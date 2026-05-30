@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Outlet, useNavigate, useParams, useLocation } from "react-router-dom";
 import { Typography } from "@mui/material";
 import { useEvent } from "../api/hooks.js";
@@ -19,22 +19,35 @@ export function EventLayout() {
 
   const role = eventData?.myRole ?? null;
   const isStaff = role === "staff";
+  const prevMode = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!state || !role) return;
-    const onPresent = location.pathname.endsWith("/present");
     // スタッフは強制遷移しない（進行コントロールのため）
+    if (!state || !role || isStaff) {
+      if (state) prevMode.current = state.mode;
+      return;
+    }
+    const onPresent = location.pathname.endsWith("/present");
     const onAwards = location.pathname.endsWith("/awards");
-    if (state.mode === "presentation" && !isStaff && !onPresent) {
+    const mode = state.mode;
+    const modeChanged = prevMode.current !== mode;
+    prevMode.current = mode;
+
+    // モードが切り替わった瞬間（または初回ロード）だけ該当画面へ誘導。
+    // 以後は参加者が自分で採点一覧などへ移動でき、引き戻されない。
+    if (modeChanged && mode === "presentation" && !onPresent) {
       navigate(`/events/${id}/present`, { replace: true });
+      return;
     }
-    if (state.mode === "awards" && !isStaff && !onAwards) {
+    if (modeChanged && mode === "awards" && !onAwards) {
       navigate(`/events/${id}/awards`, { replace: true });
+      return;
     }
-    if (state.mode !== "presentation" && onPresent && !isStaff) {
+    // モードが終わったら発表/表彰画面からは退避させる
+    if (mode !== "presentation" && onPresent) {
       navigate(`/events/${id}`, { replace: true });
     }
-    if (state.mode !== "awards" && onAwards && !isStaff) {
+    if (mode !== "awards" && onAwards) {
       navigate(`/events/${id}`, { replace: true });
     }
   }, [state, role, isStaff, location.pathname, id, navigate]);

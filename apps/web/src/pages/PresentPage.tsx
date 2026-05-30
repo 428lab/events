@@ -2,6 +2,7 @@ import {
   Avatar,
   AvatarGroup,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -10,7 +11,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router-dom";
 import {
   useEvent,
   useEventEntries,
@@ -145,6 +146,15 @@ export function PresentPage() {
                   発表チームが選択されると採点できます
                 </Typography>
               )}
+              <Button
+                fullWidth
+                variant="outlined"
+                component={RouterLink}
+                to={`/events/${id}/scoring`}
+                sx={{ mt: 2 }}
+              >
+                他の発表も採点する（採点一覧）
+              </Button>
             </CardContent>
           </Card>
         </Grid>
