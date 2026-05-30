@@ -71,6 +71,26 @@ export function ControlPage() {
         進行コントロール
       </Typography>
 
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        <Button
+          variant="contained"
+          component={RouterLink}
+          to={`/events/${id}/scoring`}
+        >
+          採点画面へ
+        </Button>
+        {state.mode === "presentation" && (
+          <Button
+            variant="outlined"
+            color="error"
+            component={RouterLink}
+            to={`/events/${id}/present`}
+          >
+            プレゼン画面へ
+          </Button>
+        )}
+      </Stack>
+
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" gutterBottom>
