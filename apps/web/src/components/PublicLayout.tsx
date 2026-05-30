@@ -7,6 +7,7 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
+import { ThemeSwitcher } from "./ThemeSwitcher.js";
 
 /** 未ログインの公開ページ用の軽量レイアウト（ログイン導線のみ） */
 export function PublicLayout({ children }: { children: React.ReactNode }) {
@@ -23,6 +24,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
             events lab
           </Typography>
           <Box sx={{ flexGrow: 1 }} />
+          <ThemeSwitcher />
           <Button color="inherit" component={RouterLink} to="/login">
             ログイン
           </Button>

@@ -11,6 +11,7 @@ import {
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import type { User } from "@eventer/shared";
 import { useIsAdmin, useLogout } from "../api/hooks.js";
+import { ThemeSwitcher } from "./ThemeSwitcher.js";
 
 export function Layout({
   user,
@@ -49,6 +50,7 @@ export function Layout({
           <Button color="inherit" component={RouterLink} to="/me">
             マイページ
           </Button>
+          <ThemeSwitcher />
           <Avatar
             src={user.avatarUrl ?? undefined}
             sx={{ width: 32, height: 32, mx: 1 }}
