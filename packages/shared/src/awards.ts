@@ -38,6 +38,13 @@ export const createSpecialAwardInput = z.object({
 });
 export type CreateSpecialAwardInput = z.infer<typeof createSpecialAwardInput>;
 
+export const updateSpecialAwardInput = z.object({
+  name: z.string().min(1).max(100).optional(),
+  content: z.string().max(500).optional().nullable(),
+  sortOrder: z.number().int().optional(),
+});
+export type UpdateSpecialAwardInput = z.infer<typeof updateSpecialAwardInput>;
+
 /** 受賞割当（ランク賞 or 特別枠に entry を設定） */
 export const setAwardResultInput = z.object({
   entryId: z.string().nullable(),

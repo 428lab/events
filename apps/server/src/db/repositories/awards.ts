@@ -4,6 +4,7 @@ import type {
   CreateSpecialAwardInput,
   SpecialAward,
   UpdateAwardRankInput,
+  UpdateSpecialAwardInput,
 } from "@eventer/shared";
 import { randomUUID } from "node:crypto";
 import { db } from "../client.js";
@@ -110,6 +111,21 @@ export const awardsRepo = {
       .prepare("SELECT * FROM special_award WHERE id = ?")
       .get(id) as SpecialRow;
     return toSpecial(row);
+  },
+  findSpecial(id: string): SpecialAward | null {
+    const r = db.prepare("SELECT * FROM special_award WHERE id = ?").get(id) as
+      | SpecialRow
+      | undefined;
+    return r ? toSpecial(r) : null;
+  },
+  updateSpecial(id: string, input: UpdateSpecialAwardInput): SpecialAward | null {
+    const cur = this.findSpecial(id);
+    if (!cur) return null;
+    const next = { ...cur, ...input };
+    db.prepare(
+      "UPDATE special_award SET name = ?, content = ?, sort_order = ? WHERE id = ?",
+    ).run(next.name, next.content ?? null, next.sortOrder, id);
+    return this.findSpecial(id);
   },
   deleteSpecial(id: string): void {
     db.prepare("DELETE FROM special_award WHERE id = ?").run(id);

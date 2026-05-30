@@ -5,6 +5,7 @@ import {
   createSpecialAwardInput,
   setAwardResultInput,
   updateAwardRankInput,
+  updateSpecialAwardInput,
 } from "@eventer/shared";
 import type {
   AwardResultView,
@@ -12,6 +13,7 @@ import type {
   CreateSpecialAwardInput,
   SetAwardResultInput,
   UpdateAwardRankInput,
+  UpdateSpecialAwardInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { currentUser, requireAuth } from "../auth/session.js";
@@ -115,6 +117,19 @@ awardRoutes.post(
       },
       201,
     ),
+);
+awardRoutes.patch(
+  "/:id/special-awards/:specialId",
+  requireEventRole(["staff"]),
+  zValidator("json", updateSpecialAwardInput),
+  (c) => {
+    const special = awardsRepo.updateSpecial(
+      c.req.param("specialId"),
+      valid<UpdateSpecialAwardInput>(c, "json"),
+    );
+    if (!special) return c.json({ error: "not_found" }, 404);
+    return c.json({ special });
+  },
 );
 awardRoutes.delete(
   "/:id/special-awards/:specialId",

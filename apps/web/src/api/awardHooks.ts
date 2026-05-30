@@ -6,6 +6,7 @@ import type {
   EventState,
   SetAwardResultInput,
   UpdateAwardRankInput,
+  UpdateSpecialAwardInput,
 } from "@eventer/shared";
 import { api } from "./client.js";
 
@@ -48,6 +49,19 @@ export function useCreateSpecial(eventId: string) {
   return useMutation({
     mutationFn: (input: CreateSpecialAwardInput) =>
       api.post(`/events/${eventId}/special-awards`, input),
+    onSuccess: () => invalidate(qc, eventId),
+  });
+}
+export function useUpdateSpecial(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      specialId,
+      input,
+    }: {
+      specialId: string;
+      input: UpdateSpecialAwardInput;
+    }) => api.patch(`/events/${eventId}/special-awards/${specialId}`, input),
     onSuccess: () => invalidate(qc, eventId),
   });
 }

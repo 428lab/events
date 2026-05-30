@@ -22,6 +22,7 @@ import {
   useDeleteSpecial,
   useSetAwardResult,
   useUpdateRank,
+  useUpdateSpecial,
 } from "../api/awardHooks.js";
 
 export function AwardsEditor({ eventId }: { eventId: string }) {
@@ -31,6 +32,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
   const updateRank = useUpdateRank(eventId);
   const deleteRank = useDeleteRank(eventId);
   const createSpecial = useCreateSpecial(eventId);
+  const updateSpecial = useUpdateSpecial(eventId);
   const deleteSpecial = useDeleteSpecial(eventId);
   const setResult = useSetAwardResult(eventId);
 
@@ -178,29 +180,52 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
           <Card key={s.id} variant="outlined">
             <CardContent>
               <Stack direction="row" spacing={1.5} alignItems="center">
-                <Typography sx={{ flex: 1 }} fontWeight={600}>
-                  {s.name}
-                </Typography>
-                <TextField
-                  label="受賞チーム"
-                  select
-                  size="small"
-                  value={winnerOf("special", s.id)}
-                  onChange={(e) =>
-                    setResult.mutate({
-                      specialAwardId: s.id,
-                      entryId: e.target.value || null,
-                    })
-                  }
-                  sx={{ minWidth: 200 }}
-                >
-                  <MenuItem value="">（未選択）</MenuItem>
-                  {entryOptions.map((en) => (
-                    <MenuItem key={en.id} value={en.id}>
-                      {en.name}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                <Stack spacing={1} sx={{ flex: 1 }}>
+                  <TextField
+                    label="特別枠の名前"
+                    defaultValue={s.name}
+                    size="small"
+                    onBlur={(e) =>
+                      e.target.value &&
+                      e.target.value !== s.name &&
+                      updateSpecial.mutate({
+                        specialId: s.id,
+                        input: { name: e.target.value },
+                      })
+                    }
+                  />
+                  <TextField
+                    label="賞品・賞の内容（任意）"
+                    defaultValue={s.content ?? ""}
+                    size="small"
+                    onBlur={(e) =>
+                      e.target.value !== (s.content ?? "") &&
+                      updateSpecial.mutate({
+                        specialId: s.id,
+                        input: { content: e.target.value || null },
+                      })
+                    }
+                  />
+                  <TextField
+                    label="受賞チーム"
+                    select
+                    size="small"
+                    value={winnerOf("special", s.id)}
+                    onChange={(e) =>
+                      setResult.mutate({
+                        specialAwardId: s.id,
+                        entryId: e.target.value || null,
+                      })
+                    }
+                  >
+                    <MenuItem value="">（未選択）</MenuItem>
+                    {entryOptions.map((en) => (
+                      <MenuItem key={en.id} value={en.id}>
+                        {en.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
                 <IconButton color="error" onClick={() => deleteSpecial.mutate(s.id)}>
                   <DeleteIcon />
                 </IconButton>
