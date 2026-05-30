@@ -17,8 +17,9 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /**
- * 元画像から指定範囲を OG サイズ(1200x630)に描画し、1MB 以内の JPEG Blob を返す。
+ * 元画像から指定範囲を OG サイズ(1200x630)に描画し、1MB 以内の WebP Blob を返す。
  * サイズ超過時は品質を段階的に下げて再エンコードする。
+ * （WebP 非対応ブラウザでは toBlob が別形式にフォールバックするが、保存側は image/* を許容）
  */
 export async function cropToOgImage(
   imageSrc: string,
@@ -47,7 +48,7 @@ export async function cropToOgImage(
     new Promise((resolve, reject) => {
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
-        "image/jpeg",
+        "image/webp",
         quality,
       );
     });
