@@ -7,6 +7,7 @@ import {
   CardContent,
   Chip,
   Divider,
+  Grid,
   Link,
   List,
   ListItem,
@@ -102,7 +103,9 @@ export function EventDetailPage() {
   const myEntry = entries?.find((e) => me && e.memberUserIds.includes(me.id));
 
   return (
-    <Stack spacing={3}>
+    <Grid container spacing={3}>
+      <Grid item xs={12} md={8}>
+        <Stack spacing={3}>
       <Box>
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography variant="h4" fontWeight={700}>
@@ -224,26 +227,6 @@ export function EventDetailPage() {
 
       {myEntry && <SubmissionEditor eventId={id} entry={myEntry} />}
 
-      {isMember && (
-        <Card variant="outlined">
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              参加者一覧
-            </Typography>
-            <List dense>
-              {members?.map((m) => (
-                <ListItem key={m.id} disableGutters>
-                  <ListItemText
-                    primary={m.user.globalName ?? m.user.username}
-                    secondary={roleLabel[m.role]}
-                  />
-                </ListItem>
-              ))}
-            </List>
-          </CardContent>
-        </Card>
-      )}
-
       {(event.venueType === "online" || event.venueType === "hybrid") &&
         entries && (
           <Card variant="outlined">
@@ -289,6 +272,33 @@ export function EventDetailPage() {
             </CardContent>
           </Card>
         )}
-    </Stack>
+        </Stack>
+      </Grid>
+
+      <Grid item xs={12} md={4}>
+        {isMember && (
+          <Card
+            variant="outlined"
+            sx={{ position: { md: "sticky" }, top: { md: 16 } }}
+          >
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                参加者一覧（{members?.length ?? 0}）
+              </Typography>
+              <List dense>
+                {members?.map((m) => (
+                  <ListItem key={m.id} disableGutters>
+                    <ListItemText
+                      primary={m.user.globalName ?? m.user.username}
+                      secondary={roleLabel[m.role]}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </CardContent>
+          </Card>
+        )}
+      </Grid>
+    </Grid>
   );
 }
