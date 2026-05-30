@@ -1,0 +1,199 @@
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  LinearProgress,
+  MenuItem,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { useParams } from "react-router-dom";
+import { EVENT_MODES, type EventMode } from "@eventer/shared";
+import { useEvent, useEventEntries } from "../api/hooks.js";
+import {
+  useEventState,
+  useScoreProgress,
+  useScoreSummary,
+  useSetMode,
+  useSetPresenting,
+  useToggleScoringLock,
+} from "../api/scoringHooks.js";
+import { roleLabel } from "../lib/format.js";
+
+const modeLabel: Record<EventMode, string> = {
+  normal: "通常",
+  presentation: "プレゼン",
+  aggregation: "集計",
+  awards: "表彰",
+};
+
+export function ControlPage() {
+  const { id = "" } = useParams();
+  const { data: eventData } = useEvent(id);
+  const { data: state } = useEventState(id);
+  const { data: entries } = useEventEntries(id);
+  const setMode = useSetMode(id);
+  const setPresenting = useSetPresenting(id);
+  const toggleLock = useToggleScoringLock(id);
+
+  const isStaff = eventData?.myRole === "staff";
+  const { data: summary } = useScoreSummary(id, Boolean(isStaff));
+  const { data: progress } = useScoreProgress(id, Boolean(isStaff));
+
+  if (!eventData || !state || !entries) {
+    return <Typography>読み込み中…</Typography>;
+  }
+  if (!isStaff) {
+    return <Alert severity="info">進行コントロールはスタッフ専用です。</Alert>;
+  }
+
+  return (
+    <Stack spacing={3}>
+      <Typography variant="h5" fontWeight={700}>
+        進行コントロール
+      </Typography>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            モード
+          </Typography>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            {EVENT_MODES.map((m) => (
+              <Button
+                key={m}
+                variant={state.mode === m ? "contained" : "outlined"}
+                onClick={() => setMode.mutate(m)}
+              >
+                {modeLabel[m]}
+              </Button>
+            ))}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            発表中のチーム
+          </Typography>
+          <TextField
+            select
+            fullWidth
+            value={state.presentingEntryId ?? ""}
+            onChange={(e) =>
+              setPresenting.mutate(e.target.value === "" ? null : e.target.value)
+            }
+          >
+            <MenuItem value="">（未選択）</MenuItem>
+            {entries.map((en) => (
+              <MenuItem key={en.id} value={en.id}>
+                {en.name}
+              </MenuItem>
+            ))}
+          </TextField>
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Box>
+              <Typography variant="h6">採点の締切</Typography>
+              <Chip
+                size="small"
+                color={state.scoringLocked ? "error" : "success"}
+                label={state.scoringLocked ? "締切済み" : "受付中"}
+              />
+            </Box>
+            <Button
+              variant="outlined"
+              color={state.scoringLocked ? "success" : "error"}
+              onClick={() => toggleLock.mutate()}
+            >
+              {state.scoringLocked ? "採点を再開" : "採点を締め切る"}
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            採点進捗
+          </Typography>
+          {progress?.judges.length === 0 ? (
+            <Typography color="text.secondary">採点者がいません</Typography>
+          ) : (
+            <Stack spacing={1.5}>
+              {progress?.judges.map((j) => (
+                <Box key={j.userId}>
+                  <Stack direction="row" justifyContent="space-between">
+                    <Typography variant="body2">
+                      {j.name}（{roleLabel[j.role as keyof typeof roleLabel] ?? j.role}）
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color={j.complete ? "success.main" : "text.secondary"}
+                    >
+                      {j.filled}/{j.total} {j.complete ? "✓" : ""}
+                    </Typography>
+                  </Stack>
+                  <LinearProgress
+                    variant="determinate"
+                    value={j.total > 0 ? (j.filled / j.total) * 100 : 0}
+                  />
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            集計プレビュー
+          </Typography>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>チーム</TableCell>
+                {summary?.criteria.map((c) => (
+                  <TableCell key={c.id} align="right">
+                    {c.name}
+                  </TableCell>
+                ))}
+                <TableCell align="right">合計</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {summary?.entries.map((e) => (
+                <TableRow key={e.entryId}>
+                  <TableCell>{e.entryName}</TableCell>
+                  {summary.criteria.map((c) => (
+                    <TableCell key={c.id} align="right">
+                      {e.perCriterion[c.id] ?? 0}
+                    </TableCell>
+                  ))}
+                  <TableCell align="right">
+                    <strong>{e.total}</strong>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </Stack>
+  );
+}

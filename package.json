@@ -1,0 +1,27 @@
+{
+  "name": "eventer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "dev:server": "pnpm --filter @eventer/server dev",
+    "dev:web": "pnpm --filter @eventer/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "migrate": "pnpm --filter @eventer/server migrate",
+    "start": "NODE_ENV=production node apps/server/dist/index.js",
+    "tunnel": "cloudflared tunnel --config deploy/cloudflared.yml run events-kojira",
+    "deploy": "bash deploy/run.sh"
+  },
+  "packageManager": "pnpm@10.30.0+sha512.2b5753de015d480eeb88f5b5b61e0051f05b4301808a82ec8b840c9d2adf7748eb352c83f5c1593ca703ff1017295bc3fdd3119abb9686efc96b9fcb18200937"
+}

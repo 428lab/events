@@ -1,0 +1,53 @@
+import { Box, CircularProgress } from "@mui/material";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { useMe } from "./api/hooks.js";
+import { Layout } from "./components/Layout.js";
+import { EventLayout } from "./components/EventLayout.js";
+import { LoginPage } from "./pages/LoginPage.js";
+import { MyPage } from "./pages/MyPage.js";
+import { EventsPage } from "./pages/EventsPage.js";
+import { EventDetailPage } from "./pages/EventDetailPage.js";
+import { CreateEventPage } from "./pages/CreateEventPage.js";
+import { ScoringPage } from "./pages/ScoringPage.js";
+import { PresentPage } from "./pages/PresentPage.js";
+import { ControlPage } from "./pages/ControlPage.js";
+import { CriteriaAdminPage } from "./pages/CriteriaAdminPage.js";
+
+export function App() {
+  const { data: user, isLoading } = useMe();
+
+  if (isLoading) {
+    return (
+      <Box sx={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <Layout user={user}>
+      <Routes>
+        <Route path="/me" element={<MyPage />} />
+        <Route path="/events" element={<EventsPage />} />
+        <Route path="/events/new" element={<CreateEventPage />} />
+        <Route path="/events/:id" element={<EventLayout />}>
+          <Route index element={<EventDetailPage />} />
+          <Route path="scoring" element={<ScoringPage />} />
+          <Route path="present" element={<PresentPage />} />
+          <Route path="control" element={<ControlPage />} />
+          <Route path="criteria" element={<CriteriaAdminPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/me" replace />} />
+      </Routes>
+    </Layout>
+  );
+}

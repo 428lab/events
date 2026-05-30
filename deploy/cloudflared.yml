@@ -1,0 +1,7 @@
+tunnel: b3093ae7-8fb6-447d-8885-5cc86540203e
+credentials-file: /Users/kojira/.cloudflared/b3093ae7-8fb6-447d-8885-5cc86540203e.json
+
+ingress:
+  - hostname: events.kojira.io
+    service: http://localhost:8080
+  - service: http_status:404

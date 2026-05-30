@@ -1,0 +1,23 @@
+node_modules/
+dist/
+*.local
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# SQLite（どの階層でも除外）
+*.db
+*.db-shm
+*.db-wal
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor / os
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
