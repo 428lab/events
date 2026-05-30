@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -11,6 +11,8 @@ import {
   Typography,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import type { AwardRank } from "@eventer/shared";
 import { useEventEntries } from "../api/hooks.js";
 import {
   useAwards,
@@ -19,12 +21,14 @@ import {
   useDeleteRank,
   useDeleteSpecial,
   useSetAwardResult,
+  useUpdateRank,
 } from "../api/awardHooks.js";
 
 export function AwardsEditor({ eventId }: { eventId: string }) {
   const { data: awards } = useAwards(eventId);
   const { data: entries } = useEventEntries(eventId);
   const createRank = useCreateRank(eventId);
+  const updateRank = useUpdateRank(eventId);
   const deleteRank = useDeleteRank(eventId);
   const createSpecial = useCreateSpecial(eventId);
   const deleteSpecial = useDeleteSpecial(eventId);
@@ -33,12 +37,40 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
   const [rankName, setRankName] = useState("");
   const [specialName, setSpecialName] = useState("");
 
+  // ドラッグ並び替え用のローカル順序
+  const [ranks, setRanks] = useState<AwardRank[]>([]);
+  useEffect(() => {
+    if (awards) setRanks(awards.ranks);
+  }, [awards]);
+  const dragIndex = useRef<number | null>(null);
+
+  const onDragOver = (e: React.DragEvent, i: number) => {
+    e.preventDefault();
+    const from = dragIndex.current;
+    if (from === null || from === i) return;
+    setRanks((prev) => {
+      const a = [...prev];
+      const [moved] = a.splice(from, 1);
+      a.splice(i, 0, moved);
+      return a;
+    });
+    dragIndex.current = i;
+  };
+  const onDrop = () => {
+    dragIndex.current = null;
+    // 新しい並び順を rank_order に反映（1 が最上位）
+    ranks.forEach((r, idx) => {
+      if (r.rankOrder !== idx + 1) {
+        updateRank.mutate({ rankId: r.id, input: { rankOrder: idx + 1 } });
+      }
+    });
+  };
+
+  const entryOptions = entries ?? [];
   const winnerOf = (key: "rank" | "special", id: string) =>
     awards?.results.find((r) =>
       key === "rank" ? r.awardRankId === id : r.specialAwardId === id,
     )?.entryId ?? "";
-
-  const entryOptions = entries ?? [];
 
   return (
     <Box>
@@ -47,36 +79,70 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
       </Typography>
 
       <Typography variant="subtitle2" sx={{ mt: 1 }}>
-        ランキング賞（上から上位）
+        ランキング賞（ドラッグで並び替え・上が上位）
       </Typography>
       <Stack spacing={1} sx={{ mt: 1 }}>
-        {awards?.ranks.map((r) => (
-          <Card key={r.id} variant="outlined">
+        {ranks.map((r, i) => (
+          <Card
+            key={r.id}
+            variant="outlined"
+            draggable
+            onDragStart={() => (dragIndex.current = i)}
+            onDragOver={(e) => onDragOver(e, i)}
+            onDrop={onDrop}
+            onDragEnd={onDrop}
+          >
             <CardContent>
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <Typography sx={{ flex: 1 }} fontWeight={600}>
-                  {r.name}
-                </Typography>
-                <TextField
-                  label="受賞チーム"
-                  select
-                  size="small"
-                  value={winnerOf("rank", r.id)}
-                  onChange={(e) =>
-                    setResult.mutate({
-                      awardRankId: r.id,
-                      entryId: e.target.value || null,
-                    })
-                  }
-                  sx={{ minWidth: 200 }}
-                >
-                  <MenuItem value="">（未選択）</MenuItem>
-                  {entryOptions.map((en) => (
-                    <MenuItem key={en.id} value={en.id}>
-                      {en.name}
-                    </MenuItem>
-                  ))}
-                </TextField>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <DragIndicatorIcon
+                  sx={{ cursor: "grab", color: "text.disabled" }}
+                />
+                <Stack spacing={1} sx={{ flex: 1 }}>
+                  <TextField
+                    label="賞の名前"
+                    defaultValue={r.name}
+                    size="small"
+                    onBlur={(e) =>
+                      e.target.value !== r.name &&
+                      e.target.value &&
+                      updateRank.mutate({
+                        rankId: r.id,
+                        input: { name: e.target.value },
+                      })
+                    }
+                  />
+                  <TextField
+                    label="賞の内容（任意）"
+                    defaultValue={r.content ?? ""}
+                    size="small"
+                    onBlur={(e) =>
+                      e.target.value !== (r.content ?? "") &&
+                      updateRank.mutate({
+                        rankId: r.id,
+                        input: { content: e.target.value || null },
+                      })
+                    }
+                  />
+                  <TextField
+                    label="受賞チーム"
+                    select
+                    size="small"
+                    value={winnerOf("rank", r.id)}
+                    onChange={(e) =>
+                      setResult.mutate({
+                        awardRankId: r.id,
+                        entryId: e.target.value || null,
+                      })
+                    }
+                  >
+                    <MenuItem value="">（未選択）</MenuItem>
+                    {entryOptions.map((en) => (
+                      <MenuItem key={en.id} value={en.id}>
+                        {en.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
                 <IconButton color="error" onClick={() => deleteRank.mutate(r.id)}>
                   <DeleteIcon />
                 </IconButton>
