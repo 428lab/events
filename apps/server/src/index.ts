@@ -9,6 +9,8 @@ import { authRoutes } from "./routes/auth.js";
 import { eventRoutes } from "./routes/events.js";
 import { scoringRoutes } from "./routes/scoring.js";
 import { meRoutes } from "./routes/me.js";
+import { getEventImage } from "./routes/images.js";
+import { eventsRepo } from "./db/repositories/events.js";
 
 runMigrations();
 
@@ -19,6 +21,8 @@ api.get("/health", (c) =>
   c.json({ ok: true, discordConfigured: env.discordConfigured }),
 );
 api.route("/auth", authRoutes);
+// 公開: イベント画像（認証不要。eventRoutes(要認証)より先に登録）
+api.get("/events/:id/image", getEventImage);
 api.route("/events", eventRoutes);
 api.route("/events", scoringRoutes);
 api.route("/me", meRoutes);
@@ -28,11 +32,45 @@ app.route("/api", api);
 // 本番では Hono がビルド済み SPA を同一オリジンで配信する
 if (env.isProd) {
   const indexHtml = readFileSync(join(env.webDistPath, "index.html"), "utf8");
+
+  const escapeHtml = (s: string) =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  // /events/:id のリクエストには OG メタを注入（クローラ向け）
+  const renderEventOg = (eventId: string): string | null => {
+    const event = eventsRepo.findById(eventId);
+    if (!event || event.status !== "published") return null;
+    const url = `${env.appBaseUrl}/events/${eventId}`;
+    const title = escapeHtml(event.title);
+    const desc = escapeHtml((event.description || "").slice(0, 200));
+    const tags = [
+      `<meta property="og:type" content="website" />`,
+      `<meta property="og:title" content="${title}" />`,
+      `<meta property="og:description" content="${desc}" />`,
+      `<meta property="og:url" content="${url}" />`,
+    ];
+    if (event.imageUpdatedAt) {
+      const img = `${env.appBaseUrl}/api/events/${eventId}/image?v=${event.imageUpdatedAt}`;
+      tags.push(`<meta property="og:image" content="${img}" />`);
+      tags.push(`<meta name="twitter:card" content="summary_large_image" />`);
+    }
+    return indexHtml.replace("</head>", `${tags.join("\n")}\n</head>`);
+  };
+
   app.use("/*", serveStatic({ root: env.webDistPath }));
   // SPA フォールバック（/me や /events/:id などのクライアントルート）
   app.notFound((c) => {
     if (c.req.path.startsWith("/api")) {
       return c.json({ error: "not_found" }, 404);
+    }
+    const m = c.req.path.match(/^\/events\/([^/]+)$/);
+    if (m) {
+      const html = renderEventOg(m[1]);
+      if (html) return c.html(html);
     }
     return c.html(indexHtml);
   });

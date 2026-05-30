@@ -20,6 +20,7 @@ interface EventRow {
   status: string;
   created_by: string;
   created_at: number;
+  image_updated_at: number | null;
 }
 
 function toEvent(row: EventRow): Event {
@@ -37,6 +38,7 @@ function toEvent(row: EventRow): Event {
     status: row.status as Event["status"],
     createdBy: row.created_by,
     createdAt: row.created_at,
+    imageUpdatedAt: row.image_updated_at,
   };
 }
 

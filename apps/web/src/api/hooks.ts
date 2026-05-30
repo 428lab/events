@@ -152,6 +152,47 @@ export function useLeaveEvent() {
   });
 }
 
+export function eventImageUrl(event: {
+  id: string;
+  imageUpdatedAt: number | null;
+}): string | null {
+  if (!event.imageUpdatedAt) return null;
+  return `/api/events/${event.id}/image?v=${event.imageUpdatedAt}`;
+}
+
+export function useUploadEventImage(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (blob: Blob) => {
+      const res = await fetch(`/api/events/${eventId}/image`, {
+        method: "PUT",
+        headers: { "Content-Type": blob.type },
+        credentials: "include",
+        body: blob,
+      });
+      if (!res.ok) throw new ApiError(res.status, await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId] });
+      qc.invalidateQueries({ queryKey: ["events"] });
+      qc.invalidateQueries({ queryKey: ["myPage"] });
+    },
+  });
+}
+
+export function useDeleteEventImage(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del(`/events/${eventId}/image`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId] });
+      qc.invalidateQueries({ queryKey: ["events"] });
+      qc.invalidateQueries({ queryKey: ["myPage"] });
+    },
+  });
+}
+
 export function useUpdateSubmission(eventId: string) {
   const qc = useQueryClient();
   return useMutation({

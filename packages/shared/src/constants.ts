@@ -18,3 +18,10 @@ export type EntryKind = (typeof ENTRY_KINDS)[number];
 
 /** イベント管理（設定変更・ロール割当）が可能なロール */
 export const EVENT_ADMIN_ROLES: readonly EventRole[] = ["staff"];
+
+/** イベント画像（OG画像サイズ 1.91:1）。クロップ先サイズと最大バイト数。 */
+export const EVENT_IMAGE = {
+  width: 1200,
+  height: 630,
+  maxBytes: 1024 * 1024, // 1MB
+} as const;

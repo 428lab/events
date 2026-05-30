@@ -35,6 +35,7 @@ export const eventSchema = z.object({
   status: z.enum(EVENT_STATUSES),
   createdBy: z.string(),
   createdAt: z.number(),
+  imageUpdatedAt: z.number().nullable(),
 });
 export type Event = z.infer<typeof eventSchema>;
 

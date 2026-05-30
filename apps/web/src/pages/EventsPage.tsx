@@ -9,7 +9,7 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { Link as RouterLink } from "react-router-dom";
-import { useEvents } from "../api/hooks.js";
+import { eventImageUrl, useEvents } from "../api/hooks.js";
 import { formatDateRange, venueLabel } from "../lib/format.js";
 
 export function EventsPage() {
@@ -44,6 +44,19 @@ export function EventsPage() {
           {events.map((e) => (
             <Card key={e.id} variant="outlined">
               <CardActionArea component={RouterLink} to={`/events/${e.id}`}>
+                {eventImageUrl(e) && (
+                  <Box
+                    component="img"
+                    src={eventImageUrl(e)!}
+                    alt={e.title}
+                    sx={{
+                      width: "100%",
+                      aspectRatio: "1200 / 630",
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                )}
                 <CardContent>
                   <Typography variant="h6">{e.title}</Typography>
                   <Typography variant="body2" color="text.secondary">

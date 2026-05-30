@@ -19,6 +19,7 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { entriesRepo } from "../db/repositories/entries.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
+import { deleteEventImage, putEventImage } from "./images.js";
 
 export const eventRoutes = new Hono<AppEnv>();
 
@@ -62,6 +63,10 @@ eventRoutes.patch(
     return c.json({ event });
   },
 );
+
+/** イベント画像のアップロード/削除（staff のみ。admin はバイパス） */
+eventRoutes.put("/:id/image", requireEventRole(["staff"]), putEventImage);
+eventRoutes.delete("/:id/image", requireEventRole(["staff"]), deleteEventImage);
 
 /** 公開（staff のみ） */
 eventRoutes.post("/:id/publish", requireEventRole(["staff"]), (c) => {

@@ -18,6 +18,7 @@ import {
 import { Link as RouterLink, useParams } from "react-router-dom";
 import type { Entry } from "@eventer/shared";
 import {
+  eventImageUrl,
   useEvent,
   useEventEntries,
   useEventMembers,
@@ -29,6 +30,7 @@ import {
   useUpdateSubmission,
 } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
+import { EventImageEditor } from "../components/EventImageEditor.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
 
 function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry }) {
@@ -119,6 +121,28 @@ export function EventDetailPage() {
           {venueLabel[event.venueType]}
         </Typography>
       </Box>
+
+      {eventImageUrl(event) && (
+        <Box
+          component="img"
+          src={eventImageUrl(event)!}
+          alt={event.title}
+          sx={{
+            width: "100%",
+            aspectRatio: "1200 / 630",
+            objectFit: "cover",
+            borderRadius: 2,
+          }}
+        />
+      )}
+
+      {isStaff && (
+        <Card variant="outlined">
+          <CardContent>
+            <EventImageEditor event={event} />
+          </CardContent>
+        </Card>
+      )}
 
       {event.description && (
         <Card variant="outlined">

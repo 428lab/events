@@ -121,6 +121,7 @@ export const eventMembersRepo = {
       status: row.status as MyEventSummary["status"],
       createdBy: row.created_by as string,
       createdAt: row.created_at as number,
+      imageUpdatedAt: (row.image_updated_at as number | null) ?? null,
       myRole: row.my_role as EventRole,
     }));
   },
