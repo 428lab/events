@@ -15,6 +15,7 @@ import {
   useEvent,
   useEventEntries,
   useEventMembers,
+  useIsAdmin,
   useMe,
 } from "../api/hooks.js";
 import {
@@ -27,6 +28,7 @@ import { ScoringPanel } from "../components/ScoringPanel.js";
 export function PresentPage() {
   const { id = "" } = useParams();
   const { data: me } = useMe();
+  const isAdmin = useIsAdmin();
   const { data: eventData } = useEvent(id);
   const { data: state } = useEventState(id);
   const { data: entries } = useEventEntries(id);
@@ -51,7 +53,7 @@ export function PresentPage() {
         };
       })
     : [];
-  const canScore = role === "judge" || role === "staff";
+  const canScore = role === "judge" || role === "staff" || isAdmin;
   const isSelf = presenting
     ? Boolean(me && presenting.memberUserIds.includes(me.id))
     : false;
