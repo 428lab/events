@@ -1,10 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Button,
   Card,
   CardContent,
   Chip,
+  LinearProgress,
   Stack,
   Typography,
 } from "@mui/material";
@@ -14,7 +15,7 @@ import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
 import { useAwards, useAwardsAdvance, useAwardsReset } from "../api/awardHooks.js";
 import { RadarChart } from "../components/RadarChart.js";
-import { fireConfetti, playDrumrollThenFanfare } from "../lib/effects.js";
+import { fireConfetti, playDrumroll, playFanfare } from "../lib/effects.js";
 
 interface RevealItem {
   key: string;
@@ -32,7 +33,9 @@ export function AwardsPage() {
   const { data: state } = useEventState(id, true);
   const advance = useAwardsAdvance(id);
   const reset = useAwardsReset(id);
-  const prevCursor = useRef(0);
+  const prevCursor = useRef<number | null>(null);
+  // ドラムロール中は結果を隠す
+  const [drumrolling, setDrumrolling] = useState(false);
 
   const isStaff = eventData?.myRole === "staff" || isAdmin;
   const cursor = state?.awardsRevealCursor ?? 0;
@@ -67,13 +70,20 @@ export function AwardsPage() {
   const revealed = sequence.slice(0, cursor);
   const latest = cursor > 0 ? sequence[cursor - 1] : undefined;
 
-  // カーソルが増えたら演出
+  // カーソルが増えたら演出: ドラムロール再生 → 鳴り終わってから結果＋ファンファーレ＋紙吹雪
   useEffect(() => {
-    if (cursor > prevCursor.current && cursor > 0) {
-      playDrumrollThenFanfare(1400);
-      const t = setTimeout(() => fireConfetti(), 1400);
+    if (prevCursor.current === null) {
+      // 初回マウント（途中参加/リロード）は演出せず現状表示
       prevCursor.current = cursor;
-      return () => clearTimeout(t);
+      return;
+    }
+    if (cursor > prevCursor.current && cursor > 0) {
+      setDrumrolling(true);
+      playDrumroll(() => {
+        setDrumrolling(false);
+        playFanfare();
+        fireConfetti();
+      });
     }
     prevCursor.current = cursor;
   }, [cursor]);
@@ -109,7 +119,20 @@ export function AwardsPage() {
             <Typography variant="h4" fontWeight={800} gutterBottom>
               {latest.awardName}
             </Typography>
-            {latest.result ? (
+            {drumrolling ? (
+              <Box sx={{ py: 3 }}>
+                <Typography variant="h2" sx={{ mb: 2 }}>
+                  🥁
+                </Typography>
+                <Typography variant="h5" sx={{ mb: 2 }}>
+                  受賞は…？
+                </Typography>
+                <LinearProgress
+                  color="inherit"
+                  sx={{ maxWidth: 320, mx: "auto", opacity: 0.8 }}
+                />
+              </Box>
+            ) : latest.result ? (
               <>
                 <Typography variant="h3" fontWeight={900} sx={{ my: 1 }}>
                   {latest.result.entryName}
