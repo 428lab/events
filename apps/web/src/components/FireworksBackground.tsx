@@ -59,7 +59,7 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
       last = now;
       acc += dt;
       // 約1.1秒ごとに打ち上げ（タブ非表示時は描画自体が止まる）
-      if (acc > 1100 && !document.hidden) {
+      if (acc > 900) {
         acc = 0;
         explode();
       }
@@ -72,12 +72,15 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
         p.vx *= 0.99;
         p.vy *= 0.99;
         p.life -= 0.012;
-        ctx.globalAlpha = Math.max(0, p.life) * 0.85;
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = p.color;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
         ctx.fillStyle = p.color;
         ctx.fill();
       }
+      ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
       raf = requestAnimationFrame(tick);
     };
@@ -97,7 +100,9 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
         inset: 0,
         width: "100%",
         height: "100%",
-        zIndex: -1,
+        // コンテンツより前面に薄く重ねる（クリックは透過）。MUIのモーダル(1300)より下。
+        zIndex: 1200,
+        opacity: 0.6,
         pointerEvents: "none",
       }}
       aria-hidden
