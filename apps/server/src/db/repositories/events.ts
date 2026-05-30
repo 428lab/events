@@ -24,10 +24,10 @@ interface EventRow {
   participant_count: number;
 }
 
-/** participant_count（参加メンバー総数）を含む event の SELECT */
+/** participant_count（確定メンバー数）を含む event の SELECT */
 const SELECT_EVENT = `SELECT *,
   (SELECT COUNT(1) FROM event_member em
-   WHERE em.event_id = event.id) AS participant_count
+   WHERE em.event_id = event.id AND em.status = 'confirmed') AS participant_count
   FROM event`;
 
 function toEvent(row: EventRow): Event {

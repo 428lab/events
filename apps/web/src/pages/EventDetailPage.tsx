@@ -23,6 +23,7 @@ import {
   useEvent,
   useEventEntries,
   useEventMembers,
+  useEventSlots,
   useJoinEvent,
   useLeaveEvent,
   useIsAdmin,
@@ -30,7 +31,15 @@ import {
   useUpdateSubmission,
 } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
+import { EventSlots } from "../components/EventSlots.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
+
+const STATUS_LABEL: Record<string, string> = {
+  confirmed: "確定",
+  waitlist: "キャンセル待ち",
+  applied: "抽選申込中",
+  lost: "落選",
+};
 
 function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry }) {
   const update = useUpdateSubmission(eventId);
@@ -92,6 +101,7 @@ export function EventDetailPage() {
   const isMember = Boolean(data?.myRole);
   const isStaff = data?.myRole === "staff" || isAdmin;
   const { data: members } = useEventMembers(id, true);
+  const { data: slots } = useEventSlots(id);
   const { data: entries } = useEventEntries(id);
   const { data: state } = useEventState(id, Boolean(me));
   const join = useJoinEvent();
@@ -108,6 +118,8 @@ export function EventDetailPage() {
   const { event, myRole } = data;
 
   const myEntry = entries?.find((e) => me && e.memberUserIds.includes(me.id));
+  const myMembership = members?.find((m) => me && m.user.id === me.id);
+  const hasSlots = Boolean(slots && slots.length > 0);
 
   return (
     <Grid container spacing={3}>
@@ -166,30 +178,47 @@ export function EventDetailPage() {
         </Card>
       )}
 
-      <Stack direction="row" spacing={2}>
+      <Stack direction="row" spacing={2} alignItems="center">
         {!me ? (
           <Button variant="contained" component={RouterLink} to="/login">
             ログインして参加
           </Button>
-        ) : !isMember ? (
+        ) : isMember ? (
+          <>
+            {myMembership && myRole === "participant" && (
+              <Chip
+                color={myMembership.status === "confirmed" ? "success" : "default"}
+                label={`参加状態: ${STATUS_LABEL[myMembership.status] ?? myMembership.status}`}
+              />
+            )}
+            <Button
+              variant="outlined"
+              color="error"
+              disabled={leave.isPending}
+              onClick={() => leave.mutate(id)}
+            >
+              参加を解除する
+            </Button>
+          </>
+        ) : !hasSlots ? (
           <Button
             variant="contained"
             disabled={join.isPending}
-            onClick={() => join.mutate(id)}
+            onClick={() => join.mutate({ id })}
           >
             参加登録する
           </Button>
-        ) : (
-          <Button
-            variant="outlined"
-            color="error"
-            disabled={leave.isPending}
-            onClick={() => leave.mutate(id)}
-          >
-            参加を解除する
-          </Button>
-        )}
+        ) : null}
       </Stack>
+
+      {hasSlots && slots && (
+        <EventSlots
+          eventId={id}
+          slots={slots}
+          me={me ?? null}
+          isMember={isMember}
+        />
+      )}
 
       {(isMember || isAdmin) && (
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>

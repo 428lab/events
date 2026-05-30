@@ -19,6 +19,13 @@ export type EntryKind = (typeof ENTRY_KINDS)[number];
 /** イベント管理（設定変更・ロール割当）が可能なロール */
 export const EVENT_ADMIN_ROLES: readonly EventRole[] = ["staff"];
 
+export const SELECTION_TYPES = ["first_come", "lottery"] as const;
+export type SelectionType = (typeof SELECTION_TYPES)[number];
+
+/** 参加メンバーの状態: 確定 / キャンセル待ち / 抽選申込 / 落選 */
+export const MEMBER_STATUSES = ["confirmed", "waitlist", "applied", "lost"] as const;
+export type MemberStatus = (typeof MEMBER_STATUSES)[number];
+
 /** イベント画像（OG画像サイズ 1.91:1）。クロップ先サイズと最大バイト数。 */
 export const EVENT_IMAGE = {
   width: 1200,

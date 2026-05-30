@@ -2,15 +2,21 @@ import { Hono } from "hono";
 import { valid, zValidator } from "../lib/validator.js";
 import {
   createEventInput,
+  createSlotInput,
+  joinEventInput,
   updateEventInput,
   updateMemberRoleInput,
+  updateSlotInput,
   updateSubmissionInput,
 } from "@eventer/shared";
 import type {
   CreateEventInput,
+  CreateSlotInput,
   Event,
+  JoinEventInput,
   UpdateEventInput,
   UpdateMemberRoleInput,
+  UpdateSlotInput,
   UpdateSubmissionInput,
   User,
 } from "@eventer/shared";
@@ -22,6 +28,8 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { entriesRepo } from "../db/repositories/entries.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
+import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
+import { usersRepo } from "../db/repositories/users.js";
 import { deleteEventImage, putEventImage } from "./images.js";
 
 export const eventRoutes = new Hono<AppEnv>();
@@ -73,6 +81,14 @@ eventRoutes.get("/:id/members", (c) => {
   if (!event) return c.json({ error: "not_found" }, 404);
   if (!canView(event, currentUser(c))) return c.json({ error: "forbidden" }, 403);
   return c.json({ members: eventMembersRepo.listWithUsers(event.id) });
+});
+
+/** 参加枠一覧（公開イベントは未ログインでも閲覧可） */
+eventRoutes.get("/:id/slots", (c) => {
+  const event = eventsRepo.findById(c.req.param("id"));
+  if (!event) return c.json({ error: "not_found" }, 404);
+  if (!canView(event, currentUser(c))) return c.json({ error: "forbidden" }, 403);
+  return c.json({ slots: participationSlotsRepo.listByEvent(event.id) });
 });
 
 /* =========================================================
@@ -127,17 +143,47 @@ eventRoutes.delete("/:id", requireEventRole(["staff"]), (c) => {
   return c.json({ ok: true });
 });
 
-/** 参加登録（participant として参加し、個人 Entry を自動生成） */
-eventRoutes.post("/:id/join", (c) => {
+/** 参加登録（枠選択。先着=確定/満員はキャンセル待ち、抽選=申込） */
+eventRoutes.post("/:id/join", zValidator("json", joinEventInput), (c) => {
   const user = c.get("user");
   const eventId = c.req.param("id");
   const event = eventsRepo.findById(eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const member = eventMembersRepo.add(eventId, user.id, "participant");
-  const displayName = user.globalName ?? user.username;
-  entriesRepo.createIndividual(eventId, user.id, displayName);
-  return c.json({ member }, 201);
+  const existing = eventMembersRepo.find(eventId, user.id);
+  if (existing) return c.json({ member: existing });
+
+  const input = valid<JoinEventInput>(c, "json");
+  const slots = participationSlotsRepo.listByEvent(eventId);
+  let slotId: string | null = null;
+  let status = "confirmed";
+
+  if (slots.length > 0) {
+    const slot = slots.find((s) => s.id === input.slotId);
+    if (!slot) return c.json({ error: "slot_required" }, 400);
+    slotId = slot.id;
+    if (slot.selectionType === "lottery") {
+      status = "applied";
+    } else {
+      status = slot.confirmedCount < slot.capacity ? "confirmed" : "waitlist";
+    }
+  }
+
+  const member = eventMembersRepo.add(
+    eventId,
+    user.id,
+    "participant",
+    slotId,
+    status,
+  );
+  if (status === "confirmed") {
+    entriesRepo.createIndividual(
+      eventId,
+      user.id,
+      user.globalName ?? user.username,
+    );
+  }
+  return c.json({ member, status }, 201);
 });
 
 /** 参加解除（メンバーと個人 Entry を削除） */
@@ -164,6 +210,70 @@ eventRoutes.patch(
     return c.json({ member });
   },
 );
+
+/** 参加枠の作成/更新/削除（staff のみ） */
+eventRoutes.post(
+  "/:id/slots",
+  requireEventRole(["staff"]),
+  zValidator("json", createSlotInput),
+  (c) => {
+    const slot = participationSlotsRepo.create(
+      c.req.param("id"),
+      valid<CreateSlotInput>(c, "json"),
+    );
+    return c.json({ slot }, 201);
+  },
+);
+
+eventRoutes.patch(
+  "/:id/slots/:slotId",
+  requireEventRole(["staff"]),
+  zValidator("json", updateSlotInput),
+  (c) => {
+    const slot = participationSlotsRepo.update(
+      c.req.param("slotId"),
+      valid<UpdateSlotInput>(c, "json"),
+    );
+    if (!slot) return c.json({ error: "not_found" }, 404);
+    return c.json({ slot });
+  },
+);
+
+eventRoutes.delete("/:id/slots/:slotId", requireEventRole(["staff"]), (c) => {
+  participationSlotsRepo.delete(c.req.param("slotId"));
+  return c.json({ ok: true });
+});
+
+/** 抽選実行（staff のみ）。applied から定員までを当選=confirmed、残りを落選=lost に */
+eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), (c) => {
+  const eventId = c.req.param("id");
+  const slot = participationSlotsRepo.findById(c.req.param("slotId"));
+  if (!slot || slot.eventId !== eventId) return c.json({ error: "not_found" }, 404);
+  if (slot.selectionType !== "lottery") {
+    return c.json({ error: "not_lottery" }, 400);
+  }
+  const applied = eventMembersRepo.membersBySlotStatus(slot.id, "applied");
+  const shuffled = [...applied].sort(() => Math.random() - 0.5);
+  const winners = shuffled.slice(0, slot.capacity);
+  const winnerIds = new Set(winners.map((w) => w.id));
+
+  for (const m of applied) {
+    if (winnerIds.has(m.id)) {
+      eventMembersRepo.setStatus(m.id, "confirmed");
+      const u = usersRepo.findById(m.userId);
+      if (u) {
+        entriesRepo.createIndividual(eventId, m.userId, u.globalName ?? u.username);
+      }
+    } else {
+      eventMembersRepo.setStatus(m.id, "lost");
+    }
+  }
+  return c.json({
+    drawn: applied.length,
+    confirmed: winners.length,
+    lost: applied.length - winners.length,
+  });
+});
 
 /** 自分の Entry の成果物を保存（その Entry の member のみ） */
 eventRoutes.put(

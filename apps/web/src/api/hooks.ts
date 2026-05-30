@@ -9,9 +9,12 @@ import type {
   Event,
   EventMemberWithUser,
   EventRole,
+  CreateSlotInput,
   MyPage,
+  ParticipationSlot,
   Submission,
   UpdateEventInput,
+  UpdateSlotInput,
   UpdateSubmissionInput,
   User,
 } from "@eventer/shared";
@@ -174,10 +177,64 @@ export function usePublishEvent() {
 export function useJoinEvent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.post(`/events/${id}/join`),
-    onSuccess: (_d, id) => {
+    mutationFn: ({ id, slotId }: { id: string; slotId?: string | null }) =>
+      api.post(`/events/${id}/join`, { slotId: slotId ?? null }),
+    onSuccess: (_d, { id }) => {
       qc.invalidateQueries({ queryKey: ["event", id] });
       qc.invalidateQueries({ queryKey: ["myPage"] });
+    },
+  });
+}
+
+/** ===== 参加枠 ===== */
+export function useEventSlots(eventId: string) {
+  return useQuery({
+    queryKey: ["event", eventId, "slots"],
+    queryFn: async () =>
+      (await api.get<{ slots: ParticipationSlot[] }>(`/events/${eventId}/slots`))
+        .slots,
+  });
+}
+
+export function useCreateSlot(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateSlotInput) =>
+      api.post(`/events/${eventId}/slots`, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["event", eventId, "slots"] }),
+  });
+}
+
+export function useUpdateSlot(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ slotId, input }: { slotId: string; input: UpdateSlotInput }) =>
+      api.patch(`/events/${eventId}/slots/${slotId}`, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["event", eventId, "slots"] }),
+  });
+}
+
+export function useDeleteSlot(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slotId: string) =>
+      api.del(`/events/${eventId}/slots/${slotId}`),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["event", eventId, "slots"] }),
+  });
+}
+
+export function useDrawSlot(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slotId: string) =>
+      api.post(`/events/${eventId}/slots/${slotId}/draw`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId, "slots"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId, "members"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId] });
     },
   });
 }

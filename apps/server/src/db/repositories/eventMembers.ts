@@ -13,6 +13,8 @@ interface MemberRow {
   event_id: string;
   user_id: string;
   role: string;
+  slot_id: string | null;
+  status: string;
   created_at: number;
 }
 
@@ -31,6 +33,8 @@ function toMember(row: MemberRow): EventMember {
     eventId: row.event_id,
     userId: row.user_id,
     role: row.role as EventRole,
+    slotId: row.slot_id,
+    status: row.status,
     createdAt: row.created_at,
   };
 }
@@ -54,15 +58,42 @@ export const eventMembersRepo = {
     return row ? toMember(row) : null;
   },
 
-  add(eventId: string, userId: string, role: EventRole): EventMember {
+  add(
+    eventId: string,
+    userId: string,
+    role: EventRole,
+    slotId: string | null = null,
+    status = "confirmed",
+  ): EventMember {
     const existing = this.find(eventId, userId);
     if (existing) return existing;
     const id = randomUUID();
     db.prepare(
-      `INSERT INTO event_member (id, event_id, user_id, role, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(id, eventId, userId, role, Date.now());
+      `INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, eventId, userId, role, slotId, status, Date.now());
     return this.find(eventId, userId)!;
+  },
+
+  /** 抽選などで状態を更新 */
+  setStatus(memberId: string, status: string): void {
+    db.prepare("UPDATE event_member SET status = ? WHERE id = ?").run(
+      status,
+      memberId,
+    );
+  },
+
+  /** 枠の特定状態のメンバー（抽選用） */
+  membersBySlotStatus(
+    slotId: string,
+    status: string,
+  ): Array<{ id: string; userId: string }> {
+    const rows = db
+      .prepare(
+        "SELECT id, user_id FROM event_member WHERE slot_id = ? AND status = ?",
+      )
+      .all(slotId, status) as Array<{ id: string; user_id: string }>;
+    return rows.map((r) => ({ id: r.id, userId: r.user_id }));
   },
 
   setRole(eventId: string, userId: string, role: EventRole): EventMember | null {
@@ -99,7 +130,7 @@ export const eventMembersRepo = {
       .prepare(
         `SELECT e.*, m.role AS my_role,
                 (SELECT COUNT(1) FROM event_member em
-                 WHERE em.event_id = e.id) AS participant_count
+                 WHERE em.event_id = e.id AND em.status = 'confirmed') AS participant_count
          FROM event_member m
          JOIN event e ON e.id = m.event_id
          WHERE m.user_id = ?

@@ -76,6 +76,8 @@ export const eventMemberSchema = z.object({
   eventId: z.string(),
   userId: z.string(),
   role: z.enum(EVENT_ROLES),
+  slotId: z.string().nullable(),
+  status: z.string(),
   createdAt: z.number(),
 });
 export type EventMember = z.infer<typeof eventMemberSchema>;
