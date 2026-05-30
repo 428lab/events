@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   Card,
@@ -11,6 +12,7 @@ import {
   Link,
   List,
   ListItem,
+  ListItemAvatar,
   ListItemText,
   Stack,
   TextField,
@@ -414,6 +416,14 @@ export function EventDetailPage() {
               <List dense>
                 {members?.map((m) => (
                   <ListItem key={m.id} disableGutters>
+                    <ListItemAvatar>
+                      <Avatar
+                        src={m.user.avatarUrl ?? undefined}
+                        alt={m.user.globalName ?? m.user.username}
+                      >
+                        {(m.user.globalName ?? m.user.username).charAt(0)}
+                      </Avatar>
+                    </ListItemAvatar>
                     <ListItemText
                       primary={m.user.globalName ?? m.user.username}
                       secondary={roleLabel[m.role]}
