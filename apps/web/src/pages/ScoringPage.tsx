@@ -13,6 +13,7 @@ import {
   useMyScores,
 } from "../api/scoringHooks.js";
 import { ScoringPanel } from "../components/ScoringPanel.js";
+import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
 export function ScoringPage() {
   const { id = "" } = useParams();
@@ -35,6 +36,11 @@ export function ScoringPage() {
 
   return (
     <Stack spacing={3}>
+      <EventBreadcrumbs
+        eventId={id}
+        eventTitle={eventData.event.title}
+        current="採点"
+      />
       <Typography variant="h5" fontWeight={700}>
         採点
       </Typography>

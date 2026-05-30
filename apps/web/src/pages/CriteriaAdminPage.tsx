@@ -20,6 +20,7 @@ import {
   useDeleteCriterion,
   useUpdateCriterion,
 } from "../api/scoringHooks.js";
+import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
 export function CriteriaAdminPage() {
   const { id = "" } = useParams();
@@ -55,6 +56,11 @@ export function CriteriaAdminPage() {
 
   return (
     <Stack spacing={3}>
+      <EventBreadcrumbs
+        eventId={id}
+        eventTitle={eventData.event.title}
+        current="採点項目"
+      />
       <Typography variant="h5" fontWeight={700}>
         採点項目の管理
       </Typography>

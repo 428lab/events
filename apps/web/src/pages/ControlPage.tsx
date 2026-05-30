@@ -28,6 +28,7 @@ import {
   useToggleScoringLock,
 } from "../api/scoringHooks.js";
 import { roleLabel } from "../lib/format.js";
+import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
 const modeLabel: Record<EventMode, string> = {
   normal: "通常",
@@ -59,6 +60,11 @@ export function ControlPage() {
 
   return (
     <Stack spacing={3}>
+      <EventBreadcrumbs
+        eventId={id}
+        eventTitle={eventData.event.title}
+        current="進行コントロール"
+      />
       <Typography variant="h5" fontWeight={700}>
         進行コントロール
       </Typography>
