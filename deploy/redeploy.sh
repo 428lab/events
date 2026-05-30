@@ -3,8 +3,10 @@
 # 本番を再ビルド＆再起動する。本番の .env.production と data/（DB）は除外＝保持される。
 set -euo pipefail
 
-DEV=/Users/kojira/develop/eventer
-PROD=/Users/kojira/develop/eventer-prod
+# 開発ツリー = このスクリプトの 1つ上（deploy/ の親）。本番ツリーは既定で <dev>-prod。
+# 別の場所にしたい場合は環境変数 EVENTER_PROD で上書き。
+DEV="$(cd "$(dirname "$0")/.." && pwd)"
+PROD="${EVENTER_PROD:-${DEV}-prod}"
 
 echo "[redeploy] syncing source $DEV -> $PROD"
 rsync -a \

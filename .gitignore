@@ -11,6 +11,9 @@ dist/
 *.db-shm
 *.db-wal
 
+# 環境固有のトンネル設定（UUID/ローカルパスを含むためコミットしない。example を参照）
+deploy/cloudflared.yml
+
 # logs
 *.log
 npm-debug.log*

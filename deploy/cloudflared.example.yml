@@ -1,0 +1,11 @@
+# cloudflared 設定のテンプレート。
+# これをコピーして deploy/cloudflared.yml を作成し、実値を埋める（実ファイルは gitignore 済み）。
+#   cloudflared tunnel create <TUNNEL_NAME>
+#   cloudflared tunnel route dns <TUNNEL_NAME> <HOSTNAME>
+tunnel: <TUNNEL_UUID>
+credentials-file: <HOME>/.cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: <HOSTNAME>
+    service: http://localhost:8080
+  - service: http_status:404

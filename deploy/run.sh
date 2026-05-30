@@ -24,5 +24,5 @@ for i in $(seq 1 20); do
   sleep 0.5
 done
 
-echo "[deploy] starting cloudflared tunnel -> events.kojira.io"
-cloudflared tunnel --config deploy/cloudflared.yml run events-kojira
+echo "[deploy] starting cloudflared tunnel (deploy/cloudflared.yml)"
+cloudflared tunnel --config deploy/cloudflared.yml run
