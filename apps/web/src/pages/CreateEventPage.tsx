@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Box,
   Button,
   Card,
   CardContent,
@@ -9,8 +10,9 @@ import {
   Typography,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
-import { VENUE_TYPES, type VenueType } from "@eventer/shared";
+import { EVENT_IMAGE, VENUE_TYPES, type VenueType } from "@eventer/shared";
 import { useCreateEvent } from "../api/hooks.js";
+import { ImageCropField } from "../components/ImageCropField.js";
 import { venueLabel } from "../lib/format.js";
 
 function toEpoch(local: string): number {
@@ -28,6 +30,19 @@ export function CreateEventPage() {
   const [venueType, setVenueType] = useState<VenueType>("offline");
   const [venueOffline, setVenueOffline] = useState("");
   const [venueOnline, setVenueOnline] = useState("");
+  const [imageBlob, setImageBlob] = useState<Blob | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  const setCropped = (blob: Blob) => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageBlob(blob);
+    setImagePreview(URL.createObjectURL(blob));
+  };
+  const clearImage = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageBlob(null);
+    setImagePreview(null);
+  };
 
   const canSubmit = title && startsAt && endsAt;
 
@@ -43,7 +58,19 @@ export function CreateEventPage() {
         venueOnline: venueOnline || null,
         aggregateSelfEntry: false,
       },
-      { onSuccess: ({ event }) => navigate(`/events/${event.id}`) },
+      {
+        onSuccess: async ({ event }) => {
+          if (imageBlob) {
+            await fetch(`/api/events/${event.id}/image`, {
+              method: "PUT",
+              headers: { "Content-Type": imageBlob.type },
+              credentials: "include",
+              body: imageBlob,
+            }).catch(() => undefined);
+          }
+          navigate(`/events/${event.id}`);
+        },
+      },
     );
   };
 
@@ -116,6 +143,39 @@ export function CreateEventPage() {
               fullWidth
             />
           )}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              イベント画像（OG画像 {EVENT_IMAGE.width}×{EVENT_IMAGE.height}・任意）
+            </Typography>
+            {imagePreview && (
+              <Box
+                component="img"
+                src={imagePreview}
+                alt="preview"
+                sx={{
+                  width: "100%",
+                  maxWidth: 480,
+                  aspectRatio: `${EVENT_IMAGE.width} / ${EVENT_IMAGE.height}`,
+                  objectFit: "cover",
+                  borderRadius: 1,
+                  display: "block",
+                  mb: 1,
+                }}
+              />
+            )}
+            <Stack direction="row" spacing={1}>
+              <ImageCropField
+                label={imagePreview ? "画像を変更" : "画像を選択"}
+                onCropped={setCropped}
+              />
+              {imagePreview && (
+                <Button color="error" onClick={clearImage}>
+                  削除
+                </Button>
+              )}
+            </Stack>
+          </Box>
+
           {createEvent.isError && (
             <Typography color="error" variant="body2">
               作成に失敗しました。入力内容を確認してください。
