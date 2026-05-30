@@ -126,7 +126,7 @@ export const eventsRepo = {
       `UPDATE event SET
          title = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
-         aggregate_self_entry = ?
+         aggregate_self_entry = ?, status = ?
        WHERE id = ?`,
     ).run(
       next.title,
@@ -137,6 +137,7 @@ export const eventsRepo = {
       next.venueOffline ?? null,
       next.venueOnline ?? null,
       next.aggregateSelfEntry ? 1 : 0,
+      next.status,
       id,
     );
     return this.findById(id);

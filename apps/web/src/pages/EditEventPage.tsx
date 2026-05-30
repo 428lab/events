@@ -9,6 +9,8 @@ import {
   MenuItem,
   Stack,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
@@ -17,7 +19,6 @@ import {
   useDeleteEvent,
   useEvent,
   useIsAdmin,
-  usePublishEvent,
   useUpdateEvent,
 } from "../api/hooks.js";
 import { EventImageEditor } from "../components/EventImageEditor.js";
@@ -35,9 +36,9 @@ export function EditEventPage() {
   const { data, isLoading } = useEvent(id);
   const isAdmin = useIsAdmin();
   const update = useUpdateEvent(id);
-  const publish = usePublishEvent();
   const del = useDeleteEvent(id);
 
+  const [status, setStatus] = useState<"draft" | "published">("draft");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startsAt, setStartsAt] = useState("");
@@ -51,6 +52,7 @@ export function EditEventPage() {
   useEffect(() => {
     if (data?.event && !initialized) {
       const e = data.event;
+      setStatus(e.status === "published" ? "published" : "draft");
       setTitle(e.title);
       setDescription(e.description);
       setStartsAt(toLocalInput(e.startsAt));
@@ -73,6 +75,7 @@ export function EditEventPage() {
   const save = () => {
     update.mutate(
       {
+        status,
         title,
         description,
         startsAt: new Date(startsAt).getTime(),
@@ -92,6 +95,24 @@ export function EditEventPage() {
           イベント編集
         </Typography>
         <Stack spacing={2.5} sx={{ mt: 2 }}>
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              公開状態
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              color="primary"
+              value={status}
+              onChange={(_e, v) => v && setStatus(v)}
+            >
+              <ToggleButton value="draft">非公開（下書き）</ToggleButton>
+              <ToggleButton value="published">公開</ToggleButton>
+            </ToggleButtonGroup>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+              公開にすると未ログインでも閲覧でき、開催前なら公開トップの一覧に表示されます。
+            </Typography>
+          </Box>
           <TextField
             label="タイトル"
             value={title}
@@ -163,19 +184,6 @@ export function EditEventPage() {
           )}
           <Stack direction="row" spacing={2} justifyContent="flex-end">
             <Button onClick={() => navigate(`/events/${id}`)}>キャンセル</Button>
-            {event.status !== "published" && (
-              <Button
-                variant="outlined"
-                disabled={publish.isPending}
-                onClick={() =>
-                  publish.mutate(id, {
-                    onSuccess: () => navigate(`/events/${id}`),
-                  })
-                }
-              >
-                公開する
-              </Button>
-            )}
             <Button
               variant="contained"
               disabled={!title || update.isPending}

@@ -66,6 +66,7 @@ export const updateEventInput = z.object({
   venueOffline: z.string().max(500).optional().nullable(),
   venueOnline: z.string().max(500).optional().nullable(),
   aggregateSelfEntry: z.boolean().optional(),
+  status: z.enum(["draft", "published"]).optional(),
 });
 export type UpdateEventInput = z.infer<typeof updateEventInput>;
 

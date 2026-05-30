@@ -11,6 +11,7 @@ import type {
   EventRole,
   MyPage,
   Submission,
+  UpdateEventInput,
   UpdateSubmissionInput,
   User,
 } from "@eventer/shared";
@@ -138,7 +139,7 @@ export function useCreateEvent() {
 export function useUpdateEvent(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: Partial<CreateEventInput>) =>
+    mutationFn: (input: UpdateEventInput) =>
       api.patch<{ event: Event }>(`/events/${id}`, input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["event", id] });
