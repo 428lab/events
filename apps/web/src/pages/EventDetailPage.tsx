@@ -16,6 +16,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import type { Entry } from "@eventer/shared";
 import {
@@ -31,6 +32,7 @@ import {
   useUpdateSubmission,
 } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
+import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
 
@@ -104,6 +106,7 @@ export function EventDetailPage() {
   const { data: slots } = useEventSlots(id);
   const { data: entries } = useEventEntries(id);
   const { data: state } = useEventState(id, Boolean(me));
+  const { data: awards } = useAwards(id);
   const join = useJoinEvent();
   const leave = useLeaveEvent();
 
@@ -120,6 +123,30 @@ export function EventDetailPage() {
   const myEntry = entries?.find((e) => me && e.memberUserIds.includes(me.id));
   const myMembership = members?.find((m) => me && m.user.id === me.id);
   const hasSlots = Boolean(slots && slots.length > 0);
+
+  const awardItems = awards
+    ? [
+        ...[...awards.ranks]
+          .sort((a, b) => b.rankOrder - a.rankOrder)
+          .map((r) => ({
+            key: `rank-${r.id}`,
+            name: r.name,
+            content: r.content,
+            result: awards.results.find((x) => x.awardRankId === r.id),
+          })),
+        ...awards.specials.map((s) => ({
+          key: `special-${s.id}`,
+          name: s.name,
+          content: s.content,
+          result: awards.results.find((x) => x.specialAwardId === s.id),
+        })),
+      ].filter((it) => it.result)
+    : [];
+  const ceremonyDone =
+    (state?.awardsRevealCursor ?? 0) >=
+    (awards ? awards.ranks.length + awards.specials.length : 0);
+  const eventEnded = event.endsAt < Date.now();
+  const showAwards = awardItems.length > 0 && (ceremonyDone || eventEnded);
 
   return (
     <Grid container spacing={3}>
@@ -153,6 +180,45 @@ export function EventDetailPage() {
             borderRadius: 2,
           }}
         />
+      )}
+
+      {showAwards && (
+        <Card variant="outlined">
+          <CardContent>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+              <EmojiEventsIcon color="secondary" />
+              <Typography variant="h6">表彰結果</Typography>
+            </Stack>
+            <Stack spacing={1.5}>
+              {awardItems.map((it) => (
+                <Box
+                  key={it.key}
+                  sx={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "baseline",
+                    gap: 1,
+                  }}
+                >
+                  <Chip
+                    label={it.name}
+                    color="secondary"
+                    size="small"
+                    variant="outlined"
+                  />
+                  <Typography variant="h6" fontWeight={700}>
+                    {it.result!.entryName}
+                  </Typography>
+                  {it.content && (
+                    <Typography variant="body2" color="text.secondary">
+                      （{it.content}）
+                    </Typography>
+                  )}
+                </Box>
+              ))}
+            </Stack>
+          </CardContent>
+        </Card>
       )}
 
       {event.description && (

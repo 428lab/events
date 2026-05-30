@@ -76,14 +76,14 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
 
   return (
     <Box>
-      <Typography variant="subtitle1" gutterBottom>
+      <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 3 }}>
         表彰（ランキング賞・特別枠）
       </Typography>
 
-      <Typography variant="subtitle2" sx={{ mt: 1 }}>
+      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 2 }}>
         ランキング賞（ドラッグで並び替え・上が上位）
       </Typography>
-      <Stack spacing={1} sx={{ mt: 1 }}>
+      <Stack spacing={2}>
         {ranks.map((r, i) => (
           <Card
             key={r.id}
@@ -95,11 +95,11 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
             onDragEnd={onDrop}
           >
             <CardContent>
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={1.5} alignItems="center">
                 <DragIndicatorIcon
                   sx={{ cursor: "grab", color: "text.disabled" }}
                 />
-                <Stack spacing={1} sx={{ flex: 1 }}>
+                <Stack spacing={1.5} sx={{ flex: 1 }}>
                   <TextField
                     label="賞の名前"
                     defaultValue={r.name}
@@ -153,7 +153,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
           </Card>
         ))}
       </Stack>
-      <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+      <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
         <TextField
           size="small"
           label="賞の名前（例: 最優秀賞）"
@@ -172,15 +172,15 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
         </Button>
       </Stack>
 
-      <Typography variant="subtitle2" sx={{ mt: 3 }}>
+      <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 5, mb: 2 }}>
         特別枠（ランキング外）
       </Typography>
-      <Stack spacing={1} sx={{ mt: 1 }}>
+      <Stack spacing={2}>
         {awards?.specials.map((s) => (
           <Card key={s.id} variant="outlined">
             <CardContent>
               <Stack direction="row" spacing={1.5} alignItems="center">
-                <Stack spacing={1} sx={{ flex: 1 }}>
+                <Stack spacing={1.5} sx={{ flex: 1 }}>
                   <TextField
                     label="特別枠の名前"
                     defaultValue={s.name}
@@ -234,7 +234,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
           </Card>
         ))}
       </Stack>
-      <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+      <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
         <TextField
           size="small"
           label="特別枠の名前（例: オーディエンス賞）"
