@@ -63,7 +63,7 @@ export function PresentPage() {
 
   return (
     <Grid container spacing={3}>
-      <Grid item xs={12} md={canScore ? 7 : 12}>
+      <Grid item xs={12} md={canScore ? 6 : 12}>
         <Stack spacing={2}>
           <Chip color="error" label="プレゼンモード" sx={{ alignSelf: "flex-start" }} />
           {presenting ? (
@@ -126,7 +126,7 @@ export function PresentPage() {
       </Grid>
 
       {canScore && (
-        <Grid item xs={12} md={5}>
+        <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent>
               <Typography variant="h6" gutterBottom>
