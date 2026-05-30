@@ -8,11 +8,14 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 import { eventImageUrl, usePublicEvents } from "../api/hooks.js";
 import { formatDateRange, venueLabel } from "../lib/format.js";
 
 export function PublicEventsPage() {
+  const theme = useTheme();
+  const placeholderBg = `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`;
   const [page, setPage] = useState(1);
   const { data, isLoading } = usePublicEvents(page);
   const limit = data?.limit ?? 12;
@@ -33,32 +36,49 @@ export function PublicEventsPage() {
       ) : (
         <>
           <Stack spacing={2}>
-            {data.events.map((e) => (
-              <Card key={e.id} variant="outlined">
-                <CardActionArea component={RouterLink} to={`/events/${e.id}`}>
-                  {eventImageUrl(e) && (
+            {data.events.map((e) => {
+              const img = eventImageUrl(e);
+              return (
+                <Card key={e.id} variant="outlined">
+                  <CardActionArea
+                    component={RouterLink}
+                    to={`/events/${e.id}`}
+                    sx={{ display: "flex", alignItems: "stretch" }}
+                  >
                     <Box
-                      component="img"
-                      src={eventImageUrl(e)!}
-                      alt={e.title}
                       sx={{
-                        width: "100%",
+                        flexShrink: 0,
+                        width: { xs: 120, sm: 200 },
                         aspectRatio: "1200 / 630",
-                        objectFit: "cover",
-                        display: "block",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#fff",
+                        background: img ? undefined : placeholderBg,
+                        ...(img && {
+                          backgroundImage: `url(${img})`,
+                          backgroundSize: "cover",
+                          backgroundPosition: "center",
+                        }),
                       }}
-                    />
-                  )}
-                  <CardContent>
-                    <Typography variant="h6">{e.title}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {formatDateRange(e.startsAt, e.endsAt)} ・{" "}
-                      {venueLabel[e.venueType]} ・ 参加 {e.participantCount} 人
-                    </Typography>
-                  </CardContent>
-                </CardActionArea>
-              </Card>
-            ))}
+                    >
+                      {!img && (
+                        <Typography variant="h4" fontWeight={800} sx={{ opacity: 0.9 }}>
+                          {e.title.charAt(0)}
+                        </Typography>
+                      )}
+                    </Box>
+                    <CardContent sx={{ flex: 1 }}>
+                      <Typography variant="h6">{e.title}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {formatDateRange(e.startsAt, e.endsAt)} ・{" "}
+                        {venueLabel[e.venueType]} ・ 参加 {e.participantCount} 人
+                      </Typography>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              );
+            })}
           </Stack>
           {pageCount > 1 && (
             <Box sx={{ display: "flex", justifyContent: "center" }}>
