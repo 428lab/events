@@ -9,7 +9,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router-dom";
 import type { AwardResultView } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
@@ -172,16 +172,29 @@ export function AwardsPage() {
       )}
 
       {isStaff && (
-        <Stack direction="row" spacing={2}>
-          <Button variant="outlined" onClick={() => reset.mutate()}>
-            リセット
-          </Button>
+        <Stack spacing={1} alignItems="center">
+          <Typography variant="caption" color="text.secondary">
+            発表 {cursor} / {sequence.length}
+          </Typography>
+          <Stack direction="row" spacing={2}>
+            <Button variant="outlined" onClick={() => reset.mutate()}>
+              リセット
+            </Button>
+            <Button
+              variant="contained"
+              disabled={cursor >= sequence.length || advance.isPending}
+              onClick={() => advance.mutate()}
+            >
+              {cursor >= sequence.length ? "すべて発表済み" : "次を発表"}
+            </Button>
+          </Stack>
           <Button
-            variant="contained"
-            disabled={cursor >= sequence.length || advance.isPending}
-            onClick={() => advance.mutate()}
+            size="small"
+            color="inherit"
+            component={RouterLink}
+            to={`/events/${id}/control`}
           >
-            {cursor >= sequence.length ? "すべて発表済み" : "次を発表"}
+            ← 進行コントロールへ戻る
           </Button>
         </Stack>
       )}

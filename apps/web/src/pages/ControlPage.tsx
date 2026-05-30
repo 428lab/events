@@ -27,6 +27,7 @@ import {
   useSetPresenting,
   useToggleScoringLock,
 } from "../api/scoringHooks.js";
+import { useAwards } from "../api/awardHooks.js";
 import { roleLabel } from "../lib/format.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
@@ -50,6 +51,7 @@ export function ControlPage() {
   const isStaff = eventData?.myRole === "staff" || isAdmin;
   const { data: summary } = useScoreSummary(id, Boolean(isStaff));
   const { data: progress } = useScoreProgress(id, Boolean(isStaff));
+  const { data: awards } = useAwards(id);
 
   if (!eventData || !state || !entries) {
     return <Typography>読み込み中…</Typography>;
@@ -218,6 +220,85 @@ export function ControlPage() {
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            表彰
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            ① 受賞者を設定 → ② 表彰モードに切替（参加者は自動で表彰画面へ）→ ③
+            表彰式画面で1件ずつ発表します。
+          </Typography>
+          <Stack spacing={2}>
+            <Stack
+              direction="row"
+              spacing={1.5}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+            >
+              <Chip size="small" label="①" />
+              <Typography variant="body2" sx={{ flex: 1, minWidth: 140 }}>
+                受賞者を設定（{awards ? awards.results.length : 0}/
+                {awards ? awards.ranks.length + awards.specials.length : 0} 賞）
+              </Typography>
+              <Button
+                size="small"
+                variant="outlined"
+                component={RouterLink}
+                to={`/events/${id}/edit`}
+              >
+                受賞者を設定
+              </Button>
+            </Stack>
+
+            <Stack
+              direction="row"
+              spacing={1.5}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+            >
+              <Chip size="small" label="②" />
+              <Typography variant="body2" sx={{ flex: 1, minWidth: 140 }}>
+                表彰モードにする
+                {state.mode === "awards" && "（現在このモード）"}
+              </Typography>
+              <Button
+                size="small"
+                variant={state.mode === "awards" ? "contained" : "outlined"}
+                disabled={state.mode === "awards"}
+                onClick={() => setMode.mutate("awards")}
+              >
+                表彰モードにする
+              </Button>
+            </Stack>
+
+            <Stack
+              direction="row"
+              spacing={1.5}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+            >
+              <Chip size="small" label="③" />
+              <Typography variant="body2" sx={{ flex: 1, minWidth: 140 }}>
+                表彰式を進行（この画面が参加者にも映ります）
+              </Typography>
+              <Button
+                size="small"
+                variant="contained"
+                color="secondary"
+                component={RouterLink}
+                to={`/events/${id}/awards`}
+              >
+                表彰式の操作へ
+              </Button>
+            </Stack>
+          </Stack>
         </CardContent>
       </Card>
     </Stack>
