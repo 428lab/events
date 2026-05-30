@@ -21,8 +21,9 @@ pnpm install
 pnpm -r build
 
 echo "[redeploy] restarting prod server on :8080"
-PID=$(lsof -ti:8080 2>/dev/null || true)
-if [ -n "$PID" ]; then kill "$PID"; sleep 1; fi
+# LISTEN しているサーバープロセスのみ対象（cloudflared の :8080 への接続を拾わない）
+for PID in $(lsof -ti:8080 -sTCP:LISTEN 2>/dev/null); do kill "$PID"; done
+sleep 1
 NODE_ENV=production node apps/server/dist/index.js > /tmp/eventer-prod.log 2>&1 &
 
 # 起動待ち
