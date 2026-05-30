@@ -7,7 +7,7 @@ interface Axis {
 export function RadarChart({
   axes,
   size = 280,
-  color = "#5865F2",
+  color = "#14B8A6",
 }: {
   axes: Axis[];
   size?: number;

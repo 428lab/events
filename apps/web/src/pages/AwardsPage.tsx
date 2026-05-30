@@ -108,7 +108,7 @@ export function AwardsPage() {
           sx={{
             width: "100%",
             maxWidth: 560,
-            background: "linear-gradient(135deg,#5865F2,#EB459E)",
+            background: "linear-gradient(135deg,#14B8A6,#FB923C)",
             color: "#fff",
           }}
         >

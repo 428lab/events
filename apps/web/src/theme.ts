@@ -1,26 +1,29 @@
 import { createTheme } from "@mui/material/styles";
 
-// DESIGN.md "Spotlight" の design tokens を MUI テーマに反映
-const ink = "#0E1020";
-const indigo = "#4F46E5";
-const indigoDark = "#4338CA";
-const rose = "#F43F75";
-const neutral = "#F6F7FB";
-const border = "#E6E8EF";
-const muted = "#6B7280";
+// DESIGN.md "Natsumatsuri（夏祭り）": 夜祭のダーク基調 × 提灯ティール × 灯りのアンバー
+const night = "#0E1426"; // 夜空（背景）
+const surface = "#1A2238"; // 提灯まわりの面
+const surface2 = "#222C46";
+const teal = "#2DD4BF"; // 提灯の灯り（ブランド/操作）
+const tealDark = "#14B8A6";
+const amber = "#FB923C"; // 灯り・お祭りアクセント
+const textHigh = "#EAF0F7";
+const textMuted = "#97A3BC";
+const line = "#2A3350";
 
 const font = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 export const theme = createTheme({
   palette: {
-    mode: "light",
-    primary: { main: indigo, dark: indigoDark, contrastText: "#FFFFFF" },
-    secondary: { main: rose, contrastText: "#FFFFFF" },
-    success: { main: "#16A34A" },
-    warning: { main: "#D97706" },
-    text: { primary: ink, secondary: muted },
-    background: { default: neutral, paper: "#FFFFFF" },
-    divider: border,
+    mode: "dark",
+    primary: { main: teal, dark: tealDark, contrastText: "#06231D" },
+    secondary: { main: amber, contrastText: "#2A1400" },
+    success: { main: "#34D399" },
+    warning: { main: "#FBBF24" },
+    error: { main: "#FB7185" },
+    text: { primary: textHigh, secondary: textMuted },
+    background: { default: night, paper: surface },
+    divider: line,
   },
   shape: { borderRadius: 14 },
   typography: {
@@ -40,29 +43,39 @@ export const theme = createTheme({
       defaultProps: { disableElevation: true },
       styleOverrides: {
         root: { borderRadius: 999, textTransform: "none", paddingInline: 18 },
-        containedPrimary: {
-          "&:hover": { backgroundColor: indigoDark },
-        },
+        containedPrimary: { "&:hover": { backgroundColor: tealDark } },
       },
     },
     MuiChip: {
-      styleOverrides: { root: { borderRadius: 999, fontWeight: 600 } },
+      styleOverrides: { root: { borderRadius: 999, fontWeight: 700 } },
     },
     MuiCard: {
       defaultProps: { variant: "outlined" },
       styleOverrides: {
-        root: { borderColor: border, borderRadius: 14 },
+        root: {
+          backgroundColor: surface,
+          borderColor: line,
+          borderRadius: 14,
+          backgroundImage: "none",
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: { backgroundImage: "none" },
+        rounded: { borderRadius: 14 },
       },
     },
     MuiAppBar: {
       styleOverrides: {
         root: {
-          backgroundImage: `linear-gradient(90deg, ${indigo}, #6D5DF6)`,
+          backgroundImage: `linear-gradient(90deg, #0B3A34 0%, ${night} 60%)`,
+          borderBottom: `1px solid ${line}`,
         },
       },
     },
-    MuiPaper: {
-      styleOverrides: { rounded: { borderRadius: 14 } },
+    MuiOutlinedInput: {
+      styleOverrides: { root: { backgroundColor: surface2 } },
     },
   },
 });

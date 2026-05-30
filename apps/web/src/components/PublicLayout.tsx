@@ -11,7 +11,7 @@ import { Link as RouterLink } from "react-router-dom";
 /** 未ログインの公開ページ用の軽量レイアウト（ログイン導線のみ） */
 export function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "grey.50" }}>
+    <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
       <AppBar position="static" elevation={0}>
         <Toolbar>
           <Typography

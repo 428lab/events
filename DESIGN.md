@@ -1,20 +1,22 @@
 ---
 version: alpha
-name: Spotlight
-description: events lab の視覚的アイデンティティ。イベントの高揚感と運営の信頼感を両立する。
+name: Natsumatsuri
+description: events lab の視覚的アイデンティティ。夜祭（夏祭り）の高揚感をダーク基調で表現する。
 colors:
-  primary: "#4F46E5"
-  on-primary: "#FFFFFF"
-  primary-container: "#EEF0FF"
-  secondary: "#0E1020"
-  tertiary: "#F43F75"
-  on-tertiary: "#FFFFFF"
-  neutral: "#F6F7FB"
-  surface: "#FFFFFF"
-  muted: "#6B7280"
-  border: "#E6E8EF"
-  success: "#16A34A"
-  warning: "#D97706"
+  primary: "#2DD4BF"
+  on-primary: "#06231D"
+  primary-dark: "#14B8A6"
+  secondary: "#FB923C"
+  on-secondary: "#2A1400"
+  festive-pink: "#FB7185"
+  festive-gold: "#FBBF24"
+  background: "#0E1426"
+  surface: "#1A2238"
+  surface-2: "#222C46"
+  on-surface: "#EAF0F7"
+  muted: "#97A3BC"
+  border: "#2A3350"
+  success: "#34D399"
 typography:
   display:
     fontFamily: Plus Jakarta Sans
@@ -39,7 +41,7 @@ typography:
   label:
     fontFamily: Plus Jakarta Sans
     fontSize: 0.8125rem
-    fontWeight: 600
+    fontWeight: 700
     letterSpacing: "0.04em"
 rounded:
   sm: 10px
@@ -60,75 +62,66 @@ components:
     padding: 10px 20px
     typography: "{typography.label}"
   button-primary-hover:
-    backgroundColor: "#4338CA"
+    backgroundColor: "{colors.primary-dark}"
   card:
     backgroundColor: "{colors.surface}"
+    textColor: "{colors.on-surface}"
     rounded: "{rounded.md}"
     padding: 20px
   chip-accent:
-    backgroundColor: "{colors.tertiary}"
-    textColor: "{colors.on-tertiary}"
+    backgroundColor: "{colors.secondary}"
+    textColor: "{colors.on-secondary}"
     rounded: "{rounded.pill}"
 ---
 
 ## Overview
 
-**Spotlight** — 舞台のスポットライトのように、その瞬間の主役（発表チーム・受賞者）を照らすデザイン。
-ベースは静かでクリーンな余白の多いレイアウト。アクションと祝福の場面だけ、彩度の高い色とモーションで一気に高揚させる。「普段は冷静に運営、当日は熱く盛り上がる」を視覚で表現する。
-
-落ち着いたインク色の見出し、クールなオフホワイトの背景、エレクトリックインディゴのアクション、そして表彰やお祝いに使う鮮やかなローズ。この4本柱で全画面の一貫性を保つ。
+**Natsumatsuri（夏祭り）** — 夜祭の空のようなダークを基調に、提灯の灯りのようなティールと、祭りの暖色（アンバー／花火のピンク・ゴールド）でポップに賑やかさを添える。
+普段の運営画面は夜空の落ち着き（暗くて読みやすい）。当日のプレゼン・表彰では、提灯やぼんぼり、花火のように彩度の高い色とモーションで一気に盛り上げる。「夜の縁日」を歩く高揚感が指針。
 
 ## Colors
 
-ハイコントラストなニュートラルを土台に、操作色（インディゴ）と祝福色（ローズ）の2アクセントで構成する。
+夜空のダーク面を土台に、操作色（提灯ティール）と祭りの暖色アクセントで構成する。
 
-- **Primary (#4F46E5):** エレクトリックインディゴ。主要ボタン・リンク・選択状態など「操作」を一手に担う。
-- **Secondary (#0E1020):** ほぼ黒のディープインク。見出し・本文の基調色。純黒は使わない。
-- **Tertiary (#F43F75):** ビビッドローズ。表彰・お祝い・特別な強調にのみ使う祝福色。多用しない。
-- **Neutral (#F6F7FB):** 少し青みのあるオフホワイト。アプリ全体の背景。純白の `surface` と重ねて階層を作る。
-- **Surface (#FFFFFF):** カード等の前面。背景 neutral との差で奥行きを出す。
-- **Muted (#6B7280):** スレートグレー。日時・補足・メタ情報。
-- **Border (#E6E8EF):** 罫線・カード枠。影に頼らず境界を示す主役。
+- **Primary (#2DD4BF):** 提灯ティール。ボタン・リンク・選択など「操作」を担うブランド色。暗背景で映える明るいティール。
+- **Background (#0E1426):** 夜祭の空。アプリ全体の背景。
+- **Surface (#1A2238) / Surface-2 (#222C46):** 提灯まわりの面。背景との明度差＋細い border で階層を作る。
+- **Secondary (#FB923C):** 灯り（提灯）のアンバー。お祝い・特別な状態バッジ・表彰の暖色に。
+- **Festive Pink (#FB7185) / Gold (#FBBF24):** 花火の彩り。表彰の演出（紙吹雪・グラデ）に限定して使う。
+- **On-surface (#EAF0F7) / Muted (#97A3BC):** 本文と補足。純白は避け、やや青みのある白。
+- **Border (#2A3350):** 夜に沈む細い罫線。影に頼らず面を区切る。
 
-アクセント2色（primary / tertiary）を同一要素で同時に強く使わない。役割を「操作＝インディゴ／祝福＝ローズ」で分ける。
+操作＝ティール、祝福＝暖色（アンバー／ピンク／ゴールド）と役割を分ける。1要素で両系統を同時に強く使わない。
 
 ## Typography
 
-書体は **Plus Jakarta Sans** に統一。幾何学的で親しみやすく、太いウェイトで力強い見出しが作れる。
-
-- 見出しは太く（700–800）、字間をわずかに詰めて（-0.01〜-0.02em）密度と勢いを出す。
-- 本文は行間 1.6 でゆったり。情報量が多い運営画面でも読みやすく。
-- ラベル／チップは小さめ・太字・字間広め（+0.04em）で機能的に。
-- フォントサイズの段階を増やしすぎない（display / h1 / h2 / body / label）。
+書体は **Plus Jakarta Sans**。暗背景に太いウェイトの見出しがよく映える。見出しは 700–800・字詰め、本文は行間 1.6、ラベルは小さく太字で字間広め。サイズ段階は増やしすぎない。
 
 ## Layout
 
-- コンテンツは中央寄せの単一カラムを基本（最大幅 ~960px）。イベント詳細など情報が多い画面のみ「本体＋右サイド（参加者など）」の2カラム。
-- 余白はスケール（4/8/16/24/40px）に乗せる。隣接要素の間隔は迷ったら 16px。
-- カードで情報をグルーピングし、背景 neutral とカード surface のコントラストで区切る。罫線（border）を細く効かせ、影は控えめに。
+中央寄せ単一カラム（最大 ~960px）を基本。情報の多いイベント詳細のみ本体＋右サイド（参加者など）の2カラム。余白は 4/8/16/24/40 のスケール。カードで面をグルーピングし、暗い背景と少し明るい surface のコントラスト＋細罫線で区切る。
 
 ## Elevation & Depth
 
-影は最小限。階層は「色（neutral 背景 vs surface 前面）＋ 細い border」で表現する。
-例外は **表彰式の主役カード**と**モーダル**で、ここだけ強めの影（elevation 8 相当）と発色で前に出す。スポットライトの比喩どおり、強い奥行きは「主役の瞬間」に取っておく。
+暗いトーンでは影が効きにくいので、階層は「面の明度差（background → surface → surface-2）＋ 細い border」で表現する。強い発色と大きめの影は、**プレゼンの主役**と**表彰の受賞カード**にだけ使い、夜祭のスポットのように主役を浮かせる。
 
 ## Shapes
 
-角丸は中庸（sm 10 / md 14 / lg 20px）。ボタンは丸み最大の pill 形で軽快さと押しやすさを出す。
-正方形・鋭角は使わず、全体に柔らかく親しみのある印象を保つ。
+角丸は中庸（sm 10 / md 14 / lg 20px）。ボタンは pill 形で軽快に。鋭角は使わず、提灯のように柔らかい印象を保つ。
 
 ## Components
 
-- **button-primary:** インディゴ地・白文字・pill 形。ラベルは大文字化しない（日本語前提）。ホバーで一段濃いインディゴ。
-- **card:** 白地・md 角丸・20px パディング・細い border。影は基本なし〜極薄。
-- **chip-accent:** ローズ地・白文字・pill。「運営管理者」「表彰式」などの特別な状態バッジに。通常の状態（ロール等）はニュートラルなチップで控えめに。
-- 入力・選択は MUI 標準の outlined を基調に、角丸と余白だけ本システムに合わせる。
+- **button-primary:** ティール地・暗い文字・pill。ホバーで一段濃いティール。ラベルは大文字化しない。
+- **card:** surface 地・md 角丸・細 border・影なし。
+- **chip-accent:** アンバー地。「運営管理者」「表彰式」など祭り側の特別バッジに。通常状態のチップは控えめなニュートラル。
+- **AppBar:** 左から提灯ティールがにじむ夜空グラデ（`#0B3A34 → background`）。
+- 表彰カードはティール→アンバーのグラデで「灯り」を表現。
 
 ## Do's and Don'ts
 
-- **Do** 操作はインディゴ、祝福・受賞はローズ、と色の役割を一貫させる。
-- **Do** 余白を恐れない。密度は罫線とカードで作り、色で詰め込まない。
+- **Do** 操作はティール、祝福・表彰は暖色、と役割を一貫させる。
+- **Do** 普段は夜空の落ち着き（暗・高可読）。賑やかさは演出に集中。
 - **Do** 見出しは太く短く。1画面に display 見出しは1つまで。
-- **Don't** インディゴとローズを同じ要素で同時に強調しない。
-- **Don't** 純黒（#000）・純白テキストの多用、影の多用をしない。階層は色と境界で。
-- **Don't** 通常画面で派手なアニメーション・発色を使わない。演出は当日の進行（プレゼン／表彰）に集中させる。
+- **Don't** ティールと暖色を同一要素で同時に強調しない。
+- **Don't** 純黒・純白の多用、影の多用をしない。階層は面の明度差と罫線で。
+- **Don't** 通常画面で花火色（ピンク/ゴールド）を多用しない。演出専用に取っておく。

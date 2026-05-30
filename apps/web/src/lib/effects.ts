@@ -5,7 +5,7 @@ import fanfareUrl from "../assets/fanfare.mp3";
 /** 紙吹雪 */
 export function fireConfetti(): void {
   const end = Date.now() + 1200;
-  const colors = ["#5865F2", "#EB459E", "#FEE75C", "#57F287"];
+  const colors = ["#2DD4BF", "#FB923C", "#FB7185", "#FBBF24", "#FFFFFF"];
   (function frame() {
     confetti({ particleCount: 4, angle: 60, spread: 55, origin: { x: 0 }, colors });
     confetti({ particleCount: 4, angle: 120, spread: 55, origin: { x: 1 }, colors });

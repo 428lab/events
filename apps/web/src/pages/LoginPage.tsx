@@ -11,7 +11,7 @@ export function LoginPage() {
         minHeight: "100vh",
         display: "grid",
         placeItems: "center",
-        bgcolor: "grey.100",
+        bgcolor: "background.default",
         p: 2,
       }}
     >
