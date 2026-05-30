@@ -244,6 +244,16 @@ export function EventDetailPage() {
               プレゼン画面へ
             </Button>
           )}
+          {state?.mode === "awards" && (
+            <Button
+              variant="contained"
+              color="secondary"
+              component={RouterLink}
+              to={`/events/${id}/awards`}
+            >
+              表彰式へ
+            </Button>
+          )}
           {(myRole === "judge" || myRole === "staff" || isAdmin) && (
             <Button variant="outlined" component={RouterLink} to={`/events/${id}/scoring`}>
               採点
@@ -259,6 +269,9 @@ export function EventDetailPage() {
               </Button>
               <Button variant="outlined" component={RouterLink} to={`/events/${id}/criteria`}>
                 採点項目
+              </Button>
+              <Button variant="outlined" component={RouterLink} to={`/events/${id}/awards`}>
+                表彰式
               </Button>
             </>
           )}

@@ -24,10 +24,17 @@ export function EventLayout() {
     if (!state || !role) return;
     const onPresent = location.pathname.endsWith("/present");
     // スタッフは強制遷移しない（進行コントロールのため）
+    const onAwards = location.pathname.endsWith("/awards");
     if (state.mode === "presentation" && !isStaff && !onPresent) {
       navigate(`/events/${id}/present`, { replace: true });
     }
+    if (state.mode === "awards" && !isStaff && !onAwards) {
+      navigate(`/events/${id}/awards`, { replace: true });
+    }
     if (state.mode !== "presentation" && onPresent && !isStaff) {
+      navigate(`/events/${id}`, { replace: true });
+    }
+    if (state.mode !== "awards" && onAwards && !isStaff) {
       navigate(`/events/${id}`, { replace: true });
     }
   }, [state, role, isStaff, location.pathname, id, navigate]);

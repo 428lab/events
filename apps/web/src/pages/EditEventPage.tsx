@@ -23,6 +23,7 @@ import {
 } from "../api/hooks.js";
 import { EventImageEditor } from "../components/EventImageEditor.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
+import { AwardsEditor } from "../components/AwardsEditor.js";
 import { venueLabel } from "../lib/format.js";
 
 function toLocalInput(epoch: number): string {
@@ -179,6 +180,9 @@ export function EditEventPage() {
 
           <Divider />
           <EventSlotsEditor eventId={id} />
+
+          <Divider />
+          <AwardsEditor eventId={id} />
 
           <Divider />
           <EventImageEditor event={event} />

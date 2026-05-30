@@ -12,6 +12,7 @@ import { CreateEventPage } from "./pages/CreateEventPage.js";
 import { EditEventPage } from "./pages/EditEventPage.js";
 import { PublicEventsPage } from "./pages/PublicEventsPage.js";
 import { ScoringPage } from "./pages/ScoringPage.js";
+import { AwardsPage } from "./pages/AwardsPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
 import { ControlPage } from "./pages/ControlPage.js";
 import { CriteriaAdminPage } from "./pages/CriteriaAdminPage.js";
@@ -64,6 +65,7 @@ export function App() {
           <Route path="edit" element={<EditEventPage />} />
           <Route path="scoring" element={<ScoringPage />} />
           <Route path="present" element={<PresentPage />} />
+          <Route path="awards" element={<AwardsPage />} />
           <Route path="control" element={<ControlPage />} />
           <Route path="criteria" element={<CriteriaAdminPage />} />
         </Route>

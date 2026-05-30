@@ -57,4 +57,12 @@ export const eventStateRepo = {
     ).run(locked ? 1 : 0, Date.now(), eventId);
     return this.getOrInit(eventId);
   },
+
+  setAwardsCursor(eventId: string, cursor: number | null): EventState {
+    this.getOrInit(eventId);
+    db.prepare(
+      "UPDATE event_state SET awards_reveal_cursor = ?, updated_at = ? WHERE event_id = ?",
+    ).run(cursor, Date.now(), eventId);
+    return this.getOrInit(eventId);
+  },
 };
