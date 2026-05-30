@@ -119,6 +119,30 @@ export function useCreateEvent() {
   });
 }
 
+export function useUpdateEvent(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Partial<CreateEventInput>) =>
+      api.patch<{ event: Event }>(`/events/${id}`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", id] });
+      qc.invalidateQueries({ queryKey: ["events"] });
+      qc.invalidateQueries({ queryKey: ["myPage"] });
+    },
+  });
+}
+
+export function useDeleteEvent(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del(`/events/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["events"] });
+      qc.invalidateQueries({ queryKey: ["myPage"] });
+    },
+  });
+}
+
 export function usePublishEvent() {
   const qc = useQueryClient();
   return useMutation({

@@ -117,4 +117,9 @@ export const eventsRepo = {
     db.prepare("UPDATE event SET status = ? WHERE id = ?").run(status, id);
     return this.findById(id);
   },
+
+  delete(id: string): void {
+    // 関連（メンバー/エントリー/採点/画像/状態）は FK の ON DELETE CASCADE で削除
+    db.prepare("DELETE FROM event WHERE id = ?").run(id);
+  },
 };

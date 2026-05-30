@@ -26,11 +26,9 @@ import {
   useLeaveEvent,
   useIsAdmin,
   useMe,
-  usePublishEvent,
   useUpdateSubmission,
 } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
-import { EventImageEditor } from "../components/EventImageEditor.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
 
 function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry }) {
@@ -97,7 +95,6 @@ export function EventDetailPage() {
   const { data: state } = useEventState(id);
   const join = useJoinEvent();
   const leave = useLeaveEvent();
-  const publish = usePublishEvent();
 
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
   const { event, myRole } = data;
@@ -134,14 +131,6 @@ export function EventDetailPage() {
             borderRadius: 2,
           }}
         />
-      )}
-
-      {isStaff && (
-        <Card variant="outlined">
-          <CardContent>
-            <EventImageEditor event={event} />
-          </CardContent>
-        </Card>
       )}
 
       {event.description && (
@@ -186,15 +175,6 @@ export function EventDetailPage() {
             参加を解除する
           </Button>
         )}
-        {isStaff && event.status !== "published" && (
-          <Button
-            variant="outlined"
-            disabled={publish.isPending}
-            onClick={() => publish.mutate(id)}
-          >
-            公開する
-          </Button>
-        )}
       </Stack>
 
       {(isMember || isAdmin) && (
@@ -228,6 +208,9 @@ export function EventDetailPage() {
           )}
           {isStaff && (
             <>
+              <Button variant="contained" component={RouterLink} to={`/events/${id}/edit`}>
+                編集
+              </Button>
               <Button variant="outlined" component={RouterLink} to={`/events/${id}/control`}>
                 進行コントロール
               </Button>

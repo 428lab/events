@@ -75,6 +75,12 @@ eventRoutes.post("/:id/publish", requireEventRole(["staff"]), (c) => {
   return c.json({ event });
 });
 
+/** イベント削除（staff のみ。関連データは FK CASCADE で削除） */
+eventRoutes.delete("/:id", requireEventRole(["staff"]), (c) => {
+  eventsRepo.delete(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
 /** 参加登録（participant として参加し、個人 Entry を自動生成） */
 eventRoutes.post("/:id/join", (c) => {
   const user = c.get("user");
