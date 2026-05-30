@@ -16,6 +16,7 @@ import { AwardsPage } from "./pages/AwardsPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
 import { ControlPage } from "./pages/ControlPage.js";
 import { CriteriaAdminPage } from "./pages/CriteriaAdminPage.js";
+import { ScoreResultsPage } from "./pages/ScoreResultsPage.js";
 
 export function App() {
   const { data: user, isLoading } = useMe();
@@ -49,6 +50,14 @@ export function App() {
             </PublicLayout>
           }
         />
+        <Route
+          path="/events/:id/results"
+          element={
+            <PublicLayout>
+              <ScoreResultsPage />
+            </PublicLayout>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
@@ -68,6 +77,7 @@ export function App() {
           <Route path="awards" element={<AwardsPage />} />
           <Route path="control" element={<ControlPage />} />
           <Route path="criteria" element={<CriteriaAdminPage />} />
+          <Route path="results" element={<ScoreResultsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/me" replace />} />
       </Routes>

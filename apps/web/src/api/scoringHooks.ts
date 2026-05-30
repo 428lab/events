@@ -85,6 +85,16 @@ export function useScoreSummary(eventId: string, enabled: boolean) {
   });
 }
 
+export type ScoreResults = ScoreSummary & { available: boolean };
+
+/** 公開: 採点結果一覧（締切後/終了後のみ available=true でデータが返る） */
+export function useScoreResults(eventId: string) {
+  return useQuery({
+    queryKey: ["event", eventId, "results"],
+    queryFn: () => api.get<ScoreResults>(`/events/${eventId}/scores/results`),
+  });
+}
+
 export function useScoreProgress(eventId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["event", eventId, "progress"],

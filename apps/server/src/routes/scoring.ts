@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import {
   createCriterionInput,
@@ -17,6 +18,8 @@ import type {
 import type { AppEnv } from "../types.js";
 import { requireAuth, currentUser } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
+import { isAppAdmin } from "../auth/admin.js";
+import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { entriesRepo } from "../db/repositories/entries.js";
@@ -26,6 +29,33 @@ import { eventStateRepo } from "../db/repositories/eventState.js";
 import { sseHub } from "../sse/hub.js";
 
 export const scoringRoutes = new Hono<AppEnv>();
+
+/**
+ * 公開: 採点結果一覧（集計）。採点締切後またはイベント終了後のみ閲覧可。
+ * 公開イベントは未ログイン可、非公開はメンバー/管理者のみ。
+ * eventRoutes のブランケット requireAuth を避けるため api に直接登録する。
+ */
+export function getEventScoreResults(c: Context) {
+  const eventId = c.req.param("id")!;
+  const event = eventsRepo.findById(eventId);
+  if (!event) return c.json({ error: "not_found" }, 404);
+  if (event.status !== "published") {
+    const user = currentUser(c);
+    if (
+      !user ||
+      (!isAppAdmin(user) && !eventMembersRepo.find(eventId, user.id))
+    ) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+  }
+  const state = eventStateRepo.getOrInit(eventId);
+  const available = state.scoringLocked || event.endsAt < Date.now();
+  if (!available) {
+    return c.json({ available: false, criteria: [], entries: [] });
+  }
+  const summary = scoresRepo.summary(eventId, event.aggregateSelfEntry);
+  return c.json({ available: true, ...summary });
+}
 
 /** ===== SSE（cookie 認証。requireAuth より前に定義） ===== */
 scoringRoutes.get("/:id/stream", (c) => {

@@ -7,7 +7,7 @@ import { env } from "./env.js";
 import { runMigrations } from "./db/migrate.js";
 import { authRoutes } from "./routes/auth.js";
 import { eventRoutes } from "./routes/events.js";
-import { scoringRoutes } from "./routes/scoring.js";
+import { scoringRoutes, getEventScoreResults } from "./routes/scoring.js";
 import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes } from "./routes/me.js";
 import { getEventImage } from "./routes/images.js";
@@ -29,6 +29,8 @@ api.route("/public", publicRoutes);
 api.get("/events/:id/image", getEventImage);
 // 公開: 表彰内容（認証不要。eventRoutes より先に登録）
 api.get("/events/:id/awards", getEventAwards);
+// 公開: 採点結果一覧（締切後/終了後のみ。eventRoutes より先に登録）
+api.get("/events/:id/scores/results", getEventScoreResults);
 api.route("/events", eventRoutes);
 api.route("/events", scoringRoutes);
 api.route("/events", awardRoutes);

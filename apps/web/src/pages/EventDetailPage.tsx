@@ -230,6 +230,18 @@ export function EventDetailPage() {
         </Card>
       )}
 
+      {(eventEnded || state?.scoringLocked) && (
+        <Stack direction="row">
+          <Button
+            variant="outlined"
+            component={RouterLink}
+            to={`/events/${id}/results`}
+          >
+            採点結果を見る
+          </Button>
+        </Stack>
+      )}
+
       {event.description && (
         <Card variant="outlined">
           <CardContent>
