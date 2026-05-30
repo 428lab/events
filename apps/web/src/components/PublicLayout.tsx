@@ -12,7 +12,7 @@ import { ThemeSwitcher } from "./ThemeSwitcher.js";
 /** 未ログインの公開ページ用の軽量レイアウト（ログイン導線のみ） */
 export function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
+    <Box sx={{ minHeight: "100vh" }}>
       <AppBar position="static" elevation={0}>
         <Toolbar>
           <Typography

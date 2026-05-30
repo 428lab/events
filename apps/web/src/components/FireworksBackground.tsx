@@ -16,6 +16,7 @@ interface Rocket {
   x: number;
   y: number;
   vy: number;
+  targetY: number;
   color: string;
 }
 
@@ -179,9 +180,11 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
     const tick = (now: number) => {
       if (now >= nextLaunch) {
         rockets.push({
-          x: w * (0.16 + Math.random() * 0.68),
+          x: w * (0.12 + Math.random() * 0.76),
           y: h,
           vy: -(9 + Math.random() * 5),
+          // 開く高さをばらけさせる（上部だけでなく中央付近でも開く）
+          targetY: h * (0.12 + Math.random() * 0.6),
           color: pick(),
         });
         nextLaunch = now + 3000 + Math.random() * 2800;
@@ -203,7 +206,7 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
         ctx.beginPath();
         ctx.arc(r.x, r.y, 2, 0, Math.PI * 2);
         ctx.fill();
-        if (r.vy >= -0.8) {
+        if (r.y <= r.targetY || r.vy >= -0.8) {
           explode(r.x, r.y, r.color);
           return false;
         }
@@ -254,7 +257,7 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
         width: "100%",
         height: "100%",
         zIndex: 0,
-        opacity: 0.5,
+        opacity: 0.7,
         pointerEvents: "none",
       }}
       aria-hidden
