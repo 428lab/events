@@ -78,35 +78,51 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
     const explode = (x: number, y: number, baseColor: string) => {
       const patterns: Pattern[] = ["burst", "ring", "double", "willow"];
       const pattern = patterns[Math.floor(Math.random() * patterns.length)];
-      const scale = 0.6 + Math.random() * 1.4; // 小〜大
-      const size = 1.6 + scale * 1.1;
+      const scale = 1.0 + Math.random() * 1.3; // 中〜大（小さすぎる花火を出さない）
+      const size = 1.8 + scale * 1.1;
+
+      // 中心のフラッシュ（開いた瞬間の芯）
+      for (let i = 0; i < 10; i++)
+        add(x, y, Math.random() * Math.PI * 2, Math.random() * 1.2, "#FFFFFF", {
+          decay: 0.02,
+          gravity: 0.01,
+          size: size * 1.1,
+        });
 
       if (pattern === "ring") {
-        const n = Math.round(46 + scale * 14);
-        const sp = 2.6 * scale;
-        for (let i = 0; i < n; i++) add(x, y, (Math.PI * 2 * i) / n, sp, baseColor, { size });
+        const n = Math.round(70 + scale * 18);
+        const sp = 2.8 * scale;
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI * 2 * i) / n;
+          add(x, y, a, sp + Math.random() * 0.4, baseColor, { size });
+        }
       } else if (pattern === "double") {
         const c2 = pick();
-        const n = Math.round(34 + scale * 10);
+        const n = Math.round(50 + scale * 14);
         for (let i = 0; i < n; i++) {
-          add(x, y, (Math.PI * 2 * i) / n, 1.8 * scale, baseColor, { size });
-          add(x, y, (Math.PI * 2 * i) / n + 0.1, 3.4 * scale, c2, { size: size * 0.85 });
+          const a = (Math.PI * 2 * i) / n;
+          add(x, y, a, 1.9 * scale, baseColor, { size });
+          add(x, y, a + 0.08, 3.6 * scale, c2, { size: size * 0.9 });
         }
       } else if (pattern === "willow") {
-        // しだれ: ゆっくり長く落ちる
-        const n = Math.round(26 + scale * 10);
-        for (let i = 0; i < n; i++)
-          add(x, y, (Math.PI * 2 * i) / n, 1.6 * scale, baseColor, {
+        // しだれ: 多めの粒がゆっくり長く垂れて落ちる
+        const n = Math.round(54 + scale * 16);
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI * 2 * i) / n;
+          add(x, y, a, (1.8 + Math.random() * 0.8) * scale, baseColor, {
             decay: 0.0032,
             gravity: 0.05,
-            size: size * 0.9,
-            downBias: 0.6,
+            size: size * 0.95,
+            downBias: 0.5,
           });
+        }
       } else {
-        // burst: 速度ばらつきで密度のある球状
-        const n = Math.round(40 + scale * 18);
-        for (let i = 0; i < n; i++)
-          add(x, y, (Math.PI * 2 * i) / n, (1 + Math.random() * 3) * scale, baseColor, { size });
+        // burst: 速度ばらつきで密度のある球状（多め）
+        const n = Math.round(90 + scale * 40);
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI * 2 * i) / n + Math.random() * 0.2;
+          add(x, y, a, (1.2 + Math.random() * 3.2) * scale, baseColor, { size });
+        }
       }
     };
 
