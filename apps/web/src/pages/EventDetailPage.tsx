@@ -286,6 +286,24 @@ export function EventDetailPage() {
         ) : null}
       </Stack>
 
+      {(isMember || isAdmin) && state && !state.scoringLocked && (
+        <Alert
+          severity="info"
+          sx={{ alignItems: "center", "& .MuiAlert-message": { flex: 1 } }}
+          action={
+            <Button
+              variant="contained"
+              component={RouterLink}
+              to={`/events/${id}/scoring`}
+            >
+              採点する
+            </Button>
+          }
+        >
+          採点を受付中です。各チームを採点できます（あとから何度でも変更可）。
+        </Alert>
+      )}
+
       {hasSlots && slots && (
         <EventSlots
           eventId={id}
