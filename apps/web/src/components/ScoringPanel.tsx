@@ -33,7 +33,13 @@ export function ScoringPanel({
                 {c.description}
               </Typography>
             )}
-            <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ mt: 0.5 }}
+            >
               {Array.from({ length: c.maxLevel }, (_, i) => i + 1).map((v) => (
                 <Button
                   key={v}
