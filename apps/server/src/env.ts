@@ -21,6 +21,11 @@ export const env = {
   isProd: optional("NODE_ENV", "development") === "production",
   databasePath: optional("DATABASE_PATH", "./data/eventer.db"),
   webDistPath: optional("WEB_DIST_PATH", "apps/web/dist"),
+  /** アプリ運営管理者の Discord ID 一覧（ADMIN_DISCORD_IDS、カンマ区切り） */
+  adminDiscordIds: optional("ADMIN_DISCORD_IDS", "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
   appBaseUrl: optional("APP_BASE_URL", "http://localhost:5173"),
   sessionSecret: optional("SESSION_SECRET", "dev-insecure-secret"),
   discord: {

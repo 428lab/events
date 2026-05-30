@@ -8,6 +8,7 @@ import {
   currentUser,
   issueSession,
 } from "../auth/session.js";
+import { isAppAdmin } from "../auth/admin.js";
 
 const DISCORD_AUTHORIZE = "https://discord.com/api/oauth2/authorize";
 const DISCORD_TOKEN = "https://discord.com/api/oauth2/token";
@@ -31,7 +32,7 @@ export const authRoutes = new Hono();
 authRoutes.get("/me", (c) => {
   const user = currentUser(c);
   if (!user) return c.json({ error: "unauthorized" }, 401);
-  return c.json({ user });
+  return c.json({ user, isAdmin: isAppAdmin(user) });
 });
 
 authRoutes.post("/logout", (c) => {

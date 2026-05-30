@@ -18,7 +18,7 @@ import {
 } from "@mui/material";
 import { useParams } from "react-router-dom";
 import { EVENT_MODES, type EventMode } from "@eventer/shared";
-import { useEvent, useEventEntries } from "../api/hooks.js";
+import { useEvent, useEventEntries, useIsAdmin } from "../api/hooks.js";
 import {
   useEventState,
   useScoreProgress,
@@ -45,7 +45,8 @@ export function ControlPage() {
   const setPresenting = useSetPresenting(id);
   const toggleLock = useToggleScoringLock(id);
 
-  const isStaff = eventData?.myRole === "staff";
+  const isAdmin = useIsAdmin();
+  const isStaff = eventData?.myRole === "staff" || isAdmin;
   const { data: summary } = useScoreSummary(id, Boolean(isStaff));
   const { data: progress } = useScoreProgress(id, Boolean(isStaff));
 

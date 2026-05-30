@@ -16,20 +16,39 @@ import type {
 } from "@eventer/shared";
 import { api, ApiError } from "./client.js";
 
+interface MeResponse {
+  user: User;
+  isAdmin: boolean;
+}
+
+async function fetchMe(): Promise<MeResponse | null> {
+  try {
+    return await api.get<MeResponse>("/auth/me");
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) return null;
+    throw e;
+  }
+}
+
+/** ログインユーザー（未ログインなら null）。data は User を返す（従来互換） */
 export function useMe() {
   return useQuery({
     queryKey: ["me"],
-    queryFn: async () => {
-      try {
-        const { user } = await api.get<{ user: User }>("/auth/me");
-        return user;
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 401) return null;
-        throw e;
-      }
-    },
+    queryFn: fetchMe,
     retry: false,
+    select: (d) => d?.user ?? null,
   });
+}
+
+/** アプリ運営管理者かどうか */
+export function useIsAdmin(): boolean {
+  const { data } = useQuery({
+    queryKey: ["me"],
+    queryFn: fetchMe,
+    retry: false,
+    select: (d) => d?.isAdmin ?? false,
+  });
+  return data ?? false;
 }
 
 export function useLogout() {

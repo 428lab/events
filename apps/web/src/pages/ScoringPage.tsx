@@ -6,7 +6,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useParams } from "react-router-dom";
-import { useEvent, useEventEntries, useMe } from "../api/hooks.js";
+import { useEvent, useEventEntries, useIsAdmin, useMe } from "../api/hooks.js";
 import {
   useCriteria,
   useEventState,
@@ -17,6 +17,7 @@ import { ScoringPanel } from "../components/ScoringPanel.js";
 export function ScoringPage() {
   const { id = "" } = useParams();
   const { data: me } = useMe();
+  const isAdmin = useIsAdmin();
   const { data: eventData } = useEvent(id);
   const { data: state } = useEventState(id);
   const { data: entries } = useEventEntries(id);
@@ -28,7 +29,7 @@ export function ScoringPage() {
   }
 
   const role = eventData.myRole;
-  if (role !== "judge" && role !== "staff") {
+  if (role !== "judge" && role !== "staff" && !isAdmin) {
     return <Alert severity="info">採点権限がありません。</Alert>;
   }
 

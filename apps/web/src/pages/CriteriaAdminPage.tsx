@@ -13,7 +13,7 @@ import {
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { useParams } from "react-router-dom";
-import { useEvent } from "../api/hooks.js";
+import { useEvent, useIsAdmin } from "../api/hooks.js";
 import {
   useCreateCriterion,
   useCriteria,
@@ -24,6 +24,7 @@ import {
 export function CriteriaAdminPage() {
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
+  const isAdmin = useIsAdmin();
   const { data: criteria } = useCriteria(id);
   const create = useCreateCriterion(id);
   const update = useUpdateCriterion(id);
@@ -34,7 +35,7 @@ export function CriteriaAdminPage() {
   const [maxLevel, setMaxLevel] = useState(4);
 
   if (!eventData || !criteria) return <Typography>読み込み中…</Typography>;
-  if (eventData.myRole !== "staff") {
+  if (eventData.myRole !== "staff" && !isAdmin) {
     return <Alert severity="info">採点項目の管理はスタッフ専用です。</Alert>;
   }
 

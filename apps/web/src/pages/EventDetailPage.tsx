@@ -23,6 +23,7 @@ import {
   useEventMembers,
   useJoinEvent,
   useLeaveEvent,
+  useIsAdmin,
   useMe,
   usePublishEvent,
   useUpdateSubmission,
@@ -86,9 +87,10 @@ export function EventDetailPage() {
   const { id = "" } = useParams();
   const { data: me } = useMe();
   const { data, isLoading } = useEvent(id);
+  const isAdmin = useIsAdmin();
   const isMember = Boolean(data?.myRole);
-  const isStaff = data?.myRole === "staff";
-  const { data: members } = useEventMembers(id, isMember);
+  const isStaff = data?.myRole === "staff" || isAdmin;
+  const { data: members } = useEventMembers(id, isMember || isAdmin);
   const { data: entries } = useEventEntries(id);
   const { data: state } = useEventState(id);
   const join = useJoinEvent();
@@ -171,7 +173,7 @@ export function EventDetailPage() {
         )}
       </Stack>
 
-      {isMember && (
+      {(isMember || isAdmin) && (
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           {state && state.mode !== "normal" && (
             <Chip
@@ -195,7 +197,7 @@ export function EventDetailPage() {
               プレゼン画面へ
             </Button>
           )}
-          {(myRole === "judge" || myRole === "staff") && (
+          {(myRole === "judge" || myRole === "staff" || isAdmin) && (
             <Button variant="outlined" component={RouterLink} to={`/events/${id}/scoring`}>
               採点
             </Button>

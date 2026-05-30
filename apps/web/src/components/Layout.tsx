@@ -3,13 +3,14 @@ import {
   Avatar,
   Box,
   Button,
+  Chip,
   Container,
   Toolbar,
   Typography,
 } from "@mui/material";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import type { User } from "@eventer/shared";
-import { useLogout } from "../api/hooks.js";
+import { useIsAdmin, useLogout } from "../api/hooks.js";
 
 export function Layout({
   user,
@@ -20,6 +21,7 @@ export function Layout({
 }) {
   const logout = useLogout();
   const navigate = useNavigate();
+  const isAdmin = useIsAdmin();
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "grey.50" }}>
       <AppBar position="static" elevation={0}>
@@ -33,6 +35,14 @@ export function Layout({
             events lab
           </Typography>
           <Box sx={{ flexGrow: 1 }} />
+          {isAdmin && (
+            <Chip
+              label="運営管理者"
+              size="small"
+              color="secondary"
+              sx={{ mr: 1, color: "#fff" }}
+            />
+          )}
           <Button color="inherit" component={RouterLink} to="/events">
             イベント
           </Button>
