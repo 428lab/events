@@ -46,7 +46,8 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
         {fireworksOn && def.fireworks && (
           <FireworksBackground colors={def.fireworks} />
         )}
-        {children}
+        {/* コンテンツを花火canvas(z0)より前面に。花火は背面でかすかに見える */}
+        <div style={{ position: "relative", zIndex: 1 }}>{children}</div>
       </ThemeProvider>
     </Ctx.Provider>
   );
