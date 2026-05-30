@@ -30,7 +30,7 @@ export function Layout({
             to="/me"
             sx={{ color: "inherit", textDecoration: "none", fontWeight: 700 }}
           >
-            Eventer
+            events lab
           </Typography>
           <Box sx={{ flexGrow: 1 }} />
           <Button color="inherit" component={RouterLink} to="/events">

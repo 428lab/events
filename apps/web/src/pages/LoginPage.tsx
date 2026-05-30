@@ -19,7 +19,7 @@ export function LoginPage() {
         <CardContent>
           <Stack spacing={3} alignItems="center" sx={{ py: 2 }}>
             <Typography variant="h4" fontWeight={700}>
-              Eventer
+              events lab
             </Typography>
             <Typography color="text.secondary" textAlign="center">
               アイディアソン・ハッカソン運営ツール
