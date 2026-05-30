@@ -130,6 +130,12 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
         ))}
       </Stack>
 
+      {slots && slots.length === 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          まだ参加枠がありません。下の「追加」ボタンで枠を追加できます（枠なしの場合は定員なしで参加できます）。
+        </Typography>
+      )}
+
       <Card variant="outlined" sx={{ mt: 2 }}>
         <CardContent>
           <Typography variant="subtitle2" gutterBottom>
