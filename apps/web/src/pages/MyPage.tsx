@@ -27,7 +27,7 @@ function EventCard({ event }: { event: MyEventSummary }) {
           </Stack>
           <Typography variant="body2" color="text.secondary">
             {formatDateRange(event.startsAt, event.endsAt)} ・{" "}
-            {venueLabel[event.venueType]}
+            {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
           </Typography>
         </CardContent>
       </CardActionArea>

@@ -36,6 +36,7 @@ export const eventSchema = z.object({
   createdBy: z.string(),
   createdAt: z.number(),
   imageUpdatedAt: z.number().nullable(),
+  participantCount: z.number(),
 });
 export type Event = z.infer<typeof eventSchema>;
 

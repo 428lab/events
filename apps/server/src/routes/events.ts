@@ -67,6 +67,14 @@ eventRoutes.get("/:id/submissions", (c) => {
   return c.json({ entries });
 });
 
+/** 参加者一覧（公開イベントは未ログインでも閲覧可） */
+eventRoutes.get("/:id/members", (c) => {
+  const event = eventsRepo.findById(c.req.param("id"));
+  if (!event) return c.json({ error: "not_found" }, 404);
+  if (!canView(event, currentUser(c))) return c.json({ error: "forbidden" }, 403);
+  return c.json({ members: eventMembersRepo.listWithUsers(event.id) });
+});
+
 /* =========================================================
  *  ここから認証必須
  * =======================================================*/
@@ -140,15 +148,6 @@ eventRoutes.delete("/:id/join", (c) => {
   eventMembersRepo.remove(eventId, user.id);
   return c.json({ ok: true });
 });
-
-/** 参加者一覧（メンバーなら閲覧可） */
-eventRoutes.get(
-  "/:id/members",
-  requireEventRole(["participant", "staff", "judge", "observer"]),
-  (c) => {
-    return c.json({ members: eventMembersRepo.listWithUsers(c.req.param("id")) });
-  },
-);
 
 /** ロール変更（staff のみ） */
 eventRoutes.patch(

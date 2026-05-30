@@ -21,7 +21,14 @@ interface EventRow {
   created_by: string;
   created_at: number;
   image_updated_at: number | null;
+  participant_count: number;
 }
+
+/** participant_count（参加メンバー総数）を含む event の SELECT */
+const SELECT_EVENT = `SELECT *,
+  (SELECT COUNT(1) FROM event_member em
+   WHERE em.event_id = event.id) AS participant_count
+  FROM event`;
 
 function toEvent(row: EventRow): Event {
   return {
@@ -39,12 +46,13 @@ function toEvent(row: EventRow): Event {
     createdBy: row.created_by,
     createdAt: row.created_at,
     imageUpdatedAt: row.image_updated_at,
+    participantCount: row.participant_count,
   };
 }
 
 export const eventsRepo = {
   findById(id: string): Event | null {
-    const row = db.prepare("SELECT * FROM event WHERE id = ?").get(id) as
+    const row = db.prepare(`${SELECT_EVENT} WHERE id = ?`).get(id) as
       | EventRow
       | undefined;
     return row ? toEvent(row) : null;
@@ -52,7 +60,7 @@ export const eventsRepo = {
 
   listPublished(): Event[] {
     const rows = db
-      .prepare("SELECT * FROM event WHERE status = 'published' ORDER BY starts_at DESC")
+      .prepare(`${SELECT_EVENT} WHERE status = 'published' ORDER BY starts_at DESC`)
       .all() as EventRow[];
     return rows.map(toEvent);
   },
@@ -61,7 +69,7 @@ export const eventsRepo = {
   listUpcomingPublished(now: number, limit: number, offset: number): Event[] {
     const rows = db
       .prepare(
-        `SELECT * FROM event
+        `${SELECT_EVENT}
          WHERE status = 'published' AND starts_at > ?
          ORDER BY starts_at ASC
          LIMIT ? OFFSET ?`,
@@ -81,7 +89,7 @@ export const eventsRepo = {
   /** 管理向け: 全イベント */
   listAll(): Event[] {
     const rows = db
-      .prepare("SELECT * FROM event ORDER BY created_at DESC")
+      .prepare(`${SELECT_EVENT} ORDER BY created_at DESC`)
       .all() as EventRow[];
     return rows.map(toEvent);
   },

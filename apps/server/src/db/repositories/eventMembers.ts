@@ -97,7 +97,9 @@ export const eventMembersRepo = {
   listEventsForUser(userId: string): MyEventSummary[] {
     const rows = db
       .prepare(
-        `SELECT e.*, m.role AS my_role
+        `SELECT e.*, m.role AS my_role,
+                (SELECT COUNT(1) FROM event_member em
+                 WHERE em.event_id = e.id) AS participant_count
          FROM event_member m
          JOIN event e ON e.id = m.event_id
          WHERE m.user_id = ?
@@ -122,6 +124,7 @@ export const eventMembersRepo = {
       createdBy: row.created_by as string,
       createdAt: row.created_at as number,
       imageUpdatedAt: (row.image_updated_at as number | null) ?? null,
+      participantCount: (row.participant_count as number) ?? 0,
       myRole: row.my_role as EventRole,
     }));
   },

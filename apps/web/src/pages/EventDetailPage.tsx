@@ -91,7 +91,7 @@ export function EventDetailPage() {
   const isAdmin = useIsAdmin();
   const isMember = Boolean(data?.myRole);
   const isStaff = data?.myRole === "staff" || isAdmin;
-  const { data: members } = useEventMembers(id, isMember || isAdmin);
+  const { data: members } = useEventMembers(id, true);
   const { data: entries } = useEventEntries(id);
   const { data: state } = useEventState(id, Boolean(me));
   const join = useJoinEvent();
@@ -125,7 +125,7 @@ export function EventDetailPage() {
         </Stack>
         <Typography color="text.secondary" sx={{ mt: 1 }}>
           {formatDateRange(event.startsAt, event.endsAt)} ・{" "}
-          {venueLabel[event.venueType]}
+          {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
         </Typography>
       </Box>
 
@@ -287,14 +287,14 @@ export function EventDetailPage() {
       </Grid>
 
       <Grid item xs={12} md={4}>
-        {isMember && (
+        {members && (
           <Card
             variant="outlined"
             sx={{ position: { md: "sticky" }, top: { md: 16 } }}
           >
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                参加者一覧（{members?.length ?? 0}）
+                参加者一覧（{members.length}）
               </Typography>
               <List dense>
                 {members?.map((m) => (

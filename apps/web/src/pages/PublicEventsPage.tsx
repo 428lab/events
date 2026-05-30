@@ -53,7 +53,7 @@ export function PublicEventsPage() {
                     <Typography variant="h6">{e.title}</Typography>
                     <Typography variant="body2" color="text.secondary">
                       {formatDateRange(e.startsAt, e.endsAt)} ・{" "}
-                      {venueLabel[e.venueType]}
+                      {venueLabel[e.venueType]} ・ 参加 {e.participantCount} 人
                     </Typography>
                   </CardContent>
                 </CardActionArea>
