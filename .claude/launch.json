@@ -5,13 +5,13 @@
       "name": "web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@eventer/web", "dev"],
-      "port": 5174
+      "port": 4280
     },
     {
       "name": "server",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@eventer/server", "dev"],
-      "port": 8787
+      "port": 4281
     }
   ]
 }
