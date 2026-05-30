@@ -16,7 +16,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router-dom";
 import { EVENT_MODES, type EventMode } from "@eventer/shared";
 import { useEvent, useEventEntries, useIsAdmin } from "../api/hooks.js";
 import {
@@ -130,6 +130,25 @@ export function ControlPage() {
               {state.scoringLocked ? "採点を再開" : "採点を締め切る"}
             </Button>
           </Stack>
+          {state.scoringLocked && (
+            <Box sx={{ mt: 2 }}>
+              <Alert
+                severity="success"
+                action={
+                  <Button
+                    color="inherit"
+                    size="small"
+                    component={RouterLink}
+                    to={`/events/${id}/edit`}
+                  >
+                    受賞者を設定する
+                  </Button>
+                }
+              >
+                採点を締め切りました。受賞者を設定して表彰の準備をしましょう。
+              </Alert>
+            </Box>
+          )}
         </CardContent>
       </Card>
 
