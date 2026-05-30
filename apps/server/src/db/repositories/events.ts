@@ -65,12 +65,12 @@ export const eventsRepo = {
     return rows.map(toEvent);
   },
 
-  /** 開催前（starts_at > now）の公開イベントを開催直前順（昇順）でページング取得 */
+  /** 開催前＋開催中（ends_at > now）の公開イベントを開催直前順（開始昇順）でページング取得 */
   listUpcomingPublished(now: number, limit: number, offset: number): Event[] {
     const rows = db
       .prepare(
         `${SELECT_EVENT}
-         WHERE status = 'published' AND starts_at > ?
+         WHERE status = 'published' AND ends_at > ?
          ORDER BY starts_at ASC
          LIMIT ? OFFSET ?`,
       )
@@ -81,7 +81,7 @@ export const eventsRepo = {
   countUpcomingPublished(now: number): number {
     return (db
       .prepare(
-        "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND starts_at > ?",
+        "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND ends_at > ?",
       )
       .get(now) as { n: number }).n;
   },
