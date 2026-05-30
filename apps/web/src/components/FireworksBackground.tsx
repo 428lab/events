@@ -187,7 +187,8 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
           targetY: h * (0.12 + Math.random() * 0.6),
           color: pick(),
         });
-        nextLaunch = now + 3000 + Math.random() * 2800;
+        // 低頻度: 約20〜32秒に1発
+        nextLaunch = now + 20000 + Math.random() * 12000;
       }
 
       // 残像を少し残してフェード（尾を引く）
@@ -215,6 +216,9 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
 
       particles = particles.filter((p) => p.life > 0);
       for (const p of particles) {
+        // 微小なランダムの揺らぎ（乱流）で自然な動きに
+        p.vx += (Math.random() - 0.5) * 0.08;
+        p.vy += (Math.random() - 0.5) * 0.08;
         p.x += p.vx;
         p.y += p.vy;
         p.vy += p.gravity;

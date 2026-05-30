@@ -1,39 +1,6 @@
-import {
-  Box,
-  Card,
-  CardActionArea,
-  CardContent,
-  Chip,
-  Stack,
-  Typography,
-} from "@mui/material";
-import { Link as RouterLink } from "react-router-dom";
-import type { MyEventSummary } from "@eventer/shared";
+import { Box, Stack, Typography } from "@mui/material";
 import { useMyPage } from "../api/hooks.js";
-import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
-
-function EventCard({ event }: { event: MyEventSummary }) {
-  return (
-    <Card variant="outlined">
-      <CardActionArea component={RouterLink} to={`/events/${event.id}`}>
-        <CardContent>
-          <Stack
-            direction="row"
-            justifyContent="space-between"
-            alignItems="center"
-          >
-            <Typography variant="h6">{event.title}</Typography>
-            <Chip size="small" label={roleLabel[event.myRole]} />
-          </Stack>
-          <Typography variant="body2" color="text.secondary">
-            {formatDateRange(event.startsAt, event.endsAt)} ・{" "}
-            {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
-          </Typography>
-        </CardContent>
-      </CardActionArea>
-    </Card>
-  );
-}
+import { EventCard } from "../components/EventCard.js";
 
 export function MyPage() {
   const { data, isLoading } = useMyPage();
@@ -50,7 +17,7 @@ export function MyPage() {
         ) : (
           <Stack spacing={2}>
             {data.ongoing.map((e) => (
-              <EventCard key={e.id} event={e} />
+              <EventCard key={e.id} event={e} role={e.myRole} />
             ))}
           </Stack>
         )}
@@ -64,7 +31,7 @@ export function MyPage() {
         ) : (
           <Stack spacing={2}>
             {data.past.map((e) => (
-              <EventCard key={e.id} event={e} />
+              <EventCard key={e.id} event={e} role={e.myRole} />
             ))}
           </Stack>
         )}

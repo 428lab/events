@@ -1,16 +1,8 @@
-import {
-  Box,
-  Button,
-  Card,
-  CardActionArea,
-  CardContent,
-  Stack,
-  Typography,
-} from "@mui/material";
+import { Box, Button, Stack, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { Link as RouterLink } from "react-router-dom";
-import { eventImageUrl, useEvents } from "../api/hooks.js";
-import { formatDateRange, venueLabel } from "../lib/format.js";
+import { useEvents } from "../api/hooks.js";
+import { EventCard } from "../components/EventCard.js";
 
 export function EventsPage() {
   const { data: events, isLoading } = useEvents();
@@ -42,30 +34,7 @@ export function EventsPage() {
       ) : (
         <Stack spacing={2}>
           {events.map((e) => (
-            <Card key={e.id} variant="outlined">
-              <CardActionArea component={RouterLink} to={`/events/${e.id}`}>
-                {eventImageUrl(e) && (
-                  <Box
-                    component="img"
-                    src={eventImageUrl(e)!}
-                    alt={e.title}
-                    sx={{
-                      width: "100%",
-                      aspectRatio: "1200 / 630",
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
-                )}
-                <CardContent>
-                  <Typography variant="h6">{e.title}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {formatDateRange(e.startsAt, e.endsAt)} ・{" "}
-                    {venueLabel[e.venueType]} ・ 参加 {e.participantCount} 人
-                  </Typography>
-                </CardContent>
-              </CardActionArea>
-            </Card>
+            <EventCard key={e.id} event={e} />
           ))}
         </Stack>
       )}
