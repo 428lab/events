@@ -32,22 +32,26 @@ export function LoginPage() {
             >
               Discord でログイン
             </Button>
-            <Button
-              variant="outlined"
-              size="large"
-              fullWidth
-              disabled={devLogin.isPending}
-              onClick={() =>
-                devLogin.mutate(undefined, {
-                  onSuccess: () => navigate("/me"),
-                })
-              }
-            >
-              開発用ログイン
-            </Button>
-            <Typography variant="caption" color="text.secondary">
-              ※ 開発用ログインは Discord 未設定の開発環境でのみ動作します
-            </Typography>
+            {import.meta.env.DEV && (
+              <>
+                <Button
+                  variant="outlined"
+                  size="large"
+                  fullWidth
+                  disabled={devLogin.isPending}
+                  onClick={() =>
+                    devLogin.mutate(undefined, {
+                      onSuccess: () => navigate("/me"),
+                    })
+                  }
+                >
+                  開発用ログイン
+                </Button>
+                <Typography variant="caption" color="text.secondary">
+                  ※ 開発用ログインは Discord 未設定の開発環境でのみ動作します
+                </Typography>
+              </>
+            )}
           </Stack>
         </CardContent>
       </Card>

@@ -102,12 +102,13 @@ authRoutes.get("/discord/callback", async (c) => {
 });
 
 /**
- * 開発専用ログイン。
+ * 開発専用ログイン。Discord 設定の有無に関わらず開発時は常に利用可能
+ * （開発では Discord ログインと dev-login を併用できる）。
  * `process.env.NODE_ENV !== "production"` で囲うことで、本番ビルド時に
  * esbuild の --define により静的に false 評価され、このブロックごと
  * バンドルから除去される（本番成果物に dev-login は一切含まれない）。
  */
-if (process.env.NODE_ENV !== "production" && !env.discordConfigured) {
+if (process.env.NODE_ENV !== "production") {
   authRoutes.post("/dev-login", (c) => {
     const user = usersRepo.upsertByDiscordId({
       discordId: "dev-user",
