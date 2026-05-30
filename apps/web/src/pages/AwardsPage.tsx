@@ -164,7 +164,7 @@ export function AwardsPage() {
               </>
             ) : (
               <Typography variant="h5" sx={{ my: 2 }}>
-                該当なし
+                該当者なし
               </Typography>
             )}
           </CardContent>
@@ -205,7 +205,7 @@ export function AwardsPage() {
                 >
                   <Typography>{item.awardName}</Typography>
                   <Typography fontWeight={600}>
-                    {item.result ? item.result.entryName : "該当なし"}
+                    {item.result ? item.result.entryName : "該当者なし"}
                   </Typography>
                 </CardContent>
               </Card>

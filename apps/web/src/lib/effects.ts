@@ -19,32 +19,28 @@ const fanfare = new Audio(fanfareUrl);
 drumroll.preload = "auto";
 fanfare.preload = "auto";
 
+/** ドラムロール音源の「じゃ～ん！」が鳴るタイミング（ms） */
+const DRUMROLL_REVEAL_MS = 3000;
+
 /**
- * ドラムロールを最後まで再生し、再生完了時に onEnd を呼ぶ。
- * 自動再生がブロックされた場合や想定より長い場合は安全タイマーで onEnd する。
+ * ドラムロールを再生し、クライマックス（約3秒）の「じゃ～ん！」に合わせて onReveal を呼ぶ。
+ * 音はそのまま最後まで鳴らし続ける（途中で止めない）。
+ * 自動再生がブロックされた場合は即座に onReveal する。
  */
-export function playDrumroll(onEnd: () => void): void {
+export function playDrumroll(onReveal: () => void): void {
   let done = false;
-  let timer = 0;
   const finish = () => {
     if (done) return;
     done = true;
-    window.clearTimeout(timer);
-    onEnd();
+    onReveal();
   };
 
-  drumroll.onended = finish;
   drumroll.currentTime = 0;
-
-  // ended が発火しない/極端に長い場合の安全タイマー
-  const safetyMs =
-    (Number.isFinite(drumroll.duration) && drumroll.duration > 0
-      ? drumroll.duration * 1000
-      : 6000) + 1500;
-  timer = window.setTimeout(finish, safetyMs);
-
   const p = drumroll.play();
   if (p) p.catch(() => finish());
+
+  // 「じゃ～ん！」のタイミングで結果を出す。音は止めず最後まで再生。
+  window.setTimeout(finish, DRUMROLL_REVEAL_MS);
 }
 
 /** ファンファーレを再生 */

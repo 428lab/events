@@ -99,7 +99,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                 <DragIndicatorIcon
                   sx={{ cursor: "grab", color: "text.disabled" }}
                 />
-                <Stack spacing={1.5} sx={{ flex: 1 }}>
+                <Stack spacing={3} sx={{ flex: 1 }}>
                   <TextField
                     label="賞の名前"
                     defaultValue={r.name}
@@ -180,7 +180,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
           <Card key={s.id} variant="outlined">
             <CardContent>
               <Stack direction="row" spacing={1.5} alignItems="center">
-                <Stack spacing={1.5} sx={{ flex: 1 }}>
+                <Stack spacing={3} sx={{ flex: 1 }}>
                   <TextField
                     label="特別枠の名前"
                     defaultValue={s.name}
@@ -218,7 +218,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                       })
                     }
                   >
-                    <MenuItem value="">（未選択）</MenuItem>
+                    <MenuItem value="">該当者なし</MenuItem>
                     {entryOptions.map((en) => (
                       <MenuItem key={en.id} value={en.id}>
                         {en.name}

@@ -126,6 +126,7 @@ export function EventDetailPage() {
 
   const awardItems = awards
     ? [
+        // ランキング賞は受賞者が設定されたものだけ
         ...[...awards.ranks]
           .sort((a, b) => b.rankOrder - a.rankOrder)
           .map((r) => ({
@@ -133,14 +134,16 @@ export function EventDetailPage() {
             name: r.name,
             content: r.content,
             result: awards.results.find((x) => x.awardRankId === r.id),
-          })),
+          }))
+          .filter((it) => it.result),
+        // 特別枠は受賞者なし（該当者なし）も表示する
         ...awards.specials.map((s) => ({
           key: `special-${s.id}`,
           name: s.name,
           content: s.content,
           result: awards.results.find((x) => x.specialAwardId === s.id),
         })),
-      ].filter((it) => it.result)
+      ]
     : [];
   const ceremonyDone =
     (state?.awardsRevealCursor ?? 0) >=
@@ -206,8 +209,12 @@ export function EventDetailPage() {
                     size="small"
                     variant="outlined"
                   />
-                  <Typography variant="h6" fontWeight={700}>
-                    {it.result!.entryName}
+                  <Typography
+                    variant="h6"
+                    fontWeight={700}
+                    color={it.result ? "text.primary" : "text.secondary"}
+                  >
+                    {it.result ? it.result.entryName : "該当者なし"}
                   </Typography>
                   {it.content && (
                     <Typography variant="body2" color="text.secondary">
