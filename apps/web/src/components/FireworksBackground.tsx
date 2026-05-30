@@ -104,6 +104,12 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
       const scale = 1.0 + Math.random() * 1.4;
       const size = 1.7 + scale;
 
+      // 6割はカラフル（粒ごとにパレットから多色）、4割は単色でメリハリ
+      const multi = Math.random() < 0.6;
+      // カラフル時は数色をシャッフルして使う
+      const palette = colorsRef.current;
+      const col = () => (multi ? palette[Math.floor(Math.random() * palette.length)] : baseColor);
+
       // 開いた瞬間の芯
       for (let i = 0; i < 12; i++)
         add(x, y, Math.random() * Math.PI * 2, Math.random() * 1.4, "#FFFFFF", {
@@ -113,23 +119,26 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
         });
 
       if (pattern === "ring") {
+        // リング: 角度ごとに色相を回す（カラフルな環）
         const n = Math.round(72 + scale * 18);
         const sp = 3 * scale;
-        for (let i = 0; i < n; i++)
-          add(x, y, (Math.PI * 2 * i) / n, sp + Math.random() * 0.3, baseColor, { size });
-      } else if (pattern === "double") {
-        const c2 = pick();
-        const n = Math.round(50 + scale * 14);
         for (let i = 0; i < n; i++) {
-          const a = (Math.PI * 2 * i) / n;
-          add(x, y, a, 1.9 * scale, baseColor, { size });
-          add(x, y, a + 0.08, 3.6 * scale, c2, { size: size * 0.9 });
+          const c = multi ? palette[i % palette.length] : baseColor;
+          add(x, y, (Math.PI * 2 * i) / n, sp + Math.random() * 0.3, c, { size });
         }
+      } else if (pattern === "double") {
+        // 多重: 3色の同心リング
+        const cs = [baseColor, pick(), pick()];
+        const n = Math.round(40 + scale * 12);
+        cs.forEach((c, ring) => {
+          const sp = (1.6 + ring * 1.2) * scale;
+          for (let i = 0; i < n; i++)
+            add(x, y, (Math.PI * 2 * i) / n + ring * 0.1, sp, c, { size: size * (1 - ring * 0.1) });
+        });
       } else if (pattern === "willow") {
-        // しだれ: 長く垂れて落ち、終盤キラキラ
         const n = Math.round(54 + scale * 16);
         for (let i = 0; i < n; i++)
-          add(x, y, (Math.PI * 2 * i) / n, (1.7 + Math.random() * 0.7) * scale, baseColor, {
+          add(x, y, (Math.PI * 2 * i) / n, (1.7 + Math.random() * 0.7) * scale, col(), {
             decay: 0.003,
             gravity: 0.06,
             size: size * 0.95,
@@ -137,28 +146,25 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
             glitter: true,
           });
       } else if (pattern === "palm") {
-        // 椰子: 太い尾を引くコメットが数本
         const n = Math.round(10 + scale * 4);
         for (let i = 0; i < n; i++)
-          add(x, y, (Math.PI * 2 * i) / n + Math.random() * 0.1, (3.5 + Math.random() * 1.5) * scale, baseColor, {
+          add(x, y, (Math.PI * 2 * i) / n + Math.random() * 0.1, (3.5 + Math.random() * 1.5) * scale, col(), {
             decay: 0.0045,
             gravity: 0.05,
             size: size * 1.4,
           });
       } else if (pattern === "crackle") {
-        // 千輪: 球状に開いてしばらくしてから一斉にチカチカ
         const n = Math.round(80 + scale * 30);
         for (let i = 0; i < n; i++)
-          add(x, y, (Math.PI * 2 * i) / n + Math.random() * 0.2, (1.2 + Math.random() * 2.6) * scale, baseColor, {
+          add(x, y, (Math.PI * 2 * i) / n + Math.random() * 0.2, (1.2 + Math.random() * 2.6) * scale, col(), {
             decay: 0.004,
             size: size * 0.85,
             glitter: true,
           });
       } else if (pattern === "chrysanthemum") {
-        // 菊: 尾を引いて放射状（速度ばらつき）
         const n = Math.round(80 + scale * 26);
         for (let i = 0; i < n; i++)
-          add(x, y, (Math.PI * 2 * i) / n, (1.6 + Math.random() * 2.4) * scale, baseColor, {
+          add(x, y, (Math.PI * 2 * i) / n, (1.6 + Math.random() * 2.4) * scale, col(), {
             decay: 0.0045,
             size,
           });
@@ -166,7 +172,7 @@ export function FireworksBackground({ colors }: { colors: string[] }) {
         // 牡丹: 密度のある球状
         const n = Math.round(90 + scale * 36);
         for (let i = 0; i < n; i++)
-          add(x, y, (Math.PI * 2 * i) / n + Math.random() * 0.2, (1.2 + Math.random() * 3.2) * scale, baseColor, { size });
+          add(x, y, (Math.PI * 2 * i) / n + Math.random() * 0.2, (1.2 + Math.random() * 3.2) * scale, col(), { size });
       }
     };
 

@@ -95,7 +95,16 @@ export const THEMES: Record<string, ThemeDef> = {
   natsumatsuri: {
     key: "natsumatsuri",
     label: "夏祭り",
-    fireworks: ["#2DD4BF", "#FB923C", "#FB7185", "#FBBF24", "#FFFFFF"],
+    fireworks: [
+      "#2DD4BF",
+      "#FB923C",
+      "#FB7185",
+      "#FBBF24",
+      "#60A5FA",
+      "#A78BFA",
+      "#34D399",
+      "#FFFFFF",
+    ],
     theme: makeTheme({
       mode: "dark",
       primary: "#2DD4BF",
@@ -116,7 +125,15 @@ export const THEMES: Record<string, ThemeDef> = {
   neon: {
     key: "neon",
     label: "ネオン",
-    fireworks: ["#22D3EE", "#E879F9", "#A78BFA", "#FFFFFF"],
+    fireworks: [
+      "#22D3EE",
+      "#E879F9",
+      "#A78BFA",
+      "#34D399",
+      "#FACC15",
+      "#FF6AD5",
+      "#FFFFFF",
+    ],
     theme: makeTheme({
       mode: "dark",
       primary: "#22D3EE",
