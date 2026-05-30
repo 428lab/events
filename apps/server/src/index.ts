@@ -10,6 +10,7 @@ import { eventRoutes } from "./routes/events.js";
 import { scoringRoutes } from "./routes/scoring.js";
 import { meRoutes } from "./routes/me.js";
 import { getEventImage } from "./routes/images.js";
+import { publicRoutes } from "./routes/public.js";
 import { eventsRepo } from "./db/repositories/events.js";
 
 runMigrations();
@@ -21,6 +22,8 @@ api.get("/health", (c) =>
   c.json({ ok: true, discordConfigured: env.discordConfigured }),
 );
 api.route("/auth", authRoutes);
+// 公開: 開催前イベント一覧（認証不要）
+api.route("/public", publicRoutes);
 // 公開: イベント画像（認証不要。eventRoutes(要認証)より先に登録）
 api.get("/events/:id/image", getEventImage);
 api.route("/events", eventRoutes);

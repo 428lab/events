@@ -10,6 +10,7 @@ import { EventsPage } from "./pages/EventsPage.js";
 import { EventDetailPage } from "./pages/EventDetailPage.js";
 import { CreateEventPage } from "./pages/CreateEventPage.js";
 import { EditEventPage } from "./pages/EditEventPage.js";
+import { PublicEventsPage } from "./pages/PublicEventsPage.js";
 import { ScoringPage } from "./pages/ScoringPage.js";
 import { PresentPage } from "./pages/PresentPage.js";
 import { ControlPage } from "./pages/ControlPage.js";
@@ -30,7 +31,15 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        {/* 公開イベントは未ログインでも閲覧可（OGリンク用） */}
+        {/* 未ログインの公開ページ */}
+        <Route
+          path="/"
+          element={
+            <PublicLayout>
+              <PublicEventsPage />
+            </PublicLayout>
+          }
+        />
         <Route
           path="/events/:id"
           element={
@@ -39,7 +48,7 @@ export function App() {
             </PublicLayout>
           }
         />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
   }

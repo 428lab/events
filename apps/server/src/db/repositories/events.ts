@@ -57,6 +57,27 @@ export const eventsRepo = {
     return rows.map(toEvent);
   },
 
+  /** 開催前（starts_at > now）の公開イベントを開催直前順（昇順）でページング取得 */
+  listUpcomingPublished(now: number, limit: number, offset: number): Event[] {
+    const rows = db
+      .prepare(
+        `SELECT * FROM event
+         WHERE status = 'published' AND starts_at > ?
+         ORDER BY starts_at ASC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(now, limit, offset) as EventRow[];
+    return rows.map(toEvent);
+  },
+
+  countUpcomingPublished(now: number): number {
+    return (db
+      .prepare(
+        "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND starts_at > ?",
+      )
+      .get(now) as { n: number }).n;
+  },
+
   /** 管理向け: 全イベント */
   listAll(): Event[] {
     const rows = db

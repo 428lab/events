@@ -81,6 +81,22 @@ export function useEvents() {
   });
 }
 
+export interface PublicEventsPage {
+  events: Event[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+/** 開催前の公開イベント（未ログイン可・開催直前順・ページング） */
+export function usePublicEvents(page: number) {
+  return useQuery({
+    queryKey: ["publicEvents", page],
+    queryFn: () => api.get<PublicEventsPage>(`/public/events?page=${page}`),
+  });
+}
+
 export function useEvent(id: string) {
   return useQuery({
     queryKey: ["event", id],

@@ -17,7 +17,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
           <Typography
             variant="h6"
             component={RouterLink}
-            to="/login"
+            to="/"
             sx={{ color: "inherit", textDecoration: "none", fontWeight: 700 }}
           >
             events lab
