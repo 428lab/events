@@ -329,7 +329,7 @@ export function EventDetailPage() {
               表彰式へ
             </Button>
           )}
-          {(myRole === "judge" || myRole === "staff" || isAdmin) && (
+          {(isMember || isAdmin) && (
             <Button variant="outlined" component={RouterLink} to={`/events/${id}/scoring`}>
               採点
             </Button>

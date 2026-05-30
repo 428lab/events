@@ -106,7 +106,7 @@ scoringRoutes.get("/:id/scores/mine", (c) => {
 
 scoringRoutes.put(
   "/:id/scores",
-  requireEventRole(["judge", "staff"]),
+  requireEventRole(["participant", "judge", "staff"]),
   zValidator("json", putScoreInput),
   (c) => {
     const user = c.get("user");
@@ -160,7 +160,7 @@ scoringRoutes.get(
     return c.json({
       judges: scoresRepo.progress(
         eventId,
-        ["judge", "staff"],
+        ["participant", "judge", "staff"],
         event.aggregateSelfEntry,
       ),
     });

@@ -30,8 +30,8 @@ export function ScoringPage() {
   }
 
   const role = eventData.myRole;
-  if (role !== "judge" && role !== "staff" && !isAdmin) {
-    return <Alert severity="info">採点権限がありません。</Alert>;
+  if (!role && !isAdmin) {
+    return <Alert severity="info">採点するにはイベントへの参加が必要です。</Alert>;
   }
 
   return (

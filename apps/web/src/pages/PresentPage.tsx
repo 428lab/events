@@ -53,7 +53,7 @@ export function PresentPage() {
         };
       })
     : [];
-  const canScore = role === "judge" || role === "staff" || isAdmin;
+  const canScore = Boolean(role) || isAdmin;
   const isSelf = presenting
     ? Boolean(me && presenting.memberUserIds.includes(me.id))
     : false;
