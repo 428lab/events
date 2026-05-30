@@ -2,6 +2,15 @@ import { createTheme, type Theme } from "@mui/material/styles";
 
 const font = '"Plus Jakarta Sans", system-ui, sans-serif';
 
+/** #RRGGBB → rgba(...) */
+function rgba(hex: string, a: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 export interface ThemeTokens {
   mode: "light" | "dark";
   primary: string;
@@ -58,7 +67,10 @@ function makeTheme(t: ThemeTokens): Theme {
         defaultProps: { variant: "outlined" },
         styleOverrides: {
           root: {
-            backgroundColor: t.surface,
+            // 半透明＋すりガラスで背面の花火がうっすら透ける
+            backgroundColor: rgba(t.surface, t.mode === "dark" ? 0.6 : 0.82),
+            backdropFilter: "blur(2px)",
+            WebkitBackdropFilter: "blur(2px)",
             borderColor: t.border,
             borderRadius: 14,
             backgroundImage: "none",
