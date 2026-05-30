@@ -87,16 +87,23 @@ function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry })
 export function EventDetailPage() {
   const { id = "" } = useParams();
   const { data: me } = useMe();
-  const { data, isLoading } = useEvent(id);
+  const { data, isLoading, isError } = useEvent(id);
   const isAdmin = useIsAdmin();
   const isMember = Boolean(data?.myRole);
   const isStaff = data?.myRole === "staff" || isAdmin;
   const { data: members } = useEventMembers(id, isMember || isAdmin);
   const { data: entries } = useEventEntries(id);
-  const { data: state } = useEventState(id);
+  const { data: state } = useEventState(id, Boolean(me));
   const join = useJoinEvent();
   const leave = useLeaveEvent();
 
+  if (isError) {
+    return (
+      <Alert severity="info">
+        このイベントは見つからないか、非公開です。
+      </Alert>
+    );
+  }
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
   const { event, myRole } = data;
 
@@ -160,7 +167,11 @@ export function EventDetailPage() {
       )}
 
       <Stack direction="row" spacing={2}>
-        {!isMember ? (
+        {!me ? (
+          <Button variant="contained" component={RouterLink} to="/login">
+            ログインして参加
+          </Button>
+        ) : !isMember ? (
           <Button
             variant="contained"
             disabled={join.isPending}

@@ -94,9 +94,10 @@ export function useScoreProgress(eventId: string, enabled: boolean) {
 }
 
 /** ===== 進行状態 ===== */
-export function useEventState(eventId: string) {
+export function useEventState(eventId: string, enabled = true) {
   return useQuery({
     queryKey: ["event", eventId, "state"],
+    enabled,
     queryFn: () => api.get<EventState>(`/events/${eventId}/state`),
   });
 }

@@ -8,13 +8,16 @@ import {
 } from "@eventer/shared";
 import type {
   CreateEventInput,
+  Event,
   UpdateEventInput,
   UpdateMemberRoleInput,
   UpdateSubmissionInput,
+  User,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
+import { currentUser, requireAuth } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
+import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { entriesRepo } from "../db/repositories/entries.js";
@@ -23,6 +26,50 @@ import { deleteEventImage, putEventImage } from "./images.js";
 
 export const eventRoutes = new Hono<AppEnv>();
 
+/** 公開イベントは誰でも閲覧可。下書きはメンバー/管理者のみ。 */
+function canView(event: Event, user: User | null): boolean {
+  if (event.status === "published") return true;
+  if (!user) return false;
+  if (isAppAdmin(user)) return true;
+  return Boolean(eventMembersRepo.find(event.id, user.id));
+}
+
+/* =========================================================
+ *  公開ルート（未ログイン可）。requireAuth より前に登録する。
+ * =======================================================*/
+
+/** イベント詳細（公開イベントは未ログインでも閲覧可） */
+eventRoutes.get("/:id", (c) => {
+  const event = eventsRepo.findById(c.req.param("id"));
+  if (!event) return c.json({ error: "not_found" }, 404);
+  const user = currentUser(c);
+  if (!canView(event, user)) return c.json({ error: "not_found" }, 404);
+  const member = user ? eventMembersRepo.find(event.id, user.id) : null;
+  return c.json({ event, myRole: member?.role ?? null });
+});
+
+/** Entry 一覧（公開イベントは未ログインでも閲覧可） */
+eventRoutes.get("/:id/entries", (c) => {
+  const event = eventsRepo.findById(c.req.param("id"));
+  if (!event) return c.json({ error: "not_found" }, 404);
+  if (!canView(event, currentUser(c))) return c.json({ error: "forbidden" }, 403);
+  return c.json({ entries: entriesRepo.listByEvent(event.id) });
+});
+
+/** 成果物集約（公開イベントは未ログインでも閲覧可。提出済みのみ） */
+eventRoutes.get("/:id/submissions", (c) => {
+  const event = eventsRepo.findById(c.req.param("id"));
+  if (!event) return c.json({ error: "not_found" }, 404);
+  if (!canView(event, currentUser(c))) return c.json({ error: "forbidden" }, 403);
+  const entries = entriesRepo
+    .listByEvent(event.id)
+    .filter((e) => e.submission);
+  return c.json({ entries });
+});
+
+/* =========================================================
+ *  ここから認証必須
+ * =======================================================*/
 eventRoutes.use("*", requireAuth);
 
 /** 公開イベント一覧 */
@@ -38,15 +85,6 @@ eventRoutes.post("/", zValidator("json", createEventInput), (c) => {
   eventMembersRepo.add(event.id, user.id, "staff");
   scoringCriteriaRepo.seedDefaults(event.id);
   return c.json({ event }, 201);
-});
-
-/** イベント詳細 */
-eventRoutes.get("/:id", (c) => {
-  const event = eventsRepo.findById(c.req.param("id"));
-  if (!event) return c.json({ error: "not_found" }, 404);
-  const user = c.get("user");
-  const myMember = eventMembersRepo.find(event.id, user.id);
-  return c.json({ event, myRole: myMember?.role ?? null });
 });
 
 /** イベント更新（staff のみ） */
@@ -104,9 +142,13 @@ eventRoutes.delete("/:id/join", (c) => {
 });
 
 /** 参加者一覧（メンバーなら閲覧可） */
-eventRoutes.get("/:id/members", requireEventRole(["participant", "staff", "judge", "observer"]), (c) => {
-  return c.json({ members: eventMembersRepo.listWithUsers(c.req.param("id")) });
-});
+eventRoutes.get(
+  "/:id/members",
+  requireEventRole(["participant", "staff", "judge", "observer"]),
+  (c) => {
+    return c.json({ members: eventMembersRepo.listWithUsers(c.req.param("id")) });
+  },
+);
 
 /** ロール変更（staff のみ） */
 eventRoutes.patch(
@@ -123,19 +165,6 @@ eventRoutes.patch(
     return c.json({ member });
   },
 );
-
-/** Entry 一覧 */
-eventRoutes.get("/:id/entries", (c) => {
-  return c.json({ entries: entriesRepo.listByEvent(c.req.param("id")) });
-});
-
-/** 成果物集約（オンライン時の一覧表示用。提出済みのみ） */
-eventRoutes.get("/:id/submissions", (c) => {
-  const entries = entriesRepo
-    .listByEvent(c.req.param("id"))
-    .filter((e) => e.submission);
-  return c.json({ entries });
-});
 
 /** 自分の Entry の成果物を保存（その Entry の member のみ） */
 eventRoutes.put(

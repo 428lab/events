@@ -2,6 +2,7 @@ import { Box, CircularProgress } from "@mui/material";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useMe } from "./api/hooks.js";
 import { Layout } from "./components/Layout.js";
+import { PublicLayout } from "./components/PublicLayout.js";
 import { EventLayout } from "./components/EventLayout.js";
 import { LoginPage } from "./pages/LoginPage.js";
 import { MyPage } from "./pages/MyPage.js";
@@ -29,6 +30,15 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        {/* 公開イベントは未ログインでも閲覧可（OGリンク用） */}
+        <Route
+          path="/events/:id"
+          element={
+            <PublicLayout>
+              <EventDetailPage />
+            </PublicLayout>
+          }
+        />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
