@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "cd ../.. && wrangler dev",
     "deploy": "cd ../.. && wrangler deploy",
+    "deploy:staging": "cd ../.. && wrangler deploy --env staging",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:migrate:local": "cd ../.. && wrangler d1 migrations apply eventer --local",
     "db:migrate:remote": "cd ../.. && wrangler d1 migrations apply eventer --remote"

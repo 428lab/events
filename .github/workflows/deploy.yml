@@ -1,0 +1,39 @@
+name: Deploy
+
+# production ブランチ → 本番（eventer / events.kojira.io）
+# staging ブランチ    → staging（eventer-staging / *.workers.dev・管理者限定）
+on:
+  push:
+    branches: [production, staging]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # フロントをビルド（Worker の ASSETS バインディングが apps/web/dist を配信）
+      - run: pnpm --filter @eventer/web build
+
+      - name: Deploy to production
+        if: github.ref == 'refs/heads/production'
+        run: pnpm --filter @eventer/server run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Deploy to staging
+        if: github.ref == 'refs/heads/staging'
+        run: pnpm --filter @eventer/server run deploy:staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

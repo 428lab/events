@@ -33,3 +33,28 @@ DISCORD_REDIRECT_URI = "https://events.kojira.io/api/auth/discord/callback"
 
 # シークレットは `wrangler secret put` で登録（wrangler.toml には書かない）:
 #   DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, SESSION_SECRET
+
+# ===== staging 環境（管理者ログイン限定）=====
+# デプロイ: wrangler deploy --env staging
+# URL: https://eventer-staging.kojiran.workers.dev（workers.dev・別D1/R2）
+[env.staging]
+name = "eventer-staging"
+workers_dev = true
+routes = []  # staging はカスタムルートを使わず workers.dev のみ（本番ルートの継承を打ち消す）
+assets = { directory = "apps/web/dist", binding = "ASSETS", not_found_handling = "single-page-application", run_worker_first = true }
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "eventer-staging"
+database_id = "389e4625-8e13-4a41-9530-3ab3be10cee5"
+migrations_dir = "apps/server/migrations"
+
+[[env.staging.r2_buckets]]
+binding = "BUCKET"
+bucket_name = "eventer-images-staging"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+APP_BASE_URL = "https://eventer-staging.kojiran.workers.dev"
+ADMIN_DISCORD_IDS = "390732846236434452"
+DISCORD_REDIRECT_URI = "https://eventer-staging.kojiran.workers.dev/api/auth/discord/callback"

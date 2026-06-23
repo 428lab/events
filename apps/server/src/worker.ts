@@ -8,6 +8,8 @@ import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes } from "./routes/me.js";
 import { getEventImage } from "./routes/images.js";
 import { publicRoutes } from "./routes/public.js";
+import { currentUser } from "./auth/session.js";
+import { isAppAdmin } from "./auth/admin.js";
 import { eventsRepo } from "./db/repositories/events.js";
 
 const api = new Hono();
@@ -28,7 +30,38 @@ api.route("/events", scoringRoutes);
 api.route("/events", awardRoutes);
 api.route("/me", meRoutes);
 
+/** staging（管理者専用）ゲート用の簡易HTML */
+function stagingGateHtml(loggedInNonAdmin: boolean): string {
+  const msg = loggedInNonAdmin
+    ? "このアカウントには staging の閲覧権限がありません。"
+    : "staging 環境です。管理者アカウントでログインしてください。";
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>events lab — staging</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0E1426;color:#E2E8F0;font-family:system-ui,sans-serif}
+.card{text-align:center;padding:40px;max-width:420px}.tag{display:inline-block;background:#FB923C;color:#0E1426;font-weight:700;border-radius:999px;padding:4px 14px;font-size:13px;margin-bottom:20px}
+h1{font-size:22px;margin:0 0 12px}p{color:#94A3B8;line-height:1.7}
+a.btn{display:inline-block;margin-top:20px;background:#5865F2;color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600}</style>
+</head><body><div class="card"><div class="tag">STAGING</div>
+<h1>events lab（検証環境）</h1><p>${msg}</p>
+<a class="btn" href="/api/auth/discord/login">Discord でログイン</a></div></body></html>`;
+}
+
 const app = new Hono();
+
+// staging: 管理者ログイン限定ゲート（OAuth と health は通す）
+app.use("*", async (c, next) => {
+  if (!env.isStaging) return next();
+  const path = new URL(c.req.url).pathname;
+  if (path.startsWith("/api/auth/") || path === "/api/health") return next();
+  const user = await currentUser(c);
+  if (user && isAppAdmin(user)) return next();
+  if (path.startsWith("/api/")) {
+    return c.json({ error: "staging_admin_only" }, 403);
+  }
+  return c.html(stagingGateHtml(Boolean(user)), 403);
+});
+
 app.route("/api", api);
 
 const escapeHtml = (s: string) =>

@@ -41,8 +41,14 @@ export function getAssets(): Fetcher {
 
 /** 旧 env オブジェクトと同形（getter ベース）。既存の import 箇所をそのまま活かす。 */
 export const env = {
+  get environment(): string {
+    return must().ENVIRONMENT;
+  },
   get isProd(): boolean {
     return must().ENVIRONMENT === "production";
+  },
+  get isStaging(): boolean {
+    return must().ENVIRONMENT === "staging";
   },
   get appBaseUrl(): string {
     return must().APP_BASE_URL;
