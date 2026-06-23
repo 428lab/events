@@ -1,6 +1,5 @@
 import type { Entry, Submission } from "@eventer/shared";
-import { randomUUID } from "node:crypto";
-import { db } from "../client.js";
+import { one, many, run, batch } from "../client.js";
 
 interface EntryRow {
   id: string;
@@ -18,7 +17,7 @@ interface SubmissionRow {
   updated_at: number;
 }
 
-function toSubmission(row: SubmissionRow | undefined): Submission | null {
+function toSubmission(row: SubmissionRow | null): Submission | null {
   if (!row) return null;
   return {
     presentationUrl: row.presentation_url,
@@ -27,23 +26,23 @@ function toSubmission(row: SubmissionRow | undefined): Submission | null {
   };
 }
 
-function memberUserIds(entryId: string): string[] {
-  const rows = db
-    .prepare("SELECT user_id FROM entry_member WHERE entry_id = ?")
-    .all(entryId) as Array<{ user_id: string }>;
+async function memberUserIds(entryId: string): Promise<string[]> {
+  const rows = await many<{ user_id: string }>(
+    "SELECT user_id FROM entry_member WHERE entry_id = ?",
+    entryId,
+  );
   return rows.map((r) => r.user_id);
 }
 
-function submissionFor(entryId: string): Submission | null {
-  const row = db
-    .prepare(
-      "SELECT presentation_url, source_code_url, updated_at FROM submission WHERE entry_id = ?",
-    )
-    .get(entryId) as SubmissionRow | undefined;
+async function submissionFor(entryId: string): Promise<Submission | null> {
+  const row = await one<SubmissionRow>(
+    "SELECT presentation_url, source_code_url, updated_at FROM submission WHERE entry_id = ?",
+    entryId,
+  );
   return toSubmission(row);
 }
 
-function toEntry(row: EntryRow): Entry {
+async function toEntry(row: EntryRow): Promise<Entry> {
   return {
     id: row.id,
     eventId: row.event_id,
@@ -52,95 +51,110 @@ function toEntry(row: EntryRow): Entry {
     teamId: row.team_id,
     presentationOrder: row.presentation_order,
     createdAt: row.created_at,
-    memberUserIds: memberUserIds(row.id),
-    submission: submissionFor(row.id),
+    memberUserIds: await memberUserIds(row.id),
+    submission: await submissionFor(row.id),
   };
 }
 
 export const entriesRepo = {
-  findById(id: string): Entry | null {
-    const row = db.prepare("SELECT * FROM entry WHERE id = ?").get(id) as
-      | EntryRow
-      | undefined;
-    return row ? toEntry(row) : null;
+  async findById(id: string): Promise<Entry | null> {
+    const row = await one<EntryRow>("SELECT * FROM entry WHERE id = ?", id);
+    return row ? await toEntry(row) : null;
   },
 
-  listByEvent(eventId: string): Entry[] {
-    const rows = db
-      .prepare(
-        `SELECT * FROM entry WHERE event_id = ?
+  async listByEvent(eventId: string): Promise<Entry[]> {
+    const rows = await many<EntryRow>(
+      `SELECT * FROM entry WHERE event_id = ?
          ORDER BY COALESCE(presentation_order, 1e9), created_at ASC`,
-      )
-      .all(eventId) as EntryRow[];
-    return rows.map(toEntry);
+      eventId,
+    );
+    return Promise.all(rows.map(toEntry));
   },
 
   /** 個人参加: そのユーザーの Entry を返す（無ければ null） */
-  findIndividualEntry(eventId: string, userId: string): Entry | null {
-    const row = db
-      .prepare(
-        `SELECT e.* FROM entry e
+  async findIndividualEntry(
+    eventId: string,
+    userId: string,
+  ): Promise<Entry | null> {
+    const row = await one<EntryRow>(
+      `SELECT e.* FROM entry e
          JOIN entry_member em ON em.entry_id = e.id
          WHERE e.event_id = ? AND e.kind = 'individual' AND em.user_id = ?
          LIMIT 1`,
-      )
-      .get(eventId, userId) as EntryRow | undefined;
-    return row ? toEntry(row) : null;
+      eventId,
+      userId,
+    );
+    return row ? await toEntry(row) : null;
   },
 
   /** 個人 Entry を作成（参加登録時）。既にあればそれを返す */
-  createIndividual(eventId: string, userId: string, name: string): Entry {
-    const existing = this.findIndividualEntry(eventId, userId);
+  async createIndividual(
+    eventId: string,
+    userId: string,
+    name: string,
+  ): Promise<Entry> {
+    const existing = await this.findIndividualEntry(eventId, userId);
     if (existing) return existing;
-    const id = randomUUID();
-    const tx = db.transaction(() => {
-      db.prepare(
-        `INSERT INTO entry (id, event_id, kind, name, created_at)
+    const id = crypto.randomUUID();
+    await batch([
+      {
+        sql: `INSERT INTO entry (id, event_id, kind, name, created_at)
          VALUES (?, ?, 'individual', ?, ?)`,
-      ).run(id, eventId, name, Date.now());
-      db.prepare(
-        `INSERT INTO entry_member (id, entry_id, user_id, is_leader)
+        args: [id, eventId, name, Date.now()],
+      },
+      {
+        sql: `INSERT INTO entry_member (id, entry_id, user_id, is_leader)
          VALUES (?, ?, ?, 1)`,
-      ).run(randomUUID(), id, userId);
-    });
-    tx();
-    return this.findById(id)!;
+        args: [crypto.randomUUID(), id, userId],
+      },
+    ]);
+    return (await this.findById(id))!;
   },
 
   /** 個人参加解除: そのユーザーの個人 Entry を削除 */
-  removeIndividualEntry(eventId: string, userId: string): void {
-    const entry = this.findIndividualEntry(eventId, userId);
-    if (entry) db.prepare("DELETE FROM entry WHERE id = ?").run(entry.id);
+  async removeIndividualEntry(eventId: string, userId: string): Promise<void> {
+    const entry = await this.findIndividualEntry(eventId, userId);
+    if (entry) await run("DELETE FROM entry WHERE id = ?", entry.id);
   },
 
-  isMember(entryId: string, userId: string): boolean {
-    const row = db
-      .prepare(
-        "SELECT 1 FROM entry_member WHERE entry_id = ? AND user_id = ?",
-      )
-      .get(entryId, userId);
+  async isMember(entryId: string, userId: string): Promise<boolean> {
+    const row = await one(
+      "SELECT 1 FROM entry_member WHERE entry_id = ? AND user_id = ?",
+      entryId,
+      userId,
+    );
     return Boolean(row);
   },
 
-  upsertSubmission(
+  async upsertSubmission(
     entryId: string,
     presentationUrl: string | null,
     sourceCodeUrl: string | null,
-  ): Submission {
-    const existing = db
-      .prepare("SELECT id FROM submission WHERE entry_id = ?")
-      .get(entryId) as { id: string } | undefined;
+  ): Promise<Submission> {
+    const existing = await one<{ id: string }>(
+      "SELECT id FROM submission WHERE entry_id = ?",
+      entryId,
+    );
     if (existing) {
-      db.prepare(
+      await run(
         `UPDATE submission SET presentation_url = ?, source_code_url = ?, updated_at = ?
          WHERE entry_id = ?`,
-      ).run(presentationUrl, sourceCodeUrl, Date.now(), entryId);
+        presentationUrl,
+        sourceCodeUrl,
+        Date.now(),
+        entryId,
+      );
     } else {
-      db.prepare(
+      await run(
         `INSERT INTO submission (id, entry_id, presentation_url, source_code_url, updated_at)
          VALUES (?, ?, ?, ?, ?)`,
-      ).run(randomUUID(), entryId, presentationUrl, sourceCodeUrl, Date.now());
+        crypto.randomUUID(),
+        entryId,
+        presentationUrl,
+        sourceCodeUrl,
+        Date.now(),
+      );
     }
-    return submissionFor(entryId)!;
+    return (await submissionFor(entryId))!;
   },
 };

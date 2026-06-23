@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { db } from "../client.js";
+import { one, run } from "../client.js";
 
 export interface Session {
   id: string;
@@ -20,28 +19,29 @@ function toSession(row: SessionRow): Session {
 const TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 
 export const sessionsRepo = {
-  create(userId: string): Session {
-    const id = randomUUID();
+  async create(userId: string): Promise<Session> {
+    const id = crypto.randomUUID();
     const expiresAt = Date.now() + TTL_MS;
-    db.prepare(
+    await run(
       "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
-    ).run(id, userId, expiresAt);
+      id,
+      userId,
+      expiresAt,
+    );
     return { id, userId, expiresAt };
   },
 
-  find(id: string): Session | null {
-    const row = db.prepare("SELECT * FROM session WHERE id = ?").get(id) as
-      | SessionRow
-      | undefined;
+  async find(id: string): Promise<Session | null> {
+    const row = await one<SessionRow>("SELECT * FROM session WHERE id = ?", id);
     if (!row) return null;
     if (row.expires_at < Date.now()) {
-      this.delete(id);
+      await this.delete(id);
       return null;
     }
     return toSession(row);
   },
 
-  delete(id: string): void {
-    db.prepare("DELETE FROM session WHERE id = ?").run(id);
+  async delete(id: string): Promise<void> {
+    await run("DELETE FROM session WHERE id = ?", id);
   },
 };

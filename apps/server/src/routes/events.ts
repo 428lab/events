@@ -35,11 +35,11 @@ import { deleteEventImage, putEventImage } from "./images.js";
 export const eventRoutes = new Hono<AppEnv>();
 
 /** 公開イベントは誰でも閲覧可。下書きはメンバー/管理者のみ。 */
-function canView(event: Event, user: User | null): boolean {
+async function canView(event: Event, user: User | null): Promise<boolean> {
   if (event.status === "published") return true;
   if (!user) return false;
   if (isAppAdmin(user)) return true;
-  return Boolean(eventMembersRepo.find(event.id, user.id));
+  return Boolean(await eventMembersRepo.find(event.id, user.id));
 }
 
 /* =========================================================
@@ -47,48 +47,48 @@ function canView(event: Event, user: User | null): boolean {
  * =======================================================*/
 
 /** イベント詳細（公開イベントは未ログインでも閲覧可） */
-eventRoutes.get("/:id", (c) => {
-  const event = eventsRepo.findById(c.req.param("id"));
+eventRoutes.get("/:id", async (c) => {
+  const event = await eventsRepo.findById(c.req.param("id"));
   if (!event) return c.json({ error: "not_found" }, 404);
-  const user = currentUser(c);
-  if (!canView(event, user)) return c.json({ error: "not_found" }, 404);
-  const member = user ? eventMembersRepo.find(event.id, user.id) : null;
+  const user = await currentUser(c);
+  if (!(await canView(event, user))) return c.json({ error: "not_found" }, 404);
+  const member = user ? await eventMembersRepo.find(event.id, user.id) : null;
   return c.json({ event, myRole: member?.role ?? null });
 });
 
 /** Entry 一覧（公開イベントは未ログインでも閲覧可） */
-eventRoutes.get("/:id/entries", (c) => {
-  const event = eventsRepo.findById(c.req.param("id"));
+eventRoutes.get("/:id/entries", async (c) => {
+  const event = await eventsRepo.findById(c.req.param("id"));
   if (!event) return c.json({ error: "not_found" }, 404);
-  if (!canView(event, currentUser(c))) return c.json({ error: "forbidden" }, 403);
-  return c.json({ entries: entriesRepo.listByEvent(event.id) });
+  if (!(await canView(event, await currentUser(c)))) return c.json({ error: "forbidden" }, 403);
+  return c.json({ entries: await entriesRepo.listByEvent(event.id) });
 });
 
 /** 成果物集約（公開イベントは未ログインでも閲覧可。提出済みのみ） */
-eventRoutes.get("/:id/submissions", (c) => {
-  const event = eventsRepo.findById(c.req.param("id"));
+eventRoutes.get("/:id/submissions", async (c) => {
+  const event = await eventsRepo.findById(c.req.param("id"));
   if (!event) return c.json({ error: "not_found" }, 404);
-  if (!canView(event, currentUser(c))) return c.json({ error: "forbidden" }, 403);
-  const entries = entriesRepo
-    .listByEvent(event.id)
-    .filter((e) => e.submission);
+  if (!(await canView(event, await currentUser(c)))) return c.json({ error: "forbidden" }, 403);
+  const entries = (await entriesRepo.listByEvent(event.id)).filter(
+    (e) => e.submission,
+  );
   return c.json({ entries });
 });
 
 /** 参加者一覧（公開イベントは未ログインでも閲覧可） */
-eventRoutes.get("/:id/members", (c) => {
-  const event = eventsRepo.findById(c.req.param("id"));
+eventRoutes.get("/:id/members", async (c) => {
+  const event = await eventsRepo.findById(c.req.param("id"));
   if (!event) return c.json({ error: "not_found" }, 404);
-  if (!canView(event, currentUser(c))) return c.json({ error: "forbidden" }, 403);
-  return c.json({ members: eventMembersRepo.listWithUsers(event.id) });
+  if (!(await canView(event, await currentUser(c)))) return c.json({ error: "forbidden" }, 403);
+  return c.json({ members: await eventMembersRepo.listWithUsers(event.id) });
 });
 
 /** 参加枠一覧（公開イベントは未ログインでも閲覧可） */
-eventRoutes.get("/:id/slots", (c) => {
-  const event = eventsRepo.findById(c.req.param("id"));
+eventRoutes.get("/:id/slots", async (c) => {
+  const event = await eventsRepo.findById(c.req.param("id"));
   if (!event) return c.json({ error: "not_found" }, 404);
-  if (!canView(event, currentUser(c))) return c.json({ error: "forbidden" }, 403);
-  return c.json({ slots: participationSlotsRepo.listByEvent(event.id) });
+  if (!(await canView(event, await currentUser(c)))) return c.json({ error: "forbidden" }, 403);
+  return c.json({ slots: await participationSlotsRepo.listByEvent(event.id) });
 });
 
 /* =========================================================
@@ -97,17 +97,17 @@ eventRoutes.get("/:id/slots", (c) => {
 eventRoutes.use("*", requireAuth);
 
 /** 公開イベント一覧 */
-eventRoutes.get("/", (c) => {
-  return c.json({ events: eventsRepo.listPublished() });
+eventRoutes.get("/", async (c) => {
+  return c.json({ events: await eventsRepo.listPublished() });
 });
 
 /** イベント作成（作成者は staff として自動参加） */
-eventRoutes.post("/", zValidator("json", createEventInput), (c) => {
+eventRoutes.post("/", zValidator("json", createEventInput), async (c) => {
   const user = c.get("user");
   const input = valid<CreateEventInput>(c, "json");
-  const event = eventsRepo.create(input, user.id);
-  eventMembersRepo.add(event.id, user.id, "staff");
-  scoringCriteriaRepo.seedDefaults(event.id);
+  const event = await eventsRepo.create(input, user.id);
+  await eventMembersRepo.add(event.id, user.id, "staff");
+  await scoringCriteriaRepo.seedDefaults(event.id);
   return c.json({ event }, 201);
 });
 
@@ -116,8 +116,8 @@ eventRoutes.patch(
   "/:id",
   requireEventRole(["staff"]),
   zValidator("json", updateEventInput),
-  (c) => {
-    const event = eventsRepo.update(
+  async (c) => {
+    const event = await eventsRepo.update(
       c.req.param("id"),
       valid<UpdateEventInput>(c, "json"),
     );
@@ -131,30 +131,30 @@ eventRoutes.put("/:id/image", requireEventRole(["staff"]), putEventImage);
 eventRoutes.delete("/:id/image", requireEventRole(["staff"]), deleteEventImage);
 
 /** 公開（staff のみ） */
-eventRoutes.post("/:id/publish", requireEventRole(["staff"]), (c) => {
-  const event = eventsRepo.setStatus(c.req.param("id"), "published");
+eventRoutes.post("/:id/publish", requireEventRole(["staff"]), async (c) => {
+  const event = await eventsRepo.setStatus(c.req.param("id"), "published");
   if (!event) return c.json({ error: "not_found" }, 404);
   return c.json({ event });
 });
 
 /** イベント削除（staff のみ。関連データは FK CASCADE で削除） */
-eventRoutes.delete("/:id", requireEventRole(["staff"]), (c) => {
-  eventsRepo.delete(c.req.param("id"));
+eventRoutes.delete("/:id", requireEventRole(["staff"]), async (c) => {
+  await eventsRepo.delete(c.req.param("id"));
   return c.json({ ok: true });
 });
 
 /** 参加登録（枠選択。先着=確定/満員はキャンセル待ち、抽選=申込） */
-eventRoutes.post("/:id/join", zValidator("json", joinEventInput), (c) => {
+eventRoutes.post("/:id/join", zValidator("json", joinEventInput), async (c) => {
   const user = c.get("user");
   const eventId = c.req.param("id");
-  const event = eventsRepo.findById(eventId);
+  const event = await eventsRepo.findById(eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const existing = eventMembersRepo.find(eventId, user.id);
+  const existing = await eventMembersRepo.find(eventId, user.id);
   if (existing) return c.json({ member: existing });
 
   const input = valid<JoinEventInput>(c, "json");
-  const slots = participationSlotsRepo.listByEvent(eventId);
+  const slots = await participationSlotsRepo.listByEvent(eventId);
   let slotId: string | null = null;
   let status = "confirmed";
 
@@ -169,7 +169,7 @@ eventRoutes.post("/:id/join", zValidator("json", joinEventInput), (c) => {
     }
   }
 
-  const member = eventMembersRepo.add(
+  const member = await eventMembersRepo.add(
     eventId,
     user.id,
     "participant",
@@ -177,7 +177,7 @@ eventRoutes.post("/:id/join", zValidator("json", joinEventInput), (c) => {
     status,
   );
   if (status === "confirmed") {
-    entriesRepo.createIndividual(
+    await entriesRepo.createIndividual(
       eventId,
       user.id,
       user.globalName ?? user.username,
@@ -187,11 +187,11 @@ eventRoutes.post("/:id/join", zValidator("json", joinEventInput), (c) => {
 });
 
 /** 参加解除（メンバーと個人 Entry を削除） */
-eventRoutes.delete("/:id/join", (c) => {
+eventRoutes.delete("/:id/join", async (c) => {
   const user = c.get("user");
   const eventId = c.req.param("id");
-  entriesRepo.removeIndividualEntry(eventId, user.id);
-  eventMembersRepo.remove(eventId, user.id);
+  await entriesRepo.removeIndividualEntry(eventId, user.id);
+  await eventMembersRepo.remove(eventId, user.id);
   return c.json({ ok: true });
 });
 
@@ -200,8 +200,8 @@ eventRoutes.patch(
   "/:id/members/:userId/role",
   requireEventRole(["staff"]),
   zValidator("json", updateMemberRoleInput),
-  (c) => {
-    const member = eventMembersRepo.setRole(
+  async (c) => {
+    const member = await eventMembersRepo.setRole(
       c.req.param("id"),
       c.req.param("userId"),
       valid<UpdateMemberRoleInput>(c, "json").role,
@@ -216,8 +216,8 @@ eventRoutes.post(
   "/:id/slots",
   requireEventRole(["staff"]),
   zValidator("json", createSlotInput),
-  (c) => {
-    const slot = participationSlotsRepo.create(
+  async (c) => {
+    const slot = await participationSlotsRepo.create(
       c.req.param("id"),
       valid<CreateSlotInput>(c, "json"),
     );
@@ -229,8 +229,8 @@ eventRoutes.patch(
   "/:id/slots/:slotId",
   requireEventRole(["staff"]),
   zValidator("json", updateSlotInput),
-  (c) => {
-    const slot = participationSlotsRepo.update(
+  async (c) => {
+    const slot = await participationSlotsRepo.update(
       c.req.param("slotId"),
       valid<UpdateSlotInput>(c, "json"),
     );
@@ -239,33 +239,33 @@ eventRoutes.patch(
   },
 );
 
-eventRoutes.delete("/:id/slots/:slotId", requireEventRole(["staff"]), (c) => {
-  participationSlotsRepo.delete(c.req.param("slotId"));
+eventRoutes.delete("/:id/slots/:slotId", requireEventRole(["staff"]), async (c) => {
+  await participationSlotsRepo.delete(c.req.param("slotId"));
   return c.json({ ok: true });
 });
 
 /** 抽選実行（staff のみ）。applied から定員までを当選=confirmed、残りを落選=lost に */
-eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), (c) => {
+eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), async (c) => {
   const eventId = c.req.param("id");
-  const slot = participationSlotsRepo.findById(c.req.param("slotId"));
+  const slot = await participationSlotsRepo.findById(c.req.param("slotId"));
   if (!slot || slot.eventId !== eventId) return c.json({ error: "not_found" }, 404);
   if (slot.selectionType !== "lottery") {
     return c.json({ error: "not_lottery" }, 400);
   }
-  const applied = eventMembersRepo.membersBySlotStatus(slot.id, "applied");
+  const applied = await eventMembersRepo.membersBySlotStatus(slot.id, "applied");
   const shuffled = [...applied].sort(() => Math.random() - 0.5);
   const winners = shuffled.slice(0, slot.capacity);
   const winnerIds = new Set(winners.map((w) => w.id));
 
   for (const m of applied) {
     if (winnerIds.has(m.id)) {
-      eventMembersRepo.setStatus(m.id, "confirmed");
-      const u = usersRepo.findById(m.userId);
+      await eventMembersRepo.setStatus(m.id, "confirmed");
+      const u = await usersRepo.findById(m.userId);
       if (u) {
-        entriesRepo.createIndividual(eventId, m.userId, u.globalName ?? u.username);
+        await entriesRepo.createIndividual(eventId, m.userId, u.globalName ?? u.username);
       }
     } else {
-      eventMembersRepo.setStatus(m.id, "lost");
+      await eventMembersRepo.setStatus(m.id, "lost");
     }
   }
   return c.json({
@@ -279,19 +279,19 @@ eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), (c) => 
 eventRoutes.put(
   "/:id/entries/:entryId/submission",
   zValidator("json", updateSubmissionInput),
-  (c) => {
+  async (c) => {
     const user = c.get("user");
     const entryId = c.req.param("entryId");
-    const entry = entriesRepo.findById(entryId);
+    const entry = await entriesRepo.findById(entryId);
     if (!entry || entry.eventId !== c.req.param("id")) {
       return c.json({ error: "not_found" }, 404);
     }
-    if (!entriesRepo.isMember(entryId, user.id)) {
+    if (!(await entriesRepo.isMember(entryId, user.id))) {
       return c.json({ error: "forbidden" }, 403);
     }
     const input = valid<UpdateSubmissionInput>(c, "json");
     const norm = (v: string | null | undefined) => (v ? v : null);
-    const submission = entriesRepo.upsertSubmission(
+    const submission = await entriesRepo.upsertSubmission(
       entryId,
       norm(input.presentationUrl),
       norm(input.sourceCodeUrl),

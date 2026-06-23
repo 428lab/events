@@ -1,5 +1,5 @@
 import type { EventMode, EventState } from "@eventer/shared";
-import { db } from "../client.js";
+import { one, run } from "../client.js";
 
 interface StateRow {
   event_id: string;
@@ -23,46 +23,70 @@ function toState(row: StateRow): EventState {
 
 export const eventStateRepo = {
   /** 取得。無ければデフォルト(normal)を作成 */
-  getOrInit(eventId: string): EventState {
-    const row = db
-      .prepare("SELECT * FROM event_state WHERE event_id = ?")
-      .get(eventId) as StateRow | undefined;
+  async getOrInit(eventId: string): Promise<EventState> {
+    const row = await one<StateRow>(
+      "SELECT * FROM event_state WHERE event_id = ?",
+      eventId,
+    );
     if (row) return toState(row);
-    db.prepare(
+    await run(
       "INSERT INTO event_state (event_id, mode, scoring_locked, updated_at) VALUES (?, 'normal', 0, ?)",
-    ).run(eventId, Date.now());
+      eventId,
+      Date.now(),
+    );
     return this.getOrInit(eventId);
   },
 
-  setMode(eventId: string, mode: EventMode): EventState {
-    this.getOrInit(eventId);
-    db.prepare(
+  async setMode(eventId: string, mode: EventMode): Promise<EventState> {
+    await this.getOrInit(eventId);
+    await run(
       "UPDATE event_state SET mode = ?, updated_at = ? WHERE event_id = ?",
-    ).run(mode, Date.now(), eventId);
+      mode,
+      Date.now(),
+      eventId,
+    );
     return this.getOrInit(eventId);
   },
 
-  setPresenting(eventId: string, presentingEntryId: string | null): EventState {
-    this.getOrInit(eventId);
-    db.prepare(
+  async setPresenting(
+    eventId: string,
+    presentingEntryId: string | null,
+  ): Promise<EventState> {
+    await this.getOrInit(eventId);
+    await run(
       "UPDATE event_state SET presenting_entry_id = ?, updated_at = ? WHERE event_id = ?",
-    ).run(presentingEntryId, Date.now(), eventId);
+      presentingEntryId,
+      Date.now(),
+      eventId,
+    );
     return this.getOrInit(eventId);
   },
 
-  setScoringLocked(eventId: string, locked: boolean): EventState {
-    this.getOrInit(eventId);
-    db.prepare(
+  async setScoringLocked(
+    eventId: string,
+    locked: boolean,
+  ): Promise<EventState> {
+    await this.getOrInit(eventId);
+    await run(
       "UPDATE event_state SET scoring_locked = ?, updated_at = ? WHERE event_id = ?",
-    ).run(locked ? 1 : 0, Date.now(), eventId);
+      locked ? 1 : 0,
+      Date.now(),
+      eventId,
+    );
     return this.getOrInit(eventId);
   },
 
-  setAwardsCursor(eventId: string, cursor: number | null): EventState {
-    this.getOrInit(eventId);
-    db.prepare(
+  async setAwardsCursor(
+    eventId: string,
+    cursor: number | null,
+  ): Promise<EventState> {
+    await this.getOrInit(eventId);
+    await run(
       "UPDATE event_state SET awards_reveal_cursor = ?, updated_at = ? WHERE event_id = ?",
-    ).run(cursor, Date.now(), eventId);
+      cursor,
+      Date.now(),
+      eventId,
+    );
     return this.getOrInit(eventId);
   },
 };

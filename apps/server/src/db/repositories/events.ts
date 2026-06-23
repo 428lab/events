@@ -3,8 +3,7 @@ import type {
   Event,
   UpdateEventInput,
 } from "@eventer/shared";
-import { randomUUID } from "node:crypto";
-import { db } from "../client.js";
+import { many, one, run } from "../client.js";
 
 interface EventRow {
   id: string;
@@ -51,58 +50,58 @@ function toEvent(row: EventRow): Event {
 }
 
 export const eventsRepo = {
-  findById(id: string): Event | null {
-    const row = db.prepare(`${SELECT_EVENT} WHERE id = ?`).get(id) as
-      | EventRow
-      | undefined;
+  async findById(id: string): Promise<Event | null> {
+    const row = await one<EventRow>(`${SELECT_EVENT} WHERE id = ?`, id);
     return row ? toEvent(row) : null;
   },
 
-  listPublished(): Event[] {
-    const rows = db
-      .prepare(`${SELECT_EVENT} WHERE status = 'published' ORDER BY starts_at DESC`)
-      .all() as EventRow[];
+  async listPublished(): Promise<Event[]> {
+    const rows = await many<EventRow>(
+      `${SELECT_EVENT} WHERE status = 'published' ORDER BY starts_at DESC`,
+    );
     return rows.map(toEvent);
   },
 
   /** 開催前＋開催中（ends_at > now）の公開イベントを開催直前順（開始昇順）でページング取得 */
-  listUpcomingPublished(now: number, limit: number, offset: number): Event[] {
-    const rows = db
-      .prepare(
-        `${SELECT_EVENT}
+  async listUpcomingPublished(
+    now: number,
+    limit: number,
+    offset: number,
+  ): Promise<Event[]> {
+    const rows = await many<EventRow>(
+      `${SELECT_EVENT}
          WHERE status = 'published' AND ends_at > ?
          ORDER BY starts_at ASC
          LIMIT ? OFFSET ?`,
-      )
-      .all(now, limit, offset) as EventRow[];
+      now,
+      limit,
+      offset,
+    );
     return rows.map(toEvent);
   },
 
-  countUpcomingPublished(now: number): number {
-    return (db
-      .prepare(
-        "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND ends_at > ?",
-      )
-      .get(now) as { n: number }).n;
+  async countUpcomingPublished(now: number): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND ends_at > ?",
+      now,
+    );
+    return row?.n ?? 0;
   },
 
   /** 管理向け: 全イベント */
-  listAll(): Event[] {
-    const rows = db
-      .prepare(`${SELECT_EVENT} ORDER BY created_at DESC`)
-      .all() as EventRow[];
+  async listAll(): Promise<Event[]> {
+    const rows = await many<EventRow>(`${SELECT_EVENT} ORDER BY created_at DESC`);
     return rows.map(toEvent);
   },
 
-  create(input: CreateEventInput, createdBy: string): Event {
-    const id = randomUUID();
-    db.prepare(
+  async create(input: CreateEventInput, createdBy: string): Promise<Event> {
+    const id = crypto.randomUUID();
+    await run(
       `INSERT INTO event
         (id, title, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, status, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, 'draft', ?, ?)`,
-    ).run(
       id,
       input.title,
       input.description ?? "",
@@ -115,20 +114,19 @@ export const eventsRepo = {
       createdBy,
       Date.now(),
     );
-    return this.findById(id)!;
+    return (await this.findById(id))!;
   },
 
-  update(id: string, input: UpdateEventInput): Event | null {
-    const current = this.findById(id);
+  async update(id: string, input: UpdateEventInput): Promise<Event | null> {
+    const current = await this.findById(id);
     if (!current) return null;
     const next = { ...current, ...input };
-    db.prepare(
+    await run(
       `UPDATE event SET
          title = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, status = ?
        WHERE id = ?`,
-    ).run(
       next.title,
       next.description,
       next.startsAt,
@@ -143,13 +141,13 @@ export const eventsRepo = {
     return this.findById(id);
   },
 
-  setStatus(id: string, status: Event["status"]): Event | null {
-    db.prepare("UPDATE event SET status = ? WHERE id = ?").run(status, id);
+  async setStatus(id: string, status: Event["status"]): Promise<Event | null> {
+    await run("UPDATE event SET status = ? WHERE id = ?", status, id);
     return this.findById(id);
   },
 
-  delete(id: string): void {
+  async delete(id: string): Promise<void> {
     // 関連（メンバー/エントリー/採点/画像/状態）は FK の ON DELETE CASCADE で削除
-    db.prepare("DELETE FROM event WHERE id = ?").run(id);
+    await run("DELETE FROM event WHERE id = ?", id);
   },
 };

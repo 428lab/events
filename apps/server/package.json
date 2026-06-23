@@ -4,25 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cd ../.. && tsx watch apps/server/src/index.ts",
-    "build": "rm -rf dist && esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --define:process.env.NODE_ENV=\\\"production\\\" --minify-syntax --outfile=dist/index.js --external:better-sqlite3 --external:hono --external:hono/* --external:@hono/node-server --external:@hono/node-server/* --external:dotenv --external:zod && rm -rf dist/migrations && cp -r src/db/migrations dist/migrations",
-    "start": "node dist/index.js",
+    "dev": "cd ../.. && wrangler dev",
+    "deploy": "cd ../.. && wrangler deploy",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "migrate": "cd ../.. && tsx apps/server/src/db/migrate.ts"
+    "db:migrate:local": "cd ../.. && wrangler d1 migrations apply eventer --local",
+    "db:migrate:remote": "cd ../.. && wrangler d1 migrations apply eventer --remote"
   },
   "dependencies": {
     "@eventer/shared": "workspace:*",
-    "@hono/node-server": "^1.13.7",
-    "better-sqlite3": "^11.5.0",
-    "dotenv": "^16.4.5",
     "hono": "^4.6.9",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250510.0",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.9.0",
-    "esbuild": "^0.24.0",
+    "better-sqlite3": "^11.5.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "wrangler": "^4.85.0"
   }
 }

@@ -3,8 +3,7 @@ import type {
   ScoringCriterion,
   UpdateCriterionInput,
 } from "@eventer/shared";
-import { randomUUID } from "node:crypto";
-import { db } from "../client.js";
+import { batch, many, one, run } from "../client.js";
 
 interface CriterionRow {
   id: string;
@@ -34,64 +33,77 @@ const DEFAULT_CRITERIA: Array<{ name: string; description: string }> = [
 ];
 
 export const scoringCriteriaRepo = {
-  listByEvent(eventId: string): ScoringCriterion[] {
-    const rows = db
-      .prepare(
-        "SELECT * FROM scoring_criterion WHERE event_id = ? ORDER BY sort_order ASC, rowid ASC",
-      )
-      .all(eventId) as CriterionRow[];
+  async listByEvent(eventId: string): Promise<ScoringCriterion[]> {
+    const rows = await many<CriterionRow>(
+      "SELECT * FROM scoring_criterion WHERE event_id = ? ORDER BY sort_order ASC, rowid ASC",
+      eventId,
+    );
     return rows.map(toCriterion);
   },
 
-  findById(id: string): ScoringCriterion | null {
-    const row = db
-      .prepare("SELECT * FROM scoring_criterion WHERE id = ?")
-      .get(id) as CriterionRow | undefined;
+  async findById(id: string): Promise<ScoringCriterion | null> {
+    const row = await one<CriterionRow>(
+      "SELECT * FROM scoring_criterion WHERE id = ?",
+      id,
+    );
     return row ? toCriterion(row) : null;
   },
 
-  create(eventId: string, input: CreateCriterionInput): ScoringCriterion {
-    const id = randomUUID();
-    const next = (db
-      .prepare(
-        "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM scoring_criterion WHERE event_id = ?",
-      )
-      .get(eventId) as { n: number }).n;
-    db.prepare(
+  async create(
+    eventId: string,
+    input: CreateCriterionInput,
+  ): Promise<ScoringCriterion> {
+    const id = crypto.randomUUID();
+    const next = (await one<{ n: number }>(
+      "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM scoring_criterion WHERE event_id = ?",
+      eventId,
+    ))!.n;
+    await run(
       `INSERT INTO scoring_criterion (id, event_id, name, description, sort_order, max_level)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(id, eventId, input.name, input.description ?? null, next, input.maxLevel);
-    return this.findById(id)!;
+      id,
+      eventId,
+      input.name,
+      input.description ?? null,
+      next,
+      input.maxLevel,
+    );
+    return (await this.findById(id))!;
   },
 
-  update(id: string, input: UpdateCriterionInput): ScoringCriterion | null {
-    const current = this.findById(id);
+  async update(
+    id: string,
+    input: UpdateCriterionInput,
+  ): Promise<ScoringCriterion | null> {
+    const current = await this.findById(id);
     if (!current) return null;
     const next = { ...current, ...input };
-    db.prepare(
+    await run(
       `UPDATE scoring_criterion SET name = ?, description = ?, sort_order = ?, max_level = ?
        WHERE id = ?`,
-    ).run(next.name, next.description ?? null, next.sortOrder, next.maxLevel, id);
+      next.name,
+      next.description ?? null,
+      next.sortOrder,
+      next.maxLevel,
+      id,
+    );
     return this.findById(id);
   },
 
-  delete(id: string): void {
-    db.prepare("DELETE FROM scoring_criterion WHERE id = ?").run(id);
+  async delete(id: string): Promise<void> {
+    await run("DELETE FROM scoring_criterion WHERE id = ?", id);
   },
 
   /** デフォルト採点項目をシード（既に項目があれば何もしない） */
-  seedDefaults(eventId: string): ScoringCriterion[] {
-    const existing = this.listByEvent(eventId);
+  async seedDefaults(eventId: string): Promise<ScoringCriterion[]> {
+    const existing = await this.listByEvent(eventId);
     if (existing.length > 0) return existing;
-    const tx = db.transaction(() => {
-      DEFAULT_CRITERIA.forEach((c, i) => {
-        db.prepare(
-          `INSERT INTO scoring_criterion (id, event_id, name, description, sort_order, max_level)
+    const stmts = DEFAULT_CRITERIA.map((c, i) => ({
+      sql: `INSERT INTO scoring_criterion (id, event_id, name, description, sort_order, max_level)
            VALUES (?, ?, ?, ?, ?, 4)`,
-        ).run(randomUUID(), eventId, c.name, c.description, i);
-      });
-    });
-    tx();
+      args: [crypto.randomUUID(), eventId, c.name, c.description, i],
+    }));
+    await batch(stmts);
     return this.listByEvent(eventId);
   },
 };

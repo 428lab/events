@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import { randomUUID } from "node:crypto";
 import { env } from "../env.js";
 import { usersRepo } from "../db/repositories/users.js";
 import {
@@ -29,14 +28,14 @@ function avatarUrl(u: DiscordUser): string | null {
 
 export const authRoutes = new Hono();
 
-authRoutes.get("/me", (c) => {
-  const user = currentUser(c);
+authRoutes.get("/me", async (c) => {
+  const user = await currentUser(c);
   if (!user) return c.json({ error: "unauthorized" }, 401);
   return c.json({ user, isAdmin: isAppAdmin(user) });
 });
 
-authRoutes.post("/logout", (c) => {
-  clearSession(c);
+authRoutes.post("/logout", async (c) => {
+  await clearSession(c);
   return c.json({ ok: true });
 });
 
@@ -44,7 +43,7 @@ authRoutes.get("/discord/login", (c) => {
   if (!env.discordConfigured) {
     return c.json({ error: "discord_not_configured" }, 503);
   }
-  const state = randomUUID();
+  const state = crypto.randomUUID();
   setCookie(c, STATE_COOKIE, state, {
     httpOnly: true,
     sameSite: "Lax",
@@ -91,33 +90,29 @@ authRoutes.get("/discord/callback", async (c) => {
   if (!meRes.ok) return c.json({ error: "fetch_profile_failed" }, 502);
   const profile = (await meRes.json()) as DiscordUser;
 
-  const user = usersRepo.upsertByDiscordId({
+  const user = await usersRepo.upsertByDiscordId({
     discordId: profile.id,
     username: profile.username,
     globalName: profile.global_name,
     avatarUrl: avatarUrl(profile),
   });
 
-  issueSession(c, user.id);
+  await issueSession(c, user.id);
   return c.redirect(env.appBaseUrl + "/me");
 });
 
 /**
- * 開発専用ログイン。Discord 設定の有無に関わらず開発時は常に利用可能
- * （開発では Discord ログインと dev-login を併用できる）。
- * `process.env.NODE_ENV !== "production"` で囲うことで、本番ビルド時に
- * esbuild の --define により静的に false 評価され、このブロックごと
- * バンドルから除去される（本番成果物に dev-login は一切含まれない）。
+ * 開発専用ログイン。常に登録するが、本番（ENVIRONMENT=production）では 404 を返して
+ * 機能しない。ローカル（wrangler dev / ENVIRONMENT=development）でのみ有効。
  */
-if (process.env.NODE_ENV !== "production") {
-  authRoutes.post("/dev-login", (c) => {
-    const user = usersRepo.upsertByDiscordId({
-      discordId: "dev-user",
-      username: "DevUser",
-      globalName: "開発ユーザー",
-      avatarUrl: null,
-    });
-    issueSession(c, user.id);
-    return c.json({ user });
+authRoutes.post("/dev-login", async (c) => {
+  if (env.isProd) return c.json({ error: "not_found" }, 404);
+  const user = await usersRepo.upsertByDiscordId({
+    discordId: "dev-user",
+    username: "DevUser",
+    globalName: "開発ユーザー",
+    avatarUrl: null,
   });
-}
+  await issueSession(c, user.id);
+  return c.json({ user });
+});

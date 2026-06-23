@@ -4,8 +4,7 @@ import type {
   Score,
   ScoringCriterion,
 } from "@eventer/shared";
-import { randomUUID } from "node:crypto";
-import { db } from "../client.js";
+import { many, one, run } from "../client.js";
 import { scoringCriteriaRepo } from "./scoringCriteria.js";
 
 interface ScoreRow {
@@ -16,12 +15,12 @@ interface ScoreRow {
 
 export const scoresRepo = {
   /** ある採点者の採点一覧 */
-  listForJudge(eventId: string, judgeUserId: string): Score[] {
-    const rows = db
-      .prepare(
-        "SELECT entry_id, criterion_id, value FROM score WHERE event_id = ? AND judge_user_id = ?",
-      )
-      .all(eventId, judgeUserId) as ScoreRow[];
+  async listForJudge(eventId: string, judgeUserId: string): Promise<Score[]> {
+    const rows = await many<ScoreRow>(
+      "SELECT entry_id, criterion_id, value FROM score WHERE event_id = ? AND judge_user_id = ?",
+      eventId,
+      judgeUserId,
+    );
     return rows.map((r) => ({
       entryId: r.entry_id,
       criterionId: r.criterion_id,
@@ -29,29 +28,38 @@ export const scoresRepo = {
     }));
   },
 
-  upsert(
+  async upsert(
     eventId: string,
     entryId: string,
     criterionId: string,
     judgeUserId: string,
     value: number,
-  ): void {
-    const existing = db
-      .prepare(
-        "SELECT id FROM score WHERE entry_id = ? AND criterion_id = ? AND judge_user_id = ?",
-      )
-      .get(entryId, criterionId, judgeUserId) as { id: string } | undefined;
+  ): Promise<void> {
+    const existing = await one<{ id: string }>(
+      "SELECT id FROM score WHERE entry_id = ? AND criterion_id = ? AND judge_user_id = ?",
+      entryId,
+      criterionId,
+      judgeUserId,
+    );
     if (existing) {
-      db.prepare("UPDATE score SET value = ?, updated_at = ? WHERE id = ?").run(
+      await run(
+        "UPDATE score SET value = ?, updated_at = ? WHERE id = ?",
         value,
         Date.now(),
         existing.id,
       );
     } else {
-      db.prepare(
+      await run(
         `INSERT INTO score (id, event_id, entry_id, criterion_id, judge_user_id, value, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).run(randomUUID(), eventId, entryId, criterionId, judgeUserId, value, Date.now());
+        crypto.randomUUID(),
+        eventId,
+        entryId,
+        criterionId,
+        judgeUserId,
+        value,
+        Date.now(),
+      );
     }
   },
 
@@ -59,14 +67,18 @@ export const scoresRepo = {
    * 集計。aggregateSelfEntry=false の場合、採点者が対象 Entry のメンバーである
    * 採点を集計から除外する。
    */
-  summary(eventId: string, aggregateSelfEntry: boolean): {
+  async summary(
+    eventId: string,
+    aggregateSelfEntry: boolean,
+  ): Promise<{
     criteria: ScoringCriterion[];
     entries: EntryScoreSummary[];
-  } {
-    const criteria = scoringCriteriaRepo.listByEvent(eventId);
-    const entries = db
-      .prepare("SELECT id, name FROM entry WHERE event_id = ? ORDER BY created_at ASC")
-      .all(eventId) as Array<{ id: string; name: string }>;
+  }> {
+    const criteria = await scoringCriteriaRepo.listByEvent(eventId);
+    const entries = await many<{ id: string; name: string }>(
+      "SELECT id, name FROM entry WHERE event_id = ? ORDER BY created_at ASC",
+      eventId,
+    );
 
     const selfFilter = aggregateSelfEntry
       ? ""
@@ -75,21 +87,20 @@ export const scoresRepo = {
            WHERE em.entry_id = s.entry_id AND em.user_id = s.judge_user_id
          )`;
 
-    const agg = db
-      .prepare(
-        `SELECT s.entry_id, s.criterion_id,
+    const agg = await many<{
+      entry_id: string;
+      criterion_id: string;
+      total: number;
+      judges: number;
+    }>(
+      `SELECT s.entry_id, s.criterion_id,
                 SUM(s.value) AS total,
                 COUNT(DISTINCT s.judge_user_id) AS judges
          FROM score s
          WHERE s.event_id = ? ${selfFilter}
          GROUP BY s.entry_id, s.criterion_id`,
-      )
-      .all(eventId) as Array<{
-      entry_id: string;
-      criterion_id: string;
-      total: number;
-      judges: number;
-    }>;
+      eventId,
+    );
 
     const summaries: EntryScoreSummary[] = entries.map((e) => {
       const perCriterion: Record<string, number> = {};
@@ -116,57 +127,64 @@ export const scoresRepo = {
   },
 
   /** 採点者ごとの入力進捗（誰が未入力か） */
-  progress(
+  async progress(
     eventId: string,
     judgeRoles: string[],
     aggregateSelfEntry: boolean,
-  ): JudgeProgress[] {
-    const criteriaCount = scoringCriteriaRepo.listByEvent(eventId).length;
-    const entryCount = (db
-      .prepare("SELECT COUNT(*) AS n FROM entry WHERE event_id = ?")
-      .get(eventId) as { n: number }).n;
+  ): Promise<JudgeProgress[]> {
+    const criteriaCount = (await scoringCriteriaRepo.listByEvent(eventId)).length;
+    const entryCountRow = await one<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM entry WHERE event_id = ?",
+      eventId,
+    );
+    const entryCount = entryCountRow?.n ?? 0;
 
     const placeholders = judgeRoles.map(() => "?").join(",");
-    const judges = db
-      .prepare(
-        `SELECT m.user_id, m.role, u.username, u.global_name
-         FROM event_member m
-         JOIN user u ON u.id = m.user_id
-         WHERE m.event_id = ? AND m.role IN (${placeholders})
-         ORDER BY m.role, u.username`,
-      )
-      .all(eventId, ...judgeRoles) as Array<{
+    const judges = await many<{
       user_id: string;
       role: string;
       username: string;
       global_name: string | null;
-    }>;
+    }>(
+      `SELECT m.user_id, m.role, u.username, u.global_name
+         FROM event_member m
+         JOIN user u ON u.id = m.user_id
+         WHERE m.event_id = ? AND m.role IN (${placeholders})
+         ORDER BY m.role, u.username`,
+      eventId,
+      ...judgeRoles,
+    );
 
-    return judges.map((j) => {
+    const result: JudgeProgress[] = [];
+    for (const j of judges) {
       // 自己 Entry 除外時は、その採点者が所属する Entry 数を total から減らす
-      const ownEntries = aggregateSelfEntry
-        ? 0
-        : (db
-            .prepare(
-              `SELECT COUNT(DISTINCT em.entry_id) AS n
+      let ownEntries = 0;
+      if (!aggregateSelfEntry) {
+        const ownRow = await one<{ n: number }>(
+          `SELECT COUNT(DISTINCT em.entry_id) AS n
                FROM entry_member em JOIN entry e ON e.id = em.entry_id
                WHERE e.event_id = ? AND em.user_id = ?`,
-            )
-            .get(eventId, j.user_id) as { n: number }).n;
+          eventId,
+          j.user_id,
+        );
+        ownEntries = ownRow?.n ?? 0;
+      }
       const total = (entryCount - ownEntries) * criteriaCount;
-      const filled = (db
-        .prepare(
-          "SELECT COUNT(*) AS n FROM score WHERE event_id = ? AND judge_user_id = ?",
-        )
-        .get(eventId, j.user_id) as { n: number }).n;
-      return {
+      const filledRow = await one<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM score WHERE event_id = ? AND judge_user_id = ?",
+        eventId,
+        j.user_id,
+      );
+      const filled = filledRow?.n ?? 0;
+      result.push({
         userId: j.user_id,
         name: j.global_name ?? j.username,
         role: j.role,
         filled,
         total,
         complete: total > 0 && filled >= total,
-      };
-    });
+      });
+    }
+    return result;
   },
 };

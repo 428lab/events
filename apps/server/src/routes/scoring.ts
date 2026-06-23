@@ -35,31 +35,31 @@ export const scoringRoutes = new Hono<AppEnv>();
  * 公開イベントは未ログイン可、非公開はメンバー/管理者のみ。
  * eventRoutes のブランケット requireAuth を避けるため api に直接登録する。
  */
-export function getEventScoreResults(c: Context) {
+export async function getEventScoreResults(c: Context) {
   const eventId = c.req.param("id")!;
-  const event = eventsRepo.findById(eventId);
+  const event = await eventsRepo.findById(eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
   if (event.status !== "published") {
-    const user = currentUser(c);
+    const user = await currentUser(c);
     if (
       !user ||
-      (!isAppAdmin(user) && !eventMembersRepo.find(eventId, user.id))
+      (!isAppAdmin(user) && !(await eventMembersRepo.find(eventId, user.id)))
     ) {
       return c.json({ error: "forbidden" }, 403);
     }
   }
-  const state = eventStateRepo.getOrInit(eventId);
+  const state = await eventStateRepo.getOrInit(eventId);
   const available = state.scoringLocked || event.endsAt < Date.now();
   if (!available) {
     return c.json({ available: false, criteria: [], entries: [] });
   }
-  const summary = scoresRepo.summary(eventId, event.aggregateSelfEntry);
+  const summary = await scoresRepo.summary(eventId, event.aggregateSelfEntry);
   return c.json({ available: true, ...summary });
 }
 
 /** ===== SSE（cookie 認証。requireAuth より前に定義） ===== */
-scoringRoutes.get("/:id/stream", (c) => {
-  const user = currentUser(c);
+scoringRoutes.get("/:id/stream", async (c) => {
+  const user = await currentUser(c);
   if (!user) return c.json({ error: "unauthorized" }, 401);
   const eventId = c.req.param("id");
 
@@ -67,7 +67,7 @@ scoringRoutes.get("/:id/stream", (c) => {
     // 接続直後に現在の状態を送る
     await stream.writeSSE({
       event: "state",
-      data: JSON.stringify(eventStateRepo.getOrInit(eventId)),
+      data: JSON.stringify(await eventStateRepo.getOrInit(eventId)),
     });
 
     const unsubscribe = sseHub.subscribe(eventId, (event, data) => {
@@ -92,16 +92,16 @@ scoringRoutes.get("/:id/stream", (c) => {
 scoringRoutes.use("*", requireAuth);
 
 /** ===== 採点項目 ===== */
-scoringRoutes.get("/:id/criteria", (c) => {
-  return c.json({ criteria: scoringCriteriaRepo.listByEvent(c.req.param("id")) });
+scoringRoutes.get("/:id/criteria", async (c) => {
+  return c.json({ criteria: await scoringCriteriaRepo.listByEvent(c.req.param("id")) });
 });
 
 scoringRoutes.post(
   "/:id/criteria",
   requireEventRole(["staff"]),
   zValidator("json", createCriterionInput),
-  (c) => {
-    const criterion = scoringCriteriaRepo.create(
+  async (c) => {
+    const criterion = await scoringCriteriaRepo.create(
       c.req.param("id"),
       valid<CreateCriterionInput>(c, "json"),
     );
@@ -113,8 +113,8 @@ scoringRoutes.patch(
   "/:id/criteria/:cid",
   requireEventRole(["staff"]),
   zValidator("json", updateCriterionInput),
-  (c) => {
-    const criterion = scoringCriteriaRepo.update(
+  async (c) => {
+    const criterion = await scoringCriteriaRepo.update(
       c.req.param("cid"),
       valid<UpdateCriterionInput>(c, "json"),
     );
@@ -123,40 +123,40 @@ scoringRoutes.patch(
   },
 );
 
-scoringRoutes.delete("/:id/criteria/:cid", requireEventRole(["staff"]), (c) => {
-  scoringCriteriaRepo.delete(c.req.param("cid"));
+scoringRoutes.delete("/:id/criteria/:cid", requireEventRole(["staff"]), async (c) => {
+  await scoringCriteriaRepo.delete(c.req.param("cid"));
   return c.json({ ok: true });
 });
 
 /** ===== 採点 ===== */
-scoringRoutes.get("/:id/scores/mine", (c) => {
+scoringRoutes.get("/:id/scores/mine", async (c) => {
   const user = c.get("user");
-  return c.json({ scores: scoresRepo.listForJudge(c.req.param("id"), user.id) });
+  return c.json({ scores: await scoresRepo.listForJudge(c.req.param("id"), user.id) });
 });
 
 scoringRoutes.put(
   "/:id/scores",
   requireEventRole(["participant", "judge", "staff"]),
   zValidator("json", putScoreInput),
-  (c) => {
+  async (c) => {
     const user = c.get("user");
     const eventId = c.req.param("id");
-    const event = eventsRepo.findById(eventId);
+    const event = await eventsRepo.findById(eventId);
     if (!event) return c.json({ error: "not_found" }, 404);
 
-    const state = eventStateRepo.getOrInit(eventId);
+    const state = await eventStateRepo.getOrInit(eventId);
     if (state.scoringLocked) return c.json({ error: "scoring_locked" }, 409);
 
     const input = valid<PutScoreInput>(c, "json");
-    const entry = entriesRepo.findById(input.entryId);
+    const entry = await entriesRepo.findById(input.entryId);
     if (!entry || entry.eventId !== eventId) {
       return c.json({ error: "entry_not_found" }, 404);
     }
     // 自己採点制限
-    if (!event.aggregateSelfEntry && entriesRepo.isMember(input.entryId, user.id)) {
+    if (!event.aggregateSelfEntry && (await entriesRepo.isMember(input.entryId, user.id))) {
       return c.json({ error: "self_scoring_forbidden" }, 403);
     }
-    scoresRepo.upsert(
+    await scoresRepo.upsert(
       eventId,
       input.entryId,
       input.criterionId,
@@ -174,21 +174,21 @@ scoringRoutes.put(
 scoringRoutes.get(
   "/:id/scores/summary",
   requireEventRole(["staff", "judge"]),
-  (c) => {
+  async (c) => {
     const eventId = c.req.param("id");
-    const event = eventsRepo.findById(eventId)!;
-    return c.json(scoresRepo.summary(eventId, event.aggregateSelfEntry));
+    const event = (await eventsRepo.findById(eventId))!;
+    return c.json(await scoresRepo.summary(eventId, event.aggregateSelfEntry));
   },
 );
 
 scoringRoutes.get(
   "/:id/scores/progress",
   requireEventRole(["staff"]),
-  (c) => {
+  async (c) => {
     const eventId = c.req.param("id");
-    const event = eventsRepo.findById(eventId)!;
+    const event = (await eventsRepo.findById(eventId))!;
     return c.json({
-      judges: scoresRepo.progress(
+      judges: await scoresRepo.progress(
         eventId,
         ["participant", "judge", "staff"],
         event.aggregateSelfEntry,
@@ -198,17 +198,17 @@ scoringRoutes.get(
 );
 
 /** ===== 進行（モード/プレゼン/締切） ===== */
-scoringRoutes.get("/:id/state", (c) => {
-  return c.json(eventStateRepo.getOrInit(c.req.param("id")));
+scoringRoutes.get("/:id/state", async (c) => {
+  return c.json(await eventStateRepo.getOrInit(c.req.param("id")));
 });
 
 scoringRoutes.patch(
   "/:id/state/mode",
   requireEventRole(["staff"]),
   zValidator("json", setModeInput),
-  (c) => {
+  async (c) => {
     const eventId = c.req.param("id");
-    const state = eventStateRepo.setMode(
+    const state = await eventStateRepo.setMode(
       eventId,
       valid<SetModeInput>(c, "json").mode,
     );
@@ -221,9 +221,9 @@ scoringRoutes.patch(
   "/:id/state/presenting",
   requireEventRole(["staff"]),
   zValidator("json", setPresentingInput),
-  (c) => {
+  async (c) => {
     const eventId = c.req.param("id");
-    const state = eventStateRepo.setPresenting(
+    const state = await eventStateRepo.setPresenting(
       eventId,
       valid<SetPresentingInput>(c, "json").presentingEntryId,
     );
@@ -235,10 +235,10 @@ scoringRoutes.patch(
 scoringRoutes.post(
   "/:id/state/scoring-lock",
   requireEventRole(["staff"]),
-  (c) => {
+  async (c) => {
     const eventId = c.req.param("id");
-    const current = eventStateRepo.getOrInit(eventId);
-    const state = eventStateRepo.setScoringLocked(eventId, !current.scoringLocked);
+    const current = await eventStateRepo.getOrInit(eventId);
+    const state = await eventStateRepo.setScoringLocked(eventId, !current.scoringLocked);
     sseHub.broadcast(eventId, "state", state);
     return c.json(state);
   },

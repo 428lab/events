@@ -4,8 +4,7 @@ import type {
   SelectionType,
   UpdateSlotInput,
 } from "@eventer/shared";
-import { randomUUID } from "node:crypto";
-import { db } from "../client.js";
+import { many, one, run } from "../client.js";
 
 interface SlotRow {
   id: string;
@@ -40,48 +39,63 @@ const SELECT_SLOT = `SELECT s.*,
   FROM participation_slot s`;
 
 export const participationSlotsRepo = {
-  listByEvent(eventId: string): ParticipationSlot[] {
-    const rows = db
-      .prepare(
-        `${SELECT_SLOT} WHERE s.event_id = ? ORDER BY s.sort_order ASC, s.rowid ASC`,
-      )
-      .all(eventId) as SlotRow[];
+  async listByEvent(eventId: string): Promise<ParticipationSlot[]> {
+    const rows = await many<SlotRow>(
+      `${SELECT_SLOT} WHERE s.event_id = ? ORDER BY s.sort_order ASC, s.rowid ASC`,
+      eventId,
+    );
     return rows.map(toSlot);
   },
 
-  findById(id: string): ParticipationSlot | null {
-    const row = db.prepare(`${SELECT_SLOT} WHERE s.id = ?`).get(id) as
-      | SlotRow
-      | undefined;
+  async findById(id: string): Promise<ParticipationSlot | null> {
+    const row = await one<SlotRow>(`${SELECT_SLOT} WHERE s.id = ?`, id);
     return row ? toSlot(row) : null;
   },
 
-  create(eventId: string, input: CreateSlotInput): ParticipationSlot {
-    const id = randomUUID();
-    const next = (db
-      .prepare(
-        "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM participation_slot WHERE event_id = ?",
-      )
-      .get(eventId) as { n: number }).n;
-    db.prepare(
+  async create(
+    eventId: string,
+    input: CreateSlotInput,
+  ): Promise<ParticipationSlot> {
+    const id = crypto.randomUUID();
+    const r = await one<{ n: number }>(
+      "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM participation_slot WHERE event_id = ?",
+      eventId,
+    );
+    const next = r?.n ?? 0;
+    await run(
       `INSERT INTO participation_slot (id, event_id, name, capacity, selection_type, sort_order, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, eventId, input.name, input.capacity, input.selectionType, next, Date.now());
-    return this.findById(id)!;
+      id,
+      eventId,
+      input.name,
+      input.capacity,
+      input.selectionType,
+      next,
+      Date.now(),
+    );
+    return (await this.findById(id))!;
   },
 
-  update(id: string, input: UpdateSlotInput): ParticipationSlot | null {
-    const current = this.findById(id);
+  async update(
+    id: string,
+    input: UpdateSlotInput,
+  ): Promise<ParticipationSlot | null> {
+    const current = await this.findById(id);
     if (!current) return null;
     const next = { ...current, ...input };
-    db.prepare(
+    await run(
       `UPDATE participation_slot SET name = ?, capacity = ?, selection_type = ?, sort_order = ?
        WHERE id = ?`,
-    ).run(next.name, next.capacity, next.selectionType, next.sortOrder, id);
+      next.name,
+      next.capacity,
+      next.selectionType,
+      next.sortOrder,
+      id,
+    );
     return this.findById(id);
   },
 
-  delete(id: string): void {
-    db.prepare("DELETE FROM participation_slot WHERE id = ?").run(id);
+  async delete(id: string): Promise<void> {
+    await run("DELETE FROM participation_slot WHERE id = ?", id);
   },
 };

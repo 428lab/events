@@ -29,29 +29,29 @@ import { sseHub } from "../sse/hub.js";
 
 export const awardRoutes = new Hono<AppEnv>();
 
-function canView(eventId: string, c: Context): boolean {
-  const event = eventsRepo.findById(eventId);
+async function canView(eventId: string, c: Context): Promise<boolean> {
+  const event = await eventsRepo.findById(eventId);
   if (!event) return false;
   if (event.status === "published") return true;
-  const user = currentUser(c);
+  const user = await currentUser(c);
   if (!user) return false;
   if (isAppAdmin(user)) return true;
-  return Boolean(eventMembersRepo.find(eventId, user.id));
+  return Boolean(await eventMembersRepo.find(eventId, user.id));
 }
 
 /** 公開: 表彰内容（公開イベントは未ログイン可。集計値付き）。
  * eventRoutes のブランケット requireAuth を避けるため api に直接登録する。 */
-export function getEventAwards(c: Context) {
+export async function getEventAwards(c: Context) {
   const eventId = c.req.param("id")!;
-  const event = eventsRepo.findById(eventId);
+  const event = await eventsRepo.findById(eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
-  if (!canView(eventId, c)) return c.json({ error: "forbidden" }, 403);
+  if (!(await canView(eventId, c))) return c.json({ error: "forbidden" }, 403);
 
-  const summary = scoresRepo.summary(eventId, event.aggregateSelfEntry);
+  const summary = await scoresRepo.summary(eventId, event.aggregateSelfEntry);
   const scoreByEntry = new Map(summary.entries.map((e) => [e.entryId, e]));
-  const ranks = awardsRepo.listRanks(eventId);
-  const specials = awardsRepo.listSpecials(eventId);
-  const results: AwardResultView[] = awardsRepo.listResults(eventId).map((r) => {
+  const ranks = await awardsRepo.listRanks(eventId);
+  const specials = await awardsRepo.listSpecials(eventId);
+  const results: AwardResultView[] = (await awardsRepo.listResults(eventId)).map((r) => {
     const s = scoreByEntry.get(r.entry_id);
     return {
       id: r.id,
@@ -73,10 +73,10 @@ awardRoutes.post(
   "/:id/award-ranks",
   requireEventRole(["staff"]),
   zValidator("json", createAwardRankInput),
-  (c) =>
+  async (c) =>
     c.json(
       {
-        rank: awardsRepo.createRank(
+        rank: await awardsRepo.createRank(
           c.req.param("id"),
           valid<CreateAwardRankInput>(c, "json"),
         ),
@@ -88,8 +88,8 @@ awardRoutes.patch(
   "/:id/award-ranks/:rankId",
   requireEventRole(["staff"]),
   zValidator("json", updateAwardRankInput),
-  (c) => {
-    const rank = awardsRepo.updateRank(
+  async (c) => {
+    const rank = await awardsRepo.updateRank(
       c.req.param("rankId"),
       valid<UpdateAwardRankInput>(c, "json"),
     );
@@ -97,8 +97,8 @@ awardRoutes.patch(
     return c.json({ rank });
   },
 );
-awardRoutes.delete("/:id/award-ranks/:rankId", requireEventRole(["staff"]), (c) => {
-  awardsRepo.deleteRank(c.req.param("rankId"));
+awardRoutes.delete("/:id/award-ranks/:rankId", requireEventRole(["staff"]), async (c) => {
+  await awardsRepo.deleteRank(c.req.param("rankId"));
   return c.json({ ok: true });
 });
 
@@ -107,10 +107,10 @@ awardRoutes.post(
   "/:id/special-awards",
   requireEventRole(["staff"]),
   zValidator("json", createSpecialAwardInput),
-  (c) =>
+  async (c) =>
     c.json(
       {
-        special: awardsRepo.createSpecial(
+        special: await awardsRepo.createSpecial(
           c.req.param("id"),
           valid<CreateSpecialAwardInput>(c, "json"),
         ),
@@ -122,8 +122,8 @@ awardRoutes.patch(
   "/:id/special-awards/:specialId",
   requireEventRole(["staff"]),
   zValidator("json", updateSpecialAwardInput),
-  (c) => {
-    const special = awardsRepo.updateSpecial(
+  async (c) => {
+    const special = await awardsRepo.updateSpecial(
       c.req.param("specialId"),
       valid<UpdateSpecialAwardInput>(c, "json"),
     );
@@ -134,8 +134,8 @@ awardRoutes.patch(
 awardRoutes.delete(
   "/:id/special-awards/:specialId",
   requireEventRole(["staff"]),
-  (c) => {
-    awardsRepo.deleteSpecial(c.req.param("specialId"));
+  async (c) => {
+    await awardsRepo.deleteSpecial(c.req.param("specialId"));
     return c.json({ ok: true });
   },
 );
@@ -145,13 +145,13 @@ awardRoutes.put(
   "/:id/award-results",
   requireEventRole(["staff"]),
   zValidator("json", setAwardResultInput),
-  (c) => {
+  async (c) => {
     const eventId = c.req.param("id");
     const input = valid<SetAwardResultInput>(c, "json");
     if (input.awardRankId) {
-      awardsRepo.setRankWinner(eventId, input.awardRankId, input.entryId);
+      await awardsRepo.setRankWinner(eventId, input.awardRankId, input.entryId);
     } else if (input.specialAwardId) {
-      awardsRepo.setSpecialWinner(eventId, input.specialAwardId, input.entryId);
+      await awardsRepo.setSpecialWinner(eventId, input.specialAwardId, input.entryId);
     } else {
       return c.json({ error: "rank_or_special_required" }, 400);
     }
@@ -160,15 +160,15 @@ awardRoutes.put(
 );
 
 /* 表彰の段階発表 */
-awardRoutes.post("/:id/state/awards-advance", requireEventRole(["staff"]), (c) => {
+awardRoutes.post("/:id/state/awards-advance", requireEventRole(["staff"]), async (c) => {
   const eventId = c.req.param("id");
-  const cur = eventStateRepo.getOrInit(eventId).awardsRevealCursor ?? 0;
-  const state = eventStateRepo.setAwardsCursor(eventId, cur + 1);
+  const cur = (await eventStateRepo.getOrInit(eventId)).awardsRevealCursor ?? 0;
+  const state = await eventStateRepo.setAwardsCursor(eventId, cur + 1);
   sseHub.broadcast(eventId, "state", state);
   return c.json(state);
 });
-awardRoutes.post("/:id/state/awards-reset", requireEventRole(["staff"]), (c) => {
-  const state = eventStateRepo.setAwardsCursor(c.req.param("id"), 0);
+awardRoutes.post("/:id/state/awards-reset", requireEventRole(["staff"]), async (c) => {
+  const state = await eventStateRepo.setAwardsCursor(c.req.param("id"), 0);
   sseHub.broadcast(c.req.param("id"), "state", state);
   return c.json(state);
 });

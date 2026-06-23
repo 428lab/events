@@ -5,8 +5,7 @@ import type {
   MyEventSummary,
   User,
 } from "@eventer/shared";
-import { randomUUID } from "node:crypto";
-import { db } from "../client.js";
+import { many, one, run } from "../client.js";
 
 interface MemberRow {
   id: string;
@@ -51,94 +50,109 @@ function toUser(row: MemberUserRow): User {
 }
 
 export const eventMembersRepo = {
-  find(eventId: string, userId: string): EventMember | null {
-    const row = db
-      .prepare("SELECT * FROM event_member WHERE event_id = ? AND user_id = ?")
-      .get(eventId, userId) as MemberRow | undefined;
+  async find(eventId: string, userId: string): Promise<EventMember | null> {
+    const row = await one<MemberRow>(
+      "SELECT * FROM event_member WHERE event_id = ? AND user_id = ?",
+      eventId,
+      userId,
+    );
     return row ? toMember(row) : null;
   },
 
-  add(
+  async add(
     eventId: string,
     userId: string,
     role: EventRole,
     slotId: string | null = null,
     status = "confirmed",
-  ): EventMember {
-    const existing = this.find(eventId, userId);
+  ): Promise<EventMember> {
+    const existing = await this.find(eventId, userId);
     if (existing) return existing;
-    const id = randomUUID();
-    db.prepare(
+    const id = crypto.randomUUID();
+    await run(
       `INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, eventId, userId, role, slotId, status, Date.now());
-    return this.find(eventId, userId)!;
+      id,
+      eventId,
+      userId,
+      role,
+      slotId,
+      status,
+      Date.now(),
+    );
+    return (await this.find(eventId, userId))!;
   },
 
   /** 抽選などで状態を更新 */
-  setStatus(memberId: string, status: string): void {
-    db.prepare("UPDATE event_member SET status = ? WHERE id = ?").run(
+  async setStatus(memberId: string, status: string): Promise<void> {
+    await run(
+      "UPDATE event_member SET status = ? WHERE id = ?",
       status,
       memberId,
     );
   },
 
   /** 枠の特定状態のメンバー（抽選用） */
-  membersBySlotStatus(
+  async membersBySlotStatus(
     slotId: string,
     status: string,
-  ): Array<{ id: string; userId: string }> {
-    const rows = db
-      .prepare(
-        "SELECT id, user_id FROM event_member WHERE slot_id = ? AND status = ?",
-      )
-      .all(slotId, status) as Array<{ id: string; user_id: string }>;
+  ): Promise<Array<{ id: string; userId: string }>> {
+    const rows = await many<{ id: string; user_id: string }>(
+      "SELECT id, user_id FROM event_member WHERE slot_id = ? AND status = ?",
+      slotId,
+      status,
+    );
     return rows.map((r) => ({ id: r.id, userId: r.user_id }));
   },
 
-  setRole(eventId: string, userId: string, role: EventRole): EventMember | null {
-    db.prepare(
+  async setRole(
+    eventId: string,
+    userId: string,
+    role: EventRole,
+  ): Promise<EventMember | null> {
+    await run(
       "UPDATE event_member SET role = ? WHERE event_id = ? AND user_id = ?",
-    ).run(role, eventId, userId);
+      role,
+      eventId,
+      userId,
+    );
     return this.find(eventId, userId);
   },
 
-  remove(eventId: string, userId: string): void {
-    db.prepare(
+  async remove(eventId: string, userId: string): Promise<void> {
+    await run(
       "DELETE FROM event_member WHERE event_id = ? AND user_id = ?",
-    ).run(eventId, userId);
+      eventId,
+      userId,
+    );
   },
 
-  listWithUsers(eventId: string): EventMemberWithUser[] {
-    const rows = db
-      .prepare(
-        `SELECT m.*, u.id AS u_id, u.discord_id AS u_discord_id,
+  async listWithUsers(eventId: string): Promise<EventMemberWithUser[]> {
+    const rows = await many<MemberUserRow>(
+      `SELECT m.*, u.id AS u_id, u.discord_id AS u_discord_id,
                 u.username AS u_username, u.global_name AS u_global_name,
                 u.avatar_url AS u_avatar_url, u.created_at AS u_created_at
          FROM event_member m
          JOIN user u ON u.id = m.user_id
          WHERE m.event_id = ?
          ORDER BY m.created_at ASC`,
-      )
-      .all(eventId) as MemberUserRow[];
+      eventId,
+    );
     return rows.map((row) => ({ ...toMember(row), user: toUser(row) }));
   },
 
   /** ユーザーが参加している全イベントを role 付きで返す（マイページ用） */
-  listEventsForUser(userId: string): MyEventSummary[] {
-    const rows = db
-      .prepare(
-        `SELECT e.*, m.role AS my_role,
+  async listEventsForUser(userId: string): Promise<MyEventSummary[]> {
+    const rows = await many<Record<string, unknown> & { my_role: string }>(
+      `SELECT e.*, m.role AS my_role,
                 (SELECT COUNT(1) FROM event_member em
                  WHERE em.event_id = e.id AND em.status = 'confirmed') AS participant_count
          FROM event_member m
          JOIN event e ON e.id = m.event_id
          WHERE m.user_id = ?
          ORDER BY e.starts_at DESC`,
-      )
-      .all(userId) as Array<
-      Record<string, unknown> & { my_role: string }
-    >;
+      userId,
+    );
     return rows.map((row) => ({
       id: row.id as string,
       title: row.title as string,

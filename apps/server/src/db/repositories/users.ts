@@ -1,6 +1,5 @@
 import type { User } from "@eventer/shared";
-import { randomUUID } from "node:crypto";
-import { db } from "../client.js";
+import { one, run } from "../client.js";
 
 interface UserRow {
   id: string;
@@ -30,34 +29,36 @@ export interface UpsertUserInput {
 }
 
 export const usersRepo = {
-  findById(id: string): User | null {
-    const row = db.prepare("SELECT * FROM user WHERE id = ?").get(id) as
-      | UserRow
-      | undefined;
+  async findById(id: string): Promise<User | null> {
+    const row = await one<UserRow>("SELECT * FROM user WHERE id = ?", id);
     return row ? toUser(row) : null;
   },
 
-  findByDiscordId(discordId: string): User | null {
-    const row = db
-      .prepare("SELECT * FROM user WHERE discord_id = ?")
-      .get(discordId) as UserRow | undefined;
+  async findByDiscordId(discordId: string): Promise<User | null> {
+    const row = await one<UserRow>(
+      "SELECT * FROM user WHERE discord_id = ?",
+      discordId,
+    );
     return row ? toUser(row) : null;
   },
 
-  upsertByDiscordId(input: UpsertUserInput): User {
-    const existing = this.findByDiscordId(input.discordId);
+  async upsertByDiscordId(input: UpsertUserInput): Promise<User> {
+    const existing = await this.findByDiscordId(input.discordId);
     if (existing) {
-      db.prepare(
+      await run(
         `UPDATE user SET username = ?, global_name = ?, avatar_url = ?
          WHERE discord_id = ?`,
-      ).run(input.username, input.globalName, input.avatarUrl, input.discordId);
-      return this.findByDiscordId(input.discordId)!;
+        input.username,
+        input.globalName,
+        input.avatarUrl,
+        input.discordId,
+      );
+      return (await this.findByDiscordId(input.discordId))!;
     }
-    const id = randomUUID();
-    db.prepare(
+    const id = crypto.randomUUID();
+    await run(
       `INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(
       id,
       input.discordId,
       input.username,
@@ -65,6 +66,6 @@ export const usersRepo = {
       input.avatarUrl,
       Date.now(),
     );
-    return this.findById(id)!;
+    return (await this.findById(id))!;
   },
 };

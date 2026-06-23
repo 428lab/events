@@ -1,14 +1,44 @@
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import Database from "better-sqlite3";
-import type { Database as DatabaseType } from "better-sqlite3";
-import { env } from "../env.js";
+import type { D1Database } from "@cloudflare/workers-types";
+import { getDb } from "../runtime.js";
 
-mkdirSync(dirname(env.databasePath), { recursive: true });
+export { getDb };
+export type DB = D1Database;
 
-export const db: DatabaseType = new Database(env.databasePath);
+/** 1行取得（無ければ null）。better-sqlite3 の prepare().get() 相当。 */
+export function one<T = Record<string, unknown>>(
+  sql: string,
+  ...args: unknown[]
+): Promise<T | null> {
+  return getDb()
+    .prepare(sql)
+    .bind(...args)
+    .first<T>();
+}
 
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+/** 全行取得。better-sqlite3 の prepare().all() 相当。 */
+export async function many<T = Record<string, unknown>>(
+  sql: string,
+  ...args: unknown[]
+): Promise<T[]> {
+  const r = await getDb()
+    .prepare(sql)
+    .bind(...args)
+    .all<T>();
+  return r.results;
+}
 
-export type DB = DatabaseType;
+/** 書き込み。better-sqlite3 の prepare().run() 相当。 */
+export async function run(sql: string, ...args: unknown[]): Promise<void> {
+  await getDb()
+    .prepare(sql)
+    .bind(...args)
+    .run();
+}
+
+/** 複数文をアトミックに実行（D1 batch）。better-sqlite3 の transaction 相当。 */
+export async function batch(
+  stmts: Array<{ sql: string; args?: unknown[] }>,
+): Promise<void> {
+  const db = getDb();
+  await db.batch(stmts.map((s) => db.prepare(s.sql).bind(...(s.args ?? []))));
+}

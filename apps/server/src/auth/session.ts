@@ -7,8 +7,8 @@ import { usersRepo } from "../db/repositories/users.js";
 
 const COOKIE_NAME = "eventer_session";
 
-export function issueSession(c: Context, userId: string): void {
-  const session = sessionsRepo.create(userId);
+export async function issueSession(c: Context, userId: string): Promise<void> {
+  const session = await sessionsRepo.create(userId);
   setCookie(c, COOKIE_NAME, session.id, {
     httpOnly: true,
     sameSite: "Lax",
@@ -18,23 +18,23 @@ export function issueSession(c: Context, userId: string): void {
   });
 }
 
-export function clearSession(c: Context): void {
+export async function clearSession(c: Context): Promise<void> {
   const id = getCookie(c, COOKIE_NAME);
-  if (id) sessionsRepo.delete(id);
+  if (id) await sessionsRepo.delete(id);
   deleteCookie(c, COOKIE_NAME, { path: "/" });
 }
 
-export function currentUser(c: Context): User | null {
+export async function currentUser(c: Context): Promise<User | null> {
   const id = getCookie(c, COOKIE_NAME);
   if (!id) return null;
-  const session = sessionsRepo.find(id);
+  const session = await sessionsRepo.find(id);
   if (!session) return null;
   return usersRepo.findById(session.userId);
 }
 
 /** ログイン必須。c.set("user", user) を設定 */
 export const requireAuth: MiddlewareHandler = async (c, next) => {
-  const user = currentUser(c);
+  const user = await currentUser(c);
   if (!user) return c.json({ error: "unauthorized" }, 401);
   c.set("user", user);
   await next();

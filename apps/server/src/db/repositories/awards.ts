@@ -6,8 +6,7 @@ import type {
   UpdateAwardRankInput,
   UpdateSpecialAwardInput,
 } from "@eventer/shared";
-import { randomUUID } from "node:crypto";
-import { db } from "../client.js";
+import { batch, many, one, run } from "../client.js";
 
 interface RankRow {
   id: string;
@@ -47,117 +46,129 @@ const toSpecial = (r: SpecialRow): SpecialAward => ({
 
 export const awardsRepo = {
   /* ranks */
-  listRanks(eventId: string): AwardRank[] {
+  async listRanks(eventId: string): Promise<AwardRank[]> {
     return (
-      db
-        .prepare(
-          "SELECT * FROM award_rank WHERE event_id = ? ORDER BY rank_order ASC, rowid ASC",
-        )
-        .all(eventId) as RankRow[]
+      await many<RankRow>(
+        "SELECT * FROM award_rank WHERE event_id = ? ORDER BY rank_order ASC, rowid ASC",
+        eventId,
+      )
     ).map(toRank);
   },
-  findRank(id: string): AwardRank | null {
-    const r = db.prepare("SELECT * FROM award_rank WHERE id = ?").get(id) as
-      | RankRow
-      | undefined;
+  async findRank(id: string): Promise<AwardRank | null> {
+    const r = await one<RankRow>(
+      "SELECT * FROM award_rank WHERE id = ?",
+      id,
+    );
     return r ? toRank(r) : null;
   },
-  createRank(eventId: string, input: CreateAwardRankInput): AwardRank {
-    const id = randomUUID();
-    const next = (db
-      .prepare(
-        "SELECT COALESCE(MAX(rank_order), 0) + 1 AS n FROM award_rank WHERE event_id = ?",
-      )
-      .get(eventId) as { n: number }).n;
-    db.prepare(
+  async createRank(eventId: string, input: CreateAwardRankInput): Promise<AwardRank> {
+    const id = crypto.randomUUID();
+    const next = (await one<{ n: number }>(
+      "SELECT COALESCE(MAX(rank_order), 0) + 1 AS n FROM award_rank WHERE event_id = ?",
+      eventId,
+    ))!.n;
+    await run(
       "INSERT INTO award_rank (id, event_id, name, content, rank_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(id, eventId, input.name, input.content ?? null, next, Date.now());
-    return this.findRank(id)!;
+      id, eventId, input.name, input.content ?? null, next, Date.now(),
+    );
+    return (await this.findRank(id))!;
   },
-  updateRank(id: string, input: UpdateAwardRankInput): AwardRank | null {
-    const cur = this.findRank(id);
+  async updateRank(id: string, input: UpdateAwardRankInput): Promise<AwardRank | null> {
+    const cur = await this.findRank(id);
     if (!cur) return null;
     const next = { ...cur, ...input };
-    db.prepare(
+    await run(
       "UPDATE award_rank SET name = ?, content = ?, rank_order = ? WHERE id = ?",
-    ).run(next.name, next.content ?? null, next.rankOrder, id);
+      next.name, next.content ?? null, next.rankOrder, id,
+    );
     return this.findRank(id);
   },
-  deleteRank(id: string): void {
-    db.prepare("DELETE FROM award_rank WHERE id = ?").run(id);
+  async deleteRank(id: string): Promise<void> {
+    await run("DELETE FROM award_rank WHERE id = ?", id);
   },
 
   /* specials */
-  listSpecials(eventId: string): SpecialAward[] {
+  async listSpecials(eventId: string): Promise<SpecialAward[]> {
     return (
-      db
-        .prepare(
-          "SELECT * FROM special_award WHERE event_id = ? ORDER BY sort_order ASC, rowid ASC",
-        )
-        .all(eventId) as SpecialRow[]
+      await many<SpecialRow>(
+        "SELECT * FROM special_award WHERE event_id = ? ORDER BY sort_order ASC, rowid ASC",
+        eventId,
+      )
     ).map(toSpecial);
   },
-  createSpecial(eventId: string, input: CreateSpecialAwardInput): SpecialAward {
-    const id = randomUUID();
-    const next = (db
-      .prepare(
-        "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM special_award WHERE event_id = ?",
-      )
-      .get(eventId) as { n: number }).n;
-    db.prepare(
+  async createSpecial(eventId: string, input: CreateSpecialAwardInput): Promise<SpecialAward> {
+    const id = crypto.randomUUID();
+    const next = (await one<{ n: number }>(
+      "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM special_award WHERE event_id = ?",
+      eventId,
+    ))!.n;
+    await run(
       "INSERT INTO special_award (id, event_id, name, content, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(id, eventId, input.name, input.content ?? null, next, Date.now());
-    const row = db
-      .prepare("SELECT * FROM special_award WHERE id = ?")
-      .get(id) as SpecialRow;
+      id, eventId, input.name, input.content ?? null, next, Date.now(),
+    );
+    const row = (await one<SpecialRow>(
+      "SELECT * FROM special_award WHERE id = ?",
+      id,
+    ))!;
     return toSpecial(row);
   },
-  findSpecial(id: string): SpecialAward | null {
-    const r = db.prepare("SELECT * FROM special_award WHERE id = ?").get(id) as
-      | SpecialRow
-      | undefined;
+  async findSpecial(id: string): Promise<SpecialAward | null> {
+    const r = await one<SpecialRow>(
+      "SELECT * FROM special_award WHERE id = ?",
+      id,
+    );
     return r ? toSpecial(r) : null;
   },
-  updateSpecial(id: string, input: UpdateSpecialAwardInput): SpecialAward | null {
-    const cur = this.findSpecial(id);
+  async updateSpecial(id: string, input: UpdateSpecialAwardInput): Promise<SpecialAward | null> {
+    const cur = await this.findSpecial(id);
     if (!cur) return null;
     const next = { ...cur, ...input };
-    db.prepare(
+    await run(
       "UPDATE special_award SET name = ?, content = ?, sort_order = ? WHERE id = ?",
-    ).run(next.name, next.content ?? null, next.sortOrder, id);
+      next.name, next.content ?? null, next.sortOrder, id,
+    );
     return this.findSpecial(id);
   },
-  deleteSpecial(id: string): void {
-    db.prepare("DELETE FROM special_award WHERE id = ?").run(id);
+  async deleteSpecial(id: string): Promise<void> {
+    await run("DELETE FROM special_award WHERE id = ?", id);
   },
 
   /* results */
-  listResults(eventId: string): AwardResultRow[] {
-    return db
-      .prepare("SELECT id, entry_id, award_rank_id, special_award_id FROM award_result WHERE event_id = ?")
-      .all(eventId) as AwardResultRow[];
+  async listResults(eventId: string): Promise<AwardResultRow[]> {
+    return many<AwardResultRow>(
+      "SELECT id, entry_id, award_rank_id, special_award_id FROM award_result WHERE event_id = ?",
+      eventId,
+    );
   },
   /** ランク賞の受賞者を設定（1賞1エントリー。null で解除） */
-  setRankWinner(eventId: string, rankId: string, entryId: string | null): void {
-    const tx = db.transaction(() => {
-      db.prepare("DELETE FROM award_result WHERE award_rank_id = ?").run(rankId);
-      if (entryId) {
-        db.prepare(
-          "INSERT INTO award_result (id, event_id, entry_id, award_rank_id) VALUES (?, ?, ?, ?)",
-        ).run(randomUUID(), eventId, entryId, rankId);
-      }
-    });
-    tx();
+  async setRankWinner(eventId: string, rankId: string, entryId: string | null): Promise<void> {
+    if (entryId) {
+      await batch([
+        { sql: "DELETE FROM award_result WHERE award_rank_id = ?", args: [rankId] },
+        {
+          sql: "INSERT INTO award_result (id, event_id, entry_id, award_rank_id) VALUES (?, ?, ?, ?)",
+          args: [crypto.randomUUID(), eventId, entryId, rankId],
+        },
+      ]);
+    } else {
+      await batch([
+        { sql: "DELETE FROM award_result WHERE award_rank_id = ?", args: [rankId] },
+      ]);
+    }
   },
-  setSpecialWinner(eventId: string, specialId: string, entryId: string | null): void {
-    const tx = db.transaction(() => {
-      db.prepare("DELETE FROM award_result WHERE special_award_id = ?").run(specialId);
-      if (entryId) {
-        db.prepare(
-          "INSERT INTO award_result (id, event_id, entry_id, special_award_id) VALUES (?, ?, ?, ?)",
-        ).run(randomUUID(), eventId, entryId, specialId);
-      }
-    });
-    tx();
+  async setSpecialWinner(eventId: string, specialId: string, entryId: string | null): Promise<void> {
+    if (entryId) {
+      await batch([
+        { sql: "DELETE FROM award_result WHERE special_award_id = ?", args: [specialId] },
+        {
+          sql: "INSERT INTO award_result (id, event_id, entry_id, special_award_id) VALUES (?, ?, ?, ?)",
+          args: [crypto.randomUUID(), eventId, entryId, specialId],
+        },
+      ]);
+    } else {
+      await batch([
+        { sql: "DELETE FROM award_result WHERE special_award_id = ?", args: [specialId] },
+      ]);
+    }
   },
 };

@@ -21,7 +21,7 @@ export function requireEventRole(
       await next();
       return;
     }
-    const member = eventMembersRepo.find(eventId, user.id);
+    const member = await eventMembersRepo.find(eventId, user.id);
     if (!member || !roles.includes(member.role)) {
       return c.json({ error: "forbidden" }, 403);
     }
