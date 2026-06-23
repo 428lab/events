@@ -101,6 +101,14 @@ export function usePublicEvents(page: number) {
   });
 }
 
+/** 開催済みの公開イベント（未ログイン可・終了が新しい順・ページング） */
+export function usePublicPastEvents(page: number) {
+  return useQuery({
+    queryKey: ["publicPastEvents", page],
+    queryFn: () => api.get<PublicEventsPage>(`/public/events/past?page=${page}`),
+  });
+}
+
 export function useEvent(id: string) {
   return useQuery({
     queryKey: ["event", id],

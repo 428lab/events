@@ -88,6 +88,32 @@ export const eventsRepo = {
     return row?.n ?? 0;
   },
 
+  /** 開催済み（ends_at <= now）の公開イベントを終了が新しい順でページング取得 */
+  async listPastPublished(
+    now: number,
+    limit: number,
+    offset: number,
+  ): Promise<Event[]> {
+    const rows = await many<EventRow>(
+      `${SELECT_EVENT}
+         WHERE status = 'published' AND ends_at <= ?
+         ORDER BY ends_at DESC
+         LIMIT ? OFFSET ?`,
+      now,
+      limit,
+      offset,
+    );
+    return rows.map(toEvent);
+  },
+
+  async countPastPublished(now: number): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND ends_at <= ?",
+      now,
+    );
+    return row?.n ?? 0;
+  },
+
   /** 管理向け: 全イベント */
   async listAll(): Promise<Event[]> {
     const rows = await many<EventRow>(`${SELECT_EVENT} ORDER BY created_at DESC`);
