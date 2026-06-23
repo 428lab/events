@@ -144,21 +144,24 @@ export function useToggleScoringLock(eventId: string) {
   });
 }
 
-/** ===== SSE 購読 ===== */
+/**
+ * 進行状態のリアルタイム連動（ポーリング方式）。
+ * Cloudflare Workers はステートレス（複数アイソレート）で in-memory SSE 配信が
+ * できないため、一定間隔で状態・採点進捗を再取得する。invalidateQueries は
+ * アクティブに購読されているクエリのみ再フェッチするので、無駄な通信は出ない。
+ */
+const POLL_INTERVAL_MS = 2000;
+
 export function useEventStream(eventId: string) {
   const qc = useQueryClient();
   useEffect(() => {
     if (!eventId) return;
-    const es = new EventSource(`/api/events/${eventId}/stream`, {
-      withCredentials: true,
-    });
-    es.addEventListener("state", (e) => {
-      qc.setQueryData(["event", eventId, "state"], JSON.parse(e.data));
-    });
-    es.addEventListener("score-progress", () => {
+    const tick = () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId, "state"] });
       qc.invalidateQueries({ queryKey: ["event", eventId, "progress"] });
       qc.invalidateQueries({ queryKey: ["event", eventId, "summary"] });
-    });
-    return () => es.close();
+    };
+    const id = window.setInterval(tick, POLL_INTERVAL_MS);
+    return () => window.clearInterval(id);
   }, [eventId, qc]);
 }

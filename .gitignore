@@ -24,3 +24,7 @@ pnpm-debug.log*
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Cloudflare local dev
+.dev.vars
+.wrangler/
