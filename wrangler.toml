@@ -5,9 +5,10 @@ compatibility_flags = ["nodejs_compat"]
 account_id = "b9cec3916d500760a7c7b9c31c720d80"
 workers_dev = true
 
-# 本番ドメイン切替: events.kojira.io の既存DNS（トンネルCNAME）を削除後に
-# 下行を有効化して `wrangler deploy` するとカスタムドメインが付与される。
-# routes = [{ pattern = "events.kojira.io", custom_domain = true }]
+# 本番ドメイン: Worker ルートでエッジ処理（既存DNSを触らずトンネルを上書き）。
+# DNS は events.kojira.io の CNAME（旧トンネル）をそのまま残してよい——
+# ルートにマッチしたリクエストはオリジン(トンネル)へ行かず Worker が直接応答する。
+routes = [{ pattern = "events.kojira.io/*", zone_name = "kojira.io" }]
 
 # React ビルドを同一 Worker から配信（/events/:id の OG メタ注入のため単一Worker構成）。
 # run_worker_first: 全リクエストをまず Worker が受け、/api と /events/:id を処理。
