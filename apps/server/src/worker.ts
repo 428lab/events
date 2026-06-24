@@ -10,6 +10,7 @@ import { getEventImage } from "./routes/images.js";
 import { publicRoutes } from "./routes/public.js";
 import { currentUser } from "./auth/session.js";
 import { isAppAdmin } from "./auth/admin.js";
+import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
 
 const api = new Hono();
@@ -35,9 +36,15 @@ api.route("/me", meRoutes);
  * 中身を悟られないよう最小限のサインインのみ表示する。
  */
 function stagingGateHtml(loggedInNonAdmin: boolean): string {
+  const buttons = PROVIDERS.filter(providerConfigured)
+    .map(
+      (p) =>
+        `<a class="btn" href="/api/auth/${p}/login">${p} でサインイン</a>`,
+    )
+    .join("");
   const body = loggedInNonAdmin
     ? `<p>アクセスできません。</p>`
-    : `<a class="btn" href="/api/auth/discord/login">サインイン</a>`;
+    : `<div class="btns">${buttons || '<a class="btn" href="/api/auth/discord/login">サインイン</a>'}</div>`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in</title>
@@ -45,7 +52,8 @@ function stagingGateHtml(loggedInNonAdmin: boolean): string {
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0E1426;color:#94A3B8;font-family:system-ui,sans-serif}
 .card{text-align:center;padding:40px}
 p{color:#94A3B8}
-a.btn{display:inline-block;background:#334155;color:#E2E8F0;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:600}</style>
+.btns{display:flex;flex-direction:column;gap:12px}
+a.btn{display:inline-block;background:#334155;color:#E2E8F0;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:600;text-transform:capitalize}</style>
 </head><body><div class="card">${body}</div></body></html>`;
 }
 

@@ -1,32 +1,27 @@
 import { Hono } from "hono";
-import { getCookie, setCookie } from "hono/cookie";
+import { getCookie, setCookie, deleteCookie } from "hono/cookie";
+import type { AppEnv } from "../types.js";
 import { env } from "../env.js";
 import { usersRepo } from "../db/repositories/users.js";
+import { identitiesRepo } from "../db/repositories/identities.js";
 import {
   clearSession,
   currentUser,
   issueSession,
+  requireAuth,
 } from "../auth/session.js";
 import { isAppAdmin } from "../auth/admin.js";
+import {
+  PROVIDERS,
+  isProvider,
+  providerConfig,
+  providerConfigured,
+  redirectUri,
+} from "../auth/providers.js";
 
-const DISCORD_AUTHORIZE = "https://discord.com/api/oauth2/authorize";
-const DISCORD_TOKEN = "https://discord.com/api/oauth2/token";
-const DISCORD_ME = "https://discord.com/api/users/@me";
 const STATE_COOKIE = "eventer_oauth_state";
 
-interface DiscordUser {
-  id: string;
-  username: string;
-  global_name: string | null;
-  avatar: string | null;
-}
-
-function avatarUrl(u: DiscordUser): string | null {
-  if (!u.avatar) return null;
-  return `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`;
-}
-
-export const authRoutes = new Hono();
+export const authRoutes = new Hono<AppEnv>();
 
 authRoutes.get("/me", async (c) => {
   const user = await currentUser(c);
@@ -39,12 +34,46 @@ authRoutes.post("/logout", async (c) => {
   return c.json({ ok: true });
 });
 
-authRoutes.get("/discord/login", (c) => {
-  if (!env.discordConfigured) {
-    return c.json({ error: "discord_not_configured" }, 503);
+/** 有効な（client_id/secret 設定済み）プロバイダ一覧 */
+authRoutes.get("/providers", (c) => {
+  return c.json({ providers: PROVIDERS.filter(providerConfigured) });
+});
+
+/** ログイン中ユーザーの連携プロバイダ一覧 */
+authRoutes.get("/identities", requireAuth, async (c) => {
+  const user = c.get("user");
+  const identities = await identitiesRepo.listByUser(user.id);
+  return c.json({
+    identities: identities.map((i) => ({ provider: i.provider, email: i.email })),
+  });
+});
+
+/** 連携解除（最後の1つは外せない） */
+authRoutes.delete("/identities/:provider", requireAuth, async (c) => {
+  const provider = c.req.param("provider");
+  const user = c.get("user");
+  if (!isProvider(provider)) return c.json({ error: "unknown_provider" }, 404);
+  if ((await identitiesRepo.countByUser(user.id)) <= 1) {
+    return c.json({ error: "last_identity" }, 409);
   }
+  await identitiesRepo.unlink(user.id, provider);
+  if (provider === "discord") {
+    // 実Discord IDを手放す（合成値に置換＝管理者判定も解除）
+    await usersRepo.setDiscordId(user.id, `removed:${crypto.randomUUID()}`);
+  }
+  return c.json({ ok: true });
+});
+
+/** OAuth 開始（provider はパス） */
+authRoutes.get("/:provider/login", (c) => {
+  const provider = c.req.param("provider");
+  if (!isProvider(provider)) return c.json({ error: "unknown_provider" }, 404);
+  if (!providerConfigured(provider)) {
+    return c.json({ error: "provider_not_configured" }, 503);
+  }
+  const cfg = providerConfig(provider);
   const state = crypto.randomUUID();
-  setCookie(c, STATE_COOKIE, state, {
+  setCookie(c, STATE_COOKIE, `${provider}:${state}`, {
     httpOnly: true,
     sameSite: "Lax",
     secure: env.isProd,
@@ -52,67 +81,93 @@ authRoutes.get("/discord/login", (c) => {
     maxAge: 600,
   });
   const params = new URLSearchParams({
-    client_id: env.discord.clientId,
-    redirect_uri: env.discord.redirectUri,
+    client_id: env.providerCreds(provider).clientId,
+    redirect_uri: redirectUri(provider),
     response_type: "code",
-    scope: "identify",
+    scope: cfg.scope,
     state,
+    ...(cfg.extraAuthParams ?? {}),
   });
-  return c.redirect(`${DISCORD_AUTHORIZE}?${params.toString()}`);
+  return c.redirect(`${cfg.authorizeUrl}?${params.toString()}`);
 });
 
-authRoutes.get("/discord/callback", async (c) => {
+/** OAuth コールバック。未ログイン→ログイン/新規、ログイン中→連携/統合。 */
+authRoutes.get("/:provider/callback", async (c) => {
+  const provider = c.req.param("provider");
+  if (!isProvider(provider)) return c.json({ error: "unknown_provider" }, 404);
+
   const code = c.req.query("code");
   const state = c.req.query("state");
-  const savedState = getCookie(c, STATE_COOKIE);
-
-  if (!code || !state || !savedState || state !== savedState) {
+  const saved = getCookie(c, STATE_COOKIE);
+  if (!code || !state || saved !== `${provider}:${state}`) {
     return c.json({ error: "invalid_oauth_state" }, 400);
   }
+  deleteCookie(c, STATE_COOKIE, { path: "/" });
 
-  const tokenRes = await fetch(DISCORD_TOKEN, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: env.discord.clientId,
-      client_secret: env.discord.clientSecret,
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: env.discord.redirectUri,
-    }),
-  });
-  if (!tokenRes.ok) return c.json({ error: "token_exchange_failed" }, 502);
-  const token = (await tokenRes.json()) as { access_token: string };
+  const cfg = providerConfig(provider);
+  let profile;
+  try {
+    const token = await cfg.exchange(code, redirectUri(provider));
+    profile = await cfg.fetchProfile(token);
+  } catch {
+    return c.json({ error: "oauth_failed" }, 502);
+  }
 
-  const meRes = await fetch(DISCORD_ME, {
-    headers: { Authorization: `Bearer ${token.access_token}` },
-  });
-  if (!meRes.ok) return c.json({ error: "fetch_profile_failed" }, 502);
-  const profile = (await meRes.json()) as DiscordUser;
+  const current = await currentUser(c);
+  const existingUserId = await identitiesRepo.findUserId(
+    provider,
+    profile.providerUserId,
+  );
 
-  const user = await usersRepo.upsertByDiscordId({
-    discordId: profile.id,
-    username: profile.username,
-    globalName: profile.global_name,
-    avatarUrl: avatarUrl(profile),
-  });
+  if (current) {
+    // 連携 or 統合
+    if (!existingUserId) {
+      await identitiesRepo.link(
+        current.id,
+        provider,
+        profile.providerUserId,
+        profile.email,
+      );
+      if (provider === "discord") {
+        await usersRepo.setDiscordId(current.id, profile.providerUserId);
+      }
+    } else if (existingUserId !== current.id) {
+      // 別アカウントを現在のアカウントへ統合
+      const fromUser = await usersRepo.findById(existingUserId);
+      await identitiesRepo.mergeInto(existingUserId, current.id);
+      if (fromUser && !fromUser.discordId.includes(":")) {
+        await usersRepo.setDiscordId(current.id, fromUser.discordId);
+      }
+    }
+    return c.redirect(env.appBaseUrl + "/account");
+  }
 
-  await issueSession(c, user.id);
+  // 未ログイン: 既存ならログイン、無ければ新規作成
+  let userId = existingUserId;
+  if (!userId) {
+    const u = await usersRepo.createFromProfile(provider, profile);
+    await identitiesRepo.link(u.id, provider, profile.providerUserId, profile.email);
+    userId = u.id;
+  }
+  await issueSession(c, userId);
   return c.redirect(env.appBaseUrl + "/me");
 });
 
 /**
- * 開発専用ログイン。常に登録するが、本番（ENVIRONMENT=production）では 404 を返して
- * 機能しない。ローカル（wrangler dev / ENVIRONMENT=development）でのみ有効。
+ * 開発専用ログイン。本番(ENVIRONMENT=production)では 404。
  */
 authRoutes.post("/dev-login", async (c) => {
   if (env.isProd) return c.json({ error: "not_found" }, 404);
-  const user = await usersRepo.upsertByDiscordId({
-    discordId: "dev-user",
-    username: "DevUser",
-    globalName: "開発ユーザー",
-    avatarUrl: null,
-  });
-  await issueSession(c, user.id);
-  return c.json({ user });
+  let u = await usersRepo.findByDiscordId("dev-user");
+  if (!u) {
+    u = await usersRepo.createFromProfile("discord", {
+      providerUserId: "dev-user",
+      username: "DevUser",
+      globalName: "開発ユーザー",
+      avatarUrl: null,
+    });
+    await identitiesRepo.link(u.id, "discord", "dev-user", null);
+  }
+  await issueSession(c, u.id);
+  return c.json({ user: u });
 });

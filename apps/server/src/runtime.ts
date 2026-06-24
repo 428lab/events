@@ -11,6 +11,10 @@ export interface Env {
   DISCORD_CLIENT_ID: string;
   DISCORD_CLIENT_SECRET: string;
   DISCORD_REDIRECT_URI: string;
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
+  GITHUB_CLIENT_ID: string;
+  GITHUB_CLIENT_SECRET: string;
   SESSION_SECRET: string;
 }
 
@@ -72,6 +76,20 @@ export const env = {
     get redirectUri(): string {
       return must().DISCORD_REDIRECT_URI || "";
     },
+  },
+  /** プロバイダごとの client id/secret を取得（未設定なら空文字） */
+  providerCreds(provider: string): { clientId: string; clientSecret: string } {
+    const e = must();
+    switch (provider) {
+      case "discord":
+        return { clientId: e.DISCORD_CLIENT_ID || "", clientSecret: e.DISCORD_CLIENT_SECRET || "" };
+      case "google":
+        return { clientId: e.GOOGLE_CLIENT_ID || "", clientSecret: e.GOOGLE_CLIENT_SECRET || "" };
+      case "github":
+        return { clientId: e.GITHUB_CLIENT_ID || "", clientSecret: e.GITHUB_CLIENT_SECRET || "" };
+      default:
+        return { clientId: "", clientSecret: "" };
+    }
   },
   get discordConfigured(): boolean {
     const e = must();

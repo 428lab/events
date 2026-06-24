@@ -68,4 +68,39 @@ export const usersRepo = {
     );
     return (await this.findById(id))!;
   },
+
+  /** OAuthプロフィールから新規ユーザーを作成。
+   * discord_id は NOT NULL UNIQUE のため、非Discordは "provider:id" の合成値を入れる
+   * （ADMIN_DISCORD_IDS には決して一致しない＝管理者にならない）。 */
+  async createFromProfile(
+    provider: string,
+    profile: {
+      providerUserId: string;
+      username: string;
+      globalName: string | null;
+      avatarUrl: string | null;
+    },
+  ): Promise<User> {
+    const id = crypto.randomUUID();
+    const discordId =
+      provider === "discord"
+        ? profile.providerUserId
+        : `${provider}:${profile.providerUserId}`;
+    await run(
+      `INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      id,
+      discordId,
+      profile.username,
+      profile.globalName,
+      profile.avatarUrl,
+      Date.now(),
+    );
+    return (await this.findById(id))!;
+  },
+
+  /** Discord 連携時に discord_id を実IDへ更新（管理者判定を効かせる） */
+  async setDiscordId(userId: string, discordId: string): Promise<void> {
+    await run("UPDATE user SET discord_id = ? WHERE id = ?", discordId, userId);
+  },
 };

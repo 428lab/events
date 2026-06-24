@@ -71,6 +71,38 @@ export function useDevLogin() {
   });
 }
 
+/** 有効なログインプロバイダ一覧 */
+export function useAuthProviders() {
+  return useQuery({
+    queryKey: ["authProviders"],
+    queryFn: async () =>
+      (await api.get<{ providers: string[] }>("/auth/providers")).providers,
+  });
+}
+
+export interface LinkedIdentity {
+  provider: string;
+  email: string | null;
+}
+
+/** ログイン中ユーザーの連携プロバイダ */
+export function useIdentities() {
+  return useQuery({
+    queryKey: ["identities"],
+    queryFn: async () =>
+      (await api.get<{ identities: LinkedIdentity[] }>("/auth/identities"))
+        .identities,
+  });
+}
+
+export function useUnlinkIdentity() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: string) => api.del(`/auth/identities/${provider}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["identities"] }),
+  });
+}
+
 export function useMyPage() {
   return useQuery({
     queryKey: ["myPage"],

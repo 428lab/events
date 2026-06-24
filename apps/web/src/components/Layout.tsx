@@ -52,8 +52,17 @@ export function Layout({
           </Button>
           <ThemeSwitcher />
           <Avatar
+            component={RouterLink}
+            to="/account"
             src={user.avatarUrl ?? undefined}
-            sx={{ width: 32, height: 32, mx: 1 }}
+            title="アカウント設定"
+            sx={{
+              width: 32,
+              height: 32,
+              mx: 1,
+              textDecoration: "none",
+              cursor: "pointer",
+            }}
           >
             {(user.globalName ?? user.username).charAt(0)}
           </Avatar>

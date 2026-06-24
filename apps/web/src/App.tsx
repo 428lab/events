@@ -18,6 +18,7 @@ import { ControlPage } from "./pages/ControlPage.js";
 import { CriteriaAdminPage } from "./pages/CriteriaAdminPage.js";
 import { ScoreResultsPage } from "./pages/ScoreResultsPage.js";
 import { LotteryAdminPage } from "./pages/LotteryAdminPage.js";
+import { AccountPage } from "./pages/AccountPage.js";
 
 export function App() {
   const { data: user, isLoading } = useMe();
@@ -68,6 +69,7 @@ export function App() {
     <Layout user={user}>
       <Routes>
         <Route path="/me" element={<MyPage />} />
+        <Route path="/account" element={<AccountPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/new" element={<CreateEventPage />} />
         <Route path="/events/:id" element={<EventLayout />}>
