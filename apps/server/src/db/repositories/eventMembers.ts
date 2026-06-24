@@ -98,7 +98,7 @@ export const eventMembersRepo = {
     status: string,
   ): Promise<Array<{ id: string; userId: string }>> {
     const rows = await many<{ id: string; user_id: string }>(
-      "SELECT id, user_id FROM event_member WHERE slot_id = ? AND status = ?",
+      "SELECT id, user_id FROM event_member WHERE slot_id = ? AND status = ? ORDER BY created_at ASC",
       slotId,
       status,
     );

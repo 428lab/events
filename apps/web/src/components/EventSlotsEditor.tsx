@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import { Link as RouterLink } from "react-router-dom";
 import { SELECTION_TYPES, type SelectionType } from "@eventer/shared";
 import {
   useCreateSlot,
@@ -19,6 +20,7 @@ import {
   useEventSlots,
   useUpdateSlot,
 } from "../api/hooks.js";
+import { toDateTimeLocal, fromDateTimeLocal } from "../lib/format.js";
 
 const typeLabel: Record<SelectionType, string> = {
   first_come: "先着順",
@@ -52,9 +54,24 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
 
   return (
     <Box>
-      <Typography variant="subtitle1" gutterBottom>
-        参加枠（定員・先着/抽選）
-      </Typography>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        sx={{ mb: 1 }}
+      >
+        <Typography variant="subtitle1">参加枠（定員・先着/抽選）</Typography>
+        {slots?.some((s) => s.selectionType === "lottery") && (
+          <Button
+            size="small"
+            variant="outlined"
+            component={RouterLink}
+            to={`/events/${eventId}/lottery`}
+          >
+            当選操作・抽選結果
+          </Button>
+        )}
+      </Stack>
 
       <Stack spacing={1.5}>
         {slots?.map((s) => (
@@ -114,16 +131,35 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
                 {s.waitlistCount > 0 ? ` ・ キャンセル待ち ${s.waitlistCount}` : ""}
               </Typography>
               {s.selectionType === "lottery" && (
-                <Box sx={{ mt: 1 }}>
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={1.5}
+                  alignItems={{ sm: "center" }}
+                  sx={{ mt: 1.5 }}
+                >
+                  <TextField
+                    label="抽選日時（任意）"
+                    type="datetime-local"
+                    size="small"
+                    defaultValue={toDateTimeLocal(s.drawAt)}
+                    InputLabelProps={{ shrink: true }}
+                    onBlur={(e) => {
+                      const v = fromDateTimeLocal(e.target.value);
+                      if (v !== s.drawAt) {
+                        update.mutate({ slotId: s.id, input: { drawAt: v } });
+                      }
+                    }}
+                    sx={{ width: 220 }}
+                  />
                   <Button
                     size="small"
                     variant="outlined"
                     disabled={draw.isPending || s.appliedCount === 0}
                     onClick={() => draw.mutate(s.id)}
                   >
-                    抽選を実行（申込 {s.appliedCount} 人 → 定員 {s.capacity}）
+                    自動抽選（申込 {s.appliedCount} → 定員 {s.capacity}）
                   </Button>
-                </Box>
+                </Stack>
               )}
             </CardContent>
           </Card>

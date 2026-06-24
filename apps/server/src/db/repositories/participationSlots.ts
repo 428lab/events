@@ -13,6 +13,7 @@ interface SlotRow {
   capacity: number;
   selection_type: string;
   sort_order: number;
+  draw_at: number | null;
   confirmed_count: number;
   waitlist_count: number;
   applied_count: number;
@@ -26,6 +27,7 @@ function toSlot(row: SlotRow): ParticipationSlot {
     capacity: row.capacity,
     selectionType: row.selection_type as SelectionType,
     sortOrder: row.sort_order,
+    drawAt: row.draw_at,
     confirmedCount: row.confirmed_count,
     waitlistCount: row.waitlist_count,
     appliedCount: row.applied_count,
@@ -63,14 +65,15 @@ export const participationSlotsRepo = {
     );
     const next = r?.n ?? 0;
     await run(
-      `INSERT INTO participation_slot (id, event_id, name, capacity, selection_type, sort_order, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO participation_slot (id, event_id, name, capacity, selection_type, sort_order, draw_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
       eventId,
       input.name,
       input.capacity,
       input.selectionType,
       next,
+      input.drawAt ?? null,
       Date.now(),
     );
     return (await this.findById(id))!;
@@ -84,12 +87,13 @@ export const participationSlotsRepo = {
     if (!current) return null;
     const next = { ...current, ...input };
     await run(
-      `UPDATE participation_slot SET name = ?, capacity = ?, selection_type = ?, sort_order = ?
+      `UPDATE participation_slot SET name = ?, capacity = ?, selection_type = ?, sort_order = ?, draw_at = ?
        WHERE id = ?`,
       next.name,
       next.capacity,
       next.selectionType,
       next.sortOrder,
+      next.drawAt ?? null,
       id,
     );
     return this.findById(id);

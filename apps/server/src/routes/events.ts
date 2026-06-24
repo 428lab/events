@@ -4,6 +4,7 @@ import {
   createEventInput,
   createSlotInput,
   joinEventInput,
+  setMemberSlotStatusInput,
   updateEventInput,
   updateMemberRoleInput,
   updateSlotInput,
@@ -14,6 +15,7 @@ import type {
   CreateSlotInput,
   Event,
   JoinEventInput,
+  SetMemberSlotStatusInput,
   UpdateEventInput,
   UpdateMemberRoleInput,
   UpdateSlotInput,
@@ -186,13 +188,42 @@ eventRoutes.post("/:id/join", zValidator("json", joinEventInput), async (c) => {
   return c.json({ member, status }, 201);
 });
 
-/** 参加解除（メンバーと個人 Entry を削除） */
+/** 参加解除（メンバーと個人 Entry を削除）。先着枠なら待機を自動繰り上げ。 */
 eventRoutes.delete("/:id/join", async (c) => {
   const user = c.get("user");
   const eventId = c.req.param("id");
+  const leaving = await eventMembersRepo.find(eventId, user.id);
   await entriesRepo.removeIndividualEntry(eventId, user.id);
   await eventMembersRepo.remove(eventId, user.id);
-  return c.json({ ok: true });
+
+  let promotedUserId: string | null = null;
+  // 先着枠で確定者が抜けたら、待機(waitlist)の最古を確定へ繰り上げる
+  if (leaving && leaving.slotId && leaving.status === "confirmed") {
+    const slot = await participationSlotsRepo.findById(leaving.slotId);
+    if (
+      slot &&
+      slot.selectionType === "first_come" &&
+      slot.confirmedCount < slot.capacity
+    ) {
+      const [next] = await eventMembersRepo.membersBySlotStatus(
+        leaving.slotId,
+        "waitlist",
+      );
+      if (next) {
+        await eventMembersRepo.setStatus(next.id, "confirmed");
+        const u = await usersRepo.findById(next.userId);
+        if (u) {
+          await entriesRepo.createIndividual(
+            eventId,
+            next.userId,
+            u.globalName ?? u.username,
+          );
+        }
+        promotedUserId = next.userId;
+      }
+    }
+  }
+  return c.json({ ok: true, promotedUserId });
 });
 
 /** ロール変更（staff のみ） */
@@ -274,6 +305,37 @@ eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), async (
     lost: applied.length - winners.length,
   });
 });
+
+/** 当選操作（staff のみ）。申込者の status を手動設定し、Entry を同期。 */
+eventRoutes.patch(
+  "/:id/slots/:slotId/members/:userId/status",
+  requireEventRole(["staff"]),
+  zValidator("json", setMemberSlotStatusInput),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const userId = c.req.param("userId");
+    const member = await eventMembersRepo.find(eventId, userId);
+    if (!member || member.slotId !== c.req.param("slotId")) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    const status = valid<SetMemberSlotStatusInput>(c, "json").status;
+    await eventMembersRepo.setStatus(member.id, status);
+    // Entry 同期: 確定なら個人Entry作成、それ以外は削除
+    if (status === "confirmed") {
+      const u = await usersRepo.findById(userId);
+      if (u) {
+        await entriesRepo.createIndividual(
+          eventId,
+          userId,
+          u.globalName ?? u.username,
+        );
+      }
+    } else {
+      await entriesRepo.removeIndividualEntry(eventId, userId);
+    }
+    return c.json({ ok: true });
+  },
+);
 
 /** 自分の Entry の成果物を保存（その Entry の member のみ） */
 eventRoutes.put(

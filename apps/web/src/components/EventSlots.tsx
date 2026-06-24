@@ -9,6 +9,7 @@ import {
 } from "@mui/material";
 import type { ParticipationSlot, User } from "@eventer/shared";
 import { useJoinEvent } from "../api/hooks.js";
+import { formatDateTime } from "../lib/format.js";
 
 /** 参加枠の一覧表示。未参加のログインユーザーには枠ごとの申込ボタンを出す。 */
 export function EventSlots({
@@ -62,6 +63,11 @@ export function EventSlots({
                     : ""}
                   {s.waitlistCount > 0 ? ` ・ キャンセル待ち ${s.waitlistCount}` : ""}
                 </Typography>
+                {s.selectionType === "lottery" && s.drawAt && (
+                  <Typography variant="caption" color="text.secondary">
+                    抽選日時: {formatDateTime(s.drawAt)}
+                  </Typography>
+                )}
               </Box>
               {me && !isMember && (
                 <Button

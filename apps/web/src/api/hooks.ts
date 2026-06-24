@@ -247,12 +247,39 @@ export function useDrawSlot(eventId: string) {
   });
 }
 
+/** 当選操作: 申込者の status を手動設定（staff） */
+export function useSetMemberSlotStatus(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      slotId,
+      userId,
+      status,
+    }: {
+      slotId: string;
+      userId: string;
+      status: "confirmed" | "waitlist" | "applied" | "lost";
+    }) =>
+      api.patch(
+        `/events/${eventId}/slots/${slotId}/members/${userId}/status`,
+        { status },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId, "slots"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId, "members"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId] });
+    },
+  });
+}
+
 export function useLeaveEvent() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.del(`/events/${id}/join`),
     onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: ["event", id] });
+      qc.invalidateQueries({ queryKey: ["event", id, "slots"] });
+      qc.invalidateQueries({ queryKey: ["event", id, "members"] });
       qc.invalidateQueries({ queryKey: ["myPage"] });
     },
   });

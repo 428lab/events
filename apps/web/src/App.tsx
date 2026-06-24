@@ -17,6 +17,7 @@ import { PresentPage } from "./pages/PresentPage.js";
 import { ControlPage } from "./pages/ControlPage.js";
 import { CriteriaAdminPage } from "./pages/CriteriaAdminPage.js";
 import { ScoreResultsPage } from "./pages/ScoreResultsPage.js";
+import { LotteryAdminPage } from "./pages/LotteryAdminPage.js";
 
 export function App() {
   const { data: user, isLoading } = useMe();
@@ -78,6 +79,7 @@ export function App() {
           <Route path="control" element={<ControlPage />} />
           <Route path="criteria" element={<CriteriaAdminPage />} />
           <Route path="results" element={<ScoreResultsPage />} />
+          <Route path="lottery" element={<LotteryAdminPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/me" replace />} />
       </Routes>
