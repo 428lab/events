@@ -128,9 +128,9 @@ export function EventDetailPage() {
 
   const awardItems = awards
     ? [
-        // ランキング賞は受賞者が設定されたものだけ
+        // ランキング賞は受賞者が設定されたものだけ。上位（rankOrder 小）から表示。
         ...[...awards.ranks]
-          .sort((a, b) => b.rankOrder - a.rankOrder)
+          .sort((a, b) => a.rankOrder - b.rankOrder)
           .map((r) => ({
             key: `rank-${r.id}`,
             name: r.name,
