@@ -8,6 +8,7 @@ import {
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
+import { VersionFooter } from "./VersionFooter.js";
 
 /** 未ログインの公開ページ用の軽量レイアウト（ログイン導線のみ） */
 export function PublicLayout({ children }: { children: React.ReactNode }) {
@@ -33,6 +34,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
       <Container maxWidth="md" sx={{ py: 4 }}>
         {children}
       </Container>
+      <VersionFooter />
     </Box>
   );
 }

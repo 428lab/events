@@ -12,6 +12,7 @@ import { Link as RouterLink, useNavigate } from "react-router-dom";
 import type { User } from "@eventer/shared";
 import { useIsAdmin, useLogout } from "../api/hooks.js";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
+import { VersionFooter } from "./VersionFooter.js";
 
 export function Layout({
   user,
@@ -79,6 +80,7 @@ export function Layout({
       <Container maxWidth="md" sx={{ py: 4 }}>
         {children}
       </Container>
+      <VersionFooter />
     </Box>
   );
 }
