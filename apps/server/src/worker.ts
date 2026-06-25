@@ -8,6 +8,7 @@ import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes } from "./routes/me.js";
 import { getEventImage } from "./routes/images.js";
 import { publicRoutes } from "./routes/public.js";
+import { inquiryRoutes, adminInquiryRoutes } from "./routes/inquiries.js";
 import { currentUser } from "./auth/session.js";
 import { isAppAdmin } from "./auth/admin.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
@@ -30,6 +31,8 @@ api.route("/events", eventRoutes);
 api.route("/events", scoringRoutes);
 api.route("/events", awardRoutes);
 api.route("/me", meRoutes);
+api.route("/inquiries", inquiryRoutes);
+api.route("/admin/inquiries", adminInquiryRoutes);
 
 /**
  * staging ゲート用の無地HTML。サービス名・環境名などは出さず、

@@ -19,6 +19,10 @@ import { CriteriaAdminPage } from "./pages/CriteriaAdminPage.js";
 import { ScoreResultsPage } from "./pages/ScoreResultsPage.js";
 import { LotteryAdminPage } from "./pages/LotteryAdminPage.js";
 import { AccountPage } from "./pages/AccountPage.js";
+import { InquiriesPage } from "./pages/InquiriesPage.js";
+import { InquiryThreadPage } from "./pages/InquiryThreadPage.js";
+import { AdminInquiriesPage } from "./pages/AdminInquiriesPage.js";
+import { AdminInquiryThreadPage } from "./pages/AdminInquiryThreadPage.js";
 
 export function App() {
   const { data: user, isLoading } = useMe();
@@ -70,6 +74,10 @@ export function App() {
       <Routes>
         <Route path="/me" element={<MyPage />} />
         <Route path="/account" element={<AccountPage />} />
+        <Route path="/inquiries" element={<InquiriesPage />} />
+        <Route path="/inquiries/:id" element={<InquiryThreadPage />} />
+        <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />
+        <Route path="/admin/inquiries/:id" element={<AdminInquiryThreadPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/new" element={<CreateEventPage />} />
         <Route path="/events/:id" element={<EventLayout />}>

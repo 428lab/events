@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   AppBar,
   Avatar,
+  Badge,
   Box,
   Button,
   Chip,
@@ -16,7 +17,9 @@ import MenuIcon from "@mui/icons-material/Menu";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import type { User } from "@eventer/shared";
 import { useIsAdmin, useLogout } from "../api/hooks.js";
+import { useAdminInquiryUnreadCount } from "../api/inquiryHooks.js";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
+import { NotificationBell } from "./NotificationBell.js";
 import { VersionFooter } from "./VersionFooter.js";
 
 export function Layout({
@@ -29,6 +32,7 @@ export function Layout({
   const logout = useLogout();
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
+  const { data: adminUnread } = useAdminInquiryUnreadCount(isAdmin);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const closeMenu = () => setAnchor(null);
   const doLogout = () =>
@@ -78,8 +82,16 @@ export function Layout({
             <Button color="inherit" component={RouterLink} to="/me">
               マイページ
             </Button>
+            {isAdmin && (
+              <Button color="inherit" component={RouterLink} to="/admin/inquiries">
+                <Badge badgeContent={adminUnread ?? 0} color="error">
+                  問い合わせ管理
+                </Badge>
+              </Button>
+            )}
           </Box>
 
+          <NotificationBell />
           <ThemeSwitcher />
           <Avatar
             component={RouterLink}
@@ -122,6 +134,26 @@ export function Layout({
             <MenuItem component={RouterLink} to="/me" onClick={closeMenu}>
               マイページ
             </MenuItem>
+            <MenuItem component={RouterLink} to="/inquiries" onClick={closeMenu}>
+              お問い合わせ
+            </MenuItem>
+            {isAdmin && (
+              <MenuItem
+                component={RouterLink}
+                to="/admin/inquiries"
+                onClick={closeMenu}
+              >
+                問い合わせ管理
+                {Boolean(adminUnread) && (
+                  <Chip
+                    size="small"
+                    color="error"
+                    label={adminUnread}
+                    sx={{ ml: 1, height: 18 }}
+                  />
+                )}
+              </MenuItem>
+            )}
             <MenuItem component={RouterLink} to="/account" onClick={closeMenu}>
               アカウント設定
             </MenuItem>
