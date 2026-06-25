@@ -94,18 +94,23 @@ function injectEventOg(html: string, event: Event): string {
   const url = `${env.appBaseUrl}/events/${event.id}`;
   const title = escapeHtml(event.title);
   const desc = escapeHtml((event.description || "").slice(0, 200));
+  // 画像なしイベントは既定OG画像にフォールバック
+  const image = event.imageUpdatedAt
+    ? `${env.appBaseUrl}/api/events/${event.id}/image?v=${event.imageUpdatedAt}`
+    : `${env.appBaseUrl}/og-default.png`;
   const tags = [
     `<meta property="og:type" content="website" />`,
     `<meta property="og:title" content="${title}" />`,
     `<meta property="og:description" content="${desc}" />`,
     `<meta property="og:url" content="${url}" />`,
+    `<meta property="og:image" content="${image}" />`,
+    `<meta name="twitter:card" content="summary_large_image" />`,
   ];
-  if (event.imageUpdatedAt) {
-    const img = `${env.appBaseUrl}/api/events/${event.id}/image?v=${event.imageUpdatedAt}`;
-    tags.push(`<meta property="og:image" content="${img}" />`);
-    tags.push(`<meta name="twitter:card" content="summary_large_image" />`);
-  }
-  return html.replace("</head>", `${tags.join("\n")}\n</head>`);
+  // index.html の既定OGを取り除いてからイベント固有を入れる（重複回避）
+  const cleaned = html
+    .replace(/\s*<meta property="og:[^>]*>/g, "")
+    .replace(/\s*<meta name="twitter:[^>]*>/g, "");
+  return cleaned.replace("</head>", `${tags.join("\n")}\n</head>`);
 }
 
 // /events/:id（イベント詳細）には OG メタを注入した index.html を返す

@@ -1,0 +1,21 @@
+<svg width="1200" height="630" viewBox="0 0 680 357" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="680" height="357" fill="#0E1426"/>
+<rect x="10" y="10" width="660" height="337" rx="16" fill="none" stroke="#1E2A44" stroke-width="1"/>
+<g stroke-width="2" stroke-linecap="round">
+<g stroke="#2DD4BF"><line x1="98" y1="80" x2="98" y2="58"/><line x1="98" y1="80" x2="114" y2="64"/><line x1="98" y1="80" x2="120" y2="80"/><line x1="98" y1="80" x2="114" y2="96"/><line x1="98" y1="80" x2="98" y2="102"/><line x1="98" y1="80" x2="82" y2="96"/><line x1="98" y1="80" x2="76" y2="80"/><line x1="98" y1="80" x2="82" y2="64"/></g>
+<g stroke="#FB7185" stroke-width="1.5" opacity="0.8"><line x1="606" y1="298" x2="606" y2="284"/><line x1="606" y1="298" x2="616" y2="288"/><line x1="606" y1="298" x2="620" y2="298"/><line x1="606" y1="298" x2="616" y2="308"/><line x1="606" y1="298" x2="606" y2="312"/><line x1="606" y1="298" x2="596" y2="308"/><line x1="606" y1="298" x2="592" y2="298"/><line x1="606" y1="298" x2="596" y2="288"/></g>
+</g>
+<circle cx="98" cy="80" r="3" fill="#5EEAD4"/>
+<text x="316" y="184" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans CJK JP',sans-serif" font-size="62" font-weight="700"><tspan fill="#F8FAFC">events</tspan><tspan fill="#FB923C" dx="14">lab</tspan></text>
+<rect x="476" y="132" width="62" height="26" rx="13" fill="#FB923C"/>
+<text x="507" y="150" text-anchor="middle" font-family="'Hiragino Sans',sans-serif" font-size="14" font-weight="700" fill="#0E1426" letter-spacing="1">BETA</text>
+<rect x="272" y="202" width="92" height="4" rx="2" fill="#2DD4BF"/>
+<text x="318" y="241" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans CJK JP',sans-serif" font-size="24" font-weight="700" fill="#F8FAFC">募集から配信まで全部やる。</text>
+<g font-family="'Hiragino Sans','Noto Sans CJK JP',sans-serif" font-size="15">
+<rect x="142" y="268" width="90" height="30" rx="15" fill="#13203A" stroke="#2DD4BF" stroke-width="1"/><text x="187" y="288" text-anchor="middle" fill="#5EEAD4">告知</text>
+<rect x="244" y="268" width="90" height="30" rx="15" fill="#13203A" stroke="#FB923C" stroke-width="1"/><text x="289" y="288" text-anchor="middle" fill="#FDBA74">参加</text>
+<rect x="346" y="268" width="90" height="30" rx="15" fill="#13203A" stroke="#2DD4BF" stroke-width="1"/><text x="391" y="288" text-anchor="middle" fill="#5EEAD4">プレゼン</text>
+<rect x="448" y="268" width="90" height="30" rx="15" fill="#13203A" stroke="#FB923C" stroke-width="1"/><text x="493" y="288" text-anchor="middle" fill="#FDBA74">配信</text>
+</g>
+<text x="340" y="328" text-anchor="middle" font-family="'Hiragino Sans',sans-serif" font-size="15" fill="#2DD4BF" letter-spacing="1">events.kojira.io</text>
+</svg>

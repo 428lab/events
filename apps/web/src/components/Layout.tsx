@@ -36,6 +36,18 @@ export function Layout({
           >
             events lab
           </Typography>
+          <Chip
+            label="BETA"
+            size="small"
+            sx={{
+              ml: 1,
+              height: 18,
+              fontSize: 11,
+              fontWeight: 700,
+              bgcolor: "#FB923C",
+              color: "#0E1426",
+            }}
+          />
           <Box sx={{ flexGrow: 1 }} />
           {isAdmin && (
             <Chip
