@@ -14,13 +14,14 @@ import { VersionFooter } from "./VersionFooter.js";
 /** 未ログインの公開ページ用の軽量レイアウト（ログイン導線のみ） */
 export function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Box sx={{ minHeight: "100vh" }}>
+    <Box sx={{ minHeight: "100vh", overflowX: "hidden" }}>
       <AppBar position="static" elevation={0}>
-        <Toolbar>
+        <Toolbar sx={{ gap: 0.5 }}>
           <Typography
             variant="h6"
             component={RouterLink}
             to="/"
+            noWrap
             sx={{ color: "inherit", textDecoration: "none", fontWeight: 700 }}
           >
             events lab
