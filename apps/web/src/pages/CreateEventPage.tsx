@@ -9,13 +9,16 @@ import {
   Stack,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { EVENT_IMAGE, VENUE_TYPES, type VenueType } from "@eventer/shared";
 import { useCreateEvent } from "../api/hooks.js";
 import { ImageCropField } from "../components/ImageCropField.js";
-import { venueLabel } from "../lib/format.js";
+import { EventImageStudio } from "../components/EventImageStudio.js";
+import { formatDateRange, venueLabel } from "../lib/format.js";
 
 function toEpoch(local: string): number {
   return new Date(local).getTime();
@@ -33,6 +36,7 @@ export function CreateEventPage() {
   const [venueOffline, setVenueOffline] = useState("");
   const [venueOnline, setVenueOnline] = useState("");
   const [contestMode, setContestMode] = useState(false);
+  const [imageMode, setImageMode] = useState<"upload" | "template">("upload");
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
@@ -166,6 +170,17 @@ export function CreateEventPage() {
             <Typography variant="subtitle2" gutterBottom>
               イベント画像（OG画像 {EVENT_IMAGE.width}×{EVENT_IMAGE.height}・任意）
             </Typography>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={imageMode}
+              onChange={(_e, v) => v && setImageMode(v)}
+              sx={{ mb: 1.5 }}
+            >
+              <ToggleButton value="upload">アップロード</ToggleButton>
+              <ToggleButton value="template">テンプレートで作る</ToggleButton>
+            </ToggleButtonGroup>
+
             {imagePreview && (
               <Box
                 component="img"
@@ -182,17 +197,33 @@ export function CreateEventPage() {
                 }}
               />
             )}
-            <Stack direction="row" spacing={1}>
-              <ImageCropField
-                label={imagePreview ? "画像を変更" : "画像を選択"}
-                onCropped={setCropped}
+
+            {imageMode === "upload" ? (
+              <Stack direction="row" spacing={1}>
+                <ImageCropField
+                  label={imagePreview ? "画像を変更" : "画像を選択"}
+                  onCropped={setCropped}
+                />
+                {imagePreview && (
+                  <Button color="error" onClick={clearImage}>
+                    削除
+                  </Button>
+                )}
+              </Stack>
+            ) : (
+              <EventImageStudio
+                title={title}
+                subtitle={
+                  startsAt
+                    ? formatDateRange(
+                        toEpoch(startsAt),
+                        toEpoch(endsAt || startsAt),
+                      )
+                    : undefined
+                }
+                onGenerated={setCropped}
               />
-              {imagePreview && (
-                <Button color="error" onClick={clearImage}>
-                  削除
-                </Button>
-              )}
-            </Stack>
+            )}
           </Box>
 
           {createEvent.isError && (
