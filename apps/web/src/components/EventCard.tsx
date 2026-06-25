@@ -49,8 +49,10 @@ export function EventCard({
         <Box
           sx={{
             flexShrink: 0,
-            width: { xs: 120, sm: 200 },
+            width: { xs: 140, sm: 200 },
             aspectRatio: "1200 / 630",
+            // 画像はアスペクト維持で切らない（縦に引き伸ばされてクロップされるのを防ぐ）
+            alignSelf: img ? "flex-start" : "stretch",
             ...(img
               ? {
                   backgroundImage: `url(${img})`,
@@ -95,17 +97,47 @@ export function EventCard({
             </>
           )}
         </Box>
-        <CardContent sx={{ flex: 1 }}>
+        <CardContent
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            p: { xs: 1.25, sm: 2 },
+            "&:last-child": { pb: { xs: 1.25, sm: 2 } },
+          }}
+        >
           <Stack
             direction="row"
             spacing={1}
             alignItems="center"
             justifyContent="space-between"
           >
-            <Typography variant="h6">{event.title}</Typography>
-            {role && <Chip size="small" label={roleLabel[role]} />}
+            <Typography
+              variant="h6"
+              sx={{
+                fontSize: { xs: "0.95rem", sm: "1.25rem" },
+                lineHeight: 1.25,
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {event.title}
+            </Typography>
+            {role && <Chip size="small" label={roleLabel[role]} sx={{ flexShrink: 0 }} />}
           </Stack>
-          <Typography variant="body2" color="text.secondary">
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              mt: 0.25,
+              fontSize: { xs: "0.72rem", sm: "0.875rem" },
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
             {formatDateRange(event.startsAt, event.endsAt)} ・{" "}
             {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
           </Typography>
