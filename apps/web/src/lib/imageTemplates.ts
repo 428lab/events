@@ -60,15 +60,37 @@ export const BACKGROUNDS: BackgroundDef[] = [
     draw: fill("#0E1426"),
   },
   {
-    label: "夏祭り",
+    label: "花火",
     fg: "#F8FAFC",
     sub: "#CBD5E1",
     draw: (ctx) => {
-      const g = ctx.createLinearGradient(0, 0, OG_W, OG_H);
-      g.addColorStop(0, "#134E4A");
-      g.addColorStop(1, "#7C2D12");
-      ctx.fillStyle = g;
+      ctx.fillStyle = "#0E1426";
       ctx.fillRect(0, 0, OG_W, OG_H);
+      const bursts: [number, number, string][] = [
+        [170, 140, "#2DD4BF"],
+        [1010, 110, "#FB923C"],
+        [1070, 500, "#FB7185"],
+        [120, 470, "#FBBF24"],
+      ];
+      for (const [cx, cy, color] of bursts) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        ctx.globalAlpha = 0.5;
+        for (let a = 0; a < 8; a++) {
+          const ang = (a * Math.PI) / 4;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + Math.cos(ang) * 36, cy + Math.sin(ang) * 36);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
     },
   },
   {

@@ -34,11 +34,21 @@ export function EventImageStudio({
   onGenerated: (blob: Blob) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [fontIdx, setFontIdx] = useState(0);
-  const [bgIdx, setBgIdx] = useState(0);
-  const [layout, setLayout] = useState<LayoutKey>("center");
-  const [titleSize, setTitleSize] = useState(96);
+  const rand = (n: number) => Math.floor(Math.random() * n);
+  const [fontIdx, setFontIdx] = useState(() => rand(FONTS.length));
+  const [bgIdx, setBgIdx] = useState(() => rand(BACKGROUNDS.length));
+  const [layout, setLayout] = useState<LayoutKey>(
+    () => LAYOUTS[rand(LAYOUTS.length)].key,
+  );
+  const [titleSize, setTitleSize] = useState(() => 72 + rand(7) * 8);
   const [showSubtitle, setShowSubtitle] = useState(Boolean(subtitle));
+
+  const shuffle = () => {
+    setFontIdx(rand(FONTS.length));
+    setBgIdx(rand(BACKGROUNDS.length));
+    setLayout(LAYOUTS[rand(LAYOUTS.length)].key);
+    setTitleSize(72 + rand(7) * 8);
+  };
 
   const font = FONTS[fontIdx];
   const background = BACKGROUNDS[bgIdx];
@@ -85,6 +95,10 @@ export function EventImageStudio({
           borderColor: "divider",
         }}
       />
+
+      <Button variant="outlined" onClick={shuffle} sx={{ alignSelf: "flex-start" }}>
+        🎲 おまかせ（ランダム）
+      </Button>
 
       <TextField
         select
