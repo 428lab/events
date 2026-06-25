@@ -6,8 +6,10 @@ import {
   Card,
   CardContent,
   Divider,
+  FormControlLabel,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -48,6 +50,7 @@ export function EditEventPage() {
   const [venueType, setVenueType] = useState<VenueType>("offline");
   const [venueOffline, setVenueOffline] = useState("");
   const [venueOnline, setVenueOnline] = useState("");
+  const [contestMode, setContestMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
@@ -62,6 +65,7 @@ export function EditEventPage() {
       setVenueType(e.venueType);
       setVenueOffline(e.venueOffline ?? "");
       setVenueOnline(e.venueOnline ?? "");
+      setContestMode(e.contestMode);
       setInitialized(true);
     }
   }, [data, initialized]);
@@ -85,6 +89,7 @@ export function EditEventPage() {
         venueType,
         venueOffline: venueOffline || null,
         venueOnline: venueOnline || null,
+        contestMode,
       },
       { onSuccess: () => navigate(`/events/${id}`) },
     );
@@ -178,11 +183,30 @@ export function EditEventPage() {
             />
           )}
 
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={contestMode}
+                  onChange={(e) => setContestMode(e.target.checked)}
+                />
+              }
+              label="コンテスト形式（採点・成果物・表彰を使う）"
+            />
+            <Typography variant="caption" color="text.secondary" display="block">
+              オフなら告知・募集だけの一般イベントになり、採点・成果物・表彰は表示されません。
+            </Typography>
+          </Box>
+
           <Divider />
           <EventSlotsEditor eventId={id} />
 
-          <Divider />
-          <AwardsEditor eventId={id} />
+          {contestMode && (
+            <>
+              <Divider />
+              <AwardsEditor eventId={id} />
+            </>
+          )}
 
           <Divider />
           <EventImageEditor event={event} />

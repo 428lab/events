@@ -151,7 +151,9 @@ export function EventDetailPage() {
     (state?.awardsRevealCursor ?? 0) >=
     (awards ? awards.ranks.length + awards.specials.length : 0);
   const eventEnded = event.endsAt < Date.now();
-  const showAwards = awardItems.length > 0 && (ceremonyDone || eventEnded);
+  const contest = event.contestMode;
+  const showAwards =
+    contest && awardItems.length > 0 && (ceremonyDone || eventEnded);
 
   return (
     <Grid container spacing={3}>
@@ -230,7 +232,7 @@ export function EventDetailPage() {
         </Card>
       )}
 
-      {(eventEnded || state?.scoringLocked) && (
+      {contest && (eventEnded || state?.scoringLocked) && (
         <Stack direction="row">
           <Button
             variant="outlined"
@@ -298,7 +300,7 @@ export function EventDetailPage() {
         ) : null}
       </Stack>
 
-      {(isMember || isAdmin) && state && !state.scoringLocked && (
+      {contest && (isMember || isAdmin) && state && !state.scoringLocked && (
         <Alert
           severity="info"
           sx={{ alignItems: "center", "& .MuiAlert-message": { flex: 1 } }}
@@ -327,7 +329,7 @@ export function EventDetailPage() {
 
       {(isMember || isAdmin) && (
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          {state && state.mode !== "normal" && (
+          {contest && state && state.mode !== "normal" && (
             <Chip
               color={state.mode === "presentation" ? "error" : "primary"}
               label={`進行中: ${
@@ -339,7 +341,7 @@ export function EventDetailPage() {
               }`}
             />
           )}
-          {state?.mode === "presentation" && (
+          {contest && state?.mode === "presentation" && (
             <Button
               variant="contained"
               color="error"
@@ -349,7 +351,7 @@ export function EventDetailPage() {
               プレゼン画面へ
             </Button>
           )}
-          {state?.mode === "awards" && (
+          {contest && state?.mode === "awards" && (
             <Button
               variant="contained"
               color="secondary"
@@ -359,16 +361,18 @@ export function EventDetailPage() {
               表彰式へ
             </Button>
           )}
-          {(isMember || isAdmin) && (
+          {contest && (
             <Button variant="outlined" component={RouterLink} to={`/events/${id}/scoring`}>
               採点
             </Button>
           )}
           {isStaff && (
+            <Button variant="contained" component={RouterLink} to={`/events/${id}/edit`}>
+              編集
+            </Button>
+          )}
+          {contest && isStaff && (
             <>
-              <Button variant="contained" component={RouterLink} to={`/events/${id}/edit`}>
-                編集
-              </Button>
               <Button variant="outlined" component={RouterLink} to={`/events/${id}/control`}>
                 進行コントロール
               </Button>
@@ -383,9 +387,10 @@ export function EventDetailPage() {
         </Stack>
       )}
 
-      {myEntry && <SubmissionEditor eventId={id} entry={myEntry} />}
+      {contest && myEntry && <SubmissionEditor eventId={id} entry={myEntry} />}
 
-      {(event.venueType === "online" || event.venueType === "hybrid") &&
+      {contest &&
+        (event.venueType === "online" || event.venueType === "hybrid") &&
         entries && (
           <Card variant="outlined">
             <CardContent>

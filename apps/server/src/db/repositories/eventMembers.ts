@@ -165,6 +165,7 @@ export const eventMembersRepo = {
       participationType:
         row.participation_type as MyEventSummary["participationType"],
       aggregateSelfEntry: (row.aggregate_self_entry as number) === 1,
+      contestMode: (row.contest_mode as number) === 1,
       status: row.status as MyEventSummary["status"],
       createdBy: row.created_by as string,
       createdAt: row.created_at as number,

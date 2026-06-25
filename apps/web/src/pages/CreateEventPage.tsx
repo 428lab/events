@@ -4,8 +4,10 @@ import {
   Button,
   Card,
   CardContent,
+  FormControlLabel,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -30,6 +32,7 @@ export function CreateEventPage() {
   const [venueType, setVenueType] = useState<VenueType>("offline");
   const [venueOffline, setVenueOffline] = useState("");
   const [venueOnline, setVenueOnline] = useState("");
+  const [contestMode, setContestMode] = useState(false);
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
@@ -57,6 +60,7 @@ export function CreateEventPage() {
         venueOffline: venueOffline || null,
         venueOnline: venueOnline || null,
         aggregateSelfEntry: false,
+        contestMode,
       },
       {
         onSuccess: async ({ event }) => {
@@ -143,6 +147,21 @@ export function CreateEventPage() {
               fullWidth
             />
           )}
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={contestMode}
+                  onChange={(e) => setContestMode(e.target.checked)}
+                />
+              }
+              label="コンテスト形式（採点・成果物・表彰を使う）"
+            />
+            <Typography variant="caption" color="text.secondary" display="block">
+              オフなら告知・募集だけの一般イベントになります（採点や表彰は表示されません）。あとから変更できます。
+            </Typography>
+          </Box>
+
           <Box>
             <Typography variant="subtitle2" gutterBottom>
               イベント画像（OG画像 {EVENT_IMAGE.width}×{EVENT_IMAGE.height}・任意）

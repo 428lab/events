@@ -32,6 +32,8 @@ export const eventSchema = z.object({
   venueOnline: z.string().nullable(),
   participationType: z.enum(PARTICIPATION_TYPES),
   aggregateSelfEntry: z.boolean(),
+  /** コンテスト形式（採点・成果物・表彰などを使う）。オフ＝告知/募集のみの一般イベント */
+  contestMode: z.boolean(),
   status: z.enum(EVENT_STATUSES),
   createdBy: z.string(),
   createdAt: z.number(),
@@ -50,6 +52,7 @@ export const createEventInput = z
     venueOffline: z.string().max(500).optional().nullable(),
     venueOnline: z.string().max(500).optional().nullable(),
     aggregateSelfEntry: z.boolean().default(false),
+    contestMode: z.boolean().default(false),
   })
   .refine((v) => v.endsAt >= v.startsAt, {
     message: "endsAt must be >= startsAt",
@@ -66,6 +69,7 @@ export const updateEventInput = z.object({
   venueOffline: z.string().max(500).optional().nullable(),
   venueOnline: z.string().max(500).optional().nullable(),
   aggregateSelfEntry: z.boolean().optional(),
+  contestMode: z.boolean().optional(),
   status: z.enum(["draft", "published"]).optional(),
 });
 export type UpdateEventInput = z.infer<typeof updateEventInput>;

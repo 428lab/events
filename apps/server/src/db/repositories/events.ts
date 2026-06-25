@@ -16,6 +16,7 @@ interface EventRow {
   venue_online: string | null;
   participation_type: string;
   aggregate_self_entry: number;
+  contest_mode: number;
   status: string;
   created_by: string;
   created_at: number;
@@ -41,6 +42,7 @@ function toEvent(row: EventRow): Event {
     venueOnline: row.venue_online,
     participationType: row.participation_type as Event["participationType"],
     aggregateSelfEntry: row.aggregate_self_entry === 1,
+    contestMode: row.contest_mode === 1,
     status: row.status as Event["status"],
     createdBy: row.created_by,
     createdAt: row.created_at,
@@ -126,8 +128,8 @@ export const eventsRepo = {
       `INSERT INTO event
         (id, title, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
-         aggregate_self_entry, status, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, 'draft', ?, ?)`,
+         aggregate_self_entry, contest_mode, status, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?)`,
       id,
       input.title,
       input.description ?? "",
@@ -137,6 +139,7 @@ export const eventsRepo = {
       input.venueOffline ?? null,
       input.venueOnline ?? null,
       input.aggregateSelfEntry ? 1 : 0,
+      input.contestMode ? 1 : 0,
       createdBy,
       Date.now(),
     );
@@ -151,7 +154,7 @@ export const eventsRepo = {
       `UPDATE event SET
          title = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
-         aggregate_self_entry = ?, status = ?
+         aggregate_self_entry = ?, contest_mode = ?, status = ?
        WHERE id = ?`,
       next.title,
       next.description,
@@ -161,6 +164,7 @@ export const eventsRepo = {
       next.venueOffline ?? null,
       next.venueOnline ?? null,
       next.aggregateSelfEntry ? 1 : 0,
+      next.contestMode ? 1 : 0,
       next.status,
       id,
     );
