@@ -44,15 +44,18 @@ export function EventCard({
       <CardActionArea
         component={RouterLink}
         to={`/events/${event.id}`}
-        sx={{ display: "flex", alignItems: "stretch" }}
+        sx={{
+          display: "flex",
+          // モバイルは縦積み（画像が上に全幅）、PCは横並び
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: "stretch",
+        }}
       >
         <Box
           sx={{
             flexShrink: 0,
-            width: { xs: 140, sm: 200 },
+            width: { xs: "100%", sm: 200 },
             aspectRatio: "1200 / 630",
-            // 画像はアスペクト維持で切らない（縦に引き伸ばされてクロップされるのを防ぐ）
-            alignSelf: img ? "flex-start" : "stretch",
             ...(img
               ? {
                   backgroundImage: `url(${img})`,
@@ -74,7 +77,7 @@ export function EventCard({
                 sx={{
                   color: "#F1F5F9",
                   fontWeight: 700,
-                  fontSize: { xs: 12, sm: 14 },
+                  fontSize: { xs: 20, sm: 14 },
                   lineHeight: 1.3,
                   display: "-webkit-box",
                   WebkitLineClamp: 3,
