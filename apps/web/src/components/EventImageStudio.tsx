@@ -4,6 +4,7 @@ import {
   Button,
   ListSubheader,
   MenuItem,
+  Slider,
   Stack,
   TextField,
   ToggleButton,
@@ -36,6 +37,7 @@ export function EventImageStudio({
   const [fontIdx, setFontIdx] = useState(0);
   const [bgIdx, setBgIdx] = useState(0);
   const [layout, setLayout] = useState<LayoutKey>("center");
+  const [titleSize, setTitleSize] = useState(96);
   const [showSubtitle, setShowSubtitle] = useState(Boolean(subtitle));
 
   const font = FONTS[fontIdx];
@@ -52,12 +54,13 @@ export function EventImageStudio({
         font,
         background,
         layout,
+        titleSize,
       });
     })();
     return () => {
       alive = false;
     };
-  }, [font, background, layout, title, subtitle, showSubtitle]);
+  }, [font, background, layout, titleSize, title, subtitle, showSubtitle]);
 
   const use = () => {
     canvasRef.current?.toBlob(
@@ -142,6 +145,20 @@ export function EventImageStudio({
             ))}
           </ToggleButtonGroup>
         </Box>
+      </Box>
+
+      <Box sx={{ maxWidth: 280 }}>
+        <Typography variant="caption" color="text.secondary">
+          文字サイズ
+        </Typography>
+        <Slider
+          size="small"
+          min={40}
+          max={140}
+          step={4}
+          value={titleSize}
+          onChange={(_e, v) => setTitleSize(v as number)}
+        />
       </Box>
 
       {subtitle && (

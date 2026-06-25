@@ -144,6 +144,8 @@ export interface RenderOpts {
   font: FontDef;
   background: BackgroundDef;
   layout: LayoutKey;
+  /** タイトルの基準サイズ(px)。長い場合は収まるよう自動縮小。既定96 */
+  titleSize?: number;
 }
 
 /** タイトルを指定幅に収まるよう改行＋自動縮小して行配列を返す */
@@ -154,8 +156,9 @@ function fitLines(
   weight: number,
   maxWidth: number,
   maxHeight: number,
+  startSize = 96,
 ): { lines: string[]; fontSize: number; lineHeight: number } {
-  for (let size = 96; size >= 36; size -= 4) {
+  for (let size = startSize; size >= 28; size -= 4) {
     ctx.font = `${weight} ${size}px "${family}", sans-serif`;
     const lineHeight = size * 1.25;
     const lines: string[] = [];
@@ -202,6 +205,7 @@ export function drawEventImage(
     opts.font.weight,
     maxW,
     maxH,
+    opts.titleSize ?? 96,
   );
 
   const align: CanvasTextAlign = opts.layout === "center" ? "center" : "left";
