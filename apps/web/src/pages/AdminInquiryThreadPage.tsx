@@ -1,4 +1,4 @@
-import { Alert, Button, Stack, Typography } from "@mui/material";
+import { Alert, Avatar, Box, Button, Stack, Typography } from "@mui/material";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useIsAdmin } from "../api/hooks.js";
 import {
@@ -27,6 +27,36 @@ export function AdminInquiryThreadPage() {
       >
         ← お問い合わせ管理へ
       </Button>
+      {data.userId && (
+        <Box
+          component={RouterLink}
+          to={`/users/${data.userId}`}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            textDecoration: "none",
+            color: "inherit",
+            alignSelf: "flex-start",
+            "&:hover .name": { textDecoration: "underline" },
+          }}
+        >
+          <Avatar
+            src={data.userAvatarUrl ?? undefined}
+            sx={{ width: 32, height: 32 }}
+          >
+            {data.userName?.charAt(0)}
+          </Avatar>
+          <Box>
+            <Typography className="name" variant="body2" fontWeight={600}>
+              {data.userName}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              プロフィールを見る
+            </Typography>
+          </Box>
+        </Box>
+      )}
       <InquiryThread
         detail={data}
         selfSender="admin"

@@ -5,3 +5,4 @@ export * from "./slots.js";
 export * from "./awards.js";
 export * from "./inquiries.js";
 export * from "./notifications.js";
+export * from "./users.js";

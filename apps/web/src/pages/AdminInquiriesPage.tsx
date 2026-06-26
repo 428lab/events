@@ -9,13 +9,14 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { useIsAdmin } from "../api/hooks.js";
 import { useAdminInquiries } from "../api/inquiryHooks.js";
 import { formatDateTime } from "../lib/format.js";
 
 export function AdminInquiriesPage() {
   const isAdmin = useIsAdmin();
+  const navigate = useNavigate();
   const { data: inquiries, isLoading } = useAdminInquiries();
 
   if (!isAdmin) {
@@ -52,7 +53,13 @@ export function AdminInquiriesPage() {
                     )}
                     <Avatar
                       src={q.userAvatarUrl ?? undefined}
-                      sx={{ width: 28, height: 28 }}
+                      title={`${q.userName} のプロフィール`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        navigate(`/users/${q.userId}`);
+                      }}
+                      sx={{ width: 28, height: 28, cursor: "pointer" }}
                     >
                       {q.userName.charAt(0)}
                     </Avatar>
@@ -60,8 +67,28 @@ export function AdminInquiriesPage() {
                       <Typography sx={{ fontWeight: q.unread ? 700 : 400 }} noWrap>
                         {q.subject}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {q.userName} ・ {formatDateTime(q.lastMessageAt)}
+                      <Box
+                        component="span"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          navigate(`/users/${q.userId}`);
+                        }}
+                        sx={{
+                          fontSize: 12,
+                          color: "text.secondary",
+                          "&:hover": { textDecoration: "underline" },
+                        }}
+                      >
+                        {q.userName}
+                      </Box>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        component="span"
+                      >
+                        {" "}
+                        ・ {formatDateTime(q.lastMessageAt)}
                       </Typography>
                     </Box>
                     <Chip

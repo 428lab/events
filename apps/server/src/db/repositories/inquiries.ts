@@ -149,6 +149,7 @@ export const inquiriesRepo = {
     );
     return rows.map((r) => ({
       ...toInquiry(r, "admin"),
+      userId: r.user_id,
       userName: r.u_name ?? r.u_username,
       userAvatarUrl: r.u_avatar,
     }));
@@ -164,16 +165,26 @@ export const inquiriesRepo = {
 
   async getForAdmin(id: string): Promise<InquiryDetail | null> {
     const inq = await one<
-      InquiryRow & { u_name: string | null; u_username: string }
+      InquiryRow & {
+        u_name: string | null;
+        u_username: string;
+        u_avatar: string | null;
+      }
     >(
-      `SELECT i.*, u.global_name AS u_name, u.username AS u_username
+      `SELECT i.*, u.global_name AS u_name, u.username AS u_username,
+              u.avatar_url AS u_avatar
        FROM inquiry i JOIN user u ON u.id = i.user_id WHERE i.id = ?`,
       id,
     );
     if (!inq) return null;
     await run("UPDATE inquiry SET admin_read_at = ? WHERE id = ?", Date.now(), id);
     const detail = await this.detail(inq);
-    return { ...detail, userName: inq.u_name ?? inq.u_username };
+    return {
+      ...detail,
+      userId: inq.user_id,
+      userName: inq.u_name ?? inq.u_username,
+      userAvatarUrl: inq.u_avatar,
+    };
   },
 
   /** 返信を追加。成功時は通知用に問い合わせ主の userId と件名を返す */

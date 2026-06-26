@@ -153,25 +153,46 @@ export const eventMembersRepo = {
          ORDER BY e.starts_at DESC`,
       userId,
     );
-    return rows.map((row) => ({
-      id: row.id as string,
-      title: row.title as string,
-      description: row.description as string,
-      startsAt: row.starts_at as number,
-      endsAt: row.ends_at as number,
-      venueType: row.venue_type as MyEventSummary["venueType"],
-      venueOffline: (row.venue_offline as string | null) ?? null,
-      venueOnline: (row.venue_online as string | null) ?? null,
-      participationType:
-        row.participation_type as MyEventSummary["participationType"],
-      aggregateSelfEntry: (row.aggregate_self_entry as number) === 1,
-      contestMode: (row.contest_mode as number) === 1,
-      status: row.status as MyEventSummary["status"],
-      createdBy: row.created_by as string,
-      createdAt: row.created_at as number,
-      imageUpdatedAt: (row.image_updated_at as number | null) ?? null,
-      participantCount: (row.participant_count as number) ?? 0,
-      myRole: row.my_role as EventRole,
-    }));
+    return rows.map(mapMyEventSummary);
+  },
+
+  /** 公開プロフィール用: 公開イベントのうち本人が確定参加しているもの */
+  async listPublicEventsForUser(userId: string): Promise<MyEventSummary[]> {
+    const rows = await many<Record<string, unknown> & { my_role: string }>(
+      `SELECT e.*, m.role AS my_role,
+                (SELECT COUNT(1) FROM event_member em
+                 WHERE em.event_id = e.id AND em.status = 'confirmed') AS participant_count
+         FROM event_member m
+         JOIN event e ON e.id = m.event_id
+         WHERE m.user_id = ? AND m.status = 'confirmed' AND e.status = 'published'
+         ORDER BY e.starts_at DESC`,
+      userId,
+    );
+    return rows.map(mapMyEventSummary);
   },
 };
+
+function mapMyEventSummary(
+  row: Record<string, unknown> & { my_role: string },
+): MyEventSummary {
+  return {
+    id: row.id as string,
+    title: row.title as string,
+    description: row.description as string,
+    startsAt: row.starts_at as number,
+    endsAt: row.ends_at as number,
+    venueType: row.venue_type as MyEventSummary["venueType"],
+    venueOffline: (row.venue_offline as string | null) ?? null,
+    venueOnline: (row.venue_online as string | null) ?? null,
+    participationType:
+      row.participation_type as MyEventSummary["participationType"],
+    aggregateSelfEntry: (row.aggregate_self_entry as number) === 1,
+    contestMode: (row.contest_mode as number) === 1,
+    status: row.status as MyEventSummary["status"],
+    createdBy: row.created_by as string,
+    createdAt: row.created_at as number,
+    imageUpdatedAt: (row.image_updated_at as number | null) ?? null,
+    participantCount: (row.participant_count as number) ?? 0,
+    myRole: row.my_role as EventRole,
+  };
+}

@@ -18,6 +18,7 @@ export type Inquiry = z.infer<typeof inquirySchema>;
 
 /** 運営一覧用に作成者情報を付与 */
 export const adminInquirySchema = inquirySchema.extend({
+  userId: z.string(),
   userName: z.string(),
   userAvatarUrl: z.string().nullable(),
 });
@@ -36,8 +37,10 @@ export const inquiryDetailSchema = z.object({
   subject: z.string(),
   status: z.enum(INQUIRY_STATUSES),
   messages: z.array(inquiryMessageSchema),
-  /** 運営視点の詳細でのみ付与される投稿者の表示名 */
+  /** 運営視点の詳細でのみ付与される投稿者情報 */
+  userId: z.string().optional(),
   userName: z.string().optional(),
+  userAvatarUrl: z.string().nullable().optional(),
 });
 export type InquiryDetail = z.infer<typeof inquiryDetailSchema>;
 

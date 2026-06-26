@@ -25,6 +25,7 @@ import { AdminInquiriesPage } from "./pages/AdminInquiriesPage.js";
 import { AdminInquiryThreadPage } from "./pages/AdminInquiryThreadPage.js";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage.js";
 import { TermsPage } from "./pages/TermsPage.js";
+import { UserProfilePage } from "./pages/UserProfilePage.js";
 
 export function App() {
   const { data: user, isLoading } = useMe();
@@ -82,6 +83,14 @@ export function App() {
             </PublicLayout>
           }
         />
+        <Route
+          path="/users/:id"
+          element={
+            <PublicLayout>
+              <UserProfilePage />
+            </PublicLayout>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
@@ -98,6 +107,7 @@ export function App() {
         <Route path="/admin/inquiries/:id" element={<AdminInquiryThreadPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsPage />} />
+        <Route path="/users/:id" element={<UserProfilePage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/new" element={<CreateEventPage />} />
         <Route path="/events/:id" element={<EventLayout />}>

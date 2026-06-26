@@ -1,7 +1,24 @@
 import { Hono } from "hono";
 import { eventsRepo } from "../db/repositories/events.js";
+import { usersRepo } from "../db/repositories/users.js";
+import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 
 export const publicRoutes = new Hono();
+
+/** 公開ユーザープロフィール（未ログイン可）。アイコン・表示名・公開イベント実績 */
+publicRoutes.get("/users/:id", async (c) => {
+  const id = c.req.param("id");
+  const user = await usersRepo.findById(id);
+  if (!user) return c.json({ error: "not_found" }, 404);
+  const events = await eventMembersRepo.listPublicEventsForUser(id);
+  return c.json({
+    id: user.id,
+    name: user.globalName ?? user.username,
+    avatarUrl: user.avatarUrl,
+    createdAt: user.createdAt,
+    events,
+  });
+});
 
 /** 開催前の公開イベント一覧（未ログイン可・開催直前順・ページング） */
 publicRoutes.get("/events", async (c) => {
