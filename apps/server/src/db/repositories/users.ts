@@ -1,5 +1,5 @@
 import type { User } from "@eventer/shared";
-import { one, run } from "../client.js";
+import { many, one, run } from "../client.js";
 
 interface UserRow {
   id: string;
@@ -40,6 +40,17 @@ export const usersRepo = {
       discordId,
     );
     return row ? toUser(row) : null;
+  },
+
+  /** ADMIN_DISCORD_IDS に該当するユーザーの id 一覧（運営宛て通知用） */
+  async listIdsByDiscordIds(discordIds: string[]): Promise<string[]> {
+    if (discordIds.length === 0) return [];
+    const placeholders = discordIds.map(() => "?").join(", ");
+    const rows = await many<{ id: string }>(
+      `SELECT id FROM user WHERE discord_id IN (${placeholders})`,
+      ...discordIds,
+    );
+    return rows.map((r) => r.id);
   },
 
   async upsertByDiscordId(input: UpsertUserInput): Promise<User> {

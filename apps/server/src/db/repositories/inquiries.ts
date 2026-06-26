@@ -109,17 +109,18 @@ export const inquiriesRepo = {
     return this.detail(inq);
   },
 
+  /** 返信を追加。成功時は運営宛て通知用に件名を返す。所有者でなければ null */
   async addUserMessage(
     id: string,
     userId: string,
     body: string,
-  ): Promise<boolean> {
-    const inq = await one<{ id: string }>(
-      "SELECT id FROM inquiry WHERE id = ? AND user_id = ?",
+  ): Promise<{ subject: string } | null> {
+    const inq = await one<{ subject: string }>(
+      "SELECT subject FROM inquiry WHERE id = ? AND user_id = ?",
       id,
       userId,
     );
-    if (!inq) return false;
+    if (!inq) return null;
     const now = Date.now();
     await batch([
       {
@@ -133,7 +134,7 @@ export const inquiriesRepo = {
         args: [now, now, id],
       },
     ]);
-    return true;
+    return { subject: inq.subject };
   },
 
   // ===== 運営 =====

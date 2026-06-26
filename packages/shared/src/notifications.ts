@@ -7,6 +7,7 @@ export const NOTIFICATION_TYPES = [
   "waitlist_promoted",
   "award",
   "inquiry_reply",
+  "inquiry_new",
   "info",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

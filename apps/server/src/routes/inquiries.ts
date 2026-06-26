@@ -11,9 +11,29 @@ import type {
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { isAppAdmin } from "../auth/admin.js";
+import { env } from "../env.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { inquiriesRepo } from "../db/repositories/inquiries.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
+import { usersRepo } from "../db/repositories/users.js";
+
+/** 新規問い合わせ/返信を運営管理者のベルへ通知（投稿者本人は除く） */
+async function notifyAdminsOfInquiry(
+  inquiryId: string,
+  subject: string,
+  authorUserId: string,
+) {
+  const adminIds = (
+    await usersRepo.listIdsByDiscordIds(env.adminDiscordIds)
+  ).filter((id) => id !== authorUserId);
+  await notificationsRepo.createForMany(
+    adminIds,
+    "inquiry_new",
+    "新しいお問い合わせがあります",
+    subject ? `「${subject}」` : "",
+    `/admin/inquiries/${inquiryId}`,
+  );
+}
 
 const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (!isAppAdmin(c.get("user"))) return c.json({ error: "forbidden" }, 403);
@@ -39,6 +59,7 @@ inquiryRoutes.post("/", zValidator("json", createInquiryInput), async (c) => {
     input.subject,
     input.body,
   );
+  await notifyAdminsOfInquiry(id, input.subject, c.get("user").id);
   return c.json({ id }, 201);
 });
 
@@ -55,12 +76,14 @@ inquiryRoutes.post(
   "/:id/messages",
   zValidator("json", postInquiryMessageInput),
   async (c) => {
-    const ok = await inquiriesRepo.addUserMessage(
-      c.req.param("id"),
+    const id = c.req.param("id");
+    const result = await inquiriesRepo.addUserMessage(
+      id,
       c.get("user").id,
       valid<PostInquiryMessageInput>(c, "json").body,
     );
-    if (!ok) return c.json({ error: "not_found" }, 404);
+    if (!result) return c.json({ error: "not_found" }, 404);
+    await notifyAdminsOfInquiry(id, result.subject, c.get("user").id);
     return c.json({ ok: true });
   },
 );
