@@ -13,6 +13,7 @@ import {
   List,
   ListItem,
   ListItemAvatar,
+  ListItemButton,
   ListItemText,
   Stack,
   TextField,
@@ -450,7 +451,12 @@ export function EventDetailPage() {
               </Typography>
               <List dense>
                 {members?.map((m) => (
-                  <ListItem key={m.id} disableGutters>
+                  <ListItemButton
+                    key={m.id}
+                    disableGutters
+                    component={RouterLink}
+                    to={`/users/${m.user.username}`}
+                  >
                     <ListItemAvatar>
                       <Avatar
                         src={m.user.avatarUrl ?? undefined}
@@ -463,7 +469,7 @@ export function EventDetailPage() {
                       primary={m.user.globalName ?? m.user.username}
                       secondary={roleLabel[m.role]}
                     />
-                  </ListItem>
+                  </ListItemButton>
                 ))}
               </List>
             </CardContent>
