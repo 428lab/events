@@ -1,7 +1,6 @@
 import { Box, Stack, Typography } from "@mui/material";
 import { useMyPage } from "../api/hooks.js";
 import { EventCard } from "../components/EventCard.js";
-import { UsernameCard } from "../components/UsernameCard.js";
 
 export function MyPage() {
   const { data, isLoading } = useMyPage();
@@ -9,7 +8,6 @@ export function MyPage() {
 
   return (
     <Stack spacing={4}>
-      <UsernameCard />
       <Box>
         <Typography variant="h5" gutterBottom fontWeight={700}>
           開催中・予定のイベント

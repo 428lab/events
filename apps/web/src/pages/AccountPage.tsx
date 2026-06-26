@@ -14,6 +14,7 @@ import {
   useMe,
   useUnlinkIdentity,
 } from "../api/hooks.js";
+import { UsernameCard } from "../components/UsernameCard.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
 
 export function AccountPage() {
@@ -33,6 +34,8 @@ export function AccountPage() {
       <Typography variant="h5" fontWeight={700}>
         アカウント設定
       </Typography>
+
+      <UsernameCard />
 
       <Card variant="outlined">
         <CardContent>
