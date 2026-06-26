@@ -163,10 +163,17 @@ export const inquiriesRepo = {
   },
 
   async getForAdmin(id: string): Promise<InquiryDetail | null> {
-    const inq = await one<InquiryRow>("SELECT * FROM inquiry WHERE id = ?", id);
+    const inq = await one<
+      InquiryRow & { u_name: string | null; u_username: string }
+    >(
+      `SELECT i.*, u.global_name AS u_name, u.username AS u_username
+       FROM inquiry i JOIN user u ON u.id = i.user_id WHERE i.id = ?`,
+      id,
+    );
     if (!inq) return null;
     await run("UPDATE inquiry SET admin_read_at = ? WHERE id = ?", Date.now(), id);
-    return this.detail(inq);
+    const detail = await this.detail(inq);
+    return { ...detail, userName: inq.u_name ?? inq.u_username };
   },
 
   /** 返信を追加。成功時は通知用に問い合わせ主の userId と件名を返す */

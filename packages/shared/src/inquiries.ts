@@ -36,6 +36,8 @@ export const inquiryDetailSchema = z.object({
   subject: z.string(),
   status: z.enum(INQUIRY_STATUSES),
   messages: z.array(inquiryMessageSchema),
+  /** 運営視点の詳細でのみ付与される投稿者の表示名 */
+  userName: z.string().optional(),
 });
 export type InquiryDetail = z.infer<typeof inquiryDetailSchema>;
 

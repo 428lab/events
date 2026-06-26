@@ -43,6 +43,11 @@ export function InquiryThread({
       <Stack spacing={1.5}>
         {detail.messages.map((m) => {
           const mine = m.sender === selfSender;
+          const senderLabel = mine
+            ? "あなた"
+            : m.sender === "admin"
+              ? "運営"
+              : (detail.userName ?? "ユーザー");
           return (
             <Box
               key={m.id}
@@ -69,7 +74,7 @@ export function InquiryThread({
                 color="text.secondary"
                 sx={{ display: "block", textAlign: mine ? "right" : "left", mt: 0.25 }}
               >
-                {m.sender === "admin" ? "運営" : "あなた"} ・ {formatDateTime(m.createdAt)}
+                {senderLabel} ・ {formatDateTime(m.createdAt)}
               </Typography>
             </Box>
           );
