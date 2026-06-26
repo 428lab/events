@@ -143,4 +143,9 @@ export const usersRepo = {
   async setDiscordId(userId: string, discordId: string): Promise<void> {
     await run("UPDATE user SET discord_id = ? WHERE id = ?", discordId, userId);
   },
+
+  /** ユーザー名（ハンドル）を変更 */
+  async setUsername(userId: string, username: string): Promise<void> {
+    await run("UPDATE user SET username = ? WHERE id = ?", username, userId);
+  },
 };
