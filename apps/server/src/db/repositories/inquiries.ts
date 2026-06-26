@@ -168,12 +168,16 @@ export const inquiriesRepo = {
     return this.detail(inq);
   },
 
-  async addAdminMessage(id: string, body: string): Promise<boolean> {
-    const inq = await one<{ id: string }>(
-      "SELECT id FROM inquiry WHERE id = ?",
+  /** 返信を追加。成功時は通知用に問い合わせ主の userId と件名を返す */
+  async addAdminMessage(
+    id: string,
+    body: string,
+  ): Promise<{ userId: string; subject: string } | null> {
+    const inq = await one<{ user_id: string; subject: string }>(
+      "SELECT user_id, subject FROM inquiry WHERE id = ?",
       id,
     );
-    if (!inq) return false;
+    if (!inq) return null;
     const now = Date.now();
     await batch([
       {
@@ -187,7 +191,7 @@ export const inquiriesRepo = {
         args: [now, now, id],
       },
     ]);
-    return true;
+    return { userId: inq.user_id, subject: inq.subject };
   },
 
   async detail(inq: InquiryRow): Promise<InquiryDetail> {

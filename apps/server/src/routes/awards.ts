@@ -23,6 +23,8 @@ import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { awardsRepo } from "../db/repositories/awards.js";
+import { entriesRepo } from "../db/repositories/entries.js";
+import { notificationsRepo } from "../db/repositories/notifications.js";
 import { scoresRepo } from "../db/repositories/scores.js";
 import { eventStateRepo } from "../db/repositories/eventState.js";
 import { sseHub } from "../sse/hub.js";
@@ -156,6 +158,47 @@ awardRoutes.put(
       return c.json({ error: "rank_or_special_required" }, 400);
     }
     return c.json({ ok: true });
+  },
+);
+
+/* 受賞者へアプリ内通知（staff のみ。発表後に明示的に押す＝ネタバレ防止） */
+awardRoutes.post(
+  "/:id/award-results/notify",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const event = await eventsRepo.findById(eventId);
+    if (!event) return c.json({ error: "not_found" }, 404);
+
+    const ranks = await awardsRepo.listRanks(eventId);
+    const specials = await awardsRepo.listSpecials(eventId);
+    const rankName = new Map(ranks.map((r) => [r.id, r.name]));
+    const specialName = new Map(specials.map((s) => [s.id, s.name]));
+    const results = await awardsRepo.listResults(eventId);
+    const link = `/events/${eventId}/results`;
+
+    const notified = new Set<string>();
+    for (const r of results) {
+      const awardName = r.award_rank_id
+        ? rankName.get(r.award_rank_id)
+        : r.special_award_id
+          ? specialName.get(r.special_award_id)
+          : undefined;
+      if (!awardName) continue;
+      const entry = await entriesRepo.findById(r.entry_id);
+      if (!entry) continue;
+      for (const uid of entry.memberUserIds) {
+        await notificationsRepo.create(
+          uid,
+          "award",
+          "受賞おめでとうございます🎉",
+          `「${event.title}」で${awardName}を受賞しました`,
+          link,
+        );
+        notified.add(uid);
+      }
+    }
+    return c.json({ notified: notified.size });
   },
 );
 

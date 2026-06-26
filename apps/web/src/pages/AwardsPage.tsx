@@ -14,6 +14,7 @@ import type { AwardResultView } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
 import { useAwards, useAwardsAdvance, useAwardsReset } from "../api/awardHooks.js";
+import { useNotifyAwardWinners } from "../api/notificationHooks.js";
 import { RadarChart } from "../components/RadarChart.js";
 import { fireConfetti, playDrumroll, playFanfare } from "../lib/effects.js";
 
@@ -33,6 +34,8 @@ export function AwardsPage() {
   const { data: state } = useEventState(id, true);
   const advance = useAwardsAdvance(id);
   const reset = useAwardsReset(id);
+  const notifyWinners = useNotifyAwardWinners(id);
+  const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const prevCursor = useRef<number | null>(null);
   // ドラムロール中は結果を隠す
   const [drumrolling, setDrumrolling] = useState(false);
@@ -188,6 +191,29 @@ export function AwardsPage() {
               {cursor >= sequence.length ? "すべて発表済み" : "次を発表"}
             </Button>
           </Stack>
+          <Button
+            variant="outlined"
+            color="secondary"
+            disabled={cursor < sequence.length || notifyWinners.isPending}
+            onClick={() =>
+              notifyWinners.mutate(undefined, {
+                onSuccess: (r) =>
+                  setNotifyMsg(`受賞者 ${r.notified} 人に通知しました`),
+              })
+            }
+          >
+            🏆 受賞者にアプリ内通知
+          </Button>
+          {cursor < sequence.length && (
+            <Typography variant="caption" color="text.disabled">
+              （すべて発表後に通知できます）
+            </Typography>
+          )}
+          {notifyMsg && (
+            <Typography variant="caption" color="success.main">
+              {notifyMsg}
+            </Typography>
+          )}
           <Button
             size="small"
             color="inherit"

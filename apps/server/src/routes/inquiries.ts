@@ -13,6 +13,7 @@ import { requireAuth } from "../auth/session.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { inquiriesRepo } from "../db/repositories/inquiries.js";
+import { notificationsRepo } from "../db/repositories/notifications.js";
 
 const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (!isAppAdmin(c.get("user"))) return c.json({ error: "forbidden" }, 403);
@@ -86,11 +87,19 @@ adminInquiryRoutes.post(
   "/:id/messages",
   zValidator("json", postInquiryMessageInput),
   async (c) => {
-    const ok = await inquiriesRepo.addAdminMessage(
-      c.req.param("id"),
+    const id = c.req.param("id");
+    const owner = await inquiriesRepo.addAdminMessage(
+      id,
       valid<PostInquiryMessageInput>(c, "json").body,
     );
-    if (!ok) return c.json({ error: "not_found" }, 404);
+    if (!owner) return c.json({ error: "not_found" }, 404);
+    await notificationsRepo.create(
+      owner.userId,
+      "inquiry_reply",
+      "お問い合わせに返信がありました",
+      owner.subject ? `「${owner.subject}」` : "",
+      `/inquiries/${id}`,
+    );
     return c.json({ ok: true });
   },
 );

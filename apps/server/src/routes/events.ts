@@ -32,6 +32,7 @@ import { entriesRepo } from "../db/repositories/entries.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
 import { usersRepo } from "../db/repositories/users.js";
+import { notificationsRepo } from "../db/repositories/notifications.js";
 import { deleteEventImage, putEventImage } from "./images.js";
 
 export const eventRoutes = new Hono<AppEnv>();
@@ -220,6 +221,14 @@ eventRoutes.delete("/:id/join", async (c) => {
           );
         }
         promotedUserId = next.userId;
+        const event = await eventsRepo.findById(eventId);
+        await notificationsRepo.create(
+          next.userId,
+          "waitlist_promoted",
+          "キャンセル待ちから繰り上がりました",
+          event ? `「${event.title}」への参加が確定しました` : "参加が確定しました",
+          `/events/${eventId}`,
+        );
       }
     }
   }
@@ -287,6 +296,9 @@ eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), async (
   const shuffled = [...applied].sort(() => Math.random() - 0.5);
   const winners = shuffled.slice(0, slot.capacity);
   const winnerIds = new Set(winners.map((w) => w.id));
+  const event = await eventsRepo.findById(eventId);
+  const title = event?.title ?? "イベント";
+  const link = `/events/${eventId}`;
 
   for (const m of applied) {
     if (winnerIds.has(m.id)) {
@@ -295,8 +307,22 @@ eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), async (
       if (u) {
         await entriesRepo.createIndividual(eventId, m.userId, u.globalName ?? u.username);
       }
+      await notificationsRepo.create(
+        m.userId,
+        "lottery_won",
+        "抽選に当選しました",
+        `「${title}」の抽選に当選しました。参加が確定です`,
+        link,
+      );
     } else {
       await eventMembersRepo.setStatus(m.id, "lost");
+      await notificationsRepo.create(
+        m.userId,
+        "lottery_lost",
+        "抽選結果のお知らせ",
+        `「${title}」は今回は落選となりました`,
+        link,
+      );
     }
   }
   return c.json({
@@ -332,6 +358,28 @@ eventRoutes.patch(
       }
     } else {
       await entriesRepo.removeIndividualEntry(eventId, userId);
+    }
+    // 確定/落選はユーザーへ通知
+    if (status === "confirmed" || status === "lost") {
+      const event = await eventsRepo.findById(eventId);
+      const title = event?.title ?? "イベント";
+      if (status === "confirmed") {
+        await notificationsRepo.create(
+          userId,
+          "lottery_won",
+          "参加が確定しました",
+          `「${title}」への参加が確定しました`,
+          `/events/${eventId}`,
+        );
+      } else {
+        await notificationsRepo.create(
+          userId,
+          "lottery_lost",
+          "抽選結果のお知らせ",
+          `「${title}」は今回は落選となりました`,
+          `/events/${eventId}`,
+        );
+      }
     }
     return c.json({ ok: true });
   },
