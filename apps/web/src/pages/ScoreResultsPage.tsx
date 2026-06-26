@@ -7,6 +7,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
   Typography,
@@ -44,14 +45,19 @@ export function ScoreResultsPage() {
         <Typography color="text.secondary">採点データがありません。</Typography>
       ) : (
         <Card variant="outlined">
-          <CardContent>
-            <Table size="small">
+          <CardContent sx={{ p: { xs: 1, sm: 2 } }}>
+            <TableContainer sx={{ overflowX: "auto" }}>
+            <Table size="small" sx={{ width: "auto", minWidth: "100%" }}>
               <TableHead>
                 <TableRow>
                   <TableCell>順位</TableCell>
-                  <TableCell>チーム</TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>チーム</TableCell>
                   {results.criteria.map((c) => (
-                    <TableCell key={c.id} align="right">
+                    <TableCell
+                      key={c.id}
+                      align="right"
+                      sx={{ whiteSpace: "nowrap" }}
+                    >
                       {c.name}
                     </TableCell>
                   ))}
@@ -72,7 +78,9 @@ export function ScoreResultsPage() {
                         `${i + 1}位`
                       )}
                     </TableCell>
-                    <TableCell>{e.entryName}</TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>
+                      {e.entryName}
+                    </TableCell>
                     {results.criteria.map((c) => (
                       <TableCell key={c.id} align="right">
                         {e.perCriterion[c.id] ?? 0}
@@ -85,6 +93,7 @@ export function ScoreResultsPage() {
                 ))}
               </TableBody>
             </Table>
+            </TableContainer>
           </CardContent>
         </Card>
       )}
