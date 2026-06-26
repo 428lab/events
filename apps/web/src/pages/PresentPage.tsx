@@ -25,6 +25,7 @@ import {
   useMyScores,
 } from "../api/scoringHooks.js";
 import { ScoringPanel } from "../components/ScoringPanel.js";
+import { UserLink } from "../components/UserLink.js";
 
 export function PresentPage() {
   const { id = "" } = useParams();
@@ -49,6 +50,7 @@ export function PresentPage() {
         const m = members?.find((mm) => mm.user.id === uid);
         return {
           id: uid,
+          username: m?.user.username,
           name: m?.user.globalName ?? m?.user.username ?? "?",
           avatarUrl: m?.user.avatarUrl ?? undefined,
         };
@@ -75,20 +77,46 @@ export function PresentPage() {
                 </Typography>
                 <Stack direction="row" spacing={2} alignItems="center">
                   <AvatarGroup max={6} sx={{ "& .MuiAvatar-root": { width: 64, height: 64, fontSize: 28 } }}>
-                    {presentingMembers.map((m) => (
-                      <Avatar key={m.id} src={m.avatarUrl} alt={m.name}>
-                        {m.name.charAt(0)}
-                      </Avatar>
-                    ))}
+                    {presentingMembers.map((m) =>
+                      m.username ? (
+                        <Avatar
+                          key={m.id}
+                          src={m.avatarUrl}
+                          alt={m.name}
+                          component={RouterLink}
+                          to={`/users/${m.username}`}
+                        >
+                          {m.name.charAt(0)}
+                        </Avatar>
+                      ) : (
+                        <Avatar key={m.id} src={m.avatarUrl} alt={m.name}>
+                          {m.name.charAt(0)}
+                        </Avatar>
+                      ),
+                    )}
                   </AvatarGroup>
                   <Typography variant="h3" fontWeight={700}>
                     {presenting.name}
                   </Typography>
                 </Stack>
                 {presentingMembers.length > 0 && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    {presentingMembers.map((m) => m.name).join("、")}
-                  </Typography>
+                  <Box
+                    sx={{
+                      mt: 1,
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      color: "text.secondary",
+                      fontSize: "0.875rem",
+                    }}
+                  >
+                    {presentingMembers.map((m, i) => (
+                      <Box key={m.id} component="span" sx={{ display: "inline-flex" }}>
+                        <UserLink username={m.username} name={m.name} />
+                        {i < presentingMembers.length - 1 && "、"}
+                      </Box>
+                    ))}
+                  </Box>
                 )}
                 {presenting.submission?.presentationUrl && (
                   <Typography sx={{ mt: 2 }}>

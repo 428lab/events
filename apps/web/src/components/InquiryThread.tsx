@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Box, Button, Chip, Stack, TextField, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  Chip,
+  Link,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import type { InquiryDetail } from "@eventer/shared";
 import { formatDateTime } from "../lib/format.js";
 
@@ -48,6 +57,11 @@ export function InquiryThread({
             : m.sender === "admin"
               ? "運営"
               : (detail.userName ?? "ユーザー");
+          // 運営視点でユーザー発言の名前はプロフィールへリンク
+          const linkToUser =
+            !mine && m.sender === "user" && detail.userHandle
+              ? `/users/${detail.userHandle}`
+              : null;
           return (
             <Box
               key={m.id}
@@ -74,7 +88,19 @@ export function InquiryThread({
                 color="text.secondary"
                 sx={{ display: "block", textAlign: mine ? "right" : "left", mt: 0.25 }}
               >
-                {senderLabel} ・ {formatDateTime(m.createdAt)}
+                {linkToUser ? (
+                  <Link
+                    component={RouterLink}
+                    to={linkToUser}
+                    color="inherit"
+                    underline="hover"
+                  >
+                    {senderLabel}
+                  </Link>
+                ) : (
+                  senderLabel
+                )}{" "}
+                ・ {formatDateTime(m.createdAt)}
               </Typography>
             </Box>
           );

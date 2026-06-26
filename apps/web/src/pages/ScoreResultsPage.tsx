@@ -13,6 +13,8 @@ import {
   Typography,
 } from "@mui/material";
 import { useParams } from "react-router-dom";
+import { UserLink } from "../components/UserLink.js";
+import { useEntryUserResolver } from "../lib/entryUser.js";
 import { useEvent } from "../api/hooks.js";
 import { useScoreResults } from "../api/scoringHooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
@@ -21,6 +23,7 @@ export function ScoreResultsPage() {
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const { data: results } = useScoreResults(id);
+  const resolveUser = useEntryUserResolver(id);
 
   if (!eventData || !results) {
     return <Typography>読み込み中…</Typography>;
@@ -74,7 +77,12 @@ export function ScoreResultsPage() {
                         `${i + 1}位`
                       )}
                     </TableCell>
-                    <TableCell>{e.entryName}</TableCell>
+                    <TableCell>
+                      <UserLink
+                        username={resolveUser(e.entryId)?.username}
+                        name={e.entryName}
+                      />
+                    </TableCell>
                     {results.criteria.map((c) => (
                       <TableCell key={c.id} align="right">
                         {e.perCriterion[c.id] ?? 0}

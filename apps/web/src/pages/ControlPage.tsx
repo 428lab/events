@@ -30,6 +30,8 @@ import {
 import { useAwards } from "../api/awardHooks.js";
 import { roleLabel } from "../lib/format.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
+import { UserLink } from "../components/UserLink.js";
+import { useEntryUserResolver } from "../lib/entryUser.js";
 
 const modeLabel: Record<EventMode, string> = {
   normal: "通常",
@@ -43,6 +45,7 @@ export function ControlPage() {
   const { data: eventData } = useEvent(id);
   const { data: state } = useEventState(id);
   const { data: entries } = useEventEntries(id);
+  const resolveUser = useEntryUserResolver(id);
   const setMode = useSetMode(id);
   const setPresenting = useSetPresenting(id);
   const toggleLock = useToggleScoringLock(id);
@@ -227,7 +230,12 @@ export function ControlPage() {
             <TableBody>
               {summary?.entries.map((e) => (
                 <TableRow key={e.entryId}>
-                  <TableCell>{e.entryName}</TableCell>
+                  <TableCell>
+                    <UserLink
+                      username={resolveUser(e.entryId)?.username}
+                      name={e.entryName}
+                    />
+                  </TableCell>
                   {summary.criteria.map((c) => (
                     <TableCell key={c.id} align="right">
                       {e.perCriterion[c.id] ?? 0}

@@ -1,6 +1,5 @@
 import {
   Alert,
-  Avatar,
   Box,
   Button,
   Card,
@@ -21,6 +20,7 @@ import {
   useSetMemberSlotStatus,
 } from "../api/hooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
+import { UserLink } from "../components/UserLink.js";
 import { formatDateTime } from "../lib/format.js";
 
 const STATUS_META: Record<
@@ -126,13 +126,14 @@ export function LotteryAdminPage() {
                           spacing={1.5}
                           sx={{ py: 0.5 }}
                         >
-                          <Avatar
-                            src={m.user.avatarUrl ?? undefined}
-                            sx={{ width: 32, height: 32 }}
-                          >
-                            {memberName(m).charAt(0)}
-                          </Avatar>
-                          <Typography sx={{ flex: 1 }}>{memberName(m)}</Typography>
+                          <UserLink
+                            username={m.user.username}
+                            name={memberName(m)}
+                            avatarUrl={m.user.avatarUrl}
+                            withAvatar
+                            avatarSize={32}
+                            sx={{ flex: 1 }}
+                          />
                           <Chip size="small" label={meta.label} color={meta.color} />
                           <Button
                             size="small"

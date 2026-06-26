@@ -15,6 +15,8 @@ import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
 import { useAwards, useAwardsAdvance, useAwardsReset } from "../api/awardHooks.js";
 import { useNotifyAwardWinners } from "../api/notificationHooks.js";
+import { UserLink } from "../components/UserLink.js";
+import { useEntryUserResolver } from "../lib/entryUser.js";
 import { RadarChart } from "../components/RadarChart.js";
 import { fireConfetti, playDrumroll, playFanfare } from "../lib/effects.js";
 
@@ -35,6 +37,7 @@ export function AwardsPage() {
   const advance = useAwardsAdvance(id);
   const reset = useAwardsReset(id);
   const notifyWinners = useNotifyAwardWinners(id);
+  const resolveUser = useEntryUserResolver(id);
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const prevCursor = useRef<number | null>(null);
   // ドラムロール中は結果を隠す
@@ -137,9 +140,18 @@ export function AwardsPage() {
               </Box>
             ) : latest.result ? (
               <>
-                <Typography variant="h3" fontWeight={900} sx={{ my: 1 }}>
-                  {latest.result.entryName}
-                </Typography>
+                <UserLink
+                  username={resolveUser(latest.result.entryId)?.username}
+                  name={latest.result.entryName}
+                  withAvatar
+                  avatarSize={56}
+                  sx={{
+                    my: 1,
+                    justifyContent: "center",
+                    fontSize: "3rem",
+                    fontWeight: 900,
+                  }}
+                />
                 <Typography variant="h6">
                   合計 {latest.result.total} 点
                 </Typography>
@@ -243,9 +255,17 @@ export function AwardsPage() {
                   }}
                 >
                   <Typography>{item.awardName}</Typography>
-                  <Typography fontWeight={600}>
-                    {item.result ? item.result.entryName : "該当者なし"}
-                  </Typography>
+                  {item.result ? (
+                    <UserLink
+                      username={resolveUser(item.result.entryId)?.username}
+                      name={item.result.entryName}
+                      sx={{ fontWeight: 600 }}
+                    />
+                  ) : (
+                    <Typography fontWeight={600} color="text.secondary">
+                      該当者なし
+                    </Typography>
+                  )}
                 </CardContent>
               </Card>
             ))}

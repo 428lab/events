@@ -22,6 +22,7 @@ import {
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
+import { UserLink } from "../components/UserLink.js";
 import type { Entry } from "@eventer/shared";
 import {
   eventImageUrl,
@@ -157,6 +158,14 @@ export function EventDetailPage() {
     const uid = entry?.memberUserIds[0];
     return uid ? (userById.get(uid)?.avatarUrl ?? undefined) : undefined;
   };
+  const resultUsername = (result?: { entryId: string }) => {
+    const entry = result ? entryById.get(result.entryId) : undefined;
+    const uid =
+      entry && entry.memberUserIds.length === 1
+        ? entry.memberUserIds[0]
+        : undefined;
+    return uid ? userById.get(uid)?.username : undefined;
+  };
 
   const ceremonyDone =
     (state?.awardsRevealCursor ?? 0) >=
@@ -224,21 +233,20 @@ export function EventDetailPage() {
                     size="small"
                     variant="outlined"
                   />
-                  {it.result && (
-                    <Avatar
-                      src={resultAvatarUrl(it.result)}
-                      sx={{ width: 28, height: 28 }}
-                    >
-                      {it.result.entryName.charAt(0)}
-                    </Avatar>
+                  {it.result ? (
+                    <UserLink
+                      username={resultUsername(it.result)}
+                      name={it.result.entryName}
+                      avatarUrl={resultAvatarUrl(it.result)}
+                      withAvatar
+                      avatarSize={28}
+                      sx={{ fontSize: "1.25rem", fontWeight: 700 }}
+                    />
+                  ) : (
+                    <Typography variant="h6" fontWeight={700} color="text.secondary">
+                      該当者なし
+                    </Typography>
                   )}
-                  <Typography
-                    variant="h6"
-                    fontWeight={700}
-                    color={it.result ? "text.primary" : "text.secondary"}
-                  >
-                    {it.result ? it.result.entryName : "該当者なし"}
-                  </Typography>
                   {it.content && (
                     <Typography variant="body2" color="text.secondary">
                       （{it.content}）
