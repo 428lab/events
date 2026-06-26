@@ -2,6 +2,13 @@ import { Box } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+/** パス部分の拡張子で画像URLか判定（?rlkey=... などのクエリは無視）。表示には元URL（クエリ込み）を使う。 */
+function isImageUrl(href?: string): boolean {
+  if (!href) return false;
+  const path = href.split("?")[0].split("#")[0];
+  return /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(path);
+}
+
 /** イベント本文などを安全に Markdown 描画（生HTMLは無効＝XSS対策）。GFM対応。 */
 export function Markdown({ children }: { children: string }) {
   return (
@@ -59,8 +66,30 @@ export function Markdown({ children }: { children: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          a({ node: _node, ...props }) {
-            return <a {...props} target="_blank" rel="noopener noreferrer" />;
+          a({ node: _node, href, children, ...props }) {
+            // 裸の画像URL（クエリ付き含む）は画像として表示。タップで原寸を別タブ
+            if (isImageUrl(href)) {
+              return (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: "inline-block" }}
+                >
+                  <img src={href} alt="" loading="lazy" />
+                </a>
+              );
+            }
+            return (
+              <a
+                {...props}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {children}
+              </a>
+            );
           },
         }}
       >
