@@ -6,13 +6,17 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 export const publicRoutes = new Hono();
 
 /** 公開ユーザープロフィール（未ログイン可）。アイコン・表示名・公開イベント実績 */
-publicRoutes.get("/users/:id", async (c) => {
-  const id = c.req.param("id");
-  const user = await usersRepo.findById(id);
+publicRoutes.get("/users/:handle", async (c) => {
+  const handle = c.req.param("handle");
+  // ハンドル(username)優先、UUID直指定も後方互換で許可
+  const user =
+    (await usersRepo.findByUsername(handle)) ??
+    (await usersRepo.findById(handle));
   if (!user) return c.json({ error: "not_found" }, 404);
-  const events = await eventMembersRepo.listPublicEventsForUser(id);
+  const events = await eventMembersRepo.listPublicEventsForUser(user.id);
   return c.json({
     id: user.id,
+    handle: user.username,
     name: user.globalName ?? user.username,
     avatarUrl: user.avatarUrl,
     createdAt: user.createdAt,

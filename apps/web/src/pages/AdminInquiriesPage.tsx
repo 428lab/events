@@ -57,7 +57,7 @@ export function AdminInquiriesPage() {
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        navigate(`/users/${q.userId}`);
+                        navigate(`/users/${q.userHandle}`);
                       }}
                       sx={{ width: 28, height: 28, cursor: "pointer" }}
                     >
@@ -72,7 +72,7 @@ export function AdminInquiriesPage() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          navigate(`/users/${q.userId}`);
+                          navigate(`/users/${q.userHandle}`);
                         }}
                         sx={{
                           fontSize: 12,

@@ -27,10 +27,10 @@ export function AdminInquiryThreadPage() {
       >
         ← お問い合わせ管理へ
       </Button>
-      {data.userId && (
+      {data.userHandle && (
         <Box
           component={RouterLink}
-          to={`/users/${data.userId}`}
+          to={`/users/${data.userHandle}`}
           sx={{
             display: "flex",
             alignItems: "center",

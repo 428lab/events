@@ -42,6 +42,15 @@ export const usersRepo = {
     return row ? toUser(row) : null;
   },
 
+  /** プロフィールURLのハンドル解決（username、大文字小文字を無視） */
+  async findByUsername(username: string): Promise<User | null> {
+    const row = await one<UserRow>(
+      "SELECT * FROM user WHERE username = ? COLLATE NOCASE LIMIT 1",
+      username,
+    );
+    return row ? toUser(row) : null;
+  },
+
   /** ADMIN_DISCORD_IDS に該当するユーザーの id 一覧（運営宛て通知用） */
   async listIdsByDiscordIds(discordIds: string[]): Promise<string[]> {
     if (discordIds.length === 0) return [];

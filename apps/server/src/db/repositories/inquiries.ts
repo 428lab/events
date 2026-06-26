@@ -150,6 +150,7 @@ export const inquiriesRepo = {
     return rows.map((r) => ({
       ...toInquiry(r, "admin"),
       userId: r.user_id,
+      userHandle: r.u_username,
       userName: r.u_name ?? r.u_username,
       userAvatarUrl: r.u_avatar,
     }));
@@ -182,6 +183,7 @@ export const inquiriesRepo = {
     return {
       ...detail,
       userId: inq.user_id,
+      userHandle: inq.u_username,
       userName: inq.u_name ?? inq.u_username,
       userAvatarUrl: inq.u_avatar,
     };
