@@ -17,15 +17,27 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
     <Box sx={{ minHeight: "100vh", overflowX: "hidden" }}>
       <AppBar position="static" elevation={0}>
         <Toolbar sx={{ gap: 0.5 }}>
-          <Typography
-            variant="h6"
+          <Box
             component={RouterLink}
             to="/"
-            noWrap
-            sx={{ color: "inherit", textDecoration: "none", fontWeight: 700 }}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              color: "inherit",
+              textDecoration: "none",
+            }}
           >
-            events lab
-          </Typography>
+            <Box
+              component="img"
+              src="/logo.svg"
+              alt=""
+              sx={{ width: 30, height: 30, borderRadius: 1, display: "block" }}
+            />
+            <Typography variant="h6" noWrap sx={{ fontWeight: 700 }}>
+              events lab
+            </Typography>
+          </Box>
           <Chip
             label="BETA"
             size="small"
