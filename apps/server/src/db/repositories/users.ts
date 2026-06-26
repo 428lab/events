@@ -62,13 +62,33 @@ export const usersRepo = {
     return rows.map((r) => r.id);
   },
 
+  /** ハンドル(username)の重複を避けた利用可能な username を返す。
+   * 既に他ユーザーが使っていれば末尾に数字を付ける（exceptUserId は自分自身として除外）。 */
+  async availableUsername(desired: string, exceptUserId?: string): Promise<string> {
+    let candidate = desired;
+    for (let n = 2; ; n += 1) {
+      const row = await one<{ id: string }>(
+        "SELECT id FROM user WHERE username = ? COLLATE NOCASE LIMIT 1",
+        candidate,
+      );
+      if (!row || row.id === exceptUserId) return candidate;
+      candidate = `${desired}${n}`;
+    }
+  },
+
   async upsertByDiscordId(input: UpsertUserInput): Promise<User> {
     const existing = await this.findByDiscordId(input.discordId);
     if (existing) {
+      // ハンドル(username)が他ユーザーと被る変更は据え置く（URL衝突防止）
+      let username = input.username;
+      if (username.toLowerCase() !== existing.username.toLowerCase()) {
+        const taken = await this.findByUsername(username);
+        if (taken && taken.id !== existing.id) username = existing.username;
+      }
       await run(
         `UPDATE user SET username = ?, global_name = ?, avatar_url = ?
          WHERE discord_id = ?`,
-        input.username,
+        username,
         input.globalName,
         input.avatarUrl,
         input.discordId,
@@ -81,7 +101,7 @@ export const usersRepo = {
        VALUES (?, ?, ?, ?, ?, ?)`,
       id,
       input.discordId,
-      input.username,
+      await this.availableUsername(input.username),
       input.globalName,
       input.avatarUrl,
       Date.now(),
@@ -111,7 +131,7 @@ export const usersRepo = {
        VALUES (?, ?, ?, ?, ?, ?)`,
       id,
       discordId,
-      profile.username,
+      await this.availableUsername(profile.username),
       profile.globalName,
       profile.avatarUrl,
       Date.now(),
