@@ -20,6 +20,7 @@ import { useIsAdmin, useLogout } from "../api/hooks.js";
 import { useAdminInquiryUnreadCount } from "../api/inquiryHooks.js";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
 import { NotificationBell } from "./NotificationBell.js";
+import { LogoGlyph } from "./LogoGlyph.js";
 import { VersionFooter } from "./VersionFooter.js";
 
 export function Layout({
@@ -53,17 +54,8 @@ export function Layout({
               textDecoration: "none",
             }}
           >
-            <Box
-              component="img"
-              src="/logo.svg"
-              alt=""
-              sx={{ width: 30, height: 30, borderRadius: 1, display: "block" }}
-            />
-            <Typography
-              variant="h6"
-              noWrap
-              sx={{ fontWeight: 700 }}
-            >
+            <LogoGlyph size={34} />
+            <Typography variant="h6" noWrap sx={{ fontWeight: 700 }}>
               events lab
             </Typography>
           </Box>

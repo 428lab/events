@@ -9,6 +9,7 @@ import {
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
+import { LogoGlyph } from "./LogoGlyph.js";
 import { VersionFooter } from "./VersionFooter.js";
 
 /** 未ログインの公開ページ用の軽量レイアウト（ログイン導線のみ） */
@@ -28,12 +29,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               textDecoration: "none",
             }}
           >
-            <Box
-              component="img"
-              src="/logo.svg"
-              alt=""
-              sx={{ width: 30, height: 30, borderRadius: 1, display: "block" }}
-            />
+            <LogoGlyph size={34} />
             <Typography variant="h6" noWrap sx={{ fontWeight: 700 }}>
               events lab
             </Typography>
