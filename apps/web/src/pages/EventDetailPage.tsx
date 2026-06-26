@@ -149,6 +149,15 @@ export function EventDetailPage() {
         })),
       ]
     : [];
+  // 受賞エントリ→メンバーのアバター解決（個人エントリは1人。なければ頭文字）
+  const entryById = new Map((entries ?? []).map((e) => [e.id, e] as const));
+  const userById = new Map((members ?? []).map((m) => [m.user.id, m.user] as const));
+  const resultAvatarUrl = (result?: { entryId: string }) => {
+    const entry = result ? entryById.get(result.entryId) : undefined;
+    const uid = entry?.memberUserIds[0];
+    return uid ? (userById.get(uid)?.avatarUrl ?? undefined) : undefined;
+  };
+
   const ceremonyDone =
     (state?.awardsRevealCursor ?? 0) >=
     (awards ? awards.ranks.length + awards.specials.length : 0);
@@ -205,7 +214,7 @@ export function EventDetailPage() {
                   sx={{
                     display: "flex",
                     flexWrap: "wrap",
-                    alignItems: "baseline",
+                    alignItems: "center",
                     gap: 1,
                   }}
                 >
@@ -215,6 +224,14 @@ export function EventDetailPage() {
                     size="small"
                     variant="outlined"
                   />
+                  {it.result && (
+                    <Avatar
+                      src={resultAvatarUrl(it.result)}
+                      sx={{ width: 28, height: 28 }}
+                    >
+                      {it.result.entryName.charAt(0)}
+                    </Avatar>
+                  )}
                   <Typography
                     variant="h6"
                     fontWeight={700}
