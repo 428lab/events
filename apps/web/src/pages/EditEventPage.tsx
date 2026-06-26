@@ -134,6 +134,7 @@ export function EditEventPage() {
             multiline
             minRows={3}
             fullWidth
+            helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調** など）"
           />
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <TextField

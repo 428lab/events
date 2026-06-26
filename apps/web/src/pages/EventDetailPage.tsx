@@ -21,6 +21,7 @@ import {
 } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { Markdown } from "../components/Markdown.js";
 import type { Entry } from "@eventer/shared";
 import {
   eventImageUrl,
@@ -248,9 +249,7 @@ export function EventDetailPage() {
       {event.description && (
         <Card variant="outlined">
           <CardContent>
-            <Typography sx={{ whiteSpace: "pre-wrap" }}>
-              {event.description}
-            </Typography>
+            <Markdown>{event.description}</Markdown>
             {event.venueOffline && (
               <Typography variant="body2" sx={{ mt: 2 }}>
                 会場: {event.venueOffline}
