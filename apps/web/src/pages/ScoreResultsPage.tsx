@@ -51,13 +51,9 @@ export function ScoreResultsPage() {
               <TableHead>
                 <TableRow>
                   <TableCell>順位</TableCell>
-                  <TableCell sx={{ whiteSpace: "nowrap" }}>チーム</TableCell>
+                  <TableCell>チーム</TableCell>
                   {results.criteria.map((c) => (
-                    <TableCell
-                      key={c.id}
-                      align="right"
-                      sx={{ whiteSpace: "nowrap" }}
-                    >
+                    <TableCell key={c.id} align="right">
                       {c.name}
                     </TableCell>
                   ))}
@@ -78,9 +74,7 @@ export function ScoreResultsPage() {
                         `${i + 1}位`
                       )}
                     </TableCell>
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>
-                      {e.entryName}
-                    </TableCell>
+                    <TableCell>{e.entryName}</TableCell>
                     {results.criteria.map((c) => (
                       <TableCell key={c.id} align="right">
                         {e.perCriterion[c.id] ?? 0}
