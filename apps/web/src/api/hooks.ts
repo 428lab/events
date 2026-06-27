@@ -1,4 +1,5 @@
 import {
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
@@ -163,6 +164,17 @@ export function usePublicPastEvents(page: number) {
   return useQuery({
     queryKey: ["publicPastEvents", page],
     queryFn: () => api.get<PublicEventsPage>(`/public/events/past?page=${page}`),
+  });
+}
+
+/** 開催済みの公開イベントを「もっと見る」で遡るための無限読み込み */
+export function usePublicPastEventsInfinite() {
+  return useInfiniteQuery({
+    queryKey: ["publicPastEventsInfinite"],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
+      api.get<PublicEventsPage>(`/public/events/past?page=${pageParam}`),
+    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
   });
 }
 

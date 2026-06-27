@@ -119,6 +119,7 @@ export function App() {
   return (
     <Layout user={user}>
       <Routes>
+        <Route path="/" element={<PublicEventsPage />} />
         <Route path="/me" element={<MyPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="/inquiries" element={<InquiriesPage />} />

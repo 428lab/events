@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Box, Pagination, Stack, Typography } from "@mui/material";
+import { Box, Button, Pagination, Stack, Typography } from "@mui/material";
 import {
   usePublicEvents,
-  usePublicPastEvents,
+  usePublicPastEventsInfinite,
   type PublicEventsPage as PublicEventsData,
 } from "../api/hooks.js";
 import { EventCard } from "../components/EventCard.js";
@@ -60,9 +60,10 @@ function EventSection({
 
 export function PublicEventsPage() {
   const [page, setPage] = useState(1);
-  const [pastPage, setPastPage] = useState(1);
   const upcoming = usePublicEvents(page);
-  const past = usePublicPastEvents(pastPage);
+  const past = usePublicPastEventsInfinite();
+  const pastEvents = past.data?.pages.flatMap((p) => p.events) ?? [];
+  const pastTotal = past.data?.pages[0]?.total ?? 0;
 
   return (
     <EventSearchPanel>
@@ -75,15 +76,30 @@ export function PublicEventsPage() {
           onPage={setPage}
           emptyText="公開中のイベントはありません。"
         />
-        {(past.data?.total ?? 0) > 0 && (
-          <EventSection
-            title="過去のイベント"
-            data={past.data}
-            isLoading={past.isLoading}
-            page={pastPage}
-            onPage={setPastPage}
-            emptyText="過去のイベントはありません。"
-          />
+        {pastTotal > 0 && (
+          <Box>
+            <Typography variant="h5" fontWeight={700} gutterBottom>
+              過去のイベント
+            </Typography>
+            <Stack spacing={2}>
+              {pastEvents.map((e) => (
+                <EventCard key={e.id} event={e} />
+              ))}
+            </Stack>
+            {past.hasNextPage && (
+              <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+                <Button
+                  variant="outlined"
+                  onClick={() => past.fetchNextPage()}
+                  disabled={past.isFetchingNextPage}
+                >
+                  {past.isFetchingNextPage
+                    ? "読み込み中…"
+                    : `もっと見る（残り ${pastTotal - pastEvents.length} 件）`}
+                </Button>
+              </Box>
+            )}
+          </Box>
         )}
       </Stack>
     </EventSearchPanel>

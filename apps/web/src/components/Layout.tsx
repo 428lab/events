@@ -45,7 +45,7 @@ export function Layout({
         <Toolbar sx={{ gap: 0.5 }}>
           <Box
             component={RouterLink}
-            to="/me"
+            to="/"
             sx={{
               display: "flex",
               alignItems: "center",
