@@ -1,0 +1,457 @@
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import {
+  Box,
+  Button,
+  Divider,
+  IconButton,
+  Stack,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import TextFieldsIcon from "@mui/icons-material/TextFields";
+import ImageIcon from "@mui/icons-material/Image";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import FormatBoldIcon from "@mui/icons-material/FormatBold";
+import { Link as RouterLink, useParams } from "react-router-dom";
+import { Rnd } from "react-rnd";
+import { DECK_H, DECK_W } from "@eventer/shared";
+import type { DeckContent, DeckElement, DeckSlide } from "@eventer/shared";
+import { useDeck, useUpdateDeck } from "../api/deckHooks.js";
+import { ElementContent } from "../components/SlideStage.js";
+
+const uid = () => crypto.randomUUID();
+
+export function DeckEditorPage() {
+  const { id = "" } = useParams();
+  const { data: deck, isLoading, isError } = useDeck(id);
+  const update = useUpdateDeck(id);
+
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState<DeckContent | null>(null);
+  const [slideIdx, setSlideIdx] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const inited = useRef(false);
+
+  useEffect(() => {
+    if (deck && !inited.current) {
+      setTitle(deck.title);
+      setContent(deck.content);
+      inited.current = true;
+    }
+  }, [deck]);
+
+  // 自動保存（変更の 800ms 後）
+  const firstSave = useRef(true);
+  useEffect(() => {
+    if (content === null) return;
+    if (firstSave.current) {
+      firstSave.current = false;
+      return;
+    }
+    const t = setTimeout(() => update.mutate({ title, content }), 800);
+    return () => clearTimeout(t);
+  }, [content, title]);
+
+  // キャンバス幅の計測
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [cw, setCw] = useState(0);
+  useLayoutEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setCw(el.clientWidth));
+    ro.observe(el);
+    setCw(el.clientWidth);
+    return () => ro.disconnect();
+  }, [content]);
+
+  if (isError) return <Typography>スライドが見つかりません。</Typography>;
+  if (isLoading || !content) return <Typography>読み込み中…</Typography>;
+
+  const slides = content.slides;
+  const idx = Math.min(slideIdx, slides.length - 1);
+  const slide: DeckSlide | undefined = slides[idx];
+  const scale = cw > 0 ? cw / DECK_W : 0;
+  const selected = slide?.elements.find((e) => e.id === selectedId) ?? null;
+
+  const setSlides = (fn: (s: DeckSlide[]) => DeckSlide[]) =>
+    setContent((c) => (c ? { ...c, slides: fn(c.slides) } : c));
+  const patchSlide = (i: number, patch: Partial<DeckSlide>) =>
+    setSlides((s) => s.map((sl, j) => (j === i ? { ...sl, ...patch } : sl)));
+  const patchElement = (elId: string, patch: Partial<DeckElement>) =>
+    setSlides((s) =>
+      s.map((sl, j) =>
+        j === idx
+          ? {
+              ...sl,
+              elements: sl.elements.map((e) =>
+                e.id === elId ? { ...e, ...patch } : e,
+              ),
+            }
+          : sl,
+      ),
+    );
+  const addElement = (el: DeckElement) => {
+    setSlides((s) =>
+      s.map((sl, j) =>
+        j === idx ? { ...sl, elements: [...sl.elements, el] } : sl,
+      ),
+    );
+    setSelectedId(el.id);
+  };
+  const deleteElement = (elId: string) => {
+    setSlides((s) =>
+      s.map((sl, j) =>
+        j === idx
+          ? { ...sl, elements: sl.elements.filter((e) => e.id !== elId) }
+          : sl,
+      ),
+    );
+    setSelectedId(null);
+  };
+
+  const addText = () =>
+    addElement({
+      id: uid(),
+      type: "text",
+      x: 120,
+      y: 200,
+      w: 480,
+      h: 100,
+      rotation: 0,
+      text: "テキスト",
+      fontSize: 40,
+      color: "#0f172a",
+      align: "left",
+    });
+  const addImage = () => {
+    const src = window.prompt("画像のURLを入力してください（https://…）");
+    if (!src) return;
+    addElement({
+      id: uid(),
+      type: "image",
+      x: 200,
+      y: 120,
+      w: 400,
+      h: 300,
+      rotation: 0,
+      src,
+    });
+  };
+
+  const addSlide = () => {
+    const ns: DeckSlide = { id: uid(), background: "#ffffff", elements: [] };
+    setSlides((s) => [...s.slice(0, idx + 1), ns, ...s.slice(idx + 1)]);
+    setSlideIdx(idx + 1);
+    setSelectedId(null);
+  };
+  const dupSlide = () => {
+    const copy: DeckSlide = {
+      ...slide!,
+      id: uid(),
+      elements: slide!.elements.map((e) => ({ ...e, id: uid() })),
+    };
+    setSlides((s) => [...s.slice(0, idx + 1), copy, ...s.slice(idx + 1)]);
+    setSlideIdx(idx + 1);
+  };
+  const delSlide = () => {
+    if (slides.length <= 1) return;
+    setSlides((s) => s.filter((_, j) => j !== idx));
+    setSlideIdx(Math.max(0, idx - 1));
+    setSelectedId(null);
+  };
+  const moveSlide = (d: number) => {
+    const to = idx + d;
+    if (to < 0 || to >= slides.length) return;
+    setSlides((s) => {
+      const a = [...s];
+      [a[idx], a[to]] = [a[to], a[idx]];
+      return a;
+    });
+    setSlideIdx(to);
+  };
+
+  return (
+    <Stack spacing={2}>
+      {/* 上部バー */}
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+      >
+        <Button size="small" component={RouterLink} to="/decks">
+          ← 一覧
+        </Button>
+        <TextField
+          size="small"
+          placeholder="スライドのタイトル"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          sx={{ flex: 1, minWidth: 180 }}
+        />
+        <Typography variant="caption" color="text.secondary">
+          {update.isPending ? "保存中…" : "自動保存"}
+        </Typography>
+        {deck && (
+          <Button
+            size="small"
+            variant="outlined"
+            component={RouterLink}
+            to={`/d/${deck.slug}`}
+            target="_blank"
+          >
+            公開ビューア
+          </Button>
+        )}
+      </Stack>
+
+      <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+        {/* スライド一覧 */}
+        <Stack spacing={1} sx={{ width: { md: 160 }, flexShrink: 0 }}>
+          {slides.map((s, j) => (
+            <Box
+              key={s.id}
+              onClick={() => {
+                setSlideIdx(j);
+                setSelectedId(null);
+              }}
+              sx={{
+                cursor: "pointer",
+                border: "2px solid",
+                borderColor: j === idx ? "primary.main" : "divider",
+                borderRadius: 1,
+                aspectRatio: "16 / 9",
+                bgcolor: s.background,
+                position: "relative",
+                overflow: "hidden",
+              }}
+            >
+              <Typography
+                variant="caption"
+                sx={{
+                  position: "absolute",
+                  top: 2,
+                  left: 4,
+                  color: "rgba(0,0,0,0.5)",
+                }}
+              >
+                {j + 1}
+              </Typography>
+            </Box>
+          ))}
+          <Button size="small" onClick={addSlide}>
+            ＋ ページ追加
+          </Button>
+          <Stack direction="row" spacing={0.5} justifyContent="center">
+            <Tooltip title="複製">
+              <IconButton size="small" onClick={dupSlide}>
+                <ContentCopyIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="上へ">
+              <IconButton size="small" onClick={() => moveSlide(-1)}>
+                <ArrowUpwardIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="下へ">
+              <IconButton size="small" onClick={() => moveSlide(1)}>
+                <ArrowDownwardIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="削除">
+              <IconButton
+                size="small"
+                onClick={delSlide}
+                disabled={slides.length <= 1}
+              >
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+        </Stack>
+
+        {/* キャンバス */}
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1} sx={{ mb: 1 }} alignItems="center">
+            <Button size="small" startIcon={<TextFieldsIcon />} onClick={addText}>
+              テキスト
+            </Button>
+            <Button size="small" startIcon={<ImageIcon />} onClick={addImage}>
+              画像
+            </Button>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Typography variant="caption">背景</Typography>
+              <input
+                type="color"
+                value={slide?.background ?? "#ffffff"}
+                onChange={(e) => patchSlide(idx, { background: e.target.value })}
+              />
+            </Box>
+          </Stack>
+          <Box ref={canvasRef} sx={{ width: "100%" }}>
+            {slide && scale > 0 && (
+              <Box
+                onMouseDown={() => setSelectedId(null)}
+                sx={{
+                  position: "relative",
+                  width: cw,
+                  height: DECK_H * scale,
+                  bgcolor: "grey.300",
+                  overflow: "hidden",
+                  borderRadius: 1,
+                }}
+              >
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: DECK_W,
+                    height: DECK_H,
+                    transform: `scale(${scale})`,
+                    transformOrigin: "top left",
+                    background: slide.background,
+                  }}
+                >
+                  {slide.elements.map((el) => (
+                    <Rnd
+                      key={el.id}
+                      scale={scale}
+                      bounds="parent"
+                      size={{ width: el.w, height: el.h }}
+                      position={{ x: el.x, y: el.y }}
+                      onDragStop={(_e, d) => patchElement(el.id, { x: d.x, y: d.y })}
+                      onResizeStop={(_e, _dir, ref, _delta, pos) =>
+                        patchElement(el.id, {
+                          w: parseFloat(ref.style.width),
+                          h: parseFloat(ref.style.height),
+                          x: pos.x,
+                          y: pos.y,
+                        })
+                      }
+                      onMouseDown={(e: MouseEvent) => {
+                        e.stopPropagation();
+                        setSelectedId(el.id);
+                      }}
+                      style={{
+                        outline:
+                          selectedId === el.id
+                            ? "2px solid #2563eb"
+                            : "1px dashed rgba(0,0,0,0.25)",
+                      }}
+                    >
+                      <ElementContent el={el} />
+                    </Rnd>
+                  ))}
+                </Box>
+              </Box>
+            )}
+          </Box>
+        </Box>
+
+        {/* プロパティ */}
+        <Stack spacing={1.5} sx={{ width: { md: 240 }, flexShrink: 0 }}>
+          {selected ? (
+            <>
+              <Typography variant="subtitle2">
+                {selected.type === "text" ? "テキスト" : "画像"}
+              </Typography>
+              {selected.type === "text" && (
+                <>
+                  <TextField
+                    size="small"
+                    label="内容"
+                    multiline
+                    minRows={2}
+                    value={selected.text ?? ""}
+                    onChange={(e) =>
+                      patchElement(selected.id, { text: e.target.value })
+                    }
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="文字サイズ"
+                    value={selected.fontSize ?? 40}
+                    onChange={(e) =>
+                      patchElement(selected.id, {
+                        fontSize: Number(e.target.value) || 40,
+                      })
+                    }
+                  />
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Typography variant="caption">色</Typography>
+                    <input
+                      type="color"
+                      value={selected.color ?? "#0f172a"}
+                      onChange={(e) =>
+                        patchElement(selected.id, { color: e.target.value })
+                      }
+                    />
+                    <ToggleButton
+                      size="small"
+                      value="bold"
+                      selected={Boolean(selected.bold)}
+                      onChange={() =>
+                        patchElement(selected.id, { bold: !selected.bold })
+                      }
+                    >
+                      <FormatBoldIcon fontSize="small" />
+                    </ToggleButton>
+                  </Box>
+                  <ToggleButtonGroup
+                    size="small"
+                    exclusive
+                    value={selected.align ?? "left"}
+                    onChange={(_e, v) =>
+                      v && patchElement(selected.id, { align: v })
+                    }
+                  >
+                    <ToggleButton value="left">左</ToggleButton>
+                    <ToggleButton value="center">中</ToggleButton>
+                    <ToggleButton value="right">右</ToggleButton>
+                  </ToggleButtonGroup>
+                </>
+              )}
+              {selected.type === "image" && (
+                <TextField
+                  size="small"
+                  label="画像URL"
+                  value={selected.src ?? ""}
+                  onChange={(e) =>
+                    patchElement(selected.id, { src: e.target.value })
+                  }
+                />
+              )}
+              <Divider />
+              <Button
+                size="small"
+                color="error"
+                startIcon={<DeleteOutlineIcon />}
+                onClick={() => deleteElement(selected.id)}
+              >
+                この要素を削除
+              </Button>
+            </>
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              要素を選ぶと編集できます。「テキスト」「画像」から追加し、ドラッグで移動・隅でリサイズ。
+            </Typography>
+          )}
+        </Stack>
+      </Stack>
+    </Stack>
+  );
+}

@@ -31,6 +31,9 @@ import { CommunityPage } from "./pages/CommunityPage.js";
 import { CreateCommunityPage } from "./pages/CreateCommunityPage.js";
 import { CommunityEditPage } from "./pages/CommunityEditPage.js";
 import { UpcomingEventsPage } from "./pages/UpcomingEventsPage.js";
+import { DecksPage } from "./pages/DecksPage.js";
+import { DeckEditorPage } from "./pages/DeckEditorPage.js";
+import { DeckViewerPage } from "./pages/DeckViewerPage.js";
 
 export function App() {
   const { data: user, isLoading } = useMe();
@@ -120,6 +123,14 @@ export function App() {
             </PublicLayout>
           }
         />
+        <Route
+          path="/d/:slug"
+          element={
+            <PublicLayout>
+              <DeckViewerPage />
+            </PublicLayout>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
@@ -142,6 +153,9 @@ export function App() {
         <Route path="/communities/new" element={<CreateCommunityPage />} />
         <Route path="/c/:slug" element={<CommunityPage />} />
         <Route path="/c/:slug/edit" element={<CommunityEditPage />} />
+        <Route path="/decks" element={<DecksPage />} />
+        <Route path="/decks/:id/edit" element={<DeckEditorPage />} />
+        <Route path="/d/:slug" element={<DeckViewerPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/upcoming" element={<UpcomingEventsPage />} />
         <Route path="/events/new" element={<CreateEventPage />} />

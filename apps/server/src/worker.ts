@@ -12,6 +12,7 @@ import { inquiryRoutes, adminInquiryRoutes } from "./routes/inquiries.js";
 import { notificationRoutes } from "./routes/notifications.js";
 import { communityRoutes } from "./routes/communities.js";
 import { getCommunityImage } from "./routes/communityImages.js";
+import { deckRoutes } from "./routes/decks.js";
 import { currentUser } from "./auth/session.js";
 import { isAppAdmin } from "./auth/admin.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
@@ -41,6 +42,7 @@ api.route("/notifications", notificationRoutes);
 api.get("/communities/:id/icon", getCommunityImage("icon"));
 api.get("/communities/:id/banner", getCommunityImage("banner"));
 api.route("/communities", communityRoutes);
+api.route("/decks", deckRoutes);
 
 /**
  * staging ゲート用の無地HTML。サービス名・環境名などは出さず、

@@ -5,8 +5,16 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
+import { decksRepo } from "../db/repositories/decks.js";
 
 export const publicRoutes = new Hono<AppEnv>();
+
+/** 公開: スライドデッキの閲覧（未ログイン可） */
+publicRoutes.get("/decks/:slug", async (c) => {
+  const deck = await decksRepo.findBySlug(c.req.param("slug"));
+  if (!deck) return c.json({ error: "not_found" }, 404);
+  return c.json(deck);
+});
 
 /** 公開コミュニティ一覧（未ログイン可） */
 publicRoutes.get("/communities", async (c) => {

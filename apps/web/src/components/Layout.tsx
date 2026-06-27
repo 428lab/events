@@ -90,6 +90,9 @@ export function Layout({
             <Button color="inherit" component={RouterLink} to="/communities">
               コミュニティ
             </Button>
+            <Button color="inherit" component={RouterLink} to="/decks">
+              スライド
+            </Button>
             <Button color="inherit" component={RouterLink} to="/me">
               マイページ
             </Button>
@@ -144,6 +147,9 @@ export function Layout({
             </MenuItem>
             <MenuItem component={RouterLink} to="/communities" onClick={closeMenu}>
               コミュニティ
+            </MenuItem>
+            <MenuItem component={RouterLink} to="/decks" onClick={closeMenu}>
+              スライド
             </MenuItem>
             <MenuItem component={RouterLink} to="/me" onClick={closeMenu}>
               マイページ
