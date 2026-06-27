@@ -49,6 +49,7 @@ export function ElementContent({ el }: { el: DeckElement }) {
         justifyContent: justify,
         textAlign: el.align ?? "left",
         color: el.color ?? "#0f172a",
+        fontFamily: el.fontFamily || undefined,
         fontSize: el.fontSize ?? 28,
         fontWeight: el.bold ? 700 : 400,
         fontStyle: el.italic ? "italic" : "normal",

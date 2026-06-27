@@ -6,6 +6,7 @@ import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import { useParams } from "react-router-dom";
 import { usePublicDeck } from "../api/deckHooks.js";
 import { SlideStage } from "../components/SlideStage.js";
+import { ensureDeckFonts } from "../lib/deckFonts.js";
 
 export function DeckViewerPage() {
   const { slug = "" } = useParams();
@@ -22,6 +23,10 @@ export function DeckViewerPage() {
     ro.observe(el);
     setWidth(el.clientWidth);
     return () => ro.disconnect();
+  }, [deck]);
+
+  useEffect(() => {
+    if (deck) ensureDeckFonts(deck.content);
   }, [deck]);
 
   const slides = deck?.content.slides ?? [];

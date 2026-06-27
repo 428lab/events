@@ -17,6 +17,7 @@ export const deckElementSchema = z.object({
   // text
   text: z.string().optional(),
   fontSize: z.number().optional(),
+  fontFamily: z.string().optional(),
   color: z.string().optional(),
   bold: z.boolean().optional(),
   italic: z.boolean().optional(),

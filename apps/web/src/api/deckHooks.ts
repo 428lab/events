@@ -53,6 +53,21 @@ export function useUpdateDeck(id: string) {
   });
 }
 
+export function useUploadDeckImage(deckId: string) {
+  return useMutation({
+    mutationFn: async (file: Blob): Promise<{ url: string }> => {
+      const res = await fetch(`/api/decks/${deckId}/images`, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "image/png" },
+        credentials: "include",
+        body: file,
+      });
+      if (!res.ok) throw new Error("upload_failed");
+      return res.json();
+    },
+  });
+}
+
 export function useDeleteDeck() {
   const qc = useQueryClient();
   return useMutation({

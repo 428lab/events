@@ -13,6 +13,7 @@ import { notificationRoutes } from "./routes/notifications.js";
 import { communityRoutes } from "./routes/communities.js";
 import { getCommunityImage } from "./routes/communityImages.js";
 import { deckRoutes } from "./routes/decks.js";
+import { getDeckImage } from "./routes/deckImages.js";
 import { currentUser } from "./auth/session.js";
 import { isAppAdmin } from "./auth/admin.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
@@ -42,6 +43,8 @@ api.route("/notifications", notificationRoutes);
 api.get("/communities/:id/icon", getCommunityImage("icon"));
 api.get("/communities/:id/banner", getCommunityImage("banner"));
 api.route("/communities", communityRoutes);
+// 公開: スライド画像（認証不要。deckRoutes より先に登録）
+api.get("/decks/:id/images/:imageId", getDeckImage);
 api.route("/decks", deckRoutes);
 
 /**

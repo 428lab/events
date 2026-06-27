@@ -9,6 +9,8 @@ import {
   Button,
   Divider,
   IconButton,
+  MenuItem,
+  Slider,
   Stack,
   TextField,
   ToggleButton,
@@ -27,8 +29,13 @@ import { Link as RouterLink, useParams } from "react-router-dom";
 import { Rnd } from "react-rnd";
 import { DECK_H, DECK_W } from "@eventer/shared";
 import type { DeckContent, DeckElement, DeckSlide } from "@eventer/shared";
-import { useDeck, useUpdateDeck } from "../api/deckHooks.js";
+import {
+  useDeck,
+  useUpdateDeck,
+  useUploadDeckImage,
+} from "../api/deckHooks.js";
 import { ElementContent } from "../components/SlideStage.js";
+import { DECK_FONTS, ensureDeckFont, ensureDeckFonts } from "../lib/deckFonts.js";
 
 const uid = () => crypto.randomUUID();
 
@@ -36,6 +43,9 @@ export function DeckEditorPage() {
   const { id = "" } = useParams();
   const { data: deck, isLoading, isError } = useDeck(id);
   const update = useUpdateDeck(id);
+  const upload = useUploadDeckImage(id);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const onPicked = useRef<(url: string) => void>(() => {});
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState<DeckContent | null>(null);
@@ -47,6 +57,7 @@ export function DeckEditorPage() {
     if (deck && !inited.current) {
       setTitle(deck.title);
       setContent(deck.content);
+      ensureDeckFonts(deck.content);
       inited.current = true;
     }
   }, [deck]);
@@ -134,20 +145,34 @@ export function DeckEditorPage() {
       color: "#0f172a",
       align: "left",
     });
-  const addImage = () => {
-    const src = window.prompt("画像のURLを入力してください（https://…）");
-    if (!src) return;
-    addElement({
-      id: uid(),
-      type: "image",
-      x: 200,
-      y: 120,
-      w: 400,
-      h: 300,
-      rotation: 0,
-      src,
-    });
+  const pickImage = (cb: (url: string) => void) => {
+    onPicked.current = cb;
+    fileRef.current?.click();
   };
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const { url } = await upload.mutateAsync(file);
+      onPicked.current(url);
+    } catch {
+      window.alert("画像のアップロードに失敗しました（6MBまで）");
+    }
+  };
+  const addImage = () =>
+    pickImage((url) =>
+      addElement({
+        id: uid(),
+        type: "image",
+        x: 200,
+        y: 120,
+        w: 400,
+        h: 300,
+        rotation: 0,
+        src: url,
+      }),
+    );
 
   const addSlide = () => {
     const ns: DeckSlide = { id: uid(), background: "#ffffff", elements: [] };
@@ -183,6 +208,13 @@ export function DeckEditorPage() {
 
   return (
     <Stack spacing={2}>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={onFile}
+      />
       {/* 上部バー */}
       <Stack
         direction="row"
@@ -381,16 +413,40 @@ export function DeckEditorPage() {
                     }
                   />
                   <TextField
+                    select
                     size="small"
-                    type="number"
-                    label="文字サイズ"
-                    value={selected.fontSize ?? 40}
-                    onChange={(e) =>
-                      patchElement(selected.id, {
-                        fontSize: Number(e.target.value) || 40,
-                      })
-                    }
-                  />
+                    label="フォント"
+                    value={selected.fontFamily ?? ""}
+                    onChange={(e) => {
+                      ensureDeckFont(e.target.value);
+                      patchElement(selected.id, { fontFamily: e.target.value });
+                    }}
+                  >
+                    {DECK_FONTS.map((f) => (
+                      <MenuItem
+                        key={f.label}
+                        value={f.family}
+                        onMouseEnter={() => ensureDeckFont(f.family)}
+                        style={{ fontFamily: f.family || undefined }}
+                      >
+                        {f.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">
+                      文字サイズ：{selected.fontSize ?? 40}
+                    </Typography>
+                    <Slider
+                      size="small"
+                      min={12}
+                      max={160}
+                      value={selected.fontSize ?? 40}
+                      onChange={(_e, v) =>
+                        patchElement(selected.id, { fontSize: v as number })
+                      }
+                    />
+                  </Box>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     <Typography variant="caption">色</Typography>
                     <input
@@ -426,14 +482,27 @@ export function DeckEditorPage() {
                 </>
               )}
               {selected.type === "image" && (
-                <TextField
-                  size="small"
-                  label="画像URL"
-                  value={selected.src ?? ""}
-                  onChange={(e) =>
-                    patchElement(selected.id, { src: e.target.value })
-                  }
-                />
+                <>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<ImageIcon />}
+                    disabled={upload.isPending}
+                    onClick={() =>
+                      pickImage((url) => patchElement(selected.id, { src: url }))
+                    }
+                  >
+                    {upload.isPending ? "アップロード中…" : "画像を差し替え"}
+                  </Button>
+                  <TextField
+                    size="small"
+                    label="画像URL（直接指定）"
+                    value={selected.src ?? ""}
+                    onChange={(e) =>
+                      patchElement(selected.id, { src: e.target.value })
+                    }
+                  />
+                </>
               )}
               <Divider />
               <Button
