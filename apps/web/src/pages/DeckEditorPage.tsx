@@ -63,6 +63,10 @@ export function DeckEditorPage() {
   const [content, setContent] = useState<DeckContent | null>(null);
   const [slideIdx, setSlideIdx] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // ドラッグ中のハンドル追従用（content は触らずここだけ更新してループを防ぐ）
+  const [dragXY, setDragXY] = useState<{ id: string; x: number; y: number } | null>(
+    null,
+  );
   const inited = useRef(false);
 
   useEffect(() => {
@@ -429,8 +433,13 @@ export function DeckEditorPage() {
                       position={{ x: el.x, y: el.y }}
                       enableResizing={false}
                       onDragStart={() => setSelectedId(el.id)}
-                      onDrag={(_e, d) => patchElement(el.id, { x: d.x, y: d.y })}
-                      onDragStop={(_e, d) => patchElement(el.id, { x: d.x, y: d.y })}
+                      onDrag={(_e, d) =>
+                        setDragXY({ id: el.id, x: d.x, y: d.y })
+                      }
+                      onDragStop={(_e, d) => {
+                        patchElement(el.id, { x: d.x, y: d.y });
+                        setDragXY(null);
+                      }}
                       onResizeStop={(_e, _dir, ref, _delta, pos) =>
                         patchElement(el.id, {
                           w: parseFloat(ref.style.width),
@@ -466,16 +475,14 @@ export function DeckEditorPage() {
                         ["se", "nwse-resize"],
                       ] as const
                     ).map(([corner, cursor]) => {
+                      const bx =
+                        dragXY?.id === selected.id ? dragXY.x : selected.x;
+                      const by =
+                        dragXY?.id === selected.id ? dragXY.y : selected.y;
                       const left =
-                        (corner.includes("w")
-                          ? selected.x
-                          : selected.x + selected.w) -
-                        hs / 2;
+                        (corner.includes("w") ? bx : bx + selected.w) - hs / 2;
                       const top =
-                        (corner.includes("n")
-                          ? selected.y
-                          : selected.y + selected.h) -
-                        hs / 2;
+                        (corner.includes("n") ? by : by + selected.h) - hs / 2;
                       return (
                         <div
                           key={corner}
