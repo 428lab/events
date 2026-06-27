@@ -25,6 +25,8 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
+import UndoIcon from "@mui/icons-material/Undo";
+import RedoIcon from "@mui/icons-material/Redo";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Rnd } from "react-rnd";
 import { DECK_H, DECK_W } from "@eventer/shared";
@@ -69,14 +71,36 @@ export function DeckEditorPage() {
   );
   const inited = useRef(false);
 
+  // 履歴（Undo/Redo）。content の変更を少し待って1ステップにまとめて積む
+  const undoStack = useRef<DeckContent[]>([]);
+  const redoStack = useRef<DeckContent[]>([]);
+  const lastCommitted = useRef<DeckContent | null>(null);
+  const histTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [histVer, setHistVer] = useState(0);
+
   useEffect(() => {
     if (deck && !inited.current) {
       setTitle(deck.title);
       setContent(deck.content);
+      lastCommitted.current = deck.content;
       ensureDeckFonts(deck.content);
       inited.current = true;
     }
   }, [deck]);
+
+  // content 変更を 500ms 後に履歴へコミット（連続変更は1ステップに集約）
+  useEffect(() => {
+    if (content === null || lastCommitted.current === null) return;
+    if (content === lastCommitted.current) return;
+    if (histTimer.current) clearTimeout(histTimer.current);
+    histTimer.current = setTimeout(() => {
+      undoStack.current.push(lastCommitted.current!);
+      if (undoStack.current.length > 100) undoStack.current.shift();
+      lastCommitted.current = content;
+      redoStack.current = [];
+      setHistVer((v) => v + 1);
+    }, 500);
+  }, [content]);
 
   // 自動保存（変更の 800ms 後）
   const firstSave = useRef(true);
@@ -89,6 +113,24 @@ export function DeckEditorPage() {
     const t = setTimeout(() => update.mutate({ title, content }), 800);
     return () => clearTimeout(t);
   }, [content, title]);
+
+  // 最新の undo/redo を保持（キーボードハンドラから呼ぶ）
+  const undoRef = useRef<() => void>(() => {});
+  const redoRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const k = e.key.toLowerCase();
+      if (k !== "z" && k !== "y") return;
+      const tag = (document.activeElement?.tagName ?? "").toLowerCase();
+      if (tag === "input" || tag === "textarea") return; // 文字入力中はブラウザ標準
+      e.preventDefault();
+      if (k === "y" || (k === "z" && e.shiftKey)) redoRef.current();
+      else undoRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // キャンバス幅の計測
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -114,6 +156,46 @@ export function DeckEditorPage() {
   // 自前リサイズ用ハンドル（キャンバスは scale 倍。画面上で約24pxに見えるよう逆補正）
   const hs = Math.max(12, Math.round(24 / (scale || 1)));
   const hb = Math.max(1, Math.round(2 / (scale || 1)));
+
+  // 履歴の保留分を即コミット（Undo/Redo 前に呼ぶ）
+  const flushHistory = () => {
+    if (histTimer.current) {
+      clearTimeout(histTimer.current);
+      histTimer.current = null;
+    }
+    if (lastCommitted.current && content !== lastCommitted.current) {
+      undoStack.current.push(lastCommitted.current);
+      lastCommitted.current = content;
+      redoStack.current = [];
+    }
+  };
+  const undo = () => {
+    flushHistory();
+    const prev = undoStack.current.pop();
+    if (prev === undefined || lastCommitted.current === null) return;
+    redoStack.current.push(lastCommitted.current);
+    lastCommitted.current = prev;
+    setContent(prev);
+    setSelectedId(null);
+    setHistVer((v) => v + 1);
+  };
+  const redo = () => {
+    flushHistory();
+    const next = redoStack.current.pop();
+    if (next === undefined || lastCommitted.current === null) return;
+    undoStack.current.push(lastCommitted.current);
+    lastCommitted.current = next;
+    setContent(next);
+    setSelectedId(null);
+    setHistVer((v) => v + 1);
+  };
+  undoRef.current = undo;
+  redoRef.current = redo;
+  void histVer;
+  const canUndo =
+    undoStack.current.length > 0 ||
+    (lastCommitted.current !== null && content !== lastCommitted.current);
+  const canRedo = redoStack.current.length > 0;
 
   const setSlides = (fn: (s: DeckSlide[]) => DeckSlide[]) =>
     setContent((c) => (c ? { ...c, slides: fn(c.slides) } : c));
@@ -293,6 +375,20 @@ export function DeckEditorPage() {
         <Button size="small" component={RouterLink} to="/decks">
           ← 一覧
         </Button>
+        <Tooltip title="元に戻す (Ctrl/⌘+Z)">
+          <span>
+            <IconButton size="small" onClick={undo} disabled={!canUndo}>
+              <UndoIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title="やり直す (Ctrl/⌘+Shift+Z)">
+          <span>
+            <IconButton size="small" onClick={redo} disabled={!canRedo}>
+              <RedoIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
         <TextField
           size="small"
           placeholder="スライドのタイトル"
