@@ -96,6 +96,25 @@ export function DeckEditorPage() {
   const scale = cw > 0 ? cw / DECK_W : 0;
   const selected = slide?.elements.find((e) => e.id === selectedId) ?? null;
 
+  // 画面上で一定サイズに見えるリサイズハンドル（キャンバスは scale 倍されている）
+  const hs = Math.max(8, Math.round(16 / (scale || 1)));
+  const hb = Math.max(1, Math.round(2 / (scale || 1)));
+  const off = -Math.round(hs / 2);
+  const handleBase = {
+    width: hs,
+    height: hs,
+    background: "#2563eb",
+    border: `${hb}px solid #fff`,
+    borderRadius: "50%",
+    boxSizing: "border-box" as const,
+  };
+  const handleStyles = {
+    topLeft: { ...handleBase, left: off, top: off },
+    topRight: { ...handleBase, right: off, top: off },
+    bottomLeft: { ...handleBase, left: off, bottom: off },
+    bottomRight: { ...handleBase, right: off, bottom: off },
+  };
+
   const setSlides = (fn: (s: DeckSlide[]) => DeckSlide[]) =>
     setContent((c) => (c ? { ...c, slides: fn(c.slides) } : c));
   const patchSlide = (i: number, patch: Partial<DeckSlide>) =>
@@ -122,6 +141,9 @@ export function DeckEditorPage() {
     setSelectedId(el.id);
   };
   const deleteElement = (elId: string) => {
+    // 削除ボタンがフォーカスのまま消えるとブラウザがトップへスクロールするため抑止
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    const y = window.scrollY;
     setSlides((s) =>
       s.map((sl, j) =>
         j === idx
@@ -130,6 +152,7 @@ export function DeckEditorPage() {
       ),
     );
     setSelectedId(null);
+    requestAnimationFrame(() => window.scrollTo(0, y));
   };
 
   const addText = () =>
@@ -366,6 +389,11 @@ export function DeckEditorPage() {
                       bounds="parent"
                       size={{ width: el.w, height: el.h }}
                       position={{ x: el.x, y: el.y }}
+                      enableResizing={selectedId === el.id}
+                      resizeHandleStyles={
+                        selectedId === el.id ? handleStyles : undefined
+                      }
+                      onDragStart={() => setSelectedId(el.id)}
                       onDragStop={(_e, d) => patchElement(el.id, { x: d.x, y: d.y })}
                       onResizeStop={(_e, _dir, ref, _delta, pos) =>
                         patchElement(el.id, {
@@ -384,6 +412,7 @@ export function DeckEditorPage() {
                           selectedId === el.id
                             ? "2px solid #2563eb"
                             : "1px dashed rgba(0,0,0,0.25)",
+                        zIndex: selectedId === el.id ? 5 : 1,
                       }}
                     >
                       <ElementContent el={el} />
