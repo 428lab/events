@@ -21,28 +21,21 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  * サイズ超過時は品質を段階的に下げて再エンコードする。
  * （WebP 非対応ブラウザでは toBlob が別形式にフォールバックするが、保存側は image/* を許容）
  */
-export async function cropToOgImage(
+export async function cropToImage(
   imageSrc: string,
   crop: PixelCrop,
+  outW: number,
+  outH: number,
+  maxBytes: number,
 ): Promise<Blob> {
   const image = await loadImage(imageSrc);
   const canvas = document.createElement("canvas");
-  canvas.width = EVENT_IMAGE.width;
-  canvas.height = EVENT_IMAGE.height;
+  canvas.width = outW;
+  canvas.height = outH;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("canvas context unavailable");
 
-  ctx.drawImage(
-    image,
-    crop.x,
-    crop.y,
-    crop.width,
-    crop.height,
-    0,
-    0,
-    EVENT_IMAGE.width,
-    EVENT_IMAGE.height,
-  );
+  ctx.drawImage(image, crop.x, crop.y, crop.width, crop.height, 0, 0, outW, outH);
 
   const toBlob = (quality: number): Promise<Blob> =>
     new Promise((resolve, reject) => {
@@ -55,9 +48,22 @@ export async function cropToOgImage(
 
   let quality = 0.9;
   let blob = await toBlob(quality);
-  while (blob.size > EVENT_IMAGE.maxBytes && quality > 0.3) {
+  while (blob.size > maxBytes && quality > 0.3) {
     quality -= 0.1;
     blob = await toBlob(quality);
   }
   return blob;
+}
+
+export async function cropToOgImage(
+  imageSrc: string,
+  crop: PixelCrop,
+): Promise<Blob> {
+  return cropToImage(
+    imageSrc,
+    crop,
+    EVENT_IMAGE.width,
+    EVENT_IMAGE.height,
+    EVENT_IMAGE.maxBytes,
+  );
 }

@@ -121,6 +121,30 @@ export function useSetCommunityRole(slug: string) {
   });
 }
 
+export function useUploadCommunityImage(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: {
+      communityId: string;
+      kind: "icon" | "banner";
+      blob: Blob;
+    }) => {
+      const res = await fetch(`/api/communities/${v.communityId}/${v.kind}`, {
+        method: "PUT",
+        headers: { "Content-Type": v.blob.type },
+        credentials: "include",
+        body: v.blob,
+      });
+      if (!res.ok) throw new Error("upload_failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["community", slug] });
+      qc.invalidateQueries({ queryKey: ["communities"] });
+    },
+  });
+}
+
 export function useTransferOwnership(slug: string) {
   const qc = useQueryClient();
   return useMutation({

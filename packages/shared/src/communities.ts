@@ -36,12 +36,20 @@ export const RESERVED_COMMUNITY_SLUGS = [
 export const COMMUNITY_ROLES = ["owner", "admin", "member"] as const;
 export type CommunityRole = (typeof COMMUNITY_ROLES)[number];
 
+export const communityLinkSchema = z.object({
+  label: z.string().trim().min(1).max(40),
+  url: z.string().trim().url().max(500),
+});
+export type CommunityLink = z.infer<typeof communityLinkSchema>;
+
 export const communitySchema = z.object({
   id: z.string(),
   slug: z.string(),
   name: z.string(),
   description: z.string(),
   iconUrl: z.string().nullable(),
+  bannerUrl: z.string().nullable(),
+  links: z.array(communityLinkSchema),
   ownerId: z.string(),
   createdAt: z.number(),
   memberCount: z.number(),
@@ -91,6 +99,7 @@ export type CreateCommunityInput = z.infer<typeof createCommunityInput>;
 export const updateCommunityInput = z.object({
   name: z.string().trim().min(1).max(60).optional(),
   description: z.string().max(2000).optional(),
+  links: z.array(communityLinkSchema).max(10).optional(),
 });
 export type UpdateCommunityInput = z.infer<typeof updateCommunityInput>;
 

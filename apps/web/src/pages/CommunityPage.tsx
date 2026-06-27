@@ -55,6 +55,20 @@ export function CommunityPage() {
 
   return (
     <Stack spacing={3}>
+      {c.bannerUrl && (
+        <Box
+          component="img"
+          src={c.bannerUrl}
+          alt=""
+          sx={{
+            width: "100%",
+            aspectRatio: "3 / 1",
+            objectFit: "cover",
+            borderRadius: 2,
+          }}
+        />
+      )}
+
       {/* ヘッダー */}
       <Stack direction="row" spacing={2} alignItems="center">
         <Avatar
@@ -120,6 +134,24 @@ export function CommunityPage() {
       </Stack>
 
       {c.description && <Markdown>{c.description}</Markdown>}
+
+      {c.links.length > 0 && (
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          {c.links.map((l, i) => (
+            <Button
+              key={i}
+              size="small"
+              variant="outlined"
+              component="a"
+              href={l.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {l.label}
+            </Button>
+          ))}
+        </Stack>
+      )}
 
       <Divider />
 

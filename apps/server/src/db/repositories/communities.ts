@@ -1,5 +1,6 @@
 import type {
   Community,
+  CommunityLink,
   CommunityMember,
   CommunityRole,
   CommunitySummary,
@@ -14,10 +15,31 @@ interface CommunityRow {
   name: string;
   description: string;
   icon_url: string | null;
+  icon_updated_at: number | null;
+  banner_updated_at: number | null;
+  links: string | null;
   owner_id: string;
   created_at: number;
   member_count: number;
   event_count: number;
+}
+
+function parseLinks(json: string | null): CommunityLink[] {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+export function communityImageUrl(
+  id: string,
+  kind: "icon" | "banner",
+  updatedAt: number | null,
+): string | null {
+  return updatedAt ? `/api/communities/${id}/${kind}?v=${updatedAt}` : null;
 }
 
 // メンバー数＝明示メンバー ∪ 所属イベントの確定参加者（重複排除）
@@ -37,7 +59,9 @@ function toCommunity(row: CommunityRow): Community {
     slug: row.slug,
     name: row.name,
     description: row.description,
-    iconUrl: row.icon_url,
+    iconUrl: communityImageUrl(row.id, "icon", row.icon_updated_at),
+    bannerUrl: communityImageUrl(row.id, "banner", row.banner_updated_at),
+    links: parseLinks(row.links),
     ownerId: row.owner_id,
     createdAt: row.created_at,
     memberCount: row.member_count ?? 0,
@@ -107,12 +131,35 @@ export const communitiesRepo = {
     const current = await this.findById(id);
     if (!current) return null;
     await run(
-      "UPDATE community SET name = ?, description = ? WHERE id = ?",
+      "UPDATE community SET name = ?, description = ?, links = ? WHERE id = ?",
       input.name ?? current.name,
       input.description ?? current.description,
+      JSON.stringify(input.links ?? current.links),
       id,
     );
     return this.findById(id);
+  },
+
+  /** 画像アップロード時刻の取得（配信ルートの ETag/404 判定用） */
+  async imageUpdatedAt(
+    id: string,
+    kind: "icon" | "banner",
+  ): Promise<number | null> {
+    const col = kind === "icon" ? "icon_updated_at" : "banner_updated_at";
+    const row = await one<{ v: number | null }>(
+      `SELECT ${col} AS v FROM community WHERE id = ?`,
+      id,
+    );
+    return row?.v ?? null;
+  },
+
+  async setImageUpdated(
+    id: string,
+    kind: "icon" | "banner",
+    ts: number,
+  ): Promise<void> {
+    const col = kind === "icon" ? "icon_updated_at" : "banner_updated_at";
+    await run(`UPDATE community SET ${col} = ? WHERE id = ?`, ts, id);
   },
 
   async delete(id: string): Promise<void> {
@@ -195,10 +242,10 @@ export const communitiesRepo = {
       id: string;
       slug: string;
       name: string;
-      icon_url: string | null;
+      icon_updated_at: number | null;
       role: string;
     }>(
-      `SELECT c.id, c.slug, c.name, c.icon_url, COALESCE(cm.role, 'member') AS role
+      `SELECT c.id, c.slug, c.name, c.icon_updated_at, COALESCE(cm.role, 'member') AS role
        FROM community c
        LEFT JOIN community_member cm ON cm.community_id = c.id AND cm.user_id = ?
        WHERE c.id IN (
@@ -217,7 +264,7 @@ export const communitiesRepo = {
       id: r.id,
       slug: r.slug,
       name: r.name,
-      iconUrl: r.icon_url,
+      iconUrl: communityImageUrl(r.id, "icon", r.icon_updated_at),
       role: r.role as CommunityRole,
     }));
   },

@@ -32,3 +32,15 @@ export const EVENT_IMAGE = {
   height: 630,
   maxBytes: 1024 * 1024, // 1MB
 } as const;
+
+export const COMMUNITY_ICON = {
+  width: 512,
+  height: 512,
+  maxBytes: 1024 * 1024,
+} as const;
+
+export const COMMUNITY_BANNER = {
+  width: 1500,
+  height: 500,
+  maxBytes: 1024 * 1024,
+} as const;

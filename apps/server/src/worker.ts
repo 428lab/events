@@ -11,6 +11,7 @@ import { publicRoutes } from "./routes/public.js";
 import { inquiryRoutes, adminInquiryRoutes } from "./routes/inquiries.js";
 import { notificationRoutes } from "./routes/notifications.js";
 import { communityRoutes } from "./routes/communities.js";
+import { getCommunityImage } from "./routes/communityImages.js";
 import { currentUser } from "./auth/session.js";
 import { isAppAdmin } from "./auth/admin.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
@@ -36,6 +37,9 @@ api.route("/me", meRoutes);
 api.route("/inquiries", inquiryRoutes);
 api.route("/admin/inquiries", adminInquiryRoutes);
 api.route("/notifications", notificationRoutes);
+// 公開: コミュニティ画像（認証不要。communityRoutes(要認証) より先に登録）
+api.get("/communities/:id/icon", getCommunityImage("icon"));
+api.get("/communities/:id/banner", getCommunityImage("banner"));
 api.route("/communities", communityRoutes);
 
 /**

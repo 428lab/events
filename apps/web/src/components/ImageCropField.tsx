@@ -12,20 +12,26 @@ import {
   Typography,
 } from "@mui/material";
 import { EVENT_IMAGE } from "@eventer/shared";
-import { cropToOgImage, type PixelCrop } from "../lib/cropImage.js";
+import { cropToImage, type PixelCrop } from "../lib/cropImage.js";
 
 /**
- * 画像をピックして OG サイズ(1200x630)にクロップし、Blob を onCropped で返す。
- * アップロードは行わない（呼び出し側が即アップロード/遅延アップロードを選べる）。
+ * 画像をピックして指定サイズにクロップし、Blob を onCropped で返す。
+ * デフォルトは OG サイズ(1200x630)。アップロードは呼び出し側が行う。
  */
 export function ImageCropField({
   label,
   busy,
   onCropped,
+  outWidth = EVENT_IMAGE.width,
+  outHeight = EVENT_IMAGE.height,
+  maxBytes = EVENT_IMAGE.maxBytes,
 }: {
   label: string;
   busy?: boolean;
   onCropped: (blob: Blob) => void;
+  outWidth?: number;
+  outHeight?: number;
+  maxBytes?: number;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [src, setSrc] = useState<string | null>(null);
@@ -56,7 +62,13 @@ export function ImageCropField({
     if (!src || !areaPixels) return;
     setWorking(true);
     try {
-      const blob = await cropToOgImage(src, areaPixels);
+      const blob = await cropToImage(
+        src,
+        areaPixels,
+        outWidth,
+        outHeight,
+        maxBytes,
+      );
       onCropped(blob);
       close();
     } finally {
@@ -97,7 +109,7 @@ export function ImageCropField({
                 image={src}
                 crop={crop}
                 zoom={zoom}
-                aspect={EVENT_IMAGE.width / EVENT_IMAGE.height}
+                aspect={outWidth / outHeight}
                 onCropChange={setCrop}
                 onZoomChange={setZoom}
                 onCropComplete={onCropComplete}

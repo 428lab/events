@@ -16,6 +16,7 @@ import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
+import { putCommunityImage } from "./communityImages.js";
 
 /** /api/communities（作成・参加・自分の主催コミュニティ）。閲覧系は /api/public/communities */
 export const communityRoutes = new Hono<AppEnv>();
@@ -106,6 +107,10 @@ communityRoutes.put(
     return c.json({ ok: true });
   },
 );
+
+/** アイコン/バナー画像のアップロード（owner/admin。生バイナリ） */
+communityRoutes.put("/:id/icon", putCommunityImage("icon"));
+communityRoutes.put("/:id/banner", putCommunityImage("banner"));
 
 /** オーナー譲渡（owner のみ。譲渡先は admin であること） */
 communityRoutes.post(
