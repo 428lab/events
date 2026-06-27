@@ -8,6 +8,7 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { useEventSearchInfinite } from "../api/hooks.js";
 import { EventCard } from "../components/EventCard.js";
+import { EventSearchPanel } from "../components/EventSearchPanel.js";
 
 export function UpcomingEventsPage() {
   const [params] = useSearchParams();
@@ -37,29 +38,34 @@ export function UpcomingEventsPage() {
   }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage]);
 
   return (
-    <Stack spacing={3}>
-      <Typography variant="h5" fontWeight={700}>
-        開催予定のイベント
-      </Typography>
-      {query.isLoading ? (
-        <Typography>読み込み中…</Typography>
-      ) : events.length === 0 ? (
-        <Typography color="text.secondary">イベントはありません。</Typography>
-      ) : (
-        <Stack spacing={2}>
-          {events.map((e) => (
-            <EventCard key={e.id} event={e} />
-          ))}
-        </Stack>
-      )}
-      <Box ref={sentinel} sx={{ display: "flex", justifyContent: "center", py: 2 }}>
-        {query.isFetchingNextPage && <CircularProgress size={28} />}
-        {!query.hasNextPage && events.length > 0 && (
-          <Typography variant="caption" color="text.secondary">
-            これ以上ありません
-          </Typography>
+    <EventSearchPanel>
+      <Stack spacing={3}>
+        <Typography variant="h5" fontWeight={700}>
+          開催予定のイベント
+        </Typography>
+        {query.isLoading ? (
+          <Typography>読み込み中…</Typography>
+        ) : events.length === 0 ? (
+          <Typography color="text.secondary">イベントはありません。</Typography>
+        ) : (
+          <Stack spacing={2}>
+            {events.map((e) => (
+              <EventCard key={e.id} event={e} />
+            ))}
+          </Stack>
         )}
-      </Box>
-    </Stack>
+        <Box
+          ref={sentinel}
+          sx={{ display: "flex", justifyContent: "center", py: 2 }}
+        >
+          {query.isFetchingNextPage && <CircularProgress size={28} />}
+          {!query.hasNextPage && events.length > 0 && (
+            <Typography variant="caption" color="text.secondary">
+              これ以上ありません
+            </Typography>
+          )}
+        </Box>
+      </Stack>
+    </EventSearchPanel>
   );
 }
