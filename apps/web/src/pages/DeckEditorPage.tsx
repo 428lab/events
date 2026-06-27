@@ -96,26 +96,9 @@ export function DeckEditorPage() {
   const scale = cw > 0 ? cw / DECK_W : 0;
   const selected = slide?.elements.find((e) => e.id === selectedId) ?? null;
 
-  // 画面上で一定サイズに見えるリサイズハンドル（キャンバスは scale 倍されている）
-  // タッチでも掴めるよう大きめ＋ touch-action:none（指ドラッグでページがスクロールするのを防ぐ）
+  // 自前リサイズ用ハンドル（キャンバスは scale 倍。画面上で約24pxに見えるよう逆補正）
   const hs = Math.max(12, Math.round(24 / (scale || 1)));
   const hb = Math.max(1, Math.round(2 / (scale || 1)));
-  const off = -Math.round(hs / 2);
-  const handleBase = {
-    width: hs,
-    height: hs,
-    background: "#2563eb",
-    border: `${hb}px solid #fff`,
-    borderRadius: "50%",
-    boxSizing: "border-box" as const,
-    touchAction: "none" as const,
-  };
-  const handleStyles = {
-    topLeft: { ...handleBase, left: off, top: off },
-    topRight: { ...handleBase, right: off, top: off },
-    bottomLeft: { ...handleBase, left: off, bottom: off },
-    bottomRight: { ...handleBase, right: off, bottom: off },
-  };
 
   const setSlides = (fn: (s: DeckSlide[]) => DeckSlide[]) =>
     setContent((c) => (c ? { ...c, slides: fn(c.slides) } : c));
@@ -155,6 +138,58 @@ export function DeckEditorPage() {
     );
     setSelectedId(null);
     requestAnimationFrame(() => window.scrollTo(0, y));
+  };
+
+  // 自前リサイズ（マウス/タッチ統一の Pointer Events）
+  const resizeRef = useRef<{
+    elId: string;
+    corner: string;
+    sx: number;
+    sy: number;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
+  const startResize = (
+    e: React.PointerEvent,
+    el: DeckElement,
+    corner: string,
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setSelectedId(el.id);
+    resizeRef.current = {
+      elId: el.id,
+      corner,
+      sx: e.clientX,
+      sy: e.clientY,
+      x: el.x,
+      y: el.y,
+      w: el.w,
+      h: el.h,
+    };
+  };
+  const moveResize = (e: React.PointerEvent) => {
+    const r = resizeRef.current;
+    if (!r) return;
+    const s = scale || 1;
+    const dx = (e.clientX - r.sx) / s;
+    const dy = (e.clientY - r.sy) / s;
+    let { x, y, w, h } = r;
+    if (r.corner.includes("e")) w = r.w + dx;
+    if (r.corner.includes("w")) w = r.w - dx;
+    w = Math.max(20, w);
+    if (r.corner.includes("w")) x = r.x + (r.w - w);
+    if (r.corner.includes("s")) h = r.h + dy;
+    if (r.corner.includes("n")) h = r.h - dy;
+    h = Math.max(20, h);
+    if (r.corner.includes("n")) y = r.y + (r.h - h);
+    patchElement(r.elId, { x, y, w, h });
+  };
+  const endResize = () => {
+    resizeRef.current = null;
   };
 
   const addText = () =>
@@ -391,10 +426,7 @@ export function DeckEditorPage() {
                       bounds="parent"
                       size={{ width: el.w, height: el.h }}
                       position={{ x: el.x, y: el.y }}
-                      enableResizing={selectedId === el.id}
-                      resizeHandleStyles={
-                        selectedId === el.id ? handleStyles : undefined
-                      }
+                      enableResizing={false}
                       onDragStart={() => setSelectedId(el.id)}
                       onDragStop={(_e, d) => patchElement(el.id, { x: d.x, y: d.y })}
                       onResizeStop={(_e, _dir, ref, _delta, pos) =>
@@ -421,6 +453,50 @@ export function DeckEditorPage() {
                       <ElementContent el={el} />
                     </Rnd>
                   ))}
+
+                  {/* 自前リサイズハンドル（選択中の要素の四隅） */}
+                  {selected &&
+                    (
+                      [
+                        ["nw", "nwse-resize"],
+                        ["ne", "nesw-resize"],
+                        ["sw", "nesw-resize"],
+                        ["se", "nwse-resize"],
+                      ] as const
+                    ).map(([corner, cursor]) => {
+                      const left =
+                        (corner.includes("w")
+                          ? selected.x
+                          : selected.x + selected.w) -
+                        hs / 2;
+                      const top =
+                        (corner.includes("n")
+                          ? selected.y
+                          : selected.y + selected.h) -
+                        hs / 2;
+                      return (
+                        <div
+                          key={corner}
+                          onPointerDown={(e) => startResize(e, selected, corner)}
+                          onPointerMove={moveResize}
+                          onPointerUp={endResize}
+                          style={{
+                            position: "absolute",
+                            left,
+                            top,
+                            width: hs,
+                            height: hs,
+                            borderRadius: "50%",
+                            background: "#2563eb",
+                            border: `${hb}px solid #fff`,
+                            boxSizing: "border-box",
+                            cursor,
+                            touchAction: "none",
+                            zIndex: 10,
+                          }}
+                        />
+                      );
+                    })}
                 </Box>
               </Box>
             )}
