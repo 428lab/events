@@ -124,6 +124,7 @@ export function EventDetailPage() {
   }
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
   const { event, myRole } = data;
+  const community = data.community;
 
   const myEntry = entries?.find((e) => me && e.memberUserIds.includes(me.id));
   const myMembership = members?.find((m) => me && m.user.id === me.id);
@@ -180,6 +181,30 @@ export function EventDetailPage() {
       <Grid item xs={12} md={8}>
         <Stack spacing={3}>
       <Box>
+        {community && (
+          <Box
+            component={RouterLink}
+            to={`/c/${community.slug}`}
+            sx={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 0.75,
+              mb: 0.5,
+              color: "text.secondary",
+              textDecoration: "none",
+              "&:hover": { textDecoration: "underline" },
+            }}
+          >
+            <Avatar
+              src={community.iconUrl ?? undefined}
+              variant="rounded"
+              sx={{ width: 20, height: 20, fontSize: 12 }}
+            >
+              {community.name.charAt(0)}
+            </Avatar>
+            <Typography variant="body2">{community.name}</Typography>
+          </Box>
+        )}
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography variant="h4" fontWeight={700}>
             {event.title}

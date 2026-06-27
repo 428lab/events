@@ -193,6 +193,7 @@ function mapMyEventSummary(
     createdAt: row.created_at as number,
     imageUpdatedAt: (row.image_updated_at as number | null) ?? null,
     participantCount: (row.participant_count as number) ?? 0,
+    communityId: (row.community_id as string | null) ?? null,
     myRole: row.my_role as EventRole,
   };
 }

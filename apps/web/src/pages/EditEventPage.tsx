@@ -23,6 +23,7 @@ import {
   useIsAdmin,
   useUpdateEvent,
 } from "../api/hooks.js";
+import { useMyCommunities } from "../api/communityHooks.js";
 import { EventImageEditor } from "../components/EventImageEditor.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
 import { AwardsEditor } from "../components/AwardsEditor.js";
@@ -51,6 +52,9 @@ export function EditEventPage() {
   const [venueOffline, setVenueOffline] = useState("");
   const [venueOnline, setVenueOnline] = useState("");
   const [contestMode, setContestMode] = useState(false);
+  const [communityId, setCommunityId] = useState("");
+  const myCommunitiesQuery = useMyCommunities();
+  const myCommunities = myCommunitiesQuery.data;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
@@ -66,6 +70,7 @@ export function EditEventPage() {
       setVenueOffline(e.venueOffline ?? "");
       setVenueOnline(e.venueOnline ?? "");
       setContestMode(e.contestMode);
+      setCommunityId(e.communityId ?? "");
       setInitialized(true);
     }
   }, [data, initialized]);
@@ -90,6 +95,7 @@ export function EditEventPage() {
         venueOffline: venueOffline || null,
         venueOnline: venueOnline || null,
         contestMode,
+        communityId: communityId || null,
       },
       { onSuccess: () => navigate(`/events/${id}`) },
     );
@@ -136,6 +142,22 @@ export function EditEventPage() {
             fullWidth
             helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調** など）"
           />
+          {myCommunities && myCommunities.length > 0 && (
+            <TextField
+              select
+              label="コミュニティ（任意）"
+              value={communityId}
+              onChange={(e) => setCommunityId(e.target.value)}
+              fullWidth
+            >
+              <MenuItem value="">なし</MenuItem>
+              {myCommunities.map((c) => (
+                <MenuItem key={c.id} value={c.id}>
+                  {c.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <TextField
               label="開始日時"

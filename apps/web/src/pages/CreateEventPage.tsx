@@ -16,6 +16,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { EVENT_IMAGE, VENUE_TYPES, type VenueType } from "@eventer/shared";
 import { useCreateEvent } from "../api/hooks.js";
+import { useMyCommunities } from "../api/communityHooks.js";
 import { ImageCropField } from "../components/ImageCropField.js";
 import { EventImageStudio } from "../components/EventImageStudio.js";
 import { formatDateRange, venueLabel } from "../lib/format.js";
@@ -27,7 +28,9 @@ function toEpoch(local: string): number {
 export function CreateEventPage() {
   const navigate = useNavigate();
   const createEvent = useCreateEvent();
+  const { data: myCommunities } = useMyCommunities();
 
+  const [communityId, setCommunityId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startsAt, setStartsAt] = useState("");
@@ -65,6 +68,7 @@ export function CreateEventPage() {
         venueOnline: venueOnline || null,
         aggregateSelfEntry: false,
         contestMode,
+        communityId: communityId || null,
       },
       {
         onSuccess: async ({ event }) => {
@@ -105,6 +109,23 @@ export function CreateEventPage() {
             fullWidth
             helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調** など）"
           />
+          {myCommunities && myCommunities.length > 0 && (
+            <TextField
+              select
+              label="コミュニティ（任意）"
+              value={communityId}
+              onChange={(e) => setCommunityId(e.target.value)}
+              fullWidth
+              helperText="主催コミュニティに紐付けると、そのコミュニティページに表示されます"
+            >
+              <MenuItem value="">なし</MenuItem>
+              {myCommunities.map((c) => (
+                <MenuItem key={c.id} value={c.id}>
+                  {c.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <TextField
               label="開始日時"

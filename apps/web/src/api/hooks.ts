@@ -141,11 +141,22 @@ export function usePublicPastEvents(page: number) {
   });
 }
 
+export interface EventCommunityRef {
+  id: string;
+  slug: string;
+  name: string;
+  iconUrl: string | null;
+}
+
 export function useEvent(id: string) {
   return useQuery({
     queryKey: ["event", id],
     queryFn: () =>
-      api.get<{ event: Event; myRole: EventRole | null }>(`/events/${id}`),
+      api.get<{
+        event: Event;
+        myRole: EventRole | null;
+        community: EventCommunityRef | null;
+      }>(`/events/${id}`),
   });
 }
 

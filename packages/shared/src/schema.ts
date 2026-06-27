@@ -39,6 +39,8 @@ export const eventSchema = z.object({
   createdAt: z.number(),
   imageUpdatedAt: z.number().nullable(),
   participantCount: z.number(),
+  /** 所属コミュニティ（任意。無所属は null） */
+  communityId: z.string().nullable(),
 });
 export type Event = z.infer<typeof eventSchema>;
 
@@ -53,6 +55,7 @@ export const createEventInput = z
     venueOnline: z.string().max(500).optional().nullable(),
     aggregateSelfEntry: z.boolean().default(false),
     contestMode: z.boolean().default(false),
+    communityId: z.string().nullable().optional(),
   })
   .refine((v) => v.endsAt >= v.startsAt, {
     message: "endsAt must be >= startsAt",
@@ -71,6 +74,7 @@ export const updateEventInput = z.object({
   aggregateSelfEntry: z.boolean().optional(),
   contestMode: z.boolean().optional(),
   status: z.enum(["draft", "published"]).optional(),
+  communityId: z.string().nullable().optional(),
 });
 export type UpdateEventInput = z.infer<typeof updateEventInput>;
 

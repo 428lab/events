@@ -26,6 +26,9 @@ import { AdminInquiryThreadPage } from "./pages/AdminInquiryThreadPage.js";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage.js";
 import { TermsPage } from "./pages/TermsPage.js";
 import { UserProfilePage } from "./pages/UserProfilePage.js";
+import { CommunitiesPage } from "./pages/CommunitiesPage.js";
+import { CommunityPage } from "./pages/CommunityPage.js";
+import { CreateCommunityPage } from "./pages/CreateCommunityPage.js";
 
 export function App() {
   const { data: user, isLoading } = useMe();
@@ -91,6 +94,22 @@ export function App() {
             </PublicLayout>
           }
         />
+        <Route
+          path="/communities"
+          element={
+            <PublicLayout>
+              <CommunitiesPage />
+            </PublicLayout>
+          }
+        />
+        <Route
+          path="/c/:slug"
+          element={
+            <PublicLayout>
+              <CommunityPage />
+            </PublicLayout>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
@@ -108,6 +127,9 @@ export function App() {
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/users/:id" element={<UserProfilePage />} />
+        <Route path="/communities" element={<CommunitiesPage />} />
+        <Route path="/communities/new" element={<CreateCommunityPage />} />
+        <Route path="/c/:slug" element={<CommunityPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/new" element={<CreateEventPage />} />
         <Route path="/events/:id" element={<EventLayout />}>

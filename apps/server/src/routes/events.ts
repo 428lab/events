@@ -33,6 +33,7 @@ import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
+import { communitiesRepo } from "../db/repositories/communities.js";
 import { deleteEventImage, putEventImage } from "./images.js";
 
 export const eventRoutes = new Hono<AppEnv>();
@@ -56,7 +57,21 @@ eventRoutes.get("/:id", async (c) => {
   const user = await currentUser(c);
   if (!(await canView(event, user))) return c.json({ error: "not_found" }, 404);
   const member = user ? await eventMembersRepo.find(event.id, user.id) : null;
-  return c.json({ event, myRole: member?.role ?? null });
+  const community = event.communityId
+    ? await communitiesRepo.findById(event.communityId)
+    : null;
+  return c.json({
+    event,
+    myRole: member?.role ?? null,
+    community: community
+      ? {
+          id: community.id,
+          slug: community.slug,
+          name: community.name,
+          iconUrl: community.iconUrl,
+        }
+      : null,
+  });
 });
 
 /** Entry 一覧（公開イベントは未ログインでも閲覧可） */

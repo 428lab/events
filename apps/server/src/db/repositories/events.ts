@@ -22,6 +22,7 @@ interface EventRow {
   created_at: number;
   image_updated_at: number | null;
   participant_count: number;
+  community_id: string | null;
 }
 
 /** participant_count（確定メンバー数）を含む event の SELECT */
@@ -48,6 +49,7 @@ function toEvent(row: EventRow): Event {
     createdAt: row.created_at,
     imageUpdatedAt: row.image_updated_at,
     participantCount: row.participant_count,
+    communityId: row.community_id ?? null,
   };
 }
 
@@ -60,6 +62,15 @@ export const eventsRepo = {
   async listPublished(): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT} WHERE status = 'published' ORDER BY starts_at DESC`,
+    );
+    return rows.map(toEvent);
+  },
+
+  /** コミュニティに所属する公開イベント（開始の降順） */
+  async listByCommunity(communityId: string): Promise<Event[]> {
+    const rows = await many<EventRow>(
+      `${SELECT_EVENT} WHERE community_id = ? AND status = 'published' ORDER BY starts_at DESC`,
+      communityId,
     );
     return rows.map(toEvent);
   },
@@ -128,8 +139,9 @@ export const eventsRepo = {
       `INSERT INTO event
         (id, title, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
-         aggregate_self_entry, contest_mode, status, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?)`,
+         aggregate_self_entry, contest_mode, status, created_by, created_at,
+         community_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?)`,
       id,
       input.title,
       input.description ?? "",
@@ -142,6 +154,7 @@ export const eventsRepo = {
       input.contestMode ? 1 : 0,
       createdBy,
       Date.now(),
+      input.communityId ?? null,
     );
     return (await this.findById(id))!;
   },
@@ -154,7 +167,8 @@ export const eventsRepo = {
       `UPDATE event SET
          title = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
-         aggregate_self_entry = ?, contest_mode = ?, status = ?
+         aggregate_self_entry = ?, contest_mode = ?, status = ?,
+         community_id = ?
        WHERE id = ?`,
       next.title,
       next.description,
@@ -166,6 +180,7 @@ export const eventsRepo = {
       next.aggregateSelfEntry ? 1 : 0,
       next.contestMode ? 1 : 0,
       next.status,
+      next.communityId ?? null,
       id,
     );
     return this.findById(id);
