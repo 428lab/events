@@ -5,12 +5,14 @@ import {
   Button,
   Card,
   CardContent,
+  Collapse,
   MenuItem,
   Pagination,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
+import SearchIcon from "@mui/icons-material/Search";
 import { useEventSearch, type EventSearchParams } from "../api/hooks.js";
 import { useCommunities } from "../api/communityHooks.js";
 import { EventCard } from "./EventCard.js";
@@ -28,6 +30,7 @@ export function EventSearchPanel({ children }: { children: ReactNode }) {
   const [communityId, setCommunityId] = useState("");
   const [sort, setSort] = useState<"soon" | "recent" | "new">("soon");
   const [page, setPage] = useState(1);
+  const [open, setOpen] = useState(false);
   const { data: communities } = useCommunities();
 
   const hasFilters = Boolean(
@@ -65,7 +68,20 @@ export function EventSearchPanel({ children }: { children: ReactNode }) {
     : 1;
 
   return (
-    <Stack spacing={4}>
+    <Stack spacing={3}>
+      <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button
+          size="small"
+          color="inherit"
+          startIcon={<SearchIcon />}
+          onClick={() => setOpen((o) => !o)}
+          sx={{ opacity: 0.85 }}
+        >
+          検索・絞り込み
+        </Button>
+      </Box>
+
+      <Collapse in={open} unmountOnExit>
       <Card variant="outlined">
         <CardContent>
           <Stack spacing={2}>
@@ -140,6 +156,7 @@ export function EventSearchPanel({ children }: { children: ReactNode }) {
           </Stack>
         </CardContent>
       </Card>
+      </Collapse>
 
       {hasFilters ? (
         <Box>
