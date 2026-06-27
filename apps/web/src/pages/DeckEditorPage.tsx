@@ -27,6 +27,8 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
+import FlipToFrontIcon from "@mui/icons-material/FlipToFront";
+import FlipToBackIcon from "@mui/icons-material/FlipToBack";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Rnd } from "react-rnd";
 import { DECK_H, DECK_W } from "@eventer/shared";
@@ -114,20 +116,10 @@ export function DeckEditorPage() {
     return () => clearTimeout(t);
   }, [content, title]);
 
-  // 最新の undo/redo を保持（キーボードハンドラから呼ぶ）
-  const undoRef = useRef<() => void>(() => {});
-  const redoRef = useRef<() => void>(() => {});
+  // 最新のキーボードハンドラを保持（毎レンダで最新クロージャに差し替え）
+  const keydownRef = useRef<(e: KeyboardEvent) => void>(() => {});
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      const k = e.key.toLowerCase();
-      if (k !== "z" && k !== "y") return;
-      const tag = (document.activeElement?.tagName ?? "").toLowerCase();
-      if (tag === "input" || tag === "textarea") return; // 文字入力中はブラウザ標準
-      e.preventDefault();
-      if (k === "y" || (k === "z" && e.shiftKey)) redoRef.current();
-      else undoRef.current();
-    };
+    const onKey = (e: KeyboardEvent) => keydownRef.current(e);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
@@ -189,8 +181,42 @@ export function DeckEditorPage() {
     setSelectedId(null);
     setHistVer((v) => v + 1);
   };
-  undoRef.current = undo;
-  redoRef.current = redo;
+  keydownRef.current = (e: KeyboardEvent) => {
+    const tag = (document.activeElement?.tagName ?? "").toLowerCase();
+    const typing = tag === "input" || tag === "textarea";
+    if (e.metaKey || e.ctrlKey) {
+      const k = e.key.toLowerCase();
+      if ((k === "z" || k === "y") && !typing) {
+        e.preventDefault();
+        if (k === "y" || (k === "z" && e.shiftKey)) redo();
+        else undo();
+      } else if (k === "d" && selected && !typing) {
+        e.preventDefault();
+        duplicateElement(selected);
+      }
+      return;
+    }
+    if (typing || !selected) return;
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      deleteElement(selected.id);
+      return;
+    }
+    const step = e.shiftKey ? 10 : 1;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      patchElement(selected.id, { x: selected.x - step });
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      patchElement(selected.id, { x: selected.x + step });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      patchElement(selected.id, { y: selected.y - step });
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      patchElement(selected.id, { y: selected.y + step });
+    }
+  };
   void histVer;
   const canUndo =
     undoStack.current.length > 0 ||
@@ -236,6 +262,37 @@ export function DeckEditorPage() {
     setSelectedId(null);
     requestAnimationFrame(() => window.scrollTo(0, y));
   };
+  const duplicateElement = (el: DeckElement) => {
+    addElement({ ...el, id: uid(), x: el.x + 20, y: el.y + 20 });
+  };
+  const bringToFront = (elId: string) =>
+    setSlides((s) =>
+      s.map((sl, j) =>
+        j === idx
+          ? {
+              ...sl,
+              elements: [
+                ...sl.elements.filter((e) => e.id !== elId),
+                ...sl.elements.filter((e) => e.id === elId),
+              ],
+            }
+          : sl,
+      ),
+    );
+  const sendToBack = (elId: string) =>
+    setSlides((s) =>
+      s.map((sl, j) =>
+        j === idx
+          ? {
+              ...sl,
+              elements: [
+                ...sl.elements.filter((e) => e.id === elId),
+                ...sl.elements.filter((e) => e.id !== elId),
+              ],
+            }
+          : sl,
+      ),
+    );
 
   // 自前リサイズ（マウス/タッチ統一の Pointer Events）
   const startResize = (
@@ -720,6 +777,31 @@ export function DeckEditorPage() {
                 </>
               )}
               <Divider />
+              <Stack direction="row" spacing={1}>
+                <Button
+                  size="small"
+                  startIcon={<ContentCopyIcon />}
+                  onClick={() => duplicateElement(selected)}
+                >
+                  複製
+                </Button>
+              </Stack>
+              <Stack direction="row" spacing={1}>
+                <Button
+                  size="small"
+                  startIcon={<FlipToFrontIcon />}
+                  onClick={() => bringToFront(selected.id)}
+                >
+                  前面へ
+                </Button>
+                <Button
+                  size="small"
+                  startIcon={<FlipToBackIcon />}
+                  onClick={() => sendToBack(selected.id)}
+                >
+                  背面へ
+                </Button>
+              </Stack>
               <Button
                 size="small"
                 color="error"
