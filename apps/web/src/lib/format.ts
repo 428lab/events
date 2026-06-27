@@ -1,13 +1,40 @@
 import type { EventRole, VenueType } from "@eventer/shared";
 
 export function formatDateRange(startsAt: number, endsAt: number): string {
-  const fmt = new Intl.DateTimeFormat("ja-JP", {
+  const s = new Date(startsAt);
+  const e = new Date(endsAt);
+  const sameDay =
+    s.getFullYear() === e.getFullYear() &&
+    s.getMonth() === e.getMonth() &&
+    s.getDate() === e.getDate();
+  const sameYear = s.getFullYear() === e.getFullYear();
+
+  // 開始は常に年つき
+  const start = new Intl.DateTimeFormat("ja-JP", {
+    year: "numeric",
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  });
-  return `${fmt.format(startsAt)} 〜 ${fmt.format(endsAt)}`;
+  }).format(s);
+
+  // 終了は重複を避けて簡潔に（同日→時刻のみ / 同年→月日＋時刻 / 別年→年つき）
+  const end = new Intl.DateTimeFormat(
+    "ja-JP",
+    sameDay
+      ? { hour: "2-digit", minute: "2-digit" }
+      : sameYear
+        ? { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }
+        : {
+            year: "numeric",
+            month: "numeric",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          },
+  ).format(e);
+
+  return `${start} 〜 ${end}`;
 }
 
 /** 単一日時を日本語表記（年つき） */
