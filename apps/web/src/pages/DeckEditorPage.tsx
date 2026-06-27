@@ -429,6 +429,7 @@ export function DeckEditorPage() {
                       position={{ x: el.x, y: el.y }}
                       enableResizing={false}
                       onDragStart={() => setSelectedId(el.id)}
+                      onDrag={(_e, d) => patchElement(el.id, { x: d.x, y: d.y })}
                       onDragStop={(_e, d) => patchElement(el.id, { x: d.x, y: d.y })}
                       onResizeStop={(_e, _dir, ref, _delta, pos) =>
                         patchElement(el.id, {
