@@ -20,8 +20,14 @@ interface CommunityRow {
   event_count: number;
 }
 
+// メンバー数＝明示メンバー ∪ 所属イベントの確定参加者（重複排除）
 const SELECT_COMMUNITY = `SELECT c.*,
-  (SELECT COUNT(1) FROM community_member m WHERE m.community_id = c.id) AS member_count,
+  (SELECT COUNT(*) FROM (
+     SELECT user_id FROM community_member WHERE community_id = c.id
+     UNION
+     SELECT em.user_id FROM event_member em JOIN event e ON e.id = em.event_id
+       WHERE e.community_id = c.id AND em.status = 'confirmed'
+   )) AS member_count,
   (SELECT COUNT(1) FROM event e WHERE e.community_id = c.id AND e.status = 'published') AS event_count
   FROM community c`;
 
@@ -183,7 +189,7 @@ export const communitiesRepo = {
     ]);
   },
 
-  /** ユーザーが所属する全コミュニティ（プロフィール表示用、ロール付き） */
+  /** ユーザーが所属する全コミュニティ（明示メンバー ∪ イベント確定参加）。プロフィール表示用 */
   async listForUser(userId: string): Promise<CommunitySummary[]> {
     const rows = await many<{
       id: string;
@@ -192,10 +198,19 @@ export const communitiesRepo = {
       icon_url: string | null;
       role: string;
     }>(
-      `SELECT c.id, c.slug, c.name, c.icon_url, m.role
-       FROM community_member m JOIN community c ON c.id = m.community_id
-       WHERE m.user_id = ?
-       ORDER BY (m.role = 'owner') DESC, (m.role = 'admin') DESC, c.created_at DESC`,
+      `SELECT c.id, c.slug, c.name, c.icon_url, COALESCE(cm.role, 'member') AS role
+       FROM community c
+       LEFT JOIN community_member cm ON cm.community_id = c.id AND cm.user_id = ?
+       WHERE c.id IN (
+         SELECT community_id FROM community_member WHERE user_id = ?
+         UNION
+         SELECT e.community_id FROM event_member em JOIN event e ON e.id = em.event_id
+           WHERE em.user_id = ? AND em.status = 'confirmed' AND e.community_id IS NOT NULL
+       )
+       ORDER BY (COALESCE(cm.role,'') = 'owner') DESC,
+                (COALESCE(cm.role,'') = 'admin') DESC, c.created_at DESC`,
+      userId,
+      userId,
       userId,
     );
     return rows.map((r) => ({
@@ -227,6 +242,7 @@ export const communitiesRepo = {
     );
   },
 
+  /** 明示メンバー ∪ 所属イベントの確定参加者。参加のみの人は role='member' */
   async listMembers(communityId: string): Promise<CommunityMember[]> {
     const rows = await many<{
       user_id: string;
@@ -235,10 +251,22 @@ export const communitiesRepo = {
       avatar_url: string | null;
       role: string;
     }>(
-      `SELECT m.user_id, u.username, u.global_name, u.avatar_url, m.role
-       FROM community_member m JOIN user u ON u.id = m.user_id
-       WHERE m.community_id = ?
-       ORDER BY (m.role = 'owner') DESC, m.created_at ASC`,
+      `SELECT u.id AS user_id, u.username, u.global_name, u.avatar_url,
+              COALESCE(cm.role, 'member') AS role
+       FROM (
+         SELECT user_id FROM community_member WHERE community_id = ?
+         UNION
+         SELECT em.user_id FROM event_member em JOIN event e ON e.id = em.event_id
+           WHERE e.community_id = ? AND em.status = 'confirmed'
+       ) ids
+       JOIN user u ON u.id = ids.user_id
+       LEFT JOIN community_member cm
+         ON cm.community_id = ? AND cm.user_id = ids.user_id
+       ORDER BY (COALESCE(cm.role,'') = 'owner') DESC,
+                (COALESCE(cm.role,'') = 'admin') DESC,
+                u.username ASC`,
+      communityId,
+      communityId,
       communityId,
     );
     return rows.map((r) => ({
