@@ -53,6 +53,44 @@ function toEvent(row: EventRow): Event {
   };
 }
 
+export interface EventSearchOpts {
+  q?: string;
+  /** この時刻以降に終わるイベント（期間の開始） */
+  from?: number;
+  /** この時刻以前に始まるイベント（期間の終了） */
+  to?: number;
+  communityId?: string;
+  sort?: "soon" | "recent" | "new";
+  limit: number;
+  offset: number;
+}
+
+function buildSearchWhere(o: EventSearchOpts): {
+  where: string;
+  args: (string | number)[];
+} {
+  const conds = ["status = 'published'"];
+  const args: (string | number)[] = [];
+  if (o.q) {
+    conds.push("(title LIKE ? OR description LIKE ?)");
+    const like = `%${o.q}%`;
+    args.push(like, like);
+  }
+  if (o.from != null) {
+    conds.push("ends_at >= ?");
+    args.push(o.from);
+  }
+  if (o.to != null) {
+    conds.push("starts_at <= ?");
+    args.push(o.to);
+  }
+  if (o.communityId) {
+    conds.push("community_id = ?");
+    args.push(o.communityId);
+  }
+  return { where: conds.join(" AND "), args };
+}
+
 export const eventsRepo = {
   async findById(id: string): Promise<Event | null> {
     const row = await one<EventRow>(`${SELECT_EVENT} WHERE id = ?`, id);
@@ -123,6 +161,33 @@ export const eventsRepo = {
     const row = await one<{ n: number }>(
       "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND ends_at <= ?",
       now,
+    );
+    return row?.n ?? 0;
+  },
+
+  /** 公開イベントの検索（キーワード・期間・コミュニティ・並び替え） */
+  async searchPublished(o: EventSearchOpts): Promise<Event[]> {
+    const { where, args } = buildSearchWhere(o);
+    const order =
+      o.sort === "recent"
+        ? "starts_at DESC"
+        : o.sort === "new"
+          ? "created_at DESC"
+          : "starts_at ASC";
+    const rows = await many<EventRow>(
+      `${SELECT_EVENT} WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
+      ...args,
+      o.limit,
+      o.offset,
+    );
+    return rows.map(toEvent);
+  },
+
+  async countSearchPublished(o: EventSearchOpts): Promise<number> {
+    const { where, args } = buildSearchWhere(o);
+    const row = await one<{ n: number }>(
+      `SELECT COUNT(1) AS n FROM event WHERE ${where}`,
+      ...args,
     );
     return row?.n ?? 0;
   },

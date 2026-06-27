@@ -3,6 +3,7 @@ import AddIcon from "@mui/icons-material/Add";
 import { Link as RouterLink } from "react-router-dom";
 import { useEvents } from "../api/hooks.js";
 import { EventCard } from "../components/EventCard.js";
+import { EventSearchPanel } from "../components/EventSearchPanel.js";
 
 export function EventsPage() {
   const { data: events, isLoading } = useEvents();
@@ -23,21 +24,23 @@ export function EventsPage() {
         </Button>
       </Stack>
 
-      {isLoading || !events ? (
-        <Typography>読み込み中…</Typography>
-      ) : events.length === 0 ? (
-        <Box>
-          <Typography color="text.secondary">
-            公開中のイベントはありません。作成してみましょう。
-          </Typography>
-        </Box>
-      ) : (
-        <Stack spacing={2}>
-          {events.map((e) => (
-            <EventCard key={e.id} event={e} />
-          ))}
-        </Stack>
-      )}
+      <EventSearchPanel>
+        {isLoading || !events ? (
+          <Typography>読み込み中…</Typography>
+        ) : events.length === 0 ? (
+          <Box>
+            <Typography color="text.secondary">
+              公開中のイベントはありません。作成してみましょう。
+            </Typography>
+          </Box>
+        ) : (
+          <Stack spacing={2}>
+            {events.map((e) => (
+              <EventCard key={e.id} event={e} />
+            ))}
+          </Stack>
+        )}
+      </EventSearchPanel>
     </Stack>
   );
 }

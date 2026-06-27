@@ -6,6 +6,7 @@ import {
   type PublicEventsPage as PublicEventsData,
 } from "../api/hooks.js";
 import { EventCard } from "../components/EventCard.js";
+import { EventSearchPanel } from "../components/EventSearchPanel.js";
 
 function EventSection({
   title,
@@ -64,25 +65,27 @@ export function PublicEventsPage() {
   const past = usePublicPastEvents(pastPage);
 
   return (
-    <Stack spacing={5}>
-      <EventSection
-        title="開催中・開催予定のイベント"
-        data={upcoming.data}
-        isLoading={upcoming.isLoading}
-        page={page}
-        onPage={setPage}
-        emptyText="公開中のイベントはありません。"
-      />
-      {(past.data?.total ?? 0) > 0 && (
+    <EventSearchPanel>
+      <Stack spacing={5}>
         <EventSection
-          title="過去のイベント"
-          data={past.data}
-          isLoading={past.isLoading}
-          page={pastPage}
-          onPage={setPastPage}
-          emptyText="過去のイベントはありません。"
+          title="開催中・開催予定のイベント"
+          data={upcoming.data}
+          isLoading={upcoming.isLoading}
+          page={page}
+          onPage={setPage}
+          emptyText="公開中のイベントはありません。"
         />
-      )}
-    </Stack>
+        {(past.data?.total ?? 0) > 0 && (
+          <EventSection
+            title="過去のイベント"
+            data={past.data}
+            isLoading={past.isLoading}
+            page={pastPage}
+            onPage={setPastPage}
+            emptyText="過去のイベントはありません。"
+          />
+        )}
+      </Stack>
+    </EventSearchPanel>
   );
 }

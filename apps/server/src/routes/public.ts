@@ -61,6 +61,33 @@ publicRoutes.get("/users/:handle", async (c) => {
   });
 });
 
+/** 公開イベント検索（キーワード/期間/コミュニティ/並び替え・ページング） */
+publicRoutes.get("/events/search", async (c) => {
+  const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);
+  const limit = Math.min(50, Math.max(1, Number(c.req.query("limit") ?? 12) || 12));
+  const offset = (page - 1) * limit;
+  const sortParam = c.req.query("sort");
+  const opts = {
+    q: c.req.query("q")?.trim() || undefined,
+    from: c.req.query("from") ? Number(c.req.query("from")) : undefined,
+    to: c.req.query("to") ? Number(c.req.query("to")) : undefined,
+    communityId: c.req.query("communityId") || undefined,
+    sort:
+      sortParam === "recent" || sortParam === "new" ? sortParam : "soon",
+    limit,
+    offset,
+  } as const;
+  const total = await eventsRepo.countSearchPublished(opts);
+  const events = await eventsRepo.searchPublished(opts);
+  return c.json({
+    events,
+    total,
+    page,
+    limit,
+    hasMore: offset + events.length < total,
+  });
+});
+
 /** 開催前の公開イベント一覧（未ログイン可・開催直前順・ページング） */
 publicRoutes.get("/events", async (c) => {
   const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);

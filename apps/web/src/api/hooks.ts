@@ -133,6 +133,31 @@ export function usePublicEvents(page: number) {
   });
 }
 
+export interface EventSearchParams {
+  q?: string;
+  from?: number;
+  to?: number;
+  communityId?: string;
+  sort?: "soon" | "recent" | "new";
+  page?: number;
+}
+
+export function useEventSearch(params: EventSearchParams, enabled: boolean) {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.from != null) qs.set("from", String(params.from));
+  if (params.to != null) qs.set("to", String(params.to));
+  if (params.communityId) qs.set("communityId", params.communityId);
+  if (params.sort) qs.set("sort", params.sort);
+  qs.set("page", String(params.page ?? 1));
+  const key = qs.toString();
+  return useQuery({
+    queryKey: ["eventSearch", key],
+    enabled,
+    queryFn: () => api.get<PublicEventsPage>(`/public/events/search?${key}`),
+  });
+}
+
 /** 開催済みの公開イベント（未ログイン可・終了が新しい順・ページング） */
 export function usePublicPastEvents(page: number) {
   return useQuery({
