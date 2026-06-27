@@ -3,6 +3,7 @@ import type {
   Community,
   CommunityDetail,
   CommunityMember,
+  CommunitySummary,
   CreateCommunityInput,
   UpdateCommunityInput,
 } from "@eventer/shared";
@@ -35,6 +36,16 @@ export function useCommunityMembers(slug: string) {
           `/public/communities/${slug}/members`,
         )
       ).members,
+  });
+}
+
+/** マイページ用：自分が所属する全コミュニティ（参加歴含む・ロール付き） */
+export function useMyJoinedCommunities() {
+  return useQuery({
+    queryKey: ["communities", "joined"],
+    queryFn: async () =>
+      (await api.get<{ communities: CommunitySummary[] }>("/me/communities"))
+        .communities,
   });
 }
 

@@ -6,10 +6,18 @@ import { requireAuth } from "../auth/session.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { usersRepo } from "../db/repositories/users.js";
+import { communitiesRepo } from "../db/repositories/communities.js";
 
 export const meRoutes = new Hono<AppEnv>();
 
 meRoutes.use("*", requireAuth);
+
+/** マイページ: 自分が所属する全コミュニティ（参加歴含む・ロール付き） */
+meRoutes.get("/communities", async (c) => {
+  return c.json({
+    communities: await communitiesRepo.listForUser(c.get("user").id),
+  });
+});
 
 /** マイページ: 開催中 / 過去参加イベント */
 meRoutes.get("/events", async (c) => {
