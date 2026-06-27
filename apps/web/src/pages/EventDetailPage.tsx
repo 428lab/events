@@ -216,23 +216,19 @@ export function EventDetailPage() {
               <EmojiEventsIcon color="secondary" />
               <Typography variant="h6">表彰結果</Typography>
             </Stack>
-            <Stack spacing={1.5}>
+            <Stack spacing={2} divider={<Divider flexItem />}>
               {awardItems.map((it) => (
-                <Box
-                  key={it.key}
-                  sx={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                    gap: 1,
-                  }}
-                >
-                  <Chip
-                    label={it.name}
-                    color="secondary"
-                    size="small"
-                    variant="outlined"
-                  />
+                <Box key={it.key}>
+                  {/* 1行目: 賞の名前 */}
+                  <Box sx={{ mb: 1 }}>
+                    <Chip
+                      label={it.name}
+                      color="secondary"
+                      size="small"
+                      variant="outlined"
+                    />
+                  </Box>
+                  {/* 2行目: 受賞者名 */}
                   {it.result ? (
                     <UserLink
                       username={resultUsername(it.result)}
@@ -247,9 +243,14 @@ export function EventDetailPage() {
                       該当者なし
                     </Typography>
                   )}
+                  {/* 3行目: 賞品 */}
                   {it.content && (
-                    <Typography variant="body2" color="text.secondary">
-                      （{it.content}）
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mt: 0.5 }}
+                    >
+                      {it.content}
                     </Typography>
                   )}
                 </Box>
