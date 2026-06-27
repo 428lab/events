@@ -97,7 +97,8 @@ export function DeckEditorPage() {
   const selected = slide?.elements.find((e) => e.id === selectedId) ?? null;
 
   // 画面上で一定サイズに見えるリサイズハンドル（キャンバスは scale 倍されている）
-  const hs = Math.max(8, Math.round(16 / (scale || 1)));
+  // タッチでも掴めるよう大きめ＋ touch-action:none（指ドラッグでページがスクロールするのを防ぐ）
+  const hs = Math.max(12, Math.round(24 / (scale || 1)));
   const hb = Math.max(1, Math.round(2 / (scale || 1)));
   const off = -Math.round(hs / 2);
   const handleBase = {
@@ -107,6 +108,7 @@ export function DeckEditorPage() {
     border: `${hb}px solid #fff`,
     borderRadius: "50%",
     boxSizing: "border-box" as const,
+    touchAction: "none" as const,
   };
   const handleStyles = {
     topLeft: { ...handleBase, left: off, top: off },
@@ -413,6 +415,7 @@ export function DeckEditorPage() {
                             ? "2px solid #2563eb"
                             : "1px dashed rgba(0,0,0,0.25)",
                         zIndex: selectedId === el.id ? 5 : 1,
+                        touchAction: "none",
                       }}
                     >
                       <ElementContent el={el} />
