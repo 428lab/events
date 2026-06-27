@@ -4,6 +4,7 @@ import type {
   CommunityDetail,
   CommunityMember,
   CreateCommunityInput,
+  UpdateCommunityInput,
 } from "@eventer/shared";
 import { api } from "./client.js";
 
@@ -74,6 +75,59 @@ export function useLeaveCommunity(slug: string) {
   return useMutation({
     mutationFn: (communityId: string) =>
       api.del(`/communities/${communityId}/membership`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["community", slug] });
+      qc.invalidateQueries({ queryKey: ["community", slug, "members"] });
+    },
+  });
+}
+
+export function useUpdateCommunity(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; input: UpdateCommunityInput }) =>
+      api.patch<Community>(`/communities/${v.id}`, v.input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["community", slug] });
+      qc.invalidateQueries({ queryKey: ["communities"] });
+    },
+  });
+}
+
+export function useDeleteCommunity() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (communityId: string) =>
+      api.del(`/communities/${communityId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["communities"] }),
+  });
+}
+
+export function useSetCommunityRole(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      communityId: string;
+      userId: string;
+      role: "admin" | "member";
+    }) =>
+      api.put(`/communities/${v.communityId}/members/${v.userId}/role`, {
+        role: v.role,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["community", slug] });
+      qc.invalidateQueries({ queryKey: ["community", slug, "members"] });
+    },
+  });
+}
+
+export function useTransferOwnership(slug: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { communityId: string; toUserId: string }) =>
+      api.post(`/communities/${v.communityId}/transfer`, {
+        toUserId: v.toUserId,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["community", slug] });
       qc.invalidateQueries({ queryKey: ["community", slug, "members"] });

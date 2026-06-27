@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { myEventSummary } from "./schema.js";
+import { communitySummarySchema } from "./communities.js";
 
 /** 公開ユーザープロフィール（誰でも閲覧可） */
 export const userProfileSchema = z.object({
@@ -9,6 +10,7 @@ export const userProfileSchema = z.object({
   avatarUrl: z.string().nullable(),
   createdAt: z.number(),
   events: z.array(myEventSummary),
+  communities: z.array(communitySummarySchema),
 });
 export type UserProfile = z.infer<typeof userProfileSchema>;
 

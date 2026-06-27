@@ -27,6 +27,7 @@ publicRoutes.get("/communities/:slug", async (c) => {
     ...community,
     isOwner: user ? community.ownerId === user.id : false,
     isMember: Boolean(role),
+    myRole: role,
     upcomingEvents: events.filter((e) => e.endsAt >= now),
     pastEvents: events.filter((e) => e.endsAt < now),
   });
@@ -48,6 +49,7 @@ publicRoutes.get("/users/:handle", async (c) => {
     (await usersRepo.findById(handle));
   if (!user) return c.json({ error: "not_found" }, 404);
   const events = await eventMembersRepo.listPublicEventsForUser(user.id);
+  const communities = await communitiesRepo.listForUser(user.id);
   return c.json({
     id: user.id,
     handle: user.username,
@@ -55,6 +57,7 @@ publicRoutes.get("/users/:handle", async (c) => {
     avatarUrl: user.avatarUrl,
     createdAt: user.createdAt,
     events,
+    communities,
   });
 });
 

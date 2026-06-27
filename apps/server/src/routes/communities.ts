@@ -1,6 +1,17 @@
 import { Hono } from "hono";
-import { createCommunityInput, RESERVED_COMMUNITY_SLUGS } from "@eventer/shared";
-import type { CreateCommunityInput } from "@eventer/shared";
+import {
+  createCommunityInput,
+  setCommunityRoleInput,
+  transferOwnershipInput,
+  updateCommunityInput,
+  RESERVED_COMMUNITY_SLUGS,
+} from "@eventer/shared";
+import type {
+  CreateCommunityInput,
+  SetCommunityRoleInput,
+  TransferOwnershipInput,
+  UpdateCommunityInput,
+} from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -42,3 +53,75 @@ communityRoutes.delete("/:id/membership", async (c) => {
   await communitiesRepo.leave(c.req.param("id"), c.get("user").id);
   return c.json({ ok: true });
 });
+
+/** 編集（owner/admin） */
+communityRoutes.patch(
+  "/:id",
+  zValidator("json", updateCommunityInput),
+  async (c) => {
+    const id = c.req.param("id");
+    if (!(await communitiesRepo.isManager(id, c.get("user").id))) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+    const updated = await communitiesRepo.update(
+      id,
+      valid<UpdateCommunityInput>(c, "json"),
+    );
+    if (!updated) return c.json({ error: "not_found" }, 404);
+    return c.json(updated);
+  },
+);
+
+/** 削除（owner のみ） */
+communityRoutes.delete("/:id", async (c) => {
+  const community = await communitiesRepo.findById(c.req.param("id"));
+  if (!community) return c.json({ error: "not_found" }, 404);
+  if (community.ownerId !== c.get("user").id) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  await communitiesRepo.delete(community.id);
+  return c.json({ ok: true });
+});
+
+/** メンバーのロール変更 admin↔member（owner のみ。owner自身は対象外） */
+communityRoutes.put(
+  "/:id/members/:userId/role",
+  zValidator("json", setCommunityRoleInput),
+  async (c) => {
+    const id = c.req.param("id");
+    const targetUserId = c.req.param("userId");
+    const community = await communitiesRepo.findById(id);
+    if (!community) return c.json({ error: "not_found" }, 404);
+    if (community.ownerId !== c.get("user").id) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+    if (targetUserId === community.ownerId) {
+      return c.json({ error: "cannot_change_owner" }, 400);
+    }
+    await communitiesRepo.setMemberRole(
+      id,
+      targetUserId,
+      valid<SetCommunityRoleInput>(c, "json").role,
+    );
+    return c.json({ ok: true });
+  },
+);
+
+/** オーナー譲渡（owner のみ。譲渡先は admin であること） */
+communityRoutes.post(
+  "/:id/transfer",
+  zValidator("json", transferOwnershipInput),
+  async (c) => {
+    const id = c.req.param("id");
+    const me = c.get("user").id;
+    const community = await communitiesRepo.findById(id);
+    if (!community) return c.json({ error: "not_found" }, 404);
+    if (community.ownerId !== me) return c.json({ error: "forbidden" }, 403);
+    const { toUserId } = valid<TransferOwnershipInput>(c, "json");
+    if ((await communitiesRepo.memberRole(id, toUserId)) !== "admin") {
+      return c.json({ error: "target_not_admin" }, 400);
+    }
+    await communitiesRepo.transferOwnership(id, me, toUserId);
+    return c.json({ ok: true });
+  },
+);
