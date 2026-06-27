@@ -71,6 +71,7 @@ publicRoutes.get("/events/search", async (c) => {
     q: c.req.query("q")?.trim() || undefined,
     from: c.req.query("from") ? Number(c.req.query("from")) : undefined,
     to: c.req.query("to") ? Number(c.req.query("to")) : undefined,
+    after: c.req.query("after") ? Number(c.req.query("after")) : undefined,
     communityId: c.req.query("communityId") || undefined,
     sort:
       sortParam === "recent" || sortParam === "new" ? sortParam : "soon",

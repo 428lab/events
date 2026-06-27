@@ -127,10 +127,12 @@ export interface PublicEventsPage {
 }
 
 /** 開催前の公開イベント（未ログイン可・開催直前順・ページング） */
-export function usePublicEvents(page: number) {
+export function usePublicEvents(page: number, limit?: number) {
+  const qs = new URLSearchParams({ page: String(page) });
+  if (limit != null) qs.set("limit", String(limit));
   return useQuery({
-    queryKey: ["publicEvents", page],
-    queryFn: () => api.get<PublicEventsPage>(`/public/events?page=${page}`),
+    queryKey: ["publicEvents", page, limit ?? 12],
+    queryFn: () => api.get<PublicEventsPage>(`/public/events?${qs.toString()}`),
   });
 }
 
@@ -138,24 +140,49 @@ export interface EventSearchParams {
   q?: string;
   from?: number;
   to?: number;
+  after?: number;
   communityId?: string;
   sort?: "soon" | "recent" | "new";
   page?: number;
 }
 
-export function useEventSearch(params: EventSearchParams, enabled: boolean) {
+function searchQs(params: EventSearchParams): URLSearchParams {
   const qs = new URLSearchParams();
   if (params.q) qs.set("q", params.q);
   if (params.from != null) qs.set("from", String(params.from));
   if (params.to != null) qs.set("to", String(params.to));
+  if (params.after != null) qs.set("after", String(params.after));
   if (params.communityId) qs.set("communityId", params.communityId);
   if (params.sort) qs.set("sort", params.sort);
+  return qs;
+}
+
+export function useEventSearch(params: EventSearchParams, enabled: boolean) {
+  const qs = searchQs(params);
   qs.set("page", String(params.page ?? 1));
   const key = qs.toString();
   return useQuery({
     queryKey: ["eventSearch", key],
     enabled,
     queryFn: () => api.get<PublicEventsPage>(`/public/events/search?${key}`),
+  });
+}
+
+/** 「続きを見る」用の無限スクロール検索 */
+export function useEventSearchInfinite(
+  params: EventSearchParams,
+  enabled: boolean,
+) {
+  const base = searchQs(params).toString();
+  return useInfiniteQuery({
+    queryKey: ["eventSearchInfinite", base],
+    enabled,
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
+      api.get<PublicEventsPage>(
+        `/public/events/search?${base}&page=${pageParam}`,
+      ),
+    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
   });
 }
 
@@ -168,9 +195,10 @@ export function usePublicPastEvents(page: number) {
 }
 
 /** 開催済みの公開イベントを「もっと見る」で遡るための無限読み込み */
-export function usePublicPastEventsInfinite() {
+export function usePublicPastEventsInfinite(enabled = true) {
   return useInfiniteQuery({
     queryKey: ["publicPastEventsInfinite"],
+    enabled,
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
       api.get<PublicEventsPage>(`/public/events/past?page=${pageParam}`),

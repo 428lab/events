@@ -59,6 +59,8 @@ export interface EventSearchOpts {
   from?: number;
   /** この時刻以前に始まるイベント（期間の終了） */
   to?: number;
+  /** この時刻以降に始まるイベント（「続きを見る」での継続表示用） */
+  after?: number;
   communityId?: string;
   sort?: "soon" | "recent" | "new";
   limit: number;
@@ -83,6 +85,10 @@ function buildSearchWhere(o: EventSearchOpts): {
   if (o.to != null) {
     conds.push("starts_at <= ?");
     args.push(o.to);
+  }
+  if (o.after != null) {
+    conds.push("starts_at >= ?");
+    args.push(o.after);
   }
   if (o.communityId) {
     conds.push("community_id = ?");
