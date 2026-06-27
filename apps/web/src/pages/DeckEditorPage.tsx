@@ -36,6 +36,7 @@ import {
 } from "../api/deckHooks.js";
 import { ElementContent } from "../components/SlideStage.js";
 import { DECK_FONTS, ensureDeckFont, ensureDeckFonts } from "../lib/deckFonts.js";
+import { encodeImageForUpload } from "../lib/encodeImage.js";
 
 const uid = () => crypto.randomUUID();
 
@@ -154,7 +155,8 @@ export function DeckEditorPage() {
     e.target.value = "";
     if (!file) return;
     try {
-      const { url } = await upload.mutateAsync(file);
+      const encoded = await encodeImageForUpload(file);
+      const { url } = await upload.mutateAsync(encoded);
       onPicked.current(url);
     } catch {
       window.alert("画像のアップロードに失敗しました（6MBまで）");
