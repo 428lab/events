@@ -47,6 +47,17 @@ export function DeckEditorPage() {
   const upload = useUploadDeckImage(id);
   const fileRef = useRef<HTMLInputElement>(null);
   const onPicked = useRef<(url: string) => void>(() => {});
+  // 自前リサイズの進行中ジェスチャ（フックは早期returnより前に置く）
+  const resizeRef = useRef<{
+    elId: string;
+    corner: string;
+    sx: number;
+    sy: number;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState<DeckContent | null>(null);
@@ -141,16 +152,6 @@ export function DeckEditorPage() {
   };
 
   // 自前リサイズ（マウス/タッチ統一の Pointer Events）
-  const resizeRef = useRef<{
-    elId: string;
-    corner: string;
-    sx: number;
-    sy: number;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null>(null);
   const startResize = (
     e: React.PointerEvent,
     el: DeckElement,
