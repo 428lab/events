@@ -293,6 +293,19 @@ export function DeckEditorPage() {
           : sl,
       ),
     );
+  // 1段だけ前後に移動（配列内で隣の要素と入れ替え。末尾=最前面）
+  const moveZ = (elId: string, dir: 1 | -1) =>
+    setSlides((s) =>
+      s.map((sl, j) => {
+        if (j !== idx) return sl;
+        const arr = [...sl.elements];
+        const i = arr.findIndex((e) => e.id === elId);
+        const to = i + dir;
+        if (i < 0 || to < 0 || to >= arr.length) return sl;
+        [arr[i], arr[to]] = [arr[to], arr[i]];
+        return { ...sl, elements: arr };
+      }),
+    );
 
   // 自前リサイズ（マウス/タッチ統一の Pointer Events）
   const startResize = (
@@ -786,20 +799,29 @@ export function DeckEditorPage() {
                   複製
                 </Button>
               </Stack>
-              <Stack direction="row" spacing={1}>
+              <Typography variant="caption" color="text.secondary">
+                重なり順
+              </Typography>
+              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
                 <Button
                   size="small"
                   startIcon={<FlipToFrontIcon />}
                   onClick={() => bringToFront(selected.id)}
                 >
+                  最前面
+                </Button>
+                <Button size="small" onClick={() => moveZ(selected.id, 1)}>
                   前面へ
+                </Button>
+                <Button size="small" onClick={() => moveZ(selected.id, -1)}>
+                  背面へ
                 </Button>
                 <Button
                   size="small"
                   startIcon={<FlipToBackIcon />}
                   onClick={() => sendToBack(selected.id)}
                 >
-                  背面へ
+                  最背面
                 </Button>
               </Stack>
               <Button
