@@ -545,6 +545,48 @@ export function DeckEditorPage() {
               </IconButton>
             </Tooltip>
           </Stack>
+
+          {/* レイヤー（要素一覧。前面が上） */}
+          <Divider sx={{ mt: 1 }} />
+          <Typography variant="caption" color="text.secondary">
+            レイヤー（前面が上）
+          </Typography>
+          <Stack spacing={0.25}>
+            {[...(slide?.elements ?? [])].reverse().map((el) => (
+              <Box
+                key={el.id}
+                onClick={() => setSelectedId(el.id)}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 0.75,
+                  px: 0.75,
+                  py: 0.5,
+                  borderRadius: 1,
+                  cursor: "pointer",
+                  bgcolor:
+                    selectedId === el.id ? "action.selected" : "transparent",
+                  "&:hover": { bgcolor: "action.hover" },
+                }}
+              >
+                {el.type === "image" ? (
+                  <ImageIcon fontSize="small" />
+                ) : (
+                  <TextFieldsIcon fontSize="small" />
+                )}
+                <Typography variant="caption" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                  {el.type === "image"
+                    ? "画像"
+                    : el.text?.trim().slice(0, 16) || "テキスト"}
+                </Typography>
+              </Box>
+            ))}
+            {(slide?.elements.length ?? 0) === 0 && (
+              <Typography variant="caption" color="text.disabled">
+                要素なし
+              </Typography>
+            )}
+          </Stack>
         </Stack>
 
         {/* キャンバス */}
