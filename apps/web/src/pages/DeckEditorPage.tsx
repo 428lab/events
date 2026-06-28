@@ -40,11 +40,12 @@ import {
   useUpdateDeck,
   useUploadDeckImage,
 } from "../api/deckHooks.js";
-import { ElementContent } from "../components/SlideStage.js";
+import { ElementContent, SlideStage } from "../components/SlideStage.js";
 import { DECK_FONTS, ensureDeckFont, ensureDeckFonts } from "../lib/deckFonts.js";
 import { encodeImageForUpload } from "../lib/encodeImage.js";
 
 const uid = () => crypto.randomUUID();
+const THUMB_W = 150;
 
 export function DeckEditorPage() {
   const { id = "" } = useParams();
@@ -542,7 +543,7 @@ export function DeckEditorPage() {
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
         {/* スライド一覧 */}
-        <Stack spacing={1} sx={{ width: { md: 160 }, flexShrink: 0 }}>
+        <Stack spacing={1} sx={{ width: { md: 168 }, flexShrink: 0 }}>
           {slides.map((s, j) => (
             <Box
               key={s.id}
@@ -555,19 +556,25 @@ export function DeckEditorPage() {
                 border: "2px solid",
                 borderColor: j === idx ? "primary.main" : "divider",
                 borderRadius: 1,
-                aspectRatio: "16 / 9",
-                bgcolor: s.background,
                 position: "relative",
                 overflow: "hidden",
+                lineHeight: 0,
               }}
             >
+              <Box sx={{ pointerEvents: "none" }}>
+                <SlideStage slide={s} width={THUMB_W} />
+              </Box>
               <Typography
                 variant="caption"
                 sx={{
                   position: "absolute",
                   top: 2,
                   left: 4,
-                  color: "rgba(0,0,0,0.5)",
+                  px: 0.5,
+                  borderRadius: 0.5,
+                  bgcolor: "rgba(0,0,0,0.45)",
+                  color: "#fff",
+                  lineHeight: 1.4,
                 }}
               >
                 {j + 1}
