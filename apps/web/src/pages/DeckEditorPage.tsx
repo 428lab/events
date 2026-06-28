@@ -81,6 +81,13 @@ export function DeckEditorPage() {
   const [dragXY, setDragXY] = useState<{ id: string; x: number; y: number } | null>(
     null,
   );
+  // グループ/複数ドラッグ中の一時オフセット（content は触らない）
+  const [grpOff, setGrpOff] = useState<{
+    ids: string[];
+    draggedId: string;
+    dx: number;
+    dy: number;
+  } | null>(null);
   const inited = useRef(false);
 
   // 履歴（Undo/Redo）。content の変更を少し待って1ステップにまとめて積む
@@ -709,7 +716,20 @@ export function DeckEditorPage() {
                       scale={scale}
                       bounds="parent"
                       size={{ width: el.w, height: el.h }}
-                      position={{ x: el.x, y: el.y }}
+                      position={{
+                        x:
+                          grpOff &&
+                          grpOff.ids.includes(el.id) &&
+                          el.id !== grpOff.draggedId
+                            ? el.x + grpOff.dx
+                            : el.x,
+                        y:
+                          grpOff &&
+                          grpOff.ids.includes(el.id) &&
+                          el.id !== grpOff.draggedId
+                            ? el.y + grpOff.dy
+                            : el.y,
+                      }}
                       enableResizing={false}
                       onDragStart={() => {
                         const moveIds =
@@ -728,26 +748,51 @@ export function DeckEditorPage() {
                           ids: moveIds,
                           starts,
                         };
+                        if (moveIds.length > 1)
+                          setGrpOff({
+                            ids: moveIds,
+                            draggedId: el.id,
+                            dx: 0,
+                            dy: 0,
+                          });
                       }}
                       onDrag={(_e, d) => {
                         const g = groupDragRef.current;
                         if (g && g.ids.length > 1) {
                           const base = g.starts[g.draggedId];
-                          const dx = d.x - base.x;
-                          const dy = d.y - base.y;
-                          g.ids.forEach((mid) => {
-                            if (mid !== g.draggedId) {
-                              const st = g.starts[mid];
-                              patchElement(mid, { x: st.x + dx, y: st.y + dy });
-                            }
+                          // content は触らず一時オフセットだけ更新（他要素は position で追従）
+                          setGrpOff({
+                            ids: g.ids,
+                            draggedId: g.draggedId,
+                            dx: d.x - base.x,
+                            dy: d.y - base.y,
                           });
                         } else {
                           setDragXY({ id: el.id, x: d.x, y: d.y });
                         }
                       }}
                       onDragStop={(_e, d) => {
-                        patchElement(el.id, { x: d.x, y: d.y });
+                        const g = groupDragRef.current;
+                        if (g && g.ids.length > 1) {
+                          const base = g.starts[g.draggedId];
+                          const dx = d.x - base.x;
+                          const dy = d.y - base.y;
+                          mapCurrentSlide((arr) =>
+                            arr.map((e2) =>
+                              g.starts[e2.id]
+                                ? {
+                                    ...e2,
+                                    x: g.starts[e2.id].x + dx,
+                                    y: g.starts[e2.id].y + dy,
+                                  }
+                                : e2,
+                            ),
+                          );
+                        } else {
+                          patchElement(el.id, { x: d.x, y: d.y });
+                        }
                         setDragXY(null);
+                        setGrpOff(null);
                         groupDragRef.current = null;
                       }}
                       onMouseDown={(e: MouseEvent) => {
