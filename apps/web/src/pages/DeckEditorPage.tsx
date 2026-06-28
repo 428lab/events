@@ -732,11 +732,10 @@ export function DeckEditorPage() {
                       }}
                       enableResizing={false}
                       onDragStart={() => {
-                        const moveIds =
-                          selectedSet.has(el.id) && selectedIds.length > 1
-                            ? selectedIds
-                            : expandGroup(el.id);
-                        setSelectedIds(moveIds);
+                        // 選択は onMouseDown 側で確定済み。ここでは上書きしない
+                        const moveIds = selectedSet.has(el.id)
+                          ? selectedIds
+                          : expandGroup(el.id);
                         const starts: Record<string, { x: number; y: number }> =
                           {};
                         els.forEach((e) => {
@@ -777,18 +776,20 @@ export function DeckEditorPage() {
                           const base = g.starts[g.draggedId];
                           const dx = d.x - base.x;
                           const dy = d.y - base.y;
-                          mapCurrentSlide((arr) =>
-                            arr.map((e2) =>
-                              g.starts[e2.id]
-                                ? {
-                                    ...e2,
-                                    x: g.starts[e2.id].x + dx,
-                                    y: g.starts[e2.id].y + dy,
-                                  }
-                                : e2,
-                            ),
-                          );
-                        } else {
+                          if (dx !== 0 || dy !== 0) {
+                            mapCurrentSlide((arr) =>
+                              arr.map((e2) =>
+                                g.starts[e2.id]
+                                  ? {
+                                      ...e2,
+                                      x: g.starts[e2.id].x + dx,
+                                      y: g.starts[e2.id].y + dy,
+                                    }
+                                  : e2,
+                              ),
+                            );
+                          }
+                        } else if (d.x !== el.x || d.y !== el.y) {
                           patchElement(el.id, { x: d.x, y: d.y });
                         }
                         setDragXY(null);
@@ -797,7 +798,10 @@ export function DeckEditorPage() {
                       }}
                       onMouseDown={(e: MouseEvent) => {
                         e.stopPropagation();
-                        selectElement(el.id, e.shiftKey || multiSelect);
+                        const additive = e.shiftKey || multiSelect;
+                        if (additive) selectElement(el.id, true);
+                        else if (!selectedSet.has(el.id))
+                          selectElement(el.id, false);
                       }}
                       style={{
                         outline: selectedSet.has(el.id)
