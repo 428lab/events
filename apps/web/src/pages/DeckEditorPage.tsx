@@ -30,6 +30,7 @@ import RedoIcon from "@mui/icons-material/Redo";
 import FlipToFrontIcon from "@mui/icons-material/FlipToFront";
 import FlipToBackIcon from "@mui/icons-material/FlipToBack";
 import FolderIcon from "@mui/icons-material/Folder";
+import LibraryAddCheckIcon from "@mui/icons-material/LibraryAddCheck";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Rnd } from "react-rnd";
 import { DECK_H, DECK_W } from "@eventer/shared";
@@ -74,6 +75,8 @@ export function DeckEditorPage() {
   const [content, setContent] = useState<DeckContent | null>(null);
   const [slideIdx, setSlideIdx] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // スマホ等で Shift が無い環境向けの複数選択モード（ON中はタップで追加/解除）
+  const [multiSelect, setMultiSelect] = useState(false);
   // ドラッグ中のハンドル追従用（content は触らずここだけ更新してループを防ぐ）
   const [dragXY, setDragXY] = useState<{ id: string; x: number; y: number } | null>(
     null,
@@ -603,7 +606,7 @@ export function DeckEditorPage() {
             {[...(slide?.elements ?? [])].reverse().map((el) => (
               <Box
                 key={el.id}
-                onClick={(e) => selectElement(el.id, e.shiftKey)}
+                onClick={(e) => selectElement(el.id, e.shiftKey || multiSelect)}
                 sx={{
                   display: "flex",
                   alignItems: "center",
@@ -642,7 +645,14 @@ export function DeckEditorPage() {
 
         {/* キャンバス */}
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Stack direction="row" spacing={1} sx={{ mb: 1 }} alignItems="center">
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ mb: 1 }}
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+          >
             <Button size="small" startIcon={<TextFieldsIcon />} onClick={addText}>
               テキスト
             </Button>
@@ -657,6 +667,16 @@ export function DeckEditorPage() {
                 onChange={(e) => patchSlide(idx, { background: e.target.value })}
               />
             </Box>
+            <ToggleButton
+              size="small"
+              value="multi"
+              selected={multiSelect}
+              onChange={() => setMultiSelect((m) => !m)}
+              sx={{ py: 0.25 }}
+            >
+              <LibraryAddCheckIcon fontSize="small" sx={{ mr: 0.5 }} />
+              複数選択
+            </ToggleButton>
           </Stack>
           <Box ref={canvasRef} sx={{ width: "100%" }}>
             {slide && scale > 0 && (
@@ -732,7 +752,7 @@ export function DeckEditorPage() {
                       }}
                       onMouseDown={(e: MouseEvent) => {
                         e.stopPropagation();
-                        selectElement(el.id, e.shiftKey);
+                        selectElement(el.id, e.shiftKey || multiSelect);
                       }}
                       style={{
                         outline: selectedSet.has(el.id)
