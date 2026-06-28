@@ -14,7 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
-import { Link as RouterLink, useNavigate } from "react-router-dom";
+import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import type { User } from "@eventer/shared";
 import { useIsAdmin, useLogout } from "../api/hooks.js";
 import { useAdminInquiryUnreadCount } from "../api/inquiryHooks.js";
@@ -32,6 +32,10 @@ export function Layout({
 }) {
   const logout = useLogout();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  // スライド編集は作業領域を最大化するため全幅
+  const wide =
+    pathname.startsWith("/decks/") && pathname.endsWith("/edit");
   const isAdmin = useIsAdmin();
   const { data: adminUnread } = useAdminInquiryUnreadCount(isAdmin);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
@@ -188,7 +192,7 @@ export function Layout({
           </Menu>
         </Toolbar>
       </AppBar>
-      <Container maxWidth="md" sx={{ py: 4 }}>
+      <Container maxWidth={wide ? false : "md"} sx={{ py: 4 }}>
         {children}
       </Container>
       <VersionFooter />

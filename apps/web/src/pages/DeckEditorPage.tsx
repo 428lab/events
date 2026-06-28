@@ -685,7 +685,14 @@ export function DeckEditorPage() {
               複数選択
             </ToggleButton>
           </Stack>
-          <Box ref={canvasRef} sx={{ width: "100%" }}>
+          <Box
+            ref={canvasRef}
+            sx={{
+              width: "100%",
+              // 全幅でも縦が画面を超えないよう高さで上限（16:9）
+              maxWidth: "calc(80vh * 16 / 9)",
+            }}
+          >
             {slide && scale > 0 && (
               <Box
                 onMouseDown={() => setSelectedIds([])}
