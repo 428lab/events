@@ -623,7 +623,6 @@ export function DeckEditorPage() {
                           selectedId === el.id
                             ? "2px solid #2563eb"
                             : "1px dashed rgba(0,0,0,0.25)",
-                        zIndex: selectedId === el.id ? 5 : 1,
                         touchAction: "none",
                       }}
                     >
