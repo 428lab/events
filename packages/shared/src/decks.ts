@@ -14,6 +14,8 @@ export const deckElementSchema = z.object({
   w: z.number(),
   h: z.number(),
   rotation: z.number().default(0),
+  /** 同じ groupId の要素はまとめて選択・移動される */
+  groupId: z.string().optional(),
   // text
   text: z.string().optional(),
   fontSize: z.number().optional(),

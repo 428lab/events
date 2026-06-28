@@ -29,6 +29,7 @@ import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
 import FlipToFrontIcon from "@mui/icons-material/FlipToFront";
 import FlipToBackIcon from "@mui/icons-material/FlipToBack";
+import FolderIcon from "@mui/icons-material/Folder";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Rnd } from "react-rnd";
 import { DECK_H, DECK_W } from "@eventer/shared";
@@ -62,11 +63,17 @@ export function DeckEditorPage() {
     w: number;
     h: number;
   } | null>(null);
+  // グループ/複数選択ドラッグ中の開始位置
+  const groupDragRef = useRef<{
+    draggedId: string;
+    ids: string[];
+    starts: Record<string, { x: number; y: number }>;
+  } | null>(null);
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState<DeckContent | null>(null);
   const [slideIdx, setSlideIdx] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   // ドラッグ中のハンドル追従用（content は触らずここだけ更新してループを防ぐ）
   const [dragXY, setDragXY] = useState<{ id: string; x: number; y: number } | null>(
     null,
@@ -143,7 +150,34 @@ export function DeckEditorPage() {
   const idx = Math.min(slideIdx, slides.length - 1);
   const slide: DeckSlide | undefined = slides[idx];
   const scale = cw > 0 ? cw / DECK_W : 0;
-  const selected = slide?.elements.find((e) => e.id === selectedId) ?? null;
+  const els = slide?.elements ?? [];
+  const selectedSet = new Set(selectedIds);
+  const selectedEls = els.filter((e) => selectedSet.has(e.id));
+  // 単一選択時だけプロパティ編集・リサイズハンドルを出す
+  const selected = selectedEls.length === 1 ? selectedEls[0] : null;
+  const groupIdsOfSelection = new Set(
+    selectedEls.map((e) => e.groupId).filter(Boolean) as string[],
+  );
+
+  // 同じグループの要素も含めた選択 ID 群
+  const expandGroup = (elId: string): string[] => {
+    const el = els.find((e) => e.id === elId);
+    if (el?.groupId) {
+      return els.filter((e) => e.groupId === el.groupId).map((e) => e.id);
+    }
+    return [elId];
+  };
+  const selectElement = (elId: string, additive: boolean) => {
+    const members = expandGroup(elId);
+    if (!additive) {
+      setSelectedIds(members);
+      return;
+    }
+    const set = new Set(selectedIds);
+    const allIn = members.every((id) => set.has(id));
+    members.forEach((id) => (allIn ? set.delete(id) : set.add(id)));
+    setSelectedIds([...set]);
+  };
 
   // 自前リサイズ用ハンドル（キャンバスは scale 倍。画面上で約24pxに見えるよう逆補正）
   const hs = Math.max(12, Math.round(24 / (scale || 1)));
@@ -168,7 +202,7 @@ export function DeckEditorPage() {
     redoStack.current.push(lastCommitted.current);
     lastCommitted.current = prev;
     setContent(prev);
-    setSelectedId(null);
+    setSelectedIds([]);
     setHistVer((v) => v + 1);
   };
   const redo = () => {
@@ -178,7 +212,7 @@ export function DeckEditorPage() {
     undoStack.current.push(lastCommitted.current);
     lastCommitted.current = next;
     setContent(next);
-    setSelectedId(null);
+    setSelectedIds([]);
     setHistVer((v) => v + 1);
   };
   keydownRef.current = (e: KeyboardEvent) => {
@@ -190,31 +224,34 @@ export function DeckEditorPage() {
         e.preventDefault();
         if (k === "y" || (k === "z" && e.shiftKey)) redo();
         else undo();
-      } else if (k === "d" && selected && !typing) {
+      } else if (k === "d" && selectedIds.length && !typing) {
         e.preventDefault();
-        duplicateElement(selected);
+        duplicateSelected();
+      } else if (k === "g" && selectedIds.length >= 2 && !typing) {
+        e.preventDefault();
+        groupSelected();
       }
       return;
     }
-    if (typing || !selected) return;
+    if (typing || selectedIds.length === 0) return;
     if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
-      deleteElement(selected.id);
+      deleteSelected();
       return;
     }
     const step = e.shiftKey ? 10 : 1;
     if (e.key === "ArrowLeft") {
       e.preventDefault();
-      patchElement(selected.id, { x: selected.x - step });
+      moveSelected(-step, 0);
     } else if (e.key === "ArrowRight") {
       e.preventDefault();
-      patchElement(selected.id, { x: selected.x + step });
+      moveSelected(step, 0);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      patchElement(selected.id, { y: selected.y - step });
+      moveSelected(0, -step);
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      patchElement(selected.id, { y: selected.y + step });
+      moveSelected(0, step);
     }
   };
   void histVer;
@@ -246,53 +283,8 @@ export function DeckEditorPage() {
         j === idx ? { ...sl, elements: [...sl.elements, el] } : sl,
       ),
     );
-    setSelectedId(el.id);
+    setSelectedIds([el.id]);
   };
-  const deleteElement = (elId: string) => {
-    // 削除ボタンがフォーカスのまま消えるとブラウザがトップへスクロールするため抑止
-    (document.activeElement as HTMLElement | null)?.blur?.();
-    const y = window.scrollY;
-    setSlides((s) =>
-      s.map((sl, j) =>
-        j === idx
-          ? { ...sl, elements: sl.elements.filter((e) => e.id !== elId) }
-          : sl,
-      ),
-    );
-    setSelectedId(null);
-    requestAnimationFrame(() => window.scrollTo(0, y));
-  };
-  const duplicateElement = (el: DeckElement) => {
-    addElement({ ...el, id: uid(), x: el.x + 20, y: el.y + 20 });
-  };
-  const bringToFront = (elId: string) =>
-    setSlides((s) =>
-      s.map((sl, j) =>
-        j === idx
-          ? {
-              ...sl,
-              elements: [
-                ...sl.elements.filter((e) => e.id !== elId),
-                ...sl.elements.filter((e) => e.id === elId),
-              ],
-            }
-          : sl,
-      ),
-    );
-  const sendToBack = (elId: string) =>
-    setSlides((s) =>
-      s.map((sl, j) =>
-        j === idx
-          ? {
-              ...sl,
-              elements: [
-                ...sl.elements.filter((e) => e.id === elId),
-                ...sl.elements.filter((e) => e.id !== elId),
-              ],
-            }
-          : sl,
-      ),
-    );
   // 1段だけ前後に移動（配列内で隣の要素と入れ替え。末尾=最前面）
   const moveZ = (elId: string, dir: 1 | -1) =>
     setSlides((s) =>
@@ -307,6 +299,62 @@ export function DeckEditorPage() {
       }),
     );
 
+  // ===== 選択（複数/グループ）対象の操作 =====
+  const mapCurrentSlide = (fn: (els: DeckElement[]) => DeckElement[]) =>
+    setSlides((s) =>
+      s.map((sl, j) => (j === idx ? { ...sl, elements: fn(sl.elements) } : sl)),
+    );
+  const moveSelected = (dx: number, dy: number) =>
+    mapCurrentSlide((arr) =>
+      arr.map((e) =>
+        selectedSet.has(e.id) ? { ...e, x: e.x + dx, y: e.y + dy } : e,
+      ),
+    );
+  const deleteSelected = () => {
+    if (selectedIds.length === 0) return;
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    const y = window.scrollY;
+    mapCurrentSlide((arr) => arr.filter((e) => !selectedSet.has(e.id)));
+    setSelectedIds([]);
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  };
+  const duplicateSelected = () => {
+    if (selectedIds.length === 0) return;
+    const newGid = selectedIds.length > 1 ? uid() : undefined;
+    const copies = selectedEls.map((e) => ({
+      ...e,
+      id: uid(),
+      x: e.x + 20,
+      y: e.y + 20,
+      groupId: newGid ?? e.groupId,
+    }));
+    mapCurrentSlide((arr) => [...arr, ...copies]);
+    setSelectedIds(copies.map((c) => c.id));
+  };
+  const frontSelected = () =>
+    mapCurrentSlide((arr) => [
+      ...arr.filter((e) => !selectedSet.has(e.id)),
+      ...arr.filter((e) => selectedSet.has(e.id)),
+    ]);
+  const backSelected = () =>
+    mapCurrentSlide((arr) => [
+      ...arr.filter((e) => selectedSet.has(e.id)),
+      ...arr.filter((e) => !selectedSet.has(e.id)),
+    ]);
+  const groupSelected = () => {
+    if (selectedIds.length < 2) return;
+    const gid = uid();
+    mapCurrentSlide((arr) =>
+      arr.map((e) => (selectedSet.has(e.id) ? { ...e, groupId: gid } : e)),
+    );
+  };
+  const ungroupSelected = () =>
+    mapCurrentSlide((arr) =>
+      arr.map((e) =>
+        selectedSet.has(e.id) ? { ...e, groupId: undefined } : e,
+      ),
+    );
+
   // 自前リサイズ（マウス/タッチ統一の Pointer Events）
   const startResize = (
     e: React.PointerEvent,
@@ -316,7 +364,7 @@ export function DeckEditorPage() {
     e.stopPropagation();
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setSelectedId(el.id);
+    setSelectedIds([el.id]);
     resizeRef.current = {
       elId: el.id,
       corner,
@@ -397,7 +445,7 @@ export function DeckEditorPage() {
     const ns: DeckSlide = { id: uid(), background: "#ffffff", elements: [] };
     setSlides((s) => [...s.slice(0, idx + 1), ns, ...s.slice(idx + 1)]);
     setSlideIdx(idx + 1);
-    setSelectedId(null);
+    setSelectedIds([]);
   };
   const dupSlide = () => {
     const copy: DeckSlide = {
@@ -412,7 +460,7 @@ export function DeckEditorPage() {
     if (slides.length <= 1) return;
     setSlides((s) => s.filter((_, j) => j !== idx));
     setSlideIdx(Math.max(0, idx - 1));
-    setSelectedId(null);
+    setSelectedIds([]);
   };
   const moveSlide = (d: number) => {
     const to = idx + d;
@@ -490,7 +538,7 @@ export function DeckEditorPage() {
               key={s.id}
               onClick={() => {
                 setSlideIdx(j);
-                setSelectedId(null);
+                setSelectedIds([]);
               }}
               sx={{
                 cursor: "pointer",
@@ -555,7 +603,7 @@ export function DeckEditorPage() {
             {[...(slide?.elements ?? [])].reverse().map((el) => (
               <Box
                 key={el.id}
-                onClick={() => setSelectedId(el.id)}
+                onClick={(e) => selectElement(el.id, e.shiftKey)}
                 sx={{
                   display: "flex",
                   alignItems: "center",
@@ -564,12 +612,15 @@ export function DeckEditorPage() {
                   py: 0.5,
                   borderRadius: 1,
                   cursor: "pointer",
-                  bgcolor:
-                    selectedId === el.id ? "action.selected" : "transparent",
+                  bgcolor: selectedSet.has(el.id)
+                    ? "action.selected"
+                    : "transparent",
                   "&:hover": { bgcolor: "action.hover" },
                 }}
               >
-                {el.type === "image" ? (
+                {el.groupId ? (
+                  <FolderIcon fontSize="small" sx={{ opacity: 0.7 }} />
+                ) : el.type === "image" ? (
                   <ImageIcon fontSize="small" />
                 ) : (
                   <TextFieldsIcon fontSize="small" />
@@ -610,7 +661,7 @@ export function DeckEditorPage() {
           <Box ref={canvasRef} sx={{ width: "100%" }}>
             {slide && scale > 0 && (
               <Box
-                onMouseDown={() => setSelectedId(null)}
+                onMouseDown={() => setSelectedIds([])}
                 sx={{
                   position: "relative",
                   width: cw,
@@ -640,31 +691,53 @@ export function DeckEditorPage() {
                       size={{ width: el.w, height: el.h }}
                       position={{ x: el.x, y: el.y }}
                       enableResizing={false}
-                      onDragStart={() => setSelectedId(el.id)}
-                      onDrag={(_e, d) =>
-                        setDragXY({ id: el.id, x: d.x, y: d.y })
-                      }
+                      onDragStart={() => {
+                        const moveIds =
+                          selectedSet.has(el.id) && selectedIds.length > 1
+                            ? selectedIds
+                            : expandGroup(el.id);
+                        setSelectedIds(moveIds);
+                        const starts: Record<string, { x: number; y: number }> =
+                          {};
+                        els.forEach((e) => {
+                          if (moveIds.includes(e.id))
+                            starts[e.id] = { x: e.x, y: e.y };
+                        });
+                        groupDragRef.current = {
+                          draggedId: el.id,
+                          ids: moveIds,
+                          starts,
+                        };
+                      }}
+                      onDrag={(_e, d) => {
+                        const g = groupDragRef.current;
+                        if (g && g.ids.length > 1) {
+                          const base = g.starts[g.draggedId];
+                          const dx = d.x - base.x;
+                          const dy = d.y - base.y;
+                          g.ids.forEach((mid) => {
+                            if (mid !== g.draggedId) {
+                              const st = g.starts[mid];
+                              patchElement(mid, { x: st.x + dx, y: st.y + dy });
+                            }
+                          });
+                        } else {
+                          setDragXY({ id: el.id, x: d.x, y: d.y });
+                        }
+                      }}
                       onDragStop={(_e, d) => {
                         patchElement(el.id, { x: d.x, y: d.y });
                         setDragXY(null);
+                        groupDragRef.current = null;
                       }}
-                      onResizeStop={(_e, _dir, ref, _delta, pos) =>
-                        patchElement(el.id, {
-                          w: parseFloat(ref.style.width),
-                          h: parseFloat(ref.style.height),
-                          x: pos.x,
-                          y: pos.y,
-                        })
-                      }
                       onMouseDown={(e: MouseEvent) => {
                         e.stopPropagation();
-                        setSelectedId(el.id);
+                        selectElement(el.id, e.shiftKey);
                       }}
                       style={{
-                        outline:
-                          selectedId === el.id
-                            ? "2px solid #2563eb"
-                            : "1px dashed rgba(0,0,0,0.25)",
+                        outline: selectedSet.has(el.id)
+                          ? "2px solid #2563eb"
+                          : "1px dashed rgba(0,0,0,0.25)",
                         touchAction: "none",
                       }}
                     >
@@ -721,12 +794,20 @@ export function DeckEditorPage() {
 
         {/* プロパティ */}
         <Stack spacing={1.5} sx={{ width: { md: 240 }, flexShrink: 0 }}>
-          {selected ? (
+          {selectedIds.length === 0 ? (
+            <Typography variant="caption" color="text.secondary">
+              要素を選ぶと編集できます。「テキスト」「画像」から追加し、ドラッグで移動・隅でリサイズ。Shift+クリックで複数選択。
+            </Typography>
+          ) : (
             <>
               <Typography variant="subtitle2">
-                {selected.type === "text" ? "テキスト" : "画像"}
+                {selected
+                  ? selected.type === "text"
+                    ? "テキスト"
+                    : "画像"
+                  : `${selectedIds.length}個を選択中`}
               </Typography>
-              {selected.type === "text" && (
+              {selected && selected.type === "text" && (
                 <>
                   <TextField
                     size="small"
@@ -807,7 +888,7 @@ export function DeckEditorPage() {
                   </ToggleButtonGroup>
                 </>
               )}
-              {selected.type === "image" && (
+              {selected && selected.type === "image" && (
                 <>
                   <Button
                     size="small"
@@ -831,11 +912,26 @@ export function DeckEditorPage() {
                 </>
               )}
               <Divider />
-              <Stack direction="row" spacing={1}>
+              {/* グループ化 / 解除 */}
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {selectedIds.length >= 2 && (
+                  <Button
+                    size="small"
+                    startIcon={<FolderIcon />}
+                    onClick={groupSelected}
+                  >
+                    グループ化
+                  </Button>
+                )}
+                {groupIdsOfSelection.size > 0 && (
+                  <Button size="small" onClick={ungroupSelected}>
+                    グループ解除
+                  </Button>
+                )}
                 <Button
                   size="small"
                   startIcon={<ContentCopyIcon />}
-                  onClick={() => duplicateElement(selected)}
+                  onClick={duplicateSelected}
                 >
                   複製
                 </Button>
@@ -847,20 +943,24 @@ export function DeckEditorPage() {
                 <Button
                   size="small"
                   startIcon={<FlipToFrontIcon />}
-                  onClick={() => bringToFront(selected.id)}
+                  onClick={frontSelected}
                 >
                   最前面
                 </Button>
-                <Button size="small" onClick={() => moveZ(selected.id, 1)}>
-                  前面へ
-                </Button>
-                <Button size="small" onClick={() => moveZ(selected.id, -1)}>
-                  背面へ
-                </Button>
+                {selected && (
+                  <Button size="small" onClick={() => moveZ(selected.id, 1)}>
+                    前面へ
+                  </Button>
+                )}
+                {selected && (
+                  <Button size="small" onClick={() => moveZ(selected.id, -1)}>
+                    背面へ
+                  </Button>
+                )}
                 <Button
                   size="small"
                   startIcon={<FlipToBackIcon />}
-                  onClick={() => sendToBack(selected.id)}
+                  onClick={backSelected}
                 >
                   最背面
                 </Button>
@@ -869,15 +969,13 @@ export function DeckEditorPage() {
                 size="small"
                 color="error"
                 startIcon={<DeleteOutlineIcon />}
-                onClick={() => deleteElement(selected.id)}
+                onClick={deleteSelected}
               >
-                この要素を削除
+                {selectedIds.length > 1
+                  ? `${selectedIds.length}個を削除`
+                  : "この要素を削除"}
               </Button>
             </>
-          ) : (
-            <Typography variant="caption" color="text.secondary">
-              要素を選ぶと編集できます。「テキスト」「画像」から追加し、ドラッグで移動・隅でリサイズ。
-            </Typography>
           )}
         </Stack>
       </Stack>
