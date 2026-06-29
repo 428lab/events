@@ -8,6 +8,7 @@ import {
   Box,
   Button,
   Divider,
+  Fab,
   IconButton,
   MenuItem,
   Slider,
@@ -1062,6 +1063,25 @@ export function DeckEditorPage() {
           )}
         </Stack>
       </Stack>
+
+      {/* スマホ用：画面下に固定の Undo/Redo */}
+      <Box
+        sx={{
+          display: { xs: "flex", md: "none" },
+          position: "fixed",
+          bottom: 16,
+          right: 16,
+          gap: 1,
+          zIndex: (t) => t.zIndex.fab,
+        }}
+      >
+        <Fab size="small" onClick={undo} disabled={!canUndo}>
+          <UndoIcon />
+        </Fab>
+        <Fab size="small" onClick={redo} disabled={!canRedo}>
+          <RedoIcon />
+        </Fab>
+      </Box>
     </Stack>
   );
 }
