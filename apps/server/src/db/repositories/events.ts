@@ -25,6 +25,7 @@ interface EventRow {
   community_id: string | null;
   scheduling: number;
   schedule_anonymous: number;
+  slug: string | null;
 }
 
 /** participant_count（確定メンバー数）を含む event の SELECT */
@@ -54,7 +55,13 @@ function toEvent(row: EventRow): Event {
     communityId: row.community_id ?? null,
     scheduling: row.scheduling === 1,
     scheduleAnonymous: row.schedule_anonymous === 1,
+    slug: row.slug ?? "",
   };
+}
+
+/** 短いシェア用スラッグ（8文字hex） */
+function genEventSlug(): string {
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 8);
 }
 
 export interface EventSearchOpts {
@@ -107,6 +114,11 @@ export const eventsRepo = {
     return row ? toEvent(row) : null;
   },
 
+  async findBySlug(slug: string): Promise<Event | null> {
+    const row = await one<EventRow>(`${SELECT_EVENT} WHERE slug = ?`, slug);
+    return row ? toEvent(row) : null;
+  },
+
   async listPublished(): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT} WHERE status = 'published' ORDER BY starts_at DESC`,
@@ -131,8 +143,8 @@ export const eventsRepo = {
   ): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT}
-         WHERE status = 'published' AND (scheduling = 1 OR ends_at > ?)
-         ORDER BY scheduling DESC, starts_at ASC
+         WHERE status = 'published' AND scheduling = 0 AND ends_at > ?
+         ORDER BY starts_at ASC
          LIMIT ? OFFSET ?`,
       now,
       limit,
@@ -143,8 +155,28 @@ export const eventsRepo = {
 
   async countUpcomingPublished(now: number): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND (scheduling = 1 OR ends_at > ?)",
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND scheduling = 0 AND ends_at > ?",
       now,
+    );
+    return row?.n ?? 0;
+  },
+
+  /** 日程調整中の公開イベント（新着順・ページング） */
+  async listSchedulingPublished(limit: number, offset: number): Promise<Event[]> {
+    const rows = await many<EventRow>(
+      `${SELECT_EVENT}
+         WHERE status = 'published' AND scheduling = 1
+         ORDER BY created_at DESC
+         LIMIT ? OFFSET ?`,
+      limit,
+      offset,
+    );
+    return rows.map(toEvent);
+  },
+
+  async countSchedulingPublished(): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND scheduling = 1",
     );
     return row?.n ?? 0;
   },
@@ -210,13 +242,15 @@ export const eventsRepo = {
 
   async create(input: CreateEventInput, createdBy: string): Promise<Event> {
     const id = crypto.randomUUID();
+    let slug = genEventSlug();
+    while (await this.findBySlug(slug)) slug = genEventSlug();
     await run(
       `INSERT INTO event
         (id, title, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
-         community_id, scheduling, schedule_anonymous)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?)`,
+         community_id, scheduling, schedule_anonymous, slug)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?)`,
       id,
       input.title,
       input.description ?? "",
@@ -232,6 +266,7 @@ export const eventsRepo = {
       input.communityId ?? null,
       input.scheduling ? 1 : 0,
       input.scheduleAnonymous ? 1 : 0,
+      slug,
     );
     return (await this.findById(id))!;
   },

@@ -34,6 +34,7 @@ import { UpcomingEventsPage } from "./pages/UpcomingEventsPage.js";
 import { DecksPage } from "./pages/DecksPage.js";
 import { DeckEditorPage } from "./pages/DeckEditorPage.js";
 import { DeckViewerPage } from "./pages/DeckViewerPage.js";
+import { ShortEventPage } from "./pages/ShortEventPage.js";
 
 export function App() {
   const { data: user, isLoading } = useMe();
@@ -131,6 +132,14 @@ export function App() {
             </PublicLayout>
           }
         />
+        <Route
+          path="/e/:slug"
+          element={
+            <PublicLayout>
+              <ShortEventPage />
+            </PublicLayout>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
@@ -156,6 +165,7 @@ export function App() {
         <Route path="/decks" element={<DecksPage />} />
         <Route path="/decks/:id/edit" element={<DeckEditorPage />} />
         <Route path="/d/:slug" element={<DeckViewerPage />} />
+        <Route path="/e/:slug" element={<ShortEventPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/upcoming" element={<UpcomingEventsPage />} />
         <Route path="/events/new" element={<CreateEventPage />} />

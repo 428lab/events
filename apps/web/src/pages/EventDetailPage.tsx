@@ -23,6 +23,7 @@ import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
+import { ShareButton } from "../components/ShareButton.js";
 import { UserLink } from "../components/UserLink.js";
 import type { Entry } from "@eventer/shared";
 import {
@@ -206,7 +207,7 @@ export function EventDetailPage() {
             <Typography variant="body2">{community.name}</Typography>
           </Box>
         )}
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <Typography variant="h4" fontWeight={700}>
             {event.title}
           </Typography>
@@ -214,6 +215,9 @@ export function EventDetailPage() {
             <Chip size="small" color="warning" label={event.status} />
           )}
           {myRole && <Chip size="small" label={roleLabel[myRole]} />}
+          {event.status === "published" && (
+            <ShareButton slug={event.slug} title={event.title} />
+          )}
         </Stack>
         <Typography color="text.secondary" sx={{ mt: 1 }}>
           {event.scheduling

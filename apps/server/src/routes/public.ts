@@ -97,6 +97,31 @@ publicRoutes.get("/events/search", async (c) => {
   });
 });
 
+/** 日程調整中の公開イベント一覧（未ログイン可・新着順・ページング） */
+publicRoutes.get("/events/scheduling", async (c) => {
+  const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);
+  const limit = Math.min(50, Math.max(1, Number(c.req.query("limit") ?? 12) || 12));
+  const offset = (page - 1) * limit;
+  const total = await eventsRepo.countSchedulingPublished();
+  const events = await eventsRepo.listSchedulingPublished(limit, offset);
+  return c.json({
+    events,
+    total,
+    page,
+    limit,
+    hasMore: offset + events.length < total,
+  });
+});
+
+/** 短いシェアURLの解決（未ログイン可）。公開イベントのみ */
+publicRoutes.get("/events/by-slug/:slug", async (c) => {
+  const event = await eventsRepo.findBySlug(c.req.param("slug"));
+  if (!event || event.status !== "published") {
+    return c.json({ error: "not_found" }, 404);
+  }
+  return c.json({ id: event.id });
+});
+
 /** 開催前の公開イベント一覧（未ログイン可・開催直前順・ページング） */
 publicRoutes.get("/events", async (c) => {
   const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);

@@ -139,6 +139,16 @@ app.get("/events/:id", async (c) => {
   return c.html(html);
 });
 
+// /e/:slug（短いシェアURL）にも OG メタを注入
+app.get("/e/:slug", async (c) => {
+  const html = await loadIndexHtml(c.req.url);
+  const event = await eventsRepo.findBySlug(c.req.param("slug"));
+  if (event && event.status === "published") {
+    return c.html(injectEventOg(html, event));
+  }
+  return c.html(html);
+});
+
 // それ以外（静的アセット & SPA ルート）は ASSETS から配信
 app.all("*", (c) => getAssets().fetch(c.req.raw));
 

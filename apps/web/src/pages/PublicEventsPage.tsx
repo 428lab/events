@@ -1,9 +1,18 @@
-import { Box, Button, Stack, Typography, useMediaQuery } from "@mui/material";
+import { useState } from "react";
+import {
+  Box,
+  Button,
+  Pagination,
+  Stack,
+  Typography,
+  useMediaQuery,
+} from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 import {
   usePublicEvents,
   usePublicPastEventsInfinite,
+  usePublicSchedulingEvents,
 } from "../api/hooks.js";
 import { EventCard } from "../components/EventCard.js";
 import { EventSearchPanel } from "../components/EventSearchPanel.js";
@@ -40,6 +49,37 @@ function PastEvents() {
   );
 }
 
+function SchedulingEvents() {
+  const [page, setPage] = useState(1);
+  const q = usePublicSchedulingEvents(page);
+  const total = q.data?.total ?? 0;
+  const limit = q.data?.limit ?? 12;
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  if (q.isLoading || total === 0) return null;
+  return (
+    <Box>
+      <Typography variant="h5" fontWeight={700} gutterBottom>
+        📅 日程調整中のイベント
+      </Typography>
+      <Stack spacing={2}>
+        {(q.data?.events ?? []).map((e) => (
+          <EventCard key={e.id} event={e} />
+        ))}
+      </Stack>
+      {pageCount > 1 && (
+        <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+          <Pagination
+            count={pageCount}
+            page={page}
+            onChange={(_e, p) => setPage(p)}
+            color="primary"
+          />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 export function PublicEventsPage() {
   const theme = useTheme();
   const isPc = useMediaQuery(theme.breakpoints.up("sm"));
@@ -54,6 +94,7 @@ export function PublicEventsPage() {
   return (
     <EventSearchPanel>
       <Stack spacing={5}>
+        <SchedulingEvents />
         <Box>
           <Typography variant="h5" fontWeight={700} gutterBottom>
             開催中・開催予定のイベント

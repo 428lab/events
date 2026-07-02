@@ -45,6 +45,8 @@ export const eventSchema = z.object({
   scheduling: z.boolean(),
   /** 日程調整の回答者を匿名にする（人数のみ表示） */
   scheduleAnonymous: z.boolean(),
+  /** 短いシェアURL用スラッグ（/e/:slug） */
+  slug: z.string(),
 });
 export type Event = z.infer<typeof eventSchema>;
 

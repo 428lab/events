@@ -186,6 +186,25 @@ export function useEventSearchInfinite(
   });
 }
 
+/** 日程調整中の公開イベント（未ログイン可・新着順・ページング） */
+export function usePublicSchedulingEvents(page: number) {
+  return useQuery({
+    queryKey: ["publicSchedulingEvents", page],
+    queryFn: () =>
+      api.get<PublicEventsPage>(`/public/events/scheduling?page=${page}`),
+  });
+}
+
+/** 短いシェアURL（/e/:slug）→ イベントIDの解決 */
+export function useEventBySlug(slug: string) {
+  return useQuery({
+    queryKey: ["eventBySlug", slug],
+    enabled: Boolean(slug),
+    retry: false,
+    queryFn: () => api.get<{ id: string }>(`/public/events/by-slug/${slug}`),
+  });
+}
+
 /** 開催済みの公開イベント（未ログイン可・終了が新しい順・ページング） */
 export function usePublicPastEvents(page: number) {
   return useQuery({

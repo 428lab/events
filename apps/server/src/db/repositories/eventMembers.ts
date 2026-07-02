@@ -196,6 +196,7 @@ function mapMyEventSummary(
     communityId: (row.community_id as string | null) ?? null,
     scheduling: (row.scheduling as number) === 1,
     scheduleAnonymous: (row.schedule_anonymous as number) === 1,
+    slug: (row.slug as string | null) ?? "",
     myRole: row.my_role as EventRole,
   };
 }
