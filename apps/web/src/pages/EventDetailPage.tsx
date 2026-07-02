@@ -34,6 +34,7 @@ import {
   useEventSlots,
   useJoinEvent,
   useLeaveEvent,
+  usePublishEvent,
   useIsAdmin,
   useMe,
   useUpdateSubmission,
@@ -116,6 +117,7 @@ export function EventDetailPage() {
   const { data: awards } = useAwards(id);
   const join = useJoinEvent();
   const leave = useLeaveEvent();
+  const publish = usePublishEvent();
 
   if (isError) {
     return (
@@ -226,6 +228,24 @@ export function EventDetailPage() {
           ・ {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
         </Typography>
       </Box>
+
+      {isStaff && event.status === "draft" && (
+        <Alert
+          severity="warning"
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              disabled={publish.isPending}
+              onClick={() => publish.mutate(event.id)}
+            >
+              公開する
+            </Button>
+          }
+        >
+          このイベントは<strong>下書き</strong>です。公開するまで他の人には表示されず、シェアリンクも開けません。
+        </Alert>
+      )}
 
       {event.scheduling && (
         <SchedulePanel

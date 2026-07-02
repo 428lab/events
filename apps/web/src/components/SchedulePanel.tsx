@@ -17,6 +17,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link as RouterLink } from "react-router-dom";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -344,8 +345,21 @@ export function SchedulePanel({
         )}
 
         {!me && (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            回答するにはログインしてください。
+          <Alert
+            severity="info"
+            sx={{ mt: 2 }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                component={RouterLink}
+                to={`/login?next=/events/${eventId}`}
+              >
+                ログインして回答
+              </Button>
+            }
+          >
+            候補日への回答にはログインが必要です。ログイン後この画面に戻ります。
           </Alert>
         )}
 

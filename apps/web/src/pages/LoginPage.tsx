@@ -1,14 +1,45 @@
-import { Box, Button, Card, CardContent, Stack, Typography } from "@mui/material";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Alert, Box, Button, Card, CardContent, Stack, Typography } from "@mui/material";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthProviders, useDevLogin } from "../api/hooks.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
+import { hasNip07, nostrNip07Login } from "../lib/nostr.js";
 
 export function LoginPage() {
   const devLogin = useDevLogin();
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [params] = useSearchParams();
+  const [nostrBusy, setNostrBusy] = useState(false);
+  const [nostrError, setNostrError] = useState<string | null>(null);
   const { data: providers } = useAuthProviders();
   // 設定済みプロバイダが取れない場合のフォールバック（Discord）
   const list = providers && providers.length > 0 ? providers : ["discord"];
+
+  // ログイン後に戻る先（OAuthリダイレクトを跨ぐため localStorage に退避）
+  const next = params.get("next");
+  useEffect(() => {
+    if (next) localStorage.setItem("postLoginRedirect", next);
+  }, [next]);
+
+  const nostrLogin = async () => {
+    setNostrError(null);
+    setNostrBusy(true);
+    try {
+      await nostrNip07Login();
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      navigate(next ?? "/me");
+    } catch (e) {
+      setNostrError(
+        e instanceof Error && e.message === "no_extension"
+          ? "NIP-07 対応拡張（Alby、nos2x など）が見つかりません。インストールしてから再度お試しください。"
+          : "Nostr ログインに失敗しました。",
+      );
+    } finally {
+      setNostrBusy(false);
+    }
+  };
 
   return (
     <Box sx={{ minHeight: "100vh", display: "grid", placeItems: "center", p: 2 }}>
@@ -50,6 +81,30 @@ export function LoginPage() {
                   </Button>
                 );
               })}
+              <Button
+                variant="contained"
+                size="large"
+                fullWidth
+                disabled={nostrBusy}
+                onClick={nostrLogin}
+                sx={{
+                  bgcolor: PROVIDER_META.nostr.color,
+                  color: PROVIDER_META.nostr.textColor,
+                  "&:hover": {
+                    bgcolor: PROVIDER_META.nostr.color,
+                    filter: "brightness(0.95)",
+                  },
+                }}
+              >
+                {nostrBusy ? "確認中…" : "Nostr でログイン (NIP-07)"}
+              </Button>
+              {nostrError && <Alert severity="warning">{nostrError}</Alert>}
+              {!hasNip07() && !nostrError && (
+                <Typography variant="caption" color="text.secondary">
+                  Nostr ログインにはブラウザの NIP-07 拡張（Alby、nos2x
+                  など）が必要です。
+                </Typography>
+              )}
             </Stack>
 
             {import.meta.env.DEV && (

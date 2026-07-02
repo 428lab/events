@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Alert,
   Box,
@@ -8,6 +9,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useAuthProviders,
   useIdentities,
@@ -16,18 +18,43 @@ import {
 } from "../api/hooks.js";
 import { UsernameCard } from "../components/UsernameCard.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
+import { nostrNip07Login } from "../lib/nostr.js";
 
 export function AccountPage() {
   const { data: me } = useMe();
   const { data: providers } = useAuthProviders();
   const { data: identities } = useIdentities();
   const unlink = useUnlinkIdentity();
+  const qc = useQueryClient();
+  const [nostrBusy, setNostrBusy] = useState(false);
+  const [nostrError, setNostrError] = useState<string | null>(null);
 
   if (!me || !identities) return <Typography>読み込み中…</Typography>;
 
   const linked = new Map(identities.map((i) => [i.provider, i]));
-  const all = providers && providers.length > 0 ? providers : ["discord"];
+  const all = [
+    ...(providers && providers.length > 0 ? providers : ["discord"]),
+    "nostr",
+  ];
   const canUnlink = identities.length > 1;
+
+  const linkNostr = async () => {
+    setNostrError(null);
+    setNostrBusy(true);
+    try {
+      await nostrNip07Login();
+      await qc.invalidateQueries({ queryKey: ["identities"] });
+      await qc.invalidateQueries({ queryKey: ["me"] });
+    } catch (e) {
+      setNostrError(
+        e instanceof Error && e.message === "no_extension"
+          ? "NIP-07 対応拡張（Alby、nos2x など）が見つかりません。"
+          : "Nostr 連携に失敗しました。",
+      );
+    } finally {
+      setNostrBusy(false);
+    }
+  };
 
   return (
     <Stack spacing={3}>
@@ -93,13 +120,24 @@ export function AccountPage() {
                   ) : (
                     <>
                       <Box sx={{ flex: 1 }} />
-                      <Button
-                        size="small"
-                        variant="contained"
-                        href={`/api/auth/${p}/login`}
-                      >
-                        連携する
-                      </Button>
+                      {p === "nostr" ? (
+                        <Button
+                          size="small"
+                          variant="contained"
+                          disabled={nostrBusy}
+                          onClick={linkNostr}
+                        >
+                          {nostrBusy ? "確認中…" : "連携する"}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="small"
+                          variant="contained"
+                          href={`/api/auth/${p}/login`}
+                        >
+                          連携する
+                        </Button>
+                      )}
                     </>
                   )}
                 </Box>
@@ -107,6 +145,11 @@ export function AccountPage() {
             })}
           </Stack>
 
+          {nostrError && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              {nostrError}
+            </Alert>
+          )}
           {!canUnlink && (
             <Alert severity="info" sx={{ mt: 2 }}>
               ログイン方法は最低1つ必要です（最後の1つは解除できません）。

@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import { Box, CircularProgress } from "@mui/material";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useMe } from "./api/hooks.js";
 import { Layout } from "./components/Layout.js";
 import { PublicLayout } from "./components/PublicLayout.js";
@@ -35,6 +36,21 @@ import { DecksPage } from "./pages/DecksPage.js";
 import { DeckEditorPage } from "./pages/DeckEditorPage.js";
 import { DeckViewerPage } from "./pages/DeckViewerPage.js";
 import { ShortEventPage } from "./pages/ShortEventPage.js";
+
+/** ログイン前に控えた戻り先（/login?next=…）へ、ログイン後に一度だけ遷移する */
+function PostLoginRedirect() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const next = localStorage.getItem("postLoginRedirect");
+    if (next && next.startsWith("/")) {
+      localStorage.removeItem("postLoginRedirect");
+      navigate(next, { replace: true });
+    } else if (next) {
+      localStorage.removeItem("postLoginRedirect");
+    }
+  }, [navigate]);
+  return null;
+}
 
 export function App() {
   const { data: user, isLoading } = useMe();
@@ -147,6 +163,7 @@ export function App() {
 
   return (
     <Layout user={user}>
+      <PostLoginRedirect />
       <Routes>
         <Route path="/" element={<PublicEventsPage />} />
         <Route path="/me" element={<MyPage />} />

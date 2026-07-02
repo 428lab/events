@@ -18,6 +18,11 @@ import {
   providerConfigured,
   redirectUri,
 } from "../auth/providers.js";
+import {
+  issueNostrChallenge,
+  verifyNostrLogin,
+  type NostrEvent,
+} from "../auth/nostr.js";
 
 const STATE_COOKIE = "eventer_oauth_state";
 
@@ -52,7 +57,9 @@ authRoutes.get("/identities", requireAuth, async (c) => {
 authRoutes.delete("/identities/:provider", requireAuth, async (c) => {
   const provider = c.req.param("provider");
   const user = c.get("user");
-  if (!isProvider(provider)) return c.json({ error: "unknown_provider" }, 404);
+  if (!isProvider(provider) && provider !== "nostr") {
+    return c.json({ error: "unknown_provider" }, 404);
+  }
   if ((await identitiesRepo.countByUser(user.id)) <= 1) {
     return c.json({ error: "last_identity" }, 409);
   }
@@ -61,6 +68,59 @@ authRoutes.delete("/identities/:provider", requireAuth, async (c) => {
     // 実Discord IDを手放す（合成値に置換＝管理者判定も解除）
     await usersRepo.setDiscordId(user.id, `removed:${crypto.randomUUID()}`);
   }
+  return c.json({ ok: true });
+});
+
+/* =========================================================
+ *  Nostr (NIP-07) ログイン
+ * =======================================================*/
+
+/** ログイン用チャレンジの発行（サーバー状態なし・HMAC署名付き・10分有効） */
+authRoutes.get("/nostr/challenge", async (c) => {
+  return c.json({ challenge: await issueNostrChallenge() });
+});
+
+/** NIP-07 で署名した kind:22242 イベントでログイン/連携 */
+authRoutes.post("/nostr/login", async (c) => {
+  let body: { event?: NostrEvent };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+  const pubkey = body.event ? await verifyNostrLogin(body.event) : null;
+  if (!pubkey) return c.json({ error: "invalid_event" }, 401);
+
+  const current = await currentUser(c);
+  const existingUserId = await identitiesRepo.findUserId("nostr", pubkey);
+
+  if (current) {
+    // ログイン中 → 連携 or 統合（OAuthコールバックと同じ規則）
+    if (!existingUserId) {
+      await identitiesRepo.link(current.id, "nostr", pubkey, null);
+    } else if (existingUserId !== current.id) {
+      const fromUser = await usersRepo.findById(existingUserId);
+      await identitiesRepo.mergeInto(existingUserId, current.id);
+      if (fromUser && !fromUser.discordId.includes(":")) {
+        await usersRepo.setDiscordId(current.id, fromUser.discordId);
+      }
+    }
+    return c.json({ ok: true, linked: true });
+  }
+
+  // 未ログイン: 既存ならログイン、無ければ新規作成
+  let userId = existingUserId;
+  if (!userId) {
+    const u = await usersRepo.createFromProfile("nostr", {
+      providerUserId: pubkey,
+      username: `nostr_${pubkey.slice(0, 8)}`,
+      globalName: null,
+      avatarUrl: null,
+    });
+    await identitiesRepo.link(u.id, "nostr", pubkey, null);
+    userId = u.id;
+  }
+  await issueSession(c, userId);
   return c.json({ ok: true });
 });
 
