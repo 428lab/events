@@ -18,7 +18,7 @@ const PROFILE_RELAYS = [
   "wss://relay.damus.io",
   "wss://nos.lol",
   "wss://yabu.me",
-  "wss://relay.nostr.band",
+  "wss://r.kojira.io",
 ];
 
 interface RelayEvent {
