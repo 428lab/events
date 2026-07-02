@@ -24,8 +24,9 @@ meRoutes.get("/events", async (c) => {
   const user = c.get("user");
   const now = Date.now();
   const all = await eventMembersRepo.listEventsForUser(user.id);
-  const ongoing = all.filter((e) => e.endsAt >= now);
-  const past = all.filter((e) => e.endsAt < now);
+  // 日程調整中（endsAt未確定=0）は常に「開催予定」側
+  const ongoing = all.filter((e) => e.scheduling || e.endsAt >= now);
+  const past = all.filter((e) => !e.scheduling && e.endsAt < now);
   return c.json({ ongoing, past });
 });
 

@@ -36,8 +36,9 @@ publicRoutes.get("/communities/:slug", async (c) => {
     isOwner: user ? community.ownerId === user.id : false,
     isMember: Boolean(role),
     myRole: role,
-    upcomingEvents: events.filter((e) => e.endsAt >= now),
-    pastEvents: events.filter((e) => e.endsAt < now),
+    // 日程調整中（endsAt未確定=0）は常に「開催予定」側
+    upcomingEvents: events.filter((e) => e.scheduling || e.endsAt >= now),
+    pastEvents: events.filter((e) => !e.scheduling && e.endsAt < now),
   });
 });
 
