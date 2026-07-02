@@ -1,4 +1,4 @@
-import { Box, Button, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Stack, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { Link as RouterLink } from "react-router-dom";
 import { useEvents } from "../api/hooks.js";
@@ -6,7 +6,7 @@ import { EventCard } from "../components/EventCard.js";
 import { EventSearchPanel } from "../components/EventSearchPanel.js";
 
 export function EventsPage() {
-  const { data: events, isLoading } = useEvents();
+  const { data: events, isLoading, isError } = useEvents();
 
   return (
     <Stack spacing={3}>
@@ -25,7 +25,11 @@ export function EventsPage() {
       </Stack>
 
       <EventSearchPanel>
-        {isLoading || !events ? (
+        {isError ? (
+          <Alert severity="error">
+            イベントを読み込めませんでした。時間をおいて再読み込みしてください。
+          </Alert>
+        ) : isLoading || !events ? (
           <Typography>読み込み中…</Typography>
         ) : events.length === 0 ? (
           <Box>

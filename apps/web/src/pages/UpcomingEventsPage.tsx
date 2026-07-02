@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
+  Alert,
   Box,
   CircularProgress,
   Stack,
@@ -43,7 +44,11 @@ export function UpcomingEventsPage() {
         <Typography variant="h5" fontWeight={700}>
           開催予定のイベント
         </Typography>
-        {query.isLoading ? (
+        {query.isError ? (
+          <Alert severity="error">
+            イベントを読み込めませんでした。時間をおいて再読み込みしてください。
+          </Alert>
+        ) : query.isLoading ? (
           <Typography>読み込み中…</Typography>
         ) : events.length === 0 ? (
           <Typography color="text.secondary">イベントはありません。</Typography>

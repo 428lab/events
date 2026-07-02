@@ -100,9 +100,16 @@ authRoutes.post("/nostr/login", async (c) => {
     if (!existingUserId) {
       await identitiesRepo.link(current.id, "nostr", pubkey, null);
     } else if (existingUserId !== current.id) {
-      // 既に別アカウントに連携済み。自動統合は破壊的（＆権限の横取りに
-      // 悪用され得る）ため行わない。
-      return c.json({ error: "already_linked" }, 409);
+      // 別アカウントに連携済み。鍵の所有は署名で証明済みなので、
+      // 相手の唯一のログイン方法なら identity を引き取る（他は何も引き継がない）。
+      // 他のログイン方法が残るアカウントからの横取りは拒否。
+      if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
+        return c.json({ error: "already_linked" }, 409);
+      }
+      await identitiesRepo.unlink(existingUserId, "nostr");
+      // 旧アカウントの合成 discord_id を退役させる（同じ npub での再作成と衝突しないように）
+      await usersRepo.setDiscordId(existingUserId, `removed:${crypto.randomUUID()}`);
+      await identitiesRepo.link(current.id, "nostr", pubkey, null);
     }
     return c.json({ ok: true, linked: true });
   }
@@ -210,9 +217,25 @@ authRoutes.get("/:provider/callback", async (c) => {
         await usersRepo.setDiscordId(current.id, profile.providerUserId);
       }
     } else if (existingUserId !== current.id) {
-      // 既に別アカウントに連携済み。自動統合は破壊的（＆管理者権限の横取りに
-      // 悪用され得る）ため行わず、エラーを返して利用者に委ねる。
-      return c.redirect(env.appBaseUrl + "/account?link_error=already_linked");
+      // 別アカウントに連携済み。アカウントの所有は OAuth で証明済みなので、
+      // 相手の唯一のログイン方法なら identity を引き取る（DB上の discordId 等は
+      // 引き継がない＝旧・自動統合の権限横取り経路を残さない）。
+      if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
+        return c.redirect(env.appBaseUrl + "/account?link_error=already_linked");
+      }
+      await identitiesRepo.unlink(existingUserId, provider);
+      // 旧アカウントの実IDを退役（UNIQUE衝突と管理者判定の残置を防ぐ）
+      await usersRepo.setDiscordId(existingUserId, `removed:${crypto.randomUUID()}`);
+      await identitiesRepo.link(
+        current.id,
+        provider,
+        profile.providerUserId,
+        profile.email,
+      );
+      if (provider === "discord") {
+        // OAuth で本人確認済みの実IDのみ反映（DB由来の値は使わない）
+        await usersRepo.setDiscordId(current.id, profile.providerUserId);
+      }
     }
     return c.redirect(env.appBaseUrl + "/account");
   }

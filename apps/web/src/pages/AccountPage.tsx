@@ -22,7 +22,7 @@ import { nostrNip07Login } from "../lib/nostr.js";
 import { ApiError } from "../api/client.js";
 
 const ALREADY_LINKED_MSG =
-  "そのアカウントは既に別のユーザーに連携されています。統合したい場合は、先に相手側アカウントで連携を解除してください。";
+  "そのアカウントは他のログイン方法を持つ別ユーザーに連携されています。統合したい場合は、先に相手側アカウントで連携を解除してください。";
 
 export function AccountPage() {
   const { data: me } = useMe();
@@ -78,8 +78,8 @@ export function AccountPage() {
             ログイン方法（連携）
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            複数のログイン方法を連携できます。既に別ユーザーに連携済みのアカウントは、
-            先にそちらで解除しないと連携できません。
+            複数のログイン方法を連携できます。そのログイン方法だけの別アカウントが
+            既にある場合は、連携がこちらへ引き継がれます。
           </Typography>
 
           {linkError === "already_linked" && (

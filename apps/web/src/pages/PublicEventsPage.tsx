@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Alert,
   Box,
   Button,
   Pagination,
@@ -99,7 +100,11 @@ export function PublicEventsPage() {
           <Typography variant="h5" fontWeight={700} gutterBottom>
             開催中・開催予定のイベント
           </Typography>
-          {upcoming.isLoading ? (
+          {upcoming.isError ? (
+            <Alert severity="error">
+              イベントを読み込めませんでした。時間をおいて再読み込みしてください。
+            </Alert>
+          ) : upcoming.isLoading ? (
             <Typography>読み込み中…</Typography>
           ) : events.length === 0 ? (
             <Typography color="text.secondary">
