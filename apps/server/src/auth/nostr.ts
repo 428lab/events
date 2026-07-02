@@ -2,6 +2,7 @@ import { schnorr } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { env } from "../runtime.js";
+import { one, run } from "../db/client.js";
 
 /** NIP-01 イベント（NIP-07 拡張が署名して返す形） */
 export interface NostrEvent {
@@ -48,7 +49,21 @@ async function verifyChallenge(challenge: string): Promise<boolean> {
   if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > CHALLENGE_TTL_MS) {
     return false;
   }
-  return (await hmacHex(`nostr-challenge:${ts}:${nonce}`)) === mac;
+  if ((await hmacHex(`nostr-challenge:${ts}:${nonce}`)) !== mac) return false;
+  // リプレイ防止: nonce は一度きり。挿入できなければ使用済み。
+  const inserted = await one<{ nonce: string }>(
+    `INSERT OR IGNORE INTO nostr_challenge_used (nonce, used_at)
+     VALUES (?, ?) RETURNING nonce`,
+    nonce,
+    Date.now(),
+  );
+  if (!inserted) return false;
+  // TTL を過ぎた記録は掃除（テーブル肥大防止）
+  await run(
+    "DELETE FROM nostr_challenge_used WHERE used_at < ?",
+    Date.now() - CHALLENGE_TTL_MS * 2,
+  );
+  return true;
 }
 
 const HEX64 = /^[0-9a-f]{64}$/;

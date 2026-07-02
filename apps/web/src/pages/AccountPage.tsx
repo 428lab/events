@@ -19,6 +19,10 @@ import {
 import { UsernameCard } from "../components/UsernameCard.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
 import { nostrNip07Login } from "../lib/nostr.js";
+import { ApiError } from "../api/client.js";
+
+const ALREADY_LINKED_MSG =
+  "そのアカウントは既に別のユーザーに連携されています。統合したい場合は、先に相手側アカウントで連携を解除してください。";
 
 export function AccountPage() {
   const { data: me } = useMe();
@@ -28,6 +32,8 @@ export function AccountPage() {
   const qc = useQueryClient();
   const [nostrBusy, setNostrBusy] = useState(false);
   const [nostrError, setNostrError] = useState<string | null>(null);
+  // OAuth コールバックからのエラー通知（?link_error=already_linked）
+  const linkError = new URLSearchParams(window.location.search).get("link_error");
 
   if (!me || !identities) return <Typography>読み込み中…</Typography>;
 
@@ -49,7 +55,9 @@ export function AccountPage() {
       setNostrError(
         e instanceof Error && e.message === "no_extension"
           ? "NIP-07 対応拡張（Alby、nos2x など）が見つかりません。"
-          : "Nostr 連携に失敗しました。",
+          : e instanceof ApiError && e.status === 409
+            ? ALREADY_LINKED_MSG
+            : "Nostr 連携に失敗しました。",
       );
     } finally {
       setNostrBusy(false);
@@ -70,9 +78,15 @@ export function AccountPage() {
             ログイン方法（連携）
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            複数のログイン方法を連携できます。別アカウントで作成済みのサービスを連携すると、
-            そのアカウントは現在のアカウントに統合されます。
+            複数のログイン方法を連携できます。既に別ユーザーに連携済みのアカウントは、
+            先にそちらで解除しないと連携できません。
           </Typography>
+
+          {linkError === "already_linked" && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {ALREADY_LINKED_MSG}
+            </Alert>
+          )}
 
           <Stack spacing={1.5}>
             {all.map((p) => {

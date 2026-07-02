@@ -62,6 +62,16 @@ scoringRoutes.get("/:id/stream", async (c) => {
   const user = await currentUser(c);
   if (!user) return c.json({ error: "unauthorized" }, 401);
   const eventId = c.req.param("id");
+  // 閲覧可能なイベントに限定（公開 or メンバー or 管理者）
+  const event = await eventsRepo.findById(eventId);
+  if (!event) return c.json({ error: "not_found" }, 404);
+  if (
+    event.status !== "published" &&
+    !isAppAdmin(user) &&
+    !(await eventMembersRepo.find(eventId, user.id))
+  ) {
+    return c.json({ error: "forbidden" }, 403);
+  }
 
   return streamSSE(c, async (stream) => {
     // 接続直後に現在の状態を送る
@@ -114,6 +124,10 @@ scoringRoutes.patch(
   requireEventRole(["staff"]),
   zValidator("json", updateCriterionInput),
   async (c) => {
+    const existing = await scoringCriteriaRepo.findById(c.req.param("cid"));
+    if (!existing || existing.eventId !== c.req.param("id")) {
+      return c.json({ error: "not_found" }, 404);
+    }
     const criterion = await scoringCriteriaRepo.update(
       c.req.param("cid"),
       valid<UpdateCriterionInput>(c, "json"),
@@ -124,6 +138,10 @@ scoringRoutes.patch(
 );
 
 scoringRoutes.delete("/:id/criteria/:cid", requireEventRole(["staff"]), async (c) => {
+  const existing = await scoringCriteriaRepo.findById(c.req.param("cid"));
+  if (!existing || existing.eventId !== c.req.param("id")) {
+    return c.json({ error: "not_found" }, 404);
+  }
   await scoringCriteriaRepo.delete(c.req.param("cid"));
   return c.json({ ok: true });
 });
@@ -151,6 +169,10 @@ scoringRoutes.put(
     const entry = await entriesRepo.findById(input.entryId);
     if (!entry || entry.eventId !== eventId) {
       return c.json({ error: "entry_not_found" }, 404);
+    }
+    const criterion = await scoringCriteriaRepo.findById(input.criterionId);
+    if (!criterion || criterion.eventId !== eventId) {
+      return c.json({ error: "criterion_not_found" }, 404);
     }
     // 自己採点制限
     if (!event.aggregateSelfEntry && (await entriesRepo.isMember(input.entryId, user.id))) {

@@ -380,6 +380,10 @@ eventRoutes.patch(
   requireEventRole(["staff"]),
   zValidator("json", updateSlotInput),
   async (c) => {
+    const cur = await participationSlotsRepo.findById(c.req.param("slotId"));
+    if (!cur || cur.eventId !== c.req.param("id")) {
+      return c.json({ error: "not_found" }, 404);
+    }
     const slot = await participationSlotsRepo.update(
       c.req.param("slotId"),
       valid<UpdateSlotInput>(c, "json"),
@@ -390,6 +394,10 @@ eventRoutes.patch(
 );
 
 eventRoutes.delete("/:id/slots/:slotId", requireEventRole(["staff"]), async (c) => {
+  const cur = await participationSlotsRepo.findById(c.req.param("slotId"));
+  if (!cur || cur.eventId !== c.req.param("id")) {
+    return c.json({ error: "not_found" }, 404);
+  }
   await participationSlotsRepo.delete(c.req.param("slotId"));
   return c.json({ ok: true });
 });

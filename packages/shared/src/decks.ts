@@ -7,7 +7,7 @@ export const DECK_H = 540;
 export const DECK_ELEMENT_TYPES = ["text", "image"] as const;
 
 export const deckElementSchema = z.object({
-  id: z.string(),
+  id: z.string().max(64),
   type: z.enum(DECK_ELEMENT_TYPES),
   x: z.number(),
   y: z.number(),
@@ -15,29 +15,29 @@ export const deckElementSchema = z.object({
   h: z.number(),
   rotation: z.number().default(0),
   /** 同じ groupId の要素はまとめて選択・移動される */
-  groupId: z.string().optional(),
+  groupId: z.string().max(64).optional(),
   // text
-  text: z.string().optional(),
+  text: z.string().max(10000).optional(),
   fontSize: z.number().optional(),
-  fontFamily: z.string().optional(),
-  color: z.string().optional(),
+  fontFamily: z.string().max(100).optional(),
+  color: z.string().max(50).optional(),
   bold: z.boolean().optional(),
   italic: z.boolean().optional(),
   align: z.enum(["left", "center", "right"]).optional(),
   // image
-  src: z.string().optional(),
+  src: z.string().max(500).optional(),
 });
 export type DeckElement = z.infer<typeof deckElementSchema>;
 
 export const deckSlideSchema = z.object({
-  id: z.string(),
-  background: z.string().default("#ffffff"),
-  elements: z.array(deckElementSchema).default([]),
+  id: z.string().max(64),
+  background: z.string().max(50).default("#ffffff"),
+  elements: z.array(deckElementSchema).max(200).default([]),
 });
 export type DeckSlide = z.infer<typeof deckSlideSchema>;
 
 export const deckContentSchema = z.object({
-  slides: z.array(deckSlideSchema).default([]),
+  slides: z.array(deckSlideSchema).max(300).default([]),
 });
 export type DeckContent = z.infer<typeof deckContentSchema>;
 

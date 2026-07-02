@@ -96,15 +96,13 @@ authRoutes.post("/nostr/login", async (c) => {
   const existingUserId = await identitiesRepo.findUserId("nostr", pubkey);
 
   if (current) {
-    // ログイン中 → 連携 or 統合（OAuthコールバックと同じ規則）
+    // ログイン中 → 連携（OAuthコールバックと同じ規則）
     if (!existingUserId) {
       await identitiesRepo.link(current.id, "nostr", pubkey, null);
     } else if (existingUserId !== current.id) {
-      const fromUser = await usersRepo.findById(existingUserId);
-      await identitiesRepo.mergeInto(existingUserId, current.id);
-      if (fromUser && !fromUser.discordId.includes(":")) {
-        await usersRepo.setDiscordId(current.id, fromUser.discordId);
-      }
+      // 既に別アカウントに連携済み。自動統合は破壊的（＆権限の横取りに
+      // 悪用され得る）ため行わない。
+      return c.json({ error: "already_linked" }, 409);
     }
     return c.json({ ok: true, linked: true });
   }
@@ -212,12 +210,9 @@ authRoutes.get("/:provider/callback", async (c) => {
         await usersRepo.setDiscordId(current.id, profile.providerUserId);
       }
     } else if (existingUserId !== current.id) {
-      // 別アカウントを現在のアカウントへ統合
-      const fromUser = await usersRepo.findById(existingUserId);
-      await identitiesRepo.mergeInto(existingUserId, current.id);
-      if (fromUser && !fromUser.discordId.includes(":")) {
-        await usersRepo.setDiscordId(current.id, fromUser.discordId);
-      }
+      // 既に別アカウントに連携済み。自動統合は破壊的（＆管理者権限の横取りに
+      // 悪用され得る）ため行わず、エラーを返して利用者に委ねる。
+      return c.redirect(env.appBaseUrl + "/account?link_error=already_linked");
     }
     return c.redirect(env.appBaseUrl + "/account");
   }
@@ -237,7 +232,8 @@ authRoutes.get("/:provider/callback", async (c) => {
  * 開発専用ログイン。本番(ENVIRONMENT=production)では 404。
  */
 authRoutes.post("/dev-login", async (c) => {
-  if (env.isProd) return c.json({ error: "not_found" }, 404);
+  // 開発環境のみ（staging も /api/auth/* はゲート免除のため明示的に塞ぐ）
+  if (env.isProd || env.isStaging) return c.json({ error: "not_found" }, 404);
   let u = await usersRepo.findByDiscordId("dev-user");
   if (!u) {
     u = await usersRepo.createFromProfile("discord", {

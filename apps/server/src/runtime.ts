@@ -58,7 +58,15 @@ export const env = {
     return must().APP_BASE_URL;
   },
   get sessionSecret(): string {
-    return must().SESSION_SECRET || "dev-insecure-secret";
+    const secret = must().SESSION_SECRET;
+    if (!secret) {
+      // 本番/staging で未設定なら起動させない（弱い既定値で動くのは開発時のみ）
+      if (this.isProd || this.isStaging) {
+        throw new Error("SESSION_SECRET is not set");
+      }
+      return "dev-insecure-secret";
+    }
+    return secret;
   },
   get adminDiscordIds(): string[] {
     return (must().ADMIN_DISCORD_IDS || "")

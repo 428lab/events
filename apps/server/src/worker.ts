@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { bindEnv, getAssets, env, type Env } from "./runtime.js";
 import type { Event } from "@eventer/shared";
 import { authRoutes } from "./routes/auth.js";
@@ -20,6 +21,14 @@ import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
 
 const api = new Hono();
+// リクエストボディの上限（最大の画像アップロード 6MB より少し上）
+api.use(
+  "*",
+  bodyLimit({
+    maxSize: 8 * 1024 * 1024,
+    onError: (c) => c.json({ error: "too_large" }, 413),
+  }),
+);
 api.get("/health", (c) =>
   c.json({ ok: true, discordConfigured: env.discordConfigured }),
 );
@@ -75,6 +84,23 @@ a.btn{display:inline-block;background:#334155;color:#E2E8F0;text-decoration:none
 
 const app = new Hono();
 
+// 全レスポンスに基本セキュリティヘッダを付与（MIMEスニッフ抑止・クリックジャッキング防止）
+app.use("*", async (c, next) => {
+  await next();
+  const set = (h: Headers) => {
+    h.set("X-Content-Type-Options", "nosniff");
+    h.set("X-Frame-Options", "DENY");
+    h.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  };
+  try {
+    set(c.res.headers);
+  } catch {
+    // ASSETS 由来のイミュータブルなヘッダは複製してから付与
+    c.res = new Response(c.res.body, c.res);
+    set(c.res.headers);
+  }
+});
+
 // staging: 管理者ログイン限定ゲート（OAuth と health は通す）
 app.use("*", async (c, next) => {
   if (!env.isStaging) return next();
@@ -95,7 +121,8 @@ const escapeHtml = (s: string) =>
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 /** ASSETS バインディングから index.html を取得 */
 async function loadIndexHtml(reqUrl: string): Promise<string> {
@@ -111,9 +138,11 @@ function injectEventOg(html: string, event: Event): string {
   const title = escapeHtml(event.title);
   const desc = escapeHtml((event.description || "").slice(0, 200));
   // 画像なしイベントは既定OG画像にフォールバック
-  const image = event.imageUpdatedAt
-    ? `${env.appBaseUrl}/api/events/${event.id}/image?v=${event.imageUpdatedAt}`
-    : `${env.appBaseUrl}/og-default.png`;
+  const image = escapeHtml(
+    event.imageUpdatedAt
+      ? `${env.appBaseUrl}/api/events/${event.id}/image?v=${event.imageUpdatedAt}`
+      : `${env.appBaseUrl}/og-default.png`,
+  );
   const tags = [
     `<meta property="og:type" content="website" />`,
     `<meta property="og:title" content="${title}" />`,

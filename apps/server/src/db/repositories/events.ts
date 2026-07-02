@@ -85,8 +85,9 @@ function buildSearchWhere(o: EventSearchOpts): {
   const conds = ["status = 'published'"];
   const args: (string | number)[] = [];
   if (o.q) {
-    conds.push("(title LIKE ? OR description LIKE ?)");
-    const like = `%${o.q}%`;
+    conds.push("(title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')");
+    // LIKE のワイルドカード（% _）をリテラル扱いに
+    const like = `%${o.q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
     args.push(like, like);
   }
   if (o.from != null) {

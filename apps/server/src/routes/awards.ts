@@ -91,6 +91,10 @@ awardRoutes.patch(
   requireEventRole(["staff"]),
   zValidator("json", updateAwardRankInput),
   async (c) => {
+    const cur = await awardsRepo.findRank(c.req.param("rankId"));
+    if (!cur || cur.eventId !== c.req.param("id")) {
+      return c.json({ error: "not_found" }, 404);
+    }
     const rank = await awardsRepo.updateRank(
       c.req.param("rankId"),
       valid<UpdateAwardRankInput>(c, "json"),
@@ -100,6 +104,10 @@ awardRoutes.patch(
   },
 );
 awardRoutes.delete("/:id/award-ranks/:rankId", requireEventRole(["staff"]), async (c) => {
+  const cur = await awardsRepo.findRank(c.req.param("rankId"));
+  if (!cur || cur.eventId !== c.req.param("id")) {
+    return c.json({ error: "not_found" }, 404);
+  }
   await awardsRepo.deleteRank(c.req.param("rankId"));
   return c.json({ ok: true });
 });
@@ -125,6 +133,10 @@ awardRoutes.patch(
   requireEventRole(["staff"]),
   zValidator("json", updateSpecialAwardInput),
   async (c) => {
+    const cur = await awardsRepo.findSpecial(c.req.param("specialId"));
+    if (!cur || cur.eventId !== c.req.param("id")) {
+      return c.json({ error: "not_found" }, 404);
+    }
     const special = await awardsRepo.updateSpecial(
       c.req.param("specialId"),
       valid<UpdateSpecialAwardInput>(c, "json"),
@@ -137,6 +149,10 @@ awardRoutes.delete(
   "/:id/special-awards/:specialId",
   requireEventRole(["staff"]),
   async (c) => {
+    const cur = await awardsRepo.findSpecial(c.req.param("specialId"));
+    if (!cur || cur.eventId !== c.req.param("id")) {
+      return c.json({ error: "not_found" }, 404);
+    }
     await awardsRepo.deleteSpecial(c.req.param("specialId"));
     return c.json({ ok: true });
   },
@@ -150,9 +166,24 @@ awardRoutes.put(
   async (c) => {
     const eventId = c.req.param("id");
     const input = valid<SetAwardResultInput>(c, "json");
+    // entryId は当該イベントのものに限定（null は解除なのでチェック不要）
+    if (input.entryId != null) {
+      const entry = await entriesRepo.findById(input.entryId);
+      if (!entry || entry.eventId !== eventId) {
+        return c.json({ error: "entry_not_found" }, 404);
+      }
+    }
     if (input.awardRankId) {
+      const rank = await awardsRepo.findRank(input.awardRankId);
+      if (!rank || rank.eventId !== eventId) {
+        return c.json({ error: "rank_not_found" }, 404);
+      }
       await awardsRepo.setRankWinner(eventId, input.awardRankId, input.entryId);
     } else if (input.specialAwardId) {
+      const special = await awardsRepo.findSpecial(input.specialAwardId);
+      if (!special || special.eventId !== eventId) {
+        return c.json({ error: "special_not_found" }, 404);
+      }
       await awardsRepo.setSpecialWinner(eventId, input.specialAwardId, input.entryId);
     } else {
       return c.json({ error: "rank_or_special_required" }, 400);

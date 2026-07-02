@@ -53,7 +53,7 @@ export type Event = z.infer<typeof eventSchema>;
 export const createEventInput = z
   .object({
     title: z.string().min(1).max(200),
-    description: z.string().default(""),
+    description: z.string().max(20000).default(""),
     startsAt: z.number().int().default(0),
     endsAt: z.number().int().default(0),
     venueType: z.enum(VENUE_TYPES),
@@ -75,7 +75,7 @@ export type CreateEventInput = z.infer<typeof createEventInput>;
 
 export const updateEventInput = z.object({
   title: z.string().min(1).max(200).optional(),
-  description: z.string().optional(),
+  description: z.string().max(20000).optional(),
   startsAt: z.number().int().optional(),
   endsAt: z.number().int().optional(),
   venueType: z.enum(VENUE_TYPES).optional(),

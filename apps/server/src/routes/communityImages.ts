@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { COMMUNITY_BANNER, COMMUNITY_ICON } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { getBucket } from "../runtime.js";
+import { normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 
 type Kind = "icon" | "banner";
@@ -22,7 +23,8 @@ export function getCommunityImage(kind: Kind) {
     if (!obj) return c.json({ error: "not_found" }, 404);
     return new Response(obj.body as unknown as ReadableStream, {
       headers: {
-        "Content-Type": obj.httpMetadata?.contentType ?? "image/webp",
+        "Content-Type": safeServeMime(obj.httpMetadata?.contentType ?? "image/webp"),
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "public, max-age=60",
         ETag: etag,
       },
@@ -39,9 +41,12 @@ export function putCommunityImage(kind: Kind) {
     if (!(await communitiesRepo.isManager(id, c.get("user").id))) {
       return c.json({ error: "forbidden" }, 403);
     }
-    const mime = c.req.header("content-type") ?? "";
-    if (!mime.startsWith("image/")) {
+    const mime = normalizeImageMime(c.req.header("content-type"));
+    if (!mime) {
       return c.json({ error: "invalid_content_type" }, 400);
+    }
+    if (Number(c.req.header("content-length") ?? "0") > maxBytes) {
+      return c.json({ error: "too_large", maxBytes }, 413);
     }
     const body = await c.req.arrayBuffer();
     if (body.byteLength === 0) return c.json({ error: "empty_body" }, 400);

@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { EVENT_IMAGE } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { getBucket } from "../runtime.js";
+import { normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventImagesRepo } from "../db/repositories/eventImages.js";
 
@@ -22,7 +23,8 @@ export async function getEventImage(c: Context) {
   if (!obj) return c.json({ error: "not_found" }, 404);
   return new Response(obj.body as unknown as ReadableStream, {
     headers: {
-      "Content-Type": meta.mime,
+      "Content-Type": safeServeMime(meta.mime),
+      "X-Content-Type-Options": "nosniff",
       "Cache-Control": "public, max-age=60",
       ETag: etag,
     },
@@ -36,9 +38,13 @@ export async function putEventImage(c: Context<AppEnv>) {
     return c.json({ error: "not_found" }, 404);
   }
 
-  const mime = c.req.header("content-type") ?? "";
-  if (!mime.startsWith("image/")) {
+  const mime = normalizeImageMime(c.req.header("content-type"));
+  if (!mime) {
     return c.json({ error: "invalid_content_type" }, 400);
+  }
+  const declared = Number(c.req.header("content-length") ?? "0");
+  if (declared > EVENT_IMAGE.maxBytes) {
+    return c.json({ error: "too_large", maxBytes: EVENT_IMAGE.maxBytes }, 413);
   }
   const body = await c.req.arrayBuffer();
   if (body.byteLength === 0) return c.json({ error: "empty_body" }, 400);
