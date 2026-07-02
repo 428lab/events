@@ -50,7 +50,7 @@ export function LoginPage() {
               events lab
             </Typography>
             <Typography color="text.secondary" textAlign="center">
-              アイディアソン・ハッカソン運営ツール
+              募集から配信まで全部やる、イベント運営ツール
             </Typography>
 
             <Stack spacing={1.5} sx={{ width: "100%" }}>
