@@ -16,7 +16,6 @@ import { getCommunityImage } from "./routes/communityImages.js";
 import { deckRoutes } from "./routes/decks.js";
 import { getDeckImage } from "./routes/deckImages.js";
 import { currentUser } from "./auth/session.js";
-import { isAppAdmin } from "./auth/admin.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
 
@@ -59,17 +58,15 @@ api.route("/decks", deckRoutes);
 /**
  * staging ゲート用の無地HTML。サービス名・環境名などは出さず、
  * 中身を悟られないよう最小限のサインインのみ表示する。
+ * Nostr は SPA に入れないと NIP-07 を呼べないため、ここに直接ボタンを置く。
  */
-function stagingGateHtml(loggedInNonAdmin: boolean): string {
+function stagingGateHtml(): string {
   const buttons = PROVIDERS.filter(providerConfigured)
     .map(
       (p) =>
         `<a class="btn" href="/api/auth/${p}/login">${p} でサインイン</a>`,
     )
     .join("");
-  const body = loggedInNonAdmin
-    ? `<p>アクセスできません。</p>`
-    : `<div class="btns">${buttons || '<a class="btn" href="/api/auth/discord/login">サインイン</a>'}</div>`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in</title>
@@ -78,8 +75,32 @@ function stagingGateHtml(loggedInNonAdmin: boolean): string {
 .card{text-align:center;padding:40px}
 p{color:#94A3B8}
 .btns{display:flex;flex-direction:column;gap:12px}
-a.btn{display:inline-block;background:#334155;color:#E2E8F0;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:600;text-transform:capitalize}</style>
-</head><body><div class="card">${body}</div></body></html>`;
+.btn{display:inline-block;background:#334155;color:#E2E8F0;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:600;text-transform:capitalize;border:0;font-size:1rem;font-family:inherit;cursor:pointer}
+#nostr-err{color:#FCA5A5;font-size:.85rem;margin-top:12px}</style>
+</head><body><div class="card"><div class="btns">${buttons}<button class="btn" id="nostr">nostr でサインイン</button></div><div id="nostr-err"></div></div>
+<script>
+document.getElementById("nostr").onclick = async () => {
+  const err = document.getElementById("nostr-err");
+  err.textContent = "";
+  try {
+    if (!window.nostr) { err.textContent = "NIP-07 拡張が見つかりません"; return; }
+    const { challenge } = await (await fetch("/api/auth/nostr/challenge")).json();
+    const event = await window.nostr.signEvent({
+      kind: 22242,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [["relay", location.origin], ["challenge", challenge]],
+      content: "events lab にログイン",
+    });
+    const r = await fetch("/api/auth/nostr/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ event }),
+    });
+    if (!r.ok) { err.textContent = "サインインに失敗しました"; return; }
+    location.reload();
+  } catch { err.textContent = "サインインに失敗しました"; }
+};
+</script></body></html>`;
 }
 
 const app = new Hono();
@@ -101,17 +122,17 @@ app.use("*", async (c, next) => {
   }
 });
 
-// staging: 管理者ログイン限定ゲート（OAuth と health は通す）
+// staging: ログイン必須ゲート（匿名には中身を見せない。OAuth と health は通す）
 app.use("*", async (c, next) => {
   if (!env.isStaging) return next();
   const path = new URL(c.req.url).pathname;
   if (path.startsWith("/api/auth/") || path === "/api/health") return next();
   const user = await currentUser(c);
-  if (user && isAppAdmin(user)) return next();
+  if (user) return next();
   if (path.startsWith("/api/")) {
-    return c.json({ error: "staging_admin_only" }, 403);
+    return c.json({ error: "staging_login_required" }, 403);
   }
-  return c.html(stagingGateHtml(Boolean(user)), 403);
+  return c.html(stagingGateHtml(), 403);
 });
 
 app.route("/api", api);
