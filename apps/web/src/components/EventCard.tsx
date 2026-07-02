@@ -141,8 +141,10 @@ export function EventCard({
               overflow: "hidden",
             }}
           >
-            {formatDateRange(event.startsAt, event.endsAt)} ・{" "}
-            {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
+            {event.scheduling
+              ? "📅 日程調整中"
+              : formatDateRange(event.startsAt, event.endsAt)}{" "}
+            ・ {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
           </Typography>
         </CardContent>
       </CardActionArea>

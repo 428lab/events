@@ -39,6 +39,7 @@ export function CreateEventPage() {
   const [venueOffline, setVenueOffline] = useState("");
   const [venueOnline, setVenueOnline] = useState("");
   const [contestMode, setContestMode] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const [imageMode, setImageMode] = useState<"upload" | "template">("upload");
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -54,21 +55,22 @@ export function CreateEventPage() {
     setImagePreview(null);
   };
 
-  const canSubmit = title && startsAt && endsAt;
+  const canSubmit = title && (scheduling || (startsAt && endsAt));
 
   const submit = () => {
     createEvent.mutate(
       {
         title,
         description,
-        startsAt: toEpoch(startsAt),
-        endsAt: toEpoch(endsAt),
+        startsAt: scheduling ? 0 : toEpoch(startsAt),
+        endsAt: scheduling ? 0 : toEpoch(endsAt),
         venueType,
         venueOffline: venueOffline || null,
         venueOnline: venueOnline || null,
         aggregateSelfEntry: false,
         contestMode,
         communityId: communityId || null,
+        scheduling,
       },
       {
         onSuccess: async ({ event }) => {
@@ -126,24 +128,35 @@ export function CreateEventPage() {
               ))}
             </TextField>
           )}
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <TextField
-              label="開始日時"
-              type="datetime-local"
-              value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-            <TextField
-              label="終了日時"
-              type="datetime-local"
-              value={endsAt}
-              onChange={(e) => setEndsAt(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-          </Stack>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={scheduling}
+                onChange={(e) => setScheduling(e.target.checked)}
+              />
+            }
+            label="日程調整（日程未定で公開。候補日に参加者が○△×で回答）"
+          />
+          {!scheduling && (
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField
+                label="開始日時"
+                type="datetime-local"
+                value={startsAt}
+                onChange={(e) => setStartsAt(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+              />
+              <TextField
+                label="終了日時"
+                type="datetime-local"
+                value={endsAt}
+                onChange={(e) => setEndsAt(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+              />
+            </Stack>
+          )}
           <TextField
             label="会場種別"
             select

@@ -41,6 +41,8 @@ export const eventSchema = z.object({
   participantCount: z.number(),
   /** 所属コミュニティ（任意。無所属は null） */
   communityId: z.string().nullable(),
+  /** 日程調整中（開始/終了日時は未確定。候補日に投票して主催が確定する） */
+  scheduling: z.boolean(),
 });
 export type Event = z.infer<typeof eventSchema>;
 
@@ -48,14 +50,16 @@ export const createEventInput = z
   .object({
     title: z.string().min(1).max(200),
     description: z.string().default(""),
-    startsAt: z.number().int(),
-    endsAt: z.number().int(),
+    startsAt: z.number().int().default(0),
+    endsAt: z.number().int().default(0),
     venueType: z.enum(VENUE_TYPES),
     venueOffline: z.string().max(500).optional().nullable(),
     venueOnline: z.string().max(500).optional().nullable(),
     aggregateSelfEntry: z.boolean().default(false),
     contestMode: z.boolean().default(false),
     communityId: z.string().nullable().optional(),
+    /** 日程未定で公開（日程調整） */
+    scheduling: z.boolean().default(false),
   })
   .refine((v) => v.endsAt >= v.startsAt, {
     message: "endsAt must be >= startsAt",

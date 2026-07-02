@@ -22,6 +22,7 @@ import {
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
+import { SchedulePanel } from "../components/SchedulePanel.js";
 import { UserLink } from "../components/UserLink.js";
 import type { Entry } from "@eventer/shared";
 import {
@@ -215,10 +216,14 @@ export function EventDetailPage() {
           {myRole && <Chip size="small" label={roleLabel[myRole]} />}
         </Stack>
         <Typography color="text.secondary" sx={{ mt: 1 }}>
-          {formatDateRange(event.startsAt, event.endsAt)} ・{" "}
-          {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
+          {event.scheduling
+            ? "📅 日程調整中"
+            : formatDateRange(event.startsAt, event.endsAt)}{" "}
+          ・ {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
         </Typography>
       </Box>
+
+      {event.scheduling && <SchedulePanel eventId={event.id} isStaff={isStaff} />}
 
       {eventImageUrl(event) && (
         <Box

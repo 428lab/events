@@ -23,6 +23,7 @@ interface EventRow {
   image_updated_at: number | null;
   participant_count: number;
   community_id: string | null;
+  scheduling: number;
 }
 
 /** participant_count（確定メンバー数）を含む event の SELECT */
@@ -50,6 +51,7 @@ function toEvent(row: EventRow): Event {
     imageUpdatedAt: row.image_updated_at,
     participantCount: row.participant_count,
     communityId: row.community_id ?? null,
+    scheduling: row.scheduling === 1,
   };
 }
 
@@ -127,8 +129,8 @@ export const eventsRepo = {
   ): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT}
-         WHERE status = 'published' AND ends_at > ?
-         ORDER BY starts_at ASC
+         WHERE status = 'published' AND (scheduling = 1 OR ends_at > ?)
+         ORDER BY scheduling DESC, starts_at ASC
          LIMIT ? OFFSET ?`,
       now,
       limit,
@@ -139,13 +141,13 @@ export const eventsRepo = {
 
   async countUpcomingPublished(now: number): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND ends_at > ?",
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND (scheduling = 1 OR ends_at > ?)",
       now,
     );
     return row?.n ?? 0;
   },
 
-  /** 開催済み（ends_at <= now）の公開イベントを終了が新しい順でページング取得 */
+  /** 開催済み（ends_at <= now・日程調整中は除く）の公開イベントを終了が新しい順で取得 */
   async listPastPublished(
     now: number,
     limit: number,
@@ -153,7 +155,7 @@ export const eventsRepo = {
   ): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT}
-         WHERE status = 'published' AND ends_at <= ?
+         WHERE status = 'published' AND scheduling = 0 AND ends_at <= ?
          ORDER BY ends_at DESC
          LIMIT ? OFFSET ?`,
       now,
@@ -165,7 +167,7 @@ export const eventsRepo = {
 
   async countPastPublished(now: number): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND ends_at <= ?",
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND scheduling = 0 AND ends_at <= ?",
       now,
     );
     return row?.n ?? 0;
@@ -211,13 +213,13 @@ export const eventsRepo = {
         (id, title, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
-         community_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?)`,
+         community_id, scheduling)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?)`,
       id,
       input.title,
       input.description ?? "",
-      input.startsAt,
-      input.endsAt,
+      input.startsAt ?? 0,
+      input.endsAt ?? 0,
       input.venueType,
       input.venueOffline ?? null,
       input.venueOnline ?? null,
@@ -226,6 +228,7 @@ export const eventsRepo = {
       createdBy,
       Date.now(),
       input.communityId ?? null,
+      input.scheduling ? 1 : 0,
     );
     return (await this.findById(id))!;
   },
@@ -259,6 +262,21 @@ export const eventsRepo = {
 
   async setStatus(id: string, status: Event["status"]): Promise<Event | null> {
     await run("UPDATE event SET status = ? WHERE id = ?", status, id);
+    return this.findById(id);
+  },
+
+  /** 日程調整を確定：開始/終了日時を設定し scheduling を解除 */
+  async finalizeDate(
+    id: string,
+    startsAt: number,
+    endsAt: number,
+  ): Promise<Event | null> {
+    await run(
+      "UPDATE event SET starts_at = ?, ends_at = ?, scheduling = 0 WHERE id = ?",
+      startsAt,
+      endsAt,
+      id,
+    );
     return this.findById(id);
   },
 

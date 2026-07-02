@@ -1,19 +1,24 @@
 import { Hono } from "hono";
 import { valid, zValidator } from "../lib/validator.js";
 import {
+  addDateOptionInput,
   createEventInput,
   createSlotInput,
+  finalizeDateInput,
   joinEventInput,
   setMemberSlotStatusInput,
   updateEventInput,
   updateMemberRoleInput,
   updateSlotInput,
   updateSubmissionInput,
+  voteInput,
 } from "@eventer/shared";
 import type {
+  AddDateOptionInput,
   CreateEventInput,
   CreateSlotInput,
   Event,
+  FinalizeDateInput,
   JoinEventInput,
   SetMemberSlotStatusInput,
   UpdateEventInput,
@@ -21,6 +26,7 @@ import type {
   UpdateSlotInput,
   UpdateSubmissionInput,
   User,
+  VoteInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { currentUser, requireAuth } from "../auth/session.js";
@@ -34,6 +40,7 @@ import { participationSlotsRepo } from "../db/repositories/participationSlots.js
 import { usersRepo } from "../db/repositories/users.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
+import { schedulingRepo } from "../db/repositories/scheduling.js";
 import { deleteEventImage, putEventImage } from "./images.js";
 
 export const eventRoutes = new Hono<AppEnv>();
@@ -109,10 +116,92 @@ eventRoutes.get("/:id/slots", async (c) => {
   return c.json({ slots: await participationSlotsRepo.listByEvent(event.id) });
 });
 
+/** 日程調整（候補日と集計。公開イベントは未ログイン可。ログイン時は自分の回答付き） */
+eventRoutes.get("/:id/schedule", async (c) => {
+  const event = await eventsRepo.findById(c.req.param("id"));
+  if (!event) return c.json({ error: "not_found" }, 404);
+  const user = await currentUser(c);
+  if (!(await canView(event, user))) return c.json({ error: "not_found" }, 404);
+  const options = await schedulingRepo.listOptions(event.id);
+  const myVotes = user
+    ? await schedulingRepo.myVotes(event.id, user.id)
+    : {};
+  return c.json({ options, myVotes });
+});
+
 /* =========================================================
  *  ここから認証必須
  * =======================================================*/
 eventRoutes.use("*", requireAuth);
+
+/** 候補日の追加（staff） */
+eventRoutes.post(
+  "/:id/date-options",
+  requireEventRole(["staff"]),
+  zValidator("json", addDateOptionInput),
+  async (c) => {
+    const input = valid<AddDateOptionInput>(c, "json");
+    const id = await schedulingRepo.addOption(
+      c.req.param("id"),
+      input.startsAt,
+      input.endsAt,
+    );
+    return c.json({ id }, 201);
+  },
+);
+
+/** 候補日の削除（staff） */
+eventRoutes.delete(
+  "/:id/date-options/:optionId",
+  requireEventRole(["staff"]),
+  async (c) => {
+    await schedulingRepo.deleteOption(
+      c.req.param("id"),
+      c.req.param("optionId"),
+    );
+    return c.json({ ok: true });
+  },
+);
+
+/** 候補日への回答（ログインユーザー誰でも） */
+eventRoutes.put(
+  "/:id/date-options/:optionId/vote",
+  zValidator("json", voteInput),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const optionId = c.req.param("optionId");
+    if (!(await schedulingRepo.getOption(eventId, optionId))) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    await schedulingRepo.vote(
+      optionId,
+      c.get("user").id,
+      valid<VoteInput>(c, "json").choice,
+    );
+    return c.json({ ok: true });
+  },
+);
+
+/** 日程を確定（staff）。候補の日時をイベント開催日時に設定し調整完了 */
+eventRoutes.post(
+  "/:id/finalize-date",
+  requireEventRole(["staff"]),
+  zValidator("json", finalizeDateInput),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const opt = await schedulingRepo.getOption(
+      eventId,
+      valid<FinalizeDateInput>(c, "json").optionId,
+    );
+    if (!opt) return c.json({ error: "not_found" }, 404);
+    const event = await eventsRepo.finalizeDate(
+      eventId,
+      opt.startsAt,
+      opt.endsAt,
+    );
+    return c.json({ event });
+  },
+);
 
 /** 公開イベント一覧 */
 eventRoutes.get("/", async (c) => {
