@@ -19,6 +19,7 @@ import {
   redirectUri,
 } from "../auth/providers.js";
 import {
+  extractNostrProfile,
   issueNostrChallenge,
   verifyNostrLogin,
   type NostrEvent,
@@ -121,6 +122,25 @@ authRoutes.post("/nostr/login", async (c) => {
     userId = u.id;
   }
   await issueSession(c, userId);
+  return c.json({ ok: true });
+});
+
+/** Nostr の kind:0（プロフィール）を検証して表示名/アイコンを補完。
+ * イベント自体がユーザー署名済みのため、リレー経由でも改ざんできない。 */
+authRoutes.post("/nostr/profile", requireAuth, async (c) => {
+  const user = c.get("user");
+  let body: { event?: NostrEvent };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+  const profile = body.event ? extractNostrProfile(body.event) : null;
+  if (!profile) return c.json({ error: "invalid_event" }, 401);
+  // この pubkey が現在のユーザーに連携されていること
+  const linkedUserId = await identitiesRepo.findUserId("nostr", profile.pubkey);
+  if (linkedUserId !== user.id) return c.json({ error: "forbidden" }, 403);
+  await usersRepo.fillProfile(user.id, profile.name, profile.picture);
   return c.json({ ok: true });
 });
 

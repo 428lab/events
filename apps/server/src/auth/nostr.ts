@@ -54,32 +54,23 @@ async function verifyChallenge(challenge: string): Promise<boolean> {
 const HEX64 = /^[0-9a-f]{64}$/;
 const HEX128 = /^[0-9a-f]{128}$/;
 
-/**
- * NIP-07 で署名されたログインイベント（kind 22242, NIP-42 準拠）を検証し、
- * 正当なら pubkey(hex) を返す。不正なら null。
- */
-export async function verifyNostrLogin(ev: NostrEvent): Promise<string | null> {
+/** NIP-01 イベントの構造・id・schnorr署名を検証（kind は問わない） */
+export function verifyEventSignature(ev: NostrEvent): boolean {
   if (
     !ev ||
     typeof ev.id !== "string" ||
     typeof ev.pubkey !== "string" ||
     typeof ev.sig !== "string" ||
+    typeof ev.kind !== "number" ||
+    typeof ev.created_at !== "number" ||
     !Array.isArray(ev.tags) ||
     typeof ev.content !== "string"
   ) {
-    return null;
+    return false;
   }
-  if (ev.kind !== 22242) return null;
   if (!HEX64.test(ev.id) || !HEX64.test(ev.pubkey) || !HEX128.test(ev.sig)) {
-    return null;
+    return false;
   }
-  // 時刻ずれは10分まで
-  if (Math.abs(Date.now() / 1000 - ev.created_at) > 600) return null;
-
-  // challenge タグの検証（このサーバーが発行した新鮮なものか）
-  const challenge = ev.tags.find((t) => t[0] === "challenge")?.[1];
-  if (!challenge || !(await verifyChallenge(challenge))) return null;
-
   // NIP-01: id = sha256(serialize(event))
   const serialized = JSON.stringify([
     0,
@@ -90,17 +81,51 @@ export async function verifyNostrLogin(ev: NostrEvent): Promise<string | null> {
     ev.content,
   ]);
   const id = bytesToHex(sha256(new TextEncoder().encode(serialized)));
-  if (id !== ev.id) return null;
-
-  // schnorr 署名検証
+  if (id !== ev.id) return false;
   try {
-    if (
-      !schnorr.verify(hexToBytes(ev.sig), hexToBytes(ev.id), hexToBytes(ev.pubkey))
-    ) {
-      return null;
-    }
+    return schnorr.verify(
+      hexToBytes(ev.sig),
+      hexToBytes(ev.id),
+      hexToBytes(ev.pubkey),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * NIP-07 で署名されたログインイベント（kind 22242, NIP-42 準拠）を検証し、
+ * 正当なら pubkey(hex) を返す。不正なら null。
+ */
+export async function verifyNostrLogin(ev: NostrEvent): Promise<string | null> {
+  if (!verifyEventSignature(ev)) return null;
+  if (ev.kind !== 22242) return null;
+  // 時刻ずれは10分まで
+  if (Math.abs(Date.now() / 1000 - ev.created_at) > 600) return null;
+  // challenge タグの検証（このサーバーが発行した新鮮なものか）
+  const challenge = ev.tags.find((t) => t[0] === "challenge")?.[1];
+  if (!challenge || !(await verifyChallenge(challenge))) return null;
+  return ev.pubkey;
+}
+
+/** kind:0（プロフィール）イベントを検証し、名前とアイコンURLを取り出す */
+export function extractNostrProfile(
+  ev: NostrEvent,
+): { pubkey: string; name: string | null; picture: string | null } | null {
+  if (!verifyEventSignature(ev) || ev.kind !== 0) return null;
+  let meta: Record<string, unknown>;
+  try {
+    meta = JSON.parse(ev.content);
   } catch {
     return null;
   }
-  return ev.pubkey;
+  const pick = (v: unknown): string | null =>
+    typeof v === "string" && v.trim() ? v.trim() : null;
+  const name = pick(meta.display_name) ?? pick(meta.name);
+  const rawPicture = pick(meta.picture);
+  const picture =
+    rawPicture && /^https?:\/\//.test(rawPicture) && rawPicture.length <= 500
+      ? rawPicture
+      : null;
+  return { pubkey: ev.pubkey, name, picture };
 }

@@ -148,4 +148,27 @@ export const usersRepo = {
   async setUsername(userId: string, username: string): Promise<void> {
     await run("UPDATE user SET username = ? WHERE id = ?", username, userId);
   },
+
+  /** 表示名/アイコンが未設定の場合のみ補完（Nostrプロフィール等の反映用） */
+  async fillProfile(
+    userId: string,
+    globalName: string | null,
+    avatarUrl: string | null,
+  ): Promise<void> {
+    await run(
+      `UPDATE user SET
+         global_name = CASE
+           WHEN (global_name IS NULL OR global_name = '') AND ? IS NOT NULL THEN ?
+           ELSE global_name END,
+         avatar_url = CASE
+           WHEN (avatar_url IS NULL OR avatar_url = '') AND ? IS NOT NULL THEN ?
+           ELSE avatar_url END
+       WHERE id = ?`,
+      globalName,
+      globalName,
+      avatarUrl,
+      avatarUrl,
+      userId,
+    );
+  },
 };
