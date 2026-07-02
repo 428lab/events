@@ -25,6 +25,8 @@ export const scheduleViewSchema = z.object({
   options: z.array(dateOptionSchema),
   /** 閲覧者自身の回答（optionId → choice） */
   myVotes: z.record(z.string(), z.enum(VOTE_CHOICES)),
+  /** 回答者を匿名にする（true のとき voters は常に空） */
+  anonymous: z.boolean(),
 });
 export type ScheduleView = z.infer<typeof scheduleViewSchema>;
 

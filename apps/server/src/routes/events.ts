@@ -126,7 +126,13 @@ eventRoutes.get("/:id/schedule", async (c) => {
   const myVotes = user
     ? await schedulingRepo.myVotes(event.id, user.id)
     : {};
-  return c.json({ options, myVotes });
+  // 匿名設定時は回答者情報をサーバー側で落とす（クライアントから覗けない）
+  const anonymous = event.scheduleAnonymous;
+  return c.json({
+    options: anonymous ? options.map((o) => ({ ...o, voters: [] })) : options,
+    myVotes,
+    anonymous,
+  });
 });
 
 /* =========================================================

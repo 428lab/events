@@ -43,6 +43,8 @@ export const eventSchema = z.object({
   communityId: z.string().nullable(),
   /** 日程調整中（開始/終了日時は未確定。候補日に投票して主催が確定する） */
   scheduling: z.boolean(),
+  /** 日程調整の回答者を匿名にする（人数のみ表示） */
+  scheduleAnonymous: z.boolean(),
 });
 export type Event = z.infer<typeof eventSchema>;
 
@@ -60,6 +62,8 @@ export const createEventInput = z
     communityId: z.string().nullable().optional(),
     /** 日程未定で公開（日程調整） */
     scheduling: z.boolean().default(false),
+    /** 日程調整の回答者を匿名にする */
+    scheduleAnonymous: z.boolean().default(false),
   })
   .refine((v) => v.endsAt >= v.startsAt, {
     message: "endsAt must be >= startsAt",
@@ -79,6 +83,7 @@ export const updateEventInput = z.object({
   contestMode: z.boolean().optional(),
   status: z.enum(["draft", "published"]).optional(),
   communityId: z.string().nullable().optional(),
+  scheduleAnonymous: z.boolean().optional(),
 });
 export type UpdateEventInput = z.infer<typeof updateEventInput>;
 

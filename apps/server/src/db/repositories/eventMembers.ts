@@ -195,6 +195,7 @@ function mapMyEventSummary(
     participantCount: (row.participant_count as number) ?? 0,
     communityId: (row.community_id as string | null) ?? null,
     scheduling: (row.scheduling as number) === 1,
+    scheduleAnonymous: (row.schedule_anonymous as number) === 1,
     myRole: row.my_role as EventRole,
   };
 }

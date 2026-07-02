@@ -40,6 +40,7 @@ export function CreateEventPage() {
   const [venueOnline, setVenueOnline] = useState("");
   const [contestMode, setContestMode] = useState(false);
   const [scheduling, setScheduling] = useState(false);
+  const [scheduleAnonymous, setScheduleAnonymous] = useState(false);
   const [imageMode, setImageMode] = useState<"upload" | "template">("upload");
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -71,6 +72,7 @@ export function CreateEventPage() {
         contestMode,
         communityId: communityId || null,
         scheduling,
+        scheduleAnonymous: scheduling ? scheduleAnonymous : false,
       },
       {
         onSuccess: async ({ event }) => {
@@ -137,6 +139,18 @@ export function CreateEventPage() {
             }
             label="日程調整（日程未定で公開。候補日に参加者が○△×で回答）"
           />
+          {scheduling && (
+            <FormControlLabel
+              sx={{ ml: 3 }}
+              control={
+                <Switch
+                  checked={scheduleAnonymous}
+                  onChange={(e) => setScheduleAnonymous(e.target.checked)}
+                />
+              }
+              label="回答者を匿名にする（人数のみ表示。大人数向け）"
+            />
+          )}
           {!scheduling && (
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField

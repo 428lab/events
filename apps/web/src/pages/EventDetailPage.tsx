@@ -223,7 +223,13 @@ export function EventDetailPage() {
         </Typography>
       </Box>
 
-      {event.scheduling && <SchedulePanel eventId={event.id} isStaff={isStaff} />}
+      {event.scheduling && (
+        <SchedulePanel
+          eventId={event.id}
+          isStaff={isStaff}
+          anonymous={event.scheduleAnonymous}
+        />
+      )}
 
       {eventImageUrl(event) && (
         <Box

@@ -6,19 +6,23 @@ import {
   Card,
   CardContent,
   Divider,
+  FormControlLabel,
   IconButton,
   Stack,
+  Switch,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
+import { useQueryClient } from "@tanstack/react-query";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import type { VoteChoice } from "@eventer/shared";
-import { useMe } from "../api/hooks.js";
+import { useMe, useUpdateEvent } from "../api/hooks.js";
+import { UserLink } from "./UserLink.js";
 import {
   useAddDateOption,
   useDeleteDateOption,
@@ -161,9 +165,11 @@ function MiniCalendar({
 export function SchedulePanel({
   eventId,
   isStaff,
+  anonymous,
 }: {
   eventId: string;
   isStaff: boolean;
+  anonymous: boolean;
 }) {
   const { data: me } = useMe();
   const { data, isLoading } = useEventSchedule(eventId);
@@ -171,6 +177,8 @@ export function SchedulePanel({
   const addOption = useAddDateOption(eventId);
   const delOption = useDeleteDateOption(eventId);
   const finalize = useFinalizeDate(eventId);
+  const updateEvent = useUpdateEvent(eventId);
+  const qc = useQueryClient();
 
   // 時間帯は1回指定、日付はカレンダーで複数選択→一括追加
   const [startTime, setStartTime] = useState("19:00");
@@ -234,62 +242,101 @@ export function SchedulePanel({
         ) : (
           <Stack spacing={1.5}>
             {data.options.map((o) => (
-              <Box
-                key={o.id}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  flexWrap: "wrap",
-                }}
-              >
-                <Box sx={{ flex: 1, minWidth: 180 }}>
-                  <Typography fontWeight={600}>
-                    {formatDateRange(o.startsAt, o.endsAt)}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    ○ {o.counts.yes} ・ △ {o.counts.maybe} ・ × {o.counts.no}
-                  </Typography>
-                </Box>
-                {me && (
-                  <ToggleButtonGroup
-                    size="small"
-                    exclusive
-                    value={data.myVotes[o.id] ?? null}
-                    onChange={(_e, v) =>
-                      v && vote.mutate({ optionId: o.id, choice: v })
-                    }
-                  >
-                    {CHOICES.map((ch) => (
-                      <ToggleButton key={ch.value} value={ch.value}>
-                        {ch.label}
-                      </ToggleButton>
-                    ))}
-                  </ToggleButtonGroup>
-                )}
-                {isStaff && (
-                  <>
-                    <Button
+              <Box key={o.id}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Box sx={{ flex: 1, minWidth: 180 }}>
+                    <Typography fontWeight={600}>
+                      {formatDateRange(o.startsAt, o.endsAt)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      ○ {o.counts.yes} ・ △ {o.counts.maybe} ・ × {o.counts.no}
+                    </Typography>
+                  </Box>
+                  {me && (
+                    <ToggleButtonGroup
                       size="small"
-                      variant="outlined"
-                      color="secondary"
-                      disabled={finalize.isPending}
-                      onClick={() => {
-                        if (window.confirm("この日程に決定しますか？"))
-                          finalize.mutate(o.id);
-                      }}
+                      exclusive
+                      value={data.myVotes[o.id] ?? null}
+                      onChange={(_e, v) =>
+                        v && vote.mutate({ optionId: o.id, choice: v })
+                      }
                     >
-                      この日程に決定
-                    </Button>
-                    <Tooltip title="候補を削除">
-                      <IconButton
+                      {CHOICES.map((ch) => (
+                        <ToggleButton key={ch.value} value={ch.value}>
+                          {ch.label}
+                        </ToggleButton>
+                      ))}
+                    </ToggleButtonGroup>
+                  )}
+                  {isStaff && (
+                    <>
+                      <Button
                         size="small"
-                        onClick={() => delOption.mutate(o.id)}
+                        variant="outlined"
+                        color="secondary"
+                        disabled={finalize.isPending}
+                        onClick={() => {
+                          if (window.confirm("この日程に決定しますか？"))
+                            finalize.mutate(o.id);
+                        }}
                       >
-                        <DeleteOutlineIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </>
+                        この日程に決定
+                      </Button>
+                      <Tooltip title="候補を削除">
+                        <IconButton
+                          size="small"
+                          onClick={() => delOption.mutate(o.id)}
+                        >
+                          <DeleteOutlineIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </>
+                  )}
+                </Box>
+                {/* 回答者一覧（匿名でない場合のみ。○△×ごとに表示） */}
+                {!anonymous && o.voters.length > 0 && (
+                  <Stack spacing={0.25} sx={{ mt: 0.5, pl: 0.5 }}>
+                    {CHOICES.map((ch) => {
+                      const vs = o.voters.filter((v) => v.choice === ch.value);
+                      if (vs.length === 0) return null;
+                      return (
+                        <Stack
+                          key={ch.value}
+                          direction="row"
+                          spacing={1}
+                          alignItems="center"
+                          flexWrap="wrap"
+                          useFlexGap
+                        >
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ width: 14, flexShrink: 0 }}
+                          >
+                            {ch.label}
+                          </Typography>
+                          {vs.map((v) => (
+                            <UserLink
+                              key={v.userId}
+                              username={v.username}
+                              name={v.name}
+                              avatarUrl={v.avatarUrl}
+                              withAvatar
+                              avatarSize={18}
+                              sx={{ fontSize: 12 }}
+                            />
+                          ))}
+                        </Stack>
+                      );
+                    })}
+                  </Stack>
                 )}
               </Box>
             ))}
@@ -302,10 +349,40 @@ export function SchedulePanel({
           </Alert>
         )}
 
+        {anonymous && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", mt: 1 }}
+          >
+            回答は匿名です（人数のみ表示）。
+          </Typography>
+        )}
+
         {isStaff && (
           <>
             <Divider sx={{ my: 2 }} />
-            <Typography variant="subtitle2" gutterBottom>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={anonymous}
+                  disabled={updateEvent.isPending}
+                  onChange={(e) =>
+                    updateEvent.mutate(
+                      { scheduleAnonymous: e.target.checked },
+                      {
+                        onSuccess: () =>
+                          qc.invalidateQueries({
+                            queryKey: ["eventSchedule", eventId],
+                          }),
+                      },
+                    )
+                  }
+                />
+              }
+              label="回答者を匿名にする（誰がどれを選んだか表示しない）"
+            />
+            <Typography variant="subtitle2" gutterBottom sx={{ mt: 1 }}>
               候補日を追加
             </Typography>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>

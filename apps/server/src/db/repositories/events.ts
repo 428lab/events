@@ -24,6 +24,7 @@ interface EventRow {
   participant_count: number;
   community_id: string | null;
   scheduling: number;
+  schedule_anonymous: number;
 }
 
 /** participant_count（確定メンバー数）を含む event の SELECT */
@@ -52,6 +53,7 @@ function toEvent(row: EventRow): Event {
     participantCount: row.participant_count,
     communityId: row.community_id ?? null,
     scheduling: row.scheduling === 1,
+    scheduleAnonymous: row.schedule_anonymous === 1,
   };
 }
 
@@ -213,8 +215,8 @@ export const eventsRepo = {
         (id, title, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
-         community_id, scheduling)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?)`,
+         community_id, scheduling, schedule_anonymous)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?)`,
       id,
       input.title,
       input.description ?? "",
@@ -229,6 +231,7 @@ export const eventsRepo = {
       Date.now(),
       input.communityId ?? null,
       input.scheduling ? 1 : 0,
+      input.scheduleAnonymous ? 1 : 0,
     );
     return (await this.findById(id))!;
   },
@@ -242,7 +245,7 @@ export const eventsRepo = {
          title = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
-         community_id = ?
+         community_id = ?, schedule_anonymous = ?
        WHERE id = ?`,
       next.title,
       next.description,
@@ -255,6 +258,7 @@ export const eventsRepo = {
       next.contestMode ? 1 : 0,
       next.status,
       next.communityId ?? null,
+      next.scheduleAnonymous ? 1 : 0,
       id,
     );
     return this.findById(id);
