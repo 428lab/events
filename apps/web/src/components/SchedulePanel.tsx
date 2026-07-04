@@ -198,9 +198,12 @@ export function SchedulePanel({
     return s;
   }, [data]);
 
-  // ○が最多の候補（同率含む）をハイライトする（調整さん風）
-  const maxYes = useMemo(() => {
-    const m = Math.max(0, ...(data?.options ?? []).map((o) => o.counts.yes));
+  // 参加見込みが最多の候補（同率含む）をハイライトする。
+  // 調整さんと同じ重み付け: ○=1、△=0.5
+  const optionScore = (o: { counts: { yes: number; maybe: number } }) =>
+    o.counts.yes + o.counts.maybe * 0.5;
+  const maxScore = useMemo(() => {
+    const m = Math.max(0, ...(data?.options ?? []).map(optionScore));
     return m > 0 ? m : null;
   }, [data]);
 
@@ -251,7 +254,7 @@ export function SchedulePanel({
         ) : (
           <Stack spacing={1.5}>
             {data.options.map((o) => {
-              const isTop = maxYes !== null && o.counts.yes === maxYes;
+              const isTop = maxScore !== null && optionScore(o) === maxScore;
               return (
               <Box
                 key={o.id}
