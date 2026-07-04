@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   Divider,
   FormControlLabel,
   IconButton,
@@ -15,6 +16,7 @@ import {
   ToggleButtonGroup,
   Tooltip,
   Typography,
+  alpha,
 } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
@@ -196,6 +198,12 @@ export function SchedulePanel({
     return s;
   }, [data]);
 
+  // ○が最多の候補（同率含む）をハイライトする（調整さん風）
+  const maxYes = useMemo(() => {
+    const m = Math.max(0, ...(data?.options ?? []).map((o) => o.counts.yes));
+    return m > 0 ? m : null;
+  }, [data]);
+
   const toggleDay = (key: string) =>
     setSelectedDays((prev) => {
       const next = new Set(prev);
@@ -242,8 +250,25 @@ export function SchedulePanel({
           </Typography>
         ) : (
           <Stack spacing={1.5}>
-            {data.options.map((o) => (
-              <Box key={o.id}>
+            {data.options.map((o) => {
+              const isTop = maxYes !== null && o.counts.yes === maxYes;
+              return (
+              <Box
+                key={o.id}
+                sx={
+                  isTop
+                    ? {
+                        bgcolor: (t) => alpha(t.palette.warning.main, 0.12),
+                        border: 1,
+                        borderColor: (t) => alpha(t.palette.warning.main, 0.5),
+                        borderRadius: 1.5,
+                        px: 1,
+                        py: 0.75,
+                        mx: -1,
+                      }
+                    : undefined
+                }
+              >
                 <Box
                   sx={{
                     display: "flex",
@@ -253,11 +278,35 @@ export function SchedulePanel({
                   }}
                 >
                   <Box sx={{ flex: 1, minWidth: 180 }}>
-                    <Typography fontWeight={600}>
-                      {formatDateRange(o.startsAt, o.endsAt)}
-                    </Typography>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography fontWeight={600}>
+                        {formatDateRange(o.startsAt, o.endsAt)}
+                      </Typography>
+                      {isTop && (
+                        <Chip
+                          size="small"
+                          color="warning"
+                          variant="outlined"
+                          label="★ 参加最多"
+                          sx={{ fontWeight: 700 }}
+                        />
+                      )}
+                    </Stack>
                     <Typography variant="caption" color="text.secondary">
-                      ○ {o.counts.yes} ・ △ {o.counts.maybe} ・ × {o.counts.no}
+                      {isTop ? (
+                        <Box
+                          component="span"
+                          sx={{ color: "warning.main", fontWeight: 700 }}
+                        >
+                          ○ {o.counts.yes}
+                        </Box>
+                      ) : (
+                        <>○ {o.counts.yes}</>
+                      )}
+                      {" ・ △ "}
+                      {o.counts.maybe}
+                      {" ・ × "}
+                      {o.counts.no}
                     </Typography>
                   </Box>
                   {me && (
@@ -340,7 +389,8 @@ export function SchedulePanel({
                   </Stack>
                 )}
               </Box>
-            ))}
+              );
+            })}
           </Stack>
         )}
 
