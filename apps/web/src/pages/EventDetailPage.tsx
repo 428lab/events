@@ -35,7 +35,6 @@ import {
   useJoinEvent,
   useLeaveEvent,
   usePublishEvent,
-  useIsAdmin,
   useMe,
   useUpdateSubmission,
 } from "../api/hooks.js";
@@ -107,9 +106,10 @@ export function EventDetailPage() {
   const { id = "" } = useParams();
   const { data: me } = useMe();
   const { data, isLoading, isError } = useEvent(id);
-  const isAdmin = useIsAdmin();
   const isMember = Boolean(data?.myRole);
-  const isStaff = data?.myRole === "staff" || isAdmin;
+  // アプリ管理者でも、このページでは自分のロールどおりに表示する
+  // （他人のイベントでは一般参加者と同じ見え方にする）
+  const isStaff = data?.myRole === "staff";
   const { data: members } = useEventMembers(id, true);
   const { data: slots } = useEventSlots(id);
   const { data: entries } = useEventEntries(id);
@@ -386,7 +386,7 @@ export function EventDetailPage() {
         ) : null}
       </Stack>
 
-      {contest && (isMember || isAdmin) && state && !state.scoringLocked && (
+      {contest && isMember && state && !state.scoringLocked && (
         <Alert
           severity="info"
           sx={{ alignItems: "center", "& .MuiAlert-message": { flex: 1 } }}
@@ -413,7 +413,7 @@ export function EventDetailPage() {
         />
       )}
 
-      {(isMember || isAdmin) && (
+      {isMember && (
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           {contest && state && state.mode !== "normal" && (
             <Chip
