@@ -39,6 +39,7 @@ import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
+import { formatDateRangeJa } from "../lib/dateFormat.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { schedulingRepo } from "../db/repositories/scheduling.js";
 import { deleteEventImage, putEventImage } from "./images.js";
@@ -169,13 +170,16 @@ eventRoutes.delete(
   },
 );
 
-/** 候補日への回答（ログインユーザー誰でも） */
+/** 候補日への回答（ログインユーザー誰でも。確定後は不可） */
 eventRoutes.put(
   "/:id/date-options/:optionId/vote",
   zValidator("json", voteInput),
   async (c) => {
     const eventId = c.req.param("id");
     const optionId = c.req.param("optionId");
+    const event = await eventsRepo.findById(eventId);
+    if (!event) return c.json({ error: "not_found" }, 404);
+    if (!event.scheduling) return c.json({ error: "schedule_finalized" }, 409);
     if (!(await schedulingRepo.getOption(eventId, optionId))) {
       return c.json({ error: "not_found" }, 404);
     }
@@ -205,6 +209,21 @@ eventRoutes.post(
       opt.startsAt,
       opt.endsAt,
     );
+    // 日程調整の回答者へ確定を通知（確定操作をした本人は除く）
+    if (event) {
+      const me = c.get("user").id;
+      const when = formatDateRangeJa(opt.startsAt, opt.endsAt);
+      for (const userId of await schedulingRepo.listVoterIds(eventId)) {
+        if (userId === me) continue;
+        await notificationsRepo.create(
+          userId,
+          "schedule_finalized",
+          "日程が確定しました",
+          `「${event.title}」の開催日時が ${when} に決定しました`,
+          `/events/${eventId}`,
+        );
+      }
+    }
     return c.json({ event });
   },
 );

@@ -169,10 +169,16 @@ export function SchedulePanel({
   eventId,
   isStaff,
   anonymous,
+  finalized,
+  visible,
 }: {
   eventId: string;
   isStaff: boolean;
   anonymous: boolean;
+  /** 日程確定済み（結果の閲覧のみ。回答・候補編集は不可） */
+  finalized: boolean;
+  /** 確定後も結果を表示する設定（主催者がオンオフ） */
+  visible: boolean;
 }) {
   const { data: me } = useMe();
   const { data, isLoading } = useEventSchedule(eventId);
@@ -234,15 +240,30 @@ export function SchedulePanel({
     }
   };
 
+  // 確定済み: 候補が無い（＝日程調整を使っていない）イベントや、
+  // 表示オフのイベントでは何も出さない（主催者には設定用に表示する）
+  if (finalized) {
+    if (isLoading || !data || data.options.length === 0) return null;
+    if (!visible && !isStaff) return null;
+  }
+
   return (
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          📅 日程調整
+          {finalized ? "📅 日程調整の結果" : "📅 日程調整"}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          候補日ごとに ○（参加）/△（未定）/×（不可）で回答してください。
+          {finalized
+            ? "日程は確定済みです。回答の変更はできません。"
+            : "候補日ごとに ○（参加）/△（未定）/×（不可）で回答してください。"}
         </Typography>
+
+        {finalized && isStaff && !visible && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            この結果は現在あなた（スタッフ）にしか表示されていません。
+          </Alert>
+        )}
 
         {isLoading || !data ? (
           <Typography>読み込み中…</Typography>
@@ -312,7 +333,7 @@ export function SchedulePanel({
                       {o.counts.no}
                     </Typography>
                   </Box>
-                  {me && (
+                  {me && !finalized && (
                     <ToggleButtonGroup
                       size="small"
                       exclusive
@@ -328,7 +349,7 @@ export function SchedulePanel({
                       ))}
                     </ToggleButtonGroup>
                   )}
-                  {isStaff && (
+                  {isStaff && !finalized && (
                     <>
                       <Button
                         size="small"
@@ -397,7 +418,7 @@ export function SchedulePanel({
           </Stack>
         )}
 
-        {!me && (
+        {!me && !finalized && (
           <Alert
             severity="info"
             sx={{ mt: 2 }}
@@ -426,7 +447,25 @@ export function SchedulePanel({
           </Typography>
         )}
 
-        {isStaff && (
+        {isStaff && finalized && (
+          <>
+            <Divider sx={{ my: 2 }} />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={visible}
+                  disabled={updateEvent.isPending}
+                  onChange={(e) =>
+                    updateEvent.mutate({ scheduleVisible: e.target.checked })
+                  }
+                />
+              }
+              label="日程調整の結果をみんなに表示する（回答してくれた人の一覧など）"
+            />
+          </>
+        )}
+
+        {isStaff && !finalized && (
           <>
             <Divider sx={{ my: 2 }} />
             <FormControlLabel

@@ -221,11 +221,17 @@ export function EventDetailPage() {
             <ShareButton slug={event.slug} title={event.title} />
           )}
         </Stack>
-        <Typography color="text.secondary" sx={{ mt: 1 }}>
+        <Typography
+          variant="h6"
+          fontWeight={700}
+          sx={{ mt: 1, color: event.scheduling ? "warning.main" : "primary.main" }}
+        >
           {event.scheduling
-            ? "📅 日程調整中"
-            : formatDateRange(event.startsAt, event.endsAt)}{" "}
-          ・ {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
+            ? "📅 日程調整中（開催日時は未定）"
+            : `📅 ${formatDateRange(event.startsAt, event.endsAt)}`}
+        </Typography>
+        <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+          {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
         </Typography>
       </Box>
 
@@ -247,13 +253,15 @@ export function EventDetailPage() {
         </Alert>
       )}
 
-      {event.scheduling && (
-        <SchedulePanel
-          eventId={event.id}
-          isStaff={isStaff}
-          anonymous={event.scheduleAnonymous}
-        />
-      )}
+      {/* 調整中は常に表示。確定後は候補があり表示オンなら結果を表示（パネル側で判定） */}
+      <SchedulePanel
+        eventId={event.id}
+        isStaff={isStaff}
+        anonymous={event.scheduleAnonymous}
+        finalized={!event.scheduling}
+        visible={event.scheduleVisible}
+      />
+
 
       {eventImageUrl(event) && (
         <Box

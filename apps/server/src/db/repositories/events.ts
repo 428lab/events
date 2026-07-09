@@ -25,6 +25,7 @@ interface EventRow {
   community_id: string | null;
   scheduling: number;
   schedule_anonymous: number;
+  schedule_visible: number;
   slug: string | null;
 }
 
@@ -55,6 +56,7 @@ function toEvent(row: EventRow): Event {
     communityId: row.community_id ?? null,
     scheduling: row.scheduling === 1,
     scheduleAnonymous: row.schedule_anonymous === 1,
+    scheduleVisible: row.schedule_visible === 1,
     slug: row.slug ?? "",
   };
 }
@@ -281,7 +283,7 @@ export const eventsRepo = {
          title = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
-         community_id = ?, schedule_anonymous = ?
+         community_id = ?, schedule_anonymous = ?, schedule_visible = ?
        WHERE id = ?`,
       next.title,
       next.description,
@@ -295,6 +297,7 @@ export const eventsRepo = {
       next.status,
       next.communityId ?? null,
       next.scheduleAnonymous ? 1 : 0,
+      next.scheduleVisible ? 1 : 0,
       id,
     );
     return this.findById(id);

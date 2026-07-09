@@ -106,6 +106,17 @@ export const schedulingRepo = {
     return row ? { startsAt: row.starts_at, endsAt: row.ends_at } : null;
   },
 
+  /** このイベントの日程調整に回答した全ユーザーID（確定通知用） */
+  async listVoterIds(eventId: string): Promise<string[]> {
+    const rows = await many<{ user_id: string }>(
+      `SELECT DISTINCT v.user_id FROM event_date_vote v
+       JOIN event_date_option o ON o.id = v.option_id
+       WHERE o.event_id = ?`,
+      eventId,
+    );
+    return rows.map((r) => r.user_id);
+  },
+
   async vote(
     optionId: string,
     userId: string,

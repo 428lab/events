@@ -8,6 +8,7 @@ export const NOTIFICATION_TYPES = [
   "award",
   "inquiry_reply",
   "inquiry_new",
+  "schedule_finalized",
   "info",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

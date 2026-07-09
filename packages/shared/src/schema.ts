@@ -45,6 +45,8 @@ export const eventSchema = z.object({
   scheduling: z.boolean(),
   /** 日程調整の回答者を匿名にする（人数のみ表示） */
   scheduleAnonymous: z.boolean(),
+  /** 日程確定後も日程調整の結果を表示する（主催者がオンオフ可能） */
+  scheduleVisible: z.boolean(),
   /** 短いシェアURL用スラッグ（/e/:slug） */
   slug: z.string(),
 });
@@ -86,6 +88,7 @@ export const updateEventInput = z.object({
   status: z.enum(["draft", "published"]).optional(),
   communityId: z.string().nullable().optional(),
   scheduleAnonymous: z.boolean().optional(),
+  scheduleVisible: z.boolean().optional(),
 });
 export type UpdateEventInput = z.infer<typeof updateEventInput>;
 
