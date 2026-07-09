@@ -171,6 +171,8 @@ export function SchedulePanel({
   anonymous,
   finalized,
   visible,
+  eventStartsAt,
+  eventEndsAt,
 }: {
   eventId: string;
   isStaff: boolean;
@@ -179,6 +181,9 @@ export function SchedulePanel({
   finalized: boolean;
   /** 確定後も結果を表示する設定（主催者がオンオフ） */
   visible: boolean;
+  /** イベントの開催日時（確定した候補の照合用） */
+  eventStartsAt: number;
+  eventEndsAt: number;
 }) {
   const { data: me } = useMe();
   const { data, isLoading } = useEventSchedule(eventId);
@@ -276,21 +281,36 @@ export function SchedulePanel({
           <Stack spacing={1.5}>
             {data.options.map((o) => {
               const isTop = maxScore !== null && optionScore(o) === maxScore;
+              // 確定した候補（イベントの開催日時と一致）は緑で最優先表示
+              const isDecided =
+                finalized &&
+                o.startsAt === eventStartsAt &&
+                o.endsAt === eventEndsAt;
               return (
               <Box
                 key={o.id}
                 sx={
-                  isTop
+                  isDecided
                     ? {
-                        bgcolor: (t) => alpha(t.palette.warning.main, 0.12),
-                        border: 1,
-                        borderColor: (t) => alpha(t.palette.warning.main, 0.5),
+                        bgcolor: (t) => alpha(t.palette.success.main, 0.14),
+                        border: 2,
+                        borderColor: "success.main",
                         borderRadius: 1.5,
                         px: 1,
                         py: 0.75,
                         mx: -1,
                       }
-                    : undefined
+                    : isTop
+                      ? {
+                          bgcolor: (t) => alpha(t.palette.warning.main, 0.12),
+                          border: 1,
+                          borderColor: (t) => alpha(t.palette.warning.main, 0.5),
+                          borderRadius: 1.5,
+                          px: 1,
+                          py: 0.75,
+                          mx: -1,
+                        }
+                      : undefined
                 }
               >
                 <Box
@@ -306,6 +326,14 @@ export function SchedulePanel({
                       <Typography fontWeight={600}>
                         {formatDateRange(o.startsAt, o.endsAt)}
                       </Typography>
+                      {isDecided && (
+                        <Chip
+                          size="small"
+                          color="success"
+                          label="✓ この日程に決定"
+                          sx={{ fontWeight: 700 }}
+                        />
+                      )}
                       {isTop && (
                         <Chip
                           size="small"

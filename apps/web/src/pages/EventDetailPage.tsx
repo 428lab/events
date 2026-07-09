@@ -260,6 +260,8 @@ export function EventDetailPage() {
         anonymous={event.scheduleAnonymous}
         finalized={!event.scheduling}
         visible={event.scheduleVisible}
+        eventStartsAt={event.startsAt}
+        eventEndsAt={event.endsAt}
       />
 
 
