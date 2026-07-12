@@ -23,6 +23,7 @@ import { Link as RouterLink } from "react-router-dom";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import { isHoliday } from "japanese-holidays";
 import type { VoteChoice } from "@eventer/shared";
 import { useMe, useUpdateEvent } from "../api/hooks.js";
 import { UserLink } from "./UserLink.js";
@@ -33,7 +34,6 @@ import {
   useFinalizeDate,
   useVoteDateOption,
 } from "../api/scheduleHooks.js";
-import { formatDateRange } from "../lib/format.js";
 
 const CHOICES: { value: VoteChoice; label: string }[] = [
   { value: "yes", label: "○" },
@@ -45,6 +45,50 @@ const dateKey = (y: number, m: number, d: number) =>
   `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** 曜日・祝日に応じた文字色（日曜・祝日=赤、土曜=青） */
+function dayColor(dow: number, holiday: string | undefined): string | undefined {
+  if (holiday || dow === 0) return "error.main";
+  if (dow === 6) return "primary.main";
+  return undefined;
+}
+
+const fmtDate = new Intl.DateTimeFormat("ja-JP", {
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+});
+const fmtTime = new Intl.DateTimeFormat("ja-JP", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/** 候補日を「2026/7/20（月・海の日）19:00 〜 21:00」形式で表示 */
+function OptionDate({ startsAt, endsAt }: { startsAt: number; endsAt: number }) {
+  const s = new Date(startsAt);
+  const e = new Date(endsAt);
+  const holiday = isHoliday(s);
+  const sameDay =
+    s.getFullYear() === e.getFullYear() &&
+    s.getMonth() === e.getMonth() &&
+    s.getDate() === e.getDate();
+  return (
+    <Typography fontWeight={600} component="span">
+      {fmtDate.format(s)}
+      <Box
+        component="span"
+        sx={{ color: dayColor(s.getDay(), holiday) ?? "text.secondary", mx: 0.25 }}
+      >
+        （{WEEKDAYS[s.getDay()]}
+        {holiday ? `・${holiday}` : ""}）
+      </Box>
+      {fmtTime.format(s)} 〜{" "}
+      {sameDay
+        ? fmtTime.format(e)
+        : `${fmtDate.format(e)}（${WEEKDAYS[e.getDay()]}）${fmtTime.format(e)}`}
+    </Typography>
+  );
+}
 
 /** 月グリッドのミニカレンダー。日付タップで複数選択（過去は不可）。候補あり日はドット表示 */
 function MiniCalendar({
@@ -121,7 +165,8 @@ function MiniCalendar({
           const date = new Date(y, m, d);
           const past = date < today;
           const isSel = selected.has(key);
-          return (
+          const holiday = isHoliday(date);
+          const cell = (
             <Box
               key={key}
               onClick={() => !past && onToggle(key)}
@@ -135,7 +180,9 @@ function MiniCalendar({
                 cursor: past ? "default" : "pointer",
                 opacity: past ? 0.35 : 1,
                 bgcolor: isSel ? "primary.main" : "transparent",
-                color: isSel ? "primary.contrastText" : "text.primary",
+                color: isSel
+                  ? "primary.contrastText"
+                  : (dayColor(date.getDay(), holiday) ?? "text.primary"),
                 "&:hover": past
                   ? undefined
                   : { bgcolor: isSel ? "primary.main" : "action.hover" },
@@ -158,6 +205,13 @@ function MiniCalendar({
                 />
               )}
             </Box>
+          );
+          return holiday ? (
+            <Tooltip key={key} title={holiday}>
+              {cell}
+            </Tooltip>
+          ) : (
+            cell
           );
         })}
       </Box>
@@ -322,10 +376,14 @@ export function SchedulePanel({
                   }}
                 >
                   <Box sx={{ flex: 1, minWidth: 180 }}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography fontWeight={600}>
-                        {formatDateRange(o.startsAt, o.endsAt)}
-                      </Typography>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
+                      <OptionDate startsAt={o.startsAt} endsAt={o.endsAt} />
                       {isDecided && (
                         <Chip
                           size="small"
