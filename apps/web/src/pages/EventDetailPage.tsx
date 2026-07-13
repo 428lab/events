@@ -467,6 +467,15 @@ export function EventDetailPage() {
               編集
             </Button>
           )}
+          {isStaff && (
+            <Button
+              variant="outlined"
+              component={RouterLink}
+              to={`/events/${id}/live/control`}
+            >
+              🎬 配信
+            </Button>
+          )}
           {contest && isStaff && (
             <>
               <Button variant="outlined" component={RouterLink} to={`/events/${id}/control`}>

@@ -125,18 +125,20 @@ export type UpdateEventLiveStateInput = z.infer<typeof updateEventLiveStateInput
 
 /** ---- デフォルトテンプレート ----
  * ゼロ設定でも配信できるよう、新規セット作成時にこのシーン一式を複製する。
+ * イベントで配信セット未選択のときも読み取り専用の既定セットとして使うため、
+ * ID は固定（毎回同じ）にしてポーリング間で安定させる。
  * 色は DESIGN.md（Natsumatsuri）の夜空ダーク＋提灯ティール。 */
 
-// shared は DOM 型を持たないため crypto に頼らない簡易ID（テンプレ生成用）
-const uid = () =>
-  Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+/** イベントで配信セット未選択のとき使う仮想セットのID */
+export const DEFAULT_LIVE_SET_ID = "default";
 
 function centerText(
+  id: string,
   text: string,
   opts: Partial<LiveElement> = {},
 ): LiveElement {
   return {
-    id: uid(),
+    id,
     type: "text",
     x: 80,
     y: 210,
@@ -155,64 +157,64 @@ function centerText(
 export function defaultLiveSetContent(): LiveSetContent {
   const scenes: LiveScene[] = [
     {
-      id: uid(),
+      id: "tpl-wait",
       name: "開始前待機",
       background: "#0E1426",
       elements: [
-        { id: uid(), type: "eventInfo", field: "title", x: 80, y: 160, w: 800, h: 90, rotation: 0, fontSize: 44, color: "#EAF0F7", bold: true, align: "center" },
-        centerText("まもなく開始します", { y: 280, fontSize: 30, color: "#2DD4BF", bold: false }),
+        { id: "tpl-wait-title", type: "eventInfo", field: "title", x: 80, y: 160, w: 800, h: 90, rotation: 0, fontSize: 44, color: "#EAF0F7", bold: true, align: "center" },
+        centerText("tpl-wait-msg", "まもなく開始します", { y: 280, fontSize: 30, color: "#2DD4BF", bold: false }),
       ],
     },
     {
-      id: uid(),
+      id: "tpl-op",
       name: "OP",
       background: "linear-gradient(135deg, #0B3A34 0%, #0E1426 60%)",
       elements: [
-        { id: uid(), type: "eventInfo", field: "title", x: 80, y: 180, w: 800, h: 100, rotation: 0, fontSize: 52, color: "#EAF0F7", bold: true, align: "center" },
-        { id: uid(), type: "eventInfo", field: "datetime", x: 80, y: 300, w: 800, h: 50, rotation: 0, fontSize: 24, color: "#97A3BC", align: "center" },
+        { id: "tpl-op-title", type: "eventInfo", field: "title", x: 80, y: 180, w: 800, h: 100, rotation: 0, fontSize: 52, color: "#EAF0F7", bold: true, align: "center" },
+        { id: "tpl-op-dt", type: "eventInfo", field: "datetime", x: 80, y: 300, w: 800, h: 50, rotation: 0, fontSize: 24, color: "#97A3BC", align: "center" },
       ],
     },
     {
-      id: uid(),
+      id: "tpl-deck",
       name: "スライド全画面",
       background: "#000000",
       elements: [
-        { id: uid(), type: "deck", x: 0, y: 0, w: 960, h: 540, rotation: 0 },
+        { id: "tpl-deck-main", type: "deck", x: 0, y: 0, w: 960, h: 540, rotation: 0 },
       ],
     },
     {
-      id: uid(),
+      id: "tpl-deck-cam",
       name: "スライド + カメラ",
       background: "#0E1426",
       elements: [
-        { id: uid(), type: "deck", x: 0, y: 0, w: 720, h: 405, rotation: 0 },
-        { id: uid(), type: "camera", x: 736, y: 16, w: 208, h: 156, rotation: 0, fit: "cover", radius: 12 },
+        { id: "tpl-deck-cam-deck", type: "deck", x: 0, y: 0, w: 720, h: 405, rotation: 0 },
+        { id: "tpl-deck-cam-cam", type: "camera", x: 736, y: 16, w: 208, h: 156, rotation: 0, fit: "cover", radius: 12 },
       ],
     },
     {
-      id: uid(),
+      id: "tpl-cam",
       name: "カメラ全画面",
       background: "#000000",
       elements: [
-        { id: uid(), type: "camera", x: 0, y: 0, w: 960, h: 540, rotation: 0, fit: "cover" },
+        { id: "tpl-cam-main", type: "camera", x: 0, y: 0, w: 960, h: 540, rotation: 0, fit: "cover" },
       ],
     },
     {
-      id: uid(),
+      id: "tpl-break",
       name: "休憩中",
       background: "#0E1426",
       elements: [
-        centerText("しばらくお待ちください", { fontSize: 40 }),
-        centerText("☕", { y: 130, fontSize: 64, bold: false }),
+        centerText("tpl-break-msg", "しばらくお待ちください", { fontSize: 40 }),
+        centerText("tpl-break-icon", "☕", { y: 130, fontSize: 64, bold: false }),
       ],
     },
     {
-      id: uid(),
+      id: "tpl-ed",
       name: "ED",
       background: "linear-gradient(135deg, #0E1426 40%, #0B3A34 100%)",
       elements: [
-        centerText("ご視聴ありがとうございました！", { y: 200, fontSize: 44 }),
-        { id: uid(), type: "eventInfo", field: "title", x: 80, y: 320, w: 800, h: 50, rotation: 0, fontSize: 24, color: "#97A3BC", align: "center" },
+        centerText("tpl-ed-msg", "ご視聴ありがとうございました！", { y: 200, fontSize: 44 }),
+        { id: "tpl-ed-title", type: "eventInfo", field: "title", x: 80, y: 320, w: 800, h: 50, rotation: 0, fontSize: 24, color: "#97A3BC", align: "center" },
       ],
     },
   ];

@@ -35,6 +35,8 @@ import { UpcomingEventsPage } from "./pages/UpcomingEventsPage.js";
 import { DecksPage } from "./pages/DecksPage.js";
 import { LiveSetsPage } from "./pages/LiveSetsPage.js";
 import { LiveSetEditorPage } from "./pages/LiveSetEditorPage.js";
+import { LiveScreenPage } from "./pages/LiveScreenPage.js";
+import { LiveControlPage } from "./pages/LiveControlPage.js";
 import { DeckEditorPage } from "./pages/DeckEditorPage.js";
 import { DeckViewerPage } from "./pages/DeckViewerPage.js";
 import { ShortEventPage } from "./pages/ShortEventPage.js";
@@ -190,6 +192,9 @@ export function App() {
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/upcoming" element={<UpcomingEventsPage />} />
         <Route path="/events/new" element={<CreateEventPage />} />
+        {/* 配信画面/コントロール（EventLayoutのモード強制遷移を受けない） */}
+        <Route path="/events/:id/live/screen" element={<LiveScreenPage />} />
+        <Route path="/events/:id/live/control" element={<LiveControlPage />} />
         <Route path="/events/:id" element={<EventLayout />}>
           <Route index element={<EventDetailPage />} />
           <Route path="edit" element={<EditEventPage />} />
