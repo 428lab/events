@@ -14,14 +14,19 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import EditIcon from "@mui/icons-material/Edit";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { DEFAULT_LIVE_SET_ID } from "@eventer/shared";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import {
+  useEventLiveDeck,
   useEventLiveSetContent,
   useEventLiveState,
   useUpdateEventLiveState,
 } from "../api/liveControlHooks.js";
 import { useMyLiveSets } from "../api/liveSetHooks.js";
+import { useMyDecks } from "../api/deckHooks.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
+import { SlideStage } from "../components/SlideStage.js";
 
 /** 配信コントロールタブ（シーン切替・配信セット選択）。スマホでも操作できる */
 export function LiveControlPage() {
@@ -31,6 +36,8 @@ export function LiveControlPage() {
   const { data: state } = useEventLiveState(id);
   const { data: liveSet } = useEventLiveSetContent(id, state?.liveSetId);
   const { data: mySets } = useMyLiveSets();
+  const { data: myDecks } = useMyDecks();
+  const { data: deck } = useEventLiveDeck(id, state?.deckId);
   const update = useUpdateEventLiveState(id);
 
   const isStaff = eventData?.myRole === "staff" || isAdmin;
@@ -168,6 +175,81 @@ export function LiveControlPage() {
           配信セットにシーンがありません。「セットを編集」から追加してください。
         </Typography>
       )}
+
+      {/* スライド（デッキ）選択とページ送り */}
+      <Stack spacing={1}>
+        <Typography variant="h6">🖥️ スライド</Typography>
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <TextField
+            select
+            size="small"
+            label="配信で映すスライド"
+            value={state?.deckId ?? ""}
+            onChange={(e) =>
+              update.mutate({
+                deckId: e.target.value || null,
+                deckPage: 0,
+              })
+            }
+            sx={{ minWidth: 220 }}
+            SelectProps={{ displayEmpty: true }}
+          >
+            <MenuItem value="">（なし）</MenuItem>
+            {(myDecks ?? []).map((d) => (
+              <MenuItem key={d.id} value={d.id}>
+                {d.title || "無題のスライド"}
+              </MenuItem>
+            ))}
+          </TextField>
+          {deck && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Button
+                variant="outlined"
+                size="large"
+                disabled={(state?.deckPage ?? 0) <= 0}
+                onClick={() =>
+                  update.mutate({ deckPage: Math.max(0, (state?.deckPage ?? 0) - 1) })
+                }
+              >
+                <ChevronLeftIcon />
+              </Button>
+              <Typography sx={{ minWidth: 64, textAlign: "center" }} fontWeight={700}>
+                {Math.min((state?.deckPage ?? 0) + 1, deck.content.slides.length)} /{" "}
+                {deck.content.slides.length}
+              </Typography>
+              <Button
+                variant="outlined"
+                size="large"
+                disabled={(state?.deckPage ?? 0) >= deck.content.slides.length - 1}
+                onClick={() =>
+                  update.mutate({
+                    deckPage: Math.min(
+                      deck.content.slides.length - 1,
+                      (state?.deckPage ?? 0) + 1,
+                    ),
+                  })
+                }
+              >
+                <ChevronRightIcon />
+              </Button>
+            </Stack>
+          )}
+        </Stack>
+        {deck && deck.content.slides[state?.deckPage ?? 0] && (
+          <Box
+            sx={{
+              width: 240,
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 1,
+              overflow: "hidden",
+              lineHeight: 0,
+            }}
+          >
+            <SlideStage slide={deck.content.slides[state?.deckPage ?? 0]} width={238} />
+          </Box>
+        )}
+      </Stack>
     </Stack>
   );
 }

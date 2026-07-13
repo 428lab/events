@@ -5,6 +5,7 @@ import type {
   LiveSet,
   UpdateEventLiveStateInput,
 } from "@eventer/shared";
+import type { Deck } from "@eventer/shared";
 import { api } from "./client.js";
 
 /** 配信状態（画面タブ・コントロールタブが共有。1秒ポーリング） */
@@ -28,6 +29,17 @@ export function useUpdateEventLiveState(eventId: string) {
       qc.setQueryData(["event", eventId, "liveState"], state);
       qc.invalidateQueries({ queryKey: ["event", eventId, "liveSetContent"] });
     },
+  });
+}
+
+/** 配信で映すスライド（デッキ）の中身 */
+export function useEventLiveDeck(eventId: string, deckId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["event", eventId, "liveDeck", deckId ?? "none"],
+    enabled: Boolean(eventId),
+    queryFn: async () =>
+      (await api.get<{ deck: Deck | null }>(`/events/${eventId}/live-deck-content`))
+        .deck,
   });
 }
 

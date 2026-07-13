@@ -5,10 +5,12 @@ import { useParams } from "react-router-dom";
 import type { EventInfoField, LiveElement } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
 import {
+  useEventLiveDeck,
   useEventLiveSetContent,
   useEventLiveState,
 } from "../api/liveControlHooks.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
+import { SlideStage } from "../components/SlideStage.js";
 import type { LiveRuntime } from "../components/LiveStage.js";
 import { formatDateRange } from "../lib/format.js";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
@@ -23,6 +25,7 @@ export function LiveScreenPage() {
   const event = eventData?.event;
   const { data: state } = useEventLiveState(id);
   const { data: liveSet } = useEventLiveSetContent(id, state?.liveSetId);
+  const { data: deck } = useEventLiveDeck(id, state?.deckId);
 
   // ウィンドウサイズに合わせて 16:9 を最大化
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
@@ -75,6 +78,11 @@ export function LiveScreenPage() {
     };
   }, [needCamera, deviceId]);
 
+  // 配信で映すデッキのフォントも読み込む
+  useEffect(() => {
+    if (deck) ensureDeckFonts(deck.content);
+  }, [deck]);
+
   // フォント読み込み（デッキと同じWebフォント群）
   useEffect(() => {
     if (liveSet) {
@@ -114,11 +122,46 @@ export function LiveScreenPage() {
   const scene =
     scenes.find((s) => s.id === state?.activeSceneId) ?? scenes[0] ?? null;
 
+  const deckSlide =
+    deck?.content.slides[
+      Math.min(state?.deckPage ?? 0, Math.max(0, (deck?.content.slides.length ?? 1) - 1))
+    ] ?? null;
+
   const runtime: LiveRuntime = {
     camera: (el: LiveElement) => (
       <CameraVideo stream={stream} fit={el.fit ?? "cover"} />
     ),
-    // deck は PR3 で実装（現状はプレースホルダー表示のまま）
+    deck: (el: LiveElement) =>
+      deckSlide ? (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "grid",
+            placeItems: "center",
+            overflow: "hidden",
+          }}
+        >
+          <SlideStage
+            slide={deckSlide}
+            width={Math.min(el.w, (el.h * 16) / 9)}
+          />
+        </div>
+      ) : (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "grid",
+            placeItems: "center",
+            background: "#111827",
+            color: "#64748b",
+            fontSize: 18,
+          }}
+        >
+          スライド未選択（コントロール画面で選べます）
+        </div>
+      ),
     eventInfo: (field: EventInfoField) => {
       if (!event) return "";
       switch (field) {

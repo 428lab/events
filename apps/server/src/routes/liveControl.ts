@@ -11,6 +11,7 @@ import { requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
+import { decksRepo } from "../db/repositories/decks.js";
 
 /** イベントの配信ランタイム状態（コントロールタブ→配信画面タブの同期点）。staff専用 */
 export const liveControlRoutes = new Hono<AppEnv>();
@@ -39,6 +40,17 @@ liveControlRoutes.patch(
       }
     }
     return c.json(await eventLiveStateRepo.update(c.req.param("id"), input));
+  },
+);
+
+/** 配信で映すスライド（デッキ）の中身。staff なら読める（deck要素のレンダリング用） */
+liveControlRoutes.get(
+  "/:id/live-deck-content",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const state = await eventLiveStateRepo.getOrInit(c.req.param("id"));
+    if (!state.deckId) return c.json({ deck: null });
+    return c.json({ deck: await decksRepo.findById(state.deckId) });
   },
 );
 
