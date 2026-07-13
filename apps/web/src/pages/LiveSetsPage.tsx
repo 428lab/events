@@ -10,6 +10,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { useNavigate } from "react-router-dom";
 import {
@@ -28,6 +29,11 @@ export function LiveSetsPage() {
   const newSet = () =>
     create.mutate(
       { name: "" },
+      { onSuccess: (s) => navigate(`/live-sets/${s.id}/edit`) },
+    );
+  const duplicateSet = (baseId: string, baseName: string) =>
+    create.mutate(
+      { name: `${baseName}のコピー`, baseLiveSetId: baseId },
       { onSuccess: (s) => navigate(`/live-sets/${s.id}/edit`) },
     );
 
@@ -78,6 +84,19 @@ export function LiveSetsPage() {
                     <Typography variant="body2" color="text.secondary">
                       {s.sceneCount} シーン ・ {formatDateTime(s.updatedAt)} 更新
                     </Typography>
+                    <Tooltip title="このセットをベースに新規作成">
+                      <IconButton
+                        size="small"
+                        disabled={create.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          duplicateSet(s.id, s.name || "配信セット");
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <ContentCopyIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="削除">
                       <IconButton
                         size="small"

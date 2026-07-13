@@ -19,10 +19,17 @@ liveSetRoutes.get("/mine", async (c) => {
 });
 
 liveSetRoutes.post("/", zValidator("json", createLiveSetInput), async (c) => {
-  const liveSet = await liveSetsRepo.create(
-    valid<CreateLiveSetInput>(c, "json"),
-    c.get("user").id,
-  );
+  const input = valid<CreateLiveSetInput>(c, "json");
+  // ベース指定時は自分のセットの中身を複製（未指定はビルトインテンプレ）
+  let baseContent;
+  if (input.baseLiveSetId) {
+    const base = await liveSetsRepo.findById(input.baseLiveSetId);
+    if (!base || base.ownerId !== c.get("user").id) {
+      return c.json({ error: "base_not_found" }, 404);
+    }
+    baseContent = base.content;
+  }
+  const liveSet = await liveSetsRepo.create(input, c.get("user").id, baseContent);
   return c.json(liveSet, 201);
 });
 

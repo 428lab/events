@@ -42,6 +42,7 @@ import {
   useUpdateLiveSet,
   useUploadLiveSetImage,
 } from "../api/liveSetHooks.js";
+import { useBgmTracks } from "../api/bgmHooks.js";
 import { LiveElementContent, LiveSceneStage } from "../components/LiveStage.js";
 import { DECK_FONTS, ensureDeckFont } from "../lib/deckFonts.js";
 import { encodeImageForUpload } from "../lib/encodeImage.js";
@@ -78,6 +79,7 @@ export function LiveSetEditorPage() {
   const { data: liveSet, isLoading, isError } = useLiveSet(id);
   const update = useUpdateLiveSet(id);
   const upload = useUploadLiveSetImage(id);
+  const { data: bgmTracks } = useBgmTracks();
   const fileRef = useRef<HTMLInputElement>(null);
   const onPicked = useRef<(url: string) => void>(() => {});
   const resizeRef = useRef<{
@@ -627,6 +629,36 @@ export function LiveSetEditorPage() {
               {BG_PRESETS.map((p) => (
                 <MenuItem key={p.label} value={p.value}>
                   {p.label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="このシーンのBGM"
+              value={
+                scene?.bgmTrackId === undefined
+                  ? "__keep"
+                  : (scene.bgmTrackId ?? "__stop")
+              }
+              onChange={(e) =>
+                patchScene(idx, {
+                  bgmTrackId:
+                    e.target.value === "__keep"
+                      ? undefined
+                      : e.target.value === "__stop"
+                        ? null
+                        : e.target.value,
+                })
+              }
+              sx={{ minWidth: 180 }}
+              helperText="シーン切替時に自動で反映"
+            >
+              <MenuItem value="__keep">変更しない</MenuItem>
+              <MenuItem value="__stop">BGMを停止</MenuItem>
+              {(bgmTracks ?? []).map((t) => (
+                <MenuItem key={t.id} value={t.id}>
+                  {t.ownerId === null ? `🎁 ${t.name}` : t.name}
                 </MenuItem>
               ))}
             </TextField>

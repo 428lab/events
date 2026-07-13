@@ -57,6 +57,9 @@ export const liveSceneSchema = z.object({
   id: z.string().max(64),
   name: z.string().max(100),
   background: z.string().max(200).default("#0E1426"),
+  /** このシーンに切り替えたときのBGM。
+   * undefined=変更しない / null=停止 / trackId=その曲を再生 */
+  bgmTrackId: z.string().max(64).nullable().optional(),
   elements: z.array(liveElementSchema).max(50).default([]),
 });
 export type LiveScene = z.infer<typeof liveSceneSchema>;
@@ -87,6 +90,8 @@ export type LiveSetSummary = z.infer<typeof liveSetSummarySchema>;
 
 export const createLiveSetInput = z.object({
   name: z.string().trim().max(120).default(""),
+  /** ベースにする既存セット（自分のセットのみ）。未指定はビルトインテンプレ */
+  baseLiveSetId: z.string().optional(),
 });
 export type CreateLiveSetInput = z.infer<typeof createLiveSetInput>;
 

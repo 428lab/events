@@ -9,7 +9,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import type { LiveScene } from "@eventer/shared";
+import type { LiveScene, UpdateEventLiveStateInput } from "@eventer/shared";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import EditIcon from "@mui/icons-material/Edit";
 import { Link as RouterLink, useParams } from "react-router-dom";
@@ -162,7 +162,19 @@ export function LiveControlPage() {
           return (
             <Box
               key={s.id}
-              onClick={() => update.mutate({ activeSceneId: s.id })}
+              onClick={() => {
+                // シーンにBGM指定があれば一緒に切り替える（undefined=変更しない）
+                const patch: UpdateEventLiveStateInput = { activeSceneId: s.id };
+                if (s.bgmTrackId !== undefined) {
+                  if (s.bgmTrackId === null) {
+                    patch.bgmPlaying = false;
+                  } else {
+                    patch.bgmTrackId = s.bgmTrackId;
+                    patch.bgmPlaying = true;
+                  }
+                }
+                update.mutate(patch);
+              }}
               sx={{
                 cursor: "pointer",
                 border: "3px solid",

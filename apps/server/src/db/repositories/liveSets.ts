@@ -58,8 +58,12 @@ export const liveSetsRepo = {
     }));
   },
 
-  /** 新規作成。デフォルトテンプレのシーン一式を入れる */
-  async create(input: CreateLiveSetInput, ownerId: string): Promise<LiveSet> {
+  /** 新規作成。content 未指定ならデフォルトテンプレのシーン一式を入れる */
+  async create(
+    input: CreateLiveSetInput,
+    ownerId: string,
+    baseContent?: LiveSetContent,
+  ): Promise<LiveSet> {
     const id = crypto.randomUUID();
     const now = Date.now();
     await run(
@@ -68,7 +72,7 @@ export const liveSetsRepo = {
       id,
       ownerId,
       input.name || "配信セット",
-      JSON.stringify(defaultLiveSetContent()),
+      JSON.stringify(baseContent ?? defaultLiveSetContent()),
       now,
       now,
     );
