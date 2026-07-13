@@ -1,0 +1,16 @@
+# ローカル開発用の環境変数（wrangler dev が自動で読む）。
+# コピーして .dev.vars を作る（.dev.vars は gitignore 済み）:
+#   cp .dev.vars.example .dev.vars
+
+# development にすると開発用ログイン（POST /api/auth/dev-login）が使える
+ENVIRONMENT=development
+APP_BASE_URL=http://localhost:4280
+
+# ローカルで実プロバイダのログインを試す場合のみ設定（通常は dev-login で足りる）
+# DISCORD_CLIENT_ID=
+# DISCORD_CLIENT_SECRET=
+# DISCORD_REDIRECT_URI=http://localhost:4280/api/auth/discord/callback
+# SESSION_SECRET=
+
+# アプリ運営管理者の Discord ユーザーID（カンマ区切り）
+# ADMIN_DISCORD_IDS=

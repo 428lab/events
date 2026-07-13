@@ -27,7 +27,6 @@ import { entriesRepo } from "../db/repositories/entries.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
 import { scoresRepo } from "../db/repositories/scores.js";
 import { eventStateRepo } from "../db/repositories/eventState.js";
-import { sseHub } from "../sse/hub.js";
 
 export const awardRoutes = new Hono<AppEnv>();
 
@@ -238,11 +237,9 @@ awardRoutes.post("/:id/state/awards-advance", requireEventRole(["staff"]), async
   const eventId = c.req.param("id");
   const cur = (await eventStateRepo.getOrInit(eventId)).awardsRevealCursor ?? 0;
   const state = await eventStateRepo.setAwardsCursor(eventId, cur + 1);
-  sseHub.broadcast(eventId, "state", state);
   return c.json(state);
 });
 awardRoutes.post("/:id/state/awards-reset", requireEventRole(["staff"]), async (c) => {
   const state = await eventStateRepo.setAwardsCursor(c.req.param("id"), 0);
-  sseHub.broadcast(c.req.param("id"), "state", state);
   return c.json(state);
 });

@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { streamSSE } from "hono/streaming";
 import {
   createCriterionInput,
   putScoreInput,
@@ -26,7 +25,6 @@ import { entriesRepo } from "../db/repositories/entries.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { scoresRepo } from "../db/repositories/scores.js";
 import { eventStateRepo } from "../db/repositories/eventState.js";
-import { sseHub } from "../sse/hub.js";
 
 export const scoringRoutes = new Hono<AppEnv>();
 
@@ -56,48 +54,6 @@ export async function getEventScoreResults(c: Context) {
   const summary = await scoresRepo.summary(eventId, event.aggregateSelfEntry);
   return c.json({ available: true, ...summary });
 }
-
-/** ===== SSE（cookie 認証。requireAuth より前に定義） ===== */
-scoringRoutes.get("/:id/stream", async (c) => {
-  const user = await currentUser(c);
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  const eventId = c.req.param("id");
-  // 閲覧可能なイベントに限定（公開 or メンバー or 管理者）
-  const event = await eventsRepo.findById(eventId);
-  if (!event) return c.json({ error: "not_found" }, 404);
-  if (
-    event.status !== "published" &&
-    !isAppAdmin(user) &&
-    !(await eventMembersRepo.find(eventId, user.id))
-  ) {
-    return c.json({ error: "forbidden" }, 403);
-  }
-
-  return streamSSE(c, async (stream) => {
-    // 接続直後に現在の状態を送る
-    await stream.writeSSE({
-      event: "state",
-      data: JSON.stringify(await eventStateRepo.getOrInit(eventId)),
-    });
-
-    const unsubscribe = sseHub.subscribe(eventId, (event, data) => {
-      void stream.writeSSE({ event, data: JSON.stringify(data) });
-    });
-
-    // keep-alive（Cloudflare Tunnel のタイムアウト対策）
-    const ping = setInterval(() => {
-      void stream.writeSSE({ event: "ping", data: "1" });
-    }, 25000);
-
-    await new Promise<void>((resolve) => {
-      stream.onAbort(() => {
-        clearInterval(ping);
-        unsubscribe();
-        resolve();
-      });
-    });
-  });
-});
 
 scoringRoutes.use("*", requireAuth);
 
@@ -185,10 +141,6 @@ scoringRoutes.put(
       user.id,
       input.value,
     );
-    sseHub.broadcast(eventId, "score-progress", {
-      entryId: input.entryId,
-      judgeUserId: user.id,
-    });
     return c.json({ ok: true });
   },
 );
@@ -234,7 +186,6 @@ scoringRoutes.patch(
       eventId,
       valid<SetModeInput>(c, "json").mode,
     );
-    sseHub.broadcast(eventId, "state", state);
     return c.json(state);
   },
 );
@@ -249,7 +200,6 @@ scoringRoutes.patch(
       eventId,
       valid<SetPresentingInput>(c, "json").presentingEntryId,
     );
-    sseHub.broadcast(eventId, "state", state);
     return c.json(state);
   },
 );
@@ -261,7 +211,6 @@ scoringRoutes.post(
     const eventId = c.req.param("id");
     const current = await eventStateRepo.getOrInit(eventId);
     const state = await eventStateRepo.setScoringLocked(eventId, !current.scoringLocked);
-    sseHub.broadcast(eventId, "state", state);
     return c.json(state);
   },
 );
