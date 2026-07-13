@@ -1,9 +1,30 @@
-# Eventer 設計ドキュメント
+# Eventer（events lab）設計ドキュメント
 
-アイディアソン・ハッカソンイベント運営支援ツール
+イベント運営支援ツール（当初はアイディアソン・ハッカソン向けとして設計）
 
-- 最終更新: 2026-05-30
-- ステータス: ドラフト（初版）
+- 初版: 2026-05-30 ／ 差分追記: 2026-07-13
+- ステータス: **初期設計の記録**。データモデル（Entry 抽象・ロール・モード設計）は現行実装と一致するが、インフラ・認証・リアルタイムは下記のとおり実装が置き換わっている。
+
+---
+
+## 0. 現在の実装との差分（2026-07-13 時点）
+
+初版設計から実装が変わった点。以降の章は歴史的記録として残す（★印の章は置き換え済み）。
+
+| 項目 | 初版設計（本書） | 現在の実装 |
+|------|----------------|-----------|
+| 実行環境（★2,3章） | Node.js + Hono ＋ Cloudflare Tunnel 公開 | **Cloudflare Workers**（単一 Worker が SPA 配信・OG 注入・API を担当。`apps/server/src/worker.ts`） |
+| DB（★2,3章） | SQLite（better-sqlite3・同期） | **Cloudflare D1**（SQLite 互換・非同期）。リポジトリ層方針は維持（`db/client.ts` の `one/many/run/batch`） |
+| 画像 | — | **R2**（イベント画像・コミュニティ画像・スライド画像。D1 にはメタのみ） |
+| マイグレーション（★2章） | 自前ランナー + `schema_migrations` | **`wrangler d1 migrations`**（`apps/server/migrations/*.sql`） |
+| 認証（★5章） | Discord OAuth のみ | **Discord / Google / GitHub OAuth + Nostr NIP-07**。`identity` テーブルで複数連携・引き取り対応 |
+| リアルタイム（★8章） | SSE | **2秒ポーリング**（Workers はアイソレートを跨げず in-memory SSE ハブが機能しないため。無料枠維持のため Durable Objects 不使用） |
+| 環境変数（★5章） | `.env` | `wrangler.toml [vars]` + `wrangler secret` + ローカルは `.dev.vars` |
+| ルーティング（★9章） | `/admin/events/...` 系 | 管理画面はイベント配下（`/events/:id/edit`・`/scoring`・`/present`・`/awards`・`/control`）。他に `/e/:slug`（短縮）・`/c/:slug`（コミュニティ）・`/d/:slug`（スライド）・`/users/:id` など |
+| デプロイ | 手動 build + Tunnel | GitHub Actions（`staging`/`production` ブランチ → wrangler deploy）＋ staging はログイン必須ゲート |
+
+初版設計後に追加された主な機能（本書には未記載）:
+日程調整（候補日投票・確定通知・祝日表示）、参加枠（先着／抽選・手動当落・キャンセル待ち繰り上げ）、コミュニティ、スライド（デッキ）、アプリ内通知、問い合わせ、公開ユーザープロフィール、短縮シェア URL、イベント検索・ページング、セキュリティ強化一式。機能の現状一覧は `README.md` を参照。
 
 ---
 

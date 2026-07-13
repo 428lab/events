@@ -11,7 +11,7 @@
       "name": "server",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@eventer/server", "dev"],
-      "port": 4281
+      "port": 8787
     }
   ]
 }
