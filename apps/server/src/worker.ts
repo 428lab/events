@@ -18,6 +18,7 @@ import { getDeckImage } from "./routes/deckImages.js";
 import { liveSetRoutes } from "./routes/liveSets.js";
 import { getLiveSetImage } from "./routes/liveSetImages.js";
 import { liveControlRoutes } from "./routes/liveControl.js";
+import { bgmRoutes, getBgmAudio } from "./routes/bgm.js";
 import { currentUser } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
@@ -62,6 +63,9 @@ api.route("/decks", deckRoutes);
 api.get("/live-sets/:id/images/:imageId", getLiveSetImage);
 // 配信セット（配信画面ツール。要認証）
 api.route("/live-sets", liveSetRoutes);
+// 公開: BGM音声（bgmRoutes より先に登録）
+api.get("/bgm/:id/audio", getBgmAudio);
+api.route("/bgm", bgmRoutes);
 
 /**
  * staging ゲート用の無地HTML。サービス名・環境名などは出さず、

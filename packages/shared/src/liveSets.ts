@@ -123,6 +123,21 @@ export const updateEventLiveStateInput = z.object({
 });
 export type UpdateEventLiveStateInput = z.infer<typeof updateEventLiveStateInput>;
 
+/** ---- BGM ---- */
+
+export const bgmTrackSchema = z.object({
+  id: z.string(),
+  /** null はビルトイン曲 */
+  ownerId: z.string().nullable(),
+  name: z.string(),
+  /** YouTube概要欄などに貼るクレジット表記（出典・ライセンス） */
+  creditText: z.string(),
+  createdAt: z.number(),
+});
+export type BgmTrack = z.infer<typeof bgmTrackSchema>;
+
+export const BGM_MAX_BYTES = 8 * 1024 * 1024; // bodyLimit と同じ8MB
+
 /** ---- デフォルトテンプレート ----
  * ゼロ設定でも配信できるよう、新規セット作成時にこのシーン一式を複製する。
  * イベントで配信セット未選択のときも読み取り専用の既定セットとして使うため、

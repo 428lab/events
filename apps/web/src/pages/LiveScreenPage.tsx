@@ -101,6 +101,27 @@ export function LiveScreenPage() {
     }
   }, [liveSet]);
 
+  // BGM（配信画面側で再生。OBSのデスクトップ音声が拾う）
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !state) return;
+    audio.volume = state.bgmVolume;
+    if (state.bgmTrackId && state.bgmPlaying) {
+      const src = `/api/bgm/${state.bgmTrackId}/audio`;
+      if (!audio.src.endsWith(src)) audio.src = src;
+      audio.loop = true;
+      audio
+        .play()
+        .then(() => setAudioBlocked(false))
+        .catch(() => setAudioBlocked(true));
+    } else {
+      audio.pause();
+      setAudioBlocked(false);
+    }
+  }, [state?.bgmTrackId, state?.bgmPlaying, state?.bgmVolume]);
+
   // カーソル自動非表示（3秒）
   const [cursorVisible, setCursorVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -209,6 +230,33 @@ export function LiveScreenPage() {
         </Box>
       ) : (
         <Typography color="#334155">配信セットを読み込み中…</Typography>
+      )}
+
+      <audio ref={audioRef} hidden />
+
+      {/* 自動再生ブロック時: 一度クリックしてもらう（配信者だけが見る画面） */}
+      {audioBlocked && (
+        <Box
+          onClick={() => {
+            const a = audioRef.current;
+            if (a) void a.play().then(() => setAudioBlocked(false)).catch(() => {});
+          }}
+          sx={{
+            position: "fixed",
+            top: 12,
+            left: "50%",
+            transform: "translateX(-50%)",
+            bgcolor: "rgba(0,0,0,0.75)",
+            color: "#fff",
+            px: 2,
+            py: 1,
+            borderRadius: 2,
+            cursor: "pointer",
+            fontSize: 14,
+          }}
+        >
+          🔇 クリックして BGM を有効化
+        </Box>
       )}
 
       {/* 設定（キャプチャに写りにくいよう右下・カーソル表示中のみ） */}

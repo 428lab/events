@@ -16,7 +16,14 @@ import { Link as RouterLink, useParams } from "react-router-dom";
 import { DEFAULT_LIVE_SET_ID } from "@eventer/shared";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import StopIcon from "@mui/icons-material/Stop";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import { Slider, IconButton, Tooltip } from "@mui/material";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
+import { useBgmTracks, useDeleteBgm, useUploadBgm } from "../api/bgmHooks.js";
 import {
   useEventLiveDeck,
   useEventLiveSetContent,
@@ -38,7 +45,36 @@ export function LiveControlPage() {
   const { data: mySets } = useMyLiveSets();
   const { data: myDecks } = useMyDecks();
   const { data: deck } = useEventLiveDeck(id, state?.deckId);
+  const { data: bgmTracks } = useBgmTracks();
+  const uploadBgm = useUploadBgm();
+  const deleteBgm = useDeleteBgm();
   const update = useUpdateEventLiveState(id);
+  const bgmFileRef = useRef<HTMLInputElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const selectedBgm = (bgmTracks ?? []).find((t) => t.id === state?.bgmTrackId);
+  const onBgmFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const name = window.prompt("曲名（コントロールに表示されます）", file.name.replace(/\.[^.]+$/, ""));
+    if (name === null) return;
+    const credit = window.prompt(
+      "クレジット表記（YouTube概要欄に貼る出典・ライセンス。省略可）",
+      "",
+    );
+    try {
+      await uploadBgm.mutateAsync({ file, name: name || file.name, credit: credit ?? "" });
+    } catch {
+      window.alert("アップロードに失敗しました（対応形式: mp3/m4a/ogg/wav、8MBまで）");
+    }
+  };
+  const copyCredit = async () => {
+    if (!selectedBgm?.creditText) return;
+    await navigator.clipboard.writeText(selectedBgm.creditText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   const isStaff = eventData?.myRole === "staff" || isAdmin;
   if (eventData && !isStaff) {
@@ -249,6 +285,104 @@ export function LiveControlPage() {
             <SlideStage slide={deck.content.slides[state?.deckPage ?? 0]} width={238} />
           </Box>
         )}
+      </Stack>
+
+      {/* BGM */}
+      <Stack spacing={1}>
+        <Typography variant="h6">🎵 BGM</Typography>
+        <input
+          ref={bgmFileRef}
+          type="file"
+          accept="audio/*"
+          hidden
+          onChange={onBgmFile}
+        />
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <TextField
+            select
+            size="small"
+            label="曲"
+            value={state?.bgmTrackId ?? ""}
+            onChange={(e) =>
+              update.mutate({
+                bgmTrackId: e.target.value || null,
+                bgmPlaying: false,
+              })
+            }
+            sx={{ minWidth: 220 }}
+            SelectProps={{ displayEmpty: true }}
+          >
+            <MenuItem value="">（なし）</MenuItem>
+            {(bgmTracks ?? []).map((t) => (
+              <MenuItem key={t.id} value={t.id}>
+                {t.ownerId === null ? `🎁 ${t.name}` : t.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Button
+            variant={state?.bgmPlaying ? "outlined" : "contained"}
+            color={state?.bgmPlaying ? "error" : "primary"}
+            startIcon={state?.bgmPlaying ? <StopIcon /> : <PlayArrowIcon />}
+            disabled={!state?.bgmTrackId}
+            onClick={() => update.mutate({ bgmPlaying: !state?.bgmPlaying })}
+          >
+            {state?.bgmPlaying ? "停止" : "再生"}
+          </Button>
+          <Button
+            size="small"
+            startIcon={<UploadFileIcon />}
+            disabled={uploadBgm.isPending}
+            onClick={() => bgmFileRef.current?.click()}
+          >
+            {uploadBgm.isPending ? "アップロード中…" : "曲を追加"}
+          </Button>
+          {selectedBgm && selectedBgm.ownerId !== null && (
+            <Tooltip title="この曲を削除">
+              <IconButton
+                size="small"
+                onClick={() => {
+                  if (window.confirm(`「${selectedBgm.name}」を削除しますか？`)) {
+                    update.mutate({ bgmTrackId: null, bgmPlaying: false });
+                    deleteBgm.mutate(selectedBgm.id);
+                  }
+                }}
+              >
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Stack>
+        <Stack direction="row" spacing={2} alignItems="center" sx={{ maxWidth: 420 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ width: 40 }}>
+            音量
+          </Typography>
+          <Slider
+            size="small"
+            min={0}
+            max={1}
+            step={0.05}
+            value={state?.bgmVolume ?? 0.5}
+            onChangeCommitted={(_e, v) => update.mutate({ bgmVolume: v as number })}
+          />
+        </Stack>
+        {selectedBgm?.creditText && (
+          <Stack direction="row" spacing={1} alignItems="flex-start">
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ whiteSpace: "pre-wrap", flex: 1 }}
+            >
+              {selectedBgm.creditText}
+            </Typography>
+            <Button size="small" startIcon={<ContentCopyIcon />} onClick={copyCredit}>
+              {copied ? "コピーしました" : "クレジットをコピー"}
+            </Button>
+          </Stack>
+        )}
+        <Typography variant="caption" color="text.secondary">
+          BGMは配信画面タブ側で鳴ります（OBSのデスクトップ音声が拾います）。クレジットは
+          YouTube 概要欄に貼ってください。
+        </Typography>
       </Stack>
     </Stack>
   );
