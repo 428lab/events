@@ -6,6 +6,7 @@ import { usersRepo } from "../db/repositories/users.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { decksRepo } from "../db/repositories/decks.js";
+import { awardsRepo } from "../db/repositories/awards.js";
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -59,6 +60,7 @@ publicRoutes.get("/users/:handle", async (c) => {
   if (!user) return c.json({ error: "not_found" }, 404);
   const events = await eventMembersRepo.listPublicEventsForUser(user.id);
   const communities = await communitiesRepo.listForUser(user.id);
+  const awards = await awardsRepo.listPublicAwardsForUser(user.id, Date.now());
   return c.json({
     id: user.id,
     handle: user.username,
@@ -67,6 +69,7 @@ publicRoutes.get("/users/:handle", async (c) => {
     createdAt: user.createdAt,
     events,
     communities,
+    awards,
   });
 });
 

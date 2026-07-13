@@ -5,6 +5,7 @@ import type {
   SpecialAward,
   UpdateAwardRankInput,
   UpdateSpecialAwardInput,
+  UserAward,
 } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
 
@@ -139,6 +140,45 @@ export const awardsRepo = {
       "SELECT id, entry_id, award_rank_id, special_award_id FROM award_result WHERE event_id = ?",
       eventId,
     );
+  },
+
+  /** 公開プロフィール用: ユーザーの受賞歴。
+   * ネタバレ防止のため終了済み（ends_at < now）の公開イベントに限定。 */
+  async listPublicAwardsForUser(userId: string, now: number): Promise<UserAward[]> {
+    const rows = await many<{
+      event_id: string;
+      event_title: string;
+      ends_at: number;
+      award_name: string;
+      entry_name: string;
+      rank_order: number | null;
+    }>(
+      `SELECT e.id AS event_id, e.title AS event_title, e.ends_at,
+              COALESCE(r.name, s.name) AS award_name,
+              en.name AS entry_name,
+              r.rank_order
+       FROM award_result ar
+       JOIN entry en ON en.id = ar.entry_id
+       JOIN entry_member em ON em.entry_id = en.id AND em.user_id = ?
+       JOIN event e ON e.id = ar.event_id
+            AND e.status = 'published' AND e.ends_at < ?
+       LEFT JOIN award_rank r ON r.id = ar.award_rank_id
+       LEFT JOIN special_award s ON s.id = ar.special_award_id
+       WHERE ar.award_rank_id IS NOT NULL OR ar.special_award_id IS NOT NULL
+       ORDER BY e.ends_at DESC, COALESCE(r.rank_order, 9999) ASC`,
+      userId,
+      now,
+    );
+    return rows
+      .filter((r) => r.award_name)
+      .map((r) => ({
+        eventId: r.event_id,
+        eventTitle: r.event_title,
+        endsAt: r.ends_at,
+        awardName: r.award_name,
+        entryName: r.entry_name,
+        rankOrder: r.rank_order,
+      }));
   },
   /** ランク賞の受賞者を設定（1賞1エントリー。null で解除） */
   async setRankWinner(eventId: string, rankId: string, entryId: string | null): Promise<void> {

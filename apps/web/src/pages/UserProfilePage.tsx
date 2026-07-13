@@ -1,6 +1,16 @@
-import { Alert, Avatar, Box, Chip, Stack, Typography } from "@mui/material";
+import {
+  Alert,
+  Avatar,
+  Box,
+  Card,
+  CardContent,
+  Chip,
+  Link,
+  Stack,
+  Typography,
+} from "@mui/material";
 import { Link as RouterLink, useParams } from "react-router-dom";
-import type { UserProfile } from "@eventer/shared";
+import type { UserAward, UserProfile } from "@eventer/shared";
 import { useUserProfile } from "../api/userHooks.js";
 import { EventCard } from "../components/EventCard.js";
 
@@ -8,6 +18,70 @@ const COMMUNITY_ROLE_LABEL: Record<string, string> = {
   owner: "オーナー",
   admin: "管理者",
 };
+
+/** 順位に応じたメダル（特別枠は 🎖️） */
+function awardEmoji(rankOrder: number | null): string {
+  if (rankOrder === 1) return "🥇";
+  if (rankOrder === 2) return "🥈";
+  if (rankOrder === 3) return "🥉";
+  if (rankOrder != null) return "🏅";
+  return "🎖️";
+}
+
+function AwardsSection({
+  awards,
+  profileName,
+}: {
+  awards: UserAward[];
+  profileName: string;
+}) {
+  if (awards.length === 0) return null;
+  return (
+    <Box>
+      <Typography variant="h6" gutterBottom>
+        🏆 受賞歴（{awards.length}）
+      </Typography>
+      <Stack spacing={1}>
+        {awards.map((a, i) => (
+          <Card key={`${a.eventId}-${a.awardName}-${i}`} variant="outlined">
+            <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
+              <Stack
+                direction="row"
+                spacing={1.5}
+                alignItems="center"
+                flexWrap="wrap"
+                useFlexGap
+              >
+                <Typography fontSize={26} lineHeight={1}>
+                  {awardEmoji(a.rankOrder)}
+                </Typography>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
+                  <Typography fontWeight={700} sx={{ color: "secondary.main" }}>
+                    {a.awardName}
+                  </Typography>
+                  <Typography variant="body2">
+                    <Link
+                      component={RouterLink}
+                      to={`/events/${a.eventId}`}
+                      underline="hover"
+                      color="inherit"
+                    >
+                      {a.eventTitle}
+                    </Link>
+                    {a.entryName !== profileName && `（${a.entryName}）`}
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                  {new Date(a.endsAt).toLocaleDateString("ja-JP")}
+                </Typography>
+              </Stack>
+            </CardContent>
+          </Card>
+        ))}
+      </Stack>
+    </Box>
+  );
+}
 
 export function UserProfilePage() {
   const { id = "" } = useParams();
@@ -38,6 +112,8 @@ export function UserProfilePage() {
           </Typography>
         </Box>
       </Stack>
+
+      <AwardsSection awards={data.awards} profileName={data.name} />
 
       {data.communities.length > 0 && (
         <Box>
