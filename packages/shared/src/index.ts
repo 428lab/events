@@ -9,3 +9,4 @@ export * from "./users.js";
 export * from "./communities.js";
 export * from "./decks.js";
 export * from "./scheduling.js";
+export * from "./liveSets.js";

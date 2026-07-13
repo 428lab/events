@@ -15,6 +15,8 @@ import { communityRoutes } from "./routes/communities.js";
 import { getCommunityImage } from "./routes/communityImages.js";
 import { deckRoutes } from "./routes/decks.js";
 import { getDeckImage } from "./routes/deckImages.js";
+import { liveSetRoutes } from "./routes/liveSets.js";
+import { getLiveSetImage } from "./routes/liveSetImages.js";
 import { currentUser } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
@@ -54,6 +56,10 @@ api.route("/communities", communityRoutes);
 // 公開: スライド画像（認証不要。deckRoutes より先に登録）
 api.get("/decks/:id/images/:imageId", getDeckImage);
 api.route("/decks", deckRoutes);
+// 公開: 配信シーン画像（認証不要。liveSetRoutes より先に登録）
+api.get("/live-sets/:id/images/:imageId", getLiveSetImage);
+// 配信セット（配信画面ツール。要認証）
+api.route("/live-sets", liveSetRoutes);
 
 /**
  * staging ゲート用の無地HTML。サービス名・環境名などは出さず、

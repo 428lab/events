@@ -13,6 +13,14 @@ export default defineConfig({
   plugins: [react()],
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
+    // react-draggable(react-rnd) のデバッグログが process.env を参照して
+    // ブラウザで ReferenceError になるのを防ぐ
+    "process.env.DRAGGABLE_DEBUG": "false",
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      define: { "process.env.DRAGGABLE_DEBUG": "false" },
+    },
   },
   server: {
     host: "127.0.0.1",

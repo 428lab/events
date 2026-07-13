@@ -33,9 +33,10 @@ export function Layout({
   const logout = useLogout();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  // スライド編集は作業領域を最大化するため全幅
+  // スライド/配信セット編集は作業領域を最大化するため全幅
   const wide =
-    pathname.startsWith("/decks/") && pathname.endsWith("/edit");
+    (pathname.startsWith("/decks/") || pathname.startsWith("/live-sets/")) &&
+    pathname.endsWith("/edit");
   const isAdmin = useIsAdmin();
   const { data: adminUnread } = useAdminInquiryUnreadCount(isAdmin);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
@@ -97,6 +98,9 @@ export function Layout({
             <Button color="inherit" component={RouterLink} to="/decks">
               スライド
             </Button>
+            <Button color="inherit" component={RouterLink} to="/live-sets">
+              配信
+            </Button>
             <Button color="inherit" component={RouterLink} to="/me">
               マイページ
             </Button>
@@ -154,6 +158,9 @@ export function Layout({
             </MenuItem>
             <MenuItem component={RouterLink} to="/decks" onClick={closeMenu}>
               スライド
+            </MenuItem>
+            <MenuItem component={RouterLink} to="/live-sets" onClick={closeMenu}>
+              配信
             </MenuItem>
             <MenuItem component={RouterLink} to="/me" onClick={closeMenu}>
               マイページ
