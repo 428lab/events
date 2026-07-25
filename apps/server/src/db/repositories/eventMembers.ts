@@ -197,6 +197,7 @@ function mapMyEventSummary(
     scheduling: (row.scheduling as number) === 1,
     scheduleAnonymous: (row.schedule_anonymous as number) === 1,
     scheduleVisible: (row.schedule_visible as number) === 1,
+    photosPublic: (row.photos_public as number) === 1,
     slug: (row.slug as string | null) ?? "",
     myRole: row.my_role as EventRole,
   };

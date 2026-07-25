@@ -7,8 +7,10 @@ import {
   Card,
   CardContent,
   Dialog,
+  FormControlLabel,
   IconButton,
   Stack,
+  Switch,
   Typography,
 } from "@mui/material";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
@@ -16,7 +18,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import CloseIcon from "@mui/icons-material/Close";
 import type { EventPhoto, EventRole } from "@eventer/shared";
 import { EVENT_PHOTO_LIMIT } from "@eventer/shared";
-import { useMe } from "../api/hooks.js";
+import { useMe, useUpdateEvent } from "../api/hooks.js";
 import {
   useDeleteEventPhoto,
   useEventPhotos,
@@ -27,29 +29,36 @@ import { encodeImageForUpload } from "../lib/encodeImage.js";
 const photoUrl = (eventId: string, photoId: string) =>
   `/api/events/${eventId}/photos/${photoId}/image`;
 
-/** イベントフォトギャラリー（参加者のみ表示・アップロード） */
+/** イベントフォトギャラリー（参加者は常に、公開設定時は誰でも閲覧） */
 export function EventPhotos({
   eventId,
   myRole,
   isAdmin,
+  photosPublic,
+  published,
 }: {
   eventId: string;
   myRole: EventRole | null;
   isAdmin: boolean;
+  photosPublic: boolean;
+  published: boolean;
 }) {
   const { data: me } = useMe();
   const isMember = Boolean(myRole);
   const isStaff = myRole === "staff" || isAdmin;
-  const { data: photos } = useEventPhotos(eventId, isMember);
+  // 公開設定なら誰でも閲覧、そうでなければ参加者のみ
+  const canView = isMember || (photosPublic && published);
+  const { data: photos } = useEventPhotos(eventId, canView);
   const upload = useUploadEventPhoto(eventId);
   const del = useDeleteEventPhoto(eventId);
+  const updateEvent = useUpdateEvent(eventId);
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<EventPhoto | null>(null);
   const [uploading, setUploading] = useState(0);
 
-  // 非参加者には出さない（参加者限定の写真プライバシー）
-  if (!isMember) return null;
+  // 閲覧権限がなく、写真もない（＝出す理由がない）なら非表示
+  if (!canView) return null;
 
   const onFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = [...(e.target.files ?? [])];
@@ -98,20 +107,41 @@ export function EventPhotos({
             hidden
             onChange={onFiles}
           />
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={<PhotoCameraIcon />}
-            disabled={uploading > 0}
-            onClick={() => fileRef.current?.click()}
-          >
-            {uploading > 0 ? `アップロード中… 残り${uploading}` : "写真を追加"}
-          </Button>
+          {isMember && (
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<PhotoCameraIcon />}
+              disabled={uploading > 0}
+              onClick={() => fileRef.current?.click()}
+            >
+              {uploading > 0 ? `アップロード中… 残り${uploading}` : "写真を追加"}
+            </Button>
+          )}
         </Stack>
 
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
-          このイベントの参加者だけが見られます。複数選択できます。
+          {photosPublic
+            ? "この写真は誰でも見られます。"
+            : "このイベントの参加者だけが見られます。"}
+          {isMember && "複数選択できます。"}
         </Typography>
+
+        {isStaff && (
+          <FormControlLabel
+            sx={{ mb: 1 }}
+            control={
+              <Switch
+                checked={photosPublic}
+                disabled={updateEvent.isPending}
+                onChange={(e) =>
+                  updateEvent.mutate({ photosPublic: e.target.checked })
+                }
+              />
+            }
+            label="参加者以外にも写真を公開する"
+          />
+        )}
 
         {error && (
           <Alert severity="warning" sx={{ mb: 1.5 }} onClose={() => setError(null)}>

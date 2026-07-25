@@ -26,6 +26,7 @@ interface EventRow {
   scheduling: number;
   schedule_anonymous: number;
   schedule_visible: number;
+  photos_public: number;
   slug: string | null;
 }
 
@@ -57,6 +58,7 @@ function toEvent(row: EventRow): Event {
     scheduling: row.scheduling === 1,
     scheduleAnonymous: row.schedule_anonymous === 1,
     scheduleVisible: row.schedule_visible === 1,
+    photosPublic: row.photos_public === 1,
     slug: row.slug ?? "",
   };
 }
@@ -283,7 +285,8 @@ export const eventsRepo = {
          title = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
-         community_id = ?, schedule_anonymous = ?, schedule_visible = ?
+         community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
+         photos_public = ?
        WHERE id = ?`,
       next.title,
       next.description,
@@ -298,6 +301,7 @@ export const eventsRepo = {
       next.communityId ?? null,
       next.scheduleAnonymous ? 1 : 0,
       next.scheduleVisible ? 1 : 0,
+      next.photosPublic ? 1 : 0,
       id,
     );
     return this.findById(id);

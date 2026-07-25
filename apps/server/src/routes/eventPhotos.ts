@@ -1,11 +1,13 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { EVENT_PHOTO_LIMIT, EVENT_PHOTO_MAX_BYTES } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
+import { requireAuth, currentUser } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { getBucket } from "../runtime.js";
 import { normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
+import { eventsRepo } from "../db/repositories/events.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 
@@ -13,38 +15,54 @@ const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
 const r2Key = (eventId: string, photoId: string) =>
   `event-photos/${eventId}/${photoId}`;
 
-/** イベントフォト。アップロード=参加者、閲覧=参加者のみ、削除=本人+staff */
+/** 写真を閲覧できるか。photos_public 公開イベントは誰でも、
+ * それ以外はメンバー/管理者のみ */
+async function canViewPhotos(eventId: string, c: Context): Promise<boolean> {
+  const event = await eventsRepo.findById(eventId);
+  if (!event) return false;
+  if (event.photosPublic && event.status === "published") return true;
+  const user = await currentUser(c);
+  if (!user) return false;
+  if (isAppAdmin(user)) return true;
+  return Boolean(await eventMembersRepo.find(eventId, user.id));
+}
+
+/* ===== 公開ハンドラ（未ログイン可。worker.ts で eventRoutes より先に登録） ===== */
+
+/** 写真一覧 */
+export async function getEventPhotos(c: Context<AppEnv>) {
+  const eventId = c.req.param("id")!;
+  if (!(await canViewPhotos(eventId, c))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  return c.json({ photos: await eventPhotosRepo.listByEvent(eventId) });
+}
+
+/** 写真本体 */
+export async function getEventPhotoImage(c: Context<AppEnv>) {
+  const eventId = c.req.param("id")!;
+  if (!(await canViewPhotos(eventId, c))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  const photo = await eventPhotosRepo.findById(c.req.param("photoId")!);
+  if (!photo || photo.eventId !== eventId) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  const obj = await getBucket().get(r2Key(photo.eventId, photo.id));
+  if (!obj) return c.json({ error: "not_found" }, 404);
+  return new Response(obj.body as unknown as ReadableStream, {
+    headers: {
+      "Content-Type": safeServeMime(obj.httpMetadata?.contentType),
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, max-age=3600",
+    },
+  });
+}
+
+/* ===== 書き込み（要認証。アップロード・削除はメンバーのみ） ===== */
+
 export const eventPhotoRoutes = new Hono<AppEnv>();
 eventPhotoRoutes.use("*", requireAuth);
-
-eventPhotoRoutes.get(
-  "/:id/photos",
-  requireEventRole([...MEMBER_ROLES]),
-  async (c) => {
-    return c.json({ photos: await eventPhotosRepo.listByEvent(c.req.param("id")) });
-  },
-);
-
-/** 写真本体（参加者限定なのでキャッシュは private） */
-eventPhotoRoutes.get(
-  "/:id/photos/:photoId/image",
-  requireEventRole([...MEMBER_ROLES]),
-  async (c) => {
-    const photo = await eventPhotosRepo.findById(c.req.param("photoId"));
-    if (!photo || photo.eventId !== c.req.param("id")) {
-      return c.json({ error: "not_found" }, 404);
-    }
-    const obj = await getBucket().get(r2Key(photo.eventId, photo.id));
-    if (!obj) return c.json({ error: "not_found" }, 404);
-    return new Response(obj.body as unknown as ReadableStream, {
-      headers: {
-        "Content-Type": safeServeMime(obj.httpMetadata?.contentType),
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "private, max-age=3600",
-      },
-    });
-  },
-);
 
 /** アップロード（生バイナリ） */
 eventPhotoRoutes.post(

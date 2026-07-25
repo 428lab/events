@@ -47,6 +47,8 @@ export const eventSchema = z.object({
   scheduleAnonymous: z.boolean(),
   /** 日程確定後も日程調整の結果を表示する（主催者がオンオフ可能） */
   scheduleVisible: z.boolean(),
+  /** イベント写真を参加者以外にも公開する（主催者がオンオフ可能。既定は参加者限定） */
+  photosPublic: z.boolean(),
   /** 短いシェアURL用スラッグ（/e/:slug） */
   slug: z.string(),
 });
@@ -89,6 +91,7 @@ export const updateEventInput = z.object({
   communityId: z.string().nullable().optional(),
   scheduleAnonymous: z.boolean().optional(),
   scheduleVisible: z.boolean().optional(),
+  photosPublic: z.boolean().optional(),
 });
 export type UpdateEventInput = z.infer<typeof updateEventInput>;
 

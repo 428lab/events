@@ -495,8 +495,14 @@ export function EventDetailPage() {
         </Stack>
       )}
 
-      {/* イベントフォト（参加者のみ表示・アップロード） */}
-      <EventPhotos eventId={id} myRole={myRole} isAdmin={isAdmin} />
+      {/* イベントフォト（参加者は常に、公開設定時は誰でも閲覧） */}
+      <EventPhotos
+        eventId={id}
+        myRole={myRole}
+        isAdmin={isAdmin}
+        photosPublic={event.photosPublic}
+        published={event.status === "published"}
+      />
 
       {contest && myEntry && <SubmissionEditor eventId={id} entry={myEntry} />}
 
