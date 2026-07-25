@@ -36,9 +36,11 @@ import {
   useLeaveEvent,
   usePublishEvent,
   useMe,
+  useIsAdmin,
   useUpdateSubmission,
 } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
+import { EventPhotos } from "../components/EventPhotos.js";
 import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
@@ -105,6 +107,7 @@ function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry })
 export function EventDetailPage() {
   const { id = "" } = useParams();
   const { data: me } = useMe();
+  const isAdmin = useIsAdmin();
   const { data, isLoading, isError } = useEvent(id);
   const isMember = Boolean(data?.myRole);
   // アプリ管理者でも、このページでは自分のロールどおりに表示する
@@ -491,6 +494,9 @@ export function EventDetailPage() {
           )}
         </Stack>
       )}
+
+      {/* イベントフォト（参加者のみ表示・アップロード） */}
+      <EventPhotos eventId={id} myRole={myRole} isAdmin={isAdmin} />
 
       {contest && myEntry && <SubmissionEditor eventId={id} entry={myEntry} />}
 
