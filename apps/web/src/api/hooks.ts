@@ -412,6 +412,19 @@ export function useLeaveEvent() {
   });
 }
 
+/** イベントメンバーのロール変更（staff） */
+export function useSetEventMemberRole(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { userId: string; role: EventRole }) =>
+      api.patch(`/events/${eventId}/members/${v.userId}/role`, { role: v.role }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId, "members"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId] });
+    },
+  });
+}
+
 /** 出席チェック（staff）。楽観更新はせずメンバー一覧を再取得 */
 export function useSetAttendance(eventId: string) {
   const qc = useQueryClient();

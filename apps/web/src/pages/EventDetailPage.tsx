@@ -23,12 +23,16 @@ import {
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import { IconButton, Menu, MenuItem } from "@mui/material";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { UserLink } from "../components/UserLink.js";
-import type { Entry } from "@eventer/shared";
+import type { Entry, EventMemberWithUser, EventRole } from "@eventer/shared";
+import { EVENT_ROLES } from "@eventer/shared";
+import { useSetEventMemberRole } from "../api/hooks.js";
 import {
   eventImageUrl,
   useEvent,
@@ -579,72 +583,121 @@ export function EventDetailPage() {
                 </Alert>
               )}
               <List dense>
-                {members?.map((m) => {
-                  const showCheck = event.attendanceCheck;
-                  const attendChip =
-                    showCheck && m.attended ? (
-                      <Chip
-                        size="small"
-                        color="success"
-                        label="出席"
-                        sx={{ height: 18, fontSize: 10 }}
-                      />
-                    ) : null;
-                  return (
-                    <ListItem
-                      key={m.id}
-                      disableGutters
-                      secondaryAction={
-                        showCheck && isStaff ? (
-                          <Checkbox
-                            edge="end"
-                            size="small"
-                            icon={<CheckCircleOutlineIcon />}
-                            checkedIcon={<CheckCircleIcon />}
-                            checked={m.attended}
-                            disabled={setAttendance.isPending}
-                            onChange={(e) =>
-                              setAttendance.mutate({
-                                userId: m.user.id,
-                                attended: e.target.checked,
-                              })
-                            }
-                            title="出席チェック"
-                          />
-                        ) : (
-                          attendChip
-                        )
-                      }
-                    >
-                      <ListItemButton
-                        component={RouterLink}
-                        to={`/users/${m.user.username}`}
-                        sx={{ borderRadius: 1 }}
-                      >
-                        <ListItemAvatar>
-                          <Avatar
-                            src={m.user.avatarUrl ?? undefined}
-                            alt={m.user.globalName ?? m.user.username}
-                          >
-                            {(m.user.globalName ?? m.user.username).charAt(0)}
-                          </Avatar>
-                        </ListItemAvatar>
-                        <ListItemText
-                          primary={m.user.globalName ?? m.user.username}
-                          secondary={roleLabel[m.role]}
-                        />
-                        {showCheck && isStaff && attendChip && (
-                          <Box sx={{ mr: 1 }}>{attendChip}</Box>
-                        )}
-                      </ListItemButton>
-                    </ListItem>
-                  );
-                })}
+                {members?.map((m) => (
+                  <MemberRow
+                    key={m.id}
+                    eventId={id}
+                    member={m}
+                    isStaff={isStaff}
+                    attendanceCheck={event.attendanceCheck}
+                    isMe={me?.id === m.user.id}
+                    setAttendance={setAttendance}
+                  />
+                ))}
               </List>
             </CardContent>
           </Card>
         )}
       </Grid>
     </Grid>
+  );
+}
+
+/** 参加者一覧の1行。staff にはロール変更メニューと出席チェックを出す */
+function MemberRow({
+  eventId,
+  member: m,
+  isStaff,
+  attendanceCheck,
+  isMe,
+  setAttendance,
+}: {
+  eventId: string;
+  member: EventMemberWithUser;
+  isStaff: boolean;
+  attendanceCheck: boolean;
+  isMe: boolean;
+  setAttendance: ReturnType<typeof useSetAttendance>;
+}) {
+  const setRole = useSetEventMemberRole(eventId);
+  const [anchor, setAnchor] = useState<null | HTMLElement>(null);
+  const showCheck = attendanceCheck && isStaff;
+  const attendChip =
+    attendanceCheck && m.attended ? (
+      <Chip size="small" color="success" label="出席" sx={{ height: 18, fontSize: 10 }} />
+    ) : null;
+
+  return (
+    <ListItem
+      key={m.id}
+      disableGutters
+      secondaryAction={
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          {showCheck ? (
+            <Checkbox
+              edge="end"
+              size="small"
+              icon={<CheckCircleOutlineIcon />}
+              checkedIcon={<CheckCircleIcon />}
+              checked={m.attended}
+              disabled={setAttendance.isPending}
+              onChange={(e) =>
+                setAttendance.mutate({ userId: m.user.id, attended: e.target.checked })
+              }
+              title="出席チェック"
+            />
+          ) : (
+            attendChip
+          )}
+          {/* 自分自身のロールは誤操作防止のため変更不可 */}
+          {isStaff && !isMe && (
+            <>
+              <IconButton
+                size="small"
+                onClick={(e) => setAnchor(e.currentTarget)}
+                title="ロールを変更"
+              >
+                <MoreVertIcon fontSize="small" />
+              </IconButton>
+              <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+                {EVENT_ROLES.map((r) => (
+                  <MenuItem
+                    key={r}
+                    selected={m.role === r}
+                    disabled={setRole.isPending}
+                    onClick={() => {
+                      if (r !== m.role) setRole.mutate({ userId: m.user.id, role: r });
+                      setAnchor(null);
+                    }}
+                  >
+                    {roleLabel[r as EventRole]}
+                    {m.role === r ? " ✓" : ""}
+                  </MenuItem>
+                ))}
+              </Menu>
+            </>
+          )}
+        </Stack>
+      }
+    >
+      <ListItemButton
+        component={RouterLink}
+        to={`/users/${m.user.username}`}
+        sx={{ borderRadius: 1 }}
+      >
+        <ListItemAvatar>
+          <Avatar
+            src={m.user.avatarUrl ?? undefined}
+            alt={m.user.globalName ?? m.user.username}
+          >
+            {(m.user.globalName ?? m.user.username).charAt(0)}
+          </Avatar>
+        </ListItemAvatar>
+        <ListItemText
+          primary={m.user.globalName ?? m.user.username}
+          secondary={roleLabel[m.role]}
+        />
+      </ListItemButton>
+    </ListItem>
   );
 }
