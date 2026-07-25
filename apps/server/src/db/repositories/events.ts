@@ -27,13 +27,20 @@ interface EventRow {
   schedule_anonymous: number;
   schedule_visible: number;
   photos_public: number;
+  attendance_check: number;
   slug: string | null;
 }
 
-/** participant_count（確定メンバー数）を含む event の SELECT */
+/** 参加者としてカウントする条件。出席チェックモードでは
+ * 「出席済み」または参加者以外(staff等)のみ。通常モードは確定者すべて。 */
+export const COUNTS_AS_PARTICIPANT =
+  "(event.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant')";
+
+/** participant_count（実参加者数）を含む event の SELECT */
 const SELECT_EVENT = `SELECT *,
   (SELECT COUNT(1) FROM event_member em
-   WHERE em.event_id = event.id AND em.status = 'confirmed') AS participant_count
+   WHERE em.event_id = event.id AND em.status = 'confirmed'
+     AND ${COUNTS_AS_PARTICIPANT}) AS participant_count
   FROM event`;
 
 function toEvent(row: EventRow): Event {
@@ -59,6 +66,7 @@ function toEvent(row: EventRow): Event {
     scheduleAnonymous: row.schedule_anonymous === 1,
     scheduleVisible: row.schedule_visible === 1,
     photosPublic: row.photos_public === 1,
+    attendanceCheck: row.attendance_check === 1,
     slug: row.slug ?? "",
   };
 }
@@ -286,7 +294,7 @@ export const eventsRepo = {
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
-         photos_public = ?
+         photos_public = ?, attendance_check = ?
        WHERE id = ?`,
       next.title,
       next.description,
@@ -302,6 +310,7 @@ export const eventsRepo = {
       next.scheduleAnonymous ? 1 : 0,
       next.scheduleVisible ? 1 : 0,
       next.photosPublic ? 1 : 0,
+      next.attendanceCheck ? 1 : 0,
       id,
     );
     return this.findById(id);

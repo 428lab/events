@@ -412,6 +412,21 @@ export function useLeaveEvent() {
   });
 }
 
+/** 出席チェック（staff）。楽観更新はせずメンバー一覧を再取得 */
+export function useSetAttendance(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { userId: string; attended: boolean }) =>
+      api.patch(`/events/${eventId}/members/${v.userId}/attendance`, {
+        attended: v.attended,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId, "members"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId] });
+    },
+  });
+}
+
 export function eventImageUrl(event: {
   id: string;
   imageUpdatedAt: number | null;

@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   Divider,
   Grid,
@@ -20,6 +21,8 @@ import {
   Typography,
 } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
@@ -37,6 +40,7 @@ import {
   usePublishEvent,
   useMe,
   useIsAdmin,
+  useSetAttendance,
   useUpdateSubmission,
 } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
@@ -121,6 +125,7 @@ export function EventDetailPage() {
   const join = useJoinEvent();
   const leave = useLeaveEvent();
   const publish = usePublishEvent();
+  const setAttendance = useSetAttendance(id);
 
   if (isError) {
     return (
@@ -567,28 +572,74 @@ export function EventDetailPage() {
               <Typography variant="h6" gutterBottom>
                 参加者一覧（{members.length}）
               </Typography>
+              {event.attendanceCheck && (
+                <Alert severity="info" sx={{ mb: 1, py: 0 }}>
+                  出席チェックモード：チェックされた人だけが参加者として記録されます
+                  {isStaff ? "。名前の右で出欠を切り替えられます。" : "。"}
+                </Alert>
+              )}
               <List dense>
-                {members?.map((m) => (
-                  <ListItemButton
-                    key={m.id}
-                    disableGutters
-                    component={RouterLink}
-                    to={`/users/${m.user.username}`}
-                  >
-                    <ListItemAvatar>
-                      <Avatar
-                        src={m.user.avatarUrl ?? undefined}
-                        alt={m.user.globalName ?? m.user.username}
+                {members?.map((m) => {
+                  const showCheck = event.attendanceCheck;
+                  const attendChip =
+                    showCheck && m.attended ? (
+                      <Chip
+                        size="small"
+                        color="success"
+                        label="出席"
+                        sx={{ height: 18, fontSize: 10 }}
+                      />
+                    ) : null;
+                  return (
+                    <ListItem
+                      key={m.id}
+                      disableGutters
+                      secondaryAction={
+                        showCheck && isStaff ? (
+                          <Checkbox
+                            edge="end"
+                            size="small"
+                            icon={<CheckCircleOutlineIcon />}
+                            checkedIcon={<CheckCircleIcon />}
+                            checked={m.attended}
+                            disabled={setAttendance.isPending}
+                            onChange={(e) =>
+                              setAttendance.mutate({
+                                userId: m.user.id,
+                                attended: e.target.checked,
+                              })
+                            }
+                            title="出席チェック"
+                          />
+                        ) : (
+                          attendChip
+                        )
+                      }
+                    >
+                      <ListItemButton
+                        component={RouterLink}
+                        to={`/users/${m.user.username}`}
+                        sx={{ borderRadius: 1 }}
                       >
-                        {(m.user.globalName ?? m.user.username).charAt(0)}
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={m.user.globalName ?? m.user.username}
-                      secondary={roleLabel[m.role]}
-                    />
-                  </ListItemButton>
-                ))}
+                        <ListItemAvatar>
+                          <Avatar
+                            src={m.user.avatarUrl ?? undefined}
+                            alt={m.user.globalName ?? m.user.username}
+                          >
+                            {(m.user.globalName ?? m.user.username).charAt(0)}
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={m.user.globalName ?? m.user.username}
+                          secondary={roleLabel[m.role]}
+                        />
+                        {showCheck && isStaff && attendChip && (
+                          <Box sx={{ mr: 1 }}>{attendChip}</Box>
+                        )}
+                      </ListItemButton>
+                    </ListItem>
+                  );
+                })}
               </List>
             </CardContent>
           </Card>

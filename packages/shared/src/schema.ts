@@ -49,6 +49,8 @@ export const eventSchema = z.object({
   scheduleVisible: z.boolean(),
   /** イベント写真を参加者以外にも公開する（主催者がオンオフ可能。既定は参加者限定） */
   photosPublic: z.boolean(),
+  /** 出席チェックモード。ON なら出席チェックされた人だけが参加者扱いになる */
+  attendanceCheck: z.boolean(),
   /** 短いシェアURL用スラッグ（/e/:slug） */
   slug: z.string(),
 });
@@ -92,6 +94,7 @@ export const updateEventInput = z.object({
   scheduleAnonymous: z.boolean().optional(),
   scheduleVisible: z.boolean().optional(),
   photosPublic: z.boolean().optional(),
+  attendanceCheck: z.boolean().optional(),
 });
 export type UpdateEventInput = z.infer<typeof updateEventInput>;
 
@@ -103,9 +106,17 @@ export const eventMemberSchema = z.object({
   role: z.enum(EVENT_ROLES),
   slotId: z.string().nullable(),
   status: z.string(),
+  /** 出席チェック済みか（出席チェックモード時に有効） */
+  attended: z.boolean(),
   createdAt: z.number(),
 });
 export type EventMember = z.infer<typeof eventMemberSchema>;
+
+/** 出席チェックの更新（staff） */
+export const setAttendanceInput = z.object({
+  attended: z.boolean(),
+});
+export type SetAttendanceInput = z.infer<typeof setAttendanceInput>;
 
 export const eventMemberWithUser = eventMemberSchema.extend({
   user: userSchema,
@@ -147,6 +158,8 @@ export type UpdateSubmissionInput = z.infer<typeof updateSubmissionInput>;
 /** ---- My page ---- */
 export const myEventSummary = eventSchema.extend({
   myRole: z.enum(EVENT_ROLES),
+  /** 自分が出席チェック済みか */
+  attended: z.boolean(),
 });
 export type MyEventSummary = z.infer<typeof myEventSummary>;
 

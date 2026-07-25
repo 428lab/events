@@ -26,7 +26,13 @@ meRoutes.get("/events", async (c) => {
   const all = await eventMembersRepo.listEventsForUser(user.id);
   // 日程調整中（endsAt未確定=0）は常に「開催予定」側
   const ongoing = all.filter((e) => e.scheduling || e.endsAt >= now);
-  const past = all.filter((e) => !e.scheduling && e.endsAt < now);
+  // 過去参加。出席チェックモードで未出席の参加者は「参加した」に含めない
+  const past = all.filter(
+    (e) =>
+      !e.scheduling &&
+      e.endsAt < now &&
+      !(e.attendanceCheck && e.myRole === "participant" && !e.attended),
+  );
   return c.json({ ongoing, past });
 });
 

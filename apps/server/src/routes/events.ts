@@ -6,6 +6,7 @@ import {
   createSlotInput,
   finalizeDateInput,
   joinEventInput,
+  setAttendanceInput,
   setMemberSlotStatusInput,
   updateEventInput,
   updateMemberRoleInput,
@@ -20,6 +21,7 @@ import type {
   Event,
   FinalizeDateInput,
   JoinEventInput,
+  SetAttendanceInput,
   SetMemberSlotStatusInput,
   UpdateEventInput,
   UpdateMemberRoleInput,
@@ -385,6 +387,22 @@ eventRoutes.patch(
       c.req.param("id"),
       c.req.param("userId"),
       valid<UpdateMemberRoleInput>(c, "json").role,
+    );
+    if (!member) return c.json({ error: "not_found" }, 404);
+    return c.json({ member });
+  },
+);
+
+/** 出席チェック（staff のみ） */
+eventRoutes.patch(
+  "/:id/members/:userId/attendance",
+  requireEventRole(["staff"]),
+  zValidator("json", setAttendanceInput),
+  async (c) => {
+    const member = await eventMembersRepo.setAttended(
+      c.req.param("id"),
+      c.req.param("userId"),
+      valid<SetAttendanceInput>(c, "json").attended,
     );
     if (!member) return c.json({ error: "not_found" }, 404);
     return c.json({ member });

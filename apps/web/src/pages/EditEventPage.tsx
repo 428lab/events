@@ -52,6 +52,7 @@ export function EditEventPage() {
   const [venueOffline, setVenueOffline] = useState("");
   const [venueOnline, setVenueOnline] = useState("");
   const [contestMode, setContestMode] = useState(false);
+  const [attendanceCheck, setAttendanceCheck] = useState(false);
   const [communityId, setCommunityId] = useState("");
   const myCommunitiesQuery = useMyCommunities();
   const myCommunities = myCommunitiesQuery.data;
@@ -70,6 +71,7 @@ export function EditEventPage() {
       setVenueOffline(e.venueOffline ?? "");
       setVenueOnline(e.venueOnline ?? "");
       setContestMode(e.contestMode);
+      setAttendanceCheck(e.attendanceCheck);
       setCommunityId(e.communityId ?? "");
       setInitialized(true);
     }
@@ -95,6 +97,7 @@ export function EditEventPage() {
         venueOffline: venueOffline || null,
         venueOnline: venueOnline || null,
         contestMode,
+        attendanceCheck,
         communityId: communityId || null,
       },
       { onSuccess: () => navigate(`/events/${id}`) },
@@ -218,6 +221,21 @@ export function EditEventPage() {
             />
             <Typography variant="caption" color="text.secondary" display="block">
               オフなら告知・募集だけの一般イベントになり、採点・成果物・表彰は表示されません。
+            </Typography>
+          </Box>
+
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={attendanceCheck}
+                  onChange={(e) => setAttendanceCheck(e.target.checked)}
+                />
+              }
+              label="出席チェックモード"
+            />
+            <Typography variant="caption" color="text.secondary" display="block">
+              オンにすると、スタッフが出席チェックした人だけが参加者として記録されます。チェックされなかった人は参加人数・参加履歴に含まれません（当日受付・ドタキャン対策に）。
             </Typography>
           </Box>
 

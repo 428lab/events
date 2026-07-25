@@ -14,6 +14,7 @@ interface MemberRow {
   role: string;
   slot_id: string | null;
   status: string;
+  attended: number;
   created_at: number;
 }
 
@@ -34,6 +35,7 @@ function toMember(row: MemberRow): EventMember {
     role: row.role as EventRole,
     slotId: row.slot_id,
     status: row.status,
+    attended: row.attended === 1,
     createdAt: row.created_at,
   };
 }
@@ -92,6 +94,21 @@ export const eventMembersRepo = {
     );
   },
 
+  /** 出席チェックの更新（staff） */
+  async setAttended(
+    eventId: string,
+    userId: string,
+    attended: boolean,
+  ): Promise<EventMember | null> {
+    await run(
+      "UPDATE event_member SET attended = ? WHERE event_id = ? AND user_id = ?",
+      attended ? 1 : 0,
+      eventId,
+      userId,
+    );
+    return this.find(eventId, userId);
+  },
+
   /** 枠の特定状態のメンバー（抽選用） */
   async membersBySlotStatus(
     slotId: string,
@@ -144,9 +161,11 @@ export const eventMembersRepo = {
   /** ユーザーが参加している全イベントを role 付きで返す（マイページ用） */
   async listEventsForUser(userId: string): Promise<MyEventSummary[]> {
     const rows = await many<Record<string, unknown> & { my_role: string }>(
-      `SELECT e.*, m.role AS my_role,
+      `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
                 (SELECT COUNT(1) FROM event_member em
-                 WHERE em.event_id = e.id AND em.status = 'confirmed') AS participant_count
+                 WHERE em.event_id = e.id AND em.status = 'confirmed'
+                   AND (e.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant'))
+                 AS participant_count
          FROM event_member m
          JOIN event e ON e.id = m.event_id
          WHERE m.user_id = ?
@@ -156,15 +175,19 @@ export const eventMembersRepo = {
     return rows.map(mapMyEventSummary);
   },
 
-  /** 公開プロフィール用: 公開イベントのうち本人が確定参加しているもの */
+  /** 公開プロフィール用: 公開イベントのうち本人が確定参加しているもの。
+   * 出席チェックモードのイベントは、参加者ロールなら出席済みのみ。 */
   async listPublicEventsForUser(userId: string): Promise<MyEventSummary[]> {
     const rows = await many<Record<string, unknown> & { my_role: string }>(
-      `SELECT e.*, m.role AS my_role,
+      `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
                 (SELECT COUNT(1) FROM event_member em
-                 WHERE em.event_id = e.id AND em.status = 'confirmed') AS participant_count
+                 WHERE em.event_id = e.id AND em.status = 'confirmed'
+                   AND (e.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant'))
+                 AS participant_count
          FROM event_member m
          JOIN event e ON e.id = m.event_id
          WHERE m.user_id = ? AND m.status = 'confirmed' AND e.status = 'published'
+           AND (e.attendance_check = 0 OR m.attended = 1 OR m.role <> 'participant')
          ORDER BY e.starts_at DESC`,
       userId,
     );
@@ -198,7 +221,9 @@ function mapMyEventSummary(
     scheduleAnonymous: (row.schedule_anonymous as number) === 1,
     scheduleVisible: (row.schedule_visible as number) === 1,
     photosPublic: (row.photos_public as number) === 1,
+    attendanceCheck: (row.attendance_check as number) === 1,
     slug: (row.slug as string | null) ?? "",
     myRole: row.my_role as EventRole,
+    attended: (row.my_attended as number) === 1,
   };
 }
