@@ -156,6 +156,37 @@ export function EventPhotos({
                   loading="lazy"
                   sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                 />
+                {/* 投稿者（アイコン＋名前） */}
+                <Stack
+                  direction="row"
+                  spacing={0.5}
+                  alignItems="center"
+                  sx={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    px: 0.5,
+                    py: 0.25,
+                    background:
+                      "linear-gradient(to top, rgba(0,0,0,0.65), rgba(0,0,0,0))",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <Avatar
+                    src={p.userAvatarUrl ?? undefined}
+                    sx={{ width: 16, height: 16, fontSize: 9 }}
+                  >
+                    {p.userName.charAt(0)}
+                  </Avatar>
+                  <Typography
+                    variant="caption"
+                    noWrap
+                    sx={{ color: "#fff", fontSize: 11, minWidth: 0 }}
+                  >
+                    {p.userName}
+                  </Typography>
+                </Stack>
                 {canDelete(p) && (
                   <IconButton
                     className="photo-del"
