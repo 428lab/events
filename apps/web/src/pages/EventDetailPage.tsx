@@ -366,28 +366,29 @@ export function EventDetailPage() {
         </Card>
       )}
 
-      <Stack direction="row" spacing={2} alignItems="center">
-        {!me ? (
+      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+        {/* 参加状態のバッジは終了後も表示（参加履歴として残す） */}
+        {isMember && myMembership && myRole === "participant" && (
+          <Chip
+            color={myMembership.status === "confirmed" ? "success" : "default"}
+            label={`参加状態: ${STATUS_LABEL[myMembership.status] ?? myMembership.status}`}
+          />
+        )}
+        {eventEnded ? (
+          <Chip variant="outlined" label="このイベントは終了しました" />
+        ) : !me ? (
           <Button variant="contained" component={RouterLink} to="/login">
             ログインして参加
           </Button>
         ) : isMember ? (
-          <>
-            {myMembership && myRole === "participant" && (
-              <Chip
-                color={myMembership.status === "confirmed" ? "success" : "default"}
-                label={`参加状態: ${STATUS_LABEL[myMembership.status] ?? myMembership.status}`}
-              />
-            )}
-            <Button
-              variant="outlined"
-              color="error"
-              disabled={leave.isPending}
-              onClick={() => leave.mutate(id)}
-            >
-              参加を解除する
-            </Button>
-          </>
+          <Button
+            variant="outlined"
+            color="error"
+            disabled={leave.isPending}
+            onClick={() => leave.mutate(id)}
+          >
+            参加を解除する
+          </Button>
         ) : !hasSlots ? (
           <Button
             variant="contained"
@@ -423,6 +424,7 @@ export function EventDetailPage() {
           slots={slots}
           me={me ?? null}
           isMember={isMember}
+          ended={eventEnded}
         />
       )}
 

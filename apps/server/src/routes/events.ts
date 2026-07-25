@@ -275,12 +275,19 @@ eventRoutes.delete("/:id", requireEventRole(["staff"]), async (c) => {
   return c.json({ ok: true });
 });
 
+/** 終了済みイベントか（日程調整中＝開催日未定は終了扱いしない） */
+function isEventEnded(event: Event): boolean {
+  return !event.scheduling && event.endsAt < Date.now();
+}
+
 /** 参加登録（枠選択。先着=確定/満員はキャンセル待ち、抽選=申込） */
 eventRoutes.post("/:id/join", zValidator("json", joinEventInput), async (c) => {
   const user = c.get("user");
   const eventId = c.req.param("id");
   const event = await eventsRepo.findById(eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
+  // 終了済みイベントには参加できない（日程調整中は終了扱いしない）
+  if (isEventEnded(event)) return c.json({ error: "event_ended" }, 409);
 
   const existing = await eventMembersRepo.find(eventId, user.id);
   if (existing) return c.json({ member: existing });
@@ -322,6 +329,10 @@ eventRoutes.post("/:id/join", zValidator("json", joinEventInput), async (c) => {
 eventRoutes.delete("/:id/join", async (c) => {
   const user = c.get("user");
   const eventId = c.req.param("id");
+  const event = await eventsRepo.findById(eventId);
+  if (!event) return c.json({ error: "not_found" }, 404);
+  // 終了済みイベントは参加解除できない（参加履歴を残す）
+  if (isEventEnded(event)) return c.json({ error: "event_ended" }, 409);
   const leaving = await eventMembersRepo.find(eventId, user.id);
   await entriesRepo.removeIndividualEntry(eventId, user.id);
   await eventMembersRepo.remove(eventId, user.id);

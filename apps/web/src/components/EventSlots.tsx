@@ -17,11 +17,14 @@ export function EventSlots({
   slots,
   me,
   isMember,
+  ended = false,
 }: {
   eventId: string;
   slots: ParticipationSlot[];
   me: User | null;
   isMember: boolean;
+  /** 終了済みイベントでは申込ボタンを出さない */
+  ended?: boolean;
 }) {
   const join = useJoinEvent();
 
@@ -69,7 +72,7 @@ export function EventSlots({
                   </Typography>
                 )}
               </Box>
-              {me && !isMember && (
+              {me && !isMember && !ended && (
                 <Button
                   variant="contained"
                   size="small"
