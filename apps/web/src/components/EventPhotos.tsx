@@ -497,9 +497,14 @@ function PhotoLightbox({
                       {c.userName.charAt(0)}
                     </Avatar>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="caption" fontWeight={600}>
-                        {c.userName}
-                      </Typography>
+                      <Stack direction="row" spacing={0.75} alignItems="baseline" flexWrap="wrap">
+                        <Typography variant="caption" fontWeight={600}>
+                          {c.userName}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {formatDateTime(c.createdAt)}
+                        </Typography>
+                      </Stack>
                       <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                         {c.body}
                       </Typography>
