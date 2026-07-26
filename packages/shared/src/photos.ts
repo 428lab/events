@@ -46,5 +46,6 @@ export type UserPhoto = z.infer<typeof userPhotoSchema>;
 export const EVENT_PHOTO_LIMIT = 50;
 /** 1枚あたりのコメント上限件数（いたずら対策） */
 export const PHOTO_COMMENT_LIMIT = 100;
-/** 1枚あたりの上限バイト数（クライアント側でWebP圧縮後） */
-export const EVENT_PHOTO_MAX_BYTES = 6 * 1024 * 1024;
+/** 1枚あたりの上限バイト数。クライアントは長辺1600px/WebP画質0.8に縮小して
+ * 送るため通常はごく小さい。これを超えるものはサーバーが拒否（縮小はしない）。 */
+export const EVENT_PHOTO_MAX_BYTES = 1.5 * 1024 * 1024;

@@ -75,7 +75,8 @@ export function EventPhotos({
       setUploading(images.length);
       try {
         for (const file of images) {
-          const encoded = await encodeImageForUpload(file, 2048, 0.85);
+          // 長辺1600px・WebP画質0.8に縮小（容量削減。典型 ~250KB）
+          const encoded = await encodeImageForUpload(file, 1600, 0.8);
           await upload.mutateAsync(encoded);
           setUploading((n) => n - 1);
         }
