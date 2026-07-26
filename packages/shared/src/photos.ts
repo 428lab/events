@@ -42,7 +42,9 @@ export const userPhotoSchema = z.object({
 });
 export type UserPhoto = z.infer<typeof userPhotoSchema>;
 
-/** 1イベントあたりの上限枚数 */
-export const EVENT_PHOTO_LIMIT = 500;
+/** 1イベントあたりの上限枚数（いたずら対策） */
+export const EVENT_PHOTO_LIMIT = 50;
+/** 1枚あたりのコメント上限件数（いたずら対策） */
+export const PHOTO_COMMENT_LIMIT = 100;
 /** 1枚あたりの上限バイト数（クライアント側でWebP圧縮後） */
 export const EVENT_PHOTO_MAX_BYTES = 6 * 1024 * 1024;

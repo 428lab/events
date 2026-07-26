@@ -21,7 +21,8 @@ import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import SendIcon from "@mui/icons-material/Send";
 import { Link as RouterLink } from "react-router-dom";
 import type { EventPhoto, EventRole } from "@eventer/shared";
-import { EVENT_PHOTO_LIMIT } from "@eventer/shared";
+import { EVENT_PHOTO_LIMIT, PHOTO_COMMENT_LIMIT } from "@eventer/shared";
+import { ApiError } from "../api/client.js";
 import { useMe, useUpdateEvent } from "../api/hooks.js";
 import {
   useAddPhotoComment,
@@ -377,11 +378,21 @@ function PhotoLightbox({
   const addComment = useAddPhotoComment(eventId, photoId);
   const delComment = useDeletePhotoComment(eventId, photoId);
   const [body, setBody] = useState("");
+  const [commentError, setCommentError] = useState<string | null>(null);
 
   const submit = () => {
     const text = body.trim();
     if (!text) return;
-    addComment.mutate(text, { onSuccess: () => setBody("") });
+    setCommentError(null);
+    addComment.mutate(text, {
+      onSuccess: () => setBody(""),
+      onError: (err) =>
+        setCommentError(
+          err instanceof ApiError && err.status === 409
+            ? `コメントは1枚につき${PHOTO_COMMENT_LIMIT}件までです。`
+            : "コメントの投稿に失敗しました。",
+        ),
+    });
   };
 
   return (
@@ -508,10 +519,16 @@ function PhotoLightbox({
 
             {/* 入力 */}
             {canComment ? (
+              <Box sx={{ borderTop: 1, borderColor: "divider" }}>
+              {commentError && (
+                <Alert severity="warning" sx={{ mx: 1.5, mt: 1.5 }} onClose={() => setCommentError(null)}>
+                  {commentError}
+                </Alert>
+              )}
               <Stack
                 direction="row"
                 spacing={1}
-                sx={{ p: 1.5, borderTop: 1, borderColor: "divider" }}
+                sx={{ p: 1.5 }}
               >
                 <TextField
                   size="small"
@@ -533,6 +550,7 @@ function PhotoLightbox({
                   <SendIcon />
                 </IconButton>
               </Stack>
+              </Box>
             ) : (
               <Typography
                 variant="caption"

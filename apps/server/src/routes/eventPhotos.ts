@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import {
   EVENT_PHOTO_LIMIT,
   EVENT_PHOTO_MAX_BYTES,
+  PHOTO_COMMENT_LIMIT,
   createPhotoCommentInput,
 } from "@eventer/shared";
 import type { CreatePhotoCommentInput } from "@eventer/shared";
@@ -96,6 +97,9 @@ eventPhotoRoutes.post(
     const photo = await eventPhotosRepo.findById(c.req.param("photoId"));
     if (!photo || photo.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
+    }
+    if ((await eventPhotoCommentsRepo.countByPhoto(photo.id)) >= PHOTO_COMMENT_LIMIT) {
+      return c.json({ error: "comment_limit", limit: PHOTO_COMMENT_LIMIT }, 409);
     }
     const comment = await eventPhotoCommentsRepo.create(
       photo.id,

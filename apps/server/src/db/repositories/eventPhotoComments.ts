@@ -43,6 +43,14 @@ export const eventPhotoCommentsRepo = {
     return row ? toComment(row) : null;
   },
 
+  async countByPhoto(photoId: string): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(1) AS n FROM event_photo_comment WHERE photo_id = ?",
+      photoId,
+    );
+    return row?.n ?? 0;
+  },
+
   async create(
     photoId: string,
     userId: string,
