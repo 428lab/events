@@ -7,6 +7,7 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { decksRepo } from "../db/repositories/decks.js";
 import { awardsRepo } from "../db/repositories/awards.js";
+import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -71,6 +72,16 @@ publicRoutes.get("/users/:handle", async (c) => {
     communities,
     awards,
   });
+});
+
+/** 公開: ユーザーが公開設定イベントに投稿した写真ギャラリー（未ログイン可） */
+publicRoutes.get("/users/:handle/photos", async (c) => {
+  const handle = c.req.param("handle");
+  const user =
+    (await usersRepo.findByUsername(handle)) ??
+    (await usersRepo.findById(handle));
+  if (!user) return c.json({ error: "not_found" }, 404);
+  return c.json({ photos: await eventPhotosRepo.listPublicByUser(user.id) });
 });
 
 /** 公開イベント検索（キーワード/期間/コミュニティ/並び替え・ページング） */

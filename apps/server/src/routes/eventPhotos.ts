@@ -1,14 +1,21 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { EVENT_PHOTO_LIMIT, EVENT_PHOTO_MAX_BYTES } from "@eventer/shared";
+import {
+  EVENT_PHOTO_LIMIT,
+  EVENT_PHOTO_MAX_BYTES,
+  createPhotoCommentInput,
+} from "@eventer/shared";
+import type { CreatePhotoCommentInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth, currentUser } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { getBucket } from "../runtime.js";
+import { valid, zValidator } from "../lib/validator.js";
 import { normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
+import { eventPhotoCommentsRepo } from "../db/repositories/eventPhotoComments.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 
 const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
@@ -59,10 +66,67 @@ export async function getEventPhotoImage(c: Context<AppEnv>) {
   });
 }
 
-/* ===== 書き込み（要認証。アップロード・削除はメンバーのみ） ===== */
+/** 写真コメント一覧（閲覧できる人は誰でも） */
+export async function getPhotoComments(c: Context<AppEnv>) {
+  const eventId = c.req.param("id")!;
+  if (!(await canViewPhotos(eventId, c))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  const photo = await eventPhotosRepo.findById(c.req.param("photoId")!);
+  if (!photo || photo.eventId !== eventId) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  return c.json({
+    comments: await eventPhotoCommentsRepo.listByPhoto(photo.id),
+  });
+}
+
+/* ===== 書き込み（要認証。アップロード・コメント・削除はメンバーのみ） ===== */
 
 export const eventPhotoRoutes = new Hono<AppEnv>();
 eventPhotoRoutes.use("*", requireAuth);
+
+/** コメント投稿（メンバー。他人の写真にも複数可） */
+eventPhotoRoutes.post(
+  "/:id/photos/:photoId/comments",
+  requireEventRole([...MEMBER_ROLES]),
+  zValidator("json", createPhotoCommentInput),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const photo = await eventPhotosRepo.findById(c.req.param("photoId"));
+    if (!photo || photo.eventId !== eventId) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    const comment = await eventPhotoCommentsRepo.create(
+      photo.id,
+      c.get("user").id,
+      valid<CreatePhotoCommentInput>(c, "json").body,
+    );
+    return c.json({ comment }, 201);
+  },
+);
+
+/** コメント削除（本人 or staff/管理者） */
+eventPhotoRoutes.delete(
+  "/:id/photos/:photoId/comments/:commentId",
+  requireEventRole([...MEMBER_ROLES]),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const user = c.get("user");
+    const comment = await eventPhotoCommentsRepo.findById(
+      c.req.param("commentId"),
+    );
+    if (!comment || comment.photoId !== c.req.param("photoId")) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    if (comment.userId !== user.id && !isAppAdmin(user)) {
+      const member = await eventMembersRepo.find(eventId, user.id);
+      if (member?.role !== "staff") return c.json({ error: "forbidden" }, 403);
+    }
+    await eventPhotoCommentsRepo.delete(comment.id);
+    return c.json({ ok: true });
+  },
+);
 
 /** アップロード（生バイナリ） */
 eventPhotoRoutes.post(

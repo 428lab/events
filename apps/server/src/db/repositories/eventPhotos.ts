@@ -1,4 +1,4 @@
-import type { EventPhoto } from "@eventer/shared";
+import type { EventPhoto, UserPhoto } from "@eventer/shared";
 import { many, one, run } from "../client.js";
 
 interface Row {
@@ -9,6 +9,7 @@ interface Row {
   username: string;
   global_name: string | null;
   avatar_url: string | null;
+  comment_count: number;
 }
 
 function toPhoto(row: Row): EventPhoto {
@@ -18,12 +19,15 @@ function toPhoto(row: Row): EventPhoto {
     userId: row.user_id,
     userName: row.global_name ?? row.username,
     userAvatarUrl: row.avatar_url,
+    commentCount: row.comment_count ?? 0,
     createdAt: row.created_at,
   };
 }
 
+const COMMENT_COUNT =
+  "(SELECT COUNT(1) FROM event_photo_comment c WHERE c.photo_id = p.id) AS comment_count";
 const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at,
-  u.username, u.global_name, u.avatar_url
+  u.username, u.global_name, u.avatar_url, ${COMMENT_COUNT}
   FROM event_photo p JOIN user u ON u.id = p.user_id`;
 
 export const eventPhotosRepo = {
@@ -63,5 +67,32 @@ export const eventPhotosRepo = {
 
   async delete(id: string): Promise<void> {
     await run("DELETE FROM event_photo WHERE id = ?", id);
+  },
+
+  /** 公開プロフィール用: ユーザーが公開設定イベントに投稿した写真 */
+  async listPublicByUser(userId: string): Promise<UserPhoto[]> {
+    const rows = await many<{
+      id: string;
+      event_id: string;
+      event_title: string;
+      created_at: number;
+      comment_count: number;
+    }>(
+      `SELECT p.id, p.event_id, e.title AS event_title, p.created_at,
+              (SELECT COUNT(1) FROM event_photo_comment c WHERE c.photo_id = p.id)
+                AS comment_count
+       FROM event_photo p
+       JOIN event e ON e.id = p.event_id
+       WHERE p.user_id = ? AND e.photos_public = 1 AND e.status = 'published'
+       ORDER BY p.created_at DESC`,
+      userId,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      eventId: r.event_id,
+      eventTitle: r.event_title,
+      commentCount: r.comment_count ?? 0,
+      createdAt: r.created_at,
+    }));
   },
 };

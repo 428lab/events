@@ -8,9 +8,39 @@ export const eventPhotoSchema = z.object({
   /** 投稿者の表示情報（一覧表示用） */
   userName: z.string(),
   userAvatarUrl: z.string().nullable(),
+  /** この写真へのコメント数（サムネのオーバーレイ表示用） */
+  commentCount: z.number(),
   createdAt: z.number(),
 });
 export type EventPhoto = z.infer<typeof eventPhotoSchema>;
+
+/** 写真へのコメント */
+export const photoCommentSchema = z.object({
+  id: z.string(),
+  photoId: z.string(),
+  userId: z.string(),
+  userName: z.string(),
+  userAvatarUrl: z.string().nullable(),
+  username: z.string().nullable(),
+  body: z.string(),
+  createdAt: z.number(),
+});
+export type PhotoComment = z.infer<typeof photoCommentSchema>;
+
+export const createPhotoCommentInput = z.object({
+  body: z.string().trim().min(1).max(1000),
+});
+export type CreatePhotoCommentInput = z.infer<typeof createPhotoCommentInput>;
+
+/** 公開プロフィールのギャラリー用（公開設定イベントに投稿した写真） */
+export const userPhotoSchema = z.object({
+  id: z.string(),
+  eventId: z.string(),
+  eventTitle: z.string(),
+  commentCount: z.number(),
+  createdAt: z.number(),
+});
+export type UserPhoto = z.infer<typeof userPhotoSchema>;
 
 /** 1イベントあたりの上限枚数 */
 export const EVENT_PHOTO_LIMIT = 500;

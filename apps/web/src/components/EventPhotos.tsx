@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -11,20 +11,28 @@ import {
   IconButton,
   Stack,
   Switch,
+  TextField,
   Typography,
 } from "@mui/material";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import CloseIcon from "@mui/icons-material/Close";
+import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
+import SendIcon from "@mui/icons-material/Send";
+import { Link as RouterLink } from "react-router-dom";
 import type { EventPhoto, EventRole } from "@eventer/shared";
 import { EVENT_PHOTO_LIMIT } from "@eventer/shared";
 import { useMe, useUpdateEvent } from "../api/hooks.js";
 import {
+  useAddPhotoComment,
   useDeleteEventPhoto,
+  useDeletePhotoComment,
   useEventPhotos,
+  usePhotoComments,
   useUploadEventPhoto,
 } from "../api/eventPhotoHooks.js";
 import { encodeImageForUpload } from "../lib/encodeImage.js";
+import { formatDateTime } from "../lib/format.js";
 
 const photoUrl = (eventId: string, photoId: string) =>
   `/api/events/${eventId}/photos/${photoId}/image`;
@@ -56,38 +64,96 @@ export function EventPhotos({
   const [error, setError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<EventPhoto | null>(null);
   const [uploading, setUploading] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      const images = files.filter((f) => f.type.startsWith("image/"));
+      if (images.length === 0) return;
+      setError(null);
+      setUploading(images.length);
+      try {
+        for (const file of images) {
+          const encoded = await encodeImageForUpload(file, 2048, 0.85);
+          await upload.mutateAsync(encoded);
+          setUploading((n) => n - 1);
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error && err.message === "photo_limit"
+            ? `写真は1イベント${EVENT_PHOTO_LIMIT}枚までです。`
+            : "アップロードに失敗しました。",
+        );
+      } finally {
+        setUploading(0);
+      }
+    },
+    [upload],
+  );
+
+  // クリップボードから貼り付けてアップロード（メンバーのみ・ライトボックスを開いていない時）
+  useEffect(() => {
+    if (!isMember) return;
+    const onPaste = (e: ClipboardEvent) => {
+      if (lightbox) return;
+      const files = [...(e.clipboardData?.items ?? [])]
+        .filter((i) => i.kind === "file" && i.type.startsWith("image/"))
+        .map((i) => i.getAsFile())
+        .filter((f): f is File => Boolean(f));
+      if (files.length > 0) {
+        e.preventDefault();
+        void uploadFiles(files);
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [isMember, lightbox, uploadFiles]);
 
   // 閲覧権限がなく、写真もない（＝出す理由がない）なら非表示
   if (!canView) return null;
 
-  const onFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = [...(e.target.files ?? [])];
     e.target.value = "";
-    if (files.length === 0) return;
-    setError(null);
-    setUploading(files.length);
-    try {
-      for (const file of files) {
-        const encoded = await encodeImageForUpload(file, 2048, 0.85);
-        await upload.mutateAsync(encoded);
-        setUploading((n) => n - 1);
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error && err.message === "photo_limit"
-          ? `写真は1イベント${EVENT_PHOTO_LIMIT}枚までです。`
-          : "アップロードに失敗しました。",
-      );
-    } finally {
-      setUploading(0);
-    }
+    void uploadFiles(files);
   };
 
   const canDelete = (p: EventPhoto) => p.userId === me?.id || isStaff;
 
   return (
     <Card variant="outlined">
-      <CardContent>
+      <CardContent
+        onDragEnter={
+          isMember
+            ? (e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }
+            : undefined
+        }
+        onDragOver={isMember ? (e) => e.preventDefault() : undefined}
+        onDragLeave={
+          isMember
+            ? (e) => {
+                if (e.currentTarget === e.target) setDragOver(false);
+              }
+            : undefined
+        }
+        onDrop={
+          isMember
+            ? (e) => {
+                e.preventDefault();
+                setDragOver(false);
+                void uploadFiles([...e.dataTransfer.files]);
+              }
+            : undefined
+        }
+        sx={
+          dragOver
+            ? { outline: "2px dashed", outlineColor: "primary.main", outlineOffset: -4 }
+            : undefined
+        }
+      >
         <Stack
           direction="row"
           alignItems="center"
@@ -105,7 +171,7 @@ export function EventPhotos({
             accept="image/*"
             multiple
             hidden
-            onChange={onFiles}
+            onChange={onFileInput}
           />
           {isMember && (
             <Button
@@ -124,7 +190,7 @@ export function EventPhotos({
           {photosPublic
             ? "この写真は誰でも見られます。"
             : "このイベントの参加者だけが見られます。"}
-          {isMember && "複数選択できます。"}
+          {isMember && " ドラッグ&ドロップや貼り付け（Ctrl/⌘+V）でも追加できます。"}
         </Typography>
 
         {isStaff && (
@@ -151,7 +217,8 @@ export function EventPhotos({
 
         {!photos || photos.length === 0 ? (
           <Typography color="text.secondary">
-            まだ写真がありません。「写真を追加」から共有しましょう。
+            まだ写真がありません。
+            {isMember && "「写真を追加」やドラッグ&ドロップで共有しましょう。"}
           </Typography>
         ) : (
           <Box
@@ -186,6 +253,29 @@ export function EventPhotos({
                   loading="lazy"
                   sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                 />
+                {/* コメント数バッジ */}
+                {p.commentCount > 0 && (
+                  <Stack
+                    direction="row"
+                    spacing={0.25}
+                    alignItems="center"
+                    sx={{
+                      position: "absolute",
+                      top: 2,
+                      left: 2,
+                      px: 0.5,
+                      borderRadius: 1,
+                      bgcolor: "rgba(0,0,0,0.6)",
+                      color: "#fff",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <ChatBubbleOutlineIcon sx={{ fontSize: 12 }} />
+                    <Typography sx={{ fontSize: 11, lineHeight: 1.6 }}>
+                      {p.commentCount}
+                    </Typography>
+                  </Stack>
+                )}
                 {/* 投稿者（アイコン＋名前） */}
                 <Stack
                   direction="row"
@@ -245,66 +335,216 @@ export function EventPhotos({
         )}
       </CardContent>
 
-      {/* ライトボックス */}
-      <Dialog open={Boolean(lightbox)} onClose={() => setLightbox(null)} maxWidth="lg">
-        {lightbox && (
-          <Box sx={{ position: "relative", bgcolor: "#000" }}>
+      <PhotoLightbox
+        eventId={eventId}
+        photo={lightbox}
+        onClose={() => setLightbox(null)}
+        canComment={isMember}
+        isStaff={isStaff}
+        canDeletePhoto={lightbox ? canDelete(lightbox) : false}
+        onDeletePhoto={(id) => {
+          if (window.confirm("この写真を削除しますか？")) {
+            del.mutate(id);
+            setLightbox(null);
+          }
+        }}
+      />
+    </Card>
+  );
+}
+
+/** 写真の拡大表示＋コメント */
+function PhotoLightbox({
+  eventId,
+  photo,
+  onClose,
+  canComment,
+  isStaff,
+  canDeletePhoto,
+  onDeletePhoto,
+}: {
+  eventId: string;
+  photo: EventPhoto | null;
+  onClose: () => void;
+  canComment: boolean;
+  isStaff: boolean;
+  canDeletePhoto: boolean;
+  onDeletePhoto: (id: string) => void;
+}) {
+  const { data: me } = useMe();
+  const photoId = photo?.id ?? "";
+  const { data: comments } = usePhotoComments(eventId, photoId, Boolean(photo));
+  const addComment = useAddPhotoComment(eventId, photoId);
+  const delComment = useDeletePhotoComment(eventId, photoId);
+  const [body, setBody] = useState("");
+
+  const submit = () => {
+    const text = body.trim();
+    if (!text) return;
+    addComment.mutate(text, { onSuccess: () => setBody("") });
+  };
+
+  return (
+    <Dialog open={Boolean(photo)} onClose={onClose} maxWidth="lg" fullWidth>
+      {photo && (
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: { xs: "column", md: "row" },
+            bgcolor: "background.paper",
+            maxHeight: { md: "85vh" },
+          }}
+        >
+          {/* 画像 */}
+          <Box
+            sx={{
+              position: "relative",
+              bgcolor: "#000",
+              flex: { md: "1 1 60%" },
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minHeight: 200,
+            }}
+          >
             <IconButton
-              onClick={() => setLightbox(null)}
+              onClick={onClose}
               sx={{ position: "absolute", top: 8, right: 8, color: "#fff", zIndex: 1 }}
             >
               <CloseIcon />
             </IconButton>
             <Box
               component="img"
-              src={photoUrl(eventId, lightbox.id)}
+              src={photoUrl(eventId, photo.id)}
               alt=""
               sx={{
                 display: "block",
-                maxWidth: "90vw",
-                maxHeight: "85vh",
+                maxWidth: "100%",
+                maxHeight: { xs: "50vh", md: "85vh" },
                 objectFit: "contain",
               }}
             />
+          </Box>
+
+          {/* コメント欄 */}
+          <Stack
+            sx={{
+              flex: { md: "0 0 320px" },
+              width: { md: 320 },
+              maxHeight: { xs: "40vh", md: "85vh" },
+            }}
+          >
             <Stack
               direction="row"
               spacing={1}
               alignItems="center"
-              sx={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: 0,
-                p: 1,
-                bgcolor: "rgba(0,0,0,0.5)",
-              }}
+              sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}
             >
-              <Avatar src={lightbox.userAvatarUrl ?? undefined} sx={{ width: 24, height: 24 }}>
-                {lightbox.userName.charAt(0)}
+              <Avatar src={photo.userAvatarUrl ?? undefined} sx={{ width: 28, height: 28 }}>
+                {photo.userName.charAt(0)}
               </Avatar>
-              <Typography variant="body2" sx={{ color: "#fff", flex: 1 }}>
-                {lightbox.userName}
-              </Typography>
-              {canDelete(lightbox) && (
-                <Button
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600} noWrap>
+                  {photo.userName}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {formatDateTime(photo.createdAt)}
+                </Typography>
+              </Box>
+              {canDeletePhoto && (
+                <IconButton
                   size="small"
                   color="error"
-                  variant="contained"
-                  startIcon={<DeleteOutlineIcon />}
-                  onClick={() => {
-                    if (window.confirm("この写真を削除しますか？")) {
-                      del.mutate(lightbox.id);
-                      setLightbox(null);
-                    }
-                  }}
+                  onClick={() => onDeletePhoto(photo.id)}
+                  title="写真を削除"
                 >
-                  削除
-                </Button>
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
               )}
             </Stack>
-          </Box>
-        )}
-      </Dialog>
-    </Card>
+
+            {/* コメント一覧 */}
+            <Stack spacing={1.5} sx={{ p: 1.5, flex: 1, overflowY: "auto" }}>
+              {!comments ? (
+                <Typography variant="caption" color="text.secondary">
+                  読み込み中…
+                </Typography>
+              ) : comments.length === 0 ? (
+                <Typography variant="caption" color="text.secondary">
+                  まだコメントはありません。
+                </Typography>
+              ) : (
+                comments.map((c) => (
+                  <Stack key={c.id} direction="row" spacing={1} alignItems="flex-start">
+                    <Avatar
+                      src={c.userAvatarUrl ?? undefined}
+                      component={c.username ? RouterLink : "div"}
+                      to={c.username ? `/users/${c.username}` : undefined}
+                      sx={{ width: 24, height: 24, fontSize: 12, textDecoration: "none" }}
+                    >
+                      {c.userName.charAt(0)}
+                    </Avatar>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="caption" fontWeight={600}>
+                        {c.userName}
+                      </Typography>
+                      <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                        {c.body}
+                      </Typography>
+                    </Box>
+                    {(c.userId === me?.id || isStaff) && (
+                      <IconButton
+                        size="small"
+                        onClick={() => delComment.mutate(c.id)}
+                        sx={{ mt: -0.5 }}
+                      >
+                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    )}
+                  </Stack>
+                ))
+              )}
+            </Stack>
+
+            {/* 入力 */}
+            {canComment ? (
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{ p: 1.5, borderTop: 1, borderColor: "divider" }}
+              >
+                <TextField
+                  size="small"
+                  fullWidth
+                  multiline
+                  maxRows={4}
+                  placeholder="コメントを追加…"
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
+                  }}
+                />
+                <IconButton
+                  color="primary"
+                  disabled={!body.trim() || addComment.isPending}
+                  onClick={submit}
+                >
+                  <SendIcon />
+                </IconButton>
+              </Stack>
+            ) : (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ p: 1.5, borderTop: 1, borderColor: "divider" }}
+              >
+                コメントするにはこのイベントの参加者である必要があります。
+              </Typography>
+            )}
+          </Stack>
+        </Box>
+      )}
+    </Dialog>
   );
 }

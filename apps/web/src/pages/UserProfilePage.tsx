@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Alert,
   Avatar,
@@ -5,13 +6,18 @@ import {
   Card,
   CardContent,
   Chip,
+  Dialog,
+  IconButton,
   Link,
   Stack,
   Typography,
 } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import { Link as RouterLink, useParams } from "react-router-dom";
-import type { UserAward, UserProfile } from "@eventer/shared";
+import type { UserAward, UserPhoto, UserProfile } from "@eventer/shared";
 import { useUserProfile } from "../api/userHooks.js";
+import { useUserPhotos } from "../api/eventPhotoHooks.js";
 import { EventCard } from "../components/EventCard.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
@@ -115,6 +121,9 @@ export function UserProfilePage() {
 
       <AwardsSection awards={data.awards} profileName={data.name} />
 
+      <PhotoGallerySection handle={data.handle ?? id} />
+
+
       {data.communities.length > 0 && (
         <Box>
           <Typography variant="h6" gutterBottom>
@@ -175,6 +184,122 @@ function Section({
           <EventCard key={e.id} event={e} role={e.myRole} />
         ))}
       </Stack>
+    </Box>
+  );
+}
+
+const userPhotoUrl = (p: UserPhoto) =>
+  `/api/events/${p.eventId}/photos/${p.id}/image`;
+
+/** 公開イベントに投稿した写真ギャラリー */
+function PhotoGallerySection({ handle }: { handle: string }) {
+  const { data: photos } = useUserPhotos(handle);
+  const [open, setOpen] = useState<UserPhoto | null>(null);
+  if (!photos || photos.length === 0) return null;
+  return (
+    <Box>
+      <Typography variant="h6" gutterBottom>
+        📷 投稿した写真（{photos.length}）
+      </Typography>
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: {
+            xs: "repeat(3, 1fr)",
+            sm: "repeat(4, 1fr)",
+            md: "repeat(6, 1fr)",
+          },
+          gap: 0.75,
+        }}
+      >
+        {photos.map((p) => (
+          <Box
+            key={p.id}
+            onClick={() => setOpen(p)}
+            sx={{
+              position: "relative",
+              aspectRatio: "1",
+              borderRadius: 1,
+              overflow: "hidden",
+              cursor: "pointer",
+              bgcolor: "action.hover",
+            }}
+          >
+            <Box
+              component="img"
+              src={userPhotoUrl(p)}
+              alt=""
+              loading="lazy"
+              sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            />
+            {p.commentCount > 0 && (
+              <Stack
+                direction="row"
+                spacing={0.25}
+                alignItems="center"
+                sx={{
+                  position: "absolute",
+                  top: 2,
+                  left: 2,
+                  px: 0.5,
+                  borderRadius: 1,
+                  bgcolor: "rgba(0,0,0,0.6)",
+                  color: "#fff",
+                  pointerEvents: "none",
+                }}
+              >
+                <ChatBubbleOutlineIcon sx={{ fontSize: 12 }} />
+                <Typography sx={{ fontSize: 11, lineHeight: 1.6 }}>
+                  {p.commentCount}
+                </Typography>
+              </Stack>
+            )}
+          </Box>
+        ))}
+      </Box>
+
+      <Dialog open={Boolean(open)} onClose={() => setOpen(null)} maxWidth="lg">
+        {open && (
+          <Box sx={{ position: "relative", bgcolor: "#000" }}>
+            <IconButton
+              onClick={() => setOpen(null)}
+              sx={{ position: "absolute", top: 8, right: 8, color: "#fff", zIndex: 1 }}
+            >
+              <CloseIcon />
+            </IconButton>
+            <Box
+              component="img"
+              src={userPhotoUrl(open)}
+              alt=""
+              sx={{
+                display: "block",
+                maxWidth: "90vw",
+                maxHeight: "85vh",
+                objectFit: "contain",
+              }}
+            />
+            <Box
+              sx={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                p: 1,
+                bgcolor: "rgba(0,0,0,0.55)",
+              }}
+            >
+              <Link
+                component={RouterLink}
+                to={`/events/${open.eventId}`}
+                sx={{ color: "#fff" }}
+                underline="hover"
+              >
+                {open.eventTitle} を見る →
+              </Link>
+            </Box>
+          </Box>
+        )}
+      </Dialog>
     </Box>
   );
 }

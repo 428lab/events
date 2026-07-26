@@ -23,6 +23,7 @@ import {
   eventPhotoRoutes,
   getEventPhotos,
   getEventPhotoImage,
+  getPhotoComments,
 } from "./routes/eventPhotos.js";
 import { currentUser } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
@@ -52,6 +53,7 @@ api.get("/events/:id/scores/results", getEventScoreResults);
 // 公開/参加者限定: イベント写真（photos_public 判定は各ハンドラ内。eventRoutes より先に登録）
 api.get("/events/:id/photos", getEventPhotos);
 api.get("/events/:id/photos/:photoId/image", getEventPhotoImage);
+api.get("/events/:id/photos/:photoId/comments", getPhotoComments);
 api.route("/events", eventRoutes);
 api.route("/events", scoringRoutes);
 api.route("/events", awardRoutes);
