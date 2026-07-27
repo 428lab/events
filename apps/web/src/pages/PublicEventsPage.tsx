@@ -48,6 +48,11 @@ function FeedLinks() {
             カレンダー(.ics)
           </Link>
         </Tooltip>
+        <Tooltip title="AIエージェント向けにフィードとクエリ仕様をまとめた llms.txt">
+          <Link href="/llms.txt" target="_blank" rel="noopener" variant="body2">
+            AI向け(llms.txt)
+          </Link>
+        </Tooltip>
       </Stack>
     </Box>
   );
