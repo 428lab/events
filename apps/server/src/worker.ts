@@ -33,6 +33,7 @@ import {
 import { currentUser } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
+import { feedRss, feedJson, feedIcs } from "./routes/feeds.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -230,6 +231,11 @@ app.get("/e/:slug", async (c) => {
   }
   return c.html(html);
 });
+
+// 公開イベントのフィード（RSS / JSON Feed / iCal。フィルタはクエリ）
+app.get("/feed/events.rss", feedRss);
+app.get("/feed/events.json", feedJson);
+app.get("/feed/events.ics", feedIcs);
 
 // それ以外（静的アセット & SPA ルート）は ASSETS から配信
 app.all("*", (c) => getAssets().fetch(c.req.raw));
