@@ -10,13 +10,25 @@ import { eventsRepo } from "../db/repositories/events.js";
 
 const MAX_ITEMS = 50;
 
+/** XML 1.0 で表現不可の制御文字を除去（1件でも混ざると feed 全体が不正XMLになる） */
+function stripInvalidXml(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+}
+
 function xmlEscape(s: string): string {
-  return s
+  return stripInvalidXml(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/** コードポイント境界で切り詰め（サロゲートペアを分断しない） */
+function truncate(s: string, max: number): string {
+  const cps = [...s];
+  return cps.length <= max ? s : cps.slice(0, max).join("");
 }
 
 function eventUrl(ev: Event): string {
@@ -52,7 +64,7 @@ function whenText(ev: Event): string {
 
 function summaryText(ev: Event): string {
   const parts = [whenText(ev), VENUE_LABEL[ev.venueType] ?? ev.venueType];
-  const desc = (ev.description || "").replace(/\s+/g, " ").trim().slice(0, 200);
+  const desc = truncate((ev.description || "").replace(/\s+/g, " ").trim(), 200);
   if (desc) parts.push(desc);
   return parts.join(" ／ ");
 }
@@ -84,6 +96,8 @@ async function fetchEvents(c: Context<AppEnv>): Promise<Event[]> {
     q,
     communityId,
     venueType,
+    // 日程調整中（開催日未定）はここには出さない（type=scheduling 専用）
+    excludeScheduling: true,
     from: from ?? (past ? undefined : now),
     to: to ?? (past ? now : undefined),
     sort:
@@ -171,19 +185,56 @@ export async function feedJson(c: Context<AppEnv>) {
   });
 }
 
+/** RFC5545 の 75 オクテット行折り返し（継続行は先頭に空白1個） */
+function foldIcsLine(line: string): string {
+  const enc = new TextEncoder();
+  if (enc.encode(line).length <= 75) return line;
+  const out: string[] = [];
+  let cur = "";
+  let curBytes = 0;
+  for (const ch of line) {
+    const chBytes = enc.encode(ch).length;
+    // 継続行は先頭空白1オクテットぶん詰めて 74 を上限にする
+    const limit = out.length === 0 ? 75 : 74;
+    if (curBytes + chBytes > limit) {
+      out.push(cur);
+      cur = ch;
+      curBytes = chBytes;
+    } else {
+      cur += ch;
+      curBytes += chBytes;
+    }
+  }
+  if (cur) out.push(cur);
+  return out.join("\r\n ");
+}
+
 /** iCalendar（.ics）。日程調整中（開催日未定）は VEVENT を出さない */
 export async function feedIcs(c: Context<AppEnv>) {
   const events = await fetchEvents(c);
   const dt = (ms: number) =>
     new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const esc = (s: string) =>
-    s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+    s
+      // 制御文字を除去（CR/LFは改行エスケープに、TABは残す）
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+      .replace(/\\/g, "\\\\")
+      .replace(/;/g, "\\;")
+      .replace(/,/g, "\\,")
+      .replace(/\r\n|\r|\n/g, "\\n");
+  let host = "events.kojira.io";
+  try {
+    host = new URL(env.appBaseUrl).hostname;
+  } catch {
+    // appBaseUrl が不正でも既定ホストで継続
+  }
   const vevents = events
     .filter((ev) => !ev.scheduling)
     .map((ev) =>
       [
         "BEGIN:VEVENT",
-        `UID:${ev.id}@events.kojira.io`,
+        `UID:${ev.id}@${host}`,
         `DTSTAMP:${dt(ev.createdAt)}`,
         `DTSTART:${dt(ev.startsAt)}`,
         `DTEND:${dt(ev.endsAt)}`,
@@ -191,7 +242,9 @@ export async function feedIcs(c: Context<AppEnv>) {
         `DESCRIPTION:${esc(summaryText(ev))}`,
         `URL:${eventUrl(ev)}`,
         "END:VEVENT",
-      ].join("\r\n"),
+      ]
+        .map(foldIcsLine)
+        .join("\r\n"),
     )
     .join("\r\n");
   const ics = [

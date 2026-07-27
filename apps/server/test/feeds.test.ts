@@ -80,4 +80,32 @@ describe("イベントフィード (#19)", () => {
     const feed = (await res.json()) as { items: { title: string }[] };
     expect(feed.items.some((i) => i.title === unique)).toBe(false);
   });
+
+  it("type=past: 日程調整中（開催日未定）イベントは過去フィードに出さない", async () => {
+    const cookie = await loginDev();
+    const schedTitle = `調整中_${crypto.randomUUID().slice(0, 8)}`;
+    // 開催日未定（scheduling=true）の公開イベント。starts_at=0 なので to=now 条件に引っかかりうる
+    await createPublished(cookie, schedTitle, {
+      scheduling: true,
+      startsAt: 0,
+      endsAt: 0,
+    });
+    const res = await SELF.fetch(`${BASE}/feed/events.json?type=past`);
+    const feed = (await res.json()) as { items: { title: string }[] };
+    expect(feed.items.some((i) => i.title === schedTitle)).toBe(false);
+  });
+
+  it("RSS: タイトルの XML 非許容制御文字は除去され、整形式を保つ", async () => {
+    const cookie = await loginDev();
+    const label = crypto.randomUUID().slice(0, 8);
+    // U+0000 と U+0001 は XML1.0 で実体参照でも表現不可。混入しても feed 全体が壊れないこと
+    await createPublished(cookie, `制御\u0000\u0001文字${label}`);
+    const res = await SELF.fetch(`${BASE}/feed/events.rss`);
+    const xml = await res.text();
+    expect(res.status).toBe(200);
+    // eslint-disable-next-line no-control-regex
+    expect(xml).not.toMatch(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/);
+    expect(xml).not.toContain("&#0;");
+    expect(xml).toContain(`制御文字${label}`);
+  });
 });
