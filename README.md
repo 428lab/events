@@ -73,6 +73,15 @@ pnpm dev   # web: vite (127.0.0.1:4280) + API: wrangler dev (:8787、vite が /a
 - ローカルの環境変数はリポジトリ直下の `.dev.vars`（gitignore 済）。`ENVIRONMENT=development` にすると開発用ログイン（dev-login）が使える。
 - シークレット（OAuth クレデンシャル・SESSION_SECRET）は `wrangler secret put` で登録し、リポジトリには入れない。
 
+## 開発フロー（issue #23）
+
+1. **issue を立てる**（すべての修正・機能で先に起票）
+2. ブランチを切る（`feat/…-#<issue>` / `fix/…-#<issue>`）→ 実装・コミット
+3. **PR を作成**（`Closes #<issue>`）
+4. **第三者視点レビュー**: 実装者とは独立した code-reviewer による diff レビュー→指摘を修正
+5. ブランチを staging にデプロイして動作確認 → **確認後に GO**
+6. PR を main にマージ → 本番反映（DB変更は migration を各環境へ）
+
 ## デプロイ
 
 GitHub Actions（`.github/workflows/deploy.yml`）がブランチ連動でデプロイします。
