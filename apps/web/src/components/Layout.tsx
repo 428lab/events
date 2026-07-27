@@ -190,6 +190,11 @@ export function Layout({
                 )}
               </MenuItem>
             )}
+            {isAdmin && (
+              <MenuItem component={RouterLink} to="/admin/stats" onClick={closeMenu}>
+                統計（全イベント）
+              </MenuItem>
+            )}
             <MenuItem component={RouterLink} to="/account" onClick={closeMenu}>
               アカウント設定
             </MenuItem>
