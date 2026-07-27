@@ -32,7 +32,14 @@ async function canViewPhotos(eventId: string, c: Context): Promise<boolean> {
   const user = await currentUser(c);
   if (!user) return false;
   if (isAppAdmin(user)) return true;
-  return Boolean(await eventMembersRepo.find(eventId, user.id));
+  const member = await eventMembersRepo.find(eventId, user.id);
+  if (!member) return false;
+  // 出席チェックモードでは、参加者ロールは出席チェック済みのみ閲覧可
+  // （参加人数カウント COUNTS_AS_PARTICIPANT と同じ基準）
+  if (event.attendanceCheck && member.role === "participant" && !member.attended) {
+    return false;
+  }
+  return true;
 }
 
 /* ===== 公開ハンドラ（未ログイン可。worker.ts で eventRoutes より先に登録） ===== */
