@@ -44,66 +44,75 @@ async function setupEvent(cookie: string): Promise<string> {
   return event.id;
 }
 
-/** 未チェックの participant を1人作り、そのセッションcookieを返す */
-async function makeUncheckedParticipant(eventId: string): Promise<string> {
+/** 非adminのメンバーを1人作り、{ userId, cookie } を返す。
+ * discord_id は ADMIN_DISCORD_IDS(=dev-user) と一致させないので管理者にはならない。 */
+async function makeMember(
+  eventId: string,
+  role: "participant" | "staff" | "judge" | "observer",
+  attended: 0 | 1,
+): Promise<{ userId: string; cookie: string }> {
   const uid = crypto.randomUUID();
   const sid = crypto.randomUUID();
   await env.DB.prepare(
     "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at) VALUES (?, ?, ?, ?, NULL, ?)",
   )
-    .bind(uid, `x:${uid}`, `guest_${uid.slice(0, 6)}`, "ゲスト", Date.now())
+    .bind(uid, `nostr:${uid}`, `u_${uid.slice(0, 6)}`, "テスト", Date.now())
     .run();
   await env.DB.prepare(
-    "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, 'participant', NULL, 'confirmed', 0, ?)",
+    "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, ?, NULL, 'confirmed', ?, ?)",
   )
-    .bind(crypto.randomUUID(), eventId, uid, Date.now())
+    .bind(crypto.randomUUID(), eventId, uid, role, attended, Date.now())
     .run();
   await env.DB.prepare(
     "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
   )
     .bind(sid, uid, Date.now() + 86400000)
     .run();
-  return `eventer_session=${sid}`;
+  return { userId: uid, cookie: `eventer_session=${sid}` };
 }
 
 describe("写真×出席チェック (#22)", () => {
-  it("出席チェックモード: 未チェックの参加者は写真を閲覧できない(403)、staffは可(200)", async () => {
-    const staff = await loginDev();
-    const eventId = await setupEvent(staff);
-    const guest = await makeUncheckedParticipant(eventId);
+  it("出席チェックモード: 未チェックの参加者は閲覧不可(403)、未チェックでもstaffは可(200)、未ログインは403", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const participant = await makeMember(eventId, "participant", 0);
+    // 非adminのstaff（出席未チェック）＝ role<>participant の分岐を実際に検証
+    const staff = await makeMember(eventId, "staff", 0);
 
-    // 未チェック参加者 → 403
+    // 未チェック participant → 403
     const denied = await SELF.fetch(`${BASE}/api/events/${eventId}/photos`, {
-      headers: { cookie: guest },
+      headers: { cookie: participant.cookie },
     });
     expect(denied.status).toBe(403);
 
-    // staff(DevUser) → 200
+    // 未ログイン（参加者限定なので）→ 403
+    const anon = await SELF.fetch(`${BASE}/api/events/${eventId}/photos`);
+    expect(anon.status).toBe(403);
+
+    // 非adminのstaff（未チェックでも）→ 200
     const staffView = await SELF.fetch(`${BASE}/api/events/${eventId}/photos`, {
-      headers: { cookie: staff },
+      headers: { cookie: staff.cookie },
     });
     expect(staffView.status).toBe(200);
   });
 
-  it("出席チェック後は閲覧できる(200)", async () => {
-    const staff = await loginDev();
-    const eventId = await setupEvent(staff);
-    const guest = await makeUncheckedParticipant(eventId);
-    // guest の userId を取り出す（session→user）
-    const uid = (
-      await env.DB.prepare(
-        "SELECT user_id AS u FROM session WHERE id = ?",
-      )
-        .bind(guest.split("=")[1])
-        .first<{ u: string }>()
-    )!.u;
+  it("出席チェック後は participant も閲覧できる(200)", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const participant = await makeMember(eventId, "participant", 0);
 
-    // staff が出席チェック
+    // 事前は 403
+    const before = await SELF.fetch(`${BASE}/api/events/${eventId}/photos`, {
+      headers: { cookie: participant.cookie },
+    });
+    expect(before.status).toBe(403);
+
+    // staff(admin) が出席チェック
     const patch = await SELF.fetch(
-      `${BASE}/api/events/${eventId}/members/${uid}/attendance`,
+      `${BASE}/api/events/${eventId}/members/${participant.userId}/attendance`,
       {
         method: "PATCH",
-        headers: { "content-type": "application/json", cookie: staff },
+        headers: { "content-type": "application/json", cookie: admin },
         body: JSON.stringify({ attended: true }),
       },
     );
@@ -111,7 +120,7 @@ describe("写真×出席チェック (#22)", () => {
 
     // 出席済み → 200
     const ok = await SELF.fetch(`${BASE}/api/events/${eventId}/photos`, {
-      headers: { cookie: guest },
+      headers: { cookie: participant.cookie },
     });
     expect(ok.status).toBe(200);
   });
