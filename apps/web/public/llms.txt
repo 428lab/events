@@ -1,0 +1,23 @@
+# events lab
+
+> 募集から配信まで、あらゆるイベントをまるごと運営できるプラットフォーム（ベータ）。アイディアソン/ハッカソン運営、日程調整、採点、表彰、配信画面ツールなどを備える。
+
+公開イベントは機械可読なフィードで取得できます。フィルタはクエリパラメータで指定します（検索APIと同じ語彙）。
+
+## フィード
+
+- [イベント（JSON Feed 1.1）](https://events.kojira.io/feed/events.json): エージェント向け。各 item に `_event` 拡張（startsAt/endsAt(ISO8601)・scheduling・venueType・communityId・participantCount・slug）を含む
+- [イベント（RSS 2.0）](https://events.kojira.io/feed/events.rss): 一般的な RSS リーダー向け
+- [イベント（iCalendar）](https://events.kojira.io/feed/events.ics): カレンダーアプリでの購読向け（開催日時が確定したイベントのみ）
+
+### クエリパラメータ
+
+- `type`: `upcoming`（既定・開催中/開催予定）/ `past`（終了済み）/ `scheduling`（日程調整中・開催日未定）
+- `q`: キーワード（タイトル・説明を部分一致）
+- `venueType`: `offline` / `online` / `hybrid`
+- `communityId`: コミュニティで絞り込み
+- `sort`: `soon`（開催が近い順）/ `recent`（開催が新しい順）/ `new`（作成が新しい順）
+- `from`, `to`: 期間（Unix ミリ秒）
+- `limit`: 件数（最大 50・既定 20）
+
+例: `https://events.kojira.io/feed/events.json?type=upcoming&venueType=online&limit=30`

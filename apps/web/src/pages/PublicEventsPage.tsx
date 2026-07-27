@@ -3,12 +3,15 @@ import {
   Alert,
   Box,
   Button,
+  Link,
   Pagination,
   Stack,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import RssFeedIcon from "@mui/icons-material/RssFeed";
 import { Link as RouterLink } from "react-router-dom";
 import {
   usePublicEvents,
@@ -17,6 +20,38 @@ import {
 } from "../api/hooks.js";
 import { EventCard } from "../components/EventCard.js";
 import { EventSearchPanel } from "../components/EventSearchPanel.js";
+
+/** イベント一覧のフィード購読導線（RSS / JSON Feed / iCalendar）。
+ * /feed/* は SPA ルートではなくワーカーが直接返すので通常の <a>（Link href）で開く。 */
+function FeedLinks() {
+  return (
+    <Box sx={{ pt: 3, borderTop: 1, borderColor: "divider" }}>
+      <Stack
+        direction="row"
+        spacing={1.5}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+      >
+        <RssFeedIcon fontSize="small" sx={{ color: "text.secondary" }} />
+        <Typography variant="body2" color="text.secondary">
+          イベント一覧をフィードで購読:
+        </Typography>
+        <Link href="/feed/events.rss" target="_blank" rel="noopener" variant="body2">
+          RSS
+        </Link>
+        <Link href="/feed/events.json" target="_blank" rel="noopener" variant="body2">
+          JSON Feed
+        </Link>
+        <Tooltip title="カレンダーアプリで購読できます">
+          <Link href="/feed/events.ics" target="_blank" rel="noopener" variant="body2">
+            カレンダー(.ics)
+          </Link>
+        </Tooltip>
+      </Stack>
+    </Box>
+  );
+}
 
 function PastEvents() {
   const past = usePublicPastEventsInfinite();
@@ -134,6 +169,8 @@ export function PublicEventsPage() {
 
         {/* 過去イベントは開催中/未来のイベントが無いときだけ表示 */}
         {!upcoming.isLoading && total === 0 && <PastEvents />}
+
+        <FeedLinks />
       </Stack>
     </EventSearchPanel>
   );
