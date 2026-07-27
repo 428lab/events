@@ -52,6 +52,26 @@ export const eventViewsRepo = {
       sinceDay,
     );
     const uniqByDay = new Map(dailyUniq.map((r) => [r.day, r.uniques]));
+    // 参加登録（確定メンバー）の総数と日別（created_at を JST 日付に）
+    const partTotal = await one<{ v: number }>(
+      "SELECT COUNT(*) AS v FROM event_member WHERE event_id = ? AND status = 'confirmed'",
+      eventId,
+    );
+    const dailyJoins = await many<{ day: string; joins: number }>(
+      `SELECT strftime('%Y-%m-%d', created_at / 1000 + 32400, 'unixepoch') AS day,
+              COUNT(*) AS joins
+       FROM event_member
+       WHERE event_id = ? AND status = 'confirmed'
+       GROUP BY day HAVING day >= ?`,
+      eventId,
+      sinceDay,
+    );
+    const joinsByDay = new Map(dailyJoins.map((r) => [r.day, r.joins]));
+    // 表示があった日＋参加があった日の和集合で日次を構成
+    const allDays = [
+      ...new Set([...dailyViews.map((r) => r.day), ...joinsByDay.keys()]),
+    ].sort();
+    const viewsByDay = new Map(dailyViews.map((r) => [r.day, r.views]));
     const sources = await many<{ source: string; views: number }>(
       "SELECT source, SUM(views) AS views FROM event_view_stat WHERE event_id = ? AND day >= ? GROUP BY source ORDER BY views DESC LIMIT 15",
       eventId,
@@ -65,10 +85,12 @@ export const eventViewsRepo = {
     return {
       totalViews: total?.v ?? 0,
       uniqueVisitors: uniq?.v ?? 0,
-      daily: dailyViews.map((r) => ({
-        day: r.day,
-        views: r.views,
-        uniques: uniqByDay.get(r.day) ?? 0,
+      totalParticipants: partTotal?.v ?? 0,
+      daily: allDays.map((day) => ({
+        day,
+        views: viewsByDay.get(day) ?? 0,
+        uniques: uniqByDay.get(day) ?? 0,
+        joins: joinsByDay.get(day) ?? 0,
       })),
       sources,
       countries,

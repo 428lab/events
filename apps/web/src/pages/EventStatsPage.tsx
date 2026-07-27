@@ -91,11 +91,12 @@ export function EventStatsPage() {
         <>
           {/* サマリ */}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-            <StatTile label="表示回数" value={data.totalViews} />
+            <StatTile label="表示回数 (PV)" value={data.totalViews} />
             <StatTile label="ユニークビジター" value={data.uniqueVisitors} />
+            <StatTile label="参加登録数" value={data.totalParticipants} />
           </Stack>
 
-          {data.totalViews === 0 ? (
+          {data.totalViews === 0 && data.totalParticipants === 0 ? (
             <Typography color="text.secondary">
               まだアクセスがありません。公開してシェアすると、ここに流入元や推移が表示されます。
             </Typography>
@@ -142,44 +143,76 @@ function StatTile({ label, value }: { label: string; value: number }) {
 }
 
 function DailyChart({ daily }: { daily: EventStats["daily"] }) {
-  const max = Math.max(1, ...daily.map((d) => d.views));
+  // PVと参加数でスケールが大きく違うため、棒の高さは各系列の最大値で正規化
+  const maxViews = Math.max(1, ...daily.map((d) => d.views));
+  const maxJoins = Math.max(1, ...daily.map((d) => d.joins));
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="subtitle2" gutterBottom>
-          日別の表示回数
-        </Typography>
+        <Stack
+          direction="row"
+          spacing={2}
+          alignItems="center"
+          sx={{ mb: 1 }}
+          flexWrap="wrap"
+          useFlexGap
+        >
+          <Typography variant="subtitle2">日別の推移</Typography>
+          <LegendDot color="primary.main" label="表示回数 (PV)" />
+          <LegendDot color="secondary.main" label="参加登録" />
+        </Stack>
         <Box
           sx={{
             display: "flex",
             alignItems: "flex-end",
-            gap: 0.5,
-            height: 140,
+            gap: 0.75,
+            height: 150,
             overflowX: "auto",
           }}
         >
           {daily.map((d) => (
             <Box
               key={d.day}
-              title={`${d.day}: ${d.views}回 / ${d.uniques}人`}
+              title={`${d.day}  PV:${d.views} / ユニーク:${d.uniques} / 参加:${d.joins}`}
               sx={{
-                flex: "1 0 12px",
-                minWidth: 12,
+                flex: "1 0 20px",
+                minWidth: 20,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 gap: 0.5,
               }}
             >
+              {/* PVバー＋参加バーを横並び */}
               <Box
                 sx={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  justifyContent: "center",
+                  gap: "2px",
+                  height: 110,
                   width: "100%",
-                  height: `${(d.views / max) * 110}px`,
-                  bgcolor: "primary.main",
-                  borderRadius: "3px 3px 0 0",
-                  minHeight: 2,
                 }}
-              />
+              >
+                <Box
+                  sx={{
+                    width: 8,
+                    height: `${(d.views / maxViews) * 110}px`,
+                    bgcolor: "primary.main",
+                    borderRadius: "2px 2px 0 0",
+                    minHeight: d.views > 0 ? 2 : 0,
+                  }}
+                />
+                <Box
+                  sx={{
+                    width: 8,
+                    height: `${(d.joins / maxJoins) * 110}px`,
+                    bgcolor: "secondary.main",
+                    borderRadius: "2px 2px 0 0",
+                    minHeight: d.joins > 0 ? 2 : 0,
+                  }}
+                />
+              </Box>
               <Typography
                 sx={{ fontSize: 9, color: "text.secondary", whiteSpace: "nowrap" }}
               >
@@ -190,6 +223,17 @@ function DailyChart({ daily }: { daily: EventStats["daily"] }) {
         </Box>
       </CardContent>
     </Card>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <Stack direction="row" spacing={0.5} alignItems="center">
+      <Box sx={{ width: 10, height: 10, borderRadius: "2px", bgcolor: color }} />
+      <Typography variant="caption" color="text.secondary">
+        {label}
+      </Typography>
+    </Stack>
   );
 }
 

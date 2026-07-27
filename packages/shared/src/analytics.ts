@@ -4,9 +4,16 @@ import { z } from "zod";
 export const eventStatsSchema = z.object({
   totalViews: z.number(),
   uniqueVisitors: z.number(),
-  /** 日次の表示数・ユニーク（日付昇順） */
+  /** 参加登録者数（確定） */
+  totalParticipants: z.number(),
+  /** 日次の表示数・ユニーク・新規参加（日付昇順） */
   daily: z.array(
-    z.object({ day: z.string(), views: z.number(), uniques: z.number() }),
+    z.object({
+      day: z.string(),
+      views: z.number(),
+      uniques: z.number(),
+      joins: z.number(),
+    }),
   ),
   /** 流入元トップ（views降順） */
   sources: z.array(z.object({ source: z.string(), views: z.number() })),
