@@ -76,18 +76,22 @@ export async function recordEventView(c: Context<AppEnv>) {
 export const analyticsRoutes = new Hono<AppEnv>();
 analyticsRoutes.use("*", requireAuth);
 
+/** ?days=N を JST の since 日付に。未指定/0以下は全期間（'0000'） */
+function sinceDayFromQuery(c: Context<AppEnv>): string {
+  const days = Number(c.req.query("days"));
+  if (!Number.isFinite(days) || days <= 0) return "0000";
+  return new Date(Date.now() + 9 * 3600 * 1000 - days * 86400000)
+    .toISOString()
+    .slice(0, 10);
+}
+
 analyticsRoutes.get(
   "/:id/stats",
   requireEventRole(["staff"]),
   async (c) => {
-    const days = Number(c.req.query("days"));
-    const sinceDay =
-      Number.isFinite(days) && days > 0
-        ? new Date(Date.now() + 9 * 3600 * 1000 - days * 86400000)
-            .toISOString()
-            .slice(0, 10)
-        : "0000";
-    return c.json(await eventViewsRepo.statsForEvent(c.req.param("id"), sinceDay));
+    return c.json(
+      await eventViewsRepo.statsForEvent(c.req.param("id"), sinceDayFromQuery(c)),
+    );
   },
 );
 
@@ -100,5 +104,5 @@ const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
 export const adminStatsRoutes = new Hono<AppEnv>();
 adminStatsRoutes.use("*", requireAuth, requireAdmin);
 adminStatsRoutes.get("/", async (c) => {
-  return c.json(await eventViewsRepo.adminOverview());
+  return c.json(await eventViewsRepo.adminOverview(sinceDayFromQuery(c)));
 });

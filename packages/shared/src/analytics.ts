@@ -25,6 +25,11 @@ export type EventStats = z.infer<typeof eventStatsSchema>;
 /** 管理者向け: 全イベント横断のアクセス統計 */
 export const adminStatsSchema = z.object({
   totalViews: z.number(),
+  totalParticipants: z.number(),
+  /** 全イベント合算の日別推移（日付昇順） */
+  daily: z.array(
+    z.object({ day: z.string(), views: z.number(), joins: z.number() }),
+  ),
   events: z.array(
     z.object({
       eventId: z.string(),

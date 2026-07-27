@@ -31,10 +31,11 @@ export function useEventStats(eventId: string, days: number | null, enabled: boo
   });
 }
 
-export function useAdminStats(enabled: boolean) {
+export function useAdminStats(days: number | null, enabled: boolean) {
   return useQuery({
-    queryKey: ["adminStats"],
+    queryKey: ["adminStats", days],
     enabled,
-    queryFn: () => api.get<AdminStats>("/admin/stats"),
+    queryFn: () =>
+      api.get<AdminStats>(`/admin/stats${days ? `?days=${days}` : ""}`),
   });
 }

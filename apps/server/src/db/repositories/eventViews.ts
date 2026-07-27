@@ -97,22 +97,55 @@ export const eventViewsRepo = {
     };
   },
 
-  /** 管理者向け: 全イベント横断（views降順） */
-  async adminOverview(): Promise<AdminStats> {
+  /** 管理者向け: 全イベント横断（views降順、sinceDay 以降。'0000' で全期間） */
+  async adminOverview(sinceDay: string): Promise<AdminStats> {
     const total = await one<{ v: number }>(
-      "SELECT COALESCE(SUM(views),0) AS v FROM event_view_stat",
+      "SELECT COALESCE(SUM(views),0) AS v FROM event_view_stat WHERE day >= ?",
+      sinceDay,
+    );
+    const partTotal = await one<{ v: number }>(
+      `SELECT COUNT(*) AS v FROM event_member
+       WHERE status = 'confirmed'
+         AND strftime('%Y-%m-%d', created_at / 1000 + 32400, 'unixepoch') >= ?`,
+      sinceDay,
     );
     const rows = await many<{ event_id: string; title: string; views: number }>(
       `SELECT s.event_id, e.title, SUM(s.views) AS views
        FROM event_view_stat s JOIN event e ON e.id = s.event_id
+       WHERE s.day >= ?
        GROUP BY s.event_id ORDER BY views DESC LIMIT 100`,
+      sinceDay,
     );
     const uniqRows = await many<{ event_id: string; uniques: number }>(
-      "SELECT event_id, COUNT(DISTINCT visitor_id) AS uniques FROM event_view_unique GROUP BY event_id",
+      "SELECT event_id, COUNT(DISTINCT visitor_id) AS uniques FROM event_view_unique WHERE day >= ? GROUP BY event_id",
+      sinceDay,
     );
     const uniqById = new Map(uniqRows.map((r) => [r.event_id, r.uniques]));
+    // 全イベント合算の日別推移（PV / 参加）
+    const dViews = await many<{ day: string; views: number }>(
+      "SELECT day, SUM(views) AS views FROM event_view_stat WHERE day >= ? GROUP BY day",
+      sinceDay,
+    );
+    const dJoins = await many<{ day: string; joins: number }>(
+      `SELECT strftime('%Y-%m-%d', created_at / 1000 + 32400, 'unixepoch') AS day,
+              COUNT(*) AS joins
+       FROM event_member WHERE status = 'confirmed'
+       GROUP BY day HAVING day >= ?`,
+      sinceDay,
+    );
+    const viewsByDay = new Map(dViews.map((r) => [r.day, r.views]));
+    const joinsByDay = new Map(dJoins.map((r) => [r.day, r.joins]));
+    const allDays = [
+      ...new Set([...viewsByDay.keys(), ...joinsByDay.keys()]),
+    ].sort();
     return {
       totalViews: total?.v ?? 0,
+      totalParticipants: partTotal?.v ?? 0,
+      daily: allDays.map((day) => ({
+        day,
+        views: viewsByDay.get(day) ?? 0,
+        joins: joinsByDay.get(day) ?? 0,
+      })),
       events: rows.map((r) => ({
         eventId: r.event_id,
         title: r.title,
