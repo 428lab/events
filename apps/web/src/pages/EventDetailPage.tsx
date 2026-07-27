@@ -49,6 +49,7 @@ import {
 } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
 import { EventPhotos } from "../components/EventPhotos.js";
+import { useRecordView } from "../api/analyticsHooks.js";
 import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
@@ -130,6 +131,8 @@ export function EventDetailPage() {
   const leave = useLeaveEvent();
   const publish = usePublishEvent();
   const setAttendance = useSetAttendance(id);
+  // 公開イベントの表示を記録（サーバー側で下書き・主催者/管理者は除外）
+  useRecordView(id, data?.event.status === "published");
 
   if (isError) {
     return (
@@ -488,6 +491,15 @@ export function EventDetailPage() {
               to={`/events/${id}/live/control`}
             >
               🎬 配信
+            </Button>
+          )}
+          {isStaff && (
+            <Button
+              variant="outlined"
+              component={RouterLink}
+              to={`/events/${id}/stats`}
+            >
+              📊 アクセス統計
             </Button>
           )}
           {contest && isStaff && (

@@ -1,0 +1,40 @@
+import { useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { AdminStats, EventStats } from "@eventer/shared";
+import { api } from "./client.js";
+
+/** イベントページ表示時にアクセスを記録（マウント毎に1回、document.referrer を送る） */
+export function useRecordView(eventId: string, enabled: boolean) {
+  const sent = useRef<string | null>(null);
+  useEffect(() => {
+    if (!enabled || !eventId || sent.current === eventId) return;
+    sent.current = eventId;
+    // SPA内fetchのRefererは自ドメインになるため、外部流入元は document.referrer を送る
+    void fetch(`/api/events/${eventId}/view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      keepalive: true,
+      body: JSON.stringify({ ref: document.referrer }),
+    }).catch(() => {});
+  }, [eventId, enabled]);
+}
+
+export function useEventStats(eventId: string, days: number | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["event", eventId, "stats", days],
+    enabled: enabled && Boolean(eventId),
+    queryFn: () =>
+      api.get<EventStats>(
+        `/events/${eventId}/stats${days ? `?days=${days}` : ""}`,
+      ),
+  });
+}
+
+export function useAdminStats(enabled: boolean) {
+  return useQuery({
+    queryKey: ["adminStats"],
+    enabled,
+    queryFn: () => api.get<AdminStats>("/admin/stats"),
+  });
+}

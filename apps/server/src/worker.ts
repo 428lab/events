@@ -25,6 +25,11 @@ import {
   getEventPhotoImage,
   getPhotoComments,
 } from "./routes/eventPhotos.js";
+import {
+  analyticsRoutes,
+  adminStatsRoutes,
+  recordEventView,
+} from "./routes/analytics.js";
 import { currentUser } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
@@ -54,14 +59,18 @@ api.get("/events/:id/scores/results", getEventScoreResults);
 api.get("/events/:id/photos", getEventPhotos);
 api.get("/events/:id/photos/:photoId/image", getEventPhotoImage);
 api.get("/events/:id/photos/:photoId/comments", getPhotoComments);
+// 公開: アクセス計測ビーコン（eventRoutes より先に登録）
+api.post("/events/:id/view", recordEventView);
 api.route("/events", eventRoutes);
 api.route("/events", scoringRoutes);
 api.route("/events", awardRoutes);
 api.route("/events", liveControlRoutes);
 api.route("/events", eventPhotoRoutes);
+api.route("/events", analyticsRoutes);
 api.route("/me", meRoutes);
 api.route("/inquiries", inquiryRoutes);
 api.route("/admin/inquiries", adminInquiryRoutes);
+api.route("/admin/stats", adminStatsRoutes);
 api.route("/notifications", notificationRoutes);
 // 公開: コミュニティ画像（認証不要。communityRoutes(要認証) より先に登録）
 api.get("/communities/:id/icon", getCommunityImage("icon"));

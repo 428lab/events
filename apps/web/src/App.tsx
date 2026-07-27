@@ -37,6 +37,8 @@ import { LiveSetsPage } from "./pages/LiveSetsPage.js";
 import { LiveSetEditorPage } from "./pages/LiveSetEditorPage.js";
 import { LiveScreenPage } from "./pages/LiveScreenPage.js";
 import { LiveControlPage } from "./pages/LiveControlPage.js";
+import { EventStatsPage } from "./pages/EventStatsPage.js";
+import { AdminStatsPage } from "./pages/AdminStatsPage.js";
 import { DeckEditorPage } from "./pages/DeckEditorPage.js";
 import { DeckViewerPage } from "./pages/DeckViewerPage.js";
 import { ShortEventPage } from "./pages/ShortEventPage.js";
@@ -175,6 +177,7 @@ export function App() {
         <Route path="/inquiries" element={<InquiriesPage />} />
         <Route path="/inquiries/:id" element={<InquiryThreadPage />} />
         <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />
+        <Route path="/admin/stats" element={<AdminStatsPage />} />
         <Route path="/admin/inquiries/:id" element={<AdminInquiryThreadPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsPage />} />
@@ -202,6 +205,7 @@ export function App() {
           <Route path="present" element={<PresentPage />} />
           <Route path="awards" element={<AwardsPage />} />
           <Route path="control" element={<ControlPage />} />
+          <Route path="stats" element={<EventStatsPage />} />
           <Route path="criteria" element={<CriteriaAdminPage />} />
           <Route path="results" element={<ScoreResultsPage />} />
           <Route path="lottery" element={<LotteryAdminPage />} />

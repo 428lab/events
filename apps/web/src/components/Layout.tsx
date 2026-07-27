@@ -111,6 +111,11 @@ export function Layout({
                 </Badge>
               </Button>
             )}
+            {isAdmin && (
+              <Button color="inherit" component={RouterLink} to="/admin/stats">
+                統計
+              </Button>
+            )}
           </Box>
 
           <NotificationBell />
