@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -13,10 +13,11 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { EVENT_IMAGE, VENUE_TYPES, type VenueType } from "@eventer/shared";
 import { useCreateEvent } from "../api/hooks.js";
 import { useMyCommunities } from "../api/communityHooks.js";
+import { useEventRequest, useLinkRequestEvent } from "../api/requestHooks.js";
 import { ImageCropField } from "../components/ImageCropField.js";
 import { EventImageStudio } from "../components/EventImageStudio.js";
 import { formatDateRange, venueLabel } from "../lib/format.js";
@@ -29,6 +30,11 @@ export function CreateEventPage() {
   const navigate = useNavigate();
   const createEvent = useCreateEvent();
   const { data: myCommunities } = useMyCommunities();
+  // たまご（あったらいいな）からの開催宣言: ?fromRequest=<id> でプリフィル＋作成後リンク
+  const [searchParams] = useSearchParams();
+  const fromRequestId = searchParams.get("fromRequest") ?? "";
+  const fromRequest = useEventRequest(fromRequestId);
+  const linkRequest = useLinkRequestEvent();
 
   const [communityId, setCommunityId] = useState("");
   const [title, setTitle] = useState("");
@@ -44,6 +50,19 @@ export function CreateEventPage() {
   const [imageMode, setImageMode] = useState<"upload" | "template">("upload");
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  // たまごの内容をプリフィル（1回だけ。日程は未定なので日程調整モードで開始）
+  const prefilled = useRef(false);
+  useEffect(() => {
+    const req = fromRequest.data?.request;
+    if (!req || prefilled.current) return;
+    prefilled.current = true;
+    setTitle(req.title);
+    setDescription(req.description);
+    if (req.venueTypePref) setVenueType(req.venueTypePref);
+    if (req.communityId) setCommunityId(req.communityId);
+    setScheduling(true);
+  }, [fromRequest.data]);
 
   const setCropped = (blob: Blob) => {
     if (imagePreview) URL.revokeObjectURL(imagePreview);
@@ -83,6 +102,12 @@ export function CreateEventPage() {
               credentials: "include",
               body: imageBlob,
             }).catch(() => undefined);
+          }
+          // たまごからの開催宣言なら紐付け（公開時に賛同者へ通知される）
+          if (fromRequestId) {
+            await linkRequest
+              .mutateAsync({ requestId: fromRequestId, eventId: event.id })
+              .catch(() => undefined);
           }
           navigate(`/events/${event.id}`);
         },

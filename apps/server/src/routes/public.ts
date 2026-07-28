@@ -8,6 +8,7 @@ import { communitiesRepo } from "../db/repositories/communities.js";
 import { decksRepo } from "../db/repositories/decks.js";
 import { awardsRepo } from "../db/repositories/awards.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
+import { listCommunityRequests } from "./eventRequests.js";
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -41,6 +42,8 @@ publicRoutes.get("/communities/:slug", async (c) => {
     // 日程調整中（endsAt未確定=0）は常に「開催予定」側
     upcomingEvents: events.filter((e) => e.scheduling || e.endsAt >= now),
     pastEvents: events.filter((e) => !e.scheduling && e.endsAt < now),
+    // イベントのたまご（メンバーならメンバー限定も見える）
+    requests: await listCommunityRequests(community.id, user),
   });
 });
 

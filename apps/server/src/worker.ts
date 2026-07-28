@@ -34,6 +34,10 @@ import { currentUser } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
 import { feedRss, feedJson, feedIcs } from "./routes/feeds.js";
+import {
+  eventRequestRoutes,
+  publicEventRequestRoutes,
+} from "./routes/eventRequests.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -50,6 +54,10 @@ api.get("/health", (c) =>
 api.route("/auth", authRoutes);
 // 公開: 開催前イベント一覧（認証不要）
 api.route("/public", publicRoutes);
+// 公開: イベントのたまご一覧・詳細（認証不要）
+api.route("/public/event-requests", publicEventRequestRoutes);
+// イベントのたまご（投稿・賛同・開催宣言。要認証）
+api.route("/event-requests", eventRequestRoutes);
 // 公開: イベント画像（認証不要。eventRoutes(要認証)より先に登録）
 api.get("/events/:id/image", getEventImage);
 // 公開: 表彰内容（認証不要。eventRoutes より先に登録）
