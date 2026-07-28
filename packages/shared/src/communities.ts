@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { eventSchema } from "./schema.js";
+import { eventRequestSchema } from "./eventRequests.js";
 
 /** slug: 3〜32文字、英小文字/数字/ハイフン、先頭末尾は英数字 */
 export const COMMUNITY_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/;
@@ -64,6 +65,8 @@ export const communityDetailSchema = communitySchema.extend({
   myRole: z.enum(COMMUNITY_ROLES).nullable(),
   upcomingEvents: z.array(eventSchema),
   pastEvents: z.array(eventSchema),
+  /** イベントのたまご（オープンのみ。メンバーならメンバー限定も含む） */
+  requests: z.array(eventRequestSchema),
 });
 export type CommunityDetail = z.infer<typeof communityDetailSchema>;
 

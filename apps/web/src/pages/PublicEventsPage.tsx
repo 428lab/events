@@ -20,6 +20,7 @@ import {
 } from "../api/hooks.js";
 import { EventCard } from "../components/EventCard.js";
 import { EventSearchPanel } from "../components/EventSearchPanel.js";
+import { EggTabs } from "../components/EggTabs.js";
 
 /** イベント一覧のフィード購読導線（RSS / JSON Feed / iCalendar）。
  * /feed/* は SPA ルートではなくワーカーが直接返すので通常の <a>（Link href）で開く。 */
@@ -133,9 +134,11 @@ export function PublicEventsPage() {
     : undefined;
 
   return (
-    <EventSearchPanel>
-      <Stack spacing={5}>
-        <SchedulingEvents />
+    <Box>
+      <EggTabs value="events" />
+      <EventSearchPanel>
+        <Stack spacing={5}>
+          <SchedulingEvents />
         <Box>
           <Typography variant="h5" fontWeight={700} gutterBottom>
             開催中・開催予定のイベント
@@ -172,11 +175,12 @@ export function PublicEventsPage() {
           )}
         </Box>
 
-        {/* 過去イベントは開催中/未来のイベントが無いときだけ表示 */}
-        {!upcoming.isLoading && total === 0 && <PastEvents />}
+          {/* 過去イベントは開催中/未来のイベントが無いときだけ表示 */}
+          {!upcoming.isLoading && total === 0 && <PastEvents />}
 
-        <FeedLinks />
-      </Stack>
-    </EventSearchPanel>
+          <FeedLinks />
+        </Stack>
+      </EventSearchPanel>
+    </Box>
   );
 }

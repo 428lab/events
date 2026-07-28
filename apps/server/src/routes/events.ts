@@ -45,6 +45,7 @@ import { formatDateRangeJa } from "../lib/dateFormat.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { schedulingRepo } from "../db/repositories/scheduling.js";
 import { deleteEventImage, putEventImage } from "./images.js";
+import { notifyRequestsOnPublish } from "./eventRequests.js";
 
 export const eventRoutes = new Hono<AppEnv>();
 
@@ -256,6 +257,8 @@ eventRoutes.patch(
       valid<UpdateEventInput>(c, "json"),
     );
     if (!event) return c.json({ error: "not_found" }, 404);
+    // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
+    await notifyRequestsOnPublish(event);
     return c.json({ event });
   },
 );
@@ -268,6 +271,8 @@ eventRoutes.delete("/:id/image", requireEventRole(["staff"]), deleteEventImage);
 eventRoutes.post("/:id/publish", requireEventRole(["staff"]), async (c) => {
   const event = await eventsRepo.setStatus(c.req.param("id"), "published");
   if (!event) return c.json({ error: "not_found" }, 404);
+  // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
+  await notifyRequestsOnPublish(event);
   return c.json({ event });
 });
 

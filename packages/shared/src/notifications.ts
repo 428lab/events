@@ -9,6 +9,7 @@ export const NOTIFICATION_TYPES = [
   "inquiry_reply",
   "inquiry_new",
   "schedule_finalized",
+  "request_event_created",
   "info",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

@@ -32,6 +32,9 @@ import { CommunityPage } from "./pages/CommunityPage.js";
 import { CreateCommunityPage } from "./pages/CreateCommunityPage.js";
 import { CommunityEditPage } from "./pages/CommunityEditPage.js";
 import { UpcomingEventsPage } from "./pages/UpcomingEventsPage.js";
+import { EventRequestsPage } from "./pages/EventRequestsPage.js";
+import { EventRequestNewPage } from "./pages/EventRequestNewPage.js";
+import { EventRequestDetailPage } from "./pages/EventRequestDetailPage.js";
 import { DecksPage } from "./pages/DecksPage.js";
 import { LiveSetsPage } from "./pages/LiveSetsPage.js";
 import { LiveSetEditorPage } from "./pages/LiveSetEditorPage.js";
@@ -87,6 +90,22 @@ export function App() {
           element={
             <PublicLayout>
               <UpcomingEventsPage />
+            </PublicLayout>
+          }
+        />
+        <Route
+          path="/requests"
+          element={
+            <PublicLayout>
+              <EventRequestsPage />
+            </PublicLayout>
+          }
+        />
+        <Route
+          path="/requests/:id"
+          element={
+            <PublicLayout>
+              <EventRequestDetailPage />
             </PublicLayout>
           }
         />
@@ -194,6 +213,9 @@ export function App() {
         <Route path="/e/:slug" element={<ShortEventPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/upcoming" element={<UpcomingEventsPage />} />
+        <Route path="/requests" element={<EventRequestsPage />} />
+        <Route path="/requests/new" element={<EventRequestNewPage />} />
+        <Route path="/requests/:id" element={<EventRequestDetailPage />} />
         <Route path="/events/new" element={<CreateEventPage />} />
         {/* 配信画面/コントロール（EventLayoutのモード強制遷移を受けない） */}
         <Route path="/events/:id/live/screen" element={<LiveScreenPage />} />

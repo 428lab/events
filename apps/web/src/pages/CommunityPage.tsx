@@ -26,6 +26,7 @@ import {
   useTransferOwnership,
 } from "../api/communityHooks.js";
 import { EventCard } from "../components/EventCard.js";
+import { RequestCard } from "../components/RequestCard.js";
 import { UserLink } from "../components/UserLink.js";
 import { Markdown } from "../components/Markdown.js";
 
@@ -183,6 +184,40 @@ export function CommunityPage() {
               <EventCard key={e.id} event={e} />
             ))}
           </Stack>
+        </Box>
+      )}
+
+      {/* イベントのたまご（あったらいいな） */}
+      {(c.requests.length > 0 || c.isMember) && (
+        <Box>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            sx={{ mb: 1 }}
+          >
+            <Typography variant="h6">🥚 イベントのたまご</Typography>
+            {c.isMember && (
+              <Button
+                size="small"
+                component={RouterLink}
+                to={`/requests/new?communityId=${c.id}`}
+              >
+                あったらいいなを投稿
+              </Button>
+            )}
+          </Stack>
+          {c.requests.length === 0 ? (
+            <Typography color="text.secondary" variant="body2">
+              まだたまごはありません。
+            </Typography>
+          ) : (
+            <Stack spacing={1.5}>
+              {c.requests.map((r) => (
+                <RequestCard key={r.id} request={r} />
+              ))}
+            </Stack>
+          )}
         </Box>
       )}
 
