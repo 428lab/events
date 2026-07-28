@@ -85,6 +85,9 @@ export interface EventSearchOpts {
   /** この時刻以降に始まるイベント（「続きを見る」での継続表示用） */
   after?: number;
   communityId?: string;
+  venueType?: "offline" | "online" | "hybrid";
+  /** 日程調整中（開催日未定）を除外する */
+  excludeScheduling?: boolean;
   sort?: "soon" | "recent" | "new";
   limit: number;
   offset: number;
@@ -117,6 +120,13 @@ function buildSearchWhere(o: EventSearchOpts): {
   if (o.communityId) {
     conds.push("community_id = ?");
     args.push(o.communityId);
+  }
+  if (o.venueType) {
+    conds.push("venue_type = ?");
+    args.push(o.venueType);
+  }
+  if (o.excludeScheduling) {
+    conds.push("scheduling = 0");
   }
   return { where: conds.join(" AND "), args };
 }

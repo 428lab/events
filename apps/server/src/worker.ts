@@ -33,6 +33,7 @@ import {
 import { currentUser } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
+import { feedRss, feedJson, feedIcs } from "./routes/feeds.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -229,6 +230,24 @@ app.get("/e/:slug", async (c) => {
     return c.html(injectEventOg(html, event));
   }
   return c.html(html);
+});
+
+// 公開イベントのフィード（RSS / JSON Feed / iCal。フィルタはクエリ）
+app.get("/feed/events.rss", feedRss);
+app.get("/feed/events.json", feedJson);
+app.get("/feed/events.ics", feedIcs);
+
+// llms.txt: 静的配信だと .txt に charset が付かず iOS Safari で日本語が文字化けするため、
+// charset=utf-8 を明示して返す（中身はアセットから取得）
+app.get("/llms.txt", async (c) => {
+  const res = await getAssets().fetch(
+    new Request(new URL("/llms.txt", c.req.url)),
+  );
+  const body = await res.text();
+  return c.body(body, res.status as 200, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "public, max-age=300",
+  });
 });
 
 // それ以外（静的アセット & SPA ルート）は ASSETS から配信

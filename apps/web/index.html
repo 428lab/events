@@ -14,6 +14,26 @@
     <meta property="og:image" content="https://events.kojira.io/og-default.png" />
     <meta property="og:url" content="https://events.kojira.io/" />
     <meta name="twitter:card" content="summary_large_image" />
+    <!-- フィード自動検出（RSS / JSON Feed）。iCal はカレンダー購読用 -->
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title="events lab のイベント"
+      href="/feed/events.rss"
+    />
+    <link
+      rel="alternate"
+      type="application/feed+json"
+      title="events lab のイベント"
+      href="/feed/events.json"
+    />
+    <!-- AIエージェント向け: フィードとクエリ仕様の説明 -->
+    <link
+      rel="alternate"
+      type="text/markdown"
+      title="events lab (llms.txt)"
+      href="/llms.txt"
+    />
   </head>
   <body>
     <div id="root"></div>
