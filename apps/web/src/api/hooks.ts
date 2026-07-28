@@ -241,8 +241,8 @@ export function useEvent(id: string) {
         event: Event;
         myRole: EventRole | null;
         community: EventCommunityRef | null;
-        /** 生まれ元のたまご（あったらいいな）。通常は0〜1件 */
-        fromRequests: EventRequest[];
+        /** 生まれ元のたまご（あったらいいな）。通常は0〜1件（旧レスポンスでは欠落しうる） */
+        fromRequests?: EventRequest[];
       }>(`/events/${id}`),
   });
 }

@@ -142,6 +142,19 @@ describe("イベントのたまご (#29)", () => {
       headers: { cookie: owner.cookie },
     });
     expect(mine.status).toBe(200);
+
+    // 投稿者ではない一般メンバー → 200（memberRole 経由の判定パス）
+    const member = await makeUser();
+    await env.DB.prepare(
+      "INSERT INTO community_member (id, community_id, user_id, role, created_at) VALUES (?, ?, ?, 'member', ?)",
+    )
+      .bind(crypto.randomUUID(), cid, member.userId, Date.now())
+      .run();
+    const memberView = await SELF.fetch(
+      `${BASE}/api/public/event-requests/${id}`,
+      { headers: { cookie: member.cookie } },
+    );
+    expect(memberView.status).toBe(200);
   });
 
   it("非メンバーはコミュニティたまごを投稿できない(403)・賛同もできない(403)", async () => {
@@ -347,7 +360,7 @@ describe("イベントのたまご (#29)", () => {
     expect(body.fromRequests.some((r) => r.id === openId)).toBe(true);
     expect(body.fromRequests.some((r) => r.id === secretId)).toBe(false);
 
-    // メンバー（owner）: 両方見える
+    // メンバー（owner=投稿者）: 両方見える
     const memberView = await SELF.fetch(`${BASE}/api/events/${event.id}`, {
       headers: { cookie: owner.cookie },
     });
@@ -355,6 +368,23 @@ describe("イベントのたまご (#29)", () => {
       fromRequests: { id: string }[];
     };
     expect(memberBody.fromRequests.map((r) => r.id).sort()).toEqual(
+      [openId, secretId].sort(),
+    );
+
+    // 投稿者ではない一般メンバーでも両方見える（memberRole 経由の判定パス）
+    const plainMember = await makeUser();
+    await env.DB.prepare(
+      "INSERT INTO community_member (id, community_id, user_id, role, created_at) VALUES (?, ?, ?, 'member', ?)",
+    )
+      .bind(crypto.randomUUID(), cid, plainMember.userId, Date.now())
+      .run();
+    const plainView = await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      headers: { cookie: plainMember.cookie },
+    });
+    const plainBody = (await plainView.json()) as {
+      fromRequests: { id: string }[];
+    };
+    expect(plainBody.fromRequests.map((r) => r.id).sort()).toEqual(
       [openId, secretId].sort(),
     );
 
