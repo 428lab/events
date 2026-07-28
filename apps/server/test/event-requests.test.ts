@@ -246,6 +246,59 @@ describe("イベントのたまご (#29)", () => {
     ).toBe(1);
   });
 
+  it("検索: キーワードで絞り込め、人気順で並ぶ (#31)", async () => {
+    const user = await makeUser();
+    const fan1 = await makeUser();
+    const fan2 = await makeUser();
+    const tag = crypto.randomUUID().slice(0, 8);
+    const plainId = await postRequest(user.cookie, `検索用たまご_${tag}`);
+    const popularId = await postRequest(user.cookie, `検索用人気たまご_${tag}`, {
+      description: "説明にもキーワード",
+    });
+    // popular に「参加したい」2票
+    for (const fan of [fan1, fan2]) {
+      await SELF.fetch(`${BASE}/api/event-requests/${popularId}/react`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: fan.cookie },
+        body: JSON.stringify({ kind: "attend", on: true }),
+      });
+    }
+
+    // キーワード検索（タイトル一致）
+    const res = await SELF.fetch(
+      `${BASE}/api/public/event-requests?q=${encodeURIComponent(tag)}`,
+    );
+    const body = (await res.json()) as {
+      requests: { id: string }[];
+      total: number;
+    };
+    expect(body.total).toBe(2);
+    expect(body.requests.map((r) => r.id).sort()).toEqual(
+      [plainId, popularId].sort(),
+    );
+
+    // 検索に引っかからないキーワード
+    const none = await SELF.fetch(
+      `${BASE}/api/public/event-requests?q=${encodeURIComponent(`存在しない_${tag}`)}`,
+    );
+    expect(((await none.json()) as { total: number }).total).toBe(0);
+
+    // 人気順: popular（2票）が plain（0票）より先
+    const popular = await SELF.fetch(
+      `${BASE}/api/public/event-requests?q=${encodeURIComponent(tag)}&sort=popular`,
+    );
+    const popularBody = (await popular.json()) as {
+      requests: { id: string }[];
+    };
+    expect(popularBody.requests[0].id).toBe(popularId);
+
+    // LIKE ワイルドカードはリテラル扱い（%で全件ヒットしない）
+    const wild = await SELF.fetch(
+      `${BASE}/api/public/event-requests?q=${encodeURIComponent(`%${tag}`)}`,
+    );
+    expect(((await wild.json()) as { total: number }).total).toBe(0);
+  });
+
   it("コミュニティを削除してもたまごは残り、全体たまご化される", async () => {
     const owner = await makeUser();
     const cid = await makeCommunity(owner.userId, []);

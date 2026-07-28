@@ -47,6 +47,24 @@ function toRequest(row: EventRequestRow): EventRequest {
   };
 }
 
+/** 公開一覧の WHERE 句（イベント検索と同じ LIKE エスケープ方式） */
+function buildPublicWhere(opts: { status: "open" | "closed"; q?: string }): {
+  where: string;
+  args: (string | number)[];
+} {
+  const conds = ["er.status = ?", "er.members_only = 0"];
+  const args: (string | number)[] = [opts.status];
+  if (opts.q) {
+    conds.push(
+      "(er.title LIKE ? ESCAPE '\\' OR er.description LIKE ? ESCAPE '\\')",
+    );
+    // LIKE のワイルドカード（% _）をリテラル扱いに
+    const like = `%${opts.q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+    args.push(like, like);
+  }
+  return { where: conds.join(" AND "), args };
+}
+
 export const eventRequestsRepo = {
   async findById(id: string): Promise<EventRequest | null> {
     const row = await one<EventRequestRow>(
@@ -56,27 +74,39 @@ export const eventRequestsRepo = {
     return row ? toRequest(row) : null;
   },
 
-  /** 全体公開のたまご一覧（コミュニティ内のメンバー限定は除外） */
+  /** 全体公開のたまご一覧（コミュニティ内のメンバー限定は除外）。
+   * q はタイトル・説明の部分一致、sort は新着 new / 人気 popular（参加したい数） */
   async listPublic(
-    status: "open" | "closed",
+    opts: {
+      status: "open" | "closed";
+      q?: string;
+      sort?: "new" | "popular";
+    },
     limit: number,
     offset: number,
   ): Promise<EventRequest[]> {
+    const { where, args } = buildPublicWhere(opts);
+    const order =
+      opts.sort === "popular"
+        ? "attend_count DESC, er.created_at DESC"
+        : "er.created_at DESC";
     const rows = await many<EventRequestRow>(
-      `${SELECT_REQUEST}
-        WHERE er.status = ? AND er.members_only = 0
-        ORDER BY er.created_at DESC LIMIT ? OFFSET ?`,
-      status,
+      `${SELECT_REQUEST} WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`,
+      ...args,
       limit,
       offset,
     );
     return rows.map(toRequest);
   },
 
-  async countPublic(status: "open" | "closed"): Promise<number> {
+  async countPublic(opts: {
+    status: "open" | "closed";
+    q?: string;
+  }): Promise<number> {
+    const { where, args } = buildPublicWhere(opts);
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event_request WHERE status = ? AND members_only = 0",
-      status,
+      `SELECT COUNT(1) AS n FROM event_request er WHERE ${where}`,
+      ...args,
     );
     return row?.n ?? 0;
   },

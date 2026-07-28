@@ -37,16 +37,19 @@ async function canView(
 /** ---- 公開（未ログイン可）: /api/public 配下 ---- */
 export const publicEventRequestRoutes = new Hono<AppEnv>();
 
-/** 全体のたまご一覧（メンバー限定は除く。コミュニティ公開ぶんは含む） */
+/** 全体のたまご一覧（メンバー限定は除く。コミュニティ公開ぶんは含む）。
+ * q=キーワード（タイトル・説明）、sort=new(新着・既定)|popular(参加したい数) */
 publicEventRequestRoutes.get("/", async (c) => {
   const status = c.req.query("status") === "closed" ? "closed" : "open";
   const page = Math.max(1, Number(c.req.query("page")) || 1);
+  const q = c.req.query("q")?.trim() || undefined;
+  const sort = c.req.query("sort") === "popular" ? "popular" : "new";
   const requests = await eventRequestsRepo.listPublic(
-    status,
+    { status, q, sort },
     PAGE_LIMIT,
     (page - 1) * PAGE_LIMIT,
   );
-  const total = await eventRequestsRepo.countPublic(status);
+  const total = await eventRequestsRepo.countPublic({ status, q });
   return c.json({ requests, total, limit: PAGE_LIMIT });
 });
 

@@ -29,14 +29,19 @@ export interface EventRequestDetail {
   isMine: boolean;
 }
 
-/** 全体のたまご一覧（未ログイン可） */
-export function usePublicEventRequests(page: number, status: "open" | "closed" = "open") {
+/** 全体のたまご一覧（未ログイン可）。q=キーワード、sort=新着/人気 */
+export function usePublicEventRequests(
+  page: number,
+  opts: { q?: string; sort?: "new" | "popular" } = {},
+  status: "open" | "closed" = "open",
+) {
+  const qs = new URLSearchParams({ status, page: String(page) });
+  if (opts.q) qs.set("q", opts.q);
+  if (opts.sort) qs.set("sort", opts.sort);
+  const key = qs.toString();
   return useQuery({
-    queryKey: ["eventRequests", status, page],
-    queryFn: () =>
-      api.get<EventRequestsPage>(
-        `/public/event-requests?status=${status}&page=${page}`,
-      ),
+    queryKey: ["eventRequests", key],
+    queryFn: () => api.get<EventRequestsPage>(`/public/event-requests?${key}`),
   });
 }
 
