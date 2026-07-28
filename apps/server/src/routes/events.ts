@@ -45,7 +45,10 @@ import { formatDateRangeJa } from "../lib/dateFormat.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { schedulingRepo } from "../db/repositories/scheduling.js";
 import { deleteEventImage, putEventImage } from "./images.js";
-import { notifyRequestsOnPublish } from "./eventRequests.js";
+import {
+  listViewableRequestsForEvent,
+  notifyRequestsOnPublish,
+} from "./eventRequests.js";
 
 export const eventRoutes = new Hono<AppEnv>();
 
@@ -82,6 +85,8 @@ eventRoutes.get("/:id", async (c) => {
           iconUrl: community.iconUrl,
         }
       : null,
+    // 生まれ元のたまご（メンバー限定たまごは閲覧権限のある人にだけ返す）
+    fromRequests: await listViewableRequestsForEvent(event.id, user),
   });
 });
 
