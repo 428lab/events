@@ -9,6 +9,7 @@ import type {
   Entry,
   Event,
   EventMemberWithUser,
+  EventRequest,
   EventRole,
   CreateSlotInput,
   MyPage,
@@ -240,6 +241,8 @@ export function useEvent(id: string) {
         event: Event;
         myRole: EventRole | null;
         community: EventCommunityRef | null;
+        /** 生まれ元のたまご（あったらいいな）。通常は0〜1件 */
+        fromRequests: EventRequest[];
       }>(`/events/${id}`),
   });
 }

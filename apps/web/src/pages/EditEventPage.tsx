@@ -30,6 +30,8 @@ import { AwardsEditor } from "../components/AwardsEditor.js";
 import { venueLabel } from "../lib/format.js";
 
 function toLocalInput(epoch: number): string {
+  // 日程調整中（未確定）は 0 が入っている。1970-01-01 を出さない
+  if (!epoch) return "";
   const d = new Date(epoch);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -91,8 +93,13 @@ export function EditEventPage() {
         status,
         title,
         description,
-        startsAt: new Date(startsAt).getTime(),
-        endsAt: new Date(endsAt).getTime(),
+        // 日程調整中は日時未確定（0のまま）。入力があるときだけ送る
+        ...(startsAt && endsAt
+          ? {
+              startsAt: new Date(startsAt).getTime(),
+              endsAt: new Date(endsAt).getTime(),
+            }
+          : {}),
         venueType,
         venueOffline: venueOffline || null,
         venueOnline: venueOnline || null,
@@ -161,24 +168,30 @@ export function EditEventPage() {
               ))}
             </TextField>
           )}
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <TextField
-              label="開始日時"
-              type="datetime-local"
-              value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-            <TextField
-              label="終了日時"
-              type="datetime-local"
-              value={endsAt}
-              onChange={(e) => setEndsAt(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-          </Stack>
+          {event.scheduling ? (
+            <Alert severity="info">
+              このイベントは日程調整中です。開催日時はイベントページの日程調整で確定してください。
+            </Alert>
+          ) : (
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField
+                label="開始日時"
+                type="datetime-local"
+                value={startsAt}
+                onChange={(e) => setStartsAt(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+              />
+              <TextField
+                label="終了日時"
+                type="datetime-local"
+                value={endsAt}
+                onChange={(e) => setEndsAt(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+              />
+            </Stack>
+          )}
           <TextField
             label="会場種別"
             select

@@ -89,6 +89,19 @@ publicEventRequestRoutes.get("/:id", async (c) => {
   });
 });
 
+/** イベントの「生まれ元」たまご一覧（メンバー限定は閲覧権限のある人にだけ返す） */
+export async function listViewableRequestsForEvent(
+  eventId: string,
+  user: User | null,
+): Promise<EventRequest[]> {
+  const requests = await eventRequestsRepo.requestsForEvent(eventId);
+  const results: EventRequest[] = [];
+  for (const req of requests) {
+    if (await canView(req, user)) results.push(req);
+  }
+  return results;
+}
+
 /** コミュニティのたまご一覧（メンバーならメンバー限定も見える） */
 export async function listCommunityRequests(
   communityId: string,

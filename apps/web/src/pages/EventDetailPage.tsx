@@ -144,6 +144,7 @@ export function EventDetailPage() {
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
   const { event, myRole } = data;
   const community = data.community;
+  const fromRequests = data.fromRequests ?? [];
 
   const myEntry = entries?.find((e) => me && e.memberUserIds.includes(me.id));
   const myMembership = members?.find((m) => me && m.user.id === me.id);
@@ -224,6 +225,27 @@ export function EventDetailPage() {
             <Typography variant="body2">{community.name}</Typography>
           </Box>
         )}
+        {/* 生まれ元のたまご（あったらいいな）への逆リンク */}
+        {fromRequests.map((r) => (
+          <Box
+            key={r.id}
+            component={RouterLink}
+            to={`/requests/${r.id}`}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.75,
+              mb: 0.5,
+              color: "text.secondary",
+              textDecoration: "none",
+              "&:hover": { textDecoration: "underline" },
+            }}
+          >
+            <Typography variant="body2">
+              🥚 「{r.title}」のたまごから生まれました
+            </Typography>
+          </Box>
+        ))}
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <Typography variant="h4" fontWeight={700}>
             {event.title}

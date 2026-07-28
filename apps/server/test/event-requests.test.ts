@@ -299,6 +299,72 @@ describe("イベントのたまご (#29)", () => {
     expect(((await wild.json()) as { total: number }).total).toBe(0);
   });
 
+  it("イベント詳細から生まれ元のたまごへ辿れる。メンバー限定たまごは権限のある人だけ (#33)", async () => {
+    const owner = await makeUser();
+    const outsider = await makeUser();
+    const host = await loginDev();
+    const cid = await makeCommunity(owner.userId, []);
+    // メンバー限定たまご（owner が投稿）
+    const secretId = await postRequest(owner.cookie, "限定の生まれ元たまご", {
+      communityId: cid,
+      membersOnly: true,
+    });
+    // 全体公開たまご
+    const openId = await postRequest(owner.cookie, "公開の生まれ元たまご");
+
+    // host（admin）がイベントを作り両方にリンク→公開
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: host },
+      body: JSON.stringify({
+        title: "たまご生まれイベント",
+        venueType: "online",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+    for (const rid of [secretId, openId]) {
+      await SELF.fetch(`${BASE}/api/event-requests/${rid}/link-event`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: host },
+        body: JSON.stringify({ eventId: event.id }),
+      });
+    }
+    await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: host },
+      body: JSON.stringify({ status: "published" }),
+    });
+
+    // 非メンバー: 公開たまごだけ見える
+    const view = await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      headers: { cookie: outsider.cookie },
+    });
+    const body = (await view.json()) as {
+      fromRequests: { id: string }[];
+    };
+    expect(body.fromRequests.some((r) => r.id === openId)).toBe(true);
+    expect(body.fromRequests.some((r) => r.id === secretId)).toBe(false);
+
+    // メンバー（owner）: 両方見える
+    const memberView = await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      headers: { cookie: owner.cookie },
+    });
+    const memberBody = (await memberView.json()) as {
+      fromRequests: { id: string }[];
+    };
+    expect(memberBody.fromRequests.map((r) => r.id).sort()).toEqual(
+      [openId, secretId].sort(),
+    );
+
+    // 未ログイン: 公開たまごだけ
+    const anon = await SELF.fetch(`${BASE}/api/events/${event.id}`);
+    const anonBody = (await anon.json()) as { fromRequests: { id: string }[] };
+    expect(anonBody.fromRequests.some((r) => r.id === openId)).toBe(true);
+    expect(anonBody.fromRequests.some((r) => r.id === secretId)).toBe(false);
+  });
+
   it("コミュニティを削除してもたまごは残り、全体たまご化される", async () => {
     const owner = await makeUser();
     const cid = await makeCommunity(owner.userId, []);

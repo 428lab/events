@@ -237,6 +237,18 @@ export const eventRequestsRepo = {
     );
   },
 
+  /** イベントにリンクされたたまご一覧（イベント詳細の「生まれ元」表示用） */
+  async requestsForEvent(eventId: string): Promise<EventRequest[]> {
+    const rows = await many<EventRequestRow>(
+      `${SELECT_REQUEST}
+        JOIN event_request_event ere ON ere.request_id = er.id
+        WHERE ere.event_id = ?
+        ORDER BY ere.created_at ASC`,
+      eventId,
+    );
+    return rows.map(toRequest);
+  },
+
   /** リンク済みイベントID一覧（新しい順） */
   async linkedEventIds(requestId: string): Promise<string[]> {
     const rows = await many<{ event_id: string }>(
