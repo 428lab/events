@@ -134,6 +134,11 @@ export function EventRequestDetailPage() {
               賛同や開催宣言にはログインが必要です。
             </Typography>
           )}
+          {react.isError && (
+            <Typography variant="body2" color="error" sx={{ mt: 1.5 }}>
+              賛同できませんでした。コミュニティのたまごへの賛同はメンバーのみです。
+            </Typography>
+          )}
 
           {isMine && (
             <>

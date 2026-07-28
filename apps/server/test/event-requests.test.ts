@@ -144,7 +144,7 @@ describe("イベントのたまご (#29)", () => {
     expect(mine.status).toBe(200);
   });
 
-  it("非メンバーはコミュニティたまごを投稿できない(403)", async () => {
+  it("非メンバーはコミュニティたまごを投稿できない(403)・賛同もできない(403)", async () => {
     const owner = await makeUser();
     const outsider = await makeUser();
     const cid = await makeCommunity(owner.userId, []);
@@ -154,6 +154,118 @@ describe("イベントのたまご (#29)", () => {
       body: JSON.stringify({ title: "勝手に投稿", communityId: cid }),
     });
     expect(res.status).toBe(403);
+
+    // コミュニティ公開たまご（閲覧は誰でも可）でも賛同はメンバーのみ
+    const id = await postRequest(owner.cookie, "コミュ公開たまご", {
+      communityId: cid,
+    });
+    const react = await SELF.fetch(`${BASE}/api/event-requests/${id}/react`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: outsider.cookie },
+      body: JSON.stringify({ kind: "attend", on: true }),
+    });
+    expect(react.status).toBe(403);
+  });
+
+  it("コミュニティ詳細のたまご欄: メンバー限定は非メンバーに出ない", async () => {
+    const owner = await makeUser();
+    const cid = await makeCommunity(owner.userId, []);
+    // slug を取得
+    const row = await env.DB.prepare("SELECT slug FROM community WHERE id = ?")
+      .bind(cid)
+      .first<{ slug: string }>();
+    const openId = await postRequest(owner.cookie, "公開たまご", {
+      communityId: cid,
+    });
+    const secretId = await postRequest(owner.cookie, "限定たまご", {
+      communityId: cid,
+      membersOnly: true,
+    });
+
+    // 未ログイン → 公開のみ
+    const anon = await SELF.fetch(
+      `${BASE}/api/public/communities/${row!.slug}`,
+    );
+    const anonBody = (await anon.json()) as { requests: { id: string }[] };
+    expect(anonBody.requests.some((r) => r.id === openId)).toBe(true);
+    expect(anonBody.requests.some((r) => r.id === secretId)).toBe(false);
+
+    // メンバー（owner）→ 両方
+    const mine = await SELF.fetch(
+      `${BASE}/api/public/communities/${row!.slug}`,
+      { headers: { cookie: owner.cookie } },
+    );
+    const mineBody = (await mine.json()) as { requests: { id: string }[] };
+    expect(mineBody.requests.some((r) => r.id === secretId)).toBe(true);
+  });
+
+  it("公開済みイベントの link-event は即時通知され、再POSTしても重複しない", async () => {
+    const requester = await makeUser();
+    const host = await loginDev();
+    const id = await postRequest(requester.cookie, "即時通知たまご");
+
+    // 公開済みイベントを作成
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: host },
+      body: JSON.stringify({
+        title: "公開済みイベント",
+        venueType: "online",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+    await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: host },
+      body: JSON.stringify({ status: "published" }),
+    });
+
+    // link-event を3回連打
+    for (let i = 0; i < 3; i++) {
+      const res = await SELF.fetch(
+        `${BASE}/api/event-requests/${id}/link-event`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: host },
+          body: JSON.stringify({ eventId: event.id }),
+        },
+      );
+      expect(res.status).toBe(200);
+    }
+    const notifs = await SELF.fetch(`${BASE}/api/notifications`, {
+      headers: { cookie: requester.cookie },
+    });
+    const body = (await notifs.json()) as {
+      notifications: { type: string }[];
+    };
+    expect(
+      body.notifications.filter((n) => n.type === "request_event_created")
+        .length,
+    ).toBe(1);
+  });
+
+  it("コミュニティを削除してもたまごは残り、全体たまご化される", async () => {
+    const owner = await makeUser();
+    const cid = await makeCommunity(owner.userId, []);
+    const id = await postRequest(owner.cookie, "生き残りたまご", {
+      communityId: cid,
+      membersOnly: true,
+    });
+    const del = await SELF.fetch(`${BASE}/api/communities/${cid}`, {
+      method: "DELETE",
+      headers: { cookie: owner.cookie },
+    });
+    expect(del.status).toBe(200);
+    // たまごは残り、コミュニティなし＋限定解除になっている
+    const detail = await SELF.fetch(`${BASE}/api/public/event-requests/${id}`);
+    expect(detail.status).toBe(200);
+    const d = (await detail.json()) as {
+      request: { communityId: string | null; membersOnly: boolean };
+    };
+    expect(d.request.communityId).toBeNull();
+    expect(d.request.membersOnly).toBe(false);
   });
 
   it("開催宣言→イベント公開で投稿者と賛同者に通知が届く（宣言者本人には届かない）", async () => {

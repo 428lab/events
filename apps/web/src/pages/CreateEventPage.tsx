@@ -50,19 +50,27 @@ export function CreateEventPage() {
   const [imageMode, setImageMode] = useState<"upload" | "template">("upload");
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  // イベント作成には成功したが、たまごへの紐付けに失敗したときの再試行用
+  const [linkFailedEventId, setLinkFailedEventId] = useState<string | null>(null);
 
   // たまごの内容をプリフィル（1回だけ。日程は未定なので日程調整モードで開始）
   const prefilled = useRef(false);
   useEffect(() => {
     const req = fromRequest.data?.request;
     if (!req || prefilled.current) return;
+    // コミュニティ付きたまごは、自分が運営するコミュニティの読み込みを待って照合する
+    if (req.communityId && myCommunities == null) return;
     prefilled.current = true;
-    setTitle(req.title);
-    setDescription(req.description);
+    // 既に入力があれば上書きしない
+    setTitle((t) => t || req.title);
+    setDescription((d) => d || req.description);
     if (req.venueTypePref) setVenueType(req.venueTypePref);
-    if (req.communityId) setCommunityId(req.communityId);
+    // 自分が運営するコミュニティのときだけ引き継ぐ（権限のない紐付けを防ぐ）
+    if (req.communityId && myCommunities?.some((cm) => cm.id === req.communityId)) {
+      setCommunityId(req.communityId);
+    }
     setScheduling(true);
-  }, [fromRequest.data]);
+  }, [fromRequest.data, myCommunities]);
 
   const setCropped = (blob: Blob) => {
     if (imagePreview) URL.revokeObjectURL(imagePreview);
@@ -103,11 +111,18 @@ export function CreateEventPage() {
               body: imageBlob,
             }).catch(() => undefined);
           }
-          // たまごからの開催宣言なら紐付け（公開時に賛同者へ通知される）
+          // たまごからの開催宣言なら紐付け（公開時に賛同者へ通知される）。
+          // 失敗したら遷移せず、このページで再試行できるようにする
           if (fromRequestId) {
-            await linkRequest
-              .mutateAsync({ requestId: fromRequestId, eventId: event.id })
-              .catch(() => undefined);
+            try {
+              await linkRequest.mutateAsync({
+                requestId: fromRequestId,
+                eventId: event.id,
+              });
+            } catch {
+              setLinkFailedEventId(event.id);
+              return;
+            }
           }
           navigate(`/events/${event.id}`);
         },
@@ -305,16 +320,46 @@ export function CreateEventPage() {
               作成に失敗しました。入力内容を確認してください。
             </Typography>
           )}
-          <Stack direction="row" spacing={2} justifyContent="flex-end">
-            <Button onClick={() => navigate(-1)}>キャンセル</Button>
-            <Button
-              variant="contained"
-              disabled={!canSubmit || createEvent.isPending}
-              onClick={submit}
-            >
-              作成
-            </Button>
-          </Stack>
+          {linkFailedEventId ? (
+            <Stack spacing={1}>
+              <Typography color="error" variant="body2">
+                イベントは作成されましたが、たまごへの紐付けに失敗しました。
+              </Typography>
+              <Stack direction="row" spacing={2} justifyContent="flex-end">
+                <Button onClick={() => navigate(`/events/${linkFailedEventId}`)}>
+                  紐付けせずイベントへ
+                </Button>
+                <Button
+                  variant="contained"
+                  disabled={linkRequest.isPending}
+                  onClick={async () => {
+                    try {
+                      await linkRequest.mutateAsync({
+                        requestId: fromRequestId,
+                        eventId: linkFailedEventId,
+                      });
+                      navigate(`/events/${linkFailedEventId}`);
+                    } catch {
+                      // 失敗表示のまま再試行可能
+                    }
+                  }}
+                >
+                  紐付けを再試行
+                </Button>
+              </Stack>
+            </Stack>
+          ) : (
+            <Stack direction="row" spacing={2} justifyContent="flex-end">
+              <Button onClick={() => navigate(-1)}>キャンセル</Button>
+              <Button
+                variant="contained"
+                disabled={!canSubmit || createEvent.isPending}
+                onClick={submit}
+              >
+                作成
+              </Button>
+            </Stack>
+          )}
         </Stack>
       </CardContent>
     </Card>

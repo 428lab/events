@@ -165,6 +165,11 @@ export const communitiesRepo = {
   async delete(id: string): Promise<void> {
     // event.community_id はFK制約を張っていないため手動で外す
     await run("UPDATE event SET community_id = NULL WHERE community_id = ?", id);
+    // たまごは全体たまご化（メンバー限定は所属先が消えるので限定も解除）
+    await run(
+      "UPDATE event_request SET community_id = NULL, members_only = 0 WHERE community_id = ?",
+      id,
+    );
     await run("DELETE FROM community WHERE id = ?", id);
   },
 

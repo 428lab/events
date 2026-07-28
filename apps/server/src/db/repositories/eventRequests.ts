@@ -86,14 +86,16 @@ export const eventRequestsRepo = {
     communityId: string,
     includeMembersOnly: boolean,
     status: "open" | "closed",
+    limit = 50,
   ): Promise<EventRequest[]> {
     const rows = await many<EventRequestRow>(
       `${SELECT_REQUEST}
         WHERE er.community_id = ? AND er.status = ?
           ${includeMembersOnly ? "" : "AND er.members_only = 0"}
-        ORDER BY er.created_at DESC`,
+        ORDER BY er.created_at DESC LIMIT ?`,
       communityId,
       status,
+      limit,
     );
     return rows.map(toRequest);
   },

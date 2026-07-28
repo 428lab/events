@@ -83,6 +83,8 @@ export const identitiesRepo = {
       { sql: "UPDATE OR IGNORE entry_member SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
       { sql: "UPDATE OR IGNORE score SET judge_user_id = ? WHERE judge_user_id = ?", args: [toUserId, fromUserId] },
       { sql: "UPDATE event SET created_by = ? WHERE created_by = ?", args: [toUserId, fromUserId] },
+      { sql: "UPDATE event_request SET created_by = ? WHERE created_by = ?", args: [toUserId, fromUserId] },
+      { sql: "UPDATE OR IGNORE event_request_reaction SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
       { sql: "DELETE FROM user WHERE id = ?", args: [fromUserId] },
     ]);
   },

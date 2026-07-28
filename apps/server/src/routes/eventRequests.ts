@@ -184,6 +184,7 @@ eventRequestRoutes.post(
     if (!req) return c.json({ error: "not_found" }, 404);
     const user = c.get("user");
     if (!(await canView(req, user))) return c.json({ error: "not_found" }, 404);
+    if (req.status !== "open") return c.json({ error: "closed" }, 409);
     const { eventId } = valid<{ eventId: string }>(c, "json");
     const event = await eventsRepo.findById(eventId);
     if (!event) return c.json({ error: "event_not_found" }, 404);
@@ -193,7 +194,13 @@ eventRequestRoutes.post(
     }
     await eventRequestsRepo.linkEvent(req.id, eventId);
     if (event.status === "published") {
-      await notifyRequestLinked(req, event);
+      // 未通知のときだけ（同一リンクの再POSTで通知が重複しないように）
+      const unnotified = await eventRequestsRepo.unnotifiedRequestIdsForEvent(
+        event.id,
+      );
+      if (unnotified.includes(req.id)) {
+        await notifyRequestLinked(req, event);
+      }
     }
     return c.json({ ok: true });
   },
