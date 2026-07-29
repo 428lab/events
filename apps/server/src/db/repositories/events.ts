@@ -29,6 +29,7 @@ interface EventRow {
   photos_public: number;
   attendance_check: number;
   slug: string | null;
+  venue_wanted: number;
 }
 
 /** 参加者としてカウントする条件。出席チェックモードでは
@@ -68,6 +69,7 @@ function toEvent(row: EventRow): Event {
     photosPublic: row.photos_public === 1,
     attendanceCheck: row.attendance_check === 1,
     slug: row.slug ?? "",
+    venueWanted: row.venue_wanted === 1,
   };
 }
 
@@ -88,6 +90,8 @@ export interface EventSearchOpts {
   venueType?: "offline" | "online" | "hybrid";
   /** 日程調整中（開催日未定）を除外する */
   excludeScheduling?: boolean;
+  /** 会場募集中のみ */
+  venueWantedOnly?: boolean;
   sort?: "soon" | "recent" | "new";
   limit: number;
   offset: number;
@@ -127,6 +131,9 @@ function buildSearchWhere(o: EventSearchOpts): {
   }
   if (o.excludeScheduling) {
     conds.push("scheduling = 0");
+  }
+  if (o.venueWantedOnly) {
+    conds.push("venue_wanted = 1");
   }
   return { where: conds.join(" AND "), args };
 }
@@ -272,8 +279,8 @@ export const eventsRepo = {
         (id, title, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
-         community_id, scheduling, schedule_anonymous, slug)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?)`,
+         community_id, scheduling, schedule_anonymous, slug, venue_wanted)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
       id,
       input.title,
       input.description ?? "",
@@ -290,6 +297,7 @@ export const eventsRepo = {
       input.scheduling ? 1 : 0,
       input.scheduleAnonymous ? 1 : 0,
       slug,
+      input.venueWanted ? 1 : 0,
     );
     return (await this.findById(id))!;
   },
@@ -304,7 +312,7 @@ export const eventsRepo = {
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
-         photos_public = ?, attendance_check = ?
+         photos_public = ?, attendance_check = ?, venue_wanted = ?
        WHERE id = ?`,
       next.title,
       next.description,
@@ -321,6 +329,7 @@ export const eventsRepo = {
       next.scheduleVisible ? 1 : 0,
       next.photosPublic ? 1 : 0,
       next.attendanceCheck ? 1 : 0,
+      next.venueWanted ? 1 : 0,
       id,
     );
     return this.findById(id);

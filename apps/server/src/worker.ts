@@ -51,6 +51,7 @@ import {
   venueRoutes,
   getVenueImage,
 } from "./routes/venues.js";
+import { venueOfferRoutes } from "./routes/venueOffers.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -76,6 +77,8 @@ api.get("/venues/:id/image", getVenueImage);
 api.route("/public/venues", publicVenueRoutes);
 // 会場の登録・編集（要認証）
 api.route("/venues", venueRoutes);
+// 会場オファー（要認証）
+api.route("/venue-offers", venueOfferRoutes);
 // 公開: イベント画像（認証不要。eventRoutes(要認証)より先に登録）
 api.get("/events/:id/image", getEventImage);
 // 公開: 表彰内容（認証不要。eventRoutes より先に登録）

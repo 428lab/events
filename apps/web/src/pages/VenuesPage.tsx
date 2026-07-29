@@ -16,7 +16,13 @@ import GroupsIcon from "@mui/icons-material/Groups";
 import { Link as RouterLink } from "react-router-dom";
 import type { Venue } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
-import { usePublicVenues, venueImageUrl } from "../api/venueHooks.js";
+import {
+  usePublicVenues,
+  useVenueWanted,
+  venueImageUrl,
+} from "../api/venueHooks.js";
+import { EventCard } from "../components/EventCard.js";
+import { RequestCard } from "../components/RequestCard.js";
 
 function VenueCard({ venue }: { venue: Venue }) {
   const img = venueImageUrl(venue);
@@ -157,6 +163,34 @@ export function VenuesPage() {
           />
         </Box>
       )}
+
+      <WantedSection />
+    </Box>
+  );
+}
+
+/** 会場を探しているイベント・たまご（会場オーナー向けの募集一覧） */
+function WantedSection() {
+  const { data } = useVenueWanted();
+  const events = data?.events ?? [];
+  const requests = data?.requests ?? [];
+  if (events.length === 0 && requests.length === 0) return null;
+  return (
+    <Box sx={{ mt: 5 }}>
+      <Typography variant="h5" fontWeight={700} gutterBottom>
+        🔍 会場を探しています
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        会場を提供できる場合は、各ページの「会場を提供できます」からオファーを送れます
+      </Typography>
+      <Stack spacing={2}>
+        {events.map((e) => (
+          <EventCard key={e.id} event={e} />
+        ))}
+        {requests.map((r) => (
+          <RequestCard key={r.id} request={r} />
+        ))}
+      </Stack>
     </Box>
   );
 }

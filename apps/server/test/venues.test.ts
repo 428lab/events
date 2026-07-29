@@ -159,3 +159,270 @@ describe("会場マッチング (#53 PR1)", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("会場オファー (#53 PR2)", () => {
+  async function makePublishedEvent(
+    cookie: string,
+    extra: Record<string, unknown> = {},
+  ): Promise<string> {
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        title: `会場募集イベント_${crypto.randomUUID().slice(0, 6)}`,
+        venueType: "offline",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+        venueWanted: true,
+        ...extra,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+    await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ status: "published" }),
+    });
+    return event.id;
+  }
+
+  it("会場→イベント: オファー→主催者承諾で連絡先が相互開示される", async () => {
+    const organizer = await makeUser();
+    const venueOwner = await makeUser();
+    const eventId = await makePublishedEvent(organizer.cookie);
+    const venueId = await createVenue(venueOwner.cookie);
+
+    // 会場オーナーが提供オファー
+    const offer = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: venueOwner.cookie },
+      body: JSON.stringify({ venueId, eventId }),
+    });
+    expect(offer.status).toBe(201);
+    const { offer: o } = (await offer.json()) as { offer: { id: string } };
+
+    // 主催者に通知
+    const notifs = await SELF.fetch(`${BASE}/api/notifications`, {
+      headers: { cookie: organizer.cookie },
+    });
+    const nbody = (await notifs.json()) as { notifications: { type: string }[] };
+    expect(nbody.notifications.some((n) => n.type === "venue_offer")).toBe(true);
+
+    // 第三者は respond できない
+    const stranger = await makeUser();
+    const deniedResp = await SELF.fetch(
+      `${BASE}/api/venue-offers/${o.id}/respond`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: stranger.cookie },
+        body: JSON.stringify({ action: "accept" }),
+      },
+    );
+    expect(deniedResp.status).toBe(403);
+
+    // 承諾前: 主催者側一覧に会場連絡先は出ない
+    const before = await SELF.fetch(
+      `${BASE}/api/venue-offers/for-event/${eventId}`,
+      { headers: { cookie: organizer.cookie } },
+    );
+    const beforeBody = (await before.json()) as {
+      offers: { venueContact: string; venueAddress: string }[];
+    };
+    expect(beforeBody.offers[0].venueContact).toBe("");
+    expect(beforeBody.offers[0].venueAddress).toBe("");
+
+    // 主催者が承諾（連絡先つき）
+    const accept = await SELF.fetch(`${BASE}/api/venue-offers/${o.id}/respond`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({ action: "accept", contact: "X: @organizer" }),
+    });
+    expect(accept.status).toBe(200);
+
+    // 主催者側: 会場の連絡先・住所が開示
+    const after = await SELF.fetch(
+      `${BASE}/api/venue-offers/for-event/${eventId}`,
+      { headers: { cookie: organizer.cookie } },
+    );
+    const afterBody = (await after.json()) as {
+      offers: { venueContact: string; venueAddress: string; organizerContact: string }[];
+    };
+    expect(afterBody.offers[0].venueContact).toContain("secret_contact");
+    expect(afterBody.offers[0].venueAddress).toContain("道玄坂");
+    // 主催者側ビューに organizerContact は返さない（自分のものだが会場側専用フィールド）
+    expect(afterBody.offers[0].organizerContact).toBe("");
+
+    // 会場側: 主催者の連絡先が開示
+    const venueSide = await SELF.fetch(
+      `${BASE}/api/venue-offers/for-venue/${venueId}`,
+      { headers: { cookie: venueOwner.cookie } },
+    );
+    const venueSideBody = (await venueSide.json()) as {
+      offers: { organizerContact: string; venueContact: string }[];
+    };
+    expect(venueSideBody.offers[0].organizerContact).toBe("X: @organizer");
+    expect(venueSideBody.offers[0].venueContact).toBe("");
+
+    // 会場オーナーへ結果通知
+    const ownerNotifs = await SELF.fetch(`${BASE}/api/notifications`, {
+      headers: { cookie: venueOwner.cookie },
+    });
+    const on = (await ownerNotifs.json()) as { notifications: { type: string }[] };
+    expect(on.notifications.some((n) => n.type === "venue_offer_result")).toBe(true);
+  });
+
+  it("イベント→会場: 主催者の利用申込を会場オーナーが承諾", async () => {
+    const organizer = await makeUser();
+    const venueOwner = await makeUser();
+    const eventId = await makePublishedEvent(organizer.cookie, {
+      venueWanted: false,
+    });
+    const venueId = await createVenue(venueOwner.cookie);
+
+    const offer = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({ venueId, eventId, contact: "Discord: org#1" }),
+    });
+    expect(offer.status).toBe(201);
+    const { offer: o } = (await offer.json()) as { offer: { id: string } };
+
+    // 重複オファーは409
+    const dup = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({ venueId, eventId }),
+    });
+    expect(dup.status).toBe(409);
+
+    // 会場オーナーが承諾
+    const accept = await SELF.fetch(`${BASE}/api/venue-offers/${o.id}/respond`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: venueOwner.cookie },
+      body: JSON.stringify({ action: "accept" }),
+    });
+    expect(accept.status).toBe(200);
+
+    const venueSide = await SELF.fetch(
+      `${BASE}/api/venue-offers/for-venue/${venueId}`,
+      { headers: { cookie: venueOwner.cookie } },
+    );
+    const vs = (await venueSide.json()) as {
+      offers: { organizerContact: string }[];
+    };
+    expect(vs.offers[0].organizerContact).toBe("Discord: org#1");
+  });
+
+  it("会場募集していないイベントへの提供オファーは409。無関係ユーザーのオファーは403", async () => {
+    const organizer = await makeUser();
+    const venueOwner = await makeUser();
+    const stranger = await makeUser();
+    const eventId = await makePublishedEvent(organizer.cookie, {
+      venueWanted: false,
+    });
+    const venueId = await createVenue(venueOwner.cookie);
+
+    const notWanted = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: venueOwner.cookie },
+      body: JSON.stringify({ venueId, eventId }),
+    });
+    expect(notWanted.status).toBe(409);
+
+    // 会場オーナーでも主催者でもない人は403
+    const denied = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: stranger.cookie },
+      body: JSON.stringify({ venueId, eventId }),
+    });
+    expect(denied.status).toBe(403);
+  });
+
+  it("会場募集中の一覧に venueWanted のイベントが出る", async () => {
+    const organizer = await makeUser();
+    const eventId = await makePublishedEvent(organizer.cookie);
+    const res = await SELF.fetch(`${BASE}/api/public/venues/wanted`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { events: { id: string }[] };
+    expect(body.events.some((e) => e.id === eventId)).toBe(true);
+  });
+});
+
+describe("会場オファーの追加ケース (#53 PR2 レビュー対応)", () => {
+  it("メンバー限定たまごへのオファーは404（存在秘匿）。公開たまごへの提供→承諾は成立", async () => {
+    const creator = await makeUser();
+    const venueOwner = await makeUser();
+    const venueId = await createVenue(venueOwner.cookie);
+
+    // メンバー限定たまご（コミュニティ直作成）
+    const cid = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO community (id, slug, name, owner_id, created_at) VALUES (?, ?, 'c', ?, ?)",
+    )
+      .bind(cid, `c${cid.slice(0, 8)}`, creator.userId, Date.now())
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO community_member (id, community_id, user_id, role, created_at) VALUES (?, ?, ?, 'owner', ?)",
+    )
+      .bind(crypto.randomUUID(), cid, creator.userId, Date.now())
+      .run();
+    const secretReq = await SELF.fetch(`${BASE}/api/event-requests`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: creator.cookie },
+      body: JSON.stringify({
+        title: "限定たまご会場募集",
+        communityId: cid,
+        membersOnly: true,
+        venueWanted: true,
+      }),
+    });
+    const { request: secret } = (await secretReq.json()) as {
+      request: { id: string };
+    };
+    const denied = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: venueOwner.cookie },
+      body: JSON.stringify({ venueId, requestId: secret.id }),
+    });
+    expect(denied.status).toBe(404);
+
+    // 公開たまご（会場募集中）への提供→投稿者が承諾
+    const openReq = await SELF.fetch(`${BASE}/api/event-requests`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: creator.cookie },
+      body: JSON.stringify({ title: "公開たまご会場募集", venueWanted: true }),
+    });
+    const { request: openR } = (await openReq.json()) as {
+      request: { id: string };
+    };
+    const offer = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: venueOwner.cookie },
+      body: JSON.stringify({ venueId, requestId: openR.id }),
+    });
+    expect(offer.status).toBe(201);
+    const { offer: o } = (await offer.json()) as { offer: { id: string } };
+    const accept = await SELF.fetch(`${BASE}/api/venue-offers/${o.id}/respond`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: creator.cookie },
+      body: JSON.stringify({ action: "accept", contact: "X: @egg_creator" }),
+    });
+    expect(accept.status).toBe(200);
+
+    // 投稿者側: 会場連絡先が開示
+    const mine = await SELF.fetch(
+      `${BASE}/api/venue-offers/for-request/${openR.id}`,
+      { headers: { cookie: creator.cookie } },
+    );
+    const mb = (await mine.json()) as { offers: { venueContact: string }[] };
+    expect(mb.offers[0].venueContact).toContain("secret_contact");
+
+    // 第三者は for-request を見られない
+    const stranger = await makeUser();
+    const deniedList = await SELF.fetch(
+      `${BASE}/api/venue-offers/for-request/${openR.id}`,
+      { headers: { cookie: stranger.cookie } },
+    );
+    expect(deniedList.status).toBe(403);
+  });
+});

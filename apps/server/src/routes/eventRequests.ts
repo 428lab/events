@@ -187,6 +187,23 @@ eventRequestRoutes.post(
   },
 );
 
+/** 会場募集フラグの切り替え（投稿者かアプリ管理者） */
+eventRequestRoutes.post(
+  "/:id/venue-wanted",
+  zValidator("json", z.object({ on: z.boolean() })),
+  async (c) => {
+    const req = await eventRequestsRepo.findById(c.req.param("id"));
+    if (!req) return c.json({ error: "not_found" }, 404);
+    const user = c.get("user");
+    if (req.createdBy !== user.id && !isAppAdmin(user)) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+    const { on } = valid<{ on: boolean }>(c, "json");
+    await eventRequestsRepo.setVenueWanted(req.id, on);
+    return c.json({ request: await eventRequestsRepo.findById(req.id) });
+  },
+);
+
 /** 削除（投稿者かアプリ管理者） */
 eventRequestRoutes.delete("/:id", async (c) => {
   const req = await eventRequestsRepo.findById(c.req.param("id"));

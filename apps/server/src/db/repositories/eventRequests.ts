@@ -19,6 +19,7 @@ interface EventRequestRow {
   host_count: number;
   event_count: number;
   slug: string | null;
+  venue_wanted: number;
 }
 
 /** 賛同数・リンクイベント数を含む event_request の SELECT */
@@ -46,16 +47,22 @@ function toRequest(row: EventRequestRow): EventRequest {
     hostCount: row.host_count,
     eventCount: row.event_count,
     slug: row.slug ?? "",
+    venueWanted: row.venue_wanted === 1,
   };
 }
 
 /** 公開一覧の WHERE 句（イベント検索と同じ LIKE エスケープ方式） */
-function buildPublicWhere(opts: { status: "open" | "closed"; q?: string }): {
+function buildPublicWhere(opts: {
+  status: "open" | "closed";
+  q?: string;
+  venueWantedOnly?: boolean;
+}): {
   where: string;
   args: (string | number)[];
 } {
   const conds = ["er.status = ?", "er.members_only = 0"];
   const args: (string | number)[] = [opts.status];
+  if (opts.venueWantedOnly) conds.push("er.venue_wanted = 1");
   if (opts.q) {
     conds.push(
       "(er.title LIKE ? ESCAPE '\\' OR er.description LIKE ? ESCAPE '\\')",
@@ -96,6 +103,7 @@ export const eventRequestsRepo = {
       status: "open" | "closed";
       q?: string;
       sort?: "new" | "popular";
+      venueWantedOnly?: boolean;
     },
     limit: number,
     offset: number,
@@ -155,8 +163,8 @@ export const eventRequestsRepo = {
     await run(
       `INSERT INTO event_request
         (id, title, description, venue_type_pref, community_id, members_only,
-         status, created_by, created_at, slug)
-       VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
+         status, created_by, created_at, slug, venue_wanted)
+       VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`,
       id,
       input.title,
       input.description ?? "",
@@ -166,8 +174,17 @@ export const eventRequestsRepo = {
       createdBy,
       Date.now(),
       slug,
+      input.venueWanted ? 1 : 0,
     );
     return (await this.findById(id))!;
+  },
+
+  async setVenueWanted(id: string, on: boolean): Promise<void> {
+    await run(
+      "UPDATE event_request SET venue_wanted = ? WHERE id = ?",
+      on ? 1 : 0,
+      id,
+    );
   },
 
   async setStatus(id: string, status: "open" | "closed"): Promise<void> {

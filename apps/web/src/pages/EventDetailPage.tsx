@@ -51,6 +51,7 @@ import { EventPhotos } from "../components/EventPhotos.js";
 import { useRecordView } from "../api/analyticsHooks.js";
 import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
+import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -537,6 +538,14 @@ export function EventDetailPage() {
             </>
           )}
         </Stack>
+      )}
+
+      {/* 会場マッチング: 主催者はオファー確認、会場オーナーは提供オファー */}
+      <VenueOfferPanel kind="for-event" id={id} enabled={isStaff} />
+      {me && !isStaff && event.venueWanted && event.status === "published" && (
+        <Box>
+          <OfferVenueButton eventId={id} />
+        </Box>
       )}
 
       {/* イベントフォト（参加者は常に、公開設定時は誰でも閲覧） */}

@@ -31,6 +31,8 @@ export const eventRequestSchema = z.object({
   eventCount: z.number(),
   /** 短い共有URL用スラッグ（/r/:slug） */
   slug: z.string(),
+  /** 会場を探している */
+  venueWanted: z.boolean(),
 });
 export type EventRequest = z.infer<typeof eventRequestSchema>;
 
@@ -40,6 +42,7 @@ export const createEventRequestInput = z.object({
   venueTypePref: z.enum(VENUE_TYPES).nullable().optional(),
   communityId: z.string().nullable().optional(),
   membersOnly: z.boolean().optional(),
+  venueWanted: z.boolean().optional(),
 });
 export type CreateEventRequestInput = z.infer<typeof createEventRequestInput>;
 

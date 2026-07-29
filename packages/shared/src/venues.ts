@@ -50,3 +50,27 @@ export type UpdateVenueInput = z.infer<typeof updateVenueInput>;
 
 /** カバー画像の上限（イベント画像と同等） */
 export const VENUE_IMAGE = { maxBytes: 6 * 1024 * 1024 } as const;
+
+/** ---- オファー (#53 PR2) ---- */
+export const VENUE_OFFER_STATUSES = ["pending", "accepted", "declined"] as const;
+export type VenueOfferStatus = (typeof VENUE_OFFER_STATUSES)[number];
+
+export const createVenueOfferInput = z
+  .object({
+    venueId: z.string(),
+    eventId: z.string().optional(),
+    requestId: z.string().optional(),
+    /** 主催者側からのオファー時の連絡先（承諾後に会場側へ開示） */
+    contact: z.string().max(500).optional(),
+  })
+  .refine((v) => Boolean(v.eventId) !== Boolean(v.requestId), {
+    message: "eventId か requestId のどちらか一方を指定してください",
+  });
+export type CreateVenueOfferInput = z.infer<typeof createVenueOfferInput>;
+
+export const respondVenueOfferInput = z.object({
+  action: z.enum(["accept", "decline"]),
+  /** 主催者が会場側オファーを承諾するときの連絡先 */
+  contact: z.string().max(500).optional(),
+});
+export type RespondVenueOfferInput = z.infer<typeof respondVenueOfferInput>;
