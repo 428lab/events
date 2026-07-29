@@ -74,3 +74,13 @@ export const respondVenueOfferInput = z.object({
   contact: z.string().max(500).optional(),
 });
 export type RespondVenueOfferInput = z.infer<typeof respondVenueOfferInput>;
+
+/** 会場ギャラリー写真の上限（カバーとは別） */
+export const VENUE_PHOTO_LIMIT = 10;
+
+export const venuePhotoSchema = z.object({
+  id: z.string(),
+  venueId: z.string(),
+  createdAt: z.number(),
+});
+export type VenuePhoto = z.infer<typeof venuePhotoSchema>;

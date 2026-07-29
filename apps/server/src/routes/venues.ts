@@ -3,7 +3,9 @@ import type { Context } from "hono";
 import {
   createVenueInput,
   updateVenueInput,
+  EVENT_PHOTO_MAX_BYTES,
   VENUE_IMAGE,
+  VENUE_PHOTO_LIMIT,
   type CreateVenueInput,
   type UpdateVenueInput,
 } from "@eventer/shared";
@@ -15,6 +17,7 @@ import { getBucket } from "../runtime.js";
 import { normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import { venuesRepo } from "../db/repositories/venues.js";
 import { usersRepo } from "../db/repositories/users.js";
+import { venuePhotosRepo } from "../db/repositories/venuePhotos.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
 
@@ -144,10 +147,20 @@ venueRoutes.patch("/:id", zValidator("json", updateVenueInput), async (c) => {
 venueRoutes.delete("/:id", async (c) => {
   const denied = await requireOwner(c);
   if (denied) return denied;
+  const id = c.req.param("id");
   await getBucket()
-    .delete(r2Key(c.req.param("id")))
+    .delete(r2Key(id))
     .catch(() => undefined);
-  await venuesRepo.delete(c.req.param("id"));
+  // ギャラリー写真の R2 オブジェクトも掃除（DB行は CASCADE で消えるため孤児化を防ぐ）
+  try {
+    const listed = await getBucket().list({ prefix: `venue-photos/${id}/` });
+    if (listed.objects.length > 0) {
+      await getBucket().delete(listed.objects.map((o) => o.key));
+    }
+  } catch {
+    // 掃除失敗は削除自体を妨げない
+  }
+  await venuesRepo.delete(id);
   return c.json({ ok: true });
 });
 
@@ -172,4 +185,76 @@ venueRoutes.put("/:id/image", async (c) => {
   const ts = Date.now();
   await venuesRepo.setImageUpdated(c.req.param("id"), ts);
   return c.json({ ok: true, imageUpdatedAt: ts });
+});
+
+/* ---- ギャラリー写真 (#63)。イベント写真と同じ検証・R2パターンを流用 ---- */
+
+const photoKey = (venueId: string, photoId: string) =>
+  `venue-photos/${venueId}/${photoId}`;
+
+/** 公開: 写真一覧 */
+export async function getVenuePhotos(c: Context<AppEnv>) {
+  const venue = await venuesRepo.findById(c.req.param("id")!);
+  if (!venue) return c.json({ error: "not_found" }, 404);
+  return c.json({
+    photos: await venuePhotosRepo.listByVenue(venue.id),
+    limit: VENUE_PHOTO_LIMIT,
+  });
+}
+
+/** 公開: 写真本体 */
+export async function getVenuePhotoImage(c: Context<AppEnv>) {
+  const photo = await venuePhotosRepo.findById(c.req.param("photoId")!);
+  if (!photo || photo.venueId !== c.req.param("id")) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  const obj = await getBucket().get(photoKey(photo.venueId, photo.id));
+  if (!obj) return c.json({ error: "not_found" }, 404);
+  return new Response(obj.body as unknown as ReadableStream, {
+    headers: {
+      "Content-Type": safeServeMime(obj.httpMetadata?.contentType ?? "image/webp"),
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "public, max-age=3600",
+    },
+  });
+}
+
+/** 写真アップロード（オーナーのみ・最大10点） */
+venueRoutes.post("/:id/photos", async (c) => {
+  const denied = await requireOwner(c);
+  if (denied) return denied;
+  const venueId = c.req.param("id");
+  if ((await venuePhotosRepo.countByVenue(venueId)) >= VENUE_PHOTO_LIMIT) {
+    return c.json({ error: "photo_limit", limit: VENUE_PHOTO_LIMIT }, 409);
+  }
+  const mime = normalizeImageMime(c.req.header("content-type"));
+  if (!mime) return c.json({ error: "invalid_content_type" }, 400);
+  if (Number(c.req.header("content-length") ?? "0") > EVENT_PHOTO_MAX_BYTES) {
+    return c.json({ error: "too_large", maxBytes: EVENT_PHOTO_MAX_BYTES }, 413);
+  }
+  const body = await c.req.arrayBuffer();
+  if (body.byteLength === 0) return c.json({ error: "empty_body" }, 400);
+  if (body.byteLength > EVENT_PHOTO_MAX_BYTES) {
+    return c.json({ error: "too_large", maxBytes: EVENT_PHOTO_MAX_BYTES }, 413);
+  }
+  const photo = await venuePhotosRepo.create(venueId);
+  await getBucket().put(photoKey(venueId, photo.id), body, {
+    httpMetadata: { contentType: mime },
+  });
+  return c.json({ photo }, 201);
+});
+
+/** 写真削除（オーナーのみ） */
+venueRoutes.delete("/:id/photos/:photoId", async (c) => {
+  const denied = await requireOwner(c);
+  if (denied) return denied;
+  const photo = await venuePhotosRepo.findById(c.req.param("photoId"));
+  if (!photo || photo.venueId !== c.req.param("id")) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  await getBucket()
+    .delete(photoKey(photo.venueId, photo.id))
+    .catch(() => undefined);
+  await venuePhotosRepo.delete(photo.id);
+  return c.json({ ok: true });
 });

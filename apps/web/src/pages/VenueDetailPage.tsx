@@ -19,6 +19,7 @@ import { useVenue, venueImageUrl } from "../api/venueHooks.js";
 import { Markdown } from "../components/Markdown.js";
 import { UserLink } from "../components/UserLink.js";
 import { UseVenueButton, VenueOwnerOffers } from "../components/VenueOffers.js";
+import { VenuePhotos } from "../components/VenuePhotos.js";
 import { useMe } from "../api/hooks.js";
 
 /** 会場詳細（未ログイン可）。連絡先はマッチング成立まで非公開。 */
@@ -129,6 +130,8 @@ export function VenueDetailPage() {
           </Link>
         </Box>
       )}
+
+      <VenuePhotos venueId={venue.id} isOwner={isOwner} />
 
       {venue.description && (
         <Card variant="outlined">
