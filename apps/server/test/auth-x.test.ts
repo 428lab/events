@@ -30,9 +30,22 @@ describe("X ログイン (#45)", () => {
     // state と PKCE verifier の両方が cookie に保存される
     const cookies = res.headers.getSetCookie();
     expect(cookies.some((v) => v.startsWith("eventer_oauth_state="))).toBe(true);
-    expect(cookies.some((v) => v.startsWith("eventer_oauth_verifier="))).toBe(
-      true,
+    const verifierCookie = cookies.find((v) =>
+      v.startsWith("eventer_oauth_verifier="),
     );
+    expect(verifierCookie).toBeTruthy();
+
+    // cookie の verifier から S256 を再計算し、challenge と一致することを検証
+    const verifier = verifierCookie!.split(";")[0].split("=")[1];
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(verifier),
+    );
+    const expected = btoa(String.fromCharCode(...new Uint8Array(digest)))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+    expect(loc.searchParams.get("code_challenge")).toBe(expected);
   });
 
   it("未設定プロバイダの login は 503", async () => {
