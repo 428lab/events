@@ -395,6 +395,53 @@ describe("イベントのたまご (#29)", () => {
     expect(anonBody.fromRequests.some((r) => r.id === secretId)).toBe(false);
   });
 
+  it("短い共有URL: by-slug でID解決でき、メンバー限定は非メンバーに404 (#42)", async () => {
+    const owner = await makeUser();
+    const outsider = await makeUser();
+    const id = await postRequest(owner.cookie, "共有たまご");
+    const detail = await SELF.fetch(`${BASE}/api/public/event-requests/${id}`);
+    const { request } = (await detail.json()) as {
+      request: { slug: string };
+    };
+    expect(request.slug).toMatch(/^[0-9a-f]{8}$/);
+
+    // 未ログインで by-slug 解決
+    const bySlug = await SELF.fetch(
+      `${BASE}/api/public/event-requests/by-slug/${request.slug}`,
+    );
+    expect(bySlug.status).toBe(200);
+    expect(((await bySlug.json()) as { id: string }).id).toBe(id);
+
+    // メンバー限定たまごの slug は非メンバーに404
+    const cid = await makeCommunity(owner.userId, []);
+    const secretId = await postRequest(owner.cookie, "限定共有たまご", {
+      communityId: cid,
+      membersOnly: true,
+    });
+    const secretDetail = await SELF.fetch(
+      `${BASE}/api/public/event-requests/${secretId}`,
+      { headers: { cookie: owner.cookie } },
+    );
+    const secret = (await secretDetail.json()) as {
+      request: { slug: string };
+    };
+    const denied = await SELF.fetch(
+      `${BASE}/api/public/event-requests/by-slug/${secret.request.slug}`,
+      { headers: { cookie: outsider.cookie } },
+    );
+    expect(denied.status).toBe(404);
+
+    // /r/:slug は SPA HTML（公開たまごは OG 注入あり・限定はなし）
+    const og = await SELF.fetch(`${BASE}/r/${request.slug}`);
+    expect(og.status).toBe(200);
+    const html = await og.text();
+    expect(html).toContain("og:title");
+    expect(html).toContain("共有たまご");
+    const secretOg = await SELF.fetch(`${BASE}/r/${secret.request.slug}`);
+    const secretHtml = await secretOg.text();
+    expect(secretHtml).not.toContain("限定共有たまご");
+  });
+
   it("コミュニティを削除してもたまごは残り、全体たまご化される", async () => {
     const owner = await makeUser();
     const cid = await makeCommunity(owner.userId, []);

@@ -45,6 +45,17 @@ export function usePublicEventRequests(
   });
 }
 
+/** 短いシェアURL（/r/:slug）→ たまごIDの解決 */
+export function useEventRequestBySlug(slug: string) {
+  return useQuery({
+    queryKey: ["eventRequestBySlug", slug],
+    enabled: Boolean(slug),
+    retry: false,
+    queryFn: () =>
+      api.get<{ id: string }>(`/public/event-requests/by-slug/${slug}`),
+  });
+}
+
 /** たまご詳細（未ログイン可） */
 export function useEventRequest(id: string) {
   return useQuery({

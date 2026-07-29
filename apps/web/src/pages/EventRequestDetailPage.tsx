@@ -24,6 +24,7 @@ import {
   useSetEventRequestStatus,
 } from "../api/requestHooks.js";
 import { EventCard } from "../components/EventCard.js";
+import { ShareButton } from "../components/ShareButton.js";
 import { venueLabel, formatDateTime } from "../lib/format.js";
 
 /** イベントのたまご詳細。賛同・開催宣言・クローズ。 */
@@ -78,6 +79,10 @@ export function EventRequestDetailPage() {
                 to={`/c/${community.slug}`}
                 clickable
               />
+            )}
+            {/* メンバー限定はURLを知られても見えないが、共有導線は出さない */}
+            {!request.membersOnly && (
+              <ShareButton slug={request.slug} title={request.title} prefix="r" />
             )}
           </Stack>
 

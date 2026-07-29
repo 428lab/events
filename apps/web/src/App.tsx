@@ -35,6 +35,7 @@ import { UpcomingEventsPage } from "./pages/UpcomingEventsPage.js";
 import { EventRequestsPage } from "./pages/EventRequestsPage.js";
 import { EventRequestNewPage } from "./pages/EventRequestNewPage.js";
 import { EventRequestDetailPage } from "./pages/EventRequestDetailPage.js";
+import { ShortRequestPage } from "./pages/ShortRequestPage.js";
 import { DecksPage } from "./pages/DecksPage.js";
 import { LiveSetsPage } from "./pages/LiveSetsPage.js";
 import { LiveSetEditorPage } from "./pages/LiveSetEditorPage.js";
@@ -181,6 +182,14 @@ export function App() {
             </PublicLayout>
           }
         />
+        <Route
+          path="/r/:slug"
+          element={
+            <PublicLayout>
+              <ShortRequestPage />
+            </PublicLayout>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
@@ -211,6 +220,7 @@ export function App() {
         <Route path="/live-sets/:id/edit" element={<LiveSetEditorPage />} />
         <Route path="/d/:slug" element={<DeckViewerPage />} />
         <Route path="/e/:slug" element={<ShortEventPage />} />
+        <Route path="/r/:slug" element={<ShortRequestPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/upcoming" element={<UpcomingEventsPage />} />
         <Route path="/requests" element={<EventRequestsPage />} />

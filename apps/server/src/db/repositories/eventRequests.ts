@@ -18,6 +18,7 @@ interface EventRequestRow {
   attend_count: number;
   host_count: number;
   event_count: number;
+  slug: string | null;
 }
 
 /** 賛同数・リンクイベント数を含む event_request の SELECT */
@@ -44,6 +45,7 @@ function toRequest(row: EventRequestRow): EventRequest {
     attendCount: row.attend_count,
     hostCount: row.host_count,
     eventCount: row.event_count,
+    slug: row.slug ?? "",
   };
 }
 
@@ -65,11 +67,24 @@ function buildPublicWhere(opts: { status: "open" | "closed"; q?: string }): {
   return { where: conds.join(" AND "), args };
 }
 
+/** 短いシェア用スラッグ（8文字hex。event.slug と同形式） */
+function genRequestSlug(): string {
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+}
+
 export const eventRequestsRepo = {
   async findById(id: string): Promise<EventRequest | null> {
     const row = await one<EventRequestRow>(
       `${SELECT_REQUEST} WHERE er.id = ?`,
       id,
+    );
+    return row ? toRequest(row) : null;
+  },
+
+  async findBySlug(slug: string): Promise<EventRequest | null> {
+    const row = await one<EventRequestRow>(
+      `${SELECT_REQUEST} WHERE er.slug = ?`,
+      slug,
     );
     return row ? toRequest(row) : null;
   },
@@ -135,11 +150,13 @@ export const eventRequestsRepo = {
     createdBy: string,
   ): Promise<EventRequest> {
     const id = crypto.randomUUID();
+    let slug = genRequestSlug();
+    while (await this.findBySlug(slug)) slug = genRequestSlug();
     await run(
       `INSERT INTO event_request
         (id, title, description, venue_type_pref, community_id, members_only,
-         status, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
+         status, created_by, created_at, slug)
+       VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
       id,
       input.title,
       input.description ?? "",
@@ -148,6 +165,7 @@ export const eventRequestsRepo = {
       input.communityId && input.membersOnly ? 1 : 0,
       createdBy,
       Date.now(),
+      slug,
     );
     return (await this.findById(id))!;
   },

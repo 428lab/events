@@ -29,6 +29,8 @@ export const eventRequestSchema = z.object({
   hostCount: z.number(),
   /** リンク済みイベント数（開催宣言から生まれたイベント） */
   eventCount: z.number(),
+  /** 短い共有URL用スラッグ（/r/:slug） */
+  slug: z.string(),
 });
 export type EventRequest = z.infer<typeof eventRequestSchema>;
 
