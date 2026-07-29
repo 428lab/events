@@ -10,7 +10,7 @@ import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
-import { venuesRepo, isVenueManager } from "../db/repositories/venues.js";
+import { venuesRepo, venueAdminsRepo, isVenueManager } from "../db/repositories/venues.js";
 import { venueOffersRepo, type VenueOffer } from "../db/repositories/venueOffers.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
@@ -137,9 +137,14 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
         link,
       );
     }
-  } else if (venue.ownerId !== user.id) {
-    await notificationsRepo.create(
+  } else {
+    // 運営（オーナー＋管理者）全員へ通知
+    const managers = [
       venue.ownerId,
+      ...(await venueAdminsRepo.list(venue.id)).map((a) => a.id),
+    ];
+    await notificationsRepo.createForMany(
+      managers.filter((id) => id !== user.id),
       "venue_offer",
       "会場の利用オファーが届きました🏟️",
       `「${targetTitle}」の主催者が会場「${venue.name}」を使いたいそうです`,

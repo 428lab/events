@@ -71,9 +71,8 @@ publicVenueRoutes.get("/:id", async (c) => {
   if (!venue) return c.json({ error: "not_found" }, 404);
   const user = await currentUser(c);
   const isOwner = user?.id === venue.ownerId;
-  const isManager = Boolean(
-    user && ((await isVenueManager(venue.id, user.id)) || isAppAdmin(user)),
-  );
+  // UIフラグは実権限のみ（appAdmin は参加者と同じ見た目。full view は下で別判定）
+  const isManager = Boolean(user && (await isVenueManager(venue.id, user.id)));
   const ownerUser = await usersRepo.findById(venue.ownerId);
   const owner = ownerUser
     ? {
@@ -84,7 +83,7 @@ publicVenueRoutes.get("/:id", async (c) => {
       }
     : null;
   // 運営権（オーナー/管理者）には連絡先・非公開住所込みで返す（編集画面用）
-  if (isManager) {
+  if (isManager || (user && isAppAdmin(user))) {
     return c.json({
       venue: await venuesRepo.findByIdFull(venue.id),
       owner,
@@ -122,7 +121,7 @@ venueRoutes.use("*", requireAuth);
 
 /** 自分の会場一覧（連絡先込み） */
 venueRoutes.get("/mine", async (c) => {
-  return c.json({ venues: await venuesRepo.listByOwner(c.get("user").id) });
+  return c.json({ venues: await venuesRepo.listManagedBy(c.get("user").id) });
 });
 
 venueRoutes.post("/", zValidator("json", createVenueInput), async (c) => {
@@ -293,10 +292,7 @@ export async function getVenuePhotos(c: Context<AppEnv>) {
   const venue = await venuesRepo.findById(c.req.param("id")!);
   if (!venue) return c.json({ error: "not_found" }, 404);
   const user = await currentUser(c);
-  const isOwner = Boolean(
-    user &&
-      ((await isVenueManager(venue.id, user.id)) || isAppAdmin(user)),
-  );
+  const isOwner = Boolean(user && (await isVenueManager(venue.id, user.id)));
   const photos = await venuePhotosRepo.listByVenue(venue.id, "approved");
   const pending = isOwner
     ? await venuePhotosRepo.listByVenue(venue.id, "pending")
@@ -382,10 +378,14 @@ venueRoutes.post("/:id/photos", async (c) => {
   await getBucket().put(photoKey(venueId, photo.id), body, {
     httpMetadata: { contentType: mime },
   });
-  // 参加者投稿はオーナーへ知らせる
+  // 参加者投稿は運営（オーナー＋管理者）へ知らせる
   if (!isOwner) {
-    await notificationsRepo.create(
+    const managers = [
       venue.ownerId,
+      ...(await venueAdminsRepo.list(venueId)).map((a) => a.id),
+    ];
+    await notificationsRepo.createForMany(
+      managers.filter((id) => id !== user.id),
       "venue_photo_result",
       "会場写真の投稿が届きました📷",
       `「${venue.name}」に参加者から写真が投稿されました（承認待ち）`,

@@ -20,7 +20,7 @@ import {
 } from "../api/venueHooks.js";
 import { VenueAdminsCard } from "../components/VenueAdminsCard.js";
 
-/** 会場の登録/編集（オーナーのみ）。/venues/new と /venues/:id/edit 兼用 */
+/** 会場の登録/編集（オーナー・管理者）。/venues/new と /venues/:id/edit 兼用 */
 export function VenueFormPage() {
   const { id = "" } = useParams();
   const isEdit = Boolean(id);

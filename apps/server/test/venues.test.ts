@@ -727,6 +727,16 @@ describe("会場の複数管理者とオーナー移譲 (#67)", () => {
     expect(d.isOwner).toBe(false);
     expect(d.venue.contact).toContain("secret_contact");
 
+    // 管理者: 写真の承認待ちも見える（photos一覧の isOwner=true 相当の権限）
+    const photosAsAdmin = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos`,
+      { headers: { cookie: admin.cookie } },
+    );
+    expect(photosAsAdmin.status).toBe(200);
+    expect(
+      ((await photosAsAdmin.json()) as { isOwner: boolean }).isOwner,
+    ).toBe(true);
+
     // 管理者: 削除・移譲・管理者追加は不可
     const delDenied = await SELF.fetch(`${BASE}/api/venues/${venueId}`, {
       method: "DELETE",

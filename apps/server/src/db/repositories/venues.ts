@@ -4,7 +4,7 @@ import type {
   Venue,
   VenueOwnerView,
 } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { batch, many, one, run } from "../client.js";
 
 interface VenueRow {
   id: string;
@@ -91,6 +91,19 @@ export const venuesRepo = {
     const rows = await many<VenueRow>(
       "SELECT * FROM venue WHERE owner_id = ? ORDER BY created_at DESC",
       ownerId,
+    );
+    return rows.map(toOwnerView);
+  },
+
+  /** 運営権のある会場（オーナー＋管理者。停止中も含む） */
+  async listManagedBy(userId: string): Promise<VenueOwnerView[]> {
+    const rows = await many<VenueRow>(
+      `SELECT DISTINCT v.* FROM venue v
+        LEFT JOIN venue_admin a ON a.venue_id = v.id
+       WHERE v.owner_id = ? OR a.user_id = ?
+       ORDER BY v.created_at DESC`,
+      userId,
+      userId,
     );
     return rows.map(toOwnerView);
   },
@@ -230,15 +243,17 @@ export const venueAdminsRepo = {
   },
 };
 
-/** オーナー移譲: 旧オーナーは管理者に降格、新オーナーは管理者から外す */
+/** オーナー移譲: 旧オーナーは管理者に降格、新オーナーは管理者から外す（アトミック） */
 export async function transferVenueOwnership(
   venueId: string,
   fromUserId: string,
   toUserId: string,
 ): Promise<void> {
-  await run("UPDATE venue SET owner_id = ? WHERE id = ?", toUserId, venueId);
-  await venueAdminsRepo.remove(venueId, toUserId);
-  await venueAdminsRepo.add(venueId, fromUserId);
+  await batch([
+    { sql: "UPDATE venue SET owner_id = ? WHERE id = ?", args: [toUserId, venueId] },
+    { sql: "DELETE FROM venue_admin WHERE venue_id = ? AND user_id = ?", args: [venueId, toUserId] },
+    { sql: "INSERT OR IGNORE INTO venue_admin (venue_id, user_id, created_at) VALUES (?, ?, ?)", args: [venueId, fromUserId, Date.now()] },
+  ]);
 }
 
 /** 会場の運営権（オーナー or 管理者）か */
