@@ -1,8 +1,9 @@
 import type { Context } from "hono";
-import type { Event } from "@eventer/shared";
+import type { Event, EventRequest } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { env } from "../runtime.js";
 import { eventsRepo } from "../db/repositories/events.js";
+import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
 
 /** 公開イベントのフィード（RSS / JSON Feed / iCalendar）。
  * フィルタはクエリで指定（検索APIと同じ語彙）:
@@ -80,7 +81,7 @@ async function fetchEvents(c: Context<AppEnv>): Promise<Event[]> {
   const sortParam = c.req.query("sort");
   const limit = Math.min(
     MAX_ITEMS,
-    Math.max(1, Number(c.req.query("limit")) || 20),
+    Math.max(1, Math.floor(Number(c.req.query("limit")) || 20)),
   );
   const now = Date.now();
 
@@ -112,9 +113,9 @@ async function fetchEvents(c: Context<AppEnv>): Promise<Event[]> {
 }
 
 /** そのままの取得URL（付与フィルタ込み・feed内のself用） */
-function selfUrl(c: Context, ext: string): string {
+function selfUrl(c: Context, ext: string, name = "events"): string {
   const u = new URL(c.req.url);
-  return `${env.appBaseUrl}/feed/events.${ext}${u.search}`;
+  return `${env.appBaseUrl}/feed/${name}.${ext}${u.search}`;
 }
 
 const CACHE = "public, max-age=300";
@@ -260,6 +261,103 @@ export async function feedIcs(c: Context<AppEnv>) {
     .join("\r\n");
   return c.body(ics, 200, {
     "Content-Type": "text/calendar; charset=utf-8",
+    "Cache-Control": CACHE,
+  });
+}
+
+/* =========================================================
+ *  イベントのたまご（あったらいいな）のフィード (#51)
+ *  対象は公開のオープンたまごのみ（メンバー限定は listPublic が除外）
+ * =======================================================*/
+
+function requestUrl(req: EventRequest): string {
+  return `${env.appBaseUrl}/requests/${req.id}`;
+}
+
+/** フィード本文（人間可読の要約） */
+function requestSummary(req: EventRequest): string {
+  const parts = [
+    `参加したい ${req.attendCount} ／ 開催してもいい ${req.hostCount}`,
+  ];
+  if (req.eventCount > 0) parts.push(`開催決定 ${req.eventCount}`);
+  if (req.venueTypePref) {
+    parts.push(`希望: ${VENUE_LABEL[req.venueTypePref] ?? req.venueTypePref}`);
+  }
+  const desc = truncate(
+    (req.description || "").replace(/\s+/g, " ").trim(),
+    200,
+  );
+  if (desc) parts.push(desc);
+  return parts.join(" ／ ");
+}
+
+/** クエリからたまごを取得（q / sort=new|popular / limit） */
+async function fetchRequests(c: Context<AppEnv>): Promise<EventRequest[]> {
+  const q = c.req.query("q")?.trim() || undefined;
+  const sort = c.req.query("sort") === "popular" ? "popular" : "new";
+  const limit = Math.min(
+    MAX_ITEMS,
+    Math.max(1, Math.floor(Number(c.req.query("limit")) || 20)),
+  );
+  return eventRequestsRepo.listPublic({ status: "open", q, sort }, limit, 0);
+}
+
+/** たまご RSS 2.0 */
+export async function feedRequestsRss(c: Context<AppEnv>) {
+  const requests = await fetchRequests(c);
+  const items = requests
+    .map(
+      (req) => `    <item>
+      <title>${xmlEscape(`🥚 ${req.title}`)}</title>
+      <link>${xmlEscape(requestUrl(req))}</link>
+      <guid isPermaLink="false">${xmlEscape(req.id)}</guid>
+      <pubDate>${new Date(req.createdAt).toUTCString()}</pubDate>
+      <description>${xmlEscape(requestSummary(req))}</description>
+    </item>`,
+    )
+    .join("\n");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>events lab のイベントのたまご</title>
+    <link>${xmlEscape(env.appBaseUrl)}/requests</link>
+    <description>「あったらいいな」イベントのリクエスト（賛同と開催者を募集中）</description>
+    <atom:link xmlns:atom="http://www.w3.org/2005/Atom" href="${xmlEscape(selfUrl(c, "rss", "requests"))}" rel="self" type="application/rss+xml" />
+${items}
+  </channel>
+</rss>`;
+  return c.body(xml, 200, {
+    "Content-Type": "application/rss+xml; charset=utf-8",
+    "Cache-Control": CACHE,
+  });
+}
+
+/** たまご JSON Feed 1.1（エージェント向け・_request 拡張つき） */
+export async function feedRequestsJson(c: Context<AppEnv>) {
+  const requests = await fetchRequests(c);
+  const feed = {
+    version: "https://jsonfeed.org/version/1.1",
+    title: "events lab のイベントのたまご",
+    home_page_url: `${env.appBaseUrl}/requests`,
+    feed_url: selfUrl(c, "json", "requests"),
+    items: requests.map((req) => ({
+      id: req.id,
+      url: requestUrl(req),
+      title: req.title,
+      content_text: requestSummary(req),
+      date_published: new Date(req.createdAt).toISOString(),
+      _request: {
+        attendCount: req.attendCount,
+        hostCount: req.hostCount,
+        eventCount: req.eventCount,
+        venueTypePref: req.venueTypePref,
+        communityId: req.communityId,
+        slug: req.slug,
+      },
+    })),
+  };
+  return c.body(JSON.stringify(feed), 200, {
+    "Content-Type": "application/feed+json; charset=utf-8",
     "Cache-Control": CACHE,
   });
 }

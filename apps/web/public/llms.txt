@@ -21,3 +21,18 @@
 - `limit`: 件数（最大 50・既定 20）
 
 例: `https://events.kojira.io/feed/events.json?type=upcoming&venueType=online&limit=30`
+
+## イベントのたまご（あったらいいなリクエスト）のフィード
+
+「こんなイベントがあったらいいな」という需要と、「開催してもいい」という主催候補のマッチング情報です。需要のあるイベント案を探して開催を提案できます。
+
+- [たまご（JSON Feed 1.1）](https://events.kojira.io/feed/requests.json): 各 item に `_request` 拡張（attendCount=参加したい数・hostCount=開催してもいい数・eventCount=開催決定数・venueTypePref・communityId・slug）を含む
+- [たまご（RSS 2.0）](https://events.kojira.io/feed/requests.rss)
+
+### クエリパラメータ
+
+- `q`: キーワード（タイトル・説明を部分一致）
+- `sort`: `new`（新着順・既定）/ `popular`（参加したい数の多い順）
+- `limit`: 件数（最大 50・既定 20）
+
+例: `https://events.kojira.io/feed/requests.json?sort=popular&limit=10`
