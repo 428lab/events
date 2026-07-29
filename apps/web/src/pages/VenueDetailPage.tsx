@@ -109,7 +109,7 @@ export function VenueDetailPage() {
             title="会場の地図"
             src={`https://maps.google.com/maps?q=${encodeURIComponent(`${venue.area} ${venue.address}`)}&z=16&output=embed`}
             loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
+            referrerPolicy="no-referrer"
             sx={{
               width: "100%",
               height: 300,
