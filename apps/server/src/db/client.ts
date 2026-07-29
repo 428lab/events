@@ -35,6 +35,18 @@ export async function run(sql: string, ...args: unknown[]): Promise<void> {
     .run();
 }
 
+/** run と同じだが変更行数を返す（条件付きUPDATEの成否判定用） */
+export async function runCount(
+  sql: string,
+  ...args: unknown[]
+): Promise<number> {
+  const res = await getDb()
+    .prepare(sql)
+    .bind(...args)
+    .run();
+  return res.meta?.changes ?? 0;
+}
+
 /** 複数文をアトミックに実行（D1 batch）。better-sqlite3 の transaction 相当。 */
 export async function batch(
   stmts: Array<{ sql: string; args?: unknown[] }>,

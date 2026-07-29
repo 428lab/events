@@ -39,6 +39,7 @@ import {
   publicEventRequestRoutes,
 } from "./routes/eventRequests.js";
 import { eventRequestsRepo } from "./db/repositories/eventRequests.js";
+import { followRoutes } from "./routes/follows.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -78,6 +79,8 @@ api.route("/events", liveControlRoutes);
 api.route("/events", eventPhotoRoutes);
 api.route("/events", analyticsRoutes);
 api.route("/me", meRoutes);
+// フォロー（要認証）
+api.route("/users", followRoutes);
 api.route("/inquiries", inquiryRoutes);
 api.route("/admin/inquiries", adminInquiryRoutes);
 api.route("/admin/stats", adminStatsRoutes);

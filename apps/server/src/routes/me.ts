@@ -7,6 +7,7 @@ import { valid, zValidator } from "../lib/validator.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
+import { followsRepo } from "../db/repositories/follows.js";
 
 export const meRoutes = new Hono<AppEnv>();
 
@@ -16,6 +17,13 @@ meRoutes.use("*", requireAuth);
 meRoutes.get("/communities", async (c) => {
   return c.json({
     communities: await communitiesRepo.listForUser(c.get("user").id),
+  });
+});
+
+/** マイページ: フォロー中のユーザー（本人のみ・一覧は非公開） */
+meRoutes.get("/following", async (c) => {
+  return c.json({
+    following: await followsRepo.listFollowing(c.get("user").id),
   });
 });
 

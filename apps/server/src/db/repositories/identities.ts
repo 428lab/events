@@ -85,6 +85,10 @@ export const identitiesRepo = {
       { sql: "UPDATE event SET created_by = ? WHERE created_by = ?", args: [toUserId, fromUserId] },
       { sql: "UPDATE event_request SET created_by = ? WHERE created_by = ?", args: [toUserId, fromUserId] },
       { sql: "UPDATE OR IGNORE event_request_reaction SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
+      // フォロー関係の引き継ぎ。from⇔to の相互行は先に消す（自己フォロー行が生まれるのを防ぐ）
+      { sql: "DELETE FROM user_follow WHERE (follower_id = ? AND followee_id = ?) OR (follower_id = ? AND followee_id = ?)", args: [fromUserId, toUserId, toUserId, fromUserId] },
+      { sql: "UPDATE OR IGNORE user_follow SET follower_id = ? WHERE follower_id = ?", args: [toUserId, fromUserId] },
+      { sql: "UPDATE OR IGNORE user_follow SET followee_id = ? WHERE followee_id = ?", args: [toUserId, fromUserId] },
       { sql: "DELETE FROM user WHERE id = ?", args: [fromUserId] },
     ]);
   },

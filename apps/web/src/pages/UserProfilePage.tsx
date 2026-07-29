@@ -3,6 +3,7 @@ import {
   Alert,
   Avatar,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -14,9 +15,10 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
-import { Link as RouterLink, useParams } from "react-router-dom";
+import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import type { UserAward, UserPhoto, UserProfile } from "@eventer/shared";
-import { useUserProfile } from "../api/userHooks.js";
+import { useSetFollow, useUserProfile } from "../api/userHooks.js";
+import { useMe } from "../api/hooks.js";
 import { useUserPhotos } from "../api/eventPhotoHooks.js";
 import { EventCard } from "../components/EventCard.js";
 
@@ -92,6 +94,9 @@ function AwardsSection({
 export function UserProfilePage() {
   const { id = "" } = useParams();
   const { data, isLoading, isError } = useUserProfile(id);
+  const { data: me } = useMe();
+  const navigate = useNavigate();
+  const setFollow = useSetFollow(id);
 
   if (isError) return <Alert severity="info">ユーザーが見つかりません。</Alert>;
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
@@ -100,23 +105,43 @@ export function UserProfilePage() {
   const hosted = data.events.filter((e) => e.myRole === "staff");
   const joinedEvents = data.events.filter((e) => e.myRole !== "staff");
 
+  const toggleFollow = () => {
+    if (!me) {
+      navigate("/login");
+      return;
+    }
+    setFollow.mutate(!data.isFollowing);
+  };
+
   return (
     <Stack spacing={3}>
-      <Stack direction="row" spacing={2} alignItems="center">
+      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
         <Avatar
           src={data.avatarUrl ?? undefined}
           sx={{ width: 64, height: 64, fontSize: 28 }}
         >
           {data.name.charAt(0)}
         </Avatar>
-        <Box>
+        <Box sx={{ flex: 1, minWidth: 180 }}>
           <Typography variant="h5" fontWeight={700}>
             {data.name}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            {joined} に登録
+            {joined} に登録 ・ フォロワー {data.followerCount} ・ フォロー中{" "}
+            {data.followingCount}
           </Typography>
         </Box>
+        {!data.isMe && (
+          <Button
+            variant={data.isFollowing ? "outlined" : "contained"}
+            size="small"
+            onClick={toggleFollow}
+            disabled={setFollow.isPending}
+            sx={{ flexShrink: 0 }}
+          >
+            {data.isFollowing ? "フォロー中" : "フォローする"}
+          </Button>
+        )}
       </Stack>
 
       <AwardsSection awards={data.awards} profileName={data.name} />

@@ -3,6 +3,7 @@ import { Link as RouterLink } from "react-router-dom";
 import type { MyEventSummary } from "@eventer/shared";
 import { useMyPage } from "../api/hooks.js";
 import { useMyJoinedCommunities } from "../api/communityHooks.js";
+import { useMyFollowing } from "../api/userHooks.js";
 import { EventCard } from "../components/EventCard.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
@@ -42,6 +43,7 @@ function Section({
 export function MyPage() {
   const { data, isLoading } = useMyPage();
   const { data: communities } = useMyJoinedCommunities();
+  const { data: following } = useMyFollowing();
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
 
   const pastHosted = data.past.filter((e) => e.myRole === "staff");
@@ -71,6 +73,29 @@ export function MyPage() {
                     ? `${com.name}・${COMMUNITY_ROLE_LABEL[com.role]}`
                     : com.name
                 }
+              />
+            ))}
+          </Stack>
+        </Box>
+      )}
+      {following && following.length > 0 && (
+        <Box>
+          <Typography variant="h5" gutterBottom fontWeight={700}>
+            フォロー中（{following.length}）
+          </Typography>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            {following.map((u) => (
+              <Chip
+                key={u.id}
+                component={RouterLink}
+                to={`/users/${u.username}`}
+                clickable
+                avatar={
+                  <Avatar src={u.avatarUrl ?? undefined}>
+                    {(u.globalName ?? u.username).charAt(0)}
+                  </Avatar>
+                }
+                label={u.globalName ?? u.username}
               />
             ))}
           </Stack>
