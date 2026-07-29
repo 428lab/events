@@ -49,6 +49,10 @@ import {
   listViewableRequestsForEvent,
   notifyRequestsOnPublish,
 } from "./eventRequests.js";
+import {
+  notifyFollowersOnJoin,
+  notifyFollowersOnPublish,
+} from "./follows.js";
 
 export const eventRoutes = new Hono<AppEnv>();
 
@@ -264,6 +268,8 @@ eventRoutes.patch(
     if (!event) return c.json({ error: "not_found" }, 404);
     // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
     await notifyRequestsOnPublish(event);
+    // 作成者のフォロワーへ公開通知（初回のみ）
+    await notifyFollowersOnPublish(event);
     return c.json({ event });
   },
 );
@@ -278,6 +284,8 @@ eventRoutes.post("/:id/publish", requireEventRole(["staff"]), async (c) => {
   if (!event) return c.json({ error: "not_found" }, 404);
   // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
   await notifyRequestsOnPublish(event);
+  // 作成者のフォロワーへ公開通知（初回のみ）
+  await notifyFollowersOnPublish(event);
   return c.json({ event });
 });
 
@@ -333,6 +341,8 @@ eventRoutes.post("/:id/join", zValidator("json", joinEventInput), async (c) => {
       user.id,
       user.globalName ?? user.username,
     );
+    // フォロワーへ「参加した」通知（公開イベントのみ）
+    await notifyFollowersOnJoin(event, user.id);
   }
   return c.json({ member, status }, 201);
 });

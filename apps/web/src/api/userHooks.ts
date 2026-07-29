@@ -10,6 +10,44 @@ export function useUserProfile(id: string) {
   });
 }
 
+/** フォロー/フォロー解除（#21） */
+export function useSetFollow(handle: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) =>
+      on
+        ? api.post<{ isFollowing: boolean; followerCount: number }>(
+            `/users/${handle}/follow`,
+            {},
+          )
+        : api.del<{ isFollowing: boolean; followerCount: number }>(
+            `/users/${handle}/follow`,
+          ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["userProfile"] });
+      void qc.invalidateQueries({ queryKey: ["myFollowing"] });
+    },
+  });
+}
+
+/** 自分がフォロー中のユーザー（マイページ用・本人のみ） */
+export function useMyFollowing() {
+  return useQuery({
+    queryKey: ["myFollowing"],
+    queryFn: async () =>
+      (
+        await api.get<{
+          following: {
+            id: string;
+            username: string;
+            globalName: string | null;
+            avatarUrl: string | null;
+          }[];
+        }>("/me/following")
+      ).following,
+  });
+}
+
 /** 自分のユーザー名（プロフィールURLのハンドル）を変更 */
 export function useUpdateUsername() {
   const qc = useQueryClient();

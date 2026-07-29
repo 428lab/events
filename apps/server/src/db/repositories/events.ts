@@ -3,7 +3,7 @@ import type {
   Event,
   UpdateEventInput,
 } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { many, one, run, runCount } from "../client.js";
 
 interface EventRow {
   id: string;
@@ -329,6 +329,16 @@ export const eventsRepo = {
   async setStatus(id: string, status: Event["status"]): Promise<Event | null> {
     await run("UPDATE event SET status = ? WHERE id = ?", status, id);
     return this.findById(id);
+  },
+
+  /** フォロワーへの公開通知を未送信なら送信済みに切り替える（原子的・1回だけ true） */
+  async claimFollowersNotify(id: string): Promise<boolean> {
+    const changes = await runCount(
+      "UPDATE event SET followers_notified_at = ? WHERE id = ? AND followers_notified_at = 0",
+      Date.now(),
+      id,
+    );
+    return changes > 0;
   },
 
   /** 日程調整を確定：開始/終了日時を設定し scheduling を解除 */

@@ -9,6 +9,7 @@ import { decksRepo } from "../db/repositories/decks.js";
 import { awardsRepo } from "../db/repositories/awards.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import { listCommunityRequests } from "./eventRequests.js";
+import { followsRepo } from "../db/repositories/follows.js";
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -65,6 +66,7 @@ publicRoutes.get("/users/:handle", async (c) => {
   const events = await eventMembersRepo.listPublicEventsForUser(user.id);
   const communities = await communitiesRepo.listForUser(user.id);
   const awards = await awardsRepo.listPublicAwardsForUser(user.id, Date.now());
+  const viewer = await currentUser(c);
   return c.json({
     id: user.id,
     handle: user.username,
@@ -74,6 +76,12 @@ publicRoutes.get("/users/:handle", async (c) => {
     events,
     communities,
     awards,
+    followerCount: await followsRepo.followerCount(user.id),
+    followingCount: await followsRepo.followingCount(user.id),
+    isFollowing: viewer
+      ? await followsRepo.isFollowing(viewer.id, user.id)
+      : false,
+    isMe: viewer?.id === user.id,
   });
 });
 

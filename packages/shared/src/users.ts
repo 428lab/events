@@ -27,6 +27,14 @@ export const userProfileSchema = z.object({
   events: z.array(myEventSummary),
   communities: z.array(communitySummarySchema),
   awards: z.array(userAwardSchema),
+  /** フォロワー数（公開） */
+  followerCount: z.number(),
+  /** フォロー数（公開） */
+  followingCount: z.number(),
+  /** 閲覧者がこのユーザーをフォロー中か（未ログインは false） */
+  isFollowing: z.boolean(),
+  /** 本人のプロフィールか */
+  isMe: z.boolean(),
 });
 export type UserProfile = z.infer<typeof userProfileSchema>;
 
