@@ -91,8 +91,9 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
 
   let direction: VenueOffer["direction"];
   if (isVenueOwner) {
-    // 会場側からの提供オファーは「会場探しています」の相手にのみ
+    // 会場側からの提供オファーは「会場探しています」の相手にのみ・受付中の会場のみ
     if (!venueWanted) return c.json({ error: "not_wanted" }, 409);
+    if (venue.status !== "open") return c.json({ error: "venue_closed" }, 409);
     direction = "venue_to_event";
   } else if (isOrganizer) {
     if (venue.status !== "open") return c.json({ error: "venue_closed" }, 409);

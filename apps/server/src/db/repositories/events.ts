@@ -90,6 +90,8 @@ export interface EventSearchOpts {
   venueType?: "offline" | "online" | "hybrid";
   /** 日程調整中（開催日未定）を除外する */
   excludeScheduling?: boolean;
+  /** 会場募集中のみ */
+  venueWantedOnly?: boolean;
   sort?: "soon" | "recent" | "new";
   limit: number;
   offset: number;
@@ -129,6 +131,9 @@ function buildSearchWhere(o: EventSearchOpts): {
   }
   if (o.excludeScheduling) {
     conds.push("scheduling = 0");
+  }
+  if (o.venueWantedOnly) {
+    conds.push("venue_wanted = 1");
   }
   return { where: conds.join(" AND "), args };
 }

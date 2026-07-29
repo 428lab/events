@@ -52,12 +52,17 @@ function toRequest(row: EventRequestRow): EventRequest {
 }
 
 /** 公開一覧の WHERE 句（イベント検索と同じ LIKE エスケープ方式） */
-function buildPublicWhere(opts: { status: "open" | "closed"; q?: string }): {
+function buildPublicWhere(opts: {
+  status: "open" | "closed";
+  q?: string;
+  venueWantedOnly?: boolean;
+}): {
   where: string;
   args: (string | number)[];
 } {
   const conds = ["er.status = ?", "er.members_only = 0"];
   const args: (string | number)[] = [opts.status];
+  if (opts.venueWantedOnly) conds.push("er.venue_wanted = 1");
   if (opts.q) {
     conds.push(
       "(er.title LIKE ? ESCAPE '\\' OR er.description LIKE ? ESCAPE '\\')",
@@ -98,6 +103,7 @@ export const eventRequestsRepo = {
       status: "open" | "closed";
       q?: string;
       sort?: "new" | "popular";
+      venueWantedOnly?: boolean;
     },
     limit: number,
     offset: number,

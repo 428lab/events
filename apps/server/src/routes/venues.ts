@@ -36,22 +36,25 @@ publicVenueRoutes.get("/", async (c) => {
 /** 会場を探しているイベント・たまご（会場オーナー向けの募集一覧） */
 publicVenueRoutes.get("/wanted", async (c) => {
   const now = Date.now();
-  const events = (
-    await eventsRepo.searchPublished({
-      excludeScheduling: false,
-      from: now,
-      limit: 50,
-      offset: 0,
-      sort: "soon",
-    })
-  ).filter((e) => e.venueWanted);
-  const scheduling = (await eventsRepo.listSchedulingPublished(50, 0)).filter(
+  // 開催予定（日程調整中は starts_at=0 でここには出ない）
+  const upcoming = await eventsRepo.searchPublished({
+    excludeScheduling: true,
+    venueWantedOnly: true,
+    from: now,
+    limit: 50,
+    offset: 0,
+    sort: "soon",
+  });
+  // 日程調整中で会場募集中
+  const scheduling = (await eventsRepo.listSchedulingPublished(200, 0)).filter(
     (e) => e.venueWanted,
   );
-  const requests = (
-    await eventRequestsRepo.listPublic({ status: "open" }, 50, 0)
-  ).filter((r) => r.venueWanted);
-  return c.json({ events: [...scheduling, ...events], requests });
+  const requests = await eventRequestsRepo.listPublic(
+    { status: "open", venueWantedOnly: true },
+    50,
+    0,
+  );
+  return c.json({ events: [...scheduling, ...upcoming], requests });
 });
 
 publicVenueRoutes.get("/:id", async (c) => {

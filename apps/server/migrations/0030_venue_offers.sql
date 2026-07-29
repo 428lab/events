@@ -18,3 +18,8 @@ CREATE TABLE venue_offer (
 CREATE INDEX idx_venue_offer_venue ON venue_offer(venue_id, status);
 CREATE INDEX idx_venue_offer_event ON venue_offer(event_id);
 CREATE INDEX idx_venue_offer_request ON venue_offer(request_id);
+-- 同一ペアの有効オファーを一意に（二重クリック/並行作成の重複防止）
+CREATE UNIQUE INDEX idx_venue_offer_uniq_event ON venue_offer(venue_id, event_id)
+  WHERE event_id IS NOT NULL AND status IN ('pending','accepted');
+CREATE UNIQUE INDEX idx_venue_offer_uniq_request ON venue_offer(venue_id, request_id)
+  WHERE request_id IS NOT NULL AND status IN ('pending','accepted');
