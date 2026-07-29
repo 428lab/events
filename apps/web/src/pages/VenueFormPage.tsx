@@ -84,33 +84,47 @@ export function VenueFormPage() {
     contact,
   };
 
-  const uploadImage = async (venueId: string) => {
-    if (!imageBlob) return;
-    await fetch(`/api/venues/${venueId}/image`, {
-      method: "PUT",
-      headers: { "Content-Type": imageBlob.type },
-      credentials: "include",
-      body: imageBlob,
-    }).catch(() => undefined);
+  /** 成功なら true。失敗を握りつぶさない（テキストは保存済みの旨を出す） */
+  const uploadImage = async (venueId: string): Promise<boolean> => {
+    if (!imageBlob) return true;
+    try {
+      const res = await fetch(`/api/venues/${venueId}/image`, {
+        method: "PUT",
+        headers: { "Content-Type": imageBlob.type },
+        credentials: "include",
+        body: imageBlob,
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const [imageError, setImageError] = useState<string | null>(null);
+  // 作成後に写真だけ失敗したとき、再submitで会場を二重作成しないための保存済みID
+  const [savedId, setSavedId] = useState<string | null>(null);
+
+  const afterSave = async (venueId: string) => {
+    setSavedId(venueId);
+    if (await uploadImage(venueId)) {
+      navigate(`/venues/${venueId}`);
+    } else {
+      setImageError(
+        "会場情報は保存されましたが、写真のアップロードに失敗しました。6MB以下の JPEG/PNG/WebP で再試行してください。",
+      );
+    }
   };
 
   const submit = () => {
+    setImageError(null);
     if (isEdit) {
       update.mutate(
         { ...input, status: open ? "open" : "closed" },
-        {
-          onSuccess: async () => {
-            await uploadImage(id);
-            navigate(`/venues/${id}`);
-          },
-        },
+        { onSuccess: () => void afterSave(id) },
       );
     } else {
       create.mutate(input, {
-        onSuccess: async ({ venue }) => {
-          await uploadImage(venue.id);
-          navigate(`/venues/${venue.id}`);
-        },
+        onSuccess: ({ venue }) => void afterSave(venue.id),
       });
     }
   };
@@ -228,6 +242,29 @@ export function VenueFormPage() {
           )}
           {(create.isError || update.isError) && (
             <Alert severity="error">保存に失敗しました。入力内容を確認してください。</Alert>
+          )}
+          {imageError && savedId && (
+            <Alert
+              severity="warning"
+              action={
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setImageError(null);
+                      void afterSave(savedId);
+                    }}
+                  >
+                    再試行
+                  </Button>
+                  <Button size="small" onClick={() => navigate(`/venues/${savedId}`)}>
+                    写真なしで進む
+                  </Button>
+                </Stack>
+              }
+            >
+              {imageError}
+            </Alert>
           )}
           <Stack direction="row" spacing={1.5}>
             <Button
