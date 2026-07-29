@@ -102,8 +102,16 @@ export function UserProfilePage() {
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
 
   const joined = new Date(data.createdAt).toLocaleDateString("ja-JP");
+  const now = Date.now();
+  // 日程調整中（endsAt未確定=0）は「これから」側に含める
+  const isUpcoming = (e: { scheduling: boolean; endsAt: number }) =>
+    e.scheduling || e.endsAt >= now;
   const hosted = data.events.filter((e) => e.myRole === "staff");
   const joinedEvents = data.events.filter((e) => e.myRole !== "staff");
+  const hostedUpcoming = hosted.filter(isUpcoming);
+  const hostedPast = hosted.filter((e) => !isUpcoming(e));
+  const joinedUpcoming = joinedEvents.filter(isUpcoming);
+  const joinedPast = joinedEvents.filter((e) => !isUpcoming(e));
 
   const toggleFollow = () => {
     if (!me) {
@@ -183,8 +191,10 @@ export function UserProfilePage() {
         </Typography>
       ) : (
         <>
-          <Section title="主催・運営したイベント" events={hosted} />
-          <Section title="参加したイベント" events={joinedEvents} />
+          <Section title="主催・運営するイベント" events={hostedUpcoming} />
+          <Section title="参加予定のイベント" events={joinedUpcoming} />
+          <Section title="主催・運営したイベント" events={hostedPast} />
+          <Section title="参加したイベント" events={joinedPast} />
         </>
       )}
     </Stack>
