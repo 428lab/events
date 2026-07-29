@@ -20,12 +20,14 @@ export function EggTabs({
       ]}
     >
       <Tab
+        sx={{ minHeight: 48 }}
         label="イベント"
         value="events"
         component={RouterLink}
         to="/"
       />
       <Tab
+        sx={{ minHeight: 48 }}
         icon={<EggIcon fontSize="small" />}
         iconPosition="start"
         label="イベントのたまご"

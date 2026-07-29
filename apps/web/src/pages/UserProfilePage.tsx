@@ -17,6 +17,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import MilitaryTechIcon from "@mui/icons-material/MilitaryTech";
+import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import type { UserAward, UserPhoto, UserProfile } from "@eventer/shared";
@@ -30,7 +31,7 @@ const COMMUNITY_ROLE_LABEL: Record<string, string> = {
   admin: "管理者",
 };
 
-/** 順位に応じたメダルアイコン（金/銀/銅、入賞はメダル、特別枠は勲章） */
+/** 順位に応じたメダルアイコン（1〜3位=金/銀/銅トロフィー、4位以下の入賞=メダル、特別枠=勲章） */
 function awardIcon(rankOrder: number | null) {
   if (rankOrder === 1)
     return <EmojiEventsIcon sx={{ fontSize: "inherit", color: "#FFB300" }} />;
@@ -38,6 +39,8 @@ function awardIcon(rankOrder: number | null) {
     return <EmojiEventsIcon sx={{ fontSize: "inherit", color: "#9E9E9E" }} />;
   if (rankOrder === 3)
     return <EmojiEventsIcon sx={{ fontSize: "inherit", color: "#8D6E63" }} />;
+  if (rankOrder != null)
+    return <WorkspacePremiumIcon sx={{ fontSize: "inherit" }} />;
   return <MilitaryTechIcon sx={{ fontSize: "inherit" }} />;
 }
 
