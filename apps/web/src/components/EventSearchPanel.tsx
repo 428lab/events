@@ -87,6 +87,7 @@ export function EventSearchPanel({ children }: { children: ReactNode }) {
           <Stack spacing={2}>
             <TextField
               label="キーワード"
+              slotProps={{ inputLabel: { shrink: true } }}
               value={q}
               onChange={(e) => change(() => setQ(e.target.value))}
               placeholder="イベント名・内容で検索"

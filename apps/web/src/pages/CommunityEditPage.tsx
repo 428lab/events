@@ -167,6 +167,7 @@ export function CommunityEditPage() {
               <TextField
                 size="small"
                 label="URL"
+                slotProps={{ inputLabel: { shrink: true } }}
                 value={l.url}
                 onChange={(e) => setLink(i, { url: e.target.value })}
                 fullWidth

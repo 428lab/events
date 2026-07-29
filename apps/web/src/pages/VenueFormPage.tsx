@@ -159,6 +159,7 @@ export function VenueFormPage() {
           />
           <TextField
             label="エリア"
+            slotProps={{ inputLabel: { shrink: true } }}
             placeholder="例: 東京都渋谷区"
             value={area}
             onChange={(e) => setArea(e.target.value)}
@@ -190,6 +191,7 @@ export function VenueFormPage() {
           />
           <TextField
             label="設備（任意）"
+            slotProps={{ inputLabel: { shrink: true } }}
             placeholder="Wi-Fi / プロジェクター / ホワイトボード など"
             value={equipment}
             onChange={(e) => setEquipment(e.target.value)}
@@ -199,6 +201,7 @@ export function VenueFormPage() {
           />
           <TextField
             label="提供条件（任意）"
+            slotProps={{ inputLabel: { shrink: true } }}
             placeholder="平日夜と週末のみ / 飲食可 / 原状回復お願いします など"
             value={terms}
             onChange={(e) => setTerms(e.target.value)}
@@ -208,6 +211,7 @@ export function VenueFormPage() {
           />
           <TextField
             label="連絡先（マッチング相手にのみ開示）"
+            slotProps={{ inputLabel: { shrink: true } }}
             placeholder="X: @xxx / Discord: xxx / メール等"
             value={contact}
             onChange={(e) => setContact(e.target.value)}
