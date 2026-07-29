@@ -13,3 +13,4 @@ export * from "./liveSets.js";
 export * from "./photos.js";
 export * from "./analytics.js";
 export * from "./eventRequests.js";
+export * from "./notificationPrefs.js";

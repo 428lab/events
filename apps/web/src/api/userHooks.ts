@@ -1,6 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { UserProfile } from "@eventer/shared";
+import type {
+  NotificationPrefs,
+  UpdateNotificationPrefsInput,
+  UserProfile,
+} from "@eventer/shared";
 import { api } from "./client.js";
+
+/** 通知設定の取得/更新 (#21 PR3) */
+export function useNotificationPrefs() {
+  return useQuery({
+    queryKey: ["notificationPrefs"],
+    queryFn: async () =>
+      (await api.get<{ prefs: NotificationPrefs }>("/me/notification-prefs"))
+        .prefs,
+  });
+}
+
+export function useUpdateNotificationPrefs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateNotificationPrefsInput) =>
+      api.put<{ prefs: NotificationPrefs }>("/me/notification-prefs", input),
+    onSuccess: ({ prefs }) => {
+      qc.setQueryData(["notificationPrefs"], prefs);
+    },
+  });
+}
 
 export function useUserProfile(id: string) {
   return useQuery({

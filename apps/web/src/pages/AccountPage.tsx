@@ -17,6 +17,7 @@ import {
   useUnlinkIdentity,
 } from "../api/hooks.js";
 import { UsernameCard } from "../components/UsernameCard.js";
+import { NotificationPrefsCard } from "../components/NotificationPrefsCard.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
 import { nostrNip07Login } from "../lib/nostr.js";
 import { ApiError } from "../api/client.js";
@@ -71,6 +72,8 @@ export function AccountPage() {
       </Typography>
 
       <UsernameCard />
+
+      <NotificationPrefsCard />
 
       <Card variant="outlined">
         <CardContent>

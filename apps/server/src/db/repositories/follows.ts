@@ -54,6 +54,23 @@ export const followsRepo = {
     return rows.map((r) => r.follower_id);
   },
 
+  /** 指定の通知種別をONにしているフォロワーのみ（行が無ければ既定=ON） */
+  async followerIdsWanting(
+    userId: string,
+    kind: "followee_created" | "followee_joined",
+  ): Promise<string[]> {
+    // kind はリテラル2種のみ（ユーザー入力ではない）なので列名に直接使う
+    const col = kind === "followee_created" ? "followee_created" : "followee_joined";
+    const rows = await many<{ follower_id: string }>(
+      `SELECT f.follower_id
+         FROM user_follow f
+         LEFT JOIN notification_pref p ON p.user_id = f.follower_id
+        WHERE f.followee_id = ? AND COALESCE(p.${col}, 1) = 1`,
+      userId,
+    );
+    return rows.map((r) => r.follower_id);
+  },
+
   /** 自分がフォロー中のユーザー（マイページ用・本人のみ） */
   async listFollowing(userId: string): Promise<
     {
