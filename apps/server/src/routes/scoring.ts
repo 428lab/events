@@ -47,7 +47,9 @@ export async function getEventScoreResults(c: Context) {
     }
   }
   const state = await eventStateRepo.getOrInit(eventId);
-  const available = state.scoringLocked || event.endsAt < Date.now();
+  // 日程調整中（endsAt未確定=0）は「終了済み」扱いにしない
+  const ended = !event.scheduling && event.endsAt < Date.now();
+  const available = state.scoringLocked || ended;
   if (!available) {
     return c.json({ available: false, criteria: [], entries: [] });
   }
