@@ -63,6 +63,7 @@ export function EventRequestNewPage() {
         <Stack spacing={2.5}>
           <TextField
             label="あったらいいなイベント"
+            slotProps={{ inputLabel: { shrink: true } }}
             placeholder="例: もくもく会を毎週やってほしい"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -71,6 +72,7 @@ export function EventRequestNewPage() {
           />
           <TextField
             label="詳しく（任意）"
+            slotProps={{ inputLabel: { shrink: true } }}
             placeholder="どんな内容・雰囲気・場所でやってほしい？"
             value={description}
             onChange={(e) => setDescription(e.target.value)}

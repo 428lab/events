@@ -111,6 +111,7 @@ export function VenueOfferPanel({
           </Typography>
           <TextField
             label="あなたの連絡先（任意・相手にのみ開示）"
+            slotProps={{ inputLabel: { shrink: true } }}
             placeholder="X: @xxx / Discord: xxx など"
             value={contact}
             onChange={(e) => setContact(e.target.value)}
@@ -238,6 +239,7 @@ export function UseVenueButton({ venueId }: { venueId: string }) {
             </TextField>
             <TextField
               label="あなたの連絡先（承諾後に会場側へ開示）"
+              slotProps={{ inputLabel: { shrink: true } }}
               placeholder="X: @xxx / Discord: xxx など"
               value={contact}
               onChange={(e) => setContact(e.target.value)}
