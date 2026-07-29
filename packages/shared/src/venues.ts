@@ -78,9 +78,17 @@ export type RespondVenueOfferInput = z.infer<typeof respondVenueOfferInput>;
 /** 会場ギャラリー写真の上限（カバーとは別） */
 export const VENUE_PHOTO_LIMIT = 10;
 
+export const VENUE_PHOTO_STATUSES = ["pending", "approved"] as const;
+
 export const venuePhotoSchema = z.object({
   id: z.string(),
   venueId: z.string(),
+  /** 投稿者（null=会場オーナーの投稿） */
+  userId: z.string().nullable(),
+  userName: z.string().nullable(),
+  userAvatarUrl: z.string().nullable(),
+  /** pending=審査待ち（オーナーにのみ見える）/ approved=公開 */
+  status: z.enum(VENUE_PHOTO_STATUSES),
   createdAt: z.number(),
 });
 export type VenuePhoto = z.infer<typeof venuePhotoSchema>;

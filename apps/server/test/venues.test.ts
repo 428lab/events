@@ -505,3 +505,153 @@ describe("会場ギャラリー写真 (#63)", () => {
     expect(bad.status).toBe(400);
   });
 });
+
+describe("会場写真の参加者投稿と承認フロー (#65)", () => {
+  const png2 = Uint8Array.from(
+    atob(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+    ),
+    (c) => c.charCodeAt(0),
+  );
+
+  async function notifTypes(cookie: string): Promise<string[]> {
+    const res = await SELF.fetch(`${BASE}/api/notifications`, {
+      headers: { cookie },
+    });
+    return (
+      (await res.json()) as { notifications: { type: string }[] }
+    ).notifications.map((n) => n.type);
+  }
+
+  it("マッチング済みイベントの参加者は審査待ち投稿でき、承認で公開・却下で通知＋削除", async () => {
+    const organizer = await makeUser();
+    const venueOwner = await makeUser();
+    const participant = await makeUser();
+    const outsider = await makeUser();
+    const venueId = await createVenue(venueOwner.cookie);
+
+    // 会場募集イベント作成→公開
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({
+        title: `会場写真イベント_${crypto.randomUUID().slice(0, 6)}`,
+        venueType: "offline",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+        venueWanted: true,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+    await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({ status: "published" }),
+    });
+    // 会場オーナーがオファー→主催者が承諾（マッチング成立）
+    const offer = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: venueOwner.cookie },
+      body: JSON.stringify({ venueId, eventId: event.id }),
+    });
+    const { offer: o } = (await offer.json()) as { offer: { id: string } };
+    await SELF.fetch(`${BASE}/api/venue-offers/${o.id}/respond`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({ action: "accept" }),
+    });
+    // participant がイベント参加（即confirmed）
+    await SELF.fetch(`${BASE}/api/events/${event.id}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: participant.cookie },
+      body: JSON.stringify({}),
+    });
+
+    // 無関係ユーザーは投稿できない
+    const denied = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`, {
+      method: "POST",
+      headers: { "content-type": "image/png", cookie: outsider.cookie },
+      body: png2,
+    });
+    expect(denied.status).toBe(403);
+
+    // 参加者は投稿できる（審査待ち）→ 公開一覧には出ない
+    const up1 = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`, {
+      method: "POST",
+      headers: { "content-type": "image/png", cookie: participant.cookie },
+      body: png2,
+    });
+    expect(up1.status).toBe(201);
+    const { photo: p1 } = (await up1.json()) as { photo: { id: string; status: string } };
+    expect(p1.status).toBe("pending");
+
+    const publicList = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`);
+    const pl = (await publicList.json()) as {
+      photos: { id: string }[];
+      pending: unknown[];
+      canSubmit: boolean;
+    };
+    expect(pl.photos.some((x) => x.id === p1.id)).toBe(false);
+    expect(pl.pending.length).toBe(0); // 非オーナーには pending を返さない
+
+    // オーナーには pending が見える → 承認 → 公開＋投稿者へ通知
+    const ownerList = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`, {
+      headers: { cookie: venueOwner.cookie },
+    });
+    const ol = (await ownerList.json()) as { pending: { id: string }[] };
+    expect(ol.pending.some((x) => x.id === p1.id)).toBe(true);
+
+    const approve = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos/${p1.id}/moderate`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: venueOwner.cookie },
+        body: JSON.stringify({ action: "approve" }),
+      },
+    );
+    expect(approve.status).toBe(200);
+    const afterApprove = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`);
+    const aa = (await afterApprove.json()) as { photos: { id: string }[] };
+    expect(aa.photos.some((x) => x.id === p1.id)).toBe(true);
+    expect(await notifTypes(participant.cookie)).toContain("venue_photo_result");
+
+    // 2枚目投稿 → 却下 → 一覧から消え通知が増える
+    const up2 = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`, {
+      method: "POST",
+      headers: { "content-type": "image/png", cookie: participant.cookie },
+      body: png2,
+    });
+    const { photo: p2 } = (await up2.json()) as { photo: { id: string } };
+    const before = (await notifTypes(participant.cookie)).filter(
+      (t) => t === "venue_photo_result",
+    ).length;
+    const reject = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos/${p2.id}/moderate`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: venueOwner.cookie },
+        body: JSON.stringify({ action: "reject" }),
+      },
+    );
+    expect(reject.status).toBe(200);
+    const img = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos/${p2.id}/image`,
+    );
+    expect(img.status).toBe(404);
+    const after = (await notifTypes(participant.cookie)).filter(
+      (t) => t === "venue_photo_result",
+    ).length;
+    expect(after).toBe(before + 1);
+
+    // 参加者は moderate できない
+    const modDenied = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos/${p1.id}/moderate`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: participant.cookie },
+        body: JSON.stringify({ action: "approve" }),
+      },
+    );
+    expect(modDenied.status).toBe(403);
+  });
+});

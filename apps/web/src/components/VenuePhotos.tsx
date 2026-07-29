@@ -38,11 +38,26 @@ export function VenuePhotos({
   const { data } = useQuery({
     queryKey: ["venuePhotos", venueId],
     queryFn: () =>
-      api.get<{ photos: VenuePhoto[]; limit: number }>(
-        `/venues/${venueId}/photos`,
-      ),
+      api.get<{
+        photos: VenuePhoto[];
+        pending: VenuePhoto[];
+        canSubmit: boolean;
+        isOwner: boolean;
+        limit: number;
+      }>(`/venues/${venueId}/photos`),
   });
   const photos = data?.photos ?? [];
+  const pending = data?.pending ?? [];
+  const canSubmit = data?.canSubmit ?? false;
+  const [submitted, setSubmitted] = useState(false);
+
+  const moderate = useMutation({
+    mutationFn: ({ photoId, action }: { photoId: string; action: "approve" | "reject" }) =>
+      api.post<{ ok: boolean }>(`/venues/${venueId}/photos/${photoId}/moderate`, {
+        action,
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["venuePhotos", venueId] }),
+  });
 
   const upload = useMutation({
     mutationFn: async (files: File[]) => {
@@ -63,6 +78,7 @@ export function VenuePhotos({
         }
       }
     },
+    onSuccess: () => setSubmitted(true),
     // 途中失敗でもアップロード済み分を一覧へ反映（再選択時の重複を防ぐ）
     onSettled: () => void qc.invalidateQueries({ queryKey: ["venuePhotos", venueId] }),
     onError: (e: Error) =>
@@ -82,7 +98,7 @@ export function VenuePhotos({
     },
   });
 
-  if (photos.length === 0 && !isOwner) return null;
+  if (photos.length === 0 && !isOwner && !canSubmit) return null;
 
   return (
     <Box>
@@ -90,16 +106,20 @@ export function VenuePhotos({
         <Typography variant="h6">
           📷 写真{photos.length > 0 ? `（${photos.length}）` : ""}
         </Typography>
-        {isOwner && (
+        {(isOwner || canSubmit) && (
           <Button
             size="small"
             startIcon={<AddPhotoAlternateIcon />}
-            disabled={upload.isPending || photos.length >= VENUE_PHOTO_LIMIT}
+            disabled={
+              upload.isPending || (isOwner && photos.length >= VENUE_PHOTO_LIMIT)
+            }
             onClick={() => fileInput.current?.click()}
           >
             {upload.isPending
               ? "アップロード中…"
-              : `写真を追加（最大${VENUE_PHOTO_LIMIT}点）`}
+              : isOwner
+                ? `写真を追加（最大${VENUE_PHOTO_LIMIT}点）`
+                : "写真を投稿（管理者の確認後に公開）"}
           </Button>
         )}
       </Stack>
@@ -112,7 +132,9 @@ export function VenuePhotos({
         onChange={(e) => {
           setError(null);
           const files = Array.from(e.target.files ?? []);
-          const room = VENUE_PHOTO_LIMIT - photos.length;
+          const room = isOwner
+            ? VENUE_PHOTO_LIMIT - photos.length
+            : VENUE_PHOTO_LIMIT - pending.length;
           if (files.length > room) {
             setError(`あと ${room} 点まで追加できます。`);
             return;
@@ -125,6 +147,54 @@ export function VenuePhotos({
         <Alert severity="warning" sx={{ mt: 1 }} onClose={() => setError(null)}>
           {error}
         </Alert>
+      )}
+      {submitted && !isOwner && (
+        <Alert severity="success" sx={{ mt: 1 }} onClose={() => setSubmitted(false)}>
+          投稿しました。会場管理者の確認後に公開されます。
+        </Alert>
+      )}
+      {isOwner && pending.length > 0 && (
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            承認待ちの投稿（{pending.length}）
+          </Typography>
+          <Stack spacing={1}>
+            {pending.map((p) => (
+              <Stack key={p.id} direction="row" spacing={1.5} alignItems="center">
+                <Box
+                  component="img"
+                  src={photoUrl(p)}
+                  alt="承認待ち写真"
+                  sx={{ width: 96, height: 72, objectFit: "cover", borderRadius: 1, cursor: "pointer" }}
+                  onClick={() => setViewer(p)}
+                />
+                <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                  {p.userName ?? "参加者"} さんの投稿
+                </Typography>
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={moderate.isPending || photos.length >= VENUE_PHOTO_LIMIT}
+                  onClick={() => moderate.mutate({ photoId: p.id, action: "approve" })}
+                >
+                  採用
+                </Button>
+                <Button
+                  size="small"
+                  color="error"
+                  disabled={moderate.isPending}
+                  onClick={() => {
+                    if (window.confirm("この投稿を却下して削除しますか？")) {
+                      moderate.mutate({ photoId: p.id, action: "reject" });
+                    }
+                  }}
+                >
+                  却下
+                </Button>
+              </Stack>
+            ))}
+          </Stack>
+        </Box>
       )}
       {photos.length > 0 && (
         <ImageList cols={3} gap={8} sx={{ mt: 1 }}>

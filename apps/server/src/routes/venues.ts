@@ -18,6 +18,7 @@ import { normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import { venuesRepo } from "../db/repositories/venues.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { venuePhotosRepo } from "../db/repositories/venuePhotos.js";
+import { notificationsRepo } from "../db/repositories/notifications.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
 
@@ -192,14 +193,25 @@ venueRoutes.put("/:id/image", async (c) => {
 const photoKey = (venueId: string, photoId: string) =>
   `venue-photos/${venueId}/${photoId}`;
 
-/** 公開: 写真一覧 */
+/** 公開: 写真一覧（公開=approvedのみ）。オーナーには審査待ちも返す */
 export async function getVenuePhotos(c: Context<AppEnv>) {
   const venue = await venuesRepo.findById(c.req.param("id")!);
   if (!venue) return c.json({ error: "not_found" }, 404);
-  return c.json({
-    photos: await venuePhotosRepo.listByVenue(venue.id),
-    limit: VENUE_PHOTO_LIMIT,
-  });
+  const user = await currentUser(c);
+  const isOwner = Boolean(
+    user && (venue.ownerId === user.id || isAppAdmin(user)),
+  );
+  const photos = await venuePhotosRepo.listByVenue(venue.id, "approved");
+  const pending = isOwner
+    ? await venuePhotosRepo.listByVenue(venue.id, "pending")
+    : [];
+  // その会場で行われたイベントの参加者なら投稿できる
+  const canSubmit = Boolean(
+    user &&
+      !isOwner &&
+      (await venuePhotosRepo.isEventParticipantAtVenue(venue.id, user.id)),
+  );
+  return c.json({ photos, pending, canSubmit, isOwner, limit: VENUE_PHOTO_LIMIT });
 }
 
 /** 公開: 写真本体 */
@@ -219,12 +231,29 @@ export async function getVenuePhotoImage(c: Context<AppEnv>) {
   });
 }
 
-/** 写真アップロード（オーナーのみ・最大10点） */
+/** 写真アップロード。オーナー=即公開（上限10点）。
+ * その会場で行われたイベントの参加者=審査待ち（オーナーが承認/却下） */
 venueRoutes.post("/:id/photos", async (c) => {
-  const denied = await requireOwner(c);
-  if (denied) return denied;
   const venueId = c.req.param("id");
-  if ((await venuePhotosRepo.countByVenue(venueId)) >= VENUE_PHOTO_LIMIT) {
+  const venue = await venuesRepo.findById(venueId);
+  if (!venue) return c.json({ error: "not_found" }, 404);
+  const user = c.get("user");
+  const isOwner = venue.ownerId === user.id || isAppAdmin(user);
+  if (!isOwner) {
+    if (!(await venuePhotosRepo.isEventParticipantAtVenue(venueId, user.id))) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+    // 審査待ちのスパム防止（承認枠と同じ上限）
+    if (
+      (await venuePhotosRepo.countByVenue(venueId, "pending")) >=
+      VENUE_PHOTO_LIMIT
+    ) {
+      return c.json({ error: "pending_limit", limit: VENUE_PHOTO_LIMIT }, 409);
+    }
+  } else if (
+    (await venuePhotosRepo.countByVenue(venueId, "approved")) >=
+    VENUE_PHOTO_LIMIT
+  ) {
     return c.json({ error: "photo_limit", limit: VENUE_PHOTO_LIMIT }, 409);
   }
   const mime = normalizeImageMime(c.req.header("content-type"));
@@ -237,11 +266,77 @@ venueRoutes.post("/:id/photos", async (c) => {
   if (body.byteLength > EVENT_PHOTO_MAX_BYTES) {
     return c.json({ error: "too_large", maxBytes: EVENT_PHOTO_MAX_BYTES }, 413);
   }
-  const photo = await venuePhotosRepo.create(venueId);
+  const photo = await venuePhotosRepo.create(
+    venueId,
+    isOwner ? null : user.id,
+    isOwner ? "approved" : "pending",
+  );
   await getBucket().put(photoKey(venueId, photo.id), body, {
     httpMetadata: { contentType: mime },
   });
+  // 参加者投稿はオーナーへ知らせる
+  if (!isOwner) {
+    await notificationsRepo.create(
+      venue.ownerId,
+      "venue_photo_result",
+      "会場写真の投稿が届きました📷",
+      `「${venue.name}」に参加者から写真が投稿されました（承認待ち）`,
+      `/venues/${venueId}`,
+    );
+  }
   return c.json({ photo }, 201);
+});
+
+/** 承認/却下（オーナーのみ）。却下は削除し、どちらも投稿者へ通知 */
+venueRoutes.post("/:id/photos/:photoId/moderate", async (c) => {
+  const denied = await requireOwner(c);
+  if (denied) return denied;
+  const venueId = c.req.param("id");
+  const photo = await venuePhotosRepo.findById(c.req.param("photoId"));
+  if (!photo || photo.venueId !== venueId || photo.status !== "pending") {
+    return c.json({ error: "not_found" }, 404);
+  }
+  const { action } = (await c.req.json().catch(() => ({}))) as {
+    action?: string;
+  };
+  if (action !== "approve" && action !== "reject") {
+    return c.json({ error: "invalid_action" }, 400);
+  }
+  const venue = await venuesRepo.findById(venueId);
+  if (action === "approve") {
+    if (
+      (await venuePhotosRepo.countByVenue(venueId, "approved")) >=
+      VENUE_PHOTO_LIMIT
+    ) {
+      return c.json({ error: "photo_limit", limit: VENUE_PHOTO_LIMIT }, 409);
+    }
+    await venuePhotosRepo.setStatus(photo.id, "approved");
+    if (photo.userId) {
+      await notificationsRepo.create(
+        photo.userId,
+        "venue_photo_result",
+        "会場写真が採用されました🎉",
+        venue ? `「${venue.name}」であなたの写真が公開されました` : "",
+        `/venues/${venueId}`,
+      );
+    }
+    return c.json({ ok: true, status: "approved" });
+  }
+  // 却下: R2とDBから削除して通知
+  await getBucket()
+    .delete(photoKey(venueId, photo.id))
+    .catch(() => undefined);
+  await venuePhotosRepo.delete(photo.id);
+  if (photo.userId) {
+    await notificationsRepo.create(
+      photo.userId,
+      "venue_photo_result",
+      "会場写真は見送られました",
+      venue ? `「${venue.name}」への投稿写真は公開されませんでした` : "",
+      "",
+    );
+  }
+  return c.json({ ok: true, status: "rejected" });
 });
 
 /** 写真削除（オーナーのみ） */
