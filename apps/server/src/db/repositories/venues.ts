@@ -178,3 +178,75 @@ export const venuesRepo = {
     await run("UPDATE venue SET image_updated_at = ? WHERE id = ?", ts, id);
   },
 };
+
+/** ---- 複数管理者 (#67) ---- */
+export const venueAdminsRepo = {
+  async list(venueId: string): Promise<
+    { id: string; username: string; globalName: string | null; avatarUrl: string | null }[]
+  > {
+    const rows = await many<{
+      id: string;
+      username: string;
+      global_name: string | null;
+      avatar_url: string | null;
+    }>(
+      `SELECT u.id, u.username, u.global_name, u.avatar_url
+         FROM venue_admin a JOIN user u ON u.id = a.user_id
+        WHERE a.venue_id = ? ORDER BY a.created_at ASC`,
+      venueId,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      username: r.username,
+      globalName: r.global_name,
+      avatarUrl: r.avatar_url,
+    }));
+  },
+
+  async add(venueId: string, userId: string): Promise<void> {
+    await run(
+      "INSERT OR IGNORE INTO venue_admin (venue_id, user_id, created_at) VALUES (?, ?, ?)",
+      venueId,
+      userId,
+      Date.now(),
+    );
+  },
+
+  async remove(venueId: string, userId: string): Promise<void> {
+    await run(
+      "DELETE FROM venue_admin WHERE venue_id = ? AND user_id = ?",
+      venueId,
+      userId,
+    );
+  },
+
+  async isAdmin(venueId: string, userId: string): Promise<boolean> {
+    const row = await one<{ n: number }>(
+      "SELECT 1 AS n FROM venue_admin WHERE venue_id = ? AND user_id = ? LIMIT 1",
+      venueId,
+      userId,
+    );
+    return Boolean(row);
+  },
+};
+
+/** オーナー移譲: 旧オーナーは管理者に降格、新オーナーは管理者から外す */
+export async function transferVenueOwnership(
+  venueId: string,
+  fromUserId: string,
+  toUserId: string,
+): Promise<void> {
+  await run("UPDATE venue SET owner_id = ? WHERE id = ?", toUserId, venueId);
+  await venueAdminsRepo.remove(venueId, toUserId);
+  await venueAdminsRepo.add(venueId, fromUserId);
+}
+
+/** 会場の運営権（オーナー or 管理者）か */
+export async function isVenueManager(
+  venueId: string,
+  userId: string,
+): Promise<boolean> {
+  const ownerId = await venuesRepo.ownerId(venueId);
+  if (ownerId === userId) return true;
+  return venueAdminsRepo.isAdmin(venueId, userId);
+}

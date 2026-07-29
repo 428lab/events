@@ -15,7 +15,12 @@ import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { getBucket } from "../runtime.js";
 import { normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
-import { venuesRepo } from "../db/repositories/venues.js";
+import {
+  venuesRepo,
+  venueAdminsRepo,
+  isVenueManager,
+  transferVenueOwnership,
+} from "../db/repositories/venues.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { venuePhotosRepo } from "../db/repositories/venuePhotos.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
@@ -66,6 +71,9 @@ publicVenueRoutes.get("/:id", async (c) => {
   if (!venue) return c.json({ error: "not_found" }, 404);
   const user = await currentUser(c);
   const isOwner = user?.id === venue.ownerId;
+  const isManager = Boolean(
+    user && ((await isVenueManager(venue.id, user.id)) || isAppAdmin(user)),
+  );
   const ownerUser = await usersRepo.findById(venue.ownerId);
   const owner = ownerUser
     ? {
@@ -75,15 +83,16 @@ publicVenueRoutes.get("/:id", async (c) => {
         avatarUrl: ownerUser.avatarUrl,
       }
     : null;
-  // オーナー本人には連絡先・非公開住所込みで返す（編集画面用）
-  if (isOwner || (user && isAppAdmin(user))) {
+  // 運営権（オーナー/管理者）には連絡先・非公開住所込みで返す（編集画面用）
+  if (isManager) {
     return c.json({
       venue: await venuesRepo.findByIdFull(venue.id),
       owner,
       isOwner,
+      isManager,
     });
   }
-  return c.json({ venue, owner, isOwner: false });
+  return c.json({ venue, owner, isOwner: false, isManager: false });
 });
 
 /** 公開: カバー画像 */
@@ -124,7 +133,7 @@ venueRoutes.post("/", zValidator("json", createVenueInput), async (c) => {
   return c.json({ venue }, 201);
 });
 
-/** オーナーのみ（adminは緊急対応でバイパス可） */
+/** オーナーのみ（adminは緊急対応でバイパス可）。削除・管理者管理・移譲用 */
 async function requireOwner(c: Context<AppEnv>): Promise<Response | null> {
   const ownerId = await venuesRepo.ownerId(c.req.param("id")!);
   if (!ownerId) return c.json({ error: "not_found" }, 404);
@@ -135,8 +144,20 @@ async function requireOwner(c: Context<AppEnv>): Promise<Response | null> {
   return null;
 }
 
+/** 運営権（オーナー or 会場管理者）。編集・写真承認・オファー対応用 */
+async function requireManager(c: Context<AppEnv>): Promise<Response | null> {
+  const venueId = c.req.param("id")!;
+  const ownerId = await venuesRepo.ownerId(venueId);
+  if (!ownerId) return c.json({ error: "not_found" }, 404);
+  const user = c.get("user");
+  if (!(await isVenueManager(venueId, user.id)) && !isAppAdmin(user)) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  return null;
+}
+
 venueRoutes.patch("/:id", zValidator("json", updateVenueInput), async (c) => {
-  const denied = await requireOwner(c);
+  const denied = await requireManager(c);
   if (denied) return denied;
   const venue = await venuesRepo.update(
     c.req.param("id"),
@@ -165,9 +186,83 @@ venueRoutes.delete("/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+/** 管理者一覧（運営権のある人のみ） */
+venueRoutes.get("/:id/admins", async (c) => {
+  const denied = await requireManager(c);
+  if (denied) return denied;
+  return c.json({ admins: await venueAdminsRepo.list(c.req.param("id")) });
+});
+
+/** 管理者追加（オーナーのみ。ユーザー名 or ID で指定） */
+venueRoutes.post("/:id/admins", async (c) => {
+  const denied = await requireOwner(c);
+  if (denied) return denied;
+  const venueId = c.req.param("id");
+  const { handle } = (await c.req.json().catch(() => ({}))) as {
+    handle?: string;
+  };
+  if (!handle?.trim()) return c.json({ error: "handle_required" }, 400);
+  const target =
+    (await usersRepo.findByUsername(handle.trim())) ??
+    (await usersRepo.findById(handle.trim()));
+  if (!target) return c.json({ error: "user_not_found" }, 404);
+  const ownerId = await venuesRepo.ownerId(venueId);
+  if (target.id === ownerId) return c.json({ error: "already_owner" }, 400);
+  await venueAdminsRepo.add(venueId, target.id);
+  const venue = await venuesRepo.findById(venueId);
+  await notificationsRepo.create(
+    target.id,
+    "info",
+    "会場の管理者になりました🏟️",
+    venue ? `「${venue.name}」の管理者に追加されました` : "",
+    `/venues/${venueId}`,
+  );
+  return c.json({ admins: await venueAdminsRepo.list(venueId) }, 201);
+});
+
+/** 管理者解除（オーナー、または管理者本人が自分を外す） */
+venueRoutes.delete("/:id/admins/:userId", async (c) => {
+  const venueId = c.req.param("id");
+  const targetId = c.req.param("userId");
+  const ownerId = await venuesRepo.ownerId(venueId);
+  if (!ownerId) return c.json({ error: "not_found" }, 404);
+  const user = c.get("user");
+  const isSelf = user.id === targetId;
+  if (ownerId !== user.id && !isSelf && !isAppAdmin(user)) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  await venueAdminsRepo.remove(venueId, targetId);
+  return c.json({ admins: await venueAdminsRepo.list(venueId) });
+});
+
+/** オーナー移譲（オーナーのみ・移譲先は管理者から選択。旧オーナーは管理者に降格） */
+venueRoutes.post("/:id/transfer", async (c) => {
+  const denied = await requireOwner(c);
+  if (denied) return denied;
+  const venueId = c.req.param("id");
+  const { userId } = (await c.req.json().catch(() => ({}))) as {
+    userId?: string;
+  };
+  if (!userId) return c.json({ error: "user_required" }, 400);
+  if (!(await venueAdminsRepo.isAdmin(venueId, userId))) {
+    return c.json({ error: "must_be_admin" }, 400);
+  }
+  const ownerId = (await venuesRepo.ownerId(venueId))!;
+  await transferVenueOwnership(venueId, ownerId, userId);
+  const venue = await venuesRepo.findById(venueId);
+  await notificationsRepo.create(
+    userId,
+    "info",
+    "会場のオーナーになりました🏟️",
+    venue ? `「${venue.name}」のオーナー権限が移譲されました` : "",
+    `/venues/${venueId}`,
+  );
+  return c.json({ ok: true });
+});
+
 /** カバー画像アップロード（オーナーのみ） */
 venueRoutes.put("/:id/image", async (c) => {
-  const denied = await requireOwner(c);
+  const denied = await requireManager(c);
   if (denied) return denied;
   const mime = normalizeImageMime(c.req.header("content-type"));
   if (!mime) return c.json({ error: "invalid_content_type" }, 400);
@@ -199,7 +294,8 @@ export async function getVenuePhotos(c: Context<AppEnv>) {
   if (!venue) return c.json({ error: "not_found" }, 404);
   const user = await currentUser(c);
   const isOwner = Boolean(
-    user && (venue.ownerId === user.id || isAppAdmin(user)),
+    user &&
+      ((await isVenueManager(venue.id, user.id)) || isAppAdmin(user)),
   );
   const photos = await venuePhotosRepo.listByVenue(venue.id, "approved");
   const pending = isOwner
@@ -223,10 +319,11 @@ export async function getVenuePhotoImage(c: Context<AppEnv>) {
   let cache = "public, max-age=3600";
   if (photo.status !== "approved") {
     const user = await currentUser(c);
-    const ownerId = await venuesRepo.ownerId(photo.venueId);
     const allowed =
       user &&
-      (user.id === ownerId || user.id === photo.userId || isAppAdmin(user));
+      ((await isVenueManager(photo.venueId, user.id)) ||
+        user.id === photo.userId ||
+        isAppAdmin(user));
     if (!allowed) return c.json({ error: "not_found" }, 404);
     cache = "private, max-age=0";
   }
@@ -248,7 +345,8 @@ venueRoutes.post("/:id/photos", async (c) => {
   const venue = await venuesRepo.findById(venueId);
   if (!venue) return c.json({ error: "not_found" }, 404);
   const user = c.get("user");
-  const isOwner = venue.ownerId === user.id || isAppAdmin(user);
+  const isOwner =
+    (await isVenueManager(venueId, user.id)) || isAppAdmin(user);
   if (!isOwner) {
     if (!(await venuePhotosRepo.isEventParticipantAtVenue(venueId, user.id))) {
       return c.json({ error: "forbidden" }, 403);
@@ -299,7 +397,7 @@ venueRoutes.post("/:id/photos", async (c) => {
 
 /** 承認/却下（オーナーのみ）。却下は削除し、どちらも投稿者へ通知 */
 venueRoutes.post("/:id/photos/:photoId/moderate", async (c) => {
-  const denied = await requireOwner(c);
+  const denied = await requireManager(c);
   if (denied) return denied;
   const venueId = c.req.param("id");
   const photo = await venuePhotosRepo.findById(c.req.param("photoId"));

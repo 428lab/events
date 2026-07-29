@@ -10,7 +10,7 @@ import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
-import { venuesRepo } from "../db/repositories/venues.js";
+import { venuesRepo, isVenueManager } from "../db/repositories/venues.js";
 import { venueOffersRepo, type VenueOffer } from "../db/repositories/venueOffers.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
@@ -80,7 +80,7 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
     venueWanted = req.venueWanted;
   }
 
-  const isVenueOwner = venue.ownerId === user.id;
+  const isVenueOwner = await isVenueManager(venue.id, user.id);
   const isOrganizer = input.eventId
     ? await isOrganizerOfEvent(input.eventId, user)
     : (await eventRequestsRepo.findById(input.requestId!))?.createdBy === user.id;
@@ -158,7 +158,6 @@ venueOfferRoutes.post(
     if (!offer) return c.json({ error: "not_found" }, 404);
     if (offer.status !== "pending") return c.json({ error: "already_responded" }, 409);
     const user = c.get("user");
-    const venueOwnerId = await venuesRepo.ownerId(offer.venueId);
 
     // 受け手 = オファー方向の反対側
     const isReceiver =
@@ -166,7 +165,7 @@ venueOfferRoutes.post(
         ? offer.eventId
           ? await isOrganizerOfEvent(offer.eventId, user)
           : (await eventRequestsRepo.findById(offer.requestId!))?.createdBy === user.id
-        : venueOwnerId === user.id || isAppAdmin(user);
+        : (await isVenueManager(offer.venueId, user.id)) || isAppAdmin(user);
     if (!isReceiver) return c.json({ error: "forbidden" }, 403);
 
     const input = valid<RespondVenueOfferInput>(c, "json");
@@ -232,7 +231,7 @@ venueOfferRoutes.get("/for-venue/:venueId", async (c) => {
   const ownerId = await venuesRepo.ownerId(venueId);
   if (!ownerId) return c.json({ error: "not_found" }, 404);
   const user = c.get("user");
-  if (ownerId !== user.id && !isAppAdmin(user)) {
+  if (!(await isVenueManager(venueId, user.id)) && !isAppAdmin(user)) {
     return c.json({ error: "forbidden" }, 403);
   }
   const offers = await venueOffersRepo.listByVenue(venueId);

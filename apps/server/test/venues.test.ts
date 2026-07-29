@@ -673,3 +673,113 @@ describe("会場写真の参加者投稿と承認フロー (#65)", () => {
     expect(modDenied.status).toBe(403);
   });
 });
+
+describe("会場の複数管理者とオーナー移譲 (#67)", () => {
+  it("管理者は編集・写真承認可、削除・管理者管理は不可。移譲で旧オーナーは管理者に", async () => {
+    const owner = await makeUser();
+    const admin = await makeUser();
+    const venueId = await createVenue(owner.cookie);
+
+    // 管理者のユーザー名を取得して追加
+    const meRes = await SELF.fetch(`${BASE}/api/auth/me`, {
+      headers: { cookie: admin.cookie },
+    });
+    const adminName = ((await meRes.json()) as { user: { username: string } })
+      .user.username;
+    const addDenied = await SELF.fetch(`${BASE}/api/venues/${venueId}/admins`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: admin.cookie },
+      body: JSON.stringify({ handle: adminName }),
+    });
+    expect(addDenied.status).toBe(403); // 本人はまだ権限なし
+    const add = await SELF.fetch(`${BASE}/api/venues/${venueId}/admins`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: owner.cookie },
+      body: JSON.stringify({ handle: adminName }),
+    });
+    expect(add.status).toBe(201);
+    // 通知
+    const notifs = await SELF.fetch(`${BASE}/api/notifications`, {
+      headers: { cookie: admin.cookie },
+    });
+    expect(
+      ((await notifs.json()) as { notifications: { title: string }[] })
+        .notifications.some((n) => n.title.includes("管理者になりました")),
+    ).toBe(true);
+
+    // 管理者: 編集できる
+    const patch = await SELF.fetch(`${BASE}/api/venues/${venueId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: admin.cookie },
+      body: JSON.stringify({ terms: "管理者が編集" }),
+    });
+    expect(patch.status).toBe(200);
+    // 管理者: full view（連絡先）が見える
+    const detail = await SELF.fetch(`${BASE}/api/public/venues/${venueId}`, {
+      headers: { cookie: admin.cookie },
+    });
+    const d = (await detail.json()) as {
+      venue: { contact?: string };
+      isManager: boolean;
+      isOwner: boolean;
+    };
+    expect(d.isManager).toBe(true);
+    expect(d.isOwner).toBe(false);
+    expect(d.venue.contact).toContain("secret_contact");
+
+    // 管理者: 削除・移譲・管理者追加は不可
+    const delDenied = await SELF.fetch(`${BASE}/api/venues/${venueId}`, {
+      method: "DELETE",
+      headers: { cookie: admin.cookie },
+    });
+    expect(delDenied.status).toBe(403);
+    const transferDenied = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/transfer`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: admin.cookie },
+        body: JSON.stringify({ userId: admin.userId }),
+      },
+    );
+    expect(transferDenied.status).toBe(403);
+
+    // 移譲は管理者以外へは400、管理者へはOK。旧オーナーは管理者に降格
+    const outsider = await makeUser();
+    const badTransfer = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/transfer`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: owner.cookie },
+        body: JSON.stringify({ userId: outsider.userId }),
+      },
+    );
+    expect(badTransfer.status).toBe(400);
+    const transfer = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/transfer`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: owner.cookie },
+        body: JSON.stringify({ userId: admin.userId }),
+      },
+    );
+    expect(transfer.status).toBe(200);
+    const afterDetail = await SELF.fetch(
+      `${BASE}/api/public/venues/${venueId}`,
+      { headers: { cookie: admin.cookie } },
+    );
+    const ad = (await afterDetail.json()) as { isOwner: boolean };
+    expect(ad.isOwner).toBe(true);
+    // 旧オーナーは管理者として編集可・削除は不可
+    const oldOwnerPatch = await SELF.fetch(`${BASE}/api/venues/${venueId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: owner.cookie },
+      body: JSON.stringify({ terms: "旧オーナー編集" }),
+    });
+    expect(oldOwnerPatch.status).toBe(200);
+    const oldOwnerDel = await SELF.fetch(`${BASE}/api/venues/${venueId}`, {
+      method: "DELETE",
+      headers: { cookie: owner.cookie },
+    });
+    expect(oldOwnerDel.status).toBe(403);
+  });
+});

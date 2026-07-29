@@ -18,6 +18,7 @@ import {
   useUpdateVenue,
   useVenue,
 } from "../api/venueHooks.js";
+import { VenueAdminsCard } from "../components/VenueAdminsCard.js";
 
 /** 会場の登録/編集（オーナーのみ）。/venues/new と /venues/:id/edit 兼用 */
 export function VenueFormPage() {
@@ -48,7 +49,7 @@ export function VenueFormPage() {
   useEffect(() => {
     const v = existing.data?.venue as VenueOwnerView | undefined;
     if (!isEdit || !v || loaded.current) return;
-    if (!existing.data?.isOwner) return;
+    if (!(existing.data?.isManager ?? existing.data?.isOwner)) return;
     loaded.current = true;
     setName(v.name);
     setDescription(v.description);
@@ -62,7 +63,11 @@ export function VenueFormPage() {
     setOpen(v.status === "open");
   }, [existing.data, isEdit]);
 
-  if (isEdit && existing.data && !existing.data.isOwner) {
+  if (
+    isEdit &&
+    existing.data &&
+    !(existing.data.isManager ?? existing.data.isOwner)
+  ) {
     return <Alert severity="info">この会場の編集権限がありません。</Alert>;
   }
 
@@ -132,7 +137,8 @@ export function VenueFormPage() {
   const pending = create.isPending || update.isPending;
 
   return (
-    <Card variant="outlined" sx={{ maxWidth: 760 }}>
+    <Stack spacing={3} sx={{ maxWidth: 760 }}>
+    <Card variant="outlined">
       <CardContent>
         <Typography variant="h5" fontWeight={700} gutterBottom>
           {isEdit ? "会場を編集" : "🏟️ 会場を登録"}
@@ -296,5 +302,7 @@ export function VenueFormPage() {
         </Stack>
       </CardContent>
     </Card>
+    {isEdit && existing.data?.isOwner && <VenueAdminsCard venueId={id} />}
+    </Stack>
   );
 }
