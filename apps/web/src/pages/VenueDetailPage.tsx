@@ -33,6 +33,7 @@ export function VenueDetailPage() {
     return <Alert severity="info">会場が見つかりませんでした。</Alert>;
   }
   const { venue, owner, isOwner } = q.data;
+  const isManager = q.data.isManager ?? isOwner;
   const img = venueImageUrl(venue);
   const contact = (venue as VenueOwnerView).contact;
 
@@ -56,7 +57,7 @@ export function VenueDetailPage() {
             🏟️ {venue.name}
           </Typography>
           {venue.status === "closed" && <Chip label="受付停止中" />}
-          {isOwner && (
+          {isManager && (
             <Button
               size="small"
               startIcon={<EditIcon />}
@@ -131,7 +132,7 @@ export function VenueDetailPage() {
         </Box>
       )}
 
-      <VenuePhotos venueId={venue.id} isOwner={isOwner} />
+      <VenuePhotos venueId={venue.id} isOwner={isManager} />
 
       {venue.description && (
         <Card variant="outlined">
@@ -167,21 +168,21 @@ export function VenueDetailPage() {
         </Card>
       )}
 
-      {isOwner && contact && (
+      {isManager && contact && (
         <Alert severity="info">
           連絡先（マッチング相手にのみ開示）: {contact}
         </Alert>
       )}
 
       {/* イベンター向け: 利用申込（オーナー以外・ログイン済み・受付中のみ） */}
-      {me && !isOwner && venue.status === "open" && (
+      {me && !isManager && venue.status === "open" && (
         <Box>
           <UseVenueButton venueId={venue.id} />
         </Box>
       )}
 
       {/* オーナー向け: オファー一覧 */}
-      {isOwner && <VenueOwnerOffers venueId={venue.id} />}
+      {isManager && <VenueOwnerOffers venueId={venue.id} />}
     </Stack>
   );
 }

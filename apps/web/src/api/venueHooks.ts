@@ -40,6 +40,7 @@ export function useVenue(id: string) {
           avatarUrl: string | null;
         } | null;
         isOwner: boolean;
+        isManager?: boolean;
       }>(`/public/venues/${id}`),
   });
 }
@@ -84,6 +85,54 @@ export function useDeleteVenue() {
     mutationFn: (id: string) => api.del<{ ok: boolean }>(`/venues/${id}`),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["venues"] });
+      void qc.invalidateQueries({ queryKey: ["myVenues"] });
+    },
+  });
+}
+
+/** ---- 管理者 (#67) ---- */
+export interface VenueAdmin {
+  id: string;
+  username: string;
+  globalName: string | null;
+  avatarUrl: string | null;
+}
+
+export function useVenueAdmins(venueId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["venueAdmins", venueId],
+    enabled: enabled && Boolean(venueId),
+    queryFn: async () =>
+      (await api.get<{ admins: VenueAdmin[] }>(`/venues/${venueId}/admins`)).admins,
+  });
+}
+
+export function useAddVenueAdmin(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (handle: string) =>
+      api.post<{ admins: VenueAdmin[] }>(`/venues/${venueId}/admins`, { handle }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["venueAdmins", venueId] }),
+  });
+}
+
+export function useRemoveVenueAdmin(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) =>
+      api.del<{ admins: VenueAdmin[] }>(`/venues/${venueId}/admins/${userId}`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["venueAdmins", venueId] }),
+  });
+}
+
+export function useTransferVenue(venueId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) =>
+      api.post<{ ok: boolean }>(`/venues/${venueId}/transfer`, { userId }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["venue", venueId] });
+      void qc.invalidateQueries({ queryKey: ["venueAdmins", venueId] });
       void qc.invalidateQueries({ queryKey: ["myVenues"] });
     },
   });

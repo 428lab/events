@@ -4,7 +4,7 @@ import type {
   Venue,
   VenueOwnerView,
 } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { batch, many, one, run } from "../client.js";
 
 interface VenueRow {
   id: string;
@@ -95,6 +95,19 @@ export const venuesRepo = {
     return rows.map(toOwnerView);
   },
 
+  /** 運営権のある会場（オーナー＋管理者。停止中も含む） */
+  async listManagedBy(userId: string): Promise<VenueOwnerView[]> {
+    const rows = await many<VenueRow>(
+      `SELECT DISTINCT v.* FROM venue v
+        LEFT JOIN venue_admin a ON a.venue_id = v.id
+       WHERE v.owner_id = ? OR a.user_id = ?
+       ORDER BY v.created_at DESC`,
+      userId,
+      userId,
+    );
+    return rows.map(toOwnerView);
+  },
+
   async create(input: CreateVenueInput, ownerId: string): Promise<VenueOwnerView> {
     const id = crypto.randomUUID();
     const now = Date.now();
@@ -178,3 +191,77 @@ export const venuesRepo = {
     await run("UPDATE venue SET image_updated_at = ? WHERE id = ?", ts, id);
   },
 };
+
+/** ---- 複数管理者 (#67) ---- */
+export const venueAdminsRepo = {
+  async list(venueId: string): Promise<
+    { id: string; username: string; globalName: string | null; avatarUrl: string | null }[]
+  > {
+    const rows = await many<{
+      id: string;
+      username: string;
+      global_name: string | null;
+      avatar_url: string | null;
+    }>(
+      `SELECT u.id, u.username, u.global_name, u.avatar_url
+         FROM venue_admin a JOIN user u ON u.id = a.user_id
+        WHERE a.venue_id = ? ORDER BY a.created_at ASC`,
+      venueId,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      username: r.username,
+      globalName: r.global_name,
+      avatarUrl: r.avatar_url,
+    }));
+  },
+
+  async add(venueId: string, userId: string): Promise<void> {
+    await run(
+      "INSERT OR IGNORE INTO venue_admin (venue_id, user_id, created_at) VALUES (?, ?, ?)",
+      venueId,
+      userId,
+      Date.now(),
+    );
+  },
+
+  async remove(venueId: string, userId: string): Promise<void> {
+    await run(
+      "DELETE FROM venue_admin WHERE venue_id = ? AND user_id = ?",
+      venueId,
+      userId,
+    );
+  },
+
+  async isAdmin(venueId: string, userId: string): Promise<boolean> {
+    const row = await one<{ n: number }>(
+      "SELECT 1 AS n FROM venue_admin WHERE venue_id = ? AND user_id = ? LIMIT 1",
+      venueId,
+      userId,
+    );
+    return Boolean(row);
+  },
+};
+
+/** オーナー移譲: 旧オーナーは管理者に降格、新オーナーは管理者から外す（アトミック） */
+export async function transferVenueOwnership(
+  venueId: string,
+  fromUserId: string,
+  toUserId: string,
+): Promise<void> {
+  await batch([
+    { sql: "UPDATE venue SET owner_id = ? WHERE id = ?", args: [toUserId, venueId] },
+    { sql: "DELETE FROM venue_admin WHERE venue_id = ? AND user_id = ?", args: [venueId, toUserId] },
+    { sql: "INSERT OR IGNORE INTO venue_admin (venue_id, user_id, created_at) VALUES (?, ?, ?)", args: [venueId, fromUserId, Date.now()] },
+  ]);
+}
+
+/** 会場の運営権（オーナー or 管理者）か */
+export async function isVenueManager(
+  venueId: string,
+  userId: string,
+): Promise<boolean> {
+  const ownerId = await venuesRepo.ownerId(venueId);
+  if (ownerId === userId) return true;
+  return venueAdminsRepo.isAdmin(venueId, userId);
+}
