@@ -6,6 +6,7 @@ import {
   CardContent,
   Chip,
   Divider,
+  Link,
   Stack,
   Typography,
 } from "@mui/material";
@@ -99,6 +100,35 @@ export function VenueDetailPage() {
           </Stack>
         )}
       </Box>
+
+      {/* 地図（住所公開の会場のみ）。キー不要の埋め込み＋公式リンクのフォールバック */}
+      {venue.addressPublic && venue.address && (
+        <Box>
+          <Box
+            component="iframe"
+            title="会場の地図"
+            src={`https://maps.google.com/maps?q=${encodeURIComponent(`${venue.area} ${venue.address}`)}&z=16&output=embed`}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            sx={{
+              width: "100%",
+              height: 300,
+              border: 0,
+              borderRadius: 2,
+              display: "block",
+            }}
+          />
+          <Link
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${venue.area} ${venue.address}`)}`}
+            target="_blank"
+            rel="noopener"
+            variant="body2"
+            sx={{ display: "inline-block", mt: 0.5 }}
+          >
+            Googleマップで開く
+          </Link>
+        </Box>
+      )}
 
       {venue.description && (
         <Card variant="outlined">
