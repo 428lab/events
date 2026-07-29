@@ -1,4 +1,4 @@
-import { SELF } from "cloudflare:test";
+import { SELF, env } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
 
 const BASE = "https://example.com";
@@ -123,6 +123,44 @@ describe("イベントフィード (#19)", () => {
     const rss = await SELF.fetch(`${BASE}/feed/requests.rss`);
     expect(rss.status).toBe(200);
     expect(await rss.text()).toContain(`フィードたまご_${tag}`);
+
+    // メンバー限定たまごはフィードに出ない
+    const uid = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO community (id, slug, name, owner_id, created_at) SELECT ?, ?, 'フィード限定検証', id, ? FROM user LIMIT 1",
+    )
+      .bind(uid, `c${uid.slice(0, 8)}`, Date.now())
+      .run();
+    const owner = await env.DB.prepare(
+      "SELECT owner_id AS id FROM community WHERE id = ?",
+    )
+      .bind(uid)
+      .first<{ id: string }>();
+    await env.DB.prepare(
+      "INSERT INTO community_member (id, community_id, user_id, role, created_at) VALUES (?, ?, ?, 'owner', ?)",
+    )
+      .bind(crypto.randomUUID(), uid, owner!.id, Date.now())
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO event_request (id, title, description, community_id, members_only, status, created_by, created_at, slug)
+       VALUES (?, ?, '', ?, 1, 'open', ?, ?, ?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        `限定フィードたまご_${tag}`,
+        uid,
+        owner!.id,
+        Date.now(),
+        crypto.randomUUID().replace(/-/g, "").slice(0, 8),
+      )
+      .run();
+    const withSecret = await SELF.fetch(`${BASE}/feed/requests.json`);
+    const secretFeed = (await withSecret.json()) as {
+      items: { title: string }[];
+    };
+    expect(
+      secretFeed.items.some((i) => i.title === `限定フィードたまご_${tag}`),
+    ).toBe(false);
 
     // 検索フィルタ
     const filtered = await SELF.fetch(

@@ -81,7 +81,7 @@ async function fetchEvents(c: Context<AppEnv>): Promise<Event[]> {
   const sortParam = c.req.query("sort");
   const limit = Math.min(
     MAX_ITEMS,
-    Math.max(1, Number(c.req.query("limit")) || 20),
+    Math.max(1, Math.floor(Number(c.req.query("limit")) || 20)),
   );
   const now = Date.now();
 
@@ -297,7 +297,7 @@ async function fetchRequests(c: Context<AppEnv>): Promise<EventRequest[]> {
   const sort = c.req.query("sort") === "popular" ? "popular" : "new";
   const limit = Math.min(
     MAX_ITEMS,
-    Math.max(1, Number(c.req.query("limit")) || 20),
+    Math.max(1, Math.floor(Number(c.req.query("limit")) || 20)),
   );
   return eventRequestsRepo.listPublic({ status: "open", q, sort }, limit, 0);
 }
