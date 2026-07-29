@@ -4,12 +4,14 @@ import { Link as RouterLink } from "react-router-dom";
 import { useEvents } from "../api/hooks.js";
 import { EventCard } from "../components/EventCard.js";
 import { EventSearchPanel } from "../components/EventSearchPanel.js";
+import { EggTabs } from "../components/EggTabs.js";
 
 export function EventsPage() {
   const { data: events, isLoading, isError } = useEvents();
 
   return (
     <Stack spacing={3}>
+      <EggTabs value="events" sx={{ mb: 0 }} />
       <Stack direction="row" justifyContent="space-between" alignItems="center">
         <Typography variant="h5" fontWeight={700}>
           公開中のイベント

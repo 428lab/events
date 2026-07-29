@@ -1,10 +1,23 @@
 import { Tab, Tabs } from "@mui/material";
+import type { SxProps, Theme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 
-/** トップの「イベント / イベントのたまご」切り替えタブ。 */
-export function EggTabs({ value }: { value: "events" | "requests" }) {
+/** 「イベント / イベントのたまご」切り替えタブ（トップ・イベント一覧系ページ共通）。 */
+export function EggTabs({
+  value,
+  sx,
+}: {
+  value: "events" | "requests";
+  sx?: SxProps<Theme>;
+}) {
   return (
-    <Tabs value={value} sx={{ mb: 3, borderBottom: 1, borderColor: "divider" }}>
+    <Tabs
+      value={value}
+      sx={[
+        { mb: 3, borderBottom: 1, borderColor: "divider" },
+        ...(Array.isArray(sx) ? sx : [sx]),
+      ]}
+    >
       <Tab
         label="イベント"
         value="events"

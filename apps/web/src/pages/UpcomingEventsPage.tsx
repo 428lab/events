@@ -10,6 +10,7 @@ import { useSearchParams } from "react-router-dom";
 import { useEventSearchInfinite } from "../api/hooks.js";
 import { EventCard } from "../components/EventCard.js";
 import { EventSearchPanel } from "../components/EventSearchPanel.js";
+import { EggTabs } from "../components/EggTabs.js";
 
 export function UpcomingEventsPage() {
   const [params] = useSearchParams();
@@ -39,8 +40,10 @@ export function UpcomingEventsPage() {
   }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage]);
 
   return (
-    <EventSearchPanel>
-      <Stack spacing={3}>
+    <Box>
+      <EggTabs value="events" />
+      <EventSearchPanel>
+        <Stack spacing={3}>
         <Typography variant="h5" fontWeight={700}>
           開催予定のイベント
         </Typography>
@@ -70,7 +73,8 @@ export function UpcomingEventsPage() {
             </Typography>
           )}
         </Box>
-      </Stack>
-    </EventSearchPanel>
+        </Stack>
+      </EventSearchPanel>
+    </Box>
   );
 }
