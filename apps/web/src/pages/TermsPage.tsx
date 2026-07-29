@@ -35,7 +35,7 @@ export function TermsPage() {
       </Section>
 
       <Section n={2} title="アカウント">
-        本サービスは Discord・Google・GitHub
+        本サービスは Discord・Google・GitHub・X（Twitter）・Nostr（NIP-07）
         による認証でログインします。利用者は自己の責任でアカウントを管理し、第三者に利用させてはなりません。アカウントの利用により生じた行為の責任は当該アカウントの利用者に帰属します。
       </Section>
 
@@ -76,7 +76,7 @@ export function TermsPage() {
       </Section>
 
       <Typography variant="body2" color="text.secondary">
-        制定日: 2026年6月26日
+        制定日: 2026年6月26日 ・ 最終更新日: 2026年7月30日
       </Typography>
     </Stack>
   );

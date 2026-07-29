@@ -41,18 +41,22 @@ export function PrivacyPolicyPage() {
       </Section>
 
       <Section n={2} title="取得する情報">
-        <strong>(1) ログイン連携情報</strong> — Discord・Google・GitHub
+        <strong>(1) ログイン連携情報</strong> — Discord・Google・GitHub・X（Twitter）・Nostr
         でログインする際、各サービスから取得します。
         <ul>
-          <li>各サービスのユーザーID、ユーザー名／表示名、アイコン画像のURL</li>
-          <li>メールアドレス（アカウント統合・連絡のために取得する場合があります）</li>
+          <li>各サービスのユーザーID（Nostr は公開鍵）、ユーザー名／表示名、アイコン画像のURL</li>
+          <li>メールアドレス（アカウント統合・連絡のために取得する場合があります。X・Nostr からは取得しません）</li>
           <li>パスワードは取得しません（認証は各サービスに委ねます）</li>
+          <li>
+            Nostr のプロフィール（表示名・アイコン）は、ブラウザから公開リレーに照会して取得します（照会するのは公開鍵のみです）
+          </li>
         </ul>
         <strong>(2) 利用に伴い作成される情報</strong> —
-        作成・参加したイベント、参加状態、ロール、採点内容、表彰結果、成果物URL、アップロード／生成した画像、お問い合わせ内容。
+        作成・参加したイベント、参加状態、ロール、採点内容、表彰結果、成果物URL、アップロード／生成した画像、フォロー関係、お問い合わせ内容。会場を登録する場合は会場情報（詳細住所・連絡先を含む。
+        <strong>詳細住所（非公開設定時）と連絡先はマッチングが成立した相手にのみ開示され、それ以外には公開されません</strong>）。
         <br />
         <strong>(3) 技術的情報</strong> —
-        ログイン保持のためのCookie（セッション）、アクセスに伴う通信ログ（IPアドレス等）。
+        ログイン保持のためのCookie（セッション）、アクセス統計のための訪問者Cookie（ランダムなIDのみ。統計は参照元・国単位の日次集計で、生のIPアドレスは統計として保存しません）、アクセスに伴う通信ログ（IPアドレス等）。
       </Section>
 
       <Section n={3} title="利用目的">
@@ -65,7 +69,7 @@ export function PrivacyPolicyPage() {
 
       <Section n={5} title="第三者提供・委託">
         法令に基づく場合を除き、本人の同意なく第三者へ提供しません。インフラとして
-        Cloudflare（保存・配信）、認証のために Discord・Google・GitHub
+        Cloudflare（保存・配信）、認証のために Discord・Google・GitHub・X（Twitter）
         を利用し、これらの事業者のサーバー（国外を含む）にデータが保存されることがあります。
       </Section>
 
@@ -79,7 +83,7 @@ export function PrivacyPolicyPage() {
       </Section>
 
       <Section n={8} title="Cookie">
-        ログイン保持にCookieを使用します。無効化するとログインできません。広告・トラッキング目的のCookieは使用しません。
+        ログイン保持のCookieと、イベントのアクセス統計（日次のユニーク訪問者数の集計）のためのCookieを使用します。ログイン用Cookieを無効化するとログインできません。広告目的・第三者へのトラッキング目的のCookieは使用しません。
       </Section>
 
       <Section n={9} title="ベータ版について">
@@ -91,7 +95,7 @@ export function PrivacyPolicyPage() {
       </Section>
 
       <Typography variant="body2" color="text.secondary">
-        制定日: 2026年6月26日 ・ 最終更新日: 2026年6月26日
+        制定日: 2026年6月26日 ・ 最終更新日: 2026年7月30日
       </Typography>
     </Stack>
   );
