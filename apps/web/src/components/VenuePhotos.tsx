@@ -63,7 +63,8 @@ export function VenuePhotos({
         }
       }
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["venuePhotos", venueId] }),
+    // 途中失敗でもアップロード済み分を一覧へ反映（再選択時の重複を防ぐ）
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["venuePhotos", venueId] }),
     onError: (e: Error) =>
       setError(
         e.message === "photo_limit"

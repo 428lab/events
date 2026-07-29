@@ -147,10 +147,20 @@ venueRoutes.patch("/:id", zValidator("json", updateVenueInput), async (c) => {
 venueRoutes.delete("/:id", async (c) => {
   const denied = await requireOwner(c);
   if (denied) return denied;
+  const id = c.req.param("id");
   await getBucket()
-    .delete(r2Key(c.req.param("id")))
+    .delete(r2Key(id))
     .catch(() => undefined);
-  await venuesRepo.delete(c.req.param("id"));
+  // ギャラリー写真の R2 オブジェクトも掃除（DB行は CASCADE で消えるため孤児化を防ぐ）
+  try {
+    const listed = await getBucket().list({ prefix: `venue-photos/${id}/` });
+    if (listed.objects.length > 0) {
+      await getBucket().delete(listed.objects.map((o) => o.key));
+    }
+  } catch {
+    // 掃除失敗は削除自体を妨げない
+  }
+  await venuesRepo.delete(id);
   return c.json({ ok: true });
 });
 
@@ -204,7 +214,7 @@ export async function getVenuePhotoImage(c: Context<AppEnv>) {
     headers: {
       "Content-Type": safeServeMime(obj.httpMetadata?.contentType ?? "image/webp"),
       "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "public, max-age=86400, immutable",
+      "Cache-Control": "public, max-age=3600",
     },
   });
 }
