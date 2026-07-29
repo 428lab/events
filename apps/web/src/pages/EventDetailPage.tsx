@@ -43,7 +43,6 @@ import {
   useLeaveEvent,
   usePublishEvent,
   useMe,
-  useIsAdmin,
   useSetAttendance,
   useUpdateSubmission,
 } from "../api/hooks.js";
@@ -116,7 +115,6 @@ function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry })
 export function EventDetailPage() {
   const { id = "" } = useParams();
   const { data: me } = useMe();
-  const isAdmin = useIsAdmin();
   const { data, isLoading, isError } = useEvent(id);
   const isMember = Boolean(data?.myRole);
   // アプリ管理者でも、このページでは自分のロールどおりに表示する
@@ -191,7 +189,8 @@ export function EventDetailPage() {
   const ceremonyDone =
     (state?.awardsRevealCursor ?? 0) >=
     (awards ? awards.ranks.length + awards.specials.length : 0);
-  const eventEnded = event.endsAt < Date.now();
+  // 日程調整中（endsAt未確定=0）は終了扱いしない（サーバー側 isEventEnded と同じ判定）
+  const eventEnded = !event.scheduling && event.endsAt < Date.now();
   const contest = event.contestMode;
   const showAwards =
     contest && awardItems.length > 0 && (ceremonyDone || eventEnded);
@@ -544,7 +543,6 @@ export function EventDetailPage() {
       <EventPhotos
         eventId={id}
         myRole={myRole}
-        isAdmin={isAdmin}
         photosPublic={event.photosPublic}
         published={event.status === "published"}
       />

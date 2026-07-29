@@ -42,19 +42,18 @@ const photoUrl = (eventId: string, photoId: string) =>
 export function EventPhotos({
   eventId,
   myRole,
-  isAdmin,
   photosPublic,
   published,
 }: {
   eventId: string;
   myRole: EventRole | null;
-  isAdmin: boolean;
   photosPublic: boolean;
   published: boolean;
 }) {
   const { data: me } = useMe();
   const isMember = Boolean(myRole);
-  const isStaff = myRole === "staff" || isAdmin;
+  // イベント配下のUIは myRole のみで判定（サイト管理者でもイベントスタッフでなければ操作UIを出さない）
+  const isStaff = myRole === "staff";
   // 公開設定なら誰でも閲覧、そうでなければ参加者のみ
   const canView = isMember || (photosPublic && published);
   const { data: photos } = useEventPhotos(eventId, canView);
