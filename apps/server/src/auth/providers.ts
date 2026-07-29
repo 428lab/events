@@ -1,7 +1,7 @@
 import { env } from "../runtime.js";
 
-export type ProviderName = "discord" | "google" | "github";
-export const PROVIDERS: ProviderName[] = ["discord", "google", "github"];
+export type ProviderName = "discord" | "google" | "github" | "x";
+export const PROVIDERS: ProviderName[] = ["discord", "google", "github", "x"];
 
 export function isProvider(v: string): v is ProviderName {
   return (PROVIDERS as string[]).includes(v);
@@ -19,10 +19,16 @@ export interface OAuthProfile {
 interface ProviderConfig {
   authorizeUrl: string;
   scope: string;
+  /** PKCE (S256) を使う（X など必須のプロバイダ向け） */
+  pkce?: boolean;
   /** authorize URL に追加するクエリ（任意） */
   extraAuthParams?: Record<string, string>;
-  /** code を access_token に交換 */
-  exchange: (code: string, redirectUri: string) => Promise<string>;
+  /** code を access_token に交換（PKCE 時は codeVerifier が渡る） */
+  exchange: (
+    code: string,
+    redirectUri: string,
+    codeVerifier?: string,
+  ) => Promise<string>;
   /** access_token からプロフィール取得 */
   fetchProfile: (accessToken: string) => Promise<OAuthProfile>;
 }
@@ -176,6 +182,55 @@ const CONFIGS: Record<ProviderName, ProviderConfig> = {
         globalName: u.name ?? u.login,
         avatarUrl: u.avatar_url,
         email,
+      };
+    },
+  },
+
+  x: {
+    // X (Twitter) は OAuth 2.0 + PKCE 必須。メールは取得できない
+    authorizeUrl: "https://x.com/i/oauth2/authorize",
+    scope: "users.read tweet.read",
+    pkce: true,
+    async exchange(code, redirect, codeVerifier) {
+      const { clientId, clientSecret } = env.providerCreds("x");
+      // Web App（confidential client）は Basic 認証＋code_verifier
+      const res = await postForm(
+        "https://api.x.com/2/oauth2/token",
+        {
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: redirect,
+          client_id: clientId,
+          code_verifier: codeVerifier ?? "",
+        },
+        { Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}` },
+      );
+      if (!res.ok) throw new Error("x_token_failed");
+      return ((await res.json()) as { access_token: string }).access_token;
+    },
+    async fetchProfile(token) {
+      const res = await fetch(
+        "https://api.x.com/2/users/me?user.fields=profile_image_url",
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error("x_profile_failed");
+      const { data: u } = (await res.json()) as {
+        data: {
+          id: string;
+          name: string;
+          username: string;
+          profile_image_url?: string;
+        };
+      };
+      return {
+        providerUserId: u.id,
+        username: u.username,
+        globalName: u.name || u.username,
+        // 既定の _normal(48px) を 400x400 に差し替え
+        avatarUrl: u.profile_image_url
+          ? u.profile_image_url.replace("_normal.", "_400x400.")
+          : null,
+        email: null,
       };
     },
   },
