@@ -24,6 +24,11 @@ export default defineWorkersConfig(async () => {
             // ローカルの D1 / R2 をテスト用に用意（本番リソースには触れない）
             d1Databases: ["DB"],
             r2Buckets: ["BUCKET"],
+            // OGメタ注入テスト用の最小アセット（index.html のみ）
+            assets: {
+              directory: path.join(here, "test/fixtures/assets"),
+              binding: "ASSETS",
+            },
             // テスト用の環境変数。development で dev-login 有効
             bindings: {
               TEST_MIGRATIONS: migrations,

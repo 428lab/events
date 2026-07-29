@@ -2,22 +2,22 @@ import { useState } from "react";
 import { IconButton, Snackbar, Tooltip } from "@mui/material";
 import ShareIcon from "@mui/icons-material/Share";
 
-/** 短いシェアURLを共有（モバイルはOSの共有シート、他はクリップボードにコピー） */
-export function ShareButton({ slug, title }: { slug: string; title: string }) {
+/** 短いシェアURLをワンタップでクリップボードにコピー（共有シートは使わない）。
+ * prefix: "e"=イベント(/e/:slug) / "r"=たまご(/r/:slug) */
+export function ShareButton({
+  slug,
+  title: _title,
+  prefix = "e",
+}: {
+  slug: string;
+  title: string;
+  prefix?: "e" | "r";
+}) {
   const [copied, setCopied] = useState(false);
   if (!slug) return null;
-  const url = `${window.location.origin}/e/${slug}`;
+  const url = `${window.location.origin}/${prefix}/${slug}`;
 
   const share = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({ title, url });
-        return;
-      } catch {
-        /* キャンセル時はフォールバックしない */
-        return;
-      }
-    }
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);

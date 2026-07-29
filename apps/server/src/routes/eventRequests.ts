@@ -53,6 +53,15 @@ publicEventRequestRoutes.get("/", async (c) => {
   return c.json({ requests, total, limit: PAGE_LIMIT });
 });
 
+/** 短い共有URL（/r/:slug）→ たまごIDの解決。メンバー限定は権限のある人のみ */
+publicEventRequestRoutes.get("/by-slug/:slug", async (c) => {
+  const req = await eventRequestsRepo.findBySlug(c.req.param("slug"));
+  if (!req) return c.json({ error: "not_found" }, 404);
+  const user = await currentUser(c);
+  if (!(await canView(req, user))) return c.json({ error: "not_found" }, 404);
+  return c.json({ id: req.id });
+});
+
 /** たまご詳細（賛同状態・投稿者・リンク済みイベント付き） */
 publicEventRequestRoutes.get("/:id", async (c) => {
   const req = await eventRequestsRepo.findById(c.req.param("id"));

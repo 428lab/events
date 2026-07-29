@@ -38,6 +38,7 @@ import {
   eventRequestRoutes,
   publicEventRequestRoutes,
 } from "./routes/eventRequests.js";
+import { eventRequestsRepo } from "./db/repositories/eventRequests.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -236,6 +237,54 @@ app.get("/e/:slug", async (c) => {
   const event = await eventsRepo.findBySlug(c.req.param("slug"));
   if (event && event.status === "published") {
     return c.html(injectEventOg(html, event));
+  }
+  return c.html(html);
+});
+
+/** たまご用の OG メタ注入。メンバー限定はタイトルを漏らさないため注入しない */
+function injectRequestOg(html: string, req: EventRequestOg): string {
+  const url = `${env.appBaseUrl}/requests/${req.id}`;
+  const title = escapeHtml(`🥚 ${req.title}`);
+  const desc = escapeHtml(
+    `「あったらいいな」に賛同や開催宣言をしよう ／ ${(req.description || "").slice(0, 150)}`,
+  );
+  const image = escapeHtml(`${env.appBaseUrl}/og-default.png`);
+  const tags = [
+    `<meta property="og:type" content="website" />`,
+    `<meta property="og:title" content="${title}" />`,
+    `<meta property="og:description" content="${desc}" />`,
+    `<meta property="og:url" content="${url}" />`,
+    `<meta property="og:image" content="${image}" />`,
+    `<meta name="twitter:card" content="summary" />`,
+  ];
+  const cleaned = html
+    .replace(/\s*<meta property="og:[^>]*>/g, "")
+    .replace(/\s*<meta name="twitter:[^>]*>/g, "");
+  return cleaned.replace("</head>", `${tags.join("\n")}\n</head>`);
+}
+interface EventRequestOg {
+  id: string;
+  title: string;
+  description: string;
+  membersOnly: boolean;
+}
+
+// /requests/:id（たまご詳細）に OG メタを注入
+app.get("/requests/:id", async (c) => {
+  const html = await loadIndexHtml(c.req.url);
+  const req = await eventRequestsRepo.findById(c.req.param("id"));
+  if (req && !req.membersOnly) {
+    return c.html(injectRequestOg(html, req));
+  }
+  return c.html(html);
+});
+
+// /r/:slug（たまごの短いシェアURL）にも OG メタを注入
+app.get("/r/:slug", async (c) => {
+  const html = await loadIndexHtml(c.req.url);
+  const req = await eventRequestsRepo.findBySlug(c.req.param("slug"));
+  if (req && !req.membersOnly) {
+    return c.html(injectRequestOg(html, req));
   }
   return c.html(html);
 });
