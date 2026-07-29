@@ -15,6 +15,8 @@ import { getBucket } from "../runtime.js";
 import { normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import { venuesRepo } from "../db/repositories/venues.js";
 import { usersRepo } from "../db/repositories/users.js";
+import { eventsRepo } from "../db/repositories/events.js";
+import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
 
 /** 会場マッチング (#53 PR1)。連絡先はマッチング成立まで非公開（PR2で開示） */
 
@@ -29,6 +31,27 @@ publicVenueRoutes.get("/", async (c) => {
   const venues = await venuesRepo.listOpen(PAGE_LIMIT, (page - 1) * PAGE_LIMIT);
   const total = await venuesRepo.countOpen();
   return c.json({ venues, total, limit: PAGE_LIMIT });
+});
+
+/** 会場を探しているイベント・たまご（会場オーナー向けの募集一覧） */
+publicVenueRoutes.get("/wanted", async (c) => {
+  const now = Date.now();
+  const events = (
+    await eventsRepo.searchPublished({
+      excludeScheduling: false,
+      from: now,
+      limit: 50,
+      offset: 0,
+      sort: "soon",
+    })
+  ).filter((e) => e.venueWanted);
+  const scheduling = (await eventsRepo.listSchedulingPublished(50, 0)).filter(
+    (e) => e.venueWanted,
+  );
+  const requests = (
+    await eventRequestsRepo.listPublic({ status: "open" }, 50, 0)
+  ).filter((r) => r.venueWanted);
+  return c.json({ events: [...scheduling, ...events], requests });
 });
 
 publicVenueRoutes.get("/:id", async (c) => {

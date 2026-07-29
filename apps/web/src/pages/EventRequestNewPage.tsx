@@ -33,6 +33,7 @@ export function EventRequestNewPage() {
     searchParams.get("communityId") ?? "",
   );
   const [membersOnly, setMembersOnly] = useState(false);
+  const [venueWanted, setVenueWanted] = useState(false);
 
   const submit = () => {
     create.mutate(
@@ -42,6 +43,7 @@ export function EventRequestNewPage() {
         venueTypePref: venuePref || null,
         communityId: communityId || null,
         membersOnly: communityId ? membersOnly : false,
+        venueWanted,
       },
       {
         onSuccess: ({ request }) => navigate(`/requests/${request.id}`),
@@ -110,6 +112,15 @@ export function EventRequestNewPage() {
               ))}
             </TextField>
           )}
+          <FormControlLabel
+            control={
+              <Switch
+                checked={venueWanted}
+                onChange={(e) => setVenueWanted(e.target.checked)}
+              />
+            }
+            label="🏟️ 会場も探しています（会場提供者からのオファーを受け付ける）"
+          />
           {communityId && (
             <FormControlLabel
               control={

@@ -53,6 +53,8 @@ export const eventSchema = z.object({
   attendanceCheck: z.boolean(),
   /** 短いシェアURL用スラッグ（/e/:slug） */
   slug: z.string(),
+  /** 会場を探している（会場オーナーからのオファーを受け付ける） */
+  venueWanted: z.boolean(),
 });
 export type Event = z.infer<typeof eventSchema>;
 
@@ -72,6 +74,8 @@ export const createEventInput = z
     scheduling: z.boolean().default(false),
     /** 日程調整の回答者を匿名にする */
     scheduleAnonymous: z.boolean().default(false),
+    /** 会場を探している */
+    venueWanted: z.boolean().default(false),
   })
   .refine((v) => v.endsAt >= v.startsAt, {
     message: "endsAt must be >= startsAt",
@@ -84,6 +88,7 @@ export const updateEventInput = z.object({
   description: z.string().max(20000).optional(),
   startsAt: z.number().int().optional(),
   endsAt: z.number().int().optional(),
+  venueWanted: z.boolean().optional(),
   venueType: z.enum(VENUE_TYPES).optional(),
   venueOffline: z.string().max(500).optional().nullable(),
   venueOnline: z.string().max(500).optional().nullable(),

@@ -46,6 +46,7 @@ export function CreateEventPage() {
   const [venueOnline, setVenueOnline] = useState("");
   const [contestMode, setContestMode] = useState(false);
   const [scheduling, setScheduling] = useState(false);
+  const [venueWanted, setVenueWanted] = useState(false);
   const [scheduleAnonymous, setScheduleAnonymous] = useState(false);
   const [imageMode, setImageMode] = useState<"upload" | "template">("upload");
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
@@ -100,6 +101,7 @@ export function CreateEventPage() {
         communityId: communityId || null,
         scheduling,
         scheduleAnonymous: scheduling ? scheduleAnonymous : false,
+        venueWanted,
       },
       {
         onSuccess: async ({ event }) => {
@@ -252,6 +254,21 @@ export function CreateEventPage() {
             />
             <Typography variant="caption" color="text.secondary" display="block">
               オフなら告知・募集だけの一般イベントになります（採点や表彰は表示されません）。あとから変更できます。
+            </Typography>
+          </Box>
+
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={venueWanted}
+                  onChange={(e) => setVenueWanted(e.target.checked)}
+                />
+              }
+              label="🏟️ 会場を探しています"
+            />
+            <Typography variant="caption" color="text.secondary" display="block">
+              オンにすると会場提供者からのオファーを受け付けます（会場募集一覧にも掲載）。
             </Typography>
           </Box>
 

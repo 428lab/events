@@ -22,9 +22,11 @@ import {
   useEventRequest,
   useReactEventRequest,
   useSetEventRequestStatus,
+  useSetRequestVenueWanted,
 } from "../api/requestHooks.js";
 import { EventCard } from "../components/EventCard.js";
 import { ShareButton } from "../components/ShareButton.js";
+import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
 import { venueLabel, formatDateTime } from "../lib/format.js";
 
 /** イベントのたまご詳細。賛同・開催宣言・クローズ。 */
@@ -35,6 +37,7 @@ export function EventRequestDetailPage() {
   const q = useEventRequest(id);
   const react = useReactEventRequest(id);
   const setStatus = useSetEventRequestStatus(id);
+  const setVenueWanted = useSetRequestVenueWanted(id);
   const del = useDeleteEventRequest();
 
   if (q.isLoading) return <Typography>読み込み中…</Typography>;
@@ -69,6 +72,9 @@ export function EventRequestDetailPage() {
             )}
             {request.membersOnly && (
               <Chip size="small" variant="outlined" label="メンバー限定" />
+            )}
+            {request.venueWanted && (
+              <Chip size="small" color="success" variant="outlined" label="🏟️ 会場募集中" />
             )}
             {community && (
               <Chip
@@ -160,6 +166,13 @@ export function EventRequestDetailPage() {
                 )}
                 <Button
                   size="small"
+                  disabled={setVenueWanted.isPending}
+                  onClick={() => setVenueWanted.mutate(!request.venueWanted)}
+                >
+                  {request.venueWanted ? "会場募集を止める" : "🏟️ 会場も募集する"}
+                </Button>
+                <Button
+                  size="small"
                   color="error"
                   onClick={() => {
                     if (window.confirm("このたまごを削除しますか？")) {
@@ -176,6 +189,14 @@ export function EventRequestDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* 会場マッチング */}
+      <VenueOfferPanel kind="for-request" id={id} enabled={isMine} />
+      {me && !isMine && request.venueWanted && open && !request.membersOnly && (
+        <Box>
+          <OfferVenueButton requestId={id} />
+        </Box>
+      )}
 
       {events.length > 0 && (
         <Box>

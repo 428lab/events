@@ -55,6 +55,7 @@ export function EditEventPage() {
   const [venueOnline, setVenueOnline] = useState("");
   const [contestMode, setContestMode] = useState(false);
   const [attendanceCheck, setAttendanceCheck] = useState(false);
+  const [venueWanted, setVenueWanted] = useState(false);
   const [communityId, setCommunityId] = useState("");
   const myCommunitiesQuery = useMyCommunities();
   const myCommunities = myCommunitiesQuery.data;
@@ -74,6 +75,7 @@ export function EditEventPage() {
       setVenueOnline(e.venueOnline ?? "");
       setContestMode(e.contestMode);
       setAttendanceCheck(e.attendanceCheck);
+      setVenueWanted(e.venueWanted);
       setCommunityId(e.communityId ?? "");
       setInitialized(true);
     }
@@ -105,6 +107,7 @@ export function EditEventPage() {
         venueOnline: venueOnline || null,
         contestMode,
         attendanceCheck,
+        venueWanted,
         communityId: communityId || null,
       },
       { onSuccess: () => navigate(`/events/${id}`) },
@@ -249,6 +252,21 @@ export function EditEventPage() {
             />
             <Typography variant="caption" color="text.secondary" display="block">
               オンにすると、スタッフが出席チェックした人だけが参加者として記録されます。チェックされなかった人は参加人数・参加履歴に含まれません（当日受付・ドタキャン対策に）。
+            </Typography>
+          </Box>
+
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={venueWanted}
+                  onChange={(e) => setVenueWanted(e.target.checked)}
+                />
+              }
+              label="🏟️ 会場を探しています"
+            />
+            <Typography variant="caption" color="text.secondary" display="block">
+              オンにすると会場提供者からのオファーを受け付けます（会場募集一覧にも掲載）。
             </Typography>
           </Box>
 

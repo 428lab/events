@@ -88,3 +88,84 @@ export function useDeleteVenue() {
     },
   });
 }
+
+/** ---- オファー (#53 PR2) ---- */
+
+export interface EnrichedVenueOffer {
+  id: string;
+  venueId: string;
+  eventId: string | null;
+  requestId: string | null;
+  direction: "venue_to_event" | "event_to_venue";
+  status: "pending" | "accepted" | "declined";
+  organizerContact: string;
+  createdBy: string;
+  createdAt: number;
+  venue: { id: string; name: string; area: string } | null;
+  event: { id: string; title: string } | null;
+  request: { id: string; title: string } | null;
+  venueContact: string;
+  venueAddress: string;
+}
+
+/** 会場を探しているイベント・たまご（会場オーナー向け募集一覧） */
+export function useVenueWanted() {
+  return useQuery({
+    queryKey: ["venueWanted"],
+    queryFn: () =>
+      api.get<{ events: import("@eventer/shared").Event[]; requests: import("@eventer/shared").EventRequest[] }>(
+        "/public/venues/wanted",
+      ),
+  });
+}
+
+export function useVenueOffers(
+  kind: "for-venue" | "for-event" | "for-request",
+  id: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ["venueOffers", kind, id],
+    enabled: enabled && Boolean(id),
+    queryFn: async () =>
+      (await api.get<{ offers: EnrichedVenueOffer[] }>(`/venue-offers/${kind}/${id}`))
+        .offers,
+  });
+}
+
+export function useCreateVenueOffer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      venueId: string;
+      eventId?: string;
+      requestId?: string;
+      contact?: string;
+    }) => api.post<{ offer: unknown }>("/venue-offers", input),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["venueOffers"] });
+    },
+  });
+}
+
+export function useRespondVenueOffer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      offerId,
+      action,
+      contact,
+    }: {
+      offerId: string;
+      action: "accept" | "decline";
+      contact?: string;
+    }) =>
+      api.post<{ ok: boolean }>(`/venue-offers/${offerId}/respond`, {
+        action,
+        contact,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["venueOffers"] });
+    },
+  });
+}

@@ -93,6 +93,21 @@ export function useReactEventRequest(id: string) {
   });
 }
 
+/** 会場募集フラグの切り替え（投稿者） */
+export function useSetRequestVenueWanted(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) =>
+      api.post<{ request: EventRequest }>(`/event-requests/${id}/venue-wanted`, {
+        on,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["eventRequest", id] });
+      void qc.invalidateQueries({ queryKey: ["eventRequests"] });
+    },
+  });
+}
+
 /** クローズ/再オープン（投稿者） */
 export function useSetEventRequestStatus(id: string) {
   const qc = useQueryClient();

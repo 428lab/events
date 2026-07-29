@@ -17,11 +17,14 @@ import type { VenueOwnerView } from "@eventer/shared";
 import { useVenue, venueImageUrl } from "../api/venueHooks.js";
 import { Markdown } from "../components/Markdown.js";
 import { UserLink } from "../components/UserLink.js";
+import { UseVenueButton, VenueOwnerOffers } from "../components/VenueOffers.js";
+import { useMe } from "../api/hooks.js";
 
 /** 会場詳細（未ログイン可）。連絡先はマッチング成立まで非公開。 */
 export function VenueDetailPage() {
   const { id = "" } = useParams();
   const q = useVenue(id);
+  const { data: me } = useMe();
 
   if (q.isLoading) return <Typography>読み込み中…</Typography>;
   if (q.isError || !q.data) {
@@ -136,6 +139,16 @@ export function VenueDetailPage() {
           連絡先（マッチング相手にのみ開示）: {contact}
         </Alert>
       )}
+
+      {/* イベンター向け: 利用申込（オーナー以外・ログイン済み・受付中のみ） */}
+      {me && !isOwner && venue.status === "open" && (
+        <Box>
+          <UseVenueButton venueId={venue.id} />
+        </Box>
+      )}
+
+      {/* オーナー向け: オファー一覧 */}
+      {isOwner && <VenueOwnerOffers venueId={venue.id} />}
     </Stack>
   );
 }
