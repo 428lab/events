@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Alert,
   Box,
@@ -10,6 +10,8 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import BarChartIcon from "@mui/icons-material/BarChart";
+import FlagIcon from "@mui/icons-material/Flag";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import type { EventStats } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
@@ -34,9 +36,9 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 const sourceLabel = (s: string) => SOURCE_LABEL[s] ?? s;
 
-/** 国コード→絵文字フラグ */
+/** 国コード→国旗（リージョナルインジケーター）。不明なら空文字（Flag アイコンで代替） */
 function flag(cc: string): string {
-  if (cc.length !== 2 || cc === "XX") return "🏳️";
+  if (cc.length !== 2 || cc === "XX") return "";
   return String.fromCodePoint(
     ...[...cc.toUpperCase()].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65),
   );
@@ -64,8 +66,19 @@ export function EventStatsPage() {
   return (
     <Stack spacing={2.5}>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-        <Typography variant="h5" fontWeight={700} sx={{ flex: 1, minWidth: 160 }}>
-          📊 アクセス統計
+        <Typography
+          variant="h5"
+          fontWeight={700}
+          sx={{
+            flex: 1,
+            minWidth: 160,
+            display: "flex",
+            alignItems: "center",
+            gap: 0.75,
+          }}
+        >
+          <BarChartIcon fontSize="medium" />
+          アクセス統計
         </Typography>
         <Button size="small" component={RouterLink} to={`/events/${id}`}>
           ← イベントへ戻る
@@ -113,10 +126,19 @@ export function EventStatsPage() {
                 />
                 <BarList
                   title="国・地域"
-                  rows={data.countries.map((cn) => ({
-                    label: `${flag(cn.country)} ${cn.country}`,
-                    value: cn.views,
-                  }))}
+                  rows={data.countries.map((cn) => {
+                    const f = flag(cn.country);
+                    return {
+                      label: f ? `${f} ${cn.country}` : cn.country,
+                      icon: f ? undefined : (
+                        <FlagIcon
+                          fontSize="inherit"
+                          sx={{ verticalAlign: "text-bottom", mr: 0.5 }}
+                        />
+                      ),
+                      value: cn.views,
+                    };
+                  })}
                 />
               </Stack>
             </>
@@ -242,7 +264,7 @@ function BarList({
   rows,
 }: {
   title: string;
-  rows: { label: string; value: number }[];
+  rows: { label: string; value: number; icon?: ReactNode }[];
 }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
@@ -261,6 +283,7 @@ function BarList({
               <Box key={r.label}>
                 <Stack direction="row" justifyContent="space-between">
                   <Typography variant="body2" noWrap sx={{ mr: 1 }}>
+                    {r.icon}
                     {r.label}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">

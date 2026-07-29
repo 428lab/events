@@ -10,6 +10,9 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import EggIcon from "@mui/icons-material/Egg";
+import EggAltIcon from "@mui/icons-material/EggAlt";
+import StadiumIcon from "@mui/icons-material/Stadium";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 import CampaignIcon from "@mui/icons-material/Campaign";
@@ -63,8 +66,18 @@ export function EventRequestDetailPage() {
       <Card variant="outlined">
         <CardContent>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-            <Typography variant="h5" fontWeight={700} sx={{ wordBreak: "break-word" }}>
-              🥚 {request.title}
+            <Typography
+              variant="h5"
+              fontWeight={700}
+              sx={{
+                wordBreak: "break-word",
+                display: "flex",
+                alignItems: "center",
+                gap: 0.75,
+              }}
+            >
+              <EggIcon fontSize="medium" />
+              {request.title}
             </Typography>
             {!open && <Chip size="small" label="クローズ" />}
             {request.venueTypePref && (
@@ -74,7 +87,13 @@ export function EventRequestDetailPage() {
               <Chip size="small" variant="outlined" label="メンバー限定" />
             )}
             {request.venueWanted && (
-              <Chip size="small" color="success" variant="outlined" label="🏟️ 会場募集中" />
+              <Chip
+                size="small"
+                color="success"
+                variant="outlined"
+                icon={<StadiumIcon fontSize="small" />}
+                label="会場募集中"
+              />
             )}
             {community && (
               <Chip
@@ -166,10 +185,11 @@ export function EventRequestDetailPage() {
                 )}
                 <Button
                   size="small"
+                  startIcon={request.venueWanted ? undefined : <StadiumIcon />}
                   disabled={setVenueWanted.isPending}
                   onClick={() => setVenueWanted.mutate(!request.venueWanted)}
                 >
-                  {request.venueWanted ? "会場募集を止める" : "🏟️ 会場も募集する"}
+                  {request.venueWanted ? "会場募集を止める" : "会場も募集する"}
                 </Button>
                 <Button
                   size="small"
@@ -200,8 +220,14 @@ export function EventRequestDetailPage() {
 
       {events.length > 0 && (
         <Box>
-          <Typography variant="h6" fontWeight={700} gutterBottom>
-            🐣 このたまごから生まれたイベント
+          <Typography
+            variant="h6"
+            fontWeight={700}
+            gutterBottom
+            sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+          >
+            <EggAltIcon fontSize="small" />
+            このたまごから生まれたイベント
           </Typography>
           <Stack spacing={2}>
             {events.map((e) => (

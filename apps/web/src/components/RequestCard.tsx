@@ -3,6 +3,7 @@ import { Link as RouterLink } from "react-router-dom";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import CampaignIcon from "@mui/icons-material/Campaign";
 import CelebrationIcon from "@mui/icons-material/Celebration";
+import EggIcon from "@mui/icons-material/Egg";
 import type { EventRequest } from "@eventer/shared";
 import { venueLabel } from "../lib/format.js";
 
@@ -16,7 +17,9 @@ export function RequestCard({ request }: { request: EventRequest }) {
         sx={{ p: 2 }}
       >
         <Stack direction="row" spacing={1.5} alignItems="flex-start">
-          <Box sx={{ fontSize: 28, lineHeight: 1 }}>🥚</Box>
+          <Box sx={{ lineHeight: 1 }}>
+            <EggIcon sx={{ fontSize: 28 }} />
+          </Box>
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
               <Typography fontWeight={700} sx={{ wordBreak: "break-word" }}>

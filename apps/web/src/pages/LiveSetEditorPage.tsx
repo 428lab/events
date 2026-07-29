@@ -14,6 +14,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
 import ImageIcon from "@mui/icons-material/Image";
 import VideocamIcon from "@mui/icons-material/Videocam";
@@ -658,7 +659,17 @@ export function LiveSetEditorPage() {
               <MenuItem value="__stop">BGMを停止</MenuItem>
               {(bgmTracks ?? []).map((t) => (
                 <MenuItem key={t.id} value={t.id}>
-                  {t.ownerId === null ? `🎁 ${t.name}` : t.name}
+                  {t.ownerId === null ? (
+                    <Box
+                      component="span"
+                      sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
+                    >
+                      <CardGiftcardIcon fontSize="small" />
+                      {t.name}
+                    </Box>
+                  ) : (
+                    t.name
+                  )}
                 </MenuItem>
               ))}
             </TextField>

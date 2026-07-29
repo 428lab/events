@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import PlaceIcon from "@mui/icons-material/Place";
+import StadiumIcon from "@mui/icons-material/Stadium";
 import GroupsIcon from "@mui/icons-material/Groups";
 import EditIcon from "@mui/icons-material/Edit";
 import { Link as RouterLink, useParams } from "react-router-dom";
@@ -53,8 +54,18 @@ export function VenueDetailPage() {
       )}
       <Box>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Typography variant="h4" fontWeight={700} sx={{ wordBreak: "break-word" }}>
-            🏟️ {venue.name}
+          <Typography
+            variant="h4"
+            fontWeight={700}
+            sx={{
+              wordBreak: "break-word",
+              display: "flex",
+              alignItems: "center",
+              gap: 0.75,
+            }}
+          >
+            <StadiumIcon fontSize="medium" />
+            {venue.name}
           </Typography>
           {venue.status === "closed" && <Chip label="受付停止中" />}
           {isManager && (

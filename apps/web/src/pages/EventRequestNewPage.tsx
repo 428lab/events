@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Box,
   Button,
   Card,
   CardContent,
@@ -12,6 +13,8 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import EggIcon from "@mui/icons-material/Egg";
+import StadiumIcon from "@mui/icons-material/Stadium";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type { VenueType } from "@eventer/shared";
 import { VENUE_TYPES } from "@eventer/shared";
@@ -54,8 +57,14 @@ export function EventRequestNewPage() {
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="h5" fontWeight={700} gutterBottom>
-          🥚 たまごを投稿
+        <Typography
+          variant="h5"
+          fontWeight={700}
+          gutterBottom
+          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+        >
+          <EggIcon fontSize="medium" />
+          たまごを投稿
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           「こんなイベントがあったらいいな」を投稿すると、賛同や「開催してもいい」が集まります。誰かが開催を宣言したら通知が届きます。
@@ -121,7 +130,15 @@ export function EventRequestNewPage() {
                 onChange={(e) => setVenueWanted(e.target.checked)}
               />
             }
-            label="🏟️ 会場も探しています（会場提供者からのオファーを受け付ける）"
+            label={
+              <Box
+                component="span"
+                sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
+              >
+                <StadiumIcon fontSize="small" />
+                会場も探しています（会場提供者からのオファーを受け付ける）
+              </Box>
+            }
           />
           {communityId && (
             <FormControlLabel

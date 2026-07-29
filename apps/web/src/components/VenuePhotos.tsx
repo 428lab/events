@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CloseIcon from "@mui/icons-material/Close";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -103,8 +104,12 @@ export function VenuePhotos({
   return (
     <Box>
       <Stack direction="row" alignItems="center" justifyContent="space-between">
-        <Typography variant="h6">
-          📷 写真{photos.length > 0 ? `（${photos.length}）` : ""}
+        <Typography
+          variant="h6"
+          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+        >
+          <PhotoCameraIcon fontSize="small" />
+          写真{photos.length > 0 ? `（${photos.length}）` : ""}
         </Typography>
         {(isOwner || canSubmit) && (
           <Button

@@ -14,6 +14,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import EggIcon from "@mui/icons-material/Egg";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import { useMe } from "../api/hooks.js";
 import {
@@ -196,7 +197,13 @@ export function CommunityPage() {
             justifyContent="space-between"
             sx={{ mb: 1 }}
           >
-            <Typography variant="h6">🥚 イベントのたまご</Typography>
+            <Typography
+              variant="h6"
+              sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+            >
+              <EggIcon fontSize="small" />
+              イベントのたまご
+            </Typography>
             {c.isMember && (
               <Button
                 size="small"

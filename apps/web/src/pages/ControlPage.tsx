@@ -16,6 +16,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import CheckIcon from "@mui/icons-material/Check";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { EVENT_MODES, type EventMode } from "@eventer/shared";
 import { useEvent, useEventEntries, useIsAdmin } from "../api/hooks.js";
@@ -196,7 +197,13 @@ export function ControlPage() {
                       variant="body2"
                       color={j.complete ? "success.main" : "text.secondary"}
                     >
-                      {j.filled}/{j.total} {j.complete ? "✓" : ""}
+                      {j.filled}/{j.total}
+                      {j.complete && (
+                        <CheckIcon
+                          fontSize="inherit"
+                          sx={{ verticalAlign: "text-bottom", ml: 0.5 }}
+                        />
+                      )}
                     </Typography>
                   </Stack>
                   <LinearProgress

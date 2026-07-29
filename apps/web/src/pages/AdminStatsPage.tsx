@@ -16,6 +16,7 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import BarChartIcon from "@mui/icons-material/BarChart";
 import { Link as RouterLink } from "react-router-dom";
 import type { AdminStats } from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
@@ -42,8 +43,13 @@ export function AdminStatsPage() {
 
   return (
     <Stack spacing={2.5}>
-      <Typography variant="h5" fontWeight={700}>
-        📊 アクセス統計（全イベント）
+      <Typography
+        variant="h5"
+        fontWeight={700}
+        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+      >
+        <BarChartIcon fontSize="medium" />
+        アクセス統計（全イベント）
       </Typography>
 
       <ToggleButtonGroup

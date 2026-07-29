@@ -11,6 +11,8 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import SearchIcon from "@mui/icons-material/Search";
+import StadiumIcon from "@mui/icons-material/Stadium";
 import PlaceIcon from "@mui/icons-material/Place";
 import GroupsIcon from "@mui/icons-material/Groups";
 import { Link as RouterLink } from "react-router-dom";
@@ -53,7 +55,7 @@ function VenueCard({ venue }: { venue: Venue }) {
                 }),
           }}
         >
-          {!img && "🏟️"}
+          {!img && <StadiumIcon sx={{ fontSize: 36 }} />}
         </Box>
         <Box sx={{ p: 2, minWidth: 0 }}>
           <Typography fontWeight={700} sx={{ wordBreak: "break-word" }}>
@@ -118,8 +120,13 @@ export function VenuesPage() {
         sx={{ mb: 2 }}
       >
         <Box>
-          <Typography variant="h5" fontWeight={700}>
-            🏟️ 会場
+          <Typography
+            variant="h5"
+            fontWeight={700}
+            sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+          >
+            <StadiumIcon fontSize="medium" />
+            会場
           </Typography>
           <Typography variant="body2" color="text.secondary">
             イベントに使える会場。会場を持っている人は登録して主催者とつながれます
@@ -177,8 +184,14 @@ function WantedSection() {
   if (events.length === 0 && requests.length === 0) return null;
   return (
     <Box sx={{ mt: 5 }}>
-      <Typography variant="h5" fontWeight={700} gutterBottom>
-        🔍 会場を探しています
+      <Typography
+        variant="h5"
+        fontWeight={700}
+        gutterBottom
+        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+      >
+        <SearchIcon fontSize="medium" />
+        会場を探しています
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         会場を提供できる場合は、各ページの「会場を提供できます」からオファーを送れます

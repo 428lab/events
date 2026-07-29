@@ -15,6 +15,7 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import StadiumIcon from "@mui/icons-material/Stadium";
 import { useNavigate, useParams } from "react-router-dom";
 import { VENUE_TYPES, type VenueType } from "@eventer/shared";
 import {
@@ -263,7 +264,15 @@ export function EditEventPage() {
                   onChange={(e) => setVenueWanted(e.target.checked)}
                 />
               }
-              label="🏟️ 会場を探しています"
+              label={
+                <Box
+                  component="span"
+                  sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
+                >
+                  <StadiumIcon fontSize="small" />
+                  会場を探しています
+                </Box>
+              }
             />
             <Typography variant="caption" color="text.secondary" display="block">
               オンにすると会場提供者からのオファーを受け付けます（会場募集一覧にも掲載）。

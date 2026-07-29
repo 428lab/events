@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import ImageIcon from "@mui/icons-material/Image";
+import MonitorIcon from "@mui/icons-material/Monitor";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import { LIVE_H, LIVE_W } from "@eventer/shared";
 import type { EventInfoField, LiveElement, LiveScene } from "@eventer/shared";
 
@@ -20,7 +23,7 @@ const PLACEHOLDER_INFO: Record<EventInfoField, string> = {
   community: "コミュニティ名",
 };
 
-function Placeholder({ label, icon }: { label: string; icon: string }) {
+function Placeholder({ label, icon }: { label: string; icon: ReactNode }) {
   return (
     <div
       style={{
@@ -36,7 +39,7 @@ function Placeholder({ label, icon }: { label: string; icon: string }) {
       }}
     >
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 36, lineHeight: 1.2 }}>{icon}</div>
+        <div style={{ lineHeight: 1.2 }}>{icon}</div>
         {label}
       </div>
     </div>
@@ -93,7 +96,7 @@ export function LiveElementContent({
           }}
         />
       ) : (
-        <Placeholder label="画像未設定" icon="🖼️" />
+        <Placeholder label="画像未設定" icon={<ImageIcon sx={{ fontSize: 36 }} />} />
       );
     case "camera": {
       const inner = runtime?.camera?.(el);
@@ -106,12 +109,18 @@ export function LiveElementContent({
             borderRadius: el.radius ?? 0,
           }}
         >
-          {inner ?? <Placeholder label="カメラ" icon="📷" />}
+          {inner ?? (
+            <Placeholder label="カメラ" icon={<PhotoCameraIcon sx={{ fontSize: 36 }} />} />
+          )}
         </div>
       );
     }
     case "deck":
-      return runtime?.deck?.(el) ?? <Placeholder label="スライド" icon="🖥️" />;
+      return (
+        runtime?.deck?.(el) ?? (
+          <Placeholder label="スライド" icon={<MonitorIcon sx={{ fontSize: 36 }} />} />
+        )
+      );
     case "eventInfo": {
       const field = el.field ?? "title";
       const value = runtime?.eventInfo?.(field) ?? PLACEHOLDER_INFO[field];

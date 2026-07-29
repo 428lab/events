@@ -11,6 +11,10 @@ import {
 } from "@mui/material";
 import type { LiveScene, UpdateEventLiveStateInput } from "@eventer/shared";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
+import LiveTvIcon from "@mui/icons-material/LiveTv";
+import MonitorIcon from "@mui/icons-material/Monitor";
+import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import EditIcon from "@mui/icons-material/Edit";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { DEFAULT_LIVE_SET_ID } from "@eventer/shared";
@@ -88,8 +92,19 @@ export function LiveControlPage() {
   return (
     <Stack spacing={2.5}>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-        <Typography variant="h5" fontWeight={700} sx={{ flex: 1, minWidth: 200 }}>
-          🎬 配信コントロール
+        <Typography
+          variant="h5"
+          fontWeight={700}
+          sx={{
+            flex: 1,
+            minWidth: 200,
+            display: "flex",
+            alignItems: "center",
+            gap: 0.75,
+          }}
+        >
+          <LiveTvIcon fontSize="medium" />
+          配信コントロール
         </Typography>
         <Button
           variant="contained"
@@ -226,7 +241,13 @@ export function LiveControlPage() {
 
       {/* スライド（デッキ）選択とページ送り */}
       <Stack spacing={1}>
-        <Typography variant="h6">🖥️ スライド</Typography>
+        <Typography
+          variant="h6"
+          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+        >
+          <MonitorIcon fontSize="small" />
+          スライド
+        </Typography>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <TextField
             select
@@ -301,7 +322,13 @@ export function LiveControlPage() {
 
       {/* BGM */}
       <Stack spacing={1}>
-        <Typography variant="h6">🎵 BGM</Typography>
+        <Typography
+          variant="h6"
+          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+        >
+          <MusicNoteIcon fontSize="small" />
+          BGM
+        </Typography>
         <input
           ref={bgmFileRef}
           type="file"
@@ -327,7 +354,17 @@ export function LiveControlPage() {
             <MenuItem value="">（なし）</MenuItem>
             {(bgmTracks ?? []).map((t) => (
               <MenuItem key={t.id} value={t.id}>
-                {t.ownerId === null ? `🎁 ${t.name}` : t.name}
+                {t.ownerId === null ? (
+                  <Box
+                    component="span"
+                    sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
+                  >
+                    <CardGiftcardIcon fontSize="small" />
+                    {t.name}
+                  </Box>
+                ) : (
+                  t.name
+                )}
               </MenuItem>
             ))}
           </TextField>

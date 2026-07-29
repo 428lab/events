@@ -20,7 +20,10 @@ import {
 } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import CheckIcon from "@mui/icons-material/Check";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import StarIcon from "@mui/icons-material/Star";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { isHoliday } from "japanese-holidays";
@@ -309,8 +312,13 @@ export function SchedulePanel({
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="h6" gutterBottom>
-          {finalized ? "📅 日程調整の結果" : "📅 日程調整"}
+        <Typography
+          variant="h6"
+          gutterBottom
+          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+        >
+          <CalendarMonthIcon fontSize="small" />
+          {finalized ? "日程調整の結果" : "日程調整"}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {finalized
@@ -388,7 +396,8 @@ export function SchedulePanel({
                         <Chip
                           size="small"
                           color="success"
-                          label="✓ この日程に決定"
+                          icon={<CheckIcon fontSize="small" />}
+                          label="この日程に決定"
                           sx={{ fontWeight: 700 }}
                         />
                       )}
@@ -397,7 +406,8 @@ export function SchedulePanel({
                           size="small"
                           color="warning"
                           variant="outlined"
-                          label="★ 参加最多"
+                          icon={<StarIcon fontSize="small" />}
+                          label="参加最多"
                           sx={{ fontWeight: 700 }}
                         />
                       )}
