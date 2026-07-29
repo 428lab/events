@@ -17,7 +17,10 @@ export async function notifyFollowersOnPublish(event: {
     if (event.status !== "published") return;
     // 原子的に「未通知→通知済み」へ。並行publishでも1回だけ
     if (!(await eventsRepo.claimFollowersNotify(event.id))) return;
-    const followers = await followsRepo.followerIds(event.createdBy);
+    const followers = await followsRepo.followerIdsWanting(
+      event.createdBy,
+      "followee_created",
+    );
     if (followers.length === 0) return;
     const creator = await usersRepo.findById(event.createdBy);
     const name = creator
@@ -43,7 +46,10 @@ export async function notifyFollowersOnJoin(
 ): Promise<void> {
   try {
     if (event.status !== "published") return;
-    const followers = await followsRepo.followerIds(userId);
+    const followers = await followsRepo.followerIdsWanting(
+      userId,
+      "followee_joined",
+    );
     if (followers.length === 0) return;
     const joiner = await usersRepo.findById(userId);
     const name = joiner

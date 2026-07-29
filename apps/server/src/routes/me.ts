@@ -1,6 +1,9 @@
 import { Hono } from "hono";
-import { updateUsernameInput } from "@eventer/shared";
-import type { UpdateUsernameInput } from "@eventer/shared";
+import { updateNotificationPrefsInput, updateUsernameInput } from "@eventer/shared";
+import type {
+  UpdateNotificationPrefsInput,
+  UpdateUsernameInput,
+} from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -8,6 +11,7 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { followsRepo } from "../db/repositories/follows.js";
+import { notificationPrefsRepo } from "../db/repositories/notificationPrefs.js";
 
 export const meRoutes = new Hono<AppEnv>();
 
@@ -26,6 +30,25 @@ meRoutes.get("/following", async (c) => {
     following: await followsRepo.listFollowing(c.get("user").id),
   });
 });
+
+/** 通知設定の取得/更新 (#21 PR3) */
+meRoutes.get("/notification-prefs", async (c) => {
+  return c.json({
+    prefs: await notificationPrefsRepo.get(c.get("user").id),
+  });
+});
+
+meRoutes.put(
+  "/notification-prefs",
+  zValidator("json", updateNotificationPrefsInput),
+  async (c) => {
+    const prefs = await notificationPrefsRepo.update(
+      c.get("user").id,
+      valid<UpdateNotificationPrefsInput>(c, "json"),
+    );
+    return c.json({ prefs });
+  },
+);
 
 /** マイページ: 開催中 / 過去参加イベント */
 meRoutes.get("/events", async (c) => {

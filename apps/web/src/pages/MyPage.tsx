@@ -1,4 +1,5 @@
 import { Avatar, Box, Chip, Stack, Typography } from "@mui/material";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { Link as RouterLink } from "react-router-dom";
 import type { MyEventSummary } from "@eventer/shared";
 import { useMyPage } from "../api/hooks.js";
@@ -79,26 +80,22 @@ export function MyPage() {
         </Box>
       )}
       {following && following.length > 0 && (
-        <Box>
-          <Typography variant="h5" gutterBottom fontWeight={700}>
-            フォロー中（{following.length}）
-          </Typography>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            {following.map((u) => (
-              <Chip
-                key={u.id}
-                component={RouterLink}
-                to={`/users/${u.username}`}
-                clickable
-                avatar={
-                  <Avatar src={u.avatarUrl ?? undefined}>
-                    {(u.globalName ?? u.username).charAt(0)}
-                  </Avatar>
-                }
-                label={u.globalName ?? u.username}
-              />
-            ))}
-          </Stack>
+        <Box
+          component={RouterLink}
+          to="/following"
+          sx={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 1,
+            color: "inherit",
+            textDecoration: "none",
+            "&:hover": { textDecoration: "underline" },
+          }}
+        >
+          {/* X と同様に数だけ見せ、タップで一覧へ */}
+          <Typography fontWeight={700}>{following.length}</Typography>
+          <Typography color="text.secondary">フォロー中</Typography>
+          <ChevronRightIcon fontSize="small" sx={{ color: "text.secondary" }} />
         </Box>
       )}
       <Section

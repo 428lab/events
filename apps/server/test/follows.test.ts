@@ -228,6 +228,71 @@ describe("フォローと通知 (#21)", () => {
     expect(res.status).toBe(401);
   });
 
+  it("通知設定OFFのフォロワーには公開通知が届かない (#21 PR3)", async () => {
+    const wantsIt = await makeUser();
+    const optedOut = await makeUser();
+    const host = await loginDev();
+    const meRes = await SELF.fetch(`${BASE}/api/auth/me`, {
+      headers: { cookie: host },
+    });
+    const me = (await meRes.json()) as { user: { username: string } };
+    for (const u of [wantsIt, optedOut]) {
+      await SELF.fetch(`${BASE}/api/users/${me.user.username}/follow`, {
+        method: "POST",
+        headers: { cookie: u.cookie },
+      });
+    }
+
+    // optedOut は公開通知をOFFに（取得APIの既定値も確認）
+    const before = await SELF.fetch(`${BASE}/api/me/notification-prefs`, {
+      headers: { cookie: optedOut.cookie },
+    });
+    expect(
+      ((await before.json()) as { prefs: { followeeCreated: boolean } }).prefs
+        .followeeCreated,
+    ).toBe(true);
+    const put = await SELF.fetch(`${BASE}/api/me/notification-prefs`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: optedOut.cookie },
+      body: JSON.stringify({ followeeCreated: false }),
+    });
+    expect(put.status).toBe(200);
+
+    // host がイベント作成→公開
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: host },
+      body: JSON.stringify({
+        title: `設定テスト_${crypto.randomUUID().slice(0, 6)}`,
+        venueType: "online",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+    await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: host },
+      body: JSON.stringify({ status: "published" }),
+    });
+
+    // ONの人には届き、OFFの人には届かない
+    expect(await notifTypes(wantsIt.cookie)).toContain(
+      "followee_created_event",
+    );
+    expect(await notifTypes(optedOut.cookie)).not.toContain(
+      "followee_created_event",
+    );
+    // OFFにしたのは公開通知のみ。参加通知の設定は独立（既定ONのまま）
+    const prefs = await SELF.fetch(`${BASE}/api/me/notification-prefs`, {
+      headers: { cookie: optedOut.cookie },
+    });
+    expect(
+      ((await prefs.json()) as { prefs: { followeeJoined: boolean } }).prefs
+        .followeeJoined,
+    ).toBe(true);
+  });
+
   it("フォロー相手が公開イベントに参加するとフォロワーに通知", async () => {
     const follower = await makeUser();
     const joiner = await makeUser();
