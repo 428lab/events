@@ -46,6 +46,11 @@ import {
 } from "./routes/eventRequests.js";
 import { eventRequestsRepo } from "./db/repositories/eventRequests.js";
 import { followRoutes } from "./routes/follows.js";
+import {
+  publicVenueRoutes,
+  venueRoutes,
+  getVenueImage,
+} from "./routes/venues.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -66,6 +71,11 @@ api.route("/public", publicRoutes);
 api.route("/public/event-requests", publicEventRequestRoutes);
 // イベントのたまご（投稿・賛同・開催宣言。要認証）
 api.route("/event-requests", eventRequestRoutes);
+// 公開: 会場一覧・詳細・カバー画像（認証不要）
+api.get("/venues/:id/image", getVenueImage);
+api.route("/public/venues", publicVenueRoutes);
+// 会場の登録・編集（要認証）
+api.route("/venues", venueRoutes);
 // 公開: イベント画像（認証不要。eventRoutes(要認証)より先に登録）
 api.get("/events/:id/image", getEventImage);
 // 公開: 表彰内容（認証不要。eventRoutes より先に登録）

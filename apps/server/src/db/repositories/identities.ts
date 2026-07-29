@@ -84,6 +84,7 @@ export const identitiesRepo = {
       { sql: "UPDATE OR IGNORE score SET judge_user_id = ? WHERE judge_user_id = ?", args: [toUserId, fromUserId] },
       { sql: "UPDATE event SET created_by = ? WHERE created_by = ?", args: [toUserId, fromUserId] },
       { sql: "UPDATE event_request SET created_by = ? WHERE created_by = ?", args: [toUserId, fromUserId] },
+      { sql: "UPDATE venue SET owner_id = ? WHERE owner_id = ?", args: [toUserId, fromUserId] },
       { sql: "UPDATE OR IGNORE event_request_reaction SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
       // 通知設定の引き継ぎ（to に行があれば to 優先、無ければ from を引き継ぐ）
       { sql: "UPDATE OR IGNORE notification_pref SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
