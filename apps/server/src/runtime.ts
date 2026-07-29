@@ -15,6 +15,8 @@ export interface Env {
   GOOGLE_CLIENT_SECRET: string;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
+  X_CLIENT_ID: string;
+  X_CLIENT_SECRET: string;
   SESSION_SECRET: string;
 }
 
@@ -95,6 +97,8 @@ export const env = {
         return { clientId: e.GOOGLE_CLIENT_ID || "", clientSecret: e.GOOGLE_CLIENT_SECRET || "" };
       case "github":
         return { clientId: e.GITHUB_CLIENT_ID || "", clientSecret: e.GITHUB_CLIENT_SECRET || "" };
+      case "x":
+        return { clientId: e.X_CLIENT_ID || "", clientSecret: e.X_CLIENT_SECRET || "" };
       default:
         return { clientId: "", clientSecret: "" };
     }

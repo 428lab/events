@@ -36,6 +36,9 @@ export default defineWorkersConfig(async () => {
               APP_BASE_URL: "http://localhost",
               SESSION_SECRET: "test-secret",
               ADMIN_DISCORD_IDS: "dev-user",
+              // X ログインの authorize リダイレクト（PKCE付与）検証用ダミー
+              X_CLIENT_ID: "test-x-client",
+              X_CLIENT_SECRET: "test-x-secret",
             },
           },
         },

@@ -26,6 +26,26 @@ import {
 } from "../auth/nostr.js";
 
 const STATE_COOKIE = "eventer_oauth_state";
+const PKCE_COOKIE = "eventer_oauth_verifier";
+
+/** PKCE: code_verifier（ランダム）→ S256 チャレンジ（base64url） */
+function genCodeVerifier(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return base64url(bytes);
+}
+async function codeChallengeS256(verifier: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(verifier),
+  );
+  return base64url(new Uint8Array(digest));
+}
+function base64url(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
 
 export const authRoutes = new Hono<AppEnv>();
 
@@ -150,7 +170,7 @@ authRoutes.post("/nostr/profile", requireAuth, async (c) => {
 });
 
 /** OAuth 開始（provider はパス） */
-authRoutes.get("/:provider/login", (c) => {
+authRoutes.get("/:provider/login", async (c) => {
   const provider = c.req.param("provider");
   if (!isProvider(provider)) return c.json({ error: "unknown_provider" }, 404);
   if (!providerConfigured(provider)) {
@@ -158,13 +178,14 @@ authRoutes.get("/:provider/login", (c) => {
   }
   const cfg = providerConfig(provider);
   const state = crypto.randomUUID();
-  setCookie(c, STATE_COOKIE, `${provider}:${state}`, {
+  const cookieOpts = {
     httpOnly: true,
     sameSite: "Lax",
     secure: env.isProd,
     path: "/",
     maxAge: 600,
-  });
+  } as const;
+  setCookie(c, STATE_COOKIE, `${provider}:${state}`, cookieOpts);
   const params = new URLSearchParams({
     client_id: env.providerCreds(provider).clientId,
     redirect_uri: redirectUri(provider),
@@ -173,6 +194,13 @@ authRoutes.get("/:provider/login", (c) => {
     state,
     ...(cfg.extraAuthParams ?? {}),
   });
+  // PKCE（X など必須のプロバイダ）: verifier を cookie に保持し S256 チャレンジを付与
+  if (cfg.pkce) {
+    const verifier = genCodeVerifier();
+    setCookie(c, PKCE_COOKIE, verifier, cookieOpts);
+    params.set("code_challenge", await codeChallengeS256(verifier));
+    params.set("code_challenge_method", "S256");
+  }
   return c.redirect(`${cfg.authorizeUrl}?${params.toString()}`);
 });
 
@@ -190,9 +218,15 @@ authRoutes.get("/:provider/callback", async (c) => {
   deleteCookie(c, STATE_COOKIE, { path: "/" });
 
   const cfg = providerConfig(provider);
+  // PKCE: 開始時に保存した verifier を取り出して使う（1回限り）
+  const verifier = cfg.pkce ? getCookie(c, PKCE_COOKIE) : undefined;
+  if (cfg.pkce) {
+    deleteCookie(c, PKCE_COOKIE, { path: "/" });
+    if (!verifier) return c.json({ error: "invalid_oauth_state" }, 400);
+  }
   let profile;
   try {
-    const token = await cfg.exchange(code, redirectUri(provider));
+    const token = await cfg.exchange(code, redirectUri(provider), verifier);
     profile = await cfg.fetchProfile(token);
   } catch {
     return c.json({ error: "oauth_failed" }, 502);
