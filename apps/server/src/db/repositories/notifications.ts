@@ -1,5 +1,5 @@
 import type { Notification, NotificationType } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { batch, many, one, run } from "../client.js";
 
 interface NotificationRow {
   id: string;
@@ -44,7 +44,8 @@ export const notificationsRepo = {
     );
   },
 
-  /** 複数ユーザーへ同一内容の通知を作成（抽選・表彰の一斉通知用） */
+  /** 複数ユーザーへ同一内容の通知を作成（抽選・表彰・フォロワー通知の一斉配信用）。
+   * 1人1クエリだとサブリクエスト上限とレイテンシに響くため、D1 batch でまとめて挿入 */
   async createForMany(
     userIds: string[],
     type: NotificationType,
@@ -52,8 +53,16 @@ export const notificationsRepo = {
     body = "",
     link = "",
   ): Promise<void> {
-    for (const userId of userIds) {
-      await this.create(userId, type, title, body, link);
+    const now = Date.now();
+    const CHUNK = 50;
+    for (let i = 0; i < userIds.length; i += CHUNK) {
+      await batch(
+        userIds.slice(i, i + CHUNK).map((userId) => ({
+          sql: `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+          args: [crypto.randomUUID(), userId, type, title, body, link, now],
+        })),
+      );
     }
   },
 
