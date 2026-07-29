@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   InputAdornment,
+  Link,
   Pagination,
   Stack,
   TextField,
@@ -12,6 +13,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import RssFeedIcon from "@mui/icons-material/RssFeed";
 import SearchIcon from "@mui/icons-material/Search";
 import { Link as RouterLink } from "react-router-dom";
 import { useMe } from "../api/hooks.js";
@@ -137,6 +139,27 @@ export function EventRequestsPage() {
           />
         </Box>
       )}
+
+      {/* フィード購読導線（/feed/* はワーカー直配信なので通常の <a>） */}
+      <Stack
+        direction="row"
+        spacing={1.5}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+        sx={{ mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}
+      >
+        <RssFeedIcon fontSize="small" sx={{ color: "text.secondary" }} />
+        <Typography variant="body2" color="text.secondary">
+          たまごをフィードで購読:
+        </Typography>
+        <Link href="/feed/requests.rss" target="_blank" rel="noopener" variant="body2">
+          RSS
+        </Link>
+        <Link href="/feed/requests.json" target="_blank" rel="noopener" variant="body2">
+          JSON Feed
+        </Link>
+      </Stack>
     </Box>
   );
 }

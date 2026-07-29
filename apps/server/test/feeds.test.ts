@@ -95,6 +95,43 @@ describe("イベントフィード (#19)", () => {
     expect(feed.items.some((i) => i.title === schedTitle)).toBe(false);
   });
 
+  it("たまごフィード: JSON/RSS が取得でき、メンバー限定は出ない (#51)", async () => {
+    const cookie = await loginDev();
+    const tag = crypto.randomUUID().slice(0, 8);
+    // 公開たまご
+    const open = await SELF.fetch(`${BASE}/api/event-requests`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ title: `フィードたまご_${tag}` }),
+    });
+    expect(open.status).toBe(201);
+
+    const res = await SELF.fetch(`${BASE}/feed/requests.json`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/feed+json");
+    const feed = (await res.json()) as {
+      items: {
+        title: string;
+        _request: { attendCount: number; hostCount: number; slug: string };
+      }[];
+    };
+    const item = feed.items.find((i) => i.title === `フィードたまご_${tag}`);
+    expect(item).toBeTruthy();
+    expect(item!._request.attendCount).toBe(0);
+    expect(item!._request.slug).toMatch(/^[0-9a-f]{8}$/);
+
+    const rss = await SELF.fetch(`${BASE}/feed/requests.rss`);
+    expect(rss.status).toBe(200);
+    expect(await rss.text()).toContain(`フィードたまご_${tag}`);
+
+    // 検索フィルタ
+    const filtered = await SELF.fetch(
+      `${BASE}/feed/requests.json?q=${encodeURIComponent(`存在しない_${tag}`)}`,
+    );
+    const fBody = (await filtered.json()) as { items: unknown[] };
+    expect(fBody.items.length).toBe(0);
+  });
+
   it("RSS: タイトルの XML 非許容制御文字は除去され、整形式を保つ", async () => {
     const cookie = await loginDev();
     const label = crypto.randomUUID().slice(0, 8);

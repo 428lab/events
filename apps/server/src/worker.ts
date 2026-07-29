@@ -33,7 +33,13 @@ import {
 import { currentUser } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
-import { feedRss, feedJson, feedIcs } from "./routes/feeds.js";
+import {
+  feedRss,
+  feedJson,
+  feedIcs,
+  feedRequestsRss,
+  feedRequestsJson,
+} from "./routes/feeds.js";
 import {
   eventRequestRoutes,
   publicEventRequestRoutes,
@@ -296,6 +302,9 @@ app.get("/r/:slug", async (c) => {
 app.get("/feed/events.rss", feedRss);
 app.get("/feed/events.json", feedJson);
 app.get("/feed/events.ics", feedIcs);
+// イベントのたまごのフィード (#51)
+app.get("/feed/requests.rss", feedRequestsRss);
+app.get("/feed/requests.json", feedRequestsJson);
 
 // llms.txt: 静的配信だと .txt に charset が付かず iOS Safari で日本語が文字化けするため、
 // charset=utf-8 を明示して返す（中身はアセットから取得）
