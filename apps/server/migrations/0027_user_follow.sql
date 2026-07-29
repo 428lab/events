@@ -9,3 +9,5 @@ CREATE INDEX idx_follow_followee ON user_follow(followee_id);
 
 -- イベント公開時のフォロワー通知を1回だけにする（再公開で再通知しない）
 ALTER TABLE event ADD COLUMN followers_notified_at INTEGER NOT NULL DEFAULT 0;
+-- 既に公開済みのイベントは「通知済み」扱いにする（デプロイ後の編集で偽の公開通知が飛ばないように）
+UPDATE event SET followers_notified_at = 1 WHERE status = 'published';

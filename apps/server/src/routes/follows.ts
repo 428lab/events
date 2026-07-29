@@ -13,20 +13,27 @@ export async function notifyFollowersOnPublish(event: {
   createdBy: string;
   status: string;
 }): Promise<void> {
-  if (event.status !== "published") return;
-  // 原子的に「未通知→通知済み」へ。並行publishでも1回だけ
-  if (!(await eventsRepo.claimFollowersNotify(event.id))) return;
-  const followers = await followsRepo.followerIds(event.createdBy);
-  if (followers.length === 0) return;
-  const creator = await usersRepo.findById(event.createdBy);
-  const name = creator ? (creator.globalName ?? creator.username) : "フォロー中のユーザー";
-  await notificationsRepo.createForMany(
-    followers.filter((id) => id !== event.createdBy),
-    "followee_created_event",
-    `${name} さんがイベントを公開しました`,
-    `「${event.title}」`,
-    `/events/${event.id}`,
-  );
+  try {
+    if (event.status !== "published") return;
+    // 原子的に「未通知→通知済み」へ。並行publishでも1回だけ
+    if (!(await eventsRepo.claimFollowersNotify(event.id))) return;
+    const followers = await followsRepo.followerIds(event.createdBy);
+    if (followers.length === 0) return;
+    const creator = await usersRepo.findById(event.createdBy);
+    const name = creator
+      ? (creator.globalName ?? creator.username)
+      : "フォロー中のユーザー";
+    await notificationsRepo.createForMany(
+      followers.filter((id) => id !== event.createdBy),
+      "followee_created_event",
+      `${name} さんがイベントを公開しました`,
+      `「${event.title}」`,
+      `/events/${event.id}`,
+    );
+  } catch (err) {
+    // 通知失敗で公開自体を失敗させない
+    console.error("notifyFollowersOnPublish failed", err);
+  }
 }
 
 /** イベント参加確定時: 参加者のフォロワーへ通知（公開イベントのみ） */
@@ -34,18 +41,25 @@ export async function notifyFollowersOnJoin(
   event: { id: string; title: string; status: string },
   userId: string,
 ): Promise<void> {
-  if (event.status !== "published") return;
-  const followers = await followsRepo.followerIds(userId);
-  if (followers.length === 0) return;
-  const joiner = await usersRepo.findById(userId);
-  const name = joiner ? (joiner.globalName ?? joiner.username) : "フォロー中のユーザー";
-  await notificationsRepo.createForMany(
-    followers.filter((id) => id !== userId),
-    "followee_joined_event",
-    `${name} さんがイベントに参加しました`,
-    `「${event.title}」`,
-    `/events/${event.id}`,
-  );
+  try {
+    if (event.status !== "published") return;
+    const followers = await followsRepo.followerIds(userId);
+    if (followers.length === 0) return;
+    const joiner = await usersRepo.findById(userId);
+    const name = joiner
+      ? (joiner.globalName ?? joiner.username)
+      : "フォロー中のユーザー";
+    await notificationsRepo.createForMany(
+      followers.filter((id) => id !== userId),
+      "followee_joined_event",
+      `${name} さんがイベントに参加しました`,
+      `「${event.title}」`,
+      `/events/${event.id}`,
+    );
+  } catch (err) {
+    // 通知失敗で参加自体を失敗させない
+    console.error("notifyFollowersOnJoin failed", err);
+  }
 }
 
 /** ユーザーフォロー (#21)。/api/users/:handle/follow */

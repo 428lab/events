@@ -261,6 +261,7 @@ eventRoutes.patch(
   requireEventRole(["staff"]),
   zValidator("json", updateEventInput),
   async (c) => {
+    const prior = await eventsRepo.findById(c.req.param("id"));
     const event = await eventsRepo.update(
       c.req.param("id"),
       valid<UpdateEventInput>(c, "json"),
@@ -268,8 +269,10 @@ eventRoutes.patch(
     if (!event) return c.json({ error: "not_found" }, 404);
     // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
     await notifyRequestsOnPublish(event);
-    // 作成者のフォロワーへ公開通知（初回のみ）
-    await notifyFollowersOnPublish(event);
+    // 作成者のフォロワーへ公開通知（draft→published の実遷移時のみ・初回のみ）
+    if (prior?.status !== "published") {
+      await notifyFollowersOnPublish(event);
+    }
     return c.json({ event });
   },
 );
@@ -280,12 +283,15 @@ eventRoutes.delete("/:id/image", requireEventRole(["staff"]), deleteEventImage);
 
 /** 公開（staff のみ） */
 eventRoutes.post("/:id/publish", requireEventRole(["staff"]), async (c) => {
+  const prior = await eventsRepo.findById(c.req.param("id"));
   const event = await eventsRepo.setStatus(c.req.param("id"), "published");
   if (!event) return c.json({ error: "not_found" }, 404);
   // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
   await notifyRequestsOnPublish(event);
-  // 作成者のフォロワーへ公開通知（初回のみ）
-  await notifyFollowersOnPublish(event);
+  // 作成者のフォロワーへ公開通知（draft→published の実遷移時のみ・初回のみ）
+  if (prior?.status !== "published") {
+    await notifyFollowersOnPublish(event);
+  }
   return c.json({ event });
 });
 

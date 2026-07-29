@@ -173,6 +173,61 @@ describe("フォローと通知 (#21)", () => {
     ).toBe(1);
   });
 
+  it("既存公開イベント（未通知フラグ0のまま）を編集しても偽の公開通知は飛ばない", async () => {
+    const follower = await makeUser();
+    const host = await loginDev();
+    const meRes = await SELF.fetch(`${BASE}/api/auth/me`, {
+      headers: { cookie: host },
+    });
+    const me = (await meRes.json()) as { user: { username: string } };
+    await SELF.fetch(`${BASE}/api/users/${me.user.username}/follow`, {
+      method: "POST",
+      headers: { cookie: follower.cookie },
+    });
+
+    // 公開イベントを作り、migration前の既存データ相当に notified フラグを 0 に戻す
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: host },
+      body: JSON.stringify({
+        title: `旧イベント_${crypto.randomUUID().slice(0, 6)}`,
+        venueType: "online",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+    await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: host },
+      body: JSON.stringify({ status: "published" }),
+    });
+    const before = (await notifTypes(follower.cookie)).filter(
+      (t) => t === "followee_created_event",
+    ).length;
+    await env.DB.prepare(
+      "UPDATE event SET followers_notified_at = 0 WHERE id = ?",
+    )
+      .bind(event.id)
+      .run();
+
+    // 公開済みのままタイトルだけ編集 → 遷移していないので通知は増えない
+    await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: host },
+      body: JSON.stringify({ title: "タイトル修正" }),
+    });
+    const after = (await notifTypes(follower.cookie)).filter(
+      (t) => t === "followee_created_event",
+    ).length;
+    expect(after).toBe(before);
+  });
+
+  it("/me/following は未ログインだと401", async () => {
+    const res = await SELF.fetch(`${BASE}/api/me/following`);
+    expect(res.status).toBe(401);
+  });
+
   it("フォロー相手が公開イベントに参加するとフォロワーに通知", async () => {
     const follower = await makeUser();
     const joiner = await makeUser();
