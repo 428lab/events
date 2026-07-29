@@ -11,6 +11,7 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import CasinoIcon from "@mui/icons-material/Casino";
 import {
   BACKGROUNDS,
   FONTS,
@@ -96,8 +97,13 @@ export function EventImageStudio({
         }}
       />
 
-      <Button variant="outlined" onClick={shuffle} sx={{ alignSelf: "flex-start" }}>
-        🎲 おまかせ（ランダム）
+      <Button
+        variant="outlined"
+        startIcon={<CasinoIcon />}
+        onClick={shuffle}
+        sx={{ alignSelf: "flex-start" }}
+      >
+        おまかせ（ランダム）
       </Button>
 
       <TextField

@@ -163,8 +163,18 @@ export function EventPhotos({
           flexWrap="wrap"
           useFlexGap
         >
-          <Typography variant="h6" sx={{ flex: 1, minWidth: 120 }}>
-            📷 写真（{photos?.length ?? 0}）
+          <Typography
+            variant="h6"
+            sx={{
+              flex: 1,
+              minWidth: 120,
+              display: "flex",
+              alignItems: "center",
+              gap: 0.75,
+            }}
+          >
+            <PhotoCameraIcon fontSize="small" />
+            写真（{photos?.length ?? 0}）
           </Typography>
           <input
             ref={fileRef}

@@ -21,6 +21,11 @@ import {
   Typography,
 } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
+import BarChartIcon from "@mui/icons-material/BarChart";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import CheckIcon from "@mui/icons-material/Check";
+import EggIcon from "@mui/icons-material/Egg";
+import LiveTvIcon from "@mui/icons-material/LiveTv";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
@@ -241,8 +246,12 @@ export function EventDetailPage() {
               "&:hover": { textDecoration: "underline" },
             }}
           >
-            <Typography variant="body2">
-              🥚 「{r.title}」のたまごから生まれました
+            <Typography
+              variant="body2"
+              sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
+            >
+              <EggIcon fontSize="inherit" />
+              「{r.title}」のたまごから生まれました
             </Typography>
           </Box>
         ))}
@@ -261,11 +270,18 @@ export function EventDetailPage() {
         <Typography
           variant="h6"
           fontWeight={700}
-          sx={{ mt: 1, color: event.scheduling ? "warning.main" : "primary.main" }}
+          sx={{
+            mt: 1,
+            color: event.scheduling ? "warning.main" : "primary.main",
+            display: "flex",
+            alignItems: "center",
+            gap: 0.75,
+          }}
         >
+          <CalendarMonthIcon fontSize="small" />
           {event.scheduling
-            ? "📅 日程調整中（開催日時は未定）"
-            : `📅 ${formatDateRange(event.startsAt, event.endsAt)}`}
+            ? "日程調整中（開催日時は未定）"
+            : formatDateRange(event.startsAt, event.endsAt)}
         </Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
           {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
@@ -509,19 +525,21 @@ export function EventDetailPage() {
           {isStaff && (
             <Button
               variant="outlined"
+              startIcon={<LiveTvIcon />}
               component={RouterLink}
               to={`/events/${id}/live/control`}
             >
-              🎬 配信
+              配信
             </Button>
           )}
           {isStaff && (
             <Button
               variant="outlined"
+              startIcon={<BarChartIcon />}
               component={RouterLink}
               to={`/events/${id}/stats`}
             >
-              📊 アクセス統計
+              アクセス統計
             </Button>
           )}
           {contest && isStaff && (
@@ -712,7 +730,9 @@ function MemberRow({
                     }}
                   >
                     {roleLabel[r as EventRole]}
-                    {m.role === r ? " ✓" : ""}
+                    {m.role === r && (
+                      <CheckIcon fontSize="small" sx={{ ml: 0.5 }} />
+                    )}
                   </MenuItem>
                 ))}
               </Menu>

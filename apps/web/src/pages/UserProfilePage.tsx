@@ -15,6 +15,9 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
+import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
+import MilitaryTechIcon from "@mui/icons-material/MilitaryTech";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import type { UserAward, UserPhoto, UserProfile } from "@eventer/shared";
 import { useSetFollow, useUserProfile } from "../api/userHooks.js";
@@ -27,13 +30,15 @@ const COMMUNITY_ROLE_LABEL: Record<string, string> = {
   admin: "管理者",
 };
 
-/** 順位に応じたメダル（特別枠は 🎖️） */
-function awardEmoji(rankOrder: number | null): string {
-  if (rankOrder === 1) return "🥇";
-  if (rankOrder === 2) return "🥈";
-  if (rankOrder === 3) return "🥉";
-  if (rankOrder != null) return "🏅";
-  return "🎖️";
+/** 順位に応じたメダルアイコン（金/銀/銅、入賞はメダル、特別枠は勲章） */
+function awardIcon(rankOrder: number | null) {
+  if (rankOrder === 1)
+    return <EmojiEventsIcon sx={{ fontSize: "inherit", color: "#FFB300" }} />;
+  if (rankOrder === 2)
+    return <EmojiEventsIcon sx={{ fontSize: "inherit", color: "#9E9E9E" }} />;
+  if (rankOrder === 3)
+    return <EmojiEventsIcon sx={{ fontSize: "inherit", color: "#8D6E63" }} />;
+  return <MilitaryTechIcon sx={{ fontSize: "inherit" }} />;
 }
 
 function AwardsSection({
@@ -46,8 +51,13 @@ function AwardsSection({
   if (awards.length === 0) return null;
   return (
     <Box>
-      <Typography variant="h6" gutterBottom>
-        🏆 受賞歴（{awards.length}）
+      <Typography
+        variant="h6"
+        gutterBottom
+        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+      >
+        <EmojiEventsIcon fontSize="small" />
+        受賞歴（{awards.length}）
       </Typography>
       <Stack spacing={1}>
         {awards.map((a, i) => (
@@ -61,7 +71,7 @@ function AwardsSection({
                 useFlexGap
               >
                 <Typography fontSize={26} lineHeight={1}>
-                  {awardEmoji(a.rankOrder)}
+                  {awardIcon(a.rankOrder)}
                 </Typography>
                 <Box sx={{ flex: 1, minWidth: 200 }}>
                   <Typography fontWeight={700} sx={{ color: "secondary.main" }}>
@@ -233,8 +243,13 @@ function PhotoGallerySection({ handle }: { handle: string }) {
   if (!photos || photos.length === 0) return null;
   return (
     <Box>
-      <Typography variant="h6" gutterBottom>
-        📷 投稿した写真（{photos.length}）
+      <Typography
+        variant="h6"
+        gutterBottom
+        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+      >
+        <PhotoCameraIcon fontSize="small" />
+        投稿した写真（{photos.length}）
       </Typography>
       <Box
         sx={{

@@ -8,6 +8,7 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import type { Event, EventRole } from "@eventer/shared";
 import { eventImageUrl } from "../api/hooks.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
@@ -141,9 +142,17 @@ export function EventCard({
               overflow: "hidden",
             }}
           >
-            {event.scheduling
-              ? "📅 日程調整中"
-              : formatDateRange(event.startsAt, event.endsAt)}{" "}
+            {event.scheduling ? (
+              <>
+                <CalendarMonthIcon
+                  fontSize="inherit"
+                  sx={{ verticalAlign: "text-bottom", mr: 0.25 }}
+                />
+                日程調整中
+              </>
+            ) : (
+              formatDateRange(event.startsAt, event.endsAt)
+            )}{" "}
             ・ {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
           </Typography>
         </CardContent>

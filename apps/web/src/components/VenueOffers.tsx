@@ -15,6 +15,9 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import CelebrationIcon from "@mui/icons-material/Celebration";
+import EggIcon from "@mui/icons-material/Egg";
+import StadiumIcon from "@mui/icons-material/Stadium";
 import { Link as RouterLink } from "react-router-dom";
 import {
   useCreateVenueOffer,
@@ -27,7 +30,7 @@ import { useMyPage } from "../api/hooks.js";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "回答待ち",
-  accepted: "成立🎉",
+  accepted: "成立",
   declined: "見送り",
 };
 
@@ -36,6 +39,7 @@ function statusChip(status: string) {
     <Chip
       size="small"
       color={status === "accepted" ? "success" : status === "pending" ? "warning" : "default"}
+      icon={status === "accepted" ? <CelebrationIcon fontSize="small" /> : undefined}
       label={STATUS_LABEL[status] ?? status}
     />
   );
@@ -61,8 +65,13 @@ export function VenueOfferPanel({
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="h6" gutterBottom>
-          🏟️ 会場オファー
+        <Typography
+          variant="h6"
+          gutterBottom
+          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+        >
+          <StadiumIcon fontSize="small" />
+          会場オファー
         </Typography>
         <Stack spacing={1.5}>
           {offers.map((o) => (
@@ -157,8 +166,13 @@ export function OfferVenueButton({
 
   return (
     <>
-      <Button variant="outlined" color="success" onClick={() => setOpen(true)}>
-        🏟️ 会場を提供できます
+      <Button
+        variant="outlined"
+        color="success"
+        startIcon={<StadiumIcon />}
+        onClick={() => setOpen(true)}
+      >
+        会場を提供できます
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth>
         <DialogTitle>会場を提供する</DialogTitle>
@@ -289,7 +303,18 @@ export function VenueOwnerOffers({ venueId }: { venueId: string }) {
             const target = o.event
               ? { label: o.event.title, to: `/events/${o.event.id}` }
               : o.request
-                ? { label: `🥚 ${o.request.title}`, to: `/requests/${o.request.id}` }
+                ? {
+                    label: (
+                      <Box
+                        component="span"
+                        sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
+                      >
+                        <EggIcon fontSize="inherit" />
+                        {o.request.title}
+                      </Box>
+                    ),
+                    to: `/requests/${o.request.id}`,
+                  }
                 : null;
             return (
               <Box key={o.id}>

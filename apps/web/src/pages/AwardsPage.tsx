@@ -9,6 +9,8 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
+import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import type { AwardResultView } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
@@ -128,7 +130,7 @@ export function AwardsPage() {
             {drumrolling ? (
               <Box sx={{ py: 3 }}>
                 <Typography variant="h2" sx={{ mb: 2 }}>
-                  🥁
+                  <MusicNoteIcon sx={{ fontSize: "inherit" }} />
                 </Typography>
                 <Typography variant="h5" sx={{ mb: 2 }}>
                   受賞は…？
@@ -206,6 +208,7 @@ export function AwardsPage() {
           <Button
             variant="outlined"
             color="secondary"
+            startIcon={<EmojiEventsIcon />}
             disabled={cursor < sequence.length || notifyWinners.isPending}
             onClick={() =>
               notifyWinners.mutate(undefined, {
@@ -214,7 +217,7 @@ export function AwardsPage() {
               })
             }
           >
-            🏆 受賞者にアプリ内通知
+            受賞者にアプリ内通知
           </Button>
           {cursor < sequence.length && (
             <Typography variant="caption" color="text.disabled">

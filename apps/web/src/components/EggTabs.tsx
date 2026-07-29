@@ -1,3 +1,4 @@
+import EggIcon from "@mui/icons-material/Egg";
 import { Tab, Tabs } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
@@ -25,7 +26,9 @@ export function EggTabs({
         to="/"
       />
       <Tab
-        label="🥚 イベントのたまご"
+        icon={<EggIcon fontSize="small" />}
+        iconPosition="start"
+        label="イベントのたまご"
         value="requests"
         component={RouterLink}
         to="/requests"

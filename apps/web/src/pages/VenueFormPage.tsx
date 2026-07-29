@@ -10,6 +10,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import StadiumIcon from "@mui/icons-material/Stadium";
 import { useNavigate, useParams } from "react-router-dom";
 import type { VenueOwnerView } from "@eventer/shared";
 import {
@@ -140,8 +141,14 @@ export function VenueFormPage() {
     <Stack spacing={3} sx={{ maxWidth: 760 }}>
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="h5" fontWeight={700} gutterBottom>
-          {isEdit ? "会場を編集" : "🏟️ 会場を登録"}
+        <Typography
+          variant="h5"
+          fontWeight={700}
+          gutterBottom
+          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+        >
+          {!isEdit && <StadiumIcon fontSize="medium" />}
+          {isEdit ? "会場を編集" : "会場を登録"}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           イベント主催者に使ってもらえる会場を登録します。連絡先はマッチング成立まで公開されません。

@@ -11,6 +11,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import RssFeedIcon from "@mui/icons-material/RssFeed";
 import { Link as RouterLink } from "react-router-dom";
 import {
@@ -100,8 +101,14 @@ function SchedulingEvents() {
   if (q.isLoading || total === 0) return null;
   return (
     <Box>
-      <Typography variant="h5" fontWeight={700} gutterBottom>
-        📅 日程調整中のイベント
+      <Typography
+        variant="h5"
+        fontWeight={700}
+        gutterBottom
+        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+      >
+        <CalendarMonthIcon fontSize="medium" />
+        日程調整中のイベント
       </Typography>
       <Stack spacing={2}>
         {(q.data?.events ?? []).map((e) => (

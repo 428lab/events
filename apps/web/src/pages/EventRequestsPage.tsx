@@ -13,6 +13,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import EggIcon from "@mui/icons-material/Egg";
 import RssFeedIcon from "@mui/icons-material/RssFeed";
 import SearchIcon from "@mui/icons-material/Search";
 import { Link as RouterLink } from "react-router-dom";
@@ -53,8 +54,13 @@ export function EventRequestsPage() {
         sx={{ mb: 2 }}
       >
         <Box>
-          <Typography variant="h5" fontWeight={700}>
-            🥚 イベントのたまご
+          <Typography
+            variant="h5"
+            fontWeight={700}
+            sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+          >
+            <EggIcon fontSize="medium" />
+            イベントのたまご
           </Typography>
           <Typography variant="body2" color="text.secondary">
             「こんなイベントがあったらいいな」を投稿して、賛同を集めよう。誰かが「開催します」したらイベントに孵ります

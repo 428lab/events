@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, IconButton, MenuItem, Paper, TextField, Typography } from "@mui/material";
 import SettingsIcon from "@mui/icons-material/Settings";
+import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import { useParams } from "react-router-dom";
 import type { EventInfoField, LiveElement } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
@@ -255,7 +256,13 @@ export function LiveScreenPage() {
             fontSize: 14,
           }}
         >
-          🔇 クリックして BGM を有効化
+          <Box
+            component="span"
+            sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
+          >
+            <VolumeOffIcon fontSize="small" />
+            クリックして BGM を有効化
+          </Box>
         </Box>
       )}
 

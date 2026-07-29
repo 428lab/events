@@ -10,6 +10,7 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import LiveTvIcon from "@mui/icons-material/LiveTv";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { useNavigate } from "react-router-dom";
@@ -78,8 +79,18 @@ export function LiveSetsPage() {
                       flexWrap: "wrap",
                     }}
                   >
-                    <Typography fontWeight={600} sx={{ flex: 1, minWidth: 160 }}>
-                      🎬 {s.name || "無題の配信セット"}
+                    <Typography
+                      fontWeight={600}
+                      sx={{
+                        flex: 1,
+                        minWidth: 160,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 0.75,
+                      }}
+                    >
+                      <LiveTvIcon fontSize="small" />
+                      {s.name || "無題の配信セット"}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       {s.sceneCount} シーン ・ {formatDateTime(s.updatedAt)} 更新

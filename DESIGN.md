@@ -117,6 +117,15 @@ components:
 - **AppBar:** 左から提灯ティールがにじむ夜空グラデ（`#0B3A34 → background`）。
 - 表彰カードはティール→アンバーのグラデで「灯り」を表現。
 
+## Icons
+
+**アイコンポリシー: UI装飾に絵文字は使わない（機種依存のため）。** 絵文字は OS・ブラウザごとにレンダリングが異なり（Windows / macOS / Android / 配信キャプチャで見た目が変わる）、Natsumatsuri のトーンも壊れやすい。UI の装飾・見出し・ボタン・タブ・チップ等のアイコンには **@mui/icons-material の単色 SVG アイコン**を使用する。単色 SVG は `color` を継承するので、ティール／暖色の役割分担にもそのまま乗る。
+
+- 見出し・本文の先頭アイコンは `display: flex; align-items: center; gap` で文字とベースラインを揃える。
+- Button は `startIcon`、Tab は `icon` + `iconPosition="start"`、Chip は `icon` prop を使う。
+- 順位表現（金/銀/銅）は EmojiEvents アイコン＋色分け（gold `#FFB300` / silver `#9E9E9E` / bronze `#8D6E63`）で表す。
+- **例外:** DB に保存されるテキスト（通知文言・ユーザー入力・イベント説明等）の絵文字は許容する。データ由来の文字列（国旗のリージョナルインジケーター等）もそのまま表示してよい。
+
 ## Do's and Don'ts
 
 - **Do** 操作はティール、祝福・表彰は暖色、と役割を一貫させる。
