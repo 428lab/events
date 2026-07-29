@@ -214,11 +214,21 @@ export async function getVenuePhotos(c: Context<AppEnv>) {
   return c.json({ photos, pending, canSubmit, isOwner, limit: VENUE_PHOTO_LIMIT });
 }
 
-/** 公開: 写真本体 */
+/** 写真本体。approved は公開、pending はオーナー/管理者/投稿者本人のみ */
 export async function getVenuePhotoImage(c: Context<AppEnv>) {
   const photo = await venuePhotosRepo.findById(c.req.param("photoId")!);
   if (!photo || photo.venueId !== c.req.param("id")) {
     return c.json({ error: "not_found" }, 404);
+  }
+  let cache = "public, max-age=3600";
+  if (photo.status !== "approved") {
+    const user = await currentUser(c);
+    const ownerId = await venuesRepo.ownerId(photo.venueId);
+    const allowed =
+      user &&
+      (user.id === ownerId || user.id === photo.userId || isAppAdmin(user));
+    if (!allowed) return c.json({ error: "not_found" }, 404);
+    cache = "private, max-age=0";
   }
   const obj = await getBucket().get(photoKey(photo.venueId, photo.id));
   if (!obj) return c.json({ error: "not_found" }, 404);
@@ -226,7 +236,7 @@ export async function getVenuePhotoImage(c: Context<AppEnv>) {
     headers: {
       "Content-Type": safeServeMime(obj.httpMetadata?.contentType ?? "image/webp"),
       "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": cache,
     },
   });
 }

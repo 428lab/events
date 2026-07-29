@@ -585,6 +585,24 @@ describe("会場写真の参加者投稿と承認フロー (#65)", () => {
     const { photo: p1 } = (await up1.json()) as { photo: { id: string; status: string } };
     expect(p1.status).toBe("pending");
 
+    // pending 画像本体は無認証・第三者では見えない（投稿者本人とオーナーは見える）
+    const anonImg = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos/${p1.id}/image`,
+    );
+    expect(anonImg.status).toBe(404);
+    const selfImg = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos/${p1.id}/image`,
+      { headers: { cookie: participant.cookie } },
+    );
+    expect(selfImg.status).toBe(200);
+    await selfImg.arrayBuffer();
+    const ownerImg = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos/${p1.id}/image`,
+      { headers: { cookie: venueOwner.cookie } },
+    );
+    expect(ownerImg.status).toBe(200);
+    await ownerImg.arrayBuffer();
+
     const publicList = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`);
     const pl = (await publicList.json()) as {
       photos: { id: string }[];
