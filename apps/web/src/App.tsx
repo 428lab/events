@@ -37,6 +37,9 @@ import { EventRequestNewPage } from "./pages/EventRequestNewPage.js";
 import { EventRequestDetailPage } from "./pages/EventRequestDetailPage.js";
 import { ShortRequestPage } from "./pages/ShortRequestPage.js";
 import { FollowingPage } from "./pages/FollowingPage.js";
+import { VenuesPage } from "./pages/VenuesPage.js";
+import { VenueDetailPage } from "./pages/VenueDetailPage.js";
+import { VenueFormPage } from "./pages/VenueFormPage.js";
 import { DecksPage } from "./pages/DecksPage.js";
 import { LiveSetsPage } from "./pages/LiveSetsPage.js";
 import { LiveSetEditorPage } from "./pages/LiveSetEditorPage.js";
@@ -108,6 +111,22 @@ export function App() {
           element={
             <PublicLayout>
               <EventRequestDetailPage />
+            </PublicLayout>
+          }
+        />
+        <Route
+          path="/venues"
+          element={
+            <PublicLayout>
+              <VenuesPage />
+            </PublicLayout>
+          }
+        />
+        <Route
+          path="/venues/:id"
+          element={
+            <PublicLayout>
+              <VenueDetailPage />
             </PublicLayout>
           }
         />
@@ -228,6 +247,10 @@ export function App() {
         <Route path="/requests" element={<EventRequestsPage />} />
         <Route path="/requests/new" element={<EventRequestNewPage />} />
         <Route path="/requests/:id" element={<EventRequestDetailPage />} />
+        <Route path="/venues" element={<VenuesPage />} />
+        <Route path="/venues/new" element={<VenueFormPage />} />
+        <Route path="/venues/:id" element={<VenueDetailPage />} />
+        <Route path="/venues/:id/edit" element={<VenueFormPage />} />
         <Route path="/events/new" element={<CreateEventPage />} />
         {/* 配信画面/コントロール（EventLayoutのモード強制遷移を受けない） */}
         <Route path="/events/:id/live/screen" element={<LiveScreenPage />} />

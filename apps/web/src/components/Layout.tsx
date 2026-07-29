@@ -161,6 +161,9 @@ export function Layout({
             <MenuItem component={RouterLink} to="/communities" onClick={closeMenu}>
               コミュニティ
             </MenuItem>
+            <MenuItem component={RouterLink} to="/venues" onClick={closeMenu}>
+              会場
+            </MenuItem>
             <MenuItem component={RouterLink} to="/decks" onClick={closeMenu}>
               スライド
             </MenuItem>
