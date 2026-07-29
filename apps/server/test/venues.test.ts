@@ -426,3 +426,82 @@ describe("会場オファーの追加ケース (#53 PR2 レビュー対応)", ()
     expect(deniedList.status).toBe(403);
   });
 });
+
+describe("会場ギャラリー写真 (#63)", () => {
+  const png = Uint8Array.from(
+    atob(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+    ),
+    (c) => c.charCodeAt(0),
+  );
+
+  it("オーナーが投稿→公開一覧・画像取得。他人は投稿/削除403。上限10点で409", async () => {
+    const owner = await makeUser();
+    const stranger = await makeUser();
+    const venueId = await createVenue(owner.cookie);
+
+    // 他人は投稿できない
+    const denied = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`, {
+      method: "POST",
+      headers: { "content-type": "image/png", cookie: stranger.cookie },
+      body: png,
+    });
+    expect(denied.status).toBe(403);
+
+    // オーナーが10点投稿
+    let lastId = "";
+    for (let i = 0; i < 10; i++) {
+      const up = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`, {
+        method: "POST",
+        headers: { "content-type": "image/png", cookie: owner.cookie },
+        body: png,
+      });
+      expect(up.status).toBe(201);
+      lastId = ((await up.json()) as { photo: { id: string } }).photo.id;
+    }
+    // 11点目は409
+    const over = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`, {
+      method: "POST",
+      headers: { "content-type": "image/png", cookie: owner.cookie },
+      body: png,
+    });
+    expect(over.status).toBe(409);
+
+    // 未ログインで一覧・画像が見える
+    const list = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`);
+    expect(list.status).toBe(200);
+    const { photos } = (await list.json()) as { photos: { id: string }[] };
+    expect(photos.length).toBe(10);
+    const img = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos/${lastId}/image`,
+    );
+    expect(img.status).toBe(200);
+    const bytes = await img.arrayBuffer();
+    expect(bytes.byteLength).toBe(png.byteLength);
+
+    // 他人は削除できない・オーナーは削除できる
+    const delDenied = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos/${lastId}`,
+      { method: "DELETE", headers: { cookie: stranger.cookie } },
+    );
+    expect(delDenied.status).toBe(403);
+    const del = await SELF.fetch(
+      `${BASE}/api/venues/${venueId}/photos/${lastId}`,
+      { method: "DELETE", headers: { cookie: owner.cookie } },
+    );
+    expect(del.status).toBe(200);
+    const after = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`);
+    expect(((await after.json()) as { photos: unknown[] }).photos.length).toBe(9);
+  });
+
+  it("許可外MIMEは400", async () => {
+    const owner = await makeUser();
+    const venueId = await createVenue(owner.cookie);
+    const bad = await SELF.fetch(`${BASE}/api/venues/${venueId}/photos`, {
+      method: "POST",
+      headers: { "content-type": "image/svg+xml", cookie: owner.cookie },
+      body: "<svg/>",
+    });
+    expect(bad.status).toBe(400);
+  });
+});

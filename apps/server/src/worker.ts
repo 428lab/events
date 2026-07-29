@@ -50,6 +50,8 @@ import {
   publicVenueRoutes,
   venueRoutes,
   getVenueImage,
+  getVenuePhotos,
+  getVenuePhotoImage,
 } from "./routes/venues.js";
 import { venueOfferRoutes } from "./routes/venueOffers.js";
 
@@ -74,6 +76,8 @@ api.route("/public/event-requests", publicEventRequestRoutes);
 api.route("/event-requests", eventRequestRoutes);
 // 公開: 会場一覧・詳細・カバー画像（認証不要）
 api.get("/venues/:id/image", getVenueImage);
+api.get("/venues/:id/photos", getVenuePhotos);
+api.get("/venues/:id/photos/:photoId/image", getVenuePhotoImage);
 api.route("/public/venues", publicVenueRoutes);
 // 会場の登録・編集（要認証）
 api.route("/venues", venueRoutes);
