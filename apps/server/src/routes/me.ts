@@ -12,6 +12,7 @@ import { usersRepo } from "../db/repositories/users.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { followsRepo } from "../db/repositories/follows.js";
 import { notificationPrefsRepo } from "../db/repositories/notificationPrefs.js";
+import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
 
 export const meRoutes = new Hono<AppEnv>();
 
@@ -28,6 +29,13 @@ meRoutes.get("/communities", async (c) => {
 meRoutes.get("/following", async (c) => {
   return c.json({
     following: await followsRepo.listFollowing(c.get("user").id),
+  });
+});
+
+/** 自分が投稿したオープンなたまご（会場申込の対象選択用） */
+meRoutes.get("/requests", async (c) => {
+  return c.json({
+    requests: await eventRequestsRepo.listOpenByCreator(c.get("user").id),
   });
 });
 

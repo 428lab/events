@@ -793,3 +793,70 @@ describe("会場の複数管理者とオーナー移譲 (#67)", () => {
     expect(oldOwnerDel.status).toBe(403);
   });
 });
+
+describe("会場オファーのフォローアップ (#56)", () => {
+  it("辞退後7日間は同一ペアの再オファーが429", async () => {
+    const organizer = await makeUser();
+    const venueOwner = await makeUser();
+    const venueId = await createVenue(venueOwner.cookie);
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({
+        title: `再オファー検証_${crypto.randomUUID().slice(0, 6)}`,
+        venueType: "offline",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+        venueWanted: true,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+    await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({ status: "published" }),
+    });
+    const offer = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: venueOwner.cookie },
+      body: JSON.stringify({ venueId, eventId: event.id }),
+    });
+    const { offer: o } = (await offer.json()) as { offer: { id: string } };
+    await SELF.fetch(`${BASE}/api/venue-offers/${o.id}/respond`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({ action: "decline" }),
+    });
+    const retry = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: venueOwner.cookie },
+      body: JSON.stringify({ venueId, eventId: event.id }),
+    });
+    expect(retry.status).toBe(429);
+  });
+
+  it("たまごへの利用申込（requestId方向・自分のたまご一覧API）", async () => {
+    const creator = await makeUser();
+    const venueOwner = await makeUser();
+    const venueId = await createVenue(venueOwner.cookie);
+    const req = await SELF.fetch(`${BASE}/api/event-requests`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: creator.cookie },
+      body: JSON.stringify({ title: "会場申込たまご" }),
+    });
+    const { request } = (await req.json()) as { request: { id: string } };
+    // 自分のたまご一覧
+    const mine = await SELF.fetch(`${BASE}/api/me/requests`, {
+      headers: { cookie: creator.cookie },
+    });
+    const mineBody = (await mine.json()) as { requests: { id: string }[] };
+    expect(mineBody.requests.some((r) => r.id === request.id)).toBe(true);
+    // たまご投稿者が会場に利用申込
+    const offer = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: creator.cookie },
+      body: JSON.stringify({ venueId, requestId: request.id, contact: "X: @egg" }),
+    });
+    expect(offer.status).toBe(201);
+  });
+});

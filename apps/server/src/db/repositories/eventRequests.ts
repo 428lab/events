@@ -153,6 +153,16 @@ export const eventRequestsRepo = {
     return rows.map(toRequest);
   },
 
+  /** 自分が投稿したオープンなたまご（会場申込の対象選択用） */
+  async listOpenByCreator(userId: string): Promise<EventRequest[]> {
+    const rows = await many<EventRequestRow>(
+      `${SELECT_REQUEST} WHERE er.created_by = ? AND er.status = 'open'
+        ORDER BY er.created_at DESC`,
+      userId,
+    );
+    return rows.map(toRequest);
+  },
+
   async create(
     input: CreateEventRequestInput,
     createdBy: string,

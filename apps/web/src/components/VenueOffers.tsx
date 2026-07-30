@@ -27,6 +27,9 @@ import {
   type EnrichedVenueOffer,
 } from "../api/venueHooks.js";
 import { useMyPage } from "../api/hooks.js";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../api/client.js";
+import type { EventRequest } from "@eventer/shared";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "回答待ち",
@@ -220,14 +223,22 @@ export function OfferVenueButton({
 /** イベンター側（会場詳細）: 「この会場を使いたい」ボタン */
 export function UseVenueButton({ venueId }: { venueId: string }) {
   const { data: my } = useMyPage();
+  const { data: myRequests } = useQuery({
+    queryKey: ["myRequests"],
+    queryFn: async () =>
+      (await api.get<{ requests: EventRequest[] }>("/me/requests")).requests,
+  });
   const create = useCreateVenueOffer();
   const [open, setOpen] = useState(false);
-  const [eventId, setEventId] = useState("");
+  const [target, setTarget] = useState(""); // "e:<id>" | "r:<id>"
   const [contact, setContact] = useState("");
 
-  // 自分がスタッフの開催予定イベントから選ぶ
-  const candidates = (my?.ongoing ?? []).filter((e) => e.myRole === "staff");
-  if (candidates.length === 0) return null;
+  // 自分がスタッフの開催予定イベント（公開済みのみ）と自分のたまごから選ぶ
+  const candidates = (my?.ongoing ?? []).filter(
+    (e) => e.myRole === "staff" && e.status === "published",
+  );
+  const eggs = (myRequests ?? []).filter((r) => !r.membersOnly);
+  if (candidates.length === 0 && eggs.length === 0) return null;
 
   return (
     <>
@@ -240,14 +251,19 @@ export function UseVenueButton({ venueId }: { venueId: string }) {
           <Stack spacing={2} sx={{ mt: 1 }}>
             <TextField
               select
-              label="対象イベント"
-              value={eventId}
-              onChange={(e) => setEventId(e.target.value)}
+              label="対象（イベント / たまご）"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
               fullWidth
             >
               {candidates.map((e) => (
-                <MenuItem key={e.id} value={e.id}>
+                <MenuItem key={e.id} value={`e:${e.id}`}>
                   {e.title}
+                </MenuItem>
+              ))}
+              {eggs.map((r) => (
+                <MenuItem key={r.id} value={`r:${r.id}`}>
+                  たまご: {r.title}
                 </MenuItem>
               ))}
             </TextField>
@@ -270,10 +286,16 @@ export function UseVenueButton({ venueId }: { venueId: string }) {
           <Button onClick={() => setOpen(false)}>キャンセル</Button>
           <Button
             variant="contained"
-            disabled={!eventId || create.isPending}
+            disabled={!target || create.isPending}
             onClick={() =>
               create.mutate(
-                { venueId, eventId, contact },
+                {
+                  venueId,
+                  ...(target.startsWith("e:")
+                    ? { eventId: target.slice(2) }
+                    : { requestId: target.slice(2) }),
+                  contact,
+                },
                 { onSuccess: () => setOpen(false) },
               )
             }
