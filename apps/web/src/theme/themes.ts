@@ -35,7 +35,8 @@ function makeTheme(t: ThemeTokens): Theme {
       primary: { main: t.primary, dark: t.primaryDark, contrastText: t.primaryText },
       secondary: { main: t.secondary, contrastText: t.secondaryText },
       success: { main: "#34D399" },
-      warning: { main: "#FBBF24" },
+      // dark はライトテーマのテキスト用途（自動導出だと渋いマスタードになるため明るめに指定）
+      warning: { main: "#FBBF24", dark: "#D97706" },
       error: { main: "#FB7185" },
       text: { primary: t.text, secondary: t.muted },
       background: { default: t.bg, paper: t.surface },
