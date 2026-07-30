@@ -8,11 +8,11 @@ import {
   CardContent,
   Chip,
   Stack,
-  TextField,
   Typography,
 } from "@mui/material";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { useCreateInquiry, useInquiries } from "../api/inquiryHooks.js";
+import { CounterTextField } from "../components/CounterTextField.js";
 import { formatDateTime } from "../lib/format.js";
 
 export function InquiriesPage() {
@@ -48,15 +48,17 @@ export function InquiriesPage() {
         <Card variant="outlined">
           <CardContent>
             <Stack spacing={2}>
-              <TextField
+              <CounterTextField
                 label="件名"
                 value={subject}
+                max={200}
                 onChange={(e) => setSubject(e.target.value)}
                 fullWidth
               />
-              <TextField
+              <CounterTextField
                 label="内容"
                 value={body}
+                max={5000}
                 onChange={(e) => setBody(e.target.value)}
                 multiline
                 minRows={4}

@@ -19,6 +19,7 @@ import {
   useUpdateVenue,
   useVenue,
 } from "../api/venueHooks.js";
+import { CounterTextField } from "../components/CounterTextField.js";
 import { VenueAdminsCard } from "../components/VenueAdminsCard.js";
 
 /** 会場の登録/編集（オーナー・管理者）。/venues/new と /venues/:id/edit 兼用 */
@@ -154,35 +155,39 @@ export function VenueFormPage() {
           イベント主催者に使ってもらえる会場を登録します。連絡先はマッチング成立まで公開されません。
         </Typography>
         <Stack spacing={2.5}>
-          <TextField
+          <CounterTextField
             label="会場名"
             value={name}
+            max={100}
             onChange={(e) => setName(e.target.value)}
             required
             fullWidth
           />
-          <TextField
+          <CounterTextField
             label="紹介（任意）"
             value={description}
+            max={4000}
             onChange={(e) => setDescription(e.target.value)}
             multiline
             minRows={3}
             fullWidth
             helperText="Markdown が使えます。雰囲気・アクセス・利用例など"
           />
-          <TextField
+          <CounterTextField
             label="エリア"
             slotProps={{ inputLabel: { shrink: true } }}
             placeholder="例: 東京都渋谷区"
             value={area}
+            max={100}
             onChange={(e) => setArea(e.target.value)}
             required
             fullWidth
             helperText="一覧・詳細に公開される場所情報"
           />
-          <TextField
+          <CounterTextField
             label="詳細住所（任意）"
             value={address}
+            max={300}
             onChange={(e) => setAddress(e.target.value)}
             fullWidth
           />
@@ -202,31 +207,34 @@ export function VenueFormPage() {
             onChange={(e) => setCapacity(e.target.value)}
             sx={{ maxWidth: 200 }}
           />
-          <TextField
+          <CounterTextField
             label="設備（任意）"
             slotProps={{ inputLabel: { shrink: true } }}
             placeholder="Wi-Fi / プロジェクター / ホワイトボード など"
             value={equipment}
+            max={1000}
             onChange={(e) => setEquipment(e.target.value)}
             multiline
             minRows={2}
             fullWidth
           />
-          <TextField
+          <CounterTextField
             label="提供条件（任意）"
             slotProps={{ inputLabel: { shrink: true } }}
             placeholder="平日夜と週末のみ / 飲食可 / 原状回復お願いします など"
             value={terms}
+            max={2000}
             onChange={(e) => setTerms(e.target.value)}
             multiline
             minRows={2}
             fullWidth
           />
-          <TextField
+          <CounterTextField
             label="連絡先（マッチング相手にのみ開示）"
             slotProps={{ inputLabel: { shrink: true } }}
             placeholder="X: @xxx / Discord: xxx / メール等"
             value={contact}
+            max={500}
             onChange={(e) => setContact(e.target.value)}
             fullWidth
           />

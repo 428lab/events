@@ -20,6 +20,7 @@ import {
   useDeleteCriterion,
   useUpdateCriterion,
 } from "../api/scoringHooks.js";
+import { CounterTextField } from "../components/CounterTextField.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
 export function CriteriaAdminPage() {
@@ -121,15 +122,17 @@ export function CriteriaAdminPage() {
             項目を追加
           </Typography>
           <Stack spacing={2}>
-            <TextField
+            <CounterTextField
               label="名称"
               value={name}
+              max={100}
               onChange={(e) => setName(e.target.value)}
               fullWidth
             />
-            <TextField
+            <CounterTextField
               label="説明"
               value={description}
+              max={500}
               onChange={(e) => setDescription(e.target.value)}
               fullWidth
             />

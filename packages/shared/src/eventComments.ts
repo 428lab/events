@@ -14,7 +14,7 @@ export const eventCommentSchema = z.object({
 export type EventComment = z.infer<typeof eventCommentSchema>;
 
 export const createEventCommentInput = z.object({
-  body: z.string().trim().min(1).max(2000),
+  body: z.string().trim().min(1).max(200),
 });
 export type CreateEventCommentInput = z.infer<typeof createEventCommentInput>;
 

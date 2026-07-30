@@ -7,7 +7,6 @@ import {
   Divider,
   IconButton,
   Stack,
-  TextField,
   Typography,
 } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -19,6 +18,7 @@ import {
   useUpdateCommunity,
   useUploadCommunityImage,
 } from "../api/communityHooks.js";
+import { CounterTextField } from "../components/CounterTextField.js";
 import { ImageCropField } from "../components/ImageCropField.js";
 
 export function CommunityEditPage() {
@@ -132,16 +132,18 @@ export function CommunityEditPage() {
       <Typography variant="caption" color="text.secondary">
         コミュニティID（@{c.slug}）は変更できません。
       </Typography>
-      <TextField
+      <CounterTextField
         label="コミュニティ名"
         value={name}
+        max={60}
         onChange={(e) => setName(e.target.value)}
         required
         fullWidth
       />
-      <TextField
+      <CounterTextField
         label="説明"
         value={description}
+        max={2000}
         onChange={(e) => setDescription(e.target.value)}
         multiline
         minRows={3}
@@ -157,18 +159,20 @@ export function CommunityEditPage() {
         <Stack spacing={1}>
           {links.map((l, i) => (
             <Stack key={i} direction="row" spacing={1} alignItems="center">
-              <TextField
+              <CounterTextField
                 size="small"
                 label="ラベル"
                 value={l.label}
+                max={40}
                 onChange={(e) => setLink(i, { label: e.target.value })}
                 sx={{ width: 160 }}
               />
-              <TextField
+              <CounterTextField
                 size="small"
                 label="URL"
                 slotProps={{ inputLabel: { shrink: true } }}
                 value={l.url}
+                max={500}
                 onChange={(e) => setLink(i, { url: e.target.value })}
                 fullWidth
                 placeholder="https://…"

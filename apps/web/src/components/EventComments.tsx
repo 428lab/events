@@ -138,6 +138,7 @@ export function EventComments({
                 onChange={setBody}
                 placeholder="コメントを追加…（Markdown が使えます）"
                 minRows={2}
+                max={200}
               />
               <Stack direction="row" justifyContent="flex-end" sx={{ mt: 1 }}>
                 <Button

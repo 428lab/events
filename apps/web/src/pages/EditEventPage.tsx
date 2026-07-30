@@ -25,6 +25,7 @@ import {
   useUpdateEvent,
 } from "../api/hooks.js";
 import { useMyCommunities } from "../api/communityHooks.js";
+import { CounterTextField } from "../components/CounterTextField.js";
 import { EventImageEditor } from "../components/EventImageEditor.js";
 import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
@@ -144,9 +145,10 @@ export function EditEventPage() {
               公開にすると未ログインでも閲覧でき、開催前なら公開トップの一覧に表示されます。
             </Typography>
           </Box>
-          <TextField
+          <CounterTextField
             label="タイトル"
             value={title}
+            max={200}
             onChange={(e) => setTitle(e.target.value)}
             required
             fullWidth
@@ -156,6 +158,7 @@ export function EditEventPage() {
             value={description}
             onChange={setDescription}
             minRows={3}
+            max={20000}
             helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調**、<img> など）"
           />
           <MarkdownEditor
@@ -163,6 +166,7 @@ export function EditEventPage() {
             value={membersNote}
             onChange={setMembersNote}
             minRows={3}
+            max={20000}
             helperText="Discord の招待リンクや当日の連絡事項など、参加確定者とスタッフにだけ見せたい内容を書けます。Markdown が使えます"
           />
           {myCommunities && myCommunities.length > 0 && (
@@ -219,17 +223,19 @@ export function EditEventPage() {
             ))}
           </TextField>
           {venueType !== "online" && (
-            <TextField
+            <CounterTextField
               label="オフライン会場"
               value={venueOffline}
+              max={500}
               onChange={(e) => setVenueOffline(e.target.value)}
               fullWidth
             />
           )}
           {venueType !== "offline" && (
-            <TextField
+            <CounterTextField
               label="オンライン会場（Discord 招待 URL など）"
               value={venueOnline}
+              max={500}
               onChange={(e) => setVenueOnline(e.target.value)}
               fullWidth
             />

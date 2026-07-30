@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { COMMUNITY_SLUG_RE } from "@eventer/shared";
 import { useCreateCommunity } from "../api/communityHooks.js";
 import { ApiError } from "../api/client.js";
+import { CounterTextField } from "../components/CounterTextField.js";
 
 export function CreateCommunityPage() {
   const navigate = useNavigate();
@@ -64,16 +65,18 @@ export function CreateCommunityPage() {
         }
         fullWidth
       />
-      <TextField
+      <CounterTextField
         label="コミュニティ名"
         value={name}
+        max={60}
         onChange={(e) => setName(e.target.value)}
         required
         fullWidth
       />
-      <TextField
+      <CounterTextField
         label="説明"
         value={description}
+        max={2000}
         onChange={(e) => setDescription(e.target.value)}
         multiline
         minRows={3}

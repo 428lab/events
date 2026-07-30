@@ -30,6 +30,7 @@ import { useMyPage } from "../api/hooks.js";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client.js";
 import type { EventRequest } from "@eventer/shared";
+import { CounterTextField } from "./CounterTextField.js";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "回答待ち",
@@ -121,11 +122,12 @@ export function VenueOfferPanel({
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             承諾すると会場側の連絡先・住所が開示されます。あなたの連絡先も伝えるとやりとりがスムーズです。
           </Typography>
-          <TextField
+          <CounterTextField
             label="あなたの連絡先（任意・相手にのみ開示）"
             slotProps={{ inputLabel: { shrink: true } }}
             placeholder="X: @xxx / Discord: xxx など"
             value={contact}
+            max={500}
             onChange={(e) => setContact(e.target.value)}
             fullWidth
           />
@@ -267,11 +269,12 @@ export function UseVenueButton({ venueId }: { venueId: string }) {
                 </MenuItem>
               ))}
             </TextField>
-            <TextField
+            <CounterTextField
               label="あなたの連絡先（承諾後に会場側へ開示）"
               slotProps={{ inputLabel: { shrink: true } }}
               placeholder="X: @xxx / Discord: xxx など"
               value={contact}
+              max={500}
               onChange={(e) => setContact(e.target.value)}
               fullWidth
             />
