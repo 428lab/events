@@ -80,9 +80,14 @@ eventRoutes.get("/:id", async (c) => {
     : null;
   // 参加者限定の文章：確定メンバー・staff・作成者・アプリ管理者にだけ返す
   // （それ以外はキー自体を含めない）
+  // 確定メンバー/staff/作成者/appAdmin に加え、コミュニティ管理者（staff相当でPATCH可能）
+  // にも見せる。見えないと EditEventPage の保存で members_note を空文字で消してしまう
   const canSeeMembersNote = Boolean(
     (member && (member.status === "confirmed" || member.role === "staff")) ||
-      (user && (event.createdBy === user.id || isAppAdmin(user))),
+      (user && (event.createdBy === user.id || isAppAdmin(user))) ||
+      (user &&
+        event.communityId &&
+        (await communitiesRepo.isManager(event.communityId, user.id))),
   );
   return c.json({
     event,
