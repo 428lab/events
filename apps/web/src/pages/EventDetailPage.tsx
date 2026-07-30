@@ -438,7 +438,10 @@ export function EventDetailPage() {
               variant="h6"
               sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1 }}
             >
-              <LockIcon fontSize="small" color="warning" />
+              <LockIcon
+              fontSize="small"
+              sx={{ color: (t) => (t.palette.mode === "light" ? t.palette.warning.dark : t.palette.warning.main) }}
+            />
               参加者限定のお知らせ
             </Typography>
             <Typography
