@@ -283,7 +283,9 @@ export function EventDetailPage() {
           fontWeight={700}
           sx={{
             mt: 1,
-            color: event.scheduling ? "warning.main" : "primary.main",
+            color: event.scheduling
+              ? (t) => (t.palette.mode === "light" ? t.palette.warning.dark : t.palette.warning.main)
+              : "primary.main",
             display: "flex",
             alignItems: "center",
             gap: 0.75,
