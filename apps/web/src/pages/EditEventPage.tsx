@@ -26,6 +26,7 @@ import {
 } from "../api/hooks.js";
 import { useMyCommunities } from "../api/communityHooks.js";
 import { EventImageEditor } from "../components/EventImageEditor.js";
+import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
 import { AwardsEditor } from "../components/AwardsEditor.js";
 import { venueLabel } from "../lib/format.js";
@@ -49,6 +50,7 @@ export function EditEventPage() {
   const [status, setStatus] = useState<"draft" | "published">("draft");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [membersNote, setMembersNote] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [venueType, setVenueType] = useState<VenueType>("offline");
@@ -69,6 +71,7 @@ export function EditEventPage() {
       setStatus(e.status === "published" ? "published" : "draft");
       setTitle(e.title);
       setDescription(e.description);
+      setMembersNote(data.membersNote ?? "");
       setStartsAt(toLocalInput(e.startsAt));
       setEndsAt(toLocalInput(e.endsAt));
       setVenueType(e.venueType);
@@ -96,6 +99,7 @@ export function EditEventPage() {
         status,
         title,
         description,
+        membersNote,
         // 日程調整中は日時未確定（0のまま）。入力があるときだけ送る
         ...(startsAt && endsAt
           ? {
@@ -147,14 +151,19 @@ export function EditEventPage() {
             required
             fullWidth
           />
-          <TextField
+          <MarkdownEditor
             label="内容"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            multiline
+            onChange={setDescription}
             minRows={3}
-            fullWidth
-            helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調** など）"
+            helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調**、<img> など）"
+          />
+          <MarkdownEditor
+            label="参加者限定の文章（参加確定した人にだけ表示）"
+            value={membersNote}
+            onChange={setMembersNote}
+            minRows={3}
+            helperText="Discord の招待リンクや当日の連絡事項など、参加確定者とスタッフにだけ見せたい内容を書けます。Markdown が使えます"
           />
           {myCommunities && myCommunities.length > 0 && (
             <TextField

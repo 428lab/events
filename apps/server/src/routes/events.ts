@@ -78,8 +78,17 @@ eventRoutes.get("/:id", async (c) => {
   const community = event.communityId
     ? await communitiesRepo.findById(event.communityId)
     : null;
+  // 参加者限定の文章：確定メンバー・staff・作成者・アプリ管理者にだけ返す
+  // （それ以外はキー自体を含めない）
+  const canSeeMembersNote = Boolean(
+    (member && (member.status === "confirmed" || member.role === "staff")) ||
+      (user && (event.createdBy === user.id || isAppAdmin(user))),
+  );
   return c.json({
     event,
+    ...(canSeeMembersNote
+      ? { membersNote: await eventsRepo.membersNoteFor(event.id) }
+      : {}),
     myRole: member?.role ?? null,
     community: community
       ? {

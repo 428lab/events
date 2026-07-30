@@ -26,6 +26,10 @@ import {
   getPhotoComments,
 } from "./routes/eventPhotos.js";
 import {
+  eventCommentRoutes,
+  getEventComments,
+} from "./routes/eventComments.js";
+import {
   analyticsRoutes,
   adminStatsRoutes,
   recordEventView,
@@ -93,6 +97,8 @@ api.get("/events/:id/scores/results", getEventScoreResults);
 api.get("/events/:id/photos", getEventPhotos);
 api.get("/events/:id/photos/:photoId/image", getEventPhotoImage);
 api.get("/events/:id/photos/:photoId/comments", getPhotoComments);
+// 公開: イベントコメント一覧（下書きはメンバーのみ。eventRoutes より先に登録）
+api.get("/events/:id/comments", getEventComments);
 // 公開: アクセス計測ビーコン（eventRoutes より先に登録）
 api.post("/events/:id/view", recordEventView);
 api.route("/events", eventRoutes);
@@ -100,6 +106,7 @@ api.route("/events", scoringRoutes);
 api.route("/events", awardRoutes);
 api.route("/events", liveControlRoutes);
 api.route("/events", eventPhotoRoutes);
+api.route("/events", eventCommentRoutes);
 api.route("/events", analyticsRoutes);
 api.route("/me", meRoutes);
 // フォロー（要認証）

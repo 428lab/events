@@ -1,6 +1,33 @@
 import { Box } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+
+/**
+ * 生HTMLのサニタイズ方針（XSS対策の要）:
+ * - defaultSchema（GitHub相当）をベースに、許可タグは Markdown 由来タグ＋ a / img のみ。
+ *   script / iframe / style / div / span、on* イベント属性などはすべて除去される。
+ * - a: href のみ許可（プロトコルは defaultSchema 準拠 = http/https/mailto等・相対URL可）。
+ *   target/rel は下の components で描画側が強制する（_blank + noopener noreferrer）。
+ * - img: src（http/https のみ）・alt・width・height を許可。
+ */
+const sanitizeSchema: typeof defaultSchema = {
+  ...defaultSchema,
+  // div / span は Markdown 由来では使わないため許可しない（生HTMLの持ち込みを最小化）
+  tagNames: (defaultSchema.tagNames ?? []).filter(
+    (t) => t !== "div" && t !== "span",
+  ),
+  attributes: {
+    ...defaultSchema.attributes,
+    a: ["href"],
+    img: ["src", "alt", "width", "height"],
+  },
+  protocols: {
+    ...defaultSchema.protocols,
+    src: ["http", "https"],
+  },
+};
 
 /** パス部分の拡張子で画像URLか判定（?rlkey=... などのクエリは無視）。表示には元URL（クエリ込み）を使う。 */
 function isImageUrl(href?: string): boolean {
@@ -9,7 +36,8 @@ function isImageUrl(href?: string): boolean {
   return /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(path);
 }
 
-/** イベント本文などを安全に Markdown 描画（生HTMLは無効＝XSS対策）。GFM対応。 */
+/** イベント本文などを安全に Markdown 描画。GFM対応。
+ * 生HTMLは rehype-raw で解釈しつつ rehype-sanitize で a / img 以外を除去（XSS対策）。 */
 export function Markdown({ children }: { children: string }) {
   return (
     <Box
@@ -65,6 +93,7 @@ export function Markdown({ children }: { children: string }) {
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
         components={{
           a({ node: _node, href, children, ...props }) {
             // 裸の画像URL（クエリ付き含む）は画像として表示。タップで原寸を別タブ

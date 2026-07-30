@@ -239,6 +239,8 @@ export function useEvent(id: string) {
     queryFn: () =>
       api.get<{
         event: Event;
+        /** 参加者限定の文章。確定メンバー・staff・作成者・管理者にのみ返る */
+        membersNote?: string;
         myRole: EventRole | null;
         community: EventCommunityRef | null;
         /** 生まれ元のたまご（あったらいいな）。通常は0〜1件（旧レスポンスでは欠落しうる） */

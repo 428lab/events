@@ -20,6 +20,7 @@ import { useCreateEvent } from "../api/hooks.js";
 import { useMyCommunities } from "../api/communityHooks.js";
 import { useEventRequest, useLinkRequestEvent } from "../api/requestHooks.js";
 import { ImageCropField } from "../components/ImageCropField.js";
+import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { EventImageStudio } from "../components/EventImageStudio.js";
 import { formatDateRange, venueLabel } from "../lib/format.js";
 
@@ -147,14 +148,12 @@ export function CreateEventPage() {
             required
             fullWidth
           />
-          <TextField
+          <MarkdownEditor
             label="内容"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            multiline
+            onChange={setDescription}
             minRows={3}
-            fullWidth
-            helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調** など）"
+            helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調**、<img> など）"
           />
           {myCommunities && myCommunities.length > 0 && (
             <TextField
