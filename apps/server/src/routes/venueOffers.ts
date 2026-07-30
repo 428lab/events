@@ -125,6 +125,7 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
     input.venueId,
     input.eventId ?? null,
     input.requestId ?? null,
+    user.id,
   );
   if (declinedAt && Date.now() - declinedAt < 7 * 24 * 60 * 60 * 1000) {
     return c.json({ error: "declined_recently" }, 429);

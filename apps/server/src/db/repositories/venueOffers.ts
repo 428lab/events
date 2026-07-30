@@ -66,17 +66,20 @@ export const venueOffersRepo = {
     return row ? toOffer(row) : null;
   },
 
-  /** 同一ペアの直近 declined の respond 時刻（クールダウン判定用） */
+  /** 同一ペア×同一オファー者の直近 declined 時刻（クールダウン判定用）。
+   * 辞退した側が逆方向に申し込むケースはブロックしない */
   async lastDeclinedAt(
     venueId: string,
     eventId: string | null,
     requestId: string | null,
+    createdBy: string,
   ): Promise<number | null> {
-    const row = await one<{ t: number }>(
+    const row = await one<{ t: number | null }>(
       `SELECT MAX(responded_at) AS t FROM venue_offer
-        WHERE venue_id = ? AND status = 'declined'
+        WHERE venue_id = ? AND status = 'declined' AND created_by = ?
           AND ${eventId ? "event_id = ?" : "request_id = ?"}`,
       venueId,
+      createdBy,
       (eventId ?? requestId)!,
     );
     return row?.t ?? null;
