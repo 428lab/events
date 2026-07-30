@@ -27,6 +27,18 @@ export interface EventRequestDetail {
   events: Event[];
   myReactions: EventRequestReaction[];
   isMine: boolean;
+  /** 匿名設定オンなら null（人数のみ） */
+  reactors: {
+    attend: ReactorUser[];
+    host: ReactorUser[];
+  } | null;
+}
+
+export interface ReactorUser {
+  id: string;
+  username: string;
+  globalName: string | null;
+  avatarUrl: string | null;
 }
 
 /** 全体のたまご一覧（未ログイン可）。q=キーワード、sort=新着/人気 */
@@ -89,6 +101,21 @@ export function useReactEventRequest(id: string) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["eventRequest", id] });
       void qc.invalidateQueries({ queryKey: ["eventRequests"] });
+    },
+  });
+}
+
+/** 賛同者の匿名/表示切り替え（投稿者） */
+export function useSetReactorsAnonymous(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) =>
+      api.post<{ request: EventRequest }>(
+        `/event-requests/${id}/reactors-anonymous`,
+        { on },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["eventRequest", id] });
     },
   });
 }

@@ -95,6 +95,13 @@ publicEventRequestRoutes.get("/:id", async (c) => {
       ? await eventRequestsRepo.myReactions(req.id, user.id)
       : [],
     isMine: user ? req.createdBy === user.id : false,
+    // 賛同者（匿名設定オフのときのみ。オンなら人数だけ）
+    reactors: req.reactorsAnonymous
+      ? null
+      : {
+          attend: await eventRequestsRepo.listReactors(req.id, "attend"),
+          host: await eventRequestsRepo.listReactors(req.id, "host"),
+        },
   });
 });
 
@@ -183,6 +190,23 @@ eventRequestRoutes.post(
     }
     const { status } = valid<{ status: "open" | "closed" }>(c, "json");
     await eventRequestsRepo.setStatus(req.id, status);
+    return c.json({ request: await eventRequestsRepo.findById(req.id) });
+  },
+);
+
+/** 賛同者の匿名/表示切り替え（投稿者かアプリ管理者） */
+eventRequestRoutes.post(
+  "/:id/reactors-anonymous",
+  zValidator("json", z.object({ on: z.boolean() })),
+  async (c) => {
+    const req = await eventRequestsRepo.findById(c.req.param("id"));
+    if (!req) return c.json({ error: "not_found" }, 404);
+    const user = c.get("user");
+    if (req.createdBy !== user.id && !isAppAdmin(user)) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+    const { on } = valid<{ on: boolean }>(c, "json");
+    await eventRequestsRepo.setReactorsAnonymous(req.id, on);
     return c.json({ request: await eventRequestsRepo.findById(req.id) });
   },
 );

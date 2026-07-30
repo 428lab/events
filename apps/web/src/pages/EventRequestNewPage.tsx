@@ -38,6 +38,7 @@ export function EventRequestNewPage() {
   );
   const [membersOnly, setMembersOnly] = useState(false);
   const [venueWanted, setVenueWanted] = useState(false);
+  const [reactorsAnonymous, setReactorsAnonymous] = useState(false);
 
   const submit = () => {
     create.mutate(
@@ -48,6 +49,7 @@ export function EventRequestNewPage() {
         communityId: communityId || null,
         membersOnly: communityId ? membersOnly : false,
         venueWanted,
+        reactorsAnonymous,
       },
       {
         onSuccess: ({ request }) => navigate(`/requests/${request.id}`),
@@ -142,6 +144,15 @@ export function EventRequestNewPage() {
                 会場も探しています（会場提供者からのオファーを受け付ける）
               </Box>
             }
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={reactorsAnonymous}
+                onChange={(e) => setReactorsAnonymous(e.target.checked)}
+              />
+            }
+            label="賛同者を匿名にする（人数のみ表示）"
           />
           {communityId && (
             <FormControlLabel
