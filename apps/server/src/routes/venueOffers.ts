@@ -36,18 +36,25 @@ async function isOrganizerOfEvent(
   return member?.role === "staff";
 }
 
-/** オファー対象（イベント/たまご）の主催者側ユーザーID（通知先） */
-async function organizerUserId(offer: {
+/** オファー対象（イベント/たまご）の主催者側ユーザーID一覧（通知先）。
+ * イベントは作成者＋staff全員（respond できる人と通知先を一致させる） */
+async function organizerUserIds(offer: {
   eventId: string | null;
   requestId: string | null;
-}): Promise<string | null> {
+}): Promise<string[]> {
   if (offer.eventId) {
-    return (await eventsRepo.findById(offer.eventId))?.createdBy ?? null;
+    const event = await eventsRepo.findById(offer.eventId);
+    if (!event) return [];
+    const staff = (await eventMembersRepo.listWithUsers(offer.eventId))
+      .filter((m) => m.role === "staff")
+      .map((m) => m.user.id);
+    return [...new Set([event.createdBy, ...staff])];
   }
   if (offer.requestId) {
-    return (await eventRequestsRepo.findById(offer.requestId))?.createdBy ?? null;
+    const req = await eventRequestsRepo.findById(offer.requestId);
+    return req ? [req.createdBy] : [];
   }
-  return null;
+  return [];
 }
 
 /** オファー作成（双方向）。
@@ -83,7 +90,8 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
   const isVenueOwner = await isVenueManager(venue.id, user.id);
   const isOrganizer = input.eventId
     ? await isOrganizerOfEvent(input.eventId, user)
-    : (await eventRequestsRepo.findById(input.requestId!))?.createdBy === user.id;
+    : (await eventRequestsRepo.findById(input.requestId!))?.createdBy ===
+        user.id || isAppAdmin(user);
 
   if (isVenueOwner && isOrganizer) {
     return c.json({ error: "self_match" }, 400);
@@ -112,6 +120,16 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
   ) {
     return c.json({ error: "already_offered" }, 409);
   }
+  // 辞退直後の再オファーはスパムになるためクールダウン（7日）
+  const declinedAt = await venueOffersRepo.lastDeclinedAt(
+    input.venueId,
+    input.eventId ?? null,
+    input.requestId ?? null,
+    user.id,
+  );
+  if (declinedAt && Date.now() - declinedAt < 7 * 24 * 60 * 60 * 1000) {
+    return c.json({ error: "declined_recently" }, 429);
+  }
 
   const offer = await venueOffersRepo.create({
     venueId: input.venueId,
@@ -127,16 +145,16 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
     ? `/events/${input.eventId}`
     : `/requests/${input.requestId}`;
   if (direction === "venue_to_event") {
-    const to = await organizerUserId(offer);
-    if (to && to !== user.id) {
-      await notificationsRepo.create(
-        to,
-        "venue_offer",
-        "会場の提供オファーが届きました🏟️",
-        `「${targetTitle}」に会場「${venue.name}」の提供オファー`,
-        link,
-      );
-    }
+    const targets = (await organizerUserIds(offer)).filter(
+      (id) => id !== user.id,
+    );
+    await notificationsRepo.createForMany(
+      targets,
+      "venue_offer",
+      "会場の提供オファーが届きました🏟️",
+      `「${targetTitle}」に会場「${venue.name}」の提供オファー`,
+      link,
+    );
   } else {
     // 運営（オーナー＋管理者）全員へ通知
     const managers = [
@@ -169,7 +187,8 @@ venueOfferRoutes.post(
       offer.direction === "venue_to_event"
         ? offer.eventId
           ? await isOrganizerOfEvent(offer.eventId, user)
-          : (await eventRequestsRepo.findById(offer.requestId!))?.createdBy === user.id
+          : (await eventRequestsRepo.findById(offer.requestId!))?.createdBy ===
+              user.id || isAppAdmin(user)
         : (await isVenueManager(offer.venueId, user.id)) || isAppAdmin(user);
     if (!isReceiver) return c.json({ error: "forbidden" }, 403);
 
@@ -205,12 +224,17 @@ venueOfferRoutes.post(
 
 /** オファーの充実化（相手方の情報＋成立時のみ連絡先） */
 async function enrich(offer: VenueOffer, forVenueSide: boolean) {
-  const venue = await venuesRepo.findById(offer.venueId);
+  const accepted = offer.status === "accepted";
+  // 成立後の主催者側にのみ連絡先・非公開住所を含む full ビューを引く（それ以外は公開ビュー1回）
+  const revealVenue = !forVenueSide && accepted;
+  const venueFull = revealVenue
+    ? await venuesRepo.findByIdFull(offer.venueId)
+    : null;
+  const venue = venueFull ?? (await venuesRepo.findById(offer.venueId));
   const event = offer.eventId ? await eventsRepo.findById(offer.eventId) : null;
   const request = offer.requestId
     ? await eventRequestsRepo.findById(offer.requestId)
     : null;
-  const accepted = offer.status === "accepted";
   return {
     ...offer,
     // 主催者側の連絡先は成立後・会場側にのみ
@@ -219,14 +243,8 @@ async function enrich(offer: VenueOffer, forVenueSide: boolean) {
     event: event ? { id: event.id, title: event.title } : null,
     request: request ? { id: request.id, title: request.title } : null,
     // 会場の連絡先・住所は成立後・主催者側にのみ
-    venueContact:
-      !forVenueSide && accepted
-        ? ((await venuesRepo.findByIdFull(offer.venueId))?.contact ?? "")
-        : "",
-    venueAddress:
-      !forVenueSide && accepted
-        ? ((await venuesRepo.findByIdFull(offer.venueId))?.address ?? "")
-        : "",
+    venueContact: venueFull?.contact ?? "",
+    venueAddress: venueFull?.address ?? "",
   };
 }
 
