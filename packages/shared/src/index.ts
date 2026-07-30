@@ -11,6 +11,7 @@ export * from "./decks.js";
 export * from "./scheduling.js";
 export * from "./liveSets.js";
 export * from "./photos.js";
+export * from "./eventComments.js";
 export * from "./analytics.js";
 export * from "./eventRequests.js";
 export * from "./notificationPrefs.js";

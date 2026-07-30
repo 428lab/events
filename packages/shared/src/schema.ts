@@ -100,6 +100,8 @@ export const updateEventInput = z.object({
   scheduleVisible: z.boolean().optional(),
   photosPublic: z.boolean().optional(),
   attendanceCheck: z.boolean().optional(),
+  /** 参加者限定の文章（確定メンバー＋staffにのみ表示。eventSchema には含めない） */
+  membersNote: z.string().max(20000).optional(),
 });
 export type UpdateEventInput = z.infer<typeof updateEventInput>;
 

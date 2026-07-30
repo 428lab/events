@@ -28,6 +28,7 @@ import EggIcon from "@mui/icons-material/Egg";
 import LiveTvIcon from "@mui/icons-material/LiveTv";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import LockIcon from "@mui/icons-material/Lock";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { IconButton, Menu, MenuItem } from "@mui/material";
 import { Link as RouterLink, useParams } from "react-router-dom";
@@ -53,6 +54,7 @@ import {
 } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
 import { EventPhotos } from "../components/EventPhotos.js";
+import { EventComments } from "../components/EventComments.js";
 import { useRecordView } from "../api/analyticsHooks.js";
 import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
@@ -146,12 +148,16 @@ export function EventDetailPage() {
     );
   }
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
-  const { event, myRole } = data;
+  const { event, myRole, membersNote } = data;
   const community = data.community;
   const fromRequests = data.fromRequests ?? [];
 
   const myEntry = entries?.find((e) => me && e.memberUserIds.includes(me.id));
   const myMembership = members?.find((m) => me && m.user.id === me.id);
+  // コメント投稿は参加確定者のみ（メンバー一覧の読込前は myRole の有無で仮判定）
+  const canComment = myMembership
+    ? myMembership.status === "confirmed"
+    : Boolean(myRole);
   const hasSlots = Boolean(slots && slots.length > 0);
 
   const awardItems = awards
@@ -416,6 +422,29 @@ export function EventDetailPage() {
         </Card>
       )}
 
+      {/* 参加者限定のお知らせ（サーバーが閲覧可の人にだけ返す） */}
+      {membersNote && (
+        <Card variant="outlined" sx={{ borderColor: "warning.main" }}>
+          <CardContent>
+            <Typography
+              variant="h6"
+              sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1 }}
+            >
+              <LockIcon fontSize="small" color="warning" />
+              参加者限定のお知らせ
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mb: 1 }}
+            >
+              この内容は参加確定した人とスタッフにだけ表示されています。
+            </Typography>
+            <Markdown>{membersNote}</Markdown>
+          </CardContent>
+        </Card>
+      )}
+
       <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
         {/* 参加状態のバッジは終了後も表示（参加履歴として残す） */}
         {isMember && myMembership && myRole === "participant" && (
@@ -573,6 +602,9 @@ export function EventDetailPage() {
         photosPublic={event.photosPublic}
         published={event.status === "published"}
       />
+
+      {/* コメント（閲覧はイベントが見える人全員、投稿は参加確定者のみ） */}
+      <EventComments eventId={id} myRole={myRole} canComment={canComment} />
 
       {contest && myEntry && <SubmissionEditor eventId={id} entry={myEntry} />}
 

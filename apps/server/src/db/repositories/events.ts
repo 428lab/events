@@ -30,6 +30,8 @@ interface EventRow {
   attendance_check: number;
   slug: string | null;
   venue_wanted: number;
+  /** 参加者限定の文章。toEvent には含めない（公開APIに漏らさない） */
+  members_note: string;
 }
 
 /** 参加者としてカウントする条件。出席チェックモードでは
@@ -302,17 +304,29 @@ export const eventsRepo = {
     return (await this.findById(id))!;
   },
 
+  /** 参加者限定の文章のみ取得（eventSchema には含めないため単独メソッド） */
+  async membersNoteFor(id: string): Promise<string> {
+    const row = await one<{ members_note: string }>(
+      "SELECT members_note FROM event WHERE id = ?",
+      id,
+    );
+    return row?.members_note ?? "";
+  },
+
   async update(id: string, input: UpdateEventInput): Promise<Event | null> {
     const current = await this.findById(id);
     if (!current) return null;
     const next = { ...current, ...input };
+    // membersNote は Event(eventSchema) に含まれないため個別にマージ
+    const membersNote = input.membersNote ?? (await this.membersNoteFor(id));
     await run(
       `UPDATE event SET
          title = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
-         photos_public = ?, attendance_check = ?, venue_wanted = ?
+         photos_public = ?, attendance_check = ?, venue_wanted = ?,
+         members_note = ?
        WHERE id = ?`,
       next.title,
       next.description,
@@ -330,6 +344,7 @@ export const eventsRepo = {
       next.photosPublic ? 1 : 0,
       next.attendanceCheck ? 1 : 0,
       next.venueWanted ? 1 : 0,
+      membersNote,
       id,
     );
     return this.findById(id);

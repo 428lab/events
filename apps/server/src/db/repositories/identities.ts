@@ -86,6 +86,9 @@ export const identitiesRepo = {
       { sql: "UPDATE event_request SET created_by = ? WHERE created_by = ?", args: [toUserId, fromUserId] },
       { sql: "UPDATE venue SET owner_id = ? WHERE owner_id = ?", args: [toUserId, fromUserId] },
       { sql: "UPDATE venue_photo SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
+      { sql: "UPDATE event_comment SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
+      { sql: "UPDATE event_photo SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
+      { sql: "UPDATE event_photo_comment SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
       { sql: "UPDATE OR IGNORE venue_admin SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
       // 統合の結果「自分がオーナーの会場の管理者」になった行を掃除
       { sql: "DELETE FROM venue_admin WHERE user_id = ? AND venue_id IN (SELECT id FROM venue WHERE owner_id = ?)", args: [toUserId, toUserId] },
