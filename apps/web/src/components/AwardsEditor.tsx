@@ -24,6 +24,34 @@ import {
   useUpdateRank,
   useUpdateSpecial,
 } from "../api/awardHooks.js";
+import { CounterTextField } from "./CounterTextField.js";
+
+/** onBlur 保存の賞編集フィールド（ローカル編集状態＋文字数カウンタ） */
+function BlurCounterField({
+  label,
+  initial,
+  max,
+  onSave,
+}: {
+  label: string;
+  initial: string;
+  max: number;
+  onSave: (value: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  // 保存や再取得で外側の値が変わったら同期
+  useEffect(() => setValue(initial), [initial]);
+  return (
+    <CounterTextField
+      label={label}
+      value={value}
+      max={max}
+      size="small"
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => onSave(value)}
+    />
+  );
+}
 
 export function AwardsEditor({ eventId }: { eventId: string }) {
   const { data: awards } = useAwards(eventId);
@@ -100,28 +128,28 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                   sx={{ cursor: "grab", color: "text.disabled" }}
                 />
                 <Stack spacing={3} sx={{ flex: 1 }}>
-                  <TextField
+                  <BlurCounterField
                     label="賞の名前"
-                    defaultValue={r.name}
-                    size="small"
-                    onBlur={(e) =>
-                      e.target.value !== r.name &&
-                      e.target.value &&
+                    initial={r.name}
+                    max={100}
+                    onSave={(v) =>
+                      v !== r.name &&
+                      v &&
                       updateRank.mutate({
                         rankId: r.id,
-                        input: { name: e.target.value },
+                        input: { name: v },
                       })
                     }
                   />
-                  <TextField
+                  <BlurCounterField
                     label="賞の内容（任意）"
-                    defaultValue={r.content ?? ""}
-                    size="small"
-                    onBlur={(e) =>
-                      e.target.value !== (r.content ?? "") &&
+                    initial={r.content ?? ""}
+                    max={500}
+                    onSave={(v) =>
+                      v !== (r.content ?? "") &&
                       updateRank.mutate({
                         rankId: r.id,
-                        input: { content: e.target.value || null },
+                        input: { content: v || null },
                       })
                     }
                   />
@@ -154,10 +182,11 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
         ))}
       </Stack>
       <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
-        <TextField
+        <CounterTextField
           size="small"
           label="賞の名前（例: 最優秀賞）"
           value={rankName}
+          max={100}
           onChange={(e) => setRankName(e.target.value)}
           sx={{ flex: 1 }}
         />
@@ -181,28 +210,28 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
             <CardContent>
               <Stack direction="row" spacing={1.5} alignItems="center">
                 <Stack spacing={3} sx={{ flex: 1 }}>
-                  <TextField
+                  <BlurCounterField
                     label="特別枠の名前"
-                    defaultValue={s.name}
-                    size="small"
-                    onBlur={(e) =>
-                      e.target.value &&
-                      e.target.value !== s.name &&
+                    initial={s.name}
+                    max={100}
+                    onSave={(v) =>
+                      v &&
+                      v !== s.name &&
                       updateSpecial.mutate({
                         specialId: s.id,
-                        input: { name: e.target.value },
+                        input: { name: v },
                       })
                     }
                   />
-                  <TextField
+                  <BlurCounterField
                     label="賞品・賞の内容（任意）"
-                    defaultValue={s.content ?? ""}
-                    size="small"
-                    onBlur={(e) =>
-                      e.target.value !== (s.content ?? "") &&
+                    initial={s.content ?? ""}
+                    max={500}
+                    onSave={(v) =>
+                      v !== (s.content ?? "") &&
                       updateSpecial.mutate({
                         specialId: s.id,
-                        input: { content: e.target.value || null },
+                        input: { content: v || null },
                       })
                     }
                   />
@@ -235,10 +264,11 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
         ))}
       </Stack>
       <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
-        <TextField
+        <CounterTextField
           size="small"
           label="特別枠の名前（例: オーディエンス賞）"
           value={specialName}
+          max={100}
           onChange={(e) => setSpecialName(e.target.value)}
           sx={{ flex: 1 }}
         />

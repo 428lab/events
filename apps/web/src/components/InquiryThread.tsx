@@ -5,11 +5,11 @@ import {
   Chip,
   Link,
   Stack,
-  TextField,
   Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import type { InquiryDetail } from "@eventer/shared";
+import { CounterTextField } from "./CounterTextField.js";
 import { formatDateTime } from "../lib/format.js";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -108,13 +108,14 @@ export function InquiryThread({
       </Stack>
 
       <Stack direction="row" spacing={1} alignItems="flex-end">
-        <TextField
+        <CounterTextField
           fullWidth
           multiline
           minRows={2}
           size="small"
           placeholder="返信を入力…"
           value={body}
+          max={5000}
           onChange={(e) => setBody(e.target.value)}
         />
         <Button variant="contained" disabled={sending || !body.trim()} onClick={send}>

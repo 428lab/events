@@ -19,6 +19,7 @@ import { EVENT_IMAGE, VENUE_TYPES, type VenueType } from "@eventer/shared";
 import { useCreateEvent } from "../api/hooks.js";
 import { useMyCommunities } from "../api/communityHooks.js";
 import { useEventRequest, useLinkRequestEvent } from "../api/requestHooks.js";
+import { CounterTextField } from "../components/CounterTextField.js";
 import { ImageCropField } from "../components/ImageCropField.js";
 import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { EventImageStudio } from "../components/EventImageStudio.js";
@@ -141,9 +142,10 @@ export function CreateEventPage() {
           イベント作成
         </Typography>
         <Stack spacing={2.5} sx={{ mt: 2 }}>
-          <TextField
+          <CounterTextField
             label="タイトル"
             value={title}
+            max={200}
             onChange={(e) => setTitle(e.target.value)}
             required
             fullWidth
@@ -153,6 +155,7 @@ export function CreateEventPage() {
             value={description}
             onChange={setDescription}
             minRows={3}
+            max={20000}
             helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調**、<img> など）"
           />
           {myCommunities && myCommunities.length > 0 && (
@@ -227,17 +230,19 @@ export function CreateEventPage() {
             ))}
           </TextField>
           {venueType !== "online" && (
-            <TextField
+            <CounterTextField
               label="オフライン会場"
               value={venueOffline}
+              max={500}
               onChange={(e) => setVenueOffline(e.target.value)}
               fullWidth
             />
           )}
           {venueType !== "offline" && (
-            <TextField
+            <CounterTextField
               label="オンライン会場（Discord 招待 URL など）"
               value={venueOnline}
+              max={500}
               onChange={(e) => setVenueOnline(e.target.value)}
               fullWidth
             />

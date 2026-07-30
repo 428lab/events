@@ -6,10 +6,10 @@ import {
   CardContent,
   Link,
   Stack,
-  TextField,
   Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
+import { CounterTextField } from "./CounterTextField.js";
 import { useMe } from "../api/hooks.js";
 import { useUpdateUsername } from "../api/userHooks.js";
 import { ApiError } from "../api/client.js";
@@ -69,10 +69,11 @@ export function UsernameCard() {
           </Link>
         </Typography>
         <Stack direction="row" spacing={1} alignItems="flex-start">
-          <TextField
+          <CounterTextField
             label="ユーザー名（ハンドル）"
             size="small"
             value={name}
+            max={32}
             onChange={(e) => {
               setName(e.target.value);
               setMsg(null);

@@ -21,6 +21,7 @@ import {
   useUpdateSlot,
 } from "../api/hooks.js";
 import { toDateTimeLocal, fromDateTimeLocal } from "../lib/format.js";
+import { CounterTextField } from "./CounterTextField.js";
 
 const typeLabel: Record<SelectionType, string> = {
   first_come: "先着順",
@@ -178,9 +179,10 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
             枠を追加
           </Typography>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems="center">
-            <TextField
+            <CounterTextField
               label="枠名"
               value={name}
+              max={100}
               onChange={(e) => setName(e.target.value)}
               sx={{ flex: 1 }}
               size="small"

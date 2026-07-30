@@ -11,7 +11,6 @@ import {
   IconButton,
   Stack,
   Switch,
-  TextField,
   Typography,
 } from "@mui/material";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
@@ -32,6 +31,7 @@ import {
   usePhotoComments,
   useUploadEventPhoto,
 } from "../api/eventPhotoHooks.js";
+import { CounterTextField } from "./CounterTextField.js";
 import { encodeImageForUpload } from "../lib/encodeImage.js";
 import { formatDateTime } from "../lib/format.js";
 
@@ -545,13 +545,14 @@ function PhotoLightbox({
                 spacing={1}
                 sx={{ p: 1.5 }}
               >
-                <TextField
+                <CounterTextField
                   size="small"
                   fullWidth
                   multiline
                   maxRows={4}
                   placeholder="コメントを追加…"
                   value={body}
+                  max={200}
                   onChange={(e) => setBody(e.target.value)}
                   onKeyDown={(e) => {
                     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();

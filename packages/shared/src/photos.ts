@@ -28,7 +28,7 @@ export const photoCommentSchema = z.object({
 export type PhotoComment = z.infer<typeof photoCommentSchema>;
 
 export const createPhotoCommentInput = z.object({
-  body: z.string().trim().min(1).max(1000),
+  body: z.string().trim().min(1).max(200),
 });
 export type CreatePhotoCommentInput = z.infer<typeof createPhotoCommentInput>;
 

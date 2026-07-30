@@ -10,6 +10,7 @@ import {
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import { Markdown } from "./Markdown.js";
+import { CounterTextField } from "./CounterTextField.js";
 
 /** Markdown 入力欄（編集/プレビュー切替つき）。イベント説明・参加者限定文章・コメントで使用 */
 export function MarkdownEditor({
@@ -19,6 +20,7 @@ export function MarkdownEditor({
   placeholder,
   minRows = 3,
   helperText,
+  max,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -26,6 +28,8 @@ export function MarkdownEditor({
   placeholder?: string;
   minRows?: number;
   helperText?: string;
+  /** 文字数上限（サーバー側 zod の max と同値）。指定時のみカウンタ表示 */
+  max?: number;
 }) {
   const [mode, setMode] = useState<"edit" | "preview">("edit");
 
@@ -59,15 +63,28 @@ export function MarkdownEditor({
         </ToggleButtonGroup>
       </Stack>
       {mode === "edit" ? (
-        <TextField
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          multiline
-          minRows={minRows}
-          fullWidth
-          helperText={helperText}
-        />
+        max != null ? (
+          <CounterTextField
+            max={max}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            multiline
+            minRows={minRows}
+            fullWidth
+            helperText={helperText}
+          />
+        ) : (
+          <TextField
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            multiline
+            minRows={minRows}
+            fullWidth
+            helperText={helperText}
+          />
+        )
       ) : (
         <Box
           sx={{
