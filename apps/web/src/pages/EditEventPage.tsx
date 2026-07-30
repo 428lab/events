@@ -50,6 +50,7 @@ export function EditEventPage() {
 
   const [status, setStatus] = useState<"draft" | "published">("draft");
   const [title, setTitle] = useState("");
+  const [subtitle, setSubtitle] = useState("");
   const [description, setDescription] = useState("");
   const [membersNote, setMembersNote] = useState("");
   const [startsAt, setStartsAt] = useState("");
@@ -71,6 +72,7 @@ export function EditEventPage() {
       const e = data.event;
       setStatus(e.status === "published" ? "published" : "draft");
       setTitle(e.title);
+      setSubtitle(e.subtitle);
       setDescription(e.description);
       setMembersNote(data.membersNote ?? "");
       setStartsAt(toLocalInput(e.startsAt));
@@ -99,6 +101,7 @@ export function EditEventPage() {
       {
         status,
         title,
+        subtitle,
         description,
         membersNote,
         // 日程調整中は日時未確定（0のまま）。入力があるときだけ送る
@@ -151,6 +154,13 @@ export function EditEventPage() {
             max={200}
             onChange={(e) => setTitle(e.target.value)}
             required
+            fullWidth
+          />
+          <CounterTextField
+            label="サブタイトル（任意）"
+            value={subtitle}
+            max={200}
+            onChange={(e) => setSubtitle(e.target.value)}
             fullWidth
           />
           <MarkdownEditor

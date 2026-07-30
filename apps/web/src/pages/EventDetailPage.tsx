@@ -273,6 +273,11 @@ export function EventDetailPage() {
             <ShareButton slug={event.slug} title={event.title} />
           )}
         </Stack>
+        {event.subtitle && (
+          <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 0.5 }}>
+            {event.subtitle}
+          </Typography>
+        )}
         <Typography
           variant="h6"
           fontWeight={700}

@@ -8,6 +8,7 @@ import { many, one, run, runCount } from "../client.js";
 interface EventRow {
   id: string;
   title: string;
+  subtitle: string;
   description: string;
   starts_at: number;
   ends_at: number;
@@ -50,6 +51,7 @@ function toEvent(row: EventRow): Event {
   return {
     id: row.id,
     title: row.title,
+    subtitle: row.subtitle ?? "",
     description: row.description,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
@@ -278,13 +280,14 @@ export const eventsRepo = {
     while (await this.findBySlug(slug)) slug = genEventSlug();
     await run(
       `INSERT INTO event
-        (id, title, description, starts_at, ends_at, venue_type,
+        (id, title, subtitle, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
          community_id, scheduling, schedule_anonymous, slug, venue_wanted)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
       id,
       input.title,
+      input.subtitle ?? "",
       input.description ?? "",
       input.startsAt ?? 0,
       input.endsAt ?? 0,
@@ -321,7 +324,7 @@ export const eventsRepo = {
     const membersNote = input.membersNote ?? (await this.membersNoteFor(id));
     await run(
       `UPDATE event SET
-         title = ?, description = ?, starts_at = ?, ends_at = ?,
+         title = ?, subtitle = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
@@ -329,6 +332,7 @@ export const eventsRepo = {
          members_note = ?
        WHERE id = ?`,
       next.title,
+      next.subtitle,
       next.description,
       next.startsAt,
       next.endsAt,

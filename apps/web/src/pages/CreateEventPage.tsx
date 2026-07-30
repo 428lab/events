@@ -24,6 +24,7 @@ import { ImageCropField } from "../components/ImageCropField.js";
 import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { EventImageStudio } from "../components/EventImageStudio.js";
 import { formatDateRange, venueLabel } from "../lib/format.js";
+import { generateEventImageBlob } from "../lib/imageTemplates.js";
 
 function toEpoch(local: string): number {
   return new Date(local).getTime();
@@ -41,6 +42,7 @@ export function CreateEventPage() {
 
   const [communityId, setCommunityId] = useState("");
   const [title, setTitle] = useState("");
+  const [subtitle, setSubtitle] = useState("");
   const [description, setDescription] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
@@ -93,6 +95,7 @@ export function CreateEventPage() {
     createEvent.mutate(
       {
         title,
+        subtitle,
         description,
         startsAt: scheduling ? 0 : toEpoch(startsAt),
         endsAt: scheduling ? 0 : toEpoch(endsAt),
@@ -108,12 +111,20 @@ export function CreateEventPage() {
       },
       {
         onSuccess: async ({ event }) => {
-          if (imageBlob) {
+          // 画像未設定ならタイトルから自動生成（失敗しても作成は続行）
+          let uploadBlob = imageBlob;
+          if (!uploadBlob) {
+            uploadBlob = await generateEventImageBlob(
+              title,
+              scheduling ? "日程調整中" : undefined,
+            ).catch(() => null);
+          }
+          if (uploadBlob) {
             await fetch(`/api/events/${event.id}/image`, {
               method: "PUT",
-              headers: { "Content-Type": imageBlob.type },
+              headers: { "Content-Type": uploadBlob.type },
               credentials: "include",
-              body: imageBlob,
+              body: uploadBlob,
             }).catch(() => undefined);
           }
           // たまごからの開催宣言なら紐付け（公開時に賛同者へ通知される）。
@@ -148,6 +159,13 @@ export function CreateEventPage() {
             max={200}
             onChange={(e) => setTitle(e.target.value)}
             required
+            fullWidth
+          />
+          <CounterTextField
+            label="サブタイトル（任意）"
+            value={subtitle}
+            max={200}
+            onChange={(e) => setSubtitle(e.target.value)}
             fullWidth
           />
           <MarkdownEditor

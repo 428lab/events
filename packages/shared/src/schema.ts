@@ -24,6 +24,8 @@ export type User = z.infer<typeof userSchema>;
 export const eventSchema = z.object({
   id: z.string(),
   title: z.string(),
+  /** サブタイトル（任意・1行） */
+  subtitle: z.string(),
   description: z.string(),
   startsAt: z.number(),
   endsAt: z.number(),
@@ -61,6 +63,7 @@ export type Event = z.infer<typeof eventSchema>;
 export const createEventInput = z
   .object({
     title: z.string().min(1).max(200),
+    subtitle: z.string().max(200).default(""),
     description: z.string().max(20000).default(""),
     startsAt: z.number().int().default(0),
     endsAt: z.number().int().default(0),
@@ -85,6 +88,7 @@ export type CreateEventInput = z.infer<typeof createEventInput>;
 
 export const updateEventInput = z.object({
   title: z.string().min(1).max(200).optional(),
+  subtitle: z.string().max(200).optional(),
   description: z.string().max(20000).optional(),
   startsAt: z.number().int().optional(),
   endsAt: z.number().int().optional(),

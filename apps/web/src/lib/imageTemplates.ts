@@ -256,3 +256,22 @@ export function drawEventImage(
   ctx.fillStyle = opts.background.sub;
   ctx.fillText("events lab", OG_W - pad, OG_H - 48);
 }
+
+/** タイトルからOG画像を自動生成（画像未設定イベント用）。フォント・背景はランダム */
+export async function generateEventImageBlob(
+  title: string,
+  subtitle?: string,
+): Promise<Blob | null> {
+  const font = FONTS[Math.floor(Math.random() * FONTS.length)];
+  const background = BACKGROUNDS[Math.floor(Math.random() * BACKGROUNDS.length)];
+  try {
+    await loadFont(font);
+  } catch {
+    // フォント読込失敗でもフォールバックフォントで描画
+  }
+  const canvas = document.createElement("canvas");
+  drawEventImage(canvas, { title, subtitle, font, background, layout: "center" });
+  return new Promise((resolve) =>
+    canvas.toBlob((b) => resolve(b), "image/png"),
+  );
+}

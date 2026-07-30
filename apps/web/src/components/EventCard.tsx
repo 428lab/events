@@ -12,6 +12,8 @@ import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import type { Event, EventRole } from "@eventer/shared";
 import { eventImageUrl } from "../api/hooks.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
+import { useCommunities } from "../api/communityHooks.js";
+import { Avatar } from "@mui/material";
 
 /** イベントごとに決定的に選ぶ落ち着いた配色（画像なし時のタイトルカード用） */
 const PALETTE = [
@@ -39,6 +41,11 @@ export function EventCard({
 }) {
   const img = eventImageUrl(event);
   const color = pickColor(event.id);
+  // 一覧全体で1クエリ（react-queryキャッシュ共有）。コミュニティ名とアイコンを解決
+  const { data: communities } = useCommunities();
+  const community = event.communityId
+    ? communities?.find((cm) => cm.id === event.communityId)
+    : undefined;
 
   return (
     <Card>
@@ -109,6 +116,25 @@ export function EventCard({
             "&:last-child": { pb: { xs: 1.25, sm: 2 } },
           }}
         >
+          {community && (
+            <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 0.25 }}>
+              <Avatar
+                src={community.iconUrl ?? undefined}
+                variant="rounded"
+                sx={{ width: 16, height: 16, fontSize: 10 }}
+              >
+                {community.name.charAt(0)}
+              </Avatar>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                noWrap
+                sx={{ minWidth: 0 }}
+              >
+                {community.name}
+              </Typography>
+            </Stack>
+          )}
           <Stack
             direction="row"
             spacing={1}
@@ -130,6 +156,16 @@ export function EventCard({
             </Typography>
             {role && <Chip size="small" label={roleLabel[role]} sx={{ flexShrink: 0 }} />}
           </Stack>
+          {event.subtitle && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              noWrap
+              sx={{ mt: 0.25, fontSize: { xs: "0.75rem", sm: "0.85rem" } }}
+            >
+              {event.subtitle}
+            </Typography>
+          )}
           <Typography
             variant="body2"
             color="text.secondary"
