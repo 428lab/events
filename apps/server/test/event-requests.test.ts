@@ -606,3 +606,54 @@ describe("イベントのたまご (#29)", () => {
     expect(react.status).toBe(409);
   });
 });
+
+describe("たまごの賛同者表示切替 (#87)", () => {
+  it("既定は表示（reactors返却）、匿名にすると null。切替は投稿者のみ", async () => {
+    const creator = await makeUser();
+    const fan = await makeUser();
+    const id = await postRequest(creator.cookie, "賛同者表示たまご");
+    await SELF.fetch(`${BASE}/api/event-requests/${id}/react`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: fan.cookie },
+      body: JSON.stringify({ kind: "attend", on: true }),
+    });
+
+    // 既定: 表示（fan が attend に入っている）
+    const d1 = await SELF.fetch(`${BASE}/api/public/event-requests/${id}`);
+    const b1 = (await d1.json()) as {
+      reactors: { attend: { id: string }[] } | null;
+    };
+    expect(b1.reactors).not.toBeNull();
+    expect(b1.reactors!.attend.some((u) => u.id === fan.userId)).toBe(true);
+
+    // 他人は切替できない
+    const denied = await SELF.fetch(
+      `${BASE}/api/event-requests/${id}/reactors-anonymous`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: fan.cookie },
+        body: JSON.stringify({ on: true }),
+      },
+    );
+    expect(denied.status).toBe(403);
+
+    // 投稿者が匿名に → reactors は null（人数は残る）
+    const toggle = await SELF.fetch(
+      `${BASE}/api/event-requests/${id}/reactors-anonymous`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: creator.cookie },
+        body: JSON.stringify({ on: true }),
+      },
+    );
+    expect(toggle.status).toBe(200);
+    const d2 = await SELF.fetch(`${BASE}/api/public/event-requests/${id}`);
+    const b2 = (await d2.json()) as {
+      reactors: unknown;
+      request: { attendCount: number };
+    };
+    expect(b2.reactors).toBeNull();
+    expect(b2.request.attendCount).toBe(1);
+    expect(JSON.stringify(b2)).not.toContain(fan.userId);
+  });
+});

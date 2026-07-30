@@ -25,8 +25,11 @@ import {
   useEventRequest,
   useReactEventRequest,
   useSetEventRequestStatus,
+  useSetReactorsAnonymous,
   useSetRequestVenueWanted,
+  type ReactorUser,
 } from "../api/requestHooks.js";
+import { UserLink } from "../components/UserLink.js";
 import { EventCard } from "../components/EventCard.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
@@ -41,13 +44,15 @@ export function EventRequestDetailPage() {
   const react = useReactEventRequest(id);
   const setStatus = useSetEventRequestStatus(id);
   const setVenueWanted = useSetRequestVenueWanted(id);
+  const setReactorsAnonymous = useSetReactorsAnonymous(id);
   const del = useDeleteEventRequest();
 
   if (q.isLoading) return <Typography>読み込み中…</Typography>;
   if (q.isError || !q.data) {
     return <Alert severity="error">たまごが見つかりませんでした。</Alert>;
   }
-  const { request, creator, community, events, myReactions, isMine } = q.data;
+  const { request, creator, community, events, myReactions, isMine, reactors } =
+    q.data;
   const attending = myReactions.includes("attend");
   const hosting = myReactions.includes("host");
   const open = request.status === "open";
@@ -159,6 +164,16 @@ export function EventRequestDetailPage() {
               </Button>
             )}
           </Stack>
+          {reactors && (reactors.attend.length > 0 || reactors.host.length > 0) && (
+            <Box sx={{ mt: 2 }}>
+              {reactors.attend.length > 0 && (
+                <ReactorRow label="参加したい" users={reactors.attend} />
+              )}
+              {reactors.host.length > 0 && (
+                <ReactorRow label="開催してもいい" users={reactors.host} />
+              )}
+            </Box>
+          )}
           {!me && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
               賛同や開催宣言にはログインが必要です。
@@ -190,6 +205,17 @@ export function EventRequestDetailPage() {
                   onClick={() => setVenueWanted.mutate(!request.venueWanted)}
                 >
                   {request.venueWanted ? "会場募集を止める" : "会場も募集する"}
+                </Button>
+                <Button
+                  size="small"
+                  disabled={setReactorsAnonymous.isPending}
+                  onClick={() =>
+                    setReactorsAnonymous.mutate(!request.reactorsAnonymous)
+                  }
+                >
+                  {request.reactorsAnonymous
+                    ? "賛同者を表示する"
+                    : "賛同者を匿名にする"}
                 </Button>
                 <Button
                   size="small"
@@ -236,6 +262,27 @@ export function EventRequestDetailPage() {
           </Stack>
         </Box>
       )}
+    </Stack>
+  );
+}
+
+/** 賛同者の一行表示（アバター＋名前のリンク） */
+function ReactorRow({ label, users }: { label: string; users: ReactorUser[] }) {
+  return (
+    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 0.5 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
+        {label}:
+      </Typography>
+      {users.map((u) => (
+        <UserLink
+          key={u.id}
+          username={u.username}
+          name={u.globalName ?? u.username}
+          avatarUrl={u.avatarUrl}
+          withAvatar
+          avatarSize={20}
+        />
+      ))}
     </Stack>
   );
 }

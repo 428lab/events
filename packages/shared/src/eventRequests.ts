@@ -33,6 +33,8 @@ export const eventRequestSchema = z.object({
   slug: z.string(),
   /** 会場を探している */
   venueWanted: z.boolean(),
+  /** 賛同者を匿名にする（人数のみ表示） */
+  reactorsAnonymous: z.boolean(),
 });
 export type EventRequest = z.infer<typeof eventRequestSchema>;
 
@@ -43,6 +45,7 @@ export const createEventRequestInput = z.object({
   communityId: z.string().nullable().optional(),
   membersOnly: z.boolean().optional(),
   venueWanted: z.boolean().optional(),
+  reactorsAnonymous: z.boolean().optional(),
 });
 export type CreateEventRequestInput = z.infer<typeof createEventRequestInput>;
 

@@ -20,6 +20,7 @@ interface EventRequestRow {
   event_count: number;
   slug: string | null;
   venue_wanted: number;
+  reactors_anonymous: number;
 }
 
 /** 賛同数・リンクイベント数を含む event_request の SELECT */
@@ -48,6 +49,7 @@ function toRequest(row: EventRequestRow): EventRequest {
     eventCount: row.event_count,
     slug: row.slug ?? "",
     venueWanted: row.venue_wanted === 1,
+    reactorsAnonymous: row.reactors_anonymous === 1,
   };
 }
 
@@ -173,8 +175,8 @@ export const eventRequestsRepo = {
     await run(
       `INSERT INTO event_request
         (id, title, description, venue_type_pref, community_id, members_only,
-         status, created_by, created_at, slug, venue_wanted)
-       VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`,
+         status, created_by, created_at, slug, venue_wanted, reactors_anonymous)
+       VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`,
       id,
       input.title,
       input.description ?? "",
@@ -185,8 +187,45 @@ export const eventRequestsRepo = {
       Date.now(),
       slug,
       input.venueWanted ? 1 : 0,
+      input.reactorsAnonymous ? 1 : 0,
     );
     return (await this.findById(id))!;
+  },
+
+  async setReactorsAnonymous(id: string, on: boolean): Promise<void> {
+    await run(
+      "UPDATE event_request SET reactors_anonymous = ? WHERE id = ?",
+      on ? 1 : 0,
+      id,
+    );
+  },
+
+  /** 賛同者一覧（表示設定オンのたまご用）。kindごと・古い順 */
+  async listReactors(
+    requestId: string,
+    kind: "attend" | "host",
+  ): Promise<
+    { id: string; username: string; globalName: string | null; avatarUrl: string | null }[]
+  > {
+    const rows = await many<{
+      id: string;
+      username: string;
+      global_name: string | null;
+      avatar_url: string | null;
+    }>(
+      `SELECT u.id, u.username, u.global_name, u.avatar_url
+         FROM event_request_reaction r JOIN user u ON u.id = r.user_id
+        WHERE r.request_id = ? AND r.kind = ?
+        ORDER BY r.created_at ASC LIMIT 100`,
+      requestId,
+      kind,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      username: r.username,
+      globalName: r.global_name,
+      avatarUrl: r.avatar_url,
+    }));
   },
 
   async setVenueWanted(id: string, on: boolean): Promise<void> {
