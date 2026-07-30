@@ -416,7 +416,7 @@ export function SchedulePanel({
                       {isTop ? (
                         <Box
                           component="span"
-                          sx={{ color: "warning.main", fontWeight: 700 }}
+                          sx={{ color: (t) => (t.palette.mode === "light" ? t.palette.warning.dark : t.palette.warning.main), fontWeight: 700 }}
                         >
                           ○ {o.counts.yes}
                         </Box>

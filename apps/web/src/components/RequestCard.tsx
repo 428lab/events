@@ -56,7 +56,7 @@ export function RequestCard({ request }: { request: EventRequest }) {
                 <Typography variant="body2">参加したい {request.attendCount}</Typography>
               </Stack>
               <Stack direction="row" spacing={0.5} alignItems="center">
-                <CampaignIcon sx={{ fontSize: 16, color: "warning.main" }} />
+                <CampaignIcon sx={{ fontSize: 16, color: (t) => (t.palette.mode === "light" ? t.palette.warning.dark : t.palette.warning.main) }} />
                 <Typography variant="body2">開催してもいい {request.hostCount}</Typography>
               </Stack>
               {request.eventCount > 0 && (
