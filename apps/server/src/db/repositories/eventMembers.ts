@@ -201,6 +201,7 @@ function mapMyEventSummary(
   return {
     id: row.id as string,
     title: row.title as string,
+    subtitle: (row.subtitle as string) ?? "",
     description: row.description as string,
     startsAt: row.starts_at as number,
     endsAt: row.ends_at as number,

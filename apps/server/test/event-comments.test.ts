@@ -78,6 +78,37 @@ async function postComment(
   });
 }
 
+describe("イベントのサブタイトル (#77)", () => {
+  it("作成・更新でサブタイトルが保存され GET に含まれる", async () => {
+    const res = await SELF.fetch(`${BASE}/api/auth/dev-login`, { method: "POST" });
+    const cookie = res.headers.get("set-cookie")!.split(";")[0];
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        title: "サブタイトル検証",
+        subtitle: "副題テスト",
+        venueType: "online",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+      }),
+    });
+    expect(create.status).toBe(201);
+    const { event } = (await create.json()) as {
+      event: { id: string; subtitle: string };
+    };
+    expect(event.subtitle).toBe("副題テスト");
+    const patch = await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ subtitle: "変更後" }),
+    });
+    expect(
+      ((await patch.json()) as { event: { subtitle: string } }).event.subtitle,
+    ).toBe("変更後");
+  });
+});
+
 describe("イベントコメント (#72)", () => {
   it("確定メンバーが投稿でき、公開GETで誰でも読める。非メンバー403・未ログイン401", async () => {
     const admin = await loginDev();
