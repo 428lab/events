@@ -317,18 +317,6 @@ export function EventDetailPage() {
         </Alert>
       )}
 
-      {/* 調整中は常に表示。確定後は候補があり表示オンなら結果を表示（パネル側で判定） */}
-      <SchedulePanel
-        eventId={event.id}
-        isStaff={isStaff}
-        anonymous={event.scheduleAnonymous}
-        finalized={!event.scheduling}
-        visible={event.scheduleVisible}
-        eventStartsAt={event.startsAt}
-        eventEndsAt={event.endsAt}
-      />
-
-
       {eventImageUrl(event) && (
         <Box
           component="img"
@@ -342,6 +330,19 @@ export function EventDetailPage() {
           }}
         />
       )}
+
+      {/* 調整中は常に表示。確定後は候補があり表示オンなら結果を表示（パネル側で判定） */}
+      <SchedulePanel
+        eventId={event.id}
+        isStaff={isStaff}
+        anonymous={event.scheduleAnonymous}
+        finalized={!event.scheduling}
+        visible={event.scheduleVisible}
+        eventStartsAt={event.startsAt}
+        eventEndsAt={event.endsAt}
+      />
+
+
 
       {showAwards && (
         <Card variant="outlined">
