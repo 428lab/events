@@ -303,6 +303,18 @@ export function useDeleteEvent(id: string) {
   });
 }
 
+/** イベントを複製して下書きイベントを作る（staff のみ） */
+export function useDuplicateEvent(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ event: Event }>(`/events/${id}/duplicate`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["events"] });
+      qc.invalidateQueries({ queryKey: ["myPage"] });
+    },
+  });
+}
+
 export function usePublishEvent() {
   const qc = useQueryClient();
   return useMutation({

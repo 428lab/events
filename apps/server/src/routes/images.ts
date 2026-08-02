@@ -58,6 +58,23 @@ export async function putEventImage(c: Context<AppEnv>) {
   return c.json({ ok: true, imageUpdatedAt: updatedAt });
 }
 
+/** イベント複製用: 画像を別イベントへコピー（元画像が無ければ何もしない） */
+export async function copyEventImage(
+  srcEventId: string,
+  dstEventId: string,
+): Promise<void> {
+  const meta = await eventImagesRepo.getMeta(srcEventId);
+  if (!meta) return;
+  const obj = await getBucket().get(imageKey(srcEventId));
+  if (!obj) return;
+  // イベント画像は 1MB 以内なのでメモリに載せてコピーする
+  const body = await obj.arrayBuffer();
+  await getBucket().put(imageKey(dstEventId), body, {
+    httpMetadata: { contentType: meta.mime },
+  });
+  await eventImagesRepo.upsert(dstEventId, meta.mime);
+}
+
 /** staff/admin: イベント画像の削除 */
 export async function deleteEventImage(c: Context<AppEnv>) {
   const eventId = c.req.param("id")!;

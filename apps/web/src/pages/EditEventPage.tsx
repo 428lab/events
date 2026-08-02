@@ -16,10 +16,12 @@ import {
   Typography,
 } from "@mui/material";
 import StadiumIcon from "@mui/icons-material/Stadium";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useNavigate, useParams } from "react-router-dom";
 import { VENUE_TYPES, type VenueType } from "@eventer/shared";
 import {
   useDeleteEvent,
+  useDuplicateEvent,
   useEvent,
   useIsAdmin,
   useUpdateEvent,
@@ -47,6 +49,7 @@ export function EditEventPage() {
   const isAdmin = useIsAdmin();
   const update = useUpdateEvent(id);
   const del = useDeleteEvent(id);
+  const duplicate = useDuplicateEvent(id);
 
   const [status, setStatus] = useState<"draft" | "published">("draft");
   const [title, setTitle] = useState("");
@@ -66,6 +69,12 @@ export function EditEventPage() {
   const myCommunities = myCommunitiesQuery.data;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [initialized, setInitialized] = useState(false);
+
+  // 複製後に /events/:newId/edit へ遷移してもコンポーネントは再マウントされないため、
+  // id が変わったらフォームを新イベントの内容で初期化し直す
+  useEffect(() => {
+    setInitialized(false);
+  }, [id]);
 
   useEffect(() => {
     if (data?.event && !initialized) {
@@ -330,6 +339,40 @@ export function EditEventPage() {
               保存
             </Button>
           </Stack>
+
+          <Divider />
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              イベントの複製
+            </Typography>
+            <Button
+              startIcon={<ContentCopyIcon />}
+              disabled={duplicate.isPending}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "このイベントを複製しますか？（参加者・エントリー・コメント・写真はコピーされません）",
+                  )
+                ) {
+                  return;
+                }
+                duplicate.mutate(undefined, {
+                  onSuccess: ({ event: created }) =>
+                    navigate(`/events/${created.id}/edit`),
+                });
+              }}
+            >
+              イベントを複製
+            </Button>
+            <Typography variant="caption" color="text.secondary" display="block">
+              タイトル・説明・参加枠・採点基準・表彰・画像などをコピーした下書きイベントを新しく作ります。
+            </Typography>
+            {duplicate.isError && (
+              <Alert severity="error" sx={{ mt: 1 }}>
+                複製に失敗しました。
+              </Alert>
+            )}
+          </Box>
 
           <Divider />
           <Box>
