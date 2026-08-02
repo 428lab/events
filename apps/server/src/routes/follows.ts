@@ -34,7 +34,7 @@ export async function notifyFollowersOnPublish(event: {
       `/events/${event.id}`,
       // メールでは actor 名をプロフィールへリンクする (#134)
       creator
-        ? { actorName: name, actorPath: `/users/${creator.username}` }
+        ? { actorName: name, actorPath: `/users/${encodeURIComponent(creator.username)}` }
         : undefined,
     );
   } catch (err) {
@@ -67,7 +67,7 @@ export async function notifyFollowersOnJoin(
       `/events/${event.id}`,
       // メールでは actor 名をプロフィールへリンクする (#134)
       joiner
-        ? { actorName: name, actorPath: `/users/${joiner.username}` }
+        ? { actorName: name, actorPath: `/users/${encodeURIComponent(joiner.username)}` }
         : undefined,
     );
   } catch (err) {

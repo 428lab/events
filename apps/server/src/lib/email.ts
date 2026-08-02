@@ -100,6 +100,11 @@ export async function sendEmail(opts: {
 /** イベント詳細リンク（/events/:uuid）の判定。クエリ付きも許容 */
 const EVENT_LINK_RE = /^\/events\/([0-9a-f-]{36})(?:[?#]|$)/;
 
+// 同一イベントへの一斉送信（リマインダー・フォロワー通知）でカードを組み直さないための
+// 短命キャッシュ。1回の実行内での重複フェッチ抑制が目的（TTL 60秒・最大50件）
+const cardCache = new Map<string, { html: string; at: number }>();
+const CARD_CACHE_TTL = 60_000;
+
 /** リンク先がイベント詳細なら、イベントカード（＋タイムテーブル）HTMLを組み立てる (#134)。
  * D1 参照が増えるが送信はレスポンス外（waitUntil / cron）なので許容。
  * 失敗してもプレーンなメールで送れるよう空文字を返す */
@@ -110,6 +115,9 @@ async function buildEventExtraHtml(
   try {
     const m = EVENT_LINK_RE.exec(link);
     if (!m) return "";
+    const cacheKey = `${m[1]}:${withTimetable ? 1 : 0}`;
+    const hit = cardCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < CARD_CACHE_TTL) return hit.html;
     const event = await eventsRepo.findById(m[1]!);
     if (!event) return "";
     const community = event.communityId
@@ -131,6 +139,9 @@ async function buildEventExtraHtml(
         html += timetableHtml({ items, times });
       }
     }
+    // 使い捨てに近い用途なので肥大化だけ防ぐ
+    if (cardCache.size >= 50) cardCache.clear();
+    cardCache.set(cacheKey, { html, at: Date.now() });
     return html;
   } catch (e) {
     console.warn("email: イベントカードの組み立てに失敗（プレーンで送信）", e);
