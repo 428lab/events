@@ -27,6 +27,7 @@ import {
   useUpdateEvent,
 } from "../api/hooks.js";
 import { useMyCommunities } from "../api/communityHooks.js";
+import { generateEventImageBlob } from "../lib/imageTemplates.js";
 import { CounterTextField } from "../components/CounterTextField.js";
 import { EventImageEditor } from "../components/EventImageEditor.js";
 import { MarkdownEditor } from "../components/MarkdownEditor.js";
@@ -368,8 +369,25 @@ export function EditEventPage() {
                   return;
                 }
                 duplicate.mutate(undefined, {
-                  onSuccess: ({ event: created }) =>
-                    navigate(`/events/${created.id}/edit`),
+                  onSuccess: async ({ event: created }) => {
+                    // 元イベントに画像が無い場合はコピーもされないため、
+                    // 作成時と同様にタイトルから自動生成する (#139)
+                    if (!created.imageUpdatedAt) {
+                      const blob = await generateEventImageBlob(
+                        created.title,
+                        created.scheduling ? "日程調整中" : undefined,
+                      ).catch(() => null);
+                      if (blob) {
+                        await fetch(`/api/events/${created.id}/image`, {
+                          method: "PUT",
+                          headers: { "Content-Type": blob.type },
+                          credentials: "include",
+                          body: blob,
+                        }).catch(() => undefined);
+                      }
+                    }
+                    navigate(`/events/${created.id}/edit`);
+                  },
                 });
               }}
             >
