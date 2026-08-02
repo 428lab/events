@@ -261,10 +261,22 @@ export function EventDetailPage() {
             </Typography>
           </Box>
         ))}
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Typography variant="h4" fontWeight={700}>
-            {event.title}
+        <Typography variant="h4" fontWeight={700}>
+          {event.title}
+        </Typography>
+        {event.subtitle && (
+          <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 0.5 }}>
+            {event.subtitle}
           </Typography>
+        )}
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ mt: 1 }}
+        >
           {event.status !== "published" && (
             <Chip size="small" color="warning" label={event.status} />
           )}
@@ -273,11 +285,6 @@ export function EventDetailPage() {
             <ShareButton slug={event.slug} title={event.title} />
           )}
         </Stack>
-        {event.subtitle && (
-          <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 0.5 }}>
-            {event.subtitle}
-          </Typography>
-        )}
         <Typography
           variant="h6"
           fontWeight={700}
