@@ -229,11 +229,15 @@ app.use("*", async (c, next) => {
 app.use("*", async (c, next) => {
   if (!env.isStaging) return next();
   const path = new URL(c.req.url).pathname;
-  // メール配信停止はメールクライアントから未ログインで開かれるため通す (#126)
+  // メール配信停止はメールクライアントから未ログインで開かれるため通す (#126)。
+  // メール内の画像（ロゴ・イベント画像）もメールクライアントは未ログインのため通す。
+  // 画像バイナリのみで、イベント情報のJSONはゲート対象のまま
   if (
     path.startsWith("/api/auth/") ||
     path === "/api/health" ||
-    path === "/api/email/unsubscribe"
+    path === "/api/email/unsubscribe" ||
+    path === "/logo-email.png" ||
+    /^\/api\/events\/[0-9a-f-]{36}\/image$/.test(path)
   )
     return next();
   const user = await currentUser(c);
