@@ -21,6 +21,7 @@ import {
   useUpdateCriterion,
 } from "../api/scoringHooks.js";
 import { CounterTextField } from "../components/CounterTextField.js";
+import { BlurCounterField } from "../components/BlurCounterField.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
 export function CriteriaAdminPage() {
@@ -71,12 +72,14 @@ export function CriteriaAdminPage() {
           <Card key={c.id} variant="outlined">
             <CardContent>
               <Stack direction="row" spacing={2} alignItems="center">
-                <TextField
+                <BlurCounterField
                   label="名称"
-                  defaultValue={c.name}
-                  onBlur={(e) =>
-                    e.target.value !== c.name &&
-                    update.mutate({ cid: c.id, input: { name: e.target.value } })
+                  initial={c.name}
+                  max={100}
+                  onSave={(v) =>
+                    v !== c.name &&
+                    v &&
+                    update.mutate({ cid: c.id, input: { name: v } })
                   }
                   sx={{ flex: 1 }}
                 />
