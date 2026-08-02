@@ -32,6 +32,10 @@ export async function notifyFollowersOnPublish(event: {
       `${name} さんがイベントを公開しました`,
       `「${event.title}」`,
       `/events/${event.id}`,
+      // メールでは actor 名をプロフィールへリンクする (#134)
+      creator
+        ? { actorName: name, actorPath: `/users/${creator.username}` }
+        : undefined,
     );
   } catch (err) {
     // 通知失敗で公開自体を失敗させない
@@ -61,6 +65,10 @@ export async function notifyFollowersOnJoin(
       `${name} さんがイベントに参加しました`,
       `「${event.title}」`,
       `/events/${event.id}`,
+      // メールでは actor 名をプロフィールへリンクする (#134)
+      joiner
+        ? { actorName: name, actorPath: `/users/${joiner.username}` }
+        : undefined,
     );
   } catch (err) {
     // 通知失敗で参加自体を失敗させない

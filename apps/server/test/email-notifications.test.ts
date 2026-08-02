@@ -1,7 +1,18 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
+import { computeScheduleTimes } from "@eventer/shared";
 import { bindEnv, type Env } from "../src/runtime.js";
 import { unsubscribeToken } from "../src/lib/email.js";
+import {
+  actorTitleHtml,
+  descriptionExcerpt,
+  eventCardHtml,
+  formatEventDateTime,
+  notificationEmailHtml,
+  stripMarkdown,
+  timetableHtml,
+  type EventCardEvent,
+} from "../src/lib/emailTemplates.js";
 import { emailRepo } from "../src/db/repositories/email.js";
 import { notificationsRepo } from "../src/db/repositories/notifications.js";
 import { sendEventReminders } from "../src/lib/reminders.js";
@@ -333,5 +344,246 @@ describe("cron エンドポイント (#129)", () => {
       method: "POST",
     });
     expect(none.status).toBe(403);
+  });
+});
+
+/** リッチ通知メールのHTMLビルダー (#134)。env に依存しない純粋関数を直接テストする */
+describe("リッチ通知メールのテンプレート (#134)", () => {
+  const BASE_URL = "https://example.com";
+  // 2026/8/22(土) 13:00 JST = 04:00 UTC
+  const STARTS = Date.UTC(2026, 7, 22, 4, 0);
+  // 同日 18:00 JST
+  const ENDS = Date.UTC(2026, 7, 22, 9, 0);
+
+  const baseEvent: EventCardEvent = {
+    id: "11111111-2222-3333-4444-555555555555",
+    title: "テストイベント",
+    description: "ハンズオンです",
+    startsAt: STARTS,
+    endsAt: ENDS,
+    scheduling: false,
+    venueType: "offline",
+    venueOffline: "会議室A",
+    imageUpdatedAt: 1234,
+  };
+
+  describe("Markdown のプレーンテキスト化", () => {
+    it("リンクはテキストのみ残り、画像・見出し・記号は除去される", () => {
+      const src =
+        "# 見出し\n\n**強調** と `code` と [リンク](https://a.example/x)\n\n![alt](https://a.example/i.png)\n\n> 引用\n- 箇条書き";
+      const plain = stripMarkdown(src);
+      expect(plain).toContain("見出し");
+      expect(plain).toContain("強調");
+      expect(plain).toContain("リンク");
+      expect(plain).not.toContain("https://a.example");
+      expect(plain).not.toContain("#");
+      expect(plain).not.toContain("*");
+      expect(plain).not.toContain("`");
+      expect(plain).not.toContain(">");
+      // 空白は1つに畳まれる
+      expect(plain).not.toMatch(/\s{2}/);
+    });
+
+    it("200文字を超える説明は切り詰めて … を付ける", () => {
+      const long = "あ".repeat(250);
+      const ex = descriptionExcerpt(long);
+      expect(ex).toHaveLength(201);
+      expect(ex.endsWith("…")).toBe(true);
+      // 短ければそのまま
+      expect(descriptionExcerpt("短い説明")).toBe("短い説明");
+    });
+  });
+
+  describe("開催日時の表記 (JST)", () => {
+    it("同日開催は終了を時刻だけにする", () => {
+      expect(formatEventDateTime(STARTS, ENDS, false)).toBe(
+        "2026/8/22(土) 13:00〜18:00",
+      );
+    });
+
+    it("日程調整中は「日程調整中」、終了未定は開始のみ", () => {
+      expect(formatEventDateTime(STARTS, ENDS, true)).toBe("日程調整中");
+      expect(formatEventDateTime(0, 0, false)).toBe("日時未定");
+      expect(formatEventDateTime(STARTS, 0, false)).toBe("2026/8/22(土) 13:00〜");
+    });
+
+    it("日をまたぐ場合は終了側にも日付を付ける", () => {
+      const nextDay = Date.UTC(2026, 7, 22, 17, 0); // 2026/8/23 02:00 JST
+      expect(formatEventDateTime(STARTS, nextDay, false)).toBe(
+        "2026/8/22(土) 13:00〜2026/8/23(日) 02:00",
+      );
+    });
+  });
+
+  describe("イベントカード", () => {
+    it("画像・日時・会場・コミュニティ・説明冒頭が入る", () => {
+      const html = eventCardHtml({
+        baseUrl: BASE_URL,
+        event: baseEvent,
+        communityName: "テストコミュニティ",
+      });
+      expect(html).toContain(
+        `${BASE_URL}/api/events/${baseEvent.id}/image?v=1234`,
+      );
+      expect(html).toContain("2026/8/22(土) 13:00〜18:00");
+      expect(html).toContain("オフライン（会議室A）");
+      expect(html).toContain("テストコミュニティ");
+      expect(html).toContain("ハンズオンです");
+    });
+
+    it("画像なし・コミュニティなしなら該当部分を出さない", () => {
+      const html = eventCardHtml({
+        baseUrl: BASE_URL,
+        event: { ...baseEvent, imageUpdatedAt: null },
+        communityName: null,
+      });
+      expect(html).not.toContain("/image?v=");
+      expect(html).not.toContain("コミュニティ");
+    });
+
+    it("日程調整中のイベントは「日程調整中」と表示される", () => {
+      const html = eventCardHtml({
+        baseUrl: BASE_URL,
+        event: { ...baseEvent, scheduling: true },
+        communityName: null,
+      });
+      expect(html).toContain("日程調整中");
+      expect(html).not.toContain("2026/8/22");
+    });
+
+    it("敵対的なタイトル・説明はエスケープされ javascript: リンクも残らない", () => {
+      const html = eventCardHtml({
+        baseUrl: BASE_URL,
+        event: {
+          ...baseEvent,
+          title: '<script>alert("t")</script>',
+          description:
+            '[クリック](javascript:alert(1)) と <img src=x onerror=alert(2)> と "引用"',
+        },
+        communityName: '<b>悪意</b>',
+      });
+      expect(html).not.toContain("<script>");
+      expect(html).toContain("&lt;script&gt;");
+      expect(html).not.toContain("javascript:");
+      expect(html).toContain("クリック"); // リンクテキストは残る
+      expect(html).not.toContain("<img src=x");
+      expect(html).not.toContain("<b>悪意</b>");
+      expect(html).toContain("&lt;b&gt;悪意&lt;/b&gt;");
+    });
+  });
+
+  describe("タイムテーブル", () => {
+    it("computeScheduleTimes の結果で 時刻｜内容＋担当 の行が並ぶ", () => {
+      const items = [
+        { title: "オープニング", speakerName: "主催", speaker: null, durationMin: 15, startsAt: null },
+        {
+          title: "セッション1",
+          speakerName: "",
+          speaker: { username: "alice", globalName: "アリス" },
+          durationMin: 40,
+          startsAt: null,
+        },
+      ];
+      const times = computeScheduleTimes(items, STARTS);
+      const html = timetableHtml({ items, times });
+      expect(html).toContain("タイムテーブル");
+      expect(html).toContain("13:00");
+      expect(html).toContain("13:15"); // 15分後に連鎖
+      expect(html).toContain("オープニング");
+      expect(html).toContain("主催");
+      // リンク済み担当者は globalName 優先
+      expect(html).toContain("アリス");
+    });
+
+    it("開始基準が無い項目は --:-- になり、担当名はエスケープされる", () => {
+      const items = [
+        {
+          title: "LT<script>",
+          speakerName: '<img src=x onerror=1>',
+          speaker: null,
+          durationMin: 10,
+          startsAt: null,
+        },
+      ];
+      const times = computeScheduleTimes(items, null);
+      const html = timetableHtml({ items, times });
+      expect(html).toContain("--:--");
+      expect(html).toContain("LT&lt;script&gt;");
+      expect(html).not.toContain("<img src=x");
+    });
+
+    it("項目が無ければ空文字", () => {
+      expect(timetableHtml({ items: [], times: [] })).toBe("");
+    });
+  });
+
+  describe("actor リンク付きタイトル", () => {
+    it("actor 名がプロフィールへの ref=email 付きリンクになる", () => {
+      const html = actorTitleHtml({
+        baseUrl: BASE_URL,
+        title: "アリス さんがイベントを公開しました",
+        actorName: "アリス",
+        actorPath: "/users/alice",
+      });
+      expect(html).toContain(
+        `<a href="${BASE_URL}/users/alice?ref=email"`,
+      );
+      expect(html).toContain(">アリス</a>");
+      expect(html).toContain(" さんがイベントを公開しました");
+    });
+
+    it("actor 名はエスケープされる", () => {
+      const html = actorTitleHtml({
+        baseUrl: BASE_URL,
+        title: "<b>x</b> さんがイベントに参加しました",
+        actorName: "<b>x</b>",
+        actorPath: "/users/x",
+      });
+      expect(html).not.toContain("<b>x</b> さんが");
+      expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
+    });
+
+    it("タイトルが actor 名で始まらなければ null（プレーン表示へフォールバック）", () => {
+      expect(
+        actorTitleHtml({
+          baseUrl: BASE_URL,
+          title: "イベントが公開されました",
+          actorName: "アリス",
+          actorPath: "/users/alice",
+        }),
+      ).toBeNull();
+    });
+  });
+
+  describe("メール全体のHTML", () => {
+    it("ロゴ入りヘッダー・titleHtml・extraHtml が反映される", () => {
+      const html = notificationEmailHtml({
+        baseUrl: BASE_URL,
+        title: "アリス さんがイベントを公開しました",
+        titleHtml: `<a href="${BASE_URL}/users/alice?ref=email">アリス</a> さんがイベントを公開しました`,
+        body: "「テスト」",
+        extraHtml: '<div data-testid="card">CARD</div>',
+        linkUrl: `${BASE_URL}/events/x?ref=email`,
+        unsubscribeUrl: `${BASE_URL}/api/email/unsubscribe?u=1&t=2`,
+      });
+      expect(html).toContain(`${BASE_URL}/logo-email.png`);
+      expect(html).toContain('alt="events lab"');
+      expect(html).toContain(`<a href="${BASE_URL}/users/alice?ref=email">アリス</a>`);
+      expect(html).toContain('data-testid="card"');
+      expect(html).toContain("詳細を見る");
+      expect(html).toContain("メール通知を停止する");
+    });
+
+    it("titleHtml が無ければタイトルはエスケープして表示", () => {
+      const html = notificationEmailHtml({
+        baseUrl: BASE_URL,
+        title: "<script>x</script>",
+        body: "",
+        linkUrl: null,
+        unsubscribeUrl: `${BASE_URL}/api/email/unsubscribe?u=1&t=2`,
+      });
+      expect(html).not.toContain("<script>x</script>");
+      expect(html).toContain("&lt;script&gt;x&lt;/script&gt;");
+    });
   });
 });

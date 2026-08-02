@@ -4,6 +4,7 @@ import { deferBackground } from "../../runtime.js";
 import {
   sendNotificationEmailIfOptedIn,
   sendNotificationEmailTo,
+  type EmailExtras,
 } from "../../lib/email.js";
 import { emailRepo } from "./email.js";
 
@@ -39,6 +40,8 @@ export const notificationsRepo = {
     title: string,
     body = "",
     link = "",
+    // メール表示のみに使う付加情報 (#134)。DB スキーマは変えない
+    extras?: EmailExtras,
   ): Promise<void> {
     await run(
       `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at)
@@ -53,7 +56,9 @@ export const notificationsRepo = {
     );
     // メール通知ONのユーザーには同内容をメールでも送る (#126)。
     // レスポンスをブロックしないよう waitUntil に逃がす（失敗しても通知作成は成功扱い）
-    await deferBackground(sendNotificationEmailIfOptedIn(userId, title, body, link));
+    await deferBackground(
+      sendNotificationEmailIfOptedIn(userId, title, body, link, extras),
+    );
   },
 
   /** 複数ユーザーへ同一内容の通知を作成（抽選・表彰・フォロワー通知の一斉配信用）。
@@ -64,6 +69,8 @@ export const notificationsRepo = {
     title: string,
     body = "",
     link = "",
+    // メール表示のみに使う付加情報 (#134)。DB スキーマは変えない
+    extras?: EmailExtras,
   ): Promise<void> {
     const now = Date.now();
     const CHUNK = 50;
@@ -87,7 +94,14 @@ export const notificationsRepo = {
             );
           }
           for (const r of recipients.slice(0, MAX_BULK_EMAILS)) {
-            await sendNotificationEmailTo(r.userId, r.email, title, body, link);
+            await sendNotificationEmailTo(
+              r.userId,
+              r.email,
+              title,
+              body,
+              link,
+              extras,
+            );
           }
         } catch (e) {
           console.warn("email: 一斉通知のメール送信に失敗", e);
