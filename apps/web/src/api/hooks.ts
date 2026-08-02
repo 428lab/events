@@ -1,5 +1,4 @@
 import {
-  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
@@ -112,29 +111,12 @@ export function useMyPage() {
   });
 }
 
-export function useEvents() {
-  return useQuery({
-    queryKey: ["events"],
-    queryFn: async () => (await api.get<{ events: Event[] }>("/events")).events,
-  });
-}
-
 export interface PublicEventsPage {
   events: Event[];
   total: number;
   page: number;
   limit: number;
   hasMore: boolean;
-}
-
-/** 開催前の公開イベント（未ログイン可・開催直前順・ページング） */
-export function usePublicEvents(page: number, limit?: number) {
-  const qs = new URLSearchParams({ page: String(page) });
-  if (limit != null) qs.set("limit", String(limit));
-  return useQuery({
-    queryKey: ["publicEvents", page, limit ?? 12],
-    queryFn: () => api.get<PublicEventsPage>(`/public/events?${qs.toString()}`),
-  });
 }
 
 export interface EventSearchParams {
@@ -174,33 +156,6 @@ export function useEventSearch(params: EventSearchParams, enabled: boolean) {
   });
 }
 
-/** 「続きを見る」用の無限スクロール検索 */
-export function useEventSearchInfinite(
-  params: EventSearchParams,
-  enabled: boolean,
-) {
-  const base = searchQs(params).toString();
-  return useInfiniteQuery({
-    queryKey: ["eventSearchInfinite", base],
-    enabled,
-    initialPageParam: 1,
-    queryFn: ({ pageParam }) =>
-      api.get<PublicEventsPage>(
-        `/public/events/search?${base}&page=${pageParam}`,
-      ),
-    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
-  });
-}
-
-/** 日程調整中の公開イベント（未ログイン可・新着順・ページング） */
-export function usePublicSchedulingEvents(page: number) {
-  return useQuery({
-    queryKey: ["publicSchedulingEvents", page],
-    queryFn: () =>
-      api.get<PublicEventsPage>(`/public/events/scheduling?page=${page}`),
-  });
-}
-
 /** 短いシェアURL（/e/:slug）→ イベントIDの解決 */
 export function useEventBySlug(slug: string) {
   return useQuery({
@@ -208,26 +163,6 @@ export function useEventBySlug(slug: string) {
     enabled: Boolean(slug),
     retry: false,
     queryFn: () => api.get<{ id: string }>(`/public/events/by-slug/${slug}`),
-  });
-}
-
-/** 開催済みの公開イベント（未ログイン可・終了が新しい順・ページング） */
-export function usePublicPastEvents(page: number) {
-  return useQuery({
-    queryKey: ["publicPastEvents", page],
-    queryFn: () => api.get<PublicEventsPage>(`/public/events/past?page=${page}`),
-  });
-}
-
-/** 開催済みの公開イベントを「もっと見る」で遡るための無限読み込み */
-export function usePublicPastEventsInfinite(enabled = true) {
-  return useInfiniteQuery({
-    queryKey: ["publicPastEventsInfinite"],
-    enabled,
-    initialPageParam: 1,
-    queryFn: ({ pageParam }) =>
-      api.get<PublicEventsPage>(`/public/events/past?page=${pageParam}`),
-    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
   });
 }
 
