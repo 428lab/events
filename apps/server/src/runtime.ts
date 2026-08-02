@@ -105,7 +105,7 @@ export const env = {
   },
   /** メール差出人 (#126) */
   get emailFrom(): string {
-    return must().EMAIL_FROM || "events lab <noreply@kojira.io>";
+    return must().EMAIL_FROM || "events lab <noreply@events.kojira.io>";
   },
   get adminDiscordIds(): string[] {
     return (must().ADMIN_DISCORD_IDS || "")
