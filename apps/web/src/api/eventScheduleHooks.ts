@@ -24,3 +24,17 @@ export function useSaveEventSchedule(eventId: string) {
       qc.invalidateQueries({ queryKey: ["event", eventId, "timetable"] }),
   });
 }
+
+/** 登壇資料URLの更新（登壇者本人の自己編集 #148） */
+export function useUpdateScheduleMaterial(eventId: string, itemId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (materialUrl: string) =>
+      api.patch<{ item: ScheduleItem }>(
+        `/events/${eventId}/timetable/${itemId}/material`,
+        { materialUrl },
+      ),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["event", eventId, "timetable"] }),
+  });
+}
