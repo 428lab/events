@@ -140,9 +140,6 @@ function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
           （うち直前 {cancelLate}）
         </Typography>
       </Stack>
-      <Typography variant="caption" color="text.secondary">
-        出席チェックを行わないイベントは登録＝出席として集計しています
-      </Typography>
     </Box>
   );
 }
