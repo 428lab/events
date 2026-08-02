@@ -286,3 +286,48 @@ describe("イベントの複製 (#7)", () => {
     expect("members_note" in got.event).toBe(false);
   });
 });
+
+describe("日程調整中イベントの直接日時確定 (#138)", () => {
+  it("PATCH scheduling:false で調整終了＋日時確定。日時なしは 400", async () => {
+    const login = await SELF.fetch(`${BASE}/api/auth/dev-login`, { method: "POST" });
+    const cookie = login.headers.get("set-cookie")!.split(";")[0];
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        title: "直接確定E2E",
+        venueType: "online",
+        scheduling: true,
+        startsAt: 0,
+        endsAt: 0,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+
+    // 日時なしで scheduling:false → 400
+    const bad = await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ scheduling: false }),
+    });
+    expect(bad.status).toBe(400);
+
+    // 日時つき → 調整終了・日時反映
+    const now = Date.now();
+    const ok = await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        scheduling: false,
+        startsAt: now + 3600_000,
+        endsAt: now + 7200_000,
+      }),
+    });
+    expect(ok.status).toBe(200);
+    const got = (await (
+      await SELF.fetch(`${BASE}/api/events/${event.id}`, { headers: { cookie } })
+    ).json()) as { event: { scheduling: boolean; startsAt: number } };
+    expect(got.event.scheduling).toBe(false);
+    expect(got.event.startsAt).toBe(now + 3600_000);
+  });
+});
