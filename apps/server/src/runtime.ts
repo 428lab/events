@@ -18,14 +18,39 @@ export interface Env {
   X_CLIENT_ID: string;
   X_CLIENT_SECRET: string;
   SESSION_SECRET: string;
+  /** Resend の API キー（未設定ならメール送信は無効） (#126) */
+  RESEND_API_KEY?: string;
+  /** メール差出人（未設定なら既定値） (#126) */
+  EMAIL_FROM?: string;
 }
 
 // Worker のバインディングはアイソレート内で安定（リクエスト間で同一ハンドル）なので、
 // リクエスト先頭で束ねたモジュール変数を参照しても並行リクエストで競合しない。
 let _env: Env | null = null;
+let _ctx: ExecutionContext | null = null;
+// 1リクエストあたりのメール送信予算（サブリクエスト上限の安全弁）。
+// アイソレート内の並行リクエストで共有されるためベストエフォートの近似だが、
+// 目的は暴走防止なので十分。bindEnv のたびにリセットする。
+let _emailBudget = 0;
+const EMAIL_BUDGET_PER_REQUEST = 20;
 
-export function bindEnv(e: Env): void {
+export function bindEnv(e: Env, ctx: ExecutionContext | null = null): void {
   _env = e;
+  _ctx = ctx;
+  _emailBudget = EMAIL_BUDGET_PER_REQUEST;
+}
+
+/** レスポンスをブロックせずにバックグラウンド実行する（waitUntil が無い環境では await） */
+export async function deferBackground(p: Promise<unknown>): Promise<void> {
+  if (_ctx) _ctx.waitUntil(p);
+  else await p;
+}
+
+/** メール1通ぶんの送信予算を確保。使い切っていたら false */
+export function takeEmailSlot(): boolean {
+  if (_emailBudget <= 0) return false;
+  _emailBudget--;
+  return true;
 }
 
 function must(): Env {
@@ -69,6 +94,14 @@ export const env = {
       return "dev-insecure-secret";
     }
     return secret;
+  },
+  /** Resend API キー（未設定なら空文字＝メール送信無効） (#126) */
+  get resendApiKey(): string {
+    return must().RESEND_API_KEY || "";
+  },
+  /** メール差出人 (#126) */
+  get emailFrom(): string {
+    return must().EMAIL_FROM || "events lab <noreply@kojira.io>";
   },
   get adminDiscordIds(): string[] {
     return (must().ADMIN_DISCORD_IDS || "")

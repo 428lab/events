@@ -62,6 +62,9 @@ import {
   getVenuePhotoImage,
 } from "./routes/venues.js";
 import { venueOfferRoutes } from "./routes/venueOffers.js";
+import { emailRoutes } from "./routes/email.js";
+import { sendEventReminders } from "./lib/reminders.js";
+import { adminReminderRoutes } from "./routes/adminReminders.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -76,6 +79,8 @@ api.get("/health", (c) =>
   c.json({ ok: true, discordConfigured: env.discordConfigured }),
 );
 api.route("/auth", authRoutes);
+// 公開: メール配信停止（署名付きリンク。認証不要） (#126)
+api.route("/email", emailRoutes);
 // 公開: 開催前イベント一覧（認証不要）
 api.route("/public", publicRoutes);
 // 公開: イベントのたまご一覧・詳細（認証不要）
@@ -120,6 +125,7 @@ api.route("/me", meRoutes);
 api.route("/users", followRoutes);
 api.route("/inquiries", inquiryRoutes);
 api.route("/admin/inquiries", adminInquiryRoutes);
+api.route("/admin/run-reminders", adminReminderRoutes);
 api.route("/admin/stats", adminStatsRoutes);
 api.route("/notifications", notificationRoutes);
 // 公開: コミュニティ画像（認証不要。communityRoutes(要認証) より先に登録）
@@ -208,7 +214,13 @@ app.use("*", async (c, next) => {
 app.use("*", async (c, next) => {
   if (!env.isStaging) return next();
   const path = new URL(c.req.url).pathname;
-  if (path.startsWith("/api/auth/") || path === "/api/health") return next();
+  // メール配信停止はメールクライアントから未ログインで開かれるため通す (#126)
+  if (
+    path.startsWith("/api/auth/") ||
+    path === "/api/health" ||
+    path === "/api/email/unsubscribe"
+  )
+    return next();
   const user = await currentUser(c);
   if (user) return next();
   if (path.startsWith("/api/")) {
@@ -359,8 +371,22 @@ export default {
     workerEnv: Env,
     ctx: ExecutionContext,
   ): Promise<Response> {
-    // バインディングをリクエスト先頭で束ねる（getDb/getBucket/env が参照）
-    bindEnv(workerEnv);
+    // バインディングをリクエスト先頭で束ねる（getDb/getBucket/env が参照）。
+    // ctx も束ね、メール送信等を waitUntil でレスポンス外に逃がせるようにする
+    bindEnv(workerEnv, ctx);
     return app.fetch(request, workerEnv, ctx);
+  },
+
+  // cron（毎日 UTC 0:00 = JST 9:00）: 前日リマインダーメール (#126)
+  async scheduled(
+    _controller: ScheduledController,
+    workerEnv: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    bindEnv(workerEnv);
+    // staging はDBが本番コピーになり得るため cron 送信しない（二重送信防止）。
+    // staging での動作確認は POST /api/admin/run-reminders を使う
+    if (env.isStaging) return;
+    ctx.waitUntil(sendEventReminders());
   },
 } satisfies ExportedHandler<Env>;

@@ -18,7 +18,7 @@ function jstDay(): string {
 }
 
 /** リンク側で明示された流入元（?ref=）。許可リスト制で統計の汚染を防ぐ */
-const REF_PARAM_SOURCES = new Set(["notification", "feed"]);
+const REF_PARAM_SOURCES = new Set(["notification", "feed", "email"]);
 
 /** document.referrer から流入元ラベルを作る（ホスト名のみ・先頭 www. 除去） */
 function parseSource(ref: unknown): string {

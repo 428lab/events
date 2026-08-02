@@ -23,6 +23,7 @@ const SOURCE_LABEL: Record<string, string> = {
   internal: "サイト内",
   notification: "通知",
   feed: "フィード",
+  email: "メール",
   "t.co": "X (Twitter)",
   "twitter.com": "X (Twitter)",
   "x.com": "X (Twitter)",
