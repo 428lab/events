@@ -28,7 +28,7 @@ import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { isHoliday } from "japanese-holidays";
 import type { VoteChoice } from "@eventer/shared";
-import { useEvent, useMe, useUpdateEvent } from "../api/hooks.js";
+import { useEvent, useMe, useUpdateEvent, useUploadEventImage } from "../api/hooks.js";
 import { generateEventImageBlob } from "../lib/imageTemplates.js";
 import { formatDateRange } from "../lib/format.js";
 import { UserLink } from "./UserLink.js";
@@ -251,6 +251,7 @@ export function SchedulePanel({
   const addOption = useAddDateOption(eventId);
   const delOption = useDeleteDateOption(eventId);
   const finalize = useFinalizeDate(eventId);
+  const uploadImage = useUploadEventImage(eventId);
   const updateEvent = useUpdateEvent(eventId);
   const qc = useQueryClient();
 
@@ -473,16 +474,18 @@ export function SchedulePanel({
                                 title,
                                 formatDateRange(o.startsAt, o.endsAt),
                               ).catch(() => null);
-                              if (!blob) return;
-                              await fetch(`/api/events/${eventId}/image`, {
-                                method: "PUT",
-                                headers: { "Content-Type": blob.type },
-                                credentials: "include",
-                                body: blob,
-                              }).catch(() => undefined);
-                              void qc.invalidateQueries({
-                                queryKey: ["event", eventId],
-                              });
+                              if (!blob) {
+                                window.alert("画像の生成に失敗しました。");
+                                return;
+                              }
+                              // 既存フックを再利用（res.okチェック＋一覧/マイページのinvalidate込み）
+                              try {
+                                await uploadImage.mutateAsync(blob);
+                              } catch {
+                                window.alert(
+                                  "画像のアップロードに失敗しました。編集画面から設定し直せます。",
+                                );
+                              }
                             },
                           });
                         }}
