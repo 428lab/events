@@ -22,6 +22,7 @@ import {
 } from "../api/hooks.js";
 import { toDateTimeLocal, fromDateTimeLocal } from "../lib/format.js";
 import { CounterTextField } from "./CounterTextField.js";
+import { BlurCounterField } from "./BlurCounterField.js";
 
 const typeLabel: Record<SelectionType, string> = {
   first_come: "先着順",
@@ -79,15 +80,16 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
           <Card key={s.id} variant="outlined">
             <CardContent>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems="center">
-                <TextField
+                <BlurCounterField
                   label="枠名"
-                  defaultValue={s.name}
-                  onBlur={(e) =>
-                    e.target.value !== s.name &&
-                    update.mutate({ slotId: s.id, input: { name: e.target.value } })
+                  initial={s.name}
+                  max={100}
+                  onSave={(v) =>
+                    v !== s.name &&
+                    v &&
+                    update.mutate({ slotId: s.id, input: { name: v } })
                   }
                   sx={{ flex: 1 }}
-                  size="small"
                 />
                 <TextField
                   label="定員"

@@ -24,34 +24,9 @@ import {
   useUpdateRank,
   useUpdateSpecial,
 } from "../api/awardHooks.js";
+import { BlurCounterField } from "./BlurCounterField.js";
 import { CounterTextField } from "./CounterTextField.js";
 
-/** onBlur 保存の賞編集フィールド（ローカル編集状態＋文字数カウンタ） */
-function BlurCounterField({
-  label,
-  initial,
-  max,
-  onSave,
-}: {
-  label: string;
-  initial: string;
-  max: number;
-  onSave: (value: string) => void;
-}) {
-  const [value, setValue] = useState(initial);
-  // 保存や再取得で外側の値が変わったら同期
-  useEffect(() => setValue(initial), [initial]);
-  return (
-    <CounterTextField
-      label={label}
-      value={value}
-      max={max}
-      size="small"
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => onSave(value)}
-    />
-  );
-}
 
 export function AwardsEditor({ eventId }: { eventId: string }) {
   const { data: awards } = useAwards(eventId);
