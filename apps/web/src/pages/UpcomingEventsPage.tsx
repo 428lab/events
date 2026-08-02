@@ -8,7 +8,7 @@ import {
 } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
 import { useEventSearchInfinite } from "../api/hooks.js";
-import { EventCard } from "../components/EventCard.js";
+import { EventList, ListColumnsToggle } from "../components/EventList.js";
 import { EventSearchPanel } from "../components/EventSearchPanel.js";
 import { EggTabs } from "../components/EggTabs.js";
 
@@ -44,9 +44,16 @@ export function UpcomingEventsPage() {
       <EggTabs value="events" />
       <EventSearchPanel>
         <Stack spacing={3}>
-          <Typography variant="h5" fontWeight={700}>
-            開催予定のイベント
-          </Typography>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+          >
+            <Typography variant="h5" fontWeight={700}>
+              開催予定のイベント
+            </Typography>
+            <ListColumnsToggle />
+          </Stack>
           {query.isError ? (
             <Alert severity="error">
               イベントを読み込めませんでした。時間をおいて再読み込みしてください。
@@ -56,11 +63,7 @@ export function UpcomingEventsPage() {
           ) : events.length === 0 ? (
             <Typography color="text.secondary">イベントはありません。</Typography>
           ) : (
-            <Stack spacing={2}>
-              {events.map((e) => (
-                <EventCard key={e.id} event={e} />
-              ))}
-            </Stack>
+            <EventList events={events} />
           )}
           <Box
             ref={sentinel}
