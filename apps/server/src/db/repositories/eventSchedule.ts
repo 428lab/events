@@ -1,5 +1,5 @@
 import type { SaveScheduleItemInput, ScheduleItem } from "@eventer/shared";
-import { batch, many } from "../client.js";
+import { batch, many, one, run } from "../client.js";
 
 interface Row {
   id: string;
@@ -11,6 +11,7 @@ interface Row {
   speaker_user_id: string | null;
   speaker_name: string;
   material_url: string;
+  material_og_image: string;
   sort_order: number;
   u_username: string | null;
   u_global_name: string | null;
@@ -37,12 +38,14 @@ function toItem(row: Row): ScheduleItem {
         : null,
     speakerName: row.speaker_name,
     materialUrl: row.material_url,
+    materialOgImage: row.material_og_image,
     sortOrder: row.sort_order,
   };
 }
 
 const SELECT = `SELECT s.id, s.event_id, s.title, s.description, s.duration_min,
-  s.starts_at, s.speaker_user_id, s.speaker_name, s.material_url, s.sort_order,
+  s.starts_at, s.speaker_user_id, s.speaker_name, s.material_url,
+  s.material_og_image, s.sort_order,
   u.username AS u_username, u.global_name AS u_global_name,
   u.avatar_url AS u_avatar_url
   FROM event_schedule_item s LEFT JOIN user u ON u.id = s.speaker_user_id`;
@@ -56,12 +59,24 @@ export const eventScheduleRepo = {
     return rows.map(toItem);
   },
 
-  /** 全項目をアトミックに置き換える（削除＋一括挿入）。並び順は配列順。 */
+  /** 全項目をアトミックに置き換える（削除＋一括挿入）。並び順は配列順。
+   * OG サムネイルは URL が同じ既存項目からキャッシュを引き継ぐ
+   * （保存のたびに全再取得してサムネイルが一瞬消えるのを防ぐ） */
   async replaceAll(
     eventId: string,
     items: SaveScheduleItemInput[],
   ): Promise<ScheduleItem[]> {
     const now = Date.now();
+    // URL → 取得済みOGメタ の引き継ぎマップ
+    const ogByUrl = new Map<string, string>();
+    for (const row of await many<{ material_url: string; material_og_image: string; material_og_url: string }>(
+      "SELECT material_url, material_og_image, material_og_url FROM event_schedule_item WHERE event_id = ? AND material_og_url <> ''",
+      eventId,
+    )) {
+      if (row.material_og_url === row.material_url) {
+        ogByUrl.set(row.material_url, row.material_og_image);
+      }
+    }
     await batch([
       {
         sql: "DELETE FROM event_schedule_item WHERE event_id = ?",
@@ -70,8 +85,8 @@ export const eventScheduleRepo = {
       ...items.map((it, i) => ({
         sql: `INSERT INTO event_schedule_item
           (id, event_id, title, description, duration_min, starts_at,
-           speaker_user_id, speaker_name, material_url, sort_order, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           speaker_user_id, speaker_name, material_url, material_og_image, material_og_url, sort_order, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           crypto.randomUUID(),
           eventId,
@@ -82,11 +97,76 @@ export const eventScheduleRepo = {
           it.speakerUserId,
           it.speakerName,
           it.materialUrl,
+          ogByUrl.get(it.materialUrl) ?? "",
+          ogByUrl.has(it.materialUrl) ? it.materialUrl : "",
           i,
           now,
         ],
       })),
     ]);
     return this.listByEvent(eventId);
+  },
+
+  /** 1項目を取得（イベント跨ぎ防止のため eventId でも絞る）。
+   * 権限判定用に生の speaker_user_id も返す（ユーザー削除済みでも判定できるように） */
+  async findItem(
+    eventId: string,
+    itemId: string,
+  ): Promise<(ScheduleItem & { speakerUserId: string | null }) | null> {
+    const row = await one<Row>(
+      `${SELECT} WHERE s.event_id = ? AND s.id = ?`,
+      eventId,
+      itemId,
+    );
+    return row ? { ...toItem(row), speakerUserId: row.speaker_user_id } : null;
+  },
+
+  /** 資料URLのみ更新（登壇者本人の自己編集用 #148）。
+   * URL が変わるので OG キャッシュはクリアし、バックグラウンド再取得に任せる */
+  async updateMaterial(
+    eventId: string,
+    itemId: string,
+    url: string,
+  ): Promise<void> {
+    await run(
+      `UPDATE event_schedule_item
+        SET material_url = ?, material_og_image = '', material_og_url = ''
+        WHERE id = ? AND event_id = ?`,
+      url,
+      itemId,
+      eventId,
+    );
+  },
+
+  /** OG メタが未取得（URL 変更含む）の項目を列挙する (#149) */
+  async listNeedingOgRefresh(
+    eventId: string,
+    limit: number,
+  ): Promise<Array<{ id: string; materialUrl: string }>> {
+    const rows = await many<{ id: string; material_url: string }>(
+      `SELECT id, material_url FROM event_schedule_item
+        WHERE event_id = ? AND material_url != '' AND material_og_url != material_url
+        ORDER BY sort_order ASC LIMIT ?`,
+      eventId,
+      limit,
+    );
+    return rows.map((r) => ({ id: r.id, materialUrl: r.material_url }));
+  },
+
+  /** OG メタのキャッシュを保存する（失敗時も og_url を埋めて再取得ループを防ぐ） */
+  /** OG メタを書き込む。取得開始時の URL と現在値が一致する場合のみ反映
+   * （並行実行の古い結果で新しい URL のサムネイルを上書きしないための CAS） */
+  async setOgMeta(
+    itemId: string,
+    ogImage: string,
+    ogUrl: string,
+  ): Promise<void> {
+    await run(
+      "UPDATE event_schedule_item SET material_og_image = ?, material_og_url = ? WHERE id = ? AND material_url = ?",
+      ogImage,
+      ogUrl,
+      itemId,
+      ogUrl,
+    );
   },
 };

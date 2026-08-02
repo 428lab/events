@@ -1,0 +1,156 @@
+import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
+import { takeOgFetchSlot } from "../runtime.js";
+
+/** 1回の実行で取得する最大件数（サブリクエスト上限・実行時間の安全弁） */
+const MAX_ITEMS_PER_RUN = 20;
+/** レスポンス本文の読み取り上限（OG メタは先頭にあるので十分） */
+const MAX_BODY_BYTES = 200 * 1024;
+/** 取得タイムアウト（ms） */
+const FETCH_TIMEOUT_MS = 5000;
+/** キャッシュする OG 画像 URL の最大長 */
+const MAX_OG_IMAGE_LEN = 600;
+
+/** IPv4 のプライベート/ループバック/リンクローカル帯か（数値4組で判定） */
+function isPrivateIpv4(a: number, b: number): boolean {
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 169 && b === 254) return true;
+  return false;
+}
+
+/** SSRF の安価なガード：明らかにローカル/プライベートを指すホスト名を弾く。
+ * DNS 解決まではしない（Workers の fetch は内部アドレスに届かない前提の追加防御）。
+ * 10進/8進/16進IPやuserinfo偽装は WHATWG URL の正規化後に評価されるため素通りしない */
+export function isPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (h === "localhost" || h.endsWith(".local") || h === "") return true;
+  // IPv6 リテラル（":" を含む場合のみ。fc2.com 等の通常ホスト名を誤検知しない）
+  if (h.includes(":")) {
+    if (h === "::1") return true;
+    // リンクローカル fe80::/10（fe80〜febf）・ULA fc00::/7（fc/fd 始まり）
+    if (/^fe[89ab][0-9a-f]?:/.test(h) || /^f[cd][0-9a-f]{2}:/.test(h)) return true;
+    // IPv4射影（::ffff:127.0.0.1 → ::ffff:7f00:1 に正規化される）を v4 として再評価
+    const mapped = h.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (mapped) {
+      const hi = parseInt(mapped[1], 16);
+      const lo = parseInt(mapped[2], 16);
+      return isPrivateIpv4(hi >> 8, hi & 0xff) || Number.isNaN(lo);
+    }
+    // 判定できない IPv6 リテラルは安全側で拒否（公開サイトのv6直指定はまず無い）
+    return true;
+  }
+  // IPv4 リテラル
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) return isPrivateIpv4(Number(m[1]), Number(m[2]));
+  return false;
+}
+
+/** HTML から og:image（無ければ og:image:secure_url）の URL を抜き出す。
+ * meta タグの属性順（property→content / content→property）両対応。無ければ null */
+export function parseOgImage(html: string): string | null {
+  for (const prop of ["og:image", "og:image:secure_url"]) {
+    // <meta property="og:image" content="..."> 形式
+    const re1 = new RegExp(
+      `<meta[^>]*\\bproperty=["']${prop}["'][^>]*\\bcontent=["']([^"']+)["']`,
+      "i",
+    );
+    // <meta content="..." property="og:image"> 形式（属性順が逆）
+    const re2 = new RegExp(
+      `<meta[^>]*\\bcontent=["']([^"']+)["'][^>]*\\bproperty=["']${prop}["']`,
+      "i",
+    );
+    const found = re1.exec(html)?.[1] ?? re2.exec(html)?.[1];
+    if (found) return found;
+  }
+  return null;
+}
+
+/** リダイレクトの最大追跡数（各ホップでプライベートホストを再検証する） */
+const MAX_REDIRECTS = 3;
+
+/** URL を GET して本文先頭を読み、og:image の URL を返す（見つからなければ ""）。
+ * redirect は手動追跡し、ホップごとに isPrivateHost を再検証する
+ * （公開ホスト→内部アドレスへの302で SSRF ガードを迂回されないように）。 */
+async function fetchOgImage(url: string): Promise<string> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    let current = url;
+    let res: Response | null = null;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const parsed = new URL(current);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+      if (isPrivateHost(parsed.hostname)) return "";
+      if (!takeOgFetchSlot()) return "";
+      res = await fetch(current, {
+        method: "GET",
+        redirect: "manual",
+        signal: ctrl.signal,
+        headers: { "User-Agent": "eventer-og-fetcher" },
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location");
+        if (!loc || hop === MAX_REDIRECTS) return "";
+        current = new URL(loc, current).toString();
+        continue;
+      }
+      break;
+    }
+    if (!res || !res.ok || !res.body) return "";
+    // HTML 以外（PDF等）は読まない
+    const ct = res.headers.get("content-type") ?? "";
+    if (!ct.includes("text/html")) return "";
+    // 本文は先頭 MAX_BODY_BYTES だけ読む（巨大ページ対策）
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (total < MAX_BODY_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      total += value.byteLength;
+    }
+    await reader.cancel().catch(() => {});
+    const merged = new Uint8Array(Math.min(total, MAX_BODY_BYTES));
+    let offset = 0;
+    for (const c of chunks) {
+      const take = Math.min(c.byteLength, merged.length - offset);
+      merged.set(c.subarray(0, take), offset);
+      offset += take;
+      if (offset >= merged.length) break;
+    }
+    const html = new TextDecoder("utf-8").decode(merged);
+    const image = parseOgImage(html);
+    // <img src> に使うので https のみ許可。長すぎる URL はキャッシュしない
+    if (image && image.startsWith("https://") && image.length <= MAX_OG_IMAGE_LEN) {
+      return image;
+    }
+    return "";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** イベントの資料URLの OG 画像をバックグラウンドで取得してキャッシュする (#149)。
+ * material_og_url !== material_url の項目だけが対象。失敗しても og_url を埋めて
+ * 同じ URL を永久に再取得し続けないようにする。 */
+export async function refreshMaterialMeta(eventId: string): Promise<void> {
+  const targets = await eventScheduleRepo.listNeedingOgRefresh(
+    eventId,
+    MAX_ITEMS_PER_RUN,
+  );
+  for (const t of targets) {
+    let image = "";
+    try {
+      image = await fetchOgImage(t.materialUrl);
+    } catch {
+      // 取得失敗（タイムアウト・不正URL等）は画像なしとしてキャッシュする
+    }
+    try {
+      await eventScheduleRepo.setOgMeta(t.id, image, t.materialUrl);
+    } catch {
+      // DB 書き込み失敗は次回の保存時に再試行される
+    }
+  }
+}

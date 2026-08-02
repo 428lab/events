@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import type { ScheduleItem } from "@eventer/shared";
+import { isPrivateHost, parseOgImage } from "../src/lib/materialMeta.js";
 
 const BASE = "https://example.com";
 
@@ -270,5 +271,266 @@ describe("登壇資料URL (#146)", () => {
       }),
     });
     expect(bad.status).toBe(400);
+  });
+});
+
+/** 資料URLの自己編集 PATCH を投げる */
+function patchMaterial(
+  eventId: string,
+  itemId: string,
+  cookie: string | null,
+  materialUrl: string,
+): Promise<Response> {
+  return SELF.fetch(
+    `${BASE}/api/events/${eventId}/timetable/${itemId}/material`,
+    {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        ...(cookie ? { cookie } : {}),
+      },
+      body: JSON.stringify({ materialUrl }),
+    },
+  );
+}
+
+describe("登壇資料の自己編集 (#148)", () => {
+  /** イベント＋登壇者リンク付きのコマを用意し、コマIDを返す */
+  async function setupWithSpeaker(): Promise<{
+    admin: string;
+    eventId: string;
+    speaker: { userId: string; cookie: string };
+    itemId: string;
+  }> {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const speaker = await makeMember(eventId, "participant");
+    const saved = await putTimetable(eventId, admin, [
+      { title: "オープニング", durationMin: 10 },
+      {
+        title: "登壇セッション",
+        durationMin: 30,
+        speakerUserId: speaker.userId,
+      },
+    ]);
+    expect(saved.status).toBe(200);
+    const { items } = (await saved.json()) as { items: ScheduleItem[] };
+    return { admin, eventId, speaker, itemId: items[1].id };
+  }
+
+  it("リンクされた登壇者本人が自分のコマの資料URLを設定・クリアできる", async () => {
+    const { eventId, speaker, itemId } = await setupWithSpeaker();
+
+    // 127.0.0.1 はOG取得ガードで弾かれるのでテストが外部ネットワークに出ない
+    const res = await patchMaterial(
+      eventId,
+      itemId,
+      speaker.cookie,
+      "https://127.0.0.1/my-deck",
+    );
+    expect(res.status).toBe(200);
+    const { item } = (await res.json()) as { item: ScheduleItem };
+    expect(item.materialUrl).toBe("https://127.0.0.1/my-deck");
+    expect(item.materialOgImage).toBe("");
+
+    // GET でも反映されている（materialOgImage フィールド付き）
+    const got = (await (await getTimetable(eventId)).json()) as {
+      items: ScheduleItem[];
+    };
+    expect(got.items[1].materialUrl).toBe("https://127.0.0.1/my-deck");
+    expect(got.items[1].materialOgImage).toBe("");
+
+    // 空文字でクリアできる
+    const cleared = await patchMaterial(eventId, itemId, speaker.cookie, "");
+    expect(cleared.status).toBe(200);
+    const clearedBody = (await cleared.json()) as { item: ScheduleItem };
+    expect(clearedBody.item.materialUrl).toBe("");
+  });
+
+  it("他の非staffメンバーは403、staffは誰のコマでも更新できる、未ログインは401", async () => {
+    const { eventId, itemId } = await setupWithSpeaker();
+    const other = await makeMember(eventId, "participant");
+    const staff = await makeMember(eventId, "staff");
+
+    expect(
+      (
+        await patchMaterial(
+          eventId,
+          itemId,
+          other.cookie,
+          "https://127.0.0.1/steal",
+        )
+      ).status,
+    ).toBe(403);
+
+    const byStaff = await patchMaterial(
+      eventId,
+      itemId,
+      staff.cookie,
+      "https://127.0.0.1/staff-set",
+    );
+    expect(byStaff.status).toBe(200);
+    const { item } = (await byStaff.json()) as { item: ScheduleItem };
+    expect(item.materialUrl).toBe("https://127.0.0.1/staff-set");
+
+    expect(
+      (await patchMaterial(eventId, itemId, null, "https://127.0.0.1/x"))
+        .status,
+    ).toBe(401);
+  });
+
+  it("不正URLは400、別イベントのコマは404", async () => {
+    const { admin, eventId, speaker, itemId } = await setupWithSpeaker();
+
+    expect(
+      (
+        await patchMaterial(
+          eventId,
+          itemId,
+          speaker.cookie,
+          "javascript:alert(1)",
+        )
+      ).status,
+    ).toBe(400);
+
+    // 別イベントの ID を経由すると 404（イベント跨ぎ防止）
+    const otherEventId = await setupEvent(admin);
+    expect(
+      (
+        await patchMaterial(
+          otherEventId,
+          itemId,
+          speaker.cookie,
+          "https://127.0.0.1/x",
+        )
+      ).status,
+    ).toBe(404);
+
+    // 存在しないコマも 404
+    expect(
+      (
+        await patchMaterial(
+          eventId,
+          crypto.randomUUID(),
+          speaker.cookie,
+          "https://127.0.0.1/x",
+        )
+      ).status,
+    ).toBe(404);
+  });
+});
+
+describe("資料OGメタの取得 (#149)", () => {
+  it("parseOgImage: og:image を属性順の違い込みで抽出できる", () => {
+    expect(
+      parseOgImage(
+        '<html><head><meta property="og:image" content="https://cdn.example.com/a.png"></head></html>',
+      ),
+    ).toBe("https://cdn.example.com/a.png");
+    // content が先に来る形式
+    expect(
+      parseOgImage(
+        '<meta content="https://cdn.example.com/b.jpg" property="og:image" />',
+      ),
+    ).toBe("https://cdn.example.com/b.jpg");
+    // シングルクォート・追加属性あり
+    expect(
+      parseOgImage(
+        "<meta name='x' property='og:image' data-x='1' content='https://c.example.com/c.png'/>",
+      ),
+    ).toBe("https://c.example.com/c.png");
+    // og:image が無ければ secure_url にフォールバック
+    expect(
+      parseOgImage(
+        '<meta property="og:image:secure_url" content="https://cdn.example.com/s.png">',
+      ),
+    ).toBe("https://cdn.example.com/s.png");
+    // og:image:width 等を og:image と誤認しない
+    expect(
+      parseOgImage('<meta property="og:image:width" content="1200">'),
+    ).toBeNull();
+    expect(parseOgImage("<html><body>no og</body></html>")).toBeNull();
+  });
+
+  it("isPrivateHost: ローカル/プライベート帯を弾き、公開ホストは通す", () => {
+    expect(isPrivateHost("localhost")).toBe(true);
+    expect(isPrivateHost("127.0.0.1")).toBe(true);
+    expect(isPrivateHost("10.0.0.5")).toBe(true);
+    expect(isPrivateHost("192.168.1.1")).toBe(true);
+    expect(isPrivateHost("172.16.0.1")).toBe(true);
+    expect(isPrivateHost("172.31.255.255")).toBe(true);
+    expect(isPrivateHost("169.254.1.1")).toBe(true);
+    expect(isPrivateHost("printer.local")).toBe(true);
+    expect(isPrivateHost("[::1]")).toBe(true);
+    expect(isPrivateHost("::1")).toBe(true);
+
+    expect(isPrivateHost("speakerdeck.com")).toBe(false);
+    expect(isPrivateHost("docs.google.com")).toBe(false);
+    expect(isPrivateHost("172.32.0.1")).toBe(false);
+    expect(isPrivateHost("8.8.8.8")).toBe(false);
+  });
+});
+
+describe("資料編集の権限とSSRFガード強化（レビュー対応）", () => {
+  it("キャンセル済みの元メンバーは自分のコマでも編集不可", async () => {
+    const cookie = await loginDev();
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        title: "キャンセル者編集不可E2E",
+        venueType: "online",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+    // 一般ユーザーをキャンセル済みメンバーとして直挿入し、そのコマの担当にする
+    const uid = crypto.randomUUID();
+    const sid = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at) VALUES (?, ?, ?, 'テスト', NULL, ?)",
+    )
+      .bind(uid, `nostr:${uid}`, `u_${uid.slice(0, 6)}`, Date.now())
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
+    )
+      .bind(sid, uid, Date.now() + 86400000)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at, canceled_at, canceled_scheduling) VALUES (?, ?, ?, 'participant', NULL, 'canceled', 0, ?, ?, 0)",
+    )
+      .bind(crypto.randomUUID(), event.id, uid, Date.now(), Date.now())
+      .run();
+    const itemId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO event_schedule_item (id, event_id, title, description, duration_min, starts_at, speaker_user_id, speaker_name, material_url, sort_order, created_at) VALUES (?, ?, 'LT', '', 10, NULL, ?, '', '', 0, ?)",
+    )
+      .bind(itemId, event.id, uid, Date.now())
+      .run();
+
+    const res = await SELF.fetch(
+      `${BASE}/api/events/${event.id}/timetable/${itemId}/material`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie: `eventer_session=${sid}`,
+        },
+        body: JSON.stringify({ materialUrl: "https://example.com/deck" }),
+      },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("isPrivateHost: IPv4射影・リンクローカルv6は拒否、fc2.com等の通常ホストは許可", async () => {
+    const { isPrivateHost } = await import("../src/lib/materialMeta.js");
+    expect(isPrivateHost("[::ffff:7f00:1]")).toBe(true); // ::ffff:127.0.0.1
+    expect(isPrivateHost("[::ffff:a9fe:a9fe]")).toBe(true); // 169.254.169.254
+    expect(isPrivateHost("[fe81::1]")).toBe(true);
+    expect(isPrivateHost("fc2.com")).toBe(false);
+    expect(isPrivateHost("fcbarcelona.com")).toBe(false);
+    expect(isPrivateHost("speakerdeck.com")).toBe(false);
   });
 });

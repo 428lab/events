@@ -25,9 +25,19 @@ export const scheduleItemSchema = z.object({
   speakerName: z.string(),
   /** 登壇資料URL（Speaker Deck・Googleスライド・events labのデッキ等）。空文字=なし */
   materialUrl: z.string(),
+  /** 資料URLのOG画像（サーバーが取得してキャッシュ）。空文字=なし (#149) */
+  materialOgImage: z.string(),
   sortOrder: z.number(),
 });
 export type ScheduleItem = z.infer<typeof scheduleItemSchema>;
+
+/** 登壇資料URLの入力（http/https のみ許可。空文字=なし/クリア） */
+const materialUrlInput = z
+  .string()
+  .trim()
+  .max(500)
+  .refine((v) => v === "" || /^https?:\/\//.test(v), "URLはhttp/httpsのみ")
+  .default("");
 
 /** タイムテーブルの保存入力（1項目）。並び順は配列順で決まる */
 export const saveScheduleItemInput = z.object({
@@ -38,14 +48,17 @@ export const saveScheduleItemInput = z.object({
   speakerUserId: z.string().nullable().default(null),
   speakerName: z.string().max(100).default(""),
   /** 登壇資料URL。http/https のみ許可（空文字=なし） */
-  materialUrl: z
-    .string()
-    .trim()
-    .max(500)
-    .refine((v) => v === "" || /^https?:\/\//.test(v), "URLはhttp/httpsのみ")
-    .default(""),
+  materialUrl: materialUrlInput,
 });
 export type SaveScheduleItemInput = z.infer<typeof saveScheduleItemInput>;
+
+/** 登壇者本人による資料URLの更新入力 (#148) */
+export const updateScheduleMaterialInput = z.object({
+  materialUrl: materialUrlInput,
+});
+export type UpdateScheduleMaterialInput = z.infer<
+  typeof updateScheduleMaterialInput
+>;
 
 /** タイムテーブルの保存入力（全項目の一括置き換え） */
 export const saveScheduleInput = z.object({

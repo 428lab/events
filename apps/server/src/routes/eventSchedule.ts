@@ -1,12 +1,17 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { saveScheduleInput } from "@eventer/shared";
-import type { SaveScheduleInput } from "@eventer/shared";
+import { saveScheduleInput, updateScheduleMaterialInput } from "@eventer/shared";
+import type {
+  SaveScheduleInput,
+  UpdateScheduleMaterialInput,
+} from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth, currentUser } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
+import { deferBackground } from "../runtime.js";
+import { refreshMaterialMeta } from "../lib/materialMeta.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -62,6 +67,46 @@ eventScheduleRoutes.put(
           ? it.speakerUserId
           : null,
     }));
-    return c.json({ items: await eventScheduleRepo.replaceAll(eventId, items) });
+    const saved = await eventScheduleRepo.replaceAll(eventId, items);
+    // OG サムネイルはレスポンスを待たせずバックグラウンドで取得 (#149)
+    await deferBackground(refreshMaterialMeta(eventId));
+    return c.json({ items: saved });
+  },
+);
+
+/** 登壇資料URLの更新（登壇者本人の自己編集 #148）。
+ * staff は編集画面から全体を保存できるが、このエンドポイントでも更新可。 */
+eventScheduleRoutes.patch(
+  "/:id/timetable/:itemId/material",
+  zValidator("json", updateScheduleMaterialInput),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const itemId = c.req.param("itemId");
+    if (!(await eventsRepo.findById(eventId))) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    const item = await eventScheduleRepo.findItem(eventId, itemId);
+    if (!item) return c.json({ error: "not_found" }, 404);
+
+    // 許可: アプリ管理者 / イベント staff / このコマにリンクされた登壇者本人。
+    // 登壇者本人でも現役メンバーであること（離脱・キャンセル済みは不可）
+    const user = c.get("user");
+    if (!isAppAdmin(user)) {
+      const member = await eventMembersRepo.find(eventId, user.id);
+      const isSpeakerSelf = item.speakerUserId === user.id && member != null;
+      if (!isSpeakerSelf && member?.role !== "staff") {
+        return c.json({ error: "forbidden" }, 403);
+      }
+    }
+
+    const input = valid<UpdateScheduleMaterialInput>(c, "json");
+    await eventScheduleRepo.updateMaterial(eventId, itemId, input.materialUrl);
+    // OG サムネイルはバックグラウンドで再取得 (#149)
+    await deferBackground(refreshMaterialMeta(eventId));
+    const updated = await eventScheduleRepo.findItem(eventId, itemId);
+    if (!updated) return c.json({ error: "not_found" }, 404);
+    // speakerUserId は権限判定用の内部フィールドなのでレスポンスからは外す
+    const { speakerUserId: _internal, ...responseItem } = updated;
+    return c.json({ item: responseItem });
   },
 );

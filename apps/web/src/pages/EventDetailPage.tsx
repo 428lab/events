@@ -56,6 +56,7 @@ import { useEventState } from "../api/scoringHooks.js";
 import { EventPhotos } from "../components/EventPhotos.js";
 import { EventComments } from "../components/EventComments.js";
 import { EventSchedule } from "../components/EventSchedule.js";
+import { EventMaterials } from "../components/EventMaterials.js";
 import { useRecordView } from "../api/analyticsHooks.js";
 import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
@@ -444,6 +445,9 @@ export function EventDetailPage() {
         eventStartsAt={event.scheduling ? null : event.startsAt}
         isStaff={isStaff}
       />
+
+      {/* 登壇資料ギャラリー（資料URLのあるコマだけ。無ければ非表示） */}
+      <EventMaterials eventId={id} />
 
       {/* 参加者限定のお知らせ（サーバーが閲覧可の人にだけ返す） */}
       {membersNote && (

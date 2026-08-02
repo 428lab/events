@@ -17,8 +17,11 @@ import ScheduleIcon from "@mui/icons-material/Schedule";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import { computeScheduleTimes } from "@eventer/shared";
+import type { ScheduleItem } from "@eventer/shared";
+import { useMe } from "../api/hooks.js";
 import { useEventSchedule } from "../api/eventScheduleHooks.js";
 import { formatTime } from "../lib/format.js";
+import { MaterialEditDialog } from "./MaterialEditDialog.js";
 import { ScheduleEditor } from "./ScheduleEditor.js";
 import { UserLink } from "./UserLink.js";
 
@@ -35,7 +38,10 @@ export function EventSchedule({
   isStaff: boolean;
 }) {
   const { data: items } = useEventSchedule(eventId);
+  const { data: me } = useMe();
   const [editing, setEditing] = useState(false);
+  // 登壇者本人による資料URL編集ダイアログの対象コマ (#148)
+  const [materialItem, setMaterialItem] = useState<ScheduleItem | null>(null);
 
   if (!items) return null;
   // 空のタイムテーブルは staff にだけ編集導線として見せる
@@ -131,6 +137,18 @@ export function EventSchedule({
                             <DescriptionOutlinedIcon sx={{ fontSize: 18 }} />
                           </MuiLink>
                         )}
+                        {/* リンクされた登壇者本人は自分のコマの資料URLを編集できる
+                            （staff は上の編集ボタンから全体を編集する） (#148) */}
+                        {!isStaff && me && it.speaker?.id === me.id && (
+                          <IconButton
+                            size="small"
+                            onClick={() => setMaterialItem(it)}
+                            title="資料URLを編集"
+                            sx={{ ml: 0.25, p: 0.25, verticalAlign: "middle" }}
+                          >
+                            <EditOutlinedIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        )}
                       </Typography>
                       {it.description && (
                         <Typography
@@ -163,6 +181,14 @@ export function EventSchedule({
               </TableBody>
             </Table>
           </TableContainer>
+        )}
+
+        {materialItem && (
+          <MaterialEditDialog
+            eventId={eventId}
+            item={materialItem}
+            onClose={() => setMaterialItem(null)}
+          />
         )}
       </CardContent>
     </Card>
