@@ -19,7 +19,7 @@ import {
   usePublicPastEventsInfinite,
   usePublicSchedulingEvents,
 } from "../api/hooks.js";
-import { EventCard } from "../components/EventCard.js";
+import { EventList, ListColumnsToggle } from "../components/EventList.js";
 import { EventSearchPanel } from "../components/EventSearchPanel.js";
 import { EggTabs } from "../components/EggTabs.js";
 
@@ -67,14 +67,18 @@ function PastEvents() {
   if (total === 0) return null;
   return (
     <Box>
-      <Typography variant="h5" fontWeight={700} gutterBottom>
-        過去のイベント
-      </Typography>
-      <Stack spacing={2}>
-        {events.map((e) => (
-          <EventCard key={e.id} event={e} />
-        ))}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ mb: 1 }}
+      >
+        <Typography variant="h5" fontWeight={700}>
+          過去のイベント
+        </Typography>
+        <ListColumnsToggle />
       </Stack>
+      <EventList events={events} />
       {past.hasNextPage && (
         <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
           <Button
@@ -101,20 +105,23 @@ function SchedulingEvents() {
   if (q.isLoading || total === 0) return null;
   return (
     <Box>
-      <Typography
-        variant="h5"
-        fontWeight={700}
-        gutterBottom
-        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ mb: 1 }}
       >
-        <CalendarMonthIcon fontSize="medium" />
-        日程調整中のイベント
-      </Typography>
-      <Stack spacing={2}>
-        {(q.data?.events ?? []).map((e) => (
-          <EventCard key={e.id} event={e} />
-        ))}
+        <Typography
+          variant="h5"
+          fontWeight={700}
+          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+        >
+          <CalendarMonthIcon fontSize="medium" />
+          日程調整中のイベント
+        </Typography>
+        <ListColumnsToggle />
       </Stack>
+      <EventList events={q.data?.events ?? []} />
       {pageCount > 1 && (
         <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
           <Pagination
@@ -147,9 +154,17 @@ export function PublicEventsPage() {
         <Stack spacing={5}>
           <SchedulingEvents />
         <Box>
-          <Typography variant="h5" fontWeight={700} gutterBottom>
-            開催中・開催予定のイベント
-          </Typography>
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            sx={{ mb: 1 }}
+          >
+            <Typography variant="h5" fontWeight={700}>
+              開催中・開催予定のイベント
+            </Typography>
+            <ListColumnsToggle />
+          </Stack>
           {upcoming.isError ? (
             <Alert severity="error">
               イベントを読み込めませんでした。時間をおいて再読み込みしてください。
@@ -162,11 +177,7 @@ export function PublicEventsPage() {
             </Typography>
           ) : (
             <>
-              <Stack spacing={2}>
-                {events.map((e) => (
-                  <EventCard key={e.id} event={e} />
-                ))}
-              </Stack>
+              <EventList events={events} />
               {total > events.length && lastStartsAt != null && (
                 <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
                   <Button

@@ -2,7 +2,7 @@ import { Alert, Box, Button, Stack, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { Link as RouterLink } from "react-router-dom";
 import { useEvents } from "../api/hooks.js";
-import { EventCard } from "../components/EventCard.js";
+import { EventList, ListColumnsToggle } from "../components/EventList.js";
 import { EventSearchPanel } from "../components/EventSearchPanel.js";
 import { EggTabs } from "../components/EggTabs.js";
 
@@ -16,14 +16,17 @@ export function EventsPage() {
         <Typography variant="h5" fontWeight={700}>
           公開中のイベント
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          component={RouterLink}
-          to="/events/new"
-        >
-          イベント作成
-        </Button>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <ListColumnsToggle />
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            component={RouterLink}
+            to="/events/new"
+          >
+            イベント作成
+          </Button>
+        </Stack>
       </Stack>
 
       <EventSearchPanel>
@@ -40,11 +43,7 @@ export function EventsPage() {
             </Typography>
           </Box>
         ) : (
-          <Stack spacing={2}>
-            {events.map((e) => (
-              <EventCard key={e.id} event={e} />
-            ))}
-          </Stack>
+          <EventList events={events} />
         )}
       </EventSearchPanel>
     </Stack>
