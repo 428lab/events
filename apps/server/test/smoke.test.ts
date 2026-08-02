@@ -12,6 +12,47 @@ async function login(): Promise<string> {
   return setCookie!.split(";")[0];
 }
 
+describe("検索の phase 振り分け (#98)", () => {
+  it("開催中は upcoming のみ・調整中は upcoming・終了済みは past のみ", async () => {
+    const login = await SELF.fetch(`${BASE}/api/auth/dev-login`, { method: "POST" });
+    const cookie = login.headers.get("set-cookie")!.split(";")[0];
+    const tag = crypto.randomUUID().slice(0, 8);
+    const mk = async (body: Record<string, unknown>) => {
+      const r = await SELF.fetch(`${BASE}/api/events`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ venueType: "online", ...body }),
+      });
+      const { event } = (await r.json()) as { event: { id: string } };
+      await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ status: "published" }),
+      });
+      return event.id;
+    };
+    const now = Date.now();
+    const ongoing = await mk({ title: `開催中_${tag}`, startsAt: now - 3600_000, endsAt: now + 3600_000 });
+    const sched = await mk({ title: `調整中_${tag}`, scheduling: true, startsAt: 0, endsAt: 0 });
+    const past = await mk({ title: `終了_${tag}`, startsAt: now - 7200_000, endsAt: now - 3600_000 });
+
+    const get = async (phase: string) => {
+      const r = await SELF.fetch(
+        `${BASE}/api/public/events/search?phase=${phase}&q=${encodeURIComponent(tag)}&limit=50`,
+      );
+      return ((await r.json()) as { events: { id: string }[] }).events.map((e) => e.id);
+    };
+    const up = await get("upcoming");
+    const pa = await get("past");
+    expect(up).toContain(ongoing);
+    expect(up).toContain(sched);
+    expect(up).not.toContain(past);
+    expect(pa).toContain(past);
+    expect(pa).not.toContain(ongoing);
+    expect(pa).not.toContain(sched);
+  });
+});
+
 describe("smoke", () => {
   it("GET /api/health returns ok", async () => {
     const res = await SELF.fetch(`${BASE}/api/health`);

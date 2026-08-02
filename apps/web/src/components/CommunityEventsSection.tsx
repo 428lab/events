@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  Alert,
   Box,
   Button,
   Card,
@@ -52,7 +53,6 @@ export function CommunityEventsSection({
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
   // 「現在」はマウント時に固定（クエリキーを安定させ再取得ループを防ぐ）
-  const [now] = useState(() => Date.now());
 
   const hasFilters = Boolean(
     q.trim() || from || to || sort !== DEFAULT_SORT[tab],
@@ -63,14 +63,17 @@ export function CommunityEventsSection({
       q: q.trim() || undefined,
       // タブが期間の既定値を与える（開催予定: 終了が今以降 / 過去: 開始が今以前）。
       // ユーザーが期間を指定した場合はそちらを優先する。
-      from: tab === "upcoming" ? (dayStart(from) ?? now) : dayStart(from),
-      to: tab === "past" ? (dayEnd(to) ?? now) : dayEnd(to),
+      // タブは phase で厳密に判定（開催中は upcoming のみ・調整中は upcoming・過去は終了済みのみ）。
+      // 期間フィルタはユーザー指定時のみ AND 合成
+      phase: tab,
+      from: dayStart(from),
+      to: dayEnd(to),
       communityId,
       sort,
       page,
       limit: PAGE_SIZE,
     }),
-    [tab, q, from, to, communityId, sort, page, now],
+    [tab, q, from, to, communityId, sort, page],
   );
   const search = useEventSearch(params, true);
 
@@ -194,7 +197,9 @@ export function CommunityEventsSection({
         </Card>
       </Collapse>
 
-      {search.isLoading || !search.data ? (
+      {search.isError ? (
+        <Alert severity="error">イベントを読み込めませんでした。再読み込みしてください。</Alert>
+      ) : search.isLoading || !search.data ? (
         <Typography>読み込み中…</Typography>
       ) : search.data.events.length === 0 ? (
         <Typography color="text.secondary">{emptyText}</Typography>
