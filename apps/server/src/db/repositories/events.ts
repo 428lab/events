@@ -96,6 +96,10 @@ export interface EventSearchOpts {
   excludeScheduling?: boolean;
   /** 会場募集中のみ */
   venueWantedOnly?: boolean;
+  /** 開催フェーズ: upcoming=調整中含む開催前後(ends_at>=now or scheduling) / past=終了済み */
+  phase?: "upcoming" | "past";
+  /** phase 判定に使う現在時刻 */
+  phaseNow?: number;
   sort?: "soon" | "recent" | "new";
   limit: number;
   offset: number;
@@ -138,6 +142,13 @@ function buildSearchWhere(o: EventSearchOpts): {
   }
   if (o.venueWantedOnly) {
     conds.push("venue_wanted = 1");
+  }
+  if (o.phase === "upcoming") {
+    conds.push("(scheduling = 1 OR ends_at >= ?)");
+    args.push(o.phaseNow ?? Date.now());
+  } else if (o.phase === "past") {
+    conds.push("scheduling = 0 AND ends_at < ?");
+    args.push(o.phaseNow ?? Date.now());
   }
   return { where: conds.join(" AND "), args };
 }

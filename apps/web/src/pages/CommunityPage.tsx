@@ -11,6 +11,7 @@ import {
   DialogContentText,
   DialogTitle,
   Divider,
+  Link,
   Stack,
   Typography,
 } from "@mui/material";
@@ -19,16 +20,12 @@ import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import { useMe } from "../api/hooks.js";
 import {
   useCommunity,
-  useCommunityMembers,
   useDeleteCommunity,
   useJoinCommunity,
   useLeaveCommunity,
-  useSetCommunityRole,
-  useTransferOwnership,
 } from "../api/communityHooks.js";
-import { EventCard } from "../components/EventCard.js";
+import { CommunityEventsSection } from "../components/CommunityEventsSection.js";
 import { RequestCard } from "../components/RequestCard.js";
-import { UserLink } from "../components/UserLink.js";
 import { Markdown } from "../components/Markdown.js";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -41,11 +38,8 @@ export function CommunityPage() {
   const navigate = useNavigate();
   const { data: me } = useMe();
   const { data: c, isLoading, isError } = useCommunity(slug);
-  const { data: members } = useCommunityMembers(slug);
   const join = useJoinCommunity(slug);
   const leave = useLeaveCommunity(slug);
-  const setRole = useSetCommunityRole(slug);
-  const transfer = useTransferOwnership(slug);
   const del = useDeleteCommunity();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -85,7 +79,16 @@ export function CommunityPage() {
             {c.name}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            @{c.slug} ・ メンバー {c.memberCount} ・ イベント {c.eventCount}
+            @{c.slug} ・{" "}
+            <Link
+              component={RouterLink}
+              to={`/c/${slug}/members`}
+              color="inherit"
+              underline="hover"
+            >
+              メンバー {c.memberCount}
+            </Link>{" "}
+            ・ イベント {c.eventCount}
           </Typography>
         </Box>
         {me && (
@@ -157,36 +160,8 @@ export function CommunityPage() {
 
       <Divider />
 
-      {/* イベント */}
-      <Box>
-        <Typography variant="h6" gutterBottom>
-          開催予定・開催中のイベント
-        </Typography>
-        {c.upcomingEvents.length === 0 ? (
-          <Typography color="text.secondary">
-            予定されているイベントはありません。
-          </Typography>
-        ) : (
-          <Stack spacing={1.5}>
-            {c.upcomingEvents.map((e) => (
-              <EventCard key={e.id} event={e} />
-            ))}
-          </Stack>
-        )}
-      </Box>
-
-      {c.pastEvents.length > 0 && (
-        <Box>
-          <Typography variant="h6" gutterBottom>
-            過去のイベント
-          </Typography>
-          <Stack spacing={1.5}>
-            {c.pastEvents.map((e) => (
-              <EventCard key={e.id} event={e} />
-            ))}
-          </Stack>
-        </Box>
-      )}
+      {/* イベント（検索APIベース: タブ・絞り込み・10件ページング） */}
+      <CommunityEventsSection communityId={c.id} />
 
       {/* イベントのたまご（あったらいいな） */}
       {(c.requests.length > 0 || c.isMember) && (
@@ -222,113 +197,6 @@ export function CommunityPage() {
             <Stack spacing={1.5}>
               {c.requests.map((r) => (
                 <RequestCard key={r.id} request={r} />
-              ))}
-            </Stack>
-          )}
-        </Box>
-      )}
-
-      {/* メンバー */}
-      {members && members.length > 0 && (
-        <Box>
-          <Typography variant="h6" gutterBottom>
-            メンバー（{members.length}）
-          </Typography>
-          {isOwner ? (
-            <Stack divider={<Divider flexItem />} spacing={1}>
-              {members.map((m) => (
-                <Stack
-                  key={m.userId}
-                  direction="row"
-                  spacing={1}
-                  alignItems="center"
-                  sx={{ flexWrap: "wrap" }}
-                >
-                  <UserLink
-                    username={m.username}
-                    name={m.name}
-                    avatarUrl={m.avatarUrl}
-                    withAvatar
-                    avatarSize={32}
-                  />
-                  {ROLE_LABEL[m.role] && (
-                    <Chip label={ROLE_LABEL[m.role]} size="small" />
-                  )}
-                  <Box sx={{ flex: 1 }} />
-                  {m.role === "member" && (
-                    <Button
-                      size="small"
-                      disabled={setRole.isPending}
-                      onClick={() =>
-                        setRole.mutate({
-                          communityId: c.id,
-                          userId: m.userId,
-                          role: "admin",
-                        })
-                      }
-                    >
-                      管理者にする
-                    </Button>
-                  )}
-                  {m.role === "admin" && (
-                    <>
-                      <Button
-                        size="small"
-                        disabled={setRole.isPending}
-                        onClick={() =>
-                          setRole.mutate({
-                            communityId: c.id,
-                            userId: m.userId,
-                            role: "member",
-                          })
-                        }
-                      >
-                        メンバーに戻す
-                      </Button>
-                      <Button
-                        size="small"
-                        color="secondary"
-                        disabled={transfer.isPending}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `${m.name} にオーナーを譲渡します。あなたは管理者になります。よろしいですか？`,
-                            )
-                          ) {
-                            transfer.mutate({
-                              communityId: c.id,
-                              toUserId: m.userId,
-                            });
-                          }
-                        }}
-                      >
-                        オーナー譲渡
-                      </Button>
-                    </>
-                  )}
-                </Stack>
-              ))}
-            </Stack>
-          ) : (
-            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-              {members.map((m) => (
-                <Stack
-                  key={m.userId}
-                  direction="row"
-                  spacing={0.5}
-                  alignItems="center"
-                >
-                  <UserLink
-                    username={m.username}
-                    name={m.name}
-                    avatarUrl={m.avatarUrl}
-                    withAvatar
-                    avatarSize={32}
-                  />
-                  {ROLE_LABEL[m.role] && (
-                    <Chip label={ROLE_LABEL[m.role]} size="small" />
-                  )}
-                </Stack>
               ))}
             </Stack>
           )}

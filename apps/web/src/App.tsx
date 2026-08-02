@@ -29,6 +29,7 @@ import { TermsPage } from "./pages/TermsPage.js";
 import { UserProfilePage } from "./pages/UserProfilePage.js";
 import { CommunitiesPage } from "./pages/CommunitiesPage.js";
 import { CommunityPage } from "./pages/CommunityPage.js";
+import { CommunityMembersPage } from "./pages/CommunityMembersPage.js";
 import { CreateCommunityPage } from "./pages/CreateCommunityPage.js";
 import { CommunityEditPage } from "./pages/CommunityEditPage.js";
 import { UpcomingEventsPage } from "./pages/UpcomingEventsPage.js";
@@ -187,6 +188,14 @@ export function App() {
           }
         />
         <Route
+          path="/c/:slug/members"
+          element={
+            <PublicLayout>
+              <CommunityMembersPage />
+            </PublicLayout>
+          }
+        />
+        <Route
           path="/d/:slug"
           element={
             <PublicLayout>
@@ -234,6 +243,7 @@ export function App() {
         <Route path="/communities" element={<CommunitiesPage />} />
         <Route path="/communities/new" element={<CreateCommunityPage />} />
         <Route path="/c/:slug" element={<CommunityPage />} />
+        <Route path="/c/:slug/members" element={<CommunityMembersPage />} />
         <Route path="/c/:slug/edit" element={<CommunityEditPage />} />
         <Route path="/decks" element={<DecksPage />} />
         <Route path="/decks/:id/edit" element={<DeckEditorPage />} />

@@ -32,12 +32,13 @@ export function ListColumnsToggle() {
 /**
  * イベント一覧本体。useListColumns の設定に応じて
  * 1列（横型カード）⇔ 2列（縦型コンパクトタイル）を切り替える。
+ * 各イベントが myRole を持つ場合（マイページ/プロフィール）はそちらを優先する。
  */
 export function EventList({
   events,
   role,
 }: {
-  events: Event[];
+  events: (Event & { myRole?: EventRole })[];
   role?: EventRole;
 }) {
   const [columns] = useListColumns();
@@ -46,7 +47,7 @@ export function EventList({
       <Grid container spacing={1.5}>
         {events.map((e) => (
           <Grid item xs={6} key={e.id}>
-            <EventCard event={e} role={role} compact />
+            <EventCard event={e} role={e.myRole ?? role} compact />
           </Grid>
         ))}
       </Grid>
@@ -55,7 +56,7 @@ export function EventList({
   return (
     <Stack spacing={2}>
       {events.map((e) => (
-        <EventCard key={e.id} event={e} role={role} />
+        <EventCard key={e.id} event={e} role={e.myRole ?? role} />
       ))}
     </Stack>
   );

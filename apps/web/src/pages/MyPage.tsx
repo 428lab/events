@@ -5,7 +5,7 @@ import type { MyEventSummary } from "@eventer/shared";
 import { useMyPage } from "../api/hooks.js";
 import { useMyJoinedCommunities } from "../api/communityHooks.js";
 import { useMyFollowing } from "../api/userHooks.js";
-import { EventCard } from "../components/EventCard.js";
+import { EventList, ListColumnsToggle } from "../components/EventList.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
   owner: "オーナー",
@@ -24,18 +24,23 @@ function Section({
   if (events.length === 0 && !emptyText) return null;
   return (
     <Box>
-      <Typography variant="h5" gutterBottom fontWeight={700}>
-        {title}
-        {events.length > 0 && `（${events.length}）`}
-      </Typography>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={1}
+        sx={{ mb: 1 }}
+      >
+        <Typography variant="h5" fontWeight={700}>
+          {title}
+          {events.length > 0 && `（${events.length}）`}
+        </Typography>
+        {events.length > 0 && <ListColumnsToggle />}
+      </Stack>
       {events.length === 0 ? (
         <Typography color="text.secondary">{emptyText}</Typography>
       ) : (
-        <Stack spacing={2}>
-          {events.map((e) => (
-            <EventCard key={e.id} event={e} role={e.myRole} />
-          ))}
-        </Stack>
+        <EventList events={events} />
       )}
     </Box>
   );

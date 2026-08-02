@@ -24,7 +24,7 @@ import type { UserAward, UserPhoto, UserProfile } from "@eventer/shared";
 import { useSetFollow, useUserProfile } from "../api/userHooks.js";
 import { useMe } from "../api/hooks.js";
 import { useUserPhotos } from "../api/eventPhotoHooks.js";
-import { EventCard } from "../components/EventCard.js";
+import { EventList, ListColumnsToggle } from "../components/EventList.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
   owner: "オーナー",
@@ -224,14 +224,19 @@ function Section({
   if (events.length === 0) return null;
   return (
     <Box>
-      <Typography variant="h6" gutterBottom>
-        {title}（{events.length}）
-      </Typography>
-      <Stack spacing={1.5}>
-        {events.map((e) => (
-          <EventCard key={e.id} event={e} role={e.myRole} />
-        ))}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={1}
+        sx={{ mb: 1 }}
+      >
+        <Typography variant="h6">
+          {title}（{events.length}）
+        </Typography>
+        <ListColumnsToggle />
       </Stack>
+      <EventList events={events} />
     </Box>
   );
 }

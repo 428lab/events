@@ -145,6 +145,9 @@ export interface EventSearchParams {
   communityId?: string;
   sort?: "soon" | "recent" | "new";
   page?: number;
+  /** 1ページ件数（サーバ既定12・最大50） */
+  limit?: number;
+  phase?: "upcoming" | "past";
 }
 
 function searchQs(params: EventSearchParams): URLSearchParams {
@@ -155,6 +158,8 @@ function searchQs(params: EventSearchParams): URLSearchParams {
   if (params.after != null) qs.set("after", String(params.after));
   if (params.communityId) qs.set("communityId", params.communityId);
   if (params.sort) qs.set("sort", params.sort);
+  if (params.phase) qs.set("phase", params.phase);
+  if (params.limit != null) qs.set("limit", String(params.limit));
   return qs;
 }
 
