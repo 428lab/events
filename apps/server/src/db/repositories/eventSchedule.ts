@@ -10,6 +10,7 @@ interface Row {
   starts_at: number | null;
   speaker_user_id: string | null;
   speaker_name: string;
+  material_url: string;
   sort_order: number;
   u_username: string | null;
   u_global_name: string | null;
@@ -35,12 +36,13 @@ function toItem(row: Row): ScheduleItem {
           }
         : null,
     speakerName: row.speaker_name,
+    materialUrl: row.material_url,
     sortOrder: row.sort_order,
   };
 }
 
 const SELECT = `SELECT s.id, s.event_id, s.title, s.description, s.duration_min,
-  s.starts_at, s.speaker_user_id, s.speaker_name, s.sort_order,
+  s.starts_at, s.speaker_user_id, s.speaker_name, s.material_url, s.sort_order,
   u.username AS u_username, u.global_name AS u_global_name,
   u.avatar_url AS u_avatar_url
   FROM event_schedule_item s LEFT JOIN user u ON u.id = s.speaker_user_id`;
@@ -68,8 +70,8 @@ export const eventScheduleRepo = {
       ...items.map((it, i) => ({
         sql: `INSERT INTO event_schedule_item
           (id, event_id, title, description, duration_min, starts_at,
-           speaker_user_id, speaker_name, sort_order, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           speaker_user_id, speaker_name, material_url, sort_order, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           crypto.randomUUID(),
           eventId,
@@ -79,6 +81,7 @@ export const eventScheduleRepo = {
           it.startsAt,
           it.speakerUserId,
           it.speakerName,
+          it.materialUrl,
           i,
           now,
         ],

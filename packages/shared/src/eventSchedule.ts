@@ -23,6 +23,8 @@ export const scheduleItemSchema = z.object({
   speaker: scheduleSpeakerSchema.nullable(),
   /** フリーテキストの担当者名（リンクなし） */
   speakerName: z.string(),
+  /** 登壇資料URL（Speaker Deck・Googleスライド・events labのデッキ等）。空文字=なし */
+  materialUrl: z.string(),
   sortOrder: z.number(),
 });
 export type ScheduleItem = z.infer<typeof scheduleItemSchema>;
@@ -35,6 +37,13 @@ export const saveScheduleItemInput = z.object({
   startsAt: z.number().int().min(0).nullable().default(null),
   speakerUserId: z.string().nullable().default(null),
   speakerName: z.string().max(100).default(""),
+  /** 登壇資料URL。http/https のみ許可（空文字=なし） */
+  materialUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .refine((v) => v === "" || /^https?:\/\//.test(v), "URLはhttp/httpsのみ")
+    .default(""),
 });
 export type SaveScheduleItemInput = z.infer<typeof saveScheduleItemInput>;
 
