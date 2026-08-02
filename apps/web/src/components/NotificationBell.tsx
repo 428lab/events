@@ -45,7 +45,10 @@ export function NotificationBell() {
   const onClickItem = (n: Notification) => {
     if (!n.read) markRead.mutate(n.id);
     setAnchor(null);
-    if (n.link) navigate(n.link);
+    // 通知経由の流入を統計で判別できるよう ref を付ける
+    if (n.link) {
+      navigate(n.link.includes("?") ? `${n.link}&ref=notification` : `${n.link}?ref=notification`);
+    }
   };
 
   return (

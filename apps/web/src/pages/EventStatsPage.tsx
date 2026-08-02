@@ -21,6 +21,8 @@ import { useEventStats } from "../api/analyticsHooks.js";
 const SOURCE_LABEL: Record<string, string> = {
   direct: "直接アクセス",
   internal: "サイト内",
+  notification: "通知",
+  feed: "フィード",
   "t.co": "X (Twitter)",
   "twitter.com": "X (Twitter)",
   "x.com": "X (Twitter)",
