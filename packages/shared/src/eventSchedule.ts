@@ -32,7 +32,7 @@ export const saveScheduleItemInput = z.object({
   title: z.string().trim().min(1).max(100),
   description: z.string().max(1000).default(""),
   durationMin: z.number().int().min(0).max(1440),
-  startsAt: z.number().nullable().default(null),
+  startsAt: z.number().int().min(0).nullable().default(null),
   speakerUserId: z.string().nullable().default(null),
   speakerName: z.string().max(100).default(""),
 });

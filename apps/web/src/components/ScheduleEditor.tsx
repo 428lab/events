@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Autocomplete,
@@ -110,10 +110,28 @@ export function ScheduleEditor({
 
   const onDragEnterRow = (i: number) => {
     if (dragKey === null) return;
-    const from = rows.findIndex((r) => r.key === dragKey);
-    if (from < 0 || from === i) return;
-    move(from, i);
+    // 連続 dragenter で古い配列を参照しないよう、updater 内で位置を求める
+    setRows((rs) => {
+      const from = rs.findIndex((r) => r.key === dragKey);
+      if (from < 0 || from === i || i >= rs.length) return rs;
+      const next = [...rs];
+      const [row] = next.splice(from, 1);
+      next.splice(i, 0, row);
+      return next;
+    });
   };
+
+  // ハンドル外でマウスを離した場合もドラッグ状態を解除する
+  useEffect(() => {
+    if (dragKey === null) return;
+    const clear = () => setDragKey(null);
+    document.addEventListener("mouseup", clear);
+    document.addEventListener("touchend", clear);
+    return () => {
+      document.removeEventListener("mouseup", clear);
+      document.removeEventListener("touchend", clear);
+    };
+  }, [dragKey]);
 
   const applyTemplate = (templateKey: string) => {
     setTemplateAnchor(null);
