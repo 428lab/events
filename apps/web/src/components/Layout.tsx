@@ -15,6 +15,7 @@ import {
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
+import { useBundleReload } from "../lib/useBundleReload.js";
 import type { User } from "@eventer/shared";
 import { useIsAdmin, useLogout } from "../api/hooks.js";
 import { useAdminInquiryUnreadCount } from "../api/inquiryHooks.js";
@@ -33,6 +34,8 @@ export function Layout({
   const logout = useLogout();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  // デプロイ後の古いバンドルは次の遷移で自動リロード (#143)
+  useBundleReload();
   // スライド/配信セット編集は作業領域を最大化するため全幅
   const wide =
     (pathname.startsWith("/decks/") || pathname.startsWith("/live-sets/")) &&
