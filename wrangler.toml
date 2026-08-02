@@ -15,6 +15,10 @@ routes = [{ pattern = "events.kojira.io/*", zone_name = "kojira.io" }]
 # それ以外は Worker 内から ASSETS.fetch で配信（SPA フォールバックで index.html）。
 assets = { directory = "apps/web/dist", binding = "ASSETS", not_found_handling = "single-page-application", run_worker_first = true }
 
+# 前日リマインダーメール (#126)。毎日 UTC 0:00 = JST 9:00
+[triggers]
+crons = ["0 0 * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "eventer"
@@ -36,6 +40,8 @@ DISCORD_REDIRECT_URI = "https://events.kojira.io/api/auth/discord/callback"
 #   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
 #   X_CLIENT_ID, X_CLIENT_SECRET（X Developer Portal の OAuth2 Web App。
 #   Callback URL: <APP_BASE_URL>/api/auth/x/callback を本番/stagingそれぞれ登録）
+#   RESEND_API_KEY（メール通知 #126。未設定ならメール送信は無効。
+#   差出人は EMAIL_FROM で上書き可、既定は "events lab <noreply@kojira.io>"）
 
 # ===== staging 環境（管理者ログイン限定）=====
 # デプロイ: wrangler deploy --env staging
@@ -45,6 +51,10 @@ name = "eventer-staging"
 workers_dev = true
 routes = []  # staging はカスタムルートを使わず workers.dev のみ（本番ルートの継承を打ち消す）
 assets = { directory = "apps/web/dist", binding = "ASSETS", not_found_handling = "single-page-application", run_worker_first = true }
+
+# 前日リマインダーメール (#126)。staging も同時刻に実行
+[env.staging.triggers]
+crons = ["0 0 * * *"]
 
 [[env.staging.d1_databases]]
 binding = "DB"

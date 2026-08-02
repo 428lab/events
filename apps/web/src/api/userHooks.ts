@@ -6,13 +6,17 @@ import type {
 } from "@eventer/shared";
 import { api } from "./client.js";
 
+/** 通知設定 + メール宛先（連携が無ければ null） (#21 PR3, #126) */
+export interface NotificationPrefsData {
+  prefs: NotificationPrefs;
+  email: string | null;
+}
+
 /** 通知設定の取得/更新 (#21 PR3) */
 export function useNotificationPrefs() {
   return useQuery({
     queryKey: ["notificationPrefs"],
-    queryFn: async () =>
-      (await api.get<{ prefs: NotificationPrefs }>("/me/notification-prefs"))
-        .prefs,
+    queryFn: () => api.get<NotificationPrefsData>("/me/notification-prefs"),
   });
 }
 
@@ -20,9 +24,9 @@ export function useUpdateNotificationPrefs() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: UpdateNotificationPrefsInput) =>
-      api.put<{ prefs: NotificationPrefs }>("/me/notification-prefs", input),
-    onSuccess: ({ prefs }) => {
-      qc.setQueryData(["notificationPrefs"], prefs);
+      api.put<NotificationPrefsData>("/me/notification-prefs", input),
+    onSuccess: (data) => {
+      qc.setQueryData(["notificationPrefs"], data);
     },
   });
 }

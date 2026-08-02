@@ -89,3 +89,18 @@ cd apps/server
 pnpm exec wrangler d1 migrations apply eventer-staging --remote --env staging  # staging
 pnpm exec wrangler d1 migrations apply eventer --remote                        # 本番
 ```
+
+### メール通知（Resend）
+
+メール通知（#126）は [Resend](https://resend.com) の HTTP API で送信します。
+
+- Resend のダッシュボードで送信ドメイン `kojira.io` を検証（DNS に SPF/DKIM レコードを追加）しておく。
+- API キーをシークレットとして登録する（未設定の環境ではメール送信は自動で無効になる）。
+
+```bash
+npx wrangler secret put RESEND_API_KEY                 # 本番
+npx wrangler secret put RESEND_API_KEY --env staging   # staging
+```
+
+- 差出人は既定で `events lab <noreply@kojira.io>`。変える場合は環境変数 `EMAIL_FROM` を設定。
+- 前日リマインダーは cron トリガー（毎日 UTC 0:00 = JST 9:00）で送信される。

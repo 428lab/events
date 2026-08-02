@@ -1,5 +1,13 @@
 import type { Notification, NotificationType } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
+import {
+  sendNotificationEmailIfOptedIn,
+  sendNotificationEmailTo,
+} from "../../lib/email.js";
+import { emailRepo } from "./email.js";
+
+/** createForMany 1回あたりのメール送信上限（サブリクエスト数の安全上限） */
+const MAX_BULK_EMAILS = 50;
 
 interface NotificationRow {
   id: string;
@@ -42,6 +50,8 @@ export const notificationsRepo = {
       link,
       Date.now(),
     );
+    // メール通知ONのユーザーには同内容をメールでも送る (#126)。失敗しても通知作成は成功扱い
+    await sendNotificationEmailIfOptedIn(userId, title, body, link);
   },
 
   /** 複数ユーザーへ同一内容の通知を作成（抽選・表彰・フォロワー通知の一斉配信用）。
@@ -63,6 +73,20 @@ export const notificationsRepo = {
           args: [crypto.randomUUID(), userId, type, title, body, link, now],
         })),
       );
+    }
+    // メール通知ONのユーザーへも配信 (#126)。上限つき・失敗しても通知作成は成功扱い
+    try {
+      const recipients = await emailRepo.findRecipientsAmong(userIds);
+      if (recipients.length > MAX_BULK_EMAILS) {
+        console.warn(
+          `email: 一斉通知のメール対象 ${recipients.length} 件中 ${MAX_BULK_EMAILS} 件のみ送信`,
+        );
+      }
+      for (const r of recipients.slice(0, MAX_BULK_EMAILS)) {
+        await sendNotificationEmailTo(r.userId, r.email, title, body, link);
+      }
+    } catch (e) {
+      console.warn("email: 一斉通知のメール送信に失敗", e);
     }
   },
 

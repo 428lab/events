@@ -62,6 +62,8 @@ import {
   getVenuePhotoImage,
 } from "./routes/venues.js";
 import { venueOfferRoutes } from "./routes/venueOffers.js";
+import { emailRoutes } from "./routes/email.js";
+import { sendEventReminders } from "./lib/reminders.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -76,6 +78,8 @@ api.get("/health", (c) =>
   c.json({ ok: true, discordConfigured: env.discordConfigured }),
 );
 api.route("/auth", authRoutes);
+// 公開: メール配信停止（署名付きリンク。認証不要） (#126)
+api.route("/email", emailRoutes);
 // 公開: 開催前イベント一覧（認証不要）
 api.route("/public", publicRoutes);
 // 公開: イベントのたまご一覧・詳細（認証不要）
@@ -208,7 +212,13 @@ app.use("*", async (c, next) => {
 app.use("*", async (c, next) => {
   if (!env.isStaging) return next();
   const path = new URL(c.req.url).pathname;
-  if (path.startsWith("/api/auth/") || path === "/api/health") return next();
+  // メール配信停止はメールクライアントから未ログインで開かれるため通す (#126)
+  if (
+    path.startsWith("/api/auth/") ||
+    path === "/api/health" ||
+    path === "/api/email/unsubscribe"
+  )
+    return next();
   const user = await currentUser(c);
   if (user) return next();
   if (path.startsWith("/api/")) {
@@ -362,5 +372,15 @@ export default {
     // バインディングをリクエスト先頭で束ねる（getDb/getBucket/env が参照）
     bindEnv(workerEnv);
     return app.fetch(request, workerEnv, ctx);
+  },
+
+  // cron（毎日 UTC 0:00 = JST 9:00）: 前日リマインダーメール (#126)
+  async scheduled(
+    _controller: ScheduledController,
+    workerEnv: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    bindEnv(workerEnv);
+    ctx.waitUntil(sendEventReminders());
   },
 } satisfies ExportedHandler<Env>;

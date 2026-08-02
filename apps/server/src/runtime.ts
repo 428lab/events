@@ -18,6 +18,10 @@ export interface Env {
   X_CLIENT_ID: string;
   X_CLIENT_SECRET: string;
   SESSION_SECRET: string;
+  /** Resend の API キー（未設定ならメール送信は無効） (#126) */
+  RESEND_API_KEY?: string;
+  /** メール差出人（未設定なら既定値） (#126) */
+  EMAIL_FROM?: string;
 }
 
 // Worker のバインディングはアイソレート内で安定（リクエスト間で同一ハンドル）なので、
@@ -69,6 +73,14 @@ export const env = {
       return "dev-insecure-secret";
     }
     return secret;
+  },
+  /** Resend API キー（未設定なら空文字＝メール送信無効） (#126) */
+  get resendApiKey(): string {
+    return must().RESEND_API_KEY || "";
+  },
+  /** メール差出人 (#126) */
+  get emailFrom(): string {
+    return must().EMAIL_FROM || "events lab <noreply@kojira.io>";
   },
   get adminDiscordIds(): string[] {
     return (must().ADMIN_DISCORD_IDS || "")

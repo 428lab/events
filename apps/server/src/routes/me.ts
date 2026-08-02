@@ -12,6 +12,7 @@ import { usersRepo } from "../db/repositories/users.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { followsRepo } from "../db/repositories/follows.js";
 import { notificationPrefsRepo } from "../db/repositories/notificationPrefs.js";
+import { emailRepo } from "../db/repositories/email.js";
 import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
 
 export const meRoutes = new Hono<AppEnv>();
@@ -39,10 +40,12 @@ meRoutes.get("/requests", async (c) => {
   });
 });
 
-/** 通知設定の取得/更新 (#21 PR3) */
+/** 通知設定の取得/更新 (#21 PR3)。email はメール通知の宛先（連携が無ければ null） (#126) */
 meRoutes.get("/notification-prefs", async (c) => {
+  const userId = c.get("user").id;
   return c.json({
-    prefs: await notificationPrefsRepo.get(c.get("user").id),
+    prefs: await notificationPrefsRepo.get(userId),
+    email: await emailRepo.latestIdentityEmail(userId),
   });
 });
 
@@ -50,11 +53,12 @@ meRoutes.put(
   "/notification-prefs",
   zValidator("json", updateNotificationPrefsInput),
   async (c) => {
+    const userId = c.get("user").id;
     const prefs = await notificationPrefsRepo.update(
-      c.get("user").id,
+      userId,
       valid<UpdateNotificationPrefsInput>(c, "json"),
     );
-    return c.json({ prefs });
+    return c.json({ prefs, email: await emailRepo.latestIdentityEmail(userId) });
   },
 );
 
