@@ -102,5 +102,5 @@ npx wrangler secret put RESEND_API_KEY                 # 本番
 npx wrangler secret put RESEND_API_KEY --env staging   # staging
 ```
 
-- 差出人は既定で `events lab <noreply@kojira.io>`。変える場合は環境変数 `EMAIL_FROM` を設定。
+- 差出人は既定で `events lab <noreply@events.kojira.io>`（Resend で認証済みのドメインに合わせる）。変える場合は環境変数 `EMAIL_FROM` を設定。
 - 前日リマインダーは cron トリガー（毎日 UTC 0:00 = JST 9:00）で送信される。
