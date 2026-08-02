@@ -88,6 +88,7 @@ async function stats(username: string) {
       cancelLate: number;
       hosted: number;
       staffed: number;
+      spoken: number;
     };
   };
   return body.participation;
@@ -218,5 +219,41 @@ describe("参加実績の集計 (#106)", () => {
       .run();
     const so2 = await stats(owner.username);
     expect(so2.hosted).toBe(0);
+  });
+});
+
+describe("登壇回数 (#107)", () => {
+  it("終了済み公開イベントのタイムテーブル担当リンクを数える（同一イベント複数コマは1）", async () => {
+    const admin = await loginDev();
+    const speaker = await makeUser();
+    const now = Date.now();
+    const ended = await makeEvent(admin, {
+      startsAt: now - 7200_000,
+      endsAt: now - 3600_000,
+    });
+    const upcoming = await makeEvent(admin, {
+      startsAt: now + 3600_000,
+      endsAt: now + 7200_000,
+    });
+    // 参加メンバーにして担当リンク（終了済みイベントに2コマ、未来イベントに1コマ）
+    for (const ev of [ended, upcoming]) {
+      await env.DB.prepare(
+        "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, 'participant', NULL, 'confirmed', 0, ?)",
+      )
+        .bind(crypto.randomUUID(), ev, speaker.userId, Date.now())
+        .run();
+    }
+    const addItem = (ev: string, order: number) =>
+      env.DB.prepare(
+        "INSERT INTO event_schedule_item (id, event_id, title, description, duration_min, starts_at, speaker_user_id, speaker_name, sort_order, created_at) VALUES (?, ?, 'トーク', '', 20, NULL, ?, '', ?, ?)",
+      )
+        .bind(crypto.randomUUID(), ev, speaker.userId, order, Date.now())
+        .run();
+    await addItem(ended, 0);
+    await addItem(ended, 1);
+    await addItem(upcoming, 0);
+
+    const s = await stats(speaker.username);
+    expect(s.spoken).toBe(1); // 終了済みの1イベントのみ（複数コマでも1、未来分は数えない）
   });
 });
