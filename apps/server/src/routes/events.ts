@@ -35,6 +35,7 @@ import { currentUser, requireAuth } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
+import { awardsRepo } from "../db/repositories/awards.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { entriesRepo } from "../db/repositories/entries.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
@@ -44,7 +45,7 @@ import { notificationsRepo } from "../db/repositories/notifications.js";
 import { formatDateRangeJa } from "../lib/dateFormat.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { schedulingRepo } from "../db/repositories/scheduling.js";
-import { deleteEventImage, putEventImage } from "./images.js";
+import { copyEventImage, deleteEventImage, putEventImage } from "./images.js";
 import {
   listViewableRequestsForEvent,
   notifyRequestsOnPublish,
@@ -307,6 +308,93 @@ eventRoutes.post("/:id/publish", requireEventRole(["staff"]), async (c) => {
     await notifyFollowersOnPublish(event);
   }
   return c.json({ event });
+});
+
+/** イベントの複製（staff のみ）。設定・参加枠・採点基準・表彰の定義・画像を
+ * コピーした下書きイベントを作る。メンバー・エントリー・コメント・写真・
+ * 日程調整の候補/投票・受賞結果などはコピーしない。 */
+eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
+  const src = await eventsRepo.findById(c.req.param("id"));
+  if (!src) return c.json({ error: "not_found" }, 404);
+  const user = c.get("user");
+
+  // タイトル末尾に「のコピー」（200字上限を超えるなら切り詰めてから付与）
+  const suffix = "のコピー";
+  // コードポイント境界で切り詰め（サロゲートペアを分断しない）
+  const base =
+    src.title.length + suffix.length > 200
+      ? [...src.title].slice(0, 200 - suffix.length).join("")
+      : src.title;
+
+  // 基本情報をコピーして下書きで作成。開催日時は未定（0）に戻し、
+  // 日程調整をやり直せるよう scheduling=true で作る（編集で直接設定も可能）
+  const created = await eventsRepo.create(
+    {
+      title: base + suffix,
+      subtitle: src.subtitle,
+      description: src.description,
+      startsAt: 0,
+      endsAt: 0,
+      venueType: src.venueType,
+      venueOffline: src.venueOffline,
+      venueOnline: src.venueOnline,
+      aggregateSelfEntry: src.aggregateSelfEntry,
+      contestMode: src.contestMode,
+      communityId: src.communityId,
+      scheduling: true,
+      scheduleAnonymous: src.scheduleAnonymous,
+      venueWanted: src.venueWanted,
+    },
+    user.id,
+  );
+  await eventMembersRepo.add(created.id, user.id, "staff");
+
+  // create が受け取らない設定と参加者限定の文章は update で反映
+  await eventsRepo.update(created.id, {
+    scheduleVisible: src.scheduleVisible,
+    photosPublic: src.photosPublic,
+    attendanceCheck: src.attendanceCheck,
+    membersNote: await eventsRepo.membersNoteFor(src.id),
+  });
+
+  // 参加枠の定義（参加者は除く）。listByEvent は sort_order 順なので順序が保たれる
+  for (const slot of await participationSlotsRepo.listByEvent(src.id)) {
+    await participationSlotsRepo.create(created.id, {
+      name: slot.name,
+      capacity: slot.capacity,
+      selectionType: slot.selectionType,
+      // 抽選日時は旧イベントの絶対時刻なのでコピーしない（日程リセットと整合）
+      drawAt: null,
+    });
+  }
+
+  // 採点基準（デフォルトのシードではなく元イベントの内容をコピー）
+  for (const cr of await scoringCriteriaRepo.listByEvent(src.id)) {
+    await scoringCriteriaRepo.create(created.id, {
+      name: cr.name,
+      description: cr.description,
+      maxLevel: cr.maxLevel,
+    });
+  }
+
+  // 表彰の定義（受賞結果は除く）
+  for (const rank of await awardsRepo.listRanks(src.id)) {
+    await awardsRepo.createRank(created.id, {
+      name: rank.name,
+      content: rank.content,
+    });
+  }
+  for (const special of await awardsRepo.listSpecials(src.id)) {
+    await awardsRepo.createSpecial(created.id, {
+      name: special.name,
+      content: special.content,
+    });
+  }
+
+  // イベント画像（元画像が無ければスキップ）
+  await copyEventImage(src.id, created.id);
+
+  return c.json({ event: await eventsRepo.findById(created.id) }, 201);
 });
 
 /** イベント削除（staff のみ。関連データは FK CASCADE で削除） */
