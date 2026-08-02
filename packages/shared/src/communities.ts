@@ -67,6 +67,8 @@ export const communityDetailSchema = communitySchema.extend({
   pastEvents: z.array(eventSchema),
   /** イベントのたまご（オープンのみ。メンバーならメンバー限定も含む） */
   requests: z.array(eventRequestSchema),
+  /** イベント参加者からもらったいいねの合計（公開イベントのみ） (#155) */
+  likesReceived: z.number(),
 });
 export type CommunityDetail = z.infer<typeof communityDetailSchema>;
 

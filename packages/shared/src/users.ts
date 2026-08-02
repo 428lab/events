@@ -35,6 +35,8 @@ export const participationStatsSchema = z.object({
   staffed: z.number(),
   /** 登壇した終了済みイベント数（タイムテーブルの担当にリンクされたイベント） */
   spoken: z.number(),
+  /** 主催・スタッフとしてもらったいいねの合計（公開イベントのみ） (#155) */
+  likesReceived: z.number(),
 });
 export type ParticipationStats = z.infer<typeof participationStatsSchema>;
 
