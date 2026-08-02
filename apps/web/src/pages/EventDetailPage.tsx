@@ -212,6 +212,20 @@ export function EventDetailPage() {
     <Grid container spacing={3}>
       <Grid item xs={12} md={8}>
         <Stack spacing={3}>
+      {eventImageUrl(event) && (
+        <Box
+          component="img"
+          src={eventImageUrl(event)!}
+          alt={event.title}
+          sx={{
+            width: "100%",
+            aspectRatio: "1200 / 630",
+            objectFit: "cover",
+            borderRadius: 2,
+          }}
+        />
+      )}
+
       <Box>
         {community && (
           <Box
@@ -262,7 +276,7 @@ export function EventDetailPage() {
             </Typography>
           </Box>
         ))}
-        <Typography variant="h4" fontWeight={700}>
+        <Typography variant="h5" fontWeight={700}>
           {event.title}
         </Typography>
         {event.subtitle && (
@@ -325,20 +339,6 @@ export function EventDetailPage() {
         >
           このイベントは<strong>下書き</strong>です。公開するまで他の人には表示されず、シェアリンクも開けません。
         </Alert>
-      )}
-
-      {eventImageUrl(event) && (
-        <Box
-          component="img"
-          src={eventImageUrl(event)!}
-          alt={event.title}
-          sx={{
-            width: "100%",
-            aspectRatio: "1200 / 630",
-            objectFit: "cover",
-            borderRadius: 2,
-          }}
-        />
       )}
 
       {/* 調整中は常に表示。確定後は候補があり表示オンなら結果を表示（パネル側で判定） */}
