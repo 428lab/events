@@ -28,7 +28,9 @@ import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { isHoliday } from "japanese-holidays";
 import type { VoteChoice } from "@eventer/shared";
-import { useMe, useUpdateEvent } from "../api/hooks.js";
+import { useEvent, useMe, useUpdateEvent, useUploadEventImage } from "../api/hooks.js";
+import { generateEventImageBlob } from "../lib/imageTemplates.js";
+import { formatDateRange } from "../lib/format.js";
 import { UserLink } from "./UserLink.js";
 import {
   useAddDateOption,
@@ -243,11 +245,13 @@ export function SchedulePanel({
   eventEndsAt: number;
 }) {
   const { data: me } = useMe();
+  const { data: eventData } = useEvent(eventId);
   const { data, isLoading } = useEventSchedule(eventId);
   const vote = useVoteDateOption(eventId);
   const addOption = useAddDateOption(eventId);
   const delOption = useDeleteDateOption(eventId);
   const finalize = useFinalizeDate(eventId);
+  const uploadImage = useUploadEventImage(eventId);
   const updateEvent = useUpdateEvent(eventId);
   const qc = useQueryClient();
 
@@ -453,8 +457,37 @@ export function SchedulePanel({
                         color="secondary"
                         disabled={finalize.isPending}
                         onClick={() => {
-                          if (window.confirm("この日程に決定しますか？"))
-                            finalize.mutate(o.id);
+                          if (!window.confirm("この日程に決定しますか？")) return;
+                          finalize.mutate(o.id, {
+                            onSuccess: async () => {
+                              // 自動生成画像に「日程調整中」が焼き込まれている場合があるため、
+                              // 確定日時入りでの作り直しを提案する
+                              const title = eventData?.event.title;
+                              if (!title) return;
+                              if (
+                                !window.confirm(
+                                  "日程が確定しました。イベント画像を確定日時入りで作り直しますか？（手動で設定した画像の場合は上書きされます）",
+                                )
+                              )
+                                return;
+                              const blob = await generateEventImageBlob(
+                                title,
+                                formatDateRange(o.startsAt, o.endsAt),
+                              ).catch(() => null);
+                              if (!blob) {
+                                window.alert("画像の生成に失敗しました。");
+                                return;
+                              }
+                              // 既存フックを再利用（res.okチェック＋一覧/マイページのinvalidate込み）
+                              try {
+                                await uploadImage.mutateAsync(blob);
+                              } catch {
+                                window.alert(
+                                  "画像のアップロードに失敗しました。編集画面から設定し直せます。",
+                                );
+                              }
+                            },
+                          });
                         }}
                       >
                         この日程に決定
