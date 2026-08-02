@@ -226,9 +226,14 @@ export const eventMembersRepo = {
       now,
       userId,
     );
+    // 主催/スタッフともスタッフのメンバー行がある終了済み公開イベント基準
+    // （プロフィールの一覧表示と一致させる。作成者はオーナーとして staff 行を持つ）
     const hosted = await one<{ v: number }>(
-      `SELECT COUNT(*) AS v FROM event
-        WHERE created_by = ? AND status = 'published' AND ends_at > 0 AND ends_at < ?`,
+      `SELECT COUNT(*) AS v FROM event_member m
+        JOIN event e ON e.id = m.event_id
+        WHERE m.user_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
+          AND e.created_by = m.user_id AND e.status = 'published'
+          AND e.ends_at > 0 AND e.ends_at < ?`,
       userId,
       now,
     );
@@ -236,9 +241,8 @@ export const eventMembersRepo = {
       `SELECT COUNT(*) AS v FROM event_member m
         JOIN event e ON e.id = m.event_id
         WHERE m.user_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
-          AND e.created_by <> ? AND e.status = 'published'
+          AND e.created_by <> m.user_id AND e.status = 'published'
           AND e.ends_at > 0 AND e.ends_at < ?`,
-      userId,
       userId,
       now,
     );

@@ -209,5 +209,14 @@ describe("参加実績の集計 (#106)", () => {
     const ss = await stats(staff.username);
     expect(ss.hosted).toBe(0);
     expect(ss.staffed).toBe(1);
+
+    // スタッフのメンバー行がない作成イベント（古いテストデータ等）は主催に数えない
+    await env.DB.prepare(
+      "DELETE FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(ev, owner.userId)
+      .run();
+    const so2 = await stats(owner.username);
+    expect(so2.hosted).toBe(0);
   });
 });
