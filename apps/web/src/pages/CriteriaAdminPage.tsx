@@ -84,6 +84,7 @@ export function CriteriaAdminPage() {
                   sx={{ flex: 1 }}
                 />
                 <TextField
+                  size="small"
                   label="段階"
                   select
                   value={c.maxLevel}

@@ -27,7 +27,6 @@ import {
 import { BlurCounterField } from "./BlurCounterField.js";
 import { CounterTextField } from "./CounterTextField.js";
 
-/** onBlur 保存の賞編集フィールド（ローカル編集状態＋文字数カウンタ） */
 
 export function AwardsEditor({ eventId }: { eventId: string }) {
   const { data: awards } = useAwards(eventId);
