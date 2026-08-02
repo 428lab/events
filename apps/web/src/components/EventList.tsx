@@ -1,4 +1,4 @@
-import { Grid, Stack, ToggleButton, ToggleButtonGroup } from "@mui/material";
+import { Box, Stack, ToggleButton, ToggleButtonGroup } from "@mui/material";
 import ViewAgendaIcon from "@mui/icons-material/ViewAgenda";
 import GridViewIcon from "@mui/icons-material/GridView";
 import type { Event, EventRole } from "@eventer/shared";
@@ -44,13 +44,18 @@ export function EventList({
   const [columns] = useListColumns();
   if (columns === 2) {
     return (
-      <Grid container spacing={1.5}>
+      <Box
+        sx={{
+          display: "grid",
+          // 横幅に合わせて自動で列数が決まる（1枚あたり最小170px）
+          gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+          gap: 1.5,
+        }}
+      >
         {events.map((e) => (
-          <Grid item xs={6} sm={4} md={3} key={e.id}>
-            <EventCard event={e} role={e.myRole ?? role} compact />
-          </Grid>
+          <EventCard key={e.id} event={e} role={e.myRole ?? role} compact />
         ))}
-      </Grid>
+      </Box>
     );
   }
   return (
