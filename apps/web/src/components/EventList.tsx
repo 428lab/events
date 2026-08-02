@@ -46,7 +46,7 @@ export function EventList({
     return (
       <Grid container spacing={1.5}>
         {events.map((e) => (
-          <Grid item xs={6} key={e.id}>
+          <Grid item xs={6} sm={4} md={3} key={e.id}>
             <EventCard event={e} role={e.myRole ?? role} compact />
           </Grid>
         ))}
