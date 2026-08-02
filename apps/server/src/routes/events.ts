@@ -320,9 +320,10 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
 
   // タイトル末尾に「のコピー」（200字上限を超えるなら切り詰めてから付与）
   const suffix = "のコピー";
+  // コードポイント境界で切り詰め（サロゲートペアを分断しない）
   const base =
     src.title.length + suffix.length > 200
-      ? src.title.slice(0, 200 - suffix.length)
+      ? [...src.title].slice(0, 200 - suffix.length).join("")
       : src.title;
 
   // 基本情報をコピーして下書きで作成。開催日時は未定（0）に戻し、
@@ -362,7 +363,8 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
       name: slot.name,
       capacity: slot.capacity,
       selectionType: slot.selectionType,
-      drawAt: slot.drawAt,
+      // 抽選日時は旧イベントの絶対時刻なのでコピーしない（日程リセットと整合）
+      drawAt: null,
     });
   }
 
