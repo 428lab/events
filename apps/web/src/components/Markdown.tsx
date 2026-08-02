@@ -62,7 +62,7 @@ function YouTubeEmbed({ id, start }: { id: string; start: number }) {
       src={`https://www.youtube-nocookie.com/embed/${id}${start ? `?start=${start}` : ""}`}
       title="YouTube動画"
       loading="lazy"
-      allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share"
       allowFullScreen
       referrerPolicy="strict-origin-when-cross-origin"
       sx={{
