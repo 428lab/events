@@ -10,7 +10,21 @@ const APP_VERSION = `${jst.getUTCFullYear()}.${p(jst.getUTCMonth() + 1)}.${p(
 )}-${p(jst.getUTCHours())}${p(jst.getUTCMinutes())}`;
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // デプロイ後の古いバンドル検知用 (#143)。ビルド成果物に version.json を含める
+    {
+      name: "emit-version-json",
+      apply: "build" as const,
+      generateBundle() {
+        this.emitFile({
+          type: "asset",
+          fileName: "version.json",
+          source: JSON.stringify({ version: APP_VERSION }),
+        });
+      },
+    },
+  ],
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
     // react-draggable(react-rnd) のデバッグログが process.env を参照して
