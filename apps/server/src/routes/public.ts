@@ -10,6 +10,7 @@ import { awardsRepo } from "../db/repositories/awards.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import { listCommunityRequests } from "./eventRequests.js";
 import { followsRepo } from "../db/repositories/follows.js";
+import { eventLikesRepo } from "../db/repositories/eventLikes.js";
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -45,6 +46,8 @@ publicRoutes.get("/communities/:slug", async (c) => {
     pastEvents: events.filter((e) => !e.scheduling && e.endsAt < now),
     // イベントのたまご（メンバーならメンバー限定も見える）
     requests: await listCommunityRequests(community.id, user),
+    // イベント参加者からもらったいいね合計 (#155)
+    likesReceived: await eventLikesRepo.receivedCountForCommunity(community.id),
   });
 });
 
@@ -76,10 +79,11 @@ publicRoutes.get("/users/:handle", async (c) => {
     events,
     communities,
     awards,
-    participation: await eventMembersRepo.participationStats(
-      user.id,
-      Date.now(),
-    ),
+    participation: {
+      ...(await eventMembersRepo.participationStats(user.id, Date.now())),
+      // 主催・スタッフとしてもらったいいね合計 (#155)。SQLはいいねリポジトリに集約
+      likesReceived: await eventLikesRepo.receivedCountForUser(user.id),
+    },
     followerCount: await followsRepo.followerCount(user.id),
     followingCount: await followsRepo.followingCount(user.id),
     isFollowing: viewer

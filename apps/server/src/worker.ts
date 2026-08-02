@@ -29,6 +29,7 @@ import {
   eventCommentRoutes,
   getEventComments,
 } from "./routes/eventComments.js";
+import { eventLikeRoutes } from "./routes/eventLikes.js";
 import {
   eventScheduleRoutes,
   getEventTimetable,
@@ -118,6 +119,8 @@ api.route("/events", awardRoutes);
 api.route("/events", liveControlRoutes);
 api.route("/events", eventPhotoRoutes);
 api.route("/events", eventCommentRoutes);
+// いいね (#155)（参加確定メンバーのみ。要認証）
+api.route("/events", eventLikeRoutes);
 api.route("/events", eventScheduleRoutes);
 api.route("/events", analyticsRoutes);
 api.route("/me", meRoutes);

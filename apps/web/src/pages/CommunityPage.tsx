@@ -89,6 +89,7 @@ export function CommunityPage() {
               メンバー {c.memberCount}
             </Link>{" "}
             ・ イベント {c.eventCount}
+            {(c.likesReceived ?? 0) > 0 && <> ・ いいね {c.likesReceived}</>}
           </Typography>
         </Box>
         {me && (

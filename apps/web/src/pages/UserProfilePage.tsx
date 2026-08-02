@@ -115,8 +115,19 @@ function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
   if (!stats) return null;
   const { attended, noShow, cancelEarly, cancelLate, hosted, staffed, spoken } =
     stats;
+  // 主催・スタッフとしてもらったいいね合計 (#155)。旧レスポンスでは欠落しうる
+  const likesReceived = stats.likesReceived ?? 0;
   const registered = attended + noShow;
-  if (registered + cancelEarly + cancelLate + hosted + staffed + spoken === 0) {
+  if (
+    registered +
+      cancelEarly +
+      cancelLate +
+      hosted +
+      staffed +
+      spoken +
+      likesReceived ===
+    0
+  ) {
     return null;
   }
   const rate = registered > 0 ? Math.round((attended / registered) * 100) : null;
@@ -137,6 +148,9 @@ function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
         {hosted > 0 && <Chip label={`主催 ${hosted}`} variant="outlined" />}
         {staffed > 0 && <Chip label={`スタッフ ${staffed}`} variant="outlined" />}
         {spoken > 0 && <Chip label={`登壇 ${spoken}`} color="secondary" variant="outlined" />}
+        {likesReceived > 0 && (
+          <Chip label={`いいね ${likesReceived}`} variant="outlined" />
+        )}
         <Typography variant="body2" color="text.secondary">
           出席 {attended} ・無断欠席 {noShow} ・キャンセル {cancelEarly + cancelLate}
           （うち直前 {cancelLate}）
