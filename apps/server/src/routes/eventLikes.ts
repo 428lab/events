@@ -55,17 +55,22 @@ eventLikeRoutes.put(
     }
     // 日程調整中・開始前はまだ押せない（お礼のフィードバックなので開始後から）
     if (!hasStarted(event)) return c.json({ error: "not_started" }, 409);
+    // 公開イベントのみ（下書きへのいいねは実績集計と食い違うため受け付けない）
+    if (event.status !== "published") {
+      return c.json({ error: "not_published" }, 409);
+    }
 
     const { kind, targetKey, on } = valid<SetEventLikeInput>(c, "json");
 
-    // 対象の妥当性チェック
-    if (kind === "event") {
+    // 対象の妥当性チェック。OFF（取り消し）は自分の行の削除なので、
+    // スタッフ離脱やコミュニティ変更で対象が無効になった後でも常に許可する
+    if (on && kind === "event") {
       if (targetKey !== "") return c.json({ error: "invalid_target" }, 400);
-    } else if (kind === "host") {
+    } else if (on && kind === "host") {
       if (targetKey !== event.createdBy) {
         return c.json({ error: "invalid_target" }, 400);
       }
-    } else if (kind === "staff") {
+    } else if (on && kind === "staff") {
       // 現役スタッフのみ。主催者本人は host 対象なので staff 対象にはできない
       const target = await eventMembersRepo.find(eventId, targetKey);
       if (
@@ -76,8 +81,7 @@ eventLikeRoutes.put(
       ) {
         return c.json({ error: "invalid_target" }, 400);
       }
-    } else {
-      // community
+    } else if (on && kind === "community") {
       if (!event.communityId || targetKey !== event.communityId) {
         return c.json({ error: "invalid_target" }, 400);
       }
