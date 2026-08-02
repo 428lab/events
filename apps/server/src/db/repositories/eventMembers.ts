@@ -130,7 +130,7 @@ export const eventMembersRepo = {
     attended: boolean,
   ): Promise<EventMember | null> {
     await run(
-      "UPDATE event_member SET attended = ? WHERE event_id = ? AND user_id = ?",
+      "UPDATE event_member SET attended = ? WHERE event_id = ? AND user_id = ? AND status <> 'canceled'",
       attended ? 1 : 0,
       eventId,
       userId,
@@ -157,7 +157,7 @@ export const eventMembersRepo = {
     role: EventRole,
   ): Promise<EventMember | null> {
     await run(
-      "UPDATE event_member SET role = ? WHERE event_id = ? AND user_id = ?",
+      "UPDATE event_member SET role = ? WHERE event_id = ? AND user_id = ? AND status <> 'canceled'",
       role,
       eventId,
       userId,

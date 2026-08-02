@@ -136,7 +136,7 @@ function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
         {hosted > 0 && <Chip label={`主催 ${hosted}`} variant="outlined" />}
         {staffed > 0 && <Chip label={`スタッフ ${staffed}`} variant="outlined" />}
         <Typography variant="body2" color="text.secondary">
-          出席 {attended} ・無断欠席 {noShow} ・事前キャンセル {cancelEarly + cancelLate}
+          出席 {attended} ・無断欠席 {noShow} ・キャンセル {cancelEarly + cancelLate}
           （うち直前 {cancelLate}）
         </Typography>
       </Stack>
