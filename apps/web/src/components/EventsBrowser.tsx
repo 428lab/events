@@ -93,7 +93,6 @@ export function EventsBrowser({
   const [sort, setSort] = useState<EventSort>(DEFAULT_SORT.upcoming);
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
-  // 「現在」はマウント時に固定（クエリキーを安定させ再取得ループを防ぐ）
 
   const hasFilters = Boolean(
     q.trim() ||

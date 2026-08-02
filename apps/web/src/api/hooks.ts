@@ -1,4 +1,5 @@
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -152,6 +153,8 @@ export function useEventSearch(params: EventSearchParams, enabled: boolean) {
   return useQuery({
     queryKey: ["eventSearch", key],
     enabled,
+    // ページ送りや絞り込み変更時に前の結果を表示したまま更新（ちらつき防止）
+    placeholderData: keepPreviousData,
     queryFn: () => api.get<PublicEventsPage>(`/public/events/search?${key}`),
   });
 }
