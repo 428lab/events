@@ -29,6 +29,55 @@ const sanitizeSchema: typeof defaultSchema = {
   },
 };
 
+/** YouTube 動画URLから videoId と開始秒を取り出す。対象外URLは null */
+function parseYouTube(href?: string): { id: string; start: number } | null {
+  if (!href) return null;
+  try {
+    const u = new URL(href);
+    const host = u.hostname.replace(/^www\.|^m\./, "");
+    let id: string | null = null;
+    if (host === "youtu.be") {
+      id = u.pathname.slice(1).split("/")[0] || null;
+    } else if (host === "youtube.com" || host === "music.youtube.com") {
+      if (u.pathname === "/watch") id = u.searchParams.get("v");
+      else {
+        const m = u.pathname.match(/^\/(shorts|live|embed)\/([\w-]+)/);
+        if (m) id = m[2];
+      }
+    }
+    if (!id || !/^[\w-]{6,20}$/.test(id)) return null;
+    const t = u.searchParams.get("t") ?? u.searchParams.get("start") ?? "";
+    const start = /^\d+s?$/.test(t) ? parseInt(t, 10) : 0;
+    return { id, start };
+  } catch {
+    return null;
+  }
+}
+
+/** プライバシー強化モード（youtube-nocookie.com）の埋め込みプレイヤー */
+function YouTubeEmbed({ id, start }: { id: string; start: number }) {
+  return (
+    <Box
+      component="iframe"
+      src={`https://www.youtube-nocookie.com/embed/${id}${start ? `?start=${start}` : ""}`}
+      title="YouTube動画"
+      loading="lazy"
+      allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowFullScreen
+      referrerPolicy="strict-origin-when-cross-origin"
+      sx={{
+        display: "block",
+        width: "100%",
+        maxWidth: 640,
+        aspectRatio: "16 / 9",
+        border: 0,
+        borderRadius: 1,
+        my: 1,
+      }}
+    />
+  );
+}
+
 /** パス部分の拡張子で画像URLか判定（?rlkey=... などのクエリは無視）。表示には元URL（クエリ込み）を使う。 */
 function isImageUrl(href?: string): boolean {
   if (!href) return false;
@@ -96,6 +145,12 @@ export function Markdown({ children }: { children: string }) {
         rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
         components={{
           a({ node: _node, href, children, ...props }) {
+            // 裸のYouTubeリンク（リンク文字列がURLそのもの）は埋め込みプレイヤーに。
+            // [テキスト](url) 形式は書き手の意図を尊重して通常リンクのまま
+            const yt = parseYouTube(href);
+            if (yt && String(children) === href) {
+              return <YouTubeEmbed id={yt.id} start={yt.start} />;
+            }
             // 裸の画像URL（クエリ付き含む）は画像として表示。タップで原寸を別タブ
             if (isImageUrl(href)) {
               return (
