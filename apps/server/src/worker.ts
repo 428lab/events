@@ -64,6 +64,7 @@ import {
 import { venueOfferRoutes } from "./routes/venueOffers.js";
 import { emailRoutes } from "./routes/email.js";
 import { sendEventReminders } from "./lib/reminders.js";
+import { adminReminderRoutes } from "./routes/adminReminders.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -124,6 +125,7 @@ api.route("/me", meRoutes);
 api.route("/users", followRoutes);
 api.route("/inquiries", inquiryRoutes);
 api.route("/admin/inquiries", adminInquiryRoutes);
+api.route("/admin/run-reminders", adminReminderRoutes);
 api.route("/admin/stats", adminStatsRoutes);
 api.route("/notifications", notificationRoutes);
 // 公開: コミュニティ画像（認証不要。communityRoutes(要認証) より先に登録）
@@ -369,8 +371,9 @@ export default {
     workerEnv: Env,
     ctx: ExecutionContext,
   ): Promise<Response> {
-    // バインディングをリクエスト先頭で束ねる（getDb/getBucket/env が参照）
-    bindEnv(workerEnv);
+    // バインディングをリクエスト先頭で束ねる（getDb/getBucket/env が参照）。
+    // ctx も束ね、メール送信等を waitUntil でレスポンス外に逃がせるようにする
+    bindEnv(workerEnv, ctx);
     return app.fetch(request, workerEnv, ctx);
   },
 
@@ -381,6 +384,9 @@ export default {
     ctx: ExecutionContext,
   ): Promise<void> {
     bindEnv(workerEnv);
+    // staging はDBが本番コピーになり得るため cron 送信しない（二重送信防止）。
+    // staging での動作確認は POST /api/admin/run-reminders を使う
+    if (env.isStaging) return;
     ctx.waitUntil(sendEventReminders());
   },
 } satisfies ExportedHandler<Env>;

@@ -112,7 +112,7 @@ async function addMember(
 }
 
 describe("メールのワンクリック配信停止 (#126)", () => {
-  it("正しいトークンの GET で email_enabled が 0 になる", async () => {
+  it("GET は確認ページを返すだけで停止しない（スキャナ先読み対策）。POST で停止する", async () => {
     const u = await makeUser();
     await setEmailPref(u.userId, true);
     const token = await unsubscribeToken(u.userId);
@@ -120,8 +120,15 @@ describe("メールのワンクリック配信停止 (#126)", () => {
       `${BASE}/api/email/unsubscribe?u=${u.userId}&t=${token}`,
     );
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("charset");
-    expect(await res.text()).toContain("メール通知を停止しました");
+    expect(await res.text()).toContain("メール通知を停止しますか");
+    // GET では変更されない
+    expect(await emailPref(u.userId)).toBe(1);
+    const post = await SELF.fetch(
+      `${BASE}/api/email/unsubscribe?u=${u.userId}&t=${token}`,
+      { method: "POST" },
+    );
+    expect(post.status).toBe(200);
+    expect(await post.text()).toContain("メール通知を停止しました");
     expect(await emailPref(u.userId)).toBe(0);
   });
 

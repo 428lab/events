@@ -1,5 +1,6 @@
 import type { Notification, NotificationType } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
+import { deferBackground } from "../../runtime.js";
 import {
   sendNotificationEmailIfOptedIn,
   sendNotificationEmailTo,
@@ -50,8 +51,9 @@ export const notificationsRepo = {
       link,
       Date.now(),
     );
-    // メール通知ONのユーザーには同内容をメールでも送る (#126)。失敗しても通知作成は成功扱い
-    await sendNotificationEmailIfOptedIn(userId, title, body, link);
+    // メール通知ONのユーザーには同内容をメールでも送る (#126)。
+    // レスポンスをブロックしないよう waitUntil に逃がす（失敗しても通知作成は成功扱い）
+    await deferBackground(sendNotificationEmailIfOptedIn(userId, title, body, link));
   },
 
   /** 複数ユーザーへ同一内容の通知を作成（抽選・表彰・フォロワー通知の一斉配信用）。
@@ -74,20 +76,24 @@ export const notificationsRepo = {
         })),
       );
     }
-    // メール通知ONのユーザーへも配信 (#126)。上限つき・失敗しても通知作成は成功扱い
-    try {
-      const recipients = await emailRepo.findRecipientsAmong(userIds);
-      if (recipients.length > MAX_BULK_EMAILS) {
-        console.warn(
-          `email: 一斉通知のメール対象 ${recipients.length} 件中 ${MAX_BULK_EMAILS} 件のみ送信`,
-        );
-      }
-      for (const r of recipients.slice(0, MAX_BULK_EMAILS)) {
-        await sendNotificationEmailTo(r.userId, r.email, title, body, link);
-      }
-    } catch (e) {
-      console.warn("email: 一斉通知のメール送信に失敗", e);
-    }
+    // メール通知ONのユーザーへも配信 (#126)。上限つき・waitUntil でレスポンス外に逃がす
+    await deferBackground(
+      (async () => {
+        try {
+          const recipients = await emailRepo.findRecipientsAmong(userIds);
+          if (recipients.length > MAX_BULK_EMAILS) {
+            console.warn(
+              `email: 一斉通知のメール対象 ${recipients.length} 件中 ${MAX_BULK_EMAILS} 件のみ送信`,
+            );
+          }
+          for (const r of recipients.slice(0, MAX_BULK_EMAILS)) {
+            await sendNotificationEmailTo(r.userId, r.email, title, body, link);
+          }
+        } catch (e) {
+          console.warn("email: 一斉通知のメール送信に失敗", e);
+        }
+      })(),
+    );
   },
 
   async listByUser(userId: string, limit = 40): Promise<Notification[]> {

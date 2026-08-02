@@ -53,9 +53,6 @@ routes = []  # staging はカスタムルートを使わず workers.dev のみ�
 assets = { directory = "apps/web/dist", binding = "ASSETS", not_found_handling = "single-page-application", run_worker_first = true }
 
 # 前日リマインダーメール (#126)。staging も同時刻に実行
-[env.staging.triggers]
-crons = ["0 0 * * *"]
-
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "eventer-staging"

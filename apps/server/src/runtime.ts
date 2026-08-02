@@ -27,9 +27,30 @@ export interface Env {
 // Worker のバインディングはアイソレート内で安定（リクエスト間で同一ハンドル）なので、
 // リクエスト先頭で束ねたモジュール変数を参照しても並行リクエストで競合しない。
 let _env: Env | null = null;
+let _ctx: ExecutionContext | null = null;
+// 1リクエストあたりのメール送信予算（サブリクエスト上限の安全弁）。
+// アイソレート内の並行リクエストで共有されるためベストエフォートの近似だが、
+// 目的は暴走防止なので十分。bindEnv のたびにリセットする。
+let _emailBudget = 0;
+const EMAIL_BUDGET_PER_REQUEST = 20;
 
-export function bindEnv(e: Env): void {
+export function bindEnv(e: Env, ctx: ExecutionContext | null = null): void {
   _env = e;
+  _ctx = ctx;
+  _emailBudget = EMAIL_BUDGET_PER_REQUEST;
+}
+
+/** レスポンスをブロックせずにバックグラウンド実行する（waitUntil が無い環境では await） */
+export async function deferBackground(p: Promise<unknown>): Promise<void> {
+  if (_ctx) _ctx.waitUntil(p);
+  else await p;
+}
+
+/** メール1通ぶんの送信予算を確保。使い切っていたら false */
+export function takeEmailSlot(): boolean {
+  if (_emailBudget <= 0) return false;
+  _emailBudget--;
+  return true;
 }
 
 function must(): Env {

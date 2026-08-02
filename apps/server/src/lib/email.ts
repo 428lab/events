@@ -1,4 +1,4 @@
-import { env } from "../runtime.js";
+import { env, takeEmailSlot } from "../runtime.js";
 import { emailRepo } from "../db/repositories/email.js";
 
 /** メール送信 (#126)。Resend HTTP API を fetch で直接叩く（npm 依存なし） */
@@ -19,7 +19,8 @@ export function emailLinkUrl(link: string): string {
   return `${env.appBaseUrl}${link}${sep}ref=email`;
 }
 
-/** HMAC-SHA256(userId, SESSION_SECRET) の hex。配信停止リンクの署名 (#126) */
+/** HMAC-SHA256("unsub:"+userId, SESSION_SECRET) の hex。配信停止リンクの署名 (#126)。
+ * 同じ鍵を使う他のHMAC（Nostrチャレンジ等）と衝突しないようプレフィックスで分離する */
 export async function unsubscribeToken(userId: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -31,7 +32,7 @@ export async function unsubscribeToken(userId: string): Promise<string> {
   const sig = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(userId),
+    new TextEncoder().encode(`unsub:${userId}`),
   );
   return [...new Uint8Array(sig)]
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -122,6 +123,11 @@ export async function sendNotificationEmailTo(
   body: string,
   link: string,
 ): Promise<boolean> {
+  // 1リクエストの送信予算（抽選など多人数ループでの暴走防止）
+  if (!takeEmailSlot()) {
+    console.warn("email: 送信予算を使い切ったためスキップ", userId);
+    return false;
+  }
   const unsub = await unsubscribeUrl(userId);
   const html = notificationEmailHtml({
     title,
@@ -142,7 +148,7 @@ export async function sendNotificationEmailTo(
 }
 
 /** メール通知ONのユーザーへアプリ内通知と同内容のメールを送る。
- * 失敗しても呼び出し元（通知作成）を壊さない */
+ * 失敗しても呼び出し元（通知作成）を壊さない。1リクエストの送信予算を消費 */
 export async function sendNotificationEmailIfOptedIn(
   userId: string,
   title: string,
