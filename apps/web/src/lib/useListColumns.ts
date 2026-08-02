@@ -23,7 +23,11 @@ export function useListColumns(): [ListColumns, (c: ListColumns) => void] {
   const [columns, setColumnsState] = useState<ListColumns>(readColumns);
 
   useEffect(() => {
-    const sync = () => setColumnsState(readColumns());
+    // 値はイベントの detail で受け取る（localStorage 書込失敗環境でも同期できるように）
+    const sync = (e: Event) => {
+      const detail = (e as CustomEvent<ListColumns>).detail;
+      setColumnsState(detail === 2 ? 2 : detail === 1 ? 1 : readColumns());
+    };
     window.addEventListener(CHANGE_EVENT, sync);
     // 別タブでの変更にも追従
     window.addEventListener("storage", sync);
@@ -40,7 +44,7 @@ export function useListColumns(): [ListColumns, (c: ListColumns) => void] {
       // localStorage 不可の環境ではセッション内のみ反映
     }
     setColumnsState(c);
-    window.dispatchEvent(new Event(CHANGE_EVENT));
+    window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: c }));
   }, []);
 
   return [columns, setColumns];
