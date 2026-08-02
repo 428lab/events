@@ -60,12 +60,29 @@ describe("流入元 ref パラメータの計測 (#118)", () => {
   });
 
   it("RSSフィードのイベントURLに ?ref=feed が付く", async () => {
+    // 分離ストレージでテスト間のDBは巻き戻るため、このテスト内で公開イベントを作る
+    const cookie = await loginDev();
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        title: "フィードref付与E2E",
+        venueType: "online",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+    await SELF.fetch(`${BASE}/api/events/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ status: "published" }),
+    });
+
     const res = await SELF.fetch(`${BASE}/feed/events.rss`);
     expect(res.status).toBe(200);
     const xml = await res.text();
-    // イベントが1件でもあれば ref=feed 付きリンクになっている
-    if (xml.includes("<item>")) {
-      expect(xml).toContain("?ref=feed");
-    }
+    expect(xml).toContain("<item>");
+    expect(xml).toContain(`/events/${event.id}?ref=feed`);
   });
 });

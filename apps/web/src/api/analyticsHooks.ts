@@ -28,7 +28,7 @@ export function useRecordView(eventId: string, enabled: boolean) {
       params.delete("ref");
       const q = params.toString();
       window.history.replaceState(
-        null,
+        window.history.state,
         "",
         `${window.location.pathname}${q ? `?${q}` : ""}${window.location.hash}`,
       );
