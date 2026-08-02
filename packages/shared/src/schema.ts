@@ -92,6 +92,8 @@ export const updateEventInput = z.object({
   description: z.string().max(20000).optional(),
   startsAt: z.number().int().optional(),
   endsAt: z.number().int().optional(),
+  /** 日程調整をやめて日時を直接確定する（false のみ許可。true への変更は不可） */
+  scheduling: z.literal(false).optional(),
   venueWanted: z.boolean().optional(),
   venueType: z.enum(VENUE_TYPES).optional(),
   venueOffline: z.string().max(500).optional().nullable(),

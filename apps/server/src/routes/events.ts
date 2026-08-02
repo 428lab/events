@@ -277,10 +277,16 @@ eventRoutes.patch(
   zValidator("json", updateEventInput),
   async (c) => {
     const prior = await eventsRepo.findById(c.req.param("id"));
-    const event = await eventsRepo.update(
-      c.req.param("id"),
-      valid<UpdateEventInput>(c, "json"),
-    );
+    const input = valid<UpdateEventInput>(c, "json");
+    // 日程調整をやめて直接確定する場合は、有効な開催日時が必須
+    if (input.scheduling === false) {
+      const startsAt = input.startsAt ?? prior?.startsAt ?? 0;
+      const endsAt = input.endsAt ?? prior?.endsAt ?? 0;
+      if (!(startsAt > 0 && endsAt > startsAt)) {
+        return c.json({ error: "invalid_date" }, 400);
+      }
+    }
+    const event = await eventsRepo.update(c.req.param("id"), input);
     if (!event) return c.json({ error: "not_found" }, 404);
     // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
     await notifyRequestsOnPublish(event);

@@ -340,7 +340,7 @@ export const eventsRepo = {
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
          photos_public = ?, attendance_check = ?, venue_wanted = ?,
-         members_note = ?
+         members_note = ?, scheduling = ?
        WHERE id = ?`,
       next.title,
       next.subtitle,
@@ -360,6 +360,7 @@ export const eventsRepo = {
       next.attendanceCheck ? 1 : 0,
       next.venueWanted ? 1 : 0,
       membersNote,
+      next.scheduling ? 1 : 0,
       id,
     );
     return this.findById(id);

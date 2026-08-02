@@ -58,6 +58,8 @@ export function EditEventPage() {
   const [membersNote, setMembersNote] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
+  // 日程調整中イベントで「調整をやめて直接日時を設定する」モード (#138)
+  const [directDate, setDirectDate] = useState(false);
   const [venueType, setVenueType] = useState<VenueType>("offline");
   const [venueOffline, setVenueOffline] = useState("");
   const [venueOnline, setVenueOnline] = useState("");
@@ -120,6 +122,8 @@ export function EditEventPage() {
               endsAt: new Date(endsAt).getTime(),
             }
           : {}),
+        // 日程調整をやめて直接確定 (#138)
+        ...(directDate && startsAt && endsAt ? { scheduling: false as const } : {}),
         venueType,
         venueOffline: venueOffline || null,
         venueOnline: venueOnline || null,
@@ -204,9 +208,16 @@ export function EditEventPage() {
               ))}
             </TextField>
           )}
-          {event.scheduling ? (
-            <Alert severity="info">
-              このイベントは日程調整中です。開催日時はイベントページの日程調整で確定してください。
+          {event.scheduling && !directDate ? (
+            <Alert
+              severity="info"
+              action={
+                <Button size="small" onClick={() => setDirectDate(true)}>
+                  日時を直接設定する
+                </Button>
+              }
+            >
+              このイベントは日程調整中です。イベントページの日程調整で確定するか、ここで日時を直接設定できます（直接設定すると日程調整は終了します）。
             </Alert>
           ) : (
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
