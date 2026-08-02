@@ -229,7 +229,7 @@ export function EventDetailPage() {
             <Avatar
               src={community.iconUrl ?? undefined}
               variant="rounded"
-              sx={{ width: 20, height: 20, fontSize: 12 }}
+              sx={{ width: 20, height: 20, fontSize: 12, borderRadius: "5px" }}
             >
               {community.name.charAt(0)}
             </Avatar>
