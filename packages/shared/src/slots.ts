@@ -41,8 +41,17 @@ export type JoinEventInput = z.infer<typeof joinEventInput>;
 
 export const memberStatusEnum = z.enum(MEMBER_STATUSES);
 
+/** スタッフが当選操作で設定できる状態。
+ * 'canceled' は本人取消の履歴専用のため対象外（メタデータなしのキャンセル行を作らせない） */
+export const slotMemberStatusEnum = z.enum([
+  "confirmed",
+  "waitlist",
+  "applied",
+  "lost",
+]);
+
 /** スタッフが当選操作で各申込者の状態を手動設定する入力 */
 export const setMemberSlotStatusInput = z.object({
-  status: memberStatusEnum,
+  status: slotMemberStatusEnum,
 });
 export type SetMemberSlotStatusInput = z.infer<typeof setMemberSlotStatusInput>;

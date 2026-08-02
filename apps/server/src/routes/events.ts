@@ -465,7 +465,17 @@ eventRoutes.delete("/:id/join", async (c) => {
   if (isEventEnded(event)) return c.json({ error: "event_ended" }, 409);
   const leaving = await eventMembersRepo.find(eventId, user.id);
   await entriesRepo.removeIndividualEntry(eventId, user.id);
-  await eventMembersRepo.remove(eventId, user.id);
+  if (
+    leaving &&
+    leaving.role === "participant" &&
+    leaving.status === "confirmed" &&
+    event.status === "published"
+  ) {
+    // 確定参加者の取消はキャンセル履歴として残す（参加実績の集計用）
+    await eventMembersRepo.cancel(eventId, user.id, event.scheduling);
+  } else {
+    await eventMembersRepo.remove(eventId, user.id);
+  }
 
   let promotedUserId: string | null = null;
   // 先着枠で確定者が抜けたら、待機(waitlist)の最古を確定へ繰り上げる

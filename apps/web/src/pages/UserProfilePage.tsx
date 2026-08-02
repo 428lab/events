@@ -19,8 +19,14 @@ import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import MilitaryTechIcon from "@mui/icons-material/MilitaryTech";
 import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
-import type { UserAward, UserPhoto, UserProfile } from "@eventer/shared";
+import type {
+  ParticipationStats,
+  UserAward,
+  UserPhoto,
+  UserProfile,
+} from "@eventer/shared";
 import { useSetFollow, useUserProfile } from "../api/userHooks.js";
 import { useMe } from "../api/hooks.js";
 import { useUserPhotos } from "../api/eventPhotoHooks.js";
@@ -104,6 +110,43 @@ function AwardsSection({
   );
 }
 
+/** 参加実績（出席・無断欠席・キャンセル内訳・主催/スタッフ数）。実績ゼロなら非表示 */
+function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
+  if (!stats) return null;
+  const { attended, noShow, cancelEarly, cancelLate, hosted, staffed } = stats;
+  const registered = attended + noShow;
+  if (registered + cancelEarly + cancelLate + hosted + staffed === 0) {
+    return null;
+  }
+  const rate = registered > 0 ? Math.round((attended / registered) * 100) : null;
+  return (
+    <Box>
+      <Typography
+        variant="h6"
+        gutterBottom
+        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+      >
+        <FactCheckIcon fontSize="small" />
+        参加実績
+      </Typography>
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        {rate != null && (
+          <Chip label={`参加率 ${rate}%`} color="primary" variant="outlined" />
+        )}
+        {hosted > 0 && <Chip label={`主催 ${hosted}`} variant="outlined" />}
+        {staffed > 0 && <Chip label={`スタッフ ${staffed}`} variant="outlined" />}
+        <Typography variant="body2" color="text.secondary">
+          出席 {attended} ・無断欠席 {noShow} ・キャンセル {cancelEarly + cancelLate}
+          （うち直前 {cancelLate}）
+        </Typography>
+      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        出席チェックを行わないイベントは登録＝出席として集計しています
+      </Typography>
+    </Box>
+  );
+}
+
 export function UserProfilePage() {
   const { id = "" } = useParams();
   const { data, isLoading, isError } = useUserProfile(id);
@@ -164,6 +207,8 @@ export function UserProfilePage() {
           </Button>
         )}
       </Stack>
+
+      <ParticipationSection stats={data.participation} />
 
       <AwardsSection awards={data.awards} profileName={data.name} />
 

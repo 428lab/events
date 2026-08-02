@@ -52,7 +52,21 @@ function toUser(row: MemberUserRow): User {
 }
 
 export const eventMembersRepo = {
+  /** 現役メンバーを返す（キャンセル済みはメンバー扱いしない） */
   async find(eventId: string, userId: string): Promise<EventMember | null> {
+    const row = await one<MemberRow>(
+      "SELECT * FROM event_member WHERE event_id = ? AND user_id = ? AND status <> 'canceled'",
+      eventId,
+      userId,
+    );
+    return row ? toMember(row) : null;
+  },
+
+  /** キャンセル済みの行も含めて返す（再参加の復活判定用） */
+  async findIncludingCanceled(
+    eventId: string,
+    userId: string,
+  ): Promise<EventMember | null> {
     const row = await one<MemberRow>(
       "SELECT * FROM event_member WHERE event_id = ? AND user_id = ?",
       eventId,
@@ -68,8 +82,23 @@ export const eventMembersRepo = {
     slotId: string | null = null,
     status = "confirmed",
   ): Promise<EventMember> {
-    const existing = await this.find(eventId, userId);
-    if (existing) return existing;
+    const existing = await this.findIncludingCanceled(eventId, userId);
+    if (existing && existing.status !== "canceled") return existing;
+    if (existing) {
+      // キャンセル済みの再参加: 行を復活させる（並び順の公平のため参加日時は今）
+      await run(
+        `UPDATE event_member
+            SET role = ?, slot_id = ?, status = ?, attended = 0,
+                canceled_at = NULL, canceled_scheduling = 0, created_at = ?
+          WHERE id = ?`,
+        role,
+        slotId,
+        status,
+        Date.now(),
+        existing.id,
+      );
+      return (await this.find(eventId, userId))!;
+    }
     const id = crypto.randomUUID();
     await run(
       `INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at)
@@ -101,7 +130,7 @@ export const eventMembersRepo = {
     attended: boolean,
   ): Promise<EventMember | null> {
     await run(
-      "UPDATE event_member SET attended = ? WHERE event_id = ? AND user_id = ?",
+      "UPDATE event_member SET attended = ? WHERE event_id = ? AND user_id = ? AND status <> 'canceled'",
       attended ? 1 : 0,
       eventId,
       userId,
@@ -128,7 +157,7 @@ export const eventMembersRepo = {
     role: EventRole,
   ): Promise<EventMember | null> {
     await run(
-      "UPDATE event_member SET role = ? WHERE event_id = ? AND user_id = ?",
+      "UPDATE event_member SET role = ? WHERE event_id = ? AND user_id = ? AND status <> 'canceled'",
       role,
       eventId,
       userId,
@@ -144,6 +173,85 @@ export const eventMembersRepo = {
     );
   },
 
+  /** 参加取消をキャンセル履歴として記録（行は残す） */
+  async cancel(
+    eventId: string,
+    userId: string,
+    wasScheduling: boolean,
+  ): Promise<void> {
+    await run(
+      `UPDATE event_member
+          SET status = 'canceled', canceled_at = ?, canceled_scheduling = ?
+        WHERE event_id = ? AND user_id = ?`,
+      Date.now(),
+      wasScheduling ? 1 : 0,
+      eventId,
+      userId,
+    );
+  },
+
+  /** 公開プロフィール用: 参加実績の集計。
+   * 出席チェックなしのイベントは登録=出席、直前キャンセルは開始24時間以内の取消。 */
+  async participationStats(
+    userId: string,
+    now: number,
+  ): Promise<{
+    attended: number;
+    noShow: number;
+    cancelEarly: number;
+    cancelLate: number;
+    hosted: number;
+    staffed: number;
+  }> {
+    const DAY = 24 * 60 * 60 * 1000;
+    const row = await one<{
+      attended: number | null;
+      no_show: number | null;
+      cancel_early: number | null;
+      cancel_late: number | null;
+    }>(
+      `SELECT
+         SUM(CASE WHEN m.status = 'confirmed' AND e.ends_at > 0 AND e.ends_at < ?
+                   AND (e.attendance_check = 0 OR m.attended = 1) THEN 1 ELSE 0 END) AS attended,
+         SUM(CASE WHEN m.status = 'confirmed' AND e.ends_at > 0 AND e.ends_at < ?
+                   AND e.attendance_check = 1 AND m.attended = 0 THEN 1 ELSE 0 END) AS no_show,
+         SUM(CASE WHEN m.status = 'canceled' AND m.canceled_scheduling = 0 AND e.starts_at > 0
+                   AND m.canceled_at < e.starts_at - ${DAY} THEN 1 ELSE 0 END) AS cancel_early,
+         SUM(CASE WHEN m.status = 'canceled' AND m.canceled_scheduling = 0 AND e.starts_at > 0
+                   AND m.canceled_at >= e.starts_at - ${DAY} THEN 1 ELSE 0 END) AS cancel_late
+       FROM event_member m
+       JOIN event e ON e.id = m.event_id
+       WHERE m.user_id = ? AND m.role = 'participant' AND e.status = 'published'`,
+      now,
+      now,
+      userId,
+    );
+    const hosted = await one<{ v: number }>(
+      `SELECT COUNT(*) AS v FROM event
+        WHERE created_by = ? AND status = 'published' AND ends_at > 0 AND ends_at < ?`,
+      userId,
+      now,
+    );
+    const staffed = await one<{ v: number }>(
+      `SELECT COUNT(*) AS v FROM event_member m
+        JOIN event e ON e.id = m.event_id
+        WHERE m.user_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
+          AND e.created_by <> ? AND e.status = 'published'
+          AND e.ends_at > 0 AND e.ends_at < ?`,
+      userId,
+      userId,
+      now,
+    );
+    return {
+      attended: row?.attended ?? 0,
+      noShow: row?.no_show ?? 0,
+      cancelEarly: row?.cancel_early ?? 0,
+      cancelLate: row?.cancel_late ?? 0,
+      hosted: hosted?.v ?? 0,
+      staffed: staffed?.v ?? 0,
+    };
+  },
+
   async listWithUsers(eventId: string): Promise<EventMemberWithUser[]> {
     const rows = await many<MemberUserRow>(
       `SELECT m.*, u.id AS u_id, u.discord_id AS u_discord_id,
@@ -151,7 +259,7 @@ export const eventMembersRepo = {
                 u.avatar_url AS u_avatar_url, u.created_at AS u_created_at
          FROM event_member m
          JOIN user u ON u.id = m.user_id
-         WHERE m.event_id = ?
+         WHERE m.event_id = ? AND m.status <> 'canceled'
          ORDER BY m.created_at ASC`,
       eventId,
     );
@@ -168,7 +276,7 @@ export const eventMembersRepo = {
                  AS participant_count
          FROM event_member m
          JOIN event e ON e.id = m.event_id
-         WHERE m.user_id = ?
+         WHERE m.user_id = ? AND m.status <> 'canceled'
          ORDER BY e.starts_at DESC`,
       userId,
     );

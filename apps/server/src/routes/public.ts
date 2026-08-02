@@ -76,6 +76,10 @@ publicRoutes.get("/users/:handle", async (c) => {
     events,
     communities,
     awards,
+    participation: await eventMembersRepo.participationStats(
+      user.id,
+      Date.now(),
+    ),
     followerCount: await followsRepo.followerCount(user.id),
     followingCount: await followsRepo.followingCount(user.id),
     isFollowing: viewer
