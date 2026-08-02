@@ -17,6 +17,25 @@ export const userAwardSchema = z.object({
 });
 export type UserAward = z.infer<typeof userAwardSchema>;
 
+/** 参加実績の集計（公開プロフィール用）。
+ * 出席チェックを行わないイベントは登録=出席として数える。
+ * キャンセルは開催日確定後の取消のみ対象（日程調整中の取消はノーカウント）。 */
+export const participationStatsSchema = z.object({
+  /** 出席した過去イベント数（未チェック運用のイベントは登録=出席扱い） */
+  attended: z.number(),
+  /** 無断欠席数（出席チェックONのイベントで登録したまま出席記録なし） */
+  noShow: z.number(),
+  /** 事前キャンセル数（開始24時間より前の取消） */
+  cancelEarly: z.number(),
+  /** 直前キャンセル数（開始24時間以内の取消） */
+  cancelLate: z.number(),
+  /** 主催した終了済みイベント数（イベントオーナー） */
+  hosted: z.number(),
+  /** スタッフとして参加した終了済みイベント数（オーナー分は含まない） */
+  staffed: z.number(),
+});
+export type ParticipationStats = z.infer<typeof participationStatsSchema>;
+
 /** 公開ユーザープロフィール（誰でも閲覧可） */
 export const userProfileSchema = z.object({
   id: z.string(),
@@ -27,6 +46,8 @@ export const userProfileSchema = z.object({
   events: z.array(myEventSummary),
   communities: z.array(communitySummarySchema),
   awards: z.array(userAwardSchema),
+  /** 参加実績（出席・無断欠席・キャンセル内訳） */
+  participation: participationStatsSchema,
   /** フォロワー数（公開） */
   followerCount: z.number(),
   /** フォロー数（公開） */

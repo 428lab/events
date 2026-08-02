@@ -22,8 +22,8 @@ export const EVENT_ADMIN_ROLES: readonly EventRole[] = ["staff"];
 export const SELECTION_TYPES = ["first_come", "lottery"] as const;
 export type SelectionType = (typeof SELECTION_TYPES)[number];
 
-/** 参加メンバーの状態: 確定 / キャンセル待ち / 抽選申込 / 落選 */
-export const MEMBER_STATUSES = ["confirmed", "waitlist", "applied", "lost"] as const;
+/** 参加メンバーの状態: 確定 / キャンセル待ち / 抽選申込 / 落選 / 取消済み（履歴として保持） */
+export const MEMBER_STATUSES = ["confirmed", "waitlist", "applied", "lost", "canceled"] as const;
 export type MemberStatus = (typeof MEMBER_STATUSES)[number];
 
 /** イベント画像（OG画像サイズ 1.91:1）。クロップ先サイズと最大バイト数。 */
