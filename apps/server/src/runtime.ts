@@ -20,6 +20,7 @@ export interface Env {
   SESSION_SECRET: string;
   /** Resend の API キー（未設定ならメール送信は無効） (#126) */
   RESEND_API_KEY?: string;
+  CRON_SECRET?: string;
   /** メール差出人（未設定なら既定値） (#126) */
   EMAIL_FROM?: string;
 }
@@ -96,6 +97,9 @@ export const env = {
     return secret;
   },
   /** Resend API キー（未設定なら空文字＝メール送信無効） (#126) */
+  get cronSecret(): string {
+    return must().CRON_SECRET || "";
+  },
   get resendApiKey(): string {
     return must().RESEND_API_KEY || "";
   },

@@ -39,6 +39,8 @@ export default defineWorkersConfig(async () => {
               // X ログインの authorize リダイレクト（PKCE付与）検証用ダミー
               X_CLIENT_ID: "test-x-client",
               X_CLIENT_SECRET: "test-x-secret",
+              // cron エンドポイント (#129) の検証用
+              CRON_SECRET: "test-cron-secret",
             },
           },
         },

@@ -1,0 +1,18 @@
+# 前日リマインダーメールの定時実行 (#129)
+# Workers Free は cron トリガーがアカウント5個上限のため、GitHub Actions から叩く
+name: Reminders
+on:
+  schedule:
+    - cron: "0 0 * * *" # UTC 0:00 = JST 9:00
+  workflow_dispatch: {}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call reminder endpoint (production)
+        run: |
+          code=$(curl -s -o /tmp/body -w "%{http_code}" -X POST \
+            -H "x-cron-key: ${{ secrets.CRON_SECRET }}" \
+            https://events.kojira.io/api/cron/reminders)
+          cat /tmp/body; echo
+          test "$code" = "200"

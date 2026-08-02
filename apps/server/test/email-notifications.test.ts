@@ -312,3 +312,26 @@ describe("前日リマインダーの対象抽出 (#126)", () => {
     expect(row?.r).toBeNull();
   });
 });
+
+describe("cron エンドポイント (#129)", () => {
+  it("正しい x-cron-key で実行でき、誤りは 403", async () => {
+    const ok = await SELF.fetch(`${BASE}/api/cron/reminders`, {
+      method: "POST",
+      headers: { "x-cron-key": "test-cron-secret" },
+    });
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as { sent: number };
+    expect(typeof body.sent).toBe("number");
+
+    const ng = await SELF.fetch(`${BASE}/api/cron/reminders`, {
+      method: "POST",
+      headers: { "x-cron-key": "wrong" },
+    });
+    expect(ng.status).toBe(403);
+
+    const none = await SELF.fetch(`${BASE}/api/cron/reminders`, {
+      method: "POST",
+    });
+    expect(none.status).toBe(403);
+  });
+});

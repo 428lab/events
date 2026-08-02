@@ -126,6 +126,21 @@ api.route("/users", followRoutes);
 api.route("/inquiries", inquiryRoutes);
 api.route("/admin/inquiries", adminInquiryRoutes);
 api.route("/admin/run-reminders", adminReminderRoutes);
+// GitHub Actions のスケジュール実行から叩く（Workers Free は cron 上限のため #129）。
+// CRON_SECRET 未設定なら閉じたまま（404）
+api.post("/cron/reminders", async (c) => {
+  const secret = env.cronSecret;
+  if (!secret) return c.json({ error: "not_found" }, 404);
+  const given = c.req.header("x-cron-key") ?? "";
+  // 長さ非依存の単純比較で十分（総当たりはレート的に非現実的だが一応固定時間で）
+  let diff = given.length === secret.length ? 0 : 1;
+  for (let i = 0; i < Math.min(given.length, secret.length); i++) {
+    diff |= given.charCodeAt(i) ^ secret.charCodeAt(i);
+  }
+  if (diff !== 0) return c.json({ error: "forbidden" }, 403);
+  const sent = await sendEventReminders();
+  return c.json({ sent });
+});
 api.route("/admin/stats", adminStatsRoutes);
 api.route("/notifications", notificationRoutes);
 // 公開: コミュニティ画像（認証不要。communityRoutes(要認証) より先に登録）
