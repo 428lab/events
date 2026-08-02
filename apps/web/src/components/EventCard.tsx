@@ -130,7 +130,7 @@ export function EventCard({
                 <Avatar
                   src={community.iconUrl ?? undefined}
                   variant="rounded"
-                  sx={{ width: 14, height: 14, fontSize: 9 }}
+                  sx={{ width: 22, height: 22, fontSize: 12 }}
                 >
                   {community.name.charAt(0)}
                 </Avatar>
@@ -270,7 +270,7 @@ export function EventCard({
               <Avatar
                 src={community.iconUrl ?? undefined}
                 variant="rounded"
-                sx={{ width: 16, height: 16, fontSize: 10 }}
+                sx={{ width: 22, height: 22, fontSize: 12 }}
               >
                 {community.name.charAt(0)}
               </Avatar>
