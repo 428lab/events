@@ -1,26 +1,6 @@
-import { useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Link,
-  Pagination,
-  Stack,
-  Tooltip,
-  Typography,
-  useMediaQuery,
-} from "@mui/material";
-import { useTheme } from "@mui/material/styles";
-import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import { Box, Link, Stack, Tooltip, Typography } from "@mui/material";
 import RssFeedIcon from "@mui/icons-material/RssFeed";
-import { Link as RouterLink } from "react-router-dom";
-import {
-  usePublicEvents,
-  usePublicPastEventsInfinite,
-  usePublicSchedulingEvents,
-} from "../api/hooks.js";
-import { EventList, ListColumnsToggle } from "../components/EventList.js";
-import { EventSearchPanel } from "../components/EventSearchPanel.js";
+import { EventsBrowser } from "../components/EventsBrowser.js";
 import { EggTabs } from "../components/EggTabs.js";
 
 /** イベント一覧のフィード購読導線（RSS / JSON Feed / iCalendar）。
@@ -60,145 +40,15 @@ function FeedLinks() {
   );
 }
 
-function PastEvents() {
-  const past = usePublicPastEventsInfinite();
-  const events = past.data?.pages.flatMap((p) => p.events) ?? [];
-  const total = past.data?.pages[0]?.total ?? 0;
-  if (total === 0) return null;
-  return (
-    <Box>
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ mb: 1 }}
-      >
-        <Typography variant="h5" fontWeight={700}>
-          過去のイベント
-        </Typography>
-        <ListColumnsToggle />
-      </Stack>
-      <EventList events={events} />
-      {past.hasNextPage && (
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-          <Button
-            variant="outlined"
-            onClick={() => past.fetchNextPage()}
-            disabled={past.isFetchingNextPage}
-          >
-            {past.isFetchingNextPage
-              ? "読み込み中…"
-              : `もっと見る（残り ${total - events.length} 件）`}
-          </Button>
-        </Box>
-      )}
-    </Box>
-  );
-}
-
-function SchedulingEvents() {
-  const [page, setPage] = useState(1);
-  const q = usePublicSchedulingEvents(page);
-  const total = q.data?.total ?? 0;
-  const limit = q.data?.limit ?? 12;
-  const pageCount = Math.max(1, Math.ceil(total / limit));
-  if (q.isLoading || total === 0) return null;
-  return (
-    <Box>
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ mb: 1 }}
-      >
-        <Typography
-          variant="h5"
-          fontWeight={700}
-          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
-        >
-          <CalendarMonthIcon fontSize="medium" />
-          日程調整中のイベント
-        </Typography>
-        <ListColumnsToggle />
-      </Stack>
-      <EventList events={q.data?.events ?? []} />
-      {pageCount > 1 && (
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-          <Pagination
-            count={pageCount}
-            page={page}
-            onChange={(_e, p) => setPage(p)}
-            color="primary"
-          />
-        </Box>
-      )}
-    </Box>
-  );
-}
-
 export function PublicEventsPage() {
-  const theme = useTheme();
-  const isPc = useMediaQuery(theme.breakpoints.up("sm"));
-  const count = isPc ? 5 : 3;
-  const upcoming = usePublicEvents(1, count);
-  const events = upcoming.data?.events ?? [];
-  const total = upcoming.data?.total ?? 0;
-  const lastStartsAt = events.length
-    ? events[events.length - 1].startsAt
-    : undefined;
-
   return (
     <Box>
       <EggTabs value="events" />
-      <EventSearchPanel>
-        <Stack spacing={5}>
-          <SchedulingEvents />
-        <Box>
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            sx={{ mb: 1 }}
-          >
-            <Typography variant="h5" fontWeight={700}>
-              開催中・開催予定のイベント
-            </Typography>
-            <ListColumnsToggle />
-          </Stack>
-          {upcoming.isError ? (
-            <Alert severity="error">
-              イベントを読み込めませんでした。時間をおいて再読み込みしてください。
-            </Alert>
-          ) : upcoming.isLoading ? (
-            <Typography>読み込み中…</Typography>
-          ) : events.length === 0 ? (
-            <Typography color="text.secondary">
-              開催予定のイベントはありません。
-            </Typography>
-          ) : (
-            <>
-              <EventList events={events} />
-              {total > events.length && lastStartsAt != null && (
-                <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-                  <Button
-                    component={RouterLink}
-                    to={`/events/upcoming?after=${lastStartsAt}`}
-                    variant="outlined"
-                  >
-                    続きを見る（全 {total} 件）
-                  </Button>
-                </Box>
-              )}
-            </>
-          )}
-        </Box>
-
-          {/* 過去イベントは開催中/未来のイベントが無いときだけ表示 */}
-          {!upcoming.isLoading && total === 0 && <PastEvents />}
-
-          <FeedLinks />
-        </Stack>
-      </EventSearchPanel>
+      <Stack spacing={4}>
+        {/* 開催予定/過去タブ・絞り込み・10件ページング（日程調整中は開催予定に含まれる） */}
+        <EventsBrowser />
+        <FeedLinks />
+      </Stack>
     </Box>
   );
 }

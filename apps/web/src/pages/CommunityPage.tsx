@@ -24,7 +24,7 @@ import {
   useJoinCommunity,
   useLeaveCommunity,
 } from "../api/communityHooks.js";
-import { CommunityEventsSection } from "../components/CommunityEventsSection.js";
+import { EventsBrowser } from "../components/EventsBrowser.js";
 import { RequestCard } from "../components/RequestCard.js";
 import { Markdown } from "../components/Markdown.js";
 
@@ -161,7 +161,7 @@ export function CommunityPage() {
       <Divider />
 
       {/* イベント（検索APIベース: タブ・絞り込み・10件ページング） */}
-      <CommunityEventsSection communityId={c.id} />
+      <EventsBrowser communityId={c.id} />
 
       {/* イベントのたまご（あったらいいな） */}
       {(c.requests.length > 0 || c.isMember) && (

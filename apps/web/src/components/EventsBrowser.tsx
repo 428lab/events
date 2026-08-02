@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Alert,
   Box,
@@ -16,9 +17,10 @@ import {
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import { useEventSearch, type EventSearchParams } from "../api/hooks.js";
+import { useCommunities } from "../api/communityHooks.js";
 import { EventList, ListColumnsToggle } from "./EventList.js";
 
-/** コミュニティページの1ページ表示件数 */
+/** 一覧の1ページ表示件数 */
 const PAGE_SIZE = 10;
 
 const dayStart = (d: string) =>
@@ -35,27 +37,69 @@ const DEFAULT_SORT: Record<EventsTab, EventSort> = {
   past: "recent",
 };
 
-/**
- * コミュニティ詳細のイベント一覧。
- * 検索API（communityId 固定）ベースで、開催予定/過去タブ・
- * 絞り込み（キーワード・期間・並び替え）・10件ページングを提供する。
- */
-export function CommunityEventsSection({
-  communityId,
+/** コミュニティ絞り込みセレクト。表示されたときだけ一覧を取得する */
+function CommunityFilterField({
+  value,
+  onChange,
 }: {
-  communityId: string;
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const { data: communities } = useCommunities();
+  return (
+    <TextField
+      select
+      label="コミュニティ"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      size="small"
+      fullWidth
+      sx={{ maxWidth: { sm: 320 } }}
+    >
+      <MenuItem value="">すべて</MenuItem>
+      {(communities ?? []).map((c) => (
+        <MenuItem key={c.id} value={c.id}>
+          {c.name}
+        </MenuItem>
+      ))}
+    </TextField>
+  );
+}
+
+/**
+ * イベント一覧ブラウザ（サイト共通）。
+ * 検索APIベースで、開催予定/過去タブ・絞り込み（キーワード・期間・
+ * コミュニティ・並び替え）・10件ページング・列切替を提供する。
+ * communityId を渡すとそのコミュニティのイベントに固定される
+ * （コミュニティ選択の絞り込みは非表示）。
+ */
+export function EventsBrowser({
+  communityId,
+  title = "イベント",
+  actions,
+}: {
+  /** 指定時はそのコミュニティのイベントに固定 */
+  communityId?: string;
+  /** 見出し（既定: イベント） */
+  title?: string;
+  /** 見出し行の右端に置く追加アクション（作成ボタン等） */
+  actions?: ReactNode;
 }) {
   const [tab, setTab] = useState<EventsTab>("upcoming");
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [communityFilter, setCommunityFilter] = useState("");
   const [sort, setSort] = useState<EventSort>(DEFAULT_SORT.upcoming);
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
-  // 「現在」はマウント時に固定（クエリキーを安定させ再取得ループを防ぐ）
 
   const hasFilters = Boolean(
-    q.trim() || from || to || sort !== DEFAULT_SORT[tab],
+    q.trim() ||
+      from ||
+      to ||
+      (!communityId && communityFilter) ||
+      sort !== DEFAULT_SORT[tab],
   );
 
   const params = useMemo<EventSearchParams>(
@@ -68,12 +112,12 @@ export function CommunityEventsSection({
       phase: tab,
       from: dayStart(from),
       to: dayEnd(to),
-      communityId,
+      communityId: communityId ?? (communityFilter || undefined),
       sort,
       page,
       limit: PAGE_SIZE,
     }),
-    [tab, q, from, to, communityId, sort, page],
+    [tab, q, from, to, communityId, communityFilter, sort, page],
   );
   const search = useEventSearch(params, true);
 
@@ -90,6 +134,7 @@ export function CommunityEventsSection({
     setQ("");
     setFrom("");
     setTo("");
+    setCommunityFilter("");
     setSort(DEFAULT_SORT[tab]);
     setPage(1);
   };
@@ -114,7 +159,7 @@ export function CommunityEventsSection({
         spacing={1}
         sx={{ mb: 1 }}
       >
-        <Typography variant="h6">イベント</Typography>
+        <Typography variant="h6">{title}</Typography>
         <Stack direction="row" spacing={1} alignItems="center">
           <Button
             size="small"
@@ -126,6 +171,7 @@ export function CommunityEventsSection({
             絞り込み
           </Button>
           <ListColumnsToggle />
+          {actions}
         </Stack>
       </Stack>
 
@@ -185,6 +231,12 @@ export function CommunityEventsSection({
                   <MenuItem value="new">登録が新しい順</MenuItem>
                 </TextField>
               </Stack>
+              {!communityId && (
+                <CommunityFilterField
+                  value={communityFilter}
+                  onChange={(id) => change(() => setCommunityFilter(id))}
+                />
+              )}
               {hasFilters && (
                 <Box>
                   <Button size="small" onClick={clear}>
