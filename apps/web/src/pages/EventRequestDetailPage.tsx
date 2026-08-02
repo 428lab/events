@@ -30,7 +30,7 @@ import {
   type ReactorUser,
 } from "../api/requestHooks.js";
 import { UserLink } from "../components/UserLink.js";
-import { EventCard } from "../components/EventCard.js";
+import { EventList, ListColumnsToggle } from "../components/EventList.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
 import { venueLabel, formatDateTime } from "../lib/format.js";
@@ -246,20 +246,24 @@ export function EventRequestDetailPage() {
 
       {events.length > 0 && (
         <Box>
-          <Typography
-            variant="h6"
-            fontWeight={700}
-            gutterBottom
-            sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            spacing={1}
+            sx={{ mb: 1 }}
           >
-            <EggAltIcon fontSize="small" />
-            このたまごから生まれたイベント
-          </Typography>
-          <Stack spacing={2}>
-            {events.map((e) => (
-              <EventCard key={e.id} event={e} />
-            ))}
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+            >
+              <EggAltIcon fontSize="small" />
+              このたまごから生まれたイベント
+            </Typography>
+            <ListColumnsToggle />
           </Stack>
+          <EventList events={events} />
         </Box>
       )}
     </Stack>

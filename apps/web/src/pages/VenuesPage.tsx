@@ -23,7 +23,7 @@ import {
   useVenueWanted,
   venueImageUrl,
 } from "../api/venueHooks.js";
-import { EventCard } from "../components/EventCard.js";
+import { EventList, ListColumnsToggle } from "../components/EventList.js";
 import { RequestCard } from "../components/RequestCard.js";
 
 function VenueCard({ venue }: { venue: Venue }) {
@@ -184,26 +184,33 @@ function WantedSection() {
   if (events.length === 0 && requests.length === 0) return null;
   return (
     <Box sx={{ mt: 5 }}>
-      <Typography
-        variant="h5"
-        fontWeight={700}
-        gutterBottom
-        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={1}
       >
-        <SearchIcon fontSize="medium" />
-        会場を探しています
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        <Typography
+          variant="h5"
+          fontWeight={700}
+          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+        >
+          <SearchIcon fontSize="medium" />
+          会場を探しています
+        </Typography>
+        {events.length > 0 && <ListColumnsToggle />}
+      </Stack>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
         会場を提供できる場合は、各ページの「会場を提供できます」からオファーを送れます
       </Typography>
-      <Stack spacing={2}>
-        {events.map((e) => (
-          <EventCard key={e.id} event={e} />
-        ))}
-        {requests.map((r) => (
-          <RequestCard key={r.id} request={r} />
-        ))}
-      </Stack>
+      {events.length > 0 && <EventList events={events} />}
+      {requests.length > 0 && (
+        <Stack spacing={2} sx={{ mt: events.length > 0 ? 2 : 0 }}>
+          {requests.map((r) => (
+            <RequestCard key={r.id} request={r} />
+          ))}
+        </Stack>
+      )}
     </Box>
   );
 }
