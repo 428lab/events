@@ -223,3 +223,52 @@ describe("イベントのタイムテーブル (#116)", () => {
     expect(items.map((i) => i.title)).toEqual(["新その1", "新その2"]);
   });
 });
+
+describe("登壇資料URL (#146)", () => {
+  it("http(s)のURLは保存・取得でき、javascript:等は400", async () => {
+    const cookie = await loginDev();
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        title: "資料URL E2E",
+        venueType: "online",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+
+    const ok = await SELF.fetch(`${BASE}/api/events/${event.id}/timetable`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        items: [
+          {
+            title: "LT",
+            durationMin: 10,
+            materialUrl: "https://speakerdeck.com/x/y",
+          },
+        ],
+      }),
+    });
+    expect(ok.status).toBe(200);
+    const got = (await (
+      await SELF.fetch(`${BASE}/api/events/${event.id}/timetable`, {
+        headers: { cookie },
+      })
+    ).json()) as { items: { materialUrl: string }[] };
+    expect(got.items[0].materialUrl).toBe("https://speakerdeck.com/x/y");
+
+    const bad = await SELF.fetch(`${BASE}/api/events/${event.id}/timetable`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        items: [
+          { title: "LT", durationMin: 10, materialUrl: "javascript:alert(1)" },
+        ],
+      }),
+    });
+    expect(bad.status).toBe(400);
+  });
+});

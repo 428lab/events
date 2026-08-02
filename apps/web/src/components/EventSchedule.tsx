@@ -3,6 +3,7 @@ import {
   Card,
   CardContent,
   IconButton,
+  Link as MuiLink,
   Stack,
   Table,
   TableBody,
@@ -14,6 +15,7 @@ import {
 } from "@mui/material";
 import ScheduleIcon from "@mui/icons-material/Schedule";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import { computeScheduleTimes } from "@eventer/shared";
 import { useEventSchedule } from "../api/eventScheduleHooks.js";
 import { formatTime } from "../lib/format.js";
@@ -111,7 +113,25 @@ export function EventSchedule({
                       )}
                     </TableCell>
                     <TableCell sx={{ verticalAlign: "top" }}>
-                      <Typography variant="body2">{it.title}</Typography>
+                      <Typography variant="body2">
+                        {it.title}
+                        {it.materialUrl && (
+                          <MuiLink
+                            href={it.materialUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{
+                              ml: 0.75,
+                              verticalAlign: "middle",
+                              display: "inline-flex",
+                            }}
+                            aria-label="登壇資料を開く"
+                            title="登壇資料"
+                          >
+                            <DescriptionOutlinedIcon sx={{ fontSize: 18 }} />
+                          </MuiLink>
+                        )}
+                      </Typography>
                       {it.description && (
                         <Typography
                           variant="caption"

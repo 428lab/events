@@ -53,6 +53,7 @@ function newRow(partial?: Partial<SaveScheduleItemInput>): Row {
     startsAt: null,
     speakerUserId: null,
     speakerName: "",
+    materialUrl: "",
     ...partial,
   };
 }
@@ -81,6 +82,7 @@ export function ScheduleEditor({
         startsAt: it.startsAt,
         speakerUserId: it.speaker?.id ?? null,
         speakerName: it.speakerName,
+        materialUrl: it.materialUrl,
       }),
     ),
   );
@@ -146,7 +148,11 @@ export function ScheduleEditor({
     setRows(template.items.map((it) => newRow(it)));
   };
 
-  const canSave = rows.every((r) => r.title.trim().length > 0);
+  const canSave = rows.every(
+    (r) =>
+      r.title.trim().length > 0 &&
+      (r.materialUrl.trim() === "" || /^https?:\/\//.test(r.materialUrl.trim())),
+  );
 
   const submit = () =>
     save.mutate(
@@ -157,6 +163,7 @@ export function ScheduleEditor({
         startsAt: r.startsAt,
         speakerUserId: r.speakerUserId,
         speakerName: r.speakerName,
+        materialUrl: r.materialUrl.trim(),
       })),
       { onSuccess: onClose },
     );
@@ -293,6 +300,25 @@ export function ScheduleEditor({
                 value={row.description}
                 onChange={(e) => update(i, { description: e.target.value })}
                 inputProps={{ maxLength: 1000 }}
+                fullWidth
+              />
+              <TextField
+                label="資料URL（任意・Speaker Deck / Googleスライド / デッキ等）"
+                size="small"
+                type="url"
+                value={row.materialUrl}
+                onChange={(e) => update(i, { materialUrl: e.target.value })}
+                error={
+                  row.materialUrl.trim() !== "" &&
+                  !/^https?:\/\//.test(row.materialUrl.trim())
+                }
+                helperText={
+                  row.materialUrl.trim() !== "" &&
+                  !/^https?:\/\//.test(row.materialUrl.trim())
+                    ? "http(s):// で始まるURLを入力してください"
+                    : undefined
+                }
+                inputProps={{ maxLength: 500 }}
                 fullWidth
               />
             </Stack>
