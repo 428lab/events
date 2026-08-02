@@ -105,7 +105,9 @@ export async function sendEmail(opts: {
       }),
     });
     if (!res.ok) {
-      console.warn(`email: Resend 送信失敗 status=${res.status}`);
+      // 原因特定用に Resend のエラー本文も出す（宛先アドレスは含めない）
+      const detail = (await res.text().catch(() => "")).slice(0, 300);
+      console.warn(`email: Resend 送信失敗 status=${res.status} ${detail}`);
       return false;
     }
     return true;
