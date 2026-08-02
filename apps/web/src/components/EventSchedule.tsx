@@ -40,6 +40,8 @@ export function EventSchedule({
   if (items.length === 0 && !isStaff) return null;
 
   const times = computeScheduleTimes(items, eventStartsAt);
+  // 担当が全行空なら列ごと非表示（モバイルで内容欄を広く使う）
+  const hasSpeakers = items.some((it) => it.speaker || it.speakerName);
 
   return (
     <Card variant="outlined">
@@ -84,11 +86,15 @@ export function EventSchedule({
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ width: 96, whiteSpace: "nowrap" }}>
+                  <TableCell sx={{ width: 72, whiteSpace: "nowrap" }}>
                     時刻
                   </TableCell>
                   <TableCell>内容</TableCell>
-                  <TableCell sx={{ width: 180 }}>担当</TableCell>
+                  {hasSpeakers && (
+                    <TableCell sx={{ width: "1%", whiteSpace: "nowrap" }}>
+                      担当
+                    </TableCell>
+                  )}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -116,20 +122,22 @@ export function EventSchedule({
                         </Typography>
                       )}
                     </TableCell>
-                    <TableCell sx={{ verticalAlign: "top" }}>
-                      {it.speaker ? (
-                        <UserLink
-                          username={it.speaker.username}
-                          name={it.speaker.globalName ?? it.speaker.username}
-                          avatarUrl={it.speaker.avatarUrl}
-                          withAvatar
-                          avatarSize={22}
-                          sx={{ fontSize: "0.875rem" }}
-                        />
-                      ) : it.speakerName ? (
-                        <Typography variant="body2">{it.speakerName}</Typography>
-                      ) : null}
-                    </TableCell>
+                    {hasSpeakers && (
+                      <TableCell sx={{ verticalAlign: "top", width: "1%" }}>
+                        {it.speaker ? (
+                          <UserLink
+                            username={it.speaker.username}
+                            name={it.speaker.globalName ?? it.speaker.username}
+                            avatarUrl={it.speaker.avatarUrl}
+                            withAvatar
+                            avatarSize={22}
+                            sx={{ fontSize: "0.875rem" }}
+                          />
+                        ) : it.speakerName ? (
+                          <Typography variant="body2">{it.speakerName}</Typography>
+                        ) : null}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
