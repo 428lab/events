@@ -470,3 +470,67 @@ describe("資料OGメタの取得 (#149)", () => {
     expect(isPrivateHost("8.8.8.8")).toBe(false);
   });
 });
+
+describe("資料編集の権限とSSRFガード強化（レビュー対応）", () => {
+  it("キャンセル済みの元メンバーは自分のコマでも編集不可", async () => {
+    const cookie = await loginDev();
+    const create = await SELF.fetch(`${BASE}/api/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        title: "キャンセル者編集不可E2E",
+        venueType: "online",
+        startsAt: Date.now() + 3600_000,
+        endsAt: Date.now() + 7200_000,
+      }),
+    });
+    const { event } = (await create.json()) as { event: { id: string } };
+    // 一般ユーザーをキャンセル済みメンバーとして直挿入し、そのコマの担当にする
+    const uid = crypto.randomUUID();
+    const sid = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at) VALUES (?, ?, ?, 'テスト', NULL, ?)",
+    )
+      .bind(uid, `nostr:${uid}`, `u_${uid.slice(0, 6)}`, Date.now())
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
+    )
+      .bind(sid, uid, Date.now() + 86400000)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at, canceled_at, canceled_scheduling) VALUES (?, ?, ?, 'participant', NULL, 'canceled', 0, ?, ?, 0)",
+    )
+      .bind(crypto.randomUUID(), event.id, uid, Date.now(), Date.now())
+      .run();
+    const itemId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO event_schedule_item (id, event_id, title, description, duration_min, starts_at, speaker_user_id, speaker_name, material_url, sort_order, created_at) VALUES (?, ?, 'LT', '', 10, NULL, ?, '', '', 0, ?)",
+    )
+      .bind(itemId, event.id, uid, Date.now())
+      .run();
+
+    const res = await SELF.fetch(
+      `${BASE}/api/events/${event.id}/timetable/${itemId}/material`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie: `eventer_session=${sid}`,
+        },
+        body: JSON.stringify({ materialUrl: "https://example.com/deck" }),
+      },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("isPrivateHost: IPv4射影・リンクローカルv6は拒否、fc2.com等の通常ホストは許可", async () => {
+    const { isPrivateHost } = await import("../src/lib/materialMeta.js");
+    expect(isPrivateHost("[::ffff:7f00:1]")).toBe(true); // ::ffff:127.0.0.1
+    expect(isPrivateHost("[::ffff:a9fe:a9fe]")).toBe(true); // 169.254.169.254
+    expect(isPrivateHost("[fe81::1]")).toBe(true);
+    expect(isPrivateHost("fc2.com")).toBe(false);
+    expect(isPrivateHost("fcbarcelona.com")).toBe(false);
+    expect(isPrivateHost("speakerdeck.com")).toBe(false);
+  });
+});

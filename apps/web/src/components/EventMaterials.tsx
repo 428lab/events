@@ -67,27 +67,42 @@ export function EventMaterials({ eventId }: { eventId: string }) {
                 {/* サムネイル（OG画像が無ければプレースホルダー） */}
                 <Box
                   sx={{
+                    position: "relative",
                     aspectRatio: "16 / 10",
                     bgcolor: "action.hover",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
                     overflow: "hidden",
                   }}
                 >
+                  <DescriptionOutlinedIcon
+                    sx={{
+                      fontSize: 40,
+                      color: "text.disabled",
+                      position: "absolute",
+                      top: "50%",
+                      left: "50%",
+                      transform: "translate(-50%, -50%)",
+                    }}
+                  />
                   {it.materialOgImage ? (
                     <Box
                       component="img"
                       src={it.materialOgImage}
                       alt=""
                       loading="lazy"
-                      sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      // 第三者ホストへの参照なのでリファラは送らない。読込失敗時はプレースホルダに戻す
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = "none";
+                      }}
+                      sx={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
                     />
-                  ) : (
-                    <DescriptionOutlinedIcon
-                      sx={{ fontSize: 40, color: "text.disabled" }}
-                    />
-                  )}
+                  ) : null}
                 </Box>
                 <Box sx={{ p: 1.25 }}>
                   <Typography

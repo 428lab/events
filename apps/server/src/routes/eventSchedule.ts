@@ -88,17 +88,19 @@ eventScheduleRoutes.patch(
     const item = await eventScheduleRepo.findItem(eventId, itemId);
     if (!item) return c.json({ error: "not_found" }, 404);
 
-    // 許可: アプリ管理者 / イベント staff / このコマにリンクされた登壇者本人
+    // 許可: アプリ管理者 / イベント staff / このコマにリンクされた登壇者本人。
+    // 登壇者本人でも現役メンバーであること（離脱・キャンセル済みは不可）
     const user = c.get("user");
-    if (!isAppAdmin(user) && item.speakerUserId !== user.id) {
+    if (!isAppAdmin(user)) {
       const member = await eventMembersRepo.find(eventId, user.id);
-      if (member?.role !== "staff") {
+      const isSpeakerSelf = item.speakerUserId === user.id && member != null;
+      if (!isSpeakerSelf && member?.role !== "staff") {
         return c.json({ error: "forbidden" }, 403);
       }
     }
 
     const input = valid<UpdateScheduleMaterialInput>(c, "json");
-    await eventScheduleRepo.updateMaterial(itemId, input.materialUrl);
+    await eventScheduleRepo.updateMaterial(eventId, itemId, input.materialUrl);
     // OG サムネイルはバックグラウンドで再取得 (#149)
     await deferBackground(refreshMaterialMeta(eventId));
     const updated = await eventScheduleRepo.findItem(eventId, itemId);

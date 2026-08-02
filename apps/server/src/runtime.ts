@@ -34,17 +34,28 @@ let _ctx: ExecutionContext | null = null;
 // 目的は暴走防止なので十分。bindEnv のたびにリセットする。
 let _emailBudget = 0;
 const EMAIL_BUDGET_PER_REQUEST = 20;
+// OGサムネイル取得の1リクエストあたり予算（リダイレクトのホップも1と数える）
+let _ogFetchBudget = 0;
+const OG_FETCH_BUDGET_PER_REQUEST = 20;
 
 export function bindEnv(e: Env, ctx: ExecutionContext | null = null): void {
   _env = e;
   _ctx = ctx;
   _emailBudget = EMAIL_BUDGET_PER_REQUEST;
+  _ogFetchBudget = OG_FETCH_BUDGET_PER_REQUEST;
 }
 
 /** レスポンスをブロックせずにバックグラウンド実行する（waitUntil が無い環境では await） */
 export async function deferBackground(p: Promise<unknown>): Promise<void> {
   if (_ctx) _ctx.waitUntil(p);
   else await p;
+}
+
+/** OGサムネイル取得1回ぶんの予算を確保。使い切っていたら false */
+export function takeOgFetchSlot(): boolean {
+  if (_ogFetchBudget <= 0) return false;
+  _ogFetchBudget--;
+  return true;
 }
 
 /** メール1通ぶんの送信予算を確保。使い切っていたら false */
