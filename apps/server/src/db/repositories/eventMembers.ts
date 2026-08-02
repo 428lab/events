@@ -202,6 +202,7 @@ export const eventMembersRepo = {
     cancelLate: number;
     hosted: number;
     staffed: number;
+    spoken: number;
   }> {
     const DAY = 24 * 60 * 60 * 1000;
     const row = await one<{
@@ -246,6 +247,15 @@ export const eventMembersRepo = {
       userId,
       now,
     );
+    // 登壇: タイムテーブルの担当にリンクされた終了済み公開イベント数（重複コマは1と数える）
+    const spoken = await one<{ v: number }>(
+      `SELECT COUNT(DISTINCT e.id) AS v FROM event_schedule_item si
+        JOIN event e ON e.id = si.event_id
+        WHERE si.speaker_user_id = ? AND e.status = 'published'
+          AND e.ends_at > 0 AND e.ends_at < ?`,
+      userId,
+      now,
+    );
     return {
       attended: row?.attended ?? 0,
       noShow: row?.no_show ?? 0,
@@ -253,6 +263,7 @@ export const eventMembersRepo = {
       cancelLate: row?.cancel_late ?? 0,
       hosted: hosted?.v ?? 0,
       staffed: staffed?.v ?? 0,
+      spoken: spoken?.v ?? 0,
     };
   },
 

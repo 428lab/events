@@ -33,6 +33,8 @@ export const participationStatsSchema = z.object({
   hosted: z.number(),
   /** スタッフとして参加した終了済みイベント数（オーナー分は含まない） */
   staffed: z.number(),
+  /** 登壇した終了済みイベント数（タイムテーブルの担当にリンクされたイベント） */
+  spoken: z.number(),
 });
 export type ParticipationStats = z.infer<typeof participationStatsSchema>;
 

@@ -113,9 +113,10 @@ function AwardsSection({
 /** 参加実績（出席・無断欠席・キャンセル内訳・主催/スタッフ数）。実績ゼロなら非表示 */
 function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
   if (!stats) return null;
-  const { attended, noShow, cancelEarly, cancelLate, hosted, staffed } = stats;
+  const { attended, noShow, cancelEarly, cancelLate, hosted, staffed, spoken } =
+    stats;
   const registered = attended + noShow;
-  if (registered + cancelEarly + cancelLate + hosted + staffed === 0) {
+  if (registered + cancelEarly + cancelLate + hosted + staffed + spoken === 0) {
     return null;
   }
   const rate = registered > 0 ? Math.round((attended / registered) * 100) : null;
@@ -135,6 +136,7 @@ function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
         )}
         {hosted > 0 && <Chip label={`主催 ${hosted}`} variant="outlined" />}
         {staffed > 0 && <Chip label={`スタッフ ${staffed}`} variant="outlined" />}
+        {spoken > 0 && <Chip label={`登壇 ${spoken}`} color="secondary" variant="outlined" />}
         <Typography variant="body2" color="text.secondary">
           出席 {attended} ・無断欠席 {noShow} ・キャンセル {cancelEarly + cancelLate}
           （うち直前 {cancelLate}）
