@@ -48,6 +48,14 @@ export function formatDateTime(ms: number): string {
   }).format(ms);
 }
 
+/** 時刻のみ（HH:mm） */
+export function formatTime(ms: number): string {
+  return new Intl.DateTimeFormat("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(ms);
+}
+
 /** epoch ms → datetime-local の value（ローカル時刻 "YYYY-MM-DDTHH:mm"） */
 export function toDateTimeLocal(ms: number | null | undefined): string {
   if (!ms) return "";
