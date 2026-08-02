@@ -1,17 +1,29 @@
 import { env, takeEmailSlot } from "../runtime.js";
 import { emailRepo } from "../db/repositories/email.js";
+import { eventsRepo } from "../db/repositories/events.js";
+import { communitiesRepo } from "../db/repositories/communities.js";
+import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
+import { computeScheduleTimes } from "@eventer/shared";
+import {
+  actorTitleHtml,
+  eventCardHtml,
+  notificationEmailHtml,
+  timetableHtml,
+} from "./emailTemplates.js";
 
 /** メール送信 (#126)。Resend HTTP API を fetch で直接叩く（npm 依存なし） */
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
-const escapeHtml = (s: string) =>
-  s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+/** メール表示だけに使う付加情報 (#134)。DB には保存しない */
+export interface EmailExtras {
+  /** 「◯◯ さんが…」通知の ◯◯（プロフィールへリンクする） */
+  actorName?: string;
+  /** actor のプロフィールパス（例: /users/alice） */
+  actorPath?: string;
+  /** リマインダー用: イベントのタイムテーブルも載せる */
+  timetable?: boolean;
+}
 
 /** アプリ内リンクに ?ref=email を付けた絶対URLを作る（既にクエリがあれば & で連結） */
 export function emailLinkUrl(link: string): string {
@@ -43,38 +55,6 @@ export async function unsubscribeToken(userId: string): Promise<string> {
 export async function unsubscribeUrl(userId: string): Promise<string> {
   const token = await unsubscribeToken(userId);
   return `${env.appBaseUrl}/api/email/unsubscribe?u=${encodeURIComponent(userId)}&t=${token}`;
-}
-
-/** 通知メールの最小HTML（インラインスタイル・ライト配色） */
-export function notificationEmailHtml(opts: {
-  title: string;
-  body: string;
-  linkUrl: string | null;
-  unsubscribeUrl: string;
-}): string {
-  const button = opts.linkUrl
-    ? `<p style="margin:24px 0;">
-        <a href="${escapeHtml(opts.linkUrl)}"
-           style="display:inline-block;background:#1E293B;color:#FFFFFF;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;">
-          詳細を見る
-        </a>
-      </p>`
-    : "";
-  const body = opts.body
-    ? `<p style="margin:0 0 8px;color:#334155;font-size:15px;line-height:1.7;">${escapeHtml(opts.body)}</p>`
-    : "";
-  return `<div style="background:#F8FAFC;padding:32px 16px;font-family:'Hiragino Sans','Noto Sans JP',system-ui,sans-serif;">
-  <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:32px;">
-    <p style="margin:0 0 24px;color:#64748B;font-size:13px;font-weight:600;letter-spacing:.05em;">events lab</p>
-    <h1 style="margin:0 0 12px;color:#0F172A;font-size:18px;line-height:1.5;">${escapeHtml(opts.title)}</h1>
-    ${body}
-    ${button}
-  </div>
-  <p style="max-width:560px;margin:16px auto 0;color:#94A3B8;font-size:12px;line-height:1.6;">
-    このメールは events lab のメール通知設定が ON のため送信されています。<br>
-    <a href="${escapeHtml(opts.unsubscribeUrl)}" style="color:#64748B;">メール通知を停止する</a>
-  </p>
-</div>`;
 }
 
 /** Resend でメールを1通送る。API キー未設定や失敗時は false（呼び出し元を壊さない） */
@@ -117,13 +97,67 @@ export async function sendEmail(opts: {
   }
 }
 
-/** 通知メールを1通組み立てて送る（宛先解決済みの内部ヘルパー） */
+/** イベント詳細リンク（/events/:uuid）の判定。クエリ付きも許容 */
+const EVENT_LINK_RE = /^\/events\/([0-9a-f-]{36})(?:[?#]|$)/;
+
+// 同一イベントへの一斉送信（リマインダー・フォロワー通知）でカードを組み直さないための
+// 短命キャッシュ。1回の実行内での重複フェッチ抑制が目的（TTL 60秒・最大50件）
+const cardCache = new Map<string, { html: string; at: number }>();
+const CARD_CACHE_TTL = 60_000;
+
+/** リンク先がイベント詳細なら、イベントカード（＋タイムテーブル）HTMLを組み立てる (#134)。
+ * D1 参照が増えるが送信はレスポンス外（waitUntil / cron）なので許容。
+ * 失敗してもプレーンなメールで送れるよう空文字を返す */
+async function buildEventExtraHtml(
+  link: string,
+  withTimetable: boolean,
+): Promise<string> {
+  try {
+    const m = EVENT_LINK_RE.exec(link);
+    if (!m) return "";
+    const cacheKey = `${m[1]}:${withTimetable ? 1 : 0}`;
+    const hit = cardCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < CARD_CACHE_TTL) return hit.html;
+    const event = await eventsRepo.findById(m[1]!);
+    if (!event) return "";
+    const community = event.communityId
+      ? await communitiesRepo.findById(event.communityId)
+      : null;
+    let html = eventCardHtml({
+      baseUrl: env.appBaseUrl,
+      event,
+      communityName: community?.name ?? null,
+    });
+    if (withTimetable) {
+      const items = await eventScheduleRepo.listByEvent(event.id);
+      if (items.length > 0) {
+        // 日程調整中は開始基準が無いので明示指定の項目以外は「--:--」になる
+        const times = computeScheduleTimes(
+          items,
+          event.scheduling ? null : event.startsAt,
+        );
+        html += timetableHtml({ items, times });
+      }
+    }
+    // 使い捨てに近い用途なので肥大化だけ防ぐ
+    if (cardCache.size >= 50) cardCache.clear();
+    cardCache.set(cacheKey, { html, at: Date.now() });
+    return html;
+  } catch (e) {
+    console.warn("email: イベントカードの組み立てに失敗（プレーンで送信）", e);
+    return "";
+  }
+}
+
+/** 通知メールを1通組み立てて送る（宛先解決済みの内部ヘルパー）。
+ * extras はメール表示のみに使う（アプリ内通知や DB には影響しない） */
 export async function sendNotificationEmailTo(
   userId: string,
   to: string,
   title: string,
   body: string,
   link: string,
+  extras?: EmailExtras,
 ): Promise<boolean> {
   // 1リクエストの送信予算（抽選など多人数ループでの暴走防止）
   if (!takeEmailSlot()) {
@@ -131,9 +165,24 @@ export async function sendNotificationEmailTo(
     return false;
   }
   const unsub = await unsubscribeUrl(userId);
+  // リッチ化 (#134): イベントカード＋（リマインダーなら）タイムテーブル
+  const extraHtml = await buildEventExtraHtml(link, extras?.timetable === true);
+  // 「◯◯ さんが…」の ◯◯ をプロフィールへリンク（該当しなければプレーン表示）
+  const titleHtml =
+    extras?.actorName && extras.actorPath
+      ? actorTitleHtml({
+          baseUrl: env.appBaseUrl,
+          title,
+          actorName: extras.actorName,
+          actorPath: extras.actorPath,
+        })
+      : null;
   const html = notificationEmailHtml({
+    baseUrl: env.appBaseUrl,
     title,
+    titleHtml,
     body,
+    extraHtml,
     linkUrl: link ? emailLinkUrl(link) : null,
     unsubscribeUrl: unsub,
   });
@@ -156,11 +205,12 @@ export async function sendNotificationEmailIfOptedIn(
   title: string,
   body: string,
   link: string,
+  extras?: EmailExtras,
 ): Promise<void> {
   try {
     const to = await emailRepo.findRecipient(userId);
     if (!to) return;
-    await sendNotificationEmailTo(userId, to, title, body, link);
+    await sendNotificationEmailTo(userId, to, title, body, link, extras);
   } catch (e) {
     console.warn("email: 通知メール送信に失敗", e);
   }

@@ -1,16 +1,13 @@
-import { emailRepo, type ReminderTarget } from "../db/repositories/email.js";
+import { emailRepo } from "../db/repositories/email.js";
 import { sendNotificationEmailTo } from "./email.js";
+import { venueText } from "./emailTemplates.js";
 
 /** 前日リマインダーメール (#126)。cron（毎日 UTC 0:00 = JST 9:00）から呼ばれる */
 
 /** 1回の実行での送信上限（サブリクエスト数の安全上限） */
+// 1通あたり最大~5サブリクエスト（Resend+D1）になったため、上限は控えめに維持する。
+// 引き上げる場合は Workers のサブリクエスト上限（有料1000/リクエスト）に注意
 const MAX_SENDS_PER_RUN = 200;
-
-const VENUE_LABEL: Record<string, string> = {
-  offline: "オフライン",
-  online: "オンライン",
-  hybrid: "ハイブリッド",
-};
 
 /** JST の開始時刻表記（例: 2026/8/4 19:00） */
 function startText(ms: number): string {
@@ -24,15 +21,6 @@ function startText(ms: number): string {
   }).format(ms);
 }
 
-/** 会場ラベル（オフラインは場所名、オンラインは種別のみ。URLは載せずリンク先で確認） */
-function venueText(t: ReminderTarget): string {
-  const label = VENUE_LABEL[t.venueType] ?? t.venueType;
-  if (t.venueType !== "online" && t.venueOffline) {
-    return `${label}（${t.venueOffline}）`;
-  }
-  return label;
-}
-
 /** 24時間以内に開催されるイベントの参加者へ前日リマインダーを送る。
  * 対象: メール通知ON・検証済みメール有り・未送信の confirmed メンバー */
 export async function sendEventReminders(now = Date.now()): Promise<number> {
@@ -44,8 +32,10 @@ export async function sendEventReminders(now = Date.now()): Promise<number> {
         t.userId,
         t.email,
         `明日開催:「${t.title}」`,
-        `${startText(t.startsAt)} 開始 ／ ${venueText(t)}`,
+        `${startText(t.startsAt)} 開始 ／ ${venueText(t.venueType, t.venueOffline)}`,
         `/events/${t.eventId}`,
+        // リマインダーはイベントカードに加えてタイムテーブルも載せる (#134)
+        { timetable: true },
       );
       if (ok) {
         await emailRepo.markReminderSent(t.memberId);
