@@ -33,7 +33,8 @@ function truncate(s: string, max: number): string {
 }
 
 function eventUrl(ev: Event): string {
-  return `${env.appBaseUrl}/events/${ev.id}`;
+  // フィード経由の流入を統計で判別できるよう ref を付ける
+  return `${env.appBaseUrl}/events/${ev.id}?ref=feed`;
 }
 
 function imageUrl(ev: Event): string | null {

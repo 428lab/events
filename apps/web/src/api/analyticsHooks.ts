@@ -9,14 +9,30 @@ export function useRecordView(eventId: string, enabled: boolean) {
   useEffect(() => {
     if (!enabled || !eventId || sent.current === eventId) return;
     sent.current = eventId;
-    // SPA内fetchのRefererは自ドメインになるため、外部流入元は document.referrer を送る
+    // SPA内fetchのRefererは自ドメインになるため、外部流入元は document.referrer を送る。
+    // 通知・フィード経由のリンクは ?ref= で明示されるので優先して送る
+    const params = new URLSearchParams(window.location.search);
+    const refParam = params.get("ref");
     void fetch(`/api/events/${eventId}/view`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       keepalive: true,
-      body: JSON.stringify({ ref: document.referrer }),
+      body: JSON.stringify({
+        ref: document.referrer,
+        ...(refParam ? { refParam } : {}),
+      }),
     }).catch(() => {});
+    // 記録後は URL から ref を外す（共有時に流入元が伝播しないように）
+    if (refParam) {
+      params.delete("ref");
+      const q = params.toString();
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${window.location.pathname}${q ? `?${q}` : ""}${window.location.hash}`,
+      );
+    }
   }, [eventId, enabled]);
 }
 

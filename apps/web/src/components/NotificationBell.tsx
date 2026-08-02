@@ -45,7 +45,15 @@ export function NotificationBell() {
   const onClickItem = (n: Notification) => {
     if (!n.read) markRead.mutate(n.id);
     setAnchor(null);
-    if (n.link) navigate(n.link);
+    // 通知経由の流入を統計で判別できるよう、計測対象のイベントページのみ ref を付ける
+    if (n.link) {
+      const withRef = n.link.startsWith("/events/")
+        ? n.link.includes("?")
+          ? `${n.link}&ref=notification`
+          : `${n.link}?ref=notification`
+        : n.link;
+      navigate(withRef);
+    }
   };
 
   return (

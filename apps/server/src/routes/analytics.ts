@@ -17,6 +17,9 @@ function jstDay(): string {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
+/** リンク側で明示された流入元（?ref=）。許可リスト制で統計の汚染を防ぐ */
+const REF_PARAM_SOURCES = new Set(["notification", "feed"]);
+
 /** document.referrer から流入元ラベルを作る（ホスト名のみ・先頭 www. 除去） */
 function parseSource(ref: unknown): string {
   if (typeof ref !== "string" || !ref) return "direct";
@@ -45,13 +48,18 @@ export async function recordEventView(c: Context<AppEnv>) {
     if (member?.role === "staff") return c.body(null, 204);
   }
 
-  let body: { ref?: unknown } = {};
+  let body: { ref?: unknown; refParam?: unknown } = {};
   try {
     body = await c.req.json();
   } catch {
     /* body なしでも計測（direct 扱い） */
   }
-  const source = parseSource(body.ref);
+  // 通知・フィード等のアプリ内リンク経由は referrer より ?ref= を優先
+  const explicit =
+    typeof body.refParam === "string" && REF_PARAM_SOURCES.has(body.refParam)
+      ? body.refParam
+      : null;
+  const source = explicit ?? parseSource(body.ref);
   const country =
     (c.req.raw as { cf?: { country?: string } }).cf?.country ?? "XX";
 
