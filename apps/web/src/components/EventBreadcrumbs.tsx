@@ -13,7 +13,7 @@ export function EventBreadcrumbs({
 }) {
   return (
     <Breadcrumbs sx={{ mb: 2 }}>
-      <Link component={RouterLink} to="/events" underline="hover" color="inherit">
+      <Link component={RouterLink} to="/" underline="hover" color="inherit">
         イベント
       </Link>
       <Link

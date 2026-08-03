@@ -7,7 +7,7 @@ import { PublicLayout } from "./components/PublicLayout.js";
 import { EventLayout } from "./components/EventLayout.js";
 import { LoginPage } from "./pages/LoginPage.js";
 import { MyPage } from "./pages/MyPage.js";
-import { EventsPage } from "./pages/EventsPage.js";
+
 import { EventDetailPage } from "./pages/EventDetailPage.js";
 import { CreateEventPage } from "./pages/CreateEventPage.js";
 import { EditEventPage } from "./pages/EditEventPage.js";
@@ -252,7 +252,8 @@ export function App() {
         <Route path="/d/:slug" element={<DeckViewerPage />} />
         <Route path="/e/:slug" element={<ShortEventPage />} />
         <Route path="/r/:slug" element={<ShortRequestPage />} />
-        <Route path="/events" element={<EventsPage />} />
+        {/* 旧 /events はトップに統合 (#165)。ブックマーク互換のためリダイレクト */}
+        <Route path="/events" element={<Navigate to="/" replace />} />
         <Route path="/events/upcoming" element={<UpcomingEventsPage />} />
         <Route path="/requests" element={<EventRequestsPage />} />
         <Route path="/requests/new" element={<EventRequestNewPage />} />
