@@ -165,7 +165,7 @@ export function EventRequestNewPage() {
               label="コミュニティメンバーだけに見せる"
             />
           )}
-          <Stack direction="row" spacing={1.5}>
+          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
             <Button
               variant="contained"
               onClick={submit}

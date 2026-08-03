@@ -271,7 +271,7 @@ export function LiveControlPage() {
             ))}
           </TextField>
           {deck && (
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} alignItems="center">
               <Button
                 variant="outlined"
                 size="large"

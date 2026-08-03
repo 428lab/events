@@ -373,7 +373,7 @@ export function CreateEventPage() {
               <Typography color="error" variant="body2">
                 イベントは作成されましたが、たまごへの紐付けに失敗しました。
               </Typography>
-              <Stack direction="row" spacing={2} justifyContent="flex-end">
+              <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} justifyContent="flex-end">
                 <Button onClick={() => navigate(`/events/${linkFailedEventId}`)}>
                   紐付けせずイベントへ
                 </Button>
@@ -397,7 +397,7 @@ export function CreateEventPage() {
               </Stack>
             </Stack>
           ) : (
-            <Stack direction="row" spacing={2} justifyContent="flex-end">
+            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} justifyContent="flex-end">
               <Button onClick={() => navigate(-1)}>キャンセル</Button>
               <Button
                 variant="contained"

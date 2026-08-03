@@ -67,7 +67,7 @@ export function InquiriesPage() {
               {create.isError && (
                 <Alert severity="error">送信に失敗しました。</Alert>
               )}
-              <Stack direction="row" spacing={1} justifyContent="flex-end">
+              <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} justifyContent="flex-end">
                 <Button onClick={() => setOpen(false)}>キャンセル</Button>
                 <Button
                   variant="contained"

@@ -59,7 +59,14 @@ function makeTheme(t: ThemeTokens): Theme {
       MuiButton: {
         defaultProps: { disableElevation: true },
         styleOverrides: {
-          root: { borderRadius: 999, textTransform: "none", paddingInline: 18 },
+          root: {
+            borderRadius: 999,
+            textTransform: "none",
+            paddingInline: 18,
+            // 狭い画面でフレックス圧縮されても文字を縦書きに潰さない
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+          },
           containedPrimary: { "&:hover": { backgroundColor: t.primaryDark } },
         },
       },

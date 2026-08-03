@@ -165,7 +165,7 @@ export function VenuePhotos({
           </Typography>
           <Stack spacing={1}>
             {pending.map((p) => (
-              <Stack key={p.id} direction="row" spacing={1.5} alignItems="center">
+              <Stack key={p.id} direction="row" flexWrap="wrap" useFlexGap spacing={1.5} alignItems="center">
                 <Box
                   component="img"
                   src={photoUrl(p)}

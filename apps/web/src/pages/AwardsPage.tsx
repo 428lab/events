@@ -193,7 +193,7 @@ export function AwardsPage() {
           <Typography variant="caption" color="text.secondary">
             発表 {cursor} / {sequence.length}
           </Typography>
-          <Stack direction="row" spacing={2}>
+          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2}>
             <Button variant="outlined" onClick={() => reset.mutate()}>
               リセット
             </Button>

@@ -272,7 +272,7 @@ export function VenueFormPage() {
             <Alert
               severity="warning"
               action={
-                <Stack direction="row" spacing={1}>
+                <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
                   <Button
                     size="small"
                     onClick={() => {
@@ -291,7 +291,7 @@ export function VenueFormPage() {
               {imageError}
             </Alert>
           )}
-          <Stack direction="row" spacing={1.5}>
+          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
             <Button
               variant="contained"
               onClick={submit}

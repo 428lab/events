@@ -197,7 +197,7 @@ export function CommunityEditPage() {
         </Stack>
       </Box>
 
-      <Stack direction="row" spacing={1}>
+      <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
         <Button
           variant="contained"
           disabled={!name.trim() || update.isPending}

@@ -66,7 +66,7 @@ export function CommunityPage() {
       )}
 
       {/* ヘッダー */}
-      <Stack direction="row" spacing={2} alignItems="center">
+      <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} alignItems="center">
         <Avatar
           src={c.iconUrl ?? undefined}
           variant="rounded"
@@ -93,7 +93,7 @@ export function CommunityPage() {
           </Typography>
         </Box>
         {me && (
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} alignItems="center">
             {c.myRole && ROLE_LABEL[c.myRole] && (
               <Chip
                 label={ROLE_LABEL[c.myRole]}
