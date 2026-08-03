@@ -7,8 +7,10 @@ import {
   Card,
   CardContent,
   Collapse,
+  IconButton,
   MenuItem,
   Pagination,
+  Tooltip,
   Stack,
   Tab,
   Tabs,
@@ -171,15 +173,26 @@ export function EventsBrowser({
           alignItems="center"
           sx={{ flexShrink: 0, "& .MuiButton-root": { whiteSpace: "nowrap" } }}
         >
+          {/* モバイルはアイコンのみ、sm以上は文字付き */}
           <Button
             size="small"
             color="inherit"
             startIcon={<SearchIcon />}
             onClick={() => setOpen((o) => !o)}
-            sx={{ opacity: 0.85 }}
+            sx={{ opacity: 0.85, display: { xs: "none", sm: "inline-flex" } }}
           >
             絞り込み
           </Button>
+          <Tooltip title="絞り込み">
+            <IconButton
+              size="small"
+              onClick={() => setOpen((o) => !o)}
+              aria-label="絞り込み"
+              sx={{ display: { xs: "inline-flex", sm: "none" }, opacity: 0.85 }}
+            >
+              <SearchIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
           <ListColumnsToggle />
           {actions}
         </Stack>
