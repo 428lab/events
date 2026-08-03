@@ -319,17 +319,15 @@ export function LicenseCardSvg({
   const NAME_MAX_W = 742;
   const nameWidthEm = [...card.name].reduce(
     (acc, ch) =>
-      acc + (/[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 1.0 : 0.55),
+      acc + (/[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 1.0 : 0.62),
     0,
   );
+  // textLength はレンダラによって無視されるため使わない。
+  // 安全係数 0.94 を掛けたサイズ計算のみで必ず枠内に収める（下限16px）
   const nameSize = Math.max(
-    26,
-    Math.min(72, Math.floor(NAME_MAX_W / Math.max(nameWidthEm, 1))),
+    16,
+    Math.min(72, Math.floor((NAME_MAX_W / Math.max(nameWidthEm, 1)) * 0.94)),
   );
-  const nameLenAttrs =
-    nameWidthEm * nameSize > NAME_MAX_W
-      ? { textLength: NAME_MAX_W, lengthAdjust: "spacingAndGlyphs" as const }
-      : {};
   const badgeSize = (card.topBadge?.length ?? 0) > 12 ? 19 : 26;
 
   return (
@@ -443,13 +441,21 @@ export function LicenseCardSvg({
           y={226}
           fontFamily={FONT_SANS}
           fontSize={nameSize}
-          {...nameLenAttrs}
           fontWeight={700}
           fill={INK}
         >
           {card.name}
         </text>
-        <text x={58} y={260} fontFamily={FONT_MONO} fontSize={19} fill={INK_SUB}>
+        <text
+          x={58}
+          y={260}
+          fontFamily={FONT_MONO}
+          fontSize={Math.max(
+            11,
+            Math.min(19, Math.floor((NAME_MAX_W / ((card.handle.length + 1) * 0.62)) * 0.94)),
+          )}
+          fill={INK_SUB}
+        >
           @{card.handle}
         </text>
 
@@ -547,11 +553,10 @@ export function LicenseCardSvg({
                   acc + (/[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 1 : 0.6),
                 0,
               );
-              const labelSize = Math.max(9, Math.min(14, Math.floor(LABEL_W / Math.max(units, 1))));
-              const labelAttrs =
-                units * labelSize > LABEL_W
-                  ? { textLength: LABEL_W, lengthAdjust: "spacingAndGlyphs" as const }
-                  : {};
+              const labelSize = Math.max(
+                7,
+                Math.min(14, Math.floor((LABEL_W / Math.max(units, 1)) * 0.94)),
+              );
               return (
                 <g key={c.id} transform={`translate(${x},12)`}>
                   <rect
@@ -596,7 +601,6 @@ export function LicenseCardSvg({
                     fontSize={labelSize}
                     fontWeight={600}
                     fill="#232B4D"
-                    {...labelAttrs}
                   >
                     {c.name}
                   </text>
