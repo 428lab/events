@@ -532,43 +532,46 @@ export function LicenseCardSvg({
               COMMUNITIES
             </text>
             {card.communities.map((c, i) => {
-              const CHIP_W = 148;
+              // アイコン主役の大きめチップ（アイコン52px・縦68px）
+              const CHIP_W = 150;
+              const CHIP_H = 68;
+              const ICON = 52;
               const x = i * (CHIP_W + 8);
               const label =
-                [...c.name].length > 7
-                  ? [...c.name].slice(0, 7).join("") + "…"
+                [...c.name].length > 5
+                  ? [...c.name].slice(0, 5).join("") + "…"
                   : c.name;
               return (
                 <g key={c.id} transform={`translate(${x},12)`}>
                   <rect
                     width={CHIP_W}
-                    height={44}
-                    rx={12}
+                    height={CHIP_H}
+                    rx={14}
                     fill="#FFFFFF"
                     fillOpacity={0.72}
                     stroke="#B9C2E2"
                   />
                   <clipPath id={`lc-comicon-${i}`}>
-                    <rect x={8} y={8} width={28} height={28} rx={7} />
+                    <rect x={8} y={8} width={ICON} height={ICON} rx={12} />
                   </clipPath>
-                  <rect x={8} y={8} width={28} height={28} rx={7} fill="#E3E8F6" />
+                  <rect x={8} y={8} width={ICON} height={ICON} rx={12} fill="#E3E8F6" />
                   {c.iconUrl ? (
                     <image
                       href={c.iconUrl}
                       x={8}
                       y={8}
-                      width={28}
-                      height={28}
+                      width={ICON}
+                      height={ICON}
                       clipPath={`url(#lc-comicon-${i})`}
                       preserveAspectRatio="xMidYMid slice"
                     />
                   ) : (
                     <text
-                      x={22}
-                      y={30}
+                      x={8 + ICON / 2}
+                      y={8 + ICON / 2 + 8}
                       textAnchor="middle"
                       fontFamily={FONT_SANS}
-                      fontSize={16}
+                      fontSize={24}
                       fontWeight={700}
                       fill={INK_SUB}
                     >
@@ -576,10 +579,10 @@ export function LicenseCardSvg({
                     </text>
                   )}
                   <text
-                    x={44}
-                    y={29}
+                    x={68}
+                    y={CHIP_H / 2 + 5}
                     fontFamily={FONT_SANS}
-                    fontSize={15}
+                    fontSize={14}
                     fontWeight={600}
                     fill="#232B4D"
                   >
