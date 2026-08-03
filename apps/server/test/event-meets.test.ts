@@ -260,7 +260,7 @@ describe("出会った記録 (#189)", () => {
       await addMember(eventId, filler.userId, "participant");
     }
 
-    // 12人と出会った記録を直接挿入 → 上限10件だけXPに数えられる
+    // 12人と出会った記録を直接挿入 → 全件XPに数えられる（上限なしの信頼ベース運用）
     for (let i = 0; i < 12; i++) {
       const partner = await makeUser();
       await insertMeet(eventId, u.userId, partner.userId);
@@ -271,7 +271,7 @@ describe("出会った記録 (#189)", () => {
     const { gamification } = (await res.json()) as {
       gamification: Gamification;
     };
-    expect(gamification.xp).toBe(50); // MIN(12,10) × 5
+    expect(gamification.xp).toBe(60); // 12 × 5
     const keys = gamification.badges.map((b) => b.key);
     expect(keys).toContain("first-meet");
     expect(keys).not.toContain("meet-30");

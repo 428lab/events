@@ -22,8 +22,6 @@ export const XP_WEIGHTS = {
   meet: 5,
 } as const;
 
-/** 1イベントあたりXPに数える「出会った」件数の上限（乱発防止） (#189) */
-export const MEETS_PER_EVENT_CAP = 10;
 
 /** 有効イベント基準で数えたユーザーごとの実績（XP・バッジ算出の入力） */
 export interface GamificationStats {

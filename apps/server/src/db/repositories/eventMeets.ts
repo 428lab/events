@@ -1,5 +1,4 @@
 import type { MeetableEvent } from "@eventer/shared";
-import { MEETS_PER_EVENT_CAP } from "@eventer/shared";
 import { many, one, runCount } from "../client.js";
 
 /** 開始30分前から「出会った」を受け付ける（開場・受付中の読み合いを想定） */
@@ -61,7 +60,7 @@ export const eventMeetsRepo = {
   /** イベント内でユーザーがXPに数えられる出会い数（上限適用済み） */
   async countedMeetsForUser(eventId: string, userId: string): Promise<number> {
     const row = await one<{ v: number }>(
-      `SELECT MIN(COUNT(*), ${MEETS_PER_EVENT_CAP}) AS v FROM event_meet
+      `SELECT COUNT(*) AS v FROM event_meet
         WHERE event_id = ? AND (user_low = ? OR user_high = ?)`,
       eventId,
       userId,
