@@ -358,3 +358,54 @@ describe("参加時の事前アンケート (#152)", () => {
     expect(joined.status).toBe(201);
   });
 });
+
+describe("回答のお願い通知 (#173)", () => {
+  it("未回答の確定参加者にだけ通知され、回答済み・非staffは対象外/403", async () => {
+    const staffCookie = await loginDev();
+    const eventId = await setupEvent(staffCookie);
+    await putQuestions(eventId, staffCookie, [
+      { question: "氏名", qtype: "text", required: true },
+    ]);
+    const questions = await getQuestions(eventId);
+    // 回答済み参加者と未回答参加者（直接insertで参加要件を迂回して作る）
+    const answered = await makeUser();
+    await putMyAnswers(eventId, answered.cookie, [
+      { questionId: questions[0].id, value: "回答済み" },
+    ]);
+    await joinEvent(eventId, answered.cookie);
+    const silent = await makeUser();
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, 'participant', NULL, 'confirmed', 0, ?)",
+    )
+      .bind(crypto.randomUUID(), eventId, silent.userId, Date.now())
+      .run();
+
+    // 非staffは403
+    const forbidden = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/survey/remind`,
+      { method: "POST", headers: { cookie: answered.cookie } },
+    );
+    expect(forbidden.status).toBe(403);
+
+    const res = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/survey/remind`,
+      { method: "POST", headers: { cookie: staffCookie } },
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { notified: number }).notified).toBe(1);
+
+    // 未回答者にだけ通知が作られている
+    const n1 = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM notification WHERE user_id = ? AND type = 'survey_reminder'",
+    )
+      .bind(silent.userId)
+      .first<{ n: number }>();
+    const n2 = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM notification WHERE user_id = ? AND type = 'survey_reminder'",
+    )
+      .bind(answered.userId)
+      .first<{ n: number }>();
+    expect(n1?.n).toBe(1);
+    expect(n2?.n).toBe(0);
+  });
+});

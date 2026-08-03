@@ -23,6 +23,7 @@ import { SURVEY_TEMPLATES } from "@eventer/shared";
 import {
   useEventSurvey,
   useSaveSurveyQuestions,
+  useSurveyAnswers,
 } from "../api/eventSurveyHooks.js";
 
 const QTYPE_LABEL: Record<SurveyQtype, string> = {
@@ -65,6 +66,8 @@ function parseOptions(text: string): string[] {
  * 既存質問は id を保持したまま保存するので、文言修正では回答が消えない。 */
 export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
   const { data: questions } = useEventSurvey(eventId);
+  // 破壊的変更の警告用に回答件数を取得（このコンポーネントは staff ページ内でのみ描画）
+  const { data: answersData } = useSurveyAnswers(eventId, true);
   const save = useSaveSurveyQuestions(eventId);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [templateAnchor, setTemplateAnchor] = useState<null | HTMLElement>(null);
@@ -133,7 +136,32 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
   };
   const canSave = rows.every((r) => rowError(r) === null);
 
-  const submit = () =>
+  /** questionId ごとの回答件数 */
+  const answerCountOf = (questionId: string): number =>
+    (answersData?.rows ?? []).filter((r) => (r.answers[questionId] ?? "") !== "")
+      .length;
+
+  const submit = () => {
+    // 破壊的変更（回答済み質問の削除・タイプ変更）の影響件数を集計して確認
+    if (questions) {
+      const keptIds = new Set(rows.map((r) => r.id).filter(Boolean));
+      let lost = 0;
+      for (const q of questions) {
+        if (!keptIds.has(q.id)) lost += answerCountOf(q.id);
+        else {
+          const row = rows.find((r) => r.id === q.id);
+          if (row && row.qtype !== q.qtype) lost += answerCountOf(q.id);
+        }
+      }
+      if (
+        lost > 0 &&
+        !window.confirm(
+          `この変更で ${lost} 件の回答が削除されます。よろしいですか？`,
+        )
+      ) {
+        return;
+      }
+    }
     save.mutate(
       rows.map((r) => ({
         ...(r.id ? { id: r.id } : {}),
@@ -157,6 +185,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
           );
         } },
     );
+  };
 
   return (
     <Box>
@@ -165,6 +194,12 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
       </Typography>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
         参加登録時に回答してもらう質問です（入館用の氏名・所属の収集など）。必須の質問に未回答の人は参加登録できません。回答はスタッフだけが閲覧できます。
+        {(answersData?.rows.length ?? 0) > 0 && (
+          <>
+            <br />
+            すでに回答が集まっています。質問の追加・必須化は今後の参加者にのみ適用されます（既存参加者の未回答はアクセス統計の回答一覧で確認できます）。
+          </>
+        )}
       </Typography>
 
       <Stack spacing={1.5}>

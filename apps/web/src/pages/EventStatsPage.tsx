@@ -20,10 +20,12 @@ import BarChartIcon from "@mui/icons-material/BarChart";
 import DownloadIcon from "@mui/icons-material/Download";
 import FlagIcon from "@mui/icons-material/Flag";
 import PollIcon from "@mui/icons-material/Poll";
+import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import type { EventStats } from "@eventer/shared";
 import { surveyValueLabel } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
+import { api } from "../api/client.js";
 import { useEventStats } from "../api/analyticsHooks.js";
 import { useSurveyAnswers } from "../api/eventSurveyHooks.js";
 
@@ -182,6 +184,8 @@ function SurveyAnswersCard({
   enabled: boolean;
 }) {
   const { data } = useSurveyAnswers(eventId, enabled);
+  const [reminding, setReminding] = useState(false);
+  const [remindResult, setRemindResult] = useState<string | null>(null);
   if (!data || data.questions.length === 0) return null;
   const { questions, rows } = data;
 
@@ -203,6 +207,34 @@ function SurveyAnswersCard({
             <PollIcon fontSize="small" />
             アンケート回答
           </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<NotificationsNoneIcon />}
+            disabled={reminding}
+            onClick={async () => {
+              if (
+                !window.confirm(
+                  "未回答の確定参加者に「アンケート回答のお願い」通知を送りますか？",
+                )
+              ) {
+                return;
+              }
+              setReminding(true);
+              try {
+                const res = await api.post<{ notified: number }>(
+                  `/events/${eventId}/survey/remind`,
+                );
+                setRemindResult(`${res.notified} 人に通知しました`);
+              } catch {
+                setRemindResult("送信に失敗しました");
+              } finally {
+                setReminding(false);
+              }
+            }}
+          >
+            未回答者にお願い通知
+          </Button>
           {/* 同一オリジンの <a> なので cookie 認証のままダウンロードできる */}
           <Button
             size="small"
@@ -217,6 +249,7 @@ function SurveyAnswersCard({
         </Stack>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
           参加登録時のアンケート回答です（スタッフのみ閲覧できます）。
+          {remindResult && ` ・ ${remindResult}`}
         </Typography>
         {rows.length === 0 ? (
           <Typography color="text.secondary" variant="body2">

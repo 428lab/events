@@ -17,6 +17,7 @@ import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
+import { notificationsRepo } from "../db/repositories/notifications.js";
 import {
   eventSurveyRepo,
   type SurveyAnswerRow,
@@ -207,6 +208,41 @@ async function collectAnswerRows(eventId: string): Promise<{
   }
   return { questions, rows: [...rowByUser.values()] };
 }
+
+/** 未回答の確定参加者へ「回答のお願い」通知を送る（staff のみ・強制ではない） */
+eventSurveyRoutes.post(
+  "/:id/survey/remind",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const event = await eventsRepo.findById(eventId);
+    if (!event) return c.json({ error: "not_found" }, 404);
+    const questions = await eventSurveyRepo.listQuestions(eventId, "pre");
+    if (questions.length === 0) return c.json({ notified: 0 });
+    const answered = new Set(
+      (await eventSurveyRepo.answersFor(eventId, "pre")).map((r) => r.userId),
+    );
+    // 確定参加者のうち、1問も回答していない人に通知（回答済みの人には送らない）
+    const targets = (await eventMembersRepo.listWithUsers(eventId))
+      .filter(
+        (m) =>
+          m.status === "confirmed" &&
+          m.role === "participant" &&
+          !answered.has(m.userId),
+      )
+      .map((m) => m.userId);
+    if (targets.length > 0) {
+      await notificationsRepo.createForMany(
+        targets,
+        "survey_reminder",
+        "アンケート回答のお願い",
+        `「${event.title}」の参加アンケートにご回答ください`,
+        `/events/${eventId}`,
+      );
+    }
+    return c.json({ notified: targets.length });
+  },
+);
 
 /** 全回答の一覧（staff のみ） */
 eventSurveyRoutes.get(
