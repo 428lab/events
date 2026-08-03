@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import {
+  Avatar,
   Alert,
   Box,
   Button,
@@ -20,6 +21,7 @@ import BarChartIcon from "@mui/icons-material/BarChart";
 import DownloadIcon from "@mui/icons-material/Download";
 import FlagIcon from "@mui/icons-material/Flag";
 import PollIcon from "@mui/icons-material/Poll";
+import HandshakeOutlinedIcon from "@mui/icons-material/HandshakeOutlined";
 import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import type { EventStats } from "@eventer/shared";
@@ -28,6 +30,7 @@ import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { api } from "../api/client.js";
 import { useEventStats } from "../api/analyticsHooks.js";
 import { useSurveyAnswers } from "../api/eventSurveyHooks.js";
+import { useMeetRanking } from "../api/eventMeetHooks.js";
 
 /** 流入元ラベルの友好名 */
 const SOURCE_LABEL: Record<string, string> = {
@@ -164,6 +167,7 @@ export function EventStatsPage() {
 
       {/* 事前アンケートの回答一覧 (#152)。質問がある場合のみ表示 */}
       <SurveyAnswersCard eventId={id} enabled={Boolean(eventData) && isStaff} />
+      <MeetRankingCard eventId={id} enabled={Boolean(eventData) && isStaff} />
     </Stack>
   );
 }
@@ -458,6 +462,62 @@ function BarList({
             ))}
           </Stack>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** 出会い数ランキング（スタッフのみ・景品配布などの運営用） */
+function MeetRankingCard({
+  eventId,
+  enabled,
+}: {
+  eventId: string;
+  enabled: boolean;
+}) {
+  const { data } = useMeetRanking(eventId, enabled);
+  if (!data || data.ranking.length === 0) return null;
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Typography
+          variant="h6"
+          gutterBottom
+          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+        >
+          <HandshakeOutlinedIcon fontSize="small" />
+          出会いランキング
+        </Typography>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+          「出会った！」の記録数です（スタッフのみ閲覧できます）。景品の参考にどうぞ。
+        </Typography>
+        <Stack spacing={0.75}>
+          {data.ranking.map((r, i) => (
+            <Stack
+              key={r.userId}
+              direction="row"
+              spacing={1.5}
+              alignItems="center"
+            >
+              <Typography
+                variant="body2"
+                fontWeight={700}
+                sx={{ width: 28, textAlign: "right", color: i < 3 ? "secondary.main" : "text.secondary" }}
+              >
+                {i + 1}
+              </Typography>
+              <Avatar src={r.avatarUrl ?? undefined} sx={{ width: 28, height: 28, fontSize: 14 }}>
+                {r.name.charAt(0)}
+              </Avatar>
+              <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                {r.name}
+              </Typography>
+              <Typography variant="body2" fontWeight={700}>
+                {r.count}
+              </Typography>
+            </Stack>
+          ))}
+        </Stack>
       </CardContent>
     </Card>
   );
