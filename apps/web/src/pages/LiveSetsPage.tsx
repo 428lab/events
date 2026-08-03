@@ -40,7 +40,14 @@ export function LiveSetsPage() {
 
   return (
     <Stack spacing={3}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+        spacing={1.5}
+      >
         <Box>
           <Typography variant="h5" fontWeight={700}>
             配信セット

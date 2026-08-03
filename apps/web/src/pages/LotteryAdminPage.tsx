@@ -123,6 +123,8 @@ export function LotteryAdminPage() {
                           key={m.id}
                           direction="row"
                           alignItems="center"
+                          flexWrap="wrap"
+                          useFlexGap
                           spacing={1.5}
                           sx={{ py: 0.5 }}
                         >

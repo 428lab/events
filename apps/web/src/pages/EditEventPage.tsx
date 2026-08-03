@@ -341,7 +341,7 @@ export function EditEventPage() {
           {update.isError && (
             <Alert severity="error">保存に失敗しました。</Alert>
           )}
-          <Stack direction="row" spacing={2} justifyContent="flex-end">
+          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} justifyContent="flex-end">
             <Button onClick={() => navigate(`/events/${id}`)}>キャンセル</Button>
             <Button
               variant="contained"
@@ -413,7 +413,7 @@ export function EditEventPage() {
                 このイベントを削除
               </Button>
             ) : (
-              <Stack direction="row" spacing={2} alignItems="center">
+              <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} alignItems="center">
                 <Typography variant="body2">
                   本当に削除しますか？（参加者・採点・画像も削除されます）
                 </Typography>

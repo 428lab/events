@@ -188,7 +188,7 @@ export function EventRequestDetailPage() {
           {isMine && (
             <>
               <Divider sx={{ my: 2 }} />
-              <Stack direction="row" spacing={1.5}>
+              <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
                 {open ? (
                   <Button size="small" onClick={() => setStatus.mutate("closed")}>
                     クローズする
