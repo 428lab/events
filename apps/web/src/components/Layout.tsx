@@ -92,9 +92,6 @@ export function Layout({
 
           {/* デスクトップ: 横並びナビ */}
           <Box sx={{ display: { xs: "none", sm: "flex" }, alignItems: "center" }}>
-            <Button color="inherit" component={RouterLink} to="/">
-              イベント
-            </Button>
             <Button color="inherit" component={RouterLink} to="/communities">
               コミュニティ
             </Button>
@@ -158,9 +155,6 @@ export function Layout({
             <MenuIcon />
           </IconButton>
           <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={closeMenu}>
-            <MenuItem component={RouterLink} to="/" onClick={closeMenu}>
-              イベント
-            </MenuItem>
             <MenuItem component={RouterLink} to="/communities" onClick={closeMenu}>
               コミュニティ
             </MenuItem>
