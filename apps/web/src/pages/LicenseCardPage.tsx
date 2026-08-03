@@ -16,12 +16,17 @@ import { useUserProfile } from "../api/userHooks.js";
 import {
   BG_STORAGE_KEY,
   BG_VARIANTS,
+  CARD_THEMES,
   EXPORT_H,
   EXPORT_W,
   LicenseCardSvg,
+  THEME_STORAGE_KEY,
   toCardData,
 } from "../components/licenseCard/LicenseCardSvg.js";
-import type { CardBgVariant } from "../components/licenseCard/LicenseCardSvg.js";
+import type {
+  CardBgVariant,
+  CardThemeKey,
+} from "../components/licenseCard/LicenseCardSvg.js";
 // PNG書き出し時にSVGへ埋め込むフォント（SVG-as-image はページのフォントを参照できない）
 import jakarta600Url from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-600-normal.woff2?url";
 import jakarta700Url from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-700-normal.woff2?url";
@@ -35,6 +40,13 @@ function loadBgVariant(): CardBgVariant {
   return BG_VARIANTS.some((v) => v.key === saved)
     ? (saved as CardBgVariant)
     : "rosette";
+}
+
+function loadCardTheme(): CardThemeKey {
+  const saved = localStorage.getItem(THEME_STORAGE_KEY);
+  return CARD_THEMES.some((t) => t.key === saved)
+    ? (saved as CardThemeKey)
+    : "indigo";
 }
 
 // ---------------------------------------------------------------------------
@@ -147,23 +159,25 @@ export function LicenseCardPage() {
   const { id = "" } = useParams();
   const { data, isLoading, isError } = useUserProfile(id);
   const [variant, setVariant] = useState<CardBgVariant>(loadBgVariant);
+  const [theme, setTheme] = useState<CardThemeKey>(loadCardTheme);
   const [busy, setBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  // OG画像アップロード済みの背景（マウント中は同じ背景を二重送信しない） (#193)
-  const uploadedVariantsRef = useRef<Set<CardBgVariant>>(new Set());
+  // OG画像アップロード済みの「背景×配色」（マウント中は同じ組み合わせを二重送信しない） (#193)
+  const uploadedVariantsRef = useRef<Set<string>>(new Set());
 
   // 本人が開いたら、表示中のカードをPNG化してOG画像としてサーバへ静かに送る (#193)。
   // ダウンロードと同じ生成経路（フォント・アバター埋め込み）を使うので見た目は一致する。
   // 失敗してもページ利用には影響させない（既定OG画像のまま）
   const isMe = data?.isMe ?? false;
   useEffect(() => {
-    if (!isMe || uploadedVariantsRef.current.has(variant)) return;
-    // 描画直後の連打（背景切り替え）をまとめるための小さなディレイ
+    const uploadKey = `${variant}:${theme}`;
+    if (!isMe || uploadedVariantsRef.current.has(uploadKey)) return;
+    // 描画直後の連打（背景・配色切り替え）をまとめるための小さなディレイ
     const timer = setTimeout(() => {
       const svgEl = svgRef.current;
-      if (!svgEl || uploadedVariantsRef.current.has(variant)) return;
-      uploadedVariantsRef.current.add(variant);
+      if (!svgEl || uploadedVariantsRef.current.has(uploadKey)) return;
+      uploadedVariantsRef.current.add(uploadKey);
       void (async () => {
         try {
           const png = await generateCardPng(svgEl);
@@ -180,7 +194,7 @@ export function LicenseCardPage() {
       })();
     }, 800);
     return () => clearTimeout(timer);
-  }, [isMe, variant]);
+  }, [isMe, variant, theme]);
 
   if (isError) return <Alert severity="info">ユーザーが見つかりません。</Alert>;
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
@@ -192,6 +206,11 @@ export function LicenseCardPage() {
   const selectVariant = (v: CardBgVariant) => {
     setVariant(v);
     localStorage.setItem(BG_STORAGE_KEY, v);
+  };
+
+  const selectTheme = (t: CardThemeKey) => {
+    setTheme(t);
+    localStorage.setItem(THEME_STORAGE_KEY, t);
   };
 
   const handleDownload = async () => {
@@ -257,7 +276,10 @@ export function LicenseCardPage() {
         </Box>
 
         {/* 背景パターンの選択（選択は端末に保存） */}
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+          <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32 }}>
+            背景
+          </Typography>
           {BG_VARIANTS.map((v) => (
             <Chip
               key={v.key}
@@ -265,6 +287,22 @@ export function LicenseCardPage() {
               color={variant === v.key ? "primary" : "default"}
               variant={variant === v.key ? "filled" : "outlined"}
               onClick={() => selectVariant(v.key)}
+            />
+          ))}
+        </Stack>
+
+        {/* 配色テーマの選択（選択は端末に保存） */}
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+          <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32 }}>
+            色
+          </Typography>
+          {CARD_THEMES.map((t) => (
+            <Chip
+              key={t.key}
+              label={t.name}
+              color={theme === t.key ? "primary" : "default"}
+              variant={theme === t.key ? "filled" : "outlined"}
+              onClick={() => selectTheme(t.key)}
             />
           ))}
         </Stack>
@@ -281,6 +319,7 @@ export function LicenseCardPage() {
           <LicenseCardSvg
             card={card}
             variant={variant}
+            theme={theme}
             qrUrl={qrUrl}
             svgRef={svgRef}
           />

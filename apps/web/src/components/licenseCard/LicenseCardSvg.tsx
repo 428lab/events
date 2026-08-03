@@ -33,11 +33,10 @@ const FONT_SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
 /** データ系（NO./XP/ISSUED等）の等幅フォントスタック */
 const FONT_MONO = "ui-monospace, Menlo, Consolas, monospace";
 
-/** インク色（モックアップの配色） */
+/** インク色（モックアップの配色）。テーマによらず固定 */
 const INK = "#0E1426";
 const INK_SUB = "#5A6491";
 const INK_FAINT = "#6B7499";
-const INDIGO = "#4F46E5";
 
 /** 背景パターンの選択肢。rosette がデフォルト（type-T1.svg 本体の背景） */
 export const BG_VARIANTS = [
@@ -50,6 +49,92 @@ export type CardBgVariant = (typeof BG_VARIANTS)[number]["key"];
 
 /** 背景パターン選択の保存先 */
 export const BG_STORAGE_KEY = "eventer:cardBg";
+
+/** カード配色テーマ。
+ * - paper: 紙面グラデーション3ストップ
+ * - accentA: 主アクセント（パターン主線・上端バー・ロゴ・イニシャル）
+ * - accentB: 副アクセント（ロゼット曲線などの副線）
+ * - accentBLight: 副アクセントの淡色（等高線パターンの明るい線 #2DD4BF 相当）
+ * - accentDeep: 濃色アクセント（ORGANIZER PROFILE / COMMUNITIES ラベル）
+ * - watermark: 中央ウォーターマークのグリフ色
+ * インク（文字）色とバッジの金色はテーマ間で共通 */
+export interface CardTheme {
+  key: string;
+  name: string;
+  paper: readonly [string, string, string];
+  accentA: string;
+  accentB: string;
+  accentBLight: string;
+  accentDeep: string;
+  watermark: string;
+}
+
+/** 配色テーマの選択肢。indigo がデフォルト（従来配色そのまま） */
+export const CARD_THEMES = [
+  {
+    key: "indigo",
+    name: "インディゴ",
+    paper: ["#C9D2EC", "#DFE5F6", "#BFC9E8"],
+    accentA: "#4F46E5",
+    accentB: "#0EA5A0",
+    accentBLight: "#2DD4BF",
+    accentDeep: "#4338CA",
+    watermark: "#3B3F73",
+  },
+  {
+    key: "teal",
+    name: "ティール",
+    paper: ["#C7E4E0", "#E0F3F0", "#BBDCD7"],
+    accentA: "#0D9488",
+    accentB: "#4F46E5",
+    accentBLight: "#818CF8",
+    accentDeep: "#0F766E",
+    watermark: "#2F5B55",
+  },
+  {
+    key: "rose",
+    name: "ローズ",
+    paper: ["#EED2DE", "#F8E6EE", "#E5C4D4"],
+    accentA: "#DB2777",
+    accentB: "#7C3AED",
+    accentBLight: "#A78BFA",
+    accentDeep: "#BE185D",
+    watermark: "#6B3B52",
+  },
+  {
+    key: "amber",
+    name: "アンバー",
+    paper: ["#EBDFC7", "#F6EEDC", "#E2D4B8"],
+    accentA: "#B45309",
+    accentB: "#4F46E5",
+    accentBLight: "#818CF8",
+    accentDeep: "#92400E",
+    watermark: "#6B5636",
+  },
+  {
+    key: "mono",
+    name: "モノクロ",
+    paper: ["#D9DDE4", "#EDF0F4", "#CDD2DA"],
+    accentA: "#334155",
+    accentB: "#64748B",
+    accentBLight: "#94A3B8",
+    accentDeep: "#1E293B",
+    watermark: "#3A4356",
+  },
+] as const satisfies readonly CardTheme[];
+export type CardThemeKey = (typeof CARD_THEMES)[number]["key"];
+
+/** 配色テーマ選択の保存先 */
+export const THEME_STORAGE_KEY = "eventer:cardTheme";
+
+/** patternData.ts に焼き込まれたストローク色をテーマ色へ差し替える。
+ * 生成データ（indigo基準: #4F46E5 / #0EA5A0 / #2DD4BF）は編集せず、描画時に写像する */
+function themedPatternColor(color: string, theme: CardTheme): string {
+  if (color === "#4F46E5") return theme.accentA;
+  if (color === "#0EA5A0") return theme.accentB;
+  if (color === "#2DD4BF") return theme.accentBLight;
+  return color;
+}
 
 // ---------------------------------------------------------------------------
 // 部品
@@ -76,8 +161,15 @@ function LogoGlyph({ color }: { color: string }) {
   );
 }
 
-/** 背景パターン（4種）。パスデータはモックアップからの逐語移植 */
-function BackgroundPattern({ variant }: { variant: CardBgVariant }) {
+/** 背景パターン（4種）。パスデータはモックアップからの逐語移植。
+ * 色のみ描画時にテーマへ写像する（themedPatternColor） */
+function BackgroundPattern({
+  variant,
+  theme,
+}: {
+  variant: CardBgVariant;
+  theme: CardTheme;
+}) {
   if (variant === "rosette") {
     return (
       <>
@@ -86,7 +178,7 @@ function BackgroundPattern({ variant }: { variant: CardBgVariant }) {
             key={`w${i}`}
             d={p.d}
             fill="none"
-            stroke={p.stroke}
+            stroke={themedPatternColor(p.stroke, theme)}
             strokeWidth={p.strokeWidth}
             opacity={p.opacity}
           />
@@ -96,7 +188,7 @@ function BackgroundPattern({ variant }: { variant: CardBgVariant }) {
             key={`r${i}`}
             d={p.d}
             fill="none"
-            stroke={p.stroke}
+            stroke={themedPatternColor(p.stroke, theme)}
             strokeWidth={p.strokeWidth}
             opacity={p.opacity}
           />
@@ -112,7 +204,7 @@ function BackgroundPattern({ variant }: { variant: CardBgVariant }) {
             key={i}
             d={p.d}
             fill="none"
-            stroke={p.stroke}
+            stroke={themedPatternColor(p.stroke, theme)}
             strokeWidth={p.strokeWidth}
             opacity={p.opacity}
           />
@@ -130,7 +222,7 @@ function BackgroundPattern({ variant }: { variant: CardBgVariant }) {
             cy={c.cy}
             r={c.r}
             fill="none"
-            stroke={INDIGO}
+            stroke={theme.accentA}
             strokeWidth={c.strokeWidth}
             opacity={c.opacity}
           />
@@ -146,12 +238,16 @@ function BackgroundPattern({ variant }: { variant: CardBgVariant }) {
           key={i}
           d={p.d}
           fill="none"
-          stroke={p.stroke}
+          stroke={themedPatternColor(p.stroke, theme)}
           strokeWidth={p.strokeWidth}
           opacity={p.opacity}
         />
       ))}
-      <path d={FLOW_BAND.d} fill={FLOW_BAND.fill} opacity={FLOW_BAND.opacity} />
+      <path
+        d={FLOW_BAND.d}
+        fill={themedPatternColor(FLOW_BAND.fill, theme)}
+        opacity={FLOW_BAND.opacity}
+      />
     </>
   );
 }
@@ -303,14 +399,18 @@ export function toCardData(
 export function LicenseCardSvg({
   card,
   variant,
+  theme: themeKey,
   qrUrl,
   svgRef,
 }: {
   card: CardData;
   variant: CardBgVariant;
+  theme: CardThemeKey;
   qrUrl: string;
   svgRef: React.RefObject<SVGSVGElement>;
 }) {
+  const theme: CardTheme =
+    CARD_THEMES.find((t) => t.key === themeKey) ?? CARD_THEMES[0];
   const statsParts = [`HOSTED ${card.hosted}`, `TALKS ${card.spoken}`];
   if (card.attendRate != null) statsParts.push(`ATTEND ${card.attendRate}%`);
   // 長い表示名・バッジ名はパネル幅に収まるよう段階的に縮小（モックは kojira / FIRST HOST 想定）
@@ -341,11 +441,11 @@ export function LicenseCardSvg({
       style={{ width: "100%", height: "auto", display: "block" }}
     >
       <defs>
-        {/* 紙面のグラデーションとホログラム風シアン（全バリアント共通） */}
+        {/* 紙面のグラデーション（テーマ別）とホログラム風シアン（全テーマ共通） */}
         <linearGradient id="lc-bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#C9D2EC" />
-          <stop offset="0.5" stopColor="#DFE5F6" />
-          <stop offset="1" stopColor="#BFC9E8" />
+          <stop offset="0" stopColor={theme.paper[0]} />
+          <stop offset="0.5" stopColor={theme.paper[1]} />
+          <stop offset="1" stopColor={theme.paper[2]} />
         </linearGradient>
         <linearGradient id="lc-sheen" x1="0" y1="1" x2="1" y2="0">
           <stop offset="0.30" stopColor="#FFFFFF" stopOpacity="0" />
@@ -362,18 +462,18 @@ export function LicenseCardSvg({
       </defs>
       <g clipPath="url(#lc-card-clip)">
         <rect width={CARD_W} height={CARD_H} rx={28} fill="url(#lc-bg)" />
-        <BackgroundPattern variant={variant} />
+        <BackgroundPattern variant={variant} theme={theme} />
         {/* ウォーターマーク: モックは translate(560,60) だがユーザー要望でカード中央へ
             （グリフの外接中心 (32,34) を 8.6倍でカード中心 (537,325) に合わせる） */}
         <g transform="translate(261.8,32.6) scale(8.6)" opacity={0.07}>
-          <LogoGlyph color="#3B3F73" />
+          <LogoGlyph color={theme.watermark} />
         </g>
         <rect width={CARD_W} height={CARD_H} fill="url(#lc-sheen)" opacity={0.16} />
-        <rect x={0} y={0} width={CARD_W} height={8} fill={INDIGO} />
+        <rect x={0} y={0} width={CARD_W} height={8} fill={theme.accentA} />
 
         {/* ヘッダー: ロゴ＋ワードマーク＋シリアル */}
         <g transform="translate(56,44) scale(1.35)">
-          <LogoGlyph color={INDIGO} />
+          <LogoGlyph color={theme.accentA} />
         </g>
         <text
           x={160}
@@ -417,7 +517,7 @@ export function LicenseCardSvg({
           fontFamily={FONT_SANS}
           fontSize={100}
           fontWeight={700}
-          fill={INDIGO}
+          fill={theme.accentA}
         >
           {card.name.charAt(0)}
         </text>
@@ -474,7 +574,7 @@ export function LicenseCardSvg({
             fontFamily={FONT_SANS}
             fontSize={16}
             fontWeight={600}
-            fill="#4338CA"
+            fill={theme.accentDeep}
             letterSpacing={4}
           >
             ORGANIZER PROFILE
@@ -546,7 +646,7 @@ export function LicenseCardSvg({
               fontFamily={FONT_SANS}
               fontSize={13}
               fontWeight={600}
-              fill="#4338CA"
+              fill={theme.accentDeep}
               letterSpacing={3}
             >
               COMMUNITIES
