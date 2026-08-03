@@ -29,6 +29,7 @@ import HandymanOutlinedIcon from "@mui/icons-material/HandymanOutlined";
 import CoPresentOutlinedIcon from "@mui/icons-material/CoPresentOutlined";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 import ThumbUpOutlinedIcon from "@mui/icons-material/ThumbUpOutlined";
+import HandshakeOutlinedIcon from "@mui/icons-material/HandshakeOutlined";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import type {
   EarnedBadge,
@@ -40,6 +41,7 @@ import type {
 } from "@eventer/shared";
 import { useSetFollow, useUserProfile } from "../api/userHooks.js";
 import { useMe } from "../api/hooks.js";
+import { useMeetableEvents, useRecordMeet } from "../api/eventMeetHooks.js";
 import { useUserPhotos } from "../api/eventPhotoHooks.js";
 import { EventList, ListColumnsToggle } from "../components/EventList.js";
 import { ShareButton } from "../components/ShareButton.js";
@@ -132,6 +134,7 @@ const BADGE_ICONS: Record<
   speak: CoPresentOutlinedIcon,
   attend: EventAvailableOutlinedIcon,
   liked: ThumbUpOutlinedIcon,
+  meet: HandshakeOutlinedIcon,
 };
 
 /** バッジの段階に応じた色（1=控えめ, 2=プライマリ, 3=セカンダリで強調） */
@@ -211,6 +214,69 @@ function BadgesSection({ g }: { g?: Gamification }) {
         })}
       </Stack>
     </Box>
+  );
+}
+
+/** 「同じイベントに参加中」バナー (#189)。プロフィールQRの読み合いを想定し、
+ * 両者が参加中の共通イベントがあるときだけ「出会った！」ボタンを出す。
+ * ログイン中に他人のプロフィールを見ているときのみマウントすること */
+function MeetSection({ targetUserId }: { targetUserId: string }) {
+  const { data: events } = useMeetableEvents(targetUserId, true);
+  const recordMeet = useRecordMeet();
+  // イベントごとの記録結果（created=新規記録 / already=このペアで記録済み）
+  const [results, setResults] = useState<
+    Record<string, "created" | "already" | "error">
+  >({});
+  if (!events || events.length === 0) return null;
+  return (
+    <Stack spacing={1}>
+      {/* 共通イベントが複数あるのは稀なので最大2件まで表示 */}
+      {events.slice(0, 2).map((ev) => {
+        const result = results[ev.id];
+        return (
+          <Alert
+            key={ev.id}
+            severity={result === "created" ? "success" : "info"}
+            icon={<HandshakeOutlinedIcon fontSize="inherit" />}
+            action={
+              result ? undefined : (
+                <Button
+                  color="inherit"
+                  size="small"
+                  variant="outlined"
+                  disabled={recordMeet.isPending}
+                  onClick={() =>
+                    recordMeet.mutate(
+                      { eventId: ev.id, userId: targetUserId },
+                      {
+                        onSuccess: (r) =>
+                          setResults((prev) => ({
+                            ...prev,
+                            [ev.id]: r.created ? "created" : "already",
+                          })),
+                        onError: () =>
+                          setResults((prev) => ({ ...prev, [ev.id]: "error" })),
+                      },
+                    )
+                  }
+                  sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                >
+                  出会った！
+                </Button>
+              )
+            }
+          >
+            {result === "created"
+              ? "記録しました！お互いにXPが入ります"
+              : result === "already"
+                ? "このイベントでは記録済みです"
+                : result === "error"
+                  ? "記録できませんでした（イベント時間外の可能性があります）"
+                  : `同じイベント「${ev.title}」に参加中`}
+          </Alert>
+        );
+      })}
+    </Stack>
   );
 }
 
@@ -350,6 +416,9 @@ export function UserProfilePage() {
           </Button>
         )}
       </Stack>
+
+      {/* 出会った記録 (#189)。ログイン中に他人のプロフィールを見ているときのみ */}
+      {me && !data.isMe && <MeetSection key={data.id} targetUserId={data.id} />}
 
       <BadgesSection g={data.gamification} />
 

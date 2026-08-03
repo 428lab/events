@@ -1,4 +1,5 @@
 import type { GamificationStats } from "@eventer/shared";
+import { MEETS_PER_EVENT_CAP } from "@eventer/shared";
 import { one } from "../client.js";
 
 /** ゲーミフィケーション (#14)。専用テーブルは持たず、既存データから毎回導出する。
@@ -14,6 +15,7 @@ export const gamificationRepo = {
       spoken: number;
       attended: number;
       likes: number;
+      meets: number;
     }>(
       `WITH qual AS (
          SELECT e.id, e.created_by, e.attendance_check
@@ -42,8 +44,16 @@ export const gamificationRepo = {
          -- 被いいね: 主催・スタッフ・参加者としてもらったいいね
          (SELECT COUNT(*) FROM event_like l JOIN qual q ON q.id = l.event_id
            WHERE l.kind IN ('host', 'staff', 'participant')
-             AND l.target_key = ?) AS likes`,
+             AND l.target_key = ?) AS likes,
+         -- 出会った: QR読み合いの記録 (#189)。イベントごとに上限件数まで数える
+         (SELECT COALESCE(SUM(MIN(cnt, ${MEETS_PER_EVENT_CAP})), 0) FROM (
+            SELECT COUNT(*) AS cnt FROM event_meet em
+              JOIN qual q ON q.id = em.event_id
+             WHERE em.user_low = ? OR em.user_high = ?
+             GROUP BY em.event_id)) AS meets`,
       now,
+      userId,
+      userId,
       userId,
       userId,
       userId,
@@ -56,6 +66,7 @@ export const gamificationRepo = {
       spoken: row?.spoken ?? 0,
       attendedQualifying: row?.attended ?? 0,
       likesReceivedQualifying: row?.likes ?? 0,
+      meets: row?.meets ?? 0,
     };
   },
 };

@@ -1,0 +1,72 @@
+import type { MeetableEvent } from "@eventer/shared";
+import { MEETS_PER_EVENT_CAP } from "@eventer/shared";
+import { many, one, runCount } from "../client.js";
+
+/** 開始30分前から「出会った」を受け付ける（開場・受付中の読み合いを想定） */
+export const MEET_WINDOW_BEFORE_MS = 30 * 60_000;
+/** 終了2時間後まで受け付ける（懇親会・撤収中の読み合いを想定） */
+export const MEET_WINDOW_AFTER_MS = 2 * 60 * 60_000;
+
+/** 参加者同士の「出会った」記録 (#189)。ペアはイベントごとに1回（順序に依らず正規化して保存） */
+export const eventMeetsRepo = {
+  /** 出会いを記録する。ペアを (小,大) に正規化し INSERT OR IGNORE で冪等。
+   * created=false は同じペアで記録済みだったことを表す */
+  async recordMeet(
+    eventId: string,
+    userIdA: string,
+    userIdB: string,
+  ): Promise<{ created: boolean }> {
+    const [low, high] =
+      userIdA < userIdB ? [userIdA, userIdB] : [userIdB, userIdA];
+    const changes = await runCount(
+      `INSERT OR IGNORE INTO event_meet (id, event_id, user_low, user_high, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      crypto.randomUUID(),
+      eventId,
+      low,
+      high,
+      Date.now(),
+    );
+    return { created: changes > 0 };
+  },
+
+  /** 両者がいま「出会った」を記録できる共通イベント一覧。
+   * 条件: 公開済み・日程確定・開催時間帯（前30分〜後2時間）・両者とも確定メンバー、
+   * 出席チェックONのイベントは両者とも出席済みであること */
+  async meetableEventsBetween(
+    viewerId: string,
+    targetId: string,
+    now: number,
+  ): Promise<MeetableEvent[]> {
+    return many<MeetableEvent>(
+      `SELECT DISTINCT e.id, e.title
+         FROM event e
+         JOIN event_member mv ON mv.event_id = e.id
+          AND mv.user_id = ? AND mv.status = 'confirmed'
+         JOIN event_member mt ON mt.event_id = e.id
+          AND mt.user_id = ? AND mt.status = 'confirmed'
+        WHERE e.status = 'published' AND e.scheduling = 0
+          AND e.starts_at > 0 AND e.ends_at > 0
+          AND ? >= e.starts_at - ${MEET_WINDOW_BEFORE_MS}
+          AND ? <= e.ends_at + ${MEET_WINDOW_AFTER_MS}
+          AND (e.attendance_check = 0 OR (mv.attended = 1 AND mt.attended = 1))
+        ORDER BY e.starts_at ASC`,
+      viewerId,
+      targetId,
+      now,
+      now,
+    );
+  },
+
+  /** イベント内でユーザーがXPに数えられる出会い数（上限適用済み） */
+  async countedMeetsForUser(eventId: string, userId: string): Promise<number> {
+    const row = await one<{ v: number }>(
+      `SELECT MIN(COUNT(*), ${MEETS_PER_EVENT_CAP}) AS v FROM event_meet
+        WHERE event_id = ? AND (user_low = ? OR user_high = ?)`,
+      eventId,
+      userId,
+      userId,
+    );
+    return row?.v ?? 0;
+  },
+};

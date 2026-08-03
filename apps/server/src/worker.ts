@@ -30,6 +30,7 @@ import {
   getEventComments,
 } from "./routes/eventComments.js";
 import { eventLikeRoutes } from "./routes/eventLikes.js";
+import { meetEventRoutes, meetUserRoutes } from "./routes/eventMeets.js";
 import {
   eventScheduleRoutes,
   getEventTimetable,
@@ -127,6 +128,8 @@ api.route("/events", eventPhotoRoutes);
 api.route("/events", eventCommentRoutes);
 // いいね (#155)（参加確定メンバーのみ。要認証）
 api.route("/events", eventLikeRoutes);
+// 出会った記録 (#189)（参加確定メンバー同士。要認証）
+api.route("/events", meetEventRoutes);
 api.route("/events", eventScheduleRoutes);
 // 事前アンケート (#152)（質問保存・回答・スタッフ閲覧。要認証）
 api.route("/events", eventSurveyRoutes);
@@ -134,6 +137,8 @@ api.route("/events", analyticsRoutes);
 api.route("/me", meRoutes);
 // フォロー（要認証）
 api.route("/users", followRoutes);
+// 出会える共通イベントの取得 (#189)（要認証）
+api.route("/users", meetUserRoutes);
 api.route("/inquiries", inquiryRoutes);
 api.route("/admin/inquiries", adminInquiryRoutes);
 api.route("/admin/run-reminders", adminReminderRoutes);
