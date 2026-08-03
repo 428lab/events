@@ -17,8 +17,9 @@ function jstDay(): string {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-/** リンク側で明示された流入元（?ref=）。許可リスト制で統計の汚染を防ぐ */
-const REF_PARAM_SOURCES = new Set(["notification", "feed", "email"]);
+/** リンク側で明示された流入元（?ref=）。許可リスト制で統計の汚染を防ぐ。
+ * card はライセンスカードのQRコード経由 (#178) */
+const REF_PARAM_SOURCES = new Set(["notification", "feed", "email", "card"]);
 
 /** document.referrer から流入元ラベルを作る（ホスト名のみ・先頭 www. 除去） */
 function parseSource(ref: unknown): string {

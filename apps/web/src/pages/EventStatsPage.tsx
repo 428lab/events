@@ -36,6 +36,7 @@ const SOURCE_LABEL: Record<string, string> = {
   notification: "通知",
   feed: "フィード",
   email: "メール",
+  card: "カード",
   "t.co": "X (Twitter)",
   "twitter.com": "X (Twitter)",
   "x.com": "X (Twitter)",
