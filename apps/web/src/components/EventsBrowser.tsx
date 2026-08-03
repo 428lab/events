@@ -152,15 +152,25 @@ export function EventsBrowser({
 
   return (
     <Box>
+      {/* 狭い画面ではボタン群ごと折り返す（縮小でボタン文字が縦書きに潰れないように） */}
       <Stack
         direction="row"
         alignItems="center"
         justifyContent="space-between"
         spacing={1}
+        flexWrap="wrap"
+        useFlexGap
         sx={{ mb: 1 }}
       >
-        <Typography variant="h6">{title}</Typography>
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Typography variant="h6" sx={{ whiteSpace: "nowrap" }}>
+          {title}
+        </Typography>
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          sx={{ flexShrink: 0, "& .MuiButton-root": { whiteSpace: "nowrap" } }}
+        >
           <Button
             size="small"
             color="inherit"
