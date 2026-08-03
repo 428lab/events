@@ -248,8 +248,8 @@ export interface CardData {
   attendRate: number | null;
   /** 最上位バッジの英語名（未獲得なら null） */
   topBadge: string | null;
-  /** 最上位以外の獲得バッジ数 */
-  moreBadges: number;
+  /** 獲得バッジ総数（星の数として表示） */
+  totalBadges: number;
   /** フッターに刷るサイトのドメイン */
   host: string;
   /** 参加イベント数の多い順・最大5コミュニティ（アイコン＋名前の帯表示用） */
@@ -289,7 +289,7 @@ export function toCardData(
         ? Math.round((p.participation.attended / registered) * 100)
         : null,
     topBadge: topEn,
-    moreBadges: top ? badges.length - 1 : 0,
+    totalBadges: badges.length,
     host,
     communities: [...p.communities]
       .sort((a, b) => (b.myEventCount ?? 0) - (a.myEventCount ?? 0))
@@ -328,7 +328,6 @@ export function LicenseCardSvg({
     16,
     Math.min(72, Math.floor((NAME_MAX_W / Math.max(nameWidthEm, 1)) * 0.94)),
   );
-  const badgeSize = (card.topBadge?.length ?? 0) > 12 ? 19 : 26;
 
   return (
     <svg
@@ -500,29 +499,41 @@ export function LicenseCardSvg({
             <>
               <text
                 x={404}
-                y={72}
+                y={52}
                 fontFamily={FONT_SANS}
                 fontSize={15}
                 fontWeight={600}
                 fill={INK_FAINT}
                 letterSpacing={3}
               >
-                BADGE
+                BADGES
               </text>
+              {/* 星＝獲得バッジ総数（6個で折り返し・最大12） */}
+              {Array.from({ length: Math.min(card.totalBadges, 12) }).map(
+                (_, si) => (
+                  <text
+                    key={si}
+                    x={404 + (si % 6) * 30}
+                    y={84 + Math.floor(si / 6) * 28}
+                    fontFamily={FONT_SANS}
+                    fontSize={24}
+                    fill="#D99A0B"
+                  >
+                    ★
+                  </text>
+                ),
+              )}
+              {/* 代表（最上位）バッジ名は小さめテキストで */}
               <text
                 x={404}
-                y={112}
+                y={card.totalBadges > 6 ? 138 : 112}
                 fontFamily={FONT_SANS}
-                fontSize={badgeSize}
+                fontSize={15}
                 fontWeight={700}
                 fill="#A8720A"
+                letterSpacing={1}
               >
-                ★ {card.topBadge}
-                {card.moreBadges > 0 && (
-                  <tspan fontSize={16} fill={INK_FAINT} dx={8}>
-                    +{card.moreBadges}
-                  </tspan>
-                )}
+                {card.topBadge}
               </text>
             </>
           )}
