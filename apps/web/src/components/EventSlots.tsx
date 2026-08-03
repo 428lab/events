@@ -8,26 +8,26 @@ import {
   Typography,
 } from "@mui/material";
 import type { ParticipationSlot, User } from "@eventer/shared";
-import { useJoinEvent } from "../api/hooks.js";
 import { formatDateTime } from "../lib/format.js";
 
-/** 参加枠の一覧表示。未参加のログインユーザーには枠ごとの申込ボタンを出す。 */
+/** 参加枠の一覧表示。未参加のログインユーザーには枠ごとの申込ボタンを出す。
+ * 参加操作は親（EventDetailPage）が持つ。事前アンケート (#152) を挟むため。 */
 export function EventSlots({
-  eventId,
   slots,
   me,
   isMember,
   ended = false,
+  joinPending,
+  onJoin,
 }: {
-  eventId: string;
   slots: ParticipationSlot[];
   me: User | null;
   isMember: boolean;
   /** 終了済みイベントでは申込ボタンを出さない */
   ended?: boolean;
+  joinPending: boolean;
+  onJoin: (slotId: string) => void;
 }) {
-  const join = useJoinEvent();
-
   return (
     <Stack spacing={1.5}>
       <Typography variant="h6">参加枠</Typography>
@@ -76,8 +76,8 @@ export function EventSlots({
                 <Button
                   variant="contained"
                   size="small"
-                  disabled={join.isPending}
-                  onClick={() => join.mutate({ id: eventId, slotId: s.id })}
+                  disabled={joinPending}
+                  onClick={() => onJoin(s.id)}
                 >
                   {label}
                 </Button>

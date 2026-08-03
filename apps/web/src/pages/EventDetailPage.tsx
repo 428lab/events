@@ -53,6 +53,9 @@ import {
   useUpdateSubmission,
 } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
+import { useEventSurvey } from "../api/eventSurveyHooks.js";
+import { SurveyAnswerDialog } from "../components/SurveyAnswerDialog.js";
+import { ApiError } from "../api/client.js";
 import { EventPhotos } from "../components/EventPhotos.js";
 import { EventComments } from "../components/EventComments.js";
 import { EventSchedule } from "../components/EventSchedule.js";
@@ -140,6 +143,41 @@ export function EventDetailPage() {
   const leave = useLeaveEvent();
   const publish = usePublishEvent();
   const setAttendance = useSetAttendance(id);
+  // 事前アンケート (#152)。質問があれば参加前に回答ダイアログを挟む
+  const { data: surveyQuestions } = useEventSurvey(id);
+  const hasSurvey = (surveyQuestions?.length ?? 0) > 0;
+  const [surveyOpen, setSurveyOpen] = useState(false);
+  // 回答後に続行する参加操作（null = 参加ではなく回答の編集）
+  const [pendingJoin, setPendingJoin] = useState<{ slotId?: string } | null>(
+    null,
+  );
+
+  const doJoin = (slotId?: string) =>
+    join.mutate(
+      { id, ...(slotId ? { slotId } : {}) },
+      {
+        onError: (err) => {
+          // サーバー側の必須アンケート未回答 (409 survey_required) はダイアログで回答してもらう
+          if (
+            err instanceof ApiError &&
+            (err.body as { error?: string } | null)?.error === "survey_required"
+          ) {
+            setPendingJoin({ slotId });
+            setSurveyOpen(true);
+          }
+        },
+      },
+    );
+
+  /** 参加操作の入口。アンケートがあれば先に回答ダイアログを開く */
+  const requestJoin = (slotId?: string) => {
+    if (hasSurvey) {
+      setPendingJoin({ slotId });
+      setSurveyOpen(true);
+    } else {
+      doJoin(slotId);
+    }
+  };
   // 公開イベントの表示を記録（サーバー側で下書き・主催者/管理者は除外）
   useRecordView(id, data?.event.status === "published");
 
@@ -492,6 +530,18 @@ export function EventDetailPage() {
             label={`参加状態: ${STATUS_LABEL[myMembership.status] ?? myMembership.status}`}
           />
         )}
+        {/* 参加後もアンケート回答を見直せる (#152) */}
+        {isMember && hasSurvey && (
+          <Button
+            size="small"
+            onClick={() => {
+              setPendingJoin(null);
+              setSurveyOpen(true);
+            }}
+          >
+            アンケート回答を編集
+          </Button>
+        )}
         {eventEnded ? (
           <Chip variant="outlined" label="このイベントは終了しました" />
         ) : !me ? (
@@ -511,7 +561,7 @@ export function EventDetailPage() {
           <Button
             variant="contained"
             disabled={join.isPending}
-            onClick={() => join.mutate({ id })}
+            onClick={() => requestJoin()}
           >
             参加登録する
           </Button>
@@ -538,11 +588,26 @@ export function EventDetailPage() {
 
       {hasSlots && slots && (
         <EventSlots
-          eventId={id}
           slots={slots}
           me={me ?? null}
           isMember={isMember}
           ended={eventEnded}
+          joinPending={join.isPending}
+          onJoin={(slotId) => requestJoin(slotId)}
+        />
+      )}
+
+      {/* 事前アンケートの回答ダイアログ（参加前の回答／参加後の編集に共用） */}
+      {me && surveyQuestions && hasSurvey && (
+        <SurveyAnswerDialog
+          eventId={id}
+          questions={surveyQuestions}
+          open={surveyOpen}
+          onClose={() => setSurveyOpen(false)}
+          onSubmitted={
+            pendingJoin ? () => doJoin(pendingJoin.slotId) : undefined
+          }
+          submitLabel={pendingJoin ? "回答して参加する" : "回答を保存"}
         />
       )}
 
