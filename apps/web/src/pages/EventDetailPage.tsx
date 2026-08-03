@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Avatar,
@@ -151,6 +152,7 @@ export function EventDetailPage() {
   const [pendingJoin, setPendingJoin] = useState<{ slotId?: string } | null>(
     null,
   );
+  const qc = useQueryClient();
 
   const doJoin = (slotId?: string) =>
     join.mutate(
@@ -162,6 +164,8 @@ export function EventDetailPage() {
             err instanceof ApiError &&
             (err.body as { error?: string } | null)?.error === "survey_required"
           ) {
+            // ページ読込後に質問が追加されたケースに備え、最新の質問を取得してから開く
+            void qc.invalidateQueries({ queryKey: ["event", id, "survey"] });
             setPendingJoin({ slotId });
             setSurveyOpen(true);
           }
@@ -598,7 +602,7 @@ export function EventDetailPage() {
       )}
 
       {/* 事前アンケートの回答ダイアログ（参加前の回答／参加後の編集に共用） */}
-      {me && surveyQuestions && hasSurvey && (
+      {me && surveyQuestions && (hasSurvey || surveyOpen) && (
         <SurveyAnswerDialog
           eventId={id}
           questions={surveyQuestions}

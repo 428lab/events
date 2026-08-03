@@ -489,6 +489,8 @@ eventRoutes.delete("/:id/join", async (c) => {
   } else {
     await eventMembersRepo.remove(eventId, user.id);
   }
+  // 事前アンケートの回答は本人の離脱と同時に削除（入館用氏名等のPIIを残さない）
+  await eventSurveyRepo.deleteAnswersForUser(eventId, user.id);
 
   let promotedUserId: string | null = null;
   // 先着枠で確定者が抜けたら、待機(waitlist)の最古を確定へ繰り上げる

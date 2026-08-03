@@ -295,6 +295,12 @@ describe("参加時の事前アンケート (#152)", () => {
       { questionId: questions[0].id, value: tricky },
     ]);
     await joinEvent(eventId, user.cookie);
+    // フォーミュラインジェクションを狙う回答者
+    const attacker = await makeUser();
+    await putMyAnswers(eventId, attacker.cookie, [
+      { questionId: questions[0].id, value: '=HYPERLINK("http://evil")' },
+    ]);
+    await joinEvent(eventId, attacker.cookie);
 
     // 参加者（非staff）は回答一覧もCSVも見られない
     const member = await makeMember(eventId, "participant");
@@ -339,6 +345,9 @@ describe("参加時の事前アンケート (#152)", () => {
     expect(csv).toContain("ユーザー名,表示名,参加状態,コメント");
     // カンマ・引用符・改行を含むセルは引用＆引用符は二重化
     expect(csv).toContain('"こんにちは, ""世界""\n2行目"');
+    // フォーミュラインジェクション対策: = 始まりの回答は ' が前置される
+    expect(csv).not.toMatch(/(^|,)=HYPERLINK/m);
+    expect(csv).toContain("'=HYPERLINK");
   });
 
   it("質問の無いイベントの join は影響を受けない", async () => {

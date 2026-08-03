@@ -3,7 +3,7 @@ import type {
   SurveyPhase,
   SurveyQuestion,
 } from "@eventer/shared";
-import { batch, many, one } from "../client.js";
+import { batch, many, one, run } from "../client.js";
 
 interface QuestionRow {
   id: string;
@@ -75,9 +75,9 @@ export const eventSurveyRepo = {
     items: SaveSurveyQuestionItem[],
   ): Promise<SurveyQuestion[]> {
     const now = Date.now();
-    const existingIds = new Set(
-      (await this.listQuestions(eventId, phase)).map((q) => q.id),
-    );
+    const existing = await this.listQuestions(eventId, phase);
+    const existingIds = new Set(existing.map((q) => q.id));
+    const existingById = new Map(existing.map((q) => [q.id, q]));
     // 他イベントの id を差し込まれても既存一致しない限り新規 INSERT になる
     const keptIds = items
       .map((it) => it.id)
@@ -92,6 +92,18 @@ export const eventSurveyRepo = {
           }`,
         args: [eventId, phase, ...keptIds],
       },
+      // qtype が変わった既存質問の回答は破棄（旧型式の値が「必須回答済み」扱いになるのを防ぐ）
+      ...items
+        .filter(
+          (it) =>
+            it.id &&
+            existingIds.has(it.id) &&
+            existingById.get(it.id)?.qtype !== it.qtype,
+        )
+        .map((it) => ({
+          sql: "DELETE FROM event_survey_answer WHERE question_id = ?",
+          args: [it.id as string],
+        })),
       ...items.map((it, i) => {
         const options = JSON.stringify(it.options);
         const required = it.required ? 1 : 0;
@@ -174,6 +186,15 @@ export const eventSurveyRepo = {
       phase,
     );
     return (row?.c ?? 0) === 0;
+  },
+
+  /** 本人の回答を削除（参加解除時のPII最小化） */
+  async deleteAnswersForUser(eventId: string, userId: string): Promise<void> {
+    await run(
+      "DELETE FROM event_survey_answer WHERE event_id = ? AND user_id = ?",
+      eventId,
+      userId,
+    );
   },
 
   /** スタッフ閲覧用: フェーズ内の全回答（ユーザー情報・参加状態つき）。

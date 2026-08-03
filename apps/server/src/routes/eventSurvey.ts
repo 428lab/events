@@ -221,9 +221,14 @@ eventSurveyRoutes.get(
   },
 );
 
-/** CSV の1セルをエスケープする（カンマ・引用符・改行を含むセルは引用） */
+/** CSV の1セルをエスケープする。
+ * カンマ・引用符・改行は引用で保護し、= + - @ タブ始まりのセルは
+ * Excel で式として実行されないよう ' を前置する（フォーミュラインジェクション対策） */
 function csvCell(v: string): string {
-  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  const guarded = /^[=+\-@\t]/.test(v) ? `'${v}` : v;
+  return /[",\n\r]/.test(guarded)
+    ? `"${guarded.replace(/"/g, '""')}"`
+    : guarded;
 }
 
 const MEMBER_STATUS_LABEL: Record<string, string> = {
