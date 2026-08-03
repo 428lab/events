@@ -42,6 +42,7 @@ import { useSetFollow, useUserProfile } from "../api/userHooks.js";
 import { useMe } from "../api/hooks.js";
 import { useUserPhotos } from "../api/eventPhotoHooks.js";
 import { EventList, ListColumnsToggle } from "../components/EventList.js";
+import { ShareButton } from "../components/ShareButton.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
   owner: "オーナー",
@@ -312,17 +313,31 @@ export function UserProfilePage() {
           </Typography>
           <LevelBlock g={data.gamification} />
         </Box>
-        {/* ライセンスカード (#178)。公開データのみなので誰でも開ける */}
-        <Button
-          component={RouterLink}
-          to={`/users/${data.handle ?? id}/card`}
-          variant="outlined"
-          size="small"
-          startIcon={<BadgeOutlinedIcon />}
-          sx={{ flexShrink: 0 }}
+        {/* プロフィールカード (#178) とシェア。PCでは空きスペースの中央に大きめ表示 */}
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          sx={{
+            flexShrink: 0,
+            // sm以上: 余白の中央あたりに寄せて目立たせる
+            mx: { xs: 0, sm: "auto" },
+          }}
         >
-          ライセンスカード
-        </Button>
+          <Button
+            component={RouterLink}
+            to={`/users/${data.handle ?? id}/card`}
+            variant="contained"
+            size="large"
+            startIcon={<BadgeOutlinedIcon />}
+          >
+            プロフィールカード
+          </Button>
+          <ShareButton
+            title={data.name}
+            url={`${window.location.origin}/users/${data.handle ?? id}`}
+          />
+        </Stack>
         {!data.isMe && (
           <Button
             variant={data.isFollowing ? "outlined" : "contained"}

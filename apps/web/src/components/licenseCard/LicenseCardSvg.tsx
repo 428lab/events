@@ -11,7 +11,7 @@ import {
   TOPO_CONTOURS,
 } from "./patternData.js";
 
-/** ライセンスカードのSVG本体 (#178)。
+/** プロフィールカードのSVG本体 (#178)。
  * 承認済みモックアップ type-T1.svg のレイアウト（1074x650・56pxマージングリッド）を
  * 忠実に移植し、実データ（公開プロフィールAPI）を流し込む。
  * ページ側の都合（MUI・書き出し処理）に依存しない純粋な描画モジュール。 */
@@ -337,7 +337,7 @@ export function LicenseCardSvg({
       height={CARD_H}
       xmlns="http://www.w3.org/2000/svg"
       role="img"
-      aria-label={`${card.name} のライセンスカード`}
+      aria-label={`${card.name} のプロフィールカード`}
       style={{ width: "100%", height: "auto", display: "block" }}
     >
       <defs>

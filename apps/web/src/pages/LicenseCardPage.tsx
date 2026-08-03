@@ -26,7 +26,7 @@ import type { CardBgVariant } from "../components/licenseCard/LicenseCardSvg.js"
 import jakarta600Url from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-600-normal.woff2?url";
 import jakarta700Url from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-700-normal.woff2?url";
 
-/** ライセンスカードジェネレーターのページ (#178)。
+/** プロフィールカードジェネレーターのページ (#178)。
  * カード本体の描画は components/licenseCard/LicenseCardSvg.tsx にあり、
  * ここでは背景パターン選択・印刷・PNG書き出しなどページの振る舞いを担当する。 */
 
@@ -207,7 +207,7 @@ export function LicenseCardPage() {
       <Stack spacing={2}>
         <Box>
           <Typography variant="h5" fontWeight={700}>
-            ライセンスカード
+            プロフィールカード
           </Typography>
           <Typography variant="caption" color="text.secondary">
             印刷して名札ホルダーに入れられます（91×55mm）
