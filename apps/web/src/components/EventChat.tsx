@@ -1,0 +1,455 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  Avatar,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  FormControlLabel,
+  IconButton,
+  Radio,
+  RadioGroup,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
+import SendIcon from "@mui/icons-material/Send";
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
+import { Link as RouterLink } from "react-router-dom";
+import type { ChatMember, Event, EventRole } from "@eventer/shared";
+import {
+  CHAT_MESSAGE_MAX,
+  CHAT_WINDOW_AFTER_MS,
+  CHAT_WINDOW_BEFORE_MS,
+} from "@eventer/shared";
+import type { Event as NostrEvent } from "nostr-tools/pure";
+import { useMe } from "../api/hooks.js";
+import { api } from "../api/client.js";
+import {
+  useChatMembers,
+  useHideChatNote,
+  useRegisterChatChannel,
+  useRegisterChatKey,
+} from "../api/eventChatHooks.js";
+import { hasNip07 } from "../lib/nostr.js";
+import {
+  ChatRelayPool,
+  buildChannelCreateTemplate,
+  buildChatKeyProofTemplate,
+  buildChannelMessageTemplate,
+  loadLocalChatKey,
+  loadOrCreateLocalChatKey,
+  localSigner,
+  nip07Signer,
+} from "../lib/nostrChat.js";
+import type { ChatSigner } from "../lib/nostrChat.js";
+
+/** メッセージ時刻の表示（HH:mm） */
+function formatTime(createdAtSec: number): string {
+  const d = new Date(createdAtSec * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Nostrイベントチャット (#199)。NIP-28 パブリックチャットをブラウザから
+ * ユーザー所有リレーへ直接読み書きする（サーバーはチャット本文を経由しない）。
+ * 表示は許可リスト（chat-members に登録された pubkey）のメッセージのみ。
+ */
+export function EventChat({
+  eventId,
+  event,
+  myRole,
+  canChat,
+}: {
+  eventId: string;
+  event: Event;
+  myRole: EventRole | null;
+  /** 参加確定メンバーか（呼び出し側で判定） */
+  canChat: boolean;
+}) {
+  const { data: me } = useMe();
+  // イベント配下のUIは myRole のみで判定（サイト管理者でも staff でなければ操作UIを出さない）
+  const isStaff = myRole === "staff";
+  const dateFixed = !event.scheduling && event.startsAt > 0;
+  const visible =
+    canChat && event.chatEnabled && dateFixed && event.status === "published";
+
+  const { data: chat } = useChatMembers(eventId, visible);
+  const registerKey = useRegisterChatKey(eventId);
+  const registerChannel = useRegisterChatChannel(eventId);
+  const hideNote = useHideChatNote(eventId);
+
+  const [signer, setSigner] = useState<ChatSigner | null>(null);
+  const [keyMode, setKeyMode] = useState<"ephemeral" | "nip07">("ephemeral");
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<NostrEvent[]>([]);
+  const [channelId, setChannelId] = useState<string | null>(null);
+  const [relayConnected, setRelayConnected] = useState(false);
+  const [draft, setDraft] = useState("");
+  const poolRef = useRef<ChatRelayPool | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // チャンネル確定処理から最新の chat-members を参照するための ref
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+
+  // 書き込み可能時間帯（開始30分前〜終了2時間後）。1分ごとに再評価
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const inWriteWindow =
+    dateFixed &&
+    now >= event.startsAt - CHAT_WINDOW_BEFORE_MS &&
+    now <= event.endsAt + CHAT_WINDOW_AFTER_MS;
+
+  // 登録済みの自分の鍵がローカル一時鍵と一致するなら自動で再参加する
+  const myRegisteredPubkey = useMemo(
+    () => chat?.members.find((m) => me && m.userId === me.id)?.pubkey ?? null,
+    [chat, me],
+  );
+  useEffect(() => {
+    if (signer || !myRegisteredPubkey) return;
+    const sk = loadLocalChatKey(eventId);
+    if (!sk) return;
+    const local = localSigner(sk);
+    if (local.pubkey === myRegisteredPubkey) setSigner(local);
+  }, [signer, myRegisteredPubkey, eventId]);
+
+  // 接続・チャンネル確定・購読。signer が決まったら開始し、unmount で切断
+  useEffect(() => {
+    if (!signer) return;
+    let disposed = false;
+    let unsubscribe: (() => void) | null = null;
+    const pool = new ChatRelayPool(signer);
+    poolRef.current = pool;
+    pool.onstatus = () => {
+      if (!disposed) setRelayConnected(pool.connected);
+    };
+
+    (async () => {
+      await pool.connect();
+      if (disposed) return;
+
+      // チャンネルIDを確定する（未登録なら kind:40 を発行して先勝ちで登録）
+      let cid = chatRef.current?.channelId ?? null;
+      if (!cid) {
+        try {
+          const created = await signer.signEvent(
+            buildChannelCreateTemplate(event.title),
+          );
+          await pool.publish(created);
+          const { channelId: settled } =
+            await registerChannel.mutateAsync(created);
+          cid = settled ?? created.id;
+        } catch {
+          if (!disposed) setJoinError("チャンネルの作成に失敗しました。");
+          return;
+        }
+      }
+      if (disposed) return;
+      setChannelId(cid);
+      unsubscribe = pool.subscribe(cid, (ev) => {
+        if (disposed) return;
+        setMessages((prev) =>
+          prev.some((m) => m.id === ev.id)
+            ? prev
+            : [...prev, ev].sort((a, b) => a.created_at - b.created_at),
+        );
+      });
+    })();
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+      pool.close();
+      poolRef.current = null;
+      setRelayConnected(false);
+      setMessages([]);
+      setChannelId(null);
+    };
+    // registerChannel（mutation オブジェクト）は毎レンダーで変わるため依存に含めない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signer, event.title]);
+
+  // 新着メッセージで最下部へ自動スクロール
+  const pubkeySet = useMemo(
+    () => new Set(chat?.members.map((m) => m.pubkey) ?? []),
+    [chat],
+  );
+  const hiddenSet = useMemo(
+    () => new Set(chat?.hiddenNoteIds ?? []),
+    [chat],
+  );
+  const visibleMessages = useMemo(
+    () =>
+      messages.filter((m) => pubkeySet.has(m.pubkey) && !hiddenSet.has(m.id)),
+    [messages, pubkeySet, hiddenSet],
+  );
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [visibleMessages.length]);
+
+  if (!visible) return null;
+
+  // 外部クライアント経由の巨大投稿はUIを壊すので表示対象から除外
+  const cappedMessages = visibleMessages.filter(
+    (m) => m.content.length <= CHAT_MESSAGE_MAX,
+  );
+  const memberByPubkey = new Map<string, ChatMember>(
+    (chat?.members ?? []).map((m) => [m.pubkey, m]),
+  );
+
+  const join = async () => {
+    setJoinError(null);
+    try {
+      const s =
+        keyMode === "nip07" && hasNip07()
+          ? await nip07Signer()
+          : localSigner(loadOrCreateLocalChatKey(eventId));
+      // 所有証明: サーバーのchallengeに署名して送る（他人のnpub紐付け防止）
+      const { challenge } = await api.get<{ challenge: string }>(
+        "/auth/nostr/challenge",
+      );
+      const proof = await s.signEvent(
+        buildChatKeyProofTemplate(challenge, eventId),
+      );
+      await registerKey.mutateAsync(proof);
+      setSigner(s);
+    } catch {
+      setJoinError("チャットへの参加に失敗しました。");
+    }
+  };
+
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || !signer || !channelId || !inWriteWindow) return;
+    if (text.length > CHAT_MESSAGE_MAX) return;
+    setSendError(null);
+    try {
+      const ev = await signer.signEvent(
+        buildChannelMessageTemplate(channelId, text),
+      );
+      const ok = await poolRef.current?.publish(ev);
+      if (!ok) {
+        setSendError("送信に失敗しました（リレーに接続できません）。");
+        return;
+      }
+      setDraft("");
+      // リレーからの折返しを待たず即時表示（購読側とはIDで重複排除）
+      setMessages((prev) =>
+        prev.some((m) => m.id === ev.id)
+          ? prev
+          : [...prev, ev].sort((a, b) => a.created_at - b.created_at),
+      );
+    } catch {
+      setSendError("送信に失敗しました。");
+    }
+  };
+
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ mb: 0.5 }}
+        >
+          <Typography
+            variant="h6"
+            sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+          >
+            <ForumOutlinedIcon fontSize="small" />
+            チャット
+          </Typography>
+          {signer && (
+            <Typography variant="caption" color="text.secondary">
+              {relayConnected ? "接続中" : "オフライン"}
+            </Typography>
+          )}
+        </Stack>
+
+        {!signer ? (
+          <Stack spacing={1.5} sx={{ mt: 1 }}>
+            {hasNip07() && (
+              <RadioGroup
+                value={keyMode}
+                onChange={(e) =>
+                  setKeyMode(e.target.value as "ephemeral" | "nip07")
+                }
+              >
+                <FormControlLabel
+                  value="ephemeral"
+                  control={<Radio size="small" />}
+                  label="イベント用の一時鍵で発言"
+                />
+                <FormControlLabel
+                  value="nip07"
+                  control={<Radio size="small" />}
+                  label="Nostrアカウントで発言"
+                />
+              </RadioGroup>
+            )}
+            {keyMode === "nip07" && hasNip07() && (
+              <Alert severity="info">
+                本アカウントでの発言は events lab の外の Nostr
+                クライアントからも見えます。
+              </Alert>
+            )}
+            <Typography variant="caption" color="text.secondary">
+              このチャットは Nostr
+              のパブリックチャットです（外部クライアントからも閲覧できます）。
+            </Typography>
+            {joinError && <Alert severity="error">{joinError}</Alert>}
+            <Box>
+              <Button
+                variant="contained"
+                size="small"
+                disabled={registerKey.isPending}
+                onClick={join}
+              >
+                チャットに参加する
+              </Button>
+            </Box>
+          </Stack>
+        ) : (
+          <Stack spacing={1.5} sx={{ mt: 1 }}>
+            <Box
+              ref={listRef}
+              sx={{ maxHeight: 360, overflowY: "auto", pr: 0.5 }}
+            >
+              {visibleMessages.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  まだメッセージはありません。
+                </Typography>
+              ) : (
+                <Stack spacing={1.25}>
+                  {cappedMessages.map((m) => {
+                    const member = memberByPubkey.get(m.pubkey);
+                    if (!member) return null;
+                    return (
+                      <Stack
+                        key={m.id}
+                        direction="row"
+                        spacing={1}
+                        alignItems="flex-start"
+                      >
+                        <Avatar
+                          src={member.avatarUrl ?? undefined}
+                          component={RouterLink}
+                          to={`/users/${member.username}`}
+                          sx={{
+                            width: 28,
+                            height: 28,
+                            fontSize: 13,
+                            textDecoration: "none",
+                          }}
+                        >
+                          {member.name.charAt(0)}
+                        </Avatar>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Stack
+                            direction="row"
+                            spacing={0.75}
+                            alignItems="baseline"
+                          >
+                            <Typography variant="body2" fontWeight={600} noWrap>
+                              {member.name}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {formatTime(m.created_at)}
+                            </Typography>
+                          </Stack>
+                          {/* プレーンテキストのみ（Markdown/HTML は解釈しない） */}
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {m.content}
+                          </Typography>
+                        </Box>
+                        {isStaff && (
+                          <Tooltip title="このメッセージを非表示にする">
+                            <IconButton
+                              size="small"
+                              disabled={hideNote.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "このメッセージを参加者の画面から非表示にしますか？",
+                                  )
+                                ) {
+                                  hideNote.mutate(m.id);
+                                }
+                              }}
+                            >
+                              <VisibilityOffOutlinedIcon
+                                sx={{ fontSize: 16 }}
+                              />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </Stack>
+                    );
+                  })}
+                </Stack>
+              )}
+            </Box>
+
+            {sendError && (
+              <Alert severity="warning" onClose={() => setSendError(null)}>
+                {sendError}
+              </Alert>
+            )}
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TextField
+                size="small"
+                fullWidth
+                value={draft}
+                disabled={!inWriteWindow}
+                placeholder={
+                  inWriteWindow
+                    ? "メッセージを入力…"
+                    : "書き込みはイベント開催時間の前後のみ"
+                }
+                inputProps={{ maxLength: CHAT_MESSAGE_MAX }}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+              />
+              <IconButton
+                color="primary"
+                disabled={!inWriteWindow || !draft.trim() || !channelId}
+                onClick={() => void send()}
+                aria-label="送信"
+              >
+                <SendIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              このチャットは Nostr
+              のパブリックチャットです（外部クライアントからも閲覧できます）。
+            </Typography>
+          </Stack>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

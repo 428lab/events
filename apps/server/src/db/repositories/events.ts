@@ -31,6 +31,9 @@ interface EventRow {
   attendance_check: number;
   slug: string | null;
   venue_wanted: number;
+  chat_enabled: number;
+  /** NIP-28 チャンネルID。toEvent には含めない（chat-members API で返す） */
+  chat_channel_id: string | null;
   /** 参加者限定の文章。toEvent には含めない（公開APIに漏らさない） */
   members_note: string;
 }
@@ -74,6 +77,7 @@ function toEvent(row: EventRow): Event {
     attendanceCheck: row.attendance_check === 1,
     slug: row.slug ?? "",
     venueWanted: row.venue_wanted === 1,
+    chatEnabled: row.chat_enabled === 1,
   };
 }
 
@@ -340,7 +344,7 @@ export const eventsRepo = {
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
          photos_public = ?, attendance_check = ?, venue_wanted = ?,
-         members_note = ?, scheduling = ?
+         chat_enabled = ?, members_note = ?, scheduling = ?
        WHERE id = ?`,
       next.title,
       next.subtitle,
@@ -359,6 +363,7 @@ export const eventsRepo = {
       next.photosPublic ? 1 : 0,
       next.attendanceCheck ? 1 : 0,
       next.venueWanted ? 1 : 0,
+      next.chatEnabled ? 1 : 0,
       membersNote,
       next.scheduling ? 1 : 0,
       id,

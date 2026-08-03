@@ -61,6 +61,8 @@ export const eventSchema = z.object({
   slug: z.string(),
   /** 会場を探している（会場オーナーからのオファーを受け付ける） */
   venueWanted: z.boolean(),
+  /** 参加者チャット（Nostrパブリックチャット #199）。既定はオン */
+  chatEnabled: z.boolean(),
 });
 export type Event = z.infer<typeof eventSchema>;
 
@@ -110,6 +112,8 @@ export const updateEventInput = z.object({
   scheduleVisible: z.boolean().optional(),
   photosPublic: z.boolean().optional(),
   attendanceCheck: z.boolean().optional(),
+  /** 参加者チャット（Nostrパブリックチャット #199）のオンオフ */
+  chatEnabled: z.boolean().optional(),
   /** 参加者限定の文章（確定メンバー＋staffにのみ表示。eventSchema には含めない） */
   membersNote: z.string().max(20000).optional(),
 });
