@@ -3,19 +3,22 @@ import { IconButton, Snackbar, Tooltip } from "@mui/material";
 import ShareIcon from "@mui/icons-material/Share";
 
 /** 短いシェアURLをワンタップでクリップボードにコピー（共有シートは使わない）。
- * prefix: "e"=イベント(/e/:slug) / "r"=たまご(/r/:slug) */
+ * prefix: "e"=イベント(/e/:slug) / "r"=たまご(/r/:slug)。
+ * url を直接渡すとそのURLをコピーする（プロフィール等の任意ページ用） */
 export function ShareButton({
-  slug,
+  slug = "",
   title: _title,
   prefix = "e",
+  url: urlProp,
 }: {
-  slug: string;
+  slug?: string;
   title: string;
   prefix?: "e" | "r";
+  url?: string;
 }) {
   const [copied, setCopied] = useState(false);
-  if (!slug) return null;
-  const url = `${window.location.origin}/${prefix}/${slug}`;
+  if (!slug && !urlProp) return null;
+  const url = urlProp ?? `${window.location.origin}/${prefix}/${slug}`;
 
   const share = async () => {
     try {
