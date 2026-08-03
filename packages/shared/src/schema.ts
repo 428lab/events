@@ -17,6 +17,9 @@ export const userSchema = z.object({
   globalName: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   createdAt: z.number(),
+  /** プロフィールカードPNGのR2キャッシュ更新時刻（未生成は null）。
+   * メンバー一覧などのJOIN由来ペイロードでは省略される (#193) */
+  cardImageUpdatedAt: z.number().nullable().optional(),
 });
 export type User = z.infer<typeof userSchema>;
 

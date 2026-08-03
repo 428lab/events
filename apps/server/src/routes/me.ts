@@ -14,6 +14,7 @@ import { followsRepo } from "../db/repositories/follows.js";
 import { notificationPrefsRepo } from "../db/repositories/notificationPrefs.js";
 import { emailRepo } from "../db/repositories/email.js";
 import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
+import { putMyCardImage } from "./profileCardImages.js";
 
 export const meRoutes = new Hono<AppEnv>();
 
@@ -78,6 +79,9 @@ meRoutes.get("/events", async (c) => {
   );
   return c.json({ ongoing, past });
 });
+
+/** プロフィールカードPNGのアップロード（OG画像用キャッシュ） (#193) */
+meRoutes.put("/card-image", putMyCardImage);
 
 /** ユーザー名（プロフィールURLのハンドル）を変更。他ユーザーと被る場合は 409 */
 meRoutes.put(
