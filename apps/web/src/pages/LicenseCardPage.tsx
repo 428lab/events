@@ -78,6 +78,16 @@ async function buildExportSvg(svgEl: SVGSVGElement): Promise<string> {
   } catch {
     /* フォントが取得できなくてもシステムフォントで出力を続行 */
   }
+  // コミュニティアイコン等、SVG内の全imageを dataURL 化（SVG-as-image は外部参照を読まない）
+  for (const img of Array.from(clone.querySelectorAll("image:not([data-avatar])"))) {
+    const href = img.getAttribute("href");
+    if (!href || href.startsWith("data:")) continue;
+    try {
+      img.setAttribute("href", await fetchAsDataUrl(href));
+    } catch {
+      img.remove(); // 取得失敗時は下地（イニシャル/プレースホルダ）を見せる
+    }
+  }
   const avatar = clone.querySelector("image[data-avatar]");
   if (avatar) {
     try {

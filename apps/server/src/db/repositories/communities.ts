@@ -249,8 +249,12 @@ export const communitiesRepo = {
       name: string;
       icon_updated_at: number | null;
       role: string;
+      my_event_count: number;
     }>(
-      `SELECT c.id, c.slug, c.name, c.icon_updated_at, COALESCE(cm.role, 'member') AS role
+      `SELECT c.id, c.slug, c.name, c.icon_updated_at, COALESCE(cm.role, 'member') AS role,
+              (SELECT COUNT(*) FROM event_member em JOIN event e ON e.id = em.event_id
+                WHERE e.community_id = c.id AND em.user_id = ?
+                  AND em.status = 'confirmed' AND e.status = 'published') AS my_event_count
        FROM community c
        LEFT JOIN community_member cm ON cm.community_id = c.id AND cm.user_id = ?
        WHERE c.id IN (
@@ -264,6 +268,7 @@ export const communitiesRepo = {
       userId,
       userId,
       userId,
+      userId,
     );
     return rows.map((r) => ({
       id: r.id,
@@ -271,6 +276,7 @@ export const communitiesRepo = {
       name: r.name,
       iconUrl: communityImageUrl(r.id, "icon", r.icon_updated_at),
       role: r.role as CommunityRole,
+      myEventCount: r.my_event_count,
     }));
   },
 

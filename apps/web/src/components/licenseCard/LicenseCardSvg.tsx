@@ -252,6 +252,8 @@ export interface CardData {
   moreBadges: number;
   /** フッターに刷るサイトのドメイン */
   host: string;
+  /** 参加イベント数の多い順・最大5コミュニティ（アイコン＋名前の帯表示用） */
+  communities: { id: string; name: string; iconUrl: string | null }[];
 }
 
 export function toCardData(
@@ -289,6 +291,10 @@ export function toCardData(
     topBadge: topEn,
     moreBadges: top ? badges.length - 1 : 0,
     host,
+    communities: [...p.communities]
+      .sort((a, b) => (b.myEventCount ?? 0) - (a.myEventCount ?? 0))
+      .slice(0, 5)
+      .map((c) => ({ id: c.id, name: c.name, iconUrl: c.iconUrl })),
   };
 }
 
