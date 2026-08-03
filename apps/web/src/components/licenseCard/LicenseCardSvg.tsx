@@ -314,17 +314,20 @@ export function LicenseCardSvg({
   const statsParts = [`HOSTED ${card.hosted}`, `TALKS ${card.spoken}`];
   if (card.attendRate != null) statsParts.push(`ATTEND ${card.attendRate}%`);
   // 長い表示名・バッジ名はパネル幅に収まるよう段階的に縮小（モックは kojira / FIRST HOST 想定）
-  // CJK文字は全角幅（≒フォントサイズ）で数え、実効幅からサイズを決める。
-  // それでも収まらない場合は textLength で圧縮してアバター枠への重なりを防ぐ
-  const nameUnits = [...card.name].reduce(
-    (acc, ch) => acc + (/[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 2 : 1),
+  // 名前は長さに応じて連続的にフォントサイズを決める（段階だと極端な長さで破綻する）。
+  // 幅見積り: CJK ≒ 1.0em / 欧文 ≒ 0.55em。下限まで縮めても収まらない場合のみ字間圧縮
+  const NAME_MAX_W = 742;
+  const nameWidthEm = [...card.name].reduce(
+    (acc, ch) =>
+      acc + (/[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 1.0 : 0.55),
     0,
   );
-  const nameSize = nameUnits > 18 ? 44 : nameUnits > 12 ? 52 : 72;
-  const NAME_MAX_W = 742;
-  const nameEstW = nameUnits * nameSize * 0.62;
+  const nameSize = Math.max(
+    26,
+    Math.min(72, Math.floor(NAME_MAX_W / Math.max(nameWidthEm, 1))),
+  );
   const nameLenAttrs =
-    nameEstW > NAME_MAX_W
+    nameWidthEm * nameSize > NAME_MAX_W
       ? { textLength: NAME_MAX_W, lengthAdjust: "spacingAndGlyphs" as const }
       : {};
   const badgeSize = (card.topBadge?.length ?? 0) > 12 ? 19 : 26;
