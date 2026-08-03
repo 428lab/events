@@ -368,7 +368,7 @@ export function LicenseCardSvg({
         <g transform="translate(261.8,32.6) scale(8.6)" opacity={0.07}>
           <LogoGlyph color="#3B3F73" />
         </g>
-        <rect width={CARD_W} height={CARD_H} fill="url(#lc-sheen)" />
+        <rect width={CARD_W} height={CARD_H} fill="url(#lc-sheen)" opacity={0.16} />
         <rect x={0} y={0} width={CARD_W} height={8} fill={INDIGO} />
 
         {/* ヘッダー: ロゴ＋ワードマーク＋シリアル */}
