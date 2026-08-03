@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -67,6 +67,11 @@ import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
+
+/** Nostrチャット (#199)。nostr-tools（暗号ライブラリ）が大きいため遅延読み込みで分離する */
+const EventChat = lazy(() =>
+  import("../components/EventChat.js").then((m) => ({ default: m.EventChat })),
+);
 
 const STATUS_LABEL: Record<string, string> = {
   confirmed: "確定",
@@ -499,6 +504,22 @@ export function EventDetailPage() {
         community={community}
         canLike={canComment}
       />
+
+      {/* 参加者チャット (#199)。確定メンバー＋公開＋日程確定のみ。本文はNostrリレー直通 */}
+      {canComment &&
+        event.chatEnabled &&
+        !event.scheduling &&
+        event.startsAt > 0 &&
+        event.status === "published" && (
+          <Suspense fallback={null}>
+            <EventChat
+              eventId={id}
+              event={event}
+              myRole={myRole}
+              canChat={canComment}
+            />
+          </Suspense>
+        )}
 
       {/* 参加者限定のお知らせ（サーバーが閲覧可の人にだけ返す） */}
       {membersNote && (

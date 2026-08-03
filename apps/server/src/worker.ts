@@ -32,6 +32,7 @@ import {
   getEventComments,
 } from "./routes/eventComments.js";
 import { eventLikeRoutes } from "./routes/eventLikes.js";
+import { eventChatRoutes } from "./routes/eventChat.js";
 import { meetEventRoutes, meetUserRoutes } from "./routes/eventMeets.js";
 import {
   eventScheduleRoutes,
@@ -132,6 +133,8 @@ api.route("/events", eventPhotoRoutes);
 api.route("/events", eventCommentRoutes);
 // いいね (#155)（参加確定メンバーのみ。要認証）
 api.route("/events", eventLikeRoutes);
+// Nostrイベントチャットの紐付け (#199)（参加確定メンバーのみ。要認証）
+api.route("/events", eventChatRoutes);
 // 出会った記録 (#189)（参加確定メンバー同士。要認証）
 api.route("/events", meetEventRoutes);
 api.route("/events", eventScheduleRoutes);

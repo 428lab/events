@@ -1,0 +1,98 @@
+import type { ChatMember } from "@eventer/shared";
+import { many, one, run, runCount } from "../client.js";
+
+/** Nostrイベントチャット (#199) の紐付けデータ。
+ * チャット本文はリレーにあり、ここでは「誰がどの鍵で発言するか」（表示許可リスト）、
+ * チャンネルID、非表示リストのみを扱う */
+export const eventChatRepo = {
+  /** 発言用の公開鍵を登録（イベント×ユーザーごとに1つ。再登録で置き換え） */
+  async setPubkey(
+    eventId: string,
+    userId: string,
+    pubkey: string,
+  ): Promise<void> {
+    await run(
+      `INSERT INTO event_chat_pubkey (event_id, user_id, pubkey, created_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (event_id, user_id) DO UPDATE SET pubkey = excluded.pubkey, created_at = excluded.created_at`,
+      eventId,
+      userId,
+      pubkey,
+      Date.now(),
+    );
+  },
+
+  /** 表示許可リスト（pubkey → ユーザー情報）。クライアントはこの pubkey のメッセージだけ描画する */
+  async listMembers(eventId: string): Promise<ChatMember[]> {
+    const rows = await many<{
+      pubkey: string;
+      user_id: string;
+      username: string;
+      global_name: string | null;
+      avatar_url: string | null;
+    }>(
+      `SELECT p.pubkey, u.id AS user_id, u.username, u.global_name, u.avatar_url
+         FROM event_chat_pubkey p
+         JOIN user u ON u.id = p.user_id
+        WHERE p.event_id = ?
+        ORDER BY p.created_at ASC`,
+      eventId,
+    );
+    return rows.map((r) => ({
+      pubkey: r.pubkey,
+      userId: r.user_id,
+      username: r.username,
+      name: r.global_name ?? r.username,
+      avatarUrl: r.avatar_url,
+    }));
+  },
+
+  /** チャンネルID（kind:40 のイベントID）を先勝ちで設定し、確定した値を返す。
+   * 既に設定済みなら既存値を返す（後着は無視） */
+  async setChannelOnce(
+    eventId: string,
+    channelId: string,
+  ): Promise<string | null> {
+    await runCount(
+      "UPDATE event SET chat_channel_id = ? WHERE id = ? AND chat_channel_id IS NULL",
+      channelId,
+      eventId,
+    );
+    return this.channelIdFor(eventId);
+  },
+
+  async channelIdFor(eventId: string): Promise<string | null> {
+    const row = await one<{ chat_channel_id: string | null }>(
+      "SELECT chat_channel_id FROM event WHERE id = ?",
+      eventId,
+    );
+    return row?.chat_channel_id ?? null;
+  },
+
+  /** メッセージをアプリ側で非表示にする（冪等） */
+  async hideNote(eventId: string, noteId: string): Promise<void> {
+    await run(
+      "INSERT OR IGNORE INTO event_chat_hidden (event_id, note_id, created_at) VALUES (?, ?, ?)",
+      eventId,
+      noteId,
+      Date.now(),
+    );
+  },
+
+  /** 非表示を解除する */
+  async unhideNote(eventId: string, noteId: string): Promise<void> {
+    await run(
+      "DELETE FROM event_chat_hidden WHERE event_id = ? AND note_id = ?",
+      eventId,
+      noteId,
+    );
+  },
+
+  async listHidden(eventId: string): Promise<string[]> {
+    const rows = await many<{ note_id: string }>(
+      "SELECT note_id FROM event_chat_hidden WHERE event_id = ? ORDER BY created_at ASC",
+      eventId,
+    );
+    return rows.map((r) => r.note_id);
+  },
+};
