@@ -338,3 +338,49 @@ describe("いいねフィードバック (#155)", () => {
     expect(body.likesReceived).toBe(1);
   });
 });
+
+describe("参加者へのいいね (#160)", () => {
+  it("メンバー同士で参加者にいいねでき、自分は不可、プロフィール合計に入る", async () => {
+    const owner = await makeUser();
+    const eventId = await makeEvent(owner.cookie);
+    const p1 = await makeUser();
+    const p2 = await makeUser();
+    await addMember(eventId, p1.userId, "participant");
+    await addMember(eventId, p2.userId, "participant");
+
+    // 参加者同士のいいね OK
+    const ok = await putLike(eventId, p1.cookie, {
+      kind: "participant",
+      targetKey: p2.userId,
+      on: true,
+    });
+    expect(ok.status).toBe(200);
+    const { summary } = (await ok.json()) as {
+      summary: { participants: { userId: string; count: number }[] };
+    };
+    expect(
+      summary.participants.find((x) => x.userId === p2.userId)?.count,
+    ).toBe(1);
+
+    // 自分へのいいねは不可
+    const self = await putLike(eventId, p1.cookie, {
+      kind: "participant",
+      targetKey: p1.userId,
+      on: true,
+    });
+    expect(self.status).toBe(403);
+
+    // スタッフ（主催者）→参加者も OK。プロフィール合計に反映
+    const staffLike = await putLike(eventId, owner.cookie, {
+      kind: "participant",
+      targetKey: p2.userId,
+      on: true,
+    });
+    expect(staffLike.status).toBe(200);
+    const prof = await SELF.fetch(`${BASE}/api/public/users/${p2.username}`);
+    const body = (await prof.json()) as {
+      participation: { likesReceived: number };
+    };
+    expect(body.participation.likesReceived).toBe(2);
+  });
+});

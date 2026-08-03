@@ -213,6 +213,21 @@ export function EventFeedback({
                 onToggle={() => toggle("community", community.id)}
               />
             )}
+            {summary.participants.map((p) => (
+              <LikeRow
+                key={p.userId}
+                icon={userAvatar(p)}
+                label={p.name}
+                caption="参加者"
+                count={p.count}
+                on={isMine("participant", p.userId)}
+                disabled={setLike.isPending || p.userId === me?.id}
+                disabledReason={
+                  p.userId === me?.id ? "自分にはいいねできません" : undefined
+                }
+                onToggle={() => toggle("participant", p.userId)}
+              />
+            ))}
           </Stack>
         )}
       </CardContent>
