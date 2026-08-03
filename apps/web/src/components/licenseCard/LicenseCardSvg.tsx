@@ -541,8 +541,11 @@ export function LicenseCardSvg({
               COMMUNITIES
             </text>
             {card.communities.map((c, i) => {
-              // アイコン主役の大きめチップ（アイコン52px・縦68px）
-              const CHIP_W = 150;
+              // アイコン主役の大きめチップ（アイコン52px・縦68px）。
+              // 5個並べてもQR（x=823）に届かないよう、個数に応じて幅を自動調整
+              const AVAIL_W = 823 - 56 - 10;
+              const n = card.communities.length;
+              const CHIP_W = Math.min(150, Math.floor((AVAIL_W - (n - 1) * 8) / n));
               const CHIP_H = 68;
               const ICON = 52;
               const x = i * (CHIP_W + 8);
