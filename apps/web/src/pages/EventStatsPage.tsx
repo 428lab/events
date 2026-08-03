@@ -6,16 +6,26 @@ import {
   Card,
   CardContent,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import BarChartIcon from "@mui/icons-material/BarChart";
+import DownloadIcon from "@mui/icons-material/Download";
 import FlagIcon from "@mui/icons-material/Flag";
+import PollIcon from "@mui/icons-material/Poll";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import type { EventStats } from "@eventer/shared";
+import { surveyValueLabel } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { useEventStats } from "../api/analyticsHooks.js";
+import { useSurveyAnswers } from "../api/eventSurveyHooks.js";
 
 /** 流入元ラベルの友好名 */
 const SOURCE_LABEL: Record<string, string> = {
@@ -148,7 +158,108 @@ export function EventStatsPage() {
           )}
         </>
       )}
+
+      {/* 事前アンケートの回答一覧 (#152)。質問がある場合のみ表示 */}
+      <SurveyAnswersCard eventId={id} enabled={Boolean(eventData) && isStaff} />
     </Stack>
+  );
+}
+
+const SURVEY_STATUS_LABEL: Record<string, string> = {
+  confirmed: "確定",
+  waitlist: "キャンセル待ち",
+  applied: "抽選申込中",
+  lost: "落選",
+  canceled: "キャンセル",
+};
+
+/** 事前アンケートの回答一覧（staff のみ）。CSV ダウンロードつき */
+function SurveyAnswersCard({
+  eventId,
+  enabled,
+}: {
+  eventId: string;
+  enabled: boolean;
+}) {
+  const { data } = useSurveyAnswers(eventId, enabled);
+  if (!data || data.questions.length === 0) return null;
+  const { questions, rows } = data;
+
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ mb: 1.5 }}
+        >
+          <Typography
+            variant="h6"
+            sx={{ flex: 1, minWidth: 160, display: "flex", alignItems: "center", gap: 0.75 }}
+          >
+            <PollIcon fontSize="small" />
+            アンケート回答
+          </Typography>
+          {/* 同一オリジンの <a> なので cookie 認証のままダウンロードできる */}
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            component="a"
+            href={`/api/events/${eventId}/survey/answers.csv`}
+            download
+          >
+            CSVダウンロード
+          </Button>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+          参加登録時のアンケート回答です（スタッフのみ閲覧できます）。
+        </Typography>
+        {rows.length === 0 ? (
+          <Typography color="text.secondary" variant="body2">
+            まだ回答がありません。
+          </Typography>
+        ) : (
+          <TableContainer sx={{ maxHeight: 420 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>参加者</TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>参加状態</TableCell>
+                  {questions.map((q) => (
+                    <TableCell key={q.id} sx={{ minWidth: 120 }}>
+                      {q.question}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={r.user.id} hover>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>
+                      {r.user.globalName ?? r.user.username}
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>
+                      {r.memberStatus
+                        ? (SURVEY_STATUS_LABEL[r.memberStatus] ?? r.memberStatus)
+                        : "未参加"}
+                    </TableCell>
+                    {questions.map((q) => (
+                      <TableCell key={q.id}>
+                        {surveyValueLabel(q.qtype, r.answers[q.id] ?? "")}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -40,6 +40,7 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { entriesRepo } from "../db/repositories/entries.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
+import { eventSurveyRepo } from "../db/repositories/eventSurvey.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
 import { formatDateRangeJa } from "../lib/dateFormat.js";
@@ -426,6 +427,12 @@ eventRoutes.post("/:id/join", zValidator("json", joinEventInput), async (c) => {
   const existing = await eventMembersRepo.find(eventId, user.id);
   if (existing) return c.json({ member: existing });
 
+  // 必須の事前アンケートに未回答なら参加登録をブロック (#152)。
+  // Web は先に PUT /survey/my で回答してから join する
+  if (!(await eventSurveyRepo.hasAnsweredRequired(eventId, user.id, "pre"))) {
+    return c.json({ error: "survey_required" }, 409);
+  }
+
   const input = valid<JoinEventInput>(c, "json");
   const slots = await participationSlotsRepo.listByEvent(eventId);
   let slotId: string | null = null;
@@ -482,6 +489,8 @@ eventRoutes.delete("/:id/join", async (c) => {
   } else {
     await eventMembersRepo.remove(eventId, user.id);
   }
+  // 事前アンケートの回答は本人の離脱と同時に削除（入館用氏名等のPIIを残さない）
+  await eventSurveyRepo.deleteAnswersForUser(eventId, user.id);
 
   let promotedUserId: string | null = null;
   // 先着枠で確定者が抜けたら、待機(waitlist)の最古を確定へ繰り上げる

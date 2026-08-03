@@ -14,6 +14,7 @@ export * from "./photos.js";
 export * from "./eventComments.js";
 export * from "./eventLikes.js";
 export * from "./eventSchedule.js";
+export * from "./eventSurvey.js";
 export * from "./analytics.js";
 export * from "./eventRequests.js";
 export * from "./notificationPrefs.js";

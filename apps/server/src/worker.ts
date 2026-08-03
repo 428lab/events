@@ -35,6 +35,10 @@ import {
   getEventTimetable,
 } from "./routes/eventSchedule.js";
 import {
+  eventSurveyRoutes,
+  getEventSurvey,
+} from "./routes/eventSurvey.js";
+import {
   analyticsRoutes,
   adminStatsRoutes,
   recordEventView,
@@ -111,6 +115,8 @@ api.get("/events/:id/photos/:photoId/comments", getPhotoComments);
 api.get("/events/:id/comments", getEventComments);
 // 公開: タイムテーブル (#116)（下書きはメンバーのみ。eventRoutes より先に登録）
 api.get("/events/:id/timetable", getEventTimetable);
+// 公開: 事前アンケートの質問 (#152)（下書きはメンバーのみ。eventRoutes より先に登録）
+api.get("/events/:id/survey", getEventSurvey);
 // 公開: アクセス計測ビーコン（eventRoutes より先に登録）
 api.post("/events/:id/view", recordEventView);
 api.route("/events", eventRoutes);
@@ -122,6 +128,8 @@ api.route("/events", eventCommentRoutes);
 // いいね (#155)（参加確定メンバーのみ。要認証）
 api.route("/events", eventLikeRoutes);
 api.route("/events", eventScheduleRoutes);
+// 事前アンケート (#152)（質問保存・回答・スタッフ閲覧。要認証）
+api.route("/events", eventSurveyRoutes);
 api.route("/events", analyticsRoutes);
 api.route("/me", meRoutes);
 // フォロー（要認証）

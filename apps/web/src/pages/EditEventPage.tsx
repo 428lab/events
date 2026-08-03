@@ -32,6 +32,7 @@ import { CounterTextField } from "../components/CounterTextField.js";
 import { EventImageEditor } from "../components/EventImageEditor.js";
 import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
+import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
 import { AwardsEditor } from "../components/AwardsEditor.js";
 import { venueLabel } from "../lib/format.js";
 
@@ -327,6 +328,9 @@ export function EditEventPage() {
 
           <Divider />
           <EventSlotsEditor eventId={id} />
+
+          <Divider />
+          <SurveyQuestionsEditor eventId={id} />
 
           {contestMode && (
             <>
