@@ -15,6 +15,7 @@ export const NOTIFICATION_TYPES = [
   "venue_offer",
   "venue_offer_result",
   "venue_photo_result",
+  "survey_reminder",
   "info",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
