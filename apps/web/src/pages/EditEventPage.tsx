@@ -424,7 +424,7 @@ export function EditEventPage() {
                   disabled={del.isPending}
                   onClick={() =>
                     del.mutate(undefined, {
-                      onSuccess: () => navigate("/events"),
+                      onSuccess: () => navigate("/"),
                     })
                   }
                 >
