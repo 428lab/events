@@ -519,6 +519,78 @@ export function LicenseCardSvg({
           )}
         </g>
 
+        {/* 所属コミュニティ帯（参加数順トップ5・#181）。パネル下・QRの左 */}
+        {card.communities.length > 0 && (
+          <g transform="translate(56,486)">
+            <text
+              fontFamily={FONT_SANS}
+              fontSize={13}
+              fontWeight={600}
+              fill="#4338CA"
+              letterSpacing={3}
+            >
+              COMMUNITIES
+            </text>
+            {card.communities.map((c, i) => {
+              const CHIP_W = 148;
+              const x = i * (CHIP_W + 8);
+              const label =
+                [...c.name].length > 7
+                  ? [...c.name].slice(0, 7).join("") + "…"
+                  : c.name;
+              return (
+                <g key={c.id} transform={`translate(${x},12)`}>
+                  <rect
+                    width={CHIP_W}
+                    height={44}
+                    rx={12}
+                    fill="#FFFFFF"
+                    fillOpacity={0.72}
+                    stroke="#B9C2E2"
+                  />
+                  <clipPath id={`lc-comicon-${i}`}>
+                    <rect x={8} y={8} width={28} height={28} rx={7} />
+                  </clipPath>
+                  <rect x={8} y={8} width={28} height={28} rx={7} fill="#E3E8F6" />
+                  {c.iconUrl ? (
+                    <image
+                      href={c.iconUrl}
+                      x={8}
+                      y={8}
+                      width={28}
+                      height={28}
+                      clipPath={`url(#lc-comicon-${i})`}
+                      preserveAspectRatio="xMidYMid slice"
+                    />
+                  ) : (
+                    <text
+                      x={22}
+                      y={30}
+                      textAnchor="middle"
+                      fontFamily={FONT_SANS}
+                      fontSize={16}
+                      fontWeight={700}
+                      fill={INK_SUB}
+                    >
+                      {[...c.name][0] ?? "?"}
+                    </text>
+                  )}
+                  <text
+                    x={44}
+                    y={29}
+                    fontFamily={FONT_SANS}
+                    fontSize={15}
+                    fontWeight={600}
+                    fill="#232B4D"
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         {/* QRコード（公開プロフィールURL） */}
         <QrPanel url={qrUrl} />
         <text
