@@ -18,7 +18,12 @@ export const XP_WEIGHTS = {
   attended: 10,
   /** 被いいね（host/staff/participant 対象で自分がもらった数） */
   likeReceived: 5,
+  /** 出会った（イベント会場でのQR読み合い。1イベント10件まで） (#189) */
+  meet: 5,
 } as const;
+
+/** 1イベントあたりXPに数える「出会った」件数の上限（乱発防止） (#189) */
+export const MEETS_PER_EVENT_CAP = 10;
 
 /** 有効イベント基準で数えたユーザーごとの実績（XP・バッジ算出の入力） */
 export interface GamificationStats {
@@ -32,6 +37,8 @@ export interface GamificationStats {
   attendedQualifying: number;
   /** 有効イベントでもらったいいね数 */
   likesReceivedQualifying: number;
+  /** 有効イベントでの「出会った」数（イベントごとに上限適用済み） (#189) */
+  meets: number;
 }
 
 /** 実績からXP合計を計算する */
@@ -41,7 +48,8 @@ export function xpFromStats(stats: GamificationStats): number {
     stats.staffed * XP_WEIGHTS.staffed +
     stats.spoken * XP_WEIGHTS.spoken +
     stats.attendedQualifying * XP_WEIGHTS.attended +
-    stats.likesReceivedQualifying * XP_WEIGHTS.likeReceived
+    stats.likesReceivedQualifying * XP_WEIGHTS.likeReceived +
+    stats.meets * XP_WEIGHTS.meet
   );
 }
 
@@ -79,7 +87,7 @@ export function levelFromXp(xp: number): LevelInfo {
 }
 
 /** バッジの見た目カテゴリ（Web側で単色アイコンにマップする） */
-export type BadgeIcon = "host" | "staff" | "speak" | "attend" | "liked";
+export type BadgeIcon = "host" | "staff" | "speak" | "attend" | "liked" | "meet";
 
 /** バッジ定義。earned は実績カウントに対する純粋関数（遡及的に判定できる） */
 export interface BadgeDef {
@@ -205,6 +213,24 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
     tier: 3,
     earned: (s) => s.likesReceivedQualifying >= 50,
   },
+  {
+    key: "first-meet",
+    name: "初めまして",
+    nameEn: "FIRST CONTACT",
+    description: "イベント会場で出会いを1回記録した",
+    icon: "meet",
+    tier: 1,
+    earned: (s) => s.meets >= 1,
+  },
+  {
+    key: "meet-30",
+    name: "縁結び",
+    nameEn: "SUPER CONNECTOR",
+    description: "イベント会場で出会いを30回記録した",
+    icon: "meet",
+    tier: 3,
+    earned: (s) => s.meets >= 30,
+  },
 ] as const;
 
 /** 獲得済みバッジ（APIレスポンス用） */
@@ -212,8 +238,8 @@ export const earnedBadgeSchema = z.object({
   key: z.string(),
   name: z.string(),
   description: z.string(),
-  /** アイコン種別（host/staff/speak/attend/liked） */
-  icon: z.enum(["host", "staff", "speak", "attend", "liked"]),
+  /** アイコン種別（host/staff/speak/attend/liked/meet） */
+  icon: z.enum(["host", "staff", "speak", "attend", "liked", "meet"]),
   /** 段階（1=入門, 2=常連, 3=鉄人） */
   tier: z.number(),
 });

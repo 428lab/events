@@ -13,6 +13,7 @@ export * from "./liveSets.js";
 export * from "./photos.js";
 export * from "./eventComments.js";
 export * from "./eventLikes.js";
+export * from "./eventMeets.js";
 export * from "./eventSchedule.js";
 export * from "./eventSurvey.js";
 export * from "./gamification.js";
