@@ -395,7 +395,9 @@ function injectProfileOg(
   const desc = escapeHtml(summary);
   const image = escapeHtml(
     user.cardImageUpdatedAt
-      ? `${env.appBaseUrl}/api/users/${user.id}/card-image?v=${user.cardImageUpdatedAt}`
+      ? `${env.appBaseUrl}/api/users/${user.id}/card-image?${
+          user.cardImageKey ? `k=${user.cardImageKey}&` : ""
+        }v=${user.cardImageUpdatedAt}`
       : `${env.appBaseUrl}/og-default.png`,
   );
   const tags = [

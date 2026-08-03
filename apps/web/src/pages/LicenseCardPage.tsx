@@ -181,7 +181,7 @@ export function LicenseCardPage() {
       void (async () => {
         try {
           const png = await generateCardPng(svgEl);
-          const res = await fetch("/api/me/card-image", {
+          const res = await fetch(`/api/me/card-image?k=${variant}-${theme}`, {
             method: "PUT",
             credentials: "include",
             headers: { "Content-Type": "image/png" },

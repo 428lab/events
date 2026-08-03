@@ -34,7 +34,7 @@ async function putCard(
   body: BodyInit = PNG_BYTES,
   contentType = "image/png",
 ) {
-  return SELF.fetch(`${BASE}/api/me/card-image`, {
+  return SELF.fetch(`${BASE}/api/me/card-image?k=rosette-indigo`, {
     method: "PUT",
     headers: {
       "content-type": contentType,
@@ -131,7 +131,7 @@ describe("/users/:handle の OG メタ注入 (#193)", () => {
     const { updatedAt } = (await put.json()) as { updatedAt: number };
     const html = await fetchHtml(`/users/${u.username}`);
     expect(html).toContain(
-      `content="http://localhost/api/users/${u.userId}/card-image?v=${updatedAt}"`,
+      `content="http://localhost/api/users/${u.userId}/card-image?k=rosette-indigo&amp;v=${updatedAt}"`,
     );
     expect(html).toContain(
       `<meta name="twitter:card" content="summary_large_image" />`,
@@ -155,5 +155,62 @@ describe("/users/:handle の OG メタ注入 (#193)", () => {
     const html = await fetchHtml(`/users/${u.username}`);
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+});
+
+describe("組み合わせ別キー (#201)", () => {
+  it("k なしPUTは400、別kは別ファイル、GETのk指定で切替、OGは選択中のkを指す", async () => {
+    const u = await makeUser();
+    const png = PNG_BYTES;
+
+    const noK = await SELF.fetch(`${BASE}/api/me/card-image`, {
+      method: "PUT",
+      headers: { "content-type": "image/png", cookie: u.cookie },
+      body: png,
+    });
+    expect(noK.status).toBe(400);
+
+    const badK = await SELF.fetch(`${BASE}/api/me/card-image?k=evil-key`, {
+      method: "PUT",
+      headers: { "content-type": "image/png", cookie: u.cookie },
+      body: png,
+    });
+    expect(badK.status).toBe(400);
+
+    // 2種類アップロード → 最後の選択が記録される
+    await putCard(u.cookie, png);
+    const png2 = new Uint8Array(PNG_BYTES);
+    png2[8] = 0x42;
+    const second = await SELF.fetch(`${BASE}/api/me/card-image?k=topo-rose`, {
+      method: "PUT",
+      headers: { "content-type": "image/png", cookie: u.cookie },
+      body: png2,
+    });
+    expect(second.status).toBe(200);
+
+    // k指定でそれぞれのファイルが取れる
+    const g1 = await SELF.fetch(
+      `${BASE}/api/users/${u.userId}/card-image?k=rosette-indigo`,
+    );
+    const g2 = await SELF.fetch(
+      `${BASE}/api/users/${u.userId}/card-image?k=topo-rose`,
+    );
+    expect(new Uint8Array(await g1.arrayBuffer())[8]).not.toBe(
+      new Uint8Array(await g2.arrayBuffer())[8],
+    );
+
+    // k なしGETは選択中（topo-rose）を返す
+    const gDefault = await SELF.fetch(
+      `${BASE}/api/users/${u.userId}/card-image`,
+    );
+    expect(new Uint8Array(await gDefault.arrayBuffer())[8]).toBe(
+      new Uint8Array(await (await SELF.fetch(`${BASE}/api/users/${u.userId}/card-image?k=topo-rose`)).arrayBuffer())[8],
+    );
+
+    // OG は選択中の k を含む
+    const html = await (
+      await SELF.fetch(`${BASE}/users/${u.username}`)
+    ).text();
+    expect(html).toContain("k=topo-rose");
   });
 });
