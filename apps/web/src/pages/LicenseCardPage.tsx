@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -101,8 +101,10 @@ async function buildExportSvg(svgEl: SVGSVGElement): Promise<string> {
   return new XMLSerializer().serializeToString(clone);
 }
 
-/** SVG文字列を 2148x1300 のPNGにラスタライズしてダウンロードする */
-async function downloadAsPng(svgText: string, fileName: string): Promise<void> {
+/** 表示中のSVGを 2148x1300 のPNG Blob にラスタライズする。
+ * ダウンロードとOG画像アップロード (#193) の両方で同じ生成経路を使う */
+async function generateCardPng(svgEl: SVGSVGElement): Promise<Blob> {
+  const svgText = await buildExportSvg(svgEl);
   const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
   const svgUrl = URL.createObjectURL(svgBlob);
   try {
@@ -122,14 +124,19 @@ async function downloadAsPng(svgText: string, fileName: string): Promise<void> {
       canvas.toBlob(resolve, "image/png"),
     );
     if (!png) throw new Error("PNGの生成に失敗しました");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(png);
-    a.download = fileName;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+    return png;
   } finally {
     URL.revokeObjectURL(svgUrl);
   }
+}
+
+/** PNG Blob をファイルとしてダウンロードさせる */
+function downloadBlob(png: Blob, fileName: string): void {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(png);
+  a.download = fileName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +150,37 @@ export function LicenseCardPage() {
   const [busy, setBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  // OG画像アップロード済みの背景（マウント中は同じ背景を二重送信しない） (#193)
+  const uploadedVariantsRef = useRef<Set<CardBgVariant>>(new Set());
+
+  // 本人が開いたら、表示中のカードをPNG化してOG画像としてサーバへ静かに送る (#193)。
+  // ダウンロードと同じ生成経路（フォント・アバター埋め込み）を使うので見た目は一致する。
+  // 失敗してもページ利用には影響させない（既定OG画像のまま）
+  const isMe = data?.isMe ?? false;
+  useEffect(() => {
+    if (!isMe || uploadedVariantsRef.current.has(variant)) return;
+    // 描画直後の連打（背景切り替え）をまとめるための小さなディレイ
+    const timer = setTimeout(() => {
+      const svgEl = svgRef.current;
+      if (!svgEl || uploadedVariantsRef.current.has(variant)) return;
+      uploadedVariantsRef.current.add(variant);
+      void (async () => {
+        try {
+          const png = await generateCardPng(svgEl);
+          const res = await fetch("/api/me/card-image", {
+            method: "PUT",
+            credentials: "include",
+            headers: { "Content-Type": "image/png" },
+            body: png,
+          });
+          if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+        } catch (e) {
+          console.warn("プロフィールカードのOG画像更新に失敗しました", e);
+        }
+      })();
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [isMe, variant]);
 
   if (isError) return <Alert severity="info">ユーザーが見つかりません。</Alert>;
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
@@ -161,8 +199,8 @@ export function LicenseCardPage() {
     setBusy(true);
     setExportError(null);
     try {
-      const svgText = await buildExportSvg(svgRef.current);
-      await downloadAsPng(svgText, `events-lab-card-${card.handle}.png`);
+      const png = await generateCardPng(svgRef.current);
+      downloadBlob(png, `events-lab-card-${card.handle}.png`);
     } catch (e) {
       setExportError(
         e instanceof Error ? e.message : "PNGの書き出しに失敗しました",
@@ -267,6 +305,12 @@ export function LicenseCardPage() {
             {busy ? "書き出し中…" : "PNGをダウンロード"}
           </Button>
         </Stack>
+
+        {data.isMe && (
+          <Typography variant="caption" color="text.secondary">
+            このカードはプロフィールURLをシェアしたときのOG画像として使われます
+          </Typography>
+        )}
       </Stack>
     </Box>
   );

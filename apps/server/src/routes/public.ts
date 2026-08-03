@@ -96,6 +96,8 @@ publicRoutes.get("/users/:handle", async (c) => {
       ? await followsRepo.isFollowing(viewer.id, user.id)
       : false,
     isMe: viewer?.id === user.id,
+    // プロフィールカードPNG（OG画像）の更新時刻。未生成は null (#193)
+    cardImageUpdatedAt: user.cardImageUpdatedAt,
   });
 });
 

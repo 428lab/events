@@ -1,13 +1,15 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { bindEnv, getAssets, env, type Env } from "./runtime.js";
-import type { Event } from "@eventer/shared";
+import { gamificationFromStats } from "@eventer/shared";
+import type { Event, User } from "@eventer/shared";
 import { authRoutes } from "./routes/auth.js";
 import { eventRoutes } from "./routes/events.js";
 import { scoringRoutes, getEventScoreResults } from "./routes/scoring.js";
 import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes } from "./routes/me.js";
 import { getEventImage } from "./routes/images.js";
+import { getUserCardImage } from "./routes/profileCardImages.js";
 import { publicRoutes } from "./routes/public.js";
 import { inquiryRoutes, adminInquiryRoutes } from "./routes/inquiries.js";
 import { notificationRoutes } from "./routes/notifications.js";
@@ -47,6 +49,8 @@ import {
 import { currentUser } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
+import { usersRepo } from "./db/repositories/users.js";
+import { gamificationRepo } from "./db/repositories/gamification.js";
 import {
   feedRss,
   feedJson,
@@ -135,6 +139,8 @@ api.route("/events", eventScheduleRoutes);
 api.route("/events", eventSurveyRoutes);
 api.route("/events", analyticsRoutes);
 api.route("/me", meRoutes);
+// 公開: プロフィールカードPNG（認証不要。OGクローラ用。要認証の /users ルートより先に登録） (#193)
+api.get("/users/:id/card-image", getUserCardImage);
 // フォロー（要認証）
 api.route("/users", followRoutes);
 // 出会える共通イベントの取得 (#189)（要認証）
@@ -253,7 +259,8 @@ app.use("*", async (c, next) => {
     path === "/api/health" ||
     path === "/api/email/unsubscribe" ||
     path === "/logo-email.png" ||
-    /^\/api\/events\/[0-9a-f-]{36}\/image$/.test(path)
+    /^\/api\/events\/[0-9a-f-]{36}\/image$/.test(path) ||
+    /^\/api\/users\/[0-9a-f-]{36}\/card-image$/.test(path)
   )
     return next();
   const user = await currentUser(c);
@@ -374,6 +381,52 @@ app.get("/r/:slug", async (c) => {
     return c.html(injectRequestOg(html, req));
   }
   return c.html(html);
+});
+
+/** プロフィール用の OG メタ注入 (#193)。
+ * カードPNGが生成済みなら大きなカード画像、なければ既定OG画像を出す */
+function injectProfileOg(
+  html: string,
+  user: User,
+  summary: string,
+): string {
+  const url = escapeHtml(`${env.appBaseUrl}/users/${user.username}`);
+  const title = escapeHtml(`${user.globalName ?? user.username} ・ events lab`);
+  const desc = escapeHtml(summary);
+  const image = escapeHtml(
+    user.cardImageUpdatedAt
+      ? `${env.appBaseUrl}/api/users/${user.id}/card-image?v=${user.cardImageUpdatedAt}`
+      : `${env.appBaseUrl}/og-default.png`,
+  );
+  const tags = [
+    `<meta property="og:type" content="website" />`,
+    `<meta property="og:title" content="${title}" />`,
+    `<meta property="og:description" content="${desc}" />`,
+    `<meta property="og:url" content="${url}" />`,
+    `<meta property="og:image" content="${image}" />`,
+    // カードPNGは 2148x1300 の横長なので large card。既定画像は通常カード
+    `<meta name="twitter:card" content="${user.cardImageUpdatedAt ? "summary_large_image" : "summary"}" />`,
+  ];
+  const cleaned = html
+    .replace(/\s*<meta property="og:[^>]*>/g, "")
+    .replace(/\s*<meta name="twitter:[^>]*>/g, "");
+  return cleaned.replace("</head>", `${tags.join("\n")}\n</head>`);
+}
+
+// /users/:handle（公開プロフィール）に OG メタを注入 (#193)
+app.get("/users/:handle", async (c) => {
+  const html = await loadIndexHtml(c.req.url);
+  const handle = c.req.param("handle");
+  // 公開プロフィールAPIと同じ解決順: username 優先、UUID直指定も後方互換で許可
+  const user =
+    (await usersRepo.findByUsername(handle)) ??
+    (await usersRepo.findById(handle));
+  if (!user) return c.html(html); // 存在しないユーザーは素の SPA HTML
+  // 実績サマリー（有効イベント基準）。1クエリで済む statsForUser のみ使う
+  const stats = await gamificationRepo.statsForUser(user.id, Date.now());
+  const level = gamificationFromStats(stats).level;
+  const summary = `Lv.${level} ・ 主催${stats.hosted} ・ 登壇${stats.spoken} ・ 参加${stats.attendedQualifying}`;
+  return c.html(injectProfileOg(html, user, summary));
 });
 
 // 公開イベントのフィード（RSS / JSON Feed / iCal。フィルタはクエリ）

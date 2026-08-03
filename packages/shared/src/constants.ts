@@ -33,6 +33,11 @@ export const EVENT_IMAGE = {
   maxBytes: 1024 * 1024, // 1MB
 } as const;
 
+/** プロフィールカードPNG（プロフィールOG画像のR2キャッシュ）。2148x1300 で概ね数百KB (#193) */
+export const PROFILE_CARD_IMAGE = {
+  maxBytes: 2 * 1024 * 1024, // 2MB
+} as const;
+
 export const COMMUNITY_ICON = {
   width: 512,
   height: 512,

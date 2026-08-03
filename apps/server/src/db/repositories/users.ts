@@ -8,6 +8,8 @@ interface UserRow {
   global_name: string | null;
   avatar_url: string | null;
   created_at: number;
+  /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻 (#193) */
+  card_image_updated_at: number | null;
 }
 
 function toUser(row: UserRow): User {
@@ -18,6 +20,7 @@ function toUser(row: UserRow): User {
     globalName: row.global_name,
     avatarUrl: row.avatar_url,
     createdAt: row.created_at,
+    cardImageUpdatedAt: row.card_image_updated_at ?? null,
   };
 }
 
@@ -142,6 +145,15 @@ export const usersRepo = {
   /** Discord 連携時に discord_id を実IDへ更新（管理者判定を効かせる） */
   async setDiscordId(userId: string, discordId: string): Promise<void> {
     await run("UPDATE user SET discord_id = ? WHERE id = ?", discordId, userId);
+  },
+
+  /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻を記録 (#193) */
+  async setCardImageUpdatedAt(userId: string, ts: number): Promise<void> {
+    await run(
+      "UPDATE user SET card_image_updated_at = ? WHERE id = ?",
+      ts,
+      userId,
+    );
   },
 
   /** ユーザー名（ハンドル）を変更 */

@@ -63,6 +63,8 @@ export const userProfileSchema = z.object({
   isFollowing: z.boolean(),
   /** 本人のプロフィールか */
   isMe: z.boolean(),
+  /** プロフィールカードPNG（OG画像）の更新時刻。未生成は null (#193) */
+  cardImageUpdatedAt: z.number().nullable(),
 });
 export type UserProfile = z.infer<typeof userProfileSchema>;
 
