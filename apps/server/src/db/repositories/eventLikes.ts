@@ -87,6 +87,16 @@ export const eventLikesRepo = {
       eventId,
     );
 
+    // 参加者行（#160）。エンドポイント自体がメンバー限定なので全員に返す
+    const participantRows = await many<TargetUserRow>(
+      `SELECT u.id, u.username, u.global_name, u.avatar_url
+         FROM event_member m
+         JOIN user u ON u.id = m.user_id
+        WHERE m.event_id = ? AND m.role = 'participant' AND m.status = 'confirmed'
+        ORDER BY m.created_at ASC`,
+      eventId,
+    );
+
     const mine = await many<{ kind: string; target_key: string }>(
       "SELECT kind, target_key FROM event_like WHERE event_id = ? AND user_id = ?",
       eventId,
@@ -102,6 +112,9 @@ export const eventLikesRepo = {
       community: counts
         .filter((c) => c.kind === "community")
         .reduce((sum, c) => sum + c.n, 0),
+      participants: participantRows.map((r) =>
+        toTarget(r, countOf("participant", r.id)),
+      ),
       mine: mine.map((m) => ({
         kind: m.kind as EventLikeKind,
         targetKey: m.target_key,
@@ -114,7 +127,7 @@ export const eventLikesRepo = {
     const row = await one<{ v: number }>(
       `SELECT COUNT(*) AS v FROM event_like l
         JOIN event e ON e.id = l.event_id
-        WHERE l.kind IN ('host', 'staff') AND l.target_key = ?
+        WHERE l.kind IN ('host', 'staff', 'participant') AND l.target_key = ?
           AND e.status = 'published'`,
       userId,
     );

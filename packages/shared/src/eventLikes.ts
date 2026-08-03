@@ -1,8 +1,9 @@
 import { z } from "zod";
 
-/** いいねの対象種別 (#155)。
- * event=イベント自体, host=主催者, staff=スタッフ各人, community=開催コミュニティ */
-export const EVENT_LIKE_KINDS = ["event", "host", "staff", "community"] as const;
+/** いいねの対象種別 (#155, #160)。
+ * event=イベント自体, host=主催者, staff=スタッフ各人, community=開催コミュニティ,
+ * participant=参加者各人（メンバー同士の感謝。自分以外の確定参加者へ） */
+export const EVENT_LIKE_KINDS = ["event", "host", "staff", "community", "participant"] as const;
 export const eventLikeKind = z.enum(EVENT_LIKE_KINDS);
 export type EventLikeKind = z.infer<typeof eventLikeKind>;
 
@@ -35,6 +36,8 @@ export const eventLikesSummarySchema = z.object({
   staff: z.array(eventLikeUserTargetSchema),
   /** 開催コミュニティへのいいね数（コミュニティ無しイベントは 0） */
   community: z.number(),
+  /** 参加者各人（メンバー限定APIのため全メンバーに返す） */
+  participants: z.array(eventLikeUserTargetSchema),
   /** 自分が押している対象の一覧（自分の状態表示用） */
   mine: z.array(z.object({ kind: eventLikeKind, targetKey: z.string() })),
 });

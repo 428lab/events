@@ -13,13 +13,10 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 export const eventLikeRoutes = new Hono<AppEnv>();
 eventLikeRoutes.use("*", requireAuth);
 
-/** 参加確定メンバーか（管理者バイパスなし。イベント配下UIと同じく本人のロールのみ見る） */
-async function isConfirmedMember(
-  eventId: string,
-  userId: string,
-): Promise<boolean> {
+/** 参加確定メンバーなら行を返す（管理者バイパスなし。イベント配下UIと同じく本人のロールのみ見る） */
+async function confirmedMember(eventId: string, userId: string) {
   const member = await eventMembersRepo.find(eventId, userId);
-  return member?.status === "confirmed";
+  return member?.status === "confirmed" ? member : null;
 }
 
 /** いいねを押せる期間か。開催日時が確定し、開始済みであること（終了後もOK） */
@@ -33,9 +30,8 @@ eventLikeRoutes.get("/:id/likes", async (c) => {
   const event = await eventsRepo.findById(eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
   const user = c.get("user");
-  if (!(await isConfirmedMember(eventId, user.id))) {
-    return c.json({ error: "forbidden" }, 403);
-  }
+  const member = await confirmedMember(eventId, user.id);
+  if (!member) return c.json({ error: "forbidden" }, 403);
   return c.json({
     summary: await eventLikesRepo.summaryForEvent(eventId, user.id),
   });
@@ -50,9 +46,8 @@ eventLikeRoutes.put(
     const event = await eventsRepo.findById(eventId);
     if (!event) return c.json({ error: "not_found" }, 404);
     const user = c.get("user");
-    if (!(await isConfirmedMember(eventId, user.id))) {
-      return c.json({ error: "forbidden" }, 403);
-    }
+    const member = await confirmedMember(eventId, user.id);
+    if (!member) return c.json({ error: "forbidden" }, 403);
     // 日程調整中・開始前はまだ押せない（お礼のフィードバックなので開始後から）
     if (!hasStarted(event)) return c.json({ error: "not_started" }, 409);
     // 公開イベントのみ（下書きへのいいねは実績集計と食い違うため受け付けない）
@@ -85,10 +80,19 @@ eventLikeRoutes.put(
       if (!event.communityId || targetKey !== event.communityId) {
         return c.json({ error: "invalid_target" }, 400);
       }
+    } else if (on && kind === "participant") {
+      // 参加者への感謝 (#160)。確定メンバーなら誰でも押せる（自分は下のガードで不可）
+      const target = await eventMembersRepo.find(eventId, targetKey);
+      if (target?.role !== "participant" || target.status !== "confirmed") {
+        return c.json({ error: "invalid_target" }, 400);
+      }
     }
 
     // 自分自身へのいいねは不可（主催者→自分の主催者行、スタッフ→自分のスタッフ行）
-    if ((kind === "host" || kind === "staff") && targetKey === user.id) {
+    if (
+      (kind === "host" || kind === "staff" || kind === "participant") &&
+      targetKey === user.id
+    ) {
       return c.json({ error: "self_like" }, 403);
     }
 
