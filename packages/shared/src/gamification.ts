@@ -85,6 +85,8 @@ export type BadgeIcon = "host" | "staff" | "speak" | "attend" | "liked";
 export interface BadgeDef {
   key: string;
   name: string;
+  /** ライセンスカード等で使う英語表示名（すべて大文字・絵文字なし） (#178) */
+  nameEn: string;
   description: string;
   /** アイコン種別（Web側でアイコンコンポーネントに解決） */
   icon: BadgeIcon;
@@ -98,6 +100,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "first-host",
     name: "初主催",
+    nameEn: "FIRST HOST",
     description: "イベントを1回主催した",
     icon: "host",
     tier: 1,
@@ -106,6 +109,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "host-5",
     name: "主催の常連",
+    nameEn: "SEASONED HOST",
     description: "イベントを5回主催した",
     icon: "host",
     tier: 2,
@@ -114,6 +118,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "host-20",
     name: "主催の鉄人",
+    nameEn: "IRON HOST",
     description: "イベントを20回主催した",
     icon: "host",
     tier: 3,
@@ -122,6 +127,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "first-staff",
     name: "スタッフデビュー",
+    nameEn: "STAFF DEBUT",
     description: "スタッフとしてイベントを1回支えた",
     icon: "staff",
     tier: 1,
@@ -130,6 +136,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "staff-10",
     name: "縁の下の力持ち",
+    nameEn: "BACKBONE STAFF",
     description: "スタッフとしてイベントを10回支えた",
     icon: "staff",
     tier: 2,
@@ -138,6 +145,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "first-speak",
     name: "初登壇",
+    nameEn: "FIRST TALK",
     description: "イベントで1回登壇した",
     icon: "speak",
     tier: 1,
@@ -146,6 +154,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "speak-5",
     name: "登壇の常連",
+    nameEn: "SEASONED SPEAKER",
     description: "イベントで5回登壇した",
     icon: "speak",
     tier: 2,
@@ -154,6 +163,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "speak-20",
     name: "登壇の鉄人",
+    nameEn: "IRON SPEAKER",
     description: "イベントで20回登壇した",
     icon: "speak",
     tier: 3,
@@ -162,6 +172,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "attend-10",
     name: "常連参加者",
+    nameEn: "REGULAR",
     description: "イベントに10回参加した",
     icon: "attend",
     tier: 2,
@@ -170,6 +181,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "attend-50",
     name: "イベントの主",
+    nameEn: "EVENT VETERAN",
     description: "イベントに50回参加した",
     icon: "attend",
     tier: 3,
@@ -178,6 +190,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "liked-10",
     name: "人気者",
+    nameEn: "CROWD FAVORITE",
     description: "いいねを10回もらった",
     icon: "liked",
     tier: 2,
@@ -186,6 +199,7 @@ export const BADGE_DEFS: readonly BadgeDef[] = [
   {
     key: "liked-50",
     name: "みんなの推し",
+    nameEn: "BELOVED",
     description: "いいねを50回もらった",
     icon: "liked",
     tier: 3,

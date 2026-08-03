@@ -38,6 +38,8 @@ describe("流入元 ref パラメータの計測 (#118)", () => {
       });
     expect((await view({ refParam: "notification" })).status).toBe(204);
     expect((await view({ refParam: "feed" })).status).toBe(204);
+    // ライセンスカードのQRコード経由 (#178)
+    expect((await view({ refParam: "card" })).status).toBe(204);
     expect(
       (await view({ refParam: "evil", ref: "https://example.org/page" })).status,
     ).toBe(204);
@@ -54,6 +56,7 @@ describe("流入元 ref パラメータの計測 (#118)", () => {
     );
     expect(bySource["notification"]).toBe(1);
     expect(bySource["feed"]).toBe(1);
+    expect(bySource["card"]).toBe(1);
     // 許可リスト外の refParam は無視され referrer ホストで記録
     expect(bySource["example.org"]).toBe(1);
     expect(bySource["evil"]).toBeUndefined();

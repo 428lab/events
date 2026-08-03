@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Box, CircularProgress } from "@mui/material";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useMe } from "./api/hooks.js";
@@ -51,6 +51,28 @@ import { AdminStatsPage } from "./pages/AdminStatsPage.js";
 import { DeckEditorPage } from "./pages/DeckEditorPage.js";
 import { DeckViewerPage } from "./pages/DeckViewerPage.js";
 import { ShortEventPage } from "./pages/ShortEventPage.js";
+
+/** ライセンスカード (#178)。背景パターンのパスデータが大きいため遅延読み込みで分離する */
+const LicenseCardPage = lazy(() =>
+  import("./pages/LicenseCardPage.js").then((m) => ({
+    default: m.LicenseCardPage,
+  })),
+);
+
+/** 遅延読み込みページ共通のフォールバック付きラッパー */
+function LicenseCardRoute() {
+  return (
+    <Suspense
+      fallback={
+        <Box sx={{ display: "grid", placeItems: "center", minHeight: "40vh" }}>
+          <CircularProgress />
+        </Box>
+      }
+    >
+      <LicenseCardPage />
+    </Suspense>
+  );
+}
 
 /** ログイン前に控えた戻り先（/login?next=…）へ、ログイン後に一度だけ遷移する */
 function PostLoginRedirect() {
@@ -172,6 +194,14 @@ export function App() {
           }
         />
         <Route
+          path="/users/:id/card"
+          element={
+            <PublicLayout>
+              <LicenseCardRoute />
+            </PublicLayout>
+          }
+        />
+        <Route
           path="/communities"
           element={
             <PublicLayout>
@@ -240,6 +270,7 @@ export function App() {
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/users/:id" element={<UserProfilePage />} />
+        <Route path="/users/:id/card" element={<LicenseCardRoute />} />
         <Route path="/communities" element={<CommunitiesPage />} />
         <Route path="/communities/new" element={<CreateCommunityPage />} />
         <Route path="/c/:slug" element={<CommunityPage />} />

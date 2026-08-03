@@ -15,6 +15,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
@@ -311,6 +312,17 @@ export function UserProfilePage() {
           </Typography>
           <LevelBlock g={data.gamification} />
         </Box>
+        {/* ライセンスカード (#178)。公開データのみなので誰でも開ける */}
+        <Button
+          component={RouterLink}
+          to={`/users/${data.handle ?? id}/card`}
+          variant="outlined"
+          size="small"
+          startIcon={<BadgeOutlinedIcon />}
+          sx={{ flexShrink: 0 }}
+        >
+          ライセンスカード
+        </Button>
         {!data.isMe && (
           <Button
             variant={data.isFollowing ? "outlined" : "contained"}
