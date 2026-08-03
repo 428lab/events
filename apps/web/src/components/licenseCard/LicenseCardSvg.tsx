@@ -223,7 +223,7 @@ function QrPanel({ url }: { url: string }) {
   ));
 
   return (
-    <g transform="translate(848,408)">
+    <g transform="translate(823,408)">
       <rect width={170} height={170} rx={10} fill="#FFFFFF" stroke="#B9C2E2" />
       {modules}
       {finders}
@@ -537,10 +537,18 @@ export function LicenseCardSvg({
               const CHIP_H = 68;
               const ICON = 52;
               const x = i * (CHIP_W + 8);
-              const label =
-                [...c.name].length > 5
-                  ? [...c.name].slice(0, 5).join("") + "…"
-                  : c.name;
+              // 省略はせず、収まるようにフォントサイズを縮める（CJKは全角幅で見積り）
+              const LABEL_W = CHIP_W - 68 - 8;
+              const units = [...c.name].reduce(
+                (acc, ch) =>
+                  acc + (/[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 1 : 0.6),
+                0,
+              );
+              const labelSize = Math.max(9, Math.min(14, Math.floor(LABEL_W / Math.max(units, 1))));
+              const labelAttrs =
+                units * labelSize > LABEL_W
+                  ? { textLength: LABEL_W, lengthAdjust: "spacingAndGlyphs" as const }
+                  : {};
               return (
                 <g key={c.id} transform={`translate(${x},12)`}>
                   <rect
@@ -582,11 +590,12 @@ export function LicenseCardSvg({
                     x={68}
                     y={CHIP_H / 2 + 5}
                     fontFamily={FONT_SANS}
-                    fontSize={14}
+                    fontSize={labelSize}
                     fontWeight={600}
                     fill="#232B4D"
+                    {...labelAttrs}
                   >
-                    {label}
+                    {c.name}
                   </text>
                 </g>
               );
@@ -597,7 +606,7 @@ export function LicenseCardSvg({
         {/* QRコード（公開プロフィールURL） */}
         <QrPanel url={qrUrl} />
         <text
-          x={933}
+          x={908}
           y={608}
           textAnchor="middle"
           fontFamily={FONT_MONO}
