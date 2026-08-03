@@ -27,3 +27,20 @@ export function useRecordMeet() {
       ),
   });
 }
+
+/** 出会い数ランキング（スタッフ運営用） */
+export interface MeetRankingRow {
+  userId: string;
+  username: string;
+  name: string;
+  avatarUrl: string | null;
+  count: number;
+}
+export function useMeetRanking(eventId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["event", eventId, "meet-ranking"],
+    enabled: Boolean(eventId) && enabled,
+    queryFn: () =>
+      api.get<{ ranking: MeetRankingRow[] }>(`/events/${eventId}/meets/ranking`),
+  });
+}

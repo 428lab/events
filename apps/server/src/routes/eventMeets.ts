@@ -3,6 +3,7 @@ import type { Event, RecordMeetInput } from "@eventer/shared";
 import { recordMeetInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
+import { requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -46,6 +47,19 @@ meetUserRoutes.get("/:id/meetable", async (c) => {
 /** /api/events 配下: 出会いの記録 */
 export const meetEventRoutes = new Hono<AppEnv>();
 meetEventRoutes.use("*", requireAuth);
+
+/** 出会い数ランキング（スタッフのみ・景品配布などの運営用） */
+meetEventRoutes.get(
+  "/:id/meets/ranking",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const eventId = c.req.param("id");
+    if (!(await eventsRepo.findById(eventId))) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    return c.json({ ranking: await eventMeetsRepo.rankingForEvent(eventId) });
+  },
+);
 
 /** 出会いを記録する。ペアごとに1イベント1回（2回目以降は created=false で冪等） */
 meetEventRoutes.post(

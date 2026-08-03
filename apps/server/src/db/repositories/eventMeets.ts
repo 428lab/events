@@ -29,6 +29,45 @@ export const eventMeetsRepo = {
     return { created: changes > 0 };
   },
 
+  /** イベント内の出会い数ランキング（スタッフ運営用・景品配布の参考）。両方向を合算 */
+  async rankingForEvent(eventId: string): Promise<
+    {
+      userId: string;
+      username: string;
+      name: string;
+      avatarUrl: string | null;
+      count: number;
+    }[]
+  > {
+    const rows = await many<{
+      id: string;
+      username: string;
+      global_name: string | null;
+      avatar_url: string | null;
+      n: number;
+    }>(
+      `SELECT u.id, u.username, u.global_name, u.avatar_url, COUNT(*) AS n
+         FROM (
+           SELECT user_low AS uid FROM event_meet WHERE event_id = ?
+           UNION ALL
+           SELECT user_high FROM event_meet WHERE event_id = ?
+         ) m
+         JOIN user u ON u.id = m.uid
+        GROUP BY u.id
+        ORDER BY n DESC, u.username ASC
+        LIMIT 100`,
+      eventId,
+      eventId,
+    );
+    return rows.map((r) => ({
+      userId: r.id,
+      username: r.username,
+      name: r.global_name ?? r.username,
+      avatarUrl: r.avatar_url,
+      count: r.n,
+    }));
+  },
+
   /** 両者がいま「出会った」を記録できる共通イベント一覧。
    * 条件: 公開済み・日程確定・開催時間帯（前30分〜後2時間）・両者とも確定メンバー、
    * 出席チェックONのイベントは両者とも出席済みであること */
@@ -68,4 +107,5 @@ export const eventMeetsRepo = {
     );
     return row?.v ?? 0;
   },
+
 };

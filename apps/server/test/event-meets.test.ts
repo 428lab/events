@@ -303,3 +303,41 @@ describe("出会った記録 (#189)", () => {
     expect(gamification.badges).toEqual([]);
   });
 });
+
+describe("出会いランキング（スタッフのみ）", () => {
+  it("両方向合算で降順、非staffは403", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, owner.userId, "staff");
+    const a = await makeUser();
+    const b = await makeUser();
+    const c = await makeUser();
+    for (const u of [a, b, c]) await addMember(eventId, u.userId);
+    // a-b, a-c を記録（a=2, b=1, c=1）
+    for (const [x, y] of [[a, b], [a, c]] as const) {
+      const [low, high] = x.userId < y.userId ? [x.userId, y.userId] : [y.userId, x.userId];
+      await env.DB.prepare(
+        "INSERT INTO event_meet (id, event_id, user_low, user_high, created_at) VALUES (?, ?, ?, ?, ?)",
+      )
+        .bind(crypto.randomUUID(), eventId, low, high, Date.now())
+        .run();
+    }
+    const forbidden = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/meets/ranking`,
+      { headers: { cookie: a.cookie } },
+    );
+    expect(forbidden.status).toBe(403);
+
+    const res = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/meets/ranking`,
+      { headers: { cookie: owner.cookie } },
+    );
+    expect(res.status).toBe(200);
+    const { ranking } = (await res.json()) as {
+      ranking: { userId: string; count: number }[];
+    };
+    expect(ranking[0].userId).toBe(a.userId);
+    expect(ranking[0].count).toBe(2);
+    expect(ranking.length).toBe(3);
+  });
+});
