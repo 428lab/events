@@ -138,7 +138,7 @@ export function LicenseCardPage() {
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
 
   const card = toCardData(data, id, window.location.host);
-  // QRの飛び先は公開プロフィール。?ref=card で流入元を計測できるようにする
+  // QRの飛び先は公開プロフィール。?ref=card は将来プロフィールビュー計測を入れた際に流入元として集計される（許可リスト登録済み）
   const qrUrl = `${window.location.origin}/users/${card.handle}?ref=card`;
 
   const selectVariant = (v: CardBgVariant) => {
@@ -171,6 +171,10 @@ export function LicenseCardPage() {
         styles={{
           "@media print": {
             "@page": { size: "91mm 55mm", margin: 0 },
+            // 隠した要素がレイアウト高さを持つと2ページ目以降にカードが複製されるため、
+            // ページ全体を1ページ分に固定する（Safari は @page size 非対応＝用紙左上に印字）
+            html: { height: "55mm", overflow: "hidden" },
+            body: { height: "55mm", overflow: "hidden" },
             "body *": { visibility: "hidden" },
             "#license-card-print, #license-card-print *": {
               visibility: "visible",

@@ -201,14 +201,16 @@ function QrPanel({ url }: { url: string }) {
     [0, size - 7],
   ].map(([r, c], i) => (
     <g key={i}>
+      {/* リング＝外周1モジュール分を正確に塗る（6×6枠＋stroke=1モジュール。
+          中心線ストロークだと走査比が崩れて実機デコード不能になる） */}
       <rect
-        x={off + c * grid}
-        y={off + r * grid}
-        width={7 * grid}
-        height={7 * grid}
+        x={off + (c + 0.5) * grid}
+        y={off + (r + 0.5) * grid}
+        width={6 * grid}
+        height={6 * grid}
         fill="none"
         stroke={INK}
-        strokeWidth={grid * (6.1 / 6.8)}
+        strokeWidth={grid}
       />
       <rect
         x={off + (c + 2) * grid}
@@ -306,7 +308,19 @@ export function LicenseCardSvg({
   const statsParts = [`HOSTED ${card.hosted}`, `TALKS ${card.spoken}`];
   if (card.attendRate != null) statsParts.push(`ATTEND ${card.attendRate}%`);
   // 長い表示名・バッジ名はパネル幅に収まるよう段階的に縮小（モックは kojira / FIRST HOST 想定）
-  const nameSize = card.name.length > 15 ? 52 : 72;
+  // CJK文字は全角幅（≒フォントサイズ）で数え、実効幅からサイズを決める。
+  // それでも収まらない場合は textLength で圧縮してアバター枠への重なりを防ぐ
+  const nameUnits = [...card.name].reduce(
+    (acc, ch) => acc + (/[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 2 : 1),
+    0,
+  );
+  const nameSize = nameUnits > 18 ? 44 : nameUnits > 12 ? 52 : 72;
+  const NAME_MAX_W = 742;
+  const nameEstW = nameUnits * nameSize * 0.62;
+  const nameLenAttrs =
+    nameEstW > NAME_MAX_W
+      ? { textLength: NAME_MAX_W, lengthAdjust: "spacingAndGlyphs" as const }
+      : {};
   const badgeSize = (card.topBadge?.length ?? 0) > 12 ? 19 : 26;
 
   return (
@@ -420,6 +434,7 @@ export function LicenseCardSvg({
           y={226}
           fontFamily={FONT_SANS}
           fontSize={nameSize}
+          {...nameLenAttrs}
           fontWeight={700}
           fill={INK}
         >

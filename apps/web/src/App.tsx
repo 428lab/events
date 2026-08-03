@@ -52,11 +52,19 @@ import { DeckEditorPage } from "./pages/DeckEditorPage.js";
 import { DeckViewerPage } from "./pages/DeckViewerPage.js";
 import { ShortEventPage } from "./pages/ShortEventPage.js";
 
-/** ライセンスカード (#178)。背景パターンのパスデータが大きいため遅延読み込みで分離する */
+/** ライセンスカード (#178)。背景パターンのパスデータが大きいため遅延読み込みで分離する。
+ * デプロイ直後は旧ハッシュのチャンクが404になり得るため、一度だけリロードして復旧する */
 const LicenseCardPage = lazy(() =>
-  import("./pages/LicenseCardPage.js").then((m) => ({
-    default: m.LicenseCardPage,
-  })),
+  import("./pages/LicenseCardPage.js")
+    .then((m) => ({ default: m.LicenseCardPage }))
+    .catch((e) => {
+      const KEY = "eventer:chunk-reloaded";
+      if (!sessionStorage.getItem(KEY)) {
+        sessionStorage.setItem(KEY, "1");
+        window.location.reload();
+      }
+      throw e;
+    }),
 );
 
 /** 遅延読み込みページ共通のフォールバック付きラッパー */
