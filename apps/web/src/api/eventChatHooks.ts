@@ -20,8 +20,8 @@ export function useChatMembers(eventId: string, enabled: boolean) {
 export function useRegisterChatKey(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (pubkey: string) =>
-      api.post(`/events/${eventId}/chat-key`, { pubkey }),
+    mutationFn: (proof: object) =>
+      api.post(`/events/${eventId}/chat-key`, { proof }),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["event", eventId, "chatMembers"] }),
   });
@@ -31,9 +31,9 @@ export function useRegisterChatKey(eventId: string) {
 export function useRegisterChatChannel(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (channelId: string) =>
+    mutationFn: (channelEvent: object) =>
       api.post<{ channelId: string | null }>(`/events/${eventId}/chat-channel`, {
-        channelId,
+        channelEvent,
       }),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["event", eventId, "chatMembers"] }),

@@ -14,6 +14,10 @@ import type {
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
+import {
+  verifyChatKeyProof,
+  verifyEventSignature,
+} from "../auth/nostr.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
@@ -47,8 +51,18 @@ eventChatRoutes.post(
   async (c) => {
     const denied = await confirmedOnly(c);
     if (denied) return denied;
-    const { pubkey } = valid<RegisterChatPubkeyInput>(c, "json");
-    await eventChatRepo.setPubkey(c.req.param("id"), c.get("user").id, pubkey);
+    const eventId = c.req.param("id");
+    const { proof } = valid<RegisterChatPubkeyInput>(c, "json");
+    // 所有証明: このpubkeyの秘密鍵で署名できることを検証（他人のnpub紐付けによる
+    // 発言のなりすまし表示を防ぐ）
+    const pubkey = await verifyChatKeyProof(proof, eventId);
+    if (!pubkey) return c.json({ error: "invalid_proof" }, 400);
+    // 同一イベント内で他ユーザーが既に使っている鍵は拒否
+    const owner = await eventChatRepo.pubkeyOwner(eventId, pubkey);
+    if (owner && owner !== c.get("user").id) {
+      return c.json({ error: "pubkey_taken" }, 409);
+    }
+    await eventChatRepo.setPubkey(eventId, c.get("user").id, pubkey);
     return c.json({ ok: true });
   },
 );
@@ -82,10 +96,20 @@ eventChatRoutes.post(
   async (c) => {
     const denied = await confirmedOnly(c);
     if (denied) return denied;
-    const { channelId } = valid<RegisterChatChannelInput>(c, "json");
+    const eventId = c.req.param("id");
+    const { channelEvent } = valid<RegisterChatChannelInput>(c, "json");
+    // 無関係な既存チャンネルの紐付けを防ぐ: 署名済み kind:40 で、
+    // 本人がこのイベントに登録済みの鍵で作られたものだけ受け付ける
+    if (!verifyEventSignature(channelEvent) || channelEvent.kind !== 40) {
+      return c.json({ error: "invalid_channel_event" }, 400);
+    }
+    const bound = await eventChatRepo.pubkeyOwner(eventId, channelEvent.pubkey);
+    if (bound !== c.get("user").id) {
+      return c.json({ error: "invalid_channel_event" }, 400);
+    }
     const settled = await eventChatRepo.setChannelOnce(
-      c.req.param("id"),
-      channelId,
+      eventId,
+      channelEvent.id,
     );
     return c.json({ channelId: settled });
   },

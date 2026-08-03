@@ -27,6 +27,7 @@ import {
 } from "@eventer/shared";
 import type { Event as NostrEvent } from "nostr-tools/pure";
 import { useMe } from "../api/hooks.js";
+import { api } from "../api/client.js";
 import {
   useChatMembers,
   useHideChatNote,
@@ -37,6 +38,7 @@ import { hasNip07 } from "../lib/nostr.js";
 import {
   ChatRelayPool,
   buildChannelCreateTemplate,
+  buildChatKeyProofTemplate,
   buildChannelMessageTemplate,
   loadLocalChatKey,
   loadOrCreateLocalChatKey,
@@ -142,9 +144,8 @@ export function EventChat({
             buildChannelCreateTemplate(event.title),
           );
           await pool.publish(created);
-          const { channelId: settled } = await registerChannel.mutateAsync(
-            created.id,
-          );
+          const { channelId: settled } =
+            await registerChannel.mutateAsync(created);
           cid = settled ?? created.id;
         } catch {
           if (!disposed) setJoinError("チャンネルの作成に失敗しました。");
@@ -197,6 +198,10 @@ export function EventChat({
 
   if (!visible) return null;
 
+  // 外部クライアント経由の巨大投稿はUIを壊すので表示対象から除外
+  const cappedMessages = visibleMessages.filter(
+    (m) => m.content.length <= CHAT_MESSAGE_MAX,
+  );
   const memberByPubkey = new Map<string, ChatMember>(
     (chat?.members ?? []).map((m) => [m.pubkey, m]),
   );
@@ -208,7 +213,14 @@ export function EventChat({
         keyMode === "nip07" && hasNip07()
           ? await nip07Signer()
           : localSigner(loadOrCreateLocalChatKey(eventId));
-      await registerKey.mutateAsync(s.pubkey);
+      // 所有証明: サーバーのchallengeに署名して送る（他人のnpub紐付け防止）
+      const { challenge } = await api.get<{ challenge: string }>(
+        "/auth/nostr/challenge",
+      );
+      const proof = await s.signEvent(
+        buildChatKeyProofTemplate(challenge, eventId),
+      );
+      await registerKey.mutateAsync(proof);
       setSigner(s);
     } catch {
       setJoinError("チャットへの参加に失敗しました。");
@@ -319,7 +331,7 @@ export function EventChat({
                 </Typography>
               ) : (
                 <Stack spacing={1.25}>
-                  {visibleMessages.map((m) => {
+                  {cappedMessages.map((m) => {
                     const member = memberByPubkey.get(m.pubkey);
                     if (!member) return null;
                     return (

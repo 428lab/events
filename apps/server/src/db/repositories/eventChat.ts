@@ -5,6 +5,16 @@ import { many, one, run, runCount } from "../client.js";
  * チャット本文はリレーにあり、ここでは「誰がどの鍵で発言するか」（表示許可リスト）、
  * チャンネルID、非表示リストのみを扱う */
 export const eventChatRepo = {
+  /** そのpubkeyを同一イベントで登録しているユーザーIDを返す（重複チェック用） */
+  async pubkeyOwner(eventId: string, pubkey: string): Promise<string | null> {
+    const row = await one<{ user_id: string }>(
+      "SELECT user_id FROM event_chat_pubkey WHERE event_id = ? AND pubkey = ?",
+      eventId,
+      pubkey,
+    );
+    return row?.user_id ?? null;
+  },
+
   /** 発言用の公開鍵を登録（イベント×ユーザーごとに1つ。再登録で置き換え） */
   async setPubkey(
     eventId: string,

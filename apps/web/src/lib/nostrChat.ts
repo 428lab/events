@@ -91,6 +91,24 @@ export async function nip07Signer(): Promise<ChatSigner> {
 /* ===== イベント（Nostrイベント）の組み立て（純粋関数） ===== */
 
 /** NIP-28 チャンネル作成（kind:40）。NIP-70 の ["-"] タグ付き */
+/** 鍵の所有証明イベント (#199)。サーバーのchallengeに専用kindで署名する */
+export const CHAT_KEY_PROOF_KIND = 27888;
+export function buildChatKeyProofTemplate(
+  challenge: string,
+  eventerEventId: string,
+): EventTemplate {
+  return {
+    kind: CHAT_KEY_PROOF_KIND,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [
+      ["purpose", "eventer-chat-key"],
+      ["eventer-event", eventerEventId],
+      ["challenge", challenge],
+    ],
+    content: "",
+  };
+}
+
 export function buildChannelCreateTemplate(eventTitle: string): EventTemplate {
   return {
     kind: 40,

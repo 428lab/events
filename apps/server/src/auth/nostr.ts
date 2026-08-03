@@ -123,6 +123,27 @@ export async function verifyNostrLogin(ev: NostrEvent): Promise<string | null> {
   return ev.pubkey;
 }
 
+/** チャット鍵の所有証明 (#199)。ログイン(kind 22242)と混用できないよう専用kind＋
+ * purpose/イベントIDタグを要求する。検証OKなら pubkey を返す */
+export const CHAT_KEY_PROOF_KIND = 27888;
+export async function verifyChatKeyProof(
+  ev: NostrEvent,
+  eventId: string,
+): Promise<string | null> {
+  if (!verifyEventSignature(ev)) return null;
+  if (ev.kind !== CHAT_KEY_PROOF_KIND) return null;
+  if (Math.abs(Date.now() / 1000 - ev.created_at) > 600) return null;
+  if (ev.tags.find((t) => t[0] === "purpose")?.[1] !== "eventer-chat-key") {
+    return null;
+  }
+  if (ev.tags.find((t) => t[0] === "eventer-event")?.[1] !== eventId) {
+    return null;
+  }
+  const challenge = ev.tags.find((t) => t[0] === "challenge")?.[1];
+  if (!challenge || !(await verifyChallenge(challenge))) return null;
+  return ev.pubkey;
+}
+
 /** kind:0（プロフィール）イベントを検証し、名前とアイコンURLを取り出す */
 export function extractNostrProfile(
   ev: NostrEvent,

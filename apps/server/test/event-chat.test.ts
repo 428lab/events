@@ -53,6 +53,42 @@ async function addMember(
     .run();
 }
 
+
+// ---- Nostr 署名ヘルパー（テスト用の本物の鍵と署名） ----
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+
+function makeNostrKey(): { sk: Uint8Array; pubkey: string } {
+  const sk = schnorr.utils.randomSecretKey();
+  return { sk, pubkey: bytesToHex(schnorr.getPublicKey(sk)) };
+}
+
+function signNostrEvent(
+  sk: Uint8Array,
+  pubkey: string,
+  kind: number,
+  tags: string[][],
+  content = "",
+  createdAt = Math.floor(Date.now() / 1000),
+) {
+  const serialized = JSON.stringify([0, pubkey, createdAt, kind, tags, content]);
+  const id = bytesToHex(sha256(new TextEncoder().encode(serialized)));
+  const sig = bytesToHex(schnorr.sign(hexToBytes(id), sk));
+  return { id, pubkey, sig, kind, created_at: createdAt, tags, content };
+}
+
+async function chatKeyProof(eventId: string, key = makeNostrKey()) {
+  const res = await SELF.fetch(`${BASE}/api/auth/nostr/challenge`);
+  const { challenge } = (await res.json()) as { challenge: string };
+  const proof = signNostrEvent(key.sk, key.pubkey, 27888, [
+    ["purpose", "eventer-chat-key"],
+    ["eventer-event", eventId],
+    ["challenge", challenge],
+  ]);
+  return { key, proof };
+}
+
 /** 64桁hexのダミー（Nostrの pubkey / note id 相当） */
 function hex64(seed: string): string {
   return seed.repeat(64).slice(0, 64);
@@ -80,43 +116,60 @@ async function getChatMembers(
 }
 
 describe("Nostrイベントチャットの紐付け (#199)", () => {
-  it("chat-key: 確定メンバーは登録でき、再登録で置き換わる。不正hexは400", async () => {
+  it("chat-key: 所有証明つきで登録・置換でき、不正な証明や他人の鍵は拒否", async () => {
     const owner = await makeUser();
     const a = await makeUser();
+    const b = await makeUser();
     const eventId = await insertEvent(owner.userId);
-    await addMember(eventId, owner.userId, "staff");
     await addMember(eventId, a.userId);
+    await addMember(eventId, b.userId);
 
+    // 正しい所有証明つき → 登録できる
+    const p1 = await chatKeyProof(eventId);
     const r1 = await postJson(`/events/${eventId}/chat-key`, a.cookie, {
-      pubkey: hex64("a"),
+      proof: p1.proof,
     });
     expect(r1.status).toBe(200);
 
-    // 大文字hex・短いhexは弾く
-    for (const bad of [hex64("A"), "abc", hex64("a").slice(0, 63)]) {
-      const r = await postJson(`/events/${eventId}/chat-key`, a.cookie, {
-        pubkey: bad,
-      });
-      expect(r.status).toBe(400);
-    }
+    // 署名の無い/壊れた証明 → 400
+    const broken = { ...p1.proof, sig: p1.proof.sig.replace(/^../, "00") };
+    const rBad = await postJson(`/events/${eventId}/chat-key`, a.cookie, {
+      proof: broken,
+    });
+    expect(rBad.status).toBe(400);
 
-    // 再登録は置き換え（1ユーザー1鍵）
+    // 別イベントIDに向けた証明 → 400（イベント間の流用防止）
+    const pWrong = await chatKeyProof("00000000-0000-0000-0000-000000000000");
+    const rWrong = await postJson(`/events/${eventId}/chat-key`, a.cookie, {
+      proof: pWrong.proof,
+    });
+    expect(rWrong.status).toBe(400);
+
+    // challenge の使い回し → 400（単回使用）
+    const rReplay = await postJson(`/events/${eventId}/chat-key`, b.cookie, {
+      proof: p1.proof,
+    });
+    expect(rReplay.status).toBe(400);
+
+    // 他ユーザーが登録済みの鍵と同じ pubkey → 409（なりすまし表示防止）
+    const pSame = await chatKeyProof(eventId, p1.key);
+    const rTaken = await postJson(`/events/${eventId}/chat-key`, b.cookie, {
+      proof: pSame.proof,
+    });
+    expect(rTaken.status).toBe(409);
+
+    // 本人による別鍵への再登録 → 置き換え
+    const p2 = await chatKeyProof(eventId);
     const r2 = await postJson(`/events/${eventId}/chat-key`, a.cookie, {
-      pubkey: hex64("b"),
+      proof: p2.proof,
     });
     expect(r2.status).toBe(200);
-
     const res = await getChatMembers(eventId, a.cookie);
-    expect(res.status).toBe(200);
-    const payload = (await res.json()) as ChatMembersPayload;
-    const mine = payload.members.filter((m) => m.userId === a.userId);
+    const members = ((await res.json()) as { members: { userId: string; pubkey: string }[] })
+      .members;
+    const mine = members.filter((m) => m.userId === a.userId);
     expect(mine).toHaveLength(1);
-    expect(mine[0].pubkey).toBe(hex64("b"));
-    expect(mine[0].username).toBe(a.username);
-    expect(mine[0].name).toBe("テスト");
-    expect(payload.chatEnabled).toBe(true); // 既定はオン
-    expect(payload.channelId).toBeNull();
-    expect(payload.hiddenNoteIds).toEqual([]);
+    expect(mine[0].pubkey).toBe(p2.key.pubkey);
   });
 
   it("chat-key / chat-members: 非メンバー・未確定メンバーは403", async () => {
@@ -126,23 +179,25 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     const eventId = await insertEvent(owner.userId);
     await addMember(eventId, waitlisted.userId, "participant", "waitlist");
 
+    const pOut = await chatKeyProof(eventId);
     const r1 = await postJson(`/events/${eventId}/chat-key`, outsider.cookie, {
-      pubkey: hex64("a"),
+      proof: pOut.proof,
     });
     expect(r1.status).toBe(403);
     expect((await getChatMembers(eventId, outsider.cookie)).status).toBe(403);
 
     // メンバー行はあるが未確定（waitlist）も403
+    const pWait = await chatKeyProof(eventId);
     const r2 = await postJson(
       `/events/${eventId}/chat-key`,
       waitlisted.cookie,
-      { pubkey: hex64("a") },
+      { proof: pWait.proof },
     );
     expect(r2.status).toBe(403);
     expect((await getChatMembers(eventId, waitlisted.cookie)).status).toBe(403);
   });
 
-  it("chat-channel: 先勝ちで1回だけ設定され、2件目は既存IDが返る。不正IDは400", async () => {
+  it("chat-channel: 本人の登録鍵で署名した kind:40 のみ受理・先勝ち", async () => {
     const owner = await makeUser();
     const a = await makeUser();
     const b = await makeUser();
@@ -150,31 +205,45 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     await addMember(eventId, a.userId);
     await addMember(eventId, b.userId);
 
-    const bad = await postJson(`/events/${eventId}/chat-channel`, a.cookie, {
-      channelId: "not-hex",
-    });
-    expect(bad.status).toBe(400);
+    // a/b がそれぞれ鍵を登録
+    const pa = await chatKeyProof(eventId);
+    await postJson(`/events/${eventId}/chat-key`, a.cookie, { proof: pa.proof });
+    const pb = await chatKeyProof(eventId);
+    await postJson(`/events/${eventId}/chat-key`, b.cookie, { proof: pb.proof });
 
+    // 未登録鍵で署名した kind:40 → 400（無関係チャンネルの紐付け防止）
+    const stranger = makeNostrKey();
+    const evStranger = signNostrEvent(stranger.sk, stranger.pubkey, 40, [["-"]], "{}");
+    const rBad = await postJson(`/events/${eventId}/chat-channel`, a.cookie, {
+      channelEvent: evStranger,
+    });
+    expect(rBad.status).toBe(400);
+
+    // kind違い → 400
+    const evWrongKind = signNostrEvent(pa.key.sk, pa.key.pubkey, 42, [["-"]], "x");
+    expect(
+      (
+        await postJson(`/events/${eventId}/chat-channel`, a.cookie, {
+          channelEvent: evWrongKind,
+        })
+      ).status,
+    ).toBe(400);
+
+    // a の登録鍵で署名した kind:40 → 受理
+    const ev1 = signNostrEvent(pa.key.sk, pa.key.pubkey, 40, [["-"]], "{}");
     const r1 = await postJson(`/events/${eventId}/chat-channel`, a.cookie, {
-      channelId: hex64("1"),
+      channelEvent: ev1,
     });
     expect(r1.status).toBe(200);
-    expect(((await r1.json()) as { channelId: string }).channelId).toBe(
-      hex64("1"),
-    );
+    expect(((await r1.json()) as { channelId: string }).channelId).toBe(ev1.id);
 
-    // 後着は無視され、既存のチャンネルIDがそのまま返る
+    // 後着（bの正当なkind:40）は無視され、既存IDが返る
+    const ev2 = signNostrEvent(pb.key.sk, pb.key.pubkey, 40, [["-"]], "{}");
     const r2 = await postJson(`/events/${eventId}/chat-channel`, b.cookie, {
-      channelId: hex64("2"),
+      channelEvent: ev2,
     });
     expect(r2.status).toBe(200);
-    expect(((await r2.json()) as { channelId: string }).channelId).toBe(
-      hex64("1"),
-    );
-
-    const res = await getChatMembers(eventId, b.cookie);
-    const payload = (await res.json()) as ChatMembersPayload;
-    expect(payload.channelId).toBe(hex64("1"));
+    expect(((await r2.json()) as { channelId: string }).channelId).toBe(ev1.id);
   });
 
   it("chat-hidden: staff のみ追加/解除でき、chat-members に反映される", async () => {

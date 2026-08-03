@@ -21,14 +21,28 @@ export const CHAT_MESSAGE_MAX = 500;
 const hex64 = z.string().regex(/^[0-9a-f]{64}$/);
 
 /** 発言に使う公開鍵の登録（イベント×ユーザーごとに1つ。再登録で置き換え） */
+/** NIP-01 イベント（所有証明・チャンネル登録用の生イベント） */
+export const nostrEventInput = z.object({
+  id: z.string().regex(/^[0-9a-f]{64}$/),
+  pubkey: z.string().regex(/^[0-9a-f]{64}$/),
+  sig: z.string().regex(/^[0-9a-f]{128}$/),
+  kind: z.number().int(),
+  created_at: z.number().int(),
+  tags: z.array(z.array(z.string()).max(10)).max(20),
+  content: z.string().max(2000),
+});
+export type NostrEventInput = z.infer<typeof nostrEventInput>;
+
 export const registerChatPubkeyInput = z.object({
-  pubkey: hex64,
+  /** 所有証明: 専用kindでchallenge等に署名したNostrイベント */
+  proof: nostrEventInput,
 });
 export type RegisterChatPubkeyInput = z.infer<typeof registerChatPubkeyInput>;
 
 /** NIP-28 チャンネル（kind:40 イベントID）の登録。先勝ちで1回だけ設定される */
 export const registerChatChannelInput = z.object({
-  channelId: hex64,
+  /** 署名済みの kind:40 チャンネル作成イベント（本人の登録済み鍵で署名） */
+  channelEvent: nostrEventInput,
 });
 export type RegisterChatChannelInput = z.infer<typeof registerChatChannelInput>;
 
