@@ -546,17 +546,33 @@ export function LicenseCardSvg({
               const CHIP_H = 68;
               const ICON = 52;
               const x = i * (CHIP_W + 8);
-              // 省略はせず、収まるようにフォントサイズを縮める（CJKは全角幅で見積り）
+              // 長い名前は2行に折り返す（縮めすぎない）。それでも溢れる分だけ縮小
               const LABEL_W = CHIP_W - 68 - 8;
-              const units = [...c.name].reduce(
-                (acc, ch) =>
-                  acc + (/[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 1 : 0.6),
-                0,
-              );
+              const unitOf = (ch: string) =>
+                /[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 1 : 0.62;
+              const totalUnits = [...c.name].reduce((a, ch) => a + unitOf(ch), 0);
+              // 2行に収まる最大サイズ（9〜14px）
               const labelSize = Math.max(
-                7,
-                Math.min(14, Math.floor((LABEL_W / Math.max(units, 1)) * 0.94)),
+                9,
+                Math.min(14, Math.floor(((LABEL_W * 2) / Math.max(totalUnits, 1)) * 0.94)),
               );
+              // 幅ベースの貪欲改行（最大2行。2行目に収まらない場合はサイズ下限で押し込む）
+              const maxUnitsPerLine = LABEL_W / labelSize;
+              const lines: string[] = [];
+              let cur = "";
+              let curUnits = 0;
+              for (const ch of c.name) {
+                const u = unitOf(ch);
+                if (curUnits + u > maxUnitsPerLine && lines.length < 1) {
+                  lines.push(cur);
+                  cur = ch;
+                  curUnits = u;
+                } else {
+                  cur += ch;
+                  curUnits += u;
+                }
+              }
+              if (cur) lines.push(cur);
               return (
                 <g key={c.id} transform={`translate(${x},12)`}>
                   <rect
@@ -596,13 +612,21 @@ export function LicenseCardSvg({
                   )}
                   <text
                     x={68}
-                    y={CHIP_H / 2 + 5}
+                    y={
+                      lines.length > 1
+                        ? CHIP_H / 2 - labelSize / 2 + 3
+                        : CHIP_H / 2 + 5
+                    }
                     fontFamily={FONT_SANS}
                     fontSize={labelSize}
                     fontWeight={600}
                     fill="#232B4D"
                   >
-                    {c.name}
+                    {lines.map((line, li) => (
+                      <tspan key={li} x={68} dy={li === 0 ? 0 : labelSize + 3}>
+                        {line}
+                      </tspan>
+                    ))}
                   </text>
                 </g>
               );
