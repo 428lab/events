@@ -223,9 +223,9 @@ function MeetSection({ targetUserId }: { targetUserId: string }) {
   const { data: events } = useMeetableEvents(targetUserId, true);
   const recordMeet = useRecordMeet();
   // イベントごとの記録結果（created=新規記録 / already=このペアで記録済み）
-  const [results, setResults] = useState<Record<string, "created" | "already">>(
-    {},
-  );
+  const [results, setResults] = useState<
+    Record<string, "created" | "already" | "error">
+  >({});
   if (!events || events.length === 0) return null;
   return (
     <Stack spacing={1}>
@@ -253,6 +253,8 @@ function MeetSection({ targetUserId }: { targetUserId: string }) {
                             ...prev,
                             [ev.id]: r.created ? "created" : "already",
                           })),
+                        onError: () =>
+                          setResults((prev) => ({ ...prev, [ev.id]: "error" })),
                       },
                     )
                   }
@@ -267,7 +269,9 @@ function MeetSection({ targetUserId }: { targetUserId: string }) {
               ? "記録しました！お互いにXPが入ります"
               : result === "already"
                 ? "このイベントでは記録済みです"
-                : `同じイベント「${ev.title}」に参加中`}
+                : result === "error"
+                  ? "記録できませんでした（イベント時間外の可能性があります）"
+                  : `同じイベント「${ev.title}」に参加中`}
           </Alert>
         );
       })}
@@ -399,7 +403,7 @@ export function UserProfilePage() {
       </Stack>
 
       {/* 出会った記録 (#189)。ログイン中に他人のプロフィールを見ているときのみ */}
-      {me && !data.isMe && <MeetSection targetUserId={data.id} />}
+      {me && !data.isMe && <MeetSection key={data.id} targetUserId={data.id} />}
 
       <BadgesSection g={data.gamification} />
 
