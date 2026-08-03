@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
+import { CircularProgress,
   Alert,
   Box,
   Button,
@@ -165,6 +165,10 @@ export function LicenseCardPage() {
   const svgRef = useRef<SVGSVGElement>(null);
   // OG画像アップロード済みの「背景×配色」（マウント中は同じ組み合わせを二重送信しない） (#193)
   const uploadedVariantsRef = useRef<Set<string>>(new Set());
+  // OG画像の生成/保存状態（本人のみ表示）
+  const [ogStatus, setOgStatus] = useState<
+    "idle" | "generating" | "done" | "error"
+  >("idle");
 
   // 本人が開いたら、表示中のカードをPNG化してOG画像としてサーバへ静かに送る (#193)。
   // ダウンロードと同じ生成経路（フォント・アバター埋め込み）を使うので見た目は一致する。
@@ -178,6 +182,7 @@ export function LicenseCardPage() {
       const svgEl = svgRef.current;
       if (!svgEl || uploadedVariantsRef.current.has(uploadKey)) return;
       uploadedVariantsRef.current.add(uploadKey);
+      setOgStatus("generating");
       void (async () => {
         try {
           const png = await generateCardPng(svgEl);
@@ -188,8 +193,10 @@ export function LicenseCardPage() {
             body: png,
           });
           if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+          setOgStatus("done");
         } catch (e) {
           console.warn("プロフィールカードのOG画像更新に失敗しました", e);
+          setOgStatus("error");
         }
       })();
     }, 800);
@@ -346,9 +353,29 @@ export function LicenseCardPage() {
         </Stack>
 
         {data.isMe && (
-          <Typography variant="caption" color="text.secondary">
-            このカードはプロフィールURLをシェアしたときのOG画像として使われます
-          </Typography>
+          <Stack spacing={0.25}>
+            {ogStatus === "generating" && (
+              <Stack direction="row" spacing={1} alignItems="center">
+                <CircularProgress size={14} />
+                <Typography variant="caption" color="text.secondary">
+                  プロフィールカードを作成しています…
+                </Typography>
+              </Stack>
+            )}
+            {ogStatus === "done" && (
+              <Typography variant="caption" color="success.main">
+                シェア用のカード画像を保存しました
+              </Typography>
+            )}
+            {ogStatus === "error" && (
+              <Typography variant="caption" color="warning.main">
+                カード画像の保存に失敗しました（リロードで再試行できます）
+              </Typography>
+            )}
+            <Typography variant="caption" color="text.secondary">
+              このカードはプロフィールURLをシェアしたときのOG画像として使われます
+            </Typography>
+          </Stack>
         )}
       </Stack>
     </Box>
