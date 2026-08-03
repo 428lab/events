@@ -9,19 +9,29 @@ import {
   Chip,
   Dialog,
   IconButton,
+  LinearProgress,
   Link,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import MilitaryTechIcon from "@mui/icons-material/MilitaryTech";
+import MilitaryTechOutlinedIcon from "@mui/icons-material/MilitaryTechOutlined";
 import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
+import HandymanOutlinedIcon from "@mui/icons-material/HandymanOutlined";
+import CoPresentOutlinedIcon from "@mui/icons-material/CoPresentOutlined";
+import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
+import ThumbUpOutlinedIcon from "@mui/icons-material/ThumbUpOutlined";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import type {
+  EarnedBadge,
+  Gamification,
   ParticipationStats,
   UserAward,
   UserPhoto,
@@ -105,6 +115,98 @@ function AwardsSection({
             </CardContent>
           </Card>
         ))}
+      </Stack>
+    </Box>
+  );
+}
+
+/** バッジ種別 → 単色アイコンの対応 (#14) */
+const BADGE_ICONS: Record<
+  EarnedBadge["icon"],
+  typeof CampaignOutlinedIcon
+> = {
+  host: CampaignOutlinedIcon,
+  staff: HandymanOutlinedIcon,
+  speak: CoPresentOutlinedIcon,
+  attend: EventAvailableOutlinedIcon,
+  liked: ThumbUpOutlinedIcon,
+};
+
+/** バッジの段階に応じた色（1=控えめ, 2=プライマリ, 3=セカンダリで強調） */
+const TIER_COLORS: Record<number, string> = {
+  1: "text.secondary",
+  2: "primary.main",
+  3: "secondary.main",
+};
+
+/** レベルチップ＋次のレベルまでの進捗バー (#14)。実績ゼロなら非表示 */
+function LevelBlock({ g }: { g?: Gamification }) {
+  if (!g || (g.xp === 0 && g.badges.length === 0)) return null;
+  const span = g.nextLevelXp - g.currentLevelXp;
+  const pct =
+    span > 0
+      ? Math.min(100, Math.max(0, ((g.xp - g.currentLevelXp) / span) * 100))
+      : 0;
+  return (
+    <Box sx={{ mt: 0.75, maxWidth: 320 }}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Chip
+          label={`Lv.${g.level}`}
+          color="primary"
+          size="small"
+          sx={{ fontWeight: 700 }}
+        />
+        <Typography variant="caption" color="text.secondary">
+          {g.xp} XP ・ 次のレベルまで {g.nextLevelXp - g.xp}
+        </Typography>
+      </Stack>
+      <LinearProgress
+        variant="determinate"
+        value={pct}
+        sx={{ mt: 0.5, height: 4, borderRadius: 2 }}
+      />
+    </Box>
+  );
+}
+
+/** 獲得済みバッジの一覧 (#14)。未獲得なら非表示 */
+function BadgesSection({ g }: { g?: Gamification }) {
+  if (!g || g.badges.length === 0) return null;
+  return (
+    <Box>
+      <Typography
+        variant="h6"
+        gutterBottom
+        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+      >
+        <MilitaryTechOutlinedIcon fontSize="small" />
+        バッジ（{g.badges.length}）
+      </Typography>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        {g.badges.map((b) => {
+          const Icon = BADGE_ICONS[b.icon] ?? MilitaryTechOutlinedIcon;
+          const color = TIER_COLORS[b.tier] ?? "text.secondary";
+          return (
+            <Tooltip key={b.key} title={b.description}>
+              <Card
+                variant="outlined"
+                sx={{
+                  px: 1.25,
+                  py: 0.75,
+                  // 段階が上がるほど枠線で控えめに強調（単色アイコンのみ）
+                  ...(b.tier >= 2 && { borderColor: color }),
+                }}
+              >
+                <Stack direction="row" spacing={0.75} alignItems="center">
+                  <Icon fontSize="small" sx={{ color }} />
+                  <Typography variant="body2" fontWeight={600}>
+                    {b.name}
+                  </Typography>
+                </Stack>
+              </Card>
+            </Tooltip>
+          );
+        })}
       </Stack>
     </Box>
   );
@@ -207,6 +309,7 @@ export function UserProfilePage() {
             {joined} に登録 ・ フォロワー {data.followerCount} ・ フォロー中{" "}
             {data.followingCount}
           </Typography>
+          <LevelBlock g={data.gamification} />
         </Box>
         {!data.isMe && (
           <Button
@@ -220,6 +323,8 @@ export function UserProfilePage() {
           </Button>
         )}
       </Stack>
+
+      <BadgesSection g={data.gamification} />
 
       <ParticipationSection stats={data.participation} />
 

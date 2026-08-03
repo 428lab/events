@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { myEventSummary } from "./schema.js";
 import { communitySummarySchema } from "./communities.js";
+import { gamificationSchema } from "./gamification.js";
 
 /** 受賞歴の1件（公開プロフィール用。終了済み公開イベントのみ） */
 export const userAwardSchema = z.object({
@@ -52,6 +53,8 @@ export const userProfileSchema = z.object({
   awards: z.array(userAwardSchema),
   /** 参加実績（出席・無断欠席・キャンセル内訳） */
   participation: participationStatsSchema,
+  /** XP・レベル・バッジ（有効イベントのみから導出） (#14) */
+  gamification: gamificationSchema,
   /** フォロワー数（公開） */
   followerCount: z.number(),
   /** フォロー数（公開） */

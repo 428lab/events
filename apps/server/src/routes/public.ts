@@ -11,6 +11,8 @@ import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import { listCommunityRequests } from "./eventRequests.js";
 import { followsRepo } from "../db/repositories/follows.js";
 import { eventLikesRepo } from "../db/repositories/eventLikes.js";
+import { gamificationRepo } from "../db/repositories/gamification.js";
+import { gamificationFromStats } from "@eventer/shared";
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -84,6 +86,10 @@ publicRoutes.get("/users/:handle", async (c) => {
       // 主催・スタッフとしてもらったいいね合計 (#155)。SQLはいいねリポジトリに集約
       likesReceived: await eventLikesRepo.receivedCountForUser(user.id),
     },
+    // XP・レベル・バッジ (#14)。有効イベント（公開・終了済み・確定4人以上）のみから導出
+    gamification: gamificationFromStats(
+      await gamificationRepo.statsForUser(user.id, Date.now()),
+    ),
     followerCount: await followsRepo.followerCount(user.id),
     followingCount: await followsRepo.followingCount(user.id),
     isFollowing: viewer
