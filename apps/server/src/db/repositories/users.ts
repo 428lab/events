@@ -10,6 +10,7 @@ interface UserRow {
   created_at: number;
   /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻 (#193) */
   card_image_updated_at: number | null;
+  card_image_key: string | null;
 }
 
 function toUser(row: UserRow): User {
@@ -21,6 +22,7 @@ function toUser(row: UserRow): User {
     avatarUrl: row.avatar_url,
     createdAt: row.created_at,
     cardImageUpdatedAt: row.card_image_updated_at ?? null,
+    cardImageKey: row.card_image_key ?? null,
   };
 }
 
@@ -147,11 +149,12 @@ export const usersRepo = {
     await run("UPDATE user SET discord_id = ? WHERE id = ?", discordId, userId);
   },
 
-  /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻を記録 (#193) */
-  async setCardImageUpdatedAt(userId: string, ts: number): Promise<void> {
+  /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻と選択中の組み合わせを記録 (#193, #201) */
+  async setCardImage(userId: string, ts: number, key: string): Promise<void> {
     await run(
-      "UPDATE user SET card_image_updated_at = ? WHERE id = ?",
+      "UPDATE user SET card_image_updated_at = ?, card_image_key = ? WHERE id = ?",
       ts,
+      key,
       userId,
     );
   },

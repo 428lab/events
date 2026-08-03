@@ -49,3 +49,7 @@ export const COMMUNITY_BANNER = {
   height: 500,
   maxBytes: 1024 * 1024,
 } as const;
+
+/** プロフィールカードの組み合わせキー（背景-色）。R2キー・OG URLの検証用 (#201) */
+export const CARD_COMBO_RE =
+  /^(rosette|topo|arcs|flow)-(indigo|teal|rose|amber|mono)$/;
