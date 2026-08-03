@@ -79,6 +79,8 @@ export const communitySummarySchema = z.object({
   name: z.string(),
   iconUrl: z.string().nullable(),
   role: z.enum(COMMUNITY_ROLES),
+  /** 本人がこのコミュニティで確定参加した公開イベント数（プロフィール/カード表示用） */
+  myEventCount: z.number().optional(),
 });
 export type CommunitySummary = z.infer<typeof communitySummarySchema>;
 
