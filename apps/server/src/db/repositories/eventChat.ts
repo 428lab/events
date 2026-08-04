@@ -85,10 +85,12 @@ export const eventChatRepo = {
       username: string;
       global_name: string | null;
       avatar_url: string | null;
+      role: string | null;
     }>(
-      `SELECT p.pubkey, u.id AS user_id, u.username, u.global_name, u.avatar_url
+      `SELECT p.pubkey, u.id AS user_id, u.username, u.global_name, u.avatar_url, m.role
          FROM event_chat_pubkey p
          JOIN user u ON u.id = p.user_id
+         LEFT JOIN event_member m ON m.event_id = p.event_id AND m.user_id = p.user_id
         WHERE p.event_id = ?
         ORDER BY p.created_at ASC`,
       eventId,
@@ -99,6 +101,7 @@ export const eventChatRepo = {
       username: r.username,
       name: r.global_name ?? r.username,
       avatarUrl: r.avatar_url,
+      role: r.role,
     }));
   },
 
