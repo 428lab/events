@@ -69,6 +69,17 @@ export const eventPhotosRepo = {
     await run("DELETE FROM event_photo WHERE id = ?", id);
   },
 
+  /** 退会時のR2掃除用: 本人が投稿した写真の (id, eventId) 一覧 (#244) */
+  async listIdsByUser(
+    userId: string,
+  ): Promise<Array<{ id: string; eventId: string }>> {
+    const rows = await many<{ id: string; event_id: string }>(
+      "SELECT id, event_id FROM event_photo WHERE user_id = ?",
+      userId,
+    );
+    return rows.map((r) => ({ id: r.id, eventId: r.event_id }));
+  },
+
   /** 公開プロフィール用: ユーザーが公開設定イベントに投稿した写真 */
   async listPublicByUser(userId: string): Promise<UserPhoto[]> {
     const rows = await many<{

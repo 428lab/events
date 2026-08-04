@@ -26,6 +26,12 @@ function toUser(row: UserRow): User {
   };
 }
 
+/** 「退会済みユーザー」システムユーザーの discord_id (#244)。
+ * 実IDと衝突しない合成値（ADMIN_DISCORD_IDS にも決して一致しない）。
+ * identity を持たない＝ログイン不可で、連携の引き取り (#238) や統合 (#240) は
+ * identity の provider_user_id からしかユーザーを解決しないため対象にならない */
+const DELETED_USER_DISCORD_ID = "system:deleted-user";
+
 export interface UpsertUserInput {
   discordId: string;
   username: string;
@@ -410,6 +416,83 @@ export const usersRepo = {
                                      WHERE user_id = ? AND provider = 'discord')`,
       args: [winnerId, winnerId, winnerId, winnerId],
     });
+
+    await batch(stmts);
+  },
+
+  /** 「退会済みユーザー」システムユーザーを返す（無ければ作成） (#244)。
+   * 退会者の共有コンテンツ（主催イベント・コミュニティ・会場・たまご・
+   * 会場オファー）の名義引き受け先。identity なし＝ログイン不可 */
+  async ensureDeletedUser(): Promise<User> {
+    const existing = await this.findByDiscordId(DELETED_USER_DISCORD_ID);
+    if (existing) return existing;
+    try {
+      await run(
+        `INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?)`,
+        crypto.randomUUID(),
+        DELETED_USER_DISCORD_ID,
+        await this.availableUsername("deleted-user"),
+        "退会済みユーザー",
+        Date.now(),
+      );
+    } catch {
+      // 並行作成で UNIQUE(discord_id) に負けた場合は既存行を使う
+    }
+    const ghost = await this.findByDiscordId(DELETED_USER_DISCORD_ID);
+    if (!ghost) throw new Error("failed to ensure deleted-user account");
+    return ghost;
+  },
+
+  /** 退会（アカウント削除） (#244)。単一トランザクション（D1 batch）で
+   * 「共有コンテンツを『退会済みユーザー』(ghost) に付け替え → 個人データ削除 →
+   * user 行削除（FK CASCADE で残りが消える）」を行う。
+   * R2 オブジェクトの掃除は呼び出し側（routes/me.ts）が行削除前にキーを控えて行う */
+  async deleteAccount(userId: string, ghostId: string): Promise<void> {
+    const stmts: Array<{ sql: string; args?: unknown[] }> = [];
+
+    // (1) 共有コンテンツは ghost 名義に付け替えて残す（参加者の履歴・予定を
+    //     壊さない）。いずれも user 列を含む UNIQUE キーが無いため、mergeUsers の
+    //     ような「衝突行の先行削除」は不要。FK RESTRICT の event / venue /
+    //     event_request / venue_offer の user 参照もここで解消される
+    const reassign: Array<[table: string, col: string]> = [
+      ["event", "created_by"],
+      ["community", "owner_id"],
+      ["venue", "owner_id"],
+      ["event_request", "created_by"],
+      ["venue_offer", "created_by"],
+    ];
+    for (const [table, col] of reassign) {
+      stmts.push({
+        sql: `UPDATE ${table} SET ${col} = ? WHERE ${col} = ?`,
+        args: [ghostId, userId],
+      });
+    }
+
+    // (2) FK RESTRICT の個人資産 live_set は user 削除前に明示削除。
+    //     event_live_state.live_set_id は ON DELETE SET NULL なのでブロックしない
+    stmts.push({
+      sql: "DELETE FROM live_set WHERE owner_id = ?",
+      args: [userId],
+    });
+
+    // (3) FK の無い参照: 本人が「もらった」いいね（target_key がユーザーID）。
+    //     残すと存在しないユーザーを指す宙ぶらりんの行になるため削除する
+    stmts.push({
+      sql: `DELETE FROM event_like
+            WHERE target_key = ? AND kind IN ('host', 'staff', 'participant')`,
+      args: [userId],
+    });
+
+    // (4) user 行を削除。残りの個人データは FK CASCADE で消える
+    //     （session / identity / event_member / entry_member / score /
+    //      community_member / event_date_vote / event_request_reaction /
+    //      venue_admin / event_survey_answer / event_chat_pubkey / event_like /
+    //      user_follow / event_meet / event_photo / event_photo_comment /
+    //      event_comment / notification / notification_pref / inquiry /
+    //      deck / bgm_track）。venue_photo.user_id と
+    //      event_schedule_item.speaker_user_id は SET NULL で匿名化される
+    stmts.push({ sql: "DELETE FROM user WHERE id = ?", args: [userId] });
 
     await batch(stmts);
   },
