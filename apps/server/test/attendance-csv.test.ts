@@ -329,3 +329,43 @@ describe("入館名簿CSV (#154)", () => {
     ).toBe(404);
   });
 });
+
+describe("入館名簿CSVの権限マトリクス補強", () => {
+  it("declined・他イベントのオファー持ちは403（DB直挿入でstatus/方向を制御）", async () => {
+    const staffCookie = await loginDev();
+    const eventId = await setupEvent(staffCookie);
+
+    const mkVenueOffer = async (
+      status: string,
+      targetEventId: string,
+      direction = "event_to_venue",
+    ) => {
+      const owner = await makeUser();
+      const venueId = crypto.randomUUID();
+      await env.DB.prepare(
+        "INSERT INTO venue (id, owner_id, name, created_at, updated_at) VALUES (?, ?, '会場', ?, ?)",
+      )
+        .bind(venueId, owner.userId, Date.now(), Date.now())
+        .run();
+      await env.DB.prepare(
+        "INSERT INTO venue_offer (id, venue_id, event_id, request_id, direction, status, created_by, created_at) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)",
+      )
+        .bind(crypto.randomUUID(), venueId, targetEventId, direction, status, owner.userId, Date.now())
+        .run();
+      return owner;
+    };
+
+    // declined → 403
+    const declinedOwner = await mkVenueOffer("declined", eventId);
+    expect((await fetchCsv(eventId, declinedOwner.cookie)).status).toBe(403);
+
+    // venue_to_event 方向の accepted → 200
+    const v2eOwner = await mkVenueOffer("accepted", eventId, "venue_to_event");
+    expect((await fetchCsv(eventId, v2eOwner.cookie)).status).toBe(200);
+
+    // 別イベントで accepted を持つ会場オーナー → このイベントは403
+    const otherEventId = await setupEvent(staffCookie);
+    const otherOwner = await mkVenueOffer("accepted", otherEventId);
+    expect((await fetchCsv(eventId, otherOwner.cookie)).status).toBe(403);
+  });
+});
