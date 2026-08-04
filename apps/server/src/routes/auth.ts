@@ -122,14 +122,17 @@ authRoutes.post("/nostr/login", async (c) => {
       await identitiesRepo.link(current.id, "nostr", pubkey, null);
     } else if (existingUserId !== current.id) {
       // 別アカウントに連携済み。鍵の所有は署名で証明済みなので、
-      // 相手の唯一のログイン方法なら identity を引き取る（他は何も引き継がない）。
-      // 他のログイン方法が残るアカウントからの横取りは拒否。
+      // 「他にログイン方法がなく、利用実績もない」アカウントからのみ引き取る (#238)。
+      // 実績のあるアカウントを孤児化させない（誤ログインでできた空アカウントの回収専用）
       if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
         return c.json({ error: "already_linked" }, 409);
       }
+      if (await usersRepo.hasActivity(existingUserId)) {
+        return c.json({ error: "account_in_use" }, 409);
+      }
       await identitiesRepo.unlink(existingUserId, "nostr");
-      // 旧アカウントの合成 discord_id を退役させる（同じ npub での再作成と衝突しないように）
-      await usersRepo.setDiscordId(existingUserId, `removed:${crypto.randomUUID()}`);
+      // 空アカウントは行ごと削除（ログイン不能なゴーストを残さない）
+      await usersRepo.deleteById(existingUserId);
       await identitiesRepo.link(current.id, "nostr", pubkey, null);
     }
     return c.json({ ok: true, linked: true });
@@ -253,14 +256,18 @@ authRoutes.get("/:provider/callback", async (c) => {
       }
     } else if (existingUserId !== current.id) {
       // 別アカウントに連携済み。アカウントの所有は OAuth で証明済みなので、
-      // 相手の唯一のログイン方法なら identity を引き取る（DB上の discordId 等は
-      // 引き継がない＝旧・自動統合の権限横取り経路を残さない）。
+      // 「他にログイン方法がなく、利用実績もない」アカウントからのみ引き取る (#238)。
+      // 実績のあるアカウントを孤児化させない（誤ログインでできた空アカウントの回収専用）
       if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
         return c.redirect(env.appBaseUrl + "/account?link_error=already_linked");
       }
+      if (await usersRepo.hasActivity(existingUserId)) {
+        return c.redirect(env.appBaseUrl + "/account?link_error=account_in_use");
+      }
       await identitiesRepo.unlink(existingUserId, provider);
-      // 旧アカウントの実IDを退役（UNIQUE衝突と管理者判定の残置を防ぐ）
-      await usersRepo.setDiscordId(existingUserId, `removed:${crypto.randomUUID()}`);
+      // 空アカウントは行ごと削除（ログイン不能なゴーストを残さない。
+      // discord_id の UNIQUE 衝突・管理者判定の残置も同時に消える）
+      await usersRepo.deleteById(existingUserId);
       await identitiesRepo.link(
         current.id,
         provider,

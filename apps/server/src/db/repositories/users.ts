@@ -169,6 +169,31 @@ export const usersRepo = {
     await run("UPDATE user SET global_name = ? WHERE id = ?", globalName, userId);
   },
 
+  /** アカウントに利用実績があるか (#238)。連携の引き取りで実績のある
+   * アカウントを孤児化させないためのガード（参加・作成系の主要テーブルを見る） */
+  async hasActivity(userId: string): Promise<boolean> {
+    const row = await one<{ n: number }>(
+      `SELECT EXISTS(SELECT 1 FROM event_member WHERE user_id = ?)
+            + EXISTS(SELECT 1 FROM event WHERE created_by = ?)
+            + EXISTS(SELECT 1 FROM community_member WHERE user_id = ?)
+            + EXISTS(SELECT 1 FROM entry_member WHERE user_id = ?)
+            + EXISTS(SELECT 1 FROM event_request WHERE created_by = ?)
+            + EXISTS(SELECT 1 FROM venue WHERE owner_id = ?) AS n`,
+      userId,
+      userId,
+      userId,
+      userId,
+      userId,
+      userId,
+    );
+    return (row?.n ?? 0) > 0;
+  },
+
+  /** ユーザー行を削除（関連行は FK CASCADE）。空アカウントの引き取り時の後始末用 (#238) */
+  async deleteById(id: string): Promise<void> {
+    await run("DELETE FROM user WHERE id = ?", id);
+  },
+
   /** 表示名/アイコンが未設定の場合のみ補完（Nostrプロフィール等の反映用） */
   async fillProfile(
     userId: string,
