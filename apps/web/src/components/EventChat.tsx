@@ -440,8 +440,7 @@ export function EventChat({
               </Alert>
             )}
             <Typography variant="caption" color="text.secondary">
-              このチャットは Nostr
-              のパブリックチャットです（外部クライアントからも閲覧できます）。
+              チャットの内容は公開されます。
             </Typography>
             <Box>
               <Button
@@ -617,8 +616,7 @@ export function EventChat({
               </IconButton>
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              このチャットは Nostr
-              のパブリックチャットです（外部クライアントからも閲覧できます）。
+              チャットの内容は公開されます。
             </Typography>
           </Stack>
         )}
