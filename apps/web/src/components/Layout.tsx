@@ -146,7 +146,7 @@ export function Layout({
                     to="/admin/settings"
                     onClick={() => setAdminAnchor(null)}
                   >
-                    チャット設定
+                    運用設定
                   </MenuItem>
                   <MenuItem
                     component={RouterLink}
@@ -257,7 +257,7 @@ export function Layout({
                 onClick={closeMenu}
                 sx={{ pl: 3 }}
               >
-                チャット設定
+                運用設定
               </MenuItem>
             )}
             {isAdmin && (

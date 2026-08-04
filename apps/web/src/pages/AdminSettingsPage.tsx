@@ -21,7 +21,7 @@ import {
   useAdminSettings,
   useUpdateChatRelays, useRunPurgeDeleted } from "../api/adminSettingsHooks.js";
 
-/** 管理者向け: アプリ全体の運用設定。まずはチャットリレー (#199) */
+/** 管理者向け: アプリ全体の運用設定（チャットリレー #199 / 退会予定の削除 #250） */
 export function AdminSettingsPage() {
   const isAdmin = useIsAdmin();
   const { data, isLoading } = useAdminSettings(isAdmin);
