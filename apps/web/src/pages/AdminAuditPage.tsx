@@ -111,7 +111,8 @@ export function AdminAuditPage() {
       </Typography>
       <Typography variant="body2" color="text.secondary">
         アカウント統合・退会・連携の引き取りなど、後から取り消せない重要操作の記録です。
-        個人情報（メールアドレスや本文）は記録していません。
+        記録するのはユーザーIDとハンドルのみで、メールアドレス・連絡先・本文は
+        含みません。退会後も記録は残ります（1年経過分は自動削除）。
       </Typography>
 
       <Card variant="outlined">

@@ -1,5 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
+import { auditLogsRepo } from "../src/db/repositories/auditLogs.js";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
@@ -321,5 +322,19 @@ describe("監査ログの閲覧API (#248)", () => {
     ).json()) as AuditLogsPayload;
     expect(bad.page).toBe(1);
     expect(bad.logs).toHaveLength(AUDIT_LOG_PAGE_SIZE);
+  });
+
+  it("保存期間（1年）を過ぎた記録は次の記録時に削除される", async () => {
+    const old = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO audit_log (id, action, actor_user_id, actor_handle, target_user_id, target_handle, detail, created_at) VALUES (?, 'account_merge', NULL, 'old-user', NULL, '', '', ?)",
+    )
+      .bind(old, Date.now() - 400 * 24 * 60 * 60 * 1000)
+      .run();
+    await auditLogsRepo.record({ action: "chat_channel_reset" });
+    const row = await env.DB.prepare("SELECT id FROM audit_log WHERE id = ?")
+      .bind(old)
+      .first();
+    expect(row).toBeNull();
   });
 });

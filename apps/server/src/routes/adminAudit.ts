@@ -21,7 +21,9 @@ adminAuditRoutes.get("/", async (c) => {
   // action は自由入力を許すが、DB に無い値なら単に0件になるだけ
   const action = (c.req.query("action") ?? "").trim() || undefined;
   const rawPage = Number.parseInt(c.req.query("page") ?? "1", 10);
-  const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+  // 上限を設けないと offset が巨大値になり D1 のバインドで 500 になる
+  const page =
+    Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 100_000) : 1;
   const limit = AUDIT_LOG_PAGE_SIZE;
   const [logs, total] = await Promise.all([
     auditLogsRepo.list({ action, limit, offset: (page - 1) * limit }),

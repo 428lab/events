@@ -1,6 +1,9 @@
 import type { AuditAction, AuditLog } from "@eventer/shared";
 import { many, one, run } from "../client.js";
 
+/** 監査ログの保存期間（1年）。ハンドルは個人データにあたるため無期限に持たない */
+const AUDIT_LOG_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
+
 /** 監査ログの当事者。退会・統合でユーザー行が消えても辿れるよう
  * 実行時点のハンドル（username）を一緒に控える */
 export interface AuditActor {
@@ -61,6 +64,12 @@ export const auditLogsRepo = {
       target?.handle ?? "",
       detail ? JSON.stringify(detail) : "",
       Date.now(),
+    );
+    // 保存期間を過ぎた記録は掃除する。ハンドルは個人データにあたるため
+    // 無期限には持たない（テーブル肥大化の抑制も兼ねる）
+    await run(
+      "DELETE FROM audit_log WHERE created_at < ?",
+      Date.now() - AUDIT_LOG_RETENTION_MS,
     );
   },
 
