@@ -623,13 +623,13 @@ export function EventChat({
     </>
   );
 
-  // 専用ページ (#215) では Card を使わず縦いっぱいに広げる
+  // 専用ページ (#215) では Card を使わず、親のflex列の残り高さいっぱいに広げる
   return variant === "page" ? (
     <Box
       sx={{
         display: "flex",
         flexDirection: "column",
-        height: "100%",
+        flex: 1,
         minHeight: 0,
       }}
     >

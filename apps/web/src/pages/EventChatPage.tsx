@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import {
   Alert,
   Box,
@@ -10,7 +11,12 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useEvent, useEventMembers, useMe } from "../api/hooks.js";
-import { EventChat } from "../components/EventChat.js";
+
+// nostr-tools（暗号ライブラリ）が大きいため遅延読み込みで分離する
+// （EventDetailPage と同様。静的importするとメインバンドルに混入する）
+const EventChat = lazy(() =>
+  import("../components/EventChat.js").then((m) => ({ default: m.EventChat })),
+);
 
 /**
  * イベントチャット専用ページ (#215)。イベントページ内のカードより
@@ -51,8 +57,10 @@ export function EventChatPage() {
       sx={{
         display: "flex",
         flexDirection: "column",
-        // Layout の Container(py:4)＋AppBar を差し引いて縦いっぱいに使う
+        // Layout の Container(py:4)＋AppBar を差し引いて縦いっぱいに使う。
+        // dvh はモバイルの動的ツールバー分を除いた実表示高（非対応環境は vh）
         height: "calc(100vh - 180px)",
+        "@supports (height: 100dvh)": { height: "calc(100dvh - 180px)" },
         minHeight: 360,
       }}
     >
@@ -72,13 +80,15 @@ export function EventChatPage() {
         </Typography>
       </Stack>
       {chatAvailable ? (
-        <EventChat
-          eventId={id}
-          event={event}
-          myRole={myRole}
-          canChat={canChat}
-          variant="page"
-        />
+        <Suspense fallback={null}>
+          <EventChat
+            eventId={id}
+            event={event}
+            myRole={myRole}
+            canChat={canChat}
+            variant="page"
+          />
+        </Suspense>
       ) : (
         <Alert severity="info">
           このイベントのチャットは利用できません（参加確定メンバーのみ・チャット有効なイベントのみ）。
