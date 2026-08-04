@@ -185,6 +185,97 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     expect(mine[0].pubkey).toBe(p2.key.pubkey);
   });
 
+  it("chat-key/ephemeral: サーバーが一時鍵を発行・保管し、同じ鍵を配布する (#223)", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+
+    // 発行前の GET は 404
+    const before = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/chat-key/ephemeral`,
+      { headers: { cookie: a.cookie } },
+    );
+    expect(before.status).toBe(404);
+
+    // POST で発行される（secret は 64hex、pubkey は secret から導出）
+    const r1 = await postJson(`/events/${eventId}/chat-key/ephemeral`, a.cookie, {});
+    expect(r1.status).toBe(200);
+    const k1 = (await r1.json()) as { secret: string; pubkey: string };
+    expect(k1.secret).toMatch(/^[0-9a-f]{64}$/);
+    expect(bytesToHex(schnorr.getPublicKey(hexToBytes(k1.secret)))).toBe(
+      k1.pubkey,
+    );
+
+    // 再POST・GET は同じ鍵を返す（複数端末で同一の発言者鍵）
+    const r2 = await postJson(`/events/${eventId}/chat-key/ephemeral`, a.cookie, {});
+    expect((await r2.json()) as object).toEqual(k1);
+    const g = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/chat-key/ephemeral`,
+      { headers: { cookie: a.cookie } },
+    );
+    expect(g.status).toBe(200);
+    expect((await g.json()) as object).toEqual(k1);
+
+    // 表示許可リストに pubkey が載り、secret は含まれない
+    const members = (await (
+      await getChatMembers(eventId, a.cookie)
+    ).json()) as ChatMembersPayload;
+    const mine = members.members.find((m) => m.userId === a.userId)!;
+    expect(mine.pubkey).toBe(k1.pubkey);
+    expect(JSON.stringify(members)).not.toContain(k1.secret);
+
+    // NIP-07（所有証明つき登録）に切り替えると一時鍵は消える
+    const p = await chatKeyProof(eventId);
+    await postJson(`/events/${eventId}/chat-key`, a.cookie, { proof: p.proof });
+    const afterNip07 = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/chat-key/ephemeral`,
+      { headers: { cookie: a.cookie } },
+    );
+    expect(afterNip07.status).toBe(404);
+
+    // 一時鍵に戻すと新しい鍵で置き換わる
+    const r3 = await postJson(`/events/${eventId}/chat-key/ephemeral`, a.cookie, {});
+    const k3 = (await r3.json()) as { secret: string; pubkey: string };
+    expect(k3.secret).not.toBe(k1.secret);
+
+    // 他の確定メンバーが GET しても A の鍵は返らない（自分の鍵のみ）
+    const b = await makeUser();
+    await addMember(eventId, b.userId);
+    const other = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/chat-key/ephemeral`,
+      { headers: { cookie: b.cookie } },
+    );
+    expect(other.status).toBe(404);
+  });
+
+  it("chat-key/ephemeral: 非メンバー・未確定メンバーは403", async () => {
+    const owner = await makeUser();
+    const outsider = await makeUser();
+    const waitlisted = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, waitlisted.userId, "participant", "waitlist");
+
+    expect(
+      (
+        await postJson(
+          `/events/${eventId}/chat-key/ephemeral`,
+          outsider.cookie,
+          {},
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await postJson(
+          `/events/${eventId}/chat-key/ephemeral`,
+          waitlisted.cookie,
+          {},
+        )
+      ).status,
+    ).toBe(403);
+  });
+
   it("chat-key / chat-members: 非メンバー・未確定メンバーは403", async () => {
     const owner = await makeUser();
     const outsider = await makeUser();

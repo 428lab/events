@@ -23,19 +23,56 @@ export const eventChatRepo = {
     return row?.user_id ?? null;
   },
 
-  /** 発言用の公開鍵を登録（イベント×ユーザーごとに1つ。再登録で置き換え） */
+  /** 発言用の公開鍵を登録（イベント×ユーザーごとに1つ。再登録で置き換え）。
+   * ユーザー自身の鍵（NIP-07）への置き換えなので、サーバー管理の一時鍵は消す */
   async setPubkey(
     eventId: string,
     userId: string,
     pubkey: string,
   ): Promise<void> {
     await run(
-      `INSERT INTO event_chat_pubkey (event_id, user_id, pubkey, created_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT (event_id, user_id) DO UPDATE SET pubkey = excluded.pubkey, created_at = excluded.created_at`,
+      `INSERT INTO event_chat_pubkey (event_id, user_id, pubkey, secret, created_at)
+       VALUES (?, ?, ?, NULL, ?)
+       ON CONFLICT (event_id, user_id) DO UPDATE SET pubkey = excluded.pubkey, secret = NULL, created_at = excluded.created_at`,
       eventId,
       userId,
       pubkey,
+      Date.now(),
+    );
+  },
+
+  /** サーバー管理の一時鍵 (#223)。secret 付きの行のみ返す（NIP-07 登録は対象外） */
+  async ephemeralFor(
+    eventId: string,
+    userId: string,
+  ): Promise<{ pubkey: string; secret: string } | null> {
+    const row = await one<{ pubkey: string; secret: string | null }>(
+      "SELECT pubkey, secret FROM event_chat_pubkey WHERE event_id = ? AND user_id = ?",
+      eventId,
+      userId,
+    );
+    return row?.secret ? { pubkey: row.pubkey, secret: row.secret } : null;
+  },
+
+  /** サーバー管理の一時鍵を保存。NIP-07 行（secret NULL）からの切替は置き換えるが、
+   * 既存の一時鍵は上書きしない（2端末同時発行のレースで鍵が割れないように先勝ち）。
+   * 確定した鍵は ephemeralFor で読み直すこと */
+  async setEphemeral(
+    eventId: string,
+    userId: string,
+    pubkey: string,
+    secret: string,
+  ): Promise<void> {
+    await run(
+      `INSERT INTO event_chat_pubkey (event_id, user_id, pubkey, secret, created_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (event_id, user_id) DO UPDATE
+         SET pubkey = excluded.pubkey, secret = excluded.secret, created_at = excluded.created_at
+         WHERE event_chat_pubkey.secret IS NULL`,
+      eventId,
+      userId,
+      pubkey,
+      secret,
       Date.now(),
     );
   },

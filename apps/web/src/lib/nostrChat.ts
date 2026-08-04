@@ -1,9 +1,5 @@
 import { Relay } from "nostr-tools/relay";
-import {
-  finalizeEvent,
-  generateSecretKey,
-  getPublicKey,
-} from "nostr-tools/pure";
+import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import type {
   Event as NostrEvent,
   EventTemplate,
@@ -38,10 +34,6 @@ interface Nip07Like {
 
 /* ===== 鍵の管理 ===== */
 
-function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 function hexToBytes(hex: string): Uint8Array {
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i++) {
@@ -50,27 +42,10 @@ function hexToBytes(hex: string): Uint8Array {
   return out;
 }
 
-function chatKeyStorageKey(eventId: string): string {
-  return `eventer:chatkey:${eventId}`;
-}
-
-/** イベント用の一時鍵を localStorage から読む（無ければ null） */
-export function loadLocalChatKey(eventId: string): Uint8Array | null {
-  const hex = localStorage.getItem(chatKeyStorageKey(eventId));
-  return hex && /^[0-9a-f]{64}$/.test(hex) ? hexToBytes(hex) : null;
-}
-
-/** イベント用の一時鍵を読み込み（無ければ生成して保存） */
-export function loadOrCreateLocalChatKey(eventId: string): Uint8Array {
-  const existing = loadLocalChatKey(eventId);
-  if (existing) return existing;
-  const sk = generateSecretKey();
-  localStorage.setItem(chatKeyStorageKey(eventId), bytesToHex(sk));
-  return sk;
-}
-
-/** ローカル一時鍵で署名する署名器 */
-export function localSigner(secretKey: Uint8Array): ChatSigner {
+/** 一時鍵（hex秘密鍵）で署名する署名器。
+ * 一時鍵はサーバーが生成・保管し API で配布する (#223)。localStorage には置かない */
+export function localSignerFromHex(secretHex: string): ChatSigner {
+  const secretKey = hexToBytes(secretHex);
   return {
     pubkey: getPublicKey(secretKey),
     signEvent: async (template) => finalizeEvent(template, secretKey),

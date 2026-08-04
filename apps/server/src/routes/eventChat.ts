@@ -20,6 +20,7 @@ import {
   verifyEventSignature,
 } from "../auth/nostr.js";
 import {
+  generateChatKey,
   serviceKeyConfigured,
   servicePubkey,
   signWithServiceKey,
@@ -49,6 +50,46 @@ async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
   }
   return null;
 }
+
+/** サーバー管理の一時鍵 (#223)。複数端末で同じ発言者鍵を使えるよう、
+ * イベント用一時鍵はサーバーが生成・保管し、本人のセッションにだけ配布する。
+ * GET: 既存の一時鍵を返す（NIP-07登録・未登録は 404） */
+eventChatRoutes.get(
+  "/:id/chat-key/ephemeral",
+  requireEventRole([...MEMBER_ROLES]),
+  async (c) => {
+    const denied = await confirmedOnly(c);
+    if (denied) return denied;
+    const key = await eventChatRepo.ephemeralFor(
+      c.req.param("id"),
+      c.get("user").id,
+    );
+    c.header("Cache-Control", "no-store");
+    if (!key) return c.json({ error: "not_found" }, 404);
+    return c.json(key);
+  },
+);
+
+/** POST: 一時鍵を発行して発言鍵として登録する（既にあれば同じ鍵を返す）。
+ * NIP-07 で登録済みの場合は一時鍵に置き換える（再登録で置き換えの従来仕様） */
+eventChatRoutes.post(
+  "/:id/chat-key/ephemeral",
+  requireEventRole([...MEMBER_ROLES]),
+  async (c) => {
+    const denied = await confirmedOnly(c);
+    if (denied) return denied;
+    const eventId = c.req.param("id");
+    const userId = c.get("user").id;
+    c.header("Cache-Control", "no-store");
+    const existing = await eventChatRepo.ephemeralFor(eventId, userId);
+    if (existing) return c.json(existing);
+    const { secret, pubkey } = generateChatKey();
+    // 先勝ちupsert: 同時発行のレースでは先着の鍵が残るので、確定値を読み直して返す
+    await eventChatRepo.setEphemeral(eventId, userId, pubkey, secret);
+    const settled = await eventChatRepo.ephemeralFor(eventId, userId);
+    return c.json(settled ?? { secret, pubkey });
+  },
+);
 
 /** 発言用の公開鍵を登録（確定メンバーのみ。再登録で置き換え） */
 eventChatRoutes.post(
