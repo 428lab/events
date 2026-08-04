@@ -49,7 +49,7 @@ import {
   adminStatsRoutes,
   recordEventView,
 } from "./routes/analytics.js";
-import { currentUser } from "./auth/session.js";
+import { currentUser, pendingDeletionUser } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
 import { usersRepo } from "./db/repositories/users.js";
@@ -302,6 +302,10 @@ app.use("*", async (c, next) => {
     return next();
   const user = await currentUser(c);
   if (user) return next();
+  // 退会申請中 (#250) は currentUser が null になるが、復帰フローに辿り着けないと
+  // staging で復帰を試せない。有効なセッションを持つ以上ゲートは通す
+  // （猶予期間中にできる操作は復帰のみで、これは各ルート側で制限している）
+  if (await pendingDeletionUser(c)) return next();
   if (path.startsWith("/api/")) {
     return c.json({ error: "staging_login_required" }, 403);
   }
