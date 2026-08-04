@@ -130,7 +130,7 @@ export interface EventSearchParams {
   page?: number;
   /** 1ページ件数（サーバ既定12・最大50） */
   limit?: number;
-  phase?: "upcoming" | "past";
+  phase?: "upcoming" | "scheduling" | "past";
 }
 
 function searchQs(params: EventSearchParams): URLSearchParams {

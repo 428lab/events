@@ -100,8 +100,8 @@ export interface EventSearchOpts {
   excludeScheduling?: boolean;
   /** 会場募集中のみ */
   venueWantedOnly?: boolean;
-  /** 開催フェーズ: upcoming=調整中含む開催前後(ends_at>=now or scheduling) / past=終了済み */
-  phase?: "upcoming" | "past";
+  /** 開催フェーズ: upcoming=日程確定の開催前後 / scheduling=日程調整中 / past=終了済み (#234) */
+  phase?: "upcoming" | "scheduling" | "past";
   /** phase 判定に使う現在時刻 */
   phaseNow?: number;
   sort?: "soon" | "recent" | "new";
@@ -148,8 +148,12 @@ function buildSearchWhere(o: EventSearchOpts): {
     conds.push("venue_wanted = 1");
   }
   if (o.phase === "upcoming") {
-    conds.push("(scheduling = 1 OR ends_at >= ?)");
+    // 日程調整中は専用タブ (#234) に分離（日付未定が先頭に並んで
+    // 開催日確定のイベントを押し出さないように）
+    conds.push("scheduling = 0 AND ends_at >= ?");
     args.push(o.phaseNow ?? Date.now());
+  } else if (o.phase === "scheduling") {
+    conds.push("scheduling = 1");
   } else if (o.phase === "past") {
     conds.push("scheduling = 0 AND ends_at < ?");
     args.push(o.phaseNow ?? Date.now());

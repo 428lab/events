@@ -30,12 +30,14 @@ const dayStart = (d: string) =>
 const dayEnd = (d: string) =>
   d ? new Date(`${d}T23:59:59.999`).getTime() : undefined;
 
-type EventsTab = "upcoming" | "past";
+type EventsTab = "upcoming" | "scheduling" | "past";
 type EventSort = "soon" | "recent" | "new";
 
-/** タブごとの既定の並び順（開催予定=近い順 / 過去=新しい順） */
+/** タブごとの既定の並び順（開催予定=近い順 / 調整中=登録が新しい順 / 過去=新しい順） */
 const DEFAULT_SORT: Record<EventsTab, EventSort> = {
   upcoming: "soon",
+  // 日程調整中は開催日が未定のため登録順 (#234)
+  scheduling: "new",
   past: "recent",
 };
 
@@ -70,7 +72,7 @@ function CommunityFilterField({
 
 /**
  * イベント一覧ブラウザ（サイト共通）。
- * 検索APIベースで、開催予定/過去タブ・絞り込み（キーワード・期間・
+ * 検索APIベースで、開催予定/日程調整中/過去タブ・絞り込み（キーワード・期間・
  * コミュニティ・並び替え）・10件ページング・列切替を提供する。
  * communityId を渡すとそのコミュニティのイベントに固定される
  * （コミュニティ選択の絞り込みは非表示）。
@@ -96,10 +98,13 @@ export function EventsBrowser({
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
 
+  // 日程調整中は開催日が未定（内部的に0）のため、日付フィルタと開催日ソートは
+  // 意味を成さない (#234)。タブ中は適用せず、UIからも隠す
+  const dateFilters = tab !== "scheduling";
+
   const hasFilters = Boolean(
     q.trim() ||
-      from ||
-      to ||
+      (dateFilters && (from || to)) ||
       (!communityId && communityFilter) ||
       sort !== DEFAULT_SORT[tab],
   );
@@ -107,19 +112,17 @@ export function EventsBrowser({
   const params = useMemo<EventSearchParams>(
     () => ({
       q: q.trim() || undefined,
-      // タブが期間の既定値を与える（開催予定: 終了が今以降 / 過去: 開始が今以前）。
-      // ユーザーが期間を指定した場合はそちらを優先する。
-      // タブは phase で厳密に判定（開催中は upcoming のみ・調整中は upcoming・過去は終了済みのみ）。
+      // タブは phase で厳密に判定（開催予定=日程確定のみ / 調整中=専用タブ #234 / 過去=終了済みのみ）。
       // 期間フィルタはユーザー指定時のみ AND 合成
       phase: tab,
-      from: dayStart(from),
-      to: dayEnd(to),
+      from: dateFilters ? dayStart(from) : undefined,
+      to: dateFilters ? dayEnd(to) : undefined,
       communityId: communityId ?? (communityFilter || undefined),
       sort,
       page,
       limit: PAGE_SIZE,
     }),
-    [tab, q, from, to, communityId, communityFilter, sort, page],
+    [tab, q, from, to, dateFilters, communityId, communityFilter, sort, page],
   );
   const search = useEventSearch(params, true);
 
@@ -150,7 +153,9 @@ export function EventsBrowser({
     ? "条件に合うイベントはありません。"
     : tab === "upcoming"
       ? "予定されているイベントはありません。"
-      : "過去のイベントはありません。";
+      : tab === "scheduling"
+        ? "日程調整中のイベントはありません。"
+        : "過去のイベントはありません。";
 
   return (
     <Box>
@@ -204,6 +209,7 @@ export function EventsBrowser({
         sx={{ mb: 2, borderBottom: 1, borderColor: "divider", minHeight: 40 }}
       >
         <Tab label="開催予定" value="upcoming" sx={{ minHeight: 40 }} />
+        <Tab label="日程調整中" value="scheduling" sx={{ minHeight: 40 }} />
         <Tab label="過去" value="past" sx={{ minHeight: 40 }} />
       </Tabs>
 
@@ -220,6 +226,7 @@ export function EventsBrowser({
                 fullWidth
                 size="small"
               />
+              {dateFilters && (
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <TextField
                   label="開始日（以降）"
@@ -254,6 +261,7 @@ export function EventsBrowser({
                   <MenuItem value="new">登録が新しい順</MenuItem>
                 </TextField>
               </Stack>
+              )}
               {!communityId && (
                 <CommunityFilterField
                   value={communityFilter}
