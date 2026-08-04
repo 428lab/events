@@ -50,11 +50,23 @@ describe("表示名の変更 (#232)", () => {
     expect(row?.global_name).toBe("新しい名前");
   });
 
-  it("空文字・50文字超・未ログインは拒否される", async () => {
+  it("ちょうど50文字は保存でき、絵文字合成（ZWJ）も通る", async () => {
+    const u = await makeUser();
+    expect((await putDisplayName(u.cookie, "あ".repeat(50))).status).toBe(200);
+    expect((await putDisplayName(u.cookie, "\u{1F468}\u200D\u{1F469}\u200D\u{1F467} 家族")).status).toBe(
+      200,
+    );
+  });
+
+  it("空文字・50文字超・制御/不可視文字・未ログインは拒否される", async () => {
     const u = await makeUser();
     expect((await putDisplayName(u.cookie, "")).status).toBe(400);
     expect((await putDisplayName(u.cookie, "   ")).status).toBe(400);
     expect((await putDisplayName(u.cookie, "あ".repeat(51))).status).toBe(400);
+    // ゼロ幅スペースのみ（見た目が空の名前）・bidi制御・改行/制御文字
+    expect((await putDisplayName(u.cookie, "\u200b")).status).toBe(400);
+    expect((await putDisplayName(u.cookie, "abc\u202edef")).status).toBe(400);
+    expect((await putDisplayName(u.cookie, "a\nb")).status).toBe(400);
     expect((await putDisplayName(null, "名無し")).status).toBe(401);
     // 失敗しても元の表示名のまま
     const row = await env.DB.prepare(
