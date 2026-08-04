@@ -26,6 +26,23 @@ import {
   type NostrEvent,
 } from "../auth/nostr.js";
 
+/** 連携の引き取り (#238)。相手が「唯一の連携 かつ 利用実績なし」の空アカウント
+ * のときだけユーザー行ごと削除して "ok" を返す（identity は FK CASCADE で消える。
+ * unlink を挟まない単一文なので、FK違反等で失敗しても相手アカウントは無傷のまま）。
+ * 実績のあるアカウントは孤児化させない（誤ログインでできた空アカウントの回収専用） */
+async function takeoverEmptyAccount(
+  existingUserId: string,
+): Promise<"ok" | "already_linked" | "account_in_use"> {
+  if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
+    return "already_linked";
+  }
+  if (await usersRepo.hasActivity(existingUserId)) {
+    return "account_in_use";
+  }
+  await usersRepo.deleteById(existingUserId);
+  return "ok";
+}
+
 const STATE_COOKIE = "eventer_oauth_state";
 const PKCE_COOKIE = "eventer_oauth_verifier";
 
@@ -121,15 +138,9 @@ authRoutes.post("/nostr/login", async (c) => {
     if (!existingUserId) {
       await identitiesRepo.link(current.id, "nostr", pubkey, null);
     } else if (existingUserId !== current.id) {
-      // 別アカウントに連携済み。鍵の所有は署名で証明済みなので、
-      // 相手の唯一のログイン方法なら identity を引き取る（他は何も引き継がない）。
-      // 他のログイン方法が残るアカウントからの横取りは拒否。
-      if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
-        return c.json({ error: "already_linked" }, 409);
-      }
-      await identitiesRepo.unlink(existingUserId, "nostr");
-      // 旧アカウントの合成 discord_id を退役させる（同じ npub での再作成と衝突しないように）
-      await usersRepo.setDiscordId(existingUserId, `removed:${crypto.randomUUID()}`);
+      // 別アカウントに連携済み。鍵の所有は署名で証明済み → 空アカウントのみ引き取り (#238)
+      const takeover = await takeoverEmptyAccount(existingUserId);
+      if (takeover !== "ok") return c.json({ error: takeover }, 409);
       await identitiesRepo.link(current.id, "nostr", pubkey, null);
     }
     return c.json({ ok: true, linked: true });
@@ -252,15 +263,12 @@ authRoutes.get("/:provider/callback", async (c) => {
         await usersRepo.setDiscordId(current.id, profile.providerUserId);
       }
     } else if (existingUserId !== current.id) {
-      // 別アカウントに連携済み。アカウントの所有は OAuth で証明済みなので、
-      // 相手の唯一のログイン方法なら identity を引き取る（DB上の discordId 等は
-      // 引き継がない＝旧・自動統合の権限横取り経路を残さない）。
-      if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
-        return c.redirect(env.appBaseUrl + "/account?link_error=already_linked");
+      // 別アカウントに連携済み。アカウントの所有は OAuth で証明済み → 空アカウントのみ引き取り (#238)
+      // （行削除で discord_id の UNIQUE 衝突・管理者判定の残置も同時に消える）
+      const takeover = await takeoverEmptyAccount(existingUserId);
+      if (takeover !== "ok") {
+        return c.redirect(env.appBaseUrl + `/account?link_error=${takeover}`);
       }
-      await identitiesRepo.unlink(existingUserId, provider);
-      // 旧アカウントの実IDを退役（UNIQUE衝突と管理者判定の残置を防ぐ）
-      await usersRepo.setDiscordId(existingUserId, `removed:${crypto.randomUUID()}`);
       await identitiesRepo.link(
         current.id,
         provider,

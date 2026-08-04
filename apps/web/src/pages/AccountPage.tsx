@@ -24,6 +24,9 @@ import { ApiError } from "../api/client.js";
 
 const ALREADY_LINKED_MSG =
   "そのアカウントは他のログイン方法を持つ別ユーザーに連携されています。統合したい場合は、先に相手側アカウントで連携を解除してください。";
+/** 引き取り拒否 (#238): 相手アカウントに利用実績がある場合 */
+const ACCOUNT_IN_USE_MSG =
+  "そのログイン方法は、利用実績のある別のアカウントに連携されています。そちらのアカウントでログインし直してから、逆にこちらのログイン方法を連携してください。";
 
 export function AccountPage() {
   const { data: me } = useMe();
@@ -57,7 +60,9 @@ export function AccountPage() {
         e instanceof Error && e.message === "no_extension"
           ? "NIP-07 対応拡張（Alby、nos2x など）が見つかりません。"
           : e instanceof ApiError && e.status === 409
-            ? ALREADY_LINKED_MSG
+            ? (e.body as { error?: string } | null)?.error === "account_in_use"
+              ? ACCOUNT_IN_USE_MSG
+              : ALREADY_LINKED_MSG
             : "Nostr 連携に失敗しました。",
       );
     } finally {
@@ -88,6 +93,11 @@ export function AccountPage() {
           {linkError === "already_linked" && (
             <Alert severity="warning" sx={{ mb: 2 }}>
               {ALREADY_LINKED_MSG}
+            </Alert>
+          )}
+          {linkError === "account_in_use" && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {ACCOUNT_IN_USE_MSG}
             </Alert>
           )}
 

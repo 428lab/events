@@ -169,6 +169,43 @@ export const usersRepo = {
     await run("UPDATE user SET global_name = ? WHERE id = ?", globalName, userId);
   },
 
+  /** アカウントに利用実績があるか (#238)。連携の引き取りで実績のある
+   * アカウントを孤児化させないためのガード（参加・作成系の主要テーブルを見る） */
+  async hasActivity(userId: string): Promise<boolean> {
+    // 参加・作成系に加え、ユーザー資産（deck/live_set/bgm）・公開コンテンツ
+    // （コメント）・問い合わせ・FK RESTRICT で削除をブロックするテーブル
+    // （live_set/venue_offer）も判定に含める。ここに漏れがあると
+    // 「引き取り→削除」で資産が消えるか、削除がFK違反で失敗する
+    const tables: [string, string][] = [
+      ["event_member", "user_id"],
+      ["event", "created_by"],
+      ["community_member", "user_id"],
+      ["entry_member", "user_id"],
+      ["event_request", "created_by"],
+      ["venue", "owner_id"],
+      ["venue_admin", "user_id"],
+      ["venue_offer", "created_by"],
+      ["live_set", "owner_id"],
+      ["deck", "owner_id"],
+      ["bgm_track", "owner_id"],
+      ["event_comment", "user_id"],
+      ["inquiry", "user_id"],
+    ];
+    const expr = tables
+      .map(([t, c]) => `EXISTS(SELECT 1 FROM ${t} WHERE ${c} = ?)`)
+      .join(" + ");
+    const row = await one<{ n: number }>(
+      `SELECT ${expr} AS n`,
+      ...tables.map(() => userId),
+    );
+    return (row?.n ?? 0) > 0;
+  },
+
+  /** ユーザー行を削除（関連行は FK CASCADE）。空アカウントの引き取り時の後始末用 (#238) */
+  async deleteById(id: string): Promise<void> {
+    await run("DELETE FROM user WHERE id = ?", id);
+  },
+
   /** 表示名/アイコンが未設定の場合のみ補完（Nostrプロフィール等の反映用） */
   async fillProfile(
     userId: string,
