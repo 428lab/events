@@ -68,14 +68,18 @@ export const userProfileSchema = z.object({
 });
 export type UserProfile = z.infer<typeof userProfileSchema>;
 
+/** ハンドルの許可パターン (#236)。半角英数字と _ . - に加え内部スペースを許容
+ * （先頭・末尾スペースは見えない差分で別ハンドルができるため不可）。2〜32文字 */
+export const USERNAME_PATTERN = /^[A-Za-z0-9_.-][A-Za-z0-9_.\- ]{0,30}[A-Za-z0-9_.-]$/;
+
 /** ユーザー名（プロフィールURLのハンドル）の変更入力。URL安全な文字のみ・2〜32文字 */
 export const updateUsernameInput = z.object({
   username: z
     .string()
     .trim()
     .regex(
-      /^[A-Za-z0-9_.-]{2,32}$/,
-      "半角英数字と _ . - のみ、2〜32文字で入力してください",
+      USERNAME_PATTERN,
+      "半角英数字と _ . - スペースのみ（前後スペース不可）、2〜32文字で入力してください",
     ),
 });
 export type UpdateUsernameInput = z.infer<typeof updateUsernameInput>;

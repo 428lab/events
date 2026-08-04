@@ -34,6 +34,26 @@ async function putDisplayName(
   });
 }
 
+describe("ハンドルの変更 (#236)", () => {
+  async function putUsername(cookie: string, username: string): Promise<Response> {
+    return SELF.fetch(`${BASE}/api/me/username`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ username }),
+    });
+  }
+
+  it("内部スペースは許可、漢字・前後スペース構造は拒否", async () => {
+    const u = await makeUser();
+    const sp = await putUsername(u.cookie, `merry shino ${crypto.randomUUID().slice(0, 6)}`);
+    expect(sp.status).toBe(200);
+    expect((await putUsername(u.cookie, "近藤昭雄")).status).toBe(400);
+    // 前後スペースは zod の trim で落ちた上でパターン判定される
+    const trimmed = await putUsername(u.cookie, `  ab${crypto.randomUUID().slice(0, 6)}  `);
+    expect(trimmed.status).toBe(200);
+  });
+});
+
 describe("表示名の変更 (#232)", () => {
   it("PUT /me/display-name で表示名を変更でき、trimして保存される", async () => {
     const u = await makeUser();

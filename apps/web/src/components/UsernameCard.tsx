@@ -13,8 +13,8 @@ import { CounterTextField } from "./CounterTextField.js";
 import { useMe } from "../api/hooks.js";
 import { useUpdateDisplayName, useUpdateUsername } from "../api/userHooks.js";
 import { ApiError } from "../api/client.js";
+import { USERNAME_PATTERN } from "@eventer/shared";
 
-const HANDLE_RE = /^[A-Za-z0-9_.-]{2,32}$/;
 const DISPLAY_NAME_MAX = 50;
 
 /** マイページのプロフィール（表示名・ユーザー名）編集カード */
@@ -44,7 +44,7 @@ export function UsernameCard() {
   }, [currentDisplay]);
 
   const trimmed = name.trim();
-  const valid = HANDLE_RE.test(trimmed);
+  const valid = USERNAME_PATTERN.test(trimmed);
   const changed = trimmed !== current;
 
   const displayTrimmed = display.trim();
@@ -133,10 +133,12 @@ export function UsernameCard() {
               setName(e.target.value);
               setMsg(null);
             }}
-            error={name.length > 0 && !valid}
+            // 旧仕様で作られた許可外ハンドルが「触っていないのに常時赤」に
+            // ならないよう、エラーは変更した時だけ表示する (#236)
+            error={changed && name.length > 0 && !valid}
             helperText={
-              name.length > 0 && !valid
-                ? "半角英数字と _ . - のみ、2〜32文字"
+              changed && name.length > 0 && !valid
+                ? "半角英数字と _ . - スペースのみ（前後スペース不可）、2〜32文字"
                 : "プロフィールURLに使われます"
             }
             sx={{ maxWidth: 320 }}
