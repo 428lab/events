@@ -131,6 +131,13 @@ export function CheckinPage() {
         if (err instanceof ApiError && err.status === 410) {
           setPanel({ kind: "expired" });
           scheduleResume(2500);
+        } else if (
+          err instanceof ApiError &&
+          (err.body as { error?: string } | null)?.error === "wrong_event"
+        ) {
+          // 複数イベント会場での取り違えが分かるように区別して表示
+          flashNotice("別のイベントの入場QRです");
+          pausedRef.current = false;
         } else {
           flashNotice("無効なQRコードです");
           pausedRef.current = false;
