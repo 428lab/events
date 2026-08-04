@@ -79,3 +79,9 @@ export const updateUsernameInput = z.object({
     ),
 });
 export type UpdateUsernameInput = z.infer<typeof updateUsernameInput>;
+
+/** 表示名の変更入力 (#232)。イベント・チャット等の表示に使われる */
+export const updateDisplayNameInput = z.object({
+  displayName: z.string().trim().min(1).max(50),
+});
+export type UpdateDisplayNameInput = z.infer<typeof updateDisplayNameInput>;

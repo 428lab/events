@@ -1,6 +1,11 @@
 import { Hono } from "hono";
-import { updateNotificationPrefsInput, updateUsernameInput } from "@eventer/shared";
+import {
+  updateDisplayNameInput,
+  updateNotificationPrefsInput,
+  updateUsernameInput,
+} from "@eventer/shared";
 import type {
+  UpdateDisplayNameInput,
   UpdateNotificationPrefsInput,
   UpdateUsernameInput,
 } from "@eventer/shared";
@@ -96,5 +101,17 @@ meRoutes.put(
     }
     await usersRepo.setUsername(me.id, username);
     return c.json({ ok: true, username });
+  },
+);
+
+/** 表示名を変更する (#232)。イベント・チャット・プロフィール等の表示に使われる */
+meRoutes.put(
+  "/display-name",
+  zValidator("json", updateDisplayNameInput),
+  async (c) => {
+    const me = c.get("user");
+    const displayName = valid<UpdateDisplayNameInput>(c, "json").displayName.trim();
+    await usersRepo.setGlobalName(me.id, displayName);
+    return c.json({ ok: true, displayName });
   },
 );

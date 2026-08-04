@@ -11,12 +11,13 @@ import {
 import { Link as RouterLink } from "react-router-dom";
 import { CounterTextField } from "./CounterTextField.js";
 import { useMe } from "../api/hooks.js";
-import { useUpdateUsername } from "../api/userHooks.js";
+import { useUpdateDisplayName, useUpdateUsername } from "../api/userHooks.js";
 import { ApiError } from "../api/client.js";
 
 const HANDLE_RE = /^[A-Za-z0-9_.-]{2,32}$/;
+const DISPLAY_NAME_MAX = 50;
 
-/** マイページのプロフィール（ユーザー名＝プロフィールURLのハンドル）編集カード */
+/** マイページのプロフィール（表示名・ユーザー名）編集カード */
 export function UsernameCard() {
   const { data: me } = useMe();
   const current = me?.username ?? "";
@@ -26,14 +27,40 @@ export function UsernameCard() {
   );
   const update = useUpdateUsername();
 
+  // 表示名 (#232)。イベント・チャット・プロフィール等の表示に使われる
+  const currentDisplay = me?.globalName ?? "";
+  const [display, setDisplay] = useState(currentDisplay);
+  const [displayMsg, setDisplayMsg] = useState<
+    { type: "success" | "error"; text: string } | null
+  >(null);
+  const updateDisplay = useUpdateDisplayName();
+
   // me ロード後・変更保存後に current へ同期
   useEffect(() => {
     if (current) setName(current);
   }, [current]);
+  useEffect(() => {
+    if (currentDisplay) setDisplay(currentDisplay);
+  }, [currentDisplay]);
 
   const trimmed = name.trim();
   const valid = HANDLE_RE.test(trimmed);
   const changed = trimmed !== current;
+
+  const displayTrimmed = display.trim();
+  const displayValid =
+    displayTrimmed.length >= 1 && displayTrimmed.length <= DISPLAY_NAME_MAX;
+  const displayChanged = displayTrimmed !== currentDisplay;
+
+  const saveDisplay = () => {
+    setDisplayMsg(null);
+    updateDisplay.mutate(displayTrimmed, {
+      onSuccess: () =>
+        setDisplayMsg({ type: "success", text: "表示名を変更しました" }),
+      onError: () =>
+        setDisplayMsg({ type: "error", text: "変更に失敗しました" }),
+    });
+  };
 
   const save = () => {
     setMsg(null);
@@ -68,6 +95,34 @@ export function UsernameCard() {
             プロフィールを見る
           </Link>
         </Typography>
+        <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ mb: 2 }}>
+          <CounterTextField
+            label="表示名"
+            size="small"
+            value={display}
+            max={DISPLAY_NAME_MAX}
+            onChange={(e) => {
+              setDisplay(e.target.value);
+              setDisplayMsg(null);
+            }}
+            error={display.length > 0 && !displayValid}
+            helperText="イベントやチャットで表示される名前です"
+            sx={{ maxWidth: 320 }}
+          />
+          <Button
+            variant="contained"
+            disabled={!displayValid || !displayChanged || updateDisplay.isPending}
+            onClick={saveDisplay}
+            sx={{ mt: 0.5 }}
+          >
+            保存
+          </Button>
+        </Stack>
+        {displayMsg && (
+          <Alert severity={displayMsg.type} sx={{ mt: -1, mb: 2 }}>
+            {displayMsg.text}
+          </Alert>
+        )}
         <Stack direction="row" spacing={1} alignItems="flex-start">
           <CounterTextField
             label="ユーザー名（ハンドル）"

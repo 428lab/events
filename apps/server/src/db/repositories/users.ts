@@ -164,6 +164,11 @@ export const usersRepo = {
     await run("UPDATE user SET username = ? WHERE id = ?", username, userId);
   },
 
+  /** 表示名を変更する (#232) */
+  async setGlobalName(userId: string, globalName: string): Promise<void> {
+    await run("UPDATE user SET global_name = ? WHERE id = ?", globalName, userId);
+  },
+
   /** 表示名/アイコンが未設定の場合のみ補完（Nostrプロフィール等の反映用） */
   async fillProfile(
     userId: string,
