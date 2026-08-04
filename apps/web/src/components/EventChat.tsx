@@ -34,6 +34,7 @@ import {
   useHideChatNote,
   useRegisterChatChannel,
   useRegisterChatKey,
+  useResetChatChannel,
 } from "../api/eventChatHooks.js";
 import { hasNip07 } from "../lib/nostr.js";
 import {
@@ -82,6 +83,7 @@ export function EventChat({
   const { data: chat } = useChatMembers(eventId, visible);
   const registerKey = useRegisterChatKey(eventId);
   const registerChannel = useRegisterChatChannel(eventId);
+  const resetChannel = useResetChatChannel(eventId);
   const hideNote = useHideChatNote(eventId);
 
   const [signer, setSigner] = useState<ChatSigner | null>(null);
@@ -152,7 +154,17 @@ export function EventChat({
           const created = await signer.signEvent(
             buildChannelCreateTemplate(event.title),
           );
-          await pool.publish(created);
+          // リレーに受理されたことを確認してからサーバーへ登録する
+          // （不達のまま登録すると「リレー上に存在しない部屋」を参照し続けてしまう）
+          const accepted = await pool.publish(created);
+          if (!accepted) {
+            if (!disposed) {
+              setJoinError(
+                "チャンネルの作成に失敗しました（リレーに接続できないか、kind:40 が拒否されました）。",
+              );
+            }
+            return;
+          }
           const { channelId: settled } =
             await registerChannel.mutateAsync(created);
           cid = settled ?? created.id;
@@ -316,7 +328,33 @@ export function EventChat({
               このチャットは Nostr
               のパブリックチャットです（外部クライアントからも閲覧できます）。
             </Typography>
-            {joinError && <Alert severity="error">{joinError}</Alert>}
+            {joinError && (
+              <Alert
+                severity="error"
+                action={
+                  isStaff ? (
+                    <Button
+                      size="small"
+                      color="inherit"
+                      disabled={resetChannel.isPending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            "チャンネルを作り直しますか？（リレー上に部屋が無い場合の復旧用。過去のメッセージは新しい部屋には表示されません）",
+                          )
+                        ) {
+                          resetChannel.mutate();
+                        }
+                      }}
+                    >
+                      チャンネルを作り直す
+                    </Button>
+                  ) : undefined
+                }
+              >
+                {joinError}
+              </Alert>
+            )}
             <Box>
               <Button
                 variant="contained"
