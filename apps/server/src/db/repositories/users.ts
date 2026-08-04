@@ -221,6 +221,16 @@ export const usersRepo = {
   async mergeUsers(winnerId: string, loserId: string): Promise<void> {
     const stmts: Array<{ sql: string; args?: unknown[] }> = [];
 
+    // (0) event_member の重複破棄でスタッフ権限が落ちないよう、負け側が staff の
+    //     イベントでは勝ち側の既存行を先に staff へ引き上げる
+    stmts.push({
+      sql: `UPDATE event_member SET role = 'staff'
+             WHERE user_id = ? AND role != 'staff'
+               AND event_id IN (SELECT event_id FROM event_member
+                                 WHERE user_id = ? AND role = 'staff')`,
+      args: [winnerId, loserId],
+    });
+
     // (1) UNIQUE キー（user 列 + keyCols）を持つテーブル。
     //     勝ち側に同キーの行が既にあれば、負け側の行を捨ててから付け替える
     const uniqueKeyed: Array<[table: string, userCol: string, keyCols: string[]]> = [

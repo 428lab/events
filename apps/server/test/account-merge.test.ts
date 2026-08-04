@@ -392,4 +392,40 @@ describe("アカウント統合 (#240)", () => {
       "invalid_code",
     );
   });
+
+  it("同一コードの並行使用は1回だけ成功する（使い捨ての競合安全性）", async () => {
+    const a = await makeUser();
+    const b = await makeUser();
+    const code = await issueCode(a.cookie);
+    const [r1, r2] = await Promise.all([
+      postMerge(b.cookie, { code, keep: "me" }),
+      postMerge(b.cookie, { code, keep: "me" }),
+    ]);
+    const statuses = [r1.status, r2.status].sort();
+    expect(statuses).toEqual([200, 400]);
+  });
+
+  it("同一イベントの重複参加でスタッフ権限は引き継がれる（負け側がstaff）", async () => {
+    const a = await makeUser(); // 負け側（staff）
+    const b = await makeUser(); // 勝ち側（participant）
+    const owner = await makeUser();
+    const eventId = await makeEvent(owner.userId);
+    await joinEvent(eventId, b.userId); // participant
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at) VALUES (?, ?, ?, 'staff', NULL, 'confirmed', ?)",
+    )
+      .bind(crypto.randomUUID(), eventId, a.userId, Date.now())
+      .run();
+
+    const code = await issueCode(a.cookie);
+    const res = await postMerge(b.cookie, { code, keep: "me" });
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare(
+      "SELECT role, COUNT(*) OVER () AS total FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(eventId, b.userId)
+      .first<{ role: string; total: number }>();
+    expect(row?.role).toBe("staff");
+    expect(row?.total).toBe(1);
+  });
 });

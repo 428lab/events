@@ -10,6 +10,9 @@ import { one, run } from "../db/client.js";
  * 形式: `userId:ts:nonce:mac`（userId は UUID なので ":" を含まない）
  */
 
+/** 有効期限。注意: nostr.ts 側の使い捨て記録クリーンアップ（CHALLENGE_TTL_MS * 2 =
+ * 20分）より短く保つこと。これを20分以上に延ばすと、共有テーブルの nonce 記録が
+ * 有効期限内に掃除されてコードのリプレイが可能になる */
 const MERGE_CODE_TTL_MS = 15 * 60 * 1000;
 const PURPOSE = "account-merge";
 
@@ -48,7 +51,10 @@ export async function parseMergeCode(code: string): Promise<string | null> {
   // 発行から15分まで有効（未来の ts は多少の時計ずれのみ許容）
   const age = Date.now() - ts;
   if (age > MERGE_CODE_TTL_MS || age < -60_000) return null;
-  if ((await hmacHex(`${PURPOSE}:${userId}:${ts}:${nonce}`)) !== mac) {
+  // MAC入力には受信した tsStr をそのまま使う（正準形を1つに固定）。
+  // 比較は双方を再HMACしてから行い、タイミング差を消す
+  const expected = await hmacHex(`${PURPOSE}:${userId}:${tsStr}:${nonce}`);
+  if ((await hmacHex(expected)) !== (await hmacHex(mac))) {
     return null;
   }
   return userId;

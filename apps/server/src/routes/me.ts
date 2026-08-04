@@ -134,6 +134,10 @@ meRoutes.post("/merge", zValidator("json", mergeAccountInput), async (c) => {
   }
   const [winnerId, loserId] =
     keep === "me" ? [me.id, otherId] : [otherId, me.id];
+  // 監査: 不可逆な操作なので実行記録を必ず残す（「勝手に統合された」調査用）
+  console.log(
+    `[account-merge] executor=${me.id} codeIssuer=${otherId} winner=${winnerId} loser=${loserId}`,
+  );
   await usersRepo.mergeUsers(winnerId, loserId);
   return c.json({ ok: true, winnerId });
 });
