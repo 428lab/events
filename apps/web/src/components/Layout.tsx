@@ -12,6 +12,7 @@ import {
   MenuItem,
   Toolbar,
   Typography,
+  ListSubheader,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
@@ -41,6 +42,7 @@ export function Layout({
     (pathname.startsWith("/decks/") || pathname.startsWith("/live-sets/")) &&
     pathname.endsWith("/edit");
   const isAdmin = useIsAdmin();
+  const [adminAnchor, setAdminAnchor] = useState<null | HTMLElement>(null);
   const { data: adminUnread } = useAdminInquiryUnreadCount(isAdmin);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const closeMenu = () => setAnchor(null);
@@ -108,21 +110,52 @@ export function Layout({
               マイページ
             </Button>
             {isAdmin && (
-              <Button color="inherit" component={RouterLink} to="/admin/inquiries">
-                <Badge badgeContent={adminUnread ?? 0} color="error">
-                  問い合わせ管理
-                </Badge>
-              </Button>
-            )}
-            {isAdmin && (
-              <Button color="inherit" component={RouterLink} to="/admin/stats">
-                統計
-              </Button>
-            )}
-            {isAdmin && (
-              <Button color="inherit" component={RouterLink} to="/admin/settings">
-                運用設定
-              </Button>
+              <>
+                <Button
+                  color="inherit"
+                  onClick={(e) => setAdminAnchor(e.currentTarget)}
+                  endIcon={<ExpandMoreIcon />}
+                >
+                  <Badge badgeContent={adminUnread ?? 0} color="error">
+                    運用
+                  </Badge>
+                </Button>
+                <Menu
+                  anchorEl={adminAnchor}
+                  open={Boolean(adminAnchor)}
+                  onClose={() => setAdminAnchor(null)}
+                >
+                  <MenuItem
+                    component={RouterLink}
+                    to="/admin/inquiries"
+                    onClick={() => setAdminAnchor(null)}
+                  >
+                    問い合わせ管理
+                    {Boolean(adminUnread) && (
+                      <Chip
+                        size="small"
+                        color="error"
+                        label={adminUnread}
+                        sx={{ ml: 1, height: 18 }}
+                      />
+                    )}
+                  </MenuItem>
+                  <MenuItem
+                    component={RouterLink}
+                    to="/admin/settings"
+                    onClick={() => setAdminAnchor(null)}
+                  >
+                    チャット設定
+                  </MenuItem>
+                  <MenuItem
+                    component={RouterLink}
+                    to="/admin/stats"
+                    onClick={() => setAdminAnchor(null)}
+                  >
+                    統計
+                  </MenuItem>
+                </Menu>
+              </>
             )}
           </Box>
 
@@ -182,10 +215,16 @@ export function Layout({
               お問い合わせ
             </MenuItem>
             {isAdmin && (
+              <ListSubheader sx={{ lineHeight: "32px", bgcolor: "transparent" }}>
+                運用
+              </ListSubheader>
+            )}
+            {isAdmin && (
               <MenuItem
                 component={RouterLink}
                 to="/admin/inquiries"
                 onClick={closeMenu}
+                sx={{ pl: 3 }}
               >
                 問い合わせ管理
                 {Boolean(adminUnread) && (
@@ -199,8 +238,8 @@ export function Layout({
               </MenuItem>
             )}
             {isAdmin && (
-              <MenuItem component={RouterLink} to="/admin/stats" onClick={closeMenu}>
-                統計（全イベント）
+              <MenuItem component={RouterLink} to="/admin/stats" onClick={closeMenu} sx={{ pl: 3 }}>
+                統計
               </MenuItem>
             )}
             {isAdmin && (
@@ -208,8 +247,9 @@ export function Layout({
                 component={RouterLink}
                 to="/admin/settings"
                 onClick={closeMenu}
+                sx={{ pl: 3 }}
               >
-                運用設定
+                チャット設定
               </MenuItem>
             )}
             <MenuItem component={RouterLink} to="/account" onClick={closeMenu}>
