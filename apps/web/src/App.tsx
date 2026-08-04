@@ -67,17 +67,33 @@ const LicenseCardPage = lazy(() =>
     }),
 );
 
+/** QR受付 (#154)。カメラ読み取り＋jsQR フォールバックが大きいため遅延読み込みで分離する */
+const CheckinPage = lazy(() =>
+  import("./pages/CheckinPage.js").then((m) => ({ default: m.CheckinPage })),
+);
+
+/** 遅延読み込みページ共通のフォールバック */
+function LazyFallback() {
+  return (
+    <Box sx={{ display: "grid", placeItems: "center", minHeight: "40vh" }}>
+      <CircularProgress />
+    </Box>
+  );
+}
+
 /** 遅延読み込みページ共通のフォールバック付きラッパー */
 function LicenseCardRoute() {
   return (
-    <Suspense
-      fallback={
-        <Box sx={{ display: "grid", placeItems: "center", minHeight: "40vh" }}>
-          <CircularProgress />
-        </Box>
-      }
-    >
+    <Suspense fallback={<LazyFallback />}>
       <LicenseCardPage />
+    </Suspense>
+  );
+}
+
+function CheckinRoute() {
+  return (
+    <Suspense fallback={<LazyFallback />}>
+      <CheckinPage />
     </Suspense>
   );
 }
@@ -305,6 +321,8 @@ export function App() {
         {/* 配信画面/コントロール（EventLayoutのモード強制遷移を受けない） */}
         <Route path="/events/:id/live/screen" element={<LiveScreenPage />} />
         <Route path="/events/:id/live/control" element={<LiveControlPage />} />
+        {/* QR受付。カメラ使用中に余計な再描画やSSE購読を避けるため EventLayout の外に置く */}
+        <Route path="/events/:id/checkin" element={<CheckinRoute />} />
         <Route path="/events/:id" element={<EventLayout />}>
           <Route index element={<EventDetailPage />} />
           <Route path="edit" element={<EditEventPage />} />

@@ -31,6 +31,8 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import LockIcon from "@mui/icons-material/Lock";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import QrCode2Icon from "@mui/icons-material/QrCode2";
+import QrCodeScannerIcon from "@mui/icons-material/QrCodeScanner";
 import { IconButton, Menu, MenuItem } from "@mui/material";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
@@ -66,6 +68,7 @@ import { useRecordView } from "../api/analyticsHooks.js";
 import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
+import { EntranceQrDialog } from "../components/EntranceQrDialog.js";
 import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
 
 /** Nostrチャット (#199)。nostr-tools（暗号ライブラリ）が大きいため遅延読み込みで分離する */
@@ -157,6 +160,8 @@ export function EventDetailPage() {
   const [pendingJoin, setPendingJoin] = useState<{ slotId?: string } | null>(
     null,
   );
+  // 入場QR（受付チェックイン用チケット） (#154)
+  const [entranceQrOpen, setEntranceQrOpen] = useState(false);
   const qc = useQueryClient();
 
   const doJoin = (slotId?: string) =>
@@ -555,6 +560,21 @@ export function EventDetailPage() {
             label={`参加状態: ${STATUS_LABEL[myMembership.status] ?? myMembership.status}`}
           />
         )}
+        {/* 入場QR (#154)。出席チェックモード＋日程確定済みの確定参加者に表示 */}
+        {me &&
+          myMembership?.status === "confirmed" &&
+          event.attendanceCheck &&
+          !event.scheduling &&
+          !eventEnded && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<QrCode2Icon />}
+              onClick={() => setEntranceQrOpen(true)}
+            >
+              入場QR
+            </Button>
+          )}
         {/* 参加後もアンケート回答を見直せる (#152) */}
         {isMember && hasSurvey && (
           <Button
@@ -619,6 +639,16 @@ export function EventDetailPage() {
           ended={eventEnded}
           joinPending={join.isPending}
           onJoin={(slotId) => requestJoin(slotId)}
+        />
+      )}
+
+      {/* 入場QRダイアログ (#154)。開いている間だけチケットを取得・自動更新 */}
+      {me && entranceQrOpen && (
+        <EntranceQrDialog
+          eventId={id}
+          user={me}
+          open={entranceQrOpen}
+          onClose={() => setEntranceQrOpen(false)}
         />
       )}
 
@@ -698,6 +728,16 @@ export function EventDetailPage() {
               to={`/events/${id}/stats`}
             >
               アクセス統計
+            </Button>
+          )}
+          {isStaff && event.attendanceCheck && (
+            <Button
+              variant="outlined"
+              startIcon={<QrCodeScannerIcon />}
+              component={RouterLink}
+              to={`/events/${id}/checkin`}
+            >
+              QR受付
             </Button>
           )}
           {contest && isStaff && (
