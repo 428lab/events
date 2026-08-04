@@ -59,4 +59,13 @@ export const bgmTracksRepo = {
   async delete(id: string): Promise<void> {
     await run("DELETE FROM bgm_track WHERE id = ?", id);
   },
+
+  /** 退会時のR2掃除用: 本人所有トラックのR2キー一覧（ビルトイン曲は含まない） (#244) */
+  async listKeysByOwner(ownerId: string): Promise<string[]> {
+    const rows = await many<{ r2_key: string }>(
+      "SELECT r2_key FROM bgm_track WHERE owner_id = ?",
+      ownerId,
+    );
+    return rows.map((r) => r.r2_key);
+  },
 };
