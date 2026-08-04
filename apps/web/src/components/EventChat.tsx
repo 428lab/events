@@ -50,11 +50,11 @@ import {
 } from "../lib/nostrChat.js";
 import type { ChatSigner } from "../lib/nostrChat.js";
 
-/** メッセージ時刻の表示（HH:mm） */
+/** メッセージ時刻の表示（HH:mm:ss） */
 function formatTime(createdAtSec: number): string {
   const d = new Date(createdAtSec * 1000);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 /**
@@ -477,7 +477,18 @@ export function EventChat({
                             spacing={0.75}
                             alignItems="baseline"
                           >
-                            <Typography variant="body2" fontWeight={600} noWrap>
+                            <Typography
+                              variant="body2"
+                              fontWeight={600}
+                              noWrap
+                              component={RouterLink}
+                              to={`/users/${member.username}`}
+                              sx={{
+                                color: "inherit",
+                                textDecoration: "none",
+                                "&:hover": { textDecoration: "underline" },
+                              }}
+                            >
                               {member.name}
                             </Typography>
                             <Typography
