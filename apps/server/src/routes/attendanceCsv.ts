@@ -64,6 +64,10 @@ function formatJstMinute(ms: number): string {
  * 行 = メンバー（確定を先頭に）∪ アンケート回答者。UTF-8 BOM + CRLF */
 attendanceCsvRoutes.get("/:id/attendance.csv", async (c) => {
   const eventId = c.req.param("id");
+  // Content-Disposition に埋めるためUUID形式を明示検証（多層防御）
+  if (!/^[0-9a-f-]{36}$/.test(eventId)) {
+    return c.json({ error: "not_found" }, 404);
+  }
   if (!(await eventsRepo.findById(eventId))) {
     return c.json({ error: "not_found" }, 404);
   }
