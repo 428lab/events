@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import {
+  CHAT_CHANNEL_ABOUT,
   hideChatNoteInput,
   registerChatChannelInput,
   registerChatPubkeyInput,
@@ -18,6 +19,11 @@ import {
   verifyChatKeyProof,
   verifyEventSignature,
 } from "../auth/nostr.js";
+import {
+  serviceKeyConfigured,
+  servicePubkey,
+  signWithServiceKey,
+} from "../lib/nostrSign.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
@@ -89,6 +95,35 @@ eventChatRoutes.get(
   },
 );
 
+/** 公式サービス鍵で署名した kind:40（チャンネル作成）を発行する (#199)。
+ * 主催者が NIP-07 で自ら署名するケース以外はこの鍵でチャンネルを作る
+ * （参加者個人の鍵にチャンネルを紐付けない）。
+ * ここでは登録しない: クライアントがリレーへの受理を確認してから
+ * POST /:id/chat-channel で先勝ち登録する */
+eventChatRoutes.post(
+  "/:id/chat-channel/official",
+  requireEventRole([...MEMBER_ROLES]),
+  async (c) => {
+    const denied = await confirmedOnly(c);
+    if (denied) return denied;
+    if (!serviceKeyConfigured()) {
+      return c.json({ error: "service_key_unset" }, 503);
+    }
+    const event = await eventsRepo.findById(c.req.param("id"));
+    if (!event) return c.json({ error: "not_found" }, 404);
+    const channelEvent = signWithServiceKey({
+      kind: 40,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [],
+      content: JSON.stringify({
+        name: event.title,
+        about: CHAT_CHANNEL_ABOUT,
+      }),
+    });
+    return c.json({ channelEvent });
+  },
+);
+
 /** NIP-28 チャンネル（kind:40）の登録。先勝ちで1回だけ設定され、
  * 2件目以降は既存のチャンネルIDをそのまま返す */
 eventChatRoutes.post(
@@ -100,14 +135,24 @@ eventChatRoutes.post(
     if (denied) return denied;
     const eventId = c.req.param("id");
     const { channelEvent } = valid<RegisterChatChannelInput>(c, "json");
-    // 無関係な既存チャンネルの紐付けを防ぐ: 署名済み kind:40 で、
-    // 本人がこのイベントに登録済みの鍵で作られたものだけ受け付ける
+    // 署名済みの kind:40 のみ（無関係な既存チャンネルの紐付け防止）
     if (!verifyEventSignature(channelEvent) || channelEvent.kind !== 40) {
       return c.json({ error: "invalid_channel_event" }, 400);
     }
-    const bound = await eventChatRepo.pubkeyOwner(eventId, channelEvent.pubkey);
-    if (bound !== c.get("user").id) {
-      return c.json({ error: "invalid_channel_event" }, 400);
+    // 署名者は「公式サービス鍵」または「主催者(createdBy)が登録済みの鍵」のみ (#199)。
+    // 参加者個人の鍵で作ったチャンネルは受け付けない（鍵の持ち主が消えると
+    // チャンネルの管理者が不在になるため、公式鍵/主催者鍵に限定する）
+    const event = await eventsRepo.findById(eventId);
+    if (!event) return c.json({ error: "not_found" }, 404);
+    const isServiceSigned = channelEvent.pubkey === servicePubkey();
+    if (!isServiceSigned) {
+      const bound = await eventChatRepo.pubkeyOwner(
+        eventId,
+        channelEvent.pubkey,
+      );
+      if (!bound || bound !== event.createdBy) {
+        return c.json({ error: "invalid_channel_event" }, 400);
+      }
     }
     const settled = await eventChatRepo.setChannelOnce(
       eventId,

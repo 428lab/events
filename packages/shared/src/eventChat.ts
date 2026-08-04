@@ -23,6 +23,9 @@ export const CHAT_WINDOW_AFTER_MS = 2 * 60 * 60_000;
 /** 1メッセージの最大文字数 */
 export const CHAT_MESSAGE_MAX = 500;
 
+/** kind:40 チャンネル作成イベントの about（主催者NIP-07・公式鍵どちらの経路でも同一） */
+export const CHAT_CHANNEL_ABOUT = "events lab のイベントチャット";
+
 /** Nostr の公開鍵・イベントID（64桁小文字hex） */
 const hex64 = z.string().regex(/^[0-9a-f]{64}$/);
 
@@ -51,6 +54,13 @@ export const registerChatChannelInput = z.object({
   channelEvent: nostrEventInput,
 });
 export type RegisterChatChannelInput = z.infer<typeof registerChatChannelInput>;
+
+/** POST /events/:id/chat-channel/official のレスポンス。
+ * 公式サービス鍵で署名済みの kind:40（クライアントがリレーへ発行してから
+ * /chat-channel で登録する） */
+export interface OfficialChannelPayload {
+  channelEvent: NostrEventInput;
+}
 
 /** アプリ側で非表示にするメッセージ（kind:42 の note id）。staff のみ */
 export const hideChatNoteInput = z.object({

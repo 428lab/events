@@ -26,10 +26,14 @@ import {
   CHAT_WINDOW_AFTER_MS,
   CHAT_WINDOW_BEFORE_MS,
 } from "@eventer/shared";
-import type { Event as NostrEvent } from "nostr-tools/pure";
+import type {
+  Event as NostrEvent,
+  VerifiedEvent,
+} from "nostr-tools/pure";
 import { useMe } from "../api/hooks.js";
-import { api } from "../api/client.js";
+import { api, ApiError } from "../api/client.js";
 import {
+  createOfficialChannelEvent,
   useChatMembers,
   useHideChatNote,
   useRegisterChatChannel,
@@ -99,6 +103,11 @@ export function EventChat({
   // チャンネル確定処理から最新の chat-members を参照するための ref
   const chatRef = useRef(chat);
   chatRef.current = chat;
+  // チャンネル作成時に「主催者×NIP-07」経路かを判定するための ref (#199)
+  const meRef = useRef(me);
+  meRef.current = me;
+  // 現在の signer が NIP-07（Nostrアカウント）か。setSigner の直前に設定する
+  const signerIsNip07Ref = useRef(false);
 
   // 使用するリレー（運用設定。payload 取得前は既定値）
   const relays = useMemo(
@@ -129,7 +138,10 @@ export function EventChat({
     const sk = loadLocalChatKey(eventId);
     if (!sk) return;
     const local = localSigner(sk);
-    if (local.pubkey === myRegisteredPubkey) setSigner(local);
+    if (local.pubkey === myRegisteredPubkey) {
+      signerIsNip07Ref.current = false;
+      setSigner(local);
+    }
   }, [signer, myRegisteredPubkey, eventId]);
 
   // 接続・チャンネル確定・購読。signer が決まったら開始し、unmount で切断
@@ -151,11 +163,24 @@ export function EventChat({
       let cid = chatRef.current?.channelId ?? null;
       if (!cid) {
         try {
-          const created = await signer.signEvent(
-            buildChannelCreateTemplate(event.title),
-          );
+          // チャンネル作成鍵の方針 (#199): 参加者個人の鍵では作らない。
+          // - 主催者(createdBy)本人が NIP-07 で参加している → 主催者の鍵で署名
+          // - それ以外（参加者が最初に開いた等） → 公式サービス鍵（サーバー署名）
+          const organizerNip07 =
+            signerIsNip07Ref.current &&
+            meRef.current?.id === event.createdBy;
+          const created: VerifiedEvent = organizerNip07
+            ? await signer.signEvent(buildChannelCreateTemplate(event.title))
+            : ((await createOfficialChannelEvent(eventId))
+                .channelEvent as VerifiedEvent);
           // リレーに受理されたことを確認してからサーバーへ登録する
           // （不達のまま登録すると「リレー上に存在しない部屋」を参照し続けてしまう）
+          //
+          // 注意（リレーポリシーのリスク）: 公式鍵署名の kind:40 は「参加者の
+          // 接続」から発行する。リレー/プロキシが NIP-42 で
+          // 「AUTH済みpubkey == イベントのpubkey」を書き込み条件にしていると
+          // 拒否される。その場合は下の joinError が表示されるので、リレー側で
+          // 公式鍵のイベントを任意のAUTH済み接続から許可する設定と併せて運用する
           const accepted = await pool.publish(created);
           if (!accepted) {
             if (!disposed) {
@@ -168,8 +193,14 @@ export function EventChat({
           const { channelId: settled } =
             await registerChannel.mutateAsync(created);
           cid = settled ?? created.id;
-        } catch {
-          if (!disposed) setJoinError("チャンネルの作成に失敗しました。");
+        } catch (err) {
+          if (!disposed) {
+            setJoinError(
+              err instanceof ApiError && err.status === 503
+                ? "公式鍵が未設定のためチャンネルを作成できません（運営に連絡してください）。"
+                : "チャンネルの作成に失敗しました。",
+            );
+          }
           return;
         }
       }
@@ -230,10 +261,10 @@ export function EventChat({
   const join = async () => {
     setJoinError(null);
     try {
-      const s =
-        keyMode === "nip07" && hasNip07()
-          ? await nip07Signer()
-          : localSigner(loadOrCreateLocalChatKey(eventId));
+      const useNip07 = keyMode === "nip07" && hasNip07();
+      const s = useNip07
+        ? await nip07Signer()
+        : localSigner(loadOrCreateLocalChatKey(eventId));
       // 所有証明: サーバーのchallengeに署名して送る（他人のnpub紐付け防止）
       const { challenge } = await api.get<{ challenge: string }>(
         "/auth/nostr/challenge",
@@ -242,6 +273,7 @@ export function EventChat({
         buildChatKeyProofTemplate(challenge, eventId),
       );
       await registerKey.mutateAsync(proof);
+      signerIsNip07Ref.current = useNip07;
       setSigner(s);
     } catch {
       setJoinError("チャットへの参加に失敗しました。");

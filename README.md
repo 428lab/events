@@ -104,3 +104,20 @@ npx wrangler secret put RESEND_API_KEY --env staging   # staging
 
 - 差出人は既定で `events lab <noreply@events.kojira.io>`（Resend で認証済みのドメインに合わせる）。変える場合は環境変数 `EMAIL_FROM` を設定。
 - 前日リマインダーは cron トリガー（毎日 UTC 0:00 = JST 9:00）で送信される。
+
+### イベントチャットの公式サービス鍵（NOSTR_SERVICE_KEY）
+
+Nostr イベントチャット（#199）のチャンネル作成（kind:40）は、主催者本人が
+NIP-07 で署名する場合を除き、events lab の公式サービス鍵でサーバーが署名します
+（参加者個人の鍵にはチャンネルを紐付けない）。秘密鍵は 64 桁 hex で、
+環境（本番 / staging）ごとに別の鍵をシークレットとして登録します。
+
+```bash
+npx wrangler secret put NOSTR_SERVICE_KEY                 # 本番
+npx wrangler secret put NOSTR_SERVICE_KEY --env staging   # staging
+```
+
+- 鍵は `node scripts/mine-npub.mjs <prefix>` で vanity npub をマイニングして作れる
+  （出力の `hexsec:` の値をそのまま登録する。`nsec` 形式は受け付けないので注意）。
+- 未設定の環境では公式署名エンドポイントは 503 (`service_key_unset`) を返し、
+  主催者の NIP-07 経路以外ではチャンネルを作成できない。

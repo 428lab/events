@@ -23,6 +23,9 @@ export interface Env {
   CRON_SECRET?: string;
   /** メール差出人（未設定なら既定値） (#126) */
   EMAIL_FROM?: string;
+  /** events lab 公式サービス鍵の秘密鍵（64桁hex）。チャンネル作成 kind:40 の
+   * サーバー署名に使う。未設定なら公式署名は無効 (#199) */
+  NOSTR_SERVICE_KEY?: string;
 }
 
 // Worker のバインディングはアイソレート内で安定（リクエスト間で同一ハンドル）なので、
@@ -113,6 +116,10 @@ export const env = {
   },
   get resendApiKey(): string {
     return must().RESEND_API_KEY || "";
+  },
+  /** 公式サービス鍵の秘密鍵hex（未設定なら空文字＝公式署名無効） (#199) */
+  get nostrServiceKey(): string {
+    return must().NOSTR_SERVICE_KEY || "";
   },
   /** メール差出人 (#126) */
   get emailFrom(): string {

@@ -9,7 +9,7 @@ import type {
   EventTemplate,
   VerifiedEvent,
 } from "nostr-tools/pure";
-import { CHAT_RELAYS } from "@eventer/shared";
+import { CHAT_CHANNEL_ABOUT, CHAT_RELAYS } from "@eventer/shared";
 
 /**
  * Nostrイベントチャット (#199) の薄いラッパー。
@@ -117,7 +117,7 @@ export function buildChannelCreateTemplate(eventTitle: string): EventTemplate {
     tags: [],
     content: JSON.stringify({
       name: eventTitle,
-      about: "events lab のイベントチャット",
+      about: CHAT_CHANNEL_ABOUT,
     }),
   };
 }

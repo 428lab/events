@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ChatMembersPayload } from "@eventer/shared";
+import type { ChatMembersPayload, OfficialChannelPayload } from "@eventer/shared";
 import { api } from "./client.js";
 
 /** Nostrイベントチャット (#199) の紐付けAPI。チャット本文はリレー直通でここを通らない */
@@ -38,6 +38,17 @@ export function useRegisterChatChannel(eventId: string) {
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["event", eventId, "chatMembers"] }),
   });
+}
+
+/** 公式サービス鍵で署名済みの kind:40 をサーバーに発行してもらう (#199)。
+ * 登録はしない（リレーへの受理を確認してから /chat-channel で登録する）。
+ * 公式鍵未設定の環境では 503 (service_key_unset) */
+export function createOfficialChannelEvent(
+  eventId: string,
+): Promise<OfficialChannelPayload> {
+  return api.post<OfficialChannelPayload>(
+    `/events/${eventId}/chat-channel/official`,
+  );
 }
 
 /** メッセージをアプリ側で非表示にする（staff） */
