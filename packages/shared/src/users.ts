@@ -79,3 +79,23 @@ export const updateUsernameInput = z.object({
     ),
 });
 export type UpdateUsernameInput = z.infer<typeof updateUsernameInput>;
+
+/** 表示名に許可しない不可視・制御文字 (#232)。
+ * 制御文字(C0/DEL)・bidi制御（表示順を乱す）・ゼロ幅スペース（見た目が空の名前）。
+ * U+200D(ZWJ)と異体字セレクタは絵文字の合成に必要なので許可する */
+const DISPLAY_NAME_FORBIDDEN =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u001f\u007f\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+
+/** 表示名の変更入力 (#232)。イベント・チャット等の表示に使われる */
+export const updateDisplayNameInput = z.object({
+  displayName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(50)
+    .refine((v) => !DISPLAY_NAME_FORBIDDEN.test(v), {
+      message: "使用できない文字（制御文字等）が含まれています",
+    }),
+});
+export type UpdateDisplayNameInput = z.infer<typeof updateDisplayNameInput>;

@@ -86,3 +86,15 @@ export function useUpdateUsername() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
   });
 }
+
+/** 自分の表示名を変更 (#232) */
+export function useUpdateDisplayName() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (displayName: string) =>
+      api.put<{ ok: boolean; displayName: string }>("/me/display-name", {
+        displayName,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
+}
