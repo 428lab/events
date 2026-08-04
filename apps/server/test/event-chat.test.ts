@@ -583,6 +583,67 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
       true,
     );
   });
+
+  it("chatUrlsAllowed: 既定はオフ、イベント更新（PATCH）でオンオフできる (#241)", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, owner.userId, "staff");
+    await addMember(eventId, a.userId);
+
+    // 既定はオフ（イベント取得に含まれる）
+    const before = await SELF.fetch(`${BASE}/api/events/${eventId}`, {
+      headers: { cookie: a.cookie },
+    });
+    expect(before.status).toBe(200);
+    expect(
+      ((await before.json()) as { event: Event }).event.chatUrlsAllowed,
+    ).toBe(false);
+
+    // staff がオンにできる
+    const patch = await SELF.fetch(`${BASE}/api/events/${eventId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: owner.cookie },
+      body: JSON.stringify({ chatUrlsAllowed: true }),
+    });
+    expect(patch.status).toBe(200);
+    expect(
+      ((await patch.json()) as { event: Event }).event.chatUrlsAllowed,
+    ).toBe(true);
+
+    // 再度オフに戻せる
+    const patch2 = await SELF.fetch(`${BASE}/api/events/${eventId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: owner.cookie },
+      body: JSON.stringify({ chatUrlsAllowed: false }),
+    });
+    expect(
+      ((await patch2.json()) as { event: Event }).event.chatUrlsAllowed,
+    ).toBe(false);
+  });
+
+  it("chatUrlsAllowed: イベントの複製で引き継がれる (#241)", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, owner.userId, "staff");
+
+    // 元イベントをオンにしてから複製する
+    const patch = await SELF.fetch(`${BASE}/api/events/${eventId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: owner.cookie },
+      body: JSON.stringify({ chatUrlsAllowed: true }),
+    });
+    expect(patch.status).toBe(200);
+
+    const dup = await SELF.fetch(`${BASE}/api/events/${eventId}/duplicate`, {
+      method: "POST",
+      headers: { cookie: owner.cookie },
+    });
+    expect(dup.status).toBe(201);
+    expect(
+      ((await dup.json()) as { event: Event }).event.chatUrlsAllowed,
+    ).toBe(true);
+  });
 });
 
 describe("公式チャンネル署名 (#199)", () => {

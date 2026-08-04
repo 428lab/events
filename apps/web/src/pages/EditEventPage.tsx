@@ -69,6 +69,8 @@ export function EditEventPage() {
   const [attendanceCheck, setAttendanceCheck] = useState(false);
   // 部屋を開設するかはスタッフが決める (#221)。新規イベントは既定OFF
   const [chatEnabled, setChatEnabled] = useState(false);
+  // 参加者のURL投稿を許可するか (#241)。既定OFF（スタッフは常に可）
+  const [chatUrlsAllowed, setChatUrlsAllowed] = useState(false);
   const [venueWanted, setVenueWanted] = useState(false);
   const [communityId, setCommunityId] = useState("");
   const myCommunitiesQuery = useMyCommunities();
@@ -98,6 +100,7 @@ export function EditEventPage() {
       setContestMode(e.contestMode);
       setAttendanceCheck(e.attendanceCheck);
       setChatEnabled(e.chatEnabled);
+      setChatUrlsAllowed(e.chatUrlsAllowed);
       setVenueWanted(e.venueWanted);
       setCommunityId(e.communityId ?? "");
       setInitialized(true);
@@ -135,6 +138,7 @@ export function EditEventPage() {
         contestMode,
         attendanceCheck,
         chatEnabled,
+        chatUrlsAllowed,
         venueWanted,
         communityId: communityId || null,
       },
@@ -320,6 +324,26 @@ export function EditEventPage() {
             <Typography variant="caption" color="text.secondary" display="block">
               参加確定メンバーがイベントページでチャットできます。チャットの内容は公開されます。
             </Typography>
+            {chatEnabled && (
+              <Box sx={{ pl: 3, mt: 1 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={chatUrlsAllowed}
+                      onChange={(e) => setChatUrlsAllowed(e.target.checked)}
+                    />
+                  }
+                  label="参加者のURL投稿を許可"
+                />
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  display="block"
+                >
+                  オンにすると参加者もチャットにURLを投稿できます。スタッフは常に投稿できます。
+                </Typography>
+              </Box>
+            )}
           </Box>
 
           <Box>
