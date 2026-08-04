@@ -129,6 +129,8 @@ export const eventMemberSchema = z.object({
   status: z.string(),
   /** 出席チェック済みか（出席チェックモード時に有効） */
   attended: z.boolean(),
+  /** 出席チェックした時刻（epoch ms）。未出席は null (#154) */
+  attendedAt: z.number().nullable(),
   createdAt: z.number(),
 });
 export type EventMember = z.infer<typeof eventMemberSchema>;

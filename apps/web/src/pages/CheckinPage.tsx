@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import QrCodeScannerIcon from "@mui/icons-material/QrCodeScanner";
+import DownloadIcon from "@mui/icons-material/Download";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
@@ -409,6 +410,20 @@ export function CheckinPage() {
         参加者の「入場QR」またはプロフィールカードのQRを枠内にかざしてください。
         入場QRは本人確認済みとして自動で出席記録されます。
       </Typography>
+
+      {/* 受付結果の名簿（同一オリジンの <a> なので cookie 認証のまま） (#154) */}
+      <Box>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<DownloadIcon />}
+          component="a"
+          href={`/api/events/${id}/attendance.csv`}
+          download
+        >
+          入館名簿CSV
+        </Button>
+      </Box>
 
       {log.length > 0 && (
         <Card variant="outlined">

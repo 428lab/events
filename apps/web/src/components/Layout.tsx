@@ -95,6 +95,9 @@ export function Layout({
             <Button color="inherit" component={RouterLink} to="/communities">
               コミュニティ
             </Button>
+            <Button color="inherit" component={RouterLink} to="/venues">
+              会場
+            </Button>
             <Button color="inherit" component={RouterLink} to="/decks">
               スライド
             </Button>

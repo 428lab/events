@@ -251,6 +251,17 @@ function SurveyAnswersCard({
           >
             CSVダウンロード
           </Button>
+          {/* 受付結果＋アンケートを1枚にした名簿（会場提供者にも渡せる） (#154) */}
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            component="a"
+            href={`/api/events/${eventId}/attendance.csv`}
+            download
+          >
+            入館名簿CSV
+          </Button>
         </Stack>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
           参加登録時のアンケート回答です（スタッフのみ閲覧できます）。

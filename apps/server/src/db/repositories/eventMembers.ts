@@ -15,6 +15,7 @@ interface MemberRow {
   slot_id: string | null;
   status: string;
   attended: number;
+  attended_at: number | null;
   created_at: number;
 }
 
@@ -36,6 +37,7 @@ function toMember(row: MemberRow): EventMember {
     slotId: row.slot_id,
     status: row.status,
     attended: row.attended === 1,
+    attendedAt: row.attended_at,
     createdAt: row.created_at,
   };
 }
@@ -88,7 +90,7 @@ export const eventMembersRepo = {
       // キャンセル済みの再参加: 行を復活させる（並び順の公平のため参加日時は今）
       await run(
         `UPDATE event_member
-            SET role = ?, slot_id = ?, status = ?, attended = 0,
+            SET role = ?, slot_id = ?, status = ?, attended = 0, attended_at = NULL,
                 canceled_at = NULL, canceled_scheduling = 0, created_at = ?
           WHERE id = ?`,
         role,
@@ -123,15 +125,23 @@ export const eventMembersRepo = {
     );
   },
 
-  /** 出席チェックの更新（staff） */
+  /** 出席チェックの更新（staff）。
+   * attendedAt: 出席にする時刻（通常 Date.now()）。既に出席済みなら最初の時刻を保持し、
+   * 出席解除では NULL に戻す (#154) */
   async setAttended(
     eventId: string,
     userId: string,
     attended: boolean,
+    attendedAt: number | null,
   ): Promise<EventMember | null> {
     await run(
-      "UPDATE event_member SET attended = ? WHERE event_id = ? AND user_id = ? AND status <> 'canceled'",
+      `UPDATE event_member
+          SET attended = ?,
+              attended_at = CASE WHEN ? = 1 THEN COALESCE(attended_at, ?) ELSE NULL END
+        WHERE event_id = ? AND user_id = ? AND status <> 'canceled'`,
       attended ? 1 : 0,
+      attended ? 1 : 0,
+      attendedAt,
       eventId,
       userId,
     );

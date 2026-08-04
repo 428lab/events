@@ -16,6 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import CelebrationIcon from "@mui/icons-material/Celebration";
+import DownloadIcon from "@mui/icons-material/Download";
 import EggIcon from "@mui/icons-material/Egg";
 import StadiumIcon from "@mui/icons-material/Stadium";
 import { Link as RouterLink } from "react-router-dom";
@@ -376,6 +377,29 @@ export function VenueOwnerOffers({ venueId }: { venueId: string }) {
                       ? ` 主催者の連絡先: ${o.organizerContact}（以後の相談は直接どうぞ）`
                       : " 主催者からの連絡をお待ちください（あなたの連絡先が開示されています）"}
                   </Alert>
+                )}
+                {/* 成立イベントの受付名簿（同一オリジンの <a> なので cookie 認証のまま） (#154) */}
+                {o.status === "accepted" && o.event && (
+                  <Box sx={{ mt: 1 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<DownloadIcon />}
+                      component="a"
+                      href={`/api/events/${o.event.id}/attendance.csv`}
+                      download
+                    >
+                      入館名簿CSV
+                    </Button>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                      sx={{ mt: 0.5 }}
+                    >
+                      入館管理のためにご利用ください。個人情報の取り扱いにご注意ください
+                    </Typography>
+                  </Box>
                 )}
               </Box>
             );
