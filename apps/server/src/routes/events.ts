@@ -564,10 +564,13 @@ eventRoutes.patch(
   requireEventRole(["staff"]),
   zValidator("json", setAttendanceInput),
   async (c) => {
+    const { attended } = valid<SetAttendanceInput>(c, "json");
     const member = await eventMembersRepo.setAttended(
       c.req.param("id"),
       c.req.param("userId"),
-      valid<SetAttendanceInput>(c, "json").attended,
+      attended,
+      // 出席にした時刻を記録（解除では NULL に戻る） (#154)
+      attended ? Date.now() : null,
     );
     if (!member) return c.json({ error: "not_found" }, 404);
     return c.json({ member });
@@ -634,7 +637,12 @@ eventRoutes.post(
     } else if (member.attended) {
       result = "already";
     } else {
-      member = await eventMembersRepo.setAttended(eventId, user.id, true);
+      member = await eventMembersRepo.setAttended(
+        eventId,
+        user.id,
+        true,
+        Date.now(),
+      );
       result = "checked_in";
     }
     return c.json({

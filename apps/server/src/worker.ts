@@ -42,6 +42,7 @@ import {
   eventSurveyRoutes,
   getEventSurvey,
 } from "./routes/eventSurvey.js";
+import { attendanceCsvRoutes } from "./routes/attendanceCsv.js";
 import {
   analyticsRoutes,
   adminStatsRoutes,
@@ -140,6 +141,8 @@ api.route("/events", meetEventRoutes);
 api.route("/events", eventScheduleRoutes);
 // 事前アンケート (#152)（質問保存・回答・スタッフ閲覧。要認証）
 api.route("/events", eventSurveyRoutes);
+// 入館名簿CSV (#154)（staff または成立会場の運営者。要認証）
+api.route("/events", attendanceCsvRoutes);
 api.route("/events", analyticsRoutes);
 api.route("/me", meRoutes);
 // 公開: プロフィールカードPNG（認証不要。OGクローラ用。要認証の /users ルートより先に登録） (#193)

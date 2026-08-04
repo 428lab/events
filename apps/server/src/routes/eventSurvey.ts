@@ -141,8 +141,9 @@ eventSurveyRoutes.put(
   },
 );
 
-/** スタッフ閲覧用の回答一覧。回答済みユーザー ∪ 確定メンバーの1人1行 */
-async function collectAnswerRows(eventId: string): Promise<{
+/** スタッフ閲覧用の回答一覧。回答済みユーザー ∪ 確定メンバーの1人1行
+ * （入館名簿CSV (#154) からも再利用する） */
+export async function collectAnswerRows(eventId: string): Promise<{
   questions: SurveyQuestion[];
   rows: Array<{
     user: {
@@ -259,15 +260,16 @@ eventSurveyRoutes.get(
 
 /** CSV の1セルをエスケープする。
  * カンマ・引用符・改行は引用で保護し、= + - @ タブ始まりのセルは
- * Excel で式として実行されないよう ' を前置する（フォーミュラインジェクション対策） */
-function csvCell(v: string): string {
+ * Excel で式として実行されないよう ' を前置する（フォーミュラインジェクション対策）。
+ * 入館名簿CSV (#154) からも再利用する */
+export function csvCell(v: string): string {
   const guarded = /^[=+\-@\t]/.test(v) ? `'${v}` : v;
   return /[",\n\r]/.test(guarded)
     ? `"${guarded.replace(/"/g, '""')}"`
     : guarded;
 }
 
-const MEMBER_STATUS_LABEL: Record<string, string> = {
+export const MEMBER_STATUS_LABEL: Record<string, string> = {
   confirmed: "確定",
   waitlist: "キャンセル待ち",
   applied: "抽選申込中",
