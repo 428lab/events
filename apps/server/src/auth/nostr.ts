@@ -60,6 +60,9 @@ async function verifyChallenge(challenge: string): Promise<boolean> {
   if (!inserted) return false;
   // TTL を過ぎた記録は掃除（テーブル肥大防止）
   await run(
+    // 注意: このテーブルは統合コード (#240, mergeCode.ts) の使い捨て記録と共有。
+    // クリーンアップ猶予（CHALLENGE_TTL_MS * 2 = 20分）を MERGE_CODE_TTL_MS
+    // （15分）より短くするとコードのリプレイ窓が開くので、変更時は両方を確認
     "DELETE FROM nostr_challenge_used WHERE used_at < ?",
     Date.now() - CHALLENGE_TTL_MS * 2,
   );

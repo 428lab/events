@@ -1,5 +1,5 @@
 import type { User } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { batch, many, one, run } from "../client.js";
 
 interface UserRow {
   id: string;
@@ -204,6 +204,214 @@ export const usersRepo = {
   /** ユーザー行を削除（関連行は FK CASCADE）。空アカウントの引き取り時の後始末用 (#238) */
   async deleteById(id: string): Promise<void> {
     await run("DELETE FROM user WHERE id = ?", id);
+  },
+
+  /** アカウント統合 (#240)。負け側(loser)の全ユーザーデータを勝ち側(winner)へ
+   * 移動し、負け側のユーザー行を削除する。
+   *
+   * - UNIQUE キーに user 列を含むテーブルは、勝ち側に同キー行があれば負け側を
+   *   捨ててから付け替える（勝ち側優先）
+   * - user_follow は統合で生じる自己フォロー・重複を削除
+   * - event_meet は (小,大) の正規化を保ちながら付け替え、自己ペア・重複を削除
+   * - 負け側の session は全削除（統合ではなく破棄）
+   *
+   * D1 の batch は単一トランザクションとして実行されるが、万一逐次実行に
+   * フォールバックしても途中失敗でログイン手段が失われないよう、
+   * 「子テーブル移行 → session/identity → user 削除」の順序を守る。 */
+  async mergeUsers(winnerId: string, loserId: string): Promise<void> {
+    const stmts: Array<{ sql: string; args?: unknown[] }> = [];
+
+    // (0) event_member の重複破棄でスタッフ権限が落ちないよう、負け側が staff の
+    //     イベントでは勝ち側の既存行を先に staff へ引き上げる
+    stmts.push({
+      sql: `UPDATE event_member SET role = 'staff'
+             WHERE user_id = ? AND role != 'staff'
+               AND event_id IN (SELECT event_id FROM event_member
+                                 WHERE user_id = ? AND role = 'staff')`,
+      args: [winnerId, loserId],
+    });
+
+    // (1) UNIQUE キー（user 列 + keyCols）を持つテーブル。
+    //     勝ち側に同キーの行が既にあれば、負け側の行を捨ててから付け替える
+    const uniqueKeyed: Array<[table: string, userCol: string, keyCols: string[]]> = [
+      ["event_member", "user_id", ["event_id"]],
+      ["entry_member", "user_id", ["entry_id"]],
+      ["score", "judge_user_id", ["entry_id", "criterion_id"]],
+      ["community_member", "user_id", ["community_id"]],
+      ["event_date_vote", "user_id", ["option_id"]],
+      ["event_request_reaction", "user_id", ["request_id", "kind"]],
+      ["venue_admin", "user_id", ["venue_id"]],
+      ["event_survey_answer", "user_id", ["question_id"]],
+      ["event_chat_pubkey", "user_id", ["event_id"]],
+      ["event_like", "user_id", ["event_id", "kind", "target_key"]],
+    ];
+    for (const [table, userCol, keyCols] of uniqueKeyed) {
+      const sameKey = keyCols
+        .map((k) => `w.${k} = ${table}.${k}`)
+        .join(" AND ");
+      stmts.push({
+        sql: `DELETE FROM ${table} WHERE ${userCol} = ?
+              AND EXISTS (SELECT 1 FROM ${table} w
+                          WHERE w.${userCol} = ? AND ${sameKey})`,
+        args: [loserId, winnerId],
+      });
+      stmts.push({
+        sql: `UPDATE ${table} SET ${userCol} = ? WHERE ${userCol} = ?`,
+        args: [winnerId, loserId],
+      });
+    }
+
+    // (2) event_like.target_key は host/staff/participant のとき対象 user_id。
+    //     付け替え後に重複する行と、統合で生じる「自分へのいいね」は削除
+    const likeUserKinds = "('host', 'staff', 'participant')";
+    stmts.push({
+      sql: `DELETE FROM event_like WHERE target_key = ? AND kind IN ${likeUserKinds}
+            AND EXISTS (SELECT 1 FROM event_like w
+                        WHERE w.event_id = event_like.event_id
+                          AND w.user_id = event_like.user_id
+                          AND w.kind = event_like.kind
+                          AND w.target_key = ?)`,
+      args: [loserId, winnerId],
+    });
+    stmts.push({
+      sql: `UPDATE event_like SET target_key = ?
+            WHERE target_key = ? AND kind IN ${likeUserKinds}`,
+      args: [winnerId, loserId],
+    });
+    stmts.push({
+      sql: `DELETE FROM event_like
+            WHERE user_id = ? AND target_key = ? AND kind IN ${likeUserKinds}`,
+      args: [winnerId, winnerId],
+    });
+
+    // (3) notification_pref は PK user_id。勝ち側の設定を優先し負け側は破棄
+    stmts.push({
+      sql: `DELETE FROM notification_pref WHERE user_id = ?
+            AND EXISTS (SELECT 1 FROM notification_pref WHERE user_id = ?)`,
+      args: [loserId, winnerId],
+    });
+    stmts.push({
+      sql: "UPDATE notification_pref SET user_id = ? WHERE user_id = ?",
+      args: [winnerId, loserId],
+    });
+
+    // (4) user_follow: 両者間のフォロー（統合後の自己フォロー）と重複を削除
+    stmts.push({
+      sql: `DELETE FROM user_follow
+            WHERE (follower_id = ? AND followee_id = ?)
+               OR (follower_id = ? AND followee_id = ?)`,
+      args: [loserId, winnerId, winnerId, loserId],
+    });
+    stmts.push({
+      sql: `DELETE FROM user_follow WHERE follower_id = ?
+            AND EXISTS (SELECT 1 FROM user_follow w
+                        WHERE w.follower_id = ?
+                          AND w.followee_id = user_follow.followee_id)`,
+      args: [loserId, winnerId],
+    });
+    stmts.push({
+      sql: "UPDATE user_follow SET follower_id = ? WHERE follower_id = ?",
+      args: [winnerId, loserId],
+    });
+    stmts.push({
+      sql: `DELETE FROM user_follow WHERE followee_id = ?
+            AND EXISTS (SELECT 1 FROM user_follow w
+                        WHERE w.follower_id = user_follow.follower_id
+                          AND w.followee_id = ?)`,
+      args: [loserId, winnerId],
+    });
+    stmts.push({
+      sql: "UPDATE user_follow SET followee_id = ? WHERE followee_id = ?",
+      args: [winnerId, loserId],
+    });
+
+    // (5) event_meet: ペアは (user_low < user_high) に正規化して保存されている。
+    //     両者間の出会い（統合後の自己ペア）を消し、付け替え後に重複する行を
+    //     消してから、min/max で正規化を保ったまま付け替える
+    stmts.push({
+      sql: `DELETE FROM event_meet
+            WHERE (user_low = ? AND user_high = ?)
+               OR (user_low = ? AND user_high = ?)`,
+      args: [loserId, winnerId, winnerId, loserId],
+    });
+    const meetOther =
+      "CASE WHEN event_meet.user_low = ? THEN event_meet.user_high ELSE event_meet.user_low END";
+    stmts.push({
+      sql: `DELETE FROM event_meet WHERE (user_low = ? OR user_high = ?)
+            AND EXISTS (SELECT 1 FROM event_meet w
+                        WHERE w.event_id = event_meet.event_id
+                          AND w.user_low = min(?, ${meetOther})
+                          AND w.user_high = max(?, ${meetOther}))`,
+      args: [loserId, loserId, winnerId, loserId, winnerId, loserId],
+    });
+    stmts.push({
+      sql: `UPDATE event_meet SET
+              user_low = min(?, CASE WHEN user_low = ? THEN user_high ELSE user_low END),
+              user_high = max(?, CASE WHEN user_low = ? THEN user_high ELSE user_low END)
+            WHERE user_low = ? OR user_high = ?`,
+      args: [winnerId, loserId, winnerId, loserId, loserId, loserId],
+    });
+
+    // (6) UNIQUE の無い参照列は単純に付け替え
+    const simple: Array<[table: string, col: string]> = [
+      ["event_photo", "user_id"],
+      ["event_photo_comment", "user_id"],
+      ["event_comment", "user_id"],
+      ["notification", "user_id"],
+      ["inquiry", "user_id"],
+      ["venue_photo", "user_id"],
+      ["event_schedule_item", "speaker_user_id"],
+      ["bgm_track", "owner_id"],
+      ["event", "created_by"],
+      ["event_request", "created_by"],
+      ["venue_offer", "created_by"],
+      ["community", "owner_id"],
+      ["venue", "owner_id"],
+      ["deck", "owner_id"],
+      ["live_set", "owner_id"],
+    ];
+    for (const [table, col] of simple) {
+      stmts.push({
+        sql: `UPDATE ${table} SET ${col} = ? WHERE ${col} = ?`,
+        args: [winnerId, loserId],
+      });
+    }
+
+    // (7) 負け側の session は破棄（統合しない）
+    stmts.push({
+      sql: "DELETE FROM session WHERE user_id = ?",
+      args: [loserId],
+    });
+
+    // (8) ログイン方法（identity）は勝ち側へ移す。UNIQUE(provider, provider_user_id)
+    //     に user 列は含まれないため衝突しない。user 削除の直前に置き、
+    //     万一途中で失敗してもログイン手段が失われないようにする
+    stmts.push({
+      sql: "UPDATE identity SET user_id = ? WHERE user_id = ?",
+      args: [winnerId, loserId],
+    });
+
+    // (9) 負け側の user 行を削除（FK RESTRICT の live_set / venue_offer は
+    //     (6) で移行済みなので通る）
+    stmts.push({ sql: "DELETE FROM user WHERE id = ?", args: [loserId] });
+
+    // (10) 勝ち側に discord の identity があれば user.discord_id を実IDへ揃える
+    //      （管理者判定やアイコン解決を効かせる）。既に実IDなら維持。
+    //      負け側の user 行は削除済みなので UNIQUE(discord_id) 衝突は起きない
+    stmts.push({
+      sql: `UPDATE user SET discord_id = (
+              SELECT provider_user_id FROM identity
+              WHERE user_id = ? AND provider = 'discord'
+              ORDER BY created_at LIMIT 1)
+            WHERE id = ?
+              AND EXISTS (SELECT 1 FROM identity
+                          WHERE user_id = ? AND provider = 'discord')
+              AND discord_id NOT IN (SELECT provider_user_id FROM identity
+                                     WHERE user_id = ? AND provider = 'discord')`,
+      args: [winnerId, winnerId, winnerId, winnerId],
+    });
+
+    await batch(stmts);
   },
 
   /** 表示名/アイコンが未設定の場合のみ補完（Nostrプロフィール等の反映用） */
