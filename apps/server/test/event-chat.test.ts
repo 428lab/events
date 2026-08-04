@@ -224,6 +224,21 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     const mine = members.members.find((m) => m.userId === a.userId)!;
     expect(mine.pubkey).toBe(k1.pubkey);
     expect(mine.role).toBe("participant"); // 色分け表示用のロール (#228)
+
+    // staff のロールも返る（バッジ表示の根拠 #228）
+    await addMember(eventId, owner.userId, "staff");
+    const rOwner = await postJson(
+      `/events/${eventId}/chat-key/ephemeral`,
+      owner.cookie,
+      {},
+    );
+    expect(rOwner.status).toBe(200);
+    const withStaff = (await (
+      await getChatMembers(eventId, a.cookie)
+    ).json()) as ChatMembersPayload;
+    expect(
+      withStaff.members.find((m) => m.userId === owner.userId)?.role,
+    ).toBe("staff");
     expect(JSON.stringify(members)).not.toContain(k1.secret);
 
     // NIP-07（所有証明つき登録）に切り替えると一時鍵は消える
