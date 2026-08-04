@@ -57,6 +57,14 @@ describe("staging のログインゲート", () => {
     expect(res.status).toBe(200);
   });
 
+  it("staging の退会猶予期間は10分（検証用の短縮 #250）", async () => {
+    const cookie = await makeUser(null);
+    const res = await fetchAsStaging("/api/auth/me", cookie);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { deletionGraceMs: number };
+    expect(body.deletionGraceMs).toBe(10 * 60 * 1000);
+  });
+
   it("退会申請中（猶予期間 #250）もゲートは通す（復帰フローに到達できるように）", async () => {
     const cookie = await makeUser(Date.now());
     // ページ側: ゲートHTML(403)ではなく SPA が返る

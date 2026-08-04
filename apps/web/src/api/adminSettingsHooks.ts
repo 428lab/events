@@ -22,3 +22,13 @@ export function useUpdateChatRelays() {
     },
   });
 }
+
+/** 猶予期間を過ぎた退会アカウントの削除を今すぐ実行する（運営管理者・検証用）(#250) */
+export function useRunPurgeDeleted() {
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ purged: number; failed: number; remaining: number }>(
+        "/admin/run-purge-deleted",
+      ),
+  });
+}

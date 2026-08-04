@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import { ACCOUNT_DELETION_GRACE_MS } from "@eventer/shared";
 import type { User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { env } from "../env.js";
@@ -95,7 +94,15 @@ export const authRoutes = new Hono<AppEnv>();
 
 authRoutes.get("/me", async (c) => {
   const user = await currentUser(c);
-  if (user) return c.json({ user, isAdmin: isAppAdmin(user) });
+  // deletionGraceMs は環境で変わる（staging は検証用に短い）ため、
+  // UI 文言はこの値を使う (#250)
+  if (user) {
+    return c.json({
+      user,
+      isAdmin: isAppAdmin(user),
+      deletionGraceMs: env.deletionGraceMs,
+    });
+  }
   // 退会申請中（猶予期間 #250）は 403 + 復帰の案内を返し、SPA が /restore へ誘導する。
   // 401（未ログイン）と区別できないと、ログインし直すたびに同じ画面をぐるぐるしてしまう
   const pending = await pendingDeletionUser(c);
@@ -105,7 +112,7 @@ authRoutes.get("/me", async (c) => {
         error: "pending_deletion",
         pendingDeletion: {
           deletedAt: pending.deletedAt,
-          purgeAt: pending.deletedAt + ACCOUNT_DELETION_GRACE_MS,
+          purgeAt: pending.deletedAt + env.deletionGraceMs,
           username: pending.username,
         },
       },
