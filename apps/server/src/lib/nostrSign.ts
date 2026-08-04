@@ -24,6 +24,15 @@ export function servicePubkey(): string | null {
   return bytesToHex(schnorr.getPublicKey(hexToBytes(env.nostrServiceKey)));
 }
 
+/** イベントチャット用のサーバー管理一時鍵を生成する (#223) */
+export function generateChatKey(): { secret: string; pubkey: string } {
+  const sk = schnorr.utils.randomSecretKey();
+  return {
+    secret: bytesToHex(sk),
+    pubkey: bytesToHex(schnorr.getPublicKey(sk)),
+  };
+}
+
 /** NIP-01 イベントを公式サービス鍵で署名して返す。未設定なら例外 */
 export function signWithServiceKey(template: {
   kind: number;

@@ -31,7 +31,9 @@ import { useMe } from "../api/hooks.js";
 import { api, ApiError } from "../api/client.js";
 import {
   createOfficialChannelEvent,
+  fetchEphemeralChatKey,
   useChatMembers,
+  useCreateEphemeralChatKey,
   useHideChatNote,
   useRegisterChatChannel,
   useRegisterChatKey,
@@ -43,9 +45,7 @@ import {
   buildChannelCreateTemplate,
   buildChatKeyProofTemplate,
   buildChannelMessageTemplate,
-  loadLocalChatKey,
-  loadOrCreateLocalChatKey,
-  localSigner,
+  localSignerFromHex,
   nip07Signer,
 } from "../lib/nostrChat.js";
 import type { ChatSigner } from "../lib/nostrChat.js";
@@ -83,6 +83,7 @@ export function EventChat({
 
   const { data: chat } = useChatMembers(eventId, visible);
   const registerKey = useRegisterChatKey(eventId);
+  const ephemeralKey = useCreateEphemeralChatKey(eventId);
   const registerChannel = useRegisterChatChannel(eventId);
   const resetChannel = useResetChatChannel(eventId);
   const hideNote = useHideChatNote(eventId);
@@ -125,20 +126,26 @@ export function EventChat({
     now >= event.startsAt - CHAT_WINDOW_BEFORE_MS &&
     now <= event.endsAt + CHAT_WINDOW_AFTER_MS;
 
-  // 登録済みの自分の鍵がローカル一時鍵と一致するなら自動で再参加する
+  // 登録済みの自分の鍵がサーバー管理の一時鍵なら自動で再参加する (#223)
   const myRegisteredPubkey = useMemo(
     () => chat?.members.find((m) => me && m.userId === me.id)?.pubkey ?? null,
     [chat, me],
   );
   useEffect(() => {
     if (signer || !myRegisteredPubkey || !me) return;
-    const sk = loadLocalChatKey(eventId, me.id);
-    if (!sk) return;
-    const local = localSigner(sk);
-    if (local.pubkey === myRegisteredPubkey) {
-      signerIsNip07Ref.current = false;
-      setSigner(local);
-    }
+    let cancelled = false;
+    void (async () => {
+      const key = await fetchEphemeralChatKey(eventId);
+      if (cancelled || !key) return;
+      const local = localSignerFromHex(key.secret);
+      if (local.pubkey === myRegisteredPubkey) {
+        signerIsNip07Ref.current = false;
+        setSigner(local);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [signer, myRegisteredPubkey, eventId, me]);
 
   // サーバーに登録済みのチャンネルID（未開設は null。5秒ポーリングで反映）
@@ -265,24 +272,30 @@ export function EventChat({
     setJoinError(null);
     try {
       const useNip07 = keyMode === "nip07" && hasNip07();
-      const s = useNip07
-        ? await nip07Signer()
-        : localSigner(loadOrCreateLocalChatKey(eventId, me.id));
-      // 所有証明: サーバーのchallengeに署名して送る（他人のnpub紐付け防止）
-      const { challenge } = await api.get<{ challenge: string }>(
-        "/auth/nostr/challenge",
-      );
-      const proof = await s.signEvent(
-        buildChatKeyProofTemplate(challenge, eventId),
-      );
-      await registerKey.mutateAsync(proof);
+      let s: ChatSigner;
+      if (useNip07) {
+        s = await nip07Signer();
+        // 所有証明: サーバーのchallengeに署名して送る（他人のnpub紐付け防止）
+        const { challenge } = await api.get<{ challenge: string }>(
+          "/auth/nostr/challenge",
+        );
+        const proof = await s.signEvent(
+          buildChatKeyProofTemplate(challenge, eventId),
+        );
+        await registerKey.mutateAsync(proof);
+      } else {
+        // 一時鍵はサーバーが生成・保管して配布する (#223)。発言鍵の登録も
+        // サーバー側で行われるため所有証明は不要。複数端末でも同じ鍵になる
+        const key = await ephemeralKey.mutateAsync();
+        s = localSignerFromHex(key.secret);
+      }
       signerIsNip07Ref.current = useNip07;
       setSigner(s);
     } catch (err) {
       // 原因が分かる失敗は出し分ける (#223)
       if (err instanceof ApiError && err.status === 409) {
         setJoinError(
-          "この鍵は同じイベントの別のユーザーが使用中です。NIP-07 の場合は別の Nostr アカウントを選んでください。",
+          "この Nostr アカウントの鍵は同じイベントの別のユーザーが使用中です。別のアカウントを選んでください。",
         );
       } else if (err instanceof ApiError && err.status === 403) {
         setJoinError("参加が確定しているメンバーのみチャットを利用できます。");
@@ -415,7 +428,7 @@ export function EventChat({
               <Button
                 variant="contained"
                 size="small"
-                disabled={registerKey.isPending}
+                disabled={registerKey.isPending || ephemeralKey.isPending || !me}
                 onClick={join}
               >
                 チャットに参加する
