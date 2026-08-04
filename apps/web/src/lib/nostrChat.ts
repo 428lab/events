@@ -133,6 +133,11 @@ interface SubState {
 const RECONNECT_MIN_MS = 3_000;
 const RECONNECT_MAX_MS = 30_000;
 const WATCHDOG_INTERVAL_MS = 15_000;
+/** 接続試行のタイムアウト（nostr-tools はデフォルト無制限のため必須） */
+const CONNECT_TIMEOUT_MS = 8_000;
+/** 再購読時に since から引くマージン。投稿者の時計ずれで
+ * created_at が過去になったイベントの取りこぼし防止（重複はIDで排除） */
+const RESUBSCRIBE_MARGIN_SEC = 300;
 
 /**
  * 複数リレーへの接続・購読・発行をまとめる。リレーURLは運用設定
@@ -150,6 +155,8 @@ export class ChatRelayPool {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private backoffMs = new Map<string, number>();
   private watchdog: ReturnType<typeof setInterval> | null = null;
+  /** 接続試行中のURL（pending中の watchdog/publish からの二重接続防止） */
+  private connecting = new Set<string>();
   private sub: SubState | null = null;
   /** 接続状態が変わったら呼ばれる（UI のステータス表示用） */
   onstatus: (() => void) | null = null;
@@ -161,7 +168,9 @@ export class ChatRelayPool {
 
   /** 全リレーへ接続（失敗したリレーはスキップ。1つも繋がらなくても throw しない） */
   async connect(): Promise<void> {
-    // onclose が飛ばない形の切断（スリープ復帰等）も拾う死活監視
+    if (this.watchdog) return; // 再入ガード（intervalのリーク防止）
+    // タイマー取りこぼしの保険。onclose が飛ばないゾンビ接続は
+    // enablePing（無応答なら nostr-tools が ws.close → onclose）で検知する
     this.watchdog = setInterval(() => {
       if (this.closed) return;
       for (const url of this.relayUrls) {
@@ -172,9 +181,19 @@ export class ChatRelayPool {
   }
 
   private async connectOne(url: string): Promise<void> {
-    if (this.closed || this.relays.get(url)?.connected) return;
+    if (
+      this.closed ||
+      this.connecting.has(url) ||
+      this.relays.get(url)?.connected
+    ) {
+      return;
+    }
+    this.connecting.add(url);
     try {
-      const relay = await Relay.connect(url);
+      // static Relay.connect は timeout を渡せないためインスタンス経由で接続する。
+      // enablePing: 無応答接続を検知して onclose 経由の再接続に乗せる (#225)
+      const relay = new Relay(url, { enablePing: true });
+      await relay.connect({ timeout: CONNECT_TIMEOUT_MS });
       if (this.closed) {
         relay.close();
         return;
@@ -185,6 +204,15 @@ export class ChatRelayPool {
         this.onstatus?.();
         this.scheduleReconnect(url);
       };
+      // 置き換え前の旧インスタンスが開いたままならリークするので閉じる
+      const prev = this.relays.get(url);
+      if (prev && prev !== relay) {
+        try {
+          prev.close();
+        } catch {
+          /* noop */
+        }
+      }
       this.relays.set(url, relay);
       this.backoffMs.set(url, 0);
       this.onstatus?.();
@@ -194,11 +222,13 @@ export class ChatRelayPool {
       // 接続失敗はバックオフ付きで再試行（もう一方のリレーで継続）
       this.onstatus?.();
       this.scheduleReconnect(url);
+    } finally {
+      this.connecting.delete(url);
     }
   }
 
   private scheduleReconnect(url: string): void {
-    if (this.closed || this.timers.has(url)) return;
+    if (this.closed || this.timers.has(url) || this.connecting.has(url)) return;
     if (this.relays.get(url)?.connected) return;
     const prev = this.backoffMs.get(url) ?? 0;
     const delay =
@@ -228,7 +258,8 @@ export class ChatRelayPool {
   /**
    * チャンネルの kind:42 を購読する（履歴 limit 200＋新着）。
    * リレー間・再購読間の重複はイベントIDで除去。再接続時は自動で
-   * since（最終受信時刻）付きで張り直す。戻り値は購読停止関数。
+   * since（最終受信時刻−マージン）付きで張り直す。戻り値は購読停止関数。
+   * 契約: 同時に持てる購読は1つ（再呼び出しは前の購読を置き換える）。
    */
   subscribe(channelId: string, onEvent: (ev: NostrEvent) => void): () => void {
     const sub: SubState = {
@@ -263,14 +294,20 @@ export class ChatRelayPool {
     } catch {
       /* noop */
     }
+    sub.closers.delete(url);
     const filter: {
       kinds: number[];
       "#e": string[];
       limit: number;
       since?: number;
     } = { kinds: [42], "#e": [sub.channelId], limit: 200 };
-    // 再購読では受信済み時刻から再開（同時刻の取りこぼし防止に -1 せず、IDで重複排除）
-    if (sub.lastSeen > 0) filter.since = sub.lastSeen;
+    // 再購読は受信済み時刻−マージンから再開（投稿者の時計ずれで created_at が
+    // 過去のイベントも取りこぼさない。重なった分はIDで重複排除される）
+    if (sub.lastSeen > 0) {
+      filter.since = Math.max(0, sub.lastSeen - RESUBSCRIBE_MARGIN_SEC);
+    }
+    // AUTH後も auth-required を返し続ける行儀の悪いリレーでの無限再購読防止
+    let authRetries = 0;
     const start = () => {
       const s = relay.subscribe([filter], {
         onevent: (ev) => {
@@ -285,8 +322,10 @@ export class ChatRelayPool {
             reason.startsWith("auth-required:") &&
             !this.closed &&
             this.sub === sub &&
-            relay.connected
+            relay.connected &&
+            authRetries < 3
           ) {
+            authRetries++;
             relay
               .auth((t) => this.signer.signEvent(t))
               .then(() => {
