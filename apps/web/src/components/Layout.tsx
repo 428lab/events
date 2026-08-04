@@ -15,6 +15,7 @@ import {
   ListSubheader,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import { useBundleReload } from "../lib/useBundleReload.js";
 import type { User } from "@eventer/shared";
