@@ -56,9 +56,12 @@ eventScheduleRoutes.put(
     }
     const input = valid<SaveScheduleInput>(c, "json");
     // 担当者リンクはイベントメンバーのみ許可。非メンバーは黙って null に落とす
-    // （フリーテキスト名はそのまま残る）
+    // （フリーテキスト名はそのまま残る）。
+    // 退会申請中 (#250) のメンバーも「メンバー」として許可する。除外すると
+    // 猶予期間中に staff が保存しただけでリンクが消え、復帰しても登壇者が
+    // 戻らなくなる（＝データが復元不能になる）ため
     const memberIds = new Set(
-      (await eventMembersRepo.listWithUsers(eventId)).map((m) => m.user.id),
+      await eventMembersRepo.listMemberUserIds(eventId),
     );
     const items = input.items.map((it) => ({
       ...it,
@@ -105,8 +108,6 @@ eventScheduleRoutes.patch(
     await deferBackground(refreshMaterialMeta(eventId));
     const updated = await eventScheduleRepo.findItem(eventId, itemId);
     if (!updated) return c.json({ error: "not_found" }, 404);
-    // speakerUserId は権限判定用の内部フィールドなのでレスポンスからは外す
-    const { speakerUserId: _internal, ...responseItem } = updated;
-    return c.json({ item: responseItem });
+    return c.json({ item: updated });
   },
 );

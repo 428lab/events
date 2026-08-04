@@ -8,6 +8,7 @@ import type {
   UserAward,
 } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
+import { entryAnonymizedSql, entryDisplayName } from "./entries.js";
 
 interface RankRow {
   id: string;
@@ -151,11 +152,12 @@ export const awardsRepo = {
       ends_at: number;
       award_name: string;
       entry_name: string;
+      anonymized: number;
       rank_order: number | null;
     }>(
       `SELECT e.id AS event_id, e.title AS event_title, e.ends_at,
               COALESCE(r.name, s.name) AS award_name,
-              en.name AS entry_name,
+              en.name AS entry_name, ${entryAnonymizedSql("en")} AS anonymized,
               r.rank_order
        FROM award_result ar
        JOIN entry en ON en.id = ar.entry_id
@@ -176,7 +178,7 @@ export const awardsRepo = {
         eventTitle: r.event_title,
         endsAt: r.ends_at,
         awardName: r.award_name,
-        entryName: r.entry_name,
+        entryName: entryDisplayName(r.entry_name, r.anonymized),
         rankOrder: r.rank_order,
       }));
   },

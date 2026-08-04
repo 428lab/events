@@ -13,8 +13,9 @@ jobs:
     steps:
       # HTTP 200 でも個々のアカウントの削除が失敗していることがある（failed）。
       # 気づかないまま放置されないよう、failed > 0 ならワークフローを失敗させる。
-      # remaining は1回の上限で消化しきれなかった残件（翌日に回る）で、
-      # 継続して積み上がるようなら上限の見直しが要るのでログに出す
+      # remaining は1回のサブリクエスト予算で消化しきれなかった残件（翌日に回る）。
+      # 少数なら翌日に自然に片付くので warning だが、積み上がっている（=消化速度が
+      # 追いついていない）場合は放置すると永久に減らないので error にして気づく
       - name: Call purge endpoint (production)
         run: |
           code=$(curl -s -o /tmp/body -w "%{http_code}" -X POST \
@@ -29,10 +30,15 @@ jobs:
           failed=$(jq -r '.failed // 0' /tmp/body)
           remaining=$(jq -r '.remaining // 0' /tmp/body)
           echo "purged=$purged failed=$failed remaining=$remaining"
-          if [ "$remaining" -gt 0 ]; then
+          fail=0
+          if [ "$remaining" -gt 20 ]; then
+            echo "::error::$remaining account(s) still awaiting purge; the daily budget is not keeping up (run POST /api/admin/run-purge-deleted or raise the budget)"
+            fail=1
+          elif [ "$remaining" -gt 0 ]; then
             echo "::warning::$remaining account(s) still awaiting purge (retried on the next run)"
           fi
           if [ "$failed" -gt 0 ]; then
             echo "::error::$failed account(s) failed to purge; check Workers logs ([account-purge])"
-            exit 1
+            fail=1
           fi
+          exit $fail

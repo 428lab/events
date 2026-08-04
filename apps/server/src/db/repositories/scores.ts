@@ -6,7 +6,7 @@ import type {
 } from "@eventer/shared";
 import { many, one, run } from "../client.js";
 import { scoringCriteriaRepo } from "./scoringCriteria.js";
-import { entryDisplayNameSql } from "./entries.js";
+import { entryAnonymizedSql, entryDisplayName } from "./entries.js";
 
 interface ScoreRow {
   entry_id: string;
@@ -78,11 +78,15 @@ export const scoresRepo = {
     const criteria = await scoringCriteriaRepo.listByEvent(eventId);
     // 採点結果・表彰結果 (routes/awards.ts の entryName) はここの name を使う。
     // 退会申請中 (#250) の個人エントリーは表示名を伏せる
-    const entries = await many<{ id: string; name: string }>(
-      `SELECT e.id, ${entryDisplayNameSql("e")} AS name
+    const entryRows = await many<{ id: string; name: string; anonymized: number }>(
+      `SELECT e.id, e.name, ${entryAnonymizedSql("e")} AS anonymized
          FROM entry e WHERE e.event_id = ? ORDER BY e.created_at ASC`,
       eventId,
     );
+    const entries = entryRows.map((e) => ({
+      id: e.id,
+      name: entryDisplayName(e.name, e.anonymized),
+    }));
 
     const selfFilter = aggregateSelfEntry
       ? ""

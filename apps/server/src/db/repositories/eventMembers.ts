@@ -297,6 +297,18 @@ export const eventMembersRepo = {
     return rows.map((row) => ({ ...toMember(row), user: toUser(row) }));
   },
 
+  /** 現役メンバーの user_id だけを返す。listWithUsers と違い、退会申請中 (#250)
+   * のメンバーも含む。既存リンク（タイムテーブルの担当者など）の検証に使う想定で、
+   * 「猶予期間中だから」という理由でリンクを剥がして復元不能にしないためのもの。
+   * ユーザーの表示名・ハンドルは返さないので匿名化とは競合しない */
+  async listMemberUserIds(eventId: string): Promise<string[]> {
+    const rows = await many<{ user_id: string }>(
+      "SELECT user_id FROM event_member WHERE event_id = ? AND status <> 'canceled'",
+      eventId,
+    );
+    return rows.map((r) => r.user_id);
+  },
+
   /** ユーザーが参加している全イベントを role 付きで返す（マイページ用） */
   async listEventsForUser(userId: string): Promise<MyEventSummary[]> {
     const rows = await many<Record<string, unknown> & { my_role: string }>(

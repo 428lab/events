@@ -31,6 +31,7 @@ import { usersRepo } from "../db/repositories/users.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { followsRepo } from "../db/repositories/follows.js";
 import { notificationPrefsRepo } from "../db/repositories/notificationPrefs.js";
+import { notificationsRepo } from "../db/repositories/notifications.js";
 import { emailRepo } from "../db/repositories/email.js";
 import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
@@ -174,6 +175,14 @@ meRoutes.delete("/", zValidator("json", deleteAccountInput), async (c) => {
   const now = Date.now();
   console.log(`[account-delete-requested] user=${me.id} handle=${me.username}`);
   await usersRepo.requestDeletion(me.id, now);
+  // 他の人の通知一覧に残る「◯◯ さんが…」を消す (#250)。タイトルに表示名を
+  // 焼き込んでいるため、user 行を隠すだけでは名前とプロフィールリンクが残る。
+  // 通知を消すこと自体は退会の成否に影響させない（ベストエフォート）
+  try {
+    await notificationsRepo.deleteByActor(me);
+  } catch (e) {
+    console.error(`[account-delete-requested] notification cleanup failed`, e);
+  }
   // 監査ログ (#248)。完全削除は日次バッチ側で別途記録する
   await recordAudit({
     action: "account_delete_requested",

@@ -110,6 +110,52 @@ export const notificationsRepo = {
     );
   },
 
+  /** 退会申請 (#250) したユーザーが「した側」として生成した通知を削除する。
+   *
+   * follow 起点の通知と meet 通知はタイトルに「◯◯ さんが…」と表示名を焼き込んで
+   * いるため、行が残っているとフォロワー／同席者の通知一覧に名前が出続ける
+   * （#244 の完全削除でも notification.user_id は受信者なので消えない）。
+   * notification テーブルには actor 列が無いので、種別ごとに actor を特定できる
+   * 条件で消す:
+   *   - meet                    : link が actor 本人のプロフィールURL
+   *   - followee_created_event  : link 先のイベントの created_by が actor
+   *   - followee_joined_event   : actor が参加しているイベント かつ タイトルが
+   *                               actor の表示名で始まる（同じイベントに参加した
+   *                               別のフォロイーの通知を巻き込まないため）
+   *
+   * 復帰しても通知は戻らない。通知は流れていく性質のもので、履歴として復元する
+   * 価値より猶予期間中に名前が見え続ける不利益のほうが大きいと判断した。
+   * D1 batch なのでサブリクエストは1つ。 */
+  async deleteByActor(actor: {
+    id: string;
+    username: string;
+    globalName: string | null;
+  }): Promise<void> {
+    // LIKE のワイルドカード (% _) を含む表示名で広く消しすぎないようエスケープ
+    const likePrefix = (name: string) =>
+      `${name.replace(/[\\%_]/g, (c) => `\\${c}`)} さんが%`;
+    const names = [actor.globalName, actor.username].filter(
+      (n): n is string => !!n,
+    );
+    await batch([
+      {
+        sql: "DELETE FROM notification WHERE type = 'meet' AND link = ?",
+        args: [`/users/${encodeURIComponent(actor.username)}`],
+      },
+      {
+        sql: `DELETE FROM notification WHERE type = 'followee_created_event'
+                AND link IN (SELECT '/events/' || id FROM event WHERE created_by = ?)`,
+        args: [actor.id],
+      },
+      {
+        sql: `DELETE FROM notification WHERE type = 'followee_joined_event'
+                AND (${names.map(() => "title LIKE ? ESCAPE '\\'").join(" OR ")})
+                AND link IN (SELECT '/events/' || event_id FROM event_member WHERE user_id = ?)`,
+        args: [...names.map(likePrefix), actor.id],
+      },
+    ]);
+  },
+
   async listByUser(userId: string, limit = 40): Promise<Notification[]> {
     const rows = await many<NotificationRow>(
       "SELECT * FROM notification WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",

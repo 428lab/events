@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+import type { ScheduleItem } from "@eventer/shared";
 
 /** 退会の猶予期間 (#250)。即時無効化・復帰・30日後の完全削除・引き取り/統合の除外 */
 
@@ -681,5 +682,216 @@ describe("退会の猶予期間: 表示名のコピーと連絡先の開示 (#25
     );
     expect(manual.status).toBe(404);
     expect(await statusOf(a.userId)).toBe("applied");
+  });
+});
+
+/** タイムテーブルの取得（公開GET） */
+async function getTimetable(
+  eventId: string,
+  cookie?: string,
+): Promise<ScheduleItem[]> {
+  const res = await SELF.fetch(`${BASE}/api/events/${eventId}/timetable`, {
+    headers: cookie ? { cookie } : {},
+  });
+  expect(res.status).toBe(200);
+  return ((await res.json()) as { items: ScheduleItem[] }).items;
+}
+
+/** 編集画面と同じ形（取得した項目をそのまま保存し直す）でタイムテーブルを保存 */
+async function saveTimetable(
+  eventId: string,
+  cookie: string,
+  items: ScheduleItem[],
+): Promise<Response> {
+  return SELF.fetch(`${BASE}/api/events/${eventId}/timetable`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({
+      items: items.map((it) => ({
+        title: it.title,
+        description: it.description,
+        durationMin: it.durationMin,
+        startsAt: it.startsAt,
+        // 編集画面 (ScheduleEditor) は表示用の speaker ではなく
+        // 生の speakerUserId を持ち回して保存する
+        speakerUserId: it.speakerUserId,
+        speakerName: it.speakerName,
+        materialUrl: it.materialUrl,
+      })),
+    }),
+  });
+}
+
+describe("退会の猶予期間: タイムテーブルの登壇者リンク (#250)", () => {
+  it("猶予期間中に保存しても登壇者リンクが消えず、復帰で登壇者表示が戻る", async () => {
+    const host = await makeUser();
+    const speaker = await makeUser();
+    const eventId = await makeEvent(host.userId);
+    await joinEvent(eventId, host.userId, "staff");
+    await joinEvent(eventId, speaker.userId);
+
+    const created = await SELF.fetch(`${BASE}/api/events/${eventId}/timetable`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: host.cookie },
+      body: JSON.stringify({
+        items: [
+          {
+            title: "LT 1",
+            durationMin: 10,
+            speakerUserId: speaker.userId,
+            speakerName: "",
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(200);
+    expect((await getTimetable(eventId))[0]?.speaker?.id).toBe(speaker.userId);
+
+    // 退会申請 → 表示は匿名化されるが、生のリンクはレスポンスに残る
+    expect((await requestDelete(speaker.cookie)).status).toBe(200);
+    const hidden = await getTimetable(eventId);
+    expect(hidden[0]?.speaker).toBeNull();
+    expect(hidden[0]?.speakerName).toBe("");
+    expect(hidden[0]?.speakerUserId).toBe(speaker.userId);
+
+    // 猶予期間中に staff が編集画面から保存し直しても、リンクは失われない
+    expect((await saveTimetable(eventId, host.cookie, hidden)).status).toBe(200);
+    const afterSave = await getTimetable(eventId);
+    expect(afterSave[0]?.speaker).toBeNull();
+    expect(afterSave[0]?.speakerUserId).toBe(speaker.userId);
+    expect(
+      (
+        await env.DB.prepare(
+          "SELECT speaker_user_id FROM event_schedule_item WHERE event_id = ?",
+        )
+          .bind(eventId)
+          .first<{ speaker_user_id: string | null }>()
+      )?.speaker_user_id,
+    ).toBe(speaker.userId);
+
+    // 復帰すれば登壇者情報が戻る
+    expect((await restore(await newSession(speaker.userId))).status).toBe(200);
+    const restored = await getTimetable(eventId);
+    expect(restored[0]?.speaker?.id).toBe(speaker.userId);
+    expect(restored[0]?.speaker?.username).toBe(speaker.handle);
+  });
+});
+
+describe("退会の猶予期間: 完全削除のサブリクエスト予算 (#250)", () => {
+  it("データ量の多いユーザーが居ても詰まらず、残りは remaining に計上される", async () => {
+    // 先頭のユーザーだけで予算を超える量の R2 プレフィックス（デッキ）を持たせる
+    const heavy = await makeUser();
+    const light = await makeUser();
+    expect((await requestDelete(heavy.cookie)).status).toBe(200);
+    expect((await requestDelete(light.cookie)).status).toBe(200);
+    // heavy のほうが古い申請＝先に処理される
+    await backdateDeletion(heavy.userId, 32);
+    await backdateDeletion(light.userId, 31);
+    for (let i = 0; i < 60; i += 1) {
+      await env.DB.prepare(
+        "INSERT INTO deck (id, slug, owner_id, title, created_at, updated_at) VALUES (?, ?, ?, '', ?, ?)",
+      )
+        .bind(
+          crypto.randomUUID(),
+          `slug-${crypto.randomUUID()}`,
+          heavy.userId,
+          Date.now(),
+          Date.now(),
+        )
+        .run();
+    }
+
+    const res = await runPurge();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      purged: number;
+      failed: number;
+      remaining: number;
+    };
+    // 予算を超える1人でも必ず処理される（永久に詰まらない）
+    expect(body.purged).toBe(1);
+    expect(body.failed).toBe(0);
+    expect(await userRow(heavy.userId)).toBeNull();
+    // 予算を使い切ったので後続は翌日に回り、remaining として報告される
+    expect(body.remaining).toBeGreaterThanOrEqual(1);
+    expect(await userRow(light.userId)).not.toBeNull();
+
+    // 翌日の実行で残りが片付く
+    const again = await runPurge();
+    expect(
+      ((await again.json()) as { purged: number }).purged,
+    ).toBeGreaterThanOrEqual(1);
+    expect(await userRow(light.userId)).toBeNull();
+  });
+});
+
+describe("退会の猶予期間: actor として作った通知 (#250)", () => {
+  it("退会申請でフォロワー・同席者の通知一覧から名前が消える", async () => {
+    const actor = await makeUser();
+    const follower = await makeUser();
+    const other = await makeUser();
+    const otherEventId = await makeEvent(other.userId);
+    const ownEventId = await makeEvent(actor.userId);
+    await joinEvent(otherEventId, actor.userId);
+    await joinEvent(otherEventId, other.userId, "staff");
+
+    // routes/follows.ts / routes/eventMeets.ts と同じ形の通知を作る
+    const addNotification = async (
+      userId: string,
+      type: string,
+      title: string,
+      link: string,
+    ) => {
+      await env.DB.prepare(
+        "INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at) VALUES (?, ?, ?, ?, '', ?, 0, ?)",
+      )
+        .bind(crypto.randomUUID(), userId, type, title, link, Date.now())
+        .run();
+    };
+    await addNotification(
+      follower.userId,
+      "followee_created_event",
+      `${actor.handle} さんがイベントを公開しました`,
+      `/events/${ownEventId}`,
+    );
+    await addNotification(
+      follower.userId,
+      "followee_joined_event",
+      `${actor.handle} さんがイベントに参加しました`,
+      `/events/${otherEventId}`,
+    );
+    await addNotification(
+      other.userId,
+      "meet",
+      `${actor.handle} さんと出会いました`,
+      `/users/${actor.handle}`,
+    );
+    // 巻き込んではいけない通知（別のフォロイーが同じイベントに参加した通知）
+    await addNotification(
+      follower.userId,
+      "followee_joined_event",
+      `${other.handle} さんがイベントに参加しました`,
+      `/events/${otherEventId}`,
+    );
+
+    expect((await requestDelete(actor.cookie)).status).toBe(200);
+
+    const titlesFor = async (cookie: string) => {
+      const res = await SELF.fetch(`${BASE}/api/notifications`, {
+        headers: { cookie },
+      });
+      expect(res.status).toBe(200);
+      return ((await res.json()) as { notifications: Array<{ title: string }> })
+        .notifications.map((n) => n.title);
+    };
+    const followerTitles = await titlesFor(follower.cookie);
+    expect(followerTitles.some((t) => t.includes(actor.handle))).toBe(false);
+    // 他人の通知は残る
+    expect(followerTitles).toContain(
+      `${other.handle} さんがイベントに参加しました`,
+    );
+    expect((await titlesFor(other.cookie)).some((t) => t.includes(actor.handle))).toBe(
+      false,
+    );
   });
 });

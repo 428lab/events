@@ -36,6 +36,10 @@ function toItem(row: Row): ScheduleItem {
             avatarUrl: row.u_avatar_url,
           }
         : null,
+    // 生のリンクは表示用と別に必ず返す (#250)。編集画面はこれを保持したまま
+    // 保存するので、猶予期間中に staff がタイムテーブルを保存しても
+    // speaker_user_id が NULL 落ちせず、復帰すれば登壇者表示が戻る
+    speakerUserId: row.speaker_user_id,
     // ユーザーに紐付いた枠は speaker_name を返さない (#250)。
     // LEFT JOIN の ON 側で退会申請中を外して speaker を null にしても、
     // 手入力名が残っていると表示名がそのまま出てしまう。
@@ -115,17 +119,18 @@ export const eventScheduleRepo = {
   },
 
   /** 1項目を取得（イベント跨ぎ防止のため eventId でも絞る）。
-   * 権限判定用に生の speaker_user_id も返す（ユーザー削除済みでも判定できるように） */
+   * speakerUserId は toItem が生の値を返すので、ユーザーが猶予期間中でも
+   * 登壇者本人かどうかを判定できる */
   async findItem(
     eventId: string,
     itemId: string,
-  ): Promise<(ScheduleItem & { speakerUserId: string | null }) | null> {
+  ): Promise<ScheduleItem | null> {
     const row = await one<Row>(
       `${SELECT} WHERE s.event_id = ? AND s.id = ?`,
       eventId,
       itemId,
     );
-    return row ? { ...toItem(row), speakerUserId: row.speaker_user_id } : null;
+    return row ? toItem(row) : null;
   },
 
   /** 資料URLのみ更新（登壇者本人の自己編集用 #148）。

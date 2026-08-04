@@ -10,11 +10,11 @@ interface EntryRow {
   team_id: string | null;
   presentation_order: number | null;
   created_at: number;
-  /** 表示用の name（entryDisplayNameSql による匿名化済み） */
-  display_name: string;
+  /** entryAnonymizedSql の判定結果（1 = 表示名を伏せる） */
+  anonymized: number;
 }
 
-/** 表示用の entry.name を組み立てる SQL 断片 (#250)。
+/** 個人エントリーの表示名を伏せるべきか判定する SQL 断片 (#250)。1 なら伏せる。
  *
  * 個人エントリーの name は参加確定時にユーザーの表示名をコピーした値で、
  * entry テーブル自体は user を参照しないため deleted_at では除外されない。
@@ -23,8 +23,13 @@ interface EntryRow {
  *
  * entry は成果物URL を持つので行は消さず、メンバーが全員退会申請中のときだけ
  * 表示名を伏せる。復帰すれば元の name がそのまま戻る。
- * alias はクエリ側の entry テーブル別名。 */
-export function entryDisplayNameSql(alias: string): string {
+ * alias はクエリ側の entry テーブル別名。
+ *
+ * 伏せ字の文言そのものは SQL に埋め込まず TS 側（entryDisplayName）で差し替える。
+ * SELECT 句に定数リテラルを書くと、文言に ' が入った途端にクエリが壊れる／
+ * バインドパラメータにすると SELECT 句の位置に応じて引数の順番がずれる、という
+ * どちらの落とし穴も避けるため。 */
+export function entryAnonymizedSql(alias: string): string {
   return `CASE WHEN ${alias}.kind = 'individual'
                  AND EXISTS (SELECT 1 FROM entry_member em
                               WHERE em.entry_id = ${alias}.id)
@@ -32,11 +37,15 @@ export function entryDisplayNameSql(alias: string): string {
                                    JOIN user u ON u.id = em.user_id
                                   WHERE em.entry_id = ${alias}.id
                                     AND u.deleted_at IS NULL)
-               THEN '${DELETED_USER_DISPLAY_NAME}'
-               ELSE ${alias}.name END`;
+               THEN 1 ELSE 0 END`;
 }
 
-const SELECT_ENTRY = `SELECT e.*, ${entryDisplayNameSql("e")} AS display_name
+/** entryAnonymizedSql の結果を反映した表示名を返す (#250) */
+export function entryDisplayName(name: string, anonymized: number): string {
+  return anonymized ? DELETED_USER_DISPLAY_NAME : name;
+}
+
+const SELECT_ENTRY = `SELECT e.*, ${entryAnonymizedSql("e")} AS anonymized
   FROM entry e`;
 
 interface SubmissionRow {
@@ -79,7 +88,7 @@ async function toEntry(row: EntryRow): Promise<Entry> {
     id: row.id,
     eventId: row.event_id,
     kind: row.kind,
-    name: row.display_name,
+    name: entryDisplayName(row.name, row.anonymized),
     teamId: row.team_id,
     presentationOrder: row.presentation_order,
     createdAt: row.created_at,

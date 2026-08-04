@@ -24,8 +24,12 @@ function toPhoto(row: Row): EventPhoto {
   };
 }
 
+// コメント数も投稿者が退会申請中 (#250) の分は除く。一覧（eventPhotoComments の
+// SELECT）が同じ条件で隠すので、揃えないと「3件」と出て2件しか表示されない
 const COMMENT_COUNT =
-  "(SELECT COUNT(1) FROM event_photo_comment c WHERE c.photo_id = p.id) AS comment_count";
+  `(SELECT COUNT(1) FROM event_photo_comment c
+      JOIN user cu ON cu.id = c.user_id AND cu.deleted_at IS NULL
+     WHERE c.photo_id = p.id) AS comment_count`;
 const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at,
   u.username, u.global_name, u.avatar_url, ${COMMENT_COUNT}
   FROM event_photo p JOIN user u ON u.id = p.user_id

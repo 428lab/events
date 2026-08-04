@@ -19,8 +19,14 @@ export const scheduleItemSchema = z.object({
   durationMin: z.number(),
   /** 明示的な開始時刻（epoch ms）。null なら前の項目の終わりから自動計算 */
   startsAt: z.number().nullable(),
-  /** リンクされた担当者（イベントメンバー）。フリーテキストのみなら null */
+  /** リンクされた担当者（イベントメンバー）。フリーテキストのみなら null。
+   * 退会申請中 (#250) は表示名を伏せるためここも null になる */
   speaker: scheduleSpeakerSchema.nullable(),
+  /** 生の担当者ユーザーID（表示用ではなく編集・権限判定用）。
+   * speaker が null でもリンク自体は残っているのでこちらには値が入る (#250)。
+   * 編集画面がこの値を持ち回らないと、猶予期間中の保存でリンクが消えて
+   * 復帰しても登壇者が戻らなくなる。IDのみで表示名・ハンドルは含まない */
+  speakerUserId: z.string().nullable(),
   /** フリーテキストの担当者名（リンクなし） */
   speakerName: z.string(),
   /** 登壇資料URL（Speaker Deck・Googleスライド・events labのデッキ等）。空文字=なし */

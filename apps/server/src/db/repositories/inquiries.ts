@@ -138,6 +138,10 @@ export const inquiriesRepo = {
   },
 
   // ===== 運営 =====
+  // 以下の運営向けクエリは、他の一覧と違って退会申請中 (#250) を除外しない。
+  // 問い合わせは運営が対応中の案件で、退会申請と同時に一覧から消えると
+  // 対応履歴を追えなくなるため（運営しか見られない画面なので、他ユーザーへ
+  // 表示名が漏れることもない）。完全削除時は user 行ごと消えて CASCADE で消える
   async listAll(): Promise<AdminInquiry[]> {
     const rows = await many<
       InquiryRow & { u_name: string | null; u_username: string; u_avatar: string | null }
