@@ -6,6 +6,11 @@ import {
   Card,
   CardContent,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Stack,
   Typography,
 } from "@mui/material";
@@ -37,8 +42,25 @@ export function AccountPage() {
   const qc = useQueryClient();
   const [nostrBusy, setNostrBusy] = useState(false);
   const [nostrError, setNostrError] = useState<string | null>(null);
-  // OAuth コールバックからのエラー通知（?link_error=already_linked）
-  const linkError = new URLSearchParams(window.location.search).get("link_error");
+  // 連携エラーはページ内アラートだと気づきにくいためモーダルで表示 (#245)。
+  // OAuth コールバックの ?link_error=already_linked / account_in_use を初期値に取り込む
+  const [linkErrorDialog, setLinkErrorDialog] = useState<string | null>(() => {
+    const q = new URLSearchParams(window.location.search).get("link_error");
+    return q === "already_linked"
+      ? ALREADY_LINKED_MSG
+      : q === "account_in_use"
+        ? ACCOUNT_IN_USE_MSG
+        : null;
+  });
+  const closeLinkErrorDialog = () => {
+    setLinkErrorDialog(null);
+    // リロードや戻るで再表示されないようクエリを消す
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("link_error")) {
+      url.searchParams.delete("link_error");
+      window.history.replaceState(null, "", url.toString());
+    }
+  };
 
   if (!me || !identities) return <Typography>読み込み中…</Typography>;
 
@@ -57,15 +79,20 @@ export function AccountPage() {
       await qc.invalidateQueries({ queryKey: ["identities"] });
       await qc.invalidateQueries({ queryKey: ["me"] });
     } catch (e) {
-      setNostrError(
-        e instanceof Error && e.message === "no_extension"
-          ? "NIP-07 対応拡張（Alby、nos2x など）が見つかりません。"
-          : e instanceof ApiError && e.status === 409
-            ? (e.body as { error?: string } | null)?.error === "account_in_use"
-              ? ACCOUNT_IN_USE_MSG
-              : ALREADY_LINKED_MSG
+      // 引き取り拒否系は見落とし防止のためモーダルで表示 (#245)
+      if (e instanceof ApiError && e.status === 409) {
+        setLinkErrorDialog(
+          (e.body as { error?: string } | null)?.error === "account_in_use"
+            ? ACCOUNT_IN_USE_MSG
+            : ALREADY_LINKED_MSG,
+        );
+      } else {
+        setNostrError(
+          e instanceof Error && e.message === "no_extension"
+            ? "NIP-07 対応拡張（Alby、nos2x など）が見つかりません。"
             : "Nostr 連携に失敗しました。",
-      );
+        );
+      }
     } finally {
       setNostrBusy(false);
     }
@@ -90,17 +117,6 @@ export function AccountPage() {
             複数のログイン方法を連携できます。そのログイン方法だけの別アカウントが
             既にある場合は、連携がこちらへ引き継がれます。
           </Typography>
-
-          {linkError === "already_linked" && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              {ALREADY_LINKED_MSG}
-            </Alert>
-          )}
-          {linkError === "account_in_use" && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              {ACCOUNT_IN_USE_MSG}
-            </Alert>
-          )}
 
           <Stack spacing={1.5}>
             {all.map((p) => {
@@ -187,6 +203,19 @@ export function AccountPage() {
       </Card>
 
       <AccountMergeCard />
+
+      {/* 連携エラーは見落とし防止のためモーダルで表示 (#245) */}
+      <Dialog open={Boolean(linkErrorDialog)} onClose={closeLinkErrorDialog}>
+        <DialogTitle>連携できませんでした</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{linkErrorDialog}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={closeLinkErrorDialog}>
+            閉じる
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
