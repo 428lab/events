@@ -4,6 +4,7 @@ import type { AppEnv } from "../types.js";
 import { env } from "../env.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { identitiesRepo } from "../db/repositories/identities.js";
+import { deriveHandle } from "../lib/handle.js";
 import {
   clearSession,
   currentUser,
@@ -274,10 +275,14 @@ authRoutes.get("/:provider/callback", async (c) => {
     return c.redirect(env.appBaseUrl + "/account");
   }
 
-  // 未ログイン: 既存ならログイン、無ければ新規作成
+  // 未ログイン: 既存ならログイン、無ければ新規作成。
+  // ハンドル概念のないプロバイダ由来の username は許可文字に整形する (#236)
   let userId = existingUserId;
   if (!userId) {
-    const u = await usersRepo.createFromProfile(provider, profile);
+    const u = await usersRepo.createFromProfile(provider, {
+      ...profile,
+      username: deriveHandle(profile.username, profile.email),
+    });
     await identitiesRepo.link(u.id, provider, profile.providerUserId, profile.email);
     userId = u.id;
   }
