@@ -399,7 +399,10 @@ function injectProfileOg(
   user: User,
   summary: string,
 ): string {
-  const url = escapeHtml(`${env.appBaseUrl}/users/${user.username}`);
+  // スペース入りハンドル (#236) でも有効なURLになるようエンコードする
+  const url = escapeHtml(
+    `${env.appBaseUrl}/users/${encodeURIComponent(user.username)}`,
+  );
   const title = escapeHtml(`${user.globalName ?? user.username} ・ events lab`);
   const desc = escapeHtml(summary);
   const image = escapeHtml(

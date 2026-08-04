@@ -14,13 +14,17 @@ export function sanitizeHandle(desired: string | null | undefined): string | nul
   return cleaned.length >= 2 ? cleaned : null;
 }
 
-/** 表示名 → メールの@前 → "user" の順でハンドル候補を決める */
+/** 表示名 → メールの@前 → "user" の順でハンドル候補を決める。
+ * プロバイダが表示名の代わりにメールアドレスを返すことがある（Google の
+ * name 欠落時等）ため、@ を含む候補は @前だけを使う（完全なメールアドレスが
+ * 公開プロフィールURLに露出しないように） */
 export function deriveHandle(
   name: string | null | undefined,
   email: string | null | undefined,
 ): string {
+  const nameCandidate = name?.includes("@") ? name.split("@")[0] : name;
   return (
-    sanitizeHandle(name) ??
+    sanitizeHandle(nameCandidate) ??
     sanitizeHandle(email ? email.split("@")[0] : null) ??
     "user"
   );

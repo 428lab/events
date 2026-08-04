@@ -48,6 +48,8 @@ describe("ハンドルの変更 (#236)", () => {
     const sp = await putUsername(u.cookie, `merry shino ${crypto.randomUUID().slice(0, 6)}`);
     expect(sp.status).toBe(200);
     expect((await putUsername(u.cookie, "近藤昭雄")).status).toBe(400);
+    // 連続スペースは「見えない差分で別ハンドル」になるため拒否 (#236)
+    expect((await putUsername(u.cookie, "a  b")).status).toBe(400);
     // 前後スペースは zod の trim で落ちた上でパターン判定される
     const trimmed = await putUsername(u.cookie, `  ab${crypto.randomUUID().slice(0, 6)}  `);
     expect(trimmed.status).toBe(200);

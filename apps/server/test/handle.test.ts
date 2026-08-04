@@ -23,5 +23,9 @@ describe("ハンドルの自動生成 (#236)", () => {
     expect(deriveHandle("近藤昭雄", "kondo.akio@example.com")).toBe("kondo.akio");
     expect(deriveHandle("近藤昭雄", null)).toBe("user");
     expect(deriveHandle(null, "あ@example.com")).toBe("user");
+    // name にメールアドレスが入ってくるケース（Google の name 欠落時）:
+    // 完全なメールアドレスをハンドルに露出させない
+    expect(deriveHandle("john.doe@gmail.com", "john.doe@gmail.com")).toBe("john.doe");
+    expect(deriveHandle("あ@gmail.com", "fallback.name@example.com")).toBe("fallback.name");
   });
 });
