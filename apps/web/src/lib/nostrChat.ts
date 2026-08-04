@@ -122,15 +122,16 @@ export function buildChannelCreateTemplate(eventTitle: string): EventTemplate {
   };
 }
 
-/** NIP-28 チャンネルメッセージ（kind:42） */
+/** NIP-28 チャンネルメッセージ（kind:42）。relayHint は e タグに載せる推奨リレー */
 export function buildChannelMessageTemplate(
   channelId: string,
   content: string,
+  relayHint: string = CHAT_RELAYS[0],
 ): EventTemplate {
   return {
     kind: 42,
     created_at: Math.floor(Date.now() / 1000),
-    tags: [["e", channelId, CHAT_RELAYS[0], "root"]],
+    tags: [["e", channelId, relayHint, "root"]],
     content,
   };
 }
@@ -143,7 +144,8 @@ export interface ChatRelayStatus {
 }
 
 /**
- * 2つのユーザー所有リレーへの接続・購読・発行をまとめる。
+ * 複数リレーへの接続・購読・発行をまとめる。リレーURLは運用設定
+ * （chat-members の relays）から渡し、未取得時は既定の CHAT_RELAYS。
  * ライフサイクルは呼び出し側（コンポーネント）が持ち、unmount 時に close() すること。
  */
 export class ChatRelayPool {
@@ -152,12 +154,15 @@ export class ChatRelayPool {
   /** 接続状態が変わったら呼ばれる（UI のステータス表示用） */
   onstatus: (() => void) | null = null;
 
-  constructor(private signer: ChatSigner) {}
+  constructor(
+    private signer: ChatSigner,
+    private relayUrls: readonly string[] = CHAT_RELAYS,
+  ) {}
 
   /** 全リレーへ接続（失敗したリレーはスキップ。1つも繋がらなくても throw しない） */
   async connect(): Promise<void> {
     await Promise.all(
-      CHAT_RELAYS.map(async (url) => {
+      this.relayUrls.map(async (url) => {
         try {
           const relay = await Relay.connect(url, { enableReconnect: true });
           if (this.closed) {
@@ -178,7 +183,7 @@ export class ChatRelayPool {
   }
 
   statuses(): ChatRelayStatus[] {
-    return CHAT_RELAYS.map((url) => ({
+    return this.relayUrls.map((url) => ({
       url,
       connected: this.relays.get(url)?.connected ?? false,
     }));
