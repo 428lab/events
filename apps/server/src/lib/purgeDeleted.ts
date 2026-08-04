@@ -1,5 +1,4 @@
-import { ACCOUNT_DELETION_GRACE_MS } from "@eventer/shared";
-import { getBucket } from "../runtime.js";
+import { env, getBucket } from "../runtime.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
 import { decksRepo } from "../db/repositories/decks.js";
@@ -88,7 +87,7 @@ async function collectUserObjects(
 export async function purgeDeletedAccounts(
   now = Date.now(),
 ): Promise<{ purged: number; failed: number; remaining: number }> {
-  const cutoff = now - ACCOUNT_DELETION_GRACE_MS;
+  const cutoff = now - env.deletionGraceMs;
   const budget: Budget = { spent: 1 }; // listPurgeTargets
   const ids = await usersRepo.listPurgeTargets(cutoff, MAX_CANDIDATES_PER_RUN);
   if (ids.length === 0) return { purged: 0, failed: 0, remaining: 0 };

@@ -15,13 +15,22 @@ import {
   Typography,
 } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
-import { ACCOUNT_DELETION_GRACE_DAYS } from "@eventer/shared";
+import { useDeletionGraceMs } from "../api/hooks.js";
+
 import { useDeleteAccount } from "../api/userHooks.js";
 
 /** 退会カード (#244, #250)。アカウント設定の最下部に置く。
  * 何が残り何が消えるか・猶予期間 (#250) を説明し、
  * チェック＋確認ダイアログの二段構えで実行する */
+/** 猶予期間の表示（環境で変わる。staging は検証用に短い） */
+function formatGrace(ms: number): string {
+  const days = Math.round(ms / 86_400_000);
+  if (days >= 1) return `${days}日`;
+  return `${Math.max(1, Math.round(ms / 60_000))}分`;
+}
+
 export function AccountDeleteCard() {
+  const graceText = formatGrace(useDeletionGraceMs());
   const deleteAccount = useDeleteAccount();
   const qc = useQueryClient();
   const [agreed, setAgreed] = useState(false);
@@ -52,10 +61,8 @@ export function AccountDeleteCard() {
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           退会するとアカウントはすぐに利用できなくなり、他の利用者からも見えなく
           なります。
-          {ACCOUNT_DELETION_GRACE_DAYS}
-          日以内に同じログイン方法でログインすると復帰できます。
-          {ACCOUNT_DELETION_GRACE_DAYS}
-          日経過後は完全に削除され、復元できません。
+          {graceText}以内に同じログイン方法でログインすると復帰できます。
+          {graceText}経過後は完全に削除され、復元できません。
         </Typography>
         <Typography
           variant="body2"
@@ -69,8 +76,7 @@ export function AccountDeleteCard() {
               表示など、他の利用者から見える場所には表示されなくなります
             </li>
             <li>
-              {ACCOUNT_DELETION_GRACE_DAYS}
-              日経過後に、以下のとおりデータが完全に削除されます
+              {graceText}経過後に、以下のとおりデータが完全に削除されます
             </li>
             <li>
               作成したイベント・コミュニティ・会場・イベントのたまごは、参加者の
@@ -120,10 +126,8 @@ export function AccountDeleteCard() {
         <DialogContent>
           <DialogContentText>
             アカウントはすぐに利用できなくなり、実行後はログイン画面に戻ります。
-            {ACCOUNT_DELETION_GRACE_DAYS}
-            日以内に同じログイン方法でログインすれば復帰できますが、
-            {ACCOUNT_DELETION_GRACE_DAYS}
-            日経過後は完全に削除され、元に戻すことはできません。
+            {graceText}以内に同じログイン方法でログインすれば復帰できますが、
+            {graceText}経過後は完全に削除され、元に戻すことはできません。
           </DialogContentText>
         </DialogContent>
         <DialogActions>

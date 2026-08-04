@@ -19,14 +19,20 @@ import {
 import { useIsAdmin } from "../api/hooks.js";
 import {
   useAdminSettings,
-  useUpdateChatRelays,
-} from "../api/adminSettingsHooks.js";
+  useUpdateChatRelays, useRunPurgeDeleted } from "../api/adminSettingsHooks.js";
 
 /** 管理者向け: アプリ全体の運用設定。まずはチャットリレー (#199) */
 export function AdminSettingsPage() {
   const isAdmin = useIsAdmin();
   const { data, isLoading } = useAdminSettings(isAdmin);
   const update = useUpdateChatRelays();
+
+  const purge = useRunPurgeDeleted();
+  const [purgeResult, setPurgeResult] = useState<{
+    purged: number;
+    failed: number;
+    remaining: number;
+  } | null>(null);
 
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +164,39 @@ export function AdminSettingsPage() {
               </Box>
             </Stack>
           )}
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            退会予定の削除
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            猶予期間を過ぎた退会アカウントを完全に削除します。通常は毎日自動で
+            実行されますが、ここから今すぐ実行することもできます。
+          </Typography>
+          {purgeResult && (
+            <Alert
+              severity={purgeResult.failed > 0 ? "warning" : "success"}
+              sx={{ mb: 2 }}
+              onClose={() => setPurgeResult(null)}
+            >
+              {purgeResult.purged}件を削除しました
+              {purgeResult.failed > 0 && `（失敗 ${purgeResult.failed}件）`}
+              {purgeResult.remaining > 0 && `。残り ${purgeResult.remaining}件`}
+            </Alert>
+          )}
+          <Button
+            variant="outlined"
+            size="small"
+            disabled={purge.isPending}
+            onClick={() =>
+              purge.mutate(undefined, { onSuccess: (r) => setPurgeResult(r) })
+            }
+          >
+            {purge.isPending ? "実行中…" : "今すぐ実行"}
+          </Button>
         </CardContent>
       </Card>
     </Stack>

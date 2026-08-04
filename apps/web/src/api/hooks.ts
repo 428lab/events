@@ -21,6 +21,7 @@ import type {
   UpdateSubmissionInput,
   User,
 } from "@eventer/shared";
+import { ACCOUNT_DELETION_GRACE_MS } from "@eventer/shared";
 import { api, ApiError } from "./client.js";
 
 interface MeResponse {
@@ -28,6 +29,8 @@ interface MeResponse {
   isAdmin: boolean;
   /** 退会申請中（猶予期間 #250）。復帰画面へ誘導するために使う */
   pendingDeletion?: PendingDeletion | null;
+  /** 退会の猶予期間（ms）。環境で変わるため UI 文言はこの値を使う (#250) */
+  deletionGraceMs?: number;
 }
 
 async function fetchMe(): Promise<MeResponse | null> {
@@ -54,6 +57,16 @@ export function useMe() {
     retry: false,
     select: (d) => d?.user ?? null,
   });
+}
+
+/** 退会の猶予期間（ms）。取得前・未ログインは既定値（本番と同じ30日） */
+export function useDeletionGraceMs(): number {
+  const { data } = useQuery({
+    queryKey: ["me"],
+    queryFn: fetchMe,
+    retry: false,
+  });
+  return data?.deletionGraceMs ?? ACCOUNT_DELETION_GRACE_MS;
 }
 
 /** 退会申請中（猶予期間 #250）なら復帰の案内、そうでなければ null */

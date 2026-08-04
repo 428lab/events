@@ -1,7 +1,7 @@
 import { Hono } from "hono";
+import { env } from "../runtime.js";
 import type { Context } from "hono";
 import {
-  ACCOUNT_DELETION_GRACE_MS,
   deleteAccountInput,
   mergeAccountInput,
   updateDisplayNameInput,
@@ -188,12 +188,12 @@ meRoutes.delete("/", zValidator("json", deleteAccountInput), async (c) => {
     action: "account_delete_requested",
     actor: { id: me.id, handle: me.username },
     target: { id: me.id, handle: me.username },
-    detail: { purgeAt: now + ACCOUNT_DELETION_GRACE_MS },
+    detail: { purgeAt: now + env.deletionGraceMs },
   });
 
   // session 行は requestDeletion で削除済み。cookie の破棄だけ行う
   await clearSession(c);
-  return c.json({ ok: true, purgeAt: now + ACCOUNT_DELETION_GRACE_MS });
+  return c.json({ ok: true, purgeAt: now + env.deletionGraceMs });
 });
 
 /** 退会の取り消し（復帰） (#250)。
@@ -210,7 +210,7 @@ export async function postRestoreAccount(c: Context<AppEnv>): Promise<Response> 
   const pending = await pendingDeletionUser(c);
   if (!pending) return c.json({ error: "unauthorized" }, 401);
   // 猶予期間を過ぎている場合は復帰させない（日次バッチ待ちの状態）
-  if (Date.now() - pending.deletedAt > ACCOUNT_DELETION_GRACE_MS) {
+  if (Date.now() - pending.deletedAt > env.deletionGraceMs) {
     return c.json({ error: "grace_period_expired" }, 410);
   }
   await usersRepo.restore(pending.id);

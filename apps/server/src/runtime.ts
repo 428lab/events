@@ -1,4 +1,5 @@
 import type { D1Database, R2Bucket, Fetcher } from "@cloudflare/workers-types";
+import { ACCOUNT_DELETION_GRACE_MS } from "@eventer/shared";
 
 /** Worker のバインディング/環境変数（wrangler.toml と対応） */
 export interface Env {
@@ -95,6 +96,14 @@ export const env = {
   },
   get isStaging(): boolean {
     return must().ENVIRONMENT === "staging";
+  },
+  /** 退会の猶予期間 (#250)。staging は完全削除まで30日待つと検証できないため
+   * 10分に短縮する（表示される期限もこの値から計算される）。
+   * 本番・開発・テストは既定の30日 */
+  get deletionGraceMs(): number {
+    return must().ENVIRONMENT === "staging"
+      ? 10 * 60 * 1000
+      : ACCOUNT_DELETION_GRACE_MS;
   },
   get appBaseUrl(): string {
     return must().APP_BASE_URL;
