@@ -17,6 +17,7 @@ import {
 } from "@mui/material";
 import ConstructionOutlinedIcon from "@mui/icons-material/ConstructionOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
+import OpenInFullOutlinedIcon from "@mui/icons-material/OpenInFullOutlined";
 import SendIcon from "@mui/icons-material/Send";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import { Link as RouterLink } from "react-router-dom";
@@ -68,12 +69,15 @@ export function EventChat({
   event,
   myRole,
   canChat,
+  variant = "card",
 }: {
   eventId: string;
   event: Event;
   myRole: EventRole | null;
   /** 参加確定メンバーか（呼び出し側で判定） */
   canChat: boolean;
+  /** card=イベントページ内のカード / page=専用ページで縦いっぱい (#215) */
+  variant?: "card" | "page";
 }) {
   const { data: me } = useMe();
   // イベント配下のUIは myRole のみで判定（サイト管理者でも staff でなければ操作UIを出さない）
@@ -333,9 +337,8 @@ export function EventChat({
     }
   };
 
-  return (
-    <Card variant="outlined">
-      <CardContent>
+  const content = (
+    <>
         <Stack
           direction="row"
           alignItems="center"
@@ -349,11 +352,25 @@ export function EventChat({
             <ForumOutlinedIcon fontSize="small" />
             チャット
           </Typography>
-          {signer && (
-            <Typography variant="caption" color="text.secondary">
-              {relayConnected ? "接続中" : "オフライン"}
-            </Typography>
-          )}
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            {signer && (
+              <Typography variant="caption" color="text.secondary">
+                {relayConnected ? "接続中" : "オフライン"}
+              </Typography>
+            )}
+            {variant === "card" && (
+              <Tooltip title="チャット画面で開く">
+                <IconButton
+                  size="small"
+                  component={RouterLink}
+                  to={`/events/${eventId}/chat`}
+                  aria-label="チャット画面で開く"
+                >
+                  <OpenInFullOutlinedIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Stack>
         </Stack>
 
         {/* チャンネル作成の失敗は参加後（signer確定後）にも起きるため、分岐の外で表示する */}
@@ -438,10 +455,22 @@ export function EventChat({
             </Box>
           </Stack>
         ) : (
-          <Stack spacing={1.5} sx={{ mt: 1 }}>
+          <Stack
+            spacing={1.5}
+            sx={{
+              mt: 1,
+              ...(variant === "page" ? { flex: 1, minHeight: 0 } : {}),
+            }}
+          >
             <Box
               ref={listRef}
-              sx={{ maxHeight: 360, overflowY: "auto", pr: 0.5 }}
+              sx={{
+                ...(variant === "page"
+                  ? { flex: 1, minHeight: 0 }
+                  : { maxHeight: 360 }),
+                overflowY: "auto",
+                pr: 0.5,
+              }}
             >
               {visibleMessages.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
@@ -593,7 +622,24 @@ export function EventChat({
             </Typography>
           </Stack>
         )}
-      </CardContent>
+    </>
+  );
+
+  // 専用ページ (#215) では Card を使わず縦いっぱいに広げる
+  return variant === "page" ? (
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        minHeight: 0,
+      }}
+    >
+      {content}
+    </Box>
+  ) : (
+    <Card variant="outlined">
+      <CardContent>{content}</CardContent>
     </Card>
   );
 }

@@ -9,6 +9,7 @@ import { LoginPage } from "./pages/LoginPage.js";
 import { MyPage } from "./pages/MyPage.js";
 
 import { EventDetailPage } from "./pages/EventDetailPage.js";
+import { EventChatPage } from "./pages/EventChatPage.js";
 import { CreateEventPage } from "./pages/CreateEventPage.js";
 import { EditEventPage } from "./pages/EditEventPage.js";
 import { PublicEventsPage } from "./pages/PublicEventsPage.js";
@@ -325,6 +326,8 @@ export function App() {
         <Route path="/events/:id/live/control" element={<LiveControlPage />} />
         {/* QR受付。カメラ使用中に余計な再描画やSSE購読を避けるため EventLayout の外に置く */}
         <Route path="/events/:id/checkin" element={<CheckinRoute />} />
+        {/* チャット専用ページ (#215)。リレー接続を維持するため EventLayout の外 */}
+        <Route path="/events/:id/chat" element={<EventChatPage />} />
         <Route path="/events/:id" element={<EventLayout />}>
           <Route index element={<EventDetailPage />} />
           <Route path="edit" element={<EditEventPage />} />
