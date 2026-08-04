@@ -32,6 +32,7 @@ import { decksRepo } from "../db/repositories/decks.js";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { bgmTracksRepo } from "../db/repositories/bgmTracks.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
+import { recordAudit } from "../db/repositories/auditLogs.js";
 import { putMyCardImage } from "./profileCardImages.js";
 
 export const meRoutes = new Hono<AppEnv>();
@@ -145,6 +146,13 @@ meRoutes.post("/merge", zValidator("json", mergeAccountInput), async (c) => {
     `[account-merge] executor=${me.id} codeIssuer=${otherId} winner=${winnerId} loser=${loserId}`,
   );
   await usersRepo.mergeUsers(winnerId, loserId);
+  // 監査ログ (#248)。負け側のユーザー行は消えるのでハンドルも一緒に残す
+  await recordAudit({
+    action: "account_merge",
+    actor: { id: me.id, handle: me.username },
+    target: { id: otherId, handle: other.username },
+    detail: { keep, winnerId, loserId },
+  });
   return c.json({ ok: true, winnerId });
 });
 
@@ -194,6 +202,13 @@ meRoutes.delete("/", zValidator("json", deleteAccountInput), async (c) => {
     `[account-delete] user=${me.id} handle=${me.username} ghost=${ghost.id} r2Objects=${objectKeys.length}`,
   );
   await usersRepo.deleteAccount(me.id, ghost.id);
+  // 監査ログ (#248)。user 行は消えるが FK を張っていないので記録は残る
+  await recordAudit({
+    action: "account_delete",
+    actor: { id: me.id, handle: me.username },
+    target: { id: me.id, handle: me.username },
+    detail: { ghostId: ghost.id, r2Objects: objectKeys.length },
+  });
 
   // R2 の掃除はベストエフォート（失敗しても退会自体は成立。残骸はログで追える）
   try {

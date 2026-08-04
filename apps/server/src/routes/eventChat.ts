@@ -30,6 +30,7 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { getChatRelays } from "../db/repositories/appSettings.js";
+import { recordAudit } from "../db/repositories/auditLogs.js";
 
 const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
 
@@ -229,7 +230,15 @@ eventChatRoutes.delete(
   "/:id/chat-channel",
   requireEventRole(["staff"]),
   async (c) => {
-    await eventChatRepo.clearChannel(c.req.param("id"));
+    const eventId = c.req.param("id");
+    await eventChatRepo.clearChannel(eventId);
+    // 監査ログ (#248)。参加者から見ると履歴が消えたように見える操作なので記録する
+    const me = c.get("user");
+    await recordAudit({
+      action: "chat_channel_reset",
+      actor: { id: me.id, handle: me.username },
+      detail: { eventId },
+    });
     return c.json({ ok: true });
   },
 );
