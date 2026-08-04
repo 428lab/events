@@ -101,6 +101,13 @@ export const mergeAccountInput = z.object({
 });
 export type MergeAccountInput = z.infer<typeof mergeAccountInput>;
 
+/** 退会（アカウント削除）の実行入力 (#244)。
+ * 取り消し不可の操作のため、明示的な confirm: true を必須にする */
+export const deleteAccountInput = z.object({
+  confirm: z.literal(true),
+});
+export type DeleteAccountInput = z.infer<typeof deleteAccountInput>;
+
 /** 表示名の変更入力 (#232)。イベント・チャット等の表示に使われる */
 export const updateDisplayNameInput = z.object({
   displayName: z

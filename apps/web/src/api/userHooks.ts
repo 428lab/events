@@ -102,6 +102,13 @@ export function useMergeAccount() {
   });
 }
 
+/** 退会（アカウント削除）を実行する (#244)。取り消し不可 */
+export function useDeleteAccount() {
+  return useMutation({
+    mutationFn: () => api.del<{ ok: boolean }>("/me", { confirm: true }),
+  });
+}
+
 /** 自分の表示名を変更 (#232) */
 export function useUpdateDisplayName() {
   const qc = useQueryClient();
