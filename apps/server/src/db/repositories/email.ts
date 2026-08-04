@@ -31,9 +31,11 @@ export const emailRepo = {
    * メールは最後に作成された identity のものを使う */
   async findRecipient(userId: string): Promise<string | null> {
     const row = await one<{ email: string }>(
+      // 退会申請中 (#250) には通知メールを送らない
       `SELECT i.email AS email
        FROM notification_pref p
        JOIN identity i ON i.user_id = p.user_id
+       JOIN user u ON u.id = p.user_id AND u.deleted_at IS NULL
        WHERE p.user_id = ? AND p.email_enabled = 1 AND i.email IS NOT NULL
        ORDER BY i.created_at DESC LIMIT 1`,
       userId,
@@ -57,6 +59,7 @@ export const emailRepo = {
                  WHERE i.user_id = p.user_id AND i.email IS NOT NULL
                  ORDER BY i.created_at DESC LIMIT 1) AS email
          FROM notification_pref p
+         JOIN user u ON u.id = p.user_id AND u.deleted_at IS NULL
          WHERE p.user_id IN (${placeholders}) AND p.email_enabled = 1`,
         ...chunk,
       );
@@ -92,6 +95,8 @@ export const emailRepo = {
        FROM event e
        JOIN event_member em ON em.event_id = e.id
        JOIN notification_pref p ON p.user_id = em.user_id AND p.email_enabled = 1
+       -- 退会申請中 (#250) には送らない
+       JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
        WHERE e.status = 'published' AND e.scheduling = 0
          AND e.starts_at > ? AND e.starts_at <= ?
          AND em.status = 'confirmed'

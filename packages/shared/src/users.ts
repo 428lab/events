@@ -102,11 +102,29 @@ export const mergeAccountInput = z.object({
 export type MergeAccountInput = z.infer<typeof mergeAccountInput>;
 
 /** 退会（アカウント削除）の実行入力 (#244)。
- * 取り消し不可の操作のため、明示的な confirm: true を必須にする */
+ * 猶予期間 (#250) を挟むが、誤操作防止のため confirm: true は引き続き必須 */
 export const deleteAccountInput = z.object({
   confirm: z.literal(true),
 });
 export type DeleteAccountInput = z.infer<typeof deleteAccountInput>;
+
+/** 退会の猶予期間 (#250)。この期間内に同じログイン方法でログインすれば復帰でき、
+ * 経過後は日次バッチが完全削除する。UI 文言もこの日数を参照する */
+export const ACCOUNT_DELETION_GRACE_DAYS = 30;
+export const ACCOUNT_DELETION_GRACE_MS =
+  ACCOUNT_DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000;
+
+/** 猶予期間中のアカウントでログインしたときに /api/auth/me が返す情報 (#250)。
+ * SPA はこれを見て復帰画面へ誘導する */
+export const pendingDeletionSchema = z.object({
+  /** 退会を申請した時刻 */
+  deletedAt: z.number(),
+  /** 完全削除が実行される時刻（deletedAt + 猶予期間） */
+  purgeAt: z.number(),
+  /** 復帰画面で「どのアカウントか」を示すためのハンドル */
+  username: z.string(),
+});
+export type PendingDeletion = z.infer<typeof pendingDeletionSchema>;
 
 /** 表示名の変更入力 (#232)。イベント・チャット等の表示に使われる */
 export const updateDisplayNameInput = z.object({

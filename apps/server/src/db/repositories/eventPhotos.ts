@@ -28,7 +28,8 @@ const COMMENT_COUNT =
   "(SELECT COUNT(1) FROM event_photo_comment c WHERE c.photo_id = p.id) AS comment_count";
 const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at,
   u.username, u.global_name, u.avatar_url, ${COMMENT_COUNT}
-  FROM event_photo p JOIN user u ON u.id = p.user_id`;
+  FROM event_photo p JOIN user u ON u.id = p.user_id
+    AND u.deleted_at IS NULL`;
 
 export const eventPhotosRepo = {
   async listByEvent(eventId: string): Promise<EventPhoto[]> {

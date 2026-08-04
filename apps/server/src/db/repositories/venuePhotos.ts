@@ -22,7 +22,10 @@ const toPhoto = (r: Row): VenuePhoto => ({
 });
 
 const SELECT = `SELECT p.*, u.global_name AS user_name, u.avatar_url AS user_avatar
-  FROM venue_photo p LEFT JOIN user u ON u.id = p.user_id`;
+  FROM venue_photo p LEFT JOIN user u ON u.id = p.user_id
+    AND u.deleted_at IS NULL`;
+// 退会申請中 (#250) は ON 側で外す。写真自体は残し投稿者名だけ匿名化する
+// （完全削除時も venue_photo.user_id は SET NULL で写真は残る）
 
 export const venuePhotosRepo = {
   async findById(id: string): Promise<VenuePhoto | null> {

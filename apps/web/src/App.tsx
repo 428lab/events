@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect } from "react";
 import { Box, CircularProgress } from "@mui/material";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { useMe } from "./api/hooks.js";
+import { useMe, usePendingDeletion } from "./api/hooks.js";
 import { Layout } from "./components/Layout.js";
 import { PublicLayout } from "./components/PublicLayout.js";
 import { EventLayout } from "./components/EventLayout.js";
@@ -21,6 +21,7 @@ import { CriteriaAdminPage } from "./pages/CriteriaAdminPage.js";
 import { ScoreResultsPage } from "./pages/ScoreResultsPage.js";
 import { LotteryAdminPage } from "./pages/LotteryAdminPage.js";
 import { AccountPage } from "./pages/AccountPage.js";
+import { AccountRestorePage } from "./pages/AccountRestorePage.js";
 import { InquiriesPage } from "./pages/InquiriesPage.js";
 import { InquiryThreadPage } from "./pages/InquiryThreadPage.js";
 import { AdminInquiriesPage } from "./pages/AdminInquiriesPage.js";
@@ -118,6 +119,7 @@ function PostLoginRedirect() {
 
 export function App() {
   const { data: user, isLoading } = useMe();
+  const pendingDeletion = usePendingDeletion();
 
   if (isLoading) {
     return (
@@ -125,6 +127,12 @@ export function App() {
         <CircularProgress />
       </Box>
     );
+  }
+
+  // 退会申請中（猶予期間 #250）のアカウントでログインした場合は、
+  // どのURLに居ても復帰画面だけを出す（他の画面はサーバー側でも使えない）
+  if (pendingDeletion) {
+    return <AccountRestorePage pending={pendingDeletion} />;
   }
 
   if (!user) {

@@ -205,7 +205,8 @@ export const venueAdminsRepo = {
     }>(
       `SELECT u.id, u.username, u.global_name, u.avatar_url
          FROM venue_admin a JOIN user u ON u.id = a.user_id
-        WHERE a.venue_id = ? ORDER BY a.created_at ASC`,
+        WHERE a.venue_id = ? AND u.deleted_at IS NULL
+        ORDER BY a.created_at ASC`,
       venueId,
     );
     return rows.map((r) => ({

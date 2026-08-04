@@ -150,7 +150,7 @@ export const scoresRepo = {
          FROM event_member m
          JOIN user u ON u.id = m.user_id
          WHERE m.event_id = ? AND m.status <> 'canceled'
-           AND m.role IN (${placeholders})
+           AND m.role IN (${placeholders}) AND u.deleted_at IS NULL
          ORDER BY m.role, u.username`,
       eventId,
       ...judgeRoles,

@@ -71,7 +71,7 @@ export const eventLikesRepo = {
     const hostRow = await one<TargetUserRow>(
       `SELECT u.id, u.username, u.global_name, u.avatar_url
          FROM event e JOIN user u ON u.id = e.created_by
-        WHERE e.id = ?`,
+        WHERE e.id = ? AND u.deleted_at IS NULL`,
       eventId,
     );
 
@@ -82,7 +82,7 @@ export const eventLikesRepo = {
          JOIN user u ON u.id = m.user_id
          JOIN event e ON e.id = m.event_id
         WHERE m.event_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
-          AND m.user_id <> e.created_by
+          AND m.user_id <> e.created_by AND u.deleted_at IS NULL
         ORDER BY m.created_at ASC`,
       eventId,
     );
@@ -93,6 +93,7 @@ export const eventLikesRepo = {
          FROM event_member m
          JOIN user u ON u.id = m.user_id
         WHERE m.event_id = ? AND m.role = 'participant' AND m.status = 'confirmed'
+          AND u.deleted_at IS NULL
         ORDER BY m.created_at ASC`,
       eventId,
     );

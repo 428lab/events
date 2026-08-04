@@ -1,0 +1,20 @@
+# 退会猶予期間 (#250) を過ぎたアカウントの完全削除を日次で実行する。
+# Workers Free は cron トリガーがアカウント5個上限のため、GitHub Actions から叩く
+# （リマインダー #129 と同じ方式）。リマインダーの失敗に引きずられないよう
+# ワークフローは分けている。
+name: Purge deleted accounts
+on:
+  schedule:
+    - cron: "30 18 * * *" # UTC 18:30 = JST 3:30（利用の少ない時間帯）
+  workflow_dispatch: {}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call purge endpoint (production)
+        run: |
+          code=$(curl -s -o /tmp/body -w "%{http_code}" -X POST \
+            -H "x-cron-key: ${{ secrets.CRON_SECRET }}" \
+            https://events.kojira.io/api/cron/purge-deleted)
+          cat /tmp/body; echo
+          test "$code" = "200"

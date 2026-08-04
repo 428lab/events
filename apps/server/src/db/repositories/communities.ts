@@ -317,7 +317,7 @@ export const communitiesRepo = {
          SELECT em.user_id FROM event_member em JOIN event e ON e.id = em.event_id
            WHERE e.community_id = ? AND em.status = 'confirmed'
        ) ids
-       JOIN user u ON u.id = ids.user_id
+       JOIN user u ON u.id = ids.user_id AND u.deleted_at IS NULL
        LEFT JOIN community_member cm
          ON cm.community_id = ? AND cm.user_id = ids.user_id
        ORDER BY (COALESCE(cm.role,'') = 'owner') DESC,

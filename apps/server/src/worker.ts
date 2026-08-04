@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { bindEnv, getAssets, env, type Env } from "./runtime.js";
 import { gamificationFromStats } from "@eventer/shared";
@@ -7,7 +8,7 @@ import { authRoutes } from "./routes/auth.js";
 import { eventRoutes } from "./routes/events.js";
 import { scoringRoutes, getEventScoreResults } from "./routes/scoring.js";
 import { awardRoutes, getEventAwards } from "./routes/awards.js";
-import { meRoutes } from "./routes/me.js";
+import { meRoutes, postRestoreAccount } from "./routes/me.js";
 import { getEventImage } from "./routes/images.js";
 import { getUserCardImage } from "./routes/profileCardImages.js";
 import { publicRoutes } from "./routes/public.js";
@@ -76,7 +77,11 @@ import {
 import { venueOfferRoutes } from "./routes/venueOffers.js";
 import { emailRoutes } from "./routes/email.js";
 import { sendEventReminders } from "./lib/reminders.js";
-import { adminReminderRoutes } from "./routes/adminReminders.js";
+import { purgeDeletedAccounts } from "./lib/purgeDeleted.js";
+import {
+  adminPurgeDeletedRoutes,
+  adminReminderRoutes,
+} from "./routes/adminReminders.js";
 import { adminSettingsRoutes } from "./routes/adminSettings.js";
 import { adminAuditRoutes } from "./routes/adminAudit.js";
 
@@ -146,6 +151,9 @@ api.route("/events", eventSurveyRoutes);
 // 入館名簿CSV (#154)（staff または成立会場の運営者。要認証）
 api.route("/events", attendanceCsvRoutes);
 api.route("/events", analyticsRoutes);
+// 退会の取り消し（復帰） (#250)。猶予期間中は requireAuth が通らないため、
+// requireAuth 付きの meRoutes より先に登録する
+api.post("/me/restore", postRestoreAccount);
 api.route("/me", meRoutes);
 // 公開: プロフィールカードPNG（認証不要。OGクローラ用。要認証の /users ルートより先に登録） (#193)
 api.get("/users/:id/card-image", getUserCardImage);
@@ -156,9 +164,12 @@ api.route("/users", meetUserRoutes);
 api.route("/inquiries", inquiryRoutes);
 api.route("/admin/inquiries", adminInquiryRoutes);
 api.route("/admin/run-reminders", adminReminderRoutes);
+// 退会猶予期間 (#250) の完全削除の手動実行（staging 検証用。app admin のみ）
+api.route("/admin/run-purge-deleted", adminPurgeDeletedRoutes);
 // GitHub Actions のスケジュール実行から叩く（Workers Free は cron 上限のため #129）。
-// CRON_SECRET 未設定なら閉じたまま（404）
-api.post("/cron/reminders", async (c) => {
+// CRON_SECRET 未設定なら閉じたまま（404）。
+// 未設定なら null、鍵違いなら Response を返す
+function checkCronKey(c: Context): Response | null {
   const secret = env.cronSecret;
   if (!secret) return c.json({ error: "not_found" }, 404);
   const given = c.req.header("x-cron-key") ?? "";
@@ -168,8 +179,22 @@ api.post("/cron/reminders", async (c) => {
     diff |= given.charCodeAt(i) ^ secret.charCodeAt(i);
   }
   if (diff !== 0) return c.json({ error: "forbidden" }, 403);
+  return null;
+}
+
+api.post("/cron/reminders", async (c) => {
+  const denied = checkCronKey(c);
+  if (denied) return denied;
   const sent = await sendEventReminders();
   return c.json({ sent });
+});
+
+// 退会猶予期間 (#250) を過ぎたアカウントの完全削除。日次実行
+// （.github/workflows/purge-deleted.yml）
+api.post("/cron/purge-deleted", async (c) => {
+  const denied = checkCronKey(c);
+  if (denied) return denied;
+  return c.json(await purgeDeletedAccounts());
 });
 api.route("/admin/stats", adminStatsRoutes);
 // アプリ全体の運用設定（チャットリレー等。app admin のみ） (#199)

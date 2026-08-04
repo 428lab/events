@@ -215,7 +215,7 @@ export const eventRequestsRepo = {
     }>(
       `SELECT u.id, u.username, u.global_name, u.avatar_url
          FROM event_request_reaction r JOIN user u ON u.id = r.user_id
-        WHERE r.request_id = ? AND r.kind = ?
+        WHERE r.request_id = ? AND r.kind = ? AND u.deleted_at IS NULL
         ORDER BY r.created_at ASC LIMIT 100`,
       requestId,
       kind,

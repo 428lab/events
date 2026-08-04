@@ -34,6 +34,18 @@ const ALREADY_LINKED_MSG =
 /** 引き取り拒否 (#238): 相手アカウントに利用実績がある場合 */
 const ACCOUNT_IN_USE_MSG =
   "そのログイン方法は、利用実績のある別のアカウントに連携されています。そちらのアカウントでログインし直してから、逆にこちらのログイン方法を連携してください。";
+/** 引き取り拒否 (#250): 相手アカウントが退会手続き中（猶予期間）の場合 */
+const ACCOUNT_DELETED_MSG =
+  "そのログイン方法は、退会手続き中のアカウントに連携されています。そちらのアカウントでログインすると復帰できます。完全に削除されたあとであれば、あらためて連携できます。";
+
+/** OAuth コールバックの ?link_error / API の 409 エラーコードを文言に変換する */
+function linkErrorMessage(code: string | null | undefined): string {
+  return code === "account_in_use"
+    ? ACCOUNT_IN_USE_MSG
+    : code === "account_deleted"
+      ? ACCOUNT_DELETED_MSG
+      : ALREADY_LINKED_MSG;
+}
 
 export function AccountPage() {
   const { data: me } = useMe();
@@ -47,11 +59,7 @@ export function AccountPage() {
   // OAuth コールバックの ?link_error=already_linked / account_in_use を初期値に取り込む
   const [linkErrorDialog, setLinkErrorDialog] = useState<string | null>(() => {
     const q = new URLSearchParams(window.location.search).get("link_error");
-    return q === "already_linked"
-      ? ALREADY_LINKED_MSG
-      : q === "account_in_use"
-        ? ACCOUNT_IN_USE_MSG
-        : null;
+    return q ? linkErrorMessage(q) : null;
   });
   const closeLinkErrorDialog = () => {
     setLinkErrorDialog(null);
@@ -83,9 +91,7 @@ export function AccountPage() {
       // 引き取り拒否系は見落とし防止のためモーダルで表示 (#245)
       if (e instanceof ApiError && e.status === 409) {
         setLinkErrorDialog(
-          (e.body as { error?: string } | null)?.error === "account_in_use"
-            ? ACCOUNT_IN_USE_MSG
-            : ALREADY_LINKED_MSG,
+          linkErrorMessage((e.body as { error?: string } | null)?.error),
         );
       } else {
         setNostrError(

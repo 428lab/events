@@ -14,6 +14,7 @@ import type {
   CreateSlotInput,
   MyPage,
   ParticipationSlot,
+  PendingDeletion,
   Submission,
   UpdateEventInput,
   UpdateSlotInput,
@@ -23,8 +24,10 @@ import type {
 import { api, ApiError } from "./client.js";
 
 interface MeResponse {
-  user: User;
+  user: User | null;
   isAdmin: boolean;
+  /** 退会申請中（猶予期間 #250）。復帰画面へ誘導するために使う */
+  pendingDeletion?: PendingDeletion | null;
 }
 
 async function fetchMe(): Promise<MeResponse | null> {
@@ -32,6 +35,13 @@ async function fetchMe(): Promise<MeResponse | null> {
     return await api.get<MeResponse>("/auth/me");
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) return null;
+    // 退会申請中は 403 + 復帰の案内。ログイン扱いにはせず復帰画面へ回す (#250)
+    if (e instanceof ApiError && e.status === 403) {
+      const body = e.body as { error?: string; pendingDeletion?: PendingDeletion };
+      if (body?.error === "pending_deletion" && body.pendingDeletion) {
+        return { user: null, isAdmin: false, pendingDeletion: body.pendingDeletion };
+      }
+    }
     throw e;
   }
 }
@@ -43,6 +53,26 @@ export function useMe() {
     queryFn: fetchMe,
     retry: false,
     select: (d) => d?.user ?? null,
+  });
+}
+
+/** 退会申請中（猶予期間 #250）なら復帰の案内、そうでなければ null */
+export function usePendingDeletion(): PendingDeletion | null {
+  const { data } = useQuery({
+    queryKey: ["me"],
+    queryFn: fetchMe,
+    retry: false,
+    select: (d) => d?.pendingDeletion ?? null,
+  });
+  return data ?? null;
+}
+
+/** 退会の取り消し（復帰） (#250) */
+export function useRestoreAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post("/me/restore"),
+    onSuccess: () => qc.invalidateQueries(),
   });
 }
 

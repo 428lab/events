@@ -48,7 +48,10 @@ const SELECT = `SELECT s.id, s.event_id, s.title, s.description, s.duration_min,
   s.material_og_image, s.sort_order,
   u.username AS u_username, u.global_name AS u_global_name,
   u.avatar_url AS u_avatar_url
-  FROM event_schedule_item s LEFT JOIN user u ON u.id = s.speaker_user_id`;
+  FROM event_schedule_item s LEFT JOIN user u ON u.id = s.speaker_user_id
+    AND u.deleted_at IS NULL`;
+// 退会申請中 (#250) は ON 側で外す。タイムテーブルの枠は残し登壇者名だけ匿名化する
+// （完全削除時も speaker_user_id は SET NULL で枠は残る）
 
 export const eventScheduleRepo = {
   async listByEvent(eventId: string): Promise<ScheduleItem[]> {

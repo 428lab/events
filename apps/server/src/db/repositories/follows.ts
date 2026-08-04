@@ -88,7 +88,8 @@ export const followsRepo = {
     }>(
       `SELECT u.id, u.username, u.global_name, u.avatar_url
          FROM user_follow f JOIN user u ON u.id = f.followee_id
-        WHERE f.follower_id = ? ORDER BY f.created_at DESC`,
+        WHERE f.follower_id = ? AND u.deleted_at IS NULL
+        ORDER BY f.created_at DESC`,
       userId,
     );
     return rows.map((r) => ({

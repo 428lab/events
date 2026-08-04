@@ -27,7 +27,7 @@ export const schedulingRepo = {
               u.global_name, u.avatar_url
        FROM event_date_vote v
        JOIN event_date_option o ON o.id = v.option_id
-       JOIN user u ON u.id = v.user_id
+       JOIN user u ON u.id = v.user_id AND u.deleted_at IS NULL
        WHERE o.event_id = ?`,
       eventId,
     );

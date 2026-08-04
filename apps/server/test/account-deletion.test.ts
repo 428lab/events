@@ -53,6 +53,37 @@ async function requestDelete(
   });
 }
 
+/** 猶予期間 (#250) を過ぎたことにする（deleted_at を日数分だけ過去に戻す） */
+async function backdateDeletion(userId: string, days: number): Promise<void> {
+  await env.DB.prepare(
+    "UPDATE user SET deleted_at = deleted_at - ? WHERE id = ?",
+  )
+    .bind(days * 24 * 60 * 60 * 1000, userId)
+    .run();
+}
+
+/** 日次バッチ（完全削除）を叩く */
+async function runPurge(key = "test-cron-secret"): Promise<Response> {
+  return SELF.fetch(`${BASE}/api/cron/purge-deleted`, {
+    method: "POST",
+    headers: { "x-cron-key": key },
+  });
+}
+
+/** 退会申請 → 猶予期間経過 → 完全削除、をまとめて実行する */
+async function deleteAndPurge(
+  cookie: string,
+  userId: string,
+): Promise<Response> {
+  const res = await requestDelete(cookie);
+  if (res.status === 200) {
+    await backdateDeletion(userId, 31);
+    const purged = await runPurge();
+    expect(purged.status).toBe(200);
+  }
+  return res;
+}
+
 async function count(sql: string, ...args: unknown[]): Promise<number> {
   const row = await env.DB.prepare(sql)
     .bind(...args)
@@ -68,8 +99,8 @@ async function ghostRow(): Promise<{ id: string; username: string } | null> {
     .first<{ id: string; username: string }>();
 }
 
-describe("退会（アカウント削除） (#244)", () => {
-  it("共有コンテンツは「退会済みユーザー」名義で残り、本人の活動記録・資産・ログイン情報は消える", async () => {
+describe("退会（アカウント削除） (#244, #250)", () => {
+  it("猶予期間経過後の完全削除で、共有コンテンツは「退会済みユーザー」名義で残り、本人の活動記録・資産・ログイン情報は消える", async () => {
     const a = await makeUser(); // 退会する本人
     const b = await makeUser(); // 第三者
 
@@ -182,8 +213,8 @@ describe("退会（アカウント削除） (#244)", () => {
       .bind(crypto.randomUUID(), a.userId, `g-${a.userId}`, Date.now())
       .run();
 
-    // 退会実行
-    const res = await requestDelete(a.cookie);
+    // 退会申請 → 猶予期間経過 → 日次バッチで完全削除
+    const res = await deleteAndPurge(a.cookie, a.userId);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
 
@@ -296,7 +327,7 @@ describe("退会（アカウント削除） (#244)", () => {
         .run();
     }
 
-    expect((await requestDelete(a.cookie)).status).toBe(200);
+    expect((await deleteAndPurge(a.cookie, a.userId)).status).toBe(200);
 
     expect(await count("SELECT COUNT(*) n FROM entry WHERE id = ?", solo)).toBe(0);
     expect(
@@ -331,7 +362,7 @@ describe("退会（アカウント削除） (#244)", () => {
       .bind(offerId, otherVenue, eventId, a.userId, Date.now())
       .run();
 
-    expect((await requestDelete(a.cookie)).status).toBe(200);
+    expect((await deleteAndPurge(a.cookie, a.userId)).status).toBe(200);
 
     const offer = await env.DB.prepare(
       "SELECT organizer_contact, status FROM venue_offer WHERE id = ?",
@@ -362,7 +393,7 @@ describe("退会（アカウント削除） (#244)", () => {
     // 少なくとも1人退会させて ghost を確実に作る
     const a = await makeUser();
     await makeEvent(a.userId);
-    expect((await requestDelete(a.cookie)).status).toBe(200);
+    expect((await deleteAndPurge(a.cookie, a.userId)).status).toBe(200);
 
     const ghost = await ghostRow();
     expect(ghost).not.toBeNull();
@@ -389,8 +420,8 @@ describe("退会（アカウント削除） (#244)", () => {
     const eventA = await makeEvent(a.userId);
     const eventB = await makeEvent(b.userId);
 
-    expect((await requestDelete(a.cookie)).status).toBe(200);
-    expect((await requestDelete(b.cookie)).status).toBe(200);
+    expect((await deleteAndPurge(a.cookie, a.userId)).status).toBe(200);
+    expect((await deleteAndPurge(b.cookie, b.userId)).status).toBe(200);
 
     expect(
       await count(

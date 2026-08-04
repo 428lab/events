@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
+import { ACCOUNT_DELETION_GRACE_MS } from "@eventer/shared";
 import type { User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { env } from "../env.js";
@@ -11,6 +12,7 @@ import {
   clearSession,
   currentUser,
   issueSession,
+  pendingDeletionUser,
   requireAuth,
 } from "../auth/session.js";
 import { isAppAdmin } from "../auth/admin.js";
@@ -36,24 +38,35 @@ async function takeoverEmptyAccount(
   existingUserId: string,
   actor: User,
   provider: string,
-): Promise<"ok" | "already_linked" | "account_in_use"> {
+): Promise<"ok" | "already_linked" | "account_in_use" | "account_deleted"> {
+  // 退会申請中（猶予期間 #250）は引き取りの対象外。復帰したときに
+  // ログイン手段ごとアカウントが消えていた、という事態を防ぐ
+  const target = await usersRepo.findByIdIncludingDeleted(existingUserId);
+  if (!target || target.deletedAt !== null) return "account_deleted";
   if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
     return "already_linked";
   }
   if (await usersRepo.hasActivity(existingUserId)) {
     return "account_in_use";
   }
-  // ハンドルは行が消える前に控える（監査ログから後で辿れるように）
-  const target = await usersRepo.findById(existingUserId);
   await usersRepo.deleteById(existingUserId);
   // 監査ログ (#248)。相手のユーザー行ごと消す不可逆操作なので記録する
   await recordAudit({
     action: "identity_takeover",
     actor: { id: actor.id, handle: actor.username },
-    target: { id: existingUserId, handle: target?.username ?? "" },
+    target: { id: existingUserId, handle: target.username },
     detail: { provider },
   });
   return "ok";
+}
+
+/** 退会申請中（猶予期間 #250）のアカウントか。
+ * ログイン自体は通し（本人確認はプロバイダ側で済んでいる）、復帰画面へ誘導する。
+ * ログイン自体を弾くと「同じログイン方法でログインすれば復帰できる」導線が
+ * 作れないため、この形にしている */
+async function isPendingDeletion(userId: string): Promise<boolean> {
+  const u = await usersRepo.findByIdIncludingDeleted(userId);
+  return !!u && u.deletedAt !== null;
 }
 
 const STATE_COOKIE = "eventer_oauth_state";
@@ -82,8 +95,24 @@ export const authRoutes = new Hono<AppEnv>();
 
 authRoutes.get("/me", async (c) => {
   const user = await currentUser(c);
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  return c.json({ user, isAdmin: isAppAdmin(user) });
+  if (user) return c.json({ user, isAdmin: isAppAdmin(user) });
+  // 退会申請中（猶予期間 #250）は 403 + 復帰の案内を返し、SPA が /restore へ誘導する。
+  // 401（未ログイン）と区別できないと、ログインし直すたびに同じ画面をぐるぐるしてしまう
+  const pending = await pendingDeletionUser(c);
+  if (pending) {
+    return c.json(
+      {
+        error: "pending_deletion",
+        pendingDeletion: {
+          deletedAt: pending.deletedAt,
+          purgeAt: pending.deletedAt + ACCOUNT_DELETION_GRACE_MS,
+          username: pending.username,
+        },
+      },
+      403,
+    );
+  }
+  return c.json({ error: "unauthorized" }, 401);
 });
 
 authRoutes.post("/logout", async (c) => {
@@ -175,8 +204,11 @@ authRoutes.post("/nostr/login", async (c) => {
     await identitiesRepo.link(u.id, "nostr", pubkey, null);
     userId = u.id;
   }
+  // 猶予期間中 (#250) はセッションだけ発行して復帰画面へ誘導する。
+  // このセッションで使えるのは復帰API だけ（currentUser が null を返すため）
+  const pendingDeletion = await isPendingDeletion(userId);
   await issueSession(c, userId);
-  return c.json({ ok: true });
+  return c.json({ ok: true, pendingDeletion });
 });
 
 /** Nostr の kind:0（プロフィール）を検証して表示名/アイコンを補完。
@@ -315,8 +347,11 @@ authRoutes.get("/:provider/callback", async (c) => {
     await identitiesRepo.link(u.id, provider, profile.providerUserId, profile.email);
     userId = u.id;
   }
+  // 猶予期間中 (#250) はセッションだけ発行して復帰画面へ送る。
+  // このセッションで使えるのは復帰API だけ（currentUser が null を返すため）
+  const pendingDeletion = await isPendingDeletion(userId);
   await issueSession(c, userId);
-  return c.redirect(env.appBaseUrl + "/me");
+  return c.redirect(env.appBaseUrl + (pendingDeletion ? "/restore" : "/me"));
 });
 
 /**
@@ -325,16 +360,19 @@ authRoutes.get("/:provider/callback", async (c) => {
 authRoutes.post("/dev-login", async (c) => {
   // 開発環境のみ（staging も /api/auth/* はゲート免除のため明示的に塞ぐ）
   if (env.isProd || env.isStaging) return c.json({ error: "not_found" }, 404);
-  let u = await usersRepo.findByDiscordId("dev-user");
+  // 猶予期間中 (#250) でも行は再利用する（UNIQUE(discord_id) 衝突を避ける）。
+  // 本番の OAuth と同じく、復帰するまで currentUser は null のまま
+  let u = await usersRepo.findByDiscordIdIncludingDeleted("dev-user");
   if (!u) {
-    u = await usersRepo.createFromProfile("discord", {
+    const created = await usersRepo.createFromProfile("discord", {
       providerUserId: "dev-user",
       username: "DevUser",
       globalName: "開発ユーザー",
       avatarUrl: null,
     });
-    await identitiesRepo.link(u.id, "discord", "dev-user", null);
+    await identitiesRepo.link(created.id, "discord", "dev-user", null);
+    u = { ...created, deletedAt: null };
   }
   await issueSession(c, u.id);
-  return c.json({ user: u });
+  return c.json({ user: u, pendingDeletion: u.deletedAt !== null });
 });

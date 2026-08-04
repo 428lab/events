@@ -1,0 +1,403 @@
+import { SELF, env } from "cloudflare:test";
+import { describe, it, expect } from "vitest";
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+
+/** 退会の猶予期間 (#250)。即時無効化・復帰・30日後の完全削除・引き取り/統合の除外 */
+
+const BASE = "https://example.com";
+const DAY = 24 * 60 * 60 * 1000;
+
+interface TestUser {
+  userId: string;
+  cookie: string;
+  handle: string;
+}
+
+/** 一般ユーザーを1人作る（セッション付き） */
+async function makeUser(): Promise<TestUser> {
+  const uid = crypto.randomUUID();
+  const sid = crypto.randomUUID();
+  const handle = `t_${uid.slice(0, 8)}`;
+  await env.DB.prepare(
+    "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at) VALUES (?, ?, ?, NULL, NULL, ?)",
+  )
+    .bind(uid, `t:${uid}`, handle, Date.now())
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
+  )
+    .bind(sid, uid, Date.now() + DAY)
+    .run();
+  return { userId: uid, cookie: `eventer_session=${sid}`, handle };
+}
+
+/** 既存ユーザーに追加のセッションを発行する（復帰フローの検証用） */
+async function newSession(userId: string): Promise<string> {
+  const sid = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
+  )
+    .bind(sid, userId, Date.now() + DAY)
+    .run();
+  return `eventer_session=${sid}`;
+}
+
+async function requestDelete(cookie: string): Promise<Response> {
+  return SELF.fetch(`${BASE}/api/me`, {
+    method: "DELETE",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ confirm: true }),
+  });
+}
+
+async function restore(cookie: string): Promise<Response> {
+  return SELF.fetch(`${BASE}/api/me/restore`, { method: "POST", headers: { cookie } });
+}
+
+async function runPurge(key = "test-cron-secret"): Promise<Response> {
+  return SELF.fetch(`${BASE}/api/cron/purge-deleted`, {
+    method: "POST",
+    headers: { "x-cron-key": key },
+  });
+}
+
+/** deleted_at を日数分だけ過去に戻す（猶予期間の経過を再現する） */
+async function backdateDeletion(userId: string, days: number): Promise<void> {
+  await env.DB.prepare("UPDATE user SET deleted_at = deleted_at - ? WHERE id = ?")
+    .bind(days * DAY, userId)
+    .run();
+}
+
+async function userRow(userId: string): Promise<{ deleted_at: number | null } | null> {
+  return env.DB.prepare("SELECT deleted_at FROM user WHERE id = ?")
+    .bind(userId)
+    .first<{ deleted_at: number | null }>();
+}
+
+async function makeEvent(createdBy: string): Promise<string> {
+  const eventId = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, created_by, created_at) VALUES (?, '猶予テスト', 1, 2, 'offline', 'published', ?, ?)",
+  )
+    .bind(eventId, createdBy, Date.now())
+    .run();
+  return eventId;
+}
+
+async function joinEvent(
+  eventId: string,
+  userId: string,
+  role = "participant",
+): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at) VALUES (?, ?, ?, ?, NULL, 'confirmed', ?)",
+  )
+    .bind(crypto.randomUUID(), eventId, userId, role, Date.now())
+    .run();
+}
+
+/** nostr のみを唯一の連携として持つアカウントを直接作る（引き取り元） */
+async function makeNostrOnlyUser(pubkey: string): Promise<string> {
+  const uid = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at) VALUES (?, ?, ?, NULL, NULL, ?)",
+  )
+    .bind(uid, `nostr:${pubkey}`, `n_${uid.slice(0, 8)}`, Date.now())
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO identity (id, user_id, provider, provider_user_id, email, created_at) VALUES (?, ?, 'nostr', ?, NULL, ?)",
+  )
+    .bind(crypto.randomUUID(), uid, pubkey, Date.now())
+    .run();
+  return uid;
+}
+
+/** kind:22242 のログインイベントを署名する */
+async function nostrLoginEvent(sk: Uint8Array): Promise<object> {
+  const res = await SELF.fetch(`${BASE}/api/auth/nostr/challenge`);
+  const { challenge } = (await res.json()) as { challenge: string };
+  const pubkey = bytesToHex(schnorr.getPublicKey(sk));
+  const created_at = Math.floor(Date.now() / 1000);
+  const tags = [
+    ["relay", BASE],
+    ["challenge", challenge],
+  ];
+  const serialized = JSON.stringify([0, pubkey, created_at, 22242, tags, ""]);
+  const id = bytesToHex(sha256(new TextEncoder().encode(serialized)));
+  const sig = bytesToHex(schnorr.sign(hexToBytes(id), sk));
+  return { id, pubkey, sig, kind: 22242, created_at, tags, content: "" };
+}
+
+describe("退会の猶予期間 (#250)", () => {
+  it("退会直後はデータを消さず、セッションを破棄して利用不可にする", async () => {
+    const a = await makeUser();
+    const res = await requestDelete(a.cookie);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; purgeAt: number };
+    expect(body.ok).toBe(true);
+    expect(body.purgeAt).toBeGreaterThan(Date.now() + 29 * DAY);
+
+    // ユーザー行は残り deleted_at が立つ（実データはまだ消えない）
+    const row = await userRow(a.userId);
+    expect(row?.deleted_at).toBeGreaterThan(0);
+
+    // セッションは全削除され、元の cookie では認証されない
+    const sessions = await env.DB.prepare(
+      "SELECT COUNT(1) AS n FROM session WHERE user_id = ?",
+    )
+      .bind(a.userId)
+      .first<{ n: number }>();
+    expect(sessions?.n).toBe(0);
+    const me = await SELF.fetch(`${BASE}/api/auth/me`, {
+      headers: { cookie: a.cookie },
+    });
+    expect(me.status).toBe(401);
+  });
+
+  it("退会直後は他ユーザーから見えなくなる（プロフィール・参加者一覧・チャット表示許可）", async () => {
+    const host = await makeUser();
+    const a = await makeUser();
+    const eventId = await makeEvent(host.userId);
+    // chat-members は staff/participant 等のメンバーロールで見る
+    await joinEvent(eventId, host.userId, "staff");
+    await joinEvent(eventId, a.userId);
+    await env.DB.prepare(
+      "INSERT INTO event_chat_pubkey (event_id, user_id, pubkey, created_at) VALUES (?, ?, 'pk-a', ?)",
+    )
+      .bind(eventId, a.userId, Date.now())
+      .run();
+    // フォロー（host → a）
+    await env.DB.prepare(
+      "INSERT INTO user_follow (follower_id, followee_id, created_at) VALUES (?, ?, ?)",
+    )
+      .bind(host.userId, a.userId, Date.now())
+      .run();
+
+    // 退会前は見えている
+    const before = await SELF.fetch(
+      `${BASE}/api/public/users/${encodeURIComponent(a.handle)}`,
+    );
+    expect(before.status).toBe(200);
+
+    expect((await requestDelete(a.cookie)).status).toBe(200);
+
+    // 公開プロフィールは 404
+    const after = await SELF.fetch(
+      `${BASE}/api/public/users/${encodeURIComponent(a.handle)}`,
+    );
+    expect(after.status).toBe(404);
+
+    // 参加者一覧から除外される
+    const members = await SELF.fetch(`${BASE}/api/events/${eventId}/members`, {
+      headers: { cookie: host.cookie },
+    });
+    expect(members.status).toBe(200);
+    const memberIds = (
+      (await members.json()) as { members: Array<{ user: { id: string } }> }
+    ).members.map((m) => m.user.id);
+    expect(memberIds).toContain(host.userId);
+    expect(memberIds).not.toContain(a.userId);
+
+    // チャットの表示許可リスト（Nostr pubkey）からも除外される
+    const chat = await SELF.fetch(`${BASE}/api/events/${eventId}/chat-members`, {
+      headers: { cookie: host.cookie },
+    });
+    expect(chat.status).toBe(200);
+    const pubkeys = (
+      (await chat.json()) as { members: Array<{ pubkey: string }> }
+    ).members.map((m) => m.pubkey);
+    expect(pubkeys).not.toContain("pk-a");
+
+    // フォロー中一覧からも消える
+    const following = await SELF.fetch(`${BASE}/api/me/following`, {
+      headers: { cookie: host.cookie },
+    });
+    const followed = (
+      (await following.json()) as { following: Array<{ id: string }> }
+    ).following.map((u) => u.id);
+    expect(followed).not.toContain(a.userId);
+  });
+
+  it("猶予期間中に同じログイン方法でログインすると復帰できる", async () => {
+    const a = await makeUser();
+    const eventId = await makeEvent(a.userId);
+    await joinEvent(eventId, a.userId, "host");
+    expect((await requestDelete(a.cookie)).status).toBe(200);
+
+    // ログイン（＝新しいセッション）はできるが、まだ利用不可で復帰の案内が返る
+    const cookie = await newSession(a.userId);
+    const pendingRes = await SELF.fetch(`${BASE}/api/auth/me`, {
+      headers: { cookie },
+    });
+    expect(pendingRes.status).toBe(403);
+    const pending = (await pendingRes.json()) as {
+      error: string;
+      pendingDeletion: { deletedAt: number; purgeAt: number; username: string };
+    };
+    expect(pending.error).toBe("pending_deletion");
+    expect(pending.pendingDeletion.username).toBe(a.handle);
+    expect(pending.pendingDeletion.purgeAt).toBe(
+      pending.pendingDeletion.deletedAt + 30 * DAY,
+    );
+
+    // 復帰API 以外は使えない
+    expect(
+      (await SELF.fetch(`${BASE}/api/me/events`, { headers: { cookie } })).status,
+    ).toBe(401);
+
+    // 復帰
+    expect((await restore(cookie)).status).toBe(200);
+    expect((await userRow(a.userId))?.deleted_at).toBeNull();
+
+    // 通常どおり使える／他ユーザーからも見える
+    const me = await SELF.fetch(`${BASE}/api/auth/me`, { headers: { cookie } });
+    expect(me.status).toBe(200);
+    const profile = await SELF.fetch(
+      `${BASE}/api/public/users/${encodeURIComponent(a.handle)}`,
+    );
+    expect(profile.status).toBe(200);
+
+    // 監査ログに復帰が残る
+    const audit = await env.DB.prepare(
+      "SELECT COUNT(1) AS n FROM audit_log WHERE action = 'account_restore' AND target_user_id = ?",
+    )
+      .bind(a.userId)
+      .first<{ n: number }>();
+    expect(audit?.n).toBe(1);
+  });
+
+  it("猶予期間を過ぎた申請は復帰できず、期間内なら復帰後にバッチでも消えない", async () => {
+    const a = await makeUser();
+    expect((await requestDelete(a.cookie)).status).toBe(200);
+    await backdateDeletion(a.userId, 31);
+    const cookie = await newSession(a.userId);
+    // 猶予期間を過ぎた申請は復帰させない（バッチ待ちの状態）
+    expect((await restore(cookie)).status).toBe(410);
+
+    // 29日経過なら復帰できる
+    const b = await makeUser();
+    expect((await requestDelete(b.cookie)).status).toBe(200);
+    await backdateDeletion(b.userId, 29);
+    const bCookie = await newSession(b.userId);
+    expect((await restore(bCookie)).status).toBe(200);
+    expect((await runPurge()).status).toBe(200);
+    expect(await userRow(b.userId)).not.toBeNull();
+  });
+
+  it("日次バッチは30日を過ぎた申請だけを完全削除する", async () => {
+    const old = await makeUser(); // 31日前に申請（削除される）
+    const recent = await makeUser(); // 29日前に申請（残る）
+    const active = await makeUser(); // 申請していない（残る）
+    for (const u of [old, recent]) {
+      expect((await requestDelete(u.cookie)).status).toBe(200);
+    }
+    await backdateDeletion(old.userId, 31);
+    await backdateDeletion(recent.userId, 29);
+
+    const res = await runPurge();
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { purged: number; failed: number }).toEqual({
+      purged: 1,
+      failed: 0,
+    });
+
+    expect(await userRow(old.userId)).toBeNull();
+    expect(await userRow(recent.userId)).not.toBeNull();
+    expect(await userRow(active.userId)).not.toBeNull();
+
+    // 完全削除の監査ログが残る
+    const audit = await env.DB.prepare(
+      "SELECT target_handle, detail FROM audit_log WHERE action = 'account_delete_completed' AND target_user_id = ?",
+    )
+      .bind(old.userId)
+      .first<{ target_handle: string; detail: string }>();
+    expect(audit?.target_handle).toBe(old.handle);
+    expect(JSON.parse(audit!.detail).requestedAt).toBeGreaterThan(0);
+
+    // 2回目の実行では対象が無い
+    const again = await runPurge();
+    expect((await again.json()) as { purged: number }).toEqual({
+      purged: 0,
+      failed: 0,
+    });
+  });
+
+  it("日次バッチは cron キーが無い／違うと実行されない", async () => {
+    const a = await makeUser();
+    expect((await requestDelete(a.cookie)).status).toBe(200);
+    await backdateDeletion(a.userId, 31);
+
+    expect((await runPurge("wrong")).status).toBe(403);
+    expect(
+      (await SELF.fetch(`${BASE}/api/cron/purge-deleted`, { method: "POST" }))
+        .status,
+    ).toBe(403);
+    expect(await userRow(a.userId)).not.toBeNull();
+  });
+
+  it("猶予期間中のアカウントは連携の引き取り (#238) の対象外", async () => {
+    const me = await makeUser();
+    const sk = schnorr.utils.randomSecretKey();
+    const pubkey = bytesToHex(schnorr.getPublicKey(sk));
+    // 実績なし＝本来なら引き取れる空アカウントだが、退会申請中にする
+    const orphan = await makeNostrOnlyUser(pubkey);
+    await env.DB.prepare("UPDATE user SET deleted_at = ? WHERE id = ?")
+      .bind(Date.now(), orphan)
+      .run();
+
+    const res = await SELF.fetch(`${BASE}/api/auth/nostr/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: me.cookie },
+      body: JSON.stringify({ event: await nostrLoginEvent(sk) }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe("account_deleted");
+
+    // 相手のアカウントも identity も無傷
+    expect(await userRow(orphan)).not.toBeNull();
+    const identity = await env.DB.prepare(
+      "SELECT user_id FROM identity WHERE provider = 'nostr' AND provider_user_id = ?",
+    )
+      .bind(pubkey)
+      .first<{ user_id: string }>();
+    expect(identity?.user_id).toBe(orphan);
+  });
+
+  it("猶予期間中のアカウントはアカウント統合 (#240) の相手にならない", async () => {
+    const me = await makeUser();
+    const other = await makeUser();
+    // 統合コードは退会前に発行しておく（コード自体は有効なまま）
+    const codeRes = await SELF.fetch(`${BASE}/api/me/merge-code`, {
+      method: "POST",
+      headers: { cookie: other.cookie },
+    });
+    const { code } = (await codeRes.json()) as { code: string };
+    expect((await requestDelete(other.cookie)).status).toBe(200);
+
+    const res = await SELF.fetch(`${BASE}/api/me/merge`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: me.cookie },
+      body: JSON.stringify({ code, keep: "me" }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("invalid_code");
+    // どちらのアカウントも残っている
+    expect(await userRow(me.userId)).not.toBeNull();
+    expect(await userRow(other.userId)).not.toBeNull();
+  });
+
+  it("猶予期間中もハンドルは予約され、他の人に奪われない", async () => {
+    const a = await makeUser();
+    const b = await makeUser();
+    expect((await requestDelete(a.cookie)).status).toBe(200);
+
+    const res = await SELF.fetch(`${BASE}/api/me/username`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: b.cookie },
+      body: JSON.stringify({ username: a.handle }),
+    });
+    expect(res.status).toBe(409);
+  });
+});

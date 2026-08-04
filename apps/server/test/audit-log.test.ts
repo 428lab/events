@@ -153,7 +153,7 @@ describe("監査ログの記録 (#248)", () => {
     expect(await auditRows("account_merge")).toHaveLength(1);
   });
 
-  it("退会で account_delete が記録され、ユーザー行が消えても残り続ける", async () => {
+  it("退会申請で account_delete_requested が記録される (#250)", async () => {
     const me = await makeUser();
     const res = await SELF.fetch(`${BASE}/api/me`, {
       method: "DELETE",
@@ -162,22 +162,22 @@ describe("監査ログの記録 (#248)", () => {
     });
     expect(res.status).toBe(200);
 
-    // ユーザー行は消えている
-    const gone = await env.DB.prepare("SELECT id FROM user WHERE id = ?")
+    // 猶予期間中なのでユーザー行は残っている（deleted_at が立つだけ）
+    const row = await env.DB.prepare(
+      "SELECT deleted_at FROM user WHERE id = ?",
+    )
       .bind(me.userId)
-      .first();
-    expect(gone).toBeNull();
+      .first<{ deleted_at: number | null }>();
+    expect(row?.deleted_at).toBeGreaterThan(0);
 
-    // FK を張っていないので記録は残り、ハンドルから本人を辿れる
-    const rows = await auditRows("account_delete");
+    const rows = await auditRows("account_delete_requested");
     expect(rows).toHaveLength(1);
     expect(rows[0].actor_user_id).toBe(me.userId);
     expect(rows[0].actor_handle).toBe(me.handle);
     expect(rows[0].target_user_id).toBe(me.userId);
     expect(rows[0].target_handle).toBe(me.handle);
     const detail = JSON.parse(rows[0].detail) as Record<string, unknown>;
-    expect(typeof detail.ghostId).toBe("string");
-    expect(detail.r2Objects).toBe(0);
+    expect(detail.purgeAt).toBeGreaterThan(Date.now());
   });
 
   it("連携の引き取りで identity_takeover が記録される", async () => {

@@ -285,6 +285,7 @@ export const eventMembersRepo = {
          FROM event_member m
          JOIN user u ON u.id = m.user_id
          WHERE m.event_id = ? AND m.status <> 'canceled'
+           AND u.deleted_at IS NULL
          ORDER BY m.created_at ASC`,
       eventId,
     );
