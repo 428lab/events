@@ -144,9 +144,15 @@ export function EventChat({
     }
   }, [signer, myRegisteredPubkey, eventId]);
 
+  // サーバーに登録済みのチャンネルID（未開設は null。5秒ポーリングで反映）
+  const serverChannelId = chat?.channelId ?? null;
+
   // 接続・チャンネル確定・購読。signer が決まったら開始し、unmount で切断
   useEffect(() => {
     if (!signer) return;
+    // 部屋の開設はスタッフの操作のみ (#221)。参加者は開設されるまで待つ
+    // （serverChannelId が入ると deps 経由でこの effect が再実行される）
+    if (!serverChannelId && !isStaff) return;
     let disposed = false;
     let unsubscribe: (() => void) | null = null;
     const pool = new ChatRelayPool(signer, relaysKey.split(" "));
@@ -159,8 +165,8 @@ export function EventChat({
       await pool.connect();
       if (disposed) return;
 
-      // チャンネルIDを確定する（未登録なら kind:40 を発行して先勝ちで登録）
-      let cid = chatRef.current?.channelId ?? null;
+      // チャンネルIDを確定する（未登録ならスタッフが kind:40 を発行して先勝ちで登録）
+      let cid = chatRef.current?.channelId ?? serverChannelId;
       if (!cid) {
         try {
           // チャンネル作成鍵の方針 (#199): 参加者個人の鍵では作らない。
@@ -227,7 +233,7 @@ export function EventChat({
     };
     // registerChannel（mutation オブジェクト）は毎レンダーで変わるため依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signer, event.title, relaysKey]);
+  }, [signer, event.title, relaysKey, serverChannelId, isStaff]);
 
   // 新着メッセージで最下部へ自動スクロール
   const pubkeySet = useMemo(
@@ -329,8 +335,18 @@ export function EventChat({
           )}
         </Stack>
 
-        {!signer ? (
+        {chat && !serverChannelId && !isStaff ? (
+          // 部屋の開設はスタッフの操作のみ (#221)。それまで参加UIは出さない
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            チャットの部屋はまだ開設されていません。スタッフが開設すると参加できます。
+          </Typography>
+        ) : !signer ? (
           <Stack spacing={1.5} sx={{ mt: 1 }}>
+            {isStaff && chat && !serverChannelId && (
+              <Alert severity="info">
+                チャットの部屋はまだありません。参加すると部屋が開設され、参加者もチャットできるようになります。
+              </Alert>
+            )}
             {hasNip07() && (
               <RadioGroup
                 value={keyMode}

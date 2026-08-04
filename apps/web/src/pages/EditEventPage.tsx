@@ -67,7 +67,8 @@ export function EditEventPage() {
   const [venueOnline, setVenueOnline] = useState("");
   const [contestMode, setContestMode] = useState(false);
   const [attendanceCheck, setAttendanceCheck] = useState(false);
-  const [chatEnabled, setChatEnabled] = useState(true);
+  // 部屋を開設するかはスタッフが決める (#221)。新規イベントは既定OFF
+  const [chatEnabled, setChatEnabled] = useState(false);
   const [venueWanted, setVenueWanted] = useState(false);
   const [communityId, setCommunityId] = useState("");
   const myCommunitiesQuery = useMyCommunities();

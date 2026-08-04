@@ -98,11 +98,12 @@ eventChatRoutes.get(
 /** 公式サービス鍵で署名した kind:40（チャンネル作成）を発行する (#199)。
  * 主催者が NIP-07 で自ら署名するケース以外はこの鍵でチャンネルを作る
  * （参加者個人の鍵にチャンネルを紐付けない）。
+ * 部屋を開設するかどうかはスタッフが決める (#221) ため staff 限定。
  * ここでは登録しない: クライアントがリレーへの受理を確認してから
  * POST /:id/chat-channel で先勝ち登録する */
 eventChatRoutes.post(
   "/:id/chat-channel/official",
-  requireEventRole([...MEMBER_ROLES]),
+  requireEventRole(["staff"]),
   async (c) => {
     const denied = await confirmedOnly(c);
     if (denied) return denied;
@@ -125,10 +126,11 @@ eventChatRoutes.post(
 );
 
 /** NIP-28 チャンネル（kind:40）の登録。先勝ちで1回だけ設定され、
- * 2件目以降は既存のチャンネルIDをそのまま返す */
+ * 2件目以降は既存のチャンネルIDをそのまま返す。
+ * 開設はスタッフの操作でのみ行う (#221) */
 eventChatRoutes.post(
   "/:id/chat-channel",
-  requireEventRole([...MEMBER_ROLES]),
+  requireEventRole(["staff"]),
   zValidator("json", registerChatChannelInput),
   async (c) => {
     const denied = await confirmedOnly(c);
