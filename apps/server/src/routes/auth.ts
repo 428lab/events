@@ -26,6 +26,23 @@ import {
   type NostrEvent,
 } from "../auth/nostr.js";
 
+/** 連携の引き取り (#238)。相手が「唯一の連携 かつ 利用実績なし」の空アカウント
+ * のときだけユーザー行ごと削除して "ok" を返す（identity は FK CASCADE で消える。
+ * unlink を挟まない単一文なので、FK違反等で失敗しても相手アカウントは無傷のまま）。
+ * 実績のあるアカウントは孤児化させない（誤ログインでできた空アカウントの回収専用） */
+async function takeoverEmptyAccount(
+  existingUserId: string,
+): Promise<"ok" | "already_linked" | "account_in_use"> {
+  if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
+    return "already_linked";
+  }
+  if (await usersRepo.hasActivity(existingUserId)) {
+    return "account_in_use";
+  }
+  await usersRepo.deleteById(existingUserId);
+  return "ok";
+}
+
 const STATE_COOKIE = "eventer_oauth_state";
 const PKCE_COOKIE = "eventer_oauth_verifier";
 
@@ -121,18 +138,9 @@ authRoutes.post("/nostr/login", async (c) => {
     if (!existingUserId) {
       await identitiesRepo.link(current.id, "nostr", pubkey, null);
     } else if (existingUserId !== current.id) {
-      // 別アカウントに連携済み。鍵の所有は署名で証明済みなので、
-      // 「他にログイン方法がなく、利用実績もない」アカウントからのみ引き取る (#238)。
-      // 実績のあるアカウントを孤児化させない（誤ログインでできた空アカウントの回収専用）
-      if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
-        return c.json({ error: "already_linked" }, 409);
-      }
-      if (await usersRepo.hasActivity(existingUserId)) {
-        return c.json({ error: "account_in_use" }, 409);
-      }
-      await identitiesRepo.unlink(existingUserId, "nostr");
-      // 空アカウントは行ごと削除（ログイン不能なゴーストを残さない）
-      await usersRepo.deleteById(existingUserId);
+      // 別アカウントに連携済み。鍵の所有は署名で証明済み → 空アカウントのみ引き取り (#238)
+      const takeover = await takeoverEmptyAccount(existingUserId);
+      if (takeover !== "ok") return c.json({ error: takeover }, 409);
       await identitiesRepo.link(current.id, "nostr", pubkey, null);
     }
     return c.json({ ok: true, linked: true });
@@ -255,19 +263,12 @@ authRoutes.get("/:provider/callback", async (c) => {
         await usersRepo.setDiscordId(current.id, profile.providerUserId);
       }
     } else if (existingUserId !== current.id) {
-      // 別アカウントに連携済み。アカウントの所有は OAuth で証明済みなので、
-      // 「他にログイン方法がなく、利用実績もない」アカウントからのみ引き取る (#238)。
-      // 実績のあるアカウントを孤児化させない（誤ログインでできた空アカウントの回収専用）
-      if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
-        return c.redirect(env.appBaseUrl + "/account?link_error=already_linked");
+      // 別アカウントに連携済み。アカウントの所有は OAuth で証明済み → 空アカウントのみ引き取り (#238)
+      // （行削除で discord_id の UNIQUE 衝突・管理者判定の残置も同時に消える）
+      const takeover = await takeoverEmptyAccount(existingUserId);
+      if (takeover !== "ok") {
+        return c.redirect(env.appBaseUrl + `/account?link_error=${takeover}`);
       }
-      if (await usersRepo.hasActivity(existingUserId)) {
-        return c.redirect(env.appBaseUrl + "/account?link_error=account_in_use");
-      }
-      await identitiesRepo.unlink(existingUserId, provider);
-      // 空アカウントは行ごと削除（ログイン不能なゴーストを残さない。
-      // discord_id の UNIQUE 衝突・管理者判定の残置も同時に消える）
-      await usersRepo.deleteById(existingUserId);
       await identitiesRepo.link(
         current.id,
         provider,

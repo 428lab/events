@@ -122,6 +122,33 @@ describe("連携の引き取りガード (#238)", () => {
     expect(still).not.toBeNull();
   });
 
+  it("ユーザー資産（live_set等）を持つアカウントも引き取れない（FK違反での中途孤児化防止）", async () => {
+    const me = await makeUser();
+    const sk = schnorr.utils.randomSecretKey();
+    const pubkey = bytesToHex(schnorr.getPublicKey(sk));
+    const ownerId = await makeNostrOnlyUser(pubkey);
+    // live_set は FK が RESTRICT（ON DELETE 指定なし）なので、判定から漏れると
+    // unlink 後の削除が FK 違反で落ちて孤児化する回帰ケース
+    await env.DB.prepare(
+      "INSERT INTO live_set (id, owner_id, community_id, name, content, created_at, updated_at) VALUES (?, ?, NULL, '配信セット', '{}', ?, ?)",
+    )
+      .bind(crypto.randomUUID(), ownerId, Date.now(), Date.now())
+      .run();
+
+    const res = await loginWith(me.cookie, await nostrLoginEvent(sk));
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "account_in_use",
+    );
+    // identity・アカウントとも無傷（unlink を先行させない実装の検証）
+    const ident = await env.DB.prepare(
+      "SELECT user_id FROM identity WHERE provider='nostr' AND provider_user_id = ?",
+    )
+      .bind(pubkey)
+      .first<{ user_id: string }>();
+    expect(ident?.user_id).toBe(ownerId);
+  });
+
   it("複数連携のあるアカウントからは従来どおり 409 already_linked", async () => {
     const me = await makeUser();
     const sk = schnorr.utils.randomSecretKey();

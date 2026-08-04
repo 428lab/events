@@ -172,19 +172,31 @@ export const usersRepo = {
   /** アカウントに利用実績があるか (#238)。連携の引き取りで実績のある
    * アカウントを孤児化させないためのガード（参加・作成系の主要テーブルを見る） */
   async hasActivity(userId: string): Promise<boolean> {
+    // 参加・作成系に加え、ユーザー資産（deck/live_set/bgm）・公開コンテンツ
+    // （コメント）・問い合わせ・FK RESTRICT で削除をブロックするテーブル
+    // （live_set/venue_offer）も判定に含める。ここに漏れがあると
+    // 「引き取り→削除」で資産が消えるか、削除がFK違反で失敗する
+    const tables: [string, string][] = [
+      ["event_member", "user_id"],
+      ["event", "created_by"],
+      ["community_member", "user_id"],
+      ["entry_member", "user_id"],
+      ["event_request", "created_by"],
+      ["venue", "owner_id"],
+      ["venue_admin", "user_id"],
+      ["venue_offer", "created_by"],
+      ["live_set", "owner_id"],
+      ["deck", "owner_id"],
+      ["bgm_track", "owner_id"],
+      ["event_comment", "user_id"],
+      ["inquiry", "user_id"],
+    ];
+    const expr = tables
+      .map(([t, c]) => `EXISTS(SELECT 1 FROM ${t} WHERE ${c} = ?)`)
+      .join(" + ");
     const row = await one<{ n: number }>(
-      `SELECT EXISTS(SELECT 1 FROM event_member WHERE user_id = ?)
-            + EXISTS(SELECT 1 FROM event WHERE created_by = ?)
-            + EXISTS(SELECT 1 FROM community_member WHERE user_id = ?)
-            + EXISTS(SELECT 1 FROM entry_member WHERE user_id = ?)
-            + EXISTS(SELECT 1 FROM event_request WHERE created_by = ?)
-            + EXISTS(SELECT 1 FROM venue WHERE owner_id = ?) AS n`,
-      userId,
-      userId,
-      userId,
-      userId,
-      userId,
-      userId,
+      `SELECT ${expr} AS n`,
+      ...tables.map(() => userId),
     );
     return (row?.n ?? 0) > 0;
   },
