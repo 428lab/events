@@ -69,19 +69,27 @@ export const venuesRepo = {
     return row?.owner_id ?? null;
   },
 
-  /** 公開一覧（提供受付中のみ・新着順） */
+  /** 公開一覧（提供受付中のみ・新着順）。
+   * オーナーが退会申請中 (#250) の会場は載せない。載せたままだと主催者が
+   * オファーを送り、承諾で venue.contact と非公開住所（＝オーナーの個人情報）が
+   * 猶予期間中に新規開示されてしまう。会場データ自体は消さないので復帰で戻る */
   async listOpen(limit: number, offset: number): Promise<Venue[]> {
     const rows = await many<VenueRow>(
-      "SELECT * FROM venue WHERE status = 'open' ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      `SELECT v.* FROM venue v
+         JOIN user u ON u.id = v.owner_id AND u.deleted_at IS NULL
+        WHERE v.status = 'open' ORDER BY v.created_at DESC LIMIT ? OFFSET ?`,
       limit,
       offset,
     );
     return rows.map(toVenue);
   },
 
+  /** listOpen と同じ条件で数える（件数と一覧がずれないように） */
   async countOpen(): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM venue WHERE status = 'open'",
+      `SELECT COUNT(1) AS n FROM venue v
+         JOIN user u ON u.id = v.owner_id AND u.deleted_at IS NULL
+        WHERE v.status = 'open'`,
     );
     return row?.n ?? 0;
   },

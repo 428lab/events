@@ -36,7 +36,11 @@ function toItem(row: Row): ScheduleItem {
             avatarUrl: row.u_avatar_url,
           }
         : null,
-    speakerName: row.speaker_name,
+    // ユーザーに紐付いた枠は speaker_name を返さない (#250)。
+    // LEFT JOIN の ON 側で退会申請中を外して speaker を null にしても、
+    // 手入力名が残っていると表示名がそのまま出てしまう。
+    // 紐付け時は Web 側も speakerName を空にしているので表示は変わらない
+    speakerName: row.speaker_user_id ? "" : row.speaker_name,
     materialUrl: row.material_url,
     materialOgImage: row.material_og_image,
     sortOrder: row.sort_order,

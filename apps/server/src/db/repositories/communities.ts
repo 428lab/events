@@ -42,14 +42,15 @@ export function communityImageUrl(
   return updatedAt ? `/api/communities/${id}/${kind}?v=${updatedAt}` : null;
 }
 
-// メンバー数＝明示メンバー ∪ 所属イベントの確定参加者（重複排除）
+// メンバー数＝明示メンバー ∪ 所属イベントの確定参加者（重複排除）。
+// 退会申請中 (#250) はメンバー一覧に出さないので数からも外す（数字が合わなくなる）
 const SELECT_COMMUNITY = `SELECT c.*,
   (SELECT COUNT(*) FROM (
      SELECT user_id FROM community_member WHERE community_id = c.id
      UNION
      SELECT em.user_id FROM event_member em JOIN event e ON e.id = em.event_id
        WHERE e.community_id = c.id AND em.status = 'confirmed'
-   )) AS member_count,
+   ) ids JOIN user u ON u.id = ids.user_id AND u.deleted_at IS NULL) AS member_count,
   (SELECT COUNT(1) FROM event e WHERE e.community_id = c.id AND e.status = 'published') AS event_count
   FROM community c`;
 

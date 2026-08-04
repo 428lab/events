@@ -126,6 +126,13 @@ export const pendingDeletionSchema = z.object({
 });
 export type PendingDeletion = z.infer<typeof pendingDeletionSchema>;
 
+/** 退会したユーザーの表示名 (#244, #250)。
+ * 完全削除後の「退会済みユーザー」(ghost) の表示名であり、猶予期間中に
+ * 表示名のコピー（個人エントリーの entry.name 等）を伏せるときの置換先でもある。
+ * 猶予期間中は元の name をそのまま残し、表示のときだけこの値に差し替える
+ * ので、復帰すれば元の表示名に戻る */
+export const DELETED_USER_DISPLAY_NAME = "退会済みユーザー";
+
 /** 表示名の変更入力 (#232)。イベント・チャット等の表示に使われる */
 export const updateDisplayNameInput = z.object({
   displayName: z

@@ -16,11 +16,14 @@ export const gamificationRepo = {
       likes: number;
       meets: number;
     }>(
+      // 有効イベントの人数判定・被いいねの集計とも、退会申請中 (#250) は
+      // 数えない（参加者一覧・いいね集計の見え方と揃える）
       `WITH qual AS (
          SELECT e.id, e.created_by, e.attendance_check
            FROM event e
           WHERE e.status = 'published' AND e.ends_at > 0 AND e.ends_at < ?
             AND (SELECT COUNT(*) FROM event_member m
+                  JOIN user mu ON mu.id = m.user_id AND mu.deleted_at IS NULL
                   WHERE m.event_id = e.id AND m.status = 'confirmed') >= 4
        )
        SELECT
@@ -42,6 +45,7 @@ export const gamificationRepo = {
              AND (q.attendance_check = 0 OR m.attended = 1)) AS attended,
          -- 被いいね: 主催・スタッフ・参加者としてもらったいいね
          (SELECT COUNT(*) FROM event_like l JOIN qual q ON q.id = l.event_id
+           JOIN user lu ON lu.id = l.user_id AND lu.deleted_at IS NULL
            WHERE l.kind IN ('host', 'staff', 'participant')
              AND l.target_key = ?) AS likes,
          -- 出会った: QR読み合いの記録 (#189)。イベントごとに上限件数まで数える

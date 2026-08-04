@@ -34,6 +34,10 @@ function toSlot(row: SlotRow): ParticipationSlot {
   };
 }
 
+/** 枠の在籍数。退会申請中 (#250) のメンバーもそのまま数える。
+ * 猶予期間中に席を明け渡すと、復帰したときに枠が埋まっていて戻れなくなるため
+ * （復帰の余地を優先。抽選・繰り上げの「当選対象」からは除外している）。
+ * 完全削除されれば event_member ごと消えて数も戻る */
 const SELECT_SLOT = `SELECT s.*,
   (SELECT COUNT(1) FROM event_member m WHERE m.slot_id = s.id AND m.status = 'confirmed') AS confirmed_count,
   (SELECT COUNT(1) FROM event_member m WHERE m.slot_id = s.id AND m.status = 'waitlist') AS waitlist_count,

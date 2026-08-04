@@ -6,6 +6,7 @@ import type {
   User,
 } from "@eventer/shared";
 import { many, one, run } from "../client.js";
+import { COUNTED_MEMBER_IS_ACTIVE } from "./events.js";
 
 interface MemberRow {
   id: string;
@@ -148,13 +149,17 @@ export const eventMembersRepo = {
     return this.find(eventId, userId);
   },
 
-  /** 枠の特定状態のメンバー（抽選用） */
+  /** 枠の特定状態のメンバー（抽選・繰り上げ用）。
+   * 退会申請中 (#250) は除外する。当選させても本人には通知も参加もできず、
+   * 枠だけ消費してしまうため。行はそのまま残るので復帰すれば申込に戻る */
   async membersBySlotStatus(
     slotId: string,
     status: string,
   ): Promise<Array<{ id: string; userId: string }>> {
     const rows = await many<{ id: string; user_id: string }>(
-      "SELECT id, user_id FROM event_member WHERE slot_id = ? AND status = ? ORDER BY created_at ASC",
+      `SELECT m.id, m.user_id FROM event_member m
+         JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
+        WHERE m.slot_id = ? AND m.status = ? ORDER BY m.created_at ASC`,
       slotId,
       status,
     );
@@ -298,7 +303,8 @@ export const eventMembersRepo = {
       `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
                 (SELECT COUNT(1) FROM event_member em
                  WHERE em.event_id = e.id AND em.status = 'confirmed'
-                   AND (e.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant'))
+                   AND (e.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant')
+                   AND ${COUNTED_MEMBER_IS_ACTIVE})
                  AS participant_count
          FROM event_member m
          JOIN event e ON e.id = m.event_id
@@ -316,7 +322,8 @@ export const eventMembersRepo = {
       `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
                 (SELECT COUNT(1) FROM event_member em
                  WHERE em.event_id = e.id AND em.status = 'confirmed'
-                   AND (e.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant'))
+                   AND (e.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant')
+                   AND ${COUNTED_MEMBER_IS_ACTIVE})
                  AS participant_count
          FROM event_member m
          JOIN event e ON e.id = m.event_id

@@ -16,6 +16,7 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
+import { usersRepo } from "../db/repositories/users.js";
 
 /** 会場オファー (#53 PR2)。自由メッセージなしの定型アクション。
  * 連絡先は承諾成立後にのみ相互開示する */
@@ -57,6 +58,26 @@ async function organizerUserIds(offer: {
   return [];
 }
 
+/** 退会申請中（猶予期間 #250）か。usersRepo.findById は猶予期間中を除外するので
+ * null＝「猶予期間中 or 存在しない」。会場オファーは承諾で連絡先・非公開住所を
+ * 相互開示するため、当事者のどちらかが猶予期間中なら成立させない
+ * （連絡先の値そのものは消さない。復帰すればそのまま再開できる） */
+async function isUnavailableUser(userId: string): Promise<boolean> {
+  return !(await usersRepo.findById(userId));
+}
+
+/** 猶予期間中を除いた主催者側 ID。空なら承諾できる相手が居ない */
+async function activeOrganizerUserIds(offer: {
+  eventId: string | null;
+  requestId: string | null;
+}): Promise<string[]> {
+  const ids = await organizerUserIds(offer);
+  const checked = await Promise.all(
+    ids.map(async (id) => ((await isUnavailableUser(id)) ? null : id)),
+  );
+  return checked.filter((id): id is string => id !== null);
+}
+
 /** オファー作成（双方向）。
  * 会場オーナー → 会場募集中のイベント/たまごへ「提供できます」
  * 主催者 → 受付中の会場へ「使いたい」 */
@@ -66,6 +87,12 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
 
   const venue = await venuesRepo.findById(input.venueId);
   if (!venue) return c.json({ error: "venue_not_found" }, 404);
+  // オーナーが退会申請中 (#250) の会場は新規オファーを受け付けない
+  // （承諾するとオーナーの連絡先・非公開住所が猶予期間中に開示される）。
+  // 公開一覧からも外しているので、直接APIを叩かれた場合の防波堤
+  if (await isUnavailableUser(venue.ownerId)) {
+    return c.json({ error: "venue_unavailable" }, 409);
+  }
 
   // 対象（イベント or たまご）の確認
   let targetTitle = "";
@@ -98,10 +125,21 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
   }
 
   let direction: VenueOffer["direction"];
+  /** venue_to_event のときの通知先（＝承諾できる主催者側）。猶予期間中を除く */
+  let organizerTargets: string[] = [];
   if (isVenueOwner) {
     // 会場側からの提供オファーは「会場探しています」の相手にのみ・受付中の会場のみ
     if (!venueWanted) return c.json({ error: "not_wanted" }, 409);
     if (venue.status !== "open") return c.json({ error: "venue_closed" }, 409);
+    // 主催者側が全員退会申請中 (#250) なら承諾できる相手が居ない。
+    // 承諾されると主催者の連絡先が会場側に開示されるので入口で止める
+    organizerTargets = await activeOrganizerUserIds({
+      eventId: input.eventId ?? null,
+      requestId: input.requestId ?? null,
+    });
+    if (organizerTargets.length === 0) {
+      return c.json({ error: "target_unavailable" }, 409);
+    }
     direction = "venue_to_event";
   } else if (isOrganizer) {
     if (venue.status !== "open") return c.json({ error: "venue_closed" }, 409);
@@ -145,11 +183,8 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
     ? `/events/${input.eventId}`
     : `/requests/${input.requestId}`;
   if (direction === "venue_to_event") {
-    const targets = (await organizerUserIds(offer)).filter(
-      (id) => id !== user.id,
-    );
     await notificationsRepo.createForMany(
-      targets,
+      organizerTargets.filter((id) => id !== user.id),
       "venue_offer",
       "会場の提供オファーが届きました🏟️",
       `「${targetTitle}」に会場「${venue.name}」の提供オファー`,
@@ -194,6 +229,18 @@ venueOfferRoutes.post(
 
     const input = valid<RespondVenueOfferInput>(c, "json");
     const accepted = input.action === "accept";
+    // 承諾＝連絡先と非公開住所の相互開示。相手方が退会申請中 (#250) なら
+    // 猶予期間中に新たな個人情報開示が起きてしまうので成立させない。
+    // 見送り（辞退）は開示を伴わないのでいつでもできる
+    if (accepted) {
+      const venueOwnerId = await venuesRepo.ownerId(offer.venueId);
+      const counterparties = [offer.createdBy, ...(venueOwnerId ? [venueOwnerId] : [])];
+      for (const id of new Set(counterparties)) {
+        if (await isUnavailableUser(id)) {
+          return c.json({ error: "counterparty_unavailable" }, 409);
+        }
+      }
+    }
     // 主催者が承諾する側（venue_to_event）なら連絡先を添えられる
     await venueOffersRepo.respond(
       offer.id,

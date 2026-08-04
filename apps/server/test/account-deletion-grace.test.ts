@@ -15,15 +15,16 @@ interface TestUser {
   handle: string;
 }
 
-/** 一般ユーザーを1人作る（セッション付き） */
-async function makeUser(): Promise<TestUser> {
+/** 一般ユーザーを1人作る（セッション付き）。
+ * admin=true なら discord_id を ADMIN_DISCORD_IDS(=dev-user) に一致させる */
+async function makeUser(admin = false): Promise<TestUser> {
   const uid = crypto.randomUUID();
   const sid = crypto.randomUUID();
   const handle = `t_${uid.slice(0, 8)}`;
   await env.DB.prepare(
     "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at) VALUES (?, ?, ?, NULL, NULL, ?)",
   )
-    .bind(uid, `t:${uid}`, handle, Date.now())
+    .bind(uid, admin ? "dev-user" : `t:${uid}`, handle, Date.now())
     .run();
   await env.DB.prepare(
     "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
@@ -298,10 +299,9 @@ describe("退会の猶予期間 (#250)", () => {
 
     const res = await runPurge();
     expect(res.status).toBe(200);
-    expect((await res.json()) as { purged: number; failed: number }).toEqual({
-      purged: 1,
-      failed: 0,
-    });
+    expect(
+      (await res.json()) as { purged: number; failed: number; remaining: number },
+    ).toEqual({ purged: 1, failed: 0, remaining: 0 });
 
     expect(await userRow(old.userId)).toBeNull();
     expect(await userRow(recent.userId)).not.toBeNull();
@@ -321,6 +321,7 @@ describe("退会の猶予期間 (#250)", () => {
     expect((await again.json()) as { purged: number }).toEqual({
       purged: 0,
       failed: 0,
+      remaining: 0,
     });
   });
 
@@ -399,5 +400,286 @@ describe("退会の猶予期間 (#250)", () => {
       body: JSON.stringify({ username: a.handle }),
     });
     expect(res.status).toBe(409);
+  });
+
+  it("完全削除の手動実行は app admin だけが叩ける", async () => {
+    const stranger = await makeUser();
+    const admin = await makeUser(true);
+    const path = `${BASE}/api/admin/run-purge-deleted`;
+
+    expect((await SELF.fetch(path, { method: "POST" })).status).toBe(401);
+    expect(
+      (await SELF.fetch(path, { method: "POST", headers: { cookie: stranger.cookie } }))
+        .status,
+    ).toBe(403);
+    const ok = await SELF.fetch(path, {
+      method: "POST",
+      headers: { cookie: admin.cookie },
+    });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()) as { purged: number }).toHaveProperty("purged");
+  });
+});
+
+/* ------------------------------------------------------------------
+ * 猶予期間中に「表示名のコピー」や「連絡先の新規開示」が漏れないこと
+ * ---------------------------------------------------------------- */
+
+/** 個人エントリー（参加確定時に表示名をコピーしたもの）＋成果物を作る */
+async function makeIndividualEntry(
+  eventId: string,
+  userId: string,
+  name: string,
+): Promise<string> {
+  const entryId = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO entry (id, event_id, kind, name, created_at) VALUES (?, ?, 'individual', ?, ?)",
+  )
+    .bind(entryId, eventId, name, Date.now())
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO entry_member (id, entry_id, user_id, is_leader) VALUES (?, ?, ?, 1)",
+  )
+    .bind(crypto.randomUUID(), entryId, userId)
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO submission (id, entry_id, presentation_url, source_code_url, updated_at) VALUES (?, ?, 'https://example.com/slides', NULL, ?)",
+  )
+    .bind(crypto.randomUUID(), entryId, Date.now())
+    .run();
+  return entryId;
+}
+
+/** そのエントリーを1位にする（表彰結果に entryName が出る経路） */
+async function makeAwardResult(eventId: string, entryId: string): Promise<void> {
+  const rankId = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO award_rank (id, event_id, name, content, rank_order, created_at) VALUES (?, ?, '最優秀賞', '', 0, ?)",
+  )
+    .bind(rankId, eventId, Date.now())
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO award_result (id, event_id, entry_id, award_rank_id, special_award_id) VALUES (?, ?, ?, ?, NULL)",
+  )
+    .bind(crypto.randomUUID(), eventId, entryId, rankId)
+    .run();
+}
+
+async function createVenue(cookie: string): Promise<string> {
+  const res = await SELF.fetch(`${BASE}/api/venues`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({
+      name: `猶予会場_${crypto.randomUUID().slice(0, 6)}`,
+      area: "東京都渋谷区",
+      address: "道玄坂1-2-3 テストビル4F",
+      contact: "X: @venue_secret",
+    }),
+  });
+  expect(res.status).toBe(201);
+  return ((await res.json()) as { venue: { id: string } }).venue.id;
+}
+
+async function openVenueIds(): Promise<string[]> {
+  const res = await SELF.fetch(`${BASE}/api/public/venues`);
+  expect(res.status).toBe(200);
+  return ((await res.json()) as { venues: { id: string }[] }).venues.map((v) => v.id);
+}
+
+describe("退会の猶予期間: 表示名のコピーと連絡先の開示 (#250)", () => {
+  it("個人エントリーの表示名・ユーザーIDが entries / submissions / 表彰 / 採点結果に出ない（復帰で戻る）", async () => {
+    const host = await makeUser();
+    const a = await makeUser();
+    const eventId = await makeEvent(host.userId);
+    await joinEvent(eventId, host.userId, "staff");
+    await joinEvent(eventId, a.userId);
+    // entry.name は参加確定時にコピーされた表示名（user テーブルを見ない）
+    const entryId = await makeIndividualEntry(eventId, a.userId, a.handle);
+    await makeAwardResult(eventId, entryId);
+
+    const paths = [
+      `${BASE}/api/events/${eventId}/entries`,
+      `${BASE}/api/events/${eventId}/submissions`,
+      `${BASE}/api/events/${eventId}/awards`,
+      `${BASE}/api/events/${eventId}/scores/results`,
+    ];
+    // 退会前は表示名が出ている（公開イベントなので未ログインでも見える）
+    for (const path of paths) {
+      const res = await SELF.fetch(path);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain(a.handle);
+    }
+
+    expect((await requestDelete(a.cookie)).status).toBe(200);
+
+    // 退会申請後は表示名もユーザーIDも出ない（成果物URLは残す）
+    for (const path of paths) {
+      const res = await SELF.fetch(path);
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).not.toContain(a.handle);
+      expect(text).not.toContain(a.userId);
+      expect(text).toContain("退会済みユーザー");
+    }
+    const entries = (await (
+      await SELF.fetch(`${BASE}/api/events/${eventId}/entries`)
+    ).json()) as {
+      entries: { id: string; name: string; memberUserIds: string[]; submission: unknown }[];
+    };
+    const entry = entries.entries.find((e) => e.id === entryId)!;
+    expect(entry.name).toBe("退会済みユーザー");
+    expect(entry.memberUserIds).toEqual([]);
+    expect(entry.submission).toBeTruthy(); // 成果物URLは消していない
+
+    // 復帰すれば元の表示名に戻る（データを消していないので復元できる）
+    expect((await restore(await newSession(a.userId))).status).toBe(200);
+    const back = (await (
+      await SELF.fetch(`${BASE}/api/events/${eventId}/entries`)
+    ).json()) as { entries: { id: string; name: string; memberUserIds: string[] }[] };
+    const restored = back.entries.find((e) => e.id === entryId)!;
+    expect(restored.name).toBe(a.handle);
+    expect(restored.memberUserIds).toEqual([a.userId]);
+  });
+
+  it("猶予期間中のオーナーの会場は公開一覧から消え、新規オファーも拒否される", async () => {
+    const owner = await makeUser();
+    const organizer = await makeUser();
+    const eventId = await makeEvent(organizer.userId);
+    const venueId = await createVenue(owner.cookie);
+
+    expect(await openVenueIds()).toContain(venueId);
+
+    expect((await requestDelete(owner.cookie)).status).toBe(200);
+
+    // 公開一覧から消える（承諾で連絡先・非公開住所が開示される経路を塞ぐ）
+    expect(await openVenueIds()).not.toContain(venueId);
+    // 件数も一覧と揃っている
+    const listBody = (await (await SELF.fetch(`${BASE}/api/public/venues`)).json()) as {
+      venues: unknown[];
+      total: number;
+    };
+    expect(listBody.total).toBe(listBody.venues.length);
+
+    // 一覧を経由せず直接 API を叩いてもオファーは作れない
+    const offer = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({ venueId, eventId, contact: "X: @organizer" }),
+    });
+    expect(offer.status).toBe(409);
+    expect(((await offer.json()) as { error: string }).error).toBe("venue_unavailable");
+
+    // 復帰すれば元どおり出る
+    expect((await restore(await newSession(owner.userId))).status).toBe(200);
+    expect(await openVenueIds()).toContain(venueId);
+  });
+
+  it("退会申請中の主催者が出したオファーは承諾できない（連絡先を渡さない）", async () => {
+    const owner = await makeUser();
+    const organizer = await makeUser();
+    const eventId = await makeEvent(organizer.userId);
+    const venueId = await createVenue(owner.cookie);
+
+    const created = await SELF.fetch(`${BASE}/api/venue-offers`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: organizer.cookie },
+      body: JSON.stringify({ venueId, eventId, contact: "X: @organizer_secret" }),
+    });
+    expect(created.status).toBe(201);
+    const offerId = ((await created.json()) as { offer: { id: string } }).offer.id;
+
+    // 主催者が退会申請 → 会場側が承諾しても連絡先は開示しない
+    expect((await requestDelete(organizer.cookie)).status).toBe(200);
+    const accept = await SELF.fetch(`${BASE}/api/venue-offers/${offerId}/respond`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: owner.cookie },
+      body: JSON.stringify({ action: "accept" }),
+    });
+    expect(accept.status).toBe(409);
+    expect(((await accept.json()) as { error: string }).error).toBe(
+      "counterparty_unavailable",
+    );
+    const still = await env.DB.prepare("SELECT status FROM venue_offer WHERE id = ?")
+      .bind(offerId)
+      .first<{ status: string }>();
+    expect(still?.status).toBe("pending");
+
+    // 会場側の一覧にも主催者の連絡先は出ない
+    const forVenue = await SELF.fetch(`${BASE}/api/venue-offers/for-venue/${venueId}`, {
+      headers: { cookie: owner.cookie },
+    });
+    expect(await forVenue.text()).not.toContain("organizer_secret");
+
+    // 見送り（連絡先の開示を伴わない）はできる
+    const decline = await SELF.fetch(`${BASE}/api/venue-offers/${offerId}/respond`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: owner.cookie },
+      body: JSON.stringify({ action: "decline" }),
+    });
+    expect(decline.status).toBe(200);
+  });
+
+  it("抽選は退会申請中の申込者を当選させない（枠を無駄にしない）", async () => {
+    const host = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const eventId = await makeEvent(host.userId);
+    await joinEvent(eventId, host.userId, "staff");
+
+    const slotId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO participation_slot (id, event_id, name, capacity, selection_type, sort_order, created_at) VALUES (?, ?, '一般枠', 1, 'lottery', 0, ?)",
+    )
+      .bind(slotId, eventId, Date.now())
+      .run();
+    for (const u of [a, b]) {
+      await env.DB.prepare(
+        "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at) VALUES (?, ?, ?, 'participant', ?, 'applied', ?)",
+      )
+        .bind(crypto.randomUUID(), eventId, u.userId, slotId, Date.now())
+        .run();
+    }
+
+    // a が退会申請 → 抽選の母集団から外れる（定員1を b が取る）
+    expect((await requestDelete(a.cookie)).status).toBe(200);
+    const draw = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/slots/${slotId}/draw`,
+      { method: "POST", headers: { cookie: host.cookie } },
+    );
+    expect(draw.status).toBe(200);
+    expect((await draw.json()) as { drawn: number; confirmed: number; lost: number }).toEqual(
+      { drawn: 1, confirmed: 1, lost: 0 },
+    );
+
+    const statusOf = async (userId: string) =>
+      (
+        await env.DB.prepare(
+          "SELECT status FROM event_member WHERE event_id = ? AND user_id = ?",
+        )
+          .bind(eventId, userId)
+          .first<{ status: string }>()
+      )?.status;
+    expect(await statusOf(b.userId)).toBe("confirmed");
+    // 申込のまま据え置き（当選も落選もさせない＝復帰したら申込に戻る）
+    expect(await statusOf(a.userId)).toBe("applied");
+    // 当落の通知も飛ばない
+    const notified = await env.DB.prepare(
+      "SELECT COUNT(1) AS n FROM notification WHERE user_id = ? AND type IN ('lottery_won','lottery_lost')",
+    )
+      .bind(a.userId)
+      .first<{ n: number }>();
+    expect(notified?.n).toBe(0);
+
+    // 手動の当選操作も対象外
+    const manual = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/slots/${slotId}/members/${a.userId}/status`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json", cookie: host.cookie },
+        body: JSON.stringify({ status: "confirmed" }),
+      },
+    );
+    expect(manual.status).toBe(404);
+    expect(await statusOf(a.userId)).toBe("applied");
   });
 });

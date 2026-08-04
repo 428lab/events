@@ -1,4 +1,5 @@
 import type { User } from "@eventer/shared";
+import { DELETED_USER_DISPLAY_NAME } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
 
 interface UserRow {
@@ -46,13 +47,6 @@ const ACTIVE = "deleted_at IS NULL";
  * identity を持たない＝ログイン不可で、連携の引き取り (#238) や統合 (#240) は
  * identity の provider_user_id からしかユーザーを解決しないため対象にならない */
 const DELETED_USER_DISCORD_ID = "system:deleted-user";
-
-export interface UpsertUserInput {
-  discordId: string;
-  username: string;
-  globalName: string | null;
-  avatarUrl: string | null;
-}
 
 export const usersRepo = {
   /** 退会申請済み（猶予期間中）は「存在しない」扱いで null を返す (#250)。
@@ -143,41 +137,6 @@ export const usersRepo = {
       if (!row || row.id === exceptUserId) return candidate;
       candidate = `${desired}${n}`;
     }
-  },
-
-  async upsertByDiscordId(input: UpsertUserInput): Promise<User> {
-    // 猶予期間中 (#250) の行も拾う。除外すると INSERT に回って
-    // UNIQUE(discord_id) 違反になる
-    const existing = await this.findByDiscordIdIncludingDeleted(input.discordId);
-    if (existing) {
-      // ハンドル(username)が他ユーザーと被る変更は据え置く（URL衝突防止）
-      let username = input.username;
-      if (username.toLowerCase() !== existing.username.toLowerCase()) {
-        const taken = await this.findByUsername(username);
-        if (taken && taken.id !== existing.id) username = existing.username;
-      }
-      await run(
-        `UPDATE user SET username = ?, global_name = ?, avatar_url = ?
-         WHERE discord_id = ?`,
-        username,
-        input.globalName,
-        input.avatarUrl,
-        input.discordId,
-      );
-      return (await this.findByDiscordId(input.discordId))!;
-    }
-    const id = crypto.randomUUID();
-    await run(
-      `INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      id,
-      input.discordId,
-      await this.availableUsername(input.username),
-      input.globalName,
-      input.avatarUrl,
-      Date.now(),
-    );
-    return (await this.findById(id))!;
   },
 
   /** OAuthプロフィールから新規ユーザーを作成。
@@ -493,7 +452,7 @@ export const usersRepo = {
         crypto.randomUUID(),
         DELETED_USER_DISCORD_ID,
         await this.availableUsername("deleted-user"),
-        "退会済みユーザー",
+        DELETED_USER_DISPLAY_NAME,
         Date.now(),
       );
     } catch {
@@ -527,15 +486,28 @@ export const usersRepo = {
   },
 
   /** 猶予期間 (#250) を過ぎた退会申請の id を古い順に返す。日次バッチ用。
-   * 1回の実行あたりの件数を絞って Workers のサブリクエスト上限を守る */
+   * 1回の実行あたりの件数を絞って Workers のサブリクエスト上限を守る。
+   *
+   * 境界は `<` で、復帰の判定（経過時間 > 猶予期間なら復帰不可）と表裏一致させる。
+   * `<=` だと「経過時間 == 猶予期間」の 1ms だけ復帰も完全削除も可能になる */
   async listPurgeTargets(before: number, limit: number): Promise<string[]> {
     const rows = await many<{ id: string }>(
-      `SELECT id FROM user WHERE deleted_at IS NOT NULL AND deleted_at <= ?
+      `SELECT id FROM user WHERE deleted_at IS NOT NULL AND deleted_at < ?
         ORDER BY deleted_at LIMIT ?`,
       before,
       limit,
     );
     return rows.map((r) => r.id);
+  },
+
+  /** 完全削除待ちの残件数（listPurgeTargets と同じ条件）。
+   * 1回の上限に達したときだけ呼び、消化しきれていないことをログに出す */
+  async countPurgeTargets(before: number): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(1) AS n FROM user WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+      before,
+    );
+    return row?.n ?? 0;
   },
 
   /** 退会（アカウント削除） (#244)。単一トランザクション（D1 batch）で
