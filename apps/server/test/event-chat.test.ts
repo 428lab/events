@@ -238,6 +238,15 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     const r3 = await postJson(`/events/${eventId}/chat-key/ephemeral`, a.cookie, {});
     const k3 = (await r3.json()) as { secret: string; pubkey: string };
     expect(k3.secret).not.toBe(k1.secret);
+
+    // 他の確定メンバーが GET しても A の鍵は返らない（自分の鍵のみ）
+    const b = await makeUser();
+    await addMember(eventId, b.userId);
+    const other = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/chat-key/ephemeral`,
+      { headers: { cookie: b.cookie } },
+    );
+    expect(other.status).toBe(404);
   });
 
   it("chat-key/ephemeral: 非メンバー・未確定メンバーは403", async () => {

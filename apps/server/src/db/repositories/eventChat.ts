@@ -54,7 +54,9 @@ export const eventChatRepo = {
     return row?.secret ? { pubkey: row.pubkey, secret: row.secret } : null;
   },
 
-  /** サーバー管理の一時鍵を保存（再発行・NIP-07からの切替は置き換え） */
+  /** サーバー管理の一時鍵を保存。NIP-07 行（secret NULL）からの切替は置き換えるが、
+   * 既存の一時鍵は上書きしない（2端末同時発行のレースで鍵が割れないように先勝ち）。
+   * 確定した鍵は ephemeralFor で読み直すこと */
   async setEphemeral(
     eventId: string,
     userId: string,
@@ -64,7 +66,9 @@ export const eventChatRepo = {
     await run(
       `INSERT INTO event_chat_pubkey (event_id, user_id, pubkey, secret, created_at)
        VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT (event_id, user_id) DO UPDATE SET pubkey = excluded.pubkey, secret = excluded.secret, created_at = excluded.created_at`,
+       ON CONFLICT (event_id, user_id) DO UPDATE
+         SET pubkey = excluded.pubkey, secret = excluded.secret, created_at = excluded.created_at
+         WHERE event_chat_pubkey.secret IS NULL`,
       eventId,
       userId,
       pubkey,

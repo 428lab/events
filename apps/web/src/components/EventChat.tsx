@@ -135,7 +135,8 @@ export function EventChat({
     if (signer || !myRegisteredPubkey || !me) return;
     let cancelled = false;
     void (async () => {
-      const key = await fetchEphemeralChatKey(eventId);
+      // 自動再参加は任意動作なので、一時的な取得失敗は黙ってスキップする
+      const key = await fetchEphemeralChatKey(eventId).catch(() => null);
       if (cancelled || !key) return;
       const local = localSignerFromHex(key.secret);
       if (local.pubkey === myRegisteredPubkey) {

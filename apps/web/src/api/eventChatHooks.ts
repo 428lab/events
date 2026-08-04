@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChatMembersPayload, OfficialChannelPayload } from "@eventer/shared";
-import { api } from "./client.js";
+import { api, ApiError } from "./client.js";
 
 /** Nostrイベントチャット (#199) の紐付けAPI。チャット本文はリレー直通でここを通らない */
 
@@ -16,7 +16,7 @@ export function useChatMembers(eventId: string, enabled: boolean) {
   });
 }
 
-/** サーバー管理の一時鍵 (#223)。未発行・NIP-07登録中は null */
+/** サーバー管理の一時鍵 (#223)。未発行・NIP-07登録中（404）は null、それ以外の失敗は throw */
 export async function fetchEphemeralChatKey(
   eventId: string,
 ): Promise<{ secret: string; pubkey: string } | null> {
@@ -24,8 +24,9 @@ export async function fetchEphemeralChatKey(
     return await api.get<{ secret: string; pubkey: string }>(
       `/events/${eventId}/chat-key/ephemeral`,
     );
-  } catch {
-    return null;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
   }
 }
 

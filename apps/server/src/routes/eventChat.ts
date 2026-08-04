@@ -84,8 +84,10 @@ eventChatRoutes.post(
     const existing = await eventChatRepo.ephemeralFor(eventId, userId);
     if (existing) return c.json(existing);
     const { secret, pubkey } = generateChatKey();
+    // 先勝ちupsert: 同時発行のレースでは先着の鍵が残るので、確定値を読み直して返す
     await eventChatRepo.setEphemeral(eventId, userId, pubkey, secret);
-    return c.json({ secret, pubkey });
+    const settled = await eventChatRepo.ephemeralFor(eventId, userId);
+    return c.json(settled ?? { secret, pubkey });
   },
 );
 
