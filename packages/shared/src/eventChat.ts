@@ -12,7 +12,7 @@ export const CHAT_RELAYS = ["wss://r.kojira.io", "wss://x.kojira.io"] as const;
 export const CHAT_RELAY_MAX = 5;
 
 /** リレーURLの形式（wss:// のみ許可） */
-export const CHAT_RELAY_URL_PATTERN = /^wss:\/\/[a-zA-Z0-9.-]+(:\d+)?(\/.*)?$/;
+export const CHAT_RELAY_URL_PATTERN = /^wss:\/\/[a-zA-Z0-9.-]+(:\d+)?(\/\S*)?$/;
 
 /** 書き込み可能な時間帯: 開始30分前〜終了2時間後。
  * 値は出会った記録 (#189) の MEET_WINDOW_BEFORE_MS / MEET_WINDOW_AFTER_MS
