@@ -257,6 +257,107 @@ describe("退会（アカウント削除） (#244)", () => {
     expect(meRes.status).toBe(401);
   });
 
+  it("個人参加のエントリーと成果物は削除され、チーム参加は残る", async () => {
+    const a = await makeUser();
+    const owner = await makeUser();
+    const mate = await makeUser();
+    const eventId = await makeEvent(owner.userId);
+
+    // 個人エントリー（本人名義・成果物つき）
+    const solo = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO entry (id, event_id, kind, name, created_at) VALUES (?, ?, 'individual', '退会する人', ?)",
+    )
+      .bind(solo, eventId, Date.now())
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO entry_member (id, entry_id, user_id, is_leader) VALUES (?, ?, ?, 1)",
+    )
+      .bind(crypto.randomUUID(), solo, a.userId)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO submission (id, entry_id, presentation_url, source_code_url, updated_at) VALUES (?, ?, 'https://example.com/slides', NULL, ?)",
+    )
+      .bind(crypto.randomUUID(), solo, Date.now())
+      .run();
+
+    // チームエントリー（他のメンバーが居るので共有物として残す）
+    const team = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO entry (id, event_id, kind, name, created_at) VALUES (?, ?, 'team', 'チームA', ?)",
+    )
+      .bind(team, eventId, Date.now())
+      .run();
+    for (const uid of [a.userId, mate.userId]) {
+      await env.DB.prepare(
+        "INSERT INTO entry_member (id, entry_id, user_id, is_leader) VALUES (?, ?, ?, 0)",
+      )
+        .bind(crypto.randomUUID(), team, uid)
+        .run();
+    }
+
+    expect((await requestDelete(a.cookie)).status).toBe(200);
+
+    expect(await count("SELECT COUNT(*) n FROM entry WHERE id = ?", solo)).toBe(0);
+    expect(
+      await count("SELECT COUNT(*) n FROM submission WHERE entry_id = ?", solo),
+    ).toBe(0);
+    expect(await count("SELECT COUNT(*) n FROM entry WHERE id = ?", team)).toBe(1);
+    expect(
+      await count("SELECT COUNT(*) n FROM entry_member WHERE entry_id = ?", team),
+    ).toBe(1); // 本人の行だけ消える
+  });
+
+  it("会場・オファーの連絡先は消え、未応答のオファーは辞退になる", async () => {
+    const a = await makeUser();
+    const owner = await makeUser();
+    const eventId = await makeEvent(owner.userId);
+    const venueId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO venue (id, owner_id, name, address, contact, status, created_at, updated_at) VALUES (?, ?, '会場', '住所', 'contact@example.com', 'open', ?, ?)",
+    )
+      .bind(venueId, a.userId, Date.now(), Date.now())
+      .run();
+    const otherVenue = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO venue (id, owner_id, name, address, contact, status, created_at, updated_at) VALUES (?, ?, '会場2', '住所2', 'c2@example.com', 'open', ?, ?)",
+    )
+      .bind(otherVenue, owner.userId, Date.now(), Date.now())
+      .run();
+    const offerId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO venue_offer (id, venue_id, event_id, request_id, direction, status, organizer_contact, created_by, created_at) VALUES (?, ?, ?, NULL, 'event_to_venue', 'pending', 'tel:090-0000-0000', ?, ?)",
+    )
+      .bind(offerId, otherVenue, eventId, a.userId, Date.now())
+      .run();
+
+    expect((await requestDelete(a.cookie)).status).toBe(200);
+
+    const offer = await env.DB.prepare(
+      "SELECT organizer_contact, status FROM venue_offer WHERE id = ?",
+    )
+      .bind(offerId)
+      .first<{ organizer_contact: string; status: string }>();
+    expect(offer?.organizer_contact).toBe("");
+    expect(offer?.status).toBe("declined");
+
+    const venue = await env.DB.prepare(
+      "SELECT contact, status FROM venue WHERE id = ?",
+    )
+      .bind(venueId)
+      .first<{ contact: string; status: string }>();
+    expect(venue?.contact).toBe("");
+    expect(venue?.status).toBe("closed"); // 管理者が居ないので募集を止める
+    // 第三者の会場は無傷
+    const untouched = await env.DB.prepare(
+      "SELECT contact, status FROM venue WHERE id = ?",
+    )
+      .bind(otherVenue)
+      .first<{ contact: string; status: string }>();
+    expect(untouched?.contact).toBe("c2@example.com");
+    expect(untouched?.status).toBe("open");
+  });
+
   it("退会済みユーザーのプロフィールは 500 にならない", async () => {
     // 少なくとも1人退会させて ghost を確実に作る
     const a = await makeUser();

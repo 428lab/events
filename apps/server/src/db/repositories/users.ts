@@ -469,6 +469,46 @@ export const usersRepo = {
       });
     }
 
+    // (1-b) 付け替えた共有コンテンツに残る本人の連絡先を消す。
+    //     venue_offer.organizer_contact は承諾成立後に会場側へ開示されるため、
+    //     退会後に承諾されると連絡先が渡ってしまう。未応答のオファーは辞退扱いに
+    stmts.push({
+      sql: `UPDATE venue_offer SET organizer_contact = '',
+              status = CASE WHEN status = 'pending' THEN 'declined' ELSE status END
+             WHERE created_by = ?`,
+      args: [ghostId],
+    });
+    // 会場の連絡先も本人の個人情報。管理者が他に居なければ募集を止める
+    stmts.push({
+      sql: `UPDATE venue SET contact = '',
+              status = CASE
+                WHEN NOT EXISTS (SELECT 1 FROM venue_admin WHERE venue_id = venue.id
+                                   AND user_id != ?) THEN 'closed'
+                ELSE status END
+             WHERE owner_id = ?`,
+      args: [userId, ghostId],
+    });
+
+    // (1-c) 個人参加のエントリーは本人の活動記録（entry.name に表示名、
+    //     submission に成果物URL）。entry は user への FK が無く entry_member の
+    //     CASCADE だけでは残ってしまうため明示削除する（チーム参加は共有物として残す）
+    stmts.push({
+      sql: `DELETE FROM entry
+             WHERE kind = 'individual'
+               AND EXISTS (SELECT 1 FROM entry_member m
+                            WHERE m.entry_id = entry.id AND m.user_id = ?)`,
+      args: [userId],
+    });
+
+    // (1-d) 参加者のいない下書きイベントは誰にも見えず誰も消せない孤児になるため削除
+    stmts.push({
+      sql: `DELETE FROM event
+             WHERE created_by = ? AND status = 'draft'
+               AND NOT EXISTS (SELECT 1 FROM event_member m
+                                WHERE m.event_id = event.id AND m.user_id != ?)`,
+      args: [ghostId, userId],
+    });
+
     // (2) FK RESTRICT の個人資産 live_set は user 削除前に明示削除。
     //     event_live_state.live_set_id は ON DELETE SET NULL なのでブロックしない
     stmts.push({
