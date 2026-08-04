@@ -1,4 +1,4 @@
-import { batch, many, one, run } from "../client.js";
+import { many, one, run } from "../client.js";
 
 export interface LinkedIdentity {
   provider: string;
@@ -74,33 +74,4 @@ export const identitiesRepo = {
     );
   },
 
-  /** fromUserId のアカウントを toUserId へ統合し、from を削除する。
-   * 一意制約に当たる行は UPDATE OR IGNORE で残し、from 削除時に CASCADE で消す。 */
-  async mergeInto(fromUserId: string, toUserId: string): Promise<void> {
-    await batch([
-      { sql: "UPDATE identity SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE OR IGNORE event_member SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE OR IGNORE entry_member SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE OR IGNORE score SET judge_user_id = ? WHERE judge_user_id = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE event SET created_by = ? WHERE created_by = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE event_request SET created_by = ? WHERE created_by = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE venue SET owner_id = ? WHERE owner_id = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE venue_photo SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE event_comment SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE event_photo SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE event_photo_comment SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE OR IGNORE venue_admin SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
-      // 統合の結果「自分がオーナーの会場の管理者」になった行を掃除
-      { sql: "DELETE FROM venue_admin WHERE user_id = ? AND venue_id IN (SELECT id FROM venue WHERE owner_id = ?)", args: [toUserId, toUserId] },
-      { sql: "UPDATE venue_offer SET created_by = ? WHERE created_by = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE OR IGNORE event_request_reaction SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
-      // 通知設定の引き継ぎ（to に行があれば to 優先、無ければ from を引き継ぐ）
-      { sql: "UPDATE OR IGNORE notification_pref SET user_id = ? WHERE user_id = ?", args: [toUserId, fromUserId] },
-      // フォロー関係の引き継ぎ。from⇔to の相互行は先に消す（自己フォロー行が生まれるのを防ぐ）
-      { sql: "DELETE FROM user_follow WHERE (follower_id = ? AND followee_id = ?) OR (follower_id = ? AND followee_id = ?)", args: [fromUserId, toUserId, toUserId, fromUserId] },
-      { sql: "UPDATE OR IGNORE user_follow SET follower_id = ? WHERE follower_id = ?", args: [toUserId, fromUserId] },
-      { sql: "UPDATE OR IGNORE user_follow SET followee_id = ? WHERE followee_id = ?", args: [toUserId, fromUserId] },
-      { sql: "DELETE FROM user WHERE id = ?", args: [fromUserId] },
-    ]);
-  },
 };
