@@ -15,7 +15,8 @@ import { CHAT_RELAYS } from "@eventer/shared";
  * Nostrイベントチャット (#199) の薄いラッパー。
  * - ブラウザ⇔リレー直通（サーバーはチャット本文を経由しない）
  * - NIP-28: kind:40 でチャンネル作成、kind:42 でメッセージ
- * - NIP-70: 全発行イベントに ["-"] タグを付け、第三者による再放流を拒否させる
+ * - NIP-70 は不採用（strfry がコアで protected イベントを拒否するため）。
+ *   封じ込めは「書き込みは自リレー2台限定＋NIP-42 AUTH」で担保する
  * - NIP-42: リレーの AUTH チャレンジに投稿と同じ鍵で署名して応答する
  */
 
@@ -90,7 +91,7 @@ export async function nip07Signer(): Promise<ChatSigner> {
 
 /* ===== イベント（Nostrイベント）の組み立て（純粋関数） ===== */
 
-/** NIP-28 チャンネル作成（kind:40）。NIP-70 の ["-"] タグ付き */
+/** NIP-28 チャンネル作成（kind:40） */
 /** 鍵の所有証明イベント (#199)。サーバーのchallengeに専用kindで署名する */
 export const CHAT_KEY_PROOF_KIND = 27888;
 export function buildChatKeyProofTemplate(
@@ -113,7 +114,7 @@ export function buildChannelCreateTemplate(eventTitle: string): EventTemplate {
   return {
     kind: 40,
     created_at: Math.floor(Date.now() / 1000),
-    tags: [["-"]],
+    tags: [],
     content: JSON.stringify({
       name: eventTitle,
       about: "events lab のイベントチャット",
@@ -121,7 +122,7 @@ export function buildChannelCreateTemplate(eventTitle: string): EventTemplate {
   };
 }
 
-/** NIP-28 チャンネルメッセージ（kind:42）。NIP-70 の ["-"] タグ付き */
+/** NIP-28 チャンネルメッセージ（kind:42） */
 export function buildChannelMessageTemplate(
   channelId: string,
   content: string,
@@ -129,7 +130,7 @@ export function buildChannelMessageTemplate(
   return {
     kind: 42,
     created_at: Math.floor(Date.now() / 1000),
-    tags: [["e", channelId, CHAT_RELAYS[0], "root"], ["-"]],
+    tags: [["e", channelId, CHAT_RELAYS[0], "root"]],
     content,
   };
 }
