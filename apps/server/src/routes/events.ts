@@ -374,6 +374,7 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
     photosPublic: src.photosPublic,
     attendanceCheck: src.attendanceCheck,
     chatEnabled: src.chatEnabled,
+    chatUrlsAllowed: src.chatUrlsAllowed,
     membersNote: await eventsRepo.membersNoteFor(src.id),
   });
 

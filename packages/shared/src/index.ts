@@ -23,3 +23,4 @@ export * from "./checkin.js";
 export * from "./eventRequests.js";
 export * from "./notificationPrefs.js";
 export * from "./venues.js";
+export * from "./chatText.js";

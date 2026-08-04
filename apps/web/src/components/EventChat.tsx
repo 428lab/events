@@ -8,6 +8,7 @@ import {
   CardContent,
   FormControlLabel,
   IconButton,
+  Link,
   Radio,
   RadioGroup,
   Stack,
@@ -24,6 +25,9 @@ import { Link as RouterLink } from "react-router-dom";
 import type { ChatMember, Event, EventRole } from "@eventer/shared";
 import {
   CHAT_MESSAGE_MAX,
+  containsUrl,
+  detectImageUrl,
+  splitByUrls,
   CHAT_RELAYS,
   CHAT_WINDOW_AFTER_MS,
   CHAT_WINDOW_BEFORE_MS,
@@ -51,12 +55,98 @@ import {
   nip07Signer,
 } from "../lib/nostrChat.js";
 import type { ChatSigner } from "../lib/nostrChat.js";
+import { ImageLightbox } from "./ImageLightbox.js";
 
 /** メッセージ時刻の表示（HH:mm:ss） */
 function formatTime(createdAtSec: number): string {
   const d = new Date(createdAtSec * 1000);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** 本文中のURLリンク（新しいタブで開く） */
+function ChatUrlLink({ url }: { url: string }) {
+  return (
+    <Link
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      sx={{ wordBreak: "break-all" }}
+    >
+      {url}
+    </Link>
+  );
+}
+
+/** インライン画像。読み込み失敗時はリンク表示にフォールバック (#241) */
+function InlineChatImage({
+  url,
+  onOpen,
+}: {
+  url: string;
+  onOpen: (url: string) => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <ChatUrlLink url={url} />;
+  return (
+    <Box
+      component="img"
+      src={url}
+      alt={url}
+      loading="lazy"
+      draggable={false}
+      // 外部ホストにチャットのURLを渡さない（既存の画像表示と同ポリシー）
+      referrerPolicy="no-referrer"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e: React.KeyboardEvent) => {
+        if (e.key === "Enter") onOpen(url);
+      }}
+      onClick={() => onOpen(url)}
+      onError={() => setFailed(true)}
+      sx={{
+        maxWidth: "100%",
+        maxHeight: 220,
+        objectFit: "contain",
+        display: "block",
+        mt: 0.5,
+        borderRadius: "4px",
+        cursor: "zoom-in",
+      }}
+    />
+  );
+}
+
+/** メッセージ本文。linkify のときだけURLをリンク/インライン画像にする (#241)。
+ * 表示側で制御するのは、外部クライアントからの投稿はサーバーで
+ * 止められないため（プレーン表示が最終防衛線） */
+function MessageBody({
+  content,
+  linkify,
+  onOpenImage,
+}: {
+  content: string;
+  linkify: boolean;
+  onOpenImage: (url: string) => void;
+}) {
+  return (
+    <Typography
+      variant="body2"
+      sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+    >
+      {linkify
+        ? splitByUrls(content).map((tok, i) =>
+            tok.type === "text" ? (
+              <span key={i}>{tok.value}</span>
+            ) : detectImageUrl(tok.value) ? (
+              <InlineChatImage key={i} url={tok.value} onOpen={onOpenImage} />
+            ) : (
+              <ChatUrlLink key={i} url={tok.value} />
+            ),
+          )
+        : content}
+    </Typography>
+  );
 }
 
 /**
@@ -101,6 +191,8 @@ export function EventChat({
   const [channelId, setChannelId] = useState<string | null>(null);
   const [relayConnected, setRelayConnected] = useState(false);
   const [draft, setDraft] = useState("");
+  // タップで拡大表示中のインライン画像URL (#241)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const poolRef = useRef<ChatRelayPool | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   // チャンネル確定処理から最新の chat-members を参照するための ref
@@ -315,6 +407,11 @@ export function EventChat({
     const text = draft.trim();
     if (!text || !signer || !channelId || !inWriteWindow) return;
     if (text.length > CHAT_MESSAGE_MAX) return;
+    // URL投稿の送信ガード (#241)。判定は表示側のリンク化と同じ関数を共用
+    if (!isStaff && !event.chatUrlsAllowed && containsUrl(text)) {
+      setSendError("URLの投稿はこのイベントでは許可されていません。");
+      return;
+    }
     setSendError(null);
     try {
       const ev = await signer.signEvent(
@@ -542,16 +639,15 @@ export function EventChat({
                               {formatTime(m.created_at)}
                             </Typography>
                           </Stack>
-                          {/* プレーンテキストのみ（Markdown/HTML は解釈しない） */}
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            {m.content}
-                          </Typography>
+                          {/* Markdown/HTML は解釈しない。URLのリンク化・画像化は
+                              スタッフの発言か、URL投稿が許可されたイベントのみ (#241) */}
+                          <MessageBody
+                            content={m.content}
+                            linkify={
+                              member.role === "staff" || event.chatUrlsAllowed
+                            }
+                            onOpenImage={setLightboxUrl}
+                          />
                         </Box>
                         {isStaff && (
                           <Tooltip title="このメッセージを非表示にする">
@@ -620,6 +716,11 @@ export function EventChat({
             </Typography>
           </Stack>
         )}
+        <ImageLightbox
+          src={lightboxUrl ?? ""}
+          open={lightboxUrl !== null}
+          onClose={() => setLightboxUrl(null)}
+        />
     </>
   );
 
