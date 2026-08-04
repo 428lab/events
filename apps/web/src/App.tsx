@@ -50,6 +50,7 @@ import { LiveControlPage } from "./pages/LiveControlPage.js";
 import { EventStatsPage } from "./pages/EventStatsPage.js";
 import { AdminStatsPage } from "./pages/AdminStatsPage.js";
 import { AdminSettingsPage } from "./pages/AdminSettingsPage.js";
+import { AdminAuditPage } from "./pages/AdminAuditPage.js";
 import { DeckEditorPage } from "./pages/DeckEditorPage.js";
 import { DeckViewerPage } from "./pages/DeckViewerPage.js";
 import { ShortEventPage } from "./pages/ShortEventPage.js";
@@ -293,6 +294,7 @@ export function App() {
         <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />
         <Route path="/admin/stats" element={<AdminStatsPage />} />
         <Route path="/admin/settings" element={<AdminSettingsPage />} />
+        <Route path="/admin/audit-logs" element={<AdminAuditPage />} />
         <Route path="/admin/inquiries/:id" element={<AdminInquiryThreadPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsPage />} />

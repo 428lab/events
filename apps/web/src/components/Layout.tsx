@@ -155,6 +155,13 @@ export function Layout({
                   >
                     統計
                   </MenuItem>
+                  <MenuItem
+                    component={RouterLink}
+                    to="/admin/audit-logs"
+                    onClick={() => setAdminAnchor(null)}
+                  >
+                    監査ログ
+                  </MenuItem>
                 </Menu>
               </>
             )}
@@ -251,6 +258,16 @@ export function Layout({
                 sx={{ pl: 3 }}
               >
                 チャット設定
+              </MenuItem>
+            )}
+            {isAdmin && (
+              <MenuItem
+                component={RouterLink}
+                to="/admin/audit-logs"
+                onClick={closeMenu}
+                sx={{ pl: 3 }}
+              >
+                監査ログ
               </MenuItem>
             )}
             <MenuItem component={RouterLink} to="/account" onClick={closeMenu}>

@@ -2,7 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // URL 等の WHATWG グローバル（server/web/Workers いずれにも存在）を使うため。
+    // DOM 固有API（document/window）は shared では使わないこと
+    "lib": ["ES2022", "DOM"]
   },
   "include": ["src"]
 }

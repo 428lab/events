@@ -11,6 +11,7 @@ import {
   appSettingsRepo,
   getChatRelays,
 } from "../db/repositories/appSettings.js";
+import { recordAudit } from "../db/repositories/auditLogs.js";
 
 /** アプリ全体の運用設定（app admin のみ）。まずはチャットリレー (#199) */
 const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -42,6 +43,13 @@ adminSettingsRoutes.put(
     } else {
       await appSettingsRepo.set(CHAT_RELAYS_KEY, JSON.stringify(relays));
     }
+    // 監査ログ (#248)。リレーURLは公開情報なので値も残す（既定に戻した場合は空）
+    const me = c.get("user");
+    await recordAudit({
+      action: "admin_setting_change",
+      actor: { id: me.id, handle: me.username },
+      detail: { key: CHAT_RELAYS_KEY, relays, reset: relays.length === 0 },
+    });
     return settingsPayload(c);
   },
 );

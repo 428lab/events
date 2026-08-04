@@ -22,6 +22,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # 型チェックとサーバーテスト。ここで落ちればデプロイまで進まない
+      - run: pnpm --filter @eventer/shared typecheck
+      - run: pnpm --filter @eventer/server typecheck
+      - run: pnpm --filter @eventer/server test
+
       # フロントをビルド（Worker の ASSETS バインディングが apps/web/dist を配信）
       - run: pnpm --filter @eventer/web build
 

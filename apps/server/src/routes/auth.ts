@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
+import type { User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { env } from "../env.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { identitiesRepo } from "../db/repositories/identities.js";
+import { recordAudit } from "../db/repositories/auditLogs.js";
 import { deriveHandle } from "../lib/handle.js";
 import {
   clearSession,
@@ -32,6 +34,8 @@ import {
  * 実績のあるアカウントは孤児化させない（誤ログインでできた空アカウントの回収専用） */
 async function takeoverEmptyAccount(
   existingUserId: string,
+  actor: User,
+  provider: string,
 ): Promise<"ok" | "already_linked" | "account_in_use"> {
   if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
     return "already_linked";
@@ -39,7 +43,16 @@ async function takeoverEmptyAccount(
   if (await usersRepo.hasActivity(existingUserId)) {
     return "account_in_use";
   }
+  // ハンドルは行が消える前に控える（監査ログから後で辿れるように）
+  const target = await usersRepo.findById(existingUserId);
   await usersRepo.deleteById(existingUserId);
+  // 監査ログ (#248)。相手のユーザー行ごと消す不可逆操作なので記録する
+  await recordAudit({
+    action: "identity_takeover",
+    actor: { id: actor.id, handle: actor.username },
+    target: { id: existingUserId, handle: target?.username ?? "" },
+    detail: { provider },
+  });
   return "ok";
 }
 
@@ -139,7 +152,11 @@ authRoutes.post("/nostr/login", async (c) => {
       await identitiesRepo.link(current.id, "nostr", pubkey, null);
     } else if (existingUserId !== current.id) {
       // 別アカウントに連携済み。鍵の所有は署名で証明済み → 空アカウントのみ引き取り (#238)
-      const takeover = await takeoverEmptyAccount(existingUserId);
+      const takeover = await takeoverEmptyAccount(
+        existingUserId,
+        current,
+        "nostr",
+      );
       if (takeover !== "ok") return c.json({ error: takeover }, 409);
       await identitiesRepo.link(current.id, "nostr", pubkey, null);
     }
@@ -265,7 +282,11 @@ authRoutes.get("/:provider/callback", async (c) => {
     } else if (existingUserId !== current.id) {
       // 別アカウントに連携済み。アカウントの所有は OAuth で証明済み → 空アカウントのみ引き取り (#238)
       // （行削除で discord_id の UNIQUE 衝突・管理者判定の残置も同時に消える）
-      const takeover = await takeoverEmptyAccount(existingUserId);
+      const takeover = await takeoverEmptyAccount(
+        existingUserId,
+        current,
+        provider,
+      );
       if (takeover !== "ok") {
         return c.redirect(env.appBaseUrl + `/account?link_error=${takeover}`);
       }
