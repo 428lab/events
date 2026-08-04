@@ -15,6 +15,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import ConstructionOutlinedIcon from "@mui/icons-material/ConstructionOutlined";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import SendIcon from "@mui/icons-material/Send";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
@@ -484,13 +485,28 @@ export function EventChat({
                               component={RouterLink}
                               to={`/users/${member.username}`}
                               sx={{
-                                color: "inherit",
+                                // スタッフの発言は色分け (#228)
+                                color:
+                                  member.role === "staff"
+                                    ? "secondary.main"
+                                    : "inherit",
                                 textDecoration: "none",
                                 "&:hover": { textDecoration: "underline" },
                               }}
                             >
                               {member.name}
                             </Typography>
+                            {member.role === "staff" && (
+                              <Tooltip title="スタッフ">
+                                <ConstructionOutlinedIcon
+                                  sx={{
+                                    fontSize: 14,
+                                    color: "secondary.main",
+                                    alignSelf: "center",
+                                  }}
+                                />
+                              </Tooltip>
+                            )}
                             <Typography
                               variant="caption"
                               color="text.secondary"

@@ -75,6 +75,8 @@ export const chatMemberSchema = z.object({
   username: z.string(),
   name: z.string(),
   avatarUrl: z.string().nullable(),
+  /** イベントでのロール（staff の発言を色分け表示するため #228）。行が無ければ null */
+  role: z.string().nullable(),
 });
 export type ChatMember = z.infer<typeof chatMemberSchema>;
 

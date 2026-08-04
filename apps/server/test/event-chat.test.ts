@@ -223,6 +223,7 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     ).json()) as ChatMembersPayload;
     const mine = members.members.find((m) => m.userId === a.userId)!;
     expect(mine.pubkey).toBe(k1.pubkey);
+    expect(mine.role).toBe("participant"); // 色分け表示用のロール (#228)
     expect(JSON.stringify(members)).not.toContain(k1.secret);
 
     // NIP-07（所有証明つき登録）に切り替えると一時鍵は消える
