@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, Dialog, IconButton } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 
@@ -83,6 +83,11 @@ export function ImageLightbox({
       lastTapRef.current = null;
       return;
     }
+    if (pointersRef.current.size > 2) {
+      // 3本目以降はピンチを一時停止（古い距離との比較で倍率が飛ぶのを防ぐ）
+      pinchDistRef.current = null;
+      return;
+    }
     if (pointersRef.current.size === 1) {
       // ダブルタップ/ダブルクリック: 等倍⇔2倍（タップ位置基準）
       const now = Date.now();
@@ -132,14 +137,31 @@ export function ImageLightbox({
 
   const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
     pointersRef.current.delete(e.pointerId);
-    if (pointersRef.current.size < 2) pinchDistRef.current = null;
+    if (pointersRef.current.size === 2) {
+      // 3本→2本に戻ったら現距離で再開（古い距離との比較で倍率が飛ばないように）
+      const [a, b] = [...pointersRef.current.values()];
+      pinchDistRef.current = Math.hypot(a.x - b.x, a.y - b.y);
+    } else {
+      pinchDistRef.current = null;
+    }
   };
 
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    // ホイール/トラックパッド: カーソル位置基準でズーム
-    const factor = Math.exp(-e.deltaY * 0.002);
-    zoomAt(toLocal(e.clientX, e.clientY), tRef.current.scale * factor);
-  };
+  // ホイール/トラックパッド: カーソル位置基準でズーム。
+  // React の onWheel は passive で preventDefault が効かず、Ctrl+ホイールで
+  // ブラウザのページズームが同時に発生するため、native リスナーで登録する
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !open) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.002);
+      zoomAt(toLocal(e.clientX, e.clientY), tRef.current.scale * factor);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+    // zoomAt/toLocal は ref 経由で最新状態を読むため依存不要
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   return (
     <Dialog
@@ -170,7 +192,6 @@ export function ImageLightbox({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerEnd}
         onPointerCancel={handlePointerEnd}
-        onWheel={handleWheel}
         sx={{
           width: "100%",
           height: "100%",

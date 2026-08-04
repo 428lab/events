@@ -25,6 +25,9 @@ import { Link as RouterLink } from "react-router-dom";
 import type { ChatMember, Event, EventRole } from "@eventer/shared";
 import {
   CHAT_MESSAGE_MAX,
+  containsUrl,
+  detectImageUrl,
+  splitByUrls,
   CHAT_RELAYS,
   CHAT_WINDOW_AFTER_MS,
   CHAT_WINDOW_BEFORE_MS,
@@ -52,7 +55,6 @@ import {
   nip07Signer,
 } from "../lib/nostrChat.js";
 import type { ChatSigner } from "../lib/nostrChat.js";
-import { containsUrl, detectImageUrl, splitByUrls } from "../lib/chatText.js";
 import { ImageLightbox } from "./ImageLightbox.js";
 
 /** メッセージ時刻の表示（HH:mm:ss） */
@@ -90,9 +92,16 @@ function InlineChatImage({
     <Box
       component="img"
       src={url}
-      alt=""
+      alt={url}
       loading="lazy"
       draggable={false}
+      // 外部ホストにチャットのURLを渡さない（既存の画像表示と同ポリシー）
+      referrerPolicy="no-referrer"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e: React.KeyboardEvent) => {
+        if (e.key === "Enter") onOpen(url);
+      }}
       onClick={() => onOpen(url)}
       onError={() => setFailed(true)}
       sx={{

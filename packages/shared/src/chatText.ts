@@ -37,6 +37,18 @@ function trimTrailingPunct(url: string): string {
   return u;
 }
 
+function isValidHttpUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return (
+      (u.protocol === "http:" || u.protocol === "https:") &&
+      u.hostname.length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 export interface ChatToken {
   type: "text" | "url";
   value: string;
@@ -50,7 +62,8 @@ export function splitByUrls(text: string): ChatToken[] {
   for (const m of text.matchAll(URL_RE)) {
     const start = m.index ?? 0;
     const url = trimTrailingPunct(m[0]);
-    if (!url) continue;
+    // ホストが空になる退化URL（例: "https://."→"https://"）はテキスト扱い
+    if (!url || !isValidHttpUrl(url)) continue;
     if (start > last) tokens.push({ type: "text", value: text.slice(last, start) });
     tokens.push({ type: "url", value: url });
     last = start + url.length;
