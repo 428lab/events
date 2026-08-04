@@ -124,8 +124,10 @@ publicRoutes.get("/events/search", async (c) => {
     after: c.req.query("after") ? Number(c.req.query("after")) : undefined,
     communityId: c.req.query("communityId") || undefined,
     phase:
-      c.req.query("phase") === "upcoming" || c.req.query("phase") === "past"
-        ? (c.req.query("phase") as "upcoming" | "past")
+      c.req.query("phase") === "upcoming" ||
+      c.req.query("phase") === "scheduling" ||
+      c.req.query("phase") === "past"
+        ? (c.req.query("phase") as "upcoming" | "scheduling" | "past")
         : undefined,
     sort:
       sortParam === "recent" || sortParam === "new" ? sortParam : "soon",

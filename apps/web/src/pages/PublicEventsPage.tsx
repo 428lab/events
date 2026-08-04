@@ -57,7 +57,7 @@ export function PublicEventsPage() {
     <Box>
       <EggTabs value="events" />
       <Stack spacing={4}>
-        {/* 開催予定/過去タブ・絞り込み・10件ページング（日程調整中は開催予定に含まれる） */}
+        {/* 開催予定/日程調整中/過去タブ・絞り込み・10件ページング (#234) */}
         <EventsBrowser
           actions={
             me ? (

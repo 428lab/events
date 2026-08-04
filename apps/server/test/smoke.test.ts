@@ -12,8 +12,8 @@ async function login(): Promise<string> {
   return setCookie!.split(";")[0];
 }
 
-describe("検索の phase 振り分け (#98)", () => {
-  it("開催中は upcoming のみ・調整中は upcoming・終了済みは past のみ", async () => {
+describe("検索の phase 振り分け (#98, #234)", () => {
+  it("開催中は upcoming のみ・調整中は scheduling のみ・終了済みは past のみ", async () => {
     const login = await SELF.fetch(`${BASE}/api/auth/dev-login`, { method: "POST" });
     const cookie = login.headers.get("set-cookie")!.split(";")[0];
     const tag = crypto.randomUUID().slice(0, 8);
@@ -43,10 +43,15 @@ describe("検索の phase 振り分け (#98)", () => {
       return ((await r.json()) as { events: { id: string }[] }).events.map((e) => e.id);
     };
     const up = await get("upcoming");
+    const sc = await get("scheduling");
     const pa = await get("past");
+    // 日程調整中は専用タブへ分離 (#234)
     expect(up).toContain(ongoing);
-    expect(up).toContain(sched);
+    expect(up).not.toContain(sched);
     expect(up).not.toContain(past);
+    expect(sc).toContain(sched);
+    expect(sc).not.toContain(ongoing);
+    expect(sc).not.toContain(past);
     expect(pa).toContain(past);
     expect(pa).not.toContain(ongoing);
     expect(pa).not.toContain(sched);

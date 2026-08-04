@@ -30,12 +30,14 @@ const dayStart = (d: string) =>
 const dayEnd = (d: string) =>
   d ? new Date(`${d}T23:59:59.999`).getTime() : undefined;
 
-type EventsTab = "upcoming" | "past";
+type EventsTab = "upcoming" | "scheduling" | "past";
 type EventSort = "soon" | "recent" | "new";
 
-/** タブごとの既定の並び順（開催予定=近い順 / 過去=新しい順） */
+/** タブごとの既定の並び順（開催予定=近い順 / 調整中=登録が新しい順 / 過去=新しい順） */
 const DEFAULT_SORT: Record<EventsTab, EventSort> = {
   upcoming: "soon",
+  // 日程調整中は開催日が未定のため登録順 (#234)
+  scheduling: "new",
   past: "recent",
 };
 
@@ -107,9 +109,7 @@ export function EventsBrowser({
   const params = useMemo<EventSearchParams>(
     () => ({
       q: q.trim() || undefined,
-      // タブが期間の既定値を与える（開催予定: 終了が今以降 / 過去: 開始が今以前）。
-      // ユーザーが期間を指定した場合はそちらを優先する。
-      // タブは phase で厳密に判定（開催中は upcoming のみ・調整中は upcoming・過去は終了済みのみ）。
+      // タブは phase で厳密に判定（開催予定=日程確定のみ / 調整中=専用タブ #234 / 過去=終了済みのみ）。
       // 期間フィルタはユーザー指定時のみ AND 合成
       phase: tab,
       from: dayStart(from),
@@ -150,7 +150,9 @@ export function EventsBrowser({
     ? "条件に合うイベントはありません。"
     : tab === "upcoming"
       ? "予定されているイベントはありません。"
-      : "過去のイベントはありません。";
+      : tab === "scheduling"
+        ? "日程調整中のイベントはありません。"
+        : "過去のイベントはありません。";
 
   return (
     <Box>
@@ -204,6 +206,7 @@ export function EventsBrowser({
         sx={{ mb: 2, borderBottom: 1, borderColor: "divider", minHeight: 40 }}
       >
         <Tab label="開催予定" value="upcoming" sx={{ minHeight: 40 }} />
+        <Tab label="日程調整中" value="scheduling" sx={{ minHeight: 40 }} />
         <Tab label="過去" value="past" sx={{ minHeight: 40 }} />
       </Tabs>
 
