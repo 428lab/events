@@ -1,16 +1,23 @@
 import { Hono } from "hono";
 import {
+  mergeAccountInput,
   updateDisplayNameInput,
   updateNotificationPrefsInput,
   updateUsernameInput,
 } from "@eventer/shared";
 import type {
+  MergeAccountInput,
   UpdateDisplayNameInput,
   UpdateNotificationPrefsInput,
   UpdateUsernameInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
+import {
+  consumeMergeCode,
+  issueMergeCode,
+  parseMergeCode,
+} from "../auth/mergeCode.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { usersRepo } from "../db/repositories/users.js";
@@ -103,6 +110,33 @@ meRoutes.put(
     return c.json({ ok: true, username });
   },
 );
+
+/** アカウント統合コードを発行する (#240)。もう一方のアカウント側で入力して使う */
+meRoutes.post("/merge-code", async (c) => {
+  return c.json({ code: await issueMergeCode(c.get("user").id) });
+});
+
+/** アカウント統合を実行する (#240)。
+ * code の発行者と現在のユーザーのどちらを残すか keep で選び、
+ * 負け側の全データを勝ち側へ移動して負け側アカウントを削除する */
+meRoutes.post("/merge", zValidator("json", mergeAccountInput), async (c) => {
+  const me = c.get("user");
+  const { code, keep } = valid<MergeAccountInput>(c, "json");
+  // 先に署名・期限だけ検証し、実行できないケースではコードを消費しない
+  const otherId = await parseMergeCode(code);
+  if (!otherId) return c.json({ error: "invalid_code" }, 400);
+  if (otherId === me.id) return c.json({ error: "same_account" }, 400);
+  const other = await usersRepo.findById(otherId);
+  if (!other) return c.json({ error: "invalid_code" }, 400);
+  // 使い捨てチェック（ここで消費。以降は同じコードを再利用できない）
+  if (!(await consumeMergeCode(code))) {
+    return c.json({ error: "invalid_code" }, 400);
+  }
+  const [winnerId, loserId] =
+    keep === "me" ? [me.id, otherId] : [otherId, me.id];
+  await usersRepo.mergeUsers(winnerId, loserId);
+  return c.json({ ok: true, winnerId });
+});
 
 /** 表示名を変更する (#232)。イベント・チャット・プロフィール等の表示に使われる */
 meRoutes.put(

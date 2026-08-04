@@ -92,6 +92,15 @@ const DISPLAY_NAME_FORBIDDEN =
   // eslint-disable-next-line no-control-regex
   /[\u0000-\u001f\u007f\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
 
+/** アカウント統合の実行入力 (#240)。
+ * code: もう一方のアカウントで発行した統合コード。
+ * keep: どちらのアカウントを残すか（me=いまログイン中 / other=コードを発行した側） */
+export const mergeAccountInput = z.object({
+  code: z.string().trim().min(1).max(300),
+  keep: z.enum(["me", "other"]),
+});
+export type MergeAccountInput = z.infer<typeof mergeAccountInput>;
+
 /** 表示名の変更入力 (#232)。イベント・チャット等の表示に使われる */
 export const updateDisplayNameInput = z.object({
   displayName: z

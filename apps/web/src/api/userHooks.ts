@@ -87,6 +87,21 @@ export function useUpdateUsername() {
   });
 }
 
+/** アカウント統合コードを発行する (#240) */
+export function useIssueMergeCode() {
+  return useMutation({
+    mutationFn: () => api.post<{ code: string }>("/me/merge-code", {}),
+  });
+}
+
+/** アカウント統合を実行する (#240)。keep: どちらのアカウントを残すか */
+export function useMergeAccount() {
+  return useMutation({
+    mutationFn: (input: { code: string; keep: "me" | "other" }) =>
+      api.post<{ ok: boolean; winnerId: string }>("/me/merge", input),
+  });
+}
+
 /** 自分の表示名を変更 (#232) */
 export function useUpdateDisplayName() {
   const qc = useQueryClient();
