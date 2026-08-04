@@ -131,15 +131,15 @@ export function EventChat({
     [chat, me],
   );
   useEffect(() => {
-    if (signer || !myRegisteredPubkey) return;
-    const sk = loadLocalChatKey(eventId);
+    if (signer || !myRegisteredPubkey || !me) return;
+    const sk = loadLocalChatKey(eventId, me.id);
     if (!sk) return;
     const local = localSigner(sk);
     if (local.pubkey === myRegisteredPubkey) {
       signerIsNip07Ref.current = false;
       setSigner(local);
     }
-  }, [signer, myRegisteredPubkey, eventId]);
+  }, [signer, myRegisteredPubkey, eventId, me]);
 
   // サーバーに登録済みのチャンネルID（未開設は null。5秒ポーリングで反映）
   const serverChannelId = chat?.channelId ?? null;
@@ -261,12 +261,13 @@ export function EventChat({
   );
 
   const join = async () => {
+    if (!me) return;
     setJoinError(null);
     try {
       const useNip07 = keyMode === "nip07" && hasNip07();
       const s = useNip07
         ? await nip07Signer()
-        : localSigner(loadOrCreateLocalChatKey(eventId));
+        : localSigner(loadOrCreateLocalChatKey(eventId, me.id));
       // 所有証明: サーバーのchallengeに署名して送る（他人のnpub紐付け防止）
       const { challenge } = await api.get<{ challenge: string }>(
         "/auth/nostr/challenge",
@@ -277,8 +278,17 @@ export function EventChat({
       await registerKey.mutateAsync(proof);
       signerIsNip07Ref.current = useNip07;
       setSigner(s);
-    } catch {
-      setJoinError("チャットへの参加に失敗しました。");
+    } catch (err) {
+      // 原因が分かる失敗は出し分ける (#223)
+      if (err instanceof ApiError && err.status === 409) {
+        setJoinError(
+          "この鍵は同じイベントの別のユーザーが使用中です。NIP-07 の場合は別の Nostr アカウントを選んでください。",
+        );
+      } else if (err instanceof ApiError && err.status === 403) {
+        setJoinError("参加が確定しているメンバーのみチャットを利用できます。");
+      } else {
+        setJoinError("チャットへの参加に失敗しました。");
+      }
     }
   };
 

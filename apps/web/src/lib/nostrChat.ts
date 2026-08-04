@@ -50,22 +50,30 @@ function hexToBytes(hex: string): Uint8Array {
   return out;
 }
 
-function chatKeyStorageKey(eventId: string): string {
-  return `eventer:chatkey:${eventId}`;
+/** ユーザー別に保存する (#223)。同一ブラウザでアカウントを切り替えると
+ * 同じ一時鍵を別ユーザーが登録しようとして 409 pubkey_taken になるため */
+function chatKeyStorageKey(eventId: string, userId: string): string {
+  return `eventer:chatkey:${eventId}:${userId}`;
 }
 
-/** イベント用の一時鍵を localStorage から読む（無ければ null） */
-export function loadLocalChatKey(eventId: string): Uint8Array | null {
-  const hex = localStorage.getItem(chatKeyStorageKey(eventId));
+/** イベント×ユーザー用の一時鍵を localStorage から読む（無ければ null） */
+export function loadLocalChatKey(
+  eventId: string,
+  userId: string,
+): Uint8Array | null {
+  const hex = localStorage.getItem(chatKeyStorageKey(eventId, userId));
   return hex && /^[0-9a-f]{64}$/.test(hex) ? hexToBytes(hex) : null;
 }
 
-/** イベント用の一時鍵を読み込み（無ければ生成して保存） */
-export function loadOrCreateLocalChatKey(eventId: string): Uint8Array {
-  const existing = loadLocalChatKey(eventId);
+/** イベント×ユーザー用の一時鍵を読み込み（無ければ生成して保存） */
+export function loadOrCreateLocalChatKey(
+  eventId: string,
+  userId: string,
+): Uint8Array {
+  const existing = loadLocalChatKey(eventId, userId);
   if (existing) return existing;
   const sk = generateSecretKey();
-  localStorage.setItem(chatKeyStorageKey(eventId), bytesToHex(sk));
+  localStorage.setItem(chatKeyStorageKey(eventId, userId), bytesToHex(sk));
   return sk;
 }
 
