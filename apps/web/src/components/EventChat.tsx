@@ -26,10 +26,7 @@ import {
   CHAT_WINDOW_AFTER_MS,
   CHAT_WINDOW_BEFORE_MS,
 } from "@eventer/shared";
-import type {
-  Event as NostrEvent,
-  VerifiedEvent,
-} from "nostr-tools/pure";
+import type { Event as NostrEvent } from "nostr-tools/pure";
 import { useMe } from "../api/hooks.js";
 import { api, ApiError } from "../api/client.js";
 import {
@@ -175,10 +172,9 @@ export function EventChat({
           const organizerNip07 =
             signerIsNip07Ref.current &&
             meRef.current?.id === event.createdBy;
-          const created: VerifiedEvent = organizerNip07
+          const created: NostrEvent = organizerNip07
             ? await signer.signEvent(buildChannelCreateTemplate(event.title))
-            : ((await createOfficialChannelEvent(eventId))
-                .channelEvent as VerifiedEvent);
+            : (await createOfficialChannelEvent(eventId)).channelEvent;
           // リレーに受理されたことを確認してからサーバーへ登録する
           // （不達のまま登録すると「リレー上に存在しない部屋」を参照し続けてしまう）
           //
@@ -335,6 +331,35 @@ export function EventChat({
           )}
         </Stack>
 
+        {/* チャンネル作成の失敗は参加後（signer確定後）にも起きるため、分岐の外で表示する */}
+        {joinError && (
+          <Alert
+            severity="error"
+            sx={{ mt: 1 }}
+            action={
+              isStaff ? (
+                <Button
+                  size="small"
+                  color="inherit"
+                  disabled={resetChannel.isPending}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "チャンネルを作り直しますか？（リレー上に部屋が無い場合の復旧用。過去のメッセージは新しい部屋には表示されません）",
+                      )
+                    ) {
+                      resetChannel.mutate();
+                    }
+                  }}
+                >
+                  チャンネルを作り直す
+                </Button>
+              ) : undefined
+            }
+          >
+            {joinError}
+          </Alert>
+        )}
         {chat && !serverChannelId && !isStaff ? (
           // 部屋の開設はスタッフの操作のみ (#221)。それまで参加UIは出さない
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -376,33 +401,6 @@ export function EventChat({
               このチャットは Nostr
               のパブリックチャットです（外部クライアントからも閲覧できます）。
             </Typography>
-            {joinError && (
-              <Alert
-                severity="error"
-                action={
-                  isStaff ? (
-                    <Button
-                      size="small"
-                      color="inherit"
-                      disabled={resetChannel.isPending}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            "チャンネルを作り直しますか？（リレー上に部屋が無い場合の復旧用。過去のメッセージは新しい部屋には表示されません）",
-                          )
-                        ) {
-                          resetChannel.mutate();
-                        }
-                      }}
-                    >
-                      チャンネルを作り直す
-                    </Button>
-                  ) : undefined
-                }
-              >
-                {joinError}
-              </Alert>
-            )}
             <Box>
               <Button
                 variant="contained"

@@ -110,8 +110,13 @@ eventChatRoutes.post(
     if (!serviceKeyConfigured()) {
       return c.json({ error: "service_key_unset" }, 503);
     }
-    const event = await eventsRepo.findById(c.req.param("id"));
+    const eventId = c.req.param("id");
+    const event = await eventsRepo.findById(eventId);
     if (!event) return c.json({ error: "not_found" }, 404);
+    // 公式鍵の署名オラクル化防止: チャット有効な公開イベントに限定 (#221)
+    if (!event.chatEnabled || event.status !== "published") {
+      return c.json({ error: "chat_disabled" }, 409);
+    }
     const channelEvent = signWithServiceKey({
       kind: 40,
       created_at: Math.floor(Date.now() / 1000),
@@ -121,6 +126,9 @@ eventChatRoutes.post(
         about: CHAT_CHANNEL_ABOUT,
       }),
     });
+    // 発行した id をイベントに控え、登録時に一致を要求する（別イベント向け・
+    // 過去発行分の kind:40 持ち込み防止。再発行で上書き）
+    await eventChatRepo.setPendingChannel(eventId, channelEvent.id);
     return c.json({ channelEvent });
   },
 );
@@ -137,6 +145,9 @@ eventChatRoutes.post(
     if (denied) return denied;
     const eventId = c.req.param("id");
     const { channelEvent } = valid<RegisterChatChannelInput>(c, "json");
+    // 先勝ち: 既に設定済みなら検証せず既存IDを返す（後着は無視）
+    const existing = await eventChatRepo.channelIdFor(eventId);
+    if (existing) return c.json({ channelId: existing });
     // 署名済みの kind:40 のみ（無関係な既存チャンネルの紐付け防止）
     if (!verifyEventSignature(channelEvent) || channelEvent.kind !== 40) {
       return c.json({ error: "invalid_channel_event" }, 400);
@@ -147,7 +158,13 @@ eventChatRoutes.post(
     const event = await eventsRepo.findById(eventId);
     if (!event) return c.json({ error: "not_found" }, 404);
     const isServiceSigned = channelEvent.pubkey === servicePubkey();
-    if (!isServiceSigned) {
+    if (isServiceSigned) {
+      // 公式鍵署名は「このイベント向けに /official が発行した id」のみ受理 (#221)
+      const pending = await eventChatRepo.pendingChannelFor(eventId);
+      if (!pending || pending !== channelEvent.id) {
+        return c.json({ error: "invalid_channel_event" }, 400);
+      }
+    } else {
       const bound = await eventChatRepo.pubkeyOwner(
         eventId,
         channelEvent.pubkey,

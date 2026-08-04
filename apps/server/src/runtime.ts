@@ -117,9 +117,10 @@ export const env = {
   get resendApiKey(): string {
     return must().RESEND_API_KEY || "";
   },
-  /** 公式サービス鍵の秘密鍵hex（未設定なら空文字＝公式署名無効） (#199) */
+  /** 公式サービス鍵の秘密鍵hex（未設定なら空文字＝公式署名無効） (#199)。
+   * 大文字hexや前後空白の混入で無言の503にならないよう正規化する */
   get nostrServiceKey(): string {
-    return must().NOSTR_SERVICE_KEY || "";
+    return (must().NOSTR_SERVICE_KEY || "").trim().toLowerCase();
   },
   /** メール差出人 (#126) */
   get emailFrom(): string {
