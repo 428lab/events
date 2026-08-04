@@ -727,6 +727,8 @@ eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), async (
   if (slot.selectionType !== "lottery") {
     return c.json({ error: "not_lottery" }, 400);
   }
+  // membersBySlotStatus は退会申請中 (#250) を除くので、猶予期間中の申込者は
+  // 抽選対象にも落選通知の対象にもならない（枠を無駄に消費させない）
   const applied = await eventMembersRepo.membersBySlotStatus(slot.id, "applied");
   const shuffled = [...applied].sort(() => Math.random() - 0.5);
   const winners = shuffled.slice(0, slot.capacity);
@@ -779,18 +781,19 @@ eventRoutes.patch(
     if (!member || member.slotId !== c.req.param("slotId")) {
       return c.json({ error: "not_found" }, 404);
     }
+    // 退会申請中 (#250) は一覧にも出ないので操作対象にしない（当選させても
+    // 参加できず枠だけ消費する。findById は猶予期間中を null にする）
+    const target = await usersRepo.findById(userId);
+    if (!target) return c.json({ error: "not_found" }, 404);
     const status = valid<SetMemberSlotStatusInput>(c, "json").status;
     await eventMembersRepo.setStatus(member.id, status);
     // Entry 同期: 確定なら個人Entry作成、それ以外は削除
     if (status === "confirmed") {
-      const u = await usersRepo.findById(userId);
-      if (u) {
-        await entriesRepo.createIndividual(
-          eventId,
-          userId,
-          u.globalName ?? u.username,
-        );
-      }
+      await entriesRepo.createIndividual(
+        eventId,
+        userId,
+        target.globalName ?? target.username,
+      );
     } else {
       await entriesRepo.removeIndividualEntry(eventId, userId);
     }

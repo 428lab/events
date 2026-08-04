@@ -15,10 +15,12 @@ import {
   Typography,
 } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
+import { ACCOUNT_DELETION_GRACE_DAYS } from "@eventer/shared";
 import { useDeleteAccount } from "../api/userHooks.js";
 
-/** 退会カード (#244)。アカウント設定の最下部に置く。
- * 何が残り何が消えるかを説明し、チェック＋確認ダイアログの二段構えで実行する */
+/** 退会カード (#244, #250)。アカウント設定の最下部に置く。
+ * 何が残り何が消えるか・猶予期間 (#250) を説明し、
+ * チェック＋確認ダイアログの二段構えで実行する */
 export function AccountDeleteCard() {
   const deleteAccount = useDeleteAccount();
   const qc = useQueryClient();
@@ -31,7 +33,7 @@ export function AccountDeleteCard() {
     setError(null);
     deleteAccount.mutate(undefined, {
       onSuccess: () => {
-        // アカウントは消えているので、手元の表示キャッシュも全部捨てて
+        // アカウントは即座に利用不可になるので、手元の表示キャッシュも全部捨てて
         // ログイン画面へ移動する
         qc.clear();
         window.location.assign("/login");
@@ -48,7 +50,12 @@ export function AccountDeleteCard() {
           退会
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          アカウントを削除します。この操作は取り消せません。
+          退会するとアカウントはすぐに利用できなくなり、他の利用者からも見えなく
+          なります。
+          {ACCOUNT_DELETION_GRACE_DAYS}
+          日以内に同じログイン方法でログインすると復帰できます。
+          {ACCOUNT_DELETION_GRACE_DAYS}
+          日経過後は完全に削除され、復元できません。
         </Typography>
         <Typography
           variant="body2"
@@ -57,6 +64,14 @@ export function AccountDeleteCard() {
           sx={{ mb: 2 }}
         >
           <ul style={{ margin: 0, paddingLeft: "1.4em" }}>
+            <li>
+              退会するとすぐにログアウトされ、プロフィール・参加者一覧・チャットの
+              表示など、他の利用者から見える場所には表示されなくなります
+            </li>
+            <li>
+              {ACCOUNT_DELETION_GRACE_DAYS}
+              日経過後に、以下のとおりデータが完全に削除されます
+            </li>
             <li>
               作成したイベント・コミュニティ・会場・イベントのたまごは、参加者の
               履歴や予定を守るため「退会済みユーザー」名義で残ります
@@ -67,8 +82,8 @@ export function AccountDeleteCard() {
             <li>スライド・配信セット・BGM・投稿した写真は削除されます</li>
             <li>イベントチャットの発言は表示されなくなります</li>
             <li>
-              ログイン連携はすべて解除されます。再度ログインした場合は新しい
-              アカウントになり、以前のデータは戻せません
+              完全削除の後に再度ログインした場合は新しいアカウントになり、
+              以前のデータは戻せません
             </li>
           </ul>
         </Typography>
@@ -104,8 +119,11 @@ export function AccountDeleteCard() {
         <DialogTitle>本当に退会しますか？</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            アカウントと活動記録が削除され、元に戻すことはできません。
-            実行後はログイン画面に戻ります。
+            アカウントはすぐに利用できなくなり、実行後はログイン画面に戻ります。
+            {ACCOUNT_DELETION_GRACE_DAYS}
+            日以内に同じログイン方法でログインすれば復帰できますが、
+            {ACCOUNT_DELETION_GRACE_DAYS}
+            日経過後は完全に削除され、元に戻すことはできません。
           </DialogContentText>
         </DialogContent>
         <DialogActions>

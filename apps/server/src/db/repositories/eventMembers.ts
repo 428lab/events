@@ -6,6 +6,7 @@ import type {
   User,
 } from "@eventer/shared";
 import { many, one, run } from "../client.js";
+import { COUNTED_MEMBER_IS_ACTIVE } from "./events.js";
 
 interface MemberRow {
   id: string;
@@ -148,13 +149,17 @@ export const eventMembersRepo = {
     return this.find(eventId, userId);
   },
 
-  /** 枠の特定状態のメンバー（抽選用） */
+  /** 枠の特定状態のメンバー（抽選・繰り上げ用）。
+   * 退会申請中 (#250) は除外する。当選させても本人には通知も参加もできず、
+   * 枠だけ消費してしまうため。行はそのまま残るので復帰すれば申込に戻る */
   async membersBySlotStatus(
     slotId: string,
     status: string,
   ): Promise<Array<{ id: string; userId: string }>> {
     const rows = await many<{ id: string; user_id: string }>(
-      "SELECT id, user_id FROM event_member WHERE slot_id = ? AND status = ? ORDER BY created_at ASC",
+      `SELECT m.id, m.user_id FROM event_member m
+         JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
+        WHERE m.slot_id = ? AND m.status = ? ORDER BY m.created_at ASC`,
       slotId,
       status,
     );
@@ -285,10 +290,23 @@ export const eventMembersRepo = {
          FROM event_member m
          JOIN user u ON u.id = m.user_id
          WHERE m.event_id = ? AND m.status <> 'canceled'
+           AND u.deleted_at IS NULL
          ORDER BY m.created_at ASC`,
       eventId,
     );
     return rows.map((row) => ({ ...toMember(row), user: toUser(row) }));
+  },
+
+  /** 現役メンバーの user_id だけを返す。listWithUsers と違い、退会申請中 (#250)
+   * のメンバーも含む。既存リンク（タイムテーブルの担当者など）の検証に使う想定で、
+   * 「猶予期間中だから」という理由でリンクを剥がして復元不能にしないためのもの。
+   * ユーザーの表示名・ハンドルは返さないので匿名化とは競合しない */
+  async listMemberUserIds(eventId: string): Promise<string[]> {
+    const rows = await many<{ user_id: string }>(
+      "SELECT user_id FROM event_member WHERE event_id = ? AND status <> 'canceled'",
+      eventId,
+    );
+    return rows.map((r) => r.user_id);
   },
 
   /** ユーザーが参加している全イベントを role 付きで返す（マイページ用） */
@@ -297,7 +315,8 @@ export const eventMembersRepo = {
       `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
                 (SELECT COUNT(1) FROM event_member em
                  WHERE em.event_id = e.id AND em.status = 'confirmed'
-                   AND (e.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant'))
+                   AND (e.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant')
+                   AND ${COUNTED_MEMBER_IS_ACTIVE})
                  AS participant_count
          FROM event_member m
          JOIN event e ON e.id = m.event_id
@@ -315,7 +334,8 @@ export const eventMembersRepo = {
       `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
                 (SELECT COUNT(1) FROM event_member em
                  WHERE em.event_id = e.id AND em.status = 'confirmed'
-                   AND (e.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant'))
+                   AND (e.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant')
+                   AND ${COUNTED_MEMBER_IS_ACTIVE})
                  AS participant_count
          FROM event_member m
          JOIN event e ON e.id = m.event_id

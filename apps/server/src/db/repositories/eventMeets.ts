@@ -52,7 +52,7 @@ export const eventMeetsRepo = {
            UNION ALL
            SELECT user_high FROM event_meet WHERE event_id = ?
          ) m
-         JOIN user u ON u.id = m.uid
+         JOIN user u ON u.id = m.uid AND u.deleted_at IS NULL
         GROUP BY u.id
         ORDER BY n DESC, u.username ASC
         LIMIT 100`,

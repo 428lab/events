@@ -16,11 +16,22 @@ export const gamificationRepo = {
       likes: number;
       meets: number;
     }>(
+      // 有効イベントの人数判定・被いいね・出会いの集計とも、退会申請中 (#250)
+      // は数えない（参加者一覧・いいね集計の見え方と揃える）。
+      //
+      // 意図的な副作用: 確定4人ちょうどのイベントで1人が退会を申請すると、
+      // そのイベントが有効イベントから外れ、他の参加者全員のXP・バッジも同時に
+      // 下がる（「他人の操作で自分のバッジが減る」挙動になる）。
+      // それでもこの判定にしているのは、完全削除後もまったく同じ結果になるため。
+      // 猶予期間中だけ数を維持すると、30日後に同じ現象が改めて起きるだけで、
+      // 見えている数字と実データが食い違う期間が生まれる。
+      // 復帰すれば元に戻る（この集計は毎回導出しているのでキャッシュは無い）。
       `WITH qual AS (
          SELECT e.id, e.created_by, e.attendance_check
            FROM event e
           WHERE e.status = 'published' AND e.ends_at > 0 AND e.ends_at < ?
             AND (SELECT COUNT(*) FROM event_member m
+                  JOIN user mu ON mu.id = m.user_id AND mu.deleted_at IS NULL
                   WHERE m.event_id = e.id AND m.status = 'confirmed') >= 4
        )
        SELECT
@@ -42,15 +53,21 @@ export const gamificationRepo = {
              AND (q.attendance_check = 0 OR m.attended = 1)) AS attended,
          -- 被いいね: 主催・スタッフ・参加者としてもらったいいね
          (SELECT COUNT(*) FROM event_like l JOIN qual q ON q.id = l.event_id
+           JOIN user lu ON lu.id = l.user_id AND lu.deleted_at IS NULL
            WHERE l.kind IN ('host', 'staff', 'participant')
              AND l.target_key = ?) AS likes,
-         -- 出会った: QR読み合いの記録 (#189)。イベントごとに上限件数まで数える
+         -- 出会った: QR読み合いの記録 (#189)。イベントごとに上限件数まで数える。
+         -- 相手が退会申請中 (#250) の分は数えない（いいねの扱いと揃える）
          (SELECT COALESCE(SUM(cnt), 0) FROM (
             SELECT COUNT(*) AS cnt FROM event_meet em
               JOIN qual q ON q.id = em.event_id
+              JOIN user ou ON ou.id = CASE WHEN em.user_low = ?
+                                             THEN em.user_high ELSE em.user_low END
+                          AND ou.deleted_at IS NULL
              WHERE em.user_low = ? OR em.user_high = ?
              GROUP BY em.event_id)) AS meets`,
       now,
+      userId,
       userId,
       userId,
       userId,

@@ -29,7 +29,7 @@ import {
 } from "../api/venueHooks.js";
 import { useMyPage } from "../api/hooks.js";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../api/client.js";
+import { api, ApiError } from "../api/client.js";
 import type { EventRequest } from "@eventer/shared";
 import { CounterTextField } from "./CounterTextField.js";
 
@@ -38,6 +38,30 @@ const STATUS_LABEL: Record<string, string> = {
   accepted: "成立",
   declined: "見送り",
 };
+
+/** オファーの送信・応答が断られたときの文言。
+ * *_unavailable は相手が退会申請中（猶予期間 #250）で、承諾すると連絡先や
+ * 非公開住所が開示されてしまうケース。相手の退会は伏せた言い方にする */
+function offerErrorMessage(error: unknown): string {
+  const code =
+    error instanceof ApiError
+      ? ((error.body as { error?: string } | null)?.error ?? "")
+      : "";
+  switch (code) {
+    case "venue_unavailable":
+      return "この会場は現在オファーを受け付けていません。";
+    case "target_unavailable":
+      return "オファー先の主催者が現在応答できない状態です。";
+    case "counterparty_unavailable":
+      return "相手が現在応答できない状態のため、いま承諾はできません（見送りは可能です）。";
+    case "already_offered":
+      return "同じ会場で既にオファー済みです。";
+    case "declined_recently":
+      return "直近で見送られたため、しばらくは再オファーできません。";
+    default:
+      return "送信できませんでした。時間をおいて再度お試しください。";
+  }
+}
 
 function statusChip(status: string) {
   return (
@@ -132,6 +156,11 @@ export function VenueOfferPanel({
             onChange={(e) => setContact(e.target.value)}
             fullWidth
           />
+          {respond.isError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {offerErrorMessage(respond.error)}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAcceptTarget(null)}>キャンセル</Button>
@@ -199,7 +228,7 @@ export function OfferVenueButton({
           </TextField>
           {create.isError && (
             <Alert severity="error" sx={{ mt: 2 }}>
-              送信できませんでした（同じ会場で既にオファー済みの可能性）。
+              {offerErrorMessage(create.error)}
             </Alert>
           )}
         </DialogContent>
@@ -280,9 +309,7 @@ export function UseVenueButton({ venueId }: { venueId: string }) {
               fullWidth
             />
             {create.isError && (
-              <Alert severity="error">
-                送信できませんでした（既にオファー済みの可能性）。
-              </Alert>
+              <Alert severity="error">{offerErrorMessage(create.error)}</Alert>
             )}
           </Stack>
         </DialogContent>
@@ -324,6 +351,11 @@ export function VenueOwnerOffers({ venueId }: { venueId: string }) {
         <Typography variant="h6" gutterBottom>
           この会場へのオファー
         </Typography>
+        {respond.isError && (
+          <Alert severity="error" sx={{ mb: 1.5 }}>
+            {offerErrorMessage(respond.error)}
+          </Alert>
+        )}
         <Stack spacing={1.5}>
           {offers.map((o) => {
             const target = o.event

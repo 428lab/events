@@ -1,5 +1,7 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import {
+  ACCOUNT_DELETION_GRACE_MS,
   deleteAccountInput,
   mergeAccountInput,
   updateDisplayNameInput,
@@ -13,8 +15,11 @@ import type {
   UpdateUsernameInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { clearSession, requireAuth } from "../auth/session.js";
-import { getBucket } from "../runtime.js";
+import {
+  clearSession,
+  pendingDeletionUser,
+  requireAuth,
+} from "../auth/session.js";
 import {
   consumeMergeCode,
   issueMergeCode,
@@ -26,12 +31,9 @@ import { usersRepo } from "../db/repositories/users.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { followsRepo } from "../db/repositories/follows.js";
 import { notificationPrefsRepo } from "../db/repositories/notificationPrefs.js";
+import { notificationsRepo } from "../db/repositories/notifications.js";
 import { emailRepo } from "../db/repositories/email.js";
 import { eventRequestsRepo } from "../db/repositories/eventRequests.js";
-import { decksRepo } from "../db/repositories/decks.js";
-import { liveSetsRepo } from "../db/repositories/liveSets.js";
-import { bgmTracksRepo } from "../db/repositories/bgmTracks.js";
-import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
 import { putMyCardImage } from "./profileCardImages.js";
 
@@ -109,8 +111,8 @@ meRoutes.put(
   async (c) => {
     const me = c.get("user");
     const username = valid<UpdateUsernameInput>(c, "json").username.trim();
-    const taken = await usersRepo.findByUsername(username);
-    if (taken && taken.id !== me.id) {
+    // 猶予期間中 (#250) のユーザーのハンドルも予約済みとして扱う
+    if (await usersRepo.isUsernameTaken(username, me.id)) {
       return c.json({ error: "taken" }, 409);
     }
     await usersRepo.setUsername(me.id, username);
@@ -133,6 +135,8 @@ meRoutes.post("/merge", zValidator("json", mergeAccountInput), async (c) => {
   const otherId = await parseMergeCode(code);
   if (!otherId) return c.json({ error: "invalid_code" }, 400);
   if (otherId === me.id) return c.json({ error: "same_account" }, 400);
+  // findById は退会申請中（猶予期間 #250）を null にするので、
+  // 猶予期間中のアカウントは統合の相手にならない（復帰の余地を残す）
   const other = await usersRepo.findById(otherId);
   if (!other) return c.json({ error: "invalid_code" }, 400);
   // 使い捨てチェック（ここで消費。以降は同じコードを再利用できない）
@@ -156,74 +160,69 @@ meRoutes.post("/merge", zValidator("json", mergeAccountInput), async (c) => {
   return c.json({ ok: true, winnerId });
 });
 
-/** 退会するユーザー由来の R2 オブジェクトキーを列挙する (#244)。
- * 行削除後はキーを辿れなくなるため、DB 削除前に呼ぶこと。
- * 対象: スライド画像・配信セット画像・BGM 音源・イベント写真・プロフィールカードPNG */
-async function collectUserObjectKeys(userId: string): Promise<string[]> {
-  const bucket = getBucket();
-  const prefixes = [
-    ...(await decksRepo.listByOwner(userId)).map((d) => `deck-images/${d.id}/`),
-    ...(await liveSetsRepo.listByOwner(userId)).map(
-      (s) => `live-set-images/${s.id}/`,
-    ),
-    // プロフィールカードPNG。旧キー profile-cards/{id}.png と
-    // 組み合わせ別 profile-cards/{id}/{combo}.png の両方に一致させる
-    `profile-cards/${userId}`,
-  ];
-  const keys = await bgmTracksRepo.listKeysByOwner(userId);
-  for (const p of await eventPhotosRepo.listIdsByUser(userId)) {
-    keys.push(`event-photos/${p.eventId}/${p.id}`);
-  }
-  for (const prefix of prefixes) {
-    let cursor: string | undefined;
-    do {
-      const listed = await bucket.list({ prefix, cursor });
-      keys.push(...listed.objects.map((o) => o.key));
-      cursor = listed.truncated ? listed.cursor : undefined;
-    } while (cursor);
-  }
-  return keys;
-}
-
-/** 退会（アカウント削除） (#244)。共有コンテンツ（主催イベント・コミュニティ・
- * 会場・たまご・会場オファー）は「退会済みユーザー」名義で残し、本人の活動記録・
- * 資産・ログイン情報（連携・セッション）は削除する。
- * 誤操作防止に confirm: true を必須にし、実行後はセッション cookie を破棄する */
+/** 退会リクエスト (#244, #250)。データはすぐには消さず deleted_at を立てて
+ * 「即座に利用不可・他ユーザーから非表示」にし、30日の猶予期間を置く。
+ * 猶予期間中に同じログイン方法でログインすれば復帰でき、経過後は日次バッチ
+ * (POST /api/cron/purge-deleted) が従来の完全削除を実行する。
+ * 誤操作防止に confirm: true を必須にし、実行後はセッションを破棄する */
 meRoutes.delete("/", zValidator("json", deleteAccountInput), async (c) => {
   const me = c.get("user");
+  // 「退会済みユーザー」(ghost) 自身は identity が無くログイン不可のはずだが、
+  // 共有コンテンツの引き受け先が消えると困るので多重防御で弾く
   const ghost = await usersRepo.ensureDeletedUser();
-  // 「退会済みユーザー」自身は identity が無くログイン不可のはずだが、多重防御
   if (me.id === ghost.id) return c.json({ error: "forbidden" }, 403);
 
-  const objectKeys = await collectUserObjectKeys(me.id);
-
-  // 監査: 不可逆な操作なので実行記録を必ず残す
-  console.log(
-    `[account-delete] user=${me.id} handle=${me.username} ghost=${ghost.id} r2Objects=${objectKeys.length}`,
-  );
-  await usersRepo.deleteAccount(me.id, ghost.id);
-  // 監査ログ (#248)。user 行は消えるが FK を張っていないので記録は残る
+  const now = Date.now();
+  console.log(`[account-delete-requested] user=${me.id} handle=${me.username}`);
+  await usersRepo.requestDeletion(me.id, now);
+  // 他の人の通知一覧に残る「◯◯ さんが…」を消す (#250)。タイトルに表示名を
+  // 焼き込んでいるため、user 行を隠すだけでは名前とプロフィールリンクが残る。
+  // 通知を消すこと自体は退会の成否に影響させない（ベストエフォート）
+  try {
+    await notificationsRepo.deleteByActor(me);
+  } catch (e) {
+    console.error(`[account-delete-requested] notification cleanup failed`, e);
+  }
+  // 監査ログ (#248)。完全削除は日次バッチ側で別途記録する
   await recordAudit({
-    action: "account_delete",
+    action: "account_delete_requested",
     actor: { id: me.id, handle: me.username },
     target: { id: me.id, handle: me.username },
-    detail: { ghostId: ghost.id, r2Objects: objectKeys.length },
+    detail: { purgeAt: now + ACCOUNT_DELETION_GRACE_MS },
   });
 
-  // R2 の掃除はベストエフォート（失敗しても退会自体は成立。残骸はログで追える）
-  try {
-    const bucket = getBucket();
-    for (let i = 0; i < objectKeys.length; i += 1000) {
-      await bucket.delete(objectKeys.slice(i, i + 1000));
-    }
-  } catch (e) {
-    console.error(`[account-delete] R2 cleanup failed for user=${me.id}`, e);
-  }
-
-  // セッション行は FK CASCADE で削除済み。cookie の破棄だけ行う
+  // session 行は requestDeletion で削除済み。cookie の破棄だけ行う
   await clearSession(c);
-  return c.json({ ok: true });
+  return c.json({ ok: true, purgeAt: now + ACCOUNT_DELETION_GRACE_MS });
 });
+
+/** 退会の取り消し（復帰） (#250)。
+ * POST /api/me/restore。meRoutes は requireAuth が付いていて猶予期間中は
+ * 401 になるため、worker.ts で meRoutes より先に登録している。
+ *
+ * 「ログイン成功で自動復帰」ではなく明示的な確認を挟む設計にした理由:
+ * OAuth は連携追加や別アカウントへのログインでも同じコールバックを通るため、
+ * 自動復帰にすると「退会したのに触っただけで戻る」誤復帰が起きうる。
+ * また退会直後にログイン画面へ戻る導線が残っているので、意図しない復帰を
+ * 防ぐには確認画面が要る。セッションはログイン時に発行するが、
+ * currentUser が猶予期間中を null にするため、このAPI以外は一切使えない。 */
+export async function postRestoreAccount(c: Context<AppEnv>): Promise<Response> {
+  const pending = await pendingDeletionUser(c);
+  if (!pending) return c.json({ error: "unauthorized" }, 401);
+  // 猶予期間を過ぎている場合は復帰させない（日次バッチ待ちの状態）
+  if (Date.now() - pending.deletedAt > ACCOUNT_DELETION_GRACE_MS) {
+    return c.json({ error: "grace_period_expired" }, 410);
+  }
+  await usersRepo.restore(pending.id);
+  console.log(`[account-restore] user=${pending.id} handle=${pending.username}`);
+  await recordAudit({
+    action: "account_restore",
+    actor: { id: pending.id, handle: pending.username },
+    target: { id: pending.id, handle: pending.username },
+    detail: { requestedAt: pending.deletedAt },
+  });
+  return c.json({ ok: true });
+}
 
 /** 表示名を変更する (#232)。イベント・チャット・プロフィール等の表示に使われる */
 meRoutes.put(

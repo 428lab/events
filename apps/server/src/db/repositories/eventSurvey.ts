@@ -217,7 +217,7 @@ export const eventSurveyRepo = {
         m.status AS member_status, a.question_id, a.value, a.updated_at
         FROM event_survey_answer a
         JOIN event_survey_question q ON q.id = a.question_id
-        JOIN user u ON u.id = a.user_id
+        JOIN user u ON u.id = a.user_id AND u.deleted_at IS NULL
         LEFT JOIN event_member m ON m.event_id = a.event_id AND m.user_id = a.user_id
         WHERE a.event_id = ? AND q.phase = ?
         ORDER BY u.username ASC, q.sort_order ASC`,

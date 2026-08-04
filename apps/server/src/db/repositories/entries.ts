@@ -1,4 +1,5 @@
 import type { Entry, Submission } from "@eventer/shared";
+import { DELETED_USER_DISPLAY_NAME } from "@eventer/shared";
 import { one, many, run, batch } from "../client.js";
 
 interface EntryRow {
@@ -9,7 +10,43 @@ interface EntryRow {
   team_id: string | null;
   presentation_order: number | null;
   created_at: number;
+  /** entryAnonymizedSql の判定結果（1 = 表示名を伏せる） */
+  anonymized: number;
 }
+
+/** 個人エントリーの表示名を伏せるべきか判定する SQL 断片 (#250)。1 なら伏せる。
+ *
+ * 個人エントリーの name は参加確定時にユーザーの表示名をコピーした値で、
+ * entry テーブル自体は user を参照しないため deleted_at では除外されない。
+ * そのままだと退会申請中のユーザーの表示名が Entry 一覧・成果物一覧・
+ * 表彰結果・採点結果（公開イベントなら未ログインでも見える）に残ってしまう。
+ *
+ * entry は成果物URL を持つので行は消さず、メンバーが全員退会申請中のときだけ
+ * 表示名を伏せる。復帰すれば元の name がそのまま戻る。
+ * alias はクエリ側の entry テーブル別名。
+ *
+ * 伏せ字の文言そのものは SQL に埋め込まず TS 側（entryDisplayName）で差し替える。
+ * SELECT 句に定数リテラルを書くと、文言に ' が入った途端にクエリが壊れる／
+ * バインドパラメータにすると SELECT 句の位置に応じて引数の順番がずれる、という
+ * どちらの落とし穴も避けるため。 */
+export function entryAnonymizedSql(alias: string): string {
+  return `CASE WHEN ${alias}.kind = 'individual'
+                 AND EXISTS (SELECT 1 FROM entry_member em
+                              WHERE em.entry_id = ${alias}.id)
+                 AND NOT EXISTS (SELECT 1 FROM entry_member em
+                                   JOIN user u ON u.id = em.user_id
+                                  WHERE em.entry_id = ${alias}.id
+                                    AND u.deleted_at IS NULL)
+               THEN 1 ELSE 0 END`;
+}
+
+/** entryAnonymizedSql の結果を反映した表示名を返す (#250) */
+export function entryDisplayName(name: string, anonymized: number): string {
+  return anonymized ? DELETED_USER_DISPLAY_NAME : name;
+}
+
+const SELECT_ENTRY = `SELECT e.*, ${entryAnonymizedSql("e")} AS anonymized
+  FROM entry e`;
 
 interface SubmissionRow {
   presentation_url: string | null;
@@ -26,9 +63,13 @@ function toSubmission(row: SubmissionRow | null): Submission | null {
   };
 }
 
+/** エントリーのメンバー。退会申請中 (#250) は除外する
+ * （memberUserIds はそのままユーザーIDとして公開APIに出るため） */
 async function memberUserIds(entryId: string): Promise<string[]> {
   const rows = await many<{ user_id: string }>(
-    "SELECT user_id FROM entry_member WHERE entry_id = ?",
+    `SELECT em.user_id FROM entry_member em
+       JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
+      WHERE em.entry_id = ?`,
     entryId,
   );
   return rows.map((r) => r.user_id);
@@ -47,7 +88,7 @@ async function toEntry(row: EntryRow): Promise<Entry> {
     id: row.id,
     eventId: row.event_id,
     kind: row.kind,
-    name: row.name,
+    name: entryDisplayName(row.name, row.anonymized),
     teamId: row.team_id,
     presentationOrder: row.presentation_order,
     createdAt: row.created_at,
@@ -58,14 +99,14 @@ async function toEntry(row: EntryRow): Promise<Entry> {
 
 export const entriesRepo = {
   async findById(id: string): Promise<Entry | null> {
-    const row = await one<EntryRow>("SELECT * FROM entry WHERE id = ?", id);
+    const row = await one<EntryRow>(`${SELECT_ENTRY} WHERE e.id = ?`, id);
     return row ? await toEntry(row) : null;
   },
 
   async listByEvent(eventId: string): Promise<Entry[]> {
     const rows = await many<EntryRow>(
-      `SELECT * FROM entry WHERE event_id = ?
-         ORDER BY COALESCE(presentation_order, 1e9), created_at ASC`,
+      `${SELECT_ENTRY} WHERE e.event_id = ?
+         ORDER BY COALESCE(e.presentation_order, 1e9), e.created_at ASC`,
       eventId,
     );
     return Promise.all(rows.map(toEntry));
@@ -77,7 +118,7 @@ export const entriesRepo = {
     userId: string,
   ): Promise<Entry | null> {
     const row = await one<EntryRow>(
-      `SELECT e.* FROM entry e
+      `${SELECT_ENTRY}
          JOIN entry_member em ON em.entry_id = e.id
          WHERE e.event_id = ? AND e.kind = 'individual' AND em.user_id = ?
          LIMIT 1`,

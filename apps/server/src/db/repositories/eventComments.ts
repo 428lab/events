@@ -27,7 +27,8 @@ function toComment(row: Row): EventComment {
 
 const SELECT = `SELECT c.id, c.event_id, c.user_id, c.body, c.created_at,
   u.username, u.global_name, u.avatar_url
-  FROM event_comment c JOIN user u ON u.id = c.user_id`;
+  FROM event_comment c JOIN user u ON u.id = c.user_id
+    AND u.deleted_at IS NULL`;
 
 export const eventCommentsRepo = {
   async listByEvent(eventId: string): Promise<EventComment[]> {

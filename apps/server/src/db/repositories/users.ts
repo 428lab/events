@@ -1,4 +1,5 @@
 import type { User } from "@eventer/shared";
+import { DELETED_USER_DISPLAY_NAME } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
 
 interface UserRow {
@@ -11,6 +12,8 @@ interface UserRow {
   /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻 (#193) */
   card_image_updated_at: number | null;
   card_image_key: string | null;
+  /** 退会申請時刻。NULL = 在籍中 (#250) */
+  deleted_at: number | null;
 }
 
 function toUser(row: UserRow): User {
@@ -26,55 +29,104 @@ function toUser(row: UserRow): User {
   };
 }
 
+/** 猶予期間中 (#250) かどうかを含むユーザー。復帰フローと日次バッチでのみ使う。
+ * 通常の参照系は deleted_at IS NULL で除外するため、この型は出てこない */
+export type UserWithDeletion = User & { deletedAt: number | null };
+
+function toUserWithDeletion(row: UserRow): UserWithDeletion {
+  return { ...toUser(row), deletedAt: row.deleted_at };
+}
+
+/** 退会申請済み（猶予期間中）のユーザーを除外する条件 (#250)。
+ * 参照系のクエリには原則これを付ける。付け忘れると退会したユーザーが
+ * 他ユーザーから見えてしまうため、新しいクエリを足すときは必ず確認すること */
+const ACTIVE = "deleted_at IS NULL";
+
 /** 「退会済みユーザー」システムユーザーの discord_id (#244)。
  * 実IDと衝突しない合成値（ADMIN_DISCORD_IDS にも決して一致しない）。
  * identity を持たない＝ログイン不可で、連携の引き取り (#238) や統合 (#240) は
  * identity の provider_user_id からしかユーザーを解決しないため対象にならない */
 const DELETED_USER_DISCORD_ID = "system:deleted-user";
 
-export interface UpsertUserInput {
-  discordId: string;
-  username: string;
-  globalName: string | null;
-  avatarUrl: string | null;
-}
-
 export const usersRepo = {
+  /** 退会申請済み（猶予期間中）は「存在しない」扱いで null を返す (#250)。
+   * currentUser / プロフィール / 各種表示がここを通るため、ここでの除外が
+   * 「即座に利用不可・非表示」の中心的な担保になっている */
   async findById(id: string): Promise<User | null> {
-    const row = await one<UserRow>("SELECT * FROM user WHERE id = ?", id);
+    const row = await one<UserRow>(
+      `SELECT * FROM user WHERE id = ? AND ${ACTIVE}`,
+      id,
+    );
     return row ? toUser(row) : null;
+  },
+
+  /** 猶予期間中でも引ける参照 (#250)。復帰フローと日次バッチ専用 */
+  async findByIdIncludingDeleted(id: string): Promise<UserWithDeletion | null> {
+    const row = await one<UserRow>("SELECT * FROM user WHERE id = ?", id);
+    return row ? toUserWithDeletion(row) : null;
   },
 
   async findByDiscordId(discordId: string): Promise<User | null> {
     const row = await one<UserRow>(
-      "SELECT * FROM user WHERE discord_id = ?",
+      `SELECT * FROM user WHERE discord_id = ? AND ${ACTIVE}`,
       discordId,
     );
     return row ? toUser(row) : null;
   },
 
-  /** プロフィールURLのハンドル解決（username、大文字小文字を無視） */
+  /** 猶予期間中でも引ける参照 (#250)。開発用ログインのように
+   * 「行の存在」を見たい経路で使う */
+  async findByDiscordIdIncludingDeleted(
+    discordId: string,
+  ): Promise<UserWithDeletion | null> {
+    const row = await one<UserRow>(
+      "SELECT * FROM user WHERE discord_id = ?",
+      discordId,
+    );
+    return row ? toUserWithDeletion(row) : null;
+  },
+
+  /** プロフィールURLのハンドル解決（username、大文字小文字を無視）。
+   * 猶予期間中のユーザーは 404 相当にするため除外する (#250) */
   async findByUsername(username: string): Promise<User | null> {
     const row = await one<UserRow>(
-      "SELECT * FROM user WHERE username = ? COLLATE NOCASE LIMIT 1",
+      `SELECT * FROM user WHERE username = ? COLLATE NOCASE AND ${ACTIVE} LIMIT 1`,
       username,
     );
     return row ? toUser(row) : null;
   },
 
-  /** ADMIN_DISCORD_IDS に該当するユーザーの id 一覧（運営宛て通知用） */
+  /** ハンドル(username)が他のユーザーに使われているか。
+   * findByUsername と違い、猶予期間中 (#250) のユーザーも「使用中」として扱う
+   * （復帰したときにハンドルが他人のものになっていると URL が変わってしまう） */
+  async isUsernameTaken(
+    username: string,
+    exceptUserId: string,
+  ): Promise<boolean> {
+    const row = await one<{ id: string }>(
+      "SELECT id FROM user WHERE username = ? COLLATE NOCASE AND id <> ? LIMIT 1",
+      username,
+      exceptUserId,
+    );
+    return !!row;
+  },
+
+  /** ADMIN_DISCORD_IDS に該当するユーザーの id 一覧（運営宛て通知用）。
+   * 猶予期間中の管理者には通知しない (#250) */
   async listIdsByDiscordIds(discordIds: string[]): Promise<string[]> {
     if (discordIds.length === 0) return [];
     const placeholders = discordIds.map(() => "?").join(", ");
     const rows = await many<{ id: string }>(
-      `SELECT id FROM user WHERE discord_id IN (${placeholders})`,
+      `SELECT id FROM user WHERE discord_id IN (${placeholders}) AND ${ACTIVE}`,
       ...discordIds,
     );
     return rows.map((r) => r.id);
   },
 
   /** ハンドル(username)の重複を避けた利用可能な username を返す。
-   * 既に他ユーザーが使っていれば末尾に数字を付ける（exceptUserId は自分自身として除外）。 */
+   * 既に他ユーザーが使っていれば末尾に数字を付ける（exceptUserId は自分自身として除外）。
+   * ここは猶予期間中 (#250) のユーザーも「使用中」として扱う。復帰したときに
+   * ハンドルが他人に奪われていると URL が変わってしまうため */
   async availableUsername(desired: string, exceptUserId?: string): Promise<string> {
     let candidate = desired;
     for (let n = 2; ; n += 1) {
@@ -85,39 +137,6 @@ export const usersRepo = {
       if (!row || row.id === exceptUserId) return candidate;
       candidate = `${desired}${n}`;
     }
-  },
-
-  async upsertByDiscordId(input: UpsertUserInput): Promise<User> {
-    const existing = await this.findByDiscordId(input.discordId);
-    if (existing) {
-      // ハンドル(username)が他ユーザーと被る変更は据え置く（URL衝突防止）
-      let username = input.username;
-      if (username.toLowerCase() !== existing.username.toLowerCase()) {
-        const taken = await this.findByUsername(username);
-        if (taken && taken.id !== existing.id) username = existing.username;
-      }
-      await run(
-        `UPDATE user SET username = ?, global_name = ?, avatar_url = ?
-         WHERE discord_id = ?`,
-        username,
-        input.globalName,
-        input.avatarUrl,
-        input.discordId,
-      );
-      return (await this.findByDiscordId(input.discordId))!;
-    }
-    const id = crypto.randomUUID();
-    await run(
-      `INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      id,
-      input.discordId,
-      await this.availableUsername(input.username),
-      input.globalName,
-      input.avatarUrl,
-      Date.now(),
-    );
-    return (await this.findById(id))!;
   },
 
   /** OAuthプロフィールから新規ユーザーを作成。
@@ -433,7 +452,7 @@ export const usersRepo = {
         crypto.randomUUID(),
         DELETED_USER_DISCORD_ID,
         await this.availableUsername("deleted-user"),
-        "退会済みユーザー",
+        DELETED_USER_DISPLAY_NAME,
         Date.now(),
       );
     } catch {
@@ -442,6 +461,53 @@ export const usersRepo = {
     const ghost = await this.findByDiscordId(DELETED_USER_DISCORD_ID);
     if (!ghost) throw new Error("failed to ensure deleted-user account");
     return ghost;
+  },
+
+  /** 退会リクエスト (#250)。データは消さず deleted_at を立て、セッションを
+   * 全削除して即座に利用不可・非表示にする（30日後に日次バッチが完全削除）。
+   * 単一 batch なので「セッションだけ消えて退会状態にならない」中途半端な
+   * 状態にはならない。既に申請済みなら時刻は上書きしない（猶予の延長防止） */
+  async requestDeletion(userId: string, now: number): Promise<void> {
+    await batch([
+      {
+        sql: `UPDATE user SET deleted_at = ? WHERE id = ? AND ${ACTIVE}`,
+        args: [now, userId],
+      },
+      { sql: "DELETE FROM session WHERE user_id = ?", args: [userId] },
+    ]);
+  },
+
+  /** 猶予期間中の退会申請を取り消して復帰する (#250) */
+  async restore(userId: string): Promise<void> {
+    await run(
+      "UPDATE user SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
+      userId,
+    );
+  },
+
+  /** 猶予期間 (#250) を過ぎた退会申請の id を古い順に返す。日次バッチ用。
+   * 1回の実行あたりの件数を絞って Workers のサブリクエスト上限を守る。
+   *
+   * 境界は `<` で、復帰の判定（経過時間 > 猶予期間なら復帰不可）と表裏一致させる。
+   * `<=` だと「経過時間 == 猶予期間」の 1ms だけ復帰も完全削除も可能になる */
+  async listPurgeTargets(before: number, limit: number): Promise<string[]> {
+    const rows = await many<{ id: string }>(
+      `SELECT id FROM user WHERE deleted_at IS NOT NULL AND deleted_at < ?
+        ORDER BY deleted_at LIMIT ?`,
+      before,
+      limit,
+    );
+    return rows.map((r) => r.id);
+  },
+
+  /** 完全削除待ちの残件数（listPurgeTargets と同じ条件）。
+   * 1回の上限に達したときだけ呼び、消化しきれていないことをログに出す */
+  async countPurgeTargets(before: number): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(1) AS n FROM user WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+      before,
+    );
+    return row?.n ?? 0;
   },
 
   /** 退会（アカウント削除） (#244)。単一トランザクション（D1 batch）で

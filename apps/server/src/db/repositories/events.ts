@@ -44,11 +44,17 @@ interface EventRow {
 export const COUNTS_AS_PARTICIPANT =
   "(event.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant')";
 
+/** 参加者数のカウント対象から退会申請中 (#250) を外す条件。
+ * 参加者一覧（listWithUsers）が deleted_at で絞っているので、数だけ多いと
+ * 「12人」と出て11人しか並ばない、という不整合になる */
+export const COUNTED_MEMBER_IS_ACTIVE =
+  "EXISTS (SELECT 1 FROM user u WHERE u.id = em.user_id AND u.deleted_at IS NULL)";
+
 /** participant_count（実参加者数）を含む event の SELECT */
 const SELECT_EVENT = `SELECT *,
   (SELECT COUNT(1) FROM event_member em
    WHERE em.event_id = event.id AND em.status = 'confirmed'
-     AND ${COUNTS_AS_PARTICIPANT}) AS participant_count
+     AND ${COUNTS_AS_PARTICIPANT} AND ${COUNTED_MEMBER_IS_ACTIVE}) AS participant_count
   FROM event`;
 
 function toEvent(row: EventRow): Event {

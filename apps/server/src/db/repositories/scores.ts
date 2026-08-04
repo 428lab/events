@@ -6,6 +6,7 @@ import type {
 } from "@eventer/shared";
 import { many, one, run } from "../client.js";
 import { scoringCriteriaRepo } from "./scoringCriteria.js";
+import { entryAnonymizedSql, entryDisplayName } from "./entries.js";
 
 interface ScoreRow {
   entry_id: string;
@@ -75,10 +76,17 @@ export const scoresRepo = {
     entries: EntryScoreSummary[];
   }> {
     const criteria = await scoringCriteriaRepo.listByEvent(eventId);
-    const entries = await many<{ id: string; name: string }>(
-      "SELECT id, name FROM entry WHERE event_id = ? ORDER BY created_at ASC",
+    // 採点結果・表彰結果 (routes/awards.ts の entryName) はここの name を使う。
+    // 退会申請中 (#250) の個人エントリーは表示名を伏せる
+    const entryRows = await many<{ id: string; name: string; anonymized: number }>(
+      `SELECT e.id, e.name, ${entryAnonymizedSql("e")} AS anonymized
+         FROM entry e WHERE e.event_id = ? ORDER BY e.created_at ASC`,
       eventId,
     );
+    const entries = entryRows.map((e) => ({
+      id: e.id,
+      name: entryDisplayName(e.name, e.anonymized),
+    }));
 
     const selfFilter = aggregateSelfEntry
       ? ""
@@ -150,7 +158,7 @@ export const scoresRepo = {
          FROM event_member m
          JOIN user u ON u.id = m.user_id
          WHERE m.event_id = ? AND m.status <> 'canceled'
-           AND m.role IN (${placeholders})
+           AND m.role IN (${placeholders}) AND u.deleted_at IS NULL
          ORDER BY m.role, u.username`,
       eventId,
       ...judgeRoles,

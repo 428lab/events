@@ -91,7 +91,7 @@ export const eventChatRepo = {
          FROM event_chat_pubkey p
          JOIN user u ON u.id = p.user_id
          LEFT JOIN event_member m ON m.event_id = p.event_id AND m.user_id = p.user_id
-        WHERE p.event_id = ?
+        WHERE p.event_id = ? AND u.deleted_at IS NULL
         ORDER BY p.created_at ASC`,
       eventId,
     );

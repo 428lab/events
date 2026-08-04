@@ -60,8 +60,12 @@ export const eventLikesRepo = {
     eventId: string,
     viewerUserId: string,
   ): Promise<EventLikesSummary> {
+    // 退会申請中 (#250) の人が押したいいねは数えない。押した人・押された人とも
+    // 一覧からは消えるので、数だけ残ると「誰も居ないのに5いいね」になる
     const counts = await many<{ kind: string; target_key: string; n: number }>(
-      "SELECT kind, target_key, COUNT(*) AS n FROM event_like WHERE event_id = ? GROUP BY kind, target_key",
+      `SELECT l.kind, l.target_key, COUNT(*) AS n FROM event_like l
+         JOIN user u ON u.id = l.user_id AND u.deleted_at IS NULL
+        WHERE l.event_id = ? GROUP BY l.kind, l.target_key`,
       eventId,
     );
     const countOf = (kind: string, targetKey: string) =>
@@ -71,7 +75,7 @@ export const eventLikesRepo = {
     const hostRow = await one<TargetUserRow>(
       `SELECT u.id, u.username, u.global_name, u.avatar_url
          FROM event e JOIN user u ON u.id = e.created_by
-        WHERE e.id = ?`,
+        WHERE e.id = ? AND u.deleted_at IS NULL`,
       eventId,
     );
 
@@ -82,7 +86,7 @@ export const eventLikesRepo = {
          JOIN user u ON u.id = m.user_id
          JOIN event e ON e.id = m.event_id
         WHERE m.event_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
-          AND m.user_id <> e.created_by
+          AND m.user_id <> e.created_by AND u.deleted_at IS NULL
         ORDER BY m.created_at ASC`,
       eventId,
     );
@@ -93,6 +97,7 @@ export const eventLikesRepo = {
          FROM event_member m
          JOIN user u ON u.id = m.user_id
         WHERE m.event_id = ? AND m.role = 'participant' AND m.status = 'confirmed'
+          AND u.deleted_at IS NULL
         ORDER BY m.created_at ASC`,
       eventId,
     );
@@ -122,11 +127,13 @@ export const eventLikesRepo = {
     };
   },
 
-  /** ユーザーが主催・スタッフとしてもらったいいね合計（公開イベントのみ） */
+  /** ユーザーが主催・スタッフとしてもらったいいね合計（公開イベントのみ）。
+   * 退会申請中 (#250) の人が押した分は summaryForEvent と同様に数えない */
   async receivedCountForUser(userId: string): Promise<number> {
     const row = await one<{ v: number }>(
       `SELECT COUNT(*) AS v FROM event_like l
         JOIN event e ON e.id = l.event_id
+        JOIN user u ON u.id = l.user_id AND u.deleted_at IS NULL
         WHERE l.kind IN ('host', 'staff', 'participant') AND l.target_key = ?
           AND e.status = 'published'`,
       userId,
@@ -139,6 +146,7 @@ export const eventLikesRepo = {
     const row = await one<{ v: number }>(
       `SELECT COUNT(*) AS v FROM event_like l
         JOIN event e ON e.id = l.event_id
+        JOIN user u ON u.id = l.user_id AND u.deleted_at IS NULL
         WHERE l.kind = 'community' AND l.target_key = ?
           AND e.status = 'published'`,
       communityId,

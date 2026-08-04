@@ -1,0 +1,44 @@
+# 退会猶予期間 (#250) を過ぎたアカウントの完全削除を日次で実行する。
+# Workers Free は cron トリガーがアカウント5個上限のため、GitHub Actions から叩く
+# （リマインダー #129 と同じ方式）。リマインダーの失敗に引きずられないよう
+# ワークフローは分けている。
+name: Purge deleted accounts
+on:
+  schedule:
+    - cron: "30 18 * * *" # UTC 18:30 = JST 3:30（利用の少ない時間帯）
+  workflow_dispatch: {}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      # HTTP 200 でも個々のアカウントの削除が失敗していることがある（failed）。
+      # 気づかないまま放置されないよう、failed > 0 ならワークフローを失敗させる。
+      # remaining は1回のサブリクエスト予算で消化しきれなかった残件（翌日に回る）。
+      # 少数なら翌日に自然に片付くので warning だが、積み上がっている（=消化速度が
+      # 追いついていない）場合は放置すると永久に減らないので error にして気づく
+      - name: Call purge endpoint (production)
+        run: |
+          code=$(curl -s -o /tmp/body -w "%{http_code}" -X POST \
+            -H "x-cron-key: ${{ secrets.CRON_SECRET }}" \
+            https://events.kojira.io/api/cron/purge-deleted)
+          cat /tmp/body; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::purge endpoint returned HTTP $code"
+            exit 1
+          fi
+          purged=$(jq -r '.purged // 0' /tmp/body)
+          failed=$(jq -r '.failed // 0' /tmp/body)
+          remaining=$(jq -r '.remaining // 0' /tmp/body)
+          echo "purged=$purged failed=$failed remaining=$remaining"
+          fail=0
+          if [ "$remaining" -gt 20 ]; then
+            echo "::error::$remaining account(s) still awaiting purge; the daily budget is not keeping up (run POST /api/admin/run-purge-deleted or raise the budget)"
+            fail=1
+          elif [ "$remaining" -gt 0 ]; then
+            echo "::warning::$remaining account(s) still awaiting purge (retried on the next run)"
+          fi
+          if [ "$failed" -gt 0 ]; then
+            echo "::error::$failed account(s) failed to purge; check Workers logs ([account-purge])"
+            fail=1
+          fi
+          exit $fail

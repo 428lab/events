@@ -80,7 +80,10 @@ export function ScheduleEditor({
         description: it.description,
         durationMin: it.durationMin,
         startsAt: it.startsAt,
-        speakerUserId: it.speaker?.id ?? null,
+        // 表示用の speaker ではなく生の speakerUserId を持つ (#250)。
+        // 退会申請中の登壇者は speaker が null になるため、そちらを見ると
+        // 保存のたびにリンクが外れ、復帰しても登壇者が戻らなくなる
+        speakerUserId: it.speakerUserId,
         speakerName: it.speakerName,
         materialUrl: it.materialUrl,
       }),
@@ -97,6 +100,18 @@ export function ScheduleEditor({
   }));
 
   const times = computeScheduleTimes(rows, eventStartsAt);
+
+  /** 担当欄に表示する値。メンバー一覧に居ないリンク（退会申請中など #250）は
+   * プレースホルダで見せる。null（＝空欄）にすると、リンクが外れたように見えて
+   * staff がうっかり上書きしてしまう */
+  const speakerValue = (row: Row): MemberOption | string =>
+    row.speakerUserId
+      ? (memberOptions.find((o) => o.id === row.speakerUserId) ?? {
+          id: row.speakerUserId,
+          label: "(表示できないメンバー)",
+          avatarUrl: null,
+        })
+      : row.speakerName;
 
   const update = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -235,12 +250,7 @@ export function ScheduleEditor({
                   freeSolo
                   size="small"
                   options={memberOptions}
-                  value={
-                    row.speakerUserId
-                      ? (memberOptions.find((o) => o.id === row.speakerUserId) ??
-                        null)
-                      : row.speakerName
-                  }
+                  value={speakerValue(row)}
                   onChange={(_, v) => {
                     if (v && typeof v !== "string") {
                       update(i, { speakerUserId: v.id, speakerName: "" });

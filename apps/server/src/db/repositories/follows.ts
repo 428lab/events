@@ -29,9 +29,13 @@ export const followsRepo = {
     return Boolean(row);
   },
 
+  /** フォロワー数。退会申請中 (#250) は数えない
+   * （listFollowing 等の一覧から外しているので数字を合わせる） */
   async followerCount(userId: string): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM user_follow WHERE followee_id = ?",
+      `SELECT COUNT(1) AS n FROM user_follow f
+         JOIN user u ON u.id = f.follower_id AND u.deleted_at IS NULL
+        WHERE f.followee_id = ?`,
       userId,
     );
     return row?.n ?? 0;
@@ -39,7 +43,9 @@ export const followsRepo = {
 
   async followingCount(userId: string): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM user_follow WHERE follower_id = ?",
+      `SELECT COUNT(1) AS n FROM user_follow f
+         JOIN user u ON u.id = f.followee_id AND u.deleted_at IS NULL
+        WHERE f.follower_id = ?`,
       userId,
     );
     return row?.n ?? 0;
@@ -88,7 +94,8 @@ export const followsRepo = {
     }>(
       `SELECT u.id, u.username, u.global_name, u.avatar_url
          FROM user_follow f JOIN user u ON u.id = f.followee_id
-        WHERE f.follower_id = ? ORDER BY f.created_at DESC`,
+        WHERE f.follower_id = ? AND u.deleted_at IS NULL
+        ORDER BY f.created_at DESC`,
       userId,
     );
     return rows.map((r) => ({

@@ -1,0 +1,90 @@
+import { useState } from "react";
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Stack,
+  Typography,
+} from "@mui/material";
+import type { PendingDeletion } from "@eventer/shared";
+import { useLogout, useRestoreAccount } from "../api/hooks.js";
+
+/** JST 表記の日付（例: 2026年9月3日 12:34） */
+function dateText(ms: number): string {
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(ms);
+}
+
+/** 復帰画面 (#250)。退会申請中（猶予期間）のアカウントでログインしたときに
+ * 他の画面の代わりに表示する。ここで明示的に「復帰する」を選ぶまで
+ * アカウントは利用不可のまま（サーバー側も復帰API以外を通さない） */
+export function AccountRestorePage({ pending }: { pending: PendingDeletion }) {
+  const restore = useRestoreAccount();
+  const logout = useLogout();
+  const [error, setError] = useState<string | null>(null);
+
+  const run = () => {
+    setError(null);
+    restore.mutate(undefined, {
+      // 復帰後はキャッシュを作り直したいので、素直にマイページへ読み込み直す
+      onSuccess: () => window.location.assign("/me"),
+      onError: () =>
+        setError("復帰に失敗しました。時間をおいて再度お試しください。"),
+    });
+  };
+
+  return (
+    <Box sx={{ display: "grid", placeItems: "center", minHeight: "100vh", p: 2 }}>
+      <Card variant="outlined" sx={{ maxWidth: 560, width: "100%" }}>
+        <CardContent>
+          <Stack spacing={2}>
+            <Typography variant="h5" fontWeight={700}>
+              このアカウントは退会手続き中です
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              @{pending.username} は {dateText(pending.deletedAt)}{" "}
+              に退会を申請しました。現在は他の利用者から見えない状態になっています。
+            </Typography>
+            <Alert severity="warning">
+              {dateText(pending.purgeAt)}{" "}
+              を過ぎるとアカウントと活動記録は完全に削除され、復元できなくなります。
+            </Alert>
+            <Typography variant="body2" color="text.secondary">
+              退会を取り消して、これまでの参加履歴・フォロー・作成したコンテンツを
+              そのまま使い続けますか？
+            </Typography>
+            {error && <Alert severity="error">{error}</Alert>}
+            <Stack direction="row" spacing={1}>
+              <Button
+                variant="contained"
+                disabled={restore.isPending}
+                onClick={run}
+              >
+                復帰する
+              </Button>
+              <Button
+                color="inherit"
+                disabled={logout.isPending}
+                onClick={() =>
+                  logout.mutate(undefined, {
+                    onSuccess: () => window.location.assign("/"),
+                  })
+                }
+              >
+                このまま退会する（ログアウト）
+              </Button>
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+    </Box>
+  );
+}
