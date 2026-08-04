@@ -22,6 +22,7 @@ import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
+import { getChatRelays } from "../db/repositories/appSettings.js";
 
 const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
 
@@ -82,6 +83,7 @@ eventChatRoutes.get(
       channelId: await eventChatRepo.channelIdFor(eventId),
       chatEnabled: event.chatEnabled,
       hiddenNoteIds: await eventChatRepo.listHidden(eventId),
+      relays: await getChatRelays(),
     };
     return c.json(payload);
   },

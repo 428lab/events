@@ -77,6 +77,7 @@ import { venueOfferRoutes } from "./routes/venueOffers.js";
 import { emailRoutes } from "./routes/email.js";
 import { sendEventReminders } from "./lib/reminders.js";
 import { adminReminderRoutes } from "./routes/adminReminders.js";
+import { adminSettingsRoutes } from "./routes/adminSettings.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -170,6 +171,8 @@ api.post("/cron/reminders", async (c) => {
   return c.json({ sent });
 });
 api.route("/admin/stats", adminStatsRoutes);
+// アプリ全体の運用設定（チャットリレー等。app admin のみ） (#199)
+api.route("/admin/settings", adminSettingsRoutes);
 api.route("/notifications", notificationRoutes);
 // 公開: コミュニティ画像（認証不要。communityRoutes(要認証) より先に登録）
 api.get("/communities/:id/icon", getCommunityImage("icon"));

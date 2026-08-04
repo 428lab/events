@@ -5,8 +5,14 @@ import { z } from "zod";
  * サーバーは「イベント⇔チャンネル⇔メンバー鍵」の紐付けと設定のみ保持し、
  * チャット本文は一切経由しない。 */
 
-/** 読み書きに使うリレー（両方に書き、両方から読む） */
+/** 読み書きに使うリレーの既定値（運用設定 chat_relays が未設定のとき使用） */
 export const CHAT_RELAYS = ["wss://r.kojira.io", "wss://x.kojira.io"] as const;
+
+/** リレーURLの上限数 */
+export const CHAT_RELAY_MAX = 5;
+
+/** リレーURLの形式（wss:// のみ許可） */
+export const CHAT_RELAY_URL_PATTERN = /^wss:\/\/[a-zA-Z0-9.-]+(:\d+)?(\/\S*)?$/;
 
 /** 書き込み可能な時間帯: 開始30分前〜終了2時間後。
  * 値は出会った記録 (#189) の MEET_WINDOW_BEFORE_MS / MEET_WINDOW_AFTER_MS
@@ -68,4 +74,22 @@ export interface ChatMembersPayload {
   channelId: string | null;
   chatEnabled: boolean;
   hiddenNoteIds: string[];
+  /** 読み書きに使うリレー（運用設定。未設定なら CHAT_RELAYS） */
+  relays: string[];
+}
+
+/** PUT /admin/settings/chat-relays の入力。relays=[] で既定に戻す */
+export const updateChatRelaysInput = z.object({
+  relays: z
+    .array(z.string().max(200).regex(CHAT_RELAY_URL_PATTERN))
+    .max(CHAT_RELAY_MAX),
+});
+export type UpdateChatRelaysInput = z.infer<typeof updateChatRelaysInput>;
+
+/** GET /admin/settings のレスポンス */
+export interface AppSettingsPayload {
+  /** 実効値（未設定なら既定の CHAT_RELAYS） */
+  chatRelays: string[];
+  /** 運用設定で上書きされているか */
+  chatRelaysCustom: boolean;
 }

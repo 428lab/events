@@ -22,6 +22,7 @@ import { Link as RouterLink } from "react-router-dom";
 import type { ChatMember, Event, EventRole } from "@eventer/shared";
 import {
   CHAT_MESSAGE_MAX,
+  CHAT_RELAYS,
   CHAT_WINDOW_AFTER_MS,
   CHAT_WINDOW_BEFORE_MS,
 } from "@eventer/shared";
@@ -97,6 +98,14 @@ export function EventChat({
   const chatRef = useRef(chat);
   chatRef.current = chat;
 
+  // 使用するリレー（運用設定。payload 取得前は既定値）
+  const relays = useMemo(
+    () => (chat?.relays?.length ? chat.relays : [...CHAT_RELAYS]),
+    [chat],
+  );
+  // 内容が同じなら再接続しないための比較キー
+  const relaysKey = relays.join(" ");
+
   // 書き込み可能時間帯（開始30分前〜終了2時間後）。1分ごとに再評価
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -126,7 +135,7 @@ export function EventChat({
     if (!signer) return;
     let disposed = false;
     let unsubscribe: (() => void) | null = null;
-    const pool = new ChatRelayPool(signer);
+    const pool = new ChatRelayPool(signer, relaysKey.split(" "));
     poolRef.current = pool;
     pool.onstatus = () => {
       if (!disposed) setRelayConnected(pool.connected);
@@ -175,7 +184,7 @@ export function EventChat({
     };
     // registerChannel（mutation オブジェクト）は毎レンダーで変わるため依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signer, event.title]);
+  }, [signer, event.title, relaysKey]);
 
   // 新着メッセージで最下部へ自動スクロール
   const pubkeySet = useMemo(
@@ -234,7 +243,7 @@ export function EventChat({
     setSendError(null);
     try {
       const ev = await signer.signEvent(
-        buildChannelMessageTemplate(channelId, text),
+        buildChannelMessageTemplate(channelId, text, relays[0]),
       );
       const ok = await poolRef.current?.publish(ev);
       if (!ok) {

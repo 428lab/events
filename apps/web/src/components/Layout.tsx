@@ -119,6 +119,11 @@ export function Layout({
                 統計
               </Button>
             )}
+            {isAdmin && (
+              <Button color="inherit" component={RouterLink} to="/admin/settings">
+                運用設定
+              </Button>
+            )}
           </Box>
 
           <NotificationBell />
@@ -196,6 +201,15 @@ export function Layout({
             {isAdmin && (
               <MenuItem component={RouterLink} to="/admin/stats" onClick={closeMenu}>
                 統計（全イベント）
+              </MenuItem>
+            )}
+            {isAdmin && (
+              <MenuItem
+                component={RouterLink}
+                to="/admin/settings"
+                onClick={closeMenu}
+              >
+                運用設定
               </MenuItem>
             )}
             <MenuItem component={RouterLink} to="/account" onClick={closeMenu}>
