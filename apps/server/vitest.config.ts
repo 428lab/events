@@ -41,6 +41,9 @@ export default defineWorkersConfig(async () => {
               X_CLIENT_SECRET: "test-x-secret",
               // cron エンドポイント (#129) の検証用
               CRON_SECRET: "test-cron-secret",
+              // 公式チャンネル署名 (#199) の検証用（テスト専用の固定鍵）
+              NOSTR_SERVICE_KEY:
+                "7f3b2a1c9e8d7c6b5a4938271605f4e3d2c1b0a99887766554433221100ffeed",
             },
           },
         },

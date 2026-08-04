@@ -28,8 +28,9 @@ import {
 } from "@eventer/shared";
 import type { Event as NostrEvent } from "nostr-tools/pure";
 import { useMe } from "../api/hooks.js";
-import { api } from "../api/client.js";
+import { api, ApiError } from "../api/client.js";
 import {
+  createOfficialChannelEvent,
   useChatMembers,
   useHideChatNote,
   useRegisterChatChannel,
@@ -99,6 +100,11 @@ export function EventChat({
   // チャンネル確定処理から最新の chat-members を参照するための ref
   const chatRef = useRef(chat);
   chatRef.current = chat;
+  // チャンネル作成時に「主催者×NIP-07」経路かを判定するための ref (#199)
+  const meRef = useRef(me);
+  meRef.current = me;
+  // 現在の signer が NIP-07（Nostrアカウント）か。setSigner の直前に設定する
+  const signerIsNip07Ref = useRef(false);
 
   // 使用するリレー（運用設定。payload 取得前は既定値）
   const relays = useMemo(
@@ -129,12 +135,21 @@ export function EventChat({
     const sk = loadLocalChatKey(eventId);
     if (!sk) return;
     const local = localSigner(sk);
-    if (local.pubkey === myRegisteredPubkey) setSigner(local);
+    if (local.pubkey === myRegisteredPubkey) {
+      signerIsNip07Ref.current = false;
+      setSigner(local);
+    }
   }, [signer, myRegisteredPubkey, eventId]);
+
+  // サーバーに登録済みのチャンネルID（未開設は null。5秒ポーリングで反映）
+  const serverChannelId = chat?.channelId ?? null;
 
   // 接続・チャンネル確定・購読。signer が決まったら開始し、unmount で切断
   useEffect(() => {
     if (!signer) return;
+    // 部屋の開設はスタッフの操作のみ (#221)。参加者は開設されるまで待つ
+    // （serverChannelId が入ると deps 経由でこの effect が再実行される）
+    if (!serverChannelId && !isStaff) return;
     let disposed = false;
     let unsubscribe: (() => void) | null = null;
     const pool = new ChatRelayPool(signer, relaysKey.split(" "));
@@ -147,15 +162,27 @@ export function EventChat({
       await pool.connect();
       if (disposed) return;
 
-      // チャンネルIDを確定する（未登録なら kind:40 を発行して先勝ちで登録）
-      let cid = chatRef.current?.channelId ?? null;
+      // チャンネルIDを確定する（未登録ならスタッフが kind:40 を発行して先勝ちで登録）
+      let cid = chatRef.current?.channelId ?? serverChannelId;
       if (!cid) {
         try {
-          const created = await signer.signEvent(
-            buildChannelCreateTemplate(event.title),
-          );
+          // チャンネル作成鍵の方針 (#199): 参加者個人の鍵では作らない。
+          // - 主催者(createdBy)本人が NIP-07 で参加している → 主催者の鍵で署名
+          // - それ以外（参加者が最初に開いた等） → 公式サービス鍵（サーバー署名）
+          const organizerNip07 =
+            signerIsNip07Ref.current &&
+            meRef.current?.id === event.createdBy;
+          const created: NostrEvent = organizerNip07
+            ? await signer.signEvent(buildChannelCreateTemplate(event.title))
+            : (await createOfficialChannelEvent(eventId)).channelEvent;
           // リレーに受理されたことを確認してからサーバーへ登録する
           // （不達のまま登録すると「リレー上に存在しない部屋」を参照し続けてしまう）
+          //
+          // 注意（リレーポリシーのリスク）: 公式鍵署名の kind:40 は「参加者の
+          // 接続」から発行する。リレー/プロキシが NIP-42 で
+          // 「AUTH済みpubkey == イベントのpubkey」を書き込み条件にしていると
+          // 拒否される。その場合は下の joinError が表示されるので、リレー側で
+          // 公式鍵のイベントを任意のAUTH済み接続から許可する設定と併せて運用する
           const accepted = await pool.publish(created);
           if (!accepted) {
             if (!disposed) {
@@ -168,8 +195,14 @@ export function EventChat({
           const { channelId: settled } =
             await registerChannel.mutateAsync(created);
           cid = settled ?? created.id;
-        } catch {
-          if (!disposed) setJoinError("チャンネルの作成に失敗しました。");
+        } catch (err) {
+          if (!disposed) {
+            setJoinError(
+              err instanceof ApiError && err.status === 503
+                ? "公式鍵が未設定のためチャンネルを作成できません（運営に連絡してください）。"
+                : "チャンネルの作成に失敗しました。",
+            );
+          }
           return;
         }
       }
@@ -196,7 +229,7 @@ export function EventChat({
     };
     // registerChannel（mutation オブジェクト）は毎レンダーで変わるため依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signer, event.title, relaysKey]);
+  }, [signer, event.title, relaysKey, serverChannelId, isStaff]);
 
   // 新着メッセージで最下部へ自動スクロール
   const pubkeySet = useMemo(
@@ -230,10 +263,10 @@ export function EventChat({
   const join = async () => {
     setJoinError(null);
     try {
-      const s =
-        keyMode === "nip07" && hasNip07()
-          ? await nip07Signer()
-          : localSigner(loadOrCreateLocalChatKey(eventId));
+      const useNip07 = keyMode === "nip07" && hasNip07();
+      const s = useNip07
+        ? await nip07Signer()
+        : localSigner(loadOrCreateLocalChatKey(eventId));
       // 所有証明: サーバーのchallengeに署名して送る（他人のnpub紐付け防止）
       const { challenge } = await api.get<{ challenge: string }>(
         "/auth/nostr/challenge",
@@ -242,6 +275,7 @@ export function EventChat({
         buildChatKeyProofTemplate(challenge, eventId),
       );
       await registerKey.mutateAsync(proof);
+      signerIsNip07Ref.current = useNip07;
       setSigner(s);
     } catch {
       setJoinError("チャットへの参加に失敗しました。");
@@ -297,8 +331,47 @@ export function EventChat({
           )}
         </Stack>
 
-        {!signer ? (
+        {/* チャンネル作成の失敗は参加後（signer確定後）にも起きるため、分岐の外で表示する */}
+        {joinError && (
+          <Alert
+            severity="error"
+            sx={{ mt: 1 }}
+            action={
+              isStaff ? (
+                <Button
+                  size="small"
+                  color="inherit"
+                  disabled={resetChannel.isPending}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "チャンネルを作り直しますか？（リレー上に部屋が無い場合の復旧用。過去のメッセージは新しい部屋には表示されません）",
+                      )
+                    ) {
+                      resetChannel.mutate();
+                    }
+                  }}
+                >
+                  チャンネルを作り直す
+                </Button>
+              ) : undefined
+            }
+          >
+            {joinError}
+          </Alert>
+        )}
+        {chat && !serverChannelId && !isStaff ? (
+          // 部屋の開設はスタッフの操作のみ (#221)。それまで参加UIは出さない
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            チャットの部屋はまだ開設されていません。スタッフが開設すると参加できます。
+          </Typography>
+        ) : !signer ? (
           <Stack spacing={1.5} sx={{ mt: 1 }}>
+            {isStaff && chat && !serverChannelId && (
+              <Alert severity="info">
+                チャットの部屋はまだありません。参加すると部屋が開設され、参加者もチャットできるようになります。
+              </Alert>
+            )}
             {hasNip07() && (
               <RadioGroup
                 value={keyMode}
@@ -328,33 +401,6 @@ export function EventChat({
               このチャットは Nostr
               のパブリックチャットです（外部クライアントからも閲覧できます）。
             </Typography>
-            {joinError && (
-              <Alert
-                severity="error"
-                action={
-                  isStaff ? (
-                    <Button
-                      size="small"
-                      color="inherit"
-                      disabled={resetChannel.isPending}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            "チャンネルを作り直しますか？（リレー上に部屋が無い場合の復旧用。過去のメッセージは新しい部屋には表示されません）",
-                          )
-                        ) {
-                          resetChannel.mutate();
-                        }
-                      }}
-                    >
-                      チャンネルを作り直す
-                    </Button>
-                  ) : undefined
-                }
-              >
-                {joinError}
-              </Alert>
-            )}
             <Box>
               <Button
                 variant="contained"

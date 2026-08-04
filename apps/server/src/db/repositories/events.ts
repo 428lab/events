@@ -298,8 +298,9 @@ export const eventsRepo = {
         (id, title, subtitle, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
-         community_id, scheduling, schedule_anonymous, slug, venue_wanted)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`,
+         community_id, scheduling, schedule_anonymous, slug, venue_wanted,
+         chat_enabled)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0)`,
       id,
       input.title,
       input.subtitle ?? "",

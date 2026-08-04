@@ -69,6 +69,26 @@ async function verifyChallenge(challenge: string): Promise<boolean> {
 const HEX64 = /^[0-9a-f]{64}$/;
 const HEX128 = /^[0-9a-f]{128}$/;
 
+/** NIP-01 のイベントID（署名対象）: sha256(serialize(event)) を hex で返す。
+ * 検証（verifyEventSignature）とサーバー署名（lib/nostrSign.ts）で共用 */
+export function nostrEventId(ev: {
+  pubkey: string;
+  created_at: number;
+  kind: number;
+  tags: string[][];
+  content: string;
+}): string {
+  const serialized = JSON.stringify([
+    0,
+    ev.pubkey,
+    ev.created_at,
+    ev.kind,
+    ev.tags,
+    ev.content,
+  ]);
+  return bytesToHex(sha256(new TextEncoder().encode(serialized)));
+}
+
 /** NIP-01 イベントの構造・id・schnorr署名を検証（kind は問わない） */
 export function verifyEventSignature(ev: NostrEvent): boolean {
   if (
@@ -87,16 +107,7 @@ export function verifyEventSignature(ev: NostrEvent): boolean {
     return false;
   }
   // NIP-01: id = sha256(serialize(event))
-  const serialized = JSON.stringify([
-    0,
-    ev.pubkey,
-    ev.created_at,
-    ev.kind,
-    ev.tags,
-    ev.content,
-  ]);
-  const id = bytesToHex(sha256(new TextEncoder().encode(serialized)));
-  if (id !== ev.id) return false;
+  if (nostrEventId(ev) !== ev.id) return false;
   try {
     return schnorr.verify(
       hexToBytes(ev.sig),

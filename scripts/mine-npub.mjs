@@ -41,6 +41,7 @@ if (isMainThread) {
         console.log(`npub : ${msg.npub}`);
         console.log(`nsec : ${msg.nsec}   ← 絶対に共有しないこと`);
         console.log(`hexpub: ${msg.hexpub}`);
+        console.log(`hexsec: ${msg.hexsec}   ← 絶対に共有しないこと（NOSTR_SERVICE_KEY はこの値）`);
         if (found >= count) {
           for (const x of workers) x.terminate();
           process.exit(0);
@@ -66,6 +67,7 @@ if (isMainThread) {
         npub,
         nsec: nip19.nsecEncode(sk),
         hexpub: pk,
+        hexsec: Array.from(sk, (b) => b.toString(16).padStart(2, "0")).join(""),
       });
     }
     if (n % 20000 === 0) {

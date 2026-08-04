@@ -9,7 +9,7 @@ import type {
   EventTemplate,
   VerifiedEvent,
 } from "nostr-tools/pure";
-import { CHAT_RELAYS } from "@eventer/shared";
+import { CHAT_CHANNEL_ABOUT, CHAT_RELAYS } from "@eventer/shared";
 
 /**
  * Nostrイベントチャット (#199) の薄いラッパー。
@@ -117,7 +117,7 @@ export function buildChannelCreateTemplate(eventTitle: string): EventTemplate {
     tags: [],
     content: JSON.stringify({
       name: eventTitle,
-      about: "events lab のイベントチャット",
+      about: CHAT_CHANNEL_ABOUT,
     }),
   };
 }
@@ -245,8 +245,9 @@ export class ChatRelayPool {
   /**
    * 署名済みイベントを全リレーへ発行する。auth-required で拒否されたら
    * NIP-42 AUTH を行ってからリトライ。1つ以上のリレーが受理したら true。
+   * （サーバー署名の公式イベントも通すため VerifiedEvent ではなく NostrEvent）
    */
-  async publish(event: VerifiedEvent): Promise<boolean> {
+  async publish(event: NostrEvent): Promise<boolean> {
     const results = await Promise.all(
       [...this.relays.values()].map(async (relay) => {
         try {

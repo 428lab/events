@@ -79,6 +79,24 @@ export const eventChatRepo = {
     return this.channelIdFor(eventId);
   },
 
+  /** 公式鍵で発行した kind:40 の id を控える（再発行で上書き）(#221) */
+  async setPendingChannel(eventId: string, channelId: string): Promise<void> {
+    await run(
+      "UPDATE event SET chat_channel_pending = ? WHERE id = ?",
+      channelId,
+      eventId,
+    );
+  },
+
+  /** このイベント向けに発行済みの公式 kind:40 の id（未発行は null） */
+  async pendingChannelFor(eventId: string): Promise<string | null> {
+    const row = await one<{ chat_channel_pending: string | null }>(
+      "SELECT chat_channel_pending FROM event WHERE id = ?",
+      eventId,
+    );
+    return row?.chat_channel_pending ?? null;
+  },
+
   async channelIdFor(eventId: string): Promise<string | null> {
     const row = await one<{ chat_channel_id: string | null }>(
       "SELECT chat_channel_id FROM event WHERE id = ?",
