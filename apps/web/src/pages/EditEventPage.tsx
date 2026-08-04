@@ -315,10 +315,10 @@ export function EditEventPage() {
                   onChange={(e) => setChatEnabled(e.target.checked)}
                 />
               }
-              label="参加者チャット（Nostrパブリックチャット）"
+              label="参加者チャット"
             />
             <Typography variant="caption" color="text.secondary" display="block">
-              参加確定メンバーがイベントページでチャットできます。本文は Nostr のパブリックチャットとしてリレーに保存され、外部クライアントからも閲覧できます。
+              参加確定メンバーがイベントページでチャットできます。チャットの内容は公開されます。
             </Typography>
           </Box>
 
