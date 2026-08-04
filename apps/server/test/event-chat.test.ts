@@ -342,3 +342,35 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     );
   });
 });
+
+describe("チャンネルのリセット (#199)", () => {
+  it("staff はチャンネルをクリアでき、参加者は403", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, owner.userId, "staff");
+    const member = await makeUser();
+    await addMember(eventId, member.userId);
+
+    // 鍵登録→チャンネル登録
+    const po = await chatKeyProof(eventId);
+    await postJson(`/events/${eventId}/chat-key`, owner.cookie, { proof: po.proof });
+    const ev40 = signNostrEvent(po.key.sk, po.key.pubkey, 40, [], "{}");
+    await postJson(`/events/${eventId}/chat-channel`, owner.cookie, { channelEvent: ev40 });
+
+    // 参加者のリセットは403
+    const forbidden = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/chat-channel`,
+      { method: "DELETE", headers: { cookie: member.cookie } },
+    );
+    expect(forbidden.status).toBe(403);
+
+    // staff はリセットでき、chat-members の channelId が null に戻る
+    const ok = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/chat-channel`,
+      { method: "DELETE", headers: { cookie: owner.cookie } },
+    );
+    expect(ok.status).toBe(200);
+    const res = await getChatMembers(eventId, owner.cookie);
+    expect(((await res.json()) as { channelId: string | null }).channelId).toBeNull();
+  });
+});

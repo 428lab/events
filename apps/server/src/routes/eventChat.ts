@@ -117,6 +117,18 @@ eventChatRoutes.post(
   },
 );
 
+/** チャンネルIDをリセットする（staff のみ）。
+ * NIP-70時代にリレーへ保存されなかった kind:40 を参照し続けるケース等の復旧用。
+ * リセット後、次にチャットを開いたメンバーが新しいチャンネルを作成する */
+eventChatRoutes.delete(
+  "/:id/chat-channel",
+  requireEventRole(["staff"]),
+  async (c) => {
+    await eventChatRepo.clearChannel(c.req.param("id"));
+    return c.json({ ok: true });
+  },
+);
+
 /** メッセージをアプリ側で非表示にする（staff のみ） */
 eventChatRoutes.post(
   "/:id/chat-hidden",

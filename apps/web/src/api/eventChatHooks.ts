@@ -61,3 +61,13 @@ export function useUnhideChatNote(eventId: string) {
       qc.invalidateQueries({ queryKey: ["event", eventId, "chatMembers"] }),
   });
 }
+
+/** チャンネルIDをリセット（staff・部屋の作り直し用） */
+export function useResetChatChannel(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del(`/events/${eventId}/chat-channel`),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["event", eventId, "chatMembers"] }),
+  });
+}
