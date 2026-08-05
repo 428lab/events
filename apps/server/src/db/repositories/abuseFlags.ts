@@ -1,0 +1,247 @@
+import type { AbuseAllowlistEntry, AbuseFlag } from "@eventer/shared";
+import { batch, many, one, run, runCount } from "../client.js";
+
+/** 要確認リスト (#259 PR2) の永続化。
+ * user への FK は張っていないので、退会・統合でユーザー行が消えても記録は残る */
+
+export interface AbuseFlagInput {
+  rule: string;
+  /** サービス全体の異常は null */
+  subjectUserId: string | null;
+  subjectHandle: string;
+  /** JSON化して detail に入れる。個人情報（メール・本文）は入れないこと */
+  detail: Record<string, unknown>;
+}
+
+interface AbuseFlagRow {
+  id: string;
+  rule: string;
+  subject_user_id: string | null;
+  subject_handle: string;
+  detail: string;
+  detected_at: number;
+  reviewed_at: number | null;
+  reviewed_by: string | null;
+}
+
+function toAbuseFlag(r: AbuseFlagRow): AbuseFlag {
+  return {
+    id: r.id,
+    rule: r.rule,
+    subjectUserId: r.subject_user_id,
+    subjectHandle: r.subject_handle,
+    detail: r.detail,
+    detectedAt: r.detected_at,
+    reviewedAt: r.reviewed_at,
+    reviewedBy: r.reviewed_by,
+  };
+}
+
+/** 重複抑制のキーに使う区切り文字 (US = Unit Separator)。rule にも user id にも
+ * 現れない値であればよい。**必ずエスケープ表記で書くこと**。生の制御文字を
+ * ソースに埋めると git がファイルをバイナリ扱いにして、diff / blame /
+ * コンフリクト解消・PR画面でのレビューが一切できなくなる */
+const KEY_SEP = "\u001f";
+
+/** 重複抑制の判定に使う「rule × subject」のキー。
+ * subject_user_id が NULL（サービス全体）は空文字に寄せる */
+export function abuseFlagKey(rule: string, subjectUserId: string | null): string {
+  return `${rule}${KEY_SEP}${subjectUserId ?? ""}`;
+}
+
+export const abuseFlagsRepo = {
+  /** クールダウン期間内に既にある **未確認の**「rule × subject」の集合。
+   * 1クエリで全ルール分をまとめて引き、判定はメモリ上で行う
+   * （ルールごとに SELECT するとサブリクエストがルール数だけ増えるため）。
+   *
+   * 確認済み (reviewed_at IS NOT NULL) を含めないのが肝。含めてしまうと
+   * 運営が「確認済みにする」を押した瞬間にその subject が7日間見えなくなり、
+   * **継続中の荒らしを追えなくなる**。確認済みにすれば翌日また上がってくる。
+   * 正当なヘビーユーザーの恒久的な除外は abuse_allowlist の役目。 */
+  async recentKeys(since: number): Promise<Set<string>> {
+    const rows = await many<{ rule: string; subject_user_id: string | null }>(
+      `SELECT rule, subject_user_id FROM abuse_flag
+        WHERE reviewed_at IS NULL AND detected_at >= ?`,
+      since,
+    );
+    return new Set(rows.map((r) => abuseFlagKey(r.rule, r.subject_user_id)));
+  },
+
+  /** まとめて記録する。D1 batch なので件数によらずサブリクエストは
+   * ceil(件数 / CHUNK) 本で済む */
+  async recordMany(inputs: AbuseFlagInput[], detectedAt: number): Promise<void> {
+    if (inputs.length === 0) return;
+    const CHUNK = 50;
+    for (let i = 0; i < inputs.length; i += CHUNK) {
+      await batch(
+        inputs.slice(i, i + CHUNK).map((f) => ({
+          sql: `INSERT INTO abuse_flag
+                  (id, rule, subject_user_id, subject_handle, detail, detected_at, reviewed_at, reviewed_by)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`,
+          args: [
+            crypto.randomUUID(),
+            f.rule,
+            f.subjectUserId,
+            f.subjectHandle,
+            JSON.stringify(f.detail),
+            detectedAt,
+          ],
+        })),
+      );
+    }
+  },
+
+  /** 保存期間を過ぎた記録を掃除する。ハンドルは個人データにあたるため
+   * 無期限には持たない（テーブル肥大化の抑制も兼ねる） */
+  async purgeOlderThan(before: number): Promise<void> {
+    await run("DELETE FROM abuse_flag WHERE detected_at < ?", before);
+  },
+
+  /** 一覧。未確認を上に、その中では新しい順。
+   * reviewed が undefined なら全件、true なら確認済みのみ、false なら未確認のみ */
+  async list({
+    reviewed,
+    limit,
+    offset,
+  }: {
+    reviewed?: boolean;
+    limit: number;
+    offset: number;
+  }): Promise<AbuseFlag[]> {
+    const where =
+      reviewed === undefined
+        ? ""
+        : reviewed
+          ? "WHERE reviewed_at IS NOT NULL"
+          : "WHERE reviewed_at IS NULL";
+    const rows = await many<AbuseFlagRow>(
+      `SELECT * FROM abuse_flag ${where}
+       ORDER BY (reviewed_at IS NOT NULL) ASC, detected_at DESC, id DESC
+       LIMIT ? OFFSET ?`,
+      limit,
+      offset,
+    );
+    return rows.map(toAbuseFlag);
+  },
+
+  /** 絞り込み後の総件数と、絞り込みによらない未確認件数（バッジ用）を1クエリで */
+  async counts(reviewed?: boolean): Promise<{ total: number; unreviewed: number }> {
+    const row = await one<{ total: number; unreviewed: number }>(
+      `SELECT
+         COALESCE(SUM(CASE
+           WHEN ? IS NULL THEN 1
+           WHEN ? = 1 AND reviewed_at IS NOT NULL THEN 1
+           WHEN ? = 0 AND reviewed_at IS NULL THEN 1
+           ELSE 0 END), 0) AS total,
+         COALESCE(SUM(CASE WHEN reviewed_at IS NULL THEN 1 ELSE 0 END), 0) AS unreviewed
+       FROM abuse_flag`,
+      reviewed === undefined ? null : reviewed ? 1 : 0,
+      reviewed === undefined ? null : reviewed ? 1 : 0,
+      reviewed === undefined ? null : reviewed ? 1 : 0,
+    );
+    return { total: row?.total ?? 0, unreviewed: row?.unreviewed ?? 0 };
+  },
+
+  /** 未確認件数だけ（運用メニューのバッジ用） */
+  async unreviewedCount(): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(1) AS n FROM abuse_flag WHERE reviewed_at IS NULL",
+    );
+    return row?.n ?? 0;
+  },
+
+  /** 確認済みにする。既に確認済みなら何もしない（先に見た人の記録を残す）。
+   * 存在しない/既に確認済みなら false */
+  async markReviewed(
+    id: string,
+    reviewedBy: string,
+    at: number,
+  ): Promise<boolean> {
+    return (
+      (await runCount(
+        "UPDATE abuse_flag SET reviewed_at = ?, reviewed_by = ? WHERE id = ? AND reviewed_at IS NULL",
+        at,
+        reviewedBy,
+        id,
+      )) > 0
+    );
+  },
+};
+
+interface AbuseAllowlistRow {
+  id: string;
+  user_id: string;
+  rule: string | null;
+  note: string;
+  created_at: number;
+  created_by: string;
+  handle: string | null;
+}
+
+function toAllowlistEntry(r: AbuseAllowlistRow): AbuseAllowlistEntry {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    rule: r.rule,
+    handle: r.handle ?? "",
+    note: r.note,
+    createdAt: r.created_at,
+    createdBy: r.created_by,
+  };
+}
+
+/** 検知の抑制リスト (#259 レビュー反映)。
+ *
+ * 「確認済みにする」はその1件を片付ける操作でしかなく、正当なヘビーユーザーは
+ * クールダウンが切れるたび永久に再掲される（＝運営が通知を無視するようになる）。
+ * ここに入れた user × rule は検知の段階で落とすので、記録も通知も一切出ない。
+ * rule が NULL の行は、その user の全ルールを抑制する。 */
+export const abuseAllowlistRepo = {
+  /** 検知バッチが1クエリで全件読む。運営が手で入れるものなので件数は小さい */
+  async listKeys(): Promise<Array<{ userId: string; rule: string | null }>> {
+    const rows = await many<{ user_id: string; rule: string | null }>(
+      "SELECT user_id, rule FROM abuse_allowlist",
+    );
+    return rows.map((r) => ({ userId: r.user_id, rule: r.rule }));
+  },
+
+  /** 画面用の一覧（新しい順）。user 行が残っていればハンドルも添える */
+  async list(): Promise<AbuseAllowlistEntry[]> {
+    const rows = await many<AbuseAllowlistRow>(
+      `SELECT a.*, u.username AS handle
+         FROM abuse_allowlist a LEFT JOIN user u ON u.id = a.user_id
+        ORDER BY a.created_at DESC, a.id DESC`,
+    );
+    return rows.map(toAllowlistEntry);
+  },
+
+  /** 追加。同じ user × rule が既にあれば何もしない（UNIQUE インデックスで担保） */
+  async add(input: {
+    userId: string;
+    rule: string | null;
+    note: string;
+    createdBy: string;
+    at: number;
+  }): Promise<boolean> {
+    return (
+      (await runCount(
+        `INSERT OR IGNORE INTO abuse_allowlist
+           (id, user_id, rule, note, created_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        crypto.randomUUID(),
+        input.userId,
+        input.rule,
+        input.note,
+        input.at,
+        input.createdBy,
+      )) > 0
+    );
+  },
+
+  /** 解除。存在しなければ false */
+  async remove(id: string): Promise<boolean> {
+    return (
+      (await runCount("DELETE FROM abuse_allowlist WHERE id = ?", id)) > 0
+    );
+  },
+};

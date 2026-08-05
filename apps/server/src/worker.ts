@@ -85,6 +85,11 @@ import {
 import { adminSettingsRoutes } from "./routes/adminSettings.js";
 import { adminAuditRoutes } from "./routes/adminAudit.js";
 import { adminKpiRoutes } from "./routes/adminKpi.js";
+import {
+  adminAbuseRoutes,
+  adminRunDetectAbuseRoutes,
+} from "./routes/adminAbuse.js";
+import { detectAbuse } from "./lib/detectAbuse.js";
 import { adminTrendingRoutes } from "./routes/adminTrending.js";
 
 const api = new Hono();
@@ -168,6 +173,8 @@ api.route("/admin/inquiries", adminInquiryRoutes);
 api.route("/admin/run-reminders", adminReminderRoutes);
 // 退会猶予期間 (#250) の完全削除の手動実行（staging 検証用。app admin のみ）
 api.route("/admin/run-purge-deleted", adminPurgeDeletedRoutes);
+// 異常行動の検知バッチの手動実行（staging 検証用。app admin のみ） (#259)
+api.route("/admin/run-detect-abuse", adminRunDetectAbuseRoutes);
 // GitHub Actions のスケジュール実行から叩く（Workers Free は cron 上限のため #129）。
 // CRON_SECRET 未設定なら閉じたまま（404）。
 // 未設定なら null、鍵違いなら Response を返す
@@ -198,6 +205,13 @@ api.post("/cron/purge-deleted", async (c) => {
   if (denied) return denied;
   return c.json(await purgeDeletedAccounts());
 });
+
+// 異常行動の検知 (#259 PR2)。日次実行（.github/workflows/detect-abuse.yml）
+api.post("/cron/detect-abuse", async (c) => {
+  const denied = checkCronKey(c);
+  if (denied) return denied;
+  return c.json(await detectAbuse());
+});
 api.route("/admin/stats", adminStatsRoutes);
 // 運営ダッシュボード: サービス全体のKPI（app admin のみ） (#257)
 api.route("/admin/kpi", adminKpiRoutes);
@@ -207,6 +221,8 @@ api.route("/admin/trending", adminTrendingRoutes);
 api.route("/admin/settings", adminSettingsRoutes);
 // 重要操作の監査ログ（app admin のみ） (#248)
 api.route("/admin/audit-logs", adminAuditRoutes);
+// 異常行動の「要確認」リスト（app admin のみ） (#259)
+api.route("/admin/abuse-flags", adminAbuseRoutes);
 api.route("/notifications", notificationRoutes);
 // 公開: コミュニティ画像（認証不要。communityRoutes(要認証) より先に登録）
 api.get("/communities/:id/icon", getCommunityImage("icon"));
