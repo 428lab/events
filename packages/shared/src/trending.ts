@@ -17,8 +17,14 @@ export const TRENDING_DEFAULT_DAYS = 30;
 export const TRENDING_LIST_SIZE = 10;
 
 /** SQL から持ち帰る候補の最大件数（期間内スコアの降順）。
- * 順位付けは JS 側でやるが、母集団が増えたときに全件を持ってこないための上限 */
-export const TRENDING_CANDIDATE_LIMIT = 200;
+ * 順位付けは JS 側でやるが、母集団が増えたときに全件を持ってこないための上限。
+ *
+ * **副作用**: 「急上昇」もこの候補の中からしか選べない。今期間スコアがこの上限より
+ * 下位に沈んだものは、前期間比がどれだけ大きくても急上昇に出てこない。
+ * （例: 同スコアの人が上限いっぱい並んでいると、その下にいる伸びは拾えない）
+ * クエリ本数を増やさない方針なので、まずはこの上限を余裕を持って大きく取っている。
+ * 母集団がここを超えるようになったら「急上昇だけ別条件で取る」等の見直しが要る */
+export const TRENDING_CANDIDATE_LIMIT = 500;
 
 /** ユーザーのスコア重み。値が大きいほど「注目」に上がりやすい */
 export const TRENDING_USER_WEIGHTS = {
@@ -62,6 +68,31 @@ export const TRENDING_MIN_RISING_SCORE = {
   community: 50,
 } as const;
 
+/** 前期間比の平滑化定数 K（ラプラス平滑化）。
+ * 比は素の score / previousScore ではなく **(score + K) / (previousScore + K)** で出す。
+ *
+ * 足切り (TRENDING_MIN_RISING_SCORE) が効くのは今期間スコアだけで、前期間スコアは
+ * 賛同1回の2点まで下がりうる。素の割り算だと
+ * 「前期間に賛同1回(2点) → 今期間に3回参加(30点)」が ×15 になり、
+ * 「500点 → 2000点」という本物の伸び (×4) より上に来てしまう。
+ * 分母・分子に K を足すと、K に対して小さい母数の比は 1 の側へ押し戻され、
+ * K より十分大きい母数では素の比にほぼ一致する。上の例では
+ * (30+30)/(2+30) = ×1.88 対 (2000+30)/(500+30) = ×3.83 で順序が入れ替わる。
+ *
+ * K は足切りと同じオーダー（＝主催1回ぶん相当の活動量）に置く。
+ * 大きくするほど小さな母数の跳ねは抑えられるが、比の差も潰れる */
+export const TRENDING_RATIO_SMOOTHING = {
+  user: 30,
+  community: 50,
+} as const;
+
+/** 「急上昇」で新規（前期間スコア0）に割り当てる枠の上限。
+ * 新規を無条件に先頭へ並べると、足切りを超える新規がリスト長ぶん出た期間に
+ * 急上昇が新規だけで埋まり、伸びが1件も見えなくなる。足切り30点は主催1回(100点)で
+ * 超えるので、これは実運用で常態化する。空いた枠は伸び順で埋め、
+ * あふれた新規は伸びの後ろに回す（枠を余らせない） */
+export const TRENDING_RISING_FRESH_SLOTS = 3;
+
 /** ユーザーのスコア内訳（各行動の期間内の件数） */
 export interface TrendingUserBreakdown {
   /** 主催（開催完了）した公開イベント数 */
@@ -101,8 +132,9 @@ interface TrendingItemBase {
   score: number;
   /** 前の同じ長さの期間のスコア。0 なら「新規」 */
   previousScore: number;
-  /** score / previousScore。**急上昇リストのときだけ入る**。
-   * 前期間0（新規）と活動量上位リストでは null。ゼロ除算しない */
+  /** 平滑化した前期間比 (score + K) / (previousScore + K)。**急上昇リストのときだけ入る**。
+   * 前期間0（新規）と活動量上位リストでは null。ゼロ除算しない。
+   * K は TRENDING_RATIO_SMOOTHING（素の倍率ではないので画面の説明もそれに合わせる） */
   ratio: number | null;
   /** 前期間のスコアが0（＝この期間に初めて動いた）。「新規」バッジ用 */
   isNew: boolean;
@@ -133,7 +165,8 @@ export interface TrendingCommunityItem extends TrendingItemBase {
 export interface TrendingLists<T> {
   /** 期間内スコアの上位 */
   active: T[];
-  /** 前期間比の上位（新規を先頭に）。期間内スコアが下限未満のものは載せない */
+  /** 平滑化した前期間比の上位（新規は先頭 TRENDING_RISING_FRESH_SLOTS 件まで）。
+   * 期間内スコアが下限未満のものは載せない */
   rising: T[];
 }
 
@@ -141,12 +174,17 @@ export interface TrendingLists<T> {
 export interface TrendingPayload {
   /** 集計期間（日数）。全期間は選べない */
   days: number;
-  /** 集計開始日（JST 'YYYY-MM-DD'） */
-  sinceDay: string;
-  /** 前期間の開始日（JST 'YYYY-MM-DD'）。前期間は [previousSinceDay, sinceDay) */
-  previousSinceDay: string;
+  /** 今期間の開始 (epoch ms)。今期間は **[since, until)** */
+  since: number;
+  /** 集計時刻 (epoch ms)＝今期間の終わり */
+  until: number;
+  /** 前期間の開始 (epoch ms)。前期間は **[previousSince, since)**。
+   * 日境界ではなく epoch で切るので、今期間と前期間の長さは厳密に同じ */
+  previousSince: number;
   /** 「急上昇」に載せるための期間内スコアの下限（画面の注記に出す） */
   minRisingScore: { user: number; community: number };
+  /** 前期間比の平滑化定数 K（画面の注記に出す） */
+  ratioSmoothing: { user: number; community: number };
   users: TrendingLists<TrendingUserItem>;
   communities: TrendingLists<TrendingCommunityItem>;
 }
@@ -177,35 +215,73 @@ export function trendingCommunityScore(b: TrendingCommunityBreakdown): number {
   );
 }
 
-/** 前期間比。前期間が0以下なら null（「新規」扱い）。NaN/Infinity を返さない */
-export function trendingRatio(score: number, previousScore: number): number | null {
-  return previousScore > 0 ? score / previousScore : null;
+/** 平滑化した前期間比 (score + K) / (previousScore + K)。
+ * 前期間が0以下なら null（「新規」扱いで別枠に出す）。
+ * K > 0 なので分母は 0 にならず、NaN/Infinity を返さない */
+export function trendingRatio(
+  score: number,
+  previousScore: number,
+  smoothing: number,
+): number | null {
+  return previousScore > 0
+    ? (score + smoothing) / (previousScore + smoothing)
+    : null;
+}
+
+/** buildTrendingLists の設定。既定値は同ファイルの定数 */
+export interface TrendingListOptions {
+  /** 「急上昇」に載せるための期間内スコアの下限 */
+  minScore: number;
+  /** 前期間比の平滑化定数 K（TRENDING_RATIO_SMOOTHING） */
+  smoothing: number;
+  /** 各リストの最大件数 */
+  size?: number;
+  /** 「急上昇」の新規枠の上限 */
+  freshSlots?: number;
 }
 
 /** 候補から「活動量上位」と「急上昇」の2リストを作る。
  * - 活動量上位: 期間内スコアの降順
- * - 急上昇: 期間内スコアが minRisingScore 以上のものだけ。
- *   前期間0（新規）を先頭に置き（スコア降順）、その後ろに前期間比の降順を並べる。
- *   新規を別枠で先に出すのは、比が計算できない（∞になる）ものを混ぜないため */
+ * - 急上昇: 期間内スコアが minScore 以上のものだけ。
+ *   新規（前期間0）は比が出せない（∞になる）ので別枠にし、**先頭 freshSlots 件まで**。
+ *   残りの枠は平滑化した前期間比の降順で埋め、枠にあふれた新規はその後ろに回す。
+ *
+ * 同点・同比のときは入力順（SQL の ORDER BY ... DESC, uid）がそのまま残るよう、
+ * 安定ソートに任せる（Array#sort は仕様上安定）。 */
 export function buildTrendingLists<T extends TrendingItemBase>(
   candidates: T[],
-  minRisingScore: number,
-  size: number = TRENDING_LIST_SIZE,
+  opts: TrendingListOptions,
 ): TrendingLists<T> {
+  const {
+    minScore,
+    smoothing,
+    size = TRENDING_LIST_SIZE,
+    freshSlots = TRENDING_RISING_FRESH_SLOTS,
+  } = opts;
+
   const active = [...candidates]
     .sort((a, b) => b.score - a.score)
     .slice(0, size)
     .map((it) => ({ ...it, ratio: null }));
 
-  const eligible = candidates.filter((it) => it.score >= minRisingScore);
+  const eligible = candidates.filter((it) => it.score >= minScore);
   const fresh = eligible
     .filter((it) => it.previousScore <= 0)
     .sort((a, b) => b.score - a.score)
     .map((it) => ({ ...it, ratio: null }));
   const grown = eligible
     .filter((it) => it.previousScore > 0)
-    .map((it) => ({ ...it, ratio: trendingRatio(it.score, it.previousScore) }))
+    .map((it) => ({
+      ...it,
+      ratio: trendingRatio(it.score, it.previousScore, smoothing),
+    }))
     .sort((a, b) => (b.ratio ?? 0) - (a.ratio ?? 0));
 
-  return { active, rising: [...fresh, ...grown].slice(0, size) };
+  const rising = [
+    ...fresh.slice(0, freshSlots),
+    ...grown,
+    ...fresh.slice(freshSlots),
+  ].slice(0, size);
+
+  return { active, rising };
 }

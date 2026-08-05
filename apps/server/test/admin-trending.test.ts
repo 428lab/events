@@ -1,15 +1,26 @@
 import { SELF, env } from "cloudflare:test";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import {
+  TRENDING_LIST_SIZE,
   TRENDING_MIN_RISING_SCORE,
+  TRENDING_RATIO_SMOOTHING,
+  TRENDING_RISING_FRESH_SLOTS,
   TRENDING_USER_WEIGHTS,
   type KpiPayload,
   type TrendingPayload,
   type TrendingUserItem,
 } from "@eventer/shared";
+import { bindEnv, type Env } from "../src/runtime.js";
+import { trendingRepo } from "../src/db/repositories/trending.js";
 
 const BASE = "https://example.com";
 const DAY = 86400000;
+
+// リスト長に依存しない検証のためリポジトリを直接呼ぶので、
+// テスト側アイソレートにもバインディングを束ねる
+beforeAll(() => {
+  bindEnv(env as unknown as Env);
+});
 
 /** ユーザーを1人作る（セッション付き）。admin=true で ADMIN_DISCORD_IDS に一致させる */
 async function makeUser(
@@ -141,11 +152,12 @@ async function eggReaction(
   requestId: string,
   userId: string,
   kind = "attend",
+  createdAt = Date.now(),
 ): Promise<void> {
   await env.DB.prepare(
     "INSERT INTO event_request_reaction (request_id, user_id, kind, created_at) VALUES (?, ?, ?, ?)",
   )
-    .bind(requestId, userId, kind, Date.now())
+    .bind(requestId, userId, kind, createdAt)
     .run();
 }
 
@@ -403,16 +415,17 @@ describe("注目: 急上昇", () => {
 
     const t = await getTrending(admin.cookie, 7);
     const W = TRENDING_USER_WEIGHTS;
+    const K = TRENDING_RATIO_SMOOTHING.user;
 
-    // 期待値: grown 200/100 = 2.0、doubled 300/100 = 3.0
+    // 比は平滑化つき: grown (200+K)/(100+K)、doubled (300+K)/(100+K)
     const g = find(t.users.rising, grown.userId);
     expect(g?.score).toBe(2 * W.hosted);
     expect(g?.previousScore).toBe(W.hosted);
-    expect(g?.ratio).toBe(2);
+    expect(g?.ratio).toBeCloseTo((200 + K) / (100 + K), 10);
     expect(g?.isNew).toBe(false);
 
     const d = find(t.users.rising, doubled.userId);
-    expect(d?.ratio).toBe(3);
+    expect(d?.ratio).toBeCloseTo((300 + K) / (100 + K), 10);
 
     // 新規（前期間0）は倍率を持たず、リストの先頭側に並ぶ
     const f = find(t.users.rising, fresh.userId);
@@ -447,10 +460,102 @@ describe("注目: 急上昇", () => {
     await makeEvent({ createdBy: down.userId, endsAt: now - 2 * DAY });
 
     const t = await getTrending(admin.cookie, 7);
+    const K = TRENDING_RATIO_SMOOTHING.user;
     const d = find(t.users.rising, down.userId);
     expect(d?.score).toBe(TRENDING_USER_WEIGHTS.hosted);
     expect(d?.previousScore).toBe(2 * TRENDING_USER_WEIGHTS.hosted);
-    expect(d?.ratio).toBe(0.5);
+    expect(d?.ratio).toBeCloseTo((100 + K) / (200 + K), 10);
+    expect(d?.ratio).toBeLessThan(1);
+  });
+
+  it("前期間が小さいだけのノイズは、母数の大きい本物の伸びより下に来る", async () => {
+    // 平滑化 (score+K)/(prev+K) が無いと、前期間が賛同1回(2点)しかない人の
+    // 「今期間3回参加(30点)」が ×15 になり、200→800 の本物の伸び (×4) を追い越す
+    const admin = await makeUser({ admin: true });
+    const noise = await makeUser();
+    const real = await makeUser();
+    const now = Date.now();
+    const cur = now - 2 * DAY; // 今期間（7日）の中
+    const prev = now - 10 * DAY; // 前の7日間の中
+
+    // real: 前期間 主催2回 (200) → 今期間 主催8回 (800)
+    for (let i = 0; i < 2; i++) {
+      await makeEvent({ createdBy: real.userId, endsAt: prev - i * 3600000 });
+    }
+    const curEvents: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      curEvents.push(
+        await makeEvent({ createdBy: real.userId, endsAt: cur - i * 3600000 }),
+      );
+    }
+
+    // noise: 前期間 たまごの賛同1回 (2) → 今期間 参加3回 (30)
+    // （たまごは別の人の投稿。noise の前期間スコアを賛同1回ぶんだけにするため）
+    const poster = await makeUser();
+    const eggId = await egg(poster.userId, prev);
+    await eggReaction(eggId, noise.userId, "attend", prev);
+    for (let i = 0; i < 3; i++) {
+      await join({ eventId: curEvents[i], userId: noise.userId });
+    }
+
+    const t = await getTrending(admin.cookie, 7);
+    const n = find(t.users.rising, noise.userId);
+    const r = find(t.users.rising, real.userId);
+    const K = TRENDING_RATIO_SMOOTHING.user;
+
+    // 前提: 賛同は前期間なので今期間スコアには入らない（参加3回ぶんだけ）
+    expect(n?.score).toBe(3 * TRENDING_USER_WEIGHTS.joined);
+    expect(n?.previousScore).toBe(TRENDING_USER_WEIGHTS.eggReaction);
+    expect(r?.score).toBe(8 * TRENDING_USER_WEIGHTS.hosted);
+    expect(r?.previousScore).toBe(2 * TRENDING_USER_WEIGHTS.hosted);
+
+    expect(n?.ratio).toBeCloseTo((30 + K) / (2 + K), 10);
+    expect(r?.ratio).toBeCloseTo((800 + K) / (200 + K), 10);
+
+    // 平滑化した比では本物の伸びが上
+    const ids = t.users.rising.map((u) => u.id);
+    expect(ids.indexOf(real.userId)).toBeLessThan(ids.indexOf(noise.userId));
+
+    // 素の倍率だと逆転していた（＝この並びは平滑化のおかげ）
+    const raw = (u?: TrendingUserItem) => (u ? u.score / u.previousScore : 0);
+    expect(raw(n)).toBeGreaterThan(raw(r));
+  });
+
+  it("新規が枠より多くても、伸びている人が急上昇に出る", async () => {
+    // 新規を無条件に先頭へ並べると、リスト長ぶん新規が居るだけで伸びが1件も出ない
+    const admin = await makeUser({ admin: true });
+    const now = Date.now();
+    const cur = now - 2 * DAY;
+    const prev = now - 10 * DAY;
+
+    // 新規（前期間0・今期間 主催1回=100点）をリスト長より多く用意する
+    const freshCount = TRENDING_LIST_SIZE + 2;
+    for (let i = 0; i < freshCount; i++) {
+      const u = await makeUser();
+      await makeEvent({ createdBy: u.userId, endsAt: cur - i * 60000 });
+    }
+
+    // 伸びている人（100 → 200）
+    const grown = await makeUser();
+    await makeEvent({ createdBy: grown.userId, endsAt: prev });
+    await makeEvent({ createdBy: grown.userId, endsAt: cur });
+    await makeEvent({ createdBy: grown.userId, endsAt: cur - 3600000 });
+
+    const t = await getTrending(admin.cookie, 7);
+    expect(t.users.rising).toHaveLength(TRENDING_LIST_SIZE);
+
+    // 新規は先頭の枠ぶんだけ。その直後に伸びが入る
+    expect(
+      t.users.rising.slice(0, TRENDING_RISING_FRESH_SLOTS).every((u) => u.isNew),
+    ).toBe(true);
+    const at = t.users.rising.findIndex((u) => u.id === grown.userId);
+    expect(at).toBe(TRENDING_RISING_FRESH_SLOTS);
+    expect(find(t.users.rising, grown.userId)?.ratio).not.toBeNull();
+
+    // 枠にあふれた新規は捨てずに後ろへ回す（枠を余らせない）
+    expect(t.users.rising.filter((u) => u.isNew).length).toBeGreaterThan(
+      TRENDING_RISING_FRESH_SLOTS,
+    );
   });
 
   it("前期間より前の活動は前期間にも今期間にも入らない", async () => {
@@ -465,39 +570,51 @@ describe("注目: 急上昇", () => {
 });
 
 describe("注目: KPI との整合", () => {
+  // リストは上位 TRENDING_LIST_SIZE 件で切られるので、表示リストの合計では
+  // 不変条件にならない（参加者がリスト長を超えると必ず食い違う）。
+  // 候補（切る前の全件）をリポジトリから直接取って突き合わせる
   it("参加のカウントが KPI の参加者数（JOINED）と一致する", async () => {
     const admin = await makeUser({ admin: true });
     const host = await makeUser();
     const staff = await makeUser();
-    const p1 = await makeUser();
-    const p2 = await makeUser();
-    const judge = await makeUser();
-    const observer = await makeUser();
     const canceled = await makeUser();
     const gone = await makeUser({ deletedAt: Date.now() });
 
     const ev = await makeEvent({ createdBy: host.userId });
     await join({ eventId: ev, userId: staff.userId, role: "staff" });
-    await join({ eventId: ev, userId: p1.userId });
-    await join({ eventId: ev, userId: p2.userId });
-    await join({ eventId: ev, userId: judge.userId, role: "judge" });
-    await join({ eventId: ev, userId: observer.userId, role: "observer" });
     await join({ eventId: ev, userId: canceled.userId, status: "canceled" });
     await join({ eventId: ev, userId: gone.userId });
 
-    const t = await getTrending(admin.cookie, 30);
+    // 参加者はリストの最大件数より多くする（切られた上位だけでは合わない状況を作る）
+    const roles = ["participant", "judge", "observer"];
+    const joiners: string[] = [];
+    for (let i = 0; i < TRENDING_LIST_SIZE + 5; i++) {
+      const u = await makeUser();
+      joiners.push(u.userId);
+      await join({ eventId: ev, userId: u.userId, role: roles[i % roles.length] });
+    }
+
+    const { users } = await trendingRepo.candidates(30, Date.now());
+    const joinedTotal = users.reduce((sum, u) => sum + u.breakdown.joined, 0);
+
     const kpiRes = await SELF.fetch(`${BASE}/api/admin/kpi?days=30`, {
       headers: { cookie: admin.cookie },
     });
     const kpi = (await kpiRes.json()) as KpiPayload;
 
-    const joinedTotal = t.users.active.reduce(
+    // 主催・スタッフ・取消・退会申請中は数えない。審査員・観覧者は数える
+    expect(joinedTotal).toBe(joiners.length);
+    expect(joinedTotal).toBe(kpi.northStar.heldParticipants);
+
+    // 表示リストは切られるので、そちらの合計では一致しない（この検証を
+    // リスト長に依存させてはいけない、という前提そのものを固定しておく）
+    const t = await getTrending(admin.cookie, 30);
+    expect(t.users.active).toHaveLength(TRENDING_LIST_SIZE);
+    const shownTotal = t.users.active.reduce(
       (sum, u) => sum + u.breakdown.joined,
       0,
     );
-    // p1 / p2 / judge / observer の4人。主催・スタッフ・取消・退会申請中は数えない
-    expect(joinedTotal).toBe(4);
-    expect(joinedTotal).toBe(kpi.northStar.heldParticipants);
+    expect(shownTotal).toBeLessThan(joinedTotal);
   });
 });
 
@@ -558,10 +675,11 @@ describe("注目: コミュニティ", () => {
     });
 
     const t = await getTrending(admin.cookie, 7);
+    const K = TRENDING_RATIO_SMOOTHING.community;
     const c = t.communities.rising.find((x) => x.id === cid);
     expect(c?.score).toBe(200);
     expect(c?.previousScore).toBe(100);
-    expect(c?.ratio).toBe(2);
+    expect(c?.ratio).toBeCloseTo((200 + K) / (100 + K), 10);
     expect(c?.isNew).toBe(false);
   });
 
@@ -595,7 +713,33 @@ describe("注目: 期間パラメータ", () => {
     expect(res.status).toBe(200);
     const t = (await res.json()) as TrendingPayload;
     expect(t.days).toBe(3650);
-    expect(t.sinceDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(t.previousSinceDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(t.until - t.since).toBe(3650 * DAY);
+    expect(t.since - t.previousSince).toBe(3650 * DAY);
+  });
+
+  it("今期間と前期間の長さが厳密に同じ（日境界で切らない）", async () => {
+    // 日境界で切ると今期間だけ「当日の経過ぶん」長くなり、比が系統的に上振れる
+    const admin = await makeUser({ admin: true });
+    for (const days of [7, 30, 90]) {
+      const t = await getTrending(admin.cookie, days);
+      expect(t.until - t.since).toBe(days * DAY);
+      expect(t.since - t.previousSince).toBe(days * DAY);
+    }
+  });
+
+  it("期間の境界は日付ではなく「今からちょうど N 日前」", async () => {
+    const admin = await makeUser({ admin: true });
+    const u = await makeUser();
+    const now = Date.now();
+    const W = TRENDING_USER_WEIGHTS;
+
+    // 境界の1時間前は前期間、1時間後は今期間（JSTの日付は同じ日でも分かれる）
+    await makeEvent({ createdBy: u.userId, endsAt: now - 7 * DAY - 3600000 });
+    await makeEvent({ createdBy: u.userId, endsAt: now - 7 * DAY + 3600000 });
+
+    const t = await getTrending(admin.cookie, 7);
+    const item = find(t.users.active, u.userId);
+    expect(item?.score).toBe(W.hosted);
+    expect(item?.previousScore).toBe(W.hosted);
   });
 });

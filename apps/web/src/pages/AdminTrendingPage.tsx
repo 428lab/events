@@ -18,6 +18,8 @@ import {
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
 import {
   TRENDING_COMMUNITY_WEIGHTS,
+  TRENDING_RATIO_SMOOTHING,
+  TRENDING_RISING_FRESH_SLOTS,
   TRENDING_USER_WEIGHTS,
   type TrendingCommunityItem,
   type TrendingPayload,
@@ -25,6 +27,7 @@ import {
 } from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
 import { useAdminTrending } from "../api/analyticsHooks.js";
+import { formatDateTime } from "../lib/format.js";
 
 const RANGES = [7, 30, 90] as const;
 
@@ -88,22 +91,25 @@ const COMMUNITY_PARTS: {
 ];
 
 /** 内訳のチップ列。0 の項目は出さない（並べても読みにくいだけ）。
- * ツールチップにはスコアの計算式（件数 × 重み）をそのまま出す */
+ * ツールチップにはスコアの計算式（件数 × 重み）と合計を出す。
+ * 合計を出すのは、右に表示しているスコアと突き合わせられるようにするため */
 function Breakdown<B>({
   parts,
   breakdown,
+  score,
 }: {
   parts: { label: string; weight: number; get: (b: B) => number }[];
   breakdown: B;
+  score: number;
 }) {
   const shown = parts.filter((p) => p.get(breakdown) > 0);
   if (shown.length === 0) return null;
-  const detail = shown
+  const detail = `${shown
     .map((p) => {
       const n = p.get(breakdown);
       return `${p.label} ${n} × ${p.weight} = ${n * p.weight}`;
     })
-    .join(" / ");
+    .join(" / ")} → 合計 ${score.toLocaleString()}`;
   return (
     <Tooltip title={detail} placement="top">
       <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
@@ -121,8 +127,18 @@ function Breakdown<B>({
   );
 }
 
-/** 「新規」または前期間比のバッジ。急上昇リストでのみ意味を持つ */
-function TrendBadge({ isNew, ratio }: { isNew: boolean; ratio: number | null }) {
+/** 「新規」または前期間比のバッジ。**急上昇リストでのみ**出す。
+ * 活動量上位は比を持たない（ratio は常に null）ので、そちらで「新規」だけが
+ * 出ると「比の話をしているリスト」に見えてしまう */
+function TrendBadge({
+  isNew,
+  ratio,
+  smoothing,
+}: {
+  isNew: boolean;
+  ratio: number | null;
+  smoothing: number;
+}) {
   if (isNew) {
     return (
       <Tooltip title="前の同じ期間には活動がありませんでした" placement="top">
@@ -132,7 +148,10 @@ function TrendBadge({ isNew, ratio }: { isNew: boolean; ratio: number | null }) 
   }
   if (ratio === null) return null;
   return (
-    <Tooltip title="期間内スコア ÷ 前の同じ長さの期間のスコア" placement="top">
+    <Tooltip
+      title={`（期間内スコア + ${smoothing}）÷（前の同じ長さの期間のスコア + ${smoothing}）。小さな母数で倍率が跳ねないよう両辺に ${smoothing} を足しています`}
+      placement="top"
+    >
       <Chip
         size="small"
         color={ratio >= 1 ? "primary" : "default"}
@@ -239,7 +258,14 @@ function ListCard({
   );
 }
 
-function UserList({ items }: { items: TrendingUserItem[] }) {
+/** rising=true のときだけ「新規」「×N」のバッジを出す（活動量上位では出さない） */
+function UserList({
+  items,
+  rising = false,
+}: {
+  items: TrendingUserItem[];
+  rising?: boolean;
+}) {
   return (
     <>
       {items.map((u, i) => (
@@ -252,15 +278,31 @@ function UserList({ items }: { items: TrendingUserItem[] }) {
           subtitle={`@${u.handle}`}
           score={u.score}
           previousScore={u.previousScore}
-          badge={<TrendBadge isNew={u.isNew} ratio={u.ratio} />}
-          breakdown={<Breakdown parts={USER_PARTS} breakdown={u.breakdown} />}
+          badge={
+            rising ? (
+              <TrendBadge
+                isNew={u.isNew}
+                ratio={u.ratio}
+                smoothing={TRENDING_RATIO_SMOOTHING.user}
+              />
+            ) : null
+          }
+          breakdown={
+            <Breakdown parts={USER_PARTS} breakdown={u.breakdown} score={u.score} />
+          }
         />
       ))}
     </>
   );
 }
 
-function CommunityList({ items }: { items: TrendingCommunityItem[] }) {
+function CommunityList({
+  items,
+  rising = false,
+}: {
+  items: TrendingCommunityItem[];
+  rising?: boolean;
+}) {
   return (
     <>
       {items.map((c, i) => (
@@ -273,8 +315,18 @@ function CommunityList({ items }: { items: TrendingCommunityItem[] }) {
           subtitle={`/c/${c.slug}`}
           score={c.score}
           previousScore={c.previousScore}
-          badge={<TrendBadge isNew={c.isNew} ratio={c.ratio} />}
-          breakdown={<Breakdown parts={COMMUNITY_PARTS} breakdown={c.breakdown} />}
+          badge={
+            rising ? (
+              <TrendBadge
+                isNew={c.isNew}
+                ratio={c.ratio}
+                smoothing={TRENDING_RATIO_SMOOTHING.community}
+              />
+            ) : null
+          }
+          breakdown={
+            <Breakdown parts={COMMUNITY_PARTS} breakdown={c.breakdown} score={c.score} />
+          }
         />
       ))}
     </>
@@ -333,10 +385,15 @@ export function AdminTrendingPage() {
         スコアは期間内の行動の件数に重みを掛けて足したもので、場を作る側（主催・スタッフ）を
         厚く見ています。重みはゲーミフィケーションのXPと同じ思想で決めているため、
         XPと近い値になりますが別物です（たまご・フォロワーはXPには入りません）。
-        「急上昇」は<strong>期間内スコア ÷ 前の同じ長さの期間のスコア</strong>で、
-        前の期間に活動が無かったものは比が出せないため「新規」として先に並べます。
-        小さな母数で倍率が跳ねないよう、期間内スコアが一定未満のものは急上昇に載せません。
-        退会申請中のユーザーは除いています。
+        「急上昇」は
+        <strong>（期間内スコア + K）÷（前の同じ長さの期間のスコア + K）</strong>
+        で、小さな母数で倍率が跳ねないよう分母・分子に同じ K を足しています（K は
+        ユーザー {TRENDING_RATIO_SMOOTHING.user} / コミュニティ{" "}
+        {TRENDING_RATIO_SMOOTHING.community}）。
+        期間内スコアが一定未満のものは急上昇に載せません。
+        前の期間に活動が無かったものは比が出せないため「新規」として先に並べますが、
+        新規だけでリストが埋まらないよう先頭 {TRENDING_RISING_FRESH_SLOTS}{" "}
+        件までにしています。 退会申請中のユーザーは除いています。
       </Alert>
 
       {isError ? (
@@ -366,10 +423,10 @@ export function AdminTrendingPage() {
                 </ListCard>
                 <ListCard
                   title="急上昇"
-                  note={`前の同じ期間との比が高い順（新規が先）。期間内スコア ${data.minRisingScore.user} 未満は対象外。`}
+                  note={`前の同じ期間との比（平滑化 K=${data.ratioSmoothing.user}）が高い順。新規は先頭 ${TRENDING_RISING_FRESH_SLOTS} 件まで。期間内スコア ${data.minRisingScore.user} 未満は対象外。`}
                   empty={data.users.rising.length === 0}
                 >
-                  <UserList items={data.users.rising} />
+                  <UserList items={data.users.rising} rising />
                 </ListCard>
               </Stack>
             </CardContent>
@@ -392,10 +449,10 @@ export function AdminTrendingPage() {
                 </ListCard>
                 <ListCard
                   title="急上昇"
-                  note={`前の同じ期間との比が高い順（新規が先）。期間内スコア ${data.minRisingScore.community} 未満は対象外。`}
+                  note={`前の同じ期間との比（平滑化 K=${data.ratioSmoothing.community}）が高い順。新規は先頭 ${TRENDING_RISING_FRESH_SLOTS} 件まで。期間内スコア ${data.minRisingScore.community} 未満は対象外。`}
                   empty={data.communities.rising.length === 0}
                 >
-                  <CommunityList items={data.communities.rising} />
+                  <CommunityList items={data.communities.rising} rising />
                 </ListCard>
               </Stack>
             </CardContent>
@@ -406,11 +463,15 @@ export function AdminTrendingPage() {
   );
 }
 
+/** 集計期間の注記。日境界ではなく「読み込んだ時刻から遡って N 日」なので、
+ * 日付だけでなく時刻まで出す（比を出す指標なので前期間と長さが厳密に同じ） */
 function PeriodNote({ data }: { data: TrendingPayload }) {
   return (
     <Typography variant="caption" color="text.secondary">
-      集計期間: {data.sinceDay} 〜 現在（{data.days}日） / 比較する前期間:{" "}
-      {data.previousSinceDay} 〜 {data.sinceDay}
+      集計期間: 直近{data.days}日（{formatDateTime(data.since)} 〜{" "}
+      {formatDateTime(data.until)}） / 比較する前期間: 同じ長さの直前の
+      {data.days}日（{formatDateTime(data.previousSince)} 〜{" "}
+      {formatDateTime(data.since)}）
     </Typography>
   );
 }

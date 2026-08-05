@@ -2,6 +2,7 @@ import {
   TRENDING_CANDIDATE_LIMIT,
   TRENDING_COMMUNITY_WEIGHTS,
   TRENDING_MIN_RISING_SCORE,
+  TRENDING_RATIO_SMOOTHING,
   TRENDING_USER_WEIGHTS,
   buildTrendingLists,
   trendingCommunityScore,
@@ -12,11 +13,6 @@ import {
 } from "@eventer/shared";
 import { many } from "../client.js";
 import { communityImageUrl } from "./communities.js";
-
-/** epoch ms のカラムを JST の 'YYYY-MM-DD' に。kpi.ts の jd() と同じ基準 */
-function jd(col: string): string {
-  return `strftime('%Y-%m-%d', ${col} / 1000 + 32400, 'unixepoch')`;
-}
 
 /** 退会申請中 (#250) を除く条件（任意のユーザーID列に対して）。kpi.ts と同じ */
 const USER_ACTIVE = (col: string) =>
@@ -29,10 +25,11 @@ const USER_ACTIVE = (col: string) =>
 const JOINED = (t: string) => `${t}.role <> 'staff'`;
 
 /** 開催済み（公開・日程確定済み・開催日設定済みで、すでに終了した）イベントの条件。
- * kpi.ts の HELD と同じだが、こちらは前期間まで遡るので下限が prevSinceDay。
- * バインド順: now, prevSinceDay */
+ * kpi.ts の HELD と同じだが、こちらは前期間まで遡るので下限が prevSince。
+ * KPI と違い日境界ではなく epoch ms で切る（overview のコメント参照）。
+ * バインド順: now, prevSince */
 const HELD = (t: string) =>
-  `(${t}.status = 'published' AND ${t}.scheduling = 0 AND ${t}.ends_at > 0 AND ${t}.ends_at < ? AND ${jd(`${t}.ends_at`)} >= ?)`;
+  `(${t}.status = 'published' AND ${t}.scheduling = 0 AND ${t}.ends_at > 0 AND ${t}.ends_at < ? AND ${t}.ends_at >= ?)`;
 
 /** ユーザーの行動種別。TRENDING_USER_WEIGHTS のキーと1対1で対応させる */
 const USER_KINDS = [
@@ -103,22 +100,43 @@ function scoreSql(
   return kinds.map((k) => `${prefix}${k} * ${weights[k]}`).join(" + ");
 }
 
+/** 集計期間の境界 (epoch ms)。今期間 [since, until) / 前期間 [previousSince, since) */
+export interface TrendingPeriod {
+  since: number;
+  until: number;
+  previousSince: number;
+}
+
+/** SQL から持ち帰った候補（リストに切る前の全件）。
+ * overview はここからリストを組み立てる。切り出しているのは、
+ * リスト長 (TRENDING_LIST_SIZE) に左右されない検証をテストから書けるようにするため */
+export interface TrendingCandidates {
+  period: TrendingPeriod;
+  users: TrendingUserItem[];
+  communities: TrendingCommunityItem[];
+}
+
 export const trendingRepo = {
-  /** 注目（トレンド）(#259 PR1)。
+  /** 候補の取得（今期間スコア > 0 のものを期間内スコア降順で TRENDING_CANDIDATE_LIMIT 件）。
    * Workers のサブリクエスト上限を意識して **クエリは2本**（ユーザー・コミュニティ）。
    * 今期間と前期間は WHERE で分けず、CASE で期間フラグを立てて同時に集計する。
    *
    * @param days 集計日数（1以上）。前期間は同じ長さの直前の期間 */
-  async overview(days: number, now: number): Promise<TrendingPayload> {
-    // JST 基準の日付境界。今期間は [sinceDay, ∞)、前期間は [prevSinceDay, sinceDay)
-    const jstDay = (at: number): string =>
-      new Date(at + 9 * 3600 * 1000).toISOString().slice(0, 10);
-    const sinceDay = jstDay(now - days * 86400000);
-    const prevSinceDay = jstDay(now - 2 * days * 86400000);
+  async candidates(days: number, now: number): Promise<TrendingCandidates> {
+    // 期間の境界は **epoch ms のまま**扱う。JST の日境界で切ると今期間だけ
+    // 「days ＋ 当日の経過ぶん（最大+1日）」になり、前期間よりつねに長くなる。
+    // 比を出す指標でそれをやると倍率が系統的に上振れる（30日指定・深夜で最大+3.3%）。
+    // KPI (#258) は日次推移と揃える必要があるので日境界のままでよいが、
+    // こちらは長さの対称性を優先する。
+    const span = days * 86400000;
+    const since = now - span;
+    const prevSince = now - 2 * span;
 
-    /** 期間フラグ。1=今期間 / 2=前期間 / 0=対象外。バインド順: sinceDay, prevSinceDay */
+    /** 期間フラグ。1=今期間 [since, now) / 2=前期間 [prevSince, since) / 0=対象外。
+     * バインド順: since, now, prevSince, since */
     const period = (col: string) =>
-      `CASE WHEN ${jd(col)} >= ? THEN 1 WHEN ${jd(col)} >= ? THEN 2 ELSE 0 END`;
+      `CASE WHEN ${col} >= ? AND ${col} < ? THEN 1
+            WHEN ${col} >= ? AND ${col} < ? THEN 2 ELSE 0 END`;
 
     /** UNION ALL の1枝。(key, 期間フラグ, 種別) を1行1件で吐く */
     const branch = (o: {
@@ -131,10 +149,10 @@ export const trendingRepo = {
     }): Branch => ({
       sql: `SELECT ${o.key} AS uid, ${period(o.at)} AS p, '${o.kind}' AS k
               FROM ${o.from} WHERE ${o.where}`,
-      binds: [sinceDay, prevSinceDay, ...(o.binds ?? [])],
+      binds: [since, now, prevSince, since, ...(o.binds ?? [])],
     });
 
-    /** 開催済みイベント条件つきの枝（バインド: now, prevSinceDay を後ろに足す） */
+    /** 開催済みイベント条件つきの枝（バインド: now, prevSince を後ろに足す） */
     const heldBranch = (o: {
       key: string;
       kind: string;
@@ -149,11 +167,12 @@ export const trendingRepo = {
         kind: o.kind,
         from: o.from,
         where: `${o.where} AND ${HELD(t)}`,
-        binds: [now, prevSinceDay],
+        binds: [now, prevSince],
       });
     };
 
-    /** created_at 基準の枝（前期間の開始日で足切り） */
+    /** created_at 基準の枝（前期間の開始で足切り）。
+     * 下限はここで、上限は period() の CASE で切る */
     const createdBranch = (o: {
       key: string;
       at: string;
@@ -161,7 +180,7 @@ export const trendingRepo = {
       from: string;
       where: string;
     }): Branch =>
-      branch({ ...o, where: `${o.where} AND ${jd(o.at)} >= ?`, binds: [prevSinceDay] });
+      branch({ ...o, where: `${o.where} AND ${o.at} >= ?`, binds: [prevSince] });
 
     // ---------- (1) ユーザー ----------
     const userBranches: Branch[] = [
@@ -245,6 +264,9 @@ export const trendingRepo = {
          ${unionAll(userBranches.map((b) => b.sql))}
        ),
        agg AS (
+         -- p > 0 は防御。下限は各枝で足切り済みで、上限（未来日時）に当たるのは
+         -- 記録時刻が未来の行だけ＝実データでは起きない。テストで消しても
+         -- 結果が変わらないのはそのため
          SELECT uid,
          ${sumColumns(USER_KINDS)}
          FROM acts WHERE p > 0 GROUP BY uid
@@ -255,7 +277,8 @@ export const trendingRepo = {
          FROM agg a
          JOIN user u ON u.id = a.uid AND u.deleted_at IS NULL
         WHERE (${userCur}) > 0
-        ORDER BY (${userCur}) DESC
+        -- 同点で順位が入れ替わらないよう uid でタイブレークする
+        ORDER BY (${userCur}) DESC, a.uid
         LIMIT ${TRENDING_CANDIDATE_LIMIT}`,
       ...userBranches.flatMap((b) => b.binds),
     );
@@ -307,6 +330,7 @@ export const trendingRepo = {
          ${unionAll(communityBranches.map((b) => b.sql))}
        ),
        agg AS (
+         -- p > 0 はユーザー側と同じく防御（実データでは落ちる行は無い）
          SELECT uid,
          ${sumColumns(COMMUNITY_KINDS)}
          FROM acts WHERE p > 0 GROUP BY uid
@@ -316,27 +340,42 @@ export const trendingRepo = {
          FROM agg a
          JOIN community c ON c.id = a.uid
         WHERE (${commCur}) > 0
-        ORDER BY (${commCur}) DESC
+        ORDER BY (${commCur}) DESC, a.uid
         LIMIT ${TRENDING_CANDIDATE_LIMIT}`,
       ...communityBranches.flatMap((b) => b.binds),
     );
 
     return {
+      period: { since, until: now, previousSince: prevSince },
+      users: userRows.map(toUserItem),
+      communities: communityRows.map(toCommunityItem),
+    };
+  },
+
+  /** 注目（トレンド）(#259 PR1)。候補から2つのリストを組み立てて返す */
+  async overview(days: number, now: number): Promise<TrendingPayload> {
+    const { period, users, communities } = await this.candidates(days, now);
+    return {
       days,
-      sinceDay,
-      previousSinceDay: prevSinceDay,
+      since: period.since,
+      until: period.until,
+      previousSince: period.previousSince,
       minRisingScore: {
         user: TRENDING_MIN_RISING_SCORE.user,
         community: TRENDING_MIN_RISING_SCORE.community,
       },
-      users: buildTrendingLists(
-        userRows.map(toUserItem),
-        TRENDING_MIN_RISING_SCORE.user,
-      ),
-      communities: buildTrendingLists(
-        communityRows.map(toCommunityItem),
-        TRENDING_MIN_RISING_SCORE.community,
-      ),
+      ratioSmoothing: {
+        user: TRENDING_RATIO_SMOOTHING.user,
+        community: TRENDING_RATIO_SMOOTHING.community,
+      },
+      users: buildTrendingLists(users, {
+        minScore: TRENDING_MIN_RISING_SCORE.user,
+        smoothing: TRENDING_RATIO_SMOOTHING.user,
+      }),
+      communities: buildTrendingLists(communities, {
+        minScore: TRENDING_MIN_RISING_SCORE.community,
+        smoothing: TRENDING_RATIO_SMOOTHING.community,
+      }),
     };
   },
 };
