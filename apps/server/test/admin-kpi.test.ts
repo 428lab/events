@@ -445,6 +445,7 @@ describe("KPI: 参加登録数の定義", () => {
     const p1 = await makeUser();
     const p2 = await makeUser();
     const p3 = await makeUser();
+    const drafted = await makeUser();
 
     // 公開イベント: 参加者2人 + 取消1人（+ 主催の staff 行）
     const pub = await makeEvent({ createdBy: host.userId });
@@ -457,17 +458,110 @@ describe("KPI: 参加登録数の定義", () => {
       canceledAt: Date.now(),
     });
 
-    // 下書きイベント（主催の staff 行だけができる）
-    await makeEvent({ createdBy: host.userId, status: "draft" });
+    // 下書きイベント（主催の staff 行 + 参加者1人）。
+    // 参加者の行を置かないと role 条件だけで落ちてしまい、
+    // 「下書きを除く」条件が壊れてもテストが気づけない
+    const draft = await makeEvent({ createdBy: host.userId, status: "draft" });
+    await join({ eventId: draft, userId: drafted.userId });
 
     const kpi = await getKpi(admin.cookie, 30);
-    // staff 2行・下書き分をすべて除いて 3件
+    // staff 2行・下書きの参加者1行をすべて除いて 3件
     expect(kpi.participants.registrations).toBe(3);
     expect(kpi.participants.confirmedRegistrations).toBe(2);
     expect(kpi.participants.canceled).toBe(1);
     expect(kpi.participants.cancelRate).toBeCloseTo(1 / 3, 10);
-    // 日次推移の参加登録も同じ定義（確定の2件）
+    // 日次推移の参加登録も同じ定義（公開イベントの確定2件のみ）
     expect(kpi.retention.daily.at(-1)!.joins).toBe(2);
+    // アクティベーションも下書きイベントの参加では立たない
+    expect(kpi.retention.activatedParticipant).toBe(2); // p1, p2 のみ
+  });
+
+  it("審査員・観覧者は参加者として数え、スタッフだけを除く", async () => {
+    const admin = await makeUser({ admin: true });
+    const host = await makeUser();
+    const p = await makeUser();
+    const judge = await makeUser();
+    const observer = await makeUser();
+    const staff = await makeUser();
+
+    // 開催済み公開イベント: 参加者1・審査員1・観覧者1・追加スタッフ1（+ 主催の staff 行）
+    const ev = await makeEvent({ createdBy: host.userId });
+    await join({ eventId: ev, userId: p.userId });
+    await join({ eventId: ev, userId: judge.userId, role: "judge" });
+    await join({ eventId: ev, userId: observer.userId, role: "observer" });
+    await join({ eventId: ev, userId: staff.userId, role: "staff" });
+
+    const kpi = await getKpi(admin.cookie, 30);
+    // 参加登録は staff 2行だけを除いて 3件
+    expect(kpi.participants.registrations).toBe(3);
+    expect(kpi.participants.confirmedRegistrations).toBe(3);
+    expect(kpi.retention.daily.at(-1)!.joins).toBe(3);
+    // 参加した実人数も3人（参加者・審査員・観覧者）
+    expect(kpi.participants.uniqueParticipants).toBe(3);
+    // 北極星は主催・スタッフを含む全5行、うち staff を除くと3人
+    expect(kpi.northStar.participations).toBe(5);
+    expect(kpi.northStar.heldParticipants).toBe(3);
+    // アクティベーション: 参加者・審査員・観覧者の3人（主催・スタッフは立たない）
+    expect(kpi.retention.activatedParticipant).toBe(3);
+    expect(kpi.retention.activatedHost).toBe(1);
+  });
+});
+
+describe("KPI: 出席未記録イベントの扱い", () => {
+  it("出席チェック有効で記録0件のイベントは不発率の分母から外す", async () => {
+    const admin = await makeUser({ admin: true });
+    const host = await makeUser();
+
+    // A: 出席チェック有効・記録0件 → 「不発」ではなく「未記録」
+    const unrecorded = await makeEvent({
+      createdBy: host.userId,
+      attendanceCheck: true,
+    });
+    for (let i = 0; i < 5; i++) {
+      const p = await makeUser();
+      await join({ eventId: unrecorded, userId: p.userId });
+    }
+
+    // B: 出席チェックなし・参加者1人 → 不発
+    const dud = await makeEvent({ createdBy: host.userId });
+    const solo = await makeUser();
+    await join({ eventId: dud, userId: solo.userId });
+
+    // C: 出席チェック有効・4人出席 → 不発ではない
+    const ok = await makeEvent({ createdBy: host.userId, attendanceCheck: true });
+    for (let i = 0; i < 4; i++) {
+      const p = await makeUser();
+      await join({ eventId: ok, userId: p.userId, attended: true });
+    }
+
+    const kpi = await getKpi(admin.cookie, 30);
+    expect(kpi.organizers.heldEvents).toBe(3);
+    expect(kpi.organizers.attendanceUnrecordedEvents).toBe(1); // A
+    expect(kpi.organizers.dudBaseEvents).toBe(2); // B, C
+    expect(kpi.organizers.dudEvents).toBe(1); // B のみ
+    expect(kpi.organizers.dudRate).toBe(0.5);
+    // 北極星は定義どおり: A は主催の staff 行のみ 1、B は 1+1、C は 4+1
+    expect(kpi.northStar.participations).toBe(8);
+    expect(kpi.northStar.heldParticipants).toBe(5); // B:1 + C:4
+  });
+
+  it("出席記録が1件でもあれば通常どおり不発を判定する", async () => {
+    const admin = await makeUser({ admin: true });
+    const host = await makeUser();
+
+    const ev = await makeEvent({ createdBy: host.userId, attendanceCheck: true });
+    const attendee = await makeUser();
+    await join({ eventId: ev, userId: attendee.userId, attended: true });
+    for (let i = 0; i < 4; i++) {
+      const p = await makeUser();
+      await join({ eventId: ev, userId: p.userId, attended: false });
+    }
+
+    const kpi = await getKpi(admin.cookie, 30);
+    expect(kpi.organizers.attendanceUnrecordedEvents).toBe(0);
+    expect(kpi.organizers.dudBaseEvents).toBe(1);
+    expect(kpi.organizers.dudEvents).toBe(1); // 出席1人 → 不発
+    expect(kpi.organizers.dudRate).toBe(1);
   });
 });
 

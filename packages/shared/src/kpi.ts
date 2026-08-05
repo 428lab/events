@@ -24,7 +24,8 @@ export interface KpiDailyPoint {
   day: string;
   /** 新規登録者数（退会申請中を除く） */
   signups: number;
-  /** 確定した参加登録数（participant のみ・公開イベントのみ） */
+  /** 確定した参加登録数（公開イベントのみ・主催/スタッフの行を除く）。
+   * KpiParticipants.registrations は取消も含む全ステータスなので一致しない */
   joins: number;
 }
 
@@ -34,7 +35,8 @@ export interface KpiNorthStar {
    * (participantCount) と同じ定義で、**主催・スタッフを含む**。
    * 出席チェック実施イベントは出席者数（＋主催・スタッフ）、未実施は確定登録者数 */
   participations: number;
-  /** participations のうち participant の行だけを数えたもの（主催・スタッフを除く）。
+  /** participations のうち主催・スタッフ (role='staff') の行を除いたもの。
+   * 審査員・観覧者は実際にイベントに来る人なので参加者として数える。
    * 不発イベントのしきい値判定もこちらを使う */
   heldParticipants: number;
   /** 期間内に終了した公開イベント（日程確定済み・開催日設定済み）の数 */
@@ -44,9 +46,11 @@ export interface KpiNorthStar {
 }
 
 /** 参加者ファネル（需要側）。
- * 登録系はすべて role='participant' かつ公開イベントの行のみを数える。
+ * 登録系はすべて role<>'staff' かつ公開イベントの行のみを数える。
  * イベント作成時に作成者の staff 行が作られるため、絞らないとイベントを1件作る
- * たびに参加登録が+1され、キャンセル率・転換率が実態とずれる。 */
+ * たびに参加登録が+1され、キャンセル率・転換率が実態とずれる。
+ * 審査員 (judge)・観覧者 (observer) は実際にイベントに来る人なので参加者として数える。
+ * ロールは後から変更できるため、参加者を staff に変えると過去の数字も遡って変わる。 */
 export interface KpiParticipants {
   /** 期間内に作成された参加登録（取消済みを含む全ステータス） */
   registrations: number;
@@ -56,7 +60,8 @@ export interface KpiParticipants {
   uniqueViewers: number;
   /** イベント詳細の総表示回数 (PV) */
   totalViews: number;
-  /** registrations / uniqueViewers。閲覧UUは全イベント横断の概算 */
+  /** registrations / uniqueViewers。分母は期間全体・全イベント横断のユニーク訪問者で、
+   * 一覧やお知らせなどイベント詳細を経由しない登録も分子に入るため 100% を超えうる概算 */
   viewToJoinRate: number | null;
   /** 出席率の分母: 期間内に終了した「出席チェック実施」イベントの確定参加者 */
   attendanceExpected: number;
@@ -106,9 +111,15 @@ export interface KpiOrganizers {
   /** 期間内に終了した公開イベント（＝開催完了） */
   heldEvents: number;
   /** うち「不発」イベント（主催・スタッフを除いた参加者が3人以下）。
-   * 主催・スタッフを含めるとチーム規模でしきい値がぶれ、時系列比較ができない */
+   * 主催・スタッフを含めるとチーム規模でしきい値がぶれ、時系列比較ができない。
+   * attendanceUnrecordedEvents は判定できないので含めない */
   dudEvents: number;
-  /** dudEvents / heldEvents */
+  /** heldEvents のうち「出席チェックを有効にしたが出席記録が0件」のイベント。
+   * 参加者数が構造的に0になり不発かどうか判定できないため、不発率の分子・分母から外す */
+  attendanceUnrecordedEvents: number;
+  /** 不発率の分母 = heldEvents - attendanceUnrecordedEvents */
+  dudBaseEvents: number;
+  /** dudEvents / dudBaseEvents */
   dudRate: number | null;
   /** 期間内にイベントを開催した主催者の実人数（退会申請中を除く） */
   hosts: number;
@@ -127,7 +138,7 @@ export interface KpiOrganizers {
 export interface KpiRetention {
   /** 期間内の新規登録者数（退会申請中を除く） */
   signups: number;
-  /** うち公開イベントに参加者として登録したことがある人数。
+  /** うち公開イベントに参加者（審査員・観覧者を含む）として登録したことがある人数。
    * 主催時に自動で作られる staff 行は数えない */
   activatedParticipant: number;
   /** うち公開イベントを主催したことがある人数 */
@@ -182,7 +193,8 @@ export interface KpiMatching {
   venueWantedFilled: number;
   /** venueWantedFilled / venueWantedEvents */
   venueWantedFillRate: number | null;
-  /** 期間内に投稿されたたまご（イベントリクエスト） */
+  /** 期間内に投稿されたたまご（イベントリクエスト）。
+   * 公開たまご一覧の表示と揃えるため、投稿者・賛同者の退会申請中は除いていない */
   eggs: number;
   /** そのたまごへの「参加したい」賛同数 */
   eggAttendReactions: number;

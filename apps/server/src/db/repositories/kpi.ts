@@ -24,6 +24,17 @@ const MEMBER_USER_ACTIVE =
 const USER_ACTIVE = (col: string) =>
   `EXISTS (SELECT 1 FROM user u WHERE u.id = ${col} AND u.deleted_at IS NULL)`;
 
+/** 「参加した人」の行の条件。除くのは運営側の staff 行だけで、
+ * 審査員 (judge)・観覧者 (observer) は実際にイベントに来る人なので参加者として数える。
+ * staff を除くのは、イベント作成時に作成者の staff 行が必ず作られるため
+ * （絞らないとイベントを1件作るたびに参加登録が +1 される）。 */
+const JOINED = (t: string) => `${t}.role <> 'staff'`;
+
+/** 出席チェックを有効にしたのに出席記録が1件も無いイベント（＝運営が記録し忘れた）。
+ * 参加者数が 0 と出てしまうため、不発率の分母から外す。バインド不要 */
+const ATTENDANCE_UNRECORDED = (idCol: string) =>
+  `NOT EXISTS (SELECT 1 FROM event_member em WHERE em.event_id = ${idCol} AND em.attended = 1)`;
+
 /** 開催済み（期間内に終了した公開イベント・日程確定済み）の条件。
  * ends_at = 0（開催日未設定）を除くのは既存の集計（eventMembers.participationStats,
  * events.isEventEnded）と揃えるため。除かないと全期間指定で日付未設定イベントが
@@ -39,6 +50,7 @@ interface EventAgg {
   held_participations: number;
   held_participants: number;
   dud_events: number;
+  attendance_unrecorded_events: number;
   created_events: number;
   draft_events: number;
   published_events: number;
@@ -139,20 +151,25 @@ export const kpiRepo = {
                      AND ${USER_ACTIVE("em.user_id")}
                 ) ELSE 0 END AS pcount,
                 CASE WHEN b.held THEN (
-                  -- 不発判定用。主催・スタッフを含めるとチーム規模でしきい値がぶれる
+                  -- 不発判定用。主催・スタッフを含めるとチーム規模でしきい値がぶれる。
+                  -- 審査員・観覧者は実際に来る人なので参加者として数える
                   SELECT COUNT(1) FROM event_member em
                    WHERE em.event_id = b.id AND em.status = 'confirmed'
-                     AND em.role = 'participant'
+                     AND ${JOINED("em")}
                      AND (b.attendance_check = 0 OR em.attended = 1)
                      AND ${USER_ACTIVE("em.user_id")}
-                ) ELSE 0 END AS ppl
+                ) ELSE 0 END AS ppl,
+                CASE WHEN b.held AND b.attendance_check = 1
+                       AND ${ATTENDANCE_UNRECORDED("b.id")}
+                     THEN 1 ELSE 0 END AS unrecorded
          FROM base b
        )
        SELECT
          COALESCE(SUM(CASE WHEN held THEN 1 ELSE 0 END), 0) AS held_events,
          COALESCE(SUM(CASE WHEN held THEN pcount ELSE 0 END), 0) AS held_participations,
          COALESCE(SUM(CASE WHEN held THEN ppl ELSE 0 END), 0) AS held_participants,
-         COALESCE(SUM(CASE WHEN held AND ppl <= 3 THEN 1 ELSE 0 END), 0) AS dud_events,
+         COALESCE(SUM(CASE WHEN held AND unrecorded = 0 AND ppl <= 3 THEN 1 ELSE 0 END), 0) AS dud_events,
+         COALESCE(SUM(CASE WHEN held AND unrecorded = 1 THEN 1 ELSE 0 END), 0) AS attendance_unrecorded_events,
          COALESCE(SUM(CASE WHEN in_created THEN 1 ELSE 0 END), 0) AS created_events,
          COALESCE(SUM(CASE WHEN in_created AND status = 'draft' THEN 1 ELSE 0 END), 0) AS draft_events,
          COALESCE(SUM(CASE WHEN in_created AND status = 'published' THEN 1 ELSE 0 END), 0) AS published_events,
@@ -175,6 +192,7 @@ export const kpiRepo = {
     // 登録/キャンセルは「登録の作成日」基準、出席は「イベントの終了日」基準。
     // 主催・スタッフの行（イベント作成時に自動で作られる）と下書きイベントは除く。
     // 除かないとイベントを1件作るたびに参加登録が+1され、キャンセル率が過小に出る。
+    // 審査員・観覧者は実際にイベントに来る人なので参加登録として数える。
     const memberAgg = await one<MemberAgg>(
       `SELECT
          COALESCE(SUM(CASE WHEN ${jd("m.created_at")} >= ? THEN 1 ELSE 0 END), 0) AS registrations,
@@ -187,7 +205,7 @@ export const kpiRepo = {
          COALESCE(SUM(CASE WHEN ${HELD("e")} AND e.attendance_check = 1
                              AND m.status = 'confirmed' AND m.attended = 1 THEN 1 ELSE 0 END), 0) AS attended
        FROM event_member m JOIN event e ON e.id = m.event_id
-       WHERE m.role = 'participant' AND e.status = 'published' AND ${MEMBER_USER_ACTIVE}`,
+       WHERE ${JOINED("m")} AND e.status = 'published' AND ${MEMBER_USER_ACTIVE}`,
       sinceDay,
       sinceDay,
       sinceDay,
@@ -212,7 +230,7 @@ export const kpiRepo = {
       `WITH pc AS (
          SELECT m.user_id AS uid, COUNT(DISTINCT m.event_id) AS n
          FROM event_member m JOIN event e ON e.id = m.event_id
-         WHERE m.status = 'confirmed' AND m.role = 'participant'
+         WHERE m.status = 'confirmed' AND ${JOINED("m")}
            AND (e.attendance_check = 0 OR m.attended = 1)
            AND ${HELD("e")}
            AND ${MEMBER_USER_ACTIVE}
@@ -249,7 +267,7 @@ export const kpiRepo = {
     );
 
     // --- (6) 新規登録とアクティベーション ---
-    // 「初回参加」は participant の行だけ。イベント作成時に作成者の staff 行ができるため、
+    // 「初回参加」は staff 以外の行だけ。イベント作成時に作成者の staff 行ができるため、
     // role を絞らないと「主催しただけの人」が全員「参加した人」に数えられる。
     const userAgg = await one<UserAgg>(
       `SELECT
@@ -257,7 +275,7 @@ export const kpiRepo = {
          COALESCE(SUM(CASE WHEN EXISTS (
            SELECT 1 FROM event_member m JOIN event e ON e.id = m.event_id
            WHERE m.user_id = au.id AND m.status = 'confirmed'
-             AND m.role = 'participant' AND e.status = 'published'
+             AND ${JOINED("m")} AND e.status = 'published'
          ) THEN 1 ELSE 0 END), 0) AS activated_participant,
          COALESCE(SUM(CASE WHEN EXISTS (
            SELECT 1 FROM event e WHERE e.created_by = au.id AND e.status = 'published'
@@ -271,7 +289,9 @@ export const kpiRepo = {
     // --- (7) 日次推移（新規登録 / 参加登録）---
     // 期間フィルタは各枝の WHERE に降ろす（全件を GROUP BY してから HAVING で
     // 捨てると user / event_member のフルスキャンになる）。
-    // 参加登録の定義は上の registrations と揃える（participant・公開イベントのみ）。
+    // 「参加登録」の系列は確定（confirmed）の行だけを数えるので、タイルの
+    // registrations（取消を含む全ステータス）とは一致しない。画面側の系列名も
+    // 「確定参加登録」にして区別している。role・イベント状態の条件は揃える。
     const daily = await many<{ day: string; signups: number; joins: number }>(
       `SELECT day, SUM(signups) AS signups, SUM(joins) AS joins FROM (
          SELECT ${jd("u.created_at")} AS day, 1 AS signups, 0 AS joins
@@ -279,7 +299,7 @@ export const kpiRepo = {
          UNION ALL
          SELECT ${jd("m.created_at")} AS day, 0 AS signups, 1 AS joins
          FROM event_member m JOIN event e ON e.id = m.event_id
-         WHERE m.status = 'confirmed' AND m.role = 'participant'
+         WHERE m.status = 'confirmed' AND ${JOINED("m")}
            AND e.status = 'published' AND ${jd("m.created_at")} >= ?
            AND ${MEMBER_USER_ACTIVE}
        )
@@ -308,22 +328,21 @@ export const kpiRepo = {
     );
 
     // --- (10) マッチング（会場オファー / たまご）---
+    // たまごは「投稿されたコンテンツの量」なので、公開たまご一覧・賛同数の表示と
+    // 同じ数え方にする（一覧側は投稿者・賛同者の退会申請中を除いていない）。
+    // 退会申請中を除くのは成長・定着系の「人数」指標だけに留める。
     const matchingAgg = await one<MatchingAgg>(
       `SELECT
          (SELECT COUNT(1) FROM venue_offer WHERE ${jd("created_at")} >= ?) AS venue_offers,
          (SELECT COUNT(1) FROM venue_offer WHERE ${jd("created_at")} >= ? AND status = 'accepted') AS venue_accepted,
          (SELECT COUNT(1) FROM venue_offer WHERE ${jd("created_at")} >= ? AND status = 'declined') AS venue_declined,
          (SELECT COUNT(1) FROM venue_offer WHERE ${jd("created_at")} >= ? AND status = 'pending') AS venue_pending,
-         (SELECT COUNT(1) FROM event_request r WHERE ${jd("r.created_at")} >= ?
-           AND ${USER_ACTIVE("r.created_by")}) AS eggs,
+         (SELECT COUNT(1) FROM event_request r WHERE ${jd("r.created_at")} >= ?) AS eggs,
          (SELECT COUNT(1) FROM event_request_reaction x JOIN event_request r ON r.id = x.request_id
-           WHERE ${jd("r.created_at")} >= ? AND x.kind = 'attend'
-             AND ${USER_ACTIVE("r.created_by")} AND ${USER_ACTIVE("x.user_id")}) AS egg_attend,
+           WHERE ${jd("r.created_at")} >= ? AND x.kind = 'attend') AS egg_attend,
          (SELECT COUNT(1) FROM event_request_reaction x JOIN event_request r ON r.id = x.request_id
-           WHERE ${jd("r.created_at")} >= ? AND x.kind = 'host'
-             AND ${USER_ACTIVE("r.created_by")} AND ${USER_ACTIVE("x.user_id")}) AS egg_host,
+           WHERE ${jd("r.created_at")} >= ? AND x.kind = 'host') AS egg_host,
          (SELECT COUNT(1) FROM event_request r WHERE ${jd("r.created_at")} >= ?
-           AND ${USER_ACTIVE("r.created_by")}
            AND EXISTS (SELECT 1 FROM event_request_event re WHERE re.request_id = r.id)) AS eggs_converted`,
       sinceDay,
       sinceDay,
@@ -370,6 +389,10 @@ function buildPayload(src: {
   const participations = N(src.eventAgg?.held_participations);
   const heldParticipants = N(src.eventAgg?.held_participants);
   const dudEvents = N(src.eventAgg?.dud_events);
+  // 出席チェックを有効にしたのに記録が0件のイベントは「不発」ではなく「未記録」。
+  // 参加者数が構造的に0になるため、分子・分母の両方から外す
+  const attendanceUnrecordedEvents = N(src.eventAgg?.attendance_unrecorded_events);
+  const dudBaseEvents = heldEvents - attendanceUnrecordedEvents;
 
   const registrations = N(src.memberAgg?.registrations);
   const canceled = N(src.memberAgg?.canceled);
@@ -457,7 +480,9 @@ function buildPayload(src: {
       ),
       heldEvents,
       dudEvents,
-      dudRate: rate(dudEvents, heldEvents),
+      attendanceUnrecordedEvents,
+      dudBaseEvents,
+      dudRate: rate(dudEvents, dudBaseEvents),
       hosts,
       heldEventsWithActiveHost: N(src.hostAgg?.total_held),
       repeatHosts: N(src.hostAgg?.repeat_hosts),

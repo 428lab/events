@@ -70,8 +70,10 @@ export function AdminKpiPage() {
         いま計測できているデータのみを表示しています。サイト全体のPV・DAU/MAU・
         各ファネルの到達数・検索需要・メール到達は未計測です（今後対応）。
         参加登録の数え方は「アクセス統計（全イベント）」ページと異なります。この画面は
-        参加者として登録した行のみを数え、主催・スタッフの行・下書きイベント・
-        退会申請中ユーザーを除くため、あちらより少なく出ます。
+        主催・スタッフの行（イベント作成時に自動で作られます）・下書きイベント・
+        退会申請中ユーザーを除くため、あちらより少なく出ます。審査員・観覧者は
+        実際にイベントに来る人なので参加者として数えます。ロールは後から変更できるため、
+        参加者をスタッフに変えると過去の数字も遡って変わります。
       </Alert>
 
       {isError ? (
@@ -101,12 +103,12 @@ function NorthStarSection({ data }: { data: KpiPayload }) {
   return (
     <Section
       title="北極星指標"
-      note="実際に人が集まった参加体験の数。開催済みイベント（期間内に終了した公開イベント）の確定参加者の合計で、出席チェックを実施したイベントは出席者数、未実施は確定登録者数を数えます。イベントページに出る参加者数と同じ定義のため、主催・スタッフを含みます。"
+      note="実際に人が集まった参加体験の数。開催済みイベント（期間内に終了した公開イベント）の確定参加者の合計で、出席チェックを実施したイベントは出席者数、未実施は確定登録者数を数えます。イベントページに出る参加者数と同じ定義のため、主催・スタッフを含みます。出席チェックを有効にしたのに記録を取らなかったイベントは、参加者が主催・スタッフ分しか乗らないため実態より少なく出ます。"
     >
       <Tile
         label="参加体験の数"
         value={n.participations}
-        hint={`開催済みイベントの確定参加者の合計（主催・スタッフを含む）。うち参加者は ${n.heldParticipants.toLocaleString()}`}
+        hint={`開催済みイベントの確定参加者の合計（主催・スタッフを含む）。主催・スタッフを除くと ${n.heldParticipants.toLocaleString()}`}
         big
       />
       <Tile
@@ -128,12 +130,12 @@ function ParticipantsSection({ data }: { data: KpiPayload }) {
   return (
     <Section
       title="参加者（需要側）"
-      note="閲覧はイベント詳細ページのみの計測です。登録・キャンセルは「登録が作成された日」、出席は「イベントが終了した日」で期間を切っています。数えるのは参加者として登録した行のみで、主催・スタッフの行と下書きイベントは含みません。キャンセルは、取り消したあと同じイベントに再参加すると行が再利用されるため構造的に少なめに出ます。"
+      note="閲覧はイベント詳細ページのみの計測です。登録・キャンセルは「登録が作成された日」、出席は「イベントが終了した日」で期間を切っています。数えるのは主催・スタッフを除いた行で、審査員・観覧者は参加者として含みます（下書きイベントは含みません）。キャンセルは、取り消したあと同じイベントに再参加すると行が再利用されるため構造的に少なめに出ます。"
     >
       <Tile
         label="参加登録数"
         value={p.registrations}
-        hint="期間内に作成された登録（取消を含む全ステータス。主催・スタッフを除く）"
+        hint="期間内に作成された登録（取消を含む全ステータス。主催・スタッフを除き、審査員・観覧者は含む）"
       />
       <Tile
         label="うち確定"
@@ -148,7 +150,7 @@ function ParticipantsSection({ data }: { data: KpiPayload }) {
       <Tile
         label="閲覧→登録の転換率"
         text={pct(p.viewToJoinRate)}
-        hint="参加登録数 ÷ 閲覧UU（概算）"
+        hint="イベント閲覧UUに対する概算。分母は期間全体の全イベント横断のUUで、一覧やお知らせなど詳細ページを経由しない登録も分子に入るため100%を超えることがあります"
       />
       <Tile
         label="出席率"
@@ -194,7 +196,7 @@ function OrganizersSection({ data }: { data: KpiPayload }) {
   return (
     <Section
       title="主催者（供給側）"
-      note="作成・公開は「イベントの作成日」、開催・再開催は「イベントの終了日」で期間を切っています。イベント作成画面への到達数は未計測のため、着手→作成の転換率は出せません。"
+      note="作成・公開は「イベントの作成日」、開催・再開催は「イベントの終了日」で期間を切っています。不発率は、出席チェックを有効にしたのに記録が1件も無いイベント（＝出席未記録）を分母から除いています。イベント作成画面への到達数は未計測のため、着手→作成の転換率は出せません。"
     >
       <Tile
         label="イベント作成数"
@@ -216,12 +218,12 @@ function OrganizersSection({ data }: { data: KpiPayload }) {
       <Tile
         label="開催完了数"
         value={o.heldEvents}
-        hint="期間内に終了した公開イベント"
+        hint="期間内に終了した公開イベント（日程確定済み・開催日設定済み）"
       />
       <Tile
         label="不発率"
         text={pct(o.dudRate)}
-        hint={`参加者3人以下 ${o.dudEvents} ÷ 開催完了 ${o.heldEvents}（主催・スタッフを除いた人数で判定）`}
+        hint={`参加者3人以下 ${o.dudEvents} ÷ ${o.dudBaseEvents}（主催・スタッフを除いた人数で判定）。開催完了 ${o.heldEvents} のうち出席未記録 ${o.attendanceUnrecordedEvents} 件は判定できないため除外`}
       />
       <Tile
         label="主催者数"
@@ -247,7 +249,7 @@ function RetentionSection({ data }: { data: KpiPayload }) {
   return (
     <Section
       title="定着"
-      note="退会申請中のユーザーは分母から除いています。「初回参加」は参加者として登録した人だけで、主催しただけの人は含みません（参加も主催もした人は両方に数えるため、2つの率の合計は100%を超えることがあります）。DAU/WAU/MAU と登録後の残存率（コホート）は最終アクセスを記録していないため未計測です（今後対応）。"
+      note="退会申請中のユーザーは分母から除いています。「初回参加」は参加者（審査員・観覧者を含む）として登録した人だけで、主催しただけの人は含みません（参加も主催もした人は両方に数えるため、2つの率の合計は100%を超えることがあります）。DAU/WAU/MAU と登録後の残存率（コホート）は最終アクセスを記録していないため未計測です（今後対応）。"
     >
       <Tile
         label="新規登録者数"
@@ -257,7 +259,7 @@ function RetentionSection({ data }: { data: KpiPayload }) {
       <Tile
         label="登録→初回参加"
         text={pct(r.activationParticipantRate)}
-        hint={`公開イベントに参加者として登録したことがある ${r.activatedParticipant} ÷ 新規登録 ${r.signups}`}
+        hint={`公開イベントに参加者（審査員・観覧者を含む）として登録したことがある ${r.activatedParticipant} ÷ 新規登録 ${r.signups}`}
       />
       <Tile
         label="登録→初回主催"
@@ -515,8 +517,16 @@ function TrendChart({ daily }: { daily: KpiPayload["retention"]["daily"] }) {
             日別の推移
           </Typography>
           <SeriesLabel color="primary.main" text="新規登録" />
-          <SeriesLabel color="secondary.main" text="参加登録" />
+          <SeriesLabel color="secondary.main" text="確定参加登録" />
         </Stack>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", mb: 1 }}
+        >
+          「確定参加登録」は確定状態の登録だけを数えます。上の「参加登録数」は取消も含む
+          全ステータスなので合計は一致しません。
+        </Typography>
         {daily.length === 0 ? (
           <Typography variant="caption" color="text.secondary">
             データなし
@@ -534,7 +544,7 @@ function TrendChart({ daily }: { daily: KpiPayload["retention"]["daily"] }) {
             {daily.map((d) => (
               <Box
                 key={d.day}
-                title={`${d.day}  新規登録:${d.signups} / 参加登録:${d.joins}`}
+                title={`${d.day}  新規登録:${d.signups} / 確定参加登録:${d.joins}`}
                 sx={{
                   flex: "1 0 20px",
                   minWidth: 20,
