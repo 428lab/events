@@ -28,8 +28,11 @@ jobs:
           recorded=$(jq -r '.recorded // 0' /tmp/body)
           skipped=$(jq -r '.skipped // 0' /tmp/body)
           queries=$(jq -r '.queries // 0' /tmp/body)
+          # 抑制リスト (abuse_allowlist) で落ちた件数。ここが増え続けているのに
+          # recorded が0なら、抑制しすぎていないか見直す手掛かりになる
+          suppressed=$(jq -r '.suppressed // 0' /tmp/body)
           failed=$(jq -r '.failedRules // [] | join(",")' /tmp/body)
-          echo "recorded=$recorded skipped=$skipped queries=$queries"
+          echo "recorded=$recorded skipped=$skipped suppressed=$suppressed queries=$queries"
           fail=0
           if [ -n "$failed" ]; then
             echo "::error::rule(s) failed: $failed (check Workers logs [abuse])"
