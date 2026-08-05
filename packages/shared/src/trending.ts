@@ -72,26 +72,32 @@ export const TRENDING_MIN_RISING_SCORE = {
  * 比は素の score / previousScore ではなく **(score + K) / (previousScore + K)** で出す。
  *
  * 足切り (TRENDING_MIN_RISING_SCORE) が効くのは今期間スコアだけで、前期間スコアは
- * 賛同1回の2点まで下がりうる。素の割り算だと
- * 「前期間に賛同1回(2点) → 今期間に3回参加(30点)」が ×15 になり、
+ * 賛同1回の2点まで下がりうる（前期間0＝新規も含む）。素の割り算だと
+ * 「前期間に賛同1回(2点) → 今期間に3回参加(30点)」が ×15、前期間0なら ∞ になり、
  * 「500点 → 2000点」という本物の伸び (×4) より上に来てしまう。
  * 分母・分子に K を足すと、K に対して小さい母数の比は 1 の側へ押し戻され、
- * K より十分大きい母数では素の比にほぼ一致する。上の例では
- * (30+30)/(2+30) = ×1.88 対 (2000+30)/(500+30) = ×3.83 で順序が入れ替わる。
+ * K より十分大きい母数では素の比にほぼ一致する。
  *
- * K は足切りと同じオーダー（＝主催1回ぶん相当の活動量）に置く。
+ * **K の決め方**: 足切りちょうど（今期間 = minScore）の新規が到達できる比は
+ * (minScore + K) / (0 + K) = 1 + minScore / K が上限になる。この上限を
+ * 1.5〜1.6 あたりに置くと、100→300 (K=50 で ×2.33) のような本物の伸びが
+ * ノイズの上限より確実に上に来る。逆に K を足切りと同じ値まで下げると上限が ×2 になり、
+ * 100→300 とほとんど差が無くなる。そこから逆算して
+ * - user: 足切り 30 → K 50（上限 ×1.60）
+ * - community: 足切り 50 → K 100（上限 ×1.50）
+ * とする。コミュニティも K を足切りと同値の 50 のままにすると上限が ×2.00 になり、
+ * ユーザー側と保証の強さが揃わないので、同じ考え方で引き上げてある
+ * （100 は「開催1回ぶん」でもあり、丸めた値としても収まりが良い）。
  * 大きくするほど小さな母数の跳ねは抑えられるが、比の差も潰れる */
 export const TRENDING_RATIO_SMOOTHING = {
-  user: 30,
-  community: 50,
+  user: 50,
+  community: 100,
 } as const;
 
-/** 「急上昇」で新規（前期間スコア0）に割り当てる枠の上限。
- * 新規を無条件に先頭へ並べると、足切りを超える新規がリスト長ぶん出た期間に
- * 急上昇が新規だけで埋まり、伸びが1件も見えなくなる。足切り30点は主催1回(100点)で
- * 超えるので、これは実運用で常態化する。空いた枠は伸び順で埋め、
- * あふれた新規は伸びの後ろに回す（枠を余らせない） */
-export const TRENDING_RISING_FRESH_SLOTS = 3;
+/** 「急上昇」に載せるための平滑化比の下限。下がっているものは急上昇ではないので、
+ * 1 を下回る（前期間より縮んだ）候補はリストに載せない。
+ * 伸びている候補が少ない期間はリストが短くなる（空でもよい） */
+export const TRENDING_MIN_RISING_RATIO = 1;
 
 /** ユーザーのスコア内訳（各行動の期間内の件数） */
 export interface TrendingUserBreakdown {
@@ -132,11 +138,12 @@ interface TrendingItemBase {
   score: number;
   /** 前の同じ長さの期間のスコア。0 なら「新規」 */
   previousScore: number;
-  /** 平滑化した前期間比 (score + K) / (previousScore + K)。**急上昇リストのときだけ入る**。
-   * 前期間0（新規）と活動量上位リストでは null。ゼロ除算しない。
+  /** 平滑化した前期間比 (score + K) / (previousScore + K)。**急上昇リストのときだけ入る**
+   * （活動量上位リストでは null）。K > 0 なので前期間0でも有限で、ゼロ除算しない。
    * K は TRENDING_RATIO_SMOOTHING（素の倍率ではないので画面の説明もそれに合わせる） */
   ratio: number | null;
-  /** 前期間のスコアが0（＝この期間に初めて動いた）。「新規」バッジ用 */
+  /** 前期間のスコアが0（＝この期間に初めて動いた）。**「新規」バッジ用の情報表示だけ**で、
+   * 順位には影響しない（前期間0でも比は定義できるので特別扱いしない） */
   isNew: boolean;
 }
 
@@ -165,10 +172,21 @@ export interface TrendingCommunityItem extends TrendingItemBase {
 export interface TrendingLists<T> {
   /** 期間内スコアの上位 */
   active: T[];
-  /** 平滑化した前期間比の上位（新規は先頭 TRENDING_RISING_FRESH_SLOTS 件まで）。
-   * 期間内スコアが下限未満のものは載せない */
+  /** 平滑化した前期間比の上位。新規（前期間0）も同じ式で比を出すので特別枠は無い。
+   * 期間内スコアが下限未満のもの・比が 1 未満（＝下落）のものは載せない */
   rising: T[];
 }
+
+/** 画面の注記に出すスコアの重み。**ペイロードに載せる**のは、
+ * 画面側のバンドル定数を読むと古いバンドルで注記だけが実装とずれるため */
+export type TrendingUserWeights = Record<
+  keyof typeof TRENDING_USER_WEIGHTS,
+  number
+>;
+export type TrendingCommunityWeights = Record<
+  keyof typeof TRENDING_COMMUNITY_WEIGHTS,
+  number
+>;
 
 /** GET /api/admin/trending のレスポンス */
 export interface TrendingPayload {
@@ -185,6 +203,10 @@ export interface TrendingPayload {
   minRisingScore: { user: number; community: number };
   /** 前期間比の平滑化定数 K（画面の注記に出す） */
   ratioSmoothing: { user: number; community: number };
+  /** 「急上昇」に載せるための平滑化比の下限（画面の注記に出す） */
+  minRisingRatio: number;
+  /** スコアの重み（画面の注記・内訳のツールチップに出す） */
+  weights: { user: TrendingUserWeights; community: TrendingCommunityWeights };
   users: TrendingLists<TrendingUserItem>;
   communities: TrendingLists<TrendingCommunityItem>;
 }
@@ -216,16 +238,14 @@ export function trendingCommunityScore(b: TrendingCommunityBreakdown): number {
 }
 
 /** 平滑化した前期間比 (score + K) / (previousScore + K)。
- * 前期間が0以下なら null（「新規」扱いで別枠に出す）。
- * K > 0 なので分母は 0 にならず、NaN/Infinity を返さない */
+ * **前期間0（新規）でも定義できる**のがこの式の要点で、K > 0 なので分母は 0 にならず、
+ * NaN/Infinity を返さない。新規を「比が出せないもの」として別扱いする必要は無い */
 export function trendingRatio(
   score: number,
   previousScore: number,
   smoothing: number,
-): number | null {
-  return previousScore > 0
-    ? (score + smoothing) / (previousScore + smoothing)
-    : null;
+): number {
+  return (score + smoothing) / (Math.max(previousScore, 0) + smoothing);
 }
 
 /** buildTrendingLists の設定。既定値は同ファイルの定数 */
@@ -236,15 +256,19 @@ export interface TrendingListOptions {
   smoothing: number;
   /** 各リストの最大件数 */
   size?: number;
-  /** 「急上昇」の新規枠の上限 */
-  freshSlots?: number;
+  /** 「急上昇」に載せるための平滑化比の下限 */
+  minRatio?: number;
 }
 
 /** 候補から「活動量上位」と「急上昇」の2リストを作る。
  * - 活動量上位: 期間内スコアの降順
- * - 急上昇: 期間内スコアが minScore 以上のものだけ。
- *   新規（前期間0）は比が出せない（∞になる）ので別枠にし、**先頭 freshSlots 件まで**。
- *   残りの枠は平滑化した前期間比の降順で埋め、枠にあふれた新規はその後ろに回す。
+ * - 急上昇: 期間内スコアが minScore 以上、かつ平滑化比が minRatio 以上のものを、
+ *   **平滑化比の降順に並べるだけ**。
+ *
+ * 新規（前期間0）に特別枠は無い。平滑化のおかげで (score + K) / (0 + K) が有限に
+ * 定まるので、他の候補とまったく同じ式で比較できる。別枠にして先頭へ固定すると、
+ * 足切りちょうどの新規（比 1.6 程度）が「2 → 2000」のような本物の伸び（比 39）より
+ * 上に来てしまい、リストの意味が壊れる。「新規」は順位ではなくバッジで示す。
  *
  * 同点・同比のときは入力順（SQL の ORDER BY ... DESC, uid）がそのまま残るよう、
  * 安定ソートに任せる（Array#sort は仕様上安定）。 */
@@ -256,7 +280,7 @@ export function buildTrendingLists<T extends TrendingItemBase>(
     minScore,
     smoothing,
     size = TRENDING_LIST_SIZE,
-    freshSlots = TRENDING_RISING_FRESH_SLOTS,
+    minRatio = TRENDING_MIN_RISING_RATIO,
   } = opts;
 
   const active = [...candidates]
@@ -264,24 +288,15 @@ export function buildTrendingLists<T extends TrendingItemBase>(
     .slice(0, size)
     .map((it) => ({ ...it, ratio: null }));
 
-  const eligible = candidates.filter((it) => it.score >= minScore);
-  const fresh = eligible
-    .filter((it) => it.previousScore <= 0)
-    .sort((a, b) => b.score - a.score)
-    .map((it) => ({ ...it, ratio: null }));
-  const grown = eligible
-    .filter((it) => it.previousScore > 0)
+  const rising = candidates
+    .filter((it) => it.score >= minScore)
     .map((it) => ({
       ...it,
       ratio: trendingRatio(it.score, it.previousScore, smoothing),
     }))
-    .sort((a, b) => (b.ratio ?? 0) - (a.ratio ?? 0));
-
-  const rising = [
-    ...fresh.slice(0, freshSlots),
-    ...grown,
-    ...fresh.slice(freshSlots),
-  ].slice(0, size);
+    .filter((it) => it.ratio >= minRatio)
+    .sort((a, b) => b.ratio - a.ratio)
+    .slice(0, size);
 
   return { active, rising };
 }

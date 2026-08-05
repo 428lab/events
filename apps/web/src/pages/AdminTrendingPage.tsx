@@ -17,13 +17,11 @@ import {
 } from "@mui/material";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
 import {
-  TRENDING_COMMUNITY_WEIGHTS,
-  TRENDING_RATIO_SMOOTHING,
-  TRENDING_RISING_FRESH_SLOTS,
-  TRENDING_USER_WEIGHTS,
   type TrendingCommunityItem,
+  type TrendingCommunityWeights,
   type TrendingPayload,
   type TrendingUserItem,
+  type TrendingUserWeights,
 } from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
 import { useAdminTrending } from "../api/analyticsHooks.js";
@@ -31,74 +29,47 @@ import { formatDateTime } from "../lib/format.js";
 
 const RANGES = [7, 30, 90] as const;
 
-/** 内訳の表示定義。ラベル・重み・件数の取り出し方を1箇所にまとめる */
-const USER_PARTS: {
+/** 内訳の表示定義。ラベルと件数の取り出し方だけを持ち、**重みの値はレスポンスから取る**。
+ * 画面のバンドルに重みを焼き込むと、古いバンドルのままスコアだけ新しい重みで返ってきた
+ * ときに注記と実装がずれる。表示に使う定数はできるだけペイロード側に寄せる */
+interface Part<B, W> {
   label: string;
-  weight: number;
-  get: (b: TrendingUserItem["breakdown"]) => number;
-}[] = [
-  { label: "主催", weight: TRENDING_USER_WEIGHTS.hosted, get: (b) => b.hosted },
-  { label: "スタッフ", weight: TRENDING_USER_WEIGHTS.staffed, get: (b) => b.staffed },
-  { label: "参加", weight: TRENDING_USER_WEIGHTS.joined, get: (b) => b.joined },
-  {
-    label: "いいね",
-    weight: TRENDING_USER_WEIGHTS.likeReceived,
-    get: (b) => b.likesReceived,
-  },
-  { label: "出会い", weight: TRENDING_USER_WEIGHTS.meet, get: (b) => b.meets },
-  {
-    label: "たまご投稿",
-    weight: TRENDING_USER_WEIGHTS.eggPosted,
-    get: (b) => b.eggsPosted,
-  },
-  {
-    label: "賛同",
-    weight: TRENDING_USER_WEIGHTS.eggReaction,
-    get: (b) => b.eggReactions,
-  },
-  {
-    label: "フォロワー",
-    weight: TRENDING_USER_WEIGHTS.followerGained,
-    get: (b) => b.followersGained,
-  },
+  key: keyof W;
+  get: (b: B) => number;
+}
+
+const USER_PARTS: Part<TrendingUserItem["breakdown"], TrendingUserWeights>[] = [
+  { label: "主催", key: "hosted", get: (b) => b.hosted },
+  { label: "スタッフ", key: "staffed", get: (b) => b.staffed },
+  { label: "参加", key: "joined", get: (b) => b.joined },
+  { label: "いいね", key: "likeReceived", get: (b) => b.likesReceived },
+  { label: "出会い", key: "meet", get: (b) => b.meets },
+  { label: "たまご投稿", key: "eggPosted", get: (b) => b.eggsPosted },
+  { label: "賛同", key: "eggReaction", get: (b) => b.eggReactions },
+  { label: "フォロワー", key: "followerGained", get: (b) => b.followersGained },
 ];
 
-const COMMUNITY_PARTS: {
-  label: string;
-  weight: number;
-  get: (b: TrendingCommunityItem["breakdown"]) => number;
-}[] = [
-  {
-    label: "開催",
-    weight: TRENDING_COMMUNITY_WEIGHTS.heldEvent,
-    get: (b) => b.heldEvents,
-  },
-  {
-    label: "延べ参加者",
-    weight: TRENDING_COMMUNITY_WEIGHTS.participation,
-    get: (b) => b.participations,
-  },
-  {
-    label: "新規メンバー",
-    weight: TRENDING_COMMUNITY_WEIGHTS.newMember,
-    get: (b) => b.newMembers,
-  },
-  {
-    label: "いいね",
-    weight: TRENDING_COMMUNITY_WEIGHTS.likeReceived,
-    get: (b) => b.likesReceived,
-  },
+const COMMUNITY_PARTS: Part<
+  TrendingCommunityItem["breakdown"],
+  TrendingCommunityWeights
+>[] = [
+  { label: "開催", key: "heldEvent", get: (b) => b.heldEvents },
+  { label: "延べ参加者", key: "participation", get: (b) => b.participations },
+  { label: "新規メンバー", key: "newMember", get: (b) => b.newMembers },
+  { label: "いいね", key: "likeReceived", get: (b) => b.likesReceived },
 ];
 
 /** 内訳のチップ列。0 の項目は出さない（並べても読みにくいだけ）。
  * ツールチップにはスコアの計算式（件数 × 重み）と合計を出す。
  * 合計を出すのは、右に表示しているスコアと突き合わせられるようにするため */
-function Breakdown<B>({
+function Breakdown<B, W extends Record<string, number>>({
   parts,
+  weights,
   breakdown,
   score,
 }: {
-  parts: { label: string; weight: number; get: (b: B) => number }[];
+  parts: Part<B, W>[];
+  weights: W;
   breakdown: B;
   score: number;
 }) {
@@ -107,7 +78,8 @@ function Breakdown<B>({
   const detail = `${shown
     .map((p) => {
       const n = p.get(breakdown);
-      return `${p.label} ${n} × ${p.weight} = ${n * p.weight}`;
+      const w = weights[p.key];
+      return `${p.label} ${n} × ${w} = ${n * w}`;
     })
     .join(" / ")} → 合計 ${score.toLocaleString()}`;
   return (
@@ -127,9 +99,12 @@ function Breakdown<B>({
   );
 }
 
-/** 「新規」または前期間比のバッジ。**急上昇リストでのみ**出す。
+/** 前期間比と「新規」のバッジ。**急上昇リストでのみ**出す。
  * 活動量上位は比を持たない（ratio は常に null）ので、そちらで「新規」だけが
- * 出ると「比の話をしているリスト」に見えてしまう */
+ * 出ると「比の話をしているリスト」に見えてしまう。
+ *
+ * 「新規」は前の期間に活動が無かったという情報表示だけで、順位には効かない
+ * （平滑化のおかげで前期間0でも比が定まるため、他と同じ式で並んでいる） */
 function TrendBadge({
   isNew,
   ratio,
@@ -139,26 +114,34 @@ function TrendBadge({
   ratio: number | null;
   smoothing: number;
 }) {
-  if (isNew) {
-    return (
-      <Tooltip title="前の同じ期間には活動がありませんでした" placement="top">
-        <Chip size="small" color="success" label="新規" sx={{ height: 20, fontSize: 11 }} />
-      </Tooltip>
-    );
-  }
   if (ratio === null) return null;
   return (
-    <Tooltip
-      title={`（期間内スコア + ${smoothing}）÷（前の同じ長さの期間のスコア + ${smoothing}）。小さな母数で倍率が跳ねないよう両辺に ${smoothing} を足しています`}
-      placement="top"
-    >
-      <Chip
-        size="small"
-        color={ratio >= 1 ? "primary" : "default"}
-        label={`×${ratio.toFixed(2)}`}
-        sx={{ height: 20, fontSize: 11 }}
-      />
-    </Tooltip>
+    <>
+      <Tooltip
+        title={`（期間内スコア + ${smoothing}）÷（前の同じ長さの期間のスコア + ${smoothing}）。小さな母数で倍率が跳ねないよう両辺に ${smoothing} を足しています`}
+        placement="top"
+      >
+        <Chip
+          size="small"
+          color="primary"
+          label={`×${ratio.toFixed(2)}`}
+          sx={{ height: 20, fontSize: 11 }}
+        />
+      </Tooltip>
+      {isNew ? (
+        <Tooltip
+          title="前の同じ期間には活動がありませんでした（順位はこの左の比で決まります）"
+          placement="top"
+        >
+          <Chip
+            size="small"
+            color="success"
+            label="新規"
+            sx={{ height: 20, fontSize: 11 }}
+          />
+        </Tooltip>
+      ) : null}
+    </>
   );
 }
 
@@ -258,12 +241,16 @@ function ListCard({
   );
 }
 
-/** rising=true のときだけ「新規」「×N」のバッジを出す（活動量上位では出さない） */
+/** rising=true のときだけ「×N」「新規」のバッジを出す（活動量上位では出さない） */
 function UserList({
   items,
+  weights,
+  smoothing,
   rising = false,
 }: {
   items: TrendingUserItem[];
+  weights: TrendingUserWeights;
+  smoothing: number;
   rising?: boolean;
 }) {
   return (
@@ -280,15 +267,16 @@ function UserList({
           previousScore={u.previousScore}
           badge={
             rising ? (
-              <TrendBadge
-                isNew={u.isNew}
-                ratio={u.ratio}
-                smoothing={TRENDING_RATIO_SMOOTHING.user}
-              />
+              <TrendBadge isNew={u.isNew} ratio={u.ratio} smoothing={smoothing} />
             ) : null
           }
           breakdown={
-            <Breakdown parts={USER_PARTS} breakdown={u.breakdown} score={u.score} />
+            <Breakdown
+              parts={USER_PARTS}
+              weights={weights}
+              breakdown={u.breakdown}
+              score={u.score}
+            />
           }
         />
       ))}
@@ -298,9 +286,13 @@ function UserList({
 
 function CommunityList({
   items,
+  weights,
+  smoothing,
   rising = false,
 }: {
   items: TrendingCommunityItem[];
+  weights: TrendingCommunityWeights;
+  smoothing: number;
   rising?: boolean;
 }) {
   return (
@@ -317,15 +309,16 @@ function CommunityList({
           previousScore={c.previousScore}
           badge={
             rising ? (
-              <TrendBadge
-                isNew={c.isNew}
-                ratio={c.ratio}
-                smoothing={TRENDING_RATIO_SMOOTHING.community}
-              />
+              <TrendBadge isNew={c.isNew} ratio={c.ratio} smoothing={smoothing} />
             ) : null
           }
           breakdown={
-            <Breakdown parts={COMMUNITY_PARTS} breakdown={c.breakdown} score={c.score} />
+            <Breakdown
+              parts={COMMUNITY_PARTS}
+              weights={weights}
+              breakdown={c.breakdown}
+              score={c.score}
+            />
           }
         />
       ))}
@@ -333,11 +326,17 @@ function CommunityList({
   );
 }
 
-/** スコアの重み一覧（画面の注記）。定数を直接並べるので実装とずれない */
-function WeightNote({ parts }: { parts: { label: string; weight: number }[] }) {
+/** スコアの重み一覧（画面の注記）。重みはレスポンスの値を出すので実装とずれない */
+function WeightNote<B, W extends Record<string, number>>({
+  parts,
+  weights,
+}: {
+  parts: Part<B, W>[];
+  weights: W;
+}) {
   return (
     <Typography variant="caption" color="text.secondary">
-      スコア = {parts.map((p) => `${p.label}×${p.weight}`).join(" + ")}
+      スコア = {parts.map((p) => `${p.label}×${weights[p.key]}`).join(" + ")}
     </Typography>
   );
 }
@@ -387,13 +386,12 @@ export function AdminTrendingPage() {
         XPと近い値になりますが別物です（たまご・フォロワーはXPには入りません）。
         「急上昇」は
         <strong>（期間内スコア + K）÷（前の同じ長さの期間のスコア + K）</strong>
-        で、小さな母数で倍率が跳ねないよう分母・分子に同じ K を足しています（K は
-        ユーザー {TRENDING_RATIO_SMOOTHING.user} / コミュニティ{" "}
-        {TRENDING_RATIO_SMOOTHING.community}）。
-        期間内スコアが一定未満のものは急上昇に載せません。
-        前の期間に活動が無かったものは比が出せないため「新規」として先に並べますが、
-        新規だけでリストが埋まらないよう先頭 {TRENDING_RISING_FRESH_SLOTS}{" "}
-        件までにしています。 退会申請中のユーザーは除いています。
+        の高い順で、小さな母数で倍率が跳ねないよう分母・分子に同じ K を足しています（K
+        の値は各リストの注記に出しています）。
+        前の期間に活動が無かったもの（「新規」）も同じ式で比が出るので特別扱いはせず、
+        「新規」バッジは順位ではなく状態の表示です。
+        期間内スコアが一定未満のもの・比が1未満（前の期間より縮んだもの）は載せません。
+        退会申請中のユーザーは除いています。
       </Alert>
 
       {isError ? (
@@ -411,7 +409,7 @@ export function AdminTrendingPage() {
               <Typography variant="subtitle1" fontWeight={700}>
                 ユーザー
               </Typography>
-              <WeightNote parts={USER_PARTS} />
+              <WeightNote parts={USER_PARTS} weights={data.weights.user} />
               <Divider sx={{ my: 1.5 }} />
               <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
                 <ListCard
@@ -419,14 +417,23 @@ export function AdminTrendingPage() {
                   note="期間内スコアの高い順。大きく動いている人。"
                   empty={data.users.active.length === 0}
                 >
-                  <UserList items={data.users.active} />
+                  <UserList
+                    items={data.users.active}
+                    weights={data.weights.user}
+                    smoothing={data.ratioSmoothing.user}
+                  />
                 </ListCard>
                 <ListCard
                   title="急上昇"
-                  note={`前の同じ期間との比（平滑化 K=${data.ratioSmoothing.user}）が高い順。新規は先頭 ${TRENDING_RISING_FRESH_SLOTS} 件まで。期間内スコア ${data.minRisingScore.user} 未満は対象外。`}
+                  note={`前の同じ期間との比（平滑化 K=${data.ratioSmoothing.user}）が高い順。期間内スコア ${data.minRisingScore.user} 未満・比 ${data.minRisingRatio} 未満は対象外。`}
                   empty={data.users.rising.length === 0}
                 >
-                  <UserList items={data.users.rising} rising />
+                  <UserList
+                    items={data.users.rising}
+                    weights={data.weights.user}
+                    smoothing={data.ratioSmoothing.user}
+                    rising
+                  />
                 </ListCard>
               </Stack>
             </CardContent>
@@ -437,7 +444,10 @@ export function AdminTrendingPage() {
               <Typography variant="subtitle1" fontWeight={700}>
                 コミュニティ
               </Typography>
-              <WeightNote parts={COMMUNITY_PARTS} />
+              <WeightNote
+                parts={COMMUNITY_PARTS}
+                weights={data.weights.community}
+              />
               <Divider sx={{ my: 1.5 }} />
               <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
                 <ListCard
@@ -445,14 +455,23 @@ export function AdminTrendingPage() {
                   note="期間内スコアの高い順。"
                   empty={data.communities.active.length === 0}
                 >
-                  <CommunityList items={data.communities.active} />
+                  <CommunityList
+                    items={data.communities.active}
+                    weights={data.weights.community}
+                    smoothing={data.ratioSmoothing.community}
+                  />
                 </ListCard>
                 <ListCard
                   title="急上昇"
-                  note={`前の同じ期間との比（平滑化 K=${data.ratioSmoothing.community}）が高い順。新規は先頭 ${TRENDING_RISING_FRESH_SLOTS} 件まで。期間内スコア ${data.minRisingScore.community} 未満は対象外。`}
+                  note={`前の同じ期間との比（平滑化 K=${data.ratioSmoothing.community}）が高い順。期間内スコア ${data.minRisingScore.community} 未満・比 ${data.minRisingRatio} 未満は対象外。`}
                   empty={data.communities.rising.length === 0}
                 >
-                  <CommunityList items={data.communities.rising} rising />
+                  <CommunityList
+                    items={data.communities.rising}
+                    weights={data.weights.community}
+                    smoothing={data.ratioSmoothing.community}
+                    rising
+                  />
                 </ListCard>
               </Stack>
             </CardContent>

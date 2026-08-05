@@ -1,6 +1,7 @@
 import {
   TRENDING_CANDIDATE_LIMIT,
   TRENDING_COMMUNITY_WEIGHTS,
+  TRENDING_MIN_RISING_RATIO,
   TRENDING_MIN_RISING_SCORE,
   TRENDING_RATIO_SMOOTHING,
   TRENDING_USER_WEIGHTS,
@@ -24,12 +25,13 @@ const USER_ACTIVE = (col: string) =>
  * KPI と定義がずれると同じ画面で数字が食い違って混乱する */
 const JOINED = (t: string) => `${t}.role <> 'staff'`;
 
-/** 開催済み（公開・日程確定済み・開催日設定済みで、すでに終了した）イベントの条件。
- * kpi.ts の HELD と同じだが、こちらは前期間まで遡るので下限が prevSince。
- * KPI と違い日境界ではなく epoch ms で切る（overview のコメント参照）。
- * バインド順: now, prevSince */
+/** 開催済み（公開・日程確定済み・開催日設定済み）イベントの条件。バインド不要。
+ * kpi.ts の HELD と同じ条件だが、**期間の切り出しはここに入れない**。
+ * 集計期間は period() の CASE ＋ 集計側の `WHERE p > 0` が決めていて、
+ * ここにも上下限を書くと同じ境界を2箇所にバインドすることになる。
+ * 「まだ終わっていない」(ends_at >= now) は p = 0 になって落ちる */
 const HELD = (t: string) =>
-  `(${t}.status = 'published' AND ${t}.scheduling = 0 AND ${t}.ends_at > 0 AND ${t}.ends_at < ? AND ${t}.ends_at >= ?)`;
+  `(${t}.status = 'published' AND ${t}.scheduling = 0 AND ${t}.ends_at > 0)`;
 
 /** ユーザーの行動種別。TRENDING_USER_WEIGHTS のキーと1対1で対応させる */
 const USER_KINDS = [
@@ -152,7 +154,18 @@ export const trendingRepo = {
       binds: [since, now, prevSince, since, ...(o.binds ?? [])],
     });
 
-    /** 開催済みイベント条件つきの枝（バインド: now, prevSince を後ろに足す） */
+    /** 前期間の開始で足切りする枝。上限は period() の CASE ＋ `WHERE p > 0` に任せる
+     * （下限だけ WHERE に書くのは、UNION ALL する前に行数を落とすため） */
+    const sinceBranch = (o: {
+      key: string;
+      at: string;
+      kind: string;
+      from: string;
+      where: string;
+    }): Branch =>
+      branch({ ...o, where: `${o.where} AND ${o.at} >= ?`, binds: [prevSince] });
+
+    /** 開催済みイベント条件つきの枝（時刻は ends_at 基準） */
     const heldBranch = (o: {
       key: string;
       kind: string;
@@ -161,26 +174,14 @@ export const trendingRepo = {
       alias?: string;
     }): Branch => {
       const t = o.alias ?? "e";
-      return branch({
+      return sinceBranch({
         key: o.key,
         at: `${t}.ends_at`,
         kind: o.kind,
         from: o.from,
         where: `${o.where} AND ${HELD(t)}`,
-        binds: [now, prevSince],
       });
     };
-
-    /** created_at 基準の枝（前期間の開始で足切り）。
-     * 下限はここで、上限は period() の CASE で切る */
-    const createdBranch = (o: {
-      key: string;
-      at: string;
-      kind: string;
-      from: string;
-      where: string;
-    }): Branch =>
-      branch({ ...o, where: `${o.where} AND ${o.at} >= ?`, binds: [prevSince] });
 
     // ---------- (1) ユーザー ----------
     const userBranches: Branch[] = [
@@ -208,7 +209,7 @@ export const trendingRepo = {
                 AND (e.attendance_check = 0 OR m.attended = 1)`,
       }),
       // もらったいいね: eventLikesRepo.receivedCountForUser と同じ定義
-      createdBranch({
+      sinceBranch({
         key: "l.target_key",
         at: "l.created_at",
         kind: "likeReceived",
@@ -217,14 +218,14 @@ export const trendingRepo = {
         where: "l.kind IN ('host', 'staff', 'participant') AND e.status = 'published'",
       }),
       // 出会い: 1件の記録は両者にとっての「出会い」なので2行に展開する
-      createdBranch({
+      sinceBranch({
         key: "mt.user_low",
         at: "mt.created_at",
         kind: "meet",
         from: "event_meet mt",
         where: "1 = 1",
       }),
-      createdBranch({
+      sinceBranch({
         key: "mt.user_high",
         at: "mt.created_at",
         kind: "meet",
@@ -232,7 +233,7 @@ export const trendingRepo = {
         where: "1 = 1",
       }),
       // たまごの投稿
-      createdBranch({
+      sinceBranch({
         key: "r.created_by",
         at: "r.created_at",
         kind: "eggPosted",
@@ -240,7 +241,7 @@ export const trendingRepo = {
         where: "1 = 1",
       }),
       // たまごへの賛同（押した側）
-      createdBranch({
+      sinceBranch({
         key: "x.user_id",
         at: "x.created_at",
         kind: "eggReaction",
@@ -248,7 +249,7 @@ export const trendingRepo = {
         where: "1 = 1",
       }),
       // フォロワー増加: followsRepo.followerCount と同じく退会申請中のフォロワーは数えない
-      createdBranch({
+      sinceBranch({
         key: "f.followee_id",
         at: "f.created_at",
         kind: "followerGained",
@@ -264,9 +265,8 @@ export const trendingRepo = {
          ${unionAll(userBranches.map((b) => b.sql))}
        ),
        agg AS (
-         -- p > 0 は防御。下限は各枝で足切り済みで、上限（未来日時）に当たるのは
-         -- 記録時刻が未来の行だけ＝実データでは起きない。テストで消しても
-         -- 結果が変わらないのはそのため
+         -- p > 0 が集計期間の上限（now 以降 = まだ終わっていない・未来の記録）を切る。
+         -- 下限は各枝の WHERE で先に落としてある
          SELECT uid,
          ${sumColumns(USER_KINDS)}
          FROM acts WHERE p > 0 GROUP BY uid
@@ -302,7 +302,7 @@ export const trendingRepo = {
                 AND ${USER_ACTIVE("m.user_id")}`,
       }),
       // 新規メンバー数（退会申請中は数えない。メンバー一覧の表示と揃える）
-      createdBranch({
+      sinceBranch({
         key: "cm.community_id",
         at: "cm.created_at",
         kind: "newMember",
@@ -310,7 +310,7 @@ export const trendingRepo = {
         where: USER_ACTIVE("cm.user_id"),
       }),
       // もらったいいね: eventLikesRepo.receivedCountForCommunity と同じ定義
-      createdBranch({
+      sinceBranch({
         key: "l.target_key",
         at: "l.created_at",
         kind: "likeReceived",
@@ -330,7 +330,7 @@ export const trendingRepo = {
          ${unionAll(communityBranches.map((b) => b.sql))}
        ),
        agg AS (
-         -- p > 0 はユーザー側と同じく防御（実データでは落ちる行は無い）
+         -- p > 0 はユーザー側と同じく集計期間の上限を切る
          SELECT uid,
          ${sumColumns(COMMUNITY_KINDS)}
          FROM acts WHERE p > 0 GROUP BY uid
@@ -354,7 +354,11 @@ export const trendingRepo = {
 
   /** 注目（トレンド）(#259 PR1)。候補から2つのリストを組み立てて返す */
   async overview(days: number, now: number): Promise<TrendingPayload> {
-    const { period, users, communities } = await this.candidates(days, now);
+    // this ではなく trendingRepo 経由で呼ぶ（分割代入で取り出しても壊れないように）
+    const { period, users, communities } = await trendingRepo.candidates(
+      days,
+      now,
+    );
     return {
       days,
       since: period.since,
@@ -367,6 +371,12 @@ export const trendingRepo = {
       ratioSmoothing: {
         user: TRENDING_RATIO_SMOOTHING.user,
         community: TRENDING_RATIO_SMOOTHING.community,
+      },
+      minRisingRatio: TRENDING_MIN_RISING_RATIO,
+      // 画面の注記が古いバンドルの定数とずれないよう、重みもペイロードに載せる
+      weights: {
+        user: { ...TRENDING_USER_WEIGHTS },
+        community: { ...TRENDING_COMMUNITY_WEIGHTS },
       },
       users: buildTrendingLists(users, {
         minScore: TRENDING_MIN_RISING_SCORE.user,

@@ -2,9 +2,9 @@ import { SELF, env } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
 import {
   TRENDING_LIST_SIZE,
+  TRENDING_MIN_RISING_RATIO,
   TRENDING_MIN_RISING_SCORE,
   TRENDING_RATIO_SMOOTHING,
-  TRENDING_RISING_FRESH_SLOTS,
   TRENDING_USER_WEIGHTS,
   type KpiPayload,
   type TrendingPayload,
@@ -386,10 +386,10 @@ describe("注目: 退会申請中の除外", () => {
 });
 
 describe("注目: 急上昇", () => {
-  it("前期間ありは倍率順・前期間0は新規として先頭・足切り未満は出ない", async () => {
+  it("新規も含めて平滑化比の降順に並ぶ・足切り未満は出ない", async () => {
     const admin = await makeUser({ admin: true });
-    const grown = await makeUser(); // 前期間1件 → 今期間2件（倍率2.0）
-    const doubled = await makeUser(); // 前期間1件 → 今期間3件（倍率3.0）
+    const grown = await makeUser(); // 前期間1件 → 今期間2件
+    const doubled = await makeUser(); // 前期間1件 → 今期間3件
     const fresh = await makeUser(); // 前期間0件 → 今期間1件（新規）
     const small = await makeUser(); // 今期間の参加2回だけ（足切り未満）
 
@@ -427,16 +427,18 @@ describe("注目: 急上昇", () => {
     const d = find(t.users.rising, doubled.userId);
     expect(d?.ratio).toBeCloseTo((300 + K) / (100 + K), 10);
 
-    // 新規（前期間0）は倍率を持たず、リストの先頭側に並ぶ
+    // 新規（前期間0）も同じ式で比が出る（特別枠は無い）
     const f = find(t.users.rising, fresh.userId);
     expect(f?.isNew).toBe(true);
-    expect(f?.ratio).toBeNull();
     expect(f?.previousScore).toBe(0);
-    const ids = t.users.rising.map((u) => u.id);
-    expect(ids.indexOf(fresh.userId)).toBeLessThan(ids.indexOf(grown.userId));
-    expect(ids.indexOf(fresh.userId)).toBeLessThan(ids.indexOf(doubled.userId));
+    // fresh は今期間に2件主催している（下の small の参加先として使っている）
+    expect(f?.score).toBe(2 * W.hosted);
+    expect(f?.ratio).toBeCloseTo((200 + K) / (0 + K), 10);
 
-    // 新規のあとは倍率の降順
+    // リスト全体が比の降順（新規を先頭に固定したりしない）
+    const ratios = t.users.rising.map((u) => u.ratio ?? 0);
+    expect(ratios).toEqual([...ratios].sort((a, b) => b - a));
+    const ids = t.users.rising.map((u) => u.id);
     expect(ids.indexOf(doubled.userId)).toBeLessThan(ids.indexOf(grown.userId));
 
     // 足切り未満は急上昇に出ない（活動量上位には出る）
@@ -450,22 +452,31 @@ describe("注目: 急上昇", () => {
     expect(flat).not.toContain("Infinity");
   });
 
-  it("前期間より下がった人も倍率つきで返る（1未満）", async () => {
+  it("前期間より下がった人は急上昇に出ない（下落は急上昇ではない）", async () => {
     const admin = await makeUser({ admin: true });
     const down = await makeUser();
     const now = Date.now();
 
+    // 前期間 主催2回 (200) → 今期間 主催1回 (100)。比は (100+K)/(200+K) < 1
     await makeEvent({ createdBy: down.userId, endsAt: now - 10 * DAY });
     await makeEvent({ createdBy: down.userId, endsAt: now - 11 * DAY });
     await makeEvent({ createdBy: down.userId, endsAt: now - 2 * DAY });
 
     const t = await getTrending(admin.cookie, 7);
     const K = TRENDING_RATIO_SMOOTHING.user;
-    const d = find(t.users.rising, down.userId);
-    expect(d?.score).toBe(TRENDING_USER_WEIGHTS.hosted);
-    expect(d?.previousScore).toBe(2 * TRENDING_USER_WEIGHTS.hosted);
-    expect(d?.ratio).toBeCloseTo((100 + K) / (200 + K), 10);
-    expect(d?.ratio).toBeLessThan(1);
+    expect((100 + K) / (200 + K)).toBeLessThan(TRENDING_MIN_RISING_RATIO);
+
+    // 足切りスコアは超えているが、縮んでいるので急上昇には載らない
+    expect(find(t.users.rising, down.userId)).toBeUndefined();
+    const a = find(t.users.active, down.userId);
+    expect(a?.score).toBe(TRENDING_USER_WEIGHTS.hosted);
+    expect(a?.previousScore).toBe(2 * TRENDING_USER_WEIGHTS.hosted);
+    expect(a?.score).toBeGreaterThanOrEqual(TRENDING_MIN_RISING_SCORE.user);
+
+    // 急上昇に 1 未満の比は1件も無い
+    expect(
+      t.users.rising.every((u) => (u.ratio ?? 0) >= TRENDING_MIN_RISING_RATIO),
+    ).toBe(true);
   });
 
   it("前期間が小さいだけのノイズは、母数の大きい本物の伸びより下に来る", async () => {
@@ -521,18 +532,72 @@ describe("注目: 急上昇", () => {
     expect(raw(n)).toBeGreaterThan(raw(r));
   });
 
-  it("新規が枠より多くても、伸びている人が急上昇に出る", async () => {
-    // 新規を無条件に先頭へ並べると、リスト長ぶん新規が居るだけで伸びが1件も出ない
+  it("足切りちょうどの新規は、本物の大きな伸びより下に来る", async () => {
+    // 新規を別枠にして先頭へ固定していたときの実測ケース。
+    // 足切りちょうど (30点) の新規は比 (30+K)/(0+K) = 1.6 にしかならないので、
+    // 「2 → 1000」のような本物の伸び (比 20 超) より上に来てはいけない
+    const admin = await makeUser({ admin: true });
+    const fresh = await makeUser();
+    const real = await makeUser();
+    const now = Date.now();
+    const cur = now - 2 * DAY;
+    const prev = now - 10 * DAY;
+
+    // real: 前期間 たまごの賛同1回 (2点) → 今期間 主催10回 (1000点)
+    const poster = await makeUser();
+    const eggId = await egg(poster.userId, prev);
+    await eggReaction(eggId, real.userId, "attend", prev);
+    const curEvents: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      curEvents.push(
+        await makeEvent({ createdBy: real.userId, endsAt: cur - i * 3600000 }),
+      );
+    }
+
+    // fresh: 前期間0 → 今期間 参加3回 = ちょうど足切りの 30点
+    for (let i = 0; i < 3; i++) {
+      await join({ eventId: curEvents[i], userId: fresh.userId });
+    }
+
+    const t = await getTrending(admin.cookie, 7);
+    const K = TRENDING_RATIO_SMOOTHING.user;
+    const f = find(t.users.rising, fresh.userId);
+    const r = find(t.users.rising, real.userId);
+
+    expect(f?.score).toBe(TRENDING_MIN_RISING_SCORE.user);
+    expect(f?.previousScore).toBe(0);
+    expect(f?.isNew).toBe(true);
+    expect(f?.ratio).toBeCloseTo((30 + K) / (0 + K), 10);
+    expect(r?.ratio).toBeCloseTo((1000 + K) / (2 + K), 10);
+
+    const ids = t.users.rising.map((u) => u.id);
+    expect(ids.indexOf(real.userId)).toBeLessThan(ids.indexOf(fresh.userId));
+  });
+
+  it("新規に特別枠は無い（比の低い新規は伸びている人より下）", async () => {
+    // 新規を無条件で先頭に固定していたときは、足切りちょうどの新規が
+    // 「100 → 200」の伸びを押しのけて上位を占めていた
     const admin = await makeUser({ admin: true });
     const now = Date.now();
     const cur = now - 2 * DAY;
     const prev = now - 10 * DAY;
 
-    // 新規（前期間0・今期間 主催1回=100点）をリスト長より多く用意する
-    const freshCount = TRENDING_LIST_SIZE + 2;
-    for (let i = 0; i < freshCount; i++) {
+    // 参加用のイベント（主催者は前期間にも主催していて比が跳ねないようにする）
+    const host = await makeUser();
+    await makeEvent({ createdBy: host.userId, endsAt: prev });
+    const events: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      events.push(
+        await makeEvent({ createdBy: host.userId, endsAt: cur - i * 3600000 }),
+      );
+    }
+
+    // 足切りちょうど (参加3回 = 30点) の新規をリスト長より多く用意する
+    const freshIds: string[] = [];
+    for (let i = 0; i < TRENDING_LIST_SIZE + 2; i++) {
       const u = await makeUser();
-      await makeEvent({ createdBy: u.userId, endsAt: cur - i * 60000 });
+      freshIds.push(u.userId);
+      for (const ev of events) await join({ eventId: ev, userId: u.userId });
     }
 
     // 伸びている人（100 → 200）
@@ -542,20 +607,18 @@ describe("注目: 急上昇", () => {
     await makeEvent({ createdBy: grown.userId, endsAt: cur - 3600000 });
 
     const t = await getTrending(admin.cookie, 7);
+    const K = TRENDING_RATIO_SMOOTHING.user;
+    // 前提: 新規の比 1.60 < 伸びの比 1.67（K が小さいと逆転する）
+    expect((30 + K) / (0 + K)).toBeLessThan((200 + K) / (100 + K));
+
     expect(t.users.rising).toHaveLength(TRENDING_LIST_SIZE);
-
-    // 新規は先頭の枠ぶんだけ。その直後に伸びが入る
-    expect(
-      t.users.rising.slice(0, TRENDING_RISING_FRESH_SLOTS).every((u) => u.isNew),
-    ).toBe(true);
-    const at = t.users.rising.findIndex((u) => u.id === grown.userId);
-    expect(at).toBe(TRENDING_RISING_FRESH_SLOTS);
-    expect(find(t.users.rising, grown.userId)?.ratio).not.toBeNull();
-
-    // 枠にあふれた新規は捨てずに後ろへ回す（枠を余らせない）
-    expect(t.users.rising.filter((u) => u.isNew).length).toBeGreaterThan(
-      TRENDING_RISING_FRESH_SLOTS,
-    );
+    const ids = t.users.rising.map((u) => u.id);
+    expect(ids).toContain(grown.userId);
+    // リストに載った新規はすべて伸びている人より後ろ
+    for (const id of freshIds) {
+      const at = ids.indexOf(id);
+      if (at >= 0) expect(at).toBeGreaterThan(ids.indexOf(grown.userId));
+    }
   });
 
   it("前期間より前の活動は前期間にも今期間にも入らない", async () => {
@@ -572,7 +635,13 @@ describe("注目: 急上昇", () => {
 describe("注目: KPI との整合", () => {
   // リストは上位 TRENDING_LIST_SIZE 件で切られるので、表示リストの合計では
   // 不変条件にならない（参加者がリスト長を超えると必ず食い違う）。
-  // 候補（切る前の全件）をリポジトリから直接取って突き合わせる
+  // 候補（切る前の全件）をリポジトリから直接取って突き合わせる。
+  //
+  // **揃えているのは「参加として数える行の条件」(JOINED) だけ**で、集計窓の定義は
+  // 意図的に別（KPI は JST の日境界、注目は epoch ms でちょうど N 日前）。
+  // したがって本番では境界付近のイベントで両者の件数は一致しうるとは限らない。
+  // このテストは両方の窓に確実に入るデータ（当日作成・1日前終了）だけを置いて、
+  // 行の条件が一致していることを確認している
   it("参加のカウントが KPI の参加者数（JOINED）と一致する", async () => {
     const admin = await makeUser({ admin: true });
     const host = await makeUser();
