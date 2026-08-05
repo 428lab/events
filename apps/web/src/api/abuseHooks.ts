@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AbuseFlagsPayload } from "@eventer/shared";
+import type {
+  AbuseAllowlistInput,
+  AbuseAllowlistPayload,
+  AbuseFlagsPayload,
+} from "@eventer/shared";
 import { api } from "./client.js";
 
 /** 未確認件数のポーリング間隔（問い合わせバッジと同じ） */
@@ -45,6 +49,44 @@ export function useReviewAbuseFlag() {
       ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["abuseFlags"] });
+    },
+  });
+}
+
+/** 検知の抑制リスト (#259)。ここに入れた対象は検知の段階で落ちる */
+export function useAbuseAllowlist(enabled: boolean) {
+  return useQuery({
+    queryKey: ["abuseAllowlist"],
+    enabled,
+    queryFn: () => api.get<AbuseAllowlistPayload>("/admin/abuse-flags/allowlist"),
+  });
+}
+
+/** 「今後このユーザーのこのルールは通知しない」 */
+export function useAddAbuseAllowlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AbuseAllowlistInput) =>
+      api.post<{ ok: boolean; added: boolean }>(
+        "/admin/abuse-flags/allowlist",
+        input,
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["abuseAllowlist"] });
+    },
+  });
+}
+
+/** 抑制の解除 */
+export function useRemoveAbuseAllowlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.del<{ ok: boolean; removed: boolean }>(
+        `/admin/abuse-flags/allowlist/${id}`,
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["abuseAllowlist"] });
     },
   });
 }

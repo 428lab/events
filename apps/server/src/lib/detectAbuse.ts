@@ -9,6 +9,7 @@ import {
 } from "@eventer/shared";
 import { many, one } from "../db/client.js";
 import {
+  abuseAllowlistRepo,
   abuseFlagKey,
   abuseFlagsRepo,
   type AbuseFlagInput,
@@ -24,7 +25,8 @@ import { env } from "../runtime.js";
  * ■ 設計方針
  * - 自動制限はしない。引っかかったものを abuse_flag に記録し、運営に1通だけ通知する
  * - **ルールごとに1クエリ**。Workers のサブリクエスト上限(1リクエスト50)に対し、
- *   ルール7本 ＋ 重複判定1 ＋ 掃除1 ＋ INSERT(batch)1 ＋ 通知3 = 通常13本に収まる
+ *   ルール7本 ＋ 重複判定1 ＋ 抑制リスト1 ＋ 掃除1 ＋ INSERT(batch)1 ＋ 通知3
+ *   = 通常14本に収まる
  *   （検知が50件を超えると INSERT の batch が1本増える。メール通知ONの管理者への
  *    送信は waitUntil の中で追加のサブリクエストを使うが、管理者は数人なので無視できる。
  *    ルールを増やすときはこの見積もりを更新すること）
@@ -113,35 +115,63 @@ async function detectEggBurst(now: number, q: QueryCount): Promise<Candidate[]> 
 }
 
 /** コメント・いいねの連投: 1時間あたり min 件以上。
+ *
  * 日次バッチなので「直近1時間」だけ見ると取りこぼす。lookbackMs の範囲を
- * windowMs 幅の固定バケットに割り、最大のバケットで判定する */
+ * windowMs 幅の固定バケットに割り、最大のバケットで判定する。
+ *
+ * ■ バケット境界のずらし (#259 レビュー反映)
+ * エポック基準の固定境界1系統だと、境界をまたぐ連投が2つに割れる。
+ * 60秒に58件を境界の真上に投げると 29/29 になり、min=30 に **恒久的に**
+ * 届かない（毎日同じように割れるので、いつまでも検知されない）。
+ * そこで開始位置を windowMs/2 ずらした2系統目を作り、両系統の最大値で判定する。
+ * どんな位相の連投でも、少なくとも片方の系統では 2/3 以上が同じバケットに入る。
+ *
+ * ■ いいねの数え方 (#259 レビュー反映)
+ * event_like は1イベントにつき event / host / staff(人数分) / community と
+ * 複数行できる。全部数えるとスタッフ4名のイベント8件にいいねしただけで32行になり、
+ * 熱心な参加者が誤検知される。**1アクション1カウント**になるよう kind='event'
+ * だけを数える（イベントへのいいねは1ユーザー1イベント1行）。 */
 async function detectCommentBurst(
   now: number,
   q: QueryCount,
 ): Promise<Candidate[]> {
   const { windowMs, lookbackMs, min } = T.commentBurst;
   const since = now - lookbackMs;
+  const halfWindowMs = Math.floor(windowMs / 2);
   q.n += 1;
   const rows = await many<UserRuleRow & { n: number; total: number }>(
     `WITH acts AS (
        SELECT user_id AS uid, created_at AS at FROM event_comment WHERE created_at >= ?
        UNION ALL
-       SELECT user_id AS uid, created_at AS at FROM event_like WHERE created_at >= ?
+       SELECT user_id AS uid, created_at AS at FROM event_like
+        WHERE created_at >= ? AND kind = 'event'
      ),
-     buckets AS (
-       -- CAST を挟むのは、バインドされた数値が REAL 扱いになると割り算が浮動小数に
-       -- なってしまい、1msごとに別バケットへ散る（＝永久に発火しない）ため
-       SELECT uid, CAST(at / ? AS INTEGER) AS bucket, COUNT(1) AS n
-         FROM acts GROUP BY uid, bucket
-     )
-     SELECT b.uid AS user_id, u.username AS handle,
-            MAX(b.n) AS n, COALESCE(SUM(b.n), 0) AS total
-       FROM buckets b JOIN user u ON u.id = b.uid
+     -- CAST を挟むのは、バインドされた数値が REAL 扱いになると割り算が浮動小数に
+     -- なってしまい、1msごとに別バケットへ散る（＝永久に発火しない）ため。
+     -- phase 0 はエポック基準、phase 1 は windowMs/2 ずらした系統
+     slots AS (
+       SELECT uid, 0 AS phase, CAST(at / ? AS INTEGER) AS bucket FROM acts
+       UNION ALL
+       SELECT uid, 1 AS phase, CAST((at + ?) / ? AS INTEGER) AS bucket FROM acts
+     ),
+     counted AS (
+       SELECT uid, phase, bucket, COUNT(1) AS n
+         FROM slots GROUP BY uid, phase, bucket
+     ),
+     -- total は phase をまたぐと二重に数えてしまうので acts から別に取る
+     totals AS (SELECT uid, COUNT(1) AS total FROM acts GROUP BY uid)
+     SELECT c.uid AS user_id, u.username AS handle,
+            MAX(c.n) AS n, MAX(t.total) AS total
+       FROM counted c
+       JOIN totals t ON t.uid = c.uid
+       JOIN user u ON u.id = c.uid
       WHERE u.deleted_at IS NULL
-      GROUP BY b.uid
-     HAVING MAX(b.n) >= ?`,
+      GROUP BY c.uid
+     HAVING MAX(c.n) >= ?`,
     since,
     since,
+    windowMs,
+    halfWindowMs,
     windowMs,
     min,
   );
@@ -157,7 +187,15 @@ async function detectCommentBurst(
 }
 
 /** 新規アカウントの即時大量行動: 登録から withinMs 以内にイベント作成 min 件以上。
- * 対象は lookbackMs 以内に登録したユーザーだけ（古い新規を毎日見直さない） */
+ * 対象は lookbackMs 以内に登録したユーザーだけ（古い新規を毎日見直さない）。
+ *
+ * e.created_at にも下限を置いているのは **インデックスを効かせるため**。
+ * これが無いと SQLite は event を全件 SCAN する（実測 8ms・3万行読み取り）。
+ * 対象ユーザーは lookbackMs 以内の登録、対象イベントはその登録から withinMs
+ * 以内の作成なので、イベントの作成時刻は必ず now - (lookbackMs + withinMs)
+ * 以降に入る。つまりこの下限は結果を変えず、idx_event_created_at が使えるようになる。
+ * （event(created_by) のインデックスで代用しないのは、それを足すと
+ *   event_burst の方が範囲検索から全件走査に化けるため。migration 0055 参照） */
 async function detectNewAccountBurst(
   now: number,
   q: QueryCount,
@@ -168,11 +206,12 @@ async function detectNewAccountBurst(
     `SELECT u.id AS user_id, u.username AS handle, COUNT(1) AS n
        FROM user u JOIN event e
          ON e.created_by = u.id AND e.created_at <= u.created_at + ?
-      WHERE u.created_at >= ? AND u.deleted_at IS NULL
+      WHERE u.created_at >= ? AND e.created_at >= ? AND u.deleted_at IS NULL
       GROUP BY u.id
      HAVING COUNT(1) >= ?`,
     withinMs,
     now - lookbackMs,
+    now - lookbackMs - withinMs,
     min,
   );
   return rows.map((r) => ({
@@ -182,27 +221,46 @@ async function detectNewAccountBurst(
   }));
 }
 
-/** 参加者0のイベント量産: 直近 windowMs に作成した公開イベントのうち
- * 参加者0が min 件以上。参加者は主催・スタッフ行 (role='staff') を除いた確定者
- * （イベント作成時に作成者の staff 行が必ず作られるため、除かないと常に1人になる） */
+/** 参加者0のイベント量産: 公開イベントのうち「誰も申し込んでいない」ものが
+ * min 件以上。対象は作成から minAgeMs 〜 windowMs のイベント。
+ *
+ * ■ 作成時刻の **上限** が要 (#259 レビュー反映)
+ * 下限しかないと、いま公開したばかりのイベントまで参加者0に数えてしまう。
+ * イベント複製で定例シリーズを5件まとめて公開しただけで
+ * event_burst と同時に発火する（最も普通の運用が誤検知される）。
+ * 「公開して minAgeMs 経っても誰も来ていない」を見たいので、下限と上限の両方を置く。
+ *
+ * ■ 参加者の数え方 (#259 レビュー反映)
+ * status='confirmed' だけを数えると、抽選枠(applied)・キャンセル待ち(waitlist)が
+ * 全部0人扱いになる。**申込者20名×5イベントの抽選待ち**（ハッカソン運営という
+ * 本サービスの中心ユースケース）が丸ごと誤検知されるので、status は見ずに
+ * 「staff 以外のメンバー行が1件でもあるか」で判定する。
+ * staff を除くのは、イベント作成時に作成者の staff 行が必ず作られるため
+ * （除かないと常に1人になり、このルールが永久に発火しなくなる）。
+ *
+ * ■ 日程調整中は対象外 (#259 レビュー反映)
+ * scheduling=1 は日程が決まる前の状態で、参加者がいないのが正常。 */
 async function detectEmptyEventSpam(
   now: number,
   q: QueryCount,
 ): Promise<Candidate[]> {
-  const { windowMs, min } = T.emptyEventSpam;
+  const { windowMs, minAgeMs, min } = T.emptyEventSpam;
   q.n += 1;
   const rows = await many<UserRuleRow & { empty: number; total: number }>(
     `SELECT e.created_by AS user_id, u.username AS handle,
             COALESCE(SUM(CASE WHEN NOT EXISTS (
               SELECT 1 FROM event_member m
-               WHERE m.event_id = e.id AND m.role <> 'staff' AND m.status = 'confirmed'
+               WHERE m.event_id = e.id AND m.role <> 'staff'
             ) THEN 1 ELSE 0 END), 0) AS empty,
             COUNT(1) AS total
        FROM event e JOIN user u ON u.id = e.created_by
-      WHERE e.created_at >= ? AND e.status = 'published' AND u.deleted_at IS NULL
+      WHERE e.created_at >= ? AND e.created_at <= ?
+        AND e.status = 'published' AND e.scheduling = 0
+        AND u.deleted_at IS NULL
       GROUP BY e.created_by
      HAVING empty >= ?`,
     now - windowMs,
+    now - minAgeMs,
     min,
   );
   return rows.map((r) => ({
@@ -211,33 +269,67 @@ async function detectEmptyEventSpam(
     detail: {
       emptyEvents: r.empty,
       createdEvents: r.total,
-      windowDays: Math.round(windowMs / DAY_MS),
+      // 実際に評価している幅（minAgeMs より新しいイベントは対象外）
+      windowDays: Math.round((windowMs - minAgeMs) / DAY_MS),
+      minAgeDays: Math.round(minAgeMs / DAY_MS),
     },
   }));
 }
 
-/** 大量キャンセル: 期間内のキャンセルが min 件以上 **かつ** 率が minRate 以上。
- * 母数は同じ期間に作成された参加登録（主催・スタッフ行と下書きイベントは除く。
- * 日程調整中の取消 canceled_scheduling は KPI と同様に数えない） */
+/** 大量キャンセル (#259 レビュー反映で判定式を変更)。
+ *
+ * ■ 判定式
+ *   分子 canceled = 直近 windowMs(7日) に **キャンセルされた** 参加登録の件数
+ *                   (status='canceled' AND canceled_at >= now - windowMs)
+ *   分母 total    = 同一ユーザーの対象行の件数。対象行は
+ *                   「直近 baselineWindowMs(30日) に **作成された** 登録」
+ *                   **または**「直近 windowMs にキャンセルされた登録」
+ *   検知条件      = canceled >= min かつ canceled / total >= minRate
+ *
+ * ■ なぜ分子を canceled_at にするか
+ * 旧実装は母数も分子も「直近7日に **作成された** 登録」だったため、
+ * 8日前に20件登録して今日10件キャンセルした常習者が検知0だった。
+ *
+ * ■ なぜ分母に30日の登録を混ぜるか
+ * 分母を「7日以内にキャンセルされた行」だけにすると率が常に 1.0 になり、
+ * minRate が判定として意味を持たなくなる。普段からよく参加している人ほど
+ * 分母が大きくなり、率で弾ける。
+ *
+ * 主催・スタッフ行 (role='staff') と下書きイベントは除く。
+ * 日程調整中の取消 (canceled_scheduling) は KPI と同様に数えない。 */
 async function detectCancelBurst(
   now: number,
   q: QueryCount,
 ): Promise<Candidate[]> {
-  const { windowMs, min, minRate } = T.cancelBurst;
+  const { windowMs, baselineWindowMs, min, minRate } = T.cancelBurst;
+  const canceledSince = now - windowMs;
   q.n += 1;
+  // 対象行の絞り込みを OR で書くと SQLite がどちらのインデックスも使えず
+  // event_member を丸ごと SCAN する（実測 598ms / 33万行）。UNION に分けると
+  // created_at と canceled_at のインデックスがそれぞれ効いて 21ms になる
   const rows = await many<UserRuleRow & { canceled: number; total: number }>(
-    `SELECT m.user_id AS user_id, u.username AS handle,
-            COALESCE(SUM(CASE WHEN m.status = 'canceled' AND m.canceled_scheduling = 0
+    `WITH targets AS (
+       SELECT id FROM event_member WHERE created_at >= ?
+       UNION
+       SELECT id FROM event_member WHERE canceled_at IS NOT NULL AND canceled_at >= ?
+     )
+     SELECT m.user_id AS user_id, u.username AS handle,
+            COALESCE(SUM(CASE WHEN m.status = 'canceled'
+                               AND m.canceled_scheduling = 0
+                               AND m.canceled_at >= ?
                               THEN 1 ELSE 0 END), 0) AS canceled,
             COUNT(1) AS total
-       FROM event_member m
+       FROM targets
+       JOIN event_member m ON m.id = targets.id
        JOIN event e ON e.id = m.event_id
        JOIN user u ON u.id = m.user_id
-      WHERE m.created_at >= ? AND m.role <> 'staff'
+      WHERE m.role <> 'staff'
         AND e.status = 'published' AND u.deleted_at IS NULL
       GROUP BY m.user_id
      HAVING canceled >= ? AND (canceled * 1.0 / total) >= ?`,
-    now - windowMs,
+    now - baselineWindowMs,
+    canceledSince,
+    canceledSince,
     min,
     minRate,
   );
@@ -249,13 +341,18 @@ async function detectCancelBurst(
       registrations: r.total,
       cancelRate: round2(r.canceled / r.total),
       windowDays: Math.round(windowMs / DAY_MS),
+      baselineDays: Math.round(baselineWindowMs / DAY_MS),
     },
   }));
 }
 
 /** 全体の登録急増: 直近の「完了した1日」(JST) の新規登録が、その前の
  * baselineDays 日の平均の ratio 倍以上 **かつ** min 件以上。
- * 特定ユーザーの話ではないので subject_user_id は NULL */
+ * 特定ユーザーの話ではないので subject_user_id は NULL。
+ *
+ * ベースラインは **常に baselineDays(14) で割る**（実データのある日数では割らない）。
+ * サービス開始直後のようにデータが14日ぶん無い時期は平均が小さく出るため、
+ * min 件ちょうどでほぼ必ず発火する。初期は運営が目を通せばよいので意図した挙動。 */
 async function detectSignupSpike(
   now: number,
   q: QueryCount,
@@ -333,44 +430,102 @@ async function notifyAdmins(
   return adminIds.length;
 }
 
+/** 抑制リストの判定器。rule が NULL の行はその user の全ルールを抑制する */
+function makeSuppressor(
+  keys: Array<{ userId: string; rule: string | null }>,
+): (rule: AbuseRule, subjectUserId: string | null) => boolean {
+  const all = new Set<string>();
+  const perRule = new Set<string>();
+  for (const k of keys) {
+    if (k.rule === null) all.add(k.userId);
+    else perRule.add(abuseFlagKey(k.rule, k.userId));
+  }
+  return (rule, subjectUserId) => {
+    // signup_spike のようなサービス全体の検知は抑制対象にしない
+    if (subjectUserId === null) return false;
+    return all.has(subjectUserId) || perRule.has(abuseFlagKey(rule, subjectUserId));
+  };
+}
+
+/** 同じ事象で複数ルールが同時に鳴るのを抑える (#259 レビュー反映)。
+ *
+ * 新規主催者が登録直後にシリーズを5件立てると event_burst と
+ * new_account_burst の両方に出る。運営が見るのは同じ人・同じ行動なので、
+ * より情報量の多い event_burst に寄せて new_account_burst からは落とす。
+ * （empty_event_spam の同時発火は、作成から48時間の下限を置いたことで解消済み） */
+function dropOverlaps(
+  byRule: Partial<Record<AbuseRule, Candidate[]>>,
+): void {
+  const eventBurstUsers = new Set(
+    (byRule.event_burst ?? []).map((c) => c.subjectUserId),
+  );
+  if (eventBurstUsers.size === 0) return;
+  byRule.new_account_burst = (byRule.new_account_burst ?? []).filter(
+    (c) => !eventBurstUsers.has(c.subjectUserId),
+  );
+}
+
 export async function detectAbuse(): Promise<DetectAbuseResult> {
   const now = Date.now();
   const q: QueryCount = { n: 0 };
   const failedRules: string[] = [];
 
-  // 重複抑制の判定材料を先に1クエリでまとめて取る
-  q.n += 1;
-  const recent = await abuseFlagsRepo.recentKeys(now - ABUSE_FLAG_COOLDOWN_MS);
+  // 重複抑制と抑制リストの判定材料を先に1クエリずつまとめて取る。
+  // ここは **意図的に try/catch していない**。判定材料が読めない状態で
+  // 検知を続けると、抑制すべきものを全部記録して運営に通知してしまうため、
+  // バッチごと失敗させて GHA のリトライに任せるほうが安全
+  q.n += 2;
+  const [recent, allowlistKeys] = await Promise.all([
+    abuseFlagsRepo.recentKeys(now - ABUSE_FLAG_COOLDOWN_MS),
+    abuseAllowlistRepo.listKeys(),
+  ]);
+  const isSuppressed = makeSuppressor(allowlistKeys);
 
-  const toRecord: AbuseFlagInput[] = [];
-  const byRule: Record<string, number> = {};
-  let skipped = 0;
-
+  // まず全ルールを評価する（ルール間の重複判定に他ルールの結果が要るため）
+  const candidatesByRule: Partial<Record<AbuseRule, Candidate[]>> = {};
   for (const rule of ABUSE_RULES) {
-    byRule[rule] = 0;
     try {
-      const candidates = await DETECTORS[rule](now, q);
-      for (const cand of candidates) {
-        const key = abuseFlagKey(rule, cand.subjectUserId);
-        // クールダウン期間内に既に記録があればスキップ。同じバッチ内の重複も
-        // ここで潰れるよう、記録予定のキーも recent に足していく
-        if (recent.has(key)) {
-          skipped += 1;
-          continue;
-        }
-        recent.add(key);
-        toRecord.push({ rule, ...cand });
-        byRule[rule] += 1;
-      }
+      candidatesByRule[rule] = await DETECTORS[rule](now, q);
     } catch (e) {
       // 1ルールの失敗で他のルールを止めない
       failedRules.push(rule);
       console.error(`[abuse] rule ${rule} failed`, e);
     }
   }
+  dropOverlaps(candidatesByRule);
+
+  const toRecord: AbuseFlagInput[] = [];
+  const byRule: Record<string, number> = {};
+  let skipped = 0;
+  let suppressed = 0;
+
+  for (const rule of ABUSE_RULES) {
+    byRule[rule] = 0;
+    for (const cand of candidatesByRule[rule] ?? []) {
+      // 抑制リストに入っている正当なヘビーユーザーは記録も通知もしない
+      if (isSuppressed(rule, cand.subjectUserId)) {
+        suppressed += 1;
+        continue;
+      }
+      const key = abuseFlagKey(rule, cand.subjectUserId);
+      // クールダウン期間内に **未確認の** 記録があればスキップ。同じバッチ内の
+      // 重複もここで潰れるよう、記録予定のキーも recent に足していく
+      if (recent.has(key)) {
+        skipped += 1;
+        continue;
+      }
+      recent.add(key);
+      toRecord.push({ rule, ...cand });
+      byRule[rule] += 1;
+    }
+  }
 
   if (toRecord.length > 0) {
     q.n += Math.ceil(toRecord.length / 50);
+    // ここも **意図的に try/catch していない**。記録できなければ検知は無かったのと
+    // 同じで、握りつぶすと「成功したのに何も残っていない」状態になる。
+    // 500 を返して GHA 側で失敗として見えるようにする
+    // （ルール単位の隔離は「他のルールは活かす」ためのもので、目的が違う）
     await abuseFlagsRepo.recordMany(toRecord, now);
   }
 
@@ -395,6 +550,7 @@ export async function detectAbuse(): Promise<DetectAbuseResult> {
   return {
     recorded: toRecord.length,
     skipped,
+    suppressed,
     byRule,
     failedRules,
     notified,

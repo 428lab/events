@@ -11,6 +11,7 @@ import {
   Menu,
   MenuItem,
   Toolbar,
+  Tooltip,
   Typography,
   ListSubheader,
 } from "@mui/material";
@@ -46,9 +47,14 @@ export function Layout({
   const isAdmin = useIsAdmin();
   const [adminAnchor, setAdminAnchor] = useState<null | HTMLElement>(null);
   const { data: adminUnread } = useAdminInquiryUnreadCount(isAdmin);
-  // 異常行動の未確認件数 (#259)。「運用」のバッジは問い合わせと合算して出す
+  // 異常行動の未確認件数 (#259)。「運用」のバッジは1つしか出せないので合算するが、
+  // 合算値だけだと内訳（問い合わせなのか要確認なのか）が分からないため
+  // ツールチップで内訳を出す。メニューを開けば項目ごとの件数も見える
   const { data: abuseUnread } = useAbuseUnreviewedCount(isAdmin);
   const adminBadge = (adminUnread ?? 0) + (abuseUnread ?? 0);
+  const adminBadgeTitle = adminBadge
+    ? `問い合わせ未読 ${adminUnread ?? 0} 件 / 要確認 ${abuseUnread ?? 0} 件`
+    : "";
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const closeMenu = () => setAnchor(null);
   const doLogout = () =>
@@ -116,15 +122,17 @@ export function Layout({
             </Button>
             {isAdmin && (
               <>
-                <Button
-                  color="inherit"
-                  onClick={(e) => setAdminAnchor(e.currentTarget)}
-                  endIcon={<ExpandMoreIcon />}
-                >
-                  <Badge badgeContent={adminBadge} color="error">
-                    運用
-                  </Badge>
-                </Button>
+                <Tooltip title={adminBadgeTitle}>
+                  <Button
+                    color="inherit"
+                    onClick={(e) => setAdminAnchor(e.currentTarget)}
+                    endIcon={<ExpandMoreIcon />}
+                  >
+                    <Badge badgeContent={adminBadge} color="error">
+                      運用
+                    </Badge>
+                  </Button>
+                </Tooltip>
                 <Menu
                   anchorEl={adminAnchor}
                   open={Boolean(adminAnchor)}

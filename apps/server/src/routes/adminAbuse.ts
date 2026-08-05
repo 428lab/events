@@ -1,11 +1,20 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
-import { ABUSE_FLAG_PAGE_SIZE } from "@eventer/shared";
-import type { AbuseFlagsPayload } from "@eventer/shared";
+import {
+  ABUSE_FLAG_PAGE_SIZE,
+  abuseAllowlistInputSchema,
+} from "@eventer/shared";
+import type {
+  AbuseAllowlistPayload,
+  AbuseFlagsPayload,
+} from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { isAppAdmin } from "../auth/admin.js";
-import { abuseFlagsRepo } from "../db/repositories/abuseFlags.js";
+import {
+  abuseAllowlistRepo,
+  abuseFlagsRepo,
+} from "../db/repositories/abuseFlags.js";
 import { detectAbuse } from "../lib/detectAbuse.js";
 
 /** 異常行動の「要確認」リスト (#259 PR2)。app admin のみ。
@@ -32,6 +41,41 @@ function parseReviewed(raw: string | undefined): boolean | undefined {
  * `/:id/review` より前に置く必要はないが、意図を明確にするため先頭に置く */
 adminAbuseRoutes.get("/unread-count", async (c) => {
   return c.json({ count: await abuseFlagsRepo.unreviewedCount() });
+});
+
+/** 検知の抑制リスト (#259 レビュー反映)。
+ *
+ * 「確認済みにする」はその1件を片付けるだけで、正当なヘビーユーザーは
+ * クールダウンが切れるたびに再掲される。ここに入れた user × rule は
+ * **検知の段階で落とす**ので、記録も通知も出なくなる。
+ * `/:id/review` より前に置いて、:id にマッチしないようにしている。 */
+adminAbuseRoutes.get("/allowlist", async (c) => {
+  const payload: AbuseAllowlistPayload = {
+    entries: await abuseAllowlistRepo.list(),
+  };
+  return c.json(payload);
+});
+
+/** 「今後このユーザーのこのルールは通知しない」。rule 省略で全ルール抑制。
+ * 既に同じ user × rule があれば何もしない（added=false） */
+adminAbuseRoutes.post("/allowlist", async (c) => {
+  const parsed = abuseAllowlistInputSchema.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "invalid" }, 400);
+  const added = await abuseAllowlistRepo.add({
+    userId: parsed.data.userId,
+    rule: parsed.data.rule ?? null,
+    // note は運営の自由記述。個人情報を書かない運用（画面にも注意書きを出す）
+    note: parsed.data.note ?? "",
+    createdBy: c.get("user").id,
+    at: Date.now(),
+  });
+  return c.json({ ok: true, added });
+});
+
+/** 抑制の解除。存在しないIDでも 200（画面の再読込で揃う） */
+adminAbuseRoutes.delete("/allowlist/:id", async (c) => {
+  const removed = await abuseAllowlistRepo.remove(c.req.param("id"));
+  return c.json({ ok: true, removed });
 });
 
 /** GET /api/admin/abuse-flags?reviewed=&page= （1ページ ABUSE_FLAG_PAGE_SIZE 件）。

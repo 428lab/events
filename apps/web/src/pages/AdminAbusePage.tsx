@@ -29,7 +29,10 @@ import {
 import type { AbuseFlag, AbuseRule } from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
 import {
+  useAbuseAllowlist,
   useAbuseFlags,
+  useAddAbuseAllowlist,
+  useRemoveAbuseAllowlist,
   useReviewAbuseFlag,
 } from "../api/abuseHooks.js";
 import { UserLink } from "../components/UserLink.js";
@@ -69,6 +72,7 @@ function detailText(detail: string): string {
 
 function FlagRow({ flag }: { flag: AbuseFlag }) {
   const review = useReviewAbuseFlag();
+  const suppress = useAddAbuseAllowlist();
   const reviewed = flag.reviewedAt !== null;
   return (
     <TableRow hover>
@@ -108,22 +112,120 @@ function FlagRow({ flag }: { flag: AbuseFlag }) {
         {formatDateTime(flag.detectedAt)}
       </TableCell>
       <TableCell sx={{ whiteSpace: "nowrap" }}>
-        {reviewed ? (
-          <Typography variant="caption" color="text.secondary">
-            {formatDateTime(flag.reviewedAt as number)}
-          </Typography>
-        ) : (
-          <Button
-            size="small"
-            variant="outlined"
-            disabled={review.isPending}
-            onClick={() => review.mutate(flag.id)}
-          >
-            確認済みにする
-          </Button>
-        )}
+        <Stack direction="row" spacing={1} alignItems="center">
+          {reviewed ? (
+            <Typography variant="caption" color="text.secondary">
+              {formatDateTime(flag.reviewedAt as number)}
+            </Typography>
+          ) : (
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={review.isPending}
+              onClick={() => review.mutate(flag.id)}
+            >
+              確認済みにする
+            </Button>
+          )}
+          {/* 確認済みにしてもクールダウンが切れれば再検知される。毎週イベントを
+              開く主催者のような正当なヘビーユーザーは、こちらで恒久的に除外する */}
+          {flag.subjectUserId !== null && (
+            <Tooltip title="今後このユーザーのこのルールは検知・通知しない（抑制リストに追加）">
+              <span>
+                <Button
+                  size="small"
+                  color="inherit"
+                  disabled={suppress.isPending}
+                  onClick={() =>
+                    suppress.mutate({
+                      userId: flag.subjectUserId as string,
+                      rule: flag.rule,
+                    })
+                  }
+                >
+                  今後通知しない
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+        </Stack>
       </TableCell>
     </TableRow>
+  );
+}
+
+/** 抑制リスト（検知の段階で落とす対象）の一覧と解除 */
+function AllowlistCard({ enabled }: { enabled: boolean }) {
+  const { data } = useAbuseAllowlist(enabled);
+  const remove = useRemoveAbuseAllowlist();
+  const entries = data?.entries ?? [];
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Stack spacing={1.5}>
+          <Typography variant="subtitle1" fontWeight={700}>
+            抑制リスト（{entries.length} 件）
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            ここに入っている対象は<strong>検知の段階で落とす</strong>ため、記録も通知も出ません。
+            毎週イベントを開く主催者のように「毎回出るが問題ない」と分かっている相手を入れてください。
+            「確認済みにする」は1件を片付けるだけで、次に条件を満たせばまた出ます。
+          </Typography>
+          {entries.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              まだありません。
+            </Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>対象</TableCell>
+                    <TableCell>抑制するルール</TableCell>
+                    <TableCell>メモ</TableCell>
+                    <TableCell>追加日時</TableCell>
+                    <TableCell>解除</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {entries.map((e) => (
+                    <TableRow key={e.id} hover>
+                      <TableCell sx={{ whiteSpace: "nowrap" }}>
+                        <UserLink
+                          username={e.handle || null}
+                          name={e.handle || e.userId.slice(0, 8)}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ whiteSpace: "nowrap" }}>
+                        {e.rule === null ? (
+                          <Chip size="small" label="すべて" variant="outlined" />
+                        ) : (
+                          ruleLabel(e.rule)
+                        )}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: 13 }}>{e.note}</TableCell>
+                      <TableCell sx={{ whiteSpace: "nowrap" }}>
+                        {formatDateTime(e.createdAt)}
+                      </TableCell>
+                      <TableCell sx={{ whiteSpace: "nowrap" }}>
+                        <Button
+                          size="small"
+                          color="inherit"
+                          disabled={remove.isPending}
+                          onClick={() => remove.mutate(e.id)}
+                        >
+                          解除
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -246,6 +348,8 @@ export function AdminAbusePage() {
           </Stack>
         </CardContent>
       </Card>
+
+      <AllowlistCard enabled={isAdmin} />
     </Stack>
   );
 }

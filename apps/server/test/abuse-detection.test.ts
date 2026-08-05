@@ -2,6 +2,7 @@ import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import {
   ABUSE_THRESHOLDS as T,
+  type AbuseAllowlistPayload,
   type AbuseFlagsPayload,
   type DetectAbuseResult,
 } from "@eventer/shared";
@@ -66,13 +67,15 @@ async function makeEvent(opts: {
   createdBy: string;
   status?: string;
   createdAt?: number;
+  /** 1 = 日程調整中（参加者がいないのが正常な状態） */
+  scheduling?: number;
 }): Promise<string> {
   const id = crypto.randomUUID();
   const createdAt = opts.createdAt ?? Date.now();
   await env.DB.prepare(
     `INSERT INTO event (id, title, description, starts_at, ends_at, venue_type,
-       status, created_by, created_at)
-     VALUES (?, ?, '', ?, ?, 'online', ?, ?, ?)`,
+       status, created_by, created_at, scheduling)
+     VALUES (?, ?, '', ?, ?, 'online', ?, ?, ?, ?)`,
   )
     .bind(
       id,
@@ -82,6 +85,7 @@ async function makeEvent(opts: {
       opts.status ?? "published",
       opts.createdBy,
       createdAt,
+      opts.scheduling ?? 0,
     )
     .run();
   await join({
@@ -140,15 +144,19 @@ async function makeComment(
     .run();
 }
 
+/** いいねを1行作る。本番では1イベントへの「いいね」が
+ * event / host / staff(人数分) / community と複数行になる (#259 レビュー) */
 async function makeLike(
   eventId: string,
   userId: string,
   createdAt: number,
+  kind = "event",
+  targetKey = "",
 ): Promise<void> {
   await env.DB.prepare(
-    "INSERT INTO event_like (id, event_id, user_id, kind, target_key, created_at) VALUES (?, ?, ?, 'event', '', ?)",
+    "INSERT INTO event_like (id, event_id, user_id, kind, target_key, created_at) VALUES (?, ?, ?, ?, ?, ?)",
   )
-    .bind(crypto.randomUUID(), eventId, userId, createdAt)
+    .bind(crypto.randomUUID(), eventId, userId, kind, targetKey, createdAt)
     .run();
 }
 
@@ -233,7 +241,8 @@ describe("検知バッチの認可", () => {
     const body = (await res.json()) as DetectAbuseResult;
     expect(body.recorded).toBe(0);
     expect(body.failedRules).toEqual([]);
-    // ルール7本 + 重複判定1 + 掃除1。Workers のサブリクエスト上限(50)に十分収まる
+    // ルール7本 + 重複判定1 + 抑制リスト1 + 掃除1。
+    // Workers のサブリクエスト上限(50)に十分収まる
     expect(body.queries).toBeLessThanOrEqual(20);
   });
 });
@@ -396,6 +405,48 @@ describe("comment_burst: コメント・いいねの連投", () => {
     }
     expect(await detectCount("comment_burst")).toBe(0);
   });
+
+  // ---- 以下は #259 レビューで見つかった穴 ----
+
+  it(`バケット境界の真上に投げた ${T.commentBurst.min * 2 - 2} 件を取りこぼさない`, async () => {
+    const u = await makeUser();
+    const host = await makeUser();
+    const ev = await makeEvent({ createdBy: host.userId });
+    // エポック基準の1時間境界をまたいで前後 min-1 件ずつ（=58件/分）。
+    // バケットが1系統だけだと 29/29 に割れ、min=30 に **恒久的に** 届かない
+    // （毎日同じ割れ方をするので、いつまでも検知されない）
+    const boundary = Math.floor((Date.now() - 3 * HOUR) / HOUR) * HOUR;
+    const half = T.commentBurst.min - 1;
+    for (let i = 0; i < half; i++) {
+      await makeComment(ev, u.userId, boundary - (i + 1) * 1000);
+    }
+    for (let i = 0; i < half; i++) {
+      await makeComment(ev, u.userId, boundary + i * 1000);
+    }
+    expect(await detectCount("comment_burst")).toBe(1);
+  });
+
+  it("1イベントへのいいねは種類が増えても1件として数える", async () => {
+    const u = await makeUser();
+    const host = await makeUser();
+    const base = bucketBase();
+    // 本番の event_like は1イベントにつき
+    // event / host / staff(人数分) / community と複数行できる。
+    // スタッフ4名のイベント8件にいいねすると 8×7 = 56行になり、
+    // 修正前は行数をそのまま数えて min=30 を超えて誤検知していた
+    let at = base;
+    for (let i = 0; i < 8; i++) {
+      const ev = await makeEvent({ createdBy: host.userId });
+      await makeLike(ev, u.userId, at++, "event", "");
+      await makeLike(ev, u.userId, at++, "host", host.userId);
+      for (let sfi = 0; sfi < 4; sfi++) {
+        await makeLike(ev, u.userId, at++, "staff", `staff-${sfi}`);
+      }
+      await makeLike(ev, u.userId, at++, "community", "community-1");
+    }
+    // 実際の「いいねした」アクションは8回なので発火しない
+    expect(await detectCount("comment_burst")).toBe(0);
+  });
 });
 
 describe("new_account_burst: 新規アカウントの即時大量行動", () => {
@@ -436,6 +487,37 @@ describe("new_account_burst: 新規アカウントの即時大量行動", () => 
       });
     }
     expect(await detectCount("new_account_burst")).toBe(0);
+  });
+
+  it("新規アカウントが初日に event_burst のしきい値未満しか立てなければ検知しない", async () => {
+    // しきい値が event_burst の短期(5件)より **緩い** と、初めての主催者が
+    // 初日にシリーズを3〜4件立てるという普通の導線で発火してしまう。
+    // 修正前は3件で、登録6時間後に5件公開すると3ルールが同時に記録されていた
+    expect(T.newAccountBurst.min).toBeGreaterThanOrEqual(T.eventBurst.shortMin);
+    const at = Date.now() - 6 * HOUR;
+    const u = await makeUser({ createdAt: at });
+    for (let i = 0; i < T.eventBurst.shortMin - 1; i++) {
+      await makeEvent({ createdBy: u.userId, createdAt: at + HOUR + i * 1000 });
+    }
+    const r = await runDetect();
+    expect(r.byRule.new_account_burst).toBe(0);
+    expect(r.byRule.event_burst).toBe(0);
+    expect(r.recorded).toBe(0);
+  });
+
+  it("登録直後にシリーズをまとめて公開しても event_burst の1件に寄せる", async () => {
+    // 新規主催者が初日にイベントを立てるのは普通の導線。修正前はしきい値が
+    // 3件と event_burst(5件) より緩く、5件公開すると3ルールが同時に記録されていた
+    const at = Date.now() - 6 * HOUR;
+    const u = await makeUser({ createdAt: at });
+    for (let i = 0; i < T.eventBurst.shortMin; i++) {
+      await makeEvent({ createdBy: u.userId, createdAt: at + HOUR + i * 1000 });
+    }
+    const r = await runDetect();
+    expect(r.byRule.event_burst).toBe(1);
+    expect(r.byRule.new_account_burst).toBe(0);
+    expect(r.byRule.empty_event_spam).toBe(0);
+    expect(r.recorded).toBe(1);
   });
 
   it("古い登録（lookback の外）は毎日は見直さない", async () => {
@@ -496,17 +578,87 @@ describe("empty_event_spam: 参加者0のイベント量産", () => {
     }
     expect(await detectCount("empty_event_spam")).toBe(0);
   });
+
+  // ---- 以下は #259 レビューで見つかった誤検知。修正前はすべて発火していた ----
+
+  it("いま公開したばかりのイベントは参加者0に数えない（イベント複製での定例作成）", async () => {
+    const u = await makeUser();
+    // 修正前は作成時刻に **下限しかなかった** ため、シリーズ5件をいま公開した
+    // だけで event_burst と empty_event_spam が同時に記録されていた
+    for (let i = 0; i < T.emptyEventSpam.min + 2; i++) {
+      await makeEvent({ createdBy: u.userId, createdAt: Date.now() - i * 1000 });
+    }
+    const r = await runDetect();
+    expect(r.byRule.empty_event_spam).toBe(0);
+    // 「イベントをまとめて作った」ことは event_burst だけで拾えていればよい
+    expect(r.byRule.event_burst).toBe(1);
+  });
+
+  it(`作成から ${Math.round(T.emptyEventSpam.minAgeMs / 3600000)} 時間たっていないイベントは対象外（境界）`, async () => {
+    const u = await makeUser();
+    // 下限ちょうどより 1時間だけ新しい ＝ まだ様子見の時間内
+    for (let i = 0; i < T.emptyEventSpam.min; i++) {
+      await makeEvent({
+        createdBy: u.userId,
+        createdAt: Date.now() - T.emptyEventSpam.minAgeMs + HOUR + i * 1000,
+      });
+    }
+    expect(await detectCount("empty_event_spam")).toBe(0);
+  });
+
+  it("抽選枠(applied)・キャンセル待ち(waitlist)の申込者は参加者として数える", async () => {
+    const u = await makeUser();
+    const applicant = await makeUser();
+    const waiting = await makeUser();
+    // ハッカソン運営の中心ユースケース。修正前は status='confirmed' しか
+    // 見ていなかったため、申込者がいるのに全イベントが「参加者0」扱いだった
+    for (let i = 0; i < T.emptyEventSpam.min + 2; i++) {
+      const ev = await makeEvent({ createdBy: u.userId, createdAt: spreadAt(i) });
+      await join({ eventId: ev, userId: applicant.userId, status: "applied" });
+      await join({ eventId: ev, userId: waiting.userId, status: "waitlist" });
+    }
+    expect(await detectCount("empty_event_spam")).toBe(0);
+  });
+
+  it("日程調整中(scheduling=1)のイベントは対象外", async () => {
+    const u = await makeUser();
+    // 日程が決まる前は参加者が0なのが正常
+    for (let i = 0; i < T.emptyEventSpam.min + 2; i++) {
+      await makeEvent({
+        createdBy: u.userId,
+        createdAt: spreadAt(i),
+        scheduling: 1,
+      });
+    }
+    expect(await detectCount("empty_event_spam")).toBe(0);
+  });
+
+  it("窓より古いイベント（windowMs の外）は数えない", async () => {
+    const u = await makeUser();
+    for (let i = 0; i < T.emptyEventSpam.min + 2; i++) {
+      await makeEvent({
+        createdBy: u.userId,
+        createdAt: Date.now() - T.emptyEventSpam.windowMs - DAY - i * 1000,
+      });
+    }
+    expect(await detectCount("empty_event_spam")).toBe(0);
+  });
 });
 
 describe("cancel_burst: 大量キャンセル", () => {
   /** 参加登録を n 件、うち canceled 件をキャンセル済みにする。
-   * イベント自体は60日前に作られたことにして、他ルールの巻き込みを避ける */
+   * イベント自体は60日前に作られたことにして、他ルールの巻き込みを避ける。
+   * registeredAt / canceledAt を分けて指定できるのが肝で、これを分けないと
+   * 「昔登録して今キャンセルした」常習者のケースを再現できない (#259 レビュー) */
   async function joinAndCancel(
     userId: string,
     total: number,
     canceled: number,
+    opts: { registeredAt?: number; canceledAt?: number } = {},
   ): Promise<void> {
     const host = await makeUser();
+    const registeredAt = opts.registeredAt ?? Date.now();
+    const canceledAt = opts.canceledAt ?? Date.now() - HOUR;
     for (let i = 0; i < total; i++) {
       const ev = await makeEvent({
         createdBy: host.userId,
@@ -516,7 +668,8 @@ describe("cancel_burst: 大量キャンセル", () => {
         eventId: ev,
         userId,
         status: i < canceled ? "canceled" : "confirmed",
-        canceledAt: i < canceled ? Date.now() - HOUR : undefined,
+        createdAt: registeredAt,
+        canceledAt: i < canceled ? canceledAt : undefined,
       });
     }
   }
@@ -547,6 +700,65 @@ describe("cancel_burst: 大量キャンセル", () => {
     for (let i = 0; i < T.cancelBurst.min * 2; i++) {
       await makeEvent({ createdBy: u.userId, createdAt: Date.now() - 60 * DAY });
     }
+    expect(await detectCount("cancel_burst")).toBe(0);
+  });
+
+  // ---- 以下は #259 レビューで見つかった取りこぼし。修正前はすべて検知0 ----
+
+  it("8日前に登録して今日キャンセルした常習者を検知する", async () => {
+    const u = await makeUser();
+    // 修正前は母数も分子も「直近7日に **作成された** 登録」だったため、
+    // 登録が窓の外にあるこのケースが丸ごと漏れていた
+    const total = Math.round(T.cancelBurst.min / T.cancelBurst.minRate);
+    await joinAndCancel(u.userId, total, T.cancelBurst.min, {
+      registeredAt: Date.now() - 8 * DAY,
+      canceledAt: Date.now() - HOUR,
+    });
+    expect(await detectCount("cancel_burst")).toBe(1);
+  });
+
+  it("母数には直近30日の登録が入る（率が常に 1.0 にならない）", async () => {
+    const u = await makeUser();
+    // 8日前に min*4 件登録し、今日 min 件だけキャンセル → 率は 0.25 で不検知。
+    // 分母を「キャンセルされた行」だけにすると率が常に 1.0 になり、
+    // minRate が判定として機能しなくなる
+    await joinAndCancel(u.userId, T.cancelBurst.min * 4, T.cancelBurst.min, {
+      registeredAt: Date.now() - 8 * DAY,
+      canceledAt: Date.now() - HOUR,
+    });
+    expect(await detectCount("cancel_burst")).toBe(0);
+  });
+
+  it("検知時の detail の母数に、キャンセルしていない登録も入っている", async () => {
+    const u = await makeUser();
+    const total = Math.round(T.cancelBurst.min / T.cancelBurst.minRate);
+    await joinAndCancel(u.userId, total, T.cancelBurst.min, {
+      registeredAt: Date.now() - 8 * DAY,
+      canceledAt: Date.now() - HOUR,
+    });
+    await runDetect();
+    const row = await env.DB.prepare(
+      "SELECT detail FROM abuse_flag WHERE rule = 'cancel_burst' AND subject_user_id = ?",
+    )
+      .bind(u.userId)
+      .first<{ detail: string }>();
+    const detail = JSON.parse(row?.detail ?? "{}") as {
+      canceled: number;
+      registrations: number;
+      cancelRate: number;
+    };
+    expect(detail.canceled).toBe(T.cancelBurst.min);
+    expect(detail.registrations).toBe(total);
+    expect(detail.cancelRate).toBe(T.cancelBurst.minRate);
+  });
+
+  it("窓より前にキャンセルされた分は分子に数えない（境界）", async () => {
+    const u = await makeUser();
+    // 40日前に登録（母数の30日窓の外）・8日前にキャンセル（分子の7日窓の外）
+    await joinAndCancel(u.userId, T.cancelBurst.min * 2, T.cancelBurst.min * 2, {
+      registeredAt: Date.now() - 40 * DAY,
+      canceledAt: Date.now() - 8 * DAY,
+    });
     expect(await detectCount("cancel_burst")).toBe(0);
   });
 });
@@ -679,6 +891,185 @@ describe("クールダウン期間内の重複はスキップされる", () => {
     expect(r.byRule.event_burst).toBe(1);
     expect(r.byRule.egg_burst).toBe(1);
     expect(r.recorded).toBe(2);
+  });
+
+  it("subject が NULL の signup_spike にもクールダウンが効く", async () => {
+    // subject_user_id が NULL の行はキーが特別扱いなので、直接押さえておく
+    const { baselineDays, min } = T.signupSpike;
+    for (let i = 0; i < min; i++) await makeSignup(Date.now() - DAY);
+    // ベースラインを0にするため、比較期間には誰も入れない
+    expect(baselineDays).toBeGreaterThan(0);
+
+    const first = await runDetect();
+    expect(first.byRule.signup_spike).toBe(1);
+
+    const second = await runDetect();
+    expect(second.byRule.signup_spike).toBe(0);
+    expect(second.skipped).toBeGreaterThanOrEqual(1);
+
+    const row = await env.DB.prepare(
+      "SELECT COUNT(1) AS n FROM abuse_flag WHERE rule = 'signup_spike'",
+    ).first<{ n: number }>();
+    expect(row?.n).toBe(1);
+  });
+
+  it("確認済みにした記録はクールダウンの対象にしない（継続中の荒らしを翌日も追える）", async () => {
+    const u = await makeUser();
+    for (let i = 0; i < T.eventBurst.shortMin; i++) {
+      await makeEvent({ createdBy: u.userId, status: "draft" });
+    }
+    expect((await runDetect()).byRule.event_burst).toBe(1);
+
+    // 運営が「確認済みにする」を押した状態
+    await env.DB.prepare(
+      "UPDATE abuse_flag SET reviewed_at = ?, reviewed_by = ?",
+    )
+      .bind(Date.now(), u.userId)
+      .run();
+
+    // 荒らしが続いていれば翌日また上がってくる（確認済みで7日消えてはいけない）
+    const again = await runDetect();
+    expect(again.byRule.event_burst).toBe(1);
+    expect(again.skipped).toBe(0);
+    expect(await flagCount("event_burst", u.userId)).toBe(2);
+  });
+});
+
+// -------------------------------------------------------------------------
+// 抑制リスト (#259 レビュー反映)
+// -------------------------------------------------------------------------
+
+/** 抑制リストに追加する */
+async function addAllowlist(
+  cookie: string,
+  body: { userId: string; rule?: string | null; note?: string },
+): Promise<Response> {
+  return SELF.fetch(`${BASE}/api/admin/abuse-flags/allowlist`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function listAllowlist(cookie: string): Promise<AbuseAllowlistPayload> {
+  const res = await SELF.fetch(`${BASE}/api/admin/abuse-flags/allowlist`, {
+    headers: { cookie },
+  });
+  expect(res.status).toBe(200);
+  return (await res.json()) as AbuseAllowlistPayload;
+}
+
+/** イベントを大量作成して event_burst の条件を満たさせる */
+async function makeEventBurst(userId: string): Promise<void> {
+  for (let i = 0; i < T.eventBurst.shortMin; i++) {
+    await makeEvent({ createdBy: userId, status: "draft" });
+  }
+}
+
+describe("抑制リスト: 正当なヘビーユーザーを恒久的に除外する", () => {
+  it("非管理者は操作できない", async () => {
+    const u = await makeUser();
+    expect((await addAllowlist(u.cookie, { userId: u.userId })).status).toBe(403);
+    const res = await SELF.fetch(`${BASE}/api/admin/abuse-flags/allowlist`, {
+      headers: { cookie: u.cookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("ルールを指定して抑制すると、そのルールだけ検知されなくなる", async () => {
+    const admin = await makeUser({ admin: true });
+    const u = await makeUser();
+    await makeEventBurst(u.userId);
+    for (let i = 0; i < T.eggBurst.min; i++) {
+      await makeEgg(u.userId, Date.now() - i * HOUR);
+    }
+
+    const res = await addAllowlist(admin.cookie, {
+      userId: u.userId,
+      rule: "event_burst",
+      note: "毎週の定例イベント主催者",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, added: true });
+
+    const r = await runDetect();
+    // event_burst は落ち、抑制していない egg_burst は残る
+    expect(r.byRule.event_burst).toBe(0);
+    expect(r.byRule.egg_burst).toBe(1);
+    expect(r.suppressed).toBe(1);
+    expect(await flagCount("event_burst", u.userId)).toBe(0);
+  });
+
+  it("rule を省略するとそのユーザーの全ルールを抑制する", async () => {
+    const admin = await makeUser({ admin: true });
+    const u = await makeUser();
+    await makeEventBurst(u.userId);
+    for (let i = 0; i < T.eggBurst.min; i++) {
+      await makeEgg(u.userId, Date.now() - i * HOUR);
+    }
+    expect((await addAllowlist(admin.cookie, { userId: u.userId })).status).toBe(
+      200,
+    );
+
+    const r = await runDetect();
+    expect(r.recorded).toBe(0);
+    expect(r.suppressed).toBe(2);
+  });
+
+  it("一覧で抑制中を確認でき、解除すると再び検知される", async () => {
+    const admin = await makeUser({ admin: true });
+    const u = await makeUser();
+    await makeEventBurst(u.userId);
+    await addAllowlist(admin.cookie, {
+      userId: u.userId,
+      rule: "event_burst",
+      note: "運営スタッフの検証用アカウント",
+    });
+
+    const listed = await listAllowlist(admin.cookie);
+    expect(listed.entries.length).toBe(1);
+    expect(listed.entries[0].userId).toBe(u.userId);
+    expect(listed.entries[0].rule).toBe("event_burst");
+    expect(listed.entries[0].handle).toBe(u.handle);
+    expect(listed.entries[0].note).toBe("運営スタッフの検証用アカウント");
+    expect(listed.entries[0].createdBy).toBe(admin.userId);
+    expect((await runDetect()).byRule.event_burst).toBe(0);
+
+    const del = await SELF.fetch(
+      `${BASE}/api/admin/abuse-flags/allowlist/${listed.entries[0].id}`,
+      { method: "DELETE", headers: { cookie: admin.cookie } },
+    );
+    expect(del.status).toBe(200);
+    expect(await del.json()).toEqual({ ok: true, removed: true });
+    expect((await listAllowlist(admin.cookie)).entries.length).toBe(0);
+
+    expect((await runDetect()).byRule.event_burst).toBe(1);
+  });
+
+  it("同じ user × rule の二重登録は増えない", async () => {
+    const admin = await makeUser({ admin: true });
+    const u = await makeUser();
+    const first = await addAllowlist(admin.cookie, {
+      userId: u.userId,
+      rule: "event_burst",
+    });
+    expect(await first.json()).toEqual({ ok: true, added: true });
+    const second = await addAllowlist(admin.cookie, {
+      userId: u.userId,
+      rule: "event_burst",
+    });
+    expect(await second.json()).toEqual({ ok: true, added: false });
+    expect((await listAllowlist(admin.cookie)).entries.length).toBe(1);
+  });
+
+  it("userId が無いリクエストは 400", async () => {
+    const admin = await makeUser({ admin: true });
+    const res = await SELF.fetch(`${BASE}/api/admin/abuse-flags/allowlist`, {
+      method: "POST",
+      headers: { cookie: admin.cookie, "content-type": "application/json" },
+      body: JSON.stringify({ rule: "event_burst" }),
+    });
+    expect(res.status).toBe(400);
   });
 });
 
