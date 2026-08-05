@@ -85,6 +85,7 @@ import {
 import { adminSettingsRoutes } from "./routes/adminSettings.js";
 import { adminAuditRoutes } from "./routes/adminAudit.js";
 import { adminKpiRoutes } from "./routes/adminKpi.js";
+import { adminTrendingRoutes } from "./routes/adminTrending.js";
 
 const api = new Hono();
 // リクエストボディの上限（最大の画像アップロード 6MB より少し上）
@@ -200,6 +201,8 @@ api.post("/cron/purge-deleted", async (c) => {
 api.route("/admin/stats", adminStatsRoutes);
 // 運営ダッシュボード: サービス全体のKPI（app admin のみ） (#257)
 api.route("/admin/kpi", adminKpiRoutes);
+// 運営ダッシュボード: 注目のユーザー/コミュニティ（app admin のみ） (#259 PR1)
+api.route("/admin/trending", adminTrendingRoutes);
 // アプリ全体の運用設定（チャットリレー等。app admin のみ） (#199)
 api.route("/admin/settings", adminSettingsRoutes);
 // 重要操作の監査ログ（app admin のみ） (#248)

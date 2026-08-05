@@ -1,6 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { AdminStats, EventStats, KpiPayload } from "@eventer/shared";
+import type {
+  AdminStats,
+  EventStats,
+  KpiPayload,
+  TrendingPayload,
+} from "@eventer/shared";
 import { api } from "./client.js";
 
 /** イベントページ表示時にアクセスを記録（マウント毎に1回、document.referrer を送る） */
@@ -66,5 +71,17 @@ export function useAdminKpi(days: number | null, enabled: boolean) {
     refetchOnWindowFocus: false,
     queryFn: () =>
       api.get<KpiPayload>(`/admin/kpi${days ? `?days=${days}` : ""}`),
+  });
+}
+
+/** 運営ダッシュボードの注目（トレンド） (#259)。app admin のみ。
+ * 「急上昇」は前の同じ長さの期間との比なので、全期間（days=null）は選べない */
+export function useAdminTrending(days: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ["adminTrending", days],
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    queryFn: () => api.get<TrendingPayload>(`/admin/trending?days=${days}`),
   });
 }
