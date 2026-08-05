@@ -36,7 +36,7 @@ function num(v: number | null, digits = 1): string {
 export function AdminKpiPage() {
   const isAdmin = useIsAdmin();
   const [range, setRange] = useState<number | null>(30);
-  const { data, isLoading } = useAdminKpi(range, isAdmin);
+  const { data, isLoading, isError } = useAdminKpi(range, isAdmin);
 
   if (!isAdmin) {
     return <Alert severity="warning">この画面は運営管理者専用です。</Alert>;
@@ -69,9 +69,16 @@ export function AdminKpiPage() {
       <Alert severity="info" sx={{ py: 0.5 }}>
         いま計測できているデータのみを表示しています。サイト全体のPV・DAU/MAU・
         各ファネルの到達数・検索需要・メール到達は未計測です（今後対応）。
+        参加登録の数え方は「アクセス統計（全イベント）」ページと異なります。この画面は
+        参加者として登録した行のみを数え、主催・スタッフの行・下書きイベント・
+        退会申請中ユーザーを除くため、あちらより少なく出ます。
       </Alert>
 
-      {isLoading || !data ? (
+      {isError ? (
+        <Alert severity="error">
+          KPI の取得に失敗しました。時間をおいて再読み込みしてください。
+        </Alert>
+      ) : isLoading || !data ? (
         <Typography>読み込み中…</Typography>
       ) : (
         <>
@@ -94,18 +101,18 @@ function NorthStarSection({ data }: { data: KpiPayload }) {
   return (
     <Section
       title="北極星指標"
-      note="実際に人が集まった参加体験の数。開催済みイベント（期間内に終了した公開イベント）の確定参加者の合計で、出席チェックを実施したイベントは出席者数、未実施は確定登録者数を数えます。"
+      note="実際に人が集まった参加体験の数。開催済みイベント（期間内に終了した公開イベント）の確定参加者の合計で、出席チェックを実施したイベントは出席者数、未実施は確定登録者数を数えます。イベントページに出る参加者数と同じ定義のため、主催・スタッフを含みます。"
     >
       <Tile
         label="参加体験の数"
         value={n.participations}
-        hint="開催済みイベントの確定参加者の合計"
+        hint={`開催済みイベントの確定参加者の合計（主催・スタッフを含む）。うち参加者は ${n.heldParticipants.toLocaleString()}`}
         big
       />
       <Tile
         label="開催イベント数"
         value={n.heldEvents}
-        hint="期間内に終了した公開イベント（日程確定済み）"
+        hint="期間内に終了した公開イベント（日程確定済み・開催日設定済み）"
       />
       <Tile
         label="1イベントあたり平均参加者"
@@ -121,12 +128,12 @@ function ParticipantsSection({ data }: { data: KpiPayload }) {
   return (
     <Section
       title="参加者（需要側）"
-      note="閲覧はイベント詳細ページのみの計測です。登録・キャンセルは「登録が作成された日」、出席は「イベントが終了した日」で期間を切っています。"
+      note="閲覧はイベント詳細ページのみの計測です。登録・キャンセルは「登録が作成された日」、出席は「イベントが終了した日」で期間を切っています。数えるのは参加者として登録した行のみで、主催・スタッフの行と下書きイベントは含みません。キャンセルは、取り消したあと同じイベントに再参加すると行が再利用されるため構造的に少なめに出ます。"
     >
       <Tile
         label="参加登録数"
         value={p.registrations}
-        hint="期間内に作成された登録（取消を含む全ステータス）"
+        hint="期間内に作成された登録（取消を含む全ステータス。主催・スタッフを除く）"
       />
       <Tile
         label="うち確定"
@@ -156,7 +163,7 @@ function ParticipantsSection({ data }: { data: KpiPayload }) {
       <Tile
         label="キャンセル率"
         text={pct(p.cancelRate)}
-        hint={`取消 ${p.canceled} ÷ 期間内の登録 ${p.registrations}（日程調整中の取消は除外）`}
+        hint={`取消 ${p.canceled} ÷ 期間内の登録 ${p.registrations}（日程調整中の取消は除外。再参加すると取消の記録は消える）`}
       />
       <Tile
         label="うち直前24時間"
@@ -214,12 +221,12 @@ function OrganizersSection({ data }: { data: KpiPayload }) {
       <Tile
         label="不発率"
         text={pct(o.dudRate)}
-        hint={`参加者3人以下 ${o.dudEvents} ÷ 開催完了 ${o.heldEvents}`}
+        hint={`参加者3人以下 ${o.dudEvents} ÷ 開催完了 ${o.heldEvents}（主催・スタッフを除いた人数で判定）`}
       />
       <Tile
         label="主催者数"
         value={o.hosts}
-        hint="期間内にイベントを開催した実人数"
+        hint="期間内にイベントを開催した実人数（退会申請中を除く）"
       />
       <Tile
         label="再開催率"
@@ -229,7 +236,7 @@ function OrganizersSection({ data }: { data: KpiPayload }) {
       <Tile
         label="主催者あたり開催数"
         text={num(o.avgEventsPerHost)}
-        hint="開催完了数 ÷ 主催者数"
+        hint={`在籍主催者の開催 ${o.heldEventsWithActiveHost} ÷ 主催者数 ${o.hosts}（開催完了 ${o.heldEvents} には退会申請中の主催者の分も含む）`}
       />
     </Section>
   );
@@ -240,7 +247,7 @@ function RetentionSection({ data }: { data: KpiPayload }) {
   return (
     <Section
       title="定着"
-      note="退会申請中のユーザーは分母から除いています。DAU/WAU/MAU と登録後の残存率（コホート）は最終アクセスを記録していないため未計測です（今後対応）。"
+      note="退会申請中のユーザーは分母から除いています。「初回参加」は参加者として登録した人だけで、主催しただけの人は含みません（参加も主催もした人は両方に数えるため、2つの率の合計は100%を超えることがあります）。DAU/WAU/MAU と登録後の残存率（コホート）は最終アクセスを記録していないため未計測です（今後対応）。"
     >
       <Tile
         label="新規登録者数"
@@ -250,7 +257,7 @@ function RetentionSection({ data }: { data: KpiPayload }) {
       <Tile
         label="登録→初回参加"
         text={pct(r.activationParticipantRate)}
-        hint={`公開イベントに参加登録したことがある ${r.activatedParticipant} ÷ 新規登録 ${r.signups}`}
+        hint={`公開イベントに参加者として登録したことがある ${r.activatedParticipant} ÷ 新規登録 ${r.signups}`}
       />
       <Tile
         label="登録→初回主催"
@@ -495,10 +502,11 @@ function MiniBars({
   );
 }
 
-/** 日別の推移（新規登録 / 参加登録）。既存の統計ページと同じ素朴な棒グラフ */
+/** 日別の推移（新規登録 / 参加登録）。既存の統計ページと同じ素朴な棒グラフ。
+ * 2系列を同じチャートに描くので目盛りは共通にする（系列ごとに正規化すると
+ * 同じ高さの棒が違う値を意味してしまう） */
 function TrendChart({ daily }: { daily: KpiPayload["retention"]["daily"] }) {
-  const maxSignups = Math.max(1, ...daily.map((d) => d.signups));
-  const maxJoins = Math.max(1, ...daily.map((d) => d.joins));
+  const max = Math.max(1, ...daily.map((d) => Math.max(d.signups, d.joins)));
   return (
     <Card variant="outlined" sx={{ width: "100%" }}>
       <CardContent>
@@ -549,7 +557,7 @@ function TrendChart({ daily }: { daily: KpiPayload["retention"]["daily"] }) {
                   <Box
                     sx={{
                       width: 8,
-                      height: `${(d.signups / maxSignups) * 110}px`,
+                      height: `${(d.signups / max) * 110}px`,
                       bgcolor: "primary.main",
                       borderRadius: "2px 2px 0 0",
                       minHeight: d.signups > 0 ? 2 : 0,
@@ -558,7 +566,7 @@ function TrendChart({ daily }: { daily: KpiPayload["retention"]["daily"] }) {
                   <Box
                     sx={{
                       width: 8,
-                      height: `${(d.joins / maxJoins) * 110}px`,
+                      height: `${(d.joins / max) * 110}px`,
                       bgcolor: "secondary.main",
                       borderRadius: "2px 2px 0 0",
                       minHeight: d.joins > 0 ? 2 : 0,

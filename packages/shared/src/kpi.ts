@@ -24,22 +24,29 @@ export interface KpiDailyPoint {
   day: string;
   /** 新規登録者数（退会申請中を除く） */
   signups: number;
-  /** 確定した参加登録数 */
+  /** 確定した参加登録数（participant のみ・公開イベントのみ） */
   joins: number;
 }
 
 /** 北極星指標: 実際に人が集まった参加体験の数 */
 export interface KpiNorthStar {
-  /** 開催済みイベントの確定参加者数の合計。
-   * 出席チェック実施イベントは出席者数、未実施は確定登録者数 */
+  /** 開催済みイベントの確定参加者数の合計。イベントページの参加者数
+   * (participantCount) と同じ定義で、**主催・スタッフを含む**。
+   * 出席チェック実施イベントは出席者数（＋主催・スタッフ）、未実施は確定登録者数 */
   participations: number;
-  /** 期間内に終了した公開イベント（日程確定済み）の数 */
+  /** participations のうち participant の行だけを数えたもの（主催・スタッフを除く）。
+   * 不発イベントのしきい値判定もこちらを使う */
+  heldParticipants: number;
+  /** 期間内に終了した公開イベント（日程確定済み・開催日設定済み）の数 */
   heldEvents: number;
   /** participations / heldEvents */
   avgParticipantsPerEvent: number | null;
 }
 
-/** 参加者ファネル（需要側） */
+/** 参加者ファネル（需要側）。
+ * 登録系はすべて role='participant' かつ公開イベントの行のみを数える。
+ * イベント作成時に作成者の staff 行が作られるため、絞らないとイベントを1件作る
+ * たびに参加登録が+1され、キャンセル率・転換率が実態とずれる。 */
 export interface KpiParticipants {
   /** 期間内に作成された参加登録（取消済みを含む全ステータス） */
   registrations: number;
@@ -59,7 +66,8 @@ export interface KpiParticipants {
   attendanceRate: number | null;
   /** 1 - attendanceRate（登録したのに来なかった割合） */
   noShowRate: number | null;
-  /** 期間内に作成された登録のうち取消されたもの（日程調整中の取消は除く） */
+  /** 期間内に作成された登録のうち取消されたもの（日程調整中の取消は除く）。
+   * 再参加時は行を再利用して canceled_at を戻すため、構造的に過小に出る */
   canceled: number;
   /** canceled / registrations */
   cancelRate: number | null;
@@ -97,17 +105,21 @@ export interface KpiOrganizers {
   schedulingConfirmRate: number | null;
   /** 期間内に終了した公開イベント（＝開催完了） */
   heldEvents: number;
-  /** うち参加者3人以下の「不発」イベント */
+  /** うち「不発」イベント（主催・スタッフを除いた参加者が3人以下）。
+   * 主催・スタッフを含めるとチーム規模でしきい値がぶれ、時系列比較ができない */
   dudEvents: number;
   /** dudEvents / heldEvents */
   dudRate: number | null;
-  /** 期間内にイベントを開催した主催者の実人数 */
+  /** 期間内にイベントを開催した主催者の実人数（退会申請中を除く） */
   hosts: number;
+  /** heldEvents のうち主催者が在籍している（退会申請中でない）ものだけの数。
+   * avgEventsPerHost / repeatHostRate の分子はこちらで、hosts と分母が揃う */
+  heldEventsWithActiveHost: number;
   /** うち2回以上開催した人数 */
   repeatHosts: number;
   /** repeatHosts / hosts */
   repeatHostRate: number | null;
-  /** heldEvents / hosts */
+  /** heldEventsWithActiveHost / hosts */
   avgEventsPerHost: number | null;
 }
 
@@ -115,7 +127,8 @@ export interface KpiOrganizers {
 export interface KpiRetention {
   /** 期間内の新規登録者数（退会申請中を除く） */
   signups: number;
-  /** うち公開イベントに参加登録したことがある人数 */
+  /** うち公開イベントに参加者として登録したことがある人数。
+   * 主催時に自動で作られる staff 行は数えない */
   activatedParticipant: number;
   /** うち公開イベントを主催したことがある人数 */
   activatedHost: number;

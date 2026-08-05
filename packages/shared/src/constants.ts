@@ -53,3 +53,7 @@ export const COMMUNITY_BANNER = {
 /** プロフィールカードの組み合わせキー（背景-色）。R2キー・OG URLの検証用 (#201) */
 export const CARD_COMBO_RE =
   /^(rosette|topo|arcs|flow)-(indigo|teal|rose|amber|mono)$/;
+
+/** 統計・KPI の ?days= の上限（約10年）。
+ * 上限が無いと ?days=1e9 で Date が範囲外になり toISOString() が投げて 500 になる */
+export const STATS_MAX_DAYS = 3650;

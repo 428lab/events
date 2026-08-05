@@ -56,11 +56,14 @@ export function useAdminStats(days: number | null, enabled: boolean) {
   });
 }
 
-/** 運営ダッシュボードのKPI (#257)。app admin のみ */
+/** 運営ダッシュボードのKPI (#257)。app admin のみ。
+ * 10本の集計クエリが走るので、フォーカス復帰のたびに叩かないよう staleTime を置く */
 export function useAdminKpi(days: number | null, enabled: boolean) {
   return useQuery({
     queryKey: ["adminKpi", days],
     enabled,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
     queryFn: () =>
       api.get<KpiPayload>(`/admin/kpi${days ? `?days=${days}` : ""}`),
   });
