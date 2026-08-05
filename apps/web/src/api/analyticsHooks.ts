@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { AdminStats, EventStats } from "@eventer/shared";
+import type { AdminStats, EventStats, KpiPayload } from "@eventer/shared";
 import { api } from "./client.js";
 
 /** イベントページ表示時にアクセスを記録（マウント毎に1回、document.referrer を送る） */
@@ -53,5 +53,18 @@ export function useAdminStats(days: number | null, enabled: boolean) {
     enabled,
     queryFn: () =>
       api.get<AdminStats>(`/admin/stats${days ? `?days=${days}` : ""}`),
+  });
+}
+
+/** 運営ダッシュボードのKPI (#257)。app admin のみ。
+ * 10本の集計クエリが走るので、フォーカス復帰のたびに叩かないよう staleTime を置く */
+export function useAdminKpi(days: number | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["adminKpi", days],
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    queryFn: () =>
+      api.get<KpiPayload>(`/admin/kpi${days ? `?days=${days}` : ""}`),
   });
 }

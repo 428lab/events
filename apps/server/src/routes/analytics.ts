@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { STATS_MAX_DAYS } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { env } from "../runtime.js";
 import { requireAuth, currentUser } from "../auth/session.js";
@@ -85,10 +86,12 @@ export async function recordEventView(c: Context<AppEnv>) {
 export const analyticsRoutes = new Hono<AppEnv>();
 analyticsRoutes.use("*", requireAuth);
 
-/** ?days=N を JST の since 日付に。未指定/0以下は全期間（'0000'） */
+/** ?days=N を JST の since 日付に。未指定/0以下は全期間（'0000'）。
+ * 上限を設けないと ?days=1e9 で Date が範囲外になり toISOString() が投げる */
 function sinceDayFromQuery(c: Context<AppEnv>): string {
-  const days = Number(c.req.query("days"));
-  if (!Number.isFinite(days) || days <= 0) return "0000";
+  const raw = Number(c.req.query("days"));
+  if (!Number.isFinite(raw) || raw <= 0) return "0000";
+  const days = Math.min(Math.floor(raw), STATS_MAX_DAYS);
   return new Date(Date.now() + 9 * 3600 * 1000 - days * 86400000)
     .toISOString()
     .slice(0, 10);
