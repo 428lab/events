@@ -169,6 +169,13 @@ export function Layout({
                   </MenuItem>
                   <MenuItem
                     component={RouterLink}
+                    to="/admin/trending"
+                    onClick={() => setAdminAnchor(null)}
+                  >
+                    注目
+                  </MenuItem>
+                  <MenuItem
+                    component={RouterLink}
                     to="/admin/stats"
                     onClick={() => setAdminAnchor(null)}
                   >
@@ -282,6 +289,16 @@ export function Layout({
             {isAdmin && (
               <MenuItem component={RouterLink} to="/admin/kpi" onClick={closeMenu} sx={{ pl: 3 }}>
                 KPI
+              </MenuItem>
+            )}
+            {isAdmin && (
+              <MenuItem
+                component={RouterLink}
+                to="/admin/trending"
+                onClick={closeMenu}
+                sx={{ pl: 3 }}
+              >
+                注目
               </MenuItem>
             )}
             {isAdmin && (
