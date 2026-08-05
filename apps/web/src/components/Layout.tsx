@@ -21,6 +21,7 @@ import { useBundleReload } from "../lib/useBundleReload.js";
 import type { User } from "@eventer/shared";
 import { useIsAdmin, useLogout } from "../api/hooks.js";
 import { useAdminInquiryUnreadCount } from "../api/inquiryHooks.js";
+import { useAbuseUnreviewedCount } from "../api/abuseHooks.js";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
 import { NotificationBell } from "./NotificationBell.js";
 import { LogoGlyph } from "./LogoGlyph.js";
@@ -45,6 +46,9 @@ export function Layout({
   const isAdmin = useIsAdmin();
   const [adminAnchor, setAdminAnchor] = useState<null | HTMLElement>(null);
   const { data: adminUnread } = useAdminInquiryUnreadCount(isAdmin);
+  // 異常行動の未確認件数 (#259)。「運用」のバッジは問い合わせと合算して出す
+  const { data: abuseUnread } = useAbuseUnreviewedCount(isAdmin);
+  const adminBadge = (adminUnread ?? 0) + (abuseUnread ?? 0);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const closeMenu = () => setAnchor(null);
   const doLogout = () =>
@@ -117,7 +121,7 @@ export function Layout({
                   onClick={(e) => setAdminAnchor(e.currentTarget)}
                   endIcon={<ExpandMoreIcon />}
                 >
-                  <Badge badgeContent={adminUnread ?? 0} color="error">
+                  <Badge badgeContent={adminBadge} color="error">
                     運用
                   </Badge>
                 </Button>
@@ -161,6 +165,21 @@ export function Layout({
                     onClick={() => setAdminAnchor(null)}
                   >
                     統計
+                  </MenuItem>
+                  <MenuItem
+                    component={RouterLink}
+                    to="/admin/abuse"
+                    onClick={() => setAdminAnchor(null)}
+                  >
+                    要確認
+                    {Boolean(abuseUnread) && (
+                      <Chip
+                        size="small"
+                        color="error"
+                        label={abuseUnread}
+                        sx={{ ml: 1, height: 18 }}
+                      />
+                    )}
                   </MenuItem>
                   <MenuItem
                     component={RouterLink}
@@ -270,6 +289,24 @@ export function Layout({
                 sx={{ pl: 3 }}
               >
                 運用設定
+              </MenuItem>
+            )}
+            {isAdmin && (
+              <MenuItem
+                component={RouterLink}
+                to="/admin/abuse"
+                onClick={closeMenu}
+                sx={{ pl: 3 }}
+              >
+                要確認
+                {Boolean(abuseUnread) && (
+                  <Chip
+                    size="small"
+                    color="error"
+                    label={abuseUnread}
+                    sx={{ ml: 1, height: 18 }}
+                  />
+                )}
               </MenuItem>
             )}
             {isAdmin && (

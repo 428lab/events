@@ -1,0 +1,44 @@
+# 異常行動の検知 (#259 PR2) を日次で実行する。
+# Workers Free は cron トリガーがアカウント5個上限のため、GitHub Actions から叩く
+# （リマインダー #129・退会の完全削除 #250 と同じ方式）。他のバッチの失敗に
+# 引きずられないようワークフローは分けている。
+name: Detect abuse
+on:
+  schedule:
+    - cron: "45 18 * * *" # UTC 18:45 = JST 3:45（purge-deleted の15分後にずらす）
+  workflow_dispatch: {}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      # HTTP 200 でも一部のルールだけ失敗していることがある（failedRules）。
+      # 気づかないまま検知が止まるのを防ぐため、failedRules が空でなければ失敗させる。
+      # queries は Workers のサブリクエスト上限(50)に対する消費本数。ルールを
+      # 増やしたときに上限に近づいたら気づけるよう、しきい値を超えたら警告する。
+      - name: Call detect endpoint (production)
+        run: |
+          code=$(curl -s -o /tmp/body -w "%{http_code}" -X POST \
+            -H "x-cron-key: ${{ secrets.CRON_SECRET }}" \
+            https://events.kojira.io/api/cron/detect-abuse)
+          cat /tmp/body; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::detect-abuse endpoint returned HTTP $code"
+            exit 1
+          fi
+          recorded=$(jq -r '.recorded // 0' /tmp/body)
+          skipped=$(jq -r '.skipped // 0' /tmp/body)
+          queries=$(jq -r '.queries // 0' /tmp/body)
+          failed=$(jq -r '.failedRules // [] | join(",")' /tmp/body)
+          echo "recorded=$recorded skipped=$skipped queries=$queries"
+          fail=0
+          if [ -n "$failed" ]; then
+            echo "::error::rule(s) failed: $failed (check Workers logs [abuse])"
+            fail=1
+          fi
+          if [ "$queries" -gt 40 ]; then
+            echo "::error::detect-abuse used $queries subrequests; the Workers limit is 50 (split the batch before adding rules)"
+            fail=1
+          elif [ "$queries" -gt 30 ]; then
+            echo "::warning::detect-abuse used $queries subrequests (limit 50)"
+          fi
+          exit $fail
