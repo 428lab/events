@@ -14,6 +14,7 @@ import type { CommunityKpiPayload } from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
 import { useCommunity } from "../api/communityHooks.js";
 import { useCommunityKpi } from "../api/analyticsHooks.js";
+import { KpiNote } from "../components/KpiNote.js";
 import {
   FullWidth,
   MiniBars,
@@ -94,14 +95,14 @@ export function CommunityKpiPage() {
         コミュニティの数字
       </Typography>
 
-      <Alert severity="info" sx={{ py: 0.5 }}>
+      <KpiNote>
         コミュニティの状態を振り返るための数字です。良し悪しを採点するものではなく、
         「次に何を試すか」を考えるための材料として使ってください。数え方は運営ダッシュボードの
         全体KPIと揃えてあり、主催・スタッフの行（イベント作成時に自動で作られます）と
         退会申請中のユーザーは除いています。審査員・観覧者は実際にイベントに来る人なので
         参加者として数えます。母数が少ないときは率が極端に振れて誤読しやすいため、
         件数だけを出して率は「—」にしています。
-      </Alert>
+      </KpiNote>
 
       <ToggleButtonGroup
         size="small"

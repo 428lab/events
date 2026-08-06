@@ -13,6 +13,7 @@ import InsightsIcon from "@mui/icons-material/Insights";
 import type { KpiPayload } from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
 import { useAdminKpi } from "../api/analyticsHooks.js";
+import { KpiNote } from "../components/KpiNote.js";
 import {
   FullWidth,
   MiniBars,
@@ -63,7 +64,7 @@ export function AdminKpiPage() {
         ))}
       </ToggleButtonGroup>
 
-      <Alert severity="info" sx={{ py: 0.5 }}>
+      <KpiNote>
         いま計測できているデータのみを表示しています。サイト全体のPV・DAU/MAU・
         各ファネルの到達数・検索需要・メール到達は未計測です（今後対応）。
         参加登録の数え方は「アクセス統計（全イベント）」ページと異なります。この画面は
@@ -71,7 +72,7 @@ export function AdminKpiPage() {
         退会申請中ユーザーを除くため、あちらより少なく出ます。審査員・観覧者は
         実際にイベントに来る人なので参加者として数えます。ロールは後から変更できるため、
         参加者をスタッフに変えると過去の数字も遡って変わります。
-      </Alert>
+      </KpiNote>
 
       {isError ? (
         <Alert severity="error">
