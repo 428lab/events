@@ -97,7 +97,8 @@ export function MiniBars({
   empty = "データなし",
 }: {
   title: string;
-  items: { label: string; value: number }[];
+  /** key はラベルが重複しうるとき（コミュニティ名など）に渡す。省略時はラベルを使う */
+  items: { key?: string; label: string; value: number }[];
   unit: string;
   empty?: string;
 }) {
@@ -115,7 +116,12 @@ export function MiniBars({
         ) : (
           <Stack spacing={0.75}>
             {items.map((i) => (
-              <Stack key={i.label} direction="row" spacing={1} alignItems="center">
+              <Stack
+                key={i.key ?? i.label}
+                direction="row"
+                spacing={1}
+                alignItems="center"
+              >
                 <Typography
                   variant="caption"
                   sx={{ width: 90, flexShrink: 0, color: "text.secondary" }}

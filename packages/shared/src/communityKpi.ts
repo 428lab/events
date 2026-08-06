@@ -5,13 +5,17 @@
  * イベント作成時に作成者の staff 行が自動で作られるため、staff を除かないと
  * イベントを1件作るたびに参加が +1 されてしまう。
  *
- * 「率」は分母が0のとき null（画面は「—」）。さらにコミュニティ固有の4指標は
- * 母数が COMMUNITY_KPI_MIN_SAMPLE 未満のときも null にする（3人中1人で33%のように
- * 極端に振れて誤読されるため）。 */
+ * 「率」は分母が0のとき null（画面は「—」）。さらにコミュニティKPIの画面に出る率は
+ * すべて、母数が COMMUNITY_KPI_MIN_SAMPLE 未満のときも null にする（3人中1人で33%の
+ * ように極端に振れて誤読されるため）。件数と平均はゲートを掛けずそのまま出す。
+ * 「率だけ隠す」という画面の注記と実装を一致させるため、率を1つでも素通しにしない。 */
 
 import type { KpiNorthStar, KpiParticipants } from "./kpi.js";
 
-/** コミュニティ固有の率を表示する最小母数。これ未満は率を出さず「母数が少ないため非表示」 */
+/** 率を表示する最小母数。これ未満は率を出さず「母数が少ないため非表示」。
+ * 母数は指標によって「人数」だったり「イベント件数」だったりする（不発率・主催シェアは件数）。
+ * 単位が違っても同じ定数を使うのは、どちらも1つ増減しただけで率が大きく動くため。
+ * 参加者の重複度では「重なっている人数」がこれ未満の行そのものを出さない（個人の特定を防ぐ）。 */
 export const COMMUNITY_KPI_MIN_SAMPLE = 5;
 
 /** 主催者（供給側）のコミュニティ版。バス係数（コア主催者への依存度）を含む */
@@ -24,7 +28,8 @@ export interface CommunityKpiOrganizers {
   attendanceUnrecordedEvents: number;
   /** 不発率の分母 = heldEvents - attendanceUnrecordedEvents */
   dudBaseEvents: number;
-  /** dudEvents / dudBaseEvents */
+  /** dudEvents / dudBaseEvents。判定できた開催数が少ないときは null
+   * （1件開催して1件が3人以下なら100%になり、立ち上げ期ほど誤読しやすい） */
   dudRate: number | null;
   /** 期間内にこのコミュニティのイベントを開催した実人数（退会申請中を除く） */
   hosts: number;
@@ -32,13 +37,15 @@ export interface CommunityKpiOrganizers {
   heldEventsWithActiveHost: number;
   /** うち2回以上開催した人数 */
   repeatHosts: number;
-  /** repeatHosts / hosts */
+  /** repeatHosts / hosts。開催した人数が少ないときは null */
   repeatHostRate: number | null;
   /** heldEventsWithActiveHost / hosts */
   avgEventsPerHost: number | null;
   /** いちばん多く開催した1人の開催数 */
   topHostEvents: number;
-  /** topHostEvents / heldEventsWithActiveHost。開催数が少ないときは null */
+  /** topHostEvents / heldEventsWithActiveHost。開催数が少ないときは null。
+   * ここだけ COMMUNITY_KPI_MIN_SAMPLE を「人数」ではなく「イベント件数」に掛けている
+   * （分母がイベント件数のため。不発率も同じ） */
   topHostShare: number | null;
 }
 
@@ -47,11 +54,13 @@ export interface CommunityKpiOrganizers {
 export interface CommunityKpiNewcomers {
   /** 期間内に開催されたこのコミュニティのイベントに参加した実人数 */
   participants: number;
-  /** うちこのコミュニティのイベントに初参加だった人数 */
+  /** うちこのコミュニティのイベントに初参加だった人数。
+   * 全期間（days=null）では「期間より前」が存在しないため全員がここに入る */
   newcomers: number;
-  /** 以前にも参加していた人数 */
+  /** 以前にも参加していた人数。全期間では必ず 0 */
   regulars: number;
-  /** newcomers / participants。母数が少ないときは null */
+  /** newcomers / participants。母数が少ないときは null。
+   * 全期間では必ず 100% になるトートロジーなので null（画面も新規流入の数字を出さない） */
   newcomerRate: number | null;
 }
 
@@ -94,6 +103,8 @@ export interface CommunityKpiPayload {
   dormant: CommunityKpiDormant;
   /** 参加者が重なっている他コミュニティ（多い順・最大5件）。
    * コミュニティは公開範囲の設定を持たず、一覧・メンバー一覧とも誰でも見られる
-   * 公開情報なので、そのまま名前を出してよい */
+   * 公開情報なので、そのまま名前を出してよい。ただし重なっている人数が
+   * COMMUNITY_KPI_MIN_SAMPLE 未満の行は、メンバー一覧との突き合わせで個人が
+   * 特定できてしまうため返さない */
   overlap: CommunityKpiOverlapItem[];
 }

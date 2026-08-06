@@ -473,6 +473,31 @@ describe("コミュニティKPI: 新規流入 vs 常連", () => {
     expect(kpi.newcomers.newcomers).toBe(4);
     // 件数は出すが率は出さない（3人中1人で33%のように極端に振れるため）
     expect(kpi.newcomers.newcomerRate).toBeNull();
+    // 同じセクションに並ぶ「また来てくれた人の割合」も同じ母数なので隠す
+    // （片方だけ出ると「率は出していません」という画面の注記と食い違う）
+    expect(kpi.participants.repeatRate).toBeNull();
+  });
+
+  it("全期間は初参加の割合を出さない（比べる過去が無く必ず100%になる）", async () => {
+    const owner = await makeUser();
+    const c = await makeCommunity(owner.userId);
+    const ev = await makeEvent({ createdBy: owner.userId, communityId: c.id });
+    for (let i = 0; i < 6; i++) {
+      const p = await makeUser();
+      await join({ eventId: ev, userId: p.userId });
+    }
+
+    const all = await getKpi(c.id, owner.cookie);
+    expect(all.days).toBeNull();
+    expect(all.newcomers.participants).toBe(6);
+    // 全期間では全員が「初参加」になる（トートロジー）ので率は出さない
+    expect(all.newcomers.newcomers).toBe(6);
+    expect(all.newcomers.regulars).toBe(0);
+    expect(all.newcomers.newcomerRate).toBeNull();
+
+    // 期間を切れば同じデータでも率を出す
+    const recent = await getKpi(c.id, owner.cookie, 30);
+    expect(recent.newcomers.newcomerRate).toBe(1);
   });
 });
 
@@ -501,7 +526,10 @@ describe("コミュニティKPI: コア主催者への依存度", () => {
     expect(kpi.organizers.hosts).toBe(2);
     expect(kpi.organizers.heldEventsWithActiveHost).toBe(5);
     expect(kpi.organizers.repeatHosts).toBe(1);
-    expect(kpi.organizers.repeatHostRate).toBe(0.5);
+    // 開催した人数が2人なので「2回以上開いた人の割合」は出さない
+    // （開催数だけゲートすると、同じセクションで基準が食い違う）
+    expect(kpi.organizers.repeatHostRate).toBeNull();
+    // 平均は率ではないのでそのまま出す
     expect(kpi.organizers.avgEventsPerHost).toBe(2.5);
     expect(kpi.organizers.topHostEvents).toBe(4);
     expect(kpi.organizers.topHostShare).toBe(0.8);
@@ -510,7 +538,32 @@ describe("コミュニティKPI: コア主催者への依存度", () => {
     expect(kpi.organizers.dudRate).toBe(1);
   });
 
-  it("開催数が少ないとき（5件未満）はシェアを出さない", async () => {
+  it("開催した人数が5人以上なら2回以上開いた人の割合を出す", async () => {
+    const owner = await makeUser();
+    const c = await makeCommunity(owner.userId);
+    const hosts = [owner];
+    for (let i = 0; i < 4; i++) hosts.push(await makeUser());
+    // owner だけ2件、他は1件ずつ（計6件・5人）
+    for (const [i, h] of hosts.entries()) {
+      await makeEvent({
+        createdBy: h.userId,
+        communityId: c.id,
+        endsAt: Date.now() - (i + 1) * DAY,
+      });
+    }
+    await makeEvent({
+      createdBy: owner.userId,
+      communityId: c.id,
+      endsAt: Date.now() - 7 * DAY,
+    });
+
+    const kpi = await getKpi(c.id, owner.cookie, 30);
+    expect(kpi.organizers.hosts).toBe(5);
+    expect(kpi.organizers.repeatHosts).toBe(1);
+    expect(kpi.organizers.repeatHostRate).toBe(0.2);
+  });
+
+  it("開催数が少ないとき（5件未満）はシェアも不発率も出さない", async () => {
     const owner = await makeUser();
     const c = await makeCommunity(owner.userId);
     await makeEvent({ createdBy: owner.userId, communityId: c.id });
@@ -524,6 +577,21 @@ describe("コミュニティKPI: コア主催者への依存度", () => {
     expect(kpi.organizers.hosts).toBe(1);
     expect(kpi.organizers.topHostEvents).toBe(2);
     expect(kpi.organizers.topHostShare).toBeNull();
+    // 立ち上げ期に「参加者が少なかった回の割合 100%」を突きつけない
+    expect(kpi.organizers.dudBaseEvents).toBe(2);
+    expect(kpi.organizers.dudEvents).toBe(2);
+    expect(kpi.organizers.dudRate).toBeNull();
+  });
+
+  it("開催1件がそのまま不発率100%にならない", async () => {
+    const owner = await makeUser();
+    const c = await makeCommunity(owner.userId);
+    await makeEvent({ createdBy: owner.userId, communityId: c.id });
+
+    const kpi = await getKpi(c.id, owner.cookie, 30);
+    expect(kpi.organizers.dudEvents).toBe(1);
+    expect(kpi.organizers.dudBaseEvents).toBe(1);
+    expect(kpi.organizers.dudRate).toBeNull();
   });
 });
 
@@ -579,8 +647,11 @@ describe("コミュニティKPI: 参加者の重複度", () => {
     const d = await makeCommunity(ownerD.userId);
     const e = await makeCommunity(ownerE.userId);
 
+    const ownerF = await makeUser();
+    const f = await makeCommunity(ownerF.userId);
+
     const people = [];
-    for (let i = 0; i < 5; i++) people.push(await makeUser());
+    for (let i = 0; i < 10; i++) people.push(await makeUser());
 
     const mine = await makeEvent({
       createdBy: owner.userId,
@@ -588,42 +659,50 @@ describe("コミュニティKPI: 参加者の重複度", () => {
     });
     for (const p of people) await join({ eventId: mine, userId: p.userId });
 
-    // D: 過去イベントに3人が参加
+    // D: 過去イベントに6人が参加
     const evD = await makeEvent({
       createdBy: ownerD.userId,
       communityId: d.id,
       endsAt: Date.now() - 90 * DAY,
       createdAt: Date.now() - 91 * DAY,
     });
-    for (const p of people.slice(0, 3)) {
+    for (const p of people.slice(0, 6)) {
       await join({ eventId: evD, userId: p.userId });
     }
     // D のスタッフ行は「参加」に数えない
-    await join({ eventId: evD, userId: people[3]!.userId, role: "staff" });
+    await join({ eventId: evD, userId: people[6]!.userId, role: "staff" });
 
-    // E: これから開催のイベントに1人が参加（期間は切らないので数える）
+    // E: これから開催のイベントに5人が参加（期間は切らないので数える）
     const evE = await makeEvent({
       createdBy: ownerE.userId,
       communityId: e.id,
       endsAt: Date.now() + 10 * DAY,
       startsAt: Date.now() + 9 * DAY,
     });
-    await join({ eventId: evE, userId: people[0]!.userId });
+    for (const p of people.slice(0, 5)) {
+      await join({ eventId: evE, userId: p.userId });
+    }
+
+    // F: 1人だけ重なっている → 個人が特定できるので出さない
+    const evF = await makeEvent({ createdBy: ownerF.userId, communityId: f.id });
+    await join({ eventId: evF, userId: people[0]!.userId });
 
     const kpi = await getKpi(c.id, owner.cookie, 30);
-    expect(kpi.newcomers.participants).toBe(5);
+    expect(kpi.newcomers.participants).toBe(10);
     expect(kpi.overlap.length).toBe(2);
     expect(kpi.overlap[0]!.communityId).toBe(d.id);
-    expect(kpi.overlap[0]!.users).toBe(3);
+    expect(kpi.overlap[0]!.users).toBe(6);
     expect(kpi.overlap[0]!.rate).toBe(0.6);
     expect(kpi.overlap[1]!.communityId).toBe(e.id);
-    expect(kpi.overlap[1]!.users).toBe(1);
-    expect(kpi.overlap[1]!.rate).toBe(0.2);
+    expect(kpi.overlap[1]!.users).toBe(5);
+    expect(kpi.overlap[1]!.rate).toBe(0.5);
+    // 少人数の重なりは行ごと出さない
+    expect(kpi.overlap.some((o) => o.communityId === f.id)).toBe(false);
     // 自分自身は重複先に出さない
     expect(kpi.overlap.some((o) => o.communityId === c.id)).toBe(false);
   });
 
-  it("母数が少ないときは件数だけ出して率は出さない", async () => {
+  it("重なっている人数が少ない行は人数も出さない（個人が特定できるため）", async () => {
     const owner = await makeUser();
     const ownerD = await makeUser();
     const c = await makeCommunity(owner.userId);
@@ -639,9 +718,32 @@ describe("コミュニティKPI: 参加者の重複度", () => {
     await join({ eventId: evD, userId: p1.userId });
 
     const kpi = await getKpi(c.id, owner.cookie, 30);
+    // 率だけ隠しても「1人が重なっています」＋公開メンバー一覧で誰か分かってしまう
+    expect(kpi.overlap).toEqual([]);
+    expect(JSON.stringify(kpi)).not.toContain(d.slug);
+  });
+
+  it("重なりがちょうど最小母数なら出す", async () => {
+    const owner = await makeUser();
+    const ownerD = await makeUser();
+    const c = await makeCommunity(owner.userId);
+    const d = await makeCommunity(ownerD.userId);
+
+    const people = [];
+    for (let i = 0; i < COMMUNITY_KPI_MIN_SAMPLE; i++) {
+      people.push(await makeUser());
+    }
+    const mine = await makeEvent({ createdBy: owner.userId, communityId: c.id });
+    const evD = await makeEvent({ createdBy: ownerD.userId, communityId: d.id });
+    for (const p of people) {
+      await join({ eventId: mine, userId: p.userId });
+      await join({ eventId: evD, userId: p.userId });
+    }
+
+    const kpi = await getKpi(c.id, owner.cookie, 30);
     expect(kpi.overlap.length).toBe(1);
-    expect(kpi.overlap[0]!.users).toBe(1);
-    expect(kpi.overlap[0]!.rate).toBeNull();
+    expect(kpi.overlap[0]!.users).toBe(COMMUNITY_KPI_MIN_SAMPLE);
+    expect(kpi.overlap[0]!.rate).toBe(1);
   });
 });
 
@@ -719,12 +821,34 @@ describe("コミュニティKPI: 出席・キャンセル", () => {
     const kpi = await getKpi(c.id, owner.cookie, 30);
     expect(kpi.participants.uniqueParticipants).toBe(2);
     expect(kpi.participants.repeatParticipants).toBe(1);
-    expect(kpi.participants.repeatRate).toBe(0.5);
+    // 参加した人数が2人なので率は出さない（新規流入と同じ母数・同じセクション）
+    expect(kpi.participants.repeatRate).toBeNull();
     const dist = Object.fromEntries(
       kpi.participants.countDistribution.map((b) => [b.label, b.users]),
     );
     expect(dist["1回"]).toBe(1);
     expect(dist["2回"]).toBe(1);
+  });
+
+  it("参加した人数が5人以上ならまた来てくれた割合を出す", async () => {
+    const owner = await makeUser();
+    const c = await makeCommunity(owner.userId);
+    const e1 = await makeEvent({ createdBy: owner.userId, communityId: c.id });
+    const e2 = await makeEvent({
+      createdBy: owner.userId,
+      communityId: c.id,
+      endsAt: Date.now() - 2 * DAY,
+    });
+    for (let i = 0; i < 5; i++) {
+      const p = await makeUser();
+      await join({ eventId: e1, userId: p.userId });
+      if (i < 2) await join({ eventId: e2, userId: p.userId });
+    }
+
+    const kpi = await getKpi(c.id, owner.cookie, 30);
+    expect(kpi.participants.uniqueParticipants).toBe(5);
+    expect(kpi.participants.repeatParticipants).toBe(2);
+    expect(kpi.participants.repeatRate).toBe(0.4);
   });
 
   it("イベント詳細の閲覧UUと転換率はこのコミュニティのイベントだけを見る", async () => {

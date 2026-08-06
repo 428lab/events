@@ -17,7 +17,13 @@ import {
 } from "./kpi.js";
 
 /** 母数が小さいときは率を出さない。3人中1人が新規で 33% のように極端に振れて、
- * 主催者の評価のように誤読されるのを防ぐ（画面は「母数が少ないため非表示」） */
+ * 主催者の評価のように誤読されるのを防ぐ（画面は「母数が少ないため非表示」）。
+ *
+ * コミュニティKPIの画面に出る「率」はすべてこれを通す。件数と平均は素のまま出す
+ * （画面の注記も「率だけ隠す」と書いてあるので、率を1つでも素通しにすると
+ * 同じセクション内で基準が食い違って見える）。
+ * 分母は「人数」とは限らない（不発率・主催シェアはイベント件数）。同じ定数を
+ * 人数にも件数にも使っているのは、どちらも1つ増減しただけで率が大きく動くため。 */
 function rateMin(numerator: number, denominator: number): number | null {
   if (denominator < COMMUNITY_KPI_MIN_SAMPLE) return null;
   return rate(numerator, denominator);
@@ -347,13 +353,20 @@ function buildPayload(src: {
   const members = N(src.dormantAgg?.members);
   const activeMembers = N(src.dormantAgg?.active_members);
 
-  const overlap: CommunityKpiOverlapItem[] = src.overlapRows.map((r) => ({
-    communityId: r.id,
-    slug: r.slug,
-    name: r.name,
-    users: r.users,
-    rate: rateMin(r.users, people),
-  }));
+  // 重なっている人数が少ない行は出さない。コミュニティのメンバー一覧は誰でも
+  // 見られるので、「1人が重なっています（@dee）」まで出すと突き合わせで
+  // 個人が特定できてしまう（率だけ隠しても人数から復元できる）。
+  // users <= people なので、残った行の rate は実質いつも算出できる
+  // （rateMin は分母の定義が変わったときの保険として残す）
+  const overlap: CommunityKpiOverlapItem[] = src.overlapRows
+    .filter((r) => r.users >= COMMUNITY_KPI_MIN_SAMPLE)
+    .map((r) => ({
+      communityId: r.id,
+      slug: r.slug,
+      name: r.name,
+      users: r.users,
+      rate: rateMin(r.users, people),
+    }));
 
   return {
     days: src.days,
@@ -383,7 +396,9 @@ function buildPayload(src: {
       lateCancelRate: rate(canceledLate, canceled),
       uniqueParticipants: people,
       repeatParticipants: repeaters,
-      repeatRate: rate(repeaters, people),
+      // 分母は新規流入と同じ「期間内に参加した実人数」。全体KPIでは素の rate だが、
+      // ここは新規流入と同じセクションに並ぶので同じゲートを通す
+      repeatRate: rateMin(repeaters, people),
       countDistribution,
     },
     organizers: {
@@ -391,11 +406,14 @@ function buildPayload(src: {
       dudEvents,
       attendanceUnrecordedEvents,
       dudBaseEvents,
-      dudRate: rate(dudEvents, dudBaseEvents),
+      // 開催1件で1件が不発なら100% になる。立ち上げ期の主催者が最初に見る数字なので
+      // 特にゲートを効かせる（件数はそのまま出す）
+      dudRate: rateMin(dudEvents, dudBaseEvents),
       hosts,
       heldEventsWithActiveHost,
       repeatHosts: N(src.hostAgg?.repeat_hosts),
-      repeatHostRate: rate(N(src.hostAgg?.repeat_hosts), hosts),
+      repeatHostRate: rateMin(N(src.hostAgg?.repeat_hosts), hosts),
+      // 平均は「率」ではなく件数÷人数の目安なので、母数ゲートは掛けない
       avgEventsPerHost: rate(heldEventsWithActiveHost, hosts),
       topHostEvents,
       topHostShare: rateMin(topHostEvents, heldEventsWithActiveHost),
@@ -404,7 +422,10 @@ function buildPayload(src: {
       participants: people,
       newcomers,
       regulars: people - newcomers,
-      newcomerRate: rateMin(newcomers, people),
+      // 全期間は「期間より前」が存在しないので全員が初参加になり、率は必ず 100%
+      // （トートロジー）。他の期間と同じ見た目で出すと誤読されるので出さない
+      newcomerRate:
+        src.days === null ? null : rateMin(newcomers, people),
     },
     dormant: {
       members,

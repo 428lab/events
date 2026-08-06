@@ -31,10 +31,20 @@ const RANGES: { label: string; days: number | null }[] = [
 ];
 
 /** 母数不足で率を出せないときの補足。件数そのものは出しているので、
- * 「隠している」のではなく「率にすると誤読しやすい」ことを伝える */
-function fewNote(base: number, minSample: number, label: string): string {
-  if (base >= minSample) return "";
-  return `いまは ${label} が ${base} のため、率は「—」にしています（${minSample} 以上で表示。少ない母数だと1人の増減で率が大きく動くためです）。`;
+ * 「隠している」のではなく「率にすると誤読しやすい」ことを伝える。
+ *
+ * 1つのセクションに分母の違う率が並ぶことがあるので（例: 開催シェアの分母は
+ * イベント件数、2回以上開いた人の割合の分母は人数）、足りていない母数を
+ * すべて並べる。サーバー側は画面に出るすべての率に同じゲートを掛けているので、
+ * ここに挙がっていない率が「—」になることはない。 */
+function fewNote(
+  bases: { base: number; label: string }[],
+  minSample: number,
+): string {
+  const few = bases.filter((b) => b.base < minSample);
+  if (few.length === 0) return "";
+  const list = few.map((b) => `${b.label}が ${b.base}`).join("、");
+  return `いまは${list}のため、このセクションの割合は「—」にしています（${minSample} 以上で表示。少ない母数だと1件・1人の増減で割合が大きく動くためです）。件数と平均はそのまま出しています。`;
 }
 
 /** コミュニティ運営者向けのKPI (#262)。/c/:slug/kpi。
@@ -134,7 +144,10 @@ function NorthStarSection({ data }: { data: CommunityKpiPayload }) {
   return (
     <Section
       title="開催と参加"
-      note="このコミュニティに紐づく公開イベントのうち、期間内に終了したものが対象です。出席チェックを実施したイベントは出席者数、未実施は確定登録者数を数えます（イベントページの参加者数と同じ定義なので主催・スタッフを含みます）。何が分かるか: 活動の量と、1回あたりの集まり具合。"
+      note={`このコミュニティに紐づく公開イベントのうち、期間内に終了したものが対象です。出席チェックを実施したイベントは出席者数、未実施は確定登録者数を数えます（イベントページの参加者数と同じ定義なので主催・スタッフを含みます）。何が分かるか: 活動の量と、1回あたりの集まり具合。${fewNote(
+        [{ base: o.dudBaseEvents, label: "参加者数を判定できた開催数" }],
+        data.minSample,
+      )}`}
     >
       <Tile
         label="参加体験の数"
@@ -163,10 +176,43 @@ function NorthStarSection({ data }: { data: CommunityKpiPayload }) {
 
 function NewcomerSection({ data }: { data: CommunityKpiPayload }) {
   const nc = data.newcomers;
+  const repeatTile = (
+    <Tile
+      label="また来てくれた人の割合"
+      text={pct(data.participants.repeatRate)}
+      hint={`期間内に2回以上参加 ${data.participants.repeatParticipants} 人 ÷ 参加した人数 ${data.participants.uniqueParticipants} 人`}
+      big={data.days === null}
+    />
+  );
+
+  // 全期間は「期間より前」が存在しないので、全員が「初参加」になってしまう。
+  // 他の期間と同じタイルで出すと必ず 100% で誤読されるため、数字は出さずに理由を書く
+  if (data.days === null) {
+    return (
+      <Section
+        title="また来てくれた人"
+        note={`全期間では「期間より前に参加していたか」を判定できない（比べる過去が無い）ため、初参加と常連の内訳は出していません。新規流入を見たいときは 30日・90日・1年に切り替えてください。${fewNote(
+          [{ base: nc.participants, label: "参加した人数" }],
+          data.minSample,
+        )}`}
+      >
+        {repeatTile}
+        <Tile
+          label="参加した人数"
+          value={nc.participants}
+          hint="このコミュニティのイベントに参加したことがある実人数（全期間）"
+        />
+      </Section>
+    );
+  }
+
   return (
     <Section
       title="新規流入と常連"
-      note={`期間内にこのコミュニティのイベントに参加した人を、「初参加」と「以前にも来ていた人」に分けています。初参加の判定は、期間の開始日より前に終了したこのコミュニティの公開イベントへの参加記録が無いこと。何が分かるか: 常連だけで回っていないか、新しい人が入る余地があるか。${fewNote(nc.participants, data.minSample, "参加した人数")}`}
+      note={`期間内にこのコミュニティのイベントに参加した人を、「初参加」と「以前にも来ていた人」に分けています。初参加の判定は、期間の開始日より前に終了したこのコミュニティの公開イベントへの参加記録が無いこと。何が分かるか: 常連だけで回っていないか、新しい人が入る余地があるか。${fewNote(
+        [{ base: nc.participants, label: "参加した人数" }],
+        data.minSample,
+      )}`}
     >
       <Tile
         label="初参加の割合"
@@ -184,11 +230,7 @@ function NewcomerSection({ data }: { data: CommunityKpiPayload }) {
         value={nc.regulars}
         hint="期間より前にも参加していた人。ここが厚いほど継続的な関係ができています"
       />
-      <Tile
-        label="また来てくれた人の割合"
-        text={pct(data.participants.repeatRate)}
-        hint={`期間内に2回以上参加 ${data.participants.repeatParticipants} 人 ÷ 参加した人数 ${data.participants.uniqueParticipants} 人`}
-      />
+      {repeatTile}
     </Section>
   );
 }
@@ -198,7 +240,13 @@ function HostSection({ data }: { data: CommunityKpiPayload }) {
   return (
     <Section
       title="開催を担っている人"
-      note={`期間内にこのコミュニティのイベントを開いた人の内訳です（退会申請中の人は除きます）。何が分かるか: 開催が特定の人に集中していないか。集中していても問題があるとは限りませんが、その人が忙しくなると活動が止まりやすくなります。${fewNote(o.heldEventsWithActiveHost, data.minSample, "開催数")}`}
+      note={`期間内にこのコミュニティのイベントを開いた人の内訳です（退会申請中の人は除きます）。何が分かるか: 開催が特定の人に集中していないか。集中していても問題があるとは限りませんが、その人が忙しくなると活動が止まりやすくなります。${fewNote(
+        [
+          { base: o.heldEventsWithActiveHost, label: "開催数" },
+          { base: o.hosts, label: "開催した人数" },
+        ],
+        data.minSample,
+      )}`}
     >
       <Tile
         label="開催した人数"
@@ -230,7 +278,10 @@ function DormantSection({ data }: { data: CommunityKpiPayload }) {
   return (
     <Section
       title="フォローしている人の動き"
-      note={`フォロー登録（コミュニティのメンバー）をしている在籍ユーザーのうち、期間内に開催されたイベントに参加した人と、していない人の内訳です。イベントに参加しただけでフォローしていない人は含みません。主催のみの人は「参加」に数えません。何が分かるか: 名簿だけが増えていないか、届いていない人にどう声をかけるか。${fewNote(d.members, data.minSample, "フォロー人数")}`}
+      note={`フォロー登録（コミュニティのメンバー）をしている在籍ユーザーのうち、期間内に開催されたイベントに参加した人と、していない人の内訳です。イベントに参加しただけでフォローしていない人は含みません。主催のみの人は「参加」に数えません。抽選や先着で参加枠を絞っている場合、申し込んだけれど参加できなかった人も「参加していない人」に入るため、実際より高く見えます。何が分かるか: 名簿だけが増えていないか、届いていない人にどう声をかけるか。${fewNote(
+        [{ base: d.members, label: "フォロー人数" }],
+        data.minSample,
+      )}`}
     >
       <Tile
         label="しばらく参加していない人の割合"
@@ -257,17 +308,18 @@ function OverlapSection({ data }: { data: CommunityKpiPayload }) {
   return (
     <Section
       title="他のコミュニティとの重なり"
-      note="期間内にこのコミュニティのイベントに参加した人が、他のどのコミュニティの公開イベントにも参加しているか（時期は問いません・多い順に最大5件）。誰でも見られる公開イベントの参加記録だけを使っています。何が分かるか: 声をかけやすい連携先、独自の層をどれくらい持てているか。"
+      note={`期間内にこのコミュニティのイベントに参加した人が、他のどのコミュニティの公開イベントにも参加しているか（時期は問いません・多い順に最大5件）。誰でも見られる公開イベントの参加記録だけを使っています。数え方は分子と分母で少し違い、こちら側（分母）は出席チェックを反映した期間内の参加、相手側（分子）は公開イベントへの確定登録で、出席チェックと時期は問いません。重なっている人が ${data.minSample} 人未満のコミュニティは、メンバー一覧と突き合わせると誰のことか分かってしまうため出していません。何が分かるか: 声をかけやすい連携先、独自の層をどれくらい持てているか。`}
     >
       <FullWidth>
         <MiniBars
           title={`重なっている人数（期間内の参加者 ${total} 人のうち）`}
           items={data.overlap.map((o) => ({
+            key: o.communityId,
             label: o.name,
             value: o.users,
           }))}
           unit="人"
-          empty="他のコミュニティのイベントに参加している人は見つかりませんでした。"
+          empty={`他のコミュニティのイベントに参加している人は見つかりませんでした（重なりが ${data.minSample} 人未満のコミュニティは出していません）。`}
         />
       </FullWidth>
       {data.overlap.map((o) => (
