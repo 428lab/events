@@ -25,6 +25,7 @@ import {
 } from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
 import { useAdminTrending } from "../api/analyticsHooks.js";
+import { KpiNote } from "../components/KpiNote.js";
 import { formatDateTime } from "../lib/format.js";
 
 const RANGES = [7, 30, 90] as const;
@@ -377,7 +378,7 @@ export function AdminTrendingPage() {
         ))}
       </ToggleButtonGroup>
 
-      <Alert severity="info" sx={{ py: 0.5 }}>
+      <KpiNote summary="スコアと急上昇の決め方">
         <strong>公開ランキングではありません。</strong>
         この画面は運営が「いま動きのある人・コミュニティ」を見つけるための内部指標で、
         ユーザーには公開されず、順位や点数を本人に知らせることもありません。
@@ -392,7 +393,7 @@ export function AdminTrendingPage() {
         「新規」バッジは順位ではなく状態の表示です。
         期間内スコアが一定未満のもの・比が1未満（前の期間より縮んだもの）は載せません。
         退会申請中のユーザーは除いています。
-      </Alert>
+      </KpiNote>
 
       {isError ? (
         <Alert severity="error">
