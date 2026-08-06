@@ -34,6 +34,7 @@ import { CommunityPage } from "./pages/CommunityPage.js";
 import { CommunityMembersPage } from "./pages/CommunityMembersPage.js";
 import { CreateCommunityPage } from "./pages/CreateCommunityPage.js";
 import { CommunityEditPage } from "./pages/CommunityEditPage.js";
+import { CommunityKpiPage } from "./pages/CommunityKpiPage.js";
 import { UpcomingEventsPage } from "./pages/UpcomingEventsPage.js";
 import { EventRequestsPage } from "./pages/EventRequestsPage.js";
 import { EventRequestNewPage } from "./pages/EventRequestNewPage.js";
@@ -319,6 +320,8 @@ export function App() {
         <Route path="/c/:slug" element={<CommunityPage />} />
         <Route path="/c/:slug/members" element={<CommunityMembersPage />} />
         <Route path="/c/:slug/edit" element={<CommunityEditPage />} />
+        {/* コミュニティ別KPI (#262)。管理者・運営管理者のみ（ページ側でも判定） */}
+        <Route path="/c/:slug/kpi" element={<CommunityKpiPage />} />
         <Route path="/decks" element={<DecksPage />} />
         <Route path="/decks/:id/edit" element={<DeckEditorPage />} />
         <Route path="/live-sets" element={<LiveSetsPage />} />

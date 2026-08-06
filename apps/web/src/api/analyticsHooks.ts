@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   AdminStats,
+  CommunityKpiPayload,
   EventStats,
   KpiPayload,
   TrendingPayload,
@@ -71,6 +72,26 @@ export function useAdminKpi(days: number | null, enabled: boolean) {
     refetchOnWindowFocus: false,
     queryFn: () =>
       api.get<KpiPayload>(`/admin/kpi${days ? `?days=${days}` : ""}`),
+  });
+}
+
+/** コミュニティ別KPI (#262)。そのコミュニティの管理者 or 運営管理者のみ。
+ * 7本の集計クエリが走るので、全体KPIと同じく staleTime を置く */
+export function useCommunityKpi(
+  communityId: string | undefined,
+  days: number | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ["communityKpi", communityId, days],
+    enabled: enabled && Boolean(communityId),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    queryFn: () =>
+      api.get<CommunityKpiPayload>(
+        `/communities/${communityId}/kpi${days ? `?days=${days}` : ""}`,
+      ),
   });
 }
 

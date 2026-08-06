@@ -16,8 +16,9 @@ import {
   Typography,
 } from "@mui/material";
 import EggIcon from "@mui/icons-material/Egg";
+import InsightsIcon from "@mui/icons-material/Insights";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
-import { useMe } from "../api/hooks.js";
+import { useIsAdmin, useMe } from "../api/hooks.js";
 import {
   useCommunity,
   useDeleteCommunity,
@@ -37,6 +38,7 @@ export function CommunityPage() {
   const { slug = "" } = useParams();
   const navigate = useNavigate();
   const { data: me } = useMe();
+  const isAdmin = useIsAdmin();
   const { data: c, isLoading, isError } = useCommunity(slug);
   const join = useJoinCommunity(slug);
   const leave = useLeaveCommunity(slug);
@@ -100,6 +102,17 @@ export function CommunityPage() {
                 color="secondary"
                 size="small"
               />
+            )}
+            {/* コミュニティの数字 (#262)。管理者・運営管理者にだけ導線を出す */}
+            {(isManager || isAdmin) && (
+              <Button
+                variant="outlined"
+                component={RouterLink}
+                to={`/c/${slug}/kpi`}
+                startIcon={<InsightsIcon />}
+              >
+                数字を見る
+              </Button>
             )}
             {isManager ? (
               <Button
