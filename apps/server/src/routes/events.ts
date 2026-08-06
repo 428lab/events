@@ -273,10 +273,29 @@ eventRoutes.get("/", async (c) => {
   return c.json({ events: await eventsRepo.listPublished() });
 });
 
+/** イベントをコミュニティに紐づけられるか (#264)。
+ * 紐づけると相手コミュニティの一覧・KPI（開催数・不発率・新規流入・重複度）に
+ * そのまま入ってしまうため、勝手にぶら下げられないようにする。
+ *
+ * 条件は owner/admin。community_member は誰でも自由に参加できる（POST
+ * /communities/:id/membership）ので、「メンバーか」では素通しになってしまう。
+ * イベント作成フォームの選択肢も GET /communities/mine（= owner/admin）なので、
+ * 画面上の仕様とも一致する。 */
+async function canAttachCommunity(
+  communityId: string,
+  user: User,
+): Promise<boolean> {
+  if (isAppAdmin(user)) return true;
+  return communitiesRepo.isManager(communityId, user.id);
+}
+
 /** イベント作成（作成者は staff として自動参加） */
 eventRoutes.post("/", zValidator("json", createEventInput), async (c) => {
   const user = c.get("user");
   const input = valid<CreateEventInput>(c, "json");
+  if (input.communityId && !(await canAttachCommunity(input.communityId, user))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
   const event = await eventsRepo.create(input, user.id);
   await eventMembersRepo.add(event.id, user.id, "staff");
   await scoringCriteriaRepo.seedDefaults(event.id);
@@ -291,6 +310,18 @@ eventRoutes.patch(
   async (c) => {
     const prior = await eventsRepo.findById(c.req.param("id"));
     const input = valid<UpdateEventInput>(c, "json");
+    // 紐づけ先コミュニティを「変える」ときだけ権限を見る (#264)。
+    // 編集フォームは現在値をそのまま送り返すので、変更がなければ通す
+    // （コミュニティの owner/admin ではないイベントstaffが編集できなくなるため）。
+    // 外すだけ（null）は staff なら誰でもできる
+    if (input.communityId !== undefined) {
+      const next = input.communityId ?? null;
+      if (next !== (prior?.communityId ?? null)) {
+        if (next && !(await canAttachCommunity(next, c.get("user")))) {
+          return c.json({ error: "forbidden" }, 403);
+        }
+      }
+    }
     // 日程調整をやめて直接確定する場合は、有効な開催日時が必須
     if (input.scheduling === false) {
       const startsAt = input.startsAt ?? prior?.startsAt ?? 0;
@@ -359,6 +390,9 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
       venueOnline: src.venueOnline,
       aggregateSelfEntry: src.aggregateSelfEntry,
       contestMode: src.contestMode,
+      // 複製元と同じコミュニティに紐づける。複製できるのは複製元の staff
+      // （＝そのコミュニティ側から招かれた人）だけなので、#264 の
+      // 「第三者が任意のコミュニティにぶら下げる」経路にはならない
       communityId: src.communityId,
       scheduling: true,
       scheduleAnonymous: src.scheduleAnonymous,
