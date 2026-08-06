@@ -7,32 +7,32 @@ import type {
 import { many, one } from "../client.js";
 
 /** epoch ms のカラムを JST の 'YYYY-MM-DD' に。既存の jstDay() と同じ基準 */
-function jd(col: string): string {
+export function jd(col: string): string {
   return `strftime('%Y-%m-%d', ${col} / 1000 + 32400, 'unixepoch')`;
 }
 
 /** 率。分母0は null（画面は「—」表示）。NaN/Infinity を返さない */
-function rate(numerator: number, denominator: number): number | null {
+export function rate(numerator: number, denominator: number): number | null {
   return denominator > 0 ? numerator / denominator : null;
 }
 
 /** 退会申請中 (#250) を除く条件。成長・定着系の分母から外す */
-const MEMBER_USER_ACTIVE =
+export const MEMBER_USER_ACTIVE =
   "EXISTS (SELECT 1 FROM user u WHERE u.id = m.user_id AND u.deleted_at IS NULL)";
 
 /** 退会申請中 (#250) を除く条件（任意のユーザーID列に対して） */
-const USER_ACTIVE = (col: string) =>
+export const USER_ACTIVE = (col: string) =>
   `EXISTS (SELECT 1 FROM user u WHERE u.id = ${col} AND u.deleted_at IS NULL)`;
 
 /** 「参加した人」の行の条件。除くのは運営側の staff 行だけで、
  * 審査員 (judge)・観覧者 (observer) は実際にイベントに来る人なので参加者として数える。
  * staff を除くのは、イベント作成時に作成者の staff 行が必ず作られるため
  * （絞らないとイベントを1件作るたびに参加登録が +1 される）。 */
-const JOINED = (t: string) => `${t}.role <> 'staff'`;
+export const JOINED = (t: string) => `${t}.role <> 'staff'`;
 
 /** 出席チェックを有効にしたのに出席記録が1件も無いイベント（＝運営が記録し忘れた）。
  * 参加者数が 0 と出てしまうため、不発率の分母から外す。バインド不要 */
-const ATTENDANCE_UNRECORDED = (idCol: string) =>
+export const ATTENDANCE_UNRECORDED = (idCol: string) =>
   `NOT EXISTS (SELECT 1 FROM event_member em WHERE em.event_id = ${idCol} AND em.attended = 1)`;
 
 /** 開催済み（期間内に終了した公開イベント・日程確定済み）の条件。
@@ -40,10 +40,10 @@ const ATTENDANCE_UNRECORDED = (idCol: string) =>
  * events.isEventEnded）と揃えるため。除かないと全期間指定で日付未設定イベントが
  * 「開催完了」に混ざる。
  * バインド順: now, sinceDay */
-const HELD = (t: string) =>
+export const HELD = (t: string) =>
   `(${t}.status = 'published' AND ${t}.scheduling = 0 AND ${t}.ends_at > 0 AND ${t}.ends_at < ? AND ${jd(`${t}.ends_at`)} >= ?)`;
 
-const N = (v: number | null | undefined): number => v ?? 0;
+export const N = (v: number | null | undefined): number => v ?? 0;
 
 interface EventAgg {
   held_events: number;

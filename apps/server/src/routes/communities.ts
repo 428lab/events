@@ -14,8 +14,11 @@ import type {
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
+import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
+import { kpiPeriodFromQuery } from "../lib/kpiPeriod.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
+import { communityKpiRepo } from "../db/repositories/communityKpi.js";
 import { putCommunityImage } from "./communityImages.js";
 
 /** /api/communities（作成・参加・自分の主催コミュニティ）。閲覧系は /api/public/communities */
@@ -107,6 +110,27 @@ communityRoutes.put(
     return c.json({ ok: true });
   },
 );
+
+/** コミュニティ別KPI (#262)。そのコミュニティの owner/admin か運営管理者のみ。
+ * 一般公開はしない（一般メンバー・非メンバーは 403） */
+communityRoutes.get("/:id/kpi", async (c) => {
+  const id = c.req.param("id");
+  const community = await communitiesRepo.findById(id);
+  if (!community) return c.json({ error: "not_found" }, 404);
+  const user = c.get("user");
+  const allowed =
+    isAppAdmin(user) || (await communitiesRepo.isManager(id, user.id));
+  if (!allowed) return c.json({ error: "forbidden" }, 403);
+
+  const { days, sinceDay } = kpiPeriodFromQuery(c);
+  return c.json(
+    await communityKpiRepo.overview(
+      { id: community.id, slug: community.slug, name: community.name },
+      sinceDay,
+      days,
+    ),
+  );
+});
 
 /** アイコン/バナー画像のアップロード（owner/admin。生バイナリ） */
 communityRoutes.put("/:id/icon", putCommunityImage("icon"));
