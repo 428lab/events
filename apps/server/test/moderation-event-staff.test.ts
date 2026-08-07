@@ -303,6 +303,46 @@ describe("イベント内コンテンツのモデレーションはイベント�
     expect(await listPhotoComments(eventId, photoId, admin)).toHaveLength(1);
   });
 
+  it("参加が確定していても staff でないメンバーは他人のコンテンツを消せない", async () => {
+    // コメント・写真の削除は外側が MEMBER_ROLES なので、staff かどうかを見るのは
+    // ハンドラ内の1判定だけ。ここが落ちると確定参加者なら誰でも消せてしまう
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin, null);
+    const author = await makeMember(eventId, "participant");
+    const commentId = await postComment(eventId, author.cookie, "残るはず");
+    const photoId = await uploadPhoto(eventId, author.cookie);
+    const photoCommentId = await postPhotoComment(
+      eventId,
+      photoId,
+      author.cookie,
+      "残るはず",
+    );
+
+    for (const role of ["participant", "judge", "observer"] as const) {
+      const other = await makeMember(eventId, role);
+      expect(
+        (await del(`/events/${eventId}/comments/${commentId}`, other.cookie))
+          .status,
+      ).toBe(403);
+      expect(
+        (
+          await del(
+            `/events/${eventId}/photos/${photoId}/comments/${photoCommentId}`,
+            other.cookie,
+          )
+        ).status,
+      ).toBe(403);
+      expect(
+        (await del(`/events/${eventId}/photos/${photoId}`, other.cookie)).status,
+      ).toBe(403);
+    }
+
+    // 何も消えていない
+    expect(await listComments(eventId)).toHaveLength(1);
+    expect(await listPhotos(eventId, admin)).toHaveLength(1);
+    expect(await listPhotoComments(eventId, photoId, admin)).toHaveLength(1);
+  });
+
   it("投稿者本人は参加が確定していなくても自分のコンテンツを取り下げられる", async () => {
     const admin = await loginDev();
     const eventId = await setupEvent(admin, null);
