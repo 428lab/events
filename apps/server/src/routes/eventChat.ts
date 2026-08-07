@@ -8,6 +8,7 @@ import {
 } from "@eventer/shared";
 import type {
   ChatMembersPayload,
+  EventMember,
   HideChatNoteInput,
   RegisterChatChannelInput,
   RegisterChatPubkeyInput,
@@ -35,18 +36,52 @@ import { recordAudit } from "../db/repositories/auditLogs.js";
 const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
 
 /** Nostrイベントチャット (#199)。チャット本文はブラウザ⇔リレー直通で、
- * ここでは鍵の紐付け・チャンネルID・非表示リストのみ扱う。すべて要認証。 */
+ * ここでは鍵の紐付け・チャンネルID・非表示リストのみ扱う。すべて要認証。
+ *
+ * 権限は2段階に分けてある:
+ * - 読む・参加する: 参加確定メンバー（＋appAdmin / コミュニティ管理者）
+ * - 部屋の開設・作り直し・メッセージの非表示: **そのイベントの staff メンバーだけ**
+ *   （eventStaffOnly）。web も myRole === "staff" でしか操作UIを出さない (#275) */
 export const eventChatRoutes = new Hono<AppEnv>();
 eventChatRoutes.use("*", requireAuth);
 
 /** requireEventRole はロールのみ見るため、確定済み（status=confirmed）を追加チェック。
- * （メンバー行がない=appAdmin/コミュニティ管理者バイパスはそのまま許可） */
+ * （メンバー行がない=appAdmin/コミュニティ管理者バイパスはそのまま許可。
+ * eventQa.ts の同名ヘルパーと同じ判定）。
+ * 読み出し・参加で使う（スタッフ操作は eventStaffOnly でさらに絞る） */
 async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
   const member = await eventMembersRepo.find(
     c.req.param("id")!,
     c.get("user").id,
   );
   if (member && member.status !== "confirmed") {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  return null;
+}
+
+/** **そのイベントの staff メンバーか**。
+ *
+ * requireEventRole(["staff"]) はアプリ運営管理者とコミュニティの owner/admin も
+ * 通すが、チャットのスタッフ操作はそこから更に絞る (#275)。「イベント配下の表示・操作に
+ * サイト管理者かどうかを混ぜず、イベント内の役割だけで判定する」というこのプロジェクトの
+ * 方針に揃えるため（操作が必要な人は、そのイベントの staff に加わればよい）。
+ * web も myRole === "staff" でしか操作UIを出さないので、これで基準が一致する。
+ * Q&A (eventQa.ts) の isEventStaff / eventStaffOnly と同じ形。 */
+function isEventStaff(member: EventMember | null): member is EventMember {
+  return member?.role === "staff";
+}
+
+/** スタッフ操作（部屋の開設・作り直し・メッセージの非表示）の入口。
+ * requireEventRole(["staff"]) の後ろに置き、運営管理者・コミュニティ管理者の
+ * バイパスをここで閉じる。参加確定も要求する（confirmedOnly と同じ理由で、
+ * 未確定の staff が読み出しは403なのに操作は通る、という非対称をなくす）。 */
+async function eventStaffOnly(c: Context<AppEnv>): Promise<Response | null> {
+  const member = await eventMembersRepo.find(
+    c.req.param("id")!,
+    c.get("user").id,
+  );
+  if (!isEventStaff(member) || member.status !== "confirmed") {
     return c.json({ error: "forbidden" }, 403);
   }
   return null;
@@ -140,14 +175,14 @@ eventChatRoutes.get(
 /** 公式サービス鍵で署名した kind:40（チャンネル作成）を発行する (#199)。
  * 主催者が NIP-07 で自ら署名するケース以外はこの鍵でチャンネルを作る
  * （参加者個人の鍵にチャンネルを紐付けない）。
- * 部屋を開設するかどうかはスタッフが決める (#221) ため staff 限定。
+ * 部屋を開設するかどうかはスタッフが決める (#221) ため、そのイベントの staff 限定。
  * ここでは登録しない: クライアントがリレーへの受理を確認してから
  * POST /:id/chat-channel で先勝ち登録する */
 eventChatRoutes.post(
   "/:id/chat-channel/official",
   requireEventRole(["staff"]),
   async (c) => {
-    const denied = await confirmedOnly(c);
+    const denied = await eventStaffOnly(c);
     if (denied) return denied;
     if (!serviceKeyConfigured()) {
       return c.json({ error: "service_key_unset" }, 503);
@@ -177,13 +212,13 @@ eventChatRoutes.post(
 
 /** NIP-28 チャンネル（kind:40）の登録。先勝ちで1回だけ設定され、
  * 2件目以降は既存のチャンネルIDをそのまま返す。
- * 開設はスタッフの操作でのみ行う (#221) */
+ * 開設はそのイベントのスタッフの操作でのみ行う (#221) */
 eventChatRoutes.post(
   "/:id/chat-channel",
   requireEventRole(["staff"]),
   zValidator("json", registerChatChannelInput),
   async (c) => {
-    const denied = await confirmedOnly(c);
+    const denied = await eventStaffOnly(c);
     if (denied) return denied;
     const eventId = c.req.param("id");
     const { channelEvent } = valid<RegisterChatChannelInput>(c, "json");
@@ -223,13 +258,15 @@ eventChatRoutes.post(
   },
 );
 
-/** チャンネルIDをリセットする（staff のみ）。
+/** チャンネルIDをリセットする（そのイベントの staff のみ）。
  * NIP-70時代にリレーへ保存されなかった kind:40 を参照し続けるケース等の復旧用。
  * リセット後、次にチャットを開いたメンバーが新しいチャンネルを作成する */
 eventChatRoutes.delete(
   "/:id/chat-channel",
   requireEventRole(["staff"]),
   async (c) => {
+    const denied = await eventStaffOnly(c);
+    if (denied) return denied;
     const eventId = c.req.param("id");
     await eventChatRepo.clearChannel(eventId);
     // 監査ログ (#248)。参加者から見ると履歴が消えたように見える操作なので記録する
@@ -243,23 +280,27 @@ eventChatRoutes.delete(
   },
 );
 
-/** メッセージをアプリ側で非表示にする（staff のみ） */
+/** メッセージをアプリ側で非表示にする（そのイベントの staff のみ） */
 eventChatRoutes.post(
   "/:id/chat-hidden",
   requireEventRole(["staff"]),
   zValidator("json", hideChatNoteInput),
   async (c) => {
+    const denied = await eventStaffOnly(c);
+    if (denied) return denied;
     const { noteId } = valid<HideChatNoteInput>(c, "json");
     await eventChatRepo.hideNote(c.req.param("id"), noteId);
     return c.json({ ok: true });
   },
 );
 
-/** 非表示を解除する（staff のみ） */
+/** 非表示を解除する（そのイベントの staff のみ） */
 eventChatRoutes.delete(
   "/:id/chat-hidden/:noteId",
   requireEventRole(["staff"]),
   async (c) => {
+    const denied = await eventStaffOnly(c);
+    if (denied) return denied;
     const noteId = c.req.param("noteId");
     if (!/^[0-9a-f]{64}$/.test(noteId)) {
       return c.json({ error: "invalid_note_id" }, 400);
