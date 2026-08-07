@@ -827,7 +827,9 @@ eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), async (
     return c.json({ error: "not_lottery" }, 400);
   }
   // membersBySlotStatus は退会申請中 (#250) を除くので、猶予期間中の申込者は
-  // 抽選対象にも落選通知の対象にもならない（枠を無駄に消費させない）
+  // 抽選対象にも落選通知の対象にもならない（枠を無駄に消費させない）。
+  // 参加者以外（staff/judge/observer）も除く (#277)：運営側は枠を消費しないし、
+  // 落選にすると操作UIは出るのにサーバーが403を返す状態になる
   const applied = await eventMembersRepo.membersBySlotStatus(slot.id, "applied");
   const shuffled = [...applied].sort(() => Math.random() - 0.5);
   const winners = shuffled.slice(0, slot.capacity);

@@ -152,7 +152,10 @@ export const eventMembersRepo = {
 
   /** 枠の特定状態のメンバー（抽選・繰り上げ用）。
    * 退会申請中 (#250) は除外する。当選させても本人には通知も参加もできず、
-   * 枠だけ消費してしまうため。行はそのまま残るので復帰すれば申込に戻る */
+   * 枠だけ消費してしまうため。行はそのまま残るので復帰すれば申込に戻る。
+   * 参加者以外（staff/judge/observer）も除外する (#277)。運営側は枠を消費しない
+   * ので、選考（抽選・繰り上げ）の対象にもしない。setRole 側で枠を外しているが、
+   * そこを通らない経路が生まれても落選＝操作できない staff を作らないよう二重に塞ぐ */
   async membersBySlotStatus(
     slotId: string,
     status: string,
@@ -160,20 +163,32 @@ export const eventMembersRepo = {
     const rows = await many<{ id: string; user_id: string }>(
       `SELECT m.id, m.user_id FROM event_member m
          JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
-        WHERE m.slot_id = ? AND m.status = ? ORDER BY m.created_at ASC`,
+        WHERE m.slot_id = ? AND m.status = ? AND m.role = 'participant'
+        ORDER BY m.created_at ASC`,
       slotId,
       status,
     );
     return rows.map((r) => ({ id: r.id, userId: r.user_id }));
   },
 
+  /** ロール変更 (#277)。
+   *
+   * 参加者以外（staff/judge/observer）にするときは参加枠を外し、参加状態を確定にする。
+   * 運営側は枠を消費しないので抽選の当選枠を応募者に残せるし、抽選対象からも外れる
+   * ので「スタッフにしたのに抽選で落選になり、操作UIは出るのに403」を防げる。
+   *
+   * 参加者に戻すときは参加状態に触れない。触ると「参加者へ降格したら参加確定」という
+   * 逆向きの権限が湧いてしまう。改めて応募してもらう（枠は自動では戻らない）。 */
   async setRole(
     eventId: string,
     userId: string,
     role: EventRole,
   ): Promise<EventMember | null> {
     await run(
-      "UPDATE event_member SET role = ? WHERE event_id = ? AND user_id = ? AND status <> 'canceled'",
+      role === "participant"
+        ? "UPDATE event_member SET role = ? WHERE event_id = ? AND user_id = ? AND status <> 'canceled'"
+        : `UPDATE event_member SET role = ?, slot_id = NULL, status = 'confirmed'
+             WHERE event_id = ? AND user_id = ? AND status <> 'canceled'`,
       role,
       eventId,
       userId,
