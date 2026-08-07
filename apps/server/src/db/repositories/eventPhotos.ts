@@ -26,7 +26,8 @@ function toPhoto(row: Row): EventPhoto {
 
 // コメント数も投稿者が退会申請中 (#250) の分は除く。一覧（eventPhotoComments の
 // SELECT）が同じ条件で隠すので、揃えないと「3件」と出て2件しか表示されない。
-// 運営が非表示にしたコメント (#278) も同じ理由で数から外す
+// 運営が非表示にしたコメント (#278) も同じ理由で数から外す。
+// **数を出すところは必ずこの定数を使うこと**（別に書くと条件がずれる）
 const COMMENT_COUNT =
   `(SELECT COUNT(1) FROM event_photo_comment c
       JOIN user cu ON cu.id = c.user_id AND cu.deleted_at IS NULL
@@ -104,10 +105,11 @@ export const eventPhotosRepo = {
       created_at: number;
       comment_count: number;
     }>(
+      // コメント数は一覧と同じ COMMENT_COUNT を使う。ここだけ別に書いていたため
+      // 退会申請中 (#250) の投稿者ぶんが数から落ちておらず、「3件」と出て
+      // 2件しか並ばないズレがあった（どちらも p が event_photo なのでそのまま使える）
       `SELECT p.id, p.event_id, e.title AS event_title, p.created_at,
-              (SELECT COUNT(1) FROM event_photo_comment c
-                WHERE c.photo_id = p.id AND c.admin_hidden_at IS NULL)
-                AS comment_count
+              ${COMMENT_COUNT}
        FROM event_photo p
        JOIN event e ON e.id = p.event_id
        WHERE p.user_id = ? AND e.photos_public = 1 AND e.status = 'published'

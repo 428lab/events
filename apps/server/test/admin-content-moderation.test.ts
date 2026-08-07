@@ -330,6 +330,37 @@ describe("運営によるイベント内コンテンツの非表示 (#278)", () 
     ).toContain(commentId);
   });
 
+  it("公開プロフィールのコメント数が、実際に並ぶコメントと一致する", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const owner = await makeMember(eventId, "participant");
+    const kept = await makeMember(eventId, "participant");
+    const hiddenBy = await makeMember(eventId, "participant");
+    const leaving = await makeMember(eventId, "participant");
+    const photoId = await uploadPhoto(eventId, owner.cookie);
+    await postPhotoComment(eventId, photoId, kept.cookie);
+    const toHide = await postPhotoComment(eventId, photoId, hiddenBy.cookie);
+    await postPhotoComment(eventId, photoId, leaving.cookie);
+
+    await hide(eventId, "photo_comment", toHide, admin);
+    // 退会申請中 (#250) の投稿者ぶんも一覧からは落ちるので、数からも落ちる必要がある
+    await env.DB.prepare("UPDATE user SET deleted_at = ? WHERE id = ?")
+      .bind(Date.now(), leaving.userId)
+      .run();
+
+    const shown = await listPhotoComments(eventId, photoId, owner.cookie);
+    expect(shown).toHaveLength(1);
+    // イベント内の一覧と公開プロフィールのギャラリー、どちらの数も一致すること
+    const inEvent = await listPhotos(eventId, owner.cookie);
+    expect(inEvent.find((p) => p.id === photoId)?.commentCount).toBe(
+      shown.length,
+    );
+    const onProfile = await publicPhotos(owner.username);
+    expect(onProfile.find((p) => p.id === photoId)?.commentCount).toBe(
+      shown.length,
+    );
+  });
+
   it("イベントコメント: 非表示にすると一覧から消え、復元で戻る", async () => {
     const admin = await loginDev();
     const eventId = await setupEvent(admin);

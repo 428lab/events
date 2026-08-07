@@ -86,6 +86,32 @@ describe("連携の引き取りガード (#238)", () => {
     expect(gone).toBeNull();
   });
 
+  it("運営が非表示にした投稿しかなくても引き取れない (#278)", async () => {
+    const me = await makeUser();
+    const sk = schnorr.utils.randomSecretKey();
+    const pubkey = bytesToHex(schnorr.getPublicKey(sk));
+    const activeId = await makeNostrOnlyUser(pubkey);
+    const eventId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, created_by, created_at) VALUES (?, '実績E2E', 1, 2, 'offline', 'published', ?, ?)",
+    )
+      .bind(eventId, me.userId, Date.now())
+      .run();
+    // 唯一の実績が「運営が非表示にしたコメント」だけ、という状態を作る。
+    // ここを実績なし扱いにすると、荒らし投稿しかないアカウントが乗っ取れてしまう
+    await env.DB.prepare(
+      "INSERT INTO event_comment (id, event_id, user_id, body, created_at, admin_hidden_at, admin_hidden_by) VALUES (?, ?, ?, '荒らし', ?, ?, 'admin')",
+    )
+      .bind(crypto.randomUUID(), eventId, activeId, Date.now(), Date.now())
+      .run();
+
+    const res = await loginWith(me.cookie, await nostrLoginEvent(sk));
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "account_in_use",
+    );
+  });
+
   it("利用実績のあるアカウントからは引き取れない（409 account_in_use）", async () => {
     const me = await makeUser();
     const sk = schnorr.utils.randomSecretKey();
