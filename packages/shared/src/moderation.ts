@@ -21,6 +21,17 @@ export const MODERATION_KINDS = [
 ] as const;
 export type ModerationKind = (typeof MODERATION_KINDS)[number];
 
+/** items（下の moderationItemSchema）に載る種類。
+ * チャットは本文も投稿者もサーバーに無く、ブラウザがリレーから直接読むので
+ * items ではなく chat.hidden 側に出る。**chat_message はここに入らない** */
+export const MODERATION_ITEM_KINDS = [
+  "photo",
+  "photo_comment",
+  "event_comment",
+  "question",
+] as const;
+export type ModerationItemKind = (typeof MODERATION_ITEM_KINDS)[number];
+
 /** 画面表示用の日本語ラベル */
 export const MODERATION_KIND_LABELS: Record<ModerationKind, string> = {
   photo: "写真",
@@ -30,30 +41,33 @@ export const MODERATION_KIND_LABELS: Record<ModerationKind, string> = {
   chat_message: "チャットのメッセージ",
 };
 
-/** 対処の対象1件。チャット以外は本文（写真は本文なしで画像を見る）。
+/** 対処の対象1件（DB に行があるもの＝チャット以外）。
+ * 本文は写真だけ null で、画像そのものを見て判断する。
  *
  * 投稿者は退会・統合でユーザー行が消えることがあるので、
  * 表示は authorHandle が空でも壊れないようにすること。 */
 export const moderationItemSchema = z.object({
-  kind: z.enum(MODERATION_KINDS),
-  /** 写真コメントは写真のID、チャットは note の id、それ以外は行のID */
+  kind: z.enum(MODERATION_ITEM_KINDS),
+  /** 写真コメントは写真コメントのID、それ以外は行のID */
   id: z.string(),
   /** 写真コメントがぶら下がっている写真のID（それ以外は null） */
   photoId: z.string().nullable(),
   /** 本文。写真は null（画像そのものを見て判断する） */
   body: z.string().nullable(),
-  /** 投稿者。チャットはサーバーが本文も投稿者も持たないので null */
+  /** 投稿者。ユーザー行が消えている場合に備えて null 許容 */
   authorUserId: z.string().nullable(),
   authorHandle: z.string(),
   authorName: z.string(),
-  /** 投稿日時（ミリ秒）。チャットはサーバーが持たないので null */
-  createdAt: z.number().nullable(),
-  /** 運営が非表示にした日時。null なら通常どおり見えている */
+  /** 投稿日時（ミリ秒） */
+  createdAt: z.number(),
+  /** 運営が非表示にした日時。null なら運営は対処していない */
   hiddenAt: z.number().nullable(),
   /** 対処した運営管理者の user id */
   hiddenBy: z.string().nullable(),
-  /** そのイベントのスタッフが非表示にしている（Q&A・チャットのみ）。
-   * 運営の対処とは別系統なので、区別して表示する */
+  /** そのイベントのスタッフも非表示にしている（Q&A のみ）。
+   * 運営の対処とは別系統なので区別して表示する。
+   * 運営が対処したあとも、**対処する前にスタッフが非表示にしていたか** を出す
+   * （運営の復元はスタッフの非表示までは取り消さないため） */
   staffHidden: z.boolean(),
 });
 export type ModerationItem = z.infer<typeof moderationItemSchema>;
@@ -94,7 +108,9 @@ export const moderationChatSchema = z.object({
       noteId: z.string(),
       hiddenAt: z.number().nullable(),
       hiddenBy: z.string().nullable(),
-      /** 運営の対処ではなく、そのイベントのスタッフが非表示にしたもの */
+      /** そのイベントのスタッフも非表示にしている。
+       * 運営が対処したあとも、**対処する前にスタッフが非表示にしていたか** を出す
+       * （運営の復元はスタッフの非表示までは取り消さないため） */
       staffHidden: z.boolean(),
     }),
   ),
@@ -121,9 +137,9 @@ export const moderationActionInput = z.object({
 });
 export type ModerationActionInput = z.infer<typeof moderationActionInput>;
 
-/** 対処対象を探すときの1ページの上限件数 */
+/** 対処対象を探すときに返すイベントの上限件数（新しい順にこの件数まで）。
+ *
+ * 期間では絞らない。モデレーションの道具が候補を黙って隠すと、1年前のイベントに
+ * 投稿された違反コンテンツが運営には「対象なし」に見えてしまう。
+ * 代わりに件数で打ち切り、打ち切ったことは truncated で画面に伝える。 */
 export const MODERATION_EVENT_LIMIT = 50;
-
-/** ユーザー指定で「関わったイベント」を探すときに遡る期間。
- * 全期間を対象にすると D1 の読み取り行数が跳ねるため区切っている */
-export const MODERATION_LOOKBACK_MS = 180 * 24 * 60 * 60 * 1000;

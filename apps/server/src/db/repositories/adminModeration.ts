@@ -1,4 +1,4 @@
-import { MODERATION_EVENT_LIMIT, MODERATION_LOOKBACK_MS } from "@eventer/shared";
+import { MODERATION_EVENT_LIMIT } from "@eventer/shared";
 import type { ModerationEvent, ModerationItem } from "@eventer/shared";
 import { many, one, runCount } from "../client.js";
 
@@ -13,21 +13,44 @@ import { many, one, runCount } from "../client.js";
  * 消えるケースが増えても一覧が空にならないようにするため。 */
 
 /** 対処できるテーブルと、その行がどのイベントに属するかの引き方。
- * kind → SQL の対応をこの1箇所に閉じ込め、hide/restore で分岐を書かないようにする */
+ * kind → SQL の対応をこの1箇所に閉じ込め、hide/restore で分岐を書かないようにする。
+ *
+ * `hideSet` / `restoreSet` は admin_hidden_at 以外に触る列（先頭のカンマ込み）。
+ * Q&A だけスタッフ用の hidden も動かすので、その差分をここに置く */
 const TARGETS = {
   photo: {
     table: "event_photo",
     /** id と event_id で行を特定する（他イベントのIDを差し込まれても効かない） */
     where: "id = ? AND event_id = ?",
+    hideSet: "",
+    restoreSet: "",
   },
   photo_comment: {
     table: "event_photo_comment",
     // 写真コメントは event_id を持たないので、写真を経由してイベントを確かめる
     where:
       "id = ? AND photo_id IN (SELECT id FROM event_photo WHERE event_id = ?)",
+    hideSet: "",
+    restoreSet: "",
   },
-  event_comment: { table: "event_comment", where: "id = ? AND event_id = ?" },
-  question: { table: "event_question", where: "id = ? AND event_id = ?" },
+  event_comment: {
+    table: "event_comment",
+    where: "id = ? AND event_id = ?",
+    hideSet: "",
+    restoreSet: "",
+  },
+  question: {
+    table: "event_question",
+    where: "id = ? AND event_id = ?",
+    // スタッフ用の hidden も一緒に立てる。**既にある非表示の仕組みに載せる** ことで、
+    // Q&A の読み出し経路（投影画面・ピックアップ）に手を入れずに済む。
+    // 立てる前の値は admin_prev_hidden に控える（復元でそこへ戻す）
+    hideSet: ", admin_prev_hidden = hidden, hidden = 1",
+    // SQLite の UPDATE は SET の右辺を **更新前の行** で評価するので、
+    // admin_prev_hidden を同時に NULL に戻しても hidden には古い値が入る
+    restoreSet:
+      ", hidden = COALESCE(admin_prev_hidden, 0), admin_prev_hidden = NULL",
+  },
 } as const;
 
 /** hide/restore できる kind（チャットは本文がサーバーに無く、別テーブルなので除く） */
@@ -99,10 +122,15 @@ export const adminModerationRepo = {
    *   要確認リスト (#259) はユーザー単位なので、そこから対象イベントに辿る導線になる。
    * - `q`: イベントIDそのもの、またはタイトルの部分一致。
    *
-   * 投稿側は MODERATION_LOOKBACK_MS 以内に絞ってある。D1 は rows_read 課金で、
-   * event_comment のような大きいテーブルを user_id で全走査すると跳ねるため
-   * （event_comment には created_at のインデックスがある）。運営が管理画面で
-   * ときどき叩くだけの経路なので、範囲を切るほうを優先している。
+   * **期間では絞らない。** 古いイベントを黙って候補から外すと、運営には
+   * 「対象なし」に見えてしまう（モデレーションの道具としては致命的）。
+   * 代わりに新しい順に MODERATION_EVENT_LIMIT 件で打ち切り、打ち切ったことは
+   * truncated で呼び出し側に返す。
+   *
+   * D1 の読み取り行数は、期間で切っても減らない。単独の created_at インデックスが
+   * あるのは event_comment だけで、event_photo / event_photo_comment /
+   * event_question は user_id にも created_at にも単独のインデックスが無く、
+   * どのみち全表走査になるため。運営が管理画面でときどき叩くだけの経路。
    */
   async searchEvents({
     userId,
@@ -115,28 +143,23 @@ export const adminModerationRepo = {
     const limit = MODERATION_EVENT_LIMIT + 1;
     let rows: EventRow[];
     if (userId) {
-      const since = Date.now() - MODERATION_LOOKBACK_MS;
       rows = await many<EventRow>(
         `${EVENT_SELECT}
           WHERE e.id IN (
             SELECT id FROM event WHERE created_by = ?
-            UNION SELECT event_id FROM event_comment WHERE user_id = ? AND created_at >= ?
-            UNION SELECT event_id FROM event_photo WHERE user_id = ? AND created_at >= ?
+            UNION SELECT event_id FROM event_comment WHERE user_id = ?
+            UNION SELECT event_id FROM event_photo WHERE user_id = ?
             UNION SELECT p.event_id FROM event_photo_comment c
                     JOIN event_photo p ON p.id = c.photo_id
-                   WHERE c.user_id = ? AND c.created_at >= ?
-            UNION SELECT event_id FROM event_question WHERE user_id = ? AND created_at >= ?
+                   WHERE c.user_id = ?
+            UNION SELECT event_id FROM event_question WHERE user_id = ?
           )
           ORDER BY e.starts_at DESC LIMIT ?`,
         userId,
         userId,
-        since,
         userId,
-        since,
         userId,
-        since,
         userId,
-        since,
         limit,
       );
     } else {
@@ -193,8 +216,11 @@ export const adminModerationRepo = {
         `SELECT q.id, NULL AS photo_id, q.body, q.user_id,
                 u.username, u.global_name, q.created_at,
                 q.admin_hidden_at, q.admin_hidden_by,
-                CASE WHEN q.hidden = 1 AND q.admin_hidden_at IS NULL THEN 1 ELSE 0 END
-                  AS staff_hidden
+                -- 運営が対処すると hidden も立つので、対処済みの行は
+                -- **対処する前の値**（admin_prev_hidden）でスタッフの非表示を出す。
+                -- そうしないと「スタッフも非表示にしていた」が管理画面から消える
+                CASE WHEN q.admin_hidden_at IS NULL THEN q.hidden
+                     ELSE COALESCE(q.admin_prev_hidden, 0) END AS staff_hidden
            FROM event_question q LEFT JOIN user u ON u.id = q.user_id
           WHERE q.event_id = ? ORDER BY q.created_at DESC`,
         eventId,
@@ -208,10 +234,9 @@ export const adminModerationRepo = {
     ];
   },
 
-  /** 非表示にする。既に非表示なら 0 を返す（画面の再読込で揃う）。
-   *
-   * Q&A はスタッフ用の hidden も一緒に立てる。**既にある非表示の仕組みに載せる**
-   * ことで、Q&A の読み出し経路（投影画面・ピックアップ）に手を入れずに済む */
+  /** 非表示にする。既に運営が非表示にしていれば 0 を返す（画面の再読込で揃う）。
+   * 2人目の対処で「最初に誰がいつ対処したか」を上書きしないため、条件は
+   * admin_hidden_at IS NULL に固定してある */
   async hide(
     kind: RowKind,
     id: string,
@@ -220,10 +245,9 @@ export const adminModerationRepo = {
     at: number,
   ): Promise<number> {
     const t = TARGETS[kind];
-    const extra = kind === "question" ? ", hidden = 1" : "";
     return runCount(
       `UPDATE ${t.table}
-          SET admin_hidden_at = ?, admin_hidden_by = ?${extra}
+          SET admin_hidden_at = ?, admin_hidden_by = ?${t.hideSet}
         WHERE ${t.where} AND admin_hidden_at IS NULL`,
       at,
       adminId,
@@ -232,15 +256,15 @@ export const adminModerationRepo = {
     );
   },
 
-  /** 復元する。Q&A はスタッフ用の hidden も一緒に下ろす
-   * （運営が対処する前にスタッフが非表示にしていたかは記録していないので、
-   * 「対処を取り消す＝見えるところまで戻す」に倒す） */
+  /** 復元する。**運営の対処だけを解く**。
+   * Q&A は、運営が対処する前にスタッフが非表示にしていたならそこへ戻す
+   * （スタッフの判断まで取り消さない）。他の種類はスタッフ用の非表示が無いので、
+   * 目印を外せば見えるようになる */
   async restore(kind: RowKind, id: string, eventId: string): Promise<number> {
     const t = TARGETS[kind];
-    const extra = kind === "question" ? ", hidden = 0" : "";
     return runCount(
       `UPDATE ${t.table}
-          SET admin_hidden_at = NULL, admin_hidden_by = NULL${extra}
+          SET admin_hidden_at = NULL, admin_hidden_by = NULL${t.restoreSet}
         WHERE ${t.where} AND admin_hidden_at IS NOT NULL`,
       id,
       eventId,

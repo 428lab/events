@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { moderationActionInput } from "@eventer/shared";
 import type {
   ModerationActionInput,
@@ -106,6 +106,47 @@ function findAuthor(
   return adminModerationRepo.findRowAuthor(kind as RowKind, id, eventId);
 }
 
+/** 監査ログの detail。
+ *
+ * チャットは発言者を target に残せない（サーバーが本文も pubkey も持たない）。
+ * target が空なだけだと「記録し忘れ」と区別が付かないので、
+ * **記録できなかったこと自体** を detail に残す */
+function auditDetail(
+  eventId: string,
+  kind: ModerationActionInput["kind"],
+  id: string,
+): Record<string, unknown> {
+  const base = { eventId, kind, contentId: id };
+  if (kind !== "chat_message") return base;
+  return {
+    ...base,
+    // 発言者が空欄なのは記録漏れではない、と後から読み取れるようにする
+    authorUnrecorded: true,
+    authorUnrecordedReason:
+      "チャットの発言はリレー上にあり、サーバーに発言者の記録が無いため特定できない",
+  };
+}
+
+/** hide / restore に共通の入口チェック。
+ * チャットは行が無くても INSERT できてしまうので、note の形式とイベントの存在を
+ * ここで確かめる。**hide と restore で同じ検証を通す**（片方だけ緩いと、
+ * 復元の経路から存在しないイベントに対する操作が素通りする） */
+async function rejectBadTarget(
+  c: Context<AppEnv>,
+  eventId: string,
+  kind: ModerationActionInput["kind"],
+  id: string,
+): Promise<Response | null> {
+  if (kind !== "chat_message") return null;
+  if (!/^[0-9a-f]{64}$/.test(id)) {
+    return c.json({ error: "invalid_note_id" }, 400);
+  }
+  if (!(await adminModerationRepo.findEvent(eventId))) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  return null;
+}
+
 /** 非表示にする */
 adminModerationRoutes.post(
   "/events/:eventId/hide",
@@ -115,19 +156,15 @@ adminModerationRoutes.post(
     const { kind, id } = valid<ModerationActionInput>(c, "json");
     const me = c.get("user");
     const now = Date.now();
+    const bad = await rejectBadTarget(c, eventId, kind, id);
+    if (bad) return bad;
     // 監査ログ用の投稿者は **非表示にする前** に引く（対象を特定できるうちに）
     const target = await findAuthor(eventId, kind, id);
 
     let changed = 0;
     if (kind === "chat_message") {
-      if (!/^[0-9a-f]{64}$/.test(id)) {
-        return c.json({ error: "invalid_note_id" }, 400);
-      }
-      if (!(await adminModerationRepo.findEvent(eventId))) {
-        return c.json({ error: "not_found" }, 404);
-      }
-      await eventChatRepo.adminHideNote(eventId, id, me.id, now);
-      changed = 1;
+      // 既に運営が対処済みなら 0。最初に対処した人の記録を上書きしない
+      changed = await eventChatRepo.adminHideNote(eventId, id, me.id, now);
     } else {
       changed = await adminModerationRepo.hide(
         kind as RowKind,
@@ -150,7 +187,7 @@ adminModerationRoutes.post(
         actor: { id: me.id, handle: me.username },
         target,
         // 本文は入れない（監査ログに個人情報を持たない方針 #248）
-        detail: { eventId, kind, contentId: id },
+        detail: auditDetail(eventId, kind, id),
       });
     }
     return c.json({ ok: true, changed: changed > 0 });
@@ -165,6 +202,8 @@ adminModerationRoutes.post(
     const eventId = c.req.param("eventId");
     const { kind, id } = valid<ModerationActionInput>(c, "json");
     const me = c.get("user");
+    const bad = await rejectBadTarget(c, eventId, kind, id);
+    if (bad) return bad;
 
     let changed = 0;
     if (kind === "chat_message") {
@@ -177,7 +216,7 @@ adminModerationRoutes.post(
         action: "content_restore",
         actor: { id: me.id, handle: me.username },
         target: await findAuthor(eventId, kind, id),
-        detail: { eventId, kind, contentId: id },
+        detail: auditDetail(eventId, kind, id),
       });
     }
     return c.json({ ok: true, changed: changed > 0 });

@@ -48,6 +48,34 @@ export const eventCommentsRepo = {
     return row ? toComment(row) : null;
   },
 
+  /** 削除の可否を決めるための素性。運営が非表示にしたコメント (#278) も引ける。
+   * findById は非表示を落とすので、それで判定すると投稿者本人にもスタッフにも
+   * 404 になり、なぜ消せないのかが伝わらない（Q&A の meta と同じ役回り） */
+  async meta(id: string): Promise<{
+    id: string;
+    eventId: string;
+    userId: string;
+    adminHidden: boolean;
+  } | null> {
+    const row = await one<{
+      id: string;
+      event_id: string;
+      user_id: string;
+      admin_hidden_at: number | null;
+    }>(
+      "SELECT id, event_id, user_id, admin_hidden_at FROM event_comment WHERE id = ?",
+      id,
+    );
+    return row
+      ? {
+          id: row.id,
+          eventId: row.event_id,
+          userId: row.user_id,
+          adminHidden: row.admin_hidden_at !== null,
+        }
+      : null;
+  },
+
   /** 上限チェック用。非表示のものも数に入れる（eventPhotos.countByEvent と同じ） */
   async countByEvent(eventId: string): Promise<number> {
     const row = await one<{ n: number }>(

@@ -1,5 +1,12 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
+import {
+  EVENT_COMMENT_LIMIT,
+  EVENT_PHOTO_LIMIT,
+  EVENT_QUESTION_LIMIT,
+  MODERATION_EVENT_LIMIT,
+  PHOTO_COMMENT_LIMIT,
+} from "@eventer/shared";
 import type {
   AuditLogsPayload,
   EventComment,
@@ -250,6 +257,77 @@ async function adminContent(
   );
   expect(res.status).toBe(200);
   return (await res.json()) as ModerationContentPayload;
+}
+
+/** 管理画面の画像配信（非表示にした写真も見られる経路）。
+ * R2 のストリームは必ず読み切る（テスト間でストレージを片付けられなくなるため） */
+async function adminImage(
+  eventId: string,
+  photoId: string,
+  cookie: string,
+): Promise<{ status: number; contentType: string | null; bytes: number }> {
+  const res = await SELF.fetch(
+    `${BASE}/api/admin/moderation/events/${eventId}/photos/${photoId}/image`,
+    { headers: { cookie } },
+  );
+  const body = await res.arrayBuffer();
+  return {
+    status: res.status,
+    contentType: res.headers.get("content-type"),
+    bytes: body.byteLength,
+  };
+}
+
+/** そのイベントで非表示になっている note の一覧（スタッフから見えるもの） */
+async function hiddenNoteIds(
+  eventId: string,
+  cookie: string,
+): Promise<string[]> {
+  const res = await SELF.fetch(`${BASE}/api/events/${eventId}/chat-members`, {
+    headers: { cookie },
+  });
+  expect(res.status).toBe(200);
+  return ((await res.json()) as { hiddenNoteIds: string[] }).hiddenNoteIds;
+}
+
+/** スタッフによるチャットの非表示 / 解除 */
+async function staffHideChat(
+  eventId: string,
+  noteId: string,
+  cookie: string,
+): Promise<void> {
+  const res = await SELF.fetch(`${BASE}/api/events/${eventId}/chat-hidden`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ noteId }),
+  });
+  expect(res.status).toBe(200);
+}
+
+async function staffUnhideChat(
+  eventId: string,
+  noteId: string,
+  cookie: string,
+): Promise<void> {
+  const res = await SELF.fetch(
+    `${BASE}/api/events/${eventId}/chat-hidden/${noteId}`,
+    { method: "DELETE", headers: { cookie } },
+  );
+  expect(res.status).toBe(200);
+}
+
+/** スタッフによる Q&A の非表示 / 解除 */
+function staffSetQuestionHidden(
+  eventId: string,
+  qid: string,
+  hidden: boolean,
+  cookie: string,
+): Promise<Response> {
+  return SELF.fetch(`${BASE}/api/events/${eventId}/questions/${qid}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ hidden }),
+  });
 }
 
 async function auditActions(cookie: string): Promise<AuditLogsPayload> {
@@ -542,25 +620,156 @@ describe("運営によるイベント内コンテンツの非表示 (#278)", () 
     expect((await listComments(eventId)).map((x) => x.id)).toContain(commentId);
   });
 
-  it("他イベントのIDを差し込んでも対処できない", async () => {
+  it("他イベントのIDを差し込んでも対処できない（4種すべて・非表示も復元も）", async () => {
     const admin = await loginDev();
     const eventId = await setupEvent(admin);
     const otherId = await setupEvent(admin);
     const poster = await makeMember(eventId, "participant");
-    const commentId = await postComment(eventId, poster.cookie);
+    const photoId = await uploadPhoto(eventId, poster.cookie);
+    const targets: Array<[string, string]> = [
+      ["photo", photoId],
+      ["photo_comment", await postPhotoComment(eventId, photoId, poster.cookie)],
+      ["event_comment", await postComment(eventId, poster.cookie)],
+      ["question", await postQuestion(eventId, poster.cookie)],
+    ];
 
+    // 他イベントのIDでは非表示にできない
+    for (const [kind, id] of targets) {
+      const res = await moderate("hide", otherId, kind, id, admin);
+      expect(res.status, kind).toBe(200);
+      expect((await res.json()) as { changed: boolean }, kind).toMatchObject({
+        changed: false,
+      });
+    }
+    const untouched = await adminContent(eventId, admin);
+    for (const [kind, id] of targets) {
+      expect(untouched.items.find((i) => i.id === id)?.hiddenAt, kind).toBeNull();
+    }
+
+    // 正しいイベントで対処したあと、他イベントのIDでは復元もできない
+    for (const [kind, id] of targets) {
+      await hide(eventId, kind, id, admin);
+      const res = await moderate("restore", otherId, kind, id, admin);
+      expect(res.status, kind).toBe(200);
+      expect((await res.json()) as { changed: boolean }, kind).toMatchObject({
+        changed: false,
+      });
+    }
+    const stillHidden = await adminContent(eventId, admin);
+    for (const [kind, id] of targets) {
+      expect(
+        stillHidden.items.find((i) => i.id === id)?.hiddenAt,
+        kind,
+      ).not.toBeNull();
+    }
+  });
+
+  it("チャット: 他イベントのIDで対処しても、そのイベントの非表示は動かない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const otherId = await setupEvent(admin);
+    const staff = await makeMember(eventId, "staff");
+    const noteId = "b".repeat(64);
+
+    await hide(otherId, "chat_message", noteId, admin);
+    expect(await hiddenNoteIds(eventId, staff.cookie)).not.toContain(noteId);
+
+    // 逆向きも同じ。正しいイベントで対処したものを他イベントから復元できない
+    await hide(eventId, "chat_message", noteId, admin);
     const res = await moderate(
-      "hide",
+      "restore",
       otherId,
-      "event_comment",
-      commentId,
+      "chat_message",
+      noteId,
       admin,
     );
     expect(res.status).toBe(200);
     expect((await res.json()) as { changed: boolean }).toMatchObject({
-      changed: false,
+      changed: true, // otherId 側の行が消えるだけ
     });
-    expect((await listComments(eventId)).map((x) => x.id)).toContain(commentId);
+    expect(await hiddenNoteIds(eventId, staff.cookie)).toContain(noteId);
+  });
+
+  it("管理画面の画像は管理者だけが見られ、他イベントのIDでは引けない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const otherId = await setupEvent(admin);
+    const poster = await makeMember(eventId, "participant");
+    const staff = await makeMember(eventId, "staff");
+    const photoId = await uploadPhoto(eventId, poster.cookie);
+
+    const ok = await adminImage(eventId, photoId, admin);
+    expect(ok.status).toBe(200);
+    expect(ok.contentType).toBe("image/png");
+    expect(ok.bytes).toBe(PNG.byteLength);
+
+    // 非表示にしたあとも管理画面からは見られる（復元してよいか判断するため）
+    await hide(eventId, "photo", photoId, admin);
+    expect((await adminImage(eventId, photoId, admin)).status).toBe(200);
+
+    // 管理者以外は不可（そのイベントのスタッフでも・投稿者本人でも）
+    for (const cookie of [staff.cookie, poster.cookie]) {
+      expect((await adminImage(eventId, photoId, cookie)).status).toBe(403);
+    }
+    const anon = await SELF.fetch(
+      `${BASE}/api/admin/moderation/events/${eventId}/photos/${photoId}/image`,
+    );
+    expect(anon.status).toBe(401);
+
+    // 他イベントのIDでは引けない
+    expect((await adminImage(otherId, photoId, admin)).status).toBe(404);
+  });
+
+  it("運営が対処したコンテンツは投稿者もスタッフも削除できず、理由が返る", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const poster = await makeMember(eventId, "participant");
+    const staff = await makeMember(eventId, "staff");
+    const photoId = await uploadPhoto(eventId, poster.cookie);
+    const photoCommentId = await postPhotoComment(
+      eventId,
+      photoId,
+      poster.cookie,
+    );
+    const commentId = await postComment(eventId, poster.cookie);
+    const qid = await postQuestion(eventId, poster.cookie);
+    await hide(eventId, "photo", photoId, admin);
+    await hide(eventId, "photo_comment", photoCommentId, admin);
+    await hide(eventId, "event_comment", commentId, admin);
+    await hide(eventId, "question", qid, admin);
+
+    const paths: Array<[string, string]> = [
+      [`/api/events/${eventId}/photos/${photoId}`, "content_hidden"],
+      [
+        `/api/events/${eventId}/photos/${photoId}/comments/${photoCommentId}`,
+        "content_hidden",
+      ],
+      [`/api/events/${eventId}/comments/${commentId}`, "content_hidden"],
+      [`/api/events/${eventId}/questions/${qid}`, "question_hidden"],
+    ];
+    // 投稿者本人にもそのイベントのスタッフにも、404 ではなく理由の分かる 409 を返す
+    for (const cookie of [poster.cookie, staff.cookie]) {
+      for (const [path, error] of paths) {
+        const res = await SELF.fetch(`${BASE}${path}`, {
+          method: "DELETE",
+          headers: { cookie },
+        });
+        // Q&A の削除は投稿者本人しかできないので、スタッフには 403 が先に返る
+        if (cookie === staff.cookie && path.includes("/questions/")) {
+          expect(res.status, path).toBe(403);
+          continue;
+        }
+        expect(res.status, path).toBe(409);
+        expect((await res.json()) as { error: string }, path).toMatchObject({
+          error,
+        });
+      }
+    }
+    // 実際に消えていない（復元すれば戻る）
+    await restore(eventId, "photo", photoId, admin);
+    expect((await listPhotos(eventId, poster.cookie)).map((p) => p.id)).toContain(
+      photoId,
+    );
   });
 
   it("対処と復元が監査ログに残る", async () => {
@@ -617,5 +826,381 @@ describe("運営によるイベント内コンテンツの非表示 (#278)", () 
         (e) => e.id,
       ),
     ).toContain(eventId);
+  });
+
+  it("ユーザー指定の検索は、古いイベントも候補に出す", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const poster = await makeMember(eventId, "participant");
+    const commentId = await postComment(eventId, poster.cookie);
+    // 2年前の投稿にする。期間で打ち切ると候補から消えてしまい、
+    // 運営には「対象なし」に見えてしまう
+    const old = Date.now() - 2 * 365 * 24 * 60 * 60 * 1000;
+    await env.DB.batch([
+      env.DB.prepare("UPDATE event_comment SET created_at = ? WHERE id = ?").bind(
+        old,
+        commentId,
+      ),
+      env.DB.prepare(
+        "UPDATE event SET starts_at = ?, ends_at = ? WHERE id = ?",
+      ).bind(old, old + 3600000, eventId),
+    ]);
+
+    const res = await SELF.fetch(
+      `${BASE}/api/admin/moderation/events?userId=${poster.userId}`,
+      { headers: { cookie: admin } },
+    );
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as ModerationEventsPayload;
+    expect(payload.events.map((e) => e.id)).toContain(eventId);
+  });
+
+  it("候補が上限を超えたら、切れたことが分かる形で返る", async () => {
+    const admin = await loginDev();
+    const host = await makeUser();
+    // 上限より1件多く主催イベントを作る（打ち切りの判定は +1 件で見ている）
+    const now = Date.now();
+    await env.DB.batch(
+      Array.from({ length: MODERATION_EVENT_LIMIT + 1 }, (_, i) =>
+        env.DB.prepare(
+          `INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, created_by, created_at)
+           VALUES (?, '打ち切りテスト', ?, ?, 'offline', 'published', ?, ?)`,
+        ).bind(crypto.randomUUID(), now + i, now + i + 1, host.userId, now),
+      ),
+    );
+
+    const res = await SELF.fetch(
+      `${BASE}/api/admin/moderation/events?userId=${host.userId}`,
+      { headers: { cookie: admin } },
+    );
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as ModerationEventsPayload;
+    expect(payload.events).toHaveLength(MODERATION_EVENT_LIMIT);
+    expect(payload.truncated).toBe(true);
+  });
+
+  it("チャット: 2回目の対処は記録を上書きしない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const noteId = "c".repeat(64);
+
+    await hide(eventId, "chat_message", noteId, admin);
+    const first = await env.DB.prepare(
+      "SELECT admin_hidden_at, admin_hidden_by FROM event_chat_hidden WHERE event_id = ? AND note_id = ?",
+    )
+      .bind(eventId, noteId)
+      .first<{ admin_hidden_at: number; admin_hidden_by: string }>();
+
+    // 2回目は何も変えない。上書きすると「最初に誰がいつ対処したか」が消える
+    const again = await moderate("hide", eventId, "chat_message", noteId, admin);
+    expect(again.status).toBe(200);
+    expect((await again.json()) as { changed: boolean }).toMatchObject({
+      changed: false,
+    });
+    const second = await env.DB.prepare(
+      "SELECT admin_hidden_at, admin_hidden_by FROM event_chat_hidden WHERE event_id = ? AND note_id = ?",
+    )
+      .bind(eventId, noteId)
+      .first<{ admin_hidden_at: number; admin_hidden_by: string }>();
+    expect(second).toEqual(first);
+
+    // 監査ログも1件だけ（2回目は記録しない）
+    const { logs } = await auditActions(admin);
+    expect(
+      logs.filter(
+        (l) => l.action === "content_hide" && l.detail.includes(noteId),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("チャットの監査ログには、発言者を記録できていないことが残る", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const noteId = "d".repeat(64);
+    await hide(eventId, "chat_message", noteId, admin);
+
+    const { logs } = await auditActions(admin);
+    const log = logs.find(
+      (l) => l.action === "content_hide" && l.detail.includes(noteId),
+    );
+    expect(log).toBeDefined();
+    // 発言者はサーバーに記録が無いので当事者は空。空欄が記録漏れに見えないよう、
+    // 「記録できていない」ことを detail に残す
+    expect(log?.targetUserId).toBeNull();
+    const detail = JSON.parse(log!.detail) as Record<string, unknown>;
+    expect(detail).toMatchObject({
+      eventId,
+      kind: "chat_message",
+      contentId: noteId,
+      authorUnrecorded: true,
+    });
+    expect(String(detail.authorUnrecordedReason)).not.toBe("");
+  });
+
+  it("復元も非表示と同じ検証を通す（noteIdの形式・イベントの存在）", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const missingEvent = crypto.randomUUID();
+    const noteId = "e".repeat(64);
+
+    for (const action of ["hide", "restore"] as const) {
+      // note の形式
+      const bad = await moderate(
+        action,
+        eventId,
+        "chat_message",
+        "not-a-note-id",
+        admin,
+      );
+      expect(bad.status, action).toBe(400);
+      expect((await bad.json()) as { error: string }, action).toMatchObject({
+        error: "invalid_note_id",
+      });
+      // イベントの存在
+      const gone = await moderate(
+        action,
+        missingEvent,
+        "chat_message",
+        noteId,
+        admin,
+      );
+      expect(gone.status, action).toBe(404);
+    }
+  });
+
+  it("Q&A: スタッフが先に非表示にしていても、運営の対処は解除されない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const poster = await makeMember(eventId, "participant");
+    const staff = await makeMember(eventId, "staff");
+    const qid = await postQuestion(eventId, poster.cookie);
+
+    // スタッフが先に非表示 → 運営が非表示 → スタッフが解除
+    expect(
+      (await staffSetQuestionHidden(eventId, qid, true, staff.cookie)).status,
+    ).toBe(200);
+    await hide(eventId, "question", qid, admin);
+    expect(
+      (await staffSetQuestionHidden(eventId, qid, false, staff.cookie)).status,
+    ).toBe(404);
+
+    expect(
+      (await listQuestions(eventId, staff.cookie)).questions.map((q) => q.id),
+    ).not.toContain(qid);
+    const row = await env.DB.prepare(
+      "SELECT hidden, admin_hidden_at, admin_prev_hidden FROM event_question WHERE id = ?",
+    )
+      .bind(qid)
+      .first<{
+        hidden: number;
+        admin_hidden_at: number | null;
+        admin_prev_hidden: number | null;
+      }>();
+    expect(row?.hidden).toBe(1);
+    expect(row?.admin_hidden_at).not.toBeNull();
+    // 運営が対処する前の状態（スタッフが非表示にしていた）を控えてある
+    expect(row?.admin_prev_hidden).toBe(1);
+  });
+
+  it("Q&A: 運営の復元はスタッフの非表示までは取り消さない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const poster = await makeMember(eventId, "participant");
+    const staff = await makeMember(eventId, "staff");
+    const staffHiddenQid = await postQuestion(eventId, poster.cookie);
+    const plainQid = await postQuestion(eventId, poster.cookie);
+
+    await staffSetQuestionHidden(eventId, staffHiddenQid, true, staff.cookie);
+    await hide(eventId, "question", staffHiddenQid, admin);
+    await hide(eventId, "question", plainQid, admin);
+
+    // 管理画面では、運営が対処したあとも「スタッフも非表示にしていた」が分かる
+    const hiddenView = await adminContent(eventId, admin);
+    expect(
+      hiddenView.items.find((i) => i.id === staffHiddenQid)?.staffHidden,
+    ).toBe(true);
+    expect(hiddenView.items.find((i) => i.id === plainQid)?.staffHidden).toBe(
+      false,
+    );
+
+    await restore(eventId, "question", staffHiddenQid, admin);
+    await restore(eventId, "question", plainQid, admin);
+
+    // スタッフが非表示にしていたものはスタッフの非表示のまま戻る
+    const staffView = await listQuestions(eventId, staff.cookie);
+    expect(staffView.questions.find((q) => q.id === staffHiddenQid)?.hidden).toBe(
+      true,
+    );
+    // 参加者には見えないまま（スタッフの判断が取り消されていない）
+    expect(
+      (await listQuestions(eventId, poster.cookie)).questions.map((q) => q.id),
+    ).not.toContain(staffHiddenQid);
+    // スタッフが触っていなかったものは普通に見える状態へ戻る
+    expect(
+      (await listQuestions(eventId, poster.cookie)).questions.map((q) => q.id),
+    ).toContain(plainQid);
+
+    // 戻したあとはスタッフが解除できる
+    expect(
+      (await staffSetQuestionHidden(eventId, staffHiddenQid, false, staff.cookie))
+        .status,
+    ).toBe(200);
+    expect(
+      (await listQuestions(eventId, poster.cookie)).questions.map((q) => q.id),
+    ).toContain(staffHiddenQid);
+  });
+
+  it("チャット: スタッフが先に非表示にしていても、運営の対処は解除されない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const staff = await makeMember(eventId, "staff");
+    const noteId = "f".repeat(64);
+
+    // スタッフが先に非表示 → 運営が非表示 → スタッフが解除
+    await staffHideChat(eventId, noteId, staff.cookie);
+    await hide(eventId, "chat_message", noteId, admin);
+    await staffUnhideChat(eventId, noteId, staff.cookie);
+    expect(await hiddenNoteIds(eventId, staff.cookie)).toContain(noteId);
+  });
+
+  it("チャット: 運営の復元はスタッフの非表示までは取り消さない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const staff = await makeMember(eventId, "staff");
+    const staffHiddenNote = "1".repeat(64);
+    const plainNote = "2".repeat(64);
+
+    await staffHideChat(eventId, staffHiddenNote, staff.cookie);
+    await hide(eventId, "chat_message", staffHiddenNote, admin);
+    await hide(eventId, "chat_message", plainNote, admin);
+
+    // 管理画面では、運営が対処したあとも「スタッフも非表示にしていた」が分かる
+    const view = await adminContent(eventId, admin);
+    expect(view.chat.hidden.find((h) => h.noteId === staffHiddenNote)).toMatchObject(
+      { staffHidden: true },
+    );
+    expect(view.chat.hidden.find((h) => h.noteId === plainNote)).toMatchObject({
+      staffHidden: false,
+    });
+
+    await restore(eventId, "chat_message", staffHiddenNote, admin);
+    await restore(eventId, "chat_message", plainNote, admin);
+
+    // スタッフが非表示にしていたぶんは非表示のまま残る
+    const after = await hiddenNoteIds(eventId, staff.cookie);
+    expect(after).toContain(staffHiddenNote);
+    expect(after).not.toContain(plainNote);
+    // 戻したあとはスタッフが解除できる
+    await staffUnhideChat(eventId, staffHiddenNote, staff.cookie);
+    expect(await hiddenNoteIds(eventId, staff.cookie)).not.toContain(
+      staffHiddenNote,
+    );
+  });
+
+  it("非表示にしても、上限のための件数は減らない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const poster = await makeMember(eventId, "participant");
+    const photoId = await uploadPhoto(eventId, poster.cookie);
+    // 写真コメントの上限は写真ごとなので、非表示にしない写真に載せる
+    const commentPhotoId = await uploadPhoto(eventId, poster.cookie);
+    const photoCommentId = await postPhotoComment(
+      eventId,
+      commentPhotoId,
+      poster.cookie,
+    );
+    const commentId = await postComment(eventId, poster.cookie);
+    const qid = await postQuestion(eventId, poster.cookie);
+
+    // それぞれ上限ちょうどまで直接埋める（API 経由だと時間がかかるだけなので）
+    const now = Date.now();
+    const fill = (sql: string, n: number, extra: (i: number) => unknown[]) =>
+      env.DB.batch(
+        Array.from({ length: n }, (_, i) =>
+          env.DB.prepare(sql).bind(...extra(i)),
+        ),
+      );
+    await fill(
+      "INSERT INTO event_photo (id, event_id, user_id, created_at) VALUES (?, ?, ?, ?)",
+      EVENT_PHOTO_LIMIT - 2,
+      (i) => [crypto.randomUUID(), eventId, poster.userId, now + i],
+    );
+    await fill(
+      "INSERT INTO event_photo_comment (id, photo_id, user_id, body, created_at) VALUES (?, ?, ?, '埋め', ?)",
+      PHOTO_COMMENT_LIMIT - 1,
+      (i) => [crypto.randomUUID(), commentPhotoId, poster.userId, now + i],
+    );
+    await fill(
+      "INSERT INTO event_comment (id, event_id, user_id, body, created_at) VALUES (?, ?, ?, '埋め', ?)",
+      EVENT_COMMENT_LIMIT - 1,
+      (i) => [crypto.randomUUID(), eventId, poster.userId, now + i],
+    );
+    await fill(
+      "INSERT INTO event_question (id, event_id, user_id, body, created_at) VALUES (?, ?, ?, '埋め', ?)",
+      EVENT_QUESTION_LIMIT - 1,
+      (i) => [crypto.randomUUID(), eventId, poster.userId, now + i],
+    );
+
+    // 4種とも非表示にする。行は残っているので、上限の空きが増えてはいけない
+    await hide(eventId, "photo", photoId, admin);
+    await hide(eventId, "photo_comment", photoCommentId, admin);
+    await hide(eventId, "event_comment", commentId, admin);
+    await hide(eventId, "question", qid, admin);
+
+    const another = await makeMember(eventId, "participant");
+    const attempts: Array<[string, RequestInit, string]> = [
+      [
+        `/api/events/${eventId}/photos`,
+        {
+          method: "POST",
+          headers: { "content-type": "image/png", cookie: another.cookie },
+          body: PNG,
+        },
+        "photo_limit",
+      ],
+      [
+        `/api/events/${eventId}/photos/${commentPhotoId}/comments`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            cookie: another.cookie,
+          },
+          body: JSON.stringify({ body: "もう1件" }),
+        },
+        "comment_limit",
+      ],
+      [
+        `/api/events/${eventId}/comments`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            cookie: another.cookie,
+          },
+          body: JSON.stringify({ body: "もう1件" }),
+        },
+        "comment_limit",
+      ],
+      [
+        `/api/events/${eventId}/questions`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            cookie: another.cookie,
+          },
+          body: JSON.stringify({ body: "もう1件", anonymous: false }),
+        },
+        "question_limit",
+      ],
+    ];
+    for (const [path, init, error] of attempts) {
+      const res = await SELF.fetch(`${BASE}${path}`, init);
+      expect(res.status, path).toBe(409);
+      expect((await res.json()) as { error: string }, path).toMatchObject({
+        error,
+      });
+    }
   });
 });

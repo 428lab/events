@@ -75,7 +75,7 @@ eventCommentRoutes.delete(
   async (c) => {
     const eventId = c.req.param("id");
     const user = c.get("user");
-    const comment = await eventCommentsRepo.findById(c.req.param("commentId"));
+    const comment = await eventCommentsRepo.meta(c.req.param("commentId"));
     if (!comment || comment.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
     }
@@ -85,6 +85,11 @@ eventCommentRoutes.delete(
     ) {
       return c.json({ error: "forbidden" }, 403);
     }
+    // 運営が対処したコメント (#278) は本人でもスタッフでも消せない。消せてしまうと
+    // 対処の証跡ごと消える。**理由が分かるように 409 を返す**（Q&A と揃える。
+    // 非表示を落とす findById で判定すると 404 になり、投稿者には
+    // 「なぜか消せない」としか見えない）
+    if (comment.adminHidden) return c.json({ error: "content_hidden" }, 409);
     await eventCommentsRepo.delete(comment.id);
     return c.json({ ok: true });
   },

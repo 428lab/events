@@ -56,6 +56,34 @@ export const eventPhotosRepo = {
     return row ? toPhoto(row) : null;
   },
 
+  /** 削除の可否を決めるための素性。運営が非表示にした写真 (#278) も引ける。
+   * findById は非表示を落とすので、それで判定すると投稿者本人にもスタッフにも
+   * 404 になり、なぜ消せないのかが伝わらない（Q&A の meta と同じ役回り） */
+  async meta(id: string): Promise<{
+    id: string;
+    eventId: string;
+    userId: string;
+    adminHidden: boolean;
+  } | null> {
+    const row = await one<{
+      id: string;
+      event_id: string;
+      user_id: string;
+      admin_hidden_at: number | null;
+    }>(
+      "SELECT id, event_id, user_id, admin_hidden_at FROM event_photo WHERE id = ?",
+      id,
+    );
+    return row
+      ? {
+          id: row.id,
+          eventId: row.event_id,
+          userId: row.user_id,
+          adminHidden: row.admin_hidden_at !== null,
+        }
+      : null;
+  },
+
   /** イベントの枚数（上限チェック用）。運営が非表示にした写真 (#278) も数に入れる。
    * 行は残っているので、非表示にされるたびに上限が空くのはおかしい（Q&A と同じ扱い） */
   async countByEvent(eventId: string): Promise<number> {

@@ -14,6 +14,7 @@ import {
 } from "@mui/material";
 import GavelIcon from "@mui/icons-material/Gavel";
 import {
+  MODERATION_EVENT_LIMIT,
   MODERATION_KINDS,
   MODERATION_KIND_LABELS,
 } from "@eventer/shared";
@@ -41,12 +42,30 @@ interface RelayNote {
   created_at: number;
 }
 
-/** 対処の状態バッジ。運営の非表示とスタッフの非表示は別系統なので分けて出す */
-function StateChip({ item }: { item: ModerationItem }) {
-  if (item.hiddenAt !== null) {
-    return <Chip size="small" color="error" label="運営が非表示" />;
+/** 対処の状態バッジ。運営の非表示とスタッフの非表示は別系統なので分けて出す。
+ *
+ * 運営が対処していても、その **前からスタッフが非表示にしていた** ことは分かるように
+ * 出す。復元してもスタッフの非表示までは解けない（そこまでは戻さない）ため、
+ * 「復元したのにまだ見えない」を運営が事前に分かる必要がある。 */
+function StateChip({
+  adminHidden,
+  staffHidden,
+}: {
+  adminHidden: boolean;
+  staffHidden: boolean;
+}) {
+  if (adminHidden) {
+    return (
+      <Chip
+        size="small"
+        color="error"
+        label={
+          staffHidden ? "運営が非表示（スタッフも非表示）" : "運営が非表示"
+        }
+      />
+    );
   }
-  if (item.staffHidden) {
+  if (staffHidden) {
     return (
       <Chip
         size="small"
@@ -103,15 +122,13 @@ function ItemRow({
       )}
       <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-          <StateChip item={item} />
+          <StateChip adminHidden={hidden} staffHidden={item.staffHidden} />
           <Typography variant="caption" color="text.secondary">
             {authorText(item)}
           </Typography>
-          {item.createdAt !== null && (
-            <Typography variant="caption" color="text.secondary">
-              {formatDateTime(item.createdAt)}
-            </Typography>
-          )}
+          <Typography variant="caption" color="text.secondary">
+            {formatDateTime(item.createdAt)}
+          </Typography>
         </Stack>
         {item.body && (
           <Typography
@@ -124,6 +141,8 @@ function ItemRow({
         {hidden && (
           <Typography variant="caption" color="text.secondary">
             {formatDateTime(item.hiddenAt as number)} に非表示
+            {item.staffHidden &&
+              "（復元しても、スタッフの非表示はそのまま残ります）"}
           </Typography>
         )}
       </Stack>
@@ -231,7 +250,6 @@ function ChatSection({
           </Typography>
           {notes.map((n) => {
             const h = hiddenById.get(n.id);
-            const hidden = Boolean(h);
             return (
               <Stack
                 key={n.id}
@@ -247,18 +265,10 @@ function ChatSection({
                     alignItems="center"
                     flexWrap="wrap"
                   >
-                    {h?.hiddenAt ? (
-                      <Chip size="small" color="error" label="運営が非表示" />
-                    ) : hidden ? (
-                      <Chip
-                        size="small"
-                        color="warning"
-                        variant="outlined"
-                        label="スタッフが非表示"
-                      />
-                    ) : (
-                      <Chip size="small" variant="outlined" label="表示中" />
-                    )}
+                    <StateChip
+                      adminHidden={h?.hiddenAt != null}
+                      staffHidden={Boolean(h?.staffHidden)}
+                    />
                     <Typography variant="caption" color="text.secondary">
                       {nameOf(n.pubkey)}
                     </Typography>
@@ -404,9 +414,12 @@ export function AdminModerationPage() {
               </Typography>
             )}
             {found?.truncated && (
-              <Typography variant="caption" color="text.secondary">
-                件数が多いため一部だけ表示しています。絞り込んでください。
-              </Typography>
+              // 打ち切ったことは必ず出す。黙って候補を隠すと「対象なし」に見えてしまう
+              <Alert severity="warning">
+                新しい順に {MODERATION_EVENT_LIMIT}{" "}
+                件まで表示しています。ここに無いイベントは、
+                イベント名かイベントIDで検索してください。
+              </Alert>
             )}
             <Stack spacing={0.5}>
               {found?.events.map((e) => (

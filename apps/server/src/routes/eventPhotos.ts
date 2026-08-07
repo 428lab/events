@@ -127,9 +127,7 @@ eventPhotoRoutes.delete(
   async (c) => {
     const eventId = c.req.param("id");
     const user = c.get("user");
-    const comment = await eventPhotoCommentsRepo.findById(
-      c.req.param("commentId"),
-    );
+    const comment = await eventPhotoCommentsRepo.meta(c.req.param("commentId"));
     if (!comment || comment.photoId !== c.req.param("photoId")) {
       return c.json({ error: "not_found" }, 404);
     }
@@ -139,6 +137,8 @@ eventPhotoRoutes.delete(
     ) {
       return c.json({ error: "forbidden" }, 403);
     }
+    // 運営が対処したコメント (#278) は消せない。理由が分かるように 409（写真と同じ）
+    if (comment.adminHidden) return c.json({ error: "content_hidden" }, 409);
     await eventPhotoCommentsRepo.delete(comment.id);
     return c.json({ ok: true });
   },
@@ -180,7 +180,7 @@ eventPhotoRoutes.delete(
   async (c) => {
     const eventId = c.req.param("id");
     const user = c.get("user");
-    const photo = await eventPhotosRepo.findById(c.req.param("photoId"));
+    const photo = await eventPhotosRepo.meta(c.req.param("photoId"));
     if (!photo || photo.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
     }
@@ -190,6 +190,11 @@ eventPhotoRoutes.delete(
     ) {
       return c.json({ error: "forbidden" }, 403);
     }
+    // 運営が対処した写真 (#278) は本人でもスタッフでも消せない。消せてしまうと
+    // 対処の証跡ごと消える。**理由が分かるように 409 を返す**（Q&A と揃える。
+    // 非表示を落とす findById で判定すると 404 になり、投稿者には
+    // 「なぜか消せない」としか見えない）
+    if (photo.adminHidden) return c.json({ error: "content_hidden" }, 409);
     await getBucket().delete(photoR2Key(eventId, photo.id));
     await eventPhotosRepo.delete(photo.id);
     return c.json({ ok: true });
