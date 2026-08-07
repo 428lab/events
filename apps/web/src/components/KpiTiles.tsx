@@ -328,9 +328,10 @@ export function TrendChart({
   // 目盛りが半端な数になり、最大の棒が軸に張り付いて読みにくい
   const scaleMax = axisMax(max);
   // 日付ラベルは「月-日」で約30px要るが、1本あたりの幅は20px。水平に並べると
-  // 隣とくっついて数字の切れ目が分からなくなるので斜めに出す。斜めにしても
-  // 必要な間隔は約21pxあるので、本数が多いときは間引く (#290)
-  const labelStep = Math.ceil(shown.length / 15) || 1;
+  // 隣とくっついて数字の切れ目が分からなくなるので斜めに出す。斜めなら必要な
+  // 間隔は約21pxで、日別で出す範囲（長い期間は週別に切り替わる）なら全部入る。
+  // 極端に本数が多いときだけ間引く (#290)
+  const labelStep = shown.length > 40 ? Math.ceil(shown.length / 40) : 1;
   return (
     <Card variant="outlined" sx={{ width: "100%" }}>
       <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
