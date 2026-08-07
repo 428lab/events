@@ -192,6 +192,19 @@ Team（将来）──1 Entry                 （チーム参加時、Entry の�
 | global_name | text null | Discord グローバル名 |
 | avatar_url | text null | |
 | created_at | integer | |
+| last_seen_at | integer null | 最終アクセス時刻。null = 計測開始 (#257) より前からのユーザー |
+
+#### user_active_day（日次の活動記録 #257）
+| カラム | 型 | 説明 |
+|--------|----|------|
+| day | text | JST の `YYYY-MM-DD` |
+| user_id | text | ユーザー（FK は張らない） |
+
+- primary key(day, user_id)。1ユーザー1日ちょうど1行。
+- 認証を通ったリクエストで、**JST の日付が変わった最初の1回だけ** `user.last_seen_at` と同じ batch で記録する（書き込みは 1ユーザー 1日 1回）。
+- `last_seen_at` は「**最終**アクセス日」しか持たないため、日別に集計しても出るのは休眠分布であって DAU の推移にはならない。日別 DAU / WAU / MAU / コホート残存 / 休眠復帰はこの表から算出する。
+- user への FK を張らないのは、退会・完全削除でユーザー行が消えても過去の集計値を動かさないため（監査ログと同方針）。
+- 保存期間は当面無制限（サイズ試算と見直しの条件は `migrations/0056_user_last_seen_at.sql` のコメント）。
 
 #### event
 | カラム | 型 | 説明 |

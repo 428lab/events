@@ -31,16 +31,17 @@ export async function clearSession(c: Context): Promise<void> {
  * 「退会したら即座に利用不可」の担保はここ1箇所に集約されている。
  * （復帰のためにセッション自体は発行するが、使えるのは復帰APIだけ）
  *
- * DAU/MAU 計測 (#257) の last_seen_at もここで更新する。全リクエストの認証が
- * 通る唯一の場所なので計測地点として過不足がない。書き込みは JST の日付が
- * 変わった最初の1回だけ・waitUntil でレスポンス外（lib/lastSeen.ts 参照）。 */
+ * DAU/MAU 計測 (#257) のアクセス記録（last_seen_at と user_active_day）もここで
+ * 行う。全リクエストの認証が通る唯一の場所なので計測地点として過不足がない。
+ * 書き込みは JST の日付が変わった最初の1回だけ・waitUntil でレスポンス外
+ * （lib/lastSeen.ts 参照）。 */
 export async function currentUser(c: Context): Promise<User | null> {
   const id = getCookie(c, COOKIE_NAME);
   if (!id) return null;
   const session = await sessionsRepo.find(id);
   if (!session) return null;
   const user = await usersRepo.findByIdWithLastSeen(session.userId);
-  // 退会申請中 (#250) はここで null になるため、last_seen_at も更新されない
+  // 退会申請中 (#250) はここで null になるため、アクセス記録も走らない
   if (!user) return null;
   const { lastSeenAt, ...plain } = user;
   try {
