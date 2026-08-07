@@ -177,6 +177,21 @@ export const eventMembersRepo = {
     return rows.map((r) => ({ id: r.id, userId: r.user_id }));
   },
 
+  /** そのイベントを管理できる staff の人数 (#281)。
+   *
+   * 退会申請中 (#250) と取消済みは数えない。どちらもイベントを操作できないので、
+   * 「残っているように見えて誰も管理できない」状態を作らないため。
+   * 最後の1人を降格させて staff 0人のイベントを作らせない判定に使う。 */
+  async countStaff(eventId: string): Promise<number> {
+    const row = await one<{ n: number }>(
+      `SELECT COUNT(1) AS n FROM event_member m
+         JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
+        WHERE m.event_id = ? AND m.role = 'staff' AND m.status <> 'canceled'`,
+      eventId,
+    );
+    return row?.n ?? 0;
+  },
+
   /** 参加者以外のロールへの変更 (#277)。参加枠を外して参加状態を確定にする。
    *
    * 運営側は枠を消費しないので抽選の当選枠を応募者に残せるし、抽選対象からも外れる

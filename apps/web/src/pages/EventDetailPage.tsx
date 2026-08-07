@@ -17,6 +17,7 @@ import {
   ListItemAvatar,
   ListItemButton,
   ListItemText,
+  Snackbar,
   Stack,
   TextField,
   Typography,
@@ -961,8 +962,27 @@ export function EventDetailPage() {
   );
 }
 
+/** ロール変更が断られた理由を、その場で直せる形の文言にする (#281)。
+ * 何が起きたか（なぜ変えられないか）と、次に何をすればよいかまで書く */
+export function roleChangeErrorMessage(err: unknown): string {
+  const code =
+    err instanceof ApiError
+      ? (err.body as { error?: string } | null)?.error
+      : undefined;
+  if (code === "last_staff") {
+    return "このイベントの最後のスタッフです。先に別の人をスタッフにしてください。";
+  }
+  if (code === "event_ended") {
+    return "終了したイベントでは一般参加者に戻せません（参加履歴が残るため）。";
+  }
+  if (code === "not_found") {
+    return "対象が見つかりませんでした。画面を更新してください。";
+  }
+  return "ロールを変更できませんでした。時間をおいて試してください。";
+}
+
 /** 参加者一覧の1行。staff にはロール変更メニューと出席チェックを出す */
-function MemberRow({
+export function MemberRow({
   eventId,
   member: m,
   isStaff,
@@ -979,7 +999,17 @@ function MemberRow({
 }) {
   const setRole = useSetEventMemberRole(eventId);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
+  const [roleError, setRoleError] = useState("");
   const showCheck = attendanceCheck && isStaff;
+  const memberName = m.user.globalName ?? m.user.username;
+
+  /** 一般参加者に戻すのは参加の取消 (#281)。申込が無言で消えるのを防ぐため、
+   * この遷移だけ確認を挟む。他のロールへの変更は破壊的ではないので挟まない */
+  const confirmRoleChange = (r: EventRole): boolean =>
+    r !== "participant" ||
+    window.confirm(
+      `${memberName} さんを一般参加者に戻すと、参加枠と申込を取り消します。参加者一覧からも外れ、参加するには本人が改めて申し込む必要があります。よろしいですか？`,
+    );
   const attendChip =
     attendanceCheck && m.attended ? (
       <Chip size="small" color="success" label="出席" sx={{ height: 18, fontSize: 10 }} />
@@ -1024,8 +1054,12 @@ function MemberRow({
                     selected={m.role === r}
                     disabled={setRole.isPending}
                     onClick={() => {
-                      if (r !== m.role) setRole.mutate({ userId: m.user.id, role: r });
                       setAnchor(null);
+                      if (r === m.role || !confirmRoleChange(r)) return;
+                      setRole.mutate(
+                        { userId: m.user.id, role: r },
+                        { onError: (e) => setRoleError(roleChangeErrorMessage(e)) },
+                      );
                     }}
                   >
                     {roleLabel[r as EventRole]}
@@ -1035,6 +1069,13 @@ function MemberRow({
                   </MenuItem>
                 ))}
               </Menu>
+              {/* 断られた理由は画面に出す。出さないと「押しても何も起きない」に見える */}
+              <Snackbar
+                open={Boolean(roleError)}
+                autoHideDuration={8000}
+                onClose={() => setRoleError("")}
+                message={roleError}
+              />
             </>
           )}
         </Stack>

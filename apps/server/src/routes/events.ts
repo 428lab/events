@@ -690,6 +690,17 @@ eventRoutes.patch(
     if (!before) return c.json({ error: "not_found" }, 404);
     const { role } = valid<UpdateMemberRoleInput>(c, "json");
 
+    // 最後のスタッフは降ろせない (#281)。staff が0人になるとイベントの設定変更も
+    // ロール割当も誰にもできなくなり、画面から復旧する手段が無い。
+    // 先に別の人をスタッフにしてから、という順番に倒す
+    if (
+      before.role === "staff" &&
+      role !== "staff" &&
+      (await eventMembersRepo.countStaff(eventId)) <= 1
+    ) {
+      return c.json({ error: "last_staff" }, 409);
+    }
+
     if (role === "participant") {
       // 既に参加者なら何もしない（同じロールの指定で参加を消さない）
       if (before.role === "participant") return c.json({ member: before });

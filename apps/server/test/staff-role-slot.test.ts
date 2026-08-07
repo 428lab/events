@@ -441,6 +441,101 @@ describe("一般参加者に戻すのは参加の取消 (#281)", () => {
   });
 });
 
+/** スタッフ0人のイベントを作らせない (#281)。
+ * staff が居なくなると設定変更もロール割当も誰にもできなくなり、
+ * 画面から復旧する手段が無くなる。 */
+describe("最後のスタッフは降ろせない (#281)", () => {
+  /** dev-login のユーザー（イベント作成者＝最初の staff）の id */
+  async function devUserId(): Promise<string> {
+    const row = await env.DB.prepare(
+      "SELECT id FROM user WHERE discord_id = 'dev-user'",
+    ).first<{ id: string }>();
+    expect(row).not.toBeNull();
+    return row!.id;
+  }
+
+  it.each(["participant", "judge", "observer"])(
+    "最後のスタッフを %s に変更しようとすると 409",
+    async (role) => {
+      const admin = await loginDev();
+      const eventId = await setupEvent(admin);
+      const adminId = await devUserId();
+
+      const res = await setRole(eventId, adminId, role, admin);
+      expect(res.status).toBe(409);
+      expect((await res.json()) as { error: string }).toEqual({
+        error: "last_staff",
+      });
+      // 断ったのだから行は元のまま
+      expect(await memberRow(eventId, adminId)).toEqual({
+        role: "staff",
+        status: "confirmed",
+        slot_id: null,
+      });
+    },
+  );
+
+  it("スタッフが2人居れば降ろせる（最後の1人になったら断る）", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const adminId = await devUserId();
+    const b = await makeUser();
+    expect(await joinEvent(eventId, b.cookie, "")).toBe("confirmed");
+    expect((await setRole(eventId, b.userId, "staff", admin)).status).toBe(200);
+
+    // 2人居るので降ろせる
+    expect(
+      (await setRole(eventId, b.userId, "participant", admin)).status,
+    ).toBe(200);
+    expect(await memberRowOrNull(eventId, b.userId)).toBeNull();
+
+    // 残った1人は降ろせない
+    expect((await setRole(eventId, adminId, "participant", admin)).status).toBe(
+      409,
+    );
+  });
+
+  it("退会申請中のスタッフは頭数に入れない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const adminId = await devUserId();
+    const b = await makeUser();
+    expect(await joinEvent(eventId, b.cookie, "")).toBe("confirmed");
+    expect((await setRole(eventId, b.userId, "staff", admin)).status).toBe(200);
+
+    // 退会申請中 (#250) はイベントを操作できないので、居ても管理者0人と同じ
+    await env.DB.prepare("UPDATE user SET deleted_at = ? WHERE id = ?")
+      .bind(Date.now(), b.userId)
+      .run();
+
+    const res = await setRole(eventId, adminId, "participant", admin);
+    expect(res.status).toBe(409);
+    expect((await res.json()) as { error: string }).toEqual({
+      error: "last_staff",
+    });
+  });
+
+  it("スタッフ以外のロール変更は最後の1人でも通る", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const b = await makeUser();
+    expect(await joinEvent(eventId, b.cookie, "")).toBe("confirmed");
+
+    // 参加者→審査員はスタッフの人数に関係しない
+    expect((await setRole(eventId, b.userId, "judge", admin)).status).toBe(200);
+    expect((await memberRow(eventId, b.userId)).role).toBe("judge");
+  });
+
+  it("スタッフのまま指定し直すのは通る（人数が減らないため）", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const adminId = await devUserId();
+
+    expect((await setRole(eventId, adminId, "staff", admin)).status).toBe(200);
+    expect((await memberRow(eventId, adminId)).role).toBe("staff");
+  });
+});
+
 /** 先着枠は確定者が抜けたら繰り上げる (#281)。
  * ロール変更でも枠は空くので、参加解除と同じ繰り上げを通す。 */
 describe("スタッフ昇格で空いた先着枠の繰り上げ (#281)", () => {
