@@ -127,7 +127,7 @@ export function Tile({
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ lineHeight: 1.35, mt: 0.25 }}
+            sx={{ lineHeight: 1.35, mt: 0.25, lineBreak: "strict" }}
           >
             {label}
           </Typography>
@@ -136,7 +136,11 @@ export function Tile({
         <Typography
           fontWeight={800}
           sx={{
-            fontSize: big ? 32 : 26,
+            // 狭い端末では字を落として桁数の多い数値が切れないようにする
+            // （Card は overflow:hidden なので、縮めないと無言で欠ける）
+            fontSize: big
+              ? { xs: 26, sm: 32 }
+              : { xs: 21, sm: 26 },
             lineHeight: 1.2,
             letterSpacing: "-0.02em",
           }}

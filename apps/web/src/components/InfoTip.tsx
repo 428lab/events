@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ClickAwayListener, IconButton, Tooltip } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 
@@ -25,8 +25,23 @@ export function InfoTip({
   const [open, setOpen] = useState(false);
   /** マウスのホバーで開いている間は click でトグルしない（開いた直後に閉じないように） */
   const hovering = useRef(false);
+  // ホバーで開いた吹き出しはボタンにフォーカスが無いため、要素の onKeyDown では
+  // Escape を拾えない。開いている間だけ document で拾う（WCAG 1.4.13 Dismissible）
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   return (
-    <ClickAwayListener onClickAway={() => setOpen(false)}>
+    <ClickAwayListener
+      onClickAway={() => setOpen(false)}
+      // 1画面に数十個並ぶため、閉じている間は document リスナーを張らない
+      mouseEvent={open ? "onClick" : false}
+      touchEvent={open ? "onTouchEnd" : false}
+    >
       <Tooltip
         title={text}
         open={open}
@@ -61,14 +76,22 @@ export function InfoTip({
             setOpen(false);
           }}
           onFocus={(e) => {
-            if (e.currentTarget.matches(":focus-visible")) setOpen(true);
+            // 未対応ブラウザでは matches が throw するので握る
+            try {
+              if (e.currentTarget.matches(":focus-visible")) setOpen(true);
+            } catch {
+              /* noop */
+            }
           }}
           onBlur={() => setOpen(false)}
           onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
           }}
           sx={{
+            // タップ領域は 24x24 以上（WCAG 2.5.8）。見た目のアイコンは size のまま
             p: 0.25,
+            minWidth: 24,
+            minHeight: 24,
             flexShrink: 0,
             color: "text.disabled",
             "&:hover, &:focus-visible": { color: "text.secondary" },
