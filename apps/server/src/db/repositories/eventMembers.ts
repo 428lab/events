@@ -44,6 +44,12 @@ function toMember(row: MemberRow): EventMember {
   };
 }
 
+/** 参加者以外のロール (#277)。運営側として関わる人で、参加枠を消費しない。
+ * 明示的に並べておく：ロールが増えたときに黙って「枠を外して確定」側へ
+ * 落ちないよう、型で追加の判断を迫る */
+export const NON_PARTICIPANT_ROLES = ["staff", "judge", "observer"] as const;
+export type NonParticipantRole = (typeof NON_PARTICIPANT_ROLES)[number];
+
 function toUser(row: MemberUserRow): User {
   return {
     id: row.u_id,
@@ -171,24 +177,24 @@ export const eventMembersRepo = {
     return rows.map((r) => ({ id: r.id, userId: r.user_id }));
   },
 
-  /** ロール変更 (#277)。
+  /** 参加者以外のロールへの変更 (#277)。参加枠を外して参加状態を確定にする。
    *
-   * 参加者以外（staff/judge/observer）にするときは参加枠を外し、参加状態を確定にする。
    * 運営側は枠を消費しないので抽選の当選枠を応募者に残せるし、抽選対象からも外れる
    * ので「スタッフにしたのに抽選で落選になり、操作UIは出るのに403」を防げる。
+   * 席が空くので、呼び出し側は先着枠の繰り上げも走らせること (#281)。
    *
-   * 参加者に戻すときは参加状態に触れない。触ると「参加者へ降格したら参加確定」という
-   * 逆向きの権限が湧いてしまう。改めて応募してもらう（枠は自動では戻らない）。 */
+   * 一般参加者へ戻す経路はここには無い。ロールだけ書き換えると、ここで書いた確定が
+   * 残って「一度も当選していないのに確定参加者」ができてしまうため、ルート側で
+   * 参加取消と同じ扱いにしている (#281)。個人 Entry も同じ理由でここでは作らない
+   * （確定にするのは運営として参加するためで、コンテストの応募ではない）。 */
   async setRole(
     eventId: string,
     userId: string,
-    role: EventRole,
+    role: NonParticipantRole,
   ): Promise<EventMember | null> {
     await run(
-      role === "participant"
-        ? "UPDATE event_member SET role = ? WHERE event_id = ? AND user_id = ? AND status <> 'canceled'"
-        : `UPDATE event_member SET role = ?, slot_id = NULL, status = 'confirmed'
-             WHERE event_id = ? AND user_id = ? AND status <> 'canceled'`,
+      `UPDATE event_member SET role = ?, slot_id = NULL, status = 'confirmed'
+         WHERE event_id = ? AND user_id = ? AND status <> 'canceled'`,
       role,
       eventId,
       userId,

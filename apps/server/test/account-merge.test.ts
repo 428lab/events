@@ -428,4 +428,80 @@ describe("アカウント統合 (#240)", () => {
     expect(row?.role).toBe("staff");
     expect(row?.total).toBe(1);
   });
+
+  it("スタッフ権限の引き継ぎでも参加枠を外して確定にする（未確定スタッフを作らない）", async () => {
+    // 勝ち側が抽選に申込中(applied)のイベントで、負け側がそのイベントの staff。
+    // ロールだけ書き換えると {staff, applied, 枠つき} ができ、抽選の対象外なので
+    // 申込中のまま固定される（#277 と同じ「操作UIは出るのに403」）(#281)
+    const a = await makeUser(); // 負け側（staff）
+    const b = await makeUser(); // 勝ち側（抽選に申込中の参加者）
+    const owner = await makeUser();
+    const eventId = await makeEvent(owner.userId);
+    const slotId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO participation_slot (id, event_id, name, capacity, selection_type, created_at) VALUES (?, ?, '一般枠', 1, 'lottery', ?)",
+    )
+      .bind(slotId, eventId, Date.now())
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at) VALUES (?, ?, ?, 'participant', ?, 'applied', ?)",
+    )
+      .bind(crypto.randomUUID(), eventId, b.userId, slotId, Date.now())
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at) VALUES (?, ?, ?, 'staff', NULL, 'confirmed', ?)",
+    )
+      .bind(crypto.randomUUID(), eventId, a.userId, Date.now())
+      .run();
+
+    const code = await issueCode(a.cookie);
+    expect((await postMerge(b.cookie, { code, keep: "me" })).status).toBe(200);
+
+    const row = await env.DB.prepare(
+      "SELECT role, status, slot_id FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(eventId, b.userId)
+      .first<{ role: string; status: string; slot_id: string | null }>();
+    expect(row).toEqual({
+      role: "staff",
+      status: "confirmed",
+      slot_id: null,
+    });
+    // 枠が空いたので、抽選枠は他の応募者のために残っている
+    expect(
+      await count(
+        "SELECT COUNT(*) AS n FROM event_member WHERE slot_id = ?",
+        slotId,
+      ),
+    ).toBe(0);
+  });
+
+  it("スタッフ権限の引き継ぎで、勝ち側の取消済みの行も参加確定に戻す", async () => {
+    // role だけ staff にしても取消済み(canceled)のままではメンバーとして扱われず、
+    // 引き継いだはずの staff 権限が消える (#281)
+    const a = await makeUser(); // 負け側（staff）
+    const b = await makeUser(); // 勝ち側（参加を取り消し済み）
+    const owner = await makeUser();
+    const eventId = await makeEvent(owner.userId);
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, canceled_at, created_at) VALUES (?, ?, ?, 'participant', NULL, 'canceled', ?, ?)",
+    )
+      .bind(crypto.randomUUID(), eventId, b.userId, Date.now(), Date.now())
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at) VALUES (?, ?, ?, 'staff', NULL, 'confirmed', ?)",
+    )
+      .bind(crypto.randomUUID(), eventId, a.userId, Date.now())
+      .run();
+
+    const code = await issueCode(a.cookie);
+    expect((await postMerge(b.cookie, { code, keep: "me" })).status).toBe(200);
+
+    const row = await env.DB.prepare(
+      "SELECT role, status FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(eventId, b.userId)
+      .first<{ role: string; status: string }>();
+    expect(row).toEqual({ role: "staff", status: "confirmed" });
+  });
 });
