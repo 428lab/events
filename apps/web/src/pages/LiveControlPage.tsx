@@ -37,7 +37,12 @@ import {
 import { useMyLiveSets } from "../api/liveSetHooks.js";
 import { useMyDecks } from "../api/deckHooks.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
+import {
+  PresenterPanelToggle,
+  PresenterSidePanel,
+} from "../components/PresenterSidePanel.js";
 import { SlideStage } from "../components/SlideStage.js";
+import { usePresenterPanel } from "../lib/usePresenterPanel.js";
 
 /** 配信コントロールタブ（シーン切替・配信セット選択）。スマホでも操作できる */
 export function LiveControlPage() {
@@ -55,6 +60,8 @@ export function LiveControlPage() {
   const update = useUpdateEventLiveState(id);
   const bgmFileRef = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
+  // 登壇者向けサイドパネル (#215)。開閉は発表ビューと共有する
+  const [panelOpen] = usePresenterPanel();
 
   const selectedBgm = (bgmTracks ?? []).find((t) => t.id === state?.bgmTrackId);
   const onBgmFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,7 +97,15 @@ export function LiveControlPage() {
     scenes.find((s) => s.id === state?.activeSceneId)?.id ?? scenes[0]?.id;
 
   return (
-    <Stack spacing={2.5}>
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "flex-start",
+        flexWrap: "wrap",
+        gap: 3,
+      }}
+    >
+    <Stack spacing={2.5} sx={{ flex: "1 1 320px", minWidth: 0 }}>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
         <Typography
           variant="h5"
@@ -106,6 +121,8 @@ export function LiveControlPage() {
           <LiveTvIcon fontSize="medium" />
           配信コントロール
         </Typography>
+        {/* 登壇者向けサイドパネル (#215)。開閉は発表ビューと共有する */}
+        <PresenterPanelToggle />
         <Button
           variant="contained"
           startIcon={<OpenInNewIcon />}
@@ -434,6 +451,8 @@ export function LiveControlPage() {
         </Typography>
       </Stack>
     </Stack>
+      {panelOpen && <PresenterSidePanel eventId={id} />}
+    </Box>
   );
 }
 

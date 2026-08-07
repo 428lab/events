@@ -24,8 +24,13 @@ import {
   useEventState,
   useMyScores,
 } from "../api/scoringHooks.js";
+import {
+  PresenterPanelToggle,
+  PresenterSidePanel,
+} from "../components/PresenterSidePanel.js";
 import { ScoringPanel } from "../components/ScoringPanel.js";
 import { UserLink } from "../components/UserLink.js";
+import { usePresenterPanel } from "../lib/usePresenterPanel.js";
 
 export function PresentPage() {
   const { id = "" } = useParams();
@@ -37,6 +42,8 @@ export function PresentPage() {
   const { data: members } = useEventMembers(id, true);
   const { data: criteria } = useCriteria(id);
   const { data: myScores } = useMyScores(id);
+  // 登壇者向けサイドパネル (#215)。開閉は配信コントロールと共有する
+  const [panelOpen] = usePresenterPanel();
 
   if (!eventData || !state || !entries || !criteria) {
     return <Typography>読み込み中…</Typography>;
@@ -65,10 +72,29 @@ export function PresentPage() {
     (!eventData.event.aggregateSelfEntry && isSelf);
 
   return (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "flex-start",
+        flexWrap: "wrap",
+        gap: 3,
+      }}
+    >
+      <Box sx={{ flex: "1 1 320px", minWidth: 0 }}>
     <Grid container spacing={3}>
       <Grid item xs={12} md={canScore ? 6 : 12}>
         <Stack spacing={2}>
-          <Chip color="error" label="プレゼンモード" sx={{ alignSelf: "flex-start" }} />
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+          >
+            <Chip color="error" label="プレゼンモード" />
+            <Box sx={{ flex: 1 }} />
+            <PresenterPanelToggle />
+          </Stack>
           {presenting ? (
             <Card>
               <CardContent>
@@ -188,5 +214,8 @@ export function PresentPage() {
         </Grid>
       )}
     </Grid>
+      </Box>
+      {panelOpen && <PresenterSidePanel eventId={id} />}
+    </Box>
   );
 }

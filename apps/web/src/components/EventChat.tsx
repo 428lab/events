@@ -124,15 +124,18 @@ function MessageBody({
   content,
   linkify,
   onOpenImage,
+  fontSize,
 }: {
   content: string;
   linkify: boolean;
   onOpenImage: (url: string) => void;
+  /** 投影用の拡大表示 (#215)。未指定なら variant="body2" の既定サイズ */
+  fontSize?: string;
 }) {
   return (
     <Typography
       variant="body2"
-      sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+      sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize }}
     >
       {linkify
         ? splitByUrls(content).map((tok, i) =>
@@ -160,18 +163,26 @@ export function EventChat({
   myRole,
   canChat,
   variant = "card",
+  fontScale = 1,
 }: {
   eventId: string;
   event: Event;
   myRole: EventRole | null;
   /** 参加確定メンバーか（呼び出し側で判定） */
   canChat: boolean;
-  /** card=イベントページ内のカード / page=専用ページで縦いっぱい (#215) */
-  variant?: "card" | "page";
+  /** card=イベントページ内のカード / page=専用ページで縦いっぱい /
+   * display=投影用（見出し・入力欄・操作UIなしで本文だけを流す） (#215) */
+  variant?: "card" | "page" | "display";
+  /** display のときの文字サイズ倍率（投影距離に合わせて呼び出し側が変える） */
+  fontScale?: number;
 }) {
   const { data: me } = useMe();
   // イベント配下のUIは myRole のみで判定（サイト管理者でも staff でなければ操作UIを出さない）
   const isStaff = myRole === "staff";
+  // 投影は人に見せる画面なので、スタッフ用の操作UI（非表示ボタン等）は出さない (#215)
+  const display = variant === "display";
+  const fullHeight = variant === "page" || display;
+  const showStaffActions = isStaff && !display;
   const dateFixed = !event.scheduling && event.startsAt > 0;
   const visible =
     canChat && event.chatEnabled && dateFixed && event.status === "published";
@@ -434,13 +445,19 @@ export function EventChat({
     }
   };
 
+  // 投影用のサイズ（プロジェクターやウィンドウキャプチャで読める大きさ）
+  const bodyFontSize = display ? `${1.5 * fontScale}rem` : undefined;
+  const nameFontSize = display ? `${1 * fontScale}rem` : undefined;
+  const avatarSize = display ? Math.round(44 * fontScale) : 28;
+
   const content = (
     <>
+        {/* 投影用は見出しを出さない（画面いっぱいに本文だけを流す） (#215) */}
         <Stack
           direction="row"
           alignItems="center"
           justifyContent="space-between"
-          sx={{ mb: 0.5 }}
+          sx={{ mb: 0.5, display: display ? "none" : undefined }}
         >
           <Typography
             variant="h6"
@@ -555,25 +572,27 @@ export function EventChat({
             spacing={1.5}
             sx={{
               mt: 1,
-              ...(variant === "page" ? { flex: 1, minHeight: 0 } : {}),
+              ...(fullHeight ? { flex: 1, minHeight: 0 } : {}),
             }}
           >
             <Box
               ref={listRef}
               sx={{
-                ...(variant === "page"
-                  ? { flex: 1, minHeight: 0 }
-                  : { maxHeight: 360 }),
+                ...(fullHeight ? { flex: 1, minHeight: 0 } : { maxHeight: 360 }),
                 overflowY: "auto",
                 pr: 0.5,
               }}
             >
               {visibleMessages.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ fontSize: bodyFontSize }}
+                >
                   まだメッセージはありません。
                 </Typography>
               ) : (
-                <Stack spacing={1.25}>
+                <Stack spacing={display ? 2 : 1.25}>
                   {cappedMessages.map((m) => {
                     const member = memberByPubkey.get(m.pubkey);
                     if (!member) return null;
@@ -581,7 +600,7 @@ export function EventChat({
                       <Stack
                         key={m.id}
                         direction="row"
-                        spacing={1}
+                        spacing={display ? 1.5 : 1}
                         alignItems="flex-start"
                       >
                         <Avatar
@@ -589,9 +608,9 @@ export function EventChat({
                           component={RouterLink}
                           to={`/users/${member.username}`}
                           sx={{
-                            width: 28,
-                            height: 28,
-                            fontSize: 13,
+                            width: avatarSize,
+                            height: avatarSize,
+                            fontSize: display ? avatarSize * 0.45 : 13,
                             textDecoration: "none",
                           }}
                         >
@@ -617,6 +636,7 @@ export function EventChat({
                                     : "inherit",
                                 textDecoration: "none",
                                 "&:hover": { textDecoration: "underline" },
+                                fontSize: nameFontSize,
                               }}
                             >
                               {member.name}
@@ -625,7 +645,7 @@ export function EventChat({
                               <Tooltip title="スタッフ">
                                 <ConstructionOutlinedIcon
                                   sx={{
-                                    fontSize: 14,
+                                    fontSize: display ? 20 * fontScale : 14,
                                     color: "secondary.main",
                                     alignSelf: "center",
                                   }}
@@ -635,6 +655,7 @@ export function EventChat({
                             <Typography
                               variant="caption"
                               color="text.secondary"
+                              sx={{ fontSize: display ? nameFontSize : undefined }}
                             >
                               {formatTime(m.created_at)}
                             </Typography>
@@ -647,9 +668,10 @@ export function EventChat({
                               member.role === "staff" || event.chatUrlsAllowed
                             }
                             onOpenImage={setLightboxUrl}
+                            fontSize={bodyFontSize}
                           />
                         </Box>
-                        {isStaff && (
+                        {showStaffActions && (
                           <Tooltip title="このメッセージを非表示にする">
                             <IconButton
                               size="small"
@@ -677,11 +699,14 @@ export function EventChat({
               )}
             </Box>
 
-            {sendError && (
+            {sendError && !display && (
               <Alert severity="warning" onClose={() => setSendError(null)}>
                 {sendError}
               </Alert>
             )}
+            {/* 投影用は入力欄を出さない（読むだけの画面） (#215) */}
+            {!display && (
+              <>
             <Stack direction="row" spacing={1} alignItems="center">
               <TextField
                 size="small"
@@ -714,6 +739,8 @@ export function EventChat({
             <Typography variant="caption" color="text.secondary">
               チャットの内容は公開されます。
             </Typography>
+              </>
+            )}
           </Stack>
         )}
         <ImageLightbox
@@ -724,8 +751,8 @@ export function EventChat({
     </>
   );
 
-  // 専用ページ (#215) では Card を使わず、親のflex列の残り高さいっぱいに広げる
-  return variant === "page" ? (
+  // 専用ページ・投影用 (#215) では Card を使わず、親のflex列の残り高さいっぱいに広げる
+  return fullHeight ? (
     <Box
       sx={{
         display: "flex",
