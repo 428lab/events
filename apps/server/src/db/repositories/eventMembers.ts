@@ -5,6 +5,7 @@ import type {
   MyEventSummary,
   User,
 } from "@eventer/shared";
+import { QA_ANONYMITY_MODES } from "@eventer/shared";
 import { many, one, run } from "../client.js";
 import { COUNTED_MEMBER_IS_ACTIVE } from "./events.js";
 
@@ -379,6 +380,12 @@ function mapMyEventSummary(
     venueWanted: (row.venue_wanted as number) === 1,
     chatEnabled: (row.chat_enabled as number) === 1,
     chatUrlsAllowed: (row.chat_urls_allowed as number) === 1,
+    qaEnabled: (row.qa_enabled as number) === 1,
+    qaAnonymity: QA_ANONYMITY_MODES.includes(
+      row.qa_anonymity as MyEventSummary["qaAnonymity"],
+    )
+      ? (row.qa_anonymity as MyEventSummary["qaAnonymity"])
+      : "choice",
     registrationDeadline: (row.registration_deadline as number | null) ?? null,
     slug: (row.slug as string | null) ?? "",
     myRole: row.my_role as EventRole,

@@ -18,7 +18,13 @@ import {
 import StadiumIcon from "@mui/icons-material/Stadium";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useNavigate, useParams } from "react-router-dom";
-import { VENUE_TYPES, type VenueType } from "@eventer/shared";
+import {
+  QA_ANONYMITY_LABEL,
+  QA_ANONYMITY_MODES,
+  VENUE_TYPES,
+  type QaAnonymity,
+  type VenueType,
+} from "@eventer/shared";
 import {
   useDeleteEvent,
   useDuplicateEvent,
@@ -74,6 +80,9 @@ export function EditEventPage() {
   const [chatEnabled, setChatEnabled] = useState(false);
   // 参加者のURL投稿を許可するか (#241)。既定OFF（スタッフは常に可）
   const [chatUrlsAllowed, setChatUrlsAllowed] = useState(false);
+  // Q&A (#216)。チャットと同じく使いたいイベントだけONにする。既定OFF
+  const [qaEnabled, setQaEnabled] = useState(false);
+  const [qaAnonymity, setQaAnonymity] = useState<QaAnonymity>("choice");
   const [venueWanted, setVenueWanted] = useState(false);
   const [communityId, setCommunityId] = useState("");
   const myCommunitiesQuery = useMyCommunities();
@@ -105,6 +114,8 @@ export function EditEventPage() {
       setAttendanceCheck(e.attendanceCheck);
       setChatEnabled(e.chatEnabled);
       setChatUrlsAllowed(e.chatUrlsAllowed);
+      setQaEnabled(e.qaEnabled);
+      setQaAnonymity(e.qaAnonymity);
       setVenueWanted(e.venueWanted);
       setCommunityId(e.communityId ?? "");
       setInitialized(true);
@@ -173,6 +184,8 @@ export function EditEventPage() {
         attendanceCheck,
         chatEnabled,
         chatUrlsAllowed,
+        qaEnabled,
+        qaAnonymity,
         venueWanted,
         communityId: communityId || null,
       },
@@ -392,6 +405,48 @@ export function EditEventPage() {
                   display="block"
                 >
                   オンにすると参加者もチャットにURLを投稿できます。スタッフは常に投稿できます。
+                </Typography>
+              </Box>
+            )}
+          </Box>
+
+          {/* Q&A (#216)。チャットの隣に置く（どちらも「使いたいイベントだけONにする」設定） */}
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={qaEnabled}
+                  onChange={(e) => setQaEnabled(e.target.checked)}
+                />
+              }
+              label="Q&A（質問と投票）"
+            />
+            <Typography variant="caption" color="text.secondary" display="block">
+              参加確定メンバーが質問を投稿し、聞きたい質問に投票できます。票の多い順に並ぶので、登壇者は人気の質問から答えられます。
+            </Typography>
+            {qaEnabled && (
+              <Box sx={{ pl: 3, mt: 1 }}>
+                <TextField
+                  select
+                  size="small"
+                  label="質問の名前の出し方"
+                  value={qaAnonymity}
+                  onChange={(e) => setQaAnonymity(e.target.value as QaAnonymity)}
+                  sx={{ minWidth: 220 }}
+                >
+                  {QA_ANONYMITY_MODES.map((m) => (
+                    <MenuItem key={m} value={m}>
+                      {QA_ANONYMITY_LABEL[m]}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  display="block"
+                  sx={{ mt: 1 }}
+                >
+                  「参加者が選べる」にすると、投稿するときに本人が名前を出すかどうかを決められます。いずれの設定でも、荒らし対応のためスタッフには投稿者が表示されます。
                 </Typography>
               </Box>
             )}

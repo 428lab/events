@@ -454,6 +454,9 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
     attendanceCheck: src.attendanceCheck,
     chatEnabled: src.chatEnabled,
     chatUrlsAllowed: src.chatUrlsAllowed,
+    // Q&A (#216) は設定だけコピーする（質問・票は複製元のもの）
+    qaEnabled: src.qaEnabled,
+    qaAnonymity: src.qaAnonymity,
     membersNote: await eventsRepo.membersNoteFor(src.id),
   });
 
