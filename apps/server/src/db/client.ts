@@ -47,10 +47,14 @@ export async function runCount(
   return res.meta?.changes ?? 0;
 }
 
-/** 複数文をアトミックに実行（D1 batch）。better-sqlite3 の transaction 相当。 */
+/** 複数文をアトミックに実行（D1 batch）。better-sqlite3 の transaction 相当。
+ * 文ごとの変更行数を返す（使わない呼び出し側は無視してよい）。 */
 export async function batch(
   stmts: Array<{ sql: string; args?: unknown[] }>,
-): Promise<void> {
+): Promise<number[]> {
   const db = getDb();
-  await db.batch(stmts.map((s) => db.prepare(s.sql).bind(...(s.args ?? []))));
+  const res = await db.batch(
+    stmts.map((s) => db.prepare(s.sql).bind(...(s.args ?? []))),
+  );
+  return res.map((r) => r.meta?.changes ?? 0);
 }

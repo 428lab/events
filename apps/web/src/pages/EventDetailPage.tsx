@@ -25,6 +25,7 @@ import {
 } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import BarChartIcon from "@mui/icons-material/BarChart";
+import CampaignIcon from "@mui/icons-material/Campaign";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import CheckIcon from "@mui/icons-material/Check";
@@ -817,6 +818,16 @@ export function EventDetailPage() {
               to={`/events/${id}/live/control`}
             >
               配信
+            </Button>
+          )}
+          {isStaff && (
+            <Button
+              variant="outlined"
+              startIcon={<CampaignIcon />}
+              component={RouterLink}
+              to={`/events/${id}/broadcast`}
+            >
+              一斉連絡
             </Button>
           )}
           {isStaff && (

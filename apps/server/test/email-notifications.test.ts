@@ -585,5 +585,20 @@ describe("リッチ通知メールのテンプレート (#134)", () => {
       expect(html).not.toContain("<script>x</script>");
       expect(html).toContain("&lt;script&gt;x&lt;/script&gt;");
     });
+
+    it("本文の改行がメールでも改行のまま出る", () => {
+      // 一斉連絡 (#172) のように複数行の本文を送る通知があり、
+      // white-space の指定が無いと段落1つに潰れる
+      const html = notificationEmailHtml({
+        baseUrl: BASE_URL,
+        title: "件名",
+        body: "1行目\n\n2行目",
+        linkUrl: null,
+        unsubscribeUrl: `${BASE_URL}/api/email/unsubscribe?u=1&t=2`,
+      });
+      const paragraph = /<p style="([^"]*)">1行目\n\n2行目<\/p>/.exec(html);
+      expect(paragraph).not.toBeNull();
+      expect(paragraph![1]).toContain("white-space:pre-wrap");
+    });
   });
 });

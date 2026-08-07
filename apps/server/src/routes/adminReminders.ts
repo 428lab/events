@@ -5,6 +5,7 @@ import { requireAuth } from "../auth/session.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { sendEventReminders } from "../lib/reminders.js";
 import { purgeDeletedAccounts } from "../lib/purgeDeleted.js";
+import { drainBroadcastEmails } from "../lib/broadcast.js";
 
 /** 前日リマインダーの手動実行 (#126)。staging 検証・本番の補完用（app admin のみ）。
  * staging は cron を張らないため、動作確認はこのエンドポイントで行う */
@@ -26,4 +27,12 @@ export const adminPurgeDeletedRoutes = new Hono<AppEnv>();
 adminPurgeDeletedRoutes.use("*", requireAuth, requireAdmin);
 adminPurgeDeletedRoutes.post("/", async (c) => {
   return c.json(await purgeDeletedAccounts());
+});
+
+/** 一斉連絡 (#172) のメール送信待ちの消化の手動実行（app admin のみ）。
+ * staging は GHA の定時実行を張らないため、動作確認はこのエンドポイントで行う */
+export const adminBroadcastEmailRoutes = new Hono<AppEnv>();
+adminBroadcastEmailRoutes.use("*", requireAuth, requireAdmin);
+adminBroadcastEmailRoutes.post("/", async (c) => {
+  return c.json(await drainBroadcastEmails());
 });

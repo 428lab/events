@@ -57,6 +57,23 @@ export async function unsubscribeUrl(userId: string): Promise<string> {
   return `${env.appBaseUrl}/api/email/unsubscribe?u=${encodeURIComponent(userId)}&t=${token}`;
 }
 
+/**
+ * メール1通の送信結果。
+ *
+ * retryable は「時間をおけば直る見込みがあるか」。一斉連絡 (#172) の送信待ちは
+ * これを見て、直る見込みのある失敗では試行回数を消費せずに間隔を空けて粘る。
+ */
+export interface EmailSendOutcome {
+  ok: boolean;
+  retryable: boolean;
+}
+
+/** レート超過・サーバー側の不調・認証設定のミスは時間をおけば直りうる。
+ * それ以外の 4xx（宛先やペイロードが不正）は何度ためしても同じ結果になる */
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status === 401 || status === 403 || status >= 500;
+}
+
 /** Resend でメールを1通送る。API キー未設定や失敗時は false（呼び出し元を壊さない） */
 export async function sendEmail(opts: {
   to: string;
@@ -64,10 +81,21 @@ export async function sendEmail(opts: {
   html: string;
   headers?: Record<string, string>;
 }): Promise<boolean> {
+  return (await sendEmailWithOutcome(opts)).ok;
+}
+
+/** sendEmail と同じだが、失敗が一時的なものかどうかも返す */
+export async function sendEmailWithOutcome(opts: {
+  to: string;
+  subject: string;
+  html: string;
+  headers?: Record<string, string>;
+}): Promise<EmailSendOutcome> {
   const apiKey = env.resendApiKey;
   if (!apiKey) {
     console.warn("email: RESEND_API_KEY 未設定のため送信をスキップ");
-    return false;
+    // 鍵を設定すれば送れるので、送信待ちは失敗に倒さず待たせる
+    return { ok: false, retryable: true };
   }
   try {
     const res = await fetch(RESEND_ENDPOINT, {
@@ -88,12 +116,13 @@ export async function sendEmail(opts: {
       // 原因特定用に Resend のエラー本文も出す（宛先アドレスは含めない）
       const detail = (await res.text().catch(() => "")).slice(0, 300);
       console.warn(`email: Resend 送信失敗 status=${res.status} ${detail}`);
-      return false;
+      return { ok: false, retryable: isRetryableStatus(res.status) };
     }
-    return true;
+    return { ok: true, retryable: false };
   } catch (e) {
+    // 通信エラー。次の実行では通るかもしれない
     console.warn("email: Resend 送信エラー", e);
-    return false;
+    return { ok: false, retryable: true };
   }
 }
 
@@ -159,10 +188,25 @@ export async function sendNotificationEmailTo(
   link: string,
   extras?: EmailExtras,
 ): Promise<boolean> {
+  return (
+    await sendNotificationEmailToWithOutcome(userId, to, title, body, link, extras)
+  ).ok;
+}
+
+/** sendNotificationEmailTo と同じだが、失敗が一時的なものかどうかも返す */
+export async function sendNotificationEmailToWithOutcome(
+  userId: string,
+  to: string,
+  title: string,
+  body: string,
+  link: string,
+  extras?: EmailExtras,
+): Promise<EmailSendOutcome> {
   // 1リクエストの送信予算（抽選など多人数ループでの暴走防止）
   if (!takeEmailSlot()) {
     console.warn("email: 送信予算を使い切ったためスキップ", userId);
-    return false;
+    // 送っていないだけで壊れてはいない。次の実行で送れる
+    return { ok: false, retryable: true };
   }
   const unsub = await unsubscribeUrl(userId);
   // リッチ化 (#134): イベントカード＋（リマインダーなら）タイムテーブル
@@ -186,7 +230,7 @@ export async function sendNotificationEmailTo(
     linkUrl: link ? emailLinkUrl(link) : null,
     unsubscribeUrl: unsub,
   });
-  return sendEmail({
+  return sendEmailWithOutcome({
     to,
     subject: title,
     html,
