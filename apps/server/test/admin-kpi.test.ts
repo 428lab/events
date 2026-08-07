@@ -651,10 +651,13 @@ describe("KPI: アクティベーション率", () => {
     expect(kpi.retention.activationParticipantRate).toBe(0.25);
     expect(kpi.retention.activationHostRate).toBe(0.25);
     expect(kpi.retention.activeUsers).toBe(4);
-    // 日次推移: 新規4人・参加1件が今日の1行にまとまる
-    expect(kpi.retention.daily.length).toBe(1);
-    expect(kpi.retention.daily[0]!.signups).toBe(4);
-    expect(kpi.retention.daily[0]!.joins).toBe(1);
+    // 日次推移: 新規4人・参加1件が今日の1行にまとまる。
+    // 活動が無かった日も 0 で埋めるので、30日指定なら開始日〜今日の31日ぶん並ぶ (#266)
+    expect(kpi.retention.daily.length).toBe(31);
+    expect(kpi.retention.daily.at(-1)!.signups).toBe(4);
+    expect(kpi.retention.daily.at(-1)!.joins).toBe(1);
+    expect(kpi.retention.daily[0]!.signups).toBe(0);
+    expect(kpi.retention.daily[0]!.joins).toBe(0);
   });
 
   it("退会申請中ユーザーは成長・定着の分母から外し、退会数として数える", async () => {

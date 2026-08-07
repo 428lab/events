@@ -122,11 +122,12 @@ communityRoutes.get("/:id/kpi", async (c) => {
     isAppAdmin(user) || (await communitiesRepo.isManager(id, user.id));
   if (!allowed) return c.json({ error: "forbidden" }, 403);
 
-  const { days, sinceDay } = kpiPeriodFromQuery(c);
+  const { days, sinceDay, prevSinceDay } = kpiPeriodFromQuery(c);
   return c.json(
     await communityKpiRepo.overview(
       { id: community.id, slug: community.slug, name: community.name },
       sinceDay,
+      prevSinceDay,
       days,
     ),
   );

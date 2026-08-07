@@ -11,6 +11,18 @@
  * 「率だけ隠す」という画面の注記と実装を一致させるため、率を1つでも素通しにしない。 */
 
 import type { KpiNorthStar, KpiParticipants } from "./kpi.js";
+import type { KpiPreviousValues } from "./kpiTrend.js";
+
+/** コミュニティの日次推移1日分。活動が無かった日も 0 で埋めて連続で返す。
+ * DAU/MAU はコミュニティ単位では計測していない（user_active_day はサービス全体） */
+export interface CommunityKpiDailyPoint {
+  /** JST の 'YYYY-MM-DD' */
+  day: string;
+  /** その日に終了したこのコミュニティの公開イベント数 */
+  heldEvents: number;
+  /** その日に終了したイベントの参加者の合計 */
+  participations: number;
+}
 
 /** 率を表示する最小母数。これ未満は率を出さず「母数が少ないため非表示」。
  * 母数は指標によって「人数」だったり「イベント件数」だったりする（不発率・主催シェアは件数）。
@@ -93,6 +105,14 @@ export interface CommunityKpiPayload {
   days: number | null;
   /** 集計開始日（JST 'YYYY-MM-DD'）。全期間は '0000' */
   sinceDay: string;
+  /** 前の同じ長さの期間 [previousSinceDay, sinceDay) の値 (#266)。全期間は null。
+   * 率は今期間と同じ母数ゲート（COMMUNITY_KPI_MIN_SAMPLE）を通しているので、
+   * 前期間の母数が少なければ null になり、増減も出ない */
+  previous: KpiPreviousValues | null;
+  /** 前期間の開始日（JST 'YYYY-MM-DD'）。全期間は null */
+  previousSinceDay: string | null;
+  /** 開催と参加の日次推移（日付昇順） */
+  daily: CommunityKpiDailyPoint[];
   community: { id: string; slug: string; name: string };
   /** 率を出すのに必要な最小母数（COMMUNITY_KPI_MIN_SAMPLE） */
   minSample: number;

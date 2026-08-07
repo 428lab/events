@@ -10,7 +10,13 @@ import {
 import InsightsIcon from "@mui/icons-material/Insights";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { Link as RouterLink, useParams } from "react-router-dom";
-import type { CommunityKpiPayload } from "@eventer/shared";
+import {
+  type CommunityKpiPayload,
+  type KpiMetricKey,
+  type KpiSeriesPoint,
+  type KpiTrend,
+  kpiTrend,
+} from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
 import { useCommunity } from "../api/communityHooks.js";
 import { useCommunityKpi } from "../api/analyticsHooks.js";
@@ -20,9 +26,28 @@ import {
   MiniBars,
   Section,
   Tile,
+  TrendChart,
   num,
   pct,
 } from "../components/KpiTiles.js";
+
+/** 前期間比を引く。方向（増えたら良いか）の定義は @eventer/shared の
+ * KPI_METRICS が1箇所で持っていて、全体KPIの画面と共通 (#266)。
+ * 全期間を選んだときは previous が null なので何も出さない */
+function trendOf(
+  data: CommunityKpiPayload,
+  key: KpiMetricKey,
+  current: number | null,
+): KpiTrend | null {
+  return kpiTrend(key, current, data.previous?.[key]);
+}
+
+function seriesPoints(data: CommunityKpiPayload): KpiSeriesPoint[] {
+  return data.daily.map((d) => ({
+    day: d.day,
+    values: { heldEvents: d.heldEvents, participations: d.participations },
+  }));
+}
 
 const RANGES: { label: string; days: number | null }[] = [
   { label: "30日", days: 30 },
@@ -107,7 +132,10 @@ export function CommunityKpiPage() {
         全体KPIと揃えてあり、主催・スタッフの行（イベント作成時に自動で作られます）と
         退会申請中のユーザーは除いています。審査員・観覧者は実際にイベントに来る人なので
         参加者として数えます。母数が少ないときは率が極端に振れて誤読しやすいため、
-        件数だけを出して率は「—」にしています。
+        件数だけを出して率は「—」にしています。数字の下の「前期間」は同じ長さの
+        ひとつ前の期間との比較で、減ったほうが良い指標（参加者が少なかった回の割合・
+        キャンセル率・しばらく参加していない人の割合など）は下がったときを緑にしています。
+        全期間を選ぶと比べる過去が無いため出しません。
       </KpiNote>
 
       <ToggleButtonGroup
@@ -162,23 +190,42 @@ function NorthStarSection({ data }: { data: CommunityKpiPayload }) {
         label="参加体験の数"
         value={n.participations}
         hint={`開催済みイベントの参加者の合計（主催・スタッフを含む）。主催・スタッフを除くと ${n.heldParticipants.toLocaleString()}`}
+        trend={trendOf(data, "participations", n.participations)}
         big
       />
       <Tile
         label="開催イベント数"
         value={n.heldEvents}
         hint="期間内に終了した公開イベント（日程確定済み・開催日設定済み）"
+        trend={trendOf(data, "heldEvents", n.heldEvents)}
       />
       <Tile
         label="1イベントあたり平均参加者"
         text={num(n.avgParticipantsPerEvent)}
         hint="参加体験の数 ÷ 開催イベント数"
+        trend={trendOf(
+          data,
+          "avgParticipantsPerEvent",
+          n.avgParticipantsPerEvent,
+        )}
       />
       <Tile
         label="参加者が少なかった回の割合"
         text={pct(o.dudRate)}
-        hint={`参加者3人以下 ${o.dudEvents} 件 ÷ ${o.dudBaseEvents} 件。出席チェックを有効にしたのに記録が0件の ${o.attendanceUnrecordedEvents} 件は判定できないため除いています。告知のタイミングや開催形式を見直すヒントに`}
+        hint={`参加者3人以下 ${o.dudEvents} 件 ÷ ${o.dudBaseEvents} 件。出席チェックを有効にしたのに記録が0件の ${o.attendanceUnrecordedEvents} 件は判定できないため除いています。告知のタイミングや開催形式を見直すヒントに。減ったほうが良い指標なので、下がったときを緑にしています`}
+        trend={trendOf(data, "dudRate", o.dudRate)}
       />
+      <FullWidth>
+        <TrendChart
+          title="開催と参加の推移"
+          hint="イベントが終了した日に立てています。参加体験の数は主催・スタッフを含む合計なので、開催イベント数より桁がひとつ大きくなります（目盛りは共通です）。"
+          points={seriesPoints(data)}
+          series={[
+            { key: "participations", label: "参加体験の数", color: "primary.main" },
+            { key: "heldEvents", label: "開催イベント数", color: "secondary.main" },
+          ]}
+        />
+      </FullWidth>
     </Section>
   );
 }
@@ -194,6 +241,7 @@ function NewcomerSection({ data }: { data: CommunityKpiPayload }) {
       label="また来てくれた人の割合"
       text={pct(data.participants.repeatRate)}
       hint={`期間内に2回以上参加 ${data.participants.repeatParticipants} 人 ÷ 参加した人数 ${data.participants.uniqueParticipants} 人`}
+      trend={trendOf(data, "repeatRate", data.participants.repeatRate)}
       big={data.days === null}
     />
   );
@@ -227,17 +275,20 @@ function NewcomerSection({ data }: { data: CommunityKpiPayload }) {
         label="初参加の割合"
         text={pct(nc.newcomerRate)}
         hint={`初参加 ${nc.newcomers} 人 ÷ 参加した人数 ${nc.participants} 人`}
+        trend={trendOf(data, "newcomerRate", nc.newcomerRate)}
         big
       />
       <Tile
         label="初参加の人数"
         value={nc.newcomers}
         hint="このコミュニティのイベントに初めて来た人"
+        trend={trendOf(data, "newcomers", nc.newcomers)}
       />
       <Tile
         label="以前にも来ていた人数"
         value={nc.regulars}
         hint="期間より前にも参加していた人。ここが厚いほど継続的な関係ができています"
+        trend={trendOf(data, "regulars", nc.regulars)}
       />
       {repeatTile}
     </Section>
@@ -263,22 +314,26 @@ function HostSection({ data }: { data: CommunityKpiPayload }) {
         label="開催した人数"
         value={o.hosts}
         hint="期間内に1件以上イベントを開いた実人数"
+        trend={trendOf(data, "hosts", o.hosts)}
         big
       />
       <Tile
         label="いちばん多い人のシェア"
         text={pct(o.topHostShare)}
-        hint={`最多の1人が ${o.topHostEvents} 件 ÷ 開催 ${o.heldEventsWithActiveHost} 件。高いときは共同開催や当番制を試すヒントに`}
+        hint={`最多の1人が ${o.topHostEvents} 件 ÷ 開催 ${o.heldEventsWithActiveHost} 件。高いときは共同開催や当番制を試すヒントに。特定の人への集中は下がったほうが良いので、下がったときを緑にしています`}
+        trend={trendOf(data, "topHostShare", o.topHostShare)}
       />
       <Tile
         label="1人あたり開催数"
         text={num(o.avgEventsPerHost)}
         hint={`開催 ${o.heldEventsWithActiveHost} 件 ÷ 開催した人数 ${o.hosts} 人`}
+        trend={trendOf(data, "avgEventsPerHost", o.avgEventsPerHost)}
       />
       <Tile
         label="2回以上開いた人の割合"
         text={pct(o.repeatHostRate)}
         hint={`2回以上 ${o.repeatHosts} 人 ÷ 開催した人数 ${o.hosts} 人`}
+        trend={trendOf(data, "repeatHostRate", o.repeatHostRate)}
       />
     </Section>
   );
@@ -299,18 +354,20 @@ function DormantSection({ data }: { data: CommunityKpiPayload }) {
       <Tile
         label="しばらく参加していない人の割合"
         text={pct(d.dormantRate)}
-        hint={`未参加 ${d.dormantMembers} 人 ÷ フォロー ${d.members} 人`}
+        hint={`未参加 ${d.dormantMembers} 人 ÷ フォロー ${d.members} 人。減ったほうが良い指標なので、下がったときを緑にしています`}
+        trend={trendOf(data, "dormantRate", d.dormantRate)}
         big
       />
       <Tile
         label="フォローしている人数"
         value={d.members}
-        hint="コミュニティをフォローしている在籍ユーザー（コミュニティページのメンバー数はイベント参加者も含むため一致しません）"
+        hint="コミュニティをフォローしている在籍ユーザー（コミュニティページのメンバー数はイベント参加者も含むため一致しません）。いまの人数のスナップショットなので、前期間比は出しません"
       />
       <Tile
         label="うち期間内に参加した人数"
         value={d.activeMembers}
         hint="期間内に開催されたこのコミュニティのイベントに参加した人"
+        trend={trendOf(data, "activeMembers", d.activeMembers)}
       />
     </Section>
   );
@@ -358,38 +415,50 @@ function ParticipantsSection({ data }: { data: CommunityKpiPayload }) {
       <Tile
         label="参加登録数"
         value={p.registrations}
-        hint="期間内に作成された登録（取消を含む全ステータス）"
+        hint="期間内に作成された登録（取消を含む全ステータス）。取消も含むため、増えたことが良いとは限りません"
+        trend={trendOf(data, "registrations", p.registrations)}
       />
-      <Tile label="うち確定" value={p.confirmedRegistrations} hint="いま確定状態の登録" />
+      <Tile
+        label="うち確定"
+        value={p.confirmedRegistrations}
+        hint="いま確定状態の登録"
+        trend={trendOf(data, "confirmedRegistrations", p.confirmedRegistrations)}
+      />
       <Tile
         label="イベント詳細の閲覧UU"
         value={p.uniqueViewers}
         hint={`このコミュニティのイベント詳細を見た訪問者（Cookieで重複排除）。総表示回数 ${p.totalViews.toLocaleString()}`}
+        trend={trendOf(data, "uniqueViewers", p.uniqueViewers)}
       />
       <Tile
         label="閲覧→登録の転換率"
         text={pct(p.viewToJoinRate)}
         hint="概算です。一覧やお知らせなど詳細ページを経由しない登録も分子に入るため100%を超えることがあります。低いときはイベント説明や日時の書き方を見直すヒントに"
+        trend={trendOf(data, "viewToJoinRate", p.viewToJoinRate)}
       />
       <Tile
         label="出席率"
         text={pct(p.attendanceRate)}
         hint={`出席 ${p.attended} ÷ 出席チェックを実施したイベントの確定参加者 ${p.attendanceExpected}`}
+        trend={trendOf(data, "attendanceRate", p.attendanceRate)}
       />
       <Tile
         label="当日来られなかった割合"
         text={pct(p.noShowRate)}
-        hint="登録したのに出席チェックされなかった割合。リマインドの有無を見直すヒントに"
+        hint="登録したのに出席チェックされなかった割合。リマインドの有無を見直すヒントに。減ったほうが良い指標なので、下がったときを緑にしています"
+        trend={trendOf(data, "noShowRate", p.noShowRate)}
       />
       <Tile
         label="キャンセル率"
         text={pct(p.cancelRate)}
-        hint={`取消 ${p.canceled} ÷ 期間内の登録 ${p.registrations}（日程調整中の取消は除外）`}
+        hint={`取消 ${p.canceled} ÷ 期間内の登録 ${p.registrations}（日程調整中の取消は除外）。減ったほうが良い指標なので、下がったときを緑にしています`}
+        trend={trendOf(data, "cancelRate", p.cancelRate)}
       />
       <Tile
         label="うち直前24時間"
         text={`${p.canceledLate} / ${p.canceled}`}
-        hint={`事前の取消は ${p.canceledEarly} 件。直前率 ${pct(p.lateCancelRate)}`}
+        hint={`事前の取消は ${p.canceledEarly} 件。直前率 ${pct(p.lateCancelRate)}。前期間比は直前率で見ています`}
+        trend={trendOf(data, "lateCancelRate", p.lateCancelRate)}
       />
       <FullWidth>
         <MiniBars

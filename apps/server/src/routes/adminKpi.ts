@@ -15,6 +15,6 @@ const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
 export const adminKpiRoutes = new Hono<AppEnv>();
 adminKpiRoutes.use("*", requireAuth, requireAdmin);
 adminKpiRoutes.get("/", async (c) => {
-  const { days, sinceDay } = kpiPeriodFromQuery(c);
-  return c.json(await kpiRepo.overview(sinceDay, days));
+  const { days, sinceDay, prevSinceDay } = kpiPeriodFromQuery(c);
+  return c.json(await kpiRepo.overview(sinceDay, prevSinceDay, days));
 });
