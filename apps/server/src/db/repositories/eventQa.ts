@@ -21,7 +21,11 @@ export interface QuestionRow {
 
 /** 投稿者は「退会申請中 (#250) でない」ユーザーのみ。
  * event_comment と同じく、退会申請中ユーザーの投稿は一覧から落とす。
- * 票も同様に退会申請中ユーザー分は数えない（一覧に並ぶ人数と票数がズレないように） */
+ * 票も同様に退会申請中ユーザー分は数えない（一覧に並ぶ人数と票数がズレないように）。
+ *
+ * 運営が非表示にした質問 (#278) は **includeHidden（そのイベントの staff）でも**
+ * 出さないので、スタッフの非表示 (q.hidden) とは別に WHERE をここに固定してある。
+ * 呼び出し側は AND で条件を足すだけになり、除外を書き忘れられない */
 const SELECT_QUESTION = `SELECT q.id, q.event_id, q.user_id, q.body, q.anonymous,
     q.answered, q.hidden, q.created_at,
     u.username, u.global_name, u.avatar_url,
@@ -31,7 +35,8 @@ const SELECT_QUESTION = `SELECT q.id, q.event_id, q.user_id, q.body, q.anonymous
     (SELECT COUNT(1) FROM event_question_vote v2
       WHERE v2.question_id = q.id AND v2.user_id = ?) AS voted
   FROM event_question q
-  JOIN user u ON u.id = q.user_id AND u.deleted_at IS NULL`;
+  JOIN user u ON u.id = q.user_id AND u.deleted_at IS NULL
+  WHERE q.admin_hidden_at IS NULL`;
 
 /** 並び: 未回答が先 → 票数の多い順 → 古い順（先に聞いた人が上）→ id。
  * 最後に id を入れているのは、票数も投稿時刻も同じときに並びが揺れないようにするため
@@ -47,7 +52,7 @@ export const eventQaRepo = {
     includeHidden: boolean,
   ): Promise<QuestionRow[]> {
     return many<QuestionRow>(
-      `${SELECT_QUESTION} WHERE q.event_id = ?${
+      `${SELECT_QUESTION} AND q.event_id = ?${
         includeHidden ? "" : " AND q.hidden = 0"
       } ${ORDER_QUESTION}`,
       viewerId,
@@ -56,7 +61,7 @@ export const eventQaRepo = {
   },
 
   async findById(id: string, viewerId: string): Promise<QuestionRow | null> {
-    return one<QuestionRow>(`${SELECT_QUESTION} WHERE q.id = ?`, viewerId, id);
+    return one<QuestionRow>(`${SELECT_QUESTION} AND q.id = ?`, viewerId, id);
   },
 
   /** 質問の素性だけを引く（所属イベント・投稿者・非表示）。
@@ -164,8 +169,11 @@ export const eventQaRepo = {
       args.push(flags.hidden ? 1 : 0);
     }
     if (sets.length === 0) return;
+    // 運営が非表示にした質問 (#278) はスタッフの操作では動かせない。
+    // ルート側でも 409 を返しているが、経路が増えたときのために SQL でも閉じる
     await run(
-      `UPDATE event_question SET ${sets.join(", ")} WHERE id = ?`,
+      `UPDATE event_question SET ${sets.join(", ")}
+        WHERE id = ? AND admin_hidden_at IS NULL`,
       ...args,
       questionId,
     );

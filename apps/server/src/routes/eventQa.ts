@@ -279,6 +279,9 @@ eventQaRoutes.patch(
     if (!meta || meta.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
     }
+    // 運営が対処した質問 (#278) にスタッフの操作が効かないのは updateFlags 側で
+    // 閉じてある。ここで先に弾いてもレスポンス（下の findById が null で 404）は
+    // 同じなので、判定は1箇所だけに置く
     const input = valid<UpdateQuestionInput>(c, "json");
     await eventQaRepo.updateFlags(qid, input);
     // 非表示にした質問がピックアップ中なら解除する

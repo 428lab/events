@@ -20,7 +20,8 @@ import { eventPhotoCommentsRepo } from "../db/repositories/eventPhotoComments.js
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 
 const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
-const r2Key = (eventId: string, photoId: string) =>
+/** R2 のキー。管理画面 (#278) も同じ実体を配信するのでここから使う */
+export const photoR2Key = (eventId: string, photoId: string) =>
   `event-photos/${eventId}/${photoId}`;
 
 /** 写真を閲覧できるか。photos_public 公開イベントは誰でも、
@@ -63,7 +64,7 @@ export async function getEventPhotoImage(c: Context<AppEnv>) {
   if (!photo || photo.eventId !== eventId) {
     return c.json({ error: "not_found" }, 404);
   }
-  const obj = await getBucket().get(r2Key(photo.eventId, photo.id));
+  const obj = await getBucket().get(photoR2Key(photo.eventId, photo.id));
   if (!obj) return c.json({ error: "not_found" }, 404);
   return new Response(obj.body as unknown as ReadableStream, {
     headers: {
@@ -163,7 +164,7 @@ eventPhotoRoutes.post(
       return c.json({ error: "too_large", maxBytes: EVENT_PHOTO_MAX_BYTES }, 413);
     }
     const photoId = await eventPhotosRepo.create(eventId, c.get("user").id);
-    await getBucket().put(r2Key(eventId, photoId), body, {
+    await getBucket().put(photoR2Key(eventId, photoId), body, {
       httpMetadata: { contentType: mime },
     });
     return c.json({ photo: await eventPhotosRepo.findById(photoId) }, 201);
@@ -189,7 +190,7 @@ eventPhotoRoutes.delete(
     ) {
       return c.json({ error: "forbidden" }, 403);
     }
-    await getBucket().delete(r2Key(eventId, photo.id));
+    await getBucket().delete(photoR2Key(eventId, photo.id));
     await eventPhotosRepo.delete(photo.id);
     return c.json({ ok: true });
   },

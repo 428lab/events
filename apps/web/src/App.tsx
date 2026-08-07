@@ -57,6 +57,7 @@ import { AdminTrendingPage } from "./pages/AdminTrendingPage.js";
 import { AdminSettingsPage } from "./pages/AdminSettingsPage.js";
 import { AdminAuditPage } from "./pages/AdminAuditPage.js";
 import { AdminAbusePage } from "./pages/AdminAbusePage.js";
+import { AdminModerationPage } from "./pages/AdminModerationPage.js";
 import { DeckEditorPage } from "./pages/DeckEditorPage.js";
 import { DeckViewerPage } from "./pages/DeckViewerPage.js";
 import { ShortEventPage } from "./pages/ShortEventPage.js";
@@ -311,6 +312,7 @@ export function App() {
         <Route path="/admin/settings" element={<AdminSettingsPage />} />
         <Route path="/admin/audit-logs" element={<AdminAuditPage />} />
         <Route path="/admin/abuse" element={<AdminAbusePage />} />
+        <Route path="/admin/moderation" element={<AdminModerationPage />} />
         <Route path="/admin/inquiries/:id" element={<AdminInquiryThreadPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/terms" element={<TermsPage />} />

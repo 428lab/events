@@ -198,6 +198,13 @@ export function Layout({
                   </MenuItem>
                   <MenuItem
                     component={RouterLink}
+                    to="/admin/moderation"
+                    onClick={() => setAdminAnchor(null)}
+                  >
+                    コンテンツの対処
+                  </MenuItem>
+                  <MenuItem
+                    component={RouterLink}
                     to="/admin/audit-logs"
                     onClick={() => setAdminAnchor(null)}
                   >
@@ -332,6 +339,16 @@ export function Layout({
                     sx={{ ml: 1, height: 18 }}
                   />
                 )}
+              </MenuItem>
+            )}
+            {isAdmin && (
+              <MenuItem
+                component={RouterLink}
+                to="/admin/moderation"
+                onClick={closeMenu}
+                sx={{ pl: 3 }}
+              >
+                コンテンツの対処
               </MenuItem>
             )}
             {isAdmin && (

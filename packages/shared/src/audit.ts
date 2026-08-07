@@ -14,6 +14,10 @@ export const AUDIT_ACTIONS = [
   "identity_takeover",
   "chat_channel_reset",
   "admin_setting_change",
+  /** 運営によるイベント内コンテンツの非表示 (#278) */
+  "content_hide",
+  /** 上記の復元 (#278) */
+  "content_restore",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -27,6 +31,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   identity_takeover: "連携の引き取り",
   chat_channel_reset: "チャンネルのリセット",
   admin_setting_change: "運用設定の変更",
+  content_hide: "コンテンツの非表示",
+  content_restore: "コンテンツの復元",
 };
 
 /** 監査ログ1件。ユーザー行が消えても辿れるよう、実行時点のハンドルを持つ */

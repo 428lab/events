@@ -155,10 +155,12 @@ export const eventChatRepo = {
     );
   },
 
-  /** 非表示を解除する */
+  /** 非表示を解除する（スタッフ）。
+   * 運営が対処したもの (#278) は残す。戻せてしまうと対処した意味が無くなる */
   async unhideNote(eventId: string, noteId: string): Promise<void> {
     await run(
-      "DELETE FROM event_chat_hidden WHERE event_id = ? AND note_id = ?",
+      `DELETE FROM event_chat_hidden
+        WHERE event_id = ? AND note_id = ? AND admin_hidden_at IS NULL`,
       eventId,
       noteId,
     );
@@ -170,5 +172,66 @@ export const eventChatRepo = {
       eventId,
     );
     return rows.map((r) => r.note_id);
+  },
+
+  /** 運営による非表示 (#278)。既にスタッフが非表示にしていた行にも目印を付ける
+   * （以後スタッフの解除では戻らなくなる） */
+  async adminHideNote(
+    eventId: string,
+    noteId: string,
+    adminId: string,
+    at: number,
+  ): Promise<void> {
+    await run(
+      `INSERT INTO event_chat_hidden
+         (event_id, note_id, created_at, admin_hidden_at, admin_hidden_by)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (event_id, note_id) DO UPDATE
+         SET admin_hidden_at = excluded.admin_hidden_at,
+             admin_hidden_by = excluded.admin_hidden_by`,
+      eventId,
+      noteId,
+      at,
+      at,
+      adminId,
+    );
+  },
+
+  /** 運営による復元 (#278)。行ごと消す（スタッフが別途非表示にしていたかどうかは
+   * 区別できないが、対処を取り消す操作なので「見えるところまで戻す」に倒す） */
+  async adminUnhideNote(eventId: string, noteId: string): Promise<number> {
+    return runCount(
+      `DELETE FROM event_chat_hidden
+        WHERE event_id = ? AND note_id = ? AND admin_hidden_at IS NOT NULL`,
+      eventId,
+      noteId,
+    );
+  },
+
+  /** 管理画面用: 非表示にしている note を、誰がいつ対処したか付きで返す */
+  async listHiddenDetail(eventId: string): Promise<
+    Array<{
+      noteId: string;
+      hiddenAt: number | null;
+      hiddenBy: string | null;
+      staffHidden: boolean;
+    }>
+  > {
+    const rows = await many<{
+      note_id: string;
+      created_at: number;
+      admin_hidden_at: number | null;
+      admin_hidden_by: string | null;
+    }>(
+      `SELECT note_id, created_at, admin_hidden_at, admin_hidden_by
+         FROM event_chat_hidden WHERE event_id = ? ORDER BY created_at ASC`,
+      eventId,
+    );
+    return rows.map((r) => ({
+      noteId: r.note_id,
+      hiddenAt: r.admin_hidden_at,
+      hiddenBy: r.admin_hidden_by,
+      staffHidden: r.admin_hidden_at === null,
+    }));
   },
 };
