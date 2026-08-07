@@ -155,10 +155,12 @@ export const eventChatRepo = {
     );
   },
 
-  /** 非表示を解除する */
+  /** 非表示を解除する（スタッフ）。
+   * 運営が対処したもの (#278) は残す。戻せてしまうと対処した意味が無くなる */
   async unhideNote(eventId: string, noteId: string): Promise<void> {
     await run(
-      "DELETE FROM event_chat_hidden WHERE event_id = ? AND note_id = ?",
+      `DELETE FROM event_chat_hidden
+        WHERE event_id = ? AND note_id = ? AND admin_hidden_at IS NULL`,
       eventId,
       noteId,
     );
@@ -170,5 +172,91 @@ export const eventChatRepo = {
       eventId,
     );
     return rows.map((r) => r.note_id);
+  },
+
+  /** 運営による非表示 (#278)。既にスタッフが非表示にしていた行にも目印を付ける
+   * （以後スタッフの解除では戻らなくなる）。変更した行数を返す。
+   *
+   * **冪等**。既に運営が対処済みの行には触れず 0 を返す。上書きしてしまうと
+   * 同じメッセージに2人目が対処したときに「最初に誰がいつ対処したか」が消え、
+   * 監査ログにも2件目が残ってしまう（他の4種と揃えてある）。
+   *
+   * 行があること自体がスタッフの非表示なので、対処前の状態は
+   * 「衝突したか」でそのまま決まる（衝突＝スタッフが非表示にしていた）。 */
+  async adminHideNote(
+    eventId: string,
+    noteId: string,
+    adminId: string,
+    at: number,
+  ): Promise<number> {
+    return runCount(
+      `INSERT INTO event_chat_hidden
+         (event_id, note_id, created_at, admin_hidden_at, admin_hidden_by,
+          admin_prev_hidden)
+       VALUES (?, ?, ?, ?, ?, 0)
+       ON CONFLICT (event_id, note_id) DO UPDATE
+         SET admin_hidden_at = excluded.admin_hidden_at,
+             admin_hidden_by = excluded.admin_hidden_by,
+             admin_prev_hidden = 1
+         WHERE event_chat_hidden.admin_hidden_at IS NULL`,
+      eventId,
+      noteId,
+      at,
+      at,
+      adminId,
+    );
+  },
+
+  /** 運営による復元 (#278)。**運営の対処だけを解く**。
+   * 対処する前からスタッフが非表示にしていたなら、行は残して目印だけ外す
+   * （スタッフの判断まで取り消さない）。そうでなければ行ごと消す */
+  async adminUnhideNote(eventId: string, noteId: string): Promise<number> {
+    const backToStaff = await runCount(
+      `UPDATE event_chat_hidden
+          SET admin_hidden_at = NULL, admin_hidden_by = NULL,
+              admin_prev_hidden = NULL
+        WHERE event_id = ? AND note_id = ?
+          AND admin_hidden_at IS NOT NULL AND admin_prev_hidden = 1`,
+      eventId,
+      noteId,
+    );
+    if (backToStaff > 0) return backToStaff;
+    return runCount(
+      `DELETE FROM event_chat_hidden
+        WHERE event_id = ? AND note_id = ? AND admin_hidden_at IS NOT NULL`,
+      eventId,
+      noteId,
+    );
+  },
+
+  /** 管理画面用: 非表示にしている note を、誰がいつ対処したか付きで返す。
+   * staffHidden は運営が対処したあとも「対処する前にスタッフが非表示にしていたか」 */
+  async listHiddenDetail(eventId: string): Promise<
+    Array<{
+      noteId: string;
+      hiddenAt: number | null;
+      hiddenBy: string | null;
+      staffHidden: boolean;
+    }>
+  > {
+    const rows = await many<{
+      note_id: string;
+      created_at: number;
+      admin_hidden_at: number | null;
+      admin_hidden_by: string | null;
+      admin_prev_hidden: number | null;
+    }>(
+      `SELECT note_id, created_at, admin_hidden_at, admin_hidden_by,
+              admin_prev_hidden
+         FROM event_chat_hidden WHERE event_id = ? ORDER BY created_at ASC`,
+      eventId,
+    );
+    return rows.map((r) => ({
+      noteId: r.note_id,
+      hiddenAt: r.admin_hidden_at,
+      hiddenBy: r.admin_hidden_by,
+      staffHidden:
+        r.admin_hidden_at === null ? true : r.admin_prev_hidden === 1,
+    }));
   },
 };

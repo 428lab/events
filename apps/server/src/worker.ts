@@ -91,6 +91,7 @@ import {
   adminRunDetectAbuseRoutes,
 } from "./routes/adminAbuse.js";
 import { detectAbuse } from "./lib/detectAbuse.js";
+import { adminModerationRoutes } from "./routes/adminModeration.js";
 import { adminTrendingRoutes } from "./routes/adminTrending.js";
 
 const api = new Hono();
@@ -226,6 +227,9 @@ api.route("/admin/settings", adminSettingsRoutes);
 api.route("/admin/audit-logs", adminAuditRoutes);
 // 異常行動の「要確認」リスト（app admin のみ） (#259)
 api.route("/admin/abuse-flags", adminAbuseRoutes);
+// イベント内コンテンツの非表示・復元（app admin のみ） (#278)。
+// イベントのスタッフによる削除 (#275) とは別系統
+api.route("/admin/moderation", adminModerationRoutes);
 api.route("/notifications", notificationRoutes);
 // 公開: コミュニティ画像（認証不要。communityRoutes(要認証) より先に登録）
 api.get("/communities/:id/icon", getCommunityImage("icon"));

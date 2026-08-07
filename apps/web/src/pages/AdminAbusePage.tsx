@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -127,6 +128,18 @@ function FlagRow({ flag }: { flag: AbuseFlag }) {
               onClick={() => review.mutate(flag.id)}
             >
               確認済みにする
+            </Button>
+          )}
+          {/* 中身を見ないと判断できないので、その人が関わったイベントの
+              コンテンツ一覧へ辿れるようにする (#278) */}
+          {flag.subjectUserId !== null && (
+            <Button
+              size="small"
+              color="inherit"
+              component={RouterLink}
+              to={`/admin/moderation?userId=${flag.subjectUserId}`}
+            >
+              コンテンツを確認
             </Button>
           )}
           {/* 確認済みにしてもクールダウンが切れれば再検知される。毎週イベントを

@@ -20,7 +20,8 @@ import { eventPhotoCommentsRepo } from "../db/repositories/eventPhotoComments.js
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 
 const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
-const r2Key = (eventId: string, photoId: string) =>
+/** R2 のキー。管理画面 (#278) も同じ実体を配信するのでここから使う */
+export const photoR2Key = (eventId: string, photoId: string) =>
   `event-photos/${eventId}/${photoId}`;
 
 /** 写真を閲覧できるか。photos_public 公開イベントは誰でも、
@@ -63,7 +64,7 @@ export async function getEventPhotoImage(c: Context<AppEnv>) {
   if (!photo || photo.eventId !== eventId) {
     return c.json({ error: "not_found" }, 404);
   }
-  const obj = await getBucket().get(r2Key(photo.eventId, photo.id));
+  const obj = await getBucket().get(photoR2Key(photo.eventId, photo.id));
   if (!obj) return c.json({ error: "not_found" }, 404);
   return new Response(obj.body as unknown as ReadableStream, {
     headers: {
@@ -126,9 +127,7 @@ eventPhotoRoutes.delete(
   async (c) => {
     const eventId = c.req.param("id");
     const user = c.get("user");
-    const comment = await eventPhotoCommentsRepo.findById(
-      c.req.param("commentId"),
-    );
+    const comment = await eventPhotoCommentsRepo.meta(c.req.param("commentId"));
     if (!comment || comment.photoId !== c.req.param("photoId")) {
       return c.json({ error: "not_found" }, 404);
     }
@@ -138,6 +137,8 @@ eventPhotoRoutes.delete(
     ) {
       return c.json({ error: "forbidden" }, 403);
     }
+    // 運営が対処したコメント (#278) は消せない。理由が分かるように 409（写真と同じ）
+    if (comment.adminHidden) return c.json({ error: "content_hidden" }, 409);
     await eventPhotoCommentsRepo.delete(comment.id);
     return c.json({ ok: true });
   },
@@ -163,7 +164,7 @@ eventPhotoRoutes.post(
       return c.json({ error: "too_large", maxBytes: EVENT_PHOTO_MAX_BYTES }, 413);
     }
     const photoId = await eventPhotosRepo.create(eventId, c.get("user").id);
-    await getBucket().put(r2Key(eventId, photoId), body, {
+    await getBucket().put(photoR2Key(eventId, photoId), body, {
       httpMetadata: { contentType: mime },
     });
     return c.json({ photo: await eventPhotosRepo.findById(photoId) }, 201);
@@ -179,7 +180,7 @@ eventPhotoRoutes.delete(
   async (c) => {
     const eventId = c.req.param("id");
     const user = c.get("user");
-    const photo = await eventPhotosRepo.findById(c.req.param("photoId"));
+    const photo = await eventPhotosRepo.meta(c.req.param("photoId"));
     if (!photo || photo.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
     }
@@ -189,7 +190,12 @@ eventPhotoRoutes.delete(
     ) {
       return c.json({ error: "forbidden" }, 403);
     }
-    await getBucket().delete(r2Key(eventId, photo.id));
+    // 運営が対処した写真 (#278) は本人でもスタッフでも消せない。消せてしまうと
+    // 対処の証跡ごと消える。**理由が分かるように 409 を返す**（Q&A と揃える。
+    // 非表示を落とす findById で判定すると 404 になり、投稿者には
+    // 「なぜか消せない」としか見えない）
+    if (photo.adminHidden) return c.json({ error: "content_hidden" }, 409);
+    await getBucket().delete(photoR2Key(eventId, photo.id));
     await eventPhotosRepo.delete(photo.id);
     return c.json({ ok: true });
   },

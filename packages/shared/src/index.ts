@@ -31,3 +31,4 @@ export * from "./venues.js";
 export * from "./chatText.js";
 export * from "./audit.js";
 export * from "./abuse.js";
+export * from "./moderation.js";

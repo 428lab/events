@@ -25,30 +25,67 @@ function toPhoto(row: Row): EventPhoto {
 }
 
 // コメント数も投稿者が退会申請中 (#250) の分は除く。一覧（eventPhotoComments の
-// SELECT）が同じ条件で隠すので、揃えないと「3件」と出て2件しか表示されない
+// SELECT）が同じ条件で隠すので、揃えないと「3件」と出て2件しか表示されない。
+// 運営が非表示にしたコメント (#278) も同じ理由で数から外す。
+// **数を出すところは必ずこの定数を使うこと**（別に書くと条件がずれる）
 const COMMENT_COUNT =
   `(SELECT COUNT(1) FROM event_photo_comment c
       JOIN user cu ON cu.id = c.user_id AND cu.deleted_at IS NULL
-     WHERE c.photo_id = p.id) AS comment_count`;
+     WHERE c.photo_id = p.id AND c.admin_hidden_at IS NULL) AS comment_count`;
+// 運営が非表示にした写真 (#278) は **この SELECT を通る全経路** から落とす。
+// WHERE をここに含めておくことで、呼び出し側は AND で足すだけになり、
+// 経路が増えたときに除外を書き忘れられないようにしている
+// （非表示のものを見られるのは管理画面の adminModeration 専用クエリだけ）
 const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at,
   u.username, u.global_name, u.avatar_url, ${COMMENT_COUNT}
   FROM event_photo p JOIN user u ON u.id = p.user_id
-    AND u.deleted_at IS NULL`;
+    AND u.deleted_at IS NULL
+  WHERE p.admin_hidden_at IS NULL`;
 
 export const eventPhotosRepo = {
   async listByEvent(eventId: string): Promise<EventPhoto[]> {
     const rows = await many<Row>(
-      `${SELECT} WHERE p.event_id = ? ORDER BY p.created_at DESC`,
+      `${SELECT} AND p.event_id = ? ORDER BY p.created_at DESC`,
       eventId,
     );
     return rows.map(toPhoto);
   },
 
   async findById(id: string): Promise<EventPhoto | null> {
-    const row = await one<Row>(`${SELECT} WHERE p.id = ?`, id);
+    const row = await one<Row>(`${SELECT} AND p.id = ?`, id);
     return row ? toPhoto(row) : null;
   },
 
+  /** 削除の可否を決めるための素性。運営が非表示にした写真 (#278) も引ける。
+   * findById は非表示を落とすので、それで判定すると投稿者本人にもスタッフにも
+   * 404 になり、なぜ消せないのかが伝わらない（Q&A の meta と同じ役回り） */
+  async meta(id: string): Promise<{
+    id: string;
+    eventId: string;
+    userId: string;
+    adminHidden: boolean;
+  } | null> {
+    const row = await one<{
+      id: string;
+      event_id: string;
+      user_id: string;
+      admin_hidden_at: number | null;
+    }>(
+      "SELECT id, event_id, user_id, admin_hidden_at FROM event_photo WHERE id = ?",
+      id,
+    );
+    return row
+      ? {
+          id: row.id,
+          eventId: row.event_id,
+          userId: row.user_id,
+          adminHidden: row.admin_hidden_at !== null,
+        }
+      : null;
+  },
+
+  /** イベントの枚数（上限チェック用）。運営が非表示にした写真 (#278) も数に入れる。
+   * 行は残っているので、非表示にされるたびに上限が空くのはおかしい（Q&A と同じ扱い） */
   async countByEvent(eventId: string): Promise<number> {
     const row = await one<{ n: number }>(
       "SELECT COUNT(1) AS n FROM event_photo WHERE event_id = ?",
@@ -74,7 +111,9 @@ export const eventPhotosRepo = {
     await run("DELETE FROM event_photo WHERE id = ?", id);
   },
 
-  /** 退会時のR2掃除用: 本人が投稿した写真の (id, eventId) 一覧 (#244) */
+  /** 退会時のR2掃除用: 本人が投稿した写真の (id, eventId) 一覧 (#244)。
+   * ここは表示ではなく実体の掃除なので、運営が非表示にした写真 (#278) も必ず含める
+   * （除外すると R2 にファイルだけが残る） */
   async listIdsByUser(
     userId: string,
   ): Promise<Array<{ id: string; eventId: string }>> {
@@ -94,12 +133,15 @@ export const eventPhotosRepo = {
       created_at: number;
       comment_count: number;
     }>(
+      // コメント数は一覧と同じ COMMENT_COUNT を使う。ここだけ別に書いていたため
+      // 退会申請中 (#250) の投稿者ぶんが数から落ちておらず、「3件」と出て
+      // 2件しか並ばないズレがあった（どちらも p が event_photo なのでそのまま使える）
       `SELECT p.id, p.event_id, e.title AS event_title, p.created_at,
-              (SELECT COUNT(1) FROM event_photo_comment c WHERE c.photo_id = p.id)
-                AS comment_count
+              ${COMMENT_COUNT}
        FROM event_photo p
        JOIN event e ON e.id = p.event_id
        WHERE p.user_id = ? AND e.photos_public = 1 AND e.status = 'published'
+         AND p.admin_hidden_at IS NULL
        ORDER BY p.created_at DESC`,
       userId,
     );
