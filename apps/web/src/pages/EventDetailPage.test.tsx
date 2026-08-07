@@ -96,8 +96,9 @@ describe("ロール変更メニューの確認 (#281)", () => {
     pickRole("参加者");
 
     expect(confirm).toHaveBeenCalledTimes(1);
-    // 何が起きるか（枠と申込の取消・再申込が必要）が文言に出ていること
+    // 何が起きるか（枠と申込の取消・戻せない削除・再申込が必要）が文言に出ていること
     expect(confirm.mock.calls[0][0]).toMatch(/参加枠と申込を取り消し/);
+    expect(confirm.mock.calls[0][0]).toMatch(/事前アンケートの回答も削除/);
     expect(confirm.mock.calls[0][0]).toMatch(/改めて申し込む/);
     expect(patchMock).not.toHaveBeenCalled();
   });

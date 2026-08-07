@@ -1008,7 +1008,7 @@ export function MemberRow({
   const confirmRoleChange = (r: EventRole): boolean =>
     r !== "participant" ||
     window.confirm(
-      `${memberName} さんを一般参加者に戻すと、参加枠と申込を取り消します。参加者一覧からも外れ、参加するには本人が改めて申し込む必要があります。よろしいですか？`,
+      `${memberName} さんを一般参加者に戻すと、参加枠と申込を取り消します。参加者一覧から外れ、事前アンケートの回答も削除されます（元に戻せません）。参加するには本人が改めて申し込む必要があります。よろしいですか？`,
     );
   const attendChip =
     attendanceCheck && m.attended ? (
