@@ -20,6 +20,7 @@ export * from "./eventSurvey.js";
 export * from "./gamification.js";
 export * from "./analytics.js";
 export * from "./kpi.js";
+export * from "./kpiTrend.js";
 export * from "./communityKpi.js";
 export * from "./trending.js";
 export * from "./checkin.js";

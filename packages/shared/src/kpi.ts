@@ -4,6 +4,8 @@
  *
  * 「率」は分母が0のとき null を返す（画面は「—」表示）。ゼロ除算しない。 */
 
+import type { KpiPreviousValues } from "./kpiTrend.js";
+
 /** 参加回数の分布の1区間 */
 export interface KpiDistributionBucket {
   /** '1回' '2回' '3回' '4〜5回' '6〜10回' '11回以上' */
@@ -18,7 +20,8 @@ export interface KpiProviderCount {
   users: number;
 }
 
-/** 日次推移の1日分 */
+/** 日次推移の1日分。活動が無かった日も 0 で埋めて連続した日付で返す
+ * （抜けたまま並べると横軸が詰まって、休みの日が無かったように見える） */
 export interface KpiDailyPoint {
   /** JST の 'YYYY-MM-DD' */
   day: string;
@@ -27,6 +30,17 @@ export interface KpiDailyPoint {
   /** 確定した参加登録数（公開イベントのみ・主催/スタッフの行を除く）。
    * KpiParticipants.registrations は取消も含む全ステータスなので一致しない */
   joins: number;
+  /** その日に終了した公開イベント数（KpiNorthStar.heldEvents の日次内訳） */
+  heldEvents: number;
+  /** その日に終了したイベントの参加者の合計（KpiNorthStar.participations の日次内訳） */
+  participations: number;
+  /** その日アクセスしたユーザー数 (DAU)。計測開始 (#257) より前の日は null。
+   * 0 で返すと「誰も来なかった日」と区別できない */
+  dau: number | null;
+  /** その日を含む直近30日にアクセスしたユーザー数 (MAU のローリング)。
+   * 計測開始より前の日は null。**計測開始から30日間は窓が埋まりきらないため
+   * 実態より低く出る**（画面にその旨を出すこと） */
+  mau: number | null;
 }
 
 /** 北極星指標: 実際に人が集まった参加体験の数 */
@@ -214,6 +228,18 @@ export interface KpiPayload {
   days: number | null;
   /** 集計開始日（JST 'YYYY-MM-DD'）。全期間は '0000' */
   sinceDay: string;
+  /** 前の同じ長さの期間 [previousSinceDay, sinceDay) の値 (#266)。
+   * 全期間（days=null）は比べる過去が無いので null。
+   *
+   * 今期間は [sinceDay, 今日] で当日ぶんが途中まで、前期間はちょうど days 日ぶん
+   * なので、今期間がわずかに長い（増加が少しだけ大きめに出る）。日次推移と
+   * 期間の切り方を揃えるためこの非対称は許容している。 */
+  previous: KpiPreviousValues | null;
+  /** 前期間の開始日（JST 'YYYY-MM-DD'）。全期間は null */
+  previousSinceDay: string | null;
+  /** DAU/MAU の計測を開始した日（user_active_day の最初の日。#257）。
+   * まだ1件も無いときは null。**この日から30日間の MAU は窓が埋まりきらない** */
+  activeMeasuredFrom: string | null;
   northStar: KpiNorthStar;
   participants: KpiParticipants;
   organizers: KpiOrganizers;
