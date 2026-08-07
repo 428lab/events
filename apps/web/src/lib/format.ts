@@ -63,8 +63,9 @@ export function formatRemaining(target: number, now = Date.now()): string {
   if (diff <= 0) return "";
   const hours = Math.floor(diff / 3600000);
   if (hours >= 1) return `あと${hours}時間`;
-  // 1時間未満は分単位。切り上げて「あと0分」を出さない
-  return `あと${Math.max(1, Math.ceil(diff / 60000))}分`;
+  // 1時間未満は分単位。切り上げて「あと0分」を出さない。
+  // 59分台の切り上げが 60 になると「あと60分」＝1時間の表記と食い違うので 59 で止める
+  return `あと${Math.min(59, Math.max(1, Math.ceil(diff / 60000)))}分`;
 }
 
 /** epoch ms → datetime-local の value（ローカル時刻 "YYYY-MM-DDTHH:mm"） */

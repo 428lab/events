@@ -35,6 +35,7 @@ import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
 import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
 import { AwardsEditor } from "../components/AwardsEditor.js";
 import { fromDateTimeLocal, venueLabel } from "../lib/format.js";
+import { ApiError } from "../api/client.js";
 
 function toLocalInput(epoch: number): string {
   // 日程調整中（未確定）は 0 が入っている。1970-01-01 を出さない
@@ -118,16 +119,32 @@ export function EditEventPage() {
   }
   const { event } = data;
 
-  // 募集締切 (#269) を設定できるのは開催日時が確定しているときだけ。
-  // 日程調整中でも「日時を直接設定する」を選んでいれば、この保存で確定するので入力可
-  const deadlineEditable = !event.scheduling || directDate;
   const deadlineMs = fromDateTimeLocal(registrationDeadline);
   const startsAtMs = fromDateTimeLocal(startsAt);
+  const endsAtMs = fromDateTimeLocal(endsAt);
+  // 募集締切 (#269) を設定できるのは開催日時が確定しているときだけ。
+  // 日程調整中でも「日時を直接設定する」を選べば、この保存で確定するので入力可。
+  // ただし開始・終了日時が実際に入っていることまで求める：空のまま締切だけ入れると
+  // サーバーの deadline_requires_fixed_date / deadline_after_start で弾かれるので、
+  // そもそも入力させない
+  const deadlineEditable =
+    (!event.scheduling || directDate) && startsAtMs !== null && endsAtMs !== null;
   // 開始後まで受け付けたい場合は「締切なし（空欄）」を選ぶ、という整理 (#269)
   const deadlineError =
     deadlineMs !== null && startsAtMs !== null && deadlineMs > startsAtMs
       ? "募集締切は開始日時より後にできません。開催中も受け付けるなら空欄にしてください。"
       : "";
+  // 保存失敗の理由。締切まわりは汎用文言だと何を直せばいいか分からないので個別に出す (#269)
+  const saveErrorCode =
+    update.error instanceof ApiError
+      ? (update.error.body as { error?: string } | null)?.error
+      : undefined;
+  const saveErrorMessage =
+    saveErrorCode === "deadline_requires_fixed_date"
+      ? "募集締切を設定するには、先に開始日時と終了日時を入力してください。"
+      : saveErrorCode === "deadline_after_start"
+        ? "募集締切は開始日時より後にできません。開催中も受け付けるなら空欄にしてください。"
+        : "保存に失敗しました。";
 
   const save = () => {
     update.mutate(
@@ -138,17 +155,17 @@ export function EditEventPage() {
         description,
         membersNote,
         // 日程調整中は日時未確定（0のまま）。入力があるときだけ送る
-        ...(startsAt && endsAt
-          ? {
-              startsAt: new Date(startsAt).getTime(),
-              endsAt: new Date(endsAt).getTime(),
-            }
+        ...(startsAtMs !== null && endsAtMs !== null
+          ? { startsAt: startsAtMs, endsAt: endsAtMs }
           : {}),
         // 日程調整をやめて直接確定 (#138)
-        ...(directDate && startsAt && endsAt ? { scheduling: false as const } : {}),
+        ...(directDate && startsAtMs !== null && endsAtMs !== null
+          ? { scheduling: false as const }
+          : {}),
         // 募集締切 (#269)。空欄なら null を送って締切を解除する。
-        // 日程調整中（入力不可）のときは常に null＝締切なしのまま
-        registrationDeadline: deadlineEditable ? deadlineMs : null,
+        // 入力できない状態のときはキー自体を送らない：null を送ってしまうと
+        // 「開始日時を消しただけ」で既存の締切まで解除されてしまう
+        ...(deadlineEditable ? { registrationDeadline: deadlineMs } : {}),
         venueType,
         venueOffline: venueOffline || null,
         venueOnline: venueOnline || null,
@@ -278,7 +295,7 @@ export function EditEventPage() {
               deadlineError ||
               (deadlineEditable
                 ? "空欄なら締切なしで、イベント終了まで受け付けます。締切を過ぎると新しい参加登録だけができなくなります（参加者のキャンセルやスタッフの操作はそのまま行えます）。"
-                : "開催日時が未定のため設定できません。日程が決まると設定できるようになります。")
+                : "開催日時が決まっていないため設定できません。開始日時と終了日時を入力すると設定できるようになります。")
             }
             InputLabelProps={{ shrink: true }}
             fullWidth
@@ -420,7 +437,7 @@ export function EditEventPage() {
           <EventImageEditor event={event} />
 
           {update.isError && (
-            <Alert severity="error">保存に失敗しました。</Alert>
+            <Alert severity="error">{saveErrorMessage}</Alert>
           )}
           <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} justifyContent="flex-end">
             <Button onClick={() => navigate(`/events/${id}`)}>キャンセル</Button>

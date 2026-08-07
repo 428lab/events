@@ -214,6 +214,144 @@ describe("募集締切 (#269)", () => {
     expect(await errorOf(closed)).toBe("registration_closed");
   });
 
+  it("締切後は、いったんキャンセルした人も再参加できない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+
+    // 締切前に参加してからキャンセル（event_member の行はキャンセル済みで残る）
+    const user = await makeUser();
+    expect((await joinEvent(eventId, user.cookie)).status).toBe(201);
+    expect((await leaveEvent(eventId, user.cookie)).status).toBe(200);
+    const canceled = await env.DB.prepare(
+      "SELECT status FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(eventId, user.userId)
+      .first<{ status: string }>();
+    expect(canceled?.status).toBe("canceled");
+
+    // 締切後の再参加は 409。join が「既存メンバーなら素通し」に使う find が
+    // キャンセル済みを返すようになると、キャンセル済みの人だけ締切をすり抜けて
+    // 復活できてしまうので、その退行をここで捕まえる
+    await setDeadline(eventId, admin, Date.now() - 1000);
+    const rejoin = await joinEvent(eventId, user.cookie);
+    expect(rejoin.status).toBe(409);
+    expect(await errorOf(rejoin)).toBe("registration_closed");
+    // 行はキャンセル済みのまま（復活していない）
+    const after = await env.DB.prepare(
+      "SELECT status FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(eventId, user.userId)
+      .first<{ status: string }>();
+    expect(after?.status).toBe("canceled");
+  });
+
+  it("締切と無関係な項目だけを PATCH しても締切は保持される", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const deadline = Date.now() - 1000;
+    await setDeadline(eventId, admin, deadline);
+
+    // registrationDeadline を含まない編集（タイトル・会場・チャット設定）。
+    // update が「入力に無いキーは現在値を残す」をやめると、ここで締切が消えて
+    // 「無関係な編集をしたら募集が勝手に再開する」退行になる
+    const patched = await patchEvent(eventId, admin, {
+      title: "タイトルだけ変更",
+      venueOffline: "どこかの会場",
+      chatEnabled: true,
+    });
+    expect(patched.status).toBe(200);
+    const { event } = (await patched.json()) as { event: Event };
+    expect(event.title).toBe("タイトルだけ変更");
+    expect(event.registrationDeadline).toBe(deadline);
+
+    // GET でも保持されていて、実際にまだ締め切られている
+    const detail = await SELF.fetch(`${BASE}/api/events/${eventId}`);
+    expect(
+      ((await detail.json()) as { event: Event }).event.registrationDeadline,
+    ).toBe(deadline);
+    const late = await makeUser();
+    const closed = await joinEvent(eventId, late.cookie);
+    expect(closed.status).toBe(409);
+    expect(await errorOf(closed)).toBe("registration_closed");
+  });
+
+  it("締切に 0 や負値は設定できない（未設定は null だけ）", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    for (const bad of [0, -1]) {
+      const res = await patchEvent(eventId, admin, {
+        registrationDeadline: bad,
+      });
+      expect(res.status).toBe(400);
+    }
+    // 締切は付いていない（0 が入って「永久に締切済み」になっていない）
+    const detail = await SELF.fetch(`${BASE}/api/events/${eventId}`);
+    expect(
+      ((await detail.json()) as { event: Event }).event.registrationDeadline,
+    ).toBeNull();
+  });
+
+  it("締切ありのイベントは候補日の追加も日程の再確定もできない", async () => {
+    const admin = await loginDev();
+
+    // 日程調整中に候補日を足してから、PATCH で日程確定＋締切設定
+    const eventId = await setupEvent(admin, {
+      scheduling: true,
+      startsAt: 0,
+      endsAt: 0,
+    });
+    const addOption = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/date-options`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: admin },
+        body: JSON.stringify({
+          startsAt: STARTS_AT - 3 * DAY,
+          endsAt: STARTS_AT - 3 * DAY + DAY,
+        }),
+      },
+    );
+    expect(addOption.status).toBe(201);
+    const { id: optionId } = (await addOption.json()) as { id: string };
+    const fixed = await patchEvent(eventId, admin, {
+      scheduling: false,
+      startsAt: STARTS_AT,
+      endsAt: ENDS_AT,
+      registrationDeadline: STARTS_AT - DAY,
+    });
+    expect(fixed.status).toBe(200);
+
+    // 締切より前の開催日になる候補で確定しようとしても 400（PATCH と同じ不変条件）
+    const finalize = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/finalize-date`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: admin },
+        body: JSON.stringify({ optionId }),
+      },
+    );
+    expect(finalize.status).toBe(400);
+    expect(await errorOf(finalize)).toBe("deadline_after_start");
+
+    // 締切があるうちは候補日そのものを足せない
+    const addAfter = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/date-options`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: admin },
+        body: JSON.stringify({ startsAt: STARTS_AT, endsAt: ENDS_AT }),
+      },
+    );
+    expect(addAfter.status).toBe(400);
+    expect(await errorOf(addAfter)).toBe("deadline_requires_fixed_date");
+
+    // 開催日時は動いていない
+    const detail = await SELF.fetch(`${BASE}/api/events/${eventId}`);
+    const { event } = (await detail.json()) as { event: Event };
+    expect(event.startsAt).toBe(STARTS_AT);
+    expect(event.registrationDeadline).toBe(STARTS_AT - DAY);
+  });
+
   it("締切後もスタッフのメンバー操作（ロール変更・当選操作・出席）はできる", async () => {
     const admin = await loginDev();
     const eventId = await setupEvent(admin);

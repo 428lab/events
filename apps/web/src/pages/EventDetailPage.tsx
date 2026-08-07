@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -169,22 +169,50 @@ export function EventDetailPage() {
   );
   // 入場QR（受付チェックイン用チケット） (#154)
   const [entranceQrOpen, setEntranceQrOpen] = useState(false);
+  // 参加できなかった理由の表示（締切/終了）。押しても何も起きない状態を作らない (#269)
+  const [joinError, setJoinError] = useState("");
+  // 募集締切の残り時間を動かすための時計 (#269)。開いたままのページでも
+  // 締切をまたいだら表示が「募集は締め切りました」に切り替わるよう1分ごとに進める。
+  // 秒単位で刻む必要はない（表示の粒度が分・時間なので）
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
   const qc = useQueryClient();
 
   const doJoin = (slotId?: string) =>
     join.mutate(
       { id, ...(slotId ? { slotId } : {}) },
       {
+        onSuccess: () => setJoinError(""),
         onError: (err) => {
+          const code =
+            err instanceof ApiError
+              ? (err.body as { error?: string } | null)?.error
+              : undefined;
           // サーバー側の必須アンケート未回答 (409 survey_required) はダイアログで回答してもらう
-          if (
-            err instanceof ApiError &&
-            (err.body as { error?: string } | null)?.error === "survey_required"
-          ) {
+          if (code === "survey_required") {
             // ページ読込後に質問が追加されたケースに備え、最新の質問を取得してから開く
             void qc.invalidateQueries({ queryKey: ["event", id, "survey"] });
             setPendingJoin({ slotId });
             setSurveyOpen(true);
+            return;
+          }
+          // 締切前に開いたまま放置されたページからの参加 (#269)。ボタンはまだ
+          // 有効なので押せてしまうが、サーバーは 409 で断る。理由を出したうえで
+          // イベントを取り直し、締切後の表示（募集は締め切りました）に切り替える。
+          // event_ended も同じ経路（開いたまま終了時刻をまたいだ）なので一緒に扱う
+          if (code === "registration_closed" || code === "event_ended") {
+            setJoinError(
+              code === "registration_closed"
+                ? "募集は締め切りました。"
+                : "このイベントは終了しました。",
+            );
+            setSurveyOpen(false);
+            setPendingJoin(null);
+            setNow(Date.now());
+            void qc.invalidateQueries({ queryKey: ["event", id] });
           }
         },
       },
@@ -192,6 +220,7 @@ export function EventDetailPage() {
 
   /** 参加操作の入口。アンケートがあれば先に回答ダイアログを開く */
   const requestJoin = (slotId?: string) => {
+    setJoinError("");
     if (hasSurvey) {
       setPendingJoin({ slotId });
       setSurveyOpen(true);
@@ -263,16 +292,17 @@ export function EventDetailPage() {
   const ceremonyDone =
     (state?.awardsRevealCursor ?? 0) >=
     (awards ? awards.ranks.length + awards.specials.length : 0);
-  // 日程調整中（endsAt未確定=0）は終了扱いしない（サーバー側 isEventEnded と同じ判定）
-  const eventEnded = !event.scheduling && event.endsAt < Date.now();
+  // 日程調整中（endsAt未確定=0）は終了扱いしない（サーバー側 isEventEnded と同じ判定）。
+  // now は1分ごとに進むので、開いたままのページでも終了・締切をまたげば表示が切り替わる
+  const eventEnded = !event.scheduling && event.endsAt < now;
   // 募集締切 (#269)。未設定（null）なら締切なしで、従来どおり終了まで受け付ける。
   // サーバー側 isRegistrationClosed と同じ判定
   const deadline = event.registrationDeadline;
-  const registrationClosed = deadline !== null && deadline <= Date.now();
+  const registrationClosed = deadline !== null && deadline <= now;
   // 締切24時間前を切ったら残り時間を強調して申し込みを促す
   const deadlineRemaining =
-    deadline !== null && !registrationClosed && deadline - Date.now() < 86400000
-      ? formatRemaining(deadline)
+    deadline !== null && !registrationClosed && deadline - now < 86400000
+      ? formatRemaining(deadline, now)
       : "";
   const contest = event.contestMode;
   const showAwards =
@@ -635,7 +665,9 @@ export function EventDetailPage() {
         )}
         {eventEnded ? (
           <Chip variant="outlined" label="このイベントは終了しました" />
-        ) : /* 締切後は新規登録だけを止める。既存参加者の解除ボタンは下で出す (#269) */
+        ) : /* 締切後は新規登録だけを止める。既存参加者の解除ボタンは下で出す (#269)。
+             未ログインの訪問者にも「ログインして参加」ではなくこの表示を出すのは意図的で、
+             ログインしたところで参加できない以上、先に締切を伝えるほうが親切なため */
         registrationClosed && !isMember ? (
           <Chip variant="outlined" label="募集は締め切りました" />
         ) : !me ? (
@@ -661,6 +693,15 @@ export function EventDetailPage() {
           </Button>
         ) : null}
       </Stack>
+
+      {/* 参加できなかった理由 (#269)。締切・終了をまたいだページから押したとき、
+          無反応にせずここで理由を出す。表示自体は invalidate 後の再描画で
+          締切後のものに切り替わる */}
+      {joinError && (
+        <Alert severity="warning" onClose={() => setJoinError("")}>
+          {joinError}
+        </Alert>
+      )}
 
       {contest && isMember && state && !state.scoringLocked && (
         <Alert

@@ -188,11 +188,17 @@ eventRoutes.post(
   zValidator("json", addDateOptionInput),
   async (c) => {
     const input = valid<AddDateOptionInput>(c, "json");
-    const id = await schedulingRepo.addOption(
-      c.req.param("id"),
-      input.startsAt,
-      input.endsAt,
-    );
+    const eventId = c.req.param("id");
+    const event = await eventsRepo.findById(eventId);
+    if (!event) return c.json({ error: "not_found" }, 404);
+    // 募集締切 (#269) と候補日は両立しない。締切は「開催日時が確定している」
+    // 前提の設定なのに、候補日を足して finalize-date すると開催日時が動き、
+    // 締切 > 開始日時（PATCH では 400 で弾いている状態）を作れてしまう。
+    // 締切を外してから日程を選び直す、という順番に倒す
+    if (event.registrationDeadline !== null) {
+      return c.json({ error: "deadline_requires_fixed_date" }, 400);
+    }
+    const id = await schedulingRepo.addOption(eventId, input.startsAt, input.endsAt);
     return c.json({ id }, 201);
   },
 );
@@ -244,6 +250,18 @@ eventRoutes.post(
       valid<FinalizeDateInput>(c, "json").optionId,
     );
     if (!opt) return c.json({ error: "not_found" }, 404);
+    // 確定で開催日時が動くので、PATCH と同じ不変条件（締切 <= 開始日時）を
+    // ここでも守る (#269)。候補日の追加は締切ありなら弾いているが、
+    // 「候補日あり → PATCH で日程確定＋締切設定 → 古い候補で finalize」の
+    // 経路が残るため、確定側にもチェックを置く
+    const current = await eventsRepo.findById(eventId);
+    if (!current) return c.json({ error: "not_found" }, 404);
+    if (
+      current.registrationDeadline !== null &&
+      current.registrationDeadline > opt.startsAt
+    ) {
+      return c.json({ error: "deadline_after_start" }, 400);
+    }
     const event = await eventsRepo.finalizeDate(
       eventId,
       opt.startsAt,

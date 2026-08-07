@@ -123,8 +123,10 @@ export const updateEventInput = z.object({
   chatUrlsAllowed: z.boolean().optional(),
   /** 募集の締切日時（epoch ms）。null を送ると締切を解除する (#269)。
    * chatEnabled 等と同じくイベント編集でのみ設定する項目なので createEventInput
-   * には入れない（作成直後は締切なし＝従来の振る舞い） */
-  registrationDeadline: z.number().int().nullable().optional(),
+   * には入れない（作成直後は締切なし＝従来の振る舞い）。
+   * positive なのは 0 や負値を弾くため：締切なしは必ず null で表す約束なので、
+   * 0 を通すと「未設定のつもりが 1970年＝永久に締切済み」の行を作れてしまう */
+  registrationDeadline: z.number().int().positive().nullable().optional(),
   /** 参加者限定の文章（確定メンバー＋staffにのみ表示。eventSchema には含めない） */
   membersNote: z.string().max(20000).optional(),
 });
