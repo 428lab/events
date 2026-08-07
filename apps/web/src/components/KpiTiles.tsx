@@ -10,6 +10,7 @@ import {
 import {
   type KpiGranularity,
   type KpiSeriesPoint,
+  type KpiTone,
   type KpiTrend,
   kpiGranularity,
   toWeekly,
@@ -97,24 +98,36 @@ function prevText(trend: KpiTrend): string {
 }
 
 /** 増減そのものの表示。率はポイント差、件数・平均は変化率 (#266)。
- * 出せないとき（前期間0・母数が少ない）は null を返して前期間の値だけ見せる */
-function deltaText(trend: KpiTrend): string | null {
-  if (trend.isNew) return "新規";
-  if (trend.ratio !== null) {
-    const sign = trend.ratio > 0 ? "▲" : trend.ratio < 0 ? "▼" : "±";
-    return `${sign}${Math.abs(trend.ratio * 100).toFixed(0)}%`;
-  }
-  if (trend.diff !== null) {
-    const sign = trend.diff > 0 ? "▲" : trend.diff < 0 ? "▼" : "±";
-    return `${sign}${Math.abs(trend.diff * 100).toFixed(1)}pt`;
-  }
+ * 出せないとき（前期間0・母数が少ない）は null を返して前期間の値だけ見せる。
+ *
+ * 色は**表示する桁に丸めたあとの値**で決める。丸めて 0 になる増減
+ * （+0.4% → 「0%」）に矢印と色を付けると、増えていないのに増えたように読める。 */
+function deltaOf(trend: KpiTrend): { text: string; tone: KpiTone } | null {
+  if (trend.isNew) return { text: "新規", tone: trend.tone };
+  if (trend.ratio !== null) return shown(trend, trend.ratio * 100, 0, "%");
+  if (trend.diff !== null) return shown(trend, trend.diff * 100, 1, "pt");
   return null;
+}
+
+function shown(
+  trend: KpiTrend,
+  raw: number,
+  digits: number,
+  unit: string,
+): { text: string; tone: KpiTone } {
+  const v = Number(raw.toFixed(digits));
+  const sign = v > 0 ? "▲" : v < 0 ? "▼" : "±";
+  return {
+    text: `${sign}${Math.abs(v).toFixed(digits)}${unit}`,
+    // 丸めて 0 になったら「変化なし」として色を付けない
+    tone: v === 0 ? "flat" : trend.tone,
+  };
 }
 
 /** 前期間比。数字が主役という設計を崩さないよう、値の下に小さく1行だけ添える。
  * 色は指標ごとの方向（KPI_METRICS）に従うので、キャンセル率が減ったときは緑になる */
 export function TrendNote({ trend }: { trend: KpiTrend }) {
-  const delta = deltaText(trend);
+  const delta = deltaOf(trend);
   return (
     <Typography
       variant="caption"
@@ -137,18 +150,18 @@ export function TrendNote({ trend }: { trend: KpiTrend }) {
             ml: 0.5,
             fontWeight: 700,
             color: (t) =>
-              trend.tone === "good"
+              delta.tone === "good"
                 ? t.palette.mode === "light"
                   ? t.palette.success.dark
                   : t.palette.success.light
-                : trend.tone === "bad"
+                : delta.tone === "bad"
                   ? t.palette.mode === "light"
                     ? t.palette.error.dark
                     : t.palette.error.light
                   : "text.secondary",
           }}
         >
-          {delta}
+          {delta.text}
         </Box>
       ) : null}
     </Typography>

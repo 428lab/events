@@ -215,15 +215,28 @@ function NorthStarSection({ data }: { data: CommunityKpiPayload }) {
         hint={`参加者3人以下 ${o.dudEvents} 件 ÷ ${o.dudBaseEvents} 件。出席チェックを有効にしたのに記録が0件の ${o.attendanceUnrecordedEvents} 件は判定できないため除いています。告知のタイミングや開催形式を見直すヒントに。減ったほうが良い指標なので、下がったときを緑にしています`}
         trend={trendOf(data, "dudRate", o.dudRate)}
       />
+      {/* 参加体験の数は開催イベント数より桁がひとつ大きい。同じ目盛りに並べると
+          開催イベント数の棒が潰れて読めないので、チャートを分ける */}
       <FullWidth>
         <TrendChart
-          title="開催と参加の推移"
-          hint="イベントが終了した日に立てています。参加体験の数は主催・スタッフを含む合計なので、開催イベント数より桁がひとつ大きくなります（目盛りは共通です）。"
+          title="参加体験の推移"
+          hint="イベントが終了した日に立てています。主催・スタッフを含む合計です。"
           points={seriesPoints(data)}
           series={[
             { key: "participations", label: "参加体験の数", color: "primary.main" },
+          ]}
+          unit="人"
+        />
+      </FullWidth>
+      <FullWidth>
+        <TrendChart
+          title="開催の推移"
+          hint="イベントが終了した日に立てています。参加体験の数とは桁が違うため、別のグラフにしています。"
+          points={seriesPoints(data)}
+          series={[
             { key: "heldEvents", label: "開催イベント数", color: "secondary.main" },
           ]}
+          unit="件"
         />
       </FullWidth>
     </Section>
@@ -454,10 +467,11 @@ function ParticipantsSection({ data }: { data: CommunityKpiPayload }) {
         hint={`取消 ${p.canceled} ÷ 期間内の登録 ${p.registrations}（日程調整中の取消は除外）。減ったほうが良い指標なので、下がったときを緑にしています`}
         trend={trendOf(data, "cancelRate", p.cancelRate)}
       />
+      {/* 前期間比がポイント差なので、値も率にして単位を揃える */}
       <Tile
-        label="うち直前24時間"
-        text={`${p.canceledLate} / ${p.canceled}`}
-        hint={`事前の取消は ${p.canceledEarly} 件。直前率 ${pct(p.lateCancelRate)}。前期間比は直前率で見ています`}
+        label="うち直前24時間の割合"
+        text={pct(p.lateCancelRate)}
+        hint={`直前24時間の取消 ${p.canceledLate} ÷ 取消 ${p.canceled}（事前の取消は ${p.canceledEarly} 件）。減ったほうが良い指標なので、下がったときを緑にしています`}
         trend={trendOf(data, "lateCancelRate", p.lateCancelRate)}
       />
       <FullWidth>

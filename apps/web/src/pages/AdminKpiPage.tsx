@@ -160,15 +160,28 @@ function NorthStarSection({ data }: { data: KpiPayload }) {
           n.avgParticipantsPerEvent,
         )}
       />
+      {/* 参加体験の数は開催イベント数より桁がひとつ大きい。同じ目盛りに並べると
+          開催イベント数の棒が潰れて読めないので、チャートを分ける */}
       <FullWidth>
         <TrendChart
-          title="参加体験と開催の推移"
-          hint="イベントが終了した日に立てています。参加体験の数は主催・スタッフを含む合計なので、開催イベント数より桁がひとつ大きくなります（目盛りは共通です）。"
+          title="参加体験の推移"
+          hint="イベントが終了した日に立てています。主催・スタッフを含む合計です。"
           points={seriesPoints(data)}
           series={[
             { key: "participations", label: "参加体験の数", color: "primary.main" },
+          ]}
+          unit="人"
+        />
+      </FullWidth>
+      <FullWidth>
+        <TrendChart
+          title="開催イベント数の推移"
+          hint="イベントが終了した日に立てています。参加体験の数とは桁が違うため、別のグラフにしています。"
+          points={seriesPoints(data)}
+          series={[
             { key: "heldEvents", label: "開催イベント数", color: "secondary.main" },
           ]}
+          unit="件"
         />
       </FullWidth>
     </Section>
@@ -224,10 +237,12 @@ function ParticipantsSection({ data }: { data: KpiPayload }) {
         hint={`取消 ${p.canceled} ÷ 期間内の登録 ${p.registrations}（日程調整中の取消は除外。再参加すると取消の記録は消える）。減ったら良い指標なので、下がったときを緑にしています`}
         trend={trendOf(data, "cancelRate", p.cancelRate)}
       />
+      {/* 前期間比がポイント差なので、値も率にして単位を揃える
+          （件数を出して増減だけ pt で出すと、何が何 pt 動いたのか読み違える） */}
       <Tile
-        label="うち直前24時間"
-        text={`${p.canceledLate} / ${p.canceled}`}
-        hint={`事前の取消は ${p.canceledEarly} 件。直前率 ${pct(p.lateCancelRate)}。前期間比は直前率で見ています`}
+        label="うち直前24時間の割合"
+        text={pct(p.lateCancelRate)}
+        hint={`直前24時間の取消 ${p.canceledLate} ÷ 取消 ${p.canceled}（事前の取消は ${p.canceledEarly} 件）。減ったら良い指標なので、下がったときを緑にしています`}
         trend={trendOf(data, "lateCancelRate", p.lateCancelRate)}
       />
       <Tile
@@ -348,21 +363,18 @@ function RetentionSection({ data }: { data: KpiPayload }) {
         hint="期間内にアカウントを作った人"
         trend={trendOf(data, "signups", r.signups)}
       />
+      {/* 前期間比は出さない。分子が「これまでに1度でも参加/主催したか」で期間の
+          縛りが無く、前期間に登録した人ほど猶予が長いため、横ばいでも必ず
+          「悪化」に寄って誤読させる（詳細は kpi.ts の previousValues のコメント） */}
       <Tile
         label="登録→初回参加"
         text={pct(r.activationParticipantRate)}
-        hint={`公開イベントに参加者（審査員・観覧者を含む）として登録したことがある ${r.activatedParticipant} ÷ 新規登録 ${r.signups}`}
-        trend={trendOf(
-          data,
-          "activationParticipantRate",
-          r.activationParticipantRate,
-        )}
+        hint={`公開イベントに参加者（審査員・観覧者を含む）として登録したことがある ${r.activatedParticipant} ÷ 新規登録 ${r.signups}。登録が新しい人ほど参加する時間が短いため、前期間との比較は出していません`}
       />
       <Tile
         label="登録→初回主催"
         text={pct(r.activationHostRate)}
-        hint={`公開イベントを主催したことがある ${r.activatedHost} ÷ 新規登録 ${r.signups}`}
-        trend={trendOf(data, "activationHostRate", r.activationHostRate)}
+        hint={`公開イベントを主催したことがある ${r.activatedHost} ÷ 新規登録 ${r.signups}。登録が新しい人ほど主催する時間が短いため、前期間との比較は出していません`}
       />
       <Tile
         label="在籍ユーザー数"
@@ -380,15 +392,37 @@ function RetentionSection({ data }: { data: KpiPayload }) {
           ]}
         />
       </FullWidth>
+      {/* MAU は DAU のおよそ30倍になるため、同じ目盛りに並べると DAU が潰れる。
+          別のグラフにして、それぞれの目盛りで読めるようにする */}
       <FullWidth>
         <TrendChart
-          title="アクティブユーザーの推移"
-          hint="DAU はその日にアクセスした人数、MAU はその日を含む直近30日にアクセスした実人数です。週別表示のとき DAU は週の平均、MAU は週の最終日の値を出します（足すと延べ人数になって意味が変わるため）。"
+          title="MAU の推移"
+          hint="その日を含む直近30日にアクセスした実人数です。週別表示では週の最終日の値を出します（足すと延べ人数になって意味が変わるため）。"
           caution={mauCaution(data.activeMeasuredFrom, points.at(-1)?.day)}
           points={points}
           series={[
-            { key: "mau", label: "MAU（直近30日）", color: "primary.main", weekly: "last" },
-            { key: "dau", label: "DAU（その日）", color: "secondary.main", weekly: "average" },
+            {
+              key: "mau",
+              label: "MAU（直近30日）",
+              color: "primary.main",
+              weekly: "last",
+            },
+          ]}
+          unit="人"
+        />
+      </FullWidth>
+      <FullWidth>
+        <TrendChart
+          title="DAU の推移"
+          hint="その日にアクセスした人数です。週別表示では週の平均を出します（足すと延べ人数になります）。MAU とは桁が違うため、別のグラフにしています。"
+          points={points}
+          series={[
+            {
+              key: "dau",
+              label: "DAU（その日）",
+              color: "secondary.main",
+              weekly: "average",
+            },
           ]}
           unit="人"
         />

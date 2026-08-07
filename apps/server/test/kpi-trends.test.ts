@@ -6,11 +6,16 @@ import {
   type CommunityKpiPayload,
   type KpiPayload,
   type KpiSeriesPoint,
+  addDays,
   kpiGranularity,
   kpiTrend,
   toWeekly,
   weekStart,
 } from "@eventer/shared";
+import {
+  MAX_SERIES_POINTS,
+  fillDailySeries,
+} from "../src/db/repositories/kpi.js";
 
 /** KPI の推移 (#266)。
  *   1. 前期間比（サーバーが返す previous と、方向つきの見せ方）
@@ -33,7 +38,7 @@ function dayAgo(n: number): string {
 }
 
 async function makeUser(
-  opts: { admin?: boolean } = {},
+  opts: { admin?: boolean; createdAt?: number } = {},
 ): Promise<{ userId: string; cookie: string }> {
   const uid = crypto.randomUUID();
   const sid = crypto.randomUUID();
@@ -44,7 +49,7 @@ async function makeUser(
       uid,
       opts.admin ? "dev-user" : `t:${uid}`,
       `u_${uid.slice(0, 8)}`,
-      Date.now(),
+      opts.createdAt ?? Date.now(),
     )
     .run();
   await env.DB.prepare(
@@ -123,6 +128,86 @@ async function join(opts: {
     .run();
 }
 
+/** 閲覧UU（visitor cookie で日次重複排除された1行） */
+async function addUniqueView(
+  eventId: string,
+  day: string,
+  visitorId: string,
+): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO event_view_unique (event_id, day, visitor_id) VALUES (?, ?, ?)",
+  )
+    .bind(eventId, day, visitorId)
+    .run();
+}
+
+/** 表示回数（流入元ごとの日次集計） */
+async function addViewStat(
+  eventId: string,
+  day: string,
+  source: string,
+  views: number,
+): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO event_view_stat (event_id, day, source, country, views) VALUES (?, ?, ?, 'XX', ?)",
+  )
+    .bind(eventId, day, source, views)
+    .run();
+}
+
+async function addAudit(action: string, at: number): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO audit_log (id, action, actor_user_id, actor_handle, target_user_id, target_handle, detail, created_at) VALUES (?, ?, NULL, '', NULL, '', '', ?)",
+  )
+    .bind(crypto.randomUUID(), action, at)
+    .run();
+}
+
+async function makeVenue(ownerId: string): Promise<string> {
+  const id = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO venue (id, owner_id, name, created_at, updated_at) VALUES (?, ?, 'v', ?, ?)",
+  )
+    .bind(id, ownerId, Date.now(), Date.now())
+    .run();
+  return id;
+}
+
+async function makeOffer(
+  venueId: string,
+  createdBy: string,
+  createdAt: number,
+): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO venue_offer (id, venue_id, event_id, direction, status, created_by, created_at) VALUES (?, ?, NULL, 'venue_to_event', 'pending', ?, ?)",
+  )
+    .bind(crypto.randomUUID(), venueId, createdBy, createdAt)
+    .run();
+}
+
+/** たまご（イベントのリクエスト） */
+async function makeEgg(createdBy: string, createdAt: number): Promise<string> {
+  const id = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO event_request (id, title, description, status, created_by, created_at) VALUES (?, ?, '', 'open', ?, ?)",
+  )
+    .bind(id, `egg_${id.slice(0, 6)}`, createdBy, createdAt)
+    .run();
+  return id;
+}
+
+async function reactEgg(
+  requestId: string,
+  userId: string,
+  kind: "attend" | "host",
+): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO event_request_reaction (request_id, user_id, kind, created_at) VALUES (?, ?, ?, ?)",
+  )
+    .bind(requestId, userId, kind, Date.now())
+    .run();
+}
+
 async function markActive(day: string, userId: string): Promise<void> {
   await env.DB.prepare(
     "INSERT OR IGNORE INTO user_active_day (day, user_id) VALUES (?, ?)",
@@ -186,14 +271,17 @@ describe("前期間比の計算", () => {
   });
 
   it("母数が小さいときは変化率を出さない（前期間の値は出す）", () => {
-    const few = kpiTrend("participations", KPI_TREND_MIN_SAMPLE - 1, 1)!;
+    // しきい値は定数相対ではなくリテラルで固定する。KPI_TREND_MIN_SAMPLE を
+    // 使って書くと、定数を変えてもテストが一緒にずれて何も検出しない
+    expect(KPI_TREND_MIN_SAMPLE).toBe(5);
+    const few = kpiTrend("participations", 4, 1)!;
     expect(few.ratio).toBeNull();
     expect(few.isNew).toBe(false);
     expect(few.tone).toBe("flat");
     expect(few.previous).toBe(1);
 
-    // どちらかが閾値に届いていれば出す
-    const enough = kpiTrend("participations", KPI_TREND_MIN_SAMPLE, 1)!;
+    // どちらかが閾値（5）に届いていれば出す
+    const enough = kpiTrend("participations", 5, 1)!;
     expect(enough.ratio).toBeCloseTo(4, 10);
   });
 
@@ -254,6 +342,41 @@ describe("減ったら良い指標は色が反転する", () => {
 /* ---------------- 2. サーバーが返す前期間の値 ---------------- */
 
 describe("KPI: 前期間の集計", () => {
+  it("横ばいのデータでは前期間比が 0% になる（期間の日数が揃っている）", async () => {
+    const admin = await makeUser({ admin: true });
+    const host = await makeUser();
+
+    // 今日から15日前まで、毎日ちょうど1件ずつ開催した完全に横ばいのデータ。
+    // 7日指定なら 今期間 [7日前, 今日] の8日ぶん・前期間 [15日前, 8日前] の8日ぶんで、
+    // どちらも 8 件になる。前期間を days 日（8日 対 7日）にすると、横ばいでも
+    // +14.3% と出て「増えている」と誤読させる（30日指定なら +3.3%）
+    for (let i = 0; i <= 15; i++) {
+      await makeEvent({
+        createdBy: host.userId,
+        // 「今日」ぶんも開催済みにする必要があるので、いまより少しだけ前に終える
+        endsAt: Date.now() - i * DAY - 1000,
+      });
+    }
+
+    const kpi = await getKpi(admin.cookie, 7);
+    expect(kpi.northStar.heldEvents).toBe(8);
+    expect(kpi.previous!.heldEvents).toBe(8);
+    expect(kpi.previousSinceDay).toBe(dayAgo(15));
+    // 参加体験（1件につき主催の1人）と作成数も同じく横ばい
+    expect(kpi.northStar.participations).toBe(8);
+    expect(kpi.previous!.participations).toBe(8);
+    expect(kpi.organizers.createdEvents).toBe(8);
+    expect(kpi.previous!.createdEvents).toBe(8);
+
+    const trend = kpiTrend(
+      "heldEvents",
+      kpi.northStar.heldEvents,
+      kpi.previous!.heldEvents,
+    )!;
+    expect(trend.ratio).toBe(0);
+    expect(trend.tone).toBe("flat");
+  });
+
   it("同じ長さのひとつ前の期間を別立てで数える", async () => {
     const admin = await makeUser({ admin: true });
     const host = await makeUser();
@@ -267,7 +390,7 @@ describe("KPI: 前期間の集計", () => {
     await join({ eventId: cur, userId: p2.userId });
     await join({ eventId: cur, userId: p3.userId });
 
-    // 前期間（10日前に終了 = 7日指定なら [14日前, 7日前)）: 参加者1人 + 主催 = 2
+    // 前期間（10日前に終了 = 7日指定なら [15日前, 7日前)）: 参加者1人 + 主催 = 2
     const prev = await makeEvent({ createdBy: host.userId, endsAt: Date.now() - 10 * DAY });
     await join({ eventId: prev, userId: p1.userId });
 
@@ -281,7 +404,7 @@ describe("KPI: 前期間の集計", () => {
     expect(kpi.previous).not.toBeNull();
     expect(kpi.previous!.participations).toBe(2);
     expect(kpi.previous!.heldEvents).toBe(1);
-    expect(kpi.previousSinceDay).toBe(dayAgo(14));
+    expect(kpi.previousSinceDay).toBe(dayAgo(15));
 
     // 主催者は同じ1人。実人数なので期間ごとに1
     expect(kpi.organizers.hosts).toBe(1);
@@ -357,6 +480,117 @@ describe("KPI: 前期間の集計", () => {
     // staff 行を数えていたら 2 になる
     expect(kpi.previous!.registrations).toBe(1);
     expect(kpi.participants.registrations).toBe(0);
+  });
+
+  /* 以下は「前期間の列が今期間と同じ数え方になっているか」を、クエリごとに
+   * 実際の値で押さえるもの。prev_* の列は SQL の字面どおりの ? 並びに依存していて、
+   * バインドを1つずらしても今期間の値は正しいまま前期間だけ静かに壊れる。 */
+
+  it("閲覧UU・表示回数の前期間を閲覧日で切って数える", async () => {
+    const admin = await makeUser({ admin: true });
+    const host = await makeUser();
+    const ev = await makeEvent({
+      createdBy: host.userId,
+      endsAt: Date.now() - 2 * DAY,
+    });
+
+    // 今期間（2日前）: UU 2人・表示 5回
+    await addUniqueView(ev, dayAgo(2), "v1");
+    await addUniqueView(ev, dayAgo(2), "v2");
+    await addViewStat(ev, dayAgo(2), "direct", 5);
+    // 前期間（10日前 = 7日指定なら [15日前, 7日前)）: UU 3人・表示 30回
+    await addUniqueView(ev, dayAgo(10), "p1");
+    await addUniqueView(ev, dayAgo(10), "p2");
+    await addUniqueView(ev, dayAgo(10), "p3");
+    await addViewStat(ev, dayAgo(10), "direct", 30);
+    // どちらの期間にも入らない（20日前）
+    await addUniqueView(ev, dayAgo(20), "o1");
+    await addViewStat(ev, dayAgo(20), "direct", 100);
+
+    const kpi = await getKpi(admin.cookie, 7);
+    expect(kpi.participants.uniqueViewers).toBe(2);
+    expect(kpi.participants.totalViews).toBe(5);
+    expect(kpi.previous!.uniqueViewers).toBe(3);
+    expect(kpi.previous!.totalViews).toBe(30);
+  });
+
+  it("新規登録数の前期間を登録日で切って数える", async () => {
+    const admin = await makeUser({ admin: true });
+    // 前期間（10日前）に3人
+    for (let i = 0; i < 3; i++) {
+      await makeUser({ createdAt: Date.now() - 10 * DAY });
+    }
+    // 今期間（2日前）に1人。admin 自身も今日の作成なので今期間に入る
+    await makeUser({ createdAt: Date.now() - 2 * DAY });
+    // どちらの期間にも入らない（20日前）
+    await makeUser({ createdAt: Date.now() - 20 * DAY });
+
+    const kpi = await getKpi(admin.cookie, 7);
+    expect(kpi.retention.signups).toBe(2);
+    expect(kpi.previous!.signups).toBe(3);
+  });
+
+  it("アクティベーション率は前期間比の対象にしない", async () => {
+    const admin = await makeUser({ admin: true });
+    const kpi = await getKpi(admin.cookie, 7);
+    const prev = kpi.previous as unknown as Record<string, unknown>;
+    // 分子が「これまでに1度でも参加/主催したか」で期間の縛りが無く、前期間に
+    // 登録した人ほど猶予が長い。横ばいでも必ず「悪化」に寄るので値ごと出さない
+    expect(prev.activationParticipantRate).toBeUndefined();
+    expect(prev.activationHostRate).toBeUndefined();
+    // 同じセクションの新規登録数は比較対象のまま（丸ごと落ちていないことの確認）
+    expect(prev.signups).toBeDefined();
+  });
+
+  it("退会・復帰の件数の前期間を監査ログの日付で切って数える", async () => {
+    const admin = await makeUser({ admin: true });
+    await addAudit("account_delete_requested", Date.now() - 2 * DAY);
+    await addAudit("account_delete_requested", Date.now() - 10 * DAY);
+    await addAudit("account_delete_requested", Date.now() - 11 * DAY);
+    await addAudit("account_restore", Date.now() - 10 * DAY);
+    await addAudit("account_delete_completed", Date.now() - 3 * DAY);
+    // どちらの期間にも入らない（20日前）
+    await addAudit("account_delete_requested", Date.now() - 20 * DAY);
+
+    const kpi = await getKpi(admin.cookie, 7);
+    expect(kpi.health.deleteRequested).toBe(1);
+    expect(kpi.health.deleteCompleted).toBe(1);
+    expect(kpi.health.restored).toBe(0);
+    expect(kpi.previous!.deleteRequested).toBe(2);
+    expect(kpi.previous!.deleteCompleted).toBe(0);
+    expect(kpi.previous!.restored).toBe(1);
+  });
+
+  it("会場オファー・たまご・賛同の前期間をそれぞれの作成日で切って数える", async () => {
+    const admin = await makeUser({ admin: true });
+    const host = await makeUser();
+    const fan1 = await makeUser();
+    const fan2 = await makeUser();
+    const venue = await makeVenue(host.userId);
+
+    // 会場オファー: 今期間1件 / 前期間2件
+    await makeOffer(venue, host.userId, Date.now() - 2 * DAY);
+    await makeOffer(venue, host.userId, Date.now() - 10 * DAY);
+    await makeOffer(venue, host.userId, Date.now() - 11 * DAY);
+    await makeOffer(venue, host.userId, Date.now() - 20 * DAY);
+
+    // たまご: 今期間1件 / 前期間2件。賛同は「たまごの作成日」で期間に振り分ける
+    await makeEgg(host.userId, Date.now() - 2 * DAY);
+    const prevEgg = await makeEgg(host.userId, Date.now() - 10 * DAY);
+    await makeEgg(host.userId, Date.now() - 11 * DAY);
+    await makeEgg(host.userId, Date.now() - 20 * DAY);
+    await reactEgg(prevEgg, fan1.userId, "attend");
+    await reactEgg(prevEgg, fan2.userId, "attend");
+    await reactEgg(prevEgg, fan1.userId, "host");
+
+    const kpi = await getKpi(admin.cookie, 7);
+    expect(kpi.matching.venueOffers).toBe(1);
+    expect(kpi.previous!.venueOffers).toBe(2);
+    expect(kpi.matching.eggs).toBe(1);
+    expect(kpi.previous!.eggs).toBe(2);
+    expect(kpi.matching.eggAttendReactions).toBe(0);
+    // 賛同（参加したい2 + 開催してもいい1）は前期間のたまごに付いている
+    expect(kpi.previous!.eggReactions).toBe(3);
   });
 });
 
@@ -485,18 +719,60 @@ describe("KPI: 日次推移", () => {
     expect(by.get(dayAgo(0))!.mau).toBe(4);
   });
 
-  it("30日より前のアクセスは MAU のローリング窓から外れる", async () => {
+  it("MAU のローリング窓はちょうど直近30日（29日前は入り30日前は入らない）", async () => {
     const admin = await makeUser({ admin: true });
-    const oldUser = await makeUser();
-    const nowUser = await makeUser();
-    await markActive(dayAgo(40), oldUser.userId);
-    await markActive(dayAgo(1), nowUser.userId);
+    const u29 = await makeUser();
+    const u30 = await makeUser();
+    const u40 = await makeUser();
+    // 境界ちょうどに置く。「3日前と40日前」のようなデータだけだと窓を
+    // 28日にしても35日にしても値が変わらず、窓の広さを何も固定できない
+    await markActive(dayAgo(29), u29.userId);
+    await markActive(dayAgo(30), u30.userId);
+    await markActive(dayAgo(40), u40.userId);
 
     const kpi = await getKpi(admin.cookie, 7);
     const by = new Map(kpi.retention.daily.map((d) => [d.day, d]));
-    // 40日前の人は窓（直近30日）の外。残るのは1日前の人と、
-    // 画面を見ている管理者自身（アクセスが今日として記録される）
+
+    // 今日の窓は [29日前, 今日]。29日前ちょうどは入り、30日前は外れる。
+    // 残るのは 29日前の人と、画面を見ている管理者自身（アクセスが今日として
+    // 記録される #257）。窓が28日なら1人、30日以上なら3人になる
+    expect(by.get(dayAgo(0))!.dau).toBe(1);
     expect(by.get(dayAgo(0))!.mau).toBe(2);
+    // 1日前の窓は [30日前, 1日前]。30日前ちょうどが入り、管理者は入らない
+    expect(by.get(dayAgo(1))!.dau).toBe(0);
+    expect(by.get(dayAgo(1))!.mau).toBe(2);
+    // 7日前の窓は [36日前, 7日前]。40日前の人はまだ入らない（窓が35日だと入る）
+    expect(by.get(dayAgo(7))!.mau).toBe(2);
+  });
+
+  it("週次表示になる長さでは MAU を週の最終日だけ算出する", async () => {
+    // MAU は1日ぶん出すのに直近30日を引き当てるので、日次で全日ぶん出すと
+    // 走査量が 日数 × 30 × DAU になる。画面が週次にまとめる長さのときは
+    // 週の最終日（日曜）だけ算出し、間の日は「算出していない」= null で返す
+    const admin = await makeUser({ admin: true });
+    const u = await makeUser();
+    await markActive(dayAgo(89), u.userId);
+
+    const kpi = await getKpi(admin.cookie, 90);
+    const daily = kpi.retention.daily;
+    expect(daily.length).toBe(91);
+    const isSunday = (day: string) =>
+      new Date(`${day}T12:00:00Z`).getUTCDay() === 0;
+    const measured = daily.filter((d) => d.day >= dayAgo(89));
+    for (const d of measured) {
+      if (isSunday(d.day)) expect(d.mau).not.toBeNull();
+      else expect(d.mau).toBeNull();
+      // DAU は週の平均に畳むので日次のまま必要
+      expect(d.dau).not.toBeNull();
+    }
+
+    // 週次にまとめると MAU は週の最終日の値になり、欠けない
+    const weekly = toWeekly(
+      measured.map((d) => ({ day: d.day, values: { mau: d.mau, dau: d.dau } })),
+      { lastKeys: ["mau"], averageKeys: ["dau"] },
+    );
+    expect(weekly.length).toBeGreaterThan(0);
+    expect(weekly.every((w) => w.values.mau !== null)).toBe(true);
   });
 
   it("コミュニティKPIも開催と参加の日次推移を返す", async () => {
@@ -516,6 +792,31 @@ describe("KPI: 日次推移", () => {
     expect(d.heldEvents).toBe(1);
     expect(d.participations).toBe(2);
     expect(kpi.daily.find((x) => x.day === dayAgo(3))!.heldEvents).toBe(0);
+  });
+});
+
+describe("日次系列の上限", () => {
+  it("長すぎる期間は古い側を切り、直近を必ず残す", () => {
+    // ?days=3650 のような指定でも点数には上限がある。古い日から詰めて途中で
+    // 打ち切ると**新しい側**が落ち、直近ぶんが警告も無くグラフから消える
+    const today = "2026-08-07";
+    const out = fillDailySeries("2000-01-01", today, [], []);
+    expect(out.length).toBe(MAX_SERIES_POINTS);
+    expect(out.at(-1)!.day).toBe(today);
+    expect(out[0]!.day).toBe(addDays(today, -(MAX_SERIES_POINTS - 1)));
+  });
+
+  it("上限に収まる期間はそのまま返す", () => {
+    const out = fillDailySeries("2026-08-01", "2026-08-07", [], []);
+    expect(out.map((p) => p.day)).toEqual([
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-03",
+      "2026-08-04",
+      "2026-08-05",
+      "2026-08-06",
+      "2026-08-07",
+    ]);
   });
 });
 

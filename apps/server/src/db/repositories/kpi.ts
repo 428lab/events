@@ -1,9 +1,11 @@
-import type {
-  KpiDailyPoint,
-  KpiDistributionBucket,
-  KpiPayload,
-  KpiPreviousValues,
-  KpiProviderCount,
+import {
+  KPI_DAILY_MAX_DAYS,
+  type KpiDailyPoint,
+  type KpiDistributionBucket,
+  type KpiPayload,
+  type KpiPreviousValues,
+  type KpiProviderCount,
+  addDays,
 } from "@eventer/shared";
 import { many, one } from "../client.js";
 
@@ -194,7 +196,8 @@ interface DailyRow {
 interface ActiveRow {
   day: string;
   dau: number;
-  mau: number;
+  /** 週次表示になる長さのときは週の最終日（日曜）以外 null（＝算出していない） */
+  mau: number | null;
   measured_from: string | null;
 }
 
@@ -310,24 +313,27 @@ export const kpiRepo = {
     );
 
     // --- (3) 閲覧（イベント詳細ページ）---
-    // スカラーサブクエリは1列しか返せないので、期間ごとに1本ずつ並べる（クエリは1本）
+    // どちらのテーブルにも day の索引が無いので必ず全走査になる。期間ごとに
+    // スカラーサブクエリを並べると同じテーブルを2回スキャンするため、
+    // マッチング (11) と同じく**派生テーブルで今期間・前期間を1度に数える**。
     const viewAgg = await one<Dual<ViewAgg>>(
-      `SELECT
-         (SELECT COUNT(DISTINCT CASE WHEN day >= ? THEN visitor_id END)
-            FROM event_view_unique WHERE day >= ?) AS unique_viewers,
-         (SELECT COUNT(DISTINCT CASE WHEN day >= ? AND day < ? THEN visitor_id END)
-            FROM event_view_unique WHERE day >= ?) AS prev_unique_viewers,
-         (SELECT COALESCE(SUM(CASE WHEN day >= ? THEN views ELSE 0 END), 0)
-            FROM event_view_stat WHERE day >= ?) AS total_views,
-         (SELECT COALESCE(SUM(CASE WHEN day >= ? AND day < ? THEN views ELSE 0 END), 0)
-            FROM event_view_stat WHERE day >= ?) AS prev_total_views`,
+      `SELECT vu.unique_viewers, vu.prev_unique_viewers,
+              vs.total_views, vs.prev_total_views
+       FROM (SELECT COUNT(DISTINCT CASE WHEN day >= ? THEN visitor_id END)
+                      AS unique_viewers,
+                    COUNT(DISTINCT CASE WHEN day >= ? AND day < ? THEN visitor_id END)
+                      AS prev_unique_viewers
+               FROM event_view_unique WHERE day >= ?) vu,
+            (SELECT COALESCE(SUM(CASE WHEN day >= ? THEN views ELSE 0 END), 0)
+                      AS total_views,
+                    COALESCE(SUM(CASE WHEN day >= ? AND day < ? THEN views ELSE 0 END), 0)
+                      AS prev_total_views
+               FROM event_view_stat WHERE day >= ?) vs`,
       sinceDay,
       prevSinceDay,
-      prevSinceDay,
       sinceDay,
       prevSinceDay,
       sinceDay,
-      prevSinceDay,
       prevSinceDay,
       sinceDay,
       prevSinceDay,
@@ -467,12 +473,19 @@ export const kpiRepo = {
 
     // --- (8) DAU / MAU の推移 (#266) ---
     // user_active_day は「その日アクセスした」1ユーザー1行 (#257)。
-    // MAU は各日時点の「直近30日にアクティブだったユーザーの実数」のローリングなので、
-    // 日の一覧（axis）に対して過去29日ぶんを引き当てて COUNT(DISTINCT) する。
+    // MAU は各日時点の「直近30日にアクティブだったユーザーの実数」のローリング。
     // axis を再帰CTEで作るのは、活動ゼロの日にも MAU の値が要るため
     // （その日の行が無いだけで MAU が 0 に落ちたように見えてしまう）。
     // axis の開始は「指定期間の開始」と「計測開始日」の遅い方。計測より前の日を
     // 並べても 0 が続くだけで「誰も居なかった」と誤読される。
+    //
+    // MAU は1日あたり30日ぶんを引き当てるので、走査量が axis日数 × 30 × DAU の
+    // オーダーになる（365日レンジや全期間だと1回の表示で100万行規模）。
+    // **画面が週次にまとめる長さのときは週の最終日（日曜）ぶんだけ算出する**。
+    // 週次まとめは MAU を「週の最終の既知値」で畳むので、間の日は使われない。
+    // 画面の粒度は系列の点数 (kpiGranularity) で決まり、系列は axis 以上の長さに
+    // なる（axis の開始は期間の開始以降）。つまり axis が週次と判断する長さなら
+    // 画面も必ず週次になり、間引いた日が日次表示で欠けることはない。
     const active = await many<ActiveRow>(
       `WITH RECURSIVE bounds(head, tail) AS (
          SELECT MAX(?, (SELECT COALESCE(MIN(day), ?) FROM user_active_day)), ?
@@ -483,16 +496,18 @@ export const kpiRepo = {
          SELECT date(day, '+1 day') FROM axis WHERE day < (SELECT tail FROM bounds)
        )
        SELECT x.day AS day,
-              COALESCE(SUM(CASE WHEN a.day = x.day THEN 1 ELSE 0 END), 0) AS dau,
-              COUNT(DISTINCT a.user_id) AS mau,
+              (SELECT COUNT(1) FROM user_active_day d WHERE d.day = x.day) AS dau,
+              CASE WHEN (SELECT julianday(tail) - julianday(head) + 1 FROM bounds) <= ?
+                        OR strftime('%w', x.day) = '0'
+                   THEN (SELECT COUNT(DISTINCT a.user_id) FROM user_active_day a
+                          WHERE a.day <= x.day AND a.day >= date(x.day, '-29 days'))
+              END AS mau,
               (SELECT MIN(day) FROM user_active_day) AS measured_from
-       FROM axis x
-       LEFT JOIN user_active_day a
-         ON a.day <= x.day AND a.day >= date(x.day, '-29 days')
-       GROUP BY x.day ORDER BY x.day`,
+       FROM axis x ORDER BY x.day`,
       sinceDay,
       today,
       today,
+      KPI_DAILY_MAX_DAYS,
     );
 
     // --- (9) 健全性: 退会・復帰 ---
@@ -748,8 +763,12 @@ export function previousValues(m: PeriodMetrics): KpiPreviousValues {
     repeatHostRate: m.repeatHostRate,
     avgEventsPerHost: m.avgEventsPerHost,
     signups: m.signups,
-    activationParticipantRate: m.activationParticipantRate,
-    activationHostRate: m.activationHostRate,
+    // アクティベーション率（activationParticipantRate / activationHostRate）は
+    // **意図的に外している**。分子の EXISTS が「これまでに1度でも参加/主催したか」で
+    // 期間の縛りが無いため、前期間に登録した人は今期間ぶんだけ猶予が長い。
+    // 横ばいのデータでも前期間の方が高く出て恒常的に「悪化」に寄り、
+    // 「アクティベーションが落ちた」と誤読させる。比べるなら「登録から N 日以内」を
+    // 揃えたコホート指標に定義し直す必要があり、それは #266 の範囲を超える。
     deleteRequested: m.deleteRequested,
     deleteCompleted: m.deleteCompleted,
     restored: m.restored,
@@ -766,6 +785,17 @@ export function previousValues(m: PeriodMetrics): KpiPreviousValues {
   };
 }
 
+/** 日次系列の最大点数。?days=3650 のような長い指定でも点数に上限を掛ける。
+ * **切り捨てるのは古い側**（開始日をクランプする）。ループの途中で break すると
+ * 落ちるのが新しい側になり、直近ぶんが警告も無くグラフから消える。 */
+export const MAX_SERIES_POINTS = 3000;
+
+/** 系列の開始日。上限を超える長さのときは「新しい側を必ず残す」ように古い側を切る */
+export function clampSeriesStart(first: string, today: string): string {
+  const limit = addDays(today, -(MAX_SERIES_POINTS - 1));
+  return first < limit ? limit : first;
+}
+
 /** 日次の系列を「抜けの無い日付」に整える (#266)。
  * 活動ゼロの日は 0 で埋める。DAU/MAU は計測開始 (#257) より前を null にして、
  * 「0人だった日」と「まだ計測していない日」を区別する。
@@ -780,14 +810,15 @@ export function fillDailySeries(
   const measuredFrom = active[0]?.measured_from ?? null;
   const byDay = new Map(daily.map((d) => [d.day, d]));
   const activeByDay = new Map(active.map((a) => [a.day, a]));
-  const first =
+  const start =
     from !== "0000"
       ? from
       : [daily[0]?.day, active[0]?.day].filter((d): d is string => !!d).sort()[0];
-  if (!first || first > today) return [];
+  if (!start || start > today) return [];
+  const first = clampSeriesStart(start, today);
 
   const out: KpiDailyPoint[] = [];
-  for (let day = first; day <= today; day = addDay(day)) {
+  for (let day = first; day <= today; day = addDays(day, 1)) {
     const d = byDay.get(day);
     const a = activeByDay.get(day);
     const measured = measuredFrom !== null && day >= measuredFrom;
@@ -798,18 +829,13 @@ export function fillDailySeries(
       heldEvents: N(d?.held_events),
       participations: N(d?.participations),
       dau: measured ? N(a?.dau) : null,
-      mau: measured ? N(a?.mau) : null,
+      // MAU は週次表示になる長さのとき週の最終日ぶんだけ算出する（クエリ (8) 参照）。
+      // 「計測済みだが算出していない日」を 0 で埋めると MAU が落ちたように見えるので
+      // null のまま返す（週次まとめは週の最終の既知値を採る）
+      mau: measured ? (a?.mau ?? null) : null,
     });
-    // 日付の連番は上限が要る（データが壊れて first が遠い過去でも暴走しない）
-    if (out.length > 3000) break;
   }
   return out;
-}
-
-function addDay(day: string): string {
-  return new Date(Date.parse(`${day}T12:00:00Z`) + 86400000)
-    .toISOString()
-    .slice(0, 10);
 }
 
 function buildPayload(src: {

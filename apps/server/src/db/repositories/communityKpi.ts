@@ -5,6 +5,7 @@ import {
   type CommunityKpiPayload,
   type KpiDistributionBucket,
   type KpiPreviousValues,
+  addDays,
 } from "@eventer/shared";
 import { many, one } from "../client.js";
 import {
@@ -18,6 +19,7 @@ import {
   MEMBER_USER_ACTIVE,
   N,
   USER_ACTIVE,
+  clampSeriesStart,
   dual,
   jd,
   jstDay,
@@ -128,7 +130,7 @@ interface DailyRow {
 export const communityKpiRepo = {
   /** コミュニティ運営者向けのKPI (#262)。数え方は全体KPI (kpi.ts) と同じヘルパーを
    * 使っており、同じ期間なら community KPI の各数字は全体KPIの部分集合になる。
-   * Workers のサブリクエスト上限を意識して 9 本にまとめている
+   * Workers のサブリクエスト上限を意識して 8 本にまとめている
    * （前期間 (#266) は本数を増やさず各クエリの CASE で同時に数える）。 */
   async overview(
     community: { id: string; slug: string; name: string },
@@ -218,30 +220,29 @@ export const communityKpiRepo = {
     );
 
     // --- (3) 閲覧（このコミュニティのイベント詳細ページ）---
+    // day に索引が無く必ず全走査になるので、期間ごとにスカラーサブクエリを並べず
+    // 派生テーブルで今期間・前期間を1度に数える（同じテーブルを2回スキャンしない）
     const viewAgg = await one<Dual<ViewAgg>>(
-      `SELECT
-         (SELECT COUNT(DISTINCT CASE WHEN v.day >= ? THEN v.visitor_id END)
-            FROM event_view_unique v JOIN event e ON e.id = v.event_id
-           WHERE v.day >= ? AND e.community_id = ?) AS unique_viewers,
-         (SELECT COUNT(DISTINCT CASE WHEN v.day >= ? AND v.day < ? THEN v.visitor_id END)
-            FROM event_view_unique v JOIN event e ON e.id = v.event_id
-           WHERE v.day >= ? AND e.community_id = ?) AS prev_unique_viewers,
-         (SELECT COALESCE(SUM(CASE WHEN s.day >= ? THEN s.views ELSE 0 END), 0)
-            FROM event_view_stat s JOIN event e ON e.id = s.event_id
-           WHERE s.day >= ? AND e.community_id = ?) AS total_views,
-         (SELECT COALESCE(SUM(CASE WHEN s.day >= ? AND s.day < ? THEN s.views ELSE 0 END), 0)
-            FROM event_view_stat s JOIN event e ON e.id = s.event_id
-           WHERE s.day >= ? AND e.community_id = ?) AS prev_total_views`,
+      `SELECT vu.unique_viewers, vu.prev_unique_viewers,
+              vs.total_views, vs.prev_total_views
+       FROM (SELECT COUNT(DISTINCT CASE WHEN v.day >= ? THEN v.visitor_id END)
+                      AS unique_viewers,
+                    COUNT(DISTINCT CASE WHEN v.day >= ? AND v.day < ? THEN v.visitor_id END)
+                      AS prev_unique_viewers
+               FROM event_view_unique v JOIN event e ON e.id = v.event_id
+              WHERE v.day >= ? AND e.community_id = ?) vu,
+            (SELECT COALESCE(SUM(CASE WHEN s.day >= ? THEN s.views ELSE 0 END), 0)
+                      AS total_views,
+                    COALESCE(SUM(CASE WHEN s.day >= ? AND s.day < ? THEN s.views ELSE 0 END), 0)
+                      AS prev_total_views
+               FROM event_view_stat s JOIN event e ON e.id = s.event_id
+              WHERE s.day >= ? AND e.community_id = ?) vs`,
+      sinceDay,
+      prevSinceDay,
       sinceDay,
       prevSinceDay,
       cid,
-      prevSinceDay,
       sinceDay,
-      prevSinceDay,
-      cid,
-      sinceDay,
-      prevSinceDay,
-      cid,
       prevSinceDay,
       sinceDay,
       prevSinceDay,
@@ -576,6 +577,7 @@ function previousValues(m: PeriodMetrics): KpiPreviousValues {
 }
 
 /** 日次推移を抜けの無い日付に整える（活動ゼロの日は 0）。
+ * 上限を超える長さのときは古い側を切る（新しい側を必ず残す）。
  * @param from 期間の開始日。'0000'（全期間）のときはデータのある最初の日 */
 function fillDaily(
   from: string,
@@ -583,25 +585,19 @@ function fillDaily(
   rows: DailyRow[],
 ): CommunityKpiDailyPoint[] {
   const byDay = new Map(rows.map((r) => [r.day, r]));
-  const first = from !== "0000" ? from : rows[0]?.day;
-  if (!first || first > today) return [];
+  const start = from !== "0000" ? from : rows[0]?.day;
+  if (!start || start > today) return [];
+  const first = clampSeriesStart(start, today);
   const out: CommunityKpiDailyPoint[] = [];
-  for (let day = first; day <= today; day = addDay(day)) {
+  for (let day = first; day <= today; day = addDays(day, 1)) {
     const r = byDay.get(day);
     out.push({
       day,
       heldEvents: N(r?.held_events),
       participations: N(r?.participations),
     });
-    if (out.length > 3000) break;
   }
   return out;
-}
-
-function addDay(day: string): string {
-  return new Date(Date.parse(`${day}T12:00:00Z`) + 86400000)
-    .toISOString()
-    .slice(0, 10);
 }
 
 function buildPayload(src: {
