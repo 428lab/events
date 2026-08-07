@@ -463,7 +463,7 @@ describe("イベントQ&A (#216)", () => {
     expect((await postQuestion(eventId, a.cookie, { body: "あ".repeat(300) })).status).toBe(201);
   });
 
-  it("コミュニティのオーナーは操作はできるが、匿名投稿者の実名は見えない", async () => {
+  it("イベントの staff でなければ、コミュニティのオーナーもサイト管理者も操作できない", async () => {
     const staff = await loginDev();
     const owner = await makeUser();
     const communityId = await makeCommunity(owner.userId);
@@ -474,24 +474,47 @@ describe("イベントQ&A (#216)", () => {
     const a = await makeMember(eventId, "participant");
     const qid = await ask(eventId, a.cookie, "匿名で聞きたいこと");
 
-    // イベントの staff ではないので、実名は返らない（開示は最小限）
+    // コミュニティのオーナー: 読めるが、操作も実名の開示もできない
     const asOwner = await qa(eventId, owner.cookie);
+    expect(asOwner.canModerate).toBe(false);
     expect(asOwner.revealsAuthor).toBe(false);
     expect(find(asOwner, qid)!.author).toBeNull();
-    // モデレーション操作はできる（荒らしを止める手段は残す）
-    expect(asOwner.canModerate).toBe(true);
-    expect((await patchQuestion(eventId, qid, owner.cookie, { hidden: true })).status).toBe(200);
-    expect(find(await qa(eventId, owner.cookie), qid)!.hidden).toBe(true);
+    expect((await patchQuestion(eventId, qid, owner.cookie, { answered: true })).status).toBe(403);
+    expect((await patchQuestion(eventId, qid, owner.cookie, { hidden: true })).status).toBe(403);
+    expect((await pick(eventId, owner.cookie, qid)).status).toBe(403);
+    expect((await pick(eventId, owner.cookie, null)).status).toBe(403);
 
-    // 同じ人がイベントの staff になれば実名も見える
+    // 参加していないサイト管理者も同じ（DevUser=appAdmin の staff メンバー行を外す）
+    await env.DB.prepare(
+      "DELETE FROM event_member WHERE event_id = ? AND user_id = (SELECT id FROM user WHERE discord_id = 'dev-user')",
+    )
+      .bind(eventId)
+      .run();
+    const asAdmin = await qa(eventId, staff);
+    expect(asAdmin.canModerate).toBe(false);
+    expect(asAdmin.revealsAuthor).toBe(false);
+    expect(find(asAdmin, qid)!.author).toBeNull();
+    expect((await patchQuestion(eventId, qid, staff, { hidden: true })).status).toBe(403);
+    expect((await pick(eventId, staff, qid)).status).toBe(403);
+
+    // 何も操作されていない（403 が素通りしていないことの確認）
+    const untouched = find(await qa(eventId, a.cookie), qid)!;
+    expect(untouched.answered).toBe(false);
+    expect((await qa(eventId, a.cookie)).pickedQuestionId).toBeNull();
+
+    // イベントの staff に加われば、操作も実名の開示もできる
     await env.DB.prepare(
       "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, 'staff', NULL, 'confirmed', 0, ?)",
     )
       .bind(crypto.randomUUID(), eventId, owner.userId, Date.now())
       .run();
     const asEventStaff = await qa(eventId, owner.cookie);
+    expect(asEventStaff.canModerate).toBe(true);
     expect(asEventStaff.revealsAuthor).toBe(true);
     expect(find(asEventStaff, qid)!.author?.id).toBe(a.userId);
+    expect((await pick(eventId, owner.cookie, qid)).status).toBe(200);
+    expect((await patchQuestion(eventId, qid, owner.cookie, { hidden: true })).status).toBe(200);
+    expect(find(await qa(eventId, owner.cookie), qid)!.hidden).toBe(true);
   });
 
   it("参加していないコミュニティ管理者は読めても投稿・投票できない", async () => {

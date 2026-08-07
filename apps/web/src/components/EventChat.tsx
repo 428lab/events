@@ -194,7 +194,8 @@ export function EventChat({
   fontScale?: number;
 }) {
   const { data: me } = useMe();
-  // イベント配下のUIは myRole のみで判定（サイト管理者でも staff でなければ操作UIを出さない）
+  // イベント配下のUIは myRole のみで判定（サイト管理者でも staff でなければ操作UIを出さない）。
+  // Q&A 側の canModerate と同じ基準＝「そのイベントの staff メンバーであること」
   const isStaff = myRole === "staff";
   // 投影用は「見せるだけ」の画面 (#215)。人前のスクリーンに映るので、
   // 参加UI・入力欄・スタッフ用の操作UI（非表示ボタン、チャンネルの作り直し等）は出さない

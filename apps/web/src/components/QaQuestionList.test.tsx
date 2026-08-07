@@ -67,6 +67,30 @@ describe("QaQuestionList の匿名投稿", () => {
     expect(screen.getByText("質問した人")).toBeInTheDocument();
   });
 
+  it("isStaff=false ならハンドラを渡してもモデレーション操作を出さない", () => {
+    // isStaff にはサーバーの canModerate をそのまま渡す約束。canModerate が
+    // false（＝そのイベントの staff ではない）なら、呼び出し側がハンドラを
+    // 渡していても操作ボタンは出さない
+    const moderation = {
+      onPick: () => {},
+      onAnswered: () => {},
+      onHidden: () => {},
+    };
+    const { unmount } = draw(
+      <QaQuestionList questions={[question()]} isStaff={false} {...moderation} />,
+    );
+    expect(screen.queryByTitle("いまこの質問にする")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("回答済みにする")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("非表示にする")).not.toBeInTheDocument();
+    unmount();
+
+    // 対になる確認（そもそも出ない状態を通過していないこと）
+    draw(<QaQuestionList questions={[question()]} isStaff {...moderation} />);
+    expect(screen.getByTitle("いまこの質問にする")).toBeInTheDocument();
+    expect(screen.getByTitle("回答済みにする")).toBeInTheDocument();
+    expect(screen.getByTitle("非表示にする")).toBeInTheDocument();
+  });
+
   it("showMineChip=false なら「自分」チップを出さない（画面共有で本人だと分かるため）", () => {
     const mine = [question({ mine: true })];
     const { unmount } = draw(<QaQuestionList questions={mine} />);

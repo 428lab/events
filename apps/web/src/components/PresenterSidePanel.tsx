@@ -53,9 +53,11 @@ export function PresenterPanelToggle() {
 export function PresenterSidePanel({ eventId }: { eventId: string }) {
   const [, setOpen] = usePresenterPanel();
   const { event, myRole, canChat, chatAvailable } = useEventChatAccess(eventId);
-  // イベント配下のUIは myRole のみで判定（サイト管理者でも staff でなければ操作UIを出さない）
-  const isStaff = myRole === "staff";
   const { data: qa } = useEventQa(eventId, canChat);
+  // Q&A の操作UIはサーバーの canModerate をそのまま使う（EventQa と同じ基準）。
+  // canModerate は「そのイベントの参加確定 staff メンバー」＝ myRole === "staff" と
+  // 同じ条件で、サイト管理者やコミュニティ管理者というだけでは true にならない
+  const isStaff = qa?.canModerate ?? false;
   const vote = useVoteQuestion(eventId);
   const update = useUpdateQuestion(eventId);
   const pick = usePickQuestion(eventId);

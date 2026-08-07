@@ -32,7 +32,8 @@ export interface QaQuestionListProps {
   /** 投票ボタンを出すか（参加確定メンバー＋Q&A有効） */
   canVote?: boolean;
   /** スタッフ操作（回答済み・非表示・ピックアップ）を出すか。
-   * サーバーが返す canModerate をそのまま渡す */
+   * サーバーが返す canModerate をそのまま渡すこと（＝そのイベントの参加確定
+   * staff メンバーだけ。画面側で条件を書き直すとサーバーの認可とズレる） */
   isStaff?: boolean;
   /**
    * **匿名投稿**の投稿者名を出してよい画面か。既定 false（＝渡さなければ出さない）。
