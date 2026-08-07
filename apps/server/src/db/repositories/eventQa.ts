@@ -59,14 +59,46 @@ export const eventQaRepo = {
     return one<QuestionRow>(`${SELECT_QUESTION} WHERE q.id = ?`, viewerId, id);
   },
 
-  /** そのイベントの質問かどうか（他イベントのIDを差し込まれないように使う） */
-  async belongsTo(id: string, eventId: string): Promise<boolean> {
-    const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event_question WHERE id = ? AND event_id = ?",
+  /** 質問の素性だけを引く（所属イベント・投稿者・非表示）。
+   * 他イベントのIDを差し込まれていないか、非表示の質問を操作していないかの判定に使う。
+   * findById と違い投稿者の退会申請は見ない（「行として存在するか」だけを答える） */
+  async meta(
+    id: string,
+  ): Promise<{ eventId: string; userId: string; hidden: boolean } | null> {
+    const row = await one<{
+      event_id: string;
+      user_id: string;
+      hidden: number;
+    }>(
+      "SELECT event_id, user_id, hidden FROM event_question WHERE id = ?",
       id,
+    );
+    if (!row) return null;
+    return {
+      eventId: row.event_id,
+      userId: row.user_id,
+      hidden: row.hidden === 1,
+    };
+  },
+
+  /** イベントの質問数（上限チェック用）。非表示のものも数に入れる
+   * （非表示にしても行は残るので、上限をすり抜けられないように） */
+  async countByEvent(eventId: string): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(1) AS n FROM event_question WHERE event_id = ?",
       eventId,
     );
-    return (row?.n ?? 0) > 0;
+    return row?.n ?? 0;
+  },
+
+  /** そのイベントでの1人あたりの質問数（上限チェック用） */
+  async countByUser(eventId: string, userId: string): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(1) AS n FROM event_question WHERE event_id = ? AND user_id = ?",
+      eventId,
+      userId,
+    );
+    return row?.n ?? 0;
   },
 
   async create(
@@ -88,6 +120,12 @@ export const eventQaRepo = {
       Date.now(),
     );
     return id;
+  },
+
+  /** 質問の削除（投稿者本人による取り消し）。
+   * 票は event_question_vote の外部キー ON DELETE CASCADE で一緒に消える */
+  async delete(id: string): Promise<void> {
+    await run("DELETE FROM event_question WHERE id = ?", id);
   },
 
   /** 投票（冪等。二重投票は主キーで弾かれる） */
@@ -161,7 +199,7 @@ export const eventQaRepo = {
 };
 
 /** DB の行を API レスポンスの形にする。
- * anonymous な質問の投稿者は showAuthor（staff）のときだけ入れる。
+ * anonymous な質問の投稿者は showAuthor（そのイベントの staff）のときだけ入れる。
  * **匿名投稿でも user_id は必ず記録されている**ので、ここで落とすのは表示だけ */
 export function toQuestion(
   row: QuestionRow,

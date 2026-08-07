@@ -606,7 +606,7 @@ export function EventDetailPage() {
       {/* Q&A (#216)。確定メンバーのみ。表示は QaQuestionList に切り出してあり
           投影用画面・プレゼンターのサイドパネル (#215) から再利用する */}
       {canComment && event.qaEnabled && (
-        <EventQa eventId={id} myRole={myRole} canPost={canComment} />
+        <EventQa eventId={id} canPost={canComment} />
       )}
 
       {/* 参加者限定のお知らせ（サーバーが閲覧可の人にだけ返す） */}

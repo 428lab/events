@@ -33,6 +33,16 @@ export function usePostQuestion(eventId: string) {
   });
 }
 
+/** 自分の質問の取り消し（投稿者本人のみ。行ごと消える） */
+export function useDeleteQuestion(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (questionId: string) =>
+      api.del(`/events/${eventId}/questions/${questionId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qaQueryKey(eventId) }),
+  });
+}
+
 /** 投票 / 取り消し（voted=これから投票したい状態） */
 export function useVoteQuestion(eventId: string) {
   const qc = useQueryClient();

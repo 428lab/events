@@ -15,8 +15,16 @@ export type QaAnonymity = (typeof QA_ANONYMITY_MODES)[number];
  * Q&A は「投影画面に大きく出す」用途があり、長文だと読めなくなるため */
 export const QA_QUESTION_MAX = 300;
 
+/** 1イベントに投稿できる質問の総数。いたずら対策で EVENT_COMMENT_LIMIT と同じ考え方。
+ * 一覧はページングなしで全件返し、参加者全員がポーリングで取りに来るので、
+ * 上限がないと荒らし1人で全員のレスポンスが膨らむ */
+export const EVENT_QUESTION_LIMIT = 200;
+
+/** 1人が同じイベントに投稿できる質問の数。総数の上限を1人で使い切れないようにする */
+export const EVENT_QUESTION_USER_LIMIT = 20;
+
 /** 質問の投稿者。匿名投稿では一般参加者に対して null になる
- * （スタッフには荒らし対応のため常に入る） */
+ * （イベントのスタッフには荒らし対応のため常に入る） */
 export const qaAuthorSchema = z.object({
   id: z.string(),
   username: z.string(),
@@ -36,14 +44,14 @@ export const eventQuestionSchema = z.object({
   anonymous: z.boolean(),
   /** スタッフが「回答済み」にした */
   answered: z.boolean(),
-  /** スタッフが非表示にした（この質問はスタッフにしか返さない） */
+  /** スタッフが非表示にした（この質問はモデレーションできる人にしか返さない） */
   hidden: z.boolean(),
   votes: z.number(),
   /** 自分が投票済みか */
   votedByMe: z.boolean(),
   /** 自分の投稿か（匿名でも本人には分かるようにする） */
   mine: z.boolean(),
-  /** 投稿者。匿名投稿は一般参加者には null、スタッフには入る */
+  /** 投稿者。匿名投稿は一般参加者には null、イベントのスタッフには入る */
   author: qaAuthorSchema.nullable(),
 });
 export type EventQuestion = z.infer<typeof eventQuestionSchema>;
@@ -56,8 +64,15 @@ export interface EventQaPayload {
   pickedQuestionId: string | null;
   /** 投稿・投票ができるか（Q&Aが有効で、自分が参加確定メンバー） */
   canPost: boolean;
-  /** スタッフとして見ているか（匿名投稿の投稿者が入っている・非表示も含まれる） */
-  isStaff: boolean;
+  /** モデレーション操作（回答済み・非表示・ピックアップ）ができるか。
+   * 非表示の質問も questions に含まれている。
+   * イベントの staff のほか、アプリ運営管理者とコミュニティ管理者も含む
+   * （サーバーの認可と同じ条件。web の操作UIはこの値で出す） */
+  canModerate: boolean;
+  /** 匿名投稿の author が入っているか（イベントの staff のみ）。
+   * canModerate より狭い: 操作はできても実名までは要らない人がいるため。
+   * web はこの値をそのまま QaQuestionList の revealAuthor に渡す */
+  revealsAuthor: boolean;
   questions: EventQuestion[];
 }
 
