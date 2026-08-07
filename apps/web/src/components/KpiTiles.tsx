@@ -367,7 +367,9 @@ export function TrendChart({
             データなし
           </Typography>
         ) : (
-          <Box sx={{ display: "flex", height: 150 }}>
+          // 高さを固定しない。棒の並びを下揃えにすると日付ラベルのぶんだけ
+          // 棒の足元が下がり、目盛りの 0 の線より下に飛び出してマイナスに見える
+          <Box sx={{ display: "flex", alignItems: "flex-start" }}>
             {/* 縦軸。棒の高さだけでは値が読めず、ツールチップはタッチ端末で開けない (#290) */}
             <Box
               sx={{
@@ -423,9 +425,8 @@ export function TrendChart({
               <Box
                 sx={{
                   display: "flex",
-                  alignItems: "flex-end",
+                  alignItems: "flex-start",
                   gap: 0.75,
-                  height: 150,
                   position: "relative",
                 }}
               >
