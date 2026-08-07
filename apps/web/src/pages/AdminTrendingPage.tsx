@@ -26,6 +26,7 @@ import {
 import { useIsAdmin } from "../api/hooks.js";
 import { useAdminTrending } from "../api/analyticsHooks.js";
 import { KpiNote } from "../components/KpiNote.js";
+import { InfoTip } from "../components/InfoTip.js";
 import { formatDateTime } from "../lib/format.js";
 
 const RANGES = [7, 30, 90] as const;
@@ -216,19 +217,20 @@ function ListCard({
   children,
 }: {
   title: string;
+  /** 並び順の決め方。ⓘのツールチップに入る（常時表示はしない） */
   note: string;
   empty: boolean;
   children: ReactNode;
 }) {
   return (
     <Card variant="outlined" sx={{ flex: "1 1 340px", minWidth: 280 }}>
-      <CardContent>
-        <Typography variant="subtitle2" fontWeight={700}>
-          {title}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {note}
-        </Typography>
+      <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
+        <Stack direction="row" spacing={0.25} alignItems="center">
+          <Typography variant="subtitle2" fontWeight={700}>
+            {title}
+          </Typography>
+          <InfoTip label={title} text={note} />
+        </Stack>
         <Divider sx={{ my: 1 }} />
         {empty ? (
           <Typography variant="caption" color="text.secondary">
@@ -327,19 +329,15 @@ function CommunityList({
   );
 }
 
-/** スコアの重み一覧（画面の注記）。重みはレスポンスの値を出すので実装とずれない */
-function WeightNote<B, W extends Record<string, number>>({
-  parts,
-  weights,
-}: {
-  parts: Part<B, W>[];
-  weights: W;
-}) {
-  return (
-    <Typography variant="caption" color="text.secondary">
-      スコア = {parts.map((p) => `${p.label}×${weights[p.key]}`).join(" + ")}
-    </Typography>
-  );
+/** スコアの重み一覧（見出し横のⓘに出す注記）。
+ * 重みはレスポンスの値を使うので実装とずれない */
+function weightText<B, W extends Record<string, number>>(
+  parts: Part<B, W>[],
+  weights: W,
+): string {
+  return `スコア = ${parts
+    .map((p) => `${p.label}×${weights[p.key]}`)
+    .join(" + ")}`;
 }
 
 /** 運営管理者向け: 注目のユーザー / コミュニティ (#259 PR1)。
@@ -355,7 +353,7 @@ export function AdminTrendingPage() {
   }
 
   return (
-    <Stack spacing={2.5}>
+    <Stack spacing={2}>
       <Typography
         variant="h5"
         fontWeight={700}
@@ -406,12 +404,18 @@ export function AdminTrendingPage() {
           <PeriodNote data={data} />
 
           <Card variant="outlined">
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight={700}>
-                ユーザー
-              </Typography>
-              <WeightNote parts={USER_PARTS} weights={data.weights.user} />
-              <Divider sx={{ my: 1.5 }} />
+            <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+              <Stack direction="row" spacing={0.25} alignItems="center">
+                <Typography variant="subtitle1" fontWeight={700}>
+                  ユーザー
+                </Typography>
+                <InfoTip
+                  label="ユーザーのスコア"
+                  text={weightText(USER_PARTS, data.weights.user)}
+                  size={16}
+                />
+              </Stack>
+              <Divider sx={{ my: 1.25 }} />
               <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
                 <ListCard
                   title="活動量 上位"
@@ -441,15 +445,18 @@ export function AdminTrendingPage() {
           </Card>
 
           <Card variant="outlined">
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight={700}>
-                コミュニティ
-              </Typography>
-              <WeightNote
-                parts={COMMUNITY_PARTS}
-                weights={data.weights.community}
-              />
-              <Divider sx={{ my: 1.5 }} />
+            <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+              <Stack direction="row" spacing={0.25} alignItems="center">
+                <Typography variant="subtitle1" fontWeight={700}>
+                  コミュニティ
+                </Typography>
+                <InfoTip
+                  label="コミュニティのスコア"
+                  text={weightText(COMMUNITY_PARTS, data.weights.community)}
+                  size={16}
+                />
+              </Stack>
+              <Divider sx={{ my: 1.25 }} />
               <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
                 <ListCard
                   title="活動量 上位"
@@ -487,11 +494,17 @@ export function AdminTrendingPage() {
  * 日付だけでなく時刻まで出す（比を出す指標なので前期間と長さが厳密に同じ） */
 function PeriodNote({ data }: { data: TrendingPayload }) {
   return (
-    <Typography variant="caption" color="text.secondary">
-      集計期間: 直近{data.days}日（{formatDateTime(data.since)} 〜{" "}
-      {formatDateTime(data.until)}） / 比較する前期間: 同じ長さの直前の
-      {data.days}日（{formatDateTime(data.previousSince)} 〜{" "}
-      {formatDateTime(data.since)}）
-    </Typography>
+    <Stack direction="row" spacing={0.25} alignItems="center" flexWrap="wrap">
+      <Typography variant="caption" color="text.secondary">
+        集計期間: 直近{data.days}日（{formatDateTime(data.since)} 〜{" "}
+        {formatDateTime(data.until)}）
+      </Typography>
+      <InfoTip
+        label="集計期間"
+        text={`比較する前期間: 同じ長さの直前の${data.days}日（${formatDateTime(
+          data.previousSince,
+        )} 〜 ${formatDateTime(data.since)}）`}
+      />
+    </Stack>
   );
 }
