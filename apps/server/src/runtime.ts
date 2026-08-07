@@ -62,6 +62,13 @@ export function takeOgFetchSlot(): boolean {
   return true;
 }
 
+/** 残っているメール送信予算の数。
+ * 一斉連絡 (#172) の送信待ちを消化するとき、予算切れで送れなかったぶんを
+ * 「失敗」と数えないよう、取り出す件数をここに合わせるために使う */
+export function emailSlotsLeft(): number {
+  return _emailBudget;
+}
+
 /** メール1通ぶんの送信予算を確保。使い切っていたら false */
 export function takeEmailSlot(): boolean {
   if (_emailBudget <= 0) return false;

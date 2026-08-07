@@ -71,6 +71,11 @@ export const notificationsRepo = {
     link = "",
     // メール表示のみに使う付加情報 (#134)。DB スキーマは変えない
     extras?: EmailExtras,
+    // メール配信をここでは行わない。一斉連絡 (#172) のように、送信待ちを積んで
+    // 定期実行で順次送る＝配信を自前で持っている呼び出し元のためのもの。
+    // ここに任せると上限 (MAX_BULK_EMAILS) で静かに打ち切られ、
+    // 「誰に届いていないか」も残らない
+    opts?: { skipEmail?: boolean },
   ): Promise<void> {
     const now = Date.now();
     const CHUNK = 50;
@@ -83,6 +88,7 @@ export const notificationsRepo = {
         })),
       );
     }
+    if (opts?.skipEmail) return;
     // メール通知ONのユーザーへも配信 (#126)。上限つき・waitUntil でレスポンス外に逃がす
     await deferBackground(
       (async () => {

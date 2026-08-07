@@ -42,6 +42,7 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - [x] コミュニティ（`/c/:slug`。アイコン／バナー、所属イベント一覧）
 - [x] スライド（デッキ）の作成・編集・公開（`/d/:slug`。画像・テキスト配置）
 - [x] アプリ内通知（抽選結果・繰り上げ・受賞・問い合わせ・日程確定）
+- [x] **一斉連絡**（スタッフが区分を選んで参加者へお知らせ。アプリ内通知は即時、メールは順次送信。送信状況と履歴はスタッフのみ閲覧）
 - [x] 問い合わせ（ユーザー⇔運営のスレッド）
 - [x] 成果物の登録（プレゼン資料 URL・ソースコード URL）
 - [x] イベントごとのロール（参加者／スタッフ／審査員／観覧者）＋アプリ運営管理者
@@ -104,6 +105,12 @@ npx wrangler secret put RESEND_API_KEY --env staging   # staging
 
 - 差出人は既定で `events lab <noreply@events.kojira.io>`（Resend で認証済みのドメインに合わせる）。変える場合は環境変数 `EMAIL_FROM` を設定。
 - 前日リマインダーは cron トリガー（毎日 UTC 0:00 = JST 9:00）で送信される。
+- 一斉連絡（#172）のメールは送信待ちに積まれ、GitHub Actions の定時実行
+  （`.github/workflows/broadcast-emails.yml`。5分おき）が
+  `POST /api/cron/broadcast-emails` を叩いて順次送信する。1回で送れるのは
+  1リクエストのメール送信予算ぶんまでで、残りは次の実行が続きから送る。
+  staging には定時実行を張らないため、動作確認は
+  `POST /api/admin/run-broadcast-emails`（アプリ運営管理者のみ）で行う。
 
 ### イベントチャットの公式サービス鍵（NOSTR_SERVICE_KEY）
 

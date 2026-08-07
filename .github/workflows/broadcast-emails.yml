@@ -1,0 +1,29 @@
+# 一斉連絡 (#172) のメール送信待ちの消化
+#
+# アプリ内通知は送信時に届くが、メールは1リクエストで送れる件数に上限があるため
+# 送信待ちを積んで少しずつ送る。リマインダー (#129) と同じく Workers の cron は
+# アカウント上限で埋まっているので GitHub Actions から叩く。
+# リマインダーは日次でよいがこちらは「数分で届く」ことが要るので別ワークフローにした。
+#
+# GitHub の定時実行は混雑時に遅れることがある。遅れても送信待ちは消えず
+# 次の実行で続きから送られる。
+name: Broadcast emails
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+# 前の実行が長引いたときに重ならないようにする（同じ送信待ちを二重に処理しない）
+concurrency:
+  group: broadcast-emails
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call broadcast email endpoint (production)
+        run: |
+          code=$(curl -s -o /tmp/body -w "%{http_code}" -X POST \
+            -H "x-cron-key: ${{ secrets.CRON_SECRET }}" \
+            https://events.kojira.io/api/cron/broadcast-emails)
+          cat /tmp/body; echo
+          test "$code" = "200"

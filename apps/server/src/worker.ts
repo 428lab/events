@@ -79,7 +79,10 @@ import { venueOfferRoutes } from "./routes/venueOffers.js";
 import { emailRoutes } from "./routes/email.js";
 import { sendEventReminders } from "./lib/reminders.js";
 import { purgeDeletedAccounts } from "./lib/purgeDeleted.js";
+import { drainBroadcastEmails } from "./lib/broadcast.js";
+import { eventBroadcastRoutes } from "./routes/eventBroadcast.js";
 import {
+  adminBroadcastEmailRoutes,
   adminPurgeDeletedRoutes,
   adminReminderRoutes,
 } from "./routes/adminReminders.js";
@@ -154,6 +157,8 @@ api.route("/events", eventLikeRoutes);
 api.route("/events", eventChatRoutes);
 // Q&A (#216)（質問の投稿・投票は参加確定メンバー、回答済み・ピックアップ・非表示は staff。要認証）
 api.route("/events", eventQaRoutes);
+// 参加者への一斉連絡 (#172)（送信・履歴閲覧ともそのイベントのスタッフのみ。要認証）
+api.route("/events", eventBroadcastRoutes);
 // 出会った記録 (#189)（参加確定メンバー同士。要認証）
 api.route("/events", meetEventRoutes);
 api.route("/events", eventScheduleRoutes);
@@ -177,6 +182,8 @@ api.route("/admin/inquiries", adminInquiryRoutes);
 api.route("/admin/run-reminders", adminReminderRoutes);
 // 退会猶予期間 (#250) の完全削除の手動実行（staging 検証用。app admin のみ）
 api.route("/admin/run-purge-deleted", adminPurgeDeletedRoutes);
+// 一斉連絡 (#172) のメール送信待ちの消化の手動実行（staging 検証用。app admin のみ）
+api.route("/admin/run-broadcast-emails", adminBroadcastEmailRoutes);
 // 異常行動の検知バッチの手動実行（staging 検証用。app admin のみ） (#259)
 api.route("/admin/run-detect-abuse", adminRunDetectAbuseRoutes);
 // GitHub Actions のスケジュール実行から叩く（Workers Free は cron 上限のため #129）。
@@ -200,6 +207,15 @@ api.post("/cron/reminders", async (c) => {
   if (denied) return denied;
   const sent = await sendEventReminders();
   return c.json({ sent });
+});
+
+// 一斉連絡 (#172) のメール送信待ちを消化する。数分おきの実行
+// （.github/workflows/broadcast-emails.yml）。
+// 1回で送れるのは1リクエストのメール送信予算ぶんまでで、残りは次の実行が拾う
+api.post("/cron/broadcast-emails", async (c) => {
+  const denied = checkCronKey(c);
+  if (denied) return denied;
+  return c.json(await drainBroadcastEmails());
 });
 
 // 退会猶予期間 (#250) を過ぎたアカウントの完全削除。日次実行

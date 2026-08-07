@@ -19,6 +19,8 @@ export const NOTIFICATION_TYPES = [
   "meet",
   /** 異常行動の検知バッチが要確認を記録したときの運営向け通知 (#259) */
   "abuse_flag",
+  /** スタッフからの一斉連絡 (#172) */
+  "event_broadcast",
   "info",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
