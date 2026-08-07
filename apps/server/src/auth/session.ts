@@ -4,6 +4,7 @@ import type { User } from "@eventer/shared";
 import { env } from "../env.js";
 import { sessionsRepo } from "../db/repositories/sessions.js";
 import { usersRepo } from "../db/repositories/users.js";
+import { recordLastSeen } from "../lib/lastSeen.js";
 
 const COOKIE_NAME = "eventer_session";
 
@@ -28,13 +29,27 @@ export async function clearSession(c: Context): Promise<void> {
  * 退会申請中（猶予期間 #250）のユーザーはここで null になる。
  * requireAuth も各ルートの任意認証もすべてこの関数を通るため、
  * 「退会したら即座に利用不可」の担保はここ1箇所に集約されている。
- * （復帰のためにセッション自体は発行するが、使えるのは復帰APIだけ） */
+ * （復帰のためにセッション自体は発行するが、使えるのは復帰APIだけ）
+ *
+ * DAU/MAU 計測 (#257) の last_seen_at もここで更新する。全リクエストの認証が
+ * 通る唯一の場所なので計測地点として過不足がない。書き込みは JST の日付が
+ * 変わった最初の1回だけ・waitUntil でレスポンス外（lib/lastSeen.ts 参照）。 */
 export async function currentUser(c: Context): Promise<User | null> {
   const id = getCookie(c, COOKIE_NAME);
   if (!id) return null;
   const session = await sessionsRepo.find(id);
   if (!session) return null;
-  return usersRepo.findById(session.userId);
+  const user = await usersRepo.findByIdWithLastSeen(session.userId);
+  // 退会申請中 (#250) はここで null になるため、last_seen_at も更新されない
+  if (!user) return null;
+  const { lastSeenAt, ...plain } = user;
+  try {
+    await recordLastSeen(user.id, lastSeenAt);
+  } catch (e) {
+    // 計測の失敗で認証を壊さない
+    console.warn("last_seen_at の記録に失敗", e);
+  }
+  return plain;
 }
 
 /** 退会申請中（猶予期間 #250）のユーザーをセッションから引く。

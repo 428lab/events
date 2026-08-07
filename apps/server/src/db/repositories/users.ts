@@ -14,6 +14,8 @@ interface UserRow {
   card_image_key: string | null;
   /** 退会申請時刻。NULL = 在籍中 (#250) */
   deleted_at: number | null;
+  /** 最終アクセス時刻。NULL = 計測開始 (#257) より前からのユーザー */
+  last_seen_at: number | null;
 }
 
 function toUser(row: UserRow): User {
@@ -37,6 +39,10 @@ function toUserWithDeletion(row: UserRow): UserWithDeletion {
   return { ...toUser(row), deletedAt: row.deleted_at };
 }
 
+/** 最終アクセス時刻 (#257) を含むユーザー。currentUser の内部でだけ使う。
+ * 公開型 User には入れない（APIレスポンスに載せる情報ではない） */
+export type UserWithLastSeen = User & { lastSeenAt: number | null };
+
 /** 退会申請済み（猶予期間中）のユーザーを除外する条件 (#250)。
  * 参照系のクエリには原則これを付ける。付け忘れると退会したユーザーが
  * 他ユーザーから見えてしまうため、新しいクエリを足すときは必ず確認すること */
@@ -58,6 +64,29 @@ export const usersRepo = {
       id,
     );
     return row ? toUser(row) : null;
+  },
+
+  /** findById と同じ（退会申請中は null）だが、最終アクセス時刻 (#257) も返す。
+   * currentUser 専用。既に SELECT * している行から取るだけなので追加の読み取りは
+   * 発生せず、「JSTの日付が変わったか」を JS 側でタダで判定できる */
+  async findByIdWithLastSeen(id: string): Promise<UserWithLastSeen | null> {
+    const row = await one<UserRow>(
+      `SELECT * FROM user WHERE id = ? AND ${ACTIVE}`,
+      id,
+    );
+    return row ? { ...toUser(row), lastSeenAt: row.last_seen_at ?? null } : null;
+  },
+
+  /** 最終アクセス時刻を記録する (#257)。DAU/MAU 計測用。
+   * 「JSTの日付が変わった最初の1回だけ」の判定は呼び出し側 (lib/lastSeen.ts) が行う。
+   * ここでも在籍中 (deleted_at IS NULL) に限定し、退会申請中のユーザーの行を
+   * 触らないことを二重に担保する */
+  async touchLastSeen(userId: string, at: number): Promise<void> {
+    await run(
+      `UPDATE user SET last_seen_at = ? WHERE id = ? AND ${ACTIVE}`,
+      at,
+      userId,
+    );
   },
 
   /** 猶予期間中でも引ける参照 (#250)。復帰フローと日次バッチ専用 */
