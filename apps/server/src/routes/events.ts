@@ -949,7 +949,14 @@ eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), async (
   });
 });
 
-/** 当選操作（staff のみ）。申込者の status を手動設定し、Entry を同期。 */
+/** 申込者の参加状態を手動設定（staff のみ）。status を更新し、Entry を同期。
+ *
+ * 抽選枠の当落だけでなく、先着枠のキャンセル待ちを当日その場で確定にする
+ * （繰り上げ）経路でもある (#286)。先着枠では定員超過を拒否しない：当日
+ * キャンセルが出た・その場で1人増やすといった運営判断を塞ぐほうが困る。
+ * 超過は画面側に見えるようにしてある。
+ *
+ * 参加確定でない状態にすると、出席の記録も一緒に落ちる（setStatus 参照）。 */
 eventRoutes.patch(
   "/:id/slots/:slotId/members/:userId/status",
   requireEventRole(["staff"]),

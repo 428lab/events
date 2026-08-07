@@ -63,14 +63,16 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
         sx={{ mb: 1 }}
       >
         <Typography variant="subtitle1">参加枠（定員・先着/抽選）</Typography>
-        {slots?.some((s) => s.selectionType === "lottery") && (
+        {/* 先着枠でも申込者の管理は要る（当日キャンセルの繰り上げ）ので、
+            抽選枠の有無ではなく参加枠の有無で出す (#286) */}
+        {(slots?.length ?? 0) > 0 && (
           <Button
             size="small"
             variant="outlined"
             component={RouterLink}
             to={`/events/${eventId}/lottery`}
           >
-            当選操作・抽選結果
+            申込者の管理
           </Button>
         )}
       </Stack>

@@ -161,7 +161,6 @@ export function EventDetailPage() {
   const join = useJoinEvent();
   const leave = useLeaveEvent();
   const publish = usePublishEvent();
-  const setAttendance = useSetAttendance(id);
   // 事前アンケート (#152)。質問があれば参加前に回答ダイアログを挟む
   const { data: surveyQuestions } = useEventSurvey(id);
   const hasSurvey = (surveyQuestions?.length ?? 0) > 0;
@@ -951,7 +950,6 @@ export function EventDetailPage() {
                     isStaff={isStaff}
                     attendanceCheck={event.attendanceCheck}
                     isMe={me?.id === m.user.id}
-                    setAttendance={setAttendance}
                   />
                 ))}
               </List>
@@ -991,7 +989,7 @@ export function attendanceErrorMessage(err: unknown): string {
       ? (err.body as { error?: string } | null)?.error
       : undefined;
   if (code === "not_confirmed") {
-    return "参加が確定している人だけ出席にできます。先に参加状態を確定にしてください。";
+    return "参加が確定している人だけ出席にできます。参加枠の「申込者の管理」で先に参加を確定にしてください。";
   }
   if (code === "not_found") {
     return "対象が見つかりませんでした。画面を更新してください。";
@@ -1006,16 +1004,17 @@ export function MemberRow({
   isStaff,
   attendanceCheck,
   isMe,
-  setAttendance,
 }: {
   eventId: string;
   member: EventMemberWithUser;
   isStaff: boolean;
   attendanceCheck: boolean;
   isMe: boolean;
-  setAttendance: ReturnType<typeof useSetAttendance>;
 }) {
   const setRole = useSetEventMemberRole(eventId);
+  // 行ごとに持つ（ロール変更と同じ）。1つを全行で共有すると、続けて操作したとき
+  // 後の行の結果が前の行のエラー表示を消してしまう (#286)
+  const setAttendance = useSetAttendance(eventId);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const [roleError, setRoleError] = useState("");
   const [attendError, setAttendError] = useState("");
@@ -1032,7 +1031,7 @@ export function MemberRow({
     ? "出席チェック"
     : m.attended
       ? `参加が確定していないため（現在: ${statusLabel}）、出席の解除だけできます。`
-      : `参加が確定していないため出席にできません（現在: ${statusLabel}）。先に参加状態を確定にしてください。`;
+      : `参加が確定していないため出席にできません（現在: ${statusLabel}）。参加枠の「申込者の管理」で先に参加を確定にしてください。`;
 
   /** 一般参加者に戻すのは参加の取消 (#281)。申込が無言で消えるのを防ぐため、
    * この遷移だけ確認を挟む。他のロールへの変更は破壊的ではないので挟まない */
@@ -1060,7 +1059,12 @@ export function MemberRow({
               enterTouchDelay={0}
               leaveTouchDelay={5000}
             >
-              <span>
+              {/* 無効なチェックボックスはフォーカスを受け取らないので、包む span を
+                  フォーカス可能にする。そうしないとキーボードだけでは理由を読めない */}
+              <span
+                tabIndex={canAttend ? undefined : 0}
+                aria-label={canAttend ? undefined : attendTitle}
+              >
                 <Checkbox
                   edge="end"
                   size="small"

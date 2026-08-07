@@ -31,6 +31,19 @@ import { lookupMember, postCheckin } from "../api/checkinHooks.js";
 /** username か UUID（member-lookup と同じ文字種） */
 const HANDLE_RE = /^(?:[A-Za-z0-9_.-]{2,32}|[0-9a-fA-F-]{36})$/;
 
+/** プロフィールQR経由の手動記録が断られた理由 (#286)。
+ * 照会から記録までの間に落選や取消に変わることがある。「失敗しました」だけだと
+ * 受付でその人に何を案内すればよいか分からないので、理由が分かる文言にする */
+export function manualAttendErrorMessage(err: unknown): string {
+  const code =
+    err instanceof ApiError
+      ? (err.body as { error?: string } | null)?.error
+      : undefined;
+  return code === "not_confirmed"
+    ? "参加が確定している人だけ出席にできます"
+    : "出席の記録に失敗しました";
+}
+
 /** BarcodeDetector の最小型（TS の lib.dom にまだ無い） */
 interface BarcodeDetectorLike {
   detect(source: CanvasImageSource): Promise<{ rawValue: string }[]>;
@@ -49,7 +62,7 @@ type PanelKind =
   | "expired"
   | "manual"; // プロフィールQR: 手動記録の確認待ち
 
-interface Panel {
+export interface Panel {
   kind: PanelKind;
   user?: CheckinUser;
 }
@@ -193,17 +206,7 @@ export function CheckinPage() {
         });
         scheduleResume(1500);
       } catch (err) {
-        // 照会から記録までの間に落選や取消に変わった場合 (#286)。
-        // 「失敗しました」だけだと受付で何を案内すればよいか分からない
-        const code =
-          err instanceof ApiError
-            ? (err.body as { error?: string } | null)?.error
-            : undefined;
-        flashNotice(
-          code === "not_confirmed"
-            ? "参加が確定している人だけ出席にできます"
-            : "出席の記録に失敗しました",
-        );
+        flashNotice(manualAttendErrorMessage(err));
       }
     },
     [id, addLog, scheduleResume, flashNotice],
@@ -512,7 +515,7 @@ const OVERLAY_STYLE: Record<
 };
 
 /** スキャン結果のオーバーレイ表示 */
-function ResultOverlay({
+export function ResultOverlay({
   panel,
   onManualAttend,
   onCancelManual,

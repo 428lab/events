@@ -431,14 +431,20 @@ export function useSetEventMemberRole(eventId: string) {
 /** 出席チェック（staff）。楽観更新はせずメンバー一覧を再取得 */
 export function useSetAttendance(eventId: string) {
   const qc = useQueryClient();
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["event", eventId, "members"] });
+    qc.invalidateQueries({ queryKey: ["event", eventId] });
+  };
   return useMutation({
     mutationFn: (v: { userId: string; attended: boolean }) =>
       api.patch(`/events/${eventId}/members/${v.userId}/attendance`, {
         attended: v.attended,
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["event", eventId, "members"] });
-      qc.invalidateQueries({ queryKey: ["event", eventId] });
+    onSuccess: refresh,
+    // 409 は「手元の一覧が古い」ということなので、断られたときこそ取り直す (#286)。
+    // 抽選や取消で参加状態が変わった相手のチェックを、押せる見た目のまま残さない
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 409) refresh();
     },
   });
 }
