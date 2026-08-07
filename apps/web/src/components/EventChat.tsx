@@ -53,9 +53,26 @@ import {
   buildChannelMessageTemplate,
   localSignerFromHex,
   nip07Signer,
+  randomLocalSigner,
 } from "../lib/nostrChat.js";
 import type { ChatSigner } from "../lib/nostrChat.js";
 import { ImageLightbox } from "./ImageLightbox.js";
+
+/** 状態に貯めておくメッセージの上限 (#215)。投影用画面は何時間もつけっぱなしに
+ * するので、際限なく増やすと配列とDOMがそのまま伸びる。表示対象を選ぶ前の
+ * 生の受信ぶんなので、表示上限より少し多めに持つ */
+const MESSAGE_BUFFER_MAX = 500;
+/** 実際に描画する件数の上限 (#215)。古い方から捨てて末尾だけを出す */
+const MESSAGE_DISPLAY_MAX = 200;
+
+/** 受信・送信したメッセージを時刻順に足す。IDで重複排除し、古い方から丸める */
+function appendMessage(prev: NostrEvent[], ev: NostrEvent): NostrEvent[] {
+  if (prev.some((m) => m.id === ev.id)) return prev;
+  const next = [...prev, ev].sort((a, b) => a.created_at - b.created_at);
+  return next.length > MESSAGE_BUFFER_MAX
+    ? next.slice(next.length - MESSAGE_BUFFER_MAX)
+    : next;
+}
 
 /** メッセージ時刻の表示（HH:mm:ss） */
 function formatTime(createdAtSec: number): string {
@@ -179,9 +196,12 @@ export function EventChat({
   const { data: me } = useMe();
   // イベント配下のUIは myRole のみで判定（サイト管理者でも staff でなければ操作UIを出さない）
   const isStaff = myRole === "staff";
-  // 投影は人に見せる画面なので、スタッフ用の操作UI（非表示ボタン等）は出さない (#215)
+  // 投影用は「見せるだけ」の画面 (#215)。人前のスクリーンに映るので、
+  // 参加UI・入力欄・スタッフ用の操作UI（非表示ボタン、チャンネルの作り直し等）は出さない
   const display = variant === "display";
   const fullHeight = variant === "page" || display;
+  /** スタッフ用の操作UIを出してよいか。**スタッフ向けのUIを足すときは必ずこの
+   * フラグで囲むこと**（isStaff を直接見ると投影用画面に漏れる） */
   const showStaffActions = isStaff && !display;
   const dateFixed = !event.scheduling && event.startsAt > 0;
   const visible =
@@ -240,7 +260,8 @@ export function EventChat({
     [chat, me],
   );
   useEffect(() => {
-    if (signer || !myRegisteredPubkey || !me) return;
+    // 投影用は参加操作をしない（下の読み取り専用の鍵で購読するだけ）
+    if (display || signer || !myRegisteredPubkey || !me) return;
     let cancelled = false;
     void (async () => {
       // 自動再参加は任意動作なので、一時的な取得失敗は黙ってスキップする
@@ -255,20 +276,32 @@ export function EventChat({
     return () => {
       cancelled = true;
     };
-  }, [signer, myRegisteredPubkey, eventId, me]);
+  }, [display, signer, myRegisteredPubkey, eventId, me]);
+
+  // 投影用画面は「読むだけ」なので、参加していなくても本文が出るようにする (#215)。
+  // NIP-07 で参加している人が開くと一時鍵は取れず signer が決まらないため、
+  // signer 頼みにするとメッセージが1件も出ない。リレーの NIP-42 AUTH に
+  // 応答するためだけの使い捨て鍵で購読する（この鍵では発言しない）
+  const readOnlySignerRef = useRef<ChatSigner | null>(null);
+  if (display && !readOnlySignerRef.current) {
+    readOnlySignerRef.current = randomLocalSigner();
+  }
+  const activeSigner = signer ?? (display ? readOnlySignerRef.current : null);
 
   // サーバーに登録済みのチャンネルID（未開設は null。5秒ポーリングで反映）
   const serverChannelId = chat?.channelId ?? null;
+  // 部屋の開設はスタッフの操作 (#221)。投影用は見せるだけなので開設もしない
+  const canOpenChannel = isStaff && !display;
 
-  // 接続・チャンネル確定・購読。signer が決まったら開始し、unmount で切断
+  // 接続・チャンネル確定・購読。署名器が決まったら開始し、unmount で切断
   useEffect(() => {
-    if (!signer) return;
-    // 部屋の開設はスタッフの操作のみ (#221)。参加者は開設されるまで待つ
+    if (!activeSigner) return;
+    // 部屋が未開設なら、開設できる人以外は待つ
     // （serverChannelId が入ると deps 経由でこの effect が再実行される）
-    if (!serverChannelId && !isStaff) return;
+    if (!serverChannelId && !canOpenChannel) return;
     let disposed = false;
     let unsubscribe: (() => void) | null = null;
-    const pool = new ChatRelayPool(signer, relaysKey.split(" "));
+    const pool = new ChatRelayPool(activeSigner, relaysKey.split(" "));
     poolRef.current = pool;
     pool.onstatus = () => {
       if (!disposed) setRelayConnected(pool.connected);
@@ -289,7 +322,9 @@ export function EventChat({
             signerIsNip07Ref.current &&
             meRef.current?.id === event.createdBy;
           const created: NostrEvent = organizerNip07
-            ? await signer.signEvent(buildChannelCreateTemplate(event.title))
+            ? await activeSigner.signEvent(
+                buildChannelCreateTemplate(event.title),
+              )
             : (await createOfficialChannelEvent(eventId)).channelEvent;
           // リレーに受理されたことを確認してからサーバーへ登録する
           // （不達のまま登録すると「リレー上に存在しない部屋」を参照し続けてしまう）
@@ -326,11 +361,7 @@ export function EventChat({
       setChannelId(cid);
       unsubscribe = pool.subscribe(cid, (ev) => {
         if (disposed) return;
-        setMessages((prev) =>
-          prev.some((m) => m.id === ev.id)
-            ? prev
-            : [...prev, ev].sort((a, b) => a.created_at - b.created_at),
-        );
+        setMessages((prev) => appendMessage(prev, ev));
       });
     })();
 
@@ -345,7 +376,7 @@ export function EventChat({
     };
     // registerChannel（mutation オブジェクト）は毎レンダーで変わるため依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signer, event.title, relaysKey, serverChannelId, isStaff]);
+  }, [activeSigner, event.title, relaysKey, serverChannelId, canOpenChannel]);
 
   // 新着メッセージで最下部へ自動スクロール
   const pubkeySet = useMemo(
@@ -356,11 +387,19 @@ export function EventChat({
     () => new Set(chat?.hiddenNoteIds ?? []),
     [chat],
   );
-  const visibleMessages = useMemo(
-    () =>
-      messages.filter((m) => pubkeySet.has(m.pubkey) && !hiddenSet.has(m.id)),
-    [messages, pubkeySet, hiddenSet],
-  );
+  /** 実際に描く分。許可リスト外・非表示・外部クライアント経由の巨大投稿
+   * （UIを壊す）を除いたうえで、末尾 MESSAGE_DISPLAY_MAX 件に丸める (#215) */
+  const visibleMessages = useMemo(() => {
+    const kept = messages.filter(
+      (m) =>
+        pubkeySet.has(m.pubkey) &&
+        !hiddenSet.has(m.id) &&
+        m.content.length <= CHAT_MESSAGE_MAX,
+    );
+    return kept.length > MESSAGE_DISPLAY_MAX
+      ? kept.slice(kept.length - MESSAGE_DISPLAY_MAX)
+      : kept;
+  }, [messages, pubkeySet, hiddenSet]);
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -368,10 +407,6 @@ export function EventChat({
 
   if (!visible) return null;
 
-  // 外部クライアント経由の巨大投稿はUIを壊すので表示対象から除外
-  const cappedMessages = visibleMessages.filter(
-    (m) => m.content.length <= CHAT_MESSAGE_MAX,
-  );
   const memberByPubkey = new Map<string, ChatMember>(
     (chat?.members ?? []).map((m) => [m.pubkey, m]),
   );
@@ -435,11 +470,7 @@ export function EventChat({
       }
       setDraft("");
       // リレーからの折返しを待たず即時表示（購読側とはIDで重複排除）
-      setMessages((prev) =>
-        prev.some((m) => m.id === ev.id)
-          ? prev
-          : [...prev, ev].sort((a, b) => a.created_at - b.created_at),
-      );
+      setMessages((prev) => appendMessage(prev, ev));
     } catch {
       setSendError("送信に失敗しました。");
     }
@@ -487,13 +518,14 @@ export function EventChat({
           </Stack>
         </Stack>
 
-        {/* チャンネル作成の失敗は参加後（signer確定後）にも起きるため、分岐の外で表示する */}
-        {joinError && (
+        {/* チャンネル作成の失敗は参加後（signer確定後）にも起きるため、分岐の外で表示する。
+            投影用には出さない（リレーやkindの話を会場のスクリーンに映さない） */}
+        {joinError && !display && (
           <Alert
             severity="error"
             sx={{ mt: 1 }}
             action={
-              isStaff ? (
+              showStaffActions ? (
                 <Button
                   size="small"
                   color="inherit"
@@ -516,14 +548,16 @@ export function EventChat({
             {joinError}
           </Alert>
         )}
-        {chat && !serverChannelId && !isStaff ? (
+        {/* 投影用はどちらの分岐にも入らず、常にメッセージ一覧だけを出す (#215)。
+            参加操作は戻り先の通常のチャット画面に任せる */}
+        {!display && chat && !serverChannelId && !isStaff ? (
           // 部屋の開設はスタッフの操作のみ (#221)。それまで参加UIは出さない
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
             チャットの部屋はまだ開設されていません。スタッフが開設すると参加できます。
           </Typography>
-        ) : !signer ? (
+        ) : !display && !signer ? (
           <Stack spacing={1.5} sx={{ mt: 1 }}>
-            {isStaff && chat && !serverChannelId && (
+            {showStaffActions && chat && !serverChannelId && (
               <Alert severity="info">
                 チャットの部屋はまだありません。参加すると部屋が開設され、参加者もチャットできるようになります。
               </Alert>
@@ -589,11 +623,13 @@ export function EventChat({
                   color="text.secondary"
                   sx={{ fontSize: bodyFontSize }}
                 >
-                  まだメッセージはありません。
+                  {display
+                    ? "まだ表示できるメッセージがありません。"
+                    : "まだメッセージはありません。"}
                 </Typography>
               ) : (
                 <Stack spacing={display ? 2 : 1.25}>
-                  {cappedMessages.map((m) => {
+                  {visibleMessages.map((m) => {
                     const member = memberByPubkey.get(m.pubkey);
                     if (!member) return null;
                     return (

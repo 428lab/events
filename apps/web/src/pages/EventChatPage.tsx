@@ -74,6 +74,7 @@ export function EventChatPage() {
             component={RouterLink}
             to={`/events/${id}/chat/screen`}
             target="_blank"
+            rel="noopener"
             sx={{ flexShrink: 0 }}
           >
             投影用画面

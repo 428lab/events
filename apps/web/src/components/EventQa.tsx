@@ -117,6 +117,12 @@ export function EventQa({
         </Typography>
 
         <Stack spacing={2}>
+          {/* 「解除できない」で当日詰まらないよう、失敗は黙って捨てない */}
+          {pick.isError && (
+            <Alert severity="warning" onClose={() => pick.reset()}>
+              「いまこの質問」の変更に失敗しました。
+            </Alert>
+          )}
           {picked && (
             <Box sx={{ py: 2, borderRadius: 2, bgcolor: "action.hover" }}>
               <QaPickedQuestion

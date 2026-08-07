@@ -579,9 +579,37 @@ describe("イベントQ&A (#216)", () => {
 
     // 消えた質問はもう消せない / 他イベントのIDも通らない
     expect((await deleteQuestion(eventId, qid, a.cookie)).status).toBe(404);
+    // 「他イベントのID」は、両方のイベントのメンバーで確かめる。片方だけの
+    // メンバーだと requireEventRole の403で止まり、eventId の突き合わせまで届かない
     const other = await setupEvent(staff);
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, 'participant', NULL, 'confirmed', 0, ?)",
+    )
+      .bind(crypto.randomUUID(), other, a.userId, Date.now())
+      .run();
     const kept = await ask(eventId, a.cookie, "残す質問");
-    expect((await deleteQuestion(other, kept, a.cookie)).status).toBe(403);
+    expect((await deleteQuestion(other, kept, a.cookie)).status).toBe(404);
+    // 取り違えた側で消えていないこと
+    expect(find(await qa(eventId, a.cookie), kept)).toBeDefined();
+  });
+
+  it("スタッフが非表示にした質問は、投稿者本人でも取り消せない", async () => {
+    const staff = await loginDev();
+    const eventId = await setupEvent(staff);
+    const a = await makeMember(eventId, "participant");
+    const qid = await ask(eventId, a.cookie, "非表示にされる質問");
+
+    expect((await patchQuestion(eventId, qid, staff, { hidden: true })).status).toBe(200);
+    // 消せるとモデレーションの記録が消え、1人あたりの上限もすり抜けられる
+    const res = await deleteQuestion(eventId, qid, a.cookie);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: "question_hidden" });
+    expect(find(await qa(eventId, staff), qid)!.hidden).toBe(true);
+
+    // 非表示を解除すれば、本人の取り下げは通る
+    expect((await patchQuestion(eventId, qid, staff, { hidden: false })).status).toBe(200);
+    expect((await deleteQuestion(eventId, qid, a.cookie)).status).toBe(200);
+    expect(find(await qa(eventId, staff), qid)).toBeUndefined();
   });
 
   it("ピックアップ中の質問を投稿者が取り消すと、ピックアップも外れる", async () => {
@@ -603,20 +631,25 @@ describe("イベントQ&A (#216)", () => {
     expect((await qa(eventId, staff)).pickedQuestionId).toBeNull();
   });
 
-  it("Q&A が OFF ならピックアップできない / 未確定スタッフは更新もできない", async () => {
+  it("Q&A を OFF にしても投影中の質問は解除できる / 未確定スタッフは更新もできない", async () => {
     const staff = await loginDev();
     const eventId = await setupEvent(staff);
     const a = await makeMember(eventId, "participant");
     const qid = await ask(eventId, a.cookie, "投影したい質問");
+    // OFF にする前にピックアップしておく（当日ありがちな順番）
+    expect((await pick(eventId, staff, qid)).status).toBe(200);
 
     await SELF.fetch(`${BASE}/api/events/${eventId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json", cookie: staff },
       body: JSON.stringify({ qaEnabled: false }),
     });
-    // 投影のための操作なので OFF では受け付けない（片付けの非表示は通る）
+    // 新しくピックアップはできない（投影のための操作なので）
     expect((await pick(eventId, staff, qid)).status).toBe(409);
-    expect((await pick(eventId, staff, null)).status).toBe(409);
+    // 解除は通す。通さないと投影に残った質問を外す手段がなくなる
+    expect((await pick(eventId, staff, null)).status).toBe(200);
+    expect((await qa(eventId, staff)).pickedQuestionId).toBeNull();
+    // 片付けの非表示も通る
     expect((await patchQuestion(eventId, qid, staff, { hidden: true })).status).toBe(200);
 
     // 参加が確定していない staff は、一覧GETと同じく更新・ピックアップも403

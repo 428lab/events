@@ -249,6 +249,11 @@ eventQaRoutes.delete(
     if (meta.userId !== c.get("user").id) {
       return c.json({ error: "forbidden" }, 403);
     }
+    // スタッフが非表示にした質問は本人でも消せない。消せてしまうと
+    // 「投稿 → 非表示 → 削除 → 再投稿」でモデレーションの記録が消え、
+    // countByUser が削除済みを数えないため1人あたりの上限もすり抜けられる。
+    // 他の参加者にはすでに見えていないので、取り下げの目的は達成されている
+    if (meta.hidden) return c.json({ error: "question_hidden" }, 409);
     await eventQaRepo.delete(qid);
     // 消した質問がピックアップ中なら解除する
     // （event.qa_picked_question_id には FK がないので自分で片付ける）
@@ -290,7 +295,11 @@ eventQaRoutes.patch(
 );
 
 /** 「いまこの質問」の設定・解除（staff のみ）。
- * イベントの1列に持つので、常に1件だけしかピックアップされない */
+ * イベントの1列に持つので、常に1件だけしかピックアップされない。
+ *
+ * 解除（questionId=null）は qaEnabled を見ない。Q&A を OFF にすると
+ * イベント詳細から Q&A セクションごと消えるのに、投影画面には
+ * ピックアップが残り続けるため、OFF でも解除できないと外す手段がなくなる。 */
 eventQaRoutes.put(
   "/:id/qa/pick",
   requireEventRole(["staff"]),
@@ -301,11 +310,11 @@ eventQaRoutes.put(
     const eventId = c.req.param("id");
     const event = await eventsRepo.findById(eventId);
     if (!event) return c.json({ error: "not_found" }, 404);
-    // 投影に出すための操作なので、Q&A を切っているイベントでは受け付けない
-    // （回答済み・非表示の片付けと違い、後から必要になることがない）
-    if (!event.qaEnabled) return c.json({ error: "qa_disabled" }, 409);
     const { questionId } = valid<PickQuestionInput>(c, "json");
     if (questionId !== null) {
+      // 投影に出すための操作なので、Q&A を切っているイベントでは
+      // 新しくピックアップはできない（解除だけは上記のとおり通す）
+      if (!event.qaEnabled) return c.json({ error: "qa_disabled" }, 409);
       const meta = await eventQaRepo.meta(questionId);
       if (!meta || meta.eventId !== eventId) {
         return c.json({ error: "not_found" }, 404);

@@ -46,6 +46,14 @@ export interface QaQuestionListProps {
    * 実名投稿の投稿者名は元から全員に公開なので、この指定に関わらず表示する。
    */
   revealAuthor?: boolean;
+  /**
+   * 自分の投稿に「自分」チップを出すか。既定 true。
+   *
+   * 人に見せる画面では false にすること。登壇者のサイドパネル (#215) は
+   * 画面共有されることがあり、登壇者自身が匿名で投げた質問にチップが付くと
+   * 「匿名」と並んで誰の質問か分かってしまう。
+   */
+  showMineChip?: boolean;
   onVote?: (question: EventQuestion, voted: boolean) => void;
   onAnswered?: (question: EventQuestion, answered: boolean) => void;
   onHidden?: (question: EventQuestion, hidden: boolean) => void;
@@ -70,10 +78,12 @@ function anonymousAuthor(question: EventQuestion, revealAuthor?: boolean) {
 function QaAuthorLine({
   question,
   revealAuthor,
+  showMineChip = true,
   dense,
 }: {
   question: EventQuestion;
   revealAuthor?: boolean;
+  showMineChip?: boolean;
   dense?: boolean;
 }) {
   const anonymous = question.anonymous;
@@ -119,7 +129,9 @@ function QaAuthorLine({
           {author?.name ?? "不明"}
         </Typography>
       )}
-      {question.mine && <Chip size="small" label="自分" variant="outlined" />}
+      {question.mine && showMineChip && (
+        <Chip size="small" label="自分" variant="outlined" />
+      )}
       <Typography variant="caption" color="text.secondary">
         {formatDateTime(question.createdAt)}
       </Typography>
@@ -134,6 +146,7 @@ export function QaQuestionItem({
   canVote,
   isStaff,
   revealAuthor = false,
+  showMineChip = true,
   onVote,
   onAnswered,
   onHidden,
@@ -215,6 +228,7 @@ export function QaQuestionItem({
             <QaAuthorLine
               question={question}
               revealAuthor={revealAuthor}
+              showMineChip={showMineChip}
               dense={dense}
             />
           </Box>

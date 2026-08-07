@@ -105,352 +105,352 @@ export function LiveControlPage() {
         gap: 3,
       }}
     >
-    <Stack spacing={2.5} sx={{ flex: "1 1 320px", minWidth: 0 }}>
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-        <Typography
-          variant="h5"
-          fontWeight={700}
-          sx={{
-            flex: 1,
-            minWidth: 200,
-            display: "flex",
-            alignItems: "center",
-            gap: 0.75,
-          }}
-        >
-          <LiveTvIcon fontSize="medium" />
-          配信コントロール
-        </Typography>
-        {/* 登壇者向けサイドパネル (#215)。開閉は発表ビューと共有する */}
-        <PresenterPanelToggle />
-        <Button
-          variant="contained"
-          startIcon={<OpenInNewIcon />}
-          component={RouterLink}
-          to={`/events/${id}/live/screen`}
-          target="_blank"
-        >
-          配信画面を開く
-        </Button>
-      </Stack>
-
-      <Alert severity="info" sx={{ py: 0.5 }}>
-        「配信画面を開く」で出る画面を OBS
-        の「ウィンドウキャプチャ」で取り込んでください（音声はデスクトップ音声）。シーンを切り替えると配信画面に約1秒で反映されます。
-      </Alert>
-
-      {/* 配信セット選択 */}
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-        <TextField
-          select
-          size="small"
-          label="配信セット"
-          value={state?.liveSetId ?? DEFAULT_LIVE_SET_ID}
-          onChange={(e) =>
-            update.mutate({
-              liveSetId:
-                e.target.value === DEFAULT_LIVE_SET_ID ? null : e.target.value,
-              activeSceneId: null,
-            })
-          }
-          sx={{ minWidth: 220 }}
-        >
-          <MenuItem value={DEFAULT_LIVE_SET_ID}>デフォルト（ビルトイン）</MenuItem>
-          {(mySets ?? []).map((s) => (
-            <MenuItem key={s.id} value={s.id}>
-              {s.name || "無題の配信セット"}
-            </MenuItem>
-          ))}
-        </TextField>
-        {state?.liveSetId && state.liveSetId !== DEFAULT_LIVE_SET_ID && (
-          <Button
-            size="small"
-            startIcon={<EditIcon />}
-            component={RouterLink}
-            to={`/live-sets/${state.liveSetId}/edit`}
+      <Stack spacing={2.5} sx={{ flex: "1 1 320px", minWidth: 0 }}>
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Typography
+            variant="h5"
+            fontWeight={700}
+            sx={{
+              flex: 1,
+              minWidth: 200,
+              display: "flex",
+              alignItems: "center",
+              gap: 0.75,
+            }}
           >
-            セットを編集
+            <LiveTvIcon fontSize="medium" />
+            配信コントロール
+          </Typography>
+          {/* 登壇者向けサイドパネル (#215)。開閉は発表ビューと共有する */}
+          <PresenterPanelToggle />
+          <Button
+            variant="contained"
+            startIcon={<OpenInNewIcon />}
+            component={RouterLink}
+            to={`/events/${id}/live/screen`}
+            target="_blank"
+          >
+            配信画面を開く
           </Button>
-        )}
-        <Button size="small" component={RouterLink} to="/live-sets">
-          セット一覧
-        </Button>
-      </Stack>
+        </Stack>
 
-      {/* シーングリッド（タップで切替） */}
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: {
-            xs: "repeat(2, 1fr)",
-            sm: "repeat(3, 1fr)",
-            md: "repeat(4, 1fr)",
-          },
-          gap: 1.5,
-        }}
-      >
-        {scenes.map((s) => {
-          const active = s.id === activeId;
-          return (
-            <Box
-              key={s.id}
-              onClick={() => {
-                // シーンにBGM指定があれば一緒に切り替える（undefined=変更しない）
-                const patch: UpdateEventLiveStateInput = { activeSceneId: s.id };
-                if (s.bgmTrackId !== undefined) {
-                  if (s.bgmTrackId === null) {
-                    patch.bgmPlaying = false;
-                  } else {
-                    patch.bgmTrackId = s.bgmTrackId;
-                    patch.bgmPlaying = true;
-                  }
-                }
-                update.mutate(patch);
-              }}
-              sx={{
-                cursor: "pointer",
-                border: "3px solid",
-                borderColor: active ? "secondary.main" : "divider",
-                borderRadius: 1.5,
-                overflow: "hidden",
-                position: "relative",
-                lineHeight: 0,
-                "&:hover": { borderColor: active ? "secondary.main" : "primary.main" },
-              }}
-            >
-              <ResponsiveScene sceneId={s.id} scene={s} />
-              <Box
-                sx={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  px: 1,
-                  py: 0.25,
-                  bgcolor: "rgba(0,0,0,0.6)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 0.5,
-                }}
-              >
-                <Typography variant="caption" sx={{ color: "#fff", flex: 1 }} noWrap>
-                  {s.name}
-                </Typography>
-                {active && (
-                  <Chip
-                    size="small"
-                    color="secondary"
-                    label="ON AIR"
-                    sx={{ height: 16, fontSize: 10, fontWeight: 700 }}
-                  />
-                )}
-              </Box>
-            </Box>
-          );
-        })}
-      </Box>
+        <Alert severity="info" sx={{ py: 0.5 }}>
+          「配信画面を開く」で出る画面を OBS
+          の「ウィンドウキャプチャ」で取り込んでください（音声はデスクトップ音声）。シーンを切り替えると配信画面に約1秒で反映されます。
+        </Alert>
 
-      {scenes.length === 0 && (
-        <Typography color="text.secondary">
-          配信セットにシーンがありません。「セットを編集」から追加してください。
-        </Typography>
-      )}
-
-      {/* スライド（デッキ）選択とページ送り */}
-      <Stack spacing={1}>
-        <Typography
-          variant="h6"
-          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
-        >
-          <MonitorIcon fontSize="small" />
-          スライド
-        </Typography>
+        {/* 配信セット選択 */}
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <TextField
             select
             size="small"
-            label="配信で映すスライド"
-            value={state?.deckId ?? ""}
+            label="配信セット"
+            value={state?.liveSetId ?? DEFAULT_LIVE_SET_ID}
             onChange={(e) =>
               update.mutate({
-                deckId: e.target.value || null,
-                deckPage: 0,
+                liveSetId:
+                  e.target.value === DEFAULT_LIVE_SET_ID ? null : e.target.value,
+                activeSceneId: null,
               })
             }
             sx={{ minWidth: 220 }}
-            SelectProps={{ displayEmpty: true }}
           >
-            <MenuItem value="">（なし）</MenuItem>
-            {(myDecks ?? []).map((d) => (
-              <MenuItem key={d.id} value={d.id}>
-                {d.title || "無題のスライド"}
+            <MenuItem value={DEFAULT_LIVE_SET_ID}>デフォルト（ビルトイン）</MenuItem>
+            {(mySets ?? []).map((s) => (
+              <MenuItem key={s.id} value={s.id}>
+                {s.name || "無題の配信セット"}
               </MenuItem>
             ))}
           </TextField>
-          {deck && (
-            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} alignItems="center">
-              <Button
-                variant="outlined"
-                size="large"
-                disabled={(state?.deckPage ?? 0) <= 0}
-                onClick={() =>
-                  update.mutate({ deckPage: Math.max(0, (state?.deckPage ?? 0) - 1) })
-                }
+          {state?.liveSetId && state.liveSetId !== DEFAULT_LIVE_SET_ID && (
+            <Button
+              size="small"
+              startIcon={<EditIcon />}
+              component={RouterLink}
+              to={`/live-sets/${state.liveSetId}/edit`}
+            >
+              セットを編集
+            </Button>
+          )}
+          <Button size="small" component={RouterLink} to="/live-sets">
+            セット一覧
+          </Button>
+        </Stack>
+
+        {/* シーングリッド（タップで切替） */}
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: {
+              xs: "repeat(2, 1fr)",
+              sm: "repeat(3, 1fr)",
+              md: "repeat(4, 1fr)",
+            },
+            gap: 1.5,
+          }}
+        >
+          {scenes.map((s) => {
+            const active = s.id === activeId;
+            return (
+              <Box
+                key={s.id}
+                onClick={() => {
+                  // シーンにBGM指定があれば一緒に切り替える（undefined=変更しない）
+                  const patch: UpdateEventLiveStateInput = { activeSceneId: s.id };
+                  if (s.bgmTrackId !== undefined) {
+                    if (s.bgmTrackId === null) {
+                      patch.bgmPlaying = false;
+                    } else {
+                      patch.bgmTrackId = s.bgmTrackId;
+                      patch.bgmPlaying = true;
+                    }
+                  }
+                  update.mutate(patch);
+                }}
+                sx={{
+                  cursor: "pointer",
+                  border: "3px solid",
+                  borderColor: active ? "secondary.main" : "divider",
+                  borderRadius: 1.5,
+                  overflow: "hidden",
+                  position: "relative",
+                  lineHeight: 0,
+                  "&:hover": { borderColor: active ? "secondary.main" : "primary.main" },
+                }}
               >
-                <ChevronLeftIcon />
-              </Button>
-              <Typography sx={{ minWidth: 64, textAlign: "center" }} fontWeight={700}>
-                {Math.min((state?.deckPage ?? 0) + 1, deck.content.slides.length)} /{" "}
-                {deck.content.slides.length}
+                <ResponsiveScene sceneId={s.id} scene={s} />
+                <Box
+                  sx={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    px: 1,
+                    py: 0.25,
+                    bgcolor: "rgba(0,0,0,0.6)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.5,
+                  }}
+                >
+                  <Typography variant="caption" sx={{ color: "#fff", flex: 1 }} noWrap>
+                    {s.name}
+                  </Typography>
+                  {active && (
+                    <Chip
+                      size="small"
+                      color="secondary"
+                      label="ON AIR"
+                      sx={{ height: 16, fontSize: 10, fontWeight: 700 }}
+                    />
+                  )}
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
+
+        {scenes.length === 0 && (
+          <Typography color="text.secondary">
+            配信セットにシーンがありません。「セットを編集」から追加してください。
+          </Typography>
+        )}
+
+        {/* スライド（デッキ）選択とページ送り */}
+        <Stack spacing={1}>
+          <Typography
+            variant="h6"
+            sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+          >
+            <MonitorIcon fontSize="small" />
+            スライド
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <TextField
+              select
+              size="small"
+              label="配信で映すスライド"
+              value={state?.deckId ?? ""}
+              onChange={(e) =>
+                update.mutate({
+                  deckId: e.target.value || null,
+                  deckPage: 0,
+                })
+              }
+              sx={{ minWidth: 220 }}
+              SelectProps={{ displayEmpty: true }}
+            >
+              <MenuItem value="">（なし）</MenuItem>
+              {(myDecks ?? []).map((d) => (
+                <MenuItem key={d.id} value={d.id}>
+                  {d.title || "無題のスライド"}
+                </MenuItem>
+              ))}
+            </TextField>
+            {deck && (
+              <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} alignItems="center">
+                <Button
+                  variant="outlined"
+                  size="large"
+                  disabled={(state?.deckPage ?? 0) <= 0}
+                  onClick={() =>
+                    update.mutate({ deckPage: Math.max(0, (state?.deckPage ?? 0) - 1) })
+                  }
+                >
+                  <ChevronLeftIcon />
+                </Button>
+                <Typography sx={{ minWidth: 64, textAlign: "center" }} fontWeight={700}>
+                  {Math.min((state?.deckPage ?? 0) + 1, deck.content.slides.length)} /{" "}
+                  {deck.content.slides.length}
+                </Typography>
+                <Button
+                  variant="outlined"
+                  size="large"
+                  disabled={(state?.deckPage ?? 0) >= deck.content.slides.length - 1}
+                  onClick={() =>
+                    update.mutate({
+                      deckPage: Math.min(
+                        deck.content.slides.length - 1,
+                        (state?.deckPage ?? 0) + 1,
+                      ),
+                    })
+                  }
+                >
+                  <ChevronRightIcon />
+                </Button>
+              </Stack>
+            )}
+          </Stack>
+          {deck && deck.content.slides[state?.deckPage ?? 0] && (
+            <Box
+              sx={{
+                width: 240,
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 1,
+                overflow: "hidden",
+                lineHeight: 0,
+              }}
+            >
+              <SlideStage slide={deck.content.slides[state?.deckPage ?? 0]} width={238} />
+            </Box>
+          )}
+        </Stack>
+
+        {/* BGM */}
+        <Stack spacing={1}>
+          <Typography
+            variant="h6"
+            sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+          >
+            <MusicNoteIcon fontSize="small" />
+            BGM
+          </Typography>
+          <input
+            ref={bgmFileRef}
+            type="file"
+            accept="audio/*"
+            hidden
+            onChange={onBgmFile}
+          />
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <TextField
+              select
+              size="small"
+              label="曲"
+              value={state?.bgmTrackId ?? ""}
+              onChange={(e) =>
+                update.mutate({
+                  bgmTrackId: e.target.value || null,
+                  bgmPlaying: false,
+                })
+              }
+              sx={{ minWidth: 220 }}
+              SelectProps={{ displayEmpty: true }}
+            >
+              <MenuItem value="">（なし）</MenuItem>
+              {(bgmTracks ?? []).map((t) => (
+                <MenuItem key={t.id} value={t.id}>
+                  {t.ownerId === null ? (
+                    <Box
+                      component="span"
+                      sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
+                    >
+                      <CardGiftcardIcon fontSize="small" />
+                      {t.name}
+                    </Box>
+                  ) : (
+                    t.name
+                  )}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Button
+              variant={state?.bgmPlaying ? "outlined" : "contained"}
+              color={state?.bgmPlaying ? "error" : "primary"}
+              startIcon={state?.bgmPlaying ? <StopIcon /> : <PlayArrowIcon />}
+              disabled={!state?.bgmTrackId}
+              onClick={() => update.mutate({ bgmPlaying: !state?.bgmPlaying })}
+            >
+              {state?.bgmPlaying ? "停止" : "再生"}
+            </Button>
+            <Button
+              size="small"
+              startIcon={<UploadFileIcon />}
+              disabled={uploadBgm.isPending}
+              onClick={() => bgmFileRef.current?.click()}
+            >
+              {uploadBgm.isPending ? "アップロード中…" : "曲を追加"}
+            </Button>
+            {selectedBgm && selectedBgm.ownerId !== null && (
+              <Tooltip title="この曲を削除">
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    if (window.confirm(`「${selectedBgm.name}」を削除しますか？`)) {
+                      update.mutate({ bgmTrackId: null, bgmPlaying: false });
+                      deleteBgm.mutate(selectedBgm.id);
+                    }
+                  }}
+                >
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Stack>
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ maxWidth: 420 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ width: 40 }}>
+              音量
+            </Typography>
+            <Slider
+              size="small"
+              min={0}
+              max={1}
+              step={0.05}
+              value={state?.bgmVolume ?? 0.5}
+              onChangeCommitted={(_e, v) => update.mutate({ bgmVolume: v as number })}
+            />
+          </Stack>
+          {selectedBgm?.creditText && (
+            <Stack direction="row" spacing={1} alignItems="flex-start">
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ whiteSpace: "pre-wrap", flex: 1 }}
+              >
+                {selectedBgm.creditText}
               </Typography>
-              <Button
-                variant="outlined"
-                size="large"
-                disabled={(state?.deckPage ?? 0) >= deck.content.slides.length - 1}
-                onClick={() =>
-                  update.mutate({
-                    deckPage: Math.min(
-                      deck.content.slides.length - 1,
-                      (state?.deckPage ?? 0) + 1,
-                    ),
-                  })
-                }
-              >
-                <ChevronRightIcon />
+              <Button size="small" startIcon={<ContentCopyIcon />} onClick={copyCredit}>
+                {copied ? "コピーしました" : "クレジットをコピー"}
               </Button>
             </Stack>
           )}
-        </Stack>
-        {deck && deck.content.slides[state?.deckPage ?? 0] && (
-          <Box
-            sx={{
-              width: 240,
-              border: "1px solid",
-              borderColor: "divider",
-              borderRadius: 1,
-              overflow: "hidden",
-              lineHeight: 0,
-            }}
-          >
-            <SlideStage slide={deck.content.slides[state?.deckPage ?? 0]} width={238} />
-          </Box>
-        )}
-      </Stack>
-
-      {/* BGM */}
-      <Stack spacing={1}>
-        <Typography
-          variant="h6"
-          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
-        >
-          <MusicNoteIcon fontSize="small" />
-          BGM
-        </Typography>
-        <input
-          ref={bgmFileRef}
-          type="file"
-          accept="audio/*"
-          hidden
-          onChange={onBgmFile}
-        />
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-          <TextField
-            select
-            size="small"
-            label="曲"
-            value={state?.bgmTrackId ?? ""}
-            onChange={(e) =>
-              update.mutate({
-                bgmTrackId: e.target.value || null,
-                bgmPlaying: false,
-              })
-            }
-            sx={{ minWidth: 220 }}
-            SelectProps={{ displayEmpty: true }}
-          >
-            <MenuItem value="">（なし）</MenuItem>
-            {(bgmTracks ?? []).map((t) => (
-              <MenuItem key={t.id} value={t.id}>
-                {t.ownerId === null ? (
-                  <Box
-                    component="span"
-                    sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
-                  >
-                    <CardGiftcardIcon fontSize="small" />
-                    {t.name}
-                  </Box>
-                ) : (
-                  t.name
-                )}
-              </MenuItem>
-            ))}
-          </TextField>
-          <Button
-            variant={state?.bgmPlaying ? "outlined" : "contained"}
-            color={state?.bgmPlaying ? "error" : "primary"}
-            startIcon={state?.bgmPlaying ? <StopIcon /> : <PlayArrowIcon />}
-            disabled={!state?.bgmTrackId}
-            onClick={() => update.mutate({ bgmPlaying: !state?.bgmPlaying })}
-          >
-            {state?.bgmPlaying ? "停止" : "再生"}
-          </Button>
-          <Button
-            size="small"
-            startIcon={<UploadFileIcon />}
-            disabled={uploadBgm.isPending}
-            onClick={() => bgmFileRef.current?.click()}
-          >
-            {uploadBgm.isPending ? "アップロード中…" : "曲を追加"}
-          </Button>
-          {selectedBgm && selectedBgm.ownerId !== null && (
-            <Tooltip title="この曲を削除">
-              <IconButton
-                size="small"
-                onClick={() => {
-                  if (window.confirm(`「${selectedBgm.name}」を削除しますか？`)) {
-                    update.mutate({ bgmTrackId: null, bgmPlaying: false });
-                    deleteBgm.mutate(selectedBgm.id);
-                  }
-                }}
-              >
-                <DeleteOutlineIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Stack>
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ maxWidth: 420 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ width: 40 }}>
-            音量
+          <Typography variant="caption" color="text.secondary">
+            BGMは配信画面タブ側で鳴ります（OBSのデスクトップ音声が拾います）。クレジットは
+            YouTube 概要欄に貼ってください。
           </Typography>
-          <Slider
-            size="small"
-            min={0}
-            max={1}
-            step={0.05}
-            value={state?.bgmVolume ?? 0.5}
-            onChangeCommitted={(_e, v) => update.mutate({ bgmVolume: v as number })}
-          />
         </Stack>
-        {selectedBgm?.creditText && (
-          <Stack direction="row" spacing={1} alignItems="flex-start">
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ whiteSpace: "pre-wrap", flex: 1 }}
-            >
-              {selectedBgm.creditText}
-            </Typography>
-            <Button size="small" startIcon={<ContentCopyIcon />} onClick={copyCredit}>
-              {copied ? "コピーしました" : "クレジットをコピー"}
-            </Button>
-          </Stack>
-        )}
-        <Typography variant="caption" color="text.secondary">
-          BGMは配信画面タブ側で鳴ります（OBSのデスクトップ音声が拾います）。クレジットは
-          YouTube 概要欄に貼ってください。
-        </Typography>
       </Stack>
-    </Stack>
       {panelOpen && <PresenterSidePanel eventId={id} />}
     </Box>
   );

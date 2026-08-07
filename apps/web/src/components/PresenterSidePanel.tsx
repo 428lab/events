@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
 import {
+  Alert,
   Box,
   Button,
   Divider,
@@ -59,8 +60,15 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
   const update = useUpdateQuestion(eventId);
   const pick = usePickQuestion(eventId);
 
+  // このパネルは発表中に画面共有・投影されることがあるので、
+  // モデレーションで非表示にした本文は並べない（解除はイベント詳細のQ&Aで行う）。
+  // staff には hidden 付きの質問もサーバーから届くため、ここで落とす
+  const questions = (qa?.questions ?? []).filter((q) => !q.hidden);
+  // Q&A を OFF にしたイベントではピックアップも出さない（投影用画面と揃える）
   const picked =
-    qa?.questions.find((q) => q.id === qa.pickedQuestionId) ?? null;
+    (qa?.qaEnabled
+      ? questions.find((q) => q.id === qa.pickedQuestionId)
+      : null) ?? null;
 
   return (
     <Paper
@@ -99,6 +107,16 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
         </Typography>
       ) : (
         <>
+          {/* 「解除できない」で当日詰まらないよう、失敗は黙って捨てない */}
+          {pick.isError && (
+            <Alert
+              severity="warning"
+              sx={{ mt: 1, flexShrink: 0 }}
+              onClose={() => pick.reset()}
+            >
+              「いまこの質問」の変更に失敗しました。
+            </Alert>
+          )}
           {picked && (
             <Box
               sx={{
@@ -162,16 +180,19 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
               }}
             >
               <HelpOutlineIcon fontSize="small" />
-              Q&A（{(qa?.questions ?? []).filter((q) => !q.answered).length}）
+              {/* 件数も非表示ぶんを除いた数（staff だけ数がズレるのを防ぐ） */}
+              Q&A（{questions.filter((q) => !q.answered).length}）
             </Typography>
             {/* 発表中に画面共有・投影されることがあるので、匿名投稿の投稿者名は
-                出さない（revealAuthor 相当の指定は渡さず既定のままにすること） */}
+                出さない（revealAuthor 相当の指定は渡さず既定のままにすること）。
+                「自分」チップも出さない（登壇者が匿名で投げた質問が本人のものだと分かる） */}
             <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", pr: 0.5 }}>
               <QaQuestionList
-                questions={qa?.questions ?? []}
-                pickedQuestionId={qa?.pickedQuestionId}
+                questions={questions}
+                pickedQuestionId={picked?.id ?? null}
                 canVote={qa?.canPost}
                 isStaff={isStaff}
+                showMineChip={false}
                 dense
                 onVote={(q, voted) => vote.mutate({ questionId: q.id, voted })}
                 onAnswered={

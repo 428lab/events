@@ -43,10 +43,14 @@ export function EventChatScreenPage() {
   const { id = "" } = useParams();
   const { event, myRole, canChat, chatAvailable, isLoading, isError } =
     useEventChatAccess(id);
-  // ピックアップされた質問だけを出す（一覧や操作UIは投影しない）
+  // ピックアップされた質問だけを出す（一覧や操作UIは投影しない）。
+  // Q&A を OFF にしたら投影からも消える（詳細画面から Q&A セクションが
+  // 消えるので、残っていると外す手段が分かりにくい）
   const { data: qa } = useEventQa(id, canChat);
   const picked =
-    qa?.questions.find((q) => q.id === qa.pickedQuestionId) ?? null;
+    (qa?.qaEnabled
+      ? qa.questions.find((q) => q.id === qa.pickedQuestionId)
+      : null) ?? null;
 
   const [scale, setScale] = useState(readScale);
   const changeScale = (dir: 1 | -1) => {
@@ -76,7 +80,10 @@ export function EventChatScreenPage() {
 
   return (
     <Box
+      // マウスの無い端末・キーボード操作でもコントロールを呼び戻せるようにする
       onMouseMove={wake}
+      onTouchStart={wake}
+      onKeyDown={wake}
       sx={{
         position: "fixed",
         inset: 0,
@@ -92,9 +99,9 @@ export function EventChatScreenPage() {
         <Typography color="text.secondary">読み込み中…</Typography>
       ) : isError || !event ? (
         <Alert severity="error">イベントが見つかりません。</Alert>
-      ) : !chatAvailable ? (
+      ) : !canChat ? (
         <Alert severity="info">
-          このイベントのチャットは利用できません（参加確定メンバーのみ・チャット有効なイベントのみ）。
+          この画面は参加が確定しているメンバーのみ表示できます。
         </Alert>
       ) : (
         <>
@@ -116,16 +123,27 @@ export function EventChatScreenPage() {
               <QaPickedQuestion question={picked} scale={1.6 * scale} />
             </Box>
           )}
-          <Suspense fallback={null}>
-            <EventChat
-              eventId={id}
-              event={event}
-              myRole={myRole}
-              canChat={canChat}
-              variant="display"
-              fontScale={scale}
-            />
-          </Suspense>
+          {/* チャットを使わない（Q&Aだけ有効な）イベントでも質問は投影できるよう、
+              条件はチャット部分にだけかける */}
+          {chatAvailable ? (
+            <Suspense fallback={null}>
+              <EventChat
+                eventId={id}
+                event={event}
+                myRole={myRole}
+                canChat={canChat}
+                variant="display"
+                fontScale={scale}
+              />
+            </Suspense>
+          ) : (
+            // 質問を投影しているときは、案内でスクリーンを埋めない
+            !picked && (
+              <Typography color="text.secondary">
+                このイベントではチャットを表示できません。
+              </Typography>
+            )
+          )}
         </>
       )}
 
