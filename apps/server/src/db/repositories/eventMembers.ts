@@ -124,10 +124,24 @@ export const eventMembersRepo = {
     return (await this.find(eventId, userId))!;
   },
 
-  /** 抽選などで状態を更新 */
+  /** 抽選などで状態を更新。
+   *
+   * 参加確定でなくなる状態（落選・抽選申込中・キャンセル待ち）にするときは、出席の
+   * 記録も一緒に落とす (#286)。確定→出席→落選 の順に操作すると、マイグレーション
+   * 0063 が消したのと同じ「参加していないのに出席」の行が復活してしまうため、
+   * 同じ論理をランタイム側にも置く。
+   *
+   * 取消済み(canceled)は触らない。「出席したあとで取り消した」順序は実際に起こる
+   * ので、参加履歴として残す方針 (0061・0063) に揃える。 */
   async setStatus(memberId: string, status: string): Promise<void> {
+    const clearsAttendance =
+      status === "lost" || status === "applied" || status === "waitlist";
     await run(
-      "UPDATE event_member SET status = ? WHERE id = ?",
+      clearsAttendance
+        ? `UPDATE event_member
+              SET status = ?, attended = 0, attended_at = NULL
+            WHERE id = ?`
+        : "UPDATE event_member SET status = ? WHERE id = ?",
       status,
       memberId,
     );

@@ -20,6 +20,7 @@ import {
   Snackbar,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
@@ -161,7 +162,6 @@ export function EventDetailPage() {
   const join = useJoinEvent();
   const leave = useLeaveEvent();
   const publish = usePublishEvent();
-  const setAttendance = useSetAttendance(id);
   // 事前アンケート (#152)。質問があれば参加前に回答ダイアログを挟む
   const { data: surveyQuestions } = useEventSurvey(id);
   const hasSurvey = (surveyQuestions?.length ?? 0) > 0;
@@ -961,7 +961,6 @@ export function EventDetailPage() {
                     isStaff={isStaff}
                     attendanceCheck={event.attendanceCheck}
                     isMe={me?.id === m.user.id}
-                    setAttendance={setAttendance}
                   />
                 ))}
               </List>
@@ -992,6 +991,23 @@ export function roleChangeErrorMessage(err: unknown): string {
   return "ロールを変更できませんでした。時間をおいて試してください。";
 }
 
+/** 出席チェックが断られた理由 (#286)。UI では確定でない人のチェックを無効にして
+ * いるが、一覧を開いたまま抽選が走るなどで通ってしまうことがあるので、その場合も
+ * 無言で失敗させない */
+export function attendanceErrorMessage(err: unknown): string {
+  const code =
+    err instanceof ApiError
+      ? (err.body as { error?: string } | null)?.error
+      : undefined;
+  if (code === "not_confirmed") {
+    return "参加が確定している人だけ出席にできます。参加枠の「申込者の管理」で先に参加を確定にしてください。";
+  }
+  if (code === "not_found") {
+    return "対象が見つかりませんでした。画面を更新してください。";
+  }
+  return "出席を変更できませんでした。時間をおいて試してください。";
+}
+
 /** 参加者一覧の1行。staff にはロール変更メニューと出席チェックを出す */
 export function MemberRow({
   eventId,
@@ -999,20 +1015,34 @@ export function MemberRow({
   isStaff,
   attendanceCheck,
   isMe,
-  setAttendance,
 }: {
   eventId: string;
   member: EventMemberWithUser;
   isStaff: boolean;
   attendanceCheck: boolean;
   isMe: boolean;
-  setAttendance: ReturnType<typeof useSetAttendance>;
 }) {
   const setRole = useSetEventMemberRole(eventId);
+  // 行ごとに持つ（ロール変更と同じ）。1つを全行で共有すると、続けて操作したとき
+  // 後の行の結果が前の行のエラー表示を消してしまう (#286)
+  const setAttendance = useSetAttendance(eventId);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const [roleError, setRoleError] = useState("");
+  const [attendError, setAttendError] = useState("");
   const showCheck = attendanceCheck && isStaff;
   const memberName = m.user.globalName ?? m.user.username;
+  /** 出席にできるのは参加確定の人だけ (#286)。staff/judge/observer は
+   * ロール変更時に確定になる (#277) ので、ここで弾かれるのは
+   * 落選・抽選申込中・キャンセル待ちの人だけ。
+   * 既に出席が付いている行は、確定でなくても解除できるようチェックを触れる状態にする */
+  const isConfirmed = m.status === "confirmed";
+  const canAttend = isConfirmed || m.attended;
+  const statusLabel = STATUS_LABEL[m.status] ?? m.status;
+  const attendTitle = isConfirmed
+    ? "出席チェック"
+    : m.attended
+      ? `参加が確定していないため（現在: ${statusLabel}）、出席の解除だけできます。`
+      : `参加が確定していないため出席にできません（現在: ${statusLabel}）。参加枠の「申込者の管理」で先に参加を確定にしてください。`;
 
   /** 一般参加者に戻すのは参加の取消 (#281)。申込が無言で消えるのを防ぐため、
    * この遷移だけ確認を挟む。他のロールへの変更は破壊的ではないので挟まない */
@@ -1033,21 +1063,46 @@ export function MemberRow({
       secondaryAction={
         <Stack direction="row" spacing={0.5} alignItems="center">
           {showCheck ? (
-            <Checkbox
-              edge="end"
-              size="small"
-              icon={<CheckCircleOutlineIcon />}
-              checkedIcon={<CheckCircleIcon />}
-              checked={m.attended}
-              disabled={setAttendance.isPending}
-              onChange={(e) =>
-                setAttendance.mutate({ userId: m.user.id, attended: e.target.checked })
-              }
-              title="出席チェック"
-            />
+            /* 押せない理由はその場で読めるようにする。無効なチェックボックスだけ
+               置くと「押しても何も起きない」に見えるため (#286) */
+            <Tooltip
+              title={attendTitle}
+              enterTouchDelay={0}
+              leaveTouchDelay={5000}
+            >
+              {/* 無効なチェックボックスはフォーカスを受け取らないので、包む span を
+                  フォーカス可能にする。そうしないとキーボードだけでは理由を読めない */}
+              <span
+                tabIndex={canAttend ? undefined : 0}
+                aria-label={canAttend ? undefined : attendTitle}
+              >
+                <Checkbox
+                  edge="end"
+                  size="small"
+                  icon={<CheckCircleOutlineIcon />}
+                  checkedIcon={<CheckCircleIcon />}
+                  checked={m.attended}
+                  disabled={setAttendance.isPending || !canAttend}
+                  onChange={(e) =>
+                    setAttendance.mutate(
+                      { userId: m.user.id, attended: e.target.checked },
+                      { onError: (err) => setAttendError(attendanceErrorMessage(err)) },
+                    )
+                  }
+                  inputProps={{ "aria-label": attendTitle }}
+                />
+              </span>
+            </Tooltip>
           ) : (
             attendChip
           )}
+          {/* 断られた理由は画面に出す（一覧を開いたまま状態が変わった場合） */}
+          <Snackbar
+            open={Boolean(attendError)}
+            autoHideDuration={8000}
+            onClose={() => setAttendError("")}
+            message={attendError}
+          />
           {/* 自分自身のロールは誤操作防止のため変更不可 */}
           {isStaff && !isMe && (
             <>
