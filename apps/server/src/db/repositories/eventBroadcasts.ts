@@ -409,24 +409,30 @@ export const eventBroadcastsRepo = {
    * 戻した件数を返す
    */
   async requeueFailedEmails(broadcastId: string): Promise<number> {
-    const moved = await runCount(
-      `UPDATE event_broadcast_email
-          SET status = 'pending', attempts = 0, deferrals = 0,
-              next_attempt_at = 0, claimed_at = NULL
-        WHERE broadcast_id = ? AND status = 'failed'`,
-      broadcastId,
-    );
-    if (moved > 0) {
-      await run(
-        `UPDATE event_broadcast
-            SET email_failed = MAX(0, email_failed - ?),
-                email_pending = email_pending + ?
-          WHERE id = ?`,
-        moved,
-        moved,
-        broadcastId,
-      );
-    }
+    // 他の遷移と違い、戻す件数が実行するまで分からないので差分では書けない。
+    // 行の更新とカウンタの更新を別々の文にすると、後者が落ちたときにカウンタが
+    // ズレたまま残り、画面が「失敗◯件」と嘘をつき続ける。件数を数え直す形にして
+    // 同じ batch（＝同一トランザクション）に入れ、ズレる経路自体を無くす。
+    // スタッフが押したときだけ走る操作なので、数え直しの費用は問題にならない。
+    const [moved] = await batch([
+      {
+        sql: `UPDATE event_broadcast_email
+                 SET status = 'pending', attempts = 0, deferrals = 0,
+                     next_attempt_at = 0, claimed_at = NULL
+               WHERE broadcast_id = ? AND status = 'failed'`,
+        args: [broadcastId],
+      },
+      {
+        sql: `UPDATE event_broadcast
+                 SET email_pending = (SELECT COUNT(1) FROM event_broadcast_email
+                                       WHERE broadcast_id = ?
+                                         AND status IN ('pending', 'sending')),
+                     email_failed = (SELECT COUNT(1) FROM event_broadcast_email
+                                      WHERE broadcast_id = ? AND status = 'failed')
+               WHERE id = ?`,
+        args: [broadcastId, broadcastId, broadcastId],
+      },
+    ]);
     return moved;
   },
 
