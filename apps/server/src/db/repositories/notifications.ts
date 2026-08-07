@@ -11,6 +11,24 @@ import { emailRepo } from "./email.js";
 /** createForMany 1回あたりのメール送信上限（サブリクエスト数の安全上限） */
 const MAX_BULK_EMAILS = 50;
 
+/**
+ * createForMany の途中で失敗したことを、そこまでに作れた人数つきで伝える。
+ *
+ * 一括作成は先頭から順に固まりで書くので、delivered 人目までは通知が作られている
+ * ＝ userIds の先頭 delivered 人には届いている。呼び出し元がこれを見て
+ * 「一部にだけ届いた」ことを記録できるようにする（黙って全体を失敗にすると、
+ * 再送を促されて同じ人に二重に届く）。
+ */
+export class PartialNotificationError extends Error {
+  constructor(
+    readonly delivered: number,
+    override readonly cause: unknown,
+  ) {
+    super(`notification: 一括作成が途中で失敗しました（${delivered} 人まで作成）`);
+    this.name = "PartialNotificationError";
+  }
+}
+
 interface NotificationRow {
   id: string;
   type: string;
@@ -80,13 +98,19 @@ export const notificationsRepo = {
     const now = Date.now();
     const CHUNK = 50;
     for (let i = 0; i < userIds.length; i += CHUNK) {
-      await batch(
-        userIds.slice(i, i + CHUNK).map((userId) => ({
-          sql: `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
-          args: [crypto.randomUUID(), userId, type, title, body, link, now],
-        })),
-      );
+      const chunk = userIds.slice(i, i + CHUNK);
+      try {
+        await batch(
+          chunk.map((userId) => ({
+            sql: `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+            args: [crypto.randomUUID(), userId, type, title, body, link, now],
+          })),
+        );
+      } catch (e) {
+        // どこまで作れたかを添えて投げ直す（呼び出し元が「一部にだけ届いた」と扱えるように）
+        throw new PartialNotificationError(i, e);
+      }
     }
     if (opts?.skipEmail) return;
     // メール通知ONのユーザーへも配信 (#126)。上限つき・waitUntil でレスポンス外に逃がす

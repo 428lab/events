@@ -20,7 +20,22 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
+      # CRON_SECRET が未設定のリポジトリ（fork 等）では 5分おきに job が失敗し、
+      # 1日 288 回の失敗通知になる。日次のワークフローと違って桁が違うので、
+      # 鍵が無いときは呼ばずに正常終了させる（設定漏れは下の警告で気づける）
+      - name: Skip when CRON_SECRET is not configured
+        id: guard
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::warning::CRON_SECRET が未設定のため一斉連絡のメール送信をスキップしました"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Call broadcast email endpoint (production)
+        if: steps.guard.outputs.configured == 'true'
         run: |
           code=$(curl -s -o /tmp/body -w "%{http_code}" -X POST \
             -H "x-cron-key: ${{ secrets.CRON_SECRET }}" \

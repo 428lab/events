@@ -217,8 +217,10 @@ export function notificationEmailHtml(opts: {
         </a>
       </p>`
     : "";
+  // white-space:pre-wrap で本文の改行をそのまま出す。一斉連絡 (#172) のように
+  // 複数行の本文を送れる通知があり、指定が無いと全部1段落に潰れる
   const body = opts.body
-    ? `<p style="margin:0 0 8px;color:#334155;font-size:15px;line-height:1.7;">${escapeHtml(opts.body)}</p>`
+    ? `<p style="margin:0 0 8px;color:#334155;font-size:15px;line-height:1.7;white-space:pre-wrap;">${escapeHtml(opts.body)}</p>`
     : "";
   return `<div style="background:#F8FAFC;padding:32px 16px;font-family:'Hiragino Sans','Noto Sans JP',system-ui,sans-serif;">
   <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:32px;">

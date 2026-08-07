@@ -6,13 +6,15 @@ import {
   createBroadcastInput,
   type CreateBroadcastInput,
   type EventBroadcastsPayload,
+  type SendBroadcastResult,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { isConfirmedEventStaff } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
-import { sendBroadcast } from "../lib/broadcast.js";
+import { drainBroadcastEmails, sendBroadcast } from "../lib/broadcast.js";
 import { eventBroadcastsRepo } from "../db/repositories/eventBroadcasts.js";
+import { deferBackground } from "../runtime.js";
 
 /**
  * 参加者への一斉連絡 (#172)。送信も履歴閲覧も**そのイベントのスタッフだけ**。
@@ -96,10 +98,31 @@ eventBroadcastRoutes.post(
       title: input.title,
       body: input.body,
     });
-    return c.json({
+    const payload: SendBroadcastResult = {
       id: result.broadcastId,
       recipientCount: result.recipientCount,
       emailQueued: result.emailQueued,
-    });
+      incomplete: result.incomplete,
+      truncatedFrom: result.truncatedFrom,
+    };
+    return c.json(payload);
+  },
+);
+
+/** 失敗したメールを送信待ちに戻す。
+ * 送信そのものは作り直さないので、送信回数の上限は消費しない
+ * （届かなかった人へ届けるだけで、届いた人にもう1通増えることはない） */
+eventBroadcastRoutes.post(
+  "/:id/broadcasts/:broadcastId/retry-emails",
+  async (c) => {
+    const eventId = c.req.param("id");
+    const broadcastId = c.req.param("broadcastId");
+    if (!(await eventBroadcastsRepo.existsInEvent(broadcastId, eventId))) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    const requeued = await eventBroadcastsRepo.requeueFailedEmails(broadcastId);
+    // 戻したぶんはその場で送れるだけ送る（残りは定期実行が拾う）
+    if (requeued > 0) await deferBackground(drainBroadcastEmails());
+    return c.json({ requeued });
   },
 );

@@ -14,7 +14,7 @@ export const BROADCAST_SEGMENTS = [
   "confirmed",
   "waitlist",
   "lottery_won",
-  "lottery_lost",
+  "lost",
   "staff",
   "judge",
   "observer",
@@ -28,7 +28,9 @@ export const BROADCAST_SEGMENT_LABELS: Record<BroadcastSegment, string> = {
   confirmed: "確定",
   waitlist: "キャンセル待ち",
   lottery_won: "抽選の当選者",
-  lottery_lost: "抽選の落選者",
+  // 抽選枠が残っているかどうかに関わらず「落選のまま残っている参加者」を指すので
+  // 「抽選の」は付けない（枠を消した後・先着枠で落選にした場合も入る）
+  lost: "落選者",
   staff: "スタッフ",
   judge: "審査員",
   // 既存のロール表示 (roleLabel) に合わせる。イベント内では「観覧者」で統一されている
@@ -37,25 +39,62 @@ export const BROADCAST_SEGMENT_LABELS: Record<BroadcastSegment, string> = {
   not_attended: "出席しなかった人",
 };
 
-/** 区分が誰を指すかの補足。送信前の確認で「思っていた相手と違う」を防ぐためのもの */
+/**
+ * 区分が誰を指すかの補足。送信前の確認で「思っていた相手と違う」を防ぐためのもの。
+ *
+ * 区分どうしは重なる（当選者は確定にも入る、出席した人にはスタッフも入る）ので、
+ * 重なる相手が分かるように書く。BROADCAST_OVERLAP_NOTE も画面に併記すること。
+ */
 export const BROADCAST_SEGMENT_NOTES: Record<BroadcastSegment, string> = {
-  all: "参加を取り消した人を除く、このイベントの関係者すべて（スタッフ・審査員・観覧者を含む）",
-  confirmed: "参加が確定している参加者。スタッフ・審査員・観覧者は含みません",
+  all: "参加を取り消した人と落選した人を除く、このイベントの関係者すべて。スタッフ・審査員・観覧者のほか、キャンセル待ちの人と抽選の申込中の人も含みます",
+  confirmed:
+    "参加が確定している参加者。抽選の当選者もここに含まれます。スタッフ・審査員・観覧者は含みません",
   waitlist: "先着枠が満員でキャンセル待ちになっている参加者",
-  lottery_won: "抽選枠で当選している参加者",
-  lottery_lost: "抽選枠で落選した参加者",
-  staff: "このイベントのスタッフ",
-  judge: "このイベントの審査員",
-  observer: "このイベントの観覧者",
-  attended: "受付で出席が記録された人",
+  lottery_won:
+    "抽選枠で当選した参加者。この人たちは「確定」にも含まれます（続けて両方に送ると2通届きます）",
+  lost: "抽選に外れたまま参加していない参加者。抽選枠を後から消した場合や、先着枠で落選にした場合もここに入ります。「全員」には含まれません",
+  staff: "このイベントのスタッフ（辞退した人を除く）",
+  judge: "このイベントの審査員（辞退した人を除く）",
+  observer: "このイベントの観覧者（取り消した人を除く）",
+  attended:
+    "受付で出席が記録された人。参加者だけでなく、受付を通ったスタッフ・審査員・観覧者も含みます",
   not_attended:
-    "参加が確定していたのに出席の記録がない参加者。受付を使っていないイベントでは全員がここに入ります",
+    "参加が確定していたのに出席の記録がない参加者。受付を使っていないイベントでは確定者全員がここに入ります",
 };
+
+/** 区分どうしが重なることの注意。区分を選ぶ画面に常時出す */
+export const BROADCAST_OVERLAP_NOTE =
+  "区分どうしは重なることがあります（抽選の当選者は「確定」にも、出席した人にはスタッフ・審査員・観覧者も含まれます）。続けて2つの区分に送ると、重なっている人には2通届きます。";
 
 /** 件名の最大文字数。そのままメールの件名になるので1行で収まる長さに */
 export const BROADCAST_TITLE_MAX = 100;
 /** 本文の最大文字数。チャット本文 (2000) と揃える */
 export const BROADCAST_BODY_MAX = 2000;
+
+/**
+ * メールを送りきるのにかかる時間の見積もりに使う実測値。
+ *
+ * 1回の定期実行で送れるのは1リクエストのメール送信予算ぶん (20通)、
+ * 定期実行は5分おき (= 12回/時) なので 20 x 12 = 240通/時。
+ * 「数分で届く」と書くと100人規模でも実態と桁が違うので、この値から計算して出す。
+ */
+export const BROADCAST_EMAILS_PER_HOUR = 240;
+
+/** 件数ぶんのメールを送りきるおおよその所要時間（分）。0件なら0 */
+export function broadcastEmailMinutes(count: number): number {
+  if (count <= 0) return 0;
+  return Math.max(1, Math.ceil((count / BROADCAST_EMAILS_PER_HOUR) * 60));
+}
+
+/** 所要時間の日本語表記（「約25分」「約1時間15分」）。切り上げた概算 */
+export function formatBroadcastEmailEta(count: number): string {
+  const min = broadcastEmailMinutes(count);
+  if (min <= 0) return "";
+  if (min < 60) return `約${min}分`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `約${h}時間` : `約${h}時間${m}分`;
+}
 
 /** 1イベントあたり直近24時間の送信回数の上限。
  * 一斉連絡は取り消せず全員に届くので、乗っ取られたときの被害を時間で頭打ちにする */
@@ -148,12 +187,27 @@ export const eventBroadcastSchema = z.object({
   body: z.string(),
   /** 送信した人の表示名（退会等で消えていたら null） */
   senderName: z.string().nullable(),
-  /** アプリ内通知を作った人数（送信時点の区分の人数） */
+  /** アプリ内通知を作れた人数（送信時点の区分の人数。途中で失敗したらそこまでの数） */
   recipientCount: z.number(),
+  /** アプリ内通知の作成が途中で失敗した。区分の一部の人にしか届いていない */
+  incomplete: z.boolean(),
   email: broadcastEmailStatsSchema,
   createdAt: z.number(),
 });
 export type EventBroadcast = z.infer<typeof eventBroadcastSchema>;
+
+/** POST /events/:id/broadcasts のレスポンス */
+export interface SendBroadcastResult {
+  id: string;
+  /** アプリ内通知を作れた人数 */
+  recipientCount: number;
+  /** メールの送信待ちに積んだ件数 */
+  emailQueued: number;
+  /** 通知の作成が途中で失敗した（一部の人にしか届いていない） */
+  incomplete: boolean;
+  /** 宛先が多すぎて打ち切った場合の、区分に該当した本来の人数。打ち切っていなければ null */
+  truncatedFrom: number | null;
+}
 
 /** GET /events/:id/broadcasts のレスポンス（そのイベントのスタッフのみ） */
 export interface EventBroadcastsPayload {
