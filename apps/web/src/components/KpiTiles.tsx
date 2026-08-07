@@ -327,6 +327,10 @@ export function TrendChart({
   // 棒の高さと目盛りは同じ上限で割る。実データの最大値をそのまま上限にすると
   // 目盛りが半端な数になり、最大の棒が軸に張り付いて読みにくい
   const scaleMax = axisMax(max);
+  // 日付ラベルは「月-日」で約30px要るが、1本あたりの幅は20px。水平に並べると
+  // 隣とくっついて数字の切れ目が分からなくなるので斜めに出す。斜めにしても
+  // 必要な間隔は約21pxあるので、本数が多いときは間引く (#290)
+  const labelStep = Math.ceil(shown.length / 15) || 1;
   return (
     <Card variant="outlined" sx={{ width: "100%" }}>
       <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
@@ -430,7 +434,7 @@ export function TrendChart({
                   position: "relative",
                 }}
               >
-                {shown.map((p) => (
+                {shown.map((p, i) => (
               <Box
                 key={p.day}
                 title={`${p.day}  ${series
@@ -471,15 +475,25 @@ export function TrendChart({
                     );
                   })}
                 </Box>
-                <Typography
-                  sx={{
-                    fontSize: 9,
-                    color: "text.secondary",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {p.day.slice(5)}
-                </Typography>
+                {/* 斜めに出す。列の中心から左下へ伸ばすので、列の幅を
+                    広げずに隣とぶつからない */}
+                <Box sx={{ height: 30, width: "100%", position: "relative" }}>
+                  <Typography
+                    sx={{
+                      position: "absolute",
+                      top: 2,
+                      right: "50%",
+                      transformOrigin: "top right",
+                      transform: "rotate(-45deg)",
+                      fontSize: 9,
+                      color: "text.secondary",
+                      whiteSpace: "nowrap",
+                      visibility: i % labelStep === 0 ? "visible" : "hidden",
+                    }}
+                  >
+                    {p.day.slice(5)}
+                  </Typography>
+                </Box>
                   </Box>
                 ))}
               </Box>
