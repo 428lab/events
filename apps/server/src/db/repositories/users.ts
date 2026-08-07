@@ -294,9 +294,14 @@ export const usersRepo = {
     const stmts: Array<{ sql: string; args?: unknown[] }> = [];
 
     // (0) event_member の重複破棄でスタッフ権限が落ちないよう、負け側が staff の
-    //     イベントでは勝ち側の既存行を先に staff へ引き上げる
+    //     イベントでは勝ち側の既存行を先に staff へ引き上げる。
+    //     枠と参加状態も setRole (#277) と同じに揃える：ロールだけ書き換えると
+    //     抽選に申込中(applied)のままスタッフになり、抽選対象から外れて申込中で
+    //     固定された「操作UIは出るのに403」の行ができてしまう (#281)。
+    //     勝ち側が取消済みの行を持っていた場合も確定に戻す。role だけ staff に
+    //     しても取消済みのままではメンバーとして扱われず、staff 権限が消える
     stmts.push({
-      sql: `UPDATE event_member SET role = 'staff'
+      sql: `UPDATE event_member SET role = 'staff', slot_id = NULL, status = 'confirmed'
              WHERE user_id = ? AND role != 'staff'
                AND event_id IN (SELECT event_id FROM event_member
                                  WHERE user_id = ? AND role = 'staff')`,

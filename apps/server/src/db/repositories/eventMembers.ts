@@ -44,6 +44,12 @@ function toMember(row: MemberRow): EventMember {
   };
 }
 
+/** 参加者以外のロール (#277)。運営側として関わる人で、参加枠を消費しない。
+ * 明示的に並べておく：ロールが増えたときに黙って「枠を外して確定」側へ
+ * 落ちないよう、型で追加の判断を迫る */
+export const NON_PARTICIPANT_ROLES = ["staff", "judge", "observer"] as const;
+export type NonParticipantRole = (typeof NON_PARTICIPANT_ROLES)[number];
+
 function toUser(row: MemberUserRow): User {
   return {
     id: row.u_id,
@@ -152,7 +158,10 @@ export const eventMembersRepo = {
 
   /** 枠の特定状態のメンバー（抽選・繰り上げ用）。
    * 退会申請中 (#250) は除外する。当選させても本人には通知も参加もできず、
-   * 枠だけ消費してしまうため。行はそのまま残るので復帰すれば申込に戻る */
+   * 枠だけ消費してしまうため。行はそのまま残るので復帰すれば申込に戻る。
+   * 参加者以外（staff/judge/observer）も除外する (#277)。運営側は枠を消費しない
+   * ので、選考（抽選・繰り上げ）の対象にもしない。setRole 側で枠を外しているが、
+   * そこを通らない経路が生まれても落選＝操作できない staff を作らないよう二重に塞ぐ */
   async membersBySlotStatus(
     slotId: string,
     status: string,
@@ -160,20 +169,47 @@ export const eventMembersRepo = {
     const rows = await many<{ id: string; user_id: string }>(
       `SELECT m.id, m.user_id FROM event_member m
          JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
-        WHERE m.slot_id = ? AND m.status = ? ORDER BY m.created_at ASC`,
+        WHERE m.slot_id = ? AND m.status = ? AND m.role = 'participant'
+        ORDER BY m.created_at ASC`,
       slotId,
       status,
     );
     return rows.map((r) => ({ id: r.id, userId: r.user_id }));
   },
 
+  /** そのイベントを管理できる staff の人数 (#281)。
+   *
+   * 退会申請中 (#250) と取消済みは数えない。どちらもイベントを操作できないので、
+   * 「残っているように見えて誰も管理できない」状態を作らないため。
+   * 最後の1人を降格させて staff 0人のイベントを作らせない判定に使う。 */
+  async countStaff(eventId: string): Promise<number> {
+    const row = await one<{ n: number }>(
+      `SELECT COUNT(1) AS n FROM event_member m
+         JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
+        WHERE m.event_id = ? AND m.role = 'staff' AND m.status <> 'canceled'`,
+      eventId,
+    );
+    return row?.n ?? 0;
+  },
+
+  /** 参加者以外のロールへの変更 (#277)。参加枠を外して参加状態を確定にする。
+   *
+   * 運営側は枠を消費しないので抽選の当選枠を応募者に残せるし、抽選対象からも外れる
+   * ので「スタッフにしたのに抽選で落選になり、操作UIは出るのに403」を防げる。
+   * 席が空くので、呼び出し側は先着枠の繰り上げも走らせること (#281)。
+   *
+   * 一般参加者へ戻す経路はここには無い。ロールだけ書き換えると、ここで書いた確定が
+   * 残って「一度も当選していないのに確定参加者」ができてしまうため、ルート側で
+   * 参加取消と同じ扱いにしている (#281)。個人 Entry も同じ理由でここでは作らない
+   * （確定にするのは運営として参加するためで、コンテストの応募ではない）。 */
   async setRole(
     eventId: string,
     userId: string,
-    role: EventRole,
+    role: NonParticipantRole,
   ): Promise<EventMember | null> {
     await run(
-      "UPDATE event_member SET role = ? WHERE event_id = ? AND user_id = ? AND status <> 'canceled'",
+      `UPDATE event_member SET role = ?, slot_id = NULL, status = 'confirmed'
+         WHERE event_id = ? AND user_id = ? AND status <> 'canceled'`,
       role,
       eventId,
       userId,

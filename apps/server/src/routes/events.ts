@@ -581,6 +581,76 @@ eventRoutes.post("/:id/join", zValidator("json", joinEventInput), async (c) => {
   return c.json({ member, status }, 201);
 });
 
+/** 先着枠で席が空いたとき、キャンセル待ちの最古を確定へ繰り上げる (#281)。
+ * 呼び出し前に席を空けておくこと（confirmedCount はその場で数え直す）。
+ *
+ * 席が空く経路は参加解除だけではない。参加者をスタッフ等にすると枠が外れて
+ * 席が空くので (#277)、そちらからも同じ処理を通す。通さないと空席のまま
+ * キャンセル待ちが放置され、後から申し込んだ人に横入りされる。
+ *
+ * @returns 繰り上げた人の userId（繰り上げなしなら null） */
+async function promoteFromWaitlist(
+  event: Event,
+  slotId: string,
+): Promise<string | null> {
+  const slot = await participationSlotsRepo.findById(slotId);
+  if (
+    !slot ||
+    slot.selectionType !== "first_come" ||
+    slot.confirmedCount >= slot.capacity
+  ) {
+    return null;
+  }
+  const [next] = await eventMembersRepo.membersBySlotStatus(slotId, "waitlist");
+  if (!next) return null;
+  await eventMembersRepo.setStatus(next.id, "confirmed");
+  const u = await usersRepo.findById(next.userId);
+  if (u) {
+    await entriesRepo.createIndividual(
+      event.id,
+      next.userId,
+      u.globalName ?? u.username,
+    );
+  }
+  await notificationsRepo.create(
+    next.userId,
+    "waitlist_promoted",
+    "キャンセル待ちから繰り上がりました",
+    `「${event.title}」への参加が確定しました`,
+    `/events/${event.id}`,
+  );
+  return next.userId;
+}
+
+/** 参加を取り消して「参加していない状態」に戻す (#281)。
+ * 本人の参加解除 (DELETE /join) と、運営が一般参加者に戻すときで共有する。
+ *
+ * 確定参加者の取消だけはキャンセル履歴として行を残す（参加実績の集計用）。
+ * それ以外（申込中・キャンセル待ち・落選や、参加者以外のロール）は行ごと消す。
+ * 行が残ると本人が再度申し込めない（POST /join は既存メンバーで打ち切る）。
+ *
+ * @returns 繰り上げた人の userId（繰り上げなしなら null） */
+async function leaveEvent(
+  event: Event,
+  leaving: EventMember,
+): Promise<string | null> {
+  await entriesRepo.removeIndividualEntry(event.id, leaving.userId);
+  if (
+    leaving.role === "participant" &&
+    leaving.status === "confirmed" &&
+    event.status === "published"
+  ) {
+    await eventMembersRepo.cancel(event.id, leaving.userId, event.scheduling);
+  } else {
+    await eventMembersRepo.remove(event.id, leaving.userId);
+  }
+  // 事前アンケートの回答は離脱と同時に削除（入館用氏名等のPIIを残さない）
+  await eventSurveyRepo.deleteAnswersForUser(event.id, leaving.userId);
+  return leaving.slotId && leaving.status === "confirmed"
+    ? promoteFromWaitlist(event, leaving.slotId)
+    : null;
+}
+
 /** 参加解除（メンバーと個人 Entry を削除）。先着枠なら待機を自動繰り上げ。 */
 eventRoutes.delete("/:id/join", async (c) => {
   const user = c.get("user");
@@ -590,72 +660,65 @@ eventRoutes.delete("/:id/join", async (c) => {
   // 終了済みイベントは参加解除できない（参加履歴を残す）
   if (isEventEnded(event)) return c.json({ error: "event_ended" }, 409);
   const leaving = await eventMembersRepo.find(eventId, user.id);
-  await entriesRepo.removeIndividualEntry(eventId, user.id);
-  if (
-    leaving &&
-    leaving.role === "participant" &&
-    leaving.status === "confirmed" &&
-    event.status === "published"
-  ) {
-    // 確定参加者の取消はキャンセル履歴として残す（参加実績の集計用）
-    await eventMembersRepo.cancel(eventId, user.id, event.scheduling);
-  } else {
+  if (!leaving) {
+    // メンバー行がない場合も後始末だけはしておく（Entry の取り残し防止）
+    await entriesRepo.removeIndividualEntry(eventId, user.id);
     await eventMembersRepo.remove(eventId, user.id);
+    await eventSurveyRepo.deleteAnswersForUser(eventId, user.id);
+    return c.json({ ok: true, promotedUserId: null });
   }
-  // 事前アンケートの回答は本人の離脱と同時に削除（入館用氏名等のPIIを残さない）
-  await eventSurveyRepo.deleteAnswersForUser(eventId, user.id);
-
-  let promotedUserId: string | null = null;
-  // 先着枠で確定者が抜けたら、待機(waitlist)の最古を確定へ繰り上げる
-  if (leaving && leaving.slotId && leaving.status === "confirmed") {
-    const slot = await participationSlotsRepo.findById(leaving.slotId);
-    if (
-      slot &&
-      slot.selectionType === "first_come" &&
-      slot.confirmedCount < slot.capacity
-    ) {
-      const [next] = await eventMembersRepo.membersBySlotStatus(
-        leaving.slotId,
-        "waitlist",
-      );
-      if (next) {
-        await eventMembersRepo.setStatus(next.id, "confirmed");
-        const u = await usersRepo.findById(next.userId);
-        if (u) {
-          await entriesRepo.createIndividual(
-            eventId,
-            next.userId,
-            u.globalName ?? u.username,
-          );
-        }
-        promotedUserId = next.userId;
-        const event = await eventsRepo.findById(eventId);
-        await notificationsRepo.create(
-          next.userId,
-          "waitlist_promoted",
-          "キャンセル待ちから繰り上がりました",
-          event ? `「${event.title}」への参加が確定しました` : "参加が確定しました",
-          `/events/${eventId}`,
-        );
-      }
-    }
-  }
+  const promotedUserId = await leaveEvent(event, leaving);
   return c.json({ ok: true, promotedUserId });
 });
 
-/** ロール変更（staff のみ） */
+/** ロール変更（staff のみ）。
+ *
+ * 一般参加者に戻すのは「参加していない状態」に戻すこと (#281)。参加枠と参加状態は
+ * ロールと別の軸なので、ロールだけ書き換えるとスタッフにしたときの確定 (#277) が
+ * 残り、一度も当選していない人が確定参加者になってしまう。本人に改めて申し込んで
+ * もらう形にして、参加取消と同じ後始末（Entry 削除・枠の繰り上げ）を通す。 */
 eventRoutes.patch(
   "/:id/members/:userId/role",
   requireEventRole(["staff"]),
   zValidator("json", updateMemberRoleInput),
   async (c) => {
-    const member = await eventMembersRepo.setRole(
-      c.req.param("id"),
-      c.req.param("userId"),
-      valid<UpdateMemberRoleInput>(c, "json").role,
-    );
+    const eventId = c.req.param("id");
+    const userId = c.req.param("userId");
+    const event = await eventsRepo.findById(eventId);
+    if (!event) return c.json({ error: "not_found" }, 404);
+    const before = await eventMembersRepo.find(eventId, userId);
+    if (!before) return c.json({ error: "not_found" }, 404);
+    const { role } = valid<UpdateMemberRoleInput>(c, "json");
+
+    // 最後のスタッフは降ろせない (#281)。staff が0人になるとイベントの設定変更も
+    // ロール割当も誰にもできなくなり、画面から復旧する手段が無い。
+    // 先に別の人をスタッフにしてから、という順番に倒す
+    if (
+      before.role === "staff" &&
+      role !== "staff" &&
+      (await eventMembersRepo.countStaff(eventId)) <= 1
+    ) {
+      return c.json({ error: "last_staff" }, 409);
+    }
+
+    if (role === "participant") {
+      // 既に参加者なら何もしない（同じロールの指定で参加を消さない）
+      if (before.role === "participant") return c.json({ member: before });
+      // 終了済みイベントでは参加履歴を消さない（DELETE /join と同じ扱い）。
+      // 終了後は本人が申し込み直せないので、消すと戻す手段が無くなる
+      if (isEventEnded(event)) return c.json({ error: "event_ended" }, 409);
+      const promotedUserId = await leaveEvent(event, before);
+      return c.json({ member: null, promotedUserId });
+    }
+
+    const member = await eventMembersRepo.setRole(eventId, userId, role);
     if (!member) return c.json({ error: "not_found" }, 404);
-    return c.json({ member });
+    // 先着枠の確定者だったなら席が空いたので繰り上げる
+    const promotedUserId =
+      before.slotId && before.status === "confirmed"
+        ? await promoteFromWaitlist(event, before.slotId)
+        : null;
+    return c.json({ member, promotedUserId });
   },
 );
 
@@ -827,7 +890,9 @@ eventRoutes.post("/:id/slots/:slotId/draw", requireEventRole(["staff"]), async (
     return c.json({ error: "not_lottery" }, 400);
   }
   // membersBySlotStatus は退会申請中 (#250) を除くので、猶予期間中の申込者は
-  // 抽選対象にも落選通知の対象にもならない（枠を無駄に消費させない）
+  // 抽選対象にも落選通知の対象にもならない（枠を無駄に消費させない）。
+  // 参加者以外（staff/judge/observer）も除く (#277)：運営側は枠を消費しないし、
+  // 落選にすると操作UIは出るのにサーバーが403を返す状態になる
   const applied = await eventMembersRepo.membersBySlotStatus(slot.id, "applied");
   const shuffled = [...applied].sort(() => Math.random() - 0.5);
   const winners = shuffled.slice(0, slot.capacity);
@@ -879,6 +944,12 @@ eventRoutes.patch(
     const member = await eventMembersRepo.find(eventId, userId);
     if (!member || member.slotId !== c.req.param("slotId")) {
       return c.json({ error: "not_found" }, 404);
+    }
+    // 当落は参加者に対する操作 (#281)。参加者以外（staff/judge/observer）は枠を
+    // 消費しないので当落の対象にしない。0061 より前の「枠を持ったままの確定
+    // スタッフ」がこの画面に並ぶことがあり、落選にすると #277 の状態が復活する
+    if (member.role !== "participant") {
+      return c.json({ error: "not_participant" }, 409);
     }
     // 退会申請中 (#250) は一覧にも出ないので操作対象にしない（当選させても
     // 参加できず枠だけ消費する。findById は猶予期間中を null にする）

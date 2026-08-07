@@ -358,6 +358,11 @@ describe("募集締切 (#269)", () => {
     const slot = await createSlot(eventId, admin, 5);
     const member = await makeUser();
     expect((await joinEvent(eventId, member.cookie, slot.id)).status).toBe(201);
+    // 枠内ステータスの操作対象は参加者のまま残す人 (#277: スタッフは枠を外れる)
+    const applicant = await makeUser();
+    expect((await joinEvent(eventId, applicant.cookie, slot.id)).status).toBe(
+      201,
+    );
 
     await setDeadline(eventId, admin, Date.now() - 1000);
 
@@ -377,7 +382,7 @@ describe("募集締切 (#269)", () => {
 
     // 枠内ステータスの手動変更（当選/取消の運用）
     const status = await SELF.fetch(
-      `${BASE}/api/events/${eventId}/slots/${slot.id}/members/${member.userId}/status`,
+      `${BASE}/api/events/${eventId}/slots/${slot.id}/members/${applicant.userId}/status`,
       {
         method: "PATCH",
         headers: { "content-type": "application/json", cookie: admin },
