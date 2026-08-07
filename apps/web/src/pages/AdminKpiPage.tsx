@@ -14,6 +14,7 @@ import type { KpiPayload } from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
 import { useAdminKpi } from "../api/analyticsHooks.js";
 import { KpiNote } from "../components/KpiNote.js";
+import { InfoTip } from "../components/InfoTip.js";
 import {
   FullWidth,
   MiniBars,
@@ -41,7 +42,7 @@ export function AdminKpiPage() {
   }
 
   return (
-    <Stack spacing={2.5}>
+    <Stack spacing={2}>
       <Typography
         variant="h5"
         fontWeight={700}
@@ -177,7 +178,8 @@ function ParticipantsSection({ data }: { data: KpiPayload }) {
       />
       <FullWidth>
         <MiniBars
-          title="参加回数の分布（期間内に開催されたイベントへの参加回数）"
+          title="参加回数の分布"
+          hint="期間内に開催されたイベントへの参加回数"
           items={p.countDistribution.map((b) => ({
             label: b.label,
             value: b.users,
@@ -316,7 +318,8 @@ function HealthSection({ data }: { data: KpiPayload }) {
       />
       <FullWidth>
         <MiniBars
-          title="ログイン方法の内訳（在籍ユーザーの現在の連携。期間によらない）"
+          title="ログイン方法の内訳"
+          hint="在籍ユーザーの現在の連携。期間によらない"
           items={h.providers.map((p) => ({
             label: p.provider,
             value: p.users,
@@ -374,22 +377,18 @@ function TrendChart({ daily }: { daily: KpiPayload["retention"]["daily"] }) {
   const max = Math.max(1, ...daily.map((d) => Math.max(d.signups, d.joins)));
   return (
     <Card variant="outlined" sx={{ width: "100%" }}>
-      <CardContent>
+      <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap" useFlexGap>
-          <Typography variant="subtitle2" sx={{ flex: 1, minWidth: 120 }}>
-            日別の推移
-          </Typography>
+          <Stack direction="row" spacing={0.25} alignItems="center" sx={{ flex: 1, minWidth: 120 }}>
+            <Typography variant="subtitle2">日別の推移</Typography>
+            <InfoTip
+              label="日別の推移"
+              text="「確定参加登録」は確定状態の登録だけを数えます。上の「参加登録数」は取消も含む全ステータスなので合計は一致しません。"
+            />
+          </Stack>
           <SeriesLabel color="primary.main" text="新規登録" />
           <SeriesLabel color="secondary.main" text="確定参加登録" />
         </Stack>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ display: "block", mb: 1 }}
-        >
-          「確定参加登録」は確定状態の登録だけを数えます。上の「参加登録数」は取消も含む
-          全ステータスなので合計は一致しません。
-        </Typography>
         {daily.length === 0 ? (
           <Typography variant="caption" color="text.secondary">
             データなし

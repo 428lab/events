@@ -7,6 +7,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { InfoTip } from "./InfoTip.js";
 
 /** KPI 画面共通の表示部品。運営ダッシュボード (#257) とコミュニティ別KPI (#262) で使う */
 
@@ -20,26 +21,54 @@ export function num(v: number | null, digits = 1): string {
   return v === null ? "—" : v.toFixed(digits);
 }
 
+/** その場の数字を読むのに必須の注記（母数不足で率が「—」など）。
+ * 定義の説明はⓘに畳むが、これは畳むと数字を誤読するので短くして残す */
+export function Caution({ text }: { text: string }) {
+  return (
+    <Typography
+      variant="caption"
+      sx={{
+        display: "block",
+        mt: 0.25,
+        lineHeight: 1.5,
+        color: (t) =>
+          t.palette.mode === "light"
+            ? t.palette.warning.dark
+            : t.palette.warning.main,
+      }}
+    >
+      {text}
+    </Typography>
+  );
+}
+
 export function Section({
   title,
   note,
+  caution,
   children,
 }: {
   title: string;
+  /** 定義・数え方。ⓘのツールチップに入る（常時表示はしない） */
   note: string;
+  /** 数字を読むのに必須の短い注記。指定したときだけ見出しの下に出す */
+  caution?: string;
   children: ReactNode;
 }) {
   return (
     <Card variant="outlined">
-      <CardContent>
-        <Typography variant="subtitle1" fontWeight={700}>
-          {title}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {note}
-        </Typography>
-        <Divider sx={{ my: 1.5 }} />
-        <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+      <CardContent
+        sx={{ p: { xs: 1.5, sm: 2 }, "&:last-child": { pb: { xs: 1.5, sm: 2 } } }}
+      >
+        <Stack direction="row" spacing={0.25} alignItems="center">
+          <Typography variant="subtitle1" fontWeight={700}>
+            {title}
+          </Typography>
+          <InfoTip label={title} text={note} size={16} />
+        </Stack>
+        {caution ? <Caution text={caution} /> : null}
+        <Divider sx={{ my: 1.25 }} />
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           {children}
         </Stack>
       </CardContent>
@@ -62,27 +91,61 @@ export function Tile({
   label: string;
   value?: number;
   text?: string;
+  /** 計算式・定義。ⓘのツールチップに入る */
   hint: string;
   big?: boolean;
 }) {
   return (
     <Card
       variant="outlined"
-      sx={{ flex: big ? "1 1 260px" : "1 1 200px", minWidth: 180 }}
+      sx={{
+        // 360px 幅の端末でも2列並ぶ寸法（Container の余白24〜32px と
+        // セクションの余白24px を引いた実効幅 ≒ 300px に2枚入る）
+        flex: big ? "1 1 220px" : "1 1 140px",
+        minWidth: 130,
+        // 端数の1枚が横いっぱいに伸びて数字が孤立して見えるのを防ぐ
+        // （モバイルは1列に伸びてよいので上限を掛けない）
+        maxWidth: { xs: "none", sm: big ? 420 : 320 },
+        display: "flex",
+      }}
     >
-      <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
-        <Typography variant="caption" color="text.secondary">
-          {label}
-        </Typography>
-        <Typography variant={big ? "h3" : "h4"} fontWeight={700}>
-          {text ?? (value ?? 0).toLocaleString()}
-        </Typography>
+      {/* ラベルが1行か2行かで数値の高さがずれると横に読みにくいので、
+          数値は下端に揃える（同じ行のカードは高さが揃う） */}
+      <CardContent
+        sx={{
+          px: 1.5,
+          py: 1,
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          gap: 0.25,
+          "&:last-child": { pb: 1 },
+        }}
+      >
+        <Stack direction="row" spacing={0.25} alignItems="flex-start">
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ lineHeight: 1.35, mt: 0.25, lineBreak: "strict" }}
+          >
+            {label}
+          </Typography>
+          <InfoTip label={label} text={hint} />
+        </Stack>
         <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ display: "block", mt: 0.5, lineHeight: 1.4 }}
+          fontWeight={800}
+          sx={{
+            // 狭い端末では字を落として桁数の多い数値が切れないようにする
+            // （Card は overflow:hidden なので、縮めないと無言で欠ける）
+            fontSize: big
+              ? { xs: 26, sm: 32 }
+              : { xs: 21, sm: 26 },
+            lineHeight: 1.2,
+            letterSpacing: "-0.02em",
+          }}
         >
-          {hint}
+          {text ?? (value ?? 0).toLocaleString()}
         </Typography>
       </CardContent>
     </Card>
@@ -92,11 +155,14 @@ export function Tile({
 /** 横棒の簡易グラフ（チャートライブラリは使わない） */
 export function MiniBars({
   title,
+  hint,
   items,
   unit,
   empty = "データなし",
 }: {
   title: string;
+  /** 数え方の補足。指定するとタイトル横のⓘに入る */
+  hint?: string;
   /** key はラベルが重複しうるとき（コミュニティ名など）に渡す。省略時はラベルを使う */
   items: { key?: string; label: string; value: number }[];
   unit: string;
@@ -105,10 +171,16 @@ export function MiniBars({
   const max = Math.max(1, ...items.map((i) => i.value));
   return (
     <Card variant="outlined" sx={{ width: "100%" }}>
-      <CardContent>
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>
-          {title}
-        </Typography>
+      <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
+        <Stack
+          direction="row"
+          spacing={0.25}
+          alignItems="center"
+          sx={{ mb: 0.75 }}
+        >
+          <Typography variant="subtitle2">{title}</Typography>
+          {hint ? <InfoTip label={title} text={hint} /> : null}
+        </Stack>
         {items.length === 0 ? (
           <Typography variant="caption" color="text.secondary">
             {empty}

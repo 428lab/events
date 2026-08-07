@@ -35,6 +35,8 @@ import {
   useRemoveAbuseAllowlist,
   useReviewAbuseFlag,
 } from "../api/abuseHooks.js";
+import { InfoTip } from "../components/InfoTip.js";
+import { KpiNote } from "../components/KpiNote.js";
 import { UserLink } from "../components/UserLink.js";
 import { formatDateTime } from "../lib/format.js";
 
@@ -163,14 +165,17 @@ function AllowlistCard({ enabled }: { enabled: boolean }) {
     <Card variant="outlined">
       <CardContent>
         <Stack spacing={1.5}>
-          <Typography variant="subtitle1" fontWeight={700}>
-            抑制リスト（{entries.length} 件）
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            ここに入っている対象は<strong>検知の段階で落とす</strong>ため、記録も通知も出ません。
-            毎週イベントを開く主催者のように「毎回出るが問題ない」と分かっている相手を入れてください。
-            「確認済みにする」は1件を片付けるだけで、次に条件を満たせばまた出ます。
-          </Typography>
+          <Stack direction="row" spacing={0.25} alignItems="center">
+            <Typography variant="subtitle1" fontWeight={700}>
+              抑制リスト（{entries.length} 件）
+            </Typography>
+            {/* 「何を入れる場所か」の説明は一覧より場所を取るのでⓘに畳む */}
+            <InfoTip
+              label="抑制リスト"
+              text="ここに入っている対象は検知の段階で落とすため、記録も通知も出ません。毎週イベントを開く主催者のように「毎回出るが問題ない」と分かっている相手を入れてください。「確認済みにする」は1件を片付けるだけで、次に条件を満たせばまた出ます。"
+              size={16}
+            />
+          </Stack>
           {entries.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
               まだありません。
@@ -249,7 +254,7 @@ export function AdminAbusePage() {
   const pageCount = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
 
   return (
-    <Stack spacing={2.5}>
+    <Stack spacing={2}>
       <Typography
         variant="h5"
         fontWeight={700}
@@ -264,12 +269,16 @@ export function AdminAbusePage() {
         毎週イベントを開く主催者のような正当なヘビーユーザーも同じように出ます。
         中身を見て問題がなければ「確認済みにする」で片付けてください（自動的な制限は一切行いません）。
       </Alert>
-      <Typography variant="body2" color="text.secondary">
+      {/* 何を記録しているかは畳まない（データの取り扱いは常に見える場所に置く）。
+          検知ルールの一覧だけ背景説明として畳む */}
+      <Typography variant="caption" color="text.secondary">
+        記録するのはユーザーIDとハンドル・件数のみで、メールアドレスや本文は含みません。1年経過した記録は自動削除されます。
+      </Typography>
+      <KpiNote summary="検知ルールの一覧">
         検知の内訳は
         {ABUSE_RULES.map((r) => ABUSE_RULE_LABELS[r]).join("・")}
-        です。記録するのはユーザーIDとハンドル・件数のみで、メールアドレスや本文は含みません。
-        1年経過した記録は自動削除されます。
-      </Typography>
+        です。
+      </KpiNote>
 
       <Card variant="outlined">
         <CardContent>

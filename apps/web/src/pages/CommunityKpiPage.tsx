@@ -37,15 +37,21 @@ const RANGES: { label: string; days: number | null }[] = [
  * 1つのセクションに分母の違う率が並ぶことがあるので（例: 開催シェアの分母は
  * イベント件数、2回以上開いた人の割合の分母は人数）、足りていない母数を
  * すべて並べる。サーバー側は画面に出るすべての率に同じゲートを掛けているので、
- * ここに挙がっていない率が「—」になることはない。 */
+ * ここに挙がっていない率が「—」になることはない。
+ *
+ * caution は「なぜ率が —なのか」を知らないとその場の数字を誤読するので短く見せる。
+ * 理由や閾値の説明（detail）はセクションのⓘに畳む。 */
 function fewNote(
   bases: { base: number; label: string }[],
   minSample: number,
-): string {
+): { caution?: string; detail: string } {
   const few = bases.filter((b) => b.base < minSample);
-  if (few.length === 0) return "";
+  if (few.length === 0) return { detail: "" };
   const list = few.map((b) => `${b.label}が ${b.base}`).join("、");
-  return `いまは${list}のため、このセクションの割合は「—」にしています（${minSample} 以上で表示。少ない母数だと1件・1人の増減で割合が大きく動くためです）。件数と平均はそのまま出しています。`;
+  return {
+    caution: `${list}のため、このセクションの割合は「—」にしています`,
+    detail: `いまは${list}のため、このセクションの割合は「—」にしています（${minSample} 以上で表示。少ない母数だと1件・1人の増減で割合が大きく動くためです）。件数と平均はそのまま出しています。`,
+  };
 }
 
 /** コミュニティ運営者向けのKPI (#262)。/c/:slug/kpi。
@@ -76,7 +82,7 @@ export function CommunityKpiPage() {
   }
 
   return (
-    <Stack spacing={2.5}>
+    <Stack spacing={2}>
       <Button
         component={RouterLink}
         to={`/c/${slug}`}
@@ -142,13 +148,15 @@ export function CommunityKpiPage() {
 function NorthStarSection({ data }: { data: CommunityKpiPayload }) {
   const n = data.northStar;
   const o = data.organizers;
+  const few = fewNote(
+    [{ base: o.dudBaseEvents, label: "参加者数を判定できた開催数" }],
+    data.minSample,
+  );
   return (
     <Section
       title="開催と参加"
-      note={`このコミュニティに紐づく公開イベントのうち、期間内に終了したものが対象です。出席チェックを実施したイベントは出席者数、未実施は確定登録者数を数えます（イベントページの参加者数と同じ定義なので主催・スタッフを含みます）。何が分かるか: 活動の量と、1回あたりの集まり具合。${fewNote(
-        [{ base: o.dudBaseEvents, label: "参加者数を判定できた開催数" }],
-        data.minSample,
-      )}`}
+      caution={few.caution}
+      note={`このコミュニティに紐づく公開イベントのうち、期間内に終了したものが対象です。出席チェックを実施したイベントは出席者数、未実施は確定登録者数を数えます（イベントページの参加者数と同じ定義なので主催・スタッフを含みます）。何が分かるか: 活動の量と、1回あたりの集まり具合。${few.detail}`}
     >
       <Tile
         label="参加体験の数"
@@ -177,6 +185,10 @@ function NorthStarSection({ data }: { data: CommunityKpiPayload }) {
 
 function NewcomerSection({ data }: { data: CommunityKpiPayload }) {
   const nc = data.newcomers;
+  const few = fewNote(
+    [{ base: nc.participants, label: "参加した人数" }],
+    data.minSample,
+  );
   const repeatTile = (
     <Tile
       label="また来てくれた人の割合"
@@ -192,10 +204,8 @@ function NewcomerSection({ data }: { data: CommunityKpiPayload }) {
     return (
       <Section
         title="また来てくれた人"
-        note={`全期間では「期間より前に参加していたか」を判定できない（比べる過去が無い）ため、初参加と常連の内訳は出していません。新規流入を見たいときは 30日・90日・1年に切り替えてください。${fewNote(
-          [{ base: nc.participants, label: "参加した人数" }],
-          data.minSample,
-        )}`}
+        caution={few.caution}
+        note={`全期間では「期間より前に参加していたか」を判定できない（比べる過去が無い）ため、初参加と常連の内訳は出していません。新規流入を見たいときは 30日・90日・1年に切り替えてください。${few.detail}`}
       >
         {repeatTile}
         <Tile
@@ -210,10 +220,8 @@ function NewcomerSection({ data }: { data: CommunityKpiPayload }) {
   return (
     <Section
       title="新規流入と常連"
-      note={`期間内にこのコミュニティのイベントに参加した人を、「初参加」と「以前にも来ていた人」に分けています。初参加の判定は、期間の開始日より前に終了したこのコミュニティの公開イベントへの参加記録が無いこと。何が分かるか: 常連だけで回っていないか、新しい人が入る余地があるか。${fewNote(
-        [{ base: nc.participants, label: "参加した人数" }],
-        data.minSample,
-      )}`}
+      caution={few.caution}
+      note={`期間内にこのコミュニティのイベントに参加した人を、「初参加」と「以前にも来ていた人」に分けています。初参加の判定は、期間の開始日より前に終了したこのコミュニティの公開イベントへの参加記録が無いこと。何が分かるか: 常連だけで回っていないか、新しい人が入る余地があるか。${few.detail}`}
     >
       <Tile
         label="初参加の割合"
@@ -238,16 +246,18 @@ function NewcomerSection({ data }: { data: CommunityKpiPayload }) {
 
 function HostSection({ data }: { data: CommunityKpiPayload }) {
   const o = data.organizers;
+  const few = fewNote(
+    [
+      { base: o.heldEventsWithActiveHost, label: "開催数" },
+      { base: o.hosts, label: "開催した人数" },
+    ],
+    data.minSample,
+  );
   return (
     <Section
       title="開催を担っている人"
-      note={`期間内にこのコミュニティのイベントを開いた人の内訳です（退会申請中の人は除きます）。何が分かるか: 開催が特定の人に集中していないか。集中していても問題があるとは限りませんが、その人が忙しくなると活動が止まりやすくなります。${fewNote(
-        [
-          { base: o.heldEventsWithActiveHost, label: "開催数" },
-          { base: o.hosts, label: "開催した人数" },
-        ],
-        data.minSample,
-      )}`}
+      caution={few.caution}
+      note={`期間内にこのコミュニティのイベントを開いた人の内訳です（退会申請中の人は除きます）。何が分かるか: 開催が特定の人に集中していないか。集中していても問題があるとは限りませんが、その人が忙しくなると活動が止まりやすくなります。${few.detail}`}
     >
       <Tile
         label="開催した人数"
@@ -276,13 +286,15 @@ function HostSection({ data }: { data: CommunityKpiPayload }) {
 
 function DormantSection({ data }: { data: CommunityKpiPayload }) {
   const d = data.dormant;
+  const few = fewNote(
+    [{ base: d.members, label: "フォロー人数" }],
+    data.minSample,
+  );
   return (
     <Section
       title="フォローしている人の動き"
-      note={`フォロー登録（コミュニティのメンバー）をしている在籍ユーザーのうち、期間内に開催されたイベントに参加した人と、していない人の内訳です。イベントに参加しただけでフォローしていない人は含みません。主催のみの人は「参加」に数えません。抽選や先着で参加枠を絞っている場合、申し込んだけれど参加できなかった人も「参加していない人」に入るため、実際より高く見えます。何が分かるか: 名簿だけが増えていないか、届いていない人にどう声をかけるか。${fewNote(
-        [{ base: d.members, label: "フォロー人数" }],
-        data.minSample,
-      )}`}
+      caution={few.caution}
+      note={`フォロー登録（コミュニティのメンバー）をしている在籍ユーザーのうち、期間内に開催されたイベントに参加した人と、していない人の内訳です。イベントに参加しただけでフォローしていない人は含みません。主催のみの人は「参加」に数えません。抽選や先着で参加枠を絞っている場合、申し込んだけれど参加できなかった人も「参加していない人」に入るため、実際より高く見えます。何が分かるか: 名簿だけが増えていないか、届いていない人にどう声をかけるか。${few.detail}`}
     >
       <Tile
         label="しばらく参加していない人の割合"
@@ -313,7 +325,8 @@ function OverlapSection({ data }: { data: CommunityKpiPayload }) {
     >
       <FullWidth>
         <MiniBars
-          title={`重なっている人数（期間内の参加者 ${total} 人のうち）`}
+          title={`重なっている人数（参加者 ${total} 人中）`}
+          hint="期間内にこのコミュニティのイベントに参加した人のうち、他のコミュニティの公開イベントにも参加している人数"
           items={data.overlap.map((o) => ({
             key: o.communityId,
             label: o.name,
@@ -380,7 +393,8 @@ function ParticipantsSection({ data }: { data: CommunityKpiPayload }) {
       />
       <FullWidth>
         <MiniBars
-          title="参加回数の分布（期間内に開催されたイベントへの参加回数）"
+          title="参加回数の分布"
+          hint="期間内に開催されたイベントへの参加回数"
           items={p.countDistribution.map((b) => ({
             label: b.label,
             value: b.users,
