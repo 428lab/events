@@ -14,6 +14,8 @@ interface UserRow {
   card_image_key: string | null;
   /** 退会申請時刻。NULL = 在籍中 (#250) */
   deleted_at: number | null;
+  /** 最終アクセス時刻。NULL = 計測開始 (#257) より前からのユーザー */
+  last_seen_at: number | null;
 }
 
 function toUser(row: UserRow): User {
@@ -37,10 +39,20 @@ function toUserWithDeletion(row: UserRow): UserWithDeletion {
   return { ...toUser(row), deletedAt: row.deleted_at };
 }
 
+/** 最終アクセス時刻 (#257) を含むユーザー。currentUser の内部でだけ使う。
+ * 公開型 User には入れない（APIレスポンスに載せる情報ではない） */
+export type UserWithLastSeen = User & { lastSeenAt: number | null };
+
 /** 退会申請済み（猶予期間中）のユーザーを除外する条件 (#250)。
  * 参照系のクエリには原則これを付ける。付け忘れると退会したユーザーが
  * 他ユーザーから見えてしまうため、新しいクエリを足すときは必ず確認すること */
 const ACTIVE = "deleted_at IS NULL";
+
+/** 在籍中のユーザーを id で引く（生の行）。findById 系はすべてここを通す。
+ * SQL をコピーして持つと、将来 ACTIVE の条件を変えたときに片方だけ直す事故になる */
+function findActiveRow(id: string): Promise<UserRow | null> {
+  return one<UserRow>(`SELECT * FROM user WHERE id = ? AND ${ACTIVE}`, id);
+}
 
 /** 「退会済みユーザー」システムユーザーの discord_id (#244)。
  * 実IDと衝突しない合成値（ADMIN_DISCORD_IDS にも決して一致しない）。
@@ -53,11 +65,42 @@ export const usersRepo = {
    * currentUser / プロフィール / 各種表示がここを通るため、ここでの除外が
    * 「即座に利用不可・非表示」の中心的な担保になっている */
   async findById(id: string): Promise<User | null> {
-    const row = await one<UserRow>(
-      `SELECT * FROM user WHERE id = ? AND ${ACTIVE}`,
-      id,
-    );
+    const row = await findActiveRow(id);
     return row ? toUser(row) : null;
+  },
+
+  /** findById と同じ（退会申請中は null）だが、最終アクセス時刻 (#257) も返す。
+   * currentUser 専用。既に SELECT * している行から取るだけなので追加の読み取りは
+   * 発生せず、「JSTの日付が変わったか」を JS 側でタダで判定できる */
+  async findByIdWithLastSeen(id: string): Promise<UserWithLastSeen | null> {
+    const row = await findActiveRow(id);
+    return row ? { ...toUser(row), lastSeenAt: row.last_seen_at ?? null } : null;
+  },
+
+  /** アクセスを記録する (#257)。DAU/MAU 計測用に2つ書く。
+   *   - user.last_seen_at … 最終アクセス時刻（休眠の判定用）
+   *   - user_active_day   … その日アクセスした事実（DAU の推移・コホート用）
+   * last_seen_at だけだと「最終」日しか残らず過去日の推移が出せないため、
+   * 日次の記録を別に持つ（migrations/0056 のコメント参照）。
+   *
+   * 「JSTの日付が変わった最初の1回だけ」の判定は呼び出し側 (lib/lastSeen.ts) が行う。
+   * 2文は D1 の batch で1回にまとめるので、書き込みは 1ユーザー 1日 1回のまま。
+   * どちらも在籍中 (deleted_at IS NULL) に限定し、退会申請中のユーザーを
+   * 記録しないことを（呼び出し側の判定と合わせて）二重に担保する。
+   * @param day now の JST 日付 'YYYY-MM-DD'（JSTの計算は lib/lastSeen.ts に一本化） */
+  async touchLastSeen(userId: string, at: number, day: string): Promise<void> {
+    await batch([
+      {
+        sql: `UPDATE user SET last_seen_at = ? WHERE id = ? AND ${ACTIVE}`,
+        args: [at, userId],
+      },
+      {
+        // SELECT 経由なのは、退会申請中なら1行も挿さないようにするため
+        sql: `INSERT OR IGNORE INTO user_active_day (day, user_id)
+              SELECT ?, id FROM user WHERE id = ? AND ${ACTIVE}`,
+        args: [day, userId],
+      },
+    ]);
   },
 
   /** 猶予期間中でも引ける参照 (#250)。復帰フローと日次バッチ専用 */
