@@ -722,16 +722,32 @@ eventRoutes.patch(
   },
 );
 
-/** 出席チェック（staff のみ） */
+/** 出席チェック（staff のみ）。
+ *
+ * 出席にできるのは参加確定の人だけ (#286)。落選・申込中・キャンセル待ちのまま
+ * 出席にできると、参加していないはずの人が参加実績・一斉連絡の宛先・公開プロフィール
+ * に入ってしまう。受付のQR経由 (POST /:id/checkin) は元から確定を求めているので、
+ * 手動経路もそこに揃える。出席にしたい相手が確定でないなら、先にロール変更や
+ * 繰り上げで参加状態を確定にしてもらう。
+ *
+ * 出席の解除は確定でなくても通す。誤って出席にした行や、この検査より前に付いて
+ * しまった行を staff が画面から直せなくなるほうが困るため（片方向だけ塞ぐ）。 */
 eventRoutes.patch(
   "/:id/members/:userId/attendance",
   requireEventRole(["staff"]),
   zValidator("json", setAttendanceInput),
   async (c) => {
+    const eventId = c.req.param("id");
+    const userId = c.req.param("userId");
     const { attended } = valid<SetAttendanceInput>(c, "json");
+    const before = await eventMembersRepo.find(eventId, userId);
+    if (!before) return c.json({ error: "not_found" }, 404);
+    if (attended && before.status !== "confirmed") {
+      return c.json({ error: "not_confirmed" }, 409);
+    }
     const member = await eventMembersRepo.setAttended(
-      c.req.param("id"),
-      c.req.param("userId"),
+      eventId,
+      userId,
       attended,
       // 出席にした時刻を記録（解除では NULL に戻る） (#154)
       attended ? Date.now() : null,

@@ -47,10 +47,13 @@ const MEMBER: EventMemberWithUser = {
   },
 };
 
-/** 出席チェックは出さない設定で描画するので、この stub は使われない */
+/** 出席チェックを出さない描画では使われない。出席チェックの検証では mutate を見る */
 const setAttendance = { mutate: vi.fn(), isPending: false };
 
-function draw(member: EventMemberWithUser = MEMBER) {
+function draw(
+  member: EventMemberWithUser = MEMBER,
+  attendanceCheck = false,
+) {
   const qc = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
@@ -61,7 +64,7 @@ function draw(member: EventMemberWithUser = MEMBER) {
           eventId="e-1"
           member={member}
           isStaff
-          attendanceCheck={false}
+          attendanceCheck={attendanceCheck}
           isMe={false}
           setAttendance={
             setAttendance as unknown as Parameters<
@@ -139,6 +142,81 @@ describe("ロール変更メニューの確認 (#281)", () => {
     expect(
       await screen.findByText(
         /最後のスタッフです。先に別の人をスタッフにしてください。/,
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * 出席チェックは参加確定の人だけ (#286)。
+ *
+ * サーバーが落選・申込中・キャンセル待ちを拒否するようになったので、画面側でも
+ * 押せないようにする。ただし押せないだけだと「反応しない」に見えるので、
+ * 理由（今の参加状態と、先に確定にすること）が読めることまで確かめる。
+ */
+describe("出席チェックの対象 (#286)", () => {
+  beforeEach(() => {
+    setAttendance.mutate.mockReset();
+  });
+
+  const attendCheckbox = () => screen.getByRole("checkbox");
+
+  it("参加確定の人はチェックできる", async () => {
+    draw({ ...MEMBER, status: "confirmed" }, true);
+
+    const box = attendCheckbox();
+    expect(box).not.toBeDisabled();
+    fireEvent.click(box);
+
+    await waitFor(() => expect(setAttendance.mutate).toHaveBeenCalledTimes(1));
+    expect(setAttendance.mutate.mock.calls[0][0]).toEqual({
+      userId: "u-1",
+      attended: true,
+    });
+  });
+
+  it.each([
+    ["lost", "落選"],
+    ["applied", "抽選申込中"],
+    ["waitlist", "キャンセル待ち"],
+  ])("%s は押せず、理由が読める", (status, label) => {
+    draw({ ...MEMBER, status }, true);
+
+    const box = attendCheckbox();
+    expect(box).toBeDisabled();
+    // 無言で押せないのではなく、今の状態と次にやることが分かること
+    const reason = box.getAttribute("aria-label") ?? "";
+    expect(reason).toMatch(new RegExp(label));
+    expect(reason).toMatch(/先に参加状態を確定にしてください/);
+    expect(setAttendance.mutate).not.toHaveBeenCalled();
+  });
+
+  it("確定でなくても既に出席が付いていれば解除できる", async () => {
+    draw({ ...MEMBER, status: "lost", attended: true }, true);
+
+    const box = attendCheckbox();
+    expect(box).not.toBeDisabled();
+    fireEvent.click(box);
+
+    await waitFor(() => expect(setAttendance.mutate).toHaveBeenCalledTimes(1));
+    expect(setAttendance.mutate.mock.calls[0][0]).toEqual({
+      userId: "u-1",
+      attended: false,
+    });
+  });
+
+  it("サーバーに断られた理由が画面に出る（一覧を開いたまま状態が変わった場合）", async () => {
+    setAttendance.mutate.mockImplementation(
+      (_v: unknown, opts: { onError: (e: unknown) => void }) =>
+        opts.onError(new ApiError(409, { error: "not_confirmed" })),
+    );
+    draw({ ...MEMBER, status: "confirmed" }, true);
+
+    fireEvent.click(attendCheckbox());
+
+    expect(
+      await screen.findByText(
+        /参加が確定している人だけ出席にできます。先に参加状態を確定にしてください。/,
       ),
     ).toBeInTheDocument();
   });

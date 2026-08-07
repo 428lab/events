@@ -277,6 +277,127 @@ describe("QR受付: 入場チケット (#154)", () => {
   });
 });
 
+describe("手動の出席チェック: 参加確定の人だけ (#286)", () => {
+  /** PATCH /:id/members/:userId/attendance */
+  const setAttendance = (
+    eventId: string,
+    userId: string,
+    attended: boolean,
+    cookie: string,
+  ) =>
+    SELF.fetch(`${BASE}/api/events/${eventId}/members/${userId}/attendance`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ attended }),
+    });
+
+  it("落選・抽選申込中・キャンセル待ちは出席にできない（409 not_confirmed）", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+
+    for (const status of ["lost", "applied", "waitlist"]) {
+      const m = await makeMember(eventId, "participant", { status });
+      const res = await setAttendance(eventId, m.userId, true, admin);
+      expect(res.status, status).toBe(409);
+      expect(await res.json()).toEqual({ error: "not_confirmed" });
+      // 記録も時刻も付いていない
+      expect(await attendedInDb(eventId, m.userId), status).toBe(0);
+      const row = await env.DB.prepare(
+        "SELECT attended_at FROM event_member WHERE event_id = ? AND user_id = ?",
+      )
+        .bind(eventId, m.userId)
+        .first<{ attended_at: number | null }>();
+      expect(row?.attended_at, status).toBeNull();
+    }
+  });
+
+  it("取消済みの人も出席にできない（メンバー扱いしないので404）", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const m = await makeMember(eventId, "participant", { status: "canceled" });
+
+    const res = await setAttendance(eventId, m.userId, true, admin);
+    expect(res.status).toBe(404);
+    expect(await attendedInDb(eventId, m.userId)).toBe(0);
+  });
+
+  it("参加確定の参加者・スタッフ・審査員・見学は出席にできる", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+
+    for (const role of ["participant", "staff", "judge", "observer"] as const) {
+      const m = await makeMember(eventId, role);
+      const res = await setAttendance(eventId, m.userId, true, admin);
+      expect(res.status, role).toBe(200);
+      const { member } = (await res.json()) as {
+        member: { attended: boolean; attendedAt: number | null };
+      };
+      expect(member.attended, role).toBe(true);
+      expect(member.attendedAt, role).not.toBeNull();
+      expect(await attendedInDb(eventId, m.userId), role).toBe(1);
+    }
+  });
+
+  it("ロール変更で参加確定になった人（#277）は出席にできる", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    // 落選のままスタッフにする → setRole が確定に揃える
+    const m = await makeMember(eventId, "participant", { status: "lost" });
+    const promote = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/members/${m.userId}/role`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json", cookie: admin },
+        body: JSON.stringify({ role: "staff" }),
+      },
+    );
+    expect(promote.status).toBe(200);
+
+    const res = await setAttendance(eventId, m.userId, true, admin);
+    expect(res.status).toBe(200);
+    expect(await attendedInDb(eventId, m.userId)).toBe(1);
+  });
+
+  it("出席の解除は確定でなくても通す（誤操作や過去データを直せるように）", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    // #286 以前に付いてしまった「落選なのに出席」の行を模す
+    const m = await makeMember(eventId, "participant", {
+      status: "lost",
+      attended: 1,
+    });
+
+    const res = await setAttendance(eventId, m.userId, false, admin);
+    expect(res.status).toBe(200);
+    expect(await attendedInDb(eventId, m.userId)).toBe(0);
+  });
+
+  it("存在しないメンバーは404", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const outsider = await makeUser();
+
+    const res = await setAttendance(eventId, outsider.userId, true, admin);
+    expect(res.status).toBe(404);
+  });
+
+  it("staff 以外は出席を変更できない", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const member = await makeMember(eventId, "participant");
+    const other = await makeMember(eventId, "participant");
+
+    const res = await setAttendance(
+      eventId,
+      other.userId,
+      true,
+      member.cookie,
+    );
+    expect(res.status).toBe(403);
+    expect(await attendedInDb(eventId, other.userId)).toBe(0);
+  });
+});
+
 describe("QR受付: member-lookup (#154)", () => {
   it("staff 以外は403", async () => {
     const admin = await loginDev();

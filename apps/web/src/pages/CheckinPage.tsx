@@ -192,8 +192,18 @@ export function CheckinPage() {
           canUndo: true,
         });
         scheduleResume(1500);
-      } catch {
-        flashNotice("出席の記録に失敗しました");
+      } catch (err) {
+        // 照会から記録までの間に落選や取消に変わった場合 (#286)。
+        // 「失敗しました」だけだと受付で何を案内すればよいか分からない
+        const code =
+          err instanceof ApiError
+            ? (err.body as { error?: string } | null)?.error
+            : undefined;
+        flashNotice(
+          code === "not_confirmed"
+            ? "参加が確定している人だけ出席にできます"
+            : "出席の記録に失敗しました",
+        );
       }
     },
     [id, addLog, scheduleResume, flashNotice],
