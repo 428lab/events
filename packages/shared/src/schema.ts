@@ -65,6 +65,9 @@ export const eventSchema = z.object({
   chatEnabled: z.boolean(),
   /** チャットで参加者のURL投稿を許可（スタッフは常に可）。既定はオフ (#241) */
   chatUrlsAllowed: z.boolean(),
+  /** 募集の締切日時（epoch ms）。null = 締切なしで、従来どおりイベント終了まで
+   * 受け付ける。締切後に止まるのは新規の参加登録だけ (#269) */
+  registrationDeadline: z.number().nullable(),
 });
 export type Event = z.infer<typeof eventSchema>;
 
@@ -118,6 +121,12 @@ export const updateEventInput = z.object({
   chatEnabled: z.boolean().optional(),
   /** チャットで参加者のURL投稿を許可するか (#241) */
   chatUrlsAllowed: z.boolean().optional(),
+  /** 募集の締切日時（epoch ms）。null を送ると締切を解除する (#269)。
+   * chatEnabled 等と同じくイベント編集でのみ設定する項目なので createEventInput
+   * には入れない（作成直後は締切なし＝従来の振る舞い）。
+   * positive なのは 0 や負値を弾くため：締切なしは必ず null で表す約束なので、
+   * 0 を通すと「未設定のつもりが 1970年＝永久に締切済み」の行を作れてしまう */
+  registrationDeadline: z.number().int().positive().nullable().optional(),
   /** 参加者限定の文章（確定メンバー＋staffにのみ表示。eventSchema には含めない） */
   membersNote: z.string().max(20000).optional(),
 });

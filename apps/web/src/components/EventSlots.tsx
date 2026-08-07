@@ -17,6 +17,7 @@ export function EventSlots({
   me,
   isMember,
   ended = false,
+  closed = false,
   joinPending,
   onJoin,
 }: {
@@ -25,6 +26,8 @@ export function EventSlots({
   isMember: boolean;
   /** 終了済みイベントでは申込ボタンを出さない */
   ended?: boolean;
+  /** 募集締切を過ぎた (#269)。申込ボタンの代わりに締切済みの表示を出す */
+  closed?: boolean;
   joinPending: boolean;
   onJoin: (slotId: string) => void;
 }) {
@@ -72,16 +75,21 @@ export function EventSlots({
                   </Typography>
                 )}
               </Box>
-              {me && !isMember && !ended && (
-                <Button
-                  variant="contained"
-                  size="small"
-                  disabled={joinPending}
-                  onClick={() => onJoin(s.id)}
-                >
-                  {label}
-                </Button>
-              )}
+              {me &&
+                !isMember &&
+                !ended &&
+                (closed ? (
+                  <Chip size="small" variant="outlined" label="募集は締め切りました" />
+                ) : (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    disabled={joinPending}
+                    onClick={() => onJoin(s.id)}
+                  >
+                    {label}
+                  </Button>
+                ))}
             </CardContent>
           </Card>
         );

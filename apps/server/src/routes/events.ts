@@ -188,11 +188,17 @@ eventRoutes.post(
   zValidator("json", addDateOptionInput),
   async (c) => {
     const input = valid<AddDateOptionInput>(c, "json");
-    const id = await schedulingRepo.addOption(
-      c.req.param("id"),
-      input.startsAt,
-      input.endsAt,
-    );
+    const eventId = c.req.param("id");
+    const event = await eventsRepo.findById(eventId);
+    if (!event) return c.json({ error: "not_found" }, 404);
+    // 募集締切 (#269) と候補日は両立しない。締切は「開催日時が確定している」
+    // 前提の設定なのに、候補日を足して finalize-date すると開催日時が動き、
+    // 締切 > 開始日時（PATCH では 400 で弾いている状態）を作れてしまう。
+    // 締切を外してから日程を選び直す、という順番に倒す
+    if (event.registrationDeadline !== null) {
+      return c.json({ error: "deadline_requires_fixed_date" }, 400);
+    }
+    const id = await schedulingRepo.addOption(eventId, input.startsAt, input.endsAt);
     return c.json({ id }, 201);
   },
 );
@@ -244,6 +250,18 @@ eventRoutes.post(
       valid<FinalizeDateInput>(c, "json").optionId,
     );
     if (!opt) return c.json({ error: "not_found" }, 404);
+    // 確定で開催日時が動くので、PATCH と同じ不変条件（締切 <= 開始日時）を
+    // ここでも守る (#269)。候補日の追加は締切ありなら弾いているが、
+    // 「候補日あり → PATCH で日程確定＋締切設定 → 古い候補で finalize」の
+    // 経路が残るため、確定側にもチェックを置く
+    const current = await eventsRepo.findById(eventId);
+    if (!current) return c.json({ error: "not_found" }, 404);
+    if (
+      current.registrationDeadline !== null &&
+      current.registrationDeadline > opt.startsAt
+    ) {
+      return c.json({ error: "deadline_after_start" }, 400);
+    }
     const event = await eventsRepo.finalizeDate(
       eventId,
       opt.startsAt,
@@ -330,6 +348,29 @@ eventRoutes.patch(
         return c.json({ error: "invalid_date" }, 400);
       }
     }
+    // 募集締切 (#269) は「更新後の状態」で検証する。入力に含まれない項目は
+    // 現在値が残るので、締切だけを送る編集でも、開始日時だけを前倒しする編集でも
+    // 同じ不変条件（締切 <= 開始日時）を保てる
+    const nextDeadline =
+      input.registrationDeadline !== undefined
+        ? input.registrationDeadline
+        : (prior?.registrationDeadline ?? null);
+    if (nextDeadline !== null) {
+      // 日程調整中は開催日が未定で、締切より先に開催日が決まる保証が無い
+      // （締切だけ過ぎて誰も申し込めない状態になり得る）。日程を確定してから設定する。
+      // なお scheduling は false にしか変更できない（updateEventInput が z.literal(false)）
+      // ため「締切が入ったまま日程調整へ戻る」経路は存在せず、クリア処理は要らない
+      const stillScheduling = (prior?.scheduling ?? false) && input.scheduling !== false;
+      if (stillScheduling) {
+        return c.json({ error: "deadline_requires_fixed_date" }, 400);
+      }
+      // 開始後まで受け付けたいなら「締切なし」を選ぶ、という整理にする
+      // （開始後の締切を許すと、締切とイベント終了の2つの締めが並んで分かりにくい）
+      const nextStartsAt = input.startsAt ?? prior?.startsAt ?? 0;
+      if (nextDeadline > nextStartsAt) {
+        return c.json({ error: "deadline_after_start" }, 400);
+      }
+    }
     const event = await eventsRepo.update(c.req.param("id"), input);
     if (!event) return c.json({ error: "not_found" }, 404);
     // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
@@ -402,7 +443,11 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
   );
   await eventMembersRepo.add(created.id, user.id, "staff");
 
-  // create が受け取らない設定と参加者限定の文章は update で反映
+  // create が受け取らない設定と参加者限定の文章は update で反映。
+  // 募集締切 (#269) は**あえてコピーしない**。締切は複製元の開催日に紐づいた
+  // 絶対時刻で、複製では開催日時を 0 に戻している（上）ため、そのまま持ち越すと
+  // 「作った瞬間もう締め切られている」下書きができてしまう。抽選日時 drawAt を
+  // コピーしない（下）のと同じ理由。
   await eventsRepo.update(created.id, {
     scheduleVisible: src.scheduleVisible,
     photosPublic: src.photosPublic,
@@ -463,6 +508,16 @@ function isEventEnded(event: Event): boolean {
   return !event.scheduling && event.endsAt < Date.now();
 }
 
+/** 募集の締切を過ぎたか (#269)。
+ * 未設定（null）は締切なし＝従来どおり isEventEnded まで受け付ける。
+ * これで止まるのは**新規の参加登録だけ**。キャンセル・繰り上げ・スタッフ操作
+ * （ロール変更・当選操作・出席チェック・QR受付）は当日運営に必要なので通す。 */
+function isRegistrationClosed(event: Event): boolean {
+  return (
+    event.registrationDeadline !== null && event.registrationDeadline <= Date.now()
+  );
+}
+
 /** 参加登録（枠選択。先着=確定/満員はキャンセル待ち、抽選=申込） */
 eventRoutes.post("/:id/join", zValidator("json", joinEventInput), async (c) => {
   const user = c.get("user");
@@ -474,6 +529,13 @@ eventRoutes.post("/:id/join", zValidator("json", joinEventInput), async (c) => {
 
   const existing = await eventMembersRepo.find(eventId, user.id);
   if (existing) return c.json({ member: existing });
+
+  // 募集締切を過ぎたら新規登録を断る (#269)。既存メンバーの再POSTは上で
+  // 抜けているので影響しない。アンケート判定より**前**に置くこと：後ろだと
+  // 締切後なのに Web がアンケート回答ダイアログを出してから断ることになる
+  if (isRegistrationClosed(event)) {
+    return c.json({ error: "registration_closed" }, 409);
+  }
 
   // 必須の事前アンケートに未回答なら参加登録をブロック (#152)。
   // Web は先に PUT /survey/my で回答してから join する
