@@ -66,11 +66,14 @@ export interface EventQaPayload {
   canPost: boolean;
   /** モデレーション操作（回答済み・非表示・ピックアップ）ができるか。
    * 非表示の質問も questions に含まれている。
-   * イベントの staff のほか、アプリ運営管理者とコミュニティ管理者も含む
-   * （サーバーの認可と同じ条件。web の操作UIはこの値で出す） */
+   * **そのイベントの参加確定 staff メンバーだけ** true。アプリ運営管理者や
+   * コミュニティ管理者でも、そのイベントの staff でなければ false
+   * （イベント配下の表示・操作はイベント内の役割だけで判定する方針）。
+   * web の操作UIはこの値で出す */
   canModerate: boolean;
-  /** 匿名投稿の author が入っているか（イベントの staff のみ）。
-   * canModerate より狭い: 操作はできても実名までは要らない人がいるため。
+  /** 匿名投稿の author が入っているか。
+   * 条件はいま canModerate と同じ（そのイベントの staff）だが、
+   * 「操作できるか」と「実名が見えるか」は別の話なので項目は分けてある。
    * web はこの値をそのまま QaQuestionList の revealAuthor に渡す */
   revealsAuthor: boolean;
   questions: EventQuestion[];

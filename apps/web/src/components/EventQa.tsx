@@ -57,7 +57,10 @@ export function EventQa({
   if (!data) return null;
 
   // 操作UIの有無と匿名投稿者の見え方は、どちらもサーバーの判定をそのまま使う
-  // （画面側で条件を書くと、サーバーが返す範囲とズレる）
+  // （画面側で条件を書くと、サーバーが返す範囲とズレる）。
+  // canModerate が true なのは「そのイベントの参加確定 staff メンバー」だけで、
+  // サイト管理者やコミュニティ管理者というだけでは操作UIは出ない
+  // （登壇者サイドパネル (#215) も同じ値を見ている）
   const canModerate = data.canModerate;
 
   const picked =
@@ -117,6 +120,12 @@ export function EventQa({
         </Typography>
 
         <Stack spacing={2}>
+          {/* 「解除できない」で当日詰まらないよう、失敗は黙って捨てない */}
+          {pick.isError && (
+            <Alert severity="warning" onClose={() => pick.reset()}>
+              「いまこの質問」の変更に失敗しました。
+            </Alert>
+          )}
           {picked && (
             <Box sx={{ py: 2, borderRadius: 2, bgcolor: "action.hover" }}>
               <QaPickedQuestion

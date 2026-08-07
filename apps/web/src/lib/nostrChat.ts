@@ -1,5 +1,9 @@
 import { Relay } from "nostr-tools/relay";
-import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
+import {
+  finalizeEvent,
+  generateSecretKey,
+  getPublicKey,
+} from "nostr-tools/pure";
 import type {
   Event as NostrEvent,
   EventTemplate,
@@ -46,6 +50,20 @@ function hexToBytes(hex: string): Uint8Array {
  * 一時鍵はサーバーが生成・保管し API で配布する (#223)。localStorage には置かない */
 export function localSignerFromHex(secretHex: string): ChatSigner {
   const secretKey = hexToBytes(secretHex);
+  return {
+    pubkey: getPublicKey(secretKey),
+    signEvent: async (template) => finalizeEvent(template, secretKey),
+  };
+}
+
+/**
+ * 読み取り専用の使い捨て署名器 (#215)。投影用画面のように「参加せずに読むだけ」の
+ * 画面で、リレーの NIP-42 AUTH に応答するためだけに使う。
+ * この鍵で発言することはない（投影用画面には入力欄が無い）ので、
+ * サーバーにも localStorage にも残さず、その場で作って捨てる。
+ */
+export function randomLocalSigner(): ChatSigner {
+  const secretKey = generateSecretKey();
   return {
     pubkey: getPublicKey(secretKey),
     signEvent: async (template) => finalizeEvent(template, secretKey),
@@ -138,6 +156,10 @@ const CONNECT_TIMEOUT_MS = 8_000;
 /** 再購読時に since から引くマージン。投稿者の時計ずれで
  * created_at が過去になったイベントの取りこぼし防止（重複はIDで排除） */
 const RESUBSCRIBE_MARGIN_SEC = 300;
+/** 重複排除の記憶件数の上限 (#215)。投影用画面は何時間もつけっぱなしにするので、
+ * 際限なく貯めると Set がそのまま増え続ける。超えたら古いものから捨てる
+ * （直近の再購読ぶんが残っていれば取りこぼしは起きない） */
+const SEEN_MAX = 2_000;
 
 /**
  * 複数リレーへの接続・購読・発行をまとめる。リレーURLは運用設定
@@ -313,6 +335,13 @@ export class ChatRelayPool {
         onevent: (ev) => {
           if (sub.seen.has(ev.id)) return;
           sub.seen.add(ev.id);
+          // Set は挿入順に反復するので、あふれた分は古い側から捨てられる
+          if (sub.seen.size > SEEN_MAX) {
+            for (const id of sub.seen) {
+              sub.seen.delete(id);
+              if (sub.seen.size <= SEEN_MAX / 2) break;
+            }
+          }
           if (ev.created_at > sub.lastSeen) sub.lastSeen = ev.created_at;
           sub.onEvent(ev);
         },

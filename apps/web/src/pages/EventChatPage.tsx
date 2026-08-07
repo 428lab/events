@@ -2,6 +2,7 @@ import { Suspense, lazy } from "react";
 import {
   Alert,
   Box,
+  Button,
   CircularProgress,
   IconButton,
   Stack,
@@ -9,8 +10,9 @@ import {
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import SlideshowOutlinedIcon from "@mui/icons-material/SlideshowOutlined";
 import { Link as RouterLink, useParams } from "react-router-dom";
-import { useEvent, useEventMembers, useMe } from "../api/hooks.js";
+import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 
 // nostr-tools（暗号ライブラリ）が大きいため遅延読み込みで分離する
 // （EventDetailPage と同様。静的importするとメインバンドルに混入する）
@@ -24,9 +26,8 @@ const EventChat = lazy(() =>
  */
 export function EventChatPage() {
   const { id = "" } = useParams();
-  const { data: me } = useMe();
-  const { data, isLoading, isError } = useEvent(id);
-  const { data: members } = useEventMembers(id, true);
+  const { event, myRole, canChat, chatAvailable, isLoading, isError } =
+    useEventChatAccess(id);
 
   if (isLoading) {
     return (
@@ -35,22 +36,9 @@ export function EventChatPage() {
       </Box>
     );
   }
-  if (isError || !data?.event) {
+  if (isError || !event) {
     return <Alert severity="error">イベントが見つかりません。</Alert>;
   }
-  const event = data.event;
-  const myRole = data.myRole;
-  // EventDetailPage の canComment と同じ判定（確定メンバーのみ）
-  const myMembership = members?.find((m) => me && m.userId === me.id);
-  const canChat = myMembership
-    ? myMembership.status === "confirmed"
-    : Boolean(myRole);
-  const chatAvailable =
-    canChat &&
-    event.chatEnabled &&
-    !event.scheduling &&
-    event.startsAt > 0 &&
-    event.status === "published";
 
   return (
     <Box
@@ -75,9 +63,23 @@ export function EventChatPage() {
             <ArrowBackIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-        <Typography variant="h6" noWrap sx={{ minWidth: 0 }}>
+        <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0 }}>
           {event.title}
         </Typography>
+        {chatAvailable && (
+          // 投影用画面 (#215)。プロジェクターやウィンドウキャプチャ用に別タブで開く
+          <Button
+            size="small"
+            startIcon={<SlideshowOutlinedIcon />}
+            component={RouterLink}
+            to={`/events/${id}/chat/screen`}
+            target="_blank"
+            rel="noopener"
+            sx={{ flexShrink: 0 }}
+          >
+            投影用画面
+          </Button>
+        )}
       </Stack>
       {chatAvailable ? (
         <Suspense fallback={null}>

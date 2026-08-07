@@ -18,11 +18,9 @@ import type {
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
-import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
-import { communitiesRepo } from "../db/repositories/communities.js";
 import { eventQaRepo, toQuestion } from "../db/repositories/eventQa.js";
 
 const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
@@ -33,14 +31,15 @@ const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
  * 権限は3段階に分けてある（混ぜると開示範囲が広がりすぎる）:
  * - 読める人: メンバー（＋appAdmin / コミュニティ管理者）
  * - 投稿・投票できる人: 参加確定メンバーのみ（confirmedMemberOnly）
- * - モデレーションできる人: canModerate / 実名が見える人: そのイベントの staff だけ */
+ * - モデレーション・実名の開示: **そのイベントの staff メンバーだけ**（isEventStaff）。
+ *   アプリ運営管理者もコミュニティ管理者も、staff でなければ操作できない */
 export const eventQaRoutes = new Hono<AppEnv>();
 eventQaRoutes.use("*", requireAuth);
 
 /** requireEventRole はロールのみ見るため、確定済み（status=confirmed）を追加チェック。
  * （メンバー行がない=appAdmin/コミュニティ管理者バイパスはそのまま許可。
  * eventChat.ts の同名ヘルパーと同じ判定）。
- * 閲覧・モデレーションの入口で使う */
+ * 一覧の閲覧だけで使う（モデレーションは eventStaffOnly でさらに絞る） */
 async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
   const member = await eventMembersRepo.find(
     c.req.param("id")!,
@@ -69,28 +68,31 @@ async function confirmedMemberOnly(
   return null;
 }
 
-/** モデレーション操作（回答済み・非表示・ピックアップ）ができる相手か。
- * requireEventRole(["staff"]) が通す相手（イベントの staff / アプリ運営管理者 /
- * コミュニティ管理者）と同じ条件。非表示の質問もこの人たちには返す
- * （非表示にしたものを見られないと解除できない） */
-async function canModerate(c: Context<AppEnv>, eventId: string): Promise<boolean> {
-  const user = c.get("user");
-  if (isAppAdmin(user)) return true;
-  const member = await eventMembersRepo.find(eventId, user.id);
-  if (member?.role === "staff") return true;
-  const event = await eventsRepo.findById(eventId);
-  if (!event?.communityId) return false;
-  return communitiesRepo.isManager(event.communityId, user.id);
+/** **そのイベントの staff メンバーか**。Q&A のモデレーション権限と
+ * 匿名投稿者の開示は、どちらもこの1本で判定する。
+ *
+ * requireEventRole(["staff"]) はアプリ運営管理者とコミュニティの owner/admin も
+ * 通すが、Q&A ではそこから更に絞る。「イベント配下の表示・操作にサイト管理者かどうかを
+ * 混ぜず、イベント内の役割だけで判定する」というこのプロジェクトの方針に揃えるため
+ * （操作や実名が必要な人は、そのイベントの staff に加わればよい）。
+ * 非表示の質問をこの人たちにだけ返すのも同じ理由（見られないと解除できない）。 */
+function isEventStaff(member: EventMember | null): member is EventMember {
+  return member?.role === "staff";
 }
 
-/** 匿名投稿の投稿者を見せてよい相手か＝**そのイベントの staff メンバーだけ**。
- * canModerate より狭くしているのは、確定仕様の「スタッフには常に投稿者が分かる」を
- * 満たしつつ開示範囲を最小にするため。たとえば自分のコミュニティのイベントに
- * 一般参加者として参加しているコミュニティオーナーや、イベントと関係のない
- * アプリ運営管理者にまで匿名投稿者の実名を返す必要はない
- * （荒らし対応で実名が要る場合は、そのイベントの staff にすればよい）。 */
-function revealsAuthor(member: EventMember | null): boolean {
-  return member?.role === "staff";
+/** モデレーション操作（回答済み・非表示・ピックアップ）の入口。
+ * requireEventRole(["staff"]) の後ろに置き、運営管理者・コミュニティ管理者の
+ * バイパスをここで閉じる。一覧GETと同じく参加確定も要求する
+ * （未確定の staff がGETは403なのに更新は通る、という非対称をなくす）。 */
+async function eventStaffOnly(c: Context<AppEnv>): Promise<Response | null> {
+  const member = await eventMembersRepo.find(
+    c.req.param("id")!,
+    c.get("user").id,
+  );
+  if (!isEventStaff(member) || member.status !== "confirmed") {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  return null;
 }
 
 /** 質問一覧（参加確定メンバー）。Q&A が無効でも読み出しは通す
@@ -107,13 +109,13 @@ eventQaRoutes.get(
     if (!event) return c.json({ error: "not_found" }, 404);
     const me = c.get("user");
     const member = await eventMembersRepo.find(eventId, me.id);
-    const moderate = await canModerate(c, eventId);
-    // 実名の開示（reveal）と操作権限（moderate）は別物。混ぜると
-    // 「操作したいだけの人」にまで匿名投稿者の実名が渡ってしまう
-    const reveal = revealsAuthor(member);
-    const rows = await eventQaRepo.listByEvent(eventId, me.id, moderate);
+    // 操作できるか（canModerate）と実名が見えるか（revealsAuthor）は
+    // ペイロードでは別項目のまま残してある（web はそれぞれ別の用途で使い、
+    // 今後どちらかだけを動かすことがありうる）が、条件はいまは同じ
+    const staff = isEventStaff(member);
+    const rows = await eventQaRepo.listByEvent(eventId, me.id, staff);
     const questions: EventQuestion[] = rows.map((r) =>
-      toQuestion(r, me.id, reveal),
+      toQuestion(r, me.id, staff),
     );
     // 一覧に無いピックアップ（投稿者が退会した等）は無かったことにする
     const picked = await eventQaRepo.pickedFor(eventId);
@@ -124,8 +126,8 @@ eventQaRoutes.get(
         picked && questions.some((q) => q.id === picked) ? picked : null,
       // 参加していない appAdmin / コミュニティ管理者は読めても投稿・投票はできない
       canPost: event.qaEnabled && member?.status === "confirmed",
-      canModerate: moderate,
-      revealsAuthor: reveal,
+      canModerate: staff,
+      revealsAuthor: staff,
       questions,
     };
     return c.json(payload);
@@ -177,7 +179,7 @@ eventQaRoutes.post(
     if (!row) return c.json({ error: "not_found" }, 404);
     const member = await eventMembersRepo.find(eventId, me.id);
     return c.json(
-      { question: toQuestion(row, me.id, revealsAuthor(member)) },
+      { question: toQuestion(row, me.id, isEventStaff(member)) },
       201,
     );
   },
@@ -249,6 +251,11 @@ eventQaRoutes.delete(
     if (meta.userId !== c.get("user").id) {
       return c.json({ error: "forbidden" }, 403);
     }
+    // スタッフが非表示にした質問は本人でも消せない。消せてしまうと
+    // 「投稿 → 非表示 → 削除 → 再投稿」でモデレーションの記録が消え、
+    // countByUser が削除済みを数えないため1人あたりの上限もすり抜けられる。
+    // 他の参加者にはすでに見えていないので、取り下げの目的は達成されている
+    if (meta.hidden) return c.json({ error: "question_hidden" }, 409);
     await eventQaRepo.delete(qid);
     // 消した質問がピックアップ中なら解除する
     // （event.qa_picked_question_id には FK がないので自分で片付ける）
@@ -257,16 +264,14 @@ eventQaRoutes.delete(
   },
 );
 
-/** 回答済み / 非表示の切り替え（staff のみ）。
+/** 回答済み / 非表示の切り替え（そのイベントの staff のみ）。
  * Q&A を後からオフにしても片付けはできるよう qaEnabled は見ない */
 eventQaRoutes.patch(
   "/:id/questions/:qid",
   requireEventRole(["staff"]),
   zValidator("json", updateQuestionInput),
   async (c) => {
-    // 一覧GETと同じく参加確定を要求する（未確定の staff がGETは403なのに
-    // 更新は通る、という非対称をなくす）
-    const denied = await confirmedOnly(c);
+    const denied = await eventStaffOnly(c);
     if (denied) return denied;
     const eventId = c.req.param("id");
     const qid = c.req.param("qid");
@@ -285,27 +290,31 @@ eventQaRoutes.patch(
     const row = await eventQaRepo.findById(qid, me.id);
     if (!row) return c.json({ error: "not_found" }, 404);
     const member = await eventMembersRepo.find(eventId, me.id);
-    return c.json({ question: toQuestion(row, me.id, revealsAuthor(member)) });
+    return c.json({ question: toQuestion(row, me.id, isEventStaff(member)) });
   },
 );
 
-/** 「いまこの質問」の設定・解除（staff のみ）。
- * イベントの1列に持つので、常に1件だけしかピックアップされない */
+/** 「いまこの質問」の設定・解除（そのイベントの staff のみ）。
+ * イベントの1列に持つので、常に1件だけしかピックアップされない。
+ *
+ * 解除（questionId=null）は qaEnabled を見ない。Q&A を OFF にすると
+ * イベント詳細から Q&A セクションごと消えるのに、投影画面には
+ * ピックアップが残り続けるため、OFF でも解除できないと外す手段がなくなる。 */
 eventQaRoutes.put(
   "/:id/qa/pick",
   requireEventRole(["staff"]),
   zValidator("json", pickQuestionInput),
   async (c) => {
-    const denied = await confirmedOnly(c);
+    const denied = await eventStaffOnly(c);
     if (denied) return denied;
     const eventId = c.req.param("id");
     const event = await eventsRepo.findById(eventId);
     if (!event) return c.json({ error: "not_found" }, 404);
-    // 投影に出すための操作なので、Q&A を切っているイベントでは受け付けない
-    // （回答済み・非表示の片付けと違い、後から必要になることがない）
-    if (!event.qaEnabled) return c.json({ error: "qa_disabled" }, 409);
     const { questionId } = valid<PickQuestionInput>(c, "json");
     if (questionId !== null) {
+      // 投影に出すための操作なので、Q&A を切っているイベントでは
+      // 新しくピックアップはできない（解除だけは上記のとおり通す）
+      if (!event.qaEnabled) return c.json({ error: "qa_disabled" }, 409);
       const meta = await eventQaRepo.meta(questionId);
       if (!meta || meta.eventId !== eventId) {
         return c.json({ error: "not_found" }, 404);
