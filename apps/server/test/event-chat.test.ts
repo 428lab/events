@@ -9,8 +9,9 @@ import type { ChatMembersPayload, Event } from "@eventer/shared";
 
 const BASE = "https://example.com";
 
-/** 一般ユーザーを1人作る（セッション付き） */
-async function makeUser(): Promise<{
+/** 一般ユーザーを1人作る（セッション付き）。
+ * admin=true なら discord_id を ADMIN_DISCORD_IDS(=dev-user) に一致させる */
+async function makeUser(admin = false): Promise<{
   userId: string;
   username: string;
   cookie: string;
@@ -21,7 +22,7 @@ async function makeUser(): Promise<{
   await env.DB.prepare(
     "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at) VALUES (?, ?, ?, ?, NULL, ?)",
   )
-    .bind(uid, `nostr:${uid}`, username, "テスト", Date.now())
+    .bind(uid, admin ? "dev-user" : `nostr:${uid}`, username, "テスト", Date.now())
     .run();
   await env.DB.prepare(
     "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
@@ -32,14 +33,33 @@ async function makeUser(): Promise<{
 }
 
 /** イベント行を直接作る（既定は公開・開催中） */
-async function insertEvent(ownerId: string): Promise<string> {
+async function insertEvent(
+  ownerId: string,
+  communityId: string | null = null,
+): Promise<string> {
   const id = crypto.randomUUID();
   const now = Date.now();
   await env.DB.prepare(
-    `INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, created_by, created_at)
-     VALUES (?, ?, ?, ?, 'offline', 'published', ?, ?)`,
+    `INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, created_by, community_id, created_at)
+     VALUES (?, ?, ?, ?, 'offline', 'published', ?, ?, ?)`,
   )
-    .bind(id, `チャットE2E_${id.slice(0, 6)}`, now - 3600_000, now + 3600_000, ownerId, now)
+    .bind(id, `チャットE2E_${id.slice(0, 6)}`, now - 3600_000, now + 3600_000, ownerId, communityId, now)
+    .run();
+  return id;
+}
+
+/** コミュニティを作り、owner を1人つける */
+async function makeCommunity(ownerId: string): Promise<string> {
+  const id = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO community (id, slug, name, description, owner_id, created_at) VALUES (?, ?, ?, '', ?, ?)",
+  )
+    .bind(id, `c-${id.slice(0, 8)}`, `community_${id.slice(0, 4)}`, ownerId, Date.now())
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO community_member (id, community_id, user_id, role, created_at) VALUES (?, ?, ?, 'owner', ?)",
+  )
+    .bind(crypto.randomUUID(), id, ownerId, Date.now())
     .run();
   return id;
 }
@@ -850,5 +870,126 @@ describe("チャンネルのリセット (#199)", () => {
     expect(ok.status).toBe(200);
     const res = await getChatMembers(eventId, owner.cookie);
     expect(((await res.json()) as { channelId: string | null }).channelId).toBeNull();
+  });
+});
+
+describe("チャットのスタッフ操作はイベントの staff のみ (#275)", () => {
+  /** 非表示リストと登録済みチャンネルIDを読む（副作用の有無の確認用） */
+  async function chatState(
+    eventId: string,
+    cookie: string,
+  ): Promise<ChatMembersPayload> {
+    const res = await getChatMembers(eventId, cookie);
+    expect(res.status).toBe(200);
+    return (await res.json()) as ChatMembersPayload;
+  }
+
+  function del(path: string, cookie: string): Promise<Response> {
+    return SELF.fetch(`${BASE}/api${path}`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+  }
+
+  it("コミュニティのオーナーもサイト管理者も、そのイベントの staff でなければ403", async () => {
+    const owner = await makeUser();
+    const admin = await makeUser(true);
+    const communityId = await makeCommunity(owner.userId);
+    const staff = await makeUser();
+    const eventId = await insertEvent(staff.userId, communityId);
+    await addMember(eventId, staff.userId, "staff");
+
+    // 部屋の開設（公式鍵の署名発行）
+    expect(
+      (await postJson(`/events/${eventId}/chat-channel/official`, owner.cookie, {})).status,
+    ).toBe(403);
+    expect(
+      (await postJson(`/events/${eventId}/chat-channel/official`, admin.cookie, {})).status,
+    ).toBe(403);
+
+    // staff が発行した kind:40 を横から登録することもできない
+    const issued = await postJson(
+      `/events/${eventId}/chat-channel/official`,
+      staff.cookie,
+      {},
+    );
+    expect(issued.status).toBe(200);
+    const { channelEvent } = (await issued.json()) as {
+      channelEvent: { id: string };
+    };
+    for (const cookie of [owner.cookie, admin.cookie]) {
+      expect(
+        (await postJson(`/events/${eventId}/chat-channel`, cookie, { channelEvent }))
+          .status,
+      ).toBe(403);
+    }
+    // 403 が素通りしていない（部屋は未開設のまま）
+    expect((await chatState(eventId, staff.cookie)).channelId).toBeNull();
+
+    // staff は開設できる
+    const opened = await postJson(`/events/${eventId}/chat-channel`, staff.cookie, {
+      channelEvent,
+    });
+    expect(opened.status).toBe(200);
+    expect((await chatState(eventId, staff.cookie)).channelId).toBe(channelEvent.id);
+
+    // チャンネルの作り直し（リセット）
+    for (const cookie of [owner.cookie, admin.cookie]) {
+      expect((await del(`/events/${eventId}/chat-channel`, cookie)).status).toBe(403);
+    }
+    expect((await chatState(eventId, staff.cookie)).channelId).toBe(channelEvent.id);
+
+    // メッセージの非表示
+    for (const cookie of [owner.cookie, admin.cookie]) {
+      expect(
+        (await postJson(`/events/${eventId}/chat-hidden`, cookie, { noteId: hex64("a") }))
+          .status,
+      ).toBe(403);
+    }
+    expect((await chatState(eventId, staff.cookie)).hiddenNoteIds).toEqual([]);
+
+    // 非表示の解除（staff が非表示にしたものを外せない）
+    expect(
+      (await postJson(`/events/${eventId}/chat-hidden`, staff.cookie, { noteId: hex64("a") }))
+        .status,
+    ).toBe(200);
+    for (const cookie of [owner.cookie, admin.cookie]) {
+      expect(
+        (await del(`/events/${eventId}/chat-hidden/${hex64("a")}`, cookie)).status,
+      ).toBe(403);
+    }
+    expect((await chatState(eventId, staff.cookie)).hiddenNoteIds).toEqual([hex64("a")]);
+
+    // イベントの staff に加われば操作できる
+    await addMember(eventId, owner.userId, "staff");
+    expect(
+      (await del(`/events/${eventId}/chat-hidden/${hex64("a")}`, owner.cookie)).status,
+    ).toBe(200);
+    expect((await chatState(eventId, owner.cookie)).hiddenNoteIds).toEqual([]);
+    expect((await del(`/events/${eventId}/chat-channel`, owner.cookie)).status).toBe(200);
+    expect((await chatState(eventId, owner.cookie)).channelId).toBeNull();
+  });
+
+  it("参加が確定していない staff もスタッフ操作は403", async () => {
+    const owner = await makeUser();
+    const onHold = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, owner.userId, "staff");
+    await addMember(eventId, onHold.userId, "staff", "waitlist");
+
+    expect(
+      (await postJson(`/events/${eventId}/chat-channel/official`, onHold.cookie, {})).status,
+    ).toBe(403);
+    expect(
+      (await postJson(`/events/${eventId}/chat-hidden`, onHold.cookie, { noteId: hex64("b") }))
+        .status,
+    ).toBe(403);
+    expect(
+      (await del(`/events/${eventId}/chat-hidden/${hex64("b")}`, onHold.cookie)).status,
+    ).toBe(403);
+    expect((await del(`/events/${eventId}/chat-channel`, onHold.cookie)).status).toBe(403);
+
+    // 何も起きていない（確定 staff から見ても非表示リストは空）
+    expect((await chatState(eventId, owner.cookie)).hiddenNoteIds).toEqual([]);
   });
 });

@@ -4,7 +4,7 @@ import { EVENT_COMMENT_LIMIT, createEventCommentInput } from "@eventer/shared";
 import type { CreateEventCommentInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth, currentUser } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
+import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
@@ -65,7 +65,10 @@ eventCommentRoutes.post(
   },
 );
 
-/** コメント削除（本人 or staff/管理者） */
+/** コメント削除（投稿者本人 or **そのイベントの参加確定 staff メンバー**）。
+ * 他人のコメントを消すのはイベント内コンテンツのモデレーションなので、
+ * サイト管理者・コミュニティ管理者というだけでは通さない (#275)。
+ * 本人による取り下げは参加確定でなくなっていてもできる（妨げない）。 */
 eventCommentRoutes.delete(
   "/:id/comments/:commentId",
   requireEventRole([...MEMBER_ROLES]),
@@ -76,9 +79,11 @@ eventCommentRoutes.delete(
     if (!comment || comment.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
     }
-    if (comment.userId !== user.id && !isAppAdmin(user)) {
-      const member = await eventMembersRepo.find(eventId, user.id);
-      if (member?.role !== "staff") return c.json({ error: "forbidden" }, 403);
+    if (
+      comment.userId !== user.id &&
+      !(await isConfirmedEventStaff(eventId, user.id))
+    ) {
+      return c.json({ error: "forbidden" }, 403);
     }
     await eventCommentsRepo.delete(comment.id);
     return c.json({ ok: true });

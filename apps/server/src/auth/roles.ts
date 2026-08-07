@@ -43,3 +43,24 @@ export function requireEventRole(
     return c.json({ error: "forbidden" }, 403);
   };
 }
+
+/**
+ * **そのイベントの参加確定 staff メンバーか**。
+ *
+ * requireEventRole(["staff"]) はアプリ運営管理者とコミュニティの owner/admin も
+ * 通すが、イベント内コンテンツのモデレーション（コメント・写真の削除、チャットの
+ * 非表示など）はそこから更に絞る (#275)。「イベント配下の表示・操作にサイト管理者か
+ * どうかを混ぜず、イベント内の役割だけで判定する」というこのプロジェクトの方針に
+ * 揃えるため（操作が必要な人は、そのイベントの staff に加わればよい）。
+ * web も myRole === "staff" でしか操作UIを出さないので、これで基準が一致する。
+ *
+ * 参加確定（status=confirmed）も要求する。未確定の staff が閲覧はできないのに
+ * 削除は通る、という非対称をなくすため。
+ */
+export async function isConfirmedEventStaff(
+  eventId: string,
+  userId: string,
+): Promise<boolean> {
+  const member = await eventMembersRepo.find(eventId, userId);
+  return member?.role === "staff" && member.status === "confirmed";
+}
