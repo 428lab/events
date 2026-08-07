@@ -65,6 +65,7 @@ import { EventComments } from "../components/EventComments.js";
 import { EventSchedule } from "../components/EventSchedule.js";
 import { EventMaterials } from "../components/EventMaterials.js";
 import { EventFeedback } from "../components/EventFeedback.js";
+import { EventQa } from "../components/EventQa.js";
 import { useRecordView } from "../api/analyticsHooks.js";
 import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
@@ -601,6 +602,12 @@ export function EventDetailPage() {
             />
           </Suspense>
         )}
+
+      {/* Q&A (#216)。確定メンバーのみ。表示は QaQuestionList に切り出してあり
+          投影用画面・プレゼンターのサイドパネル (#215) から再利用する */}
+      {canComment && event.qaEnabled && (
+        <EventQa eventId={id} myRole={myRole} canPost={canComment} />
+      )}
 
       {/* 参加者限定のお知らせ（サーバーが閲覧可の人にだけ返す） */}
       {membersNote && (

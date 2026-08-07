@@ -5,6 +5,7 @@ import {
   PARTICIPATION_TYPES,
   VENUE_TYPES,
 } from "./constants.js";
+import { QA_ANONYMITY_MODES } from "./eventQa.js";
 
 const url = z.string().url();
 const optionalUrl = z.union([url, z.literal("")]).optional().nullable();
@@ -65,6 +66,10 @@ export const eventSchema = z.object({
   chatEnabled: z.boolean(),
   /** チャットで参加者のURL投稿を許可（スタッフは常に可）。既定はオフ (#241) */
   chatUrlsAllowed: z.boolean(),
+  /** Q&A (#216)。既定はオフ（使いたいイベントだけスタッフがONにする） */
+  qaEnabled: z.boolean(),
+  /** Q&A の匿名の扱い。既定は 'choice'（投稿ごとに参加者が選ぶ） (#216) */
+  qaAnonymity: z.enum(QA_ANONYMITY_MODES),
   /** 募集の締切日時（epoch ms）。null = 締切なしで、従来どおりイベント終了まで
    * 受け付ける。締切後に止まるのは新規の参加登録だけ (#269) */
   registrationDeadline: z.number().nullable(),
@@ -121,6 +126,10 @@ export const updateEventInput = z.object({
   chatEnabled: z.boolean().optional(),
   /** チャットで参加者のURL投稿を許可するか (#241) */
   chatUrlsAllowed: z.boolean().optional(),
+  /** Q&A (#216) のオンオフ */
+  qaEnabled: z.boolean().optional(),
+  /** Q&A の匿名の扱い (#216) */
+  qaAnonymity: z.enum(QA_ANONYMITY_MODES).optional(),
   /** 募集の締切日時（epoch ms）。null を送ると締切を解除する (#269)。
    * chatEnabled 等と同じくイベント編集でのみ設定する項目なので createEventInput
    * には入れない（作成直後は締切なし＝従来の振る舞い）。

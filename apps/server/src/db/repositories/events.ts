@@ -3,6 +3,7 @@ import type {
   Event,
   UpdateEventInput,
 } from "@eventer/shared";
+import { QA_ANONYMITY_MODES } from "@eventer/shared";
 import { many, one, run, runCount } from "../client.js";
 
 interface EventRow {
@@ -33,6 +34,11 @@ interface EventRow {
   venue_wanted: number;
   chat_enabled: number;
   chat_urls_allowed: number;
+  /** Q&A (#216) の有効/無効と匿名の扱い */
+  qa_enabled: number;
+  qa_anonymity: string;
+  /** Q&A の「いまこの質問」。toEvent には含めない（questions API で返す） */
+  qa_picked_question_id: string | null;
   /** 募集の締切日時（epoch ms）。NULL = 締切なし (#269) */
   registration_deadline: number | null;
   /** NIP-28 チャンネルID。toEvent には含めない（chat-members API で返す） */
@@ -88,6 +94,13 @@ function toEvent(row: EventRow): Event {
     venueWanted: row.venue_wanted === 1,
     chatEnabled: row.chat_enabled === 1,
     chatUrlsAllowed: row.chat_urls_allowed === 1,
+    qaEnabled: row.qa_enabled === 1,
+    // 未知の値（手作業のDB更新など）は既定の 'choice' に寄せる
+    qaAnonymity: QA_ANONYMITY_MODES.includes(
+      row.qa_anonymity as Event["qaAnonymity"],
+    )
+      ? (row.qa_anonymity as Event["qaAnonymity"])
+      : "choice",
     // 未設定は NULL。?? null で undefined（列追加前の行）も NULL に寄せる
     registrationDeadline: row.registration_deadline ?? null,
   };
@@ -361,7 +374,8 @@ export const eventsRepo = {
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
          photos_public = ?, attendance_check = ?, venue_wanted = ?,
-         chat_enabled = ?, chat_urls_allowed = ?, members_note = ?, scheduling = ?,
+         chat_enabled = ?, chat_urls_allowed = ?, qa_enabled = ?, qa_anonymity = ?,
+         members_note = ?, scheduling = ?,
          registration_deadline = ?
        WHERE id = ?`,
       next.title,
@@ -383,6 +397,8 @@ export const eventsRepo = {
       next.venueWanted ? 1 : 0,
       next.chatEnabled ? 1 : 0,
       next.chatUrlsAllowed ? 1 : 0,
+      next.qaEnabled ? 1 : 0,
+      next.qaAnonymity,
       membersNote,
       next.scheduling ? 1 : 0,
       // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る
