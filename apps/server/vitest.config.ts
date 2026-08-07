@@ -13,6 +13,14 @@ export default defineWorkersConfig(async () => {
   return {
     test: {
       setupFiles: ["./test/apply-migrations.ts"],
+      // 既定の 5 秒では CI が落ちる (#280)。実測で最も遅いテストが約3.1秒あり、
+      // 遅いランナー（実測で約1.85倍）を引くと超える。
+      // タイムアウトしても worker 側の処理は止まらないため、テスト用ストレージの
+      // 後片付けが終わった後に D1 を触ってしまい、後片付け自体が中断して
+      // テスト用DBが消える → 同じファイルの残りが総崩れ、という壊れ方をする。
+      // hookTimeout は beforeAll のマイグレーション適用（60本超）が次に危ないので併せて上げる。
+      testTimeout: 30_000,
+      hookTimeout: 30_000,
       poolOptions: {
         workers: {
           // wrangler.toml は読まない（assets.directory=apps/web/dist の存在チェックで
