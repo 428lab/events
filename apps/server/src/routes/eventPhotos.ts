@@ -9,7 +9,7 @@ import {
 import type { CreatePhotoCommentInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth, currentUser } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
+import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { getBucket } from "../runtime.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -117,7 +117,9 @@ eventPhotoRoutes.post(
   },
 );
 
-/** コメント削除（本人 or staff/管理者） */
+/** コメント削除（投稿者本人 or **そのイベントの参加確定 staff メンバー**）。
+ * 他人のコメントを消すのはイベント内コンテンツのモデレーションなので、
+ * サイト管理者・コミュニティ管理者というだけでは通さない (#275) */
 eventPhotoRoutes.delete(
   "/:id/photos/:photoId/comments/:commentId",
   requireEventRole([...MEMBER_ROLES]),
@@ -130,9 +132,11 @@ eventPhotoRoutes.delete(
     if (!comment || comment.photoId !== c.req.param("photoId")) {
       return c.json({ error: "not_found" }, 404);
     }
-    if (comment.userId !== user.id && !isAppAdmin(user)) {
-      const member = await eventMembersRepo.find(eventId, user.id);
-      if (member?.role !== "staff") return c.json({ error: "forbidden" }, 403);
+    if (
+      comment.userId !== user.id &&
+      !(await isConfirmedEventStaff(eventId, user.id))
+    ) {
+      return c.json({ error: "forbidden" }, 403);
     }
     await eventPhotoCommentsRepo.delete(comment.id);
     return c.json({ ok: true });
@@ -166,7 +170,9 @@ eventPhotoRoutes.post(
   },
 );
 
-/** 削除（本人 or staff/管理者） */
+/** 削除（投稿者本人 or **そのイベントの参加確定 staff メンバー**）。
+ * 他人の写真を消すのはイベント内コンテンツのモデレーションなので、
+ * サイト管理者・コミュニティ管理者というだけでは通さない (#275) */
 eventPhotoRoutes.delete(
   "/:id/photos/:photoId",
   requireEventRole([...MEMBER_ROLES]),
@@ -177,9 +183,11 @@ eventPhotoRoutes.delete(
     if (!photo || photo.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
     }
-    if (photo.userId !== user.id && !isAppAdmin(user)) {
-      const member = await eventMembersRepo.find(eventId, user.id);
-      if (member?.role !== "staff") return c.json({ error: "forbidden" }, 403);
+    if (
+      photo.userId !== user.id &&
+      !(await isConfirmedEventStaff(eventId, user.id))
+    ) {
+      return c.json({ error: "forbidden" }, 403);
     }
     await getBucket().delete(r2Key(eventId, photo.id));
     await eventPhotosRepo.delete(photo.id);

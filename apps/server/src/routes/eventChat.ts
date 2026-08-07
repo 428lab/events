@@ -8,14 +8,13 @@ import {
 } from "@eventer/shared";
 import type {
   ChatMembersPayload,
-  EventMember,
   HideChatNoteInput,
   RegisterChatChannelInput,
   RegisterChatPubkeyInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
+import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import {
   verifyChatKeyProof,
   verifyEventSignature,
@@ -60,28 +59,12 @@ async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
   return null;
 }
 
-/** **そのイベントの staff メンバーか**。
- *
- * requireEventRole(["staff"]) はアプリ運営管理者とコミュニティの owner/admin も
- * 通すが、チャットのスタッフ操作はそこから更に絞る (#275)。「イベント配下の表示・操作に
- * サイト管理者かどうかを混ぜず、イベント内の役割だけで判定する」というこのプロジェクトの
- * 方針に揃えるため（操作が必要な人は、そのイベントの staff に加わればよい）。
- * web も myRole === "staff" でしか操作UIを出さないので、これで基準が一致する。
- * Q&A (eventQa.ts) の isEventStaff / eventStaffOnly と同じ形。 */
-function isEventStaff(member: EventMember | null): member is EventMember {
-  return member?.role === "staff";
-}
-
 /** スタッフ操作（部屋の開設・作り直し・メッセージの非表示）の入口。
  * requireEventRole(["staff"]) の後ろに置き、運営管理者・コミュニティ管理者の
- * バイパスをここで閉じる。参加確定も要求する（confirmedOnly と同じ理由で、
- * 未確定の staff が読み出しは403なのに操作は通る、という非対称をなくす）。 */
+ * バイパスをここで閉じる（判定の中身は isConfirmedEventStaff を参照）。
+ * Q&A (eventQa.ts) の eventStaffOnly と同じ形。 */
 async function eventStaffOnly(c: Context<AppEnv>): Promise<Response | null> {
-  const member = await eventMembersRepo.find(
-    c.req.param("id")!,
-    c.get("user").id,
-  );
-  if (!isEventStaff(member) || member.status !== "confirmed") {
+  if (!(await isConfirmedEventStaff(c.req.param("id")!, c.get("user").id))) {
     return c.json({ error: "forbidden" }, 403);
   }
   return null;
