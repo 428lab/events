@@ -34,7 +34,7 @@ import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
 import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
 import { AwardsEditor } from "../components/AwardsEditor.js";
-import { venueLabel } from "../lib/format.js";
+import { fromDateTimeLocal, venueLabel } from "../lib/format.js";
 
 function toLocalInput(epoch: number): string {
   // 日程調整中（未確定）は 0 が入っている。1970-01-01 を出さない
@@ -60,6 +60,8 @@ export function EditEventPage() {
   const [membersNote, setMembersNote] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
+  // 募集締切 (#269)。空文字＝締切なし（従来どおりイベント終了まで受け付ける）
+  const [registrationDeadline, setRegistrationDeadline] = useState("");
   // 日程調整中イベントで「調整をやめて直接日時を設定する」モード (#138)
   const [directDate, setDirectDate] = useState(false);
   const [venueType, setVenueType] = useState<VenueType>("offline");
@@ -94,6 +96,7 @@ export function EditEventPage() {
       setMembersNote(data.membersNote ?? "");
       setStartsAt(toLocalInput(e.startsAt));
       setEndsAt(toLocalInput(e.endsAt));
+      setRegistrationDeadline(toLocalInput(e.registrationDeadline ?? 0));
       setVenueType(e.venueType);
       setVenueOffline(e.venueOffline ?? "");
       setVenueOnline(e.venueOnline ?? "");
@@ -115,6 +118,17 @@ export function EditEventPage() {
   }
   const { event } = data;
 
+  // 募集締切 (#269) を設定できるのは開催日時が確定しているときだけ。
+  // 日程調整中でも「日時を直接設定する」を選んでいれば、この保存で確定するので入力可
+  const deadlineEditable = !event.scheduling || directDate;
+  const deadlineMs = fromDateTimeLocal(registrationDeadline);
+  const startsAtMs = fromDateTimeLocal(startsAt);
+  // 開始後まで受け付けたい場合は「締切なし（空欄）」を選ぶ、という整理 (#269)
+  const deadlineError =
+    deadlineMs !== null && startsAtMs !== null && deadlineMs > startsAtMs
+      ? "募集締切は開始日時より後にできません。開催中も受け付けるなら空欄にしてください。"
+      : "";
+
   const save = () => {
     update.mutate(
       {
@@ -132,6 +146,9 @@ export function EditEventPage() {
           : {}),
         // 日程調整をやめて直接確定 (#138)
         ...(directDate && startsAt && endsAt ? { scheduling: false as const } : {}),
+        // 募集締切 (#269)。空欄なら null を送って締切を解除する。
+        // 日程調整中（入力不可）のときは常に null＝締切なしのまま
+        registrationDeadline: deadlineEditable ? deadlineMs : null,
         venueType,
         venueOffline: venueOffline || null,
         venueOnline: venueOnline || null,
@@ -249,6 +266,23 @@ export function EditEventPage() {
               />
             </Stack>
           )}
+          {/* 募集締切 (#269)。開催日時が確定していないと設定できない */}
+          <TextField
+            label="募集締切日時（任意）"
+            type="datetime-local"
+            value={deadlineEditable ? registrationDeadline : ""}
+            onChange={(e) => setRegistrationDeadline(e.target.value)}
+            disabled={!deadlineEditable}
+            error={Boolean(deadlineError)}
+            helperText={
+              deadlineError ||
+              (deadlineEditable
+                ? "空欄なら締切なしで、イベント終了まで受け付けます。締切を過ぎると新しい参加登録だけができなくなります（参加者のキャンセルやスタッフの操作はそのまま行えます）。"
+                : "開催日時が未定のため設定できません。日程が決まると設定できるようになります。")
+            }
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
           <TextField
             label="会場種別"
             select
@@ -392,7 +426,7 @@ export function EditEventPage() {
             <Button onClick={() => navigate(`/events/${id}`)}>キャンセル</Button>
             <Button
               variant="contained"
-              disabled={!title || update.isPending}
+              disabled={!title || Boolean(deadlineError) || update.isPending}
               onClick={save}
             >
               保存

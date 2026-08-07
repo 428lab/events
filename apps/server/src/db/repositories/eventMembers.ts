@@ -379,6 +379,7 @@ function mapMyEventSummary(
     venueWanted: (row.venue_wanted as number) === 1,
     chatEnabled: (row.chat_enabled as number) === 1,
     chatUrlsAllowed: (row.chat_urls_allowed as number) === 1,
+    registrationDeadline: (row.registration_deadline as number | null) ?? null,
     slug: (row.slug as string | null) ?? "",
     myRole: row.my_role as EventRole,
     attended: (row.my_attended as number) === 1,

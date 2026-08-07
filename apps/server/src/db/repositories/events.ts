@@ -33,6 +33,8 @@ interface EventRow {
   venue_wanted: number;
   chat_enabled: number;
   chat_urls_allowed: number;
+  /** 募集の締切日時（epoch ms）。NULL = 締切なし (#269) */
+  registration_deadline: number | null;
   /** NIP-28 チャンネルID。toEvent には含めない（chat-members API で返す） */
   chat_channel_id: string | null;
   /** 参加者限定の文章。toEvent には含めない（公開APIに漏らさない） */
@@ -86,6 +88,8 @@ function toEvent(row: EventRow): Event {
     venueWanted: row.venue_wanted === 1,
     chatEnabled: row.chat_enabled === 1,
     chatUrlsAllowed: row.chat_urls_allowed === 1,
+    // 未設定は NULL。?? null で undefined（列追加前の行）も NULL に寄せる
+    registrationDeadline: row.registration_deadline ?? null,
   };
 }
 
@@ -357,7 +361,8 @@ export const eventsRepo = {
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
          photos_public = ?, attendance_check = ?, venue_wanted = ?,
-         chat_enabled = ?, chat_urls_allowed = ?, members_note = ?, scheduling = ?
+         chat_enabled = ?, chat_urls_allowed = ?, members_note = ?, scheduling = ?,
+         registration_deadline = ?
        WHERE id = ?`,
       next.title,
       next.subtitle,
@@ -380,6 +385,8 @@ export const eventsRepo = {
       next.chatUrlsAllowed ? 1 : 0,
       membersNote,
       next.scheduling ? 1 : 0,
+      // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る
+      next.registrationDeadline ?? null,
       id,
     );
     return this.findById(id);

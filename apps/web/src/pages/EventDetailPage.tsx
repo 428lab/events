@@ -24,6 +24,7 @@ import {
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import CheckIcon from "@mui/icons-material/Check";
 import EggIcon from "@mui/icons-material/Egg";
 import LiveTvIcon from "@mui/icons-material/LiveTv";
@@ -69,7 +70,13 @@ import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
 import { EntranceQrDialog } from "../components/EntranceQrDialog.js";
-import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
+import {
+  formatDateRange,
+  formatDateTime,
+  formatRemaining,
+  roleLabel,
+  venueLabel,
+} from "../lib/format.js";
 
 /** Nostrチャット (#199)。nostr-tools（暗号ライブラリ）が大きいため遅延読み込みで分離する */
 const EventChat = lazy(() =>
@@ -258,6 +265,15 @@ export function EventDetailPage() {
     (awards ? awards.ranks.length + awards.specials.length : 0);
   // 日程調整中（endsAt未確定=0）は終了扱いしない（サーバー側 isEventEnded と同じ判定）
   const eventEnded = !event.scheduling && event.endsAt < Date.now();
+  // 募集締切 (#269)。未設定（null）なら締切なしで、従来どおり終了まで受け付ける。
+  // サーバー側 isRegistrationClosed と同じ判定
+  const deadline = event.registrationDeadline;
+  const registrationClosed = deadline !== null && deadline <= Date.now();
+  // 締切24時間前を切ったら残り時間を強調して申し込みを促す
+  const deadlineRemaining =
+    deadline !== null && !registrationClosed && deadline - Date.now() < 86400000
+      ? formatRemaining(deadline)
+      : "";
   const contest = event.contestMode;
   const showAwards =
     contest && awardItems.length > 0 && (ceremonyDone || eventEnded);
@@ -372,6 +388,36 @@ export function EventDetailPage() {
             ? "日程調整中（開催日時は未定）"
             : formatDateRange(event.startsAt, event.endsAt)}
         </Typography>
+        {/* 募集締切 (#269)。設定されているときだけ出す（未設定は従来の見た目のまま） */}
+        {deadline !== null && (
+          <Typography
+            variant="body2"
+            sx={{
+              mt: 0.5,
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              // 締切間近は目に留まるように強調。締切後は落ち着いた色に戻す
+              color: registrationClosed
+                ? "text.secondary"
+                : deadlineRemaining
+                  ? (t) =>
+                      t.palette.mode === "light"
+                        ? t.palette.warning.dark
+                        : t.palette.warning.main
+                  : "text.secondary",
+              fontWeight: deadlineRemaining ? 700 : 400,
+            }}
+          >
+            <HourglassBottomIcon fontSize="small" />
+            募集締切: {formatDateTime(deadline)}
+            {registrationClosed
+              ? "（締め切りました）"
+              : deadlineRemaining
+                ? `（${deadlineRemaining}）`
+                : ""}
+          </Typography>
+        )}
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
           {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
         </Typography>
@@ -589,6 +635,9 @@ export function EventDetailPage() {
         )}
         {eventEnded ? (
           <Chip variant="outlined" label="このイベントは終了しました" />
+        ) : /* 締切後は新規登録だけを止める。既存参加者の解除ボタンは下で出す (#269) */
+        registrationClosed && !isMember ? (
+          <Chip variant="outlined" label="募集は締め切りました" />
         ) : !me ? (
           <Button variant="contained" component={RouterLink} to="/login">
             ログインして参加
@@ -637,6 +686,7 @@ export function EventDetailPage() {
           me={me ?? null}
           isMember={isMember}
           ended={eventEnded}
+          closed={registrationClosed}
           joinPending={join.isPending}
           onJoin={(slotId) => requestJoin(slotId)}
         />
