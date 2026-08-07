@@ -269,6 +269,26 @@ function fmtValue(v: number | null): string {
   return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(1);
 }
 
+/** 縦軸の目盛り用。桁数が増えても軸の幅が破綻しないよう短く出す */
+function fmtAxis(v: number): string {
+  if (v >= 10000) return `${Math.round(v / 1000)}k`;
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+/** 目盛りの上限をきりのいい数にする。
+ * 実データの最大値をそのまま上限にすると最大の棒が軸に張り付いて読みにくく、
+ * 目盛りの数字も半端になる。倍率を 2/4/10 に限っているのは、中間の目盛り
+ * （上限の半分）が整数側に寄るようにするため。 */
+function axisMax(max: number): number {
+  if (max <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(max)));
+  for (const n of [2, 4, 10]) {
+    if (max <= n * pow) return n * pow;
+  }
+  return 10 * pow;
+}
+
 /** 日別/週別の推移（チャートライブラリは追加せず、既存の素朴な棒グラフを拡張したもの）。
  *
  * - 同じチャートに複数系列を描くときは目盛りを共通にする（系列ごとに正規化すると
@@ -304,6 +324,9 @@ export function TrendChart({
     1,
     ...shown.flatMap((p) => series.map((s) => p.values[s.key] ?? 0)),
   );
+  // 棒の高さと目盛りは同じ上限で割る。実データの最大値をそのまま上限にすると
+  // 目盛りが半端な数になり、最大の棒が軸に張り付いて読みにくい
+  const scaleMax = axisMax(max);
   return (
     <Card variant="outlined" sx={{ width: "100%" }}>
       <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
@@ -344,16 +367,69 @@ export function TrendChart({
             データなし
           </Typography>
         ) : (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "flex-end",
-              gap: 0.75,
-              height: 150,
-              overflowX: "auto",
-            }}
-          >
-            {shown.map((p) => (
+          <Box sx={{ display: "flex", height: 150 }}>
+            {/* 縦軸。棒の高さだけでは値が読めず、ツールチップはタッチ端末で開けない (#290) */}
+            <Box
+              sx={{
+                width: 34,
+                flexShrink: 0,
+                height: 110,
+                position: "relative",
+                mr: 0.5,
+              }}
+            >
+              {[1, 0.5, 0].map((r) => (
+                <Typography
+                  key={r}
+                  sx={{
+                    position: "absolute",
+                    right: 0,
+                    // 目盛りの線と文字の中心を合わせる
+                    top: `${(1 - r) * 110}px`,
+                    transform: "translateY(-50%)",
+                    fontSize: 9,
+                    color: "text.secondary",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {fmtAxis(scaleMax * r)}
+                </Typography>
+              ))}
+            </Box>
+            <Box
+              sx={{
+                position: "relative",
+                flex: 1,
+                minWidth: 0,
+                overflowX: "auto",
+              }}
+            >
+              {/* 補助線。目盛りの文字と同じ位置に引く */}
+              {[1, 0.5, 0].map((r) => (
+                <Box
+                  key={r}
+                  sx={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    top: `${(1 - r) * 110}px`,
+                    borderTop: "1px solid",
+                    borderColor: "divider",
+                    opacity: r === 0 ? 1 : 0.5,
+                    pointerEvents: "none",
+                  }}
+                />
+              ))}
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  gap: 0.75,
+                  height: 150,
+                  position: "relative",
+                }}
+              >
+                {shown.map((p) => (
               <Box
                 key={p.day}
                 title={`${p.day}  ${series
@@ -385,7 +461,7 @@ export function TrendChart({
                         key={s.key}
                         sx={{
                           width: 8,
-                          height: v === null ? 0 : `${(v / max) * 110}px`,
+                          height: v === null ? 0 : `${(v / scaleMax) * 110}px`,
                           bgcolor: s.color,
                           borderRadius: "2px 2px 0 0",
                           minHeight: v !== null && v > 0 ? 2 : 0,
@@ -403,8 +479,10 @@ export function TrendChart({
                 >
                   {p.day.slice(5)}
                 </Typography>
+                  </Box>
+                ))}
               </Box>
-            ))}
+            </Box>
           </Box>
         )}
         {unit ? (
