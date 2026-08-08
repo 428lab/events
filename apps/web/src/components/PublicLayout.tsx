@@ -18,6 +18,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
     <Box sx={{ minHeight: "100vh", overflowX: "hidden" }}>
       <AppBar position="static" elevation={0}>
         <Toolbar sx={{ gap: 0.5 }}>
+          {/* 幅が足りないときはロゴ文字から先に詰める（右側の導線を守る, #316） */}
           <Box
             component={RouterLink}
             to="/"
@@ -27,6 +28,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               gap: 1,
               color: "inherit",
               textDecoration: "none",
+              minWidth: 0,
             }}
           >
             <LogoGlyph size={34} />
@@ -42,15 +44,23 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               height: 18,
               fontSize: 11,
               fontWeight: 700,
+              flexShrink: 0,
               bgcolor: "#FB923C",
               color: "#0E1426",
             }}
           />
           <Box sx={{ flexGrow: 1 }} />
-          <ThemeSwitcher />
-          <Button color="inherit" component={RouterLink} to="/login">
-            ログイン
-          </Button>
+          <Box sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+            <ThemeSwitcher />
+            <Button
+              color="inherit"
+              component={RouterLink}
+              to="/login"
+              sx={{ whiteSpace: "nowrap" }}
+            >
+              ログイン
+            </Button>
+          </Box>
         </Toolbar>
       </AppBar>
       <Container maxWidth="md" sx={{ py: 4 }}>

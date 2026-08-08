@@ -12,6 +12,11 @@ import react from "@vitejs/plugin-react";
  */
 export default defineConfig({
   plugins: [react()],
+  // 本番ビルドで vite.config.ts が埋め込む定数。
+  // テストでも参照する画面（VersionFooter など）があるのでダミーを入れる
+  define: {
+    __APP_VERSION__: JSON.stringify("test"),
+  },
   test: {
     environment: "jsdom",
     globals: true,
