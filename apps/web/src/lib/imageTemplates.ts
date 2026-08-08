@@ -52,6 +52,59 @@ const fill = (c: string) => (ctx: CanvasRenderingContext2D) => {
   ctx.fillRect(0, 0, OG_W, OG_H);
 };
 
+const NIGHT = "#0E1426";
+
+/** 同じ種を渡せば毎回同じ絵になる乱数。プレビューと保存される画像が
+ * 食い違わないよう、描画のたびに変わる Math.random は使わない */
+function seeded(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s * 1103515245 + 12345) % 2147483648;
+    return s / 2147483648;
+  };
+}
+
+/** 小さな光の粒（既存の「花火」の柄）。文字の背後が濃くなりすぎないよう
+ * 四隅寄りに置く */
+function drawSparks(
+  ctx: CanvasRenderingContext2D,
+  bursts: [number, number, string][],
+) {
+  for (const [cx, cy, color] of bursts) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.globalAlpha = 0.5;
+    for (let a = 0; a < 8; a++) {
+      const ang = (a * Math.PI) / 4;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(ang) * 36, cy + Math.sin(ang) * 36);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+/** 光の粒を四隅に散らす夜空。色だけ差し替えれば別の柄になる */
+const sparkNight =
+  (colors: [string, string, string, string]) =>
+  (ctx: CanvasRenderingContext2D) => {
+    ctx.fillStyle = NIGHT;
+    ctx.fillRect(0, 0, OG_W, OG_H);
+    drawSparks(ctx, [
+      [170, 140, colors[0]],
+      [1010, 110, colors[1]],
+      [1070, 500, colors[2]],
+      [120, 470, colors[3]],
+    ]);
+  };
+
 export const BACKGROUNDS: BackgroundDef[] = [
   {
     label: "ダーク",
@@ -63,34 +116,124 @@ export const BACKGROUNDS: BackgroundDef[] = [
     label: "花火",
     fg: "#F8FAFC",
     sub: "#CBD5E1",
+    draw: sparkNight(["#2DD4BF", "#FB923C", "#FB7185", "#FBBF24"]),
+  },
+  {
+    label: "花火（暖色）",
+    fg: "#F8FAFC",
+    sub: "#CBD5E1",
+    draw: sparkNight(["#FBBF24", "#FB7185", "#FB923C", "#F472B6"]),
+  },
+  {
+    label: "花火（寒色）",
+    fg: "#F8FAFC",
+    sub: "#CBD5E1",
+    draw: sparkNight(["#38BDF8", "#2DD4BF", "#A78BFA", "#818CF8"]),
+  },
+  {
+    label: "打ち上げ花火",
+    fg: "#F8FAFC",
+    sub: "#CBD5E1",
     draw: (ctx) => {
-      ctx.fillStyle = "#0E1426";
+      ctx.fillStyle = NIGHT;
       ctx.fillRect(0, 0, OG_W, OG_H);
-      const bursts: [number, number, string][] = [
-        [170, 140, "#2DD4BF"],
-        [1010, 110, "#FB923C"],
-        [1070, 500, "#FB7185"],
-        [120, 470, "#FBBF24"],
+      // 大きく開いた花火。中央は文字が乗るので、左右の端に寄せて開かせる
+      const shells: [number, number, number, string][] = [
+        [210, 210, 150, "#FBBF24"],
+        [1000, 300, 190, "#FB7185"],
       ];
-      for (const [cx, cy, color] of bursts) {
+      const rnd = seeded(7);
+      for (const [cx, cy, r, color] of shells) {
         ctx.strokeStyle = color;
-        ctx.lineWidth = 3;
-        ctx.lineCap = "round";
-        ctx.globalAlpha = 0.5;
-        for (let a = 0; a < 8; a++) {
-          const ang = (a * Math.PI) / 4;
-          ctx.beginPath();
-          ctx.moveTo(cx, cy);
-          ctx.lineTo(cx + Math.cos(ang) * 36, cy + Math.sin(ang) * 36);
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 0.9;
         ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.lineCap = "round";
+        for (let a = 0; a < 24; a++) {
+          const ang = (a * Math.PI) / 12;
+          // 光の筋は中心から少し離れた位置で始める（芯を白く飛ばさない）
+          const from = r * 0.28;
+          const to = r * (0.78 + rnd() * 0.22);
+          ctx.globalAlpha = 0.35;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(ang) * from, cy + Math.sin(ang) * from);
+          ctx.lineTo(cx + Math.cos(ang) * to, cy + Math.sin(ang) * to);
+          ctx.stroke();
+          // 筋の先の粒。散り際の見え方に寄せて、先端ほど明るく小さく
+          ctx.globalAlpha = 0.85;
+          ctx.beginPath();
+          ctx.arc(cx + Math.cos(ang) * to, cy + Math.sin(ang) * to, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.globalAlpha = 1;
       }
+    },
+  },
+  {
+    label: "紙吹雪",
+    fg: "#F8FAFC",
+    sub: "#CBD5E1",
+    draw: (ctx) => {
+      ctx.fillStyle = NIGHT;
+      ctx.fillRect(0, 0, OG_W, OG_H);
+      const colors = ["#2DD4BF", "#FB923C", "#FB7185", "#FBBF24", "#818CF8"];
+      const rnd = seeded(21);
+      for (let i = 0; i < 90; i++) {
+        const x = rnd() * OG_W;
+        const y = rnd() * OG_H;
+        // 中央は文字が乗るので薄くする（読みにくさを持ち込まない）
+        const centerish =
+          Math.abs(x - OG_W / 2) < OG_W * 0.28 &&
+          Math.abs(y - OG_H / 2) < OG_H * 0.3;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rnd() * Math.PI);
+        ctx.globalAlpha = centerish ? 0.16 : 0.55 + rnd() * 0.35;
+        ctx.fillStyle = colors[i % colors.length]!;
+        ctx.fillRect(-6, -3, 12, 6);
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+    },
+  },
+  {
+    label: "星空",
+    fg: "#F8FAFC",
+    sub: "#94A3B8",
+    draw: (ctx) => {
+      ctx.fillStyle = "#0A1020";
+      ctx.fillRect(0, 0, OG_W, OG_H);
+      const rnd = seeded(97);
+      // 小さな星をたくさん。花火より静かで、長いタイトルでも読める
+      for (let i = 0; i < 220; i++) {
+        const x = rnd() * OG_W;
+        const y = rnd() * OG_H;
+        const r = 0.6 + rnd() * 1.8;
+        ctx.globalAlpha = 0.25 + rnd() * 0.6;
+        ctx.fillStyle = "#FFFFFF";
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 数個だけ十字の光をつけて、のっぺりさせない
+      const shines: [number, number, number, string][] = [
+        [180, 150, 16, "#FBBF24"],
+        [1030, 120, 13, "#38BDF8"],
+        [1060, 500, 15, "#F8FAFC"],
+        [140, 480, 12, "#2DD4BF"],
+      ];
+      for (const [x, y, len, color] of shines) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(x - len, y);
+        ctx.lineTo(x + len, y);
+        ctx.moveTo(x, y - len);
+        ctx.lineTo(x, y + len);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
     },
   },
   {
