@@ -84,6 +84,13 @@ const CheckinPage = lazy(() =>
   import("./pages/CheckinPage.js").then((m) => ({ default: m.CheckinPage })),
 );
 
+/** 名札の一括印刷 (#304)。カード描画（QR生成・背景パターン）が大きいため遅延読み込みで分離する */
+const NameCardPrintPage = lazy(() =>
+  import("./pages/NameCardPrintPage.js").then((m) => ({
+    default: m.NameCardPrintPage,
+  })),
+);
+
 /** 遅延読み込みページ共通のフォールバック */
 function LazyFallback() {
   return (
@@ -106,6 +113,14 @@ function CheckinRoute() {
   return (
     <Suspense fallback={<LazyFallback />}>
       <CheckinPage />
+    </Suspense>
+  );
+}
+
+function NameCardPrintRoute() {
+  return (
+    <Suspense fallback={<LazyFallback />}>
+      <NameCardPrintPage />
     </Suspense>
   );
 }
@@ -351,6 +366,8 @@ export function App() {
         <Route path="/events/:id/live/control" element={<LiveControlPage />} />
         {/* QR受付。カメラ使用中に余計な再描画やSSE購読を避けるため EventLayout の外に置く */}
         <Route path="/events/:id/checkin" element={<CheckinRoute />} />
+        {/* 名札の一括印刷 (#304)。印刷用の面付けを邪魔しないよう EventLayout の外に置く */}
+        <Route path="/events/:id/name-cards" element={<NameCardPrintRoute />} />
         {/* チャット専用ページ (#215)。リレー接続を維持するため EventLayout の外 */}
         <Route path="/events/:id/chat" element={<EventChatPage />} />
         {/* 投影用画面 (#215)。配信画面と同じくモード強制遷移を受けない位置に置く */}

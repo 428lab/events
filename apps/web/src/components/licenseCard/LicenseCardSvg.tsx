@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import QRCode from "qrcode";
 import { BADGE_DEFS } from "@eventer/shared";
-import type { UserProfile } from "@eventer/shared";
 import {
   ARC_CIRCLES,
   FLOW_BAND,
@@ -352,8 +351,38 @@ export interface CardData {
   communities: { id: string; name: string; iconUrl: string | null }[];
 }
 
+/** toCardData が実際に読むプロフィールの範囲。
+ * 公開プロフィール（UserProfile）はこれを満たすが、名札の一括印刷 (#304) は
+ * 100人分をまとめて取るのでカードに出る値だけの軽量ペイロードを渡す。
+ * どちらも同じ関数でカード化できるよう、必要な形だけを型にしてある */
+export interface CardProfile {
+  id: string;
+  handle?: string;
+  name: string;
+  avatarUrl: string | null;
+  createdAt: number;
+  participation: {
+    attended: number;
+    noShow: number;
+    hosted: number;
+    spoken: number;
+  };
+  gamification: {
+    level: number;
+    xp: number;
+    badges: readonly { key: string; tier: number }[];
+  };
+  /** myEventCount は無ければ 0 扱い（サーバー側で並べ替え済みの場合は順序を保つ） */
+  communities: readonly {
+    id: string;
+    name: string;
+    iconUrl: string | null;
+    myEventCount?: number | null;
+  }[];
+}
+
 export function toCardData(
-  p: UserProfile,
+  p: CardProfile,
   fallbackHandle: string,
   host: string,
 ): CardData {
@@ -407,7 +436,8 @@ export function LicenseCardSvg({
   variant: CardBgVariant;
   theme: CardThemeKey;
   qrUrl: string;
-  svgRef: React.RefObject<SVGSVGElement>;
+  /** PNG書き出し用の参照。名札の一括印刷 (#304) のように書き出さない用途では省略できる */
+  svgRef?: React.RefObject<SVGSVGElement>;
 }) {
   const theme: CardTheme =
     CARD_THEMES.find((t) => t.key === themeKey) ?? CARD_THEMES[0];

@@ -37,6 +37,7 @@ import LockIcon from "@mui/icons-material/Lock";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import QrCode2Icon from "@mui/icons-material/QrCode2";
 import QrCodeScannerIcon from "@mui/icons-material/QrCodeScanner";
+import BadgeIcon from "@mui/icons-material/Badge";
 import { IconButton, Menu, MenuItem } from "@mui/material";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
@@ -849,6 +850,16 @@ export function EventDetailPage() {
               to={`/events/${id}/checkin`}
             >
               QR受付
+            </Button>
+          )}
+          {isStaff && (
+            <Button
+              variant="outlined"
+              startIcon={<BadgeIcon />}
+              component={RouterLink}
+              to={`/events/${id}/name-cards`}
+            >
+              名札の印刷
             </Button>
           )}
           {contest && isStaff && (

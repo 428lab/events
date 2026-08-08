@@ -45,6 +45,7 @@ import {
   getEventSurvey,
 } from "./routes/eventSurvey.js";
 import { attendanceCsvRoutes } from "./routes/attendanceCsv.js";
+import { nameCardRoutes } from "./routes/nameCards.js";
 import {
   analyticsRoutes,
   adminStatsRoutes,
@@ -166,6 +167,8 @@ api.route("/events", eventScheduleRoutes);
 api.route("/events", eventSurveyRoutes);
 // 入館名簿CSV (#154)（staff または成立会場の運営者。要認証）
 api.route("/events", attendanceCsvRoutes);
+// 名札の一括印刷 (#304)（そのイベントの参加確定スタッフのみ。要認証）
+api.route("/events", nameCardRoutes);
 api.route("/events", analyticsRoutes);
 // 退会の取り消し（復帰） (#250)。猶予期間中は requireAuth が通らないため、
 // requireAuth 付きの meRoutes より先に登録する
