@@ -19,8 +19,9 @@ function jstDay(): string {
 }
 
 /** リンク側で明示された流入元（?ref=）。許可リスト制で統計の汚染を防ぐ。
- * card はライセンスカードのQRコード経由 (#178) */
-const REF_PARAM_SOURCES = new Set(["notification", "feed", "email", "card"]);
+ * card はライセンスカードのQRコード経由 (#178)、
+ * qr は自分のQRを大きく表示して直接読み取ってもらった場合 (#324) */
+const REF_PARAM_SOURCES = new Set(["notification", "feed", "email", "card", "qr"]);
 
 /** document.referrer から流入元ラベルを作る（ホスト名のみ・先頭 www. 除去） */
 function parseSource(ref: unknown): string {

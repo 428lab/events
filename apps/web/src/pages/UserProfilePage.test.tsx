@@ -142,6 +142,23 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     expect(screen.getByText(/フォロー中 5/)).toBeTruthy();
   });
 
+  it("本人のページにだけQRを見せる導線を出す (#324)", async () => {
+    renderProfile(profile());
+    await screen.findByText("テスター");
+    const button = screen.getByRole("button", { name: "QRを見せる" });
+    button.click();
+    expect(
+      (await screen.findByTestId("big-qr")).getAttribute("data-qr-url"),
+    ).toBe(`${window.location.origin}/users/tester?ref=qr`);
+  });
+
+  it("他人のページにはQRを見せる導線を出さない (#324)", async () => {
+    renderProfile(profile({ isMe: false, id: "u-other", handle: "other" }));
+    await screen.findByText("テスター");
+    expect(screen.queryByRole("button", { name: "QRを見せる" })).toBeNull();
+    expect(screen.queryByTestId("big-qr")).toBeNull();
+  });
+
   it("本人のページの一覧には下書きも出る（マイページ相当）", async () => {
     renderProfile(profile());
     // 画像の無いイベントはカードのサムネにもタイトルを敷くので複数出る

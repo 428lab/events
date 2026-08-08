@@ -16,6 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
+import QrCode2Icon from "@mui/icons-material/QrCode2";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
@@ -46,6 +47,7 @@ import { useMeetableEvents, useRecordMeet } from "../api/eventMeetHooks.js";
 import { useUserPhotos } from "../api/eventPhotoHooks.js";
 import { ParticipationHistory } from "../components/ParticipationHistory.js";
 import { ShareButton } from "../components/ShareButton.js";
+import { BigQrDialog } from "../components/BigQrDialog.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
   owner: "オーナー",
@@ -392,6 +394,8 @@ export function UserProfilePage() {
   // 公開イベントだけなので、本人には下書き・参加申込中も含む自分用の一覧を出す
   const isMe = data?.isMe === true;
   const { data: myEvents } = useMyPage(isMe);
+  // 自分のQRを大きく見せる (#324)。他人のQRを見せる意味はないので本人のときだけ
+  const [qrOpen, setQrOpen] = useState(false);
 
   if (isError) return <Alert severity="info">ユーザーが見つかりません。</Alert>;
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
@@ -446,6 +450,8 @@ export function UserProfilePage() {
           direction="row"
           spacing={1}
           alignItems="center"
+          flexWrap="wrap"
+          useFlexGap
           sx={{
             flexShrink: 0,
             // sm以上: 余白の中央あたりに寄せて目立たせる
@@ -461,6 +467,17 @@ export function UserProfilePage() {
           >
             プロフィールカード
           </Button>
+          {/* 交流の場で相手に読み取ってもらう用の大きなQR (#324) */}
+          {data.isMe && (
+            <Button
+              variant="outlined"
+              size="large"
+              startIcon={<QrCode2Icon />}
+              onClick={() => setQrOpen(true)}
+            >
+              QRを見せる
+            </Button>
+          )}
           <ShareButton
             title={data.name}
             url={`${window.location.origin}/users/${data.handle ?? id}`}
@@ -486,6 +503,16 @@ export function UserProfilePage() {
           </Button>
         )}
       </Stack>
+
+      {data.isMe && (
+        <BigQrDialog
+          open={qrOpen}
+          onClose={() => setQrOpen(false)}
+          handle={data.handle ?? id}
+          name={data.name}
+          avatarUrl={data.avatarUrl}
+        />
+      )}
 
       {/* 直下の一覧と同じ母集団を数える。本人のページは下書き等も含む自分用の
           一覧なので、公開ぶんだけを数えると件数が合わなくなる (#319) */}
