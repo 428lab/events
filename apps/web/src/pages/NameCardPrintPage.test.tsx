@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   CARDS_PER_SHEET,
+  NAME_CARD_GAP_MM,
   NAME_CARD_H_MM,
   NAME_CARD_W_MM,
   SHEET_COLS,
@@ -215,13 +216,22 @@ describe("名札の印刷: 権限 (#304)", () => {
 });
 
 describe("名札の印刷: 面付けと崩れにくさ (#304)", () => {
-  it("A4に10面（2列×5行）で、余白は左右14mm・上下11mm", () => {
-    // 91×55mm を等間隔に敷き詰めた結果が市販の名刺用紙10面と一致する
+  it("A4に10面（2列×5行）。カードの間を1mmあけ、余白は左右13.5mm・上下9mm", () => {
     expect(CARDS_PER_SHEET).toBe(10);
     expect(SHEET_COLS * NAME_CARD_W_MM).toBe(182);
     expect(SHEET_ROWS * NAME_CARD_H_MM).toBe(275);
-    expect(SHEET_MARGIN_X_MM).toBe(14);
-    expect(SHEET_MARGIN_Y_MM).toBe(11);
+    // 完全にくっついていると裁断しづらいので間をあける
+    expect(NAME_CARD_GAP_MM).toBeGreaterThan(0);
+    expect(SHEET_MARGIN_X_MM).toBe(13.5);
+    expect(SHEET_MARGIN_Y_MM).toBe(9);
+    // 用紙からはみ出さない。上下の余白はプリンタが刷れる範囲（5mm以上）に収める
+    const usedW =
+      SHEET_COLS * NAME_CARD_W_MM + (SHEET_COLS - 1) * NAME_CARD_GAP_MM;
+    const usedH =
+      SHEET_ROWS * NAME_CARD_H_MM + (SHEET_ROWS - 1) * NAME_CARD_GAP_MM;
+    expect(usedW + SHEET_MARGIN_X_MM * 2).toBe(210);
+    expect(usedH + SHEET_MARGIN_Y_MM * 2).toBe(297);
+    expect(SHEET_MARGIN_Y_MM).toBeGreaterThanOrEqual(5);
   });
 
   it("11人以上は用紙をまたいで割り付けられる", () => {
