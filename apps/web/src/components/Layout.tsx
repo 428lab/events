@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AppBar,
   Avatar,
@@ -19,6 +19,7 @@ import MenuIcon from "@mui/icons-material/Menu";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import { useBundleReload } from "../lib/useBundleReload.js";
+import { useNavCollapse } from "../lib/useNavCollapse.js";
 import type { User } from "@eventer/shared";
 import { useIsAdmin, useLogout } from "../api/hooks.js";
 import { useAdminInquiryUnreadCount } from "../api/inquiryHooks.js";
@@ -27,6 +28,36 @@ import { ThemeSwitcher } from "./ThemeSwitcher.js";
 import { NotificationBell } from "./NotificationBell.js";
 import { LogoGlyph } from "./LogoGlyph.js";
 import { VersionFooter } from "./VersionFooter.js";
+
+/**
+ * 横並びナビとハンバーガーで同じものを出すため、項目は1か所で定義する。
+ * （別々に書いていると片方に追加し忘れて到達できない項目ができる）
+ */
+const NAV_ITEMS = [
+  { to: "/communities", label: "コミュニティ" },
+  { to: "/venues", label: "会場" },
+  { to: "/decks", label: "スライド" },
+  { to: "/live-sets", label: "配信" },
+  { to: "/me", label: "マイページ" },
+] as const;
+
+type AdminItem = {
+  to: string;
+  label: string;
+  /** 未読件数バッジの種別 */
+  badge?: "inquiry" | "abuse";
+};
+
+const ADMIN_ITEMS: readonly AdminItem[] = [
+  { to: "/admin/inquiries", label: "問い合わせ管理", badge: "inquiry" },
+  { to: "/admin/settings", label: "運用設定" },
+  { to: "/admin/kpi", label: "KPI" },
+  { to: "/admin/trending", label: "注目" },
+  { to: "/admin/stats", label: "統計" },
+  { to: "/admin/abuse", label: "要確認", badge: "abuse" },
+  { to: "/admin/moderation", label: "コンテンツの対処" },
+  { to: "/admin/audit-logs", label: "監査ログ" },
+];
 
 export function Layout({
   user,
@@ -59,11 +90,27 @@ export function Layout({
   const closeMenu = () => setAnchor(null);
   const doLogout = () =>
     logout.mutate(undefined, { onSuccess: () => navigate("/login") });
+  const badgeCount = (kind: AdminItem["badge"]) =>
+    kind === "inquiry" ? (adminUnread ?? 0) : kind === "abuse" ? (abuseUnread ?? 0) : 0;
+
+  // 幅に収まらなくなったらハンバーガーへ畳む (#316)
+  const { containerRef, contentRef, collapsed } = useNavCollapse<
+    HTMLDivElement,
+    HTMLDivElement
+  >();
+
+  // 表示形態が切り替わったら、開きっぱなしのメニューは閉じる。
+  // 消えた要素にアンカーされたままにしないため
+  useEffect(() => {
+    if (collapsed) setAdminAnchor(null);
+    else setAnchor(null);
+  }, [collapsed]);
 
   return (
     <Box sx={{ minHeight: "100vh", overflowX: "hidden" }}>
       <AppBar position="static" elevation={0}>
         <Toolbar sx={{ gap: 0.5 }}>
+          {/* 幅が足りないときはロゴ文字から先に詰める（右側の操作系を守る） */}
           <Box
             component={RouterLink}
             to="/"
@@ -73,6 +120,7 @@ export function Layout({
               gap: 1,
               color: "inherit",
               textDecoration: "none",
+              minWidth: 0,
             }}
           >
             <LogoGlyph size={34} />
@@ -88,185 +136,152 @@ export function Layout({
               height: 18,
               fontSize: 11,
               fontWeight: 700,
+              flexShrink: 0,
               bgcolor: "#FB923C",
               color: "#0E1426",
             }}
           />
-          <Box sx={{ flexGrow: 1 }} />
 
-          {isAdmin && (
-            <Chip
-              label="運営管理者"
-              size="small"
-              color="secondary"
-              sx={{ mr: 0.5, color: "#fff", display: { xs: "none", sm: "flex" } }}
-            />
-          )}
-
-          {/* デスクトップ: 横並びナビ */}
-          <Box sx={{ display: { xs: "none", sm: "flex" }, alignItems: "center" }}>
-            <Button color="inherit" component={RouterLink} to="/communities">
-              コミュニティ
-            </Button>
-            <Button color="inherit" component={RouterLink} to="/venues">
-              会場
-            </Button>
-            <Button color="inherit" component={RouterLink} to="/decks">
-              スライド
-            </Button>
-            <Button color="inherit" component={RouterLink} to="/live-sets">
-              配信
-            </Button>
-            <Button color="inherit" component={RouterLink} to="/me">
-              マイページ
-            </Button>
-            {isAdmin && (
-              <>
+          {/* デスクトップ: 横並びナビ。
+              収まらなくなったら畳むが、幅を測り続けるため DOM には残す */}
+          <Box
+            ref={containerRef}
+            sx={{
+              // flex-basis は 0。畳んでいる（= 見えない）ナビの幅を
+              // 主張してロゴを押し縮めないようにする。
+              // ここの幅がそのまま「ナビに使える幅」になる
+              flex: "1 1 0%",
+              minWidth: 0,
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              overflow: "hidden",
+            }}
+          >
+            <Box
+              ref={contentRef}
+              aria-hidden={collapsed || undefined}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                flexShrink: 0,
+                visibility: collapsed ? "hidden" : "visible",
+                pointerEvents: collapsed ? "none" : undefined,
+              }}
+            >
+              {isAdmin && (
+                <Chip
+                  label="運営管理者"
+                  size="small"
+                  color="secondary"
+                  sx={{ mr: 0.5, color: "#fff" }}
+                />
+              )}
+              {NAV_ITEMS.map((item) => (
+                <Button
+                  key={item.to}
+                  color="inherit"
+                  component={RouterLink}
+                  to={item.to}
+                  sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                >
+                  {item.label}
+                </Button>
+              ))}
+              {isAdmin && (
                 <Tooltip title={adminBadgeTitle}>
                   <Button
                     color="inherit"
                     onClick={(e) => setAdminAnchor(e.currentTarget)}
                     endIcon={<ExpandMoreIcon />}
+                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
                   >
                     <Badge badgeContent={adminBadge} color="error">
                       運用
                     </Badge>
                   </Button>
                 </Tooltip>
-                <Menu
-                  anchorEl={adminAnchor}
-                  open={Boolean(adminAnchor)}
-                  onClose={() => setAdminAnchor(null)}
-                >
-                  <MenuItem
-                    component={RouterLink}
-                    to="/admin/inquiries"
-                    onClick={() => setAdminAnchor(null)}
-                  >
-                    問い合わせ管理
-                    {Boolean(adminUnread) && (
-                      <Chip
-                        size="small"
-                        color="error"
-                        label={adminUnread}
-                        sx={{ ml: 1, height: 18 }}
-                      />
-                    )}
-                  </MenuItem>
-                  <MenuItem
-                    component={RouterLink}
-                    to="/admin/settings"
-                    onClick={() => setAdminAnchor(null)}
-                  >
-                    運用設定
-                  </MenuItem>
-                  <MenuItem
-                    component={RouterLink}
-                    to="/admin/kpi"
-                    onClick={() => setAdminAnchor(null)}
-                  >
-                    KPI
-                  </MenuItem>
-                  <MenuItem
-                    component={RouterLink}
-                    to="/admin/trending"
-                    onClick={() => setAdminAnchor(null)}
-                  >
-                    注目
-                  </MenuItem>
-                  <MenuItem
-                    component={RouterLink}
-                    to="/admin/stats"
-                    onClick={() => setAdminAnchor(null)}
-                  >
-                    統計
-                  </MenuItem>
-                  <MenuItem
-                    component={RouterLink}
-                    to="/admin/abuse"
-                    onClick={() => setAdminAnchor(null)}
-                  >
-                    要確認
-                    {Boolean(abuseUnread) && (
-                      <Chip
-                        size="small"
-                        color="error"
-                        label={abuseUnread}
-                        sx={{ ml: 1, height: 18 }}
-                      />
-                    )}
-                  </MenuItem>
-                  <MenuItem
-                    component={RouterLink}
-                    to="/admin/moderation"
-                    onClick={() => setAdminAnchor(null)}
-                  >
-                    コンテンツの対処
-                  </MenuItem>
-                  <MenuItem
-                    component={RouterLink}
-                    to="/admin/audit-logs"
-                    onClick={() => setAdminAnchor(null)}
-                  >
-                    監査ログ
-                  </MenuItem>
-                </Menu>
-              </>
+              )}
+              <Button
+                color="inherit"
+                onClick={doLogout}
+                sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+              >
+                ログアウト
+              </Button>
+            </Box>
+          </Box>
+
+          {/* お知らせ・テーマ・アカウントとハンバーガーは常に手前に残す */}
+          <Box
+            sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}
+          >
+            <NotificationBell />
+            <ThemeSwitcher />
+            <Avatar
+              component={RouterLink}
+              to="/account"
+              src={user.avatarUrl ?? undefined}
+              title="アカウント設定"
+              sx={{
+                width: 32,
+                height: 32,
+                mx: 0.5,
+                textDecoration: "none",
+                cursor: "pointer",
+              }}
+            >
+              {(user.globalName ?? user.username).charAt(0)}
+            </Avatar>
+            {collapsed && (
+              <IconButton
+                color="inherit"
+                edge="end"
+                onClick={(e) => setAnchor(e.currentTarget)}
+                aria-label="メニュー"
+              >
+                <MenuIcon />
+              </IconButton>
             )}
           </Box>
 
-          <NotificationBell />
-          <ThemeSwitcher />
-          <Avatar
-            component={RouterLink}
-            to="/account"
-            src={user.avatarUrl ?? undefined}
-            title="アカウント設定"
-            sx={{
-              width: 32,
-              height: 32,
-              mx: 0.5,
-              textDecoration: "none",
-              cursor: "pointer",
-            }}
+          <Menu
+            anchorEl={adminAnchor}
+            open={Boolean(adminAnchor)}
+            onClose={() => setAdminAnchor(null)}
           >
-            {(user.globalName ?? user.username).charAt(0)}
-          </Avatar>
+            {ADMIN_ITEMS.map((item) => (
+              <MenuItem
+                key={item.to}
+                component={RouterLink}
+                to={item.to}
+                onClick={() => setAdminAnchor(null)}
+              >
+                {item.label}
+                {Boolean(badgeCount(item.badge)) && (
+                  <Chip
+                    size="small"
+                    color="error"
+                    label={badgeCount(item.badge)}
+                    sx={{ ml: 1, height: 18 }}
+                  />
+                )}
+              </MenuItem>
+            ))}
+          </Menu>
 
-          <Button
-            color="inherit"
-            onClick={doLogout}
-            sx={{ display: { xs: "none", sm: "inline-flex" } }}
-          >
-            ログアウト
-          </Button>
-
-          {/* モバイル: ハンバーガーメニュー */}
-          <IconButton
-            color="inherit"
-            edge="end"
-            onClick={(e) => setAnchor(e.currentTarget)}
-            sx={{ display: { xs: "inline-flex", sm: "none" } }}
-            aria-label="メニュー"
-          >
-            <MenuIcon />
-          </IconButton>
+          {/* 折りたたみ時のメニュー。横並びナビの項目をすべて含む */}
           <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={closeMenu}>
-            <MenuItem component={RouterLink} to="/communities" onClick={closeMenu}>
-              コミュニティ
-            </MenuItem>
-            <MenuItem component={RouterLink} to="/venues" onClick={closeMenu}>
-              会場
-            </MenuItem>
-            <MenuItem component={RouterLink} to="/decks" onClick={closeMenu}>
-              スライド
-            </MenuItem>
-            <MenuItem component={RouterLink} to="/live-sets" onClick={closeMenu}>
-              配信
-            </MenuItem>
-            <MenuItem component={RouterLink} to="/me" onClick={closeMenu}>
-              マイページ
-            </MenuItem>
+            {NAV_ITEMS.map((item) => (
+              <MenuItem
+                key={item.to}
+                component={RouterLink}
+                to={item.to}
+                onClick={closeMenu}
+              >
+                {item.label}
+              </MenuItem>
+            ))}
             <MenuItem
               component={RouterLink}
               to="/notifications"
@@ -282,92 +297,26 @@ export function Layout({
                 運用
               </ListSubheader>
             )}
-            {isAdmin && (
-              <MenuItem
-                component={RouterLink}
-                to="/admin/inquiries"
-                onClick={closeMenu}
-                sx={{ pl: 3 }}
-              >
-                問い合わせ管理
-                {Boolean(adminUnread) && (
-                  <Chip
-                    size="small"
-                    color="error"
-                    label={adminUnread}
-                    sx={{ ml: 1, height: 18 }}
-                  />
-                )}
-              </MenuItem>
-            )}
-            {isAdmin && (
-              <MenuItem component={RouterLink} to="/admin/kpi" onClick={closeMenu} sx={{ pl: 3 }}>
-                KPI
-              </MenuItem>
-            )}
-            {isAdmin && (
-              <MenuItem
-                component={RouterLink}
-                to="/admin/trending"
-                onClick={closeMenu}
-                sx={{ pl: 3 }}
-              >
-                注目
-              </MenuItem>
-            )}
-            {isAdmin && (
-              <MenuItem component={RouterLink} to="/admin/stats" onClick={closeMenu} sx={{ pl: 3 }}>
-                統計
-              </MenuItem>
-            )}
-            {isAdmin && (
-              <MenuItem
-                component={RouterLink}
-                to="/admin/settings"
-                onClick={closeMenu}
-                sx={{ pl: 3 }}
-              >
-                運用設定
-              </MenuItem>
-            )}
-            {isAdmin && (
-              <MenuItem
-                component={RouterLink}
-                to="/admin/abuse"
-                onClick={closeMenu}
-                sx={{ pl: 3 }}
-              >
-                要確認
-                {Boolean(abuseUnread) && (
-                  <Chip
-                    size="small"
-                    color="error"
-                    label={abuseUnread}
-                    sx={{ ml: 1, height: 18 }}
-                  />
-                )}
-              </MenuItem>
-            )}
-            {isAdmin && (
-              <MenuItem
-                component={RouterLink}
-                to="/admin/moderation"
-                onClick={closeMenu}
-                sx={{ pl: 3 }}
-              >
-                コンテンツの対処
-              </MenuItem>
-            )}
-            {isAdmin && (
-              <MenuItem
-                component={RouterLink}
-                to="/admin/audit-logs"
-                onClick={closeMenu}
-                sx={{ pl: 3 }}
-              >
-                監査ログ
-              </MenuItem>
-            )}
+            {isAdmin &&
+              ADMIN_ITEMS.map((item) => (
+                <MenuItem
+                  key={item.to}
+                  component={RouterLink}
+                  to={item.to}
+                  onClick={closeMenu}
+                  sx={{ pl: 3 }}
+                >
+                  {item.label}
+                  {Boolean(badgeCount(item.badge)) && (
+                    <Chip
+                      size="small"
+                      color="error"
+                      label={badgeCount(item.badge)}
+                      sx={{ ml: 1, height: 18 }}
+                    />
+                  )}
+                </MenuItem>
+              ))}
             <MenuItem component={RouterLink} to="/account" onClick={closeMenu}>
               アカウント設定
             </MenuItem>
