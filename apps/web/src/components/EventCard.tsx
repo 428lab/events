@@ -11,7 +11,12 @@ import { Link as RouterLink } from "react-router-dom";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import type { Event, EventRole } from "@eventer/shared";
 import { eventImageUrl } from "../api/hooks.js";
-import { formatDateRange, roleLabel, venueLabel } from "../lib/format.js";
+import {
+  formatDateRange,
+  participantCountLabel,
+  roleLabel,
+  venueLabel,
+} from "../lib/format.js";
 import { useCommunities } from "../api/communityHooks.js";
 import { Avatar } from "@mui/material";
 
@@ -188,7 +193,7 @@ export function EventCard({
               ) : (
                 formatDateRange(event.startsAt, event.endsAt)
               )}{" "}
-              ・ 参加 {event.participantCount} 人
+              ・ {participantCountLabel(event)}
             </Typography>
           </CardContent>
         </CardActionArea>
@@ -338,7 +343,7 @@ export function EventCard({
             ) : (
               formatDateRange(event.startsAt, event.endsAt)
             )}{" "}
-            ・ {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
+            ・ {venueLabel[event.venueType]} ・ {participantCountLabel(event)}
           </Typography>
         </CardContent>
       </CardActionArea>

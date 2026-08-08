@@ -24,6 +24,7 @@ interface EventRow {
   created_at: number;
   image_updated_at: number | null;
   participant_count: number;
+  attended_count: number;
   community_id: string | null;
   scheduling: number;
   schedule_anonymous: number;
@@ -47,22 +48,30 @@ interface EventRow {
   members_note: string;
 }
 
-/** 参加者としてカウントする条件。出席チェックモードでは
- * 「出席済み」または参加者以外(staff等)のみ。通常モードは確定者すべて。 */
-export const COUNTS_AS_PARTICIPANT =
-  "(event.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant')";
-
 /** 参加者数のカウント対象から退会申請中 (#250) を外す条件。
  * 参加者一覧（listWithUsers）が deleted_at で絞っているので、数だけ多いと
  * 「12人」と出て11人しか並ばない、という不整合になる */
 export const COUNTED_MEMBER_IS_ACTIVE =
   "EXISTS (SELECT 1 FROM user u WHERE u.id = em.user_id AND u.deleted_at IS NULL)";
 
-/** participant_count（実参加者数）を含む event の SELECT */
+/** 参加者数（確定メンバー数）を数えるサブクエリ。参加者一覧（listWithUsers）と
+ * 同じ母集団なので、一覧の件数と必ず一致する (#297) */
+export const PARTICIPANT_COUNT_SQL = (eventIdExpr: string) =>
+  `(SELECT COUNT(1) FROM event_member em
+    WHERE em.event_id = ${eventIdExpr} AND em.status = 'confirmed'
+      AND ${COUNTED_MEMBER_IS_ACTIVE})`;
+
+/** 出席者数。役割を問わず、実際に出席が記録された人だけを数える。
+ * 出席チェックモード以外のイベントでは常に 0（誰も記録されない） (#297) */
+export const ATTENDED_COUNT_SQL = (eventIdExpr: string) =>
+  `(SELECT COUNT(1) FROM event_member em
+    WHERE em.event_id = ${eventIdExpr} AND em.status = 'confirmed'
+      AND em.attended = 1 AND ${COUNTED_MEMBER_IS_ACTIVE})`;
+
+/** participant_count（参加者数）/ attended_count（出席者数）を含む event の SELECT */
 const SELECT_EVENT = `SELECT *,
-  (SELECT COUNT(1) FROM event_member em
-   WHERE em.event_id = event.id AND em.status = 'confirmed'
-     AND ${COUNTS_AS_PARTICIPANT} AND ${COUNTED_MEMBER_IS_ACTIVE}) AS participant_count
+  ${PARTICIPANT_COUNT_SQL("event.id")} AS participant_count,
+  ${ATTENDED_COUNT_SQL("event.id")} AS attended_count
   FROM event`;
 
 function toEvent(row: EventRow): Event {
@@ -84,6 +93,7 @@ function toEvent(row: EventRow): Event {
     createdAt: row.created_at,
     imageUpdatedAt: row.image_updated_at,
     participantCount: row.participant_count,
+    attendedCount: row.attended_count ?? 0,
     communityId: row.community_id ?? null,
     scheduling: row.scheduling === 1,
     scheduleAnonymous: row.schedule_anonymous === 1,

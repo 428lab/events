@@ -230,7 +230,8 @@ export const kpiRepo = {
          -- 数えても捨てるだけなので CASE で短絡させる）
          SELECT b.*,
                 CASE WHEN b.held_p > 0 THEN (
-                  -- イベントページの participantCount と同じ定義（主催・スタッフを含む）
+                  -- 実際に集まった人数（主催・スタッフを含む）。イベントページの
+                  -- participantCount は確定メンバー数なので、ここは意図的に別定義 (#297)
                   SELECT COUNT(1) FROM event_member em
                    WHERE em.event_id = b.id AND em.status = 'confirmed'
                      AND (b.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant')

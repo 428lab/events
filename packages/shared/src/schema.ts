@@ -45,7 +45,11 @@ export const eventSchema = z.object({
   createdBy: z.string(),
   createdAt: z.number(),
   imageUpdatedAt: z.number().nullable(),
+  /** 参加者数（確定メンバー数）。参加者一覧の件数と一致する (#297) */
   participantCount: z.number(),
+  /** 出席者数。役割を問わず実際に出席が記録された人数。
+   * 出席チェックモードでないイベントは常に 0 (#297) */
+  attendedCount: z.number(),
   /** 所属コミュニティ（任意。無所属は null） */
   communityId: z.string().nullable(),
   /** 日程調整中（開始/終了日時は未確定。候補日に投票して主催が確定する） */

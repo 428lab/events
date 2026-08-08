@@ -258,7 +258,7 @@ describe("KPI: 北極星と出席率", () => {
     expect(kpi.participants.noShowRate).toBeCloseTo(1 / 3, 10);
   });
 
-  it("北極星の参加者数はイベントページの参加者数 (participantCount) と一致する", async () => {
+  it("北極星は実際に集まった人数で数える（イベントページの参加者数とは別 #297）", async () => {
     const admin = await makeUser({ admin: true });
     const host = await makeUser();
     const p1 = await makeUser();
@@ -273,11 +273,17 @@ describe("KPI: 北極星と出席率", () => {
 
     const res = await SELF.fetch(`${BASE}/api/events/${ev}`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { event: { participantCount: number } };
+    const body = (await res.json()) as {
+      event: { participantCount: number; attendedCount: number };
+    };
 
+    // イベントページは確定メンバー全員（主催1 + 登録3）
+    expect(body.event.participantCount).toBe(4);
+    expect(body.event.attendedCount).toBe(2);
+
+    // 北極星は「実際に集まった人数」なので出席2 + 主催1
     const kpi = await getKpi(admin.cookie, 30);
-    expect(body.event.participantCount).toBe(3); // 出席2 + 主催1
-    expect(kpi.northStar.participations).toBe(body.event.participantCount);
+    expect(kpi.northStar.participations).toBe(3);
   });
 
   it("退会申請中ユーザーは北極星・出席率の分母から外す", async () => {

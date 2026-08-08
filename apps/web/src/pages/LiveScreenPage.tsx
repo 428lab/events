@@ -13,7 +13,7 @@ import {
 import { LiveSceneStage } from "../components/LiveStage.js";
 import { SlideStage } from "../components/SlideStage.js";
 import type { LiveRuntime } from "../components/LiveStage.js";
-import { formatDateRange } from "../lib/format.js";
+import { formatDateRange, participantCountLabel } from "../lib/format.js";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
 
 const DEVICE_KEY = "eventer-live-camera-device";
@@ -194,7 +194,7 @@ export function LiveScreenPage() {
             ? "日程調整中"
             : formatDateRange(event.startsAt, event.endsAt);
         case "participants":
-          return `参加 ${event.participantCount} 人`;
+          return participantCountLabel(event);
         case "community":
           return eventData?.community?.name ?? "";
       }

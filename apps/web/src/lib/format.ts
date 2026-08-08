@@ -1,4 +1,4 @@
-import type { EventRole, VenueType } from "@eventer/shared";
+import type { Event, EventRole, VenueType } from "@eventer/shared";
 
 export function formatDateRange(startsAt: number, endsAt: number): string {
   const s = new Date(startsAt);
@@ -94,3 +94,39 @@ export const venueLabel: Record<VenueType, string> = {
   online: "オンライン",
   hybrid: "ハイブリッド",
 };
+
+/** 人数表示に使うイベント項目 */
+type CountableEvent = Pick<
+  Event,
+  | "attendanceCheck"
+  | "scheduling"
+  | "startsAt"
+  | "participantCount"
+  | "attendedCount"
+>;
+
+/** 出席者数も並べるか。出席チェックモードで、かつ開始日時を過ぎたイベントだけ。
+ * 開催前は誰も出席していないので「出席 0 人」を並べても意味がない。
+ * 日程調整中・開始日時が未設定 (0) のイベントは開催前として扱う (#297) */
+export function showsAttendedCount(
+  event: CountableEvent,
+  now: number = Date.now(),
+): boolean {
+  return (
+    event.attendanceCheck &&
+    !event.scheduling &&
+    event.startsAt > 0 &&
+    event.startsAt <= now
+  );
+}
+
+/** 「参加 5 人」または「参加 5 人・出席 3 人」 (#297) */
+export function participantCountLabel(
+  event: CountableEvent,
+  now: number = Date.now(),
+): string {
+  const base = `参加 ${event.participantCount} 人`;
+  return showsAttendedCount(event, now)
+    ? `${base}・出席 ${event.attendedCount} 人`
+    : base;
+}

@@ -36,7 +36,7 @@ async function canViewPhotos(eventId: string, c: Context): Promise<boolean> {
   const member = await eventMembersRepo.find(eventId, user.id);
   if (!member) return false;
   // 出席チェックモードでは、参加者ロールは出席チェック済みのみ閲覧可
-  // （参加人数カウント COUNTS_AS_PARTICIPANT と同じ基準）
+  // （実際に来た人だけに見せる。参加者数の表示とは別の基準）
   if (event.attendanceCheck && member.role === "participant" && !member.attended) {
     return false;
   }
