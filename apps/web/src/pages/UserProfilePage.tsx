@@ -37,13 +37,12 @@ import type {
   ParticipationStats,
   UserAward,
   UserPhoto,
-  UserProfile,
 } from "@eventer/shared";
 import { useSetFollow, useUserProfile } from "../api/userHooks.js";
 import { useMe } from "../api/hooks.js";
 import { useMeetableEvents, useRecordMeet } from "../api/eventMeetHooks.js";
 import { useUserPhotos } from "../api/eventPhotoHooks.js";
-import { EventList, ListColumnsToggle } from "../components/EventList.js";
+import { ParticipationTimeline } from "../components/ParticipationTimeline.js";
 import { ShareButton } from "../components/ShareButton.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
@@ -341,16 +340,6 @@ export function UserProfilePage() {
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
 
   const joined = new Date(data.createdAt).toLocaleDateString("ja-JP");
-  const now = Date.now();
-  // 日程調整中（endsAt未確定=0）は「これから」側に含める
-  const isUpcoming = (e: { scheduling: boolean; endsAt: number }) =>
-    e.scheduling || e.endsAt >= now;
-  const hosted = data.events.filter((e) => e.myRole === "staff");
-  const joinedEvents = data.events.filter((e) => e.myRole !== "staff");
-  const hostedUpcoming = hosted.filter(isUpcoming);
-  const hostedPast = hosted.filter((e) => !isUpcoming(e));
-  const joinedUpcoming = joinedEvents.filter(isUpcoming);
-  const joinedPast = joinedEvents.filter((e) => !isUpcoming(e));
 
   const toggleFollow = () => {
     if (!me) {
@@ -457,46 +446,19 @@ export function UserProfilePage() {
         </Box>
       )}
 
+      {/* 参加履歴の年表 (#308)。どのイベントに行ったかを日付順に見せる */}
       {data.events.length === 0 ? (
         <Typography color="text.secondary">
           公開イベントの実績はまだありません。
         </Typography>
       ) : (
-        <>
-          <Section title="主催・運営するイベント" events={hostedUpcoming} />
-          <Section title="参加予定のイベント" events={joinedUpcoming} />
-          <Section title="主催・運営したイベント" events={hostedPast} />
-          <Section title="参加したイベント" events={joinedPast} />
-        </>
+        <ParticipationTimeline
+          events={data.events}
+          userId={data.id}
+          speakerEventIds={data.speakerEventIds ?? []}
+        />
       )}
     </Stack>
-  );
-}
-
-function Section({
-  title,
-  events,
-}: {
-  title: string;
-  events: UserProfile["events"];
-}) {
-  if (events.length === 0) return null;
-  return (
-    <Box>
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        spacing={1}
-        sx={{ mb: 1 }}
-      >
-        <Typography variant="h6">
-          {title}（{events.length}）
-        </Typography>
-        <ListColumnsToggle />
-      </Stack>
-      <EventList events={events} />
-    </Box>
   );
 }
 

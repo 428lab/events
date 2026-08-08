@@ -8,6 +8,7 @@ import { communitiesRepo } from "../db/repositories/communities.js";
 import { decksRepo } from "../db/repositories/decks.js";
 import { awardsRepo } from "../db/repositories/awards.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
+import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
 import { listCommunityRequests } from "./eventRequests.js";
 import { followsRepo } from "../db/repositories/follows.js";
 import { eventLikesRepo } from "../db/repositories/eventLikes.js";
@@ -68,7 +69,10 @@ publicRoutes.get("/users/:handle", async (c) => {
     (await usersRepo.findByUsername(handle)) ??
     (await usersRepo.findById(handle));
   if (!user) return c.json({ error: "not_found" }, 404);
-  const events = await eventMembersRepo.listPublicEventsForUser(user.id);
+  const events = await eventMembersRepo.listPublicEventsForUser(
+    user.id,
+    Date.now(),
+  );
   const communities = await communitiesRepo.listForUser(user.id);
   const awards = await awardsRepo.listPublicAwardsForUser(user.id, Date.now());
   const viewer = await currentUser(c);
@@ -81,6 +85,9 @@ publicRoutes.get("/users/:handle", async (c) => {
     events,
     communities,
     awards,
+    // 年表に「登壇」を添えるための紐づけ (#308)。イベント本体とは別テーブルなので
+    // 一覧に混ぜず id の集合だけ渡し、表示側で events と突き合わせる
+    speakerEventIds: await eventScheduleRepo.listPublicSpokenEventIds(user.id),
     participation: {
       ...(await eventMembersRepo.participationStats(user.id, Date.now())),
       // 主催・スタッフとしてもらったいいね合計 (#155)。SQLはいいねリポジトリに集約

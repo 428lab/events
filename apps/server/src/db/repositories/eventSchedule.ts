@@ -181,4 +181,17 @@ export const eventScheduleRepo = {
       ogUrl,
     );
   },
+
+  /** 公開プロフィール用: そのユーザーが登壇者として紐づいている公開イベントの id (#308)。
+   * タイムテーブルは公開イベントページで誰でも見られる情報なので公開してよい。
+   * 下書き・非公開のイベントは id も返さない */
+  async listPublicSpokenEventIds(userId: string): Promise<string[]> {
+    const rows = await many<{ event_id: string }>(
+      `SELECT DISTINCT si.event_id FROM event_schedule_item si
+         JOIN event e ON e.id = si.event_id
+        WHERE si.speaker_user_id = ? AND e.status = 'published'`,
+      userId,
+    );
+    return rows.map((r) => r.event_id);
+  },
 };

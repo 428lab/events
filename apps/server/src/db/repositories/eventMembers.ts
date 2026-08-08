@@ -381,8 +381,13 @@ export const eventMembersRepo = {
   },
 
   /** 公開プロフィール用: 公開イベントのうち本人が確定参加しているもの。
-   * 出席チェックモードのイベントは、参加者ロールなら出席済みのみ。 */
-  async listPublicEventsForUser(userId: string): Promise<MyEventSummary[]> {
+   * 出席チェックモードのイベントは、参加者ロールなら出席済みのみ。
+   * ただし「出席の記録が無い＝行っていない」と言えるのは終了済みの回だけなので、
+   * これから開催される回と日程調整中（ends_at 未確定=0）は出席に関わらず残す (#308) */
+  async listPublicEventsForUser(
+    userId: string,
+    now: number,
+  ): Promise<MyEventSummary[]> {
     const rows = await many<Record<string, unknown> & { my_role: string }>(
       `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
                 ${PARTICIPANT_COUNT_SQL("e.id")} AS participant_count,
@@ -391,9 +396,11 @@ export const eventMembersRepo = {
          FROM event_member m
          JOIN event e ON e.id = m.event_id
          WHERE m.user_id = ? AND m.status = 'confirmed' AND e.status = 'published'
-           AND (e.attendance_check = 0 OR m.attended = 1 OR m.role <> 'participant')
+           AND (e.attendance_check = 0 OR m.attended = 1 OR m.role <> 'participant'
+                OR e.ends_at <= 0 OR e.ends_at >= ?)
          ORDER BY e.starts_at DESC`,
       userId,
+      now,
     );
     return rows.map(mapMyEventSummary);
   },

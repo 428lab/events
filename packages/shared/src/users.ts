@@ -51,6 +51,9 @@ export const userProfileSchema = z.object({
   events: z.array(myEventSummary),
   communities: z.array(communitySummarySchema),
   awards: z.array(userAwardSchema),
+  /** events のうち、タイムテーブルで登壇者として紐づいているイベントの id (#308)。
+   * 参加履歴の年表で「登壇」を添えるために使う */
+  speakerEventIds: z.array(z.string()),
   /** 参加実績（出席・無断欠席・キャンセル内訳） */
   participation: participationStatsSchema,
   /** XP・レベル・バッジ（有効イベントのみから導出） (#14) */
