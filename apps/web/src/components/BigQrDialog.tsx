@@ -152,9 +152,10 @@ export function BigQrDialog({
           data-testid="big-qr"
           data-qr-url={url}
           sx={{
-            // 縦持ちのスマホで短辺いっぱい。周囲の余白も静穏帯として効く
-            width: "min(92vw, 70vh)",
-            height: "min(92vw, 70vh)",
+            // 縦持ちのスマホで短辺いっぱい。周囲の余白も静穏帯として効く。
+            // 100% を混ぜて左右パディングぶんの横はみ出し（幅400px未満の端末）を防ぐ
+            width: "min(92vw, 70vh, 100%)",
+            height: "min(92vw, 70vh, 100%)",
             bgcolor: "#ffffff",
           }}
         >
