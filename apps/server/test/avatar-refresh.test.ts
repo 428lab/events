@@ -167,12 +167,25 @@ interface Row {
   avatar_image_updated_at: number | null;
   avatar_image_mime: string | null;
   avatar_image_hash: string | null;
+  avatar_source_url: string | null;
+  avatar_sync_attempted_at: number | null;
 }
 
 async function userRow(userId: string): Promise<Row | null> {
   return env.DB.prepare("SELECT * FROM user WHERE id = ?")
     .bind(userId)
     .first<Row>();
+}
+
+/** nostr の pubkey からユーザーIDを引く */
+async function nostrUserId(sk: Uint8Array): Promise<string> {
+  const row = await env.DB.prepare(
+    "SELECT user_id FROM identity WHERE provider = 'nostr' AND provider_user_id = ?",
+  )
+    .bind(bytesToHex(schnorr.getPublicKey(sk)))
+    .first<{ user_id: string }>();
+  if (!row) throw new Error("no nostr identity");
+  return row.user_id;
 }
 
 /** identity から、その provider_user_id のユーザー行を引く */
@@ -451,18 +464,12 @@ describe("連携先アイコンの取り込みと配信 (#312)", () => {
     mockAvatar(t.origin, t.path, 200, IMAGE_A);
     await postNostrProfile(sk, cookie, t.fetchedUrl);
 
-    const userId = (
-      await env.DB.prepare(
-        "SELECT user_id FROM identity WHERE provider = 'nostr' AND provider_user_id = ?",
-      )
-        .bind(bytesToHex(schnorr.getPublicKey(sk)))
-        .first<{ user_id: string }>()
-    )!.user_id;
+    const userId = await nostrUserId(sk);
     const before = await userRow(userId);
     expect(before!.avatar_image_updated_at).not.toBeNull();
 
     // 取得元URLは本人が自由に書けるので、毎回違うバイト列を返すURLを指定すれば
-    // ハッシュ比較が効かず「1MB取得＋R2 put＋D1 update」を連打できてしまう
+    // ハッシュ比較が効かず、取得も書き込みも連打できてしまう
     const t2 = newCase();
     mockAvatar(t2.origin, t2.path, 200, IMAGE_B);
     await postNostrProfile(sk, cookie, t2.fetchedUrl);
@@ -470,6 +477,89 @@ describe("連携先アイコンの取り込みと配信 (#312)", () => {
     const after = await userRow(userId);
     expect(after!.avatar_image_updated_at).toBe(before!.avatar_image_updated_at);
     expect(after!.avatar_image_hash).toBe(before!.avatar_image_hash);
+    // 試みた時刻が進んでいない＝取得そのものに入る前に打ち切っている
+    expect(after!.avatar_sync_attempted_at).toBe(
+      before!.avatar_sync_attempted_at,
+    );
+  });
+
+  it("毎回同じ画像を返すURLでも連打を抑止する（更新時刻ではなく試行時刻で判定）", async () => {
+    const sk = schnorr.utils.randomSecretKey();
+    const cookie = await loginWithNostr(sk);
+    const t = newCase();
+    mockAvatar(t.origin, t.path, 200, IMAGE_A);
+    await postNostrProfile(sk, cookie, t.fetchedUrl);
+
+    const userId = await nostrUserId(sk);
+    const before = await userRow(userId);
+    expect(before!.avatar_sync_attempted_at).not.toBeNull();
+
+    // 中身が同じだと avatar_image_updated_at は進まない。これを基準にすると
+    // スロットルが一度も発火せず、外向きの取得だけ無制限に踏ませられる
+    const t2 = newCase();
+    mockAvatar(t2.origin, t2.path, 200, IMAGE_A);
+    await postNostrProfile(sk, cookie, t2.fetchedUrl);
+
+    const after = await userRow(userId);
+    expect(after!.avatar_sync_attempted_at).toBe(
+      before!.avatar_sync_attempted_at,
+    );
+    // 取りに行っていないので、取得元URLも書き換わらない
+    expect(after!.avatar_source_url).toBe(t.fetchedUrl);
+  });
+
+  it("中身が同じでURLだけ変わったら、取得元URLだけ追随する", async () => {
+    const t = newCase();
+    setXProfile(t.providerUserId, t.sourceUrl);
+    mockAvatar(t.origin, t.path, 200, IMAGE_A);
+    await loginWithX();
+    const before = await userByProvider(t.providerUserId);
+    expect(before.avatar_source_url).toBe(t.fetchedUrl);
+
+    // 連携先CDNがURLをローテーションしたが画像は同じ。旧URLは 404 になるので、
+    // 切り戻し用に控えているURLがそのままだと死んだURLを復元してしまう
+    const t2 = newCase();
+    setXProfile(t.providerUserId, t2.sourceUrl);
+    mockAvatar(t2.origin, t2.path, 200, IMAGE_A);
+    await loginWithX();
+
+    const after = await userByProvider(t.providerUserId);
+    expect(after.avatar_source_url).toBe(t2.fetchedUrl);
+    // 中身は同じなので ?v= は進めない（同じ画像を再ダウンロードさせない）
+    expect(after.avatar_image_updated_at).toBe(before.avatar_image_updated_at);
+    expect(after.avatar_url).toBe(before.avatar_url);
+  });
+
+  it("エッジキャッシュに載り、D1/R2 を引かずに返る", async () => {
+    const t = newCase();
+    setXProfile(t.providerUserId, t.sourceUrl);
+    mockAvatar(t.origin, t.path, 200, IMAGE_A);
+    await loginWithX();
+    const row = await userByProvider(t.providerUserId);
+
+    // worker.fetch 経由で叩く（cache.put が waitUntil に載っているため、
+    // waitOnExecutionContext で載り終わりを待つ必要がある）
+    const first = await hit(row.avatar_url!);
+    expect(first.status).toBe(200);
+    await first.arrayBuffer();
+
+    // 実体もメタも消してから同じURLを引く。それでも中身が返るなら、
+    // D1 も R2 も引かずにエッジキャッシュから返っている
+    await env.BUCKET.delete(`avatars/${row.id}`);
+    await env.DB.prepare(
+      "UPDATE user SET avatar_image_updated_at = NULL WHERE id = ?",
+    )
+      .bind(row.id)
+      .run();
+
+    const cached = await SELF.fetch(`${BASE}${row.avatar_url}`);
+    expect(cached.status).toBe(200);
+    expect(await cached.text()).toBe(asText(IMAGE_A));
+
+    // 余計なクエリを足しても同じエントリに当たる（キーは ?v= だけに正規化）
+    const withJunk = await SELF.fetch(`${BASE}${row.avatar_url}&junk=1`);
+    expect(withJunk.status).toBe(200);
+    expect(await withJunk.text()).toBe(asText(IMAGE_A));
   });
 
   it("配信は ETag で 304 を返す", async () => {
