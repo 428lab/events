@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   CARDS_PER_SHEET,
+  NAME_CARD_GAP_MM,
   NAME_CARD_H_MM,
   NAME_CARD_W_MM,
   SHEET_COLS,
@@ -66,6 +67,7 @@ function card(over: Partial<EventNameCard> = {}): EventNameCard {
     handle: `handle-${id}`,
     name: `参加者 ${id}`,
     avatarUrl: null,
+    cardImageKey: null,
     createdAt: 1_700_000_000_000,
     participation: { attended: 0, noShow: 0, hosted: 0, spoken: 0 },
     gamification: {
@@ -214,14 +216,61 @@ describe("名札の印刷: 権限 (#304)", () => {
   });
 });
 
+describe("名札の印刷: 本人が設定したカードで刷る (#304)", () => {
+  it("本人が選んだ見た目で描く（刷る人の設定では上書きしない）", async () => {
+    mockApi("staff", [
+      card({ id: "u-1", name: "田中", cardImageKey: "arcs-teal" }),
+      card({ id: "u-2", name: "鈴木", cardImageKey: "flow-amber" }),
+    ]);
+    renderPage();
+    await screen.findByText(/2 人/);
+    const svgs = document.querySelectorAll(".name-card-cell svg");
+    expect(svgs).toHaveLength(2);
+    // 背景の描き分けが実際に違うこと（同じ見た目で刷られていない）
+    expect(svgs[0]!.innerHTML).not.toBe(svgs[1]!.innerHTML);
+  });
+
+  it("カードを保存していない人は既定の見た目で描く（欠けても壊れない）", async () => {
+    mockApi("staff", [card({ id: "u-1", name: "田中", cardImageKey: null })]);
+    renderPage();
+    await screen.findByText(/1 人/);
+    expect(document.querySelectorAll(".name-card-cell svg")).toHaveLength(1);
+  });
+
+  it("アイコンが読み込めないときは名前の1文字目に戻す", async () => {
+    mockApi("staff", [
+      card({ id: "u-1", name: "田中", avatarUrl: "https://example.com/x.png" }),
+    ]);
+    renderPage();
+    await screen.findByText(/1 人/);
+    const img = document.querySelector('[data-avatar="1"]');
+    expect(img).toBeTruthy();
+    // 読み込み失敗を通知すると画像が消え、下に描いてあるイニシャルが見える
+    fireEvent.error(img!);
+    await waitFor(() =>
+      expect(document.querySelector('[data-avatar="1"]')).toBeNull(),
+    );
+    expect(screen.getAllByText("田").length).toBeGreaterThan(0);
+  });
+});
+
 describe("名札の印刷: 面付けと崩れにくさ (#304)", () => {
-  it("A4に10面（2列×5行）で、余白は左右14mm・上下11mm", () => {
-    // 91×55mm を等間隔に敷き詰めた結果が市販の名刺用紙10面と一致する
+  it("A4に10面（2列×5行）。カードの間を1mmあけ、余白は左右13.5mm・上下9mm", () => {
     expect(CARDS_PER_SHEET).toBe(10);
     expect(SHEET_COLS * NAME_CARD_W_MM).toBe(182);
     expect(SHEET_ROWS * NAME_CARD_H_MM).toBe(275);
-    expect(SHEET_MARGIN_X_MM).toBe(14);
-    expect(SHEET_MARGIN_Y_MM).toBe(11);
+    // 完全にくっついていると裁断しづらいので間をあける
+    expect(NAME_CARD_GAP_MM).toBeGreaterThan(0);
+    expect(SHEET_MARGIN_X_MM).toBe(13.5);
+    expect(SHEET_MARGIN_Y_MM).toBe(9);
+    // 用紙からはみ出さない。上下の余白はプリンタが刷れる範囲（5mm以上）に収める
+    const usedW =
+      SHEET_COLS * NAME_CARD_W_MM + (SHEET_COLS - 1) * NAME_CARD_GAP_MM;
+    const usedH =
+      SHEET_ROWS * NAME_CARD_H_MM + (SHEET_ROWS - 1) * NAME_CARD_GAP_MM;
+    expect(usedW + SHEET_MARGIN_X_MM * 2).toBe(210);
+    expect(usedH + SHEET_MARGIN_Y_MM * 2).toBe(297);
+    expect(SHEET_MARGIN_Y_MM).toBeGreaterThanOrEqual(5);
   });
 
   it("11人以上は用紙をまたいで割り付けられる", () => {

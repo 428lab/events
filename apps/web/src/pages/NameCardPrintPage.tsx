@@ -18,6 +18,7 @@ import PrintIcon from "@mui/icons-material/Print";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import {
   CARDS_PER_SHEET,
+  NAME_CARD_GAP_MM,
   NAME_CARD_H_MM,
   NAME_CARD_W_MM,
   SHEET_COLS,
@@ -76,6 +77,25 @@ function loadCardTheme(): CardThemeKey {
     : "indigo";
 }
 
+/** 本人が選んだカードの見た目 (#304)。
+ *
+ * 本人がカードを保存すると「背景-配色」がサーバーに記録される（OG画像の配信でも
+ * 同じ値を使っている）。名札もこれに従い、**その人が自分で決めたとおりの見た目**で刷る。
+ * 一度も保存していない人は値が無いので、刷る人の手元の設定を既定として使う */
+function cardLook(
+  key: string | null,
+  fallback: { variant: CardBgVariant; theme: CardThemeKey },
+): { variant: CardBgVariant; theme: CardThemeKey } {
+  const [bg, color] = (key ?? "").split("-");
+  const variant = BG_VARIANTS.some((v) => v.key === bg)
+    ? (bg as CardBgVariant)
+    : fallback.variant;
+  const theme = CARD_THEMES.some((t) => t.key === color)
+    ? (color as CardThemeKey)
+    : fallback.theme;
+  return { variant, theme };
+}
+
 /** 10枚ずつのページに割る（A4 1枚分＝10面） */
 export function toSheets<T>(cards: T[], perSheet = CARDS_PER_SHEET): T[][] {
   const sheets: T[][] = [];
@@ -125,7 +145,6 @@ export const PRINT_STYLES = {
     "#name-card-sheets": {
       margin: "0 !important",
       padding: 0,
-      gap: "0 !important",
       // 画面では横スクロールさせるが、印刷では必ず外す。overflow が visible 以外だと
       // 分割できないボックスになり、中身が用紙に収まっていても末尾に白紙が1枚増える
       overflow: "visible !important",
@@ -245,6 +264,8 @@ function SheetInner({
         display: "grid",
         gridTemplateColumns: `repeat(${SHEET_COLS}, ${NAME_CARD_W_MM}mm)`,
         gridAutoRows: `${NAME_CARD_H_MM}mm`,
+        // 切り離しやすいようカードどうしを少しあける（余白は定数側で調整済み）
+        gap: `${NAME_CARD_GAP_MM}mm`,
         background: "#fff",
         marginLeft: "auto",
         marginRight: "auto",
@@ -252,16 +273,20 @@ function SheetInner({
       // 画面では用紙の輪郭が分かるように（印刷では PrintStyles が消す）
       sx={{ border: "1px solid", borderColor: "divider" }}
     >
-      {cards.map((c) => (
-        <NameCardCell
-          key={c.id}
-          card={c}
-          variant={variant}
-          theme={theme}
-          origin={origin}
-          host={host}
-        />
-      ))}
+      {cards.map((c) => {
+        // 本人が決めた見た目で刷る。未設定の人だけ刷る人の設定を借りる
+        const look = cardLook(c.cardImageKey, { variant, theme });
+        return (
+          <NameCardCell
+            key={c.id}
+            card={c}
+            variant={look.variant}
+            theme={look.theme}
+            origin={origin}
+            host={host}
+          />
+        );
+      })}
     </Box>
   );
 }

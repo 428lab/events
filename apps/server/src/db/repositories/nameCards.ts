@@ -240,6 +240,7 @@ interface MemberRow {
   username: string;
   global_name: string | null;
   avatar_url: string | null;
+  card_image_key: string | null;
   created_at: number;
 }
 
@@ -267,6 +268,7 @@ export const nameCardsRepo = {
       many<MemberRow>(
         `SELECT m.user_id AS user_id, m.role AS role, u.username AS username,
                 u.global_name AS global_name, u.avatar_url AS avatar_url,
+                u.card_image_key AS card_image_key,
                 u.created_at AS created_at
            FROM event_member m
            JOIN user u ON u.id = m.user_id
@@ -292,6 +294,7 @@ export const nameCardsRepo = {
         handle: m.username,
         name: m.global_name ?? m.username,
         avatarUrl: m.avatar_url,
+        cardImageKey: m.card_image_key,
         createdAt: m.created_at,
         participation: p
           ? {
