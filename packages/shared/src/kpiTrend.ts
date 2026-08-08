@@ -228,22 +228,29 @@ function toneOf(direction: KpiDirection, change: number): KpiTone {
 
 /* ---------------- 時系列（推移グラフ）---------------- */
 
-/** 時系列の粒度。日次か週次か */
-export type KpiGranularity = "day" | "week";
+/** 時系列の粒度。日次・週次・月次 */
+export type KpiGranularity = "day" | "week" | "month";
 
 /** 日次のまま出す上限の日数。これを超えたら週次にまとめる。
  * 画面の期間選択は 7 / 30 / 90 / 365 / 全期間 なので、30日までが日次・
  * 90日以上が週次になる（issue #266 の「30日以下は日次 / 90日以上は週次」）。 */
 export const KPI_DAILY_MAX_DAYS = 60;
 
+/** 週次で出す上限の日数。これを超えたら月次にまとめる (#292)。
+ * 180日 ≒ 26週。棒は1本20pxなので、26本ならスクロールせずにおおむね収まる。
+ * 1年（52週）を週次で並べると横に長すぎて形が読めないので、月次に落とす。
+ * 1年 → 12本、全期間 → 年12本ずつ。 */
+export const KPI_WEEKLY_MAX_DAYS = 180;
+
 export function kpiGranularity(dayCount: number): KpiGranularity {
-  return dayCount <= KPI_DAILY_MAX_DAYS ? "day" : "week";
+  if (dayCount <= KPI_DAILY_MAX_DAYS) return "day";
+  return dayCount <= KPI_WEEKLY_MAX_DAYS ? "week" : "month";
 }
 
 /** 推移グラフ1点分。値が null の系列は「その日は計測していない」
  * （DAU/MAU は計測開始 (#257) より前の日を 0 と描くと「誰も居なかった」に見える） */
 export interface KpiSeriesPoint {
-  /** JST の 'YYYY-MM-DD'。週次のときは週の**月曜**の日付 */
+  /** JST の 'YYYY-MM-DD'。週次のときは週の**月曜**、月次のときは月の**1日** */
   day: string;
   values: Record<string, number | null>;
 }
@@ -263,31 +270,53 @@ export function weekStart(day: string): string {
   return addDays(day, -back);
 }
 
-/** 日次の点を週次にまとめる。
+/** その日を含む月の1日（JST の 'YYYY-MM-DD'） */
+export function monthStart(day: string): string {
+  return `${day.slice(0, 7)}-01`;
+}
+
+/** その月の日数。月初の日付（'YYYY-MM-01'）でも月の途中の日付でも同じ結果になる */
+export function daysInMonth(day: string): number {
+  const y = Number(day.slice(0, 4));
+  const m = Number(day.slice(5, 7));
+  // Date.UTC の day=0 は「前月の最終日」。m は1始まりなので m 月の最終日になる
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/** 系列ごとの畳み方。
+ * - 省略（合計）… 件数の系列
+ * - average    … DAU など「その日の人数」。足すと延べ人数になる
+ * - last       … MAU など「その時点の状態」。足すと意味の無い数になる */
+export interface KpiRollupOptions {
+  averageKeys?: string[];
+  lastKeys?: string[];
+}
+
+/** 日次の点をまとめる共通処理。週次・月次で**同じ畳み方**になるよう1箇所に置く
+ * （集計の種類が粒度によって違うと、同じ指標が週別と月別で意味を変えてしまう）。
  *
- * - 件数の系列は合計、`averageKeys` に挙げた系列（DAU など「その日の人数」）は平均、
- *   `lastKeys` に挙げた系列（MAU など「その時点の状態」）は週の最終日の値を使う。
- *   DAU を7日ぶん足すと延べ人数になり、MAU を足すと意味の無い数になる。
- * - **期間の端の欠けた週は落とす**。3日しかない週を7日の週と並べると、
- *   落ち込んだように見えて誤読する。 */
-export function toWeekly(
+ * @param bucketOf   その日が属するバケツの代表日（週の月曜・月の1日）
+ * @param fullLength そのバケツが「完全」なら何日あるはずか。端の欠けたバケツを落とす */
+function rollup(
   points: KpiSeriesPoint[],
-  opts: { averageKeys?: string[]; lastKeys?: string[] } = {},
+  bucketOf: (day: string) => string,
+  fullLength: (bucket: string) => number,
+  opts: KpiRollupOptions,
 ): KpiSeriesPoint[] {
   const avg = new Set(opts.averageKeys ?? []);
   const last = new Set(opts.lastKeys ?? []);
   const buckets = new Map<string, KpiSeriesPoint[]>();
   for (const p of points) {
-    const w = weekStart(p.day);
-    const arr = buckets.get(w);
+    const b = bucketOf(p.day);
+    const arr = buckets.get(b);
     if (arr) arr.push(p);
-    else buckets.set(w, [p]);
+    else buckets.set(b, [p]);
   }
   const out: KpiSeriesPoint[] = [];
-  for (const [w, days] of [...buckets.entries()].sort((a, b) =>
-    a[0] < b[0] ? -1 : 1,
+  for (const [b, days] of [...buckets.entries()].sort((a, b2) =>
+    a[0] < b2[0] ? -1 : 1,
   )) {
-    if (days.length < 7) continue; // 端の不完全な週は出さない
+    if (days.length < fullLength(b)) continue; // 端の不完全なバケツは出さない
     const keys = new Set<string>();
     for (const d of days) for (const k of Object.keys(d.values)) keys.add(k);
     const values: Record<string, number | null> = {};
@@ -297,15 +326,49 @@ export function toWeekly(
       if (known.length === 0) {
         values[k] = null;
       } else if (last.has(k)) {
-        // 週の最終日の値。最終日が未計測なら分かっている最後の日
+        // 期末の値。最終日が未計測なら分かっている最後の日
         values[k] = known[known.length - 1]!;
       } else if (avg.has(k)) {
-        values[k] = known.reduce((a, b) => a + b, 0) / known.length;
+        values[k] = known.reduce((a, b2) => a + b2, 0) / known.length;
       } else {
-        values[k] = known.reduce((a, b) => a + b, 0);
+        values[k] = known.reduce((a, b2) => a + b2, 0);
       }
     }
-    out.push({ day: w, values });
+    out.push({ day: b, values });
   }
   return out;
+}
+
+/** 日次の点を週次にまとめる。点の日付は週の**月曜**。
+ *
+ * **期間の端の欠けた週は落とす**。3日しかない週を7日の週と並べると、
+ * 落ち込んだように見えて誤読する。 */
+export function toWeekly(
+  points: KpiSeriesPoint[],
+  opts: KpiRollupOptions = {},
+): KpiSeriesPoint[] {
+  return rollup(points, weekStart, () => 7, opts);
+}
+
+/** 日次の点を月次にまとめる (#292)。点の日付は月の**1日**。
+ *
+ * 週次と同じ考え方で、**期間の端の欠けた月は落とす**（5日しかない月を
+ * 31日の月と並べると落ち込んで見える）。月の日数は 28〜31 と揃っていないので、
+ * 完全かどうかはその月の実際の日数で判定する。 */
+export function toMonthly(
+  points: KpiSeriesPoint[],
+  opts: KpiRollupOptions = {},
+): KpiSeriesPoint[] {
+  return rollup(points, monthStart, daysInMonth, opts);
+}
+
+/** 粒度に合わせてまとめる。日次はそのまま */
+export function toGranularity(
+  points: KpiSeriesPoint[],
+  granularity: KpiGranularity,
+  opts: KpiRollupOptions = {},
+): KpiSeriesPoint[] {
+  if (granularity === "week") return toWeekly(points, opts);
+  if (granularity === "month") return toMonthly(points, opts);
+  return points;
 }

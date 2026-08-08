@@ -9,6 +9,8 @@ import {
   addDays,
   kpiGranularity,
   kpiTrend,
+  monthStart,
+  toMonthly,
   toWeekly,
   weekStart,
 } from "@eventer/shared";
@@ -745,10 +747,11 @@ describe("KPI: 日次推移", () => {
     expect(by.get(dayAgo(7))!.mau).toBe(2);
   });
 
-  it("週次表示になる長さでは MAU を週の最終日だけ算出する", async () => {
+  it("まとめて表示する長さでは MAU を期末（週の最終日・月末）だけ算出する", async () => {
     // MAU は1日ぶん出すのに直近30日を引き当てるので、日次で全日ぶん出すと
-    // 走査量が 日数 × 30 × DAU になる。画面が週次にまとめる長さのときは
-    // 週の最終日（日曜）だけ算出し、間の日は「算出していない」= null で返す
+    // 走査量が 日数 × 30 × DAU になる。画面がまとめる長さのときは期末だけ
+    // 算出し、間の日は「算出していない」= null で返す。期末は週次なら日曜、
+    // 月次なら月末 (#292)。月末を落とすと月別の MAU が月内の最後の日曜の値になる
     const admin = await makeUser({ admin: true });
     const u = await makeUser();
     await markActive(dayAgo(89), u.userId);
@@ -758,21 +761,30 @@ describe("KPI: 日次推移", () => {
     expect(daily.length).toBe(91);
     const isSunday = (day: string) =>
       new Date(`${day}T12:00:00Z`).getUTCDay() === 0;
+    const isMonthEnd = (day: string) => addDays(day, 1).endsWith("-01");
     const measured = daily.filter((d) => d.day >= dayAgo(89));
+    // 90日あれば月末は必ず含まれる（この分岐が効いていることの確認）
+    expect(measured.filter((d) => isMonthEnd(d.day) && !isSunday(d.day)).length)
+      .toBeGreaterThan(0);
     for (const d of measured) {
-      if (isSunday(d.day)) expect(d.mau).not.toBeNull();
+      if (isSunday(d.day) || isMonthEnd(d.day)) expect(d.mau).not.toBeNull();
       else expect(d.mau).toBeNull();
-      // DAU は週の平均に畳むので日次のまま必要
+      // DAU は週・月の平均に畳むので日次のまま必要
       expect(d.dau).not.toBeNull();
     }
 
-    // 週次にまとめると MAU は週の最終日の値になり、欠けない
-    const weekly = toWeekly(
-      measured.map((d) => ({ day: d.day, values: { mau: d.mau, dau: d.dau } })),
-      { lastKeys: ["mau"], averageKeys: ["dau"] },
-    );
+    // 週次・月次にまとめると MAU は期末の値になり、欠けない
+    const points = measured.map((d) => ({
+      day: d.day,
+      values: { mau: d.mau, dau: d.dau },
+    }));
+    const opts = { lastKeys: ["mau"], averageKeys: ["dau"] };
+    const weekly = toWeekly(points, opts);
     expect(weekly.length).toBeGreaterThan(0);
     expect(weekly.every((w) => w.values.mau !== null)).toBe(true);
+    const monthly = toMonthly(points, opts);
+    expect(monthly.length).toBeGreaterThan(0);
+    expect(monthly.every((m) => m.values.mau !== null)).toBe(true);
   });
 
   it("コミュニティKPIも開催と参加の日次推移を返す", async () => {
@@ -821,11 +833,16 @@ describe("日次系列の上限", () => {
 });
 
 describe("時系列の粒度", () => {
-  it("30日以下は日次・90日以上は週次", () => {
+  it("30日以下は日次・90日は週次・半年超は月次", () => {
     expect(kpiGranularity(8)).toBe("day");
     expect(kpiGranularity(31)).toBe("day");
+    expect(kpiGranularity(60)).toBe("day");
     expect(kpiGranularity(61)).toBe("week");
     expect(kpiGranularity(91)).toBe("week");
+    // 180日（≒26週）までが週次。1年を週次で並べると52本になって形が読めない (#292)
+    expect(kpiGranularity(180)).toBe("week");
+    expect(kpiGranularity(181)).toBe("month");
+    expect(kpiGranularity(366)).toBe("month");
   });
 
   it("週次は月曜始まりで、端の欠けた週を落とす", () => {
@@ -861,5 +878,64 @@ describe("時系列の粒度", () => {
     expect(weekly.length).toBe(1);
     expect(weekly[0]!.values.joins).toBe(14);
     expect(weekly[0]!.values.dau).toBeNull();
+  });
+
+  /** 月次まとめ (#292)。週次と**同じ畳み方**（合計／平均／期末）で、
+   * 端の欠けた月は出さない。月の日数が揃っていないぶん、完全かどうかの判定が
+   * 週次より間違えやすいので固定する。 */
+  it("月次は暦月ごとで、端の欠けた月を落とす", () => {
+    // 2026-01-20 〜 2026-04-10。1月は20日始まりで欠け、4月は10日で切れる
+    const points: KpiSeriesPoint[] = [];
+    for (let day = "2026-01-20"; day <= "2026-04-10"; day = addDays(day, 1)) {
+      points.push({
+        day,
+        values: { joins: 1, dau: 10, mau: 100 + points.length },
+      });
+    }
+    expect(monthStart("2026-02-17")).toBe("2026-02-01");
+
+    const monthly = toMonthly(points, {
+      averageKeys: ["dau"],
+      lastKeys: ["mau"],
+    });
+    expect(monthly.map((m) => m.day)).toEqual(["2026-02-01", "2026-03-01"]);
+    // 件数は合計（2月は28日・3月は31日）、DAU は平均、MAU は月末の値
+    expect(monthly[0]!.values.joins).toBe(28);
+    expect(monthly[1]!.values.joins).toBe(31);
+    expect(monthly[0]!.values.dau).toBe(10);
+    expect(monthly[0]!.values.mau).toBe(139); // 02-28 = i:39 → 100+39
+    expect(monthly[1]!.values.mau).toBe(170); // 03-31 = i:70 → 100+70
+  });
+
+  it("うるう年の2月は29日そろって初めて出す", () => {
+    const feb = (n: number): KpiSeriesPoint[] => {
+      const out: KpiSeriesPoint[] = [];
+      for (let i = 1; i <= n; i++) {
+        out.push({
+          day: `2028-02-${String(i).padStart(2, "0")}`,
+          values: { joins: 1 },
+        });
+      }
+      return out;
+    };
+    // 2028 はうるう年。28日ぶんでは「1日足りない月」なので出さない
+    expect(toMonthly(feb(28)).length).toBe(0);
+    expect(toMonthly(feb(29)).map((m) => m.values.joins)).toEqual([29]);
+  });
+
+  it("月次でも未計測（null）の月は 0 と取り違えない", () => {
+    // 計測開始前の月は値が無い。合計 0 にすると「誰も居なかった月」に見える
+    const points: KpiSeriesPoint[] = [];
+    for (let day = "2026-02-01"; day <= "2026-03-31"; day = addDays(day, 1)) {
+      points.push({
+        day,
+        values: { joins: 2, dau: day >= "2026-03-01" ? 5 : null },
+      });
+    }
+    const monthly = toMonthly(points, { averageKeys: ["dau"] });
+    expect(monthly.map((m) => m.day)).toEqual(["2026-02-01", "2026-03-01"]);
+    expect(monthly[0]!.values.dau).toBeNull();
+    expect(monthly[0]!.values.joins).toBe(56);
+    expect(monthly[1]!.values.dau).toBe(5);
   });
 });

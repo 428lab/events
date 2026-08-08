@@ -481,11 +481,12 @@ export const kpiRepo = {
     //
     // MAU は1日あたり30日ぶんを引き当てるので、走査量が axis日数 × 30 × DAU の
     // オーダーになる（365日レンジや全期間だと1回の表示で100万行規模）。
-    // **画面が週次にまとめる長さのときは週の最終日（日曜）ぶんだけ算出する**。
-    // 週次まとめは MAU を「週の最終の既知値」で畳むので、間の日は使われない。
+    // **画面がまとめて出す長さのときは、期末の日ぶんだけ算出する**。
+    // まとめる処理は MAU を「その期間の最終の既知値」で畳むので、間の日は使われない。
+    // 期末は週次なら日曜、月次なら月末 (#292) なので、その両方を残す。
     // 画面の粒度は系列の点数 (kpiGranularity) で決まり、系列は axis 以上の長さに
-    // なる（axis の開始は期間の開始以降）。つまり axis が週次と判断する長さなら
-    // 画面も必ず週次になり、間引いた日が日次表示で欠けることはない。
+    // なる（axis の開始は期間の開始以降）。つまり axis が日次でないと判断する長さなら
+    // 画面も必ず週次か月次になり、間引いた日が日次表示で欠けることはない。
     const active = await many<ActiveRow>(
       `WITH RECURSIVE bounds(head, tail) AS (
          SELECT MAX(?, (SELECT COALESCE(MIN(day), ?) FROM user_active_day)), ?
@@ -499,6 +500,7 @@ export const kpiRepo = {
               (SELECT COUNT(1) FROM user_active_day d WHERE d.day = x.day) AS dau,
               CASE WHEN (SELECT julianday(tail) - julianday(head) + 1 FROM bounds) <= ?
                         OR strftime('%w', x.day) = '0'
+                        OR strftime('%d', date(x.day, '+1 day')) = '01'
                    THEN (SELECT COUNT(DISTINCT a.user_id) FROM user_active_day a
                           WHERE a.day <= x.day AND a.day >= date(x.day, '-29 days'))
               END AS mau,

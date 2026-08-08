@@ -13,11 +13,17 @@ import {
   type KpiTone,
   type KpiTrend,
   kpiGranularity,
-  toWeekly,
+  toGranularity,
 } from "@eventer/shared";
 import { InfoTip } from "./InfoTip.js";
 
 /** KPI 画面共通の表示部品。運営ダッシュボード (#257) とコミュニティ別KPI (#262) で使う */
+
+/** 'YYYY-MM-DD' を日本語表記に。日付をそのまま出すより「いつから」が読み取りやすい */
+export function jpDay(day: string): string {
+  const [y, m, d] = day.split("-");
+  return `${Number(y)}年${Number(m)}月${Number(d)}日`;
+}
 
 /** 率の表示。分母0・母数不足（null）は「—」 */
 export function pct(v: number | null): string {
@@ -251,8 +257,9 @@ export interface TrendSeries {
   label: string;
   /** MUI のパレット指定（'primary.main' など） */
   color: string;
-  /** 週次にまとめるときの畳み方。省略時は合計（件数の系列） */
-  weekly?: "sum" | "average" | "last";
+  /** 週次・月次にまとめるときの畳み方。省略時は合計（件数の系列）。
+   * 粒度によらず同じ指定が効く（DAU は週別でも月別でも平均） */
+  rollup?: "sum" | "average" | "last";
 }
 
 function SeriesLabel({ color, text }: { color: string; text: string }) {
@@ -289,13 +296,72 @@ function axisMax(max: number): number {
   return 10 * pow;
 }
 
-/** 日別/週別の推移（チャートライブラリは追加せず、既存の素朴な棒グラフを拡張したもの）。
+/** 粒度ごとの見出しの言い方 */
+const GRANULARITY_LABEL: Record<KpiGranularity, string> = {
+  day: "日別",
+  week: "週別",
+  month: "月別",
+};
+
+/** 棒の下に出す日付。月別で「08-01」と出すと日別と見分けが付かない (#292) */
+function barLabel(day: string, granularity: KpiGranularity): string {
+  return granularity === "month" ? day.slice(0, 7) : day.slice(5);
+}
+
+/** ホバーで出す期間の言い方。月別の点は月初の日付を持つので、
+ * そのまま出すと「その日だけの値」に読める */
+function barPeriod(day: string, granularity: KpiGranularity): string {
+  if (granularity === "month") return `${day.slice(0, 4)}年${Number(day.slice(5, 7))}月`;
+  if (granularity === "week") return `${day} の週`;
+  return day;
+}
+
+/** その系列に「計測した値」が1つでもあるか。
+ * 値が null の点は「まだ計測していない」なので、0 と同じには数えない (#292) */
+function hasMeasured(points: KpiSeriesPoint[], series: TrendSeries[]): boolean {
+  return points.some((p) => series.some((s) => (p.values[s.key] ?? null) !== null));
+}
+
+/** グラフを描かずに文章で説明すべきときの文言。描いてよいときは null。
+ *
+ * 軸だけのグラフを出すと「ずっと0だった」に見える。**0 なのか計測していないのか**が
+ * 区別できることが要件 (#292)。 */
+function emptyReason({
+  points,
+  shown,
+  series,
+  granularity,
+  measuredFrom,
+}: {
+  points: KpiSeriesPoint[];
+  shown: KpiSeriesPoint[];
+  series: TrendSeries[];
+  granularity: KpiGranularity;
+  measuredFrom?: string | null;
+}): string | null {
+  if (hasMeasured(shown, series)) return null;
+  if (points.length === 0) return "データなし";
+  if (!hasMeasured(points, series)) {
+    // 選んだ期間が丸ごと計測開始より前（または一度も計測していない）
+    return measuredFrom
+      ? `${jpDay(measuredFrom)}から計測しています。選んだ期間には計測したデータがまだありません。`
+      : "この期間に計測したデータはありません。";
+  }
+  // 日次には値があるのに、まとめたら1つも残らなかった＝端の欠けたバケツしかない
+  const unit = granularity === "month" ? "1か月" : "1週間";
+  const bucket = granularity === "month" ? "月" : "週";
+  return `計測できているのは期間の一部だけで、まるまる${unit}そろった${bucket}がまだありません。短い期間を選ぶと日別で見られます。`;
+}
+
+/** 日別/週別/月別の推移（チャートライブラリは追加せず、既存の素朴な棒グラフを拡張したもの）。
  *
  * - 同じチャートに複数系列を描くときは目盛りを共通にする（系列ごとに正規化すると
  *   同じ高さの棒が違う値を意味してしまう）
- * - 期間が長いときは週次にまとめる。**端の欠けた週は出さない**（3日ぶんの週を
- *   7日ぶんの週と並べると落ち込んだように見える）ので、その旨も画面に出す
- * - 値が null の日は「まだ計測していない」。棒を描かず 0 とも区別する */
+ * - 期間が長いときは週次・さらに長ければ月次にまとめる。**端の欠けた週・月は
+ *   出さない**（3日ぶんの週を7日ぶんの週と並べると落ち込んだように見える）ので、
+ *   その旨も画面に出す
+ * - 値が null の日は「まだ計測していない」。棒を描かず 0 とも区別する。
+ *   計測開始日 (measuredFrom) を渡すと、それが**いつからなのか**を文章でも出す */
 export function TrendChart({
   title,
   hint,
@@ -303,6 +369,7 @@ export function TrendChart({
   points,
   series,
   unit = "",
+  measuredFrom,
 }: {
   title: string;
   hint?: string;
@@ -311,15 +378,22 @@ export function TrendChart({
   points: KpiSeriesPoint[];
   series: TrendSeries[];
   unit?: string;
+  /** その系列の計測開始日 (#292)。計測前の日は棒が無いので、説明が無いと
+   * 「0が続いている」に見える。null は「まだ一度も計測していない」、
+   * 省略は「計測開始という概念が無い系列」（件数など） */
+  measuredFrom?: string | null;
 }) {
   const granularity: KpiGranularity = kpiGranularity(points.length);
-  const shown =
-    granularity === "week"
-      ? toWeekly(points, {
-          averageKeys: series.filter((s) => s.weekly === "average").map((s) => s.key),
-          lastKeys: series.filter((s) => s.weekly === "last").map((s) => s.key),
-        })
-      : points;
+  const shown = toGranularity(points, granularity, {
+    averageKeys: series.filter((s) => s.rollup === "average").map((s) => s.key),
+    lastKeys: series.filter((s) => s.rollup === "last").map((s) => s.key),
+  });
+  const empty = emptyReason({ points, shown, series, granularity, measuredFrom });
+  // 計測開始が期間の途中なら、その前が「0」ではないことを明示する
+  const startNote =
+    !empty && measuredFrom && points[0] && measuredFrom > points[0].day
+      ? `${jpDay(measuredFrom)}から計測しています。それより前は棒を出していません（0ではなく、計測していません）。`
+      : null;
   const max = Math.max(
     1,
     ...shown.flatMap((p) => series.map((s) => p.values[s.key] ?? 0)),
@@ -330,7 +404,8 @@ export function TrendChart({
   // 日付ラベルは「月-日」で約30px要るが、1本あたりの幅は20px。水平に並べると
   // 隣とくっついて数字の切れ目が分からなくなるので斜めに出す。斜めなら必要な
   // 間隔は約21pxで、日別で出す範囲（長い期間は週別に切り替わる）なら全部入る。
-  // 極端に本数が多いときだけ間引く (#290)
+  // 極端に本数が多いときだけ間引く (#290)。月別のラベル（'2026-08'）は
+  // 少し長いが、月別で本数が多くなるのは全期間だけで、そのときは間引きが効く
   const labelStep = shown.length > 40 ? Math.ceil(shown.length / 40) : 1;
   return (
     <Card variant="outlined" sx={{ width: "100%" }}>
@@ -350,7 +425,7 @@ export function TrendChart({
             sx={{ flex: 1, minWidth: 120 }}
           >
             <Typography variant="subtitle2">
-              {title}（{granularity === "week" ? "週別" : "日別"}）
+              {title}（{GRANULARITY_LABEL[granularity]}）
             </Typography>
             {hint ? <InfoTip label={title} text={hint} /> : null}
           </Stack>
@@ -359,18 +434,33 @@ export function TrendChart({
           ))}
         </Stack>
         {caution ? <Caution text={caution} /> : null}
-        {granularity === "week" ? (
+        {startNote ? (
           <Typography
             variant="caption"
             sx={{ display: "block", color: "text.secondary", mb: 0.5 }}
           >
-            月曜始まりの週ごとの集計です。期間の端にある欠けた週は出していません。
+            {startNote}
           </Typography>
         ) : null}
-        {shown.length === 0 ? (
-          <Typography variant="caption" color="text.secondary">
-            データなし
+        {!empty && granularity !== "day" ? (
+          <Typography
+            variant="caption"
+            sx={{ display: "block", color: "text.secondary", mb: 0.5 }}
+          >
+            {granularity === "week"
+              ? "月曜始まりの週ごとの集計です。期間の端にある欠けた週は出していません。"
+              : "暦月ごとの集計です。期間の端にある欠けた月は出していません。"}
           </Typography>
+        ) : null}
+        {empty ? (
+          // 軸だけのグラフを出すと「全部0」に見えるので、グラフごと出さない (#292)
+          empty === "データなし" ? (
+            <Typography variant="caption" color="text.secondary">
+              {empty}
+            </Typography>
+          ) : (
+            <Caution text={empty} />
+          )
         ) : (
           // 高さを固定しない。棒の並びを下揃えにすると日付ラベルのぶんだけ
           // 棒の足元が下がり、目盛りの 0 の線より下に飛び出してマイナスに見える
@@ -438,7 +528,7 @@ export function TrendChart({
                 {shown.map((p, i) => (
               <Box
                 key={p.day}
-                title={`${p.day}  ${series
+                title={`${barPeriod(p.day, granularity)}  ${series
                   .map((s) => `${s.label}:${fmtValue(p.values[s.key] ?? null)}`)
                   .join(" / ")}`}
                 sx={{
@@ -492,7 +582,7 @@ export function TrendChart({
                       visibility: i % labelStep === 0 ? "visible" : "hidden",
                     }}
                   >
-                    {p.day.slice(5)}
+                    {barLabel(p.day, granularity)}
                   </Typography>
                 </Box>
                   </Box>
