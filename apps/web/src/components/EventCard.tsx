@@ -30,7 +30,9 @@ const PALETTE = [
   { bg: "#213A20", fg: "#BEF264" },
 ];
 
-function pickColor(id: string) {
+/** イベント id から画像なし時の配色を決める。カード以外（年表のサムネイル等）でも
+ * 同じイベントが同じ色で出るよう、配色の決め方はここに1つだけ置く */
+export function eventColor(id: string) {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return PALETTE[h % PALETTE.length];
@@ -48,7 +50,7 @@ export function EventCard({
   compact?: boolean;
 }) {
   const img = eventImageUrl(event);
-  const color = pickColor(event.id);
+  const color = eventColor(event.id);
   // 一覧全体で1クエリ（react-queryキャッシュ共有）。コミュニティ名とアイコンを解決
   const { data: communities } = useCommunities();
   const community = event.communityId

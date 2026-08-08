@@ -48,6 +48,14 @@ export function formatDateTime(ms: number): string {
   }).format(ms);
 }
 
+/** 月日のみ（例: "3/15"）。年は見出しで区切る年表の日付欄で使う (#308) */
+export function formatMonthDay(ms: number): string {
+  return new Intl.DateTimeFormat("ja-JP", {
+    month: "numeric",
+    day: "numeric",
+  }).format(ms);
+}
+
 /** 時刻のみ（HH:mm） */
 export function formatTime(ms: number): string {
   return new Intl.DateTimeFormat("ja-JP", {
