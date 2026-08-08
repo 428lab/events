@@ -103,6 +103,7 @@ type CountableEvent = Pick<
   | "startsAt"
   | "participantCount"
   | "attendedCount"
+  | "capacityTotal"
 >;
 
 /** 出席者数も並べるか。出席チェックモードで、かつ開始日時を過ぎたイベントだけ。
@@ -120,12 +121,19 @@ export function showsAttendedCount(
   );
 }
 
-/** 「参加 5 人」または「参加 5 人・出席 3 人」 (#297) */
+/** 「参加 5 人」「参加 5 / 21 人」「参加 5 人・出席 3 人」 (#297)。
+ *
+ * 参加枠があるイベントは上限も並べる。空きがあるかが一覧で分かるようにするため。
+ * 上限は枠の合計にスタッフ等を足した数（capacityTotal 参照）なので、
+ * 分子の参加者数と数える対象が揃っている */
 export function participantCountLabel(
   event: CountableEvent,
   now: number = Date.now(),
 ): string {
-  const base = `参加 ${event.participantCount} 人`;
+  const base =
+    event.capacityTotal == null
+      ? `参加 ${event.participantCount} 人`
+      : `参加 ${event.participantCount} / ${event.capacityTotal} 人`;
   return showsAttendedCount(event, now)
     ? `${base}・出席 ${event.attendedCount} 人`
     : base;

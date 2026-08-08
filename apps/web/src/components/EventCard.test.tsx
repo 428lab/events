@@ -21,6 +21,7 @@ function ev(over: Partial<Event> = {}): Event {
     attendanceCheck: false,
     participantCount: 5,
     attendedCount: 0,
+    capacityTotal: null,
     imageUrl: null,
     ...over,
   } as Event;

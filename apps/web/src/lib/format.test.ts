@@ -13,11 +13,34 @@ function ev(over: Partial<Event> = {}): Event {
     startsAt: NOW - DAY,
     participantCount: 5,
     attendedCount: 3,
+    capacityTotal: null,
     ...over,
   } as Event;
 }
 
 describe("participantCountLabel (#297)", () => {
+  it("参加枠があるイベントは上限も出す", () => {
+    // 上限は枠の合計＋枠を消費しないメンバー。分子と母集団が揃っている
+    expect(participantCountLabel(ev({ capacityTotal: 21 }), NOW)).toBe(
+      "参加 5 / 21 人",
+    );
+  });
+
+  it("参加枠が無いイベントは上限を出さない（上限なしなので）", () => {
+    expect(participantCountLabel(ev({ capacityTotal: null }), NOW)).toBe(
+      "参加 5 人",
+    );
+  });
+
+  it("出席も出る場面では上限と両立する", () => {
+    expect(
+      participantCountLabel(
+        ev({ capacityTotal: 21, attendanceCheck: true }),
+        NOW,
+      ),
+    ).toBe("参加 5 / 21 人・出席 3 人");
+  });
+
   it("出席チェックモードでないイベントは、開催後でも参加者数だけ", () => {
     expect(participantCountLabel(ev(), NOW)).toBe("参加 5 人");
     expect(showsAttendedCount(ev(), NOW)).toBe(false);

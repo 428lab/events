@@ -50,6 +50,10 @@ export const eventSchema = z.object({
   /** 出席者数。役割を問わず実際に出席が記録された人数。
    * 出席チェックモードでないイベントは常に 0 (#297) */
   attendedCount: z.number(),
+  /** 参加できる人数の上限。参加枠があるイベントだけ数字が入る（無ければ null＝上限なし）。
+   * 枠の合計に、枠を消費しない確定メンバー（スタッフ等）を足したもの。
+   * participantCount と母集団を揃えてあるので「5 / 21 人」のように並べて出せる */
+  capacityTotal: z.number().nullable(),
   /** 所属コミュニティ（任意。無所属は null） */
   communityId: z.string().nullable(),
   /** 日程調整中（開始/終了日時は未確定。候補日に投票して主催が確定する） */
