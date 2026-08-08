@@ -65,6 +65,13 @@ describe("staging のログインゲート", () => {
     expect(body.deletionGraceMs).toBe(10 * 60 * 1000);
   });
 
+  it("アイコンの配信は未ログインでも通す (#320)", async () => {
+    // #312 でアイコンは認証なしの配信になった。staging でもその挙動を
+    // 未ログインのまま確かめられる必要がある（ゲートの 403 で潰さない）
+    const res = await fetchAsStaging(`/api/users/${crypto.randomUUID()}/avatar`);
+    expect(res.status).not.toBe(403);
+  });
+
   it("退会申請中（猶予期間 #250）もゲートは通す（復帰フローに到達できるように）", async () => {
     const cookie = await makeUser(Date.now());
     // ページ側: ゲートHTML(403)ではなく SPA が返る

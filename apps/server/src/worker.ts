@@ -341,14 +341,17 @@ app.use("*", async (c, next) => {
   const path = new URL(c.req.url).pathname;
   // メール配信停止はメールクライアントから未ログインで開かれるため通す (#126)。
   // メール内の画像（ロゴ・イベント画像）もメールクライアントは未ログインのため通す。
-  // 画像バイナリのみで、イベント情報のJSONはゲート対象のまま
+  // 画像バイナリのみで、イベント情報のJSONはゲート対象のまま。
+  // アイコンは #312 で認証なしの配信に変えたので、その挙動を staging でも
+  // 未ログインのまま確かめられるよう同じく通す (#320)
   if (
     path.startsWith("/api/auth/") ||
     path === "/api/health" ||
     path === "/api/email/unsubscribe" ||
     path === "/logo-email.png" ||
     /^\/api\/events\/[0-9a-f-]{36}\/image$/.test(path) ||
-    /^\/api\/users\/[0-9a-f-]{36}\/card-image$/.test(path)
+    /^\/api\/users\/[0-9a-f-]{36}\/card-image$/.test(path) ||
+    /^\/api\/users\/[0-9a-f-]{36}\/avatar$/.test(path)
   )
     return next();
   const user = await currentUser(c);
