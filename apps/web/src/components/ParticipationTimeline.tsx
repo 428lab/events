@@ -184,6 +184,9 @@ function PhotoStrip({
   photos: EventTimelinePhotos;
   onOpen: (p: OpenPhoto) => void;
 }) {
+  // 取得に失敗した写真。イベントの公開設定が読み込み後に変わると 403/404 に
+  // なり得るので、壊れた画像アイコンではなく無地の枠で出す
+  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
   // サーバーも同じ順で返すが、並び順はこの画面の約束なのでここでも保証しておく
   const ids = [...photos.photos]
     .sort((a, b) => b.commentCount - a.commentCount)
@@ -218,18 +221,23 @@ function PhotoStrip({
             },
           }}
         >
-          <Box
-            component="img"
-            src={photoUrl(eventId, id)}
-            alt=""
-            loading="lazy"
-            sx={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              display: "block",
-            }}
-          />
+          {!failed.has(id) && (
+            <Box
+              component="img"
+              src={photoUrl(eventId, id)}
+              alt=""
+              loading="lazy"
+              onError={() =>
+                setFailed((prev) => new Set(prev).add(id))
+              }
+              sx={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+          )}
         </ButtonBase>
       ))}
       {rest > 0 && (
@@ -601,6 +609,8 @@ export function ParticipationTimeline({
 
   const visible = items.filter((it) => match(it, role, when));
   const groups = groupByYear(visible);
+  // 表示中のカードの出会い数の合計。同じ人と別のイベントで会えば2件と数える
+  // 延べ件数なので、プロフィール上部の「出会った人（実人数）」とは別物として出す
   const metTotal = visible.reduce((s, it) => s + it.meets, 0);
 
   // 左右交互は「見えている順」で振り直す（絞り込んでも片側に偏らない）
@@ -670,7 +680,7 @@ export function ParticipationTimeline({
           role="status"
           sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}
         >
-          表示中 {visible.length} 件 ・ このうち出会った人 {metTotal} 人
+          表示中 {visible.length} 件 ・ 出会いの記録 {metTotal} 件
         </Typography>
       </Box>
 
@@ -692,7 +702,8 @@ export function ParticipationTimeline({
               role === "all" ? null : ROLE_LABEL[role],
             ]
               .filter(Boolean)
-              .join(" × ") || "履歴"}
+              .join(" × ") || ""}
+            {role === "all" && when === "all" ? "履歴" : " の履歴"}
             はまだありません
           </Typography>
           <Typography variant="body2" color="text.secondary">

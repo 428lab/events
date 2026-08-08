@@ -157,12 +157,20 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     );
   });
 
-  it("通算の出会い数は表示中の合計ではなくサーバーの値を出す", async () => {
+  it("通算の出会い数は表示中の合計ではなくサーバーの実人数を出す", async () => {
     renderProfile(profile());
     await screen.findByText("テスター");
     expect(screen.getByText("通算")).toBeTruthy();
-    // meetCounts の合計は 4 だが、通算は独立に数えた 9
+    // meetCounts の合計は 4（延べ）だが、通算は独立に数えた実人数 9
     expect(screen.getByText("9")).toBeTruthy();
     expect(screen.getByText("出会った人")).toBeTruthy();
+  });
+
+  it("通算のイベント数は直下の一覧と同じ母集団を数える", async () => {
+    renderProfile(profile());
+    await screen.findAllByText("下書きイベント");
+    // 本人のページは下書きを含む2件。公開ぶんだけの1件にはしない
+    const totals = screen.getByText("イベント").previousSibling;
+    expect(totals?.textContent).toBe("2");
   });
 });

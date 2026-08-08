@@ -103,9 +103,13 @@ interface ProfileBody {
   }[];
 }
 
-/** 「出会った」を1件記録する（相手は使い捨てのユーザー） */
-async function addMeet(eventId: string, userId: string): Promise<void> {
-  const other = (await makeUser()).userId;
+/** 「出会った」を1件記録する（相手を渡さなければ使い捨てのユーザー） */
+async function addMeet(
+  eventId: string,
+  userId: string,
+  partnerId?: string,
+): Promise<void> {
+  const other = partnerId ?? (await makeUser()).userId;
   const [low, high] = userId < other ? [userId, other] : [other, userId];
   await env.DB.prepare(
     "INSERT INTO event_meet (id, event_id, user_low, user_high, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -362,6 +366,31 @@ describe("年表に添える出会い数 (#315)", () => {
     // 年表に出るのは1件ぶんだが、通算は2人。表示中の合計とは別物
     expect(body.meetCounts[shown]).toBe(1);
     expect(body.meetTotal).toBe(2);
+  });
+
+  it("通算は人数（同じ人と複数のイベントで会っても1人）", async () => {
+    const owner = await makeUser();
+    const u = await makeUser();
+    const friend = await makeUser();
+    const now = Date.now();
+    const first = await makeEvent(owner.cookie, {
+      startsAt: now - 86400_000,
+      endsAt: now - 86400_000 + 3600_000,
+    });
+    const second = await makeEvent(owner.cookie, {
+      startsAt: now - 2 * 86400_000,
+      endsAt: now - 2 * 86400_000 + 3600_000,
+    });
+    await addMember(first, u.userId);
+    await addMember(second, u.userId);
+    // 同じ相手と2つのイベントで会う。イベントごとは1人ずつだが通算は1人
+    await addMeet(first, u.userId, friend.userId);
+    await addMeet(second, u.userId, friend.userId);
+
+    const body = await profile(u.username);
+    expect(body.meetCounts[first]).toBe(1);
+    expect(body.meetCounts[second]).toBe(1);
+    expect(body.meetTotal).toBe(1);
   });
 
   it("公開プロフィールに載らないイベントの人数は返さない", async () => {

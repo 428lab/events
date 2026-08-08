@@ -333,7 +333,9 @@ function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
 
 /** プロフィール上部の通算値 (#315)。年表の絞り込みには追随しないことを
  * 「通算」のラベルで明示する（絞り込みに追随する集計は年表の中に別で出る）。
- * 出会い数は表示中の行の合計ではなくサーバーが独立に数えた値 */
+ * 出会い数は表示中の行の合計ではなくサーバーが独立に数えた実人数
+ * （同じ人と別のイベントで会っても1人）。年表下部の「出会いの記録 N件」は
+ * 延べ件数なので別物 */
 function TotalsBar({
   events,
   meetTotal,
@@ -485,10 +487,9 @@ export function UserProfilePage() {
         )}
       </Stack>
 
-      <TotalsBar
-        events={data.events}
-        meetTotal={data.meetTotal ?? 0}
-      />
+      {/* 直下の一覧と同じ母集団を数える。本人のページは下書き等も含む自分用の
+          一覧なので、公開ぶんだけを数えると件数が合わなくなる (#319) */}
+      <TotalsBar events={historyEvents} meetTotal={data.meetTotal ?? 0} />
 
       {/* 出会った記録 (#189)。ログイン中に他人のプロフィールを見ているときのみ */}
       {me && !data.isMe && <MeetSection key={data.id} targetUserId={data.id} />}

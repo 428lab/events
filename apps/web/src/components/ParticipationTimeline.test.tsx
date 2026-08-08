@@ -168,13 +168,13 @@ describe("参加履歴の年表", () => {
     it("チップに件数が出て、押すと絞り込まれる", () => {
       renderTimeline(events);
       // 初期はすべて表示
-      expect(screen.getByText("表示中 3 件 ・ このうち出会った人 0 人")).toBeTruthy();
+      expect(screen.getByText("表示中 3 件 ・ 出会いの記録 0 件")).toBeTruthy();
 
       fireEvent.click(screen.getByText("主催・運営 2"));
       // 画像の無いイベントはバナーにもタイトルを敷くので2か所に出る
       expect(screen.getAllByText("主催した回").length).toBeGreaterThan(0);
       expect(screen.queryByText("参加した回")).toBeNull();
-      expect(screen.getByText("表示中 2 件 ・ このうち出会った人 0 人")).toBeTruthy();
+      expect(screen.getByText("表示中 2 件 ・ 出会いの記録 0 件")).toBeTruthy();
     });
 
     it("件数はもう一方の絞り込みを反映する", () => {
@@ -189,7 +189,7 @@ describe("参加履歴の年表", () => {
       renderTimeline(events);
       fireEvent.click(screen.getByText("これから 1"));
       fireEvent.click(screen.getByText("参加 0"));
-      expect(screen.getByText("これから × 参加はまだありません")).toBeTruthy();
+      expect(screen.getByText("これから × 参加 の履歴はまだありません")).toBeTruthy();
       expect(screen.queryByText("主催する回")).toBeNull();
     });
   });
@@ -204,7 +204,8 @@ describe("参加履歴の年表", () => {
         { meetCounts: { met: 23 } },
       );
       expect(screen.getByText("出会った 23 人")).toBeTruthy();
-      expect(screen.getByText("表示中 2 件 ・ このうち出会った人 23 人")).toBeTruthy();
+      // 年表下部はカードの合計なので延べ件数。上部の「出会った人（実人数）」とは別物
+      expect(screen.getByText("表示中 2 件 ・ 出会いの記録 23 件")).toBeTruthy();
     });
 
     it("0人のイベントは項目ごと出さない", () => {
@@ -263,6 +264,39 @@ describe("参加履歴の年表", () => {
       expect(
         screen.getByRole("dialog").querySelector("img")?.getAttribute("src"),
       ).toBe("/api/events/p-ev/photos/ph-mid/image");
+    });
+
+    it("←→ で前後の写真にたどれる", () => {
+      renderTimeline([ev({ id: "p-ev", title: "写真のある回" })], {
+        eventPhotos: photos,
+      });
+      fireEvent.click(screen.getByLabelText("写真1枚目を拡大表示"));
+      const src = () =>
+        screen.getByRole("dialog").querySelector("img")?.getAttribute("src");
+      expect(src()).toBe("/api/events/p-ev/photos/ph-top/image");
+
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "ArrowRight" });
+      expect(src()).toBe("/api/events/p-ev/photos/ph-mid/image");
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "ArrowLeft" });
+      expect(src()).toBe("/api/events/p-ev/photos/ph-top/image");
+      // 先頭からさらに戻ると末尾へ回る
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "ArrowLeft" });
+      expect(src()).toBe("/api/events/p-ev/photos/ph-low/image");
+    });
+
+    it("読み込めなかった写真は壊れた画像を出さず無地の枠にする", () => {
+      const { container } = renderTimeline(
+        [ev({ id: "p-ev", title: "写真のある回" })],
+        { eventPhotos: photos },
+      );
+      const first = container.querySelectorAll("img")[0];
+      fireEvent.error(first);
+      const srcs = [...container.querySelectorAll("img")].map((i) =>
+        i.getAttribute("src"),
+      );
+      expect(srcs).not.toContain("/api/events/p-ev/photos/ph-top/image");
+      // サムネイルの枠自体は残るので、並び順や押せる場所は変わらない
+      expect(screen.getByLabelText("写真1枚目を拡大表示")).toBeTruthy();
     });
 
     it("写真が無いイベントにはサムネイルを出さない", () => {

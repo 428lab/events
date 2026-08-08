@@ -123,13 +123,19 @@ export const eventMeetsRepo = {
     return new Map(rows.map((r) => [r.event_id, r.n]));
   },
 
-  /** 通算の出会い数 (#315)。プロフィール上部に固定で出す値。
-   * 年表に並んでいる行の合計で作ると、絞り込み・イベント削除・非公開化で
-   * ずれるため、表示とは独立にここで数える */
+  /** 通算で出会った「人数」 (#315)。プロフィール上部に固定で出す値。
+   *
+   * event_meet はイベントごとに1行なので、素の COUNT(*) だと同じ人と3つの
+   * イベントで会えば3になる（イベント×相手の延べ数）。ここは人数なので
+   * 相手側の user_id で DISTINCT を取る。
+   * 年表に並んでいる行の合計で作ると絞り込み・非公開化でずれるため、
+   * 表示とは独立にここで数える */
   async totalMeetsForUser(userId: string): Promise<number> {
     const row = await one<{ v: number }>(
-      `SELECT COUNT(*) AS v FROM event_meet
+      `SELECT COUNT(DISTINCT CASE WHEN user_low = ? THEN user_high ELSE user_low END) AS v
+         FROM event_meet
         WHERE user_low = ? OR user_high = ?`,
+      userId,
       userId,
       userId,
     );
