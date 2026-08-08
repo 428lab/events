@@ -17,6 +17,10 @@ export interface ThemeTokens {
   primaryDark: string;
   primaryText: string;
   secondary: string;
+  /** 淡い面の上に小さい文字で secondary を置くときの色 (#315)。
+   * light テーマは素の secondary だと白地でコントラストが 2.1〜2.4:1 しか出ず
+   * 読めないため、暗い派生値を各テーマで明示する */
+  secondaryDark: string;
   secondaryText: string;
   bg: string;
   surface: string;
@@ -33,7 +37,11 @@ function makeTheme(t: ThemeTokens): Theme {
     palette: {
       mode: t.mode,
       primary: { main: t.primary, dark: t.primaryDark, contrastText: t.primaryText },
-      secondary: { main: t.secondary, contrastText: t.secondaryText },
+      secondary: {
+        main: t.secondary,
+        dark: t.secondaryDark,
+        contrastText: t.secondaryText,
+      },
       success: { main: "#34D399" },
       // dark はライトテーマのテキスト用途（自動導出だと渋いマスタードになるため明るめに指定）
       warning: { main: "#FBBF24", dark: "#D97706" },
@@ -131,6 +139,7 @@ export const THEMES: Record<string, ThemeDef> = {
       primaryDark: "#14B8A6",
       primaryText: "#06231D",
       secondary: "#FB923C",
+      secondaryDark: "#EA7317",
       secondaryText: "#2A1400",
       bg: "#0E1426",
       surface: "#1A2238",
@@ -160,6 +169,7 @@ export const THEMES: Record<string, ThemeDef> = {
       primaryDark: "#06B6D4",
       primaryText: "#04181C",
       secondary: "#E879F9",
+      secondaryDark: "#C026D3",
       secondaryText: "#2A0A2E",
       bg: "#0B0A1F",
       surface: "#17152E",
@@ -181,6 +191,7 @@ export const THEMES: Record<string, ThemeDef> = {
       primaryDark: "#DB2777",
       primaryText: "#FFFFFF",
       secondary: "#F59E0B",
+      secondaryDark: "#8A5A00",
       secondaryText: "#2A1400",
       bg: "#FFF5F8",
       surface: "#FFFFFF",
@@ -202,6 +213,7 @@ export const THEMES: Record<string, ThemeDef> = {
       primaryDark: "#4338CA",
       primaryText: "#FFFFFF",
       secondary: "#06B6D4",
+      secondaryDark: "#086B7D",
       secondaryText: "#04222A",
       bg: "#F6F7FB",
       surface: "#FFFFFF",

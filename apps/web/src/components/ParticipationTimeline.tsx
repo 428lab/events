@@ -785,7 +785,19 @@ function PhotoLightbox({
       index: (index + d + photoIds.length) % photoIds.length,
     });
   return (
-    <Dialog open onClose={onClose} maxWidth="lg" aria-label="写真の拡大表示">
+    <Dialog
+      open
+      onClose={onClose}
+      maxWidth="lg"
+      aria-label="写真の拡大表示"
+      // ←→ で前後の写真へ。閉じるは Esc と背景クリック（Dialog 側）と
+      // 閉じるボタン。閉じたときのフォーカス戻しも Dialog に任せる
+      onKeyDown={(e) => {
+        if (photoIds.length < 2) return;
+        if (e.key === "ArrowLeft") step(-1);
+        else if (e.key === "ArrowRight") step(1);
+      }}
+    >
       <Box sx={{ position: "relative", bgcolor: "#000" }}>
         <IconButton
           onClick={onClose}

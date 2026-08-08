@@ -95,6 +95,7 @@ interface ProfileBody {
   }[];
   speakerEventIds: string[];
   meetCounts: Record<string, number>;
+  meetTotal: number;
   eventPhotos: {
     eventId: string;
     photos: { id: string; commentCount: number }[];
@@ -337,6 +338,30 @@ describe("年表に添える出会い数 (#315)", () => {
     const body = await profile(u.username);
     expect(body.meetCounts[met]).toBe(2);
     expect(Object.hasOwn(body.meetCounts, alone)).toBe(false);
+  });
+
+  it("通算は公開プロフィールに載らないイベントぶんも含めて独立に数える", async () => {
+    const owner = await makeUser();
+    const u = await makeUser();
+    const now = Date.now();
+    const shown = await makeEvent(owner.cookie, {
+      startsAt: now - 86400_000,
+      endsAt: now - 86400_000 + 3600_000,
+    });
+    const draft = await makeEvent(owner.cookie, {
+      startsAt: now - 2 * 86400_000,
+      endsAt: now - 2 * 86400_000 + 3600_000,
+      publish: false,
+    });
+    await addMember(shown, u.userId);
+    await addMember(draft, u.userId);
+    await addMeet(shown, u.userId);
+    await addMeet(draft, u.userId);
+
+    const body = await profile(u.username);
+    // 年表に出るのは1件ぶんだが、通算は2人。表示中の合計とは別物
+    expect(body.meetCounts[shown]).toBe(1);
+    expect(body.meetTotal).toBe(2);
   });
 
   it("公開プロフィールに載らないイベントの人数は返さない", async () => {

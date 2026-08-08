@@ -101,6 +101,9 @@ publicRoutes.get("/users/:handle", async (c) => {
     // 一覧に混ぜず id の集合だけ渡し、表示側で events と突き合わせる
     speakerEventIds: await eventScheduleRepo.listPublicSpokenEventIds(user.id),
     meetCounts,
+    // 通算の出会い数 (#315)。年表の絞り込みに追随させないので、表示中の行の
+    // 合計ではなく独立に数えた値を返す
+    meetTotal: await eventMeetsRepo.totalMeetsForUser(user.id),
     // 年表のカードに添えるサムネイル (#315)。公開設定イベントに本人が投稿した
     // 写真だけ（参加者限定イベントの写真は出さない）。コメントの多い順に数枚
     eventPhotos: await eventPhotosRepo.listPublicTopByUserPerEvent(

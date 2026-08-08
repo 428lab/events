@@ -59,6 +59,10 @@ export const userProfileSchema = z.object({
    * 人数だけなので公開範囲の制限は設けないが、キーは events に載る
    * 公開イベントに限る。0人のイベントはキー自体を持たない */
   meetCounts: z.record(z.string(), z.number()),
+  /** 通算の出会い数 (#315)。meetCounts の合計とは一致しないことがある
+   * （非公開になったイベントぶんは meetCounts から落ちるため）。
+   * プロフィール上部の「通算」はこちらを使い、絞り込みに追随させない */
+  meetTotal: z.number(),
   /** 年表のカードに添える公開写真のサムネイル (#315)。
    * 本人が公開設定イベントに投稿した写真だけ（参加者限定イベントの写真は含まない） */
   eventPhotos: z.array(eventTimelinePhotosSchema),

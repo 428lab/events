@@ -148,9 +148,12 @@ export function useUnlinkIdentity() {
   });
 }
 
-export function useMyPage() {
+/** 自分が関わるイベント一覧（下書き・申込中も含む）。
+ * 自分のプロフィールページがマイページを兼ねるため、他人のページでは引かない (#319) */
+export function useMyPage(enabled = true) {
   return useQuery({
     queryKey: ["myPage"],
+    enabled,
     queryFn: () => api.get<MyPage>("/me/events"),
   });
 }

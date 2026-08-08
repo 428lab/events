@@ -104,21 +104,32 @@ describe("ヘッダーのメニュー (#316)", () => {
         "/venues",
         "/decks",
         "/live-sets",
-        "/me",
+        // マイページは廃止して設定に置き換えた (#319)
+        "/account",
       ]),
     );
+    expect(inline).not.toContain("/me");
 
     collapseHeader();
     const targets = menuTargets(openMenu("メニュー"));
     for (const to of inline) expect(targets).toContain(to);
   });
 
-  it("畳んだメニューにはアカウント設定とログアウトもある", () => {
+  it("畳んだメニューには設定とログアウトもある", () => {
     renderLayout(false);
     collapseHeader();
     const menu = openMenu("メニュー");
     expect(menuTargets(menu)).toContain("/account");
+    // 設定は NAV_ITEMS 側の1項目だけ。同じ行き先を二重に出さない (#319)
+    expect(menuTargets(menu).filter((t) => t === "/account").length).toBe(1);
     expect(within(menu).getByText("ログアウト")).toBeTruthy();
+  });
+
+  it("右上のアイコンは自分のプロフィールを開く (#319)", () => {
+    renderLayout(false);
+    const avatar = document.querySelector("a[href='/users/tester']");
+    expect(avatar).toBeTruthy();
+    expect(avatar?.getAttribute("title")).toBe("自分のプロフィール");
   });
 
   it("運営管理者の「運用」項目が横並びと畳んだ側で一致する", () => {

@@ -122,4 +122,17 @@ export const eventMeetsRepo = {
     );
     return new Map(rows.map((r) => [r.event_id, r.n]));
   },
+
+  /** 通算の出会い数 (#315)。プロフィール上部に固定で出す値。
+   * 年表に並んでいる行の合計で作ると、絞り込み・イベント削除・非公開化で
+   * ずれるため、表示とは独立にここで数える */
+  async totalMeetsForUser(userId: string): Promise<number> {
+    const row = await one<{ v: number }>(
+      `SELECT COUNT(*) AS v FROM event_meet
+        WHERE user_low = ? OR user_high = ?`,
+      userId,
+      userId,
+    );
+    return row?.v ?? 0;
+  },
 };

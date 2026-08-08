@@ -6,7 +6,6 @@ import { Layout } from "./components/Layout.js";
 import { PublicLayout } from "./components/PublicLayout.js";
 import { EventLayout } from "./components/EventLayout.js";
 import { LoginPage } from "./pages/LoginPage.js";
-import { MyPage } from "./pages/MyPage.js";
 
 import { EventDetailPage } from "./pages/EventDetailPage.js";
 import { EventChatPage } from "./pages/EventChatPage.js";
@@ -312,12 +311,17 @@ export function App() {
     );
   }
 
+  // 自分のプロフィールページ。マイページの転送先でもある (#319)
+  const myPath = `/users/${encodeURIComponent(user.username)}`;
+
   return (
     <Layout user={user}>
       <PostLoginRedirect />
       <Routes>
         <Route path="/" element={<PublicEventsPage />} />
-        <Route path="/me" element={<MyPage />} />
+        {/* マイページは自分のプロフィールページに統合した (#319)。
+            既存のリンクやブックマークが死なないよう転送だけ残す */}
+        <Route path="/me" element={<Navigate to={myPath} replace />} />
         <Route path="/following" element={<FollowingPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
@@ -386,7 +390,7 @@ export function App() {
           {/* 参加者への一斉連絡 (#172)。スタッフ専用 */}
           <Route path="broadcast" element={<EventBroadcastPage />} />
         </Route>
-        <Route path="*" element={<Navigate to="/me" replace />} />
+        <Route path="*" element={<Navigate to={myPath} replace />} />
       </Routes>
     </Layout>
   );
