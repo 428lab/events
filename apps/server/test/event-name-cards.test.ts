@@ -275,7 +275,7 @@ describe("名札の一括印刷: 対象メンバー (#304)", () => {
     expect(ids).not.toContain(leaving.userId);
   });
 
-  it("存在しないイベントは 404（スタッフ判定より先に素通ししない）", async () => {
+  it("存在しないイベントも 403（イベントの有無を漏らさない）", async () => {
     const missing = crypto.randomUUID();
     const stranger = await makeUser();
     // 権限が先に落ちる（イベントの有無を漏らさない）

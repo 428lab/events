@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -85,6 +85,19 @@ export function toSheets<T>(cards: T[], perSheet = CARDS_PER_SHEET): T[][] {
   return sheets;
 }
 
+/** 印刷では消す要素。共通ヘッダー・この画面の操作UI・重なり系（ダイアログ等）に加え、
+ * 共通フッター（Layout では Container の外にいる）も含める。フッターが残ると最後の
+ * 用紙のあとに流れて、リンクとバージョンだけが刷られた紙が1枚余分に出る */
+export const HIDDEN_IN_PRINT = [
+  ".MuiAppBar-root",
+  ".name-card-controls",
+  ".version-footer",
+  ".MuiSnackbar-root",
+  ".MuiDialog-root",
+  ".MuiPopover-root",
+  ".MuiTooltip-popper",
+];
+
 /** 印刷用スタイル。用紙に出るのはカードだけで、共通ヘッダーもこの画面の操作UIも刷らない。
  *
  * 隠すものは visibility ではなく display で消す。visibility だけだと隠した要素が
@@ -93,62 +106,121 @@ export function toSheets<T>(cards: T[], perSheet = CARDS_PER_SHEET): T[][] {
  * （position: absolute にすると改ページ指定が効かないブラウザがある）。
  *
  * 面付けはA4に等間隔で敷き詰める＝左右14mm・上下11mmの余白（名刺用紙の10面と同じ） */
+export const PRINT_STYLES = {
+  "@media print": {
+    "@page": { size: "A4 portrait", margin: 0 },
+    html: { background: "#fff" },
+    body: { background: "#fff", margin: 0, padding: 0 },
+    [HIDDEN_IN_PRINT.join(",")]: { display: "none !important" },
+    // 用紙を用紙の左上から始めるため、外側の余白と幅制限を外す
+    ".MuiContainer-root": {
+      maxWidth: "none !important",
+      margin: "0 !important",
+      padding: "0 !important",
+    },
+    ".name-card-page": {
+      maxWidth: "none !important",
+      margin: "0 !important",
+    },
+    "#name-card-sheets": {
+      margin: "0 !important",
+      padding: 0,
+      gap: "0 !important",
+      // 画面では横スクロールさせるが、印刷では必ず外す。overflow が visible 以外だと
+      // 分割できないボックスになり、中身が用紙に収まっていても末尾に白紙が1枚増える
+      overflow: "visible !important",
+    },
+    // 背景パターンや紙面グラデーションを落とさずに刷る
+    ".name-card-sheet": {
+      border: "none !important",
+      boxShadow: "none !important",
+      margin: "0 !important",
+      breakAfter: "page",
+      pageBreakAfter: "always",
+      printColorAdjust: "exact",
+      WebkitPrintColorAdjust: "exact",
+    },
+    // 最後の1枚のあとに空白ページを作らない
+    ".name-card-sheet:last-of-type": {
+      breakAfter: "auto",
+      pageBreakAfter: "auto",
+    },
+    ".name-card-cell": { breakInside: "avoid", pageBreakInside: "avoid" },
+  },
+} as const;
+
 function PrintStyles() {
-  return (
-    <GlobalStyles
-      styles={{
-        "@media print": {
-          "@page": { size: "A4 portrait", margin: 0 },
-          html: { background: "#fff" },
-          body: { background: "#fff", margin: 0, padding: 0 },
-          // 共通ヘッダー・操作UI・重なり系（ダイアログ等）は刷らない
-          [[
-            ".MuiAppBar-root",
-            ".name-card-controls",
-            ".MuiSnackbar-root",
-            ".MuiDialog-root",
-            ".MuiPopover-root",
-            ".MuiTooltip-popper",
-          ].join(",")]: { display: "none !important" },
-          // 用紙を用紙の左上から始めるため、外側の余白と幅制限を外す
-          ".MuiContainer-root": {
-            maxWidth: "none !important",
-            margin: "0 !important",
-            padding: "0 !important",
-          },
-          ".name-card-page": {
-            maxWidth: "none !important",
-            margin: "0 !important",
-          },
-          "#name-card-sheets": {
-            margin: "0 !important",
-            padding: 0,
-            gap: "0 !important",
-          },
-          // 背景パターンや紙面グラデーションを落とさずに刷る
-          ".name-card-sheet": {
-            border: "none !important",
-            boxShadow: "none !important",
-            margin: "0 !important",
-            breakAfter: "page",
-            pageBreakAfter: "always",
-            printColorAdjust: "exact",
-            WebkitPrintColorAdjust: "exact",
-          },
-          // 最後の1枚のあとに空白ページを作らない
-          ".name-card-sheet:last-of-type": {
-            breakAfter: "auto",
-            pageBreakAfter: "auto",
-          },
-          ".name-card-cell": { breakInside: "avoid", pageBreakInside: "avoid" },
-        },
-      }}
-    />
-  );
+  return <GlobalStyles styles={PRINT_STYLES} />;
 }
 
-/** A4 1枚分（10面）。画面でも同じ寸法で出して、刷り上がりと見比べられるようにする */
-function Sheet({
+/** 名札1枚ぶんのセル。
+ *
+ * カードは6枚ずつ描き足していくので、memo が無いと1バッチごとに既に描いた分まで
+ * 全部描き直しになる（100人なら延べ900枚ぶん）。カード1枚のQRだけで矩形が551個あり、
+ * 実測できるほど重い。card は react-query が返す配列の要素で参照が変わらず、
+ * 残りの props も文字列なので、既定の浅い比較でそのまま止められる。
+ * toCardData() は毎回新しいオブジェクトを返すため、memo の内側で作る。
+ *
+ * カードSVG内の id（グラデーション・clipPath）は固定値なので、100枚並べると同じ id が
+ * 並ぶ。今は全カードが同じテーマ＝同じ定義なのでどれを参照しても結果が変わらず問題ないが、
+ * カードごとにテーマや背景を変えられるようにするなら、id をカード単位で一意にしないと
+ * すべてのカードが先頭カードの色で描かれる。 */
+const NameCardCell = memo(function NameCardCell({
+  card,
+  variant,
+  theme,
+  origin,
+  host,
+}: {
+  card: EventNameCard;
+  variant: CardBgVariant;
+  theme: CardThemeKey;
+  origin: string;
+  host: string;
+}) {
+  const data = useMemo(
+    () => toCardData(card, card.handle, host),
+    [card, host],
+  );
+  return (
+    <Box
+      className="name-card-cell"
+      // カードSVGは幅いっぱい（91mm）に伸ばす。1074:650 の比なので高さは 55.07mm となり、
+      // はみ出す 0.07mm はここで切る。用紙側の面付けを 55mm ちょうどに保つため
+      style={{
+        width: `${NAME_CARD_W_MM}mm`,
+        height: `${NAME_CARD_H_MM}mm`,
+        overflow: "hidden",
+      }}
+    >
+      <LicenseCardSvg
+        card={data}
+        variant={variant}
+        theme={theme}
+        qrUrl={`${origin}/users/${card.handle}?ref=card`}
+      />
+    </Box>
+  );
+});
+
+/** A4 1枚分（10面）。画面でも同じ寸法で出して、刷り上がりと見比べられるようにする。
+ *
+ * toSheets() は描き足すたびに新しい配列を返すので、中身が同じでも参照だけが変わる。
+ * 既に埋まった用紙をそのまま素通りさせるため、カードの並びを1枚ずつ比べて判定する */
+const Sheet = memo(SheetInner, (a, b) => {
+  if (
+    a.variant !== b.variant ||
+    a.theme !== b.theme ||
+    a.origin !== b.origin ||
+    a.host !== b.host ||
+    a.cards.length !== b.cards.length
+  ) {
+    return false;
+  }
+  return a.cards.every((c, i) => c === b.cards[i]);
+});
+
+function SheetInner({
   cards,
   variant,
   theme,
@@ -181,29 +253,14 @@ function Sheet({
       sx={{ border: "1px solid", borderColor: "divider" }}
     >
       {cards.map((c) => (
-        <Box
+        <NameCardCell
           key={c.id}
-          className="name-card-cell"
-          style={{
-            width: `${NAME_CARD_W_MM}mm`,
-            height: `${NAME_CARD_H_MM}mm`,
-            overflow: "hidden",
-          }}
-          sx={{
-            "& svg": {
-              width: `${NAME_CARD_W_MM}mm`,
-              height: `${NAME_CARD_H_MM}mm`,
-              display: "block",
-            },
-          }}
-        >
-          <LicenseCardSvg
-            card={toCardData(c, c.handle, host)}
-            variant={variant}
-            theme={theme}
-            qrUrl={`${origin}/users/${c.handle}?ref=card`}
-          />
-        </Box>
+          card={c}
+          variant={variant}
+          theme={theme}
+          origin={origin}
+          host={host}
+        />
       ))}
     </Box>
   );
@@ -248,7 +305,9 @@ export function NameCardPrintPage() {
     () => selected.slice(0, Math.max(rendered, 0)),
     [selected, rendered],
   );
-  const ready = visible.length === selected.length;
+  // 名簿が届く前は selected も visible も 0 で「描き終わった」ことになってしまうので、
+  // 読み込み中は未完了として扱う（進捗バーが一瞬消えてまた出るのを防ぐ）
+  const ready = !isLoading && visible.length === selected.length;
 
   const origin = useRef(window.location.origin).current;
   const host = useRef(window.location.host).current;

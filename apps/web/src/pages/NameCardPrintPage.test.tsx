@@ -23,7 +23,10 @@ import type { EventNameCard, EventRole } from "@eventer/shared";
  * 見た目は既存のプロフィールカード (#178) をそのまま使う（新しい意匠は作らない）。
  */
 
-const { getMock } = vi.hoisted(() => ({ getMock: vi.fn() }));
+const { getMock, cardRenders } = vi.hoisted(() => ({
+  getMock: vi.fn(),
+  cardRenders: vi.fn(),
+}));
 
 vi.mock("../api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client.js")>();
@@ -33,7 +36,25 @@ vi.mock("../api/client.js", async (importOriginal) => {
   };
 });
 
-const { NameCardPrintPage, toSheets } = await import("./NameCardPrintPage.js");
+// カードSVGは本物のまま使い、何回描かれたかだけ数える（描き直しの退行検知用）
+vi.mock("../components/licenseCard/LicenseCardSvg.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("../components/licenseCard/LicenseCardSvg.js")
+    >();
+  const Real = actual.LicenseCardSvg;
+  return {
+    ...actual,
+    LicenseCardSvg: (props: Parameters<typeof Real>[0]) => {
+      cardRenders(props.card.handle);
+      return <Real {...props} />;
+    },
+  };
+});
+
+const { NameCardPrintPage, toSheets, PRINT_STYLES, HIDDEN_IN_PRINT } =
+  await import("./NameCardPrintPage.js");
+const { VersionFooter } = await import("../components/VersionFooter.js");
 
 const EVENT_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -104,6 +125,7 @@ function printedNames(): string[] {
 
 beforeEach(() => {
   getMock.mockReset();
+  cardRenders.mockClear();
   localStorage.clear();
 });
 
@@ -239,6 +261,18 @@ describe("名札の印刷: 面付けと崩れにくさ (#304)", () => {
     ).toContain("田");
   });
 
+  it("カードは描き足しても既に描いた分を描き直さない", async () => {
+    // 13人＝6枚ずつ3回に分けて描き足す。memo が外れると 6+12+13=31 回になる
+    const cards = Array.from({ length: 13 }, (_, i) =>
+      card({ id: `u-${i}`, name: `参加者${i}` }),
+    );
+    mockApi("staff", cards);
+    renderPage();
+
+    await waitFor(() => expect(printedNames()).toHaveLength(13));
+    expect(cardRenders).toHaveBeenCalledTimes(13);
+  });
+
   it("長い表示名でもカード幅に収まるまで字を縮める", async () => {
     const LONG = "とてもとても長い表示名のかたです".repeat(4);
     mockApi("staff", [card({ id: "u-1", name: LONG })]);
@@ -254,5 +288,66 @@ describe("名札の印刷: 面付けと崩れにくさ (#304)", () => {
     // 下限16pxまで縮み、既定の72pxのままにはならない
     expect(size).toBeGreaterThanOrEqual(16);
     expect(size).toBeLessThan(72);
+  });
+});
+
+/**
+ * 余分な白紙は「印刷してみないと気づかない」種類の壊れ方で、印刷用スタイルを
+ * 整理したときに戻りやすい。実測で1シート＝1枚になった条件をここで固定しておく。
+ */
+describe("名札の印刷: 余分なページを出さない (#304)", () => {
+  const printRules = PRINT_STYLES["@media print"] as unknown as Record<
+    string,
+    Record<string, string>
+  >;
+
+  it("用紙を並べる箱は印刷では overflow を外す（外さないと末尾に白紙が1枚増える）", () => {
+    // overflow が visible 以外だと分割できないボックスになり、中身が1枚に収まっていても
+    // Chrome は次のページを作る。画面の横スクロールのために付けているので print で解除する
+    expect(printRules["#name-card-sheets"].overflow).toBe("visible !important");
+  });
+
+  it("画面では横スクロールできるままにする（印刷のためにプレビューを壊さない）", async () => {
+    mockApi("staff", [card({ id: "u-1", name: "田中" })]);
+    const { container } = renderPage();
+    await waitFor(() => expect(printedNames()).toHaveLength(1));
+
+    const sheets = container.querySelector<HTMLElement>("#name-card-sheets")!;
+    expect(getComputedStyle(sheets).overflowX).toBe("auto");
+  });
+
+  it("共通フッターも印刷では消す（最後の用紙のあとに1枚流れる）", () => {
+    expect(HIDDEN_IN_PRINT).toContain(".version-footer");
+    expect(printRules[HIDDEN_IN_PRINT.join(",")].display).toBe(
+      "none !important",
+    );
+  });
+
+  it("印刷で消す目印が共通フッター側から外れていない", () => {
+    vi.stubGlobal("__APP_VERSION__", "0.0.0-test");
+    const { container } = render(
+      <MemoryRouter>
+        <VersionFooter />
+      </MemoryRouter>,
+    );
+    // Layout では Container の外にいるので、この目印が外れると刷られてしまう
+    expect(
+      HIDDEN_IN_PRINT.some((sel) => container.querySelector(sel)),
+    ).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it("印刷用スタイルが実際に文書へ入る（GlobalStyles が外れたら落ちる）", async () => {
+    mockApi("staff", [card({ id: "u-1", name: "田中" })]);
+    renderPage();
+    await waitFor(() => expect(printedNames()).toHaveLength(1));
+
+    const css = Array.from(document.querySelectorAll("style"))
+      .map((s) => s.textContent ?? "")
+      .join("")
+      .replace(/\s+/g, "");
+    expect(css).toContain("@mediaprint");
+    expect(css).toContain("overflow:visible!important");
+    expect(css).toContain(".version-footer");
   });
 });
