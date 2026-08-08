@@ -7,6 +7,17 @@ import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * こちらは TZ を固定していない (#322)。
+ * サーバーのテストは workerd の中で動き、workerd の時刻は常に UTC で
+ * 環境変数の TZ を見ない。加えて、サーバーが生成する日時テキストは
+ * lib/dateFormat.ts・lib/emailTemplates.ts・lib/reminders.ts・routes/feeds.ts の
+ * いずれも Intl に timeZone: "Asia/Tokyo" を明示しているため、
+ * 実行環境の TZ では結果が変わらない（UTC・Asia/Tokyo・Pacific/Kiritimati で
+ * 全件通ることを確認済み）。
+ * 日時テキストをサーバーで新しく組み立てるときは、この前提を保つために
+ * 必ず timeZone を明示すること。
+ */
 export default defineWorkersConfig(async () => {
   // apps/server/migrations の *.sql を読み、テスト用D1へ適用する
   const migrations = await readD1Migrations(path.join(here, "migrations"));
