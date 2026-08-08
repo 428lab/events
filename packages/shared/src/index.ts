@@ -6,6 +6,7 @@ export * from "./awards.js";
 export * from "./inquiries.js";
 export * from "./notifications.js";
 export * from "./users.js";
+export * from "./nameCards.js";
 export * from "./communities.js";
 export * from "./decks.js";
 export * from "./scheduling.js";
