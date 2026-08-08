@@ -29,10 +29,14 @@ import {
   pct,
 } from "../components/KpiTiles.js";
 
+/** 期間の選択肢。90日までは日別/週別、1年・全期間は月別になる
+ * （粒度の切り替えは kpiGranularity が点数で決める #292）。
+ * コミュニティ別KPI (#262) と同じ並びにしている */
 const RANGES: { label: string; days: number | null }[] = [
   { label: "7日", days: 7 },
   { label: "30日", days: 30 },
   { label: "90日", days: 90 },
+  { label: "1年", days: 365 },
   { label: "全期間", days: null },
 ];
 
