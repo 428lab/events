@@ -11,8 +11,10 @@ import { CircularProgress,
 } from "@mui/material";
 import PrintIcon from "@mui/icons-material/Print";
 import DownloadIcon from "@mui/icons-material/Download";
+import QrCode2Icon from "@mui/icons-material/QrCode2";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useUserProfile } from "../api/userHooks.js";
+import { BigQrDialog } from "../components/BigQrDialog.js";
 import {
   BG_STORAGE_KEY,
   BG_VARIANTS,
@@ -174,6 +176,8 @@ export function LicenseCardPage() {
   const [theme, setTheme] = useState<CardThemeKey>(loadCardTheme);
   const [busy, setBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  // 交流の場で相手に読み取ってもらう用の大きなQR (#324)。自分のカードのときだけ
+  const [qrOpen, setQrOpen] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   // OG画像アップロード済みの「背景×配色」（マウント中は同じ組み合わせを二重送信しない） (#193)
   const uploadedVariantsRef = useRef<Set<string>>(new Set());
@@ -369,7 +373,26 @@ export function LicenseCardPage() {
           >
             {busy ? "書き出し中…" : "PNGをダウンロード"}
           </Button>
+          {data.isMe && (
+            <Button
+              variant="outlined"
+              startIcon={<QrCode2Icon />}
+              onClick={() => setQrOpen(true)}
+            >
+              QRを大きく表示
+            </Button>
+          )}
         </Stack>
+
+        {data.isMe && (
+          <BigQrDialog
+            open={qrOpen}
+            onClose={() => setQrOpen(false)}
+            handle={card.handle}
+            name={card.name}
+            avatarUrl={data.avatarUrl}
+          />
+        )}
 
         {data.isMe && (
           <Stack spacing={0.25}>
