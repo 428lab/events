@@ -1,7 +1,8 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import type { ScheduleItem } from "@eventer/shared";
-import { isPrivateHost, parseOgImage } from "../src/lib/materialMeta.js";
+import { parseOgImage } from "../src/lib/materialMeta.js";
+import { isPrivateHost } from "../src/lib/urlGuard.js";
 
 const BASE = "https://example.com";
 
@@ -525,7 +526,7 @@ describe("資料編集の権限とSSRFガード強化（レビュー対応）", 
   });
 
   it("isPrivateHost: IPv4射影・リンクローカルv6は拒否、fc2.com等の通常ホストは許可", async () => {
-    const { isPrivateHost } = await import("../src/lib/materialMeta.js");
+    const { isPrivateHost } = await import("../src/lib/urlGuard.js");
     expect(isPrivateHost("[::ffff:7f00:1]")).toBe(true); // ::ffff:127.0.0.1
     expect(isPrivateHost("[::ffff:a9fe:a9fe]")).toBe(true); // 169.254.169.254
     expect(isPrivateHost("[fe81::1]")).toBe(true);
