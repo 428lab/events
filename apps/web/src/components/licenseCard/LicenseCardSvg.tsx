@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { BADGE_DEFS } from "@eventer/shared";
 import {
@@ -441,6 +441,9 @@ export function LicenseCardSvg({
 }) {
   const theme: CardTheme =
     CARD_THEMES.find((t) => t.key === themeKey) ?? CARD_THEMES[0];
+  // アイコンが読み込めなかったか。URL が変わったらやり直す
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  useEffect(() => setAvatarFailed(false), [card.avatarUrl]);
   const statsParts = [`HOSTED ${card.hosted}`, `TALKS ${card.spoken}`];
   if (card.attendRate != null) statsParts.push(`ATTEND ${card.attendRate}%`);
   // 長い表示名・バッジ名はパネル幅に収まるよう段階的に縮小（モックは kojira / FIRST HOST 想定）
@@ -551,10 +554,14 @@ export function LicenseCardSvg({
         >
           {card.name.charAt(0)}
         </text>
-        {card.avatarUrl && (
+        {card.avatarUrl && !avatarFailed && (
           <image
             data-avatar="1"
             href={card.avatarUrl}
+            // 読み込めなかったら消して、下に描いてある名前の1文字目を見せる。
+            // 消さないと壊れた画像がイニシャルの上に重なる（他の画面はイニシャルに
+            // フォールバックするので、カードだけ見え方が違っていた）
+            onError={() => setAvatarFailed(true)}
             x={798}
             y={140}
             width={220}

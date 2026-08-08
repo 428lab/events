@@ -67,6 +67,7 @@ function card(over: Partial<EventNameCard> = {}): EventNameCard {
     handle: `handle-${id}`,
     name: `参加者 ${id}`,
     avatarUrl: null,
+    cardImageKey: null,
     createdAt: 1_700_000_000_000,
     participation: { attended: 0, noShow: 0, hosted: 0, spoken: 0 },
     gamification: {
@@ -212,6 +213,44 @@ describe("名札の印刷: 権限 (#304)", () => {
     expect(getMock).not.toHaveBeenCalledWith(
       `/events/${EVENT_ID}/name-cards`,
     );
+  });
+});
+
+describe("名札の印刷: 本人が設定したカードで刷る (#304)", () => {
+  it("本人が選んだ見た目で描く（刷る人の設定では上書きしない）", async () => {
+    mockApi("staff", [
+      card({ id: "u-1", name: "田中", cardImageKey: "arcs-teal" }),
+      card({ id: "u-2", name: "鈴木", cardImageKey: "flow-amber" }),
+    ]);
+    renderPage();
+    await screen.findByText(/2 人/);
+    const svgs = document.querySelectorAll(".name-card-cell svg");
+    expect(svgs).toHaveLength(2);
+    // 背景の描き分けが実際に違うこと（同じ見た目で刷られていない）
+    expect(svgs[0]!.innerHTML).not.toBe(svgs[1]!.innerHTML);
+  });
+
+  it("カードを保存していない人は既定の見た目で描く（欠けても壊れない）", async () => {
+    mockApi("staff", [card({ id: "u-1", name: "田中", cardImageKey: null })]);
+    renderPage();
+    await screen.findByText(/1 人/);
+    expect(document.querySelectorAll(".name-card-cell svg")).toHaveLength(1);
+  });
+
+  it("アイコンが読み込めないときは名前の1文字目に戻す", async () => {
+    mockApi("staff", [
+      card({ id: "u-1", name: "田中", avatarUrl: "https://example.com/x.png" }),
+    ]);
+    renderPage();
+    await screen.findByText(/1 人/);
+    const img = document.querySelector('[data-avatar="1"]');
+    expect(img).toBeTruthy();
+    // 読み込み失敗を通知すると画像が消え、下に描いてあるイニシャルが見える
+    fireEvent.error(img!);
+    await waitFor(() =>
+      expect(document.querySelector('[data-avatar="1"]')).toBeNull(),
+    );
+    expect(screen.getAllByText("田").length).toBeGreaterThan(0);
   });
 });
 

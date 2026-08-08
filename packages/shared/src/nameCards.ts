@@ -40,6 +40,9 @@ export const eventNameCardSchema = z.object({
   handle: z.string(),
   name: z.string(),
   avatarUrl: z.string().nullable(),
+  /** 本人が選んだカードの見た目（背景-配色）。未設定なら null。
+   * 印刷はこれを見て**本人が設定したとおりの配色**で描く (#304) */
+  cardImageKey: z.string().nullable(),
   /** 登録日（カードの ISSUED 欄） */
   createdAt: z.number(),
   participation: nameCardParticipationSchema,
