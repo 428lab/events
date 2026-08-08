@@ -113,9 +113,19 @@ async function buildExportSvg(svgEl: SVGSVGElement): Promise<string> {
   return new XMLSerializer().serializeToString(clone);
 }
 
-/** 表示中のSVGを 2148x1300 のPNG Blob にラスタライズする。
+/** シェア時のOG画像に使う幅。
+ *
+ * ダウンロード用の 2148px をそのまま送ると 2MB の上限を超えて 413 で弾かれる
+ * （実際に保存できていなかった）。OG画像は表示上 1200px あれば足りるので、
+ * 保存用だけ小さくする。ダウンロードは印刷にも使えるよう高解像度のまま */
+const OG_UPLOAD_W = 1200;
+
+/** 表示中のSVGをPNG Blob にラスタライズする。
  * ダウンロードとOG画像アップロード (#193) の両方で同じ生成経路を使う */
-async function generateCardPng(svgEl: SVGSVGElement): Promise<Blob> {
+async function generateCardPng(
+  svgEl: SVGSVGElement,
+  width: number = EXPORT_W,
+): Promise<Blob> {
   const svgText = await buildExportSvg(svgEl);
   const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
   const svgUrl = URL.createObjectURL(svgBlob);
@@ -127,11 +137,13 @@ async function generateCardPng(svgEl: SVGSVGElement): Promise<Blob> {
       img.src = svgUrl;
     });
     const canvas = document.createElement("canvas");
-    canvas.width = EXPORT_W;
-    canvas.height = EXPORT_H;
+    // 縦横比はカードのまま保つ
+    const height = Math.round((width * EXPORT_H) / EXPORT_W);
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas を初期化できませんでした");
-    ctx.drawImage(img, 0, 0, EXPORT_W, EXPORT_H);
+    ctx.drawImage(img, 0, 0, width, height);
     const png = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/png"),
     );
@@ -185,14 +197,21 @@ export function LicenseCardPage() {
       setOgStatus("generating");
       void (async () => {
         try {
-          const png = await generateCardPng(svgEl);
+          const png = await generateCardPng(svgEl, OG_UPLOAD_W);
           const res = await fetch(`/api/me/card-image?k=${variant}-${theme}`, {
             method: "PUT",
             credentials: "include",
             headers: { "Content-Type": "image/png" },
             body: png,
           });
-          if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+          if (!res.ok) {
+            // 理由が分からないと直しようがないので、状態から言葉にする
+            throw new Error(
+              res.status === 413
+                ? "画像が大きすぎて保存できませんでした"
+                : `保存に失敗しました（${res.status}）`,
+            );
+          }
           setOgStatus("done");
         } catch (e) {
           console.warn("プロフィールカードのOG画像更新に失敗しました", e);
