@@ -9,12 +9,13 @@ import { avatarKey } from "../lib/avatarStore.js";
  * これまで連携先CDNが担っていた配信が全部こちらに移るため、名札の一括印刷
  * （最大100人）や参加者一覧で D1/R2 を素通りできることの効きが大きい (#313)。
  *
- * s-maxage を別に置いてエッジ側だけ1日で切っている。エッジに載った分は
- * パージできないため、退会したユーザーのアイコンや、古い ?v= を掴んだままの
- * クライアントへの応答が長く残らないようにするため（ブラウザ側は ?v= が
- * 変われば別URLになるので長くてよい） */
-const IMMUTABLE_CACHE =
-  "public, max-age=31536000, immutable, s-maxage=86400";
+ * s-maxage を別に置いてエッジ側だけ5分で切っている。エッジに載った分は
+ * パージできないので、退会したユーザーのアイコンがここに残ると、D1 の行も
+ * R2 の実体も消えたあとまで配信され続けてしまう。D1/R2 の削減はブラウザ
+ * キャッシュと If-None-Match でほぼ取れており、エッジ側を長く持つ価値より
+ * 「退会したらすぐ消える」を優先する (#313)。
+ * ブラウザ側は ?v= が変われば別URLになるので長いままでよい */
+const IMMUTABLE_CACHE = "public, max-age=31536000, immutable, s-maxage=300";
 
 /** ?v= 無し（または古い ?v=）で来たとき。更新に追従できるよう短くする */
 const SHORT_CACHE = "public, max-age=3600";
@@ -37,9 +38,14 @@ export async function getUserAvatarImage(c: Context) {
     });
   }
 
-  // エッジキャッシュ。?v= が付いているURLだけを載せる（内容が変わらないため）
+  // エッジキャッシュ。?v= が付いているURLだけを載せる（内容が変わらないため）。
+  // キーは ?v= だけに正規化する。生のURLをそのまま使うと ?v=...&junk=1 のような
+  // 余計なクエリの数だけ別エントリが作れてしまう
   const cache = caches.default;
-  const cacheKey = new Request(c.req.url, { method: "GET" });
+  const url = new URL(c.req.url);
+  const cacheKey = new Request(`${url.origin}${url.pathname}?v=${v ?? ""}`, {
+    method: "GET",
+  });
   if (v) {
     const hit = await cache.match(cacheKey).catch(() => undefined);
     if (hit) return hit;
