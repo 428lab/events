@@ -259,6 +259,17 @@ describe("お知らせのページング (#294)", () => {
     const payload = await fetchPage(me.cookie, 999_999_999);
     expect(payload.notifications).toEqual([]);
     expect(payload.total).toBe(1);
+
+    // 桁が大きすぎる指定でも同じ。そのまま offset にすると D1 のバインドが
+    // 扱えない値になり 500 になるので、上限で丸めていること
+    const res = await SELF.fetch(
+      `${BASE}/api/notifications?page=99999999999999999999`,
+      { headers: { cookie: me.cookie } },
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as NotificationsPayload).notifications).toEqual(
+      [],
+    );
   });
 });
 
