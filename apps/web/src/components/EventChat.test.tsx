@@ -85,10 +85,20 @@ vi.mock("../lib/nostr.js", () => ({
  * 同時にある**（発言中に締め出された）状態が実際に起きる形 */
 let chatQuery: { data?: ChatMembersPayload; error?: unknown } = { data: CHAT };
 
+/** 「チャットに参加する」を押したときの一時鍵の発行 (#223) の結果。
+ * 参加時に締め出しが分かる経路 (#283) を確かめるため差し替えられるようにしてある */
+let joinResult: () => Promise<{ secret: string; pubkey: string }> = async () => ({
+  secret: "00",
+  pubkey: "pk-me",
+});
+
 vi.mock("../api/eventChatHooks.js", () => ({
   useChatMembers: () => chatQuery,
   useRegisterChatKey: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useCreateEphemeralChatKey: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useCreateEphemeralChatKey: () => ({
+    isPending: false,
+    mutateAsync: () => joinResult(),
+  }),
   useRegisterChatChannel: () => ({ mutateAsync: vi.fn() }),
   useResetChatChannel: () => ({ isPending: false, mutate: vi.fn() }),
   useHideChatNote: () => ({ isPending: false, mutate: vi.fn() }),
@@ -128,6 +138,7 @@ beforeEach(() => {
   deliver = null;
   ephemeralKey = null;
   chatQuery = { data: CHAT };
+  joinResult = async () => ({ secret: "00", pubkey: "pk-me" });
 });
 
 /** 描画して、非同期の自動再参加・リレー接続が落ち着くまで待つ */
@@ -262,6 +273,64 @@ describe("チャットに繋がせない状態 (#283)", () => {
     chatQuery = { error: new ApiError(403, { error: "forbidden" }) };
     await renderChat("page");
 
+    expect(
+      screen.queryByText("このイベントのチャットに接続できません。"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("同じ error 名でも 403 以外ならこの文言は出さない", async () => {
+    // 別のエンドポイントが同じ名前を別のステータスで返し始めても、
+    // 無関係な失敗をこの画面に吸い込ませない
+    chatQuery = { error: new ApiError(500, { error: "chat_unavailable" }) };
+    await renderChat("page");
+
+    expect(
+      screen.queryByText("このイベントのチャットに接続できません。"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 参加ボタンを押したときの失敗の出し分け (#283)。
+ *
+ * 締め出しは許可リストの取得が落ちる前に押される（ポーリングの間・リトライ中）ので、
+ * 参加ボタン側にも同じ 403 が返ってくる。
+ * **締め出された人は参加が確定している**ので、ここで「参加が確定しているメンバーのみ」
+ * と出すと事実と違う説明になる。理由は書かないが、嘘も書かない。
+ */
+describe("参加ボタンが 403 で失敗したとき (#283)", () => {
+  const NOT_CONFIRMED_TEXT = "参加が確定しているメンバーのみチャットを利用できます。";
+
+  /** 参加UI（署名器が決まっていない状態）を出して「チャットに参加する」を押す */
+  async function clickJoin() {
+    await renderChat("page");
+    const button = await screen.findByRole("button", {
+      name: "チャットに参加する",
+    });
+    await act(async () => {
+      button.click();
+    });
+  }
+
+  it("締め出しなら、参加が確定していないとは書かない", async () => {
+    joinResult = async () => {
+      throw new ApiError(403, { error: "chat_unavailable" });
+    };
+    await clickJoin();
+
+    expect(
+      await screen.findByText("このイベントのチャットに接続できません。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(NOT_CONFIRMED_TEXT)).not.toBeInTheDocument();
+  });
+
+  it("参加確定前の 403 は従来どおりの文言（上の確認の空振り防止）", async () => {
+    joinResult = async () => {
+      throw new ApiError(403, { error: "forbidden" });
+    };
+    await clickJoin();
+
+    expect(await screen.findByText(NOT_CONFIRMED_TEXT)).toBeInTheDocument();
     expect(
       screen.queryByText("このイベントのチャットに接続できません。"),
     ).not.toBeInTheDocument();

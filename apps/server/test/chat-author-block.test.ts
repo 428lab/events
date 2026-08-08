@@ -20,6 +20,13 @@ const BASE = "https://example.com";
  *
  * 1件ずつの非表示 (#278) は admin-content-moderation.test.ts が見ている。 */
 
+async function deleteReq(path: string, cookie: string): Promise<Response> {
+  return SELF.fetch(`${BASE}/api${path}`, {
+    method: "DELETE",
+    headers: { cookie },
+  });
+}
+
 /** dev-login（DevUser = アプリ運営管理者） */
 async function loginDev(): Promise<string> {
   const res = await SELF.fetch(`${BASE}/api/auth/dev-login`, { method: "POST" });
@@ -240,6 +247,158 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
     // 解除すれば本人も戻る
     expect((await unblock(eventId, admin, noisyKey.pubkey)).status).toBe(200);
     expect((await chatMembers(eventId, noisy.cookie)).status).toBe(200);
+  });
+
+  it("締め出し中の鍵の登録は、鍵の使用状況より先に締め出しで止まる", async () => {
+    const admin = await loginDev();
+    const owner = await makeUser();
+    const noisy = await makeUser();
+    const other = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, noisy.userId);
+    await addMember(eventId, other.userId);
+    await joinChat(eventId, noisy.cookie);
+    const otherKey = await joinChat(eventId, other.cookie);
+
+    // 「他人が使用中」かつ「締め出し中」の鍵を登録しようとした場合。
+    // 使用状況 (409) を先に返すと、繋がらない事実より先に別の情報が出てしまう
+    expect((await block(eventId, admin, otherKey.pubkey)).status).toBe(200);
+    const proof = await chatKeyProof(eventId, otherKey);
+    const res = await postJson(`/events/${eventId}/chat-key`, noisy.cookie, {
+      proof,
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "chat_unavailable" });
+
+    // 締め出しが無ければ従来どおり「使用中」で弾かれる（この確認の空振り防止）
+    expect((await unblock(eventId, admin, otherKey.pubkey)).status).toBe(200);
+    const again = await postJson(`/events/${eventId}/chat-key`, noisy.cookie, {
+      proof: await chatKeyProof(eventId, otherKey),
+    });
+    expect(again.status).toBe(409);
+  });
+
+  it("締め出されたスタッフはチャットのスタッフ操作もできない", async () => {
+    const admin = await loginDev();
+    const owner = await makeUser();
+    const staff = await makeUser();
+    const other = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, staff.userId, "staff");
+    await addMember(eventId, other.userId);
+    const staffKey = await joinChat(eventId, staff.cookie);
+    await joinChat(eventId, other.cookie);
+
+    // 部屋がある状態にしておく（作り直しが通ってしまったことを検出するため）
+    const channelId = "cc".repeat(32);
+    await env.DB.prepare("UPDATE event SET chat_channel_id = ? WHERE id = ?")
+      .bind(channelId, eventId)
+      .run();
+
+    // 締め出す前は通ること＝この後の 403 が「そもそもスタッフ操作ができない」
+    // ではなく、締め出しによるものだと言えるようにする
+    const noteId = "ab".repeat(32);
+    expect(
+      (await postJson(`/events/${eventId}/chat-hidden`, staff.cookie, { noteId }))
+        .status,
+    ).toBe(200);
+
+    expect((await block(eventId, admin, staffKey.pubkey)).status).toBe(200);
+
+    // 締め出された人はチャットから切り離された人なので、スタッフ操作も一切できない
+    const hide = await postJson(`/events/${eventId}/chat-hidden`, staff.cookie, {
+      noteId: "cd".repeat(32),
+    });
+    expect(hide.status).toBe(403);
+    expect(await hide.json()).toEqual({ error: "chat_unavailable" });
+    expect(
+      (await deleteReq(`/events/${eventId}/chat-hidden/${noteId}`, staff.cookie))
+        .status,
+    ).toBe(403);
+    // ここがいちばん効く: 部屋を作り直されると**全員の**履歴が画面から消える
+    expect(
+      (await deleteReq(`/events/${eventId}/chat-channel`, staff.cookie)).status,
+    ).toBe(403);
+    expect(
+      (await postJson(`/events/${eventId}/chat-channel/official`, staff.cookie))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await postJson(`/events/${eventId}/chat-channel`, staff.cookie, {
+          channelEvent: {
+            id: "ef".repeat(32),
+            pubkey: "12".repeat(32),
+            sig: "34".repeat(64),
+            kind: 40,
+            created_at: 1,
+            tags: [],
+            content: "{}",
+          },
+        })
+      ).status,
+    ).toBe(403);
+
+    // 実際に何も起きていないこと（拒否されたつもりで通っていた、を防ぐ）
+    const view = await chatMembers(eventId, other.cookie);
+    expect(view.status).toBe(200);
+    const payload = (await view.json()) as ChatMembersPayload;
+    expect(payload.channelId).toBe(channelId);
+    expect(payload.hiddenNoteIds).toEqual([noteId]);
+
+    // 解除すればスタッフ操作も元どおり
+    expect((await unblock(eventId, admin, staffKey.pubkey)).status).toBe(200);
+    expect(
+      (await deleteReq(`/events/${eventId}/chat-channel`, staff.cookie)).status,
+    ).toBe(200);
+  });
+
+  it("あるイベントでの締め出しは、同じ人・同じ鍵でも別のイベントに波及しない", async () => {
+    const admin = await loginDev();
+    const owner = await makeUser();
+    const noisy = await makeUser();
+    const other = await makeUser();
+    const eventA = await insertEvent(owner.userId);
+    const eventB = await insertEvent(owner.userId);
+    for (const ev of [eventA, eventB]) {
+      await addMember(ev, noisy.userId);
+      await addMember(ev, other.userId);
+    }
+    await joinChat(eventA, other.cookie);
+    await joinChat(eventB, other.cookie);
+
+    // 同じ人が同じ鍵で両方のイベントに参加している状態を作る
+    // （NIP-07 で同じアカウントを使えば実際にこうなる）。
+    // 鍵が別々だと「イベントで絞れているか」を確かめたことにならない
+    const shared = await joinChat(eventA, noisy.cookie);
+    const proof = await chatKeyProof(eventB, shared);
+    expect(
+      (await postJson(`/events/${eventB}/chat-key`, noisy.cookie, { proof }))
+        .status,
+    ).toBe(200);
+    expect((await visiblePubkeys(eventB, other.cookie)).has(shared.pubkey)).toBe(
+      true,
+    );
+
+    expect((await block(eventA, admin, shared.pubkey)).status).toBe(200);
+
+    // A では効く
+    expect((await visiblePubkeys(eventA, other.cookie)).has(shared.pubkey)).toBe(
+      false,
+    );
+    expect((await chatMembers(eventA, noisy.cookie)).status).toBe(403);
+
+    // B には波及しない。ここが崩れると「1つのイベントの締め出しが
+    // その人のすべてのイベントのチャットを止める」ことになる
+    expect((await visiblePubkeys(eventB, other.cookie)).has(shared.pubkey)).toBe(
+      true,
+    );
+    expect((await chatMembers(eventB, noisy.cookie)).status).toBe(200);
+    // 発言用の鍵も B では今までどおり手に入る
+    expect(
+      (await postJson(`/events/${eventB}/chat-key/ephemeral`, noisy.cookie))
+        .status,
+    ).toBe(200);
   });
 
   it("管理者以外は締め出しも一覧閲覧もできない", async () => {

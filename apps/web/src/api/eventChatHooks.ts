@@ -13,7 +13,9 @@ export function useChatMembers(eventId: string, enabled: boolean) {
     refetchInterval: 5000,
     // 403（繋がせない状態 #283 / 参加確定前）は再試行しても結果が変わらないので
     // 既定の3回リトライを待たずに画面へ返す。ポーリング自体は続くため、
-    // 締め出しが解除されれば次の周回で自動的に元に戻る
+    // 締め出しが解除されれば次の周回で自動的に元に戻る。
+    // 403以外は既定のまま: react-query は失敗のたびに 0 から数えた count を渡し、
+    // 既定の retry:3 も `count < 3` で判定するので、この式は既定と同じ3回になる
     retry: (count, err) =>
       !(err instanceof ApiError && err.status === 403) && count < 3,
     queryFn: () =>

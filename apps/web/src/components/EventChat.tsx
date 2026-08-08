@@ -70,6 +70,19 @@ const MESSAGE_DISPLAY_MAX = 200;
  * 締め出された側からは通信の不調と区別が付かないので、これで目的は足りる */
 const CHAT_UNAVAILABLE_TEXT = "このイベントのチャットに接続できません。";
 
+/** 「チャットに繋がせない状態」(#283) のサーバー応答か。
+ * 許可リストの取得 (chat-members) と参加ボタン (chat-key) の両方が同じ 403 を返すので、
+ * 判定はここ1箇所に寄せる。**status も見る**: 別のエンドポイントが同じ
+ * error 名を別のステータスで返し始めたときに、無関係な失敗をこの画面に
+ * 吸い込ませないため */
+function isChatUnavailable(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status === 403 &&
+    (err.body as { error?: string } | null)?.error === "chat_unavailable"
+  );
+}
+
 /** 受信・送信したメッセージを時刻順に足す。IDで重複排除し、古い方から丸める */
 function appendMessage(prev: NostrEvent[], ev: NostrEvent): NostrEvent[] {
   if (prev.some((m) => m.id === ev.id)) return prev;
@@ -220,11 +233,8 @@ export function EventChat({
    * 別の鍵を作って戻ってくるだけで意味がないため。
    * ただし「ネットワークが不調です」のような嘘も書かない。誤って締め出された人が
    * 回線を疑って時間を無駄にするし、後で分かったときに嘘をついたことになる。
-   * 理由を明かさず、事実として正しい文言（下の CHAT_UNAVAILABLE_TEXT）だけを出す。 */
-  const chatUnavailable =
-    chatError instanceof ApiError &&
-    chatError.status === 403 &&
-    (chatError.body as { error?: string } | null)?.error === "chat_unavailable";
+   * 理由を明かさず、事実として正しい文言（上の CHAT_UNAVAILABLE_TEXT）だけを出す。 */
+  const chatUnavailable = isChatUnavailable(chatError);
   const registerKey = useRegisterChatKey(eventId);
   const ephemeralKey = useCreateEphemeralChatKey(eventId);
   const registerChannel = useRegisterChatChannel(eventId);
@@ -468,6 +478,11 @@ export function EventChat({
         setJoinError(
           "この Nostr アカウントの鍵は同じイベントの別のユーザーが使用中です。別のアカウントを選んでください。",
         );
+      } else if (isChatUnavailable(err)) {
+        // 締め出し (#283)。締め出された人は**参加が確定している**ので、
+        // 下の「参加が確定しているメンバーのみ」に落とすと事実と違う説明になる。
+        // 理由は書かないが嘘も書かない、で上の表示と同じ文言に揃える
+        setJoinError(CHAT_UNAVAILABLE_TEXT);
       } else if (err instanceof ApiError && err.status === 403) {
         setJoinError("参加が確定しているメンバーのみチャットを利用できます。");
       } else {

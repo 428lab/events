@@ -40,14 +40,17 @@ const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
  * 権限は2段階に分けてある:
  * - 読む・参加する: 参加確定メンバー（＋appAdmin / コミュニティ管理者）
  * - 部屋の開設・作り直し・メッセージの非表示: **そのイベントの staff メンバーだけ**
- *   （eventStaffOnly）。web も myRole === "staff" でしか操作UIを出さない (#275) */
+ *   （staffAndNotBlocked）。web も myRole === "staff" でしか操作UIを出さない (#275)
+ *
+ * どちらの段にも締め出し (#283) を通す。締め出された人はチャットから切り離された
+ * 人なので、読む・書く・運営するのいずれもできない */
 export const eventChatRoutes = new Hono<AppEnv>();
 eventChatRoutes.use("*", requireAuth);
 
 /** requireEventRole はロールのみ見るため、確定済み（status=confirmed）を追加チェック。
  * （メンバー行がない=appAdmin/コミュニティ管理者バイパスはそのまま許可。
  * eventQa.ts の同名ヘルパーと同じ判定）。
- * 読み出し・参加で使う（スタッフ操作は eventStaffOnly でさらに絞る） */
+ * 読み出し・参加で使う（スタッフ操作は staffAndNotBlocked でさらに絞る） */
 async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
   const member = await eventMembersRepo.find(
     c.req.param("id")!,
@@ -89,12 +92,19 @@ async function notBlocked(c: Context<AppEnv>): Promise<Response | null> {
 /** スタッフ操作（部屋の開設・作り直し・メッセージの非表示）の入口。
  * requireEventRole(["staff"]) の後ろに置き、運営管理者・コミュニティ管理者の
  * バイパスをここで閉じる（判定の中身は isConfirmedEventStaff を参照）。
- * Q&A (eventQa.ts) の eventStaffOnly と同じ形。 */
-async function eventStaffOnly(c: Context<AppEnv>): Promise<Response | null> {
+ * Q&A (eventQa.ts) の eventStaffOnly と同じ形。
+ *
+ * **締め出し (#283) も必ずここで一緒に見る**。締め出された人は「このアプリの
+ * チャットから切り離された人」なので、スタッフであってもチャットに関する操作は
+ * 一切させない。特にチャンネルの作り直し（DELETE /chat-channel）は、締め出された
+ * スタッフが部屋を作り直して**全員の履歴を画面から飛ばせて**しまう。 */
+async function staffAndNotBlocked(
+  c: Context<AppEnv>,
+): Promise<Response | null> {
   if (!(await isConfirmedEventStaff(c.req.param("id")!, c.get("user").id))) {
     return c.json({ error: "forbidden" }, 403);
   }
-  return null;
+  return notBlocked(c);
 }
 
 /** サーバー管理の一時鍵 (#223)。複数端末で同じ発言者鍵を使えるよう、
@@ -151,16 +161,20 @@ eventChatRoutes.post(
     // 発言のなりすまし表示を防ぐ）
     const pubkey = await verifyChatKeyProof(proof, eventId);
     if (!pubkey) return c.json({ error: "invalid_proof" }, 400);
+    // 締め出し中の鍵での登録は受け付けない (#283)。
+    // 登録できても許可リストからは外れたままなので実害は無いが、
+    // 「登録できたのに何も映らない」より、繋がらないと分かる方が素直。
+    //
+    // 重複チェック (pubkey_taken) より**先**に見る。逆順だと、締め出された人が
+    // 他人の鍵を指定したときに「その鍵は使用中」だけが返り、鍵の使用状況という
+    // 別の情報が先に漏れる。繋がらないことが分かった時点で話を終わらせる
+    if (await eventChatRepo.isBlocked(eventId, pubkey)) {
+      return c.json({ error: "chat_unavailable" }, 403);
+    }
     // 同一イベント内で他ユーザーが既に使っている鍵は拒否
     const owner = await eventChatRepo.pubkeyOwner(eventId, pubkey);
     if (owner && owner !== c.get("user").id) {
       return c.json({ error: "pubkey_taken" }, 409);
-    }
-    // 締め出し中の鍵での登録は受け付けない (#283)。
-    // 登録できても許可リストからは外れたままなので実害は無いが、
-    // 「登録できたのに何も映らない」より、繋がらないと分かる方が素直
-    if (await eventChatRepo.isBlocked(eventId, pubkey)) {
-      return c.json({ error: "chat_unavailable" }, 403);
     }
     await eventChatRepo.setPubkey(eventId, c.get("user").id, pubkey);
     return c.json({ ok: true });
@@ -198,7 +212,7 @@ eventChatRoutes.post(
   "/:id/chat-channel/official",
   requireEventRole(["staff"]),
   async (c) => {
-    const denied = await eventStaffOnly(c);
+    const denied = await staffAndNotBlocked(c);
     if (denied) return denied;
     if (!serviceKeyConfigured()) {
       return c.json({ error: "service_key_unset" }, 503);
@@ -234,7 +248,7 @@ eventChatRoutes.post(
   requireEventRole(["staff"]),
   zValidator("json", registerChatChannelInput),
   async (c) => {
-    const denied = await eventStaffOnly(c);
+    const denied = await staffAndNotBlocked(c);
     if (denied) return denied;
     const eventId = c.req.param("id");
     const { channelEvent } = valid<RegisterChatChannelInput>(c, "json");
@@ -281,7 +295,7 @@ eventChatRoutes.delete(
   "/:id/chat-channel",
   requireEventRole(["staff"]),
   async (c) => {
-    const denied = await eventStaffOnly(c);
+    const denied = await staffAndNotBlocked(c);
     if (denied) return denied;
     const eventId = c.req.param("id");
     await eventChatRepo.clearChannel(eventId);
@@ -302,7 +316,7 @@ eventChatRoutes.post(
   requireEventRole(["staff"]),
   zValidator("json", hideChatNoteInput),
   async (c) => {
-    const denied = await eventStaffOnly(c);
+    const denied = await staffAndNotBlocked(c);
     if (denied) return denied;
     const { noteId } = valid<HideChatNoteInput>(c, "json");
     await eventChatRepo.hideNote(c.req.param("id"), noteId);
@@ -315,7 +329,7 @@ eventChatRoutes.delete(
   "/:id/chat-hidden/:noteId",
   requireEventRole(["staff"]),
   async (c) => {
-    const denied = await eventStaffOnly(c);
+    const denied = await staffAndNotBlocked(c);
     if (denied) return denied;
     const noteId = c.req.param("noteId");
     if (!/^[0-9a-f]{64}$/.test(noteId)) {
