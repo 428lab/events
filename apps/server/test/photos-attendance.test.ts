@@ -50,6 +50,7 @@ async function makeMember(
   eventId: string,
   role: "participant" | "staff" | "judge" | "observer",
   attended: 0 | 1,
+  status = "confirmed",
 ): Promise<{ userId: string; cookie: string }> {
   const uid = crypto.randomUUID();
   const sid = crypto.randomUUID();
@@ -59,9 +60,9 @@ async function makeMember(
     .bind(uid, `nostr:${uid}`, `u_${uid.slice(0, 6)}`, "テスト", Date.now())
     .run();
   await env.DB.prepare(
-    "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, ?, NULL, 'confirmed', ?, ?)",
+    "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)",
   )
-    .bind(crypto.randomUUID(), eventId, uid, role, attended, Date.now())
+    .bind(crypto.randomUUID(), eventId, uid, role, status, attended, Date.now())
     .run();
   await env.DB.prepare(
     "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
@@ -70,6 +71,49 @@ async function makeMember(
     .run();
   return { userId: uid, cookie: `eventer_session=${sid}` };
 }
+
+describe("写真の閲覧は参加確定の人だけ (#289)", () => {
+  it("落選・申込中・キャンセル待ちは閲覧できない（出席チェックを使わないイベントでも）", async () => {
+    const admin = await loginDev();
+    // setupEvent は出席チェックモードで作るので、それを切って素のイベントにする。
+    // 出席チェックの分岐ではなく status の分岐そのものを検証したい
+    const eventId = await setupEvent(admin);
+    await env.DB.prepare("UPDATE event SET attendance_check = 0 WHERE id = ?")
+      .bind(eventId)
+      .run();
+
+    for (const status of ["lost", "applied", "waitlist"] as const) {
+      const m = await makeMember(eventId, "participant", 0, status);
+      const res = await SELF.fetch(`${BASE}/api/events/${eventId}/photos`, {
+        headers: { cookie: m.cookie },
+      });
+      expect(res.status).toBe(403);
+    }
+
+    // 確定した人は見られる（塞ぎすぎていないことの対）
+    const ok = await makeMember(eventId, "participant", 0);
+    const allowed = await SELF.fetch(`${BASE}/api/events/${eventId}/photos`, {
+      headers: { cookie: ok.cookie },
+    });
+    expect(allowed.status).toBe(200);
+  });
+
+  it("公開設定のイベントは、参加が確定していなくても見られる（公開の意味を壊さない）", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    await env.DB.prepare(
+      "UPDATE event SET attendance_check = 0, photos_public = 1 WHERE id = ?",
+    )
+      .bind(eventId)
+      .run();
+
+    const lost = await makeMember(eventId, "participant", 0, "lost");
+    const res = await SELF.fetch(`${BASE}/api/events/${eventId}/photos`, {
+      headers: { cookie: lost.cookie },
+    });
+    expect(res.status).toBe(200);
+  });
+});
 
 describe("写真×出席チェック (#22)", () => {
   it("出席チェックモード: 未チェックの参加者は閲覧不可(403)、未チェックでもstaffは可(200)、未ログインは403", async () => {

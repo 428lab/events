@@ -35,6 +35,10 @@ async function canViewPhotos(eventId: string, c: Context): Promise<boolean> {
   if (isAppAdmin(user)) return true;
   const member = await eventMembersRepo.find(eventId, user.id);
   if (!member) return false;
+  // 参加が確定していない人（落選・申込中・キャンセル待ち）は見られない (#289)。
+  // 写真には参加者が写るので、参加していない人に見せる理由が無い。
+  // 参加を取り消した人は find がメンバー扱いしないので、ここに来る前に落ちる
+  if (member.status !== "confirmed") return false;
   // 出席チェックモードでは、参加者ロールは出席チェック済みのみ閲覧可
   // （実際に来た人だけに見せる。参加者数の表示とは別の基準）
   if (event.attendanceCheck && member.role === "participant" && !member.attended) {
