@@ -246,6 +246,62 @@ export const usersRepo = {
     };
   },
 
+  /** 取り込み側 (lib/avatarStore.ts) がまとめて要る状態 (#313)。
+   * スロットル判定・ハッシュ比較・取得元URLの比較を1回の SELECT で賄う。
+   * findAvatarImage と分けているのは、あちらが「配信できる画像があるか」を
+   * 表す null を返すのに対し、こちらは画像が無くても行の状態が要るため */
+  async findAvatarSyncState(userId: string): Promise<{
+    updatedAt: number | null;
+    mime: string | null;
+    hash: string | null;
+    sourceUrl: string | null;
+    attemptedAt: number | null;
+  } | null> {
+    const row = await one<{
+      avatar_image_updated_at: number | null;
+      avatar_image_mime: string | null;
+      avatar_image_hash: string | null;
+      avatar_source_url: string | null;
+      avatar_sync_attempted_at: number | null;
+    }>(
+      `SELECT avatar_image_updated_at, avatar_image_mime, avatar_image_hash,
+              avatar_source_url, avatar_sync_attempted_at
+       FROM user WHERE id = ? AND ${ACTIVE}`,
+      userId,
+    );
+    if (!row) return null;
+    return {
+      updatedAt: row.avatar_image_updated_at,
+      mime: row.avatar_image_mime,
+      hash: row.avatar_image_hash,
+      sourceUrl: row.avatar_source_url,
+      attemptedAt: row.avatar_sync_attempted_at,
+    };
+  },
+
+  /** 取り込みを試みた時刻を記録する (#313)。取得の前に呼ぶ。
+   * 成否や中身の変化に関わらず進むので、これでスロットルすれば
+   * 「毎回同じ画像を返すURL」でも外向き fetch ごと抑止できる */
+  async touchAvatarSyncAttempt(userId: string, at: number): Promise<void> {
+    await run(
+      "UPDATE user SET avatar_sync_attempted_at = ? WHERE id = ?",
+      at,
+      userId,
+    );
+  },
+
+  /** 取得元URLだけを更新する (#313)。
+   * 連携先がURLをローテーションしても画像は同じ、というケース（CDN でよくある）で
+   * 使う。?v= は進めない（中身が同じなので再ダウンロードさせない）が、
+   * 切り戻し用に控えているURLが既に404のものになるのは避けたい */
+  async setAvatarSourceUrl(userId: string, sourceUrl: string): Promise<void> {
+    await run(
+      "UPDATE user SET avatar_source_url = ? WHERE id = ?",
+      sourceUrl,
+      userId,
+    );
+  },
+
   /** 自前保管したアイコンを記録する (#312)。
    * avatar_url も同時に自ドメインのURLへ差し替える（表示側は全てここを読む）。
    * 1文にまとめてあるので「R2 には入ったが URL が連携先のまま」にはならない。

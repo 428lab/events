@@ -37,3 +37,9 @@ ALTER TABLE user ADD COLUMN avatar_image_hash TEXT;
 -- 旧コードは「未設定のときだけ補完」なので再ログインしても復旧できない。
 -- ここに控えておけば UPDATE user SET avatar_url = avatar_source_url で戻せる。
 ALTER TABLE user ADD COLUMN avatar_source_url TEXT;
+
+-- 最後に取り込みを「試みた」時刻(epoch ms)。成否・変更の有無に関わらず記録する。
+-- 取得元URLを本人が自由に書ける経路（Nostr の kind:0）でのスロットルに使う。
+-- avatar_image_updated_at では代用できない：あれは中身が変わったときだけ進むので、
+-- 毎回同じバイト列を返すURLを指定されると永久に進まず、外向き fetch を抑止できない。
+ALTER TABLE user ADD COLUMN avatar_sync_attempted_at INTEGER;

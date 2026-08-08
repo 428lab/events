@@ -22,8 +22,10 @@ const FETCH_TIMEOUT_MS = 5000;
 const USER_AGENT = "eventer-avatar-fetcher";
 
 /** 本人が取得元URLを自由に書ける経路 (#313) 向けの最小取り込み間隔。
- * 毎回異なるバイト列を返すURLを指定されるとハッシュ比較が効かず、
- * 「1MB取得＋R2 put＋D1 update」を連打できてしまうため */
+ * ハッシュ比較は「同じ画像なら書き込まない」ためのもので、外向きの取得までは
+ * 止められない（毎回違うバイト列を返せば R2 put と D1 update も走る）。
+ * 1MB のダウンロードを無制限に踏ませないよう、間隔そのものを制限する。
+ * 判定は avatar_sync_attempted_at（＝試みた時刻）で行う */
 export const AVATAR_SYNC_MIN_INTERVAL_MS = 10 * 60 * 1000;
 
 /** 取り込みを見送った理由を1行だけ残す。連携先が 403/404 を返す・許可外の
@@ -32,6 +34,13 @@ export const AVATAR_SYNC_MIN_INTERVAL_MS = 10 * 60 * 1000;
 function skip(userId: string, reason: string, detail = ""): false {
   console.warn(`[avatar] skip user=${userId} reason=${reason}${detail}`);
   return false;
+}
+
+/** 連携先が返した値をログに載せる前に丸める。長さ無制限・改行入りの値を
+ * そのまま出すと、ログの行を偽装されたりログが肥大したりする */
+function logSafe(v: string | undefined): string {
+  if (!v) return "(none)";
+  return v.slice(0, 64).replace(/[\r\n]/g, " ");
 }
 
 /** ログに出してよい範囲のホスト名（URL全体は出さない） */
@@ -193,16 +202,26 @@ export async function syncAvatarFromSource(
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    // 現在の保管状態は最初に1回だけ引く（スロットル判定とハッシュ比較で共用）
-    const current = await usersRepo.findAvatarImage(userId);
+    // 現在の状態は最初に1回だけ引く（スロットル判定・ハッシュ比較・取得元URLの
+    // 比較で共用）
+    const state = await usersRepo.findAvatarSyncState(userId);
     const minInterval = opts.minIntervalMs ?? 0;
-    if (
-      minInterval > 0 &&
-      current &&
-      Date.now() - current.updatedAt < minInterval
-    ) {
-      return skip(userId, "throttled");
+    if (minInterval > 0) {
+      const now = Date.now();
+      // 基準は「試みた時刻」であって「更新した時刻」ではない。後者は中身が
+      // 変わったときだけ進むため、毎回同じバイト列を返すURLを指定されると
+      // 永久に発火せず、外向きの取得（1MB × 無制限）を抑止できない
+      if (state?.attemptedAt && now - state.attemptedAt < minInterval) {
+        return skip(userId, "throttled");
+      }
+      // 取得の前に記録する。成否に関わらずここで刻んでおかないと、
+      // 失敗し続けるURLを指定して連打されたときに抑止できない
+      await usersRepo.touchAvatarSyncAttempt(userId, now);
     }
+    const current =
+      state && state.updatedAt !== null
+        ? { updatedAt: state.updatedAt, mime: state.mime, hash: state.hash }
+        : null;
 
     const res = await fetchAvatar(userId, url, ctrl.signal);
     if (!res) return false;
@@ -217,7 +236,7 @@ export async function syncAvatarFromSource(
     const mime = normalizeImageMime(ct);
     if (!mime) {
       discard(res);
-      return skip(userId, "mime", ` ct=${ct ?? "(none)"}`);
+      return skip(userId, "mime", ` ct=${logSafe(ct)}`);
     }
 
     // Content-Length は見ない（詐称されうるし、読みながら打ち切るので上限は守れる）
@@ -230,7 +249,15 @@ export async function syncAvatarFromSource(
     }
 
     const hash = toHex(await crypto.subtle.digest("SHA-256", bytes));
-    if (current && current.hash === hash && current.mime === mime) return false;
+    if (current && current.hash === hash && current.mime === mime) {
+      // 中身が同じでもURLだけ変わることがある（連携先CDNのURLローテーション）。
+      // ?v= は進めない（同じ画像を再ダウンロードさせない）が、切り戻し用に
+      // 控えているURLが既に404のものになっていると復元できないので追随させる
+      if (state?.sourceUrl !== url.toString()) {
+        await usersRepo.setAvatarSourceUrl(userId, url.toString());
+      }
+      return false;
+    }
 
     const updatedAt = Date.now();
     await getBucket().put(avatarKey(userId), bytes, {

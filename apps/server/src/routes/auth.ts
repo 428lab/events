@@ -268,8 +268,8 @@ authRoutes.post("/nostr/profile", requireAuth, async (c) => {
   // 従来どおりに保つ）、そのうえで自前保管を試みて自ドメインのURLへ差し替える (#312)
   await usersRepo.fillProfile(user.id, profile.name, profile.picture);
   // 取得元URLは本人が何度でも書き換えられるうえ、この API は回数制限が無い。
-  // 毎回違うバイト列を返すURLを指定されるとハッシュ比較が効かず「1MB取得＋
-  // R2 put＋D1 update」を連打できるので、直近の取り込みから一定時間は見送る (#313)
+  // ハッシュ比較では外向きの取得（1MB）までは止められないので、
+  // 直近に「試みた」時刻を基準に一定時間は取りに行かない (#313)
   await syncAvatarInBackground(user.id, profile.picture, {
     minIntervalMs: AVATAR_SYNC_MIN_INTERVAL_MS,
   });
