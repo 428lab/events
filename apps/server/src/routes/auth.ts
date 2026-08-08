@@ -7,6 +7,7 @@ import { usersRepo } from "../db/repositories/users.js";
 import { identitiesRepo } from "../db/repositories/identities.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
 import { deriveHandle } from "../lib/handle.js";
+import { syncAvatarFromSource } from "../lib/avatarStore.js";
 import {
   clearSession,
   currentUser,
@@ -233,7 +234,11 @@ authRoutes.post("/nostr/profile", requireAuth, async (c) => {
   // この pubkey が現在のユーザーに連携されていること
   const linkedUserId = await identitiesRepo.findUserId("nostr", profile.pubkey);
   if (linkedUserId !== user.id) return c.json({ error: "forbidden" }, 403);
+  // 表示名は本人が変更できる (#232) ため、これまで通り未設定のときだけ補完する。
+  // アイコンはまず未設定なら連携先のURLで埋め（取り込みに失敗したときの見え方を
+  // 従来どおりに保つ）、そのうえで自前保管を試みて自ドメインのURLへ差し替える (#312)
   await usersRepo.fillProfile(user.id, profile.name, profile.picture);
+  await syncAvatarFromSource(user.id, profile.picture);
   return c.json({ ok: true });
 });
 
@@ -357,6 +362,12 @@ authRoutes.get("/:provider/callback", async (c) => {
   // 猶予期間中 (#250) はセッションだけ発行して復帰画面へ送る。
   // このセッションで使えるのは復帰API だけ（currentUser が null を返すため）
   const pendingDeletion = await isPendingDeletion(userId);
+  // ログインのたびにアイコンを取り直して自前保管する (#312)。
+  // 連携先（Discord など）でアイコンを変えると旧URLが 404 になるため、
+  // 「未設定のときだけ補完」では直らない。失敗しても握り潰してログインは通す。
+  // 取得元は**今回ログインに使った連携先**（複数連携していても最新のものに揃う）。
+  // 退会申請中は表示自体されないので取りに行かない
+  if (!pendingDeletion) await syncAvatarFromSource(userId, profile.avatarUrl);
   await issueSession(c, userId);
   return c.redirect(env.appBaseUrl + (pendingDeletion ? "/restore" : "/me"));
 });

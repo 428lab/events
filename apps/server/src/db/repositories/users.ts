@@ -16,6 +16,10 @@ interface UserRow {
   deleted_at: number | null;
   /** 最終アクセス時刻。NULL = 計測開始 (#257) より前からのユーザー */
   last_seen_at: number | null;
+  /** 自前保管したアイコン (#312) の更新時刻。NULL = 保管なし（配信もしない） */
+  avatar_image_updated_at: number | null;
+  avatar_image_mime: string | null;
+  avatar_image_hash: string | null;
 }
 
 function toUser(row: UserRow): User {
@@ -215,6 +219,53 @@ export const usersRepo = {
   /** Discord 連携時に discord_id を実IDへ更新（管理者判定を効かせる） */
   async setDiscordId(userId: string, discordId: string): Promise<void> {
     await run("UPDATE user SET discord_id = ? WHERE id = ?", discordId, userId);
+  },
+
+  /** 自前保管したアイコン (#312) のメタ。配信 (routes/avatarImages.ts) と
+   * 「中身が変わったときだけ書き込む」判定 (lib/avatarStore.ts) の両方で使う。
+   * 退会申請中 (#250) は null＝配信しない（他の参照系と同じ扱い） */
+  async findAvatarImage(userId: string): Promise<{
+    updatedAt: number;
+    mime: string | null;
+    hash: string | null;
+  } | null> {
+    const row = await one<{
+      avatar_image_updated_at: number | null;
+      avatar_image_mime: string | null;
+      avatar_image_hash: string | null;
+    }>(
+      `SELECT avatar_image_updated_at, avatar_image_mime, avatar_image_hash
+       FROM user WHERE id = ? AND ${ACTIVE}`,
+      userId,
+    );
+    if (!row?.avatar_image_updated_at) return null;
+    return {
+      updatedAt: row.avatar_image_updated_at,
+      mime: row.avatar_image_mime,
+      hash: row.avatar_image_hash,
+    };
+  },
+
+  /** 自前保管したアイコンを記録する (#312)。
+   * avatar_url も同時に自ドメインのURLへ差し替える（表示側は全てここを読む）。
+   * 1文にまとめてあるので「R2 には入ったが URL が連携先のまま」にはならない */
+  async setAvatarImage(
+    userId: string,
+    avatarUrl: string,
+    updatedAt: number,
+    mime: string,
+    hash: string,
+  ): Promise<void> {
+    await run(
+      `UPDATE user SET avatar_url = ?, avatar_image_updated_at = ?,
+         avatar_image_mime = ?, avatar_image_hash = ?
+       WHERE id = ?`,
+      avatarUrl,
+      updatedAt,
+      mime,
+      hash,
+      userId,
+    );
   },
 
   /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻と選択中の組み合わせを記録 (#193, #201) */

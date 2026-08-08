@@ -5,6 +5,7 @@ import { decksRepo } from "../db/repositories/decks.js";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { bgmTracksRepo } from "../db/repositories/bgmTracks.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
+import { avatarKey } from "./avatarStore.js";
 
 /** 退会猶予期間 (#250) を過ぎたアカウントの完全削除。
  * GitHub Actions の定時実行から POST /api/cron/purge-deleted 経由で呼ばれる
@@ -49,7 +50,8 @@ interface Budget {
 
 /** 退会するユーザー由来の R2 オブジェクトキーを列挙する (#244)。
  * 行削除後はキーを辿れなくなるため、DB 削除前に呼ぶこと。
- * 対象: スライド画像・配信セット画像・BGM 音源・イベント写真・プロフィールカードPNG。
+ * 対象: スライド画像・配信セット画像・BGM 音源・イベント写真・プロフィールカードPNG・
+ * 自前保管のアイコン (#312)。
  * デッキ数・配信セット数だけ R2 list が増えるので、消費数を budget に積む */
 async function collectUserObjects(
   userId: string,
@@ -62,6 +64,9 @@ async function collectUserObjects(
   const photos = await eventPhotosRepo.listIdsByUser(userId);
   budget.spent += 4;
   for (const p of photos) keys.push(`event-photos/${p.eventId}/${p.id}`);
+  // 自前保管のアイコン (#312) は 1ユーザー1キー固定なので list は要らない。
+  // 保管していなければ存在しないキーを消すだけ（削除は下でまとめて投げるので費用ゼロ）
+  keys.push(avatarKey(userId));
   const prefixes = [
     ...decks.map((d) => `deck-images/${d.id}/`),
     ...liveSets.map((s) => `live-set-images/${s.id}/`),

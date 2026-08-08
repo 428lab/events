@@ -190,9 +190,16 @@ Team（将来）──1 Entry                 （チーム参加時、Entry の�
 | discord_id | text unique | Discord ユーザー ID |
 | username | text | 表示名 |
 | global_name | text null | Discord グローバル名 |
-| avatar_url | text null | |
+| avatar_url | text null | 表示に使うアイコンURL。自前保管できていれば `/api/users/{id}/avatar?v={更新時刻}` (#312) |
 | created_at | integer | |
 | last_seen_at | integer null | 最終アクセス時刻。null = 計測開始 (#257) より前からのユーザー |
+| avatar_image_updated_at | integer null | 自前保管したアイコンの更新時刻。null = 保管なし (#312) |
+| avatar_image_mime | text null | 保管したアイコンの MIME（配信時の Content-Type） |
+| avatar_image_hash | text null | 保管したアイコンの SHA-256。中身が変わったときだけ書き直すための比較用 |
+
+- アイコンは**ログインのたびに**、そのとき使った連携先（Discord / Google / GitHub / X / Nostr）から取り直して R2 `avatars/{user_id}` に保管し、`avatar_url` を自分のドメインのURLへ差し替える (#312)。連携先のURLをそのまま持つと、向こうでアイコンを変えられた時点で 404 になるため。
+- 取得に失敗（連携先が落ちている・既に 404・大きすぎる・画像でない）してもログインは成功させ、既存の `avatar_url` を残す。
+- 中身（ハッシュ）が前回と同じなら R2 も `avatar_image_updated_at` も書き換えない。毎ログインで `?v=` が変わると同じ画像を再ダウンロードさせてしまうため。
 
 #### user_active_day（日次の活動記録 #257）
 | カラム | 型 | 説明 |
