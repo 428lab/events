@@ -2,6 +2,18 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 /**
+ * テストのタイムゾーンを日本時間に固定する (#322)。
+ *
+ * 画面に出す日時（apps/web/src/lib/format.ts）は、利用者の端末の時刻で
+ * 見せたいので Intl に timeZone を渡していない＝実行環境の TZ に従う。
+ * そのためテストが実行環境の TZ に左右され、日本時間のローカルでは通るのに
+ * UTC の CI では落ちる、という壊れ方をしていた。
+ * 個々のテストで文字列を避けて回るのではなく、ここで前提を固定する。
+ * ここで代入しておけば、テストを走らせるワーカーにも引き継がれる。
+ */
+process.env.TZ = "Asia/Tokyo";
+
+/**
  * web のテスト設定。サーバー側 (apps/server/vitest.config.ts) と同じく
  * vitest を使う。こちらはブラウザ向けなので jsdom + Testing Library で
  * 「DOM に何が出るか」を確かめる。

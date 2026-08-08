@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import type { Event } from "@eventer/shared";
-import { participantCountLabel, showsAttendedCount } from "./format.js";
+import {
+  formatTime,
+  participantCountLabel,
+  showsAttendedCount,
+} from "./format.js";
 
 const NOW = new Date("2026-08-07T12:00:00+09:00").getTime();
 const DAY = 86400000;
@@ -75,5 +79,24 @@ describe("participantCountLabel (#297)", () => {
     // scheduling を解除し忘れても startsAt=0 なら出席は出さない
     const noDate = ev({ attendanceCheck: true, startsAt: 0 });
     expect(participantCountLabel(noDate, NOW)).toBe("参加 5 人");
+  });
+});
+
+/**
+ * 日時の表示は Intl に timeZone を渡していない＝実行環境の TZ に従うので、
+ * テストは vitest.config.ts で日本時間に固定してある (#322)。
+ * 固定が外れると「ローカルでは通るが CI では落ちる」という分かりにくい
+ * 壊れ方に戻るため、前提そのものをここで見張る。
+ */
+describe("テストのタイムゾーン (#322)", () => {
+  it("日本時間に固定されている", () => {
+    expect(process.env.TZ).toBe("Asia/Tokyo");
+    expect(new Date().getTimezoneOffset()).toBe(-540);
+  });
+
+  it("時刻の表示が実行環境ではなく固定した TZ で出る", () => {
+    expect(formatTime(new Date("2026-05-03T13:00:00+09:00").getTime())).toBe(
+      "13:00",
+    );
   });
 });
