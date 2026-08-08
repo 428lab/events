@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
-import { moderationActionInput } from "@eventer/shared";
+import { chatAuthorBlockInput, moderationActionInput } from "@eventer/shared";
 import type {
+  ChatAuthorBlockInput,
   ModerationActionInput,
   ModerationContentPayload,
   ModerationEventsPayload,
@@ -56,19 +57,23 @@ adminModerationRoutes.get("/events/:eventId", async (c) => {
   const eventId = c.req.param("eventId");
   const event = await adminModerationRepo.findEvent(eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
-  const [items, channelId, hidden, relays, members] = await Promise.all([
-    adminModerationRepo.listContent(eventId),
-    eventChatRepo.channelIdFor(eventId),
-    eventChatRepo.listHiddenDetail(eventId),
-    getChatRelays(),
-    eventChatRepo.listMembers(eventId),
-  ]);
+  const [items, channelId, hidden, relays, members, blocked] =
+    await Promise.all([
+      adminModerationRepo.listContent(eventId),
+      eventChatRepo.channelIdFor(eventId),
+      eventChatRepo.listHiddenDetail(eventId),
+      getChatRelays(),
+      // 締め出し中 (#283) も含める。誰を締め出したのか、その人が何を書いたのかを
+      // 見たうえでないと解除の判断ができない
+      eventChatRepo.listMembersWithBlocked(eventId),
+      eventChatRepo.listBlocked(eventId),
+    ]);
   const payload: ModerationContentPayload = {
     event,
     items,
     // チャット本文はサーバーに無い。ブラウザが channelId と relays を使って
     // 直接取りに行き、hidden に載っているものを非表示として表示する
-    chat: { channelId, relays, members, hidden },
+    chat: { channelId, relays, members, hidden, blocked },
   };
   return c.json(payload);
 });
@@ -221,4 +226,59 @@ adminModerationRoutes.post(
     }
     return c.json({ ok: true, changed: changed > 0 });
   },
+);
+
+/** 発言者単位の締め出し (#283)。
+ *
+ * 1件ずつの非表示だと、1人が大量に投稿したときに手数が足りない。チャットの表示は
+ * 発言者の鍵の許可リストで絞っているので、鍵を1つ落とせばその人のこれまでの発言が
+ * **このアプリの表示から** まとめて消え、**このアプリからは投稿できなくなる**
+ * （判定の中身は routes/eventChat.ts の notBlocked を参照）。
+ * リレーへの書き込みそのものを止めるものではない。
+ *
+ * **発言は消さない**。許可リストからも行を消さず、別テーブルに締め出しを持つだけなので、
+ * 解除すればそのまま元に戻る。誤操作は必ず起きるので、一覧と解除は同じ画面に置く。
+ *
+ * 限界（承知のうえ）: 締め出された人が別の鍵で入り直すことは防げない。
+ * **その場の荒らしを止める**ための道具であって、恒久的な追放ではない。 */
+async function actOnChatAuthor(
+  c: Context<AppEnv>,
+  action: "block" | "unblock",
+): Promise<Response> {
+  const eventId = c.req.param("eventId")!;
+  const { pubkey } = valid<ChatAuthorBlockInput>(c, "json");
+  if (!(await adminModerationRepo.findEvent(eventId))) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  const me = c.get("user");
+  // 当事者は締め出す **前** に引く（許可リストの行は残るので後でも引けるが、
+  // hide 側と手順を揃えておく）
+  const target = await eventChatRepo.blockedAuthorOf(eventId, pubkey);
+  const changed =
+    action === "block"
+      ? await eventChatRepo.blockAuthor(eventId, pubkey, me.id, Date.now())
+      : await eventChatRepo.unblockAuthor(eventId, pubkey);
+  // 実際に状態を変えたときだけ記録する（冪等な再送で2件目を残さない）
+  if (changed > 0) {
+    await recordAudit({
+      action: action === "block" ? "chat_author_block" : "chat_author_unblock",
+      actor: { id: me.id, handle: me.username },
+      target,
+      // 対象の鍵は残す（公開情報。本文や連絡先は入れない #248）
+      detail: { eventId, kind: "chat_author", pubkey },
+    });
+  }
+  return c.json({ ok: true, changed: changed > 0 });
+}
+
+adminModerationRoutes.post(
+  "/events/:eventId/chat-authors/block",
+  zValidator("json", chatAuthorBlockInput),
+  (c) => actOnChatAuthor(c, "block"),
+);
+
+adminModerationRoutes.post(
+  "/events/:eventId/chat-authors/unblock",
+  zValidator("json", chatAuthorBlockInput),
+  (c) => actOnChatAuthor(c, "unblock"),
 );

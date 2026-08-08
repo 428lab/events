@@ -94,13 +94,25 @@ export type ModerationEventsPayload = z.infer<
   typeof moderationEventsPayloadSchema
 >;
 
+/** 締め出している発言者1人ぶん (#283) */
+export const blockedChatAuthorSchema = z.object({
+  /** 発言に使われている公開鍵 */
+  pubkey: z.string(),
+  blockedAt: z.number(),
+  /** 締め出した運営管理者の user id */
+  blockedBy: z.string().nullable(),
+});
+export type BlockedChatAuthor = z.infer<typeof blockedChatAuthorSchema>;
+
 /** チャットは本文がサーバーに無く、外部にも公開されている。
  * 管理画面はチャンネルIDとリレーだけを渡し、本文はブラウザが直接取りに行く。 */
 export const moderationChatSchema = z.object({
   /** チャットが使われていない（部屋が無い）イベントは null */
   channelId: z.string().nullable(),
   relays: z.array(z.string()),
-  /** 公開鍵 → 発言者の対応。誰の発言かを画面に出すために使う */
+  /** 公開鍵 → 発言者の対応。誰の発言かを画面に出すために使う。
+   * **締め出し中 (#283) の発言者も含む**（管理画面は誰を締め出したのか、
+   * その人が何を書いたのかを見たうえで解除を判断するため） */
   members: z.array(chatMemberSchema),
   /** 非表示にしている note の一覧（運営・スタッフの両方） */
   hidden: z.array(
@@ -114,6 +126,9 @@ export const moderationChatSchema = z.object({
       staffHidden: z.boolean(),
     }),
   ),
+  /** 締め出している発言者 (#283)。members からは外れているが、
+   * この画面では誰を締め出しているか一覧でき、解除もできる必要がある */
+  blocked: z.array(blockedChatAuthorSchema),
 });
 export type ModerationChat = z.infer<typeof moderationChatSchema>;
 
@@ -136,6 +151,16 @@ export const moderationActionInput = z.object({
   id: z.string().min(1),
 });
 export type ModerationActionInput = z.infer<typeof moderationActionInput>;
+
+/** POST /api/admin/moderation/events/:eventId/chat-authors/block
+ *  POST /api/admin/moderation/events/:eventId/chat-authors/unblock (#283)
+ *
+ * 1件ずつの非表示 (moderationActionInput) と違い、対象は「発言」ではなく
+ * 「発言者」。その人のこのイベントでの発言がまとめて表示されなくなる。 */
+export const chatAuthorBlockInput = z.object({
+  pubkey: z.string().regex(/^[0-9a-f]{64}$/),
+});
+export type ChatAuthorBlockInput = z.infer<typeof chatAuthorBlockInput>;
 
 /** 対処対象を探すときに返すイベントの上限件数（新しい順にこの件数まで）。
  *

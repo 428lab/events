@@ -1,5 +1,43 @@
-import type { ChatMember } from "@eventer/shared";
+import type { BlockedChatAuthor, ChatMember } from "@eventer/shared";
 import { many, one, run, runCount } from "../client.js";
+
+/** 表示許可リストの取得本体。withBlocked=true のときだけ締め出し中 (#283) も含める。
+ * 参加者向けと管理画面で SQL が分かれると片方に除外漏れが出るので、1箇所に寄せてある */
+async function listMembersRows(
+  eventId: string,
+  withBlocked: boolean,
+): Promise<ChatMember[]> {
+  const rows = await many<{
+    pubkey: string;
+    user_id: string;
+    username: string;
+    global_name: string | null;
+    avatar_url: string | null;
+    role: string | null;
+  }>(
+    `SELECT p.pubkey, u.id AS user_id, u.username, u.global_name, u.avatar_url, m.role
+       FROM event_chat_pubkey p
+       JOIN user u ON u.id = p.user_id
+       LEFT JOIN event_member m ON m.event_id = p.event_id AND m.user_id = p.user_id
+      WHERE p.event_id = ? AND u.deleted_at IS NULL${
+        withBlocked
+          ? ""
+          : ` AND NOT EXISTS (
+             SELECT 1 FROM event_chat_blocked b
+              WHERE b.event_id = p.event_id AND b.pubkey = p.pubkey)`
+      }
+      ORDER BY p.created_at ASC`,
+    eventId,
+  );
+  return rows.map((r) => ({
+    pubkey: r.pubkey,
+    userId: r.user_id,
+    username: r.username,
+    name: r.global_name ?? r.username,
+    avatarUrl: r.avatar_url,
+    role: r.role,
+  }));
+}
 
 /** Nostrイベントチャット (#199) の紐付けデータ。
  * チャット本文はリレーにあり、ここでは「誰がどの鍵で発言するか」（表示許可リスト）、
@@ -77,32 +115,109 @@ export const eventChatRepo = {
     );
   },
 
-  /** 表示許可リスト（pubkey → ユーザー情報）。クライアントはこの pubkey のメッセージだけ描画する */
+  /** 表示許可リスト（pubkey → ユーザー情報）。クライアントはこの pubkey のメッセージだけ描画する。
+   *
+   * **締め出し中の発言者 (#283) はここから外れる**。表示はこのリストで絞られているので、
+   * 1行外すだけでその人のこれまでの発言がまとめて見えなくなる。
+   * 管理画面だけは締め出し中も含めて見る必要がある → listMembersWithBlocked */
   async listMembers(eventId: string): Promise<ChatMember[]> {
+    return listMembersRows(eventId, false);
+  },
+
+  /** 締め出し中 (#283) も含む全員。**管理画面専用**。
+   * 誰を締め出したのか、その人が何を書いたのかを見たうえで解除を判断するため、
+   * 管理画面では pubkey → 発言者 の対応が引けないと困る。
+   * 参加者向けの経路では絶対に使わないこと（締め出しが効かなくなる） */
+  async listMembersWithBlocked(eventId: string): Promise<ChatMember[]> {
+    return listMembersRows(eventId, true);
+  },
+
+  /** 発言者を締め出す (#283)。冪等（既に締め出し中なら 0 を返す）。
+   * 許可リストの行は消さない ＝ 解除すればそのまま元に戻る */
+  async blockAuthor(
+    eventId: string,
+    pubkey: string,
+    adminId: string,
+    at: number,
+  ): Promise<number> {
+    return runCount(
+      `INSERT OR IGNORE INTO event_chat_blocked
+         (event_id, pubkey, created_at, created_by) VALUES (?, ?, ?, ?)`,
+      eventId,
+      pubkey,
+      at,
+      adminId,
+    );
+  },
+
+  /** 締め出しを解除する (#283)。冪等（締め出していなければ 0 を返す） */
+  async unblockAuthor(eventId: string, pubkey: string): Promise<number> {
+    return runCount(
+      "DELETE FROM event_chat_blocked WHERE event_id = ? AND pubkey = ?",
+      eventId,
+      pubkey,
+    );
+  },
+
+  /** 締め出している発言者の一覧（管理画面の解除導線用） */
+  async listBlocked(eventId: string): Promise<BlockedChatAuthor[]> {
     const rows = await many<{
       pubkey: string;
-      user_id: string;
-      username: string;
-      global_name: string | null;
-      avatar_url: string | null;
-      role: string | null;
+      created_at: number;
+      created_by: string | null;
     }>(
-      `SELECT p.pubkey, u.id AS user_id, u.username, u.global_name, u.avatar_url, m.role
-         FROM event_chat_pubkey p
-         JOIN user u ON u.id = p.user_id
-         LEFT JOIN event_member m ON m.event_id = p.event_id AND m.user_id = p.user_id
-        WHERE p.event_id = ? AND u.deleted_at IS NULL
-        ORDER BY p.created_at ASC`,
+      `SELECT pubkey, created_at, created_by FROM event_chat_blocked
+        WHERE event_id = ? ORDER BY created_at ASC`,
       eventId,
     );
     return rows.map((r) => ({
       pubkey: r.pubkey,
-      userId: r.user_id,
-      username: r.username,
-      name: r.global_name ?? r.username,
-      avatarUrl: r.avatar_url,
-      role: r.role,
+      blockedAt: r.created_at,
+      blockedBy: r.created_by,
     }));
+  },
+
+  /** その鍵を締め出しているか (#283) */
+  async isBlocked(eventId: string, pubkey: string): Promise<boolean> {
+    const row = await one<{ n: number }>(
+      "SELECT 1 AS n FROM event_chat_blocked WHERE event_id = ? AND pubkey = ?",
+      eventId,
+      pubkey,
+    );
+    return row !== null;
+  },
+
+  /** そのユーザーが「いま登録している鍵」で締め出されているか (#283)。
+   * 本人の画面をチャットに繋がせないための判定に使う。
+   *
+   * 締め出しは鍵に対して行うので、別の鍵で登録し直されたら外れる。
+   * それは承知のうえ（下の blockedAuthorOf のコメント参照） */
+  async isUserBlocked(eventId: string, userId: string): Promise<boolean> {
+    const row = await one<{ n: number }>(
+      `SELECT 1 AS n FROM event_chat_pubkey p
+         JOIN event_chat_blocked b
+           ON b.event_id = p.event_id AND b.pubkey = p.pubkey
+        WHERE p.event_id = ? AND p.user_id = ?`,
+      eventId,
+      userId,
+    );
+    return row !== null;
+  },
+
+  /** その鍵をこのイベントで登録している人（監査ログの当事者に残すため）。
+   * 退会等で辿れなければ null。鍵しか残らなくても記録の意味は失われない */
+  async blockedAuthorOf(
+    eventId: string,
+    pubkey: string,
+  ): Promise<{ id: string; handle: string } | null> {
+    const row = await one<{ id: string; username: string }>(
+      `SELECT u.id, u.username FROM event_chat_pubkey p
+         JOIN user u ON u.id = p.user_id
+        WHERE p.event_id = ? AND p.pubkey = ?`,
+      eventId,
+      pubkey,
+    );
+    return row ? { id: row.id, handle: row.username } : null;
   },
 
   /** チャンネルID（kind:40 のイベントID）を先勝ちで設定し、確定した値を返す。
