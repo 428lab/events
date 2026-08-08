@@ -1,4 +1,8 @@
-import type { EventPhoto, UserPhoto } from "@eventer/shared";
+import type {
+  EventPhoto,
+  EventTimelinePhotos,
+  UserPhoto,
+} from "@eventer/shared";
 import { many, one, run } from "../client.js";
 
 interface Row {
@@ -28,10 +32,13 @@ function toPhoto(row: Row): EventPhoto {
 // SELECT）が同じ条件で隠すので、揃えないと「3件」と出て2件しか表示されない。
 // 運営が非表示にしたコメント (#278) も同じ理由で数から外す。
 // **数を出すところは必ずこの定数を使うこと**（別に書くと条件がずれる）
-const COMMENT_COUNT =
+// 並び順に使うとき用の素の式。別名 comment_count はウィンドウ関数の ORDER BY
+// からは参照できないので、式そのものが要る場所はこちらを使う
+const COMMENT_COUNT_EXPR =
   `(SELECT COUNT(1) FROM event_photo_comment c
       JOIN user cu ON cu.id = c.user_id AND cu.deleted_at IS NULL
-     WHERE c.photo_id = p.id AND c.admin_hidden_at IS NULL) AS comment_count`;
+     WHERE c.photo_id = p.id AND c.admin_hidden_at IS NULL)`;
+const COMMENT_COUNT = `${COMMENT_COUNT_EXPR} AS comment_count`;
 // 運営が非表示にした写真 (#278) は **この SELECT を通る全経路** から落とす。
 // WHERE をここに含めておくことで、呼び出し側は AND で足すだけになり、
 // 経路が増えたときに除外を書き忘れられないようにしている
@@ -152,5 +159,53 @@ export const eventPhotosRepo = {
       commentCount: r.comment_count ?? 0,
       createdAt: r.created_at,
     }));
+  },
+
+  /** 年表用: 本人が公開設定イベントに投稿した写真を、イベントごとに
+   * コメントの多い順で上位 perEvent 枚だけ返す (#315)。
+   *
+   * 公開範囲は listPublicByUser とまったく同じ条件（photos_public=1 の公開イベント・
+   * 本人の投稿・運営非表示を除く）。イベントフォトは本来「閲覧も参加者のみ」なので、
+   * この条件を緩めてはいけない。
+   *
+   * イベントごとに1本ずつ引くと N+1 になるため、ウィンドウ関数で
+   * イベント内順位と総数を1本のクエリで出している */
+  async listPublicTopByUserPerEvent(
+    userId: string,
+    perEvent: number,
+  ): Promise<EventTimelinePhotos[]> {
+    const rows = await many<{
+      id: string;
+      event_id: string;
+      comment_count: number;
+      total: number;
+    }>(
+      `SELECT id, event_id, comment_count, total FROM (
+         SELECT p.id, p.event_id, p.created_at, ${COMMENT_COUNT},
+                ROW_NUMBER() OVER (
+                  PARTITION BY p.event_id
+                  ORDER BY ${COMMENT_COUNT_EXPR} DESC, p.created_at DESC, p.id
+                ) AS rn,
+                COUNT(*) OVER (PARTITION BY p.event_id) AS total
+           FROM event_photo p
+           JOIN event e ON e.id = p.event_id
+          WHERE p.user_id = ? AND e.photos_public = 1 AND e.status = 'published'
+            AND p.admin_hidden_at IS NULL
+       )
+       WHERE rn <= ?
+       ORDER BY event_id, rn`,
+      userId,
+      perEvent,
+    );
+    const byEvent = new Map<string, EventTimelinePhotos>();
+    for (const r of rows) {
+      let group = byEvent.get(r.event_id);
+      if (!group) {
+        group = { eventId: r.event_id, photos: [], total: r.total };
+        byEvent.set(r.event_id, group);
+      }
+      group.photos.push({ id: r.id, commentCount: r.comment_count ?? 0 });
+    }
+    return [...byEvent.values()];
   },
 };

@@ -38,7 +38,9 @@ const NAV_ITEMS = [
   { to: "/venues", label: "会場" },
   { to: "/decks", label: "スライド" },
   { to: "/live-sets", label: "配信" },
-  { to: "/me", label: "マイページ" },
+  // マイページは自分のプロフィールページに統合したので、ここは設定に置き換えた。
+  // 自分のページへは右上のアイコンから行く (#319)
+  { to: "/account", label: "設定" },
 ] as const;
 
 type AdminItem = {
@@ -218,11 +220,12 @@ export function Layout({
           >
             <NotificationBell />
             <ThemeSwitcher />
+            {/* 自分のページを開く。設定は横並びナビ／メニューの「設定」から (#319) */}
             <Avatar
               component={RouterLink}
-              to="/account"
+              to={`/users/${encodeURIComponent(user.username)}`}
               src={user.avatarUrl ?? undefined}
-              title="アカウント設定"
+              title="自分のプロフィール"
               sx={{
                 width: 32,
                 height: 32,
@@ -317,9 +320,6 @@ export function Layout({
                   )}
                 </MenuItem>
               ))}
-            <MenuItem component={RouterLink} to="/account" onClick={closeMenu}>
-              アカウント設定
-            </MenuItem>
             <MenuItem
               onClick={() => {
                 closeMenu();

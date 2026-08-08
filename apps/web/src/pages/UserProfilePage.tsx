@@ -16,6 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
@@ -37,12 +38,13 @@ import type {
   ParticipationStats,
   UserAward,
   UserPhoto,
+  UserProfile,
 } from "@eventer/shared";
 import { useSetFollow, useUserProfile } from "../api/userHooks.js";
-import { useMe } from "../api/hooks.js";
+import { useMe, useMyPage } from "../api/hooks.js";
 import { useMeetableEvents, useRecordMeet } from "../api/eventMeetHooks.js";
 import { useUserPhotos } from "../api/eventPhotoHooks.js";
-import { ParticipationTimeline } from "../components/ParticipationTimeline.js";
+import { ParticipationHistory } from "../components/ParticipationHistory.js";
 import { ShareButton } from "../components/ShareButton.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
@@ -329,17 +331,75 @@ function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
   );
 }
 
+/** プロフィール上部の通算値 (#315)。年表の絞り込みには追随しないことを
+ * 「通算」のラベルで明示する（絞り込みに追随する集計は年表の中に別で出る）。
+ * 出会い数は表示中の行の合計ではなくサーバーが独立に数えた実人数
+ * （同じ人と別のイベントで会っても1人）。年表下部の「出会いの記録 N件」は
+ * 延べ件数なので別物 */
+function TotalsBar({
+  events,
+  meetTotal,
+}: {
+  events: UserProfile["events"];
+  meetTotal: number;
+}) {
+  const hosted = events.filter((e) => e.myRole === "staff").length;
+  const totals = [
+    { label: "イベント", value: events.length, accent: false },
+    { label: "主催・運営", value: hosted, accent: false },
+    { label: "参加", value: events.length - hosted, accent: false },
+    { label: "出会った人", value: meetTotal, accent: true },
+  ];
+  if (events.length === 0 && meetTotal === 0) return null;
+  return (
+    <Stack
+      direction="row"
+      spacing={2}
+      alignItems="center"
+      flexWrap="wrap"
+      useFlexGap
+    >
+      <Chip label="通算" size="small" variant="outlined" sx={{ fontWeight: 800 }} />
+      {totals.map((t) => (
+        <Box key={t.label}>
+          <Typography
+            sx={{
+              fontSize: 19,
+              fontWeight: 800,
+              lineHeight: 1.2,
+              fontVariantNumeric: "tabular-nums",
+              ...(t.accent && { color: "primary.main" }),
+            }}
+          >
+            {t.value}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {t.label}
+          </Typography>
+        </Box>
+      ))}
+    </Stack>
+  );
+}
+
 export function UserProfilePage() {
   const { id = "" } = useParams();
   const { data, isLoading, isError } = useUserProfile(id);
   const { data: me } = useMe();
   const navigate = useNavigate();
   const setFollow = useSetFollow(id);
+  // 本人のページはマイページ相当を兼ねる (#319)。公開プロフィールの一覧は
+  // 公開イベントだけなので、本人には下書き・参加申込中も含む自分用の一覧を出す
+  const isMe = data?.isMe === true;
+  const { data: myEvents } = useMyPage(isMe);
 
   if (isError) return <Alert severity="info">ユーザーが見つかりません。</Alert>;
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
 
   const joined = new Date(data.createdAt).toLocaleDateString("ja-JP");
+  // 参加履歴に流す一覧。本人なら自分用（公開ぶんの上位集合）、他人なら公開ぶん
+  const historyEvents =
+    data.isMe && myEvents ? [...myEvents.ongoing, ...myEvents.past] : data.events;
 
   const toggleFollow = () => {
     if (!me) {
@@ -363,8 +423,21 @@ export function UserProfilePage() {
             {data.name}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            {joined} に登録 ・ フォロワー {data.followerCount} ・ フォロー中{" "}
-            {data.followingCount}
+            {joined} に登録 ・ フォロワー {data.followerCount} ・{" "}
+            {/* 本人のときだけフォロー中の一覧へ行けるようにする (#319)。
+                /following は自分のフォローを管理する画面なので他人には出さない */}
+            {data.isMe ? (
+              <Link
+                component={RouterLink}
+                to="/following"
+                color="inherit"
+                underline="hover"
+              >
+                フォロー中 {data.followingCount}
+              </Link>
+            ) : (
+              <>フォロー中 {data.followingCount}</>
+            )}
           </Typography>
           <LevelBlock g={data.gamification} />
         </Box>
@@ -392,6 +465,14 @@ export function UserProfilePage() {
             title={data.name}
             url={`${window.location.origin}/users/${data.handle ?? id}`}
           />
+          {/* 設定は本人にしか意味がないので本人のページだけに出す (#319) */}
+          {data.isMe && (
+            <Tooltip title="設定">
+              <IconButton component={RouterLink} to="/account" aria-label="設定">
+                <SettingsOutlinedIcon />
+              </IconButton>
+            </Tooltip>
+          )}
         </Stack>
         {!data.isMe && (
           <Button
@@ -405,6 +486,10 @@ export function UserProfilePage() {
           </Button>
         )}
       </Stack>
+
+      {/* 直下の一覧と同じ母集団を数える。本人のページは下書き等も含む自分用の
+          一覧なので、公開ぶんだけを数えると件数が合わなくなる (#319) */}
+      <TotalsBar events={historyEvents} meetTotal={data.meetTotal ?? 0} />
 
       {/* 出会った記録 (#189)。ログイン中に他人のプロフィールを見ているときのみ */}
       {me && !data.isMe && <MeetSection key={data.id} targetUserId={data.id} />}
@@ -446,16 +531,21 @@ export function UserProfilePage() {
         </Box>
       )}
 
-      {/* 参加履歴の年表 (#308)。どのイベントに行ったかを日付順に見せる */}
-      {data.events.length === 0 ? (
+      {/* 参加履歴 (#315)。主役は4分類の一覧で、年表はタブで切り替える。
+          本人のページではマイページ相当の一覧（下書き等も含む）を出す (#319) */}
+      {historyEvents.length === 0 ? (
         <Typography color="text.secondary">
-          公開イベントの実績はまだありません。
+          {data.isMe
+            ? "参加中のイベントはありません。"
+            : "公開イベントの実績はまだありません。"}
         </Typography>
       ) : (
-        <ParticipationTimeline
-          events={data.events}
+        <ParticipationHistory
+          events={historyEvents}
           userId={data.id}
           speakerEventIds={data.speakerEventIds ?? []}
+          meetCounts={data.meetCounts}
+          eventPhotos={data.eventPhotos}
         />
       )}
     </Stack>

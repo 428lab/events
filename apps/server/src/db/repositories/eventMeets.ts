@@ -108,4 +108,37 @@ export const eventMeetsRepo = {
     return row?.v ?? 0;
   },
 
+  /** ユーザーの出会い数を、イベントごとにまとめて数える (#315)。
+   * 年表はイベント1件ごとに人数を出すが、countedMeetsForUser をイベント数ぶん
+   * 呼ぶと N+1 になるので、GROUP BY で1本にまとめている。
+   * 0人のイベントは行自体が返らない（呼び出し側は「キーが無い＝0人」として扱う） */
+  async countsByEventForUser(userId: string): Promise<Map<string, number>> {
+    const rows = await many<{ event_id: string; n: number }>(
+      `SELECT event_id, COUNT(*) AS n FROM event_meet
+        WHERE user_low = ? OR user_high = ?
+        GROUP BY event_id`,
+      userId,
+      userId,
+    );
+    return new Map(rows.map((r) => [r.event_id, r.n]));
+  },
+
+  /** 通算で出会った「人数」 (#315)。プロフィール上部に固定で出す値。
+   *
+   * event_meet はイベントごとに1行なので、素の COUNT(*) だと同じ人と3つの
+   * イベントで会えば3になる（イベント×相手の延べ数）。ここは人数なので
+   * 相手側の user_id で DISTINCT を取る。
+   * 年表に並んでいる行の合計で作ると絞り込み・非公開化でずれるため、
+   * 表示とは独立にここで数える */
+  async totalMeetsForUser(userId: string): Promise<number> {
+    const row = await one<{ v: number }>(
+      `SELECT COUNT(DISTINCT CASE WHEN user_low = ? THEN user_high ELSE user_low END) AS v
+         FROM event_meet
+        WHERE user_low = ? OR user_high = ?`,
+      userId,
+      userId,
+      userId,
+    );
+    return row?.v ?? 0;
+  },
 };

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { myEventSummary } from "./schema.js";
 import { communitySummarySchema } from "./communities.js";
 import { gamificationSchema } from "./gamification.js";
+import { eventTimelinePhotosSchema } from "./photos.js";
 
 /** 受賞歴の1件（公開プロフィール用。終了済み公開イベントのみ） */
 export const userAwardSchema = z.object({
@@ -54,6 +55,17 @@ export const userProfileSchema = z.object({
   /** events のうち、タイムテーブルで登壇者として紐づいているイベントの id (#308)。
    * 参加履歴の年表で「登壇」を添えるために使う */
   speakerEventIds: z.array(z.string()),
+  /** イベントid → そのイベントで出会った人数 (#315)。
+   * 人数だけなので公開範囲の制限は設けないが、キーは events に載る
+   * 公開イベントに限る。0人のイベントはキー自体を持たない */
+  meetCounts: z.record(z.string(), z.number()),
+  /** 通算の出会い数 (#315)。meetCounts の合計とは一致しないことがある
+   * （非公開になったイベントぶんは meetCounts から落ちるため）。
+   * プロフィール上部の「通算」はこちらを使い、絞り込みに追随させない */
+  meetTotal: z.number(),
+  /** 年表のカードに添える公開写真のサムネイル (#315)。
+   * 本人が公開設定イベントに投稿した写真だけ（参加者限定イベントの写真は含まない） */
+  eventPhotos: z.array(eventTimelinePhotosSchema),
   /** 参加実績（出席・無断欠席・キャンセル内訳） */
   participation: participationStatsSchema,
   /** XP・レベル・バッジ（有効イベントのみから導出） (#14) */

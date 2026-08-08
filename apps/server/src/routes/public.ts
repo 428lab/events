@@ -13,7 +13,11 @@ import { listCommunityRequests } from "./eventRequests.js";
 import { followsRepo } from "../db/repositories/follows.js";
 import { eventLikesRepo } from "../db/repositories/eventLikes.js";
 import { gamificationRepo } from "../db/repositories/gamification.js";
-import { gamificationFromStats } from "@eventer/shared";
+import { eventMeetsRepo } from "../db/repositories/eventMeets.js";
+import {
+  gamificationFromStats,
+  TIMELINE_PHOTOS_PER_EVENT,
+} from "@eventer/shared";
 
 export const publicRoutes = new Hono<AppEnv>();
 
@@ -76,6 +80,14 @@ publicRoutes.get("/users/:handle", async (c) => {
   const communities = await communitiesRepo.listForUser(user.id);
   const awards = await awardsRepo.listPublicAwardsForUser(user.id, Date.now());
   const viewer = await currentUser(c);
+  // 年表に添える出会い数 (#315)。イベントごとの人数だけなので誰が見ても出すが、
+  // 公開プロフィールに載っていないイベント（非公開・未参加扱い）のキーは落とす
+  const publicEventIds = new Set(events.map((e) => e.id));
+  const meetCountsByEvent = await eventMeetsRepo.countsByEventForUser(user.id);
+  const meetCounts: Record<string, number> = {};
+  for (const [eventId, n] of meetCountsByEvent) {
+    if (publicEventIds.has(eventId)) meetCounts[eventId] = n;
+  }
   return c.json({
     id: user.id,
     handle: user.username,
@@ -88,6 +100,16 @@ publicRoutes.get("/users/:handle", async (c) => {
     // 年表に「登壇」を添えるための紐づけ (#308)。イベント本体とは別テーブルなので
     // 一覧に混ぜず id の集合だけ渡し、表示側で events と突き合わせる
     speakerEventIds: await eventScheduleRepo.listPublicSpokenEventIds(user.id),
+    meetCounts,
+    // 通算の出会い数 (#315)。年表の絞り込みに追随させないので、表示中の行の
+    // 合計ではなく独立に数えた値を返す
+    meetTotal: await eventMeetsRepo.totalMeetsForUser(user.id),
+    // 年表のカードに添えるサムネイル (#315)。公開設定イベントに本人が投稿した
+    // 写真だけ（参加者限定イベントの写真は出さない）。コメントの多い順に数枚
+    eventPhotos: await eventPhotosRepo.listPublicTopByUserPerEvent(
+      user.id,
+      TIMELINE_PHOTOS_PER_EVENT,
+    ),
     participation: {
       ...(await eventMembersRepo.participationStats(user.id, Date.now())),
       // 主催・スタッフとしてもらったいいね合計 (#155)。SQLはいいねリポジトリに集約
