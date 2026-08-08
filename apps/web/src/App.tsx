@@ -25,6 +25,7 @@ import { EventBroadcastPage } from "./pages/EventBroadcastPage.js";
 import { AccountPage } from "./pages/AccountPage.js";
 import { AccountRestorePage } from "./pages/AccountRestorePage.js";
 import { InquiriesPage } from "./pages/InquiriesPage.js";
+import { NotificationsPage } from "./pages/NotificationsPage.js";
 import { InquiryThreadPage } from "./pages/InquiryThreadPage.js";
 import { AdminInquiriesPage } from "./pages/AdminInquiriesPage.js";
 import { AdminInquiryThreadPage } from "./pages/AdminInquiryThreadPage.js";
@@ -304,6 +305,7 @@ export function App() {
         <Route path="/me" element={<MyPage />} />
         <Route path="/following" element={<FollowingPage />} />
         <Route path="/account" element={<AccountPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/inquiries" element={<InquiriesPage />} />
         <Route path="/inquiries/:id" element={<InquiryThreadPage />} />
         <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />

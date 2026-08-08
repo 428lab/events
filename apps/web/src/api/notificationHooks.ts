@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Notification } from "@eventer/shared";
+import type { NotificationsPayload } from "@eventer/shared";
 import { api } from "./client.js";
 
 const POLL = 30000;
@@ -14,14 +14,21 @@ export function useNotificationUnreadCount(enabled = true) {
   });
 }
 
-export function useNotifications(enabled = true) {
+/** お知らせのページ (#294)。既読・全既読の後は ["notifications"] の無効化で
+ * どのページも取り直される（キーの先頭を揃えてあるため） */
+export function useNotificationPage(page: number, enabled = true) {
   return useQuery({
-    queryKey: ["notifications"],
+    queryKey: ["notifications", "list", page],
     enabled,
-    queryFn: async () =>
-      (await api.get<{ notifications: Notification[] }>("/notifications"))
-        .notifications,
+    queryFn: () =>
+      api.get<NotificationsPayload>(`/notifications?page=${page}`),
   });
+}
+
+/** 通知ベル用。新しいものだけ見えれば足りるので1ページ目を使う */
+export function useNotifications(enabled = true) {
+  const query = useNotificationPage(1, enabled);
+  return { ...query, data: query.data?.notifications };
 }
 
 export function useMarkNotificationRead() {
