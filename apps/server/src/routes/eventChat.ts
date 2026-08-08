@@ -59,6 +59,33 @@ async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
   return null;
 }
 
+/** 締め出された発言者 (#283) をチャットから切り離す。
+ *
+ * **理由は返さない**。「あなたは締め出されました」と伝えると鍵を作り直して
+ * 戻ってくるだけで意味がないため、画面には理由を書かない
+ * （ただし「不調です」のような嘘も書かない。文言は EventChat.tsx を参照）。
+ *
+ * 効き方は2段構え。どちらも **このアプリの中で** 効くもので、リレーへの
+ * 書き込みそのものを止めるわけではない:
+ * - 他人の画面: 表示許可リスト (listMembers) から外れるので、これまでの発言が
+ *   まとめて描画されなくなる（表示側のフィルタが本体）
+ * - 本人の画面: この関数を通す経路（許可リスト・一時鍵）が 403 になるので、
+ *   署名器が手に入らずリレーにも繋がらない ＝ **このアプリからは投稿できなくなる**。
+ *   一時鍵を渡さないのは、これが無いと画面を再読み込みするだけで復帰するため
+ *
+ * 限界（承知のうえ）: リレーはこのサービスの外にあるので、外部の Nostr
+ * クライアントからは引き続き投稿できる。ただしその発言は許可リストに載っていない
+ * ので、このアプリの誰の画面にも出ない（それで目的は足りる、と確認済み）。
+ * 別の鍵で入り直されることも防げない。
+ * **その場の荒らしを止めるための道具**であって、恒久的な追放ではない。 */
+async function notBlocked(c: Context<AppEnv>): Promise<Response | null> {
+  const blocked = await eventChatRepo.isUserBlocked(
+    c.req.param("id")!,
+    c.get("user").id,
+  );
+  return blocked ? c.json({ error: "chat_unavailable" }, 403) : null;
+}
+
 /** スタッフ操作（部屋の開設・作り直し・メッセージの非表示）の入口。
  * requireEventRole(["staff"]) の後ろに置き、運営管理者・コミュニティ管理者の
  * バイパスをここで閉じる（判定の中身は isConfirmedEventStaff を参照）。
@@ -77,7 +104,7 @@ eventChatRoutes.get(
   "/:id/chat-key/ephemeral",
   requireEventRole([...MEMBER_ROLES]),
   async (c) => {
-    const denied = await confirmedOnly(c);
+    const denied = (await confirmedOnly(c)) ?? (await notBlocked(c));
     if (denied) return denied;
     const key = await eventChatRepo.ephemeralFor(
       c.req.param("id"),
@@ -95,7 +122,7 @@ eventChatRoutes.post(
   "/:id/chat-key/ephemeral",
   requireEventRole([...MEMBER_ROLES]),
   async (c) => {
-    const denied = await confirmedOnly(c);
+    const denied = (await confirmedOnly(c)) ?? (await notBlocked(c));
     if (denied) return denied;
     const eventId = c.req.param("id");
     const userId = c.get("user").id;
@@ -129,6 +156,12 @@ eventChatRoutes.post(
     if (owner && owner !== c.get("user").id) {
       return c.json({ error: "pubkey_taken" }, 409);
     }
+    // 締め出し中の鍵での登録は受け付けない (#283)。
+    // 登録できても許可リストからは外れたままなので実害は無いが、
+    // 「登録できたのに何も映らない」より、繋がらないと分かる方が素直
+    if (await eventChatRepo.isBlocked(eventId, pubkey)) {
+      return c.json({ error: "chat_unavailable" }, 403);
+    }
     await eventChatRepo.setPubkey(eventId, c.get("user").id, pubkey);
     return c.json({ ok: true });
   },
@@ -139,7 +172,7 @@ eventChatRoutes.get(
   "/:id/chat-members",
   requireEventRole([...MEMBER_ROLES]),
   async (c) => {
-    const denied = await confirmedOnly(c);
+    const denied = (await confirmedOnly(c)) ?? (await notBlocked(c));
     if (denied) return denied;
     const eventId = c.req.param("id");
     const event = await eventsRepo.findById(eventId);

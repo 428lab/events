@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { Event as NostrEvent } from "nostr-tools/pure";
 import type { ChatMembersPayload, Event } from "@eventer/shared";
+import { ApiError } from "../api/client.js";
 import { EventChat } from "./EventChat.js";
 
 /**
@@ -79,8 +80,13 @@ vi.mock("../lib/nostr.js", () => ({
   hasNip07: () => true,
 }));
 
+/** useChatMembers の返り値。締め出し (#283) の確認では error を差し替える。
+ * react-query は失敗しても直前の data を保持するので、**data と error が
+ * 同時にある**（発言中に締め出された）状態が実際に起きる形 */
+let chatQuery: { data?: ChatMembersPayload; error?: unknown } = { data: CHAT };
+
 vi.mock("../api/eventChatHooks.js", () => ({
-  useChatMembers: () => ({ data: CHAT }),
+  useChatMembers: () => chatQuery,
   useRegisterChatKey: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useCreateEphemeralChatKey: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useRegisterChatChannel: () => ({ mutateAsync: vi.fn() }),
@@ -121,6 +127,7 @@ vi.mock("../lib/nostrChat.js", () => {
 beforeEach(() => {
   deliver = null;
   ephemeralKey = null;
+  chatQuery = { data: CHAT };
 });
 
 /** 描画して、非同期の自動再参加・リレー接続が落ち着くまで待つ */
@@ -200,5 +207,63 @@ describe('EventChat variant="page"（通常のチャット画面）', () => {
       screen.queryAllByTestId("VisibilityOffOutlinedIcon").length,
     ).toBeGreaterThan(0);
     expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+});
+
+/**
+ * 締め出された発言者に見せる画面 (#283)。
+ *
+ * 理由は書かない（伝えると別の鍵を作って戻ってくるだけで意味がない）。
+ * ただし「ネットワークが不調です」のような嘘も書かない。事実として正しい
+ * 「接続できません」だけを出す。
+ *
+ * すでに発言していた人がその場で締め出される形なので、直前の許可リスト（data）を
+ * 抱えたまま 403 になる状態で確かめる。
+ */
+describe("チャットに繋がせない状態 (#283)", () => {
+  const unavailableQuery = {
+    data: CHAT,
+    error: new ApiError(403, { error: "chat_unavailable" }),
+  };
+
+  it("理由を書かず、参加UI・入力欄・メッセージ・リレー接続のいずれも出さない", async () => {
+    ephemeralKey = { secret: "00" };
+    chatQuery = unavailableQuery;
+    await renderChat("page");
+
+    expect(
+      screen.getByText("このイベントのチャットに接続できません。"),
+    ).toBeInTheDocument();
+    // 理由は明かさない。嘘（不調・回線）も書かない
+    expect(screen.queryByText(/締め出/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ネットワーク|回線|不調/)).not.toBeInTheDocument();
+    // 参加もできず、この画面からは投稿もできない
+    expect(
+      screen.queryByRole("button", { name: "チャットに参加する" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    // リレーの購読も始めない（署名器を持っていても繋がない）
+    expect(deliver).toBeNull();
+  });
+
+  it("投影用画面でも「まだメッセージがありません」ではなくこの文言を出す", async () => {
+    chatQuery = unavailableQuery;
+    await renderChat("display");
+
+    expect(
+      screen.getByText("このイベントのチャットに接続できません。"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("まだ表示できるメッセージがありません。"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("403 でも別の理由ならこの文言は出さない", async () => {
+    chatQuery = { error: new ApiError(403, { error: "forbidden" }) };
+    await renderChat("page");
+
+    expect(
+      screen.queryByText("このイベントのチャットに接続できません。"),
+    ).not.toBeInTheDocument();
   });
 });

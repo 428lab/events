@@ -25,6 +25,7 @@ import type {
 } from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
 import {
+  useBlockChatAuthor,
   useModerateContent,
   useModerationContent,
   useModerationEvents,
@@ -160,15 +161,74 @@ function ItemRow({
   );
 }
 
+/** 締め出している発言者の一覧 (#283)。
+ *
+ * 誤操作は必ず起きるので、**誰を締め出しているかが一覧でき、ここから解除できる**
+ * ことを機能の一部として扱う。リレーからメッセージが取れていなくても出す
+ * （解除の導線がメッセージの取得に依存すると、取れないときに解除できなくなる）。 */
+function BlockedAuthorList({
+  chat,
+  nameOf,
+  onUnblock,
+  pending,
+}: {
+  chat: ModerationChat;
+  nameOf: (pubkey: string) => string;
+  onUnblock: (pubkey: string) => void;
+  pending: boolean;
+}) {
+  if (chat.blocked.length === 0) return null;
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Stack spacing={1}>
+          <Typography variant="subtitle2" fontWeight={700}>
+            締め出している発言者（{chat.blocked.length} 人）
+          </Typography>
+          {chat.blocked.map((b) => (
+            <Stack
+              key={b.pubkey}
+              direction="row"
+              spacing={1.5}
+              alignItems="center"
+              sx={{ py: 0.75, borderTop: 1, borderColor: "divider" }}
+            >
+              <Stack spacing={0.25} sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2">{nameOf(b.pubkey)}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {formatDateTime(b.blockedAt)} に締め出し
+                </Typography>
+              </Stack>
+              <Button
+                size="small"
+                variant="outlined"
+                color="inherit"
+                disabled={pending}
+                onClick={() => onUnblock(b.pubkey)}
+                sx={{ flexShrink: 0 }}
+              >
+                解除する
+              </Button>
+            </Stack>
+          ))}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
 /** チャットは本文がこのサービスの外にあり、ブラウザが直接読みに行く。
  * ここでできるのはこのサービスの表示から消すことだけ。 */
 function ChatSection({
   chat,
   onAct,
+  onBlock,
   pending,
 }: {
   chat: ModerationChat;
   onAct: (action: "hide" | "restore", noteId: string) => void;
+  /** 発言者単位の締め出し / 解除 (#283) */
+  onBlock: (action: "block" | "unblock", pubkey: string) => void;
   pending: boolean;
 }) {
   const [notes, setNotes] = useState<RelayNote[]>([]);
@@ -225,6 +285,10 @@ function ChatSection({
     () => new Map(chat.hidden.map((h) => [h.noteId, h])),
     [chat.hidden],
   );
+  const blockedSet = useMemo(
+    () => new Set(chat.blocked.map((b) => b.pubkey)),
+    [chat.blocked],
+  );
   // リレーから取れなかった（消えた・まだ届いていない）非表示ぶんも一覧に残す
   const orphanHidden = chat.hidden.filter(
     (h) => !notes.some((n) => n.id === h.noteId),
@@ -237,6 +301,23 @@ function ChatSection({
         <strong>このサービスの表示から消えるだけ</strong>
         で、外部に出たものは消せません。
       </Alert>
+      <Alert severity="info">
+        1人が大量に投稿している場合は、
+        <strong>発言者ごと締め出す</strong>
+        こともできます。締め出すと、その発言者のこのイベントでのこれまでの発言が
+        <strong>このサービスの表示からまとめて消え</strong>、
+        その人はこのサービスからは投稿できなくなります。
+        発言そのものは消えないので、解除すれば元に戻ります。
+        締め出された側に理由は表示されません。
+        なお、このサービスの外から投稿すること自体は止められません（その投稿もこのサービスには表示されません）。
+        同じ人が別の発言者として入り直すことも防げません。その場の投稿を止めるための機能です。
+      </Alert>
+      <BlockedAuthorList
+        chat={chat}
+        nameOf={nameOf}
+        pending={pending}
+        onUnblock={(pubkey) => onBlock("unblock", pubkey)}
+      />
       {!channelId ? (
         <Typography variant="body2" color="text.secondary">
           このイベントではチャットが使われていません。
@@ -272,6 +353,9 @@ function ChatSection({
                     <Typography variant="caption" color="text.secondary">
                       {nameOf(n.pubkey)}
                     </Typography>
+                    {blockedSet.has(n.pubkey) && (
+                      <Chip size="small" color="error" label="締め出し中" />
+                    )}
                     <Typography variant="caption" color="text.secondary">
                       {formatDateTime(n.created_at * 1000)}
                     </Typography>
@@ -283,16 +367,46 @@ function ChatSection({
                     {n.content}
                   </Typography>
                 </Stack>
-                <Button
-                  size="small"
-                  variant={h?.hiddenAt ? "outlined" : "contained"}
-                  color={h?.hiddenAt ? "inherit" : "error"}
-                  disabled={pending}
-                  onClick={() => onAct(h?.hiddenAt ? "restore" : "hide", n.id)}
-                  sx={{ flexShrink: 0 }}
-                >
-                  {h?.hiddenAt ? "復元する" : "非表示にする"}
-                </Button>
+                <Stack spacing={0.5} sx={{ flexShrink: 0 }}>
+                  <Button
+                    size="small"
+                    variant={h?.hiddenAt ? "outlined" : "contained"}
+                    color={h?.hiddenAt ? "inherit" : "error"}
+                    disabled={pending}
+                    onClick={() => onAct(h?.hiddenAt ? "restore" : "hide", n.id)}
+                  >
+                    {h?.hiddenAt ? "復元する" : "非表示にする"}
+                  </Button>
+                  {blockedSet.has(n.pubkey) ? (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="inherit"
+                      disabled={pending}
+                      onClick={() => onBlock("unblock", n.pubkey)}
+                    >
+                      締め出しを解除
+                    </Button>
+                  ) : (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      disabled={pending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            "この発言者のこのイベントでの発言をすべて非表示にし、このサービスからは投稿できないようにしますか？（この画面から解除できます）",
+                          )
+                        ) {
+                          onBlock("block", n.pubkey);
+                        }
+                      }}
+                    >
+                      この発言者を締め出す
+                    </Button>
+                  )}
+                </Stack>
               </Stack>
             );
           })}
@@ -323,6 +437,7 @@ export function AdminModerationPage() {
   const { data: found } = useModerationEvents(isAdmin, { userId, q: query });
   const { data, isLoading } = useModerationContent(eventId, isAdmin);
   const act = useModerateContent(eventId);
+  const blockAuthor = useBlockChatAuthor(eventId);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -468,9 +583,12 @@ export function AdminModerationPage() {
                     {kind === "chat_message" ? (
                       <ChatSection
                         chat={data.chat}
-                        pending={act.isPending}
+                        pending={act.isPending || blockAuthor.isPending}
                         onAct={(action, noteId) =>
                           act.mutate({ action, kind, id: noteId })
+                        }
+                        onBlock={(action, pubkey) =>
+                          blockAuthor.mutate({ action, pubkey })
                         }
                       />
                     ) : items.length === 0 ? (

@@ -18,6 +18,10 @@ export const AUDIT_ACTIONS = [
   "content_hide",
   /** 上記の復元 (#278) */
   "content_restore",
+  /** 運営によるチャットの発言者単位の締め出し (#283) */
+  "chat_author_block",
+  /** 上記の解除 (#283) */
+  "chat_author_unblock",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -33,6 +37,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   admin_setting_change: "運用設定の変更",
   content_hide: "コンテンツの非表示",
   content_restore: "コンテンツの復元",
+  chat_author_block: "チャットの発言者の締め出し",
+  chat_author_unblock: "チャットの発言者の締め出しの解除",
 };
 
 /** 監査ログ1件。ユーザー行が消えても辿れるよう、実行時点のハンドルを持つ */

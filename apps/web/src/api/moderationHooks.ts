@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  ChatAuthorBlockInput,
   ModerationActionInput,
   ModerationContentPayload,
   ModerationEventsPayload,
@@ -51,6 +52,25 @@ export function useModerateContent(eventId: string) {
       api.post<{ ok: boolean; changed: boolean }>(
         `/admin/moderation/events/${eventId}/${action}`,
         input,
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["moderationContent", eventId] });
+    },
+  });
+}
+
+/** 発言者単位の締め出し / 解除 (#283)。
+ * 1件ずつの非表示と違い、その発言者のこのイベントでの発言がまとめて表示されなくなる */
+export function useBlockChatAuthor(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      action,
+      pubkey,
+    }: ChatAuthorBlockInput & { action: "block" | "unblock" }) =>
+      api.post<{ ok: boolean; changed: boolean }>(
+        `/admin/moderation/events/${eventId}/chat-authors/${action}`,
+        { pubkey },
       ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["moderationContent", eventId] });

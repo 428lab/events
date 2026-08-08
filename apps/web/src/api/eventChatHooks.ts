@@ -11,6 +11,11 @@ export function useChatMembers(eventId: string, enabled: boolean) {
     queryKey: ["event", eventId, "chatMembers"],
     enabled: enabled && Boolean(eventId),
     refetchInterval: 5000,
+    // 403（繋がせない状態 #283 / 参加確定前）は再試行しても結果が変わらないので
+    // 既定の3回リトライを待たずに画面へ返す。ポーリング自体は続くため、
+    // 締め出しが解除されれば次の周回で自動的に元に戻る
+    retry: (count, err) =>
+      !(err instanceof ApiError && err.status === 403) && count < 3,
     queryFn: () =>
       api.get<ChatMembersPayload>(`/events/${eventId}/chat-members`),
   });
