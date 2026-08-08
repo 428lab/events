@@ -24,6 +24,7 @@ import {
   Section,
   Tile,
   TrendChart,
+  jpDay,
   num,
   pct,
 } from "../components/KpiTiles.js";
@@ -337,14 +338,16 @@ function OrganizersSection({ data }: { data: KpiPayload }) {
   );
 }
 
-/** MAU が立ち上がり途中かどうかの注記。計測開始 (#257) から30日は窓が埋まらない */
+/** MAU が立ち上がり途中かどうかの注記。計測開始 (#257) から30日は窓が埋まらない。
+ *
+ * 「いつから計測しているか」「この期間に計測データがあるか」はグラフ側が
+ * measuredFrom から出す (#292)。ここは**それだけでは分からない**こと
+ * ＝「値は出ているが窓が埋まりきっていないので低く出る」だけを言う。 */
 function mauCaution(measuredFrom: string | null, latestDay: string | undefined) {
-  if (measuredFrom === null) {
-    return "アクセスの記録がまだありません（DAU/MAU は計測開始日以降のぶんだけ出ます）。";
-  }
+  if (measuredFrom === null) return undefined;
   const full = addDays(measuredFrom, 29);
   if (latestDay && latestDay < full) {
-    return `アクセスの計測開始は ${measuredFrom} です。MAU は「直近30日にアクセスした人数」なので、${full} までは窓が埋まりきらず実態より低く出ます。`;
+    return `MAU は「直近30日にアクセスした人数」なので、計測開始（${jpDay(measuredFrom)}）から30日たつ ${jpDay(full)} までは窓が埋まりきらず実態より低く出ます。`;
   }
   return undefined;
 }
@@ -397,15 +400,16 @@ function RetentionSection({ data }: { data: KpiPayload }) {
       <FullWidth>
         <TrendChart
           title="MAU の推移"
-          hint="その日を含む直近30日にアクセスした実人数です。週別表示では週の最終日の値を出します（足すと延べ人数になって意味が変わるため）。"
+          hint="その日を含む直近30日にアクセスした実人数です。週別・月別表示では期末（週の最終日・月末）の値を出します（足すと延べ人数になって意味が変わるため）。"
           caution={mauCaution(data.activeMeasuredFrom, points.at(-1)?.day)}
           points={points}
+          measuredFrom={data.activeMeasuredFrom}
           series={[
             {
               key: "mau",
               label: "MAU（直近30日）",
               color: "primary.main",
-              weekly: "last",
+              rollup: "last",
             },
           ]}
           unit="人"
@@ -414,14 +418,15 @@ function RetentionSection({ data }: { data: KpiPayload }) {
       <FullWidth>
         <TrendChart
           title="DAU の推移"
-          hint="その日にアクセスした人数です。週別表示では週の平均を出します（足すと延べ人数になります）。MAU とは桁が違うため、別のグラフにしています。"
+          hint="その日にアクセスした人数です。週別・月別表示ではその期間の平均を出します（足すと延べ人数になります）。MAU とは桁が違うため、別のグラフにしています。"
           points={points}
+          measuredFrom={data.activeMeasuredFrom}
           series={[
             {
               key: "dau",
               label: "DAU（その日）",
               color: "secondary.main",
-              weekly: "average",
+              rollup: "average",
             },
           ]}
           unit="人"
