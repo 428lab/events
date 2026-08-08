@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { env } from "../runtime.js";
+import { env, getBucket } from "../runtime.js";
+import { avatarKey } from "../lib/avatarStore.js";
 import type { Context } from "hono";
 import {
   deleteAccountInput,
@@ -150,6 +151,13 @@ meRoutes.post("/merge", zValidator("json", mergeAccountInput), async (c) => {
     `[account-merge] executor=${me.id} codeIssuer=${otherId} winner=${winnerId} loser=${loserId}`,
   );
   await usersRepo.mergeUsers(winnerId, loserId);
+  // 負け側が自前保管していたアイコン (#312) の実体を消す。勝ち側は自分のものを
+  // 引き続き使うので移し替えは不要。行が消えたあとはキーを辿れず孤児になる
+  try {
+    await getBucket().delete(avatarKey(loserId));
+  } catch (e) {
+    console.warn(`[avatar] 統合時の削除に失敗 user=${loserId}`, e);
+  }
   // 監査ログ (#248)。負け側のユーザー行は消えるのでハンドルも一緒に残す
   await recordAudit({
     action: "account_merge",
