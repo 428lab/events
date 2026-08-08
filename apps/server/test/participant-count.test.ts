@@ -59,22 +59,34 @@ async function makeUser(): Promise<{ userId: string; cookie: string }> {
 async function makeMember(
   eventId: string,
   role: "participant" | "staff" | "judge" | "observer",
-  opts: { attended?: 0 | 1 } = {},
+  opts: { attended?: 0 | 1; slotId?: string } = {},
 ): Promise<{ userId: string; cookie: string }> {
   const u = await makeUser();
   await env.DB.prepare(
-    "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, ?, NULL, 'confirmed', ?, ?)",
+    "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?)",
   )
     .bind(
       crypto.randomUUID(),
       eventId,
       u.userId,
       role,
+      opts.slotId ?? null,
       opts.attended ?? 0,
       Date.now(),
     )
     .run();
   return u;
+}
+
+/** 参加枠を1つ作って id を返す */
+async function makeSlot(eventId: string, capacity: number): Promise<string> {
+  const id = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO participation_slot (id, event_id, name, capacity, selection_type, sort_order, draw_at, created_at) VALUES (?, ?, ?, ?, 'first_come', 0, NULL, ?)",
+  )
+    .bind(id, eventId, "一般", capacity, Date.now())
+    .run();
+  return id;
 }
 
 async function fetchEvent(eventId: string): Promise<Event> {
@@ -95,6 +107,40 @@ async function memberListCount(
   const body = (await res.json()) as { members: unknown[] };
   return body.members.length;
 }
+
+describe("参加できる人数の上限", () => {
+  it("参加枠が無いイベントは上限なし（null）", async () => {
+    const cookie = await loginDev();
+    const eventId = await setupEvent(cookie, {});
+    await makeMember(eventId, "participant");
+    expect((await fetchEvent(eventId)).capacityTotal).toBeNull();
+  });
+
+  it("枠の合計に、枠を使わない確定メンバーを足す（参加者数と母集団を揃える）", async () => {
+    const cookie = await loginDev();
+    const eventId = await setupEvent(cookie, {});
+    const slot = await makeSlot(eventId, 20);
+    // 枠に入った参加者2人 + 枠を使わないスタッフ1人（主催の staff 行も枠なし）
+    await makeMember(eventId, "participant", { slotId: slot });
+    await makeMember(eventId, "participant", { slotId: slot });
+    await makeMember(eventId, "staff");
+
+    const event = await fetchEvent(eventId);
+    // 主催(staff) + 追加したstaff = 枠を使わない確定メンバー2人
+    expect(event.capacityTotal).toBe(22);
+    // 上限は参加者数を下回らない（「6/5人」のような見え方にならない）
+    expect(event.participantCount).toBeLessThanOrEqual(event.capacityTotal!);
+  });
+
+  it("枠が複数あれば合計する", async () => {
+    const cookie = await loginDev();
+    const eventId = await setupEvent(cookie, {});
+    await makeSlot(eventId, 10);
+    await makeSlot(eventId, 5);
+    // 主催の staff 行（枠なし）が1人
+    expect((await fetchEvent(eventId)).capacityTotal).toBe(16);
+  });
+});
 
 describe("参加者数・出席者数の表示 (#297)", () => {
   it("出席チェックモードの開催前でも、参加者数が参加者一覧の件数と一致する", async () => {

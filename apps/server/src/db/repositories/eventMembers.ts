@@ -7,7 +7,11 @@ import type {
 } from "@eventer/shared";
 import { QA_ANONYMITY_MODES } from "@eventer/shared";
 import { many, one, run } from "../client.js";
-import { ATTENDED_COUNT_SQL, PARTICIPANT_COUNT_SQL } from "./events.js";
+import {
+  ATTENDED_COUNT_SQL,
+  CAPACITY_TOTAL_SQL,
+  PARTICIPANT_COUNT_SQL,
+} from "./events.js";
 
 interface MemberRow {
   id: string;
@@ -365,7 +369,8 @@ export const eventMembersRepo = {
     const rows = await many<Record<string, unknown> & { my_role: string }>(
       `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
                 ${PARTICIPANT_COUNT_SQL("e.id")} AS participant_count,
-                ${ATTENDED_COUNT_SQL("e.id")} AS attended_count
+                ${ATTENDED_COUNT_SQL("e.id")} AS attended_count,
+                ${CAPACITY_TOTAL_SQL("e.id")} AS capacity_total
          FROM event_member m
          JOIN event e ON e.id = m.event_id
          WHERE m.user_id = ? AND m.status <> 'canceled'
@@ -381,7 +386,8 @@ export const eventMembersRepo = {
     const rows = await many<Record<string, unknown> & { my_role: string }>(
       `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
                 ${PARTICIPANT_COUNT_SQL("e.id")} AS participant_count,
-                ${ATTENDED_COUNT_SQL("e.id")} AS attended_count
+                ${ATTENDED_COUNT_SQL("e.id")} AS attended_count,
+                ${CAPACITY_TOTAL_SQL("e.id")} AS capacity_total
          FROM event_member m
          JOIN event e ON e.id = m.event_id
          WHERE m.user_id = ? AND m.status = 'confirmed' AND e.status = 'published'
@@ -416,6 +422,7 @@ function mapMyEventSummary(
     imageUpdatedAt: (row.image_updated_at as number | null) ?? null,
     participantCount: (row.participant_count as number) ?? 0,
     attendedCount: (row.attended_count as number) ?? 0,
+    capacityTotal: (row.capacity_total as number | null) ?? null,
     communityId: (row.community_id as string | null) ?? null,
     scheduling: (row.scheduling as number) === 1,
     scheduleAnonymous: (row.schedule_anonymous as number) === 1,

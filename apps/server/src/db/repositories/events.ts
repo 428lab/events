@@ -25,6 +25,7 @@ interface EventRow {
   image_updated_at: number | null;
   participant_count: number;
   attended_count: number;
+  capacity_total: number | null;
   community_id: string | null;
   scheduling: number;
   schedule_anonymous: number;
@@ -68,10 +69,28 @@ export const ATTENDED_COUNT_SQL = (eventIdExpr: string) =>
     WHERE em.event_id = ${eventIdExpr} AND em.status = 'confirmed'
       AND em.attended = 1 AND ${COUNTED_MEMBER_IS_ACTIVE})`;
 
+/** 参加できる人数の上限。参加枠があるイベントだけ数える（無ければ NULL＝上限なし）。
+ *
+ * 枠の上限の合計だけだと、分子（participant_count＝スタッフ等も含む確定メンバー数）と
+ * 数える対象が食い違い、「参加5人 / 20」なのに実際は4人ぶんしか枠を使っていない、
+ * という見え方になる。枠を消費しない確定メンバー（スタッフ・審査員・観覧者や、
+ * 枠に紐づかない参加者）を上限側にも足して、分子と分母の母集団を揃える */
+export const CAPACITY_TOTAL_SQL = (eventIdExpr: string) =>
+  `(SELECT CASE WHEN NOT EXISTS (
+             SELECT 1 FROM participation_slot s WHERE s.event_id = ${eventIdExpr})
+           THEN NULL
+           ELSE (SELECT COALESCE(SUM(s.capacity), 0) FROM participation_slot s
+                  WHERE s.event_id = ${eventIdExpr})
+              + (SELECT COUNT(1) FROM event_member em
+                  WHERE em.event_id = ${eventIdExpr} AND em.status = 'confirmed'
+                    AND em.slot_id IS NULL AND ${COUNTED_MEMBER_IS_ACTIVE})
+           END)`;
+
 /** participant_count（参加者数）/ attended_count（出席者数）を含む event の SELECT */
 const SELECT_EVENT = `SELECT *,
   ${PARTICIPANT_COUNT_SQL("event.id")} AS participant_count,
-  ${ATTENDED_COUNT_SQL("event.id")} AS attended_count
+  ${ATTENDED_COUNT_SQL("event.id")} AS attended_count,
+  ${CAPACITY_TOTAL_SQL("event.id")} AS capacity_total
   FROM event`;
 
 function toEvent(row: EventRow): Event {
@@ -94,6 +113,7 @@ function toEvent(row: EventRow): Event {
     imageUpdatedAt: row.image_updated_at,
     participantCount: row.participant_count,
     attendedCount: row.attended_count ?? 0,
+    capacityTotal: row.capacity_total ?? null,
     communityId: row.community_id ?? null,
     scheduling: row.scheduling === 1,
     scheduleAnonymous: row.schedule_anonymous === 1,
