@@ -227,6 +227,10 @@ export function EventBroadcastPage() {
             <Typography variant="body2" color="text.secondary">
               {BROADCAST_OVERLAP_NOTE}
             </Typography>
+            <Typography variant="body2" color="text.secondary">
+              人数は実際に届く人数です。送ったものはこのページの履歴で読めるので、
+              自分あてには届きません。
+            </Typography>
 
             <CounterTextField
               label="件名"

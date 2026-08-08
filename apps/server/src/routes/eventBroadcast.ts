@@ -63,7 +63,7 @@ eventBroadcastRoutes.get("/:id/broadcasts", async (c) => {
   const left = await remaining(eventId);
   const payload: EventBroadcastsPayload = {
     broadcasts: await eventBroadcastsRepo.listByEvent(eventId),
-    counts: await eventBroadcastsRepo.countsBySegment(eventId),
+    counts: await eventBroadcastsRepo.countsBySegment(eventId, c.get("user").id),
     remainingToday: left.today,
     remainingTotal: left.total,
   };
