@@ -78,6 +78,7 @@ import {
   formatDateRange,
   formatDateTime,
   formatRemaining,
+  participantCountLabel,
   roleLabel,
   venueLabel,
 } from "../lib/format.js";
@@ -452,7 +453,7 @@ export function EventDetailPage() {
           </Typography>
         )}
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-          {venueLabel[event.venueType]} ・ 参加 {event.participantCount} 人
+          {venueLabel[event.venueType]} ・ {participantCountLabel(event)}
         </Typography>
       </Box>
 
