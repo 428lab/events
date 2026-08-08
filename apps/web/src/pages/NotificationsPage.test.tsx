@@ -113,6 +113,12 @@ describe("お知らせ一覧 (#294)", () => {
     expect(body.textContent).toContain("末尾まで表示");
     // 改行を潰さない
     expect(getComputedStyle(body).whiteSpace).toBe("pre-wrap");
+    // 見た目でも切られていない。DOM に全文があっても行数制限で潰していたら
+    // 「最後まで読める」は成立しない（ベルの方は2行に潰しているので、
+    // うっかり同じ指定をこちらへ持ってくると気づけないまま壊れる）
+    const bodyStyle = getComputedStyle(body);
+    expect(bodyStyle.webkitLineClamp || "none").toBe("none");
+    expect(bodyStyle.overflow === "hidden").toBe(false);
     // 種別が分かる
     expect(screen.getByText("イベントからの連絡")).toBeTruthy();
   });

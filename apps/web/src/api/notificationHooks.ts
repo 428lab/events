@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import type { NotificationsPayload } from "@eventer/shared";
 import { api } from "./client.js";
 
@@ -20,6 +25,9 @@ export function useNotificationPage(page: number, enabled = true) {
   return useQuery({
     queryKey: ["notifications", "list", page],
     enabled,
+    // ページを送るあいだ前のページを残す。これが無いと一覧もページ送りごと
+    // 消えて「読み込み中…」に切り替わり、押した場所を見失う
+    placeholderData: keepPreviousData,
     queryFn: () =>
       api.get<NotificationsPayload>(`/notifications?page=${page}`),
   });

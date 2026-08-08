@@ -236,6 +236,12 @@ describe("お知らせのページング (#294)", () => {
     const ids = [...p1.notifications, ...p2.notifications].map((n) => n.id);
     expect(ids).toHaveLength(total);
     expect(new Set(ids).size).toBe(total);
+
+    // 並び順そのものを見る。和集合が揃うことだけを見ていると、タイブレークが
+    // 無くても DB がたまたま安定した順で返すぶん素通りしてしまう。
+    // id はランダムなので挿入順とは一致せず、id の降順を外すと落ちる
+    const page1Ids = p1.notifications.map((n) => n.id);
+    expect(page1Ids).toEqual([...page1Ids].sort((a, b) => (a < b ? 1 : -1)));
   });
 
   it("page が無い・不正でも1ページ目を返す", async () => {
