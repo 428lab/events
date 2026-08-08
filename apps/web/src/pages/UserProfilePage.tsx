@@ -42,7 +42,7 @@ import { useSetFollow, useUserProfile } from "../api/userHooks.js";
 import { useMe } from "../api/hooks.js";
 import { useMeetableEvents, useRecordMeet } from "../api/eventMeetHooks.js";
 import { useUserPhotos } from "../api/eventPhotoHooks.js";
-import { ParticipationTimeline } from "../components/ParticipationTimeline.js";
+import { ParticipationHistory } from "../components/ParticipationHistory.js";
 import { ShareButton } from "../components/ShareButton.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
@@ -446,16 +446,18 @@ export function UserProfilePage() {
         </Box>
       )}
 
-      {/* 参加履歴の年表 (#308)。どのイベントに行ったかを日付順に見せる */}
+      {/* 参加履歴 (#315)。主役は4分類の一覧で、年表はタブで切り替える */}
       {data.events.length === 0 ? (
         <Typography color="text.secondary">
           公開イベントの実績はまだありません。
         </Typography>
       ) : (
-        <ParticipationTimeline
+        <ParticipationHistory
           events={data.events}
           userId={data.id}
           speakerEventIds={data.speakerEventIds ?? []}
+          meetCounts={data.meetCounts}
+          eventPhotos={data.eventPhotos}
         />
       )}
     </Stack>

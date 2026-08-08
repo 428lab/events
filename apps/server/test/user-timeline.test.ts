@@ -94,6 +94,52 @@ interface ProfileBody {
     status: string;
   }[];
   speakerEventIds: string[];
+  meetCounts: Record<string, number>;
+  eventPhotos: {
+    eventId: string;
+    photos: { id: string; commentCount: number }[];
+    total: number;
+  }[];
+}
+
+/** 「出会った」を1件記録する（相手は使い捨てのユーザー） */
+async function addMeet(eventId: string, userId: string): Promise<void> {
+  const other = (await makeUser()).userId;
+  const [low, high] = userId < other ? [userId, other] : [other, userId];
+  await env.DB.prepare(
+    "INSERT INTO event_meet (id, event_id, user_low, user_high, created_at) VALUES (?, ?, ?, ?, ?)",
+  )
+    .bind(crypto.randomUUID(), eventId, low, high, Date.now())
+    .run();
+}
+
+/** 写真を1枚入れ、コメントを commentCount 件つける */
+async function addPhoto(
+  eventId: string,
+  userId: string,
+  opts: { comments?: number; hidden?: boolean } = {},
+): Promise<string> {
+  const photoId = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO event_photo (id, event_id, user_id, caption, created_at, admin_hidden_at) VALUES (?, ?, ?, '', ?, ?)",
+  )
+    .bind(photoId, eventId, userId, Date.now(), opts.hidden ? Date.now() : null)
+    .run();
+  for (let i = 0; i < (opts.comments ?? 0); i++) {
+    await env.DB.prepare(
+      "INSERT INTO event_photo_comment (id, photo_id, user_id, body, created_at) VALUES (?, ?, ?, 'c', ?)",
+    )
+      .bind(crypto.randomUUID(), photoId, userId, Date.now())
+      .run();
+  }
+  return photoId;
+}
+
+/** 写真を参加者以外にも公開する設定にする */
+async function makePhotosPublic(eventId: string): Promise<void> {
+  await env.DB.prepare("UPDATE event SET photos_public = 1 WHERE id = ?")
+    .bind(eventId)
+    .run();
 }
 
 /** 未ログインで公開プロフィールを取る（cookie を渡せば閲覧者ありで取る） */
@@ -267,5 +313,126 @@ describe("参加履歴の年表 (#308)", () => {
     expect(s.events[0].myRole).toBe("staff");
     expect(j.events.map((e) => e.id)).toEqual([ev]);
     expect(j.events[0].myRole).toBe("judge");
+  });
+});
+
+describe("年表に添える出会い数 (#315)", () => {
+  it("イベントごとの人数が返り、0人のイベントはキーごと出ない", async () => {
+    const owner = await makeUser();
+    const u = await makeUser();
+    const now = Date.now();
+    const met = await makeEvent(owner.cookie, {
+      startsAt: now - 2 * 86400_000,
+      endsAt: now - 2 * 86400_000 + 3600_000,
+    });
+    const alone = await makeEvent(owner.cookie, {
+      startsAt: now - 3 * 86400_000,
+      endsAt: now - 3 * 86400_000 + 3600_000,
+    });
+    await addMember(met, u.userId);
+    await addMember(alone, u.userId);
+    await addMeet(met, u.userId);
+    await addMeet(met, u.userId);
+
+    const body = await profile(u.username);
+    expect(body.meetCounts[met]).toBe(2);
+    expect(Object.hasOwn(body.meetCounts, alone)).toBe(false);
+  });
+
+  it("公開プロフィールに載らないイベントの人数は返さない", async () => {
+    const owner = await makeUser();
+    const u = await makeUser();
+    const now = Date.now();
+    const draft = await makeEvent(owner.cookie, {
+      startsAt: now - 86400_000,
+      endsAt: now - 86400_000 + 3600_000,
+      publish: false,
+    });
+    await addMember(draft, u.userId);
+    await addMeet(draft, u.userId);
+
+    const body = await profile(u.username);
+    expect(body.events.map((e) => e.id)).not.toContain(draft);
+    expect(Object.hasOwn(body.meetCounts, draft)).toBe(false);
+  });
+
+  it("人数だけなので、未ログインでも他人のページで見える", async () => {
+    const owner = await makeUser();
+    const u = await makeUser();
+    const other = await makeUser();
+    const now = Date.now();
+    const ev = await makeEvent(owner.cookie, {
+      startsAt: now - 86400_000,
+      endsAt: now - 86400_000 + 3600_000,
+    });
+    await addMember(ev, u.userId);
+    await addMeet(ev, u.userId);
+
+    for (const cookie of [undefined, other.cookie, u.cookie]) {
+      expect((await profile(u.username, cookie)).meetCounts[ev]).toBe(1);
+    }
+  });
+});
+
+describe("年表に添える公開写真 (#315)", () => {
+  it("写真を公開しているイベントだけ、コメントの多い順に上位数枚を返す", async () => {
+    const owner = await makeUser();
+    const u = await makeUser();
+    const now = Date.now();
+    const ev = await makeEvent(owner.cookie, {
+      startsAt: now - 86400_000,
+      endsAt: now - 86400_000 + 3600_000,
+    });
+    await makePhotosPublic(ev);
+    await addMember(ev, u.userId);
+    const low = await addPhoto(ev, u.userId, { comments: 1 });
+    const top = await addPhoto(ev, u.userId, { comments: 12 });
+    const mid = await addPhoto(ev, u.userId, { comments: 5 });
+    await addPhoto(ev, u.userId, { comments: 0 });
+
+    const group = (await profile(u.username)).eventPhotos.find(
+      (g) => g.eventId === ev,
+    );
+    expect(group?.photos.map((p) => p.id)).toEqual([top, mid, low]);
+    // 「+N」を出せるよう総数も返す（上位3枚に絞っても4枚あることが分かる）
+    expect(group?.total).toBe(4);
+  });
+
+  it("参加者限定のイベントの写真は返さない", async () => {
+    const owner = await makeUser();
+    const u = await makeUser();
+    const now = Date.now();
+    const closed = await makeEvent(owner.cookie, {
+      startsAt: now - 86400_000,
+      endsAt: now - 86400_000 + 3600_000,
+    });
+    await addMember(closed, u.userId);
+    await addPhoto(closed, u.userId, { comments: 3 });
+
+    const body = await profile(u.username);
+    expect(body.eventPhotos.find((g) => g.eventId === closed)).toBeUndefined();
+  });
+
+  it("他人の写真と、運営が非表示にした写真は混ざらない", async () => {
+    const owner = await makeUser();
+    const u = await makeUser();
+    const someoneElse = await makeUser();
+    const now = Date.now();
+    const ev = await makeEvent(owner.cookie, {
+      startsAt: now - 86400_000,
+      endsAt: now - 86400_000 + 3600_000,
+    });
+    await makePhotosPublic(ev);
+    await addMember(ev, u.userId);
+    await addMember(ev, someoneElse.userId);
+    const mine = await addPhoto(ev, u.userId, { comments: 2 });
+    await addPhoto(ev, u.userId, { comments: 9, hidden: true });
+    await addPhoto(ev, someoneElse.userId, { comments: 9 });
+
+    const group = (await profile(u.username)).eventPhotos.find(
+      (g) => g.eventId === ev,
+    );
+    expect(group?.photos.map((p) => p.id)).toEqual([mine]);
+    expect(group?.total).toBe(1);
   });
 });

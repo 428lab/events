@@ -108,4 +108,18 @@ export const eventMeetsRepo = {
     return row?.v ?? 0;
   },
 
+  /** ユーザーの出会い数を、イベントごとにまとめて数える (#315)。
+   * 年表はイベント1件ごとに人数を出すが、countedMeetsForUser をイベント数ぶん
+   * 呼ぶと N+1 になるので、GROUP BY で1本にまとめている。
+   * 0人のイベントは行自体が返らない（呼び出し側は「キーが無い＝0人」として扱う） */
+  async countsByEventForUser(userId: string): Promise<Map<string, number>> {
+    const rows = await many<{ event_id: string; n: number }>(
+      `SELECT event_id, COUNT(*) AS n FROM event_meet
+        WHERE user_low = ? OR user_high = ?
+        GROUP BY event_id`,
+      userId,
+      userId,
+    );
+    return new Map(rows.map((r) => [r.event_id, r.n]));
+  },
 };

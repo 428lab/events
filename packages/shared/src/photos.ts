@@ -42,6 +42,30 @@ export const userPhotoSchema = z.object({
 });
 export type UserPhoto = z.infer<typeof userPhotoSchema>;
 
+/** 公開プロフィールの年表に添えるサムネイル1枚 (#315)。
+ * 出どころは userPhotoSchema と同じ（本人が公開設定イベントに投稿した写真）で、
+ * 年表では枚数を絞るので eventTitle 等は持たせない。
+ * commentCount は並び順（多い順）を決めるためだけに使い、画面には出さない */
+export const timelinePhotoSchema = z.object({
+  id: z.string(),
+  commentCount: z.number(),
+});
+export type TimelinePhoto = z.infer<typeof timelinePhotoSchema>;
+
+/** イベント1件ぶんの年表用サムネイル (#315) */
+export const eventTimelinePhotosSchema = z.object({
+  eventId: z.string(),
+  /** コメントが多い順の上位数枚 */
+  photos: z.array(timelinePhotoSchema),
+  /** そのイベントの公開写真の総数（「+N」の残枚数表示に使う） */
+  total: z.number(),
+});
+export type EventTimelinePhotos = z.infer<typeof eventTimelinePhotosSchema>;
+
+/** 年表のカード1枚に並べるサムネイルの上限 (#315)。
+ * これを超える分は「+N」だけ出す */
+export const TIMELINE_PHOTOS_PER_EVENT = 3;
+
 /** 1イベントあたりの上限枚数（いたずら対策） */
 export const EVENT_PHOTO_LIMIT = 50;
 /** 1枚あたりのコメント上限件数（いたずら対策） */
