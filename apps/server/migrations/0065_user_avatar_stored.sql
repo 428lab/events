@@ -29,3 +29,11 @@ ALTER TABLE user ADD COLUMN avatar_image_mime TEXT;
 -- （URL の同一性では判定できない。GitHub のようにアイコンを変えてもURLが変わらない
 --   連携先があり、URLで判定すると変更に追従できなくなる）
 ALTER TABLE user ADD COLUMN avatar_image_hash TEXT;
+
+-- 取り込み元（連携先）のアイコンURL。
+-- 保管に成功すると avatar_url は自ドメインのURLで上書きされるため、これが無いと
+-- 元の連携先URLがどこにも残らない（identity 表にもアイコンURLの列は無い）。
+-- その状態でこの機能を切り戻すと、配信ルートが消えてアイコンが全員 404 になり、
+-- 旧コードは「未設定のときだけ補完」なので再ログインしても復旧できない。
+-- ここに控えておけば UPDATE user SET avatar_url = avatar_source_url で戻せる。
+ALTER TABLE user ADD COLUMN avatar_source_url TEXT;

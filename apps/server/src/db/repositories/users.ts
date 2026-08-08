@@ -248,22 +248,27 @@ export const usersRepo = {
 
   /** 自前保管したアイコンを記録する (#312)。
    * avatar_url も同時に自ドメインのURLへ差し替える（表示側は全てここを読む）。
-   * 1文にまとめてあるので「R2 には入ったが URL が連携先のまま」にはならない */
+   * 1文にまとめてあるので「R2 には入ったが URL が連携先のまま」にはならない。
+   *
+   * 取り込み元URL (sourceUrl) も併せて残す。avatar_url を上書きしてしまう以上、
+   * ここに控えないと元の連携先URLがどこにも残らず、切り戻しができなくなる (#313) */
   async setAvatarImage(
     userId: string,
     avatarUrl: string,
     updatedAt: number,
     mime: string,
     hash: string,
+    sourceUrl: string,
   ): Promise<void> {
     await run(
       `UPDATE user SET avatar_url = ?, avatar_image_updated_at = ?,
-         avatar_image_mime = ?, avatar_image_hash = ?
+         avatar_image_mime = ?, avatar_image_hash = ?, avatar_source_url = ?
        WHERE id = ?`,
       avatarUrl,
       updatedAt,
       mime,
       hash,
+      sourceUrl,
       userId,
     );
   },
