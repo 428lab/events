@@ -18,6 +18,7 @@ import PrintIcon from "@mui/icons-material/Print";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import {
   CARDS_PER_SHEET,
+  NAME_CARD_GAP_MM,
   NAME_CARD_H_MM,
   NAME_CARD_W_MM,
   SHEET_COLS,
@@ -125,7 +126,6 @@ export const PRINT_STYLES = {
     "#name-card-sheets": {
       margin: "0 !important",
       padding: 0,
-      gap: "0 !important",
       // 画面では横スクロールさせるが、印刷では必ず外す。overflow が visible 以外だと
       // 分割できないボックスになり、中身が用紙に収まっていても末尾に白紙が1枚増える
       overflow: "visible !important",
@@ -245,6 +245,8 @@ function SheetInner({
         display: "grid",
         gridTemplateColumns: `repeat(${SHEET_COLS}, ${NAME_CARD_W_MM}mm)`,
         gridAutoRows: `${NAME_CARD_H_MM}mm`,
+        // 切り離しやすいようカードどうしを少しあける（余白は定数側で調整済み）
+        gap: `${NAME_CARD_GAP_MM}mm`,
         background: "#fff",
         marginLeft: "auto",
         marginRight: "auto",

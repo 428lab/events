@@ -59,9 +59,23 @@ export const NAME_CARD_H_MM = 55;
 /** A4（mm） */
 export const SHEET_W_MM = 210;
 export const SHEET_H_MM = 297;
-/** A4に10面（2列×5行）。等間隔に敷き詰めると左右14mm・上下11mmの余白になる */
+/** A4に10面（2列×5行） */
 export const SHEET_COLS = 2;
 export const SHEET_ROWS = 5;
 export const CARDS_PER_SHEET = SHEET_COLS * SHEET_ROWS;
-export const SHEET_MARGIN_X_MM = (SHEET_W_MM - SHEET_COLS * NAME_CARD_W_MM) / 2;
-export const SHEET_MARGIN_Y_MM = (SHEET_H_MM - SHEET_ROWS * NAME_CARD_H_MM) / 2;
+
+/** カードどうしの間隔。隙間なく敷き詰めると裁断しづらいので少しあける。
+ *
+ * 広げすぎると10面が入らなくなる。縦は 5行×55mm = 275mm あるので、間隔を
+ * 2.5mm より広げると上下の余白が 5mm を切り、多くのプリンタが印刷できない
+ * 領域に入る。それ以上あけたい場合は1ページの面数を減らすこと */
+export const NAME_CARD_GAP_MM = 1;
+
+export const SHEET_MARGIN_X_MM =
+  (SHEET_W_MM -
+    (SHEET_COLS * NAME_CARD_W_MM + (SHEET_COLS - 1) * NAME_CARD_GAP_MM)) /
+  2;
+export const SHEET_MARGIN_Y_MM =
+  (SHEET_H_MM -
+    (SHEET_ROWS * NAME_CARD_H_MM + (SHEET_ROWS - 1) * NAME_CARD_GAP_MM)) /
+  2;
