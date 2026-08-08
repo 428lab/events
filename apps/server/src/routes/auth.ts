@@ -8,6 +8,12 @@ import { identitiesRepo } from "../db/repositories/identities.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
 import { deriveHandle } from "../lib/handle.js";
 import {
+  AVATAR_SYNC_MIN_INTERVAL_MS,
+  avatarKey,
+  syncAvatarFromSource,
+} from "../lib/avatarStore.js";
+import { deferBackground, getBucket } from "../runtime.js";
+import {
   clearSession,
   currentUser,
   issueSession,
@@ -29,6 +35,23 @@ import {
   type NostrEvent,
 } from "../auth/nostr.js";
 
+/** アイコンの取り込み (#312) をレスポンスの外へ逃がす (#313)。
+ * 同期で待つと、連携先CDNが遅いときに全ユーザーのログインが取得タイムアウト
+ * ぶん（最大5秒）待たされる。取り込みは「次の表示までに終わっていればよい」
+ * 性質のものなので waitUntil に載せる。失敗はログだけ残してログインは通す */
+async function syncAvatarInBackground(
+  userId: string,
+  sourceUrl: string | null | undefined,
+  opts: { minIntervalMs?: number } = {},
+): Promise<void> {
+  try {
+    await deferBackground(syncAvatarFromSource(userId, sourceUrl, opts));
+  } catch (e) {
+    // waitUntil を受け付けない ExecutionContext だった場合など
+    console.warn("[avatar] バックグラウンド実行に失敗", e);
+  }
+}
+
 /** 連携の引き取り (#238)。相手が「唯一の連携 かつ 利用実績なし」の空アカウント
  * のときだけユーザー行ごと削除して "ok" を返す（identity は FK CASCADE で消える。
  * unlink を挟まない単一文なので、FK違反等で失敗しても相手アカウントは無傷のまま）。
@@ -49,6 +72,13 @@ async function takeoverEmptyAccount(
     return "account_in_use";
   }
   await usersRepo.deleteById(existingUserId);
+  // 自前保管したアイコン (#312) の実体も消す。行が消えるとキーを辿れなくなり、
+  // R2 に孤児が残り続ける（退会の完全削除 purgeDeleted.ts と同じ後始末）
+  try {
+    await getBucket().delete(avatarKey(existingUserId));
+  } catch (e) {
+    console.warn(`[avatar] 引き取り時の削除に失敗 user=${existingUserId}`, e);
+  }
   // 監査ログ (#248)。相手のユーザー行ごと消す不可逆操作なので記録する
   await recordAudit({
     action: "identity_takeover",
@@ -233,7 +263,16 @@ authRoutes.post("/nostr/profile", requireAuth, async (c) => {
   // この pubkey が現在のユーザーに連携されていること
   const linkedUserId = await identitiesRepo.findUserId("nostr", profile.pubkey);
   if (linkedUserId !== user.id) return c.json({ error: "forbidden" }, 403);
+  // 表示名は本人が変更できる (#232) ため、これまで通り未設定のときだけ補完する。
+  // アイコンはまず未設定なら連携先のURLで埋め（取り込みに失敗したときの見え方を
+  // 従来どおりに保つ）、そのうえで自前保管を試みて自ドメインのURLへ差し替える (#312)
   await usersRepo.fillProfile(user.id, profile.name, profile.picture);
+  // 取得元URLは本人が何度でも書き換えられるうえ、この API は回数制限が無い。
+  // ハッシュ比較では外向きの取得（1MB）までは止められないので、
+  // 直近に「試みた」時刻を基準に一定時間は取りに行かない (#313)
+  await syncAvatarInBackground(user.id, profile.picture, {
+    minIntervalMs: AVATAR_SYNC_MIN_INTERVAL_MS,
+  });
   return c.json({ ok: true });
 });
 
@@ -358,6 +397,13 @@ authRoutes.get("/:provider/callback", async (c) => {
   // このセッションで使えるのは復帰API だけ（currentUser が null を返すため）
   const pendingDeletion = await isPendingDeletion(userId);
   await issueSession(c, userId);
+  // ログインのたびにアイコンを取り直して自前保管する (#312)。
+  // 連携先（Discord など）でアイコンを変えると旧URLが 404 になるため、
+  // 「未設定のときだけ補完」では直らない。失敗しても握り潰してログインは通す。
+  // 取得元は**今回ログインに使った連携先**（複数連携していても最新のものに揃う）。
+  // セッション発行のあとに回すのは、連携先CDNの遅延でログインを待たせないため。
+  // 退会申請中は表示自体されないので取りに行かない
+  if (!pendingDeletion) await syncAvatarInBackground(userId, profile.avatarUrl);
   return c.redirect(env.appBaseUrl + (pendingDeletion ? "/restore" : "/me"));
 });
 

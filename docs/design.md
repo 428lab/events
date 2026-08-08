@@ -190,9 +190,23 @@ Team（将来）──1 Entry                 （チーム参加時、Entry の�
 | discord_id | text unique | Discord ユーザー ID |
 | username | text | 表示名 |
 | global_name | text null | Discord グローバル名 |
-| avatar_url | text null | |
+| avatar_url | text null | 表示に使うアイコンURL。自前保管できていれば `/api/users/{id}/avatar?v={更新時刻}` (#312) |
 | created_at | integer | |
 | last_seen_at | integer null | 最終アクセス時刻。null = 計測開始 (#257) より前からのユーザー |
+| avatar_image_updated_at | integer null | 自前保管したアイコンの更新時刻。null = 保管なし (#312) |
+| avatar_image_mime | text null | 保管したアイコンの MIME（配信時の Content-Type） |
+| avatar_image_hash | text null | 保管したアイコンの SHA-256。中身が変わったときだけ書き直すための比較用 |
+| avatar_source_url | text null | 取り込み元（連携先）のアイコンURL。`avatar_url` を上書きするため、切り戻し用に元のURLを残す |
+| avatar_sync_attempted_at | integer null | 最後に取り込みを**試みた**時刻。成否・変更の有無に関わらず進む。スロットルの判定に使う |
+
+- アイコンは**ログインのたびに**、そのとき使った連携先（Discord / Google / GitHub / X / Nostr）から取り直して R2 `avatars/{user_id}` に保管し、`avatar_url` を自分のドメインのURLへ差し替える (#312)。連携先のURLをそのまま持つと、向こうでアイコンを変えられた時点で 404 になるため。
+- 取得はレスポンスを待たせない（`ctx.waitUntil`）。連携先CDNが遅いときにログインが取得タイムアウトぶん待たされるのを避けるため。
+- 取得先は https 限定で、リダイレクトは手動追跡してホップごとにスキーム・プライベートホストを再検証する（SSRF ガード。判定は `lib/urlGuard.ts` に集約し OG サムネイル取得 #149 と共有）。Content-Type の許可リストに加え、実バイト列の先頭シグネチャも突き合わせる。
+- 取得に失敗（連携先が落ちている・既に 404・大きすぎる・画像でない）してもログインは成功させ、既存の `avatar_url` を残す。見送った理由は1行ログに残す。
+- 中身（ハッシュ）が前回と同じなら R2 も `avatar_image_updated_at` も書き換えない。毎ログインで `?v=` が変わると同じ画像を再ダウンロードさせてしまうため。ただし取得元URLだけが変わっていた場合（連携先CDNのURLローテーション）は `avatar_source_url` だけ追随させる。切り戻し用に控えているURLが既に 404 のものになるのを避けるため。
+- 取得元URLを本人が自由に書ける経路（Nostr の kind:0）は、直近10分以内に**試みて**いればスキップする。判定に `avatar_image_updated_at` を使わないのは、あれが中身の変化でしか進まず、同じ画像を返し続けるURLでは一度も発火しないため（外向きの取得そのものを抑止したい）。
+- 配信 `GET /api/users/{id}/avatar?v=` は `?v=` を ETag として使い、条件付きGETを D1 の前で捌く。`Cache-Control: public, max-age=31536000, immutable, s-maxage=300` ＋ `caches.default` でエッジにも載せる。`s-maxage` を短く分けているのは、エッジに載った分をパージできず、退会したユーザーのアイコンが D1 の行と R2 の実体を消したあとまで配信され続けるのを避けるため。キャッシュキーは `?v=` だけに正規化する。
+- 古い `?v=` のURLは、その時点の画像を返す（エッジキャッシュに載っている場合）。中身が変わると `?v=` ごと変わる設計なので、これは同じ内容の別バージョンではなく「その版の画像」が返っているだけ。`avatar_url` は毎回 D1 から読まれるため、画面を開き直せば新しい `?v=` に切り替わり、古いURLが表示に使われ続けることはない。
 
 #### user_active_day（日次の活動記録 #257）
 | カラム | 型 | 説明 |

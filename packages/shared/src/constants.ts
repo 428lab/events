@@ -38,6 +38,13 @@ export const PROFILE_CARD_IMAGE = {
   maxBytes: 2 * 1024 * 1024, // 2MB
 } as const;
 
+/** 連携先から取り込んで自前保管するユーザーアイコン (#312)。
+ * 連携先が返すアイコンは大きくても数百KB（Discord 4096px の PNG でも 1MB 未満）。
+ * 取得元は連携先まかせで際限なく大きいものを掴む可能性があるため上限を設ける */
+export const AVATAR_IMAGE = {
+  maxBytes: 1024 * 1024, // 1MB
+} as const;
+
 export const COMMUNITY_ICON = {
   width: 512,
   height: 512,

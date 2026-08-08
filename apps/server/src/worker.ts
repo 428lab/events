@@ -11,6 +11,7 @@ import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes, postRestoreAccount } from "./routes/me.js";
 import { getEventImage } from "./routes/images.js";
 import { getUserCardImage } from "./routes/profileCardImages.js";
+import { getUserAvatarImage } from "./routes/avatarImages.js";
 import { publicRoutes } from "./routes/public.js";
 import { inquiryRoutes, adminInquiryRoutes } from "./routes/inquiries.js";
 import { notificationRoutes } from "./routes/notifications.js";
@@ -176,6 +177,8 @@ api.post("/me/restore", postRestoreAccount);
 api.route("/me", meRoutes);
 // 公開: プロフィールカードPNG（認証不要。OGクローラ用。要認証の /users ルートより先に登録） (#193)
 api.get("/users/:id/card-image", getUserCardImage);
+// 公開: ユーザーアイコン（認証不要。未ログインでも見える一覧に出る。要認証の /users ルートより先に登録） (#312)
+api.get("/users/:id/avatar", getUserAvatarImage);
 // フォロー（要認証）
 api.route("/users", followRoutes);
 // 出会える共通イベントの取得 (#189)（要認証）
