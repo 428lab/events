@@ -192,8 +192,16 @@ export function EventCard({
                 </>
               ) : (
                 formatDateRange(event.startsAt, event.endsAt)
-              )}{" "}
-              ・ {participantCountLabel(event)}
+              )}
+            </Typography>
+            {/* 人数は行を分ける。日時と同じ行に詰めるとカードの幅に収まらず、
+                noWrap で人数側だけが切れて見えなくなる */}
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block" }}
+            >
+              {participantCountLabel(event)}
             </Typography>
           </CardContent>
         </CardActionArea>
