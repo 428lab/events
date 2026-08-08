@@ -267,6 +267,13 @@ export function Layout({
             <MenuItem component={RouterLink} to="/me" onClick={closeMenu}>
               マイページ
             </MenuItem>
+            <MenuItem
+              component={RouterLink}
+              to="/notifications"
+              onClick={closeMenu}
+            >
+              お知らせ
+            </MenuItem>
             <MenuItem component={RouterLink} to="/inquiries" onClick={closeMenu}>
               お問い合わせ
             </MenuItem>

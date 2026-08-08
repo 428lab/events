@@ -19,6 +19,7 @@ import {
   useNotifications,
   useNotificationUnreadCount,
 } from "../api/notificationHooks.js";
+import { notificationLinkTo } from "../lib/notificationLink.js";
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -45,15 +46,7 @@ export function NotificationBell() {
   const onClickItem = (n: Notification) => {
     if (!n.read) markRead.mutate(n.id);
     setAnchor(null);
-    // 通知経由の流入を統計で判別できるよう、計測対象のイベントページのみ ref を付ける
-    if (n.link) {
-      const withRef = n.link.startsWith("/events/")
-        ? n.link.includes("?")
-          ? `${n.link}&ref=notification`
-          : `${n.link}?ref=notification`
-        : n.link;
-      navigate(withRef);
-    }
+    if (n.link) navigate(notificationLinkTo(n.link));
   };
 
   return (
@@ -114,7 +107,18 @@ export function NotificationBell() {
                   {n.title}
                 </Typography>
                 {n.body && (
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    // 一斉連絡 (#172) の本文は最大2000字ある。ここは要約に留め、
+                    // 続きはお知らせ一覧 (#294) で読んでもらう
+                    sx={{
+                      display: "-webkit-box",
+                      WebkitBoxOrient: "vertical",
+                      WebkitLineClamp: 2,
+                      overflow: "hidden",
+                    }}
+                  >
                     {n.body}
                   </Typography>
                 )}
@@ -131,6 +135,19 @@ export function NotificationBell() {
             </Typography>
           </Box>
         )}
+        <Divider />
+        {/* ここは新しいぶんしか出ない。読み直しは一覧で (#294) */}
+        <Button
+          fullWidth
+          size="small"
+          onClick={() => {
+            setAnchor(null);
+            navigate("/notifications");
+          }}
+          sx={{ py: 1, borderRadius: 0 }}
+        >
+          お知らせ一覧
+        </Button>
         <Divider />
         <Button
           fullWidth

@@ -36,3 +36,44 @@ export const notificationSchema = z.object({
   createdAt: z.number(),
 });
 export type Notification = z.infer<typeof notificationSchema>;
+
+/**
+ * 種別の見出し。一覧 (#294) で「何の知らせか」を一目で分かるようにするためのもの。
+ *
+ * 通知そのものは title と body に読める文が入っているので、ここは分類のラベルに
+ * とどめる（本文の言い換えにはしない）。将来 NOTIFICATION_TYPES に足りない値が
+ * 入っても壊れないよう、参照側は未知の種別をラベル無しとして扱うこと。
+ */
+export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  lottery_won: "抽選",
+  lottery_lost: "抽選",
+  waitlist_promoted: "参加",
+  award: "表彰",
+  inquiry_reply: "問い合わせ",
+  inquiry_new: "問い合わせ",
+  schedule_finalized: "日程",
+  request_event_created: "リクエスト",
+  followee_created_event: "フォロー",
+  followee_joined_event: "フォロー",
+  venue_offer: "会場",
+  venue_offer_result: "会場",
+  venue_photo_result: "会場",
+  survey_reminder: "アンケート",
+  meet: "出会い",
+  abuse_flag: "運用",
+  event_broadcast: "イベントからの連絡",
+  info: "お知らせ",
+};
+
+/** お知らせ一覧の1ページあたり件数 (#294)。
+ * 通知は消えずに溜まり続けるので、一覧も通知ベルも必ずこの単位で区切って取る */
+export const NOTIFICATION_PAGE_SIZE = 20;
+
+/** GET /api/notifications のレスポンス */
+export const notificationsPayloadSchema = z.object({
+  notifications: z.array(notificationSchema),
+  total: z.number(),
+  page: z.number(),
+  limit: z.number(),
+});
+export type NotificationsPayload = z.infer<typeof notificationsPayloadSchema>;

@@ -186,13 +186,30 @@ export const notificationsRepo = {
     ]);
   },
 
-  async listByUser(userId: string, limit = 40): Promise<Notification[]> {
+  /** 受信者本人のぶんを新しい順に。user_id で必ず絞るので、他人の通知は出ない。
+   * created_at が同じ行（一斉連絡は全員同じ時刻で作る）でも順序がぶれないよう
+   * id を第2キーにする。ぶれるとページの境目で取りこぼし・重複が起きる */
+  async listByUser(
+    userId: string,
+    limit = 40,
+    offset = 0,
+  ): Promise<Notification[]> {
     const rows = await many<NotificationRow>(
-      "SELECT * FROM notification WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+      "SELECT * FROM notification WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
       userId,
       limit,
+      offset,
     );
     return rows.map(toNotification);
+  },
+
+  /** 本人の通知の総数（一覧のページ数計算用） */
+  async countByUser(userId: string): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(1) AS n FROM notification WHERE user_id = ?",
+      userId,
+    );
+    return row?.n ?? 0;
   },
 
   async unreadCount(userId: string): Promise<number> {
