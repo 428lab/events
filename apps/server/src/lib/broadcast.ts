@@ -100,6 +100,7 @@ export async function sendBroadcast(
   const all = await eventBroadcastsRepo.recipientIds(
     input.eventId,
     input.segment,
+    input.actorUserId,
   );
   const userIds = all.slice(0, maxRecipients);
   const truncatedFrom = all.length > userIds.length ? all.length : null;

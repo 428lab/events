@@ -137,31 +137,39 @@ function moveCounter(from: string, to: string): string {
 }
 
 export const eventBroadcastsRepo = {
-  /** 区分に該当するユーザーID。通知の一括作成とメールの積み込みに使う */
+  /** 区分に該当するユーザーID。通知の一括作成とメールの積み込みに使う。
+   * 送る本人は除く (#285)。送った内容は履歴で読めるので自分に通知を送る意味が無い */
   async recipientIds(
     eventId: string,
     segment: BroadcastSegment,
+    senderId: string,
   ): Promise<string[]> {
     const rows = await many<{ user_id: string }>(
       `SELECT m.user_id AS user_id ${RECIPIENT_FROM}
          AND (${SEGMENT_CONDITIONS[segment]})
+         AND m.user_id <> ?
        ORDER BY m.created_at ASC`,
       eventId,
+      senderId,
     );
     return rows.map((r) => r.user_id);
   },
 
-  /** 全区分の人数を1クエリで。送信前の確認に出す「実際の人数」 */
+  /** 全区分の人数を1クエリで。送信前の確認に出す「実際に届く人数」。
+   * recipientIds と同じく本人を除く。ここがズレると
+   * 「5人に送信する」と確認したのに4人にしか届かない、が起きる */
   async countsBySegment(
     eventId: string,
+    senderId: string,
   ): Promise<Record<BroadcastSegment, number>> {
     const sums = BROADCAST_SEGMENTS.map(
       (seg) =>
         `SUM(CASE WHEN ${SEGMENT_CONDITIONS[seg]} THEN 1 ELSE 0 END) AS c_${seg}`,
     ).join(",\n              ");
     const row = await one<Record<string, number | null>>(
-      `SELECT ${sums} ${RECIPIENT_FROM}`,
+      `SELECT ${sums} ${RECIPIENT_FROM} AND m.user_id <> ?`,
       eventId,
+      senderId,
     );
     const out = {} as Record<BroadcastSegment, number>;
     for (const seg of BROADCAST_SEGMENTS) out[seg] = row?.[`c_${seg}`] ?? 0;

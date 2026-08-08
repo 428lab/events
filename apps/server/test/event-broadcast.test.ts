@@ -284,8 +284,12 @@ describe("送信先の区分", () => {
   async function ids(
     eventId: string,
     segment: BroadcastSegment,
+    // 区分の絞り込みを見るテストでは、誰も除かれない送り主を渡す
+    senderId = "not-a-member",
   ): Promise<Set<string>> {
-    return new Set(await eventBroadcastsRepo.recipientIds(eventId, segment));
+    return new Set(
+      await eventBroadcastsRepo.recipientIds(eventId, segment, senderId),
+    );
   }
 
   it("「確定」に運営側（スタッフ・審査員・観覧者）は入らない", async () => {
@@ -299,6 +303,20 @@ describe("送信先の区分", () => {
     expect(got.has(c.staff2.userId)).toBe(false);
     expect(got.has(c.judge.userId)).toBe(false);
     expect(got.has(c.observer.userId)).toBe(false);
+  });
+
+  it("送る本人は宛先に入らない（送った内容は履歴で読める）", async () => {
+    const c = await makeCast();
+    // staff が「スタッフ」に送ると、自分だけ抜けて staff2 が残る
+    const asStaff = await ids(c.eventId, "staff", c.staff.userId);
+    expect(asStaff.has(c.staff.userId)).toBe(false);
+    expect(asStaff.has(c.staff2.userId)).toBe(true);
+
+    // 「全員」でも同じ。自分以外は変わらない
+    const allAsStaff = await ids(c.eventId, "all", c.staff.userId);
+    const allAsOther = await ids(c.eventId, "all");
+    expect(allAsStaff.has(c.staff.userId)).toBe(false);
+    expect(allAsStaff.size).toBe(allAsOther.size - 1);
   });
 
   it("スタッフ・審査員・観覧者はそれぞれの区分だけに入る", async () => {
@@ -406,12 +424,19 @@ describe("送信先の区分", () => {
     }
   });
 
-  it("人数の集計が宛先の件数と一致する", async () => {
+  it("人数の集計が宛先の件数と一致する（送り主を除いた数どうしで）", async () => {
     const c = await makeCast();
-    const counts = await eventBroadcastsRepo.countsBySegment(c.eventId);
-    for (const seg of BROADCAST_SEGMENTS) {
-      const got = await ids(c.eventId, seg);
-      expect(counts[seg]).toBe(got.size);
+    // 画面に出る人数と実際に届く人数がズレると、確認の意味が無くなる。
+    // 本人を除く仕様なので、同じ送り主で両方を引いて突き合わせる
+    for (const senderId of ["not-a-member", c.staff.userId]) {
+      const counts = await eventBroadcastsRepo.countsBySegment(
+        c.eventId,
+        senderId,
+      );
+      for (const seg of BROADCAST_SEGMENTS) {
+        const got = await ids(c.eventId, seg, senderId);
+        expect(counts[seg]).toBe(got.size);
+      }
     }
   });
 });
@@ -663,6 +688,10 @@ describe("配信", () => {
     const gone = await makeUser({ deleted: true });
     await enableEmail(gone.userId, true);
     await addMember({ eventId, userId: gone.userId });
+    // 送り主は宛先に入らない (#285) ので、届く相手を別に1人置く。
+    // これが無いと 0 件になり「退会者を除いた」のか「誰も居ない」のか区別できない
+    const other = await makeUser();
+    await addMember({ eventId, userId: other.userId });
 
     const res = await postBroadcast(eventId, staff.cookie, {
       segment: "all",
@@ -670,7 +699,7 @@ describe("配信", () => {
       body: "本文",
     });
     const created = (await res.json()) as SendBroadcastResult;
-    // staff 本人のみ
+    // 退会申請中を除いた 1 人（other）だけ。staff 本人は入らない
     expect(created.recipientCount).toBe(1);
     expect(created.emailQueued).toBe(0);
     const n = await env.DB.prepare(
