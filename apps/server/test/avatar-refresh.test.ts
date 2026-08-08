@@ -1,11 +1,33 @@
-import { SELF, env, fetchMock } from "cloudflare:test";
+import {
+  SELF,
+  env,
+  fetchMock,
+  createExecutionContext,
+  waitOnExecutionContext,
+} from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
 const BASE = "https://example.com";
 
+/** PNG のシグネチャ。宣言 MIME と実バイト列の突き合わせ (#313) を通すために
+ * 本物の先頭バイトが要る。以降のバイトは区別さえつけば中身は問わない */
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/** PNG として通るバイト列を作る（tag で中身を区別する） */
+function pngBytes(tag: string, extra = 0): Uint8Array {
+  const tail = [...tag].map((ch) => ch.charCodeAt(0));
+  return new Uint8Array([...PNG_MAGIC, ...tail, ...new Array(extra).fill(0)]);
+}
+
 /** 連携先が返すアイコン本体。中身は問わないのでバイト列が区別できれば十分 */
-const IMAGE_A = "IMAGE-BYTES-A";
-const IMAGE_B = "IMAGE-BYTES-B-DIFFERENT";
+const IMAGE_A = pngBytes("IMAGE-BYTES-A");
+const IMAGE_B = pngBytes("IMAGE-BYTES-B-DIFFERENT");
+
+/** レスポンス本文を IMAGE_A / IMAGE_B と比較するための文字列化 */
+const asText = (b: Uint8Array) => new TextDecoder().decode(b);
 
 /** X のプロフィール応答。テストごとに差し替える（intercept 自体は使い回す） */
 let xProfile: Record<string, unknown> = {};
@@ -52,11 +74,25 @@ function mockAvatar(
     .persist();
 }
 
+/** worker を直接叩く。SELF.fetch ではなくこちらを使うのは、アイコンの取り込みが
+ * waitUntil に載っている (#313) ため、waitOnExecutionContext で完了を待たないと
+ * 「取り込まれたか」を安定して検証できないから（sleep 待ちは遅いCIで偽グリーンになる） */
+async function hit(path: string, init: RequestInit = {}): Promise<Response> {
+  const { default: worker } = await import("../src/worker.js");
+  const ctx = createExecutionContext();
+  const res = await worker.fetch(
+    new Request(`${BASE}${path}`, { redirect: "manual", ...init }),
+    env as never,
+    ctx,
+  );
+  // ここが返った時点でバックグラウンドの取り込みも完了している
+  await waitOnExecutionContext(ctx);
+  return res;
+}
+
 /** X でログインする（新規なら作成、既存ならログイン）。callback の応答を返す */
 async function loginWithX(): Promise<Response> {
-  const login = await SELF.fetch(`${BASE}/api/auth/x/login`, {
-    redirect: "manual",
-  });
+  const login = await hit("/api/auth/x/login");
   const cookie = login.headers
     .getSetCookie()
     .map((v) => v.split(";")[0])
@@ -64,10 +100,65 @@ async function loginWithX(): Promise<Response> {
   const state = new URL(login.headers.get("location")!).searchParams.get(
     "state",
   );
-  return SELF.fetch(`${BASE}/api/auth/x/callback?code=dummy&state=${state}`, {
+  return hit(`/api/auth/x/callback?code=dummy&state=${state}`, {
     headers: { cookie },
-    redirect: "manual",
   });
+}
+
+/** Nostr のイベントに署名する（kind と content は呼び出し側が決める） */
+function signEvent(
+  sk: Uint8Array,
+  kind: number,
+  tags: string[][],
+  content: string,
+): object {
+  const pubkey = bytesToHex(schnorr.getPublicKey(sk));
+  const created_at = Math.floor(Date.now() / 1000);
+  const serialized = JSON.stringify([0, pubkey, created_at, kind, tags, content]);
+  const id = bytesToHex(sha256(new TextEncoder().encode(serialized)));
+  const sig = bytesToHex(schnorr.sign(hexToBytes(id), sk));
+  return { id, pubkey, sig, kind, created_at, tags, content };
+}
+
+/** Nostr でログインしてセッション cookie を返す */
+async function loginWithNostr(sk: Uint8Array): Promise<string> {
+  const res = await hit("/api/auth/nostr/challenge");
+  const { challenge } = (await res.json()) as { challenge: string };
+  const event = signEvent(
+    sk,
+    22242,
+    [
+      ["relay", BASE],
+      ["challenge", challenge],
+    ],
+    "",
+  );
+  const login = await hit("/api/auth/nostr/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ event }),
+  });
+  await login.arrayBuffer();
+  return login.headers
+    .getSetCookie()
+    .map((v) => v.split(";")[0])
+    .join("; ");
+}
+
+/** kind:0（プロフィール）を投げてアイコンの取り込みを走らせる */
+async function postNostrProfile(
+  sk: Uint8Array,
+  cookie: string,
+  picture: string,
+): Promise<Response> {
+  const event = signEvent(sk, 0, [], JSON.stringify({ name: "n", picture }));
+  const res = await hit("/api/auth/nostr/profile", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ event }),
+  });
+  await res.arrayBuffer();
+  return res;
 }
 
 interface Row {
@@ -137,7 +228,9 @@ describe("連携先アイコンの取り込みと配信 (#312)", () => {
     expect(img.status).toBe(200);
     expect(img.headers.get("content-type")).toBe("image/png");
     expect(img.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(await img.text()).toBe(IMAGE_A);
+    // ?v= 付きのURLは中身が変わらないので長くキャッシュさせる (#313)
+    expect(img.headers.get("cache-control")).toContain("immutable");
+    expect(await img.text()).toBe(asText(IMAGE_A));
   });
 
   it("連携先でアイコンが変わったら、2回目のログインで差し替わる（未設定時だけの補完ではない）", async () => {
@@ -146,7 +239,7 @@ describe("連携先アイコンの取り込みと配信 (#312)", () => {
     mockAvatar(t.origin, t.path, 200, IMAGE_A);
     await loginWithX();
     const before = await userByProvider(t.providerUserId);
-    expect(await bodyOf(before.avatar_url!)).toBe(IMAGE_A);
+    expect(await bodyOf(before.avatar_url!)).toBe(asText(IMAGE_A));
 
     // 連携先がアイコンを差し替えた（URLも中身も変わる）
     const t2 = newCase();
@@ -162,9 +255,13 @@ describe("連携先アイコンの取り込みと配信 (#312)", () => {
       before.avatar_image_updated_at!,
     );
     expect(after.avatar_url).not.toBe(before.avatar_url);
-    expect(await bodyOf(after.avatar_url!)).toBe(IMAGE_B);
-    // 旧URLを掴んでいるクライアントにも新しい画像が返る（古い画像は残らない）
-    expect(await bodyOf(before.avatar_url!)).toBe(IMAGE_B);
+    expect(await bodyOf(after.avatar_url!)).toBe(asText(IMAGE_B));
+    // 旧URL（古い ?v=）でも 404 にはならない。中身はその ?v= の時点のものが
+    // 返り得る（エッジキャッシュに載るため #313）が、avatar_url は D1 から
+    // 読まれるので、次に画面を開いた時点で新しい ?v= のURLに切り替わる
+    const stale = await SELF.fetch(`${BASE}${before.avatar_url}`);
+    expect(stale.status).toBe(200);
+    await stale.arrayBuffer();
   });
 
   it("中身が同じなら更新時刻を進めない（毎ログインで再ダウンロードさせない）", async () => {
@@ -204,7 +301,7 @@ describe("連携先アイコンの取り込みと配信 (#312)", () => {
     expect(after.avatar_url).toBe(before.avatar_url);
     expect(after.avatar_image_updated_at).toBe(before.avatar_image_updated_at);
     // 保管済みの画像はそのまま配信できる
-    expect(await bodyOf(after.avatar_url!)).toBe(IMAGE_A);
+    expect(await bodyOf(after.avatar_url!)).toBe(asText(IMAGE_A));
   });
 
   it("連携先が落ちていてもログインは成功する", async () => {
@@ -281,6 +378,98 @@ describe("連携先アイコンの取り込みと配信 (#312)", () => {
     expect(
       (await userByProvider(t.providerUserId)).avatar_image_updated_at,
     ).toBeNull();
+  });
+
+  it("リダイレクトで http やローカルアドレスへ飛ばされたら取り込まない", async () => {
+    const t = newCase();
+    setXProfile(t.providerUserId, t.sourceUrl);
+    // 公開ホスト → 302 → 内部アドレス。ホップごとに再検証していないと、
+    // https 限定のガードを 302 ひとつで迂回できてしまう
+    fetchMock
+      .get(t.origin)
+      .intercept({ path: t.path })
+      .reply(302, "", { headers: { location: "http://169.254.169.254/latest" } })
+      .persist();
+
+    const res = await loginWithX();
+    expect(res.status).toBe(302);
+    expect(
+      (await userByProvider(t.providerUserId)).avatar_image_updated_at,
+    ).toBeNull();
+  });
+
+  it("リダイレクト先が https でもローカルアドレスなら取り込まない", async () => {
+    const t = newCase();
+    setXProfile(t.providerUserId, t.sourceUrl);
+    fetchMock
+      .get(t.origin)
+      .intercept({ path: t.path })
+      .reply(302, "", { headers: { location: "https://169.254.169.254/" } })
+      .persist();
+
+    const res = await loginWithX();
+    expect(res.status).toBe(302);
+    expect(
+      (await userByProvider(t.providerUserId)).avatar_image_updated_at,
+    ).toBeNull();
+  });
+
+  it("Content-Type が image/png でも中身が画像でなければ取り込まない", async () => {
+    const t = newCase();
+    setXProfile(t.providerUserId, t.sourceUrl);
+    // 宣言だけ画像にして任意のバイト列を自ドメインでホストさせる手口を塞ぐ
+    mockAvatar(t.origin, t.path, 200, "<html>not an image</html>");
+
+    const res = await loginWithX();
+    expect(res.status).toBe(302);
+    expect(
+      (await userByProvider(t.providerUserId)).avatar_image_updated_at,
+    ).toBeNull();
+  });
+
+  it("取り込み元のURLを残す（切り戻せるようにする）", async () => {
+    const t = newCase();
+    setXProfile(t.providerUserId, t.sourceUrl);
+    mockAvatar(t.origin, t.path, 200, IMAGE_A);
+    await loginWithX();
+
+    const row = await env.DB.prepare(
+      `SELECT u.avatar_source_url AS src FROM user u
+         JOIN identity i ON i.user_id = u.id
+        WHERE i.provider = 'x' AND i.provider_user_id = ?`,
+    )
+      .bind(t.providerUserId)
+      .first<{ src: string | null }>();
+    // avatar_url は自ドメインのURLで上書きされるので、元のURLはここにしか残らない
+    expect(row!.src).toBe(t.fetchedUrl);
+  });
+
+  it("プロフィール更新の連打では取り込み直さない（毎回違う画像でも）", async () => {
+    const sk = schnorr.utils.randomSecretKey();
+    const cookie = await loginWithNostr(sk);
+    const t = newCase();
+    mockAvatar(t.origin, t.path, 200, IMAGE_A);
+    await postNostrProfile(sk, cookie, t.fetchedUrl);
+
+    const userId = (
+      await env.DB.prepare(
+        "SELECT user_id FROM identity WHERE provider = 'nostr' AND provider_user_id = ?",
+      )
+        .bind(bytesToHex(schnorr.getPublicKey(sk)))
+        .first<{ user_id: string }>()
+    )!.user_id;
+    const before = await userRow(userId);
+    expect(before!.avatar_image_updated_at).not.toBeNull();
+
+    // 取得元URLは本人が自由に書けるので、毎回違うバイト列を返すURLを指定すれば
+    // ハッシュ比較が効かず「1MB取得＋R2 put＋D1 update」を連打できてしまう
+    const t2 = newCase();
+    mockAvatar(t2.origin, t2.path, 200, IMAGE_B);
+    await postNostrProfile(sk, cookie, t2.fetchedUrl);
+
+    const after = await userRow(userId);
+    expect(after!.avatar_image_updated_at).toBe(before!.avatar_image_updated_at);
+    expect(after!.avatar_image_hash).toBe(before!.avatar_image_hash);
   });
 
   it("配信は ETag で 304 を返す", async () => {

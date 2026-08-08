@@ -196,10 +196,15 @@ Team（将来）──1 Entry                 （チーム参加時、Entry の�
 | avatar_image_updated_at | integer null | 自前保管したアイコンの更新時刻。null = 保管なし (#312) |
 | avatar_image_mime | text null | 保管したアイコンの MIME（配信時の Content-Type） |
 | avatar_image_hash | text null | 保管したアイコンの SHA-256。中身が変わったときだけ書き直すための比較用 |
+| avatar_source_url | text null | 取り込み元（連携先）のアイコンURL。`avatar_url` を上書きするため、切り戻し用に元のURLを残す |
 
 - アイコンは**ログインのたびに**、そのとき使った連携先（Discord / Google / GitHub / X / Nostr）から取り直して R2 `avatars/{user_id}` に保管し、`avatar_url` を自分のドメインのURLへ差し替える (#312)。連携先のURLをそのまま持つと、向こうでアイコンを変えられた時点で 404 になるため。
-- 取得に失敗（連携先が落ちている・既に 404・大きすぎる・画像でない）してもログインは成功させ、既存の `avatar_url` を残す。
+- 取得はレスポンスを待たせない（`ctx.waitUntil`）。連携先CDNが遅いときにログインが取得タイムアウトぶん待たされるのを避けるため。
+- 取得先は https 限定で、リダイレクトは手動追跡してホップごとにスキーム・プライベートホストを再検証する（SSRF ガード。判定は `lib/urlGuard.ts` に集約し OG サムネイル取得 #149 と共有）。Content-Type の許可リストに加え、実バイト列の先頭シグネチャも突き合わせる。
+- 取得に失敗（連携先が落ちている・既に 404・大きすぎる・画像でない）してもログインは成功させ、既存の `avatar_url` を残す。見送った理由は1行ログに残す。
 - 中身（ハッシュ）が前回と同じなら R2 も `avatar_image_updated_at` も書き換えない。毎ログインで `?v=` が変わると同じ画像を再ダウンロードさせてしまうため。
+- 取得元URLを本人が自由に書ける経路（Nostr の kind:0）は、直近10分以内に取り込み済みならスキップする。毎回違うバイト列を返すURLを指定するとハッシュ比較が効かず、取得と書き込みを連打できるため。
+- 配信 `GET /api/users/{id}/avatar?v=` は `?v=` を ETag として使い、条件付きGETを D1 の前で捌く。`Cache-Control: public, max-age=31536000, immutable, s-maxage=86400` ＋ `caches.default` でエッジにも載せる（`s-maxage` を分けているのは、エッジに載った分をパージできないため）。
 
 #### user_active_day（日次の活動記録 #257）
 | カラム | 型 | 説明 |
