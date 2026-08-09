@@ -465,7 +465,7 @@ export function UserProfilePage() {
             // 1つずつ折り返して縦に伸びるため
             "& .MuiButton-root": {
               fontSize: { xs: "0.875rem", sm: "0.9375rem" },
-              px: { xs: 1.5, sm: 2.75 },
+              px: { xs: 1.5, sm: 2.25 },
             },
           }}
         >
