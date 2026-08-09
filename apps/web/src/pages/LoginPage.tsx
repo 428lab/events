@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuthProviders, useDevLogin } from "../api/hooks.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
 import { hasNip07, nostrNip07Login } from "../lib/nostr.js";
+import { safeRedirectPath } from "../lib/safeRedirect.js";
 
 export function LoginPage() {
   const devLogin = useDevLogin();
@@ -17,8 +18,9 @@ export function LoginPage() {
   // 設定済みプロバイダが取れない場合のフォールバック（Discord）
   const list = providers && providers.length > 0 ? providers : ["discord"];
 
-  // ログイン後に戻る先（OAuthリダイレクトを跨ぐため localStorage に退避）
-  const next = params.get("next");
+  // ログイン後に戻る先（OAuthリダイレクトを跨ぐため localStorage に退避）。
+  // 外部サイトへの踏み台にされないよう、同一オリジンのパスだけを控える
+  const next = safeRedirectPath(params.get("next"));
   useEffect(() => {
     if (next) localStorage.setItem("postLoginRedirect", next);
   }, [next]);

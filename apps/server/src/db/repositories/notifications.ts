@@ -236,4 +236,24 @@ export const notificationsRepo = {
       userId,
     );
   },
+
+  /** 出会いの取り消し (#330) に伴って、その読み取りで出した meet 通知を消す。
+   *
+   * notification は出会いの行を参照していないので、「誰から (link=相手のプロフィール)
+   * いつ以降に届いた meet 通知か」で絞る。since には取り消しトークンの発行時刻を
+   * 渡す想定で、それより前の（別の機会の）通知には触らない。
+   * メールは送信済みなら取り消せないが、通知一覧に残り続けるのは防げる。 */
+  async deleteMeetSince(
+    userId: string,
+    link: string,
+    since: number,
+  ): Promise<void> {
+    await run(
+      `DELETE FROM notification
+        WHERE user_id = ? AND type = 'meet' AND link = ? AND created_at >= ?`,
+      userId,
+      link,
+      since,
+    );
+  },
 };

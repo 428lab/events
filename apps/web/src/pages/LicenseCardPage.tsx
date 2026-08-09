@@ -388,7 +388,6 @@ export function LicenseCardPage() {
           <BigQrDialog
             open={qrOpen}
             onClose={() => setQrOpen(false)}
-            handle={card.handle}
             name={card.name}
             avatarUrl={data.avatarUrl}
           />

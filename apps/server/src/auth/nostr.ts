@@ -2,7 +2,7 @@ import { schnorr } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { env } from "../runtime.js";
-import { one, run } from "../db/client.js";
+import { consumeNonce } from "../lib/usedNonce.js";
 
 /** NIP-01 イベント（NIP-07 拡張が署名して返す形） */
 export interface NostrEvent {
@@ -15,6 +15,8 @@ export interface NostrEvent {
   sig: string;
 }
 
+/** チャレンジの有効期間。変更したら lib/usedNonce.ts の SHARED_TTLS_MS も直すこと
+ * （掃除のしきい値がそこから決まる） */
 const CHALLENGE_TTL_MS = 10 * 60 * 1000;
 
 async function hmacHex(message: string): Promise<string> {
@@ -51,22 +53,8 @@ async function verifyChallenge(challenge: string): Promise<boolean> {
   }
   if ((await hmacHex(`nostr-challenge:${ts}:${nonce}`)) !== mac) return false;
   // リプレイ防止: nonce は一度きり。挿入できなければ使用済み。
-  const inserted = await one<{ nonce: string }>(
-    `INSERT OR IGNORE INTO nostr_challenge_used (nonce, used_at)
-     VALUES (?, ?) RETURNING nonce`,
-    nonce,
-    Date.now(),
-  );
-  if (!inserted) return false;
-  // TTL を過ぎた記録は掃除（テーブル肥大防止）
-  await run(
-    // 注意: このテーブルは統合コード (#240, mergeCode.ts) の使い捨て記録と共有。
-    // クリーンアップ猶予（CHALLENGE_TTL_MS * 2 = 20分）を MERGE_CODE_TTL_MS
-    // （15分）より短くするとコードのリプレイ窓が開くので、変更時は両方を確認
-    "DELETE FROM nostr_challenge_used WHERE used_at < ?",
-    Date.now() - CHALLENGE_TTL_MS * 2,
-  );
-  return true;
+  // 記録先と掃除は lib/usedNonce.ts に集約（統合コード #240・出会いQR #330 と共有）
+  return consumeNonce(nonce);
 }
 
 const HEX64 = /^[0-9a-f]{64}$/;
