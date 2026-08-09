@@ -32,7 +32,11 @@ jobs:
 
       # フロントをビルド（tsc も走るので web の型チェックを兼ねる。
       # Worker の ASSETS バインディングが apps/web/dist を配信する）
+      # 閲覧数の計測 (#328) の識別子はここで渡す。
+      # シークレット未設定のリポジトリでは空になり、計測は自動で無効になる
       - run: pnpm --filter @eventer/web build
+        env:
+          VITE_WEB_ANALYTICS_TOKEN: ${{ secrets.WEB_ANALYTICS_TOKEN }}
 
       - name: Deploy to production
         if: github.ref == 'refs/heads/production'

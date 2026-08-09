@@ -119,6 +119,19 @@ npx wrangler secret put RESEND_API_KEY --env staging   # staging
   staging には定時実行を張らないため、動作確認は
   `POST /api/admin/run-broadcast-emails`（アプリ運営管理者のみ）で行う。
 
+### 閲覧数の計測（WEB_ANALYTICS_TOKEN）
+
+どのページが見られているかは、ホスティング先が提供する計測をそのまま使います（#328）。
+クッキーは使わず、外部の解析サービスにも渡さず、アプリのデータベースにも書きません。
+
+- ホスティング先のダッシュボードで Web Analytics にサイト（`events.kojira.io`）を追加し、
+  発行された識別子を GitHub のリポジトリシークレット `WEB_ANALYTICS_TOKEN` に登録する。
+- デプロイ時のフロントのビルドで `VITE_WEB_ANALYTICS_TOKEN` として埋め込まれる。
+  **未設定のリポジトリでは計測タグを読み込まない＝計測は自動で無効。**
+- 画面遷移（React Router）も計測タグ側が拾う。遷移ごとの送信をアプリに書く必要はない。
+- 分かるのはページ別の閲覧数・訪問数・流入元・国・端末／ブラウザ・表示速度。
+  クエリ文字列は記録されない。個別の利用者の追跡や独自イベントの計測はできない。
+
 ### イベントチャットの公式サービス鍵（NOSTR_SERVICE_KEY）
 
 Nostr イベントチャット（#199）のチャンネル作成（kind:40）は、主催者本人が
