@@ -219,7 +219,9 @@ describe("出会った記録 (#189)", () => {
     );
   });
 
-  it("出席チェックONのイベントは両者とも出席済みでないと記録できない", async () => {
+  it("出席チェックONでも、出席していない相手と記録できる (#330)", async () => {
+    // 以前は「両者とも出席済み」を条件にしていたため、受付を通していない人と
+    // 記録できず、実際のイベントで「出会ったボタンが出ない」事象が起きた
     const owner = await makeUser();
     const a = await makeUser();
     const b = await makeUser();
@@ -227,22 +229,27 @@ describe("出会った記録 (#189)", () => {
     await addMember(eventId, a.userId, "participant", 1); // a は出席済み
     await addMember(eventId, b.userId, "participant", 0); // b は未出席
 
-    const r1 = await postMeet(eventId, a.cookie, b.userId);
-    expect(r1.status).toBe(403);
-    expect(((await r1.json()) as { error: string }).error).toBe("not_attended");
-    // meetable にも出ない
-    expect(await getMeetable(b.userId, a.cookie)).toEqual([]);
-
-    // b も出席したら記録できる
-    await env.DB.prepare(
-      "UPDATE event_member SET attended = 1 WHERE event_id = ? AND user_id = ?",
-    )
-      .bind(eventId, b.userId)
-      .run();
+    // ボタンが出る（meetable に載る）
     expect(await getMeetable(b.userId, a.cookie)).toHaveLength(1);
-    const r2 = await postMeet(eventId, a.cookie, b.userId);
-    expect(r2.status).toBe(200);
-    expect(((await r2.json()) as { created: boolean }).created).toBe(true);
+    const r1 = await postMeet(eventId, a.cookie, b.userId);
+    expect(r1.status).toBe(200);
+    expect(((await r1.json()) as { created: boolean }).created).toBe(true);
+
+    // どちらも未出席でも記録できる
+    const c = await makeUser();
+    const d = await makeUser();
+    const other = await insertEvent(owner.userId, { attendanceCheck: true });
+    await addMember(other, c.userId, "participant", 0);
+    await addMember(other, d.userId, "participant", 0);
+    expect(await getMeetable(d.userId, c.cookie)).toHaveLength(1);
+    expect((await postMeet(other, c.cookie, d.userId)).status).toBe(200);
+    // 記録しただけで出席は付かない（出席は staff が絡む読み取りだけ #330）
+    const row = await env.DB.prepare(
+      "SELECT attended FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(other, c.userId)
+      .first<{ attended: number }>();
+    expect(row?.attended).toBe(0);
   });
 
   it("XP: 有効イベントの出会いは1件5XP・1イベント10件まで、first-meet バッジが付く", async () => {

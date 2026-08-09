@@ -36,7 +36,11 @@ import {
 import { eventLikeRoutes } from "./routes/eventLikes.js";
 import { eventChatRoutes } from "./routes/eventChat.js";
 import { eventQaRoutes } from "./routes/eventQa.js";
-import { meetEventRoutes, meetUserRoutes } from "./routes/eventMeets.js";
+import {
+  meetEventRoutes,
+  meetScanRoutes,
+  meetUserRoutes,
+} from "./routes/eventMeets.js";
 import {
   eventScheduleRoutes,
   getEventTimetable,
@@ -183,6 +187,8 @@ api.get("/users/:id/avatar", getUserAvatarImage);
 api.route("/users", followRoutes);
 // 出会える共通イベントの取得 (#189)（要認証）
 api.route("/users", meetUserRoutes);
+// QRの発行・読み取り・取り消し (#330)（要認証）
+api.route("/meet", meetScanRoutes);
 api.route("/inquiries", inquiryRoutes);
 api.route("/admin/inquiries", adminInquiryRoutes);
 api.route("/admin/run-reminders", adminReminderRoutes);

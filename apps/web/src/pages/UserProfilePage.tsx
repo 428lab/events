@@ -519,7 +519,6 @@ export function UserProfilePage() {
         <BigQrDialog
           open={qrOpen}
           onClose={() => setQrOpen(false)}
-          handle={data.handle ?? id}
           name={data.name}
           avatarUrl={data.avatarUrl}
         />

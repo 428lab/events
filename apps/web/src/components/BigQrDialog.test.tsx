@@ -1,55 +1,87 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { BigQrDialog, buildProfileQrUrl } from "./BigQrDialog.js";
+import { render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 
 /**
- * 大きなQR表示 (#324)。飛び先は公開プロフィールで、流入元は ?ref=qr
- * （プロフィールカード内のQR=card と区別する。サーバー側の許可リストにも登録済み）
+ * 大きなQR表示 (#324 → #330)。
+ *
+ * 飛び先は公開プロフィールではなく、使い捨てトークンを載せた
+ * 読み取り確定用の入口。トークンが取れるまでQRを描かないこと
+ * （古い・空のQRを読ませない）を固定しておく。
  */
 
-describe("大きなQR表示 (#324)", () => {
-  it("飛び先は公開プロフィールで流入元は qr", () => {
-    expect(buildProfileQrUrl("tester", "https://example.test")).toBe(
-      "https://example.test/users/tester?ref=qr",
+const { getMock } = vi.hoisted(() => ({ getMock: vi.fn() }));
+
+vi.mock("../api/client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/client.js")>();
+  return {
+    ...actual,
+    api: { ...actual.api, get: (...args: unknown[]) => getMock(...args) },
+  };
+});
+
+const { BigQrDialog, buildMeetQrUrl } = await import("./BigQrDialog.js");
+
+function renderDialog(open = true) {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={qc}>
+      <BigQrDialog open={open} onClose={() => {}} name="テスター" />
+    </QueryClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  getMock.mockReset();
+});
+
+describe("大きなQR表示 (#330)", () => {
+  it("飛び先は読み取り確定用の入口で、トークンはURLとして安全にエスケープする", () => {
+    expect(buildMeetQrUrl("mt1.u.1.ab", "https://example.test")).toBe(
+      "https://example.test/m/mt1.u.1.ab",
+    );
+    expect(buildMeetQrUrl("a b/c", "https://example.test")).toBe(
+      "https://example.test/m/a%20b%2Fc",
     );
   });
 
-  it("ハンドルはURLとして安全にエスケープする", () => {
-    expect(buildProfileQrUrl("a b/c", "https://example.test")).toBe(
-      "https://example.test/users/a%20b%2Fc?ref=qr",
-    );
-  });
+  it("取得したトークンの入口URLをQRにする", async () => {
+    getMock.mockResolvedValue({
+      token: "mt1.u-1.1700000000.deadbeef",
+      expiresAt: Date.now() + 120_000,
+    });
+    renderDialog();
 
-  it("QRと名前を出し、QRの中身は公開プロフィールURLになる", () => {
-    render(
-      <BigQrDialog
-        open
-        onClose={() => {}}
-        handle="tester"
-        name="テスター"
-        avatarUrl={null}
-      />,
+    await waitFor(() =>
+      expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toBe(
+        `${window.location.origin}/m/mt1.u-1.1700000000.deadbeef`,
+      ),
     );
-    expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toBe(
-      `${window.location.origin}/users/tester?ref=qr`,
-    );
+    expect(getMock).toHaveBeenCalledWith("/meet/token");
     // 誰のQRか分かるように名前を添える
     expect(screen.getByText("テスター")).toBeTruthy();
     expect(screen.getByRole("img", { name: /テスター/ })).toBeTruthy();
   });
 
+  it("トークンが取れるまでQRを描かない", () => {
+    getMock.mockReturnValue(new Promise(() => {}));
+    renderDialog();
+    expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toBe("");
+    expect(screen.queryByRole("img", { name: /テスター/ })).toBeNull();
+  });
+
+  it("閉じている間はトークンを取りに行かない", () => {
+    getMock.mockResolvedValue({ token: "mt1.x.1.y", expiresAt: 0 });
+    renderDialog(false);
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
   it("スリープ防止に対応していない環境でもエラーにならない", () => {
     // jsdom には navigator.wakeLock が無い。黙って無視されること
     expect("wakeLock" in navigator).toBe(false);
-    expect(() =>
-      render(
-        <BigQrDialog
-          open
-          onClose={() => {}}
-          handle="tester"
-          name="テスター"
-        />,
-      ),
-    ).not.toThrow();
+    getMock.mockResolvedValue({ token: "mt1.x.1.y", expiresAt: 0 });
+    expect(() => renderDialog()).not.toThrow();
   });
 });

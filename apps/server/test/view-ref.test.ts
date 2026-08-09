@@ -40,7 +40,8 @@ describe("流入元 ref パラメータの計測 (#118)", () => {
     expect((await view({ refParam: "feed" })).status).toBe(204);
     // ライセンスカードのQRコード経由 (#178)
     expect((await view({ refParam: "card" })).status).toBe(204);
-    // 大きく表示したQRコードを直接読み取ってもらった場合 (#324)
+    // 大きく表示したQRの ref=qr (#324) は廃止した。飛び先が使い捨てトークンの
+    // 専用入口になり、プロフィール閲覧を数える対象ではなくなったため (#330)
     expect((await view({ refParam: "qr" })).status).toBe(204);
     expect(
       (await view({ refParam: "evil", ref: "https://example.org/page" })).status,
@@ -59,7 +60,9 @@ describe("流入元 ref パラメータの計測 (#118)", () => {
     expect(bySource["notification"]).toBe(1);
     expect(bySource["feed"]).toBe(1);
     expect(bySource["card"]).toBe(1);
-    expect(bySource["qr"]).toBe(1);
+    // 許可リストから外した qr は referrer なしの direct に落ちる
+    expect(bySource["qr"]).toBeUndefined();
+    expect(bySource["direct"]).toBe(1);
     // 許可リスト外の refParam は無視され referrer ホストで記録
     expect(bySource["example.org"]).toBe(1);
     expect(bySource["evil"]).toBeUndefined();

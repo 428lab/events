@@ -1,7 +1,16 @@
 import { useEffect, useMemo } from "react";
-import { Avatar, Box, Dialog, IconButton, Stack, Typography } from "@mui/material";
+import {
+  Avatar,
+  Box,
+  CircularProgress,
+  Dialog,
+  IconButton,
+  Stack,
+  Typography,
+} from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import QRCode from "qrcode";
+import { useMyMeetToken } from "../api/eventMeetHooks.js";
 
 /**
  * 自分のQRコードを画面いっぱいに表示するダイアログ (#324)。
@@ -11,12 +20,14 @@ import QRCode from "qrcode";
  * - 常に白背景・黒モジュール。ダークテーマでも反転させない
  * - 静穏帯（クワイエットゾーン）を規格どおり4モジュール取る
  * - スマホ縦持ちで画面の短辺いっぱいまで大きくする
+ *
+ * 飛び先は読み取ったその場で出会いを確定する専用の入口 (#330)。
+ * 短時間で切り替わるトークンを載せるので、表示している間は自動で描き替える。
  */
 
-/** QRの飛び先は公開プロフィール。?ref=qr は流入元の集計用
- * （プロフィールカード内のQR=card と区別するため別の値。サーバー側の許可リストに登録済み） */
-export function buildProfileQrUrl(handle: string, origin: string): string {
-  return `${origin}/users/${encodeURIComponent(handle)}?ref=qr`;
+/** 読み取り確定用の入口URL。token は短時間で切り替わる */
+export function buildMeetQrUrl(token: string, origin: string): string {
+  return `${origin}/m/${encodeURIComponent(token)}`;
 }
 
 /** 静穏帯（規格上の最小4モジュール）。これを削ると読み取り率が落ちる */
@@ -114,18 +125,20 @@ function useScreenWakeLock(active: boolean) {
 export function BigQrDialog({
   open,
   onClose,
-  handle,
   name,
   avatarUrl,
 }: {
   open: boolean;
   onClose: () => void;
-  handle: string;
   name: string;
   avatarUrl?: string | null;
 }) {
   useScreenWakeLock(open);
-  const url = buildProfileQrUrl(handle, window.location.origin);
+  // 開いている間だけ取得し、一定間隔で取り直す（トークンが切り替わる）
+  const { data: meetToken, isError } = useMyMeetToken(open);
+  const url = meetToken
+    ? buildMeetQrUrl(meetToken.token, window.location.origin)
+    : null;
 
   return (
     <Dialog
@@ -150,16 +163,26 @@ export function BigQrDialog({
       >
         <Box
           data-testid="big-qr"
-          data-qr-url={url}
+          data-qr-url={url ?? ""}
           sx={{
             // 縦持ちのスマホで短辺いっぱい。周囲の余白も静穏帯として効く。
             // 100% を混ぜて左右パディングぶんの横はみ出し（幅400px未満の端末）を防ぐ
             width: "min(92vw, 70vh, 100%)",
             height: "min(92vw, 70vh, 100%)",
             bgcolor: "#ffffff",
+            display: "grid",
+            placeItems: "center",
           }}
         >
-          <QrCodeSvg url={url} label={`${name} のプロフィールのQRコード`} />
+          {url ? (
+            <QrCodeSvg url={url} label={`${name} の交流用QRコード`} />
+          ) : isError ? (
+            <Typography variant="body2" sx={{ color: "#555555" }}>
+              QRを表示できませんでした。閉じてもう一度お試しください
+            </Typography>
+          ) : (
+            <CircularProgress sx={{ color: "#555555" }} />
+          )}
         </Box>
         <Stack direction="row" spacing={1.5} alignItems="center">
           {avatarUrl && <Avatar src={avatarUrl} sx={{ width: 40, height: 40 }} />}
@@ -168,7 +191,7 @@ export function BigQrDialog({
               {name}
             </Typography>
             <Typography variant="caption" sx={{ color: "#555555" }}>
-              読み取ると交流を記録できます
+              読み取るとその場で交流が記録されます
             </Typography>
           </Box>
         </Stack>

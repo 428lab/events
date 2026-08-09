@@ -31,6 +31,7 @@ import { AdminInquiryThreadPage } from "./pages/AdminInquiryThreadPage.js";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage.js";
 import { TermsPage } from "./pages/TermsPage.js";
 import { UserProfilePage } from "./pages/UserProfilePage.js";
+import { MeetScanPage } from "./pages/MeetScanPage.js";
 import { CommunitiesPage } from "./pages/CommunitiesPage.js";
 import { CommunityPage } from "./pages/CommunityPage.js";
 import { CommunityMembersPage } from "./pages/CommunityMembersPage.js";
@@ -306,6 +307,16 @@ export function App() {
             </PublicLayout>
           }
         />
+        {/* QRを読み取った先 (#330)。未ログインならログインへ送り、
+            ログイン後にこのURLへ戻ってから記録する */}
+        <Route
+          path="/m/:token"
+          element={
+            <PublicLayout>
+              <MeetScanPage />
+            </PublicLayout>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
@@ -340,6 +351,8 @@ export function App() {
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/users/:id" element={<UserProfilePage />} />
         <Route path="/users/:id/card" element={<LicenseCardRoute />} />
+        {/* QRを読み取った先 (#330)。開いた時点でその場で記録する */}
+        <Route path="/m/:token" element={<MeetScanPage />} />
         <Route path="/communities" element={<CommunitiesPage />} />
         <Route path="/communities/new" element={<CreateCommunityPage />} />
         <Route path="/c/:slug" element={<CommunityPage />} />

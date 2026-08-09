@@ -19,9 +19,11 @@ function jstDay(): string {
 }
 
 /** リンク側で明示された流入元（?ref=）。許可リスト制で統計の汚染を防ぐ。
- * card はライセンスカードのQRコード経由 (#178)、
- * qr は自分のQRを大きく表示して直接読み取ってもらった場合 (#324) */
-const REF_PARAM_SOURCES = new Set(["notification", "feed", "email", "card", "qr"]);
+ * card はライセンスカードのQRコード経由 (#178)。
+ * qr（大きく表示したQR経由 #324）は廃止した。飛び先が公開プロフィールではなく
+ * 使い捨てトークンの専用入口になり、そこはプロフィール閲覧を数える対象では
+ * なくなったため (#330) */
+const REF_PARAM_SOURCES = new Set(["notification", "feed", "email", "card"]);
 
 /** document.referrer から流入元ラベルを作る（ホスト名のみ・先頭 www. 除去） */
 function parseSource(ref: unknown): string {

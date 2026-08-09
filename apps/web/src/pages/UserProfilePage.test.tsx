@@ -101,6 +101,12 @@ function renderProfile(p: UserProfile) {
       return Promise.resolve({ ongoing: [], past: [PUBLIC_EVENT, DRAFT_EVENT] });
     }
     if (path === "/auth/me") return Promise.resolve({ id: "u-me" });
+    if (path === "/meet/token") {
+      return Promise.resolve({
+        token: "mt1.u-me.1700000000.abcdef",
+        expiresAt: Date.now() + 120_000,
+      });
+    }
     return Promise.resolve({});
   });
   const qc = new QueryClient({
@@ -147,9 +153,12 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     await screen.findByText("テスター");
     const button = screen.getByRole("button", { name: "QRを見せる" });
     button.click();
-    expect(
-      (await screen.findByTestId("big-qr")).getAttribute("data-qr-url"),
-    ).toBe(`${window.location.origin}/users/tester?ref=qr`);
+    // 飛び先は公開プロフィールではなく、使い捨てトークンの入口 (#330)
+    await waitFor(() =>
+      expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toBe(
+        `${window.location.origin}/m/mt1.u-me.1700000000.abcdef`,
+      ),
+    );
   });
 
   it("他人のページにはQRを見せる導線を出さない (#324)", async () => {
