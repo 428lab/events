@@ -134,8 +134,30 @@ export function BigQrDialog({
   avatarUrl?: string | null;
 }) {
   useScreenWakeLock(open);
-  // 開いている間だけ取得し、一定間隔で取り直す（トークンが切り替わる）
-  const { data: meetToken, isError } = useMyMeetToken(open);
+  // 表示中のトークン。読まれるまでは同じものを出し続ける（読み取っている
+  // 最中に切り替わると失敗し続けるため）。読まれたらサーバーが次のぶんを返す
+  const [current, setCurrent] = useState<string | null>(null);
+  const { data: meetToken, isError } = useMyMeetToken(open, current);
+  // 「読み取られました」の一時表示。次の人に向け直す合図になる
+  const [justRead, setJustRead] = useState(false);
+
+  useEffect(() => {
+    if (!meetToken) return;
+    setCurrent(meetToken.token);
+    if (!meetToken.consumed) return;
+    setJustRead(true);
+    const timer = setTimeout(() => setJustRead(false), 2500);
+    return () => clearTimeout(timer);
+  }, [meetToken]);
+
+  // 閉じたら次に開いたときのために持ち越さない（古いQRを描かないため）
+  useEffect(() => {
+    if (!open) {
+      setCurrent(null);
+      setJustRead(false);
+    }
+  }, [open]);
+
   // 期限切れを描かないための時計。読み取る側だけが「期限切れ」を見て、
   // 見せている側は気づけない、という壊れ方を防ぐ (#330)。
   // 一度閉じて開き直した直後（キャッシュが残っている）と、
@@ -208,8 +230,13 @@ export function BigQrDialog({
             <Typography variant="h6" fontWeight={700} sx={{ color: "#000000" }}>
               {name}
             </Typography>
-            <Typography variant="caption" sx={{ color: "#555555" }}>
-              読み取るとその場で交流が記録されます
+            <Typography
+              variant="caption"
+              sx={{ color: justRead ? "#1b5e20" : "#555555", fontWeight: justRead ? 700 : 400 }}
+            >
+              {justRead
+                ? "読み取られました。次の人もどうぞ"
+                : "読み取るとその場で交流が記録されます"}
             </Typography>
           </Box>
         </Stack>

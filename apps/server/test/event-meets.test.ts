@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import type { Gamification } from "@eventer/shared";
+import type { Gamification, MeetableEvent } from "@eventer/shared";
 
 const BASE = "https://example.com";
 
@@ -72,6 +72,29 @@ async function addMember(
     .run();
 }
 
+async function postMeet(
+  eventId: string,
+  cookie: string,
+  userId: string,
+): Promise<Response> {
+  return SELF.fetch(`${BASE}/api/events/${eventId}/meet`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ userId }),
+  });
+}
+
+async function getMeetable(
+  targetUserId: string,
+  cookie: string,
+): Promise<MeetableEvent[]> {
+  const res = await SELF.fetch(`${BASE}/api/users/${targetUserId}/meetable`, {
+    headers: { cookie },
+  });
+  expect(res.status).toBe(200);
+  return ((await res.json()) as { events: MeetableEvent[] }).events;
+}
+
 /** 出会い行を直接挿入（ペアは低/高に正規化） */
 async function insertMeet(
   eventId: string,
@@ -86,8 +109,8 @@ async function insertMeet(
     .run();
 }
 
-describe("ボタンで記録する旧経路の廃止 (#330)", () => {
-  it("相手を指定して記録する経路は残っていない（対面の裏付けが無いため）", async () => {
+describe("出会った記録 (#189)", () => {
+  it("開催中イベントの確定メンバー同士は記録でき、同一ペアの2回目は created=false、相手に通知が入る", async () => {
     const owner = await makeUser();
     const a = await makeUser();
     const b = await makeUser();
@@ -95,32 +118,140 @@ describe("ボタンで記録する旧経路の廃止 (#330)", () => {
     await addMember(eventId, a.userId);
     await addMember(eventId, b.userId);
 
-    // 開催中・両者とも確定メンバー、という「以前なら通った」条件でも受け付けない。
-    // 残しておくと、参加者一覧から相手を選ぶだけで出会いを量産できてしまう
-    const res = await SELF.fetch(`${BASE}/api/events/${eventId}/meet`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: a.cookie },
-      body: JSON.stringify({ userId: b.userId }),
-    });
-    expect(res.status).toBe(404);
+    // meetable にイベントが出る
+    const meetable = await getMeetable(b.userId, a.cookie);
+    expect(meetable.map((e) => e.id)).toContain(eventId);
 
-    // 共通イベントの一覧（ボタンの出し分け用）も無くなっている
-    const meetable = await SELF.fetch(
-      `${BASE}/api/users/${b.userId}/meetable`,
-      { headers: { cookie: a.cookie } },
-    );
-    expect(meetable.status).toBe(404);
+    // 1回目は created=true・出会い数1
+    const r1 = await postMeet(eventId, a.cookie, b.userId);
+    expect(r1.status).toBe(200);
+    const body1 = (await r1.json()) as { created: boolean; meets: number };
+    expect(body1.created).toBe(true);
+    expect(body1.meets).toBe(1);
 
-    const row = await env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM event_meet WHERE event_id = ?",
+    // 2回目（逆方向でも同一ペア）は created=false のまま冪等
+    const r2 = await postMeet(eventId, b.cookie, a.userId);
+    expect(r2.status).toBe(200);
+    const body2 = (await r2.json()) as { created: boolean; meets: number };
+    expect(body2.created).toBe(false);
+    expect(body2.meets).toBe(1);
+
+    // 相手（b）に meet 通知が1件だけ入る
+    const notif = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM notification WHERE user_id = ? AND type = 'meet'",
     )
-      .bind(eventId)
+      .bind(b.userId)
       .first<{ n: number }>();
-    expect(row?.n).toBe(0);
+    expect(notif?.n).toBe(1);
   });
-});
 
-describe("出会いのXP (#189)", () => {
+  it("自分自身は400、非メンバーは403（自分・相手どちらでも）", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const outsider = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+
+    const self = await postMeet(eventId, a.cookie, a.userId);
+    expect(self.status).toBe(400);
+    expect(((await self.json()) as { error: string }).error).toBe("self_meet");
+
+    // 自分が非メンバー
+    const r1 = await postMeet(eventId, outsider.cookie, a.userId);
+    expect(r1.status).toBe(403);
+    // 相手が非メンバー
+    const r2 = await postMeet(eventId, a.cookie, outsider.userId);
+    expect(r2.status).toBe(403);
+    expect(((await r2.json()) as { error: string }).error).toBe(
+      "target_not_member",
+    );
+
+    // 自分自身の meetable は常に空
+    expect(await getMeetable(a.userId, a.cookie)).toEqual([]);
+  });
+
+  it("開催時間帯の外・日程調整中・下書きは記録できない", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const now = Date.now();
+
+    // 開始30分前より前（未来イベント）
+    const future = await insertEvent(owner.userId, {
+      startsAt: now + 7200_000,
+      endsAt: now + 10800_000,
+    });
+    await addMember(future, a.userId);
+    await addMember(future, b.userId);
+    const r1 = await postMeet(future, a.cookie, b.userId);
+    expect(r1.status).toBe(409);
+    expect(((await r1.json()) as { error: string }).error).toBe(
+      "outside_window",
+    );
+    // meetable にも出ない
+    expect(await getMeetable(b.userId, a.cookie)).toEqual([]);
+
+    // 終了2時間後より後
+    const past = await insertEvent(owner.userId, {
+      startsAt: now - 14400_000,
+      endsAt: now - 10800_000,
+    });
+    await addMember(past, a.userId);
+    await addMember(past, b.userId);
+    const r2 = await postMeet(past, a.cookie, b.userId);
+    expect(r2.status).toBe(409);
+
+    // 日程調整中
+    const scheduling = await insertEvent(owner.userId, { scheduling: true });
+    await addMember(scheduling, a.userId);
+    await addMember(scheduling, b.userId);
+    const r3 = await postMeet(scheduling, a.cookie, b.userId);
+    expect(r3.status).toBe(409);
+
+    // 下書き
+    const draft = await insertEvent(owner.userId, { status: "draft" });
+    await addMember(draft, a.userId);
+    await addMember(draft, b.userId);
+    const r4 = await postMeet(draft, a.cookie, b.userId);
+    expect(r4.status).toBe(409);
+    expect(((await r4.json()) as { error: string }).error).toBe(
+      "not_published",
+    );
+  });
+
+  it("出席チェックONでも、出席していない相手と記録できる (#330)", async () => {
+    // 以前は「両者とも出席済み」を条件にしていたため、受付を通していない人と
+    // 記録できず、実際のイベントで「出会ったボタンが出ない」事象が起きた
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const eventId = await insertEvent(owner.userId, { attendanceCheck: true });
+    await addMember(eventId, a.userId, "participant", 1); // a は出席済み
+    await addMember(eventId, b.userId, "participant", 0); // b は未出席
+
+    // ボタンが出る（meetable に載る）
+    expect(await getMeetable(b.userId, a.cookie)).toHaveLength(1);
+    const r1 = await postMeet(eventId, a.cookie, b.userId);
+    expect(r1.status).toBe(200);
+    expect(((await r1.json()) as { created: boolean }).created).toBe(true);
+
+    // どちらも未出席でも記録できる
+    const c = await makeUser();
+    const d = await makeUser();
+    const other = await insertEvent(owner.userId, { attendanceCheck: true });
+    await addMember(other, c.userId, "participant", 0);
+    await addMember(other, d.userId, "participant", 0);
+    expect(await getMeetable(d.userId, c.cookie)).toHaveLength(1);
+    expect((await postMeet(other, c.cookie, d.userId)).status).toBe(200);
+    // 記録しただけで出席は付かない（出席は staff が絡む読み取りだけ #330）
+    const row = await env.DB.prepare(
+      "SELECT attended FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(other, c.userId)
+      .first<{ attended: number }>();
+    expect(row?.attended).toBe(0);
+  });
+
   it("XP: 有効イベントの出会いは1件5XP・1イベント10件まで、first-meet バッジが付く", async () => {
     const owner = await makeUser();
     const u = await makeUser();

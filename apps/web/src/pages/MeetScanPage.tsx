@@ -53,6 +53,11 @@ const FAILURES: Record<Failure, FailureInfo> = {
       "QRの有効期限が切れました。相手の画面のQRをもう一度読み取ってください",
     retryable: false,
   },
+  used: {
+    message:
+      "このQRはすでに読み取り済みです。相手の画面には新しいQRが出ているので、そちらを読み取ってください",
+    retryable: false,
+  },
   invalid: {
     message: "このQRは読み取れませんでした。もう一度読み取ってください",
     retryable: false,
@@ -93,6 +98,7 @@ const FAILURES: Record<Failure, FailureInfo> = {
 
 const SERVER_CODES = new Set<string>([
   "expired",
+  "used",
   "invalid",
   "self",
   "no_shared_event",
@@ -149,8 +155,10 @@ export function MeetScanPage() {
     run();
   }, [me, meLoading, token, navigate, run]);
 
-  const attendanceAdded =
-    result?.events.some((e) => e.attendedMe || e.attendedTarget) ?? false;
+  // 受付が済んだのが自分か相手かで案内が変わる。1つに潰すと、読んでもらった
+  // 参加者に「自分の受付が済んだ」ことが伝わらず、受付に並び直す二度手間になる
+  const attendedMe = result?.events.some((e) => e.attendedMe) ?? false;
+  const attendedTarget = result?.events.some((e) => e.attendedTarget) ?? false;
   const info = failure ? FAILURES[failure] : null;
 
   return (
@@ -238,9 +246,14 @@ export function MeetScanPage() {
                           : `「${ev.title}」では記録済みです`}
                       </Alert>
                     ))}
-                    {attendanceAdded && (
+                    {attendedMe && (
                       <Alert severity="success">
-                        受付（出席）も一緒に済ませました
+                        あなたの受付（出席）も一緒に済ませました
+                      </Alert>
+                    )}
+                    {attendedTarget && (
+                      <Alert severity="success">
+                        {result.target.name} さんの受付（出席）も済ませました
                       </Alert>
                     )}
                   </>
@@ -260,9 +273,17 @@ export function MeetScanPage() {
                       color="inherit"
                       disabled={undo.isPending}
                       onClick={() =>
-                        undo.mutate(result.undoToken, {
-                          onSuccess: () => setUndone(true),
-                        })
+                        undo.mutate(
+                          {
+                            userId: result.target.id,
+                            events: result.events.map((ev) => ({
+                              eventId: ev.eventId,
+                              revokeMyAttendance: ev.attendedMe,
+                              revokeTargetAttendance: ev.attendedTarget,
+                            })),
+                          },
+                          { onSuccess: () => setUndone(true) },
+                        )
                       }
                     >
                       取り消す

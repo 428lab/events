@@ -1,32 +1,74 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { MeetScanResult, MeetToken } from "@eventer/shared";
+import type {
+  MeetScanResult,
+  MeetToken,
+  MeetUndoInput,
+  MeetableEvent,
+} from "@eventer/shared";
 import { api } from "./client.js";
 
-/** QRを描き替える間隔（ミリ秒）。サーバー側の有効期限より十分短く保つこと
- * （apps/server/src/lib/meetToken.ts の MEET_TOKEN_REFRESH_SEC と対応） */
-export const MEET_TOKEN_REFRESH_MS = 30_000;
+/** いま「出会った」を記録できる共通イベント (#189)。
+ * 他人のプロフィールをログイン中に見ているときだけ enabled にすること */
+export function useMeetableEvents(targetUserId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["meetable", targetUserId],
+    enabled: enabled && Boolean(targetUserId),
+    queryFn: async () =>
+      (
+        await api.get<{ events: MeetableEvent[] }>(
+          `/users/${targetUserId}/meetable`,
+        )
+      ).events,
+  });
+}
+
+/** 出会いの記録 (#189)。created=false は同じペアで記録済み（冪等） */
+export function useRecordMeet() {
+  return useMutation({
+    mutationFn: (input: { eventId: string; userId: string }) =>
+      api.post<{ created: boolean; meets: number }>(
+        `/events/${input.eventId}/meet`,
+        { userId: input.userId },
+      ),
+  });
+}
+
+/**
+ * 自分のQRのトークンを見張る間隔（ミリ秒） (#330)。
+ *
+ * トークンは使い切りなので、定期的に切り替える必要はない（読み取っている
+ * 最中に変わると失敗し続けるし、行列の2人目以降が使用済みで弾かれる）。
+ * 代わりに「読まれたか」を短い間隔で確かめ、読まれた直後だけ描き替える。
+ * 3秒にしたのは、次の人にQRを向け直すまでの間に新しいものが出ていてほしい
+ * ため。表示している間だけ・画面が見えている間だけ動かす。
+ */
+export const MEET_TOKEN_POLL_MS = 3_000;
 
 /** 会場の電波が悪いときに待ち続けないための上限（ミリ秒）。
  * これを過ぎたら打ち切って、画面から再試行できるようにする */
 const MEET_REQUEST_TIMEOUT_MS = 15_000;
 
-/** 自分のQRに載せる使い捨てトークン (#330)。
- * 表示は出しっぱなしになるので、開いている間は一定間隔で取り直して描き替える */
-export function useMyMeetToken(enabled: boolean) {
+/** 自分のQRに載せる使い切りトークン (#330)。
+ *
+ * 表示中のトークンを `current` に添えて問い合わせ、まだ読まれていなければ
+ * 同じものが返る（QRは変わらない）。読まれた・切れたときだけ次のぶんが返る。 */
+export function useMyMeetToken(enabled: boolean, current: string | null) {
   return useQuery({
+    // current はキーに入れない。入れるとトークンが変わるたびに
+    // 別クエリになり、前のデータが残ったまま画面がちらつく
     queryKey: ["meet-token"],
     enabled,
     queryFn: () =>
-      api.get<MeetToken>("/meet/token", {
-        // 次の描き替えまでに終わらない要求は捨てる
-        timeoutMs: MEET_TOKEN_REFRESH_MS,
-      }),
-    refetchInterval: enabled ? MEET_TOKEN_REFRESH_MS : false,
-    // 画面を消して戻したときも即座に新しいものにする
+      api.get<MeetToken>(
+        current
+          ? `/meet/token?current=${encodeURIComponent(current)}`
+          : "/meet/token",
+        { timeoutMs: MEET_REQUEST_TIMEOUT_MS },
+      ),
+    refetchInterval: enabled ? MEET_TOKEN_POLL_MS : false,
+    // 裏に回っている間は見張らない（無駄に叩き続けない）
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-    // 前の（古い）トークンを表示し続けないよう保持しない。
-    // ただしオブザーバが残っている間はキャッシュも残るので、
-    // 期限切れを描かない担保は表示側の expiresAt 判定で行う
     gcTime: 0,
     staleTime: 0,
     retry: false,
@@ -45,13 +87,13 @@ export function useMeetScan() {
   });
 }
 
-/** 読み取りの取り消し (#330)。scan が返したトークンだけを渡す */
+/** 読み取りの取り消し (#330)。誤って読み取ったとき用 */
 export function useMeetUndo() {
   return useMutation({
-    mutationFn: (undoToken: string) =>
+    mutationFn: (input: MeetUndoInput) =>
       api.post<{ undone: number; attendanceRevoked: boolean }>(
         "/meet/undo",
-        { undoToken },
+        input,
         { timeoutMs: MEET_REQUEST_TIMEOUT_MS },
       ),
   });

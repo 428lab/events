@@ -49,7 +49,6 @@ const RESULT: MeetScanResult = {
       attendedTarget: false,
     },
   ],
-  undoToken: "mu1.payload.sig",
 };
 
 function renderPage(loggedIn = true) {
@@ -92,11 +91,13 @@ describe("読み取り直後の画面 (#330)", () => {
     // 自動送信は1回だけ（読み取りが二重に走らないこと）
     expect(postMock).toHaveBeenCalledTimes(1);
     expect(screen.getByText("相手さん")).toBeTruthy();
-    // 出席も付いたことが分かる
-    expect(screen.getByText(/受付（出席）も一緒に済ませました/)).toBeTruthy();
+    // 誰の受付が済んだのかまで分かる（自分の受付が済んだと伝わらないと
+    // 受付に並び直す二度手間になる）
+    expect(screen.getByText(/あなたの受付（出席）も一緒に済ませました/)).toBeTruthy();
+    expect(screen.queryByText(/相手さん さんの受付/)).toBeNull();
   });
 
-  it("取り消しはサーバーが返したトークンだけを送る", async () => {
+  it("取り消しは、この読み取りで付いた出席だけを戻す指示を送る", async () => {
     postMock.mockResolvedValue(RESULT);
     renderPage();
     await screen.findByText(/秋の集まり/);
@@ -107,7 +108,16 @@ describe("読み取り直後の画面 (#330)", () => {
     await waitFor(() =>
       expect(postMock).toHaveBeenLastCalledWith(
         "/meet/undo",
-        { undoToken: "mu1.payload.sig" },
+        {
+          userId: "u-target",
+          events: [
+            {
+              eventId: "e-1",
+              revokeMyAttendance: true,
+              revokeTargetAttendance: false,
+            },
+          ],
+        },
         expect.objectContaining({ timeoutMs: expect.any(Number) }),
       ),
     );
@@ -117,6 +127,7 @@ describe("読み取り直後の画面 (#330)", () => {
   it("失敗の理由ごとに違う案内を出す", async () => {
     for (const [error, expected] of [
       ["expired", /有効期限が切れました/],
+      ["used", /すでに読み取り済み/],
       ["no_shared_event", /同じイベントに参加していない/],
       ["outside_window", /開催時間帯ではない/],
       ["not_confirmed_me", /あなたの参加がまだ確定していない/],

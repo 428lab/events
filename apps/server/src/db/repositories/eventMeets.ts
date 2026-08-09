@@ -9,8 +9,8 @@ export const MEET_WINDOW_AFTER_MS = 2 * 60 * 60_000;
 /** 共通イベント1件ぶんの、両者のイベント内ロールと出席状況 (#330)。
  * 出席の自動付与（相手が staff なら読み取った側を出席にする）の判断に使う */
 export interface MeetablePair extends MeetableEvent {
-  /** 出席チェックを使うイベントか。出席の自動付与はこれが有効なときだけ行う */
-  attendanceCheck: boolean;
+  /** 開始時刻。出席を付ける「いま居る回」を1件に絞るのに使う */
+  startsAt: number;
   viewerRole: string;
   targetRole: string;
   viewerAttended: boolean;
@@ -94,13 +94,13 @@ export const eventMeetsRepo = {
     const rows = await many<{
       id: string;
       title: string;
-      attendance_check: number;
+      starts_at: number;
       viewer_role: string;
       target_role: string;
       viewer_attended: number;
       target_attended: number;
     }>(
-      `SELECT DISTINCT e.id, e.title, e.attendance_check,
+      `SELECT DISTINCT e.id, e.title, e.starts_at,
               mv.role AS viewer_role, mt.role AS target_role,
               mv.attended AS viewer_attended, mt.attended AS target_attended
          FROM event e
@@ -121,12 +121,22 @@ export const eventMeetsRepo = {
     return rows.map((r) => ({
       id: r.id,
       title: r.title,
-      attendanceCheck: r.attendance_check === 1,
+      startsAt: r.starts_at,
       viewerRole: r.viewer_role,
       targetRole: r.target_role,
       viewerAttended: r.viewer_attended === 1,
       targetAttended: r.target_attended === 1,
     }));
+  },
+
+  /** 上と同じ条件で、画面に出す最小限（id/title）だけを返す */
+  async meetableEventsBetween(
+    viewerId: string,
+    targetId: string,
+    now: number,
+  ): Promise<MeetableEvent[]> {
+    const pairs = await this.meetablePairsBetween(viewerId, targetId, now);
+    return pairs.map(({ id, title }) => ({ id, title }));
   },
 
   /** 記録できなかったときの理由を切り分ける (#330)。

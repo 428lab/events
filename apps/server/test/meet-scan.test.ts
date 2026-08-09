@@ -118,29 +118,18 @@ async function craftToken(
   userId: string,
   exp: number,
   secret = SESSION_SECRET,
+  nonce = "0123456789abcdef",
 ): Promise<string> {
-  return `mt1.${userId}.${exp}.${await hmac(`meet:${userId}:${exp}`, secret)}`;
+  const sig = await hmac(`meet:${userId}:${exp}:${nonce}`, secret);
+  return `mt1.${userId}.${exp}.${nonce}.${sig}`;
 }
 
-/** 取り消しトークンをサーバーと同じ方式で作る（期限切れ・別鍵のケース用） */
-async function craftUndoToken(
-  scannerId: string,
-  targetId: string,
-  grants: {
-    eventId: string;
-    meetCreated: boolean;
-    attendedMe: boolean;
-    attendedTarget: boolean;
-  }[],
-  exp: number,
-  secret = SESSION_SECRET,
-): Promise<string> {
-  const json = JSON.stringify({ scannerId, targetId, grants, exp });
-  const encoded = btoa(json)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-  return `mu1.${encoded}.${await hmac(`meet-undo:${encoded}`, secret)}`;
+/** 使用済み記録の件数（掃除の確認用）。接頭辞で他用途と分けている */
+async function usedNonceCount(): Promise<number> {
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM nostr_challenge_used WHERE nonce LIKE 'meet:%'",
+  ).first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 async function meetNotificationCount(userId: string): Promise<number> {
@@ -158,6 +147,19 @@ async function issueToken(cookie: string): Promise<string> {
   return ((await res.json()) as MeetToken).token;
 }
 
+/** 表示中のトークンを添えて問い合わせる（表示側の見張りと同じ呼び方） */
+async function currentToken(
+  cookie: string,
+  current: string,
+): Promise<MeetToken> {
+  const res = await SELF.fetch(
+    `${BASE}/api/meet/token?current=${encodeURIComponent(current)}`,
+    { headers: { cookie } },
+  );
+  expect(res.status).toBe(200);
+  return (await res.json()) as MeetToken;
+}
+
 async function scan(cookie: string, token: string): Promise<Response> {
   return SELF.fetch(`${BASE}/api/meet/scan`, {
     method: "POST",
@@ -166,12 +168,24 @@ async function scan(cookie: string, token: string): Promise<Response> {
   });
 }
 
-async function undo(cookie: string, undoToken: string): Promise<Response> {
+async function undo(cookie: string, body: unknown): Promise<Response> {
   return SELF.fetch(`${BASE}/api/meet/undo`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify({ undoToken }),
+    body: JSON.stringify(body),
   });
+}
+
+/** scan の結果を、そのまま取り消しに渡せる形にする */
+function undoBodyOf(r: MeetScanResult) {
+  return {
+    userId: r.target.id,
+    events: r.events.map((e) => ({
+      eventId: e.eventId,
+      revokeMyAttendance: e.attendedMe,
+      revokeTargetAttendance: e.attendedTarget,
+    })),
+  };
 }
 
 /** 読み取りを1回行い、結果（取り消しトークンつき）を取り出す */
@@ -187,11 +201,13 @@ describe("QRトークンの検証 (#330)", () => {
     const res = await SELF.fetch(`${BASE}/api/meet/token`, {
       headers: { cookie: a.cookie },
     });
-    const { token, expiresAt } = (await res.json()) as MeetToken;
+    const { token, expiresAt, consumed } = (await res.json()) as MeetToken;
     expect(token.startsWith(`mt1.${a.userId}.`)).toBe(true);
-    // 有効期限は数十秒〜数分の短寿命（写真を後から渡して成立させないため）
-    expect(expiresAt - Date.now()).toBeGreaterThan(0);
-    expect(expiresAt - Date.now()).toBeLessThanOrEqual(180_000);
+    expect(consumed).toBe(false);
+    // 使い切りなので有効期限は緩めでよい（その場で新規登録する人の
+    // OAuth 往復に間に合わせる）。ただし無期限にはしない
+    expect(expiresAt - Date.now()).toBeGreaterThan(5 * 60_000);
+    expect(expiresAt - Date.now()).toBeLessThanOrEqual(20 * 60_000);
 
     expect((await SELF.fetch(`${BASE}/api/meet/token`)).status).toBe(401);
     const anon = await SELF.fetch(`${BASE}/api/meet/scan`, {
@@ -242,7 +258,8 @@ describe("QRトークンの検証 (#330)", () => {
     expect(await meetCount(eventId)).toBe(0);
   });
 
-  it("1つのトークンは有効期限内なら複数人が読める（単回限りにしない）", async () => {
+  it("トークンは使い切り。2回目は used として弾く", async () => {
+    // 画面の写真を後から渡されても、目の前の人が読んだ時点で使用済みになる
     const owner = await makeUser();
     const a = await makeUser();
     const b = await makeUser();
@@ -250,11 +267,79 @@ describe("QRトークンの検証 (#330)", () => {
     const eventId = await insertEvent(owner.userId);
     for (const u of [a, b, c]) await addMember(eventId, u.userId);
 
-    // a が出したQRを b と c が続けて読む（自分のQRを次々に読んでもらう使い方）
     const token = await issueToken(a.cookie);
     expect((await scan(b.cookie, token)).status).toBe(200);
-    expect((await scan(c.cookie, token)).status).toBe(200);
+
+    // 同じQRを別の人が読んでも、同じ人が読み直しても通らない
+    const second = await scan(c.cookie, token);
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { error: string }).error).toBe("used");
+    expect((await scan(b.cookie, token)).status).toBe(409);
+    expect(await meetCount(eventId)).toBe(1);
+
+    // 次のトークンを出せば続けて読んでもらえる（行列がここで止まらない）
+    expect((await scan(c.cookie, await issueToken(a.cookie))).status).toBe(200);
     expect(await meetCount(eventId)).toBe(2);
+  });
+
+  it("自分のQRを自分で読んでも使い切られない（自分のQRを潰せない）", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+    await addMember(eventId, b.userId);
+
+    const token = await issueToken(a.cookie);
+    expect((await scan(a.cookie, token)).status).toBe(400);
+    // 消費されていないので、相手はそのまま読める
+    expect((await scan(b.cookie, token)).status).toBe(200);
+  });
+
+  it("表示側は読まれるまで同じトークンを持ち続け、読まれたら次を受け取る", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+    await addMember(eventId, b.userId);
+
+    const token = await issueToken(a.cookie);
+    // 読まれていないうちは同じQRのまま（読み取り中に切り替わらない）
+    const same = await currentToken(a.cookie, token);
+    expect(same.token).toBe(token);
+    expect(same.consumed).toBe(false);
+
+    await scan(b.cookie, token);
+    // 読まれたら次のぶんに切り替わり、描き替えの合図が立つ
+    const next = await currentToken(a.cookie, token);
+    expect(next.token).not.toBe(token);
+    expect(next.consumed).toBe(true);
+
+    // 他人のトークンを添えても、その人のぶんが新しく出るだけ
+    const foreign = await currentToken(b.cookie, next.token);
+    expect(foreign.token.startsWith(`mt1.${b.userId}.`)).toBe(true);
+  });
+
+  it("使用済み記録は有効期限を過ぎたぶんが掃除される", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+    await addMember(eventId, b.userId);
+
+    // 十分に古い使用済み記録を積んでおく
+    await env.DB.prepare(
+      "INSERT INTO nostr_challenge_used (nonce, used_at) VALUES (?, ?)",
+    )
+      .bind("meet:old0000000000", Date.now() - 60 * 60_000)
+      .run();
+    expect(await usedNonceCount()).toBe(1);
+
+    // 新しい読み取りが1件入り、古い記録は消える
+    await scan(b.cookie, await issueToken(a.cookie));
+    expect(await usedNonceCount()).toBe(1);
   });
 });
 
@@ -425,19 +510,34 @@ describe("読み取りによる出席の自動付与 (#330)", () => {
     expect(await attendedInDb(eventId, p.userId)).toBe(1);
   });
 
-  it("出席チェックを使わないイベントには出席を付けない", async () => {
-    // 時間帯が重なるだけの別イベントにまで出席が立つのを避ける (#330)。
-    // 出席チェックOFFのイベントは「登録＝出席」で集計されるので立てる意味も無い
+  it("時間帯が重なる別イベントには出席を付けない（いま開催中の1件だけ）", async () => {
+    // 開始30分前〜終了2時間後という幅のせいで前後の回が同時に窓に入る。
+    // その場に居ない回まで出席にしてしまうと当日の名簿が狂う (#330)
     const staff = await makeUser();
     const p = await makeUser();
-    const eventId = await insertEvent(staff.userId, { attendanceCheck: false });
-    await addMember(eventId, staff.userId, "staff");
-    await addMember(eventId, p.userId);
+    const now = Date.now();
+    // 午前の回（1時間前に終了。終了2時間後まで窓に入っている）
+    const morning = await insertEvent(staff.userId, {
+      startsAt: now - 3 * 3600_000,
+      endsAt: now - 3600_000,
+    });
+    // 午後の回（30分前に開始＝いま開催中）
+    const afternoon = await insertEvent(staff.userId, {
+      startsAt: now - 30 * 60_000,
+      endsAt: now + 3600_000,
+    });
+    for (const eventId of [morning, afternoon]) {
+      await addMember(eventId, staff.userId, "staff");
+      await addMember(eventId, p.userId);
+    }
 
     const body = await scanOk(p.cookie, await issueToken(staff.cookie));
-    expect(body.events[0].meetCreated).toBe(true);
-    expect(body.events[0].attendedMe).toBe(false);
-    expect(await attendedInDb(eventId, p.userId)).toBe(0);
+    // 出会いはどちらにも残る（同じ日に両方に出ていたのは事実）
+    expect(body.events).toHaveLength(2);
+    expect(body.events.every((e) => e.meetCreated)).toBe(true);
+    // 出席が付くのは、いま開催中の回だけ
+    expect(await attendedInDb(afternoon, p.userId)).toBe(1);
+    expect(await attendedInDb(morning, p.userId)).toBe(0);
   });
 });
 
@@ -454,7 +554,7 @@ describe("読み取りの取り消し (#330)", () => {
     expect(await attendedInDb(eventId, p.userId)).toBe(1);
     expect(await meetNotificationCount(staff.userId)).toBe(1);
 
-    const undoRes = await undo(p.cookie, body.undoToken);
+    const undoRes = await undo(p.cookie, undoBodyOf(body));
     expect(undoRes.status).toBe(200);
     const undoBody = (await undoRes.json()) as {
       undone: number;
@@ -468,101 +568,67 @@ describe("読み取りの取り消し (#330)", () => {
     expect(await meetNotificationCount(staff.userId)).toBe(0);
   });
 
-  it("取り消しトークンは発行者本人しか使えない", async () => {
-    const staff = await makeUser();
-    const p = await makeUser();
-    const other = await makeUser();
-    const eventId = await insertEvent(staff.userId);
-    await addMember(eventId, staff.userId, "staff");
-    await addMember(eventId, p.userId);
-    await addMember(eventId, other.userId);
-
-    const body = await scanOk(p.cookie, await issueToken(staff.cookie));
-    // 横取りしたトークンは効かない
-    expect((await undo(other.cookie, body.undoToken)).status).toBe(403);
-    expect(await meetCount(eventId)).toBe(1);
-    expect(await attendedInDb(eventId, p.userId)).toBe(1);
-  });
-
-  it("期限切れ・改竄された取り消しトークンは受け付けない", async () => {
+  it("受付で正規に付いた出席は、あとから自分では外せない", async () => {
+    // staff の userId を拾って取り消しに乗せるだけで当日の名簿が壊れると困る。
+    // 直前に付いたぶんだけ戻せるようにしてある
     const staff = await makeUser();
     const p = await makeUser();
     const eventId = await insertEvent(staff.userId);
     await addMember(eventId, staff.userId, "staff");
     await addMember(eventId, p.userId);
-    const body = await scanOk(p.cookie, await issueToken(staff.cookie));
-
-    // ペイロードだけ差し替える（署名が合わなくなる）
-    const [, encoded, sig] = body.undoToken.split(".");
-    const tampered = `mu1.${encoded.slice(0, -2)}AA.${sig}`;
-    expect((await undo(p.cookie, tampered)).status).toBe(400);
-    expect((await undo(p.cookie, "mu1.broken")).status).toBe(400);
-
-    const expired = await craftUndoToken(
-      p.userId,
-      staff.userId,
-      [{ eventId, meetCreated: true, attendedMe: true, attendedTarget: false }],
-      Math.floor(Date.now() / 1000) - 10,
-    );
-    expect((await undo(p.cookie, expired)).status).toBe(410);
-
-    // どのケースでも何も戻っていない
-    expect(await meetCount(eventId)).toBe(1);
-    expect(await attendedInDb(eventId, p.userId)).toBe(1);
-  });
-
-  it("受付で正規に付いた出席は、自分では外せない", async () => {
-    // トークンに attendedMe が入っていない＝この読み取りでは付けていない、
-    // という記録があるので、staff の userId を拾っても解除には使えない
-    const staff = await makeUser();
-    const p = await makeUser();
-    const eventId = await insertEvent(staff.userId);
-    await addMember(eventId, staff.userId, "staff");
-    await addMember(eventId, p.userId);
+    // 1時間前に受付を通っている
     await env.DB.prepare(
-      "UPDATE event_member SET attended = 1 WHERE event_id = ? AND user_id = ?",
+      "UPDATE event_member SET attended = 1, attended_at = ? WHERE event_id = ? AND user_id = ?",
     )
-      .bind(eventId, p.userId)
+      .bind(Date.now() - 60 * 60_000, eventId, p.userId)
       .run();
 
-    const body = await scanOk(p.cookie, await issueToken(staff.cookie));
-    expect(body.events[0].attendedMe).toBe(false);
-    const res = await undo(p.cookie, body.undoToken);
+    const res = await undo(p.cookie, {
+      userId: staff.userId,
+      events: [
+        { eventId, revokeMyAttendance: true, revokeTargetAttendance: true },
+      ],
+    });
     expect(res.status).toBe(200);
     expect(
       ((await res.json()) as { attendanceRevoked: boolean }).attendanceRevoked,
     ).toBe(false);
     expect(await attendedInDb(eventId, p.userId)).toBe(1);
-
-    // 自作のトークンでも外せない（署名できないため）
-    const forged = await craftUndoToken(
-      p.userId,
-      staff.userId,
-      [{ eventId, meetCreated: false, attendedMe: true, attendedTarget: false }],
-      Math.floor(Date.now() / 1000) + 100,
-      "wrong-secret",
-    );
-    expect((await undo(p.cookie, forged)).status).toBe(400);
-    expect(await attendedInDb(eventId, p.userId)).toBe(1);
   });
 
-  it("他人が記録した出会いは消せない", async () => {
+  it("一般参加者は取り消しに乗せても相手の出席を外せない", async () => {
     const owner = await makeUser();
     const a = await makeUser();
     const b = await makeUser();
     const eventId = await insertEvent(owner.userId);
     await addMember(eventId, a.userId);
     await addMember(eventId, b.userId);
+    // b はいましがた受付を通ったところ（時刻の条件は満たす）
+    await env.DB.prepare(
+      "UPDATE event_member SET attended = 1, attended_at = ? WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(Date.now(), eventId, b.userId)
+      .run();
+    await scan(a.cookie, await issueToken(b.cookie));
 
-    // b が先に a を読んで記録済みにする
-    await scanOk(b.cookie, await issueToken(a.cookie));
-    expect(await meetCount(eventId)).toBe(1);
+    const res = await undo(a.cookie, {
+      userId: b.userId,
+      events: [
+        { eventId, revokeMyAttendance: true, revokeTargetAttendance: true },
+      ],
+    });
+    expect(res.status).toBe(200);
+    // 出会いは消えるが、staff でない a は相手の出席を動かせない
+    expect(await meetCount(eventId)).toBe(0);
+    expect(await attendedInDb(eventId, b.userId)).toBe(1);
+  });
 
-    // a が読み直しても meetCreated=false。その取り消しでは行は消えない
-    const body = await scanOk(a.cookie, await issueToken(b.cookie));
-    expect(body.events[0].meetCreated).toBe(false);
-    const res = await undo(a.cookie, body.undoToken);
-    expect(((await res.json()) as { undone: number }).undone).toBe(0);
-    expect(await meetCount(eventId)).toBe(1);
+  it("自分自身への取り消しは受け付けない", async () => {
+    const a = await makeUser();
+    const res = await undo(a.cookie, {
+      userId: a.userId,
+      events: [{ eventId: crypto.randomUUID() }],
+    });
+    expect(res.status).toBe(400);
   });
 });
