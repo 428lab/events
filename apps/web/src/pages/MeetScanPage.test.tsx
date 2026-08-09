@@ -7,8 +7,10 @@ import type { MeetScanResult } from "@eventer/shared";
 /**
  * QRを読み取った先の画面 (#330)。
  *
- * 開いた時点で記録が走ること、失敗した理由が読み手に分かること、
- * 誤読み取りを取り消せること、未ログインならログインへ送られることを固定する。
+ * 開いた時点で記録が走ること、**失敗の理由が潰れないこと**、誤読み取りを
+ * 取り消せること、未ログインならログインへ送られることを固定する。
+ * 会場では電波が不安定なので、通信断を「読み取れないQR」と案内すると
+ * 正常なQRを何度も出し直させることになる。
  */
 
 const { getMock, postMock } = vi.hoisted(() => ({
@@ -28,8 +30,8 @@ vi.mock("../api/client.js", async (importOriginal) => {
   };
 });
 
-const { ApiError } = await import("../api/client.js");
-const { MeetScanPage } = await import("./MeetScanPage.js");
+const { ApiError, NetworkError } = await import("../api/client.js");
+const { MeetScanPage, failureOf } = await import("./MeetScanPage.js");
 
 const RESULT: MeetScanResult = {
   target: {
@@ -47,6 +49,7 @@ const RESULT: MeetScanResult = {
       attendedTarget: false,
     },
   ],
+  undoToken: "mu1.payload.sig",
 };
 
 function renderPage(loggedIn = true) {
@@ -81,35 +84,32 @@ describe("読み取り直後の画面 (#330)", () => {
     renderPage();
 
     await screen.findByText(/秋の集まり/);
-    expect(postMock).toHaveBeenCalledWith("/meet/scan", {
-      token: "mt1.u-target.1700000000.abcdef",
-    });
-    // 送信は1回だけ（読み取りが二重に走らないこと）
+    expect(postMock).toHaveBeenCalledWith(
+      "/meet/scan",
+      { token: "mt1.u-target.1700000000.abcdef" },
+      expect.objectContaining({ timeoutMs: expect.any(Number) }),
+    );
+    // 自動送信は1回だけ（読み取りが二重に走らないこと）
     expect(postMock).toHaveBeenCalledTimes(1);
     expect(screen.getByText("相手さん")).toBeTruthy();
     // 出席も付いたことが分かる
     expect(screen.getByText(/受付（出席）も一緒に済ませました/)).toBeTruthy();
   });
 
-  it("取り消すと、この読み取りで付いた出席も戻す指示を送る", async () => {
+  it("取り消しはサーバーが返したトークンだけを送る", async () => {
     postMock.mockResolvedValue(RESULT);
     renderPage();
     await screen.findByText(/秋の集まり/);
 
-    postMock.mockResolvedValue({ undone: 1 });
+    postMock.mockResolvedValue({ undone: 1, attendanceRevoked: true });
     screen.getByRole("button", { name: "取り消す" }).click();
 
     await waitFor(() =>
-      expect(postMock).toHaveBeenLastCalledWith("/meet/undo", {
-        userId: "u-target",
-        events: [
-          {
-            eventId: "e-1",
-            revokeMyAttendance: true,
-            revokeTargetAttendance: false,
-          },
-        ],
-      }),
+      expect(postMock).toHaveBeenLastCalledWith(
+        "/meet/undo",
+        { undoToken: "mu1.payload.sig" },
+        expect.objectContaining({ timeoutMs: expect.any(Number) }),
+      ),
     );
     await screen.findByText("記録を取り消しました");
   });
@@ -119,7 +119,8 @@ describe("読み取り直後の画面 (#330)", () => {
       ["expired", /有効期限が切れました/],
       ["no_shared_event", /同じイベントに参加していない/],
       ["outside_window", /開催時間帯ではない/],
-      ["not_confirmed", /参加がまだ確定していない/],
+      ["not_confirmed_me", /あなたの参加がまだ確定していない/],
+      ["not_confirmed_target", /相手の参加がまだ確定していない/],
     ] as const) {
       postMock.mockReset();
       postMock.mockRejectedValue(new ApiError(409, { error }));
@@ -127,6 +128,34 @@ describe("読み取り直後の画面 (#330)", () => {
       await screen.findByText(expected);
       unmount();
     }
+  });
+
+  it("通信断・セッション切れ・サーバー不調を「読み取れないQR」に潰さない", () => {
+    // ここが潰れると、正常なQRを相手に何度も出し直させることになる
+    expect(failureOf(new NetworkError(false))).toBe("network");
+    expect(failureOf(new NetworkError(true))).toBe("network");
+    expect(failureOf(new TypeError("boom"))).toBe("network");
+    expect(failureOf(new ApiError(401, { error: "unauthorized" }))).toBe(
+      "unauthorized",
+    );
+    expect(failureOf(new ApiError(500, null))).toBe("server");
+    // 想定外の 4xx もQRのせいと決めつけない
+    expect(failureOf(new ApiError(429, { error: "rate_limited" }))).toBe(
+      "server",
+    );
+    expect(failureOf(new ApiError(410, { error: "expired" }))).toBe("expired");
+  });
+
+  it("失敗しても同じQRで再試行できる", async () => {
+    postMock.mockRejectedValue(new NetworkError(true));
+    renderPage();
+
+    await screen.findByText(/通信できませんでした/);
+    postMock.mockResolvedValue(RESULT);
+    screen.getByRole("button", { name: /もう一度試す/ }).click();
+
+    await screen.findByText(/秋の集まり/);
+    expect(postMock).toHaveBeenCalledTimes(2);
   });
 
   it("未ログインならログイン画面へ送り、記録は走らせない", async () => {

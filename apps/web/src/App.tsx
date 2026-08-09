@@ -32,6 +32,7 @@ import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage.js";
 import { TermsPage } from "./pages/TermsPage.js";
 import { UserProfilePage } from "./pages/UserProfilePage.js";
 import { MeetScanPage } from "./pages/MeetScanPage.js";
+import { safeRedirectPath } from "./lib/safeRedirect.js";
 import { CommunitiesPage } from "./pages/CommunitiesPage.js";
 import { CommunityPage } from "./pages/CommunityPage.js";
 import { CommunityMembersPage } from "./pages/CommunityMembersPage.js";
@@ -125,17 +126,16 @@ function NameCardPrintRoute() {
   );
 }
 
-/** ログイン前に控えた戻り先（/login?next=…）へ、ログイン後に一度だけ遷移する */
+/** ログイン前に控えた戻り先（/login?next=…）へ、ログイン後に一度だけ遷移する。
+ * 外部サイトへの踏み台にされないよう、同一オリジンのパスだけを通す */
 function PostLoginRedirect() {
   const navigate = useNavigate();
   useEffect(() => {
     const next = localStorage.getItem("postLoginRedirect");
-    if (next && next.startsWith("/")) {
-      localStorage.removeItem("postLoginRedirect");
-      navigate(next, { replace: true });
-    } else if (next) {
-      localStorage.removeItem("postLoginRedirect");
-    }
+    if (!next) return;
+    localStorage.removeItem("postLoginRedirect");
+    const safe = safeRedirectPath(next);
+    if (safe) navigate(safe, { replace: true });
   }, [navigate]);
   return null;
 }

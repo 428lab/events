@@ -59,7 +59,11 @@ describe("大きなQR表示 (#330)", () => {
         `${window.location.origin}/m/mt1.u-1.1700000000.deadbeef`,
       ),
     );
-    expect(getMock).toHaveBeenCalledWith("/meet/token");
+    // 待ち続けないよう上限つきで取りに行く
+    expect(getMock).toHaveBeenCalledWith(
+      "/meet/token",
+      expect.objectContaining({ timeoutMs: expect.any(Number) }),
+    );
     // 誰のQRか分かるように名前を添える
     expect(screen.getByText("テスター")).toBeTruthy();
     expect(screen.getByRole("img", { name: /テスター/ })).toBeTruthy();
@@ -70,6 +74,23 @@ describe("大きなQR表示 (#330)", () => {
     renderDialog();
     expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toBe("");
     expect(screen.queryByRole("img", { name: /テスター/ })).toBeNull();
+  });
+
+  it("期限切れのトークンはQRにしない", async () => {
+    // 一度閉じて開き直した直後や、電波が切れて取り直せていない間に
+    // 古いQRを出し続けると、読み取った側だけが「期限切れ」を見て、
+    // 見せている側は気づけない (#330)
+    getMock.mockResolvedValue({
+      token: "mt1.u-1.1700000000.deadbeef",
+      expiresAt: Date.now() - 1,
+    });
+    renderDialog();
+
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toBe("");
+    expect(screen.queryByRole("img", { name: /テスター/ })).toBeNull();
+    // 「準備中」に落として、見せている側にも取り直し中だと分かるようにする
+    expect(screen.getByText(/QRを準備しています/)).toBeTruthy();
   });
 
   it("閉じている間はトークンを取りに行かない", () => {

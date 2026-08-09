@@ -93,13 +93,8 @@ async function meetCount(eventId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** サーバーが発行するのと同じ形のトークンを作る（期限切れ・改竄のケース用）。
- * 署名は先頭16バイト＝32桁hexに切り詰める（lib/meetToken.ts と同じ） */
-async function craftToken(
-  userId: string,
-  exp: number,
-  secret = SESSION_SECRET,
-): Promise<string> {
+/** lib/meetToken.ts と同じ署名（先頭16バイト＝32桁hexに切り詰める） */
+async function hmac(message: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -110,13 +105,51 @@ async function craftToken(
   const sig = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(`meet:${userId}:${exp}`),
+    new TextEncoder().encode(message),
   );
-  const hex = [...new Uint8Array(sig)]
+  return [...new Uint8Array(sig)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("")
     .slice(0, 32);
-  return `mt1.${userId}.${exp}.${hex}`;
+}
+
+/** サーバーが発行するのと同じ形のQRトークンを作る（期限切れ・改竄のケース用） */
+async function craftToken(
+  userId: string,
+  exp: number,
+  secret = SESSION_SECRET,
+): Promise<string> {
+  return `mt1.${userId}.${exp}.${await hmac(`meet:${userId}:${exp}`, secret)}`;
+}
+
+/** 取り消しトークンをサーバーと同じ方式で作る（期限切れ・別鍵のケース用） */
+async function craftUndoToken(
+  scannerId: string,
+  targetId: string,
+  grants: {
+    eventId: string;
+    meetCreated: boolean;
+    attendedMe: boolean;
+    attendedTarget: boolean;
+  }[],
+  exp: number,
+  secret = SESSION_SECRET,
+): Promise<string> {
+  const json = JSON.stringify({ scannerId, targetId, grants, exp });
+  const encoded = btoa(json)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return `mu1.${encoded}.${await hmac(`meet-undo:${encoded}`, secret)}`;
+}
+
+async function meetNotificationCount(userId: string): Promise<number> {
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM notification WHERE user_id = ? AND type = 'meet'",
+  )
+    .bind(userId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 async function issueToken(cookie: string): Promise<string> {
@@ -133,12 +166,19 @@ async function scan(cookie: string, token: string): Promise<Response> {
   });
 }
 
-async function undo(cookie: string, body: unknown): Promise<Response> {
+async function undo(cookie: string, undoToken: string): Promise<Response> {
   return SELF.fetch(`${BASE}/api/meet/undo`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ undoToken }),
   });
+}
+
+/** 読み取りを1回行い、結果（取り消しトークンつき）を取り出す */
+async function scanOk(cookie: string, token: string): Promise<MeetScanResult> {
+  const res = await scan(cookie, token);
+  expect(res.status).toBe(200);
+  return (await res.json()) as MeetScanResult;
 }
 
 describe("QRトークンの検証 (#330)", () => {
@@ -251,7 +291,7 @@ describe("読み取りでの出会いの記録 (#330)", () => {
     expect(await meetCount(eventId)).toBe(1);
   });
 
-  it("失敗の理由を区別して返す（共通イベントなし・時間帯外・参加が未確定）", async () => {
+  it("失敗の理由を区別して返す（共通イベントなし・時間帯外・どちらが未確定か）", async () => {
     const owner = await makeUser();
     const a = await makeUser();
     const b = await makeUser();
@@ -277,15 +317,45 @@ describe("読み取りでの出会いの記録 (#330)", () => {
       "outside_window",
     );
 
-    // 参加が確定していない（キャンセル待ち）
+    // 相手の参加が確定していない（キャンセル待ち）
     const c = await makeUser();
+    const d = await makeUser();
     const live = await insertEvent(owner.userId);
     await addMember(live, c.userId);
-    await addMember(live, b.userId, "participant", "waitlist");
-    const res3 = await scan(c.cookie, await issueToken(b.cookie));
+    await addMember(live, d.userId, "participant", "waitlist");
+    const res3 = await scan(c.cookie, await issueToken(d.cookie));
     expect(res3.status).toBe(409);
     expect(((await res3.json()) as { error: string }).error).toBe(
-      "not_confirmed",
+      "not_confirmed_target",
+    );
+    // 自分の参加が確定していない側は、案内の宛先が変わるので区別する
+    const res4 = await scan(d.cookie, await issueToken(c.cookie));
+    expect(res4.status).toBe(409);
+    expect(((await res4.json()) as { error: string }).error).toBe(
+      "not_confirmed_me",
+    );
+  });
+
+  it("日程調整中の共通イベントがあっても、未確定の理由が時間帯外に隠れない", async () => {
+    // diagnoseUnmeetable の1本目が scheduling を見ていないと、日程未確定の
+    // 共通イベントに引っ張られて常に outside_window になってしまう
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, attendance_check, scheduling, created_by, created_at)
+       VALUES (?, '日程調整中', 0, 0, 'offline', 'published', 0, 1, ?, ?)`,
+    )
+      .bind(id, owner.userId, Date.now())
+      .run();
+    await addMember(id, a.userId);
+    await addMember(id, b.userId, "participant", "waitlist");
+
+    const res = await scan(a.cookie, await issueToken(b.cookie));
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "not_confirmed_target",
     );
   });
 });
@@ -354,72 +424,145 @@ describe("読み取りによる出席の自動付与 (#330)", () => {
     expect(body.events[0].attendedMe).toBe(false);
     expect(await attendedInDb(eventId, p.userId)).toBe(1);
   });
+
+  it("出席チェックを使わないイベントには出席を付けない", async () => {
+    // 時間帯が重なるだけの別イベントにまで出席が立つのを避ける (#330)。
+    // 出席チェックOFFのイベントは「登録＝出席」で集計されるので立てる意味も無い
+    const staff = await makeUser();
+    const p = await makeUser();
+    const eventId = await insertEvent(staff.userId, { attendanceCheck: false });
+    await addMember(eventId, staff.userId, "staff");
+    await addMember(eventId, p.userId);
+
+    const body = await scanOk(p.cookie, await issueToken(staff.cookie));
+    expect(body.events[0].meetCreated).toBe(true);
+    expect(body.events[0].attendedMe).toBe(false);
+    expect(await attendedInDb(eventId, p.userId)).toBe(0);
+  });
 });
 
 describe("読み取りの取り消し (#330)", () => {
-  it("出会いの記録と、この読み取りで付いた出席を戻せる", async () => {
+  it("出会いの記録と、この読み取りで付いた出席を戻し、通知も残さない", async () => {
     const staff = await makeUser();
     const p = await makeUser();
     const eventId = await insertEvent(staff.userId);
     await addMember(eventId, staff.userId, "staff");
     await addMember(eventId, p.userId);
 
-    const res = await scan(p.cookie, await issueToken(staff.cookie));
-    const body = (await res.json()) as MeetScanResult;
+    const body = await scanOk(p.cookie, await issueToken(staff.cookie));
     expect(await meetCount(eventId)).toBe(1);
     expect(await attendedInDb(eventId, p.userId)).toBe(1);
+    expect(await meetNotificationCount(staff.userId)).toBe(1);
 
-    const undoRes = await undo(p.cookie, {
-      userId: body.target.id,
-      events: body.events.map((e) => ({
-        eventId: e.eventId,
-        revokeMyAttendance: e.attendedMe,
-        revokeTargetAttendance: e.attendedTarget,
-      })),
-    });
+    const undoRes = await undo(p.cookie, body.undoToken);
     expect(undoRes.status).toBe(200);
-    expect(((await undoRes.json()) as { undone: number }).undone).toBe(1);
+    const undoBody = (await undoRes.json()) as {
+      undone: number;
+      attendanceRevoked: boolean;
+    };
+    expect(undoBody.undone).toBe(1);
+    expect(undoBody.attendanceRevoked).toBe(true);
     expect(await meetCount(eventId)).toBe(0);
     expect(await attendedInDb(eventId, p.userId)).toBe(0);
+    // 取り消したのに「出会いました」が残っていると読み手が混乱する
+    expect(await meetNotificationCount(staff.userId)).toBe(0);
   });
 
-  it("一般参加者は取り消しに乗せても相手の出席を外せない", async () => {
+  it("取り消しトークンは発行者本人しか使えない", async () => {
+    const staff = await makeUser();
+    const p = await makeUser();
+    const other = await makeUser();
+    const eventId = await insertEvent(staff.userId);
+    await addMember(eventId, staff.userId, "staff");
+    await addMember(eventId, p.userId);
+    await addMember(eventId, other.userId);
+
+    const body = await scanOk(p.cookie, await issueToken(staff.cookie));
+    // 横取りしたトークンは効かない
+    expect((await undo(other.cookie, body.undoToken)).status).toBe(403);
+    expect(await meetCount(eventId)).toBe(1);
+    expect(await attendedInDb(eventId, p.userId)).toBe(1);
+  });
+
+  it("期限切れ・改竄された取り消しトークンは受け付けない", async () => {
+    const staff = await makeUser();
+    const p = await makeUser();
+    const eventId = await insertEvent(staff.userId);
+    await addMember(eventId, staff.userId, "staff");
+    await addMember(eventId, p.userId);
+    const body = await scanOk(p.cookie, await issueToken(staff.cookie));
+
+    // ペイロードだけ差し替える（署名が合わなくなる）
+    const [, encoded, sig] = body.undoToken.split(".");
+    const tampered = `mu1.${encoded.slice(0, -2)}AA.${sig}`;
+    expect((await undo(p.cookie, tampered)).status).toBe(400);
+    expect((await undo(p.cookie, "mu1.broken")).status).toBe(400);
+
+    const expired = await craftUndoToken(
+      p.userId,
+      staff.userId,
+      [{ eventId, meetCreated: true, attendedMe: true, attendedTarget: false }],
+      Math.floor(Date.now() / 1000) - 10,
+    );
+    expect((await undo(p.cookie, expired)).status).toBe(410);
+
+    // どのケースでも何も戻っていない
+    expect(await meetCount(eventId)).toBe(1);
+    expect(await attendedInDb(eventId, p.userId)).toBe(1);
+  });
+
+  it("受付で正規に付いた出席は、自分では外せない", async () => {
+    // トークンに attendedMe が入っていない＝この読み取りでは付けていない、
+    // という記録があるので、staff の userId を拾っても解除には使えない
+    const staff = await makeUser();
+    const p = await makeUser();
+    const eventId = await insertEvent(staff.userId);
+    await addMember(eventId, staff.userId, "staff");
+    await addMember(eventId, p.userId);
+    await env.DB.prepare(
+      "UPDATE event_member SET attended = 1 WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(eventId, p.userId)
+      .run();
+
+    const body = await scanOk(p.cookie, await issueToken(staff.cookie));
+    expect(body.events[0].attendedMe).toBe(false);
+    const res = await undo(p.cookie, body.undoToken);
+    expect(res.status).toBe(200);
+    expect(
+      ((await res.json()) as { attendanceRevoked: boolean }).attendanceRevoked,
+    ).toBe(false);
+    expect(await attendedInDb(eventId, p.userId)).toBe(1);
+
+    // 自作のトークンでも外せない（署名できないため）
+    const forged = await craftUndoToken(
+      p.userId,
+      staff.userId,
+      [{ eventId, meetCreated: false, attendedMe: true, attendedTarget: false }],
+      Math.floor(Date.now() / 1000) + 100,
+      "wrong-secret",
+    );
+    expect((await undo(p.cookie, forged)).status).toBe(400);
+    expect(await attendedInDb(eventId, p.userId)).toBe(1);
+  });
+
+  it("他人が記録した出会いは消せない", async () => {
     const owner = await makeUser();
     const a = await makeUser();
     const b = await makeUser();
     const eventId = await insertEvent(owner.userId);
     await addMember(eventId, a.userId);
     await addMember(eventId, b.userId);
-    // b は受付で出席済み（この読み取りとは無関係に付いた出席）
-    await env.DB.prepare(
-      "UPDATE event_member SET attended = 1 WHERE event_id = ? AND user_id = ?",
-    )
-      .bind(eventId, b.userId)
-      .run();
-    await scan(a.cookie, await issueToken(b.cookie));
 
-    const res = await undo(a.cookie, {
-      userId: b.userId,
-      events: [
-        {
-          eventId,
-          revokeMyAttendance: true,
-          revokeTargetAttendance: true,
-        },
-      ],
-    });
-    expect(res.status).toBe(200);
-    // 出会いは消えるが、staff でない a は相手の出席を動かせない
-    expect(await meetCount(eventId)).toBe(0);
-    expect(await attendedInDb(eventId, b.userId)).toBe(1);
-  });
+    // b が先に a を読んで記録済みにする
+    await scanOk(b.cookie, await issueToken(a.cookie));
+    expect(await meetCount(eventId)).toBe(1);
 
-  it("自分自身への取り消しは受け付けない", async () => {
-    const a = await makeUser();
-    const res = await undo(a.cookie, {
-      userId: a.userId,
-      events: [{ eventId: crypto.randomUUID() }],
-    });
-    expect(res.status).toBe(400);
+    // a が読み直しても meetCreated=false。その取り消しでは行は消えない
+    const body = await scanOk(a.cookie, await issueToken(b.cookie));
+    expect(body.events[0].meetCreated).toBe(false);
+    const res = await undo(a.cookie, body.undoToken);
+    expect(((await res.json()) as { undone: number }).undone).toBe(0);
+    expect(await meetCount(eventId)).toBe(1);
   });
 });

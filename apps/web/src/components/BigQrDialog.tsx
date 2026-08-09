@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Avatar,
   Box,
@@ -136,9 +136,20 @@ export function BigQrDialog({
   useScreenWakeLock(open);
   // 開いている間だけ取得し、一定間隔で取り直す（トークンが切り替わる）
   const { data: meetToken, isError } = useMyMeetToken(open);
-  const url = meetToken
-    ? buildMeetQrUrl(meetToken.token, window.location.origin)
-    : null;
+  // 期限切れを描かないための時計。読み取る側だけが「期限切れ」を見て、
+  // 見せている側は気づけない、という壊れ方を防ぐ (#330)。
+  // 一度閉じて開き直した直後（キャッシュが残っている）と、
+  // 電波が切れて取り直せていない間の両方がここで止まる
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!open) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [open]);
+
+  const fresh = meetToken && meetToken.expiresAt > now ? meetToken : null;
+  const url = fresh ? buildMeetQrUrl(fresh.token, window.location.origin) : null;
 
   return (
     <Dialog
@@ -177,11 +188,18 @@ export function BigQrDialog({
           {url ? (
             <QrCodeSvg url={url} label={`${name} の交流用QRコード`} />
           ) : isError ? (
-            <Typography variant="body2" sx={{ color: "#555555" }}>
-              QRを表示できませんでした。閉じてもう一度お試しください
+            <Typography variant="body2" textAlign="center" sx={{ color: "#555555" }}>
+              QRを表示できませんでした。通信状況を確かめて、
+              <br />
+              閉じてもう一度お試しください
             </Typography>
           ) : (
-            <CircularProgress sx={{ color: "#555555" }} />
+            <Stack spacing={1.5} alignItems="center">
+              <CircularProgress sx={{ color: "#555555" }} />
+              <Typography variant="body2" sx={{ color: "#555555" }}>
+                QRを準備しています…
+              </Typography>
+            </Stack>
           )}
         </Box>
         <Stack direction="row" spacing={1.5} alignItems="center">

@@ -9,6 +9,8 @@ export const MEET_WINDOW_AFTER_MS = 2 * 60 * 60_000;
 /** 共通イベント1件ぶんの、両者のイベント内ロールと出席状況 (#330)。
  * 出席の自動付与（相手が staff なら読み取った側を出席にする）の判断に使う */
 export interface MeetablePair extends MeetableEvent {
+  /** 出席チェックを使うイベントか。出席の自動付与はこれが有効なときだけ行う */
+  attendanceCheck: boolean;
   viewerRole: string;
   targetRole: string;
   viewerAttended: boolean;
@@ -77,7 +79,7 @@ export const eventMeetsRepo = {
     }));
   },
 
-  /** 両者がいま「出会った」を記録できる共通イベントを、双方のロール・出席状況つきで返す。
+  /** 両者がいま出会いを記録できる共通イベントを、双方のロール・出席状況つきで返す。
    * 条件: 公開済み・日程確定・開催時間帯（前30分〜後2時間）・両者とも確定メンバー。
    *
    * 「両者とも出席済み」の条件は #330 で外した。出席チェックONのイベントで受付を
@@ -92,12 +94,13 @@ export const eventMeetsRepo = {
     const rows = await many<{
       id: string;
       title: string;
+      attendance_check: number;
       viewer_role: string;
       target_role: string;
       viewer_attended: number;
       target_attended: number;
     }>(
-      `SELECT DISTINCT e.id, e.title,
+      `SELECT DISTINCT e.id, e.title, e.attendance_check,
               mv.role AS viewer_role, mt.role AS target_role,
               mv.attended AS viewer_attended, mt.attended AS target_attended
          FROM event e
@@ -118,6 +121,7 @@ export const eventMeetsRepo = {
     return rows.map((r) => ({
       id: r.id,
       title: r.title,
+      attendanceCheck: r.attendance_check === 1,
       viewerRole: r.viewer_role,
       targetRole: r.target_role,
       viewerAttended: r.viewer_attended === 1,
@@ -125,24 +129,23 @@ export const eventMeetsRepo = {
     }));
   },
 
-  /** 上と同じ条件で、画面に出す最小限（id/title）だけを返す */
-  async meetableEventsBetween(
-    viewerId: string,
-    targetId: string,
-    now: number,
-  ): Promise<MeetableEvent[]> {
-    const pairs = await this.meetablePairsBetween(viewerId, targetId, now);
-    return pairs.map(({ id, title }) => ({ id, title }));
-  },
-
   /** 記録できなかったときの理由を切り分ける (#330)。
-   * meetableEventsBetween が空だったときだけ呼ぶ。利用者に「共通イベントがない」のか
-   * 「時間帯の外」なのか「参加が確定していない」のかを伝えるためのもの */
+   * meetablePairsBetween が空だったときだけ呼ぶ。利用者に「共通イベントがない」のか
+   * 「時間帯の外」なのか「どちらの参加が未確定なのか」を伝えるためのもの。
+   *
+   * 1本目は meetablePairsBetween から「開催時間帯」だけを落とした条件にする。
+   * 日程調整中や日時未定のイベントまで拾うと、真の原因（相手がキャンセル待ち等）が
+   * 「時間帯の外」に隠れてしまうため。 */
   async diagnoseUnmeetable(
     viewerId: string,
     targetId: string,
-  ): Promise<"outside_window" | "not_confirmed" | "no_shared_event"> {
-    // 時間帯を問わず、両者とも確定メンバーの公開イベントがあるか
+  ): Promise<
+    | "outside_window"
+    | "not_confirmed_me"
+    | "not_confirmed_target"
+    | "no_shared_event"
+  > {
+    // 時間帯を問わず、両者とも確定メンバーの「日時が決まった公開イベント」があるか
     const timing = await one<{ v: number }>(
       `SELECT 1 AS v
          FROM event e
@@ -150,24 +153,28 @@ export const eventMeetsRepo = {
           AND mv.user_id = ? AND mv.status = 'confirmed'
          JOIN event_member mt ON mt.event_id = e.id
           AND mt.user_id = ? AND mt.status = 'confirmed'
-        WHERE e.status = 'published'
+        WHERE e.status = 'published' AND e.scheduling = 0
+          AND e.starts_at > 0 AND e.ends_at > 0
         LIMIT 1`,
       viewerId,
       targetId,
     );
     if (timing) return "outside_window";
-    // 参加状態を問わず、両者がメンバー行を持つ公開イベントがあるか
-    const pending = await one<{ v: number }>(
-      `SELECT 1 AS v
+    // 参加状態を問わず両者がメンバー行を持つ公開イベントを探し、
+    // どちら側が確定していないのかまで返す（案内の宛先が変わるため）
+    const pending = await one<{ viewer_ok: number; target_ok: number }>(
+      `SELECT MAX(CASE WHEN mv.status = 'confirmed' THEN 1 ELSE 0 END) AS viewer_ok,
+              MAX(CASE WHEN mt.status = 'confirmed' THEN 1 ELSE 0 END) AS target_ok
          FROM event e
          JOIN event_member mv ON mv.event_id = e.id AND mv.user_id = ?
          JOIN event_member mt ON mt.event_id = e.id AND mt.user_id = ?
-        WHERE e.status = 'published'
-        LIMIT 1`,
+        WHERE e.status = 'published'`,
       viewerId,
       targetId,
     );
-    return pending ? "not_confirmed" : "no_shared_event";
+    if (!pending || pending.viewer_ok === null) return "no_shared_event";
+    // 両方が未確定なら、まず自分の側を案内する（自分で動かせるのはこちらだけ）
+    return pending.viewer_ok === 1 ? "not_confirmed_target" : "not_confirmed_me";
   },
 
   /** 出会いの記録を取り消す (#330)。誤って読み取ったとき用。
