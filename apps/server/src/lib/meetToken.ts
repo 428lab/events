@@ -1,5 +1,5 @@
 import { env } from "../runtime.js";
-import { consumeNonce, isNonceUsed } from "./usedNonce.js";
+import { consumeNonce, isNonceUsed, releaseNonce } from "./usedNonce.js";
 
 /**
  * 出会い確定QRのトークン (#330)。
@@ -137,6 +137,12 @@ export async function verifyMeetToken(
  * 記録先と掃除は lib/usedNonce.ts に集約している */
 export async function consumeMeetToken(nonce: string): Promise<boolean> {
   return consumeNonce(USED_NONCE_PREFIX + nonce);
+}
+
+/** 確保したトークンを手放す。読み取りが何も記録しなかったときに使う。
+ * 確保できた（consumeMeetToken が true を返した）本人だけが呼ぶこと */
+export async function releaseMeetToken(nonce: string): Promise<void> {
+  await releaseNonce(USED_NONCE_PREFIX + nonce);
 }
 
 /** そのトークンが既に読み取られたか。表示側が「読まれたら描き替える」ために使う。

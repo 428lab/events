@@ -52,6 +52,16 @@ export async function consumeNonce(key: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * 使用済みの記録を取り消す（`consumeNonce` で確保した nonce を手放す）。
+ *
+ * 「先に原子的に確保してから処理し、何も起きなければ返す」形のためのもの。
+ * 確保した本人だけが呼ぶこと。他人の nonce を解放すると使い回しが可能になる。
+ */
+export async function releaseNonce(key: string): Promise<void> {
+  await run("DELETE FROM nostr_challenge_used WHERE nonce = ?", key);
+}
+
 /** 使用済みかを見るだけ（記録は増やさない）。何度呼んでも結果は変わらない */
 export async function isNonceUsed(key: string): Promise<boolean> {
   const row = await one<{ nonce: string }>(

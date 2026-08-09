@@ -339,6 +339,54 @@ describe("QRトークンの検証 (#330)", () => {
     expect(rotated.consumed).toBe(false);
   });
 
+  it("同じトークンで同時に来ても、通るのは1つだけ", async () => {
+    // 「使用済みか調べる → 書く → 使用済みにする」の順だと隙間で全員通る。
+    // 写真を流して「いま一斉に開いて」で複数人ぶんの出席が成立しないこと
+    const owner = await makeUser();
+    const a = await makeUser();
+    const readers = [await makeUser(), await makeUser(), await makeUser()];
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+    for (const r of readers) await addMember(eventId, r.userId);
+
+    const token = await issueToken(a.cookie);
+    const results = await Promise.all(
+      readers.map((r) => scan(r.cookie, token)),
+    );
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses.filter((s) => s === 200)).toHaveLength(1);
+    expect(statuses.filter((s) => s === 409)).toHaveLength(2);
+    // 記録されたのも1件だけ
+    expect(await meetCount(eventId)).toBe(1);
+  });
+
+  it("老朽で描き替えたら、画面から降りた旧トークンはもう使えない", async () => {
+    // 焼かずに次を出すと、撮られたQRが誰にも消費されないまま有効期限まで
+    // 生き残る（目の前の人は新しいQRを読むので写真を殺せない）
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+    await addMember(eventId, b.userId);
+
+    // 発行から十分に時間が経ったトークン（署名は正しい）
+    const stale = await craftToken(
+      a.userId,
+      Math.floor(Date.now() / 1000) + MEET_TOKEN_TTL_SEC - 120,
+    );
+    const rotated = await currentToken(a.cookie, stale);
+    expect(rotated.token).not.toBe(stale);
+
+    // 旧トークン（＝撮られた写真に写っているQR）はもう通らない
+    const res = await scan(b.cookie, stale);
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe("used");
+    expect(await meetCount(eventId)).toBe(0);
+    // 画面に出ている新しいQRは使える
+    expect((await scan(b.cookie, rotated.token)).status).toBe(200);
+  });
+
   it("自分のQRを自分で読んでも使い切られない（自分のQRを潰せない）", async () => {
     const owner = await makeUser();
     const a = await makeUser();

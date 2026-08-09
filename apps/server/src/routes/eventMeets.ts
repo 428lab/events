@@ -17,6 +17,7 @@ import {
   isMeetTokenUsed,
   MEET_UNDO_TTL_SEC,
   meetTokenTooOld,
+  releaseMeetToken,
   verifyMeetToken,
   verifyUndoToken,
 } from "../lib/meetToken.js";
@@ -102,9 +103,10 @@ meetScanRoutes.get("/token", async (c) => {
   const verified = current ? await verifyMeetToken(current) : null;
   const mine = verified?.ok && verified.userId === me.id ? verified : null;
   if (mine) {
+    const consumed = await isMeetTokenUsed(mine.nonce);
     // 出しっぱなしが長引くと、その画面を撮った写真が効く窓も伸びる。
     // 読み取りが終わらないうちに切り替わらない長さは残しつつ、頭打ちにする
-    if (!meetTokenTooOld(mine.exp) && !(await isMeetTokenUsed(mine.nonce))) {
+    if (!consumed && !meetTokenTooOld(mine.exp)) {
       // まだ誰にも読まれていない。出しっぱなしのQRをそのまま使い続ける
       return c.json({
         token: current!,
@@ -112,9 +114,14 @@ meetScanRoutes.get("/token", async (c) => {
         consumed: false,
       });
     }
-    // 読まれた（または出し続けて古くなった）ので次のぶんを出す。
+    // 切り替えるときは、画面から降ろす旧トークンを必ず焼く。
+    //
+    // 焼かずに次を出すと、撮られたQRが「誰にも消費されないまま有効期限まで
+    // 生き残る」状態になる。目の前の人は新しいQRを読むので、写真のほうを
+    // 消費して殺す働きが無くなり、回転を入れたことでかえって写真に有利になる。
+    // 既に読まれていれば何も起きない（挿入が弾かれるだけ）。
+    await consumeMeetToken(mine.nonce);
     // consumed は「読まれたから替わった」ときだけ立てる（表示の文言が変わる）
-    const consumed = await isMeetTokenUsed(mine.nonce);
     return c.json({ ...(await createMeetToken(me.id)), consumed });
   }
   // 手持ちが無い・切れた・自分のものでない
@@ -150,7 +157,7 @@ meetScanRoutes.post("/scan", zValidator("json", meetScanInput), async (c) => {
   const target = await usersRepo.findById(verified.userId);
   if (!target) return c.json({ error: "invalid" }, 400);
 
-  // 使用済みのQRは、書き込みに進む前に弾く
+  // 使用済みのQRは、記録できるかを調べる前に弾く（よくある2度読みの近道）
   if (await isMeetTokenUsed(verified.nonce)) {
     return c.json({ error: "used" }, 409);
   }
@@ -161,9 +168,21 @@ meetScanRoutes.post("/scan", zValidator("json", meetScanInput), async (c) => {
     target.id,
     now,
   );
+  // 記録できない相手の読み取りでは、トークンを確保もしない。
+  // 共通イベントが無い他人が読むだけでQRが潰れると、受付の大QRの前で
+  // 読み続けられて他の参加者が受付できなくなる
   if (pairs.length === 0) {
     const reason = await eventMeetsRepo.diagnoseUnmeetable(me.id, target.id);
     return c.json({ error: reason }, 409);
+  }
+
+  // 書き込みに入る前に、トークンを原子的に確保する。
+  // 「使用済みか調べる → 書く → 使用済みにする」の順だと、その隙間に同じ
+  // トークンで同時に来たリクエストが全員通ってしまう（写真を流して
+  // 「いま一斉に開いて」で複数人ぶんの出席が成立しうる）。
+  // 確保できなかった＝誰かが先に読んだということ
+  if (!(await consumeMeetToken(verified.nonce))) {
+    return c.json({ error: "used" }, 409);
   }
 
   // 出席を付ける対象は1件。開始済みのうち最も新しく始まった回＝いま居る回と見なす
@@ -208,18 +227,15 @@ meetScanRoutes.post("/scan", zValidator("json", meetScanInput), async (c) => {
     });
   }
 
-  // ここで使い切る。写真を後から渡されても、目の前の人が読んだ時点で終わり。
-  //
-  // 消費するのは「新しい出会いか出席が実際に記録できたとき」だけ。
-  // 無条件に焼くと、共通イベントが無い赤の他人や、同じ人の読み直しでも
-  // トークンが潰れる。受付の大QRの前で読み続けられると、出た端から
-  // 使用済みになって他の参加者が受付できなくなる。
+  // 何も書かなかったなら、確保したトークンを返す。
+  // 同じ人が読み直しただけ（記録済みで何も起きない）でQRが潰れると、
+  // 受付の大QRの前で読み続けられて他の参加者が受付できなくなる。
   // 写真を後から渡されても成立しないことは、この条件でも変わらない
-  // （成立するなら、それは記録が発生する読み取りなので消費される）
+  // （成立するなら、それは記録が発生する読み取りなので確保したままになる）
   const wrote = events.some(
     (e) => e.meetCreated || e.attendedMe || e.attendedTarget,
   );
-  if (wrote) await consumeMeetToken(verified.nonce);
+  if (!wrote) await releaseMeetToken(verified.nonce);
 
   return c.json({
     target: {
