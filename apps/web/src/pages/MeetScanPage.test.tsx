@@ -49,6 +49,7 @@ const RESULT: MeetScanResult = {
       attendedTarget: false,
     },
   ],
+  undoToken: "mu1.payload.sig",
 };
 
 function renderPage(loggedIn = true) {
@@ -97,7 +98,7 @@ describe("読み取り直後の画面 (#330)", () => {
     expect(screen.queryByText(/相手さん さんの受付/)).toBeNull();
   });
 
-  it("取り消しは、この読み取りで付いた出席だけを戻す指示を送る", async () => {
+  it("取り消しはサーバーが返したトークンだけを送る", async () => {
     postMock.mockResolvedValue(RESULT);
     renderPage();
     await screen.findByText(/秋の集まり/);
@@ -108,16 +109,7 @@ describe("読み取り直後の画面 (#330)", () => {
     await waitFor(() =>
       expect(postMock).toHaveBeenLastCalledWith(
         "/meet/undo",
-        {
-          userId: "u-target",
-          events: [
-            {
-              eventId: "e-1",
-              revokeMyAttendance: true,
-              revokeTargetAttendance: false,
-            },
-          ],
-        },
+        { undoToken: "mu1.payload.sig" },
         expect.objectContaining({ timeoutMs: expect.any(Number) }),
       ),
     );

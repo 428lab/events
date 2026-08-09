@@ -1,15 +1,15 @@
 import { z } from "zod";
 
-/** 出会った記録 (#189)。プロフィールQRの読み合いでお互いにXPが入る */
+/**
+ * 出会った記録 (#189)。イベント中に参加者どうしがQRを読み合うとお互いにXPが入る。
+ *
+ * 記録できるのは #330 以降、使い切りトークン付きQRの読み取り（/api/meet/scan）だけ。
+ * 「相手を選んでボタンを押す」経路は廃止した。対面の裏付けが無い書き込み経路が
+ * 残っていると、開催時間帯に確定メンバーの一覧から相手を選ぶだけで出会いを
+ * 量産できてしまうため（XPは相手にも入る）。
+ */
 
-/** 出会った相手（同じイベントの確定メンバー）を指定する入力 */
-export const recordMeetInput = z.object({
-  /** 相手のユーザーID */
-  userId: z.string().min(1),
-});
-export type RecordMeetInput = z.infer<typeof recordMeetInput>;
-
-/** いま「出会った」を記録できる共通イベント（両者が対象メンバーの開催中イベント） */
+/** 出会いを記録できる共通イベント（両者が確定メンバーの開催中イベント） */
 export const meetableEventSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -59,6 +59,12 @@ export interface MeetScanUser {
 export interface MeetScanResult {
   target: MeetScanUser;
   events: MeetScanEventResult[];
+  /**
+   * この読み取りを取り消すための署名付きトークン (#330)。
+   * 取り消せる範囲を「この読み取りが実際に書いた行」に閉じるためのもので、
+   * 発行者本人・短時間しか使えない。undo にはこれ以外の入力を受け付けない。
+   */
+  undoToken: string;
 }
 
 /**
@@ -83,21 +89,8 @@ export type MeetScanFailure =
   | "not_confirmed_me"
   | "not_confirmed_target";
 
-/** POST /api/meet/undo の入力（scan のレスポンスをそのまま渡せる形） */
+/** POST /api/meet/undo の入力。scan が返したトークンだけを受け取る */
 export const meetUndoInput = z.object({
-  /** QRの持ち主のユーザーID */
-  userId: z.string().min(1),
-  events: z
-    .array(
-      z.object({
-        eventId: z.string().min(1),
-        /** 読み取りで自分に付いた出席を外す */
-        revokeMyAttendance: z.boolean().default(false),
-        /** 読み取りで相手に付いた出席を外す */
-        revokeTargetAttendance: z.boolean().default(false),
-      }),
-    )
-    .min(1)
-    .max(10),
+  undoToken: z.string().min(10).max(4096),
 });
 export type MeetUndoInput = z.infer<typeof meetUndoInput>;

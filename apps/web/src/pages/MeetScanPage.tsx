@@ -273,17 +273,9 @@ export function MeetScanPage() {
                       color="inherit"
                       disabled={undo.isPending}
                       onClick={() =>
-                        undo.mutate(
-                          {
-                            userId: result.target.id,
-                            events: result.events.map((ev) => ({
-                              eventId: ev.eventId,
-                              revokeMyAttendance: ev.attendedMe,
-                              revokeTargetAttendance: ev.attendedTarget,
-                            })),
-                          },
-                          { onSuccess: () => setUndone(true) },
-                        )
+                        undo.mutate(result.undoToken, {
+                          onSuccess: () => setUndone(true),
+                        })
                       }
                     >
                       取り消す

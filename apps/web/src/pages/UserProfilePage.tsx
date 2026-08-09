@@ -43,7 +43,6 @@ import type {
 } from "@eventer/shared";
 import { useSetFollow, useUserProfile } from "../api/userHooks.js";
 import { useMe, useMyPage } from "../api/hooks.js";
-import { useMeetableEvents, useRecordMeet } from "../api/eventMeetHooks.js";
 import { useUserPhotos } from "../api/eventPhotoHooks.js";
 import { ParticipationHistory } from "../components/ParticipationHistory.js";
 import { ShareButton } from "../components/ShareButton.js";
@@ -217,69 +216,6 @@ function BadgesSection({ g }: { g?: Gamification }) {
         })}
       </Stack>
     </Box>
-  );
-}
-
-/** 「同じイベントに参加中」バナー (#189)。プロフィールQRの読み合いを想定し、
- * 両者が参加中の共通イベントがあるときだけ「出会った！」ボタンを出す。
- * ログイン中に他人のプロフィールを見ているときのみマウントすること */
-function MeetSection({ targetUserId }: { targetUserId: string }) {
-  const { data: events } = useMeetableEvents(targetUserId, true);
-  const recordMeet = useRecordMeet();
-  // イベントごとの記録結果（created=新規記録 / already=このペアで記録済み）
-  const [results, setResults] = useState<
-    Record<string, "created" | "already" | "error">
-  >({});
-  if (!events || events.length === 0) return null;
-  return (
-    <Stack spacing={1}>
-      {/* 共通イベントが複数あるのは稀なので最大2件まで表示 */}
-      {events.slice(0, 2).map((ev) => {
-        const result = results[ev.id];
-        return (
-          <Alert
-            key={ev.id}
-            severity={result === "created" ? "success" : "info"}
-            icon={<HandshakeOutlinedIcon fontSize="inherit" />}
-            action={
-              result ? undefined : (
-                <Button
-                  color="inherit"
-                  size="small"
-                  variant="outlined"
-                  disabled={recordMeet.isPending}
-                  onClick={() =>
-                    recordMeet.mutate(
-                      { eventId: ev.id, userId: targetUserId },
-                      {
-                        onSuccess: (r) =>
-                          setResults((prev) => ({
-                            ...prev,
-                            [ev.id]: r.created ? "created" : "already",
-                          })),
-                        onError: () =>
-                          setResults((prev) => ({ ...prev, [ev.id]: "error" })),
-                      },
-                    )
-                  }
-                  sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
-                >
-                  出会った！
-                </Button>
-              )
-            }
-          >
-            {result === "created"
-              ? "記録しました！お互いにXPが入ります"
-              : result === "already"
-                ? "このイベントでは記録済みです"
-                : result === "error"
-                  ? "記録できませんでした（イベント時間外の可能性があります）"
-                  : `同じイベント「${ev.title}」に参加中`}
-          </Alert>
-        );
-      })}
-    </Stack>
   );
 }
 
@@ -527,9 +463,6 @@ export function UserProfilePage() {
       {/* 直下の一覧と同じ母集団を数える。本人のページは下書き等も含む自分用の
           一覧なので、公開ぶんだけを数えると件数が合わなくなる (#319) */}
       <TotalsBar events={historyEvents} meetTotal={data.meetTotal ?? 0} />
-
-      {/* 出会った記録 (#189)。ログイン中に他人のプロフィールを見ているときのみ */}
-      {me && !data.isMe && <MeetSection key={data.id} targetUserId={data.id} />}
 
       <BadgesSection g={data.gamification} />
 

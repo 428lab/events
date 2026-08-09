@@ -1,37 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type {
-  MeetScanResult,
-  MeetToken,
-  MeetUndoInput,
-  MeetableEvent,
-} from "@eventer/shared";
+import type { MeetScanResult, MeetToken } from "@eventer/shared";
 import { api } from "./client.js";
-
-/** いま「出会った」を記録できる共通イベント (#189)。
- * 他人のプロフィールをログイン中に見ているときだけ enabled にすること */
-export function useMeetableEvents(targetUserId: string, enabled: boolean) {
-  return useQuery({
-    queryKey: ["meetable", targetUserId],
-    enabled: enabled && Boolean(targetUserId),
-    queryFn: async () =>
-      (
-        await api.get<{ events: MeetableEvent[] }>(
-          `/users/${targetUserId}/meetable`,
-        )
-      ).events,
-  });
-}
-
-/** 出会いの記録 (#189)。created=false は同じペアで記録済み（冪等） */
-export function useRecordMeet() {
-  return useMutation({
-    mutationFn: (input: { eventId: string; userId: string }) =>
-      api.post<{ created: boolean; meets: number }>(
-        `/events/${input.eventId}/meet`,
-        { userId: input.userId },
-      ),
-  });
-}
 
 /**
  * 自分のQRのトークンを見張る間隔（ミリ秒） (#330)。
@@ -87,13 +56,13 @@ export function useMeetScan() {
   });
 }
 
-/** 読み取りの取り消し (#330)。誤って読み取ったとき用 */
+/** 読み取りの取り消し (#330)。scan が返したトークンだけを渡す */
 export function useMeetUndo() {
   return useMutation({
-    mutationFn: (input: MeetUndoInput) =>
+    mutationFn: (undoToken: string) =>
       api.post<{ undone: number; attendanceRevoked: boolean }>(
         "/meet/undo",
-        input,
+        { undoToken },
         { timeoutMs: MEET_REQUEST_TIMEOUT_MS },
       ),
   });

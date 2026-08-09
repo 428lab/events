@@ -11,6 +11,8 @@ export const MEET_WINDOW_AFTER_MS = 2 * 60 * 60_000;
 export interface MeetablePair extends MeetableEvent {
   /** 開始時刻。出席を付ける「いま居る回」を1件に絞るのに使う */
   startsAt: number;
+  /** 出席チェックを使うイベントか。出席の自動付与はこれが有効なときだけ行う */
+  attendanceCheck: boolean;
   viewerRole: string;
   targetRole: string;
   viewerAttended: boolean;
@@ -95,12 +97,13 @@ export const eventMeetsRepo = {
       id: string;
       title: string;
       starts_at: number;
+      attendance_check: number;
       viewer_role: string;
       target_role: string;
       viewer_attended: number;
       target_attended: number;
     }>(
-      `SELECT DISTINCT e.id, e.title, e.starts_at,
+      `SELECT DISTINCT e.id, e.title, e.starts_at, e.attendance_check,
               mv.role AS viewer_role, mt.role AS target_role,
               mv.attended AS viewer_attended, mt.attended AS target_attended
          FROM event e
@@ -122,21 +125,12 @@ export const eventMeetsRepo = {
       id: r.id,
       title: r.title,
       startsAt: r.starts_at,
+      attendanceCheck: r.attendance_check === 1,
       viewerRole: r.viewer_role,
       targetRole: r.target_role,
       viewerAttended: r.viewer_attended === 1,
       targetAttended: r.target_attended === 1,
     }));
-  },
-
-  /** 上と同じ条件で、画面に出す最小限（id/title）だけを返す */
-  async meetableEventsBetween(
-    viewerId: string,
-    targetId: string,
-    now: number,
-  ): Promise<MeetableEvent[]> {
-    const pairs = await this.meetablePairsBetween(viewerId, targetId, now);
-    return pairs.map(({ id, title }) => ({ id, title }));
   },
 
   /** 記録できなかったときの理由を切り分ける (#330)。
