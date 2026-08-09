@@ -14,10 +14,12 @@ import {
   consumeMeetToken,
   createMeetToken,
   createUndoToken,
+  isMeetTokenRead,
   isMeetTokenUsed,
   MEET_UNDO_TTL_SEC,
   meetTokenTooOld,
   releaseMeetToken,
+  retireMeetToken,
   verifyMeetToken,
   verifyUndoToken,
 } from "../lib/meetToken.js";
@@ -103,10 +105,12 @@ meetScanRoutes.get("/token", async (c) => {
   const verified = current ? await verifyMeetToken(current) : null;
   const mine = verified?.ok && verified.userId === me.id ? verified : null;
   if (mine) {
-    const consumed = await isMeetTokenUsed(mine.nonce);
+    // 「読まれた」と「画面から降ろした」を分けて見る。表示の文言に使うのは前者
+    const consumed = await isMeetTokenRead(mine.nonce);
+    const unusable = consumed || (await isMeetTokenUsed(mine.nonce));
     // 出しっぱなしが長引くと、その画面を撮った写真が効く窓も伸びる。
     // 読み取りが終わらないうちに切り替わらない長さは残しつつ、頭打ちにする
-    if (!consumed && !meetTokenTooOld(mine.exp)) {
+    if (!unusable && !meetTokenTooOld(mine.exp)) {
       // まだ誰にも読まれていない。出しっぱなしのQRをそのまま使い続ける
       return c.json({
         token: current!,
@@ -119,8 +123,10 @@ meetScanRoutes.get("/token", async (c) => {
     // 焼かずに次を出すと、撮られたQRが「誰にも消費されないまま有効期限まで
     // 生き残る」状態になる。目の前の人は新しいQRを読むので、写真のほうを
     // 消費して殺す働きが無くなり、回転を入れたことでかえって写真に有利になる。
-    // 既に読まれていれば何も起きない（挿入が弾かれるだけ）。
-    await consumeMeetToken(mine.nonce);
+    // 読み取りの確保とは別キーにするのが要点。同じキーだと、読み直しの
+    // 解放（確保 → 何も書かない → 解放）がこの印まで消してしまい、
+    // 降ろしたはずのトークンが生き返る。
+    await retireMeetToken(mine.nonce);
     // consumed は「読まれたから替わった」ときだけ立てる（表示の文言が変わる）
     return c.json({ ...(await createMeetToken(me.id)), consumed });
   }

@@ -155,6 +155,20 @@ async function usedNonceCount(): Promise<number> {
   return row?.n ?? 0;
 }
 
+/** 出会い行を直接入れる（「もう出会っている」状態を作る） */
+async function insertMeetRow(
+  eventId: string,
+  x: string,
+  y: string,
+): Promise<void> {
+  const [low, high] = x < y ? [x, y] : [y, x];
+  await env.DB.prepare(
+    "INSERT INTO event_meet (id, event_id, user_low, user_high, created_at) VALUES (?, ?, ?, ?, ?)",
+  )
+    .bind(crypto.randomUUID(), eventId, low, high, Date.now())
+    .run();
+}
+
 async function meetNotificationCount(userId: string): Promise<number> {
   const row = await env.DB.prepare(
     "SELECT COUNT(*) AS n FROM notification WHERE user_id = ? AND type = 'meet'",
@@ -385,6 +399,52 @@ describe("QRトークンの検証 (#330)", () => {
     expect(await meetCount(eventId)).toBe(0);
     // 画面に出ている新しいQRは使える
     expect((await scan(b.cookie, rotated.token)).status).toBe(200);
+  });
+
+  it("確保中に描き替えが走っても、解放で旧トークンが復活しない", async () => {
+    // 読み直し（確保 → 何も書かない → 解放）と描き替えが重なったとき、
+    // 描き替えの印を解放が消してしまうと、画面から降ろしたトークンが
+    // 有効期限まで生き返る（誰も表示していないので消費もされない）。
+    // 老朽トークンなら描き替えは必ず走るので、どちらの順序になっても
+    // 「降ろしたトークンは使えない」が成り立つことを見る
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const c = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    for (const u of [a, b, c]) await addMember(eventId, u.userId);
+
+    // b と a は既に出会っている＝b の読み直しは何も書かない（＝解放される）
+    await insertMeetRow(eventId, a.userId, b.userId);
+
+    // 老朽トークン（署名は正しい・未読）。描き替えは必ず走る
+    const stale = await craftToken(
+      a.userId,
+      Math.floor(Date.now() / 1000) + MEET_TOKEN_TTL_SEC - 120,
+    );
+    const [rotated, again] = await Promise.all([
+      currentToken(a.cookie, stale),
+      scan(b.cookie, stale),
+    ]);
+    expect(rotated.token).not.toBe(stale);
+    // 読み直しは通っても通らなくてもよい（順序次第）が、通ったなら何も書いていない
+    if (again.status === 200) {
+      expect(
+        ((await again.json()) as MeetScanResult).events[0].meetCreated,
+      ).toBe(false);
+    }
+
+    // 画面から降ろしたトークンは、解放を挟んでももう通らない
+    const revived = await scan(c.cookie, stale);
+    expect(revived.status).toBe(409);
+    expect(((await revived.json()) as { error: string }).error).toBe("used");
+    // 降ろした印は読み取り済みとは別のキーで残る（解放が触るのは meet: 側だけ）
+    const retired = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM nostr_challenge_used WHERE nonce LIKE 'meetret:%'",
+    ).first<{ n: number }>();
+    expect(retired?.n).toBe(1);
+    // c の読み取りは弾かれているので、出会いは最初の1件のまま
+    expect(await meetCount(eventId)).toBe(1);
   });
 
   it("自分のQRを自分で読んでも使い切られない（自分のQRを潰せない）", async () => {

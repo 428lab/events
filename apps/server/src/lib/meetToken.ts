@@ -48,9 +48,17 @@ export function meetTokenTooOld(exp: number, now = Date.now()): boolean {
   return now / 1000 - issuedAtSec > MEET_TOKEN_MAX_DISPLAY_SEC;
 }
 
-/** 使用済み記録の nonce につける接頭辞。共有テーブルで他用途の nonce と
+/** 読み取り済みの記録につける接頭辞。共有テーブルで他用途の nonce と
  * ぶつからないようにする（衝突すると片方が「使用済み」に見えてしまう） */
 const USED_NONCE_PREFIX = "meet:";
+
+/** 「画面から降ろした」印。読み取り済み（`meet:`）とは別のキーにする。
+ *
+ * 同じキーにすると、読み直し（確保→何も書かない→解放）の最中に描き替えが
+ * 走ったとき、描き替えが付けた印を解放が消してしまい、**画面から降ろした
+ * はずのトークンが有効期限まで生き返る**（誰も表示していないので、その後
+ * 消費されることもない）。解放が触るのは `meet:` 側だけにして分離する。 */
+const RETIRED_NONCE_PREFIX = "meetret:";
 
 /**
  * 取り消しトークンの有効期間（秒）。
@@ -133,9 +141,10 @@ export async function verifyMeetToken(
   return { ok: true, userId, exp, nonce };
 }
 
-/** トークンを使用済みにする。既に使われていれば false（＝2回目以降）。
- * 記録先と掃除は lib/usedNonce.ts に集約している */
+/** トークンを読み取り用に確保する。既に使われていれば false（＝2回目以降）。
+ * 画面から降ろされたトークンもここで弾く。記録先と掃除は lib/usedNonce.ts */
 export async function consumeMeetToken(nonce: string): Promise<boolean> {
+  if (await isNonceUsed(RETIRED_NONCE_PREFIX + nonce)) return false;
   return consumeNonce(USED_NONCE_PREFIX + nonce);
 }
 
@@ -145,10 +154,24 @@ export async function releaseMeetToken(nonce: string): Promise<void> {
   await releaseNonce(USED_NONCE_PREFIX + nonce);
 }
 
-/** そのトークンが既に読み取られたか。表示側が「読まれたら描き替える」ために使う。
+/** そのトークンをもう使えなくする（画面から降ろすとき）。
+ * 読み取りの確保とは別キーなので、読み直しの解放では消えない */
+export async function retireMeetToken(nonce: string): Promise<void> {
+  await consumeNonce(RETIRED_NONCE_PREFIX + nonce);
+}
+
+/** そのトークンが実際に読み取られたか。表示の文言（読み取られました）に使う */
+export async function isMeetTokenRead(nonce: string): Promise<boolean> {
+  return isNonceUsed(USED_NONCE_PREFIX + nonce);
+}
+
+/** そのトークンがもう使えないか（読み取り済み、または画面から降ろした）。
  * 記録は消さないので、何度呼んでも結果は変わらない */
 export async function isMeetTokenUsed(nonce: string): Promise<boolean> {
-  return isNonceUsed(USED_NONCE_PREFIX + nonce);
+  return (
+    (await isNonceUsed(USED_NONCE_PREFIX + nonce)) ||
+    (await isNonceUsed(RETIRED_NONCE_PREFIX + nonce))
+  );
 }
 /**
  * 取り消しトークン (#330)。
