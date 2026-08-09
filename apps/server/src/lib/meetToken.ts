@@ -1,5 +1,5 @@
 import { env } from "../runtime.js";
-import { one, run } from "../db/client.js";
+import { consumeNonce, isNonceUsed } from "./usedNonce.js";
 
 /**
  * 出会い確定QRのトークン (#330)。
@@ -27,19 +27,30 @@ import { one, run } from "../db/client.js";
  * なお出会いの記録には開催時間帯（前30分〜後2時間）の条件が別途あるので、
  * イベントが終われば有効期限内でも使えない。
  *
- * 注意: 使用済み記録は nostr_challenge_used を共有しており、その掃除は
- * 「20分より古いもの」で行われる（auth/nostr.ts の CHALLENGE_TTL_MS * 2）。
- * この TTL を20分以上に延ばすと、記録が消えたトークンを再利用できてしまう。
+ * 変更したら lib/usedNonce.ts の SHARED_TTLS_MS も直すこと（使用済み記録の
+ * 掃除しきい値がそこで全用途の最長 TTL から決まっている）。
  */
 export const MEET_TOKEN_TTL_SEC = 10 * 60;
+
+/**
+ * 1枚のQRを出し続ける上限（秒）。
+ *
+ * 使い切りなので有効期限は10分あるが、読まれないかぎり同じQRが出続けると、
+ * その画面を撮った写真が10分間使えることになる（不在の人に先に消費されると
+ * 目の前の人が読めない）。読み取りが終わらないうちに切り替わらない長さは
+ * 残しつつ、写真が効く窓を1分台に抑える。 */
+export const MEET_TOKEN_MAX_DISPLAY_SEC = 90;
+
+/** そのトークンを出し始めてから MEET_TOKEN_MAX_DISPLAY_SEC を過ぎたか。
+ * 発行時刻はトークン自身の exp から逆算できるので、保存は増やさない */
+export function meetTokenTooOld(exp: number, now = Date.now()): boolean {
+  const issuedAtSec = exp - MEET_TOKEN_TTL_SEC;
+  return now / 1000 - issuedAtSec > MEET_TOKEN_MAX_DISPLAY_SEC;
+}
 
 /** 使用済み記録の nonce につける接頭辞。共有テーブルで他用途の nonce と
  * ぶつからないようにする（衝突すると片方が「使用済み」に見えてしまう） */
 const USED_NONCE_PREFIX = "meet:";
-
-/** 使用済み記録を消す基準（ミリ秒）。TTL を過ぎた記録はもう検証で弾けるので
- * 残す意味がない。共有テーブルを肥大させないために掃除する */
-const USED_RETENTION_MS = MEET_TOKEN_TTL_SEC * 1000 * 2;
 
 /**
  * 取り消しトークンの有効期間（秒）。
@@ -122,37 +133,16 @@ export async function verifyMeetToken(
   return { ok: true, userId, exp, nonce };
 }
 
-/**
- * トークンを使用済みにする。既に使われていれば false（＝2回目以降）。
- *
- * 記録先は nostr ログインチャレンジ・アカウント統合コードと同じ
- * nostr_challenge_used。用途ごとにテーブルを増やしても掃除の仕組みが
- * 増えるだけなので、接頭辞でドメイン分離して共有する。
- */
+/** トークンを使用済みにする。既に使われていれば false（＝2回目以降）。
+ * 記録先と掃除は lib/usedNonce.ts に集約している */
 export async function consumeMeetToken(nonce: string): Promise<boolean> {
-  const inserted = await one<{ nonce: string }>(
-    `INSERT OR IGNORE INTO nostr_challenge_used (nonce, used_at)
-     VALUES (?, ?) RETURNING nonce`,
-    USED_NONCE_PREFIX + nonce,
-    Date.now(),
-  );
-  if (!inserted) return false;
-  // 有効期限を過ぎた記録は検証側で弾けるので残さない
-  await run(
-    "DELETE FROM nostr_challenge_used WHERE used_at < ?",
-    Date.now() - USED_RETENTION_MS,
-  );
-  return true;
+  return consumeNonce(USED_NONCE_PREFIX + nonce);
 }
 
 /** そのトークンが既に読み取られたか。表示側が「読まれたら描き替える」ために使う。
  * 記録は消さないので、何度呼んでも結果は変わらない */
 export async function isMeetTokenUsed(nonce: string): Promise<boolean> {
-  const row = await one<{ nonce: string }>(
-    "SELECT nonce FROM nostr_challenge_used WHERE nonce = ?",
-    USED_NONCE_PREFIX + nonce,
-  );
-  return Boolean(row);
+  return isNonceUsed(USED_NONCE_PREFIX + nonce);
 }
 /**
  * 取り消しトークン (#330)。

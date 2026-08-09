@@ -15,6 +15,8 @@ import type { MeetScanResult, MeetToken } from "@eventer/shared";
 const BASE = "https://example.com";
 /** vitest.config.ts の miniflare バインディングと同じ値 */
 const SESSION_SECRET = "test-secret";
+/** lib/meetToken.ts の MEET_TOKEN_TTL_SEC と同じ値 */
+const MEET_TOKEN_TTL_SEC = 10 * 60;
 
 async function makeUser(): Promise<{ userId: string; cookie: string }> {
   const uid = crypto.randomUUID();
@@ -289,6 +291,52 @@ describe("QRトークンの検証 (#330)", () => {
     // 次のトークンを出せば続けて読んでもらえる（行列がここで止まらない）
     expect((await scan(c.cookie, await issueToken(a.cookie))).status).toBe(200);
     expect(await meetCount(eventId)).toBe(2);
+  });
+
+  it("記録が発生しない読み取りではトークンを焼かない", async () => {
+    // 受付の大QRの前で読み続けられると、出た端から使用済みになって
+    // 他の参加者が受付できなくなる。焼けるのは実際に書き込めたときだけ
+    const owner = await makeUser();
+    const a = await makeUser();
+    const stranger = await makeUser();
+    const b = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+    await addMember(eventId, b.userId);
+
+    // 共通イベントが無い赤の他人が読んでも焼けない
+    const token = await issueToken(a.cookie);
+    expect((await scan(stranger.cookie, token)).status).toBe(409);
+    expect((await currentToken(a.cookie, token)).consumed).toBe(false);
+    // 目の前の人はそのまま読める
+    expect((await scan(b.cookie, token)).status).toBe(200);
+
+    // 同じ人が読み直しても（記録済みなので何も起きない）焼けない
+    const next = await issueToken(a.cookie);
+    const again = await scanOk(b.cookie, next);
+    expect(again.events[0].meetCreated).toBe(false);
+    expect((await currentToken(a.cookie, next)).consumed).toBe(false);
+    // 別の人はその同じQRで記録できる
+    const c = await makeUser();
+    await addMember(eventId, c.userId);
+    expect((await scan(c.cookie, next)).status).toBe(200);
+  });
+
+  it("読まれないままでも、一定時間が過ぎたら次のQRを出す", async () => {
+    // 出しっぱなしが長引くほど、その画面を撮った写真が効く窓も伸びる
+    const a = await makeUser();
+    const fresh = await issueToken(a.cookie);
+    expect((await currentToken(a.cookie, fresh)).token).toBe(fresh);
+
+    // 発行から十分に時間が経ったトークン（署名は正しい）
+    const stale = await craftToken(
+      a.userId,
+      Math.floor(Date.now() / 1000) + MEET_TOKEN_TTL_SEC - 120,
+    );
+    const rotated = await currentToken(a.cookie, stale);
+    expect(rotated.token).not.toBe(stale);
+    // 読まれて替わったわけではないので、読み取りの合図は立てない
+    expect(rotated.consumed).toBe(false);
   });
 
   it("自分のQRを自分で読んでも使い切られない（自分のQRを潰せない）", async () => {
@@ -666,6 +714,38 @@ describe("読み取りの取り消し (#330)", () => {
       "wrong-secret",
     );
     expect((await undo(p.cookie, forged)).status).toBe(400);
+    expect(await attendedInDb(eventId, p.userId)).toBe(1);
+  });
+
+  it("出会いを取り消せない読み取りでは、出席も戻さない", async () => {
+    // 受付で正規にチェックインされた人が「staff を相手にした読み取り」を
+    // 口実に自分の出席だけ消せる、という抜け道を塞ぐ
+    const staff = await makeUser();
+    const p = await makeUser();
+    const eventId = await insertEvent(staff.userId);
+    await addMember(eventId, staff.userId, "staff");
+    await addMember(eventId, p.userId);
+
+    // 1回目の読み取りで出会いと出席が入る
+    const first = await scanOk(p.cookie, await issueToken(staff.cookie));
+    expect(first.events[0].attendedMe).toBe(true);
+    // 出会いだけ先に取り消しておく（出席は残る）
+    await undo(p.cookie, first.undoToken);
+    await env.DB.prepare(
+      "UPDATE event_member SET attended = 1, attended_at = ? WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(Date.now(), eventId, p.userId)
+      .run();
+
+    // 同じトークンをもう一度使っても、消す出会いが無いので出席は動かない
+    const res = await undo(p.cookie, first.undoToken);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      undone: number;
+      attendanceRevoked: boolean;
+    };
+    expect(body.undone).toBe(0);
+    expect(body.attendanceRevoked).toBe(false);
     expect(await attendedInDb(eventId, p.userId)).toBe(1);
   });
 

@@ -16,6 +16,7 @@ import {
   createUndoToken,
   isMeetTokenUsed,
   MEET_UNDO_TTL_SEC,
+  meetTokenTooOld,
   verifyMeetToken,
   verifyUndoToken,
 } from "../lib/meetToken.js";
@@ -101,7 +102,9 @@ meetScanRoutes.get("/token", async (c) => {
   const verified = current ? await verifyMeetToken(current) : null;
   const mine = verified?.ok && verified.userId === me.id ? verified : null;
   if (mine) {
-    if (!(await isMeetTokenUsed(mine.nonce))) {
+    // 出しっぱなしが長引くと、その画面を撮った写真が効く窓も伸びる。
+    // 読み取りが終わらないうちに切り替わらない長さは残しつつ、頭打ちにする
+    if (!meetTokenTooOld(mine.exp) && !(await isMeetTokenUsed(mine.nonce))) {
       // まだ誰にも読まれていない。出しっぱなしのQRをそのまま使い続ける
       return c.json({
         token: current!,
@@ -109,8 +112,10 @@ meetScanRoutes.get("/token", async (c) => {
         consumed: false,
       });
     }
-    // 読まれたので次のぶんを出す。表示側はここで描き替える
-    return c.json({ ...(await createMeetToken(me.id)), consumed: true });
+    // 読まれた（または出し続けて古くなった）ので次のぶんを出す。
+    // consumed は「読まれたから替わった」ときだけ立てる（表示の文言が変わる）
+    const consumed = await isMeetTokenUsed(mine.nonce);
+    return c.json({ ...(await createMeetToken(me.id)), consumed });
   }
   // 手持ちが無い・切れた・自分のものでない
   return c.json({ ...(await createMeetToken(me.id)), consumed: false });
@@ -145,8 +150,8 @@ meetScanRoutes.post("/scan", zValidator("json", meetScanInput), async (c) => {
   const target = await usersRepo.findById(verified.userId);
   if (!target) return c.json({ error: "invalid" }, 400);
 
-  // ここで使い切る。写真を後から渡されても、目の前の人が読んだ時点で終わり
-  if (!(await consumeMeetToken(verified.nonce))) {
+  // 使用済みのQRは、書き込みに進む前に弾く
+  if (await isMeetTokenUsed(verified.nonce)) {
     return c.json({ error: "used" }, 409);
   }
 
@@ -202,6 +207,19 @@ meetScanRoutes.post("/scan", zValidator("json", meetScanInput), async (c) => {
       attendedTarget,
     });
   }
+
+  // ここで使い切る。写真を後から渡されても、目の前の人が読んだ時点で終わり。
+  //
+  // 消費するのは「新しい出会いか出席が実際に記録できたとき」だけ。
+  // 無条件に焼くと、共通イベントが無い赤の他人や、同じ人の読み直しでも
+  // トークンが潰れる。受付の大QRの前で読み続けられると、出た端から
+  // 使用済みになって他の参加者が受付できなくなる。
+  // 写真を後から渡されても成立しないことは、この条件でも変わらない
+  // （成立するなら、それは記録が発生する読み取りなので消費される）
+  const wrote = events.some(
+    (e) => e.meetCreated || e.attendedMe || e.attendedTarget,
+  );
+  if (wrote) await consumeMeetToken(verified.nonce);
 
   return c.json({
     target: {
@@ -267,17 +285,20 @@ meetScanRoutes.post("/undo", zValidator("json", meetUndoInput), async (c) => {
     if (mine?.status !== "confirmed" || target?.status !== "confirmed") continue;
 
     // この読み取りが作った出会いだけを消す（元からあった記録には触らない）
-    if (
+    const deleted =
       grant.meetCreated &&
-      (await eventMeetsRepo.deleteMeet(grant.eventId, me.id, targetId))
-    ) {
-      undone++;
-    }
-    if (grant.attendedMe && target.role === "staff") {
+      (await eventMeetsRepo.deleteMeet(grant.eventId, me.id, targetId));
+    if (deleted) undone++;
+
+    // 出席を戻すのは、その回の出会いを実際に取り消せたときだけ。
+    // 出会いを消していないのに出席だけ外せると、受付で正規にチェックイン
+    // された人が「staff を相手にした読み取り」を口実に自分の出席を消せる。
+    // 取り消しの範囲を「この読み取りが書いた行ごと戻す」に閉じる
+    if (deleted && grant.attendedMe && target.role === "staff") {
       await eventMembersRepo.setAttended(grant.eventId, me.id, false, null);
       attendanceRevoked = true;
     }
-    if (grant.attendedTarget && mine.role === "staff") {
+    if (deleted && grant.attendedTarget && mine.role === "staff") {
       await eventMembersRepo.setAttended(grant.eventId, targetId, false, null);
       attendanceRevoked = true;
     }

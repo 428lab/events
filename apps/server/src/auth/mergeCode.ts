@@ -1,6 +1,6 @@
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { env } from "../runtime.js";
-import { one, run } from "../db/client.js";
+import { consumeNonce } from "../lib/usedNonce.js";
 
 /**
  * アカウント統合コード (#240)。
@@ -10,9 +10,9 @@ import { one, run } from "../db/client.js";
  * 形式: `userId:ts:nonce:mac`（userId は UUID なので ":" を含まない）
  */
 
-/** 有効期限。注意: nostr.ts 側の使い捨て記録クリーンアップ（CHALLENGE_TTL_MS * 2 =
- * 20分）より短く保つこと。これを20分以上に延ばすと、共有テーブルの nonce 記録が
- * 有効期限内に掃除されてコードのリプレイが可能になる */
+/** 有効期限。変更したら lib/usedNonce.ts の SHARED_TTLS_MS も直すこと。
+ * 共有テーブルの掃除しきい値はそこで「全用途の最長 TTL」から決まっており、
+ * ここだけ延ばすと記録が有効期限内に消えてリプレイが可能になる */
 const MERGE_CODE_TTL_MS = 15 * 60 * 1000;
 const PURPOSE = "account-merge";
 
@@ -60,22 +60,10 @@ export async function parseMergeCode(code: string): Promise<string | null> {
   return userId;
 }
 
-/** コードを使用済みにする。既に使われていれば false（リプレイ防止） */
+/** コードを使用済みにする。既に使われていれば false（リプレイ防止）。
+ * 記録先と掃除は lib/usedNonce.ts に集約（nostr チャレンジ・出会いQRと共有） */
 export async function consumeMergeCode(code: string): Promise<boolean> {
   const userId = await parseMergeCode(code);
   if (!userId) return false;
-  const nonce = code.split(":")[2];
-  const inserted = await one<{ nonce: string }>(
-    `INSERT OR IGNORE INTO nostr_challenge_used (nonce, used_at)
-     VALUES (?, ?) RETURNING nonce`,
-    nonce,
-    Date.now(),
-  );
-  if (!inserted) return false;
-  // TTL を過ぎた記録は掃除（テーブル肥大防止）
-  await run(
-    "DELETE FROM nostr_challenge_used WHERE used_at < ?",
-    Date.now() - MERGE_CODE_TTL_MS * 2,
-  );
-  return true;
+  return consumeNonce(code.split(":")[2]);
 }
