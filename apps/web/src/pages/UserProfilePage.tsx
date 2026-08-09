@@ -453,9 +453,20 @@ export function UserProfilePage() {
           flexWrap="wrap"
           useFlexGap
           sx={{
-            flexShrink: 0,
+            // スマホ幅ではボタン3つが横に収まらない。縮まないままだと右端の
+            // シェア・設定が本文の余白を突き抜けて画面際に貼りつくので、
+            // 幅いっぱいに置いて中で折り返させ、左右の余白を他の要素と揃える (#326)
+            width: { xs: "100%", sm: "auto" },
+            minWidth: 0,
+            flexShrink: { xs: 1, sm: 0 },
             // sm以上: 余白の中央あたりに寄せて目立たせる
             mx: { xs: 0, sm: "auto" },
+            // スマホ幅ではラベル付きの2つが1行に収まる大きさにする。収まらないと
+            // 1つずつ折り返して縦に伸びるため
+            "& .MuiButton-root": {
+              fontSize: { xs: "0.875rem", sm: "0.9375rem" },
+              px: { xs: 1.5, sm: 2.75 },
+            },
           }}
         >
           <Button
