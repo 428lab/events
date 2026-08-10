@@ -139,7 +139,7 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     expect(href("設定")).toBe("/account");
     expect(href("フォロー中 5")).toBe("/following");
     // カードのデザイン画面へも飛べる（マイページからは飛べなかった）
-    expect(href("プロフィールカード")).toBe("/users/tester/card");
+    expect(href("デザインを変える")).toBe("/users/tester/card");
   });
 
   it("他人のページには設定を出さず、フォロー中はただの数字にする", async () => {
@@ -203,16 +203,129 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
   });
 });
 
+/** カード上端のバーは配色テーマの主アクセント色。誰の配色で描かれたかの手掛かりに使う */
+const ACCENT = { indigo: "#4F46E5", teal: "#0D9488", rose: "#DB2777" };
+
+/** バッジ持ち・コミュニティ所属のプロフィール（落とした項目の重複を見るため） */
+const decorated = (over: Partial<UserProfile> = {}) =>
+  profile({
+    gamification: {
+      xp: 40,
+      level: 1,
+      currentLevelXp: 0,
+      nextLevelXp: 100,
+      badges: [
+        {
+          key: "first-contact",
+          name: "はじめての出会い",
+          description: "はじめて人と出会った",
+          icon: "meet",
+          tier: 1,
+        },
+      ],
+    },
+    communities: [
+      {
+        id: "c1",
+        slug: "nostr",
+        name: "Nostr",
+        iconUrl: null,
+        role: "member",
+        myEventCount: 1,
+      },
+    ],
+    ...over,
+  } as Partial<UserProfile>);
+
 /**
- * カードのデザイン画面への導線 (#334)。
+ * プロフィールに載せるカード (#334)。
  *
- * カードは持ち主が決めた意匠で描くもので、他人のカードには編集も印刷も無い。
- * だから導線そのものを他人のページに出さない。
+ * カードは名刺のように見せて渡すもので、QRの飛び先がこのプロフィール。
+ * 誰が見ても**持ち主が決めた意匠**で出ること、他人には編集・印刷・書き出しの
+ * 導線を出さないこと、カードに載っている情報を下で繰り返さないことを固定する。
  */
-describe("カードのデザイン画面への導線 (#334)", () => {
-  it("他人のページにはカードの導線を出さない", async () => {
+describe("プロフィール上のプロフィールカード (#334)", () => {
+  /** 見る人の手元の既定を「ティール／等高線」にしておく */
+  const setViewerDefaults = () => {
+    localStorage.setItem("eventer:cardBg", "topo");
+    localStorage.setItem("eventer:cardTheme", "teal");
+  };
+
+  const cardSvg = () =>
+    screen.getByRole("img", { name: "テスター のプロフィールカード" });
+
+  it("他人のカードも持ち主が選んだ配色で描く（見る人の配色では描かない）", async () => {
+    setViewerDefaults();
+    renderProfile(
+      profile({
+        isMe: false,
+        id: "u-other",
+        handle: "other",
+        cardImageKey: "arcs-rose",
+      }),
+    );
+    await screen.findByText("テスター さんのプロフィールカード");
+    const svg = cardSvg();
+    expect(svg.querySelector(`[fill="${ACCENT.rose}"]`)).toBeTruthy();
+    expect(svg.querySelector(`[fill="${ACCENT.teal}"]`)).toBeNull();
+    expect(svg.querySelector(`[fill="${ACCENT.indigo}"]`)).toBeNull();
+  });
+
+  it("他人のカードを見ても手元の既定は書き換わらない", async () => {
+    setViewerDefaults();
+    renderProfile(
+      profile({
+        isMe: false,
+        id: "u-other",
+        handle: "other",
+        cardImageKey: "arcs-rose",
+      }),
+    );
+    await screen.findByText("テスター さんのプロフィールカード");
+    expect(localStorage.getItem("eventer:cardBg")).toBe("topo");
+    expect(localStorage.getItem("eventer:cardTheme")).toBe("teal");
+  });
+
+  it("持ち主が一度も決めていないときだけ、見る人の既定を借りる", async () => {
+    setViewerDefaults();
+    renderProfile(
+      profile({ isMe: false, id: "u-other", handle: "other", cardImageKey: null }),
+    );
+    await screen.findByText("テスター さんのプロフィールカード");
+    expect(cardSvg().querySelector(`[fill="${ACCENT.teal}"]`)).toBeTruthy();
+  });
+
+  it("他人には編集・印刷・書き出しの導線を出さない", async () => {
     renderProfile(profile({ isMe: false, id: "u-other", handle: "other" }));
-    await screen.findByText("テスター");
-    expect(screen.queryByRole("link", { name: /カード/ })).toBeNull();
+    await screen.findByText("テスター さんのプロフィールカード");
+    expect(screen.queryByRole("link", { name: /デザイン/ })).toBeNull();
+    expect(screen.queryAllByRole("link", { name: /カード/ })).toHaveLength(0);
+    for (const label of [/印刷/, /ダウンロード/, /書き出/]) {
+      expect(screen.queryByText(label)).toBeNull();
+    }
+    // 印刷サイズの案内は本人向けの説明なので他人には出さない
+    expect(screen.queryByText(/91×55mm/)).toBeNull();
+  });
+
+  it("本人にはデザイン画面への導線と、印刷・書き出しの在りかを伝える", async () => {
+    renderProfile(profile());
+    await screen.findByText(/あなたのプロフィールカード/);
+    expect(href("デザインを変える")).toBe("/users/tester/card");
+    expect(screen.getByText(/91×55mm/)).toBeTruthy();
+  });
+
+  it("カードに載っている情報は下で繰り返さない", async () => {
+    renderProfile(decorated());
+    await screen.findByText(/あなたのプロフィールカード/);
+    // バッジ・所属コミュニティの一覧、レベルの進捗は見出しから落とした
+    expect(screen.queryByText(/バッジ（/)).toBeNull();
+    expect(screen.queryByText("所属コミュニティ")).toBeNull();
+    expect(screen.queryByText(/次のレベルまで/)).toBeNull();
+    // レベルと名前が出るのはカードの中の1か所だけ
+    expect(screen.getAllByText("Lv.1")).toHaveLength(1);
+    expect(screen.getAllByText("テスター")).toHaveLength(1);
+    // カードに無いものは残す
+    expect(screen.getByText("通算")).toBeTruthy();
+    expect(screen.getByText("参加実績")).toBeTruthy();
   });
 });

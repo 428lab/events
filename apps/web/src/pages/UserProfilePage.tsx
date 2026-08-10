@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   Alert,
-  Avatar,
   Box,
   Button,
   Card,
@@ -9,7 +8,6 @@ import {
   Chip,
   Dialog,
   IconButton,
-  LinearProgress,
   Link,
   Stack,
   Tooltip,
@@ -22,20 +20,11 @@ import CloseIcon from "@mui/icons-material/Close";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import MilitaryTechIcon from "@mui/icons-material/MilitaryTech";
-import MilitaryTechOutlinedIcon from "@mui/icons-material/MilitaryTechOutlined";
 import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
-import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
-import HandymanOutlinedIcon from "@mui/icons-material/HandymanOutlined";
-import CoPresentOutlinedIcon from "@mui/icons-material/CoPresentOutlined";
-import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
-import ThumbUpOutlinedIcon from "@mui/icons-material/ThumbUpOutlined";
-import HandshakeOutlinedIcon from "@mui/icons-material/HandshakeOutlined";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import type {
-  EarnedBadge,
-  Gamification,
   ParticipationStats,
   UserAward,
   UserPhoto,
@@ -47,11 +36,7 @@ import { useUserPhotos } from "../api/eventPhotoHooks.js";
 import { ParticipationHistory } from "../components/ParticipationHistory.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
-
-const COMMUNITY_ROLE_LABEL: Record<string, string> = {
-  owner: "オーナー",
-  admin: "管理者",
-};
+import { ProfileCardPanel } from "../components/licenseCard/ProfileCardPanel.js";
 
 /** 順位に応じたメダルアイコン（1〜3位=金/銀/銅トロフィー、4位以下の入賞=メダル、特別枠=勲章） */
 function awardIcon(rankOrder: number | null) {
@@ -121,99 +106,6 @@ function AwardsSection({
             </CardContent>
           </Card>
         ))}
-      </Stack>
-    </Box>
-  );
-}
-
-/** バッジ種別 → 単色アイコンの対応 (#14) */
-const BADGE_ICONS: Record<
-  EarnedBadge["icon"],
-  typeof CampaignOutlinedIcon
-> = {
-  host: CampaignOutlinedIcon,
-  staff: HandymanOutlinedIcon,
-  speak: CoPresentOutlinedIcon,
-  attend: EventAvailableOutlinedIcon,
-  liked: ThumbUpOutlinedIcon,
-  meet: HandshakeOutlinedIcon,
-};
-
-/** バッジの段階に応じた色（1=控えめ, 2=プライマリ, 3=セカンダリで強調） */
-const TIER_COLORS: Record<number, string> = {
-  1: "text.secondary",
-  2: "primary.main",
-  3: "secondary.main",
-};
-
-/** レベルチップ＋次のレベルまでの進捗バー (#14)。実績ゼロなら非表示 */
-function LevelBlock({ g }: { g?: Gamification }) {
-  if (!g || (g.xp === 0 && g.badges.length === 0)) return null;
-  const span = g.nextLevelXp - g.currentLevelXp;
-  const pct =
-    span > 0
-      ? Math.min(100, Math.max(0, ((g.xp - g.currentLevelXp) / span) * 100))
-      : 0;
-  return (
-    <Box sx={{ mt: 0.75, maxWidth: 320 }}>
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Chip
-          label={`Lv.${g.level}`}
-          color="primary"
-          size="small"
-          sx={{ fontWeight: 700 }}
-        />
-        <Typography variant="caption" color="text.secondary">
-          {g.xp} XP ・ 次のレベルまで {g.nextLevelXp - g.xp}
-        </Typography>
-      </Stack>
-      <LinearProgress
-        variant="determinate"
-        value={pct}
-        sx={{ mt: 0.5, height: 4, borderRadius: 2 }}
-      />
-    </Box>
-  );
-}
-
-/** 獲得済みバッジの一覧 (#14)。未獲得なら非表示 */
-function BadgesSection({ g }: { g?: Gamification }) {
-  if (!g || g.badges.length === 0) return null;
-  return (
-    <Box>
-      <Typography
-        variant="h6"
-        gutterBottom
-        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
-      >
-        <MilitaryTechOutlinedIcon fontSize="small" />
-        バッジ（{g.badges.length}）
-      </Typography>
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-        {g.badges.map((b) => {
-          const Icon = BADGE_ICONS[b.icon] ?? MilitaryTechOutlinedIcon;
-          const color = TIER_COLORS[b.tier] ?? "text.secondary";
-          return (
-            <Tooltip key={b.key} title={b.description}>
-              <Card
-                variant="outlined"
-                sx={{
-                  px: 1.25,
-                  py: 0.75,
-                  // 段階が上がるほど枠線で控えめに強調（単色アイコンのみ）
-                  ...(b.tier >= 2 && { borderColor: color }),
-                }}
-              >
-                <Stack direction="row" spacing={0.75} alignItems="center">
-                  <Icon fontSize="small" sx={{ color }} />
-                  <Typography variant="body2" fontWeight={600}>
-                    {b.name}
-                  </Typography>
-                </Stack>
-              </Card>
-            </Tooltip>
-          );
-        })}
       </Stack>
     </Box>
   );
@@ -351,109 +243,92 @@ export function UserProfilePage() {
 
   return (
     <Stack spacing={3}>
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-        <Avatar
-          src={data.avatarUrl ?? undefined}
-          sx={{ width: 64, height: 64, fontSize: 28 }}
-        >
-          {data.name.charAt(0)}
-        </Avatar>
-        <Box sx={{ flex: 1, minWidth: 180 }}>
-          <Typography variant="h5" fontWeight={700}>
-            {data.name}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {joined} に登録 ・ フォロワー {data.followerCount} ・{" "}
-            {/* 本人のときだけフォロー中の一覧へ行けるようにする (#319)。
-                /following は自分のフォローを管理する画面なので他人には出さない */}
-            {data.isMe ? (
-              <Link
-                component={RouterLink}
-                to="/following"
-                color="inherit"
-                underline="hover"
-              >
-                フォロー中 {data.followingCount}
-              </Link>
-            ) : (
-              <>フォロー中 {data.followingCount}</>
-            )}
-          </Typography>
-          <LevelBlock g={data.gamification} />
-        </Box>
-        {/* プロフィールカード (#178) とシェア。PCでは空きスペースの中央に大きめ表示 */}
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          flexWrap="wrap"
-          useFlexGap
-          sx={{
-            // スマホ幅ではボタン3つが横に収まらない。縮まないままだと右端の
-            // シェア・設定が本文の余白を突き抜けて画面際に貼りつくので、
-            // 幅いっぱいに置いて中で折り返させ、左右の余白を他の要素と揃える (#326)
-            width: { xs: "100%", sm: "auto" },
-            minWidth: 0,
-            flexShrink: { xs: 1, sm: 0 },
-            // sm以上: 余白の中央あたりに寄せて目立たせる
-            mx: { xs: 0, sm: "auto" },
-            // スマホ幅ではラベル付きの2つが1行に収まる大きさにする。収まらないと
-            // 1つずつ折り返して縦に伸びるため
-            "& .MuiButton-root": {
-              fontSize: { xs: "0.875rem", sm: "0.9375rem" },
-              px: { xs: 1.5, sm: 2.25 },
-            },
-          }}
-        >
-          {/* カードは自分の意匠を仕立てる画面 (#334)。他人のカードは編集も印刷も
-              できないので、本人のページにだけ出す */}
-          {data.isMe && (
-            <Button
-              component={RouterLink}
-              to={`/users/${data.handle ?? id}/card`}
-              variant="contained"
-              size="large"
-              startIcon={<BadgeOutlinedIcon />}
-            >
-              プロフィールカード
-            </Button>
-          )}
-          {/* 交流の場で相手に読み取ってもらう用の大きなQR (#324) */}
-          {data.isMe && (
-            <Button
-              variant="outlined"
-              size="large"
-              startIcon={<QrCode2Icon />}
-              onClick={() => setQrOpen(true)}
-            >
-              QRを見せる
-            </Button>
-          )}
-          <ShareButton
-            title={data.name}
-            url={`${window.location.origin}/users/${data.handle ?? id}`}
-          />
-          {/* 設定は本人にしか意味がないので本人のページだけに出す (#319) */}
-          {data.isMe && (
-            <Tooltip title="設定">
-              <IconButton component={RouterLink} to="/account" aria-label="設定">
-                <SettingsOutlinedIcon />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Stack>
+      {/* カードを主役にする (#334)。アイコン・名前・ハンドル・レベル・バッジ・
+          所属コミュニティはすべてカードに載っているので、以下では繰り返さない */}
+      <ProfileCardPanel profile={data} fallbackHandle={id} />
+
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+        sx={{
+          // スマホ幅で1行に収まらないぶんは折り返す。縮まないままだと右端の
+          // ボタンが本文の余白を突き抜けて画面際に貼りつく (#326)
+          minWidth: 0,
+          "& .MuiButton-root": {
+            fontSize: { xs: "0.875rem", sm: "0.9375rem" },
+            px: { xs: 1.5, sm: 2.25 },
+          },
+        }}
+      >
+        {/* 他人にできるのはフォローだけ。編集・印刷・書き出しの導線は出さない */}
         {!data.isMe && (
           <Button
             variant={data.isFollowing ? "outlined" : "contained"}
-            size="small"
+            size="large"
             onClick={toggleFollow}
             disabled={setFollow.isPending}
-            sx={{ flexShrink: 0 }}
           >
             {data.isFollowing ? "フォロー中" : "フォローする"}
           </Button>
         )}
+        {/* カードの意匠を仕立てる画面 (#334)。他人のカードは編集も印刷もできない */}
+        {data.isMe && (
+          <Button
+            component={RouterLink}
+            to={`/users/${data.handle ?? id}/card`}
+            variant="contained"
+            size="large"
+            startIcon={<BadgeOutlinedIcon />}
+          >
+            デザインを変える
+          </Button>
+        )}
+        {/* 交流の場で相手に読み取ってもらう用の大きなQR (#324) */}
+        {data.isMe && (
+          <Button
+            variant="outlined"
+            size="large"
+            startIcon={<QrCode2Icon />}
+            onClick={() => setQrOpen(true)}
+          >
+            QRを見せる
+          </Button>
+        )}
+        <ShareButton
+          title={data.name}
+          url={`${window.location.origin}/users/${data.handle ?? id}`}
+        />
+        {/* 設定は本人にしか意味がないので本人のページだけに出す (#319) */}
+        {data.isMe && (
+          <Tooltip title="設定">
+            <IconButton component={RouterLink} to="/account" aria-label="設定">
+              <SettingsOutlinedIcon />
+            </IconButton>
+          </Tooltip>
+        )}
       </Stack>
+
+      {/* カードに無い素性。登録日とフォローの数 */}
+      <Typography variant="caption" color="text.secondary">
+        {joined} に登録 ・ フォロワー {data.followerCount} ・{" "}
+        {/* 本人のときだけフォロー中の一覧へ行けるようにする (#319)。
+            /following は自分のフォローを管理する画面なので他人には出さない */}
+        {data.isMe ? (
+          <Link
+            component={RouterLink}
+            to="/following"
+            color="inherit"
+            underline="hover"
+          >
+            フォロー中 {data.followingCount}
+          </Link>
+        ) : (
+          <>フォロー中 {data.followingCount}</>
+        )}
+      </Typography>
 
       {data.isMe && (
         <BigQrDialog
@@ -468,42 +343,11 @@ export function UserProfilePage() {
           一覧なので、公開ぶんだけを数えると件数が合わなくなる (#319) */}
       <TotalsBar events={historyEvents} meetTotal={data.meetTotal ?? 0} />
 
-      <BadgesSection g={data.gamification} />
-
       <ParticipationSection stats={data.participation} />
 
       <AwardsSection awards={data.awards} profileName={data.name} />
 
       <PhotoGallerySection handle={data.handle ?? id} />
-
-
-      {data.communities.length > 0 && (
-        <Box>
-          <Typography variant="h6" gutterBottom>
-            所属コミュニティ
-          </Typography>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            {data.communities.map((com) => (
-              <Chip
-                key={com.id}
-                component={RouterLink}
-                to={`/c/${com.slug}`}
-                clickable
-                avatar={
-                  <Avatar src={com.iconUrl ?? undefined} variant="rounded">
-                    {com.name.charAt(0)}
-                  </Avatar>
-                }
-                label={
-                  COMMUNITY_ROLE_LABEL[com.role]
-                    ? `${com.name}・${COMMUNITY_ROLE_LABEL[com.role]}`
-                    : com.name
-                }
-              />
-            ))}
-          </Stack>
-        </Box>
-      )}
 
       {/* 参加履歴 (#315)。主役は4分類の一覧で、年表はタブで切り替える。
           本人のページではマイページ相当の一覧（下書き等も含む）を出す (#319) */}
