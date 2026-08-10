@@ -543,6 +543,9 @@ export const usersRepo = {
 
     // (6) UNIQUE の無い参照列は単純に付け替え
     const simple: Array<[table: string, col: string]> = [
+      // 発言鍵の履歴 (#332) は PK が (event_id, pubkey) で user 列を含まないため
+      // 衝突しない。統合後は両方の鍵が勝ち側の発言として表示される
+      ["event_chat_pubkey_history", "user_id"],
       ["event_photo", "user_id"],
       ["event_photo_comment", "user_id"],
       ["event_comment", "user_id"],
@@ -757,7 +760,8 @@ export const usersRepo = {
     // (4) user 行を削除。残りの個人データは FK CASCADE で消える
     //     （session / identity / event_member / entry_member / score /
     //      community_member / event_date_vote / event_request_reaction /
-    //      venue_admin / event_survey_answer / event_chat_pubkey / event_like /
+    //      venue_admin / event_survey_answer / event_chat_pubkey /
+    //      event_chat_pubkey_history / event_like /
     //      user_follow / event_meet / event_photo / event_photo_comment /
     //      event_comment / notification / notification_pref / inquiry /
     //      deck / bgm_track）。venue_photo.user_id と

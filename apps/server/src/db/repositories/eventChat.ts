@@ -2,7 +2,16 @@ import type { BlockedChatAuthor, ChatMember } from "@eventer/shared";
 import { many, one, run, runCount } from "../client.js";
 
 /** 表示許可リストの取得本体。withBlocked=true のときだけ締め出し中 (#283) も含める。
- * 参加者向けと管理画面で SQL が分かれると片方に除外漏れが出るので、1箇所に寄せてある */
+ * 参加者向けと管理画面で SQL が分かれると片方に除外漏れが出るので、1箇所に寄せてある。
+ *
+ * 元にするのは「いま署名に使う鍵」(event_chat_pubkey) ではなく
+ * **これまでに使った鍵ぜんぶ** (event_chat_pubkey_history) (#332)。
+ * 1人が複数行になる（端末や署名手段を変えると鍵が増える）。
+ *
+ * 締め出し (#283) は**その人の鍵をまとめて**外す。鍵が1人1つだった頃は
+ * 「鍵を1つ外す＝その人の発言が全部消える」で一致していたが、履歴を持つように
+ * なった今は、外した鍵ぶんだけ消えて別の鍵の発言が残ってしまう。
+ * 締め出しは鍵ではなく人に対する操作なので、人単位で外す */
 async function listMembersRows(
   eventId: string,
   withBlocked: boolean,
@@ -16,7 +25,7 @@ async function listMembersRows(
     role: string | null;
   }>(
     `SELECT p.pubkey, u.id AS user_id, u.username, u.global_name, u.avatar_url, m.role
-       FROM event_chat_pubkey p
+       FROM event_chat_pubkey_history p
        JOIN user u ON u.id = p.user_id
        LEFT JOIN event_member m ON m.event_id = p.event_id AND m.user_id = p.user_id
       WHERE p.event_id = ? AND u.deleted_at IS NULL${
@@ -24,7 +33,9 @@ async function listMembersRows(
           ? ""
           : ` AND NOT EXISTS (
              SELECT 1 FROM event_chat_blocked b
-              WHERE b.event_id = p.event_id AND b.pubkey = p.pubkey)`
+               JOIN event_chat_pubkey_history h
+                 ON h.event_id = b.event_id AND h.pubkey = b.pubkey
+              WHERE b.event_id = p.event_id AND h.user_id = p.user_id)`
       }
       ORDER BY p.created_at ASC`,
     eventId,
@@ -39,9 +50,37 @@ async function listMembersRows(
   }));
 }
 
+/** いま登録されている鍵を「その人がこれまでに使った鍵」へ記録する (#332)。
+ * 登録の直後に呼ぶ（登録経路は setPubkey / setEphemeral の2つだけ）。
+ *
+ * 現在の行から写すので、同時登録のレースで**実際に確定した鍵**が記録される。
+ * 履歴は消さない ＝ 署名の手段を変えても過去の自分の発言が表示され続ける。
+ *
+ * OR IGNORE なのは、同じ鍵を登録し直したとき（最初の created_at を残す）。
+ * 他人が押さえている鍵はそもそも登録側 (pubkeyOwner) で弾かれる */
+async function recordKeyHistory(
+  eventId: string,
+  userId: string,
+): Promise<void> {
+  await run(
+    `INSERT OR IGNORE INTO event_chat_pubkey_history
+       (event_id, user_id, pubkey, created_at)
+     SELECT event_id, user_id, pubkey, created_at FROM event_chat_pubkey
+      WHERE event_id = ? AND user_id = ?`,
+    eventId,
+    userId,
+  );
+}
+
 /** Nostrイベントチャット (#199) の紐付けデータ。
  * チャット本文はリレーにあり、ここでは「誰がどの鍵で発言するか」（表示許可リスト）、
- * チャンネルID、非表示リストのみを扱う */
+ * チャンネルID、非表示リストのみを扱う。
+ *
+ * 鍵は2つの表に分かれている (#332):
+ * - event_chat_pubkey: **いま署名に使う鍵**（イベント×ユーザーで1行。一時鍵の secret 付き）
+ * - event_chat_pubkey_history: **これまでに使った鍵ぜんぶ**（表示許可リストの元）
+ * 「この鍵は誰のものか」を見る問い合わせは、必ず履歴のほうを見ること。
+ * いまの鍵だけを見ると、手放した鍵が別人のものとして扱えてしまう */
 export const eventChatRepo = {
   /** チャンネルIDをクリアする（リレー上に部屋が無い場合の作り直し用） */
   async clearChannel(eventId: string): Promise<void> {
@@ -51,10 +90,13 @@ export const eventChatRepo = {
     );
   },
 
-  /** そのpubkeyを同一イベントで登録しているユーザーIDを返す（重複チェック用） */
+  /** そのpubkeyを同一イベントで使っているユーザーIDを返す（重複チェック用）。
+   * **いま使っている鍵だけでなく、過去に使った鍵も対象** (#332)。
+   * 誰かが手放した鍵を別の人が登録できてしまうと、その鍵の過去の発言が
+   * 登録した人の名前で表示される（なりすまし）ため */
   async pubkeyOwner(eventId: string, pubkey: string): Promise<string | null> {
     const row = await one<{ user_id: string }>(
-      "SELECT user_id FROM event_chat_pubkey WHERE event_id = ? AND pubkey = ?",
+      "SELECT user_id FROM event_chat_pubkey_history WHERE event_id = ? AND pubkey = ?",
       eventId,
       pubkey,
     );
@@ -62,7 +104,8 @@ export const eventChatRepo = {
   },
 
   /** 発言用の公開鍵を登録（イベント×ユーザーごとに1つ。再登録で置き換え）。
-   * ユーザー自身の鍵（NIP-07）への置き換えなので、サーバー管理の一時鍵は消す */
+   * ユーザー自身の鍵（NIP-07）への置き換えなので、サーバー管理の一時鍵は消す。
+   * 置き換えても**前の鍵は履歴に残る**（過去の発言が消えないように #332） */
   async setPubkey(
     eventId: string,
     userId: string,
@@ -77,6 +120,7 @@ export const eventChatRepo = {
       pubkey,
       Date.now(),
     );
+    await recordKeyHistory(eventId, userId);
   },
 
   /** サーバー管理の一時鍵 (#223)。secret 付きの行のみ返す（NIP-07 登録は対象外） */
@@ -113,6 +157,7 @@ export const eventChatRepo = {
       secret,
       Date.now(),
     );
+    await recordKeyHistory(eventId, userId);
   },
 
   /** 表示許可リスト（pubkey → ユーザー情報）。クライアントはこの pubkey のメッセージだけ描画する。
@@ -187,14 +232,16 @@ export const eventChatRepo = {
     return row !== null;
   },
 
-  /** そのユーザーが「いま登録している鍵」で締め出されているか (#283)。
+  /** そのユーザーが、このイベントで使った鍵のどれかで締め出されているか (#283)。
    * 本人の画面をチャットに繋がせないための判定に使う。
    *
-   * 締め出しは鍵に対して行うので、別の鍵で登録し直されたら外れる。
-   * それは承知のうえ（下の blockedAuthorOf のコメント参照） */
+   * 見るのは履歴 (#332) なので、**同じアカウントのまま鍵を登録し直しても外れない**。
+   * 鍵が1人1つだった頃は登録し直すと締め出しが外れていたが、履歴が残るように
+   * なったのでその抜け道は塞がる（このアプリの中での話。別アカウントで入り直す
+   * ことや、外部のクライアントからリレーへ投稿することは相変わらず防げない） */
   async isUserBlocked(eventId: string, userId: string): Promise<boolean> {
     const row = await one<{ n: number }>(
-      `SELECT 1 AS n FROM event_chat_pubkey p
+      `SELECT 1 AS n FROM event_chat_pubkey_history p
          JOIN event_chat_blocked b
            ON b.event_id = p.event_id AND b.pubkey = p.pubkey
         WHERE p.event_id = ? AND p.user_id = ?`,
@@ -204,14 +251,15 @@ export const eventChatRepo = {
     return row !== null;
   },
 
-  /** その鍵をこのイベントで登録している人（監査ログの当事者に残すため）。
-   * 退会等で辿れなければ null。鍵しか残らなくても記録の意味は失われない */
+  /** その鍵をこのイベントで使った人（監査ログの当事者に残すため）。
+   * 過去に使った鍵 (#332) も辿る。退会等で辿れなければ null。
+   * 鍵しか残らなくても記録の意味は失われない */
   async blockedAuthorOf(
     eventId: string,
     pubkey: string,
   ): Promise<{ id: string; handle: string } | null> {
     const row = await one<{ id: string; username: string }>(
-      `SELECT u.id, u.username FROM event_chat_pubkey p
+      `SELECT u.id, u.username FROM event_chat_pubkey_history p
          JOIN user u ON u.id = p.user_id
         WHERE p.event_id = ? AND p.pubkey = ?`,
       eventId,

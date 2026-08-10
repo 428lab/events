@@ -190,7 +190,9 @@ function MessageBody({
 /**
  * Nostrイベントチャット (#199)。NIP-28 パブリックチャットをブラウザから
  * ユーザー所有リレーへ直接読み書きする（サーバーはチャット本文を経由しない）。
- * 表示は許可リスト（chat-members に登録された pubkey）のメッセージのみ。
+ * 表示は許可リスト（chat-members が返す pubkey）のメッセージのみ。許可リストには
+ * 1人につき「これまでに使った鍵」が全部載る (#332) ので、端末や発言の手段を
+ * 変えても過去の自分の発言は表示され続ける。
  */
 export function EventChat({
   eventId,
@@ -281,21 +283,28 @@ export function EventChat({
     now >= event.startsAt - CHAT_WINDOW_BEFORE_MS &&
     now <= event.endsAt + CHAT_WINDOW_AFTER_MS;
 
-  // 登録済みの自分の鍵がサーバー管理の一時鍵なら自動で再参加する (#223)
-  const myRegisteredPubkey = useMemo(
-    () => chat?.members.find((m) => me && m.userId === me.id)?.pubkey ?? null,
+  // 登録済みの自分の鍵がサーバー管理の一時鍵なら自動で再参加する (#223)。
+  // 許可リストには**これまでに使った鍵が全部**載る (#332) ので、自分の鍵は複数ある
+  const myPubkeys = useMemo(
+    () =>
+      new Set(
+        (chat?.members ?? [])
+          .filter((m) => me && m.userId === me.id)
+          .map((m) => m.pubkey),
+      ),
     [chat, me],
   );
   useEffect(() => {
     // 投影用は参加操作をしない（下の読み取り専用の鍵で購読するだけ）
-    if (display || signer || !myRegisteredPubkey || !me) return;
+    if (display || signer || myPubkeys.size === 0 || !me) return;
     let cancelled = false;
     void (async () => {
       // 自動再参加は任意動作なので、一時的な取得失敗は黙ってスキップする
       const key = await fetchEphemeralChatKey(eventId).catch(() => null);
       if (cancelled || !key) return;
       const local = localSignerFromHex(key.secret);
-      if (local.pubkey === myRegisteredPubkey) {
+      // 配られた一時鍵が自分の鍵として登録されていることを確かめてから使う
+      if (myPubkeys.has(local.pubkey)) {
         signerIsNip07Ref.current = false;
         setSigner(local);
       }
@@ -303,7 +312,7 @@ export function EventChat({
     return () => {
       cancelled = true;
     };
-  }, [display, signer, myRegisteredPubkey, eventId, me]);
+  }, [display, signer, myPubkeys, eventId, me]);
 
   // 投影用画面は「読むだけ」なので、参加していなくても本文が出るようにする (#215)。
   // NIP-07 で参加している人が開くと一時鍵は取れず signer が決まらないため、

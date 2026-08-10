@@ -353,6 +353,55 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
     ).toBe(200);
   });
 
+  /** 発言鍵の履歴 (#332) が入ってから、1人が同じイベントで複数の鍵を持つ。
+   * 締め出しは「鍵」ではなく「人」に対する操作なので、どの鍵を指して締め出しても
+   * その人の鍵はまとめて許可リストから外れる（外した鍵ぶんだけ消えて、
+   * 別の鍵で書いた発言が残ってしまうと、締め出した意味が無くなる） */
+  it("鍵を複数持っている人でも、締め出せば発言はまとめて消える (#332)", async () => {
+    const admin = await loginDev();
+    const owner = await makeUser();
+    const noisy = await makeUser();
+    const other = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    const spare = await insertEvent(owner.userId);
+    await addMember(eventId, noisy.userId);
+    await addMember(eventId, other.userId);
+    await addMember(spare, noisy.userId);
+    const otherKey = await joinChat(eventId, other.cookie);
+
+    // 端末を変えて2つの鍵で発言してきた状態を作る
+    // （鍵の作り方だけ別イベントの一時鍵を借りている。使い道は同じ）
+    const first = await joinChat(eventId, noisy.cookie);
+    const second = await joinChat(spare, noisy.cookie);
+    expect(
+      (
+        await postJson(`/events/${eventId}/chat-key`, noisy.cookie, {
+          proof: await chatKeyProof(eventId, second),
+        })
+      ).status,
+    ).toBe(200);
+    const before = await visiblePubkeys(eventId, other.cookie);
+    expect(before.has(first.pubkey)).toBe(true);
+    expect(before.has(second.pubkey)).toBe(true);
+
+    // 古いほうの鍵を指して締め出す
+    expect((await block(eventId, admin, first.pubkey)).status).toBe(200);
+
+    const after = await visiblePubkeys(eventId, other.cookie);
+    expect(after.has(first.pubkey)).toBe(false);
+    expect(after.has(second.pubkey)).toBe(false);
+    expect(after.has(otherKey.pubkey)).toBe(true);
+    // 本人はチャットに繋がれない（鍵を登録し直しても履歴で判定するので外れない）
+    expect((await chatMembers(eventId, noisy.cookie)).status).toBe(403);
+
+    // 解除すれば両方戻る
+    expect((await unblock(eventId, admin, first.pubkey)).status).toBe(200);
+    const restored = await visiblePubkeys(eventId, other.cookie);
+    expect(restored.has(first.pubkey)).toBe(true);
+    expect(restored.has(second.pubkey)).toBe(true);
+    expect((await chatMembers(eventId, noisy.cookie)).status).toBe(200);
+  });
+
   it("あるイベントでの締め出しは、同じ人・同じ鍵でも別のイベントに波及しない", async () => {
     const admin = await loginDev();
     const owner = await makeUser();

@@ -191,7 +191,8 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     });
     expect(rTaken.status).toBe(409);
 
-    // 本人による別鍵への再登録 → 置き換え
+    // 本人による別鍵への再登録 → 発言に使う鍵は置き換わるが、
+    // 前の鍵も表示許可リストに残る（過去の自分の発言が消えないように #332）
     const p2 = await chatKeyProof(eventId);
     const r2 = await postJson(`/events/${eventId}/chat-key`, a.cookie, {
       proof: p2.proof,
@@ -201,8 +202,67 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     const members = ((await res.json()) as { members: { userId: string; pubkey: string }[] })
       .members;
     const mine = members.filter((m) => m.userId === a.userId);
-    expect(mine).toHaveLength(1);
-    expect(mine[0].pubkey).toBe(p2.key.pubkey);
+    expect(mine.map((m) => m.pubkey).sort()).toEqual(
+      [p1.key.pubkey, p2.key.pubkey].sort(),
+    );
+  });
+
+  /** #332: スマホなど拡張機能が使えない端末で入り直すと、以前に拡張機能で
+   * 署名して書いた自分の発言が画面から消えていた。表示は許可リストで絞られていて、
+   * 鍵を登録し直すと前の鍵が許可リストから消えていたため。
+   * 同じアカウントである限り、署名の手段が変わっても過去の鍵は残り続ける */
+  it("chat-key: 署名の手段を変えても過去の自分の鍵が表示許可リストに残る (#332)", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+    await addMember(eventId, b.userId);
+
+    // 拡張機能がある端末で自分の鍵を登録して発言していた状態
+    const p1 = await chatKeyProof(eventId);
+    expect(
+      (await postJson(`/events/${eventId}/chat-key`, a.cookie, { proof: p1.proof }))
+        .status,
+    ).toBe(200);
+
+    // 拡張機能が使えない端末で入り直す（＝一時鍵での参加）
+    const r = await postJson(`/events/${eventId}/chat-key/ephemeral`, a.cookie, {});
+    expect(r.status).toBe(200);
+    const ephemeral = (await r.json()) as { secret: string; pubkey: string };
+
+    // 許可リストには両方の鍵が載る（過去の発言も、これからの発言も描画される）
+    const members = (await (
+      await getChatMembers(eventId, a.cookie)
+    ).json()) as ChatMembersPayload;
+    const mine = members.members.filter((m) => m.userId === a.userId);
+    expect(mine.map((m) => m.pubkey).sort()).toEqual(
+      [p1.key.pubkey, ephemeral.pubkey].sort(),
+    );
+    // 他人の鍵が自分のものとして載ることはない
+    expect(members.members.some((m) => m.userId === b.userId)).toBe(false);
+
+    // 手放した鍵は他人が登録できない（その鍵の過去の発言を横取りさせない）
+    const stolen = await chatKeyProof(eventId, p1.key);
+    expect(
+      (await postJson(`/events/${eventId}/chat-key`, b.cookie, { proof: stolen.proof }))
+        .status,
+    ).toBe(409);
+    // 一時鍵のほうも同じ（サーバー発行の鍵でも所有者は変わらない）
+    const p3 = await chatKeyProof(eventId);
+    expect(
+      (await postJson(`/events/${eventId}/chat-key`, b.cookie, { proof: p3.proof }))
+        .status,
+    ).toBe(200);
+    const after = (await (
+      await getChatMembers(eventId, a.cookie)
+    ).json()) as ChatMembersPayload;
+    expect(
+      after.members.find((m) => m.pubkey === p1.key.pubkey)?.userId,
+    ).toBe(a.userId);
+    expect(
+      after.members.find((m) => m.pubkey === p3.key.pubkey)?.userId,
+    ).toBe(b.userId);
   });
 
   it("chat-key/ephemeral: サーバーが一時鍵を発行・保管し、同じ鍵を配布する (#223)", async () => {

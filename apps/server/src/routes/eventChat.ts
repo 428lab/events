@@ -79,7 +79,8 @@ async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
  * 限界（承知のうえ）: リレーはこのサービスの外にあるので、外部の Nostr
  * クライアントからは引き続き投稿できる。ただしその発言は許可リストに載っていない
  * ので、このアプリの誰の画面にも出ない（それで目的は足りる、と確認済み）。
- * 別の鍵で入り直されることも防げない。
+ * 別のアカウントで入り直されることも防げない（同じアカウントのまま鍵を
+ * 登録し直しても、判定はこれまでに使った鍵で行うので外れない #332）。
  * **その場の荒らしを止めるための道具**であって、恒久的な追放ではない。 */
 async function notBlocked(c: Context<AppEnv>): Promise<Response | null> {
   const blocked = await eventChatRepo.isUserBlocked(
@@ -140,6 +141,11 @@ eventChatRoutes.post(
     const existing = await eventChatRepo.ephemeralFor(eventId, userId);
     if (existing) return c.json(existing);
     const { secret, pubkey } = generateChatKey();
+    // 生成した鍵が既にこのイベントで使われていたら登録しない (#332)。
+    // 乱数256bitなので現実には起きないが、衝突したまま登録すると
+    // 「その鍵の過去の発言」が別人のものとして表示されてしまう
+    const taken = await eventChatRepo.pubkeyOwner(eventId, pubkey);
+    if (taken && taken !== userId) return c.json({ error: "pubkey_taken" }, 409);
     // 先勝ちupsert: 同時発行のレースでは先着の鍵が残るので、確定値を読み直して返す
     await eventChatRepo.setEphemeral(eventId, userId, pubkey, secret);
     const settled = await eventChatRepo.ephemeralFor(eventId, userId);
@@ -171,7 +177,8 @@ eventChatRoutes.post(
     if (await eventChatRepo.isBlocked(eventId, pubkey)) {
       return c.json({ error: "chat_unavailable" }, 403);
     }
-    // 同一イベント内で他ユーザーが既に使っている鍵は拒否
+    // 同一イベント内で他ユーザーが使っている鍵は拒否（過去に使っていた鍵も含む
+    // #332。手放した鍵を登録できると、その鍵の過去の発言が自分の名前で出る）
     const owner = await eventChatRepo.pubkeyOwner(eventId, pubkey);
     if (owner && owner !== c.get("user").id) {
       return c.json({ error: "pubkey_taken" }, 409);
