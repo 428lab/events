@@ -405,15 +405,19 @@ export function UserProfilePage() {
             },
           }}
         >
-          <Button
-            component={RouterLink}
-            to={`/users/${data.handle ?? id}/card`}
-            variant="contained"
-            size="large"
-            startIcon={<BadgeOutlinedIcon />}
-          >
-            プロフィールカード
-          </Button>
+          {/* カードは自分の意匠を仕立てる画面 (#334)。他人のカードは編集も印刷も
+              できないので、本人のページにだけ出す */}
+          {data.isMe && (
+            <Button
+              component={RouterLink}
+              to={`/users/${data.handle ?? id}/card`}
+              variant="contained"
+              size="large"
+              startIcon={<BadgeOutlinedIcon />}
+            >
+              プロフィールカード
+            </Button>
+          )}
           {/* 交流の場で相手に読み取ってもらう用の大きなQR (#324) */}
           {data.isMe && (
             <Button

@@ -46,9 +46,6 @@ export const BG_VARIANTS = [
 ] as const;
 export type CardBgVariant = (typeof BG_VARIANTS)[number]["key"];
 
-/** 背景パターン選択の保存先 */
-export const BG_STORAGE_KEY = "eventer:cardBg";
-
 /** カード配色テーマ。
  * - paper: 紙面グラデーション3ストップ
  * - accentA: 主アクセント（パターン主線・上端バー・ロゴ・イニシャル）
@@ -122,9 +119,6 @@ export const CARD_THEMES = [
   },
 ] as const satisfies readonly CardTheme[];
 export type CardThemeKey = (typeof CARD_THEMES)[number]["key"];
-
-/** 配色テーマ選択の保存先 */
-export const THEME_STORAGE_KEY = "eventer:cardTheme";
 
 /** patternData.ts に焼き込まれたストローク色をテーマ色へ差し替える。
  * 生成データ（indigo基準: #4F46E5 / #0EA5A0 / #2DD4BF）は編集せず、描画時に写像する */

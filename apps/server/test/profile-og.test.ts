@@ -99,6 +99,28 @@ describe("プロフィールカードPNGのアップロード/配信 (#193)", ()
     const body = (await after.json()) as { cardImageUpdatedAt: number | null };
     expect(body.cardImageUpdatedAt).toBeGreaterThan(0);
   });
+
+  it("公開プロフィールに持ち主が選んだ見た目が出る (#334)", async () => {
+    // これが欠けていると、プロフィールに載せるカードを見る人の配色で描くしかなくなる
+    const u = await makeUser();
+    const before = await SELF.fetch(`${BASE}/api/public/users/${u.username}`);
+    expect(
+      ((await before.json()) as { cardImageKey: string | null }).cardImageKey,
+    ).toBeNull();
+
+    const put = await SELF.fetch(`${BASE}/api/me/card-image?k=arcs-rose`, {
+      method: "PUT",
+      headers: { "content-type": "image/png", cookie: u.cookie },
+      body: PNG_BYTES,
+    });
+    expect(put.status).toBe(200);
+
+    // 未ログイン（＝他人）から見ても持ち主の値が返る
+    const after = await SELF.fetch(`${BASE}/api/public/users/${u.username}`);
+    expect(
+      ((await after.json()) as { cardImageKey: string | null }).cardImageKey,
+    ).toBe("arcs-rose");
+  });
 });
 
 describe("/users/:handle の OG メタ注入 (#193)", () => {

@@ -127,6 +127,9 @@ publicRoutes.get("/users/:handle", async (c) => {
     isMe: viewer?.id === user.id,
     // プロフィールカードPNG（OG画像）の更新時刻。未生成は null (#193)
     cardImageUpdatedAt: user.cardImageUpdatedAt,
+    // 持ち主が選んだカードの見た目（背景-配色） (#334)。プロフィールに載せるカードは
+    // 見る人の設定ではなく、これで描く。未設定（一度も保存していない）は null
+    cardImageKey: user.cardImageKey,
   });
 });
 

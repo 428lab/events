@@ -87,6 +87,7 @@ function profile(over: Partial<UserProfile> = {}): UserProfile {
     isFollowing: false,
     isMe: true,
     cardImageUpdatedAt: null,
+    cardImageKey: null,
     ...over,
   } as UserProfile;
 }
@@ -128,6 +129,7 @@ const href = (name: string) =>
 
 beforeEach(() => {
   getMock.mockReset();
+  localStorage.clear();
 });
 
 describe("公開プロフィール（マイページ統合 #319）", () => {
@@ -136,7 +138,7 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     await screen.findByText("テスター");
     expect(href("設定")).toBe("/account");
     expect(href("フォロー中 5")).toBe("/following");
-    // プロフィールカードへも飛べる（マイページからは飛べなかった）
+    // カードのデザイン画面へも飛べる（マイページからは飛べなかった）
     expect(href("プロフィールカード")).toBe("/users/tester/card");
   });
 
@@ -198,5 +200,19 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     // 本人のページは下書きを含む2件。公開ぶんだけの1件にはしない
     const totals = screen.getByText("イベント").previousSibling;
     expect(totals?.textContent).toBe("2");
+  });
+});
+
+/**
+ * カードのデザイン画面への導線 (#334)。
+ *
+ * カードは持ち主が決めた意匠で描くもので、他人のカードには編集も印刷も無い。
+ * だから導線そのものを他人のページに出さない。
+ */
+describe("カードのデザイン画面への導線 (#334)", () => {
+  it("他人のページにはカードの導線を出さない", async () => {
+    renderProfile(profile({ isMe: false, id: "u-other", handle: "other" }));
+    await screen.findByText("テスター");
+    expect(screen.queryByRole("link", { name: /カード/ })).toBeNull();
   });
 });
