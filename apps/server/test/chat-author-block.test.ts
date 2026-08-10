@@ -122,6 +122,29 @@ async function visiblePubkeys(
   return new Set(payload.members.map((m) => m.pubkey));
 }
 
+/** 管理画面が「締め出し中」として受け取る行（鍵1本＝1行） */
+async function blockedAuthors(
+  eventId: string,
+  cookie: string,
+): Promise<ModerationContentPayload["chat"]["blocked"]> {
+  const res = await SELF.fetch(
+    `${BASE}/api/admin/moderation/events/${eventId}`,
+    { headers: { cookie } },
+  );
+  expect(res.status).toBe(200);
+  const { chat } = (await res.json()) as ModerationContentPayload;
+  return chat.blocked;
+}
+
+/** 管理画面が「締め出し中」として受け取る pubkey の集合 */
+async function blockedPubkeys(
+  eventId: string,
+  cookie: string,
+): Promise<Set<string>> {
+  const rows = await blockedAuthors(eventId, cookie);
+  return new Set(rows.map((b) => b.pubkey));
+}
+
 function block(eventId: string, cookie: string, pubkey: string) {
   return postJson(
     `/admin/moderation/events/${eventId}/chat-authors/block`,
@@ -241,6 +264,17 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
     });
     expect(reregister.status).toBe(403);
 
+    // **締め出されていない別の鍵**での登録も受け付けない。
+    // 締め出しは鍵ではなく人に対する操作なので、他の経路と同じく人で止める
+    // （ここが通ると、締め出された人だけ 200 が返る不揃いが残る）
+    const fresh = makeOwnKey();
+    await linkKey(noisy.userId, fresh.pubkey);
+    const withFresh = await postJson(`/events/${eventId}/chat-key`, noisy.cookie, {
+      proof: await chatKeyProof(eventId, fresh),
+    });
+    expect(withFresh.status).toBe(403);
+    expect(await withFresh.json()).toEqual({ error: "chat_unavailable" });
+
     // 他の人は今までどおり
     expect((await chatMembers(eventId, other.cookie)).status).toBe(200);
 
@@ -270,8 +304,10 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "chat_unavailable" });
 
-    // 締め出しが無ければ従来どおり「使用中」で弾かれる（この確認の空振り防止）
+    // 締め出しが無ければ従来どおり「使用中」で弾かれる（この確認の空振り防止）。
+    // 使用状況まで判定が進むのは、その鍵がアカウントに登録されている場合だけ (#332)
     expect((await unblock(eventId, admin, otherKey.pubkey)).status).toBe(200);
+    await linkKey(noisy.userId, otherKey.pubkey);
     const again = await postJson(`/events/${eventId}/chat-key`, noisy.cookie, {
       proof: await chatKeyProof(eventId, otherKey),
     });
@@ -353,6 +389,73 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
     ).toBe(200);
   });
 
+  /** 鍵が1人1つでなくなった (#332) ので、1人が同じイベントで複数の鍵を持つ。
+   * 締め出しは「鍵」ではなく「人」に対する操作なので、どの鍵を指して締め出しても
+   * その人の鍵はまとめて許可リストから外れる（外した鍵ぶんだけ消えて、
+   * 別の鍵で書いた発言が残ってしまうと、締め出した意味が無くなる） */
+  it("鍵を複数持っている人でも、締め出せば発言はまとめて消える (#332)", async () => {
+    const admin = await loginDev();
+    const owner = await makeUser();
+    const noisy = await makeUser();
+    const other = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, noisy.userId);
+    await addMember(eventId, other.userId);
+    const otherKey = await joinChat(eventId, other.cookie);
+
+    // 端末を変えて2つの鍵で発言してきた状態を作る
+    // （一時鍵で参加したあと、自分の鍵が使える端末でも参加した）
+    const first = await joinChat(eventId, noisy.cookie);
+    const second = makeOwnKey();
+    await linkKey(noisy.userId, second.pubkey);
+    expect(
+      (
+        await postJson(`/events/${eventId}/chat-key`, noisy.cookie, {
+          proof: await chatKeyProof(eventId, second),
+        })
+      ).status,
+    ).toBe(200);
+    const before = await visiblePubkeys(eventId, other.cookie);
+    expect(before.has(first.pubkey)).toBe(true);
+    expect(before.has(second.pubkey)).toBe(true);
+
+    // 古いほうの鍵を指して締め出す
+    expect((await block(eventId, admin, first.pubkey)).status).toBe(200);
+
+    const after = await visiblePubkeys(eventId, other.cookie);
+    expect(after.has(first.pubkey)).toBe(false);
+    expect(after.has(second.pubkey)).toBe(false);
+    expect(after.has(otherKey.pubkey)).toBe(true);
+    // 本人はチャットに繋がれない（鍵を登録し直しても履歴で判定するので外れない）
+    expect((await chatMembers(eventId, noisy.cookie)).status).toBe(403);
+
+    // 管理画面には**その人の鍵が全部**「締め出し中」として出る。
+    // 締め出した鍵しか出ないと、別の鍵の発言に「締め出す」ボタンが出てしまい、
+    // 押すと締め出しが2本になって、片方を解除しても人としては戻らなくなる
+    expect(await blockedPubkeys(eventId, admin)).toEqual(
+      new Set([first.pubkey, second.pubkey]),
+    );
+    // その鍵たちが**同じ1人のもの**だと分かる形で出す。分からないと、管理画面は
+    // 「締め出している発言者」に同じ人を鍵の数だけ並べ、件数も人数にならない
+    const blockedRows = await blockedAuthors(eventId, admin);
+    expect(blockedRows.map((b) => b.userId)).toEqual([
+      noisy.userId,
+      noisy.userId,
+    ]);
+    // その別の鍵を指して締め出しても、状態は増えない（人単位で冪等）
+    const twice = await block(eventId, admin, second.pubkey);
+    expect(twice.status).toBe(200);
+    expect(await twice.json()).toEqual({ ok: true, changed: false });
+
+    // 解除は**どの鍵を指しても**その人の締め出しをまとめて解く
+    expect((await unblock(eventId, admin, second.pubkey)).status).toBe(200);
+    expect(await blockedPubkeys(eventId, admin)).toEqual(new Set());
+    const restored = await visiblePubkeys(eventId, other.cookie);
+    expect(restored.has(first.pubkey)).toBe(true);
+    expect(restored.has(second.pubkey)).toBe(true);
+    expect((await chatMembers(eventId, noisy.cookie)).status).toBe(200);
+  });
+
   it("あるイベントでの締め出しは、同じ人・同じ鍵でも別のイベントに波及しない", async () => {
     const admin = await loginDev();
     const owner = await makeUser();
@@ -368,14 +471,17 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
     await joinChat(eventB, other.cookie);
 
     // 同じ人が同じ鍵で両方のイベントに参加している状態を作る
-    // （NIP-07 で同じアカウントを使えば実際にこうなる）。
+    // （自分の鍵で参加すれば実際にこうなる）。
     // 鍵が別々だと「イベントで絞れているか」を確かめたことにならない
-    const shared = await joinChat(eventA, noisy.cookie);
-    const proof = await chatKeyProof(eventB, shared);
-    expect(
-      (await postJson(`/events/${eventB}/chat-key`, noisy.cookie, { proof }))
-        .status,
-    ).toBe(200);
+    const shared = makeOwnKey();
+    await linkKey(noisy.userId, shared.pubkey);
+    for (const ev of [eventA, eventB]) {
+      const proof = await chatKeyProof(ev, shared);
+      expect(
+        (await postJson(`/events/${ev}/chat-key`, noisy.cookie, { proof }))
+          .status,
+      ).toBe(200);
+    }
     expect((await visiblePubkeys(eventB, other.cookie)).has(shared.pubkey)).toBe(
       true,
     );
@@ -459,6 +565,8 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
     expect(chat.members.map((m) => m.pubkey)).toContain(noisyKey.pubkey);
     expect(chat.blocked.map((b) => b.pubkey)).toEqual([noisyKey.pubkey]);
     expect(chat.blocked[0].blockedAt).toBeGreaterThan(0);
+    // 誰の鍵かも添える（画面が人ごとにまとめるのに要る #332）
+    expect(chat.blocked[0].userId).toBe(noisy.userId);
   });
 
   it("監査ログに対象と操作が残る", async () => {
@@ -503,6 +611,23 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+
+/** 自分の鍵（本番では手元の署名手段が持つ鍵）を1つ作る */
+function makeOwnKey(): { secret: string; pubkey: string } {
+  const sk = schnorr.utils.randomSecretKey();
+  return { secret: bytesToHex(sk), pubkey: bytesToHex(schnorr.getPublicKey(sk)) };
+}
+
+/** その鍵を「このアカウントに登録された鍵」にする (#332)。
+ * 登録できるのはアカウントに登録された鍵だけなので、これが無いと 403 になる */
+async function linkKey(userId: string, pubkey: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO identity (id, user_id, provider, provider_user_id, email, created_at)
+     VALUES (?, ?, 'nostr', ?, NULL, ?)`,
+  )
+    .bind(crypto.randomUUID(), userId, pubkey, Date.now())
+    .run();
+}
 
 /** 一時鍵の秘密鍵で、その鍵の所有証明（kind:27888）を作る */
 async function chatKeyProof(

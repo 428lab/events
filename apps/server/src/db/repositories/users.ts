@@ -431,7 +431,6 @@ export const usersRepo = {
       ["event_request_reaction", "user_id", ["request_id", "kind"]],
       ["venue_admin", "user_id", ["venue_id"]],
       ["event_survey_answer", "user_id", ["question_id"]],
-      ["event_chat_pubkey", "user_id", ["event_id"]],
       ["event_like", "user_id", ["event_id", "kind", "target_key"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
@@ -449,6 +448,27 @@ export const usersRepo = {
         args: [winnerId, loserId],
       });
     }
+
+    // (1b) チャットの発言鍵 (#332)。キーが (event_id, pubkey) で user 列を含まない
+    //      ため鍵は衝突せず、両方の鍵の発言が**勝ち側の発言として表示される**
+    //      （同一人物の統合なので意図どおり）。同じ理由で、負け側が締め出されて
+    //      (#283) いれば勝ち側も締め出しのまま。締め出しは人に対する操作で、
+    //      その人の鍵は1つ残らず移るため。統合を締め出しのやり直しにしない。
+    //      一時鍵 (#223) だけは「イベント×ユーザーで1つ」の部分UNIQUE があるので、
+    //      両方が持つイベントでは負け側の secret を落とす（行は残すので発言は
+    //      消えない。既に配布済みの鍵を替えずに済むよう勝ち側を残す）
+    stmts.push({
+      sql: `UPDATE event_chat_key SET secret = NULL
+             WHERE user_id = ? AND secret IS NOT NULL
+               AND EXISTS (SELECT 1 FROM event_chat_key w
+                            WHERE w.user_id = ? AND w.event_id = event_chat_key.event_id
+                              AND w.secret IS NOT NULL)`,
+      args: [loserId, winnerId],
+    });
+    stmts.push({
+      sql: "UPDATE event_chat_key SET user_id = ? WHERE user_id = ?",
+      args: [winnerId, loserId],
+    });
 
     // (2) event_like.target_key は host/staff/participant のとき対象 user_id。
     //     付け替え後に重複する行と、統合で生じる「自分へのいいね」は削除
@@ -757,7 +777,7 @@ export const usersRepo = {
     // (4) user 行を削除。残りの個人データは FK CASCADE で消える
     //     （session / identity / event_member / entry_member / score /
     //      community_member / event_date_vote / event_request_reaction /
-    //      venue_admin / event_survey_answer / event_chat_pubkey / event_like /
+    //      venue_admin / event_survey_answer / event_chat_key / event_like /
     //      user_follow / event_meet / event_photo / event_photo_comment /
     //      event_comment / notification / notification_pref / inquiry /
     //      deck / bgm_track）。venue_photo.user_id と

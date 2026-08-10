@@ -94,10 +94,17 @@ export type ModerationEventsPayload = z.infer<
   typeof moderationEventsPayloadSchema
 >;
 
-/** 締め出している発言者1人ぶん (#283) */
+/** 締め出している発言者の鍵1本ぶん (#283)。
+ * 締め出しは**人**に対する操作だが、1人が複数の鍵を持つ (#332) ので、
+ * その人の鍵の数だけ行が出る（どの発言に「締め出し中」の印を付けるかは
+ * 鍵で決まるため、鍵ぜんぶを渡す必要がある）。
+ * **人ごとの一覧として見せるときは userId でまとめること** */
 export const blockedChatAuthorSchema = z.object({
   /** 発言に使われている公開鍵 */
   pubkey: z.string(),
+  /** この鍵をこのイベントで使った人。持ち主を辿れない鍵（退会・登録前に
+   * 締め出した等）は null で、その場合は鍵1本を1人として扱うほかない */
+  userId: z.string().nullable(),
   blockedAt: z.number(),
   /** 締め出した運営管理者の user id */
   blockedBy: z.string().nullable(),

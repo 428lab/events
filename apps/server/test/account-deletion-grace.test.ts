@@ -166,7 +166,7 @@ describe("退会の猶予期間 (#250)", () => {
     await joinEvent(eventId, host.userId, "staff");
     await joinEvent(eventId, a.userId);
     await env.DB.prepare(
-      "INSERT INTO event_chat_pubkey (event_id, user_id, pubkey, created_at) VALUES (?, ?, 'pk-a', ?)",
+      "INSERT INTO event_chat_key (event_id, user_id, pubkey, created_at) VALUES (?, ?, 'pk-a', ?)",
     )
       .bind(eventId, a.userId, Date.now())
       .run();

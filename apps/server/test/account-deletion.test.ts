@@ -159,7 +159,7 @@ describe("退会（アカウント削除） (#244, #250)", () => {
       .bind(crypto.randomUUID(), eventId, a.userId, Date.now())
       .run();
     await env.DB.prepare(
-      "INSERT INTO event_chat_pubkey (event_id, user_id, pubkey, created_at) VALUES (?, ?, 'pk-a', ?)",
+      "INSERT INTO event_chat_key (event_id, user_id, pubkey, created_at) VALUES (?, ?, 'pk-a', ?)",
     )
       .bind(eventId, a.userId, Date.now())
       .run();
@@ -243,7 +243,7 @@ describe("退会（アカウント削除） (#244, #250)", () => {
         a.userId,
       ],
       ["SELECT COUNT(*) AS n FROM event_comment WHERE user_id = ?", a.userId],
-      ["SELECT COUNT(*) AS n FROM event_chat_pubkey WHERE user_id = ?", a.userId],
+      ["SELECT COUNT(*) AS n FROM event_chat_key WHERE user_id = ?", a.userId],
       [
         "SELECT COUNT(*) AS n FROM user_follow WHERE follower_id = ? OR followee_id = ?",
         a.userId,

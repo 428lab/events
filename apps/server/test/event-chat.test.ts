@@ -122,6 +122,28 @@ async function chatKeyProof(eventId: string, key = makeNostrKey()) {
   return { key, proof };
 }
 
+/** その鍵を「このアカウントに登録された鍵」にする (#332)。
+ * 本番ではサインイン（または連携）のときに作られる紐付けを、テストでは直接作る。
+ * これが無い鍵は chat-key の登録で 403 (key_not_linked) になる */
+async function linkKey(userId: string, pubkey: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO identity (id, user_id, provider, provider_user_id, email, created_at)
+     VALUES (?, ?, 'nostr', ?, NULL, ?)`,
+  )
+    .bind(crypto.randomUUID(), userId, pubkey, Date.now())
+    .run();
+}
+
+/** 紐付けを別のアカウントへ移す（鍵を手放して別の人が登録し直した状態） */
+async function relinkKey(userId: string, pubkey: string): Promise<void> {
+  await env.DB.prepare(
+    "DELETE FROM identity WHERE provider = 'nostr' AND provider_user_id = ?",
+  )
+    .bind(pubkey)
+    .run();
+  await linkKey(userId, pubkey);
+}
+
 /** 64桁hexのダミー（Nostrの pubkey / note id 相当） */
 function hex64(seed: string): string {
   return seed.repeat(64).slice(0, 64);
@@ -157,8 +179,9 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     await addMember(eventId, a.userId);
     await addMember(eventId, b.userId);
 
-    // 正しい所有証明つき → 登録できる
+    // 正しい所有証明つき、かつアカウントに登録された鍵 → 登録できる
     const p1 = await chatKeyProof(eventId);
+    await linkKey(a.userId, p1.key.pubkey);
     const r1 = await postJson(`/events/${eventId}/chat-key`, a.cookie, {
       proof: p1.proof,
     });
@@ -184,15 +207,38 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     });
     expect(rReplay.status).toBe(400);
 
-    // 他ユーザーが登録済みの鍵と同じ pubkey → 409（なりすまし表示防止）
+    // アカウントに登録されていない鍵 → 403 (#332)。所有証明が通っていても、
+    // 「この鍵の持ち主」であることと「このアカウントの人」であることは別
+    const pStray = await chatKeyProof(eventId);
+    const rStray = await postJson(`/events/${eventId}/chat-key`, a.cookie, {
+      proof: pStray.proof,
+    });
+    expect(rStray.status).toBe(403);
+    expect(await rStray.json()).toEqual({ error: "key_not_linked" });
+
+    // 他人のアカウントに登録されている鍵 → 同じく 403（鍵を共有していても、
+    // その鍵の発言を自分のものとして表示させることはできない）
+    const pOthers = await chatKeyProof(eventId, p1.key);
+    const rOthers = await postJson(`/events/${eventId}/chat-key`, b.cookie, {
+      proof: pOthers.proof,
+    });
+    expect(rOthers.status).toBe(403);
+    expect(await rOthers.json()).toEqual({ error: "key_not_linked" });
+
+    // 紐付けを B へ移しても、そのイベントで A が使った鍵は B が登録できない → 409
+    // （その鍵の過去の発言を横取りさせない。イベント内では先着で押さえる）
+    await relinkKey(b.userId, p1.key.pubkey);
     const pSame = await chatKeyProof(eventId, p1.key);
     const rTaken = await postJson(`/events/${eventId}/chat-key`, b.cookie, {
       proof: pSame.proof,
     });
     expect(rTaken.status).toBe(409);
+    await relinkKey(a.userId, p1.key.pubkey);
 
-    // 本人による別鍵への再登録 → 置き換え
+    // 本人による別鍵の登録 → 前の鍵も表示許可リストに残る
+    // （過去の自分の発言が消えないように #332）
     const p2 = await chatKeyProof(eventId);
+    await linkKey(a.userId, p2.key.pubkey);
     const r2 = await postJson(`/events/${eventId}/chat-key`, a.cookie, {
       proof: p2.proof,
     });
@@ -201,8 +247,247 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     const members = ((await res.json()) as { members: { userId: string; pubkey: string }[] })
       .members;
     const mine = members.filter((m) => m.userId === a.userId);
-    expect(mine).toHaveLength(1);
-    expect(mine[0].pubkey).toBe(p2.key.pubkey);
+    expect(mine.map((m) => m.pubkey).sort()).toEqual(
+      [p1.key.pubkey, p2.key.pubkey].sort(),
+    );
+  });
+
+  /** #332: スマホなど自分の鍵が使えない端末で入り直すと、以前に自分の鍵で
+   * 署名して書いた発言が画面から消えていた。表示は許可リストで絞られていて、
+   * 鍵を登録し直すと前の鍵が許可リストから消えていたため。
+   * 同じアカウントである限り、発言の手段が変わっても過去の鍵は残り続ける */
+  it("chat-key: 発言の手段を変えても過去の自分の鍵が表示許可リストに残る (#332)", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+    await addMember(eventId, b.userId);
+
+    // 自分の鍵が使える端末で登録して発言していた状態
+    const p1 = await chatKeyProof(eventId);
+    await linkKey(a.userId, p1.key.pubkey);
+    expect(
+      (await postJson(`/events/${eventId}/chat-key`, a.cookie, { proof: p1.proof }))
+        .status,
+    ).toBe(200);
+
+    // 自分の鍵が使えない端末で入り直す（＝一時鍵での参加）
+    const r = await postJson(`/events/${eventId}/chat-key/ephemeral`, a.cookie, {});
+    expect(r.status).toBe(200);
+    const ephemeral = (await r.json()) as { secret: string; pubkey: string };
+
+    // 許可リストには両方の鍵が載る（過去の発言も、これからの発言も描画される）
+    const members = (await (
+      await getChatMembers(eventId, a.cookie)
+    ).json()) as ChatMembersPayload;
+    const mine = members.members.filter((m) => m.userId === a.userId);
+    expect(mine.map((m) => m.pubkey).sort()).toEqual(
+      [p1.key.pubkey, ephemeral.pubkey].sort(),
+    );
+    // 他人の鍵が自分のものとして載ることはない
+    expect(members.members.some((m) => m.userId === b.userId)).toBe(false);
+
+    // 一時鍵を配ったあとに自分の鍵へ戻しても、一時鍵の行は消えない
+    expect(
+      (await postJson(`/events/${eventId}/chat-key`, a.cookie, { proof: (await chatKeyProof(eventId, p1.key)).proof }))
+        .status,
+    ).toBe(200);
+    const again = await postJson(
+      `/events/${eventId}/chat-key/ephemeral`,
+      a.cookie,
+      {},
+    );
+    expect((await again.json()) as object).toEqual(ephemeral);
+
+    // 他人の鍵はそのイベントの許可リストにも載らないまま
+    const p3 = await chatKeyProof(eventId);
+    await linkKey(b.userId, p3.key.pubkey);
+    expect(
+      (await postJson(`/events/${eventId}/chat-key`, b.cookie, { proof: p3.proof }))
+        .status,
+    ).toBe(200);
+    const after = (await (
+      await getChatMembers(eventId, a.cookie)
+    ).json()) as ChatMembersPayload;
+    expect(
+      after.members.find((m) => m.pubkey === p1.key.pubkey)?.userId,
+    ).toBe(a.userId);
+    expect(
+      after.members.find((m) => m.pubkey === p3.key.pubkey)?.userId,
+    ).toBe(b.userId);
+  });
+
+  /** #332 の核心。自分の鍵が使える端末と使えない端末を行き来しても、
+   * サーバーが保管する一時鍵は**イベント×ユーザーで1つのまま**でなければならない。
+   * 入り直すたびに発行していると、その人の鍵（＝表示許可リストの行）が
+   * 際限なく増える。リストは全参加者が数秒ごとに取るので、そのまま全員の負担になる */
+  it("chat-key/ephemeral: 端末を行き来しても一時鍵は1つしか作られない (#332)", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+
+    // 一時鍵で参加 → 自分の鍵に切替 → また一時鍵、を2往復する
+    const first = (await (
+      await postJson(`/events/${eventId}/chat-key/ephemeral`, a.cookie, {})
+    ).json()) as { secret: string; pubkey: string };
+    const ownKeys: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const p = await chatKeyProof(eventId);
+      await linkKey(a.userId, p.key.pubkey);
+      expect(
+        (await postJson(`/events/${eventId}/chat-key`, a.cookie, { proof: p.proof }))
+          .status,
+      ).toBe(200);
+      ownKeys.push(p.key.pubkey);
+      const back = await postJson(
+        `/events/${eventId}/chat-key/ephemeral`,
+        a.cookie,
+        {},
+      );
+      // 秘密ごと同じ鍵が返る（新しい鍵が発行されていない）
+      expect((await back.json()) as object).toEqual(first);
+    }
+
+    // 増えたのは登録した自分の鍵ぶんだけ。一時鍵は最初の1つのまま
+    const members = (await (
+      await getChatMembers(eventId, a.cookie)
+    ).json()) as ChatMembersPayload;
+    expect(
+      members.members
+        .filter((m) => m.userId === a.userId)
+        .map((m) => m.pubkey)
+        .sort(),
+    ).toEqual([first.pubkey, ...ownKeys].sort());
+  });
+
+  /** 移行 (0066) で運ばれてくる形の行が、そのまま使い続けられること。
+   * 移行前は「イベント×ユーザーで1行」だったので、運ばれてくるのは
+   * 一時鍵の行（secret 付き）か自分の鍵の行（secret NULL）のどちらか1行。
+   * 一時鍵の秘密が引き継がれないと、移行の直後に全員へ新しい鍵が配られ、
+   * それまでの発言が画面から消える */
+  it("移行で運ばれた鍵はそのまま使い続けられる (#332)", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const b = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+    await addMember(eventId, b.userId);
+
+    // 移行前から持っていた一時鍵（A）と自分の鍵（B）を、移行後の形で置く
+    const carried = makeNostrKey();
+    const carriedSecret = bytesToHex(carried.sk);
+    await env.DB.prepare(
+      `INSERT INTO event_chat_key (event_id, user_id, pubkey, secret, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+      .bind(eventId, a.userId, carried.pubkey, carriedSecret, Date.now() - 1000)
+      .run();
+    const oldOwn = makeNostrKey();
+    await env.DB.prepare(
+      `INSERT INTO event_chat_key (event_id, user_id, pubkey, secret, created_at)
+       VALUES (?, ?, ?, NULL, ?)`,
+    )
+      .bind(eventId, b.userId, oldOwn.pubkey, Date.now() - 1000)
+      .run();
+
+    // 一時鍵は再発行されず、そのまま配られる
+    const got = await postJson(
+      `/events/${eventId}/chat-key/ephemeral`,
+      a.cookie,
+      {},
+    );
+    expect(got.status).toBe(200);
+    expect((await got.json()) as object).toEqual({
+      pubkey: carried.pubkey,
+      secret: carriedSecret,
+    });
+
+    // 移行前の鍵はどちらも表示許可リストに残っている（過去の発言が消えない）
+    const members = (await (
+      await getChatMembers(eventId, a.cookie)
+    ).json()) as ChatMembersPayload;
+    expect(members.members.find((m) => m.pubkey === carried.pubkey)?.userId).toBe(
+      a.userId,
+    );
+    expect(members.members.find((m) => m.pubkey === oldOwn.pubkey)?.userId).toBe(
+      b.userId,
+    );
+  });
+
+  /** 鍵は消えないので、増える経路には上限が要る。
+   * アカウントに登録された鍵しか登録できない (#332) ので普通は届かないが、
+   * 鍵を登録し直せば増やせる以上、上限そのものが無いのは穴 */
+  it("chat-key: 1人が使える鍵の数には上限がある (#332)", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+
+    // 上限（10）まで使い切った状態を直接作る
+    for (let i = 0; i < 10; i++) {
+      await env.DB.prepare(
+        `INSERT INTO event_chat_key (event_id, user_id, pubkey, secret, created_at)
+         VALUES (?, ?, ?, NULL, ?)`,
+      )
+        .bind(eventId, a.userId, makeNostrKey().pubkey, Date.now())
+        .run();
+    }
+
+    const p = await chatKeyProof(eventId);
+    await linkKey(a.userId, p.key.pubkey);
+    const res = await postJson(`/events/${eventId}/chat-key`, a.cookie, {
+      proof: p.proof,
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "too_many_keys" });
+  });
+
+  /** アカウント紐付けの確認を入れる前に登録していた人 (#332)。
+   * 別の手段でサインインしていると鍵はアカウントに登録されていないので、
+   * 紐付けを先に見ると「自分の鍵なのに登録されていません」と言われてしまう。
+   * 行が増えない登録し直しは、なりすましにも許可リストの肥大にも寄与しない */
+  it("chat-key: 既に自分のものになっている鍵は、紐付けが無くても登録し直せる (#332)", async () => {
+    const owner = await makeUser();
+    const a = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, a.userId);
+
+    // 紐付けの確認より前に登録されていた鍵（アカウントには登録されていない）
+    const old = makeNostrKey();
+    await env.DB.prepare(
+      `INSERT INTO event_chat_key (event_id, user_id, pubkey, secret, created_at)
+       VALUES (?, ?, ?, NULL, ?)`,
+    )
+      .bind(eventId, a.userId, old.pubkey, Date.now())
+      .run();
+
+    const proof = await chatKeyProof(eventId, old);
+    expect(
+      (await postJson(`/events/${eventId}/chat-key`, a.cookie, { proof: proof.proof }))
+        .status,
+    ).toBe(200);
+    // 行は増えない（同じ鍵のまま）
+    const members = (await (
+      await getChatMembers(eventId, a.cookie)
+    ).json()) as ChatMembersPayload;
+    expect(members.members.filter((m) => m.userId === a.userId)).toHaveLength(1);
+
+    // 上限を使い切っていても、登録し直しは通る（何も増やさないので）
+    for (let i = 0; i < 10; i++) {
+      await env.DB.prepare(
+        `INSERT INTO event_chat_key (event_id, user_id, pubkey, secret, created_at)
+         VALUES (?, ?, ?, NULL, ?)`,
+      )
+        .bind(eventId, a.userId, makeNostrKey().pubkey, Date.now())
+        .run();
+    }
+    const again = await chatKeyProof(eventId, old);
+    expect(
+      (await postJson(`/events/${eventId}/chat-key`, a.cookie, { proof: again.proof }))
+        .status,
+    ).toBe(200);
   });
 
   it("chat-key/ephemeral: サーバーが一時鍵を発行・保管し、同じ鍵を配布する (#223)", async () => {
@@ -261,19 +546,22 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     ).toBe("staff");
     expect(JSON.stringify(members)).not.toContain(k1.secret);
 
-    // NIP-07（所有証明つき登録）に切り替えると一時鍵は消える
+    // 自分の鍵（所有証明つき登録）に切り替えても、保管してある一時鍵は残る (#332)。
+    // ここで消すと、次に自分の鍵が使えない端末で入ったときに別の鍵が発行され、
+    // 一時鍵で書いた発言が全員の画面から消える
     const p = await chatKeyProof(eventId);
+    await linkKey(a.userId, p.key.pubkey);
     await postJson(`/events/${eventId}/chat-key`, a.cookie, { proof: p.proof });
-    const afterNip07 = await SELF.fetch(
+    const afterOwnKey = await SELF.fetch(
       `${BASE}/api/events/${eventId}/chat-key/ephemeral`,
       { headers: { cookie: a.cookie } },
     );
-    expect(afterNip07.status).toBe(404);
+    expect(afterOwnKey.status).toBe(200);
+    expect((await afterOwnKey.json()) as object).toEqual(k1);
 
-    // 一時鍵に戻すと新しい鍵で置き換わる
+    // 一時鍵に戻しても同じ鍵のまま（発行はイベント×ユーザーで1回だけ）
     const r3 = await postJson(`/events/${eventId}/chat-key/ephemeral`, a.cookie, {});
-    const k3 = (await r3.json()) as { secret: string; pubkey: string };
-    expect(k3.secret).not.toBe(k1.secret);
+    expect((await r3.json()) as object).toEqual(k1);
 
     // 他の確定メンバーが GET しても A の鍵は返らない（自分の鍵のみ）
     const b = await makeUser();
@@ -346,10 +634,12 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     await addMember(eventId, a.userId);
     await addMember(eventId, staff2.userId, "staff");
 
-    // owner/a がそれぞれ鍵を登録
+    // owner/a がそれぞれ鍵を登録（登録できるのはアカウントに登録された鍵だけ #332）
     const po = await chatKeyProof(eventId);
+    await linkKey(owner.userId, po.key.pubkey);
     await postJson(`/events/${eventId}/chat-key`, owner.cookie, { proof: po.proof });
     const pa = await chatKeyProof(eventId);
+    await linkKey(a.userId, pa.key.pubkey);
     await postJson(`/events/${eventId}/chat-key`, a.cookie, { proof: pa.proof });
 
     // 参加者の登録鍵で署名した kind:40 → 400（staff が持ち込んでも、

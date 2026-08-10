@@ -70,17 +70,58 @@ const MESSAGE_DISPLAY_MAX = 200;
  * 締め出された側からは通信の不調と区別が付かないので、これで目的は足りる */
 const CHAT_UNAVAILABLE_TEXT = "このイベントのチャットに接続できません。";
 
-/** 「チャットに繋がせない状態」(#283) のサーバー応答か。
- * 許可リストの取得 (chat-members) と参加ボタン (chat-key) の両方が同じ 403 を返すので、
- * 判定はここ1箇所に寄せる。**status も見る**: 別のエンドポイントが同じ
- * error 名を別のステータスで返し始めたときに、無関係な失敗をこの画面に
- * 吸い込ませないため */
-function isChatUnavailable(err: unknown): boolean {
+/** 発言に使う鍵の選び方。ephemeral=イベント用の一時鍵 / nip07=本人の鍵 */
+type KeyMode = "ephemeral" | "nip07";
+
+/** 前回そのイベントで選んだ発言手段の記憶先 (#332)。
+ *
+ * 一時鍵はサーバー側に残り続けるようになったので、「一時鍵が取れるか」だけで
+ * 自動再参加を決めると、一度でも一時鍵を使った人は再読み込みのたびに黙って
+ * 一時鍵へ戻され、本人の鍵で発言する選択が二度と出せなくなる。
+ * そこで**選択そのもの**をイベント単位で覚えて、自動再参加の可否に使う。
+ *
+ * 覚えるのは「どちらを選んだか」だけ。鍵の中身や個人を特定できる値は書かない
+ * （鍵はサーバーが保管する。localStorage には置かない方針＝lib/nostrChat.ts） */
+function keyModeStorageKey(eventId: string): string {
+  return `eventer:chatKeyMode:${eventId}`;
+}
+
+/** 前回の選択を読む。localStorage を触れない環境（プライベートウィンドウ等で
+ * 例外を投げる）では「まだ何も選んでいない」扱いにして、既定の挙動に落とす */
+function loadKeyMode(eventId: string): KeyMode | null {
+  try {
+    const v = localStorage.getItem(keyModeStorageKey(eventId));
+    return v === "ephemeral" || v === "nip07" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 選択を覚える。書けない環境では覚えないだけで、参加そのものは成立している */
+function saveKeyMode(eventId: string, mode: KeyMode): void {
+  try {
+    localStorage.setItem(keyModeStorageKey(eventId), mode);
+  } catch {
+    // 記憶できないだけなので黙って諦める（このセッション内の選択は残る）
+  }
+}
+
+/** サーバーが返した error 名（その status のときだけ見る）。
+ * **status も一緒に見る**のは、別のエンドポイントが同じ error 名を別の
+ * ステータスで返し始めたときに、無関係な失敗をこの画面に吸い込ませないため */
+function errorIs(err: unknown, status: number, code: string): boolean {
   return (
     err instanceof ApiError &&
-    err.status === 403 &&
-    (err.body as { error?: string } | null)?.error === "chat_unavailable"
+    err.status === status &&
+    (err.body as { error?: string } | null)?.error === code
   );
+}
+
+/** 「チャットに繋がせない状態」(#283) のサーバー応答か。
+ * 許可リストの取得 (chat-members) と参加ボタン (chat-key) の両方が同じ 403 を
+ * 返すので、判定はここ1箇所に寄せる */
+function isChatUnavailable(err: unknown): boolean {
+  return errorIs(err, 403, "chat_unavailable");
 }
 
 /** 受信・送信したメッセージを時刻順に足す。IDで重複排除し、古い方から丸める */
@@ -190,7 +231,9 @@ function MessageBody({
 /**
  * Nostrイベントチャット (#199)。NIP-28 パブリックチャットをブラウザから
  * ユーザー所有リレーへ直接読み書きする（サーバーはチャット本文を経由しない）。
- * 表示は許可リスト（chat-members に登録された pubkey）のメッセージのみ。
+ * 表示は許可リスト（chat-members が返す pubkey）のメッセージのみ。許可リストには
+ * 1人につき「これまでに使った鍵」が全部載る (#332) ので、端末や発言の手段を
+ * 変えても過去の自分の発言は表示され続ける。
  */
 export function EventChat({
   eventId,
@@ -242,7 +285,10 @@ export function EventChat({
   const hideNote = useHideChatNote(eventId);
 
   const [signer, setSigner] = useState<ChatSigner | null>(null);
-  const [keyMode, setKeyMode] = useState<"ephemeral" | "nip07">("ephemeral");
+  // 前回このイベントで選んだ手段を初期値にする (#332)。未選択なら従来どおり一時鍵
+  const [keyMode, setKeyMode] = useState<KeyMode>(
+    () => loadKeyMode(eventId) ?? "ephemeral",
+  );
   const [joinError, setJoinError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [messages, setMessages] = useState<NostrEvent[]>([]);
@@ -281,21 +327,38 @@ export function EventChat({
     now >= event.startsAt - CHAT_WINDOW_BEFORE_MS &&
     now <= event.endsAt + CHAT_WINDOW_AFTER_MS;
 
-  // 登録済みの自分の鍵がサーバー管理の一時鍵なら自動で再参加する (#223)
-  const myRegisteredPubkey = useMemo(
-    () => chat?.members.find((m) => me && m.userId === me.id)?.pubkey ?? null,
+  // 登録済みの自分の鍵がサーバー管理の一時鍵なら自動で再参加する (#223)。
+  // 許可リストには**これまでに使った鍵が全部**載る (#332) ので、自分の鍵は複数ある。
+  // 依存に使うのは `,` 連結した文字列。Set はレンダーのたびに新しい参照になり、
+  // 中身が同じでも effect の依存としては「変わった」扱いになってしまう
+  // （2秒ポーリングのたびに無駄に再実行される）ため、値として安定する文字列にする
+  const myPubkeysKey = useMemo(
+    () =>
+      (chat?.members ?? [])
+        .filter((m) => me && m.userId === me.id)
+        .map((m) => m.pubkey)
+        .sort()
+        .join(","),
     [chat, me],
   );
   useEffect(() => {
+    const myPubkeys = myPubkeysKey ? myPubkeysKey.split(",") : [];
     // 投影用は参加操作をしない（下の読み取り専用の鍵で購読するだけ）
-    if (display || signer || !myRegisteredPubkey || !me) return;
+    if (display || signer || myPubkeys.length === 0 || !me) return;
+    // 前回このイベントで本人の鍵を選んだ人は、勝手に一時鍵へ戻さない (#332)。
+    // サーバーは一時鍵を消さずに持ち続けるので、この分岐が無いと下の取得が
+    // 毎回成功し、再読み込みのたびに黙って一時鍵の署名器へ切り替わってしまう
+    // （＝本人の鍵で発言する選択が、告知なく失われる）。
+    // 未選択の人と、前回一時鍵だった人はこれまでどおり自動で繋がる (#223)
+    if (loadKeyMode(eventId) === "nip07") return;
     let cancelled = false;
     void (async () => {
       // 自動再参加は任意動作なので、一時的な取得失敗は黙ってスキップする
       const key = await fetchEphemeralChatKey(eventId).catch(() => null);
       if (cancelled || !key) return;
       const local = localSignerFromHex(key.secret);
-      if (local.pubkey === myRegisteredPubkey) {
+      // 配られた一時鍵が自分の鍵として登録されていることを確かめてから使う
+      if (myPubkeys.includes(local.pubkey)) {
         signerIsNip07Ref.current = false;
         setSigner(local);
       }
@@ -303,7 +366,7 @@ export function EventChat({
     return () => {
       cancelled = true;
     };
-  }, [display, signer, myRegisteredPubkey, eventId, me]);
+  }, [display, signer, myPubkeysKey, eventId, me]);
 
   // 投影用画面は「読むだけ」なので、参加していなくても本文が出るようにする (#215)。
   // NIP-07 で参加している人が開くと一時鍵は取れず signer が決まらないため、
@@ -451,8 +514,10 @@ export function EventChat({
   const join = async () => {
     if (!me) return;
     setJoinError(null);
+    // 「本人の鍵」を選んでいても、手元でその鍵が使えなければ一時鍵で参加する。
+    // 失敗の説明を出し分けるのに使うので try の外で決める
+    const useNip07 = keyMode === "nip07" && hasNip07();
     try {
-      const useNip07 = keyMode === "nip07" && hasNip07();
       let s: ChatSigner;
       if (useNip07) {
         s = await nip07Signer();
@@ -471,18 +536,38 @@ export function EventChat({
         s = localSignerFromHex(key.secret);
       }
       signerIsNip07Ref.current = useNip07;
+      // 実際に使った手段を覚える (#332)。keyMode ではなく useNip07 を書くのは、
+      // 「本人の鍵」を選んでいても拡張が無ければ一時鍵で参加しているため
+      saveKeyMode(eventId, useNip07 ? "nip07" : "ephemeral");
       setSigner(s);
     } catch (err) {
-      // 原因が分かる失敗は出し分ける (#223)
-      if (err instanceof ApiError && err.status === 409) {
+      // 原因が分かる失敗は出し分ける (#223)。
+      // **error 名で見る**: 同じ 409 でも「鍵が使用中」と「鍵の数の上限」で
+      // 利用者のすることが違うので、status だけで束ねると片方が的外れになる
+      if (errorIs(err, 409, "pubkey_taken")) {
+        // 一時鍵の経路でも起こりうる（サーバーが作った鍵の衝突）が、その場合
+        // 利用者は鍵を選んでいないので「別の鍵を」とは言えない
         setJoinError(
-          "この Nostr アカウントの鍵は同じイベントの別のユーザーが使用中です。別のアカウントを選んでください。",
+          useNip07
+            ? "この鍵は同じイベントの別のユーザーが使用中です。別の鍵を選んでください。"
+            : "チャットへの参加に失敗しました。もう一度お試しください。",
         );
       } else if (isChatUnavailable(err)) {
         // 締め出し (#283)。締め出された人は**参加が確定している**ので、
         // 下の「参加が確定しているメンバーのみ」に落とすと事実と違う説明になる。
         // 理由は書かないが嘘も書かない、で上の表示と同じ文言に揃える
         setJoinError(CHAT_UNAVAILABLE_TEXT);
+      } else if (errorIs(err, 403, "key_not_linked")) {
+        // その鍵の持ち主であることは証明できたが、鍵がこのアカウントのものとして
+        // 登録されていないケース (#332)。何をすれば発言できるかまで書く
+        setJoinError(
+          "この鍵はあなたのアカウントに登録されていません。同じ鍵でサインインしてアカウントに登録するか、イベント用の一時鍵で参加してください。",
+        );
+      } else if (errorIs(err, 409, "too_many_keys")) {
+        // このイベントで登録できる鍵の数の上限に達した (#332)
+        setJoinError(
+          "このイベントで使える鍵の数の上限に達しました。イベント用の一時鍵で参加してください。",
+        );
       } else if (err instanceof ApiError && err.status === 403) {
         setJoinError("参加が確定しているメンバーのみチャットを利用できます。");
       } else {
@@ -634,9 +719,7 @@ export function EventChat({
             {hasNip07() && (
               <RadioGroup
                 value={keyMode}
-                onChange={(e) =>
-                  setKeyMode(e.target.value as "ephemeral" | "nip07")
-                }
+                onChange={(e) => setKeyMode(e.target.value as KeyMode)}
               >
                 <FormControlLabel
                   value="ephemeral"
