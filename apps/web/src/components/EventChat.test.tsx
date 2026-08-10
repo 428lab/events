@@ -139,6 +139,7 @@ beforeEach(() => {
   ephemeralKey = null;
   chatQuery = { data: CHAT };
   joinResult = async () => ({ secret: "00", pubkey: "pk-me" });
+  localStorage.clear();
 });
 
 /** 描画して、非同期の自動再参加・リレー接続が落ち着くまで待つ */
@@ -312,6 +313,98 @@ describe("署名の手段が変わっても過去の自分の発言が見える 
   });
 });
 
+/**
+ * 再読み込み時の自動再参加 (#223) と、前回選んだ発言手段の尊重 (#332)。
+ *
+ * サーバーは一時鍵を消さずに持ち続けるので、「一時鍵が取れるか」だけで判断すると
+ * 一度でも一時鍵を使った人は再読み込みのたびに黙って一時鍵へ戻される。
+ * 本人の鍵で発言する選択が告知なく失われるので、**前回の選択**で分ける。
+ */
+describe("再読み込み時の自動再参加と前回の選択 (#332)", () => {
+  /** 前回この画面で選んだ発言手段の記憶先（イベント単位）。
+   * 覚えるのは選択だけで、鍵や個人を特定できる値は入れない */
+  const MODE_KEY = "eventer:chatKeyMode:e-1";
+
+  it("前回「自分の鍵」を選んだ人は、一時鍵が取れても勝手に切り替わらない", async () => {
+    // サーバーには一時鍵が残っており、その鍵は許可リストにも載っている
+    // （＝この分岐が無いと自動再参加が必ず成立してしまう状況）
+    ephemeralKey = { secret: "00" };
+    localStorage.setItem(MODE_KEY, "nip07");
+    await renderChat("page");
+
+    // 参加UIが出て、選び直せる
+    expect(
+      await screen.findByRole("button", { name: "チャットに参加する" }),
+    ).toBeInTheDocument();
+    // 前回の選択が選ばれた状態で出る
+    expect(screen.getByLabelText("Nostrアカウントで発言")).toBeChecked();
+    expect(screen.getByLabelText("イベント用の一時鍵で発言")).not.toBeChecked();
+    // 一時鍵の署名器で購読を始めていない
+    expect(deliver).toBeNull();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("前回「一時鍵」だった人は、これまでどおり自動で繋がる", async () => {
+    ephemeralKey = { secret: "00" };
+    localStorage.setItem(MODE_KEY, "ephemeral");
+    await renderChat("page");
+
+    await waitFor(() => expect(deliver).not.toBeNull());
+    expect(
+      screen.queryByRole("button", { name: "チャットに参加する" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("まだ何も選んでいない人は、これまでどおり自動で繋がる（既定は変えない）", async () => {
+    ephemeralKey = { secret: "00" };
+    await renderChat("page");
+
+    await waitFor(() => expect(deliver).not.toBeNull());
+    expect(
+      screen.queryByRole("button", { name: "チャットに参加する" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("別のイベントの選択に引きずられない（記憶はイベント単位）", async () => {
+    ephemeralKey = { secret: "00" };
+    localStorage.setItem("eventer:chatKeyMode:e-999", "nip07");
+    await renderChat("page");
+
+    await waitFor(() => expect(deliver).not.toBeNull());
+  });
+
+  it("localStorage が使えない環境でも壊れず、自動で繋がる", async () => {
+    // プライベートウィンドウ等で getItem/setItem が例外を投げる状態を作る
+    const boom = () => {
+      throw new Error("no storage");
+    };
+    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(boom);
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(boom);
+    try {
+      ephemeralKey = { secret: "00" };
+      await renderChat("page");
+      await waitFor(() => expect(deliver).not.toBeNull());
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it("参加したときに、実際に使った手段を覚える", async () => {
+    // 一時鍵が無い＝自動再参加が成立せず、参加UIから入る状態
+    await renderChat("page");
+    const button = await screen.findByRole("button", {
+      name: "チャットに参加する",
+    });
+    await act(async () => {
+      button.click();
+    });
+
+    expect(localStorage.getItem(MODE_KEY)).toBe("ephemeral");
+  });
+});
+
 describe("チャットに繋がせない状態 (#283)", () => {
   const unavailableQuery = {
     data: CHAT,
@@ -415,5 +508,36 @@ describe("参加ボタンが 403 で失敗したとき (#283)", () => {
     expect(
       screen.queryByText("このイベントのチャットに接続できません。"),
     ).not.toBeInTheDocument();
+  });
+
+  it("key_not_linked（本人の鍵だがアカウントに未登録）なら専用の文言を出す", async () => {
+    joinResult = async () => {
+      throw new ApiError(403, { error: "key_not_linked" });
+    };
+    await clickJoin();
+
+    expect(
+      await screen.findByText(
+        "この鍵はあなたのアカウントに登録されていません。同じ鍵でサインインしてアカウントに登録するか、イベント用の一時鍵で参加してください。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(NOT_CONFIRMED_TEXT)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("このイベントのチャットに接続できません。"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("too_many_keys（登録できる鍵の上限到達）なら専用の文言を出す", async () => {
+    joinResult = async () => {
+      throw new ApiError(409, { error: "too_many_keys" });
+    };
+    await clickJoin();
+
+    expect(
+      await screen.findByText(
+        "このイベントで使える鍵の数の上限に達しました。イベント用の一時鍵で参加してください。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(NOT_CONFIRMED_TEXT)).not.toBeInTheDocument();
   });
 });

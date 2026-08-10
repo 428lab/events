@@ -429,6 +429,49 @@ describe("アカウント統合 (#240)", () => {
     expect(row?.total).toBe(1);
   });
 
+  /** チャットの発言鍵 (#332)。両方のアカウントが同じイベントで一時鍵を持っていると、
+   * 「一時鍵はイベント×ユーザーで1つ」の部分UNIQUE に当たって統合そのものが
+   * 失敗しうる。鍵の行は残したまま（残さないとその鍵で書いた発言が全員の画面から
+   * 消える）、負け側の一時鍵の秘密だけを落として通す */
+  it("チャットの発言鍵は両方が勝ち側へ移り、一時鍵は勝ち側のものが残る (#332)", async () => {
+    const a = await makeUser(); // 負け側
+    const b = await makeUser(); // 勝ち側
+    const owner = await makeUser();
+    const eventId = await makeEvent(owner.userId);
+    const key = async (userId: string, pubkey: string, secret: string | null) =>
+      env.DB.prepare(
+        `INSERT INTO event_chat_key (event_id, user_id, pubkey, secret, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+        .bind(eventId, userId, pubkey, secret, Date.now())
+        .run();
+    await key(a.userId, "pk-loser-eph", "sec-loser");
+    await key(a.userId, "pk-loser-own", null);
+    await key(b.userId, "pk-winner-eph", "sec-winner");
+
+    const code = await issueCode(a.cookie);
+    expect((await postMerge(b.cookie, { code, keep: "me" })).status).toBe(200);
+
+    // 3つとも勝ち側の鍵になる（どの鍵で書いた発言も本人のものとして表示される）
+    expect(
+      await count(
+        "SELECT COUNT(*) AS n FROM event_chat_key WHERE event_id = ? AND user_id = ?",
+        eventId,
+        b.userId,
+      ),
+    ).toBe(3);
+    // 一時鍵は1つだけ。配布中の鍵を替えずに済むよう、勝ち側のものを残す
+    const eph = await env.DB.prepare(
+      `SELECT pubkey, secret FROM event_chat_key
+        WHERE event_id = ? AND user_id = ? AND secret IS NOT NULL`,
+    )
+      .bind(eventId, b.userId)
+      .all<{ pubkey: string; secret: string }>();
+    expect(eph.results).toEqual([
+      { pubkey: "pk-winner-eph", secret: "sec-winner" },
+    ]);
+  });
+
   it("スタッフ権限の引き継ぎでも参加枠を外して確定にする（未確定スタッフを作らない）", async () => {
     // 勝ち側が抽選に申込中(applied)のイベントで、負け側がそのイベントの staff。
     // ロールだけ書き換えると {staff, applied, 枠つき} ができ、抽選の対象外なので

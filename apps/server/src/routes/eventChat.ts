@@ -29,10 +29,22 @@ import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
+import { identitiesRepo } from "../db/repositories/identities.js";
 import { getChatRelays } from "../db/repositories/appSettings.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
 
 const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
+
+/** 1人がこのイベントで使える発言鍵の数の上限 (#332)。
+ *
+ * 鍵は消えない（消すとその鍵で書いた発言が全員の画面から消える）ので、
+ * 増える経路には必ず上限が要る。表示許可リストは全参加者が数秒ごとに取るため、
+ * 1人が太らせるとイベント全体の負担になる。
+ *
+ * 増える経路は「サインインに使った鍵をアカウントに登録し直す」だけ
+ * （一時鍵はイベント×ユーザーで1つ、他人の鍵と未連携の鍵は登録側で弾く）なので、
+ * 普通に使っていて届く数ではない。端末や鍵を替えても十分に足りる値にしてある */
+const MAX_CHAT_KEYS_PER_USER = 10;
 
 /** Nostrイベントチャット (#199)。チャット本文はブラウザ⇔リレー直通で、
  * ここでは鍵の紐付け・チャンネルID・非表示リストのみ扱う。すべて要認証。
@@ -128,7 +140,8 @@ eventChatRoutes.get(
 );
 
 /** POST: 一時鍵を発行して発言鍵として登録する（既にあれば同じ鍵を返す）。
- * NIP-07 で登録済みの場合は一時鍵に置き換える（再登録で置き換えの従来仕様） */
+ * 本人の鍵を登録していても一時鍵は別に持てる（置き換えない #332）ので、
+ * 一度発行したあとは何度呼んでも同じ鍵が返る */
 eventChatRoutes.post(
   "/:id/chat-key/ephemeral",
   requireEventRole([...MEMBER_ROLES]),
@@ -138,6 +151,9 @@ eventChatRoutes.post(
     const eventId = c.req.param("id");
     const userId = c.get("user").id;
     c.header("Cache-Control", "no-store");
+    // 一時鍵は**イベント×ユーザーで1回だけ**発行する (#332)。入り直すたびに
+    // 作ると、その人の鍵（＝表示許可リストの行）が際限なく増える。
+    // 本人の鍵を登録してもこの鍵は保管されたままなので、ここで必ず見つかる
     const existing = await eventChatRepo.ephemeralFor(eventId, userId);
     if (existing) return c.json(existing);
     const { secret, pubkey } = generateChatKey();
@@ -146,44 +162,72 @@ eventChatRoutes.post(
     // 「その鍵の過去の発言」が別人のものとして表示されてしまう
     const taken = await eventChatRepo.pubkeyOwner(eventId, pubkey);
     if (taken && taken !== userId) return c.json({ error: "pubkey_taken" }, 409);
-    // 先勝ちupsert: 同時発行のレースでは先着の鍵が残るので、確定値を読み直して返す
-    await eventChatRepo.setEphemeral(eventId, userId, pubkey, secret);
+    // 先勝ち: 同時発行のレースでは先着の鍵が残るので、確定値を読み直して返す。
+    // 読み直して見つからないのは、その一瞬に他人が同じ鍵を押さえたときだけ
+    await eventChatRepo.addEphemeral(eventId, userId, pubkey, secret);
     const settled = await eventChatRepo.ephemeralFor(eventId, userId);
-    return c.json(settled ?? { secret, pubkey });
+    if (!settled) return c.json({ error: "pubkey_taken" }, 409);
+    return c.json(settled);
   },
 );
 
-/** 発言用の公開鍵を登録（確定メンバーのみ。再登録で置き換え） */
+/** 発言用の公開鍵を登録（確定メンバーのみ）。
+ * 前に使っていた鍵は消さずに**加える** (#332) */
 eventChatRoutes.post(
   "/:id/chat-key",
   requireEventRole([...MEMBER_ROLES]),
   zValidator("json", registerChatPubkeyInput),
   async (c) => {
-    const denied = await confirmedOnly(c);
+    // 締め出し (#283) はここでも見る。登録しても許可リストからは外れたままで
+    // 実害は無いが、他の経路が 403 を返すのにここだけ 200 を返すのは筋が悪い
+    const denied = (await confirmedOnly(c)) ?? (await notBlocked(c));
     if (denied) return denied;
     const eventId = c.req.param("id");
+    const userId = c.get("user").id;
     const { proof } = valid<RegisterChatPubkeyInput>(c, "json");
-    // 所有証明: このpubkeyの秘密鍵で署名できることを検証（他人のnpub紐付けによる
-    // 発言のなりすまし表示を防ぐ）
+    // 所有証明: このpubkeyの秘密鍵で署名できることを検証（他人の鍵を指定して
+    // その鍵の発言を自分のものとして表示させるのを防ぐ）
     const pubkey = await verifyChatKeyProof(proof, eventId);
     if (!pubkey) return c.json({ error: "invalid_proof" }, 400);
     // 締め出し中の鍵での登録は受け付けない (#283)。
-    // 登録できても許可リストからは外れたままなので実害は無いが、
-    // 「登録できたのに何も映らない」より、繋がらないと分かる方が素直。
-    //
     // 重複チェック (pubkey_taken) より**先**に見る。逆順だと、締め出された人が
     // 他人の鍵を指定したときに「その鍵は使用中」だけが返り、鍵の使用状況という
     // 別の情報が先に漏れる。繋がらないことが分かった時点で話を終わらせる
     if (await eventChatRepo.isBlocked(eventId, pubkey)) {
       return c.json({ error: "chat_unavailable" }, 403);
     }
-    // 同一イベント内で他ユーザーが使っている鍵は拒否（過去に使っていた鍵も含む
-    // #332。手放した鍵を登録できると、その鍵の過去の発言が自分の名前で出る）
+    // ここから先の検査は**行が増えるとき（＝この鍵がまだ自分のものでないとき）だけ**。
+    // 既に自分の鍵として載っている鍵の登録し直しは、何も増やさないので素通しでよい。
+    // 先に見ておかないと、この変更より前に登録した人（別の手段でサインインしていて
+    // 鍵をアカウントに登録していない）が端末を変えたときに、
+    // 自分の鍵なのに「登録されていません」と言われる
     const owner = await eventChatRepo.pubkeyOwner(eventId, pubkey);
-    if (owner && owner !== c.get("user").id) {
-      return c.json({ error: "pubkey_taken" }, 409);
+    if (owner !== userId) {
+      // **この鍵がログイン中のアカウントのものであること** (#332)。
+      // 所有証明で分かるのは「この鍵の持ち主である」ことだけで、「このアカウントの
+      // 人である」ことまでは言えない。別の手段でサインインした人が、アカウントとは
+      // 何の関係も無い鍵を発言鍵にできてしまうと、
+      // - その鍵の発言がこのアカウントの人の発言として表示される
+      // - アカウントに紐付かない鍵をいくつでも登録できる（表示許可リストが太る）
+      // アカウントに鍵が1つも登録されていない場合もここで止まる。発言できなくなる
+      // わけではなく、イベント用の一時鍵で参加できる（そちらが既定の経路）。
+      //
+      // 鍵の使用状況 (pubkey_taken) より**先**に見る。逆順だと、鍵を他人と
+      // 共有している人に「その鍵はこのイベントで使用中」という別の情報が漏れる
+      const linkedTo = await identitiesRepo.findUserId("nostr", pubkey);
+      if (linkedTo !== userId) return c.json({ error: "key_not_linked" }, 403);
+      // 同一イベント内で他ユーザーが使っている鍵は拒否（過去に使っていた鍵も含む
+      // #332。使わなくなった鍵を登録できると、その鍵の過去の発言が自分の名前で出る）
+      if (owner) return c.json({ error: "pubkey_taken" }, 409);
+      // 409 なのは、時間を置いても通らないため（429 だと再試行で通ると読める）
+      if (
+        (await eventChatRepo.countKeys(eventId, userId)) >=
+        MAX_CHAT_KEYS_PER_USER
+      ) {
+        return c.json({ error: "too_many_keys" }, 409);
+      }
     }
-    await eventChatRepo.setPubkey(eventId, c.get("user").id, pubkey);
+    await eventChatRepo.addPubkey(eventId, userId, pubkey);
     return c.json({ ok: true });
   },
 );
