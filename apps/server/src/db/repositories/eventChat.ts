@@ -230,20 +230,30 @@ export const eventChatRepo = {
   /** 締め出している発言者の一覧（管理画面の解除導線用）。
    * 締め出した鍵だけでなく、**その人の鍵をすべて**返す (#332)。
    * 管理画面はこの一覧で「締め出し中」の印と操作ボタンを出し分けているので、
-   * 締め出した鍵しか返さないと、同じ人の別の鍵に「締め出す」ボタンが出てしまう */
+   * 締め出した鍵しか返さないと、同じ人の別の鍵に「締め出す」ボタンが出てしまう。
+   *
+   * 鍵ごとの行に持ち主 (userId) を添える。締め出しは人に対する操作なので、
+   * 「締め出している人の一覧」として見せる側は userId でまとめる必要がある
+   * （添えないと、画面が同じ人を鍵の数だけ並べて件数も鍵の数になる） */
   async listBlocked(eventId: string): Promise<BlockedChatAuthor[]> {
     const rows = await many<{
       pubkey: string;
+      user_id: string | null;
       created_at: number;
       created_by: string | null;
     }>(
       // 同じ鍵が複数の締め出し行から出てきたら、最初に締め出したものを採る
-      // （SQLite は min() と同じ行の裸の列を返す）
-      `SELECT pubkey, min(created_at) AS created_at, created_by FROM (
-         SELECT b.pubkey AS pubkey, b.created_at, b.created_by
-           FROM event_chat_blocked b WHERE b.event_id = ?
+      // （SQLite は min() と同じ行の裸の列を返す）。
+      // 持ち主は鍵から辿る。締め出したあとに退会した等で辿れないことがあるので、
+      // 締め出し行そのものを起点にする側は LEFT JOIN にする
+      `SELECT pubkey, user_id, min(created_at) AS created_at, created_by FROM (
+         SELECT b.pubkey AS pubkey, k.user_id AS user_id, b.created_at, b.created_by
+           FROM event_chat_blocked b
+           LEFT JOIN event_chat_key k
+             ON k.event_id = b.event_id AND k.pubkey = b.pubkey
+          WHERE b.event_id = ?
          UNION ALL
-         SELECT k2.pubkey, b.created_at, b.created_by
+         SELECT k2.pubkey, k2.user_id, b.created_at, b.created_by
            FROM event_chat_blocked b
            JOIN event_chat_key k
              ON k.event_id = b.event_id AND k.pubkey = b.pubkey
@@ -256,6 +266,7 @@ export const eventChatRepo = {
     );
     return rows.map((r) => ({
       pubkey: r.pubkey,
+      userId: r.user_id,
       blockedAt: r.created_at,
       blockedBy: r.created_by,
     }));

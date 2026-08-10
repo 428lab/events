@@ -165,7 +165,12 @@ function ItemRow({
  *
  * 誤操作は必ず起きるので、**誰を締め出しているかが一覧でき、ここから解除できる**
  * ことを機能の一部として扱う。リレーからメッセージが取れていなくても出す
- * （解除の導線がメッセージの取得に依存すると、取れないときに解除できなくなる）。 */
+ * （解除の導線がメッセージの取得に依存すると、取れないときに解除できなくなる）。
+ *
+ * 並べるのは**人ごとに1行** (#332)。chat.blocked はその人の鍵ぜんぶを返す
+ * （どの発言に「締め出し中」の印を付けるかは鍵で決まるため）ので、そのまま
+ * 並べると同じ名前が鍵の数だけ並び、件数も人数ではなく鍵の数になる。
+ * 解除はどの鍵を指してもその人ぶんがまとめて解けるので、代表の1本を渡せばよい。 */
 function BlockedAuthorList({
   chat,
   nameOf,
@@ -177,15 +182,26 @@ function BlockedAuthorList({
   onUnblock: (pubkey: string) => void;
   pending: boolean;
 }) {
-  if (chat.blocked.length === 0) return null;
+  // 持ち主を辿れない鍵 (userId === null) は、まとめようがないので鍵ごとに残す。
+  // chat.blocked は締め出した順なので、残るのは各人の最初の1本
+  const authors = useMemo(() => {
+    const seen = new Set<string>();
+    return chat.blocked.filter((b) => {
+      if (b.userId == null) return true;
+      if (seen.has(b.userId)) return false;
+      seen.add(b.userId);
+      return true;
+    });
+  }, [chat.blocked]);
+  if (authors.length === 0) return null;
   return (
     <Card variant="outlined">
       <CardContent>
         <Stack spacing={1}>
           <Typography variant="subtitle2" fontWeight={700}>
-            締め出している発言者（{chat.blocked.length} 人）
+            締め出している発言者（{authors.length} 人）
           </Typography>
-          {chat.blocked.map((b) => (
+          {authors.map((b) => (
             <Stack
               key={b.pubkey}
               direction="row"
@@ -304,13 +320,16 @@ function ChatSection({
       <Alert severity="info">
         1人が大量に投稿している場合は、
         <strong>発言者ごと締め出す</strong>
-        こともできます。締め出すと、その発言者のこのイベントでのこれまでの発言が
+        こともできます。締め出しは
+        <strong>発言者（アカウント）ごと</strong>
+        に効くので、その人がこのイベントで使ったすべての発言が
         <strong>このサービスの表示からまとめて消え</strong>、
         その人はこのサービスからは投稿できなくなります。
+        入り直しても、同じアカウントである限り締め出されたままです。
         発言そのものは消えないので、解除すれば元に戻ります。
         締め出された側に理由は表示されません。
         なお、このサービスの外から投稿すること自体は止められません（その投稿もこのサービスには表示されません）。
-        同じ人が別の発言者として入り直すことも防げません。その場の投稿を止めるための機能です。
+        別のアカウントで入り直すことも防げません。その場の投稿を止めるための機能です。
       </Alert>
       <BlockedAuthorList
         chat={chat}

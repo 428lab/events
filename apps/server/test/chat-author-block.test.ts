@@ -122,18 +122,27 @@ async function visiblePubkeys(
   return new Set(payload.members.map((m) => m.pubkey));
 }
 
-/** 管理画面が「締め出し中」として受け取る pubkey の集合 */
-async function blockedPubkeys(
+/** 管理画面が「締め出し中」として受け取る行（鍵1本＝1行） */
+async function blockedAuthors(
   eventId: string,
   cookie: string,
-): Promise<Set<string>> {
+): Promise<ModerationContentPayload["chat"]["blocked"]> {
   const res = await SELF.fetch(
     `${BASE}/api/admin/moderation/events/${eventId}`,
     { headers: { cookie } },
   );
   expect(res.status).toBe(200);
   const { chat } = (await res.json()) as ModerationContentPayload;
-  return new Set(chat.blocked.map((b) => b.pubkey));
+  return chat.blocked;
+}
+
+/** 管理画面が「締め出し中」として受け取る pubkey の集合 */
+async function blockedPubkeys(
+  eventId: string,
+  cookie: string,
+): Promise<Set<string>> {
+  const rows = await blockedAuthors(eventId, cookie);
+  return new Set(rows.map((b) => b.pubkey));
 }
 
 function block(eventId: string, cookie: string, pubkey: string) {
@@ -426,6 +435,13 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
     expect(await blockedPubkeys(eventId, admin)).toEqual(
       new Set([first.pubkey, second.pubkey]),
     );
+    // その鍵たちが**同じ1人のもの**だと分かる形で出す。分からないと、管理画面は
+    // 「締め出している発言者」に同じ人を鍵の数だけ並べ、件数も人数にならない
+    const blockedRows = await blockedAuthors(eventId, admin);
+    expect(blockedRows.map((b) => b.userId)).toEqual([
+      noisy.userId,
+      noisy.userId,
+    ]);
     // その別の鍵を指して締め出しても、状態は増えない（人単位で冪等）
     const twice = await block(eventId, admin, second.pubkey);
     expect(twice.status).toBe(200);
@@ -549,6 +565,8 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
     expect(chat.members.map((m) => m.pubkey)).toContain(noisyKey.pubkey);
     expect(chat.blocked.map((b) => b.pubkey)).toEqual([noisyKey.pubkey]);
     expect(chat.blocked[0].blockedAt).toBeGreaterThan(0);
+    // 誰の鍵かも添える（画面が人ごとにまとめるのに要る #332）
+    expect(chat.blocked[0].userId).toBe(noisy.userId);
   });
 
   it("監査ログに対象と操作が残る", async () => {
