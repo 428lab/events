@@ -37,7 +37,12 @@ CREATE UNIQUE INDEX idx_event_chat_key_ephemeral
 INSERT OR IGNORE INTO event_chat_key (event_id, user_id, pubkey, secret, created_at)
   SELECT event_id, user_id, pubkey, secret, created_at
     FROM event_chat_pubkey ORDER BY created_at ASC;
--- **旧表はここでは消さない**。消すと、これを流した時点から新しいコードを配る
--- までの間、動いている旧コードが引く先を失って全チャット経路が落ちる。
--- 戻すこともできなくなる（データが無い）。旧表の削除は 0067 で、
--- 新しいコードが動いていることを確認してから流す
+-- **旧表 (event_chat_pubkey) はここでは消さない**。消すと、これを流した時点から
+-- 新しいコードを配るまでの間、動いている旧コードが引く先を失って全チャット経路が
+-- 落ちる。戻すこともできなくなる（データが無い）。
+--
+-- 削除はこのPRには入れず、**あとから別の番号で追加する** (#336)。
+-- `wrangler d1 migrations apply` は未適用ぶんを全部流すので、削除を今ここに
+-- 置いておくと「0066 だけ適用する」手段が無く、同じ実行で旧表まで消えて
+-- 分けた意味が無くなる。新しいコードが本番で安定して動いているのを確認してから、
+-- そのとき追加するマイグレーションで落とす
