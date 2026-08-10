@@ -34,6 +34,11 @@ export function ProfileCardPanel({
 
   return (
     <Box sx={{ maxWidth: CARD_MAX_W }}>
+      {/* カードの中の文字はSVGで、支援技術からは読めない（role="img"）。
+          誰のページかを言葉でも示すために名前の見出しを置く */}
+      <Typography variant="h5" fontWeight={700} gutterBottom>
+        {profile.name}
+      </Typography>
       <Box
         sx={{
           borderRadius: "20px",
@@ -57,7 +62,7 @@ export function ProfileCardPanel({
       >
         {profile.isMe
           ? "あなたのプロフィールカード。印刷（91×55mm）や画像の書き出しは「デザインを変える」から"
-          : `${profile.name} さんのプロフィールカード`}
+          : "このカードは本人が選んだ見た目で表示しています"}
       </Typography>
     </Box>
   );

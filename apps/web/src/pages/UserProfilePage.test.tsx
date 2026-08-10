@@ -135,7 +135,7 @@ beforeEach(() => {
 describe("公開プロフィール（マイページ統合 #319）", () => {
   it("本人のページには設定とフォロー中の導線が出る", async () => {
     renderProfile(profile());
-    await screen.findByText("テスター");
+    await screen.findAllByText("テスター"); // 見出しとカードの2か所に出る
     expect(href("設定")).toBe("/account");
     expect(href("フォロー中 5")).toBe("/following");
     // カードのデザイン画面へも飛べる（マイページからは飛べなかった）
@@ -144,7 +144,7 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
 
   it("他人のページには設定を出さず、フォロー中はただの数字にする", async () => {
     renderProfile(profile({ isMe: false, id: "u-other", handle: "other" }));
-    await screen.findByText("テスター");
+    await screen.findAllByText("テスター"); // 見出しとカードの2か所に出る
     expect(screen.queryByRole("link", { name: "設定" })).toBeNull();
     expect(screen.queryByRole("link", { name: /フォロー中/ })).toBeNull();
     expect(screen.getByText(/フォロー中 5/)).toBeTruthy();
@@ -152,7 +152,7 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
 
   it("本人のページにだけQRを見せる導線を出す (#324)", async () => {
     renderProfile(profile());
-    await screen.findByText("テスター");
+    await screen.findAllByText("テスター"); // 見出しとカードの2か所に出る
     const button = screen.getByRole("button", { name: "QRを見せる" });
     button.click();
     // 飛び先は公開プロフィールではなく、使い捨てトークンの入口 (#330)
@@ -165,7 +165,7 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
 
   it("他人のページにはQRを見せる導線を出さない (#324)", async () => {
     renderProfile(profile({ isMe: false, id: "u-other", handle: "other" }));
-    await screen.findByText("テスター");
+    await screen.findAllByText("テスター"); // 見出しとカードの2か所に出る
     expect(screen.queryByRole("button", { name: "QRを見せる" })).toBeNull();
     expect(screen.queryByTestId("big-qr")).toBeNull();
   });
@@ -187,7 +187,7 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
 
   it("通算の出会い数は表示中の合計ではなくサーバーの実人数を出す", async () => {
     renderProfile(profile());
-    await screen.findByText("テスター");
+    await screen.findAllByText("テスター"); // 見出しとカードの2か所に出る
     expect(screen.getByText("通算")).toBeTruthy();
     // meetCounts の合計は 4（延べ）だが、通算は独立に数えた実人数 9
     expect(screen.getByText("9")).toBeTruthy();
@@ -264,7 +264,7 @@ describe("プロフィール上のプロフィールカード (#334)", () => {
         cardImageKey: "arcs-rose",
       }),
     );
-    await screen.findByText("テスター さんのプロフィールカード");
+    await screen.findByText("このカードは本人が選んだ見た目で表示しています");
     const svg = cardSvg();
     expect(svg.querySelector(`[fill="${ACCENT.rose}"]`)).toBeTruthy();
     expect(svg.querySelector(`[fill="${ACCENT.teal}"]`)).toBeNull();
@@ -281,7 +281,7 @@ describe("プロフィール上のプロフィールカード (#334)", () => {
         cardImageKey: "arcs-rose",
       }),
     );
-    await screen.findByText("テスター さんのプロフィールカード");
+    await screen.findByText("このカードは本人が選んだ見た目で表示しています");
     expect(localStorage.getItem("eventer:cardBg")).toBe("topo");
     expect(localStorage.getItem("eventer:cardTheme")).toBe("teal");
   });
@@ -291,13 +291,13 @@ describe("プロフィール上のプロフィールカード (#334)", () => {
     renderProfile(
       profile({ isMe: false, id: "u-other", handle: "other", cardImageKey: null }),
     );
-    await screen.findByText("テスター さんのプロフィールカード");
+    await screen.findByText("このカードは本人が選んだ見た目で表示しています");
     expect(cardSvg().querySelector(`[fill="${ACCENT.teal}"]`)).toBeTruthy();
   });
 
   it("他人には編集・印刷・書き出しの導線を出さない", async () => {
     renderProfile(profile({ isMe: false, id: "u-other", handle: "other" }));
-    await screen.findByText("テスター さんのプロフィールカード");
+    await screen.findByText("このカードは本人が選んだ見た目で表示しています");
     expect(screen.queryByRole("link", { name: /デザイン/ })).toBeNull();
     expect(screen.queryAllByRole("link", { name: /カード/ })).toHaveLength(0);
     for (const label of [/印刷/, /ダウンロード/, /書き出/]) {
@@ -314,18 +314,36 @@ describe("プロフィール上のプロフィールカード (#334)", () => {
     expect(screen.getByText(/91×55mm/)).toBeTruthy();
   });
 
-  it("カードに載っている情報は下で繰り返さない", async () => {
+  it("カードで代替できるものだけ落とす（レベルの進捗バーと大きなアイコン）", async () => {
     renderProfile(decorated());
     await screen.findByText(/あなたのプロフィールカード/);
-    // バッジ・所属コミュニティの一覧、レベルの進捗は見出しから落とした
-    expect(screen.queryByText(/バッジ（/)).toBeNull();
-    expect(screen.queryByText("所属コミュニティ")).toBeNull();
+    // レベルとXPはカードに出るので、進捗バーは重ねて出さない
     expect(screen.queryByText(/次のレベルまで/)).toBeNull();
-    // レベルと名前が出るのはカードの中の1か所だけ
     expect(screen.getAllByText("Lv.1")).toHaveLength(1);
-    expect(screen.getAllByText("テスター")).toHaveLength(1);
     // カードに無いものは残す
     expect(screen.getByText("通算")).toBeTruthy();
     expect(screen.getByText("参加実績")).toBeTruthy();
+  });
+
+  it("誰のページかを言葉でも示す（カードの中の文字は読み上げられない）", async () => {
+    renderProfile(profile({ isMe: false, id: "u-other", handle: "other" }));
+    // 見出しとして1つだけ。カードSVGは role="img" なので中身は支援技術から読めない
+    expect(
+      await screen.findByRole("heading", { name: "テスター" }),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("heading", { name: "テスター" })).toHaveLength(1);
+  });
+
+  it("カード上で読めない情報は下に残す（バッジ名・コミュニティのリンク）", async () => {
+    renderProfile(decorated({ isMe: false, id: "u-other", handle: "other" }));
+    await screen.findByText("このカードは本人が選んだ見た目で表示しています");
+    // カードには★の数と最上位1件の英字しか出ないので、名前と件数はここで見せる
+    expect(screen.getByText("バッジ（1）")).toBeTruthy();
+    expect(screen.getByText("はじめての出会い")).toBeTruthy();
+    // カード上のコミュニティは飾りでリンクにならない（SVG・上位5件まで）
+    expect(screen.getByText("所属コミュニティ")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Nostr/ }).getAttribute("href"),
+    ).toBe("/c/nostr");
   });
 });

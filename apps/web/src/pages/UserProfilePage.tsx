@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   Card,
@@ -20,11 +21,20 @@ import CloseIcon from "@mui/icons-material/Close";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import MilitaryTechIcon from "@mui/icons-material/MilitaryTech";
+import MilitaryTechOutlinedIcon from "@mui/icons-material/MilitaryTechOutlined";
 import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
+import HandymanOutlinedIcon from "@mui/icons-material/HandymanOutlined";
+import CoPresentOutlinedIcon from "@mui/icons-material/CoPresentOutlined";
+import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
+import ThumbUpOutlinedIcon from "@mui/icons-material/ThumbUpOutlined";
+import HandshakeOutlinedIcon from "@mui/icons-material/HandshakeOutlined";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import type {
+  EarnedBadge,
+  Gamification,
   ParticipationStats,
   UserAward,
   UserPhoto,
@@ -37,6 +47,11 @@ import { ParticipationHistory } from "../components/ParticipationHistory.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
 import { ProfileCardPanel } from "../components/licenseCard/ProfileCardPanel.js";
+
+const COMMUNITY_ROLE_LABEL: Record<string, string> = {
+  owner: "オーナー",
+  admin: "管理者",
+};
 
 /** 順位に応じたメダルアイコン（1〜3位=金/銀/銅トロフィー、4位以下の入賞=メダル、特別枠=勲章） */
 function awardIcon(rankOrder: number | null) {
@@ -106,6 +121,69 @@ function AwardsSection({
             </CardContent>
           </Card>
         ))}
+      </Stack>
+    </Box>
+  );
+}
+
+/** バッジ種別 → 単色アイコンの対応 (#14) */
+const BADGE_ICONS: Record<
+  EarnedBadge["icon"],
+  typeof CampaignOutlinedIcon
+> = {
+  host: CampaignOutlinedIcon,
+  staff: HandymanOutlinedIcon,
+  speak: CoPresentOutlinedIcon,
+  attend: EventAvailableOutlinedIcon,
+  liked: ThumbUpOutlinedIcon,
+  meet: HandshakeOutlinedIcon,
+};
+
+/** バッジの段階に応じた色（1=控えめ, 2=プライマリ, 3=セカンダリで強調） */
+const TIER_COLORS: Record<number, string> = {
+  1: "text.secondary",
+  2: "primary.main",
+  3: "secondary.main",
+};
+
+/** 獲得済みバッジの一覧 (#14)。未獲得なら非表示 */
+function BadgesSection({ g }: { g?: Gamification }) {
+  if (!g || g.badges.length === 0) return null;
+  return (
+    <Box>
+      <Typography
+        variant="h6"
+        gutterBottom
+        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+      >
+        <MilitaryTechOutlinedIcon fontSize="small" />
+        バッジ（{g.badges.length}）
+      </Typography>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        {g.badges.map((b) => {
+          const Icon = BADGE_ICONS[b.icon] ?? MilitaryTechOutlinedIcon;
+          const color = TIER_COLORS[b.tier] ?? "text.secondary";
+          return (
+            <Tooltip key={b.key} title={b.description}>
+              <Card
+                variant="outlined"
+                sx={{
+                  px: 1.25,
+                  py: 0.75,
+                  // 段階が上がるほど枠線で控えめに強調（単色アイコンのみ）
+                  ...(b.tier >= 2 && { borderColor: color }),
+                }}
+              >
+                <Stack direction="row" spacing={0.75} alignItems="center">
+                  <Icon fontSize="small" sx={{ color }} />
+                  <Typography variant="body2" fontWeight={600}>
+                    {b.name}
+                  </Typography>
+                </Stack>
+              </Card>
+            </Tooltip>
+          );
+        })}
       </Stack>
     </Box>
   );
@@ -243,8 +321,8 @@ export function UserProfilePage() {
 
   return (
     <Stack spacing={3}>
-      {/* カードを主役にする (#334)。アイコン・名前・ハンドル・レベル・バッジ・
-          所属コミュニティはすべてカードに載っているので、以下では繰り返さない */}
+      {/* カードを主役にする (#334)。大きなアイコンとレベルの進捗はカードに出るので
+          落としたが、カード上で読めないもの（バッジ名・コミュニティのリンク）は下に残す */}
       <ProfileCardPanel profile={data} fallbackHandle={id} />
 
       <Stack
@@ -343,11 +421,45 @@ export function UserProfilePage() {
           一覧なので、公開ぶんだけを数えると件数が合わなくなる (#319) */}
       <TotalsBar events={historyEvents} meetTotal={data.meetTotal ?? 0} />
 
+      {/* バッジはカードにも出るが、カード上は★の数と最上位1件の英字だけで、
+          名前も説明も読めない。何を獲得したのかはここでしか分からない (#334) */}
+      <BadgesSection g={data.gamification} />
+
       <ParticipationSection stats={data.participation} />
 
       <AwardsSection awards={data.awards} profileName={data.name} />
 
       <PhotoGallerySection handle={data.handle ?? id} />
+
+      {/* コミュニティもカードに出るが、カード上は上位5件までの飾りでリンクにならない。
+          役割つきで辿れるのはここだけ (#334) */}
+      {data.communities.length > 0 && (
+        <Box>
+          <Typography variant="h6" gutterBottom>
+            所属コミュニティ
+          </Typography>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            {data.communities.map((com) => (
+              <Chip
+                key={com.id}
+                component={RouterLink}
+                to={`/c/${com.slug}`}
+                clickable
+                avatar={
+                  <Avatar src={com.iconUrl ?? undefined} variant="rounded">
+                    {com.name.charAt(0)}
+                  </Avatar>
+                }
+                label={
+                  COMMUNITY_ROLE_LABEL[com.role]
+                    ? `${com.name}・${COMMUNITY_ROLE_LABEL[com.role]}`
+                    : com.name
+                }
+              />
+            ))}
+          </Stack>
+        </Box>
+      )}
 
       {/* 参加履歴 (#315)。主役は4分類の一覧で、年表はタブで切り替える。
           本人のページではマイページ相当の一覧（下書き等も含む）を出す (#319) */}
