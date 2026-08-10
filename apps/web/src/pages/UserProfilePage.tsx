@@ -9,7 +9,6 @@ import {
   Chip,
   Dialog,
   IconButton,
-  LinearProgress,
   Link,
   Stack,
   Tooltip,
@@ -47,6 +46,7 @@ import { useUserPhotos } from "../api/eventPhotoHooks.js";
 import { ParticipationHistory } from "../components/ParticipationHistory.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
+import { ProfileCardPanel } from "../components/licenseCard/ProfileCardPanel.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
   owner: "オーナー",
@@ -145,36 +145,6 @@ const TIER_COLORS: Record<number, string> = {
   2: "primary.main",
   3: "secondary.main",
 };
-
-/** レベルチップ＋次のレベルまでの進捗バー (#14)。実績ゼロなら非表示 */
-function LevelBlock({ g }: { g?: Gamification }) {
-  if (!g || (g.xp === 0 && g.badges.length === 0)) return null;
-  const span = g.nextLevelXp - g.currentLevelXp;
-  const pct =
-    span > 0
-      ? Math.min(100, Math.max(0, ((g.xp - g.currentLevelXp) / span) * 100))
-      : 0;
-  return (
-    <Box sx={{ mt: 0.75, maxWidth: 320 }}>
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Chip
-          label={`Lv.${g.level}`}
-          color="primary"
-          size="small"
-          sx={{ fontWeight: 700 }}
-        />
-        <Typography variant="caption" color="text.secondary">
-          {g.xp} XP ・ 次のレベルまで {g.nextLevelXp - g.xp}
-        </Typography>
-      </Stack>
-      <LinearProgress
-        variant="determinate"
-        value={pct}
-        sx={{ mt: 0.5, height: 4, borderRadius: 2 }}
-      />
-    </Box>
-  );
-}
 
 /** 獲得済みバッジの一覧 (#14)。未獲得なら非表示 */
 function BadgesSection({ g }: { g?: Gamification }) {
@@ -351,60 +321,39 @@ export function UserProfilePage() {
 
   return (
     <Stack spacing={3}>
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-        <Avatar
-          src={data.avatarUrl ?? undefined}
-          sx={{ width: 64, height: 64, fontSize: 28 }}
-        >
-          {data.name.charAt(0)}
-        </Avatar>
-        <Box sx={{ flex: 1, minWidth: 180 }}>
-          <Typography variant="h5" fontWeight={700}>
-            {data.name}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {joined} に登録 ・ フォロワー {data.followerCount} ・{" "}
-            {/* 本人のときだけフォロー中の一覧へ行けるようにする (#319)。
-                /following は自分のフォローを管理する画面なので他人には出さない */}
-            {data.isMe ? (
-              <Link
-                component={RouterLink}
-                to="/following"
-                color="inherit"
-                underline="hover"
-              >
-                フォロー中 {data.followingCount}
-              </Link>
-            ) : (
-              <>フォロー中 {data.followingCount}</>
-            )}
-          </Typography>
-          <LevelBlock g={data.gamification} />
-        </Box>
-        {/* プロフィールカード (#178) とシェア。PCでは空きスペースの中央に大きめ表示 */}
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          flexWrap="wrap"
-          useFlexGap
-          sx={{
-            // スマホ幅ではボタン3つが横に収まらない。縮まないままだと右端の
-            // シェア・設定が本文の余白を突き抜けて画面際に貼りつくので、
-            // 幅いっぱいに置いて中で折り返させ、左右の余白を他の要素と揃える (#326)
-            width: { xs: "100%", sm: "auto" },
-            minWidth: 0,
-            flexShrink: { xs: 1, sm: 0 },
-            // sm以上: 余白の中央あたりに寄せて目立たせる
-            mx: { xs: 0, sm: "auto" },
-            // スマホ幅ではラベル付きの2つが1行に収まる大きさにする。収まらないと
-            // 1つずつ折り返して縦に伸びるため
-            "& .MuiButton-root": {
-              fontSize: { xs: "0.875rem", sm: "0.9375rem" },
-              px: { xs: 1.5, sm: 2.25 },
-            },
-          }}
-        >
+      {/* カードを主役にする (#334)。大きなアイコンとレベルの進捗はカードに出るので
+          落としたが、カード上で読めないもの（バッジ名・コミュニティのリンク）は下に残す */}
+      <ProfileCardPanel profile={data} fallbackHandle={id} />
+
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+        sx={{
+          // スマホ幅で1行に収まらないぶんは折り返す。縮まないままだと右端の
+          // ボタンが本文の余白を突き抜けて画面際に貼りつく (#326)
+          minWidth: 0,
+          "& .MuiButton-root": {
+            fontSize: { xs: "0.875rem", sm: "0.9375rem" },
+            px: { xs: 1.5, sm: 2.25 },
+          },
+        }}
+      >
+        {/* 他人にできるのはフォローだけ。編集・印刷・書き出しの導線は出さない */}
+        {!data.isMe && (
+          <Button
+            variant={data.isFollowing ? "outlined" : "contained"}
+            size="large"
+            onClick={toggleFollow}
+            disabled={setFollow.isPending}
+          >
+            {data.isFollowing ? "フォロー中" : "フォローする"}
+          </Button>
+        )}
+        {/* カードの意匠を仕立てる画面 (#334)。他人のカードは編集も印刷もできない */}
+        {data.isMe && (
           <Button
             component={RouterLink}
             to={`/users/${data.handle ?? id}/card`}
@@ -412,44 +361,52 @@ export function UserProfilePage() {
             size="large"
             startIcon={<BadgeOutlinedIcon />}
           >
-            プロフィールカード
-          </Button>
-          {/* 交流の場で相手に読み取ってもらう用の大きなQR (#324) */}
-          {data.isMe && (
-            <Button
-              variant="outlined"
-              size="large"
-              startIcon={<QrCode2Icon />}
-              onClick={() => setQrOpen(true)}
-            >
-              QRを見せる
-            </Button>
-          )}
-          <ShareButton
-            title={data.name}
-            url={`${window.location.origin}/users/${data.handle ?? id}`}
-          />
-          {/* 設定は本人にしか意味がないので本人のページだけに出す (#319) */}
-          {data.isMe && (
-            <Tooltip title="設定">
-              <IconButton component={RouterLink} to="/account" aria-label="設定">
-                <SettingsOutlinedIcon />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Stack>
-        {!data.isMe && (
-          <Button
-            variant={data.isFollowing ? "outlined" : "contained"}
-            size="small"
-            onClick={toggleFollow}
-            disabled={setFollow.isPending}
-            sx={{ flexShrink: 0 }}
-          >
-            {data.isFollowing ? "フォロー中" : "フォローする"}
+            デザインを変える
           </Button>
         )}
+        {/* 交流の場で相手に読み取ってもらう用の大きなQR (#324) */}
+        {data.isMe && (
+          <Button
+            variant="outlined"
+            size="large"
+            startIcon={<QrCode2Icon />}
+            onClick={() => setQrOpen(true)}
+          >
+            QRを見せる
+          </Button>
+        )}
+        <ShareButton
+          title={data.name}
+          url={`${window.location.origin}/users/${data.handle ?? id}`}
+        />
+        {/* 設定は本人にしか意味がないので本人のページだけに出す (#319) */}
+        {data.isMe && (
+          <Tooltip title="設定">
+            <IconButton component={RouterLink} to="/account" aria-label="設定">
+              <SettingsOutlinedIcon />
+            </IconButton>
+          </Tooltip>
+        )}
       </Stack>
+
+      {/* カードに無い素性。登録日とフォローの数 */}
+      <Typography variant="caption" color="text.secondary">
+        {joined} に登録 ・ フォロワー {data.followerCount} ・{" "}
+        {/* 本人のときだけフォロー中の一覧へ行けるようにする (#319)。
+            /following は自分のフォローを管理する画面なので他人には出さない */}
+        {data.isMe ? (
+          <Link
+            component={RouterLink}
+            to="/following"
+            color="inherit"
+            underline="hover"
+          >
+            フォロー中 {data.followingCount}
+          </Link>
+        ) : (
+          <>フォロー中 {data.followingCount}</>
+        )}
+      </Typography>
 
       {data.isMe && (
         <BigQrDialog
@@ -464,6 +421,8 @@ export function UserProfilePage() {
           一覧なので、公開ぶんだけを数えると件数が合わなくなる (#319) */}
       <TotalsBar events={historyEvents} meetTotal={data.meetTotal ?? 0} />
 
+      {/* バッジはカードにも出るが、カード上は★の数と最上位1件の英字だけで、
+          名前も説明も読めない。何を獲得したのかはここでしか分からない (#334) */}
       <BadgesSection g={data.gamification} />
 
       <ParticipationSection stats={data.participation} />
@@ -472,7 +431,8 @@ export function UserProfilePage() {
 
       <PhotoGallerySection handle={data.handle ?? id} />
 
-
+      {/* コミュニティもカードに出るが、カード上は上位5件までの飾りでリンクにならない。
+          役割つきで辿れるのはここだけ (#334) */}
       {data.communities.length > 0 && (
         <Box>
           <Typography variant="h6" gutterBottom>

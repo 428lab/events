@@ -12,44 +12,38 @@ import { CircularProgress,
 import PrintIcon from "@mui/icons-material/Print";
 import DownloadIcon from "@mui/icons-material/Download";
 import QrCode2Icon from "@mui/icons-material/QrCode2";
-import { Link as RouterLink, useParams } from "react-router-dom";
+import { Link as RouterLink, Navigate, useParams } from "react-router-dom";
 import { useUserProfile } from "../api/userHooks.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
 import {
-  BG_STORAGE_KEY,
   BG_VARIANTS,
   CARD_THEMES,
   EXPORT_H,
   EXPORT_W,
   LicenseCardSvg,
-  THEME_STORAGE_KEY,
   toCardData,
 } from "../components/licenseCard/LicenseCardSvg.js";
 import type {
   CardBgVariant,
   CardThemeKey,
 } from "../components/licenseCard/LicenseCardSvg.js";
+import {
+  cardLook,
+  cardLookKey,
+  loadLocalCardLook,
+  saveLocalCardLook,
+} from "../components/licenseCard/cardLook.js";
 // PNG書き出し時にSVGへ埋め込むフォント（SVG-as-image はページのフォントを参照できない）
 import jakarta600Url from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-600-normal.woff2?url";
 import jakarta700Url from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-700-normal.woff2?url";
 
-/** プロフィールカードジェネレーターのページ (#178)。
+/** プロフィールカードのデザイン画面 (#178)。
  * カード本体の描画は components/licenseCard/LicenseCardSvg.tsx にあり、
- * ここでは背景パターン選択・印刷・PNG書き出しなどページの振る舞いを担当する。 */
-
-function loadBgVariant(): CardBgVariant {
-  const saved = localStorage.getItem(BG_STORAGE_KEY);
-  return BG_VARIANTS.some((v) => v.key === saved)
-    ? (saved as CardBgVariant)
-    : "rosette";
-}
-
-function loadCardTheme(): CardThemeKey {
-  const saved = localStorage.getItem(THEME_STORAGE_KEY);
-  return CARD_THEMES.some((t) => t.key === saved)
-    ? (saved as CardThemeKey)
-    : "indigo";
-}
+ * ここでは背景パターン選択・印刷・PNG書き出しなどページの振る舞いを担当する。
+ *
+ * **本人だけの画面** (#334)。カードは持ち主が決めた意匠で描くものなので、
+ * 他人のカードには編集も印刷も無い。他人が直接URLを開いたらその人の
+ * プロフィールへ戻す。見た目の決め方は components/licenseCard/cardLook.ts にある。 */
 
 // ---------------------------------------------------------------------------
 // 書き出し（PNG）と印刷
@@ -172,8 +166,13 @@ function downloadBlob(png: Blob, fileName: string): void {
 export function LicenseCardPage() {
   const { id = "" } = useParams();
   const { data, isLoading, isError } = useUserProfile(id);
-  const [variant, setVariant] = useState<CardBgVariant>(loadBgVariant);
-  const [theme, setTheme] = useState<CardThemeKey>(loadCardTheme);
+  // 表示中の見た目。保存済みの値が届くまでは手元の既定で描く
+  const [variant, setVariant] = useState<CardBgVariant>(
+    () => loadLocalCardLook().variant,
+  );
+  const [theme, setTheme] = useState<CardThemeKey>(
+    () => loadLocalCardLook().theme,
+  );
   const [busy, setBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   // 交流の場で相手に読み取ってもらう用の大きなQR (#324)。自分のカードのときだけ
@@ -186,12 +185,25 @@ export function LicenseCardPage() {
     "idle" | "generating" | "done" | "error"
   >("idle");
 
+  // 保存済みの見た目に合わせる (#334)。データが届いたら、その人が前回選んだ
+  // 組み合わせで描き直す。手元の既定のまま描いていると、下のOG画像アップロードが
+  // 保存済みの組み合わせと食い違った絵で上書きしてしまう。
+  // 一度も保存していない（cardImageKey が無い）ときだけ手元の既定を使う
+  const savedLookKey = data?.cardImageKey ?? null;
+  const profileId = data?.id;
+  useEffect(() => {
+    if (!profileId) return;
+    const look = cardLook(savedLookKey);
+    setVariant(look.variant);
+    setTheme(look.theme);
+  }, [profileId, savedLookKey]);
+
   // 本人が開いたら、表示中のカードをPNG化してOG画像としてサーバへ静かに送る (#193)。
   // ダウンロードと同じ生成経路（フォント・アバター埋め込み）を使うので見た目は一致する。
   // 失敗してもページ利用には影響させない（既定OG画像のまま）
   const isMe = data?.isMe ?? false;
   useEffect(() => {
-    const uploadKey = `${variant}:${theme}`;
+    const uploadKey = cardLookKey({ variant, theme });
     if (!isMe || uploadedVariantsRef.current.has(uploadKey)) return;
     // 描画直後の連打（背景・配色切り替え）をまとめるための小さなディレイ
     const timer = setTimeout(() => {
@@ -202,7 +214,7 @@ export function LicenseCardPage() {
       void (async () => {
         try {
           const png = await generateCardPng(svgEl, OG_UPLOAD_W);
-          const res = await fetch(`/api/me/card-image?k=${variant}-${theme}`, {
+          const res = await fetch(`/api/me/card-image?k=${uploadKey}`, {
             method: "PUT",
             credentials: "include",
             headers: { "Content-Type": "image/png" },
@@ -229,18 +241,26 @@ export function LicenseCardPage() {
   if (isError) return <Alert severity="info">ユーザーが見つかりません。</Alert>;
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
 
+  // ここは自分のカードを仕立てる画面 (#334)。他人のカードは編集も印刷もしないので、
+  // 直接URLを開かれたらその人のプロフィールへ戻す（カードはそこに載っている）
+  if (!data.isMe) {
+    return <Navigate to={`/users/${data.handle ?? id}`} replace />;
+  }
+
   const card = toCardData(data, id, window.location.host);
   // QRの飛び先は公開プロフィール。?ref=card は将来プロフィールビュー計測を入れた際に流入元として集計される（許可リスト登録済み）
   const qrUrl = `${window.location.origin}/users/${card.handle}?ref=card`;
 
+  // 選んだ組み合わせはサーバー（＝持ち主の意匠）に保存されるが、名札を刷るときなどの
+  // 既定として手元にも覚えておく。ここは本人の画面なので自分の既定を書いてよい
   const selectVariant = (v: CardBgVariant) => {
     setVariant(v);
-    localStorage.setItem(BG_STORAGE_KEY, v);
+    saveLocalCardLook({ variant: v, theme });
   };
 
   const selectTheme = (t: CardThemeKey) => {
     setTheme(t);
-    localStorage.setItem(THEME_STORAGE_KEY, t);
+    saveLocalCardLook({ variant, theme: t });
   };
 
   const handleDownload = async () => {
@@ -373,51 +393,46 @@ export function LicenseCardPage() {
           >
             {busy ? "書き出し中…" : "PNGをダウンロード"}
           </Button>
-          {data.isMe && (
-            <Button
-              variant="outlined"
-              startIcon={<QrCode2Icon />}
-              onClick={() => setQrOpen(true)}
-            >
-              QRを大きく表示
-            </Button>
-          )}
+          {/* 交流の場で相手に読み取ってもらう用の大きなQR (#324) */}
+          <Button
+            variant="outlined"
+            startIcon={<QrCode2Icon />}
+            onClick={() => setQrOpen(true)}
+          >
+            QRを大きく表示
+          </Button>
         </Stack>
 
-        {data.isMe && (
-          <BigQrDialog
-            open={qrOpen}
-            onClose={() => setQrOpen(false)}
-            name={card.name}
-            avatarUrl={data.avatarUrl}
-          />
-        )}
+        <BigQrDialog
+          open={qrOpen}
+          onClose={() => setQrOpen(false)}
+          name={card.name}
+          avatarUrl={data.avatarUrl}
+        />
 
-        {data.isMe && (
-          <Stack spacing={0.25}>
-            {ogStatus === "generating" && (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <CircularProgress size={14} />
-                <Typography variant="caption" color="text.secondary">
-                  プロフィールカードを作成しています…
-                </Typography>
-              </Stack>
-            )}
-            {ogStatus === "done" && (
-              <Typography variant="caption" color="success.main">
-                シェア用のカード画像を保存しました
+        <Stack spacing={0.25}>
+          {ogStatus === "generating" && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <CircularProgress size={14} />
+              <Typography variant="caption" color="text.secondary">
+                プロフィールカードを作成しています…
               </Typography>
-            )}
-            {ogStatus === "error" && (
-              <Typography variant="caption" color="warning.main">
-                カード画像の保存に失敗しました（リロードで再試行できます）
-              </Typography>
-            )}
-            <Typography variant="caption" color="text.secondary">
-              このカードはプロフィールURLをシェアしたときのOG画像として使われます
+            </Stack>
+          )}
+          {ogStatus === "done" && (
+            <Typography variant="caption" color="success.main">
+              シェア用のカード画像を保存しました
             </Typography>
-          </Stack>
-        )}
+          )}
+          {ogStatus === "error" && (
+            <Typography variant="caption" color="warning.main">
+              カード画像の保存に失敗しました（リロードで再試行できます）
+            </Typography>
+          )}
+          <Typography variant="caption" color="text.secondary">
+            このカードはプロフィールURLをシェアしたときのOG画像として使われます
+          </Typography>
+        </Stack>
       </Stack>
     </Box>
   );

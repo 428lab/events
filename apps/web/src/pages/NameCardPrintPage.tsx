@@ -31,17 +31,17 @@ import type { EventNameCard, EventRole } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
 import { useEventNameCards } from "../api/nameCardHooks.js";
 import {
-  BG_STORAGE_KEY,
-  BG_VARIANTS,
-  CARD_THEMES,
   LicenseCardSvg,
-  THEME_STORAGE_KEY,
   toCardData,
 } from "../components/licenseCard/LicenseCardSvg.js";
 import type {
   CardBgVariant,
   CardThemeKey,
 } from "../components/licenseCard/LicenseCardSvg.js";
+import {
+  cardLook,
+  loadLocalCardLook,
+} from "../components/licenseCard/cardLook.js";
 
 /**
  * 名札の一括印刷 (#304)。
@@ -62,39 +62,6 @@ const ROLE_LABEL: Record<EventRole, string> = {
 
 /** 一度に描き足す枚数。100人規模でも入力が固まらないよう小分けにする */
 const RENDER_STEP = 6;
-
-function loadBgVariant(): CardBgVariant {
-  const saved = localStorage.getItem(BG_STORAGE_KEY);
-  return BG_VARIANTS.some((v) => v.key === saved)
-    ? (saved as CardBgVariant)
-    : "rosette";
-}
-
-function loadCardTheme(): CardThemeKey {
-  const saved = localStorage.getItem(THEME_STORAGE_KEY);
-  return CARD_THEMES.some((t) => t.key === saved)
-    ? (saved as CardThemeKey)
-    : "indigo";
-}
-
-/** 本人が選んだカードの見た目 (#304)。
- *
- * 本人がカードを保存すると「背景-配色」がサーバーに記録される（OG画像の配信でも
- * 同じ値を使っている）。名札もこれに従い、**その人が自分で決めたとおりの見た目**で刷る。
- * 一度も保存していない人は値が無いので、刷る人の手元の設定を既定として使う */
-function cardLook(
-  key: string | null,
-  fallback: { variant: CardBgVariant; theme: CardThemeKey },
-): { variant: CardBgVariant; theme: CardThemeKey } {
-  const [bg, color] = (key ?? "").split("-");
-  const variant = BG_VARIANTS.some((v) => v.key === bg)
-    ? (bg as CardBgVariant)
-    : fallback.variant;
-  const theme = CARD_THEMES.some((t) => t.key === color)
-    ? (color as CardThemeKey)
-    : fallback.theme;
-  return { variant, theme };
-}
 
 /** 10枚ずつのページに割る（A4 1枚分＝10面） */
 export function toSheets<T>(cards: T[], perSheet = CARDS_PER_SHEET): T[][] {
@@ -302,8 +269,8 @@ export function NameCardPrintPage() {
     isError,
   } = useEventNameCards(id, Boolean(eventData) && isStaff);
 
-  const [variant] = useState<CardBgVariant>(loadBgVariant);
-  const [theme] = useState<CardThemeKey>(loadCardTheme);
+  // 一度もカードを保存していない人にだけ使う、刷る人の手元の既定
+  const [{ variant, theme }] = useState(loadLocalCardLook);
   /** 印刷から外した人。既定は全員選択なので「外した人」を持つほうが素直 */
   const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
   /** 何枚まで描いたか。100人規模で一度に描くと固まるので少しずつ増やす */
