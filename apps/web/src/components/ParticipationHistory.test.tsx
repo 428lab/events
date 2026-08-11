@@ -99,3 +99,56 @@ describe("参加履歴（一覧と年表の切り替え）", () => {
     expect(container.textContent).toBe("");
   });
 });
+
+/**
+ * 公開前（下書き）の切り分け (#348)。
+ *
+ * 下書きは公開済みと同じ見え方だったので、公開したつもり／していないつもりの
+ * 取り違えが起きうる。4分類とは別のまとまりにし、カードにも印を出す。
+ */
+describe("下書きのイベント (#348)", () => {
+  const DRAFT = ev({
+    id: "d-1",
+    title: "下書きの回",
+    status: "draft",
+    myRole: "staff",
+    createdBy: ME,
+    startsAt: new Date("2026-12-20T10:00:00+09:00").getTime(),
+    endsAt: new Date("2026-12-20T18:00:00+09:00").getTime(),
+  });
+
+  it("下書きは独立したまとまりに出る", () => {
+    renderHistory([...EVENTS, DRAFT]);
+    expect(screen.getByText("下書きのイベント（1）")).toBeTruthy();
+    expect(
+      screen.getByText("まだ公開していません。あなたと運営だけが見られます。"),
+    ).toBeTruthy();
+  });
+
+  it("下書きは公開済みの4分類に混ざらない", () => {
+    renderHistory([...EVENTS, DRAFT]);
+    // 下書きは開催予定の主催イベントだが「主催・運営する」には数えない
+    expect(screen.getByText("主催・運営するイベント（1）")).toBeTruthy();
+    expect(screen.getByText("参加予定のイベント（1）")).toBeTruthy();
+    expect(screen.getByText("主催・運営したイベント（1）")).toBeTruthy();
+    expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
+  });
+
+  it("下書きが1件も無ければまとまりごと出さない（他人のページ）", () => {
+    renderHistory(EVENTS);
+    expect(screen.queryByText(/下書きのイベント/)).toBeNull();
+  });
+
+  it("一覧のカードにも下書きの印が付く", () => {
+    renderHistory([...EVENTS, DRAFT]);
+    // 公開済みが4件あっても、印が付くのは下書きの1枚だけ
+    expect(screen.getAllByText("下書き")).toHaveLength(1);
+  });
+
+  it("年表でも下書きの印が付く", () => {
+    renderHistory([...EVENTS, DRAFT]);
+    fireEvent.click(screen.getByRole("tab", { name: "年表" }));
+    expect(screen.getByText("参加履歴の年表")).toBeTruthy();
+    expect(screen.getAllByText("下書き")).toHaveLength(1);
+  });
+});

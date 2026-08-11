@@ -21,6 +21,7 @@ import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import type { EventTimelinePhotos, MyEventSummary } from "@eventer/shared";
 import { eventImageUrl } from "../api/hooks.js";
 import { eventColor } from "./EventCard.js";
+import { DraftChip, isDraftEvent } from "./DraftChip.js";
 import { formatTime, participantCountLabel, venueLabel } from "../lib/format.js";
 
 /** 区分フィルタの値。役割は「主催・運営」と「参加」の2つに寄せる（配色もこの2つ） */
@@ -445,6 +446,9 @@ function TimelineCard({
           )}
         </Box>
         <Stack direction="row" flexWrap="wrap" alignItems="center" gap={0.75}>
+          {/* 公開前は一覧のカードと同じ印を先頭に出す。年表でも公開済みと
+              同じ見え方にしない (#348) */}
+          {isDraftEvent(event) && <DraftChip />}
           {/* 塗り＝主催・運営 / 枠線＝参加。関わり方が分かる細かいラベルは残し、
               登壇は「主催かどうか」とは別の軸なので独立したチップにする */}
           <Chip

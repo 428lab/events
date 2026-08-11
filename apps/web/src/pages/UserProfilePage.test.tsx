@@ -185,6 +185,25 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     );
   });
 
+  it("本人のページでは下書きを独立したまとまりに出す (#348)", async () => {
+    renderProfile(profile());
+    await screen.findAllByText("下書きイベント");
+    expect(screen.getByText("下書きのイベント（1）")).toBeTruthy();
+    // 公開済みの分類には混ざらない（公開イベントは過去の参加1件のみ）
+    expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
+    // カードにも印が付く
+    expect(screen.getAllByText("下書き")).toHaveLength(1);
+  });
+
+  it("他人のページには下書きのまとまりを出さない (#348)", async () => {
+    renderProfile(profile({ isMe: false, id: "u-other", handle: "other" }));
+    await screen.findAllByText("公開イベント");
+    await waitFor(() =>
+      expect(screen.queryByText(/下書きのイベント/)).toBeNull(),
+    );
+    expect(screen.queryByText("下書き")).toBeNull();
+  });
+
   it("通算の出会い数は表示中の合計ではなくサーバーの実人数を出す", async () => {
     renderProfile(profile());
     await screen.findAllByText("テスター"); // 見出しとカードの2か所に出る
