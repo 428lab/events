@@ -75,6 +75,7 @@ import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
 import { EntranceQrDialog } from "../components/EntranceQrDialog.js";
+import { EventStaffInvitesCard } from "../components/EventStaffInvitesCard.js";
 import {
   formatDateRange,
   formatDateTime,
@@ -949,11 +950,22 @@ export function EventDetailPage() {
       </Grid>
 
       <Grid item xs={12} md={4}>
+        {/* 画面に貼り付けたままにするので、中身が画面高を超えたら
+            この列だけを縦スクロールさせる。そうしないと参加者一覧の下端に
+            到達できなくなる（招待カードが加わって届かなくなりやすくなった） */}
+        <Stack
+          spacing={2}
+          sx={{
+            position: { md: "sticky" },
+            top: { md: 16 },
+            maxHeight: { md: "calc(100vh - 32px)" },
+            overflowY: { md: "auto" },
+          }}
+        >
+        {/* 運営を指名して招く (#339)。公開前でも一緒に準備できるようにする入口 */}
+        {isStaff && <EventStaffInvitesCard eventId={id} />}
         {members && (
-          <Card
-            variant="outlined"
-            sx={{ position: { md: "sticky" }, top: { md: 16 } }}
-          >
+          <Card variant="outlined">
             <CardContent>
               <Typography variant="h6" gutterBottom>
                 参加者一覧（{members.length}）
@@ -979,6 +991,7 @@ export function EventDetailPage() {
             </CardContent>
           </Card>
         )}
+        </Stack>
       </Grid>
     </Grid>
   );

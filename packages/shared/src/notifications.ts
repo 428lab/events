@@ -21,6 +21,10 @@ export const NOTIFICATION_TYPES = [
   "abuse_flag",
   /** スタッフからの一斉連絡 (#172) */
   "event_broadcast",
+  /** 運営スタッフへの招待が届いた (#339) */
+  "staff_invite",
+  /** 送った招待が承諾/辞退された（招待した本人へ） (#339) */
+  "staff_invite_result",
   "info",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -62,6 +66,8 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   meet: "出会い",
   abuse_flag: "運用",
   event_broadcast: "イベントからの連絡",
+  staff_invite: "運営への招待",
+  staff_invite_result: "運営への招待",
   info: "お知らせ",
 };
 

@@ -40,7 +40,7 @@ import type {
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { currentUser, requireAuth } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
+import { canViewEvent as canView, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { awardsRepo } from "../db/repositories/awards.js";
@@ -58,6 +58,7 @@ import {
 } from "../lib/checkinToken.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { schedulingRepo } from "../db/repositories/scheduling.js";
+import { promoteFromWaitlist } from "../lib/waitlist.js";
 import { copyEventImage, deleteEventImage, putEventImage } from "./images.js";
 import {
   listViewableRequestsForEvent,
@@ -70,13 +71,6 @@ import {
 
 export const eventRoutes = new Hono<AppEnv>();
 
-/** 公開イベントは誰でも閲覧可。下書きはメンバー/管理者のみ。 */
-async function canView(event: Event, user: User | null): Promise<boolean> {
-  if (event.status === "published") return true;
-  if (!user) return false;
-  if (isAppAdmin(user)) return true;
-  return Boolean(await eventMembersRepo.find(event.id, user.id));
-}
 
 /* =========================================================
  *  公開ルート（未ログイン可）。requireAuth より前に登録する。
@@ -580,47 +574,6 @@ eventRoutes.post("/:id/join", zValidator("json", joinEventInput), async (c) => {
   }
   return c.json({ member, status }, 201);
 });
-
-/** 先着枠で席が空いたとき、キャンセル待ちの最古を確定へ繰り上げる (#281)。
- * 呼び出し前に席を空けておくこと（confirmedCount はその場で数え直す）。
- *
- * 席が空く経路は参加解除だけではない。参加者をスタッフ等にすると枠が外れて
- * 席が空くので (#277)、そちらからも同じ処理を通す。通さないと空席のまま
- * キャンセル待ちが放置され、後から申し込んだ人に横入りされる。
- *
- * @returns 繰り上げた人の userId（繰り上げなしなら null） */
-async function promoteFromWaitlist(
-  event: Event,
-  slotId: string,
-): Promise<string | null> {
-  const slot = await participationSlotsRepo.findById(slotId);
-  if (
-    !slot ||
-    slot.selectionType !== "first_come" ||
-    slot.confirmedCount >= slot.capacity
-  ) {
-    return null;
-  }
-  const [next] = await eventMembersRepo.membersBySlotStatus(slotId, "waitlist");
-  if (!next) return null;
-  await eventMembersRepo.setStatus(next.id, "confirmed");
-  const u = await usersRepo.findById(next.userId);
-  if (u) {
-    await entriesRepo.createIndividual(
-      event.id,
-      next.userId,
-      u.globalName ?? u.username,
-    );
-  }
-  await notificationsRepo.create(
-    next.userId,
-    "waitlist_promoted",
-    "キャンセル待ちから繰り上がりました",
-    `「${event.title}」への参加が確定しました`,
-    `/events/${event.id}`,
-  );
-  return next.userId;
-}
 
 /** 参加を取り消して「参加していない状態」に戻す (#281)。
  * 本人の参加解除 (DELETE /join) と、運営が一般参加者に戻すときで共有する。

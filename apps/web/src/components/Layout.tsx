@@ -17,6 +17,7 @@ import {
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import GroupAddIcon from "@mui/icons-material/GroupAdd";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import { useBundleReload } from "../lib/useBundleReload.js";
 import { useNavCollapse } from "../lib/useNavCollapse.js";
@@ -24,6 +25,7 @@ import type { User } from "@eventer/shared";
 import { useIsAdmin, useLogout } from "../api/hooks.js";
 import { useAdminInquiryUnreadCount } from "../api/inquiryHooks.js";
 import { useAbuseUnreviewedCount } from "../api/abuseHooks.js";
+import { useMyStaffInvites } from "../api/staffInviteHooks.js";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
 import { NotificationBell } from "./NotificationBell.js";
 import { LogoGlyph } from "./LogoGlyph.js";
@@ -88,6 +90,12 @@ export function Layout({
   const adminBadgeTitle = adminBadge
     ? `問い合わせ未読 ${adminUnread ?? 0} 件 / 要確認 ${abuseUnread ?? 0} 件`
     : "";
+  // 運営への招待 (#339)。返事待ちがあるときだけ導線を出す。承諾するまで
+  // イベントページは開けないので、通知を見落とすと辿り着けなくなるため。
+  // 置き場所はお知らせベルの隣（常に手前に残る側）。横並びナビや
+  // ハンバーガーに置くと、幅によってどちらか片方でしか出ない
+  const { data: staffInvites } = useMyStaffInvites();
+  const pendingInvites = staffInvites?.length ?? 0;
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const closeMenu = () => setAnchor(null);
   const doLogout = () =>
@@ -218,6 +226,20 @@ export function Layout({
           <Box
             sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}
           >
+            {pendingInvites > 0 && (
+              <Tooltip title={`運営への招待 ${pendingInvites} 件`}>
+                <IconButton
+                  color="inherit"
+                  component={RouterLink}
+                  to="/staff-invites"
+                  aria-label={`運営への招待 ${pendingInvites} 件`}
+                >
+                  <Badge badgeContent={pendingInvites} color="error">
+                    <GroupAddIcon />
+                  </Badge>
+                </IconButton>
+              </Tooltip>
+            )}
             <NotificationBell />
             <ThemeSwitcher />
             {/* 自分のページを開く。設定は横並びナビ／メニューの「設定」から (#319) */}

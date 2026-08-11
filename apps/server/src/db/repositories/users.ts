@@ -432,6 +432,8 @@ export const usersRepo = {
       ["venue_admin", "user_id", ["venue_id"]],
       ["event_survey_answer", "user_id", ["question_id"]],
       ["event_like", "user_id", ["event_id", "kind", "target_key"]],
+      // 運営への招待 (#339)。両方に同じイベントの招待があれば負け側を捨てる
+      ["event_staff_invite", "user_id", ["event_id"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols
@@ -570,6 +572,8 @@ export const usersRepo = {
       ["inquiry", "user_id"],
       ["venue_photo", "user_id"],
       ["event_schedule_item", "speaker_user_id"],
+      // 招待した人 (#339)。付け替えないと (9) の user 削除で招待ごと消える
+      ["event_staff_invite", "invited_by"],
       ["bgm_track", "owner_id"],
       ["event", "created_by"],
       ["event_request", "created_by"],
