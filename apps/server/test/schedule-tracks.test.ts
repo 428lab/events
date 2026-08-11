@@ -75,11 +75,8 @@ async function getTimetable(
   return (await res.json()) as { items: ScheduleItem[]; tracks: EventTrack[] };
 }
 
-/** 非adminのメンバーを1人作る（役割は指定） */
-async function makeMember(
-  eventId: string,
-  role: "participant" | "staff",
-): Promise<string> {
+/** 非adminのユーザーを1人作る（どのイベントのメンバーでもない） */
+async function makeUser(): Promise<{ userId: string; cookie: string }> {
   const uid = crypto.randomUUID();
   const sid = crypto.randomUUID();
   await env.DB.prepare(
@@ -92,12 +89,48 @@ async function makeMember(
   )
     .bind(sid, uid, Date.now() + 86400000)
     .run();
+  return { userId: uid, cookie: `eventer_session=${sid}` };
+}
+
+/** 非adminのメンバーを1人作る（役割は指定） */
+async function makeMember(
+  eventId: string,
+  role: "participant" | "staff",
+): Promise<string> {
+  const u = await makeUser();
   await env.DB.prepare(
     "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, ?, NULL, 'confirmed', 0, ?)",
   )
-    .bind(crypto.randomUUID(), eventId, uid, role, Date.now())
+    .bind(crypto.randomUUID(), eventId, u.userId, role, Date.now())
     .run();
-  return `eventer_session=${sid}`;
+  return u.cookie;
+}
+
+/** イベントをコミュニティに紐づけ、そのコミュニティの owner を1人作る
+ * （イベントのメンバーにはしない） */
+async function makeCommunityOwner(eventId: string): Promise<string> {
+  const u = await makeUser();
+  const communityId = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO community (id, slug, name, description, owner_id, created_at) VALUES (?, ?, ?, '', ?, ?)",
+  )
+    .bind(
+      communityId,
+      `c-${communityId.slice(0, 8)}`,
+      `community_${communityId.slice(0, 4)}`,
+      u.userId,
+      Date.now(),
+    )
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO community_member (id, community_id, user_id, role, created_at) VALUES (?, ?, ?, 'owner', ?)",
+  )
+    .bind(crypto.randomUUID(), communityId, u.userId, Date.now())
+    .run();
+  await env.DB.prepare("UPDATE event SET community_id = ? WHERE id = ?")
+    .bind(communityId, eventId)
+    .run();
+  return u.cookie;
 }
 
 function itemInput(
@@ -475,6 +508,35 @@ describe("未割り当てを参加者に見せない (#338)", () => {
     // イベントを作った本人（＝staff）にも返る
     const asOwner = await getTimetable(eventId, cookie);
     expect(asOwner.items).toHaveLength(2);
+  });
+
+  it("コミュニティ管理者にも未割り当てが返る（保存できる範囲と同じ）", async () => {
+    const cookie = await loginDev();
+    const eventId = await setupEvent(cookie);
+    // イベントのメンバーではないが、そのコミュニティの owner
+    const manager = await makeCommunityOwner(eventId);
+    await putTimetable(eventId, cookie, {
+      tracks: [],
+      items: [
+        itemInput("開会", { placement: "all" }),
+        itemInput("ネタ", { placement: "unassigned" }),
+      ],
+    });
+
+    // 保存が通る人には未割り当ても返る。返らないと、この人の差分保存で
+    // 未割り当てのコマが消える
+    const asManager = await getTimetable(eventId, manager);
+    expect(asManager.items.map((i) => i.title)).toEqual(["開会", "ネタ"]);
+    const saved = await putTimetable(eventId, manager, {
+      tracks: [],
+      items: asManager.items.map((i) => ({
+        id: i.id,
+        title: i.title,
+        durationMin: i.durationMin,
+        placement: i.placement,
+      })),
+    });
+    expect(saved.items.map((i) => i.placement)).toEqual(["all", "unassigned"]);
   });
 
 

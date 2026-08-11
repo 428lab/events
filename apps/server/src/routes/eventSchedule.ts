@@ -13,6 +13,7 @@ import { valid, zValidator } from "../lib/validator.js";
 import { deferBackground } from "../runtime.js";
 import { refreshMaterialMeta } from "../lib/materialMeta.js";
 import { eventsRepo } from "../db/repositories/events.js";
+import { communitiesRepo } from "../db/repositories/communities.js";
 import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 
@@ -31,12 +32,22 @@ async function canViewTimetable(eventId: string, c: Context): Promise<boolean> {
 /* ===== 公開ハンドラ（未ログイン可。worker.ts で eventRoutes より先に登録） ===== */
 
 /** タイムテーブルを編集できる人か（＝ネタ出し中のコマまで見てよい人）。
- * 保存の権限 (staff) と同じ範囲にそろえる */
+ * 下の PUT の requireEventRole(["staff"]) と**同じ範囲**にそろえる。
+ * ずれていると、保存はできるのに未割り当てが返らない人ができてしまい、
+ * その人の差分保存で未割り当てのコマが消える */
 async function canEditTimetable(eventId: string, c: Context): Promise<boolean> {
   const user = await currentUser(c);
   if (!user) return false;
   if (isAppAdmin(user)) return true;
-  return (await eventMembersRepo.find(eventId, user.id))?.role === "staff";
+  if ((await eventMembersRepo.find(eventId, user.id))?.role === "staff") {
+    return true;
+  }
+  // コミュニティの owner/admin はそのコミュニティのイベントを staff 相当で管理できる
+  const event = await eventsRepo.findById(eventId);
+  return Boolean(
+    event?.communityId &&
+      (await communitiesRepo.isManager(event.communityId, user.id)),
+  );
 }
 
 /** タイムテーブル一覧（閲覧できる人は誰でも）。
