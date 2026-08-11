@@ -697,6 +697,14 @@ async function getTimetable(
   return ((await res.json()) as { items: ScheduleItem[] }).items;
 }
 
+/** いまのタイムテーブルの版 (#340)。保存にはこれを送り返す必要がある */
+async function timetableVersion(eventId: string, cookie: string): Promise<number> {
+  const res = await SELF.fetch(`${BASE}/api/events/${eventId}/timetable`, {
+    headers: { cookie },
+  });
+  return ((await res.json()) as { version?: number }).version ?? 0;
+}
+
 /** 編集画面と同じ形（取得した項目をそのまま保存し直す）でタイムテーブルを保存 */
 async function saveTimetable(
   eventId: string,
@@ -707,6 +715,7 @@ async function saveTimetable(
     method: "PUT",
     headers: { "content-type": "application/json", cookie },
     body: JSON.stringify({
+      version: await timetableVersion(eventId, cookie),
       items: items.map((it) => ({
         title: it.title,
         description: it.description,
@@ -734,6 +743,7 @@ describe("退会の猶予期間: タイムテーブルの登壇者リンク (#25
       method: "PUT",
       headers: { "content-type": "application/json", cookie: host.cookie },
       body: JSON.stringify({
+        version: 0,
         items: [
           {
             title: "LT 1",

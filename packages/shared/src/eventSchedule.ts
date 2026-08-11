@@ -102,6 +102,48 @@ export const saveScheduleTrackInput = z.object({
 });
 export type SaveScheduleTrackInput = z.infer<typeof saveScheduleTrackInput>;
 
+/* ===== 同時編集の対策 (#340) ===== */
+
+/** 編集中ステータスを取りに行く間隔（ミリ秒）。
+ * 既存の前例（採点2秒・Q&A5秒・チャット5秒・配信15秒）のうち5秒に合わせる。
+ * 編集を始める前に「誰かが編集中」と気づけるだけの速さが要る一方、
+ * 取りに行くのはタイムテーブルを編集できる人だけなので、
+ * 参加者全員が回している Q&A・チャットより総量は小さい。
+ *
+ * 編集中の人はこの間隔で「まだ編集中」と言い続ける（＝これが心拍でもある）。 */
+export const SCHEDULE_EDIT_POLL_MS = 5_000;
+
+/** 最後の反応からこれだけ経つと編集中が自動的に解除される（ミリ秒）。
+ * 心拍 (5秒) の24回ぶん。ブラウザは背面のタブのタイマーを1分に1回まで
+ * 間引くことがあるため、**1分より十分に長く**取る必要がある。
+ * 一方で長すぎると「閉じ忘れて帰った人」を待たされるので2分に置く。 */
+export const SCHEDULE_EDIT_EXPIRE_MS = 120_000;
+
+/** いまタイムテーブルを編集している人 (#340)。
+ * 厳密な排他ではなく、**声かけのための表示**。保存できるかどうかは版で決まる */
+export const scheduleEditingUserSchema = z.object({
+  userId: z.string(),
+  /** 表示名。退会申請中などで解決できないときは空文字
+   * （画面は名前を出さず「ほかの運営メンバー」と出す） */
+  name: z.string(),
+  avatarUrl: z.string().nullable(),
+  /** 編集を始めた時刻（epoch ms） */
+  startedAt: z.number(),
+  /** この時刻を過ぎると自動的に解除される（epoch ms） */
+  expiresAt: z.number(),
+});
+export type ScheduleEditingUser = z.infer<typeof scheduleEditingUserSchema>;
+
+/** 編集中ステータスの取得結果 (#340)。版も一緒に返す
+ * （編集中の人が「自分の知っている版が古くなった」と気づけるようにするため） */
+export const scheduleEditingStateSchema = z.object({
+  /** 誰も編集していなければ null */
+  editor: scheduleEditingUserSchema.nullable(),
+  /** タイムテーブルの現在の版 */
+  version: z.number(),
+});
+export type ScheduleEditingState = z.infer<typeof scheduleEditingStateSchema>;
+
 /** 登壇者本人による資料URLの更新入力 (#148) */
 export const updateScheduleMaterialInput = z.object({
   materialUrl: materialUrlInput,
@@ -114,6 +156,13 @@ export type UpdateScheduleMaterialInput = z.infer<
  * 送られなかった既存項目は削除、ID 一致は更新、ID 無しは追加。
  * 並び順は配列順（送った全項目に 0 から振り直す） */
 export const saveScheduleInput = z.object({
+  /** 読み込んだ時点のタイムテーブルの版 (#340)。
+   * サーバーの版と食い違えば保存を止める（誰かが先に保存している）。
+   *
+   * **必須にしてある**。`tracks` の未指定は「触らない」という安全な既定に
+   * 倒せるが、版の未指定に安全な既定は無く、省略を許すと衝突検知をすり抜けた
+   * 上書きが黙って通ってしまう。送り忘れは 400 で気づけるほうがよい */
+  version: z.number().int().min(0),
   items: z.array(saveScheduleItemInput).max(100),
   /** トラックの定義（配列順が並び順）。項目と同じ差分の規則で反映する。
    *

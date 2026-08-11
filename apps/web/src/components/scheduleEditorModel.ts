@@ -138,10 +138,17 @@ export function toTimeItems(rows: Row[]): ScheduleTimeItem[] {
   }));
 }
 
-/** 保存の入力に変換する。トラックは配列の添字で参照する（新規は ID が無いため） */
-export function toSaveInput(rows: Row[], tracks: TrackRow[]): SaveScheduleInput {
+/** 保存の入力に変換する。トラックは配列の添字で参照する（新規は ID が無いため）。
+ * version は**読み込んだ時点の版**をそのまま返す (#340)。この間に他の人が
+ * 保存していればサーバー側で食い違いになり、上書きが止まる */
+export function toSaveInput(
+  rows: Row[],
+  tracks: TrackRow[],
+  version: number,
+): SaveScheduleInput {
   const indexByKey = new Map(tracks.map((t, i) => [t.key, i]));
   return {
+    version,
     tracks: tracks.map((t) => ({ id: t.id, name: t.name.trim() })),
     items: rows.map((r) => ({
       id: r.id,

@@ -67,18 +67,29 @@ async function makeMember(
   return u;
 }
 
-function putTimetable(
+/** 保存には読んだ時点の版を送り返す (#340)。
+ * 権限の無い相手は GET でも弾かれうるので、その場合は 0 で送って
+ * 権限のほうで落ちることを確かめる（版の検証は権限の後ではなく前でもよいが、
+ * どちらにせよ 403 で止まる） */
+async function putTimetable(
   eventId: string,
   cookie: string | null,
   items: unknown[],
 ): Promise<Response> {
+  const headers = {
+    "content-type": "application/json",
+    ...(cookie ? { cookie } : {}),
+  };
+  const cur = await SELF.fetch(`${BASE}/api/events/${eventId}/timetable`, {
+    headers: cookie ? { cookie } : undefined,
+  });
+  const version = cur.ok
+    ? (((await cur.json()) as { version?: number }).version ?? 0)
+    : 0;
   return SELF.fetch(`${BASE}/api/events/${eventId}/timetable`, {
     method: "PUT",
-    headers: {
-      "content-type": "application/json",
-      ...(cookie ? { cookie } : {}),
-    },
-    body: JSON.stringify({ items }),
+    headers,
+    body: JSON.stringify({ version, items }),
   });
 }
 
@@ -369,27 +380,34 @@ describe("スケジュールの差分保存 (#340)", () => {
     expect(got.items.filter((i) => i.materialUrl !== "")).toHaveLength(1);
   });
 
-  it("他イベントの ID・重複した ID は乗っ取れず、新規コマとして採番される", async () => {
+  // 以前はこれらを「新規コマとして採番し直す」で受けていたが、それだと
+  // **他人が消したコマを送り返したときに新しい ID で復活する** (#340)。
+  // 知らない ID は受け取らず、読み直しを促すほうが安全なので 409 にした
+  it("他イベントの ID・重複した ID は乗っ取れず、保存ごと止まる", async () => {
     const { admin, eventId, items } = await setupThree();
     const otherEventId = await setupEvent(admin);
     const otherItems = await save(otherEventId, admin, [
       { title: "別イベントの枠", durationMin: 10 },
     ]);
 
-    const saved = await save(eventId, admin, [
-      // 別イベントの ID
+    // 別イベントの ID
+    const foreign = await putTimetable(eventId, admin, [
       { id: otherItems[0].id, title: "乗っ取り", durationMin: 10 },
-      // 同じ ID を2回
+    ]);
+    expect(foreign.status).toBe(409);
+
+    // 同じ ID を2回
+    const duplicated = await putTimetable(eventId, admin, [
       { id: items[0].id, title: "本物", durationMin: 10 },
       { id: items[0].id, title: "複製", durationMin: 10 },
     ]);
-    expect(saved.map((i) => i.title)).toEqual(["乗っ取り", "本物", "複製"]);
-    expect(saved[0].id).not.toBe(otherItems[0].id);
-    expect(saved[1].id).toBe(items[0].id);
-    expect(saved[2].id).not.toBe(items[0].id);
-    expect(new Set(saved.map((i) => i.id)).size).toBe(3);
+    expect(duplicated.status).toBe(409);
 
-    // 別イベントの内容は無傷
+    // どちらのイベントも無傷（止まった保存は一切書いていない）
+    const mine = (await (await getTimetable(eventId, admin)).json()) as {
+      items: ScheduleItem[];
+    };
+    expect(mine.items.map((i) => i.id)).toEqual(items.map((i) => i.id));
     const other = (await (await getTimetable(otherEventId)).json()) as {
       items: ScheduleItem[];
     };
@@ -456,6 +474,7 @@ describe("登壇資料URL (#146)", () => {
       method: "PUT",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({
+        version: 0,
         items: [
           {
             title: "LT",
@@ -477,6 +496,7 @@ describe("登壇資料URL (#146)", () => {
       method: "PUT",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({
+        version: 1,
         items: [
           { title: "LT", durationMin: 10, materialUrl: "javascript:alert(1)" },
         ],

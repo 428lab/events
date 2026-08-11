@@ -50,15 +50,20 @@ async function setupEvent(cookie: string, startsAt = Date.now() + 24 * HOUR): Pr
   return event.id;
 }
 
+/** 保存には読んだ時点の版を送り返す (#340)。編集画面と同じく直前に取り直す */
 async function putTimetable(
   eventId: string,
   cookie: string,
-  body: unknown,
+  body: Record<string, unknown>,
 ): Promise<{ items: ScheduleItem[]; tracks: EventTrack[] }> {
+  const cur = await SELF.fetch(`${BASE}/api/events/${eventId}/timetable`, {
+    headers: { cookie },
+  });
+  const version = ((await cur.json()) as { version?: number }).version ?? 0;
   const res = await SELF.fetch(`${BASE}/api/events/${eventId}/timetable`, {
     method: "PUT",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ version, ...body }),
   });
   expect(res.status).toBe(200);
   return (await res.json()) as { items: ScheduleItem[]; tracks: EventTrack[] };
