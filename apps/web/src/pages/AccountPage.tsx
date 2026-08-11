@@ -23,6 +23,7 @@ import {
 } from "../api/hooks.js";
 import { UsernameCard } from "../components/UsernameCard.js";
 import { NotificationPrefsCard } from "../components/NotificationPrefsCard.js";
+import { LanguageCard } from "../components/LanguageCard.js";
 import { AccountMergeCard } from "../components/AccountMergeCard.js";
 import { AccountDeleteCard } from "../components/AccountDeleteCard.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
@@ -112,6 +113,8 @@ export function AccountPage() {
       </Typography>
 
       <UsernameCard />
+
+      <LanguageCard />
 
       <NotificationPrefsCard />
 

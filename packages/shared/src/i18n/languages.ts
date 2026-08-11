@@ -24,6 +24,17 @@ export const DATE_LOCALES: Record<AppLanguage, string> = {
   en: "en-US",
 };
 
+/**
+ * 言語そのものの呼び名 (#354)。
+ *
+ * **どの言語で表示していても綴りは同じ**。選ぶのはその言語を読む人なので、
+ * 「Japanese」ではなく「日本語」と出したほうが探しやすい。翻訳キーには置かない。
+ */
+export const LANGUAGE_NAMES: Record<AppLanguage, string> = {
+  ja: "日本語",
+  en: "English",
+};
+
 /** "en-US" や "JA" のような表記を対応言語に寄せる。対応外なら null */
 export function normalizeLanguage(tag: string | null | undefined): AppLanguage | null {
   if (!tag) return null;
