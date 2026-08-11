@@ -2,15 +2,20 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ScheduleItem } from "@eventer/shared";
+import type { EventTrack, ScheduleItem } from "@eventer/shared";
 
 /**
- * 「誰かが編集中」を**編集画面を開く前に**見せる (#340)。
+ * タイムテーブルの見出し行に並ぶ2つのもの。
  *
- * 上書きを実際に止めているのは保存時の版の突き合わせだが、それは弾かれて
- * 初めて分かる。分担の声かけができるように、編集を始める前の画面でも
- * 編集ボタンの隣に出す。ここが出ないと、2人が同時に編集を始めてから
- * 片方が弾かれる、という無駄が毎回起きる。
+ * - 「誰かが編集中」を**編集画面を開く前に**見せる (#340)。
+ *   上書きを実際に止めているのは保存時の版の突き合わせだが、それは弾かれて
+ *   初めて分かる。分担の声かけができるように、編集を始める前の画面でも
+ *   編集ボタンの隣に出す。ここが出ないと、2人が同時に編集を始めてから
+ *   片方が弾かれる、という無駄が毎回起きる。
+ * - タイムテーブル画面への導線 (#338)。
+ *   トラックが1本以下のイベントでは格子にする意味がないので出さない。
+ *   ここが出っぱなしだと、トラックを使っていないイベントでも参加者が
+ *   中身の無い画面へ飛ばされる。
  */
 
 const { getMock, putMock, postMock, delMock } = vi.hoisted(() => ({
@@ -55,6 +60,12 @@ const ITEM: ScheduleItem = {
   trackIds: [],
 };
 
+const track = (id: string, name: string, sortOrder: number): EventTrack => ({
+  id,
+  name,
+  sortOrder,
+});
+
 /** 編集中ステータスの返り値。誰も編集していない状態が既定 */
 let editingState: {
   editor: {
@@ -66,6 +77,9 @@ let editingState: {
   } | null;
   version: number;
 } = { editor: null, version: 3 };
+
+/** そのイベントのトラック。既定はトラックを使っていないイベント */
+let tracks: EventTrack[] = [];
 
 function editor(userId: string, name: string) {
   return {
@@ -95,6 +109,7 @@ function draw(isStaff: boolean) {
 
 beforeEach(() => {
   editingState = { editor: null, version: 3 };
+  tracks = [];
   getMock.mockReset();
   putMock.mockReset();
   postMock.mockReset();
@@ -102,7 +117,7 @@ beforeEach(() => {
   getMock.mockImplementation(async (path: string) => {
     if (path === "/auth/me") return { user: ME, isAdmin: false };
     if (path === "/events/e-1/timetable") {
-      return { items: [ITEM], tracks: [], version: 3 };
+      return { items: [ITEM], tracks, version: 3 };
     }
     if (path === "/events/e-1/timetable/editing") return editingState;
     if (path === "/events/e-1/members") return { members: [] };
@@ -149,6 +164,55 @@ describe("タイムテーブルの「編集中」表示 (#340)", () => {
   });
 });
 
+describe("タイムテーブル画面への導線 (#338)", () => {
+  it("トラックが2本以上あるときだけ出す", async () => {
+    tracks = [track("tr-a", "A", 0), track("tr-b", "B", 1)];
+    draw(false);
+
+    const link = await screen.findByRole("link", { name: /トラック別に見る/ });
+    expect(link).toHaveAttribute("href", "/events/e-1/timetable");
+  });
+
+  it("トラックが1本のときは出さない", async () => {
+    tracks = [track("tr-a", "A", 0)];
+    draw(false);
+
+    await screen.findByText("オープニング");
+    expect(
+      screen.queryByRole("link", { name: /トラック別に見る/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("トラックを使っていないイベントでは出さない", async () => {
+    draw(false);
+
+    await screen.findByText("オープニング");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("link", { name: /トラック別に見る/ }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  /**
+   * 導線 (#338) と編集中の表示 (#340) は同じ見出し行に並ぶ。
+   * 片方を足すときにもう片方を落としやすいので、同時に出ることを見張る。
+   */
+  it("運営が見ていて他の人が編集中でも、導線と編集中の表示が両方出る", async () => {
+    tracks = [track("tr-a", "A", 0), track("tr-b", "B", 1)];
+    editingState = editor("u-2", "アリス");
+    draw(true);
+
+    expect(await screen.findByText("アリスさんが編集中")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /トラック別に見る/ }),
+    ).toHaveAttribute("href", "/events/e-1/timetable");
+    expect(
+      screen.getByRole("button", { name: "タイムテーブルを編集" }),
+    ).toBeTruthy();
+  });
+});
+
 /**
  * 保存したあとに手元が持っている版 (#340)。
  *
@@ -164,9 +228,7 @@ describe("保存したあとの版 (#340)", () => {
     );
     const before = putMock.mock.calls.length;
     fireEvent.click(await screen.findByRole("button", { name: "保存" }));
-    await waitFor(() =>
-      expect(putMock.mock.calls.length).toBe(before + 1),
-    );
+    await waitFor(() => expect(putMock.mock.calls.length).toBe(before + 1));
     return putMock.mock.calls.at(-1)![1] as { version: number };
   }
 

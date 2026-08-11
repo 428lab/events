@@ -54,6 +54,7 @@ import { LiveSetEditorPage } from "./pages/LiveSetEditorPage.js";
 import { LiveScreenPage } from "./pages/LiveScreenPage.js";
 import { LiveControlPage } from "./pages/LiveControlPage.js";
 import { EventStatsPage } from "./pages/EventStatsPage.js";
+import { EventTimetablePage } from "./pages/EventTimetablePage.js";
 import { AdminStatsPage } from "./pages/AdminStatsPage.js";
 import { AdminKpiPage } from "./pages/AdminKpiPage.js";
 import { AdminTrendingPage } from "./pages/AdminTrendingPage.js";
@@ -397,6 +398,8 @@ export function App() {
           <Route path="awards" element={<AwardsPage />} />
           <Route path="control" element={<ControlPage />} />
           <Route path="stats" element={<EventStatsPage />} />
+          {/* マルチトラックのタイムテーブル (#338)。導線はトラックが2本以上のときだけ出る */}
+          <Route path="timetable" element={<EventTimetablePage />} />
           <Route path="criteria" element={<CriteriaAdminPage />} />
           <Route path="results" element={<ScoreResultsPage />} />
           <Route path="lottery" element={<LotteryAdminPage />} />
