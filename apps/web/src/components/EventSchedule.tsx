@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import {
+  Button,
   Card,
   CardContent,
   Chip,
@@ -17,6 +19,7 @@ import {
 import ScheduleIcon from "@mui/icons-material/Schedule";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import ViewWeekOutlinedIcon from "@mui/icons-material/ViewWeekOutlined";
 import { computeScheduleTimes } from "@eventer/shared";
 import type { ScheduleItem } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
@@ -76,15 +79,29 @@ export function EventSchedule({
             <ScheduleIcon fontSize="small" />
             タイムテーブル
           </Typography>
-          {isStaff && !editing && (
-            <IconButton
-              size="small"
-              onClick={() => setEditing(true)}
-              title="タイムテーブルを編集"
-            >
-              <EditOutlinedIcon fontSize="small" />
-            </IconButton>
-          )}
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            {/* 並行して走っているのが見える専用画面への導線 (#338)。
+                トラックが2本以上ないと格子にする意味がないので出さない */}
+            {tracks.length >= 2 && !editing && (
+              <Button
+                component={RouterLink}
+                to={`/events/${eventId}/timetable`}
+                size="small"
+                startIcon={<ViewWeekOutlinedIcon fontSize="small" />}
+              >
+                トラック別に見る
+              </Button>
+            )}
+            {isStaff && !editing && (
+              <IconButton
+                size="small"
+                onClick={() => setEditing(true)}
+                title="タイムテーブルを編集"
+              >
+                <EditOutlinedIcon fontSize="small" />
+              </IconButton>
+            )}
+          </Stack>
         </Stack>
 
         {editing ? (
