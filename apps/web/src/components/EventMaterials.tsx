@@ -3,6 +3,7 @@ import {
   Box,
   Card,
   CardContent,
+  Chip,
   IconButton,
   Typography,
 } from "@mui/material";
@@ -18,11 +19,12 @@ import { UserLink } from "./UserLink.js";
 /** 登壇資料のギャラリー (#149)。タイムテーブルのコマのうち資料URLがあるものを
  * OGサムネイル付きカードで一覧する。資料が1件もなければ非表示。 */
 export function EventMaterials({ eventId }: { eventId: string }) {
-  const { data: items } = useEventSchedule(eventId);
+  const { data } = useEventSchedule(eventId);
   const { data: me } = useMe();
   const [editing, setEditing] = useState<ScheduleItem | null>(null);
 
-  const materials = (items ?? []).filter((it) => it.materialUrl !== "");
+  // 未割り当て（ネタ出し中 #338）はサーバーが staff にしか返さないので、ここでは絞らない
+  const materials = (data?.items ?? []).filter((it) => it.materialUrl !== "");
   if (materials.length === 0) return null;
 
   return (
@@ -105,6 +107,16 @@ export function EventMaterials({ eventId }: { eventId: string }) {
                   ) : null}
                 </Box>
                 <Box sx={{ p: 1.25 }}>
+                  {/* 未割り当て（ネタ出し中）はサーバーが staff にしか返さない。
+                      届いた側にはそうと分かる印を出す（一覧と同じ文言 #338） */}
+                  {it.placement === "unassigned" && (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label="未割り当て（参加者には出ません）"
+                      sx={{ height: 18, fontSize: "0.7rem", mb: 0.5 }}
+                    />
+                  )}
                   <Typography
                     variant="body2"
                     fontWeight={600}

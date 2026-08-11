@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Card,
   CardContent,
+  Chip,
   IconButton,
   Link as MuiLink,
   Stack,
@@ -37,17 +38,25 @@ export function EventSchedule({
   eventStartsAt: number | null;
   isStaff: boolean;
 }) {
-  const { data: items } = useEventSchedule(eventId);
+  const { data } = useEventSchedule(eventId);
   const { data: me } = useMe();
   const [editing, setEditing] = useState(false);
   // 登壇者本人による資料URL編集ダイアログの対象コマ (#148)
   const [materialItem, setMaterialItem] = useState<ScheduleItem | null>(null);
 
-  if (!items) return null;
+  if (!data) return null;
+  // 未割り当て（ネタ出し中 #338）はサーバーが staff にしか返さない。
+  // ここで落とすと同じ判断が2か所になるので、来たものはそのまま扱う
+  const { items, tracks } = data;
   // 空のタイムテーブルは staff にだけ編集導線として見せる
   if (items.length === 0 && !isStaff) return null;
 
-  const times = computeScheduleTimes(items, eventStartsAt);
+  const times = computeScheduleTimes(
+    items,
+    eventStartsAt,
+    tracks.map((t) => t.id),
+  );
+  const trackName = new Map(tracks.map((t) => [t.id, t.name]));
   // 担当が全行空なら列ごと非表示（モバイルで内容欄を広く使う）
   const hasSpeakers = items.some((it) => it.speaker || it.speakerName);
 
@@ -83,6 +92,7 @@ export function EventSchedule({
             eventId={eventId}
             eventStartsAt={eventStartsAt}
             items={items}
+            tracks={tracks}
             onClose={() => setEditing(false)}
           />
         ) : items.length === 0 ? (
@@ -119,6 +129,37 @@ export function EventSchedule({
                       )}
                     </TableCell>
                     <TableCell sx={{ verticalAlign: "top" }}>
+                      {/* トラックを使っているイベントだけ、どの枠かを添える。
+                          全トラック共通の枠は全部に出るので何も出さない。
+                          未割り当ては staff にしか届かないので、そうと分かる印を出す (#338) */}
+                      {(it.placement === "unassigned" ||
+                        (tracks.length > 0 && it.placement === "tracks")) && (
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          sx={{ mb: 0.25, flexWrap: "wrap" }}
+                          useFlexGap
+                        >
+                          {it.placement === "unassigned" ? (
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label="未割り当て（参加者には出ません）"
+                              sx={{ height: 18, fontSize: "0.7rem" }}
+                            />
+                          ) : (
+                            it.trackIds.map((tid) => (
+                              <Chip
+                                key={tid}
+                                size="small"
+                                variant="outlined"
+                                label={trackName.get(tid) ?? ""}
+                                sx={{ height: 18, fontSize: "0.7rem" }}
+                              />
+                            ))
+                          )}
+                        </Stack>
+                      )}
                       <Typography variant="body2">
                         {it.title}
                         {it.materialUrl && (

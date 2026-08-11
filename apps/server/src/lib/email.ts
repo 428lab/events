@@ -137,7 +137,9 @@ const CARD_CACHE_TTL = 60_000;
 /** リンク先がイベント詳細なら、イベントカード（＋タイムテーブル）HTMLを組み立てる (#134)。
  * D1 参照が増えるが送信はレスポンス外（waitUntil / cron）なので許容。
  * 失敗してもプレーンなメールで送れるよう空文字を返す */
-async function buildEventExtraHtml(
+/** イベントリンク付きメールに足すカード（＋任意でタイムテーブル）。
+ * リマインダーの中身を実物で確かめられるよう、テストからも直接呼ぶ */
+export async function buildEventExtraHtml(
   link: string,
   withTimetable: boolean,
 ): Promise<string> {
@@ -158,12 +160,19 @@ async function buildEventExtraHtml(
       communityName: community?.name ?? null,
     });
     if (withTimetable) {
-      const items = await eventScheduleRepo.listByEvent(event.id);
+      // 未割り当て（ネタ出し中 #338）は参加者に送らない。
+      // 時刻を持たないうえ、まだ出すと決まっていないセッションなので
+      const items = (await eventScheduleRepo.listByEvent(event.id)).filter(
+        (it) => it.placement !== "unassigned",
+      );
       if (items.length > 0) {
-        // 日程調整中は開始基準が無いので明示指定の項目以外は「--:--」になる
+        // 日程調整中は開始基準が無いので明示指定の項目以外は「--:--」になる。
+        // 時刻の連鎖はトラックごと (#338)
+        const tracks = await eventScheduleRepo.listTracks(event.id);
         const times = computeScheduleTimes(
           items,
           event.scheduling ? null : event.startsAt,
+          tracks.map((t) => t.id),
         );
         html += timetableHtml({ items, times });
       }

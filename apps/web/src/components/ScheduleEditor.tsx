@@ -1,98 +1,67 @@
 import { useEffect, useState } from "react";
 import {
   Alert,
-  Autocomplete,
-  Avatar,
   Box,
   Button,
-  Card,
-  IconButton,
+  Divider,
   Menu,
   MenuItem,
   Stack,
-  TextField,
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
-import type { SaveScheduleItemInput, ScheduleItem } from "@eventer/shared";
+import type { EventTrack, ScheduleItem } from "@eventer/shared";
 import {
-  SCHEDULE_DEFAULT_DURATION_MIN,
   SCHEDULE_TEMPLATES,
   computeScheduleTimes,
+  findTrackOverlaps,
 } from "@eventer/shared";
 import { useEventMembers } from "../api/hooks.js";
 import { useSaveEventSchedule } from "../api/eventScheduleHooks.js";
+import { formatTime } from "../lib/format.js";
+import type { MemberOption } from "./ScheduleItemRow.js";
+import { ScheduleItemRow } from "./ScheduleItemRow.js";
+import { ScheduleTrackManager } from "./ScheduleTrackManager.js";
+import type { Row, TrackRow } from "./scheduleEditorModel.js";
 import {
-  formatTime,
-  fromDateTimeLocal,
-  toDateTimeLocal,
-} from "../lib/format.js";
-
-/** 編集中の1行（key は React の並び替え用） */
-interface Row extends SaveScheduleItemInput {
-  key: string;
-}
-
-interface MemberOption {
-  id: string;
-  label: string;
-  avatarUrl: string | null;
-}
-
-function newRow(partial?: Partial<SaveScheduleItemInput>): Row {
-  return {
-    key: crypto.randomUUID(),
-    // 既存項目から作る場合だけ id が入る。null は新規追加 (#340)
-    id: null,
-    title: "",
-    description: "",
-    durationMin: SCHEDULE_DEFAULT_DURATION_MIN,
-    startsAt: null,
-    speakerUserId: null,
-    speakerName: "",
-    materialUrl: "",
-    ...partial,
-  };
-}
+  countRowsOnTrack,
+  newRow,
+  newTrackRow,
+  removeTrackFromRows,
+  rowFromItem,
+  setUnassigned,
+  toSaveInput,
+  toTimeItems,
+  trackRowFromTrack,
+} from "./scheduleEditorModel.js";
 
 /** タイムテーブルの編集（staff 用）。行の追加/削除・ドラッグ/ボタンでの並び替え・
- * テンプレートからの作成に対応。時刻プレビューは表示と同じロジックで自動計算する。 */
+ * テンプレートからの作成に対応。時刻プレビューは表示と同じロジックで自動計算する。
+ *
+ * トラック (#338) は「未割り当て（ネタ出し）」と「配置済み」の2セクションで扱う。
+ * トラックの割り当ては**チップとスイッチのタップだけで完結**する。 */
 export function ScheduleEditor({
   eventId,
   eventStartsAt,
   items,
+  tracks: initialTracks,
   onClose,
 }: {
   eventId: string;
   eventStartsAt: number | null;
   items: ScheduleItem[];
+  tracks: EventTrack[];
   onClose: () => void;
 }) {
   const { data: members } = useEventMembers(eventId, true);
   const save = useSaveEventSchedule(eventId);
+  const [tracks, setTracks] = useState<TrackRow[]>(() =>
+    initialTracks.map(trackRowFromTrack),
+  );
+  // 行の割り当て先は tracks と同じキーで持つ（トラックを作り直すとキーがずれる）
   const [rows, setRows] = useState<Row[]>(() =>
-    items.map((it) =>
-      newRow({
-        // 既存項目の ID を持ち回って保存時に送り返す。これが無いと保存のたびに
-        // 作り直しになり、資料URLの自己編集 (#148) が別のコマに当たる (#340)
-        id: it.id,
-        title: it.title,
-        description: it.description,
-        durationMin: it.durationMin,
-        startsAt: it.startsAt,
-        // 表示用の speaker ではなく生の speakerUserId を持つ (#250)。
-        // 退会申請中の登壇者は speaker が null になるため、そちらを見ると
-        // 保存のたびにリンクが外れ、復帰しても登壇者が戻らなくなる
-        speakerUserId: it.speakerUserId,
-        speakerName: it.speakerName,
-        materialUrl: it.materialUrl,
-      }),
-    ),
+    items.map((it) => rowFromItem(it, tracks)),
   );
   const [templateAnchor, setTemplateAnchor] = useState<null | HTMLElement>(null);
   // ドラッグ並び替え：ハンドルを押した行だけ draggable にする（入力操作と干渉させない）
@@ -104,41 +73,52 @@ export function ScheduleEditor({
     avatarUrl: m.user.avatarUrl,
   }));
 
-  const times = computeScheduleTimes(rows, eventStartsAt);
+  // 時刻はトラックごとの連鎖。未割り当ては時刻を持たない (#338)
+  const times = computeScheduleTimes(
+    toTimeItems(rows),
+    eventStartsAt,
+    tracks.map((t) => t.key),
+  );
+  // 同一トラック内の重なりは保存を止めず、警告だけ出す (#338)。
+  // トラックはまだ ID を持たないものがあるので、編集中のキーを ID として渡す
+  const overlaps = findTrackOverlaps(
+    rows.map((r, i) => ({ ...r, trackIds: r.trackKeys, start: times[i] ?? null })),
+    times,
+    tracks.map((t, i) => ({ id: t.key, name: t.name, sortOrder: i })),
+  );
 
-  /** 担当欄に表示する値。メンバー一覧に居ないリンク（退会申請中など #250）は
-   * プレースホルダで見せる。null（＝空欄）にすると、リンクが外れたように見えて
-   * staff がうっかり上書きしてしまう */
-  const speakerValue = (row: Row): MemberOption | string =>
-    row.speakerUserId
-      ? (memberOptions.find((o) => o.id === row.speakerUserId) ?? {
-          id: row.speakerUserId,
-          label: "(表示できないメンバー)",
-          avatarUrl: null,
-        })
-      : row.speakerName;
+  const replaceRow = (key: string, next: Row) =>
+    setRows((rs) => rs.map((r) => (r.key === key ? next : r)));
 
-  const update = (i: number, patch: Partial<Row>) =>
-    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-
-  const move = (from: number, to: number) =>
+  /** 同じセクション（未割り当て/配置済み）の中で1つ隣と入れ替える。
+   * 保存の並び順は rows の配列順なので、全体の配列上で位置を交換する */
+  const move = (key: string, delta: number) =>
     setRows((rs) => {
+      const from = rs.findIndex((r) => r.key === key);
+      if (from < 0) return rs;
+      const sameSection = (r: Row) =>
+        (r.placement === "unassigned") === (rs[from]!.placement === "unassigned");
+      let to = from + delta;
+      while (to >= 0 && to < rs.length && !sameSection(rs[to]!)) to += delta;
       if (to < 0 || to >= rs.length) return rs;
       const next = [...rs];
-      const [row] = next.splice(from, 1);
-      next.splice(to, 0, row);
+      [next[from], next[to]] = [next[to]!, next[from]!];
       return next;
     });
 
-  const onDragEnterRow = (i: number) => {
-    if (dragKey === null) return;
-    // 連続 dragenter で古い配列を参照しないよう、updater 内で位置を求める
+  /** ドラッグ中の行を、いま重なっている行の位置へ差し込む（同じセクション内のみ） */
+  const onDragEnterRow = (key: string) => {
+    if (dragKey === null || dragKey === key) return;
     setRows((rs) => {
       const from = rs.findIndex((r) => r.key === dragKey);
-      if (from < 0 || from === i || i >= rs.length) return rs;
+      const to = rs.findIndex((r) => r.key === key);
+      if (from < 0 || to < 0) return rs;
+      if ((rs[from]!.placement === "unassigned") !== (rs[to]!.placement === "unassigned")) {
+        return rs;
+      }
       const next = [...rs];
       const [row] = next.splice(from, 1);
-      next.splice(i, 0, row);
+      next.splice(to, 0, row!);
       return next;
     });
   };
@@ -168,204 +148,148 @@ export function ScheduleEditor({
     setRows(template.items.map((it) => newRow(it)));
   };
 
-  const canSave = rows.every(
-    (r) =>
-      r.title.trim().length > 0 &&
-      (r.materialUrl.trim() === "" || /^https?:\/\//.test(r.materialUrl.trim())),
-  );
+  const removeTrack = (key: string) => {
+    const used = countRowsOnTrack(rows, key);
+    if (
+      used > 0 &&
+      !window.confirm(
+        `このトラックにだけ載っている${used}件のセッションは未割り当てに戻ります。削除しますか？`,
+      )
+    ) {
+      return;
+    }
+    setRows((rs) => removeTrackFromRows(rs, key));
+    setTracks((ts) => ts.filter((t) => t.key !== key));
+  };
+
+  const moveTrack = (key: string, delta: number) =>
+    setTracks((ts) => {
+      const from = ts.findIndex((t) => t.key === key);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= ts.length) return ts;
+      const next = [...ts];
+      [next[from], next[to]] = [next[to]!, next[from]!];
+      return next;
+    });
+
+  const canSave =
+    rows.every(
+      (r) =>
+        r.title.trim().length > 0 &&
+        (r.materialUrl.trim() === "" ||
+          /^https?:\/\//.test(r.materialUrl.trim())),
+    ) && tracks.every((t) => t.name.trim().length > 0);
 
   const submit = () =>
-    save.mutate(
-      rows.map((r) => ({
-        id: r.id,
-        title: r.title.trim(),
-        description: r.description,
-        durationMin: r.durationMin,
-        startsAt: r.startsAt,
-        speakerUserId: r.speakerUserId,
-        speakerName: r.speakerName,
-        materialUrl: r.materialUrl.trim(),
-      })),
-      { onSuccess: onClose },
+    save.mutate(toSaveInput(rows, tracks), { onSuccess: onClose });
+
+  const renderRow = (row: Row) => {
+    const i = rows.indexOf(row);
+    const section = rows.filter(
+      (r) => (r.placement === "unassigned") === (row.placement === "unassigned"),
     );
+    const at = section.indexOf(row);
+    return (
+      <ScheduleItemRow
+        key={row.key}
+        row={row}
+        time={times[i] ?? null}
+        memberOptions={memberOptions}
+        tracks={tracks}
+        dragging={dragKey === row.key}
+        onDragHandleDown={() => setDragKey(row.key)}
+        onDragStart={(e) => e.dataTransfer.setData("text/plain", row.key)}
+        onDragEnter={() => onDragEnterRow(row.key)}
+        onDragEnd={() => setDragKey(null)}
+        onChange={(next) => replaceRow(row.key, next)}
+        onMove={(delta) => move(row.key, delta)}
+        onDelete={() => setRows((rs) => rs.filter((r) => r.key !== row.key))}
+        canMoveUp={at > 0}
+        canMoveDown={at < section.length - 1}
+      />
+    );
+  };
+
+  const unassignedRows = rows.filter((r) => r.placement === "unassigned");
+  const placedRows = rows.filter((r) => r.placement !== "unassigned");
 
   return (
     <Stack spacing={1.5}>
-      {rows.map((row, i) => (
-        <Card
-          key={row.key}
+      <ScheduleTrackManager
+        tracks={tracks}
+        onAdd={() =>
+          setTracks((ts) => [...ts, newTrackRow(`トラック${ts.length + 1}`)])
+        }
+        onRename={(key, name) =>
+          setTracks((ts) => ts.map((t) => (t.key === key ? { ...t, name } : t)))
+        }
+        onMove={moveTrack}
+        onRemove={removeTrack}
+      />
+
+      <Divider />
+
+      <Box>
+        <Typography variant="subtitle2">未割り当て（ネタ出し）</Typography>
+        <Typography variant="caption" color="text.secondary">
+          時刻はまだ決まりません。参加者には表示されません。「配置する」で下の配置済みへ移ります。
+        </Typography>
+      </Box>
+      <Stack spacing={1.5}>
+        {unassignedRows.map(renderRow)}
+        {unassignedRows.length === 0 && (
+          <Typography variant="body2" color="text.secondary">
+            ネタ出し中のセッションはありません。
+          </Typography>
+        )}
+      </Stack>
+      <Box>
+        <Button
+          size="small"
           variant="outlined"
-          draggable={dragKey === row.key}
-          onDragStart={(e) => e.dataTransfer.setData("text/plain", row.key)}
-          onDragEnter={() => onDragEnterRow(i)}
-          onDragOver={(e) => e.preventDefault()}
-          onDragEnd={() => setDragKey(null)}
-          sx={{ p: 1.5, opacity: dragKey === row.key ? 0.5 : 1 }}
+          startIcon={<AddIcon />}
+          onClick={() =>
+            setRows((rs) => [...rs, setUnassigned(newRow())])
+          }
         >
-          <Stack direction="row" spacing={1} alignItems="flex-start">
-            <Box
-              onMouseDown={() => setDragKey(row.key)}
-              onMouseUp={() => setDragKey(null)}
-              sx={{
-                display: { xs: "none", sm: "flex" },
-                alignItems: "center",
-                alignSelf: "stretch",
-                cursor: "grab",
-                color: "text.disabled",
-                touchAction: "none",
-              }}
-              title="ドラッグで並び替え"
-            >
-              <DragIndicatorIcon fontSize="small" />
-            </Box>
-            <Typography
-              variant="body2"
-              fontWeight={600}
-              sx={{ width: 48, pt: 1.25, flexShrink: 0 }}
-            >
-              {times[i] !== null ? formatTime(times[i]!) : "--:--"}
-            </Typography>
-            <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                <TextField
-                  label="内容"
-                  size="small"
-                  value={row.title}
-                  onChange={(e) => update(i, { title: e.target.value })}
-                  inputProps={{ maxLength: 100 }}
-                  sx={{ flex: 1 }}
-                />
-                <TextField
-                  label="所要（分）"
-                  type="number"
-                  size="small"
-                  value={row.durationMin}
-                  onChange={(e) =>
-                    update(i, {
-                      durationMin: Math.max(
-                        0,
-                        Math.min(1440, Math.floor(Number(e.target.value) || 0)),
-                      ),
-                    })
-                  }
-                  sx={{ width: { xs: "100%", sm: 100 } }}
-                />
-              </Stack>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                <Autocomplete
-                  freeSolo
-                  size="small"
-                  options={memberOptions}
-                  value={speakerValue(row)}
-                  onChange={(_, v) => {
-                    if (v && typeof v !== "string") {
-                      update(i, { speakerUserId: v.id, speakerName: "" });
-                    } else {
-                      update(i, {
-                        speakerUserId: null,
-                        speakerName: typeof v === "string" ? v : "",
-                      });
-                    }
-                  }}
-                  onInputChange={(_, v, reason) => {
-                    // 手入力はフリーテキスト扱い（メンバーへのリンクは解除）
-                    if (reason === "input") {
-                      update(i, { speakerUserId: null, speakerName: v });
-                    }
-                  }}
-                  getOptionLabel={(o) => (typeof o === "string" ? o : o.label)}
-                  renderOption={(props, o) => (
-                    <li {...props} key={o.id}>
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Avatar
-                          src={o.avatarUrl ?? undefined}
-                          sx={{ width: 22, height: 22, fontSize: 12 }}
-                        >
-                          {o.label.charAt(0)}
-                        </Avatar>
-                        <span>{o.label}</span>
-                      </Stack>
-                    </li>
-                  )}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="担当（メンバー or 自由入力）"
-                      inputProps={{ ...params.inputProps, maxLength: 100 }}
-                    />
-                  )}
-                  sx={{ width: { xs: "100%", sm: 240 } }}
-                />
-                <TextField
-                  label="開始時刻を指定（任意）"
-                  type="datetime-local"
-                  size="small"
-                  value={toDateTimeLocal(row.startsAt)}
-                  onChange={(e) =>
-                    update(i, { startsAt: fromDateTimeLocal(e.target.value) })
-                  }
-                  InputLabelProps={{ shrink: true }}
-                  sx={{ width: { xs: "100%", sm: 220 } }}
-                />
-              </Stack>
-              <TextField
-                label="説明（任意）"
-                size="small"
-                multiline
-                minRows={1}
-                value={row.description}
-                onChange={(e) => update(i, { description: e.target.value })}
-                inputProps={{ maxLength: 1000 }}
-                fullWidth
-              />
-              <TextField
-                label="資料URL（任意・Speaker Deck / Googleスライド / デッキ等）"
-                size="small"
-                type="url"
-                value={row.materialUrl}
-                onChange={(e) => update(i, { materialUrl: e.target.value })}
-                error={
-                  row.materialUrl.trim() !== "" &&
-                  !/^https?:\/\//.test(row.materialUrl.trim())
-                }
-                helperText={
-                  row.materialUrl.trim() !== "" &&
-                  !/^https?:\/\//.test(row.materialUrl.trim())
-                    ? "http(s):// で始まるURLを入力してください"
-                    : undefined
-                }
-                inputProps={{ maxLength: 500 }}
-                fullWidth
-              />
-            </Stack>
-            <Stack spacing={0} sx={{ flexShrink: 0 }}>
-              <IconButton
-                size="small"
-                disabled={i === 0}
-                onClick={() => move(i, i - 1)}
-                title="上へ移動"
-              >
-                <ArrowUpwardIcon fontSize="small" />
-              </IconButton>
-              <IconButton
-                size="small"
-                disabled={i === rows.length - 1}
-                onClick={() => move(i, i + 1)}
-                title="下へ移動"
-              >
-                <ArrowDownwardIcon fontSize="small" />
-              </IconButton>
-              <IconButton
-                size="small"
-                onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
-                title="この行を削除"
-              >
-                <DeleteOutlineIcon fontSize="small" />
-              </IconButton>
-            </Stack>
-          </Stack>
-        </Card>
-      ))}
+          ネタを追加
+        </Button>
+      </Box>
+
+      <Divider />
+
+      <Typography variant="subtitle2">配置済み</Typography>
+      {overlaps.length > 0 && (
+        <Alert severity="warning">
+          <Typography variant="body2" fontWeight={600}>
+            同じトラック内で時刻が重なっています。
+          </Typography>
+          <Typography variant="body2">
+            このままでも保存できますが、タイムテーブルの枠が重なって読みにくくなります。
+          </Typography>
+          <Box component="ul" sx={{ pl: 2.5, m: 0.5 }}>
+            {overlaps.slice(0, 5).map((o, i) => (
+              <li key={i}>
+                <Typography variant="caption">
+                  {o.trackName}: 「{o.a.title || "(無題)"}」(
+                  {o.a.start === null ? "--:--" : formatTime(o.a.start)}〜) と「
+                  {o.b.title || "(無題)"}」(
+                  {o.b.start === null ? "--:--" : formatTime(o.b.start)}〜)
+                  が重なっています
+                </Typography>
+              </li>
+            ))}
+            {overlaps.length > 5 && (
+              <li>
+                <Typography variant="caption">
+                  ほか{overlaps.length - 5}件
+                </Typography>
+              </li>
+            )}
+          </Box>
+        </Alert>
+      )}
+      <Stack spacing={1.5}>{placedRows.map(renderRow)}</Stack>
 
       {save.isError && (
         <Alert severity="error">タイムテーブルの保存に失敗しました。</Alert>
