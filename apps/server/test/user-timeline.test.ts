@@ -490,3 +490,37 @@ describe("年表に添える公開写真 (#315)", () => {
     expect(group?.total).toBe(1);
   });
 });
+
+/** 自分のイベント一覧 (#348)。プロフィールを本人が見たときはここが元データで、
+ * 画面はこの status を見て「下書き」のまとまりに振り分ける。
+ * 公開プロフィール側に下書きが混ざらないことは上の describe で固定済み。 */
+describe("自分のイベント一覧の下書き (#348)", () => {
+  it("下書きも status 付きで返り、公開済みと見分けられる", async () => {
+    const owner = await makeUser();
+    const now = Date.now();
+
+    const draft = await makeEvent(owner.cookie, {
+      startsAt: now + 86400_000,
+      endsAt: now + 86400_000 + 3600_000,
+      publish: false,
+    });
+    const published = await makeEvent(owner.cookie, {
+      startsAt: now + 2 * 86400_000,
+      endsAt: now + 2 * 86400_000 + 3600_000,
+    });
+
+    const res = await SELF.fetch(`${BASE}/api/me/events`, {
+      headers: { cookie: owner.cookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ongoing: { id: string; status: string }[];
+      past: { id: string; status: string }[];
+    };
+    const byId = new Map(
+      [...body.ongoing, ...body.past].map((e) => [e.id, e.status]),
+    );
+    expect(byId.get(draft)).toBe("draft");
+    expect(byId.get(published)).toBe("published");
+  });
+});

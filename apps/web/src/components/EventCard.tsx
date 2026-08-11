@@ -18,6 +18,7 @@ import {
   venueLabel,
 } from "../lib/format.js";
 import { useCommunities } from "../api/communityHooks.js";
+import { DraftChip, isDraftEvent } from "./DraftChip.js";
 import { Avatar } from "@mui/material";
 
 /** イベントごとに決定的に選ぶ落ち着いた配色（画像なし時のタイトルカード用） */
@@ -51,6 +52,8 @@ export function EventCard({
 }) {
   const img = eventImageUrl(event);
   const color = eventColor(event.id);
+  // 公開前は一覧のどこに出ても1枚で分かるようにする (#348)
+  const draft = isDraftEvent(event);
   // 一覧全体で1クエリ（react-queryキャッシュ共有）。コミュニティ名とアイコンを解決
   const { data: communities } = useCommunities();
   const community = event.communityId
@@ -170,12 +173,24 @@ export function EventCard({
               >
                 {event.title}
               </Typography>
-              {role && (
-                <Chip
-                  size="small"
-                  label={roleLabel[role]}
-                  sx={{ flexShrink: 0, height: 18, fontSize: "0.6rem" }}
-                />
+              {(draft || role) && (
+                <Stack
+                  direction="row"
+                  spacing={0.5}
+                  flexWrap="wrap"
+                  justifyContent="flex-end"
+                  useFlexGap
+                  sx={{ flexShrink: 0 }}
+                >
+                  {draft && <DraftChip compact />}
+                  {role && (
+                    <Chip
+                      size="small"
+                      label={roleLabel[role]}
+                      sx={{ flexShrink: 0, height: 18, fontSize: "0.6rem" }}
+                    />
+                  )}
+                </Stack>
               )}
             </Stack>
             <Typography
@@ -318,7 +333,19 @@ export function EventCard({
             >
               {event.title}
             </Typography>
-            {role && <Chip size="small" label={roleLabel[role]} sx={{ flexShrink: 0 }} />}
+            {(draft || role) && (
+              <Stack
+                direction="row"
+                spacing={0.5}
+                flexWrap="wrap"
+                justifyContent="flex-end"
+                useFlexGap
+                sx={{ flexShrink: 0 }}
+              >
+                {draft && <DraftChip />}
+                {role && <Chip size="small" label={roleLabel[role]} />}
+              </Stack>
+            )}
           </Stack>
           {event.subtitle && (
             <Typography
