@@ -196,8 +196,11 @@ export function findTrackOverlaps<T extends ScheduleTimeItem>(
   tracks: EventTrack[],
 ): Array<{ trackName: string; a: T; b: T }> {
   const out: Array<{ trackName: string; a: T; b: T }> = [];
+  // 同じ組み合わせは1行だけにする。全トラック共通どうしはどの列でも重なるので、
+  // そのままだとトラックの本数ぶん同じ警告が並ぶ
+  const seen = new Set<string>();
   for (const track of tracks) {
-    const placed: Array<{ it: T; start: number }> = [];
+    const placed: Array<{ it: T; start: number; at: number }> = [];
     items.forEach((it, i) => {
       const start = times[i];
       if (start === null || start === undefined) return;
@@ -205,7 +208,7 @@ export function findTrackOverlaps<T extends ScheduleTimeItem>(
       if (it.placement !== "all" && !(it.trackIds ?? []).includes(track.id)) {
         return;
       }
-      placed.push({ it, start });
+      placed.push({ it, start, at: i });
     });
     placed.sort((x, y) => x.start - y.start);
     // 総当たり。長い枠が2つ先の枠と重なる場合があるので隣どうしだけでは足りない
@@ -216,7 +219,17 @@ export function findTrackOverlaps<T extends ScheduleTimeItem>(
         const b = placed[j]!;
         // 端が接するだけ（前の終わり＝次の始まり）は重なりではない
         if (b.start >= end) break;
-        out.push({ trackName: track.name, a: a.it, b: b.it });
+        const pair = `${a.at}-${b.at}`;
+        if (seen.has(pair)) continue;
+        seen.add(pair);
+        out.push({
+          trackName:
+            a.it.placement === "all" && b.it.placement === "all"
+              ? "全トラック共通"
+              : track.name,
+          a: a.it,
+          b: b.it,
+        });
       }
     }
   }

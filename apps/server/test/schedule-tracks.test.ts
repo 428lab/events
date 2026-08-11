@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
-import { computeScheduleTimes } from "@eventer/shared";
+import { computeScheduleTimes, findTrackOverlaps } from "@eventer/shared";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 import { bindEnv, type Env } from "../src/runtime.js";
 import { buildEventExtraHtml } from "../src/lib/email.js";
@@ -66,10 +66,38 @@ async function putTimetable(
 
 async function getTimetable(
   eventId: string,
+  cookie?: string,
 ): Promise<{ items: ScheduleItem[]; tracks: EventTrack[] }> {
-  const res = await SELF.fetch(`${BASE}/api/events/${eventId}/timetable`);
+  const res = await SELF.fetch(`${BASE}/api/events/${eventId}/timetable`, {
+    headers: cookie ? { cookie } : {},
+  });
   expect(res.status).toBe(200);
   return (await res.json()) as { items: ScheduleItem[]; tracks: EventTrack[] };
+}
+
+/** 非adminのメンバーを1人作る（役割は指定） */
+async function makeMember(
+  eventId: string,
+  role: "participant" | "staff",
+): Promise<string> {
+  const uid = crypto.randomUUID();
+  const sid = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at) VALUES (?, ?, ?, ?, NULL, ?)",
+  )
+    .bind(uid, `nostr:${uid}`, `u_${uid.slice(0, 6)}`, "テスト", Date.now())
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
+  )
+    .bind(sid, uid, Date.now() + 86400000)
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, ?, NULL, 'confirmed', 0, ?)",
+  )
+    .bind(crypto.randomUUID(), eventId, uid, role, Date.now())
+    .run();
+  return `eventer_session=${sid}`;
 }
 
 function itemInput(
@@ -160,6 +188,63 @@ describe("時刻の計算がトラックごとの連鎖になる (#338)", () => 
       ["A", "B"],
     );
     expect(times).toEqual([START, START + min(30), START + min(90)]);
+  });
+});
+
+describe("同一トラック内の重なりの警告 (#338)", () => {
+  const START = Date.UTC(2026, 8, 12, 1, 0);
+  const TRACKS: EventTrack[] = [
+    { id: "A", name: "トラックA", sortOrder: 0 },
+    { id: "B", name: "トラックB", sortOrder: 1 },
+    { id: "C", name: "トラックC", sortOrder: 2 },
+  ];
+
+  it("同じトラックの重なりだけを拾い、別トラックの同時刻は重なりではない", () => {
+    const items = [
+      { title: "A1", durationMin: 60, startsAt: START, placement: "tracks" as const, trackIds: ["A"] },
+      { title: "A2", durationMin: 30, startsAt: START + 30 * 60_000, placement: "tracks" as const, trackIds: ["A"] },
+      { title: "B1", durationMin: 60, startsAt: START, placement: "tracks" as const, trackIds: ["B"] },
+    ];
+    const overlaps = findTrackOverlaps(
+      items,
+      items.map((i) => i.startsAt),
+      TRACKS,
+    );
+    expect(overlaps).toHaveLength(1);
+    expect(overlaps[0]!.trackName).toBe("トラックA");
+    expect([overlaps[0]!.a.title, overlaps[0]!.b.title]).toEqual(["A1", "A2"]);
+  });
+
+  it("全トラック共通どうしの重なりは、トラックの本数ぶん並ばず1行だけ", () => {
+    const items = [
+      { title: "全体1", durationMin: 60, startsAt: START, placement: "all" as const },
+      { title: "全体2", durationMin: 30, startsAt: START + 30 * 60_000, placement: "all" as const },
+    ];
+    const overlaps = findTrackOverlaps(
+      items,
+      items.map((i) => i.startsAt),
+      TRACKS,
+    );
+    expect(overlaps).toHaveLength(1);
+    expect(overlaps[0]!.trackName).toBe("全トラック共通");
+  });
+
+  it("端が接するだけ（前の終わり＝次の始まり）は重なりではない", () => {
+    const items = [
+      { title: "前", durationMin: 30, startsAt: START, placement: "all" as const },
+      { title: "後", durationMin: 30, startsAt: START + 30 * 60_000, placement: "all" as const },
+    ];
+    expect(
+      findTrackOverlaps(items, items.map((i) => i.startsAt), TRACKS),
+    ).toEqual([]);
+  });
+
+  it("未割り当ては時刻を持たないので重なりに数えない", () => {
+    const items = [
+      { title: "全体", durationMin: 60, startsAt: START, placement: "all" as const },
+      { title: "ネタ", durationMin: 60, startsAt: null, placement: "unassigned" as const },
+    ];
+    expect(findTrackOverlaps(items, [START, null], TRACKS)).toEqual([]);
   });
 });
 
@@ -353,6 +438,46 @@ describe("トラックの保存と割り当て (#338)", () => {
 });
 
 describe("未割り当てを参加者に見せない (#338)", () => {
+  it("API を直に叩いても、staff 以外には未割り当てが返らない", async () => {
+    const cookie = await loginDev();
+    const eventId = await setupEvent(cookie);
+    await putTimetable(eventId, cookie, {
+      tracks: [],
+      items: [
+        itemInput("開会", { placement: "all" }),
+        itemInput("スポンサーセッション（仮）", {
+          placement: "unassigned",
+          description: "まだ出すと決まっていない",
+          materialUrl: "https://example.com/draft",
+        }),
+      ],
+    });
+
+    // 未ログイン（公開イベントなので閲覧はできる）
+    const anon = await getTimetable(eventId);
+    expect(anon.items.map((i) => i.title)).toEqual(["開会"]);
+    expect(JSON.stringify(anon)).not.toContain("スポンサーセッション");
+    // 資料ギャラリーの元データもこの API なので、下書きの資料URLも出ない
+    expect(JSON.stringify(anon)).not.toContain("example.com/draft");
+
+    // 参加者（メンバーだが staff ではない）
+    const participant = await makeMember(eventId, "participant");
+    const asParticipant = await getTimetable(eventId, participant);
+    expect(asParticipant.items.map((i) => i.title)).toEqual(["開会"]);
+
+    // staff には返る（編集画面のネタ出し置き場に要る）
+    const staff = await makeMember(eventId, "staff");
+    const asStaff = await getTimetable(eventId, staff);
+    expect(asStaff.items.map((i) => i.title)).toEqual([
+      "開会",
+      "スポンサーセッション（仮）",
+    ]);
+    // イベントを作った本人（＝staff）にも返る
+    const asOwner = await getTimetable(eventId, cookie);
+    expect(asOwner.items).toHaveLength(2);
+  });
+
+
   it("リマインダーメールのタイムテーブルに未割り当ては出ない", async () => {
     const cookie = await loginDev();
     // メールは JST の時刻を出すので、開催日時は固定値にしておく

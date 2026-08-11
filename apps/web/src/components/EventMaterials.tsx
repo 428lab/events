@@ -22,10 +22,8 @@ export function EventMaterials({ eventId }: { eventId: string }) {
   const { data: me } = useMe();
   const [editing, setEditing] = useState<ScheduleItem | null>(null);
 
-  // 未割り当て（ネタ出し中 #338）は参加者に見せない
-  const materials = (data?.items ?? []).filter(
-    (it) => it.materialUrl !== "" && it.placement !== "unassigned",
-  );
+  // 未割り当て（ネタ出し中 #338）はサーバーが staff にしか返さないので、ここでは絞らない
+  const materials = (data?.items ?? []).filter((it) => it.materialUrl !== "");
   if (materials.length === 0) return null;
 
   return (

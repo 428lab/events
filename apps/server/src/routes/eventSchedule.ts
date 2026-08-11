@@ -30,16 +30,33 @@ async function canViewTimetable(eventId: string, c: Context): Promise<boolean> {
 
 /* ===== 公開ハンドラ（未ログイン可。worker.ts で eventRoutes より先に登録） ===== */
 
+/** タイムテーブルを編集できる人か（＝ネタ出し中のコマまで見てよい人）。
+ * 保存の権限 (staff) と同じ範囲にそろえる */
+async function canEditTimetable(eventId: string, c: Context): Promise<boolean> {
+  const user = await currentUser(c);
+  if (!user) return false;
+  if (isAppAdmin(user)) return true;
+  return (await eventMembersRepo.find(eventId, user.id))?.role === "staff";
+}
+
 /** タイムテーブル一覧（閲覧できる人は誰でも）。
  * トラック (#338) も一緒に返す。時刻の計算にトラックの一覧が要るため、
- * 別々に取ると片方だけ古い状態で描画されうる */
+ * 別々に取ると片方だけ古い状態で描画されうる。
+ *
+ * **未割り当て（ネタ出し中）は staff にしか返さない** (#338)。
+ * 参加者に見せない、という判断はここ1か所だけが持つ。画面側で落とすと、
+ * この API を直に叩けばまだ出すと決まっていない企画が読めてしまう */
 export async function getEventTimetable(c: Context<AppEnv>) {
   const eventId = c.req.param("id")!;
   if (!(await canViewTimetable(eventId, c))) {
     return c.json({ error: "forbidden" }, 403);
   }
+  const items = await eventScheduleRepo.listByEvent(eventId);
+  const canEdit = await canEditTimetable(eventId, c);
   return c.json({
-    items: await eventScheduleRepo.listByEvent(eventId),
+    items: canEdit
+      ? items
+      : items.filter((it) => it.placement !== "unassigned"),
     tracks: await eventScheduleRepo.listTracks(eventId),
   });
 }

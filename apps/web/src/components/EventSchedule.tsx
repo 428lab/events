@@ -45,10 +45,9 @@ export function EventSchedule({
   const [materialItem, setMaterialItem] = useState<ScheduleItem | null>(null);
 
   if (!data) return null;
-  const tracks = data.tracks;
-  // 未割り当て（ネタ出し中 #338）は参加者にも staff の閲覧表示にも出さない。
-  // 編集画面（下の ScheduleEditor）には全件そのまま渡す
-  const items = data.items.filter((it) => it.placement !== "unassigned");
+  // 未割り当て（ネタ出し中 #338）はサーバーが staff にしか返さない。
+  // ここで落とすと同じ判断が2か所になるので、来たものはそのまま扱う
+  const { items, tracks } = data;
   // 空のタイムテーブルは staff にだけ編集導線として見せる
   if (items.length === 0 && !isStaff) return null;
 
@@ -92,15 +91,13 @@ export function EventSchedule({
           <ScheduleEditor
             eventId={eventId}
             eventStartsAt={eventStartsAt}
-            items={data.items}
+            items={items}
             tracks={tracks}
             onClose={() => setEditing(false)}
           />
         ) : items.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            {data.items.length === 0
-              ? "まだタイムテーブルはありません。右上の編集ボタンから作成できます。"
-              : "配置済みのセッションはまだありません。右上の編集ボタンから配置できます。"}
+            まだタイムテーブルはありません。右上の編集ボタンから作成できます。
           </Typography>
         ) : (
           <TableContainer>
@@ -133,23 +130,34 @@ export function EventSchedule({
                     </TableCell>
                     <TableCell sx={{ verticalAlign: "top" }}>
                       {/* トラックを使っているイベントだけ、どの枠かを添える。
-                          全トラック共通の枠は全部に出るので何も出さない (#338) */}
-                      {tracks.length > 0 && it.placement === "tracks" && (
+                          全トラック共通の枠は全部に出るので何も出さない。
+                          未割り当ては staff にしか届かないので、そうと分かる印を出す (#338) */}
+                      {(it.placement === "unassigned" ||
+                        (tracks.length > 0 && it.placement === "tracks")) && (
                         <Stack
                           direction="row"
                           spacing={0.5}
                           sx={{ mb: 0.25, flexWrap: "wrap" }}
                           useFlexGap
                         >
-                          {it.trackIds.map((tid) => (
+                          {it.placement === "unassigned" ? (
                             <Chip
-                              key={tid}
                               size="small"
                               variant="outlined"
-                              label={trackName.get(tid) ?? ""}
+                              label="未割り当て（参加者には出ません）"
                               sx={{ height: 18, fontSize: "0.7rem" }}
                             />
-                          ))}
+                          ) : (
+                            it.trackIds.map((tid) => (
+                              <Chip
+                                key={tid}
+                                size="small"
+                                variant="outlined"
+                                label={trackName.get(tid) ?? ""}
+                                sx={{ height: 18, fontSize: "0.7rem" }}
+                              />
+                            ))
+                          )}
                         </Stack>
                       )}
                       <Typography variant="body2">

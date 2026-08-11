@@ -42,7 +42,8 @@ CREATE INDEX idx_schedule_item_track_track ON event_schedule_item_track(track_id
 --
 -- 'tracks' なのに対応表が空、という状態は作らない（サーバー側で 'unassigned' に落とす）。
 -- トラックを削除して載る先が無くなったセッションが未割り当てに戻るのも同じ規則。
-ALTER TABLE event_schedule_item ADD COLUMN placement TEXT NOT NULL DEFAULT 'all';
+ALTER TABLE event_schedule_item ADD COLUMN placement TEXT NOT NULL DEFAULT 'all'
+  CHECK (placement IN ('unassigned', 'all', 'tracks'));
 -- 参加者に見せる側（一覧・リマインダーメール・資料ギャラリー）は placement で絞るので、
 -- イベント単位の取得でそのまま効く索引を張る
 CREATE INDEX idx_schedule_placement ON event_schedule_item(event_id, placement);
