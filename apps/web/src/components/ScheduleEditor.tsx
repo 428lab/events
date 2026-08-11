@@ -28,6 +28,7 @@ import type { MemberOption } from "./ScheduleItemRow.js";
 import {
   ScheduleConflictAlert,
   ScheduleEditingAlert,
+  ScheduleSaveFailedAlert,
 } from "./ScheduleEditNotice.js";
 import { ScheduleItemRow } from "./ScheduleItemRow.js";
 import { ScheduleTrackManager } from "./ScheduleTrackManager.js";
@@ -338,9 +339,7 @@ export function ScheduleEditor({
       {conflicted ? (
         <ScheduleConflictAlert onReload={reload} />
       ) : (
-        save.isError && (
-          <Alert severity="error">タイムテーブルの保存に失敗しました。</Alert>
-        )
+        save.isError && <ScheduleSaveFailedAlert />
       )}
 
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>

@@ -506,8 +506,30 @@ describe("ScheduleEditor の同時編集 (#340)", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     expect(
-      await screen.findByText("タイムテーブルの保存に失敗しました。"),
+      await screen.findByText("タイムテーブルを保存できませんでした"),
     ).toBeTruthy();
+    // もう一度押せば直ることがあるので、押せるままにする
+    expect(
+      screen.getByRole("button", { name: "保存" }).hasAttribute("disabled"),
+    ).toBe(false);
     expect(screen.queryByRole("button", { name: "最新を読み込む" })).toBeNull();
+  });
+
+  /** 版を必須にしたので、ずっと開いたままだった画面（版を送れない古い画面）は
+   * 400 で弾かれる。そこで止まらないよう、読み込み直しで復帰できることまで案内する */
+  it("版を送れない古い画面は、読み込み直しで直ることまで案内する", async () => {
+    putMock.mockRejectedValue(
+      new ApiError(400, { error: "invalid", issues: [] }),
+    );
+    draw();
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(
+      await screen.findByText("タイムテーブルを保存できませんでした"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/変えたかった箇所を控えてからページを読み込み直す/),
+    ).toBeTruthy();
   });
 });
