@@ -6,6 +6,10 @@ import { gamificationFromStats } from "@eventer/shared";
 import type { Event, User } from "@eventer/shared";
 import { authRoutes } from "./routes/auth.js";
 import { eventRoutes } from "./routes/events.js";
+import {
+  eventStaffInviteRoutes,
+  myStaffInviteRoutes,
+} from "./routes/eventStaffInvites.js";
 import { scoringRoutes, getEventScoreResults } from "./routes/scoring.js";
 import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes, postRestoreAccount } from "./routes/me.js";
@@ -174,6 +178,10 @@ api.route("/events", attendanceCsvRoutes);
 // 名札の一括印刷 (#304)（そのイベントの参加確定スタッフのみ。要認証）
 api.route("/events", nameCardRoutes);
 api.route("/events", analyticsRoutes);
+// 運営スタッフへの招待 (#339)（招待・取り消しはそのイベントのスタッフのみ。要認証）
+api.route("/events", eventStaffInviteRoutes);
+// 招待された本人の受け取り口 (#339)。requireAuth 付きの meRoutes より先に登録する
+api.route("/me/staff-invites", myStaffInviteRoutes);
 // 退会の取り消し（復帰） (#250)。猶予期間中は requireAuth が通らないため、
 // requireAuth 付きの meRoutes より先に登録する
 api.post("/me/restore", postRestoreAccount);

@@ -25,6 +25,7 @@ import { AccountPage } from "./pages/AccountPage.js";
 import { AccountRestorePage } from "./pages/AccountRestorePage.js";
 import { InquiriesPage } from "./pages/InquiriesPage.js";
 import { NotificationsPage } from "./pages/NotificationsPage.js";
+import { StaffInvitesPage } from "./pages/StaffInvitesPage.js";
 import { InquiryThreadPage } from "./pages/InquiryThreadPage.js";
 import { AdminInquiriesPage } from "./pages/AdminInquiriesPage.js";
 import { AdminInquiryThreadPage } from "./pages/AdminInquiryThreadPage.js";
@@ -337,6 +338,8 @@ export function App() {
         <Route path="/following" element={<FollowingPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
+        {/* 運営への招待 (#339)。承諾するまでイベントページは開けないのでここで返事する */}
+        <Route path="/staff-invites" element={<StaffInvitesPage />} />
         <Route path="/inquiries" element={<InquiriesPage />} />
         <Route path="/inquiries/:id" element={<InquiryThreadPage />} />
         <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />

@@ -75,6 +75,7 @@ import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
 import { EntranceQrDialog } from "../components/EntranceQrDialog.js";
+import { EventStaffInvitesCard } from "../components/EventStaffInvitesCard.js";
 import {
   formatDateRange,
   formatDateTime,
@@ -949,11 +950,11 @@ export function EventDetailPage() {
       </Grid>
 
       <Grid item xs={12} md={4}>
+        <Stack spacing={2} sx={{ position: { md: "sticky" }, top: { md: 16 } }}>
+        {/* 運営を指名して招く (#339)。公開前でも一緒に準備できるようにする入口 */}
+        {isStaff && <EventStaffInvitesCard eventId={id} />}
         {members && (
-          <Card
-            variant="outlined"
-            sx={{ position: { md: "sticky" }, top: { md: 16 } }}
-          >
+          <Card variant="outlined">
             <CardContent>
               <Typography variant="h6" gutterBottom>
                 参加者一覧（{members.length}）
@@ -979,6 +980,7 @@ export function EventDetailPage() {
             </CardContent>
           </Card>
         )}
+        </Stack>
       </Grid>
     </Grid>
   );
