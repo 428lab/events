@@ -39,6 +39,7 @@ import {
   useFinalizeDate,
   useVoteDateOption,
 } from "../api/scheduleHooks.js";
+import { dateLocale } from "../i18n/index.js";
 
 const CHOICES: { value: VoteChoice; label: string }[] = [
   { value: "yes", label: "○" },
@@ -49,7 +50,14 @@ const CHOICES: { value: VoteChoice; label: string }[] = [
 const dateKey = (y: number, m: number, d: number) =>
   `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
-const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+/** 曜日の並び（日曜始まり）。表示言語に合わせるため Intl から作る (#352)。
+ * 基準日は 2024-01-07（日曜）。タイムゾーンを渡さないのは他の日時表示と同じ */
+function weekdays(locale: string): string[] {
+  const fmt = new Intl.DateTimeFormat(locale, { weekday: "short" });
+  return Array.from({ length: 7 }, (_, i) =>
+    fmt.format(new Date(2024, 0, 7 + i)),
+  );
+}
 
 /** 曜日・祝日に応じた文字色（日曜・祝日=赤、土曜=青） */
 function dayColor(dow: number, holiday: string | undefined): string | undefined {
@@ -58,15 +66,17 @@ function dayColor(dow: number, holiday: string | undefined): string | undefined 
   return undefined;
 }
 
-const fmtDate = new Intl.DateTimeFormat("ja-JP", {
-  year: "numeric",
-  month: "numeric",
-  day: "numeric",
-});
-const fmtTime = new Intl.DateTimeFormat("ja-JP", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
+const fmtDate = () =>
+  new Intl.DateTimeFormat(dateLocale(), {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  });
+const fmtTime = () =>
+  new Intl.DateTimeFormat(dateLocale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 /** 候補日を「2026/7/20（月・海の日）19:00 〜 21:00」形式で表示 */
 function OptionDate({ startsAt, endsAt }: { startsAt: number; endsAt: number }) {
@@ -79,18 +89,18 @@ function OptionDate({ startsAt, endsAt }: { startsAt: number; endsAt: number }) 
     s.getDate() === e.getDate();
   return (
     <Typography fontWeight={600} component="span">
-      {fmtDate.format(s)}
+      {fmtDate().format(s)}
       <Box
         component="span"
         sx={{ color: dayColor(s.getDay(), holiday) ?? "text.secondary", mx: 0.25 }}
       >
-        （{WEEKDAYS[s.getDay()]}
+        （{weekdays(dateLocale())[s.getDay()]}
         {holiday ? `・${holiday}` : ""}）
       </Box>
-      {fmtTime.format(s)} 〜{" "}
+      {fmtTime().format(s)} 〜{" "}
       {sameDay
-        ? fmtTime.format(e)
-        : `${fmtDate.format(e)}（${WEEKDAYS[e.getDay()]}）${fmtTime.format(e)}`}
+        ? fmtTime().format(e)
+        : `${fmtDate().format(e)}（${weekdays(dateLocale())[e.getDay()]}）${fmtTime().format(e)}`}
     </Typography>
   );
 }
@@ -151,7 +161,7 @@ function MiniCalendar({
           mt: 0.5,
         }}
       >
-        {WEEKDAYS.map((w, i) => (
+        {weekdays(dateLocale()).map((w, i) => (
           <Typography
             key={w}
             variant="caption"

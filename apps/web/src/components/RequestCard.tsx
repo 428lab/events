@@ -29,7 +29,7 @@ export function RequestCard({ request }: { request: EventRequest }) {
                 <Chip size="small" label="クローズ" color="default" />
               )}
               {request.venueTypePref && (
-                <Chip size="small" variant="outlined" label={venueLabel[request.venueTypePref]} />
+                <Chip size="small" variant="outlined" label={venueLabel(request.venueTypePref)} />
               )}
               {request.membersOnly && (
                 <Chip size="small" variant="outlined" label="メンバー限定" />

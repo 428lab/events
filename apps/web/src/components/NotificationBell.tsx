@@ -20,17 +20,18 @@ import {
   useNotificationUnreadCount,
 } from "../api/notificationHooks.js";
 import { notificationLinkTo } from "../lib/notificationLink.js";
+import { dateLocale, i18next } from "../i18n/index.js";
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const min = Math.floor(diff / 60000);
-  if (min < 1) return "たった今";
-  if (min < 60) return `${min}分前`;
+  if (min < 1) return i18next.t("common.justNow");
+  if (min < 60) return i18next.t("common.minutesAgo", { n: min });
   const hour = Math.floor(min / 60);
-  if (hour < 24) return `${hour}時間前`;
+  if (hour < 24) return i18next.t("common.hoursAgo", { n: hour });
   const day = Math.floor(hour / 24);
-  if (day < 7) return `${day}日前`;
-  return new Date(ts).toLocaleDateString("ja-JP");
+  if (day < 7) return i18next.t("common.daysAgo", { n: day });
+  return new Date(ts).toLocaleDateString(dateLocale());
 }
 
 /** お知らせ（抽選結果・繰り上げ・受賞・問い合わせ返信）の通知ベル。push ではなくアプリ内通知 */

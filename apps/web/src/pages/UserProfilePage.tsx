@@ -47,6 +47,7 @@ import { ParticipationHistory } from "../components/ParticipationHistory.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
 import { ProfileCardPanel } from "../components/licenseCard/ProfileCardPanel.js";
+import { dateLocale } from "../i18n/index.js";
 
 const COMMUNITY_ROLE_LABEL: Record<string, string> = {
   owner: "オーナー",
@@ -115,7 +116,7 @@ function AwardsSection({
                   </Typography>
                 </Box>
                 <Typography variant="caption" color="text.secondary">
-                  {new Date(a.endsAt).toLocaleDateString("ja-JP")}
+                  {new Date(a.endsAt).toLocaleDateString(dateLocale())}
                 </Typography>
               </Stack>
             </CardContent>
@@ -306,7 +307,7 @@ export function UserProfilePage() {
   if (isError) return <Alert severity="info">ユーザーが見つかりません。</Alert>;
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;
 
-  const joined = new Date(data.createdAt).toLocaleDateString("ja-JP");
+  const joined = new Date(data.createdAt).toLocaleDateString(dateLocale());
   // 参加履歴に流す一覧。本人なら自分用（公開ぶんの上位集合）、他人なら公開ぶん
   const historyEvents =
     data.isMe && myEvents ? [...myEvents.ongoing, ...myEvents.past] : data.events;

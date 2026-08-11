@@ -86,7 +86,7 @@ export function EventRequestDetailPage() {
             </Typography>
             {!open && <Chip size="small" label="クローズ" />}
             {request.venueTypePref && (
-              <Chip size="small" variant="outlined" label={`希望: ${venueLabel[request.venueTypePref]}`} />
+              <Chip size="small" variant="outlined" label={`希望: ${venueLabel(request.venueTypePref)}`} />
             )}
             {request.membersOnly && (
               <Chip size="small" variant="outlined" label="メンバー限定" />

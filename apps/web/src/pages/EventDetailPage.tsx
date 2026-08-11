@@ -64,6 +64,8 @@ import { useEventState } from "../api/scoringHooks.js";
 import { useEventSurvey } from "../api/eventSurveyHooks.js";
 import { SurveyAnswerDialog } from "../components/SurveyAnswerDialog.js";
 import { ApiError } from "../api/client.js";
+import { errorMessage } from "../lib/errorMessage.js";
+import { i18next } from "../i18n/index.js";
 import { EventPhotos } from "../components/EventPhotos.js";
 import { EventComments } from "../components/EventComments.js";
 import { EventSchedule } from "../components/EventSchedule.js";
@@ -401,7 +403,7 @@ export function EventDetailPage() {
           {event.status !== "published" && (
             <Chip size="small" color="warning" label={event.status} />
           )}
-          {myRole && <Chip size="small" label={roleLabel[myRole]} />}
+          {myRole && <Chip size="small" label={roleLabel(myRole)} />}
           {event.status === "published" && (
             <ShareButton slug={event.slug} title={event.title} />
           )}
@@ -455,7 +457,7 @@ export function EventDetailPage() {
           </Typography>
         )}
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-          {venueLabel[event.venueType]} ・ {participantCountLabel(event)}
+          {venueLabel(event.venueType)} ・ {participantCountLabel(event)}
         </Typography>
       </Box>
 
@@ -998,39 +1000,26 @@ export function EventDetailPage() {
 }
 
 /** ロール変更が断られた理由を、その場で直せる形の文言にする (#281)。
- * 何が起きたか（なぜ変えられないか）と、次に何をすればよいかまで書く */
+ * 何が起きたか（なぜ変えられないか）と、次に何をすればよいかまで書く。
+ * ここに挙げないコードは共通の辞書 (#352) がそのまま面倒を見る */
 export function roleChangeErrorMessage(err: unknown): string {
-  const code =
-    err instanceof ApiError
-      ? (err.body as { error?: string } | null)?.error
-      : undefined;
-  if (code === "last_staff") {
-    return "このイベントの最後のスタッフです。先に別の人をスタッフにしてください。";
-  }
-  if (code === "event_ended") {
-    return "終了したイベントでは一般参加者に戻せません（参加履歴が残るため）。";
-  }
-  if (code === "not_found") {
-    return "対象が見つかりませんでした。画面を更新してください。";
-  }
-  return "ロールを変更できませんでした。時間をおいて試してください。";
+  return errorMessage(err, {
+    default: i18next.t("eventDetail.roleErrorDefault"),
+    last_staff: i18next.t("eventDetail.roleErrorLastStaff"),
+    event_ended: i18next.t("eventDetail.roleErrorEventEnded"),
+    not_found: i18next.t("eventDetail.roleErrorNotFound"),
+  });
 }
 
 /** 出席チェックが断られた理由 (#286)。UI では確定でない人のチェックを無効にして
  * いるが、一覧を開いたまま抽選が走るなどで通ってしまうことがあるので、その場合も
  * 無言で失敗させない */
 export function attendanceErrorMessage(err: unknown): string {
-  const code =
-    err instanceof ApiError
-      ? (err.body as { error?: string } | null)?.error
-      : undefined;
-  if (code === "not_confirmed") {
-    return "参加が確定している人だけ出席にできます。参加枠の「申込者の管理」で先に参加を確定にしてください。";
-  }
-  if (code === "not_found") {
-    return "対象が見つかりませんでした。画面を更新してください。";
-  }
-  return "出席を変更できませんでした。時間をおいて試してください。";
+  return errorMessage(err, {
+    default: i18next.t("eventDetail.attendanceErrorDefault"),
+    not_confirmed: i18next.t("eventDetail.attendanceErrorNotConfirmed"),
+    not_found: i18next.t("eventDetail.attendanceErrorNotFound"),
+  });
 }
 
 /** 参加者一覧の1行。staff にはロール変更メニューと出席チェックを出す */
@@ -1153,7 +1142,7 @@ export function MemberRow({
                       );
                     }}
                   >
-                    {roleLabel[r as EventRole]}
+                    {roleLabel(r as EventRole)}
                     {m.role === r && (
                       <CheckIcon fontSize="small" sx={{ ml: 0.5 }} />
                     )}
@@ -1187,7 +1176,7 @@ export function MemberRow({
         </ListItemAvatar>
         <ListItemText
           primary={m.user.globalName ?? m.user.username}
-          secondary={roleLabel[m.role]}
+          secondary={roleLabel(m.role)}
         />
       </ListItemButton>
     </ListItem>

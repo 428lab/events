@@ -1,9 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import type { Event } from "@eventer/shared";
+import { i18next } from "../i18n/index.js";
 import {
+  formatRemaining,
   formatTime,
   participantCountLabel,
+  roleLabel,
   showsAttendedCount,
+  venueLabel,
 } from "./format.js";
 
 const NOW = new Date("2026-08-07T12:00:00+09:00").getTime();
@@ -98,5 +102,53 @@ describe("テストのタイムゾーン (#322)", () => {
     expect(formatTime(new Date("2026-05-03T13:00:00+09:00").getTime())).toBe(
       "13:00",
     );
+  });
+});
+
+/**
+ * 表示言語で書式が変わること (#352)。
+ * **タイムゾーンは端末のまま**なので、#322 の固定はそのまま効く。
+ */
+describe("表示言語による書式の切り替え (#352)", () => {
+  afterEach(async () => {
+    await i18next.changeLanguage("ja");
+  });
+
+  const AT = new Date("2026-05-03T13:00:00+09:00").getTime();
+
+  it("英語表示でも時刻は日本時間のまま、書式だけ英語になる", async () => {
+    expect(formatTime(AT)).toBe("13:00");
+    await i18next.changeLanguage("en");
+    // 「13時」であることは変わらない（TZ は端末＝テストでは Asia/Tokyo）
+    expect(formatTime(AT)).toBe("01:00 PM");
+  });
+
+  it("人数の並べ方が言語で変わる", async () => {
+    expect(participantCountLabel(ev({ capacityTotal: 21 }), NOW)).toBe(
+      "参加 5 / 21 人",
+    );
+    await i18next.changeLanguage("en");
+    expect(participantCountLabel(ev({ capacityTotal: 21 }), NOW)).toBe(
+      "5 / 21 joined",
+    );
+  });
+
+  it("残り時間が言語で変わる", async () => {
+    expect(formatRemaining(NOW + 5 * 3600000, NOW)).toBe("あと5時間");
+    await i18next.changeLanguage("en");
+    expect(formatRemaining(NOW + 5 * 3600000, NOW)).toBe("5h left");
+  });
+
+  it("立場・開催形態のラベルが言語で変わる", async () => {
+    expect(roleLabel("judge")).toBe("審査員");
+    expect(venueLabel("online")).toBe("オンライン");
+    await i18next.changeLanguage("en");
+    expect(roleLabel("judge")).toBe("Judge");
+    expect(venueLabel("online")).toBe("Online");
+  });
+
+  it("知らない値はそのまま返す（サーバーが増やしても壊れない）", () => {
+    expect(roleLabel("mentor")).toBe("mentor");
+    expect(venueLabel("metaverse")).toBe("metaverse");
   });
 });

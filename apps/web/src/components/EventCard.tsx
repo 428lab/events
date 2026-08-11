@@ -186,7 +186,7 @@ export function EventCard({
                   {role && (
                     <Chip
                       size="small"
-                      label={roleLabel[role]}
+                      label={roleLabel(role)}
                       sx={{ flexShrink: 0, height: 18, fontSize: "0.6rem" }}
                     />
                   )}
@@ -343,7 +343,7 @@ export function EventCard({
                 sx={{ flexShrink: 0 }}
               >
                 {draft && <DraftChip />}
-                {role && <Chip size="small" label={roleLabel[role]} />}
+                {role && <Chip size="small" label={roleLabel(role)} />}
               </Stack>
             )}
           </Stack>
@@ -380,7 +380,7 @@ export function EventCard({
             ) : (
               formatDateRange(event.startsAt, event.endsAt)
             )}{" "}
-            ・ {venueLabel[event.venueType]} ・ {participantCountLabel(event)}
+            ・ {venueLabel(event.venueType)} ・ {participantCountLabel(event)}
           </Typography>
         </CardContent>
       </CardActionArea>
