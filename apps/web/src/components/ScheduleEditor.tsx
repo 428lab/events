@@ -67,7 +67,8 @@ export function ScheduleEditor({
   eventStartsAt: number | null;
   items: ScheduleItem[];
   tracks: EventTrack[];
-  /** items/tracks を読んだ時点のタイムテーブルの版 (#340) */
+  /** items/tracks を読んだ時点のタイムテーブルの版 (#340)。
+   * 使うのは**開いた時点の値だけ**（items/tracks と同じ1枚の写しとして固める） */
   version: number;
   /** 最新を読み込み直す（この画面は作り直され、手元の編集は失われる） */
   onReload: () => void;
@@ -94,6 +95,13 @@ export function ScheduleEditor({
   const [rows, setRows] = useState<Row[]>(() =>
     items.map((it) => rowFromItem(it, tracks)),
   );
+  // 版も**行と同じ1枚の写しとして**開いた時点で固める (#340)。
+  // 行は開いた時点のものを抱え続けるので、版だけが後から新しくなると
+  // 「古い手元の内容 ＋ 新しい版」で保存が通ってしまい、衝突検知が効かない。
+  // 開いている最中の取り直しは実際に起きる（同じページの資料ギャラリーで
+  // 登壇者が資料URLを更新する・回線が復帰する、など）。
+  // 最新に追いつく手段は読み込み直し＝作り直しの1つだけにする
+  const [baseVersion] = useState(version);
   const [templateAnchor, setTemplateAnchor] = useState<null | HTMLElement>(null);
   // ドラッグ並び替え：ハンドルを押した行だけ draggable にする（入力操作と干渉させない）
   const [dragKey, setDragKey] = useState<string | null>(null);
@@ -212,7 +220,7 @@ export function ScheduleEditor({
     ) && tracks.every((t) => t.name.trim().length > 0);
 
   const submit = () =>
-    save.mutate(toSaveInput(rows, tracks, version), { onSuccess: onClose });
+    save.mutate(toSaveInput(rows, tracks, baseVersion), { onSuccess: onClose });
 
   /** 最新を読み込み直す。手元の編集は失われるので、押す前に必ず確かめる */
   const reload = () => {

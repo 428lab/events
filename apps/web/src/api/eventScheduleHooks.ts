@@ -33,8 +33,12 @@ export function useSaveEventSchedule(eventId: string) {
   return useMutation({
     mutationFn: (input: SaveScheduleInput) =>
       api.put<EventTimetable>(`/events/${eventId}/timetable`, input),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["event", eventId, "timetable"] }),
+    // 保存の返りが**そのまま保存後の姿**（項目・トラック・進んだ版）なので、
+    // 取り直さずにそれを置く。取り直しに任せると、届くまでの間だけ古い版が
+    // 残り、その隙に編集し直した人が自分の保存に弾かれる（誰とも衝突して
+    // いないのに 409 になり、保存ボタンも押せなくなって行き止まりになる）
+    onSuccess: (saved) =>
+      qc.setQueryData(["event", eventId, "timetable"], saved),
   });
 }
 

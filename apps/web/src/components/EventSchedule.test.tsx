@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,13 +13,24 @@ import type { ScheduleItem } from "@eventer/shared";
  * 片方が弾かれる、という無駄が毎回起きる。
  */
 
-const { getMock } = vi.hoisted(() => ({ getMock: vi.fn() }));
+const { getMock, putMock, postMock, delMock } = vi.hoisted(() => ({
+  getMock: vi.fn(),
+  putMock: vi.fn(),
+  postMock: vi.fn(),
+  delMock: vi.fn(),
+}));
 
 vi.mock("../api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client.js")>();
   return {
     ...actual,
-    api: { ...actual.api, get: (...args: unknown[]) => getMock(...args) },
+    api: {
+      ...actual.api,
+      get: (...args: unknown[]) => getMock(...args),
+      put: (...args: unknown[]) => putMock(...args),
+      post: (...args: unknown[]) => postMock(...args),
+      del: (...args: unknown[]) => delMock(...args),
+    },
   };
 });
 
@@ -85,14 +96,20 @@ function draw(isStaff: boolean) {
 beforeEach(() => {
   editingState = { editor: null, version: 3 };
   getMock.mockReset();
+  putMock.mockReset();
+  postMock.mockReset();
+  delMock.mockReset();
   getMock.mockImplementation(async (path: string) => {
     if (path === "/auth/me") return { user: ME, isAdmin: false };
     if (path === "/events/e-1/timetable") {
       return { items: [ITEM], tracks: [], version: 3 };
     }
     if (path === "/events/e-1/timetable/editing") return editingState;
+    if (path === "/events/e-1/members") return { members: [] };
     throw new Error(`unexpected path: ${path}`);
   });
+  postMock.mockResolvedValue({ editor: null, version: 3 });
+  delMock.mockResolvedValue({ editor: null, version: 3 });
 });
 
 describe("タイムテーブルの「編集中」表示 (#340)", () => {
@@ -129,5 +146,42 @@ describe("タイムテーブルの「編集中」表示 (#340)", () => {
     );
     expect(getMock).not.toHaveBeenCalledWith("/events/e-1/timetable/editing");
     expect(screen.queryByText("アリスさんが編集中")).toBeNull();
+  });
+});
+
+/**
+ * 保存したあとに手元が持っている版 (#340)。
+ *
+ * 保存の返りを手元に置かないと、閉じてすぐ編集し直した人は**進む前の版**を
+ * 掴む。誰とも衝突していないのに 409 で弾かれ、保存ボタンも押せなくなって
+ * 行き止まりになる（1人で編集していても起きる）。
+ */
+describe("保存したあとの版 (#340)", () => {
+  /** 編集画面を開いて保存する。送られた本文を返す */
+  async function editAndSave(): Promise<{ version: number }> {
+    fireEvent.click(
+      screen.getByRole("button", { name: "タイムテーブルを編集" }),
+    );
+    const before = putMock.mock.calls.length;
+    fireEvent.click(await screen.findByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(putMock.mock.calls.length).toBe(before + 1),
+    );
+    return putMock.mock.calls.at(-1)![1] as { version: number };
+  }
+
+  it("保存して閉じ、すぐ編集し直しても、進んだあとの版で保存できる", async () => {
+    putMock.mockResolvedValue({ items: [ITEM], tracks: [], version: 4 });
+    draw(true);
+    expect(await screen.findByText("オープニング")).toBeTruthy();
+
+    expect((await editAndSave()).version).toBe(3);
+    // 保存し終えると編集画面は閉じる
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "保存" })).toBeNull(),
+    );
+
+    // 取り直しを待たずに開き直しても、送るのは進んだあとの版
+    expect((await editAndSave()).version).toBe(4);
   });
 });

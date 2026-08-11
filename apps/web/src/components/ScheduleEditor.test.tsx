@@ -387,6 +387,35 @@ describe("ScheduleEditor の同時編集 (#340)", () => {
     expect((await saveAndCaptureBody()).version).toBe(7);
   });
 
+  /** 手元の行は開いた時点のまま抱え続けるので、版だけが後から新しくなると
+   * 「古い手元の内容 ＋ 新しい版」で保存が通り、衝突検知が効かなくなる。
+   * 取り直しは実際に走る（同じページの資料ギャラリーで登壇者が資料URLを
+   * 更新する・回線が復帰する、など） */
+  it("開いている間に版だけ新しくなっても、保存に付けるのは開いた時点の版", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    const view = (version: number) => (
+      <QueryClientProvider client={qc}>
+        <ScheduleEditor
+          eventId="e-1"
+          eventStartsAt={null}
+          items={ITEMS}
+          tracks={[]}
+          version={version}
+          onReload={() => {}}
+          onClose={() => {}}
+        />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view(3));
+
+    // 開いている間に取り直しが走り、版だけが進んだ
+    rerender(view(9));
+
+    expect((await saveAndCaptureBody()).version).toBe(3);
+  });
+
   it("開いている間は「自分が編集中」と宣言し、閉じると解除する", async () => {
     const { unmount } = render(
       <QueryClientProvider
