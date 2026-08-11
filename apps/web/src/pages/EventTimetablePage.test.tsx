@@ -109,7 +109,9 @@ describe("EventTimetablePage (#338)", () => {
     setWidth(true);
     draw();
 
-    expect(await screen.findByRole("table", { name: "タイムテーブル" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("region", { name: "タイムテーブル" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
   });
 
@@ -118,7 +120,7 @@ describe("EventTimetablePage (#338)", () => {
     draw();
 
     expect(await screen.findByRole("tab", { name: /A（メインホール）/ })).toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "タイムテーブル" })).not.toBeInTheDocument();
   });
 
   it("未割り当ては参加者向けの並びに混ぜず、断り書きを添えて別に出す", async () => {
@@ -128,7 +130,7 @@ describe("EventTimetablePage (#338)", () => {
     expect(await screen.findByText("ネタ出し")).toBeInTheDocument();
     expect(screen.getByText("参加者には出ません")).toBeInTheDocument();
     // 格子（参加者に見せる並び）には入れない
-    const grid = screen.getByRole("table");
+    const grid = screen.getByRole("region", { name: "タイムテーブル" });
     expect(grid.textContent).not.toContain("ネタ出し");
   });
 
@@ -137,6 +139,34 @@ describe("EventTimetablePage (#338)", () => {
     draw(ITEMS, true);
 
     expect(await screen.findByText("開始時刻が未定")).toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "タイムテーブル" })).not.toBeInTheDocument();
+  });
+
+  it("開始時刻の打ち間違いは、日付を添えた別枠に出す（「未定」に紛れさせない）", async () => {
+    setWidth(true);
+    // 年を打ち間違えた1件。表には載せないが、直せるように日付ごと出す
+    draw([
+      ...ITEMS,
+      item({
+        id: "it-typo",
+        title: "打ち間違い",
+        startsAt: new Date("2126-08-11T10:00:00+09:00").getTime(),
+        placement: "tracks",
+        trackIds: ["tr-b"],
+      }),
+    ]);
+
+    expect(
+      await screen.findByText(
+        "開始時刻が他のセッションから離れているため表に載せていません",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("打ち間違い")).toBeInTheDocument();
+    // 「開始時刻が未定」ではないので、そちらの見出しは出さない
+    expect(screen.queryByText("開始時刻が未定")).not.toBeInTheDocument();
+    // 正しいコマは表に残る
+    const grid = screen.getByRole("region", { name: "タイムテーブル" });
+    expect(grid.textContent).toContain("開会");
+    expect(grid.textContent).not.toContain("打ち間違い");
   });
 });

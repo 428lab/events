@@ -4,6 +4,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useEvent } from "../api/hooks.js";
 import { useEventSchedule } from "../api/eventScheduleHooks.js";
+import { formatDateTime } from "../lib/format.js";
 import { buildTimetableLayout } from "../lib/timetableLayout.js";
 import { trackColors } from "../lib/trackColors.js";
 import { TimetableGrid } from "../components/TimetableGrid.js";
@@ -90,6 +91,26 @@ export function EventTimetablePage() {
                     {` ${e.item.durationMin}分`}
                   </Typography>
                 )}
+              </Typography>
+            ))}
+          </Stack>
+        </Box>
+      )}
+
+      {/* 時刻はあるが、他のコマから離れすぎていて表に載らなかったコマ。
+          ほとんどが年や日付の打ち間違いなので、直せるよう日付まで出す */}
+      {wide && layout.outOfRange.length > 0 && (
+        <Box>
+          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+            開始時刻が他のセッションから離れているため表に載せていません
+          </Typography>
+          <Stack spacing={0.5}>
+            {layout.outOfRange.map((e) => (
+              <Typography key={e.item.id} variant="body2">
+                {e.item.title}
+                <Typography component="span" variant="caption" color="text.secondary">
+                  {` ${formatDateTime(e.startsAt)}`}
+                </Typography>
               </Typography>
             ))}
           </Stack>

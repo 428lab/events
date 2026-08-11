@@ -143,6 +143,79 @@ describe("buildTimetableLayout (#338)", () => {
     ]);
   });
 
+  it("飛び地で割れた枠は、どちらも同じ色で描ける", () => {
+    const blocks = layout().blocks.filter((b) => b.entry.item.id === "it-gap");
+
+    // 色を列 (colStart) から引くと、割れた片割れが別の色になってしまう
+    expect(blocks.map((b) => b.colorIndex)).toEqual([0, 0]);
+  });
+
+  it("単独のトラックの枠も、どのトラックのものか名前で分かる", () => {
+    // 読み上げは列の位置が見えないので、名前が枠に無いとどのトラックか分からない
+    const solo = layout().blocks.filter((b) => b.entry.item.id === "it-a");
+
+    expect(solo).toHaveLength(1);
+    expect(solo[0]!.trackNames).toEqual([TRACKS[0]!.name]);
+  });
+
+  it("開始時刻の打ち間違いで格子が膨らまず、外れた1件だけが落ちる", () => {
+    // 年を1桁打ち間違えた1件。これで行数が数百万になり、参加者を含む
+    // 全閲覧者の画面が固まっていた
+    const typo = item({
+      id: "it-typo",
+      title: "打ち間違い",
+      startsAt: new Date("2126-08-11T10:00:00+09:00").getTime(),
+      placement: "tracks",
+      trackIds: ["tr-b"],
+    });
+    const got = buildTimetableLayout([...ITEMS, typo], TRACKS, START);
+
+    expect(got.blocks.some((b) => b.entry.item.id === "it-typo")).toBe(false);
+    expect(got.outOfRange.map((e) => e.item.id)).toEqual(["it-typo"]);
+    // 正しいコマは1つも落ちない
+    expect(got.undated).toEqual([]);
+    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual([
+      "it-a",
+      "it-b",
+      "it-gap",
+      "it-gap",
+      "it-open",
+      "it-panel",
+    ]);
+    // 打ち間違いを含めると10万行を超えていた
+    expect(got.rows).toBeLessThan(1000);
+  });
+
+  it("打ち間違いが過去側でも、正しいコマの方を表に残す", () => {
+    // 最も早いコマを基準にすると、正しいコマが全部範囲外に落ちてしまう
+    const typo = item({
+      id: "it-typo",
+      title: "打ち間違い",
+      startsAt: new Date("1926-08-11T10:00:00+09:00").getTime(),
+      placement: "tracks",
+      trackIds: ["tr-b"],
+    });
+    const got = buildTimetableLayout([typo, ...ITEMS], TRACKS, START);
+
+    expect(got.outOfRange.map((e) => e.item.id)).toEqual(["it-typo"]);
+    expect(got.blocks.some((b) => b.entry.item.id === "it-open")).toBe(true);
+    expect(got.rows).toBeLessThan(1000);
+  });
+
+  it("所要時間が壊れていても行数が膨らまない", () => {
+    const huge = item({
+      id: "it-huge",
+      title: "壊れた所要時間",
+      durationMin: 60 * 24 * 400,
+      placement: "tracks",
+      trackIds: ["tr-a"],
+    });
+    const got = buildTimetableLayout([huge], TRACKS, START);
+
+    expect(got.blocks).toHaveLength(1);
+    expect(got.rows).toBeLessThan(1000);
+  });
+
   it("トラックが1本も無いイベントでも壊れない", () => {
     const got = buildTimetableLayout(ITEMS, [], START);
 

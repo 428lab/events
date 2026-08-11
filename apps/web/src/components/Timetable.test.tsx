@@ -138,6 +138,34 @@ describe("TimetableGrid（広い画面）", () => {
     for (const b of blocks) {
       expect(b.textContent).toContain("A（メインホール）・C（ワークショップ室）");
     }
+    // 色は列ではなくコマで決めるので、割れた両方が同じ見た目になる。
+    // 見た目が同じなら emotion のクラス名も同じになる（位置だけ inline style）
+    expect(blocks[0]!.className).toBe(blocks[1]!.className);
+  });
+
+  it("表としてではなく、名前の付いた領域として置く", () => {
+    drawGrid();
+
+    // grid で描いているだけで行・セルの構造は持たない。role="table" にすると
+    // 読み上げが表として案内したのに中身が読めない状態になる
+    expect(screen.getByRole("region", { name: "タイムテーブル" })).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("どの枠にもトラック名が入っていて、読み上げでどの列か分かる", () => {
+    const container = drawGrid();
+
+    // 単独トラックの枠は列を見れば分かるので名前を表に出していないが、
+    // 読み上げには列が見えない。目に見えない形で必ず添える
+    const solo = blocksOf(container, "it-a")[0]!;
+    expect(solo.textContent).toContain("A（メインホール）");
+
+    // 全トラック共通も含め、どの枠にも「どこでやるか」が入っている
+    for (const id of ["it-open", "it-a", "it-b", "it-panel"]) {
+      for (const b of blocksOf(container, id)) {
+        expect(b.textContent).toMatch(/全トラック共通|A（メインホール）|B（小ホール）/);
+      }
+    }
   });
 
   it("未割り当ては格子に出さない", () => {

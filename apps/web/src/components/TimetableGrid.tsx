@@ -13,6 +13,19 @@ const HEAD_PX = 40;
 /** これより短い枠は1行に畳む（縦に積むと文字が切れる） */
 const SHORT_SLOTS = 5;
 
+/** 読み上げにだけ出す（目には見えない）。
+ * 格子は「どの列か」を目で見て分かる作りなので、単独トラックの枠にはトラック名を
+ * 書いていない。読み上げでは列が分からず「10:20–10:50 セッションA」としか読めない
+ * ので、ここで名前を補う。見える形で足すと狭い枠から題名が押し出される。 */
+const SR_ONLY = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  overflow: "hidden",
+  clip: "rect(0 0 0 0)",
+  whiteSpace: "nowrap",
+} as const;
+
 /** 枠に出す時間の帯（例 "10:00–10:20"） */
 function rangeLabel(block: TimetableBlock): string {
   const end = block.startsAt + block.entry.item.durationMin * 60_000;
@@ -66,8 +79,11 @@ export function TimetableGrid({
         bgcolor: "background.paper",
       }}
     >
+      {/* grid で描いているだけで表の構造（行・セル）は持たないので、role は
+          region にする。table にすると行やセルが無いことが違反になり、
+          読み上げが表として案内したのに中身が読めない状態になる */}
       <Box
-        role="table"
+        role="region"
         aria-label="タイムテーブル"
         sx={{
           display: "grid",
@@ -182,10 +198,17 @@ export function TimetableGrid({
 
         {/* セッションの枠 */}
         {blocks.map((block) => {
-          const color = colors[block.colStart] ?? theme.palette.primary.main;
+          // 色は列ではなくコマで決める。飛び地で枠が割れたときに、同じコマの
+          // 片割れが別の色になってしまう
+          const color = colors[block.colorIndex] ?? theme.palette.primary.main;
           const short = block.rowEnd - block.rowStart <= SHORT_SLOTS;
           const speaker = speakerLabel(block);
           const spans = block.colSpan > 1 || block.split;
+          // トラック名はどの枠にも必ず入れる。またぎ・全トラック共通は列を見ても
+          // 分からないので目に見える Chip、単独トラックは読み上げにだけ出す
+          const trackLabel = block.common
+            ? "全トラック共通"
+            : block.trackNames.join("・");
           return (
             <Box
               key={block.key}
@@ -251,10 +274,10 @@ export function TimetableGrid({
                     {block.entry.item.title}
                   </Typography>
                 )}
-                {(block.common || spans) && (
+                {block.common || spans ? (
                   <Chip
                     size="small"
-                    label={block.common ? "全トラック共通" : block.trackNames.join("・")}
+                    label={trackLabel}
                     sx={{
                       height: 16,
                       fontSize: "0.62rem",
@@ -264,6 +287,10 @@ export function TimetableGrid({
                         : alpha(color, 0.3),
                     }}
                   />
+                ) : (
+                  <Box component="span" sx={SR_ONLY}>
+                    トラック{trackLabel}
+                  </Box>
                 )}
               </Stack>
               {!short && (

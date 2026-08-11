@@ -12,6 +12,21 @@ const MIN_SLOTS = 2;
 
 const MS_PER_MIN = 60_000;
 
+/** 格子に描く時間の幅（ミリ秒）。
+ *
+ * 開始時刻は staff が手で入れられる任意の epoch なので、年を打ち間違えた
+ * **1件で行数が数百万になり、参加者を含む閲覧者全員の画面が固まる**。そこで
+ * 描く範囲を区切り、外れたコマは格子に置かず一覧へ落とす（消さずに残す）。
+ *
+ * 残す側は「最も多くのコマが収まる36時間」。最も早いコマを基準にすると、
+ * 過去側に1件打ち間違えただけで正しいコマが全部範囲外になってしまう。
+ * 36時間あれば、夜をまたぐイベントの1日ぶんは十分に収まる。 */
+const WINDOW_MS = 36 * 60 * MS_PER_MIN;
+
+/** 1コマの最長（分）。保存時に24時間までに絞っているので、これを超える値が
+ * 来るのは壊れたデータ。行数の上限を描く範囲だけで決めきるためここでも抑える */
+const MAX_DURATION_MIN = 24 * 60;
+
 /** 1コマ（未割り当てを除く）。格子にもスマホの一覧にも同じものを使う */
 export interface TimetableEntry {
   item: ScheduleItem;
@@ -37,7 +52,10 @@ export interface TimetableBlock {
   rowEnd: number;
   /** 全トラック共通か。無彩色の帯で描く */
   common: boolean;
-  /** またぎ・飛び地のときに枠へ添えるトラック名 */
+  /** 色に使うトラックの番号。飛び地で枠が割れても **同じコマは同じ色** に
+   * なるよう、列ではなくそのコマの先頭のトラックを指す */
+  colorIndex: number;
+  /** 枠へ添えるトラック名。読み上げのために単独のトラックでも必ず入れる */
   trackNames: string[];
   /** 隣り合っていないトラックに割り当てられていて、枠が割れている */
   split: boolean;
@@ -60,6 +78,9 @@ export interface TimetableLayout {
   blocks: TimetableBlock[];
   /** 開始時刻が決まらず格子に置けなかったコマ（日程調整中など） */
   undated: TimetableEntry[];
+  /** 時刻はあるが、描く範囲から離れすぎていて格子に置けなかったコマ。
+   * ほぼ打ち間違いなので、気付けるように「未定」とは分けて持つ（上の WINDOW_MS） */
+  outOfRange: Array<TimetableEntry & { startsAt: number }>;
   /** 未割り当て（ネタ出し中）。サーバーが staff にしか返さない (#338) */
   unassigned: ScheduleItem[];
   /** 格子の行数（ヘッダー行を除く） */
@@ -133,10 +154,29 @@ export function buildTimetableLayout(
     });
   });
 
-  const dated = entries.filter(
+  const timed = entries.filter(
     (e): e is TimetableEntry & { startsAt: number } => e.startsAt !== null,
   );
+  // 最も多くのコマが収まる WINDOW_MS ぶんだけを格子に置き、外れたものは
+  // outOfRange へ落とす（消さずに一覧で見せる。上の WINDOW_MS 参照）
+  const sorted = [...timed].sort((a, b) => a.startsAt - b.startsAt);
+  let from = 0;
+  let count = 0;
+  let lo = 0;
+  for (let hi = 0; hi < sorted.length; hi++) {
+    while (sorted[hi]!.startsAt - sorted[lo]!.startsAt > WINDOW_MS) lo++;
+    if (hi - lo + 1 > count) {
+      from = lo;
+      count = hi - lo + 1;
+    }
+  }
+  const dated = sorted.slice(from, from + count);
+  const kept = new Set<TimetableEntry>(dated);
   const undated = entries.filter((e) => e.startsAt === null);
+  const outOfRange = entries.filter(
+    (e): e is TimetableEntry & { startsAt: number } =>
+      e.startsAt !== null && !kept.has(e),
+  );
 
   if (dated.length === 0 || tracks.length === 0) {
     return {
@@ -144,6 +184,7 @@ export function buildTimetableLayout(
       entries,
       blocks: [],
       undated,
+      outOfRange,
       unassigned,
       rows: 0,
       ticks: [],
@@ -152,7 +193,10 @@ export function buildTimetableLayout(
 
   const slotMs = TIMETABLE_SLOT_MIN * MS_PER_MIN;
   const slotsOf = (min: number) =>
-    Math.max(MIN_SLOTS, Math.ceil(min / TIMETABLE_SLOT_MIN));
+    Math.max(
+      MIN_SLOTS,
+      Math.ceil(Math.min(min, MAX_DURATION_MIN) / TIMETABLE_SLOT_MIN),
+    );
   const startMs = floorToTick(Math.min(...dated.map((e) => e.startsAt)));
   const lastEnd = Math.max(
     ...dated.map((e) => e.startsAt + slotsOf(e.item.durationMin) * slotMs),
@@ -178,6 +222,7 @@ export function buildTimetableLayout(
         rowStart,
         rowEnd,
         common: true,
+        colorIndex: 0,
         trackNames: [],
         split: false,
       });
@@ -191,6 +236,8 @@ export function buildTimetableLayout(
         startsAt: entry.startsAt,
         colStart: group[0]!,
         colSpan: group.length,
+        // 割れた枠どうしで色が変わらないよう、列ではなく先頭のトラックで決める
+        colorIndex: entry.trackIndexes[0]!,
         rowStart,
         rowEnd,
         common: false,
@@ -211,7 +258,16 @@ export function buildTimetableLayout(
     });
   }
 
-  return { tracks, entries, blocks, undated, unassigned, rows, ticks };
+  return {
+    tracks,
+    entries,
+    blocks,
+    undated,
+    outOfRange,
+    unassigned,
+    rows,
+    ticks,
+  };
 }
 
 /** そのトラックのタブに出すコマ (#338)。
