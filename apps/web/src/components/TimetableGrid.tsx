@@ -19,8 +19,9 @@ const SHORT_SLOTS = 5;
  * ので、ここで名前を補う。見える形で足すと狭い枠から題名が押し出される。 */
 const SR_ONLY = {
   position: "absolute",
-  width: 1,
-  height: 1,
+  // sx の 0〜1 は割合として読まれる（1 だと 100% になる）ので単位まで書く
+  width: "1px",
+  height: "1px",
   overflow: "hidden",
   clip: "rect(0 0 0 0)",
   whiteSpace: "nowrap",
@@ -68,7 +69,15 @@ export function TimetableGrid({
   )} 0 10px, ${alpha(theme.palette.text.primary, 0.03)} 10px 20px)`;
 
   return (
+    // 役割とラベル、そしてフォーカスは **スクロールするこの外側** に置く。
+    // 内側に付けると、キーボードだけの人が横スクロールの器にたどり着けない。
+    // grid で描いているだけで表の構造（行・セル）は持たないので、role は
+    // region にする。table にすると行やセルが無いことが違反になり、
+    // 読み上げが表として案内したのに中身が読めない状態になる
     <Box
+      role="region"
+      aria-label="タイムテーブル"
+      tabIndex={0}
       sx={{
         overflow: "auto",
         maxHeight: { xs: "none", md: "min(960px, 85vh)" },
@@ -79,12 +88,7 @@ export function TimetableGrid({
         bgcolor: "background.paper",
       }}
     >
-      {/* grid で描いているだけで表の構造（行・セル）は持たないので、role は
-          region にする。table にすると行やセルが無いことが違反になり、
-          読み上げが表として案内したのに中身が読めない状態になる */}
       <Box
-        role="region"
-        aria-label="タイムテーブル"
         sx={{
           display: "grid",
           minWidth: "max-content",

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
-import { buildTimetableLayout, entriesForTrack } from "./timetableLayout.js";
+import {
+  TIMETABLE_SLOT_MIN,
+  buildTimetableLayout,
+  entriesForTrack,
+} from "./timetableLayout.js";
 
 /**
  * マルチトラックのタイムテーブルの下敷き (#338)。
@@ -156,6 +160,162 @@ describe("buildTimetableLayout (#338)", () => {
 
     expect(solo).toHaveLength(1);
     expect(solo[0]!.trackNames).toEqual([TRACKS[0]!.name]);
+  });
+
+  it("3日間のイベントでも、どの日のコマも1つ残らず表に載る (#346)", () => {
+    // 描く範囲が狭いと、多数派に入らなかった日のコマが丸ごと格子から消え、
+    // 打ち間違い扱いの見出しに並んでしまっていた
+    const days = [
+      new Date("2026-08-11T09:00:00+09:00").getTime(),
+      new Date("2026-08-12T09:00:00+09:00").getTime(),
+      new Date("2026-08-13T09:00:00+09:00").getTime(),
+    ];
+    const items = days.flatMap((startsAt, d) => [
+      item({ id: `d${d}-open`, title: `${d + 1}日目 開会`, startsAt }),
+      item({
+        id: `d${d}-a`,
+        title: `${d + 1}日目 A`,
+        placement: "tracks",
+        trackIds: ["tr-a"],
+      }),
+      item({
+        id: `d${d}-b`,
+        title: `${d + 1}日目 B`,
+        placement: "tracks",
+        trackIds: ["tr-b"],
+      }),
+    ]);
+    const got = buildTimetableLayout(items, TRACKS, days[0]!);
+
+    expect(got.outOfRange).toEqual([]);
+    expect(got.undated).toEqual([]);
+    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual(
+      items.map((i) => i.id).sort(),
+    );
+    // 3日ぶんでも行数は3桁に収まる（1日24時間＝288行）
+    expect(got.rows).toBeLessThan(1000);
+  });
+
+  it("朝から深夜までの2日間（36時間超）でも、2日目のコマが落ちない (#346)", () => {
+    const first = new Date("2026-08-11T09:00:00+09:00").getTime();
+    // 1日目の朝から数えて38時間後。1日ぶんの窓では範囲外に落ちていた
+    const lateNight = new Date("2026-08-12T23:00:00+09:00").getTime();
+    const items = [
+      item({ id: "it-d1", title: "1日目 朝", startsAt: first }),
+      item({
+        id: "it-d2-night",
+        title: "2日目 深夜",
+        startsAt: lateNight,
+        placement: "tracks",
+        trackIds: ["tr-a"],
+      }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, first);
+
+    expect(got.outOfRange).toEqual([]);
+    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual([
+      "it-d1",
+      "it-d2-night",
+    ]);
+  });
+
+  it("6日間の合宿は全部載り、月を打ち間違えた1件だけが落ちる (#346)", () => {
+    const first = new Date("2026-08-11T09:00:00+09:00").getTime();
+    const days = [0, 1, 2, 3, 4, 5].map((d) => first + d * 24 * 60 * 60_000);
+    const items = [
+      ...days.map((startsAt, d) =>
+        item({
+          id: `d${d}`,
+          title: `${d + 1}日目`,
+          startsAt,
+          placement: "tracks",
+          trackIds: ["tr-a"],
+        }),
+      ),
+      item({
+        id: "it-typo",
+        title: "日を打ち間違い",
+        // 月を打ち間違えた1件。7日の窓から大きく外れる
+        startsAt: new Date("2026-09-11T09:00:00+09:00").getTime(),
+        placement: "tracks",
+        trackIds: ["tr-b"],
+      }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, first);
+
+    expect(got.outOfRange.map((e) => e.item.id)).toEqual(["it-typo"]);
+    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual([
+      "d0",
+      "d1",
+      "d2",
+      "d3",
+      "d4",
+      "d5",
+    ]);
+    // 6日ぶんでも行数は 24時間×6＋αで、画面が固まる桁には届かない
+    expect(got.rows).toBeLessThan(2100);
+  });
+
+  it("10日ずれた打ち間違いは、月をまたがなくても弾かれる (#346)", () => {
+    // 「2日目を1週間後に打つ」「月末で日を1桁間違える」など、年や月をまたがない
+    // ずれ。窓は最頻クラスタの前後ではなく **端から端まで7日** なので、これも外れる
+    const first = new Date("2026-08-11T09:00:00+09:00").getTime();
+    const items = [
+      ...[0, 1, 2].map((d) =>
+        item({
+          id: `d${d}`,
+          title: `${d + 1}日目`,
+          startsAt: first + d * 24 * 60 * 60_000,
+          placement: "tracks",
+          trackIds: ["tr-a"],
+        }),
+      ),
+      item({
+        id: "it-typo",
+        title: "日を打ち間違い",
+        startsAt: first + 10 * 24 * 60 * 60_000,
+        placement: "tracks",
+        trackIds: ["tr-b"],
+      }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, first);
+
+    expect(got.outOfRange.map((e) => e.item.id)).toEqual(["it-typo"]);
+    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual([
+      "d0",
+      "d1",
+      "d2",
+    ]);
+  });
+
+  it("格子の行数は、いちばん広がっても8日ぶん（7日＋1コマ上限）で頭打ちになる", () => {
+    // 窓は「端から端まで7日」。**最頻クラスタから前後に7日ずつ（＝14日）ではない**。
+    // 最後のコマは所要時間の上限24時間で切られるので、行数はここが最大になる
+    const first = new Date("2026-08-11T09:00:00+09:00").getTime();
+    const items = [
+      item({
+        id: "it-first",
+        title: "初日",
+        startsAt: first,
+        placement: "tracks",
+        trackIds: ["tr-a"],
+      }),
+      item({
+        id: "it-last",
+        title: "ちょうど7日後",
+        // 端は含める（7日ちょうどは窓の中）
+        startsAt: first + 7 * 24 * 60 * 60_000,
+        durationMin: 60 * 24 * 400,
+        placement: "tracks",
+        trackIds: ["tr-a"],
+      }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, first);
+
+    expect(got.outOfRange).toEqual([]);
+    // 8日 × 24時間 × 12マス（1マス5分）
+    expect(got.rows).toBe(2304);
+    expect(got.ticks).toHaveLength(2304 / (30 / TIMETABLE_SLOT_MIN));
   });
 
   it("開始時刻の打ち間違いで格子が膨らまず、外れた1件だけが落ちる", () => {
