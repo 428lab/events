@@ -43,6 +43,8 @@ interface MyInviteRow extends InviteJoinedRow {
   e_starts_at: number;
   e_ends_at: number;
   e_status: string;
+  /** 自分がそのイベントで参加枠を押さえているか（0/1） */
+  m_holds_slot: number;
 }
 
 function toInvite(row: InviteRow): {
@@ -162,6 +164,22 @@ export const eventStaffInvitesRepo = {
     return changed > 0;
   },
 
+  /** 運営側の一覧から片付ける（取り消し／断られた行の始末）。
+   *
+   * 承諾済みは対象外。運営から外すのはロール変更の仕事で、ここで消しても
+   * 権限は変わらない＝「消したのに運営のまま」という取り違えを招くため。
+   *
+   * @returns 実際に片付けられたら true */
+  async revoke(id: string): Promise<boolean> {
+    const changed = await runCount(
+      `UPDATE event_staff_invite SET status = 'revoked', responded_at = ?
+        WHERE id = ? AND status IN ('pending', 'declined')`,
+      Date.now(),
+      id,
+    );
+    return changed > 0;
+  },
+
   /** イベントの招待一覧（運営向け）。取り消したものは出さない */
   async listByEvent(eventId: string): Promise<StaffInvite[]> {
     const rows = await many<InviteJoinedRow>(
@@ -188,9 +206,13 @@ export const eventStaffInvitesRepo = {
     const rows = await many<MyInviteRow>(
       `SELECT i.*, ${userCols("iu")}, ${userCols("bu")},
               e.title AS e_title, e.starts_at AS e_starts_at,
-              e.ends_at AS e_ends_at, e.status AS e_status
+              e.ends_at AS e_ends_at, e.status AS e_status,
+              CASE WHEN m.slot_id IS NOT NULL THEN 1 ELSE 0 END AS m_holds_slot
          FROM event_staff_invite i
          JOIN event e ON e.id = i.event_id${USER_JOINS}
+         LEFT JOIN event_member m
+                ON m.event_id = i.event_id AND m.user_id = i.user_id
+               AND m.status <> 'canceled'
         WHERE i.user_id = ? AND i.status = 'pending'
         ORDER BY i.created_at DESC`,
       userId,
@@ -202,6 +224,7 @@ export const eventStaffInvitesRepo = {
       eventStartsAt: row.e_starts_at,
       eventEndsAt: row.e_ends_at,
       eventPublished: row.e_status === "published",
+      holdsSlot: row.m_holds_slot === 1,
       invitedBy: user("bu", row),
       createdAt: row.created_at,
     }));

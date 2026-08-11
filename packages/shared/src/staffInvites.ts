@@ -58,6 +58,15 @@ export const myStaffInviteSchema = z.object({
   eventEndsAt: z.number(),
   /** 公開前かどうか（承諾するまでイベントページを開けないことの説明に使う） */
   eventPublished: z.boolean(),
+  /**
+   * 自分がそのイベントで参加枠を押さえているか。
+   *
+   * 承諾すると運営は枠を消費しない扱い (#277) になるので枠が外れ、先着枠なら
+   * 直後にキャンセル待ちが繰り上がって**実質戻せない**。黙って失わせないための
+   * 警告に使う。抽選の申込中・キャンセル待ちも同じく消えるので、状態は問わず
+   * 「枠を持っているか」だけを見る。
+   */
+  holdsSlot: z.boolean(),
   invitedBy: userSchema,
   createdAt: z.number(),
 });

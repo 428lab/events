@@ -120,9 +120,10 @@ eventStaffInviteRoutes.post(
   },
 );
 
-/** 招待の取り消し（そのイベントの運営のみ）。返事待ちのものだけ取り消せる。
- * 承諾済みを取り消しても運営から外れはしない（それはロール変更の仕事）ので、
- * 取り違えないよう pending 以外は 409 で断る */
+/** 一覧から片付ける（そのイベントの運営のみ）。
+ * 返事待ちなら取り消し、断られた行なら一覧からの片付けになる。
+ * 承諾済みだけは対象外：ここで消しても運営から外れはしない（それはロール変更の
+ * 仕事）ので、取り違えないよう 409 で断る */
 eventStaffInviteRoutes.delete(
   "/:id/staff-invites/:inviteId",
   requireEventRole(["staff"]),
@@ -133,7 +134,7 @@ eventStaffInviteRoutes.delete(
     if (!invite || invite.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
     }
-    if (!(await eventStaffInvitesRepo.resolveIfPending(invite.id, "revoked"))) {
+    if (!(await eventStaffInvitesRepo.revoke(invite.id))) {
       return c.json({ error: "not_pending" }, 409);
     }
     return c.json({ invites: await eventStaffInvitesRepo.listByEvent(eventId) });

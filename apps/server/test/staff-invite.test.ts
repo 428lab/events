@@ -223,6 +223,31 @@ describe("運営スタッフへの招待 (#339)", () => {
     expect((await respond(inviteId, guest, "accept")).status).toBe(404);
   });
 
+  it("断られた行は運営が一覧から片付けられる。承諾済みは片付けられない", async () => {
+    const { owner, guest, eventId, inviteId } = await setupPendingInvite();
+    expect((await respond(inviteId, guest, "decline")).status).toBe(200);
+    // 断られたことは一度は運営に見える
+    expect((await listInvites(eventId, owner))[0]?.status).toBe("declined");
+
+    const dismiss = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/staff-invites/${inviteId}`,
+      { method: "DELETE", headers: { cookie: owner.cookie } },
+    );
+    expect(dismiss.status).toBe(200);
+    expect(await listInvites(eventId, owner)).toHaveLength(0);
+
+    // 承諾済みは片付けられない（消しても運営から外れないため）
+    expect((await invite(eventId, owner, guest.username)).status).toBe(201);
+    const [pending] = await myInvites(guest);
+    expect((await respond(pending!.id, guest, "accept")).status).toBe(200);
+    const del = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/staff-invites/${pending!.id}`,
+      { method: "DELETE", headers: { cookie: owner.cookie } },
+    );
+    expect(del.status).toBe(409);
+    expect((await listInvites(eventId, owner))[0]?.status).toBe("accepted");
+  });
+
   it("招待を取り消せる（取り消したあとは承諾できない）", async () => {
     const { owner, guest, eventId, inviteId } = await setupPendingInvite();
 
@@ -355,11 +380,18 @@ describe("運営スタッフへの招待 (#339)", () => {
 
     expect((await invite(eventId, owner, guest.username)).status).toBe(201);
     const [pending] = await myInvites(guest);
+    // 枠を失うことを画面で警告できるよう、枠を持っていることを知らせる
+    expect(pending?.holdsSlot).toBe(true);
     const res = await respond(pending!.id, guest, "accept");
     expect(res.status).toBe(200);
     expect((await json<{ promotedUserId: string | null }>(res)).promotedUserId).toBe(
       waiting.userId,
     );
+  });
+
+  it("枠を持っていない人には holdsSlot を立てない", async () => {
+    const { guest } = await setupPendingInvite();
+    expect((await myInvites(guest))[0]?.holdsSlot).toBe(false);
   });
 
   it("同じ相手を二重に招待しない／自分自身とすでに運営の人は招待できない", async () => {

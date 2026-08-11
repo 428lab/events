@@ -93,12 +93,22 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
             このイベントはまだ公開されていません。承諾すると内容を見て、準備を一緒に進められます。
           </Alert>
         )}
+        {/* 押さえていた参加枠は承諾で外れ、先着枠は直後に他の人が繰り上がるので
+            実質戻せない。黙って失わせないよう、枠を持っている人には強く出す */}
+        {invite.holdsSlot && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            いま押さえている参加枠は外れます。運営は参加枠を使わずに参加するためで、あとから運営を降りても枠は戻りません（先着枠は他の人が繰り上がります）。
+          </Alert>
+        )}
         {error && (
           <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError("")}>
             {error}
           </Alert>
         )}
-        <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block" }}>
+          すでに参加を申し込んでいる場合、参加枠は外れて運営として参加します。
+        </Typography>
+        <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
           <Button
             variant="contained"
             disabled={pending}
