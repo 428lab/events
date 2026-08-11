@@ -515,6 +515,59 @@ describe("運営スタッフへの招待 (#339)", () => {
     expect((await myInvites(guest))[0]?.holdsSlot).toBe(false);
   });
 
+  it("落選した人にも holdsSlot を立てない（枠は残っているが持っていない）", async () => {
+    const owner = await makeUser();
+    const guest = await makeUser();
+    const eventId = await createDraftEvent(owner);
+    const slotRes = await SELF.fetch(`${BASE}/api/events/${eventId}/slots`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: owner.cookie },
+      body: JSON.stringify({ name: "抽選枠", capacity: 1, selectionType: "lottery" }),
+    });
+    expect(slotRes.status).toBe(201);
+    const { slot } = await json<{ slot: { id: string } }>(slotRes);
+    await SELF.fetch(`${BASE}/api/events/${eventId}/publish`, {
+      method: "POST",
+      headers: { cookie: owner.cookie },
+    });
+    expect(
+      (
+        await SELF.fetch(`${BASE}/api/events/${eventId}/join`, {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: guest.cookie },
+          body: JSON.stringify({ slotId: slot.id }),
+        })
+      ).status,
+    ).toBe(201);
+
+    // 落選させる。setStatus は状態しか触らないので slot_id は残る
+    const member = await env.DB.prepare(
+      "SELECT id FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(eventId, guest.userId)
+      .first<{ id: string }>();
+    const status = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/slots/${slot.id}/members/${guest.userId}/status`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json", cookie: owner.cookie },
+        body: JSON.stringify({ status: "lost" }),
+      },
+    );
+    expect(status.status).toBe(200);
+    const after = await env.DB.prepare(
+      "SELECT status, slot_id FROM event_member WHERE id = ?",
+    )
+      .bind(member!.id)
+      .first<{ status: string; slot_id: string | null }>();
+    expect(after?.status).toBe("lost");
+    expect(after?.slot_id).toBe(slot.id);
+
+    expect((await invite(eventId, owner, guest.username)).status).toBe(201);
+    // 落選＝枠は持っていないので、枠を失う警告は出さない
+    expect((await myInvites(guest))[0]?.holdsSlot).toBe(false);
+  });
+
   it("同じ相手を二重に招待しない／自分自身とすでに運営の人は招待できない", async () => {
     const { owner, guest, eventId } = await setupPendingInvite();
 

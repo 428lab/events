@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   Alert,
   Autocomplete,
+  createFilterOptions,
   Avatar,
   Box,
   Button,
@@ -38,6 +39,11 @@ interface Candidate {
   avatarUrl: string | null;
   source: string;
 }
+
+/** 表示名でもユーザー名でも絞り込めるようにする */
+const CANDIDATE_FILTER = createFilterOptions<Candidate>({
+  stringify: (o) => `${o.label} ${o.username}`,
+});
 
 export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
   const { data: invites } = useEventStaffInvites(eventId, true);
@@ -103,6 +109,10 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
             size="small"
             sx={{ flex: 1 }}
             options={candidates}
+            // 既定の絞り込みは getOptionLabel（＝ユーザー名）しか見ないので、
+            // 表示名で打つと候補が全部消える。ラベルが「名前かユーザー名」である
+            // 以上、絞り込みも両方を見ること
+            filterOptions={CANDIDATE_FILTER}
             groupBy={(o) => o.source}
             getOptionLabel={(o) => (typeof o === "string" ? o : o.username)}
             inputValue={handle}

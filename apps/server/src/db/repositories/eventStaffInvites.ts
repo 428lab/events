@@ -257,7 +257,11 @@ export const eventStaffInvitesRepo = {
   },
 
   /** 自分宛の返事待ちの招待。
-   * イベントは題名と開催日時だけを返す（公開前の中身は承諾するまで見せない） */
+   * イベントは題名と開催日時だけを返す（公開前の中身は承諾するまで見せない）。
+   *
+   * holdsSlot は取消済みだけでなく落選も除く。setStatus は状態しか触らず slot_id を
+   * 残す（eventMembers.ts）ので、単に slot_id の有無を見ると落選した人まで
+   * 「枠を失う」と警告してしまう。落選は枠を持っていない */
   async listPendingForUser(userId: string): Promise<MyStaffInvite[]> {
     const rows = await many<MyInviteRow>(
       `SELECT i.*, ${userCols("iu")}, ${userCols("bu")},
@@ -268,7 +272,7 @@ export const eventStaffInvitesRepo = {
          JOIN event e ON e.id = i.event_id${USER_JOINS}
          LEFT JOIN event_member m
                 ON m.event_id = i.event_id AND m.user_id = i.user_id
-               AND m.status <> 'canceled'
+               AND m.status NOT IN ('canceled', 'lost')
         WHERE i.user_id = ? AND i.status = 'pending'
         ORDER BY i.created_at DESC`,
       userId,

@@ -161,6 +161,28 @@ describe("運営を招く (#339)", () => {
     expect(within(list).queryByText("招待済み")).toBeNull();
   });
 
+  it("表示名で打っても候補が出る（ユーザー名を覚えていなくても選べる）", async () => {
+    serve({
+      members: [
+        { id: "m-1", role: "participant", user: user("u-p", "sanka", "こじら") },
+        { id: "m-2", role: "participant", user: user("u-o", "other", "別の人") },
+      ],
+    });
+    draw();
+    const input = await screen.findByLabelText("名前かユーザー名で招待");
+    // 表示名で絞り込む。既定の絞り込みはユーザー名しか見ないので候補が全部消える
+    fireEvent.change(input, { target: { value: "こじら" } });
+    const list = await screen.findByRole("listbox");
+    expect(within(list).getByText("こじら")).toBeTruthy();
+    expect(within(list).queryByText("別の人")).toBeNull();
+
+    // ユーザー名でも従来どおり絞り込める
+    fireEvent.change(input, { target: { value: "other" } });
+    const list2 = await screen.findByRole("listbox");
+    expect(within(list2).getByText("別の人")).toBeTruthy();
+    expect(within(list2).queryByText("こじら")).toBeNull();
+  });
+
   it("送れなかった理由がその場で読める", async () => {
     serve({});
     postMock.mockRejectedValue(new ApiError(404, { error: "user_not_found" }));

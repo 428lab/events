@@ -115,7 +115,7 @@ describe("運営への招待の受け取り (#339)", () => {
   it("参加枠を押さえている人には、承諾で枠が外れることを警告する", async () => {
     getMock.mockResolvedValue({ invites: [invite({ holdsSlot: true })] });
     draw();
-    expect(await screen.findByText(/いま押さえている参加枠は外れます/)).toBeTruthy();
+    expect(await screen.findByText(/いま申し込んでいる参加枠は外れます/)).toBeTruthy();
   });
 
   it("枠を持っていなくても、枠が外れる旨の断りは常に出す", async () => {
@@ -124,7 +124,7 @@ describe("運営への招待の受け取り (#339)", () => {
     expect(
       await screen.findByText(/すでに参加を申し込んでいる場合、参加枠は外れて/),
     ).toBeTruthy();
-    expect(screen.queryByText(/いま押さえている参加枠は外れます/)).toBeNull();
+    expect(screen.queryByText(/いま申し込んでいる参加枠は外れます/)).toBeNull();
   });
 
   it("日程調整中は「開催日時は調整中」と出す", async () => {
