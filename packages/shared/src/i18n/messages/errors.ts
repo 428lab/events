@@ -38,6 +38,12 @@ const ja = {
   service_key_unset: "この機能はまだ使えるようになっていません",
   pending_deletion: "退会手続き中のアカウントです",
   grace_period_expired: "復元できる期間を過ぎています",
+  // ログイン方法の引き取り (#245)。コードはリテラルでなく関数の戻り値で返るので、
+  // サーバーを grep しても出てこない。消すときは takeoverEmptyAccount を見ること
+  already_linked: "そのログイン方法は、別のアカウントにすでに連携されています",
+  account_in_use: "そのログイン方法が連携されているアカウントは、すでに使われています",
+  account_deleted:
+    "そのログイン方法は、退会手続き中のアカウントに連携されています",
 
   // 見つからない
   not_found: "見つかりませんでした",
@@ -129,6 +135,13 @@ const ja = {
   self_scoring_forbidden: "自分の登壇は採点できません",
   cannot_follow_self: "自分自身はフォローできません",
 
+  // 出会いの記録が断られた理由。こちらも関数の戻り値で返るコード
+  // （diagnoseUnmeetable）。画面側の詳しい案内は MeetScanPage が持っている
+  no_shared_event: "同じイベントに参加していないため記録できません",
+  outside_window: "イベントの開催時間帯ではないため記録できません",
+  not_confirmed_me: "あなたの参加がまだ確定していないため記録できません",
+  not_confirmed_target: "相手の参加がまだ確定していないため記録できません",
+
   // 上限・回数制限
   comment_limit: "投稿できる件数の上限に達しています",
   question_limit: "質問できる件数の上限に達しています",
@@ -167,6 +180,10 @@ const en: Record<keyof typeof ja, string> = {
   service_key_unset: "This feature is not available yet.",
   pending_deletion: "This account is being deleted.",
   grace_period_expired: "The period for restoring this account has passed.",
+  already_linked: "That sign-in method is already linked to another account.",
+  account_in_use: "The account that sign-in method belongs to is already in use.",
+  account_deleted:
+    "That sign-in method belongs to an account that is being deleted.",
 
   // 見つからない
   not_found: "Not found.",
@@ -257,6 +274,12 @@ const en: Record<keyof typeof ja, string> = {
   self_match: "You cannot do this with yourself.",
   self_scoring_forbidden: "You cannot score your own entry.",
   cannot_follow_self: "You cannot follow yourself.",
+
+  no_shared_event: "You are not in the same event, so this cannot be recorded.",
+  outside_window: "The event is not running right now, so this cannot be recorded.",
+  not_confirmed_me: "Your registration is not confirmed yet, so this cannot be recorded.",
+  not_confirmed_target:
+    "Their registration is not confirmed yet, so this cannot be recorded.",
 
   // 上限・回数制限
   comment_limit: "You have reached the posting limit.",

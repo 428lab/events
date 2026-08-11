@@ -5,7 +5,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { User } from "@eventer/shared";
 import { AppThemeProvider } from "../theme/ThemeContext.js";
 import { Layout } from "../components/Layout.js";
-import { dateLocale, detectLanguage, i18next } from "./index.js";
+import {
+  dateLocale,
+  detectFromEnvironment,
+  detectLanguage,
+  i18next,
+  syncDocumentLanguage,
+} from "./index.js";
 
 /**
  * 表示言語の決め方と、訳が無いときの振る舞い (#352)。
@@ -47,6 +53,40 @@ describe("表示言語の決め方 (#352)", () => {
   it("どれも決まらなければ日本語", () => {
     expect(detectLanguage("", [])).toBe("ja");
     expect(detectLanguage("?lang=", ["fr-FR"])).toBe("ja");
+  });
+});
+
+describe("起動時の判定 (#352)", () => {
+  const realLanguages = navigator.languages;
+  const setBrowserLanguages = (langs: readonly string[]) =>
+    Object.defineProperty(navigator, "languages", {
+      configurable: true,
+      value: langs,
+    });
+
+  afterEach(() => {
+    setBrowserLanguages(realLanguages);
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("URLに指定が無ければブラウザの言語を見る", () => {
+    setBrowserLanguages(["ja-JP", "ja"]);
+    expect(detectFromEnvironment()).toBe("ja");
+    setBrowserLanguages(["en-GB"]);
+    expect(detectFromEnvironment()).toBe("en");
+  });
+
+  it("URLの指定はブラウザの言語を上書きする", () => {
+    setBrowserLanguages(["ja-JP"]);
+    window.history.replaceState({}, "", "/events?lang=en");
+    expect(detectFromEnvironment()).toBe("en");
+  });
+
+  it("<html lang> が実際の言語に追従する", async () => {
+    syncDocumentLanguage();
+    expect(document.documentElement.lang).toBe("ja");
+    await i18next.changeLanguage("en");
+    expect(document.documentElement.lang).toBe("en");
   });
 });
 

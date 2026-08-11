@@ -34,7 +34,8 @@ export function detectLanguage(
   return resolveLanguage([urlLang, userPreference, ...browserLanguages]);
 }
 
-function detectFromEnvironment(): AppLanguage {
+/** 実際のブラウザの状態から言語を決める。起動時に一度だけ呼ぶ */
+export function detectFromEnvironment(): AppLanguage {
   if (typeof window === "undefined") return DEFAULT_LANGUAGE;
   const browser =
     navigator.languages && navigator.languages.length > 0

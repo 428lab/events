@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Alert,
   Box,
@@ -21,6 +22,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import { useEventSearch, type EventSearchParams } from "../api/hooks.js";
 import { useCommunities } from "../api/communityHooks.js";
 import { EventList, ListColumnsToggle } from "./EventList.js";
+import { errorMessage } from "../lib/errorMessage.js";
 
 /** 一覧の1ページ表示件数 */
 const PAGE_SIZE = 10;
@@ -49,18 +51,19 @@ function CommunityFilterField({
   value: string;
   onChange: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const { data: communities } = useCommunities();
   return (
     <TextField
       select
-      label="コミュニティ"
+      label={t("events.filterCommunity")}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       size="small"
       fullWidth
       sx={{ maxWidth: { sm: 320 } }}
     >
-      <MenuItem value="">すべて</MenuItem>
+      <MenuItem value="">{t("events.filterCommunityAll")}</MenuItem>
       {(communities ?? []).map((c) => (
         <MenuItem key={c.id} value={c.id}>
           {c.name}
@@ -79,7 +82,7 @@ function CommunityFilterField({
  */
 export function EventsBrowser({
   communityId,
-  title = "イベント",
+  title,
   actions,
 }: {
   /** 指定時はそのコミュニティのイベントに固定 */
@@ -89,6 +92,7 @@ export function EventsBrowser({
   /** 見出し行の右端に置く追加アクション（作成ボタン等） */
   actions?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<EventsTab>("upcoming");
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
@@ -130,9 +134,9 @@ export function EventsBrowser({
     setPage(1);
     fn();
   };
-  const changeTab = (t: EventsTab) => {
-    setTab(t);
-    setSort(DEFAULT_SORT[t]);
+  const changeTab = (next: EventsTab) => {
+    setTab(next);
+    setSort(DEFAULT_SORT[next]);
     setPage(1);
   };
   const clear = () => {
@@ -150,12 +154,12 @@ export function EventsBrowser({
     : 1;
 
   const emptyText = hasFilters
-    ? "条件に合うイベントはありません。"
+    ? t("events.emptyFiltered")
     : tab === "upcoming"
-      ? "予定されているイベントはありません。"
+      ? t("events.emptyUpcoming")
       : tab === "scheduling"
-        ? "日程調整中のイベントはありません。"
-        : "過去のイベントはありません。";
+        ? t("events.emptyScheduling")
+        : t("events.emptyPast");
 
   return (
     <Box>
@@ -170,7 +174,7 @@ export function EventsBrowser({
         sx={{ mb: 1 }}
       >
         <Typography variant="h6" sx={{ whiteSpace: "nowrap" }}>
-          {title}
+          {title ?? t("events.title")}
         </Typography>
         <Stack
           direction="row"
@@ -186,13 +190,13 @@ export function EventsBrowser({
             onClick={() => setOpen((o) => !o)}
             sx={{ opacity: 0.85, display: { xs: "none", sm: "inline-flex" } }}
           >
-            絞り込み
+            {t("events.filter")}
           </Button>
-          <Tooltip title="絞り込み">
+          <Tooltip title={t("events.filter")}>
             <IconButton
               size="small"
               onClick={() => setOpen((o) => !o)}
-              aria-label="絞り込み"
+              aria-label={t("events.filter")}
               sx={{ display: { xs: "inline-flex", sm: "none" }, opacity: 0.85 }}
             >
               <SearchIcon fontSize="small" />
@@ -208,9 +212,17 @@ export function EventsBrowser({
         onChange={(_e, v: EventsTab) => changeTab(v)}
         sx={{ mb: 2, borderBottom: 1, borderColor: "divider", minHeight: 40 }}
       >
-        <Tab label="開催予定" value="upcoming" sx={{ minHeight: 40 }} />
-        <Tab label="日程調整中" value="scheduling" sx={{ minHeight: 40 }} />
-        <Tab label="過去" value="past" sx={{ minHeight: 40 }} />
+        <Tab
+          label={t("events.tabUpcoming")}
+          value="upcoming"
+          sx={{ minHeight: 40 }}
+        />
+        <Tab
+          label={t("events.tabScheduling")}
+          value="scheduling"
+          sx={{ minHeight: 40 }}
+        />
+        <Tab label={t("events.tabPast")} value="past" sx={{ minHeight: 40 }} />
       </Tabs>
 
       <Collapse in={open} unmountOnExit>
@@ -218,18 +230,18 @@ export function EventsBrowser({
           <CardContent>
             <Stack spacing={2}>
               <TextField
-                label="キーワード"
+                label={t("events.filterKeyword")}
                 slotProps={{ inputLabel: { shrink: true } }}
                 value={q}
                 onChange={(e) => change(() => setQ(e.target.value))}
-                placeholder="イベント名・内容で検索"
+                placeholder={t("events.filterKeywordPlaceholder")}
                 fullWidth
                 size="small"
               />
               {dateFilters && (
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <TextField
-                  label="開始日（以降）"
+                  label={t("events.filterFrom")}
                   type="date"
                   value={from}
                   onChange={(e) => change(() => setFrom(e.target.value))}
@@ -238,7 +250,7 @@ export function EventsBrowser({
                   fullWidth
                 />
                 <TextField
-                  label="終了日（まで）"
+                  label={t("events.filterTo")}
                   type="date"
                   value={to}
                   onChange={(e) => change(() => setTo(e.target.value))}
@@ -248,7 +260,7 @@ export function EventsBrowser({
                 />
                 <TextField
                   select
-                  label="並び替え"
+                  label={t("events.sort")}
                   value={sort}
                   onChange={(e) =>
                     change(() => setSort(e.target.value as EventSort))
@@ -256,9 +268,9 @@ export function EventsBrowser({
                   size="small"
                   fullWidth
                 >
-                  <MenuItem value="soon">開催日が近い順</MenuItem>
-                  <MenuItem value="recent">開催日が新しい順</MenuItem>
-                  <MenuItem value="new">登録が新しい順</MenuItem>
+                  <MenuItem value="soon">{t("events.sortSoon")}</MenuItem>
+                  <MenuItem value="recent">{t("events.sortRecent")}</MenuItem>
+                  <MenuItem value="new">{t("events.sortNew")}</MenuItem>
                 </TextField>
               </Stack>
               )}
@@ -271,7 +283,7 @@ export function EventsBrowser({
               {hasFilters && (
                 <Box>
                   <Button size="small" onClick={clear}>
-                    条件をクリア
+                    {t("events.clearFilters")}
                   </Button>
                 </Box>
               )}
@@ -281,9 +293,11 @@ export function EventsBrowser({
       </Collapse>
 
       {search.isError ? (
-        <Alert severity="error">イベントを読み込めませんでした。再読み込みしてください。</Alert>
+        <Alert severity="error">
+          {errorMessage(search.error, { default: t("events.loadError") })}
+        </Alert>
       ) : search.isLoading || !search.data ? (
-        <Typography>読み込み中…</Typography>
+        <Typography>{t("common.loading")}</Typography>
       ) : search.data.events.length === 0 ? (
         <Typography color="text.secondary">{emptyText}</Typography>
       ) : (
@@ -294,7 +308,7 @@ export function EventsBrowser({
               color="text.secondary"
               sx={{ display: "block", mb: 1 }}
             >
-              条件に一致: {total}件
+              {t("events.matchCount", { n: total })}
             </Typography>
           )}
           <EventList events={search.data.events} />
