@@ -20,9 +20,13 @@ import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import { computeScheduleTimes } from "@eventer/shared";
 import type { ScheduleItem } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
-import { useEventSchedule } from "../api/eventScheduleHooks.js";
+import {
+  useEventSchedule,
+  useScheduleEditingState,
+} from "../api/eventScheduleHooks.js";
 import { formatTime } from "../lib/format.js";
 import { MaterialEditDialog } from "./MaterialEditDialog.js";
+import { editorLabel } from "./ScheduleEditNotice.js";
 import { ScheduleEditor } from "./ScheduleEditor.js";
 import { UserLink } from "./UserLink.js";
 
@@ -38,9 +42,18 @@ export function EventSchedule({
   eventStartsAt: number | null;
   isStaff: boolean;
 }) {
-  const { data } = useEventSchedule(eventId);
+  const { data, refetch } = useEventSchedule(eventId);
   const { data: me } = useMe();
   const [editing, setEditing] = useState(false);
+  // 編集画面を作り直すためのキー (#340)。版が食い違って保存が止まったとき、
+  // 最新を取り直して編集画面を作り直す（手元の編集は失われると案内済み）
+  const [editorSeed, setEditorSeed] = useState(0);
+  // 誰かが編集中か (#340)。編集できる人にしか返らないので staff のときだけ。
+  // 編集画面を開いている間は、そちら（心拍つき）が同じ状態を取りに行くので止める
+  const { data: editState } = useScheduleEditingState(
+    eventId,
+    isStaff && !editing,
+  );
   // 登壇者本人による資料URL編集ダイアログの対象コマ (#148)
   const [materialItem, setMaterialItem] = useState<ScheduleItem | null>(null);
 
@@ -48,6 +61,11 @@ export function EventSchedule({
   // 未割り当て（ネタ出し中 #338）はサーバーが staff にしか返さない。
   // ここで落とすと同じ判断が2か所になるので、来たものはそのまま扱う
   const { items, tracks } = data;
+  // 自分の編集中は出さない（編集画面を閉じた直後は期限切れまで残るため）
+  const otherEditor =
+    editState?.editor && editState.editor.userId !== me?.id
+      ? editState.editor
+      : null;
   // 空のタイムテーブルは staff にだけ編集導線として見せる
   if (items.length === 0 && !isStaff) return null;
 
@@ -77,22 +95,41 @@ export function EventSchedule({
             タイムテーブル
           </Typography>
           {isStaff && !editing && (
-            <IconButton
-              size="small"
-              onClick={() => setEditing(true)}
-              title="タイムテーブルを編集"
-            >
-              <EditOutlinedIcon fontSize="small" />
-            </IconButton>
+            <Stack direction="row" alignItems="center" spacing={0.5}>
+              {/* 編集を始める前に気づけるように、編集ボタンのすぐ隣に出す (#340) */}
+              {otherEditor && (
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color="info"
+                  label={`${editorLabel(otherEditor)}が編集中`}
+                />
+              )}
+              <IconButton
+                size="small"
+                onClick={() => setEditing(true)}
+                title="タイムテーブルを編集"
+              >
+                <EditOutlinedIcon fontSize="small" />
+              </IconButton>
+            </Stack>
           )}
         </Stack>
 
         {editing ? (
           <ScheduleEditor
+            // 読み込み直しは作り直しで行う（手元の編集を残すと、どこが最新で
+            // どこが手元の変更か分からなくなる #340）
+            key={editorSeed}
             eventId={eventId}
             eventStartsAt={eventStartsAt}
             items={items}
             tracks={tracks}
+            version={data.version}
+            onReload={async () => {
+              await refetch();
+              setEditorSeed((n) => n + 1);
+            }}
             onClose={() => setEditing(false)}
           />
         ) : items.length === 0 ? (

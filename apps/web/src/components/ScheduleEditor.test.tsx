@@ -12,9 +12,12 @@ import type { EventTrack, ScheduleItem } from "@eventer/shared";
  * 実際に描画して保存ボタンを押して確かめる。
  */
 
-const { getMock, putMock } = vi.hoisted(() => ({
+const { getMock, putMock, postMock, delMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
   putMock: vi.fn(),
+  // 編集中ステータス (#340) の宣言（POST）と解除（DELETE）
+  postMock: vi.fn(),
+  delMock: vi.fn(),
 }));
 
 vi.mock("../api/client.js", async (importOriginal) => {
@@ -25,10 +28,14 @@ vi.mock("../api/client.js", async (importOriginal) => {
       ...actual.api,
       get: (...args: unknown[]) => getMock(...args),
       put: (...args: unknown[]) => putMock(...args),
+      post: (...args: unknown[]) => postMock(...args),
+      del: (...args: unknown[]) => delMock(...args),
     },
   };
 });
 
+// モックは actual を広げているので、ApiError は本物のまま使える (#340)
+const { ApiError } = await import("../api/client.js");
 const { ScheduleEditor } = await import("./ScheduleEditor.js");
 
 function item(patch: Partial<ScheduleItem> & { id: string }): ScheduleItem {
@@ -56,7 +63,11 @@ const ITEMS: ScheduleItem[] = [
   item({ id: "it-2", title: "セッション", durationMin: 30, sortOrder: 1 }),
 ];
 
-function draw(items: ScheduleItem[] = ITEMS, tracks: EventTrack[] = []) {
+function draw(
+  items: ScheduleItem[] = ITEMS,
+  tracks: EventTrack[] = [],
+  opts: { version?: number; onReload?: () => void } = {},
+) {
   const qc = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
@@ -67,14 +78,28 @@ function draw(items: ScheduleItem[] = ITEMS, tracks: EventTrack[] = []) {
         eventStartsAt={null}
         items={items}
         tracks={tracks}
+        version={opts.version ?? 3}
+        onReload={opts.onReload ?? (() => {})}
         onClose={() => {}}
       />
     </QueryClientProvider>,
   );
 }
 
+/** 既定のモック。担当者候補（メンバー一覧）と、誰も編集していない状態 (#340) */
+function resetApiMocks() {
+  getMock.mockReset();
+  putMock.mockReset();
+  postMock.mockReset();
+  delMock.mockReset();
+  getMock.mockResolvedValue({ members: [] });
+  postMock.mockResolvedValue({ editor: null, version: 3 });
+  delMock.mockResolvedValue({ editor: null, version: 3 });
+}
+
 /** 保存ボタンを押して、送られた本文を取り出す */
 async function saveAndCaptureBody(): Promise<{
+  version: number;
   items: Array<{
     id: string | null;
     title: string;
@@ -100,10 +125,7 @@ async function saveAndCapture(): Promise<
 
 describe("ScheduleEditor の差分保存 (#340)", () => {
   beforeEach(() => {
-    getMock.mockReset();
-    putMock.mockReset();
-    // 担当者候補（メンバー一覧）の取得
-    getMock.mockResolvedValue({ members: [] });
+    resetApiMocks();
     putMock.mockResolvedValue({ items: [] });
   });
 
@@ -182,9 +204,7 @@ const TRACKS: EventTrack[] = [
 
 describe("ScheduleEditor のトラック割り当て (#338)", () => {
   beforeEach(() => {
-    getMock.mockReset();
-    putMock.mockReset();
-    getMock.mockResolvedValue({ members: [] });
+    resetApiMocks();
     putMock.mockResolvedValue({ items: [], tracks: [] });
   });
 
@@ -345,5 +365,149 @@ describe("ScheduleEditor のトラック割り当て (#338)", () => {
     );
 
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+/**
+ * 同時編集の対策 (#340)。
+ *
+ * 画面側の役割は2つだけ。**読んだ版をそのまま送り返すこと**と、
+ * 止められたときに**次に何をすればよいかを出すこと**。
+ * 上書きを実際に防いでいるのはサーバー側の版の突き合わせ。
+ */
+describe("ScheduleEditor の同時編集 (#340)", () => {
+  beforeEach(() => {
+    resetApiMocks();
+    putMock.mockResolvedValue({ items: [], tracks: [], version: 4 });
+  });
+
+  it("読み込んだ版をそのまま保存に付けて送る", async () => {
+    draw(ITEMS, [], { version: 7 });
+
+    expect((await saveAndCaptureBody()).version).toBe(7);
+  });
+
+  it("開いている間は「自分が編集中」と宣言し、閉じると解除する", async () => {
+    const { unmount } = render(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: {
+              mutations: { retry: false },
+              queries: { retry: false },
+            },
+          })
+        }
+      >
+        <ScheduleEditor
+          eventId="e-1"
+          eventStartsAt={null}
+          items={ITEMS}
+          tracks={[]}
+          version={3}
+          onReload={() => {}}
+          onClose={() => {}}
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith("/events/e-1/timetable/editing"),
+    );
+    unmount();
+    await waitFor(() =>
+      expect(delMock).toHaveBeenCalledWith("/events/e-1/timetable/editing"),
+    );
+  });
+
+  it("ほかの人が編集中なら名前つきで出るが、保存は止めない（助言）", async () => {
+    postMock.mockResolvedValue({
+      editor: {
+        userId: "u-other",
+        name: "アリス",
+        avatarUrl: null,
+        startedAt: Date.now(),
+        expiresAt: Date.now() + 120_000,
+      },
+      version: 3,
+    });
+    draw();
+
+    expect(
+      await screen.findByText(/アリスさんがいまタイムテーブルを編集しています/),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "保存" }).hasAttribute("disabled"),
+    ).toBe(false);
+  });
+
+  it("表示名が取れない相手は名前を出さずに知らせる", async () => {
+    postMock.mockResolvedValue({
+      editor: {
+        userId: "u-other",
+        name: "",
+        avatarUrl: null,
+        startedAt: Date.now(),
+        expiresAt: Date.now() + 120_000,
+      },
+      version: 3,
+    });
+    draw();
+
+    expect(
+      await screen.findByText(/ほかの運営メンバーがいまタイムテーブルを編集/),
+    ).toBeTruthy();
+  });
+
+  it("版が食い違って止められたら、次に何をすればよいかを出す", async () => {
+    putMock.mockRejectedValue(new ApiError(409, { error: "conflict", version: 5 }));
+    const onReload = vi.fn();
+    const confirm = vi
+      .spyOn(window, "confirm")
+      .mockReturnValue(true);
+    draw(ITEMS, [], { onReload });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(
+      await screen.findByText("ほかの人が先にタイムテーブルを更新しました"),
+    ).toBeTruthy();
+    expect(screen.getByText(/変えたかった箇所を控えてから/)).toBeTruthy();
+    // 同じ内容を送り直しても必ずまた弾かれるので、保存は押せなくする
+    expect(
+      screen.getByRole("button", { name: "保存" }).hasAttribute("disabled"),
+    ).toBe(true);
+
+    // 読み込み直しは、手元の編集が失われることを確かめてから
+    fireEvent.click(screen.getByRole("button", { name: "最新を読み込む" }));
+    expect(confirm).toHaveBeenCalled();
+    expect(onReload).toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it("読み込み直しを取り消したら、手元の編集はそのまま残る", async () => {
+    putMock.mockRejectedValue(new ApiError(409, { error: "conflict", version: 5 }));
+    const onReload = vi.fn();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    draw(ITEMS, [], { onReload });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await screen.findByText("ほかの人が先にタイムテーブルを更新しました");
+    fireEvent.click(screen.getByRole("button", { name: "最新を読み込む" }));
+
+    expect(onReload).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it("通信の失敗は衝突と別の案内にする（読み込み直しを出さない）", async () => {
+    putMock.mockRejectedValue(new ApiError(500, null));
+    draw();
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(
+      await screen.findByText("タイムテーブルの保存に失敗しました。"),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "最新を読み込む" })).toBeNull();
   });
 });

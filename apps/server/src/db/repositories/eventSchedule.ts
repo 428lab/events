@@ -106,6 +106,29 @@ export const eventScheduleRepo = {
     return rows.map((r) => toItem(r, byItem.get(r.id) ?? []));
   },
 
+  /** いま存在する項目・トラックの ID (#340)。
+   * 保存の入力に**知らない ID** が混じっていないかを見るために使う。
+   * 知らない ID は「編集画面を開いている間に他人が消した」ものなので、
+   * 新規として採番し直すと消したはずのセッションが復活してしまう */
+  async listIds(
+    eventId: string,
+  ): Promise<{ itemIds: Set<string>; trackIds: Set<string> }> {
+    const [items, tracks] = await Promise.all([
+      many<{ id: string }>(
+        "SELECT id FROM event_schedule_item WHERE event_id = ?",
+        eventId,
+      ),
+      many<{ id: string }>(
+        "SELECT id FROM event_track WHERE event_id = ?",
+        eventId,
+      ),
+    ]);
+    return {
+      itemIds: new Set(items.map((r) => r.id)),
+      trackIds: new Set(tracks.map((r) => r.id)),
+    };
+  },
+
   /** イベントのトラック一覧（並び順） (#338) */
   async listTracks(eventId: string): Promise<EventTrack[]> {
     const rows = await many<TrackRow>(

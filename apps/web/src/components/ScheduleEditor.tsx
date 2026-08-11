@@ -17,10 +17,18 @@ import {
   computeScheduleTimes,
   findTrackOverlaps,
 } from "@eventer/shared";
-import { useEventMembers } from "../api/hooks.js";
-import { useSaveEventSchedule } from "../api/eventScheduleHooks.js";
+import { useEventMembers, useMe } from "../api/hooks.js";
+import {
+  useHoldScheduleEditing,
+  useSaveEventSchedule,
+} from "../api/eventScheduleHooks.js";
+import { ApiError } from "../api/client.js";
 import { formatTime } from "../lib/format.js";
 import type { MemberOption } from "./ScheduleItemRow.js";
+import {
+  ScheduleConflictAlert,
+  ScheduleEditingAlert,
+} from "./ScheduleEditNotice.js";
 import { ScheduleItemRow } from "./ScheduleItemRow.js";
 import { ScheduleTrackManager } from "./ScheduleTrackManager.js";
 import type { Row, TrackRow } from "./scheduleEditorModel.js";
@@ -40,22 +48,44 @@ import {
  * テンプレートからの作成に対応。時刻プレビューは表示と同じロジックで自動計算する。
  *
  * トラック (#338) は「未割り当て（ネタ出し）」と「配置済み」の2セクションで扱う。
- * トラックの割り当ては**チップとスイッチのタップだけで完結**する。 */
+ * トラックの割り当ては**チップとスイッチのタップだけで完結**する。
+ *
+ * 同時編集 (#340) は2段構え。開いている間は「自分が編集中」と言い続けて
+ * 他の人に見せ（助言）、保存では読み込んだ時点の版を送り返して食い違いを弾く
+ * （こちらが実際の防衛）。 */
 export function ScheduleEditor({
   eventId,
   eventStartsAt,
   items,
   tracks: initialTracks,
+  version,
+  onReload,
   onClose,
 }: {
   eventId: string;
   eventStartsAt: number | null;
   items: ScheduleItem[];
   tracks: EventTrack[];
+  /** items/tracks を読んだ時点のタイムテーブルの版 (#340) */
+  version: number;
+  /** 最新を読み込み直す（この画面は作り直され、手元の編集は失われる） */
+  onReload: () => void;
   onClose: () => void;
 }) {
   const { data: members } = useEventMembers(eventId, true);
+  const { data: me } = useMe();
   const save = useSaveEventSchedule(eventId);
+  // 開いている間だけ「自分が編集中」と宣言し続ける。返るのは反映後の状態なので、
+  // 先に他の人が編集していればその人が入っている（奪わない #340）
+  const { data: editing } = useHoldScheduleEditing(eventId);
+  const otherEditor =
+    editing?.editor && editing.editor.userId !== me?.id
+      ? editing.editor
+      : null;
+  // 版の食い違いだけは別の案内にする（通信失敗などと同じ扱いにすると、
+  // 「もう一度保存」を押させてしまい、押しても直らない）
+  const conflicted =
+    save.error instanceof ApiError && save.error.status === 409;
   const [tracks, setTracks] = useState<TrackRow[]>(() =>
     initialTracks.map(trackRowFromTrack),
   );
@@ -181,7 +211,19 @@ export function ScheduleEditor({
     ) && tracks.every((t) => t.name.trim().length > 0);
 
   const submit = () =>
-    save.mutate(toSaveInput(rows, tracks), { onSuccess: onClose });
+    save.mutate(toSaveInput(rows, tracks, version), { onSuccess: onClose });
+
+  /** 最新を読み込み直す。手元の編集は失われるので、押す前に必ず確かめる */
+  const reload = () => {
+    if (
+      !window.confirm(
+        "最新のタイムテーブルを読み込み直します。この画面の編集内容は失われます。よろしいですか？",
+      )
+    ) {
+      return;
+    }
+    onReload();
+  };
 
   const renderRow = (row: Row) => {
     const i = rows.indexOf(row);
@@ -215,6 +257,8 @@ export function ScheduleEditor({
 
   return (
     <Stack spacing={1.5}>
+      {otherEditor && <ScheduleEditingAlert editor={otherEditor} />}
+
       <ScheduleTrackManager
         tracks={tracks}
         onAdd={() =>
@@ -291,8 +335,12 @@ export function ScheduleEditor({
       )}
       <Stack spacing={1.5}>{placedRows.map(renderRow)}</Stack>
 
-      {save.isError && (
-        <Alert severity="error">タイムテーブルの保存に失敗しました。</Alert>
+      {conflicted ? (
+        <ScheduleConflictAlert onReload={reload} />
+      ) : (
+        save.isError && (
+          <Alert severity="error">タイムテーブルの保存に失敗しました。</Alert>
+        )
       )}
 
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -331,7 +379,9 @@ export function ScheduleEditor({
           size="small"
           variant="contained"
           onClick={submit}
-          disabled={!canSave || save.isPending}
+          // 版が食い違ったあとは、同じ内容を送っても必ずまた弾かれる。
+          // 押せるままにすると同じ失敗を繰り返させるので、読み込み直しへ誘導する
+          disabled={!canSave || save.isPending || conflicted}
         >
           保存
         </Button>
