@@ -66,7 +66,7 @@ import { useEventSurvey } from "../api/eventSurveyHooks.js";
 import { SurveyAnswerDialog } from "../components/SurveyAnswerDialog.js";
 import { ApiError } from "../api/client.js";
 import { errorMessage } from "../lib/errorMessage.js";
-import { i18next } from "../i18n/index.js";
+import { i18next, tDynamic } from "../i18n/index.js";
 import { EventPhotos } from "../components/EventPhotos.js";
 import { EventComments } from "../components/EventComments.js";
 import { EventSchedule } from "../components/EventSchedule.js";
@@ -103,7 +103,7 @@ const STATUS_KEY: Record<string, string> = {
 
 function statusLabel(status: string): string {
   const key = STATUS_KEY[status];
-  return key ? i18next.t(`eventDetail.${key}`) : status;
+  return key ? tDynamic(`eventDetail.${key}`, status) : status;
 }
 
 function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry }) {

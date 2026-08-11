@@ -80,4 +80,20 @@ export function dateLocale(): string {
   return DATE_LOCALES[lang] ?? DATE_LOCALES[DEFAULT_LANGUAGE];
 }
 
+/**
+ * キーの一部が実行時にしか決まらない場合の逃げ道 (#352)。
+ *
+ * サーバーのエラーコードやロールのように、**サーバーが増やせる値**を
+ * キーに混ぜるときは型で縛れない。逃げ道はここ1か所だけにしてあるので、
+ * 各所で `as any` を書かないこと。`defaultValue` を必ず取るのは、
+ * 辞書に無い値でもキー名が画面に出ないようにするため。
+ *
+ * 固定のキーには使わないこと（`t("nav.venues")` は型で守られる）。
+ */
+export function tDynamic(key: string, defaultValue: string): string {
+  // `defaultValue` を渡す形なら i18next が任意のキーを受ける。
+  // キャストを書かずに済むので、型の穴はここにも空けない
+  return i18next.t(key, { defaultValue });
+}
+
 export { i18next };

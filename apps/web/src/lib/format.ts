@@ -1,5 +1,5 @@
 import type { Event, EventRole, VenueType } from "@eventer/shared";
-import { dateLocale, i18next } from "../i18n/index.js";
+import { dateLocale, i18next, tDynamic } from "../i18n/index.js";
 
 /**
  * 日時の書式は **端末のタイムゾーンのまま、ロケールだけ切り替える** (#352)。
@@ -101,12 +101,12 @@ export function fromDateTimeLocal(s: string): number | null {
 /** イベント内での立場のラベル。訳は packages/shared/src/i18n が持つ。
  * 知らない値が来たらそのまま返す（サーバーが増やしても画面は壊れない） */
 export function roleLabel(role: EventRole | string): string {
-  return i18next.t(`role.${role}`, { defaultValue: String(role) });
+  return tDynamic(`role.${role}`, String(role));
 }
 
 /** 開催形態のラベル。知らない値はそのまま返す */
 export function venueLabel(venue: VenueType | string): string {
-  return i18next.t(`venue.${venue}`, { defaultValue: String(venue) });
+  return tDynamic(`venue.${venue}`, String(venue));
 }
 
 /** 人数表示に使うイベント項目 */

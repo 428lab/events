@@ -12,6 +12,7 @@ import {
   detectLanguage,
   i18next,
   syncDocumentLanguage,
+  tDynamic,
 } from "./index.js";
 
 /**
@@ -149,17 +150,22 @@ describe("起動時の判定 (#352)", () => {
   });
 });
 
+/**
+ * 辞書に無いキーは**型で落ちる**ようになったので (#352 の型拡張)、
+ * ここは実行時に辞書へ足したキーと `tDynamic` 経由で確かめる。
+ * 型で守れる範囲は i18n/keys.test.ts が見張っている。
+ */
 describe("訳が無い箇所 (#352)", () => {
   it("英語に訳が無いキーは日本語のまま出る（空欄にならない）", async () => {
     await i18next.changeLanguage("en");
     // ja にしか無いキーを1つ足して、英語表示でどうなるかを見る
     i18next.addResource("ja", "translation", "onlyJa.sample", "日本語だけ");
-    expect(i18next.t("onlyJa.sample")).toBe("日本語だけ");
+    expect(tDynamic("onlyJa.sample", "")).toBe("日本語だけ");
   });
 
   it("どちらにも無いキーでも例外にならない", () => {
-    expect(() => i18next.t("nowhere.at.all")).not.toThrow();
-    expect(typeof i18next.t("nowhere.at.all")).toBe("string");
+    expect(() => tDynamic("nowhere.at.all", "既定")).not.toThrow();
+    expect(tDynamic("nowhere.at.all", "既定")).toBe("既定");
   });
 });
 

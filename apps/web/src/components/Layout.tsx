@@ -23,6 +23,7 @@ import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import { useBundleReload } from "../lib/useBundleReload.js";
 import { useNavCollapse } from "../lib/useNavCollapse.js";
 import type { User } from "@eventer/shared";
+import type { TranslationResource } from "@eventer/shared/i18n";
 import { useIsAdmin, useLogout } from "../api/hooks.js";
 import { useAdminInquiryUnreadCount } from "../api/inquiryHooks.js";
 import { useAbuseUnreviewedCount } from "../api/abuseHooks.js";
@@ -39,7 +40,9 @@ import { VersionFooter } from "./VersionFooter.js";
  * 文言そのものは持たず**翻訳キーだけ**を持つ (#352)。訳は
  * packages/shared/src/i18n/messages/nav.ts にある
  */
-const NAV_ITEMS = [
+type NavKey = `nav.${keyof TranslationResource["nav"]}`;
+
+const NAV_ITEMS: readonly { to: string; key: NavKey }[] = [
   { to: "/communities", key: "nav.communities" },
   { to: "/venues", key: "nav.venues" },
   { to: "/decks", key: "nav.decks" },
@@ -47,11 +50,12 @@ const NAV_ITEMS = [
   // マイページは自分のプロフィールページに統合したので、ここは設定に置き換えた。
   // 自分のページへは右上のアイコンから行く (#319)
   { to: "/account", key: "nav.settings" },
-] as const;
+];
 
 type AdminItem = {
   to: string;
-  key: string;
+  /** 翻訳キー。辞書の nav.* に無い名前を書いたら型で落ちる */
+  key: NavKey;
   /** 未読件数バッジの種別 */
   badge?: "inquiry" | "abuse";
 };

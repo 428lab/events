@@ -8,7 +8,7 @@
  * `overrides.default` を渡すと、辞書に無いコードのときの文言も差し替わる。
  */
 import { ApiError, NetworkError } from "../api/client.js";
-import { i18next } from "../i18n/index.js";
+import { i18next, tDynamic } from "../i18n/index.js";
 
 /** 例外からサーバーのエラーコードを取り出す。取れなければ null */
 export function errorCode(err: unknown): string | null {
@@ -27,6 +27,8 @@ export function errorMessage(
   const fallback = overrides?.default ?? i18next.t("errors.default");
   const code = errorCode(err);
   if (!code) return fallback;
-  if (overrides?.[code]) return overrides[code];
-  return i18next.t(`errors.${code}`, { defaultValue: fallback });
+  // `in` で見るのは、空文字での上書き（「この画面では何も出さない」）を
+  // 潰さないため。truthy 判定だと空文字が無かったことにされる
+  if (overrides && code in overrides) return overrides[code];
+  return tDynamic(`errors.${code}`, fallback);
 }
