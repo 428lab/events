@@ -1,4 +1,5 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { normalizeLanguage } from "@eventer/shared/i18n";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -54,6 +55,37 @@ describe("表示言語の決め方 (#352)", () => {
     expect(detectLanguage("", [])).toBe("ja");
     expect(detectLanguage("?lang=", ["fr-FR"])).toBe("ja");
   });
+
+  /**
+   * 言語タグは「最初の `-` まで」が言語部分。前方一致で見ると `jbo`（ロジバン）や
+   * `jam`（ジャマイカ・クレオール）を日本語と取り違える。同じく `enm`（中英語）を
+   * 英語と取り違える。判定を `startsWith` に書き換えたら、ここで落ちる。
+   */
+  it("先頭が同じだけの別言語を取り違えない", () => {
+    expect(normalizeLanguage("jbo")).toBeNull();
+    expect(normalizeLanguage("jam")).toBeNull();
+    expect(normalizeLanguage("enm")).toBeNull();
+    // 日本語と誤判定していれば "ja" が返る。英語に落ちるのが正しい
+    expect(detectLanguage("", ["jbo", "en-US"])).toBe("en");
+    expect(detectLanguage("", ["jam", "en"])).toBe("en");
+    // 正しい書き方は取りこぼさない
+    expect(normalizeLanguage("ja")).toBe("ja");
+    expect(normalizeLanguage("ja-JP")).toBe("ja");
+    expect(normalizeLanguage("JA-jp")).toBe("ja");
+  });
+
+  /**
+   * URLの指定は**対応している言語のときだけ**優先される。未知の値が
+   * ブラウザの言語を横取りして日本語に落とすと、英語圏の人が
+   * `?lang=zh` のリンクを踏んだだけで日本語になってしまう。
+   */
+  it("対応していない ?lang は無視して、ブラウザの言語に落ちる", () => {
+    expect(detectLanguage("?lang=zh", ["en-US"])).toBe("en");
+    expect(detectLanguage("?lang=xx", ["en-US"])).toBe("en");
+    expect(detectLanguage("?lang=jbo", ["en-US"])).toBe("en");
+    // 利用者の設定も同じ扱い。未知の値は次の段に落とす
+    expect(detectLanguage("?lang=zh", ["en-US"], "zh")).toBe("en");
+  });
 });
 
 describe("起動時の判定 (#352)", () => {
@@ -80,6 +112,33 @@ describe("起動時の判定 (#352)", () => {
     setBrowserLanguages(["ja-JP"]);
     window.history.replaceState({}, "", "/events?lang=en");
     expect(detectFromEnvironment()).toBe("en");
+  });
+
+  /**
+   * 言語の判定は保存領域を読まない。プライベートモードや保存領域を
+   * 無効にした環境では `localStorage` に触れるだけで例外が飛び、
+   * 起動時に判定している都合上そのまま画面が真っ白になるため。
+   *
+   * 「利用者の設定」を保存する段になっても、読み取りは try/catch で
+   * 包んでから `detectLanguage` の第3引数に渡すこと（判定そのものは
+   * 保存領域を知らないままにしておく）。
+   */
+  it("保存領域が使えなくても判定が落ちない", () => {
+    const boom = () => {
+      throw new DOMException("denied", "SecurityError");
+    };
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(boom);
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(boom);
+    try {
+      setBrowserLanguages(["en-US"]);
+      expect(() => detectFromEnvironment()).not.toThrow();
+      expect(detectFromEnvironment()).toBe("en");
+      // そもそも保存領域を見ていない
+      expect(getItem).not.toHaveBeenCalled();
+    } finally {
+      getItem.mockRestore();
+      setItem.mockRestore();
+    }
   });
 
   it("<html lang> が実際の言語に追従する", async () => {
