@@ -1,26 +1,33 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { SaveScheduleItemInput, ScheduleItem } from "@eventer/shared";
+import type {
+  EventTrack,
+  SaveScheduleInput,
+  ScheduleItem,
+} from "@eventer/shared";
 import { api } from "./client.js";
+
+/** タイムテーブルの取得結果。トラック (#338) は時刻の計算に要るので一緒に返る */
+export interface EventTimetable {
+  items: ScheduleItem[];
+  tracks: EventTrack[];
+}
 
 export function useEventSchedule(eventId: string) {
   return useQuery({
     queryKey: ["event", eventId, "timetable"],
     enabled: Boolean(eventId),
-    queryFn: async () =>
-      (await api.get<{ items: ScheduleItem[] }>(`/events/${eventId}/timetable`))
-        .items,
+    queryFn: () => api.get<EventTimetable>(`/events/${eventId}/timetable`),
   });
 }
 
 /** タイムテーブルの保存（全項目を送り、サーバーが差分で反映する。staff のみ #340）。
- * 既存項目は id を付けて送ること。付けないと削除＋新規追加になり ID が変わる */
+ * 既存項目・既存トラックは id を付けて送ること。付けないと削除＋新規追加になり
+ * ID が変わる（トラックの割り当て #338 もその時点で消える） */
 export function useSaveEventSchedule(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (items: SaveScheduleItemInput[]) =>
-      api.put<{ items: ScheduleItem[] }>(`/events/${eventId}/timetable`, {
-        items,
-      }),
+    mutationFn: (input: SaveScheduleInput) =>
+      api.put<EventTimetable>(`/events/${eventId}/timetable`, input),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["event", eventId, "timetable"] }),
   });

@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Card,
   CardContent,
+  Chip,
   IconButton,
   Link as MuiLink,
   Stack,
@@ -37,17 +38,26 @@ export function EventSchedule({
   eventStartsAt: number | null;
   isStaff: boolean;
 }) {
-  const { data: items } = useEventSchedule(eventId);
+  const { data } = useEventSchedule(eventId);
   const { data: me } = useMe();
   const [editing, setEditing] = useState(false);
   // 登壇者本人による資料URL編集ダイアログの対象コマ (#148)
   const [materialItem, setMaterialItem] = useState<ScheduleItem | null>(null);
 
-  if (!items) return null;
+  if (!data) return null;
+  const tracks = data.tracks;
+  // 未割り当て（ネタ出し中 #338）は参加者にも staff の閲覧表示にも出さない。
+  // 編集画面（下の ScheduleEditor）には全件そのまま渡す
+  const items = data.items.filter((it) => it.placement !== "unassigned");
   // 空のタイムテーブルは staff にだけ編集導線として見せる
   if (items.length === 0 && !isStaff) return null;
 
-  const times = computeScheduleTimes(items, eventStartsAt);
+  const times = computeScheduleTimes(
+    items,
+    eventStartsAt,
+    tracks.map((t) => t.id),
+  );
+  const trackName = new Map(tracks.map((t) => [t.id, t.name]));
   // 担当が全行空なら列ごと非表示（モバイルで内容欄を広く使う）
   const hasSpeakers = items.some((it) => it.speaker || it.speakerName);
 
@@ -82,12 +92,15 @@ export function EventSchedule({
           <ScheduleEditor
             eventId={eventId}
             eventStartsAt={eventStartsAt}
-            items={items}
+            items={data.items}
+            tracks={tracks}
             onClose={() => setEditing(false)}
           />
         ) : items.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            まだタイムテーブルはありません。右上の編集ボタンから作成できます。
+            {data.items.length === 0
+              ? "まだタイムテーブルはありません。右上の編集ボタンから作成できます。"
+              : "配置済みのセッションはまだありません。右上の編集ボタンから配置できます。"}
           </Typography>
         ) : (
           <TableContainer>
@@ -119,6 +132,26 @@ export function EventSchedule({
                       )}
                     </TableCell>
                     <TableCell sx={{ verticalAlign: "top" }}>
+                      {/* トラックを使っているイベントだけ、どの枠かを添える。
+                          全トラック共通の枠は全部に出るので何も出さない (#338) */}
+                      {tracks.length > 0 && it.placement === "tracks" && (
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          sx={{ mb: 0.25, flexWrap: "wrap" }}
+                          useFlexGap
+                        >
+                          {it.trackIds.map((tid) => (
+                            <Chip
+                              key={tid}
+                              size="small"
+                              variant="outlined"
+                              label={trackName.get(tid) ?? ""}
+                              sx={{ height: 18, fontSize: "0.7rem" }}
+                            />
+                          ))}
+                        </Stack>
+                      )}
                       <Typography variant="body2">
                         {it.title}
                         {it.materialUrl && (

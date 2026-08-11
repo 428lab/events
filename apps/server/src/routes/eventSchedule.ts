@@ -30,13 +30,18 @@ async function canViewTimetable(eventId: string, c: Context): Promise<boolean> {
 
 /* ===== 公開ハンドラ（未ログイン可。worker.ts で eventRoutes より先に登録） ===== */
 
-/** タイムテーブル一覧（閲覧できる人は誰でも） */
+/** タイムテーブル一覧（閲覧できる人は誰でも）。
+ * トラック (#338) も一緒に返す。時刻の計算にトラックの一覧が要るため、
+ * 別々に取ると片方だけ古い状態で描画されうる */
 export async function getEventTimetable(c: Context<AppEnv>) {
   const eventId = c.req.param("id")!;
   if (!(await canViewTimetable(eventId, c))) {
     return c.json({ error: "forbidden" }, 403);
   }
-  return c.json({ items: await eventScheduleRepo.listByEvent(eventId) });
+  return c.json({
+    items: await eventScheduleRepo.listByEvent(eventId),
+    tracks: await eventScheduleRepo.listTracks(eventId),
+  });
 }
 
 /* ===== 書き込み（要認証。staff のみ） ===== */
@@ -45,7 +50,8 @@ export const eventScheduleRoutes = new Hono<AppEnv>();
 eventScheduleRoutes.use("*", requireAuth);
 
 /** タイムテーブルの保存（全項目を送り、サーバーが差分で反映する。staff のみ #340）。
- * 既存項目の ID を送れば更新扱いになり、ID が保存をまたいで変わらない */
+ * 既存項目の ID を送れば更新扱いになり、ID が保存をまたいで変わらない。
+ * トラックの定義と割り当て (#338) も同じ保存で一緒に反映する */
 eventScheduleRoutes.put(
   "/:id/timetable",
   requireEventRole(["staff"]),
@@ -71,10 +77,13 @@ eventScheduleRoutes.put(
           ? it.speakerUserId
           : null,
     }));
-    const saved = await eventScheduleRepo.saveAll(eventId, items);
+    const saved = await eventScheduleRepo.saveAll(eventId, items, input.tracks);
     // OG サムネイルはレスポンスを待たせずバックグラウンドで取得 (#149)
     await deferBackground(refreshMaterialMeta(eventId));
-    return c.json({ items: saved });
+    return c.json({
+      items: saved,
+      tracks: await eventScheduleRepo.listTracks(eventId),
+    });
   },
 );
 

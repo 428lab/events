@@ -18,11 +18,14 @@ import { UserLink } from "./UserLink.js";
 /** 登壇資料のギャラリー (#149)。タイムテーブルのコマのうち資料URLがあるものを
  * OGサムネイル付きカードで一覧する。資料が1件もなければ非表示。 */
 export function EventMaterials({ eventId }: { eventId: string }) {
-  const { data: items } = useEventSchedule(eventId);
+  const { data } = useEventSchedule(eventId);
   const { data: me } = useMe();
   const [editing, setEditing] = useState<ScheduleItem | null>(null);
 
-  const materials = (items ?? []).filter((it) => it.materialUrl !== "");
+  // 未割り当て（ネタ出し中 #338）は参加者に見せない
+  const materials = (data?.items ?? []).filter(
+    (it) => it.materialUrl !== "" && it.placement !== "unassigned",
+  );
   if (materials.length === 0) return null;
 
   return (
