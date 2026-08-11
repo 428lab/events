@@ -8,6 +8,7 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import type { Event, EventRole } from "@eventer/shared";
 import { eventImageUrl } from "../api/hooks.js";
@@ -50,6 +51,7 @@ export function EventCard({
   role?: EventRole;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   const img = eventImageUrl(event);
   const color = eventColor(event.id);
   // 公開前は一覧のどこに出ても1枚で分かるようにする (#348)
@@ -186,7 +188,7 @@ export function EventCard({
                   {role && (
                     <Chip
                       size="small"
-                      label={roleLabel[role]}
+                      label={roleLabel(role)}
                       sx={{ flexShrink: 0, height: 18, fontSize: "0.6rem" }}
                     />
                   )}
@@ -205,7 +207,7 @@ export function EventCard({
                     fontSize="inherit"
                     sx={{ verticalAlign: "text-bottom", mr: 0.25 }}
                   />
-                  日程調整中
+                  {t("events.schedulingBadge")}
                 </>
               ) : (
                 formatDateRange(event.startsAt, event.endsAt)
@@ -343,7 +345,7 @@ export function EventCard({
                 sx={{ flexShrink: 0 }}
               >
                 {draft && <DraftChip />}
-                {role && <Chip size="small" label={roleLabel[role]} />}
+                {role && <Chip size="small" label={roleLabel(role)} />}
               </Stack>
             )}
           </Stack>
@@ -375,12 +377,15 @@ export function EventCard({
                   fontSize="inherit"
                   sx={{ verticalAlign: "text-bottom", mr: 0.25 }}
                 />
-                日程調整中
+                {t("events.schedulingBadge")}
               </>
             ) : (
               formatDateRange(event.startsAt, event.endsAt)
             )}{" "}
-            ・ {venueLabel[event.venueType]} ・ {participantCountLabel(event)}
+            {t("events.cardMeta", {
+              venue: venueLabel(event.venueType),
+              participants: participantCountLabel(event),
+            })}
           </Typography>
         </CardContent>
       </CardActionArea>

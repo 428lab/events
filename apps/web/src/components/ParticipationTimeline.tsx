@@ -120,8 +120,8 @@ export function groupByYear(
 
 /** 会場の表示。オンラインのURLはそのまま出さず種別だけにする */
 function venueText(event: MyEventSummary): string {
-  if (event.venueType === "online") return venueLabel.online;
-  return event.venueOffline?.trim() || venueLabel[event.venueType];
+  if (event.venueType === "online") return venueLabel("online");
+  return event.venueOffline?.trim() || venueLabel(event.venueType);
 }
 
 /** 日付ラベル（年はピル型見出しに任せず、カードでも通しで読めるようにする） */

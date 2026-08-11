@@ -20,6 +20,7 @@ import type { CheckinUser } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { api, ApiError } from "../api/client.js";
 import { lookupMember, postCheckin } from "../api/checkinHooks.js";
+import { dateLocale } from "../i18n/index.js";
 
 /**
  * QR受付（スタッフ用リーダー） (#154)。スマホでの利用が前提。
@@ -453,7 +454,7 @@ export function CheckinPage() {
                   alignItems="center"
                 >
                   <Typography variant="caption" color="text.secondary" sx={{ width: 60 }}>
-                    {new Date(e.at).toLocaleTimeString("ja-JP", {
+                    {new Date(e.at).toLocaleTimeString(dateLocale(), {
                       hour: "2-digit",
                       minute: "2-digit",
                       second: "2-digit",

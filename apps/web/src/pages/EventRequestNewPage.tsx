@@ -106,7 +106,7 @@ export function EventRequestNewPage() {
             >
               {VENUE_TYPES.map((v) => (
                 <ToggleButton key={v} value={v}>
-                  {venueLabel[v]}
+                  {venueLabel(v)}
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>

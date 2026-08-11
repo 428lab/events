@@ -1,4 +1,5 @@
 import { Box, Stack, ToggleButton, ToggleButtonGroup } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import ViewAgendaIcon from "@mui/icons-material/ViewAgenda";
 import GridViewIcon from "@mui/icons-material/GridView";
 import type { Event, EventRole } from "@eventer/shared";
@@ -7,6 +8,7 @@ import { useListColumns } from "../lib/useListColumns.js";
 
 /** 一覧見出し行の右側に置く 1列⇔2列 表示切替トグル。 */
 export function ListColumnsToggle() {
+  const { t } = useTranslation();
   const [columns, setColumns] = useListColumns();
   return (
     <ToggleButtonGroup
@@ -16,13 +18,13 @@ export function ListColumnsToggle() {
       onChange={(_e, v: 1 | 2 | null) => {
         if (v != null) setColumns(v);
       }}
-      aria-label="表示列数"
+      aria-label={t("events.columns")}
       sx={{ flexShrink: 0 }}
     >
-      <ToggleButton value={1} aria-label="1列表示">
+      <ToggleButton value={1} aria-label={t("events.columnsOne")}>
         <ViewAgendaIcon fontSize="small" />
       </ToggleButton>
-      <ToggleButton value={2} aria-label="2列表示">
+      <ToggleButton value={2} aria-label={t("events.columnsTwo")}>
         <GridViewIcon fontSize="small" />
       </ToggleButton>
     </ToggleButtonGroup>

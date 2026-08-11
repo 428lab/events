@@ -322,7 +322,7 @@ export function EditEventPage() {
           >
             {VENUE_TYPES.map((v) => (
               <MenuItem key={v} value={v}>
-                {venueLabel[v]}
+                {venueLabel(v)}
               </MenuItem>
             ))}
           </TextField>

@@ -10,6 +10,7 @@ import {
 import RssFeedIcon from "@mui/icons-material/RssFeed";
 import AddIcon from "@mui/icons-material/Add";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { EventsBrowser } from "../components/EventsBrowser.js";
 import { EggTabs } from "../components/EggTabs.js";
 import { useMe } from "../api/hooks.js";
@@ -17,6 +18,7 @@ import { useMe } from "../api/hooks.js";
 /** イベント一覧のフィード購読導線（RSS / JSON Feed / iCalendar）。
  * /feed/* は SPA ルートではなくワーカーが直接返すので通常の <a>（Link href）で開く。 */
 function FeedLinks() {
+  const { t } = useTranslation();
   return (
     <Box sx={{ pt: 3, borderTop: 1, borderColor: "divider" }}>
       <Stack
@@ -28,7 +30,7 @@ function FeedLinks() {
       >
         <RssFeedIcon fontSize="small" sx={{ color: "text.secondary" }} />
         <Typography variant="body2" color="text.secondary">
-          イベント一覧をフィードで購読:
+          {t("events.feedSubscribe")}
         </Typography>
         <Link href="/feed/events.rss" target="_blank" rel="noopener" variant="body2">
           RSS
@@ -36,14 +38,14 @@ function FeedLinks() {
         <Link href="/feed/events.json" target="_blank" rel="noopener" variant="body2">
           JSON Feed
         </Link>
-        <Tooltip title="カレンダーアプリで購読できます">
+        <Tooltip title={t("events.feedIcsHint")}>
           <Link href="/feed/events.ics" target="_blank" rel="noopener" variant="body2">
-            カレンダー(.ics)
+            {t("events.feedIcs")}
           </Link>
         </Tooltip>
-        <Tooltip title="AIエージェント向けにフィードとクエリ仕様をまとめた llms.txt">
+        <Tooltip title={t("events.feedLlmsHint")}>
           <Link href="/llms.txt" target="_blank" rel="noopener" variant="body2">
-            AI向け(llms.txt)
+            {t("events.feedLlms")}
           </Link>
         </Tooltip>
       </Stack>
@@ -52,6 +54,7 @@ function FeedLinks() {
 }
 
 export function PublicEventsPage() {
+  const { t } = useTranslation();
   const { data: me } = useMe();
   return (
     <Box>
@@ -70,14 +73,14 @@ export function PublicEventsPage() {
                   to="/events/new"
                   sx={{ display: { xs: "none", sm: "inline-flex" } }}
                 >
-                  イベント作成
+                  {t("events.create")}
                 </Button>
-                <Tooltip title="イベント作成">
+                <Tooltip title={t("events.create")}>
                   <IconButton
                     color="primary"
                     component={RouterLink}
                     to="/events/new"
-                    aria-label="イベント作成"
+                    aria-label={t("events.create")}
                     sx={{
                       display: { xs: "inline-flex", sm: "none" },
                       bgcolor: "primary.main",

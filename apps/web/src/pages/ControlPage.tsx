@@ -191,7 +191,7 @@ export function ControlPage() {
                 <Box key={j.userId}>
                   <Stack direction="row" justifyContent="space-between">
                     <Typography variant="body2">
-                      {j.name}（{roleLabel[j.role as keyof typeof roleLabel] ?? j.role}）
+                      {j.name}（{roleLabel(j.role)}）
                     </Typography>
                     <Typography
                       variant="body2"

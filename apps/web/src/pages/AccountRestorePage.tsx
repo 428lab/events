@@ -11,16 +11,19 @@ import {
 import type { PendingDeletion } from "@eventer/shared";
 import { useLogout, useRestoreAccount } from "../api/hooks.js";
 import { ApiError } from "../api/client.js";
+import { dateLocale } from "../i18n/index.js";
 
-/** JST 表記の日付（例: 2026年9月3日 12:34） */
+/** 復元できる期限。**タイムゾーンは日本時間に固定**（サーバーの締めがJSTのため）。
+ * 端末の時刻と読み違えられないよう、タイムゾーン名も一緒に出す (#352) */
 function dateText(ms: number): string {
-  return new Intl.DateTimeFormat("ja-JP", {
+  return new Intl.DateTimeFormat(dateLocale(), {
     timeZone: "Asia/Tokyo",
     year: "numeric",
     month: "long",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZoneName: "short",
   }).format(ms);
 }
 

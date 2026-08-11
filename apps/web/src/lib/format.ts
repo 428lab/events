@@ -1,4 +1,11 @@
 import type { Event, EventRole, VenueType } from "@eventer/shared";
+import { dateLocale, i18next, tDynamic } from "../i18n/index.js";
+
+/**
+ * 日時の書式は **端末のタイムゾーンのまま、ロケールだけ切り替える** (#352)。
+ * Intl に timeZone を渡していないのは意図的（利用者ごとのタイムゾーン設定は
+ * 作らない）。テストのタイムゾーン固定 (#322) もそのまま効く。
+ */
 
 export function formatDateRange(startsAt: number, endsAt: number): string {
   const s = new Date(startsAt);
@@ -10,7 +17,7 @@ export function formatDateRange(startsAt: number, endsAt: number): string {
   const sameYear = s.getFullYear() === e.getFullYear();
 
   // 開始は常に年つき
-  const start = new Intl.DateTimeFormat("ja-JP", {
+  const start = new Intl.DateTimeFormat(dateLocale(), {
     year: "numeric",
     month: "numeric",
     day: "numeric",
@@ -20,7 +27,7 @@ export function formatDateRange(startsAt: number, endsAt: number): string {
 
   // 終了は重複を避けて簡潔に（同日→時刻のみ / 同年→月日＋時刻 / 別年→年つき）
   const end = new Intl.DateTimeFormat(
-    "ja-JP",
+    dateLocale(),
     sameDay
       ? { hour: "2-digit", minute: "2-digit" }
       : sameYear
@@ -34,12 +41,12 @@ export function formatDateRange(startsAt: number, endsAt: number): string {
           },
   ).format(e);
 
-  return `${start} 〜 ${end}`;
+  return i18next.t("common.dateRange", { start, end });
 }
 
 /** 単一日時を日本語表記（年つき） */
 export function formatDateTime(ms: number): string {
-  return new Intl.DateTimeFormat("ja-JP", {
+  return new Intl.DateTimeFormat(dateLocale(), {
     year: "numeric",
     month: "numeric",
     day: "numeric",
@@ -50,7 +57,7 @@ export function formatDateTime(ms: number): string {
 
 /** 月日のみ（例: "3/15"）。年は見出しで区切る年表の日付欄で使う (#308) */
 export function formatMonthDay(ms: number): string {
-  return new Intl.DateTimeFormat("ja-JP", {
+  return new Intl.DateTimeFormat(dateLocale(), {
     month: "numeric",
     day: "numeric",
   }).format(ms);
@@ -58,7 +65,7 @@ export function formatMonthDay(ms: number): string {
 
 /** 時刻のみ（HH:mm） */
 export function formatTime(ms: number): string {
-  return new Intl.DateTimeFormat("ja-JP", {
+  return new Intl.DateTimeFormat(dateLocale(), {
     hour: "2-digit",
     minute: "2-digit",
   }).format(ms);
@@ -70,10 +77,11 @@ export function formatRemaining(target: number, now = Date.now()): string {
   const diff = target - now;
   if (diff <= 0) return "";
   const hours = Math.floor(diff / 3600000);
-  if (hours >= 1) return `あと${hours}時間`;
+  if (hours >= 1) return i18next.t("common.remainingHours", { n: hours });
   // 1時間未満は分単位。切り上げて「あと0分」を出さない。
   // 59分台の切り上げが 60 になると「あと60分」＝1時間の表記と食い違うので 59 で止める
-  return `あと${Math.min(59, Math.max(1, Math.ceil(diff / 60000)))}分`;
+  const minutes = Math.min(59, Math.max(1, Math.ceil(diff / 60000)));
+  return i18next.t("common.remainingMinutes", { n: minutes });
 }
 
 /** epoch ms → datetime-local の value（ローカル時刻 "YYYY-MM-DDTHH:mm"） */
@@ -90,18 +98,16 @@ export function fromDateTimeLocal(s: string): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-export const roleLabel: Record<EventRole, string> = {
-  participant: "参加者",
-  staff: "スタッフ",
-  judge: "審査員",
-  observer: "観覧者",
-};
+/** イベント内での立場のラベル。訳は packages/shared/src/i18n が持つ。
+ * 知らない値が来たらそのまま返す（サーバーが増やしても画面は壊れない） */
+export function roleLabel(role: EventRole | string): string {
+  return tDynamic(`role.${role}`, String(role));
+}
 
-export const venueLabel: Record<VenueType, string> = {
-  offline: "オフライン",
-  online: "オンライン",
-  hybrid: "ハイブリッド",
-};
+/** 開催形態のラベル。知らない値はそのまま返す */
+export function venueLabel(venue: VenueType | string): string {
+  return tDynamic(`venue.${venue}`, String(venue));
+}
 
 /** 人数表示に使うイベント項目 */
 type CountableEvent = Pick<
@@ -140,9 +146,15 @@ export function participantCountLabel(
 ): string {
   const base =
     event.capacityTotal == null
-      ? `参加 ${event.participantCount} 人`
-      : `参加 ${event.participantCount} / ${event.capacityTotal} 人`;
+      ? i18next.t("common.participants", { n: event.participantCount })
+      : i18next.t("common.participantsOfCapacity", {
+          n: event.participantCount,
+          total: event.capacityTotal,
+        });
   return showsAttendedCount(event, now)
-    ? `${base}・出席 ${event.attendedCount} 人`
+    ? i18next.t("common.participantsWithAttended", {
+        base,
+        n: event.attendedCount,
+      })
     : base;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AppBar,
   Avatar,
@@ -22,6 +23,7 @@ import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import { useBundleReload } from "../lib/useBundleReload.js";
 import { useNavCollapse } from "../lib/useNavCollapse.js";
 import type { User } from "@eventer/shared";
+import type { TranslationResource } from "@eventer/shared/i18n";
 import { useIsAdmin, useLogout } from "../api/hooks.js";
 import { useAdminInquiryUnreadCount } from "../api/inquiryHooks.js";
 import { useAbuseUnreviewedCount } from "../api/abuseHooks.js";
@@ -34,33 +36,39 @@ import { VersionFooter } from "./VersionFooter.js";
 /**
  * 横並びナビとハンバーガーで同じものを出すため、項目は1か所で定義する。
  * （別々に書いていると片方に追加し忘れて到達できない項目ができる）
+ *
+ * 文言そのものは持たず**翻訳キーだけ**を持つ (#352)。訳は
+ * packages/shared/src/i18n/messages/nav.ts にある
  */
-const NAV_ITEMS = [
-  { to: "/communities", label: "コミュニティ" },
-  { to: "/venues", label: "会場" },
-  { to: "/decks", label: "スライド" },
-  { to: "/live-sets", label: "配信" },
+type NavKey = `nav.${keyof TranslationResource["nav"]}`;
+
+const NAV_ITEMS: readonly { to: string; key: NavKey }[] = [
+  { to: "/communities", key: "nav.communities" },
+  { to: "/venues", key: "nav.venues" },
+  { to: "/decks", key: "nav.decks" },
+  { to: "/live-sets", key: "nav.liveSets" },
   // マイページは自分のプロフィールページに統合したので、ここは設定に置き換えた。
   // 自分のページへは右上のアイコンから行く (#319)
-  { to: "/account", label: "設定" },
-] as const;
+  { to: "/account", key: "nav.settings" },
+];
 
 type AdminItem = {
   to: string;
-  label: string;
+  /** 翻訳キー。辞書の nav.* に無い名前を書いたら型で落ちる */
+  key: NavKey;
   /** 未読件数バッジの種別 */
   badge?: "inquiry" | "abuse";
 };
 
 const ADMIN_ITEMS: readonly AdminItem[] = [
-  { to: "/admin/inquiries", label: "問い合わせ管理", badge: "inquiry" },
-  { to: "/admin/settings", label: "運用設定" },
-  { to: "/admin/kpi", label: "KPI" },
-  { to: "/admin/trending", label: "注目" },
-  { to: "/admin/stats", label: "統計" },
-  { to: "/admin/abuse", label: "要確認", badge: "abuse" },
-  { to: "/admin/moderation", label: "コンテンツの対処" },
-  { to: "/admin/audit-logs", label: "監査ログ" },
+  { to: "/admin/inquiries", key: "nav.adminInquiries", badge: "inquiry" },
+  { to: "/admin/settings", key: "nav.adminSettings" },
+  { to: "/admin/kpi", key: "nav.adminKpi" },
+  { to: "/admin/trending", key: "nav.adminTrending" },
+  { to: "/admin/stats", key: "nav.adminStats" },
+  { to: "/admin/abuse", key: "nav.adminAbuse", badge: "abuse" },
+  { to: "/admin/moderation", key: "nav.adminModeration" },
+  { to: "/admin/audit-logs", key: "nav.adminAudit" },
 ];
 
 export function Layout({
@@ -70,6 +78,7 @@ export function Layout({
   user: User;
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   const logout = useLogout();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -88,7 +97,10 @@ export function Layout({
   const { data: abuseUnread } = useAbuseUnreviewedCount(isAdmin);
   const adminBadge = (adminUnread ?? 0) + (abuseUnread ?? 0);
   const adminBadgeTitle = adminBadge
-    ? `問い合わせ未読 ${adminUnread ?? 0} 件 / 要確認 ${abuseUnread ?? 0} 件`
+    ? t("nav.operationsBreakdown", {
+        inquiries: adminUnread ?? 0,
+        abuse: abuseUnread ?? 0,
+      })
     : "";
   // 運営への招待 (#339)。返事待ちがあるときだけ導線を出す。承諾するまで
   // イベントページは開けないので、通知を見落とすと辿り着けなくなるため。
@@ -181,7 +193,7 @@ export function Layout({
             >
               {isAdmin && (
                 <Chip
-                  label="運営管理者"
+                  label={t("nav.adminBadge")}
                   size="small"
                   color="secondary"
                   sx={{ mr: 0.5, color: "#fff" }}
@@ -195,7 +207,7 @@ export function Layout({
                   to={item.to}
                   sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
                 >
-                  {item.label}
+                  {t(item.key)}
                 </Button>
               ))}
               {isAdmin && (
@@ -207,7 +219,7 @@ export function Layout({
                     sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
                   >
                     <Badge badgeContent={adminBadge} color="error">
-                      運用
+                      {t("nav.operations")}
                     </Badge>
                   </Button>
                 </Tooltip>
@@ -217,7 +229,7 @@ export function Layout({
                 onClick={doLogout}
                 sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
               >
-                ログアウト
+                {t("nav.logout")}
               </Button>
             </Box>
           </Box>
@@ -227,12 +239,12 @@ export function Layout({
             sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}
           >
             {pendingInvites > 0 && (
-              <Tooltip title={`運営への招待 ${pendingInvites} 件`}>
+              <Tooltip title={t("nav.staffInvites", { n: pendingInvites })}>
                 <IconButton
                   color="inherit"
                   component={RouterLink}
                   to="/staff-invites"
-                  aria-label={`運営への招待 ${pendingInvites} 件`}
+                  aria-label={t("nav.staffInvites", { n: pendingInvites })}
                 >
                   <Badge badgeContent={pendingInvites} color="error">
                     <GroupAddIcon />
@@ -247,7 +259,7 @@ export function Layout({
               component={RouterLink}
               to={`/users/${encodeURIComponent(user.username)}`}
               src={user.avatarUrl ?? undefined}
-              title="自分のプロフィール"
+              title={t("nav.myProfile")}
               sx={{
                 width: 32,
                 height: 32,
@@ -263,7 +275,7 @@ export function Layout({
                 color="inherit"
                 edge="end"
                 onClick={(e) => setAnchor(e.currentTarget)}
-                aria-label="メニュー"
+                aria-label={t("nav.menu")}
               >
                 <MenuIcon />
               </IconButton>
@@ -282,7 +294,7 @@ export function Layout({
                 to={item.to}
                 onClick={() => setAdminAnchor(null)}
               >
-                {item.label}
+                {t(item.key)}
                 {Boolean(badgeCount(item.badge)) && (
                   <Chip
                     size="small"
@@ -304,7 +316,7 @@ export function Layout({
                 to={item.to}
                 onClick={closeMenu}
               >
-                {item.label}
+                {t(item.key)}
               </MenuItem>
             ))}
             <MenuItem
@@ -312,14 +324,14 @@ export function Layout({
               to="/notifications"
               onClick={closeMenu}
             >
-              お知らせ
+              {t("nav.notifications")}
             </MenuItem>
             <MenuItem component={RouterLink} to="/inquiries" onClick={closeMenu}>
-              お問い合わせ
+              {t("nav.inquiries")}
             </MenuItem>
             {isAdmin && (
               <ListSubheader sx={{ lineHeight: "32px", bgcolor: "transparent" }}>
-                運用
+                {t("nav.operations")}
               </ListSubheader>
             )}
             {isAdmin &&
@@ -331,7 +343,7 @@ export function Layout({
                   onClick={closeMenu}
                   sx={{ pl: 3 }}
                 >
-                  {item.label}
+                  {t(item.key)}
                   {Boolean(badgeCount(item.badge)) && (
                     <Chip
                       size="small"
@@ -348,7 +360,7 @@ export function Layout({
                 doLogout();
               }}
             >
-              ログアウト
+              {t("nav.logout")}
             </MenuItem>
           </Menu>
         </Toolbar>

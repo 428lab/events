@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Box, Button, Card, CardContent, Stack, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthProviders, useDevLogin } from "../api/hooks.js";
@@ -8,6 +9,7 @@ import { hasNip07, nostrNip07Login } from "../lib/nostr.js";
 import { safeRedirectPath } from "../lib/safeRedirect.js";
 
 export function LoginPage() {
+  const { t } = useTranslation();
   const devLogin = useDevLogin();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -35,8 +37,8 @@ export function LoginPage() {
     } catch (e) {
       setNostrError(
         e instanceof Error && e.message === "no_extension"
-          ? "NIP-07 対応拡張（Alby、nos2x など）が見つかりません。インストールしてから再度お試しください。"
-          : "Nostr ログインに失敗しました。",
+          ? t("login.extensionMissing")
+          : t("login.signInFailed"),
       );
     } finally {
       setNostrBusy(false);
@@ -52,7 +54,7 @@ export function LoginPage() {
               events lab
             </Typography>
             <Typography color="text.secondary" textAlign="center">
-              募集から配信まで全部やる、イベント運営ツール
+              {t("login.tagline")}
             </Typography>
 
             <Stack spacing={1.5} sx={{ width: "100%" }}>
@@ -79,7 +81,7 @@ export function LoginPage() {
                         : undefined
                     }
                   >
-                    {providerLabel(p)} でログイン
+                    {t("login.signInWith", { provider: providerLabel(p) })}
                   </Button>
                 );
               })}
@@ -98,13 +100,14 @@ export function LoginPage() {
                   },
                 }}
               >
-                {nostrBusy ? "確認中…" : "Nostr でログイン (NIP-07)"}
+                {nostrBusy
+                  ? t("login.checking")
+                  : t("login.signInWith", { provider: providerLabel("nostr") })}
               </Button>
               {nostrError && <Alert severity="warning">{nostrError}</Alert>}
               {!hasNip07() && !nostrError && (
                 <Typography variant="caption" color="text.secondary">
-                  Nostr ログインにはブラウザの NIP-07 拡張（Alby、nos2x
-                  など）が必要です。
+                  {t("login.extensionHint")}
                 </Typography>
               )}
             </Stack>
@@ -120,10 +123,10 @@ export function LoginPage() {
                     devLogin.mutate(undefined, { onSuccess: () => navigate("/me") })
                   }
                 >
-                  開発用ログイン
+                  {t("login.devLogin")}
                 </Button>
                 <Typography variant="caption" color="text.secondary">
-                  ※ 開発用ログインは開発環境でのみ動作します
+                  {t("login.devLoginNote")}
                 </Typography>
               </>
             )}
