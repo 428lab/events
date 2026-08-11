@@ -205,7 +205,7 @@ describe("イベントのタイムテーブル (#116)", () => {
     expect(items).toHaveLength(1);
   });
 
-  it("保存は全置き換え：3件のあと2件を保存すると2件だけ残る", async () => {
+  it("ID を付けずに送ると全入れ替え：3件のあと2件を保存すると2件だけ残る", async () => {
     const admin = await loginDev();
     const eventId = await setupEvent(admin);
 
@@ -223,6 +223,217 @@ describe("イベントのタイムテーブル (#116)", () => {
     const res = await getTimetable(eventId);
     const { items } = (await res.json()) as { items: ScheduleItem[] };
     expect(items.map((i) => i.title)).toEqual(["新その1", "新その2"]);
+  });
+});
+
+describe("スケジュールの差分保存 (#340)", () => {
+  /** 保存して、返ってきた項目一覧を取り出す */
+  async function save(
+    eventId: string,
+    cookie: string,
+    items: unknown[],
+  ): Promise<ScheduleItem[]> {
+    const res = await putTimetable(eventId, cookie, items);
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { items: ScheduleItem[] }).items;
+  }
+
+  /** 3件のコマを持つイベントを用意する */
+  async function setupThree(): Promise<{
+    admin: string;
+    eventId: string;
+    items: ScheduleItem[];
+  }> {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const items = await save(eventId, admin, [
+      { title: "オープニング", durationMin: 10 },
+      { title: "セッション", durationMin: 30 },
+      { title: "クロージング", durationMin: 10 },
+    ]);
+    expect(items).toHaveLength(3);
+    return { admin, eventId, items };
+  }
+
+  it("既存の ID を送れば、内容を書き換えても ID が保存をまたいで変わらない", async () => {
+    const { admin, eventId, items } = await setupThree();
+
+    const saved = await save(
+      eventId,
+      admin,
+      items.map((it) => ({
+        id: it.id,
+        title: it.title === "セッション" ? "セッション（改題）" : it.title,
+        durationMin: it.durationMin,
+      })),
+    );
+    expect(saved.map((i) => i.id)).toEqual(items.map((i) => i.id));
+    expect(saved[1].title).toBe("セッション（改題）");
+
+    // GET でも同じ ID のまま
+    const got = (await (await getTimetable(eventId)).json()) as {
+      items: ScheduleItem[];
+    };
+    expect(got.items.map((i) => i.id)).toEqual(items.map((i) => i.id));
+  });
+
+  it("追加・更新・削除がそれぞれ効き、触っていないコマの ID は保たれる", async () => {
+    const { admin, eventId, items } = await setupThree();
+
+    // 真ん中を消し、末尾に1件足し、先頭の所要時間だけ変える
+    const saved = await save(eventId, admin, [
+      { id: items[0].id, title: items[0].title, durationMin: 15 },
+      { id: items[2].id, title: items[2].title, durationMin: 10 },
+      { title: "懇親会", durationMin: 60 },
+    ]);
+
+    expect(saved.map((i) => i.title)).toEqual([
+      "オープニング",
+      "クロージング",
+      "懇親会",
+    ]);
+    expect(saved[0].id).toBe(items[0].id);
+    expect(saved[0].durationMin).toBe(15);
+    expect(saved[1].id).toBe(items[2].id);
+    // 消したコマの ID は復活しない。追加分は新しい ID
+    expect(saved.map((i) => i.id)).not.toContain(items[1].id);
+    expect(saved[2].id).not.toBe(items[1].id);
+  });
+
+  it("並べ替えは配列順どおりに反映され、ID は変わらない", async () => {
+    const { admin, eventId, items } = await setupThree();
+
+    const reordered = [items[2], items[0], items[1]];
+    const saved = await save(
+      eventId,
+      admin,
+      reordered.map((it) => ({
+        id: it.id,
+        title: it.title,
+        durationMin: it.durationMin,
+      })),
+    );
+    expect(saved.map((i) => i.id)).toEqual(reordered.map((i) => i.id));
+    expect(saved.map((i) => i.title)).toEqual([
+      "クロージング",
+      "オープニング",
+      "セッション",
+    ]);
+    expect(saved.map((i) => i.sortOrder)).toEqual([0, 1, 2]);
+
+    // 並び順は GET でも維持される
+    const got = (await (await getTimetable(eventId)).json()) as {
+      items: ScheduleItem[];
+    };
+    expect(got.items.map((i) => i.id)).toEqual(reordered.map((i) => i.id));
+  });
+
+  it("staff が保存し直しても、登壇者本人の資料URL編集が同じコマに当たり続ける", async () => {
+    const admin = await loginDev();
+    const eventId = await setupEvent(admin);
+    const speaker = await makeMember(eventId, "participant");
+    const before = await save(eventId, admin, [
+      { title: "オープニング", durationMin: 10 },
+      { title: "登壇枠", durationMin: 30, speakerUserId: speaker.userId },
+    ]);
+    const itemId = before[1].id;
+
+    // staff が別のコマを追加して保存（差分保存なので登壇枠の ID は変わらない）
+    const after = await save(eventId, admin, [
+      ...before.map((it) => ({
+        id: it.id,
+        title: it.title,
+        durationMin: it.durationMin,
+        speakerUserId: it.speakerUserId,
+        materialUrl: it.materialUrl,
+      })),
+      { title: "追加された枠", durationMin: 10 },
+    ]);
+    expect(after[1].id).toBe(itemId);
+
+    // 保存前に取得した ID のままで登壇者本人が資料URLを更新できる
+    const patched = await patchMaterial(
+      eventId,
+      itemId,
+      speaker.cookie,
+      "https://127.0.0.1/my-deck",
+    );
+    expect(patched.status).toBe(200);
+    const got = (await (await getTimetable(eventId)).json()) as {
+      items: ScheduleItem[];
+    };
+    expect(got.items.find((i) => i.id === itemId)!.materialUrl).toBe(
+      "https://127.0.0.1/my-deck",
+    );
+    // 別のコマには波及しない
+    expect(got.items.filter((i) => i.materialUrl !== "")).toHaveLength(1);
+  });
+
+  it("他イベントの ID・重複した ID は乗っ取れず、新規コマとして採番される", async () => {
+    const { admin, eventId, items } = await setupThree();
+    const otherEventId = await setupEvent(admin);
+    const otherItems = await save(otherEventId, admin, [
+      { title: "別イベントの枠", durationMin: 10 },
+    ]);
+
+    const saved = await save(eventId, admin, [
+      // 別イベントの ID
+      { id: otherItems[0].id, title: "乗っ取り", durationMin: 10 },
+      // 同じ ID を2回
+      { id: items[0].id, title: "本物", durationMin: 10 },
+      { id: items[0].id, title: "複製", durationMin: 10 },
+    ]);
+    expect(saved.map((i) => i.title)).toEqual(["乗っ取り", "本物", "複製"]);
+    expect(saved[0].id).not.toBe(otherItems[0].id);
+    expect(saved[1].id).toBe(items[0].id);
+    expect(saved[2].id).not.toBe(items[0].id);
+    expect(new Set(saved.map((i) => i.id)).size).toBe(3);
+
+    // 別イベントの内容は無傷
+    const other = (await (await getTimetable(otherEventId)).json()) as {
+      items: ScheduleItem[];
+    };
+    expect(other.items).toHaveLength(1);
+    expect(other.items[0].title).toBe("別イベントの枠");
+  });
+
+  it("URL を変えずに保存しても取得済みのOGサムネイルが消えない", async () => {
+    const { admin, eventId, items } = await setupThree();
+    const url = "https://example.com/deck";
+    // OG 取得は外部ネットワークに出るので、取得済みの状態を直接作る
+    // （og_url == material_url なのでバックグラウンド再取得の対象にならない）
+    await env.DB.prepare(
+      "UPDATE event_schedule_item SET material_url = ?, material_og_image = ?, material_og_url = ? WHERE id = ?",
+    )
+      .bind(url, "https://cdn.example.com/og.png", url, items[1].id)
+      .run();
+
+    // タイトルだけ変えて保存（URL は据え置き）
+    const saved = await save(
+      eventId,
+      admin,
+      items.map((it) => ({
+        id: it.id,
+        title: `${it.title}!`,
+        durationMin: it.durationMin,
+        materialUrl: it.id === items[1].id ? url : "",
+      })),
+    );
+    expect(saved[1].materialUrl).toBe(url);
+    expect(saved[1].materialOgImage).toBe("https://cdn.example.com/og.png");
+
+    // URL を変えたらキャッシュは落ちる（再取得に任せる）
+    const changed = await save(
+      eventId,
+      admin,
+      saved.map((it) => ({
+        id: it.id,
+        title: it.title,
+        durationMin: it.durationMin,
+        materialUrl: it.id === saved[1].id ? "https://127.0.0.1/other" : "",
+      })),
+    );
+    expect(changed[1].materialOgImage).toBe("");
   });
 });
 

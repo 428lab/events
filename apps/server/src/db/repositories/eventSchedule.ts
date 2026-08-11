@@ -70,30 +70,79 @@ export const eventScheduleRepo = {
     return rows.map(toItem);
   },
 
-  /** 全項目をアトミックに置き換える（削除＋一括挿入）。並び順は配列順。
-   * OG サムネイルは URL が同じ既存項目からキャッシュを引き継ぐ
+  /** 送られた全項目をアトミックに反映する (#340)。
+   * ID が既存項目と一致すれば更新（＝ID が保存をまたいで変わらない）、
+   * ID 無し・未知の ID は追加、送られなかった既存項目は削除。並び順は配列順。
+   *
+   * ID を安定させるのは、登壇者本人の資料URL編集 (#148) が他人の保存で
+   * 迷子にならないようにするためと、セッションを ID で参照する後続機能
+   * （トラック割り当て #338）が保存のたびに消えないようにするため。
+   *
+   * OG サムネイルは、URL が変わらない項目はそのまま残し、新規・URL 変更時は
+   * 同じ URL を持つ既存項目からキャッシュを引き継ぐ
    * （保存のたびに全再取得してサムネイルが一瞬消えるのを防ぐ） */
-  async replaceAll(
+  async saveAll(
     eventId: string,
     items: SaveScheduleItemInput[],
   ): Promise<ScheduleItem[]> {
     const now = Date.now();
-    // URL → 取得済みOGメタ の引き継ぎマップ
-    const ogByUrl = new Map<string, string>();
-    for (const row of await many<{ material_url: string; material_og_image: string; material_og_url: string }>(
-      "SELECT material_url, material_og_image, material_og_url FROM event_schedule_item WHERE event_id = ? AND material_og_url <> ''",
+    const existing = await many<{
+      id: string;
+      material_url: string;
+      material_og_image: string;
+      material_og_url: string;
+    }>(
+      "SELECT id, material_url, material_og_image, material_og_url FROM event_schedule_item WHERE event_id = ?",
       eventId,
-    )) {
-      if (row.material_og_url === row.material_url) {
+    );
+    const byId = new Map(existing.map((r) => [r.id, r]));
+    // URL → 取得済みOGメタ の引き継ぎマップ（新規・URL 変更時のみ使う）
+    const ogByUrl = new Map<string, string>();
+    for (const row of existing) {
+      if (row.material_og_url !== "" && row.material_og_url === row.material_url) {
         ogByUrl.set(row.material_url, row.material_og_image);
       }
     }
-    await batch([
-      {
-        sql: "DELETE FROM event_schedule_item WHERE event_id = ?",
-        args: [eventId],
-      },
-      ...items.map((it, i) => ({
+
+    const kept = new Set<string>();
+    const stmts: Array<{ sql: string; args: unknown[] }> = [];
+    items.forEach((it, i) => {
+      // 既存 ID との一致だけを更新対象にする。他イベントの ID や重複指定は
+      // 採用せず新規として採番し直す（クライアントの ID を主キーにしない）
+      const current = it.id && !kept.has(it.id) ? byId.get(it.id) : undefined;
+      if (current) {
+        kept.add(current.id);
+        // URL が変わらない限り OG キャッシュには触らない
+        const [ogImage, ogUrl] =
+          it.materialUrl === current.material_url
+            ? [current.material_og_image, current.material_og_url]
+            : ogByUrl.has(it.materialUrl)
+              ? [ogByUrl.get(it.materialUrl)!, it.materialUrl]
+              : ["", ""];
+        stmts.push({
+          sql: `UPDATE event_schedule_item
+            SET title = ?, description = ?, duration_min = ?, starts_at = ?,
+                speaker_user_id = ?, speaker_name = ?, material_url = ?,
+                material_og_image = ?, material_og_url = ?, sort_order = ?
+            WHERE id = ? AND event_id = ?`,
+          args: [
+            it.title,
+            it.description,
+            it.durationMin,
+            it.startsAt,
+            it.speakerUserId,
+            it.speakerName,
+            it.materialUrl,
+            ogImage,
+            ogUrl,
+            i,
+            current.id,
+            eventId,
+          ],
+        });
+        return;
+      }
+      stmts.push({
         sql: `INSERT INTO event_schedule_item
           (id, event_id, title, description, duration_min, starts_at,
            speaker_user_id, speaker_name, material_url, material_og_image, material_og_url, sort_order, created_at)
@@ -113,7 +162,16 @@ export const eventScheduleRepo = {
           i,
           now,
         ],
+      });
+    });
+
+    const removed = existing.filter((r) => !kept.has(r.id)).map((r) => r.id);
+    await batch([
+      ...removed.map((id) => ({
+        sql: "DELETE FROM event_schedule_item WHERE id = ? AND event_id = ?",
+        args: [id, eventId],
       })),
+      ...stmts,
     ]);
     return this.listByEvent(eventId);
   },

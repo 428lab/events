@@ -47,6 +47,8 @@ interface MemberOption {
 function newRow(partial?: Partial<SaveScheduleItemInput>): Row {
   return {
     key: crypto.randomUUID(),
+    // 既存項目から作る場合だけ id が入る。null は新規追加 (#340)
+    id: null,
     title: "",
     description: "",
     durationMin: SCHEDULE_DEFAULT_DURATION_MIN,
@@ -76,6 +78,9 @@ export function ScheduleEditor({
   const [rows, setRows] = useState<Row[]>(() =>
     items.map((it) =>
       newRow({
+        // 既存項目の ID を持ち回って保存時に送り返す。これが無いと保存のたびに
+        // 作り直しになり、資料URLの自己編集 (#148) が別のコマに当たる (#340)
+        id: it.id,
         title: it.title,
         description: it.description,
         durationMin: it.durationMin,
@@ -172,6 +177,7 @@ export function ScheduleEditor({
   const submit = () =>
     save.mutate(
       rows.map((r) => ({
+        id: r.id,
         title: r.title.trim(),
         description: r.description,
         durationMin: r.durationMin,

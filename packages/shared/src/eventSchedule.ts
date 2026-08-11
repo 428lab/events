@@ -47,6 +47,11 @@ const materialUrlInput = z
 
 /** タイムテーブルの保存入力（1項目）。並び順は配列順で決まる */
 export const saveScheduleItemInput = z.object({
+  /** 既存項目の ID。null / 未指定なら新規追加。
+   * 送られた ID が既存項目と一致する間は保存をまたいで ID が変わらない (#340)。
+   * サーバーは自分のイベントの既存 ID のみ採用し、それ以外は新規として
+   * 採番し直すので、この値をそのまま主キーにはしない */
+  id: z.string().max(64).nullable().default(null),
   title: z.string().trim().min(1).max(100),
   description: z.string().max(1000).default(""),
   durationMin: z.number().int().min(0).max(1440),
@@ -66,7 +71,9 @@ export type UpdateScheduleMaterialInput = z.infer<
   typeof updateScheduleMaterialInput
 >;
 
-/** タイムテーブルの保存入力（全項目の一括置き換え） */
+/** タイムテーブルの保存入力（全項目を送り、サーバーが差分で反映する #340）。
+ * 送られなかった既存項目は削除、ID 一致は更新、ID 無しは追加。
+ * 並び順は配列順（送った全項目に 0 から振り直す） */
 export const saveScheduleInput = z.object({
   items: z.array(saveScheduleItemInput).max(100),
 });

@@ -44,7 +44,8 @@ export async function getEventTimetable(c: Context<AppEnv>) {
 export const eventScheduleRoutes = new Hono<AppEnv>();
 eventScheduleRoutes.use("*", requireAuth);
 
-/** タイムテーブルの一括保存（全置き換え。staff のみ） */
+/** タイムテーブルの保存（全項目を送り、サーバーが差分で反映する。staff のみ #340）。
+ * 既存項目の ID を送れば更新扱いになり、ID が保存をまたいで変わらない */
 eventScheduleRoutes.put(
   "/:id/timetable",
   requireEventRole(["staff"]),
@@ -70,7 +71,7 @@ eventScheduleRoutes.put(
           ? it.speakerUserId
           : null,
     }));
-    const saved = await eventScheduleRepo.replaceAll(eventId, items);
+    const saved = await eventScheduleRepo.saveAll(eventId, items);
     // OG サムネイルはレスポンスを待たせずバックグラウンドで取得 (#149)
     await deferBackground(refreshMaterialMeta(eventId));
     return c.json({ items: saved });
