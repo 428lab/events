@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono";
-import type { EventRole } from "@eventer/shared";
+import type { Event, EventRole, User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { eventsRepo } from "../db/repositories/events.js";
@@ -30,18 +30,52 @@ export function requireEventRole(
       return;
     }
     // コミュニティ管理者（owner/admin）はそのコミュニティのイベントを staff 相当で管理可
-    if (roles.includes("staff")) {
-      const event = await eventsRepo.findById(eventId);
-      if (
-        event?.communityId &&
-        (await communitiesRepo.isManager(event.communityId, user.id))
-      ) {
-        await next();
-        return;
-      }
+    if (roles.includes("staff") && (await canManageEvent(eventId, user))) {
+      await next();
+      return;
     }
     return c.json({ error: "forbidden" }, 403);
   };
+}
+
+/**
+ * そのイベントを運営として操作できるか。**requireEventRole(["staff"]) と同じ基準**。
+ *
+ * ミドルウェアを通せない場面のためのもの。いまの用途は「招待した人がいまも運営か」
+ * を承諾の時点で確かめること (#339)：招待した人が降格・脱退・退会しても pending の
+ * 招待は残るので、そのままだと資格を失った人の招待で運営になれてしまう。
+ *
+ * 判定を requireEventRole と2か所に書くと必ずずれるので、あちらからもここを呼ぶ。
+ */
+export async function canManageEvent(
+  eventId: string,
+  user: User,
+): Promise<boolean> {
+  if (isAppAdmin(user)) return true;
+  const member = await eventMembersRepo.find(eventId, user.id);
+  if (member?.role === "staff") return true;
+  const event = await eventsRepo.findById(eventId);
+  return Boolean(
+    event?.communityId &&
+      (await communitiesRepo.isManager(event.communityId, user.id)),
+  );
+}
+
+/**
+ * イベントの中身を見てよいか。公開イベントは誰でも、下書きはメンバー/管理者のみ。
+ *
+ * 「メンバー行があるか」で判定する（承諾前の招待は権限を生まない）。招待の情報で
+ * 未公開イベントの ID を知れるようになった (#339) ので、イベント配下の GET は
+ * 一律これを通すこと。通していないと、承諾する前から中身が読めてしまう。
+ */
+export async function canViewEvent(
+  event: Event,
+  user: User | null,
+): Promise<boolean> {
+  if (event.status === "published") return true;
+  if (!user) return false;
+  if (isAppAdmin(user)) return true;
+  return Boolean(await eventMembersRepo.find(event.id, user.id));
 }
 
 /**

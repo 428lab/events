@@ -4,7 +4,7 @@ import type {
   StaffInviteStatus,
   User,
 } from "@eventer/shared";
-import { many, one, run, runCount } from "../client.js";
+import { batch, many, one, run, runCount } from "../client.js";
 
 /** 運営スタッフへの招待 (#339)。
  *
@@ -162,6 +162,62 @@ export const eventStaffInvitesRepo = {
       id,
     );
     return changed > 0;
+  },
+
+  /**
+   * 承諾を成立させる：招待を accepted にして、同時に staff のメンバー行を作る。
+   *
+   * **1回のバッチにまとめる**のが肝。別々に書くと、間で失敗したときに
+   * 「招待だけ消費されて運営になっていない」行が残り、本人には直す手立てが無い。
+   *
+   * 2文目以降は「この呼び出しで承諾できた場合だけ」書くよう、1文目が立てた
+   * responded_at と同じ値を条件に入れてある。単に status='accepted' を見るだけだと
+   * 前回の承諾で立った値にも当たり、二重実行でメンバー行を書き直してしまう。
+   *
+   * メンバー行の扱いは eventMembersRepo の add / setRole に合わせる。
+   * 取消済みの行は参加日時を今にして復活させ（並び順の公平のため）、出席の記録も
+   * 落とす。生きている行はロールだけ staff にして枠を外し、参加確定に揃える (#277)。
+   *
+   * @returns 承諾が成立したら true（返事待ちでなければ false）
+   */
+  async accept(
+    inviteId: string,
+    eventId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const now = Date.now();
+    // 「今回この呼び出しで承諾された招待か」。2文目以降のガード
+    const acceptedNow = `EXISTS (SELECT 1 FROM event_staff_invite i
+                                  WHERE i.id = ? AND i.event_id = ? AND i.user_id = ?
+                                    AND i.status = 'accepted' AND i.responded_at = ?)`;
+    const guard = [inviteId, eventId, userId, now];
+    const [changed] = await batch([
+      {
+        sql: `UPDATE event_staff_invite SET status = 'accepted', responded_at = ?
+               WHERE id = ? AND status = 'pending'`,
+        args: [now, inviteId],
+      },
+      {
+        sql: `INSERT INTO event_member
+                (id, event_id, user_id, role, slot_id, status, created_at)
+              SELECT ?, ?, ?, 'staff', NULL, 'confirmed', ?
+               WHERE ${acceptedNow}
+                 AND NOT EXISTS (SELECT 1 FROM event_member
+                                  WHERE event_id = ? AND user_id = ?)`,
+        args: [crypto.randomUUID(), eventId, userId, now, ...guard, eventId, userId],
+      },
+      {
+        sql: `UPDATE event_member
+                 SET role = 'staff', slot_id = NULL, status = 'confirmed',
+                     attended = CASE WHEN status = 'canceled' THEN 0 ELSE attended END,
+                     attended_at = CASE WHEN status = 'canceled' THEN NULL ELSE attended_at END,
+                     canceled_at = NULL, canceled_scheduling = 0,
+                     created_at = CASE WHEN status = 'canceled' THEN ? ELSE created_at END
+               WHERE event_id = ? AND user_id = ? AND ${acceptedNow}`,
+        args: [now, eventId, userId, ...guard],
+      },
+    ]);
+    return (changed ?? 0) > 0;
   },
 
   /** 運営側の一覧から片付ける（取り消し／断られた行の始末）。

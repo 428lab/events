@@ -16,7 +16,7 @@ import type {
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth, currentUser } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
+import { canViewEvent, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -59,8 +59,20 @@ export async function getEventScoreResults(c: Context) {
 
 scoringRoutes.use("*", requireAuth);
 
+/** イベント配下の GET を「そのイベントを見てよい人」に限る。
+ * 下書きのイベントIDは招待された人にも渡る (#339) ので、メンバーでない人に
+ * 採点項目名や進行状態を読ませない（イベント詳細 GET と同じ基準にそろえる） */
+async function requireEventVisible(c: Context): Promise<Response | null> {
+  const event = await eventsRepo.findById(c.req.param("id")!);
+  if (!event) return c.json({ error: "not_found" }, 404);
+  if (await canViewEvent(event, c.get("user"))) return null;
+  return c.json({ error: "forbidden" }, 403);
+}
+
 /** ===== 採点項目 ===== */
 scoringRoutes.get("/:id/criteria", async (c) => {
+  const denied = await requireEventVisible(c);
+  if (denied) return denied;
   return c.json({ criteria: await scoringCriteriaRepo.listByEvent(c.req.param("id")) });
 });
 
@@ -175,6 +187,8 @@ scoringRoutes.get(
 
 /** ===== 進行（モード/プレゼン/締切） ===== */
 scoringRoutes.get("/:id/state", async (c) => {
+  const denied = await requireEventVisible(c);
+  if (denied) return denied;
   return c.json(await eventStateRepo.getOrInit(c.req.param("id")));
 });
 

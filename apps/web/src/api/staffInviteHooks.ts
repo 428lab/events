@@ -84,6 +84,8 @@ export function inviteErrorMessage(err: unknown): string {
       return "その人はすでに運営です。";
     case "already_invited":
       return "その人にはすでに招待を送っています。返事を待つか、取り消してから送り直してください。";
+    case "inviter_not_staff":
+      return "招待した人は、このイベントの運営ではなくなりました。必要なら別の運営から招待し直してもらってください。";
     case "not_pending":
       return "この招待はすでに返事が済んでいます。画面を更新してください。";
     case "not_found":

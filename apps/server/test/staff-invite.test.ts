@@ -203,6 +203,127 @@ describe("運営スタッフへの招待 (#339)", () => {
     expect(await myInvites(guest)).toHaveLength(0);
   });
 
+  it("承諾前は、イベントIDを知っていても採点項目も進行状態も読めない", async () => {
+    const { owner, guest, eventId, inviteId } = await setupPendingInvite();
+    // 招待の情報でイベントIDは分かる（承諾の判断に要る）
+    expect((await myInvites(guest))[0]?.eventId).toBe(eventId);
+
+    for (const path of ["criteria", "state"]) {
+      const res = await SELF.fetch(`${BASE}/api/events/${eventId}/${path}`, {
+        headers: { cookie: guest.cookie },
+      });
+      expect(res.status).toBe(403);
+    }
+    // 承諾すればメンバーなので読める（運営には元から読める）
+    expect((await respond(inviteId, guest, "accept")).status).toBe(200);
+    for (const cookie of [guest.cookie, owner.cookie]) {
+      for (const path of ["criteria", "state"]) {
+        const res = await SELF.fetch(`${BASE}/api/events/${eventId}/${path}`, {
+          headers: { cookie },
+        });
+        expect(res.status).toBe(200);
+      }
+    }
+  });
+
+  it("招待した人が運営でなくなったら、その招待では運営になれない", async () => {
+    const owner = await makeUser();
+    const helper = await makeUser();
+    const guest = await makeUser();
+    const eventId = await createDraftEvent(owner);
+
+    // helper を運営にして、helper から guest を招待させる
+    expect((await invite(eventId, owner, helper.username)).status).toBe(201);
+    const [helperInvite] = await myInvites(helper);
+    expect((await respond(helperInvite!.id, helper, "accept")).status).toBe(200);
+    expect((await invite(eventId, helper, guest.username)).status).toBe(201);
+    const [pending] = await myInvites(guest);
+
+    // helper を一般参加者に降ろす（＝運営の資格を失う）
+    const demote = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/members/${helper.userId}/role`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json", cookie: owner.cookie },
+        body: JSON.stringify({ role: "participant" }),
+      },
+    );
+    expect(demote.status).toBe(200);
+
+    const res = await respond(pending!.id, guest, "accept");
+    expect(res.status).toBe(409);
+    expect((await json<{ error: string }>(res)).error).toBe("inviter_not_staff");
+    // 運営にはなっていないし、招待も消費されていない（招待し直せば承諾できる）
+    expect((await getEvent(eventId, guest)).status).toBe(404);
+    expect(await myInvites(guest)).toHaveLength(1);
+  });
+
+  it("承諾は招待の消費とメンバー行の作成が一度に起きる（片方だけ残らない）", async () => {
+    const { guest, eventId, inviteId } = await setupPendingInvite();
+    expect((await respond(inviteId, guest, "accept")).status).toBe(200);
+
+    const invited = await env.DB.prepare(
+      "SELECT status, responded_at FROM event_staff_invite WHERE id = ?",
+    )
+      .bind(inviteId)
+      .first<{ status: string; responded_at: number | null }>();
+    const member = await env.DB.prepare(
+      "SELECT role, status FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(eventId, guest.userId)
+      .first<{ role: string; status: string }>();
+    expect(invited?.status).toBe("accepted");
+    expect(invited?.responded_at).toBeGreaterThan(0);
+    expect(member).toMatchObject({ role: "staff", status: "confirmed" });
+
+    // 二度目は招待が返事待ちでないので通らない（メンバー行も書き換わらない）
+    expect((await respond(inviteId, guest, "accept")).status).toBe(404);
+  });
+
+  it("参加を取り消した人が招待を承諾すると、運営として復活する", async () => {
+    const owner = await makeUser();
+    const guest = await makeUser();
+    const eventId = await createDraftEvent(owner);
+    await SELF.fetch(`${BASE}/api/events/${eventId}/publish`, {
+      method: "POST",
+      headers: { cookie: owner.cookie },
+    });
+    // 参加してから取り消す（取消済みの行が残る）
+    await SELF.fetch(`${BASE}/api/events/${eventId}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: guest.cookie },
+      body: JSON.stringify({}),
+    });
+    await SELF.fetch(`${BASE}/api/events/${eventId}/join`, {
+      method: "DELETE",
+      headers: { cookie: guest.cookie },
+    });
+    expect(
+      (
+        await env.DB.prepare(
+          "SELECT status FROM event_member WHERE event_id = ? AND user_id = ?",
+        )
+          .bind(eventId, guest.userId)
+          .first<{ status: string }>()
+      )?.status,
+    ).toBe("canceled");
+
+    expect((await invite(eventId, owner, guest.username)).status).toBe(201);
+    const [pending] = await myInvites(guest);
+    expect((await respond(pending!.id, guest, "accept")).status).toBe(200);
+    const member = await env.DB.prepare(
+      "SELECT role, status, canceled_at FROM event_member WHERE event_id = ? AND user_id = ?",
+    )
+      .bind(eventId, guest.userId)
+      .first<{ role: string; status: string; canceled_at: number | null }>();
+    expect(member).toMatchObject({
+      role: "staff",
+      status: "confirmed",
+      canceled_at: null,
+    });
+    expect((await editEvent(eventId, guest)).status).toBe(200);
+  });
+
   it("他人宛の招待は承諾も辞退もできない", async () => {
     const { guest, inviteId, eventId } = await setupPendingInvite();
     const stranger = await makeUser();

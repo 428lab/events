@@ -3,7 +3,7 @@ import { createStaffInviteInput } from "@eventer/shared";
 import type { CreateStaffInviteInput, Event, User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
+import { canManageEvent, requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import {
@@ -180,17 +180,24 @@ myStaffInviteRoutes.post("/:inviteId/accept", async (c) => {
   if (!found) return c.json({ error: "not_found" }, 404);
   const { invite, event } = found;
 
-  // 取り消しと同時押しになった場合はここで負ける（pending のときだけ進む）
-  if (!(await eventStaffInvitesRepo.resolveIfPending(invite.id, "accepted"))) {
+  // 招待した人がいまも運営かを、承諾のこの時点で確かめる。
+  // 降格・脱退・退会しても pending の招待は残るので、見ないと資格を失った人の
+  // 招待で運営になれてしまう。降格や脱退の側で招待を取り消す形にしなかったのは、
+  // 資格を失う経路（ロール変更・参加取消・退会・コミュニティ管理者から外れる）が
+  // 複数あり、どれかを塞ぎ忘れると同じ穴が開くため。ここ1か所で見れば漏れない
+  const inviter = await usersRepo.findById(invite.invitedBy);
+  if (!inviter || !(await canManageEvent(event.id, inviter))) {
+    return c.json({ error: "inviter_not_staff" }, 409);
+  }
+
+  // 招待の消費とメンバー行の作成を1回のバッチで行う。別々に書くと、間で失敗した
+  // ときに「招待だけ消費されて運営になっていない」状態が残り、本人には直せない。
+  // 取り消しと同時押しになった場合もここで負ける（pending のときだけ進む）
+  const before = await eventMembersRepo.find(event.id, user.id);
+  if (!(await eventStaffInvitesRepo.accept(invite.id, event.id, user.id))) {
     return c.json({ error: "not_found" }, 404);
   }
 
-  const before = await eventMembersRepo.find(event.id, user.id);
-  if (before) {
-    await eventMembersRepo.setRole(event.id, user.id, "staff");
-  } else {
-    await eventMembersRepo.add(event.id, user.id, "staff");
-  }
   // 先着枠の確定者だったなら席が空いたので繰り上げる (#281)
   const promotedUserId =
     before?.slotId && before.status === "confirmed"

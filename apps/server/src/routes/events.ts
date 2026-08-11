@@ -40,7 +40,7 @@ import type {
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { currentUser, requireAuth } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
+import { canViewEvent as canView, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { awardsRepo } from "../db/repositories/awards.js";
@@ -71,13 +71,6 @@ import {
 
 export const eventRoutes = new Hono<AppEnv>();
 
-/** 公開イベントは誰でも閲覧可。下書きはメンバー/管理者のみ。 */
-async function canView(event: Event, user: User | null): Promise<boolean> {
-  if (event.status === "published") return true;
-  if (!user) return false;
-  if (isAppAdmin(user)) return true;
-  return Boolean(await eventMembersRepo.find(event.id, user.id));
-}
 
 /* =========================================================
  *  公開ルート（未ログイン可）。requireAuth より前に登録する。
