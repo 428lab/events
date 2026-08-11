@@ -152,6 +152,27 @@ describe("TimetableGrid（広い画面）", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
+  it("横スクロールする器そのものにフォーカスが行き、キーボードだけで動かせる", () => {
+    drawGrid();
+    const region = screen.getByRole("region", { name: "タイムテーブル" });
+
+    // 役割とラベルが内側に付いていると、外側の器にフォーカスが行かず、
+    // マウスやタッチの無い人がトラックの続きを見られない
+    expect(region.tabIndex).toBe(0);
+    expect(getComputedStyle(region).overflow).toBe("auto");
+  });
+
+  it("読み上げ専用のトラック名は、見た目の場所を取らない", () => {
+    const solo = blocksOf(drawGrid(), "it-a")[0]!;
+    const srOnly = Array.from(solo.querySelectorAll("span")).find((el) =>
+      el.textContent?.startsWith("トラック"),
+    )!;
+
+    // sx の 0〜1 は割合として読まれるので、1 と書くと 100% になってしまう
+    expect(getComputedStyle(srOnly).width).toBe("1px");
+    expect(getComputedStyle(srOnly).height).toBe("1px");
+  });
+
   it("どの枠にもトラック名が入っていて、読み上げでどの列か分かる", () => {
     const container = drawGrid();
 

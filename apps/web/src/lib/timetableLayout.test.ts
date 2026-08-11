@@ -158,6 +158,100 @@ describe("buildTimetableLayout (#338)", () => {
     expect(solo[0]!.trackNames).toEqual([TRACKS[0]!.name]);
   });
 
+  it("3日間のイベントでも、どの日のコマも1つ残らず表に載る (#346)", () => {
+    // 描く範囲が狭いと、多数派に入らなかった日のコマが丸ごと格子から消え、
+    // 打ち間違い扱いの見出しに並んでしまっていた
+    const days = [
+      new Date("2026-08-11T09:00:00+09:00").getTime(),
+      new Date("2026-08-12T09:00:00+09:00").getTime(),
+      new Date("2026-08-13T09:00:00+09:00").getTime(),
+    ];
+    const items = days.flatMap((startsAt, d) => [
+      item({ id: `d${d}-open`, title: `${d + 1}日目 開会`, startsAt }),
+      item({
+        id: `d${d}-a`,
+        title: `${d + 1}日目 A`,
+        placement: "tracks",
+        trackIds: ["tr-a"],
+      }),
+      item({
+        id: `d${d}-b`,
+        title: `${d + 1}日目 B`,
+        placement: "tracks",
+        trackIds: ["tr-b"],
+      }),
+    ]);
+    const got = buildTimetableLayout(items, TRACKS, days[0]!);
+
+    expect(got.outOfRange).toEqual([]);
+    expect(got.undated).toEqual([]);
+    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual(
+      items.map((i) => i.id).sort(),
+    );
+    // 3日ぶんでも行数は3桁に収まる（1日24時間＝288行）
+    expect(got.rows).toBeLessThan(1000);
+  });
+
+  it("朝から深夜までの2日間（36時間超）でも、2日目のコマが落ちない (#346)", () => {
+    const first = new Date("2026-08-11T09:00:00+09:00").getTime();
+    // 1日目の朝から数えて38時間後。1日ぶんの窓では範囲外に落ちていた
+    const lateNight = new Date("2026-08-12T23:00:00+09:00").getTime();
+    const items = [
+      item({ id: "it-d1", title: "1日目 朝", startsAt: first }),
+      item({
+        id: "it-d2-night",
+        title: "2日目 深夜",
+        startsAt: lateNight,
+        placement: "tracks",
+        trackIds: ["tr-a"],
+      }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, first);
+
+    expect(got.outOfRange).toEqual([]);
+    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual([
+      "it-d1",
+      "it-d2-night",
+    ]);
+  });
+
+  it("6日間の合宿は全部載り、月を打ち間違えた1件だけが落ちる (#346)", () => {
+    const first = new Date("2026-08-11T09:00:00+09:00").getTime();
+    const days = [0, 1, 2, 3, 4, 5].map((d) => first + d * 24 * 60 * 60_000);
+    const items = [
+      ...days.map((startsAt, d) =>
+        item({
+          id: `d${d}`,
+          title: `${d + 1}日目`,
+          startsAt,
+          placement: "tracks",
+          trackIds: ["tr-a"],
+        }),
+      ),
+      item({
+        id: "it-typo",
+        title: "日を打ち間違い",
+        // 月を打ち間違えた1件。7日の窓から大きく外れる
+        startsAt: new Date("2026-09-11T09:00:00+09:00").getTime(),
+        placement: "tracks",
+        trackIds: ["tr-b"],
+      }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, first);
+
+    expect(got.outOfRange.map((e) => e.item.id)).toEqual(["it-typo"]);
+    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual([
+      "d0",
+      "d1",
+      "d2",
+      "d3",
+      "d4",
+      "d5",
+    ]);
+    // 6日ぶんでも行数は 24時間×6＋αで、画面が固まる桁には届かない
+    expect(got.rows).toBeLessThan(2100);
+  });
+
   it("開始時刻の打ち間違いで格子が膨らまず、外れた1件だけが落ちる", () => {
     // 年を1桁打ち間違えた1件。これで行数が数百万になり、参加者を含む
     // 全閲覧者の画面が固まっていた
