@@ -12,7 +12,8 @@ export function useEventSchedule(eventId: string) {
   });
 }
 
-/** タイムテーブルの一括保存（全置き換え。staff のみ） */
+/** タイムテーブルの保存（全項目を送り、サーバーが差分で反映する。staff のみ #340）。
+ * 既存項目は id を付けて送ること。付けないと削除＋新規追加になり ID が変わる */
 export function useSaveEventSchedule(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
