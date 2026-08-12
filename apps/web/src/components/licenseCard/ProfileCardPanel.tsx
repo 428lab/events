@@ -1,4 +1,5 @@
 import { Box, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import type { UserProfile } from "@eventer/shared";
 import { LicenseCardSvg, toCardData } from "./LicenseCardSvg.js";
 import { cardLook } from "./cardLook.js";
@@ -26,6 +27,7 @@ export function ProfileCardPanel({
   /** URLで指定されたハンドル（プロフィールが handle を持たない古い応答の保険） */
   fallbackHandle: string;
 }) {
+  const { t } = useTranslation();
   const handle = profile.handle ?? fallbackHandle;
   const card = toCardData(profile, fallbackHandle, window.location.host);
   const look = cardLook(profile.cardImageKey);
@@ -61,8 +63,8 @@ export function ProfileCardPanel({
         sx={{ display: "block", mt: 0.75 }}
       >
         {profile.isMe
-          ? "あなたのプロフィールカード。印刷（91×55mm）や画像の書き出しは「デザインを変える」から"
-          : "このカードは本人が選んだ見た目で表示しています"}
+          ? t("profile.cardOwnHint")
+          : t("profile.cardOtherHint")}
       </Typography>
     </Box>
   );

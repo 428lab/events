@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import type { Theme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -22,22 +23,29 @@ import type { EventTimelinePhotos, MyEventSummary } from "@eventer/shared";
 import { eventImageUrl } from "../api/hooks.js";
 import { eventColor } from "./EventCard.js";
 import { DraftChip, isDraftEvent } from "./DraftChip.js";
-import { formatTime, participantCountLabel, venueLabel } from "../lib/format.js";
+import {
+  formatTime,
+  participantCountLabel,
+  roleLabel,
+  venueLabel,
+} from "../lib/format.js";
+import { i18next } from "../i18n/index.js";
 
 /** 区分フィルタの値。役割は「主催・運営」と「参加」の2つに寄せる（配色もこの2つ） */
 type RoleFilter = "all" | "host" | "join";
 type WhenFilter = "all" | "upcoming" | "past";
 
-const ROLE_LABEL: Record<RoleFilter, string> = {
-  all: "すべて",
-  host: "主催・運営",
-  join: "参加",
-};
-const WHEN_LABEL: Record<WhenFilter, string> = {
-  all: "すべて",
-  upcoming: "これから",
-  past: "過去",
-};
+/** 絞り込みの見え方。表は持たず引くたびに辞書から取る（言語を切り替えても追随する） */
+function roleFilterLabel(value: RoleFilter): string {
+  if (value === "host") return i18next.t("profile.filterHost");
+  if (value === "join") return i18next.t("profile.filterJoin");
+  return i18next.t("profile.filterAll");
+}
+function whenFilterLabel(value: WhenFilter): string {
+  if (value === "upcoming") return i18next.t("profile.filterUpcoming");
+  if (value === "past") return i18next.t("profile.filterPast");
+  return i18next.t("profile.filterAll");
+}
 
 /** 狭い幅では中央縦線をやめて左寄せの1カラムに畳む */
 const NARROW = "@media (max-width:640px)";
@@ -47,23 +55,34 @@ const NARROW = "@media (max-width:640px)";
 const inkOf = (t: Theme, role: "primary" | "secondary") =>
   t.palette.mode === "dark" ? t.palette[role].main : t.palette[role].dark;
 
-/** 関わり方のラベルを組み立てる。作成者は「主催」、それ以外のスタッフは「スタッフ」。
+/** 年表のチップに出す「関わり方」。文言ではなくキーを返す（呼ぶ側が判定に使うため） */
+export type EntryRole = "host" | "staff" | "judge" | "observer" | "speaker";
+
+/** 関わり方を並べる。作成者は「主催」、それ以外のスタッフは「スタッフ」。
  * タイムテーブルの担当に紐づいていれば「登壇」も添える */
 export function entryRoles(
   event: MyEventSummary,
   userId: string,
   spokeEventIds: ReadonlySet<string>,
-): string[] {
-  const roles: string[] = [];
+): EntryRole[] {
+  const roles: EntryRole[] = [];
   if (event.myRole === "staff") {
-    roles.push(event.createdBy === userId ? "主催" : "スタッフ");
+    roles.push(event.createdBy === userId ? "host" : "staff");
   } else if (event.myRole === "judge") {
-    roles.push("審査員");
+    roles.push("judge");
   } else if (event.myRole === "observer") {
-    roles.push("観覧者");
+    roles.push("observer");
   }
-  if (spokeEventIds.has(event.id)) roles.push("登壇");
+  if (spokeEventIds.has(event.id)) roles.push("speaker");
   return roles;
+}
+
+/** 関わり方のキーを表示用の文言にする。イベント内での立場は `role.*` を再利用し、
+ * 年表だけの言い方（主催 / 登壇）を `profile.*` が持つ */
+function entryRoleLabel(role: EntryRole): string {
+  if (role === "host") return i18next.t("profile.roleHost");
+  if (role === "speaker") return i18next.t("profile.roleSpeaker");
+  return roleLabel(role);
 }
 
 /** 開催予定か（日程調整中は日付が未確定なので常に予定側） */
@@ -79,7 +98,7 @@ function roleKindOf(event: MyEventSummary): "host" | "join" {
 /** 年表に並べる1件ぶんの、表示に必要なものを揃えたもの */
 interface TimelineItem {
   event: MyEventSummary;
-  roles: string[];
+  roles: EntryRole[];
   kind: "host" | "join";
   when: "upcoming" | "past";
   /** そのイベントで出会った人数。0なら出さない */
@@ -110,7 +129,7 @@ export function groupByYear(
     groups.push({
       key,
       label: item.event.scheduling
-        ? "日程調整中"
+        ? i18next.t("events.schedulingBadge")
         : String(new Date(item.event.startsAt).getFullYear()),
       items: [item],
     });
@@ -126,7 +145,7 @@ function venueText(event: MyEventSummary): string {
 
 /** 日付ラベル（年はピル型見出しに任せず、カードでも通しで読めるようにする） */
 function dateText(event: MyEventSummary): string {
-  if (event.scheduling) return "日程調整中";
+  if (event.scheduling) return i18next.t("events.schedulingBadge");
   const d = new Date(event.startsAt);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())}`;
@@ -185,6 +204,7 @@ function PhotoStrip({
   photos: EventTimelinePhotos;
   onOpen: (p: OpenPhoto) => void;
 }) {
+  const { t } = useTranslation();
   // 取得に失敗した写真。イベントの公開設定が読み込み後に変わると 403/404 に
   // なり得るので、壊れた画像アイコンではなく無地の枠で出す
   const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
@@ -200,13 +220,13 @@ function PhotoStrip({
       spacing={0.625}
       alignItems="center"
       sx={{ ml: "auto" }}
-      aria-label="公開写真"
+      aria-label={t("profile.photoStrip")}
     >
       {ids.map((id, i) => (
         <ButtonBase
           key={id}
           onClick={() => onOpen({ eventId, eventTitle, photoIds: ids, index: i })}
-          aria-label={`写真${i + 1}枚目を拡大表示`}
+          aria-label={t("profile.photoOpen", { n: i + 1 })}
           sx={{
             width: { xs: 31, sm: 36 },
             height: { xs: 31, sm: 36 },
@@ -218,7 +238,7 @@ function PhotoStrip({
             "&:hover, &.Mui-focusVisible": {
               transform: "scale(1.14)",
               zIndex: 3,
-              boxShadow: (t) => `0 0 0 2px ${t.palette.primary.main}`,
+              boxShadow: (theme) => `0 0 0 2px ${theme.palette.primary.main}`,
             },
           }}
         >
@@ -244,7 +264,7 @@ function PhotoStrip({
       {rest > 0 && (
         <Box
           component="span"
-          title={`ほか${rest}枚`}
+          title={t("profile.photoMore", { n: rest })}
           sx={{
             width: { xs: 31, sm: 36 },
             height: { xs: 31, sm: 36 },
@@ -276,7 +296,10 @@ function TimelineCard({
   side: "left" | "right";
   onOpenPhoto: (p: OpenPhoto) => void;
 }) {
+  const { t } = useTranslation();
   const { event, roles, kind, when, meets, photos } = item;
+  // 塗り分けの主になる関わり方。登壇は別軸なので独立したチップに回す
+  const mainRole = roles.find((r) => r !== "speaker");
   const img = eventImageUrl(event);
   const color = eventColor(event.id);
   const accent = kind === "host" ? "primary" : "secondary";
@@ -340,7 +363,7 @@ function TimelineCard({
             fontWeight: 700,
             letterSpacing: "0.1em",
             fontVariantNumeric: "tabular-nums",
-            color: (t) => inkOf(t, accent),
+            color: (theme) => inkOf(theme, accent),
           }}
         >
           {dateText(event)}
@@ -428,7 +451,7 @@ function TimelineCard({
         >
           <Meta icon={<AccessTimeIcon />}>
             {event.scheduling
-              ? "日程調整中"
+              ? t("events.schedulingBadge")
               : `${formatTime(event.startsAt)}–${formatTime(event.endsAt)}`}
           </Meta>
           <Meta icon={<PlaceOutlinedIcon />}>{venueText(event)}</Meta>
@@ -440,7 +463,7 @@ function TimelineCard({
           {meets > 0 && (
             <Meta icon={<PersonAddAlt1Icon color={accent} />} strong>
               <Box component="span" sx={{ fontWeight: 800 }}>
-                出会った {meets} 人
+                {t("profile.metCount", { n: meets })}
               </Box>
             </Meta>
           )}
@@ -453,15 +476,15 @@ function TimelineCard({
               登壇は「主催かどうか」とは別の軸なので独立したチップにする */}
           <Chip
             size="small"
-            label={roles.find((r) => r !== "登壇") ?? "参加"}
+            label={mainRole ? entryRoleLabel(mainRole) : t("profile.filterJoin")}
             color={accent}
             variant={kind === "host" ? "filled" : "outlined"}
             sx={{ fontWeight: 800, height: 24 }}
           />
-          {roles.includes("登壇") && (
+          {roles.includes("speaker") && (
             <Chip
               size="small"
-              label="登壇"
+              label={entryRoleLabel("speaker")}
               color="secondary"
               variant="outlined"
               sx={{ fontWeight: 800, height: 24 }}
@@ -470,7 +493,7 @@ function TimelineCard({
           {when === "upcoming" && (
             <Chip
               size="small"
-              label="これから"
+              label={t("profile.filterUpcoming")}
               variant="outlined"
               icon={
                 <Box
@@ -508,10 +531,10 @@ function TimelineCard({
           position: "relative",
           zIndex: 2,
           bgcolor: when === "upcoming" ? "background.default" : `${accent}.main`,
-          boxShadow: (t) =>
+          boxShadow: (theme) =>
             when === "upcoming"
-              ? `0 0 0 4px ${t.palette.background.default}, 0 0 0 6px ${t.palette[accent].main}`
-              : `0 0 0 4px ${t.palette.background.default}, 0 0 0 5px ${t.palette[accent].main}`,
+              ? `0 0 0 4px ${theme.palette.background.default}, 0 0 0 6px ${theme.palette[accent].main}`
+              : `0 0 0 4px ${theme.palette.background.default}, 0 0 0 5px ${theme.palette[accent].main}`,
           [NARROW]: { gridColumn: 1 },
         }}
       />
@@ -585,6 +608,7 @@ export function ParticipationTimeline({
   eventPhotos?: EventTimelinePhotos[];
   now?: number;
 }) {
+  const { t } = useTranslation();
   const [role, setRole] = useState<RoleFilter>("all");
   const [when, setWhen] = useState<WhenFilter>("all");
   const [open, setOpen] = useState<OpenPhoto | null>(null);
@@ -623,10 +647,10 @@ export function ParticipationTimeline({
   return (
     <Box>
       <Typography variant="h6" gutterBottom>
-        参加履歴の年表
+        {t("profile.timelineHeading")}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        区分で絞り込めます。件数は、もう一方の絞り込みを反映した数です。
+        {t("profile.timelineHint")}
       </Typography>
 
       <Box
@@ -647,12 +671,12 @@ export function ParticipationTimeline({
             color="text.secondary"
             sx={{ fontWeight: 800, letterSpacing: "0.08em", width: 44 }}
           >
-            区分
+            {t("profile.timelineRoleLabel")}
           </Typography>
           {(["all", "host", "join"] as const).map((v) => (
             <FilterChip
               key={v}
-              label={ROLE_LABEL[v]}
+              label={roleFilterLabel(v)}
               count={count(v, when)}
               selected={role === v}
               swatch={v === "host" ? "primary" : v === "join" ? "secondary" : undefined}
@@ -666,12 +690,12 @@ export function ParticipationTimeline({
             color="text.secondary"
             sx={{ fontWeight: 800, letterSpacing: "0.08em", width: 44 }}
           >
-            時期
+            {t("profile.timelineWhenLabel")}
           </Typography>
           {(["all", "upcoming", "past"] as const).map((v) => (
             <FilterChip
               key={v}
-              label={WHEN_LABEL[v]}
+              label={whenFilterLabel(v)}
               count={count(role, v)}
               selected={when === v}
               onClick={() => setWhen(v)}
@@ -684,7 +708,7 @@ export function ParticipationTimeline({
           role="status"
           sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}
         >
-          表示中 {visible.length} 件 ・ 出会いの記録 {metTotal} 件
+          {t("profile.timelineSummary", { n: visible.length, m: metTotal })}
         </Typography>
       </Box>
 
@@ -701,17 +725,19 @@ export function ParticipationTimeline({
           role="status"
         >
           <Typography fontWeight={800} gutterBottom>
-            {[
-              when === "all" ? null : WHEN_LABEL[when],
-              role === "all" ? null : ROLE_LABEL[role],
-            ]
-              .filter(Boolean)
-              .join(" × ") || ""}
-            {role === "all" && when === "all" ? "履歴" : " の履歴"}
-            はまだありません
+            {role === "all" && when === "all"
+              ? t("profile.timelineEmpty")
+              : t("profile.timelineEmptyFiltered", {
+                  filters: [
+                    when === "all" ? null : whenFilterLabel(when),
+                    role === "all" ? null : roleFilterLabel(role),
+                  ]
+                    .filter(Boolean)
+                    .join(" × "),
+                })}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            「すべて」に戻すと、ほかの履歴が表示されます。
+            {t("profile.timelineEmptyHint")}
           </Typography>
         </Box>
       ) : (
@@ -729,8 +755,8 @@ export function ParticipationTimeline({
               width: 2,
               transform: "translateX(-1px)",
               opacity: 0.55,
-              background: (t) =>
-                `linear-gradient(180deg, transparent 0, ${t.palette.primary.main} 7%, ${t.palette.secondary.main} 93%, transparent 100%)`,
+              background: (theme) =>
+                `linear-gradient(180deg, transparent 0, ${theme.palette.primary.main} 7%, ${theme.palette.secondary.main} 93%, transparent 100%)`,
               [NARROW]: { left: 14, transform: "none" },
             },
           }}
@@ -792,6 +818,7 @@ function PhotoLightbox({
   onChange: (p: OpenPhoto) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   if (!open) return null;
   const { eventId, eventTitle, photoIds, index } = open;
   const step = (d: number) =>
@@ -804,7 +831,7 @@ function PhotoLightbox({
       open
       onClose={onClose}
       maxWidth="lg"
-      aria-label="写真の拡大表示"
+      aria-label={t("profile.photoLightbox")}
       // ←→ で前後の写真へ。閉じるは Esc と背景クリック（Dialog 側）と
       // 閉じるボタン。閉じたときのフォーカス戻しも Dialog に任せる
       onKeyDown={(e) => {
@@ -816,7 +843,7 @@ function PhotoLightbox({
       <Box sx={{ position: "relative", bgcolor: "#000" }}>
         <IconButton
           onClick={onClose}
-          aria-label="閉じる"
+          aria-label={t("common.close")}
           sx={{ position: "absolute", top: 8, right: 8, color: "#fff", zIndex: 1 }}
         >
           <CloseIcon />
@@ -825,7 +852,7 @@ function PhotoLightbox({
           <>
             <IconButton
               onClick={() => step(-1)}
-              aria-label="前の写真"
+              aria-label={t("profile.photoPrev")}
               sx={{
                 position: "absolute",
                 top: "50%",
@@ -839,7 +866,7 @@ function PhotoLightbox({
             </IconButton>
             <IconButton
               onClick={() => step(1)}
-              aria-label="次の写真"
+              aria-label={t("profile.photoNext")}
               sx={{
                 position: "absolute",
                 top: "50%",
@@ -884,7 +911,7 @@ function PhotoLightbox({
             underline="hover"
             noWrap
           >
-            {eventTitle} を見る →
+            {t("profile.viewEvent", { title: eventTitle })}
           </Link>
           {photoIds.length > 1 && (
             <Typography

@@ -54,6 +54,8 @@ const ja = {
 
   /** カードで開催日時の代わりに出す印 */
   schedulingBadge: "日程調整中",
+  /** 公開前であることを示す印。一覧カードでも年表でも同じ印を出す (#348) */
+  draftBadge: "下書き",
   /** 横型カードで日時のうしろに並べる開催形態と人数（区切りは言語で変わる） */
   cardMeta: "・ {{venue}} ・ {{participants}}",
 
@@ -102,6 +104,7 @@ const en: Record<keyof typeof ja, string> = {
   columnsTwo: "Two columns",
 
   schedulingBadge: "Date TBD",
+  draftBadge: "Draft",
   cardMeta: "· {{venue}} · {{participants}}",
 
   feedSubscribe: "Subscribe to these events:",

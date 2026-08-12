@@ -13,6 +13,7 @@ import {
 import HandshakeOutlinedIcon from "@mui/icons-material/HandshakeOutlined";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { MeetScanFailure, MeetScanResult } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
 import { ApiError, NetworkError } from "../api/client.js";
@@ -41,59 +42,22 @@ type Failure =
   /** サーバー側の一時的な不調 */
   | "server";
 
-interface FailureInfo {
-  message: string;
-  /** 同じトークンで再試行する意味があるか（QRを出し直してもらう必要がない） */
-  retryable: boolean;
-}
-
-const FAILURES: Record<Failure, FailureInfo> = {
-  expired: {
-    message:
-      "QRの有効期限が切れました。相手の画面のQRをもう一度読み取ってください",
-    retryable: false,
-  },
-  used: {
-    message:
-      "このQRはすでに読み取り済みです。相手の画面には新しいQRが出ているので、そちらを読み取ってください",
-    retryable: false,
-  },
-  invalid: {
-    message: "このQRは読み取れませんでした。もう一度読み取ってください",
-    retryable: false,
-  },
-  self: { message: "自分のQRは読み取れません", retryable: false },
-  no_shared_event: {
-    message: "同じイベントに参加していないため記録できません",
-    retryable: false,
-  },
-  outside_window: {
-    message:
-      "イベントの開催時間帯ではないため記録できません（開始30分前から終了2時間後まで）",
-    retryable: false,
-  },
-  not_confirmed_me: {
-    message:
-      "あなたの参加がまだ確定していないため記録できません。参加を確定してからもう一度お試しください",
-    retryable: true,
-  },
-  not_confirmed_target: {
-    message: "相手の参加がまだ確定していないため記録できません",
-    retryable: false,
-  },
-  network: {
-    message:
-      "通信できませんでした。電波の状態を確かめて、もう一度お試しください",
-    retryable: true,
-  },
-  unauthorized: {
-    message: "ログインの有効期限が切れました。ログインし直してください",
-    retryable: false,
-  },
-  server: {
-    message: "一時的に記録できませんでした。もう一度お試しください",
-    retryable: true,
-  },
+/**
+ * 同じトークンで再試行する意味があるか（QRを出し直してもらう必要がない）。
+ * 文言そのものは meetFailure 名前空間にある（同じ表を2か所に持たない）
+ */
+const RETRYABLE: Record<Failure, boolean> = {
+  expired: false,
+  used: false,
+  invalid: false,
+  self: false,
+  no_shared_event: false,
+  outside_window: false,
+  not_confirmed_me: true,
+  not_confirmed_target: false,
+  network: true,
+  unauthorized: false,
+  server: true,
 };
 
 const SERVER_CODES = new Set<string>([
@@ -120,6 +84,7 @@ export function failureOf(err: unknown): Failure {
 
 export function MeetScanPage() {
   const { token = "" } = useParams();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: me, isLoading: meLoading } = useMe();
   const scan = useMeetScan();
@@ -159,7 +124,6 @@ export function MeetScanPage() {
   // 参加者に「自分の受付が済んだ」ことが伝わらず、受付に並び直す二度手間になる
   const attendedMe = result?.events.some((e) => e.attendedMe) ?? false;
   const attendedTarget = result?.events.some((e) => e.attendedTarget) ?? false;
-  const info = failure ? FAILURES[failure] : null;
 
   return (
     <Box sx={{ maxWidth: 560, mx: "auto", p: 2 }}>
@@ -171,20 +135,22 @@ export function MeetScanPage() {
               sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
             >
               <HandshakeOutlinedIcon fontSize="small" />
-              交流の記録
+              {t("meet.title")}
             </Typography>
 
             {!result && !failure && (
               <Stack direction="row" spacing={1.5} alignItems="center">
                 <CircularProgress size={20} />
-                <Typography color="text.secondary">記録しています…</Typography>
+                <Typography color="text.secondary">
+                  {t("meet.recording")}
+                </Typography>
               </Stack>
             )}
 
-            {info && (
+            {failure && (
               <>
-                <Alert severity={info.retryable ? "info" : "warning"}>
-                  {info.message}
+                <Alert severity={RETRYABLE[failure] ? "info" : "warning"}>
+                  {t(`meetFailure.${failure}`)}
                 </Alert>
                 <Stack direction="row" spacing={1}>
                   {/* トークンはURLに残っているので、同じ読み取りをやり直せる */}
@@ -194,7 +160,7 @@ export function MeetScanPage() {
                     disabled={scan.isPending}
                     onClick={run}
                   >
-                    もう一度試す
+                    {t("meet.retry")}
                   </Button>
                   {failure === "unauthorized" ? (
                     <Button
@@ -202,11 +168,11 @@ export function MeetScanPage() {
                       to={`/login?next=${encodeURIComponent(`/m/${token}`)}`}
                       variant="outlined"
                     >
-                      ログインする
+                      {t("meet.signIn")}
                     </Button>
                   ) : (
                     <Button component={RouterLink} to="/" variant="outlined">
-                      トップへ戻る
+                      {t("meet.backToTop")}
                     </Button>
                   )}
                 </Stack>
@@ -233,7 +199,7 @@ export function MeetScanPage() {
                 </Stack>
 
                 {undone ? (
-                  <Alert severity="info">記録を取り消しました</Alert>
+                  <Alert severity="info">{t("meet.undone")}</Alert>
                 ) : (
                   <>
                     {result.events.map((ev) => (
@@ -242,18 +208,18 @@ export function MeetScanPage() {
                         severity={ev.meetCreated ? "success" : "info"}
                       >
                         {ev.meetCreated
-                          ? `「${ev.title}」で出会いを記録しました！お互いにXPが入ります`
-                          : `「${ev.title}」では記録済みです`}
+                          ? t("meet.recorded", { title: ev.title })
+                          : t("meet.alreadyRecorded", { title: ev.title })}
                       </Alert>
                     ))}
                     {attendedMe && (
-                      <Alert severity="success">
-                        あなたの受付（出席）も一緒に済ませました
-                      </Alert>
+                      <Alert severity="success">{t("meet.attendedMe")}</Alert>
                     )}
                     {attendedTarget && (
                       <Alert severity="success">
-                        {result.target.name} さんの受付（出席）も済ませました
+                        {t("meet.attendedTarget", {
+                          name: result.target.name,
+                        })}
                       </Alert>
                     )}
                   </>
@@ -265,7 +231,7 @@ export function MeetScanPage() {
                     to={`/users/${encodeURIComponent(result.target.username)}`}
                     variant="contained"
                   >
-                    プロフィールを見る
+                    {t("common.viewProfile")}
                   </Button>
                   {!undone && (
                     <Button
@@ -278,14 +244,12 @@ export function MeetScanPage() {
                         })
                       }
                     >
-                      取り消す
+                      {t("meet.undo")}
                     </Button>
                   )}
                 </Stack>
                 {undo.isError && (
-                  <Alert severity="warning">
-                    取り消しに失敗しました。もう一度お試しください
-                  </Alert>
+                  <Alert severity="warning">{t("meet.undoFailed")}</Alert>
                 )}
               </>
             )}

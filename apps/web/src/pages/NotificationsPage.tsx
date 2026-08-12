@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   NOTIFICATION_TYPE_LABELS,
   type Notification,
@@ -22,12 +23,16 @@ import {
   useNotificationPage,
   useNotificationUnreadCount,
 } from "../api/notificationHooks.js";
+import { tDynamic } from "../i18n/index.js";
 import { formatDateTime } from "../lib/format.js";
 import { notificationLinkTo } from "../lib/notificationLink.js";
 
-/** 種別の見出し。将来増えた種別はラベル無し（本文だけ）で出す */
+/** 種別の見出し。将来増えた種別はラベル無し（本文だけ）で出す。
+ *  日本語は NOTIFICATION_TYPE_LABELS が source で、訳は notificationType 名前空間にある */
 function typeLabel(type: string): string | null {
-  return NOTIFICATION_TYPE_LABELS[type as NotificationType] ?? null;
+  if (!(type in NOTIFICATION_TYPE_LABELS)) return null;
+  const key = type as NotificationType;
+  return tDynamic(`notificationType.${key}`, NOTIFICATION_TYPE_LABELS[key]);
 }
 
 /**
@@ -46,6 +51,7 @@ function NotificationCard({
   onRead: (id: string) => void;
 }) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const label = typeLabel(n.type);
 
   const open = () => {
@@ -72,7 +78,13 @@ function NotificationCard({
             useFlexGap
           >
             {label && <Chip size="small" label={label} />}
-            {!n.read && <Chip size="small" color="primary" label="未読" />}
+            {!n.read && (
+              <Chip
+                size="small"
+                color="primary"
+                label={t("notifications.unread")}
+              />
+            )}
             <Box sx={{ flexGrow: 1 }} />
             <Typography variant="caption" color="text.secondary">
               {formatDateTime(n.createdAt)}
@@ -107,12 +119,12 @@ function NotificationCard({
             >
               {!n.read && (
                 <Button size="small" onClick={() => onRead(n.id)}>
-                  既読にする
+                  {t("notifications.markRead")}
                 </Button>
               )}
               {n.link && (
                 <Button size="small" variant="outlined" onClick={open}>
-                  開く
+                  {t("notifications.open")}
                 </Button>
               )}
             </Stack>
@@ -131,6 +143,7 @@ function NotificationCard({
  * 本文を最後まで読める形で残す。表示されるのは本人あての通知だけ。
  */
 export function NotificationsPage() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const { data, isLoading } = useNotificationPage(page);
   const { data: unread } = useNotificationUnreadCount();
@@ -155,7 +168,7 @@ export function NotificationsPage() {
           sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
         >
           <NotificationsNoneIcon fontSize="medium" />
-          お知らせ
+          {t("nav.notifications")}
         </Typography>
         {Boolean(unread) && (
           <Button
@@ -163,24 +176,26 @@ export function NotificationsPage() {
             onClick={() => markAll.mutate()}
             disabled={markAll.isPending}
           >
-            すべて既読
+            {t("notifications.markAllRead")}
           </Button>
         )}
       </Stack>
 
       <Typography variant="body2" color="text.secondary">
-        受け取ったお知らせが新しい順に並びます。日付で自動的に消えることはありません。
-        ここに出るのはあなた宛てのお知らせだけです。
+        {t("notifications.description")}
       </Typography>
 
       {isLoading || !data ? (
-        <Typography>読み込み中…</Typography>
+        <Typography>{t("common.loading")}</Typography>
       ) : data.notifications.length === 0 ? (
-        <Typography color="text.secondary">お知らせはまだありません。</Typography>
+        <Typography color="text.secondary">
+          {t("notifications.empty")}
+        </Typography>
       ) : (
         <>
           <Typography variant="caption" color="text.secondary">
-            全 {data.total} 件{Boolean(unread) && ` / 未読 ${unread} 件`}
+            {t("notifications.countTotal", { n: data.total })}
+            {unread ? t("notifications.countUnread", { n: unread }) : null}
           </Typography>
           <Stack spacing={1.5}>
             {data.notifications.map((n) => (

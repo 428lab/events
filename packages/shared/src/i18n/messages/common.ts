@@ -30,6 +30,18 @@ const ja = {
   back: "戻る",
   retry: "もう一度",
   search: "検索",
+
+  /** シェアボタン (#357)。イベント・たまご・プロフィールのどこからでも使う */
+  share: "シェア",
+  shareCopy: "シェアリンクをコピー",
+  shareCopied: "リンクをコピーしました: {{url}}",
+  /** クリップボードが使えない環境の逃げ道（window.prompt の見出し） */
+  sharePrompt: "このURLをコピーしてください",
+
+  /** 短い項目を横に並べるときの区切り。和文と欧文で記号が違う (#357) */
+  dotSeparator: " ・ ",
+  /** 公開プロフィールへの導線。設定・QR読み取りの両方から引く (#357) */
+  viewProfile: "プロフィールを見る",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -52,6 +64,14 @@ const en: Record<keyof typeof ja, string> = {
   back: "Back",
   retry: "Try again",
   search: "Search",
+
+  share: "Share",
+  shareCopy: "Copy the share link",
+  shareCopied: "Link copied: {{url}}",
+  sharePrompt: "Copy this URL",
+
+  dotSeparator: " · ",
+  viewProfile: "View profile",
 };
 
 export const common = { ja, en };

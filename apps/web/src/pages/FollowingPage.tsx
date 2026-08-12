@@ -7,6 +7,7 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useMyFollowing, useSetFollow } from "../api/userHooks.js";
 
 function FollowingRow({
@@ -19,6 +20,7 @@ function FollowingRow({
     avatarUrl: string | null;
   };
 }) {
+  const { t } = useTranslation();
   const setFollow = useSetFollow(user.username);
   const name = user.globalName ?? user.username;
   return (
@@ -56,7 +58,7 @@ function FollowingRow({
         onClick={() => setFollow.mutate(false)}
         sx={{ flexShrink: 0 }}
       >
-        フォロー中
+        {t("profile.following")}
       </Button>
     </Stack>
   );
@@ -64,18 +66,21 @@ function FollowingRow({
 
 /** フォロー中の一覧（本人のみ）。X と同様に行リストで表示。 */
 export function FollowingPage() {
+  const { t } = useTranslation();
   const { data: following, isLoading } = useMyFollowing();
 
   return (
     <Box sx={{ maxWidth: 600 }}>
       <Typography variant="h5" fontWeight={700} gutterBottom>
-        フォロー中{following ? `（${following.length}）` : ""}
+        {following
+          ? t("profile.followingHeading", { n: following.length })
+          : t("profile.following")}
       </Typography>
       {isLoading ? (
-        <Typography>読み込み中…</Typography>
+        <Typography>{t("common.loading")}</Typography>
       ) : !following || following.length === 0 ? (
         <Typography color="text.secondary">
-          まだ誰もフォローしていません。気になる人のプロフィールからフォローしてみましょう。
+          {t("profile.noFollowing")}
         </Typography>
       ) : (
         <Stack divider={<Divider flexItem />}>

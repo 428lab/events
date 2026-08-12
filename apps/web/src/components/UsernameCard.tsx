@@ -9,6 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { CounterTextField } from "./CounterTextField.js";
 import { useMe } from "../api/hooks.js";
 import { useUpdateDisplayName, useUpdateUsername } from "../api/userHooks.js";
@@ -19,6 +20,7 @@ const DISPLAY_NAME_MAX = 50;
 
 /** マイページのプロフィール（表示名・ユーザー名）編集カード */
 export function UsernameCard() {
+  const { t } = useTranslation();
   const { data: me } = useMe();
   const current = me?.username ?? "";
   const [name, setName] = useState(current);
@@ -56,26 +58,29 @@ export function UsernameCard() {
     setDisplayMsg(null);
     updateDisplay.mutate(displayTrimmed, {
       onSuccess: () =>
-        setDisplayMsg({ type: "success", text: "表示名を変更しました" }),
+        setDisplayMsg({
+          type: "success",
+          text: t("settings.displayNameSaved"),
+        }),
       onError: () =>
-        setDisplayMsg({ type: "error", text: "変更に失敗しました" }),
+        setDisplayMsg({ type: "error", text: t("settings.saveFailed") }),
     });
   };
 
   const save = () => {
     setMsg(null);
     update.mutate(trimmed, {
-      onSuccess: () => setMsg({ type: "success", text: "ユーザー名を変更しました" }),
+      onSuccess: () => setMsg({ type: "success", text: t("settings.usernameSaved") }),
       onError: (e) => {
         const status = e instanceof ApiError ? e.status : 0;
         setMsg({
           type: "error",
           text:
             status === 409
-              ? "このユーザー名は既に使われています"
+              ? t("settings.usernameTaken")
               : status === 400
-                ? "使用できない文字が含まれています（半角英数字と _ . - スペースのみ、前後・連続スペース不可）"
-                : "変更に失敗しました",
+                ? t("settings.usernameInvalidChars")
+                : t("settings.saveFailed"),
         });
       },
     });
@@ -87,17 +92,17 @@ export function UsernameCard() {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          プロフィール
+          {t("settings.profileTitle")}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          プロフィールURL: /users/{current}
+          {t("settings.profileUrl", { path: `/users/${current}` })}
           <Link component={RouterLink} to={`/users/${current}`} sx={{ ml: 1 }}>
-            プロフィールを見る
+            {t("common.viewProfile")}
           </Link>
         </Typography>
         <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ mb: 2 }}>
           <CounterTextField
-            label="表示名"
+            label={t("settings.displayNameLabel")}
             size="small"
             value={display}
             max={DISPLAY_NAME_MAX}
@@ -106,7 +111,7 @@ export function UsernameCard() {
               setDisplayMsg(null);
             }}
             error={display.length > 0 && !displayValid}
-            helperText="イベントやチャットで表示される名前です"
+            helperText={t("settings.displayNameHelp")}
             sx={{ maxWidth: 320 }}
           />
           <Button
@@ -115,7 +120,7 @@ export function UsernameCard() {
             onClick={saveDisplay}
             sx={{ mt: 0.5 }}
           >
-            保存
+            {t("common.save")}
           </Button>
         </Stack>
         {displayMsg && (
@@ -125,7 +130,7 @@ export function UsernameCard() {
         )}
         <Stack direction="row" spacing={1} alignItems="flex-start">
           <CounterTextField
-            label="ユーザー名（ハンドル）"
+            label={t("settings.usernameLabel")}
             size="small"
             value={name}
             max={32}
@@ -138,8 +143,8 @@ export function UsernameCard() {
             error={changed && name.length > 0 && !valid}
             helperText={
               changed && name.length > 0 && !valid
-                ? "半角英数字と _ . - スペースのみ（前後スペース不可）、2〜32文字"
-                : "プロフィールURLに使われます"
+                ? t("settings.usernameInvalidHelp")
+                : t("settings.usernameHelp")
             }
             sx={{ maxWidth: 320 }}
           />
@@ -149,7 +154,7 @@ export function UsernameCard() {
             onClick={save}
             sx={{ mt: 0.5 }}
           >
-            保存
+            {t("common.save")}
           </Button>
         </Stack>
         {msg && (
