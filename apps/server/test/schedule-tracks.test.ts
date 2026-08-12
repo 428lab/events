@@ -264,7 +264,8 @@ describe("同一トラック内の重なりの警告 (#338)", () => {
       TRACKS,
     );
     expect(overlaps).toHaveLength(1);
-    expect(overlaps[0]!.trackName).toBe("全トラック共通");
+    // 「全トラック共通」の文言は画面側の辞書が持つ。ここは null で表す (#363)
+    expect(overlaps[0]!.trackName).toBeNull();
   });
 
   it("端が接するだけ（前の終わり＝次の始まり）は重なりではない", () => {

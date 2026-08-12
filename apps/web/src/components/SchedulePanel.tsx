@@ -20,6 +20,7 @@ import {
 } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import CheckIcon from "@mui/icons-material/Check";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -41,11 +42,8 @@ import {
 } from "../api/scheduleHooks.js";
 import { dateLocale } from "../i18n/index.js";
 
-const CHOICES: { value: VoteChoice; label: string }[] = [
-  { value: "yes", label: "○" },
-  { value: "maybe", label: "△" },
-  { value: "no", label: "×" },
-];
+/** 回答の3択。**並び順だけ**をここに持つ（文言は schedule.vote_* が持つ） */
+const CHOICES: VoteChoice[] = ["yes", "maybe", "no"];
 
 const dateKey = (y: number, m: number, d: number) =>
   `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
@@ -91,11 +89,17 @@ const fmtTime = perLocale(
   (locale) =>
     new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }),
 );
+/** ミニカレンダーの月見出し。和文は「2026年8月」、英文は "August 2026" */
+const fmtYearMonth = perLocale(
+  (locale) => new Intl.DateTimeFormat(locale, { year: "numeric", month: "long" }),
+);
 
 /** 候補日を「2026/7/20（月・海の日）19:00 〜 21:00」形式で表示 */
 function OptionDate({ startsAt, endsAt }: { startsAt: number; endsAt: number }) {
+  const { t } = useTranslation();
   const s = new Date(startsAt);
   const e = new Date(endsAt);
+  // 祝日名は japanese-holidays が返す日本語のまま（日本の祝日なので訳さない）
   const holiday = isHoliday(s);
   const sameDay =
     s.getFullYear() === e.getFullYear() &&
@@ -108,13 +112,23 @@ function OptionDate({ startsAt, endsAt }: { startsAt: number; endsAt: number }) 
         component="span"
         sx={{ color: dayColor(s.getDay(), holiday) ?? "text.secondary", mx: 0.25 }}
       >
-        （{weekdays()[s.getDay()]}
-        {holiday ? `・${holiday}` : ""}）
+        {holiday
+          ? t("schedule.optionDayHoliday", {
+              weekday: weekdays()[s.getDay()],
+              holiday,
+            })
+          : t("schedule.optionDay", { weekday: weekdays()[s.getDay()] })}
       </Box>
-      {fmtTime().format(s)} 〜{" "}
-      {sameDay
-        ? fmtTime().format(e)
-        : `${fmtDate().format(e)}（${weekdays()[e.getDay()]}）${fmtTime().format(e)}`}
+      {t("common.dateRange", {
+        start: fmtTime().format(s),
+        end: sameDay
+          ? fmtTime().format(e)
+          : t("schedule.optionEndOtherDay", {
+              date: fmtDate().format(e),
+              weekday: weekdays()[e.getDay()],
+              time: fmtTime().format(e),
+            }),
+      })}
     </Typography>
   );
 }
@@ -158,7 +172,7 @@ function MiniCalendar({
           <ChevronLeftIcon fontSize="small" />
         </IconButton>
         <Typography variant="subtitle2">
-          {y}年{m + 1}月
+          {fmtYearMonth().format(month)}
         </Typography>
         <IconButton
           size="small"
@@ -268,6 +282,7 @@ export function SchedulePanel({
   eventStartsAt: number;
   eventEndsAt: number;
 }) {
+  const { t } = useTranslation();
   const { data: me } = useMe();
   const { data: eventData } = useEvent(eventId);
   const { data, isLoading } = useEventSchedule(eventId);
@@ -278,6 +293,10 @@ export function SchedulePanel({
   const uploadImage = useUploadEventImage(eventId);
   const updateEvent = useUpdateEvent(eventId);
   const qc = useQueryClient();
+
+  /** 「○ 3」1つぶん。記号（英語では言葉）と数の並べ方は辞書が決める */
+  const voteCount = (choice: VoteChoice, n: number) =>
+    t("schedule.voteCount", { label: t(`schedule.vote_${choice}`), n });
 
   // 時間帯は1回指定、日付はカレンダーで複数選択→一括追加
   const [startTime, setStartTime] = useState("19:00");
@@ -346,26 +365,23 @@ export function SchedulePanel({
           sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
         >
           <CalendarMonthIcon fontSize="small" />
-          {finalized ? "日程調整の結果" : "日程調整"}
+          {finalized ? t("schedule.pollResultTitle") : t("schedule.pollTitle")}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {finalized
-            ? "日程は確定済みです。回答の変更はできません。"
-            : "候補日ごとに ○（参加）/△（未定）/×（不可）で回答してください。"}
+          {finalized ? t("schedule.pollFinalizedLead") : t("schedule.pollLead")}
         </Typography>
 
         {finalized && isStaff && !visible && (
           <Alert severity="info" sx={{ mb: 2 }}>
-            この結果は現在あなた（スタッフ）にしか表示されていません。
+            {t("schedule.resultStaffOnly")}
           </Alert>
         )}
 
         {isLoading || !data ? (
-          <Typography>読み込み中…</Typography>
+          <Typography>{t("common.loading")}</Typography>
         ) : data.options.length === 0 ? (
           <Typography color="text.secondary">
-            候補日はまだありません。
-            {isStaff && "下のカレンダーから追加してください。"}
+            {isStaff ? t("schedule.noOptionsStaff") : t("schedule.noOptions")}
           </Typography>
         ) : (
           <Stack spacing={1.5}>
@@ -382,7 +398,7 @@ export function SchedulePanel({
                 sx={
                   isDecided
                     ? {
-                        bgcolor: (t) => alpha(t.palette.success.main, 0.14),
+                        bgcolor: (theme) => alpha(theme.palette.success.main, 0.14),
                         border: 2,
                         borderColor: "success.main",
                         borderRadius: 1.5,
@@ -392,9 +408,9 @@ export function SchedulePanel({
                       }
                     : isTop
                       ? {
-                          bgcolor: (t) => alpha(t.palette.warning.main, 0.12),
+                          bgcolor: (theme) => alpha(theme.palette.warning.main, 0.12),
                           border: 1,
-                          borderColor: (t) => alpha(t.palette.warning.main, 0.5),
+                          borderColor: (theme) => alpha(theme.palette.warning.main, 0.5),
                           borderRadius: 1.5,
                           px: 1,
                           py: 0.75,
@@ -425,7 +441,7 @@ export function SchedulePanel({
                           size="small"
                           color="success"
                           icon={<CheckIcon fontSize="small" />}
-                          label="この日程に決定"
+                          label={t("schedule.decidedChip")}
                           sx={{ fontWeight: 700 }}
                         />
                       )}
@@ -435,7 +451,7 @@ export function SchedulePanel({
                           color="warning"
                           variant="outlined"
                           icon={<StarIcon fontSize="small" />}
-                          label="参加最多"
+                          label={t("schedule.topChip")}
                           sx={{ fontWeight: 700 }}
                         />
                       )}
@@ -444,17 +460,23 @@ export function SchedulePanel({
                       {isTop ? (
                         <Box
                           component="span"
-                          sx={{ color: (t) => (t.palette.mode === "light" ? t.palette.warning.dark : t.palette.warning.main), fontWeight: 700 }}
+                          sx={{
+                            color: (theme) =>
+                              theme.palette.mode === "light"
+                                ? theme.palette.warning.dark
+                                : theme.palette.warning.main,
+                            fontWeight: 700,
+                          }}
                         >
-                          ○ {o.counts.yes}
+                          {voteCount("yes", o.counts.yes)}
                         </Box>
                       ) : (
-                        <>○ {o.counts.yes}</>
+                        voteCount("yes", o.counts.yes)
                       )}
-                      {" ・ △ "}
-                      {o.counts.maybe}
-                      {" ・ × "}
-                      {o.counts.no}
+                      {t("common.dotSeparator")}
+                      {voteCount("maybe", o.counts.maybe)}
+                      {t("common.dotSeparator")}
+                      {voteCount("no", o.counts.no)}
                     </Typography>
                   </Box>
                   {me && !finalized && (
@@ -466,9 +488,9 @@ export function SchedulePanel({
                         v && vote.mutate({ optionId: o.id, choice: v })
                       }
                     >
-                      {CHOICES.map((ch) => (
-                        <ToggleButton key={ch.value} value={ch.value}>
-                          {ch.label}
+                      {CHOICES.map((choice) => (
+                        <ToggleButton key={choice} value={choice}>
+                          {t(`schedule.vote_${choice}`)}
                         </ToggleButton>
                       ))}
                     </ToggleButtonGroup>
@@ -481,7 +503,8 @@ export function SchedulePanel({
                         color="secondary"
                         disabled={finalize.isPending}
                         onClick={() => {
-                          if (!window.confirm("この日程に決定しますか？")) return;
+                          if (!window.confirm(t("schedule.decideConfirm")))
+                            return;
                           finalize.mutate(o.id, {
                             onSuccess: async () => {
                               // 自動生成画像に「日程調整中」が焼き込まれている場合があるため、
@@ -490,7 +513,7 @@ export function SchedulePanel({
                               if (!title) return;
                               if (
                                 !window.confirm(
-                                  "日程が確定しました。イベント画像を確定日時入りで作り直しますか？（手動で設定した画像の場合は上書きされます）",
+                                  t("schedule.imageRegenerateConfirm"),
                                 )
                               )
                                 return;
@@ -499,24 +522,22 @@ export function SchedulePanel({
                                 formatDateRange(o.startsAt, o.endsAt),
                               ).catch(() => null);
                               if (!blob) {
-                                window.alert("画像の生成に失敗しました。");
+                                window.alert(t("schedule.imageGenerateFailed"));
                                 return;
                               }
                               // 既存フックを再利用（res.okチェック＋一覧/マイページのinvalidate込み）
                               try {
                                 await uploadImage.mutateAsync(blob);
                               } catch {
-                                window.alert(
-                                  "画像のアップロードに失敗しました。編集画面から設定し直せます。",
-                                );
+                                window.alert(t("schedule.imageUploadFailed"));
                               }
                             },
                           });
                         }}
                       >
-                        この日程に決定
+                        {t("schedule.decide")}
                       </Button>
-                      <Tooltip title="候補を削除">
+                      <Tooltip title={t("schedule.deleteOption")}>
                         <IconButton
                           size="small"
                           onClick={() => delOption.mutate(o.id)}
@@ -530,12 +551,12 @@ export function SchedulePanel({
                 {/* 回答者一覧（匿名でない場合のみ。○△×ごとに表示） */}
                 {!anonymous && o.voters.length > 0 && (
                   <Stack spacing={0.25} sx={{ mt: 0.5, pl: 0.5 }}>
-                    {CHOICES.map((ch) => {
-                      const vs = o.voters.filter((v) => v.choice === ch.value);
+                    {CHOICES.map((choice) => {
+                      const vs = o.voters.filter((v) => v.choice === choice);
                       if (vs.length === 0) return null;
                       return (
                         <Stack
-                          key={ch.value}
+                          key={choice}
                           direction="row"
                           spacing={1}
                           alignItems="center"
@@ -545,9 +566,9 @@ export function SchedulePanel({
                           <Typography
                             variant="caption"
                             color="text.secondary"
-                            sx={{ width: 14, flexShrink: 0 }}
+                            sx={{ minWidth: 14, flexShrink: 0 }}
                           >
-                            {ch.label}
+                            {t(`schedule.vote_${choice}`)}
                           </Typography>
                           {vs.map((v) => (
                             <UserLink
@@ -582,11 +603,11 @@ export function SchedulePanel({
                 component={RouterLink}
                 to={`/login?next=/events/${eventId}`}
               >
-                ログインして回答
+                {t("schedule.loginToVote")}
               </Button>
             }
           >
-            候補日への回答にはログインが必要です。ログイン後この画面に戻ります。
+            {t("schedule.loginRequired")}
           </Alert>
         )}
 
@@ -596,7 +617,7 @@ export function SchedulePanel({
             color="text.secondary"
             sx={{ display: "block", mt: 1 }}
           >
-            回答は匿名です（人数のみ表示）。
+            {t("schedule.anonymousNote")}
           </Typography>
         )}
 
@@ -613,7 +634,7 @@ export function SchedulePanel({
                   }
                 />
               }
-              label="日程調整の結果をみんなに表示する（回答してくれた人の一覧など）"
+              label={t("schedule.showResultToAll")}
             />
           </>
         )}
@@ -639,14 +660,14 @@ export function SchedulePanel({
                   }
                 />
               }
-              label="回答者を匿名にする（誰がどれを選んだか表示しない）"
+              label={t("schedule.anonymousVotes")}
             />
             <Typography variant="subtitle2" gutterBottom sx={{ mt: 1 }}>
-              候補日を追加
+              {t("schedule.addOptions")}
             </Typography>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
               <TextField
-                label="開始"
+                label={t("schedule.startTime")}
                 type="time"
                 size="small"
                 value={startTime}
@@ -655,10 +676,10 @@ export function SchedulePanel({
                 sx={{ width: 110 }}
               />
               <Typography variant="body2" color="text.secondary">
-                〜
+                {t("schedule.timeRangeSeparator")}
               </Typography>
               <TextField
-                label="終了"
+                label={t("schedule.endTime")}
                 type="time"
                 size="small"
                 value={endTime}
@@ -668,7 +689,7 @@ export function SchedulePanel({
               />
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              カレンダーの日付をタップして選択（複数可）
+              {t("schedule.calendarHint")}
             </Typography>
             <MiniCalendar
               selected={selectedDays}
@@ -682,8 +703,13 @@ export function SchedulePanel({
               onClick={addSelected}
             >
               {adding
-                ? "追加中…"
-                : `選択した ${selectedDays.size} 日を候補に追加`}
+                ? t("schedule.adding")
+                : t(
+                    selectedDays.size === 1
+                      ? "schedule.addSelectedDay"
+                      : "schedule.addSelectedDays",
+                    { n: selectedDays.size },
+                  )}
             </Button>
           </>
         )}

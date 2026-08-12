@@ -1,5 +1,6 @@
 import { Breadcrumbs, Link, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 /** イベント配下ページ用のパンくず: イベント一覧 / {イベント名} / {現在ページ} */
 export function EventBreadcrumbs({
@@ -11,10 +12,11 @@ export function EventBreadcrumbs({
   eventTitle: string;
   current: string;
 }) {
+  const { t } = useTranslation();
   return (
     <Breadcrumbs sx={{ mb: 2 }}>
       <Link component={RouterLink} to="/" underline="hover" color="inherit">
-        イベント
+        {t("events.title")}
       </Link>
       <Link
         component={RouterLink}

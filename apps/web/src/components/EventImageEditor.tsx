@@ -8,6 +8,7 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import { EVENT_IMAGE } from "@eventer/shared";
 import {
   eventImageUrl,
@@ -29,6 +30,7 @@ export function EventImageEditor({
     endsAt: number;
   };
 }) {
+  const { t } = useTranslation();
   const upload = useUploadEventImage(event.id);
   const remove = useDeleteEventImage(event.id);
   const currentUrl = eventImageUrl(event);
@@ -37,7 +39,10 @@ export function EventImageEditor({
   return (
     <Box>
       <Typography variant="subtitle1" gutterBottom>
-        イベント画像（OG画像 {EVENT_IMAGE.width}×{EVENT_IMAGE.height}）
+        {t("eventForm.imageHeading", {
+          width: EVENT_IMAGE.width,
+          height: EVENT_IMAGE.height,
+        })}
       </Typography>
 
       <ToggleButtonGroup
@@ -47,8 +52,12 @@ export function EventImageEditor({
         onChange={(_e, v) => v && setMode(v)}
         sx={{ mb: 1.5 }}
       >
-        <ToggleButton value="upload">アップロード</ToggleButton>
-        <ToggleButton value="template">テンプレートで作る</ToggleButton>
+        <ToggleButton value="upload">
+          {t("eventForm.imageModeUpload")}
+        </ToggleButton>
+        <ToggleButton value="template">
+          {t("eventForm.imageModeTemplate")}
+        </ToggleButton>
       </ToggleButtonGroup>
 
       {currentUrl ? (
@@ -68,14 +77,16 @@ export function EventImageEditor({
         />
       ) : (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          画像は未設定です
+          {t("eventForm.imageNone")}
         </Typography>
       )}
 
       {mode === "upload" ? (
         <Stack direction="row" spacing={1} alignItems="center">
           <ImageCropField
-            label={currentUrl ? "画像を変更" : "画像を追加"}
+            label={t(
+              currentUrl ? "eventForm.imageChange" : "eventForm.imageAdd",
+            )}
             busy={upload.isPending}
             onCropped={(blob) => upload.mutate(blob)}
           />
@@ -85,7 +96,7 @@ export function EventImageEditor({
               disabled={remove.isPending}
               onClick={() => remove.mutate()}
             >
-              削除
+              {t("eventForm.imageRemove")}
             </Button>
           )}
         </Stack>
@@ -99,7 +110,7 @@ export function EventImageEditor({
 
       {upload.isError && (
         <Alert severity="error" sx={{ mt: 1 }}>
-          アップロードに失敗しました（1MB以内の画像）
+          {t("eventForm.imageUploadError")}
         </Alert>
       )}
     </Box>

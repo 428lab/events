@@ -12,14 +12,49 @@ import {
   Typography,
 } from "@mui/material";
 import CasinoIcon from "@mui/icons-material/Casino";
+import { useTranslation } from "react-i18next";
 import {
   BACKGROUNDS,
   FONTS,
   LAYOUTS,
   drawEventImage,
   loadFont,
+  type BackgroundKey,
+  type FontDef,
   type LayoutKey,
 } from "../lib/imageTemplates.js";
+
+/** フォントの分類 → 翻訳キー。**分類そのもの（コード）と並びはここが持つ**。
+ * 分類は imageTemplates.ts の FontDef が定義しているので、綴りが変わると型で落ちる */
+const FONT_CATEGORY_KEY = [
+  ["ゴシック", "eventForm.imageFontGothic"],
+  ["丸ゴシック", "eventForm.imageFontRounded"],
+  ["明朝", "eventForm.imageFontMincho"],
+  ["手書き・個性派", "eventForm.imageFontDisplay"],
+] as const satisfies readonly (readonly [FontDef["category"], string])[];
+
+/** レイアウト (`LayoutKey`) → 翻訳キー。並びは LAYOUTS が持つ */
+const LAYOUT_KEY = {
+  center: "eventForm.imageLayoutCenter",
+  left: "eventForm.imageLayoutLeft",
+  top: "eventForm.imageLayoutTop",
+} as const satisfies Record<LayoutKey, string>;
+
+/** 背景 (`BackgroundKey`) → 翻訳キー。並びは BACKGROUNDS が持つ。
+ * 背景が増えたらここが型で落ちる（訳を足し忘れたまま出せない） */
+const BACKGROUND_KEY = {
+  dark: "eventForm.imageBgDark",
+  fireworks: "eventForm.imageBgFireworks",
+  fireworksWarm: "eventForm.imageBgFireworksWarm",
+  fireworksCool: "eventForm.imageBgFireworksCool",
+  aerialShells: "eventForm.imageBgAerialShells",
+  confetti: "eventForm.imageBgConfetti",
+  stars: "eventForm.imageBgStars",
+  teal: "eventForm.imageBgTeal",
+  amber: "eventForm.imageBgAmber",
+  light: "eventForm.imageBgLight",
+  dots: "eventForm.imageBgDots",
+} as const satisfies Record<BackgroundKey, string>;
 
 /**
  * テンプレート（背景・フォント・レイアウト）からイベント画像(1200×630)を生成する。
@@ -34,12 +69,13 @@ export function EventImageStudio({
   subtitle?: string;
   onGenerated: (blob: Blob) => void;
 }) {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rand = (n: number) => Math.floor(Math.random() * n);
   const [fontIdx, setFontIdx] = useState(() => rand(FONTS.length));
   const [bgIdx, setBgIdx] = useState(() => rand(BACKGROUNDS.length));
   const [layout, setLayout] = useState<LayoutKey>(
-    () => LAYOUTS[rand(LAYOUTS.length)].key,
+    () => LAYOUTS[rand(LAYOUTS.length)]!,
   );
   const [titleSize, setTitleSize] = useState(() => 72 + rand(7) * 8);
   const [showSubtitle, setShowSubtitle] = useState(Boolean(subtitle));
@@ -47,7 +83,7 @@ export function EventImageStudio({
   const shuffle = () => {
     setFontIdx(rand(FONTS.length));
     setBgIdx(rand(BACKGROUNDS.length));
-    setLayout(LAYOUTS[rand(LAYOUTS.length)].key);
+    setLayout(LAYOUTS[rand(LAYOUTS.length)]!);
     setTitleSize(72 + rand(7) * 8);
   };
 
@@ -103,44 +139,42 @@ export function EventImageStudio({
         onClick={shuffle}
         sx={{ alignSelf: "flex-start" }}
       >
-        おまかせ（ランダム）
+        {t("eventForm.imageShuffle")}
       </Button>
 
       <TextField
         select
         size="small"
-        label="フォント"
+        label={t("eventForm.imageFont")}
         value={fontIdx}
         onChange={(e) => setFontIdx(Number(e.target.value))}
         sx={{ maxWidth: 280 }}
       >
-        {(["ゴシック", "丸ゴシック", "明朝", "手書き・個性派"] as const).flatMap(
-          (cat) => [
-            <ListSubheader key={cat}>{cat}</ListSubheader>,
-            ...FONTS.map((f, i) =>
-              f.category === cat ? (
-                <MenuItem key={i} value={i}>
-                  {f.label}
-                </MenuItem>
-              ) : null,
-            ).filter(Boolean),
-          ],
-        )}
+        {FONT_CATEGORY_KEY.flatMap(([cat, key]) => [
+          <ListSubheader key={cat}>{t(key)}</ListSubheader>,
+          ...FONTS.map((f, i) =>
+            f.category === cat ? (
+              <MenuItem key={i} value={i}>
+                {f.label}
+              </MenuItem>
+            ) : null,
+          ).filter(Boolean),
+        ])}
       </TextField>
 
       <Box>
         <Typography variant="caption" color="text.secondary">
-          背景
+          {t("eventForm.imageBackground")}
         </Typography>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
           {BACKGROUNDS.map((b, i) => (
             <Button
-              key={b.label}
+              key={b.key}
               size="small"
               variant={bgIdx === i ? "contained" : "outlined"}
               onClick={() => setBgIdx(i)}
             >
-              {b.label}
+              {t(BACKGROUND_KEY[b.key])}
             </Button>
           ))}
         </Stack>
@@ -148,7 +182,7 @@ export function EventImageStudio({
 
       <Box>
         <Typography variant="caption" color="text.secondary">
-          レイアウト
+          {t("eventForm.imageLayout")}
         </Typography>
         <Box>
           <ToggleButtonGroup
@@ -159,8 +193,8 @@ export function EventImageStudio({
             sx={{ mt: 0.5 }}
           >
             {LAYOUTS.map((l) => (
-              <ToggleButton key={l.key} value={l.key}>
-                {l.label}
+              <ToggleButton key={l} value={l}>
+                {t(LAYOUT_KEY[l])}
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
@@ -169,7 +203,7 @@ export function EventImageStudio({
 
       <Box sx={{ maxWidth: 280 }}>
         <Typography variant="caption" color="text.secondary">
-          文字サイズ
+          {t("eventForm.imageTitleSize")}
         </Typography>
         <Slider
           size="small"
@@ -188,13 +222,13 @@ export function EventImageStudio({
           onClick={() => setShowSubtitle((v) => !v)}
           sx={{ alignSelf: "flex-start" }}
         >
-          日付を{showSubtitle ? "隠す" : "表示"}
+          {t(showSubtitle ? "eventForm.imageHideDate" : "eventForm.imageShowDate")}
         </Button>
       )}
 
       <Box>
         <Button variant="contained" onClick={use}>
-          この画像を使う
+          {t("eventForm.imageUse")}
         </Button>
       </Box>
     </Stack>

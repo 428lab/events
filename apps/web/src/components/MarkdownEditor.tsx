@@ -9,6 +9,7 @@ import {
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
+import { useTranslation } from "react-i18next";
 import { Markdown } from "./Markdown.js";
 import { CounterTextField } from "./CounterTextField.js";
 
@@ -31,6 +32,7 @@ export function MarkdownEditor({
   /** 文字数上限（サーバー側 zod の max と同値）。指定時のみカウンタ表示 */
   max?: number;
 }) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<"edit" | "preview">("edit");
 
   return (
@@ -54,11 +56,11 @@ export function MarkdownEditor({
         >
           <ToggleButton value="edit" sx={{ px: 1, py: 0.25, gap: 0.5 }}>
             <EditIcon sx={{ fontSize: 16 }} />
-            編集
+            {t("eventForm.markdownEdit")}
           </ToggleButton>
           <ToggleButton value="preview" sx={{ px: 1, py: 0.25, gap: 0.5 }}>
             <VisibilityIcon sx={{ fontSize: 16 }} />
-            プレビュー
+            {t("eventForm.markdownPreview")}
           </ToggleButton>
         </ToggleButtonGroup>
       </Stack>
@@ -101,7 +103,7 @@ export function MarkdownEditor({
             <Markdown>{value}</Markdown>
           ) : (
             <Typography color="text.secondary" variant="body2">
-              プレビューする内容がありません。
+              {t("eventForm.markdownEmptyPreview")}
             </Typography>
           )}
         </Box>

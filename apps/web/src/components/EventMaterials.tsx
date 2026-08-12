@@ -10,6 +10,7 @@ import {
 import CollectionsBookmarkOutlinedIcon from "@mui/icons-material/CollectionsBookmarkOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import { useTranslation } from "react-i18next";
 import type { ScheduleItem } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
 import { useEventSchedule } from "../api/eventScheduleHooks.js";
@@ -19,6 +20,7 @@ import { UserLink } from "./UserLink.js";
 /** 登壇資料のギャラリー (#149)。タイムテーブルのコマのうち資料URLがあるものを
  * OGサムネイル付きカードで一覧する。資料が1件もなければ非表示。 */
 export function EventMaterials({ eventId }: { eventId: string }) {
+  const { t } = useTranslation();
   const { data } = useEventSchedule(eventId);
   const { data: me } = useMe();
   const [editing, setEditing] = useState<ScheduleItem | null>(null);
@@ -35,7 +37,7 @@ export function EventMaterials({ eventId }: { eventId: string }) {
           sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1.5 }}
         >
           <CollectionsBookmarkOutlinedIcon fontSize="small" />
-          登壇資料
+          {t("schedule.material")}
         </Typography>
 
         <Box
@@ -63,7 +65,7 @@ export function EventMaterials({ eventId }: { eventId: string }) {
                   href={it.materialUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`登壇資料を開く: ${it.title}`}
+                  aria-label={t("eventForm.materialOpen", { title: it.title })}
                   sx={{ position: "absolute", inset: 0, zIndex: 1 }}
                 />
                 {/* サムネイル（OG画像が無ければプレースホルダー） */}
@@ -113,7 +115,7 @@ export function EventMaterials({ eventId }: { eventId: string }) {
                     <Chip
                       size="small"
                       variant="outlined"
-                      label="未割り当て（参加者には出ません）"
+                      label={t("schedule.unassignedChip")}
                       sx={{ height: 18, fontSize: "0.7rem", mb: 0.5 }}
                     />
                   )}
@@ -157,7 +159,7 @@ export function EventMaterials({ eventId }: { eventId: string }) {
                       e.stopPropagation();
                       setEditing(it);
                     }}
-                    title="資料URLを編集"
+                    title={t("schedule.materialEdit")}
                     sx={{
                       position: "absolute",
                       top: 4,

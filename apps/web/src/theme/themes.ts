@@ -113,7 +113,8 @@ function makeTheme(t: ThemeTokens): Theme {
 
 export interface ThemeDef {
   key: string;
-  label: string;
+  /** 呼び名は辞書 (`themeName.<key>`) が持つ (#362)。
+   * ここに文字列を戻すと、英語表示でも日本語のまま出る */
   theme: Theme;
   /** 背景花火に使う色（暗いテーマのみ） */
   fireworks: string[] | null;
@@ -122,7 +123,6 @@ export interface ThemeDef {
 export const THEMES: Record<string, ThemeDef> = {
   natsumatsuri: {
     key: "natsumatsuri",
-    label: "夏祭り",
     fireworks: [
       "#2DD4BF",
       "#FB923C",
@@ -153,7 +153,6 @@ export const THEMES: Record<string, ThemeDef> = {
   },
   neon: {
     key: "neon",
-    label: "ネオン",
     fireworks: [
       "#22D3EE",
       "#E879F9",
@@ -183,7 +182,6 @@ export const THEMES: Record<string, ThemeDef> = {
   },
   sakura: {
     key: "sakura",
-    label: "桜",
     fireworks: null,
     theme: makeTheme({
       mode: "light",
@@ -205,7 +203,6 @@ export const THEMES: Record<string, ThemeDef> = {
   },
   cool: {
     key: "cool",
-    label: "クール",
     fireworks: null,
     theme: makeTheme({
       mode: "light",

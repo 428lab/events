@@ -4,7 +4,7 @@ import {
   BROADCAST_MAX_PER_DAY,
   BROADCAST_MAX_PER_EVENT,
   BROADCAST_SEGMENTS,
-  formatBroadcastEmailEta,
+  broadcastEmailMinutes,
   type BroadcastSegment,
   type EventBroadcastsPayload,
   type SendBroadcastResult,
@@ -1214,11 +1214,12 @@ describe("送信状況と履歴", () => {
   });
 
   it("送りきるまでの時間の目安が実測のペースから出る", () => {
-    // 1リクエスト20通 x 5分おき = 240通/時。「数分」では実態と桁が違う
-    expect(formatBroadcastEmailEta(0)).toBe("");
-    expect(formatBroadcastEmailEta(100)).toBe("約25分");
-    expect(formatBroadcastEmailEta(300)).toBe("約1時間15分");
-    expect(formatBroadcastEmailEta(240)).toBe("約1時間");
+    // 1リクエスト20通 x 5分おき = 240通/時。「数分」では実態と桁が違う。
+    // 「約25分」のような**表記**は辞書が持つので、ここで見るのは分の値だけ (#363)
+    expect(broadcastEmailMinutes(0)).toBe(0);
+    expect(broadcastEmailMinutes(100)).toBe(25);
+    expect(broadcastEmailMinutes(300)).toBe(75);
+    expect(broadcastEmailMinutes(240)).toBe(60);
   });
 });
 

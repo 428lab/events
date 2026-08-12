@@ -18,6 +18,7 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
+import { useTranslation } from "react-i18next";
 import type { SurveyQtype } from "@eventer/shared";
 import { SURVEY_TEMPLATES } from "@eventer/shared";
 import {
@@ -25,12 +26,14 @@ import {
   useSaveSurveyQuestions,
   useSurveyAnswers,
 } from "../api/eventSurveyHooks.js";
+import { tDynamic } from "../i18n/index.js";
 
-const QTYPE_LABEL: Record<SurveyQtype, string> = {
-  text: "自由記述",
-  select: "単一選択",
-  checkbox: "複数選択",
-};
+/** 回答形式 (`SurveyQtype`) → 翻訳キー。**選ばせる順番はこの並びが持つ** */
+const QTYPE_KEY = {
+  text: "eventForm.qtypeText",
+  select: "eventForm.qtypeSelect",
+  checkbox: "eventForm.qtypeCheckbox",
+} as const satisfies Record<SurveyQtype, string>;
 
 /** 編集中の1行。optionsText はカンマ区切りの選択肢入力 */
 interface Row {
@@ -65,6 +68,7 @@ function parseOptions(text: string): string[] {
 /** 参加時の事前アンケートの質問編集 (#152)。staff 用。
  * 既存質問は id を保持したまま保存するので、文言修正では回答が消えない。 */
 export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
+  const { t } = useTranslation();
   const { data: questions } = useEventSurvey(eventId);
   // 破壊的変更の警告用に回答件数を取得（このコンポーネントは staff ページ内でのみ描画）
   const { data: answersData } = useSurveyAnswers(eventId, true);
@@ -105,13 +109,11 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
 
   const applyTemplate = (templateKey: string) => {
     setTemplateAnchor(null);
-    const template = SURVEY_TEMPLATES.find((t) => t.key === templateKey);
+    const template = SURVEY_TEMPLATES.find((tpl) => tpl.key === templateKey);
     if (!template) return;
     if (
       rows.length > 0 &&
-      !window.confirm(
-        "現在の質問をテンプレートで置き換えますか？（保存すると既存質問の回答は消えます）",
-      )
+      !window.confirm(t("eventForm.surveyTemplateConfirm"))
     ) {
       return;
     }
@@ -128,9 +130,11 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
   };
 
   const rowError = (r: Row): string | null => {
-    if (r.question.trim().length === 0) return "質問を入力してください";
+    if (r.question.trim().length === 0) {
+      return t("eventForm.surveyQuestionRequired");
+    }
     if (r.qtype !== "text" && parseOptions(r.optionsText).length === 0) {
-      return "選択肢をカンマ区切りで1つ以上入力してください";
+      return t("eventForm.surveyOptionsRequired");
     }
     return null;
   };
@@ -155,8 +159,11 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
       }
       if (
         lost > 0 &&
+        // 単数用と複数用のどちらを使うかは**数だけ**で決まる（日本語は同じ綴り）
         !window.confirm(
-          `この変更で ${lost} 件の回答が削除されます。よろしいですか？`,
+          t(lost === 1 ? "eventForm.surveyLoseAnswer" : "eventForm.surveyLoseAnswers", {
+            n: lost,
+          }),
         )
       ) {
         return;
@@ -190,14 +197,14 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
   return (
     <Box>
       <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.5 }}>
-        参加アンケート
+        {t("eventForm.surveyHeading")}
       </Typography>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
-        参加登録時に回答してもらう質問です（入館用の氏名・所属の収集など）。必須の質問に未回答の人は参加登録できません。回答はスタッフだけが閲覧できます。
+        {t("eventForm.surveyHelp")}
         {(answersData?.rows.length ?? 0) > 0 && (
           <>
             <br />
-            すでに回答が集まっています。質問の追加・必須化は今後の参加者にのみ適用されます（既存参加者の未回答はアクセス統計の回答一覧で確認できます）。
+            {t("eventForm.surveyAnswersExist")}
           </>
         )}
       </Typography>
@@ -209,7 +216,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
               <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
                   <TextField
-                    label="質問"
+                    label={t("eventForm.surveyQuestion")}
                     size="small"
                     value={row.question}
                     onChange={(e) => update(i, { question: e.target.value })}
@@ -217,7 +224,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
                     sx={{ flex: 1 }}
                   />
                   <TextField
-                    label="回答形式"
+                    label={t("eventForm.surveyQtype")}
                     select
                     size="small"
                     value={row.qtype}
@@ -226,21 +233,21 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
                     }
                     sx={{ width: { xs: "100%", sm: 140 } }}
                   >
-                    {(Object.keys(QTYPE_LABEL) as SurveyQtype[]).map((t) => (
-                      <MenuItem key={t} value={t}>
-                        {QTYPE_LABEL[t]}
+                    {(Object.keys(QTYPE_KEY) as SurveyQtype[]).map((qt) => (
+                      <MenuItem key={qt} value={qt}>
+                        {t(QTYPE_KEY[qt])}
                       </MenuItem>
                     ))}
                   </TextField>
                 </Stack>
                 {row.qtype !== "text" && (
                   <TextField
-                    label="選択肢（カンマ区切り）"
+                    label={t("eventForm.surveyOptions")}
                     size="small"
                     value={row.optionsText}
                     onChange={(e) => update(i, { optionsText: e.target.value })}
                     error={parseOptions(row.optionsText).length === 0}
-                    helperText="例: 参加, 不参加"
+                    helperText={t("eventForm.surveyOptionsExample")}
                     fullWidth
                   />
                 )}
@@ -254,7 +261,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
                   }
                   label={
                     <Typography variant="body2">
-                      必須（未回答だと参加登録できない）
+                      {t("eventForm.surveyRequired")}
                     </Typography>
                   }
                 />
@@ -264,7 +271,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
                   size="small"
                   disabled={i === 0}
                   onClick={() => move(i, i - 1)}
-                  title="上へ移動"
+                  title={t("common.moveUp")}
                 >
                   <ArrowUpwardIcon fontSize="small" />
                 </IconButton>
@@ -272,7 +279,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
                   size="small"
                   disabled={i === rows.length - 1}
                   onClick={() => move(i, i + 1)}
-                  title="下へ移動"
+                  title={t("common.moveDown")}
                 >
                   <ArrowDownwardIcon fontSize="small" />
                 </IconButton>
@@ -281,15 +288,13 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
                   onClick={() => {
                     if (
                       row.id &&
-                      !window.confirm(
-                        "この質問を削除しますか？（保存すると集まった回答も削除されます）",
-                      )
+                      !window.confirm(t("eventForm.surveyDeleteConfirm"))
                     ) {
                       return;
                     }
                     setRows((rs) => (rs ? rs.filter((_, j) => j !== i) : rs));
                   }}
-                  title="この質問を削除"
+                  title={t("eventForm.surveyDeleteQuestion")}
                 >
                   <DeleteOutlineIcon fontSize="small" />
                 </IconButton>
@@ -299,10 +304,10 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
         ))}
 
         {save.isError && (
-          <Alert severity="error">アンケートの保存に失敗しました。</Alert>
+          <Alert severity="error">{t("eventForm.surveySaveError")}</Alert>
         )}
         {save.isSuccess && !save.isPending && (
-          <Alert severity="success">アンケートを保存しました。</Alert>
+          <Alert severity="success">{t("eventForm.surveySaved")}</Alert>
         )}
 
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -313,7 +318,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
             disabled={rows.length >= 20}
             onClick={() => setRows((rs) => (rs ? [...rs, newRow()] : rs))}
           >
-            質問を追加
+            {t("eventForm.surveyAddQuestion")}
           </Button>
           <Button
             size="small"
@@ -321,16 +326,17 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
             startIcon={<PlaylistAddIcon />}
             onClick={(e) => setTemplateAnchor(e.currentTarget)}
           >
-            テンプレから作成
+            {t("eventForm.surveyFromTemplate")}
           </Button>
           <Menu
             anchorEl={templateAnchor}
             open={Boolean(templateAnchor)}
             onClose={() => setTemplateAnchor(null)}
           >
-            {SURVEY_TEMPLATES.map((t) => (
-              <MenuItem key={t.key} onClick={() => applyTemplate(t.key)}>
-                {t.name}
+            {SURVEY_TEMPLATES.map((tpl) => (
+              <MenuItem key={tpl.key} onClick={() => applyTemplate(tpl.key)}>
+                {/* テンプレは足せるので tDynamic。受け皿は定義側の日本語 */}
+                {tDynamic(`eventForm.surveyTemplateName_${tpl.key}`, tpl.name)}
               </MenuItem>
             ))}
           </Menu>
@@ -341,7 +347,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
             onClick={submit}
             disabled={!canSave || save.isPending}
           >
-            アンケートを保存
+            {t("eventForm.surveySave")}
           </Button>
         </Stack>
       </Stack>

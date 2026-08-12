@@ -244,7 +244,7 @@ export function MeetScanPage() {
                         })
                       }
                     >
-                      {t("meet.undo")}
+                      {t("common.undo")}
                     </Button>
                   )}
                 </Stack>

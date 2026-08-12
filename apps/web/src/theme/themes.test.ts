@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { i18next, tDynamic } from "../i18n/index.js";
 import { THEMES } from "./themes.js";
 
 /**
@@ -48,5 +49,45 @@ describe("テーマトークン", () => {
         `${key} primary.dark`,
       ).toBeGreaterThanOrEqual(4.5);
     }
+  });
+});
+
+/**
+ * テーマの呼び名 (#362)。
+ *
+ * 切替メニューの文言だけ英語で、呼び名は日本語のまま、という混在になっていた。
+ * 呼び名は**意味が伝わることに価値がある**ので訳す（言語の呼び名とは扱いが違う）。
+ * ここが見るのは「どのテーマにも両方の言語の呼び名がある」ことと、
+ * 呼び名がテーマ定義そのものに戻っていないこと。
+ */
+describe("テーマの呼び名 (#362)", () => {
+  afterEach(async () => {
+    await i18next.changeLanguage("ja");
+  });
+
+  it("すべてのテーマに日本語と英語の呼び名がある", async () => {
+    for (const key of Object.keys(THEMES)) {
+      // 既定値をキーそのものにしてあるので、辞書に無ければキー名が返る
+      expect(tDynamic(`themeName.${key}`, key), key).not.toBe(key);
+    }
+    await i18next.changeLanguage("en");
+    for (const key of Object.keys(THEMES)) {
+      const name = tDynamic(`themeName.${key}`, key);
+      expect(name, key).not.toBe(key);
+      // 英語表示で日本語のまま出ていたのが #362 の中身
+      expect(name, key).not.toMatch(/[぀-ヿ㐀-䶿一-鿿]/);
+    }
+  });
+
+  it("呼び名はテーマ定義ではなく辞書が持つ", () => {
+    for (const def of Object.values(THEMES)) {
+      expect(def).not.toHaveProperty("label");
+    }
+  });
+
+  it("辞書に無いテーマでもキー名以外は出ない（受け皿がある）", () => {
+    expect(tDynamic("themeName.brand_new_theme", "brand_new_theme")).toBe(
+      "brand_new_theme",
+    );
   });
 });

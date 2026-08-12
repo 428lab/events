@@ -14,6 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import StadiumIcon from "@mui/icons-material/Stadium";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { EVENT_IMAGE, VENUE_TYPES, type VenueType } from "@eventer/shared";
 import { useCreateEvent } from "../api/hooks.js";
@@ -32,6 +33,7 @@ function toEpoch(local: string): number {
 
 export function CreateEventPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const createEvent = useCreateEvent();
   const { data: myCommunities } = useMyCommunities();
   // たまご（あったらいいな）からの開催宣言: ?fromRequest=<id> でプリフィル＋作成後リンク
@@ -116,7 +118,7 @@ export function CreateEventPage() {
           if (!uploadBlob) {
             uploadBlob = await generateEventImageBlob(
               title,
-              scheduling ? "日程調整中" : undefined,
+              scheduling ? t("eventForm.imageSchedulingSubtitle") : undefined,
             ).catch(() => null);
           }
           if (uploadBlob) {
@@ -150,11 +152,11 @@ export function CreateEventPage() {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h5" fontWeight={700} gutterBottom>
-          イベント作成
+          {t("eventForm.createTitle")}
         </Typography>
         <Stack spacing={2.5} sx={{ mt: 2 }}>
           <CounterTextField
-            label="タイトル"
+            label={t("eventForm.title")}
             value={title}
             max={200}
             onChange={(e) => setTitle(e.target.value)}
@@ -162,30 +164,30 @@ export function CreateEventPage() {
             fullWidth
           />
           <CounterTextField
-            label="サブタイトル（任意）"
+            label={t("eventForm.subtitle")}
             value={subtitle}
             max={200}
             onChange={(e) => setSubtitle(e.target.value)}
             fullWidth
           />
           <MarkdownEditor
-            label="内容"
+            label={t("eventForm.description")}
             value={description}
             onChange={setDescription}
             minRows={3}
             max={20000}
-            helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調**、<img> など）"
+            helperText={t("eventForm.markdownHelp")}
           />
           {myCommunities && myCommunities.length > 0 && (
             <TextField
               select
-              label="コミュニティ（任意）"
+              label={t("eventForm.community")}
               value={communityId}
               onChange={(e) => setCommunityId(e.target.value)}
               fullWidth
-              helperText="主催コミュニティに紐付けると、そのコミュニティページに表示されます"
+              helperText={t("eventForm.communityHelp")}
             >
-              <MenuItem value="">なし</MenuItem>
+              <MenuItem value="">{t("eventForm.communityNone")}</MenuItem>
               {myCommunities.map((c) => (
                 <MenuItem key={c.id} value={c.id}>
                   {c.name}
@@ -200,7 +202,7 @@ export function CreateEventPage() {
                 onChange={(e) => setScheduling(e.target.checked)}
               />
             }
-            label="日程調整（日程未定で公開。候補日に参加者が○△×で回答）"
+            label={t("eventForm.scheduling")}
           />
           {scheduling && (
             <FormControlLabel
@@ -211,13 +213,13 @@ export function CreateEventPage() {
                   onChange={(e) => setScheduleAnonymous(e.target.checked)}
                 />
               }
-              label="回答者を匿名にする（人数のみ表示。大人数向け）"
+              label={t("eventForm.scheduleAnonymous")}
             />
           )}
           {!scheduling && (
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField
-                label="開始日時"
+                label={t("eventForm.startsAt")}
                 type="datetime-local"
                 value={startsAt}
                 onChange={(e) => setStartsAt(e.target.value)}
@@ -225,7 +227,7 @@ export function CreateEventPage() {
                 fullWidth
               />
               <TextField
-                label="終了日時"
+                label={t("eventForm.endsAt")}
                 type="datetime-local"
                 value={endsAt}
                 onChange={(e) => setEndsAt(e.target.value)}
@@ -235,7 +237,7 @@ export function CreateEventPage() {
             </Stack>
           )}
           <TextField
-            label="会場種別"
+            label={t("eventForm.venueType")}
             select
             value={venueType}
             onChange={(e) => setVenueType(e.target.value as VenueType)}
@@ -249,7 +251,7 @@ export function CreateEventPage() {
           </TextField>
           {venueType !== "online" && (
             <CounterTextField
-              label="オフライン会場"
+              label={t("eventForm.venueOffline")}
               value={venueOffline}
               max={500}
               onChange={(e) => setVenueOffline(e.target.value)}
@@ -258,7 +260,7 @@ export function CreateEventPage() {
           )}
           {venueType !== "offline" && (
             <CounterTextField
-              label="オンライン会場（Discord 招待 URL など）"
+              label={t("eventForm.venueOnline")}
               value={venueOnline}
               max={500}
               onChange={(e) => setVenueOnline(e.target.value)}
@@ -273,10 +275,10 @@ export function CreateEventPage() {
                   onChange={(e) => setContestMode(e.target.checked)}
                 />
               }
-              label="コンテスト形式（採点・成果物・表彰を使う）"
+              label={t("eventForm.contestMode")}
             />
             <Typography variant="caption" color="text.secondary" display="block">
-              オフなら告知・募集だけの一般イベントになります（採点や表彰は表示されません）。あとから変更できます。
+              {t("eventForm.contestModeHelpCreate")}
             </Typography>
           </Box>
 
@@ -294,18 +296,21 @@ export function CreateEventPage() {
                   sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
                 >
                   <StadiumIcon fontSize="small" />
-                  会場を探しています
+                  {t("eventForm.venueWanted")}
                 </Box>
               }
             />
             <Typography variant="caption" color="text.secondary" display="block">
-              オンにすると会場提供者からのオファーを受け付けます（会場募集一覧にも掲載）。
+              {t("eventForm.venueWantedHelp")}
             </Typography>
           </Box>
 
           <Box>
             <Typography variant="subtitle2" gutterBottom>
-              イベント画像（OG画像 {EVENT_IMAGE.width}×{EVENT_IMAGE.height}・任意）
+              {t("eventForm.imageHeadingOptional", {
+                width: EVENT_IMAGE.width,
+                height: EVENT_IMAGE.height,
+              })}
             </Typography>
             <ToggleButtonGroup
               size="small"
@@ -314,8 +319,12 @@ export function CreateEventPage() {
               onChange={(_e, v) => v && setImageMode(v)}
               sx={{ mb: 1.5 }}
             >
-              <ToggleButton value="upload">アップロード</ToggleButton>
-              <ToggleButton value="template">テンプレートで作る</ToggleButton>
+              <ToggleButton value="upload">
+                {t("eventForm.imageModeUpload")}
+              </ToggleButton>
+              <ToggleButton value="template">
+                {t("eventForm.imageModeTemplate")}
+              </ToggleButton>
             </ToggleButtonGroup>
 
             {imagePreview && (
@@ -338,12 +347,14 @@ export function CreateEventPage() {
             {imageMode === "upload" ? (
               <Stack direction="row" spacing={1}>
                 <ImageCropField
-                  label={imagePreview ? "画像を変更" : "画像を選択"}
+                  label={t(
+                    imagePreview ? "eventForm.imageChange" : "eventForm.imageSelect",
+                  )}
                   onCropped={setCropped}
                 />
                 {imagePreview && (
                   <Button color="error" onClick={clearImage}>
-                    削除
+                    {t("eventForm.imageRemove")}
                   </Button>
                 )}
               </Stack>
@@ -365,17 +376,17 @@ export function CreateEventPage() {
 
           {createEvent.isError && (
             <Typography color="error" variant="body2">
-              作成に失敗しました。入力内容を確認してください。
+              {t("eventForm.createError")}
             </Typography>
           )}
           {linkFailedEventId ? (
             <Stack spacing={1}>
               <Typography color="error" variant="body2">
-                イベントは作成されましたが、たまごへの紐付けに失敗しました。
+                {t("eventForm.linkFailed")}
               </Typography>
               <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} justifyContent="flex-end">
                 <Button onClick={() => navigate(`/events/${linkFailedEventId}`)}>
-                  紐付けせずイベントへ
+                  {t("eventForm.linkSkip")}
                 </Button>
                 <Button
                   variant="contained"
@@ -392,19 +403,19 @@ export function CreateEventPage() {
                     }
                   }}
                 >
-                  紐付けを再試行
+                  {t("eventForm.linkRetry")}
                 </Button>
               </Stack>
             </Stack>
           ) : (
             <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} justifyContent="flex-end">
-              <Button onClick={() => navigate(-1)}>キャンセル</Button>
+              <Button onClick={() => navigate(-1)}>{t("common.cancel")}</Button>
               <Button
                 variant="contained"
                 disabled={!canSubmit || createEvent.isPending}
                 onClick={submit}
               >
-                作成
+                {t("eventForm.createSubmit")}
               </Button>
             </Stack>
           )}

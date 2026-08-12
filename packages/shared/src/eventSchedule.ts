@@ -238,13 +238,17 @@ export function computeScheduleTimes(
 /** 同じトラック内で時刻が重なっている組み合わせ (#338)。
  * 重なりは弾かない（保存は止めない）が、タイムテーブルの枠が潰れて読みにくく
  * なるので編集画面で警告するために使う。
- * 未割り当ては時刻を持たないので対象外。全トラック共通は全列を占める。 */
+ * 未割り当ては時刻を持たないので対象外。全トラック共通は全列を占める。
+ *
+ * `trackName` が `null` なら「どのトラックでもなく全トラック共通どうしの重なり」。
+ * ここで日本語を返すと訳せなくなるので、**呼ぶ側が辞書から文言を入れる** (#363)。
+ * 利用者が付けたトラック名はそのまま返す（訳す対象ではない）。 */
 export function findTrackOverlaps<T extends ScheduleTimeItem>(
   items: T[],
   times: Array<number | null>,
   tracks: EventTrack[],
-): Array<{ trackName: string; a: T; b: T }> {
-  const out: Array<{ trackName: string; a: T; b: T }> = [];
+): Array<{ trackName: string | null; a: T; b: T }> {
+  const out: Array<{ trackName: string | null; a: T; b: T }> = [];
   // 同じ組み合わせは1行だけにする。全トラック共通どうしはどの列でも重なるので、
   // そのままだとトラックの本数ぶん同じ警告が並ぶ
   const seen = new Set<string>();
@@ -274,7 +278,7 @@ export function findTrackOverlaps<T extends ScheduleTimeItem>(
         out.push({
           trackName:
             a.it.placement === "all" && b.it.placement === "all"
-              ? "全トラック共通"
+              ? null
               : track.name,
           a: a.it,
           b: b.it,
@@ -300,7 +304,16 @@ export interface ScheduleTemplate {
   items: ScheduleTemplateItem[];
 }
 
-/** タイムテーブルのテンプレート（編集画面のたたき台） */
+/**
+ * タイムテーブルのテンプレート（編集画面のたたき台）。
+ *
+ * **`name` は辞書 (`schedule.templateName_<key>`) が訳す**が、`items` の中身
+ * （コマの題名・説明）は日本語のまま。訳し忘れではない (#363):
+ * テンプレを選ぶと**その文言がそのまま主催者のタイムテーブルとして保存される**ので、
+ * ここを見ている人の言語で訳すと、保存されたあとに「作った人と参加者で
+ * 見える文言が違う」ことになる。保存されるデータの言語をどう扱うかは **#364**
+ * で別途決める。決まるまでは中身に手を入れないこと。
+ */
 export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
   {
     key: "lt",

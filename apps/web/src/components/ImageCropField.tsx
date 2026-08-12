@@ -11,6 +11,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import { EVENT_IMAGE } from "@eventer/shared";
 import { cropToImage, type PixelCrop } from "../lib/cropImage.js";
 
@@ -33,6 +34,7 @@ export function ImageCropField({
   outHeight?: number;
   maxBytes?: number;
 }) {
+  const { t } = useTranslation();
   const fileRef = useRef<HTMLInputElement>(null);
   const [src, setSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -94,7 +96,7 @@ export function ImageCropField({
       />
 
       <Dialog open={Boolean(src)} onClose={close} maxWidth="sm" fullWidth>
-        <DialogTitle>クロップ範囲を指定</DialogTitle>
+        <DialogTitle>{t("eventForm.cropTitle")}</DialogTitle>
         <DialogContent>
           <Box
             sx={{
@@ -117,7 +119,7 @@ export function ImageCropField({
             )}
           </Box>
           <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 2 }}>
-            <Typography variant="body2">ズーム</Typography>
+            <Typography variant="body2">{t("eventForm.cropZoom")}</Typography>
             <Slider
               min={1}
               max={3}
@@ -128,13 +130,13 @@ export function ImageCropField({
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={close}>キャンセル</Button>
+          <Button onClick={close}>{t("common.cancel")}</Button>
           <Button
             variant="contained"
             disabled={working || !areaPixels}
             onClick={save}
           >
-            適用
+            {t("eventForm.cropApply")}
           </Button>
         </DialogActions>
       </Dialog>

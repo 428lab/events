@@ -7,6 +7,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import type { ParticipationSlot, User } from "@eventer/shared";
 import { formatDateTime } from "../lib/format.js";
 
@@ -31,18 +32,20 @@ export function EventSlots({
   joinPending: boolean;
   onJoin: (slotId: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Stack spacing={1.5}>
-      <Typography variant="h6">参加枠</Typography>
+      <Typography variant="h6">{t("eventForm.slotsHeading")}</Typography>
       {slots.map((s) => {
         const full =
           s.selectionType === "first_come" && s.confirmedCount >= s.capacity;
-        const label =
+        const label = t(
           s.selectionType === "lottery"
-            ? "抽選に申し込む"
+            ? "eventForm.slotJoinLottery"
             : full
-              ? "キャンセル待ちで申込"
-              : "参加する";
+              ? "eventForm.slotJoinWaitlist"
+              : "eventForm.slotJoin",
+        );
         return (
           <Card key={s.id} variant="outlined">
             <CardContent
@@ -58,20 +61,33 @@ export function EventSlots({
                   <Typography fontWeight={600}>{s.name}</Typography>
                   <Chip
                     size="small"
-                    label={s.selectionType === "lottery" ? "抽選" : "先着順"}
+                    label={t(
+                      s.selectionType === "lottery"
+                        ? "eventForm.slotTypeLottery"
+                        : "eventForm.slotTypeFirstCome",
+                    )}
                     color={s.selectionType === "lottery" ? "secondary" : "default"}
                   />
                 </Stack>
                 <Typography variant="body2" color="text.secondary">
-                  確定 {s.confirmedCount} / 定員 {s.capacity}
+                  {t("eventForm.slotConfirmedCapacity", {
+                    n: s.confirmedCount,
+                    total: s.capacity,
+                  })}
                   {s.selectionType === "lottery" && s.appliedCount > 0
-                    ? ` ・ 抽選申込 ${s.appliedCount}`
+                    ? t("common.dotSeparator") +
+                      t("eventForm.slotAppliedCount", { n: s.appliedCount })
                     : ""}
-                  {s.waitlistCount > 0 ? ` ・ キャンセル待ち ${s.waitlistCount}` : ""}
+                  {s.waitlistCount > 0
+                    ? t("common.dotSeparator") +
+                      t("eventForm.slotWaitlistCount", { n: s.waitlistCount })
+                    : ""}
                 </Typography>
                 {s.selectionType === "lottery" && s.drawAt && (
                   <Typography variant="caption" color="text.secondary">
-                    抽選日時: {formatDateTime(s.drawAt)}
+                    {t("eventForm.slotDrawAtLabel", {
+                      date: formatDateTime(s.drawAt),
+                    })}
                   </Typography>
                 )}
               </Box>
@@ -79,7 +95,11 @@ export function EventSlots({
                 !isMember &&
                 !ended &&
                 (closed ? (
-                  <Chip size="small" variant="outlined" label="募集は締め切りました" />
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={t("eventDetail.closedChip")}
+                  />
                 ) : (
                   <Button
                     variant="contained"

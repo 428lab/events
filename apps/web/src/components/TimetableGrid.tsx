@@ -1,5 +1,6 @@
 import { Box, Chip, Stack, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
+import { useTranslation } from "react-i18next";
 import type { TimetableBlock, TimetableLayout } from "../lib/timetableLayout.js";
 import { TIMETABLE_SLOT_PX } from "../lib/timetableLayout.js";
 import { formatTime } from "../lib/format.js";
@@ -59,6 +60,7 @@ export function TimetableGrid({
   /** トラックと同じ並びの色。テーマから導いた値 (lib/trackColors.ts) */
   colors: string[];
 }) {
+  const { t } = useTranslation();
   const theme = useTheme();
   const { tracks, blocks, ticks, rows } = layout;
   if (tracks.length === 0 || rows === 0) return null;
@@ -76,7 +78,7 @@ export function TimetableGrid({
     // 読み上げが表として案内したのに中身が読めない状態になる
     <Box
       role="region"
-      aria-label="タイムテーブル"
+      aria-label={t("schedule.timetable")}
       tabIndex={0}
       sx={{
         overflow: "auto",
@@ -97,13 +99,13 @@ export function TimetableGrid({
         }}
       >
         {/* 30分ごとの横線。時 のところだけ濃くする */}
-        {ticks.map((t) => (
+        {ticks.map((tick) => (
           <Box
-            key={`line-${t.ms}`}
-            style={{ gridColumn: "1 / -1", gridRow: String(t.rowStart + 1) }}
+            key={`line-${tick.ms}`}
+            style={{ gridColumn: "1 / -1", gridRow: String(tick.rowStart + 1) }}
             sx={{
               borderTop: 1,
-              borderColor: t.hour ? "text.disabled" : "divider",
+              borderColor: tick.hour ? "text.disabled" : "divider",
               pointerEvents: "none",
             }}
           />
@@ -134,7 +136,7 @@ export function TimetableGrid({
           }}
         >
           <Typography variant="caption" color="text.secondary">
-            時刻
+            {t("schedule.time")}
           </Typography>
         </Box>
         {tracks.map((track, i) => (
@@ -171,12 +173,12 @@ export function TimetableGrid({
         ))}
 
         {/* 時刻の目盛り */}
-        {ticks.map((t) => (
+        {ticks.map((tick) => (
           <Box
-            key={`time-${t.ms}`}
+            key={`time-${tick.ms}`}
             style={{
               gridColumn: "1",
-              gridRow: `${t.rowStart + 1} / ${t.rowEnd + 1}`,
+              gridRow: `${tick.rowStart + 1} / ${tick.rowEnd + 1}`,
             }}
             sx={{
               position: "sticky",
@@ -192,10 +194,10 @@ export function TimetableGrid({
           >
             <Typography
               variant="caption"
-              fontWeight={t.hour ? 700 : 400}
-              color={t.hour ? "text.primary" : "text.secondary"}
+              fontWeight={tick.hour ? 700 : 400}
+              color={tick.hour ? "text.primary" : "text.secondary"}
             >
-              {formatTime(t.ms)}
+              {formatTime(tick.ms)}
             </Typography>
           </Box>
         ))}
@@ -211,8 +213,8 @@ export function TimetableGrid({
           // トラック名はどの枠にも必ず入れる。またぎ・全トラック共通は列を見ても
           // 分からないので目に見える Chip、単独トラックは読み上げにだけ出す
           const trackLabel = block.common
-            ? "全トラック共通"
-            : block.trackNames.join("・");
+            ? t("schedule.allTracks")
+            : block.trackNames.join(t("schedule.trackNameSeparator"));
           return (
             <Box
               key={block.key}
@@ -293,7 +295,7 @@ export function TimetableGrid({
                   />
                 ) : (
                   <Box component="span" sx={SR_ONLY}>
-                    トラック{trackLabel}
+                    {t("schedule.trackSrLabel", { name: trackLabel })}
                   </Box>
                 )}
               </Stack>

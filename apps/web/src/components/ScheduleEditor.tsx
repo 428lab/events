@@ -9,6 +9,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import AddIcon from "@mui/icons-material/Add";
 import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
@@ -23,6 +24,7 @@ import {
   useSaveEventSchedule,
 } from "../api/eventScheduleHooks.js";
 import { ApiError } from "../api/client.js";
+import { tDynamic } from "../i18n/index.js";
 import { formatTime } from "../lib/format.js";
 import type { MemberOption } from "./ScheduleItemRow.js";
 import {
@@ -74,6 +76,7 @@ export function ScheduleEditor({
   onReload: () => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const { data: members } = useEventMembers(eventId, true);
   const { data: me } = useMe();
   const save = useSaveEventSchedule(eventId);
@@ -116,14 +119,14 @@ export function ScheduleEditor({
   const times = computeScheduleTimes(
     toTimeItems(rows),
     eventStartsAt,
-    tracks.map((t) => t.key),
+    tracks.map((track) => track.key),
   );
   // 同一トラック内の重なりは保存を止めず、警告だけ出す (#338)。
   // トラックはまだ ID を持たないものがあるので、編集中のキーを ID として渡す
   const overlaps = findTrackOverlaps(
     rows.map((r, i) => ({ ...r, trackIds: r.trackKeys, start: times[i] ?? null })),
     times,
-    tracks.map((t, i) => ({ id: t.key, name: t.name, sortOrder: i })),
+    tracks.map((track, i) => ({ id: track.key, name: track.name, sortOrder: i })),
   );
 
   const replaceRow = (key: string, next: Row) =>
@@ -176,11 +179,11 @@ export function ScheduleEditor({
 
   const applyTemplate = (templateKey: string) => {
     setTemplateAnchor(null);
-    const template = SCHEDULE_TEMPLATES.find((t) => t.key === templateKey);
+    const template = SCHEDULE_TEMPLATES.find((x) => x.key === templateKey);
     if (!template) return;
     if (
       rows.length > 0 &&
-      !window.confirm("現在の内容をテンプレートで置き換えますか？")
+      !window.confirm(t("schedule.templateConfirm"))
     ) {
       return;
     }
@@ -192,18 +195,23 @@ export function ScheduleEditor({
     if (
       used > 0 &&
       !window.confirm(
-        `このトラックにだけ載っている${used}件のセッションは未割り当てに戻ります。削除しますか？`,
+        t(
+          used === 1
+            ? "schedule.removeTrackConfirmOne"
+            : "schedule.removeTrackConfirm",
+          { n: used },
+        ),
       )
     ) {
       return;
     }
     setRows((rs) => removeTrackFromRows(rs, key));
-    setTracks((ts) => ts.filter((t) => t.key !== key));
+    setTracks((ts) => ts.filter((track) => track.key !== key));
   };
 
   const moveTrack = (key: string, delta: number) =>
     setTracks((ts) => {
-      const from = ts.findIndex((t) => t.key === key);
+      const from = ts.findIndex((track) => track.key === key);
       const to = from + delta;
       if (from < 0 || to < 0 || to >= ts.length) return ts;
       const next = [...ts];
@@ -217,20 +225,14 @@ export function ScheduleEditor({
         r.title.trim().length > 0 &&
         (r.materialUrl.trim() === "" ||
           /^https?:\/\//.test(r.materialUrl.trim())),
-    ) && tracks.every((t) => t.name.trim().length > 0);
+    ) && tracks.every((track) => track.name.trim().length > 0);
 
   const submit = () =>
     save.mutate(toSaveInput(rows, tracks, baseVersion), { onSuccess: onClose });
 
   /** 最新を読み込み直す。手元の編集は失われるので、押す前に必ず確かめる */
   const reload = () => {
-    if (
-      !window.confirm(
-        "最新のタイムテーブルを読み込み直します。この画面の編集内容は失われます。よろしいですか？",
-      )
-    ) {
-      return;
-    }
+    if (!window.confirm(t("schedule.reloadConfirm"))) return;
     onReload();
   };
 
@@ -271,10 +273,16 @@ export function ScheduleEditor({
       <ScheduleTrackManager
         tracks={tracks}
         onAdd={() =>
-          setTracks((ts) => [...ts, newTrackRow(`トラック${ts.length + 1}`)])
+          setTracks((ts) => [
+            ...ts,
+            // 付けた人の言語で保存される仮の名前。あとから書き換えられる
+            newTrackRow(t("schedule.defaultTrackName", { n: ts.length + 1 })),
+          ])
         }
         onRename={(key, name) =>
-          setTracks((ts) => ts.map((t) => (t.key === key ? { ...t, name } : t)))
+          setTracks((ts) =>
+            ts.map((track) => (track.key === key ? { ...track, name } : track)),
+          )
         }
         onMove={moveTrack}
         onRemove={removeTrack}
@@ -283,16 +291,18 @@ export function ScheduleEditor({
       <Divider />
 
       <Box>
-        <Typography variant="subtitle2">未割り当て（ネタ出し）</Typography>
+        <Typography variant="subtitle2">
+          {t("schedule.unassignedSection")}
+        </Typography>
         <Typography variant="caption" color="text.secondary">
-          時刻はまだ決まりません。参加者には表示されません。「配置する」で下の配置済みへ移ります。
+          {t("schedule.unassignedSectionHint")}
         </Typography>
       </Box>
       <Stack spacing={1.5}>
         {unassignedRows.map(renderRow)}
         {unassignedRows.length === 0 && (
           <Typography variant="body2" color="text.secondary">
-            ネタ出し中のセッションはありません。
+            {t("schedule.unassignedEmpty")}
           </Typography>
         )}
       </Stack>
@@ -305,37 +315,42 @@ export function ScheduleEditor({
             setRows((rs) => [...rs, setUnassigned(newRow())])
           }
         >
-          ネタを追加
+          {t("schedule.addIdea")}
         </Button>
       </Box>
 
       <Divider />
 
-      <Typography variant="subtitle2">配置済み</Typography>
+      <Typography variant="subtitle2">{t("schedule.placedSection")}</Typography>
       {overlaps.length > 0 && (
         <Alert severity="warning">
           <Typography variant="body2" fontWeight={600}>
-            同じトラック内で時刻が重なっています。
+            {t("schedule.overlapTitle")}
           </Typography>
-          <Typography variant="body2">
-            このままでも保存できますが、タイムテーブルの枠が重なって読みにくくなります。
-          </Typography>
+          <Typography variant="body2">{t("schedule.overlapNote")}</Typography>
           <Box component="ul" sx={{ pl: 2.5, m: 0.5 }}>
             {overlaps.slice(0, 5).map((o, i) => (
               <li key={i}>
                 <Typography variant="caption">
-                  {o.trackName}: 「{o.a.title || "(無題)"}」(
-                  {o.a.start === null ? "--:--" : formatTime(o.a.start)}〜) と「
-                  {o.b.title || "(無題)"}」(
-                  {o.b.start === null ? "--:--" : formatTime(o.b.start)}〜)
-                  が重なっています
+                  {t("schedule.overlapItem", {
+                    // trackName が null なら「全トラック共通どうし」。
+                    // 文言は辞書が持つ (#363)
+                    track: o.trackName ?? t("schedule.allTracks"),
+                    a: o.a.title || t("schedule.untitled"),
+                    aStart:
+                      o.a.start === null ? "--:--" : formatTime(o.a.start),
+                    b: o.b.title || t("schedule.untitled"),
+                    bStart:
+                      o.b.start === null ? "--:--" : formatTime(o.b.start),
+                  })}
                 </Typography>
               </li>
             ))}
             {overlaps.length > 5 && (
               <li>
                 <Typography variant="caption">
-                  ほか{overlaps.length - 5}件
+                  {/* 単複で綴りが変わらない言い方なので、キーは1つでよい */}
+                  {t("schedule.overlapMore", { n: overlaps.length - 5 })}
                 </Typography>
               </li>
             )}
@@ -357,7 +372,7 @@ export function ScheduleEditor({
           startIcon={<AddIcon />}
           onClick={() => setRows((rs) => [...rs, newRow()])}
         >
-          行を追加
+          {t("schedule.addRow")}
         </Button>
         <Button
           size="small"
@@ -365,22 +380,27 @@ export function ScheduleEditor({
           startIcon={<PlaylistAddIcon />}
           onClick={(e) => setTemplateAnchor(e.currentTarget)}
         >
-          テンプレから作成
+          {t("schedule.fromTemplate")}
         </Button>
         <Menu
           anchorEl={templateAnchor}
           open={Boolean(templateAnchor)}
           onClose={() => setTemplateAnchor(null)}
         >
-          {SCHEDULE_TEMPLATES.map((t) => (
-            <MenuItem key={t.key} onClick={() => applyTemplate(t.key)}>
-              {t.name}
+          {/* テンプレートの中身（コマの題名）は保存されるデータなので
+              @eventer/shared が持つ日本語のまま。ここで訳すのは選ぶときの名前だけ */}
+          {SCHEDULE_TEMPLATES.map((template) => (
+            <MenuItem
+              key={template.key}
+              onClick={() => applyTemplate(template.key)}
+            >
+              {tDynamic(`schedule.templateName_${template.key}`, template.name)}
             </MenuItem>
           ))}
         </Menu>
         <Box sx={{ flex: 1 }} />
         <Button size="small" onClick={onClose} disabled={save.isPending}>
-          キャンセル
+          {t("common.cancel")}
         </Button>
         <Button
           size="small"
@@ -390,7 +410,7 @@ export function ScheduleEditor({
           // 押せるままにすると同じ失敗を繰り返させるので、読み込み直しへ誘導する
           disabled={!canSave || save.isPending || conflicted}
         >
-          保存
+          {t("common.save")}
         </Button>
       </Stack>
     </Stack>

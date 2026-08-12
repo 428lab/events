@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { EventMemberWithUser, ParticipationSlot } from "@eventer/shared";
 import {
   useEvent,
@@ -23,26 +24,48 @@ import {
 } from "../api/hooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { UserLink } from "../components/UserLink.js";
+import { i18next } from "../i18n/index.js";
 import { formatDateTime } from "../lib/format.js";
 
 /** 参加状態の見せ方。同じ confirmed でも、抽選枠なら「当選」、先着枠なら
- * 「参加確定」と読むほうが自然なので枠の方式で言い分ける (#286) */
+ * 「参加確定」と読むほうが自然なので枠の方式で言い分ける (#286)。
+ *
+ * 表が持つのは**翻訳キーと色**だけ。文言そのものは辞書にある
+ * （「キャンセル待ち」「落選」はイベント詳細と同じ文言なのでそちらを引く） */
+type StatusLabelKey =
+  | "staffOps.statusWon"
+  | "staffOps.statusFirstComeConfirmed"
+  | "staffOps.statusApplying"
+  | "eventDetail.statusWaitlist"
+  | "eventDetail.statusLost";
+
 const STATUS_META: Record<
   string,
-  { label: string; firstComeLabel?: string; color: "success" | "warning" | "error" | "default" }
+  {
+    labelKey: StatusLabelKey;
+    firstComeLabelKey?: StatusLabelKey;
+    color: "success" | "warning" | "error" | "default";
+  }
 > = {
-  confirmed: { label: "当選", firstComeLabel: "参加確定", color: "success" },
-  applied: { label: "申込中", color: "warning" },
-  waitlist: { label: "キャンセル待ち", color: "default" },
-  lost: { label: "落選", color: "error" },
+  confirmed: {
+    labelKey: "staffOps.statusWon",
+    firstComeLabelKey: "staffOps.statusFirstComeConfirmed",
+    color: "success",
+  },
+  applied: { labelKey: "staffOps.statusApplying", color: "warning" },
+  waitlist: { labelKey: "eventDetail.statusWaitlist", color: "default" },
+  lost: { labelKey: "eventDetail.statusLost", color: "error" },
 };
 
 function statusLabel(status: string, slot: ParticipationSlot): string {
   const meta = STATUS_META[status];
+  // 表に無い状態はサーバーの値をそのまま出す（増えても画面は壊れない）
   if (!meta) return status;
-  return slot.selectionType === "first_come"
-    ? (meta.firstComeLabel ?? meta.label)
-    : meta.label;
+  return i18next.t(
+    slot.selectionType === "first_come"
+      ? (meta.firstComeLabelKey ?? meta.labelKey)
+      : meta.labelKey,
+  );
 }
 
 function memberName(m: EventMemberWithUser): string {
@@ -50,6 +73,7 @@ function memberName(m: EventMemberWithUser): string {
 }
 
 export function LotteryAdminPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const isAdmin = useIsAdmin();
@@ -61,11 +85,11 @@ export function LotteryAdminPage() {
   const [error, setError] = useState("");
 
   if (!eventData || !slots || !members) {
-    return <Typography>読み込み中…</Typography>;
+    return <Typography>{t("common.loading")}</Typography>;
   }
   const isStaff = eventData.myRole === "staff" || isAdmin;
   if (!isStaff) {
-    return <Alert severity="info">申込者の管理はスタッフ専用です。</Alert>;
+    return <Alert severity="info">{t("staffOps.slotAdminStaffOnly")}</Alert>;
   }
 
   /** 先着枠で定員を超える確定は拒否せず、超えることを伝えてから通す (#286)。
@@ -74,7 +98,12 @@ export function LotteryAdminPage() {
     m.status === "confirmed" ||
     slot.confirmedCount < slot.capacity ||
     window.confirm(
-      `${slot.name}は定員 ${slot.capacity} 人に対して既に ${slot.confirmedCount} 人が確定しています。${memberName(m)} さんを確定にすると定員を超えます。よろしいですか？`,
+      t("staffOps.slotOverCapacityConfirm", {
+        slot: slot.name,
+        capacity: slot.capacity,
+        confirmed: slot.confirmedCount,
+        name: memberName(m),
+      }),
     );
 
   const changeStatus = (
@@ -88,7 +117,7 @@ export function LotteryAdminPage() {
       {
         onError: () =>
           setError(
-            `${memberName(m)} さんの参加状態を変更できませんでした。画面を開いたまま状態が変わった可能性があります`,
+            t("staffOps.slotStatusChangeFailed", { name: memberName(m) }),
           ),
       },
     );
@@ -99,18 +128,17 @@ export function LotteryAdminPage() {
       <EventBreadcrumbs
         eventId={id}
         eventTitle={eventData.event.title}
-        current="申込者の管理"
+        current={t("staffOps.slotAdminTitle")}
       />
       <Typography variant="h5" fontWeight={700}>
-        申込者の管理
+        {t("staffOps.slotAdminTitle")}
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        参加枠ごとの申込者です。参加確定・キャンセル待ち・落選をここで切り替えられます。
-        当日キャンセルが出たときにキャンセル待ちの人を確定にするのもこの画面です。
+        {t("staffOps.slotAdminIntro")}
       </Typography>
 
       {slots.length === 0 ? (
-        <Typography color="text.secondary">参加枠がありません。</Typography>
+        <Typography color="text.secondary">{t("staffOps.slotNone")}</Typography>
       ) : (
         slots.map((slot) => {
           const firstCome = slot.selectionType === "first_come";
@@ -121,6 +149,30 @@ export function LotteryAdminPage() {
               return order.indexOf(a.status) - order.indexOf(b.status);
             });
           const overCapacity = slot.confirmedCount > slot.capacity;
+          // 枠の要約。並べる項目は言語で増減しないので、区切りだけ辞書から取る
+          const summaryParts: string[] = [
+            t(
+              firstCome
+                ? "staffOps.slotConfirmedOfCapacity"
+                : "staffOps.slotWonOfCapacity",
+              { n: slot.confirmedCount, capacity: slot.capacity },
+            ),
+            t(
+              applicants.length === 1
+                ? "staffOps.slotApplicantCount"
+                : "staffOps.slotApplicantsCount",
+              { n: applicants.length },
+            ),
+          ];
+          if (firstCome) {
+            summaryParts.push(
+              t("staffOps.slotWaitlistCount", { n: slot.waitlistCount }),
+            );
+          } else if (slot.drawAt) {
+            summaryParts.push(
+              t("staffOps.slotDrawAt", { date: formatDateTime(slot.drawAt) }),
+            );
+          }
           return (
             <Card key={slot.id} variant="outlined">
               <CardContent>
@@ -138,21 +190,23 @@ export function LotteryAdminPage() {
                       <Chip
                         size="small"
                         variant="outlined"
-                        label={firstCome ? "先着順" : "抽選"}
+                        label={t(
+                          firstCome
+                            ? "staffOps.slotFirstCome"
+                            : "staffOps.slotLottery",
+                        )}
                       />
                       {/* 超えたことが一覧で分かるようにする（繰り上げで超えられる） */}
                       {overCapacity && (
-                        <Chip size="small" color="warning" label="定員超過" />
+                        <Chip
+                          size="small"
+                          color="warning"
+                          label={t("staffOps.slotOverCapacity")}
+                        />
                       )}
                     </Stack>
                     <Typography variant="body2" color="text.secondary">
-                      {firstCome ? "確定" : "当選"} {slot.confirmedCount} / 定員{" "}
-                      {slot.capacity} ・ 申込 {applicants.length} 人
-                      {firstCome
-                        ? ` ・ キャンセル待ち ${slot.waitlistCount} 人`
-                        : slot.drawAt
-                          ? ` ・ 抽選日時 ${formatDateTime(slot.drawAt)}`
-                          : ""}
+                      {summaryParts.join(t("common.dotSeparator"))}
                     </Typography>
                   </Box>
                   {/* 自動抽選は抽選枠だけの操作。先着枠には出さない */}
@@ -163,7 +217,10 @@ export function LotteryAdminPage() {
                       disabled={draw.isPending || slot.appliedCount === 0}
                       onClick={() => draw.mutate(slot.id)}
                     >
-                      自動抽選（申込中 {slot.appliedCount} → 定員 {slot.capacity}）
+                      {t("staffOps.slotDraw", {
+                        applied: slot.appliedCount,
+                        capacity: slot.capacity,
+                      })}
                     </Button>
                   )}
                 </Stack>
@@ -171,7 +228,7 @@ export function LotteryAdminPage() {
 
                 {applicants.length === 0 ? (
                   <Typography variant="body2" color="text.secondary">
-                    まだ申込者がいません。
+                    {t("staffOps.slotNoApplicants")}
                   </Typography>
                 ) : (
                   <Stack divider={<Divider flexItem />} spacing={1}>
@@ -207,7 +264,11 @@ export function LotteryAdminPage() {
                             disabled={setStatus.isPending}
                             onClick={() => changeStatus(slot, m, "confirmed")}
                           >
-                            {firstCome ? "参加確定" : "当選"}
+                            {t(
+                              firstCome
+                                ? "staffOps.statusFirstComeConfirmed"
+                                : "staffOps.statusWon",
+                            )}
                           </Button>
                           {/* 先着枠に「落選」は無い。席を空けるのはキャンセル待ちに戻す操作 */}
                           <Button
@@ -223,7 +284,11 @@ export function LotteryAdminPage() {
                               changeStatus(slot, m, firstCome ? "waitlist" : "lost")
                             }
                           >
-                            {firstCome ? "キャンセル待ち" : "落選"}
+                            {t(
+                              firstCome
+                                ? "eventDetail.statusWaitlist"
+                                : "eventDetail.statusLost",
+                            )}
                           </Button>
                         </Stack>
                       );

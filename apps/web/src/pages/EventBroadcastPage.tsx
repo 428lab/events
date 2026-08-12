@@ -17,15 +17,15 @@ import {
   Typography,
 } from "@mui/material";
 import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   BROADCAST_BODY_MAX,
   BROADCAST_EMAILS_PER_HOUR,
-  BROADCAST_OVERLAP_NOTE,
   BROADCAST_SEGMENTS,
   BROADCAST_SEGMENT_LABELS,
   BROADCAST_SEGMENT_NOTES,
   BROADCAST_TITLE_MAX,
-  formatBroadcastEmailEta,
+  broadcastEmailMinutes,
   type BroadcastSegment,
   type EventBroadcast,
 } from "@eventer/shared";
@@ -35,53 +35,95 @@ import {
   useRetryBroadcastEmails,
   useSendBroadcast,
 } from "../api/broadcastHooks.js";
-import { ApiError } from "../api/client.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { CounterTextField } from "../components/CounterTextField.js";
+import { i18next, tDynamic } from "../i18n/index.js";
+import { errorMessage } from "../lib/errorMessage.js";
 import { formatDateTime } from "../lib/format.js";
+
+/** 送信先の区分の名前と補足。もとの定数は日本語なので、訳が入るまでの受け皿に使う */
+function segmentLabel(segment: string): string {
+  return tDynamic(
+    `broadcastSegment.${segment}`,
+    BROADCAST_SEGMENT_LABELS[segment as BroadcastSegment] ?? segment,
+  );
+}
+function segmentNote(segment: BroadcastSegment): string {
+  return tDynamic(
+    `broadcastSegmentNote.${segment}`,
+    BROADCAST_SEGMENT_NOTES[segment],
+  );
+}
+
+/** メールを送りきるまでのおおよその時間。所要時間の計算だけを shared から借り、
+ * 表記は辞書から組み立てる（`formatBroadcastEmailEta` は日本語しか返せない） */
+function emailEta(count: number): string {
+  const minutes = broadcastEmailMinutes(count);
+  if (minutes <= 0) return "";
+  if (minutes < 60) return i18next.t("staffOps.etaMinutes", { n: minutes });
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0
+    ? i18next.t("staffOps.etaHours", { n: h })
+    : i18next.t("staffOps.etaHoursMinutes", { h, m });
+}
 
 /** 送信できなかったときの文言。上限に達した場合は時間をおいても直らないので分ける */
 function sendErrorMessage(error: unknown): string {
-  if (error instanceof ApiError && error.status === 409) {
-    const code = (error.body as { error?: string } | null)?.error;
-    if (code === "broadcast_limit_total") {
-      return "このイベントで送れる回数を使い切りました。時間をおいても増えません。どうしても必要な場合は運営にお問い合わせください。";
-    }
-    if (code === "broadcast_limit_day") {
-      return "24時間あたりの送信回数の上限に達しました。いちばん古い送信から24時間が過ぎると、また送れるようになります。";
-    }
-  }
-  return "送信できませんでした。時間をおいて試してください。";
+  return errorMessage(error, {
+    broadcast_limit_total: i18next.t("staffOps.broadcastLimitTotalError"),
+    broadcast_limit_day: i18next.t("staffOps.broadcastLimitDayNotice"),
+    default: i18next.t("staffOps.broadcastSendFailed"),
+  });
 }
 
 /** 送信結果の1行。0 件の項目は出さない（読みづらくなるだけなので） */
 function EmailStatus({ b }: { b: EventBroadcast }) {
+  const { t } = useTranslation();
   const { pending, sent, failed, skipped } = b.email;
   const total = pending + sent + failed + skipped;
   if (total === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
-        メールの宛先はありません（アプリ内のお知らせのみ）
+        {t("staffOps.broadcastEmailNone")}
       </Typography>
     );
   }
   return (
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
       {pending > 0 && (
-        <Chip size="small" color="info" label={`送信待ち ${pending}`} />
+        <Chip
+          size="small"
+          color="info"
+          label={t("staffOps.broadcastEmailPending", { n: pending })}
+        />
       )}
       {sent > 0 && (
-        <Chip size="small" color="success" label={`送信済み ${sent}`} />
+        <Chip
+          size="small"
+          color="success"
+          label={t("staffOps.broadcastEmailSent", { n: sent })}
+        />
       )}
       {failed > 0 && (
-        <Chip size="small" color="error" label={`失敗 ${failed}`} />
+        <Chip
+          size="small"
+          color="error"
+          label={t("staffOps.broadcastEmailFailed", { n: failed })}
+        />
       )}
-      {skipped > 0 && <Chip size="small" label={`対象外 ${skipped}`} />}
+      {skipped > 0 && (
+        <Chip
+          size="small"
+          label={t("staffOps.broadcastEmailSkipped", { n: skipped })}
+        />
+      )}
     </Stack>
   );
 }
 
 export function EventBroadcastPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   // イベント配下の表示はイベント内の役割だけで判定する（サイト管理者かどうかは混ぜない）
@@ -100,13 +142,15 @@ export function EventBroadcastPage() {
   const [sentInfo, setSentInfo] = useState<string | null>(null);
   const [partialInfo, setPartialInfo] = useState<string | null>(null);
 
-  if (!eventData) return <Typography>読み込み中…</Typography>;
+  if (!eventData) return <Typography>{t("common.loading")}</Typography>;
   if (!isStaff) {
-    return <Alert severity="info">一斉連絡はスタッフ専用です。</Alert>;
+    return <Alert severity="info">{t("staffOps.broadcastStaffOnly")}</Alert>;
   }
   if (!data) {
     return (
-      <Typography>{error ? "読み込めませんでした。" : "読み込み中…"}</Typography>
+      <Typography>
+        {t(error ? "staffOps.loadFailed" : "common.loading")}
+      </Typography>
     );
   }
 
@@ -141,24 +185,34 @@ export function EventBroadcastPage() {
           setConfirmCount(null);
           setTitle("");
           setBody("");
-          const eta = formatBroadcastEmailEta(r.emailQueued);
           const base =
-            `${r.recipientCount} 人にお知らせを送りました。` +
+            t(
+              r.recipientCount === 1
+                ? "staffOps.broadcastSentOne"
+                : "staffOps.broadcastSent",
+              { n: r.recipientCount },
+            ) +
             (r.emailQueued > 0
-              ? `そのうちメールを受け取る設定の ${r.emailQueued} 人には、順にメールも届きます（送りきるまで${eta}ほどかかります）。`
-              : "メールの宛先はありませんでした。");
+              ? t(
+                  r.emailQueued === 1
+                    ? "staffOps.broadcastSentEmailOne"
+                    : "staffOps.broadcastSentEmail",
+                  { n: r.emailQueued, eta: emailEta(r.emailQueued) },
+                )
+              : t("staffOps.broadcastSentNoEmail"));
           if (r.incomplete) {
             // 途中で失敗している。同じ内容をもう一度送ると、届いた人には2通になる
             setPartialInfo(
-              `途中で失敗したため、${r.recipientCount} 人までにしかお知らせが届いていません。` +
-                "同じ内容をもう一度送ると、すでに届いている人には2通届きます。" +
-                "下の送信履歴で届いた人数を確かめてから、必要な場合だけ送り直してください。",
+              t("staffOps.broadcastPartial", { n: r.recipientCount }),
             );
           } else {
             setSentInfo(
               base +
                 (r.truncatedFrom !== null
-                  ? `なお、区分に当てはまる ${r.truncatedFrom} 人のうち ${r.recipientCount} 人までで打ち切りました。残りの人には届いていません。`
+                  ? t("staffOps.broadcastTruncated", {
+                      total: r.truncatedFrom,
+                      n: r.recipientCount,
+                    })
                   : ""),
             );
           }
@@ -172,20 +226,18 @@ export function EventBroadcastPage() {
       <EventBreadcrumbs
         eventId={id}
         eventTitle={eventData.event.title}
-        current="一斉連絡"
+        current={t("eventDetail.broadcast")}
       />
       <Box>
         <Typography variant="h5" fontWeight={700}>
-          一斉連絡
+          {t("eventDetail.broadcast")}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          送信先の区分を選んでお知らせを送ります。アプリ内のお知らせはすぐに届きます。
-          メールは順番に送るため、送りきるまで
-          1時間あたり{BROADCAST_EMAILS_PER_HOUR}通ほどのペースになります
-          （100人なら{formatBroadcastEmailEta(100)}、300人なら
-          {formatBroadcastEmailEta(300)}）。
-          他のイベントの一斉連絡と同時に送信待ちがあるときは、順番を分け合うため
-          さらに時間がかかることがあります。急ぎの連絡はアプリ内のお知らせが先に届きます。
+          {t("staffOps.broadcastIntro", {
+            perHour: BROADCAST_EMAILS_PER_HOUR,
+            eta100: emailEta(100),
+            eta300: emailEta(300),
+          })}
         </Typography>
       </Box>
 
@@ -203,9 +255,7 @@ export function EventBroadcastPage() {
         <Alert severity="error">{sendErrorMessage(send.error)}</Alert>
       )}
       {retry.isError && (
-        <Alert severity="error">
-          送り直せませんでした。時間をおいて試してください。
-        </Alert>
+        <Alert severity="error">{t("staffOps.broadcastRetryFailed")}</Alert>
       )}
 
       <Card variant="outlined">
@@ -213,44 +263,46 @@ export function EventBroadcastPage() {
           <Stack spacing={2}>
             <TextField
               select
-              label="送信先"
+              label={t("staffOps.broadcastSegmentField")}
               value={segment}
               onChange={(e) => setSegment(e.target.value as BroadcastSegment)}
-              helperText={BROADCAST_SEGMENT_NOTES[segment]}
+              helperText={segmentNote(segment)}
             >
               {BROADCAST_SEGMENTS.map((s) => (
                 <MenuItem key={s} value={s}>
-                  {BROADCAST_SEGMENT_LABELS[s]}（{data.counts[s] ?? 0} 人）
+                  {t("staffOps.broadcastSegmentOption", {
+                    label: segmentLabel(s),
+                    n: data.counts[s] ?? 0,
+                  })}
                 </MenuItem>
               ))}
             </TextField>
             <Typography variant="body2" color="text.secondary">
-              {BROADCAST_OVERLAP_NOTE}
+              {t("staffOps.segmentOverlapNote")}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              人数は実際に届く人数です。送ったものはこのページの履歴で読めるので、
-              自分あてには届きません。
+              {t("staffOps.broadcastCountNote")}
             </Typography>
 
             <CounterTextField
-              label="件名"
+              label={t("common.subject")}
               max={BROADCAST_TITLE_MAX}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              helperText="お知らせの見出しになります"
+              helperText={t("staffOps.broadcastTitleHelp")}
             />
             <CounterTextField
-              label="本文"
+              label={t("staffOps.broadcastBodyField")}
               max={BROADCAST_BODY_MAX}
               value={body}
               onChange={(e) => setBody(e.target.value)}
               multiline
               minRows={5}
-              helperText="送信後は取り消せません"
+              helperText={t("staffOps.broadcastBodyHelp")}
             />
 
             <Alert severity="warning">
-              送信後は取り消せません。届いたお知らせやメールを消すことはできません。
+              {t("staffOps.broadcastNoUndoWarning")}
             </Alert>
 
             <Stack
@@ -265,21 +317,23 @@ export function EventBroadcastPage() {
                 disabled={!canSend || checking || send.isPending}
                 onClick={openConfirm}
               >
-                送信内容を確認
+                {t("staffOps.broadcastConfirmOpen")}
               </Button>
               <Typography variant="body2" color="text.secondary">
-                今日はあと {data.remainingToday} 回 ／ このイベントで通算あと{" "}
-                {data.remainingTotal} 回 送れます
+                {t("staffOps.broadcastRemaining", {
+                  today: data.remainingToday,
+                  total: data.remainingTotal,
+                })}
               </Typography>
             </Stack>
             {data.remainingTotal <= 0 ? (
               <Alert severity="info">
-                このイベントで送れる回数（通算）を使い切りました。時間をおいても増えません。
+                {t("staffOps.broadcastLimitTotalNotice")}
               </Alert>
             ) : (
               data.remainingToday <= 0 && (
                 <Alert severity="info">
-                  24時間あたりの送信回数の上限に達しました。いちばん古い送信から24時間が過ぎると、また送れるようになります。
+                  {t("staffOps.broadcastLimitDayNotice")}
                 </Alert>
               )
             )}
@@ -289,13 +343,15 @@ export function EventBroadcastPage() {
 
       <Box>
         <Typography variant="h6" sx={{ mb: 1 }}>
-          送信履歴
+          {t("staffOps.broadcastHistoryTitle")}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          この一覧はスタッフだけが見られます。
+          {t("staffOps.broadcastHistoryNote")}
         </Typography>
         {data.broadcasts.length === 0 ? (
-          <Typography color="text.secondary">まだ送信していません。</Typography>
+          <Typography color="text.secondary">
+            {t("staffOps.broadcastHistoryEmpty")}
+          </Typography>
         ) : (
           <Stack spacing={2}>
             {data.broadcasts.map((b) => (
@@ -312,18 +368,26 @@ export function EventBroadcastPage() {
                     <Chip
                       size="small"
                       color="primary"
-                      label={
-                        BROADCAST_SEGMENT_LABELS[
-                          b.segment as BroadcastSegment
-                        ] ?? b.segment
-                      }
+                      label={segmentLabel(b.segment)}
                     />
                     {b.incomplete && (
-                      <Chip size="small" color="warning" label="一部のみ送信" />
+                      <Chip
+                        size="small"
+                        color="warning"
+                        label={t("staffOps.broadcastIncompleteChip")}
+                      />
                     )}
                     <Typography variant="body2" color="text.secondary">
-                      {formatDateTime(b.createdAt)} ・ {b.recipientCount} 人へ
-                      {b.senderName ? ` ・ ${b.senderName}` : ""}
+                      {[
+                        formatDateTime(b.createdAt),
+                        t(
+                          b.recipientCount === 1
+                            ? "staffOps.broadcastSentToOne"
+                            : "staffOps.broadcastSentTo",
+                          { n: b.recipientCount },
+                        ),
+                        ...(b.senderName ? [b.senderName] : []),
+                      ].join(t("common.dotSeparator"))}
                     </Typography>
                   </Stack>
                   <Typography fontWeight={700}>{b.title}</Typography>
@@ -335,8 +399,7 @@ export function EventBroadcastPage() {
                   </Typography>
                   {b.incomplete && (
                     <Alert severity="warning" sx={{ mb: 1 }}>
-                      途中で失敗したため、この人数までにしかお知らせが届いていません。
-                      同じ内容をもう一度送ると、すでに届いている人には2通届きます。
+                      {t("staffOps.broadcastIncompleteNotice")}
                     </Alert>
                   )}
                   <Divider sx={{ mb: 1 }} />
@@ -355,7 +418,12 @@ export function EventBroadcastPage() {
                         disabled={retry.isPending}
                         onClick={() => retry.mutate(b.id)}
                       >
-                        失敗した {b.email.failed} 件を送り直す
+                        {t(
+                          b.email.failed === 1
+                            ? "staffOps.broadcastRetryOne"
+                            : "staffOps.broadcastRetry",
+                          { n: b.email.failed },
+                        )}
                       </Button>
                     )}
                   </Stack>
@@ -365,7 +433,7 @@ export function EventBroadcastPage() {
                       color="text.secondary"
                       sx={{ mt: 1 }}
                     >
-                      送り直しても、すでに届いた人にもう1通増えることはありません。送信回数も消費しません。
+                      {t("staffOps.broadcastRetryNote")}
                     </Typography>
                   )}
                 </CardContent>
@@ -381,32 +449,40 @@ export function EventBroadcastPage() {
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle>この内容で送信します</DialogTitle>
+        <DialogTitle>{t("staffOps.broadcastConfirmTitle")}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Alert severity="warning">
-              送信後は取り消せません。送る相手と人数を確かめてください。
+              {t("staffOps.broadcastConfirmWarning")}
             </Alert>
             <Box>
               <Typography variant="body2" color="text.secondary">
-                送信先
+                {t("staffOps.broadcastSegmentField")}
               </Typography>
               <Typography fontWeight={700}>
-                {BROADCAST_SEGMENT_LABELS[segment]} ・ {confirmCount ?? 0} 人
+                {[
+                  segmentLabel(segment),
+                  t(
+                    (confirmCount ?? 0) === 1
+                      ? "staffOps.personCount"
+                      : "staffOps.peopleCount",
+                    { n: confirmCount ?? 0 },
+                  ),
+                ].join(t("common.dotSeparator"))}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {BROADCAST_SEGMENT_NOTES[segment]}
+                {segmentNote(segment)}
               </Typography>
             </Box>
             <Box>
               <Typography variant="body2" color="text.secondary">
-                件名
+                {t("common.subject")}
               </Typography>
               <Typography fontWeight={700}>{title}</Typography>
             </Box>
             <Box>
               <Typography variant="body2" color="text.secondary">
-                本文
+                {t("staffOps.broadcastBodyField")}
               </Typography>
               <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
                 {body}
@@ -414,20 +490,27 @@ export function EventBroadcastPage() {
             </Box>
             {confirmCount === 0 && (
               <Alert severity="info">
-                いまこの区分に当てはまる人はいません。送信しても誰にも届きません。
+                {t("staffOps.broadcastConfirmEmpty")}
               </Alert>
             )}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmCount(null)}>やめる</Button>
+          <Button onClick={() => setConfirmCount(null)}>
+            {t("staffOps.broadcastConfirmCancel")}
+          </Button>
           <Button
             variant="contained"
             color="warning"
             disabled={send.isPending}
             onClick={doSend}
           >
-            {confirmCount ?? 0} 人に送信する
+            {t(
+              (confirmCount ?? 0) === 1
+                ? "staffOps.broadcastSendOne"
+                : "staffOps.broadcastSend",
+              { n: confirmCount ?? 0 },
+            )}
           </Button>
         </DialogActions>
       </Dialog>

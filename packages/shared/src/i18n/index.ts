@@ -11,6 +11,7 @@
 import { common } from "./messages/common.js";
 import { errors } from "./messages/errors.js";
 import { eventDetail } from "./messages/eventDetail.js";
+import { eventForm } from "./messages/eventForm.js";
 import { events } from "./messages/events.js";
 import { inquiries, inquiryStatus } from "./messages/inquiries.js";
 import { labels } from "./messages/labels.js";
@@ -19,7 +20,16 @@ import { meet, meetFailure } from "./messages/meet.js";
 import { nav } from "./messages/nav.js";
 import { notifications } from "./messages/notifications.js";
 import { communityRole, profile } from "./messages/profile.js";
+import { schedule } from "./messages/schedule.js";
 import { linkError, settings } from "./messages/settings.js";
+import { themeName } from "./messages/theme.js";
+import {
+  broadcastSegment,
+  broadcastSegmentNote,
+  staffInviteError,
+  staffInviteStatus,
+  staffOps,
+} from "./messages/staffOps.js";
 import type { AppLanguage } from "./languages.js";
 
 export * from "./languages.js";
@@ -35,9 +45,17 @@ export const translations = {
   ja: {
     common: common.ja,
     nav: nav.ja,
+    themeName: themeName.ja,
     login: login.ja,
     events: events.ja,
     eventDetail: eventDetail.ja,
+    eventForm: eventForm.ja,
+    schedule: schedule.ja,
+    staffOps: staffOps.ja,
+    staffInviteError: staffInviteError.ja,
+    staffInviteStatus: staffInviteStatus.ja,
+    broadcastSegment: broadcastSegment.ja,
+    broadcastSegmentNote: broadcastSegmentNote.ja,
     errors: errors.ja,
     settings: settings.ja,
     linkError: linkError.ja,
@@ -53,9 +71,17 @@ export const translations = {
   en: {
     common: common.en,
     nav: nav.en,
+    themeName: themeName.en,
     login: login.en,
     events: events.en,
     eventDetail: eventDetail.en,
+    eventForm: eventForm.en,
+    schedule: schedule.en,
+    staffOps: staffOps.en,
+    staffInviteError: staffInviteError.en,
+    staffInviteStatus: staffInviteStatus.en,
+    broadcastSegment: broadcastSegment.en,
+    broadcastSegmentNote: broadcastSegmentNote.en,
     errors: errors.en,
     settings: settings.en,
     linkError: linkError.en,

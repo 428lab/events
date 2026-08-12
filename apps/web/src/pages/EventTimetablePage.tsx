@@ -2,6 +2,7 @@ import { Box, Button, Chip, Stack, Typography, useMediaQuery } from "@mui/materi
 import { alpha, useTheme } from "@mui/material/styles";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useEvent } from "../api/hooks.js";
 import { useEventSchedule } from "../api/eventScheduleHooks.js";
 import { formatDateTime } from "../lib/format.js";
@@ -17,6 +18,7 @@ import { TimetableTrackTabs } from "../components/TimetableTrackTabs.js";
  * 導線はトラックが2本以上あるときだけ出る（1本以下では格子にする意味がない）。 */
 export function EventTimetablePage() {
   const { id = "" } = useParams();
+  const { t } = useTranslation();
   const theme = useTheme();
   const { data: eventData } = useEvent(id);
   const { data } = useEventSchedule(id);
@@ -24,7 +26,7 @@ export function EventTimetablePage() {
   // 3本のトラックを並べるだけで 700px 近く要るので md で切り替える
   const wide = useMediaQuery(theme.breakpoints.up("md"));
 
-  if (!eventData || !data) return <Typography>読み込み中…</Typography>;
+  if (!eventData || !data) return <Typography>{t("common.loading")}</Typography>;
 
   const event = eventData.event;
   // 日程調整中は開始時刻が無い＝どのコマも時刻が決まらない。壊れずに
@@ -49,11 +51,11 @@ export function EventTimetablePage() {
           size="small"
           startIcon={<ArrowBackIcon />}
         >
-          イベントに戻る
+          {t("schedule.backToEvent")}
         </Button>
       </Box>
       <Box>
-        <Typography variant="h5">タイムテーブル</Typography>
+        <Typography variant="h5">{t("schedule.timetable")}</Typography>
         <Typography variant="body2" color="text.secondary">
           {event.title}
         </Typography>
@@ -61,11 +63,11 @@ export function EventTimetablePage() {
 
       {layout.tracks.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
-          このイベントはトラックを分けていません。タイムテーブルはイベントのページでご覧ください。
+          {t("schedule.noTracks")}
         </Typography>
       ) : layout.blocks.length === 0 && wide ? (
         <Typography variant="body2" color="text.secondary">
-          開始時刻が決まっているセッションがまだないため、表として並べられません。
+          {t("schedule.noTimedSessions")}
         </Typography>
       ) : wide ? (
         <>
@@ -80,7 +82,7 @@ export function EventTimetablePage() {
       {wide && layout.undated.length > 0 && (
         <Box>
           <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-            開始時刻が未定
+            {t("schedule.undatedHeading")}
           </Typography>
           <Stack spacing={0.5}>
             {layout.undated.map((e) => (
@@ -88,7 +90,8 @@ export function EventTimetablePage() {
                 {e.item.title}
                 {e.item.durationMin > 0 && (
                   <Typography component="span" variant="caption" color="text.secondary">
-                    {` ${e.item.durationMin}分`}
+                    {" "}
+                    {t("schedule.durationMin", { n: e.item.durationMin })}
                   </Typography>
                 )}
               </Typography>
@@ -102,7 +105,7 @@ export function EventTimetablePage() {
       {wide && layout.outOfRange.length > 0 && (
         <Box>
           <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-            開始時刻が他のセッションから離れているため表に載せていません
+            {t("schedule.outOfRangeHeading")}
           </Typography>
           <Stack spacing={0.5}>
             {layout.outOfRange.map((e) => (
@@ -122,11 +125,11 @@ export function EventTimetablePage() {
       {layout.unassigned.length > 0 && (
         <Box>
           <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-            未割り当て{" "}
+            {t("schedule.unassignedHeading")}{" "}
             <Chip
               size="small"
               variant="outlined"
-              label="参加者には出ません"
+              label={t("schedule.notShownToParticipants")}
               sx={{ height: 18, fontSize: "0.7rem" }}
             />
           </Typography>
@@ -145,6 +148,7 @@ export function EventTimetablePage() {
 
 /** 枠の描き分けの凡例。色だけでは5本を超えると区別が付かないので言葉で補う */
 function Legend() {
+  const { t } = useTranslation();
   const theme = useTheme();
   const swatch = {
     display: "inline-block",
@@ -172,7 +176,7 @@ function Legend() {
             borderLeftColor: "primary.main",
           }}
         />
-        特定のトラック
+        {t("schedule.legendSingleTrack")}
       </Box>
       <Box component="span">
         <Box
@@ -185,7 +189,7 @@ function Legend() {
             boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.primary.main, 0.45)}`,
           }}
         />
-        複数のトラックにまたがる
+        {t("schedule.legendSpanning")}
       </Box>
       <Box component="span">
         <Box
@@ -202,7 +206,7 @@ function Legend() {
             borderLeftColor: alpha(theme.palette.text.primary, 0.55),
           }}
         />
-        全トラック共通
+        {t("schedule.allTracks")}
       </Box>
     </Stack>
   );

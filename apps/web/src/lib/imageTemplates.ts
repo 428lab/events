@@ -39,8 +39,23 @@ export const FONTS: FontDef[] = [
   { label: "DotGothic16", family: "DotGothic16", weight: 400, category: "手書き・個性派" },
 ];
 
+/** 背景の識別子。**呼び名は辞書 (`eventForm.imageBg*`) が持つ** (#363)。
+ * ここに日本語の label を戻すと、英語表示のイベント画像の仕立てに日本語が並ぶ */
+export type BackgroundKey =
+  | "dark"
+  | "fireworks"
+  | "fireworksWarm"
+  | "fireworksCool"
+  | "aerialShells"
+  | "confetti"
+  | "stars"
+  | "teal"
+  | "amber"
+  | "light"
+  | "dots";
+
 export interface BackgroundDef {
-  label: string;
+  key: BackgroundKey;
   /** タイトル/サブの文字色 */
   fg: string;
   sub: string;
@@ -107,31 +122,31 @@ const sparkNight =
 
 export const BACKGROUNDS: BackgroundDef[] = [
   {
-    label: "ダーク",
+    key: "dark",
     fg: "#F8FAFC",
     sub: "#94A3B8",
     draw: fill("#0E1426"),
   },
   {
-    label: "花火",
+    key: "fireworks",
     fg: "#F8FAFC",
     sub: "#CBD5E1",
     draw: sparkNight(["#2DD4BF", "#FB923C", "#FB7185", "#FBBF24"]),
   },
   {
-    label: "花火（暖色）",
+    key: "fireworksWarm",
     fg: "#F8FAFC",
     sub: "#CBD5E1",
     draw: sparkNight(["#FBBF24", "#FB7185", "#FB923C", "#F472B6"]),
   },
   {
-    label: "花火（寒色）",
+    key: "fireworksCool",
     fg: "#F8FAFC",
     sub: "#CBD5E1",
     draw: sparkNight(["#38BDF8", "#2DD4BF", "#A78BFA", "#818CF8"]),
   },
   {
-    label: "打ち上げ花火",
+    key: "aerialShells",
     fg: "#F8FAFC",
     sub: "#CBD5E1",
     draw: (ctx) => {
@@ -169,7 +184,7 @@ export const BACKGROUNDS: BackgroundDef[] = [
     },
   },
   {
-    label: "紙吹雪",
+    key: "confetti",
     fg: "#F8FAFC",
     sub: "#CBD5E1",
     draw: (ctx) => {
@@ -196,7 +211,7 @@ export const BACKGROUNDS: BackgroundDef[] = [
     },
   },
   {
-    label: "星空",
+    key: "stars",
     fg: "#F8FAFC",
     sub: "#94A3B8",
     draw: (ctx) => {
@@ -237,25 +252,25 @@ export const BACKGROUNDS: BackgroundDef[] = [
     },
   },
   {
-    label: "ティール",
+    key: "teal",
     fg: "#06201C",
     sub: "#0F3A33",
     draw: fill("#2DD4BF"),
   },
   {
-    label: "アンバー",
+    key: "amber",
     fg: "#1A1206",
     sub: "#3A2A10",
     draw: fill("#FB923C"),
   },
   {
-    label: "ライト",
+    key: "light",
     fg: "#111827",
     sub: "#6B7280",
     draw: fill("#F4F4F5"),
   },
   {
-    label: "ドット",
+    key: "dots",
     fg: "#F8FAFC",
     sub: "#94A3B8",
     draw: (ctx) => {
@@ -273,11 +288,8 @@ export const BACKGROUNDS: BackgroundDef[] = [
 ];
 
 export type LayoutKey = "center" | "left" | "top";
-export const LAYOUTS: { key: LayoutKey; label: string }[] = [
-  { key: "center", label: "中央" },
-  { key: "left", label: "左寄せ" },
-  { key: "top", label: "上寄せ" },
-];
+/** 並びだけを持つ。呼び名は辞書 (`eventForm.imageLayout*`) が持つ (#363) */
+export const LAYOUTS: LayoutKey[] = ["center", "left", "top"];
 
 /** Google Fonts をオンデマンドで読み込む（同一familyは一度だけ）。 */
 const loaded = new Set<string>();

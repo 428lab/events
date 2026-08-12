@@ -101,7 +101,16 @@ export interface SurveyTemplate {
   questions: SurveyTemplateQuestion[];
 }
 
-/** 事前アンケートのテンプレート（編集画面のたたき台） */
+/**
+ * 事前アンケートのテンプレート（編集画面のたたき台）。
+ *
+ * **`name` は辞書 (`eventForm.surveyTemplateName_<key>`) が訳す**が、`questions` の
+ * 中身（質問文・選択肢）は日本語のまま。訳し忘れではない (#363):
+ * テンプレを選ぶと**その文言がそのまま主催者のアンケートとして保存される**ので、
+ * ここを見ている人の言語で訳すと、保存されたあとに「作った人と参加者で
+ * 見える文言が違う」ことになる。保存されるデータの言語をどう扱うかは **#364**
+ * で別途決める。決まるまでは中身に手を入れないこと。
+ */
 export const SURVEY_TEMPLATES: SurveyTemplate[] = [
   {
     key: "entry-info",

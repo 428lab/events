@@ -12,7 +12,6 @@ import type { InquiryStatus } from "../../inquiries.js";
 const ja = {
   /** 新しい問い合わせを書き始める導線と、その入力欄 */
   create: "新規問い合わせ",
-  subject: "件名",
   body: "内容",
   /** 送信ボタン。新規作成とスレッドへの返信の両方で使う */
   send: "送信",
@@ -37,7 +36,6 @@ const ja = {
 
 const en: Record<keyof typeof ja, string> = {
   create: "New inquiry",
-  subject: "Subject",
   body: "Message",
   send: "Send",
   sendError: "Couldn't send your message.",

@@ -12,6 +12,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -64,6 +65,7 @@ export function ScheduleItemRow({
   canMoveUp: boolean;
   canMoveDown: boolean;
 }) {
+  const { t } = useTranslation();
   const update = (patch: Partial<Row>) => onChange({ ...row, ...patch });
 
   /** 担当欄に表示する値。メンバー一覧に居ないリンク（退会申請中など #250）は
@@ -72,7 +74,7 @@ export function ScheduleItemRow({
   const speakerValue: MemberOption | string = row.speakerUserId
     ? (memberOptions.find((o) => o.id === row.speakerUserId) ?? {
         id: row.speakerUserId,
-        label: "(表示できないメンバー)",
+        label: t("schedule.hiddenMember"),
         avatarUrl: null,
       })
     : row.speakerName;
@@ -101,7 +103,7 @@ export function ScheduleItemRow({
             color: "text.disabled",
             touchAction: "none",
           }}
-          title="ドラッグで並び替え"
+          title={t("schedule.dragToReorder")}
         >
           <DragIndicatorIcon fontSize="small" />
         </Box>
@@ -116,7 +118,7 @@ export function ScheduleItemRow({
         <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
             <TextField
-              label="内容"
+              label={t("schedule.content")}
               size="small"
               value={row.title}
               onChange={(e) => update({ title: e.target.value })}
@@ -124,7 +126,7 @@ export function ScheduleItemRow({
               sx={{ flex: 1 }}
             />
             <TextField
-              label="所要（分）"
+              label={t("schedule.durationLabel")}
               type="number"
               size="small"
               value={row.durationMin}
@@ -178,14 +180,14 @@ export function ScheduleItemRow({
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="担当（メンバー or 自由入力）"
+                  label={t("schedule.speakerFieldLabel")}
                   inputProps={{ ...params.inputProps, maxLength: 100 }}
                 />
               )}
               sx={{ width: { xs: "100%", sm: 240 } }}
             />
             <TextField
-              label="開始時刻を指定（任意）"
+              label={t("schedule.startsAtLabel")}
               type="datetime-local"
               size="small"
               value={toDateTimeLocal(row.startsAt)}
@@ -197,7 +199,7 @@ export function ScheduleItemRow({
             />
           </Stack>
           <TextField
-            label="説明（任意）"
+            label={t("schedule.descriptionLabel")}
             size="small"
             multiline
             minRows={1}
@@ -207,7 +209,7 @@ export function ScheduleItemRow({
             fullWidth
           />
           <TextField
-            label="資料URL（任意・Speaker Deck / Googleスライド / デッキ等）"
+            label={t("schedule.materialUrlLabel")}
             size="small"
             type="url"
             value={row.materialUrl}
@@ -219,7 +221,7 @@ export function ScheduleItemRow({
             helperText={
               row.materialUrl.trim() !== "" &&
               !/^https?:\/\//.test(row.materialUrl.trim())
-                ? "http(s):// で始まるURLを入力してください"
+                ? t("schedule.materialUrlError")
                 : undefined
             }
             inputProps={{ maxLength: 500 }}
@@ -236,7 +238,7 @@ export function ScheduleItemRow({
           >
             {(tracks.length > 0 || unassigned) && (
               <Typography variant="caption" color="text.secondary">
-                トラック
+                {t("schedule.tracks")}
               </Typography>
             )}
             {unassigned ? (
@@ -245,26 +247,31 @@ export function ScheduleItemRow({
                   size="small"
                   color="default"
                   variant="outlined"
-                  label="未割り当て（参加者には出ません）"
+                  label={t("schedule.unassignedChip")}
                 />
                 {/* 配置＝まず全トラック共通に置き、そこからチップで絞る */}
                 <Button size="small" onClick={() => onChange(setCommon(row))}>
-                  配置する
+                  {t("schedule.place")}
                 </Button>
               </>
             ) : (
               <>
-                {tracks.map((t) => {
+                {tracks.map((track) => {
                   const on =
-                    row.placement === "tracks" && row.trackKeys.includes(t.key);
+                    row.placement === "tracks" &&
+                    row.trackKeys.includes(track.key);
                   return (
                     <Chip
-                      key={t.key}
+                      key={track.key}
                       size="small"
-                      label={t.name.trim() === "" ? "(名前なし)" : t.name}
+                      label={
+                        track.name.trim() === ""
+                          ? t("schedule.unnamedTrack")
+                          : track.name
+                      }
                       color={on ? "primary" : "default"}
                       variant={on ? "filled" : "outlined"}
-                      onClick={() => onChange(toggleTrack(row, t.key))}
+                      onClick={() => onChange(toggleTrack(row, track.key))}
                       aria-pressed={on}
                     />
                   );
@@ -283,13 +290,15 @@ export function ScheduleItemRow({
                               toggleTrack(setCommon(row), tracks[0]!.key),
                         )
                       }
-                      inputProps={{ "aria-label": "全体共通" }}
+                      inputProps={{ "aria-label": t("schedule.commonToggle") }}
                     />
-                    <Typography variant="caption">全体共通</Typography>
+                    <Typography variant="caption">
+                      {t("schedule.commonToggle")}
+                    </Typography>
                   </Stack>
                 )}
                 <Button size="small" onClick={() => onChange(setUnassigned(row))}>
-                  未割り当てに戻す
+                  {t("schedule.backToUnassigned")}
                 </Button>
               </>
             )}
@@ -300,7 +309,7 @@ export function ScheduleItemRow({
             size="small"
             disabled={!canMoveUp}
             onClick={() => onMove(-1)}
-            title="上へ移動"
+            title={t("common.moveUp")}
           >
             <ArrowUpwardIcon fontSize="small" />
           </IconButton>
@@ -308,11 +317,11 @@ export function ScheduleItemRow({
             size="small"
             disabled={!canMoveDown}
             onClick={() => onMove(1)}
-            title="下へ移動"
+            title={t("common.moveDown")}
           >
             <ArrowDownwardIcon fontSize="small" />
           </IconButton>
-          <IconButton size="small" onClick={onDelete} title="この行を削除">
+          <IconButton size="small" onClick={onDelete} title={t("schedule.deleteRow")}>
             <DeleteOutlineIcon fontSize="small" />
           </IconButton>
         </Stack>

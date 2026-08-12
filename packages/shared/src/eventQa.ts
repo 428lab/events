@@ -104,8 +104,5 @@ export const pickQuestionInput = z.object({
 });
 export type PickQuestionInput = z.infer<typeof pickQuestionInput>;
 
-export const QA_ANONYMITY_LABEL: Record<QaAnonymity, string> = {
-  real: "実名のみ",
-  anon: "匿名のみ",
-  choice: "参加者が選べる",
-};
+// 匿名設定のラベルは辞書 (`eventForm.qaAnonymity*`) が持つ (#363)。
+// ここに日本語の表を戻すと、同じ文言が2か所に増える。

@@ -1,4 +1,5 @@
 import { Box, Button, IconButton, Stack, TextField, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import AddIcon from "@mui/icons-material/Add";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
@@ -21,43 +22,44 @@ export function ScheduleTrackManager({
   onMove: (key: string, delta: number) => void;
   onRemove: (key: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Box>
       <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-        トラック
+        {t("schedule.tracks")}
       </Typography>
       <Stack spacing={0.5}>
-        {tracks.map((t, i) => (
-          <Stack key={t.key} direction="row" spacing={0.5} alignItems="center">
+        {tracks.map((track, i) => (
+          <Stack key={track.key} direction="row" spacing={0.5} alignItems="center">
             <TextField
               size="small"
-              label={`トラック${i + 1}の名前`}
-              value={t.name}
-              onChange={(e) => onRename(t.key, e.target.value)}
-              error={t.name.trim() === ""}
+              label={t("schedule.trackNameLabel", { n: i + 1 })}
+              value={track.name}
+              onChange={(e) => onRename(track.key, e.target.value)}
+              error={track.name.trim() === ""}
               inputProps={{ maxLength: 50 }}
               sx={{ flex: 1, maxWidth: 320 }}
             />
             <IconButton
               size="small"
               disabled={i === 0}
-              onClick={() => onMove(t.key, -1)}
-              title="このトラックを前へ"
+              onClick={() => onMove(track.key, -1)}
+              title={t("schedule.moveTrackUp")}
             >
               <ArrowUpwardIcon fontSize="small" />
             </IconButton>
             <IconButton
               size="small"
               disabled={i === tracks.length - 1}
-              onClick={() => onMove(t.key, 1)}
-              title="このトラックを後ろへ"
+              onClick={() => onMove(track.key, 1)}
+              title={t("schedule.moveTrackDown")}
             >
               <ArrowDownwardIcon fontSize="small" />
             </IconButton>
             <IconButton
               size="small"
-              onClick={() => onRemove(t.key)}
-              title="このトラックを削除"
+              onClick={() => onRemove(track.key)}
+              title={t("schedule.removeTrack")}
             >
               <CloseIcon fontSize="small" />
             </IconButton>
@@ -71,12 +73,12 @@ export function ScheduleTrackManager({
         onClick={onAdd}
         sx={{ mt: tracks.length > 0 ? 1 : 0 }}
       >
-        トラックを追加
+        {t("schedule.addTrack")}
       </Button>
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
         {tracks.length > 0
-          ? "トラックを削除すると、そのトラックにだけ載っていたセッションは未割り当てに戻ります。"
-          : "同じ時間に並行して走る枠がある場合に追加します。"}
+          ? t("schedule.trackRemoveNote")
+          : t("schedule.trackAddHint")}
       </Typography>
     </Box>
   );

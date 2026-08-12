@@ -17,9 +17,9 @@ import {
 } from "@mui/material";
 import StadiumIcon from "@mui/icons-material/Stadium";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  QA_ANONYMITY_LABEL,
   QA_ANONYMITY_MODES,
   VENUE_TYPES,
   type QaAnonymity,
@@ -41,7 +41,14 @@ import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
 import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
 import { AwardsEditor } from "../components/AwardsEditor.js";
 import { fromDateTimeLocal, venueLabel } from "../lib/format.js";
-import { ApiError } from "../api/client.js";
+import { errorMessage } from "../lib/errorMessage.js";
+
+/** 質問の名前の出し方 (`QaAnonymity`) → 翻訳キー。並びは QA_ANONYMITY_MODES が持つ */
+const QA_ANONYMITY_KEY = {
+  real: "eventForm.qaAnonymityReal",
+  anon: "eventForm.qaAnonymityAnon",
+  choice: "eventForm.qaAnonymityChoice",
+} as const satisfies Record<QaAnonymity, string>;
 
 function toLocalInput(epoch: number): string {
   // 日程調整中（未確定）は 0 が入っている。1970-01-01 を出さない
@@ -54,6 +61,7 @@ function toLocalInput(epoch: number): string {
 export function EditEventPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { data, isLoading } = useEvent(id);
   const isAdmin = useIsAdmin();
   const update = useUpdateEvent(id);
@@ -122,11 +130,11 @@ export function EditEventPage() {
     }
   }, [data, initialized]);
 
-  if (isLoading || !data) return <Typography>読み込み中…</Typography>;
+  if (isLoading || !data) return <Typography>{t("common.loading")}</Typography>;
 
   const isStaff = data.myRole === "staff" || isAdmin;
   if (!isStaff) {
-    return <Alert severity="info">このイベントの編集権限がありません。</Alert>;
+    return <Alert severity="info">{t("eventForm.noPermission")}</Alert>;
   }
   const { event } = data;
 
@@ -143,19 +151,15 @@ export function EditEventPage() {
   // 開始後まで受け付けたい場合は「締切なし（空欄）」を選ぶ、という整理 (#269)
   const deadlineError =
     deadlineMs !== null && startsAtMs !== null && deadlineMs > startsAtMs
-      ? "募集締切は開始日時より後にできません。開催中も受け付けるなら空欄にしてください。"
+      ? t("eventForm.deadlineAfterStart")
       : "";
-  // 保存失敗の理由。締切まわりは汎用文言だと何を直せばいいか分からないので個別に出す (#269)
-  const saveErrorCode =
-    update.error instanceof ApiError
-      ? (update.error.body as { error?: string } | null)?.error
-      : undefined;
-  const saveErrorMessage =
-    saveErrorCode === "deadline_requires_fixed_date"
-      ? "募集締切を設定するには、先に開始日時と終了日時を入力してください。"
-      : saveErrorCode === "deadline_after_start"
-        ? "募集締切は開始日時より後にできません。開催中も受け付けるなら空欄にしてください。"
-        : "保存に失敗しました。";
+  // 保存失敗の理由。締切まわりは汎用文言だと何を直せばいいか分からないので、
+  // この画面だけの言い方を overrides で渡す (#269)
+  const saveErrorMessage = errorMessage(update.error, {
+    default: t("eventForm.saveError"),
+    deadline_requires_fixed_date: t("eventForm.deadlineNeedsDate"),
+    deadline_after_start: t("eventForm.deadlineAfterStart"),
+  });
 
   const save = () => {
     update.mutate(
@@ -197,12 +201,12 @@ export function EditEventPage() {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h5" fontWeight={700} gutterBottom>
-          イベント編集
+          {t("eventForm.editTitle")}
         </Typography>
         <Stack spacing={2.5} sx={{ mt: 2 }}>
           <Box>
             <Typography variant="subtitle2" gutterBottom>
-              公開状態
+              {t("eventForm.statusHeading")}
             </Typography>
             <ToggleButtonGroup
               exclusive
@@ -211,15 +215,19 @@ export function EditEventPage() {
               value={status}
               onChange={(_e, v) => v && setStatus(v)}
             >
-              <ToggleButton value="draft">非公開（下書き）</ToggleButton>
-              <ToggleButton value="published">公開</ToggleButton>
+              <ToggleButton value="draft">
+                {t("eventForm.statusDraft")}
+              </ToggleButton>
+              <ToggleButton value="published">
+                {t("eventForm.statusPublished")}
+              </ToggleButton>
             </ToggleButtonGroup>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-              公開にすると未ログインでも閲覧でき、開催前なら公開トップの一覧に表示されます。
+              {t("eventForm.statusHelp")}
             </Typography>
           </Box>
           <CounterTextField
-            label="タイトル"
+            label={t("eventForm.title")}
             value={title}
             max={200}
             onChange={(e) => setTitle(e.target.value)}
@@ -227,37 +235,37 @@ export function EditEventPage() {
             fullWidth
           />
           <CounterTextField
-            label="サブタイトル（任意）"
+            label={t("eventForm.subtitle")}
             value={subtitle}
             max={200}
             onChange={(e) => setSubtitle(e.target.value)}
             fullWidth
           />
           <MarkdownEditor
-            label="内容"
+            label={t("eventForm.description")}
             value={description}
             onChange={setDescription}
             minRows={3}
             max={20000}
-            helperText="Markdown が使えます（見出し #、リスト -、リンク [text](url)、**強調**、<img> など）"
+            helperText={t("eventForm.markdownHelp")}
           />
           <MarkdownEditor
-            label="参加者限定の文章（参加確定した人にだけ表示）"
+            label={t("eventForm.membersNote")}
             value={membersNote}
             onChange={setMembersNote}
             minRows={3}
             max={20000}
-            helperText="Discord の招待リンクや当日の連絡事項など、参加確定者とスタッフにだけ見せたい内容を書けます。Markdown が使えます"
+            helperText={t("eventForm.membersNoteHelp")}
           />
           {myCommunities && myCommunities.length > 0 && (
             <TextField
               select
-              label="コミュニティ（任意）"
+              label={t("eventForm.community")}
               value={communityId}
               onChange={(e) => setCommunityId(e.target.value)}
               fullWidth
             >
-              <MenuItem value="">なし</MenuItem>
+              <MenuItem value="">{t("eventForm.communityNone")}</MenuItem>
               {myCommunities.map((c) => (
                 <MenuItem key={c.id} value={c.id}>
                   {c.name}
@@ -270,16 +278,16 @@ export function EditEventPage() {
               severity="info"
               action={
                 <Button size="small" onClick={() => setDirectDate(true)}>
-                  日時を直接設定する
+                  {t("eventForm.setDateDirectly")}
                 </Button>
               }
             >
-              このイベントは日程調整中です。イベントページの日程調整で確定するか、ここで日時を直接設定できます（直接設定すると日程調整は終了します）。
+              {t("eventForm.schedulingNotice")}
             </Alert>
           ) : (
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField
-                label="開始日時"
+                label={t("eventForm.startsAt")}
                 type="datetime-local"
                 value={startsAt}
                 onChange={(e) => setStartsAt(e.target.value)}
@@ -287,7 +295,7 @@ export function EditEventPage() {
                 fullWidth
               />
               <TextField
-                label="終了日時"
+                label={t("eventForm.endsAt")}
                 type="datetime-local"
                 value={endsAt}
                 onChange={(e) => setEndsAt(e.target.value)}
@@ -298,7 +306,7 @@ export function EditEventPage() {
           )}
           {/* 募集締切 (#269)。開催日時が確定していないと設定できない */}
           <TextField
-            label="募集締切日時（任意）"
+            label={t("eventForm.deadline")}
             type="datetime-local"
             value={deadlineEditable ? registrationDeadline : ""}
             onChange={(e) => setRegistrationDeadline(e.target.value)}
@@ -306,15 +314,17 @@ export function EditEventPage() {
             error={Boolean(deadlineError)}
             helperText={
               deadlineError ||
-              (deadlineEditable
-                ? "空欄なら締切なしで、イベント終了まで受け付けます。締切を過ぎると新しい参加登録だけができなくなります（参加者のキャンセルやスタッフの操作はそのまま行えます）。"
-                : "開催日時が決まっていないため設定できません。開始日時と終了日時を入力すると設定できるようになります。")
+              t(
+                deadlineEditable
+                  ? "eventForm.deadlineHelp"
+                  : "eventForm.deadlineDisabledHelp",
+              )
             }
             InputLabelProps={{ shrink: true }}
             fullWidth
           />
           <TextField
-            label="会場種別"
+            label={t("eventForm.venueType")}
             select
             value={venueType}
             onChange={(e) => setVenueType(e.target.value as VenueType)}
@@ -328,7 +338,7 @@ export function EditEventPage() {
           </TextField>
           {venueType !== "online" && (
             <CounterTextField
-              label="オフライン会場"
+              label={t("eventForm.venueOffline")}
               value={venueOffline}
               max={500}
               onChange={(e) => setVenueOffline(e.target.value)}
@@ -337,7 +347,7 @@ export function EditEventPage() {
           )}
           {venueType !== "offline" && (
             <CounterTextField
-              label="オンライン会場（Discord 招待 URL など）"
+              label={t("eventForm.venueOnline")}
               value={venueOnline}
               max={500}
               onChange={(e) => setVenueOnline(e.target.value)}
@@ -353,10 +363,10 @@ export function EditEventPage() {
                   onChange={(e) => setContestMode(e.target.checked)}
                 />
               }
-              label="コンテスト形式（採点・成果物・表彰を使う）"
+              label={t("eventForm.contestMode")}
             />
             <Typography variant="caption" color="text.secondary" display="block">
-              オフなら告知・募集だけの一般イベントになり、採点・成果物・表彰は表示されません。
+              {t("eventForm.contestModeHelpEdit")}
             </Typography>
           </Box>
 
@@ -368,10 +378,10 @@ export function EditEventPage() {
                   onChange={(e) => setAttendanceCheck(e.target.checked)}
                 />
               }
-              label="出席チェックモード"
+              label={t("eventForm.attendanceCheck")}
             />
             <Typography variant="caption" color="text.secondary" display="block">
-              オンにすると、スタッフが出席チェックした人だけが参加者として記録されます。チェックされなかった人は参加人数・参加履歴に含まれません（当日受付・ドタキャン対策に）。
+              {t("eventForm.attendanceCheckHelp")}
             </Typography>
           </Box>
 
@@ -383,10 +393,10 @@ export function EditEventPage() {
                   onChange={(e) => setChatEnabled(e.target.checked)}
                 />
               }
-              label="参加者チャット"
+              label={t("eventForm.chat")}
             />
             <Typography variant="caption" color="text.secondary" display="block">
-              参加確定メンバーがイベントページでチャットできます。チャットの内容は公開されます。
+              {t("eventForm.chatHelp")}
             </Typography>
             {chatEnabled && (
               <Box sx={{ pl: 3, mt: 1 }}>
@@ -397,14 +407,14 @@ export function EditEventPage() {
                       onChange={(e) => setChatUrlsAllowed(e.target.checked)}
                     />
                   }
-                  label="参加者のURL投稿を許可"
+                  label={t("eventForm.chatUrls")}
                 />
                 <Typography
                   variant="caption"
                   color="text.secondary"
                   display="block"
                 >
-                  オンにすると参加者もチャットにURLを投稿できます。スタッフは常に投稿できます。
+                  {t("eventForm.chatUrlsHelp")}
                 </Typography>
               </Box>
             )}
@@ -419,24 +429,24 @@ export function EditEventPage() {
                   onChange={(e) => setQaEnabled(e.target.checked)}
                 />
               }
-              label="Q&A（質問と投票）"
+              label={t("eventForm.qa")}
             />
             <Typography variant="caption" color="text.secondary" display="block">
-              参加確定メンバーが質問を投稿し、聞きたい質問に投票できます。票の多い順に並ぶので、登壇者は人気の質問から答えられます。
+              {t("eventForm.qaHelp")}
             </Typography>
             {qaEnabled && (
               <Box sx={{ pl: 3, mt: 1 }}>
                 <TextField
                   select
                   size="small"
-                  label="質問の名前の出し方"
+                  label={t("eventForm.qaAnonymity")}
                   value={qaAnonymity}
                   onChange={(e) => setQaAnonymity(e.target.value as QaAnonymity)}
                   sx={{ minWidth: 220 }}
                 >
                   {QA_ANONYMITY_MODES.map((m) => (
                     <MenuItem key={m} value={m}>
-                      {QA_ANONYMITY_LABEL[m]}
+                      {t(QA_ANONYMITY_KEY[m])}
                     </MenuItem>
                   ))}
                 </TextField>
@@ -446,7 +456,7 @@ export function EditEventPage() {
                   display="block"
                   sx={{ mt: 1 }}
                 >
-                  「参加者が選べる」にすると、投稿するときに本人が名前を出すかどうかを決められます。いずれの設定でも、荒らし対応のためスタッフには投稿者が表示されます。
+                  {t("eventForm.qaAnonymityHelp")}
                 </Typography>
               </Box>
             )}
@@ -466,12 +476,12 @@ export function EditEventPage() {
                   sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
                 >
                   <StadiumIcon fontSize="small" />
-                  会場を探しています
+                  {t("eventForm.venueWanted")}
                 </Box>
               }
             />
             <Typography variant="caption" color="text.secondary" display="block">
-              オンにすると会場提供者からのオファーを受け付けます（会場募集一覧にも掲載）。
+              {t("eventForm.venueWantedHelp")}
             </Typography>
           </Box>
 
@@ -495,29 +505,29 @@ export function EditEventPage() {
             <Alert severity="error">{saveErrorMessage}</Alert>
           )}
           <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} justifyContent="flex-end">
-            <Button onClick={() => navigate(`/events/${id}`)}>キャンセル</Button>
+            <Button onClick={() => navigate(`/events/${id}`)}>
+              {t("common.cancel")}
+            </Button>
             <Button
               variant="contained"
               disabled={!title || Boolean(deadlineError) || update.isPending}
               onClick={save}
             >
-              保存
+              {t("common.save")}
             </Button>
           </Stack>
 
           <Divider />
           <Box>
             <Typography variant="subtitle2" gutterBottom>
-              イベントの複製
+              {t("eventForm.duplicateHeading")}
             </Typography>
             <Button
               startIcon={<ContentCopyIcon />}
               disabled={duplicate.isPending}
               onClick={() => {
                 if (
-                  !window.confirm(
-                    "このイベントを複製しますか？（参加者・エントリー・コメント・写真はコピーされません）",
-                  )
+                  !window.confirm(t("eventForm.duplicateConfirm"))
                 ) {
                   return;
                 }
@@ -528,7 +538,9 @@ export function EditEventPage() {
                     if (!created.imageUpdatedAt) {
                       const blob = await generateEventImageBlob(
                         created.title,
-                        created.scheduling ? "日程調整中" : undefined,
+                        created.scheduling
+                          ? t("eventForm.imageSchedulingSubtitle")
+                          : undefined,
                       ).catch(() => null);
                       if (blob) {
                         await fetch(`/api/events/${created.id}/image`, {
@@ -544,14 +556,14 @@ export function EditEventPage() {
                 });
               }}
             >
-              イベントを複製
+              {t("eventForm.duplicateButton")}
             </Button>
             <Typography variant="caption" color="text.secondary" display="block">
-              タイトル・説明・参加枠・採点基準・表彰・画像などをコピーした下書きイベントを新しく作ります。
+              {t("eventForm.duplicateHelp")}
             </Typography>
             {duplicate.isError && (
               <Alert severity="error" sx={{ mt: 1 }}>
-                複製に失敗しました。
+                {t("eventForm.duplicateError")}
               </Alert>
             )}
           </Box>
@@ -559,18 +571,20 @@ export function EditEventPage() {
           <Divider />
           <Box>
             <Typography variant="subtitle2" color="error" gutterBottom>
-              危険な操作
+              {t("eventForm.dangerZone")}
             </Typography>
             {!confirmDelete ? (
               <Button color="error" onClick={() => setConfirmDelete(true)}>
-                このイベントを削除
+                {t("eventForm.deleteButton")}
               </Button>
             ) : (
               <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} alignItems="center">
                 <Typography variant="body2">
-                  本当に削除しますか？（参加者・採点・画像も削除されます）
+                  {t("eventForm.deleteConfirm")}
                 </Typography>
-                <Button onClick={() => setConfirmDelete(false)}>やめる</Button>
+                <Button onClick={() => setConfirmDelete(false)}>
+                  {t("eventForm.deleteAbort")}
+                </Button>
                 <Button
                   variant="contained"
                   color="error"
@@ -581,7 +595,7 @@ export function EditEventPage() {
                     })
                   }
                 >
-                  削除する
+                  {t("eventForm.deleteSubmit")}
                 </Button>
               </Stack>
             )}

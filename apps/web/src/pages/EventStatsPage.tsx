@@ -24,6 +24,7 @@ import PollIcon from "@mui/icons-material/Poll";
 import HandshakeOutlinedIcon from "@mui/icons-material/HandshakeOutlined";
 import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { EventStats } from "@eventer/shared";
 import { surveyValueLabel } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
@@ -31,15 +32,30 @@ import { api } from "../api/client.js";
 import { useEventStats } from "../api/analyticsHooks.js";
 import { useSurveyAnswers } from "../api/eventSurveyHooks.js";
 import { useMeetRanking } from "../api/eventMeetHooks.js";
+import { i18next } from "../i18n/index.js";
 
-/** 流入元ラベルの友好名 */
-const SOURCE_LABEL: Record<string, string> = {
-  direct: "直接アクセス",
-  internal: "サイト内",
-  notification: "通知",
-  feed: "フィード",
-  email: "メール",
-  card: "カード",
+/** サイトが自分で付ける流入元の印。文言は辞書にある */
+const INTERNAL_SOURCE_KEY: Partial<
+  Record<
+    string,
+    | "staffOps.sourceDirect"
+    | "staffOps.sourceInternal"
+    | "staffOps.sourceNotification"
+    | "staffOps.sourceFeed"
+    | "staffOps.sourceEmail"
+    | "staffOps.sourceCard"
+  >
+> = {
+  direct: "staffOps.sourceDirect",
+  internal: "staffOps.sourceInternal",
+  notification: "staffOps.sourceNotification",
+  feed: "staffOps.sourceFeed",
+  email: "staffOps.sourceEmail",
+  card: "staffOps.sourceCard",
+};
+
+/** 外部サイトの見せ方。サービス名はどの言語でも同じ綴りなので辞書には置かない */
+const SITE_LABEL: Record<string, string> = {
   "t.co": "X (Twitter)",
   "twitter.com": "X (Twitter)",
   "x.com": "X (Twitter)",
@@ -53,7 +69,12 @@ const SOURCE_LABEL: Record<string, string> = {
   "nostr.band": "Nostr",
   "yabu.me": "Nostr",
 };
-const sourceLabel = (s: string) => SOURCE_LABEL[s] ?? s;
+
+/** 知らない流入元はそのまま出す（サーバーが増やしても画面は壊れない） */
+const sourceLabel = (s: string): string => {
+  const key = INTERNAL_SOURCE_KEY[s];
+  return key ? i18next.t(key) : (SITE_LABEL[s] ?? s);
+};
 
 /** 国コード→国旗（リージョナルインジケーター）。不明なら空文字（Flag アイコンで代替） */
 function flag(cc: string): string {
@@ -63,13 +84,18 @@ function flag(cc: string): string {
   );
 }
 
-const RANGES: { label: string; days: number | null }[] = [
-  { label: "7日", days: 7 },
-  { label: "30日", days: 30 },
-  { label: "全期間", days: null },
+/** 集計する期間。文言そのものではなく翻訳キーを持つ */
+const RANGES: {
+  labelKey: "staffOps.statsRange7" | "staffOps.statsRange30" | "staffOps.statsRangeAll";
+  days: number | null;
+}[] = [
+  { labelKey: "staffOps.statsRange7", days: 7 },
+  { labelKey: "staffOps.statsRange30", days: 30 },
+  { labelKey: "staffOps.statsRangeAll", days: null },
 ];
 
 export function EventStatsPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const isAdmin = useIsAdmin();
@@ -78,9 +104,11 @@ export function EventStatsPage() {
   const { data, isLoading, isError } = useEventStats(id, range, Boolean(eventData) && isStaff);
 
   if (eventData && !isStaff) {
-    return <Alert severity="warning">アクセス統計はスタッフ専用です。</Alert>;
+    return <Alert severity="warning">{t("staffOps.statsStaffOnly")}</Alert>;
   }
-  if (isError) return <Alert severity="info">統計を取得できませんでした。</Alert>;
+  if (isError) {
+    return <Alert severity="info">{t("staffOps.statsLoadFailed")}</Alert>;
+  }
 
   return (
     <Stack spacing={2.5}>
@@ -97,10 +125,10 @@ export function EventStatsPage() {
           }}
         >
           <BarChartIcon fontSize="medium" />
-          アクセス統計
+          {t("eventDetail.stats")}
         </Typography>
         <Button size="small" component={RouterLink} to={`/events/${id}`}>
-          ← イベントへ戻る
+          {t("staffOps.backToEvent")}
         </Button>
       </Stack>
 
@@ -111,40 +139,46 @@ export function EventStatsPage() {
         onChange={(_e, v) => v !== null && setRange(v === "all" ? null : v)}
       >
         {RANGES.map((r) => (
-          <ToggleButton key={r.label} value={r.days ?? "all"}>
-            {r.label}
+          <ToggleButton key={r.days ?? "all"} value={r.days ?? "all"}>
+            {t(r.labelKey)}
           </ToggleButton>
         ))}
       </ToggleButtonGroup>
 
       {isLoading || !data ? (
-        <Typography>読み込み中…</Typography>
+        <Typography>{t("common.loading")}</Typography>
       ) : (
         <>
           {/* サマリ */}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-            <StatTile label="表示回数 (PV)" value={data.totalViews} />
-            <StatTile label="ユニークビジター" value={data.uniqueVisitors} />
-            <StatTile label="参加登録数" value={data.totalParticipants} />
+            <StatTile label={t("staffOps.statsViews")} value={data.totalViews} />
+            <StatTile
+              label={t("staffOps.statsUniques")}
+              value={data.uniqueVisitors}
+            />
+            <StatTile
+              label={t("staffOps.statsJoins")}
+              value={data.totalParticipants}
+            />
           </Stack>
 
           {data.totalViews === 0 && data.totalParticipants === 0 ? (
             <Typography color="text.secondary">
-              まだアクセスがありません。公開してシェアすると、ここに流入元や推移が表示されます。
+              {t("staffOps.statsEmpty")}
             </Typography>
           ) : (
             <>
               <DailyChart daily={data.daily} />
               <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                 <BarList
-                  title="流入元"
+                  title={t("staffOps.statsSources")}
                   rows={data.sources.map((s) => ({
                     label: sourceLabel(s.source),
                     value: s.views,
                   }))}
                 />
                 <BarList
-                  title="国・地域"
+                  title={t("staffOps.statsCountries")}
                   rows={data.countries.map((cn) => {
                     const f = flag(cn.country);
                     return {
@@ -172,13 +206,29 @@ export function EventStatsPage() {
   );
 }
 
-const SURVEY_STATUS_LABEL: Record<string, string> = {
-  confirmed: "確定",
-  waitlist: "キャンセル待ち",
-  applied: "抽選申込中",
-  lost: "落選",
-  canceled: "キャンセル",
+/** 参加状態の見せ方。文言はイベント詳細と同じものを引く（表を2か所に持たない） */
+const SURVEY_STATUS_KEY: Partial<
+  Record<
+    string,
+    | "eventDetail.statusConfirmed"
+    | "eventDetail.statusWaitlist"
+    | "eventDetail.statusApplied"
+    | "eventDetail.statusLost"
+    | "staffOps.surveyStatusCanceled"
+  >
+> = {
+  confirmed: "eventDetail.statusConfirmed",
+  waitlist: "eventDetail.statusWaitlist",
+  applied: "eventDetail.statusApplied",
+  lost: "eventDetail.statusLost",
+  canceled: "staffOps.surveyStatusCanceled",
 };
+
+/** 表に無い状態はサーバーの値をそのまま出す */
+function surveyStatusLabel(status: string): string {
+  const key = SURVEY_STATUS_KEY[status];
+  return key ? i18next.t(key) : status;
+}
 
 /** 事前アンケートの回答一覧（staff のみ）。CSV ダウンロードつき */
 function SurveyAnswersCard({
@@ -188,6 +238,7 @@ function SurveyAnswersCard({
   eventId: string;
   enabled: boolean;
 }) {
+  const { t } = useTranslation();
   const { data } = useSurveyAnswers(eventId, enabled);
   const [reminding, setReminding] = useState(false);
   const [remindResult, setRemindResult] = useState<string | null>(null);
@@ -210,7 +261,7 @@ function SurveyAnswersCard({
             sx={{ flex: 1, minWidth: 160, display: "flex", alignItems: "center", gap: 0.75 }}
           >
             <PollIcon fontSize="small" />
-            アンケート回答
+            {t("staffOps.surveyTitle")}
           </Typography>
           <Button
             size="small"
@@ -218,11 +269,7 @@ function SurveyAnswersCard({
             startIcon={<NotificationsNoneIcon />}
             disabled={reminding}
             onClick={async () => {
-              if (
-                !window.confirm(
-                  "未回答の確定参加者に「アンケート回答のお願い」通知を送りますか？",
-                )
-              ) {
+              if (!window.confirm(t("staffOps.surveyRemindConfirm"))) {
                 return;
               }
               setReminding(true);
@@ -230,15 +277,22 @@ function SurveyAnswersCard({
                 const res = await api.post<{ notified: number }>(
                   `/events/${eventId}/survey/remind`,
                 );
-                setRemindResult(`${res.notified} 人に通知しました`);
+                setRemindResult(
+                  t(
+                    res.notified === 1
+                      ? "staffOps.surveyRemindedOne"
+                      : "staffOps.surveyReminded",
+                    { n: res.notified },
+                  ),
+                );
               } catch {
-                setRemindResult("送信に失敗しました");
+                setRemindResult(t("staffOps.surveyRemindFailed"));
               } finally {
                 setReminding(false);
               }
             }}
           >
-            未回答者にお願い通知
+            {t("staffOps.surveyRemind")}
           </Button>
           {/* 同一オリジンの <a> なので cookie 認証のままダウンロードできる */}
           <Button
@@ -249,7 +303,7 @@ function SurveyAnswersCard({
             href={`/api/events/${eventId}/survey/answers.csv`}
             download
           >
-            CSVダウンロード
+            {t("staffOps.surveyCsv")}
           </Button>
           {/* 受付結果＋アンケートを1枚にした名簿（会場提供者にも渡せる） (#154) */}
           <Button
@@ -260,24 +314,28 @@ function SurveyAnswersCard({
             href={`/api/events/${eventId}/attendance.csv`}
             download
           >
-            入館名簿CSV
+            {t("staffOps.attendanceCsv")}
           </Button>
         </Stack>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-          参加登録時のアンケート回答です（スタッフのみ閲覧できます）。
-          {remindResult && ` ・ ${remindResult}`}
+          {t("staffOps.surveyNote")}
+          {remindResult && `${t("common.dotSeparator")}${remindResult}`}
         </Typography>
         {rows.length === 0 ? (
           <Typography color="text.secondary" variant="body2">
-            まだ回答がありません。
+            {t("staffOps.surveyEmpty")}
           </Typography>
         ) : (
           <TableContainer sx={{ maxHeight: 420 }}>
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ whiteSpace: "nowrap" }}>参加者</TableCell>
-                  <TableCell sx={{ whiteSpace: "nowrap" }}>参加状態</TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>
+                    {t("eventDetail.participantsHeading")}
+                  </TableCell>
+                  <TableCell sx={{ whiteSpace: "nowrap" }}>
+                    {t("staffOps.surveyStatusColumn")}
+                  </TableCell>
                   {questions.map((q) => (
                     <TableCell key={q.id} sx={{ minWidth: 120 }}>
                       {q.question}
@@ -293,8 +351,8 @@ function SurveyAnswersCard({
                     </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap" }}>
                       {r.memberStatus
-                        ? (SURVEY_STATUS_LABEL[r.memberStatus] ?? r.memberStatus)
-                        : "未参加"}
+                        ? surveyStatusLabel(r.memberStatus)
+                        : t("staffOps.surveyNotJoined")}
                     </TableCell>
                     {questions.map((q) => (
                       <TableCell key={q.id}>
@@ -328,6 +386,7 @@ function StatTile({ label, value }: { label: string; value: number }) {
 }
 
 function DailyChart({ daily }: { daily: EventStats["daily"] }) {
+  const { t } = useTranslation();
   // PVと参加数でスケールが大きく違うため、棒の高さは各系列の最大値で正規化
   const maxViews = Math.max(1, ...daily.map((d) => d.views));
   const maxJoins = Math.max(1, ...daily.map((d) => d.joins));
@@ -342,9 +401,12 @@ function DailyChart({ daily }: { daily: EventStats["daily"] }) {
           flexWrap="wrap"
           useFlexGap
         >
-          <Typography variant="subtitle2">日別の推移</Typography>
-          <LegendDot color="primary.main" label="表示回数 (PV)" />
-          <LegendDot color="secondary.main" label="参加登録" />
+          <Typography variant="subtitle2">{t("staffOps.statsDaily")}</Typography>
+          <LegendDot color="primary.main" label={t("staffOps.statsViews")} />
+          <LegendDot
+            color="secondary.main"
+            label={t("staffOps.statsLegendJoins")}
+          />
         </Stack>
         <Box
           sx={{
@@ -358,7 +420,12 @@ function DailyChart({ daily }: { daily: EventStats["daily"] }) {
           {daily.map((d) => (
             <Box
               key={d.day}
-              title={`${d.day}  PV:${d.views} / ユニーク:${d.uniques} / 参加:${d.joins}`}
+              title={t("staffOps.statsDayTooltip", {
+                day: d.day,
+                views: d.views,
+                uniques: d.uniques,
+                joins: d.joins,
+              })}
               sx={{
                 flex: "1 0 20px",
                 minWidth: 20,
@@ -429,6 +496,7 @@ function BarList({
   title: string;
   rows: { label: string; value: number; icon?: ReactNode }[];
 }) {
+  const { t } = useTranslation();
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
     <Card variant="outlined" sx={{ flex: 1 }}>
@@ -438,7 +506,7 @@ function BarList({
         </Typography>
         {rows.length === 0 ? (
           <Typography variant="caption" color="text.secondary">
-            データなし
+            {t("staffOps.statsNoData")}
           </Typography>
         ) : (
           <Stack spacing={0.75}>
@@ -486,6 +554,7 @@ function MeetRankingCard({
   eventId: string;
   enabled: boolean;
 }) {
+  const { t } = useTranslation();
   const { data } = useMeetRanking(eventId, enabled);
   if (!data || data.ranking.length === 0) return null;
   return (
@@ -497,10 +566,10 @@ function MeetRankingCard({
           sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
         >
           <HandshakeOutlinedIcon fontSize="small" />
-          出会いランキング
+          {t("staffOps.meetRankingTitle")}
         </Typography>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-          「出会った！」の記録数です（スタッフのみ閲覧できます）。景品の参考にどうぞ。
+          {t("staffOps.meetRankingNote")}
         </Typography>
         <Stack spacing={0.75}>
           {data.ranking.map((r, i) => (
