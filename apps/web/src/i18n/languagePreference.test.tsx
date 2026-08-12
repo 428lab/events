@@ -122,6 +122,16 @@ describe("表示言語のカード (#354)", () => {
     expect(i18next.language).toBe("en");
   });
 
+  it("言語の呼び名を大文字化しない（並びが不揃いにならない）", () => {
+    setBrowserLanguages(["ja-JP"]);
+    render(<LanguageCard />);
+    // MUI 既定の大文字化のままだと ENGLISH と日本語が並んで不揃いになる
+    expect(
+      getComputedStyle(screen.getByRole("button", { name: "English" }))
+        .textTransform,
+    ).toBe("none");
+  });
+
   /**
    * プライベートモードなど保存が禁じられた環境。読み書きのどちらで例外が出ても
    * 画面は壊れず、そのセッションの表示だけは切り替わる。
