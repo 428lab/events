@@ -24,13 +24,22 @@ import { i18next } from "../i18n/index.js";
 /** 退会カード (#244, #250)。アカウント設定の最下部に置く。
  * 何が残り何が消えるか・猶予期間 (#250) を説明し、
  * チェック＋確認ダイアログの二段構えで実行する */
-/** 猶予期間の表示（環境で変わる。staging は検証用に短い） */
-function formatGrace(ms: number): string {
+/** 猶予期間の表示（環境で変わる。staging は検証用に短い）。
+ * 単数・複数でキーを選び分けるのは辞書側の都合（英語で "1 days" にしないため）で、
+ * ここが見ているのは**数だけ**。言語による分岐はここには書かない。
+ * テストから直に呼ぶので輸出している */
+export function formatGrace(ms: number): string {
   const days = Math.round(ms / 86_400_000);
-  if (days >= 1) return i18next.t("settings.graceDays", { n: days });
-  return i18next.t("settings.graceMinutes", {
-    n: Math.max(1, Math.round(ms / 60_000)),
-  });
+  if (days >= 1) {
+    return i18next.t(days === 1 ? "settings.graceDay" : "settings.graceDays", {
+      n: days,
+    });
+  }
+  const minutes = Math.max(1, Math.round(ms / 60_000));
+  return i18next.t(
+    minutes === 1 ? "settings.graceMinute" : "settings.graceMinutes",
+    { n: minutes },
+  );
 }
 
 export function AccountDeleteCard() {

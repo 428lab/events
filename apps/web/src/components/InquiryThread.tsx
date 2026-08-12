@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import type { InquiryDetail } from "@eventer/shared";
 import { CounterTextField } from "./CounterTextField.js";
 import { formatDateTime } from "../lib/format.js";
+import { tDynamic } from "../i18n/index.js";
 
 export function InquiryThread({
   detail,
@@ -40,7 +41,9 @@ export function InquiryThread({
         </Typography>
         <Chip
           size="small"
-          label={t(`inquiryStatus.${detail.status}`)}
+          // サーバーが状態を増やしても画面にキー名が出ないよう、辞書に無ければ
+          // 生のコードを出す（API 応答は実行時に検証していない）
+          label={tDynamic(`inquiryStatus.${detail.status}`, detail.status)}
           color={detail.status === "answered" ? "success" : "default"}
         />
       </Stack>

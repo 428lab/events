@@ -10,10 +10,12 @@ import {
 } from "@mui/material";
 import PaletteIcon from "@mui/icons-material/Palette";
 import CheckIcon from "@mui/icons-material/Check";
+import { useTranslation } from "react-i18next";
 import { THEME_LIST, THEMES } from "../theme/themes.js";
 import { useThemeSettings } from "../theme/ThemeContext.js";
 
 export function ThemeSwitcher() {
+  const { t } = useTranslation();
   const { themeKey, setThemeKey, fireworksOn, setFireworksOn } =
     useThemeSettings();
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
@@ -21,23 +23,29 @@ export function ThemeSwitcher() {
 
   return (
     <>
-      <Tooltip title="テーマ">
-        <IconButton color="inherit" onClick={(e) => setAnchor(e.currentTarget)}>
+      <Tooltip title={t("nav.theme")}>
+        <IconButton
+          color="inherit"
+          onClick={(e) => setAnchor(e.currentTarget)}
+          aria-label={t("nav.theme")}
+        >
           <PaletteIcon />
         </IconButton>
       </Tooltip>
       <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
-        {THEME_LIST.map((t) => (
+        {THEME_LIST.map((theme) => (
           <MenuItem
-            key={t.key}
-            selected={t.key === themeKey}
+            key={theme.key}
+            selected={theme.key === themeKey}
             onClick={() => {
-              setThemeKey(t.key);
+              setThemeKey(theme.key);
               setAnchor(null);
             }}
           >
-            <ListItemText>{t.label}</ListItemText>
-            {t.key === themeKey && <CheckIcon fontSize="small" sx={{ ml: 1 }} />}
+            <ListItemText>{theme.label}</ListItemText>
+            {theme.key === themeKey && (
+              <CheckIcon fontSize="small" sx={{ ml: 1 }} />
+            )}
           </MenuItem>
         ))}
         <Divider />
@@ -46,9 +54,11 @@ export function ThemeSwitcher() {
           onClick={() => setFireworksOn(!fireworksOn)}
         >
           <ListItemText
-            secondary={!hasFireworks ? "このテーマは花火なし" : undefined}
+            secondary={
+              !hasFireworks ? t("nav.fireworksUnavailable") : undefined
+            }
           >
-            背景の花火
+            {t("nav.fireworks")}
           </ListItemText>
           <Switch edge="end" checked={fireworksOn && hasFireworks} />
         </MenuItem>

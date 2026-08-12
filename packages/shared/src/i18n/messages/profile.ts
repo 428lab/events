@@ -20,6 +20,9 @@ const ja = {
 
   /** 見出し（件数つき） */
   awardsHeading: "受賞歴（{{n}}）",
+  /** 受賞歴で、登壇名がプロフィール名と違うときだけイベント名に添える。
+   * 括弧も、前に空白が要るかどうかも言語で変わるので画面側では書かない */
+  awardEntryName: "（{{name}}）",
   badgesHeading: "バッジ（{{n}}）",
   photosHeading: "投稿した写真（{{n}}）",
   communitiesHeading: "所属コミュニティ",
@@ -109,6 +112,9 @@ const ja = {
   /** 写真からイベント詳細への導線 */
   viewEvent: "{{title}} を見る →",
 
+  /** カードは SVG で、中に描いた文字は支援技術から読めない。絵全体に付ける名前 */
+  cardAriaLabel: "{{name}} のプロフィールカード",
+
   /** プロフィールカードの説明（本人向け／他人向け） */
   cardOwnHint:
     "あなたのプロフィールカード。印刷（91×55mm）や画像の書き出しは「デザインを変える」から",
@@ -127,6 +133,7 @@ const en: Record<keyof typeof ja, string> = {
   notFound: "This user could not be found.",
 
   awardsHeading: "Awards ({{n}})",
+  awardEntryName: " ({{name}})",
   badgesHeading: "Badges ({{n}})",
   photosHeading: "Photos ({{n}})",
   communitiesHeading: "Communities",
@@ -199,6 +206,8 @@ const en: Record<keyof typeof ja, string> = {
   photoPrev: "Previous photo",
   photoNext: "Next photo",
   viewEvent: "Open {{title}} →",
+
+  cardAriaLabel: "{{name}}'s profile card",
 
   cardOwnHint:
     "Your profile card. Printing (91×55mm) and image export are under “Change the design”.",

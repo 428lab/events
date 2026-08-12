@@ -99,7 +99,12 @@ const ja = {
 
   /** 退会カード。猶予期間は環境で変わるので {{grace}} で受ける */
   deleteTitle: "退会",
+  /** 猶予期間の表し方。単数と複数でキーを分けてあるのは、英語で "1 days" に
+   *  ならないようにするため。**どちらを使うかは数だけで決まり、画面は言語を知らない**
+   *  （日本語はどちらも同じ綴り） */
+  graceDay: "{{n}}日",
   graceDays: "{{n}}日",
+  graceMinute: "{{n}}分",
   graceMinutes: "{{n}}分",
   deleteGraceNotice:
     "退会するとアカウントはすぐに利用できなくなり、他の利用者からも見えなくなります。{{grace}}以内に同じログイン方法でログインすると復帰できます。{{grace}}経過後は完全に削除され、復元できません。",
@@ -219,7 +224,9 @@ const en: Record<keyof typeof ja, string> = {
   mergeConfirmRun: "Merge accounts",
 
   deleteTitle: "Delete account",
+  graceDay: "{{n}} day",
   graceDays: "{{n}} days",
+  graceMinute: "{{n}} minute",
   graceMinutes: "{{n}} minutes",
   deleteGraceNotice:
     "Once you leave, your account stops working straight away and is hidden from other people. You can come back by signing in with the same login method within {{grace}}. After {{grace}} it is deleted for good and cannot be restored.",

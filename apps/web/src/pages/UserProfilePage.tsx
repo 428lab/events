@@ -109,7 +109,8 @@ function AwardsSection({
                     >
                       {a.eventTitle}
                     </Link>
-                    {a.entryName !== profileName && `（${a.entryName}）`}
+                    {a.entryName !== profileName &&
+                      t("profile.awardEntryName", { name: a.entryName })}
                   </Typography>
                 </Box>
                 <Typography variant="caption" color="text.secondary">

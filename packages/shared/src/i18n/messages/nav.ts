@@ -3,6 +3,9 @@
  *
  * `admin.*` は運営管理者向けの項目。ダッシュボード本体 (/admin/*) は対象外だが、
  * **入口はヘッダー（一般画面と同じ部品）にある**ので、ここだけは訳す。
+ *
+ * `theme` / `fireworks*` はヘッダーのテーマ切替 (#357)。
+ * テーマそのものの呼び名 (theme/themes.ts の `label`) はここでは持たない。
  */
 const ja = {
   communities: "コミュニティ",
@@ -14,6 +17,11 @@ const ja = {
   inquiries: "お問い合わせ",
   logout: "ログアウト",
   menu: "メニュー",
+  /** テーマ切替ボタン（アイコンのみなので読み上げ用の名前も兼ねる） */
+  theme: "テーマ",
+  fireworks: "背景の花火",
+  /** 花火に対応していないテーマを選んでいるときの補足 */
+  fireworksUnavailable: "このテーマは花火なし",
   myProfile: "自分のプロフィール",
   staffInvites: "運営への招待 {{n}} 件",
   adminBadge: "運営管理者",
@@ -39,6 +47,9 @@ const en: Record<keyof typeof ja, string> = {
   inquiries: "Support",
   logout: "Sign out",
   menu: "Menu",
+  theme: "Theme",
+  fireworks: "Background fireworks",
+  fireworksUnavailable: "Not available in this theme",
   myProfile: "My profile",
   staffInvites: "{{n}} organizer invites",
   adminBadge: "Service admin",
