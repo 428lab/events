@@ -91,6 +91,8 @@ describe("数を含む文言の単数・複数 (#363)", () => {
     // #367 スライド・配信。どちらも利用者が作る数なので 1 もありうる
     ["studio.pageCountOne", "studio.pageCount"],
     ["studio.sceneCountOne", "studio.sceneCount"],
+    // #376 横棒グラフの単位。1本が「1人」の棒は普通に出る
+    ["kpi.unitPerson", "kpi.unitPeople"],
   ];
 
   it("日本語は単数でも複数でも同じ綴り", () => {
@@ -122,6 +124,79 @@ describe("数を含む文言の単数・複数 (#363)", () => {
     expect(i18next.t("studio.pageCount", { n: 3 })).toBe("3 pages");
     expect(i18next.t("studio.sceneCountOne", { n: 1 })).toBe("1 scene");
     expect(i18next.t("studio.sceneCount", { n: 7 })).toBe("7 scenes");
+    // #376。棒に添える単位は画面が値を見て選ぶ（"1 people" にならない）
+    expect(
+      i18next.t("kpi.valueWithUnit", {
+        value: "1",
+        unit: i18next.t("kpi.unitPerson"),
+      }),
+    ).toBe("1 person");
+    expect(
+      i18next.t("kpi.valueWithUnit", {
+        value: "3",
+        unit: i18next.t("kpi.unitPeople"),
+      }),
+    ).toBe("3 people");
+  });
+});
+
+/**
+ * KPI の共有部品 (#376)。
+ *
+ * ここが拾うのは**つなぎ目の空白**。日本語は詰めて書き、英語は半角スペースが
+ * 要るので、空白は辞書側が持っている。整形ツールや手直しで端の空白が落ちると
+ * 英語だけ単語がくっつくが、**型でもキー一致の検査でも拾えない**。
+ */
+describe("KPI の共有部品 (#376)", () => {
+  /**
+   * 「減ったほうが良い指標」の一文は5つのヒントの末尾に足す。足す側のキーの
+   * 末尾に空白を置くと落とされるので、**英語はこのキーが先頭の空白を持つ**。
+   */
+  it("減ったほうが良い指標の一文は、英語だけ前に空白が入る", async () => {
+    expect(i18next.t("kpi.lowerIsBetter").startsWith(" ")).toBe(false);
+    await i18next.changeLanguage("en");
+    expect(i18next.t("kpi.lowerIsBetter").startsWith(" ")).toBe(true);
+  });
+
+  /** 母数不足の並びの区切り。日本語は読点、英語はカンマ＋空白 */
+  it("母数の並びの区切りは、英語だけ後ろに空白が入る", async () => {
+    expect(i18next.t("kpi.fewSeparator")).toBe("、");
+    await i18next.changeLanguage("en");
+    expect(i18next.t("kpi.fewSeparator")).toBe(", ");
+  });
+
+  /** 値と単位。日本語は詰める（"12人"）、英語は空ける（"12 people"） */
+  it("値と単位の間の空白は辞書が持つ", async () => {
+    expect(i18next.t("kpi.valueWithUnit", { value: "12", unit: "人" })).toBe(
+      "12人",
+    );
+    await i18next.changeLanguage("en");
+    expect(i18next.t("kpi.valueWithUnit", { value: "12", unit: "x" })).toBe(
+      "12 x",
+    );
+  });
+
+  /**
+   * ⓘボタンの読み上げ名。**日本語は後ろ、英語は前**に付くので、画面側で
+   * 文字列を足すと必ずどちらかが壊れる。
+   */
+  it("ⓘの読み上げ名は言語で語順が変わる", async () => {
+    expect(i18next.t("kpi.infoTip", { label: "出席率" })).toBe("出席率の説明");
+    await i18next.changeLanguage("en");
+    expect(i18next.t("kpi.infoTip", { label: "Attendance rate" })).toBe(
+      "About Attendance rate",
+    );
+  });
+
+  /**
+   * 「データなし」は推移グラフと横棒グラフの両方の既定値。**元は
+   * `empty === "データなし"` と日本語で見分けていた**ので、訳した瞬間に
+   * 壊れる形だった（いまは理由を種別で持つ）。文言が両言語で出ることだけ固定する。
+   */
+  it("データが無いときの言い方が両方の言語で出る", async () => {
+    expect(i18next.t("kpi.noData")).toBe("データなし");
+    await i18next.changeLanguage("en");
+    expect(i18next.t("kpi.noData")).toBe("No data");
   });
 });
 
