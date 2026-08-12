@@ -82,6 +82,17 @@ const ja = {
   /** クリップボードが使えない環境の逃げ道（window.prompt の見出し） */
   sharePrompt: "このURLをコピーしてください",
 
+  /** 何かを仕立てる画面で使う（イベント画像・スライド・配信シーン）(#367)。
+   *  同じ綴り・同じ意味なので領域ごとに持たせない */
+  background: "背景",
+  font: "フォント",
+  /** 画像・写真を送っている間の表示 (#367)。会場の写真とスライドの画像で共通。
+   *  `eventSocial.photoUploading` は残り枚数が付く別の綴り */
+  uploading: "アップロード中…",
+  /** クリップボードへ入れたあとの表示 (#367)。アカウント連携の合言葉と
+   *  BGM のクレジットの両方から引く */
+  copied: "コピーしました",
+
   /** 短い項目を横に並べるときの区切り。和文と欧文で記号が違う (#357) */
   dotSeparator: " ・ ",
   /** 公開プロフィールへの導線。設定・QR読み取りの両方から引く (#357) */
@@ -133,6 +144,11 @@ const en: Record<keyof typeof ja, string> = {
   shareCopy: "Copy the share link",
   shareCopied: "Link copied: {{url}}",
   sharePrompt: "Copy this URL",
+
+  background: "Background",
+  font: "Font",
+  uploading: "Uploading…",
+  copied: "Copied",
 
   dotSeparator: " · ",
   viewProfile: "View profile",

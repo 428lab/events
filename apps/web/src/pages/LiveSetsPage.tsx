@@ -14,6 +14,7 @@ import LiveTvIcon from "@mui/icons-material/LiveTv";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   useCreateLiveSet,
   useDeleteLiveSet,
@@ -22,6 +23,7 @@ import {
 import { formatDateTime } from "../lib/format.js";
 
 export function LiveSetsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: liveSets, isLoading } = useMyLiveSets();
   const create = useCreateLiveSet();
@@ -34,6 +36,7 @@ export function LiveSetsPage() {
     );
   const duplicateSet = (baseId: string, baseName: string) =>
     create.mutate(
+      /** 保存されるデータ。訳す方針は #364 (#367) */
       { name: `${baseName}のコピー`, baseLiveSetId: baseId },
       { onSuccess: (s) => navigate(`/live-sets/${s.id}/edit`) },
     );
@@ -50,10 +53,10 @@ export function LiveSetsPage() {
       >
         <Box>
           <Typography variant="h5" fontWeight={700}>
-            配信セット
+            {t("studio.liveSets")}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            配信画面のシーン一式（待機画面・OP・スライド＋カメラなど）を作って、イベントの配信で使い回せます。
+            {t("studio.liveSetsLead")}
           </Typography>
         </Box>
         <Button
@@ -62,15 +65,15 @@ export function LiveSetsPage() {
           onClick={newSet}
           disabled={create.isPending}
         >
-          新しい配信セット
+          {t("studio.newLiveSet")}
         </Button>
       </Stack>
 
       {isLoading || !liveSets ? (
-        <Typography>読み込み中…</Typography>
+        <Typography>{t("common.loading")}</Typography>
       ) : liveSets.length === 0 ? (
         <Typography color="text.secondary">
-          まだ配信セットがありません。「新しい配信セット」を押すと、待機画面・OP・スライド＋カメラなどの定番シーン入りで作成されます。
+          {t("studio.liveSetsEmpty", { action: t("studio.newLiveSet") })}
         </Typography>
       ) : (
         <Stack spacing={1.5}>
@@ -97,17 +100,27 @@ export function LiveSetsPage() {
                       }}
                     >
                       <LiveTvIcon fontSize="small" />
-                      {s.name || "無題の配信セット"}
+                      {s.name || t("studio.untitledLiveSet")}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {s.sceneCount} シーン ・ {formatDateTime(s.updatedAt)} 更新
+                      {t(
+                        s.sceneCount === 1
+                          ? "studio.sceneCountOne"
+                          : "studio.sceneCount",
+                        { n: s.sceneCount },
+                      )}
+                      {t("common.dotSeparator")}
+                      {t("studio.updatedAtSuffix", {
+                        time: formatDateTime(s.updatedAt),
+                      })}
                     </Typography>
-                    <Tooltip title="このセットをベースに新規作成">
+                    <Tooltip title={t("studio.liveSetDuplicate")}>
                       <IconButton
                         size="small"
                         disabled={create.isPending}
                         onClick={(e) => {
                           e.stopPropagation();
+                          // 保存されるデータ。訳す方針は #364 (#367)
                           duplicateSet(s.id, s.name || "配信セット");
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
@@ -115,12 +128,16 @@ export function LiveSetsPage() {
                         <ContentCopyIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title="削除">
+                    <Tooltip title={t("common.delete")}>
                       <IconButton
                         size="small"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (window.confirm(`「${s.name}」を削除しますか？`)) {
+                          if (
+                            window.confirm(
+                              t("studio.deleteConfirm", { name: s.name }),
+                            )
+                          ) {
                             del.mutate(s.id);
                           }
                         }}

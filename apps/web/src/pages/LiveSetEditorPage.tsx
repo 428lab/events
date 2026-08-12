@@ -30,6 +30,7 @@ import RedoIcon from "@mui/icons-material/Redo";
 import FlipToFrontIcon from "@mui/icons-material/FlipToFront";
 import FlipToBackIcon from "@mui/icons-material/FlipToBack";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Rnd } from "react-rnd";
 import { EVENT_INFO_FIELDS, LIVE_H, LIVE_W } from "@eventer/shared";
 import type {
@@ -45,37 +46,48 @@ import {
 } from "../api/liveSetHooks.js";
 import { useBgmTracks } from "../api/bgmHooks.js";
 import { LiveElementContent, LiveSceneStage } from "../components/LiveStage.js";
-import { DECK_FONTS, ensureDeckFont } from "../lib/deckFonts.js";
+import { ensureDeckFont, useDeckFontOptions } from "../lib/deckFonts.js";
 import { encodeImageForUpload } from "../lib/encodeImage.js";
 
 const uid = () => crypto.randomUUID();
 const THUMB_W = 150;
 
-const INFO_LABEL: Record<EventInfoField, string> = {
-  title: "イベントタイトル",
-  datetime: "開催日時",
-  participants: "参加人数",
-  community: "コミュニティ名",
-};
+/** イベント情報の項目名。**訳した文字列ではなくキーを持つ**ので、
+ * 言語を切り替えたときに前の言語のまま残らない (#367) */
+const INFO_LABEL_KEY = {
+  title: "studio.infoFieldTitle",
+  datetime: "studio.infoFieldDatetime",
+  participants: "studio.infoFieldParticipants",
+  community: "studio.infoFieldCommunity",
+} as const satisfies Record<EventInfoField, string>;
 
-const TYPE_LABEL: Record<LiveElement["type"], string> = {
-  text: "テキスト",
-  image: "画像",
-  camera: "カメラ",
-  deck: "スライド",
-  eventInfo: "イベント情報",
-};
+/** 要素の種類の呼び名。同じく翻訳キーを持つ */
+const TYPE_LABEL_KEY = {
+  text: "studio.elementText",
+  image: "studio.elementImage",
+  camera: "studio.elementCamera",
+  deck: "studio.elementDeck",
+  eventInfo: "studio.elementEventInfo",
+} as const satisfies Record<LiveElement["type"], string>;
 
-/** 背景プリセット（Natsumatsuri トーン） */
+/** 背景プリセット（Natsumatsuri トーン）。色と並び順は文言ではないのでコード側に残す */
 const BG_PRESETS = [
-  { label: "夜空", value: "#0E1426" },
-  { label: "黒", value: "#000000" },
-  { label: "夜祭グラデ", value: "linear-gradient(135deg, #0B3A34 0%, #0E1426 60%)" },
-  { label: "宵グラデ", value: "linear-gradient(135deg, #0E1426 40%, #0B3A34 100%)" },
-  { label: "白", value: "#ffffff" },
-];
+  { labelKey: "studio.bgNightSky", value: "#0E1426" },
+  { labelKey: "studio.bgBlack", value: "#000000" },
+  {
+    labelKey: "studio.bgFestivalGradient",
+    value: "linear-gradient(135deg, #0B3A34 0%, #0E1426 60%)",
+  },
+  {
+    labelKey: "studio.bgDuskGradient",
+    value: "linear-gradient(135deg, #0E1426 40%, #0B3A34 100%)",
+  },
+  { labelKey: "studio.bgWhite", value: "#ffffff" },
+] as const;
 
 export function LiveSetEditorPage() {
+  const { t } = useTranslation();
+  const fontOptions = useDeckFontOptions();
   const { id = "" } = useParams();
   const { data: liveSet, isLoading, isError } = useLiveSet(id);
   const update = useUpdateLiveSet(id);
@@ -162,8 +174,8 @@ export function LiveSetEditorPage() {
     return () => ro.disconnect();
   }, [content]);
 
-  if (isError) return <Typography>配信セットが見つかりません。</Typography>;
-  if (isLoading || !content) return <Typography>読み込み中…</Typography>;
+  if (isError) return <Typography>{t("studio.liveSetNotFound")}</Typography>;
+  if (isLoading || !content) return <Typography>{t("common.loading")}</Typography>;
 
   const scenes = content.scenes;
   const idx = Math.min(sceneIdx, scenes.length - 1);
@@ -350,6 +362,7 @@ export function LiveSetEditorPage() {
       w: 480,
       h: 100,
       rotation: 0,
+      /** 保存されるデータ。訳す方針は #364 (#367) */
       text: "テキスト",
       fontSize: 40,
       color: "#EAF0F7",
@@ -368,7 +381,7 @@ export function LiveSetEditorPage() {
       const { url } = await upload.mutateAsync(encoded);
       onPicked.current(url);
     } catch {
-      window.alert("画像のアップロードに失敗しました（6MBまで）");
+      window.alert(t("studio.imageUploadFailed"));
     }
   };
   const addImage = () =>
@@ -425,6 +438,7 @@ export function LiveSetEditorPage() {
   const addScene = () => {
     const ns: LiveScene = {
       id: uid(),
+      /** 保存されるデータ。訳す方針は #364 (#367) */
       name: `シーン ${scenes.length + 1}`,
       background: "#0E1426",
       elements: [],
@@ -437,6 +451,7 @@ export function LiveSetEditorPage() {
     const copy: LiveScene = {
       ...scene!,
       id: uid(),
+      /** 保存されるデータ。訳す方針は #364 (#367) */
       name: `${scene!.name}のコピー`,
       elements: scene!.elements.map((e) => ({ ...e, id: uid() })),
     };
@@ -468,16 +483,16 @@ export function LiveSetEditorPage() {
       {/* 上部バー */}
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
         <Button size="small" component={RouterLink} to="/live-sets">
-          ← 一覧
+          {t("studio.backToList")}
         </Button>
-        <Tooltip title="元に戻す (Ctrl/⌘+Z)">
+        <Tooltip title={t("studio.undoTip")}>
           <span>
             <IconButton size="small" onClick={undo} disabled={!canUndo}>
               <UndoIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="やり直す (Ctrl/⌘+Shift+Z)">
+        <Tooltip title={t("studio.redoTip")}>
           <span>
             <IconButton size="small" onClick={redo} disabled={!canRedo}>
               <RedoIcon fontSize="small" />
@@ -486,13 +501,13 @@ export function LiveSetEditorPage() {
         </Tooltip>
         <TextField
           size="small"
-          placeholder="配信セット名"
+          placeholder={t("studio.liveSetNamePlaceholder")}
           value={name}
           onChange={(e) => setName(e.target.value)}
           sx={{ flex: 1, minWidth: 180 }}
         />
         <Typography variant="caption" color="text.secondary">
-          {update.isPending ? "保存中…" : "自動保存"}
+          {update.isPending ? t("studio.saving") : t("studio.autoSaved")}
         </Typography>
       </Stack>
 
@@ -541,25 +556,25 @@ export function LiveSetEditorPage() {
             </Box>
           ))}
           <Button size="small" onClick={addScene}>
-            ＋ シーン追加
+            {t("studio.addScene")}
           </Button>
           <Stack direction="row" spacing={0.5} justifyContent="center">
-            <Tooltip title="複製">
+            <Tooltip title={t("studio.duplicate")}>
               <IconButton size="small" onClick={dupScene}>
                 <ContentCopyIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="上へ">
+            <Tooltip title={t("studio.moveUpShort")}>
               <IconButton size="small" onClick={() => moveScene(-1)}>
                 <ArrowUpwardIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="下へ">
+            <Tooltip title={t("studio.moveDownShort")}>
               <IconButton size="small" onClick={() => moveScene(1)}>
                 <ArrowDownwardIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="削除">
+            <Tooltip title={t("common.delete")}>
               <IconButton size="small" onClick={delScene} disabled={scenes.length <= 1}>
                 <DeleteOutlineIcon fontSize="small" />
               </IconButton>
@@ -579,25 +594,25 @@ export function LiveSetEditorPage() {
           >
             <TextField
               size="small"
-              label="シーン名"
+              label={t("studio.sceneName")}
               value={scene?.name ?? ""}
               onChange={(e) => patchScene(idx, { name: e.target.value })}
               sx={{ width: 160 }}
             />
             <Button size="small" startIcon={<TextFieldsIcon />} onClick={addText}>
-              テキスト
+              {t("studio.elementText")}
             </Button>
             <Button size="small" startIcon={<ImageIcon />} onClick={addImage}>
-              画像
+              {t("studio.elementImage")}
             </Button>
             <Button size="small" startIcon={<VideocamIcon />} onClick={addCamera}>
-              カメラ
+              {t("studio.elementCamera")}
             </Button>
             <Button size="small" startIcon={<SlideshowIcon />} onClick={addDeck}>
-              スライド
+              {t("studio.elementDeck")}
             </Button>
             <Button size="small" startIcon={<InfoOutlinedIcon />} onClick={addEventInfo}>
-              イベント情報
+              {t("studio.elementEventInfo")}
             </Button>
           </Stack>
           <Stack
@@ -608,7 +623,7 @@ export function LiveSetEditorPage() {
             flexWrap="wrap"
             useFlexGap
           >
-            <Typography variant="caption">背景</Typography>
+            <Typography variant="caption">{t("common.background")}</Typography>
             <input
               type="color"
               value={bgIsColor ? scene!.background : "#0E1426"}
@@ -625,18 +640,18 @@ export function LiveSetEditorPage() {
               SelectProps={{ displayEmpty: true }}
             >
               <MenuItem value="" disabled>
-                プリセット
+                {t("studio.bgPreset")}
               </MenuItem>
               {BG_PRESETS.map((p) => (
-                <MenuItem key={p.label} value={p.value}>
-                  {p.label}
+                <MenuItem key={p.value} value={p.value}>
+                  {t(p.labelKey)}
                 </MenuItem>
               ))}
             </TextField>
             <TextField
               select
               size="small"
-              label="このシーンのBGM"
+              label={t("studio.sceneBgm")}
               value={
                 scene?.bgmTrackId === undefined
                   ? "__keep"
@@ -653,22 +668,22 @@ export function LiveSetEditorPage() {
                 })
               }
               sx={{ minWidth: 180 }}
-              helperText="シーン切替時に自動で反映"
+              helperText={t("studio.sceneBgmHelp")}
             >
-              <MenuItem value="__keep">変更しない</MenuItem>
-              <MenuItem value="__stop">BGMを停止</MenuItem>
-              {(bgmTracks ?? []).map((t) => (
-                <MenuItem key={t.id} value={t.id}>
-                  {t.ownerId === null ? (
+              <MenuItem value="__keep">{t("studio.sceneBgmKeep")}</MenuItem>
+              <MenuItem value="__stop">{t("studio.sceneBgmStop")}</MenuItem>
+              {(bgmTracks ?? []).map((track) => (
+                <MenuItem key={track.id} value={track.id}>
+                  {track.ownerId === null ? (
                     <Box
                       component="span"
                       sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
                     >
                       <CardGiftcardIcon fontSize="small" />
-                      {t.name}
+                      {track.name}
                     </Box>
                   ) : (
-                    t.name
+                    track.name
                   )}
                 </MenuItem>
               ))}
@@ -781,17 +796,18 @@ export function LiveSetEditorPage() {
         <Stack spacing={1.5} sx={{ width: { md: 240 }, flexShrink: 0 }}>
           {!selected ? (
             <Typography variant="caption" color="text.secondary">
-              要素を選ぶと編集できます。上のボタンから追加し、ドラッグで移動・隅でリサイズ。
-              カメラ・スライドの中身は配信画面で自動的に流し込まれます。
+              {t("studio.liveEditorHint")}
             </Typography>
           ) : (
             <>
-              <Typography variant="subtitle2">{TYPE_LABEL[selected.type]}</Typography>
+              <Typography variant="subtitle2">
+                {t(TYPE_LABEL_KEY[selected.type])}
+              </Typography>
 
               {selected.type === "text" && (
                 <TextField
                   size="small"
-                  label="内容"
+                  label={t("studio.textContent")}
                   multiline
                   minRows={2}
                   value={selected.text ?? ""}
@@ -803,7 +819,7 @@ export function LiveSetEditorPage() {
                 <TextField
                   select
                   size="small"
-                  label="表示する情報"
+                  label={t("studio.infoFieldLabel")}
                   value={selected.field ?? "title"}
                   onChange={(e) =>
                     patchElement(selected.id, {
@@ -813,7 +829,7 @@ export function LiveSetEditorPage() {
                 >
                   {EVENT_INFO_FIELDS.map((f) => (
                     <MenuItem key={f} value={f}>
-                      {INFO_LABEL[f]}
+                      {t(INFO_LABEL_KEY[f])}
                     </MenuItem>
                   ))}
                 </TextField>
@@ -824,16 +840,16 @@ export function LiveSetEditorPage() {
                   <TextField
                     select
                     size="small"
-                    label="フォント"
+                    label={t("common.font")}
                     value={selected.fontFamily ?? ""}
                     onChange={(e) => {
                       ensureDeckFont(e.target.value);
                       patchElement(selected.id, { fontFamily: e.target.value });
                     }}
                   >
-                    {DECK_FONTS.map((f) => (
+                    {fontOptions.map((f) => (
                       <MenuItem
-                        key={f.label}
+                        key={f.family}
                         value={f.family}
                         onMouseEnter={() => ensureDeckFont(f.family)}
                         style={{ fontFamily: f.family || undefined }}
@@ -844,7 +860,7 @@ export function LiveSetEditorPage() {
                   </TextField>
                   <Box>
                     <Typography variant="caption" color="text.secondary">
-                      文字サイズ：{selected.fontSize ?? 40}
+                      {t("studio.fontSizeValue", { n: selected.fontSize ?? 40 })}
                     </Typography>
                     <Slider
                       size="small"
@@ -857,7 +873,7 @@ export function LiveSetEditorPage() {
                     />
                   </Box>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <Typography variant="caption">色</Typography>
+                    <Typography variant="caption">{t("studio.color")}</Typography>
                     <input
                       type="color"
                       value={selected.color ?? "#EAF0F7"}
@@ -882,9 +898,9 @@ export function LiveSetEditorPage() {
                     value={selected.align ?? "left"}
                     onChange={(_e, v) => v && patchElement(selected.id, { align: v })}
                   >
-                    <ToggleButton value="left">左</ToggleButton>
-                    <ToggleButton value="center">中</ToggleButton>
-                    <ToggleButton value="right">右</ToggleButton>
+                    <ToggleButton value="left">{t("studio.alignLeft")}</ToggleButton>
+                    <ToggleButton value="center">{t("studio.alignCenter")}</ToggleButton>
+                    <ToggleButton value="right">{t("studio.alignRight")}</ToggleButton>
                   </ToggleButtonGroup>
                 </>
               )}
@@ -900,11 +916,13 @@ export function LiveSetEditorPage() {
                       pickImage((url) => patchElement(selected.id, { src: url }))
                     }
                   >
-                    {upload.isPending ? "アップロード中…" : "画像を差し替え"}
+                    {upload.isPending
+                      ? t("common.uploading")
+                      : t("studio.replaceImage")}
                   </Button>
                   <TextField
                     size="small"
-                    label="画像URL（直接指定）"
+                    label={t("studio.imageUrlLabel")}
                     value={selected.src ?? ""}
                     onChange={(e) =>
                       patchElement(selected.id, { src: e.target.value })
@@ -921,12 +939,16 @@ export function LiveSetEditorPage() {
                     value={selected.fit ?? "cover"}
                     onChange={(_e, v) => v && patchElement(selected.id, { fit: v })}
                   >
-                    <ToggleButton value="cover">枠いっぱい</ToggleButton>
-                    <ToggleButton value="contain">全体表示</ToggleButton>
+                    <ToggleButton value="cover">
+                      {t("studio.cameraFitCover")}
+                    </ToggleButton>
+                    <ToggleButton value="contain">
+                      {t("studio.cameraFitContain")}
+                    </ToggleButton>
                   </ToggleButtonGroup>
                   <Box>
                     <Typography variant="caption" color="text.secondary">
-                      角丸：{selected.radius ?? 0}
+                      {t("studio.cameraRadiusValue", { n: selected.radius ?? 0 })}
                     </Typography>
                     <Slider
                       size="small"
@@ -939,14 +961,14 @@ export function LiveSetEditorPage() {
                     />
                   </Box>
                   <Typography variant="caption" color="text.secondary">
-                    カメラ映像は配信画面タブで流し込まれます。
+                    {t("studio.cameraHint")}
                   </Typography>
                 </>
               )}
 
               {selected.type === "deck" && (
                 <Typography variant="caption" color="text.secondary">
-                  イベントで選択したスライドがここに表示されます。ページ送りはコントロール画面から。
+                  {t("studio.deckElementHint")}
                 </Typography>
               )}
 
@@ -957,24 +979,24 @@ export function LiveSetEditorPage() {
                   startIcon={<ContentCopyIcon />}
                   onClick={duplicateSelected}
                 >
-                  複製
+                  {t("studio.duplicate")}
                 </Button>
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                重なり順
+                {t("studio.zOrder")}
               </Typography>
               <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
                 <Button size="small" startIcon={<FlipToFrontIcon />} onClick={frontSelected}>
-                  最前面
+                  {t("studio.toFront")}
                 </Button>
                 <Button size="small" onClick={() => moveZ(selected.id, 1)}>
-                  前面へ
+                  {t("studio.forward")}
                 </Button>
                 <Button size="small" onClick={() => moveZ(selected.id, -1)}>
-                  背面へ
+                  {t("studio.backward")}
                 </Button>
                 <Button size="small" startIcon={<FlipToBackIcon />} onClick={backSelected}>
-                  最背面
+                  {t("studio.toBack")}
                 </Button>
               </Stack>
               <Button
@@ -983,7 +1005,7 @@ export function LiveSetEditorPage() {
                 startIcon={<DeleteOutlineIcon />}
                 onClick={deleteSelected}
               >
-                この要素を削除
+                {t("studio.deleteElement")}
               </Button>
             </>
           )}

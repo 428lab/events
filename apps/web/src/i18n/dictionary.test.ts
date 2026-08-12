@@ -88,6 +88,9 @@ describe("数を含む文言の単数・複数 (#363)", () => {
     ["venue.capacityOne", "venue.capacity"],
     ["venue.photoRoomOne", "venue.photoRoom"],
     ["egg.hatchedCountOne", "egg.hatchedCount"],
+    // #367 スライド・配信。どちらも利用者が作る数なので 1 もありうる
+    ["studio.pageCountOne", "studio.pageCount"],
+    ["studio.sceneCountOne", "studio.sceneCount"],
   ];
 
   it("日本語は単数でも複数でも同じ綴り", () => {
@@ -114,6 +117,38 @@ describe("数を含む文言の単数・複数 (#363)", () => {
     expect(i18next.t("venue.photoRoomOne", { n: 1 })).toBe(
       "You can add 1 more photo.",
     );
+    // #367。1ページのスライド・1シーンの配信セットは普通に作られる
+    expect(i18next.t("studio.pageCountOne", { n: 1 })).toBe("1 page");
+    expect(i18next.t("studio.pageCount", { n: 3 })).toBe("3 pages");
+    expect(i18next.t("studio.sceneCountOne", { n: 1 })).toBe("1 scene");
+    expect(i18next.t("studio.sceneCount", { n: 7 })).toBe("7 scenes");
+  });
+});
+
+/**
+ * わざと分けてあるキー (#367)。
+ *
+ * 「同じ日本語なのに英語だけ違う」「同じ英語なのに日本語だけ違う」は普通は
+ * 統合の合図だが、ここに挙げた組は**元の日本語を変えないために**分けている。
+ * 片方に寄せると日本語の綴りか英語の文法が壊れるので、ここで固定しておく。
+ */
+describe("わざと分けてあるキー (#367)", () => {
+  /** 一覧の更新時刻。日本語は「更新 {{time}}」と「{{time}} 更新」で元から並びが違う */
+  it("更新時刻は日本語の並びが違い、英語は同じ", async () => {
+    expect(tDynamic("studio.updatedAt", "")).not.toBe(
+      tDynamic("studio.updatedAtSuffix", ""),
+    );
+    await i18next.changeLanguage("en");
+    expect(i18next.t("studio.updatedAt", { time: "X" })).toBe("Updated X");
+    expect(i18next.t("studio.updatedAtSuffix", { time: "X" })).toBe("Updated X");
+  });
+
+  /** 配信セットは見出し（複数）と選択欄のラベル（単数）で英語だけ変わる */
+  it("配信セットは日本語が同じで、英語だけ単複が変わる", async () => {
+    expect(tDynamic("studio.liveSets", "")).toBe(tDynamic("studio.liveSet", ""));
+    await i18next.changeLanguage("en");
+    expect(i18next.t("studio.liveSets")).toBe("Broadcast sets");
+    expect(i18next.t("studio.liveSet")).toBe("Broadcast set");
   });
 });
 

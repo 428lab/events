@@ -26,6 +26,7 @@ import { notifications } from "./messages/notifications.js";
 import { communityRole, profile } from "./messages/profile.js";
 import { schedule } from "./messages/schedule.js";
 import { linkError, settings } from "./messages/settings.js";
+import { studio } from "./messages/studio.js";
 import { themeName } from "./messages/theme.js";
 import {
   venue,
@@ -82,6 +83,7 @@ export const translations = {
     communityRole: communityRole.ja,
     meet: meet.ja,
     meetFailure: meetFailure.ja,
+    studio: studio.ja,
     ...labels.ja,
   },
   en: {
@@ -115,6 +117,7 @@ export const translations = {
     communityRole: communityRole.en,
     meet: meet.en,
     meetFailure: meetFailure.en,
+    studio: studio.en,
     ...labels.en,
   },
 } satisfies Record<AppLanguage, Record<string, Record<string, string>>>;

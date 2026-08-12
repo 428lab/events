@@ -199,15 +199,15 @@ const ja = {
   /** 日程未定のイベントを自動生成するときに画像へ描く字 */
   imageSchedulingSubtitle: "日程調整中",
 
-  /** テンプレートから画像を作る画面 */
+  /** テンプレートから画像を作る画面。入力欄の「フォント」「背景」は
+   *  スライド・配信の編集と同じ綴りなので `common.font` / `common.background`
+   *  (#367)。ここに戻すと同じ文言が2か所になる */
   imageShuffle: "おまかせ（ランダム）",
-  imageFont: "フォント",
   /** フォントの分類。分類そのもの（コード）は imageTemplates.ts が持つ */
   imageFontGothic: "ゴシック",
   imageFontRounded: "丸ゴシック",
   imageFontMincho: "明朝",
   imageFontDisplay: "手書き・個性派",
-  imageBackground: "背景",
   /** 背景の呼び名。キーは imageTemplates.ts の BackgroundKey (#363) */
   imageBgDark: "ダーク",
   imageBgFireworks: "花火",
@@ -422,12 +422,10 @@ const en: Record<keyof typeof ja, string> = {
   imageSchedulingSubtitle: "Date to be decided",
 
   imageShuffle: "Surprise me",
-  imageFont: "Font",
   imageFontGothic: "Sans serif",
   imageFontRounded: "Rounded",
   imageFontMincho: "Serif",
   imageFontDisplay: "Handwritten & display",
-  imageBackground: "Background",
   imageBgDark: "Dark",
   imageBgFireworks: "Fireworks",
   imageBgFireworksWarm: "Fireworks (warm)",

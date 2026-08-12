@@ -145,7 +145,7 @@ export function EventImageStudio({
       <TextField
         select
         size="small"
-        label={t("eventForm.imageFont")}
+        label={t("common.font")}
         value={fontIdx}
         onChange={(e) => setFontIdx(Number(e.target.value))}
         sx={{ maxWidth: 280 }}
@@ -164,7 +164,7 @@ export function EventImageStudio({
 
       <Box>
         <Typography variant="caption" color="text.secondary">
-          {t("eventForm.imageBackground")}
+          {t("common.background")}
         </Typography>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
           {BACKGROUNDS.map((b, i) => (
