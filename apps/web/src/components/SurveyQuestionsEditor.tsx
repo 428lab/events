@@ -26,6 +26,7 @@ import {
   useSaveSurveyQuestions,
   useSurveyAnswers,
 } from "../api/eventSurveyHooks.js";
+import { tDynamic } from "../i18n/index.js";
 
 /** 回答形式 (`SurveyQtype`) → 翻訳キー。**選ばせる順番はこの並びが持つ** */
 const QTYPE_KEY = {
@@ -334,7 +335,8 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
           >
             {SURVEY_TEMPLATES.map((tpl) => (
               <MenuItem key={tpl.key} onClick={() => applyTemplate(tpl.key)}>
-                {tpl.name}
+                {/* テンプレは足せるので tDynamic。受け皿は定義側の日本語 */}
+                {tDynamic(`eventForm.surveyTemplateName_${tpl.key}`, tpl.name)}
               </MenuItem>
             ))}
           </Menu>

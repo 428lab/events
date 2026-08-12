@@ -137,7 +137,6 @@ const ja = {
     "このままでも保存できますが、タイムテーブルの枠が重なって読みにくくなります。",
   overlapItem:
     "{{track}}: 「{{a}}」({{aStart}}〜) と「{{b}}」({{bStart}}〜) が重なっています",
-  overlapMoreOne: "ほか{{n}}件",
   overlapMore: "ほか{{n}}件",
   untitled: "(無題)",
 
@@ -295,7 +294,6 @@ const en: Record<keyof typeof ja, string> = {
     "You can still save, but overlapping blocks make the timetable hard to read.",
   overlapItem:
     "{{track}}: “{{a}}” (from {{aStart}}) overlaps “{{b}}” (from {{bStart}})",
-  overlapMoreOne: "{{n}} more",
   overlapMore: "{{n}} more",
   untitled: "(untitled)",
 

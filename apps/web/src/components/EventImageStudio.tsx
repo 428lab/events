@@ -19,6 +19,7 @@ import {
   LAYOUTS,
   drawEventImage,
   loadFont,
+  type BackgroundKey,
   type FontDef,
   type LayoutKey,
 } from "../lib/imageTemplates.js";
@@ -39,6 +40,22 @@ const LAYOUT_KEY = {
   top: "eventForm.imageLayoutTop",
 } as const satisfies Record<LayoutKey, string>;
 
+/** 背景 (`BackgroundKey`) → 翻訳キー。並びは BACKGROUNDS が持つ。
+ * 背景が増えたらここが型で落ちる（訳を足し忘れたまま出せない） */
+const BACKGROUND_KEY = {
+  dark: "eventForm.imageBgDark",
+  fireworks: "eventForm.imageBgFireworks",
+  fireworksWarm: "eventForm.imageBgFireworksWarm",
+  fireworksCool: "eventForm.imageBgFireworksCool",
+  aerialShells: "eventForm.imageBgAerialShells",
+  confetti: "eventForm.imageBgConfetti",
+  stars: "eventForm.imageBgStars",
+  teal: "eventForm.imageBgTeal",
+  amber: "eventForm.imageBgAmber",
+  light: "eventForm.imageBgLight",
+  dots: "eventForm.imageBgDots",
+} as const satisfies Record<BackgroundKey, string>;
+
 /**
  * テンプレート（背景・フォント・レイアウト）からイベント画像(1200×630)を生成する。
  * 「この画像を使う」で PNG Blob を onGenerated に渡す。
@@ -58,7 +75,7 @@ export function EventImageStudio({
   const [fontIdx, setFontIdx] = useState(() => rand(FONTS.length));
   const [bgIdx, setBgIdx] = useState(() => rand(BACKGROUNDS.length));
   const [layout, setLayout] = useState<LayoutKey>(
-    () => LAYOUTS[rand(LAYOUTS.length)].key,
+    () => LAYOUTS[rand(LAYOUTS.length)]!,
   );
   const [titleSize, setTitleSize] = useState(() => 72 + rand(7) * 8);
   const [showSubtitle, setShowSubtitle] = useState(Boolean(subtitle));
@@ -66,7 +83,7 @@ export function EventImageStudio({
   const shuffle = () => {
     setFontIdx(rand(FONTS.length));
     setBgIdx(rand(BACKGROUNDS.length));
-    setLayout(LAYOUTS[rand(LAYOUTS.length)].key);
+    setLayout(LAYOUTS[rand(LAYOUTS.length)]!);
     setTitleSize(72 + rand(7) * 8);
   };
 
@@ -152,12 +169,12 @@ export function EventImageStudio({
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
           {BACKGROUNDS.map((b, i) => (
             <Button
-              key={b.label}
+              key={b.key}
               size="small"
               variant={bgIdx === i ? "contained" : "outlined"}
               onClick={() => setBgIdx(i)}
             >
-              {b.label}
+              {t(BACKGROUND_KEY[b.key])}
             </Button>
           ))}
         </Stack>
@@ -176,8 +193,8 @@ export function EventImageStudio({
             sx={{ mt: 0.5 }}
           >
             {LAYOUTS.map((l) => (
-              <ToggleButton key={l.key} value={l.key}>
-                {t(LAYOUT_KEY[l.key])}
+              <ToggleButton key={l} value={l}>
+                {t(LAYOUT_KEY[l])}
               </ToggleButton>
             ))}
           </ToggleButtonGroup>

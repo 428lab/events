@@ -176,10 +176,12 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
                     disabled={draw.isPending || s.appliedCount === 0}
                     onClick={() => draw.mutate(s.id)}
                   >
-                    {t("eventForm.slotDraw", {
-                      n: s.appliedCount,
-                      total: s.capacity,
-                    })}
+                    {t(
+                      s.appliedCount === 1
+                        ? "eventForm.slotDrawOne"
+                        : "eventForm.slotDraw",
+                      { n: s.appliedCount, total: s.capacity },
+                    )}
                   </Button>
                 </Stack>
               )}

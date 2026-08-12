@@ -349,12 +349,8 @@ export function ScheduleEditor({
             {overlaps.length > 5 && (
               <li>
                 <Typography variant="caption">
-                  {t(
-                    overlaps.length - 5 === 1
-                      ? "schedule.overlapMoreOne"
-                      : "schedule.overlapMore",
-                    { n: overlaps.length - 5 },
-                  )}
+                  {/* 単複で綴りが変わらない言い方なので、キーは1つでよい */}
+                  {t("schedule.overlapMore", { n: overlaps.length - 5 })}
                 </Typography>
               </li>
             )}

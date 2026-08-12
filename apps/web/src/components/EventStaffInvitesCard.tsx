@@ -233,9 +233,11 @@ function InviteRow({
           size="small"
           color={STATUS_COLOR[invite.status]}
           variant={invite.status === "pending" ? "filled" : "outlined"}
+          // サーバーが知らない状態を返すと定数側も undefined になり、既定値が
+          // 無くなってキー名が画面に出る。生の状態を最後の受け皿にする (#363)
           label={tDynamic(
             `staffInviteStatus.${invite.status}`,
-            STAFF_INVITE_STATUS_LABELS[invite.status],
+            STAFF_INVITE_STATUS_LABELS[invite.status] ?? invite.status,
           )}
         />
         {removable && (

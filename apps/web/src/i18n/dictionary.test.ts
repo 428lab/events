@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { SCHEDULE_TEMPLATES, SURVEY_TEMPLATES } from "@eventer/shared";
 import { translations } from "@eventer/shared/i18n";
 import { i18next, tDynamic } from "./index.js";
 
@@ -120,5 +121,42 @@ describe("コードで引く表 (#363)", () => {
     expect(tDynamic("staffInviteError.brand_new_code", fallback)).toBe(fallback);
     expect(tDynamic("broadcastSegment.brand_new_segment", "全員")).toBe("全員");
     expect(tDynamic("staffInviteStatus.brand_new_status", "保留")).toBe("保留");
+  });
+});
+
+/**
+ * テンプレートの**名前**が両方の言語で出ること (#363)。
+ *
+ * 名前は `tDynamic` で引くので**型では守れない**。テンプレを足したときに訳を
+ * 足し忘れると、英語表示のメニューにだけ日本語が並ぶ（元の実装がそうだった）。
+ *
+ * 中身（挿入される質問文・コマの題名）は日本語のままでよい。選ぶと**そのまま
+ * 保存されるデータ**になるため。その扱いは #364 で別途決める。
+ */
+describe("テンプレートの名前 (#363)", () => {
+  const templates = [
+    ...SCHEDULE_TEMPLATES.map((tpl) => ({
+      key: `schedule.templateName_${tpl.key}`,
+      name: tpl.name,
+    })),
+    ...SURVEY_TEMPLATES.map((tpl) => ({
+      key: `eventForm.surveyTemplateName_${tpl.key}`,
+      name: tpl.name,
+    })),
+  ];
+
+  it("日本語は定義側の名前と同じ綴りで出る", () => {
+    for (const { key, name } of templates) {
+      expect(tDynamic(key, "訳なし"), key).toBe(name);
+    }
+  });
+
+  it("英語には定義側の日本語が出ない", async () => {
+    await i18next.changeLanguage("en");
+    for (const { key, name } of templates) {
+      const translated = tDynamic(key, name);
+      expect(translated, key).not.toBe(name);
+      expect(translated, key).not.toMatch(JAPANESE);
+    }
   });
 });
