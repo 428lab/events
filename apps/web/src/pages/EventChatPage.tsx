@@ -40,7 +40,7 @@ export function EventChatPage() {
   }
   if (isError || !event) {
     return (
-      <Alert severity="error">{t("eventSocial.chatPageEventNotFound")}</Alert>
+      <Alert severity="error">{t("eventSocial.chatEventNotFound")}</Alert>
     );
   }
 

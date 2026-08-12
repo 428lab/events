@@ -13,6 +13,7 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import { useTranslation } from "react-i18next";
 import {
   useEventQa,
   usePickQuestion,
@@ -30,6 +31,7 @@ const EventChat = lazy(() =>
 
 /** サイドパネルの表示切替ボタン (#215)。発表ビューと配信コントロールで同じものを使う */
 export function PresenterPanelToggle() {
+  const { t } = useTranslation();
   const [open, setOpen] = usePresenterPanel();
   return (
     <Button
@@ -38,7 +40,7 @@ export function PresenterPanelToggle() {
       startIcon={<ForumOutlinedIcon />}
       onClick={() => setOpen(!open)}
     >
-      チャット・Q&A{open ? "を閉じる" : "を開く"}
+      {t(open ? "eventSocial.panelToggleClose" : "eventSocial.panelToggleOpen")}
     </Button>
   );
 }
@@ -51,6 +53,7 @@ export function PresenterPanelToggle() {
  * （同じ画面に他のチャットを同時に置かないこと）。
  */
 export function PresenterSidePanel({ eventId }: { eventId: string }) {
+  const { t } = useTranslation();
   const [, setOpen] = usePresenterPanel();
   const { event, myRole, canChat, chatAvailable } = useEventChatAccess(eventId);
   const { data: qa } = useEventQa(eventId, canChat);
@@ -94,10 +97,14 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
         sx={{ flexShrink: 0 }}
       >
         <Typography variant="subtitle2" color="text.secondary">
-          会場の反応
+          {t("eventSocial.panelHeading")}
         </Typography>
-        <Tooltip title="パネルを閉じる">
-          <IconButton size="small" onClick={() => setOpen(false)} aria-label="パネルを閉じる">
+        <Tooltip title={t("eventSocial.panelClose")}>
+          <IconButton
+            size="small"
+            onClick={() => setOpen(false)}
+            aria-label={t("eventSocial.panelClose")}
+          >
             <CloseIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -105,7 +112,7 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
 
       {!canChat ? (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          参加が確定しているメンバーのみ利用できます。
+          {t("eventSocial.panelMembersOnly")}
         </Typography>
       ) : (
         <>
@@ -116,7 +123,7 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
               sx={{ mt: 1, flexShrink: 0 }}
               onClose={() => pick.reset()}
             >
-              「いまこの質問」の変更に失敗しました。
+              {t("eventSocial.panelPickFailed")}
             </Alert>
           )}
           {picked && (
@@ -162,7 +169,7 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
               </Suspense>
             ) : (
               <Typography variant="body2" color="text.secondary">
-                このイベントではチャットは使えません。
+                {t("eventSocial.panelChatUnavailable")}
               </Typography>
             )}
           </Box>
@@ -183,7 +190,9 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
             >
               <HelpOutlineIcon fontSize="small" />
               {/* 件数も非表示ぶんを除いた数（staff だけ数がズレるのを防ぐ） */}
-              Q&A（{questions.filter((q) => !q.answered).length}）
+              {t("eventSocial.qaHeading", {
+                n: questions.filter((q) => !q.answered).length,
+              })}
             </Typography>
             {/* 発表中に画面共有・投影されることがあるので、匿名投稿の投稿者名は
                 出さない（revealAuthor 相当の指定は渡さず既定のままにすること）。

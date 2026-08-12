@@ -73,11 +73,29 @@ const ja = {
   chatHideMessageConfirm: "このメッセージを参加者の画面から非表示にしますか？",
 
   /* ===== チャット専用ページ (#215) ===== */
-  chatPageEventNotFound: "イベントが見つかりません。",
+  chatEventNotFound: "イベントが見つかりません。",
   chatPageBackToEvent: "イベントページへ戻る",
   chatPageScreenView: "投影用画面",
   chatPageUnavailable:
     "このイベントのチャットは利用できません（参加確定メンバーのみ・チャット有効なイベントのみ）。",
+
+  /** 投影用画面と登壇者サイドパネル (#215)。どちらもこの中のチャット・Q&A を
+   *  埋め込むので、枠の文言だけ日本語のまま残らないよう、投影・配信グループ
+   *  (#367) より先にここで拾っている */
+  screenMembersOnly: "この画面は参加が確定しているメンバーのみ表示できます。",
+  screenChatUnavailable: "このイベントではチャットを表示できません。",
+  screenTextSmaller: "文字を小さく",
+  screenTextLarger: "文字を大きく",
+  screenBackToChat: "チャット画面に戻る",
+  /** 「チャット・Q&A」＋「を開く / を閉じる」の連結だった。日本語の語順に
+   *  合わせた足し算なので英語では組み立て直せない。1つの文言として持つ */
+  panelToggleOpen: "チャット・Q&Aを開く",
+  panelToggleClose: "チャット・Q&Aを閉じる",
+  panelHeading: "会場の反応",
+  panelClose: "パネルを閉じる",
+  panelMembersOnly: "参加が確定しているメンバーのみ利用できます。",
+  panelChatUnavailable: "このイベントではチャットは使えません。",
+  panelPickFailed: "「いまこの質問」の変更に失敗しました。",
 
   /* ===== 本文の Markdown 描画（コメント・説明から共通で使う） ===== */
   /** 裸のYouTubeリンクを埋め込みにしたときの iframe のタイトル（読み上げ用） */
@@ -181,6 +199,7 @@ const ja = {
   photosEmptyHint: "「写真を追加」やドラッグ&ドロップで共有しましょう。",
   photoDelete: "写真を削除",
   photoDeleteConfirm: "この写真を削除しますか？",
+  photoCommentDelete: "このコメントを削除",
   photoCommentPlaceholder: "コメントを追加…",
   photoCommentLimit: "コメントは1枚につき{{n}}件までです。",
   photoCommentMembersOnly:
@@ -236,11 +255,24 @@ const en: Record<keyof typeof ja, string> = {
   chatHideMessage: "Hide this message",
   chatHideMessageConfirm: "Hide this message from the participants' view?",
 
-  chatPageEventNotFound: "This event could not be found.",
+  chatEventNotFound: "This event could not be found.",
   chatPageBackToEvent: "Back to the event page",
   chatPageScreenView: "Projector view",
   chatPageUnavailable:
     "The chat for this event is not available. It is open to confirmed participants, and only on events that have chat turned on.",
+
+  screenMembersOnly: "Only confirmed participants can open this view.",
+  screenChatUnavailable: "Chat cannot be shown for this event.",
+  screenTextSmaller: "Smaller text",
+  screenTextLarger: "Larger text",
+  screenBackToChat: "Back to the chat page",
+  panelToggleOpen: "Show chat and Q&A",
+  panelToggleClose: "Hide chat and Q&A",
+  panelHeading: "From the room",
+  panelClose: "Close the panel",
+  panelMembersOnly: "Only confirmed participants can use this.",
+  panelChatUnavailable: "Chat is not available for this event.",
+  panelPickFailed: "Could not change the highlighted question.",
 
 
   qaHeading: "Q&A ({{n}})",
@@ -327,6 +359,7 @@ const en: Record<keyof typeof ja, string> = {
   photosEmptyHint: " Use “Add photos”, or drag and drop, to share some.",
   photoDelete: "Delete this photo",
   photoDeleteConfirm: "Delete this photo?",
+  photoCommentDelete: "Delete this comment",
   photoCommentPlaceholder: "Add a comment…",
   photoCommentLimit: "A photo can have at most {{n}} comments.",
   photoCommentMembersOnly: "You need to be at this event to comment.",

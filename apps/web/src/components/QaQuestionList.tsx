@@ -66,7 +66,6 @@ export interface QaQuestionListProps {
   /** 余白を詰める（サイドパネル向け） */
   dense?: boolean;
   /** 空のときの文言。省略すると「まだ質問はありません。」 */
-  emptyText?: string;
 }
 
 /** 匿名投稿で表示してよい投稿者を返す。
@@ -164,7 +163,7 @@ export function QaQuestionItem({
 }: {
   question: EventQuestion;
   picked?: boolean;
-} & Omit<QaQuestionListProps, "questions" | "pickedQuestionId" | "emptyText">) {
+} & Omit<QaQuestionListProps, "questions" | "pickedQuestionId">) {
   const { t } = useTranslation();
   return (
     <Box
@@ -319,7 +318,6 @@ export function QaQuestionItem({
 export function QaQuestionList({
   questions,
   pickedQuestionId = null,
-  emptyText,
   ...itemProps
 }: QaQuestionListProps) {
   const { t } = useTranslation();
@@ -328,7 +326,7 @@ export function QaQuestionList({
   if (questions.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
-        {emptyText ?? t("eventSocial.qaEmpty")}
+        {t("eventSocial.qaEmpty")}
       </Typography>
     );
   }

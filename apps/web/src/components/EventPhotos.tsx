@@ -326,6 +326,7 @@ export function EventPhotos({
                   <IconButton
                     className="photo-del"
                     size="small"
+                    aria-label={t("eventSocial.photoDelete")}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (window.confirm(t("eventSocial.photoDeleteConfirm")))
@@ -436,6 +437,7 @@ function PhotoLightbox({
           >
             <IconButton
               onClick={onClose}
+              aria-label={t("common.close")}
               sx={{ position: "absolute", top: 8, right: 8, color: "#fff", zIndex: 1 }}
             >
               <CloseIcon />
@@ -484,6 +486,7 @@ function PhotoLightbox({
                   color="error"
                   onClick={() => onDeletePhoto(photo.id)}
                   title={t("eventSocial.photoDelete")}
+                  aria-label={t("eventSocial.photoDelete")}
                 >
                   <DeleteOutlineIcon fontSize="small" />
                 </IconButton>
@@ -528,6 +531,7 @@ function PhotoLightbox({
                       <IconButton
                         size="small"
                         onClick={() => delComment.mutate(c.id)}
+                        aria-label={t("eventSocial.photoCommentDelete")}
                         sx={{ mt: -0.5 }}
                       >
                         <DeleteOutlineIcon sx={{ fontSize: 14 }} />
@@ -568,6 +572,7 @@ function PhotoLightbox({
                   color="primary"
                   disabled={!body.trim() || addComment.isPending}
                   onClick={submit}
+                  aria-label={t("common.send")}
                 >
                   <SendIcon />
                 </IconButton>
