@@ -8,7 +8,14 @@
  * - 「削除」「編集」「保存」「キャンセル」「追加」「閉じる」「読み込み中…」
  *   「読み込めませんでした。再読み込みしてください。」「写真」「写真（{{n}}）」
  *   「この写真を削除しますか？」は `common.*`
- * - 開催形態（オフライン・オンライン・ハイブリッド）は `venue`（labels.ts）の表
+ * - 開催形態（オフライン・オンライン・ハイブリッド）は `venueType`（labels.ts）の表
+ * - 名簿CSVのボタンは `staffOps.attendanceCsv`（主催者が落とすのと同じ CSV）。
+ *   会場側にしか出ない注意書きだけ `attendanceCsvNote` としてここに置く
+ *
+ * **`labels.ts` の開催形態を `venue` に戻さないこと (#366)。** index.ts が
+ * `...labels.ja` を**この名前空間より後ろに展開する**ので、あちらが `venue`
+ * だと会場の文言が3語の開催形態の表で丸ごと上書きされて消える。
+ * `venueType` への改名は見た目の整理ではなく、衝突を避けるために要る。
  *
  * オファーの状態とエラーはサーバーが返すコードで引くので、`venueOfferStatus` /
  * `venueOfferError` として別に輸出する（`tDynamic` から引く）。
@@ -149,8 +156,9 @@ const ja = {
   useTargetEgg: "たまご: {{title}}",
   useContactLabel: "あなたの連絡先（承諾後に会場側へ開示）",
   useSubmit: "申し込む",
-  /** 成立したイベントの入館名簿を落とすボタン（CSV の中身は訳さない） */
-  attendanceCsv: "入館名簿CSV",
+  /** 名簿を落とした会場オーナー向けの注意書き。**ボタンの名前は
+   *  `staffOps.attendanceCsv`**（主催者が落とすのと同じ CSV）。ここには
+   *  会場側にしか出ない注意書きだけを置く */
   attendanceCsvNote:
     "入館管理のためにご利用ください。個人情報の取り扱いにご注意ください",
 } as const;
@@ -268,7 +276,6 @@ const en: Record<keyof typeof ja, string> = {
   useContactLabel:
     "Your contact details (shared with the venue once they accept)",
   useSubmit: "Send the request",
-  attendanceCsv: "Entry list (CSV)",
   attendanceCsvNote:
     "Please use this for building access only, and handle the personal data with care.",
 };

@@ -421,7 +421,7 @@ export function VenueOwnerOffers({ venueId }: { venueId: string }) {
                       href={`/api/events/${o.event.id}/attendance.csv`}
                       download
                     >
-                      {t("venue.attendanceCsv")}
+                      {t("staffOps.attendanceCsv")}
                     </Button>
                     <Typography
                       variant="caption"

@@ -73,6 +73,9 @@ const ja = {
   chatHideMessageConfirm: "このメッセージを参加者の画面から非表示にしますか？",
 
   /* ===== チャット専用ページ (#215) ===== */
+  /** `events.notFound` と日英とも同じ綴りだが、**意図して別のキー**にしている
+   *  （理由は `events.notFound` のコメント）。`common` へ寄せた語との違いは、
+   *  こちらが「どの領域からも使う語」ではないこと */
   chatEventNotFound: "イベントが見つかりません。",
   chatPageBackToEvent: "イベントページへ戻る",
   chatPageScreenView: "投影用画面",
