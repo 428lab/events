@@ -108,7 +108,7 @@ export function CriteriaAdminPage() {
                 <IconButton
                   color="error"
                   onClick={() => remove.mutate(c.id)}
-                  aria-label={t("eventRun.delete")}
+                  aria-label={t("common.delete")}
                 >
                   <DeleteIcon />
                 </IconButton>

@@ -16,6 +16,7 @@ import {
 import EggIcon from "@mui/icons-material/Egg";
 import StadiumIcon from "@mui/icons-material/Stadium";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { VenueType } from "@eventer/shared";
 import { VENUE_TYPES } from "@eventer/shared";
 import { useCreateEventRequest } from "../api/requestHooks.js";
@@ -25,6 +26,7 @@ import { venueLabel } from "../lib/format.js";
 
 /** イベントのたまご投稿（あったらいいな）。 */
 export function EventRequestNewPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const create = useCreateEventRequest();
@@ -67,16 +69,16 @@ export function EventRequestNewPage() {
           sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
         >
           <EggIcon fontSize="medium" />
-          たまごを投稿
+          {t("egg.newTitle")}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          「こんなイベントがあったらいいな」を投稿すると、賛同や「開催してもいい」が集まります。誰かが開催を宣言したら通知が届きます。
+          {t("egg.newLead", { action: t("egg.host") })}
         </Typography>
         <Stack spacing={2.5}>
           <CounterTextField
-            label="あったらいいなイベント"
+            label={t("egg.titleLabel")}
             slotProps={{ inputLabel: { shrink: true } }}
-            placeholder="例: もくもく会を毎週やってほしい"
+            placeholder={t("egg.titlePlaceholder")}
             value={title}
             max={200}
             onChange={(e) => setTitle(e.target.value)}
@@ -84,9 +86,9 @@ export function EventRequestNewPage() {
             fullWidth
           />
           <CounterTextField
-            label="詳しく（任意）"
+            label={t("egg.descriptionLabel")}
             slotProps={{ inputLabel: { shrink: true } }}
-            placeholder="どんな内容・雰囲気・場所でやってほしい？"
+            placeholder={t("egg.descriptionPlaceholder")}
             value={description}
             max={4000}
             onChange={(e) => setDescription(e.target.value)}
@@ -96,7 +98,7 @@ export function EventRequestNewPage() {
           />
           <div>
             <Typography variant="body2" color="text.secondary" gutterBottom>
-              希望の開催形態（任意）
+              {t("egg.venuePrefLabel")}
             </Typography>
             <ToggleButtonGroup
               exclusive
@@ -114,13 +116,14 @@ export function EventRequestNewPage() {
           {myCommunities && myCommunities.length > 0 && (
             <TextField
               select
-              label="コミュニティ（任意）"
+              // イベント作成フォームと同じ綴りなので使い回す（増やさない）
+              label={t("eventForm.community")}
               value={communityId}
               onChange={(e) => setCommunityId(e.target.value)}
-              helperText="選ぶとコミュニティのたまごとして表示されます"
+              helperText={t("egg.communityHelp")}
               fullWidth
             >
-              <MenuItem value="">なし（全体公開）</MenuItem>
+              <MenuItem value="">{t("egg.communityNone")}</MenuItem>
               {myCommunities.map((cm) => (
                 <MenuItem key={cm.id} value={cm.id}>
                   {cm.name}
@@ -141,7 +144,7 @@ export function EventRequestNewPage() {
                 sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
               >
                 <StadiumIcon fontSize="small" />
-                会場も探しています（会場提供者からのオファーを受け付ける）
+                {t("egg.venueWantedSwitch")}
               </Box>
             }
           />
@@ -152,7 +155,7 @@ export function EventRequestNewPage() {
                 onChange={(e) => setReactorsAnonymous(e.target.checked)}
               />
             }
-            label="賛同者を匿名にする（人数のみ表示）"
+            label={t("egg.reactorsAnonSwitch")}
           />
           {communityId && (
             <FormControlLabel
@@ -162,7 +165,7 @@ export function EventRequestNewPage() {
                   onChange={(e) => setMembersOnly(e.target.checked)}
                 />
               }
-              label="コミュニティメンバーだけに見せる"
+              label={t("egg.membersOnlySwitch")}
             />
           )}
           <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
@@ -171,9 +174,9 @@ export function EventRequestNewPage() {
               onClick={submit}
               disabled={!title.trim() || create.isPending}
             >
-              投稿する
+              {t("egg.newSubmit")}
             </Button>
-            <Button onClick={() => navigate(-1)}>キャンセル</Button>
+            <Button onClick={() => navigate(-1)}>{t("common.cancel")}</Button>
           </Stack>
         </Stack>
       </CardContent>

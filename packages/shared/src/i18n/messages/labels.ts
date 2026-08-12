@@ -30,7 +30,8 @@ const roleEn: Record<EventRole, string> = {
   observer: "Viewer",
 };
 
-/** 開催形態（もとは apps/web/src/lib/format.ts の venueLabel） */
+/** 開催形態（もとは apps/web/src/lib/format.ts の venueLabel）。
+ *  名前空間は `venueType`。会場そのものの文言は `venue`（messages/venue.ts） */
 const venueJa: Record<VenueType, string> = {
   offline: "オフライン",
   online: "オンライン",
@@ -91,14 +92,14 @@ const abuseRuleDescriptionEn: Record<AbuseRule, string> = {
 export const labels = {
   ja: {
     role: roleJa,
-    venue: venueJa,
+    venueType: venueJa,
     notificationType: NOTIFICATION_TYPE_LABELS,
     abuseRule: ABUSE_RULE_LABELS,
     abuseRuleDescription: ABUSE_RULE_DESCRIPTIONS,
   },
   en: {
     role: roleEn,
-    venue: venueEn,
+    venueType: venueEn,
     notificationType: notificationTypeEn,
     abuseRule: abuseRuleEn,
     abuseRuleDescription: abuseRuleDescriptionEn,

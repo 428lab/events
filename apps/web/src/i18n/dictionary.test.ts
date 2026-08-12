@@ -81,6 +81,13 @@ describe("数を含む文言の単数・複数 (#363)", () => {
     ["eventRun.totalPointOne", "eventRun.totalPoints"],
     ["eventRun.notifiedWinnerOne", "eventRun.notifiedWinners"],
     ["eventSocial.qaVoteOne", "eventSocial.qaVotes"],
+    // #366 コミュニティ・会場・たまご
+    ["community.memberCountOne", "community.memberCount"],
+    ["community.eventCountOne", "community.eventCount"],
+    ["community.likeCountOne", "community.likeCount"],
+    ["venue.capacityOne", "venue.capacity"],
+    ["venue.photoRoomOne", "venue.photoRoom"],
+    ["egg.hatchedCountOne", "egg.hatchedCount"],
   ];
 
   it("日本語は単数でも複数でも同じ綴り", () => {
@@ -99,6 +106,13 @@ describe("数を含む文言の単数・複数 (#363)", () => {
     expect(i18next.t("staffOps.peopleCount", { n: 3 })).toBe("3 people");
     expect(i18next.t("eventForm.surveyLoseAnswer", { n: 1 })).toBe(
       "This change deletes 1 answer. Continue?",
+    );
+    // #366。数だけを見てキーを選ぶので、1 のときに "1 members" にならない
+    expect(i18next.t("community.memberCountOne", { n: 1 })).toBe("1 member");
+    expect(i18next.t("community.memberCount", { n: 3 })).toBe("3 members");
+    expect(i18next.t("venue.capacityOne", { n: 1 })).toBe("Up to 1 person");
+    expect(i18next.t("venue.photoRoomOne", { n: 1 })).toBe(
+      "You can add 1 more photo.",
     );
   });
 });
@@ -125,6 +139,54 @@ describe("コードで引く表 (#363)", () => {
     expect(tDynamic("staffInviteError.brand_new_code", fallback)).toBe(fallback);
     expect(tDynamic("broadcastSegment.brand_new_segment", "全員")).toBe("全員");
     expect(tDynamic("staffInviteStatus.brand_new_status", "保留")).toBe("保留");
+  });
+
+  /**
+   * 会場オファーの状態と断り理由 (#366)。どちらも `tDynamic` 経由なので
+   * 型では守れない。状態の受け皿は**生のコード**（元の `?? status` と同じ）。
+   */
+  it("会場オファーの状態と断り理由が両方の言語で出る", async () => {
+    expect(tDynamic("venueOfferStatus.accepted", "?")).toBe("成立");
+    expect(tDynamic("venueOfferError.already_offered", "?")).toBe(
+      "同じ会場で既にオファー済みです。",
+    );
+    await i18next.changeLanguage("en");
+    expect(tDynamic("venueOfferStatus.accepted", "?")).toBe("Matched");
+    expect(tDynamic("venueOfferError.already_offered", "?")).toBe(
+      "You have already made an offer with this venue.",
+    );
+  });
+
+  it("会場オファーの未知のコードでもキー名が画面に出ない", () => {
+    expect(tDynamic("venueOfferStatus.brand_new_status", "brand_new_status")).toBe(
+      "brand_new_status",
+    );
+    const fallback = i18next.t("venueOfferError.default");
+    expect(tDynamic("venueOfferError.brand_new_code", fallback)).toBe(fallback);
+  });
+
+  /**
+   * コミュニティでの立場 (#357, #366)。**一般メンバーは辞書に無い**のが要点で、
+   * 引けないときに空文字が返ることでチップが出ない。ここが `member` を持つと
+   * コミュニティ詳細とメンバー一覧に余計なチップが出る。
+   */
+  it("コミュニティの立場は owner / admin だけが引ける", async () => {
+    expect(tDynamic("communityRole.owner", "")).toBe("オーナー");
+    expect(tDynamic("communityRole.member", "")).toBe("");
+    await i18next.changeLanguage("en");
+    expect(tDynamic("communityRole.owner", "")).toBe("Owner");
+    expect(tDynamic("communityRole.member", "")).toBe("");
+  });
+
+  /**
+   * 開催形態の表 (#366 で `venue` → `venueType` に改名)。会場そのものの
+   * 名前空間 `venue` と衝突したため。`lib/format.ts` の `venueLabel()` が
+   * ここを引くので、改名し直すと開催形態が生のコードで出る。
+   */
+  it("開催形態の表が venueType で引ける", async () => {
+    expect(tDynamic("venueType.online", "online")).toBe("オンライン");
+    await i18next.changeLanguage("en");
+    expect(tDynamic("venueType.online", "online")).toBe("Online");
   });
 });
 

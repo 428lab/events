@@ -152,7 +152,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                 </Stack>
                 <IconButton
                   color="error"
-                  aria-label={t("eventRun.delete")}
+                  aria-label={t("common.delete")}
                   onClick={() => deleteRank.mutate(r.id)}
                 >
                   <DeleteIcon />
@@ -240,7 +240,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                 </Stack>
                 <IconButton
                   color="error"
-                  aria-label={t("eventRun.delete")}
+                  aria-label={t("common.delete")}
                   onClick={() => deleteSpecial.mutate(s.id)}
                 >
                   <DeleteIcon />

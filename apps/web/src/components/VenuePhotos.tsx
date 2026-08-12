@@ -15,12 +15,17 @@ import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CloseIcon from "@mui/icons-material/Close";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { VENUE_PHOTO_LIMIT, type VenuePhoto } from "@eventer/shared";
 import { api } from "../api/client.js";
 import { encodeImageForUpload } from "../lib/encodeImage.js";
 
 const photoUrl = (p: VenuePhoto) =>
   `/api/venues/${p.venueId}/photos/${p.id}/image`;
+
+/** 失敗の種類だけを持つ。**訳した文言を state に持たない**（言語を切り替えると
+ *  前の言語のまま残るため）。`room` は「あと何点」の数 */
+type PhotoError = { kind: "limit" } | { kind: "upload" } | { kind: "room"; room: number };
 
 /** 会場のギャラリー写真（最大10点）。閲覧は公開・投稿/削除はオーナーのみ。
  * アップロード処理はイベント写真と同一（1600pxリサイズ・WebP・1.5MB上限） */
@@ -31,9 +36,10 @@ export function VenuePhotos({
   venueId: string;
   isOwner: boolean;
 }) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<PhotoError | null>(null);
   const [viewer, setViewer] = useState<VenuePhoto | null>(null);
 
   const { data } = useQuery({
@@ -83,11 +89,7 @@ export function VenuePhotos({
     // 途中失敗でもアップロード済み分を一覧へ反映（再選択時の重複を防ぐ）
     onSettled: () => void qc.invalidateQueries({ queryKey: ["venuePhotos", venueId] }),
     onError: (e: Error) =>
-      setError(
-        e.message === "photo_limit"
-          ? `写真は最大 ${VENUE_PHOTO_LIMIT} 点までです。`
-          : "アップロードに失敗しました。画像形式・サイズを確認してください。",
-      ),
+      setError(e.message === "photo_limit" ? { kind: "limit" } : { kind: "upload" }),
   });
 
   const del = useMutation({
@@ -109,7 +111,9 @@ export function VenuePhotos({
           sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
         >
           <PhotoCameraIcon fontSize="small" />
-          写真{photos.length > 0 ? `（${photos.length}）` : ""}
+          {photos.length > 0
+            ? t("common.photosHeading", { n: photos.length })
+            : t("common.photos")}
         </Typography>
         {(isOwner || canSubmit) && (
           <Button
@@ -121,10 +125,10 @@ export function VenuePhotos({
             onClick={() => fileInput.current?.click()}
           >
             {upload.isPending
-              ? "アップロード中…"
+              ? t("venue.photoUploading")
               : isOwner
-                ? `写真を追加（最大${VENUE_PHOTO_LIMIT}点）`
-                : "写真を投稿（管理者の確認後に公開）"}
+                ? t("venue.photoAddOwner", { n: VENUE_PHOTO_LIMIT })
+                : t("venue.photoSubmit")}
           </Button>
         )}
       </Stack>
@@ -141,7 +145,7 @@ export function VenuePhotos({
             ? VENUE_PHOTO_LIMIT - photos.length
             : VENUE_PHOTO_LIMIT - pending.length;
           if (files.length > room) {
-            setError(`あと ${room} 点まで追加できます。`);
+            setError({ kind: "room", room });
             return;
           }
           if (files.length > 0) upload.mutate(files);
@@ -150,18 +154,24 @@ export function VenuePhotos({
       />
       {error && (
         <Alert severity="warning" sx={{ mt: 1 }} onClose={() => setError(null)}>
-          {error}
+          {error.kind === "limit"
+            ? t("venue.photoLimit", { n: VENUE_PHOTO_LIMIT })
+            : error.kind === "upload"
+              ? t("venue.photoUploadError")
+              : t(error.room === 1 ? "venue.photoRoomOne" : "venue.photoRoom", {
+                  n: error.room,
+                })}
         </Alert>
       )}
       {submitted && !isOwner && (
         <Alert severity="success" sx={{ mt: 1 }} onClose={() => setSubmitted(false)}>
-          投稿しました。会場管理者の確認後に公開されます。
+          {t("venue.photoSubmitted")}
         </Alert>
       )}
       {isOwner && pending.length > 0 && (
         <Box sx={{ mt: 2 }}>
           <Typography variant="subtitle2" gutterBottom>
-            承認待ちの投稿（{pending.length}）
+            {t("venue.pendingHeading", { n: pending.length })}
           </Typography>
           <Stack spacing={1}>
             {pending.map((p) => (
@@ -169,12 +179,14 @@ export function VenuePhotos({
                 <Box
                   component="img"
                   src={photoUrl(p)}
-                  alt="承認待ち写真"
+                  alt={t("venue.pendingAlt")}
                   sx={{ width: 96, height: 72, objectFit: "cover", borderRadius: 1, cursor: "pointer" }}
                   onClick={() => setViewer(p)}
                 />
                 <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
-                  {p.userName ?? "参加者"} さんの投稿
+                  {t("venue.pendingBy", {
+                    name: p.userName ?? t("role.participant"),
+                  })}
                 </Typography>
                 <Button
                   size="small"
@@ -182,19 +194,19 @@ export function VenuePhotos({
                   disabled={moderate.isPending || photos.length >= VENUE_PHOTO_LIMIT}
                   onClick={() => moderate.mutate({ photoId: p.id, action: "approve" })}
                 >
-                  採用
+                  {t("venue.photoApprove")}
                 </Button>
                 <Button
                   size="small"
                   color="error"
                   disabled={moderate.isPending}
                   onClick={() => {
-                    if (window.confirm("この投稿を却下して削除しますか？")) {
+                    if (window.confirm(t("venue.photoRejectConfirm"))) {
                       moderate.mutate({ photoId: p.id, action: "reject" });
                     }
                   }}
                 >
-                  却下
+                  {t("venue.photoReject")}
                 </Button>
               </Stack>
             ))}
@@ -209,7 +221,7 @@ export function VenuePhotos({
               sx={{ cursor: "pointer", borderRadius: 2, overflow: "hidden" }}
               onClick={() => setViewer(p)}
             >
-              <img src={photoUrl(p)} alt="会場写真" loading="lazy" />
+              <img src={photoUrl(p)} alt={t("venue.photoAlt")} loading="lazy" />
             </ImageListItem>
           ))}
         </ImageList>
@@ -221,25 +233,25 @@ export function VenuePhotos({
           <Box sx={{ position: "relative", bgcolor: "black" }}>
             <img
               src={photoUrl(viewer)}
-              alt="会場写真"
+              alt={t("venue.photoAlt")}
               style={{ display: "block", maxWidth: "100%", maxHeight: "85vh" }}
             />
             <IconButton
               onClick={() => setViewer(null)}
               sx={{ position: "absolute", top: 8, right: 8, color: "#fff", bgcolor: "rgba(0,0,0,0.4)" }}
-              aria-label="閉じる"
+              aria-label={t("common.close")}
             >
               <CloseIcon />
             </IconButton>
             {isOwner && (
               <IconButton
                 onClick={() => {
-                  if (window.confirm("この写真を削除しますか？")) {
+                  if (window.confirm(t("common.photoDeleteConfirm"))) {
                     del.mutate(viewer.id);
                   }
                 }}
                 sx={{ position: "absolute", bottom: 8, right: 8, color: "#fff", bgcolor: "rgba(0,0,0,0.4)" }}
-                aria-label="削除"
+                aria-label={t("common.delete")}
               >
                 <DeleteIcon />
               </IconButton>

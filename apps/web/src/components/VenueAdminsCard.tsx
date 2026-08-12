@@ -11,6 +11,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import {
   useAddVenueAdmin,
   useRemoveVenueAdmin,
@@ -20,6 +21,7 @@ import {
 
 /** 会場の管理者管理＋オーナー移譲（オーナーのみ表示）。 */
 export function VenueAdminsCard({ venueId }: { venueId: string }) {
+  const { t } = useTranslation();
   const { data: admins } = useVenueAdmins(venueId, true);
   const add = useAddVenueAdmin(venueId);
   const remove = useRemoveVenueAdmin(venueId);
@@ -30,16 +32,16 @@ export function VenueAdminsCard({ venueId }: { venueId: string }) {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          管理者
+          {t("venue.adminsHeading")}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          管理者は会場の編集・写真の承認・オファー対応ができます（削除・管理者の変更・移譲はオーナーのみ）。
+          {t("venue.adminsLead")}
         </Typography>
         <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
           <TextField
             size="small"
-            label="ユーザー名で追加"
-            placeholder="例: kojira"
+            label={t("venue.adminAddLabel")}
+            placeholder={t("venue.adminAddPlaceholder")}
             value={handle}
             onChange={(e) => setHandle(e.target.value)}
             slotProps={{ inputLabel: { shrink: true } }}
@@ -52,17 +54,17 @@ export function VenueAdminsCard({ venueId }: { venueId: string }) {
               add.mutate(handle.trim(), { onSuccess: () => setHandle("") })
             }
           >
-            追加
+            {t("common.add")}
           </Button>
         </Stack>
         {add.isError && (
           <Alert severity="error" sx={{ mb: 2 }}>
-            追加できませんでした（ユーザー名を確認してください）。
+            {t("venue.adminAddError")}
           </Alert>
         )}
         {!admins || admins.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            管理者はまだいません。
+            {t("venue.adminsEmpty")}
           </Typography>
         ) : (
           <Stack spacing={1}>
@@ -81,7 +83,7 @@ export function VenueAdminsCard({ venueId }: { venueId: string }) {
                 </Box>
                 <Chip
                   size="small"
-                  label="オーナー移譲"
+                  label={t("venue.transferOwner")}
                   clickable
                   color="warning"
                   variant="outlined"
@@ -89,7 +91,9 @@ export function VenueAdminsCard({ venueId }: { venueId: string }) {
                   onClick={() => {
                     if (
                       window.confirm(
-                        `${a.globalName ?? a.username} さんにオーナーを移譲しますか？あなたは管理者になります。`,
+                        t("venue.transferConfirm", {
+                          name: a.globalName ?? a.username,
+                        }),
                       )
                     ) {
                       transfer.mutate(a.id);
@@ -98,7 +102,7 @@ export function VenueAdminsCard({ venueId }: { venueId: string }) {
                 />
                 <Chip
                   size="small"
-                  label="解除"
+                  label={t("venue.adminRemove")}
                   clickable
                   disabled={remove.isPending}
                   onClick={() => remove.mutate(a.id)}

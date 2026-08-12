@@ -20,6 +20,7 @@ import DownloadIcon from "@mui/icons-material/Download";
 import EggIcon from "@mui/icons-material/Egg";
 import StadiumIcon from "@mui/icons-material/Stadium";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   useCreateVenueOffer,
   useMyVenues,
@@ -29,38 +30,18 @@ import {
 } from "../api/venueHooks.js";
 import { useMyPage } from "../api/hooks.js";
 import { useQuery } from "@tanstack/react-query";
-import { api, ApiError } from "../api/client.js";
+import { api } from "../api/client.js";
 import type { EventRequest } from "@eventer/shared";
+import { errorCode } from "../lib/errorMessage.js";
+import { i18next, tDynamic } from "../i18n/index.js";
 import { CounterTextField } from "./CounterTextField.js";
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "回答待ち",
-  accepted: "成立",
-  declined: "見送り",
-};
-
-/** オファーの送信・応答が断られたときの文言。
- * *_unavailable は相手が退会申請中（猶予期間 #250）で、承諾すると連絡先や
- * 非公開住所が開示されてしまうケース。相手の退会は伏せた言い方にする */
+/** オファーの送信・応答が断られたときの文言。表は辞書 (`venueOfferError`) にあり、
+ *  知らないコードは default に落ちる */
 function offerErrorMessage(error: unknown): string {
-  const code =
-    error instanceof ApiError
-      ? ((error.body as { error?: string } | null)?.error ?? "")
-      : "";
-  switch (code) {
-    case "venue_unavailable":
-      return "この会場は現在オファーを受け付けていません。";
-    case "target_unavailable":
-      return "オファー先の主催者が現在応答できない状態です。";
-    case "counterparty_unavailable":
-      return "相手が現在応答できない状態のため、いま承諾はできません（見送りは可能です）。";
-    case "already_offered":
-      return "同じ会場で既にオファー済みです。";
-    case "declined_recently":
-      return "直近で見送られたため、しばらくは再オファーできません。";
-    default:
-      return "送信できませんでした。時間をおいて再度お試しください。";
-  }
+  const fallback = i18next.t("venueOfferError.default");
+  const code = errorCode(error);
+  return code ? tDynamic(`venueOfferError.${code}`, fallback) : fallback;
 }
 
 function statusChip(status: string) {
@@ -69,7 +50,7 @@ function statusChip(status: string) {
       size="small"
       color={status === "accepted" ? "success" : status === "pending" ? "warning" : "default"}
       icon={status === "accepted" ? <CelebrationIcon fontSize="small" /> : undefined}
-      label={STATUS_LABEL[status] ?? status}
+      label={tDynamic(`venueOfferStatus.${status}`, status)}
     />
   );
 }
@@ -84,6 +65,7 @@ export function VenueOfferPanel({
   id: string;
   enabled: boolean;
 }) {
+  const { t } = useTranslation();
   const { data: offers } = useVenueOffers(kind, id, enabled);
   const respond = useRespondVenueOffer();
   const [contact, setContact] = useState("");
@@ -100,57 +82,68 @@ export function VenueOfferPanel({
           sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
         >
           <StadiumIcon fontSize="small" />
-          会場オファー
+          {t("venue.offersHeading")}
         </Typography>
         <Stack spacing={1.5}>
-          {offers.map((o) => (
-            <Box key={o.id}>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                {statusChip(o.status)}
-                <Typography variant="body2">
-                  {o.direction === "venue_to_event" ? "提供オファー: " : "利用申込: "}
-                  <RouterLink to={`/venues/${o.venueId}`}>
-                    {o.venue?.name ?? "会場"}
-                  </RouterLink>
-                  {o.venue?.area ? `（${o.venue.area}）` : ""}
-                </Typography>
-                {o.status === "pending" && o.direction === "venue_to_event" && (
-                  <>
-                    <Button size="small" variant="contained" onClick={() => setAcceptTarget(o)}>
-                      承諾
-                    </Button>
-                    <Button
-                      size="small"
-                      onClick={() => respond.mutate({ offerId: o.id, action: "decline" })}
-                    >
-                      辞退
-                    </Button>
-                  </>
+          {offers.map((o) => {
+            // 住所・連絡先は「ある分だけ」つなぐ。語順は辞書 (`venue.matched`) が持つ
+            const details = [
+              o.venueAddress && t("venue.matchedAddress", { address: o.venueAddress }),
+              o.venueContact && t("venue.matchedContact", { contact: o.venueContact }),
+            ]
+              .filter(Boolean)
+              .join(t("venue.detailSeparator"));
+            return (
+              <Box key={o.id}>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  {statusChip(o.status)}
+                  <Typography variant="body2">
+                    {o.direction === "venue_to_event"
+                      ? t("venue.directionOffer")
+                      : t("venue.directionRequest")}{" "}
+                    <RouterLink to={`/venues/${o.venueId}`}>
+                      {o.venue?.name ?? t("venue.nameFallback")}
+                    </RouterLink>
+                    {o.venue?.area
+                      ? t("common.parenName", { name: o.venue.area })
+                      : ""}
+                  </Typography>
+                  {o.status === "pending" && o.direction === "venue_to_event" && (
+                    <>
+                      <Button size="small" variant="contained" onClick={() => setAcceptTarget(o)}>
+                        {t("venue.accept")}
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => respond.mutate({ offerId: o.id, action: "decline" })}
+                      >
+                        {t("venue.decline")}
+                      </Button>
+                    </>
+                  )}
+                </Stack>
+                {o.status === "accepted" && (o.venueContact || o.venueAddress) && (
+                  <Alert severity="success" sx={{ mt: 1 }}>
+                    {t("venue.matched", { details })}
+                  </Alert>
                 )}
-              </Stack>
-              {o.status === "accepted" && (o.venueContact || o.venueAddress) && (
-                <Alert severity="success" sx={{ mt: 1 }}>
-                  マッチング成立！{o.venueAddress && ` 住所: ${o.venueAddress}`}
-                  {o.venueContact && ` ／ 連絡先: ${o.venueContact}`}
-                  （以後の相談は直接どうぞ）
-                </Alert>
-              )}
-            </Box>
-          ))}
+              </Box>
+            );
+          })}
         </Stack>
       </CardContent>
 
       {/* 承諾ダイアログ（自分の連絡先を添えられる） */}
       <Dialog open={Boolean(acceptTarget)} onClose={() => setAcceptTarget(null)} fullWidth>
-        <DialogTitle>オファーを承諾</DialogTitle>
+        <DialogTitle>{t("venue.acceptTitle")}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            承諾すると会場側の連絡先・住所が開示されます。あなたの連絡先も伝えるとやりとりがスムーズです。
+            {t("venue.acceptLead")}
           </Typography>
           <CounterTextField
-            label="あなたの連絡先（任意・相手にのみ開示）"
+            label={t("venue.myContactLabel")}
             slotProps={{ inputLabel: { shrink: true } }}
-            placeholder="X: @xxx / Discord: xxx など"
+            placeholder={t("venue.myContactPlaceholder")}
             value={contact}
             max={500}
             onChange={(e) => setContact(e.target.value)}
@@ -163,7 +156,7 @@ export function VenueOfferPanel({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAcceptTarget(null)}>キャンセル</Button>
+          <Button onClick={() => setAcceptTarget(null)}>{t("common.cancel")}</Button>
           <Button
             variant="contained"
             disabled={respond.isPending}
@@ -175,7 +168,7 @@ export function VenueOfferPanel({
               )
             }
           >
-            承諾する
+            {t("venue.acceptSubmit")}
           </Button>
         </DialogActions>
       </Dialog>
@@ -191,6 +184,7 @@ export function OfferVenueButton({
   eventId?: string;
   requestId?: string;
 }) {
+  const { t } = useTranslation();
   const { data: myVenues } = useMyVenues();
   const create = useCreateVenueOffer();
   const [open, setOpen] = useState(false);
@@ -207,14 +201,14 @@ export function OfferVenueButton({
         startIcon={<StadiumIcon />}
         onClick={() => setOpen(true)}
       >
-        会場を提供できます
+        {t("venue.offerCta")}
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth>
-        <DialogTitle>会場を提供する</DialogTitle>
+        <DialogTitle>{t("venue.offerTitle")}</DialogTitle>
         <DialogContent>
           <TextField
             select
-            label="提供する会場"
+            label={t("venue.offerVenueLabel")}
             value={venueId}
             onChange={(e) => setVenueId(e.target.value)}
             fullWidth
@@ -222,7 +216,8 @@ export function OfferVenueButton({
           >
             {candidates.map((v) => (
               <MenuItem key={v.id} value={v.id}>
-                {v.name}（{v.area}）
+                {v.name}
+                {t("common.parenName", { name: v.area })}
               </MenuItem>
             ))}
           </TextField>
@@ -233,7 +228,7 @@ export function OfferVenueButton({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpen(false)}>キャンセル</Button>
+          <Button onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
           <Button
             variant="contained"
             disabled={!venueId || create.isPending}
@@ -244,7 +239,7 @@ export function OfferVenueButton({
               )
             }
           >
-            オファーを送る
+            {t("venue.offerSubmit")}
           </Button>
         </DialogActions>
       </Dialog>
@@ -254,6 +249,7 @@ export function OfferVenueButton({
 
 /** イベンター側（会場詳細）: 「この会場を使いたい」ボタン */
 export function UseVenueButton({ venueId }: { venueId: string }) {
+  const { t } = useTranslation();
   const { data: my } = useMyPage();
   const { data: myRequests } = useQuery({
     queryKey: ["myRequests"],
@@ -275,15 +271,15 @@ export function UseVenueButton({ venueId }: { venueId: string }) {
   return (
     <>
       <Button variant="contained" onClick={() => setOpen(true)}>
-        この会場を使いたい
+        {t("venue.useCta")}
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth>
-        <DialogTitle>会場の利用を申し込む</DialogTitle>
+        <DialogTitle>{t("venue.useTitle")}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <TextField
               select
-              label="対象（イベント / たまご）"
+              label={t("venue.useTargetLabel")}
               value={target}
               onChange={(e) => setTarget(e.target.value)}
               fullWidth
@@ -295,14 +291,14 @@ export function UseVenueButton({ venueId }: { venueId: string }) {
               ))}
               {eggs.map((r) => (
                 <MenuItem key={r.id} value={`r:${r.id}`}>
-                  たまご: {r.title}
+                  {t("venue.useTargetEgg", { title: r.title })}
                 </MenuItem>
               ))}
             </TextField>
             <CounterTextField
-              label="あなたの連絡先（承諾後に会場側へ開示）"
+              label={t("venue.useContactLabel")}
               slotProps={{ inputLabel: { shrink: true } }}
-              placeholder="X: @xxx / Discord: xxx など"
+              placeholder={t("venue.myContactPlaceholder")}
               value={contact}
               max={500}
               onChange={(e) => setContact(e.target.value)}
@@ -314,7 +310,7 @@ export function UseVenueButton({ venueId }: { venueId: string }) {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpen(false)}>キャンセル</Button>
+          <Button onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
           <Button
             variant="contained"
             disabled={!target || create.isPending}
@@ -331,7 +327,7 @@ export function UseVenueButton({ venueId }: { venueId: string }) {
               )
             }
           >
-            申し込む
+            {t("venue.useSubmit")}
           </Button>
         </DialogActions>
       </Dialog>
@@ -341,6 +337,7 @@ export function UseVenueButton({ venueId }: { venueId: string }) {
 
 /** 会場オーナー側（会場詳細）: この会場のオファー一覧と応答 */
 export function VenueOwnerOffers({ venueId }: { venueId: string }) {
+  const { t } = useTranslation();
   const { data: offers } = useVenueOffers("for-venue", venueId, true);
   const respond = useRespondVenueOffer();
   if (!offers || offers.length === 0) return null;
@@ -349,7 +346,7 @@ export function VenueOwnerOffers({ venueId }: { venueId: string }) {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          この会場へのオファー
+          {t("venue.ownerOffersHeading")}
         </Typography>
         {respond.isError && (
           <Alert severity="error" sx={{ mb: 1.5 }}>
@@ -379,7 +376,9 @@ export function VenueOwnerOffers({ venueId }: { venueId: string }) {
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                   {statusChip(o.status)}
                   <Typography variant="body2">
-                    {o.direction === "event_to_venue" ? "利用申込: " : "提供オファー: "}
+                    {o.direction === "event_to_venue"
+                      ? t("venue.directionRequest")
+                      : t("venue.directionOffer")}{" "}
                     {target && <RouterLink to={target.to}>{target.label}</RouterLink>}
                   </Typography>
                   {o.status === "pending" && o.direction === "event_to_venue" && (
@@ -390,24 +389,25 @@ export function VenueOwnerOffers({ venueId }: { venueId: string }) {
                         disabled={respond.isPending}
                         onClick={() => respond.mutate({ offerId: o.id, action: "accept" })}
                       >
-                        承諾
+                        {t("venue.accept")}
                       </Button>
                       <Button
                         size="small"
                         disabled={respond.isPending}
                         onClick={() => respond.mutate({ offerId: o.id, action: "decline" })}
                       >
-                        辞退
+                        {t("venue.decline")}
                       </Button>
                     </>
                   )}
                 </Stack>
                 {o.status === "accepted" && (
                   <Alert severity="success" sx={{ mt: 1 }}>
-                    マッチング成立！
                     {o.organizerContact
-                      ? ` 主催者の連絡先: ${o.organizerContact}（以後の相談は直接どうぞ）`
-                      : " 主催者からの連絡をお待ちください（あなたの連絡先が開示されています）"}
+                      ? t("venue.matchedOrganizer", {
+                          contact: o.organizerContact,
+                        })
+                      : t("venue.matchedWaiting")}
                   </Alert>
                 )}
                 {/* 成立イベントの受付名簿（同一オリジンの <a> なので cookie 認証のまま） (#154) */}
@@ -421,7 +421,7 @@ export function VenueOwnerOffers({ venueId }: { venueId: string }) {
                       href={`/api/events/${o.event.id}/attendance.csv`}
                       download
                     >
-                      入館名簿CSV
+                      {t("venue.attendanceCsv")}
                     </Button>
                     <Typography
                       variant="caption"
@@ -429,7 +429,7 @@ export function VenueOwnerOffers({ venueId }: { venueId: string }) {
                       display="block"
                       sx={{ mt: 0.5 }}
                     >
-                      入館管理のためにご利用ください。個人情報の取り扱いにご注意ください
+                      {t("venue.attendanceCsvNote")}
                     </Typography>
                   </Box>
                 )}

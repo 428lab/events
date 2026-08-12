@@ -10,6 +10,7 @@ import {
   Typography,
 } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { COMMUNITY_BANNER, COMMUNITY_ICON } from "@eventer/shared";
 import type { CommunityLink } from "@eventer/shared";
@@ -22,6 +23,7 @@ import { CounterTextField } from "../components/CounterTextField.js";
 import { ImageCropField } from "../components/ImageCropField.js";
 
 export function CommunityEditPage() {
+  const { t } = useTranslation();
   const { slug = "" } = useParams();
   const navigate = useNavigate();
   const { data: c, isLoading } = useCommunity(slug);
@@ -41,10 +43,10 @@ export function CommunityEditPage() {
     }
   }, [c, initialized]);
 
-  if (isLoading || !c) return <Typography>読み込み中…</Typography>;
+  if (isLoading || !c) return <Typography>{t("common.loading")}</Typography>;
   const isManager = c.myRole === "owner" || c.myRole === "admin";
   if (!isManager) {
-    return <Alert severity="info">このコミュニティの編集権限がありません。</Alert>;
+    return <Alert severity="info">{t("community.noPermission")}</Alert>;
   }
 
   const setLink = (i: number, patch: Partial<CommunityLink>) =>
@@ -55,7 +57,10 @@ export function CommunityEditPage() {
 
   const save = () => {
     update.mutate(
-      { id: c.id, input: { name: name.trim(), description, links: cleanLinks } },
+      {
+        id: c.id,
+        input: { name: name.trim(), description, links: cleanLinks },
+      },
       { onSuccess: () => navigate(`/c/${slug}`) },
     );
   };
@@ -63,13 +68,13 @@ export function CommunityEditPage() {
   return (
     <Stack spacing={3} sx={{ maxWidth: 640 }}>
       <Typography variant="h5" fontWeight={700}>
-        コミュニティを編集
+        {t("community.editTitle")}
       </Typography>
 
       {/* 画像 */}
       <Box>
         <Typography variant="subtitle2" gutterBottom>
-          バナー
+          {t("community.bannerLabel")}
         </Typography>
         <Box
           sx={{
@@ -91,7 +96,7 @@ export function CommunityEditPage() {
           )}
         </Box>
         <ImageCropField
-          label="バナーを選ぶ"
+          label={t("community.bannerPick")}
           busy={upload.isPending}
           outWidth={COMMUNITY_BANNER.width}
           outHeight={COMMUNITY_BANNER.height}
@@ -104,7 +109,7 @@ export function CommunityEditPage() {
 
       <Box>
         <Typography variant="subtitle2" gutterBottom>
-          アイコン
+          {t("community.iconLabel")}
         </Typography>
         <Stack direction="row" spacing={2} alignItems="center">
           <Avatar
@@ -115,7 +120,7 @@ export function CommunityEditPage() {
             {c.name.charAt(0)}
           </Avatar>
           <ImageCropField
-            label="アイコンを選ぶ"
+            label={t("community.iconPick")}
             busy={upload.isPending}
             outWidth={COMMUNITY_ICON.width}
             outHeight={COMMUNITY_ICON.height}
@@ -130,10 +135,10 @@ export function CommunityEditPage() {
       <Divider />
 
       <Typography variant="caption" color="text.secondary">
-        コミュニティID（@{c.slug}）は変更できません。
+        {t("community.slugFixed", { slug: c.slug })}
       </Typography>
       <CounterTextField
-        label="コミュニティ名"
+        label={t("community.nameLabel")}
         value={name}
         max={60}
         onChange={(e) => setName(e.target.value)}
@@ -141,27 +146,27 @@ export function CommunityEditPage() {
         fullWidth
       />
       <CounterTextField
-        label="説明"
+        label={t("community.descriptionLabel")}
         value={description}
         max={2000}
         onChange={(e) => setDescription(e.target.value)}
         multiline
         minRows={3}
         fullWidth
-        helperText="Markdown が使えます"
+        helperText={t("community.markdownHelp")}
       />
 
       {/* リンク */}
       <Box>
         <Typography variant="subtitle2" gutterBottom>
-          リンク
+          {t("community.linksLabel")}
         </Typography>
         <Stack spacing={1}>
           {links.map((l, i) => (
             <Stack key={i} direction="row" spacing={1} alignItems="center">
               <CounterTextField
                 size="small"
-                label="ラベル"
+                label={t("community.linkLabel")}
                 value={l.label}
                 max={40}
                 onChange={(e) => setLink(i, { label: e.target.value })}
@@ -178,7 +183,7 @@ export function CommunityEditPage() {
                 placeholder="https://…"
               />
               <IconButton
-                aria-label="削除"
+                aria-label={t("common.delete")}
                 onClick={() => setLinks((ls) => ls.filter((_, j) => j !== i))}
               >
                 <DeleteOutlineIcon />
@@ -191,7 +196,7 @@ export function CommunityEditPage() {
               onClick={() => setLinks((ls) => [...ls, { label: "", url: "" }])}
               sx={{ alignSelf: "flex-start" }}
             >
-              + リンクを追加
+              {t("community.linkAdd")}
             </Button>
           )}
         </Stack>
@@ -203,9 +208,11 @@ export function CommunityEditPage() {
           disabled={!name.trim() || update.isPending}
           onClick={save}
         >
-          保存
+          {t("common.save")}
         </Button>
-        <Button onClick={() => navigate(`/c/${slug}`)}>キャンセル</Button>
+        <Button onClick={() => navigate(`/c/${slug}`)}>
+          {t("common.cancel")}
+        </Button>
       </Stack>
     </Stack>
   );

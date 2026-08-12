@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import StadiumIcon from "@mui/icons-material/Stadium";
 import { useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { VenueOwnerView } from "@eventer/shared";
 import {
   useCreateVenue,
@@ -24,6 +25,7 @@ import { VenueAdminsCard } from "../components/VenueAdminsCard.js";
 
 /** 会場の登録/編集（オーナー・管理者）。/venues/new と /venues/:id/edit 兼用 */
 export function VenueFormPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
@@ -70,7 +72,7 @@ export function VenueFormPage() {
     existing.data &&
     !(existing.data.isManager ?? existing.data.isOwner)
   ) {
-    return <Alert severity="info">この会場の編集権限がありません。</Alert>;
+    return <Alert severity="info">{t("venue.noPermission")}</Alert>;
   }
 
   const pickImage = (file: File | null) => {
@@ -107,7 +109,8 @@ export function VenueFormPage() {
     }
   };
 
-  const [imageError, setImageError] = useState<string | null>(null);
+  // 訳した文言ではなく真偽値で持つ（言語を切り替えたときに前の言語が残らないように）
+  const [imageFailed, setImageFailed] = useState(false);
   // 作成後に写真だけ失敗したとき、再submitで会場を二重作成しないための保存済みID
   const [savedId, setSavedId] = useState<string | null>(null);
 
@@ -116,14 +119,12 @@ export function VenueFormPage() {
     if (await uploadImage(venueId)) {
       navigate(`/venues/${venueId}`);
     } else {
-      setImageError(
-        "会場情報は保存されましたが、写真のアップロードに失敗しました。6MB以下の JPEG/PNG/WebP で再試行してください。",
-      );
+      setImageFailed(true);
     }
   };
 
   const submit = () => {
-    setImageError(null);
+    setImageFailed(false);
     if (isEdit) {
       update.mutate(
         { ...input, status: open ? "open" : "closed" },
@@ -149,14 +150,14 @@ export function VenueFormPage() {
           sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
         >
           {!isEdit && <StadiumIcon fontSize="medium" />}
-          {isEdit ? "会場を編集" : "会場を登録"}
+          {isEdit ? t("venue.editTitle") : t("venue.register")}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          イベント主催者に使ってもらえる会場を登録します。連絡先はマッチング成立まで公開されません。
+          {t("venue.formLead")}
         </Typography>
         <Stack spacing={2.5}>
           <CounterTextField
-            label="会場名"
+            label={t("venue.nameLabel")}
             value={name}
             max={100}
             onChange={(e) => setName(e.target.value)}
@@ -164,28 +165,28 @@ export function VenueFormPage() {
             fullWidth
           />
           <CounterTextField
-            label="紹介（任意）"
+            label={t("venue.descriptionLabel")}
             value={description}
             max={4000}
             onChange={(e) => setDescription(e.target.value)}
             multiline
             minRows={3}
             fullWidth
-            helperText="Markdown が使えます。雰囲気・アクセス・利用例など"
+            helperText={t("venue.descriptionHelp")}
           />
           <CounterTextField
-            label="エリア"
+            label={t("venue.areaLabel")}
             slotProps={{ inputLabel: { shrink: true } }}
-            placeholder="例: 東京都渋谷区"
+            placeholder={t("venue.areaPlaceholder")}
             value={area}
             max={100}
             onChange={(e) => setArea(e.target.value)}
             required
             fullWidth
-            helperText="一覧・詳細に公開される場所情報"
+            helperText={t("venue.areaHelp")}
           />
           <CounterTextField
-            label="詳細住所（任意）"
+            label={t("venue.addressLabel")}
             value={address}
             max={300}
             onChange={(e) => setAddress(e.target.value)}
@@ -198,19 +199,19 @@ export function VenueFormPage() {
                 onChange={(e) => setAddressPublic(e.target.checked)}
               />
             }
-            label="詳細住所を公開する（OFF: マッチング成立後にのみ開示）"
+            label={t("venue.addressPublicLabel")}
           />
           <TextField
-            label="収容人数（任意）"
+            label={t("venue.capacityLabel")}
             type="number"
             value={capacity}
             onChange={(e) => setCapacity(e.target.value)}
             sx={{ maxWidth: 200 }}
           />
           <CounterTextField
-            label="設備（任意）"
+            label={t("venue.equipmentLabel")}
             slotProps={{ inputLabel: { shrink: true } }}
-            placeholder="Wi-Fi / プロジェクター / ホワイトボード など"
+            placeholder={t("venue.equipmentPlaceholder")}
             value={equipment}
             max={1000}
             onChange={(e) => setEquipment(e.target.value)}
@@ -219,9 +220,9 @@ export function VenueFormPage() {
             fullWidth
           />
           <CounterTextField
-            label="提供条件（任意）"
+            label={t("venue.termsLabel")}
             slotProps={{ inputLabel: { shrink: true } }}
-            placeholder="平日夜と週末のみ / 飲食可 / 原状回復お願いします など"
+            placeholder={t("venue.termsPlaceholder")}
             value={terms}
             max={2000}
             onChange={(e) => setTerms(e.target.value)}
@@ -230,9 +231,9 @@ export function VenueFormPage() {
             fullWidth
           />
           <CounterTextField
-            label="連絡先（マッチング相手にのみ開示）"
+            label={t("venue.contactLabel")}
             slotProps={{ inputLabel: { shrink: true } }}
-            placeholder="X: @xxx / Discord: xxx / メール等"
+            placeholder={t("venue.contactPlaceholder")}
             value={contact}
             max={500}
             onChange={(e) => setContact(e.target.value)}
@@ -240,7 +241,7 @@ export function VenueFormPage() {
           />
           <div>
             <Button variant="outlined" onClick={() => fileInput.current?.click()}>
-              カバー写真を選択
+              {t("venue.coverPick")}
             </Button>
             <input
               ref={fileInput}
@@ -252,7 +253,7 @@ export function VenueFormPage() {
             {imagePreview && (
               <img
                 src={imagePreview}
-                alt="プレビュー"
+                alt={t("venue.coverPreviewAlt")}
                 style={{ display: "block", marginTop: 8, maxWidth: "100%", borderRadius: 8 }}
               />
             )}
@@ -262,13 +263,13 @@ export function VenueFormPage() {
               control={
                 <Switch checked={open} onChange={(e) => setOpen(e.target.checked)} />
               }
-              label="提供を受け付ける"
+              label={t("venue.acceptOffers")}
             />
           )}
           {(create.isError || update.isError) && (
-            <Alert severity="error">保存に失敗しました。入力内容を確認してください。</Alert>
+            <Alert severity="error">{t("venue.saveError")}</Alert>
           )}
-          {imageError && savedId && (
+          {imageFailed && savedId && (
             <Alert
               severity="warning"
               action={
@@ -276,19 +277,19 @@ export function VenueFormPage() {
                   <Button
                     size="small"
                     onClick={() => {
-                      setImageError(null);
+                      setImageFailed(false);
                       void afterSave(savedId);
                     }}
                   >
-                    再試行
+                    {t("venue.imageRetry")}
                   </Button>
                   <Button size="small" onClick={() => navigate(`/venues/${savedId}`)}>
-                    写真なしで進む
+                    {t("venue.skipPhoto")}
                   </Button>
                 </Stack>
               }
             >
-              {imageError}
+              {t("venue.imageUploadFailed")}
             </Alert>
           )}
           <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
@@ -297,20 +298,20 @@ export function VenueFormPage() {
               onClick={submit}
               disabled={!name.trim() || !area.trim() || pending}
             >
-              {isEdit ? "保存" : "登録する"}
+              {isEdit ? t("common.save") : t("venue.createSubmit")}
             </Button>
-            <Button onClick={() => navigate(-1)}>キャンセル</Button>
+            <Button onClick={() => navigate(-1)}>{t("common.cancel")}</Button>
             {isEdit && (
               <Button
                 color="error"
                 sx={{ ml: "auto" }}
                 onClick={() => {
-                  if (window.confirm("この会場を削除しますか？")) {
+                  if (window.confirm(t("venue.deleteConfirm"))) {
                     del.mutate(id, { onSuccess: () => navigate("/venues") });
                   }
                 }}
               >
-                削除
+                {t("common.delete")}
               </Button>
             )}
           </Stack>

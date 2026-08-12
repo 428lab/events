@@ -1,5 +1,8 @@
 /** ログイン画面の文言 (#352) */
 const ja = {
+  /** 未ログインの公開ページのヘッダーにあるログイン導線 (#366)。
+   *  会場・たまごの公開ページの「枠」なので、中身と一緒に訳す */
+  signIn: "ログイン",
   tagline: "募集から配信まで全部やる、イベント運営ツール",
   signInWith: "{{provider}} でログイン",
   checking: "確認中…",
@@ -14,6 +17,7 @@ const ja = {
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
+  signIn: "Sign in",
   tagline: "Run your event end to end, from sign-ups to the live stream.",
   signInWith: "Sign in with {{provider}}",
   checking: "Checking…",

@@ -111,7 +111,6 @@ const ja = {
   deleteButton: "このイベントを削除",
   deleteConfirm: "本当に削除しますか？（参加者・採点・画像も削除されます）",
   deleteAbort: "やめる",
-  deleteSubmit: "削除する",
 
   /** 参加枠。編集する側（スタッフ）と読む側（参加者）で同じ言い方を使う */
   slotsHeading: "参加枠",
@@ -192,6 +191,8 @@ const ja = {
   imageSelect: "画像を選択",
   imageAdd: "画像を追加",
   imageChange: "画像を変更",
+  /** 選んだ画像をフォームから外すだけ。日本語は `common.delete` と同じ綴りだが
+   *  英語は "Remove"（消えて戻らない削除ではない）。**共通化しない** */
   imageRemove: "削除",
   imageNone: "画像は未設定です",
   imageUploadError: "アップロードに失敗しました（1MB以内の画像）",
@@ -234,7 +235,7 @@ const ja = {
   cropApply: "適用",
 
   /** Markdown 入力欄の編集／プレビュー切替。
-   *  日本語は `eventDetail.edit`（イベントを編集するボタン）と同じ綴りだが、
+   *  日本語は `common.edit`（詳細から編集画面へ行くボタン）と同じ綴りだが、
    *  こちらは入力欄のタブなので英語は "Write"。**別物なので共通化しない** */
   markdownEdit: "編集",
   markdownPreview: "プレビュー",
@@ -347,7 +348,6 @@ const en: Record<keyof typeof ja, string> = {
   deleteConfirm:
     "Really delete it? Participants, scores and images go with it.",
   deleteAbort: "Keep it",
-  deleteSubmit: "Delete",
 
   slotsHeading: "Slots",
   slotsEditorHeading: "Slots (capacity, first-come or lottery)",

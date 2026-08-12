@@ -65,7 +65,6 @@ const ja = {
 
   /** 参加者・スタッフ向けの入口ボタン */
   scoring: "採点",
-  edit: "編集",
   live: "配信",
   broadcast: "一斉連絡",
   stats: "アクセス統計",
@@ -177,7 +176,6 @@ const en: Record<keyof typeof ja, string> = {
   toAwards: "Go to the awards ceremony",
 
   scoring: "Scoring",
-  edit: "Edit",
   live: "Broadcast",
   broadcast: "Announcement",
   stats: "Traffic",
