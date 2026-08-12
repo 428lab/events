@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import { useTranslation } from "react-i18next";
 import { Link as RouterLink } from "react-router-dom";
 import { SELECTION_TYPES, type SelectionType } from "@eventer/shared";
 import {
@@ -24,12 +25,14 @@ import { toDateTimeLocal, fromDateTimeLocal } from "../lib/format.js";
 import { CounterTextField } from "./CounterTextField.js";
 import { BlurCounterField } from "./BlurCounterField.js";
 
-const typeLabel: Record<SelectionType, string> = {
-  first_come: "先着順",
-  lottery: "抽選",
-};
+/** 枠の選び方 (`SelectionType`) → 翻訳キー。並びは SELECTION_TYPES が持つ */
+const TYPE_KEY = {
+  first_come: "eventForm.slotTypeFirstCome",
+  lottery: "eventForm.slotTypeLottery",
+} as const satisfies Record<SelectionType, string>;
 
 export function EventSlotsEditor({ eventId }: { eventId: string }) {
+  const { t } = useTranslation();
   const { data: slots } = useEventSlots(eventId);
   const create = useCreateSlot(eventId);
   const update = useUpdateSlot(eventId);
@@ -62,7 +65,9 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
         alignItems="center"
         sx={{ mb: 1 }}
       >
-        <Typography variant="subtitle1">参加枠（定員・先着/抽選）</Typography>
+        <Typography variant="subtitle1">
+          {t("eventForm.slotsEditorHeading")}
+        </Typography>
         {/* 先着枠でも申込者の管理は要る（当日キャンセルの繰り上げ）ので、
             抽選枠の有無ではなく参加枠の有無で出す (#286) */}
         {(slots?.length ?? 0) > 0 && (
@@ -72,7 +77,7 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
             component={RouterLink}
             to={`/events/${eventId}/lottery`}
           >
-            申込者の管理
+            {t("eventForm.manageApplicants")}
           </Button>
         )}
       </Stack>
@@ -83,7 +88,7 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
             <CardContent>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems="center">
                 <BlurCounterField
-                  label="枠名"
+                  label={t("eventForm.slotName")}
                   initial={s.name}
                   max={100}
                   onSave={(v) =>
@@ -94,7 +99,7 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
                   sx={{ flex: 1 }}
                 />
                 <TextField
-                  label="定員"
+                  label={t("eventForm.slotCapacity")}
                   type="number"
                   defaultValue={s.capacity}
                   onBlur={(e) =>
@@ -108,7 +113,7 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
                   size="small"
                 />
                 <TextField
-                  label="方式"
+                  label={t("eventForm.slotSelection")}
                   select
                   value={s.selectionType}
                   onChange={(e) =>
@@ -120,9 +125,9 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
                   sx={{ width: 120 }}
                   size="small"
                 >
-                  {SELECTION_TYPES.map((t) => (
-                    <MenuItem key={t} value={t}>
-                      {typeLabel[t]}
+                  {SELECTION_TYPES.map((type) => (
+                    <MenuItem key={type} value={type}>
+                      {t(TYPE_KEY[type])}
                     </MenuItem>
                   ))}
                 </TextField>
@@ -131,9 +136,18 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
                 </IconButton>
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                確定 {s.confirmedCount}/{s.capacity}
-                {s.appliedCount > 0 ? ` ・ 抽選申込 ${s.appliedCount}` : ""}
-                {s.waitlistCount > 0 ? ` ・ キャンセル待ち ${s.waitlistCount}` : ""}
+                {t("eventForm.slotConfirmedOfCapacity", {
+                  n: s.confirmedCount,
+                  total: s.capacity,
+                })}
+                {s.appliedCount > 0
+                  ? t("common.dotSeparator") +
+                    t("eventForm.slotAppliedCount", { n: s.appliedCount })
+                  : ""}
+                {s.waitlistCount > 0
+                  ? t("common.dotSeparator") +
+                    t("eventForm.slotWaitlistCount", { n: s.waitlistCount })
+                  : ""}
               </Typography>
               {s.selectionType === "lottery" && (
                 <Stack
@@ -143,7 +157,7 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
                   sx={{ mt: 1.5 }}
                 >
                   <TextField
-                    label="抽選日時（任意）"
+                    label={t("eventForm.slotDrawAt")}
                     type="datetime-local"
                     size="small"
                     defaultValue={toDateTimeLocal(s.drawAt)}
@@ -162,7 +176,10 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
                     disabled={draw.isPending || s.appliedCount === 0}
                     onClick={() => draw.mutate(s.id)}
                   >
-                    自動抽選（申込 {s.appliedCount} → 定員 {s.capacity}）
+                    {t("eventForm.slotDraw", {
+                      n: s.appliedCount,
+                      total: s.capacity,
+                    })}
                   </Button>
                 </Stack>
               )}
@@ -173,18 +190,18 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
 
       {slots && slots.length === 0 && (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          まだ参加枠がありません。下の「追加」ボタンで枠を追加できます（枠なしの場合は定員なしで参加できます）。
+          {t("eventForm.slotsEmpty")}
         </Typography>
       )}
 
       <Card variant="outlined" sx={{ mt: 2 }}>
         <CardContent>
           <Typography variant="subtitle2" gutterBottom>
-            枠を追加
+            {t("eventForm.slotAddHeading")}
           </Typography>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems="center">
             <CounterTextField
-              label="枠名"
+              label={t("eventForm.slotName")}
               value={name}
               max={100}
               onChange={(e) => setName(e.target.value)}
@@ -192,7 +209,7 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
               size="small"
             />
             <TextField
-              label="定員"
+              label={t("eventForm.slotCapacity")}
               type="number"
               value={capacity}
               onChange={(e) => setCapacity(Number(e.target.value))}
@@ -200,16 +217,16 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
               size="small"
             />
             <TextField
-              label="方式"
+              label={t("eventForm.slotSelection")}
               select
               value={selectionType}
               onChange={(e) => setSelectionType(e.target.value as SelectionType)}
               sx={{ width: 120 }}
               size="small"
             >
-              {SELECTION_TYPES.map((t) => (
-                <MenuItem key={t} value={t}>
-                  {typeLabel[t]}
+              {SELECTION_TYPES.map((type) => (
+                <MenuItem key={type} value={type}>
+                  {t(TYPE_KEY[type])}
                 </MenuItem>
               ))}
             </TextField>
@@ -218,7 +235,7 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
               disabled={!name || create.isPending}
               onClick={add}
             >
-              追加
+              {t("eventForm.slotAdd")}
             </Button>
           </Stack>
         </CardContent>

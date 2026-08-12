@@ -12,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { MyStaffInvite } from "@eventer/shared";
 import {
   inviteErrorMessage,
@@ -27,20 +28,21 @@ import { formatDateRange } from "../lib/format.js";
  * 判断に要る題名・開催日時・招待した人だけをここに出す。
  */
 export function StaffInvitesPage() {
+  const { t } = useTranslation();
   const { data: invites, isLoading } = useMyStaffInvites();
 
   return (
     <Box sx={{ maxWidth: 720, mx: "auto" }}>
       <Typography variant="h5" gutterBottom>
-        運営への招待
+        {t("staffOps.myInvitesTitle")}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        承諾すると、そのイベントの運営として準備や当日の操作ができるようになります。断ることもできます。
+        {t("staffOps.myInvitesIntro")}
       </Typography>
       <Divider sx={{ mb: 2 }} />
       {isLoading ? null : !invites || invites.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
-          返事待ちの招待はありません。
+          {t("staffOps.myInvitesEmpty")}
         </Typography>
       ) : (
         <Stack spacing={2}>
@@ -54,6 +56,7 @@ export function StaffInvitesPage() {
 }
 
 function InviteCard({ invite }: { invite: MyStaffInvite }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const accept = useRespondStaffInvite("accept");
   const decline = useRespondStaffInvite("decline");
@@ -69,13 +72,18 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
             {invite.eventTitle}
           </Typography>
           {!invite.eventPublished && (
-            <Chip size="small" label="公開前" color="default" variant="outlined" />
+            <Chip
+              size="small"
+              label={t("staffOps.invitePreRelease")}
+              color="default"
+              variant="outlined"
+            />
           )}
         </Stack>
         <Typography variant="body2" color="text.secondary">
           {invite.eventStartsAt > 0 && invite.eventEndsAt > invite.eventStartsAt
             ? formatDateRange(invite.eventStartsAt, invite.eventEndsAt)
-            : "開催日時は調整中"}
+            : t("staffOps.inviteScheduleTbd")}
         </Typography>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5 }}>
           <Avatar
@@ -86,11 +94,13 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
           >
             {by.charAt(0)}
           </Avatar>
-          <Typography variant="body2">{by} さんからの招待</Typography>
+          <Typography variant="body2">
+            {t("staffOps.inviteFrom", { name: by })}
+          </Typography>
         </Stack>
         {!invite.eventPublished && (
           <Alert severity="info" sx={{ mt: 2, py: 0 }}>
-            このイベントはまだ公開されていません。承諾すると内容を見て、準備を一緒に進められます。
+            {t("staffOps.inviteDraftNotice")}
           </Alert>
         )}
         {/* 申し込んでいた参加枠は承諾で外れ、先着枠は直後に他の人が繰り上がるので
@@ -99,7 +109,7 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
             「確定した席」と読めない書き方にする */}
         {invite.holdsSlot && (
           <Alert severity="warning" sx={{ mt: 2 }}>
-            いま申し込んでいる参加枠は外れます。運営は参加枠を使わずに参加するためで、あとから運営を降りても申し込みは戻りません（先着枠は他の人が繰り上がります）。
+            {t("staffOps.inviteSlotWarning")}
           </Alert>
         )}
         {error && (
@@ -108,7 +118,7 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
           </Alert>
         )}
         <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block" }}>
-          すでに参加を申し込んでいる場合、参加枠は外れて運営として参加します。
+          {t("staffOps.inviteSlotNote")}
         </Typography>
         <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
           <Button
@@ -122,7 +132,7 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
               });
             }}
           >
-            承諾して運営になる
+            {t("staffOps.inviteAccept")}
           </Button>
           <Button
             variant="outlined"
@@ -132,7 +142,9 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
               setError("");
               if (
                 !window.confirm(
-                  `「${invite.eventTitle}」の運営への招待を断りますか？`,
+                  t("staffOps.inviteDeclineConfirm", {
+                    title: invite.eventTitle,
+                  }),
                 )
               ) {
                 return;
@@ -142,7 +154,7 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
               });
             }}
           >
-            断る
+            {t("staffOps.inviteDecline")}
           </Button>
         </Stack>
       </CardContent>

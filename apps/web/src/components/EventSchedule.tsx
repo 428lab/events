@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   Button,
   Card,
@@ -45,6 +46,7 @@ export function EventSchedule({
   eventStartsAt: number | null;
   isStaff: boolean;
 }) {
+  const { t } = useTranslation();
   const { data, refetch } = useEventSchedule(eventId);
   const { data: me } = useMe();
   const [editing, setEditing] = useState(false);
@@ -75,9 +77,9 @@ export function EventSchedule({
   const times = computeScheduleTimes(
     items,
     eventStartsAt,
-    tracks.map((t) => t.id),
+    tracks.map((track) => track.id),
   );
-  const trackName = new Map(tracks.map((t) => [t.id, t.name]));
+  const trackName = new Map(tracks.map((track) => [track.id, track.name]));
   // 担当が全行空なら列ごと非表示（モバイルで内容欄を広く使う）
   const hasSpeakers = items.some((it) => it.speaker || it.speakerName);
 
@@ -95,7 +97,7 @@ export function EventSchedule({
             sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
           >
             <ScheduleIcon fontSize="small" />
-            タイムテーブル
+            {t("schedule.timetable")}
           </Typography>
           <Stack direction="row" alignItems="center" spacing={0.5}>
             {/* 並行して走っているのが見える専用画面への導線 (#338)。
@@ -107,7 +109,7 @@ export function EventSchedule({
                 size="small"
                 startIcon={<ViewWeekOutlinedIcon fontSize="small" />}
               >
-                トラック別に見る
+                {t("schedule.viewByTrack")}
               </Button>
             )}
             {isStaff && !editing && (
@@ -118,13 +120,15 @@ export function EventSchedule({
                     size="small"
                     variant="outlined"
                     color="info"
-                    label={`${editorLabel(otherEditor)}が編集中`}
+                    label={t("schedule.editingByShort", {
+                      editor: editorLabel(otherEditor),
+                    })}
                   />
                 )}
                 <IconButton
                   size="small"
                   onClick={() => setEditing(true)}
-                  title="タイムテーブルを編集"
+                  title={t("schedule.edit")}
                 >
                   <EditOutlinedIcon fontSize="small" />
                 </IconButton>
@@ -151,7 +155,7 @@ export function EventSchedule({
           />
         ) : items.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            まだタイムテーブルはありません。右上の編集ボタンから作成できます。
+            {t("schedule.empty")}
           </Typography>
         ) : (
           <TableContainer>
@@ -159,12 +163,12 @@ export function EventSchedule({
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ width: 72, whiteSpace: "nowrap" }}>
-                    時刻
+                    {t("schedule.time")}
                   </TableCell>
-                  <TableCell>内容</TableCell>
+                  <TableCell>{t("schedule.content")}</TableCell>
                   {hasSpeakers && (
                     <TableCell sx={{ width: "1%", whiteSpace: "nowrap" }}>
-                      担当
+                      {t("schedule.speaker")}
                     </TableCell>
                   )}
                 </TableRow>
@@ -178,7 +182,7 @@ export function EventSchedule({
                       </Typography>
                       {it.durationMin > 0 && (
                         <Typography variant="caption" color="text.secondary">
-                          {it.durationMin}分
+                          {t("schedule.durationMin", { n: it.durationMin })}
                         </Typography>
                       )}
                     </TableCell>
@@ -198,7 +202,7 @@ export function EventSchedule({
                             <Chip
                               size="small"
                               variant="outlined"
-                              label="未割り当て（参加者には出ません）"
+                              label={t("schedule.unassignedChip")}
                               sx={{ height: 18, fontSize: "0.7rem" }}
                             />
                           ) : (
@@ -226,8 +230,8 @@ export function EventSchedule({
                               verticalAlign: "middle",
                               display: "inline-flex",
                             }}
-                            aria-label="登壇資料を開く"
-                            title="登壇資料"
+                            aria-label={t("schedule.materialOpen")}
+                            title={t("schedule.material")}
                           >
                             <DescriptionOutlinedIcon sx={{ fontSize: 18 }} />
                           </MuiLink>
@@ -238,7 +242,7 @@ export function EventSchedule({
                           <IconButton
                             size="small"
                             onClick={() => setMaterialItem(it)}
-                            title="資料URLを編集"
+                            title={t("schedule.materialEdit")}
                             sx={{ ml: 0.25, p: 0.25, verticalAlign: "middle" }}
                           >
                             <EditOutlinedIcon sx={{ fontSize: 16 }} />

@@ -1,0 +1,605 @@
+/**
+ * スタッフ（運営）だけが見る操作画面の文言 (#363)。
+ *
+ * QR受付・抽選・運営スタッフの招待・一斉連絡・名札の印刷・アクセス統計。
+ * 参加者にも見える文言は `eventDetail.ts` / `common.ts` が持つので、
+ * 同じ文言をここに増やさない。
+ *
+ * 5つの名前空間を持つ:
+ * - `staffOps` … 画面の見出し・ボタン・案内
+ * - `staffInviteError` … 招待が断られた理由コード別の案内
+ * - `staffInviteStatus` … 招待の状態（`STAFF_INVITE_STATUS_LABELS`）
+ * - `broadcastSegment` / `broadcastSegmentNote` … 一斉連絡の送信先区分
+ *
+ * 後ろの3つは**日本語をここに書き写さない**。もとの定数をそのまま `ja` に据えて、
+ * 英語だけを足す（`labels.ts` と同じやり方。2か所に増やすと必ず片方が古くなる）。
+ */
+// 数の入れ替えは {{n}} を使う。i18next の `count` は複数形の仕組みを
+// 起動してしまい、`_other` を用意していないキーで挙動が読みにくくなるため。
+import {
+  BROADCAST_OVERLAP_NOTE,
+  BROADCAST_SEGMENT_LABELS,
+  BROADCAST_SEGMENT_NOTES,
+  type BroadcastSegment,
+} from "../../eventBroadcast.js";
+import {
+  STAFF_INVITE_STATUS_LABELS,
+  type StaffInviteStatus,
+} from "../../staffInvites.js";
+
+const ja = {
+  /* ── 運営画面をまたいで使うもの ───────────────────────────── */
+  /** 矢印つきの戻り導線（QR受付・アクセス統計）。矢印も言語ごとに持つ */
+  backToEvent: "← イベントへ戻る",
+  /** 文中に置く戻りリンク（名札の印刷）。矢印は付けない */
+  backToEventLink: "イベントへ戻る",
+  loadFailed: "読み込めませんでした。",
+  /** 受付結果＋アンケートを1枚にした名簿。QR受付とアクセス統計の両方から落とせる */
+  attendanceCsv: "入館名簿CSV",
+  /** 人数。英語で "1 people" にならないよう単数と複数でキーを分ける
+   *  （どちらを使うかは数だけで決まる。日本語はどちらも同じ綴り） */
+  personCount: "{{n}} 人",
+  peopleCount: "{{n}} 人",
+
+  /* ── QR受付 (#154) ─────────────────────────────────────── */
+  checkinStaffOnly: "QR受付はスタッフ専用です。",
+  checkinCameraError:
+    "カメラを起動できませんでした。ブラウザのサイト設定でカメラの使用を許可して、ページを再読み込みしてください。",
+  checkinHint:
+    "参加者の「入場QR」またはプロフィールカードのQRを枠内にかざしてください。入場QRは本人確認済みとして自動で出席記録されます。",
+  checkinLogHeading: "受付ログ（最新{{n}}件）",
+  checkinLogUndone: "取消済み",
+  /** 受付ログの1行の見出し。ログには**種別**を積み、表示のたびに訳す
+   *  （訳した文字列を積むと、言語を切り替えたときに前の言語のまま残る） */
+  checkinLogCheckedIn: "出席（本人確認済み）",
+  checkinLogAlready: "出席済み",
+  checkinLogNotConfirmed: "確定参加者ではない",
+  checkinLogManual: "出席（手動）",
+  /** スキャンを止めない軽い通知 */
+  checkinWrongEvent: "別のイベントの入場QRです",
+  checkinInvalidQr: "無効なQRコードです",
+  checkinNotOurQr: "このイベントの受付用QRではありません",
+  checkinLookupFailed: "照会に失敗しました",
+  checkinUndoFailed: "取り消しに失敗しました",
+  /** 手動記録が断られた理由。受付の列で「失敗しました」だけだと案内できない */
+  checkinManualNotConfirmed: "参加が確定している人だけ出席にできます",
+  checkinManualFailed: "出席の記録に失敗しました",
+  /** 読み取り結果のオーバーレイ。背景色は文言ではないので画面側が持つ */
+  checkinResultCheckedIn: "出席 記録済み（本人確認済み）",
+  checkinResultManualDone: "出席 記録済み（手動）",
+  checkinResultAlready: "出席済みです",
+  checkinResultNotConfirmed: "このイベントの確定参加者ではありません",
+  checkinResultUnknownUser: "登録されていないユーザーです",
+  checkinResultExpired:
+    "QRの有効期限が切れています。参加者に画面を更新してもらってください",
+  checkinManualWarning:
+    "本人確認チケットではありません。本人確認のうえ手動で記録してください",
+  checkinBackToScan: "スキャンに戻る",
+  checkinManualAttend: "手動で出席にする",
+
+  /* ── 入場QR (#154)。見出しは eventDetail.entranceQr ────────── */
+  entranceQrError:
+    "入場QRを取得できませんでした。参加が確定しているか確認してください。",
+  entranceQrAlt: "入場QRコード",
+  entranceQrHint: "受付でスタッフに読み取ってもらってください",
+  entranceQrRemaining: "QRコードは自動的に更新されます（有効期限 残り {{time}}）",
+
+  /* ── 申込者の管理 (#286) ───────────────────────────────── */
+  slotAdminStaffOnly: "申込者の管理はスタッフ専用です。",
+  slotAdminTitle: "申込者の管理",
+  slotAdminIntro:
+    "参加枠ごとの申込者です。参加確定・キャンセル待ち・落選をここで切り替えられます。当日キャンセルが出たときにキャンセル待ちの人を確定にするのもこの画面です。",
+  slotNone: "参加枠がありません。",
+  slotFirstCome: "先着順",
+  slotLottery: "抽選",
+  slotOverCapacity: "定員超過",
+  /** 枠の要約。区切りは common.dotSeparator で画面側がつなぐ */
+  slotConfirmedOfCapacity: "確定 {{n}} / 定員 {{capacity}}",
+  slotWonOfCapacity: "当選 {{n}} / 定員 {{capacity}}",
+  slotApplicantCount: "申込 {{n}} 人",
+  slotApplicantsCount: "申込 {{n}} 人",
+  slotWaitlistCount: "キャンセル待ち {{n}} 人",
+  slotDrawAt: "抽選日時 {{date}}",
+  slotDraw: "自動抽選（申込中 {{applied}} → 定員 {{capacity}}）",
+  slotNoApplicants: "まだ申込者がいません。",
+  /** 同じ confirmed でも、抽選枠なら「当選」、先着枠なら「参加確定」と読むほうが
+   *  自然なので枠の方式で言い分ける。「キャンセル待ち」「落選」は
+   *  eventDetail.statusWaitlist / statusLost と同じ文言なのでここには持たない */
+  statusWon: "当選",
+  statusFirstComeConfirmed: "参加確定",
+  statusApplying: "申込中",
+  slotOverCapacityConfirm:
+    "{{slot}}は定員 {{capacity}} 人に対して既に {{confirmed}} 人が確定しています。{{name}} さんを確定にすると定員を超えます。よろしいですか？",
+  slotStatusChangeFailed:
+    "{{name}} さんの参加状態を変更できませんでした。画面を開いたまま状態が変わった可能性があります",
+
+  /* ── 自分宛の運営への招待 (#339) ────────────────────────── */
+  myInvitesTitle: "運営への招待",
+  myInvitesIntro:
+    "承諾すると、そのイベントの運営として準備や当日の操作ができるようになります。断ることもできます。",
+  myInvitesEmpty: "返事待ちの招待はありません。",
+  invitePreRelease: "公開前",
+  inviteScheduleTbd: "開催日時は調整中",
+  inviteFrom: "{{name}} さんからの招待",
+  inviteDraftNotice:
+    "このイベントはまだ公開されていません。承諾すると内容を見て、準備を一緒に進められます。",
+  inviteSlotWarning:
+    "いま申し込んでいる参加枠は外れます。運営は参加枠を使わずに参加するためで、あとから運営を降りても申し込みは戻りません（先着枠は他の人が繰り上がります）。",
+  inviteSlotNote:
+    "すでに参加を申し込んでいる場合、参加枠は外れて運営として参加します。",
+  inviteAccept: "承諾して運営になる",
+  inviteDecline: "断る",
+  inviteDeclineConfirm: "「{{title}}」の運営への招待を断りますか？",
+
+  /* ── イベント側の招待カード (#339) ─────────────────────── */
+  inviteStaffTitle: "運営に招く",
+  inviteStaffIntro:
+    "指名して招待します。相手が承諾すると運営になり、公開前でも一緒に準備できます。承諾するまでは運営ではありません。",
+  inviteStaffField: "名前かユーザー名で招待",
+  inviteStaffPlaceholder: "例: example_user",
+  inviteStaffSend: "招待",
+  inviteStaffEmpty: "招待はまだありません。",
+  inviteStaffBy: "招待: {{name}}",
+  /** 送った招待を取り下げる操作。状態の「取り消し」(staffInviteStatus.revoked)
+   *  とは別物（あちらは済んだ状態、こちらはこれから押すボタン） */
+  inviteStaffRevoke: "取り消し",
+  inviteStaffRemoveRow: "一覧から消す",
+  /** 入力候補の見出し。候補の出どころは英字のキーで持ち、表示のたびに訳す */
+  inviteCandidateMembers: "このイベントの参加者",
+  inviteCandidateFollowing: "フォロー中",
+  /** 理由コードが表に無いときの受け皿。コード別の文言は staffInviteError */
+  inviteErrorDefault: "処理できませんでした。時間をおいて試してください。",
+
+  /* ── 一斉連絡 (#172)。見出しは eventDetail.broadcast ────────── */
+  broadcastStaffOnly: "一斉連絡はスタッフ専用です。",
+  broadcastIntro:
+    "送信先の区分を選んでお知らせを送ります。アプリ内のお知らせはすぐに届きます。メールは順番に送るため、送りきるまで1時間あたり{{perHour}}通ほどのペースになります（100人なら{{eta100}}、300人なら{{eta300}}）。他のイベントの一斉連絡と同時に送信待ちがあるときは、順番を分け合うためさらに時間がかかることがあります。急ぎの連絡はアプリ内のお知らせが先に届きます。",
+  broadcastSegmentField: "送信先",
+  broadcastSegmentOption: "{{label}}（{{n}} 人）",
+  broadcastCountNote:
+    "人数は実際に届く人数です。送ったものはこのページの履歴で読めるので、自分あてには届きません。",
+  broadcastTitleHelp: "お知らせの見出しになります",
+  broadcastBodyField: "本文",
+  broadcastBodyHelp: "送信後は取り消せません",
+  broadcastNoUndoWarning:
+    "送信後は取り消せません。届いたお知らせやメールを消すことはできません。",
+  broadcastConfirmOpen: "送信内容を確認",
+  broadcastRemaining:
+    "今日はあと {{today}} 回 ／ このイベントで通算あと {{total}} 回 送れます",
+  /** 上限に達したときの案内。24時間の上限は「送る前の注意」と「断られた理由」で
+   *  同じ文なので1つのキーを両方から引く */
+  broadcastLimitTotalNotice:
+    "このイベントで送れる回数（通算）を使い切りました。時間をおいても増えません。",
+  broadcastLimitDayNotice:
+    "24時間あたりの送信回数の上限に達しました。いちばん古い送信から24時間が過ぎると、また送れるようになります。",
+  broadcastLimitTotalError:
+    "このイベントで送れる回数を使い切りました。時間をおいても増えません。どうしても必要な場合は運営にお問い合わせください。",
+  broadcastSendFailed: "送信できませんでした。時間をおいて試してください。",
+  broadcastRetryFailed: "送り直せませんでした。時間をおいて試してください。",
+  /** 送信履歴 */
+  broadcastHistoryTitle: "送信履歴",
+  broadcastHistoryNote: "この一覧はスタッフだけが見られます。",
+  broadcastHistoryEmpty: "まだ送信していません。",
+  broadcastIncompleteChip: "一部のみ送信",
+  broadcastSentToOne: "{{n}} 人へ",
+  broadcastSentTo: "{{n}} 人へ",
+  broadcastIncompleteNotice:
+    "途中で失敗したため、この人数までにしかお知らせが届いていません。同じ内容をもう一度送ると、すでに届いている人には2通届きます。",
+  /** メールの送信状況 */
+  broadcastEmailNone: "メールの宛先はありません（アプリ内のお知らせのみ）",
+  broadcastEmailPending: "送信待ち {{n}}",
+  broadcastEmailSent: "送信済み {{n}}",
+  broadcastEmailFailed: "失敗 {{n}}",
+  broadcastEmailSkipped: "対象外 {{n}}",
+  broadcastRetryOne: "失敗した {{n}} 件を送り直す",
+  broadcastRetry: "失敗した {{n}} 件を送り直す",
+  broadcastRetryNote:
+    "送り直しても、すでに届いた人にもう1通増えることはありません。送信回数も消費しません。",
+  /** 送信前の確認 */
+  broadcastConfirmTitle: "この内容で送信します",
+  broadcastConfirmWarning:
+    "送信後は取り消せません。送る相手と人数を確かめてください。",
+  broadcastConfirmEmpty:
+    "いまこの区分に当てはまる人はいません。送信しても誰にも届きません。",
+  broadcastConfirmCancel: "やめる",
+  broadcastSendOne: "{{n}} 人に送信する",
+  broadcastSend: "{{n}} 人に送信する",
+  /** 送信できたときの報告。画面側が順につないで1文にする */
+  broadcastSentOne: "{{n}} 人にお知らせを送りました。",
+  broadcastSent: "{{n}} 人にお知らせを送りました。",
+  broadcastSentEmailOne:
+    "そのうちメールを受け取る設定の {{n}} 人には、順にメールも届きます（送りきるまで{{eta}}ほどかかります）。",
+  broadcastSentEmail:
+    "そのうちメールを受け取る設定の {{n}} 人には、順にメールも届きます（送りきるまで{{eta}}ほどかかります）。",
+  broadcastSentNoEmail: "メールの宛先はありませんでした。",
+  broadcastTruncated:
+    "なお、区分に当てはまる {{total}} 人のうち {{n}} 人までで打ち切りました。残りの人には届いていません。",
+  broadcastPartial:
+    "途中で失敗したため、{{n}} 人までにしかお知らせが届いていません。同じ内容をもう一度送ると、すでに届いている人には2通届きます。下の送信履歴で届いた人数を確かめてから、必要な場合だけ送り直してください。",
+  /** 区分どうしが重なることの注意。日本語はもとの定数が source */
+  segmentOverlapNote: BROADCAST_OVERLAP_NOTE,
+  /** メールを送りきるまでの見積もり。単位は略記にしてあるので単数・複数を分けない
+   *  （common.remainingHours と同じ書き方） */
+  etaMinutes: "約{{n}}分",
+  etaHours: "約{{n}}時間",
+  etaHoursMinutes: "約{{h}}時間{{m}}分",
+
+  /* ── 名札の印刷 (#304)。見出しは eventDetail.nameCards ──────── */
+  nameCardStaffOnly: "この画面はイベントのスタッフだけが使えます。",
+  nameCardLoadFailed: "名札の情報を取得できませんでした。",
+  nameCardIntro:
+    "A4に10面（91×55mm）で並べます。市販の名刺用紙や名札ケースに合う大きさです",
+  nameCardNoMembers: "参加が確定しているメンバーがまだいません。",
+  nameCardCountOneSheet: "{{selected}} 人 / {{all}} 人（A4 {{sheets}} 枚）",
+  nameCardCount: "{{selected}} 人 / {{all}} 人（A4 {{sheets}} 枚）",
+  nameCardSelectAll: "すべて選ぶ",
+  nameCardClearAll: "すべて外す",
+  nameCardPrint: "印刷する",
+  nameCardBuilding: "カードを作成しています（{{done}} / {{total}}）",
+  nameCardPeopleHeading: "印刷する人",
+  nameCardPrintCheckbox: "{{name}} を印刷する",
+  nameCardPreviewHeading: "刷り上がりのプレビュー",
+  nameCardPreviewNote:
+    "背景の色を出すには、印刷ダイアログで「背景のグラフィック」を有効にしてください",
+
+  /* ── アクセス統計 (#152 / #154)。見出しは eventDetail.stats ──── */
+  statsStaffOnly: "アクセス統計はスタッフ専用です。",
+  statsLoadFailed: "統計を取得できませんでした。",
+  statsRange7: "7日",
+  statsRange30: "30日",
+  statsRangeAll: "全期間",
+  statsViews: "表示回数 (PV)",
+  statsUniques: "ユニークビジター",
+  statsJoins: "参加登録数",
+  statsEmpty:
+    "まだアクセスがありません。公開してシェアすると、ここに流入元や推移が表示されます。",
+  statsSources: "流入元",
+  statsCountries: "国・地域",
+  statsDaily: "日別の推移",
+  statsLegendJoins: "参加登録",
+  statsDayTooltip:
+    "{{day}}  PV:{{views}} / ユニーク:{{uniques}} / 参加:{{joins}}",
+  statsNoData: "データなし",
+  /** 流入元のうち、サイトが自分で付ける印。外部サイトの名前（X・Facebook 等）は
+   *  どの言語でも同じ綴りなので画面側の表に残してある */
+  sourceDirect: "直接アクセス",
+  sourceInternal: "サイト内",
+  sourceNotification: "通知",
+  sourceFeed: "フィード",
+  sourceEmail: "メール",
+  sourceCard: "カード",
+  /** 事前アンケートの回答一覧 */
+  surveyTitle: "アンケート回答",
+  surveyRemind: "未回答者にお願い通知",
+  surveyRemindConfirm:
+    "未回答の確定参加者に「アンケート回答のお願い」通知を送りますか？",
+  surveyRemindedOne: "{{n}} 人に通知しました",
+  surveyReminded: "{{n}} 人に通知しました",
+  surveyRemindFailed: "送信に失敗しました",
+  surveyCsv: "CSVダウンロード",
+  surveyNote: "参加登録時のアンケート回答です（スタッフのみ閲覧できます）。",
+  surveyEmpty: "まだ回答がありません。",
+  surveyStatusColumn: "参加状態",
+  /** 参加状態の残り1つ。確定・キャンセル待ち・抽選申込中・落選は
+   *  eventDetail.status* と同じ文言なのでそちらを引く */
+  surveyStatusCanceled: "キャンセル",
+  surveyNotJoined: "未参加",
+  /** 出会い数ランキング */
+  meetRankingTitle: "出会いランキング",
+  meetRankingNote:
+    "「出会った！」の記録数です（スタッフのみ閲覧できます）。景品の参考にどうぞ。",
+} as const;
+
+const en: Record<keyof typeof ja, string> = {
+  backToEvent: "← Back to the event",
+  backToEventLink: "Back to the event",
+  loadFailed: "Could not load this.",
+  attendanceCsv: "Attendance CSV",
+  personCount: "{{n}} person",
+  peopleCount: "{{n}} people",
+
+  checkinStaffOnly: "The QR check-in desk is for organizers only.",
+  checkinCameraError:
+    "Could not start the camera. Allow camera access in your browser's site settings, then reload the page.",
+  checkinHint:
+    "Hold the participant's entry QR code, or the QR code on their profile card, inside the frame. An entry QR code counts as verified and checks them in automatically.",
+  checkinLogHeading: "Check-in log (last {{n}})",
+  checkinLogUndone: "Undone",
+  checkinLogCheckedIn: "Attended (verified)",
+  checkinLogAlready: "Already attended",
+  checkinLogNotConfirmed: "Not a confirmed participant",
+  checkinLogManual: "Attended (manual)",
+  checkinWrongEvent: "This entry QR code belongs to a different event.",
+  checkinInvalidQr: "This QR code is not valid.",
+  checkinNotOurQr: "This is not a check-in QR code for this event.",
+  checkinLookupFailed: "Could not look this person up.",
+  checkinUndoFailed: "Could not undo that.",
+  checkinManualNotConfirmed:
+    "Only confirmed participants can be marked as attended.",
+  checkinManualFailed: "Could not record the attendance.",
+  checkinResultCheckedIn: "Checked in (verified)",
+  checkinResultManualDone: "Checked in (manual)",
+  checkinResultAlready: "Already checked in",
+  checkinResultNotConfirmed: "Not a confirmed participant of this event",
+  checkinResultUnknownUser: "This user is not registered",
+  checkinResultExpired:
+    "This QR code has expired. Ask them to refresh their screen.",
+  checkinManualWarning:
+    "This is not a verified entry ticket. Check who they are, then record it by hand.",
+  checkinBackToScan: "Back to scanning",
+  checkinManualAttend: "Mark as attended",
+
+  entranceQrError:
+    "Could not get your entry QR code. Check that your registration is confirmed.",
+  entranceQrAlt: "Entry QR code",
+  entranceQrHint: "Show this to an organizer at the check-in desk.",
+  entranceQrRemaining:
+    "This QR code refreshes itself (expires in {{time}})",
+
+  slotAdminStaffOnly: "Managing applicants is for organizers only.",
+  slotAdminTitle: "Applicants",
+  slotAdminIntro:
+    "These are the applicants for each participation slot. You can confirm people, move them to the waiting list, or mark them as not selected. This is also where you promote someone from the waiting list when a seat opens up on the day.",
+  slotNone: "This event has no participation slots.",
+  slotFirstCome: "First come",
+  slotLottery: "Lottery",
+  slotOverCapacity: "Over capacity",
+  slotConfirmedOfCapacity: "Confirmed {{n}} / {{capacity}}",
+  slotWonOfCapacity: "Selected {{n}} / {{capacity}}",
+  slotApplicantCount: "{{n}} applicant",
+  slotApplicantsCount: "{{n}} applicants",
+  slotWaitlistCount: "{{n}} waitlisted",
+  slotDrawAt: "Draw at {{date}}",
+  slotDraw: "Run the lottery ({{applied}} applied → {{capacity}} seats)",
+  slotNoApplicants: "No applicants yet.",
+  statusWon: "Selected",
+  statusFirstComeConfirmed: "Confirmed",
+  statusApplying: "Applied",
+  slotOverCapacityConfirm:
+    "{{slot}} has {{capacity}} seats and {{confirmed}} people are already confirmed. Confirming {{name}} will go over capacity. Continue?",
+  slotStatusChangeFailed:
+    "Could not change the status for {{name}}. It may have changed while this page was open.",
+
+  myInvitesTitle: "Organizer invitations",
+  myInvitesIntro:
+    "Once you accept, you can help prepare the event and run it on the day. You can also decline.",
+  myInvitesEmpty: "You have no invitations waiting for a reply.",
+  invitePreRelease: "Not published",
+  inviteScheduleTbd: "The date is still being decided",
+  inviteFrom: "Invitation from {{name}}",
+  inviteDraftNotice:
+    "This event is not published yet. Accepting lets you see it and help get it ready.",
+  inviteSlotWarning:
+    "You will lose the participation slot you signed up for. Organizers take part without using a slot, and stepping down later does not bring your sign-up back (on first-come slots, someone else moves up right away).",
+  inviteSlotNote:
+    "If you have already signed up, your slot is released and you take part as an organizer.",
+  inviteAccept: "Accept and become an organizer",
+  inviteDecline: "Decline",
+  inviteDeclineConfirm: "Decline the invitation to help organize “{{title}}”?",
+
+  inviteStaffTitle: "Invite organizers",
+  inviteStaffIntro:
+    "Invite someone by name. They become an organizer once they accept, and can then help you prepare even before the event is published. Until they accept, they are not an organizer.",
+  inviteStaffField: "Invite by name or username",
+  inviteStaffPlaceholder: "e.g. example_user",
+  inviteStaffSend: "Invite",
+  inviteStaffEmpty: "No invitations yet.",
+  inviteStaffBy: "Invited by {{name}}",
+  inviteStaffRevoke: "Revoke",
+  inviteStaffRemoveRow: "Remove from the list",
+  inviteCandidateMembers: "Taking part in this event",
+  inviteCandidateFollowing: "People you follow",
+  inviteErrorDefault: "Something went wrong. Please try again later.",
+
+  broadcastStaffOnly: "Announcements are for organizers only.",
+  broadcastIntro:
+    "Choose who to reach and send them an announcement. In-app notifications arrive right away. Emails go out in batches at roughly {{perHour}} per hour, so a full run takes {{eta100}} for 100 people and {{eta300}} for 300. When other events have announcements queued at the same time, the queue is shared and it can take longer. For anything urgent, the in-app notification gets there first.",
+  broadcastSegmentField: "Recipients",
+  broadcastSegmentOption: "{{label}} ({{n}})",
+  broadcastCountNote:
+    "The number shown is how many people will actually receive it. You can read what you sent in the history on this page, so it is not sent to you.",
+  broadcastTitleHelp: "This becomes the headline of the announcement.",
+  broadcastBodyField: "Message",
+  broadcastBodyHelp: "You cannot take this back once it is sent.",
+  broadcastNoUndoWarning:
+    "You cannot take this back once it is sent. Notifications and emails that have arrived cannot be deleted.",
+  broadcastConfirmOpen: "Review before sending",
+  broadcastRemaining:
+    "{{today}} more today / {{total}} more in total for this event",
+  broadcastLimitTotalNotice:
+    "You have used up every announcement for this event. Waiting does not give you more.",
+  broadcastLimitDayNotice:
+    "You have reached the limit for the last 24 hours. You can send again once 24 hours have passed since your oldest announcement.",
+  broadcastLimitTotalError:
+    "You have used up every announcement for this event. Waiting does not give you more. If you really need another one, please contact support.",
+  broadcastSendFailed: "Could not send this. Please try again later.",
+  broadcastRetryFailed: "Could not resend these. Please try again later.",
+  broadcastHistoryTitle: "Sent announcements",
+  broadcastHistoryNote: "Only organizers can see this list.",
+  broadcastHistoryEmpty: "You have not sent anything yet.",
+  broadcastIncompleteChip: "Partly sent",
+  broadcastSentToOne: "to {{n}} person",
+  broadcastSentTo: "to {{n}} people",
+  broadcastIncompleteNotice:
+    "Sending failed part way through, so only this many people received it. If you send the same thing again, everyone who already got it will receive a second copy.",
+  broadcastEmailNone: "No email recipients (in-app notifications only)",
+  broadcastEmailPending: "Queued {{n}}",
+  broadcastEmailSent: "Sent {{n}}",
+  broadcastEmailFailed: "Failed {{n}}",
+  broadcastEmailSkipped: "Skipped {{n}}",
+  broadcastRetryOne: "Resend {{n}} failed email",
+  broadcastRetry: "Resend {{n}} failed emails",
+  broadcastRetryNote:
+    "Resending never gives a second copy to anyone who already received it, and it does not use up another announcement.",
+  broadcastConfirmTitle: "Send this announcement",
+  broadcastConfirmWarning:
+    "You cannot take this back once it is sent. Check who it goes to and how many people that is.",
+  broadcastConfirmEmpty:
+    "Nobody matches this group right now, so sending it would reach no one.",
+  broadcastConfirmCancel: "Cancel",
+  broadcastSendOne: "Send to {{n}} person",
+  broadcastSend: "Send to {{n}} people",
+  broadcastSentOne: "The announcement was sent to {{n}} person.",
+  broadcastSent: "The announcement was sent to {{n}} people.",
+  broadcastSentEmailOne:
+    "{{n}} of them has email turned on and will get it by email as well (about {{eta}} to send them all).",
+  broadcastSentEmail:
+    "{{n}} of them have email turned on and will get it by email as well (about {{eta}} to send them all).",
+  broadcastSentNoEmail: "There were no email recipients.",
+  broadcastTruncated:
+    "Note that {{total}} people matched this group, but sending stopped after {{n}}. The rest did not receive it.",
+  broadcastPartial:
+    "Sending failed part way through, so only {{n}} people received the announcement. If you send the same thing again, everyone who already got it will receive a second copy. Check how many people it reached in the history below, and only resend if you need to.",
+  segmentOverlapNote:
+    "The groups overlap: people selected in the lottery are also in “Confirmed”, and organizers, judges and viewers are also in “Checked in”. If you send to two groups one after the other, anyone in both receives two copies.",
+  etaMinutes: "about {{n}} min",
+  etaHours: "about {{n}} h",
+  etaHoursMinutes: "about {{h}} h {{m}} min",
+
+  nameCardStaffOnly: "This page is only for the organizers of this event.",
+  nameCardLoadFailed: "Could not load the name card data.",
+  nameCardIntro:
+    "Ten cards per A4 sheet (91 × 55 mm), sized to fit off-the-shelf business card stock and badge holders",
+  nameCardNoMembers: "Nobody has a confirmed registration yet.",
+  nameCardCountOneSheet: "{{selected}} of {{all}} people ({{sheets}} A4 sheet)",
+  nameCardCount: "{{selected}} of {{all}} people ({{sheets}} A4 sheets)",
+  nameCardSelectAll: "Select everyone",
+  nameCardClearAll: "Clear all",
+  nameCardPrint: "Print",
+  nameCardBuilding: "Building the cards ({{done}} / {{total}})",
+  nameCardPeopleHeading: "Who to print",
+  nameCardPrintCheckbox: "Print {{name}}",
+  nameCardPreviewHeading: "Print preview",
+  nameCardPreviewNote:
+    "To print the background colours, turn on “Background graphics” in the print dialog.",
+
+  statsStaffOnly: "Traffic stats are for organizers only.",
+  statsLoadFailed: "Could not load the stats.",
+  statsRange7: "7 days",
+  statsRange30: "30 days",
+  statsRangeAll: "All time",
+  statsViews: "Page views",
+  statsUniques: "Unique visitors",
+  statsJoins: "Registrations",
+  statsEmpty:
+    "No visits yet. Once you publish this event and share it, you will see where people come from and how traffic changes over time.",
+  statsSources: "Where people come from",
+  statsCountries: "Countries and regions",
+  statsDaily: "Day by day",
+  statsLegendJoins: "Sign-ups",
+  statsDayTooltip:
+    "{{day}}  views: {{views}} / unique: {{uniques}} / sign-ups: {{joins}}",
+  statsNoData: "No data",
+  sourceDirect: "Direct",
+  sourceInternal: "Within the site",
+  sourceNotification: "Notification",
+  sourceFeed: "Feed",
+  sourceEmail: "Email",
+  sourceCard: "Profile card",
+  surveyTitle: "Survey answers",
+  surveyRemind: "Remind people who have not answered",
+  surveyRemindConfirm:
+    "Send a “please answer the survey” notification to confirmed participants who have not answered yet?",
+  surveyRemindedOne: "Notified {{n}} person",
+  surveyReminded: "Notified {{n}} people",
+  surveyRemindFailed: "Could not send the notifications.",
+  surveyCsv: "Download CSV",
+  surveyNote:
+    "The answers people gave when they registered (organizers only).",
+  surveyEmpty: "No answers yet.",
+  surveyStatusColumn: "Status",
+  surveyStatusCanceled: "Canceled",
+  surveyNotJoined: "Not registered",
+  meetRankingTitle: "Meet ranking",
+  meetRankingNote:
+    "How many meets each person recorded (organizers only). Handy when handing out prizes.",
+};
+
+/**
+ * 運営スタッフの招待が断られた理由 (#339)。サーバーのエラーコードで引く表なので
+ * キーはコードそのもの。共通の `errors` より一歩踏み込んで、その場で直せる形で書く。
+ *
+ * ここに無いコードは `staffOps.inviteErrorDefault` に落ちる。
+ * 「返事待ちに戻せるか」のような**文言でない属性は持たない**。
+ */
+const inviteErrorJa = {
+  user_not_found:
+    "そのユーザー名の人が見つかりませんでした。プロフィールのユーザー名を確認してください。",
+  self_invite: "自分自身は招待できません。",
+  already_staff: "その人はすでに運営です。",
+  already_invited:
+    "その人にはすでに招待を送っています。返事を待つか、取り消してから送り直してください。",
+  inviter_not_staff:
+    "招待した人は、このイベントの運営ではなくなりました。必要なら別の運営から招待し直してもらってください。",
+  not_pending: "この招待はすでに返事が済んでいます。画面を更新してください。",
+  not_found: "対象が見つかりませんでした。画面を更新してください。",
+} as const;
+
+const inviteErrorEn: Record<keyof typeof inviteErrorJa, string> = {
+  user_not_found:
+    "No one with that username was found. Check the username on their profile.",
+  self_invite: "You cannot invite yourself.",
+  already_staff: "They are already an organizer.",
+  already_invited:
+    "You have already invited them. Wait for their reply, or revoke the invitation and send it again.",
+  inviter_not_staff:
+    "The person who invited you is no longer an organizer of this event. If you still want to join, ask another organizer to invite you again.",
+  not_pending: "This invitation has already been answered. Please reload.",
+  not_found: "That was not found. Please reload the page.",
+};
+
+/** 招待の状態。日本語はもとの定数 (`STAFF_INVITE_STATUS_LABELS`) が source */
+const inviteStatusEn: Record<StaffInviteStatus, string> = {
+  pending: "Waiting for a reply",
+  accepted: "Accepted",
+  declined: "Declined",
+  revoked: "Revoked",
+};
+
+/** 一斉連絡の送信先区分。日本語はもとの定数が source */
+const segmentEn: Record<BroadcastSegment, string> = {
+  all: "Everyone",
+  confirmed: "Confirmed",
+  waitlist: "Waiting list",
+  lottery_won: "Selected in the lottery",
+  lost: "Not selected",
+  staff: "Organizers",
+  judge: "Judges",
+  observer: "Viewers",
+  attended: "Checked in",
+  not_attended: "Did not check in",
+};
+
+/** 区分が誰を指すかの補足。日本語はもとの定数が source */
+const segmentNoteEn: Record<BroadcastSegment, string> = {
+  all: "Everyone involved in this event except people who cancelled or were not selected. That includes organizers, judges and viewers, as well as anyone on the waiting list or waiting for the lottery.",
+  confirmed:
+    "Participants whose registration is confirmed, including everyone selected in the lottery. Organizers, judges and viewers are not included.",
+  waitlist:
+    "Participants on the waiting list because the first-come slot was full.",
+  lottery_won:
+    "Participants selected in a lottery slot. They are also part of “Confirmed”, so sending to both means two copies.",
+  lost: "Participants who were not selected and are still not taking part. This also covers lottery slots you removed later, and people you marked as not selected on a first-come slot. They are not part of “Everyone”.",
+  staff: "Organizers of this event (except those who stepped down).",
+  judge: "Judges for this event (except those who stepped down).",
+  observer: "Viewers of this event (except those who cancelled).",
+  attended:
+    "People checked in at the desk. Not only participants — organizers, judges and viewers who came through check-in are included too.",
+  not_attended:
+    "Participants who were confirmed but have no check-in record. At events that do not use check-in, every confirmed participant lands here.",
+};
+
+export const staffOps = { ja, en };
+export const staffInviteError = { ja: inviteErrorJa, en: inviteErrorEn };
+export const staffInviteStatus = {
+  ja: STAFF_INVITE_STATUS_LABELS,
+  en: inviteStatusEn,
+};
+export const broadcastSegment = {
+  ja: BROADCAST_SEGMENT_LABELS,
+  en: segmentEn,
+};
+export const broadcastSegmentNote = {
+  ja: BROADCAST_SEGMENT_NOTES,
+  en: segmentNoteEn,
+};

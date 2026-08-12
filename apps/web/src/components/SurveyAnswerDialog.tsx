@@ -17,6 +17,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import type { SurveyQuestion } from "@eventer/shared";
 import { parseCheckboxValue } from "@eventer/shared";
 import {
@@ -31,7 +32,7 @@ export function SurveyAnswerDialog({
   open,
   onClose,
   onSubmitted,
-  submitLabel = "回答して参加する",
+  submitLabel,
 }: {
   eventId: string;
   questions: SurveyQuestion[];
@@ -41,6 +42,7 @@ export function SurveyAnswerDialog({
   onSubmitted?: () => void;
   submitLabel?: string;
 }) {
+  const { t } = useTranslation();
   const { data: myAnswers } = useMySurveyAnswers(eventId, open);
   const submit = useSubmitSurveyAnswers(eventId);
   // questionId → 値（checkbox は string[]、それ以外は string）
@@ -97,10 +99,10 @@ export function SurveyAnswerDialog({
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>参加アンケート</DialogTitle>
+      <DialogTitle>{t("eventForm.surveyHeading")}</DialogTitle>
       <DialogContent>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
-          回答はこのイベントのスタッフだけが閲覧できます。
+          {t("eventForm.surveyAnswerNotice")}
         </Typography>
         <Stack spacing={2.5}>
           {questions.map((q) => {
@@ -127,7 +129,7 @@ export function SurveyAnswerDialog({
                   </RadioGroup>
                   {error && (
                     <Typography variant="caption" color="error">
-                      選択してください
+                      {t("eventForm.surveySelectRequired")}
                     </Typography>
                   )}
                 </FormControl>
@@ -162,7 +164,7 @@ export function SurveyAnswerDialog({
                   </FormGroup>
                   {error && (
                     <Typography variant="caption" color="error">
-                      1つ以上選択してください
+                      {t("eventForm.surveyCheckRequired")}
                     </Typography>
                   )}
                 </FormControl>
@@ -178,27 +180,29 @@ export function SurveyAnswerDialog({
                   setValues((v) => ({ ...v, [q.id]: e.target.value }))
                 }
                 error={error}
-                helperText={error ? "入力してください" : undefined}
+                helperText={
+                  error ? t("eventForm.surveyInputRequired") : undefined
+                }
                 inputProps={{ maxLength: 500 }}
                 fullWidth
               />
             );
           })}
           {submit.isError && (
-            <Alert severity="error">回答の送信に失敗しました。</Alert>
+            <Alert severity="error">{t("eventForm.surveySubmitError")}</Alert>
           )}
         </Stack>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={submit.isPending}>
-          キャンセル
+          {t("common.cancel")}
         </Button>
         <Button
           variant="contained"
           onClick={handleSubmit}
           disabled={submit.isPending}
         >
-          {submitLabel}
+          {submitLabel ?? t("eventDetail.surveySubmitJoin")}
         </Button>
       </DialogActions>
     </Dialog>

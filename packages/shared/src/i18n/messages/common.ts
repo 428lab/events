@@ -31,6 +31,16 @@ const ja = {
   retry: "もう一度",
   search: "検索",
 
+  /** 並べ替えの矢印ボタン (#363)。参加枠・事前アンケート・スケジュールの
+   *  どれも同じ言い方なので、領域ごとに持たせない */
+  moveUp: "上へ移動",
+  moveDown: "下へ移動",
+
+  /** 直前の操作を取り消す (#363)。QR受付と出会いの記録の両方から引く */
+  undo: "取り消す",
+  /** 件名の入力欄 (#363)。問い合わせと一斉連絡の両方から引く */
+  subject: "件名",
+
   /** シェアボタン (#357)。イベント・たまご・プロフィールのどこからでも使う */
   share: "シェア",
   shareCopy: "シェアリンクをコピー",
@@ -64,6 +74,12 @@ const en: Record<keyof typeof ja, string> = {
   back: "Back",
   retry: "Try again",
   search: "Search",
+
+  moveUp: "Move up",
+  moveDown: "Move down",
+
+  undo: "Undo",
+  subject: "Subject",
 
   share: "Share",
   shareCopy: "Copy the share link",

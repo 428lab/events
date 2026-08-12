@@ -51,7 +51,7 @@ export function InquiriesPage() {
           <CardContent>
             <Stack spacing={2}>
               <CounterTextField
-                label={t("inquiries.subject")}
+                label={t("common.subject")}
                 value={subject}
                 max={200}
                 onChange={(e) => setSubject(e.target.value)}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Box, Chip, Stack, Tab, Tabs, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
+import { useTranslation } from "react-i18next";
 import type { TimetableEntry, TimetableLayout } from "../lib/timetableLayout.js";
 import { entriesForTrack } from "../lib/timetableLayout.js";
 import { formatTime } from "../lib/format.js";
@@ -17,6 +18,7 @@ export function TimetableTrackTabs({
   layout: TimetableLayout;
   colors: string[];
 }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState(0);
   const { tracks } = layout;
   if (tracks.length === 0) return null;
@@ -32,7 +34,7 @@ export function TimetableTrackTabs({
         variant={tracks.length <= 3 ? "fullWidth" : "scrollable"}
         scrollButtons="auto"
         allowScrollButtonsMobile
-        aria-label="トラックを選ぶ"
+        aria-label={t("schedule.chooseTrack")}
         sx={{ borderBottom: 1, borderColor: "divider", minHeight: 42 }}
       >
         {tracks.map((track, i) => (
@@ -78,11 +80,11 @@ export function TimetableTrackTabs({
         color="text.secondary"
         sx={{ display: "block", mt: 1 }}
       >
-        全トラック共通のセッションは、どのトラックにも表示されます。
+        {t("schedule.allTracksNote")}
       </Typography>
       {entries.length === 0 ? (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          このトラックのセッションはまだありません。
+          {t("schedule.trackEmpty")}
         </Typography>
       ) : (
         <Box sx={{ mt: 1 }}>
@@ -97,6 +99,7 @@ export function TimetableTrackTabs({
 
 /** 縦一覧の1行。時刻・内容・担当の並びは既存の一覧に合わせる */
 function TimetableRow({ entry }: { entry: TimetableEntry }) {
+  const { t } = useTranslation();
   const it = entry.item;
   return (
     <Stack
@@ -110,7 +113,7 @@ function TimetableRow({ entry }: { entry: TimetableEntry }) {
         </Typography>
         {it.durationMin > 0 && (
           <Typography variant="caption" color="text.secondary">
-            {it.durationMin}分
+            {t("schedule.durationMin", { n: it.durationMin })}
           </Typography>
         )}
       </Box>
@@ -130,11 +133,11 @@ function TimetableRow({ entry }: { entry: TimetableEntry }) {
           {entry.common && (
             <Chip
               size="small"
-              label="全トラック共通"
+              label={t("schedule.allTracks")}
               sx={{
                 height: 17,
                 fontSize: "0.65rem",
-                bgcolor: (t) => alpha(t.palette.text.primary, 0.14),
+                bgcolor: (theme) => alpha(theme.palette.text.primary, 0.14),
               }}
             />
           )}

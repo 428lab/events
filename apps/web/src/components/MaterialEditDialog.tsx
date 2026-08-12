@@ -8,6 +8,7 @@ import {
   DialogTitle,
   TextField,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import type { ScheduleItem } from "@eventer/shared";
 import { useUpdateScheduleMaterial } from "../api/eventScheduleHooks.js";
 
@@ -22,6 +23,7 @@ export function MaterialEditDialog({
   item: ScheduleItem;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [url, setUrl] = useState(item.materialUrl);
   const save = useUpdateScheduleMaterial(eventId, item.id);
 
@@ -32,10 +34,10 @@ export function MaterialEditDialog({
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>登壇資料URL</DialogTitle>
+      <DialogTitle>{t("eventForm.materialUrlTitle")}</DialogTitle>
       <DialogContent>
         <TextField
-          label="資料URL（Speaker Deck / Googleスライド / デッキ等）"
+          label={t("eventForm.materialUrlLabel")}
           size="small"
           type="url"
           value={url}
@@ -43,8 +45,8 @@ export function MaterialEditDialog({
           error={invalid}
           helperText={
             invalid
-              ? "http(s):// で始まるURLを入力してください"
-              : "空にすると資料リンクを外せます"
+              ? t("eventForm.materialUrlInvalid")
+              : t("eventForm.materialUrlHelp")
           }
           inputProps={{ maxLength: 500 }}
           fullWidth
@@ -53,13 +55,13 @@ export function MaterialEditDialog({
         />
         {save.isError && (
           <Alert severity="error" sx={{ mt: 1 }}>
-            資料URLの保存に失敗しました。
+            {t("eventForm.materialSaveError")}
           </Alert>
         )}
       </DialogContent>
       <DialogActions>
         <Button size="small" onClick={onClose} disabled={save.isPending}>
-          キャンセル
+          {t("common.cancel")}
         </Button>
         <Button
           size="small"
@@ -67,7 +69,7 @@ export function MaterialEditDialog({
           onClick={submit}
           disabled={invalid || save.isPending}
         >
-          保存
+          {t("common.save")}
         </Button>
       </DialogActions>
     </Dialog>

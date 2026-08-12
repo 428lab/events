@@ -24,7 +24,6 @@ const ja = {
   signIn: "ログインする",
   backToTop: "トップへ戻る",
   undone: "記録を取り消しました",
-  undo: "取り消す",
   undoFailed: "取り消しに失敗しました。もう一度お試しください",
   /** 受付が済んだのが自分か相手かで案内を分ける（1つに潰さないこと） */
   attendedMe: "あなたの受付（出席）も一緒に済ませました",
@@ -40,7 +39,6 @@ const en: Record<keyof typeof ja, string> = {
   signIn: "Sign in",
   backToTop: "Back to home",
   undone: "This record has been undone.",
-  undo: "Undo",
   undoFailed: "Could not undo. Please try again.",
   attendedMe: "You have been checked in at the same time.",
   attendedTarget: "{{name}} has been checked in as well.",

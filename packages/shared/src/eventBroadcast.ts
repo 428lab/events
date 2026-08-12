@@ -86,15 +86,8 @@ export function broadcastEmailMinutes(count: number): number {
   return Math.max(1, Math.ceil((count / BROADCAST_EMAILS_PER_HOUR) * 60));
 }
 
-/** 所要時間の日本語表記（「約25分」「約1時間15分」）。切り上げた概算 */
-export function formatBroadcastEmailEta(count: number): string {
-  const min = broadcastEmailMinutes(count);
-  if (min <= 0) return "";
-  if (min < 60) return `約${min}分`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m === 0 ? `約${h}時間` : `約${h}時間${m}分`;
-}
+// 所要時間の表記は辞書 (`staffOps.eta*`) が持ち、画面が組み立てる (#363)。
+// ここに日本語の表記を戻すと、同じ言い回しが2か所に増えて英語で訳せなくなる。
 
 /** 1イベントあたり直近24時間の送信回数の上限。
  * 一斉連絡は取り消せず全員に届くので、乗っ取られたときの被害を時間で頭打ちにする */

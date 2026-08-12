@@ -1,12 +1,19 @@
 import { Alert, AlertTitle, Button, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import type { ScheduleEditingUser } from "@eventer/shared";
+import { i18next } from "../i18n/index.js";
 
 /** 編集中の人の呼び方 (#340)。
  * 表示名が取れないとき（退会申請中など #250）は名前を出さずに言い換える。
  * 「◯◯さん」と「ほかの運営メンバー」を文の中で作り分けると同じ文が2つに
- * 分かれるので、呼び方だけをここで決めて文は1つにする */
+ * 分かれるので、呼び方だけをここで決めて文は1つにする。
+ *
+ * 部品ではないので `i18next.t` で引く。呼ぶ側の部品が `useTranslation` を
+ * 使っているので、言語を切り替えれば描き直される */
 export function editorLabel(editor: ScheduleEditingUser): string {
-  return editor.name ? `${editor.name}さん` : "ほかの運営メンバー";
+  return editor.name
+    ? i18next.t("schedule.editorNamed", { name: editor.name })
+    : i18next.t("schedule.editorOther");
 }
 
 /** 「◯◯さんが編集中」のお知らせ (#340)。
@@ -19,16 +26,13 @@ export function ScheduleEditingAlert({
 }: {
   editor: ScheduleEditingUser;
 }) {
+  const { t } = useTranslation();
   return (
     <Alert severity="info">
       <Typography variant="body2" fontWeight={600}>
-        {editorLabel(editor)}がいまタイムテーブルを編集しています。
+        {t("schedule.editingBy", { editor: editorLabel(editor) })}
       </Typography>
-      <Typography variant="body2">
-        このまま編集できますが、先に相手が保存すると、あとから保存したほうは
-        上書きを避けるために止まります。担当を分けるか、相手の保存を待ってから
-        保存してください。
-      </Typography>
+      <Typography variant="body2">{t("schedule.editingNote")}</Typography>
     </Alert>
   );
 }
@@ -43,17 +47,12 @@ export function ScheduleEditingAlert({
  * ここに読み込み直しのボタンは置かない。通信が一時的に切れただけなら
  * もう一度押すほうが早く、その人の編集を消してしまうのは行き過ぎになる */
 export function ScheduleSaveFailedAlert() {
+  const { t } = useTranslation();
   return (
     <Alert severity="error">
-      <AlertTitle>タイムテーブルを保存できませんでした</AlertTitle>
-      <Typography variant="body2">
-        通信の状態を確かめて、もう一度保存してください。
-      </Typography>
-      <Typography variant="body2">
-        それでも保存できないときは、この画面を開いてから時間が経ちすぎている
-        可能性があります。変えたかった箇所を控えてからページを読み込み直すと、
-        保存できるようになります。
-      </Typography>
+      <AlertTitle>{t("schedule.saveFailedTitle")}</AlertTitle>
+      <Typography variant="body2">{t("schedule.saveFailedBody")}</Typography>
+      <Typography variant="body2">{t("schedule.saveFailedStale")}</Typography>
     </Alert>
   );
 }
@@ -64,24 +63,19 @@ export function ScheduleSaveFailedAlert() {
  * 消えるので、**控えてから押す**ところまで案内しないと、案内どおりに
  * 押した人が編集内容を失う */
 export function ScheduleConflictAlert({ onReload }: { onReload: () => void }) {
+  const { t } = useTranslation();
   return (
     <Alert
       severity="warning"
       action={
         <Button color="inherit" size="small" onClick={onReload}>
-          最新を読み込む
+          {t("schedule.reloadLatest")}
         </Button>
       }
     >
-      <AlertTitle>ほかの人が先にタイムテーブルを更新しました</AlertTitle>
-      <Typography variant="body2">
-        あなたが編集を始めたあとに更新が入ったため、相手の変更を消さないよう
-        保存を中止しました。いまの編集内容はこの画面に残っています。
-      </Typography>
-      <Typography variant="body2">
-        変えたかった箇所を控えてから「最新を読み込む」を押し、最新の
-        タイムテーブルに入れ直してください。
-      </Typography>
+      <AlertTitle>{t("schedule.conflictTitle")}</AlertTitle>
+      <Typography variant="body2">{t("schedule.conflictBody")}</Typography>
+      <Typography variant="body2">{t("schedule.conflictHowTo")}</Typography>
     </Alert>
   );
 }

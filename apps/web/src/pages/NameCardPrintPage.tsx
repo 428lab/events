@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import PrintIcon from "@mui/icons-material/Print";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   CARDS_PER_SHEET,
   NAME_CARD_GAP_MM,
@@ -27,9 +28,10 @@ import {
   SHEET_MARGIN_Y_MM,
   SHEET_W_MM,
 } from "@eventer/shared";
-import type { EventNameCard, EventRole } from "@eventer/shared";
+import type { EventNameCard } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
 import { useEventNameCards } from "../api/nameCardHooks.js";
+import { roleLabel } from "../lib/format.js";
 import {
   LicenseCardSvg,
   toCardData,
@@ -52,13 +54,6 @@ import {
  *
  * 見た目は既存カードのまま。この画面が足すのは「誰を刷るか」の選択と面付けだけ。
  */
-
-const ROLE_LABEL: Record<EventRole, string> = {
-  participant: "参加者",
-  staff: "スタッフ",
-  judge: "審査員",
-  observer: "観覧者",
-};
 
 /** 一度に描き足す枚数。100人規模でも入力が固まらないよう小分けにする */
 const RENDER_STEP = 6;
@@ -259,6 +254,7 @@ function SheetInner({
 }
 
 export function NameCardPrintPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData, isLoading: eventLoading } = useEvent(id);
   // イベント配下の画面はサイト管理者かどうかを混ぜず、イベント内の役割だけで判定する
@@ -313,16 +309,12 @@ export function NameCardPrintPage() {
       return next;
     });
 
-  if (eventLoading) return <Typography>読み込み中…</Typography>;
+  if (eventLoading) return <Typography>{t("common.loading")}</Typography>;
   if (!isStaff) {
-    return (
-      <Alert severity="info">
-        この画面はイベントのスタッフだけが使えます。
-      </Alert>
-    );
+    return <Alert severity="info">{t("staffOps.nameCardStaffOnly")}</Alert>;
   }
   if (isError) {
-    return <Alert severity="error">名札の情報を取得できませんでした。</Alert>;
+    return <Alert severity="error">{t("staffOps.nameCardLoadFailed")}</Alert>;
   }
 
   return (
@@ -331,13 +323,13 @@ export function NameCardPrintPage() {
       <Stack spacing={2} className="name-card-controls">
         <Box>
           <Typography variant="h5" fontWeight={700}>
-            名札の印刷
+            {t("eventDetail.nameCards")}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            A4に10面（91×55mm）で並べます。市販の名刺用紙や名札ケースに合う大きさです
-            {" ・ "}
+            {t("staffOps.nameCardIntro")}
+            {t("common.dotSeparator")}
             <Link component={RouterLink} to={`/events/${id}`}>
-              イベントへ戻る
+              {t("staffOps.backToEventLink")}
             </Link>
           </Typography>
         </Box>
@@ -345,9 +337,7 @@ export function NameCardPrintPage() {
         {isLoading && <CircularProgress size={24} />}
 
         {!isLoading && all.length === 0 && (
-          <Alert severity="info">
-            参加が確定しているメンバーがまだいません。
-          </Alert>
+          <Alert severity="info">{t("staffOps.nameCardNoMembers")}</Alert>
         )}
 
         {all.length > 0 && (
@@ -360,16 +350,25 @@ export function NameCardPrintPage() {
               useFlexGap
             >
               <Typography variant="body2">
-                {selected.length} 人 / {all.length} 人（A4 {sheets.length} 枚）
+                {t(
+                  sheets.length === 1
+                    ? "staffOps.nameCardCountOneSheet"
+                    : "staffOps.nameCardCount",
+                  {
+                    selected: selected.length,
+                    all: all.length,
+                    sheets: sheets.length,
+                  },
+                )}
               </Typography>
               <Button size="small" onClick={() => setExcluded(new Set())}>
-                すべて選ぶ
+                {t("staffOps.nameCardSelectAll")}
               </Button>
               <Button
                 size="small"
                 onClick={() => setExcluded(new Set(all.map((c) => c.id)))}
               >
-                すべて外す
+                {t("staffOps.nameCardClearAll")}
               </Button>
               <Button
                 variant="contained"
@@ -377,7 +376,7 @@ export function NameCardPrintPage() {
                 disabled={selected.length === 0 || !ready}
                 onClick={() => window.print()}
               >
-                印刷する
+                {t("staffOps.nameCardPrint")}
               </Button>
             </Stack>
 
@@ -392,14 +391,17 @@ export function NameCardPrintPage() {
                   }
                 />
                 <Typography variant="caption" color="text.secondary">
-                  カードを作成しています（{visible.length} / {selected.length}）
+                  {t("staffOps.nameCardBuilding", {
+                    done: visible.length,
+                    total: selected.length,
+                  })}
                 </Typography>
               </Box>
             )}
 
             <Box>
               <Typography variant="subtitle2" gutterBottom>
-                印刷する人
+                {t("staffOps.nameCardPeopleHeading")}
               </Typography>
               <Box
                 sx={{
@@ -421,7 +423,9 @@ export function NameCardPrintPage() {
                         checked={!excluded.has(c.id)}
                         onChange={() => toggle(c.id)}
                         inputProps={{
-                          "aria-label": `${c.name} を印刷する`,
+                          "aria-label": t("staffOps.nameCardPrintCheckbox", {
+                            name: c.name,
+                          }),
                         }}
                       />
                     }
@@ -442,7 +446,7 @@ export function NameCardPrintPage() {
                           {c.name}
                         </Typography>
                         {c.role !== "participant" && (
-                          <Chip size="small" label={ROLE_LABEL[c.role]} />
+                          <Chip size="small" label={roleLabel(c.role)} />
                         )}
                       </Stack>
                     }
@@ -452,10 +456,10 @@ export function NameCardPrintPage() {
             </Box>
 
             <Typography variant="subtitle2">
-              刷り上がりのプレビュー
+              {t("staffOps.nameCardPreviewHeading")}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              背景の色を出すには、印刷ダイアログで「背景のグラフィック」を有効にしてください
+              {t("staffOps.nameCardPreviewNote")}
             </Typography>
           </>
         )}

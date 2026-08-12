@@ -12,6 +12,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import type { User } from "@eventer/shared";
 import { useMyTicket } from "../api/checkinHooks.js";
 
@@ -33,6 +34,7 @@ export function EntranceQrDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const { data: ticket, isError } = useMyTicket(eventId, open);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -67,7 +69,7 @@ export function EntranceQrDialog({
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>入場QR</DialogTitle>
+      <DialogTitle>{t("eventDetail.entranceQr")}</DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} alignItems="center">
           {/* 画面の QR が本人のものか受付が目視確認できるよう、アバターと名前も出す */}
@@ -84,9 +86,7 @@ export function EntranceQrDialog({
             </Typography>
           </Stack>
           {isError ? (
-            <Alert severity="warning">
-              入場QRを取得できませんでした。参加が確定しているか確認してください。
-            </Alert>
+            <Alert severity="warning">{t("staffOps.entranceQrError")}</Alert>
           ) : (
             <Box
               sx={{
@@ -103,7 +103,7 @@ export function EntranceQrDialog({
                 <Box
                   component="img"
                   src={qrUrl}
-                  alt="入場QRコード"
+                  alt={t("staffOps.entranceQrAlt")}
                   sx={{ width: "100%", height: "100%", display: "block" }}
                 />
               ) : (
@@ -112,18 +112,19 @@ export function EntranceQrDialog({
             </Box>
           )}
           <Typography variant="body2" align="center">
-            受付でスタッフに読み取ってもらってください
+            {t("staffOps.entranceQrHint")}
           </Typography>
           {remainSec !== null && (
             <Typography variant="caption" color="text.secondary" align="center">
-              QRコードは自動的に更新されます（有効期限 残り
-              {` ${Math.floor(remainSec / 60)}:${String(remainSec % 60).padStart(2, "0")}`}）
+              {t("staffOps.entranceQrRemaining", {
+                time: `${Math.floor(remainSec / 60)}:${String(remainSec % 60).padStart(2, "0")}`,
+              })}
             </Typography>
           )}
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>閉じる</Button>
+        <Button onClick={onClose}>{t("common.close")}</Button>
       </DialogActions>
     </Dialog>
   );

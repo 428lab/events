@@ -13,6 +13,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import { STAFF_INVITE_STATUS_LABELS } from "@eventer/shared";
 import type { StaffInvite } from "@eventer/shared";
 import { useEventMembers } from "../api/hooks.js";
@@ -23,6 +24,7 @@ import {
   useInviteStaff,
   useRevokeStaffInvite,
 } from "../api/staffInviteHooks.js";
+import { tDynamic } from "../i18n/index.js";
 
 /** 運営スタッフの招待 (#339)。そのイベントの運営にだけ出す。
  *
@@ -37,8 +39,16 @@ interface Candidate {
   username: string;
   label: string;
   avatarUrl: string | null;
-  source: string;
+  /** 出どころ。見出しの文言ではなく**英字のキー**で持ち、表示のたびに訳す */
+  source: CandidateSource;
 }
+
+type CandidateSource = "members" | "following";
+
+const CANDIDATE_SOURCE_KEY = {
+  members: "staffOps.inviteCandidateMembers",
+  following: "staffOps.inviteCandidateFollowing",
+} as const;
 
 /** 表示名でもユーザー名でも絞り込めるようにする */
 const CANDIDATE_FILTER = createFilterOptions<Candidate>({
@@ -46,6 +56,7 @@ const CANDIDATE_FILTER = createFilterOptions<Candidate>({
 });
 
 export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
+  const { t } = useTranslation();
   const { data: invites } = useEventStaffInvites(eventId, true);
   const { data: members } = useEventMembers(eventId, true);
   const { data: following } = useMyFollowing();
@@ -70,7 +81,7 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
         username: m.user.username,
         label: m.user.globalName ?? m.user.username,
         avatarUrl: m.user.avatarUrl,
-        source: "このイベントの参加者",
+        source: "members",
       });
     }
     for (const f of following ?? []) {
@@ -79,7 +90,7 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
         username: f.username,
         label: f.globalName ?? f.username,
         avatarUrl: f.avatarUrl,
-        source: "フォロー中",
+        source: "following",
       });
     }
     return [...byHandle.values()].filter((c) => !excluded.has(c.username));
@@ -97,10 +108,10 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          運営に招く
+          {t("staffOps.inviteStaffTitle")}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          指名して招待します。相手が承諾すると運営になり、公開前でも一緒に準備できます。承諾するまでは運営ではありません。
+          {t("staffOps.inviteStaffIntro")}
         </Typography>
         <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
           <Autocomplete
@@ -113,7 +124,7 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
             // 表示名で打つと候補が全部消える。ラベルが「名前かユーザー名」である
             // 以上、絞り込みも両方を見ること
             filterOptions={CANDIDATE_FILTER}
-            groupBy={(o) => o.source}
+            groupBy={(o) => t(CANDIDATE_SOURCE_KEY[o.source])}
             getOptionLabel={(o) => (typeof o === "string" ? o : o.username)}
             inputValue={handle}
             onInputChange={(_, v) => setHandle(v)}
@@ -139,8 +150,8 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="名前かユーザー名で招待"
-                placeholder="例: example_user"
+                label={t("staffOps.inviteStaffField")}
+                placeholder={t("staffOps.inviteStaffPlaceholder")}
                 slotProps={{ inputLabel: { shrink: true } }}
               />
             )}
@@ -151,7 +162,7 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
             onClick={send}
             sx={{ flexShrink: 0 }}
           >
-            招待
+            {t("staffOps.inviteStaffSend")}
           </Button>
         </Stack>
         {error && (
@@ -161,7 +172,7 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
         )}
         {!invites || invites.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            招待はまだありません。
+            {t("staffOps.inviteStaffEmpty")}
           </Typography>
         ) : (
           <Stack spacing={1}>
@@ -189,6 +200,7 @@ function InviteRow({
   eventId: string;
   invite: StaffInvite;
 }) {
+  const { t } = useTranslation();
   // 行ごとに持つ。1つを全行で共有すると、1件を取り消している間じゅう
   // 他の行のボタンまで無効になり、続けて操作できない
   const revoke = useRevokeStaffInvite(eventId);
@@ -214,19 +226,26 @@ function InviteRow({
           </Typography>
           {/* 誰が誰を招いたかが後から分かるようにする (#339) */}
           <Typography variant="caption" color="text.secondary" noWrap display="block">
-            招待: {by}
+            {t("staffOps.inviteStaffBy", { name: by })}
           </Typography>
         </Box>
         <Chip
           size="small"
           color={STATUS_COLOR[invite.status]}
           variant={invite.status === "pending" ? "filled" : "outlined"}
-          label={STAFF_INVITE_STATUS_LABELS[invite.status]}
+          label={tDynamic(
+            `staffInviteStatus.${invite.status}`,
+            STAFF_INVITE_STATUS_LABELS[invite.status],
+          )}
         />
         {removable && (
           <Chip
             size="small"
-            label={invite.status === "pending" ? "取り消し" : "一覧から消す"}
+            label={t(
+              invite.status === "pending"
+                ? "staffOps.inviteStaffRevoke"
+                : "staffOps.inviteStaffRemoveRow",
+            )}
             clickable
             disabled={revoke.isPending}
             onClick={() => {

@@ -16,11 +16,13 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { CheckinUser } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { api, ApiError } from "../api/client.js";
 import { lookupMember, postCheckin } from "../api/checkinHooks.js";
-import { dateLocale } from "../i18n/index.js";
+import { dateLocale, i18next } from "../i18n/index.js";
+import { errorCode, errorMessage } from "../lib/errorMessage.js";
 
 /**
  * QR受付（スタッフ用リーダー） (#154)。スマホでの利用が前提。
@@ -36,13 +38,10 @@ const HANDLE_RE = /^(?:[A-Za-z0-9_.-]{2,32}|[0-9a-fA-F-]{36})$/;
  * 照会から記録までの間に落選や取消に変わることがある。「失敗しました」だけだと
  * 受付でその人に何を案内すればよいか分からないので、理由が分かる文言にする */
 export function manualAttendErrorMessage(err: unknown): string {
-  const code =
-    err instanceof ApiError
-      ? (err.body as { error?: string } | null)?.error
-      : undefined;
-  return code === "not_confirmed"
-    ? "参加が確定している人だけ出席にできます"
-    : "出席の記録に失敗しました";
+  return errorMessage(err, {
+    not_confirmed: i18next.t("staffOps.checkinManualNotConfirmed"),
+    default: i18next.t("staffOps.checkinManualFailed"),
+  });
 }
 
 /** BarcodeDetector の最小型（TS の lib.dom にまだ無い） */
@@ -68,10 +67,24 @@ export interface Panel {
   user?: CheckinUser;
 }
 
+/** 受付ログの1行が何を記録したか。**訳した文字列ではなく種別を積む**。
+ * 文字列を積むと、途中で言語を切り替えたときに前の言語のまま残る */
+type LogKind = "checkedIn" | "already" | "notConfirmed" | "manual";
+
+const LOG_LABEL_KEY = {
+  checkedIn: "staffOps.checkinLogCheckedIn",
+  already: "staffOps.checkinLogAlready",
+  notConfirmed: "staffOps.checkinLogNotConfirmed",
+  manual: "staffOps.checkinLogManual",
+} as const;
+
+/** 受付ログに残す件数 */
+const LOG_MAX = 10;
+
 interface LogEntry {
   at: number;
   name: string;
-  label: string;
+  kind: LogKind;
   userId?: string;
   /** 出席記録した行は取り消せる */
   canUndo?: boolean;
@@ -79,6 +92,7 @@ interface LogEntry {
 }
 
 export function CheckinPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const isAdmin = useIsAdmin();
@@ -99,7 +113,7 @@ export function CheckinPage() {
   const noticeTimerRef = useRef<number | undefined>(undefined);
 
   const addLog = useCallback((entry: Omit<LogEntry, "at">) => {
-    setLog((prev) => [{ at: Date.now(), ...entry }, ...prev].slice(0, 10));
+    setLog((prev) => [{ at: Date.now(), ...entry }, ...prev].slice(0, LOG_MAX));
   }, []);
 
   /** 結果パネルを ms 後に閉じてスキャンを再開する */
@@ -128,38 +142,35 @@ export function CheckinPage() {
           setPanel({ kind: "checked_in", user: res.user });
           addLog({
             name: res.user.name,
-            label: "出席（本人確認済み）",
+            kind: "checkedIn",
             userId: res.user.id,
             canUndo: true,
           });
           scheduleResume(1500);
         } else if (res.result === "already") {
           setPanel({ kind: "already", user: res.user });
-          addLog({ name: res.user.name, label: "出席済み" });
+          addLog({ name: res.user.name, kind: "already" });
           scheduleResume(1500);
         } else {
           setPanel({ kind: "not_confirmed", user: res.user });
-          addLog({ name: res.user.name, label: "確定参加者ではない" });
+          addLog({ name: res.user.name, kind: "notConfirmed" });
           scheduleResume(2500);
         }
       } catch (err) {
         if (err instanceof ApiError && err.status === 410) {
           setPanel({ kind: "expired" });
           scheduleResume(2500);
-        } else if (
-          err instanceof ApiError &&
-          (err.body as { error?: string } | null)?.error === "wrong_event"
-        ) {
+        } else if (errorCode(err) === "wrong_event") {
           // 複数イベント会場での取り違えが分かるように区別して表示
-          flashNotice("別のイベントの入場QRです");
+          flashNotice(t("staffOps.checkinWrongEvent"));
           pausedRef.current = false;
         } else {
-          flashNotice("無効なQRコードです");
+          flashNotice(t("staffOps.checkinInvalidQr"));
           pausedRef.current = false;
         }
       }
     },
-    [id, addLog, scheduleResume, flashNotice],
+    [id, addLog, scheduleResume, flashNotice, t],
   );
 
   /** プロフィールQR → 照会のみ（出席記録は手動ボタン） */
@@ -173,22 +184,22 @@ export function CheckinPage() {
           scheduleResume(2000);
         } else if (!res.member || res.member.status !== "confirmed") {
           setPanel({ kind: "not_confirmed", user: res.user });
-          addLog({ name: res.user.name, label: "確定参加者ではない" });
+          addLog({ name: res.user.name, kind: "notConfirmed" });
           scheduleResume(2500);
         } else if (res.member.attended) {
           setPanel({ kind: "already", user: res.user });
-          addLog({ name: res.user.name, label: "出席済み" });
+          addLog({ name: res.user.name, kind: "already" });
           scheduleResume(1500);
         } else {
           // 手動記録の確認待ち。自動では閉じない
           setPanel({ kind: "manual", user: res.user });
         }
       } catch {
-        flashNotice("照会に失敗しました");
+        flashNotice(t("staffOps.checkinLookupFailed"));
         pausedRef.current = false;
       }
     },
-    [id, addLog, scheduleResume, flashNotice],
+    [id, addLog, scheduleResume, flashNotice, t],
   );
 
   /** プロフィールQR経由の手動出席記録 */
@@ -201,7 +212,7 @@ export function CheckinPage() {
         setPanel({ kind: "manual_done", user });
         addLog({
           name: user.name,
-          label: "出席（手動）",
+          kind: "manual",
           userId: user.id,
           canUndo: true,
         });
@@ -225,10 +236,10 @@ export function CheckinPage() {
           prev.map((e) => (e === entry ? { ...e, undone: true } : e)),
         );
       } catch {
-        flashNotice("取り消しに失敗しました");
+        flashNotice(t("staffOps.checkinUndoFailed"));
       }
     },
-    [id, flashNotice],
+    [id, flashNotice, t],
   );
 
   /** デコード結果の振り分け。3秒以内の同一QRは無視（連続発火防止） */
@@ -258,12 +269,12 @@ export function CheckinPage() {
         }
       }
       if (!handle || !HANDLE_RE.test(handle)) {
-        flashNotice("このイベントの受付用QRではありません");
+        flashNotice(t("staffOps.checkinNotOurQr"));
         return;
       }
       void doLookup(handle);
     },
-    [doTokenCheckin, doLookup, flashNotice],
+    [doTokenCheckin, doLookup, flashNotice, t],
   );
   const handleDecodeRef = useRef(handleDecode);
   handleDecodeRef.current = handleDecode;
@@ -282,9 +293,9 @@ export function CheckinPage() {
           audio: false,
         });
       } catch {
-        setCameraError(
-          "カメラを起動できませんでした。ブラウザのサイト設定でカメラの使用を許可して、ページを再読み込みしてください。",
-        );
+        // ここは i18next を直に引く。t を使うと言語を切り替えるたびに
+        // この効果が組み直され、カメラが止まって開き直しになる
+        setCameraError(i18next.t("staffOps.checkinCameraError"));
         return;
       }
       if (cancelled || !videoRef.current) {
@@ -353,7 +364,7 @@ export function CheckinPage() {
   }, [enabled]);
 
   if (eventData && !isStaff) {
-    return <Alert severity="warning">QR受付はスタッフ専用です。</Alert>;
+    return <Alert severity="warning">{t("staffOps.checkinStaffOnly")}</Alert>;
   }
 
   return (
@@ -365,10 +376,10 @@ export function CheckinPage() {
           sx={{ flex: 1, minWidth: 160, display: "flex", alignItems: "center", gap: 0.75 }}
         >
           <QrCodeScannerIcon fontSize="medium" />
-          QR受付
+          {t("eventDetail.checkin")}
         </Typography>
         <Button size="small" component={RouterLink} to={`/events/${id}`}>
-          ← イベントへ戻る
+          {t("staffOps.backToEvent")}
         </Button>
       </Stack>
 
@@ -421,8 +432,7 @@ export function CheckinPage() {
         </Box>
       )}
       <Typography variant="caption" color="text.secondary">
-        参加者の「入場QR」またはプロフィールカードのQRを枠内にかざしてください。
-        入場QRは本人確認済みとして自動で出席記録されます。
+        {t("staffOps.checkinHint")}
       </Typography>
 
       {/* 受付結果の名簿（同一オリジンの <a> なので cookie 認証のまま） (#154) */}
@@ -435,7 +445,7 @@ export function CheckinPage() {
           href={`/api/events/${id}/attendance.csv`}
           download
         >
-          入館名簿CSV
+          {t("staffOps.attendanceCsv")}
         </Button>
       </Box>
 
@@ -443,7 +453,7 @@ export function CheckinPage() {
         <Card variant="outlined">
           <CardContent>
             <Typography variant="subtitle2" gutterBottom>
-              受付ログ（最新10件）
+              {t("staffOps.checkinLogHeading", { n: LOG_MAX })}
             </Typography>
             <Stack spacing={0.75}>
               {log.map((e, i) => (
@@ -472,7 +482,11 @@ export function CheckinPage() {
                     {e.name}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {e.undone ? "取消済み" : e.label}
+                    {t(
+                      e.undone
+                        ? "staffOps.checkinLogUndone"
+                        : LOG_LABEL_KEY[e.kind],
+                    )}
                   </Typography>
                   {e.canUndo && !e.undone && (
                     <Link
@@ -481,7 +495,7 @@ export function CheckinPage() {
                       variant="caption"
                       onClick={() => void undoAttend(e)}
                     >
-                      取り消す
+                      {t("common.undo")}
                     </Link>
                   )}
                 </Stack>
@@ -497,21 +511,44 @@ export function CheckinPage() {
   );
 }
 
+/** 読み取り結果ごとの見せ方。**色は文言ではない**のでここに残し、
+ * 見出しは翻訳キーだけを持つ（文言そのものは辞書にある） */
 const OVERLAY_STYLE: Record<
   Exclude<PanelKind, "manual">,
-  { bg: string; title: string }
+  {
+    bg: string;
+    titleKey: `staffOps.checkinResult${
+      | "CheckedIn"
+      | "ManualDone"
+      | "Already"
+      | "NotConfirmed"
+      | "UnknownUser"
+      | "Expired"}`;
+  }
 > = {
-  checked_in: { bg: "rgba(46,125,50,0.94)", title: "出席 記録済み（本人確認済み）" },
-  manual_done: { bg: "rgba(46,125,50,0.94)", title: "出席 記録済み（手動）" },
-  already: { bg: "rgba(2,136,209,0.94)", title: "出席済みです" },
+  checked_in: {
+    bg: "rgba(46,125,50,0.94)",
+    titleKey: "staffOps.checkinResultCheckedIn",
+  },
+  manual_done: {
+    bg: "rgba(46,125,50,0.94)",
+    titleKey: "staffOps.checkinResultManualDone",
+  },
+  already: {
+    bg: "rgba(2,136,209,0.94)",
+    titleKey: "staffOps.checkinResultAlready",
+  },
   not_confirmed: {
     bg: "rgba(230,81,0,0.94)",
-    title: "このイベントの確定参加者ではありません",
+    titleKey: "staffOps.checkinResultNotConfirmed",
   },
-  unknown_user: { bg: "rgba(97,97,97,0.94)", title: "登録されていないユーザーです" },
+  unknown_user: {
+    bg: "rgba(97,97,97,0.94)",
+    titleKey: "staffOps.checkinResultUnknownUser",
+  },
   expired: {
     bg: "rgba(230,81,0,0.94)",
-    title: "QRの有効期限が切れています。参加者に画面を更新してもらってください",
+    titleKey: "staffOps.checkinResultExpired",
   },
 };
 
@@ -525,6 +562,7 @@ export function ResultOverlay({
   onManualAttend: (user: CheckinUser) => void;
   onCancelManual: () => void;
 }) {
+  const { t } = useTranslation();
   const user = panel.user;
   const avatar = user && (
     <Avatar
@@ -555,11 +593,11 @@ export function ResultOverlay({
               {avatar}
               <Typography fontWeight={700}>{user?.name}</Typography>
               <Alert severity="warning" icon={<WarningAmberIcon />} sx={{ width: "100%" }}>
-                本人確認チケットではありません。本人確認のうえ手動で記録してください
+                {t("staffOps.checkinManualWarning")}
               </Alert>
               <Stack direction="row" spacing={1}>
                 <Button variant="outlined" onClick={onCancelManual}>
-                  スキャンに戻る
+                  {t("staffOps.checkinBackToScan")}
                 </Button>
                 <Button
                   variant="contained"
@@ -567,7 +605,7 @@ export function ResultOverlay({
                   sx={{ bgcolor: "action.selected" }}
                   onClick={() => user && onManualAttend(user)}
                 >
-                  手動で出席にする
+                  {t("staffOps.checkinManualAttend")}
                 </Button>
               </Stack>
             </Stack>
@@ -608,7 +646,7 @@ export function ResultOverlay({
             {user.name}
           </Typography>
         )}
-        <Typography fontWeight={700}>{style.title}</Typography>
+        <Typography fontWeight={700}>{t(style.titleKey)}</Typography>
       </Stack>
     </Box>
   );
