@@ -11,6 +11,7 @@ import {
 import PaletteIcon from "@mui/icons-material/Palette";
 import CheckIcon from "@mui/icons-material/Check";
 import { useTranslation } from "react-i18next";
+import { tDynamic } from "../i18n/index.js";
 import { THEME_LIST, THEMES } from "../theme/themes.js";
 import { useThemeSettings } from "../theme/ThemeContext.js";
 
@@ -42,7 +43,11 @@ export function ThemeSwitcher() {
               setAnchor(null);
             }}
           >
-            <ListItemText>{theme.label}</ListItemText>
+            {/* テーマは足せるので辞書引きは tDynamic。
+                辞書に無いテーマはキーがそのまま出る (#362) */}
+            <ListItemText>
+              {tDynamic(`themeName.${theme.key}`, theme.key)}
+            </ListItemText>
             {theme.key === themeKey && (
               <CheckIcon fontSize="small" sx={{ ml: 1 }} />
             )}

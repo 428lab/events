@@ -22,6 +22,7 @@ import { notifications } from "./messages/notifications.js";
 import { communityRole, profile } from "./messages/profile.js";
 import { schedule } from "./messages/schedule.js";
 import { linkError, settings } from "./messages/settings.js";
+import { themeName } from "./messages/theme.js";
 import {
   broadcastSegment,
   broadcastSegmentNote,
@@ -44,6 +45,7 @@ export const translations = {
   ja: {
     common: common.ja,
     nav: nav.ja,
+    themeName: themeName.ja,
     login: login.ja,
     events: events.ja,
     eventDetail: eventDetail.ja,
@@ -69,6 +71,7 @@ export const translations = {
   en: {
     common: common.en,
     nav: nav.en,
+    themeName: themeName.en,
     login: login.en,
     events: events.en,
     eventDetail: eventDetail.en,
