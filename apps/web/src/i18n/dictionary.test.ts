@@ -150,6 +150,31 @@ describe("わざと分けてあるキー (#367)", () => {
     expect(i18next.t("studio.liveSets")).toBe("Broadcast sets");
     expect(i18next.t("studio.liveSet")).toBe("Broadcast set");
   });
+
+  /**
+   * サムネイルの並べ替え。**英語は `common` と同じ**なので寄せたくなるが、
+   * 日本語は「上へ移動」ではなく「上へ」。寄せると日本語が変わる。
+   */
+  it("サムネイルの並べ替えは日本語が短く、英語だけ common と同じ", async () => {
+    expect(i18next.t("studio.moveUpShort")).toBe("上へ");
+    expect(i18next.t("studio.moveDownShort")).toBe("下へ");
+    expect(i18next.t("common.moveUp")).toBe("上へ移動");
+    expect(i18next.t("common.moveDown")).toBe("下へ移動");
+    await i18next.changeLanguage("en");
+    expect(i18next.t("studio.moveUpShort")).toBe(i18next.t("common.moveUp"));
+    expect(i18next.t("studio.moveDownShort")).toBe(i18next.t("common.moveDown"));
+  });
+
+  /**
+   * 日程未定の表示。`events.tabScheduling` は**一覧のタブ名**で、綴りは同じでも
+   * 別物。タブの言い方を変えたときに、本番で大写しになる配信画面が
+   * 一緒に変わってはいけない。
+   */
+  it("配信画面の日程未定は、一覧のタブとは別のキーで引ける", async () => {
+    expect(i18next.t("studio.datetimeTbd")).toBe("日程調整中");
+    await i18next.changeLanguage("en");
+    expect(i18next.t("studio.datetimeTbd")).toBe("Date TBD");
+  });
 });
 
 /**

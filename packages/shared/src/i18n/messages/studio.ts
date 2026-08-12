@@ -31,8 +31,10 @@ const ja = {
   redoTip: "やり直す (Ctrl/⌘+Shift+Z)",
   saving: "保存中…",
   autoSaved: "自動保存",
-  /** サムネイル下の並べ替え。`common.moveUp`（「上へ移動」）とは綴りが違う */
   duplicate: "複製",
+  /** サムネイル下の並べ替え。**英語は `common.moveUp` / `moveDown` と同じ**だが、
+   *  日本語が「上へ移動」ではなく「上へ」なので寄せられない。善意で統合されると
+   *  日本語が変わるので、`dictionary.test.ts` で分かれていることを固定してある */
   moveUpShort: "上へ",
   moveDownShort: "下へ",
 
@@ -187,6 +189,10 @@ const ja = {
   /* ── 配信画面（本番で大写しになる画面）───────────────── */
   liveSetLoading: "配信セットを読み込み中…",
   deckUnselected: "スライド未選択（コントロール画面で選べます）",
+  /** 日程未定のイベントの「開催日時」。`events.tabScheduling` と同じ綴りだが
+   *  **あちらは一覧のタブ名**で、タブの言い方を変えたときに本番で大写しになる
+   *  この画面が一緒に変わってはいけないので、わざと別に持つ (#367) */
+  datetimeTbd: "日程調整中",
   bgmUnblock: "クリックして BGM を有効化",
   cameraDefault: "既定のカメラ",
   cameraWaiting: "カメラ待機中…",
@@ -197,7 +203,7 @@ const en: Record<keyof typeof ja, string> = {
   undoTip: "Undo (Ctrl/⌘+Z)",
   redoTip: "Redo (Ctrl/⌘+Shift+Z)",
   saving: "Saving…",
-  autoSaved: "Autosave",
+  autoSaved: "Autosaved",
   duplicate: "Duplicate",
   moveUpShort: "Move up",
   moveDownShort: "Move down",
@@ -327,6 +333,7 @@ const en: Record<keyof typeof ja, string> = {
 
   liveSetLoading: "Loading the broadcast set…",
   deckUnselected: "No slide deck selected (pick one on the control screen)",
+  datetimeTbd: "Date TBD",
   bgmUnblock: "Click to enable the music",
   cameraDefault: "Default camera",
   cameraWaiting: "Waiting for the camera…",

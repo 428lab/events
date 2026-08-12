@@ -9,22 +9,22 @@ type BuiltinFontKey =
   | "studio.fontSerif"
   | "studio.fontMono";
 
-export type DeckFontOption = {
-  /** CSS font-family。空文字＝既定（テーマのゴシック） */
+/** 選択肢の並び。**外から引くのは `useDeckFontOptions()` だけ**なので export しない
+ * （呼ぶ側に「組み込みは辞書、欧文フォント名はそのまま」の三項を書かせない） */
+type DeckFontOption = {
+  /** CSS font-family。空文字＝既定（テーマのゴシック）。選択肢の値と key を兼ねる */
   family: string;
-  /** Google Fonts からオンデマンド読込するか */
-  google: boolean;
 } & (
   | { labelKey: BuiltinFontKey; label?: undefined }
   /** 欧文のフォント名（Noto Sans など）は訳さないのでそのまま出す */
   | { label: string; labelKey?: undefined }
 );
 
-export const DECK_FONTS: DeckFontOption[] = [
-  { labelKey: "studio.fontDefault", family: "", google: false },
-  { labelKey: "studio.fontSerif", family: "serif", google: false },
-  { labelKey: "studio.fontMono", family: "monospace", google: false },
-  ...FONTS.map((f) => ({ label: f.label, family: f.family, google: true })),
+const DECK_FONTS: DeckFontOption[] = [
+  { labelKey: "studio.fontDefault", family: "" },
+  { labelKey: "studio.fontSerif", family: "serif" },
+  { labelKey: "studio.fontMono", family: "monospace" },
+  ...FONTS.map((f) => ({ label: f.label, family: f.family })),
 ];
 
 /**

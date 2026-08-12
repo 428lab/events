@@ -193,7 +193,7 @@ export function LiveScreenPage() {
           return event.title;
         case "datetime":
           return event.scheduling
-            ? t("events.tabScheduling")
+            ? t("studio.datetimeTbd")
             : formatDateRange(event.startsAt, event.endsAt);
         case "participants":
           return participantCountLabel(event);

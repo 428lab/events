@@ -55,6 +55,7 @@ const THUMB_W = 150;
 
 export function DeckEditorPage() {
   const { t } = useTranslation();
+  const fontOptions = useDeckFontOptions();
   const { id = "" } = useParams();
   const { data: deck, isLoading, isError } = useDeck(id);
   const update = useUpdateDeck(id);
@@ -160,9 +161,6 @@ export function DeckEditorPage() {
     setCw(el.clientWidth);
     return () => ro.disconnect();
   }, [content]);
-
-  // フォント選択肢（フックなので早期 return より前）
-  const fontOptions = useDeckFontOptions();
 
   if (isError) return <Typography>{t("studio.deckNotFound")}</Typography>;
   if (isLoading || !content) return <Typography>{t("common.loading")}</Typography>;
