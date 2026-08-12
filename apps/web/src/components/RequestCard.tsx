@@ -1,5 +1,6 @@
 import { Box, Card, CardActionArea, Chip, Stack, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import CampaignIcon from "@mui/icons-material/Campaign";
 import CelebrationIcon from "@mui/icons-material/Celebration";
@@ -9,6 +10,7 @@ import { venueLabel } from "../lib/format.js";
 
 /** イベントのたまご一覧カード。 */
 export function RequestCard({ request }: { request: EventRequest }) {
+  const { t } = useTranslation();
   return (
     <Card>
       <CardActionArea
@@ -26,13 +28,13 @@ export function RequestCard({ request }: { request: EventRequest }) {
                 {request.title}
               </Typography>
               {request.status === "closed" && (
-                <Chip size="small" label="クローズ" color="default" />
+                <Chip size="small" label={t("egg.closed")} color="default" />
               )}
               {request.venueTypePref && (
                 <Chip size="small" variant="outlined" label={venueLabel(request.venueTypePref)} />
               )}
               {request.membersOnly && (
-                <Chip size="small" variant="outlined" label="メンバー限定" />
+                <Chip size="small" variant="outlined" label={t("egg.membersOnly")} />
               )}
             </Stack>
             {request.description && (
@@ -53,17 +55,34 @@ export function RequestCard({ request }: { request: EventRequest }) {
             <Stack direction="row" spacing={2} sx={{ mt: 1 }} alignItems="center">
               <Stack direction="row" spacing={0.5} alignItems="center">
                 <FavoriteIcon sx={{ fontSize: 16, color: "error.main" }} />
-                <Typography variant="body2">参加したい {request.attendCount}</Typography>
+                <Typography variant="body2">
+                  {t("egg.attendCount", { n: request.attendCount })}
+                </Typography>
               </Stack>
               <Stack direction="row" spacing={0.5} alignItems="center">
-                <CampaignIcon sx={{ fontSize: 16, color: (t) => (t.palette.mode === "light" ? t.palette.warning.dark : t.palette.warning.main) }} />
-                <Typography variant="body2">開催してもいい {request.hostCount}</Typography>
+                <CampaignIcon
+                  sx={{
+                    fontSize: 16,
+                    color: (theme) =>
+                      theme.palette.mode === "light"
+                        ? theme.palette.warning.dark
+                        : theme.palette.warning.main,
+                  }}
+                />
+                <Typography variant="body2">
+                  {t("egg.hostCount", { n: request.hostCount })}
+                </Typography>
               </Stack>
               {request.eventCount > 0 && (
                 <Stack direction="row" spacing={0.5} alignItems="center">
                   <CelebrationIcon sx={{ fontSize: 16, color: "success.main" }} />
                   <Typography variant="body2" color="success.main" fontWeight={600}>
-                    開催決定 {request.eventCount}
+                    {t(
+                      request.eventCount === 1
+                        ? "egg.hatchedCountOne"
+                        : "egg.hatchedCount",
+                      { n: request.eventCount },
+                    )}
                   </Typography>
                 </Stack>
               )}

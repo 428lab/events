@@ -8,6 +8,7 @@ import {
   Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import { useTranslation } from "react-i18next";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import type { CommunityMember } from "@eventer/shared";
 import {
@@ -17,22 +18,19 @@ import {
   useTransferOwnership,
 } from "../api/communityHooks.js";
 import { UserLink } from "../components/UserLink.js";
-
-const ROLE_LABEL: Record<string, string> = {
-  owner: "オーナー",
-  admin: "管理者",
-};
+import { tDynamic } from "../i18n/index.js";
 
 /** コミュニティのメンバー一覧ページ（/c/:slug/members）。未ログインでも閲覧可。 */
 export function CommunityMembersPage() {
+  const { t } = useTranslation();
   const { slug = "" } = useParams();
   const { data: c, isLoading, isError } = useCommunity(slug);
   const { data: members } = useCommunityMembers(slug);
   const setRole = useSetCommunityRole(slug);
   const transfer = useTransferOwnership(slug);
 
-  if (isError) return <Alert severity="info">コミュニティが見つかりません。</Alert>;
-  if (isLoading || !c) return <Typography>読み込み中…</Typography>;
+  if (isError) return <Alert severity="info">{t("community.notFound")}</Alert>;
+  if (isLoading || !c) return <Typography>{t("common.loading")}</Typography>;
 
   const isOwner = c.isOwner;
 
@@ -50,7 +48,7 @@ export function CommunityMembersPage() {
             })
           }
         >
-          管理者にする
+          {t("community.makeAdmin")}
         </Button>
       )}
       {m.role === "admin" && (
@@ -66,7 +64,7 @@ export function CommunityMembersPage() {
               })
             }
           >
-            メンバーに戻す
+            {t("community.makeMember")}
           </Button>
           <Button
             size="small"
@@ -74,9 +72,7 @@ export function CommunityMembersPage() {
             disabled={transfer.isPending}
             onClick={() => {
               if (
-                window.confirm(
-                  `${m.name} にオーナーを譲渡します。あなたは管理者になります。よろしいですか？`,
-                )
+                window.confirm(t("community.transferConfirm", { name: m.name }))
               ) {
                 transfer.mutate({
                   communityId: c.id,
@@ -85,7 +81,7 @@ export function CommunityMembersPage() {
               }
             }}
           >
-            オーナー譲渡
+            {t("community.transferOwner")}
           </Button>
         </>
       )}
@@ -108,35 +104,40 @@ export function CommunityMembersPage() {
       </Box>
 
       <Typography variant="h5" fontWeight={700}>
-        メンバー（{members?.length ?? c.memberCount}）
+        {t("community.membersHeading", { n: members?.length ?? c.memberCount })}
       </Typography>
 
       {!members || members.length === 0 ? (
-        <Typography color="text.secondary">メンバーはいません。</Typography>
+        <Typography color="text.secondary">
+          {t("community.membersEmpty")}
+        </Typography>
       ) : (
         <Stack divider={<Divider flexItem />} spacing={1}>
-          {members.map((m) => (
-            <Stack
-              key={m.userId}
-              direction="row"
-              spacing={1}
-              alignItems="center"
-              sx={{ flexWrap: "wrap" }}
-            >
-              <UserLink
-                username={m.username}
-                name={m.name}
-                avatarUrl={m.avatarUrl}
-                withAvatar
-                avatarSize={40}
-              />
-              {ROLE_LABEL[m.role] && (
-                <Chip label={ROLE_LABEL[m.role]} size="small" />
-              )}
-              <Box sx={{ flex: 1 }} />
-              {isOwner && ownerActions(m)}
-            </Stack>
-          ))}
+          {members.map((m) => {
+            // 立場のラベルはサーバーが返すコードで引く。一般メンバーは辞書に
+            // 無いので空文字になり、今までどおりラベルが出ない
+            const roleLabel = tDynamic(`communityRole.${m.role}`, "");
+            return (
+              <Stack
+                key={m.userId}
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                sx={{ flexWrap: "wrap" }}
+              >
+                <UserLink
+                  username={m.username}
+                  name={m.name}
+                  avatarUrl={m.avatarUrl}
+                  withAvatar
+                  avatarSize={40}
+                />
+                {roleLabel && <Chip label={roleLabel} size="small" />}
+                <Box sx={{ flex: 1 }} />
+                {isOwner && ownerActions(m)}
+              </Stack>
+            );
+          })}
         </Stack>
       )}
     </Stack>

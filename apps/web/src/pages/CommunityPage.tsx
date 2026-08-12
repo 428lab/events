@@ -17,6 +17,7 @@ import {
 } from "@mui/material";
 import EggIcon from "@mui/icons-material/Egg";
 import InsightsIcon from "@mui/icons-material/Insights";
+import { useTranslation } from "react-i18next";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import { useIsAdmin, useMe } from "../api/hooks.js";
 import {
@@ -28,13 +29,10 @@ import {
 import { EventsBrowser } from "../components/EventsBrowser.js";
 import { RequestCard } from "../components/RequestCard.js";
 import { Markdown } from "../components/Markdown.js";
-
-const ROLE_LABEL: Record<string, string> = {
-  owner: "オーナー",
-  admin: "管理者",
-};
+import { tDynamic } from "../i18n/index.js";
 
 export function CommunityPage() {
+  const { t } = useTranslation();
   const { slug = "" } = useParams();
   const navigate = useNavigate();
   const { data: me } = useMe();
@@ -45,11 +43,14 @@ export function CommunityPage() {
   const del = useDeleteCommunity();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  if (isError) return <Alert severity="info">コミュニティが見つかりません。</Alert>;
-  if (isLoading || !c) return <Typography>読み込み中…</Typography>;
+  if (isError) return <Alert severity="info">{t("community.notFound")}</Alert>;
+  if (isLoading || !c) return <Typography>{t("common.loading")}</Typography>;
 
   const isOwner = c.isOwner;
   const isManager = c.myRole === "owner" || c.myRole === "admin";
+  // 立場のラベルはサーバーが返すコードで引く。**どの立場に出すかの判定は
+  // 画面側**で、一般メンバーは辞書に無いので空文字になり出ない
+  const roleLabel = c.myRole ? tDynamic(`communityRole.${c.myRole}`, "") : "";
 
   return (
     <Stack spacing={3}>
@@ -68,7 +69,13 @@ export function CommunityPage() {
       )}
 
       {/* ヘッダー */}
-      <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} alignItems="center">
+      <Stack
+        direction="row"
+        flexWrap="wrap"
+        useFlexGap
+        spacing={2}
+        alignItems="center"
+      >
         <Avatar
           src={c.iconUrl ?? undefined}
           variant="rounded"
@@ -81,27 +88,51 @@ export function CommunityPage() {
             {c.name}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            @{c.slug} ・{" "}
+            @{c.slug}
+            {t("common.dotSeparator")}
             <Link
               component={RouterLink}
               to={`/c/${slug}/members`}
               color="inherit"
               underline="hover"
             >
-              メンバー {c.memberCount}
-            </Link>{" "}
-            ・ イベント {c.eventCount}
-            {(c.likesReceived ?? 0) > 0 && <> ・ いいね {c.likesReceived}</>}
+              {t(
+                c.memberCount === 1
+                  ? "community.memberCountOne"
+                  : "community.memberCount",
+                { n: c.memberCount },
+              )}
+            </Link>
+            {t("common.dotSeparator")}
+            {t(
+              c.eventCount === 1
+                ? "community.eventCountOne"
+                : "community.eventCount",
+              { n: c.eventCount },
+            )}
+            {(c.likesReceived ?? 0) > 0 && (
+              <>
+                {t("common.dotSeparator")}
+                {t(
+                  c.likesReceived === 1
+                    ? "community.likeCountOne"
+                    : "community.likeCount",
+                  { n: c.likesReceived },
+                )}
+              </>
+            )}
           </Typography>
         </Box>
         {me && (
-          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} alignItems="center">
-            {c.myRole && ROLE_LABEL[c.myRole] && (
-              <Chip
-                label={ROLE_LABEL[c.myRole]}
-                color="secondary"
-                size="small"
-              />
+          <Stack
+            direction="row"
+            flexWrap="wrap"
+            useFlexGap
+            spacing={1}
+            alignItems="center"
+          >
+            {roleLabel && (
+              <Chip label={roleLabel} color="secondary" size="small" />
             )}
             {/* コミュニティの数字 (#262)。管理者・運営管理者にだけ導線を出す */}
             {(isManager || isAdmin) && (
@@ -111,7 +142,7 @@ export function CommunityPage() {
                 to={`/c/${slug}/kpi`}
                 startIcon={<InsightsIcon />}
               >
-                数字を見る
+                {t("community.kpi")}
               </Button>
             )}
             {isManager ? (
@@ -120,7 +151,7 @@ export function CommunityPage() {
                 component={RouterLink}
                 to={`/c/${slug}/edit`}
               >
-                編集
+                {t("common.edit")}
               </Button>
             ) : c.isMember ? (
               <Button
@@ -128,7 +159,7 @@ export function CommunityPage() {
                 disabled={leave.isPending}
                 onClick={() => leave.mutate(c.id)}
               >
-                フォロー中
+                {t("profile.following")}
               </Button>
             ) : (
               <Button
@@ -136,7 +167,7 @@ export function CommunityPage() {
                 disabled={join.isPending}
                 onClick={() => join.mutate(c.id)}
               >
-                フォロー
+                {t("community.follow")}
               </Button>
             )}
             {isOwner && (
@@ -145,7 +176,7 @@ export function CommunityPage() {
                 color="error"
                 onClick={() => setConfirmDelete(true)}
               >
-                削除
+                {t("common.delete")}
               </Button>
             )}
           </Stack>
@@ -191,7 +222,7 @@ export function CommunityPage() {
               sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
             >
               <EggIcon fontSize="small" />
-              イベントのたまご
+              {t("egg.title")}
             </Typography>
             {c.isMember && (
               <Button
@@ -199,13 +230,13 @@ export function CommunityPage() {
                 component={RouterLink}
                 to={`/requests/new?communityId=${c.id}`}
               >
-                あったらいいなを投稿
+                {t("egg.postWish")}
               </Button>
             )}
           </Stack>
           {c.requests.length === 0 ? (
             <Typography color="text.secondary" variant="body2">
-              まだたまごはありません。
+              {t("egg.emptyInCommunity")}
             </Typography>
           ) : (
             <Stack spacing={1.5}>
@@ -218,14 +249,16 @@ export function CommunityPage() {
       )}
 
       <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)}>
-        <DialogTitle>コミュニティを削除しますか？</DialogTitle>
+        <DialogTitle>{t("community.deleteTitle")}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            「{c.name}」を削除します。所属イベントは無所属に戻ります（イベント自体は削除されません）。この操作は取り消せません。
+            {t("community.deleteBody", { name: c.name })}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmDelete(false)}>キャンセル</Button>
+          <Button onClick={() => setConfirmDelete(false)}>
+            {t("common.cancel")}
+          </Button>
           <Button
             color="error"
             disabled={del.isPending}
@@ -233,7 +266,7 @@ export function CommunityPage() {
               del.mutate(c.id, { onSuccess: () => navigate("/communities") })
             }
           >
-            削除する
+            {t("common.deleteSubmit")}
           </Button>
         </DialogActions>
       </Dialog>

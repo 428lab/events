@@ -595,7 +595,7 @@ export function EditEventPage() {
                     })
                   }
                 >
-                  {t("eventForm.deleteSubmit")}
+                  {t("common.deleteSubmit")}
                 </Button>
               </Stack>
             )}

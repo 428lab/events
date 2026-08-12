@@ -31,6 +31,26 @@ const ja = {
   retry: "もう一度",
   search: "検索",
 
+  /** 消えて戻らない操作のボタン・ゴミ箱の読み上げ名 (#366)。イベント・
+   *  コミュニティ・会場・たまごのどこからでも同じ言い方をする。
+   *  `eventForm.imageRemove` も日本語は「削除」だが、あちらは選んだ画像を
+   *  フォームから外すだけなので英語は "Remove"。**別物なので共通化しない** */
+  delete: "削除",
+  /** 確認ダイアログで実行する側のボタン (#366) */
+  deleteSubmit: "削除する",
+  /** 詳細画面から編集画面へ行くボタン (#366)。
+   *  `eventForm.markdownEdit` は入力欄のタブで英語が "Write" なので別物 */
+  edit: "編集",
+  /** 書いたものを一覧に載せるボタン (#366)。コメントとたまごで共通 */
+  post: "投稿",
+  /** 一覧が引けなかったとき (#366)。会場・たまごで同じ言い方をする。
+   *  `events.loadError` は「イベントを」が付く別の綴り */
+  loadErrorReload: "読み込めませんでした。再読み込みしてください。",
+  /** 写真の見出し (#366)。イベント・会場のどちらのギャラリーからも引く */
+  photos: "写真",
+  photosHeading: "写真（{{n}}）",
+  photoDeleteConfirm: "この写真を削除しますか？",
+
   /** 並べ替えの矢印ボタン (#363)。参加枠・事前アンケート・スケジュールの
    *  どれも同じ言い方なので、領域ごとに持たせない */
   moveUp: "上へ移動",
@@ -88,6 +108,15 @@ const en: Record<keyof typeof ja, string> = {
   back: "Back",
   retry: "Try again",
   search: "Search",
+
+  delete: "Delete",
+  deleteSubmit: "Delete",
+  edit: "Edit",
+  post: "Post",
+  loadErrorReload: "Couldn't load this. Please reload the page.",
+  photos: "Photos",
+  photosHeading: "Photos ({{n}})",
+  photoDeleteConfirm: "Delete this photo?",
 
   moveUp: "Move up",
   moveDown: "Move down",

@@ -8,12 +8,14 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
 import { LogoGlyph } from "./LogoGlyph.js";
 import { VersionFooter } from "./VersionFooter.js";
 
 /** 未ログインの公開ページ用の軽量レイアウト（ログイン導線のみ） */
 export function PublicLayout({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   return (
     <Box sx={{ minHeight: "100vh", overflowX: "hidden" }}>
       <AppBar position="static" elevation={0}>
@@ -58,7 +60,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
               to="/login"
               sx={{ whiteSpace: "nowrap" }}
             >
-              ログイン
+              {t("login.signIn")}
             </Button>
           </Box>
         </Toolbar>

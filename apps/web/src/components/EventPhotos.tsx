@@ -176,7 +176,7 @@ export function EventPhotos({
             }}
           >
             <PhotoCameraIcon fontSize="small" />
-            {t("eventSocial.photosHeading", { n: photos?.length ?? 0 })}
+            {t("common.photosHeading", { n: photos?.length ?? 0 })}
           </Typography>
           <input
             ref={fileRef}
@@ -329,7 +329,7 @@ export function EventPhotos({
                     aria-label={t("eventSocial.photoDelete")}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (window.confirm(t("eventSocial.photoDeleteConfirm")))
+                      if (window.confirm(t("common.photoDeleteConfirm")))
                         del.mutate(p.id);
                     }}
                     sx={{
@@ -360,7 +360,7 @@ export function EventPhotos({
         isStaff={isStaff}
         canDeletePhoto={lightbox ? canDelete(lightbox) : false}
         onDeletePhoto={(id) => {
-          if (window.confirm(t("eventSocial.photoDeleteConfirm"))) {
+          if (window.confirm(t("common.photoDeleteConfirm"))) {
             del.mutate(id);
             setLightbox(null);
           }

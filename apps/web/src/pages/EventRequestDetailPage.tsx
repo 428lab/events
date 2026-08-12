@@ -19,6 +19,7 @@ import CampaignIcon from "@mui/icons-material/Campaign";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useMe } from "../api/hooks.js";
 import {
   useDeleteEventRequest,
@@ -37,6 +38,7 @@ import { venueLabel, formatDateTime } from "../lib/format.js";
 
 /** イベントのたまご詳細。賛同・開催宣言・クローズ。 */
 export function EventRequestDetailPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { data: me } = useMe();
@@ -47,9 +49,9 @@ export function EventRequestDetailPage() {
   const setReactorsAnonymous = useSetReactorsAnonymous(id);
   const del = useDeleteEventRequest();
 
-  if (q.isLoading) return <Typography>読み込み中…</Typography>;
+  if (q.isLoading) return <Typography>{t("common.loading")}</Typography>;
   if (q.isError || !q.data) {
-    return <Alert severity="error">たまごが見つかりませんでした。</Alert>;
+    return <Alert severity="error">{t("egg.notFound")}</Alert>;
   }
   const { request, creator, community, events, myReactions, isMine, reactors } =
     q.data;
@@ -84,12 +86,18 @@ export function EventRequestDetailPage() {
               <EggIcon fontSize="medium" />
               {request.title}
             </Typography>
-            {!open && <Chip size="small" label="クローズ" />}
+            {!open && <Chip size="small" label={t("egg.closed")} />}
             {request.venueTypePref && (
-              <Chip size="small" variant="outlined" label={`希望: ${venueLabel(request.venueTypePref)}`} />
+              <Chip
+                size="small"
+                variant="outlined"
+                label={t("egg.venuePref", {
+                  venue: venueLabel(request.venueTypePref),
+                })}
+              />
             )}
             {request.membersOnly && (
-              <Chip size="small" variant="outlined" label="メンバー限定" />
+              <Chip size="small" variant="outlined" label={t("egg.membersOnly")} />
             )}
             {request.venueWanted && (
               <Chip
@@ -97,7 +105,7 @@ export function EventRequestDetailPage() {
                 color="success"
                 variant="outlined"
                 icon={<StadiumIcon fontSize="small" />}
-                label="会場募集中"
+                label={t("egg.venueWantedChip")}
               />
             )}
             {community && (
@@ -121,7 +129,9 @@ export function EventRequestDetailPage() {
               {creatorName[0]}
             </Avatar>
             <Typography variant="body2" color="text.secondary">
-              {creatorName} さんの「あったらいいな」 ・ {formatDateTime(request.createdAt)}
+              {t("egg.byline", { name: creatorName })}
+              {t("common.dotSeparator")}
+              {formatDateTime(request.createdAt)}
             </Typography>
           </Stack>
 
@@ -141,7 +151,7 @@ export function EventRequestDetailPage() {
               onClick={() => toggle("attend", !attending)}
               disabled={!open || react.isPending}
             >
-              参加したい {request.attendCount}
+              {t("egg.attendCount", { n: request.attendCount })}
             </Button>
             <Button
               variant={hosting ? "contained" : "outlined"}
@@ -150,7 +160,7 @@ export function EventRequestDetailPage() {
               onClick={() => toggle("host", !hosting)}
               disabled={!open || react.isPending}
             >
-              開催してもいい {request.hostCount}
+              {t("egg.hostCount", { n: request.hostCount })}
             </Button>
             {me && open && (
               <Button
@@ -160,28 +170,28 @@ export function EventRequestDetailPage() {
                 component={RouterLink}
                 to={`/events/new?fromRequest=${request.id}`}
               >
-                開催します
+                {t("egg.willHost")}
               </Button>
             )}
           </Stack>
           {reactors && (reactors.attend.length > 0 || reactors.host.length > 0) && (
             <Box sx={{ mt: 2 }}>
               {reactors.attend.length > 0 && (
-                <ReactorRow label="参加したい" users={reactors.attend} />
+                <ReactorRow label={t("egg.attend")} users={reactors.attend} />
               )}
               {reactors.host.length > 0 && (
-                <ReactorRow label="開催してもいい" users={reactors.host} />
+                <ReactorRow label={t("egg.host")} users={reactors.host} />
               )}
             </Box>
           )}
           {!me && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-              賛同や開催宣言にはログインが必要です。
+              {t("egg.signInRequired")}
             </Typography>
           )}
           {react.isError && (
             <Typography variant="body2" color="error" sx={{ mt: 1.5 }}>
-              賛同できませんでした。コミュニティのたまごへの賛同はメンバーのみです。
+              {t("egg.reactError")}
             </Typography>
           )}
 
@@ -191,11 +201,11 @@ export function EventRequestDetailPage() {
               <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5}>
                 {open ? (
                   <Button size="small" onClick={() => setStatus.mutate("closed")}>
-                    クローズする
+                    {t("egg.closeAction")}
                   </Button>
                 ) : (
                   <Button size="small" onClick={() => setStatus.mutate("open")}>
-                    再オープン
+                    {t("egg.reopen")}
                   </Button>
                 )}
                 <Button
@@ -204,7 +214,9 @@ export function EventRequestDetailPage() {
                   disabled={setVenueWanted.isPending}
                   onClick={() => setVenueWanted.mutate(!request.venueWanted)}
                 >
-                  {request.venueWanted ? "会場募集を止める" : "会場も募集する"}
+                  {request.venueWanted
+                    ? t("egg.venueWantedStop")
+                    : t("egg.venueWantedStart")}
                 </Button>
                 <Button
                   size="small"
@@ -214,21 +226,21 @@ export function EventRequestDetailPage() {
                   }
                 >
                   {request.reactorsAnonymous
-                    ? "賛同者を表示する"
-                    : "賛同者を匿名にする"}
+                    ? t("egg.reactorsShow")
+                    : t("egg.reactorsHide")}
                 </Button>
                 <Button
                   size="small"
                   color="error"
                   onClick={() => {
-                    if (window.confirm("このたまごを削除しますか？")) {
+                    if (window.confirm(t("egg.deleteConfirm"))) {
                       del.mutate(request.id, {
                         onSuccess: () => navigate("/requests"),
                       });
                     }
                   }}
                 >
-                  削除
+                  {t("common.delete")}
                 </Button>
               </Stack>
             </>
@@ -259,7 +271,7 @@ export function EventRequestDetailPage() {
               sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
             >
               <EggAltIcon fontSize="small" />
-              このたまごから生まれたイベント
+              {t("egg.hatchedHeading")}
             </Typography>
             <ListColumnsToggle />
           </Stack>

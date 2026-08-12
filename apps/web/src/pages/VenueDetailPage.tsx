@@ -15,6 +15,7 @@ import StadiumIcon from "@mui/icons-material/Stadium";
 import GroupsIcon from "@mui/icons-material/Groups";
 import EditIcon from "@mui/icons-material/Edit";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { VenueOwnerView } from "@eventer/shared";
 import { useVenue, venueImageUrl } from "../api/venueHooks.js";
 import { Markdown } from "../components/Markdown.js";
@@ -25,13 +26,14 @@ import { useMe } from "../api/hooks.js";
 
 /** 会場詳細（未ログイン可）。連絡先はマッチング成立まで非公開。 */
 export function VenueDetailPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const q = useVenue(id);
   const { data: me } = useMe();
 
-  if (q.isLoading) return <Typography>読み込み中…</Typography>;
+  if (q.isLoading) return <Typography>{t("common.loading")}</Typography>;
   if (q.isError || !q.data) {
-    return <Alert severity="info">会場が見つかりませんでした。</Alert>;
+    return <Alert severity="info">{t("venue.notFound")}</Alert>;
   }
   const { venue, owner, isOwner } = q.data;
   const isManager = q.data.isManager ?? isOwner;
@@ -67,7 +69,7 @@ export function VenueDetailPage() {
             <StadiumIcon fontSize="medium" />
             {venue.name}
           </Typography>
-          {venue.status === "closed" && <Chip label="受付停止中" />}
+          {venue.status === "closed" && <Chip label={t("venue.closed")} />}
           {isManager && (
             <Button
               size="small"
@@ -75,7 +77,7 @@ export function VenueDetailPage() {
               component={RouterLink}
               to={`/venues/${venue.id}/edit`}
             >
-              編集
+              {t("common.edit")}
             </Button>
           )}
         </Stack>
@@ -90,19 +92,24 @@ export function VenueDetailPage() {
           {venue.capacity != null && (
             <Stack direction="row" spacing={0.5} alignItems="center">
               <GroupsIcon sx={{ fontSize: 18, color: "text.secondary" }} />
-              <Typography color="text.secondary">〜{venue.capacity}人</Typography>
+              <Typography color="text.secondary">
+                {t(
+                  venue.capacity === 1 ? "venue.capacityOne" : "venue.capacity",
+                  { n: venue.capacity },
+                )}
+              </Typography>
             </Stack>
           )}
         </Stack>
         {!venue.addressPublic && (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            詳細な住所はマッチング成立後に開示されます
+            {t("venue.addressHidden")}
           </Typography>
         )}
         {owner && (
           <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.5 }}>
             <Typography variant="body2" color="text.secondary">
-              提供者:
+              {t("venue.ownerLabel")}
             </Typography>
             <UserLink
               username={owner.username}
@@ -119,7 +126,7 @@ export function VenueDetailPage() {
         <Box>
           <Box
             component="iframe"
-            title="会場の地図"
+            title={t("venue.mapTitle")}
             src={`https://maps.google.com/maps?q=${encodeURIComponent(`${venue.area} ${venue.address}`)}&z=16&output=embed`}
             loading="lazy"
             referrerPolicy="no-referrer"
@@ -138,7 +145,7 @@ export function VenueDetailPage() {
             variant="body2"
             sx={{ display: "inline-block", mt: 0.5 }}
           >
-            Googleマップで開く
+            {t("venue.mapOpen")}
           </Link>
         </Box>
       )}
@@ -159,7 +166,7 @@ export function VenueDetailPage() {
             {venue.equipment && (
               <>
                 <Typography variant="h6" gutterBottom>
-                  設備
+                  {t("venue.equipmentHeading")}
                 </Typography>
                 <Typography sx={{ whiteSpace: "pre-wrap" }}>
                   {venue.equipment}
@@ -170,7 +177,7 @@ export function VenueDetailPage() {
             {venue.terms && (
               <>
                 <Typography variant="h6" gutterBottom>
-                  提供条件
+                  {t("venue.termsHeading")}
                 </Typography>
                 <Typography sx={{ whiteSpace: "pre-wrap" }}>{venue.terms}</Typography>
               </>
@@ -180,9 +187,7 @@ export function VenueDetailPage() {
       )}
 
       {isManager && contact && (
-        <Alert severity="info">
-          連絡先（マッチング相手にのみ開示）: {contact}
-        </Alert>
+        <Alert severity="info">{t("venue.contactNotice", { contact })}</Alert>
       )}
 
       {/* イベンター向け: 利用申込（オーナー以外・ログイン済み・受付中のみ） */}

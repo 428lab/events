@@ -850,7 +850,7 @@ export function EventDetailPage() {
           )}
           {isStaff && (
             <Button variant="contained" component={RouterLink} to={`/events/${id}/edit`}>
-              {t("eventDetail.edit")}
+              {t("common.edit")}
             </Button>
           )}
           {isStaff && (

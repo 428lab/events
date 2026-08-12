@@ -17,6 +17,7 @@ import EggIcon from "@mui/icons-material/Egg";
 import RssFeedIcon from "@mui/icons-material/RssFeed";
 import SearchIcon from "@mui/icons-material/Search";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useMe } from "../api/hooks.js";
 import { usePublicEventRequests } from "../api/requestHooks.js";
 import { RequestCard } from "../components/RequestCard.js";
@@ -24,17 +25,18 @@ import { EggTabs } from "../components/EggTabs.js";
 
 /** イベントのたまご一覧（あったらいいな）。 */
 export function EventRequestsPage() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState("");
   const [sort, setSort] = useState<"new" | "popular">("new");
   // 入力から少し待って検索（タイプ毎のリクエストを抑える）
   const [debouncedQ, setDebouncedQ] = useState("");
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       setDebouncedQ(keyword.trim());
       setPage(1);
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [keyword]);
 
   const { data: me } = useMe();
@@ -60,10 +62,10 @@ export function EventRequestsPage() {
             sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
           >
             <EggIcon fontSize="medium" />
-            イベントのたまご
+            {t("egg.title")}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            「こんなイベントがあったらいいな」を投稿して、賛同を集めよう。誰かが「開催します」したらイベントに孵ります
+            {t("egg.lead", { action: t("egg.willHost") })}
           </Typography>
         </Box>
         {me && (
@@ -74,7 +76,7 @@ export function EventRequestsPage() {
             startIcon={<AddIcon />}
             sx={{ flexShrink: 0 }}
           >
-            投稿
+            {t("common.post")}
           </Button>
         )}
       </Stack>
@@ -87,7 +89,7 @@ export function EventRequestsPage() {
       >
         <TextField
           size="small"
-          placeholder="キーワードで検索（タイトル・説明）"
+          placeholder={t("egg.searchPlaceholder")}
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           fullWidth
@@ -113,20 +115,18 @@ export function EventRequestsPage() {
           }}
           sx={{ flexShrink: 0 }}
         >
-          <ToggleButton value="new">新着順</ToggleButton>
-          <ToggleButton value="popular">人気順</ToggleButton>
+          <ToggleButton value="new">{t("egg.sortNew")}</ToggleButton>
+          <ToggleButton value="popular">{t("egg.sortPopular")}</ToggleButton>
         </ToggleButtonGroup>
       </Stack>
 
       {q.isError ? (
-        <Alert severity="error">読み込めませんでした。再読み込みしてください。</Alert>
+        <Alert severity="error">{t("common.loadErrorReload")}</Alert>
       ) : q.isLoading ? (
-        <Typography>読み込み中…</Typography>
+        <Typography>{t("common.loading")}</Typography>
       ) : requests.length === 0 ? (
         <Typography color="text.secondary">
-          {debouncedQ
-            ? "条件に合うたまごが見つかりませんでした。"
-            : "まだたまごはありません。最初の「あったらいいな」を投稿してみましょう。"}
+          {debouncedQ ? t("egg.emptyFiltered") : t("egg.empty")}
         </Typography>
       ) : (
         <Stack spacing={2}>
@@ -157,7 +157,7 @@ export function EventRequestsPage() {
       >
         <RssFeedIcon fontSize="small" sx={{ color: "text.secondary" }} />
         <Typography variant="body2" color="text.secondary">
-          たまごをフィードで購読:
+          {t("egg.feedSubscribe")}
         </Typography>
         <Link href="/feed/requests.rss" target="_blank" rel="noopener" variant="body2">
           RSS

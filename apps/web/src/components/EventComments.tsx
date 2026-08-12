@@ -152,7 +152,7 @@ export function EventComments({
                   disabled={!body.trim() || addComment.isPending}
                   onClick={submit}
                 >
-                  {t("eventSocial.commentSubmit")}
+                  {t("common.post")}
                 </Button>
               </Stack>
             </Box>

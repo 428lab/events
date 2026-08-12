@@ -15,11 +15,6 @@ const ja = {
   /* ── この範囲の画面をまたいで使うもの ─────────────────────── */
   /** 選択肢の先頭に置く「まだ選んでいない」項目（発表中のチーム・受賞チーム） */
   notSelected: "（未選択）",
-  /** ゴミ箱ボタンの読み上げ名（採点項目・表彰の編集）。
-   *  日本語は `eventForm.imageRemove` と同じ綴りだが、あちらは選んだ画像を
-   *  フォームから外すだけなので英語は "Remove"。こちらは消えて戻らない
-   *  ので "Delete"。**別物なので共通化しない** */
-  delete: "削除",
   /** 集計の表の見出し（進行コントロール・採点結果） */
   teamColumn: "チーム",
   totalColumn: "合計",
@@ -136,7 +131,6 @@ const ja = {
 
 const en: Record<keyof typeof ja, string> = {
   notSelected: "(none selected)",
-  delete: "Delete",
   teamColumn: "Team",
   totalColumn: "Total",
 

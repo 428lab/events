@@ -16,6 +16,7 @@ import StadiumIcon from "@mui/icons-material/Stadium";
 import PlaceIcon from "@mui/icons-material/Place";
 import GroupsIcon from "@mui/icons-material/Groups";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { Venue } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
 import {
@@ -27,6 +28,7 @@ import { EventList, ListColumnsToggle } from "../components/EventList.js";
 import { RequestCard } from "../components/RequestCard.js";
 
 function VenueCard({ venue }: { venue: Venue }) {
+  const { t } = useTranslation();
   const img = venueImageUrl(venue);
   return (
     <Card>
@@ -72,12 +74,15 @@ function VenueCard({ venue }: { venue: Venue }) {
               <Stack direction="row" spacing={0.5} alignItems="center">
                 <GroupsIcon sx={{ fontSize: 16, color: "text.secondary" }} />
                 <Typography variant="body2" color="text.secondary">
-                  〜{venue.capacity}人
+                  {t(
+                    venue.capacity === 1 ? "venue.capacityOne" : "venue.capacity",
+                    { n: venue.capacity },
+                  )}
                 </Typography>
               </Stack>
             )}
             {venue.status === "closed" && (
-              <Chip size="small" label="受付停止中" />
+              <Chip size="small" label={t("venue.closed")} />
             )}
           </Stack>
           {venue.description && (
@@ -103,6 +108,7 @@ function VenueCard({ venue }: { venue: Venue }) {
 
 /** 会場一覧（提供受付中・未ログイン可）。 */
 export function VenuesPage() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const { data: me } = useMe();
   const q = usePublicVenues(page);
@@ -126,10 +132,10 @@ export function VenuesPage() {
             sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
           >
             <StadiumIcon fontSize="medium" />
-            会場
+            {t("nav.venues")}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            イベントに使える会場。会場を持っている人は登録して主催者とつながれます
+            {t("venue.lead")}
           </Typography>
         </Box>
         {me && (
@@ -140,19 +146,17 @@ export function VenuesPage() {
             startIcon={<AddIcon />}
             sx={{ flexShrink: 0 }}
           >
-            会場を登録
+            {t("venue.register")}
           </Button>
         )}
       </Stack>
 
       {q.isError ? (
-        <Alert severity="error">読み込めませんでした。再読み込みしてください。</Alert>
+        <Alert severity="error">{t("common.loadErrorReload")}</Alert>
       ) : q.isLoading ? (
-        <Typography>読み込み中…</Typography>
+        <Typography>{t("common.loading")}</Typography>
       ) : venues.length === 0 ? (
-        <Typography color="text.secondary">
-          まだ会場はありません。最初の会場を登録してみましょう。
-        </Typography>
+        <Typography color="text.secondary">{t("venue.empty")}</Typography>
       ) : (
         <Stack spacing={2}>
           {venues.map((v) => (
@@ -178,6 +182,7 @@ export function VenuesPage() {
 
 /** 会場を探しているイベント・たまご（会場オーナー向けの募集一覧） */
 function WantedSection() {
+  const { t } = useTranslation();
   const { data } = useVenueWanted();
   const events = data?.events ?? [];
   const requests = data?.requests ?? [];
@@ -196,12 +201,12 @@ function WantedSection() {
           sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
         >
           <SearchIcon fontSize="medium" />
-          会場を探しています
+          {t("eventForm.venueWanted")}
         </Typography>
         {events.length > 0 && <ListColumnsToggle />}
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-        会場を提供できる場合は、各ページの「会場を提供できます」からオファーを送れます
+        {t("venue.wantedLead", { action: t("venue.offerCta") })}
       </Typography>
       {events.length > 0 && <EventList events={events} />}
       {requests.length > 0 && (

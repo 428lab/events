@@ -106,7 +106,7 @@ export function roleLabel(role: EventRole | string): string {
 
 /** 開催形態のラベル。知らない値はそのまま返す */
 export function venueLabel(venue: VenueType | string): string {
-  return tDynamic(`venue.${venue}`, String(venue));
+  return tDynamic(`venueType.${venue}`, String(venue));
 }
 
 /** 人数表示に使うイベント項目 */

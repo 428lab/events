@@ -41,6 +41,16 @@ const ja = {
   emptyScheduling: "日程調整中のイベントはありません。",
   emptyPast: "過去のイベントはありません。",
 
+  /** 短いシェアURL (/e/:slug) から辿れなかったとき (#366)。たまごの
+   *  `egg.notFoundShort` と対になる（片方だけ訳すと同じ形の2画面で割れる）。
+   *
+   *  `eventSocial.chatEventNotFound` と**日英とも同じ綴りだが、意図して
+   *  別のキーにしている**。`common` へ寄せた「削除」「編集」などは
+   *  *どの領域からも使う語*なので1つにしたが、こちらは
+   *  「イベント一覧の側」と「イベント内の書き込みの側」で、
+   *  片方の言い回しを変えたくなったときにもう片方を巻き込む方が高くつく */
+  notFound: "イベントが見つかりません。",
+
   /** 読み込みに失敗したとき（サーバーがコードを返さないときの言い方） */
   loadError: "イベントを読み込めませんでした。再読み込みしてください。",
 
@@ -94,6 +104,8 @@ const en: Record<keyof typeof ja, string> = {
   emptyUpcoming: "No upcoming events yet.",
   emptyScheduling: "No events are picking a date right now.",
   emptyPast: "No past events yet.",
+
+  notFound: "This event could not be found.",
 
   loadError: "Couldn't load events. Please reload the page.",
 

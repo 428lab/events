@@ -9,6 +9,8 @@
  * 日本語と英語を並べて書く。片方だけ足すと型で落ちる。
  */
 import { common } from "./messages/common.js";
+import { community } from "./messages/community.js";
+import { egg } from "./messages/egg.js";
 import { errors } from "./messages/errors.js";
 import { eventDetail } from "./messages/eventDetail.js";
 import { eventForm } from "./messages/eventForm.js";
@@ -25,6 +27,11 @@ import { communityRole, profile } from "./messages/profile.js";
 import { schedule } from "./messages/schedule.js";
 import { linkError, settings } from "./messages/settings.js";
 import { themeName } from "./messages/theme.js";
+import {
+  venue,
+  venueOfferError,
+  venueOfferStatus,
+} from "./messages/venue.js";
 import {
   broadcastSegment,
   broadcastSegmentNote,
@@ -50,6 +57,7 @@ export const translations = {
     themeName: themeName.ja,
     login: login.ja,
     events: events.ja,
+    egg: egg.ja,
     eventDetail: eventDetail.ja,
     eventForm: eventForm.ja,
     eventRun: eventRun.ja,
@@ -66,6 +74,10 @@ export const translations = {
     notifications: notifications.ja,
     inquiries: inquiries.ja,
     inquiryStatus: inquiryStatus.ja,
+    community: community.ja,
+    venue: venue.ja,
+    venueOfferStatus: venueOfferStatus.ja,
+    venueOfferError: venueOfferError.ja,
     profile: profile.ja,
     communityRole: communityRole.ja,
     meet: meet.ja,
@@ -78,6 +90,7 @@ export const translations = {
     themeName: themeName.en,
     login: login.en,
     events: events.en,
+    egg: egg.en,
     eventDetail: eventDetail.en,
     eventForm: eventForm.en,
     eventRun: eventRun.en,
@@ -94,6 +107,10 @@ export const translations = {
     notifications: notifications.en,
     inquiries: inquiries.en,
     inquiryStatus: inquiryStatus.en,
+    community: community.en,
+    venue: venue.en,
+    venueOfferStatus: venueOfferStatus.en,
+    venueOfferError: venueOfferError.en,
     profile: profile.en,
     communityRole: communityRole.en,
     meet: meet.en,

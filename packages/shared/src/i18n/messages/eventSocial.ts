@@ -73,6 +73,9 @@ const ja = {
   chatHideMessageConfirm: "このメッセージを参加者の画面から非表示にしますか？",
 
   /* ===== チャット専用ページ (#215) ===== */
+  /** `events.notFound` と日英とも同じ綴りだが、**意図して別のキー**にしている
+   *  （理由は `events.notFound` のコメント）。`common` へ寄せた語との違いは、
+   *  こちらが「どの領域からも使う語」ではないこと */
   chatEventNotFound: "イベントが見つかりません。",
   chatPageBackToEvent: "イベントページへ戻る",
   chatPageScreenView: "投影用画面",
@@ -156,7 +159,6 @@ const ja = {
   commentsHeading: "コメント（{{n}}）",
   commentsEmpty: "まだコメントはありません。",
   commentPlaceholder: "コメントを追加…（Markdown が使えます）",
-  commentSubmit: "投稿",
   commentDelete: "コメントを削除",
   commentDeleteConfirm: "このコメントを削除しますか？",
   commentPostFailed: "コメントの投稿に失敗しました。",
@@ -180,7 +182,6 @@ const ja = {
   likeCaptionCommunity: "コミュニティ",
 
   /* ===== 写真 ===== */
-  photosHeading: "写真（{{n}}）",
   photoAdd: "写真を追加",
   photoUploading: "アップロード中… 残り{{n}}",
   photoUploadFailed: "アップロードに失敗しました。",
@@ -194,7 +195,6 @@ const ja = {
   photosEmpty: "まだ写真がありません。",
   photosEmptyHint: "「写真を追加」やドラッグ&ドロップで共有しましょう。",
   photoDelete: "写真を削除",
-  photoDeleteConfirm: "この写真を削除しますか？",
   photoCommentDelete: "このコメントを削除",
   photoCommentPlaceholder: "コメントを追加…",
   photoCommentLimit: "コメントは1枚につき{{n}}件までです。",
@@ -321,7 +321,6 @@ const en: Record<keyof typeof ja, string> = {
   commentsHeading: "Comments ({{n}})",
   commentsEmpty: "No comments yet.",
   commentPlaceholder: "Add a comment… (Markdown is supported)",
-  commentSubmit: "Post",
   commentDelete: "Delete this comment",
   commentDeleteConfirm: "Delete this comment?",
   commentPostFailed: "Could not post your comment.",
@@ -339,7 +338,6 @@ const en: Record<keyof typeof ja, string> = {
   likeCaptionHost: "Host",
   likeCaptionCommunity: "Community",
 
-  photosHeading: "Photos ({{n}})",
   photoAdd: "Add photos",
   photoUploading: "Uploading… {{n}} left",
   photoUploadFailed: "Could not upload.",
@@ -352,7 +350,6 @@ const en: Record<keyof typeof ja, string> = {
   photosEmpty: "No photos yet.",
   photosEmptyHint: " Use “Add photos”, or drag and drop, to share some.",
   photoDelete: "Delete this photo",
-  photoDeleteConfirm: "Delete this photo?",
   photoCommentDelete: "Delete this comment",
   photoCommentPlaceholder: "Add a comment…",
   photoCommentLimit: "A photo can have at most {{n}} comments.",
