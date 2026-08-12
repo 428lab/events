@@ -3,6 +3,7 @@ import { Box, IconButton, MenuItem, Paper, TextField, Typography } from "@mui/ma
 import SettingsIcon from "@mui/icons-material/Settings";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { EventInfoField, LiveElement } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
 import {
@@ -21,6 +22,7 @@ const DEVICE_KEY = "eventer-live-camera-device";
 /** 配信画面タブ（OBSがウィンドウキャプチャする完成画面）。
  * AppBarなし・16:9レターボックス・1秒ポーリングでシーン切替 */
 export function LiveScreenPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const event = eventData?.event;
@@ -181,7 +183,7 @@ export function LiveScreenPage() {
             fontSize: 18,
           }}
         >
-          スライド未選択（コントロール画面で選べます）
+          {t("studio.deckUnselected")}
         </div>
       ),
     eventInfo: (field: EventInfoField) => {
@@ -191,7 +193,7 @@ export function LiveScreenPage() {
           return event.title;
         case "datetime":
           return event.scheduling
-            ? "日程調整中"
+            ? t("studio.datetimeTbd")
             : formatDateRange(event.startsAt, event.endsAt);
         case "participants":
           return participantCountLabel(event);
@@ -230,7 +232,7 @@ export function LiveScreenPage() {
           <LiveSceneStage scene={scene} width={stageW} runtime={runtime} />
         </Box>
       ) : (
-        <Typography color="#334155">配信セットを読み込み中…</Typography>
+        <Typography color="#334155">{t("studio.liveSetLoading")}</Typography>
       )}
 
       <audio ref={audioRef} hidden />
@@ -261,7 +263,7 @@ export function LiveScreenPage() {
             sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
           >
             <VolumeOffIcon fontSize="small" />
-            クリックして BGM を有効化
+            {t("studio.bgmUnblock")}
           </Box>
         </Box>
       )}
@@ -275,17 +277,17 @@ export function LiveScreenPage() {
                 select
                 fullWidth
                 size="small"
-                label="カメラ"
+                label={t("studio.elementCamera")}
                 value={deviceId}
                 onChange={(e) => {
                   setDeviceId(e.target.value);
                   localStorage.setItem(DEVICE_KEY, e.target.value);
                 }}
               >
-                <MenuItem value="">既定のカメラ</MenuItem>
+                <MenuItem value="">{t("studio.cameraDefault")}</MenuItem>
                 {devices.map((d) => (
                   <MenuItem key={d.deviceId} value={d.deviceId}>
-                    {d.label || "カメラ"}
+                    {d.label || t("studio.elementCamera")}
                   </MenuItem>
                 ))}
               </TextField>
@@ -312,6 +314,7 @@ function CameraVideo({
   stream: MediaStream | null;
   fit: "cover" | "contain";
 }) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (ref.current && stream) {
@@ -332,7 +335,7 @@ function CameraVideo({
           fontSize: 16,
         }}
       >
-        カメラ待機中…
+        {t("studio.cameraWaiting")}
       </div>
     );
   }

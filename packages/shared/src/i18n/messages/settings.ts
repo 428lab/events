@@ -76,7 +76,7 @@ const ja = {
   mergeIssueCode: "統合コードを発行",
   mergeIssueFailed: "統合コードの発行に失敗しました。",
   mergeCopy: "コピー",
-  mergeCopied: "コピーしました",
+  /** 入れたあとの表示は `common.copied`（BGM のクレジットと同じ綴り, #367） */
   mergeStep2: "2. コードを入力して統合する",
   mergeCodeLabel: "統合コード",
   mergeKeepLabel:
@@ -202,7 +202,6 @@ const en: Record<keyof typeof ja, string> = {
   mergeIssueCode: "Issue a merge code",
   mergeIssueFailed: "Could not issue a merge code.",
   mergeCopy: "Copy",
-  mergeCopied: "Copied",
   mergeStep2: "2. Enter a code and merge",
   mergeCodeLabel: "Merge code",
   mergeKeepLabel:

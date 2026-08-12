@@ -125,7 +125,7 @@ export function VenuePhotos({
             onClick={() => fileInput.current?.click()}
           >
             {upload.isPending
-              ? t("venue.photoUploading")
+              ? t("common.uploading")
               : isOwner
                 ? t("venue.photoAddOwner", { n: VENUE_PHOTO_LIMIT })
                 : t("venue.photoSubmit")}

@@ -17,6 +17,7 @@ import MonitorIcon from "@mui/icons-material/Monitor";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import EditIcon from "@mui/icons-material/Edit";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { DEFAULT_LIVE_SET_ID } from "@eventer/shared";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -46,6 +47,7 @@ import { usePresenterPanel } from "../lib/usePresenterPanel.js";
 
 /** 配信コントロールタブ（シーン切替・配信セット選択）。スマホでも操作できる */
 export function LiveControlPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const isAdmin = useIsAdmin();
@@ -63,21 +65,23 @@ export function LiveControlPage() {
   // 登壇者向けサイドパネル (#215)。開閉は発表ビューと共有する
   const [panelOpen] = usePresenterPanel();
 
-  const selectedBgm = (bgmTracks ?? []).find((t) => t.id === state?.bgmTrackId);
+  const selectedBgm = (bgmTracks ?? []).find(
+    (track) => track.id === state?.bgmTrackId,
+  );
   const onBgmFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const name = window.prompt("曲名（コントロールに表示されます）", file.name.replace(/\.[^.]+$/, ""));
-    if (name === null) return;
-    const credit = window.prompt(
-      "クレジット表記（YouTube概要欄に貼る出典・ライセンス。省略可）",
-      "",
+    const name = window.prompt(
+      t("studio.bgmNamePrompt"),
+      file.name.replace(/\.[^.]+$/, ""),
     );
+    if (name === null) return;
+    const credit = window.prompt(t("studio.bgmCreditPrompt"), "");
     try {
       await uploadBgm.mutateAsync({ file, name: name || file.name, credit: credit ?? "" });
     } catch {
-      window.alert("アップロードに失敗しました（対応形式: mp3/m4a/ogg/wav、8MBまで）");
+      window.alert(t("studio.bgmUploadFailed"));
     }
   };
   const copyCredit = async () => {
@@ -89,7 +93,7 @@ export function LiveControlPage() {
 
   const isStaff = eventData?.myRole === "staff" || isAdmin;
   if (eventData && !isStaff) {
-    return <Alert severity="warning">この画面はスタッフ専用です。</Alert>;
+    return <Alert severity="warning">{t("studio.controlStaffOnly")}</Alert>;
   }
 
   const scenes = liveSet?.content.scenes ?? [];
@@ -119,7 +123,7 @@ export function LiveControlPage() {
             }}
           >
             <LiveTvIcon fontSize="medium" />
-            配信コントロール
+            {t("studio.controlHeading")}
           </Typography>
           {/* 登壇者向けサイドパネル (#215)。開閉は発表ビューと共有する */}
           <PresenterPanelToggle />
@@ -130,13 +134,12 @@ export function LiveControlPage() {
             to={`/events/${id}/live/screen`}
             target="_blank"
           >
-            配信画面を開く
+            {t("studio.openLiveScreen")}
           </Button>
         </Stack>
 
         <Alert severity="info" sx={{ py: 0.5 }}>
-          「配信画面を開く」で出る画面を OBS
-          の「ウィンドウキャプチャ」で取り込んでください（音声はデスクトップ音声）。シーンを切り替えると配信画面に約1秒で反映されます。
+          {t("studio.obsHint", { action: t("studio.openLiveScreen") })}
         </Alert>
 
         {/* 配信セット選択 */}
@@ -144,7 +147,7 @@ export function LiveControlPage() {
           <TextField
             select
             size="small"
-            label="配信セット"
+            label={t("studio.liveSet")}
             value={state?.liveSetId ?? DEFAULT_LIVE_SET_ID}
             onChange={(e) =>
               update.mutate({
@@ -155,10 +158,12 @@ export function LiveControlPage() {
             }
             sx={{ minWidth: 220 }}
           >
-            <MenuItem value={DEFAULT_LIVE_SET_ID}>デフォルト（ビルトイン）</MenuItem>
+            <MenuItem value={DEFAULT_LIVE_SET_ID}>
+              {t("studio.liveSetDefault")}
+            </MenuItem>
             {(mySets ?? []).map((s) => (
               <MenuItem key={s.id} value={s.id}>
-                {s.name || "無題の配信セット"}
+                {s.name || t("studio.untitledLiveSet")}
               </MenuItem>
             ))}
           </TextField>
@@ -169,11 +174,11 @@ export function LiveControlPage() {
               component={RouterLink}
               to={`/live-sets/${state.liveSetId}/edit`}
             >
-              セットを編集
+              {t("studio.editLiveSet")}
             </Button>
           )}
           <Button size="small" component={RouterLink} to="/live-sets">
-            セット一覧
+            {t("studio.allLiveSets")}
           </Button>
         </Stack>
 
@@ -252,7 +257,7 @@ export function LiveControlPage() {
 
         {scenes.length === 0 && (
           <Typography color="text.secondary">
-            配信セットにシーンがありません。「セットを編集」から追加してください。
+            {t("studio.scenesEmpty", { action: t("studio.editLiveSet") })}
           </Typography>
         )}
 
@@ -263,13 +268,13 @@ export function LiveControlPage() {
             sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
           >
             <MonitorIcon fontSize="small" />
-            スライド
+            {t("nav.decks")}
           </Typography>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             <TextField
               select
               size="small"
-              label="配信で映すスライド"
+              label={t("studio.deckToShow")}
               value={state?.deckId ?? ""}
               onChange={(e) =>
                 update.mutate({
@@ -280,10 +285,10 @@ export function LiveControlPage() {
               sx={{ minWidth: 220 }}
               SelectProps={{ displayEmpty: true }}
             >
-              <MenuItem value="">（なし）</MenuItem>
+              <MenuItem value="">{t("studio.noneOption")}</MenuItem>
               {(myDecks ?? []).map((d) => (
                 <MenuItem key={d.id} value={d.id}>
-                  {d.title || "無題のスライド"}
+                  {d.title || t("studio.untitledDeck")}
                 </MenuItem>
               ))}
             </TextField>
@@ -344,7 +349,7 @@ export function LiveControlPage() {
             sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
           >
             <MusicNoteIcon fontSize="small" />
-            BGM
+            {t("studio.bgmHeading")}
           </Typography>
           <input
             ref={bgmFileRef}
@@ -357,7 +362,7 @@ export function LiveControlPage() {
             <TextField
               select
               size="small"
-              label="曲"
+              label={t("studio.bgmTrack")}
               value={state?.bgmTrackId ?? ""}
               onChange={(e) =>
                 update.mutate({
@@ -368,19 +373,19 @@ export function LiveControlPage() {
               sx={{ minWidth: 220 }}
               SelectProps={{ displayEmpty: true }}
             >
-              <MenuItem value="">（なし）</MenuItem>
-              {(bgmTracks ?? []).map((t) => (
-                <MenuItem key={t.id} value={t.id}>
-                  {t.ownerId === null ? (
+              <MenuItem value="">{t("studio.noneOption")}</MenuItem>
+              {(bgmTracks ?? []).map((track) => (
+                <MenuItem key={track.id} value={track.id}>
+                  {track.ownerId === null ? (
                     <Box
                       component="span"
                       sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
                     >
                       <CardGiftcardIcon fontSize="small" />
-                      {t.name}
+                      {track.name}
                     </Box>
                   ) : (
-                    t.name
+                    track.name
                   )}
                 </MenuItem>
               ))}
@@ -392,7 +397,7 @@ export function LiveControlPage() {
               disabled={!state?.bgmTrackId}
               onClick={() => update.mutate({ bgmPlaying: !state?.bgmPlaying })}
             >
-              {state?.bgmPlaying ? "停止" : "再生"}
+              {state?.bgmPlaying ? t("studio.bgmStop") : t("studio.bgmPlay")}
             </Button>
             <Button
               size="small"
@@ -400,14 +405,18 @@ export function LiveControlPage() {
               disabled={uploadBgm.isPending}
               onClick={() => bgmFileRef.current?.click()}
             >
-              {uploadBgm.isPending ? "アップロード中…" : "曲を追加"}
+              {uploadBgm.isPending ? t("common.uploading") : t("studio.bgmAdd")}
             </Button>
             {selectedBgm && selectedBgm.ownerId !== null && (
-              <Tooltip title="この曲を削除">
+              <Tooltip title={t("studio.bgmDelete")}>
                 <IconButton
                   size="small"
                   onClick={() => {
-                    if (window.confirm(`「${selectedBgm.name}」を削除しますか？`)) {
+                    if (
+                      window.confirm(
+                        t("studio.deleteConfirm", { name: selectedBgm.name }),
+                      )
+                    ) {
                       update.mutate({ bgmTrackId: null, bgmPlaying: false });
                       deleteBgm.mutate(selectedBgm.id);
                     }
@@ -420,7 +429,7 @@ export function LiveControlPage() {
           </Stack>
           <Stack direction="row" spacing={2} alignItems="center" sx={{ maxWidth: 420 }}>
             <Typography variant="caption" color="text.secondary" sx={{ width: 40 }}>
-              音量
+              {t("studio.bgmVolume")}
             </Typography>
             <Slider
               size="small"
@@ -441,13 +450,12 @@ export function LiveControlPage() {
                 {selectedBgm.creditText}
               </Typography>
               <Button size="small" startIcon={<ContentCopyIcon />} onClick={copyCredit}>
-                {copied ? "コピーしました" : "クレジットをコピー"}
+                {copied ? t("common.copied") : t("studio.bgmCopyCredit")}
               </Button>
             </Stack>
           )}
           <Typography variant="caption" color="text.secondary">
-            BGMは配信画面タブ側で鳴ります（OBSのデスクトップ音声が拾います）。クレジットは
-            YouTube 概要欄に貼ってください。
+            {t("studio.bgmNote")}
           </Typography>
         </Stack>
       </Stack>

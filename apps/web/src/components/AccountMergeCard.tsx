@@ -120,7 +120,7 @@ export function AccountMergeCard() {
                 startIcon={<ContentCopyIcon />}
                 onClick={copyCode}
               >
-                {copied ? t("settings.mergeCopied") : t("settings.mergeCopy")}
+                {copied ? t("common.copied") : t("settings.mergeCopy")}
               </Button>
             </Stack>
           )}

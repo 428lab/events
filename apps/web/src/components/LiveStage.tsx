@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import ImageIcon from "@mui/icons-material/Image";
 import MonitorIcon from "@mui/icons-material/Monitor";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
@@ -16,12 +17,19 @@ export interface LiveRuntime {
   eventInfo?: (field: EventInfoField) => string;
 }
 
-const PLACEHOLDER_INFO: Record<EventInfoField, string> = {
-  title: "イベントタイトル",
-  datetime: "2026/1/1 19:00 〜 21:00",
-  participants: "参加 12 人",
-  community: "コミュニティ名",
-};
+/** 実体が差し込まれないとき（エディタ・サムネイル）に出す見本。
+ * **訳した文字列ではなくキーを持つ**ので、言語を切り替えたときに
+ * 前の言語のまま残らない (#367) */
+const PLACEHOLDER_INFO_KEY = {
+  title: "studio.infoFieldTitle",
+  datetime: "studio.infoSampleDatetime",
+  /** 人数の並べ方は共通の文言を引く（差し込みが要るのはこれだけ） */
+  participants: "common.participants",
+  community: "studio.infoFieldCommunity",
+} as const satisfies Record<EventInfoField, string>;
+
+/** 見本に出す参加人数 */
+const PLACEHOLDER_PARTICIPANTS = 12;
 
 function Placeholder({ label, icon }: { label: string; icon: ReactNode }) {
   return (
@@ -80,6 +88,7 @@ export function LiveElementContent({
   el: LiveElement;
   runtime?: LiveRuntime;
 }) {
+  const { t } = useTranslation();
   switch (el.type) {
     case "image":
       return el.src ? (
@@ -96,7 +105,10 @@ export function LiveElementContent({
           }}
         />
       ) : (
-        <Placeholder label="画像未設定" icon={<ImageIcon sx={{ fontSize: 36 }} />} />
+        <Placeholder
+          label={t("studio.imageUnset")}
+          icon={<ImageIcon sx={{ fontSize: 36 }} />}
+        />
       );
     case "camera": {
       const inner = runtime?.camera?.(el);
@@ -110,7 +122,10 @@ export function LiveElementContent({
           }}
         >
           {inner ?? (
-            <Placeholder label="カメラ" icon={<PhotoCameraIcon sx={{ fontSize: 36 }} />} />
+            <Placeholder
+              label={t("studio.elementCamera")}
+              icon={<PhotoCameraIcon sx={{ fontSize: 36 }} />}
+            />
           )}
         </div>
       );
@@ -118,12 +133,17 @@ export function LiveElementContent({
     case "deck":
       return (
         runtime?.deck?.(el) ?? (
-          <Placeholder label="スライド" icon={<MonitorIcon sx={{ fontSize: 36 }} />} />
+          <Placeholder
+            label={t("studio.elementDeck")}
+            icon={<MonitorIcon sx={{ fontSize: 36 }} />}
+          />
         )
       );
     case "eventInfo": {
       const field = el.field ?? "title";
-      const value = runtime?.eventInfo?.(field) ?? PLACEHOLDER_INFO[field];
+      const value =
+        runtime?.eventInfo?.(field) ??
+        t(PLACEHOLDER_INFO_KEY[field], { n: PLACEHOLDER_PARTICIPANTS });
       return <div style={textStyle(el)}>{value}</div>;
     }
     default:

@@ -97,7 +97,7 @@ const ja = {
   /* ── 写真 ─────────────────────────────────────────────── */
   photoAddOwner: "写真を追加（最大{{n}}点）",
   photoSubmit: "写真を投稿（管理者の確認後に公開）",
-  photoUploading: "アップロード中…",
+  /** 送っている間の表示は `common.uploading`（スライドの画像と同じ綴り, #367） */
   /** 上限は固定の定数（10点）なので英語の単数用キーは要らない */
   photoLimit: "写真は最大 {{n}} 点までです。",
   /** 残り枠は 1 になりうるので単数用のキーが要る */
@@ -229,7 +229,6 @@ const en: Record<keyof typeof ja, string> = {
 
   photoAddOwner: "Add photos (up to {{n}})",
   photoSubmit: "Submit a photo (published after an admin reviews it)",
-  photoUploading: "Uploading…",
   photoLimit: "A venue can have at most {{n}} photos.",
   photoRoomOne: "You can add {{n}} more photo.",
   photoRoom: "You can add {{n}} more photos.",

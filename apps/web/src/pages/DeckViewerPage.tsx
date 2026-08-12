@@ -4,11 +4,13 @@ import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { usePublicDeck } from "../api/deckHooks.js";
 import { SlideStage } from "../components/SlideStage.js";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
 
 export function DeckViewerPage() {
+  const { t } = useTranslation();
   const { slug = "" } = useParams();
   const { data: deck, isLoading, isError } = usePublicDeck(slug);
   const [index, setIndex] = useState(0);
@@ -51,10 +53,11 @@ export function DeckViewerPage() {
 
   const fullscreen = () => wrapRef.current?.requestFullscreen?.();
 
-  if (isError) return <Alert severity="info">スライドが見つかりません。</Alert>;
-  if (isLoading || !deck) return <Typography>読み込み中…</Typography>;
+  if (isError)
+    return <Alert severity="info">{t("studio.deckNotFound")}</Alert>;
+  if (isLoading || !deck) return <Typography>{t("common.loading")}</Typography>;
   if (total === 0)
-    return <Alert severity="info">このスライドにはまだページがありません。</Alert>;
+    return <Alert severity="info">{t("studio.deckNoPages")}</Alert>;
 
   const slide = slides[Math.min(index, total - 1)];
 
@@ -92,7 +95,7 @@ export function DeckViewerPage() {
         <IconButton onClick={() => go(1)} disabled={index >= total - 1}>
           <ArrowForwardIosIcon />
         </IconButton>
-        <IconButton onClick={fullscreen} title="フルスクリーン">
+        <IconButton onClick={fullscreen} title={t("studio.deckFullscreen")}>
           <FullscreenIcon />
         </IconButton>
       </Stack>

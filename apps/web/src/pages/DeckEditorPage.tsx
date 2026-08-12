@@ -33,6 +33,7 @@ import FlipToBackIcon from "@mui/icons-material/FlipToBack";
 import FolderIcon from "@mui/icons-material/Folder";
 import LibraryAddCheckIcon from "@mui/icons-material/LibraryAddCheck";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Rnd } from "react-rnd";
 import { DECK_H, DECK_W } from "@eventer/shared";
 import type { DeckContent, DeckElement, DeckSlide } from "@eventer/shared";
@@ -42,13 +43,19 @@ import {
   useUploadDeckImage,
 } from "../api/deckHooks.js";
 import { ElementContent, SlideStage } from "../components/SlideStage.js";
-import { DECK_FONTS, ensureDeckFont, ensureDeckFonts } from "../lib/deckFonts.js";
+import {
+  ensureDeckFont,
+  ensureDeckFonts,
+  useDeckFontOptions,
+} from "../lib/deckFonts.js";
 import { encodeImageForUpload } from "../lib/encodeImage.js";
 
 const uid = () => crypto.randomUUID();
 const THUMB_W = 150;
 
 export function DeckEditorPage() {
+  const { t } = useTranslation();
+  const fontOptions = useDeckFontOptions();
   const { id = "" } = useParams();
   const { data: deck, isLoading, isError } = useDeck(id);
   const update = useUpdateDeck(id);
@@ -155,8 +162,8 @@ export function DeckEditorPage() {
     return () => ro.disconnect();
   }, [content]);
 
-  if (isError) return <Typography>スライドが見つかりません。</Typography>;
-  if (isLoading || !content) return <Typography>読み込み中…</Typography>;
+  if (isError) return <Typography>{t("studio.deckNotFound")}</Typography>;
+  if (isLoading || !content) return <Typography>{t("common.loading")}</Typography>;
 
   const slides = content.slides;
   const idx = Math.min(slideIdx, slides.length - 1);
@@ -418,6 +425,7 @@ export function DeckEditorPage() {
       w: 480,
       h: 100,
       rotation: 0,
+      /** 保存されるデータ。訳す方針は #364 (#367) */
       text: "テキスト",
       fontSize: 40,
       color: "#0f172a",
@@ -436,7 +444,7 @@ export function DeckEditorPage() {
       const { url } = await upload.mutateAsync(encoded);
       onPicked.current(url);
     } catch {
-      window.alert("画像のアップロードに失敗しました（6MBまで）");
+      window.alert(t("studio.imageUploadFailed"));
     }
   };
   const addImage = () =>
@@ -503,16 +511,16 @@ export function DeckEditorPage() {
         useFlexGap
       >
         <Button size="small" component={RouterLink} to="/decks">
-          ← 一覧
+          {t("studio.backToList")}
         </Button>
-        <Tooltip title="元に戻す (Ctrl/⌘+Z)">
+        <Tooltip title={t("studio.undoTip")}>
           <span>
             <IconButton size="small" onClick={undo} disabled={!canUndo}>
               <UndoIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="やり直す (Ctrl/⌘+Shift+Z)">
+        <Tooltip title={t("studio.redoTip")}>
           <span>
             <IconButton size="small" onClick={redo} disabled={!canRedo}>
               <RedoIcon fontSize="small" />
@@ -521,13 +529,13 @@ export function DeckEditorPage() {
         </Tooltip>
         <TextField
           size="small"
-          placeholder="スライドのタイトル"
+          placeholder={t("studio.deckTitlePlaceholder")}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           sx={{ flex: 1, minWidth: 180 }}
         />
         <Typography variant="caption" color="text.secondary">
-          {update.isPending ? "保存中…" : "自動保存"}
+          {update.isPending ? t("studio.saving") : t("studio.autoSaved")}
         </Typography>
         {deck && (
           <Button
@@ -537,7 +545,7 @@ export function DeckEditorPage() {
             to={`/d/${deck.slug}`}
             target="_blank"
           >
-            公開ビューア
+            {t("studio.deckPublicViewer")}
           </Button>
         )}
       </Stack>
@@ -583,25 +591,25 @@ export function DeckEditorPage() {
             </Box>
           ))}
           <Button size="small" onClick={addSlide}>
-            ＋ ページ追加
+            {t("studio.addPage")}
           </Button>
           <Stack direction="row" spacing={0.5} justifyContent="center">
-            <Tooltip title="複製">
+            <Tooltip title={t("studio.duplicate")}>
               <IconButton size="small" onClick={dupSlide}>
                 <ContentCopyIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="上へ">
+            <Tooltip title={t("studio.moveUpShort")}>
               <IconButton size="small" onClick={() => moveSlide(-1)}>
                 <ArrowUpwardIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="下へ">
+            <Tooltip title={t("studio.moveDownShort")}>
               <IconButton size="small" onClick={() => moveSlide(1)}>
                 <ArrowDownwardIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="削除">
+            <Tooltip title={t("common.delete")}>
               <IconButton
                 size="small"
                 onClick={delSlide}
@@ -615,7 +623,7 @@ export function DeckEditorPage() {
           {/* レイヤー（要素一覧。前面が上） */}
           <Divider sx={{ mt: 1 }} />
           <Typography variant="caption" color="text.secondary">
-            レイヤー（前面が上）
+            {t("studio.layersHeading")}
           </Typography>
           <Stack spacing={0.25}>
             {[...(slide?.elements ?? [])].reverse().map((el) => (
@@ -645,14 +653,14 @@ export function DeckEditorPage() {
                 )}
                 <Typography variant="caption" noWrap sx={{ flex: 1, minWidth: 0 }}>
                   {el.type === "image"
-                    ? "画像"
-                    : el.text?.trim().slice(0, 16) || "テキスト"}
+                    ? t("studio.elementImage")
+                    : el.text?.trim().slice(0, 16) || t("studio.elementText")}
                 </Typography>
               </Box>
             ))}
             {(slide?.elements.length ?? 0) === 0 && (
               <Typography variant="caption" color="text.disabled">
-                要素なし
+                {t("studio.layersEmpty")}
               </Typography>
             )}
           </Stack>
@@ -669,13 +677,13 @@ export function DeckEditorPage() {
             useFlexGap
           >
             <Button size="small" startIcon={<TextFieldsIcon />} onClick={addText}>
-              テキスト
+              {t("studio.elementText")}
             </Button>
             <Button size="small" startIcon={<ImageIcon />} onClick={addImage}>
-              画像
+              {t("studio.elementImage")}
             </Button>
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <Typography variant="caption">背景</Typography>
+              <Typography variant="caption">{t("common.background")}</Typography>
               <input
                 type="color"
                 value={slide?.background ?? "#ffffff"}
@@ -690,7 +698,7 @@ export function DeckEditorPage() {
               sx={{ py: 0.25 }}
             >
               <LibraryAddCheckIcon fontSize="small" sx={{ mr: 0.5 }} />
-              複数選択
+              {t("studio.multiSelect")}
             </ToggleButton>
           </Stack>
           <Box
@@ -880,22 +888,25 @@ export function DeckEditorPage() {
         <Stack spacing={1.5} sx={{ width: { md: 240 }, flexShrink: 0 }}>
           {selectedIds.length === 0 ? (
             <Typography variant="caption" color="text.secondary">
-              要素を選ぶと編集できます。「テキスト」「画像」から追加し、ドラッグで移動・隅でリサイズ。Shift+クリックで複数選択。
+              {t("studio.deckEditorHint", {
+                text: t("studio.elementText"),
+                image: t("studio.elementImage"),
+              })}
             </Typography>
           ) : (
             <>
               <Typography variant="subtitle2">
                 {selected
                   ? selected.type === "text"
-                    ? "テキスト"
-                    : "画像"
-                  : `${selectedIds.length}個を選択中`}
+                    ? t("studio.elementText")
+                    : t("studio.elementImage")
+                  : t("studio.selectedCount", { n: selectedIds.length })}
               </Typography>
               {selected && selected.type === "text" && (
                 <>
                   <TextField
                     size="small"
-                    label="内容"
+                    label={t("studio.textContent")}
                     multiline
                     minRows={2}
                     value={selected.text ?? ""}
@@ -906,16 +917,16 @@ export function DeckEditorPage() {
                   <TextField
                     select
                     size="small"
-                    label="フォント"
+                    label={t("common.font")}
                     value={selected.fontFamily ?? ""}
                     onChange={(e) => {
                       ensureDeckFont(e.target.value);
                       patchElement(selected.id, { fontFamily: e.target.value });
                     }}
                   >
-                    {DECK_FONTS.map((f) => (
+                    {fontOptions.map((f) => (
                       <MenuItem
-                        key={f.label}
+                        key={f.family}
                         value={f.family}
                         onMouseEnter={() => ensureDeckFont(f.family)}
                         style={{ fontFamily: f.family || undefined }}
@@ -926,7 +937,9 @@ export function DeckEditorPage() {
                   </TextField>
                   <Box>
                     <Typography variant="caption" color="text.secondary">
-                      文字サイズ：{selected.fontSize ?? 40}
+                      {t("studio.fontSizeValue", {
+                        n: selected.fontSize ?? 40,
+                      })}
                     </Typography>
                     <Slider
                       size="small"
@@ -939,7 +952,7 @@ export function DeckEditorPage() {
                     />
                   </Box>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <Typography variant="caption">色</Typography>
+                    <Typography variant="caption">{t("studio.color")}</Typography>
                     <input
                       type="color"
                       value={selected.color ?? "#0f172a"}
@@ -966,9 +979,13 @@ export function DeckEditorPage() {
                       v && patchElement(selected.id, { align: v })
                     }
                   >
-                    <ToggleButton value="left">左</ToggleButton>
-                    <ToggleButton value="center">中</ToggleButton>
-                    <ToggleButton value="right">右</ToggleButton>
+                    <ToggleButton value="left">{t("studio.alignLeft")}</ToggleButton>
+                    <ToggleButton value="center">
+                      {t("studio.alignCenter")}
+                    </ToggleButton>
+                    <ToggleButton value="right">
+                      {t("studio.alignRight")}
+                    </ToggleButton>
                   </ToggleButtonGroup>
                 </>
               )}
@@ -983,11 +1000,13 @@ export function DeckEditorPage() {
                       pickImage((url) => patchElement(selected.id, { src: url }))
                     }
                   >
-                    {upload.isPending ? "アップロード中…" : "画像を差し替え"}
+                    {upload.isPending
+                      ? t("common.uploading")
+                      : t("studio.replaceImage")}
                   </Button>
                   <TextField
                     size="small"
-                    label="画像URL（直接指定）"
+                    label={t("studio.imageUrlLabel")}
                     value={selected.src ?? ""}
                     onChange={(e) =>
                       patchElement(selected.id, { src: e.target.value })
@@ -1004,12 +1023,12 @@ export function DeckEditorPage() {
                     startIcon={<FolderIcon />}
                     onClick={groupSelected}
                   >
-                    グループ化
+                    {t("studio.group")}
                   </Button>
                 )}
                 {groupIdsOfSelection.size > 0 && (
                   <Button size="small" onClick={ungroupSelected}>
-                    グループ解除
+                    {t("studio.ungroup")}
                   </Button>
                 )}
                 <Button
@@ -1017,11 +1036,11 @@ export function DeckEditorPage() {
                   startIcon={<ContentCopyIcon />}
                   onClick={duplicateSelected}
                 >
-                  複製
+                  {t("studio.duplicate")}
                 </Button>
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                重なり順
+                {t("studio.zOrder")}
               </Typography>
               <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
                 <Button
@@ -1029,16 +1048,16 @@ export function DeckEditorPage() {
                   startIcon={<FlipToFrontIcon />}
                   onClick={frontSelected}
                 >
-                  最前面
+                  {t("studio.toFront")}
                 </Button>
                 {selected && (
                   <Button size="small" onClick={() => moveZ(selected.id, 1)}>
-                    前面へ
+                    {t("studio.forward")}
                   </Button>
                 )}
                 {selected && (
                   <Button size="small" onClick={() => moveZ(selected.id, -1)}>
-                    背面へ
+                    {t("studio.backward")}
                   </Button>
                 )}
                 <Button
@@ -1046,7 +1065,7 @@ export function DeckEditorPage() {
                   startIcon={<FlipToBackIcon />}
                   onClick={backSelected}
                 >
-                  最背面
+                  {t("studio.toBack")}
                 </Button>
               </Stack>
               <Button
@@ -1056,8 +1075,8 @@ export function DeckEditorPage() {
                 onClick={deleteSelected}
               >
                 {selectedIds.length > 1
-                  ? `${selectedIds.length}個を削除`
-                  : "この要素を削除"}
+                  ? t("studio.deleteSelectedCount", { n: selectedIds.length })
+                  : t("studio.deleteElement")}
               </Button>
             </>
           )}

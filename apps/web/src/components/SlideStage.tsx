@@ -1,8 +1,10 @@
+import { useTranslation } from "react-i18next";
 import { DECK_H, DECK_W } from "@eventer/shared";
 import type { DeckElement, DeckSlide } from "@eventer/shared";
 
 /** 要素の中身（テキスト/画像）。位置・サイズは親が持つ */
 export function ElementContent({ el }: { el: DeckElement }) {
+  const { t } = useTranslation();
   if (el.type === "image") {
     return el.src ? (
       <img
@@ -29,7 +31,7 @@ export function ElementContent({ el }: { el: DeckElement }) {
           fontSize: 18,
         }}
       >
-        画像URL未設定
+        {t("studio.imageUrlUnset")}
       </div>
     );
   }
