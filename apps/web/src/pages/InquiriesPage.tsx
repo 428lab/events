@@ -78,7 +78,7 @@ export function InquiriesPage() {
                   disabled={!subject.trim() || !body.trim() || create.isPending}
                   onClick={submit}
                 >
-                  {t("inquiries.send")}
+                  {t("common.send")}
                 </Button>
               </Stack>
             </Stack>

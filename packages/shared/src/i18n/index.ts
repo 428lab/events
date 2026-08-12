@@ -12,6 +12,8 @@ import { common } from "./messages/common.js";
 import { errors } from "./messages/errors.js";
 import { eventDetail } from "./messages/eventDetail.js";
 import { eventForm } from "./messages/eventForm.js";
+import { eventRun } from "./messages/eventRun.js";
+import { eventSocial } from "./messages/eventSocial.js";
 import { events } from "./messages/events.js";
 import { inquiries, inquiryStatus } from "./messages/inquiries.js";
 import { labels } from "./messages/labels.js";
@@ -50,6 +52,8 @@ export const translations = {
     events: events.ja,
     eventDetail: eventDetail.ja,
     eventForm: eventForm.ja,
+    eventRun: eventRun.ja,
+    eventSocial: eventSocial.ja,
     schedule: schedule.ja,
     staffOps: staffOps.ja,
     staffInviteError: staffInviteError.ja,
@@ -76,6 +80,8 @@ export const translations = {
     events: events.en,
     eventDetail: eventDetail.en,
     eventForm: eventForm.en,
+    eventRun: eventRun.en,
+    eventSocial: eventSocial.en,
     schedule: schedule.en,
     staffOps: staffOps.en,
     staffInviteError: staffInviteError.en,

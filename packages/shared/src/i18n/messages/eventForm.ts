@@ -136,7 +136,6 @@ const ja = {
   slotDrawOne: "自動抽選（申込 {{n}} → 定員 {{total}}）",
   slotDraw: "自動抽選（申込 {{n}} → 定員 {{total}}）",
   slotAddHeading: "枠を追加",
-  slotAdd: "追加",
   /** 枠ごとの申込ボタン。満席の先着枠はキャンセル待ちになる */
   slotJoin: "参加する",
   slotJoinLottery: "抽選に申し込む",
@@ -171,7 +170,6 @@ const ja = {
   surveySaveError: "アンケートの保存に失敗しました。",
   surveySaved: "アンケートを保存しました。",
   surveyAddQuestion: "質問を追加",
-  surveyFromTemplate: "テンプレから作成",
   /** テンプレの**名前**だけ辞書が持つ。中身は保存されるデータなので訳さない
    *  (#363。データそのものの言語の扱いは #364 で決める) */
   "surveyTemplateName_entry-info": "入館情報",
@@ -370,7 +368,6 @@ const en: Record<keyof typeof ja, string> = {
   slotDrawOne: "Draw now ({{n}} entry → capacity {{total}})",
   slotDraw: "Draw now ({{n}} entries → capacity {{total}})",
   slotAddHeading: "Add a slot",
-  slotAdd: "Add",
   slotJoin: "Join",
   slotJoinLottery: "Enter the lottery",
   slotJoinWaitlist: "Join the waitlist",
@@ -400,7 +397,6 @@ const en: Record<keyof typeof ja, string> = {
   surveySaveError: "Could not save the survey.",
   surveySaved: "Survey saved.",
   surveyAddQuestion: "Add a question",
-  surveyFromTemplate: "Start from a template",
   "surveyTemplateName_entry-info": "Venue entry details",
   surveyTemplateName_party: "Social",
   surveyTemplateName_attributes: "Attendee details",

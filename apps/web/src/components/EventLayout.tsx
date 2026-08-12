@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Outlet, useNavigate, useParams, useLocation } from "react-router-dom";
 import { Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import { useEvent } from "../api/hooks.js";
 import { useEventState, useEventStream } from "../api/scoringHooks.js";
 
@@ -10,6 +11,7 @@ import { useEventState, useEventStream } from "../api/scoringHooks.js";
  * - プレゼンモードになったら参加者を強制的にプレゼン画面へ遷移
  */
 export function EventLayout() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -52,7 +54,7 @@ export function EventLayout() {
     }
   }, [state, role, isStaff, location.pathname, id, navigate]);
 
-  if (!eventData) return <Typography>読み込み中…</Typography>;
+  if (!eventData) return <Typography>{t("common.loading")}</Typography>;
 
   return <Outlet />;
 }

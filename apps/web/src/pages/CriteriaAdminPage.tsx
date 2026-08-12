@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import {
   useCreateCriterion,
@@ -25,6 +26,7 @@ import { BlurCounterField } from "../components/BlurCounterField.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
 export function CriteriaAdminPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const isAdmin = useIsAdmin();
@@ -37,9 +39,10 @@ export function CriteriaAdminPage() {
   const [description, setDescription] = useState("");
   const [maxLevel, setMaxLevel] = useState(4);
 
-  if (!eventData || !criteria) return <Typography>読み込み中…</Typography>;
+  if (!eventData || !criteria)
+    return <Typography>{t("common.loading")}</Typography>;
   if (eventData.myRole !== "staff" && !isAdmin) {
-    return <Alert severity="info">採点項目の管理はスタッフ専用です。</Alert>;
+    return <Alert severity="info">{t("eventRun.criteriaStaffOnly")}</Alert>;
   }
 
   const add = () => {
@@ -61,10 +64,10 @@ export function CriteriaAdminPage() {
       <EventBreadcrumbs
         eventId={id}
         eventTitle={eventData.event.title}
-        current="採点項目"
+        current={t("eventDetail.criteria")}
       />
       <Typography variant="h5" fontWeight={700}>
-        採点項目の管理
+        {t("eventRun.criteriaTitle")}
       </Typography>
 
       <Stack spacing={2}>
@@ -73,7 +76,7 @@ export function CriteriaAdminPage() {
             <CardContent>
               <Stack direction="row" spacing={2} alignItems="center">
                 <BlurCounterField
-                  label="名称"
+                  label={t("eventRun.criterionName")}
                   initial={c.name}
                   max={100}
                   onSave={(v) =>
@@ -85,7 +88,7 @@ export function CriteriaAdminPage() {
                 />
                 <TextField
                   size="small"
-                  label="段階"
+                  label={t("eventRun.criterionLevel")}
                   select
                   value={c.maxLevel}
                   onChange={(e) =>
@@ -105,7 +108,7 @@ export function CriteriaAdminPage() {
                 <IconButton
                   color="error"
                   onClick={() => remove.mutate(c.id)}
-                  aria-label="削除"
+                  aria-label={t("eventRun.delete")}
                 >
                   <DeleteIcon />
                 </IconButton>
@@ -123,25 +126,25 @@ export function CriteriaAdminPage() {
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            項目を追加
+            {t("eventRun.criterionAddHeading")}
           </Typography>
           <Stack spacing={2}>
             <CounterTextField
-              label="名称"
+              label={t("eventRun.criterionName")}
               value={name}
               max={100}
               onChange={(e) => setName(e.target.value)}
               fullWidth
             />
             <CounterTextField
-              label="説明"
+              label={t("eventRun.criterionDescription")}
               value={description}
               max={500}
               onChange={(e) => setDescription(e.target.value)}
               fullWidth
             />
             <TextField
-              label="段階数"
+              label={t("eventRun.criterionLevelCount")}
               select
               value={maxLevel}
               onChange={(e) => setMaxLevel(Number(e.target.value))}
@@ -159,7 +162,7 @@ export function CriteriaAdminPage() {
                 disabled={!name || create.isPending}
                 onClick={add}
               >
-                追加
+                {t("common.add")}
               </Button>
             </Box>
           </Stack>

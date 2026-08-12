@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import { useTranslation } from "react-i18next";
 import type { AwardRank } from "@eventer/shared";
 import { useEventEntries } from "../api/hooks.js";
 import {
@@ -29,6 +30,7 @@ import { CounterTextField } from "./CounterTextField.js";
 
 
 export function AwardsEditor({ eventId }: { eventId: string }) {
+  const { t } = useTranslation();
   const { data: awards } = useAwards(eventId);
   const { data: entries } = useEventEntries(eventId);
   const createRank = useCreateRank(eventId);
@@ -80,11 +82,11 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
   return (
     <Box>
       <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 3 }}>
-        表彰（ランキング賞・特別枠）
+        {t("eventRun.awardsEditorTitle")}
       </Typography>
 
       <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 2 }}>
-        ランキング賞（ドラッグで並び替え・上が上位）
+        {t("eventRun.rankAwardsHeading")}
       </Typography>
       <Stack spacing={2}>
         {ranks.map((r, i) => (
@@ -104,7 +106,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                 />
                 <Stack spacing={3} sx={{ flex: 1 }}>
                   <BlurCounterField
-                    label="賞の名前"
+                    label={t("eventRun.awardName")}
                     initial={r.name}
                     max={100}
                     onSave={(v) =>
@@ -117,7 +119,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                     }
                   />
                   <BlurCounterField
-                    label="賞の内容（任意）"
+                    label={t("eventRun.awardContent")}
                     initial={r.content ?? ""}
                     max={500}
                     onSave={(v) =>
@@ -129,7 +131,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                     }
                   />
                   <TextField
-                    label="受賞チーム"
+                    label={t("eventRun.winnerTeam")}
                     select
                     size="small"
                     value={winnerOf("rank", r.id)}
@@ -140,7 +142,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                       })
                     }
                   >
-                    <MenuItem value="">（未選択）</MenuItem>
+                    <MenuItem value="">{t("eventRun.notSelected")}</MenuItem>
                     {entryOptions.map((en) => (
                       <MenuItem key={en.id} value={en.id}>
                         {en.name}
@@ -148,7 +150,11 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                     ))}
                   </TextField>
                 </Stack>
-                <IconButton color="error" onClick={() => deleteRank.mutate(r.id)}>
+                <IconButton
+                  color="error"
+                  aria-label={t("eventRun.delete")}
+                  onClick={() => deleteRank.mutate(r.id)}
+                >
                   <DeleteIcon />
                 </IconButton>
               </Stack>
@@ -159,7 +165,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
       <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
         <CounterTextField
           size="small"
-          label="賞の名前（例: 最優秀賞）"
+          label={t("eventRun.rankAwardNamePlaceholder")}
           value={rankName}
           max={100}
           onChange={(e) => setRankName(e.target.value)}
@@ -172,12 +178,12 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
             createRank.mutate({ name: rankName }, { onSuccess: () => setRankName("") })
           }
         >
-          賞を追加
+          {t("eventRun.addRankAward")}
         </Button>
       </Stack>
 
       <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 5, mb: 2 }}>
-        特別枠（ランキング外）
+        {t("eventRun.specialAwardsHeading")}
       </Typography>
       <Stack spacing={2}>
         {awards?.specials.map((s) => (
@@ -186,7 +192,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
               <Stack direction="row" spacing={1.5} alignItems="center">
                 <Stack spacing={3} sx={{ flex: 1 }}>
                   <BlurCounterField
-                    label="特別枠の名前"
+                    label={t("eventRun.specialAwardName")}
                     initial={s.name}
                     max={100}
                     onSave={(v) =>
@@ -199,7 +205,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                     }
                   />
                   <BlurCounterField
-                    label="賞品・賞の内容（任意）"
+                    label={t("eventRun.specialAwardContent")}
                     initial={s.content ?? ""}
                     max={500}
                     onSave={(v) =>
@@ -211,7 +217,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                     }
                   />
                   <TextField
-                    label="受賞チーム"
+                    label={t("eventRun.winnerTeam")}
                     select
                     size="small"
                     value={winnerOf("special", s.id)}
@@ -222,7 +228,9 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                       })
                     }
                   >
-                    <MenuItem value="">該当者なし</MenuItem>
+                    <MenuItem value="">
+                      {t("eventDetail.noRecipient")}
+                    </MenuItem>
                     {entryOptions.map((en) => (
                       <MenuItem key={en.id} value={en.id}>
                         {en.name}
@@ -230,7 +238,11 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
                     ))}
                   </TextField>
                 </Stack>
-                <IconButton color="error" onClick={() => deleteSpecial.mutate(s.id)}>
+                <IconButton
+                  color="error"
+                  aria-label={t("eventRun.delete")}
+                  onClick={() => deleteSpecial.mutate(s.id)}
+                >
                   <DeleteIcon />
                 </IconButton>
               </Stack>
@@ -241,7 +253,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
       <Stack direction="row" spacing={1.5} sx={{ mt: 2 }}>
         <CounterTextField
           size="small"
-          label="特別枠の名前（例: オーディエンス賞）"
+          label={t("eventRun.specialAwardNamePlaceholder")}
           value={specialName}
           max={100}
           onChange={(e) => setSpecialName(e.target.value)}
@@ -257,7 +269,7 @@ export function AwardsEditor({ eventId }: { eventId: string }) {
             )
           }
         >
-          特別枠を追加
+          {t("eventRun.addSpecialAward")}
         </Button>
       </Stack>
     </Box>

@@ -11,6 +11,7 @@ import CloseFullscreenOutlinedIcon from "@mui/icons-material/CloseFullscreenOutl
 import TextDecreaseIcon from "@mui/icons-material/TextDecrease";
 import TextIncreaseIcon from "@mui/icons-material/TextIncrease";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useEventQa } from "../api/eventQaHooks.js";
 import { QaPickedQuestion } from "../components/QaQuestionList.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
@@ -40,6 +41,7 @@ function readScale(): number {
  * 権限は従来のチャットと同じ（参加確定メンバー。スタッフが開く想定）。
  */
 export function EventChatScreenPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { event, myRole, canChat, chatAvailable, isLoading, isError } =
     useEventChatAccess(id);
@@ -96,12 +98,12 @@ export function EventChatScreenPage() {
       }}
     >
       {isLoading ? (
-        <Typography color="text.secondary">読み込み中…</Typography>
+        <Typography color="text.secondary">{t("common.loading")}</Typography>
       ) : isError || !event ? (
-        <Alert severity="error">イベントが見つかりません。</Alert>
+        <Alert severity="error">{t("eventSocial.chatEventNotFound")}</Alert>
       ) : !canChat ? (
         <Alert severity="info">
-          この画面は参加が確定しているメンバーのみ表示できます。
+          {t("eventSocial.screenMembersOnly")}
         </Alert>
       ) : (
         <>
@@ -140,7 +142,7 @@ export function EventChatScreenPage() {
             // 質問を投影しているときは、案内でスクリーンを埋めない
             !picked && (
               <Typography color="text.secondary">
-                このイベントではチャットを表示できません。
+                {t("eventSocial.screenChatUnavailable")}
               </Typography>
             )
           )}
@@ -154,36 +156,36 @@ export function EventChatScreenPage() {
           spacing={0.5}
           sx={{ position: "fixed", right: 8, bottom: 8, opacity: 0.5 }}
         >
-          <Tooltip title="文字を小さく">
+          <Tooltip title={t("eventSocial.screenTextSmaller")}>
             <span>
               <IconButton
                 size="small"
                 disabled={scale === SCALES[0]}
                 onClick={() => changeScale(-1)}
-                aria-label="文字を小さく"
+                aria-label={t("eventSocial.screenTextSmaller")}
               >
                 <TextDecreaseIcon fontSize="small" />
               </IconButton>
             </span>
           </Tooltip>
-          <Tooltip title="文字を大きく">
+          <Tooltip title={t("eventSocial.screenTextLarger")}>
             <span>
               <IconButton
                 size="small"
                 disabled={scale === SCALES[SCALES.length - 1]}
                 onClick={() => changeScale(1)}
-                aria-label="文字を大きく"
+                aria-label={t("eventSocial.screenTextLarger")}
               >
                 <TextIncreaseIcon fontSize="small" />
               </IconButton>
             </span>
           </Tooltip>
-          <Tooltip title="チャット画面に戻る">
+          <Tooltip title={t("eventSocial.screenBackToChat")}>
             <IconButton
               size="small"
               component={RouterLink}
               to={`/events/${id}/chat`}
-              aria-label="チャット画面に戻る"
+              aria-label={t("eventSocial.screenBackToChat")}
             >
               <CloseFullscreenOutlinedIcon fontSize="small" />
             </IconButton>

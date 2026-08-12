@@ -1,4 +1,5 @@
 import { Box, Button, Stack, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import type { Score, ScoringCriterion } from "@eventer/shared";
 import { usePutScore } from "../api/scoringHooks.js";
 
@@ -15,6 +16,7 @@ export function ScoringPanel({
   myScores: Score[];
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
   const putScore = usePutScore(eventId);
 
   const valueFor = (criterionId: string) =>
@@ -64,7 +66,7 @@ export function ScoringPanel({
       })}
       {disabled && (
         <Typography variant="caption" color="text.secondary">
-          現在このエントリーは採点できません（自己採点制限または締切）
+          {t("eventRun.scoringDisabledNote")}
         </Typography>
       )}
     </Stack>

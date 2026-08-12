@@ -22,6 +22,7 @@ import OpenInFullOutlinedIcon from "@mui/icons-material/OpenInFullOutlined";
 import SendIcon from "@mui/icons-material/Send";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { ChatMember, Event, EventRole } from "@eventer/shared";
 import {
   CHAT_MESSAGE_MAX,
@@ -64,11 +65,6 @@ import { ImageLightbox } from "./ImageLightbox.js";
 const MESSAGE_BUFFER_MAX = 500;
 /** 実際に描画する件数の上限 (#215)。古い方から捨てて末尾だけを出す */
 const MESSAGE_DISPLAY_MAX = 200;
-
-/** チャットに繋がらないときの文言 (#283)。
- * 理由は書かないが、嘘も書かない（事実として「繋がっていない」だけを伝える）。
- * 締め出された側からは通信の不調と区別が付かないので、これで目的は足りる */
-const CHAT_UNAVAILABLE_TEXT = "このイベントのチャットに接続できません。";
 
 /** 発言に使う鍵の選び方。ephemeral=イベント用の一時鍵 / nip07=本人の鍵 */
 type KeyMode = "ephemeral" | "nip07";
@@ -254,6 +250,7 @@ export function EventChat({
   /** display のときの文字サイズ倍率（投影距離に合わせて呼び出し側が変える） */
   fontScale?: number;
 }) {
+  const { t } = useTranslation();
   const { data: me } = useMe();
   // イベント配下のUIは myRole のみで判定（サイト管理者でも staff でなければ操作UIを出さない）。
   // Q&A 側の canModerate と同じ基準＝「そのイベントの staff メンバーであること」
@@ -276,7 +273,8 @@ export function EventChat({
    * 別の鍵を作って戻ってくるだけで意味がないため。
    * ただし「ネットワークが不調です」のような嘘も書かない。誤って締め出された人が
    * 回線を疑って時間を無駄にするし、後で分かったときに嘘をついたことになる。
-   * 理由を明かさず、事実として正しい文言（上の CHAT_UNAVAILABLE_TEXT）だけを出す。 */
+   * 理由を明かさず、事実として正しい文言（`eventSocial.chatUnavailable`）だけを
+   * 出す。理由は書かないが、嘘も書かない。 */
   const chatUnavailable = isChatUnavailable(chatError);
   const registerKey = useRegisterChatKey(eventId);
   const ephemeralKey = useCreateEphemeralChatKey(eventId);
@@ -430,9 +428,7 @@ export function EventChat({
           const accepted = await pool.publish(created);
           if (!accepted) {
             if (!disposed) {
-              setJoinError(
-                "チャンネルの作成に失敗しました（リレーに接続できないか、kind:40 が拒否されました）。",
-              );
+              setJoinError(t("eventSocial.chatChannelCreateRejected"));
             }
             return;
           }
@@ -443,8 +439,8 @@ export function EventChat({
           if (!disposed) {
             setJoinError(
               err instanceof ApiError && err.status === 503
-                ? "公式鍵が未設定のためチャンネルを作成できません（運営に連絡してください）。"
-                : "チャンネルの作成に失敗しました。",
+                ? t("eventSocial.chatChannelCreateNoServiceKey")
+                : t("eventSocial.chatChannelCreateFailed"),
             );
           }
           return;
@@ -549,29 +545,25 @@ export function EventChat({
         // 利用者は鍵を選んでいないので「別の鍵を」とは言えない
         setJoinError(
           useNip07
-            ? "この鍵は同じイベントの別のユーザーが使用中です。別の鍵を選んでください。"
-            : "チャットへの参加に失敗しました。もう一度お試しください。",
+            ? t("eventSocial.chatJoinKeyTaken")
+            : t("eventSocial.chatJoinFailedRetry"),
         );
       } else if (isChatUnavailable(err)) {
         // 締め出し (#283)。締め出された人は**参加が確定している**ので、
         // 下の「参加が確定しているメンバーのみ」に落とすと事実と違う説明になる。
         // 理由は書かないが嘘も書かない、で上の表示と同じ文言に揃える
-        setJoinError(CHAT_UNAVAILABLE_TEXT);
+        setJoinError(t("eventSocial.chatUnavailable"));
       } else if (errorIs(err, 403, "key_not_linked")) {
         // その鍵の持ち主であることは証明できたが、鍵がこのアカウントのものとして
         // 登録されていないケース (#332)。何をすれば発言できるかまで書く
-        setJoinError(
-          "この鍵はあなたのアカウントに登録されていません。同じ鍵でサインインしてアカウントに登録するか、イベント用の一時鍵で参加してください。",
-        );
+        setJoinError(t("eventSocial.chatJoinKeyNotLinked"));
       } else if (errorIs(err, 409, "too_many_keys")) {
         // このイベントで登録できる鍵の数の上限に達した (#332)
-        setJoinError(
-          "このイベントで使える鍵の数の上限に達しました。イベント用の一時鍵で参加してください。",
-        );
+        setJoinError(t("eventSocial.chatJoinTooManyKeys"));
       } else if (err instanceof ApiError && err.status === 403) {
-        setJoinError("参加が確定しているメンバーのみチャットを利用できます。");
+        setJoinError(t("eventSocial.chatJoinNotConfirmed"));
       } else {
-        setJoinError("チャットへの参加に失敗しました。");
+        setJoinError(t("eventSocial.chatJoinFailed"));
       }
     }
   };
@@ -582,7 +574,7 @@ export function EventChat({
     if (text.length > CHAT_MESSAGE_MAX) return;
     // URL投稿の送信ガード (#241)。判定は表示側のリンク化と同じ関数を共用
     if (!isStaff && !event.chatUrlsAllowed && containsUrl(text)) {
-      setSendError("URLの投稿はこのイベントでは許可されていません。");
+      setSendError(t("eventSocial.chatSendUrlNotAllowed"));
       return;
     }
     setSendError(null);
@@ -592,14 +584,14 @@ export function EventChat({
       );
       const ok = await poolRef.current?.publish(ev);
       if (!ok) {
-        setSendError("送信に失敗しました（リレーに接続できません）。");
+        setSendError(t("eventSocial.chatSendFailedOffline"));
         return;
       }
       setDraft("");
       // リレーからの折返しを待たず即時表示（購読側とはIDで重複排除）
       setMessages((prev) => appendMessage(prev, ev));
     } catch {
-      setSendError("送信に失敗しました。");
+      setSendError(t("eventSocial.chatSendFailed"));
     }
   };
 
@@ -620,7 +612,7 @@ export function EventChat({
           sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
         >
           <ForumOutlinedIcon fontSize="small" />
-          チャット
+          {t("eventSocial.chatHeading")}
         </Typography>
       )}
       <Typography
@@ -628,7 +620,7 @@ export function EventChat({
         color="text.secondary"
         sx={{ fontSize: bodyFontSize }}
       >
-        {CHAT_UNAVAILABLE_TEXT}
+        {t("eventSocial.chatUnavailable")}
       </Typography>
     </Stack>
   );
@@ -649,21 +641,23 @@ export function EventChat({
             sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
           >
             <ForumOutlinedIcon fontSize="small" />
-            チャット
+            {t("eventSocial.chatHeading")}
           </Typography>
           <Stack direction="row" spacing={0.5} alignItems="center">
             {signer && (
               <Typography variant="caption" color="text.secondary">
-                {relayConnected ? "接続中" : "オフライン"}
+                {relayConnected
+                  ? t("eventSocial.chatConnected")
+                  : t("eventSocial.chatOffline")}
               </Typography>
             )}
             {variant === "card" && (
-              <Tooltip title="チャット画面で開く">
+              <Tooltip title={t("eventSocial.chatOpenInPage")}>
                 <IconButton
                   size="small"
                   component={RouterLink}
                   to={`/events/${eventId}/chat`}
-                  aria-label="チャット画面で開く"
+                  aria-label={t("eventSocial.chatOpenInPage")}
                 >
                   <OpenInFullOutlinedIcon sx={{ fontSize: 16 }} />
                 </IconButton>
@@ -686,15 +680,13 @@ export function EventChat({
                   disabled={resetChannel.isPending}
                   onClick={() => {
                     if (
-                      window.confirm(
-                        "チャンネルを作り直しますか？（リレー上に部屋が無い場合の復旧用。過去のメッセージは新しい部屋には表示されません）",
-                      )
+                      window.confirm(t("eventSocial.chatResetChannelConfirm"))
                     ) {
                       resetChannel.mutate();
                     }
                   }}
                 >
-                  チャンネルを作り直す
+                  {t("eventSocial.chatResetChannel")}
                 </Button>
               ) : undefined
             }
@@ -707,13 +699,13 @@ export function EventChat({
         {!display && chat && !serverChannelId && !isStaff ? (
           // 部屋の開設はスタッフの操作のみ (#221)。それまで参加UIは出さない
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            チャットの部屋はまだ開設されていません。スタッフが開設すると参加できます。
+            {t("eventSocial.chatRoomNotOpenYet")}
           </Typography>
         ) : !display && !signer ? (
           <Stack spacing={1.5} sx={{ mt: 1 }}>
             {showStaffActions && chat && !serverChannelId && (
               <Alert severity="info">
-                チャットの部屋はまだありません。参加すると部屋が開設され、参加者もチャットできるようになります。
+                {t("eventSocial.chatRoomNotOpenStaff")}
               </Alert>
             )}
             {hasNip07() && (
@@ -724,23 +716,22 @@ export function EventChat({
                 <FormControlLabel
                   value="ephemeral"
                   control={<Radio size="small" />}
-                  label="イベント用の一時鍵で発言"
+                  label={t("eventSocial.chatKeyModeEphemeral")}
                 />
                 <FormControlLabel
                   value="nip07"
                   control={<Radio size="small" />}
-                  label="Nostrアカウントで発言"
+                  label={t("eventSocial.chatKeyModeNip07")}
                 />
               </RadioGroup>
             )}
             {keyMode === "nip07" && hasNip07() && (
               <Alert severity="info">
-                本アカウントでの発言は events lab の外の Nostr
-                クライアントからも見えます。
+                {t("eventSocial.chatNip07Notice")}
               </Alert>
             )}
             <Typography variant="caption" color="text.secondary">
-              チャットの内容は公開されます。
+              {t("eventSocial.chatPublicNotice")}
             </Typography>
             <Box>
               <Button
@@ -749,7 +740,7 @@ export function EventChat({
                 disabled={registerKey.isPending || ephemeralKey.isPending || !me}
                 onClick={join}
               >
-                チャットに参加する
+                {t("eventSocial.chatJoin")}
               </Button>
             </Box>
           </Stack>
@@ -776,8 +767,8 @@ export function EventChat({
                   sx={{ fontSize: bodyFontSize }}
                 >
                   {display
-                    ? "まだ表示できるメッセージがありません。"
-                    : "まだメッセージはありません。"}
+                    ? t("eventSocial.chatEmptyDisplay")
+                    : t("eventSocial.chatEmpty")}
                 </Typography>
               ) : (
                 <Stack spacing={display ? 2 : 1.25}>
@@ -829,8 +820,11 @@ export function EventChat({
                             >
                               {member.name}
                             </Typography>
+                            {/* 立場の名前は `role` の表
+                                (i18n/messages/labels.ts) が source。
+                                ここに書き写さない */}
                             {member.role === "staff" && (
-                              <Tooltip title="スタッフ">
+                              <Tooltip title={t("role.staff")}>
                                 <ConstructionOutlinedIcon
                                   sx={{
                                     fontSize: display ? 20 * fontScale : 14,
@@ -860,14 +854,14 @@ export function EventChat({
                           />
                         </Box>
                         {showStaffActions && (
-                          <Tooltip title="このメッセージを非表示にする">
+                          <Tooltip title={t("eventSocial.chatHideMessage")}>
                             <IconButton
                               size="small"
                               disabled={hideNote.isPending}
                               onClick={() => {
                                 if (
                                   window.confirm(
-                                    "このメッセージを参加者の画面から非表示にしますか？",
+                                    t("eventSocial.chatHideMessageConfirm"),
                                   )
                                 ) {
                                   hideNote.mutate(m.id);
@@ -903,8 +897,8 @@ export function EventChat({
                 disabled={!inWriteWindow}
                 placeholder={
                   inWriteWindow
-                    ? "メッセージを入力…"
-                    : "書き込みはイベント開催時間の前後のみ"
+                    ? t("eventSocial.chatInputPlaceholder")
+                    : t("eventSocial.chatInputClosedPlaceholder")
                 }
                 inputProps={{ maxLength: CHAT_MESSAGE_MAX }}
                 onChange={(e) => setDraft(e.target.value)}
@@ -919,13 +913,13 @@ export function EventChat({
                 color="primary"
                 disabled={!inWriteWindow || !draft.trim() || !channelId}
                 onClick={() => void send()}
-                aria-label="送信"
+                aria-label={t("common.send")}
               >
                 <SendIcon fontSize="small" />
               </IconButton>
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              チャットの内容は公開されます。
+              {t("eventSocial.chatPublicNotice")}
             </Typography>
               </>
             )}

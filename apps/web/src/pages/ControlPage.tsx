@@ -18,6 +18,7 @@ import {
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { EVENT_MODES, type EventMode } from "@eventer/shared";
 import { useEvent, useEventEntries, useIsAdmin } from "../api/hooks.js";
 import {
@@ -34,14 +35,18 @@ import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { UserLink } from "../components/UserLink.js";
 import { useEntryUserResolver } from "../lib/entryUser.js";
 
-const modeLabel: Record<EventMode, string> = {
-  normal: "通常",
-  presentation: "プレゼン",
-  aggregation: "集計",
-  awards: "表彰",
-};
+/** モード名の翻訳キー。**訳した文字列ではなくキーを持つ**ので、
+ * 言語を切り替えたときに前の言語のまま残らない。
+ * 通常以外はイベント詳細のチップと同じ言い方なので eventDetail から引く */
+const MODE_LABEL_KEY = {
+  normal: "eventRun.modeNormal",
+  presentation: "eventDetail.modePresentation",
+  aggregation: "eventDetail.modeAggregation",
+  awards: "eventDetail.modeAwards",
+} as const satisfies Record<EventMode, string>;
 
 export function ControlPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const { data: state } = useEventState(id);
@@ -56,12 +61,14 @@ export function ControlPage() {
   const { data: summary } = useScoreSummary(id, Boolean(isStaff));
   const { data: progress } = useScoreProgress(id, Boolean(isStaff));
   const { data: awards } = useAwards(id);
+  /** 賞の総数（ランキング賞＋特別枠）。英語の単数・複数はこの数だけで決まる */
+  const awardTotal = awards ? awards.ranks.length + awards.specials.length : 0;
 
   if (!eventData || !state || !entries) {
-    return <Typography>読み込み中…</Typography>;
+    return <Typography>{t("common.loading")}</Typography>;
   }
   if (!isStaff) {
-    return <Alert severity="info">進行コントロールはスタッフ専用です。</Alert>;
+    return <Alert severity="info">{t("eventRun.controlStaffOnly")}</Alert>;
   }
 
   return (
@@ -69,10 +76,10 @@ export function ControlPage() {
       <EventBreadcrumbs
         eventId={id}
         eventTitle={eventData.event.title}
-        current="進行コントロール"
+        current={t("eventDetail.control")}
       />
       <Typography variant="h5" fontWeight={700}>
-        進行コントロール
+        {t("eventDetail.control")}
       </Typography>
 
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -81,7 +88,7 @@ export function ControlPage() {
           component={RouterLink}
           to={`/events/${id}/scoring`}
         >
-          採点画面へ
+          {t("eventRun.toScoring")}
         </Button>
         {state.mode === "presentation" && (
           <Button
@@ -90,7 +97,7 @@ export function ControlPage() {
             component={RouterLink}
             to={`/events/${id}/present`}
           >
-            プレゼン画面へ
+            {t("eventDetail.toPresentation")}
           </Button>
         )}
       </Stack>
@@ -98,7 +105,7 @@ export function ControlPage() {
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            モード
+            {t("eventRun.modeHeading")}
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             {EVENT_MODES.map((m) => (
@@ -107,7 +114,7 @@ export function ControlPage() {
                 variant={state.mode === m ? "contained" : "outlined"}
                 onClick={() => setMode.mutate(m)}
               >
-                {modeLabel[m]}
+                {t(MODE_LABEL_KEY[m])}
               </Button>
             ))}
           </Stack>
@@ -117,7 +124,7 @@ export function ControlPage() {
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            発表中のチーム
+            {t("eventRun.presentingHeading")}
           </Typography>
           <TextField
             select
@@ -127,7 +134,7 @@ export function ControlPage() {
               setPresenting.mutate(e.target.value === "" ? null : e.target.value)
             }
           >
-            <MenuItem value="">（未選択）</MenuItem>
+            <MenuItem value="">{t("eventRun.notSelected")}</MenuItem>
             {entries.map((en) => (
               <MenuItem key={en.id} value={en.id}>
                 {en.name}
@@ -141,11 +148,17 @@ export function ControlPage() {
         <CardContent>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Box>
-              <Typography variant="h6">採点の締切</Typography>
+              <Typography variant="h6">
+                {t("eventRun.scoringLockHeading")}
+              </Typography>
               <Chip
                 size="small"
                 color={state.scoringLocked ? "error" : "success"}
-                label={state.scoringLocked ? "締切済み" : "受付中"}
+                label={t(
+                  state.scoringLocked
+                    ? "eventRun.scoringLockedChip"
+                    : "eventRun.scoringOpenChip",
+                )}
               />
             </Box>
             <Button
@@ -153,7 +166,11 @@ export function ControlPage() {
               color={state.scoringLocked ? "success" : "error"}
               onClick={() => toggleLock.mutate()}
             >
-              {state.scoringLocked ? "採点を再開" : "採点を締め切る"}
+              {t(
+                state.scoringLocked
+                  ? "eventRun.reopenScoring"
+                  : "eventRun.closeScoring",
+              )}
             </Button>
           </Stack>
           {state.scoringLocked && (
@@ -167,11 +184,11 @@ export function ControlPage() {
                     component={RouterLink}
                     to={`/events/${id}/edit`}
                   >
-                    受賞者を設定する
+                    {t("eventRun.setWinnersAction")}
                   </Button>
                 }
               >
-                採点を締め切りました。受賞者を設定して表彰の準備をしましょう。
+                {t("eventRun.scoringClosedNotice")}
               </Alert>
             </Box>
           )}
@@ -181,17 +198,22 @@ export function ControlPage() {
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            採点進捗
+            {t("eventRun.progressHeading")}
           </Typography>
           {progress?.judges.length === 0 ? (
-            <Typography color="text.secondary">採点者がいません</Typography>
+            <Typography color="text.secondary">
+              {t("eventRun.noJudges")}
+            </Typography>
           ) : (
             <Stack spacing={1.5}>
               {progress?.judges.map((j) => (
                 <Box key={j.userId}>
                   <Stack direction="row" justifyContent="space-between">
                     <Typography variant="body2">
-                      {j.name}（{roleLabel(j.role)}）
+                      {t("eventRun.judgeNameWithRole", {
+                        name: j.name,
+                        role: roleLabel(j.role),
+                      })}
                     </Typography>
                     <Typography
                       variant="body2"
@@ -220,18 +242,18 @@ export function ControlPage() {
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            集計プレビュー
+            {t("eventRun.summaryHeading")}
           </Typography>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>チーム</TableCell>
+                <TableCell>{t("eventRun.teamColumn")}</TableCell>
                 {summary?.criteria.map((c) => (
                   <TableCell key={c.id} align="right">
                     {c.name}
                   </TableCell>
                 ))}
-                <TableCell align="right">合計</TableCell>
+                <TableCell align="right">{t("eventRun.totalColumn")}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -261,11 +283,11 @@ export function ControlPage() {
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            表彰
+            {t("eventDetail.modeAwards")}
           </Typography>
+          {/* ①②③ は言語で変わらない番号記号。下のチップと対応している */}
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            ① 受賞者を設定 → ② 表彰モードに切替（参加者は自動で表彰画面へ）→ ③
-            表彰式画面で1件ずつ発表します。
+            {t("eventRun.awardsSteps")}
           </Typography>
           <Stack spacing={2}>
             <Stack
@@ -277,8 +299,12 @@ export function ControlPage() {
             >
               <Chip size="small" label="①" />
               <Typography variant="body2" sx={{ flex: 1, minWidth: 140 }}>
-                受賞者を設定（{awards ? awards.results.length : 0}/
-                {awards ? awards.ranks.length + awards.specials.length : 0} 賞）
+                {t(
+                  awardTotal === 1
+                    ? "eventRun.setWinnersCountOne"
+                    : "eventRun.setWinnersCount",
+                  { n: awards ? awards.results.length : 0, total: awardTotal },
+                )}
               </Typography>
               <Button
                 size="small"
@@ -286,7 +312,7 @@ export function ControlPage() {
                 component={RouterLink}
                 to={`/events/${id}/edit`}
               >
-                受賞者を設定
+                {t("eventRun.setWinners")}
               </Button>
             </Stack>
 
@@ -299,8 +325,8 @@ export function ControlPage() {
             >
               <Chip size="small" label="②" />
               <Typography variant="body2" sx={{ flex: 1, minWidth: 140 }}>
-                表彰モードにする
-                {state.mode === "awards" && "（現在このモード）"}
+                {t("eventRun.switchToAwardsMode")}
+                {state.mode === "awards" && t("eventRun.currentModeSuffix")}
               </Typography>
               <Button
                 size="small"
@@ -308,7 +334,7 @@ export function ControlPage() {
                 disabled={state.mode === "awards"}
                 onClick={() => setMode.mutate("awards")}
               >
-                表彰モードにする
+                {t("eventRun.switchToAwardsMode")}
               </Button>
             </Stack>
 
@@ -321,7 +347,7 @@ export function ControlPage() {
             >
               <Chip size="small" label="③" />
               <Typography variant="body2" sx={{ flex: 1, minWidth: 140 }}>
-                表彰式を進行（この画面が参加者にも映ります）
+                {t("eventRun.runCeremony")}
               </Typography>
               <Button
                 size="small"
@@ -330,7 +356,7 @@ export function ControlPage() {
                 component={RouterLink}
                 to={`/events/${id}/awards`}
               >
-                表彰式の操作へ
+                {t("eventRun.toCeremonyControls")}
               </Button>
             </Stack>
           </Stack>

@@ -12,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   useEvent,
   useEventEntries,
@@ -33,6 +34,7 @@ import { UserLink } from "../components/UserLink.js";
 import { usePresenterPanel } from "../lib/usePresenterPanel.js";
 
 export function PresentPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: me } = useMe();
   const isAdmin = useIsAdmin();
@@ -46,7 +48,7 @@ export function PresentPage() {
   const [panelOpen] = usePresenterPanel();
 
   if (!eventData || !state || !entries || !criteria) {
-    return <Typography>読み込み中…</Typography>;
+    return <Typography>{t("common.loading")}</Typography>;
   }
 
   const role = eventData.myRole;
@@ -91,7 +93,7 @@ export function PresentPage() {
                 flexWrap="wrap"
                 useFlexGap
               >
-                <Chip color="error" label="プレゼンモード" />
+                <Chip color="error" label={t("eventRun.presentModeChip")} />
                 <Box sx={{ flex: 1 }} />
                 <PresenterPanelToggle />
               </Stack>
@@ -99,7 +101,7 @@ export function PresentPage() {
                 <Card>
                   <CardContent>
                     <Typography variant="overline" color="text.secondary">
-                      発表中
+                      {t("eventRun.presentNowLabel")}
                     </Typography>
                     <Stack direction="row" spacing={2} alignItems="center">
                       <AvatarGroup max={6} sx={{ "& .MuiAvatar-root": { width: 64, height: 64, fontSize: 28 } }}>
@@ -146,7 +148,7 @@ export function PresentPage() {
                     )}
                     {presenting.submission?.presentationUrl && (
                       <Typography sx={{ mt: 2 }}>
-                        資料:{" "}
+                        {t("eventRun.presentSlidesLabel")}{" "}
                         <Link
                           href={presenting.submission.presentationUrl}
                           target="_blank"
@@ -158,7 +160,7 @@ export function PresentPage() {
                     )}
                     {presenting.submission?.sourceCodeUrl && (
                       <Typography>
-                        コード:{" "}
+                        {t("eventRun.presentCodeLabel")}{" "}
                         <Link
                           href={presenting.submission.sourceCodeUrl}
                           target="_blank"
@@ -173,7 +175,7 @@ export function PresentPage() {
               ) : (
                 <Box sx={{ py: 6, textAlign: "center" }}>
                   <Typography variant="h5" color="text.secondary">
-                    発表チームの選択を待っています…
+                    {t("eventRun.presentWaiting")}
                   </Typography>
                 </Box>
               )}
@@ -185,7 +187,7 @@ export function PresentPage() {
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
-                    採点
+                    {t("eventDetail.scoring")}
                   </Typography>
                   {presenting ? (
                     <ScoringPanel
@@ -197,7 +199,7 @@ export function PresentPage() {
                     />
                   ) : (
                     <Typography color="text.secondary">
-                      発表チームが選択されると採点できます
+                      {t("eventRun.presentScoreWaiting")}
                     </Typography>
                   )}
                   <Button
@@ -207,7 +209,7 @@ export function PresentPage() {
                     to={`/events/${id}/scoring`}
                     sx={{ mt: 2 }}
                   >
-                    他の発表も採点する（採点一覧）
+                    {t("eventRun.presentScoreOthers")}
                   </Button>
                 </CardContent>
               </Card>

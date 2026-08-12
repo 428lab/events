@@ -38,6 +38,20 @@ const ja = {
 
   /** 直前の操作を取り消す (#363)。QR受付と出会いの記録の両方から引く */
   undo: "取り消す",
+  /** 一覧に項目を足すボタン (#363)。参加枠・採点項目のどちらも同じ言い方 */
+  add: "追加",
+  /** テンプレから作り始める導線 (#363)。タイムテーブルと事前アンケートで共通 */
+  fromTemplate: "テンプレから作成",
+  /** 書いたものを送るボタン (#363)。問い合わせとチャットで共通 */
+  send: "送信",
+  /** 本文に埋め込んだ動画の読み上げ名 (#363)。Markdown はイベント・会場・
+   *  コミュニティのどの説明からも使う共有部品なので、領域に寄せない */
+  youtubeEmbedTitle: "YouTube動画",
+  /** 名前を後ろに添えるときの括弧 (#363)。和文と欧文で記号と前の空きが違う。
+   *  **英語は前に半角スペースが入る**。地の文に続けて置く用途（受賞歴の登壇名）が
+   *  基準で、独立した要素として置く用途（Q&Aの投稿者名）でも前の空きは
+   *  詰められるので害がない。空き無しが要る場所が出たら別キーにすること */
+  parenName: "（{{name}}）",
   /** 件名の入力欄 (#363)。問い合わせと一斉連絡の両方から引く */
   subject: "件名",
 
@@ -79,6 +93,11 @@ const en: Record<keyof typeof ja, string> = {
   moveDown: "Move down",
 
   undo: "Undo",
+  add: "Add",
+  fromTemplate: "Start from a template",
+  send: "Send",
+  youtubeEmbedTitle: "YouTube video",
+  parenName: " ({{name}})",
   subject: "Subject",
 
   share: "Share",
