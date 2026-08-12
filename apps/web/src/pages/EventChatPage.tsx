@@ -12,6 +12,7 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import SlideshowOutlinedIcon from "@mui/icons-material/SlideshowOutlined";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 
 // nostr-tools（暗号ライブラリ）が大きいため遅延読み込みで分離する
@@ -25,6 +26,7 @@ const EventChat = lazy(() =>
  * 縦に広く使える。プレゼン中の別画面表示などにも使う。
  */
 export function EventChatPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { event, myRole, canChat, chatAvailable, isLoading, isError } =
     useEventChatAccess(id);
@@ -37,7 +39,9 @@ export function EventChatPage() {
     );
   }
   if (isError || !event) {
-    return <Alert severity="error">イベントが見つかりません。</Alert>;
+    return (
+      <Alert severity="error">{t("eventSocial.chatPageEventNotFound")}</Alert>
+    );
   }
 
   return (
@@ -53,12 +57,12 @@ export function EventChatPage() {
       }}
     >
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-        <Tooltip title="イベントページへ戻る">
+        <Tooltip title={t("eventSocial.chatPageBackToEvent")}>
           <IconButton
             size="small"
             component={RouterLink}
             to={`/events/${id}`}
-            aria-label="イベントページへ戻る"
+            aria-label={t("eventSocial.chatPageBackToEvent")}
           >
             <ArrowBackIcon fontSize="small" />
           </IconButton>
@@ -77,7 +81,7 @@ export function EventChatPage() {
             rel="noopener"
             sx={{ flexShrink: 0 }}
           >
-            投影用画面
+            {t("eventSocial.chatPageScreenView")}
           </Button>
         )}
       </Stack>
@@ -92,9 +96,7 @@ export function EventChatPage() {
           />
         </Suspense>
       ) : (
-        <Alert severity="info">
-          このイベントのチャットは利用できません（参加確定メンバーのみ・チャット有効なイベントのみ）。
-        </Alert>
+        <Alert severity="info">{t("eventSocial.chatPageUnavailable")}</Alert>
       )}
     </Box>
   );

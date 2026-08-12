@@ -326,7 +326,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
             startIcon={<PlaylistAddIcon />}
             onClick={(e) => setTemplateAnchor(e.currentTarget)}
           >
-            {t("eventForm.surveyFromTemplate")}
+            {t("common.fromTemplate")}
           </Button>
           <Menu
             anchorEl={templateAnchor}

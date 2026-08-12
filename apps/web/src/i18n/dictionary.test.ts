@@ -77,6 +77,10 @@ describe("数を含む文言の単数・複数 (#363)", () => {
     ["staffOps.personCount", "staffOps.peopleCount"],
     ["staffOps.nameCardCountOneSheet", "staffOps.nameCardCount"],
     ["eventForm.surveyLoseAnswer", "eventForm.surveyLoseAnswers"],
+    ["eventRun.setWinnersCountOne", "eventRun.setWinnersCount"],
+    ["eventRun.totalPointOne", "eventRun.totalPoints"],
+    ["eventRun.notifiedWinnerOne", "eventRun.notifiedWinners"],
+    ["eventSocial.qaVoteOne", "eventSocial.qaVotes"],
   ];
 
   it("日本語は単数でも複数でも同じ綴り", () => {

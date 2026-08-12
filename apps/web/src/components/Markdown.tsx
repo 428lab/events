@@ -1,4 +1,5 @@
 import { Box } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -56,11 +57,12 @@ function parseYouTube(href?: string): { id: string; start: number } | null {
 
 /** プライバシー強化モード（youtube-nocookie.com）の埋め込みプレイヤー */
 function YouTubeEmbed({ id, start }: { id: string; start: number }) {
+  const { t } = useTranslation();
   return (
     <Box
       component="iframe"
       src={`https://www.youtube-nocookie.com/embed/${id}${start ? `?start=${start}` : ""}`}
-      title="YouTube動画"
+      title={t("common.youtubeEmbedTitle")}
       loading="lazy"
       allow="accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; gyroscope; picture-in-picture; web-share"
       allowFullScreen

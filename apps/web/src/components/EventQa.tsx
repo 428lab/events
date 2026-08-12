@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import SendIcon from "@mui/icons-material/Send";
+import { useTranslation } from "react-i18next";
 import {
   EVENT_QUESTION_LIMIT,
   EVENT_QUESTION_USER_LIMIT,
@@ -44,6 +45,7 @@ export function EventQa({
   /** 参加確定メンバーか（閲覧も参加確定メンバーのみ） */
   canPost: boolean;
 }) {
+  const { t } = useTranslation();
   const { data } = useEventQa(eventId, canPost);
   const post = usePostQuestion(eventId);
   const vote = useVoteQuestion(eventId);
@@ -74,15 +76,15 @@ export function EventQa({
    * 何度も押すことになるので、件数まで出す */
   const postErrorMessage = (err: unknown): string => {
     if (!(err instanceof ApiError) || err.status !== 409) {
-      return "質問の投稿に失敗しました。";
+      return t("eventSocial.qaPostFailed");
     }
     switch ((err.body as { error?: string } | null)?.error) {
       case "question_limit":
-        return `このイベントの質問は${EVENT_QUESTION_LIMIT}件までです。`;
+        return t("eventSocial.qaLimit", { n: EVENT_QUESTION_LIMIT });
       case "question_user_limit":
-        return `1人が投稿できる質問は${EVENT_QUESTION_USER_LIMIT}件までです。自分の質問を取り消すと投稿できます。`;
+        return t("eventSocial.qaUserLimit", { n: EVENT_QUESTION_USER_LIMIT });
       default:
-        return "このイベントの Q&A は現在受け付けていません。";
+        return t("eventSocial.qaClosed");
     }
   };
 
@@ -107,23 +109,25 @@ export function EventQa({
           sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.5 }}
         >
           <HelpOutlineIcon fontSize="small" />
-          Q&A（{data.questions.filter((q) => !q.answered).length}）
+          {t("eventSocial.qaHeading", {
+            n: data.questions.filter((q) => !q.answered).length,
+          })}
         </Typography>
         <Typography
           variant="caption"
           color="text.secondary"
           sx={{ display: "block", mb: 1.5 }}
         >
-          聞きたいことを投稿し、聞きたい質問に投票できます。票の多い質問が上に並びます。
-          {data.anonymity === "anon" && "このイベントの質問は匿名で投稿されます。"}
-          {data.anonymity === "real" && "このイベントの質問は名前つきで投稿されます。"}
+          {t("eventSocial.qaIntro")}
+          {data.anonymity === "anon" && t("eventSocial.qaAnonAll")}
+          {data.anonymity === "real" && t("eventSocial.qaRealAll")}
         </Typography>
 
         <Stack spacing={2}>
           {/* 「解除できない」で当日詰まらないよう、失敗は黙って捨てない */}
           {pick.isError && (
             <Alert severity="warning" onClose={() => pick.reset()}>
-              「いまこの質問」の変更に失敗しました。
+              {t("eventSocial.qaPickFailed")}
             </Alert>
           )}
           {picked && (
@@ -146,7 +150,7 @@ export function EventQa({
               <CounterTextField
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                placeholder="質問を書く…"
+                placeholder={t("eventSocial.qaPlaceholder")}
                 max={QA_QUESTION_MAX}
                 multiline
                 minRows={2}
@@ -172,15 +176,15 @@ export function EventQa({
                     }
                     label={
                       <Typography variant="body2">
-                        匿名で投稿する（運営には投稿者が分かります）
+                        {t("eventSocial.qaAnonToggle")}
                       </Typography>
                     }
                   />
                 ) : (
                   <Typography variant="caption" color="text.secondary">
                     {willBeAnonymous
-                      ? "この質問は匿名で投稿されます（運営には投稿者が分かります）"
-                      : "この質問は名前つきで投稿されます"}
+                      ? t("eventSocial.qaWillBeAnon")
+                      : t("eventSocial.qaWillBeReal")}
                   </Typography>
                 )}
                 <Button
@@ -190,7 +194,7 @@ export function EventQa({
                   disabled={!body.trim() || post.isPending}
                   onClick={submit}
                 >
-                  質問する
+                  {t("eventSocial.qaSubmit")}
                 </Button>
               </Stack>
               {/* 匿名でも「参加者が少なければ消去法で分かる」ことは先に伝えておく */}
@@ -200,13 +204,13 @@ export function EventQa({
                   color="text.secondary"
                   sx={{ display: "block", mt: 0.5 }}
                 >
-                  参加者が少ないイベントでは、誰の質問か推測されることがあります。
+                  {t("eventSocial.qaAnonWarning")}
                 </Typography>
               )}
             </Box>
           ) : (
             <Typography variant="caption" color="text.secondary">
-              このイベントの Q&A は現在受け付けていません。
+              {t("eventSocial.qaClosed")}
             </Typography>
           )}
 
@@ -231,11 +235,7 @@ export function EventQa({
             }
             onPick={canModerate ? (id) => pick.mutate(id) : undefined}
             onDelete={(q) => {
-              if (
-                window.confirm(
-                  "この質問を取り消しますか？（投票も一緒に消えます。元に戻せません）",
-                )
-              ) {
+              if (window.confirm(t("eventSocial.qaDeleteConfirm"))) {
                 del.mutate(q.id);
               }
             }}

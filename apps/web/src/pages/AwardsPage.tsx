@@ -12,6 +12,7 @@ import {
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { AwardResultView } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
@@ -31,6 +32,7 @@ interface RevealItem {
 }
 
 export function AwardsPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const isAdmin = useIsAdmin();
@@ -40,7 +42,9 @@ export function AwardsPage() {
   const reset = useAwardsReset(id);
   const notifyWinners = useNotifyAwardWinners(id);
   const resolveUser = useEntryUserResolver(id);
-  const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
+  /** 通知した人数。**訳した文字列ではなく数を持つ**ので、
+   *  言語を切り替えても前の言語のまま残らない */
+  const [notifiedCount, setNotifiedCount] = useState<number | null>(null);
   const prevCursor = useRef<number | null>(null);
   // ドラムロール中は結果を隠す
   const [drumrolling, setDrumrolling] = useState(false);
@@ -97,18 +101,22 @@ export function AwardsPage() {
   }, [cursor]);
 
   if (!eventData || !awards || !state) {
-    return <Typography>読み込み中…</Typography>;
+    return <Typography>{t("common.loading")}</Typography>;
   }
 
   const criteria = awards.criteria;
 
   return (
     <Stack spacing={3} alignItems="center" sx={{ textAlign: "center" }}>
-      <Chip color="secondary" label="表彰式" sx={{ color: "#fff" }} />
+      <Chip
+        color="secondary"
+        label={t("eventDetail.awards")}
+        sx={{ color: "#fff" }}
+      />
 
       {!latest ? (
         <Typography variant="h4" color="text.secondary" sx={{ py: 6 }}>
-          まもなく発表します…
+          {t("eventRun.ceremonySoon")}
         </Typography>
       ) : (
         <Card
@@ -122,7 +130,11 @@ export function AwardsPage() {
         >
           <CardContent sx={{ py: 4 }}>
             <Typography variant="overline" sx={{ opacity: 0.9 }}>
-              {latest.kind === "special" ? "特別賞" : "ランキング"}
+              {t(
+                latest.kind === "special"
+                  ? "eventRun.awardKindSpecial"
+                  : "eventRun.awardKindRank",
+              )}
             </Typography>
             <Typography variant="h4" fontWeight={800} gutterBottom>
               {latest.awardName}
@@ -133,7 +145,7 @@ export function AwardsPage() {
                   <MusicNoteIcon sx={{ fontSize: "inherit" }} />
                 </Typography>
                 <Typography variant="h5" sx={{ mb: 2 }}>
-                  受賞は…？
+                  {t("eventRun.drumroll")}
                 </Typography>
                 <LinearProgress
                   color="inherit"
@@ -155,7 +167,12 @@ export function AwardsPage() {
                   }}
                 />
                 <Typography variant="h6">
-                  合計 {latest.result.total} 点
+                  {t(
+                    latest.result.total === 1
+                      ? "eventRun.totalPointOne"
+                      : "eventRun.totalPoints",
+                    { n: latest.result.total },
+                  )}
                 </Typography>
                 {latest.content && (
                   <Typography sx={{ mt: 1, opacity: 0.9 }}>
@@ -181,7 +198,7 @@ export function AwardsPage() {
               </>
             ) : (
               <Typography variant="h5" sx={{ my: 2 }}>
-                該当者なし
+                {t("eventDetail.noRecipient")}
               </Typography>
             )}
           </CardContent>
@@ -191,18 +208,25 @@ export function AwardsPage() {
       {isStaff && (
         <Stack spacing={1} alignItems="center">
           <Typography variant="caption" color="text.secondary">
-            発表 {cursor} / {sequence.length}
+            {t("eventRun.revealProgress", {
+              n: cursor,
+              total: sequence.length,
+            })}
           </Typography>
           <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2}>
             <Button variant="outlined" onClick={() => reset.mutate()}>
-              リセット
+              {t("eventRun.revealReset")}
             </Button>
             <Button
               variant="contained"
               disabled={cursor >= sequence.length || advance.isPending}
               onClick={() => advance.mutate()}
             >
-              {cursor >= sequence.length ? "すべて発表済み" : "次を発表"}
+              {t(
+                cursor >= sequence.length
+                  ? "eventRun.revealAllDone"
+                  : "eventRun.revealNext",
+              )}
             </Button>
           </Stack>
           <Button
@@ -212,21 +236,25 @@ export function AwardsPage() {
             disabled={cursor < sequence.length || notifyWinners.isPending}
             onClick={() =>
               notifyWinners.mutate(undefined, {
-                onSuccess: (r) =>
-                  setNotifyMsg(`受賞者 ${r.notified} 人に通知しました`),
+                onSuccess: (r) => setNotifiedCount(r.notified),
               })
             }
           >
-            受賞者にアプリ内通知
+            {t("eventRun.notifyWinners")}
           </Button>
           {cursor < sequence.length && (
             <Typography variant="caption" color="text.disabled">
-              （すべて発表後に通知できます）
+              {t("eventRun.notifyAfterAll")}
             </Typography>
           )}
-          {notifyMsg && (
+          {notifiedCount !== null && (
             <Typography variant="caption" color="success.main">
-              {notifyMsg}
+              {t(
+                notifiedCount === 1
+                  ? "eventRun.notifiedWinnerOne"
+                  : "eventRun.notifiedWinners",
+                { n: notifiedCount },
+              )}
             </Typography>
           )}
           <Button
@@ -235,7 +263,7 @@ export function AwardsPage() {
             component={RouterLink}
             to={`/events/${id}/control`}
           >
-            ← 進行コントロールへ戻る
+            {t("eventRun.backToControl")}
           </Button>
         </Stack>
       )}
@@ -243,7 +271,7 @@ export function AwardsPage() {
       {revealed.length > 1 && (
         <Stack spacing={1} sx={{ width: "100%", maxWidth: 560 }}>
           <Typography variant="subtitle2" color="text.secondary">
-            発表済み
+            {t("eventRun.revealedHeading")}
           </Typography>
           {revealed
             .slice(0, -1)
@@ -266,7 +294,7 @@ export function AwardsPage() {
                     />
                   ) : (
                     <Typography fontWeight={600} color="text.secondary">
-                      該当者なし
+                      {t("eventDetail.noRecipient")}
                     </Typography>
                   )}
                 </CardContent>

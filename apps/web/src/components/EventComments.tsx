@@ -14,6 +14,7 @@ import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import SendIcon from "@mui/icons-material/Send";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { EventRole } from "@eventer/shared";
 import { EVENT_COMMENT_LIMIT } from "@eventer/shared";
 import { ApiError } from "../api/client.js";
@@ -37,6 +38,7 @@ export function EventComments({
   myRole: EventRole | null;
   canComment: boolean;
 }) {
+  const { t } = useTranslation();
   const { data: me } = useMe();
   // イベント配下のUIは myRole のみで判定（サイト管理者でもイベントスタッフでなければ操作UIを出さない）
   const isStaff = myRole === "staff";
@@ -55,8 +57,8 @@ export function EventComments({
       onError: (err) =>
         setError(
           err instanceof ApiError && err.status === 409
-            ? `コメントは1イベントにつき${EVENT_COMMENT_LIMIT}件までです。`
-            : "コメントの投稿に失敗しました。",
+            ? t("eventSocial.commentLimit", { n: EVENT_COMMENT_LIMIT })
+            : t("eventSocial.commentPostFailed"),
         ),
     });
   };
@@ -69,17 +71,17 @@ export function EventComments({
           sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 1.5 }}
         >
           <ChatBubbleOutlineIcon fontSize="small" />
-          コメント（{comments?.length ?? 0}）
+          {t("eventSocial.commentsHeading", { n: comments?.length ?? 0 })}
         </Typography>
 
         <Stack spacing={2}>
           {!comments ? (
             <Typography variant="body2" color="text.secondary">
-              読み込み中…
+              {t("common.loading")}
             </Typography>
           ) : comments.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
-              まだコメントはありません。
+              {t("eventSocial.commentsEmpty")}
             </Typography>
           ) : (
             comments.map((c) => (
@@ -113,11 +115,13 @@ export function EventComments({
                   <IconButton
                     size="small"
                     onClick={() => {
-                      if (window.confirm("このコメントを削除しますか？")) {
+                      if (
+                        window.confirm(t("eventSocial.commentDeleteConfirm"))
+                      ) {
                         delComment.mutate(c.id);
                       }
                     }}
-                    title="コメントを削除"
+                    title={t("eventSocial.commentDelete")}
                   >
                     <DeleteOutlineIcon sx={{ fontSize: 16 }} />
                   </IconButton>
@@ -136,7 +140,7 @@ export function EventComments({
               <MarkdownEditor
                 value={body}
                 onChange={setBody}
-                placeholder="コメントを追加…（Markdown が使えます）"
+                placeholder={t("eventSocial.commentPlaceholder")}
                 minRows={2}
                 max={200}
               />
@@ -148,13 +152,13 @@ export function EventComments({
                   disabled={!body.trim() || addComment.isPending}
                   onClick={submit}
                 >
-                  投稿
+                  {t("eventSocial.commentSubmit")}
                 </Button>
               </Stack>
             </Box>
           ) : (
             <Typography variant="caption" color="text.secondary">
-              コメントするにはこのイベントへの参加確定が必要です。
+              {t("eventSocial.commentMembersOnly")}
             </Typography>
           )}
         </Stack>

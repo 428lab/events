@@ -18,6 +18,7 @@ import ThumbUpOffAltIcon from "@mui/icons-material/ThumbUpOffAlt";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { EventQuestion } from "@eventer/shared";
 import { formatDateTime } from "../lib/format.js";
 
@@ -64,6 +65,7 @@ export interface QaQuestionListProps {
   onDelete?: (question: EventQuestion) => void;
   /** 余白を詰める（サイドパネル向け） */
   dense?: boolean;
+  /** 空のときの文言。省略すると「まだ質問はありません。」 */
   emptyText?: string;
 }
 
@@ -87,6 +89,7 @@ function QaAuthorLine({
   showMineChip?: boolean;
   dense?: boolean;
 }) {
+  const { t } = useTranslation();
   const anonymous = question.anonymous;
   const author = anonymous
     ? anonymousAuthor(question, revealAuthor)
@@ -102,11 +105,11 @@ function QaAuthorLine({
       {anonymous ? (
         <>
           <Typography variant="caption" color="text.secondary">
-            匿名
+            {t("eventSocial.qaAnonymous")}
           </Typography>
           {author && (
             // 匿名投稿でも荒らし対応のためスタッフには投稿者が届く
-            <Tooltip title="スタッフにだけ表示されています">
+            <Tooltip title={t("eventSocial.qaAuthorStaffOnly")}>
               <Typography
                 variant="caption"
                 color="text.secondary"
@@ -114,7 +117,7 @@ function QaAuthorLine({
                 to={`/users/${author.username}`}
                 sx={{ textDecoration: "none" }}
               >
-                （{author.name}）
+                {t("common.parenName", { name: author.name })}
               </Typography>
             </Tooltip>
           )}
@@ -127,11 +130,15 @@ function QaAuthorLine({
           to={author ? `/users/${author.username}` : undefined}
           sx={{ textDecoration: "none" }}
         >
-          {author?.name ?? "不明"}
+          {author?.name ?? t("eventSocial.qaAuthorUnknown")}
         </Typography>
       )}
       {question.mine && showMineChip && (
-        <Chip size="small" label="自分" variant="outlined" />
+        <Chip
+          size="small"
+          label={t("eventSocial.qaMine")}
+          variant="outlined"
+        />
       )}
       <Typography variant="caption" color="text.secondary">
         {formatDateTime(question.createdAt)}
@@ -158,6 +165,7 @@ export function QaQuestionItem({
   question: EventQuestion;
   picked?: boolean;
 } & Omit<QaQuestionListProps, "questions" | "pickedQuestionId" | "emptyText">) {
+  const { t } = useTranslation();
   return (
     <Box
       sx={{
@@ -177,7 +185,11 @@ export function QaQuestionItem({
             color={question.votedByMe ? "primary" : "default"}
             disabled={!canVote || !onVote}
             onClick={() => onVote?.(question, !question.votedByMe)}
-            title={question.votedByMe ? "投票を取り消す" : "この質問に投票する"}
+            title={
+              question.votedByMe
+                ? t("eventSocial.qaUnvote")
+                : t("eventSocial.qaVote")
+            }
           >
             {question.votedByMe ? (
               <ThumbUpAltIcon fontSize="small" />
@@ -197,7 +209,7 @@ export function QaQuestionItem({
                 size="small"
                 color="primary"
                 icon={<CampaignOutlinedIcon />}
-                label="いまこの質問"
+                label={t("eventSocial.qaPicked")}
               />
             )}
             {question.answered && (
@@ -206,7 +218,7 @@ export function QaQuestionItem({
                 color="success"
                 variant="outlined"
                 icon={<CheckCircleIcon />}
-                label="回答済み"
+                label={t("eventSocial.qaAnswered")}
               />
             )}
             {question.hidden && (
@@ -215,7 +227,7 @@ export function QaQuestionItem({
                 color="warning"
                 variant="outlined"
                 icon={<VisibilityOffOutlinedIcon />}
-                label="非表示"
+                label={t("eventSocial.qaHidden")}
               />
             )}
           </Stack>
@@ -243,7 +255,9 @@ export function QaQuestionItem({
                 color={picked ? "primary" : "default"}
                 disabled={question.hidden}
                 onClick={() => onPick(picked ? null : question.id)}
-                title={picked ? "ピックアップを解除" : "いまこの質問にする"}
+                title={
+                  picked ? t("eventSocial.qaUnpick") : t("eventSocial.qaPick")
+                }
               >
                 <CampaignOutlinedIcon fontSize="small" />
               </IconButton>
@@ -253,7 +267,11 @@ export function QaQuestionItem({
                 size="small"
                 color={question.answered ? "success" : "default"}
                 onClick={() => onAnswered(question, !question.answered)}
-                title={question.answered ? "未回答に戻す" : "回答済みにする"}
+                title={
+                  question.answered
+                    ? t("eventSocial.qaMarkUnanswered")
+                    : t("eventSocial.qaMarkAnswered")
+                }
               >
                 {question.answered ? (
                   <CheckCircleIcon fontSize="small" />
@@ -267,7 +285,11 @@ export function QaQuestionItem({
                 size="small"
                 color={question.hidden ? "warning" : "default"}
                 onClick={() => onHidden(question, !question.hidden)}
-                title={question.hidden ? "非表示を解除" : "非表示にする"}
+                title={
+                  question.hidden
+                    ? t("eventSocial.qaUnhide")
+                    : t("eventSocial.qaHide")
+                }
               >
                 {question.hidden ? (
                   <VisibilityOutlinedIcon fontSize="small" />
@@ -281,7 +303,7 @@ export function QaQuestionItem({
               <IconButton
                 size="small"
                 onClick={() => onDelete(question)}
-                title="自分の質問を取り消す"
+                title={t("eventSocial.qaDeleteMine")}
               >
                 <DeleteOutlineIcon fontSize="small" />
               </IconButton>
@@ -297,15 +319,16 @@ export function QaQuestionItem({
 export function QaQuestionList({
   questions,
   pickedQuestionId = null,
-  emptyText = "まだ質問はありません。",
+  emptyText,
   ...itemProps
 }: QaQuestionListProps) {
+  const { t } = useTranslation();
   const open = questions.filter((q) => !q.answered);
   const answered = questions.filter((q) => q.answered);
   if (questions.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
-        {emptyText}
+        {emptyText ?? t("eventSocial.qaEmpty")}
       </Typography>
     );
   }
@@ -323,7 +346,7 @@ export function QaQuestionList({
         <>
           <Divider textAlign="left" sx={{ pt: 1 }}>
             <Typography variant="caption" color="text.secondary">
-              回答済み（{answered.length}）
+              {t("eventSocial.qaAnsweredCount", { n: answered.length })}
             </Typography>
           </Divider>
           {answered.map((q) => (
@@ -358,13 +381,14 @@ export function QaPickedQuestion({
   /** 解除ボタンを出す場合のハンドラ（staff のみ） */
   onClear?: () => void;
 }) {
+  const { t } = useTranslation();
   const anonAuthor = anonymousAuthor(question, revealAuthor);
   return (
     <Box sx={{ textAlign: "center", px: 2 }}>
       <Chip
         color="primary"
         icon={<CampaignOutlinedIcon />}
-        label="いまこの質問"
+        label={t("eventSocial.qaPicked")}
         sx={{ mb: 2 }}
       />
       <Typography
@@ -388,19 +412,25 @@ export function QaPickedQuestion({
         <Chip
           size="small"
           icon={<ThumbUpAltIcon />}
-          label={`${question.votes} 票`}
+          // 1票のときは英語の単数形にする（画面は数だけを見てキーを選ぶ）
+          label={t(
+            question.votes === 1
+              ? "eventSocial.qaVoteOne"
+              : "eventSocial.qaVotes",
+            { n: question.votes },
+          )}
         />
         <Typography variant="body2" color="text.secondary">
           {question.anonymous
             ? anonAuthor
-              ? `匿名（${anonAuthor.name}）`
-              : "匿名"
-            : (question.author?.name ?? "不明")}
+              ? t("eventSocial.qaAnonWithAuthor", { name: anonAuthor.name })
+              : t("eventSocial.qaAnonymous")
+            : (question.author?.name ?? t("eventSocial.qaAuthorUnknown"))}
         </Typography>
       </Stack>
       {onClear && (
         <Button size="small" sx={{ mt: 2 }} onClick={onClear}>
-          ピックアップを解除
+          {t("eventSocial.qaUnpick")}
         </Button>
       )}
     </Box>

@@ -237,7 +237,7 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
               disabled={!name || create.isPending}
               onClick={add}
             >
-              {t("eventForm.slotAdd")}
+              {t("common.add")}
             </Button>
           </Stack>
         </CardContent>

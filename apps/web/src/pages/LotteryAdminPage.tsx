@@ -192,8 +192,8 @@ export function LotteryAdminPage() {
                         variant="outlined"
                         label={t(
                           firstCome
-                            ? "staffOps.slotFirstCome"
-                            : "staffOps.slotLottery",
+                            ? "eventForm.slotTypeFirstCome"
+                            : "eventForm.slotTypeLottery",
                         )}
                       />
                       {/* 超えたことが一覧で分かるようにする（繰り上げで超えられる） */}

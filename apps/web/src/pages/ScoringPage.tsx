@@ -6,6 +6,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useEvent, useEventEntries, useIsAdmin, useMe } from "../api/hooks.js";
 import {
   useCriteria,
@@ -16,6 +17,7 @@ import { ScoringPanel } from "../components/ScoringPanel.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
 export function ScoringPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: me } = useMe();
   const isAdmin = useIsAdmin();
@@ -26,12 +28,12 @@ export function ScoringPage() {
   const { data: myScores } = useMyScores(id);
 
   if (!eventData || !state || !entries || !criteria) {
-    return <Typography>読み込み中…</Typography>;
+    return <Typography>{t("common.loading")}</Typography>;
   }
 
   const role = eventData.myRole;
   if (!role && !isAdmin) {
-    return <Alert severity="info">採点するにはイベントへの参加が必要です。</Alert>;
+    return <Alert severity="info">{t("eventRun.scoringMembersOnly")}</Alert>;
   }
 
   return (
@@ -39,13 +41,13 @@ export function ScoringPage() {
       <EventBreadcrumbs
         eventId={id}
         eventTitle={eventData.event.title}
-        current="採点"
+        current={t("eventDetail.scoring")}
       />
       <Typography variant="h5" fontWeight={700}>
-        採点
+        {t("eventDetail.scoring")}
       </Typography>
       {state.scoringLocked && (
-        <Alert severity="warning">採点は締め切られています。</Alert>
+        <Alert severity="warning">{t("eventRun.scoringLockedNotice")}</Alert>
       )}
       {entries.map((entry) => {
         const isSelf = Boolean(me && entry.memberUserIds.includes(me.id));
@@ -64,7 +66,7 @@ export function ScoringPage() {
                     color="text.secondary"
                     sx={{ ml: 1 }}
                   >
-                    （自分）
+                    {t("eventRun.selfEntrySuffix")}
                   </Typography>
                 )}
               </Typography>

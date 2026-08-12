@@ -22,7 +22,6 @@ const ja = {
   awardsHeading: "受賞歴（{{n}}）",
   /** 受賞歴で、登壇名がプロフィール名と違うときだけイベント名に添える。
    * 括弧も、前に空白が要るかどうかも言語で変わるので画面側では書かない */
-  awardEntryName: "（{{name}}）",
   badgesHeading: "バッジ（{{n}}）",
   photosHeading: "投稿した写真（{{n}}）",
   communitiesHeading: "所属コミュニティ",
@@ -133,7 +132,6 @@ const en: Record<keyof typeof ja, string> = {
   notFound: "This user could not be found.",
 
   awardsHeading: "Awards ({{n}})",
-  awardEntryName: " ({{name}})",
   badgesHeading: "Badges ({{n}})",
   photosHeading: "Photos ({{n}})",
   communitiesHeading: "Communities",

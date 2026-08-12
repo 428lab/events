@@ -116,7 +116,6 @@ const ja = {
   addIdea: "ネタを追加",
   placedSection: "配置済み",
   addRow: "行を追加",
-  fromTemplate: "テンプレから作成",
   templateConfirm: "現在の内容をテンプレートで置き換えますか？",
   reloadConfirm:
     "最新のタイムテーブルを読み込み直します。この画面の編集内容は失われます。よろしいですか？",
@@ -148,7 +147,6 @@ const ja = {
   startsAtLabel: "開始時刻を指定（任意）",
   descriptionLabel: "説明（任意）",
   materialUrlLabel: "資料URL（任意・Speaker Deck / Googleスライド / デッキ等）",
-  materialUrlError: "http(s):// で始まるURLを入力してください",
   unassignedChip: "未割り当て（参加者には出ません）",
   place: "配置する",
   unnamedTrack: "(名前なし)",
@@ -275,7 +273,6 @@ const en: Record<keyof typeof ja, string> = {
   addIdea: "Add an idea",
   placedSection: "Scheduled",
   addRow: "Add a row",
-  fromTemplate: "Start from a template",
   templateConfirm: "Replace everything here with the template?",
   reloadConfirm:
     "This reloads the latest timetable and discards the edits on this screen. Continue?",
@@ -305,7 +302,6 @@ const en: Record<keyof typeof ja, string> = {
   descriptionLabel: "Description (optional)",
   materialUrlLabel:
     "Slides URL (optional — Speaker Deck, Google Slides, and the like)",
-  materialUrlError: "Enter a URL that starts with http:// or https://",
   unassignedChip: "Unassigned (hidden from participants)",
   place: "Place it",
   unnamedTrack: "(no name)",

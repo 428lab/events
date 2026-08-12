@@ -90,8 +90,6 @@ const ja = {
   slotAdminIntro:
     "参加枠ごとの申込者です。参加確定・キャンセル待ち・落選をここで切り替えられます。当日キャンセルが出たときにキャンセル待ちの人を確定にするのもこの画面です。",
   slotNone: "参加枠がありません。",
-  slotFirstCome: "先着順",
-  slotLottery: "抽選",
   slotOverCapacity: "定員超過",
   /** 枠の要約。区切りは common.dotSeparator で画面側がつなぐ */
   slotConfirmedOfCapacity: "確定 {{n}} / 定員 {{capacity}}",
@@ -341,8 +339,6 @@ const en: Record<keyof typeof ja, string> = {
   slotAdminIntro:
     "These are the applicants for each participation slot. You can confirm people, move them to the waiting list, or mark them as not selected. This is also where you promote someone from the waiting list when a seat opens up on the day.",
   slotNone: "This event has no participation slots.",
-  slotFirstCome: "First come",
-  slotLottery: "Lottery",
   slotOverCapacity: "Over capacity",
   slotConfirmedOfCapacity: "Confirmed {{n}} / {{capacity}}",
   slotWonOfCapacity: "Selected {{n}} / {{capacity}}",

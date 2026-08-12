@@ -19,6 +19,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import SendIcon from "@mui/icons-material/Send";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { EventPhoto, EventRole } from "@eventer/shared";
 import { EVENT_PHOTO_LIMIT, PHOTO_COMMENT_LIMIT } from "@eventer/shared";
 import { ApiError } from "../api/client.js";
@@ -50,6 +51,7 @@ export function EventPhotos({
   photosPublic: boolean;
   published: boolean;
 }) {
+  const { t } = useTranslation();
   const { data: me } = useMe();
   const isMember = Boolean(myRole);
   // イベント配下のUIは myRole のみで判定（サイト管理者でもイベントスタッフでなければ操作UIを出さない）
@@ -82,14 +84,14 @@ export function EventPhotos({
       } catch (err) {
         setError(
           err instanceof Error && err.message === "photo_limit"
-            ? `写真は1イベント${EVENT_PHOTO_LIMIT}枚までです。`
-            : "アップロードに失敗しました。",
+            ? t("eventSocial.photoLimit", { n: EVENT_PHOTO_LIMIT })
+            : t("eventSocial.photoUploadFailed"),
         );
       } finally {
         setUploading(0);
       }
     },
-    [upload],
+    [upload, t],
   );
 
   // クリップボードから貼り付けてアップロード（メンバーのみ・ライトボックスを開いていない時）
@@ -174,7 +176,7 @@ export function EventPhotos({
             }}
           >
             <PhotoCameraIcon fontSize="small" />
-            写真（{photos?.length ?? 0}）
+            {t("eventSocial.photosHeading", { n: photos?.length ?? 0 })}
           </Typography>
           <input
             ref={fileRef}
@@ -192,16 +194,18 @@ export function EventPhotos({
               disabled={uploading > 0}
               onClick={() => fileRef.current?.click()}
             >
-              {uploading > 0 ? `アップロード中… 残り${uploading}` : "写真を追加"}
+              {uploading > 0
+                ? t("eventSocial.photoUploading", { n: uploading })
+                : t("eventSocial.photoAdd")}
             </Button>
           )}
         </Stack>
 
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
           {photosPublic
-            ? "この写真は誰でも見られます。"
-            : "このイベントの参加者だけが見られます。"}
-          {isMember && " ドラッグ&ドロップや貼り付け（Ctrl/⌘+V）でも追加できます。"}
+            ? t("eventSocial.photosPublicNotice")
+            : t("eventSocial.photosMembersNotice")}
+          {isMember && t("eventSocial.photosDropHint")}
         </Typography>
 
         {isStaff && (
@@ -216,7 +220,7 @@ export function EventPhotos({
                 }
               />
             }
-            label="参加者以外にも写真を公開する"
+            label={t("eventSocial.photosPublicToggle")}
           />
         )}
 
@@ -228,8 +232,8 @@ export function EventPhotos({
 
         {!photos || photos.length === 0 ? (
           <Typography color="text.secondary">
-            まだ写真がありません。
-            {isMember && "「写真を追加」やドラッグ&ドロップで共有しましょう。"}
+            {t("eventSocial.photosEmpty")}
+            {isMember && t("eventSocial.photosEmptyHint")}
           </Typography>
         ) : (
           <Box
@@ -324,7 +328,8 @@ export function EventPhotos({
                     size="small"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (window.confirm("この写真を削除しますか？")) del.mutate(p.id);
+                      if (window.confirm(t("eventSocial.photoDeleteConfirm")))
+                        del.mutate(p.id);
                     }}
                     sx={{
                       position: "absolute",
@@ -354,7 +359,7 @@ export function EventPhotos({
         isStaff={isStaff}
         canDeletePhoto={lightbox ? canDelete(lightbox) : false}
         onDeletePhoto={(id) => {
-          if (window.confirm("この写真を削除しますか？")) {
+          if (window.confirm(t("eventSocial.photoDeleteConfirm"))) {
             del.mutate(id);
             setLightbox(null);
           }
@@ -382,6 +387,7 @@ function PhotoLightbox({
   canDeletePhoto: boolean;
   onDeletePhoto: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const { data: me } = useMe();
   const photoId = photo?.id ?? "";
   const { data: comments } = usePhotoComments(eventId, photoId, Boolean(photo));
@@ -399,8 +405,8 @@ function PhotoLightbox({
       onError: (err) =>
         setCommentError(
           err instanceof ApiError && err.status === 409
-            ? `コメントは1枚につき${PHOTO_COMMENT_LIMIT}件までです。`
-            : "コメントの投稿に失敗しました。",
+            ? t("eventSocial.photoCommentLimit", { n: PHOTO_COMMENT_LIMIT })
+            : t("eventSocial.commentPostFailed"),
         ),
     });
   };
@@ -477,7 +483,7 @@ function PhotoLightbox({
                   size="small"
                   color="error"
                   onClick={() => onDeletePhoto(photo.id)}
-                  title="写真を削除"
+                  title={t("eventSocial.photoDelete")}
                 >
                   <DeleteOutlineIcon fontSize="small" />
                 </IconButton>
@@ -488,11 +494,11 @@ function PhotoLightbox({
             <Stack spacing={1.5} sx={{ p: 1.5, flex: 1, overflowY: "auto" }}>
               {!comments ? (
                 <Typography variant="caption" color="text.secondary">
-                  読み込み中…
+                  {t("common.loading")}
                 </Typography>
               ) : comments.length === 0 ? (
                 <Typography variant="caption" color="text.secondary">
-                  まだコメントはありません。
+                  {t("eventSocial.commentsEmpty")}
                 </Typography>
               ) : (
                 comments.map((c) => (
@@ -550,7 +556,7 @@ function PhotoLightbox({
                   fullWidth
                   multiline
                   maxRows={4}
-                  placeholder="コメントを追加…"
+                  placeholder={t("eventSocial.photoCommentPlaceholder")}
                   value={body}
                   max={200}
                   onChange={(e) => setBody(e.target.value)}
@@ -573,7 +579,7 @@ function PhotoLightbox({
                 color="text.secondary"
                 sx={{ p: 1.5, borderTop: 1, borderColor: "divider" }}
               >
-                コメントするにはこのイベントの参加者である必要があります。
+                {t("eventSocial.photoCommentMembersOnly")}
               </Typography>
             )}
           </Stack>

@@ -14,7 +14,6 @@ const ja = {
   create: "新規問い合わせ",
   body: "内容",
   /** 送信ボタン。新規作成とスレッドへの返信の両方で使う */
-  send: "送信",
   sendError: "送信に失敗しました。",
 
   /** 一覧 */
@@ -37,7 +36,6 @@ const ja = {
 const en: Record<keyof typeof ja, string> = {
   create: "New inquiry",
   body: "Message",
-  send: "Send",
   sendError: "Couldn't send your message.",
 
   empty: "No inquiries yet. Feel free to ask us anything.",

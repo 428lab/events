@@ -119,7 +119,7 @@ export function InquiryThread({
           onChange={(e) => setBody(e.target.value)}
         />
         <Button variant="contained" disabled={sending || !body.trim()} onClick={send}>
-          {t("inquiries.send")}
+          {t("common.send")}
         </Button>
       </Stack>
     </Stack>

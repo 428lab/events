@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Dialog, IconButton } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import { useTranslation } from "react-i18next";
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 6;
@@ -35,7 +36,9 @@ export function ImageLightbox({
   open: boolean;
   onClose: () => void;
 }) {
-  const [t, setT] = useState<Transform>(IDENTITY);
+  const { t } = useTranslation();
+  // 表示中の拡大・移動量。`t` は翻訳関数に使うので view という名前にしてある
+  const [view, setView] = useState<Transform>(IDENTITY);
   const containerRef = useRef<HTMLDivElement | null>(null);
   /** アクティブなポインタ（ピンチは2本目まで追跡） */
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
@@ -44,8 +47,8 @@ export function ImageLightbox({
   /** ダブルタップ検出用の直前タップ */
   const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
   /** 最新の transform（イベントハンドラから同期参照するため） */
-  const tRef = useRef(t);
-  tRef.current = t;
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   /** コンテナ中心を原点にした座標へ変換（transform の基準系と揃える） */
   const toLocal = (clientX: number, clientY: number) => {
@@ -57,10 +60,10 @@ export function ImageLightbox({
 
   /** 点 p（ローカル座標）を不動点にして倍率を newScale へ変更 */
   const zoomAt = (p: { x: number; y: number }, newScale: number) => {
-    const cur = tRef.current;
+    const cur = viewRef.current;
     const s = clampScale(newScale);
     const k = s / cur.scale;
-    setT({
+    setView({
       scale: s,
       x: p.x - (p.x - cur.x) * k,
       y: p.y - (p.y - cur.y) * k,
@@ -68,7 +71,7 @@ export function ImageLightbox({
   };
 
   const reset = () => {
-    setT(IDENTITY);
+    setView(IDENTITY);
     pointersRef.current.clear();
     pinchDistRef.current = null;
     lastTapRef.current = null;
@@ -98,7 +101,7 @@ export function ImageLightbox({
         Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < DOUBLE_TAP_DIST
       ) {
         lastTapRef.current = null;
-        if (tRef.current.scale !== 1) setT(IDENTITY);
+        if (viewRef.current.scale !== 1) setView(IDENTITY);
         else zoomAt(toLocal(e.clientX, e.clientY), 2);
       } else {
         lastTapRef.current = { time: now, x: e.clientX, y: e.clientY };
@@ -120,14 +123,14 @@ export function ImageLightbox({
       pinchDistRef.current = dist;
       if (lastDist && lastDist > 0) {
         const mid = toLocal((a.x + b.x) / 2, (a.y + b.y) / 2);
-        zoomAt(mid, tRef.current.scale * (dist / lastDist));
+        zoomAt(mid, viewRef.current.scale * (dist / lastDist));
       }
       return;
     }
     if (pointers.size === 1) {
       // ドラッグでパン
-      const cur = tRef.current;
-      setT({
+      const cur = viewRef.current;
+      setView({
         ...cur,
         x: cur.x + (e.clientX - prev.x),
         y: cur.y + (e.clientY - prev.y),
@@ -155,7 +158,7 @@ export function ImageLightbox({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const factor = Math.exp(-e.deltaY * 0.002);
-      zoomAt(toLocal(e.clientX, e.clientY), tRef.current.scale * factor);
+      zoomAt(toLocal(e.clientX, e.clientY), viewRef.current.scale * factor);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -173,7 +176,7 @@ export function ImageLightbox({
     >
       <IconButton
         onClick={onClose}
-        aria-label="閉じる"
+        aria-label={t("common.close")}
         sx={{
           position: "absolute",
           top: 8,
@@ -201,7 +204,7 @@ export function ImageLightbox({
           overflow: "hidden",
           // ブラウザ既定のスクロール/ピンチを止めて自前ジェスチャーに割り当てる
           touchAction: "none",
-          cursor: t.scale > 1 ? "grab" : "zoom-in",
+          cursor: view.scale > 1 ? "grab" : "zoom-in",
           userSelect: "none",
         }}
       >
@@ -214,7 +217,7 @@ export function ImageLightbox({
             maxWidth: "100%",
             maxHeight: "100%",
             objectFit: "contain",
-            transform: `translate(${t.x}px, ${t.y}px) scale(${t.scale})`,
+            transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
             transformOrigin: "center center",
             // ドラッグ/ピンチ中の追従を邪魔しないよう transition は付けない
             pointerEvents: "none",

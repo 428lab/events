@@ -221,7 +221,7 @@ export function ScheduleItemRow({
             helperText={
               row.materialUrl.trim() !== "" &&
               !/^https?:\/\//.test(row.materialUrl.trim())
-                ? t("schedule.materialUrlError")
+                ? t("eventForm.materialUrlInvalid")
                 : undefined
             }
             inputProps={{ maxLength: 500 }}

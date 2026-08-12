@@ -380,7 +380,7 @@ export function ScheduleEditor({
           startIcon={<PlaylistAddIcon />}
           onClick={(e) => setTemplateAnchor(e.currentTarget)}
         >
-          {t("schedule.fromTemplate")}
+          {t("common.fromTemplate")}
         </Button>
         <Menu
           anchorEl={templateAnchor}
