@@ -65,7 +65,6 @@ export interface QaQuestionListProps {
   onDelete?: (question: EventQuestion) => void;
   /** 余白を詰める（サイドパネル向け） */
   dense?: boolean;
-  /** 空のときの文言。省略すると「まだ質問はありません。」 */
 }
 
 /** 匿名投稿で表示してよい投稿者を返す。

@@ -474,7 +474,10 @@ export function EventDetailPage() {
           </Typography>
         )}
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-          {venueLabel(event.venueType)} ・ {participantCountLabel(event)}
+          {/* 区切りの記号は言語で変わるので辞書が持つ (#363) */}
+          {venueLabel(event.venueType)}
+          {t("common.dotSeparator")}
+          {participantCountLabel(event)}
         </Typography>
       </Box>
 

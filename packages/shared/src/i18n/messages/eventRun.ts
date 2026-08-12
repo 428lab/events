@@ -32,6 +32,16 @@ const ja = {
   modeNormal: "通常",
   presentingHeading: "発表中のチーム",
 
+  /** 発表画面 (#215)。ScoringPanel とパネル開閉ボタンを埋め込むので、
+   *  枠だけ日本語のまま残らないよう投影・配信グループ (#367) より先に拾った */
+  presentModeChip: "プレゼンモード",
+  presentNowLabel: "発表中",
+  presentSlidesLabel: "資料:",
+  presentCodeLabel: "コード:",
+  presentWaiting: "発表チームの選択を待っています…",
+  presentScoreWaiting: "発表チームが選択されると採点できます",
+  presentScoreOthers: "他の発表も採点する（採点一覧）",
+
   /** 採点の締切。チップの色は画面側が持つ（文言だけここ） */
   scoringLockHeading: "採点の締切",
   scoringLockedChip: "締切済み",
@@ -135,6 +145,14 @@ const en: Record<keyof typeof ja, string> = {
   modeHeading: "Mode",
   modeNormal: "Normal",
   presentingHeading: "Team presenting now",
+
+  presentModeChip: "Presentation mode",
+  presentNowLabel: "Presenting now",
+  presentSlidesLabel: "Slides:",
+  presentCodeLabel: "Code:",
+  presentWaiting: "Waiting for a team to be selected…",
+  presentScoreWaiting: "You can score once a team is selected",
+  presentScoreOthers: "Score the other teams (all entries)",
 
   scoringLockHeading: "Scoring window",
   scoringLockedChip: "Closed",

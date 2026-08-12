@@ -123,7 +123,7 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
               sx={{ mt: 1, flexShrink: 0 }}
               onClose={() => pick.reset()}
             >
-              {t("eventSocial.panelPickFailed")}
+              {t("eventSocial.qaPickFailed")}
             </Alert>
           )}
           {picked && (

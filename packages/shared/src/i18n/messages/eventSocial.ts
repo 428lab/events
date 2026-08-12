@@ -95,10 +95,6 @@ const ja = {
   panelClose: "パネルを閉じる",
   panelMembersOnly: "参加が確定しているメンバーのみ利用できます。",
   panelChatUnavailable: "このイベントではチャットは使えません。",
-  panelPickFailed: "「いまこの質問」の変更に失敗しました。",
-
-  /* ===== 本文の Markdown 描画（コメント・説明から共通で使う） ===== */
-  /** 裸のYouTubeリンクを埋め込みにしたときの iframe のタイトル（読み上げ用） */
 
   /* ===== Q&A (#216) ===== */
 
@@ -272,8 +268,6 @@ const en: Record<keyof typeof ja, string> = {
   panelClose: "Close the panel",
   panelMembersOnly: "Only confirmed participants can use this.",
   panelChatUnavailable: "Chat is not available for this event.",
-  panelPickFailed: "Could not change the highlighted question.",
-
 
   qaHeading: "Q&A ({{n}})",
   qaIntro:

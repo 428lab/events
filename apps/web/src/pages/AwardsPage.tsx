@@ -43,7 +43,12 @@ export function AwardsPage() {
   const notifyWinners = useNotifyAwardWinners(id);
   const resolveUser = useEntryUserResolver(id);
   /** 通知した人数。**訳した文字列ではなく数を持つ**ので、
-   *  言語を切り替えても前の言語のまま残らない */
+   *  言語を切り替えても前の言語のまま残らない。
+   *
+   *  なお**エラー文言を訳した文字列のまま state に持つ書き方**は、
+   *  チャット・コメント・写真・Q&A に第1段階から残っている。ここだけ数に
+   *  直したのは単複の選択が要るからで、扱いを分けたわけではない。
+   *  まとめてどうするかは #369 で決める。 */
   const [notifiedCount, setNotifiedCount] = useState<number | null>(null);
   const prevCursor = useRef<number | null>(null);
   // ドラムロール中は結果を隠す
