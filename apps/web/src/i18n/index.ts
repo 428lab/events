@@ -2,8 +2,9 @@
  * 画面の言語まわりの入口 (#352)。
  *
  * 決め方は **URLの指定 (`?lang=en`) > 利用者の設定 > ブラウザの言語 > 日本語**。
- * 利用者ごとの設定はまだ無いので、いまは URL とブラウザだけを見る
- * （設定が入ったら `detectLanguage` の候補に足すだけで済むようにしてある）。
+ * 利用者の設定は設定ページで選ぶ端末ごとの値 (#354)。**その保存先を知るのは
+ * `languagePreference.ts` だけ**で、ここの判定は保存領域に触らない
+ * （触ると保存が禁じられた環境で起動時に例外が飛び、画面が真っ白になる）。
  *
  * 辞書は `@eventer/shared/i18n` にある。ここが持つのは
  * 「どう選ぶか」と「i18next にどう渡すか」だけ。
@@ -17,13 +18,14 @@ import {
   translations,
   type AppLanguage,
 } from "@eventer/shared/i18n";
+import { storedLanguage } from "./languagePreference.js";
 
 /**
  * 表示言語を決める。副作用なし（テストから素で呼べる）。
  *
  * @param search `window.location.search` 相当
  * @param browserLanguages `navigator.languages` 相当
- * @param userPreference 利用者が選んだ言語。まだ設定が無いので既定は undefined
+ * @param userPreference 利用者が選んだ言語。無指定なら URL とブラウザだけで決める
  */
 export function detectLanguage(
   search: string,
@@ -34,8 +36,15 @@ export function detectLanguage(
   return resolveLanguage([urlLang, userPreference, ...browserLanguages]);
 }
 
-/** 実際のブラウザの状態から言語を決める。起動時に一度だけ呼ぶ */
-export function detectFromEnvironment(): AppLanguage {
+/**
+ * 実際のブラウザの状態から言語を決める。起動時と、設定を切り替えたときに呼ぶ。
+ *
+ * **保存領域は読まない**。利用者の設定は呼ぶ側が読んで渡す
+ * （`languagePreference.ts` の `storedLanguage()`）。
+ */
+export function detectFromEnvironment(
+  userPreference?: string | null,
+): AppLanguage {
   if (typeof window === "undefined") return DEFAULT_LANGUAGE;
   const browser =
     navigator.languages && navigator.languages.length > 0
@@ -43,7 +52,7 @@ export function detectFromEnvironment(): AppLanguage {
       : navigator.language
         ? [navigator.language]
         : [];
-  return detectLanguage(window.location.search, browser);
+  return detectLanguage(window.location.search, browser, userPreference);
 }
 
 void i18next.use(initReactI18next).init({
@@ -51,7 +60,7 @@ void i18next.use(initReactI18next).init({
     ja: { translation: translations.ja },
     en: { translation: translations.en },
   },
-  lng: detectFromEnvironment(),
+  lng: detectFromEnvironment(storedLanguage()),
   // 訳がまだ無いキーは日本語のまま出す。第2段階までは英語表示に日本語が
   // 混ざるが、空欄やキー名が出るより読める
   fallbackLng: DEFAULT_LANGUAGE,

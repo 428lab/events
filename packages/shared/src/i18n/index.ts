@@ -15,6 +15,7 @@ import { events } from "./messages/events.js";
 import { labels } from "./messages/labels.js";
 import { login } from "./messages/login.js";
 import { nav } from "./messages/nav.js";
+import { settings } from "./messages/settings.js";
 import type { AppLanguage } from "./languages.js";
 
 export * from "./languages.js";
@@ -28,6 +29,7 @@ export const translations = {
     events: events.ja,
     eventDetail: eventDetail.ja,
     errors: errors.ja,
+    settings: settings.ja,
     ...labels.ja,
   },
   en: {
@@ -37,6 +39,7 @@ export const translations = {
     events: events.en,
     eventDetail: eventDetail.en,
     errors: errors.en,
+    settings: settings.en,
     ...labels.en,
   },
 } satisfies Record<AppLanguage, Record<string, Record<string, string>>>;
