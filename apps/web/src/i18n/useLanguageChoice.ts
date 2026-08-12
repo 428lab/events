@@ -27,7 +27,12 @@ export function useLanguageChoice(): [
     // 保存に失敗しても（保存が禁じられた環境）、この先の表示は切り替える
     writeLanguageChoice(next);
     setChoice(next);
-    void i18next.changeLanguage(detectFromEnvironment(asPreference(next)));
+    // 辞書は起動時に読み込み済みなので、ここが失敗する経路は事実上無い。
+    // それでも受け取るのは、握らないと unhandled rejection になるため。
+    // 失敗しても保存とボタンの状態は進める（表示だけが前の言語のまま残る）
+    i18next
+      .changeLanguage(detectFromEnvironment(asPreference(next)))
+      .catch(() => {});
   }, []);
 
   return [choice, change];

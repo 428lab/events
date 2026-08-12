@@ -1,3 +1,4 @@
+import { useId } from "react";
 import {
   Card,
   CardContent,
@@ -20,11 +21,15 @@ import type { LanguageChoice } from "../i18n/languagePreference.js";
 export function LanguageCard() {
   const { t } = useTranslation();
   const [choice, setChoice] = useLanguageChoice();
+  // 見出しと補足を読み上げに紐付ける。aria-label で同じ文言を書くと
+  // 見出しと合わせて2回読まれるため、id で参照する
+  const titleId = useId();
+  const hintId = useId();
 
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="h6" gutterBottom>
+        <Typography id={titleId} variant="h6" gutterBottom>
           {t("settings.languageTitle")}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -39,7 +44,8 @@ export function LanguageCard() {
               // 選択中のボタンをもう一度押すと null が来る。解除はさせない
               if (v != null) setChoice(v);
             }}
-            aria-label={t("settings.languageTitle")}
+            aria-labelledby={titleId}
+            aria-describedby={hintId}
           >
             <ToggleButton value="auto">{t("settings.languageAuto")}</ToggleButton>
             {SUPPORTED_LANGUAGES.map((lang) => (
@@ -49,7 +55,7 @@ export function LanguageCard() {
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
-          <Typography variant="caption" color="text.secondary">
+          <Typography id={hintId} variant="caption" color="text.secondary">
             {t("settings.languageAutoDescription")}
           </Typography>
         </Stack>
