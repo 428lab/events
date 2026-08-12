@@ -7,6 +7,7 @@ import {
   Switch,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import {
   useNotificationPrefs,
   useUpdateNotificationPrefs,
@@ -14,6 +15,7 @@ import {
 
 /** アカウント設定: 通知のON/OFF (#21 PR3, #126 でメール通知追加)。 */
 export function NotificationPrefsCard() {
+  const { t } = useTranslation();
   const { data } = useNotificationPrefs();
   const update = useUpdateNotificationPrefs();
   const prefs = data?.prefs;
@@ -23,10 +25,10 @@ export function NotificationPrefsCard() {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          通知設定
+          {t("settings.notificationsTitle")}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          フォローしている相手の活動を通知欄に表示します。
+          {t("settings.notificationsDescription")}
         </Typography>
         <Stack>
           <FormControlLabel
@@ -39,7 +41,7 @@ export function NotificationPrefsCard() {
                 }
               />
             }
-            label="フォロー相手がイベントを公開したとき"
+            label={t("settings.notifyFolloweeCreated")}
           />
           <FormControlLabel
             control={
@@ -51,7 +53,7 @@ export function NotificationPrefsCard() {
                 }
               />
             }
-            label="フォロー相手がイベントに参加したとき"
+            label={t("settings.notifyFolloweeJoined")}
           />
           <FormControlLabel
             control={
@@ -63,17 +65,16 @@ export function NotificationPrefsCard() {
                 }
               />
             }
-            label="メール通知（通知と参加イベントの前日リマインダー）"
+            label={t("settings.notifyEmail")}
           />
           {data && !email && (
             <Alert severity="info" sx={{ mt: 1 }}>
-              メール通知には Google / GitHub / Discord
-              のログイン連携が必要です。下の「ログイン方法（連携）」から連携すると利用できます。
+              {t("settings.emailNotLinked")}
             </Alert>
           )}
           {email && (
             <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-              送信先: {email}
+              {t("settings.emailRecipient", { email })}
             </Typography>
           )}
         </Stack>

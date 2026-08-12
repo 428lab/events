@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { Notification } from "@eventer/shared";
 import {
   useMarkAllNotificationsRead,
@@ -37,6 +38,7 @@ function relativeTime(ts: number): string {
 /** お知らせ（抽選結果・繰り上げ・受賞・問い合わせ返信）の通知ベル。push ではなくアプリ内通知 */
 export function NotificationBell() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const open = Boolean(anchor);
   const { data: count } = useNotificationUnreadCount();
@@ -55,8 +57,8 @@ export function NotificationBell() {
       <IconButton
         color="inherit"
         onClick={(e) => setAnchor(e.currentTarget)}
-        aria-label="お知らせ"
-        title="お知らせ"
+        aria-label={t("nav.notifications")}
+        title={t("nav.notifications")}
       >
         <Badge badgeContent={count ?? 0} color="error">
           <NotificationsNoneIcon />
@@ -80,11 +82,11 @@ export function NotificationBell() {
           }}
         >
           <Typography variant="subtitle2" fontWeight={700}>
-            お知らせ
+            {t("nav.notifications")}
           </Typography>
           {Boolean(count) && (
             <Button size="small" onClick={() => markAll.mutate()}>
-              すべて既読
+              {t("notifications.markAllRead")}
             </Button>
           )}
         </Box>
@@ -132,7 +134,7 @@ export function NotificationBell() {
         ) : (
           <Box sx={{ px: 2, py: 4, textAlign: "center" }}>
             <Typography variant="body2" color="text.secondary">
-              お知らせはありません
+              {t("notifications.bellEmpty")}
             </Typography>
           </Box>
         )}
@@ -147,7 +149,7 @@ export function NotificationBell() {
           }}
           sx={{ py: 1, borderRadius: 0 }}
         >
-          お知らせ一覧
+          {t("notifications.bellSeeAll")}
         </Button>
         <Divider />
         <Button
@@ -159,7 +161,7 @@ export function NotificationBell() {
           }}
           sx={{ py: 1, borderRadius: 0 }}
         >
-          お問い合わせ
+          {t("nav.inquiries")}
         </Button>
       </Popover>
     </>

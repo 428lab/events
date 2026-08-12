@@ -15,6 +15,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   useAuthProviders,
   useIdentities,
@@ -29,26 +30,18 @@ import { AccountDeleteCard } from "../components/AccountDeleteCard.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
 import { nostrNip07Login } from "../lib/nostr.js";
 import { ApiError } from "../api/client.js";
+import { errorCode } from "../lib/errorMessage.js";
+import { i18next, tDynamic } from "../i18n/index.js";
 
-const ALREADY_LINKED_MSG =
-  "そのアカウントは他のログイン方法を持つ別ユーザーに連携されています。統合したい場合は、先に相手側アカウントで連携を解除してください。";
-/** 引き取り拒否 (#238): 相手アカウントに利用実績がある場合 */
-const ACCOUNT_IN_USE_MSG =
-  "そのログイン方法は、利用実績のある別のアカウントに連携されています。そちらのアカウントでログインし直してから、逆にこちらのログイン方法を連携してください。";
-/** 引き取り拒否 (#250): 相手アカウントが退会手続き中（猶予期間）の場合 */
-const ACCOUNT_DELETED_MSG =
-  "そのログイン方法は、退会手続き中のアカウントに連携されています。そちらのアカウントでログインすると復帰できます。完全に削除されたあとであれば、あらためて連携できます。";
-
-/** OAuth コールバックの ?link_error / API の 409 エラーコードを文言に変換する */
+/** OAuth コールバックの ?link_error / API の 409 で返るコードを文言にする。
+ *  表は辞書（linkError 名前空間）にあり、知らないコードは default に落ちる */
 function linkErrorMessage(code: string | null | undefined): string {
-  return code === "account_in_use"
-    ? ACCOUNT_IN_USE_MSG
-    : code === "account_deleted"
-      ? ACCOUNT_DELETED_MSG
-      : ALREADY_LINKED_MSG;
+  const fallback = i18next.t("linkError.default");
+  return code ? tDynamic(`linkError.${code}`, fallback) : fallback;
 }
 
 export function AccountPage() {
+  const { t } = useTranslation();
   const { data: me } = useMe();
   const { data: providers } = useAuthProviders();
   const { data: identities } = useIdentities();
@@ -72,7 +65,7 @@ export function AccountPage() {
     }
   };
 
-  if (!me || !identities) return <Typography>読み込み中…</Typography>;
+  if (!me || !identities) return <Typography>{t("common.loading")}</Typography>;
 
   const linked = new Map(identities.map((i) => [i.provider, i]));
   const all = [
@@ -91,14 +84,12 @@ export function AccountPage() {
     } catch (e) {
       // 引き取り拒否系は見落とし防止のためモーダルで表示 (#245)
       if (e instanceof ApiError && e.status === 409) {
-        setLinkErrorDialog(
-          linkErrorMessage((e.body as { error?: string } | null)?.error),
-        );
+        setLinkErrorDialog(linkErrorMessage(errorCode(e)));
       } else {
         setNostrError(
           e instanceof Error && e.message === "no_extension"
-            ? "NIP-07 対応拡張（Alby、nos2x など）が見つかりません。"
-            : "Nostr 連携に失敗しました。",
+            ? t("settings.nostrExtensionMissing")
+            : t("settings.nostrLinkFailed"),
         );
       }
     } finally {
@@ -109,7 +100,7 @@ export function AccountPage() {
   return (
     <Stack spacing={3}>
       <Typography variant="h5" fontWeight={700}>
-        アカウント設定
+        {t("settings.accountTitle")}
       </Typography>
 
       <UsernameCard />
@@ -121,13 +112,10 @@ export function AccountPage() {
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            ログイン方法（連携）
+            {t("settings.loginMethodsTitle")}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            複数のログイン方法を連携できます。そのログイン方法だけで使っている
-            未利用の別アカウントがある場合は、連携がこちらへ引き継がれます
-            （利用実績のあるアカウントからは引き継げません。その場合は
-            「アカウント統合」をお使いください）。
+            {t("settings.loginMethodsDescription")}
           </Typography>
 
           <Stack spacing={1.5}>
@@ -156,7 +144,11 @@ export function AccountPage() {
                   <Typography sx={{ minWidth: 80 }}>{providerLabel(p)}</Typography>
                   {id ? (
                     <>
-                      <Chip size="small" color="success" label="連携済み" />
+                      <Chip
+                        size="small"
+                        color="success"
+                        label={t("settings.linked")}
+                      />
                       {id.email && (
                         <Typography variant="body2" color="text.secondary">
                           {id.email}
@@ -170,7 +162,7 @@ export function AccountPage() {
                         disabled={!canUnlink || unlink.isPending}
                         onClick={() => unlink.mutate(p)}
                       >
-                        解除
+                        {t("settings.unlink")}
                       </Button>
                     </>
                   ) : (
@@ -183,7 +175,9 @@ export function AccountPage() {
                           disabled={nostrBusy}
                           onClick={linkNostr}
                         >
-                          {nostrBusy ? "確認中…" : "連携する"}
+                          {nostrBusy
+                            ? t("settings.linkChecking")
+                            : t("settings.link")}
                         </Button>
                       ) : (
                         <Button
@@ -191,7 +185,7 @@ export function AccountPage() {
                           variant="contained"
                           href={`/api/auth/${p}/login`}
                         >
-                          連携する
+                          {t("settings.link")}
                         </Button>
                       )}
                     </>
@@ -208,7 +202,7 @@ export function AccountPage() {
           )}
           {!canUnlink && (
             <Alert severity="info" sx={{ mt: 2 }}>
-              ログイン方法は最低1つ必要です（最後の1つは解除できません）。
+              {t("settings.lastLoginMethodNotice")}
             </Alert>
           )}
         </CardContent>
@@ -220,13 +214,13 @@ export function AccountPage() {
 
       {/* 連携エラーは見落とし防止のためモーダルで表示 (#245) */}
       <Dialog open={Boolean(linkErrorDialog)} onClose={closeLinkErrorDialog}>
-        <DialogTitle>連携できませんでした</DialogTitle>
+        <DialogTitle>{t("settings.linkFailedTitle")}</DialogTitle>
         <DialogContent>
           <DialogContentText>{linkErrorDialog}</DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button variant="contained" onClick={closeLinkErrorDialog}>
-            閉じる
+            {t("common.close")}
           </Button>
         </DialogActions>
       </Dialog>

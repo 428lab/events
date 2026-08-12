@@ -11,12 +11,14 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useCreateInquiry, useInquiries } from "../api/inquiryHooks.js";
 import { CounterTextField } from "../components/CounterTextField.js";
 import { formatDateTime } from "../lib/format.js";
 
 export function InquiriesPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { data: inquiries, isLoading } = useInquiries();
   const create = useCreateInquiry();
   const [open, setOpen] = useState(false);
@@ -35,11 +37,11 @@ export function InquiriesPage() {
     <Stack spacing={3}>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
         <Typography variant="h5" fontWeight={700}>
-          お問い合わせ
+          {t("nav.inquiries")}
         </Typography>
         {!open && (
           <Button variant="contained" onClick={() => setOpen(true)}>
-            新規問い合わせ
+            {t("inquiries.create")}
           </Button>
         )}
       </Stack>
@@ -49,14 +51,14 @@ export function InquiriesPage() {
           <CardContent>
             <Stack spacing={2}>
               <CounterTextField
-                label="件名"
+                label={t("inquiries.subject")}
                 value={subject}
                 max={200}
                 onChange={(e) => setSubject(e.target.value)}
                 fullWidth
               />
               <CounterTextField
-                label="内容"
+                label={t("inquiries.body")}
                 value={body}
                 max={5000}
                 onChange={(e) => setBody(e.target.value)}
@@ -65,16 +67,18 @@ export function InquiriesPage() {
                 fullWidth
               />
               {create.isError && (
-                <Alert severity="error">送信に失敗しました。</Alert>
+                <Alert severity="error">{t("inquiries.sendError")}</Alert>
               )}
               <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} justifyContent="flex-end">
-                <Button onClick={() => setOpen(false)}>キャンセル</Button>
+                <Button onClick={() => setOpen(false)}>
+                  {t("common.cancel")}
+                </Button>
                 <Button
                   variant="contained"
                   disabled={!subject.trim() || !body.trim() || create.isPending}
                   onClick={submit}
                 >
-                  送信
+                  {t("inquiries.send")}
                 </Button>
               </Stack>
             </Stack>
@@ -83,11 +87,9 @@ export function InquiriesPage() {
       )}
 
       {isLoading || !inquiries ? (
-        <Typography>読み込み中…</Typography>
+        <Typography>{t("common.loading")}</Typography>
       ) : inquiries.length === 0 ? (
-        <Typography color="text.secondary">
-          お問い合わせはまだありません。ご質問・ご要望はお気軽にどうぞ。
-        </Typography>
+        <Typography color="text.secondary">{t("inquiries.empty")}</Typography>
       ) : (
         <Stack spacing={1.5}>
           {inquiries.map((q) => (
@@ -111,12 +113,18 @@ export function InquiriesPage() {
                     </Typography>
                     <Chip
                       size="small"
-                      label={q.status === "answered" ? "回答済み" : "対応中"}
+                      label={t(
+                        q.status === "answered"
+                          ? "inquiryStatus.answered"
+                          : "inquiryStatus.open",
+                      )}
                       color={q.status === "answered" ? "success" : "default"}
                     />
                   </Stack>
                   <Typography variant="caption" color="text.secondary">
-                    最終更新 {formatDateTime(q.lastMessageAt)}
+                    {t("inquiries.lastUpdated", {
+                      time: formatDateTime(q.lastMessageAt),
+                    })}
                   </Typography>
                 </CardContent>
               </CardActionArea>

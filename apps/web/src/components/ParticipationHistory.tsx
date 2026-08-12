@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Box, Stack, Tab, Tabs, Typography } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import type { EventTimelinePhotos, MyEventSummary } from "@eventer/shared";
 import { EventList, ListColumnsToggle } from "./EventList.js";
 import { isDraftEvent } from "./DraftChip.js";
@@ -16,6 +17,7 @@ function Section({
   events: MyEventSummary[];
   note?: string;
 }) {
+  const { t } = useTranslation();
   if (events.length === 0) return null;
   return (
     <Box>
@@ -27,7 +29,7 @@ function Section({
         sx={{ mb: note ? 0.25 : 1 }}
       >
         <Typography variant="h6">
-          {title}（{events.length}）
+          {t("profile.sectionCount", { title, n: events.length })}
         </Typography>
         <ListColumnsToggle />
       </Stack>
@@ -65,6 +67,7 @@ export function ParticipationHistory({
   eventPhotos?: EventTimelinePhotos[];
   now?: number;
 }) {
+  const { t } = useTranslation();
   const [view, setView] = useState<"list" | "timeline">("list");
   if (events.length === 0) return null;
 
@@ -83,10 +86,14 @@ export function ParticipationHistory({
         value={view}
         onChange={(_e, v: "list" | "timeline") => setView(v)}
         sx={{ mb: 2, minHeight: 40 }}
-        aria-label="参加履歴の表示切替"
+        aria-label={t("profile.historyViewToggle")}
       >
-        <Tab value="list" label="一覧" sx={{ minHeight: 40 }} />
-        <Tab value="timeline" label="年表" sx={{ minHeight: 40 }} />
+        <Tab value="list" label={t("profile.tabList")} sx={{ minHeight: 40 }} />
+        <Tab
+          value="timeline"
+          label={t("profile.tabTimeline")}
+          sx={{ minHeight: 40 }}
+        />
       </Tabs>
 
       {view === "list" ? (
@@ -94,24 +101,24 @@ export function ParticipationHistory({
           {/* 公開前のものは一番上。これから手を入れて公開するもので、
               公開済みと取り違えると事故になるため最初に目に入る位置に置く */}
           <Section
-            title="下書きのイベント"
+            title={t("profile.sectionDrafts")}
             events={drafts}
-            note="まだ公開していません。あなたと運営だけが見られます。"
+            note={t("profile.sectionDraftsNote")}
           />
           <Section
-            title="主催・運営するイベント"
+            title={t("profile.sectionHosting")}
             events={hosted.filter(upcoming)}
           />
           <Section
-            title="参加予定のイベント"
+            title={t("profile.sectionJoining")}
             events={joined.filter(upcoming)}
           />
           <Section
-            title="主催・運営したイベント"
+            title={t("profile.sectionHosted")}
             events={hosted.filter((e) => !upcoming(e))}
           />
           <Section
-            title="参加したイベント"
+            title={t("profile.sectionJoined")}
             events={joined.filter((e) => !upcoming(e))}
           />
         </Stack>

@@ -9,6 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 import { useMyMeetToken } from "../api/eventMeetHooks.js";
 
@@ -133,6 +134,7 @@ export function BigQrDialog({
   name: string;
   avatarUrl?: string | null;
 }) {
+  const { t } = useTranslation();
   useScreenWakeLock(open);
   // 表示中のトークン。読まれるまでは同じものを出し続ける（読み取っている
   // 最中に切り替わると失敗し続けるため）。読まれたらサーバーが次のぶんを返す
@@ -183,7 +185,7 @@ export function BigQrDialog({
     >
       <IconButton
         onClick={onClose}
-        aria-label="閉じる"
+        aria-label={t("common.close")}
         sx={{ position: "absolute", top: 8, right: 8, color: "#000000" }}
       >
         <CloseIcon />
@@ -208,18 +210,16 @@ export function BigQrDialog({
           }}
         >
           {url ? (
-            <QrCodeSvg url={url} label={`${name} の交流用QRコード`} />
+            <QrCodeSvg url={url} label={t("profile.qrLabel", { name })} />
           ) : isError ? (
             <Typography variant="body2" textAlign="center" sx={{ color: "#555555" }}>
-              QRを表示できませんでした。通信状況を確かめて、
-              <br />
-              閉じてもう一度お試しください
+              {t("profile.qrError")}
             </Typography>
           ) : (
             <Stack spacing={1.5} alignItems="center">
               <CircularProgress sx={{ color: "#555555" }} />
               <Typography variant="body2" sx={{ color: "#555555" }}>
-                QRを準備しています…
+                {t("profile.qrPreparing")}
               </Typography>
             </Stack>
           )}
@@ -234,9 +234,7 @@ export function BigQrDialog({
               variant="caption"
               sx={{ color: justRead ? "#1b5e20" : "#555555", fontWeight: justRead ? 700 : 400 }}
             >
-              {justRead
-                ? "読み取られました。次の人もどうぞ"
-                : "読み取るとその場で交流が記録されます"}
+              {justRead ? t("profile.qrJustRead") : t("profile.qrHint")}
             </Typography>
           </Box>
         </Stack>

@@ -136,7 +136,10 @@ const ja = {
   cannot_follow_self: "自分自身はフォローできません",
 
   // 出会いの記録が断られた理由。こちらも関数の戻り値で返るコード
-  // （diagnoseUnmeetable）。画面側の詳しい案内は MeetScanPage が持っている
+  // （diagnoseUnmeetable）。画面側の詳しい案内は `meetFailure` 名前空間
+  // （messages/meet.ts）にある。ただし `no_shared_event` と
+  // `not_confirmed_target` は、ここの汎用の言い方で過不足がないため
+  // `meetFailure` 側も同文（あちらのコメント参照）
   no_shared_event: "同じイベントに参加していないため記録できません",
   outside_window: "イベントの開催時間帯ではないため記録できません",
   not_confirmed_me: "あなたの参加がまだ確定していないため記録できません",

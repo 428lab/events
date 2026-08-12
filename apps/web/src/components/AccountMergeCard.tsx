@@ -18,13 +18,15 @@ import {
   Typography,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import { useTranslation } from "react-i18next";
 import { useIssueMergeCode, useMergeAccount } from "../api/userHooks.js";
-import { ApiError } from "../api/client.js";
+import { errorCode } from "../lib/errorMessage.js";
 
 /** アカウント統合カード (#240)。
  * 誤ログイン等で複数できてしまったアカウントを、ユーザー自身で1つにまとめる。
  * 片方のアカウントで統合コードを発行し、もう片方で入力して実行する */
 export function AccountMergeCard() {
+  const { t } = useTranslation();
   const issue = useIssueMergeCode();
   const merge = useMergeAccount();
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export function AccountMergeCard() {
     setCopied(false);
     issue.mutate(undefined, {
       onSuccess: (data) => setIssuedCode(data.code),
-      onError: () => setError("統合コードの発行に失敗しました。"),
+      onError: () => setError(t("settings.mergeIssueFailed")),
     });
   };
 
@@ -63,14 +65,10 @@ export function AccountMergeCard() {
           window.location.reload();
         },
         onError: (e) => {
-          const body =
-            e instanceof ApiError
-              ? (e.body as { error?: string } | null)
-              : null;
           setError(
-            body?.error === "same_account"
-              ? "いまログインしているアカウント自身のコードです。もう一方のアカウントで発行したコードを入力してください。"
-              : "統合コードが正しくないか、期限切れ・使用済みです。もう一方のアカウントでコードを発行し直してください。",
+            errorCode(e) === "same_account"
+              ? t("settings.mergeSameAccountError")
+              : t("settings.mergeCodeInvalidError"),
           );
         },
       },
@@ -81,25 +79,18 @@ export function AccountMergeCard() {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          アカウント統合
+          {t("settings.mergeTitle")}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          誤って別のアカウントを作ってしまった場合に、2つのアカウントを1つに
-          まとめられます。まとめたい片方のアカウントでログインして統合コードを
-          発行し、もう片方のアカウントでそのコードを入力してください。
+          {t("settings.mergeDescription")}
         </Typography>
 
         <Stack spacing={1} sx={{ mb: 3 }}>
-          <Typography variant="subtitle2">1. 統合コードを発行する</Typography>
+          <Typography variant="subtitle2">{t("settings.mergeStep1")}</Typography>
           <Typography variant="body2" color="text.secondary">
-            コードの有効期限は15分・1回だけ使えます。発行したら、もう一方の
-            アカウントでログインし直して入力してください。
+            {t("settings.mergeStep1Description")}
           </Typography>
-          <Alert severity="warning">
-            このコードは絶対に他人に教えないでください。コードを知られると、
-            アカウントのすべてのデータを他人のアカウントに統合（奪取）されます。
-            運営がコードを尋ねることはありません。
-          </Alert>
+          <Alert severity="warning">{t("settings.mergeCodeWarning")}</Alert>
           <Box>
             <Button
               variant="outlined"
@@ -107,7 +98,7 @@ export function AccountMergeCard() {
               disabled={issue.isPending}
               onClick={issueCode}
             >
-              統合コードを発行
+              {t("settings.mergeIssueCode")}
             </Button>
           </Box>
           {issuedCode && (
@@ -129,17 +120,17 @@ export function AccountMergeCard() {
                 startIcon={<ContentCopyIcon />}
                 onClick={copyCode}
               >
-                {copied ? "コピーしました" : "コピー"}
+                {copied ? t("settings.mergeCopied") : t("settings.mergeCopy")}
               </Button>
             </Stack>
           )}
         </Stack>
 
         <Stack spacing={1}>
-          <Typography variant="subtitle2">2. コードを入力して統合する</Typography>
+          <Typography variant="subtitle2">{t("settings.mergeStep2")}</Typography>
           <TextField
             size="small"
-            label="統合コード"
+            label={t("settings.mergeCodeLabel")}
             value={inputCode}
             onChange={(e) => {
               setInputCode(e.target.value);
@@ -148,7 +139,7 @@ export function AccountMergeCard() {
             sx={{ maxWidth: 480 }}
           />
           <Typography variant="body2" color="text.secondary">
-            残すアカウント（ハンドル・プロフィール・表示名はこちらが基準になります）
+            {t("settings.mergeKeepLabel")}
           </Typography>
           <RadioGroup
             value={keep}
@@ -157,21 +148,16 @@ export function AccountMergeCard() {
             <FormControlLabel
               value="me"
               control={<Radio size="small" />}
-              label="いまログインしているアカウント"
+              label={t("settings.mergeKeepMe")}
             />
             <FormControlLabel
               value="other"
               control={<Radio size="small" />}
-              label="コードを発行したアカウント"
+              label={t("settings.mergeKeepOther")}
             />
           </RadioGroup>
           <Typography variant="body2" color="text.secondary">
-            参加履歴・作成したイベントなどのデータは、残すアカウントへすべて
-            引き継がれます（両方が同じイベントに参加している場合など、重複する
-            記録は残す側を優先して1つにまとめます。スタッフ権限は引き継がれます）。
-            「コードを発行したアカウント」を残した場合は、いまのアカウントが
-            削除されるため、いったんログイン画面に戻ります。残したアカウントで
-            改めてログインしてください。
+            {t("settings.mergeKeepNotice")}
           </Typography>
           <Box>
             <Button
@@ -181,7 +167,7 @@ export function AccountMergeCard() {
               disabled={!inputCode.trim() || merge.isPending}
               onClick={() => setConfirmOpen(true)}
             >
-              統合する
+              {t("settings.mergeRun")}
             </Button>
           </Box>
           {error && <Alert severity="warning">{error}</Alert>}
@@ -189,19 +175,19 @@ export function AccountMergeCard() {
       </CardContent>
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-        <DialogTitle>アカウントを統合しますか？</DialogTitle>
+        <DialogTitle>{t("settings.mergeConfirmTitle")}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            この操作は取り消せません。もう一方のアカウントは削除され、
-            そのデータは残すアカウントへ移動します。
-            {keep === "other" &&
-              " いまログインしているアカウントが削除されるため、実行後はログイン画面に戻ります。"}
+            {t("settings.mergeConfirmBody")}
+            {keep === "other" && " " + t("settings.mergeConfirmKeepOtherNote")}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)}>キャンセル</Button>
+          <Button onClick={() => setConfirmOpen(false)}>
+            {t("common.cancel")}
+          </Button>
           <Button color="warning" variant="contained" onClick={runMerge}>
-            統合を実行
+            {t("settings.mergeConfirmRun")}
           </Button>
         </DialogActions>
       </Dialog>

@@ -32,6 +32,7 @@ import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlin
 import ThumbUpOutlinedIcon from "@mui/icons-material/ThumbUpOutlined";
 import HandshakeOutlinedIcon from "@mui/icons-material/HandshakeOutlined";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type {
   EarnedBadge,
   Gamification,
@@ -48,11 +49,6 @@ import { ShareButton } from "../components/ShareButton.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
 import { ProfileCardPanel } from "../components/licenseCard/ProfileCardPanel.js";
 import { dateLocale } from "../i18n/index.js";
-
-const COMMUNITY_ROLE_LABEL: Record<string, string> = {
-  owner: "オーナー",
-  admin: "管理者",
-};
 
 /** 順位に応じたメダルアイコン（1〜3位=金/銀/銅トロフィー、4位以下の入賞=メダル、特別枠=勲章） */
 function awardIcon(rankOrder: number | null) {
@@ -74,6 +70,7 @@ function AwardsSection({
   awards: UserAward[];
   profileName: string;
 }) {
+  const { t } = useTranslation();
   if (awards.length === 0) return null;
   return (
     <Box>
@@ -83,7 +80,7 @@ function AwardsSection({
         sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
       >
         <EmojiEventsIcon fontSize="small" />
-        受賞歴（{awards.length}）
+        {t("profile.awardsHeading", { n: awards.length })}
       </Typography>
       <Stack spacing={1}>
         {awards.map((a, i) => (
@@ -112,7 +109,8 @@ function AwardsSection({
                     >
                       {a.eventTitle}
                     </Link>
-                    {a.entryName !== profileName && `（${a.entryName}）`}
+                    {a.entryName !== profileName &&
+                      t("profile.awardEntryName", { name: a.entryName })}
                   </Typography>
                 </Box>
                 <Typography variant="caption" color="text.secondary">
@@ -149,6 +147,7 @@ const TIER_COLORS: Record<number, string> = {
 
 /** 獲得済みバッジの一覧 (#14)。未獲得なら非表示 */
 function BadgesSection({ g }: { g?: Gamification }) {
+  const { t } = useTranslation();
   if (!g || g.badges.length === 0) return null;
   return (
     <Box>
@@ -158,7 +157,7 @@ function BadgesSection({ g }: { g?: Gamification }) {
         sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
       >
         <MilitaryTechOutlinedIcon fontSize="small" />
-        バッジ（{g.badges.length}）
+        {t("profile.badgesHeading", { n: g.badges.length })}
       </Typography>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         {g.badges.map((b) => {
@@ -192,6 +191,7 @@ function BadgesSection({ g }: { g?: Gamification }) {
 
 /** 参加実績（出席・無断欠席・キャンセル内訳・主催/スタッフ数）。実績ゼロなら非表示 */
 function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
+  const { t } = useTranslation();
   if (!stats) return null;
   const { attended, noShow, cancelEarly, cancelLate, hosted, staffed, spoken } =
     stats;
@@ -219,21 +219,42 @@ function ParticipationSection({ stats }: { stats?: ParticipationStats }) {
         sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
       >
         <FactCheckIcon fontSize="small" />
-        参加実績
+        {t("profile.participationHeading")}
       </Typography>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
         {rate != null && (
-          <Chip label={`参加率 ${rate}%`} color="primary" variant="outlined" />
+          <Chip
+            label={t("profile.attendanceRate", { n: rate })}
+            color="primary"
+            variant="outlined"
+          />
         )}
-        {hosted > 0 && <Chip label={`主催 ${hosted}`} variant="outlined" />}
-        {staffed > 0 && <Chip label={`スタッフ ${staffed}`} variant="outlined" />}
-        {spoken > 0 && <Chip label={`登壇 ${spoken}`} color="secondary" variant="outlined" />}
+        {hosted > 0 && (
+          <Chip label={t("profile.hostedCount", { n: hosted })} variant="outlined" />
+        )}
+        {staffed > 0 && (
+          <Chip label={t("profile.staffedCount", { n: staffed })} variant="outlined" />
+        )}
+        {spoken > 0 && (
+          <Chip
+            label={t("profile.spokenCount", { n: spoken })}
+            color="secondary"
+            variant="outlined"
+          />
+        )}
         {likesReceived > 0 && (
-          <Chip label={`いいね ${likesReceived}`} variant="outlined" />
+          <Chip
+            label={t("profile.likesCount", { n: likesReceived })}
+            variant="outlined"
+          />
         )}
         <Typography variant="body2" color="text.secondary">
-          出席 {attended} ・無断欠席 {noShow} ・キャンセル {cancelEarly + cancelLate}
-          （うち直前 {cancelLate}）
+          {t("profile.participationBreakdown", {
+            attended,
+            noShow,
+            canceled: cancelEarly + cancelLate,
+            late: cancelLate,
+          })}
         </Typography>
       </Stack>
     </Box>
@@ -252,12 +273,13 @@ function TotalsBar({
   events: UserProfile["events"];
   meetTotal: number;
 }) {
+  const { t } = useTranslation();
   const hosted = events.filter((e) => e.myRole === "staff").length;
   const totals = [
-    { label: "イベント", value: events.length, accent: false },
-    { label: "主催・運営", value: hosted, accent: false },
-    { label: "参加", value: events.length - hosted, accent: false },
-    { label: "出会った人", value: meetTotal, accent: true },
+    { label: t("profile.totalEvents"), value: events.length, accent: false },
+    { label: t("profile.filterHost"), value: hosted, accent: false },
+    { label: t("profile.filterJoin"), value: events.length - hosted, accent: false },
+    { label: t("profile.totalMet"), value: meetTotal, accent: true },
   ];
   if (events.length === 0 && meetTotal === 0) return null;
   return (
@@ -268,22 +290,27 @@ function TotalsBar({
       flexWrap="wrap"
       useFlexGap
     >
-      <Chip label="通算" size="small" variant="outlined" sx={{ fontWeight: 800 }} />
-      {totals.map((t) => (
-        <Box key={t.label}>
+      <Chip
+        label={t("profile.totalsLabel")}
+        size="small"
+        variant="outlined"
+        sx={{ fontWeight: 800 }}
+      />
+      {totals.map((total) => (
+        <Box key={total.label}>
           <Typography
             sx={{
               fontSize: 19,
               fontWeight: 800,
               lineHeight: 1.2,
               fontVariantNumeric: "tabular-nums",
-              ...(t.accent && { color: "primary.main" }),
+              ...(total.accent && { color: "primary.main" }),
             }}
           >
-            {t.value}
+            {total.value}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            {t.label}
+            {total.label}
           </Typography>
         </Box>
       ))}
@@ -292,6 +319,7 @@ function TotalsBar({
 }
 
 export function UserProfilePage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data, isLoading, isError } = useUserProfile(id);
   const { data: me } = useMe();
@@ -304,8 +332,9 @@ export function UserProfilePage() {
   // 自分のQRを大きく見せる (#324)。他人のQRを見せる意味はないので本人のときだけ
   const [qrOpen, setQrOpen] = useState(false);
 
-  if (isError) return <Alert severity="info">ユーザーが見つかりません。</Alert>;
-  if (isLoading || !data) return <Typography>読み込み中…</Typography>;
+  if (isError)
+    return <Alert severity="info">{t("profile.notFound")}</Alert>;
+  if (isLoading || !data) return <Typography>{t("common.loading")}</Typography>;
 
   const joined = new Date(data.createdAt).toLocaleDateString(dateLocale());
   // 参加履歴に流す一覧。本人なら自分用（公開ぶんの上位集合）、他人なら公開ぶん
@@ -350,7 +379,7 @@ export function UserProfilePage() {
             onClick={toggleFollow}
             disabled={setFollow.isPending}
           >
-            {data.isFollowing ? "フォロー中" : "フォローする"}
+            {data.isFollowing ? t("profile.following") : t("profile.follow")}
           </Button>
         )}
         {/* カードの意匠を仕立てる画面 (#334)。他人のカードは編集も印刷もできない */}
@@ -362,7 +391,7 @@ export function UserProfilePage() {
             size="large"
             startIcon={<BadgeOutlinedIcon />}
           >
-            デザインを変える
+            {t("profile.editCard")}
           </Button>
         )}
         {/* 交流の場で相手に読み取ってもらう用の大きなQR (#324) */}
@@ -373,7 +402,7 @@ export function UserProfilePage() {
             startIcon={<QrCode2Icon />}
             onClick={() => setQrOpen(true)}
           >
-            QRを見せる
+            {t("profile.showQr")}
           </Button>
         )}
         <ShareButton
@@ -382,8 +411,12 @@ export function UserProfilePage() {
         />
         {/* 設定は本人にしか意味がないので本人のページだけに出す (#319) */}
         {data.isMe && (
-          <Tooltip title="設定">
-            <IconButton component={RouterLink} to="/account" aria-label="設定">
+          <Tooltip title={t("nav.settings")}>
+            <IconButton
+              component={RouterLink}
+              to="/account"
+              aria-label={t("nav.settings")}
+            >
               <SettingsOutlinedIcon />
             </IconButton>
           </Tooltip>
@@ -392,7 +425,10 @@ export function UserProfilePage() {
 
       {/* カードに無い素性。登録日とフォローの数 */}
       <Typography variant="caption" color="text.secondary">
-        {joined} に登録 ・ フォロワー {data.followerCount} ・{" "}
+        {t("profile.joinedOn", { date: joined })}
+        {t("common.dotSeparator")}
+        {t("profile.followerCount", { n: data.followerCount })}
+        {t("common.dotSeparator")}
         {/* 本人のときだけフォロー中の一覧へ行けるようにする (#319)。
             /following は自分のフォローを管理する画面なので他人には出さない */}
         {data.isMe ? (
@@ -402,10 +438,10 @@ export function UserProfilePage() {
             color="inherit"
             underline="hover"
           >
-            フォロー中 {data.followingCount}
+            {t("profile.followingCount", { n: data.followingCount })}
           </Link>
         ) : (
-          <>フォロー中 {data.followingCount}</>
+          <>{t("profile.followingCount", { n: data.followingCount })}</>
         )}
       </Typography>
 
@@ -437,7 +473,7 @@ export function UserProfilePage() {
       {data.communities.length > 0 && (
         <Box>
           <Typography variant="h6" gutterBottom>
-            所属コミュニティ
+            {t("profile.communitiesHeading")}
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             {data.communities.map((com) => (
@@ -451,9 +487,14 @@ export function UserProfilePage() {
                     {com.name.charAt(0)}
                   </Avatar>
                 }
+                // 一般メンバーは立場を添えず名前だけ。どの立場に添えるかは
+                // 画面側の決めごとで、文言だけを辞書から引く
                 label={
-                  COMMUNITY_ROLE_LABEL[com.role]
-                    ? `${com.name}・${COMMUNITY_ROLE_LABEL[com.role]}`
+                  com.role === "owner" || com.role === "admin"
+                    ? t("profile.communityWithRole", {
+                        name: com.name,
+                        role: t(`communityRole.${com.role}`),
+                      })
                     : com.name
                 }
               />
@@ -467,8 +508,8 @@ export function UserProfilePage() {
       {historyEvents.length === 0 ? (
         <Typography color="text.secondary">
           {data.isMe
-            ? "参加中のイベントはありません。"
-            : "公開イベントの実績はまだありません。"}
+            ? t("profile.noOngoingEvents")
+            : t("profile.noPublicEvents")}
         </Typography>
       ) : (
         <ParticipationHistory
@@ -488,6 +529,7 @@ const userPhotoUrl = (p: UserPhoto) =>
 
 /** 公開イベントに投稿した写真ギャラリー */
 function PhotoGallerySection({ handle }: { handle: string }) {
+  const { t } = useTranslation();
   const { data: photos } = useUserPhotos(handle);
   const [open, setOpen] = useState<UserPhoto | null>(null);
   if (!photos || photos.length === 0) return null;
@@ -499,7 +541,7 @@ function PhotoGallerySection({ handle }: { handle: string }) {
         sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
       >
         <PhotoCameraIcon fontSize="small" />
-        投稿した写真（{photos.length}）
+        {t("profile.photosHeading", { n: photos.length })}
       </Typography>
       <Box
         sx={{
@@ -594,7 +636,7 @@ function PhotoGallerySection({ handle }: { handle: string }) {
                 sx={{ color: "#fff" }}
                 underline="hover"
               >
-                {open.eventTitle} を見る →
+                {t("profile.viewEvent", { title: open.eventTitle })}
               </Link>
             </Box>
           </Box>

@@ -8,6 +8,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { useTranslation } from "react-i18next";
 import type { PendingDeletion } from "@eventer/shared";
 import { useLogout, useRestoreAccount } from "../api/hooks.js";
 import { ApiError } from "../api/client.js";
@@ -31,6 +32,7 @@ function dateText(ms: number): string {
  * 他の画面の代わりに表示する。ここで明示的に「復帰する」を選ぶまで
  * アカウントは利用不可のまま（サーバー側も復帰API以外を通さない） */
 export function AccountRestorePage({ pending }: { pending: PendingDeletion }) {
+  const { t } = useTranslation();
   const restore = useRestoreAccount();
   const logout = useLogout();
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export function AccountRestorePage({ pending }: { pending: PendingDeletion }) {
           setExpired(true);
           return;
         }
-        setError("復帰に失敗しました。時間をおいて再度お試しください。");
+        setError(t("settings.restoreFailed"));
       },
     });
   };
@@ -59,29 +61,30 @@ export function AccountRestorePage({ pending }: { pending: PendingDeletion }) {
         <CardContent>
           <Stack spacing={2}>
             <Typography variant="h5" fontWeight={700}>
-              このアカウントは退会手続き中です
+              {t("settings.restoreTitle")}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              @{pending.username} は {dateText(pending.deletedAt)}{" "}
-              に退会を申請しました。現在は他の利用者から見えない状態になっています。
+              {t("settings.restoreAppliedAt", {
+                handle: pending.username,
+                date: dateText(pending.deletedAt),
+              })}
             </Typography>
             {expired ? (
               <Alert severity="error">
-                復帰できる期間（{dateText(pending.purgeAt)}
-                まで）を過ぎています。このアカウントと活動記録は間もなく完全に
-                削除されます。引き続きご利用いただく場合は、あらためて新規に
-                ログインしてください。
+                {t("settings.restoreExpired", {
+                  date: dateText(pending.purgeAt),
+                })}
               </Alert>
             ) : (
               <Alert severity="warning">
-                {dateText(pending.purgeAt)}{" "}
-                を過ぎるとアカウントと活動記録は完全に削除され、復元できなくなります。
+                {t("settings.restoreDeadline", {
+                  date: dateText(pending.purgeAt),
+                })}
               </Alert>
             )}
             {!expired && (
               <Typography variant="body2" color="text.secondary">
-                退会を取り消して、これまでの参加履歴・フォロー・作成したコンテンツを
-                そのまま使い続けますか？
+                {t("settings.restorePrompt")}
               </Typography>
             )}
             {error && <Alert severity="error">{error}</Alert>}
@@ -92,7 +95,7 @@ export function AccountRestorePage({ pending }: { pending: PendingDeletion }) {
                   disabled={restore.isPending}
                   onClick={run}
                 >
-                  復帰する
+                  {t("settings.restoreButton")}
                 </Button>
               )}
               <Button
@@ -104,7 +107,9 @@ export function AccountRestorePage({ pending }: { pending: PendingDeletion }) {
                   })
                 }
               >
-                {expired ? "ログアウト" : "このまま退会する（ログアウト）"}
+                {expired
+                  ? t("nav.logout")
+                  : t("settings.restoreDeleteAnyway")}
               </Button>
             </Stack>
           </Stack>

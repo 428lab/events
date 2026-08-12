@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
+import { useTranslation } from "react-i18next";
 import { BADGE_DEFS } from "@eventer/shared";
 import {
   ARC_CIRCLES,
@@ -433,8 +434,9 @@ export function LicenseCardSvg({
   /** PNG書き出し用の参照。名札の一括印刷 (#304) のように書き出さない用途では省略できる */
   svgRef?: React.RefObject<SVGSVGElement>;
 }) {
+  const { t } = useTranslation();
   const theme: CardTheme =
-    CARD_THEMES.find((t) => t.key === themeKey) ?? CARD_THEMES[0];
+    CARD_THEMES.find((c) => c.key === themeKey) ?? CARD_THEMES[0];
   // アイコンが読み込めなかったか。URL が変わったらやり直す
   const [avatarFailed, setAvatarFailed] = useState(false);
   useEffect(() => setAvatarFailed(false), [card.avatarUrl]);
@@ -464,7 +466,7 @@ export function LicenseCardSvg({
       height={CARD_H}
       xmlns="http://www.w3.org/2000/svg"
       role="img"
-      aria-label={`${card.name} のプロフィールカード`}
+      aria-label={t("profile.cardAriaLabel", { name: card.name })}
       style={{ width: "100%", height: "auto", display: "block" }}
     >
       <defs>

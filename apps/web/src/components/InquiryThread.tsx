@@ -8,15 +8,11 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { InquiryDetail } from "@eventer/shared";
 import { CounterTextField } from "./CounterTextField.js";
 import { formatDateTime } from "../lib/format.js";
-
-const STATUS_LABEL: Record<string, string> = {
-  open: "対応中",
-  answered: "回答済み",
-  closed: "クローズ",
-};
+import { tDynamic } from "../i18n/index.js";
 
 export function InquiryThread({
   detail,
@@ -29,6 +25,7 @@ export function InquiryThread({
   onSend: (body: string) => void;
   sending: boolean;
 }) {
+  const { t } = useTranslation();
   const [body, setBody] = useState("");
   const send = () => {
     if (!body.trim()) return;
@@ -44,7 +41,9 @@ export function InquiryThread({
         </Typography>
         <Chip
           size="small"
-          label={STATUS_LABEL[detail.status] ?? detail.status}
+          // サーバーが状態を増やしても画面にキー名が出ないよう、辞書に無ければ
+          // 生のコードを出す（API 応答は実行時に検証していない）
+          label={tDynamic(`inquiryStatus.${detail.status}`, detail.status)}
           color={detail.status === "answered" ? "success" : "default"}
         />
       </Stack>
@@ -53,10 +52,10 @@ export function InquiryThread({
         {detail.messages.map((m) => {
           const mine = m.sender === selfSender;
           const senderLabel = mine
-            ? "あなた"
+            ? t("inquiries.senderYou")
             : m.sender === "admin"
-              ? "運営"
-              : (detail.userName ?? "ユーザー");
+              ? t("inquiries.senderAdmin")
+              : (detail.userName ?? t("inquiries.senderUser"));
           // 運営視点でユーザー発言の名前はプロフィールへリンク
           const linkToUser =
             !mine && m.sender === "user" && detail.userHandle
@@ -99,8 +98,9 @@ export function InquiryThread({
                   </Link>
                 ) : (
                   senderLabel
-                )}{" "}
-                ・ {formatDateTime(m.createdAt)}
+                )}
+                {t("common.dotSeparator")}
+                {formatDateTime(m.createdAt)}
               </Typography>
             </Box>
           );
@@ -113,13 +113,13 @@ export function InquiryThread({
           multiline
           minRows={2}
           size="small"
-          placeholder="返信を入力…"
+          placeholder={t("inquiries.replyPlaceholder")}
           value={body}
           max={5000}
           onChange={(e) => setBody(e.target.value)}
         />
         <Button variant="contained" disabled={sending || !body.trim()} onClick={send}>
-          送信
+          {t("inquiries.send")}
         </Button>
       </Stack>
     </Stack>

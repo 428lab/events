@@ -12,15 +12,25 @@ import { common } from "./messages/common.js";
 import { errors } from "./messages/errors.js";
 import { eventDetail } from "./messages/eventDetail.js";
 import { events } from "./messages/events.js";
+import { inquiries, inquiryStatus } from "./messages/inquiries.js";
 import { labels } from "./messages/labels.js";
 import { login } from "./messages/login.js";
+import { meet, meetFailure } from "./messages/meet.js";
 import { nav } from "./messages/nav.js";
-import { settings } from "./messages/settings.js";
+import { notifications } from "./messages/notifications.js";
+import { communityRole, profile } from "./messages/profile.js";
+import { linkError, settings } from "./messages/settings.js";
 import type { AppLanguage } from "./languages.js";
 
 export * from "./languages.js";
 
-/** 言語ごとの辞書。i18next には `resources` としてこのまま渡せる形 */
+/**
+ * 言語ごとの辞書。i18next には `resources` としてこのまま渡せる形。
+ *
+ * 名前空間は2種類ある。`common` や `settings` のように**画面の文言**をまとめた
+ * ものと、`errors` `role` `linkError` のように**サーバーが返すコードで引く表**。
+ * 後者はキーがコードそのもの（snake_case）で、`tDynamic` から引く。
+ */
 export const translations = {
   ja: {
     common: common.ja,
@@ -30,6 +40,14 @@ export const translations = {
     eventDetail: eventDetail.ja,
     errors: errors.ja,
     settings: settings.ja,
+    linkError: linkError.ja,
+    notifications: notifications.ja,
+    inquiries: inquiries.ja,
+    inquiryStatus: inquiryStatus.ja,
+    profile: profile.ja,
+    communityRole: communityRole.ja,
+    meet: meet.ja,
+    meetFailure: meetFailure.ja,
     ...labels.ja,
   },
   en: {
@@ -40,6 +58,14 @@ export const translations = {
     eventDetail: eventDetail.en,
     errors: errors.en,
     settings: settings.en,
+    linkError: linkError.en,
+    notifications: notifications.en,
+    inquiries: inquiries.en,
+    inquiryStatus: inquiryStatus.en,
+    profile: profile.en,
+    communityRole: communityRole.en,
+    meet: meet.en,
+    meetFailure: meetFailure.en,
     ...labels.en,
   },
 } satisfies Record<AppLanguage, Record<string, Record<string, string>>>;
