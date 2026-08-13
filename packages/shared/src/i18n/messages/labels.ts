@@ -52,6 +52,8 @@ const notificationTypeEn: Record<NotificationType, string> = {
   inquiry_reply: "Support",
   inquiry_new: "Support",
   schedule_finalized: "Schedule",
+  // 日本語の source が「リクエスト」なので、綴りを合わせて "Request" のまま。
+  // たまごの呼び名（#378 の "egg"）に寄せるなら日本語側から直す話になる
   request_event_created: "Request",
   followee_created_event: "Following",
   followee_joined_event: "Following",
@@ -70,7 +72,7 @@ const notificationTypeEn: Record<NotificationType, string> = {
 /** 要確認ルール（日本語は packages/shared/src/abuse.ts が source） */
 const abuseRuleEn: Record<AbuseRule, string> = {
   event_burst: "Many events created in a short time",
-  egg_burst: "Many requests posted in a short time",
+  egg_burst: "Many eggs posted in a short time",
   comment_burst: "Many comments and likes in a short time",
   new_account_burst: "New account acting in bulk right away",
   empty_event_spam: "Repeated events with no participants",
@@ -79,7 +81,7 @@ const abuseRuleEn: Record<AbuseRule, string> = {
 };
 const abuseRuleDescriptionEn: Record<AbuseRule, string> = {
   event_burst: "An unusually high number of events created in a short window.",
-  egg_burst: "An unusually high number of requests posted in a short window.",
+  egg_burst: "An unusually high number of eggs posted in a short window.",
   comment_burst: "An unusually high number of comments and likes per hour.",
   new_account_burst: "Events created in bulk right after signing up.",
   empty_event_spam:

@@ -130,7 +130,7 @@ const en: Record<keyof typeof ja, string> = {
 
   notFound: "This event does not exist, or it is not public.",
 
-  fromRequest: "Hatched from the idea “{{title}}”",
+  fromRequest: "Hatched from the egg “{{title}}”",
   schedulingTbd: "Picking a date (start time not set yet)",
   // 日時のあとに続けて差し込むので、英語では区切りの空白を先頭に入れる
   deadlineAt: "Registration closes: {{date}}",

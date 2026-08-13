@@ -1,10 +1,11 @@
 /**
  * イベントのたまご（あったらいいな）の一覧・詳細・投稿フォームの文言 (#366)。
  *
- * 英語の呼び方は `eventDetail.fromRequest`（"Hatched from the idea …"）に
- * そろえて **たまご = idea / 「あったらいいな」 = wish**。サーバーのエラー
- * コード表 (`errors.request_not_found`) が "Request" を使うのは、あちらが
- * API のコードに対する説明だから。**画面ではこの呼び方に統一する**。
+ * 英語の呼び方は **たまご = egg / 「あったらいいな」 = wish** (#378)。
+ * egg は入れ物、wish は中身。孵化の言い回し（`hatchedHeading`,
+ * `eventDetail.fromRequest`）と同じ線でつながる、製品固有の呼び名。
+ * `errors.request_not_found` と `venue.useTargetEgg` もこの綴りに合わせる。
+ * なお `schedule.*` の "idea" はタイムテーブルの「ネタ」で別物。
  *
  * ここに置かないもの:
  * - 「イベント」（切り替えタブ）は `events.title`
@@ -87,17 +88,17 @@ const ja = {
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
-  title: "Event ideas",
-  lead: "Post the events you wish existed and gather support. Once somebody says “{{action}}”, the idea hatches into a real event.",
+  title: "Event eggs",
+  lead: "Post the events you wish existed and gather support. Once somebody says “{{action}}”, the egg hatches into a real event.",
 
   searchPlaceholder: "Search by keyword (title and details)",
   sortNew: "Newest",
   sortPopular: "Most popular",
-  emptyFiltered: "No ideas match your search.",
-  empty: "No ideas yet. Post the first wish.",
-  emptyInCommunity: "No ideas yet.",
+  emptyFiltered: "No eggs match your search.",
+  empty: "No eggs yet. Post the first wish.",
+  emptyInCommunity: "No eggs yet.",
   postWish: "Post a wish",
-  feedSubscribe: "Subscribe to these ideas:",
+  feedSubscribe: "Subscribe to these eggs:",
 
   closed: "Closed",
   venuePref: "Preferred: {{venue}}",
@@ -110,23 +111,23 @@ const en: Record<keyof typeof ja, string> = {
   hatchedCountOne: "{{n}} event happening",
   hatchedCount: "{{n}} events happening",
 
-  notFound: "This idea could not be found.",
-  notFoundShort: "This idea could not be found.",
+  notFound: "This egg could not be found.",
+  notFoundShort: "This egg could not be found.",
   byline: "{{name}}'s wish",
   willHost: "I will host it",
-  signInRequired: "Sign in to support an idea or offer to host it.",
+  signInRequired: "Sign in to support an egg or offer to host it.",
   reactError:
-    "Your support could not be added. Only members can support a community's ideas.",
-  closeAction: "Close this idea",
+    "Your support could not be added. Only members can support a community's eggs.",
+  closeAction: "Close this egg",
   reopen: "Reopen",
   venueWantedStop: "Stop looking for a venue",
   venueWantedStart: "Look for a venue too",
   reactorsShow: "Show who supported it",
   reactorsHide: "Hide who supported it",
-  deleteConfirm: "Delete this idea?",
-  hatchedHeading: "Events hatched from this idea",
+  deleteConfirm: "Delete this egg?",
+  hatchedHeading: "Events hatched from this egg",
 
-  newTitle: "Post an idea",
+  newTitle: "Post an egg",
   newLead:
     "Post the event you wish existed, and people can support it or say “{{action}}”. You are notified as soon as somebody offers to run it.",
   titleLabel: "The event you wish existed",
@@ -135,7 +136,7 @@ const en: Record<keyof typeof ja, string> = {
   descriptionPlaceholder:
     "What should it cover? What kind of atmosphere and place?",
   venuePrefLabel: "Preferred format (optional)",
-  communityHelp: "Pick one to post this as that community's idea",
+  communityHelp: "Pick one to post this as that community's egg",
   communityNone: "None (public)",
   venueWantedSwitch:
     "Looking for a venue too (accept offers from venue hosts)",

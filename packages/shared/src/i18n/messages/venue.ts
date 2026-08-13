@@ -270,8 +270,8 @@ const en: Record<keyof typeof ja, string> = {
   offerSubmit: "Send the offer",
   useCta: "I would like to use this venue",
   useTitle: "Request to use this venue",
-  useTargetLabel: "For (an event or an idea)",
-  useTargetEgg: "Idea: {{title}}",
+  useTargetLabel: "For (an event or an egg)",
+  useTargetEgg: "Egg: {{title}}",
   useContactLabel:
     "Your contact details (shared with the venue once they accept)",
   useSubmit: "Send the request",

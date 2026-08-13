@@ -233,7 +233,7 @@ const en: Record<keyof typeof ja, string> = {
     "You are signed out immediately and stop appearing anywhere other people can see you, such as profiles, participant lists, and chat",
   deleteBulletPurge: "After {{grace}}, your data is deleted for good as follows",
   deleteBulletKeptContent:
-    "Events, communities, venues, and requests you created stay, credited to “Deleted user”, so that other participants keep their history and plans",
+    "Events, communities, venues, and eggs you created stay, credited to “Deleted user”, so that other participants keep their history and plans",
   deleteBulletActivity:
     "Activity records such as participation history, likes, comments, follows, and notifications are deleted",
   deleteBulletMedia:
