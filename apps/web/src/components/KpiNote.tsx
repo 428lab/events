@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Box, Collapse, IconButton, Typography } from "@mui/material";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -8,13 +9,15 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
  * 既定は1行のリンクだけにして必要なときに開く。
  */
 export function KpiNote({
-  summary = "数字の読み方",
+  summary,
   children,
 }: {
-  /** 閉じているときに出す1行 */
+  /** 閉じているときに出す1行。省略時は「数字の読み方」。**既定値は描画時に訳す**
+   *  （引数の既定値に文言を置くと、その言語のまま固まる） */
   summary?: string;
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   return (
     <Box>
@@ -37,7 +40,9 @@ export function KpiNote({
         }}
       >
         <HelpOutlineIcon sx={{ fontSize: 16 }} />
-        <Typography variant="caption">{summary}</Typography>
+        <Typography variant="caption">
+          {summary ?? t("kpi.noteSummary")}
+        </Typography>
         <IconButton
           component="span"
           size="small"

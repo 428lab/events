@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { addDays } from "@eventer/shared";
+import { i18next } from "../i18n/index.js";
 import { TrendChart } from "./KpiTiles.js";
 
 /** from から to まで（両端を含む）の日次の点。values は日ごとに作る */
@@ -296,5 +297,83 @@ describe("TrendChart の計測開始の見せ方", () => {
     );
     expect(screen.queryByText(/計測したデータ/)).not.toBeInTheDocument();
     expect(screen.getByTitle("2026-08-15 DAU:0")).toBeInTheDocument();
+  });
+});
+
+/**
+ * 英語表示 (#376)。
+ *
+ * グラフを出さない理由は、元は**日本語の文言そのものを見分けて**分岐していた
+ * （`empty === "データなし"`）。訳した瞬間に壊れる形だったので、いまは理由を
+ * 種別で持っている。**英語でも日本語と同じ出し分けになる**ことを固定する。
+ * 日付と粒度の見出しも、画面側に言語別の分岐を書いていないことの確認になる。
+ */
+describe("TrendChart の英語表示 (#376)", () => {
+  const series = [{ key: "dau", label: "DAU", color: "#1976d2" }];
+
+  afterEach(async () => {
+    await i18next.changeLanguage("ja");
+  });
+
+  it("データが無いときは英語で出る", async () => {
+    await i18next.changeLanguage("en");
+    render(<TrendChart title="Registrations" points={[]} series={series} />);
+    expect(screen.getByText("No data")).toBeInTheDocument();
+    expect(screen.getByText("Registrations (Daily)")).toBeInTheDocument();
+  });
+
+  it("計測開始日は英語の日付書式で出る", async () => {
+    await i18next.changeLanguage("en");
+    render(
+      <TrendChart
+        title="DAU"
+        points={daysBetween("2026-08-01", "2026-08-30", (day) => ({
+          dau: day >= "2026-08-20" ? 3 : null,
+        }))}
+        measuredFrom="2026-08-20"
+        series={series}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Measurement started on August 20, 2026. Nothing is drawn before that (it is not zero, it was simply not measured).",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("まとまった週がまだ無いときの理由も英語で出る", async () => {
+    await i18next.changeLanguage("en");
+    render(
+      <TrendChart
+        title="DAU"
+        points={daysBetween("2026-01-05", "2026-04-01", (day) => ({
+          dau: day >= "2026-03-31" ? 4 : null,
+        }))}
+        measuredFrom="2026-03-31"
+        series={series}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Only part of this period has been measured, and no full week has completed yet. Choose a shorter period to see it day by day.",
+      ),
+    ).toBeInTheDocument();
+    // 「データなし」と同じ扱いにしない（軸も棒も出さないのは同じ）
+    expect(screen.queryByText("No data")).not.toBeInTheDocument();
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("月別のホバーは英語の年月で出る", async () => {
+    await i18next.changeLanguage("en");
+    render(
+      <TrendChart
+        title="DAU"
+        points={daysBetween("2026-01-01", "2026-07-31", () => ({ dau: 3 }))}
+        series={series}
+      />,
+    );
+    expect(screen.getByText("DAU (Monthly)")).toBeInTheDocument();
+    // 畳み方の既定は合計なので 1月は 31日 × 3
+    expect(screen.getByTitle("January 2026 DAU:93")).toBeInTheDocument();
   });
 });

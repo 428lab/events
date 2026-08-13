@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Box,
   Card,
@@ -15,14 +16,24 @@ import {
   kpiGranularity,
   toGranularity,
 } from "@eventer/shared";
+import { dateLocale, i18next } from "../i18n/index.js";
 import { InfoTip } from "./InfoTip.js";
 
-/** KPI 画面共通の表示部品。運営ダッシュボード (#257) とコミュニティ別KPI (#262) で使う */
+/** KPI 画面共通の表示部品。運営ダッシュボード (#257) とコミュニティ別KPI (#262) で使う。
+ *
+ * 文言は `kpi` 名前空間 (#376)。**管理ダッシュボードのページ本体は日本語のまま**
+ * なので、英語表示にすると管理画面は枠が日本語・この部品だけ英語になる（決定済み）。 */
 
-/** 'YYYY-MM-DD' を日本語表記に。日付をそのまま出すより「いつから」が読み取りやすい */
-export function jpDay(day: string): string {
-  const [y, m, d] = day.split("-");
-  return `${Number(y)}年${Number(m)}月${Number(d)}日`;
+/** 'YYYY-MM-DD' を表示言語の長い日付表記に（日本語は「2026年8月20日」）。
+ * 日付をそのまま出すより「いつから」が読み取りやすい。書式は Intl に任せ、
+ * タイムゾーンは端末のまま（lib/format.ts と同じ扱い） */
+export function longDay(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Intl.DateTimeFormat(dateLocale(), {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(new Date(y, m - 1, d));
 }
 
 /** 率の表示。分母0・母数不足（null）は「—」 */
@@ -45,10 +56,11 @@ export function Caution({ text }: { text: string }) {
         display: "block",
         mt: 0.25,
         lineHeight: 1.5,
-        color: (t) =>
-          t.palette.mode === "light"
-            ? t.palette.warning.dark
-            : t.palette.warning.main,
+        // 仮引数は `theme`。`t` にすると翻訳関数を隠してしまう (#367)
+        color: (theme) =>
+          theme.palette.mode === "light"
+            ? theme.palette.warning.dark
+            : theme.palette.warning.main,
       }}
     >
       {text}
@@ -109,7 +121,7 @@ function prevText(trend: KpiTrend): string {
  * 色は**表示する桁に丸めたあとの値**で決める。丸めて 0 になる増減
  * （+0.4% → 「0%」）に矢印と色を付けると、増えていないのに増えたように読める。 */
 function deltaOf(trend: KpiTrend): { text: string; tone: KpiTone } | null {
-  if (trend.isNew) return { text: "新規", tone: trend.tone };
+  if (trend.isNew) return { text: i18next.t("kpi.trendNew"), tone: trend.tone };
   if (trend.ratio !== null) return shown(trend, trend.ratio * 100, 0, "%");
   if (trend.diff !== null) return shown(trend, trend.diff * 100, 1, "pt");
   return null;
@@ -133,6 +145,7 @@ function shown(
 /** 前期間比。数字が主役という設計を崩さないよう、値の下に小さく1行だけ添える。
  * 色は指標ごとの方向（KPI_METRICS）に従うので、キャンセル率が減ったときは緑になる */
 export function TrendNote({ trend }: { trend: KpiTrend }) {
+  const { t } = useTranslation();
   const delta = deltaOf(trend);
   return (
     <Typography
@@ -148,22 +161,23 @@ export function TrendNote({ trend }: { trend: KpiTrend }) {
         textOverflow: "ellipsis",
       }}
     >
-      前期間 {prevText(trend)}
+      {t("kpi.previousPeriod", { value: prevText(trend) })}
       {delta ? (
         <Box
           component="span"
           sx={{
             ml: 0.5,
             fontWeight: 700,
-            color: (t) =>
+            // 仮引数は `theme`。`t` にすると翻訳関数を隠してしまう (#367)
+            color: (theme) =>
               delta.tone === "good"
-                ? t.palette.mode === "light"
-                  ? t.palette.success.dark
-                  : t.palette.success.light
+                ? theme.palette.mode === "light"
+                  ? theme.palette.success.dark
+                  : theme.palette.success.light
                 : delta.tone === "bad"
-                  ? t.palette.mode === "light"
-                    ? t.palette.error.dark
-                    : t.palette.error.light
+                  ? theme.palette.mode === "light"
+                    ? theme.palette.error.dark
+                    : theme.palette.error.light
                   : "text.secondary",
           }}
         >
@@ -296,12 +310,14 @@ function axisMax(max: number): number {
   return 10 * pow;
 }
 
-/** 粒度ごとの見出しの言い方 */
-const GRANULARITY_LABEL: Record<KpiGranularity, string> = {
-  day: "日別",
-  week: "週別",
-  month: "月別",
-};
+/** 粒度ごとの見出しの言い方。**訳した文字列ではなく翻訳キーを持つ**
+ * （文字列を持つと言語を切り替えたとき前の言語のまま残る）。
+ * 粒度が増えたら型で落ちる */
+const GRANULARITY_LABEL_KEY = {
+  day: "kpi.granularityDay",
+  week: "kpi.granularityWeek",
+  month: "kpi.granularityMonth",
+} as const satisfies Record<KpiGranularity, string>;
 
 /** 棒の下に出す日付。月別で「08-01」と出すと日別と見分けが付かない (#292) */
 function barLabel(day: string, granularity: KpiGranularity): string {
@@ -309,10 +325,16 @@ function barLabel(day: string, granularity: KpiGranularity): string {
 }
 
 /** ホバーで出す期間の言い方。月別の点は月初の日付を持つので、
- * そのまま出すと「その日だけの値」に読める */
+ * そのまま出すと「その日だけの値」に読める。年月の書式は Intl に任せる */
 function barPeriod(day: string, granularity: KpiGranularity): string {
-  if (granularity === "month") return `${day.slice(0, 4)}年${Number(day.slice(5, 7))}月`;
-  if (granularity === "week") return `${day} の週`;
+  if (granularity === "month") {
+    const [y, m] = day.split("-").map(Number);
+    return new Intl.DateTimeFormat(dateLocale(), {
+      year: "numeric",
+      month: "long",
+    }).format(new Date(y, m - 1, 1));
+  }
+  if (granularity === "week") return i18next.t("kpi.barPeriodWeek", { day });
   return day;
 }
 
@@ -322,9 +344,17 @@ function hasMeasured(points: KpiSeriesPoint[], series: TrendSeries[]): boolean {
   return points.some((p) => series.some((s) => (p.values[s.key] ?? null) !== null));
 }
 
-/** グラフを描かずに文章で説明すべきときの文言。描いてよいときは null。
+/** グラフを描かずに文章で説明すべきとき、その**理由**。描いてよいときは null。
  *
- * 軸だけのグラフを出すと「ずっと0だった」に見える。**0 なのか計測していないのか**が
+ * 文言ではなく理由を返すのは、呼ぶ側が「注意書きとして目立たせるか、ただの
+ * 補足として出すか」を選ぶため。**文言で見分けると訳した瞬間に壊れる** (#376)。 */
+type ChartEmpty =
+  | { kind: "noData" }
+  | { kind: "beforeMeasured"; measuredFrom: string }
+  | { kind: "neverMeasured" }
+  | { kind: "partial"; granularity: "week" | "month" };
+
+/** 軸だけのグラフを出すと「ずっと0だった」に見える。**0 なのか計測していないのか**が
  * 区別できることが要件 (#292)。 */
 function emptyReason({
   points,
@@ -338,19 +368,39 @@ function emptyReason({
   series: TrendSeries[];
   granularity: KpiGranularity;
   measuredFrom?: string | null;
-}): string | null {
+}): ChartEmpty | null {
   if (hasMeasured(shown, series)) return null;
-  if (points.length === 0) return "データなし";
+  if (points.length === 0) return { kind: "noData" };
   if (!hasMeasured(points, series)) {
     // 選んだ期間が丸ごと計測開始より前（または一度も計測していない）
     return measuredFrom
-      ? `${jpDay(measuredFrom)}から計測しています。選んだ期間には計測したデータがまだありません。`
-      : "この期間に計測したデータはありません。";
+      ? { kind: "beforeMeasured", measuredFrom }
+      : { kind: "neverMeasured" };
   }
-  // 日次には値があるのに、まとめたら1つも残らなかった＝端の欠けたバケツしかない
-  const unit = granularity === "month" ? "1か月" : "1週間";
-  const bucket = granularity === "month" ? "月" : "週";
-  return `計測できているのは期間の一部だけで、まるまる${unit}そろった${bucket}がまだありません。短い期間を選ぶと日別で見られます。`;
+  // 日次には値があるのに、まとめたら1つも残らなかった＝端の欠けたバケツしかない。
+  // 日別なら shown と points が同じなので、ここへは週別・月別でしか来ない
+  return {
+    kind: "partial",
+    granularity: granularity === "month" ? "month" : "week",
+  };
+}
+
+/** 理由に対応する文言。理由が増えたら型で落ちる */
+function emptyText(reason: ChartEmpty): string {
+  switch (reason.kind) {
+    case "noData":
+      return i18next.t("kpi.noData");
+    case "beforeMeasured":
+      return i18next.t("kpi.chartMeasuredFromEmpty", {
+        day: longDay(reason.measuredFrom),
+      });
+    case "neverMeasured":
+      return i18next.t("kpi.chartNeverMeasured");
+    case "partial":
+      return reason.granularity === "month"
+        ? i18next.t("kpi.chartPartialMonth")
+        : i18next.t("kpi.chartPartialWeek");
+  }
 }
 
 /** 日別/週別/月別の推移（チャートライブラリは追加せず、既存の素朴な棒グラフを拡張したもの）。
@@ -383,6 +433,7 @@ export function TrendChart({
    * 省略は「計測開始という概念が無い系列」（件数など） */
   measuredFrom?: string | null;
 }) {
+  const { t } = useTranslation();
   const granularity: KpiGranularity = kpiGranularity(points.length);
   const shown = toGranularity(points, granularity, {
     averageKeys: series.filter((s) => s.rollup === "average").map((s) => s.key),
@@ -392,7 +443,7 @@ export function TrendChart({
   // 計測開始が期間の途中なら、その前が「0」ではないことを明示する
   const startNote =
     !empty && measuredFrom && points[0] && measuredFrom > points[0].day
-      ? `${jpDay(measuredFrom)}から計測しています。それより前は棒を出していません（0ではなく、計測していません）。`
+      ? t("kpi.chartMeasuredFrom", { day: longDay(measuredFrom) })
       : null;
   const max = Math.max(
     1,
@@ -425,7 +476,10 @@ export function TrendChart({
             sx={{ flex: 1, minWidth: 120 }}
           >
             <Typography variant="subtitle2">
-              {title}（{GRANULARITY_LABEL[granularity]}）
+              {t("kpi.chartTitle", {
+                title,
+                granularity: t(GRANULARITY_LABEL_KEY[granularity]),
+              })}
             </Typography>
             {hint ? <InfoTip label={title} text={hint} /> : null}
           </Stack>
@@ -448,18 +502,19 @@ export function TrendChart({
             sx={{ display: "block", color: "text.secondary", mb: 0.5 }}
           >
             {granularity === "week"
-              ? "月曜始まりの週ごとの集計です。期間の端にある欠けた週は出していません。"
-              : "暦月ごとの集計です。期間の端にある欠けた月は出していません。"}
+              ? t("kpi.chartWeekNote")
+              : t("kpi.chartMonthNote")}
           </Typography>
         ) : null}
         {empty ? (
-          // 軸だけのグラフを出すと「全部0」に見えるので、グラフごと出さない (#292)
-          empty === "データなし" ? (
+          // 軸だけのグラフを出すと「全部0」に見えるので、グラフごと出さない (#292)。
+          // 「データなし」だけは注意書きにしない（説明することが無いので目立たせない）
+          empty.kind === "noData" ? (
             <Typography variant="caption" color="text.secondary">
-              {empty}
+              {emptyText(empty)}
             </Typography>
           ) : (
-            <Caution text={empty} />
+            <Caution text={emptyText(empty)} />
           )
         ) : (
           // 高さを固定しない。棒の並びを下揃えにすると日付ラベルのぶんだけ
@@ -596,7 +651,7 @@ export function TrendChart({
             variant="caption"
             sx={{ display: "block", color: "text.secondary", mt: 0.5 }}
           >
-            単位: {unit}
+            {t("kpi.chartUnit", { unit })}
           </Typography>
         ) : null}
       </CardContent>
@@ -610,7 +665,8 @@ export function MiniBars({
   hint,
   items,
   unit,
-  empty = "データなし",
+  unitOne,
+  empty,
 }: {
   title: string;
   /** 数え方の補足。指定するとタイトル横のⓘに入る */
@@ -618,8 +674,14 @@ export function MiniBars({
   /** key はラベルが重複しうるとき（コミュニティ名など）に渡す。省略時はラベルを使う */
   items: { key?: string; label: string; value: number }[];
   unit: string;
+  /** 値が 1 のときの単位。英語が「1 people」にならないよう、**数だけを見て**
+   *  こちらに切り替える（言語による分岐は書かない）。省略時は `unit` のまま */
+  unitOne?: string;
+  /** 0件のときの言い方。省略時は「データなし」。**既定値は描画時に訳す**
+   *  （引数の既定値に文言を置くと、その言語のまま固まる） */
   empty?: string;
 }) {
+  const { t } = useTranslation();
   const max = Math.max(1, ...items.map((i) => i.value));
   return (
     <Card variant="outlined" sx={{ width: "100%" }}>
@@ -635,7 +697,7 @@ export function MiniBars({
         </Stack>
         {items.length === 0 ? (
           <Typography variant="caption" color="text.secondary">
-            {empty}
+            {empty ?? t("kpi.noData")}
           </Typography>
         ) : (
           <Stack spacing={0.75}>
@@ -670,8 +732,10 @@ export function MiniBars({
                   />
                 </Box>
                 <Typography variant="caption" sx={{ width: 64, textAlign: "right" }}>
-                  {i.value.toLocaleString()}
-                  {unit}
+                  {t("kpi.valueWithUnit", {
+                    value: i.value.toLocaleString(),
+                    unit: i.value === 1 ? (unitOne ?? unit) : unit,
+                  })}
                 </Typography>
               </Stack>
             ))}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ClickAwayListener, IconButton, Tooltip } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 
@@ -22,6 +23,7 @@ export function InfoTip({
   text: string;
   size?: number;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   /** マウスのホバーで開いている間は click でトグルしない（開いた直後に閉じないように） */
   const hovering = useRef(false);
@@ -61,7 +63,8 @@ export function InfoTip({
       >
         <IconButton
           size="small"
-          aria-label={`${label}の説明`}
+          // 「〜の説明」と足すのは日本語の語順。英語では前に付くので辞書が持つ
+          aria-label={t("kpi.infoTip", { label })}
           onClick={() => {
             if (!hovering.current) setOpen((v) => !v);
           }}

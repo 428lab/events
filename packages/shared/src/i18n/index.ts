@@ -18,6 +18,7 @@ import { eventRun } from "./messages/eventRun.js";
 import { eventSocial } from "./messages/eventSocial.js";
 import { events } from "./messages/events.js";
 import { inquiries, inquiryStatus } from "./messages/inquiries.js";
+import { kpi } from "./messages/kpi.js";
 import { labels } from "./messages/labels.js";
 import { login } from "./messages/login.js";
 import { meet, meetFailure } from "./messages/meet.js";
@@ -84,6 +85,7 @@ export const translations = {
     meet: meet.ja,
     meetFailure: meetFailure.ja,
     studio: studio.ja,
+    kpi: kpi.ja,
     ...labels.ja,
   },
   en: {
@@ -118,6 +120,7 @@ export const translations = {
     meet: meet.en,
     meetFailure: meetFailure.en,
     studio: studio.en,
+    kpi: kpi.en,
     ...labels.en,
   },
 } satisfies Record<AppLanguage, Record<string, Record<string, string>>>;

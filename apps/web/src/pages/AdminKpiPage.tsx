@@ -24,7 +24,7 @@ import {
   Section,
   Tile,
   TrendChart,
-  jpDay,
+  longDay,
   num,
   pct,
 } from "../components/KpiTiles.js";
@@ -351,7 +351,7 @@ function mauCaution(measuredFrom: string | null, latestDay: string | undefined) 
   if (measuredFrom === null) return undefined;
   const full = addDays(measuredFrom, 29);
   if (latestDay && latestDay < full) {
-    return `MAU は「直近30日にアクセスした人数」なので、計測開始（${jpDay(measuredFrom)}）から30日たつ ${jpDay(full)} までは窓が埋まりきらず実態より低く出ます。`;
+    return `MAU は「直近30日にアクセスした人数」なので、計測開始（${longDay(measuredFrom)}）から30日たつ ${longDay(full)} までは窓が埋まりきらず実態より低く出ます。`;
   }
   return undefined;
 }
