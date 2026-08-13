@@ -187,7 +187,7 @@ meRoutes.delete("/", zValidator("json", deleteAccountInput), async (c) => {
   // 焼き込んでいるため、user 行を隠すだけでは名前とプロフィールリンクが残る。
   // 通知を消すこと自体は退会の成否に影響させない（ベストエフォート）
   try {
-    await notificationsRepo.deleteByActor(me);
+    await notificationsRepo.deleteByActor(me.id);
   } catch (e) {
     console.error(`[account-delete-requested] notification cleanup failed`, e);
   }

@@ -547,4 +547,48 @@ describe("アカウント統合 (#240)", () => {
       .first<{ role: string; status: string }>();
     expect(row).toEqual({ role: "staff", status: "confirmed" });
   });
+
+  /** 通知の主語 (#380)。付け替え対象に notification.actor_id が入っていないと、
+   * 負け側の user 行を消したところで FK の ON DELETE SET NULL が発火して
+   * actor_id が NULL になり、統合後に勝ち側が退会しても通知が消えなくなる */
+  it("負け側が主語の通知は勝ち側へ移り、勝ち側の退会で消える (#380)", async () => {
+    const a = await makeUser(); // 負け側（通知の主語）
+    const b = await makeUser(); // 勝ち側
+    const c = await makeUser(); // 通知の受け手（第三者）
+
+    // ここで確かめたいのは統合時の付け替えなので、通知の作られ方（読み取り
+    // 経路）は本質ではない。直接入れる。type は退会で消える種別のひとつ
+    const notificationId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at, actor_id)
+       VALUES (?, ?, 'meet', '出会いました', '', '', 0, ?, ?)`,
+    )
+      .bind(notificationId, c.userId, Date.now(), a.userId)
+      .run();
+
+    const code = await issueCode(a.cookie);
+    expect((await postMerge(b.cookie, { code, keep: "me" })).status).toBe(200);
+
+    // 直接の証拠: 負け側の削除で NULL に落ちず、勝ち側に付け替わっている
+    const notification = await env.DB.prepare(
+      "SELECT actor_id FROM notification WHERE id = ?",
+    )
+      .bind(notificationId)
+      .first<{ actor_id: string | null }>();
+    expect(notification?.actor_id).toBe(b.userId);
+
+    // 付け替わっていれば、勝ち側の退会で第三者の一覧からも消える
+    const del = await SELF.fetch(`${BASE}/api/me`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json", cookie: b.cookie },
+      body: JSON.stringify({ confirm: true }),
+    });
+    expect(del.status).toBe(200);
+    expect(
+      await count(
+        "SELECT COUNT(*) AS n FROM notification WHERE id = ?",
+        notificationId,
+      ),
+    ).toBe(0);
+  });
 });

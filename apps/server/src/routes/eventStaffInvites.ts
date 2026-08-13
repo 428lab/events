@@ -45,6 +45,9 @@ async function notifyInvited(
     `「${event.title}」の運営に招待されました`,
     `${displayName(inviter)} さんからの招待です。承諾すると運営として準備に参加できます。`,
     "/staff-invites",
+    undefined,
+    // 本文に招待者名が出るので actor を残す (#380)
+    { actorId: inviter.id },
   );
 }
 
@@ -66,6 +69,9 @@ async function notifyInviteResult(
       ? `${displayName(respondent)} さんが運営に加わりました`
       : `${displayName(respondent)} さんは運営に加わりませんでした`,
     `/events/${event.id}`,
+    undefined,
+    // 本文に応答者名が出るので actor を残す (#380)
+    { actorId: respondent.id },
   );
 }
 

@@ -51,6 +51,18 @@ function toNotification(r: NotificationRow): Notification {
   };
 }
 
+/** 退会申請 (#250) で消す通知の種別 (#380)。
+ *
+ * 「退会する本人の名前が、他の利用者の通知一覧に出続けてしまう」ものだけを挙げる。
+ * actor_id を埋めている種別と**わざと一致させていない**。埋めるのは
+ * 「文面に名前が出る通知すべて」で、消すのはそのうち退会で消すと決めたものだけ。
+ * 分けておかないと、actor_id を埋める範囲を広げた瞬間に削除範囲も黙って広がる。 */
+const ACTOR_ERASED_TYPES = [
+  "meet",
+  "followee_created_event",
+  "followee_joined_event",
+] as const satisfies readonly NotificationType[];
+
 export const notificationsRepo = {
   async create(
     userId: string,
@@ -60,10 +72,12 @@ export const notificationsRepo = {
     link = "",
     // メール表示のみに使う付加情報 (#134)。DB スキーマは変えない
     extras?: EmailExtras,
+    // その通知の主語になっている利用者 (#380)。主語が人でないときは渡さない
+    opts?: { actorId?: string },
   ): Promise<void> {
     await run(
-      `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+      `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at, actor_id)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       crypto.randomUUID(),
       userId,
       type,
@@ -71,6 +85,7 @@ export const notificationsRepo = {
       body,
       link,
       Date.now(),
+      opts?.actorId ?? null,
     );
     // メール通知ONのユーザーには同内容をメールでも送る (#126)。
     // レスポンスをブロックしないよう waitUntil に逃がす（失敗しても通知作成は成功扱い）
@@ -93,7 +108,8 @@ export const notificationsRepo = {
     // 定期実行で順次送る＝配信を自前で持っている呼び出し元のためのもの。
     // ここに任せると上限 (MAX_BULK_EMAILS) で静かに打ち切られ、
     // 「誰に届いていないか」も残らない
-    opts?: { skipEmail?: boolean },
+    // actorId: その通知の主語になっている利用者 (#380)。主語が人でないときは渡さない
+    opts?: { skipEmail?: boolean; actorId?: string },
   ): Promise<void> {
     const now = Date.now();
     const CHUNK = 50;
@@ -102,9 +118,18 @@ export const notificationsRepo = {
       try {
         await batch(
           chunk.map((userId) => ({
-            sql: `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at)
-                  VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
-            args: [crypto.randomUUID(), userId, type, title, body, link, now],
+            sql: `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at, actor_id)
+                  VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+            args: [
+              crypto.randomUUID(),
+              userId,
+              type,
+              title,
+              body,
+              link,
+              now,
+              opts?.actorId ?? null,
+            ],
           })),
         );
       } catch (e) {
@@ -142,48 +167,22 @@ export const notificationsRepo = {
 
   /** 退会申請 (#250) したユーザーが「した側」として生成した通知を削除する。
    *
-   * follow 起点の通知と meet 通知はタイトルに「◯◯ さんが…」と表示名を焼き込んで
-   * いるため、行が残っているとフォロワー／同席者の通知一覧に名前が出続ける
-   * （#244 の完全削除でも notification.user_id は受信者なので消えない）。
-   * notification テーブルには actor 列が無いので、種別ごとに actor を特定できる
-   * 条件で消す:
-   *   - meet                    : link が actor 本人のプロフィールURL
-   *   - followee_created_event  : link 先のイベントの created_by が actor
-   *   - followee_joined_event   : actor が参加しているイベント かつ タイトルが
-   *                               actor の表示名で始まる（同じイベントに参加した
-   *                               別のフォロイーの通知を巻き込まないため）
+   * 判定は actor_id 一本 (#380)。以前は種別ごとに link / title から actor を
+   * 推定していたが、
+   *   - title の綴りに依存する＝通知の文言を変えた時点で消えなくなる
+   *   - link / title は「現在の username・表示名」なので、改名した人を取りこぼす
+   *   - 同姓同名が同席していると別人の通知まで消す
+   * のいずれでも破れていた。actor_id ならどれも起きない。
    *
-   * 復帰しても通知は戻らない。通知は流れていく性質のもので、履歴として復元する
-   * 価値より猶予期間中に名前が見え続ける不利益のほうが大きいと判断した。
-   * D1 batch なのでサブリクエストは1つ。 */
-  async deleteByActor(actor: {
-    id: string;
-    username: string;
-    globalName: string | null;
-  }): Promise<void> {
-    // LIKE のワイルドカード (% _) を含む表示名で広く消しすぎないようエスケープ
-    const likePrefix = (name: string) =>
-      `${name.replace(/[\\%_]/g, (c) => `\\${c}`)} さんが%`;
-    const names = [actor.globalName, actor.username].filter(
-      (n): n is string => !!n,
+   * 復帰しても通知は戻らない（従来どおり）。 */
+  async deleteByActor(actorId: string): Promise<void> {
+    await run(
+      `DELETE FROM notification
+        WHERE actor_id = ?
+          AND type IN (${ACTOR_ERASED_TYPES.map(() => "?").join(", ")})`,
+      actorId,
+      ...ACTOR_ERASED_TYPES,
     );
-    await batch([
-      {
-        sql: "DELETE FROM notification WHERE type = 'meet' AND link = ?",
-        args: [`/users/${encodeURIComponent(actor.username)}`],
-      },
-      {
-        sql: `DELETE FROM notification WHERE type = 'followee_created_event'
-                AND link IN (SELECT '/events/' || id FROM event WHERE created_by = ?)`,
-        args: [actor.id],
-      },
-      {
-        sql: `DELETE FROM notification WHERE type = 'followee_joined_event'
-                AND (${names.map(() => "title LIKE ? ESCAPE '\\'").join(" OR ")})
-                AND link IN (SELECT '/events/' || event_id FROM event_member WHERE user_id = ?)`,
-        args: [...names.map(likePrefix), actor.id],
-      },
-    ]);
   },
 
   /** 受信者本人のぶんを新しい順に。user_id で必ず絞るので、他人の通知は出ない。
@@ -239,20 +238,20 @@ export const notificationsRepo = {
 
   /** 出会いの取り消し (#330) に伴って、その読み取りで出した meet 通知を消す。
    *
-   * notification は出会いの行を参照していないので、「誰から (link=相手のプロフィール)
-   * いつ以降に届いた meet 通知か」で絞る。since には取り消しトークンの発行時刻を
+   * notification は出会いの行を参照していないので、「誰から (actor_id=読み取った側)
+   * いつ以降に届いた meet 通知か」で絞る (#380)。since には取り消しトークンの発行時刻を
    * 渡す想定で、それより前の（別の機会の）通知には触らない。
    * メールは送信済みなら取り消せないが、通知一覧に残り続けるのは防げる。 */
   async deleteMeetSince(
     userId: string,
-    link: string,
+    actorId: string,
     since: number,
   ): Promise<void> {
     await run(
       `DELETE FROM notification
-        WHERE user_id = ? AND type = 'meet' AND link = ? AND created_at >= ?`,
+        WHERE user_id = ? AND type = 'meet' AND actor_id = ? AND created_at >= ?`,
       userId,
-      link,
+      actorId,
       since,
     );
   },

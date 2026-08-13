@@ -747,6 +747,48 @@ describe("読み取りの取り消し (#330)", () => {
     expect(await meetNotificationCount(staff.userId)).toBe(0);
   });
 
+  it("それより前の、別の機会に届いた通知には触らない", async () => {
+    const staff = await makeUser();
+    const p = await makeUser();
+    // 先に別のイベントで出会っておく。実際の読み取り経路で作るので、消す条件に
+    // 使う actor_id (#380) もサーバーが入れたものになる
+    const before = await insertEvent(staff.userId);
+    await addMember(before, staff.userId, "staff");
+    await addMember(before, p.userId);
+    await scanOk(p.cookie, await issueToken(staff.cookie));
+    const old = await env.DB.prepare(
+      "SELECT id, actor_id FROM notification WHERE user_id = ? AND type = 'meet'",
+    )
+      .bind(staff.userId)
+      .first<{ id: string; actor_id: string | null }>();
+    expect(old?.actor_id).toBe(p.userId);
+    // 「別の機会」にする。取り消しの下限はトークン発行時刻（秒精度）なので、
+    // 同じ秒に作った通知のままだと新旧の区別が付かない
+    await env.DB.prepare("UPDATE notification SET created_at = ? WHERE id = ?")
+      .bind(Date.now() - 3600_000, old?.id)
+      .run();
+
+    // 同じ相手と、今度は別のイベントで出会う（前のイベントは記録済みなので増えない）
+    const eventId = await insertEvent(staff.userId);
+    await addMember(eventId, staff.userId, "staff");
+    await addMember(eventId, p.userId);
+    const body = await scanOk(p.cookie, await issueToken(staff.cookie));
+    expect(body.events.filter((e) => e.meetCreated)).toHaveLength(1);
+    expect(await meetNotificationCount(staff.userId)).toBe(2);
+
+    const res = await undo(p.cookie, body.undoToken);
+    expect(((await res.json()) as { undone: number }).undone).toBe(1);
+    // 消えるのはこの読み取りぶんだけ。主語が同じ人でも前の機会の通知は残る
+    const left = await env.DB.prepare(
+      "SELECT id FROM notification WHERE user_id = ? AND type = 'meet'",
+    )
+      .bind(staff.userId)
+      .all<{ id: string }>();
+    expect(left.results.map((r) => r.id)).toEqual([old?.id]);
+    expect(await meetCount(before)).toBe(1);
+    expect(await meetCount(eventId)).toBe(0);
+  });
+
   it("取り消しトークンは発行者本人しか使えない", async () => {
     const staff = await makeUser();
     const p = await makeUser();
