@@ -2,7 +2,7 @@
 
 - 対象: `apps/server`（認証）・`apps/web`（ログイン画面・アカウント設定）・D1 スキーマ
 - 範囲: **ログインと連携だけ。投稿は範囲外**（したがってトークンを保存しない）
-- ステータス: 設計（実装は別 PR）。**第4章のスパイクを通過してから実装に入る**
+- ステータス: 設計（実装は別 PR）。**スパイク通過済み（4.2）。実装に入ってよい**
 
 ---
 
@@ -56,6 +56,7 @@ AT Protocol の OAuth はこの2つでは表現できない。差分は次のと
   該当実装は無い。
 
 **したがって「core が workerd で動く」ことの実機証拠はまだ無い。** 第4章のスパイクが必要な理由。
+**→ 4.2 で確認した。core は workerd で動く。**
 
 ### 2.3 その他、拾った実測
 
@@ -75,7 +76,7 @@ AT Protocol の OAuth はこの2つでは表現できない。差分は次のと
 |---|---|---|---|
 | フローを回す場所 | ブラウザ | **Worker** | 我々は自前のセッション（D1 の `session`）を発行する。ブラウザで完結させると DID を我々のサーバーに証明できない（3.2 参照） |
 | client metadata | ビルド時に静的生成 | **Worker のルートで動的生成** | eventer は Worker が SPA も配信し `APP_BASE_URL` が `wrangler.toml` にある。ビルド時環境変数を増やすより素直 |
-| ハンドル解決 | `https://bsky.social` の XRPC | **DoH（DNS TXT + `.well-known`）** | 仕様に忠実で単一ベンダーに依存しない。ライブラリ同梱で fetch だけで動く。XRPC は代替（4.2） |
+| ハンドル解決 | `https://bsky.social` の XRPC | **DoH（DNS TXT + `.well-known`）** | 仕様に忠実で単一ベンダーに依存しない。ライブラリ同梱で fetch だけで動く。XRPC は代替（DoH が実機で通ったので採らない——4.2） |
 | トークン | 保持・refresh | **保存しない** | 範囲がログインと連携だけ |
 
 ---
@@ -94,7 +95,8 @@ AT Protocol の OAuth はこの2つでは表現できない。差分は次のと
 6. **公開エンドポイントは `client-metadata.json` の1本だけ**、`/api/auth/bluesky/` 配下に置く。
    staging ゲートは `/api/auth/` を既に免除しているので**許可リストは触らない**。
 7. **state は D1 の新テーブル**（TTL 10分）＋ **ブラウザ紐付け用 cookie**。
-8. **fetch ラッパは上流の未修正バグの回避策**として、消せる条件つきで1箇所に隔離する。
+8. **`redirect: 'error'` の回避策は2枚**（fetch ラッパ＋自前 `didResolver`）。
+   どちらも上流バグの回避策として、消せる条件つきで隔離する（8章。4.2 の実測で確定）。
 
 ### 3.1 なぜ public client でよいか
 
@@ -154,6 +156,142 @@ public client のログイン専用フローは、仕様が明確なので自前
 Plan B に倒す場合も、**5章以降のモジュール分割・state の持ち方・ルート・UI・引き取り規則は変わらない**。
 差し替わるのは `auth/bluesky/client.ts` の中身だけ。この境界を保つように書く。
 
+### 4.2 スパイクの結果（2026-08-13 実測）
+
+**結論: ライブラリ方式で進める。Plan B（4.1）は採らない。** ただし
+**8章の fetch ラッパの想定は誤っていた**ので、8章を実測に合わせて書き直した（下記「S2 の詳細」）。
+
+計測環境: `wrangler dev`（wrangler 4.85.0 / ローカル workerd / `nodejs_compat`）に
+使い捨ての probe worker を置いて実行。probe は本ブランチにコミットしない。
+
+使ったパッケージ（`apps/server` の直接依存として追加）:
+
+| パッケージ | 版 |
+|---|---|
+| `@atproto/oauth-client` | 0.8.2 |
+| `@atproto/jwk-webcrypto` | 0.3.4 |
+| `@atproto/jwk-jose` | 0.2.4 |
+| `@atproto-labs/handle-resolver` | 0.4.8 |
+
+**0.8.3 が出ているが `minimumReleaseAge`（7日）が効いて 0.8.2 が入った。**
+主な推移依存: `@atproto-labs/did-resolver` 0.3.7 / `@atproto-labs/fetch` 0.3.5 /
+`@atproto-labs/identity-resolver` 0.4.7 / `@atproto/jwk` 0.7.4 /
+`@atproto/oauth-types` 0.7.5 / `jose` 5.10.0 / `core-js` 3.50.0。
+
+| # | 結果 | 要点 |
+|---|---|---|
+| S1 | **通った** | `import 'core-js/es/symbol/dispose.js'` は `nodejs_compat` 下の workerd で評価を通る。`@atproto/oauth-client-node` が落ちた原因（undici の `process.env.NODE_DEBUG`）は core には無い |
+| S2 | **通った（ただし回避策の形が変わる）** | ハンドル → DID → PDS → 認可サーバー → PAR → authorize URL まで実在ハンドル2件で通した |
+| S3 | **通った** | gzip 後 +76.7 KiB。上限に対して桁で余裕 |
+| S4 | **通った** | `extractable: true` → `privateJwk` → `JoseKey.fromJWK` で同じ鍵に戻る |
+| S5 | **通った** | PAR は 400（`use_dpop_nonce`）→ 貼り直して 201。**1往復で決まる** |
+
+#### S2 の詳細（本丸）
+
+**8章の「fetch ラッパで吸収する」は成立しない。** workerd は
+`redirect: 'error'` を **`new Request()` の構築時点で** 拒否する。
+`fetch()` を呼ぶ前に落ちるので、注入した fetch には制御が渡ってこない。
+
+```
+TypeError: Invalid redirect value, must be one of "follow" or "manual"
+("error" won't be implemented since it does not make sense at the edge;
+ use "manual" and check the response status code).
+```
+
+そして `@atproto-labs/fetch` の `bindFetch()` は、**注入した fetch を呼ぶ前に**
+`asRequest(input, init)`（＝ `new Request(url, { redirect: 'error', ... })`）を実行する。
+素の fetch を渡した probe（対照）の生の出力:
+
+```
+TypeError: Invalid redirect value, must be one of "follow" or "manual" ...
+    at asRequest (.../bluesky.js:8542:10)
+    at DidPlcMethod.fetch (.../bluesky.js:8535:42)
+    at DidPlcMethod.resolve (.../bluesky.js:8954:17)
+    at DidResolverCommon.resolve (.../bluesky.js:8916:40)
+  → Error: Failed to resolve identity: bsky.app
+```
+
+つまり**経路によって効く回避策が違う**。実測で分けると:
+
+| 経路 | 呼び方 | fetch ラッパで直せるか |
+|---|---|---|
+| `handle-resolver` の `well-known-handler-resolver.js` | 注入した fetch を `(url, init)` で直接呼ぶ | **直せる**（ラッパが `init.redirect` を書き換えてから `Request` を作ればよい） |
+| `did-resolver` の `methods/plc.js`・`methods/web.js` | `bindFetch()` 経由。Request は上流で組まれる | **直せない** |
+| `handle-resolver` の `xrpc-handle-resolver.js` | 同上 | 直せない（**DoH を使うので通らない**） |
+| `oauth-client.js` の静的 `fetchMetadata` | 同上 | 直せない（**自分の metadata は自分で書くので呼ばない**） |
+
+**必須の経路である `plc.js` が直せない**ので、追加の手当てが要る。probe で2案とも実機で通した。
+
+- **案A: 自前の `didResolver` を差し込む**（`OAuthClient` の `didResolver` オプション）。
+  `did:plc` は `https://plc.directory/<did>`、`did:web` は `/.well-known/did.json` を
+  `redirect: 'manual'` で取り、3xx は自分で例外にする。ライブラリの
+  `DidPlcMethod` / `DidWebMethod` を通らなくなるので `bindFetch` の問題が消える。**約40行。**
+- **案B: `globalThis.Request` を Proxy で差し替える**（`redirect: 'error'` を `'manual'` に読み替え、
+  その Request を `WeakSet` に覚えておいてラッパ側で3xx を例外にする）。ライブラリを無改造で使える。
+
+**案Aを採る。** 案Bは Worker のアイソレート全体のグローバルを書き換えるため、
+Bluesky と無関係な既存ルートまで影響範囲に入る。副作用の説明コストが実装量の差に見合わない。
+
+案Aで通した実測（`bsky.app`。`kojira.io` でも同じ順序で成功、所要 2.4 秒）:
+
+```
+GET  https://cloudflare-dns.com/dns-query?type=TXT&name=_atproto.bsky.app   200
+GET  https://bsky.app/.well-known/atproto-did                              (DNS が先に解決したので中断)
+GET  https://plc.directory/did%3Aplc%3Az72i7hdynmk6r22z27h6tvur            200
+GET  https://puffball.us-east.host.bsky.network/.well-known/oauth-protected-resource  200
+GET  https://bsky.social/.well-known/oauth-authorization-server            200
+POST https://bsky.social/oauth/par                                         400  (DPoP-Nonce 付き)
+POST https://bsky.social/oauth/par                                         201
+→ https://bsky.social/oauth/authorize?client_id=...&request_uri=urn:ietf:params:oauth:request_uri:req-...
+```
+
+**認可 URL に載るのは `client_id` と `request_uri` だけ**で、設計7.3 の前提（`state` は URL に出ない）は
+実測どおりだった。localhost 例外（`client_id` はポート無しの `http://localhost?...`、
+`redirect_uri` は `http://127.0.0.1:4380/callback`）も PAR に受理された。
+
+**認可画面は通していない。** 実際のログイン（`callback()` / トークン交換 / `iss` 照合）は
+staging で確認する（設計17章 PR4）。
+
+#### S3 の詳細
+
+`wrangler deploy --dry-run --outdir` の実測。
+
+| 対象 | 生 | gzip |
+|---|---|---|
+| いまの Worker | 996.16 KiB | 231.87 KiB |
+| いまの Worker + Bluesky 一式 | 1438.78 KiB | **308.60 KiB** |
+| 差分 | +442.62 KiB | **+76.73 KiB** |
+
+Workers の上限は圧縮後 3 MiB（無料プランは 1 MiB）。**どちらに対しても余裕がある。**
+
+起動 CPU の代替計測として、workerd 内でモジュール評価（トップレベルの動的 import）を測った:
+`@atproto/oauth-client` が **6 ms**、`@atproto/jwk-webcrypto` と `@atproto-labs/handle-resolver` が
+合わせて **1 ms**（ローカル workerd）。上限 400 ms に対して十分だが、
+**実機の startup CPU は実デプロイ時に Cloudflare が報告する値で確認する**（staging で見る）。
+
+#### S4 の詳細
+
+`WebcryptoKey.generate(['ES256'], undefined, { extractable: true })` →
+`key.privateJwk` → `JoseKey.fromJWK()` で往復し、`kid` の一致・公開 JWK の一致・
+同じヘッダ/ペイロードの JWT を作れることを確認した。**`extractable: true` を渡さないと
+`privateJwk` が取れない**ので、`runtimeImplementation.createKey` でこれを必ず指定する。
+
+#### S5 の詳細
+
+PAR の1回目は必ず 400 `use_dpop_nonce`（`DPoP-Nonce` ヘッダ付き）で返り、
+ライブラリが nonce を貼り直して2回目で 201。**1往復で決まる。**
+
+ただし nonce のキャッシュ（`dpopNonceCache`）は `OAuthClient` インスタンスごとなので、
+**リクエストごとにクライアントを作ると毎回この余計な400が1回入る**（実測で認可開始が約2.1〜2.4秒）。
+実装では `dpopNonceCache` をモジュールスコープに置いて同一アイソレート内で使い回す。
+それでも Workers はアイソレートが短命なので、**「毎回1往復増える」前提で見積もる**。
+
+#### 設計へ反映した変更
+
+- **8章を全面的に書き直した**（fetch ラッパだけでは足りない、自前 `didResolver` が要る）。
+- 5章に `auth/bluesky/didResolver.ts` を追加した。
+- 14章のテスト6に自前 `didResolver` の検証を追加した。
+
 ---
 
 ## 5. モジュールの分割
@@ -165,7 +303,8 @@ Plan B に倒す場合も、**5章以降のモジュール分割・state の持�
 | ファイル | 役割 | 目安 |
 |---|---|---|
 | `apps/server/src/auth/bluesky/client.ts` | `OAuthClient` の組み立て（clientMetadata 生成・runtime 実装・store 配線・handleResolver）。**環境ごとの `client_id` / `redirect_uri` の分岐はここだけ** | 120行 |
-| `apps/server/src/auth/bluesky/fetch.ts` | `redirect: 'error'` 回避の fetch ラッパ。**上流バグの回避策であることと消せる条件を明記**（8章） | 50行 |
+| `apps/server/src/auth/bluesky/fetch.ts` | `redirect: 'error'` 回避の fetch ラッパ。**上流バグの回避策であることと消せる条件を明記**（8.1） | 50行 |
+| `apps/server/src/auth/bluesky/didResolver.ts` | 自前の DID 解決（`did:plc` / `did:web`）。`bindFetch` を通る経路を外すための回避策（8.2）。**同じ「消せる条件」を明記** | 60行 |
 | `apps/server/src/auth/bluesky/stateStore.ts` | D1 バックの `StateStore`。DPoP 鍵の JWK 変換・TTL・掃除。トークン用の store は**使い捨ての Map** | 110行 |
 | `apps/server/src/auth/bluesky/profile.ts` | 公開 AppView から表示名・アイコンを取得（認証不要） | 50行 |
 | `apps/server/src/auth/bluesky/index.ts` | 外向きの2関数 `startLogin(handle, appState)` / `finishLogin(params)` とエラーコードの正規化 | 120行 |
@@ -322,32 +461,58 @@ CREATE INDEX idx_bluesky_oauth_state_created ON bluesky_oauth_state(created_at);
 
 ---
 
-## 8. fetch ラッパ（上流バグの回避策）
+## 8. `redirect: 'error'` の回避策（4.2 の実測で確定）
 
 `@atproto/oauth-client` とその依存は、リダイレクトを拒否するために
-`fetch(url, { redirect: 'error' })` を使う。**workerd はこの値を受け付けず TypeError を投げる。**
+`redirect: 'error'` を使う。**workerd はこの値を `new Request()` の構築時点で拒否して
+TypeError を投げる**（`fetch()` を呼ぶ前に落ちる）。
 
-`auth/bluesky/fetch.ts` に次の内容のコメントを必ず書く。
+```
+TypeError: Invalid redirect value, must be one of "follow" or "manual"
+("error" won't be implemented since it does not make sense at the edge;
+ use "manual" and check the response status code).
+```
 
-- **何をしているか**: `redirect: 'error'` を `'manual'` に読み替える。
+**したがって注入した fetch のラッパだけでは足りない。** `@atproto-labs/fetch` の
+`bindFetch()` は、注入した fetch を呼ぶ**前に** `asRequest()` で Request を組むためである。
+回避策は2枚に分かれる。
+
+### 8.1 `auth/bluesky/fetch.ts` — fetch ラッパ
+
+注入した fetch が `(url, init)` の形で直接呼ばれる経路だけを担当する。
+
+- **何をしているか**: `init.redirect === 'error'` を `'manual'` に読み替えてから `Request` を組む。
   **そのうえで、応答が 3xx なら自分で例外にする**。ここを省くと
   「リダイレクトを拒否する」という元の安全性が黙って失われる。
-- **なぜ必要か**: workerd が `'error'` を拒否するため。
-- **出典**: 上流 issue（1年以上 open、PR 未マージ）の URL を実装時に確認して貼る。
-- **影響範囲**（`dist` の行番号つきで、実装時の版で確認し直すこと）:
-  - `@atproto-labs/did-resolver` `methods/plc.js` — 注入した fetch を通る（**必須の経路**）
-  - `@atproto-labs/did-resolver` `methods/web.js` — 同上（did:web のとき）
-  - `@atproto-labs/handle-resolver` `internal-resolvers/well-known-handler-resolver.js` — 同上
-  - `@atproto-labs/handle-resolver` `xrpc-handle-resolver.js` — 同上（DoH を使うので通らない）
-  - `@atproto/oauth-client` `oauth-client.js` の静的 `fetchMetadata` —
-    **自分の metadata は自分で書くので呼ばない**
-- **消せる条件**: workerd が `redirect: 'error'` を受け付けるようになったら、
-  この関数ごと削除して素の `fetch` を渡す。判定は `fetch(url, { redirect: 'error' })` が
-  投げないことを `wrangler dev` で確かめるだけでよい。
+- **効く経路**: `@atproto-labs/handle-resolver` の
+  `internal-resolvers/well-known-handler-resolver.js`（ハンドルの `.well-known` 解決）。
+- **効かない経路**: `bindFetch()` を通るもの。下記 8.2 で外す。
 
-補足: `well-known-handler-resolver.js` は例外を握って `null` を返すので、
-ラッパが効かなくても「`.well-known` でしか解決できないハンドル」が失敗するだけで済む。
-一方 `did-resolver` の2つは**失敗が即ログイン不能**になる。スパイク S2 の重点はここ。
+### 8.2 `auth/bluesky/didResolver.ts` — 自前の DID 解決
+
+`OAuthClient` の `didResolver` オプションに自前の実装を渡し、
+`bindFetch()` を使う `@atproto-labs/did-resolver` の `methods/plc.js` /
+`methods/web.js` を**通らないようにする**。これが**必須の経路**（DID 解決に失敗すると即ログイン不能）。
+
+- `did:plc:` → `https://plc.directory/<did>`、`did:web:` → `https://<host>/.well-known/did.json`
+- `redirect: 'manual'` で取り、**3xx は自分で例外にする**（元の意図を保つ）
+- `@atproto/did` の `didDocumentValidator` で DID ドキュメントを検証し、
+  **`doc.id` が要求した DID と一致すること**を確かめる。ライブラリ側の検証を落とさないため
+- 目安40行。**グローバル（`globalThis.Request`）は書き換えない**——
+  アイソレート全体に影響し、Bluesky と無関係な既存ルートまで巻き込むため（4.2 の案B、却下）
+
+### 8.3 通らない経路（手当て不要）
+
+- `@atproto-labs/handle-resolver` `xrpc-handle-resolver.js` — **DoH を使うので通らない**
+- `@atproto/oauth-client` `oauth-client.js` の静的 `fetchMetadata` —
+  **自分の metadata は自分で書くので呼ばない**
+
+### 8.4 消せる条件
+
+workerd が `redirect: 'error'` を受け付けるようになったら、8.1 と 8.2 の両方を削除して
+素の `fetch` とライブラリ既定の DID 解決に戻す。判定は
+`new Request(url, { redirect: 'error' })` が投げないことを `wrangler dev` で確かめるだけでよい。
+**この判定を 8.1 のコメントに書いておく。**
 
 ---
 
@@ -499,6 +664,7 @@ CREATE INDEX idx_bluesky_oauth_state_created ON bluesky_oauth_state(created_at);
 | 4 | `GET /callback` | `state` 無しで 400 / cookie の tag 不一致で 400 / 同じ state の2回目は 400（1回目で行が消える） |
 | 5 | state ストア（ユニット） | 保存→取得で DPoP 鍵が JWK 経由で往復する / TTL 超過の行は取得できない / 掃除の SQL が古い行だけ消す |
 | 6 | fetch ラッパ（ユニット） | `redirect: 'error'` が `'manual'` に置き換わる / **3xx 応答で例外になる**（黙って追従しない） / `'follow'` はそのまま |
+| 6b | 自前 `didResolver`（ユニット） | `did:plc` / `did:web` の URL の組み立て / **3xx で例外**（追従しない）/ `doc.id` が要求した DID と違えば例外 / 不正な DID ドキュメントで例外 / 未対応の DID メソッドで例外 |
 | 7 | 引き取り規則（ユニット） | `provider="bluesky"` で既存3ケースが既存と同じ結果になる |
 | 8 | 回帰 | 既存の認証・引き取り・退会猶予のテストが無変更で通る（`accountLink` 抽出の安全網） |
 | 9 | 解除 | `DELETE /api/auth/identities/bluesky` が 404 にならない / 最後の1つは 409 |
@@ -549,14 +715,15 @@ CREATE INDEX idx_bluesky_oauth_state_created ON bluesky_oauth_state(created_at);
 
 | PR | 内容 | 検証 |
 |---|---|---|
-| 0 | **スパイク**（4章）。probe ルートで S1〜S5。結果を本書に追記 | `wrangler dev` で実アカウント1回ログイン |
+| 0 | **スパイク**（4章）。probe ルートで S1〜S5。結果を本書に追記 | **完了（4.2）**。`wrangler dev` で実在ハンドル2件の PAR まで通した |
 | 1 | `accountLink.ts` の抽出（**振る舞い変更なし**）。`routes/auth.ts` が短くなる | 既存テストが無変更で通ること |
 | 2 | マイグレーション + state リポジトリ + state ストア + fetch ラッパ（**ルートはまだ生やさない**） | ユニット（5・6） |
 | 3 | `auth/bluesky/*` 本体 + `routes/authBluesky.ts` + client-metadata | テスト 1〜4・9 |
 | 4 | UI（ログイン画面・アカウント設定・staging ゲート） | 手動。staging で本番相当の URL でログイン・連携・解除・引き取り |
 
 PR1 と PR2 は Bluesky の実装が失敗しても単独で意味がある（前者は重複の解消、後者は未使用のまま無害）。
-**PR0 が通らなければ PR3 の中身を Plan B（4.1）に差し替える。それ以外の PR は影響を受けない。**
+PR0 は通ったので **PR3 はライブラリ方式で書く**（Plan B は採らない）。
+PR2 の範囲に **8.2 の自前 `didResolver`** が加わる（fetch ラッパと同じ「回避策」の枠）。
 
 ---
 
@@ -569,10 +736,12 @@ PR1 と PR2 は Bluesky の実装が失敗しても単独で意味がある（�
 
 ライブラリ（`@atproto/oauth-client`）:
 
+- 版は **0.8.2**（4.2 で実測。0.8.3 は `minimumReleaseAge` により未採用）
 - `authorize()` / `callback()`（PAR・state・iss 照合・`sub` 再解決）
 - `InternalStateData` に `iss` / `dpopKey` / `verifier` / `appState`
 - `token_endpoint_auth_method: 'none'` を正式にサポート
-- `redirect: 'error'` の該当箇所は 8 章に列挙
+- `redirect: 'error'` の該当箇所と、経路ごとの回避策は 8 章
+- `didResolver` オプションで DID 解決を差し替えられる（8.2 が依存している契約）
 
 先行実装（`github.com/kojira/aozoraquest`。**コードは持ち込まない。参照のみ**）:
 
