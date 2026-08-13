@@ -36,6 +36,9 @@ export async function notifyFollowersOnPublish(event: {
       creator
         ? { actorName: name, actorPath: `/users/${encodeURIComponent(creator.username)}` }
         : undefined,
+      // 表示名がフォールバックに落ちても actor_id は必ず入れる (#380)。
+      // 文言のフォールバックと actor の特定は別物
+      { actorId: event.createdBy },
     );
   } catch (err) {
     // 通知失敗で公開自体を失敗させない
@@ -69,6 +72,8 @@ export async function notifyFollowersOnJoin(
       joiner
         ? { actorName: name, actorPath: `/users/${encodeURIComponent(joiner.username)}` }
         : undefined,
+      // 表示名がフォールバックに落ちても actor_id は必ず入れる (#380)
+      { actorId: userId },
     );
   } catch (err) {
     // 通知失敗で参加自体を失敗させない

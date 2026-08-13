@@ -76,6 +76,7 @@ async function notifyMeet(
         : `「${eventTitle}」`,
       actorPath,
       { actorName: name, actorPath },
+      { actorId: me.id },
     );
   } catch (err) {
     console.error("meet notification failed", err);
@@ -332,7 +333,7 @@ meetScanRoutes.post("/undo", zValidator("json", meetUndoInput), async (c) => {
     try {
       await notificationsRepo.deleteMeetSince(
         targetId,
-        `/users/${encodeURIComponent(me.username)}`,
+        me.id,
         // トークンの発行時刻。それより前に届いた別の機会の通知は消さない
         (exp - MEET_UNDO_TTL_SEC) * 1000,
       );

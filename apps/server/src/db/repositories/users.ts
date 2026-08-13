@@ -569,6 +569,9 @@ export const usersRepo = {
       ["event_photo_comment", "user_id"],
       ["event_comment", "user_id"],
       ["notification", "user_id"],
+      // 通知の主語 (#380)。付け替えないと (9) の user 削除で ON DELETE SET NULL が
+      // 発火し、統合後に勝ち側が退会しても通知が消えなくなる
+      ["notification", "actor_id"],
       ["inquiry", "user_id"],
       ["venue_photo", "user_id"],
       ["event_schedule_item", "speaker_user_id"],
