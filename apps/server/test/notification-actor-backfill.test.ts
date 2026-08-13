@@ -34,10 +34,14 @@ const BACKFILL_SQL = [
 
   // (2) followee_created_event: link 先のイベントの作成者。
   //     完全削除で ghost に付け替わったイベントは除く。
+  //     NOT IN であって != ではない。ghost は完全削除が初めて起きたときに
+  //     遅延生成される (usersRepo.ensureDeletedUser) ので、未生成の DB では
+  //     副問い合わせが NULL になり、!= だと NULL 比較で正常な行まで全部落ちる。
+  //     NOT IN は空集合で TRUE。
   `UPDATE notification SET actor_id = (
     SELECT e.created_by FROM event e
      WHERE notification.link = '/events/' || e.id
-       AND e.created_by != (SELECT id FROM user WHERE discord_id = 'system:deleted-user')
+       AND e.created_by NOT IN (SELECT id FROM user WHERE discord_id = 'system:deleted-user')
   )
  WHERE type = 'followee_created_event' AND actor_id IS NULL;`,
 
@@ -242,8 +246,8 @@ describe("埋め戻し (1) meet", () => {
  * =======================================================*/
 
 describe("埋め戻し (2) followee_created_event", () => {
-  it("link 先のイベントの作成者が埋まる", async () => {
-    // 0070 (2) は ghost の id を副問い合わせで引くため、ghost 行が要る（後述の it 参照）
+  it("ghost 行がある DB で、ghost 以外が作成者のイベントは埋まる", async () => {
+    // 除外の副問い合わせが1行返す状態。ghost が居ても普通の作成者は落ちない
     await makeGhostUser();
     const follower = await makeUser();
     const creator = await makeUser();
@@ -275,10 +279,11 @@ describe("埋め戻し (2) followee_created_event", () => {
     expect(await actorOf(n)).toBeNull();
   });
 
-  it("ghost 行がまだ無い DB では1件も埋まらない（0070 (2) の弱点を固定する）", async () => {
+  it("ghost 行がまだ無い DB でも作成者が埋まる", async () => {
     // ghost は完全削除が1回でも起きたときに初めて作られる (usersRepo.ensureDeletedUser)。
-    // 未作成だと副問い合わせが NULL になり、`created_by != NULL` が NULL に評価されて
-    // 正常な行まで落ちる。**0070 を直したらこのテストも直すこと。**
+    // 未作成の DB では除外の副問い合わせが0行を返す。
+    // **0070 (2) が `NOT IN` であることを守るテスト。`!=` に戻すとここが落ちる**
+    // （`created_by != NULL` が NULL に評価され、正常な行まで1件も埋まらなくなる）。
     const follower = await makeUser();
     const creator = await makeUser();
     const eventId = await makeEvent(creator);
@@ -290,7 +295,7 @@ describe("埋め戻し (2) followee_created_event", () => {
 
     await runBackfill();
 
-    expect(await actorOf(n)).toBeNull();
+    expect(await actorOf(n)).toBe(creator);
   });
 
   it("link 先のイベントが存在しない行は埋まらない", async () => {

@@ -142,10 +142,17 @@ UPDATE notification SET actor_id = (
 -- (2) followee_created_event: link 先のイベントの作成者。
 --     完全削除で ghost に付け替わったイベントは除く。
 --     ghost を actor にすると、以後 ghost 名義の一括削除が効きうる。
+--
+--     NOT IN であって != ではない。ghost は完全削除が初めて起きたときに
+--     遅延生成される (usersRepo.ensureDeletedUser) ので、まだ一度も完全削除が
+--     走っていない DB では副問い合わせが NULL を返す。!= だと NULL 比較の結果が
+--     NULL になり、正常な行まで含めて1件も埋まらない。NOT IN は空集合で TRUE。
+--     副問い合わせが返すのは 0 行か非 NULL の1行だけなので、
+--     NOT IN に NULL が混じって全体が NULL になる罠は踏まない。
 UPDATE notification SET actor_id = (
     SELECT e.created_by FROM event e
      WHERE notification.link = '/events/' || e.id
-       AND e.created_by != (SELECT id FROM user WHERE discord_id = 'system:deleted-user')
+       AND e.created_by NOT IN (SELECT id FROM user WHERE discord_id = 'system:deleted-user')
   )
  WHERE type = 'followee_created_event' AND actor_id IS NULL;
 
