@@ -158,6 +158,48 @@ describe("KPI の共有部品 (#376)", () => {
     expect(i18next.t("kpi.lowerIsBetter").startsWith(" ")).toBe(true);
   });
 
+  /**
+   * 母数不足の説明もセクションの説明の末尾に足す。**英語はこのキーが先頭の
+   * 空白を持つ**。無いと "…brings together.Rates in this section…" と
+   * 文がくっつく（日本語は句点で繋がるので気づけない）。
+   */
+  it("母数不足の説明は、英語だけ前に空白が入る", async () => {
+    expect(i18next.t("kpi.fewDetail", { list: "x", n: 5 })).not.toMatch(/^ /);
+    await i18next.changeLanguage("en");
+    expect(i18next.t("kpi.fewDetail", { list: "x", n: 5 })).toMatch(/^ /);
+  });
+
+  /**
+   * 実際に足した形。**母数が足りないコミュニティでは5セクション全部に出る**ので、
+   * つなぎ目が壊れると英語表示が丸ごと読みにくくなる。画面と同じ足し方で確かめる。
+   */
+  it("母数不足のとき、セクションの説明と続きの文が1つの空白で繋がる", async () => {
+    const joinedJa =
+      i18next.t("kpi.hostNote") + i18next.t("kpi.fewDetail", { list: "x", n: 5 });
+    // 日本語は句点で繋がる（空白を入れない）
+    expect(joinedJa).toContain("止まりやすくなります。いまはxのため、");
+
+    await i18next.changeLanguage("en");
+    const joined =
+      i18next.t("kpi.hostNote") + i18next.t("kpi.fewDetail", { list: "x", n: 5 });
+    expect(joined).toContain("gets busy. Rates in this section");
+    // くっつきも二重空白も出ない
+    expect(joined).not.toMatch(/[a-z]\.[A-Z]/);
+    expect(joined).not.toContain("  ");
+  });
+
+  /**
+   * 「減ったほうが良い指標」を足した形も同じように確かめる（足す側は4キーある）。
+   */
+  it("減ったほうが良い指標の一文も1つの空白で繋がる", async () => {
+    await i18next.changeLanguage("en");
+    const joined =
+      i18next.t("kpi.hintNoShowRate") + i18next.t("kpi.lowerIsBetter");
+    expect(joined).toContain("reminders go out. This is better when it goes down");
+    expect(joined).not.toMatch(/[a-z]\.[A-Z]/);
+    expect(joined).not.toContain("  ");
+  });
+
   /** 母数不足の並びの区切り。日本語は読点、英語はカンマ＋空白 */
   it("母数の並びの区切りは、英語だけ後ろに空白が入る", async () => {
     expect(i18next.t("kpi.fewSeparator")).toBe("、");
@@ -197,6 +239,60 @@ describe("KPI の共有部品 (#376)", () => {
     expect(i18next.t("kpi.noData")).toBe("データなし");
     await i18next.changeLanguage("en");
     expect(i18next.t("kpi.noData")).toBe("No data");
+  });
+
+  /**
+   * 計算式のヒントは**必ず本文に出る**（母数ゲートと関係なく出る）ので、
+   * 主催者が1人のコミュニティでは差し込みが 1 になる。英語で数のあとに名詞を
+   * 置くと「1 events held ÷ 1 people who hosted」になるため、名詞は数の**前**。
+   *
+   * 単数用のキーを増やす代わりに語順で解いているので、**その語順を機械的に固定する**。
+   * 引っかかったら、名詞を差し込みの前に移すこと（区間名や記号は直後に置いてよい）。
+   */
+  it("英語のヒントは、差し込みの直後に語を置かない", () => {
+    const offenders = Object.entries(translations.en.kpi)
+      .filter(([key]) => key.startsWith("hint"))
+      .flatMap(([key, value]) =>
+        [...value.matchAll(/\{\{\w+\}\}\s+[A-Za-z]/g)].map(
+          (m) => `kpi.${key}: 「${m[0]}」`,
+        ),
+      );
+    expect(offenders).toEqual([]);
+  });
+
+  /** 実際に 1 を入れて、数のあとに複数形が来ないことを見ておく */
+  it("主催者が1人でも英語が「1 people」にならない", async () => {
+    await i18next.changeLanguage("en");
+    expect(i18next.t("kpi.hintAvgEventsPerHost", { a: 1, b: 1 })).toBe(
+      "Events held 1 ÷ people who hosted 1",
+    );
+    expect(i18next.t("kpi.hintRepeatHostRate", { a: 1, b: 1 })).toBe(
+      "Hosted twice or more 1 ÷ people who hosted 1",
+    );
+    expect(i18next.t("kpi.hintNewcomerRate", { a: 1, b: 1 })).toBe(
+      "First-timers 1 ÷ people who took part 1",
+    );
+    expect(i18next.t("kpi.hintRepeatRate", { a: 1, b: 1 })).toBe(
+      "Took part twice or more during the period 1 ÷ people who took part 1",
+    );
+    expect(i18next.t("kpi.hintDormantRate", { a: 1, b: 1 })).toBe(
+      "Did not take part 1 ÷ followers 1.",
+    );
+    expect(
+      i18next.t("kpi.hintTopHostShare", { a: 1, b: 1 }).startsWith(
+        "Events run by the busiest single person 1 ÷ events held 1.",
+      ),
+    ).toBe(true);
+  });
+
+  /** 日本語は元の言い回しのまま（語順を英語に合わせて変えていない） */
+  it("日本語のヒントの言い回しは変わっていない", () => {
+    expect(i18next.t("kpi.hintAvgEventsPerHost", { a: 1, b: 1 })).toBe(
+      "開催 1 件 ÷ 開催した人数 1 人",
+    );
+    expect(i18next.t("kpi.hintDormantRate", { a: 1, b: 1 })).toBe(
+      "未参加 1 人 ÷ フォロー 1 人。",
+    );
   });
 });
 

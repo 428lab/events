@@ -14,9 +14,16 @@
  *   ので、ここでは訳せない（サーバーが出す文言の段階でまとめて扱う）
  *
  * 数の入れ替えは {{n}} を使う（`count` は i18next の複数形の仕組みを起動するため）。
- * 数と一緒に出す名詞は、英語で「1 events」にならないよう**数のあとに名詞を
- * 置かない書き方**にしてある（「Events held: 1 ÷ 3」の形）。例外は横棒グラフの
+ *
+ * **英語のヒント (`hint*`) は、差し込みの直後に語を置かない。** 数のあとに
+ * 名詞を置くと、主催者が1人のコミュニティで「1 people who hosted」と出る。
+ * 名詞は数の**前**に置く（`Events held {{a}} ÷ people who hosted {{b}}`）。
+ * この形は `dictionary.test.ts` が機械的に見張っている。例外は横棒グラフの
  * 単位で、そこだけ単数用のキー (`unitPerson`) を用意して画面が数で選ぶ。
+ *
+ * **文の後ろに足すキーは、英語側が先頭の半角スペースを持つ**
+ * (`lowerIsBetter` / `fewDetail`)。足す側の末尾に空白を置くと編集ツールに
+ * 落とされるため。日本語は句点で繋がるので空白を持たない。
  */
 const ja = {
   /* ---------------- 共有部品 (KpiTiles / KpiNote / InfoTip) ---------------- */
@@ -87,6 +94,8 @@ const ja = {
   fewItem: "{{label}}が {{n}}",
   fewSeparator: "、",
   fewCaution: "{{list}}のため、このセクションの割合は「—」にしています",
+  /** セクションの説明の末尾に足す。**英語は前に半角スペースが入る**
+   *  （`lowerIsBetter` と同じ扱い。足す側の末尾に空白は置かない） */
   fewDetail:
     "いまは{{list}}のため、このセクションの割合は「—」にしています（{{n}} 以上で表示。少ない母数だと1件・1人の増減で割合が大きく動くためです）。件数と平均はそのまま出しています。",
   /** 母数として並べるものの呼び名。タイルのラベルと綴りが同じものは
@@ -171,8 +180,12 @@ const ja = {
 
   /* 他のコミュニティとの重なり */
   overlapTitle: "他のコミュニティとの重なり",
+  /** {{n}} は母数ゲート（`COMMUNITY_KPI_MIN_SAMPLE` = 5）の定数。1 にならないので、
+   *  英語で数のあとに名詞を置いてよい唯一の組（`overlapEmpty` も同じ） */
   overlapNote:
     "期間内にこのコミュニティのイベントに参加した人が、他のどのコミュニティの公開イベントにも参加しているか（時期は問いません・多い順に最大5件）。誰でも見られる公開イベントの参加記録だけを使っています。数え方は分子と分母で少し違い、こちら側（分母）は出席チェックを反映した期間内の参加、相手側（分子）は公開イベントへの確定登録で、出席チェックと時期は問いません。重なっている人が {{n}} 人未満のコミュニティは、メンバー一覧と突き合わせると誰のことか分かってしまうため出していません。何が分かるか: 声をかけやすい連携先、独自の層をどれくらい持てているか。",
+  /** {{n}} は参加した実人数で 1 もありうるが、英語は "out of 1 who took part" と
+   *  数のあとに名詞を置かない形なので単数用のキーは要らない */
   overlapBarsTitle: "重なっている人数（参加者 {{n}} 人中）",
   overlapBarsHint:
     "期間内にこのコミュニティのイベントに参加した人のうち、他のコミュニティの公開イベントにも参加している人数",
@@ -260,7 +273,7 @@ const en: Record<keyof typeof ja, string> = {
   fewCaution:
     "Rates in this section are shown as “—” because the base is small ({{list}})",
   fewDetail:
-    "Rates in this section are shown as “—” because the base is small ({{list}}). They appear once the base reaches {{n}}, because with a small base one more or one fewer moves the rate a lot. Counts and averages are still shown.",
+    " Rates in this section are shown as “—” because the base is small ({{list}}). They appear once the base reaches {{n}}, because with a small base one more or one fewer moves the rate a lot. Counts and averages are still shown.",
   baseDudEvents: "Events with a measurable participant count",
   baseHeldEvents: "Number of events held",
   baseFollowers: "Followers",
@@ -291,7 +304,7 @@ const en: Record<keyof typeof ja, string> = {
 
   labelRepeatRate: "Share who came back",
   hintRepeatRate:
-    "Took part twice or more during the period: {{a}} ÷ {{b}} people who took part",
+    "Took part twice or more during the period {{a}} ÷ people who took part {{b}}",
   ncAllTitle: "People who came back",
   ncAllNote:
     "Over all time there is no way to tell whether someone had taken part before the period (there is no earlier period to compare with), so the split between first-timers and returning people is not shown. To look at new arrivals, switch to {{a}}, {{b}} or {{c}}.",
@@ -302,7 +315,7 @@ const en: Record<keyof typeof ja, string> = {
   ncNote:
     "Splits the people who took part in an event of this community during the period into first-timers and people who had come before. Someone counts as a first-timer when they have no record of taking part in a public event of this community that ended before the start of the period. What this tells you: whether the community runs on regulars alone, and whether there is room for new people.",
   labelNewcomerRate: "Share of first-timers",
-  hintNewcomerRate: "First-timers: {{a}} ÷ {{b}} people who took part",
+  hintNewcomerRate: "First-timers {{a}} ÷ people who took part {{b}}",
   labelNewcomers: "Number of first-timers",
   hintNewcomers: "People who came to an event of this community for the first time",
   labelRegulars: "People who had come before",
@@ -317,17 +330,17 @@ const en: Record<keyof typeof ja, string> = {
     "Distinct people who ran at least one event during the period",
   labelTopHostShare: "Share held by the busiest host",
   hintTopHostShare:
-    "The busiest single person: {{a}} ÷ {{b}} events held. When this is high, co-hosting or taking turns is worth a try. Concentration on one person is better when it goes down, so a fall is shown in green",
+    "Events run by the busiest single person {{a}} ÷ events held {{b}}. When this is high, co-hosting or taking turns is worth a try. Concentration on one person is better when it goes down, so a fall is shown in green",
   labelAvgEventsPerHost: "Events per host",
-  hintAvgEventsPerHost: "{{a}} events held ÷ {{b}} people who hosted",
+  hintAvgEventsPerHost: "Events held {{a}} ÷ people who hosted {{b}}",
   labelRepeatHostRate: "Share who hosted twice or more",
-  hintRepeatHostRate: "Hosted twice or more: {{a}} ÷ {{b}} people who hosted",
+  hintRepeatHostRate: "Hosted twice or more {{a}} ÷ people who hosted {{b}}",
 
   dormantTitle: "How followers are doing",
   dormantNote:
     "A breakdown of the active users who follow this community (its members), split into those who took part in an event held during the period and those who did not. People who only took part in an event without following are not included. Hosting alone does not count as taking part. If places are limited by lottery or first-come-first-served, people who applied but could not get in also land in the second group, so this reads higher than reality. What this tells you: whether the list is growing on its own, and how to reach the people you are not reaching.",
   labelDormantRate: "Share who have not taken part for a while",
-  hintDormantRate: "Did not take part: {{a}} ÷ {{b}} followers.",
+  hintDormantRate: "Did not take part {{a}} ÷ followers {{b}}.",
   labelFollowers: "Number of followers",
   hintFollowers:
     "Active users who follow this community (the member count on the community page also includes event participants, so the two do not match). This is a snapshot of the current number, so no comparison with the previous period is shown",
