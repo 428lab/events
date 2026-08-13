@@ -20,7 +20,7 @@ import { events } from "./messages/events.js";
 import { inquiries, inquiryStatus } from "./messages/inquiries.js";
 import { kpi } from "./messages/kpi.js";
 import { labels } from "./messages/labels.js";
-import { login } from "./messages/login.js";
+import { blueskyError, login } from "./messages/login.js";
 import { meet, meetFailure } from "./messages/meet.js";
 import { nav } from "./messages/nav.js";
 import { notifications } from "./messages/notifications.js";
@@ -58,6 +58,7 @@ export const translations = {
     nav: nav.ja,
     themeName: themeName.ja,
     login: login.ja,
+    blueskyError: blueskyError.ja,
     events: events.ja,
     egg: egg.ja,
     eventDetail: eventDetail.ja,
@@ -93,6 +94,7 @@ export const translations = {
     nav: nav.en,
     themeName: themeName.en,
     login: login.en,
+    blueskyError: blueskyError.en,
     events: events.en,
     egg: egg.en,
     eventDetail: eventDetail.en,

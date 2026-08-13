@@ -283,6 +283,8 @@ api.route("/bgm", bgmRoutes);
  * staging ゲート用の無地HTML。サービス名・環境名などは出さず、
  * 中身を悟られないよう最小限のサインインのみ表示する。
  * Nostr は SPA に入れないと NIP-07 を呼べないため、ここに直接ボタンを置く。
+ * Bluesky (#381) はハンドルが要るので入力欄を1つ添える。**素の form の GET** で
+ * 済むため、ここに JavaScript は増やさない。
  */
 function stagingGateHtml(): string {
   const buttons = PROVIDERS.filter(providerConfigured)
@@ -300,8 +302,10 @@ function stagingGateHtml(): string {
 p{color:#94A3B8}
 .btns{display:flex;flex-direction:column;gap:12px}
 .btn{display:inline-block;background:#334155;color:#E2E8F0;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:600;text-transform:capitalize;border:0;font-size:1rem;font-family:inherit;cursor:pointer}
+.handle{background:#1E293B;color:#E2E8F0;border:1px solid #334155;border-radius:10px;padding:12px;font-size:1rem;font-family:inherit;width:100%;box-sizing:border-box}
 #nostr-err{color:#FCA5A5;font-size:.85rem;margin-top:12px}</style>
-</head><body><div class="card"><div class="btns">${buttons}<button class="btn" id="nostr">nostr でサインイン</button></div><div id="nostr-err"></div></div>
+</head><body><div class="card"><div class="btns">${buttons}<button class="btn" id="nostr">nostr でサインイン</button>
+<form class="btns" method="get" action="/api/auth/bluesky/login"><input class="handle" type="text" name="handle" placeholder="yourname.bsky.social" autocapitalize="none" autocorrect="off" spellcheck="false" required><button class="btn" type="submit">bluesky でサインイン</button></form></div><div id="nostr-err"></div></div>
 <script>
 document.getElementById("nostr").onclick = async () => {
   const err = document.getElementById("nostr-err");

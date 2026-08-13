@@ -14,3 +14,8 @@ APP_BASE_URL=http://localhost:4280
 
 # アプリ運営管理者の Discord ユーザーID（カンマ区切り）
 # ADMIN_DISCORD_IDS=
+
+# Bluesky ログイン (#381) はシークレット不要（public client）。ただしローカルで試すときは
+# ブラウザを http://127.0.0.1:4280 で開くこと。localhost で開くと、認可後に戻ったときに
+# cookie のオリジンが違ってセッションが繋がらない（redirect_uri は RFC 8252 に従って
+# 127.0.0.1 を使う。client_id 側が localhost なのと食い違って見えるがこれで正しい）。

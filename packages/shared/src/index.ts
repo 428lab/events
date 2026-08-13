@@ -35,3 +35,4 @@ export * from "./chatText.js";
 export * from "./audit.js";
 export * from "./abuse.js";
 export * from "./moderation.js";
+export * from "./redirect.js";

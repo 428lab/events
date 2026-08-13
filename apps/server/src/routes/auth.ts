@@ -7,9 +7,8 @@ import { identitiesRepo } from "../db/repositories/identities.js";
 import { deriveHandle } from "../lib/handle.js";
 import {
   AVATAR_SYNC_MIN_INTERVAL_MS,
-  syncAvatarFromSource,
+  syncAvatarInBackground,
 } from "../lib/avatarStore.js";
-import { deferBackground } from "../runtime.js";
 import {
   clearSession,
   currentUser,
@@ -32,23 +31,7 @@ import {
   verifyNostrLogin,
   type NostrEvent,
 } from "../auth/nostr.js";
-
-/** アイコンの取り込み (#312) をレスポンスの外へ逃がす (#313)。
- * 同期で待つと、連携先CDNが遅いときに全ユーザーのログインが取得タイムアウト
- * ぶん（最大5秒）待たされる。取り込みは「次の表示までに終わっていればよい」
- * 性質のものなので waitUntil に載せる。失敗はログだけ残してログインは通す */
-async function syncAvatarInBackground(
-  userId: string,
-  sourceUrl: string | null | undefined,
-  opts: { minIntervalMs?: number } = {},
-): Promise<void> {
-  try {
-    await deferBackground(syncAvatarFromSource(userId, sourceUrl, opts));
-  } catch (e) {
-    // waitUntil を受け付けない ExecutionContext だった場合など
-    console.warn("[avatar] バックグラウンド実行に失敗", e);
-  }
-}
+import { blueskyAuthRoutes } from "./authBluesky.js";
 
 const STATE_COOKIE = "eventer_oauth_state";
 const PKCE_COOKIE = "eventer_oauth_verifier";
@@ -127,7 +110,7 @@ authRoutes.get("/identities", requireAuth, async (c) => {
 authRoutes.delete("/identities/:provider", requireAuth, async (c) => {
   const provider = c.req.param("provider");
   const user = c.get("user");
-  if (!isProvider(provider) && provider !== "nostr") {
+  if (!isProvider(provider) && provider !== "nostr" && provider !== "bluesky") {
     return c.json({ error: "unknown_provider" }, 404);
   }
   if ((await identitiesRepo.countByUser(user.id)) <= 1) {
@@ -205,6 +188,14 @@ authRoutes.post("/nostr/profile", requireAuth, async (c) => {
   });
   return c.json({ ok: true });
 });
+
+/* =========================================================
+ *  Bluesky (AT Protocol OAuth) ログイン・連携 (#381)
+ * =======================================================*/
+
+// **`/:provider/*` より前に登録すること。** Hono は登録順に照合するので、
+// 後ろに置くと /bluesky/login が OAuth 用の :provider に食われて 404 になる
+authRoutes.route("/bluesky", blueskyAuthRoutes);
 
 /** OAuth 開始（provider はパス） */
 authRoutes.get("/:provider/login", async (c) => {

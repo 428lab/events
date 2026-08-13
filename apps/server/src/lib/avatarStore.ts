@@ -1,5 +1,5 @@
 import { AVATAR_IMAGE } from "@eventer/shared";
-import { getBucket } from "../runtime.js";
+import { deferBackground, getBucket } from "../runtime.js";
 import { normalizeImageMime } from "./imageMime.js";
 import { MAX_REDIRECTS, isPrivateHost } from "./urlGuard.js";
 import { usersRepo } from "../db/repositories/users.js";
@@ -281,5 +281,26 @@ export async function syncAvatarFromSource(
     return false;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** アイコンの取り込み (#312) をレスポンスの外へ逃がす (#313)。
+ * 同期で待つと、連携先CDNが遅いときに全ユーザーのログインが取得タイムアウト
+ * ぶん（最大5秒）待たされる。取り込みは「次の表示までに終わっていればよい」
+ * 性質のものなので waitUntil に載せる。失敗はログだけ残してログインは通す。
+ *
+ * **ログイン方法を増やすたびに書き写さないこと。** 元は routes/auth.ts の
+ * 私有関数だったが、Bluesky (#381) が2つ目の呼び手になったのでここへ移した
+ * （取り込みの契約を1か所に保つ）。 */
+export async function syncAvatarInBackground(
+  userId: string,
+  sourceUrl: string | null | undefined,
+  opts: { minIntervalMs?: number } = {},
+): Promise<void> {
+  try {
+    await deferBackground(syncAvatarFromSource(userId, sourceUrl, opts));
+  } catch (e) {
+    // waitUntil を受け付けない ExecutionContext だった場合など
+    console.warn("[avatar] バックグラウンド実行に失敗", e);
   }
 }

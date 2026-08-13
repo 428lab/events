@@ -73,6 +73,7 @@ pnpm dev   # web: vite (127.0.0.1:4280) + API: wrangler dev (:8787、vite が /a
 
 - ローカルの環境変数はリポジトリ直下の `.dev.vars`（gitignore 済）。`ENVIRONMENT=development` にすると開発用ログイン（dev-login）が使える。
 - シークレット（OAuth クレデンシャル・SESSION_SECRET）は `wrangler secret put` で登録し、リポジトリには入れない。
+- Bluesky ログインをローカルで試すときは、**ブラウザを `http://127.0.0.1:4280` で開く**こと（`localhost` で開くと、認可後に戻ったときに cookie のオリジンが違ってセッションが繋がらない）。シークレットの設定は不要です。詳細は `docs/bluesky-login.md` の9章。
 
 ## デプロイ
 
