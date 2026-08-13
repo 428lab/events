@@ -16,6 +16,9 @@ importers:
       '@atproto-labs/handle-resolver':
         specifier: ^0.4.8
         version: 0.4.8
+      '@atproto-labs/identity-resolver':
+        specifier: ^0.4.7
+        version: 0.4.7
       '@atproto/did':
         specifier: ^0.5.4
         version: 0.5.4

@@ -32,6 +32,7 @@ import {
   verifyNostrLogin,
   type NostrEvent,
 } from "../auth/nostr.js";
+import { blueskyAuthRoutes } from "./authBluesky.js";
 
 /** アイコンの取り込み (#312) をレスポンスの外へ逃がす (#313)。
  * 同期で待つと、連携先CDNが遅いときに全ユーザーのログインが取得タイムアウト
@@ -127,7 +128,7 @@ authRoutes.get("/identities", requireAuth, async (c) => {
 authRoutes.delete("/identities/:provider", requireAuth, async (c) => {
   const provider = c.req.param("provider");
   const user = c.get("user");
-  if (!isProvider(provider) && provider !== "nostr") {
+  if (!isProvider(provider) && provider !== "nostr" && provider !== "bluesky") {
     return c.json({ error: "unknown_provider" }, 404);
   }
   if ((await identitiesRepo.countByUser(user.id)) <= 1) {
@@ -205,6 +206,14 @@ authRoutes.post("/nostr/profile", requireAuth, async (c) => {
   });
   return c.json({ ok: true });
 });
+
+/* =========================================================
+ *  Bluesky (AT Protocol OAuth) ログイン・連携 (#381)
+ * =======================================================*/
+
+// **`/:provider/*` より前に登録すること。** Hono は登録順に照合するので、
+// 後ろに置くと /bluesky/login が OAuth 用の :provider に食われて 404 になる
+authRoutes.route("/bluesky", blueskyAuthRoutes);
 
 /** OAuth 開始（provider はパス） */
 authRoutes.get("/:provider/login", async (c) => {

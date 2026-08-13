@@ -31,6 +31,43 @@ interface StoredState {
   appState?: string;
 }
 
+export interface PendingState {
+  /** 認可開始時に渡した appState（tag と戻り先の JSON） */
+  appState: string | null;
+  /** TTL を過ぎているか */
+  expired: boolean;
+}
+
+/**
+ * 行を消さずに `appState` と期限だけ見る。**トークン交換の前**に
+ * ブラウザとの紐付け（cookie の tag）を確かめるために要る。
+ *
+ * 後で確かめると、CSRF や期限切れのために外部と1往復してしまううえ、
+ * ライブラリの `get` は「期限切れ」と「そもそも無い」を同じ `undefined` に
+ * 潰すので応答を分けられない（期限切れは「やり直してください」、
+ * 未知の state はリプレイ・CSRF なので 400）。TTL の知識をルートへ
+ * 漏らさないよう、判定はこのファイルに置く。
+ */
+export async function peekState(
+  state: string,
+  now: number = Date.now(),
+): Promise<PendingState | null> {
+  const row = await blueskyAuthStateRepo.find(state);
+  if (!row) return null;
+  let appState: string | null = null;
+  try {
+    appState = (JSON.parse(row.data) as StoredState).appState ?? null;
+  } catch {
+    // 壊れた行は appState 無しとして扱う（下の tag 照合で弾かれる）
+  }
+  return { appState, expired: row.createdAt < now - BLUESKY_STATE_TTL_MS };
+}
+
+/** 使わずに捨てる（期限切れ・tag 不一致）。秘密鍵を含む行を残さない */
+export async function discardState(state: string): Promise<void> {
+  await blueskyAuthStateRepo.remove(state);
+}
+
 export function createStateStore(now: () => number = Date.now): StateStore {
   return {
     async set(state: string, data: InternalStateData): Promise<void> {
