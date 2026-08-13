@@ -266,6 +266,8 @@ const en: Record<keyof typeof ja, string> = {
   legendSingleTrack: "One track",
   legendSpanning: "Spans several tracks",
 
+  // ここの "idea" はタイムテーブルの「ネタ」。イベントのたまご（`egg.*` の
+  // "egg" #378）とは別物なので、この綴りのまま残す
   unassignedSection: "Unassigned (ideas)",
   unassignedSectionHint:
     "These have no start time and stay hidden from participants. Use “Place it” to move one down to the scheduled list.",

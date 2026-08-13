@@ -198,7 +198,7 @@ const en: Record<keyof typeof ja, string> = {
   criterion_not_found: "Scoring criterion not found.",
   rank_not_found: "Rank not found.",
   special_not_found: "Special award not found.",
-  request_not_found: "Request not found.",
+  request_not_found: "Egg not found.",
   live_set_not_found: "Broadcast set not found.",
   base_not_found: "The item to copy from was not found.",
   invalid_note_id: "That post could not be found.",

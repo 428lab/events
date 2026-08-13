@@ -331,7 +331,7 @@ const en: Record<keyof typeof ja, string> = {
   createSubmit: "Create",
   createError: "Could not create the event. Please check what you entered.",
   linkFailed:
-    "The event was created, but it could not be linked to the idea it came from.",
+    "The event was created, but it could not be linked to the egg it came from.",
   linkSkip: "Go to the event without linking",
   linkRetry: "Try linking again",
 
