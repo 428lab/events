@@ -322,6 +322,7 @@ PAR の1回目は必ず 400 `use_dpop_nonce`（`DPoP-Nonce` ヘッダ付き）�
 | `apps/web/src/lib/providers.ts` | `bluesky` のラベル・色を追加 |
 | `apps/web/src/pages/LoginPage.tsx` | ハンドル入力欄とボタン |
 | `apps/web/src/pages/AccountPage.tsx` | 連携行の追加とエラー文言 |
+| `lib/avatarStore.ts` | `syncAvatarInBackground()` を `routes/auth.ts` から**移す**（振る舞いは変えない）。Bluesky が2つ目の呼び手になるため（5.2） |
 
 ### 5.1 引き取り規則を1か所に保つ
 
@@ -348,6 +349,21 @@ finishIdentityLogin(c, {
 
 これは**振る舞いを変えない抽出**であり、既存の引き取り・退会猶予のテストが回帰の網になる。
 副産物として `routes/auth.ts` は 100 行ほど短くなる。
+
+### 5.2 アイコンは自前で保管し直す（既存に揃える）
+
+既存の OAuth はログインのたびに連携先のアイコンを取り込んで R2 に保管し、
+`avatar_url` を自ドメインの URL へ差し替えている (#312)。連携先で
+アイコンを変えると旧 URL が 404 になるためで、Bluesky の CDN も同じ性質を持つ。
+**外部 URL をそのまま保存すると、同じ機能の中で扱いが割れる。**
+
+その取り込みを逃がす関数 `syncAvatarInBackground()` は `routes/auth.ts` の
+私有関数だったので、**`lib/avatarStore.ts` へ移して両方から呼ぶ**（複製しない）。
+移動は純粋な移動で、既存のアイコンのテストが回帰の網になる。
+
+- **ログイン時**は既存 OAuth と同じく毎回取り込む（退会申請中は取りに行かない）。
+- **連携時**は `avatar_url` が空だったときだけ取り込む。既に設定済みの表示を
+  勝手に書き換えない（11章の「空のときだけ埋める」と同じ規則）。
 
 ---
 

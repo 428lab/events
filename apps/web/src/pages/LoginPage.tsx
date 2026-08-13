@@ -7,6 +7,12 @@ import { useAuthProviders, useDevLogin } from "../api/hooks.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
 import { hasNip07, nostrNip07Login } from "../lib/nostr.js";
 import { safeRedirectPath } from "../lib/safeRedirect.js";
+import {
+  BLUESKY_ERROR_PARAM,
+  blueskyErrorMessage,
+  clearQueryParam,
+} from "../lib/blueskyError.js";
+import { BlueskyHandleForm } from "../components/BlueskyHandleForm.js";
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -16,6 +22,17 @@ export function LoginPage() {
   const [params] = useSearchParams();
   const [nostrBusy, setNostrBusy] = useState(false);
   const [nostrError, setNostrError] = useState<string | null>(null);
+  // Bluesky のログインが途中で失敗すると ?bluesky_error= を付けてここへ戻る (#381)。
+  // 読んだらクエリを消すので、リロードや「戻る」で蒸し返さない
+  const [blueskyError] = useState<string | null>(() => {
+    const q = new URLSearchParams(window.location.search).get(
+      BLUESKY_ERROR_PARAM,
+    );
+    return q ? blueskyErrorMessage(q) : null;
+  });
+  useEffect(() => {
+    if (blueskyError) clearQueryParam(BLUESKY_ERROR_PARAM);
+  }, [blueskyError]);
   const { data: providers } = useAuthProviders();
   // 設定済みプロバイダが取れない場合のフォールバック（Discord）
   const list = providers && providers.length > 0 ? providers : ["discord"];
@@ -110,6 +127,16 @@ export function LoginPage() {
                   {t("login.extensionHint")}
                 </Typography>
               )}
+
+              {/* Bluesky はハンドルが要るので入力欄つき (#381)。
+                  素のフォーム GET でないと外部の許可画面へ飛べない */}
+              {blueskyError && <Alert severity="warning">{blueskyError}</Alert>}
+              <BlueskyHandleForm
+                next={next}
+                submitLabel={t("login.signInWith", {
+                  provider: providerLabel("bluesky"),
+                })}
+              />
             </Stack>
 
             {import.meta.env.DEV && (

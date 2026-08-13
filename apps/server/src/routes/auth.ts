@@ -7,9 +7,8 @@ import { identitiesRepo } from "../db/repositories/identities.js";
 import { deriveHandle } from "../lib/handle.js";
 import {
   AVATAR_SYNC_MIN_INTERVAL_MS,
-  syncAvatarFromSource,
+  syncAvatarInBackground,
 } from "../lib/avatarStore.js";
-import { deferBackground } from "../runtime.js";
 import {
   clearSession,
   currentUser,
@@ -33,23 +32,6 @@ import {
   type NostrEvent,
 } from "../auth/nostr.js";
 import { blueskyAuthRoutes } from "./authBluesky.js";
-
-/** アイコンの取り込み (#312) をレスポンスの外へ逃がす (#313)。
- * 同期で待つと、連携先CDNが遅いときに全ユーザーのログインが取得タイムアウト
- * ぶん（最大5秒）待たされる。取り込みは「次の表示までに終わっていればよい」
- * 性質のものなので waitUntil に載せる。失敗はログだけ残してログインは通す */
-async function syncAvatarInBackground(
-  userId: string,
-  sourceUrl: string | null | undefined,
-  opts: { minIntervalMs?: number } = {},
-): Promise<void> {
-  try {
-    await deferBackground(syncAvatarFromSource(userId, sourceUrl, opts));
-  } catch (e) {
-    // waitUntil を受け付けない ExecutionContext だった場合など
-    console.warn("[avatar] バックグラウンド実行に失敗", e);
-  }
-}
 
 const STATE_COOKIE = "eventer_oauth_state";
 const PKCE_COOKIE = "eventer_oauth_verifier";

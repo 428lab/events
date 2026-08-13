@@ -5,6 +5,7 @@ import type { AppEnv } from "../types.js";
 import { env } from "../env.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { deriveHandle } from "../lib/handle.js";
+import { syncAvatarInBackground } from "../lib/avatarStore.js";
 import { finishIdentityLogin } from "../auth/accountLink.js";
 import { currentUser } from "../auth/session.js";
 import type { BlueskyFlowErrorCode } from "../auth/bluesky/index.js";
@@ -143,8 +144,21 @@ blueskyAuthRoutes.get("/callback", async (c) => {
         login.profile.displayName,
         login.profile.avatarUrl,
       );
+      // 埋めたときだけ自前保管に差し替える (#312)。連携先のURLをそのまま
+      // 残すと、向こうでアイコンを変えた時点で 404 になる。
+      // 既にアイコンがある人の表示は書き換えない（上の fillProfile と同じ規則）
+      if (!before.avatarUrl) {
+        await syncAvatarInBackground(before.id, login.profile.avatarUrl);
+      }
     }
     return c.redirect(`${env.appBaseUrl}/account`);
+  }
+  // ログインのたびにアイコンを取り直して自前保管する (#312)。既存 OAuth の
+  // コールバックと同じ扱い（連携先で変えられた旧URLは 404 になるので、
+  // 「未設定のときだけ補完」では追随できない）。
+  // 退会申請中は表示自体されないので取りに行かない
+  if (!result.pendingDeletion) {
+    await syncAvatarInBackground(result.userId, login.profile.avatarUrl);
   }
   // next は自分で書いた state 行から来るが、戻り先はもう一度確かめる
   // （オープンリダイレクタにしないための門は1つに保つ）
