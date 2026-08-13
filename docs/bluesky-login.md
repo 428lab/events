@@ -552,6 +552,54 @@ workerd が `redirect: 'error'` を受け付けるようになったら、8.1 �
 
 ---
 
+
+### 8.5 `cache: 'no-cache'` — 互換性フラグで通す（実機で判明）
+
+**staging のコールバックが落ちた。** 一次原因:
+
+```
+TypeError: Unsupported cache mode: no-cache
+  at OAuthProtectedResourceMetadataResolver.fetchMetadata
+```
+
+`oauth-protected-resource-metadata-resolver.js` と
+`oauth-authorization-server-metadata-resolver.js` の2つが
+
+```js
+new Request(url, { cache: options?.noCache ? 'no-cache' : undefined, redirect: 'manual' })
+```
+
+を組む。コールバックの `verifyIssuer()` は **`noCache: true` をハードコード**している
+（トークンの `sub` が本当にその発行者のものかを、キャッシュを信じずに検証するため）ので、
+ここで `cache: 'no-cache'` になる。既定の workerd はこれを
+**`new Request()` の構築時点で**拒否する。**`redirect: 'error'` と同じ形の制約**で、
+注入した fetch より手前なのでラッパでは直せない。
+
+`getResourceServerMetadata()` の try/catch が広く、
+`Failed to resolve OAuth server metadata for resource: …` に丸められるため、
+外側のメッセージだけでは原因が分からない。**`cause` を辿ること。**
+
+**なぜログイン開始では起きないか**: `authorize()` は `noCache` を渡さないので
+`cache: undefined` になり、`new Request()` が通る。**開始とコールバックの違いは
+`noCache: true` だけ**（`allowStale` は CachedGetter 内部の判定にしか使われず
+Request に触れない。`signal` は健全で、`AbortSignal.timeout` も
+`throwIfAborted` も workerd にある）。
+
+**対応**: `wrangler.toml` の `compatibility_flags` に **`cache_no_cache_enabled`** を足す。
+ローカル workerd で、フラグを足すだけで `resolveFromIdentity(noCache: true)` が
+成功することを確認済み。我々のコードは `cache` を一切使っていないので影響は無い。
+
+採らなかった案:
+
+- 上流に patch を当てて `'no-cache'` → `'no-store'`（workerd はフラグ無しで受ける）。
+  回避策のファイルが3枚目になり、版が上がるたびに追従が要る
+- 2つのリゾルバの `fetchMetadata` をプロトタイプごと差し替え。
+  `OAuthClient` のコンストラクタ内で組まれるためインスタンス単位で差し込めず、
+  `didResolver` のような「経路ごと外す」きれいな形にならない
+
+**消せる条件**: workerd が既定で `cache: 'no-cache'` を受けるようになったらフラグを外せる。
+判定は `new Request(url, { cache: 'no-cache' })` が投げないことを確かめるだけでよい。
+
 ## 9. dev の扱い
 
 **localhost 例外を使う。**「dev では諦める」は採らない。この機能は外部の認可画面を
