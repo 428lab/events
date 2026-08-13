@@ -1,18 +1,15 @@
 import { Hono } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import type { User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { env } from "../env.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { identitiesRepo } from "../db/repositories/identities.js";
-import { recordAudit } from "../db/repositories/auditLogs.js";
 import { deriveHandle } from "../lib/handle.js";
 import {
   AVATAR_SYNC_MIN_INTERVAL_MS,
-  avatarKey,
   syncAvatarFromSource,
 } from "../lib/avatarStore.js";
-import { deferBackground, getBucket } from "../runtime.js";
+import { deferBackground } from "../runtime.js";
 import {
   clearSession,
   currentUser,
@@ -20,6 +17,7 @@ import {
   pendingDeletionUser,
   requireAuth,
 } from "../auth/session.js";
+import { finishIdentityLogin } from "../auth/accountLink.js";
 import { isAppAdmin } from "../auth/admin.js";
 import {
   PROVIDERS,
@@ -50,52 +48,6 @@ async function syncAvatarInBackground(
     // waitUntil を受け付けない ExecutionContext だった場合など
     console.warn("[avatar] バックグラウンド実行に失敗", e);
   }
-}
-
-/** 連携の引き取り (#238)。相手が「唯一の連携 かつ 利用実績なし」の空アカウント
- * のときだけユーザー行ごと削除して "ok" を返す（identity は FK CASCADE で消える。
- * unlink を挟まない単一文なので、FK違反等で失敗しても相手アカウントは無傷のまま）。
- * 実績のあるアカウントは孤児化させない（誤ログインでできた空アカウントの回収専用） */
-async function takeoverEmptyAccount(
-  existingUserId: string,
-  actor: User,
-  provider: string,
-): Promise<"ok" | "already_linked" | "account_in_use" | "account_deleted"> {
-  // 退会申請中（猶予期間 #250）は引き取りの対象外。復帰したときに
-  // ログイン手段ごとアカウントが消えていた、という事態を防ぐ
-  const target = await usersRepo.findByIdIncludingDeleted(existingUserId);
-  if (!target || target.deletedAt !== null) return "account_deleted";
-  if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
-    return "already_linked";
-  }
-  if (await usersRepo.hasActivity(existingUserId)) {
-    return "account_in_use";
-  }
-  await usersRepo.deleteById(existingUserId);
-  // 自前保管したアイコン (#312) の実体も消す。行が消えるとキーを辿れなくなり、
-  // R2 に孤児が残り続ける（退会の完全削除 purgeDeleted.ts と同じ後始末）
-  try {
-    await getBucket().delete(avatarKey(existingUserId));
-  } catch (e) {
-    console.warn(`[avatar] 引き取り時の削除に失敗 user=${existingUserId}`, e);
-  }
-  // 監査ログ (#248)。相手のユーザー行ごと消す不可逆操作なので記録する
-  await recordAudit({
-    action: "identity_takeover",
-    actor: { id: actor.id, handle: actor.username },
-    target: { id: existingUserId, handle: target.username },
-    detail: { provider },
-  });
-  return "ok";
-}
-
-/** 退会申請中（猶予期間 #250）のアカウントか。
- * ログイン自体は通し（本人確認はプロバイダ側で済んでいる）、復帰画面へ誘導する。
- * ログイン自体を弾くと「同じログイン方法でログインすれば復帰できる」導線が
- * 作れないため、この形にしている */
-async function isPendingDeletion(userId: string): Promise<boolean> {
-  const u = await usersRepo.findByIdIncludingDeleted(userId);
-  return !!u && u.deletedAt !== null;
 }
 
 const STATE_COOKIE = "eventer_oauth_state";
@@ -209,43 +161,21 @@ authRoutes.post("/nostr/login", async (c) => {
   const pubkey = body.event ? await verifyNostrLogin(body.event) : null;
   if (!pubkey) return c.json({ error: "invalid_event" }, 401);
 
-  const current = await currentUser(c);
-  const existingUserId = await identitiesRepo.findUserId("nostr", pubkey);
-
-  if (current) {
-    // ログイン中 → 連携（OAuthコールバックと同じ規則）
-    if (!existingUserId) {
-      await identitiesRepo.link(current.id, "nostr", pubkey, null);
-    } else if (existingUserId !== current.id) {
-      // 別アカウントに連携済み。鍵の所有は署名で証明済み → 空アカウントのみ引き取り (#238)
-      const takeover = await takeoverEmptyAccount(
-        existingUserId,
-        current,
-        "nostr",
-      );
-      if (takeover !== "ok") return c.json({ error: takeover }, 409);
-      await identitiesRepo.link(current.id, "nostr", pubkey, null);
-    }
-    return c.json({ ok: true, linked: true });
-  }
-
-  // 未ログイン: 既存ならログイン、無ければ新規作成
-  let userId = existingUserId;
-  if (!userId) {
-    const u = await usersRepo.createFromProfile("nostr", {
-      providerUserId: pubkey,
+  // 鍵の所有は署名で証明済み。以降の引き取り・ログインの判断は OAuth と共通
+  const result = await finishIdentityLogin(c, {
+    provider: "nostr",
+    providerUserId: pubkey,
+    profile: {
       username: `nostr_${pubkey.slice(0, 8)}`,
       globalName: null,
       avatarUrl: null,
-    });
-    await identitiesRepo.link(u.id, "nostr", pubkey, null);
-    userId = u.id;
-  }
-  // 猶予期間中 (#250) はセッションだけ発行して復帰画面へ誘導する。
-  // このセッションで使えるのは復帰API だけ（currentUser が null を返すため）
-  const pendingDeletion = await isPendingDeletion(userId);
-  await issueSession(c, userId);
-  return c.json({ ok: true, pendingDeletion });
+      email: null,
+    },
+  });
+  // Nostr は XHR 経由なので、失敗は 409 の JSON で返す（OAuth はリダイレクト）
+  if (result.kind === "link_error") return c.json({ error: result.code }, 409);
+  if (result.kind === "linked") return c.json({ ok: true, linked: true });
+  return c.json({ ok: true, pendingDeletion: result.pendingDeletion });
 });
 
 /** Nostr の kind:0（プロフィール）を検証して表示名/アイコンを補完。
@@ -339,72 +269,44 @@ authRoutes.get("/:provider/callback", async (c) => {
     return c.json({ error: "oauth_failed" }, 502);
   }
 
-  const current = await currentUser(c);
-  const existingUserId = await identitiesRepo.findUserId(
+  // 引き取り・ログインの判断は Nostr と共通（auth/accountLink.ts）。
+  // 新規作成時の username は、ハンドル概念のないプロバイダ由来の値を
+  // 許可文字に整形してから渡す (#236)
+  const result = await finishIdentityLogin(c, {
     provider,
-    profile.providerUserId,
-  );
-
-  if (current) {
-    // 連携 or 統合
-    if (!existingUserId) {
-      await identitiesRepo.link(
-        current.id,
-        provider,
-        profile.providerUserId,
-        profile.email,
-      );
-      if (provider === "discord") {
-        await usersRepo.setDiscordId(current.id, profile.providerUserId);
-      }
-    } else if (existingUserId !== current.id) {
-      // 別アカウントに連携済み。アカウントの所有は OAuth で証明済み → 空アカウントのみ引き取り (#238)
-      // （行削除で discord_id の UNIQUE 衝突・管理者判定の残置も同時に消える）
-      const takeover = await takeoverEmptyAccount(
-        existingUserId,
-        current,
-        provider,
-      );
-      if (takeover !== "ok") {
-        return c.redirect(env.appBaseUrl + `/account?link_error=${takeover}`);
-      }
-      await identitiesRepo.link(
-        current.id,
-        provider,
-        profile.providerUserId,
-        profile.email,
-      );
-      if (provider === "discord") {
-        // OAuth で本人確認済みの実IDのみ反映（DB由来の値は使わない）
-        await usersRepo.setDiscordId(current.id, profile.providerUserId);
-      }
-    }
-    return c.redirect(env.appBaseUrl + "/account");
-  }
-
-  // 未ログイン: 既存ならログイン、無ければ新規作成。
-  // ハンドル概念のないプロバイダ由来の username は許可文字に整形する (#236)
-  let userId = existingUserId;
-  if (!userId) {
-    const u = await usersRepo.createFromProfile(provider, {
-      ...profile,
+    providerUserId: profile.providerUserId,
+    profile: {
       username: deriveHandle(profile.username, profile.email),
-    });
-    await identitiesRepo.link(u.id, provider, profile.providerUserId, profile.email);
-    userId = u.id;
+      globalName: profile.globalName,
+      avatarUrl: profile.avatarUrl,
+      email: profile.email,
+    },
+    // Discord だけ、連携時に実IDを user 行へ反映して管理者判定を効かせる。
+    // OAuth で本人確認済みの実IDのみ使う（DB由来の値は使わない）
+    onLinked:
+      provider === "discord"
+        ? (userId) => usersRepo.setDiscordId(userId, profile.providerUserId)
+        : undefined,
+  });
+  // OAuth はブラウザの遷移なので、失敗もリダイレクトで返す（Nostr は 409 JSON）
+  if (result.kind === "link_error") {
+    return c.redirect(env.appBaseUrl + `/account?link_error=${result.code}`);
   }
-  // 猶予期間中 (#250) はセッションだけ発行して復帰画面へ送る。
-  // このセッションで使えるのは復帰API だけ（currentUser が null を返すため）
-  const pendingDeletion = await isPendingDeletion(userId);
-  await issueSession(c, userId);
+  if (result.kind === "linked") return c.redirect(env.appBaseUrl + "/account");
+
   // ログインのたびにアイコンを取り直して自前保管する (#312)。
   // 連携先（Discord など）でアイコンを変えると旧URLが 404 になるため、
   // 「未設定のときだけ補完」では直らない。失敗しても握り潰してログインは通す。
   // 取得元は**今回ログインに使った連携先**（複数連携していても最新のものに揃う）。
   // セッション発行のあとに回すのは、連携先CDNの遅延でログインを待たせないため。
-  // 退会申請中は表示自体されないので取りに行かない
-  if (!pendingDeletion) await syncAvatarInBackground(userId, profile.avatarUrl);
-  return c.redirect(env.appBaseUrl + (pendingDeletion ? "/restore" : "/me"));
+  // 退会申請中は表示自体されないので取りに行かない。
+  // Nostr は kind:0 を別APIで受け取る方式なのでここには無い（共通化しない）
+  if (!result.pendingDeletion) {
+    await syncAvatarInBackground(result.userId, profile.avatarUrl);
+  }
+  return c.redirect(
+    env.appBaseUrl + (result.pendingDeletion ? "/restore" : "/me"),
+  );
 });
 
 /**
