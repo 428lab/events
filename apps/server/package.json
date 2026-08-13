@@ -13,6 +13,12 @@
     "db:migrate:remote": "cd ../.. && wrangler d1 migrations apply eventer --remote"
   },
   "dependencies": {
+    "@atproto-labs/did-resolver": "^0.3.7",
+    "@atproto-labs/handle-resolver": "^0.4.8",
+    "@atproto/did": "^0.5.4",
+    "@atproto/jwk-jose": "^0.2.4",
+    "@atproto/jwk-webcrypto": "^0.3.4",
+    "@atproto/oauth-client": "^0.8.2",
     "@eventer/shared": "workspace:*",
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
