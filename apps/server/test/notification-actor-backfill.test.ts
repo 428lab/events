@@ -1,5 +1,12 @@
 import { env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
+// 0070 の中身をそのまま文字列で読む（Vite の ?raw）。
+// workerd の中では node:fs が使えないので、二重管理の照合はこの形でしか作れない。
+// 型宣言は置いていない。test/ は apps/server/tsconfig.json の include (src) の外で
+// 型検査の対象外のため。将来 test/ を型検査に含めるなら `declare module "*.sql?raw"`
+// を **単体の .d.ts** に置くこと（env.d.ts は import を持つモジュールなので、
+// そこに書いてもパターン宣言は効かない）。
+import migrationSql from "../migrations/0070_notification_actor.sql?raw";
 
 /**
  * 通知の actor 埋め戻しの検証 (#380 / 設計 9.5)。
@@ -7,6 +14,9 @@ import { describe, it, expect } from "vitest";
  * **このファイルの BACKFILL_SQL は `migrations/0070_notification_actor.sql` の
  * 埋め戻し SQL と対になっている。片方だけ直さないこと。**
  * 埋め戻しは一度きりの処理なので、SQL の二重管理を許容している。
+ * ただし注意書きは次に触る人には効かないので、**照合は機械でやる**。
+ * 0070 を ?raw で読み込み、末尾の describe「0070 との同期」で本数と
+ * 文字単位の一致を検証している（設計 9.5）。手作業の目視照合はしない。
  *
  * テスト用 D1 には全マイグレーションが適用済みで、0070 が流れた時点では
  * 1行も無い。そのため「旧形式の行を入れてからマイグレーションを流す」形は
@@ -16,12 +26,14 @@ import { describe, it, expect } from "vitest";
 
 /* =========================================================
  *  0070_notification_actor.sql からの写し
- *  （空白・改行まで含めてそのまま。0070 と文字列比較できるようにするため）
+ *  （空白・改行まで含めてそのまま。0070 と文字列比較しているため）
  * =======================================================*/
 const BACKFILL_SQL = [
-  // (1) meet: link が actor 本人のプロフィールURL。
-  //     event_meet の存在で裏を取る。username は変更できるため、
-  //     「A が手放したハンドルを B が取った」ケースで B に誤って結び付くのを防ぐ。
+  // (1) meet: link が actor 本人のプロフィールURL。event_meet の存在で裏を取る。
+  //     この EXISTS が見ているのは「その人と受信者がどこかで出会っているか」だけで、
+  //     通知のイベントや時刻とは対応していない。したがって「A が手放したハンドルを
+  //     B が取り、B も受信者と出会っている」場合は B に結び付く（設計 4.3）。
+  //     ガードは足さず、流す前に 8.1 の事前確認 SQL で0件を確かめる方針。
   `UPDATE notification SET actor_id = (
     SELECT u.id FROM user u
      WHERE notification.link = '/users/' || REPLACE(u.username, ' ', '%20')
@@ -216,7 +228,7 @@ describe("埋め戻し (1) meet", () => {
     expect(await actorOf(n)).toBe(actor);
   });
 
-  it("ハンドルを手放した A / それを取った B が居ても、B には結び付かない", async () => {
+  it("ハンドルを取った B が受信者と出会っていなければ、B には付かない", async () => {
     // A が receiver と出会って通知が出来る（link は当時の A のハンドル）
     const receiver = await makeUser();
     const a = await makeUser({ username: "handover" });
@@ -233,11 +245,40 @@ describe("埋め戻し (1) meet", () => {
 
     await runBackfill();
 
-    // link だけで照合すると B に付いてしまう。event_meet の EXISTS がそれを防ぐ。
+    // link だけで照合すると B に付いてしまう。EXISTS が効くのはこの形のときだけ。
     // A は改名済みで link と一致しないため、この行は NULL のまま（4.2 の「埋まらない行」）
     const filled = await actorOf(n);
     expect(filled).not.toBe(b);
     expect(filled).toBeNull();
+  });
+
+  it("ハンドルを取った B が受信者とどこかで出会っていれば、B に付く（設計 4.3 の実態）", async () => {
+    // ひとつ上のテストと違うのは「B も receiver と出会っている」ことだけ。
+    // EXISTS は「その人と受信者がどこかで出会っているか」しか見ておらず、
+    // 通知のイベントとも時刻とも対応していないので、これで条件を満たしてしまう。
+    const receiver = await makeUser();
+    const a = await makeUser({ username: "handover2" });
+    const eventA = await makeEvent(a);
+    await makeMeet(eventA, a, receiver);
+    const n = await addNotification(receiver, {
+      type: "meet",
+      title: "A さんと出会いました",
+      link: meetLink("handover2"),
+    });
+    await renameUser(a, "handover2_old");
+    const b = await makeUser({ username: "handover2" });
+    // B と receiver は別のイベントで出会う（通知とは無関係の出会い）
+    const eventB = await makeEvent(b);
+    await makeMeet(eventB, b, receiver);
+
+    await runBackfill();
+
+    // **現状の挙動を固定するテスト。正しい actor は A。**
+    // B が退会すると A の名前が入った receiver の通知が消える（誤削除）。
+    // ガードは足さない判断で、代わりに 8.1 の事前確認 SQL で対象データに
+    // 該当行が無いことを流す前に確かめる。ガードを足すならこのテストも見直すこと
+    expect(await actorOf(n)).toBe(b);
+    expect(await actorOf(n)).not.toBe(a);
   });
 });
 
@@ -527,5 +568,28 @@ describe("埋め戻しの冪等性", () => {
 
     expect(await actorOf(nBroadcast)).toBeNull();
     expect(await actorOf(nAbuse)).toBeNull();
+  });
+});
+
+/* =========================================================
+ *  0070 との同期（設計 9.5「二重管理は照合を実在させる」）
+ *
+ *  BACKFILL_SQL は 0070 の写しなので、片方だけ直すと
+ *  「テストは通るのに本番に流れる SQL は直っていない」状態になる。
+ *  冒頭のコメントで注意を促すだけでは次に触った人で必ず破れるので、
+ *  ここで 0070 の中身と機械的に突き合わせる。
+ * =======================================================*/
+
+describe("0070 との同期", () => {
+  it("BACKFILL_SQL が 0070 の埋め戻し UPDATE と本数・文字とも一致する", () => {
+    // 埋め戻しの UPDATE は3本とも文中に ';' を含まないので、最初の ';' まででよい
+    const inMigration =
+      migrationSql.match(/UPDATE notification SET actor_id[\s\S]*?;/g) ?? [];
+
+    // 本数も見る。0070 側にだけ1本足された/減らされた場合に気づけるようにするため
+    expect(inMigration).toHaveLength(BACKFILL_SQL.length);
+    expect(inMigration).toHaveLength(3);
+    // 正規化しない。空白や改行の違いも差分として落とす
+    expect(inMigration).toEqual([...BACKFILL_SQL]);
   });
 });

@@ -126,9 +126,21 @@ CREATE INDEX idx_notification_actor ON notification(actor_id) WHERE actor_id IS 
 -- デプロイ完了後に同じ3本をもう一度流す（8. の手順）。
 -- ============================================================
 
--- (1) meet: link が actor 本人のプロフィールURL。
---     event_meet の存在で裏を取る。username は変更できるため、
---     「A が手放したハンドルを B が取った」ケースで B に誤って結び付くのを防ぐ。
+-- (1) meet: link が actor 本人のプロフィールURL。event_meet の存在で裏を取る。
+--
+--     この EXISTS が見ているのは「その人と受信者がどこかで出会っているか」だけで、
+--     通知のイベントや時刻とは対応していない。したがって
+--     「A が手放したハンドルを B が取り、B も受信者と出会っている」場合は
+--     B に結び付く。username は変更でき (PUT /api/me/username)、手放した
+--     ハンドルは他人が取得できるので、link は「**いま**そのハンドルを持つ人」
+--     しか指さない。
+--
+--     ガードは足していない。これは一度きりの操作で対象は適用時点のデータだけ
+--     なので、「起きうるか」は推測ではなく**流す前に実データを見れば分かる**。
+--     設計 8.1 の事前確認 SQL で「候補が2人以上になる meet 通知」と
+--     「候補の出会いが通知より後にしか無い meet 通知」を数え、0件であることを
+--     確かめてから流すこと。0件でなければ止めて判断する。
+--     （本設計の作成時点で対象データに対して確認済み・該当0件）
 UPDATE notification SET actor_id = (
     SELECT u.id FROM user u
      WHERE notification.link = '/users/' || REPLACE(u.username, ' ', '%20')
@@ -188,6 +200,40 @@ UPDATE notification SET actor_id = (
 | 同じイベントに同姓同名が居る参加通知 | 1人に定まらない | いまは**両方**消えている（過剰削除） |
 | 作成者が既に完全削除されたイベントの公開通知 | created_by が ghost | いまも消えていない |
 | username に `[A-Za-z0-9_.-]` と空白以外を含む人の meet 通知 | URLエンコードと一致しない | いまも消えていない |
+
+### 4.3 ハンドルの引き継ぎによる誤結び付き（ガードを足さない判断）
+
+埋め戻し (1) は `link`（`/users/{username}`）から actor を逆算する。`username` は
+変更でき (`PUT /api/me/username`)、手放したハンドルは他人が取得できるので、
+`link` は「**いま**そのハンドルを持っている人」しか指さない。
+
+```
+A が 'alice' で R と出会う → 通知 (link='/users/alice')
+A が 'alice2' に改名 → B が空いた 'alice' を取得
+B も R と出会う
+→ 埋め戻すと通知の actor に B が入る（本来は A）
+```
+
+こうなると **B が退会したとき、A の名前が入った R の通知が消える**。本 PR が
+「旧実装の破れ」として直したはずの巻き添え削除が、そのまま残ることになる。
+`event_meet` の存在を見る EXISTS はこれを防げない。見ているのは
+「その人と受信者が**どこかで**出会っているか」だけで、通知との対応を取っていないため。
+
+**それでもガード（候補が1人に定まるときだけ埋める・出会いの時刻で絞る）は足さない。**
+
+理由は、これが**一度きりの操作で、対象は適用時点のデータだけ**だから。
+「起きうるか」は推測して備える話ではなく、**流す前に実データを数えれば分かる**。
+恒久的な契約なら防御を仕込む価値があるが、一度きりの UPDATE のために SQL を
+複雑にし、テストを増やすのは割に合わない。
+
+代わりに **8.1 の事前確認 SQL** で「候補が2人以上になる `meet` 通知」を数え、
+**0件であることを確かめてから流す**。0件なら、この単純な SQL はこのデータに対して
+正しい。0件でなければその時点で止めて判断する。
+
+**本設計の作成時点で、対象データに対してこの確認を実施し、該当0件であることを
+確認済み**（3種別とも候補が一意に定まる）。したがって現状のデータに対しては、
+ガードの有無で結果は変わらない。8.1 は staging と本番で流す直前の**再確認**として
+残してある（確認から適用までの間にデータは動きうるため）。
 
 ---
 
@@ -334,17 +380,123 @@ CI はマイグレーションを流さない（人が実行する）。した�
 影響するのは3種別だけで、その窓の間に誰かがイベントを公開・参加・QR読み取りを
 したときにだけ生まれる。
 
-### 手順
+### 8.1 適用前の確認（0件であることを確かめてから流す）
 
-1. **staging で先に通す。** 適用して埋め戻しの件数を確認する
-   （`SELECT type, COUNT(1) FROM notification WHERE actor_id IS NOT NULL GROUP BY type`）。
-2. 本番: マイグレーションを適用する。
-3. **間を空けずに** デプロイする。
-4. **デプロイ完了後、4.1 の埋め戻し3本をもう一度流す。**
+埋め戻し (1) は `link` からハンドルの現在の持ち主を引く（4.3）。**適用前にこれを
+実行し、0件であることを確かめること。** 0件なら、この単純な SQL はこのデータに
+対して正しい。**0件でなければその時点で止めて相談すること**（該当行を個別に見て、
+埋めるか諦めるかを決める）。
+
+```sql
+-- 埋め戻し (1) で候補が2人以上になる meet 通知（＝ハンドルの引き継ぎで
+-- 誤った actor が入りうる行）。0 件であることを確認する。
+SELECT COUNT(1) AS ambiguous_meet
+  FROM notification n
+ WHERE n.type = 'meet'
+   AND n.actor_id IS NULL
+   AND (SELECT COUNT(1) FROM user u
+         WHERE n.link = '/users/' || REPLACE(u.username, ' ', '%20')
+           AND EXISTS (
+             SELECT 1 FROM event_meet em
+              WHERE em.user_low  = min(u.id, n.user_id)
+                AND em.user_high = max(u.id, n.user_id))) > 1;
+```
+
+**この1本だけでは足りない。** 上の問い合わせは「候補が2人以上」しか見ないので、
+4.3 の**ハンドルの引き継ぎ**（A が改名して B がハンドルを取る）は検知できない。
+そのとき候補は B の1人だけになるためである。引き継ぎを捕まえるには
+**「候補の出会いが通知より後に成立している」**行を数える。**これも0件を確認すること。**
+
+```sql
+-- 候補の出会いが通知より後にしか無い meet 通知
+-- （＝通知の当時その人はまだ受信者と出会っていない＝ハンドルの引き継ぎが疑わしい）。
+-- 0 件であることを確認する。
+SELECT COUNT(1) AS meet_after_notification
+  FROM notification n
+ WHERE n.type = 'meet'
+   AND n.actor_id IS NULL
+   AND EXISTS (
+     SELECT 1 FROM user u
+      WHERE n.link = '/users/' || REPLACE(u.username, ' ', '%20')
+        AND NOT EXISTS (
+          SELECT 1 FROM event_meet em
+           WHERE em.user_low  = min(u.id, n.user_id)
+             AND em.user_high = max(u.id, n.user_id)
+             AND em.created_at <= n.created_at));
+```
+
+0件でなかったときに中身を見る用:
+
+```sql
+SELECT n.id, n.link, n.created_at
+  FROM notification n
+ WHERE n.type = 'meet'
+   AND n.actor_id IS NULL
+   AND ((SELECT COUNT(1) FROM user u
+          WHERE n.link = '/users/' || REPLACE(u.username, ' ', '%20')
+            AND EXISTS (
+              SELECT 1 FROM event_meet em
+               WHERE em.user_low  = min(u.id, n.user_id)
+                 AND em.user_high = max(u.id, n.user_id))) > 1
+     OR EXISTS (
+          SELECT 1 FROM user u
+           WHERE n.link = '/users/' || REPLACE(u.username, ' ', '%20')
+             AND NOT EXISTS (
+               SELECT 1 FROM event_meet em
+                WHERE em.user_low  = min(u.id, n.user_id)
+                  AND em.user_high = max(u.id, n.user_id)
+                  AND em.created_at <= n.created_at)));
+```
+
+**この2本でも「B が通知より前にも受信者と出会っていて、あとからハンドルを取った」
+場合は検知できない。** `username` の履歴が無い以上、その行は当時の持ち主を復元
+できず、データを見ても区別が付かない。発生には偶然が2つ重なる必要があり、
+現在の規模では実質起きないと判断している。
+
+### 8.2 手順
+
+1. **staging で先に通す。** 8.1 の事前確認 → マイグレーション適用 → 8.3 の事後確認。
+2. 本番: **8.1 の事前確認を実行し、0件を確認する。**
+3. 本番: マイグレーションを適用する。
+4. **間を空けずに** デプロイする。
+5. **デプロイ完了後、4.1 の埋め戻し3本をもう一度流す。**
    3本には `AND actor_id IS NULL` が付いているので冪等で、既に埋まった行には触れない。
    これで t0〜t1 に生まれた行が回収される。
+6. **5 の直後に、猶予期間中の人の通知を回収する1本を流す。**
 
-**4 を忘れると窓の間の行が永久に埋まらない。** PR の本文と作業手順に必ず書くこと。
+   ```sql
+   DELETE FROM notification
+    WHERE type IN ('meet','followee_created_event','followee_joined_event')
+      AND actor_id IN (SELECT id FROM user WHERE deleted_at IS NOT NULL);
+   ```
+
+   **これが無いと、デプロイ完了から 5 までの間に退会した人の通知が永久に残る。**
+   その時点では `actor_id` が NULL なので新しい `deleteByActor` が当たらず、
+   直後に 5 が `actor_id` を埋めてしまう。さらに完全削除まで進むと
+   `ON DELETE SET NULL` で `actor_id` も消え、以後どの手段でも特定できなくなる。
+   この1本は「マイグレーション適用より**前**に退会申請して猶予期間中の人」の
+   取りこぼしも同時に回収する。
+
+### 8.3 適用後の確認
+
+```sql
+-- 種別ごとに埋まった件数
+SELECT type, COUNT(1) AS filled
+  FROM notification
+ WHERE actor_id IS NOT NULL
+ GROUP BY type;
+
+-- 埋まらなかった行の件数（対象3種別で actor_id が NULL のまま）。
+-- 4.2 の「埋め戻せない行」に相当する。0 である必要はないが、
+-- 桁が想定外に大きければ埋め戻しが空振りしている疑いがある
+SELECT type, COUNT(1) AS unfilled
+  FROM notification
+ WHERE actor_id IS NULL
+   AND type IN ('meet','followee_created_event','followee_joined_event')
+ GROUP BY type;
+```
+
+**5 と 6 を忘れると窓の間の行が永久に埋まらない／消えない。** PR の本文と作業手順に必ず書くこと。
 手作業を避けたい場合は、**次のリリース**で `0071_notification_actor_backfill.sql` として
 同じ3本を入れる（0070 と同じ PR に入れてはいけない。未適用ぶんをまとめて流すので
 t0 に両方走ってしまい意味が無い）。
@@ -361,6 +513,11 @@ t0 に両方走ってしまい意味が無い）。
 `apps/server/test/account-deletion-grace.test.ts` の該当箇所を作り直す。
 いまのテストは生 INSERT で旧形式の行を手で作っているため、
 **「文言を変えても消える」の証拠にならない**。
+
+なお 9.1〜9.4 の置き場所は、**新規ファイル `apps/server/test/notification-actor.test.ts`**
+とした（11. の表を参照）。`account-deletion-grace.test.ts` は着手時点で 907 行あり、
+実経路を通す 9.1〜9.4 を足すと 1100 行を超えて「1ファイル800行」に反するため。
+同ファイルからは旧テスト（生 INSERT 版）の削除だけを行っている。
 
 ### 9.1 通知の文言を変えても消える
 
@@ -393,10 +550,17 @@ A の通知だけ消え B は残る。さらに **A と B の表示名を同じ�
 - 旧形式の行が正しく埋まる
 - 同姓同名が2人居る行は**埋まらない**
 - 別のイベントの同名参加者に誤って結び付かない
-- meet で「ハンドルを手放した A / それを取った B」が居るとき B に付かない
+- meet で「ハンドルを手放した A / それを取った B」が居るとき、
+  **B が受信者と出会っていなければ** B に付かない。
+  逆に **B が受信者とどこかで出会っていれば B に付く**（4.3）。
+  埋め戻し (1) の EXISTS は通知との対応を取っていないので、これが実装の実態。
+  テスト名でこれを「B には結び付かない」と言い切らないこと（嘘になる）
+- ghost 行が無い DB でも `followee_created_event` が埋まる（`NOT IN` の担保）
 
 SQL の二重管理になるが一度きりの処理なので許容する。
-テストのコメントに「0070 と対。片方だけ直さないこと」と明記する。
+ただし**二重管理は照合を実在させる**こと。テスト内でマイグレーションファイルを
+読み込み、写した SQL と文字単位で一致することを検証する（本数も含めて）。
+コメントに「0070 と対。片方だけ直さないこと」と書くだけでは、次に触る人には効かない。
 
 ### 9.6 統合との組み合わせ
 
@@ -439,8 +603,9 @@ SQL の二重管理になるが一度きりの処理なので許容する。
 | `apps/server/src/routes/follows.ts` | 2か所に `{ actorId }` |
 | `apps/server/src/routes/eventMeets.ts` | `notifyMeet` に `{ actorId }`、`deleteMeetSince` の引数 |
 | `apps/server/src/routes/eventStaffInvites.ts` | 2か所に `{ actorId }` |
-| `apps/server/test/account-deletion-grace.test.ts` | 9.1〜9.4 |
-| `apps/server/test/notification-actor-backfill.test.ts` | 新規（9.5） |
+| `apps/server/test/notification-actor.test.ts` | **新規**（9.1〜9.4） |
+| `apps/server/test/account-deletion-grace.test.ts` | 旧テスト（生 INSERT 版）の削除のみ |
+| `apps/server/test/notification-actor-backfill.test.ts` | 新規（9.5・0070 との SQL 照合） |
 | `apps/server/test/account-merge.test.ts` | 9.6 |
 | `apps/server/test/meet-scan.test.ts` | 9.7 |
 
