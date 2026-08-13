@@ -86,7 +86,15 @@ export function createBlueskyDidResolver(
     if (!res.ok) {
       throw new Error(`Failed to resolve ${did}: HTTP ${res.status}`);
     }
-    const mime = res.headers.get("content-type")?.split(";")[0].trim();
+    // 小文字化してから照合する。**上流（did-resolver）もそうしている**ので、
+    // ここだけ厳しくすると `Application/JSON` を返すホストで
+    // 「ライブラリなら通るのにこちらは落ちる」差が出る（設計 8.2 は
+    // 「ライブラリ同等」と約束している）
+    const mime = res.headers
+      .get("content-type")
+      ?.split(";")[0]
+      .trim()
+      .toLowerCase();
     if (!mime || !DID_DOCUMENT_MIME.test(mime)) {
       throw new Error(`Invalid DID document content type: ${mime}`);
     }

@@ -68,7 +68,15 @@ export async function discardState(state: string): Promise<void> {
   await blueskyAuthStateRepo.remove(state);
 }
 
-export function createStateStore(now: () => number = Date.now): StateStore {
+/**
+ * @param onSet 行を書いた直後に呼ぶ。**認可開始が途中で失敗したときに
+ *   その行を消すため**に要る（PAR はこの書き込みの後に走るので、PAR で
+ *   失敗すると秘密鍵入りの行が TTL まで残ってしまう）
+ */
+export function createStateStore(
+  now: () => number = Date.now,
+  onSet?: (state: string) => void,
+): StateStore {
   return {
     async set(state: string, data: InternalStateData): Promise<void> {
       const dpopJwk = data.dpopKey.privateJwk;
@@ -87,6 +95,7 @@ export function createStateStore(now: () => number = Date.now): StateStore {
       };
       const at = now();
       await blueskyAuthStateRepo.insert(state, JSON.stringify(stored), at);
+      onSet?.(state);
       // 掃除は書き込みのついで（auth/nostr.ts と同じ流儀）
       await blueskyAuthStateRepo.deleteOlderThan(at - BLUESKY_STATE_RETENTION_MS);
     },

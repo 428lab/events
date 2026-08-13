@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { safeRedirectPath } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { env } from "../env.js";
 import { usersRepo } from "../db/repositories/users.js";
@@ -168,11 +169,16 @@ blueskyAuthRoutes.get("/callback", async (c) => {
   );
 });
 
-/** 認可後の戻り先。オープンリダイレクタにしないため、自サイト内の絶対パスだけ通す */
-function safeNext(next: string | undefined): string | undefined {
-  if (!next) return undefined;
-  if (!next.startsWith("/") || next.startsWith("//")) return undefined;
-  return next;
+/**
+ * 認可後の戻り先。オープンリダイレクタにしないため、自サイト内のパスだけ通す。
+ *
+ * **判定は画面側と同じ関数（`@eventer/shared` の `safeRedirectPath`）。**
+ * ここに独自の規則を書くと、片方だけ緩い門が2つできる。組み直した値を返すので、
+ * 改行入りの値が Location ヘッダへ素通りして 302 の構築で落ちることもない
+ * （落ちると**セッションは発行済みなのにリダイレクトが返らない**）。
+ */
+export function safeNext(next: string | undefined): string | undefined {
+  return safeRedirectPath(next, env.appBaseUrl) ?? undefined;
 }
 
 function parseAppState(raw: string | null): AppState | null {

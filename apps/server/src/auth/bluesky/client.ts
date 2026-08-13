@@ -136,12 +136,17 @@ function createThrowawaySessionStore(): SessionStore {
  * 余計な PAR 往復の原因になる `dpopNonceCache` はモジュールスコープなので、
  * 同じアイソレート内なら nonce は使い回される。
  */
-export function createBlueskyClient(): OAuthClient {
+export function createBlueskyClient(
+  options: {
+    /** state 行を書いた直後に呼ぶ。認可開始が失敗したときに消すために使う */
+    onStateWritten?: (state: string) => void;
+  } = {},
+): OAuthClient {
   return new OAuthClient({
     clientMetadata: clientMetadata(),
     responseMode: "query",
     runtimeImplementation,
-    stateStore: createStateStore(),
+    stateStore: createStateStore(Date.now, options.onStateWritten),
     sessionStore: createThrowawaySessionStore(),
     dpopNonceCache,
     // 回避策2枚（設計 8）。fetch ラッパはハンドルの .well-known 解決に効き、

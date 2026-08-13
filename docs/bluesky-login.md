@@ -308,9 +308,16 @@ PAR の1回目は必ず 400 `use_dpop_nonce`（`DPoP-Nonce` ヘッダ付き）�
 | `apps/server/src/auth/bluesky/stateStore.ts` | D1 バックの `StateStore`。DPoP 鍵の JWK 変換・TTL・掃除。トークン用の store は**使い捨ての Map** | 110行 |
 | `apps/server/src/auth/bluesky/profile.ts` | 公開 AppView から表示名・アイコンを取得（認証不要） | 50行 |
 | `apps/server/src/auth/bluesky/index.ts` | 外向きの2関数 `startLogin(handle, appState)` / `finishLogin(params)` とエラーコードの正規化 | 120行 |
-| `apps/server/src/routes/authBluesky.ts` | Hono サブアプリ。`GET /client-metadata.json` / `GET /login` / `GET /callback` の**配線だけ** | 130行 |
+| `apps/server/src/routes/authBluesky.ts` | Hono サブアプリ。`GET /client-metadata.json` / `GET /login` / `GET /callback` の**配線だけ**。`auth/bluesky/index.js` は**動的 import**（下記） | 190行 |
 | `apps/server/src/db/repositories/blueskyAuthState.ts` | state 行の CRUD と掃除（生 SQL はここだけ） | 60行 |
 | `apps/server/migrations/00XX_bluesky_oauth_state.sql` | state テーブル | — |
+
+**`auth/bluesky/index.ts` はルートから動的 import で読む**（設計から変えた点）。
+`@atproto/oauth-client` は core-js を含む大きな依存を引くので、静的に繋ぐと
+**Bluesky を使わないリクエストでも評価され、Worker の起動 CPU を無駄に使う**
+（gzip 後 +76.7 KiB、モジュール評価 6ms — 4.2 の S1・S3）。
+そのぶん Bluesky の入口をこのファイル1つに揃え、境界を増やさないこと。
+型だけの import は消えるので静的でよい。
 
 ### 既存への変更（小さいものだけ）
 
@@ -463,6 +470,12 @@ CREATE INDEX idx_bluesky_oauth_state_created ON bluesky_oauth_state(created_at);
   `auth/nostr.ts` の掃除と同じ流儀。**cron は増やさない。**
 - **使ったら消す。** ライブラリは検証の前に `del(state)` を呼ぶ（リプレイ防止）。
   この順序に依存しているので、`del` を握りつぶさない。
+- **認可開始が失敗しても消す。** 行は PAR の**前**に書かれるので、PAR で落ちると
+  秘密鍵を含む行が残る。`startLogin` は書かれた `state` を覚えておき、失敗したら消す。
+- **コールバックで弾いたときも消す**（期限切れ・cookie の tag 不一致）。
+- **それでも残る経路がある。** コールバックに来ないまま放置された行と、
+  `stateStore.get` に到達する前に落ちた行は掃除まで残る＝**最大20分**。
+  マイグレーションのコメントもこの4経路で書いてある（実装と食い違わせない）。
 
 ### 7.3 ブラウザとの紐付け
 
@@ -472,8 +485,15 @@ CREATE INDEX idx_bluesky_oauth_state_created ON bluesky_oauth_state(created_at);
 - 認可開始時に 16 バイトの乱数（`tag`）を作り、`authorize()` の `state` オプション
   （＝ライブラリの `appState`）に `tag` と戻り先を入れて渡す。
 - 同じ `tag` を cookie（httpOnly / SameSite=Lax / `secure` は本番のみ / 10分）に書く。
-- コールバックで `callback()` が返す `state` の `tag` と cookie を突き合わせ、
-  一致しなければ 400。既存の state cookie と同じ役割。
+- コールバックでは、**トークン交換より先に** state 行を覗いて（行は消さない）
+  `appState` の `tag` と cookie を突き合わせる。一致しなければ行を消して 400。
+  既存の state cookie と同じ役割。
+
+**照合を先にするのは実装で設計から変えた点**（当初は `callback()` の後に置いていた）。
+後回しにすると、CSRF や期限切れのために**外部と1往復してしまう**うえ、
+ライブラリの `get` は「期限切れ」と「そもそも無い」を同じ `undefined` に潰すので
+応答を分けられない。覗くだけの `peekState` を state ストア側に置き、
+TTL の知識をルートへ漏らさないようにしている。
 
 ---
 
@@ -571,16 +591,20 @@ workerd が `redirect: 'error'` を受け付けるようになったら、8.1 �
 [認可サーバー] 利用者がログイン・許可
    ▼
 [Worker] GET /api/auth/bluesky/callback?code=...&state=...&iss=...
-         5. client.callback(params)
+         5. state 行を**覗く**（消さない）。無ければ 400
+         6. appState の tag と cookie を突き合わせる
+              ├ 期限切れ      → 行を消して /login?bluesky_error=expired
+              └ tag 不一致    → 行を消して 400
+         7. client.callback(params)   ← ここで初めて外部と話す
               ├ state 行を引いて即削除（リプレイ防止）
               ├ iss を照合
               ├ トークン交換（PKCE verifier + DPoP、client 認証は none）
               └ sub(DID) を再解決 → PDS → 認可サーバーの対応と issuer 一致を確認
-         6. appState の tag と cookie を突き合わせる（違えば 400）
-         7. トークンを捨てる（失敗は無視）
-         8. 公開 API で表示名・アイコンを取得（認証不要）
-         9. finishIdentityLogin(provider="bluesky", providerUserId=DID, ...)
-        10. issueSession → 302 /me（猶予期間中なら /restore）
+         8. トークンを捨てる（失敗は無視）
+         9. 公開 API で表示名・アイコンを取得（認証不要）
+        10. finishIdentityLogin(provider="bluesky", providerUserId=DID, ...)
+        11. アイコンを自前保管に差し替える（5.2）
+        12. issueSession → 302 /me（猶予期間中なら /restore）
 ```
 
 補足:
@@ -592,8 +616,17 @@ workerd が `redirect: 'error'` を受け付けるようになったら、8.1 �
   衝突は既存の `availableUsername()` が連番で解消する。
 - `discord_id` は `createFromProfile` が合成値を入れる（既存の仕組みどおり。
   `ADMIN_DISCORD_IDS` に一致しない＝管理者にならない）。
-- **7 のトークン破棄は「やってみるだけ」**。認可サーバーが revoke に失敗しても
+- **8 のトークン破棄は「やってみるだけ」**。認可サーバーが revoke に失敗しても
   ログインは成功として扱う（我々の手元には何も残っていない）。
+- **cookie の照合（6）をトークン交換（7）より先に置くのは設計から変えた点。**
+  理由は 7.3 に書いた（CSRF や期限切れのために外部と1往復しない）。
+- **戻り先（`next`）は `@eventer/shared` の `safeRedirectPath` に通す。**
+  画面側と同じ関数（規則を2か所に分けない）。`//evil` や `/\evil` を弾き、
+  同一オリジンに解決できたときだけパスを**組み直して**返す。改行入りの値が
+  Location に素通りすると 302 の構築で落ち、**セッションは発行済みなのに
+  リダイレクトが返らない**（＝ログインしたのに未ログイン）ため、ここは形の
+  検査ではなく組み直しでなければならない。
+- **2 には10秒のタイムアウトを付ける**（13.4）。
 
 ---
 
@@ -634,6 +667,14 @@ workerd が `redirect: 'error'` を受け付けるようになったら、8.1 �
 | state が期限切れ・見つからない | `expired` | 「時間が経ちすぎました。もう一度やり直してください」 |
 | その他（交換失敗・検証失敗） | `failed` | 「ログインできませんでした。時間をおいて試してください」 |
 
+**`state` の異常は画面に出さず 400 にする**（設計から変えた点）。当初はすべて
+`bluesky_error` で画面へ返す形だったが、次の2つは性質が違う。
+
+| 事象 | 応答 | 理由 |
+|---|---|---|
+| state 行が無い / 使用済み（リプレイ）/ cookie の tag 不一致 | **400**（`invalid_oauth_state`） | 利用者の操作では起こらない。攻撃か壊れた戻りなので、画面に説明を出さない（既存 OAuth の `invalid_oauth_state` と同じ扱い） |
+| state が**期限切れ**（10分） | `?bluesky_error=expired` でリダイレクト | 認可画面で手間取れば普通に起きる。やり直しの導線が要る |
+
 - 遷移先: 未ログインなら `/login?bluesky_error=...`、ログイン中なら `/account?bluesky_error=...`。
 - **サーバーのログには原因を残す**（段階名と例外）。UI には出さない。
 - 「DID」「PDS」といった内部用語は**画面に出さない**。「Bluesky」「ハンドル」は出してよい。
@@ -665,6 +706,28 @@ workerd が `redirect: 'error'` を受け付けるようになったら、8.1 �
 - ボタン列の下に **入力欄1つと送信ボタン1つの素の form** を足す。
   `<form method="get">` なので **JavaScript は増やさない**。
 - 既存の文言に合わせた表記にする。
+
+### 13.4 `GET /login` だけコスト特性が違う
+
+**この入口は、既存の `/:provider/login` と性質が違う。** 既存はリダイレクトを
+組み立てて返すだけ（外部通信ゼロ・DB 書き込みゼロ）だが、こちらは**未認証のまま**
+
+- 入力されたハンドル由来のホストへ**外部 fetch が3〜5回**出ていき、
+- 解決に成功すると **D1 に state 行が1行書かれる**（PAR の前）。
+
+つまり `?handle=<攻撃者のドメイン>` を連打すると、Worker を踏み台にして
+第三者のホストへ接続させたり、書き込みを増やしたりできる。手当ては次のとおり。
+
+- **タイムアウトを付ける**（`BLUESKY_RESOLVE_TIMEOUT_MS` = 10秒）。ライブラリは
+  この `signal` を識別子の解決にだけ渡すが、**攻撃者が指定したホストへ出ていくのは
+  その段だけ**なので、抑えたい経路は覆える。実測の happy path は 2.1〜2.4 秒。
+- **失敗したら state 行を消す**（7.2）。
+- **回数制限は入れていない。** このリポジトリには未認証の入口に効く回数制限の
+  仕組みが無い（`shared/abuse.ts` はログイン後の行動を運営が目視する仕組みで、
+  `takeOgFetchSlot` などは1リクエスト内の予算）。ここだけのために新しい仕組みを
+  作ると、**同じ用途の仕組みが2つになる**。入れるなら Cloudflare 側の
+  Rate Limiting Rules（`/api/auth/bluesky/login` に IP 単位）か、
+  全体に効く共通の仕組みとして別途設計する。**判断は運用側に委ねる。**
 
 ---
 

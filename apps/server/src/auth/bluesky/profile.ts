@@ -10,6 +10,11 @@
 
 const APPVIEW_BASE = "https://public.api.bsky.app";
 
+/** 取得のタイムアウト。lib/avatarStore.ts と同じ値・同じ流儀。
+ * 「失敗しても続ける」という意図は、**遅延に対しても効かせないと意味がない**
+ * （相手が黙って握ったままだと、ログインの応答がその間ずっと返らない） */
+const FETCH_TIMEOUT_MS = 5000;
+
 export interface BlueskyPublicProfile {
   /** 表示用のハンドル。識別子ではない（識別子は DID） */
   handle: string | null;
@@ -31,10 +36,15 @@ function pick(v: unknown): string | null {
 export async function fetchPublicProfile(
   did: string,
 ): Promise<BlueskyPublicProfile> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
     const url = new URL("/xrpc/app.bsky.actor.getProfile", APPVIEW_BASE);
     url.searchParams.set("actor", did);
-    const res = await fetch(url, { headers: { accept: "application/json" } });
+    const res = await fetch(url, {
+      headers: { accept: "application/json" },
+      signal: ctrl.signal,
+    });
     if (!res.ok) {
       void res.body?.cancel?.().catch(() => {});
       console.warn(`[bluesky] プロフィール取得に失敗 status=${res.status}`);
@@ -56,5 +66,7 @@ export async function fetchPublicProfile(
   } catch (e) {
     console.warn("[bluesky] プロフィール取得に失敗", e);
     return EMPTY;
+  } finally {
+    clearTimeout(timer);
   }
 }
