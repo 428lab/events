@@ -109,16 +109,16 @@ export function StaffChat({ eventId }: { eventId: string }) {
 
   // 部屋・自分の鍵が無ければ作る（先勝ち・冪等。設計 7.1）。
   // 失効から復帰した人（myKey が null で返る）もここで再有効化される。
-  // 失敗したら黙ってループしない: 1回だけ試して、以後はエラー表示に倒す
-  const openTriedRef = useRef(false);
+  // 失敗したらループしない: mutation がエラーのまま止まり、エラー表示に倒す
+  // （POST は成功すれば必ず myKey 付きの payload をキャッシュに書くので、
+  // 成功し続けてこの条件が立ちっぱなしになることはない）
   useEffect(() => {
-    if (!isSuccess || openTriedRef.current) return;
+    if (!isSuccess || open.isPending || open.isError) return;
     if (chat !== null && chat.myKey !== null) return;
-    openTriedRef.current = true;
     open.mutate();
     // open（mutation オブジェクト）は毎レンダーで変わるため依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess, chat]);
+  }, [isSuccess, chat, open.isPending, open.isError]);
 
   // 発言用の署名器（サーバー管理の一時鍵で固定。localStorage には置かない）
   const mySecret = chat?.myKey?.secret ?? null;
