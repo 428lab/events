@@ -44,6 +44,7 @@ import { canViewEvent as canView, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { awardsRepo } from "../db/repositories/awards.js";
+import { eventTodosRepo } from "../db/repositories/eventTodos.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { entriesRepo } from "../db/repositories/entries.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
@@ -487,6 +488,12 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
       content: special.content,
     });
   }
+
+  // 準備の段取り TODO (#393)。題名・補足・依存の辺・並び順だけを持ち越し、
+  // **日付・担当・状態はコピーしない**。開催日時を 0 に戻しているので期限を
+  // 持ち越すと「作った瞬間に全部が遅れになった段取り」ができる（募集締切と
+  // 抽選日時をコピーしないのとまったく同じ理由）。辺の張り替えはリポジトリに閉じる
+  await eventTodosRepo.copyForDuplicate(src.id, created.id, user.id);
 
   // イベント画像（元画像が無ければスキップ）
   await copyEventImage(src.id, created.id);

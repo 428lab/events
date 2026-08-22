@@ -7,6 +7,7 @@
  * 方向の定義を画面側に散らすと、キャンセル率が増えたのに緑になる、のような
  * 誤読を生む修正漏れが必ず起きる。**方向はこのファイルだけが持ち**、
  * 全体KPI・コミュニティKPI の画面はここを参照する。 */
+import { addDays } from "./dateOnly.js";
 
 /** 増減の意味。
  * - up:      増えたら良い（参加体験数・開催数・リピート率・アクティベーション率など）
@@ -255,12 +256,11 @@ export interface KpiSeriesPoint {
   values: Record<string, number | null>;
 }
 
-/** JST の 'YYYY-MM-DD' に日数を足す。時刻を持たない日付だけの計算なので UTC 正午で扱う
- * （夏時間の無い JST でもタイムゾーン変換を挟むと日がずれることがある） */
-export function addDays(day: string, delta: number): string {
-  const t = Date.parse(`${day}T12:00:00Z`);
-  return new Date(t + delta * 86400000).toISOString().slice(0, 10);
-}
+/** JST の 'YYYY-MM-DD' に日数を足す。
+ * 実装は `dateOnly.ts` が1つだけ持つ（#393 で同じ関数が2つ生えかけた）。
+ * ここでの日付が JST の日を指すのは呼び出し側の意味づけで、加減算そのものは
+ * タイムゾーンを持たない。再エクスポートは既存の import 元を変えないため */
+export { addDays };
 
 /** その日を含む週の月曜（JST の 'YYYY-MM-DD'） */
 export function weekStart(day: string): string {
