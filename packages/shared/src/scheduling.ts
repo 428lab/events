@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isDatetimeOrderInvalid } from "./datetimeOrder.js";
 
 export const VOTE_CHOICES = ["yes", "maybe", "no"] as const;
 export type VoteChoice = (typeof VOTE_CHOICES)[number];
@@ -35,7 +36,7 @@ export const addDateOptionInput = z
     startsAt: z.number().int(),
     endsAt: z.number().int(),
   })
-  .refine((v) => v.endsAt >= v.startsAt, {
+  .refine((v) => !isDatetimeOrderInvalid(v.startsAt, v.endsAt), {
     message: "endsAt must be >= startsAt",
     path: ["endsAt"],
   });

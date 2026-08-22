@@ -16,7 +16,12 @@ import {
 import StadiumIcon from "@mui/icons-material/Stadium";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { EVENT_IMAGE, VENUE_TYPES, type VenueType } from "@eventer/shared";
+import {
+  EVENT_IMAGE,
+  VENUE_TYPES,
+  isDatetimeOrderInvalid,
+  type VenueType,
+} from "@eventer/shared";
 import { useCreateEvent } from "../api/hooks.js";
 import { useMyCommunities } from "../api/communityHooks.js";
 import { useEventRequest, useLinkRequestEvent } from "../api/requestHooks.js";
@@ -91,7 +96,15 @@ export function CreateEventPage() {
     setImagePreview(null);
   };
 
-  const canSubmit = title && (scheduling || (startsAt && endsAt));
+  // 終了が開始より前なら入力の時点で警告して送信させない (#399)。
+  // 順序の判定は共有の isDatetimeOrderInvalid（サーバーの守りと同じ契約）
+  const dateOrderError =
+    !scheduling &&
+    Boolean(startsAt && endsAt) &&
+    isDatetimeOrderInvalid(toEpoch(startsAt), toEpoch(endsAt));
+
+  const canSubmit =
+    title && (scheduling || (startsAt && endsAt)) && !dateOrderError;
 
   const submit = () => {
     createEvent.mutate(
@@ -231,6 +244,10 @@ export function CreateEventPage() {
                 type="datetime-local"
                 value={endsAt}
                 onChange={(e) => setEndsAt(e.target.value)}
+                error={dateOrderError}
+                helperText={
+                  dateOrderError ? t("eventForm.endBeforeStart") : undefined
+                }
                 InputLabelProps={{ shrink: true }}
                 fullWidth
               />

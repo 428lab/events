@@ -6,6 +6,7 @@ import {
   VENUE_TYPES,
 } from "./constants.js";
 import { QA_ANONYMITY_MODES } from "./eventQa.js";
+import { isDatetimeOrderInvalid } from "./datetimeOrder.js";
 
 const url = z.string().url();
 const optionalUrl = z.union([url, z.literal("")]).optional().nullable();
@@ -104,7 +105,7 @@ export const createEventInput = z
     /** 会場を探している */
     venueWanted: z.boolean().default(false),
   })
-  .refine((v) => v.endsAt >= v.startsAt, {
+  .refine((v) => !isDatetimeOrderInvalid(v.startsAt, v.endsAt), {
     message: "endsAt must be >= startsAt",
     path: ["endsAt"],
   });

@@ -41,6 +41,8 @@ const ja = {
   scheduleAnonymous: "回答者を匿名にする（人数のみ表示。大人数向け）",
   startsAt: "開始日時",
   endsAt: "終了日時",
+  /** 終了が開始より前のまま送信させない (#399) */
+  endBeforeStart: "終了日時は開始日時より後にしてください。",
   schedulingNotice:
     "このイベントは日程調整中です。イベントページの日程調整で確定するか、ここで日時を直接設定できます（直接設定すると日程調整は終了します）。",
   setDateDirectly: "日時を直接設定する",
@@ -283,6 +285,7 @@ const en: Record<keyof typeof ja, string> = {
     "Hide who answered (show counts only — better for large events)",
   startsAt: "Starts at",
   endsAt: "Ends at",
+  endBeforeStart: "Set the end time after the start time.",
   schedulingNotice:
     "This event is still looking for a date. Settle it from the date poll on the event page, or set the times directly here (doing so ends the poll).",
   setDateDirectly: "Set the times directly",
