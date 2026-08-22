@@ -29,20 +29,10 @@ import {
   sealStaffChatMessage,
   visibleAfterRevocation,
 } from "../lib/staffChatCrypto.js";
+import { appendStaffChatMessage } from "../lib/staffChatBuffer.js";
 
-/** 状態に貯めておくメッセージの上限（EventChat と同じ値。#215 の判断を引き継ぐ） */
-const MESSAGE_BUFFER_MAX = 500;
-/** 実際に描画する件数の上限 */
+/** 実際に描画する件数の上限（EventChat と同じ値。#215 の判断を引き継ぐ） */
 const MESSAGE_DISPLAY_MAX = 200;
-
-/** 受信・送信したメッセージを時刻順に足す。IDで重複排除し、古い方から丸める */
-function appendMessage(prev: NostrEvent[], ev: NostrEvent): NostrEvent[] {
-  if (prev.some((m) => m.id === ev.id)) return prev;
-  const next = [...prev, ev].sort((a, b) => a.created_at - b.created_at);
-  return next.length > MESSAGE_BUFFER_MAX
-    ? next.slice(next.length - MESSAGE_BUFFER_MAX)
-    : next;
-}
 
 /** メッセージ時刻の表示（HH:mm:ss） */
 function formatTime(createdAtSec: number): string {
@@ -134,6 +124,18 @@ export function StaffChat({ eventId }: { eventId: string }) {
   const relaysKey = relays.join(" ");
   const roomId = chat?.roomId ?? null;
 
+  // 受信バッファの捨てる順序に使う許可リスト（staffChatBuffer.ts）。
+  // 購読コールバックは effect 内で閉じるので、ポーリングで更新される
+  // 最新の集合を ref 経由で見せる
+  const allowedPubkeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    allowedPubkeysRef.current = new Set(
+      (chat?.members ?? []).map((m) => m.pubkey),
+    );
+  }, [chat]);
+  const appendToBuffer = (prev: NostrEvent[], ev: NostrEvent) =>
+    appendStaffChatMessage(prev, ev, (pk) => allowedPubkeysRef.current.has(pk));
+
   // 接続・購読。署名器と部屋が決まったら開始し、unmount で切断
   useEffect(() => {
     if (!signer || !roomId || forbidden) return;
@@ -151,7 +153,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
         roomId,
         (ev) => {
           if (disposed) return;
-          setMessages((prev) => appendMessage(prev, ev));
+          setMessages((prev) => appendToBuffer(prev, ev));
         },
         GROUP_CHAT_KIND,
       );
@@ -227,7 +229,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
       }
       setDraft("");
       // リレーからの折返しを待たず即時表示（購読側とはIDで重複排除）
-      setMessages((prev) => appendMessage(prev, ev));
+      setMessages((prev) => appendToBuffer(prev, ev));
     } catch {
       setSendError(t("eventSocial.chatSendFailed"));
     }

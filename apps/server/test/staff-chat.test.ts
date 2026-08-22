@@ -18,9 +18,9 @@ import {
  * 1. **参加者に部屋の存在ごと見えないこと。** roomId・鍵・signer のどれも
  *    staff 以外に返る経路が無く、403 の応答が部屋の有無で変わらない
  * 2. **公開前から使えること。** 下書き（draft）のまま部屋を作り鍵を受け取れる
- * 3. **資格喪失の3経路（降格・参加解除・退会 purge）すべてで鍵が1世代進むこと。**
- *    フックを1つ外すと、その経路のテストが落ちる（「抜けた人が新しい鍵を
- *    取れてしまう」は GET 403 の検査が落とす）
+ * 3. **資格喪失の4経路（降格・参加解除・退会申請・退会 purge）すべてで鍵が
+ *    1世代進むこと。** フックを1つ外すと、その経路のテストが落ちる
+ *    （「抜けた人が新しい鍵を取れてしまう」は GET 403 の検査が落とす）
  *
  * 3表を触る SQL が1か所に閉じていることは `staff-chat-sql-audit.test.ts`、
  * アカウント統合の登録漏れは `merge-user-columns.test.ts` が見張る。
@@ -338,9 +338,55 @@ describe("資格喪失でローテーションが効く (#382 11.5)", () => {
     await assertRotated(eventId, second);
   });
 
-  it("退会 purge で鍵が1世代進む（ルートを通らない経路 #250）", async () => {
+  it("退会申請（soft delete）の時点で鍵が1世代進む（猶予中に読ませない）", async () => {
     const { eventId, second } = await setupTwoStaff();
-    // 退会申請 → 猶予31日経過 → 日次バッチが完全削除
+    // 申請の瞬間から、申請前に配られた鍵では新しい発言を読めなくなること。
+    // purge（31日後）まで回さないと、猶予期間のあいだ外部クライアントから
+    // 読み続けられる（レビュー指摘）。このフックを外すとここが落ちる
+    const del = await SELF.fetch(`${BASE}/api/me`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json", cookie: second.cookie },
+      body: JSON.stringify({ confirm: true }),
+    });
+    expect(del.status).toBe(200);
+    expect(await keyVersions(eventId)).toEqual([1, 2]);
+    expect((await signerRow(eventId, second.userId))!.revoked_at).not.toBeNull();
+  });
+
+  it("申請を取り消して復帰した人は、次の POST で全世代を受け取り直せる", async () => {
+    const { eventId, second } = await setupTwoStaff();
+    const firstKey = (await payload(await getChat(eventId, second.cookie)))
+      .myKey!;
+    await SELF.fetch(`${BASE}/api/me`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json", cookie: second.cookie },
+      body: JSON.stringify({ confirm: true }),
+    });
+    expect(await keyVersions(eventId)).toEqual([1, 2]);
+    // 申請でセッションは全削除されるので、復帰用に新しいセッションを作る
+    // （account-deletion-grace.test.ts と同じ再現方法）
+    const sid = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)",
+    )
+      .bind(sid, second.userId, Date.now() + DAY)
+      .run();
+    const cookie = `eventer_session=${sid}`;
+    const restore = await SELF.fetch(`${BASE}/api/me/restore`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(restore.status).toBe(200);
+    // 失効した signer は GET では配られず、POST で再有効化されて全世代が届く
+    expect((await payload(await getChat(eventId, cookie))).myKey).toBeNull();
+    const back = await payload(await postChat(eventId, cookie));
+    expect(back.myKey).toEqual(firstKey);
+    expect(back.keys.map((k) => k.version)).toEqual([1, 2]);
+  });
+
+  it("退会 purge でも鍵が進む（申請時と合わせて2世代。多重防御 #250）", async () => {
+    const { eventId, second } = await setupTwoStaff();
+    // 退会申請（ここで1回ローテーション）→ 猶予31日経過 → 日次バッチが完全削除
     const del = await SELF.fetch(`${BASE}/api/me`, {
       method: "DELETE",
       headers: { "content-type": "application/json", cookie: second.cookie },
@@ -359,7 +405,8 @@ describe("資格喪失でローテーションが効く (#382 11.5)", () => {
     expect(purge.status).toBe(200);
     expect(((await purge.json()) as { purged: number }).purged).toBe(1);
 
-    expect(await keyVersions(eventId)).toEqual([1, 2]);
+    // 申請時の v2 に加え、purge の多重防御で v3 が積まれる
+    expect(await keyVersions(eventId)).toEqual([1, 2, 3]);
     // signer 行は user 削除の FK CASCADE で消える（表示許可リストからも消える）
     expect(await signerRow(eventId, second.userId)).toBeNull();
   });

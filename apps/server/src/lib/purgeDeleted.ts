@@ -33,7 +33,8 @@ const SUBREQUEST_BUDGET = 40;
  * ＋ collectUserObjects の D1 4（decks / live_set / bgm / event_photo）
  * ＋ プロフィールカードの R2 list 1
  * ＋ deleteAccount の batch 1
- * ＋ deleteAccount 内のスタッフチャット列挙 (#382) 1（部屋があれば +1/部屋）
+ * ＋ deleteAccount 内のスタッフチャット列挙 (#382) 1
+ *   （部屋があれば +1/部屋。実消費は deleteAccount の戻り値で budget に積む）
  * ＋ recordAudit 2（INSERT と保存期間の掃除）
  * ＝ 10。R2 に実体があれば delete でさらに 1 以上増えるので 11 で見積もる。
  * 次の1件がこれ以下の余裕しか無ければ打ち切る */
@@ -129,8 +130,9 @@ export async function purgeDeletedAccounts(
       console.log(
         `[account-purge] user=${userId} handle=${user.username} ghost=${ghost.id} r2Objects=${objectKeys.length}`,
       );
-      budget.spent += 1;
-      await usersRepo.deleteAccount(userId, ghost.id);
+      // deleteAccount は自分の batch(1) に加えて、スタッフチャットの
+      // ローテーション (#382) で消費した数を返す（部屋の数だけ増える）
+      budget.spent += 1 + (await usersRepo.deleteAccount(userId, ghost.id));
       // 監査ログ (#248)。user 行は消えるが FK を張っていないので記録は残る
       budget.spent += 2;
       await recordAudit({

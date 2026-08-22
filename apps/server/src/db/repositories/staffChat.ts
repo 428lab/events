@@ -167,12 +167,13 @@ export const staffChatRepo = {
    * 2. 部屋が存在すれば共通鍵を1世代進める（reason='rotated'）
    * を行う。部屋が無ければどちらの文も0行で、何も起きない（冪等に呼べる）。
    *
-   * 呼び出し箇所は資格を失う3経路すべて（漏れると「抜けた人が新しい発言を
+   * 呼び出し箇所は資格を失う4経路すべて（漏れると「抜けた人が新しい発言を
    * 読める」が残る。test/staff-chat.test.ts がそれぞれの経路を落とす）:
    * - 降格: routes/events.ts のロール変更ハンドラ
    * - 参加解除: routes/events.ts の leaveEvent()（DELETE /join とロール変更→
    *   participant の両方がここを通る）
-   * - 退会 purge: users.ts deleteAccount → onUserPurged
+   * - 退会申請 (soft delete): users.ts requestDeletion → onStaffLostEverywhere
+   * - 退会 purge: users.ts deleteAccount → onStaffLostEverywhere（多重防御）
    *
    * 新 version の採番は INSERT...SELECT MAX(version)+1 で行う。batch は単一
    * トランザクションなので同時実行でも歯抜け・重複にならない。
@@ -199,11 +200,21 @@ export const staffChatRepo = {
     ]);
   },
 
-  /** 退会の完全削除 (#250) の前処理。purge はロール変更・参加解除のルートを
-   * 通らないので、confirmed staff だった各部屋をここで列挙してローテーションする
-   * （signer 行自体は user 削除の FK CASCADE で消える。設計 7.3）。
-   * 部屋が1つも無ければ SELECT 1回だけで終わる */
-  async onUserPurged(userId: string): Promise<void> {
+  /** confirmed staff だった**すべての部屋**をローテーションする。呼ぶのは2箇所:
+   *
+   * - **退会申請**（soft delete #250。users.ts requestDeletion）。申請の時点で
+   *   本人は API を叩けなくなるが、**申請前に受け取った鍵は手元に生きている**ので、
+   *   ここで回さないと猶予期間（30日）のあいだ外部クライアントから新しい発言を
+   *   読み続けられる。復帰（restore）した人はゲートを再び通って全世代を
+   *   受け取り直すので、先に回しても困らない
+   * - **退会の完全削除**（purge。users.ts deleteAccount）。purge はロール変更・
+   *   参加解除のルートを通らないための多重防御（申請時に回っていれば2世代目が
+   *   増えるだけで害は無い）。signer 行自体は user 削除の FK CASCADE で消える
+   *
+   * 部屋が1つも無ければ SELECT 1回だけで終わる。
+   * @returns 消費したサブリクエスト数（列挙 1 ＋ 部屋ごとの batch 1。
+   *          purge の実行予算（lib/purgeDeleted.ts）に積むため返す） */
+  async onStaffLostEverywhere(userId: string): Promise<number> {
     const rooms = await many<{ event_id: string }>(
       `SELECT r.event_id FROM event_group_chat_room r
          JOIN event_member m ON m.event_id = r.event_id AND m.user_id = ?
@@ -213,5 +224,6 @@ export const staffChatRepo = {
     for (const room of rooms) {
       await this.onStaffLost(room.event_id, userId);
     }
+    return 1 + rooms.length;
   },
 };
