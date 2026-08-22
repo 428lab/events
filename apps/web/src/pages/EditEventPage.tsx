@@ -22,6 +22,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   QA_ANONYMITY_MODES,
   VENUE_TYPES,
+  isDatetimeOrderInvalid,
   type QaAnonymity,
   type VenueType,
 } from "@eventer/shared";
@@ -148,6 +149,17 @@ export function EditEventPage() {
   // そもそも入力させない
   const deadlineEditable =
     (!event.scheduling || directDate) && startsAtMs !== null && endsAtMs !== null;
+  // 終了が開始より前なら入力の時点で警告して保存させない (#399)。判定は共有の
+  // isDatetimeOrderInvalid。日程調整をやめて直接確定する保存（scheduling: false
+  // を送る）だけはサーバーが「終了 > 開始」を要求するので、同時刻も不可にする
+  const dateOrderError =
+    startsAtMs !== null &&
+    endsAtMs !== null &&
+    isDatetimeOrderInvalid(startsAtMs, endsAtMs, {
+      requireDuration: event.scheduling && directDate,
+    })
+      ? t("eventForm.endBeforeStart")
+      : "";
   // 開始後まで受け付けたい場合は「締切なし（空欄）」を選ぶ、という整理 (#269)
   const deadlineError =
     deadlineMs !== null && startsAtMs !== null && deadlineMs > startsAtMs
@@ -299,6 +311,8 @@ export function EditEventPage() {
                 type="datetime-local"
                 value={endsAt}
                 onChange={(e) => setEndsAt(e.target.value)}
+                error={Boolean(dateOrderError)}
+                helperText={dateOrderError || undefined}
                 InputLabelProps={{ shrink: true }}
                 fullWidth
               />
@@ -510,7 +524,12 @@ export function EditEventPage() {
             </Button>
             <Button
               variant="contained"
-              disabled={!title || Boolean(deadlineError) || update.isPending}
+              disabled={
+                !title ||
+                Boolean(dateOrderError) ||
+                Boolean(deadlineError) ||
+                update.isPending
+              }
               onClick={save}
             >
               {t("common.save")}
