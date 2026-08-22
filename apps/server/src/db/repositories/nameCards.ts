@@ -8,6 +8,7 @@ import type {
 } from "@eventer/shared";
 import { many } from "../client.js";
 import { communityImageUrl } from "./communities.js";
+import { publicItemWhere } from "./eventSchedule.js";
 
 /** 名札の一括印刷 (#304) 用の読み取り。
  *
@@ -86,6 +87,7 @@ async function gamificationMetrics(
      SELECT si.speaker_user_id, 'spoken', COUNT(DISTINCT q.id)
        FROM event_schedule_item si JOIN qual q ON q.id = si.event_id
        JOIN ids ON ids.id = si.speaker_user_id
+      WHERE ${publicItemWhere("si")}
       GROUP BY si.speaker_user_id`,
     eventId,
     now,
@@ -163,6 +165,7 @@ async function participationMetrics(
        FROM event_schedule_item si JOIN event e ON e.id = si.event_id
        JOIN ids ON ids.id = si.speaker_user_id
       WHERE e.status = 'published' AND e.ends_at > 0 AND e.ends_at < ?
+        AND ${publicItemWhere("si")}
       GROUP BY si.speaker_user_id`,
     eventId,
     now,

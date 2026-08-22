@@ -10,6 +10,7 @@ import {
 import CollectionsBookmarkOutlinedIcon from "@mui/icons-material/CollectionsBookmarkOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import { useTranslation } from "react-i18next";
 import type { ScheduleItem } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
@@ -109,6 +110,24 @@ export function EventMaterials({ eventId }: { eventId: string }) {
                   ) : null}
                 </Box>
                 <Box sx={{ p: 1.25 }}>
+                  {/* 裏方（準備・片付けなど）はサーバーが staff にしか返さない。
+                      届いた側にはそうと分かる印を出す（一覧と同じ文言 #383）。
+                      ここだけ印が無いと、参加者に出ない資料が staff の目には
+                      表の資料と同じ顔で並ぶ */}
+                  {it.visibility === "staff" && (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      icon={<LockOutlinedIcon sx={{ fontSize: 13 }} />}
+                      label={t("schedule.staffOnlyChip")}
+                      sx={{
+                        height: 18,
+                        fontSize: "0.7rem",
+                        mb: 0.5,
+                        mr: 0.5,
+                      }}
+                    />
+                  )}
                   {/* 未割り当て（ネタ出し中）はサーバーが staff にしか返さない。
                       届いた側にはそうと分かる印を出す（一覧と同じ文言 #338） */}
                   {it.placement === "unassigned" && (

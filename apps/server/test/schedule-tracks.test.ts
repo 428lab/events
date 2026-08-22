@@ -356,7 +356,8 @@ describe("トラックの保存と割り当て (#338)", () => {
       ],
     });
     expect(second.tracks).toEqual([
-      { id: trackId, name: "大ホール", sortOrder: 0 },
+      // visibility は #383 で足した列。既存のトラックはすべて公開のまま
+      { id: trackId, name: "大ホール", sortOrder: 0, visibility: "public" },
     ]);
     expect(second.items[0]!.id).toBe(itemId);
     expect(second.items[0]!.trackIds).toEqual([trackId]);

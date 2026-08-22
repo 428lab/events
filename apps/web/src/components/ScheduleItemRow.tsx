@@ -12,11 +12,13 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import type { Row, TrackRow } from "./scheduleEditorModel.js";
 import {
   setCommon,
@@ -33,7 +35,10 @@ export interface MemberOption {
 
 /** タイムテーブル編集の1行（1コマ）。
  * 既存の 所要/担当/開始時刻 はそのままに、下部にトラックの行を足している (#338)。
- * トラックの操作は**すべてタップだけで完結**する（チップ・スイッチ・ボタン）。 */
+ * トラックの操作は**すべてタップだけで完結**する（チップ・スイッチ・ボタン）。
+ *
+ * 裏方 (#383) は表を分けず、**同じ表の中で薄い背景＋鍵の印**にする。
+ * 表のセッションの隣に準備が並ぶこと自体が要件なので、時間軸を分けない。 */
 export function ScheduleItemRow({
   row,
   time,
@@ -80,6 +85,8 @@ export function ScheduleItemRow({
     : row.speakerName;
 
   const unassigned = row.placement === "unassigned";
+  // 未割り当てはもともと参加者に出ないので、そちらでは切り替えを出さない (#383)
+  const staffOnly = row.visibility === "staff";
 
   return (
     <Card
@@ -89,7 +96,14 @@ export function ScheduleItemRow({
       onDragEnter={onDragEnter}
       onDragOver={(e) => e.preventDefault()}
       onDragEnd={onDragEnd}
-      sx={{ p: 1.5, opacity: dragging ? 0.5 : 1 }}
+      sx={{
+        p: 1.5,
+        opacity: dragging ? 0.5 : 1,
+        // 裏方の行 (#383)。同じ表の中に混ざるので、薄く敷いて見分けられるようにする
+        ...(staffOnly && !unassigned
+          ? { bgcolor: (theme) => alpha(theme.palette.text.primary, 0.04) }
+          : {}),
+      }}
     >
       <Stack direction="row" spacing={1} alignItems="flex-start">
         <Box
@@ -256,6 +270,14 @@ export function ScheduleItemRow({
               </>
             ) : (
               <>
+                {staffOnly && (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    icon={<LockOutlinedIcon sx={{ fontSize: 14 }} />}
+                    label={t("schedule.staffOnlyChip")}
+                  />
+                )}
                 {tracks.map((track) => {
                   const on =
                     row.placement === "tracks" &&
@@ -303,6 +325,37 @@ export function ScheduleItemRow({
               </>
             )}
           </Stack>
+
+          {/* 運営だけに見せる (#383)。配置済みの行にだけ出す
+              （未割り当てはもともと参加者に届かないので、切り替える意味がない） */}
+          {!unassigned && (
+            <Box>
+              <Stack direction="row" alignItems="center" spacing={0.25}>
+                <Switch
+                  size="small"
+                  checked={staffOnly}
+                  onChange={(e) =>
+                    update({
+                      visibility: e.target.checked ? "staff" : "public",
+                    })
+                  }
+                  inputProps={{ "aria-label": t("schedule.staffOnlyToggle") }}
+                />
+                <Typography variant="caption">
+                  {t("schedule.staffOnlyToggle")}
+                </Typography>
+              </Stack>
+              {staffOnly && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block" }}
+                >
+                  {t("schedule.staffOnlyHint")}
+                </Typography>
+              )}
+            </Box>
+          )}
         </Stack>
         <Stack spacing={0} sx={{ flexShrink: 0 }}>
           <IconButton

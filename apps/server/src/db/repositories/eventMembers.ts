@@ -12,6 +12,7 @@ import {
   CAPACITY_TOTAL_SQL,
   PARTICIPANT_COUNT_SQL,
 } from "./events.js";
+import { publicItemWhere } from "./eventSchedule.js";
 
 interface MemberRow {
   id: string;
@@ -317,12 +318,16 @@ export const eventMembersRepo = {
       userId,
       now,
     );
-    // 登壇: タイムテーブルの担当にリンクされた終了済み公開イベント数（重複コマは1と数える）
+    // 登壇: タイムテーブルの担当にリンクされた終了済み公開イベント数（重複コマは1と数える）。
+    // **参加者に見せる項目だけを数える** (#394)。未割り当て（ネタ出し中）や
+    // 裏方 (#383) の担当に指名されただけで、公開の数字が増えてはいけない。
+    // 条件は eventSchedule.ts の publicItemWhere 1か所が持つ（5か所に散っていた）
     const spoken = await one<{ v: number }>(
       `SELECT COUNT(DISTINCT e.id) AS v FROM event_schedule_item si
         JOIN event e ON e.id = si.event_id
         WHERE si.speaker_user_id = ? AND e.status = 'published'
-          AND e.ends_at > 0 AND e.ends_at < ?`,
+          AND e.ends_at > 0 AND e.ends_at < ?
+          AND ${publicItemWhere("si")}`,
       userId,
       now,
     );

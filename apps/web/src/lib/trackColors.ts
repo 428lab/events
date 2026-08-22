@@ -8,6 +8,9 @@
  * 色の差はトラックが増えるほど詰まる。5本を超えると隣どうしの区別は
  * ほとんど付かないので、**色は補助・見出しが主** という前提で使うこと。 */
 
+import { publicTracks } from "@eventer/shared";
+import type { ScheduleVisibility } from "@eventer/shared";
+
 interface Hsl {
   h: number;
   s: number;
@@ -69,4 +72,30 @@ export function trackColors(
     out.push(`hsl(${h.toFixed(1)}, ${s.toFixed(1)}%, ${l.toFixed(1)}%)`);
   }
   return out;
+}
+
+/** トラックの並びと同じ長さの色。**スタッフ用の列は色を持たない (`null`)** (#383)。
+ *
+ * 色は**公開トラックの本数だけ**で作る。スタッフ用トラックを本数に混ぜると、
+ * 同じトラックが参加者の画面と運営の画面で別の色になる（スタッフ用トラックは
+ * 参加者には返らないので本数が食い違う）。会場で「青の列」と口頭で伝えている
+ * 運営がそれで壊れるので、**裏方を足しても表の色は動かさない**。
+ *
+ * `null` の列はトラック色を一切使わず、無彩色＋斜線で描く（呼ぶ側の仕事）。
+ * 「どれか1本のトラックの色」と読み違えられないようにするため、
+ * 全トラック共通の帯と同じ描き方に寄せてある。 */
+export function trackColorsForTracks(
+  primary: string,
+  secondary: string,
+  tracks: Array<{ visibility: ScheduleVisibility }>,
+): Array<string | null> {
+  // 「表の列」の判定は @eventer/shared の publicTracks が1か所で持つ（許可リスト）
+  const count = publicTracks(tracks).length;
+  const colors = trackColors(primary, secondary, count);
+  let at = 0;
+  // 配る側も同じ判定で書く。ここだけ拒否リストにすると、将来値が増えたときに
+  // 新しい値の列が色を1本取り、公開トラックの色が1つずつ後ろへずれる
+  return tracks.map((track) =>
+    track.visibility === "public" ? (colors[at++] ?? null) : null,
+  );
 }

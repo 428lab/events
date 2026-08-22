@@ -17,11 +17,13 @@ import {
   TableRow,
   Typography,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import ScheduleIcon from "@mui/icons-material/Schedule";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import ViewWeekOutlinedIcon from "@mui/icons-material/ViewWeekOutlined";
-import { computeScheduleTimes } from "@eventer/shared";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import { computeScheduleTimes, publicTracks } from "@eventer/shared";
 import type { ScheduleItem } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
 import {
@@ -74,10 +76,14 @@ export function EventSchedule({
   // 空のタイムテーブルは staff にだけ編集導線として見せる
   if (items.length === 0 && !isStaff) return null;
 
+  // スタッフ用の列 (#383) は「並んでいる列」ではあるが、**時刻を連鎖させる列には
+  // 入れない**（理由は @eventer/shared の publicTracks に書いてある）。
+  // トラック別に見る導線の本数も同じ数え方でそろえる
+  const shownTracks = publicTracks(tracks);
   const times = computeScheduleTimes(
     items,
     eventStartsAt,
-    tracks.map((track) => track.id),
+    shownTracks.map((track) => track.id),
   );
   const trackName = new Map(tracks.map((track) => [track.id, track.name]));
   // 担当が全行空なら列ごと非表示（モバイルで内容欄を広く使う）
@@ -101,8 +107,10 @@ export function EventSchedule({
           </Typography>
           <Stack direction="row" alignItems="center" spacing={0.5}>
             {/* 並行して走っているのが見える専用画面への導線 (#338)。
-                トラックが2本以上ないと格子にする意味がないので出さない */}
-            {tracks.length >= 2 && !editing && (
+                トラックが2本以上ないと格子にする意味がないので出さない。
+                数えるのは**公開トラックだけ** (#383)。スタッフ用の列を1本
+                足しただけで staff にだけ導線が生えるのは分かりにくい */}
+            {shownTracks.length >= 2 && !editing && (
               <Button
                 component={RouterLink}
                 to={`/events/${eventId}/timetable`}
@@ -175,7 +183,19 @@ export function EventSchedule({
               </TableHead>
               <TableBody>
                 {items.map((it, i) => (
-                  <TableRow key={it.id} sx={{ "&:last-child td": { border: 0 } }}>
+                  <TableRow
+                    key={it.id}
+                    sx={{
+                      "&:last-child td": { border: 0 },
+                      // 裏方の行 (#383) は薄く敷いて、表のコマと見分けられるようにする
+                      ...(it.visibility === "staff"
+                        ? {
+                            bgcolor: (theme) =>
+                              alpha(theme.palette.text.primary, 0.04),
+                          }
+                        : {}),
+                    }}
+                  >
                     <TableCell sx={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
                       <Typography variant="body2" fontWeight={600}>
                         {times[i] !== null ? formatTime(times[i]!) : "--:--"}
@@ -190,7 +210,8 @@ export function EventSchedule({
                       {/* トラックを使っているイベントだけ、どの枠かを添える。
                           全トラック共通の枠は全部に出るので何も出さない。
                           未割り当ては staff にしか届かないので、そうと分かる印を出す (#338) */}
-                      {(it.placement === "unassigned" ||
+                      {(it.visibility === "staff" ||
+                        it.placement === "unassigned" ||
                         (tracks.length > 0 && it.placement === "tracks")) && (
                         <Stack
                           direction="row"
@@ -198,6 +219,17 @@ export function EventSchedule({
                           sx={{ mb: 0.25, flexWrap: "wrap" }}
                           useFlexGap
                         >
+                          {/* 裏方 (#383)。サーバーが staff にしか返さないので、
+                              ここに来ている時点で見てよい人が見ている */}
+                          {it.visibility === "staff" && (
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              icon={<LockOutlinedIcon sx={{ fontSize: 13 }} />}
+                              label={t("schedule.staffOnlyChip")}
+                              sx={{ height: 18, fontSize: "0.7rem" }}
+                            />
+                          )}
                           {it.placement === "unassigned" ? (
                             <Chip
                               size="small"

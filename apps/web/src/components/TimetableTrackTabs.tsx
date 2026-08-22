@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Box, Chip, Stack, Tab, Tabs, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import { useTranslation } from "react-i18next";
 import type { TimetableEntry, TimetableLayout } from "../lib/timetableLayout.js";
 import { entriesForTrack } from "../lib/timetableLayout.js";
@@ -16,7 +17,8 @@ export function TimetableTrackTabs({
   colors,
 }: {
   layout: TimetableLayout;
-  colors: string[];
+  /** `null` はスタッフ用の列 (#383)。色を持たず無彩色＋斜線で描く */
+  colors: Array<string | null>;
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState(0);
@@ -62,14 +64,23 @@ export function TimetableTrackTabs({
               maxWidth: "100%",
             }}
             icon={
-              <Box
-                sx={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "2px",
-                  bgcolor: colors[i] ?? "primary.main",
-                }}
-              />
+              // スタッフ用の列は色を持たない (#383)。公開トラックの色を
+              // 借りると、参加者の画面と色の対応がずれる
+              colors[i] ? (
+                <Box
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "2px",
+                    bgcolor: colors[i]!,
+                  }}
+                />
+              ) : (
+                <LockOutlinedIcon
+                  sx={{ fontSize: 13 }}
+                  titleAccess={t("schedule.staffTrack")}
+                />
+              )
             }
             iconPosition="start"
           />
@@ -139,6 +150,17 @@ function TimetableRow({ entry }: { entry: TimetableEntry }) {
                 fontSize: "0.65rem",
                 bgcolor: (theme) => alpha(theme.palette.text.primary, 0.14),
               }}
+            />
+          )}
+          {/* 裏方 (#383)。サーバーが staff にしか返さないので、ここに来ている
+              時点で見てよい人が見ている。参加者には出ないことを印で伝える */}
+          {entry.staffOnly && (
+            <Chip
+              size="small"
+              variant="outlined"
+              icon={<LockOutlinedIcon sx={{ fontSize: 12 }} />}
+              label={t("schedule.staffOnlyChip")}
+              sx={{ height: 17, fontSize: "0.65rem" }}
             />
           )}
         </Stack>

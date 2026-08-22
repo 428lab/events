@@ -1,5 +1,6 @@
 import type { GamificationStats } from "@eventer/shared";
 import { one } from "../client.js";
+import { publicItemWhere } from "./eventSchedule.js";
 
 /** ゲーミフィケーション (#14)。専用テーブルは持たず、既存データから毎回導出する。
  * 「有効イベント」= 公開済み・終了済み・確定メンバー4人以上。
@@ -43,10 +44,12 @@ export const gamificationRepo = {
          (SELECT COUNT(*) FROM event_member m JOIN qual q ON q.id = m.event_id
            WHERE m.user_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
              AND q.created_by <> m.user_id) AS staffed,
-         -- 登壇: タイムテーブル担当リンク（同一イベント複数コマは1）
+         -- 登壇: タイムテーブル担当リンク（同一イベント複数コマは1）。
+         -- 参加者に見せる項目だけを数える (#394)。条件は publicItemWhere 1か所が持つ
          (SELECT COUNT(DISTINCT q.id) FROM event_schedule_item si
            JOIN qual q ON q.id = si.event_id
-           WHERE si.speaker_user_id = ?) AS spoken,
+           WHERE si.speaker_user_id = ?
+             AND ${publicItemWhere("si")}) AS spoken,
          -- 参加: 確定参加者で出席扱い（未チェック運用は登録=出席）
          (SELECT COUNT(*) FROM event_member m JOIN qual q ON q.id = m.event_id
            WHERE m.user_id = ? AND m.role = 'participant' AND m.status = 'confirmed'

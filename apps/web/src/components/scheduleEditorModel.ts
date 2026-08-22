@@ -4,6 +4,7 @@ import type {
   SaveScheduleItemInput,
   ScheduleItem,
   ScheduleTimeItem,
+  ScheduleVisibility,
 } from "@eventer/shared";
 import { SCHEDULE_DEFAULT_DURATION_MIN } from "@eventer/shared";
 
@@ -11,9 +12,15 @@ import { SCHEDULE_DEFAULT_DURATION_MIN } from "@eventer/shared";
  * 割り当て先は**トラックの ID ではなく編集中のキー**で持つ (#338)。
  * 追加したばかりのトラックはまだ ID が無く（保存時にサーバーが採番する）、
  * ID で持つとその1本だけ割り当てられないため */
-export interface Row extends Omit<SaveScheduleItemInput, "trackIndexes"> {
+export interface Row
+  extends Omit<SaveScheduleItemInput, "trackIndexes" | "visibility"> {
   key: string;
   trackKeys: string[];
+  /** 誰に見せるか (#383)。保存の入力では**省略＝いまの値を保つ**ため任意だが、
+   * 編集画面は必ず値を持つ（開いた時点の値を持ち回り、保存で必ず送る）。
+   * ここを任意にすると、値を落とした行が「保つ」扱いになって
+   * 画面で切り替えたはずの見え方が保存されない */
+  visibility: ScheduleVisibility;
 }
 
 /** 編集中のトラック1本。id が null なら未保存（新規追加） */
@@ -21,6 +28,8 @@ export interface TrackRow {
   key: string;
   id: string | null;
   name: string;
+  /** 誰に見せる列か (#383)。`'staff'` は参加者に返らない運営用の列 */
+  visibility: ScheduleVisibility;
 }
 
 export function newRow(partial?: Partial<Omit<Row, "key">>): Row {
@@ -37,6 +46,9 @@ export function newRow(partial?: Partial<Omit<Row, "key">>): Row {
     materialUrl: "",
     // 既定は全トラック共通。トラックを使っていないイベントでは唯一の配置状態
     placement: "all",
+    // 既定は参加者にも見せる (#383)。既定を裏方にすると、足した行が
+    // 参加者から黙って消える（保存の入力の既定値とそろえてある）
+    visibility: "public",
     trackKeys: [],
     ...partial,
   };
@@ -63,6 +75,7 @@ export function rowFromItem(item: ScheduleItem, tracks: TrackRow[]): Row {
     speakerName: item.speakerName,
     materialUrl: item.materialUrl,
     placement: item.placement,
+    visibility: item.visibility,
     trackKeys: item.trackIds
       .map((id) => keyById.get(id))
       .filter((k): k is string => k !== undefined),
@@ -70,11 +83,17 @@ export function rowFromItem(item: ScheduleItem, tracks: TrackRow[]): Row {
 }
 
 export function trackRowFromTrack(track: EventTrack): TrackRow {
-  return { key: crypto.randomUUID(), id: track.id, name: track.name };
+  return {
+    key: crypto.randomUUID(),
+    id: track.id,
+    name: track.name,
+    visibility: track.visibility,
+  };
 }
 
 export function newTrackRow(name: string): TrackRow {
-  return { key: crypto.randomUUID(), id: null, name };
+  // 足したばかりの列は表の列。運営用にするのはスイッチで切り替える (#383)
+  return { key: crypto.randomUUID(), id: null, name, visibility: "public" };
 }
 
 /** 割り当て先を決め直す。**トラックが空になったら未割り当てに戻す**。
@@ -134,6 +153,9 @@ export function toTimeItems(rows: Row[]): ScheduleTimeItem[] {
     durationMin: r.durationMin,
     startsAt: r.startsAt,
     placement: r.placement,
+    // **必ず渡すこと** (#383)。渡さないと裏方の行がカーソルを進めてしまい、
+    // 編集画面のプレビューの時刻だけが保存後の表示とずれる
+    visibility: r.visibility,
     trackIds: r.trackKeys,
   }));
 }
@@ -149,7 +171,11 @@ export function toSaveInput(
   const indexByKey = new Map(tracks.map((t, i) => [t.key, i]));
   return {
     version,
-    tracks: tracks.map((t) => ({ id: t.id, name: t.name.trim() })),
+    tracks: tracks.map((t) => ({
+      id: t.id,
+      name: t.name.trim(),
+      visibility: t.visibility,
+    })),
     items: rows.map((r) => ({
       id: r.id,
       title: r.title.trim(),
@@ -160,6 +186,7 @@ export function toSaveInput(
       speakerName: r.speakerName,
       materialUrl: r.materialUrl.trim(),
       placement: r.placement,
+      visibility: r.visibility,
       trackIndexes: r.trackKeys
         .map((k) => indexByKey.get(k))
         .filter((i): i is number => i !== undefined),

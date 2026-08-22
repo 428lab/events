@@ -160,15 +160,17 @@ export async function buildEventExtraHtml(
       communityName: community?.name ?? null,
     });
     if (withTimetable) {
-      // 未割り当て（ネタ出し中 #338）は参加者に送らない。
-      // 時刻を持たないうえ、まだ出すと決まっていないセッションなので
-      const items = (await eventScheduleRepo.listByEvent(event.id)).filter(
-        (it) => it.placement !== "unassigned",
-      );
+      // **常に参加者向け** (#383)。未割り当て（ネタ出し中 #338）も裏方も送らない。
+      //
+      // 宛先の役割で中身を変えてはいけない。この HTML は eventId:withTimetable を
+      // キーにしてキャッシュしている（下の cardCache）ので、**先に staff 宛で
+      // 温まったキャッシュが参加者にそのまま配られる**。スタッフ宛のリマインダーに
+      // 裏方を載せたくなったら、キャッシュのキーに役割を入れるところから設計する
+      const items = await eventScheduleRepo.listByEvent(event.id, "public");
       if (items.length > 0) {
         // 日程調整中は開始基準が無いので明示指定の項目以外は「--:--」になる。
         // 時刻の連鎖はトラックごと (#338)
-        const tracks = await eventScheduleRepo.listTracks(event.id);
+        const tracks = await eventScheduleRepo.listTracks(event.id, "public");
         const times = computeScheduleTimes(
           items,
           event.scheduling ? null : event.startsAt,

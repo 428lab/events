@@ -32,8 +32,8 @@ const { EventTimetablePage } = await import("./EventTimetablePage.js");
 const START = new Date("2026-08-11T10:00:00+09:00").getTime();
 
 const TRACKS: EventTrack[] = [
-  { id: "tr-a", name: "A（メインホール）", sortOrder: 0 },
-  { id: "tr-b", name: "B（小ホール）", sortOrder: 1 },
+  { id: "tr-a", name: "A（メインホール）", sortOrder: 0, visibility: "public" },
+  { id: "tr-b", name: "B（小ホール）", sortOrder: 1, visibility: "public" },
 ];
 
 function item(patch: Partial<ScheduleItem> & { id: string }): ScheduleItem {
@@ -50,6 +50,8 @@ function item(patch: Partial<ScheduleItem> & { id: string }): ScheduleItem {
     materialOgImage: "",
     sortOrder: 0,
     placement: "all",
+    // 既存のコマは全部「参加者にも見せる」(マイグレーションの既定値 #383)
+    visibility: "public",
     trackIds: [],
     ...patch,
   };

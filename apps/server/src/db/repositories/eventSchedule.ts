@@ -2,8 +2,10 @@ import type {
   EventTrack,
   SaveScheduleItemInput,
   SaveScheduleTrackInput,
+  ScheduleAudience,
   SchedulePlacement,
   ScheduleItem,
+  ScheduleVisibility,
 } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
 
@@ -20,6 +22,7 @@ interface Row {
   material_og_image: string;
   sort_order: number;
   placement: string;
+  visibility: string;
   u_username: string | null;
   u_global_name: string | null;
   u_avatar_url: string | null;
@@ -29,6 +32,7 @@ interface TrackRow {
   id: string;
   name: string;
   sort_order: number;
+  visibility: string;
 }
 
 /** DB の値を配置状態に読み替える。未知の値は「全トラック共通」に倒す
@@ -36,6 +40,47 @@ interface TrackRow {
 function toPlacement(value: string): SchedulePlacement {
   return value === "unassigned" || value === "tracks" ? value : "all";
 }
+
+/** DB の値を見え方に読み替える (#383)。
+ *
+ * **未知の値は `'staff'`（＝参加者に出さない）に倒す**。`placement` と逆向きなのは、
+ * こちらは間違えたときの被害が非対称だから：表に出るはずの項目が出ないのは
+ * 「運営が気づいて直せる不具合」だが、裏方が参加者に出るのは事故で、
+ * しかも**誰も報告してくれない**（参加者は「そういうものか」と読む）。 */
+function toVisibility(value: string): ScheduleVisibility {
+  return value === "public" ? "public" : "staff";
+}
+
+/** **参加者に見せてよい項目の条件** (#383)。
+ *
+ * 「取ってきたあとで JS の filter で除く」をやめ、この断片を `WHERE` に入れる。
+ * **見せる／見せないの軸を足すのはここだけ**。3本目の軸が要るようになったときも、
+ * 直すのはこの1か所。
+ *
+ * 必ず**許可リスト**（`= 'public'`）で書く。`!= 'staff'`（拒否リスト）で書くと、
+ * 将来値が増えたときに新しい値が参加者へ漏れる。既存の `placement != 'unassigned'` が
+ * 実際にその形で、`placement` に値を足す案を採れなかった理由でもある
+ * （`placement` 側は 0067 の制約が3値に固定しているので、いまはこの形のまま残す）。
+ *
+ * `eventSchedule.ts` の外からも使う。「参加者に見せてよい＝登壇として数えてよい」項目の
+ * 定義が5か所に散っていた (#394) のを、これで1か所にする。 */
+export const publicItemWhere = (alias: string): string =>
+  `${alias}.placement != 'unassigned' AND ${alias}.visibility = 'public'`;
+
+/** **参加者に見せてよいトラックの条件** (#383)。上と同じく許可リストで書く */
+export const publicTrackWhere = (alias: string): string =>
+  `${alias}.visibility = 'public'`;
+
+/** その相手に返してよい項目だけに絞る `AND ...`（staff は絞らない）。
+ * `audience` は**必須引数**なので、新しい呼び出し元は付け忘れるとコンパイルが通らない */
+const itemFilter = (audience: ScheduleAudience, alias: string): string =>
+  audience === "staff" ? "" : ` AND ${publicItemWhere(alias)}`;
+
+/** 同じくトラック用。**SQL の中に三項演算子を直接書かない**のは、
+ * `staff-timeline-sql-audit.test.ts` が SQL の文字列リテラルを機械的に走査するため。
+ * 入れ子のテンプレートリテラルがあると literal の切り出しが壊れる */
+const trackFilter = (audience: ScheduleAudience, alias: string): string =>
+  audience === "staff" ? "" : ` AND ${publicTrackWhere(alias)}`;
 
 function toItem(row: Row, trackIds: string[] = []): ScheduleItem {
   return {
@@ -68,6 +113,9 @@ function toItem(row: Row, trackIds: string[] = []): ScheduleItem {
     materialOgImage: row.material_og_image,
     sortOrder: row.sort_order,
     placement: toPlacement(row.placement),
+    // 誰に見せるか (#383)。placement とは直交する別の軸で、混ぜない。
+    // audience: "public" で取った結果はここが必ず 'public' になる
+    visibility: toVisibility(row.visibility),
     // 対応表は placement が 'tracks' のときだけ意味を持つ。
     // 'all'（全トラック共通）と 'unassigned'（未割り当て）はどちらも空
     trackIds,
@@ -76,7 +124,7 @@ function toItem(row: Row, trackIds: string[] = []): ScheduleItem {
 
 const SELECT = `SELECT s.id, s.event_id, s.title, s.description, s.duration_min,
   s.starts_at, s.speaker_user_id, s.speaker_name, s.material_url,
-  s.material_og_image, s.sort_order, s.placement,
+  s.material_og_image, s.sort_order, s.placement, s.visibility,
   u.username AS u_username, u.global_name AS u_global_name,
   u.avatar_url AS u_avatar_url
   FROM event_schedule_item s LEFT JOIN user u ON u.id = s.speaker_user_id
@@ -85,16 +133,29 @@ const SELECT = `SELECT s.id, s.event_id, s.title, s.description, s.duration_min,
 // （完全削除時も speaker_user_id は SET NULL で枠は残る）
 
 export const eventScheduleRepo = {
-  async listByEvent(eventId: string): Promise<ScheduleItem[]> {
+  /** タイムテーブルの項目一覧。
+   *
+   * **`audience` は必須**（既定値を持たせない #383）。`"public"` なら未割り当てと
+   * 裏方が**そもそも SQL の結果に入らない**。「取ってから除く」形にしないのは、
+   * 除き忘れた経路が黙って参加者へ配ってしまうため（実際にそうなっていた）。 */
+  async listByEvent(
+    eventId: string,
+    audience: ScheduleAudience,
+  ): Promise<ScheduleItem[]> {
     const rows = await many<Row>(
-      `${SELECT} WHERE s.event_id = ? ORDER BY s.sort_order ASC`,
+      `${SELECT} WHERE s.event_id = ?${itemFilter(audience, "s")}
+        ORDER BY s.sort_order ASC`,
       eventId,
     );
+    // 対応表も同じ相手向けに絞る。絞らないと trackIds にスタッフ用トラックの ID が
+    // 混ざり、**トラックの一覧には無い ID を参加者の画面が受け取る**
+    // （描画は壊れないが、スタッフ用トラックが在ること自体が漏れる #383）
     const links = await many<{ item_id: string; track_id: string }>(
       `SELECT it.item_id, it.track_id FROM event_schedule_item_track it
          JOIN event_schedule_item s ON s.id = it.item_id
          JOIN event_track t ON t.id = it.track_id
-        WHERE s.event_id = ? ORDER BY t.sort_order ASC`,
+        WHERE s.event_id = ?${itemFilter(audience, "s")}${trackFilter(audience, "t")}
+        ORDER BY t.sort_order ASC`,
       eventId,
     );
     const byItem = new Map<string, string[]>();
@@ -129,16 +190,23 @@ export const eventScheduleRepo = {
     };
   },
 
-  /** イベントのトラック一覧（並び順） (#338) */
-  async listTracks(eventId: string): Promise<EventTrack[]> {
+  /** イベントのトラック一覧（並び順） (#338)。
+   * `audience` は**必須** (#383)。`"public"` ならスタッフ用の列は入らない */
+  async listTracks(
+    eventId: string,
+    audience: ScheduleAudience,
+  ): Promise<EventTrack[]> {
     const rows = await many<TrackRow>(
-      "SELECT id, name, sort_order FROM event_track WHERE event_id = ? ORDER BY sort_order ASC",
+      `SELECT id, name, sort_order, visibility FROM event_track
+        WHERE event_id = ?${trackFilter(audience, "event_track")}
+        ORDER BY sort_order ASC`,
       eventId,
     );
     return rows.map((r) => ({
       id: r.id,
       name: r.name,
       sortOrder: r.sort_order,
+      visibility: toVisibility(r.visibility),
     }));
   },
 
@@ -169,36 +237,50 @@ export const eventScheduleRepo = {
       material_og_image: string;
       material_og_url: string;
       placement: string;
+      visibility: string;
     }>(
-      "SELECT id, material_url, material_og_image, material_og_url, placement FROM event_schedule_item WHERE event_id = ?",
+      "SELECT id, material_url, material_og_image, material_og_url, placement, visibility FROM event_schedule_item WHERE event_id = ?",
       eventId,
     );
     // トラックの差分。添字 → 反映後のトラック ID（新規は採番済み）
     const trackStmts: Array<{ sql: string; args: unknown[] }> = [];
     const trackIdByIndex: string[] = [];
+    // 添字 → そのトラックがスタッフ用か (#383)。下の 4.2 の正規化で使う
+    const trackIsStaffByIndex: boolean[] = [];
     if (tracks) {
-      const existingTracks = await many<{ id: string }>(
-        "SELECT id FROM event_track WHERE event_id = ?",
+      const existingTracks = await many<{ id: string; visibility: string }>(
+        "SELECT id, visibility FROM event_track WHERE event_id = ?",
         eventId,
       );
-      const trackIds = new Set(existingTracks.map((t) => t.id));
+      const trackVisibility = new Map(
+        existingTracks.map((t) => [t.id, toVisibility(t.visibility)]),
+      );
       const keptTracks = new Set<string>();
       tracks.forEach((t, i) => {
         // 項目と同じく、既存 ID との一致だけを更新扱いにする
-        if (t.id && trackIds.has(t.id) && !keptTracks.has(t.id)) {
-          keptTracks.add(t.id);
-          trackIdByIndex.push(t.id);
+        const isExisting =
+          t.id !== null && trackVisibility.has(t.id) && !keptTracks.has(t.id);
+        // **省略は「いまの値を保つ」** (#383)。`visibility` を送らない古い
+        // クライアントの保存で運営用の列が表の列に戻り、列名が参加者に出るのを防ぐ。
+        // 新規の列は保つ相手がいないので `'public'`（表の列）から始める
+        const visibility =
+          t.visibility ??
+          (isExisting ? (trackVisibility.get(t.id!) ?? "public") : "public");
+        trackIsStaffByIndex.push(visibility === "staff");
+        if (isExisting) {
+          keptTracks.add(t.id!);
+          trackIdByIndex.push(t.id!);
           trackStmts.push({
-            sql: "UPDATE event_track SET name = ?, sort_order = ? WHERE id = ? AND event_id = ?",
-            args: [t.name, i, t.id, eventId],
+            sql: "UPDATE event_track SET name = ?, sort_order = ?, visibility = ? WHERE id = ? AND event_id = ?",
+            args: [t.name, i, visibility, t.id, eventId],
           });
           return;
         }
         const id = crypto.randomUUID();
         trackIdByIndex.push(id);
         trackStmts.push({
-          sql: "INSERT INTO event_track (id, event_id, name, sort_order, created_at) VALUES (?, ?, ?, ?, ?)",
-          args: [id, eventId, t.name, i, now],
+          sql: "INSERT INTO event_track (id, event_id, name, sort_order, created_at, visibility) VALUES (?, ?, ?, ?, ?, ?)",
+          args: [id, eventId, t.name, i, now, visibility],
         });
       });
       // 送られなかった既存トラックは削除。対応表の行は FK の CASCADE で消える。
@@ -221,30 +303,68 @@ export const eventScheduleRepo = {
       }
     }
 
-    /** その項目の配置状態と割り当て先を決める (#338)。
+    /** その項目の配置状態・見え方・割り当て先を決める (#338 / #383)。
      * トラックを知らないクライアントからの保存 (tracks 未指定) は既存値のまま。
      *
      * **割り当て先が空なら未割り当て**。トラックを消して載る先が無くなった場合も、
-     * 編集画面でチップを全部外した場合も、規則はこの1つだけ */
-    const placementOf = (
+     * 編集画面でチップを全部外した場合も、規則はこの1つだけ。
+     *
+     * **見え方は `visibility` を送ってきたときだけ変える** (#383)。
+     * 省略は「いまの値を保つ」。`visibility` を知らない古いクライアントは
+     * このキーを送らないので、**入力済みの裏方が黙って参加者に出る**のを防げる。
+     *
+     * 判定に `tracks` の有無を使ってはいけない。**`tracks` は送るが `visibility` は
+     * 送らない**ビルドが実在する（#338 で tracks が入り、#383 で visibility が入った
+     * 間のビルド）。見分けるのは `visibility` の有無そのもの1本にする。 */
+    const placeOf = (
       it: SaveScheduleItemInput,
-      current: string | undefined,
-    ): { placement: SchedulePlacement; trackIds: string[] } => {
-      if (!tracks) return { placement: toPlacement(current ?? "all"), trackIds: [] };
-      if (it.placement === "unassigned") {
-        return { placement: "unassigned", trackIds: [] };
+      current: { placement: string; visibility: string } | undefined,
+    ): {
+      placement: SchedulePlacement;
+      visibility: ScheduleVisibility;
+      trackIds: string[];
+    } => {
+      // 省略なら既存値、既存が無い（新規）なら 'public'。
+      // 新規は保つ相手がいないので、いまと同じ見え方＝参加者にも見せるから始める
+      const visibility =
+        it.visibility ?? toVisibility(current?.visibility ?? "public");
+      if (!tracks) {
+        return {
+          placement: toPlacement(current?.placement ?? "all"),
+          visibility,
+          trackIds: [],
+        };
       }
-      if (it.placement === "all") return { placement: "all", trackIds: [] };
-      const ids = [
+      if (it.placement === "unassigned") {
+        // 未割り当ては placement だけで参加者から外れる。visibility は触らない
+        // （配置し直したときに元の見え方へ戻れるよう、運営の入力を捨てない）
+        return { placement: "unassigned", visibility, trackIds: [] };
+      }
+      if (it.placement === "all") {
+        // 全トラック共通の裏方（全体の設営など）は正しい組み合わせ。そのまま通す
+        return { placement: "all", visibility, trackIds: [] };
+      }
+      const picked = [
         ...new Set(
-          it.trackIndexes
-            .map((n) => trackIdByIndex[n])
-            .filter((id): id is string => id !== undefined),
+          it.trackIndexes.filter((n) => trackIdByIndex[n] !== undefined),
         ),
       ];
-      return ids.length > 0
-        ? { placement: "tracks", trackIds: ids }
-        : { placement: "unassigned", trackIds: [] };
+      if (picked.length === 0) {
+        return { placement: "unassigned", visibility, trackIds: [] };
+      }
+      // 4.2 規則1: **スタッフ用トラックにしか載っていない項目は裏方に格上げする**。
+      // 参加者に見せると決まっている項目が、参加者に見えない列にだけ置かれている
+      // 状態は意味を持たない。落とす先を「消す」ではなく「格上げ」にするのは、
+      // 0067 が未割り当てへ落としたのと同じで**運営の入力を捨てない**ため。
+      // 逆（裏方の項目が公開トラックに載る）は要件2そのものなので正さない
+      const onlyStaffTracks = picked.every(
+        (n) => trackIsStaffByIndex[n] === true,
+      );
+      return {
+        placement: "tracks",
+        visibility: onlyStaffTracks ? "staff" : visibility,
+        trackIds: picked.map((n) => trackIdByIndex[n]!),
+      };
     };
 
     const kept = new Set<string>();
@@ -257,7 +377,7 @@ export const eventScheduleRepo = {
       const current = it.id && !kept.has(it.id) ? byId.get(it.id) : undefined;
       if (current) {
         kept.add(current.id);
-        const place = placementOf(it, current.placement);
+        const place = placeOf(it, current);
         linksByItem.push({ itemId: current.id, trackIds: place.trackIds });
         // URL が変わらない限り OG キャッシュには触らない
         const [ogImage, ogUrl] =
@@ -271,7 +391,7 @@ export const eventScheduleRepo = {
             SET title = ?, description = ?, duration_min = ?, starts_at = ?,
                 speaker_user_id = ?, speaker_name = ?, material_url = ?,
                 material_og_image = ?, material_og_url = ?, sort_order = ?,
-                placement = ?
+                placement = ?, visibility = ?
             WHERE id = ? AND event_id = ?`,
           args: [
             it.title,
@@ -285,6 +405,7 @@ export const eventScheduleRepo = {
             ogUrl,
             i,
             place.placement,
+            place.visibility,
             current.id,
             eventId,
           ],
@@ -292,13 +413,13 @@ export const eventScheduleRepo = {
         return;
       }
       const id = crypto.randomUUID();
-      const place = placementOf(it, undefined);
+      const place = placeOf(it, undefined);
       linksByItem.push({ itemId: id, trackIds: place.trackIds });
       stmts.push({
         sql: `INSERT INTO event_schedule_item
           (id, event_id, title, description, duration_min, starts_at,
-           speaker_user_id, speaker_name, material_url, material_og_image, material_og_url, sort_order, created_at, placement)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           speaker_user_id, speaker_name, material_url, material_og_image, material_og_url, sort_order, created_at, placement, visibility)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           id,
           eventId,
@@ -314,6 +435,7 @@ export const eventScheduleRepo = {
           i,
           now,
           place.placement,
+          place.visibility,
         ],
       });
     });
@@ -349,18 +471,23 @@ export const eventScheduleRepo = {
       ...stmts,
       ...linkStmts,
     ]);
-    return this.listByEvent(eventId);
+    // 保存は staff 限定（requireEventRole(["staff"])）なので staff 向けに返す
+    return this.listByEvent(eventId, "staff");
   },
 
   /** 1項目を取得（イベント跨ぎ防止のため eventId でも絞る）。
    * speakerUserId は toItem が生の値を返すので、ユーザーが猶予期間中でも
-   * 登壇者本人かどうかを判定できる */
+   * 登壇者本人かどうかを判定できる。
+   *
+   * `audience` は**必須** (#383)。`"public"` で引くと裏方の項目は**そもそも引けず**
+   * 404 になる。「引いてから弾く」形にしない。 */
   async findItem(
     eventId: string,
     itemId: string,
+    audience: ScheduleAudience,
   ): Promise<ScheduleItem | null> {
     const row = await one<Row>(
-      `${SELECT} WHERE s.event_id = ? AND s.id = ?`,
+      `${SELECT} WHERE s.event_id = ? AND s.id = ?${itemFilter(audience, "s")}`,
       eventId,
       itemId,
     );
@@ -368,7 +495,8 @@ export const eventScheduleRepo = {
     const links = await many<{ track_id: string }>(
       `SELECT it.track_id FROM event_schedule_item_track it
          JOIN event_track t ON t.id = it.track_id
-        WHERE it.item_id = ? ORDER BY t.sort_order ASC`,
+        WHERE it.item_id = ?${trackFilter(audience, "t")}
+        ORDER BY t.sort_order ASC`,
       row.id,
     );
     return toItem(
@@ -394,15 +522,19 @@ export const eventScheduleRepo = {
     );
   },
 
-  /** OG メタが未取得（URL 変更含む）の項目を列挙する (#149) */
+  /** OG メタが未取得（URL 変更含む）の項目を列挙する (#149)。
+   * 参加者に見せる項目だけを対象にする (#383)。裏方の URL を外部ホストへ
+   * 取りに行かない（要らない通信を増やさない） */
   async listNeedingOgRefresh(
     eventId: string,
     limit: number,
   ): Promise<Array<{ id: string; materialUrl: string }>> {
     const rows = await many<{ id: string; material_url: string }>(
-      `SELECT id, material_url FROM event_schedule_item
-        WHERE event_id = ? AND material_url != '' AND material_og_url != material_url
-        ORDER BY sort_order ASC LIMIT ?`,
+      `SELECT si.id, si.material_url FROM event_schedule_item si
+        WHERE si.event_id = ? AND si.material_url != ''
+          AND si.material_og_url != si.material_url
+          AND ${publicItemWhere("si")}
+        ORDER BY si.sort_order ASC LIMIT ?`,
       eventId,
       limit,
     );
@@ -429,13 +561,13 @@ export const eventScheduleRepo = {
   /** 公開プロフィール用: そのユーザーが登壇者として紐づいている公開イベントの id (#308)。
    * タイムテーブルは公開イベントページで誰でも見られる情報なので公開してよい。
    * 下書き・非公開のイベントは id も返さない。
-   * 未割り当て（ネタ出し中 #338）は参加者に見せないので、ここでも数えない */
+   * 参加者に見せない項目（未割り当て #338 / 裏方 #383）はここでも数えない */
   async listPublicSpokenEventIds(userId: string): Promise<string[]> {
     const rows = await many<{ event_id: string }>(
       `SELECT DISTINCT si.event_id FROM event_schedule_item si
          JOIN event e ON e.id = si.event_id
         WHERE si.speaker_user_id = ? AND e.status = 'published'
-          AND si.placement != 'unassigned'`,
+          AND ${publicItemWhere("si")}`,
       userId,
     );
     return rows.map((r) => r.event_id);
