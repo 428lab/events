@@ -389,7 +389,6 @@ const ja = {
   /** 外れた担当の名前は**出さない**（退会が混ざるため。#393 と同じ規則） */
   dutyAssigneeLeft: "外れた割り当てがあります。外して再割り当てしてください。",
   dutyAssigneeLeftShort: "外れた担当",
-  dutyMineChip: "自分",
   dutySaveFailed: "保存できませんでした。",
   dutyLimitError: "このイベントに作れる役割の数の上限に達しています。",
   dutyNameTakenError: "同じ名前の役割がすでにあります。",
@@ -708,7 +707,6 @@ const en: Record<keyof typeof ja, string> = {
   dutyAssigneeLeft:
     "Someone assigned here has stepped down — remove them and assign someone else.",
   dutyAssigneeLeftShort: "Stepped down",
-  dutyMineChip: "You",
   dutySaveFailed: "Could not save that.",
   dutyLimitError: "This event has reached the limit for roles.",
   dutyNameTakenError: "A role with that name already exists.",
