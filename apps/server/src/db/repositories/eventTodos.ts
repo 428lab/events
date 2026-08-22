@@ -3,7 +3,6 @@ import {
   TODO_DEPS_PER_ITEM,
   type EventTodo,
   type EventTodoDep,
-  type TodoAssignee,
 } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
 
@@ -133,34 +132,6 @@ export const eventTodosRepo = {
       eventId,
     );
     return rows.map((r) => ({ todoId: r.todo_id, dependsOnId: r.depends_on_id }));
-  },
-
-  /**
-   * 担当に指定できる人。**確定スタッフかつ退会していない人だけ**。
-   *
-   * `deleted_at` を落とすと退会者が選択肢に並ぶ。`ASSIGNEE_JOIN` と同じ条件で
-   * なければならない（ここが緩いと「選べるのに `left` になる」人が出る）。
-   */
-  async assignableStaff(eventId: string): Promise<TodoAssignee[]> {
-    const rows = await many<{
-      id: string;
-      username: string;
-      global_name: string | null;
-      avatar_url: string | null;
-    }>(
-      `SELECT u.id, u.username, u.global_name, u.avatar_url
-         FROM event_member m
-         JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
-        WHERE m.event_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
-        ORDER BY m.created_at ASC`,
-      eventId,
-    );
-    return rows.map((r) => ({
-      id: r.id,
-      username: r.username,
-      globalName: r.global_name,
-      avatarUrl: r.avatar_url,
-    }));
   },
 
   /**

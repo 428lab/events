@@ -346,6 +346,59 @@ const ja = {
   todoAssigneeNotStaffError:
     "担当にできるのは、このイベントのスタッフとして参加が確定している人だけです。",
   todoBadRangeError: "開始日が期限より後になっています。",
+
+  /* ── 役割と持ち場 (#384) ────────────────────────────────
+   * **実装上の語を出さない。** duty / slot / assignee は利用者の語彙ではないので
+   * 「役割」「持ち場」「担当」で書く。タグ本体（「受付 1/2」）は名前と数字の
+   * 組み立てなので辞書には持たない */
+  dutyTitle: "役割と持ち場",
+  dutyStaffOnly: "役割と持ち場はスタッフ専用です。",
+  dutyPageNote:
+    "時間帯ごとに「どの役割が何人要るか」を先に置き、あとから人を割り当てます。人数が先にあるので、埋まっていない持ち場が分かります。",
+  dutyToTimetable: "当日のタイムラインへ",
+  dutyDefsTitle: "役割",
+  dutyDefsNote:
+    "このイベントで使う役割（受付・司会・配信など）。イベントを複製すると名前ごとコピーされます。",
+  dutyAddPlaceholder: "役割の名前（例: 受付）",
+  dutyAddButton: "追加",
+  dutyRenameTitle: "役割の名前を変える",
+  /** 使っている持ち場ごと消えることを、消す前に必ず伝える */
+  dutyDeleteConfirm:
+    "「{{name}}」を削除しますか？ {{n}} か所の持ち場と、その割り当ても消えます。",
+  dutyDeleteConfirmUnused: "「{{name}}」を削除しますか？",
+  dutyUnfilledCount: "埋まっていない持ち場 {{n}}",
+  dutyAllFilled: "すべての持ち場が埋まっています。",
+  /** 絞り込みのチップ。集計チップ（上）と同じ綴りにしない（todoFilter と同じ理由） */
+  dutyFilterShort: "不足のみ",
+  dutyFilterMine: "自分の持ち場",
+  dutyFilterNone: "この条件に合う時間帯はありません。",
+  dutyNoItems:
+    "タイムテーブルに時間帯がありません。先にタイムテーブルを作ってください。",
+  dutyNoDuties: "まず役割を作ってください。",
+  dutyNoSlots: "持ち場なし",
+  dutyNoTime: "時刻未定",
+  dutyEditSlots: "持ち場を編集",
+  dutySlotsDialogTitle: "持ち場と割り当て",
+  dutySlotAdd: "持ち場を足す",
+  dutyRequiredLabel: "必要人数",
+  dutySlotRemove: "外す",
+  dutySlotRemoveConfirm:
+    "「{{name}}」の持ち場を外しますか？ 割り当ても消えます。",
+  dutyAssignLabel: "割り当てる人",
+  dutyAssignButton: "割り当てる",
+  /** 外れた担当の名前は**出さない**（退会が混ざるため。#393 と同じ規則） */
+  dutyAssigneeLeft: "外れた割り当てがあります。外して再割り当てしてください。",
+  dutyAssigneeLeftShort: "外れた担当",
+  dutyMineChip: "自分",
+  dutySaveFailed: "保存できませんでした。",
+  dutyLimitError: "このイベントに作れる役割の数の上限に達しています。",
+  dutyNameTakenError: "同じ名前の役割がすでにあります。",
+  dutySlotLimitError: "この時間帯に置ける持ち場の数の上限に達しています。",
+  dutyRequiredRangeError: "必要人数の指定が正しくありません。",
+  dutyAssigneeNotStaffError:
+    "割り当てられるのは、このイベントのスタッフとして参加が確定している人だけです。",
+  dutyAssigneeLimitError: "この持ち場に割り当てられる人数の上限に達しています。",
+  dutyAssigneeDupError: "その人はすでにこの持ち場に割り当てられています。",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -618,6 +671,53 @@ const en: Record<keyof typeof ja, string> = {
   todoAssigneeNotStaffError:
     "Only organizers whose place at this event is confirmed can own a job.",
   todoBadRangeError: "The start date is after the due date.",
+
+  dutyTitle: "Roles & posts",
+  dutyStaffOnly: "Roles and posts are for organizers only.",
+  dutyPageNote:
+    "First decide which roles each time slot needs and how many people, then assign people. Because the headcount comes first, you can see which posts are still unfilled.",
+  dutyToTimetable: "Go to the timetable",
+  dutyDefsTitle: "Roles",
+  dutyDefsNote:
+    "The roles this event uses (front desk, MC, streaming and so on). Duplicating the event copies them by name.",
+  dutyAddPlaceholder: "Role name (e.g. Front desk)",
+  dutyAddButton: "Add",
+  dutyRenameTitle: "Rename this role",
+  dutyDeleteConfirm:
+    "Delete “{{name}}”? Its {{n}} post(s) and their assignments will be removed too.",
+  dutyDeleteConfirmUnused: "Delete “{{name}}”?",
+  dutyUnfilledCount: "{{n}} unfilled post(s)",
+  dutyAllFilled: "Every post is filled.",
+  dutyFilterShort: "Unfilled only",
+  dutyFilterMine: "My posts",
+  dutyFilterNone: "No time slots match these filters.",
+  dutyNoItems:
+    "The timetable has no time slots yet. Build the timetable first.",
+  dutyNoDuties: "Create a role first.",
+  dutyNoSlots: "No posts",
+  dutyNoTime: "No time yet",
+  dutyEditSlots: "Edit posts",
+  dutySlotsDialogTitle: "Posts & assignments",
+  dutySlotAdd: "Add a post",
+  dutyRequiredLabel: "People needed",
+  dutySlotRemove: "Remove",
+  dutySlotRemoveConfirm:
+    "Remove the “{{name}}” post? Its assignments will be removed too.",
+  dutyAssignLabel: "Assign someone",
+  dutyAssignButton: "Assign",
+  dutyAssigneeLeft:
+    "Someone assigned here has stepped down — remove them and assign someone else.",
+  dutyAssigneeLeftShort: "Stepped down",
+  dutyMineChip: "You",
+  dutySaveFailed: "Could not save that.",
+  dutyLimitError: "This event has reached the limit for roles.",
+  dutyNameTakenError: "A role with that name already exists.",
+  dutySlotLimitError: "This time slot has reached its limit for posts.",
+  dutyRequiredRangeError: "That number of people is not allowed.",
+  dutyAssigneeNotStaffError:
+    "Only organizers whose place at this event is confirmed can be assigned.",
+  dutyAssigneeLimitError: "This post has reached its limit for assignments.",
+  dutyAssigneeDupError: "That person is already assigned to this post.",
 };
 
 /**

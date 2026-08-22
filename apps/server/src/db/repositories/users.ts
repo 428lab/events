@@ -434,6 +434,10 @@ export const usersRepo = {
       ["event_like", "user_id", ["event_id", "kind", "target_key"]],
       // 運営への招待 (#339)。両方に同じイベントの招待があれば負け側を捨てる
       ["event_staff_invite", "user_id", ["event_id"]],
+      // 持ち場の割り当て (#384)。(slot_id, user_id) の UNIQUE があるので simple に
+      // できない（勝ち負け両方が同じ持ち場に居ると UPDATE が UNIQUE 違反で落ちる）。
+      // 両方に同じ持ち場の割り当てがあれば負け側を捨てる
+      ["event_duty_assignee", "user_id", ["slot_id"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols

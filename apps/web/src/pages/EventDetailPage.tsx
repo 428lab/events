@@ -28,6 +28,7 @@ import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import CampaignIcon from "@mui/icons-material/Campaign";
 import ChecklistIcon from "@mui/icons-material/Checklist";
+import AssignmentIndOutlinedIcon from "@mui/icons-material/AssignmentIndOutlined";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import CheckIcon from "@mui/icons-material/Check";
@@ -883,6 +884,17 @@ export function EventDetailPage() {
               to={`/events/${id}/todos`}
             >
               {t("staffOps.todoTitle")}
+            </Button>
+          )}
+          {/* 役割と持ち場 (#384)。スタッフ専用の独立ページへの導線 */}
+          {isStaff && (
+            <Button
+              variant="outlined"
+              startIcon={<AssignmentIndOutlinedIcon />}
+              component={RouterLink}
+              to={`/events/${id}/staffing`}
+            >
+              {t("staffOps.dutyTitle")}
             </Button>
           )}
           {isStaff && (

@@ -198,13 +198,13 @@ const UNRESOLVED: Array<{ column: Column; breaks: string }> = [
  * 増減したらこの数を直すこと。**直す前に、増えた列が mergeUsers で
  * 扱われているかを必ず読むこと。**
  */
-const EXPECTED_USER_COLUMNS = 43;
+const EXPECTED_USER_COLUMNS = 44;
 
 /**
  * `mergeUsers` が扱う `table.column` の数（user 参照でない列も含む生の抽出数）。
  * 走査そのものが空振りしていないことの担保。
  */
-const EXPECTED_HANDLED_PAIRS = 42;
+const EXPECTED_HANDLED_PAIRS = 43;
 
 describe("アカウント統合の対象列の走査 (#396)", () => {
   const body = mergeUsersBody(Object.values(repoSources)[0]!);
@@ -292,6 +292,35 @@ describe("アカウント統合の対象列の走査 (#396)", () => {
       missing,
       "登録を1行外したのに、検出された未登録列が空だった。このテストは何も守っていない",
     ).toEqual(["event_todo.assignee_user_id"]);
+  });
+
+  it("uniqueKeyed 側の登録も、1つ外すと落ちる（#384 の組で毎回ためす）", () => {
+    // simple（上の変異）と uniqueKeyed は別の正規表現で読む。simple 側だけ
+    // 確かめていると、uniqueKeyed の走査が緩んでも気づかない
+    const line = '["event_duty_assignee", "user_id", ["slot_id"]],';
+    expect(body, `${line} が mergeUsers に無い（#384 の登録が消えている）`).toContain(
+      line,
+    );
+    expect(handledColumns(body).has("event_duty_assignee.user_id")).toBe(true);
+
+    const broken = body.replace(line, "");
+    const handledAfter = handledColumns(broken);
+    expect(
+      handledAfter.has("event_duty_assignee.user_id"),
+      "uniqueKeyed の登録を1行外したのに、走査はまだ「扱われている」と答えた",
+    ).toBe(false);
+
+    const excused = new Set<Column>([
+      ...INTENTIONAL.map((e) => e.column),
+      ...UNRESOLVED.map((e) => e.column),
+    ]);
+    const missing = userColumns().filter(
+      (c) => !handledAfter.has(c) && !excused.has(c),
+    );
+    expect(
+      missing,
+      "uniqueKeyed の登録を1行外したのに、検出された未登録列が空だった",
+    ).toEqual(["event_duty_assignee.user_id"]);
   });
 
   it("SQL コメントの中の REFERENCES を根拠にしない", () => {

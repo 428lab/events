@@ -2,6 +2,7 @@ import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import type {
   AwardRank,
+  EventStaffingPayload,
   EventTodosPayload,
   Event,
   EventMemberWithUser,
@@ -386,6 +387,93 @@ describe("複製で準備 TODO を持ち越す (#393 7.)", () => {
   });
 });
 
+describe("複製でスタッフの役割の定義を持ち越す (#384 7.)", () => {
+  /** コピーするのは役割の**名前と並び順だけ**。
+   * 持ち場（時間帯×役割×人数）と割り当てはコピー**できない**: 複製は
+   * タイムテーブルをコピーしないので、ぶら下げる先の項目が複製先に無い */
+  it("役割の名前と並び順はコピーされ、持ち場と割り当てはコピーされない", async () => {
+    const cookie = await loginDev();
+    const src = await setupSourceEvent(cookie);
+    const staff = await makeMember(src, "staff");
+
+    // 役割を2つ（並び順つき）
+    const mkDuty = async (name: string): Promise<string> => {
+      const res = await SELF.fetch(`${BASE}/api/events/${src}/staffing/duties`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ name }),
+      });
+      expect(res.status, await res.clone().text()).toBe(201);
+      return ((await res.json()) as { id: string }).id;
+    };
+    const reception = await mkDuty("受付");
+    await mkDuty("配信");
+
+    // 複製元にはタイムテーブルの項目＋持ち場＋割り当ても作っておく
+    // （これらが**コピーされない**ことを見るため）
+    const cur = await SELF.fetch(`${BASE}/api/events/${src}/timetable`, {
+      headers: { cookie },
+    });
+    const version = ((await cur.json()) as { version?: number }).version ?? 0;
+    const tt = await SELF.fetch(`${BASE}/api/events/${src}/timetable`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        version,
+        items: [{ title: "開会", durationMin: 30 }],
+      }),
+    });
+    expect(tt.status).toBe(200);
+    const itemId = ((await tt.json()) as { items: Array<{ id: string }> })
+      .items[0]!.id;
+    const put = await SELF.fetch(
+      `${BASE}/api/events/${src}/staffing/items/${itemId}`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ slots: [{ dutyId: reception, required: 2 }] }),
+      },
+    );
+    expect(put.status).toBe(200);
+    const getStaffing = async (eventId: string): Promise<EventStaffingPayload> => {
+      const res = await SELF.fetch(`${BASE}/api/events/${eventId}/staffing`, {
+        headers: { cookie },
+      });
+      expect(res.status).toBe(200);
+      return (await res.json()) as EventStaffingPayload;
+    };
+    const before = await getStaffing(src);
+    const assign = await SELF.fetch(
+      `${BASE}/api/events/${src}/staffing/slots/${before.slots[0]!.id}/assignees`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ userId: staff.userId }),
+      },
+    );
+    expect(assign.status).toBe(201);
+
+    const dup = await SELF.fetch(`${BASE}/api/events/${src}/duplicate`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(dup.status).toBe(201);
+    const copyId = ((await dup.json()) as { event: { id: string } }).event.id;
+
+    const copied = await getStaffing(copyId);
+    // 名前と並び順はそのまま。id は新しく振り直される
+    expect(copied.duties.map((d) => d.name)).toEqual(["受付", "配信"]);
+    expect(copied.duties.map((d) => d.id)).not.toContain(reception);
+    // 持ち場・割り当ては無い（タイムテーブルをコピーしないため、置く先が無い）
+    expect(copied.slots).toEqual([]);
+
+    // 複製元は変わっていない
+    const origin = await getStaffing(src);
+    expect(origin.duties.map((d) => d.name)).toEqual(["受付", "配信"]);
+    expect(origin.slots).toHaveLength(1);
+    expect(origin.slots[0]!.assignees).toHaveLength(1);
+  });
+});
 
 describe("日程調整中イベントの直接日時確定 (#138)", () => {
   it("PATCH scheduling:false で調整終了＋日時確定。日時なしは 400", async () => {

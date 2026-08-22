@@ -22,6 +22,7 @@ export * from "./eventMeets.js";
 export * from "./eventQa.js";
 export * from "./eventSchedule.js";
 export * from "./eventTodo.js";
+export * from "./eventDuty.js";
 export * from "./eventSurvey.js";
 export * from "./gamification.js";
 export * from "./analytics.js";
