@@ -12,6 +12,7 @@ import {
 import { useTranslation } from "react-i18next";
 import AddIcon from "@mui/icons-material/Add";
 import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 import {
   SCHEDULE_TEMPLATES,
@@ -52,6 +53,10 @@ import {
  *
  * トラック (#338) は「未割り当て（ネタ出し）」と「配置済み」の2セクションで扱う。
  * トラックの割り当ては**チップとスイッチのタップだけで完結**する。
+ *
+ * 裏方 (#383) は表を分けない。**同じ表の同じ時間軸の並びの中**に、薄い背景と
+ * 鍵の印を付けた行として混ざる（表のセッションの隣に準備が並ぶのが要件そのもの）。
+ * 既定は折りたたみで、開くと元の位置にそのまま現れる。
  *
  * 同時編集 (#340) は2段構え。開いている間は「自分が編集中」と言い続けて
  * 他の人に見せ（助言）、保存では読み込んだ時点の版を送り返して食い違いを弾く
@@ -108,6 +113,8 @@ export function ScheduleEditor({
   const [templateAnchor, setTemplateAnchor] = useState<null | HTMLElement>(null);
   // ドラッグ並び替え：ハンドルを押した行だけ draggable にする（入力操作と干渉させない）
   const [dragKey, setDragKey] = useState<string | null>(null);
+  // 裏方の行を出すか (#383)。既定は畳んでおき、参加者向けの表が埋まらないようにする
+  const [showStaffRows, setShowStaffRows] = useState(false);
 
   const memberOptions: MemberOption[] = (members ?? []).map((m) => ({
     id: m.user.id,
@@ -115,22 +122,38 @@ export function ScheduleEditor({
     avatarUrl: m.user.avatarUrl,
   }));
 
-  // 時刻はトラックごとの連鎖。未割り当ては時刻を持たない (#338)
+  // 時刻はトラックごとの連鎖。未割り当ては時刻を持たない (#338)。
+  // 連鎖させる列は**表の列だけ** (#383)。運営用の列を混ぜると、全トラック共通の
+  // コマが見る Math.max(...) にその列のカーソルが入り、プレビューの時刻だけが
+  // 保存後の（＝参加者に見える）時刻とずれる
   const times = computeScheduleTimes(
     toTimeItems(rows),
     eventStartsAt,
-    tracks.map((track) => track.key),
+    // 許可リストで書く（値が増えたときに新しい列が黙って混ざらないように）
+    tracks
+      .filter((track) => track.visibility === "public")
+      .map((track) => track.key),
   );
   // 同一トラック内の重なりは保存を止めず、警告だけ出す (#338)。
   // トラックはまだ ID を持たないものがあるので、編集中のキーを ID として渡す
   const overlaps = findTrackOverlaps(
     rows.map((r, i) => ({ ...r, trackIds: r.trackKeys, start: times[i] ?? null })),
     times,
-    tracks.map((track, i) => ({ id: track.key, name: track.name, sortOrder: i })),
+    tracks.map((track, i) => ({
+      id: track.key,
+      name: track.name,
+      sortOrder: i,
+      visibility: track.visibility,
+    })),
   );
 
   const replaceRow = (key: string, next: Row) =>
     setRows((rs) => rs.map((r) => (r.key === key ? next : r)));
+
+  /** いま画面に出ている行か (#383)。畳んだ裏方の行と入れ替えると、
+   * 上下ボタンを押しても何も動かないように見える */
+  const isShown = (r: Row) =>
+    r.placement === "unassigned" || showStaffRows || r.visibility !== "staff";
 
   /** 同じセクション（未割り当て/配置済み）の中で1つ隣と入れ替える。
    * 保存の並び順は rows の配列順なので、全体の配列上で位置を交換する */
@@ -139,6 +162,7 @@ export function ScheduleEditor({
       const from = rs.findIndex((r) => r.key === key);
       if (from < 0) return rs;
       const sameSection = (r: Row) =>
+        isShown(r) &&
         (r.placement === "unassigned") === (rs[from]!.placement === "unassigned");
       let to = from + delta;
       while (to >= 0 && to < rs.length && !sameSection(rs[to]!)) to += delta;
@@ -239,7 +263,9 @@ export function ScheduleEditor({
   const renderRow = (row: Row) => {
     const i = rows.indexOf(row);
     const section = rows.filter(
-      (r) => (r.placement === "unassigned") === (row.placement === "unassigned"),
+      (r) =>
+        isShown(r) &&
+        (r.placement === "unassigned") === (row.placement === "unassigned"),
     );
     const at = section.indexOf(row);
     return (
@@ -254,7 +280,14 @@ export function ScheduleEditor({
         onDragStart={(e) => e.dataTransfer.setData("text/plain", row.key)}
         onDragEnter={() => onDragEnterRow(row.key)}
         onDragEnd={() => setDragKey(null)}
-        onChange={(next) => replaceRow(row.key, next)}
+        onChange={(next) => {
+          // 畳んだまま「運営だけに見せる」を入れると、切り替えた行が目の前から
+          // 消えてしまう。切り替えた本人には見えている必要があるので開く (#383)
+          if (next.visibility === "staff" && row.visibility !== "staff") {
+            setShowStaffRows(true);
+          }
+          replaceRow(row.key, next);
+        }}
         onMove={(delta) => move(row.key, delta)}
         onDelete={() => setRows((rs) => rs.filter((r) => r.key !== row.key))}
         canMoveUp={at > 0}
@@ -265,6 +298,13 @@ export function ScheduleEditor({
 
   const unassignedRows = rows.filter((r) => r.placement === "unassigned");
   const placedRows = rows.filter((r) => r.placement !== "unassigned");
+  // 裏方は別の塊に寄せ集めず、**元の並びのまま**畳む／出す (#383)
+  const staffRowCount = placedRows.filter(
+    (r) => r.visibility === "staff",
+  ).length;
+  const shownRows = showStaffRows
+    ? placedRows
+    : placedRows.filter((r) => r.visibility !== "staff");
 
   return (
     <Stack spacing={1.5}>
@@ -286,6 +326,15 @@ export function ScheduleEditor({
         }
         onMove={moveTrack}
         onRemove={removeTrack}
+        onSetStaffOnly={(key, staffOnly) =>
+          setTracks((ts) =>
+            ts.map((track) =>
+              track.key === key
+                ? { ...track, visibility: staffOnly ? "staff" : "public" }
+                : track,
+            ),
+          )
+        }
       />
 
       <Divider />
@@ -322,6 +371,21 @@ export function ScheduleEditor({
       <Divider />
 
       <Typography variant="subtitle2">{t("schedule.placedSection")}</Typography>
+      {/* 裏方 (#383) の開閉。0件のときは押しても何も起きないので出さない。
+          開くと、寄せ集めではなく**同じ時間軸の並びの中**に現れる */}
+      {staffRowCount > 0 && (
+        <Box>
+          <Button
+            size="small"
+            startIcon={<LockOutlinedIcon fontSize="small" />}
+            onClick={() => setShowStaffRows((v) => !v)}
+          >
+            {showStaffRows
+              ? t("schedule.hideStaffRows")
+              : t("schedule.showStaffRows", { n: staffRowCount })}
+          </Button>
+        </Box>
+      )}
       {overlaps.length > 0 && (
         <Alert severity="warning">
           <Typography variant="body2" fontWeight={600}>
@@ -357,7 +421,7 @@ export function ScheduleEditor({
           </Box>
         </Alert>
       )}
-      <Stack spacing={1.5}>{placedRows.map(renderRow)}</Stack>
+      <Stack spacing={1.5}>{shownRows.map(renderRow)}</Stack>
 
       {conflicted ? (
         <ScheduleConflictAlert onReload={reload} />

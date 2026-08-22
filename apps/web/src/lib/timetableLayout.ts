@@ -41,6 +41,10 @@ export interface TimetableEntry {
   startsAt: number | null;
   /** 全トラック共通（開会・休憩など。全列をまたぐ） */
   common: boolean;
+  /** 裏方（準備・設営・片付けなど。参加者には届かない） (#383)。
+   * サーバーが staff にしか返さないので、ここに来ている＝見てよい人が見ている。
+   * **画面側では絞らない**（同じ判断が2か所になる）。半透明＋鍵の印で描き分ける */
+  staffOnly: boolean;
   /** 所属するトラックの 0 始まりの番号。common のときは全トラック */
   trackIndexes: number[];
 }
@@ -59,6 +63,9 @@ export interface TimetableBlock {
   rowEnd: number;
   /** 全トラック共通か。無彩色の帯で描く */
   common: boolean;
+  /** 裏方か (#383)。公開の枠と時刻が重なるのが普通の使い方なので、
+   * 半透明にして**公開の枠より上**に重ねる（下に置くと埋もれて見えない） */
+  staffOnly: boolean;
   /** 色に使うトラックの番号。飛び地で枠が割れても **同じコマは同じ色** に
    * なるよう、列ではなくそのコマの先頭のトラックを指す */
   colorIndex: number;
@@ -127,10 +134,15 @@ export function buildTimetableLayout(
   tracks: EventTrack[],
   eventStartsAt: number | null,
 ): TimetableLayout {
+  // 時刻を連鎖させる列は**公開トラックだけ** (#383)。格子の列にはスタッフ用の
+  // 列も並べるが、時刻の計算とは別物として扱う。混ぜると、全トラック共通が見る
+  // Math.max(...) にスタッフ用トラックのカーソルが入り、**staff の画面でだけ**
+  // 全トラック共通の時刻が後ろへずれる（参加者と時刻が食い違う）
   const times = computeScheduleTimes(
     items,
     eventStartsAt,
-    tracks.map((t) => t.id),
+    // 許可リストで書く（値が増えたときに新しい列が黙って混ざらないように）
+    tracks.filter((t) => t.visibility === "public").map((t) => t.id),
   );
   const indexOfTrack = new Map(tracks.map((t, i) => [t.id, i]));
   const allIndexes = tracks.map((_, i) => i);
@@ -157,6 +169,7 @@ export function buildTimetableLayout(
       item,
       startsAt: times[i] ?? null,
       common,
+      staffOnly: item.visibility === "staff",
       trackIndexes: common ? allIndexes : mine,
     });
   });
@@ -229,6 +242,7 @@ export function buildTimetableLayout(
         rowStart,
         rowEnd,
         common: true,
+        staffOnly: entry.staffOnly,
         colorIndex: 0,
         trackNames: [],
         split: false,
@@ -248,6 +262,7 @@ export function buildTimetableLayout(
         rowStart,
         rowEnd,
         common: false,
+        staffOnly: entry.staffOnly,
         trackNames: entry.trackIndexes.map((n) => tracks[n]!.name),
         split: groups.length > 1,
       });

@@ -53,6 +53,8 @@ function item(patch: Partial<ScheduleItem> & { id: string }): ScheduleItem {
     sortOrder: 0,
     // 既存のコマは全トラック共通（マイグレーションの既定値と同じ #338）
     placement: "all",
+    // 参加者にも見せる。裏方 (#383) は明示的に staff にした行だけ
+    visibility: "public",
     trackIds: [],
     ...patch,
   };
@@ -104,9 +106,14 @@ async function saveAndCaptureBody(): Promise<{
     id: string | null;
     title: string;
     placement: string;
+    visibility: string;
     trackIndexes: number[];
   }>;
-  tracks: Array<{ id: string | null; name: string }>;
+  tracks: Array<{
+    id: string | null;
+    name: string;
+    visibility: "public" | "staff";
+  }>;
 }> {
   fireEvent.click(screen.getByRole("button", { name: "保存" }));
   await waitFor(() => expect(putMock).toHaveBeenCalled());
@@ -198,8 +205,8 @@ describe("ScheduleEditor の差分保存 (#340)", () => {
  * ドラッグ操作はここでは一切使っていない。
  */
 const TRACKS: EventTrack[] = [
-  { id: "tr-A", name: "トラックA", sortOrder: 0 },
-  { id: "tr-B", name: "トラックB", sortOrder: 1 },
+  { id: "tr-A", name: "トラックA", sortOrder: 0, visibility: "public" },
+  { id: "tr-B", name: "トラックB", sortOrder: 1, visibility: "public" },
 ];
 
 describe("ScheduleEditor のトラック割り当て (#338)", () => {
@@ -213,8 +220,8 @@ describe("ScheduleEditor のトラック割り当て (#338)", () => {
 
     const { items, tracks } = await saveAndCaptureBody();
     expect(tracks).toEqual([
-      { id: "tr-A", name: "トラックA" },
-      { id: "tr-B", name: "トラックB" },
+      { id: "tr-A", name: "トラックA", visibility: "public" },
+      { id: "tr-B", name: "トラックB", visibility: "public" },
     ]);
     expect(items.map((i) => i.placement)).toEqual(["all", "all"]);
     expect(items.every((i) => i.trackIndexes.length === 0)).toBe(true);
@@ -285,7 +292,9 @@ describe("ScheduleEditor のトラック割り当て (#338)", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "ホールA" })[0]!);
 
     const { items, tracks } = await saveAndCaptureBody();
-    expect(tracks).toEqual([{ id: null, name: "ホールA" }]);
+    expect(tracks).toEqual([
+      { id: null, name: "ホールA", visibility: "public" },
+    ]);
     expect(items[0]).toMatchObject({ placement: "tracks", trackIndexes: [0] });
   });
 
@@ -308,7 +317,9 @@ describe("ScheduleEditor のトラック割り当て (#338)", () => {
     fireEvent.click(screen.getAllByTitle("このトラックを削除")[0]!);
 
     const { items, tracks } = await saveAndCaptureBody();
-    expect(tracks).toEqual([{ id: "tr-B", name: "トラックB" }]);
+    expect(tracks).toEqual([
+      { id: "tr-B", name: "トラックB", visibility: "public" },
+    ]);
     // トラックAにしか載っていなかった「A枠」だけが未割り当てに戻る
     expect(items.find((i) => i.id === "it-1")).toMatchObject({
       placement: "unassigned",
@@ -365,6 +376,69 @@ describe("ScheduleEditor のトラック割り当て (#338)", () => {
     );
 
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+/**
+ * 裏方（準備・片付け）を同じ表の中で扱う (#383)。
+ *
+ * 表を分けると時間軸が分かれてしまい、「表のセッションの隣に準備が並ぶ」という
+ * 要件そのものが満たせない。そこで1つの表のまま、行ごとの切り替えで持つ。
+ * 切り替えが保存に届いていなければ、画面で運営だけにしたつもりの段取りが
+ * **参加者に配られる**ので、送られる値まで見る。
+ */
+describe("ScheduleEditor の裏方 (#383)", () => {
+  beforeEach(() => {
+    resetApiMocks();
+    putMock.mockResolvedValue({ items: [], tracks: [] });
+  });
+
+  it("「運営だけに見せる」を切り替えると、送られる visibility が変わる", async () => {
+    draw(ITEMS, TRACKS);
+
+    fireEvent.click(
+      screen.getAllByRole("checkbox", {
+        name: "運営だけに見せる（準備・片付けなど）",
+      })[0]!,
+    );
+
+    const { items } = await saveAndCaptureBody();
+    expect(items[0]).toMatchObject({ id: "it-1", visibility: "staff" });
+    // 触っていない行は表のまま（既定を裏方に倒すと黙って参加者から消える）
+    expect(items[1]).toMatchObject({ id: "it-2", visibility: "public" });
+  });
+
+  it("裏方にした行は畳めるが、開くと元の並びの位置に戻る", async () => {
+    draw(ITEMS, TRACKS);
+
+    fireEvent.click(
+      screen.getAllByRole("checkbox", {
+        name: "運営だけに見せる（準備・片付けなど）",
+      })[0]!,
+    );
+    // 切り替えた本人には見えている必要があるので、切り替えた時点で開く
+    expect(screen.getByRole("button", { name: "運営だけの行を隠す" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "運営だけの行を隠す" }));
+    expect(screen.getByRole("button", { name: "運営だけの1件を表示" })).toBeTruthy();
+
+    // 畳んでも保存の中身は変わらない（見せ方だけの畳み込み）
+    const { items } = await saveAndCaptureBody();
+    expect(items.map((i) => i.id)).toEqual(["it-1", "it-2"]);
+  });
+
+  it("運営用の列に切り替えると、送られるトラックの visibility が変わる", async () => {
+    draw(ITEMS, TRACKS);
+
+    fireEvent.click(
+      screen.getAllByRole("checkbox", { name: "運営用の列にする" })[1]!,
+    );
+
+    const { tracks } = await saveAndCaptureBody();
+    expect(tracks).toEqual([
+      { id: "tr-A", name: "トラックA", visibility: "public" },
+      { id: "tr-B", name: "トラックB", visibility: "staff" },
+    ]);
   });
 });
 

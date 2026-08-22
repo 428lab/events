@@ -3,17 +3,17 @@ import type { Context } from "hono";
 import { saveScheduleInput, updateScheduleMaterialInput } from "@eventer/shared";
 import type {
   SaveScheduleInput,
+  ScheduleAudience,
   UpdateScheduleMaterialInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth, currentUser } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
+import { canManageEventAs, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { deferBackground } from "../runtime.js";
 import { refreshMaterialMeta } from "../lib/materialMeta.js";
 import { eventsRepo } from "../db/repositories/events.js";
-import { communitiesRepo } from "../db/repositories/communities.js";
 import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
 import { eventScheduleStateRepo } from "../db/repositories/eventScheduleState.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -32,44 +32,31 @@ async function canViewTimetable(eventId: string, c: Context): Promise<boolean> {
 
 /* ===== 公開ハンドラ（未ログイン可。worker.ts で eventRoutes より先に登録） ===== */
 
-/** タイムテーブルを編集できる人か（＝ネタ出し中のコマまで見てよい人）。
- * 下の PUT の requireEventRole(["staff"]) と**同じ範囲**にそろえる。
- * ずれていると、保存はできるのに未割り当てが返らない人ができてしまい、
- * その人の差分保存で未割り当てのコマが消える */
-async function canEditTimetable(eventId: string, c: Context): Promise<boolean> {
-  const user = await currentUser(c);
-  if (!user) return false;
-  if (isAppAdmin(user)) return true;
-  if ((await eventMembersRepo.find(eventId, user.id))?.role === "staff") {
-    return true;
-  }
-  // コミュニティの owner/admin はそのコミュニティのイベントを staff 相当で管理できる
-  const event = await eventsRepo.findById(eventId);
-  return Boolean(
-    event?.communityId &&
-      (await communitiesRepo.isManager(event.communityId, user.id)),
-  );
-}
-
 /** タイムテーブル一覧（閲覧できる人は誰でも）。
  * トラック (#338) も一緒に返す。時刻の計算にトラックの一覧が要るため、
  * 別々に取ると片方だけ古い状態で描画されうる。
  *
- * **未割り当て（ネタ出し中）は staff にしか返さない** (#338)。
- * 参加者に見せない、という判断はここ1か所だけが持つ。画面側で落とすと、
- * この API を直に叩けばまだ出すと決まっていない企画が読めてしまう */
+ * **未割り当て（ネタ出し中 #338）と裏方 (#383) は staff にしか返さない。**
+ * 誰向けの取得かを決めるのは**このアプリでここ1か所だけ**で、あとは
+ * `audience` としてリポジトリの入口へ渡す。取ってきたあとで JS の `filter` で
+ * 除く形にはしない（除き忘れた経路が黙って参加者へ配ってしまうため）。
+ *
+ * スタッフ専用のエンドポイントは作らない。1本のまま「見える人には見える形で返す」ので、
+ * 画面は「来たものをそのまま描く」だけで済む。 */
 export async function getEventTimetable(c: Context<AppEnv>) {
   const eventId = c.req.param("id")!;
   if (!(await canViewTimetable(eventId, c))) {
     return c.json({ error: "forbidden" }, 403);
   }
-  const items = await eventScheduleRepo.listByEvent(eventId);
-  const canEdit = await canEditTimetable(eventId, c);
+  // 「編集できる人」＝「裏方まで見てよい人」＝「PUT が通る人」。
+  // 判定は auth/roles.ts の canManageEvent 1つに寄せてある (#383)。
+  // ずれていると、絞られた一覧を受け取った人の差分保存で裏方が全部消える
+  const audience: ScheduleAudience = (await canManageEventAs(eventId, c))
+    ? "staff"
+    : "public";
   return c.json({
-    items: canEdit
-      ? items
-      : items.filter((it) => it.placement !== "unassigned"),
-    tracks: await eventScheduleRepo.listTracks(eventId),
+    items: await eventScheduleRepo.listByEvent(eventId, audience),
+    tracks: await eventScheduleRepo.listTracks(eventId, audience),
     // 保存時に送り返してもらう版 (#340)。読み専用の相手にも返してよい
     // （中身は単なる連番で、返さないと編集画面が版を知る経路が無くなる）
     version: await eventScheduleStateRepo.getVersion(eventId),
@@ -152,9 +139,10 @@ eventScheduleRoutes.put(
     const saved = await eventScheduleRepo.saveAll(eventId, items, input.tracks);
     // OG サムネイルはレスポンスを待たせずバックグラウンドで取得 (#149)
     await deferBackground(refreshMaterialMeta(eventId));
+    // 保存できるのは staff だけなので、返すのも staff 向けの全量
     return c.json({
       items: saved,
-      tracks: await eventScheduleRepo.listTracks(eventId),
+      tracks: await eventScheduleRepo.listTracks(eventId, "staff"),
       version,
     });
   },
@@ -217,7 +205,13 @@ eventScheduleRoutes.delete(
 );
 
 /** 登壇資料URLの更新（登壇者本人の自己編集 #148）。
- * staff は編集画面から全体を保存できるが、このエンドポイントでも更新可。 */
+ * staff は編集画面から全体を保存できるが、このエンドポイントでも更新可。
+ *
+ * **対象は常に参加者に見せる項目だけ** (#383)。裏方の項目は `"public"` で
+ * 引けないので 404 になる。「引いてから弾く」にしないのは、弾き忘れると
+ * 裏方のタイトル・説明・担当が応答に載って漏れるため。
+ * 裏方に登壇資料は要らないので機能の損失も無い
+ * （staff も編集画面の全体保存からは触れる）。 */
 eventScheduleRoutes.patch(
   "/:id/timetable/:itemId/material",
   zValidator("json", updateScheduleMaterialInput),
@@ -227,7 +221,7 @@ eventScheduleRoutes.patch(
     if (!(await eventsRepo.findById(eventId))) {
       return c.json({ error: "not_found" }, 404);
     }
-    const item = await eventScheduleRepo.findItem(eventId, itemId);
+    const item = await eventScheduleRepo.findItem(eventId, itemId, "public");
     if (!item) return c.json({ error: "not_found" }, 404);
 
     // 許可: アプリ管理者 / イベント staff / このコマにリンクされた登壇者本人。
@@ -249,7 +243,7 @@ eventScheduleRoutes.patch(
     await eventScheduleStateRepo.touch(eventId);
     // OG サムネイルはバックグラウンドで再取得 (#149)
     await deferBackground(refreshMaterialMeta(eventId));
-    const updated = await eventScheduleRepo.findItem(eventId, itemId);
+    const updated = await eventScheduleRepo.findItem(eventId, itemId, "public");
     if (!updated) return c.json({ error: "not_found" }, 404);
     return c.json({ item: updated });
   },

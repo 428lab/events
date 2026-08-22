@@ -19,11 +19,32 @@ export type ScheduleSpeaker = z.infer<typeof scheduleSpeakerSchema>;
 export const schedulePlacementSchema = z.enum(["unassigned", "all", "tracks"]);
 export type SchedulePlacement = z.infer<typeof schedulePlacementSchema>;
 
+/** 誰に見せるか (#383)。`placement`（**どの列に置くか**）とは直交する別の軸で、
+ * **混ぜない**。準備・設営・片付けのような裏方の段取りを `'staff'` にすると、
+ * 表のセッションと同じ時間軸に並べたまま参加者から隠せる。
+ *
+ * 絞り込みは必ず **`'public'` かどうか（許可リスト）** で書くこと。
+ * `!== 'staff'`（拒否リスト）で書くと、将来値が増えたときに参加者へ漏れる。
+ * `placement` の `!= 'unassigned'` が実際にその形で、値を増やす案を採れなかった理由。 */
+export const scheduleVisibilitySchema = z.enum(["public", "staff"]);
+export type ScheduleVisibility = z.infer<typeof scheduleVisibilitySchema>;
+
+/** タイムテーブルを**誰に見せるための取得か** (#383)。
+ *
+ * リポジトリの取得系はこれを**必須引数**で受ける。既定値を持たせない。
+ * 新しい呼び出し元が現れたとき、付け忘れが**コンパイルエラー**になる側に倒す
+ * （黙って参加者へ裏方を配る側に倒さない）。 */
+export type ScheduleAudience = "staff" | "public";
+
 /** イベント内のトラック（並行して走る枠）。名前（ラベル）でしかなく会場の部屋とは無関係 */
 export const eventTrackSchema = z.object({
   id: z.string(),
   name: z.string(),
   sortOrder: z.number(),
+  /** 誰に見せる列か (#383)。`'staff'` は表には無いスタッフ用の列
+   * （控え室の留守番のように、どのセッションにも紐づかない持ち場を置く先）。
+   * `audience: "public"` で取った一覧には**そもそも入らない** */
+  visibility: scheduleVisibilitySchema,
 });
 export type EventTrack = z.infer<typeof eventTrackSchema>;
 
@@ -54,7 +75,11 @@ export const scheduleItemSchema = z.object({
   sortOrder: z.number(),
   /** 配置状態 (#338)。トラックを使っていないイベントは全項目 `all` */
   placement: schedulePlacementSchema,
-  /** 割り当てられたトラックの ID。`placement` が `tracks` のときだけ非空 */
+  /** 誰に見せるか (#383)。`audience: "public"` で取った結果は**必ず全部 `'public'`**。
+   * 値そのものは返してよい（「見えている項目が表か裏か」は staff の画面が要る） */
+  visibility: scheduleVisibilitySchema,
+  /** 割り当てられたトラックの ID。`placement` が `tracks` のときだけ非空。
+   * `audience: "public"` で取った結果にスタッフ用トラックの ID は入らない (#383) */
   trackIds: z.array(z.string()),
 });
 export type ScheduleItem = z.infer<typeof scheduleItemSchema>;
@@ -85,6 +110,13 @@ export const saveScheduleItemInput = z.object({
   /** 配置状態 (#338)。既定は `all`（＝いまと同じ見え方）。
    * `tracks` なのに `trackIndexes` が空ならサーバーが `unassigned` に落とす */
   placement: schedulePlacementSchema.default("all"),
+  /** 誰に見せるか (#383)。既定は `public`（＝いまと同じ見え方）。
+   * 既定を `staff` にすると、既存クライアントが送った項目が黙って参加者から消える。
+   *
+   * **`tracks` を送らないクライアントからの保存ではこの値を見ない**
+   * （`placement` と同じ扱い。トラックを知らない＝裏方も知らないクライアントの
+   * 既定値で、入力済みの裏方が参加者に出てしまうため）。 */
+  visibility: scheduleVisibilitySchema.default("public"),
   /** 割り当て先を **同じ保存に入っている tracks 配列の添字** で指す。
    * 新規追加したトラックはまだ ID が無い（サーバーが採番する）ので、
    * クライアントが ID をでっち上げずに済むようにここは添字で受ける。
@@ -99,6 +131,9 @@ export const saveScheduleTrackInput = z.object({
    * 項目と同じく、サーバーは自分のイベントの既存 ID のみ採用する */
   id: z.string().max(64).nullable().default(null),
   name: z.string().trim().min(1).max(50),
+  /** 誰に見せる列か (#383)。既定は `public`（＝いまと同じ見え方）。
+   * `staff` にすると表には出ない列になり、参加者向けの一覧には入らない */
+  visibility: scheduleVisibilitySchema.default("public"),
 });
 export type SaveScheduleTrackInput = z.infer<typeof saveScheduleTrackInput>;
 
@@ -179,6 +214,8 @@ export interface ScheduleTimeItem {
   durationMin: number;
   startsAt: number | null;
   placement?: SchedulePlacement;
+  /** 省略は `'public'`（＝参加者にも見せる）扱い (#383) */
+  visibility?: ScheduleVisibility;
   trackIds?: string[];
 }
 
@@ -192,9 +229,19 @@ export interface ScheduleTimeItem {
  * - 全トラック共通 … 全トラックのカーソルの中でいちばん後ろから始まり、
  *   **全トラックのカーソルを進める**（開会・休憩が全列をまたぐため）
  * - 特定のトラック … そのトラックのカーソルだけを見て、そのトラックだけ進める
+ * - 裏方 (visibility='staff' #383) … カーソルを**読むが進めない**。下記の不変条件
  *
  * trackIds を渡さない（＝トラック未設定の）イベントは列が1本しか無いのと同じで、
- * これまでどおりの直列の連鎖になる。 */
+ * これまでどおりの直列の連鎖になる。
+ *
+ * > **不可視の項目を配列から除いても、残る項目の時刻が1ミリ秒も変わらないこと** (#383)
+ *
+ * これが成り立たないと、参加者の画面（裏方が抜けている）と staff の画面で
+ * 同じセッションの開始時刻がずれる。ずれた時刻はリマインダーのメールにも載る。
+ *
+ * **`trackIds` にはスタッフ用トラックを混ぜないこと**。混ぜると、
+ * 全トラック共通 (`all`) が見る `Math.max(...)` にスタッフ用トラックのカーソルが
+ * 入り、staff の画面でだけ `all` の時刻が後ろへずれる。 */
 export function computeScheduleTimes(
   items: ScheduleTimeItem[],
   eventStartsAt: number | null,
@@ -229,6 +276,11 @@ export function computeScheduleTimes(
       .filter((v): v is number => v !== null);
     const start = it.startsAt ?? (known.length > 0 ? Math.max(...known) : null);
     out.push(start);
+    // 裏方 (#383) は参加者に返らない。カーソルを進めると、抜けた側と抜けていない側で
+    // 同じセッションの時刻がずれる。**読むが進めない**（上の不変条件）。
+    // 代償として裏方どうしは自動で連鎖しない（続けて置くと同じ時刻から始まる）。
+    // 連鎖の規則が2種類あるとどちらが効いているか読めなくなるので、v1 では足さない
+    if (it.visibility === "staff") continue;
     const next = start === null ? null : start + it.durationMin * 60_000;
     for (const id of cols) cursors.set(id, next);
   }
@@ -239,6 +291,11 @@ export function computeScheduleTimes(
  * 重なりは弾かない（保存は止めない）が、タイムテーブルの枠が潰れて読みにくく
  * なるので編集画面で警告するために使う。
  * 未割り当ては時刻を持たないので対象外。全トラック共通は全列を占める。
+ *
+ * **表と裏 (#383) はまたいで比べない**（表どうし・裏どうしだけ）。裏方は
+ * カーソルを進めない（3.3）ので、表のセッションと時間が重なるのが**普通の使い方**
+ * （セッション中の控え室の留守番、裏で走る設営）。またいで警告すると、
+ * 正しく入力しているのに常時警告が出て、本当の重なりが埋もれる。
  *
  * `trackName` が `null` なら「どのトラックでもなく全トラック共通どうしの重なり」。
  * ここで日本語を返すと訳せなくなるので、**呼ぶ側が辞書から文言を入れる** (#363)。
@@ -272,6 +329,10 @@ export function findTrackOverlaps<T extends ScheduleTimeItem>(
         const b = placed[j]!;
         // 端が接するだけ（前の終わり＝次の始まり）は重なりではない
         if (b.start >= end) break;
+        // 表と裏はまたいで比べない (#383。上の説明)
+        if ((a.it.visibility ?? "public") !== (b.it.visibility ?? "public")) {
+          continue;
+        }
         const pair = `${a.at}-${b.at}`;
         if (seen.has(pair)) continue;
         seen.add(pair);

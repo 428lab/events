@@ -108,6 +108,22 @@ const ja = {
   legendSingleTrack: "特定のトラック",
   legendSpanning: "複数のトラックにまたがる",
 
+  /** 準備・片付けなど、参加者に見せない段取り (#383)。
+   *  **実装上の列名（visibility など）は文言に出さない**。利用者から見た
+   *  「運営だけに見える」「参加者には出ない」という振る舞いだけを伝える */
+  staffOnly: "運営のみ",
+  staffOnlyChip: "運営のみ（参加者には出ません）",
+  staffOnlyToggle: "運営だけに見せる（準備・片付けなど）",
+  staffOnlyHint:
+    "参加者のタイムテーブルにもリマインダーのメールにも出ません。前のコマから時刻が自動で続かないので、開始時刻の指定をおすすめします。",
+  showStaffRows: "運営だけの{{n}}件を表示",
+  hideStaffRows: "運営だけの行を隠す",
+  staffTrack: "運営用",
+  staffTrackToggle: "運営用の列にする",
+  staffTrackHint:
+    "受付や控え室のように、表のセッションに紐づかない持ち場の列です。参加者には出ません。",
+  staffOnlyHeading: "運営だけの段取り",
+
   /** 編集画面の骨組み */
   unassignedSection: "未割り当て（ネタ出し）",
   unassignedSectionHint:
@@ -265,6 +281,19 @@ const en: Record<keyof typeof ja, string> = {
   notShownToParticipants: "Hidden from participants",
   legendSingleTrack: "One track",
   legendSpanning: "Spans several tracks",
+
+  staffOnly: "Organizers only",
+  staffOnlyChip: "Organizers only (hidden from participants)",
+  staffOnlyToggle: "Show to organizers only (setup, teardown, and the like)",
+  staffOnlyHint:
+    "This stays out of the participants' timetable and the reminder emails. It doesn't pick up the time from the row above, so set a start time.",
+  showStaffRows: "Show {{n}} organizers-only rows",
+  hideStaffRows: "Hide the organizers-only rows",
+  staffTrack: "Organizers",
+  staffTrackToggle: "Make this an organizers-only column",
+  staffTrackHint:
+    "A column for posts that aren't tied to a session — the front desk, the green room. Participants never see it.",
+  staffOnlyHeading: "Organizers-only plan",
 
   // ここの "idea" はタイムテーブルの「ネタ」。イベントのたまご（`egg.*` の
   // "egg" #378）とは別物なので、この綴りのまま残す

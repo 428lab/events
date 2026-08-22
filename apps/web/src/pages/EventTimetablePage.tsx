@@ -7,7 +7,7 @@ import { useEvent } from "../api/hooks.js";
 import { useEventSchedule } from "../api/eventScheduleHooks.js";
 import { formatDateTime } from "../lib/format.js";
 import { buildTimetableLayout } from "../lib/timetableLayout.js";
-import { trackColors } from "../lib/trackColors.js";
+import { trackColorsForTracks } from "../lib/trackColors.js";
 import { TimetableGrid } from "../components/TimetableGrid.js";
 import { TimetableTrackTabs } from "../components/TimetableTrackTabs.js";
 
@@ -36,10 +36,12 @@ export function EventTimetablePage() {
     data.tracks,
     event.scheduling ? null : event.startsAt,
   );
-  const colors = trackColors(
+  // 色は**公開トラックの本数だけ**で作る (#383)。スタッフ用の列を本数に
+  // 混ぜると、同じトラックが参加者と運営で別の色になる
+  const colors = trackColorsForTracks(
     theme.palette.primary.main,
     theme.palette.secondary.main,
-    layout.tracks.length,
+    layout.tracks,
   );
 
   return (
@@ -72,7 +74,15 @@ export function EventTimetablePage() {
       ) : wide ? (
         <>
           <TimetableGrid layout={layout} colors={colors} />
-          <Legend />
+          {/* 裏方の凡例は、裏方が実際に届いているときだけ出す (#383)。
+              参加者には裏方が1件も来ないので、無条件に出すと
+              「運営のみ」の凡例だけが並んで意味が分からない */}
+          <Legend
+            withStaff={
+              layout.entries.some((e) => e.staffOnly) ||
+              layout.tracks.some((track) => track.visibility === "staff")
+            }
+          />
         </>
       ) : (
         <TimetableTrackTabs layout={layout} colors={colors} />
@@ -146,8 +156,9 @@ export function EventTimetablePage() {
   );
 }
 
-/** 枠の描き分けの凡例。色だけでは5本を超えると区別が付かないので言葉で補う */
-function Legend() {
+/** 枠の描き分けの凡例。色だけでは5本を超えると区別が付かないので言葉で補う。
+ * `withStaff` は裏方 (#383) が実際に届いているときだけ true になる */
+function Legend({ withStaff }: { withStaff: boolean }) {
   const { t } = useTranslation();
   const theme = useTheme();
   const swatch = {
@@ -208,6 +219,27 @@ function Legend() {
         />
         {t("schedule.allTracks")}
       </Box>
+      {/* 裏方 (#383)。参加者には届かないので、staff にしか出ない凡例 */}
+      {withStaff && (
+        <Box component="span">
+          <Box
+            component="span"
+            sx={{
+              ...swatch,
+              backgroundImage: `repeating-linear-gradient(135deg, ${alpha(
+                theme.palette.text.primary,
+                0.08,
+              )} 0 8px, ${alpha(theme.palette.text.primary, 0.03)} 8px 16px)`,
+              bgcolor: alpha(theme.palette.background.paper, 0.72),
+              border: "1px dashed",
+              borderColor: "divider",
+              borderLeft: "3px solid",
+              borderLeftColor: alpha(theme.palette.text.primary, 0.4),
+            }}
+          />
+          {t("schedule.staffOnlyChip")}
+        </Box>
+      )}
     </Stack>
   );
 }

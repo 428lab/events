@@ -57,13 +57,21 @@ const ITEM: ScheduleItem = {
   materialOgImage: "",
   sortOrder: 0,
   placement: "all",
+  // 参加者にも見せるコマ。裏方 (#383) は visibility を staff にした行だけ
+  visibility: "public",
   trackIds: [],
 };
 
-const track = (id: string, name: string, sortOrder: number): EventTrack => ({
+const track = (
+  id: string,
+  name: string,
+  sortOrder: number,
+  visibility: EventTrack["visibility"] = "public",
+): EventTrack => ({
   id,
   name,
   sortOrder,
+  visibility,
 });
 
 /** 編集中ステータスの返り値。誰も編集していない状態が既定 */
@@ -80,6 +88,9 @@ let editingState: {
 
 /** そのイベントのトラック。既定はトラックを使っていないイベント */
 let tracks: EventTrack[] = [];
+
+/** サーバーから返るコマ。裏方 (#383) は staff にしか入っていない状態で届く */
+let items: ScheduleItem[] = [ITEM];
 
 function editor(userId: string, name: string) {
   return {
@@ -110,6 +121,7 @@ function draw(isStaff: boolean) {
 beforeEach(() => {
   editingState = { editor: null, version: 3 };
   tracks = [];
+  items = [ITEM];
   getMock.mockReset();
   putMock.mockReset();
   postMock.mockReset();
@@ -117,7 +129,7 @@ beforeEach(() => {
   getMock.mockImplementation(async (path: string) => {
     if (path === "/auth/me") return { user: ME, isAdmin: false };
     if (path === "/events/e-1/timetable") {
-      return { items: [ITEM], tracks, version: 3 };
+      return { items, tracks, version: 3 };
     }
     if (path === "/events/e-1/timetable/editing") return editingState;
     if (path === "/events/e-1/members") return { members: [] };
@@ -210,6 +222,30 @@ describe("タイムテーブル画面への導線 (#338)", () => {
     expect(
       screen.getByRole("button", { name: "タイムテーブルを編集" }),
     ).toBeTruthy();
+  });
+});
+
+/**
+ * 裏方の段取り (#383)。
+ *
+ * サーバーは staff にしか裏方を返さないので、届いている時点で見てよい人が
+ * 見ている。**画面側では絞らない**（絞ると「参加者に見せない」の判断が
+ * 2か所になる）。代わりに、参加者には出ない行だと分かる印を必ず付ける。
+ */
+describe("裏方の行 (#383)", () => {
+  it("運営だけの段取りには、参加者には出ないと分かる印が付く", async () => {
+    items = [ITEM, { ...ITEM, id: "it-2", title: "設営", visibility: "staff" }];
+    draw(true);
+
+    expect(await screen.findByText("設営")).toBeTruthy();
+    expect(screen.getByText("運営のみ（参加者には出ません）")).toBeTruthy();
+  });
+
+  it("表のコマには印を付けない", async () => {
+    draw(false);
+
+    expect(await screen.findByText("オープニング")).toBeTruthy();
+    expect(screen.queryByText("運営のみ（参加者には出ません）")).toBeNull();
   });
 });
 

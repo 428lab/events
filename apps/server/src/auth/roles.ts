@@ -1,10 +1,11 @@
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import type { Event, EventRole, User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { isAppAdmin } from "./admin.js";
+import { currentUser } from "./session.js";
 
 /**
  * イベントメンバーであり、かつ指定ロールのいずれかを持つことを要求する。
@@ -59,6 +60,25 @@ export async function canManageEvent(
     event?.communityId &&
       (await communitiesRepo.isManager(event.communityId, user.id)),
   );
+}
+
+/**
+ * `canManageEvent` を **未ログインでも呼べる形**で包んだもの。
+ *
+ * 公開ハンドラ（未ログイン可）から「この人は運営か」を聞くための入口。
+ * 判定そのものは `canManageEvent` に閉じているので、**運営として何ができるかの
+ * 範囲は1つの関数が持つ**。いま使っているのはタイムテーブルで、
+ * 「編集できる人」「裏方 (#383) が見える人」「`PUT` が通る人」がこれで同じになる。
+ * ずれていると、公開向けに絞られた一覧を受け取った人が保存でき、
+ * その差分保存で**裏方と未割り当てが全部消える**。
+ */
+export async function canManageEventAs(
+  eventId: string,
+  c: Context,
+): Promise<boolean> {
+  const user = await currentUser(c);
+  if (!user) return false;
+  return canManageEvent(eventId, user);
 }
 
 /**

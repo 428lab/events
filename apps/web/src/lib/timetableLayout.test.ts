@@ -15,9 +15,9 @@ import {
  */
 
 const TRACKS: EventTrack[] = [
-  { id: "tr-a", name: "A（メインホール）", sortOrder: 0 },
-  { id: "tr-b", name: "B（小ホール）", sortOrder: 1 },
-  { id: "tr-c", name: "C（ワークショップ室）", sortOrder: 2 },
+  { id: "tr-a", name: "A（メインホール）", sortOrder: 0, visibility: "public" },
+  { id: "tr-b", name: "B（小ホール）", sortOrder: 1, visibility: "public" },
+  { id: "tr-c", name: "C（ワークショップ室）", sortOrder: 2, visibility: "public" },
 ];
 
 /** vitest.config.ts で TZ を Asia/Tokyo に固定しているので、この時刻は 10:00 */
@@ -37,6 +37,8 @@ function item(patch: Partial<ScheduleItem> & { id: string }): ScheduleItem {
     materialOgImage: "",
     sortOrder: 0,
     placement: "all",
+    // 既存のコマは全部「参加者にも見せる」(マイグレーションの既定値 #383)
+    visibility: "public",
     trackIds: [],
     ...patch,
   };

@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 import { buildTimetableLayout } from "../lib/timetableLayout.js";
-import { trackColors } from "../lib/trackColors.js";
+import { trackColors, trackColorsForTracks } from "../lib/trackColors.js";
 import { TimetableGrid } from "./TimetableGrid.js";
 import { TimetableTrackTabs } from "./TimetableTrackTabs.js";
 
@@ -17,9 +17,9 @@ import { TimetableTrackTabs } from "./TimetableTrackTabs.js";
  */
 
 const TRACKS: EventTrack[] = [
-  { id: "tr-a", name: "A（メインホール）", sortOrder: 0 },
-  { id: "tr-b", name: "B（小ホール）", sortOrder: 1 },
-  { id: "tr-c", name: "C（ワークショップ室）", sortOrder: 2 },
+  { id: "tr-a", name: "A（メインホール）", sortOrder: 0, visibility: "public" },
+  { id: "tr-b", name: "B（小ホール）", sortOrder: 1, visibility: "public" },
+  { id: "tr-c", name: "C（ワークショップ室）", sortOrder: 2, visibility: "public" },
 ];
 
 const START = new Date("2026-08-11T10:00:00+09:00").getTime();
@@ -38,6 +38,8 @@ function item(patch: Partial<ScheduleItem> & { id: string }): ScheduleItem {
     materialOgImage: "",
     sortOrder: 0,
     placement: "all",
+    // 既存のコマは全部「参加者にも見せる」(マイグレーションの既定値 #383)
+    visibility: "public",
     trackIds: [],
     ...patch,
   };
@@ -194,6 +196,49 @@ describe("TimetableGrid（広い画面）", () => {
 
     expect(blocksOf(container, "it-idea")).toHaveLength(0);
     expect(screen.queryByText("ネタ出し")).not.toBeInTheDocument();
+  });
+
+  /**
+   * 裏方 (#383)。サーバーが staff にしか返さないので、ここに届いている時点で
+   * 見てよい人が見ている。**画面側では絞らない**（絞ると判断が2か所になる）。
+   * 代わりに、参加者には出ないコマだと分かる印を必ず付ける。
+   */
+  it("裏方のコマは、参加者には出ないと分かる印を付けて描く", () => {
+    const tracks: EventTrack[] = [
+      TRACKS[0]!,
+      { id: "tr-s", name: "受付", sortOrder: 1, visibility: "staff" },
+    ];
+    const got = buildTimetableLayout(
+      [
+        item({
+          id: "it-a",
+          title: "セッションA",
+          placement: "tracks",
+          trackIds: ["tr-a"],
+        }),
+        item({
+          id: "it-prep",
+          title: "設営",
+          placement: "tracks",
+          trackIds: ["tr-a"],
+          visibility: "staff",
+        }),
+      ],
+      tracks,
+      START,
+    );
+    const { container } = render(
+      <TimetableGrid
+        layout={got}
+        colors={trackColorsForTracks("#2DD4BF", "#FB923C", got.tracks)}
+      />,
+    );
+
+    expect(blocksOf(container, "it-prep")[0]!.textContent).toContain("運営のみ");
+    // 公開のコマには付けない（付くと全部が裏方に見える）
+    expect(blocksOf(container, "it-a")[0]!.textContent).not.toContain(
+      "運営のみ",
+    );
   });
 
   it("開始時刻が決まらないときは格子を描かない（壊れない）", () => {

@@ -1,5 +1,6 @@
 import { Box, Chip, Stack, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import { useTranslation } from "react-i18next";
 import type { TimetableBlock, TimetableLayout } from "../lib/timetableLayout.js";
 import { TIMETABLE_SLOT_PX } from "../lib/timetableLayout.js";
@@ -48,6 +49,8 @@ function speakerLabel(block: TimetableBlock): string {
  * - 複数トラックにまたがるコマは、またぐ列をつないだ**1つの枠**として描く
  * - 全トラック共通は全列をまたぐ帯。トラック色を使わず無彩色＋斜線にして、
  *   「どれか1本の色」と読み違えられないようにする
+ * - 裏方 (#383) は半透明＋鍵の印。公開のコマと時刻が重なるのが普通の使い方
+ *   （セッション中の設営・控え室の留守番）なので、公開の枠の**上**に重ねる
  * - 時刻列は横スクロールしても残る（sticky）。トラックが増えたら横スクロール
  *
  * 位置（列・行）は inline style で当てる。枠ごとに値が違うので、
@@ -57,8 +60,9 @@ export function TimetableGrid({
   colors,
 }: {
   layout: TimetableLayout;
-  /** トラックと同じ並びの色。テーマから導いた値 (lib/trackColors.ts) */
-  colors: string[];
+  /** トラックと同じ並びの色。テーマから導いた値 (lib/trackColors.ts)。
+   * `null` は**スタッフ用の列** (#383)。色を持たず無彩色＋斜線で描く */
+  colors: Array<string | null>;
 }) {
   const { t } = useTranslation();
   const theme = useTheme();
@@ -157,15 +161,29 @@ export function TimetableGrid({
               whiteSpace: "nowrap",
             }}
           >
+            {/* スタッフ用の列は色を持たない (#383)。無彩色＋斜線にして、
+                公開トラックの色を1本も食わないようにする */}
             <Box
               sx={{
                 width: 9,
                 height: 9,
                 borderRadius: "3px",
                 flex: "none",
-                bgcolor: colors[i] ?? "primary.main",
+                ...(colors[i]
+                  ? { bgcolor: colors[i]! }
+                  : {
+                      backgroundImage: stripe,
+                      border: "1px solid",
+                      borderColor: "divider",
+                    }),
               }}
             />
+            {!colors[i] && (
+              <LockOutlinedIcon
+                sx={{ fontSize: 14, color: "text.secondary", flex: "none" }}
+                titleAccess={t("schedule.staffTrack")}
+              />
+            )}
             <Typography variant="body2" fontWeight={700} noWrap>
               {track.name}
             </Typography>
@@ -206,7 +224,11 @@ export function TimetableGrid({
         {blocks.map((block) => {
           // 色は列ではなくコマで決める。飛び地で枠が割れたときに、同じコマの
           // 片割れが別の色になってしまう
-          const color = colors[block.colorIndex] ?? theme.palette.primary.main;
+          const color = colors[block.colorIndex] ?? null;
+          // 色を持たない枠（全トラック共通・裏方・スタッフ用の列のコマ）は
+          // 無彩色＋斜線で描く。トラック色を1本借りると、別の列の予定に見える
+          const plain = block.common || block.staffOnly || color === null;
+          const tint = color ?? theme.palette.primary.main;
           const short = block.rowEnd - block.rowStart <= SHORT_SLOTS;
           const speaker = speakerLabel(block);
           const spans = block.colSpan > 1 || block.split;
@@ -225,14 +247,16 @@ export function TimetableGrid({
               }}
               sx={{
                 position: "relative",
-                zIndex: 1,
+                // 裏方は公開のコマと時刻が重なるのが普通の使い方 (#383)。
+                // 下に置くと埋もれて見えないので、半透明のまま上に重ねる
+                zIndex: block.staffOnly ? 2 : 1,
                 overflow: "hidden",
                 mx: "4px",
                 my: "1px",
                 px: 0.875,
                 py: "2px",
                 borderRadius: 1.5,
-                ...(block.common
+                ...(plain
                   ? {
                       // 無彩色の斜線＋破線。トラック色を一切使わないことで、
                       // 「どれか1本のトラックの色」と読み違えられない
@@ -240,15 +264,27 @@ export function TimetableGrid({
                       border: "1px dashed",
                       borderColor: "divider",
                       borderLeft: "3px solid",
-                      borderLeftColor: alpha(theme.palette.text.primary, 0.55),
+                      borderLeftColor: alpha(
+                        theme.palette.text.primary,
+                        block.staffOnly ? 0.4 : 0.55,
+                      ),
+                      // 裏方は重なった公開の枠が透けて見える濃さで重ねる (#383)
+                      ...(block.staffOnly
+                        ? {
+                            bgcolor: alpha(
+                              theme.palette.background.paper,
+                              0.72,
+                            ),
+                          }
+                        : {}),
                     }
                   : {
-                      bgcolor: alpha(color, 0.16),
+                      bgcolor: alpha(tint, 0.16),
                       borderLeft: "3px solid",
-                      borderLeftColor: color,
+                      borderLeftColor: tint,
                       // またぎは内枠線を足して「つないだ1枠」だと分かるようにする
                       boxShadow: spans
-                        ? `inset 0 0 0 1px ${alpha(color, 0.45)}`
+                        ? `inset 0 0 0 1px ${alpha(tint, 0.45)}`
                         : "none",
                     }),
               }}
@@ -280,6 +316,23 @@ export function TimetableGrid({
                     {block.entry.item.title}
                   </Typography>
                 )}
+                {/* 裏方の印 (#383)。参加者には出ないコマだと一目で分かるように
+                    する。狭い枠に入れるので短い言い方にし、長いほうは title に置く */}
+                {block.staffOnly && (
+                  <Chip
+                    size="small"
+                    icon={<LockOutlinedIcon sx={{ fontSize: 11 }} />}
+                    label={t("schedule.staffOnly")}
+                    title={t("schedule.staffOnlyChip")}
+                    sx={{
+                      height: 16,
+                      fontSize: "0.62rem",
+                      alignSelf: "baseline",
+                      "& .MuiChip-icon": { ml: "4px", mr: "-2px" },
+                      bgcolor: alpha(theme.palette.text.primary, 0.14),
+                    }}
+                  />
+                )}
                 {block.common || spans ? (
                   <Chip
                     size="small"
@@ -288,9 +341,9 @@ export function TimetableGrid({
                       height: 16,
                       fontSize: "0.62rem",
                       alignSelf: "baseline",
-                      bgcolor: block.common
+                      bgcolor: plain
                         ? alpha(theme.palette.text.primary, 0.14)
-                        : alpha(color, 0.3),
+                        : alpha(tint, 0.3),
                     }}
                   />
                 ) : (

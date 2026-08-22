@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { hexToHsl, trackColors } from "./trackColors.js";
+import {
+  hexToHsl,
+  trackColors,
+  trackColorsForTracks,
+} from "./trackColors.js";
 
 /**
  * トラック色 (#338)。テーマの primary と secondary を色相でつないだ中間色を使う。
@@ -48,5 +52,37 @@ describe("trackColors", () => {
   it("本数が0なら空。読めない色でも落ちない", () => {
     expect(trackColors("#2DD4BF", "#FB923C", 0)).toEqual([]);
     expect(trackColors("いろ", "#FB923C", 2)).toHaveLength(2);
+  });
+});
+
+/**
+ * スタッフ用トラック (#383)。
+ *
+ * 色はトラックの本数から作るので、スタッフ用の列を本数に混ぜると
+ * **公開トラックの色が動く**。スタッフ用トラックは参加者には返らないため、
+ * 動いた瞬間に「同じトラックが参加者と運営で別の色」になり、会場で
+ * 「青の列」と口頭で伝えている運営が壊れる。
+ */
+describe("trackColorsForTracks (#383)", () => {
+  const track = (id: string, visibility: "public" | "staff") => ({
+    id,
+    visibility,
+  });
+
+  it("スタッフ用トラックが混ざっても、公開トラックの色は変わらない", () => {
+    const withoutStaff = trackColorsForTracks("#2DD4BF", "#FB923C", [
+      track("tr-a", "public"),
+      track("tr-b", "public"),
+    ]);
+    const withStaff = trackColorsForTracks("#2DD4BF", "#FB923C", [
+      track("tr-a", "public"),
+      track("tr-s", "staff"),
+      track("tr-b", "public"),
+    ]);
+
+    // スタッフ用の列は色を持たない（無彩色＋斜線で描く）
+    expect(withStaff[1]).toBeNull();
+    // 公開トラックは、間に挟まれても並び順どおりに同じ色を受け取る
+    expect([withStaff[0], withStaff[2]]).toEqual(withoutStaff);
   });
 });
