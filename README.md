@@ -77,7 +77,7 @@ pnpm dev   # web: vite (127.0.0.1:4280) + API: wrangler dev (:8787、vite が /a
 
 ## デプロイ
 
-GitHub Actions（`.github/workflows/deploy.yml`）がブランチ連動でデプロイします。
+GitHub Actions（`.github/workflows/ci.yml`）がブランチ連動でデプロイします。型チェックとテストは同じワークフローで、すべての PR に対しても走ります。
 
 ```bash
 git push origin main:staging      # → staging (https://eventer-staging.kojiran.workers.dev、ログイン必須)
