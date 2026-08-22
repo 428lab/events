@@ -333,6 +333,8 @@ const ja = {
   todoGanttTitle: "日程",
   todoGanttEmpty: "開始日か期限を入れると、ここに帯が出ます。",
   todoGanttOutside: "この期間の外にある仕事が {{n}} 件あります（一覧には出ます）。",
+  /** 全項目が窓より長いときのフォールバック。帯を窓の端で切ったことの注記 */
+  todoGanttClipped: "予定が長すぎて描ききれない仕事が {{n}} 件あります（帯は途中まで）。",
   todoGanttToday: "今日",
   todoGanttSelectHint: "行を選ぶと、つながる仕事との線が出ます。",
   /** 目盛りの月。細い列のときは月だけを書く */
@@ -604,6 +606,8 @@ const en: Record<keyof typeof ja, string> = {
   todoGanttEmpty: "Add a start or due date and a bar shows up here.",
   todoGanttOutside:
     "{{n}} job(s) fall outside this range (they are still in the list).",
+  todoGanttClipped:
+    "{{n}} job(s) run longer than the chart shows — their bars are cut off.",
   todoGanttToday: "Today",
   todoGanttSelectHint: "Pick a row to see the lines to the jobs it connects to.",
   todoGanttMonth: "M{{n}}",

@@ -217,6 +217,9 @@ export interface GanttLayout {
   bars: GanttBar[];
   /** 窓から外れた項目の id。**消さずに一覧へ落とす** */
   outsideIds: string[];
+  /** 帯を窓の端で切った項目の id（下のフォールバックで使う）。
+   * 切ったことを画面が注記できるように返す（黙って短く見せない） */
+  clippedIds: string[];
   /** 今日の縦線が入る列 index。窓の外なら null */
   todayCol: number | null;
   dayPx: number;
@@ -245,6 +248,7 @@ export function layoutGantt(
       columns: [],
       bars: [],
       outsideIds: [],
+      clippedIds: [],
       todayCol: null,
       dayPx: dayColPx(0),
     };
@@ -260,9 +264,32 @@ export function layoutGantt(
     if (count > best.count) best = { start, count };
   }
   const windowEnd = addDays(best.start, TODO_GANTT_WINDOW_DAYS - 1);
-  const inside = ranges.filter(
+  let inside = ranges.filter(
     (r) => r.from >= best.start && r.to <= windowEnd,
   );
+
+  /**
+   * **日付を持つ項目のすべてが窓より長いと、ここが空になる。**
+   *
+   * 窓の候補は各項目の開始日なので、窓に丸ごと収まる項目が1件でもあれば
+   * 必ず数えられる。裏返すと、空＝全項目が `TODO_GANTT_WINDOW_DAYS` 超え
+   * （150日のスポンサー募集1件だけ、のような普通の入力で起きる）。
+   * 空のまま進むと `inside[0]!` で落ち、この layout はレンダー中の
+   * `useMemo` で呼ばれるので**ページごと描けなくなり、消して復旧もできない**。
+   *
+   * フォールバック: 最も早い開始日に窓を置き、**帯を窓の端で切って描く**。
+   * 「一覧へ落とす」だけにしないのは、唯一の項目が長いだけでガントが
+   * 空になるため。切った項目は `clippedIds` で返し、画面が注記する
+   * （黙って短く見せない）。窓に1日も触れない項目は従来どおり一覧へ落とす。
+   */
+  let clippedIds: string[] = [];
+  if (inside.length === 0) {
+    const start = starts[0]!;
+    const end = addDays(start, TODO_GANTT_WINDOW_DAYS - 1);
+    const touching = ranges.filter((r) => r.from <= end);
+    clippedIds = touching.filter((r) => r.to > end).map((r) => r.id);
+    inside = touching.map((r) => (r.to > end ? { ...r, to: end } : r));
+  }
 
   // 実際に要るぶんだけに詰める（3日ぶんの予定に120列を描かない）
   let from = inside.reduce((a, r) => (r.from < a ? r.from : a), inside[0]!.from);
@@ -300,6 +327,7 @@ export function layoutGantt(
       span: diffDays(r.from, r.to) + 1,
     })),
     outsideIds: ranges.filter((r) => !insideIds.has(r.id)).map((r) => r.id),
+    clippedIds,
     todayCol:
       today >= from && today <= addDays(from, days - 1)
         ? diffDays(from, today)

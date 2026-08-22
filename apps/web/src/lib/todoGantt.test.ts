@@ -235,6 +235,58 @@ describe("ガントの配置 (#393 8.3)", () => {
     expect(l.from).toBe("2026-09-01");
   });
 
+  it("窓より長い項目が1件だけでもページが落ちない（150日のスポンサー募集）", () => {
+    // 窓の候補は「窓に**丸ごと**収まる件数」で選ぶので、日付を持つ項目の
+    // すべてが窓より長いと、どの候補でも件数0のまま進んで落ちる形だった。
+    // 最初の1件めがこれだと**一覧ごと描けなくなり、消して復旧もできない**
+    const l = layoutGantt(
+      derive([
+        todo("スポンサー募集", { startsOn: "2026-09-01", dueOn: "2027-01-29" }),
+      ]),
+      TODAY,
+    );
+    expect(l.days).toBeLessThanOrEqual(TODO_GANTT_WINDOW_DAYS);
+    expect(l.bars).toHaveLength(1);
+    // 帯は窓の端で切って描く（一覧に落とすと、唯一の項目なのにガントが空になる）
+    expect(l.bars[0]!.startCol).toBe(0);
+    expect(l.bars[0]!.span).toBe(TODO_GANTT_WINDOW_DAYS);
+    expect(l.clippedIds).toEqual(["スポンサー募集"]);
+    expect(l.outsideIds).toEqual([]);
+  });
+
+  it("全項目が窓超えでも落ちず、窓に触れない項目は一覧へ落ちる", () => {
+    const l = layoutGantt(
+      derive([
+        todo("長い仕事A", { startsOn: "2026-09-01", dueOn: "2027-03-01" }),
+        todo("長い仕事B", { startsOn: "2026-10-01", dueOn: "2027-04-01" }),
+        // 窓（最も早い開始日から120日）に1日も触れない
+        todo("遠い長い仕事", { startsOn: "2027-06-01", dueOn: "2027-12-31" }),
+      ]),
+      TODAY,
+    );
+    expect(l.days).toBeLessThanOrEqual(TODO_GANTT_WINDOW_DAYS);
+    expect(l.bars.map((b) => b.todoId)).toEqual(["長い仕事A", "長い仕事B"]);
+    expect(l.clippedIds).toEqual(["長い仕事A", "長い仕事B"]);
+    expect(l.outsideIds).toEqual(["遠い長い仕事"]);
+    // B の帯は自分の開始日から窓の端まで
+    const b = l.bars.find((x) => x.todoId === "長い仕事B")!;
+    expect(b.startCol).toBe(30); // 9/1 から 10/1 は30日後
+    expect(b.startCol + b.span).toBeLessThanOrEqual(l.days);
+  });
+
+  it("窓に収まる項目が1件でもあれば、切らずに従来どおり選ぶ", () => {
+    const l = layoutGantt(
+      derive([
+        todo("長い仕事", { startsOn: "2026-09-01", dueOn: "2027-03-01" }),
+        todo("普通の仕事", { startsOn: "2026-09-10", dueOn: "2026-09-20" }),
+      ]),
+      TODAY,
+    );
+    expect(l.bars.map((b) => b.todoId)).toEqual(["普通の仕事"]);
+    expect(l.clippedIds).toEqual([]);
+    expect(l.outsideIds).toEqual(["長い仕事"]);
+  });
+
   it("窓は最も多くの項目が収まるところに置く（1件のために多数を落とさない）", () => {
     const far = addDays("2026-09-01", TODO_GANTT_WINDOW_DAYS + 30);
     const l = layoutGantt(

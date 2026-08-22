@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scanStatements, type Statement } from "./lib/sqlScan.js";
+import { literalsOf, scanStatements, type Statement } from "./lib/sqlScan.js";
 
 /**
  * 準備 TODO を触る SQL の置き場を1か所に閉じる (#393 設計 3.5 / 9.3)。
@@ -19,6 +19,17 @@ import { scanStatements, type Statement } from "./lib/sqlScan.js";
  * 「イベント詳細にも出そう」と思った人が最初にぶつかるのは、このテストであるべき。
  *
  * 切り出しの実装は `test/lib/sqlScan.ts`（#383 の監査と共有）。
+ *
+ * ## この走査の盲点（知ったうえで使うこと）
+ *
+ * **変数から組む表名は映らない。** `mergeUsers` の
+ * `for (const [table, col] of simple) { \`UPDATE ${table} …\` }` のように
+ * 表名がループ変数・配列・引数から来る SQL は、リテラル自身が `event_todo` を
+ * 含まず、`${table}` の展開も効かない（展開できるのは同じファイルの
+ * `const NAME = "…"` だけ）ので、上の走査を素通りする（あちらの正しさは
+ * merge-user-columns.test.ts が配列リテラルの側を読んで守っている）。
+ * 同じ手で書けば監査を黙って抜けられるので、下に「`"event_todo"` という
+ * 文字列リテラルがどのファイルに現れるか」の補助チェックを置き、抜け道ごと見張る。
  */
 
 // ソースはビルド時に文字列として取り込む（workerd の中にファイルシステムは無い）
@@ -123,6 +134,65 @@ describe("event_todo を触る SQL の走査 (#393 9.3)", () => {
       outside.map((f) => f.file),
       "eventTodos.ts の外に SQL を1本置いたのに、走査が見つけられなかった",
     ).toEqual(["../src/routes/events.ts"]);
+  });
+
+  it("動的な表名の抜け道も見張る（文字列リテラルの出現で拾う）", () => {
+    // 表名がループ変数・配列から来る `` `UPDATE ${table} …` `` は、
+    // SQL の走査には映らない（上の盲点。`const NAME = "…"` なら展開が効くが、
+    // 変数束縛は追えない）。表名そのものを文字列リテラルに持つファイルを数え、
+    // 許可した場所以外に現れたら落とす。
+    // ここが緩いと、監査は在るのに動的な組み立て1つで素通しになる
+    const ALLOWED_FILES = new Set([
+      // この表の唯一の持ち主
+      OWNER,
+      // mergeUsers / 各テストが読む配列リテラル（#396）。SQL は組み立てだが、
+      // 対象列の網羅は merge-user-columns.test.ts が別に守っている
+      "../src/db/repositories/users.ts",
+    ]);
+    const offenders: string[] = [];
+    for (const [file, src] of Object.entries(sources)) {
+      if (ALLOWED_FILES.has(file)) continue;
+      if (!src.includes("event_todo")) continue;
+      if (literalsOf(src).some((l) => l.body.includes("event_todo"))) {
+        offenders.push(file);
+      }
+    }
+    expect(
+      offenders,
+      `"event_todo" という文字列リテラルが持ち主以外のファイルにある。\n` +
+        `SQL でなくても（動的な表名・列挙・ログ）、この表に触る足がかりになる。\n` +
+        `リポジトリ経由に直すか、理由を書いて ALLOWED_FILES に足すこと。`,
+    ).toEqual([]);
+
+    // 抜け道そのものを毎回その場で作って、拾えることを確かめる。
+    // mergeUsers と同じ「配列 → ループ変数 → 組み立て」の形
+    const sneaky = [
+      'const pairs = [["event_todo", "assignee_user_id"]];',
+      "for (const [table, col] of pairs) {",
+      "  run(`UPDATE ${table} SET ${col} = ? WHERE ${col} = ?`);",
+      "}",
+    ].join("\n");
+    // 本走査には映らない（＝この補助チェックが要る理由）
+    expect(
+      scanStatements({ "x.ts": sneaky }, "event_todo", TOUCHES_TODO),
+    ).toEqual([]);
+    // 補助チェックは拾う
+    const found = literalsOf(sneaky).some((l) => l.body.includes("event_todo"));
+    expect(found, "動的な表名の形を補助チェックが拾えていない").toBe(true);
+    // なお `const NAME = "event_todo"` と**同じファイルで**組む形は、
+    // 断片の展開が効くので本走査でも映る（sqlScan.ts の expand）。
+    // 盲点は「変数束縛」だけであることをここで固定しておく
+    expect(
+      scanStatements(
+        {
+          "y.ts":
+            'const table = "event_todo";\n' +
+            "const q = `UPDATE ${table} SET title = ? WHERE id = ?`;",
+        },
+        "event_todo",
+        TOUCHES_TODO,
+      ),
+    ).toHaveLength(1);
   });
 
   it("書き込みも拾う（読みだけを見張らない）", () => {

@@ -331,6 +331,13 @@ export function TodoGantt({
             {t("staffOps.todoGanttOutside", { n: layout.outsideIds.length })}
           </Typography>
         )}
+        {/* 全項目が窓より長いときのフォールバックで、帯を窓の端で切った印。
+            切ったことを黙らない（帯の長さ＝期間だと読まれるため） */}
+        {layout.clippedIds.length > 0 && (
+          <Typography variant="caption">
+            {t("staffOps.todoGanttClipped", { n: layout.clippedIds.length })}
+          </Typography>
+        )}
       </Stack>
     </Stack>
   );
