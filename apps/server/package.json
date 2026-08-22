@@ -8,7 +8,7 @@
     "deploy": "cd ../.. && wrangler deploy",
     "deploy:staging": "cd ../.. && wrangler deploy --env staging",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "node ./scripts/run-tests.mjs",
     "db:migrate:local": "cd ../.. && wrangler d1 migrations apply eventer --local",
     "db:migrate:remote": "cd ../.. && wrangler d1 migrations apply eventer --remote"
   },
