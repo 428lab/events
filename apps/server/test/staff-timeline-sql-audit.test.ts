@@ -56,6 +56,29 @@ const ALLOWED: Array<{ contains: string; why: string }> = [
     contains: "DELETE FROM event_schedule_item WHERE id = ? AND event_id = ?",
     why: "書き込み系（保存で送られなかった項目の削除）。staff 限定",
   },
+  {
+    contains: "SELECT id FROM event_schedule_item WHERE id = ? AND event_id = ?",
+    why:
+      "eventDuties.itemInEvent (#384)。持ち場を置く前の所有チェックで、ID しか引かず" +
+      "項目の中身は外に出ない。staff 限定ルート（requireEventRole で配下ごと閉鎖）" +
+      "からしか呼ばれない。持ち場は公開・裏方を問わず全項目に置ける（設計 3.3）ので" +
+      "**絞らないことが正しい**（絞ると公開セッションの司会に持ち場を当てられない）",
+  },
+  {
+    contains: "SELECT s.id, s.item_id, s.duty_id, s.required_count",
+    why:
+      "eventDuties の listSlots / findSlotInEvent (#384)。持ち場の一覧と所有チェック。" +
+      "項目からは JOIN の突き合わせにしか使わず、項目の中身（題名・時刻）は引かない。" +
+      "staff 限定ルート（requireEventRole(['staff']) で配下ごと閉鎖）からしか呼ばれない",
+  },
+  {
+    contains: "FROM event_duty_assignee a",
+    why:
+      "eventDuties の割り当ての解決 (ASSIGNEE_SELECT) と assigneeInSlot (#384)。" +
+      "項目からは event_id を引くためだけに JOIN する。staff 限定ルート" +
+      "（requireEventRole(['staff']) で配下ごと閉鎖）からしか呼ばれない。" +
+      "この3表が eventDuties.ts の外に無いことは staff-duty-sql-audit.test.ts が守る",
+  },
 ];
 
 /** 絞り込みを見ている、と認めるしるし。
@@ -83,7 +106,7 @@ function statements(): Statement[] {
  * 壊れる形だった）。増減したらこの数を直すこと。**直す前に、増えた文が
  * 絞り込みを持っているかを必ず読むこと。**
  */
-const EXPECTED_STATEMENTS = 13;
+const EXPECTED_STATEMENTS = 18;
 
 describe("event_schedule_item を読む SQL の走査 (#383 9.10)", () => {
   it("走査そのものが空振りしていない", () => {

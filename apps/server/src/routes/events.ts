@@ -45,6 +45,7 @@ import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { awardsRepo } from "../db/repositories/awards.js";
 import { eventTodosRepo } from "../db/repositories/eventTodos.js";
+import { eventDutiesRepo } from "../db/repositories/eventDuties.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { entriesRepo } from "../db/repositories/entries.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
@@ -494,6 +495,14 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
   // 持ち越すと「作った瞬間に全部が遅れになった段取り」ができる（募集締切と
   // 抽選日時をコピーしないのとまったく同じ理由）。辺の張り替えはリポジトリに閉じる
   await eventTodosRepo.copyForDuplicate(src.id, created.id, user.id);
+
+  // スタッフの役割の定義 (#384)。名前と並び順だけをコピーする。
+  // 持ち場（時間帯×役割×人数）と割り当てはコピー**できない**: 複製は
+  // タイムテーブルをコピーしないので、ぶら下げる先の項目が複製先に無い。
+  // **将来タイムテーブルの複製が入ったら、持ち場（event_duty_slot）も
+  // コピー対象に含めること**（割り当ては含めない。複製先は開催日時 0 の
+  // 下書きで、スタッフ集めもこれからのため）。
+  await eventDutiesRepo.copyForDuplicate(src.id, created.id);
 
   // イベント画像（元画像が無ければスキップ）
   await copyEventImage(src.id, created.id);

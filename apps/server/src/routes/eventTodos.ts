@@ -17,6 +17,7 @@ import { requireAuth } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventTodosRepo, type TodoPatch } from "../db/repositories/eventTodos.js";
+import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 
 /**
  * スタッフ向けの準備 TODO とガントチャート (#393)。**参加者向けの経路は1本も無い。**
@@ -40,12 +41,13 @@ eventTodoRoutes.use("/:id/todos", requireEventRole(["staff"]));
 eventTodoRoutes.use("/:id/todos/*", requireEventRole(["staff"]));
 
 /** 担当に指定できるか。**`assignableStaff` と同じ述語を使う**
- * （選択肢の SQL と検査を別々に書くと、選べるのに弾かれる／その逆が起きる） */
+ * （選択肢の SQL と検査を別々に書くと、選べるのに弾かれる／その逆が起きる）。
+ * 実体は eventMembers.ts の1本（持ち場の割り当て #384 と契約を共有する） */
 async function assignableCheck(
   eventId: string,
   userId: string,
 ): Promise<boolean> {
-  const staff = await eventTodosRepo.assignableStaff(eventId);
+  const staff = await eventMembersRepo.assignableStaff(eventId);
   return staff.some((s) => s.id === userId);
 }
 
@@ -60,7 +62,7 @@ eventTodoRoutes.get("/:id/todos", async (c) => {
   const payload: EventTodosPayload = {
     todos: await eventTodosRepo.listByEvent(eventId),
     deps: await eventTodosRepo.listDeps(eventId),
-    assignable: await eventTodosRepo.assignableStaff(eventId),
+    assignable: await eventMembersRepo.assignableStaff(eventId),
   };
   return c.json(payload);
 });

@@ -3,6 +3,7 @@ import type {
   EventMemberWithUser,
   EventRole,
   MyEventSummary,
+  TodoAssignee,
   User,
 } from "@eventer/shared";
 import { QA_ANONYMITY_MODES } from "@eventer/shared";
@@ -209,6 +210,39 @@ export const eventMembersRepo = {
       eventId,
     );
     return row?.n ?? 0;
+  },
+
+  /**
+   * 担当に指定できる人。**確定スタッフかつ退会していない人だけ**。
+   *
+   * 「担当に指定できる人」の契約はこの1本に寄せる。準備 TODO (#393) と
+   * 持ち場の割り当て (#384) の両方がここを使う（もともと eventTodos.ts に
+   * 居たが、2つ目の利用者ができた時点で同じ契約が2か所になるのでこちらへ移した）。
+   *
+   * `deleted_at` を落とすと退会者が選択肢に並ぶ。各機能の取得側
+   * （eventTodos の `ASSIGNEE_JOIN` / eventDuties の `ASSIGNEE_SELECT`）と
+   * 同じ条件でなければならない（ここが緩いと「選べるのに `left` になる」人が出る）。
+   */
+  async assignableStaff(eventId: string): Promise<TodoAssignee[]> {
+    const rows = await many<{
+      id: string;
+      username: string;
+      global_name: string | null;
+      avatar_url: string | null;
+    }>(
+      `SELECT u.id, u.username, u.global_name, u.avatar_url
+         FROM event_member m
+         JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
+        WHERE m.event_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
+        ORDER BY m.created_at ASC`,
+      eventId,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      username: r.username,
+      globalName: r.global_name,
+      avatarUrl: r.avatar_url,
+    }));
   },
 
   /** 参加者以外のロールへの変更 (#277)。参加枠を外して参加状態を確定にする。

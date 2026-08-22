@@ -1,0 +1,719 @@
+# スタッフの役割タグと持ち場（時間帯 × 役割 × 人数） (#384)
+
+- 対象: `apps/server`（D1 スキーマ・新しいリポジトリ・新しいルート）、
+  `packages/shared`（型・入力スキーマ・上限・文言）、`apps/web`（割り当て画面とタグ表示）
+- 前提: #383（スタッフ用タイムライン）は**マージ済み**。役割を当てる先は
+  あちらが作った `event_schedule_item`（`visibility` 付き）である
+- ステータス: **実装済み**（PR #405）。見せ方 (8.) は相談の結果 **v1 は案S2 のみ**（8.1）
+
+---
+
+## 1. なぜ作るか
+
+スタッフが**何を担当するか**を表す場所が無い。受付・司会・配信・準備・片付け・
+ケータリングのような持ち場は、いまは運営の頭の中と外部の表計算にある。
+
+要件は6つ (#384)。
+
+1. 役割（受付・司会・配信…）を表せる。**イベントごとに足したり名前を変えたりできる**
+2. **使い方は2段階**: まず時間帯に「役割と人数」を当てる（「この時間帯は受付が2人」）
+   → そのあと実際のスタッフを割り当てる
+3. 先に人数を置けるので、**埋まっていない持ち場が分かる**
+   （人から埋めると、足りていないことに気づけない）
+4. 割り当てられたスタッフに**タグが付いて見える**
+5. **タグはスタッフにしか見えない**
+6. 権限の `event_member.role`（staff / judge / …）とは**別の軸**。あれは権限、これは担当
+
+5 の危険の性質は #393（TODO）と同じで #383 とは違う。#383 は「参加者にも返す1本の
+API に見せない行が混ざる」形だったが、今回は**参加者向けの経路を最初から1本も作らない**
+ことができる。閉じた状態から始めて、閉じ続けることだけを守る（3.5）。
+
+---
+
+## 2. 調査結果
+
+### 2.1 当てる先（#383 の土台）
+
+`event_schedule_item` が時間帯そのもの。`placement`（どの列か）と `visibility`
+（誰に見せるか）の2軸を持ち、id は差分保存 (#340) で**保存をまたいで安定**している。
+つまり項目に外部キーでぶら下げたデータは、タイムテーブルを編集しても生き残る。
+項目の削除は `DELETE FROM event_schedule_item WHERE id = ?` で行われるので、
+`ON DELETE CASCADE` が発火する（`event_schedule_item_track` が既にこの形）。
+
+**トラックを消すと、そこにしか載っていなかった項目は `unassigned` に落ちる**（0067）。
+消えるのではなく落ちる。この規則が 3.3（当てられる範囲）を縛る。
+
+### 2.2 「role」という語は既に権限で使われている
+
+- `event_member.role` … participant / staff / judge / observer（**権限**）
+- `apps/server/src/auth/roles.ts` … `requireEventRole` / `canManageEvent`（権限の判定）
+
+今回の「役割」にそのまま `role` と付けると、`event_member.role` と読み違える
+（issue 自身が「混ぜないこと」と書いている）。3.2 で命名を決める。
+
+### 2.3 「担当に指定できる人」の契約は #393 が既に持っている
+
+`apps/server/src/db/repositories/eventTodos.ts` の `assignableStaff`:
+`event_member.role='staff' AND status='confirmed'` かつ `user.deleted_at IS NULL`。
+外れた担当の導出（`ASSIGNEE_JOIN`）も同じファイルにある。
+**同じ契約をもう1回書かない**（3.6・6.3 で1か所に寄せる）。
+
+### 2.4 メンバーが外れる4通り（#393 設計 2.3 の表のとおり）
+
+| 起きること | `user` 行 | `event_member` 行 | FK は発火するか |
+|---|---|---|---|
+| a. 除名・自分で脱退 | 残る | **消える** | しない |
+| b. staff → participant に降格 | 残る | 残る（role が変わる） | しない |
+| c. 退会申請 (#250) | **残る（deleted_at 付き）** | 残る | しない |
+| d. 30日後の完全削除 (#244) | **消える** | CASCADE で消える | **する** |
+
+a〜c では割り当ての行に何も起きない。「まだ担当者か」は**読むときに導出する**
+（#393 と同じ。消して回ると、外す経路の数だけ同じ契約が散る）。
+d だけ FK の設定が効く（3.6 で `CASCADE` を選ぶ。TODO の `SET NULL` と**逆**にする理由もそこに書く）。
+
+### 2.5 `mergeUsers` と #396 の走査
+
+`users.ts` の `mergeUsers` は、UNIQUE キーを持つ表を `uniqueKeyed`
+（`["event_member", "user_id", ["event_id"]]` のような3つ組）で付け替える。
+今回の割り当ては（持ち場, user）で UNIQUE を張るので **`simple` ではなく
+`uniqueKeyed`** に足す。忘れても `test/merge-user-columns.test.ts` (#396) が
+**列数と組数を実数で固定**しているので落ちる——ただし落ちたテストを見て
+「数字だけ直す」と素通りするので、**設計に書いておく**（5.）。
+
+### 2.6 イベントの複製は何をコピーしているか
+
+`routes/events.ts` の `POST /:id/duplicate` は参加枠・採点基準・表彰・TODO (#393) を
+コピーし、**タイムテーブルはコピーしない**。したがって時間帯に紐づくもの
+（役割×人数、スタッフの割り当て）は**コピーのしようがない**。
+コピーできるのはイベント直下の**役割の定義だけ**（7.）。
+
+### 2.7 参加者に届く経路（役割が混ざりうる場所）
+
+#393 設計 2.6 と同じ7か所: イベント詳細 / タイムテーブル `GET /:id/timetable` /
+前日リマインダーのメール / 出席 CSV / フィード / 公開ページ・公開プロフィール /
+`notification`。**本設計はこの7か所に役割・割り当てを1件も出さない**（9.2 で機械が守る）。
+
+注意が1つ。今回の表は `event_schedule_item` に JOIN するので、
+**#383 の SQL 監査（`staff-timeline-sql-audit.test.ts`）に引っかかる**。
+これは監査が正しく働いている姿で、新しい SQL ごとに
+`ALLOWED` へ理由を書き、`EXPECTED_STATEMENTS` を増やす（9.4）。
+
+### 2.8 テンプレートの前例（`SCHEDULE_TEMPLATES` と #364）
+
+`packages/shared/src/eventSchedule.ts` にタイムテーブルのテンプレートが既にあり、
+コメントが問題を正確に書いている: **テンプレ名は辞書が訳すが、中身は日本語のまま**。
+選ぶとその文言がそのまま保存されるので、見る人の言語で訳すと「作った人と参加者で
+見える文言が違う」ことになる。**保存されるデータの言語は #364 で未決**。
+#393 は同じ理由でテンプレートを範囲外にし、**イベント複製でのコピー**を代わりにした。
+
+### 2.9 画面まわり
+
+- スタッフ用の格子は `EventTimetablePage.tsx`（267行）＋ `TimetableGrid.tsx`（384行）。
+  staff にはスタッフ用トラックの列が既に出ている（#383 案V1）。表示専用
+- タイムテーブルの編集（`ScheduleEditor.tsx` 480行）は**版番号付きの全件差分保存** (#340)。
+  ここに役割の編集を混ぜると、チップ1つ付けるのに全項目を送り返すことになる
+- スタッフ専用の独立ページの型は `EventTodoPage.tsx` (#393 案P1) が手本。
+  `EventLayout` の子ルート＋`EventDetailPage` に導線ボタン1つ
+- 色: `trackColors.ts` は**公開トラックの本数だけ**から色を作る（#383 7.3 の教訓:
+  本数に依存する色は、見る人によって同じものの色が変わる）。役割の色にも同じ罠がある
+
+---
+
+## 3. 決めたこと（結論）
+
+1. **3層のデータモデル**: 役割の定義 / 持ち場（時間帯×役割×人数）/ 割り当て（持ち場×人）（3.1）
+2. **命名は `duty`**。`role` という語をスキーマ・API に使わない（3.2）
+3. **役割はそのイベントの全項目に当てられる**（公開セッションにも、裏方にも）（3.3）
+4. **既定のテンプレートは持たない。** イベントごとに主催者が作り、**複製でコピーする**（3.4）
+5. **タグはスタッフにしか見えない**を #393 型で守る:
+   専用ルート＋リポジトリ1本＋SQL 監査。タイムテーブル API には載せない（3.5）
+6. **外れた担当は読むときに導出**する。名前も id も返さない。充足に数えない（3.6）
+7. **充足（埋まっているか）は保存せず導出**する（3.7）
+
+### 3.1 3層のデータモデル
+
+```
+event_staff_duty        役割の定義（イベントごと）      「受付」「司会」「配信」…
+      ↑ duty_id
+event_duty_slot         持ち場 ＝ 時間帯 × 役割 × 人数   「この時間帯は受付が2人」
+      ↑ slot_id             ↑ item_id = event_schedule_item（#383 の時間帯）
+event_duty_assignee     割り当て ＝ 持ち場 × スタッフ     「その受付は A さんと B さん」
+```
+
+- **要件の2段階がそのまま2つの表になる。** 持ち場（役割と人数）を先に置けるから、
+  割り当てが0件でも「受付 0/2」が見える（要件3）
+- 持ち場は（項目, 役割）で1行（UNIQUE）。「受付が2人」は行1本＋`required_count = 2`。
+  人数ぶんの行を作る案（1枠1行）は、枠に個性が無い（受付の1枠目と2枠目に区別が無い）
+  のに行だけ増え、並び・詰め替えの規則が要るので採らない
+- 1人のスタッフは**持ち場ごとに**割り当てる。時間帯が変われば別の持ち場なので、
+  「午前は受付・午後は配信」が自然に表せる（issue の「複数の役割を持てるか」への答え）。
+  同じ時間帯に2つの役割を持つことも DB は止めない（応援・兼務は現実にある）
+- TODO (#393) とは**繋がない**。あちらは準備期間（日単位）、こちらは当日の持ち場
+  （時間帯）。#393 設計 3.6 が「混ぜるな」と決めた線をそのまま守る
+
+### 3.2 命名は `duty`
+
+`role` は `event_member.role`（権限）が既に使っている (2.2)。
+表・列・型・API パスには **`duty`（担当・持ち場）** を使い、`role` の語を出さない。
+
+- 表: `event_staff_duty` / `event_duty_slot` / `event_duty_assignee`
+- 型: `StaffDuty` / `DutySlot` / `DutyAssignee`
+- 利用者向けの文言は従来どおり「役割」「持ち場」（実装の語を UI に出さない）
+
+`staff_role` のような名前は「`event_member.role = 'staff'` の話か？」と毎回迷わせる。
+`duty` なら権限の話でないことが名前だけで分かる。
+
+### 3.3 役割はそのイベントの全項目に当てられる（公開セッションにも）
+
+**`placement` も `visibility` も問わず、そのイベントの `event_schedule_item` なら
+どれにでも持ち場を置ける。**
+
+- **公開の項目にも当てる（要件そのもの）。** 司会は公開セッションに付く。配信も
+  公開セッションの仕事。裏方の項目（設営・撤収）に限ると、公開セッションの司会の
+  ために鏡写しの裏方項目をもう1本作ることになり、時刻がずれた瞬間に嘘になる
+- **`unassigned`（未割り当て）の項目にも置ける。** 制限しない理由は規則の単純さに加えて
+  もう1つある: トラックを消すと項目は `unassigned` に**落ちる** (2.1)。
+  `unassigned` を禁止すると、この落下のときに持ち場を消すか禁止状態を許すかの
+  規則が要る。許せば、配置し直したときに持ち場がそのまま戻る（運営の入力を捨てない。
+  0067 が未割り当てへ「落とす」を選んだのと同じ理由）
+- 公開の項目に持ち場を置いても、**参加者には何も変わらない**。持ち場・割り当ては
+  参加者向けの応答に1バイトも載らない（3.5）。参加者が見るセッションはいままでどおりで、
+  司会のタグは staff だけに見える。司会の名前を参加者に公表したいなら、
+  それはセッションの説明文・登壇者欄に書くことであって本機能の仕事ではない（10.）
+
+### 3.4 既定のテンプレートは持たない（複製がその役を務める）
+
+issue は「テンプレートを用意して選べる」と書いているが、**サービス共通の既定
+（「受付」「司会」…）は持たない**。イベントごとに主催者が自分で役割を作り、
+**イベント複製で役割の定義もコピーする**（7.）。
+
+理由は #393 設計 7.1 と同一で、同じ判断を3度目に繰り返す形になる。
+
+1. **#364（保存されるデータの言語）が未決。** 既定を日本語で保存すれば英語利用者に
+   日本語が出る。訳を引く形にすれば「保存データが表示時に言語で変わる」性質を導入する。
+   どちらも #364 の結論を先取りする
+2. `SCHEDULE_TEMPLATES` (2.8) が現にこの問題を抱えて「#364 が決まるまで中身に
+   手を入れない」と凍結している。同じ形の凍結対象を自分から増やさない
+3. テンプレートには**持ち主**という2本目の未決の軸がある（サービス共通 /
+   コミュニティごと / イベントごと）。issue 自身が「#364 の結論が出るまで、
+   既定テンプレの持ち方は決めない」と書いている
+
+**複製なら両方の問いに答えずに「毎回同じ役割」の価値が出る。** コピーされる名前は
+主催者が自分の言語で打った文字列なので、言語の決めごとが要らない。
+役割は高々数個〜十数個で、初回に打つコストは小さい。テンプレートが本当に要るかは、
+#364 決着後に「よく複製されている役割の集合」という実データを見てから設計できる。
+
+### 3.5 スタッフにしか見えない（#393 型で閉じる）
+
+参加者向けの経路が**ゼロの状態から始められる**ので、#383 の `audience` 引数の形は
+真似ない（聞き手が staff 1種類しかないところに引数を配り歩かない。#393 設計 3.5 と同じ）。
+代わりに不変条件を2つ置く。
+
+> 1. **3つの表を読み書きする SQL は `db/repositories/eventDuties.ts` の中にしか無い。**
+> 2. **そのリポジトリを呼ぶルートは `routes/eventDuties.ts` だけで、
+>    サブアプリ全体が `requireEventRole(["staff"])` で閉じている。**
+
+- `GET /api/events/:id/timetable` には**載せない**。#383 は「1本の API が2つの
+  聞き手を持つ」ので出し分けたが、持ち場は staff 以外に返す形が存在しない。
+  載せると、絞り込みの条件分岐が1つ増え、忘れた側に倒れると参加者へ漏れる。
+  専用 GET なら忘れる場所が無い（403 が既定）
+- 見える範囲は #383 の「裏方が見える人」＝ `requireEventRole(["staff"])`
+  （= `canManageEvent` と同じ基準）にそろえる。#393 6.1 と同じ理由:
+  当日の裏方と同じ運営情報なので、「タイムラインは見えるのに持ち場は見えない人」を
+  作らない。`isConfirmedEventStaff`（より狭い）にしない理由も同じ
+- 不変条件 1 は `staff-duty-sql-audit.test.ts` が機械で守る（9.4。#393 と同じ仕掛け、
+  `test/lib/sqlScan.ts` を共有）
+
+### 3.6 外れた担当は導出する。名前を出さず、充足に数えない
+
+割り当て行は 2.4 の a〜c（除名・降格・退会申請）では**触らない**。読むときに
+`event_member`（confirmed staff か）と `user.deleted_at` を見て
+`"active"` / `"left"` を導出する（#393 6.3 の `ASSIGNEE_JOIN` と同じ形・同じ条件）。
+
+- **`"left"` では名前も `user_id` も返さない。** #393 と同じ理由（「外れた」には
+  退会申請が混ざり、退会は「他の利用者から見えなくなる」ことが目的）。
+  区別して出し分けると、1つ間違えたときに退会者の名前が出る
+- 返さなくても行を消せるように、**割り当て行に自前の `id` を持たせる**
+  （`DELETE .../assignees/:assigneeId`）。`(slot_id, user_id)` を鍵に消す形だと、
+  画面へ `user_id` を返さざるを得なくなる
+- **充足には `"active"` だけを数える。** 「必要2・割り当て2・うち1人退会」は
+  1/2（不足）と見える。ここで `"left"` を数えると、要件3（埋まっていない持ち場が
+  分かる）が退会のたびに嘘をつく
+- **完全削除 (d) は `ON DELETE CASCADE` で行ごと消す。** TODO の `assignee` が
+  `SET NULL` なのと**逆**だが、矛盾ではない: TODO の行は仕事そのもので、担当が消えても
+  仕事は残すべきもの。割り当ての行は**リンクだけ**で、user が消えたら守る中身が無い。
+  `SET NULL` にすると「誰でもない1枠」が残って空きを1つ隠す。消えれば持ち場は
+  正しく「空き」に戻る（持ち場の行 `event_duty_slot` 自体は人に紐づかないので残る）
+
+### 3.7 充足は保存しない
+
+「埋まっているか」「何人足りないか」は `required_count` と active な割り当ての数から
+**必ず導出**する。列にすると、割り当て・除名・退会のたびに更新して回る仕事が生まれ、
+漏れた瞬間から嘘をつく（#393 が `blocked` / `overdue` を列にしなかったのと同じ判断）。
+導出は `apps/web` の純関数1か所（`lib/dutyBoard.ts`）に置く。
+
+---
+
+## 4. マイグレーション
+
+### 4.1 `apps/server/migrations/0074_staff_duty.sql`
+
+```sql
+-- スタッフの役割タグと持ち場 (#384)。
+--
+-- 3層: 役割の定義（イベントごと）→ 持ち場（時間帯×役割×人数）→ 割り当て（持ち場×人）。
+-- 「この時間帯は受付が2人」を先に置き、あとから人を割り当てる。
+-- 人数が先にあるから、埋まっていない持ち場が分かる。
+--
+-- 「役割」に role の語を使わない。event_member.role（権限: staff/judge/…）と
+-- 読み違えるため。こちらは担当なので duty と呼ぶ。
+--
+-- **この3つの表は参加者に1行も返さない。** 読み書きする SQL は
+-- db/repositories/eventDuties.ts の中にしか置かないこと。この不変条件は
+-- test/staff-duty-sql-audit.test.ts が機械で守る（#393 の監査と同じ仕掛け）。
+-- 既定のテンプレート（サービス共通の「受付」「司会」…）は持たない。#364
+-- （保存データの言語）が未決のため。イベント複製が役割の定義をコピーする。
+
+-- 役割の定義。イベントごとに主催者が作る。
+CREATE TABLE event_staff_duty (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  sort_order INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  -- 同名の役割を2つ作らせない（「受付」が2つあると、どちらに割り当てたか読めない）。
+  -- この UNIQUE が (event_id, …) の索引を兼ねる。イベントあたり高々30件 (shared の
+  -- EVENT_DUTY_LIMIT) なので並び替えはメモリで足り、sort_order の索引は張らない
+  UNIQUE (event_id, name)
+);
+
+-- 持ち場。時間帯（#383 の event_schedule_item）× 役割 × 必要人数。
+--
+-- item は placement / visibility を問わない。司会・配信は**公開セッションに付く**
+-- 仕事で、裏方の項目に限ると公開セッションの鏡写しの項目がもう1本要る。
+-- unassigned も許す: トラック削除で項目が unassigned に**落ちる**（0067）とき、
+-- 持ち場を道連れにしない（配置し直せば戻る。運営の入力を捨てない）。
+--
+-- event_id は持たない。項目→イベントの1本が正で、2か所に持つとずれる。
+-- 所有チェックは item への JOIN で行う。
+CREATE TABLE event_duty_slot (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL REFERENCES event_schedule_item(id) ON DELETE CASCADE,
+  duty_id TEXT NOT NULL REFERENCES event_staff_duty(id) ON DELETE CASCADE,
+  -- 「受付が2人」は行1本＋人数。人数ぶん行を作らない（枠に個性が無いのに
+  -- 行だけ増え、並び・詰め替えの規則が要る）。上限は shared の DUTY_REQUIRED_MAX
+  -- が持つ（DB にも書くと同じ契約が2か所になる）。下限だけ DB で止める
+  required_count INTEGER NOT NULL CHECK (required_count >= 1),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  -- 同じ項目に同じ役割の持ち場は1つ（「受付2人」を2行に割らせない）
+  UNIQUE (item_id, duty_id)
+);
+-- 役割の削除（CASCADE）と「この役割はどこで使われているか」を引く向き
+CREATE INDEX idx_event_duty_slot_duty ON event_duty_slot(duty_id);
+
+-- 割り当て。持ち場 × スタッフ。
+--
+-- 自前の id を持つ:「外れた担当」(除名・降格・退会申請) には名前も user_id も
+-- 返さない（退会者の秘匿。#393 6.3 と同じ規則）ため、行を消す操作は
+-- この id で指す。(slot_id, user_id) を鍵にすると user_id を画面へ返すことになる。
+--
+-- user_id は ON DELETE CASCADE。TODO の assignee (0073) が SET NULL なのと逆だが、
+-- あちらの行は仕事そのもの（担当が消えても仕事は残す）、こちらの行はリンクだけ
+-- （人が消えたら守る中身が無い）。SET NULL だと「誰でもない1枠」が空きを1つ隠す。
+-- 消えれば持ち場は正しく「空き」に戻る。
+--
+-- **除名・降格・退会申請では行を触らない**（user 行も event_member 行も残る／
+-- 片方だけ消えるので FK は発火しない）。「まだ担当者か」は読むときに
+-- event_member と user.deleted_at から導出する（eventTodos の ASSIGNEE_JOIN と同じ）。
+--
+-- user(id) を参照する列を足すので mergeUsers への登録が要る。(slot_id, user_id) の
+-- UNIQUE があるため simple ではなく uniqueKeyed に足すこと（test/merge-user-columns
+-- .test.ts (#396) が登録漏れと数の不一致を落とす）。
+CREATE TABLE event_duty_assignee (
+  id TEXT PRIMARY KEY,
+  slot_id TEXT NOT NULL REFERENCES event_duty_slot(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  -- 同じ人を同じ持ち場に二重に割り当てない
+  UNIQUE (slot_id, user_id)
+);
+-- mergeUsers の付け替えと「この人の持ち場」を引く向き
+CREATE INDEX idx_event_duty_assignee_user ON event_duty_assignee(user_id);
+```
+
+**埋め戻しは無い。** 新しい表だけで、既存データに触れない。
+
+### 4.2 上限（`packages/shared/src/eventDuty.ts` に定数で置き、サーバーが強制する）
+
+| 定数 | 値 | 理由 |
+|---|---|---|
+| `EVENT_DUTY_LIMIT` | 30 | 役割の数。受付〜ケータリングの類で十数個が現実の上限 |
+| `DUTY_NAME_MAX` | 30 | タグ（チップ）に収まる長さ |
+| `DUTY_SLOTS_PER_ITEM` | 10 | 1つの時間帯に10種の役割が要る状態は項目の切り方が粗いサイン |
+| `DUTY_REQUIRED_MAX` | 50 | 必要人数。大規模イベントの受付でもこの内 |
+| `DUTY_ASSIGNEES_PER_SLOT` | 50 | 割り当ての数。必要数を超える割り当て（応援）は許すが無限にしない |
+
+項目数は `saveScheduleInput` が 100 に抑えているので、持ち場はイベントあたり
+高々 100 × 10 = 1000 行。一覧は全件返しでページングしない（#393 と同じ判断）。
+
+### 4.3 切り戻し
+
+コードだけ戻す場合、表は残るが旧コードに読む経路が無いので**参加者に何かが出ることはない**
+（#393 4.3 と同じ性質）。表を落とす操作は不要。
+
+---
+
+## 5. `mergeUsers` に1組足す（`simple` ではない）
+
+`users.ts` の **`uniqueKeyed`** に足す。
+
+```ts
+// 持ち場の割り当て (#384)。(slot_id, user_id) の UNIQUE があるので simple にできない
+// （勝ち負け両方が同じ持ち場に居ると UPDATE が UNIQUE 違反で落ちる）。
+// 両方に同じ持ち場の割り当てがあれば負け側を捨てる
+["event_duty_assignee", "user_id", ["slot_id"]],
+```
+
+`test/merge-user-columns.test.ts` (#396) は `user(id)` 参照列の数と `mergeUsers` が
+扱う組の数を**実数で固定**している。この列を足すと両方の数が動くので、
+**テストの期待値を直すときに、この組が `uniqueKeyed` に入っていることを見てから直す**
+（数字だけ合わせると素通りする。#396 の走査は「登録を1つ外すと落ちる」変異検査を
+自分に課しているので、入れ忘れ自体は落ちる）。
+
+`created_by` のような作成者列は**持たない**ので、`simple` への追加は無い
+（割り当ては staff 全員が触る運営データで、荒れたときに辿る主体は監査ログの範囲外。
+#383 と同じ扱い）。
+
+---
+
+## 6. API
+
+新しいサブアプリ `apps/server/src/routes/eventDuties.ts`。
+`worker.ts` で `api.route("/events", eventDutyRoutes)`。
+
+### 6.1 権限
+
+```ts
+eventDutyRoutes.use("*", requireAuth);
+// eventBroadcast.ts / eventTodos.ts と同じ形で配下ごと閉じる
+eventDutyRoutes.use("/:id/staffing", requireEventRole(["staff"]));
+eventDutyRoutes.use("/:id/staffing/*", requireEventRole(["staff"]));
+```
+
+読みも書きも `requireEventRole(["staff"])`（3.5）。#393 6.1 の代償の注記も同じ:
+コミュニティ owner/admin とアプリ運営管理者は見える・編集できるが、
+`event_member` の confirmed staff でなければ**割り当ての対象にはならない**（6.3）。
+
+### 6.2 エンドポイント（単発操作。版付き差分保存にしない）
+
+| メソッド・パス | 中身 |
+|---|---|
+| `GET /api/events/:id/staffing` | 一覧（6.3） |
+| `POST /api/events/:id/staffing/duties` | 役割を作る。`{ name }` |
+| `PATCH /api/events/:id/staffing/duties/:dutyId` | 名前を変える。`{ name }` |
+| `PUT /api/events/:id/staffing/duties/order` | 並べ替え。`{ ids: string[] }` |
+| `DELETE /api/events/:id/staffing/duties/:dutyId` | 役割を消す。持ち場・割り当ては CASCADE（画面は使用数を出して確認を取る） |
+| `PUT /api/events/:id/staffing/items/:itemId` | その項目の持ち場一式。`{ slots: [{ dutyId, required }] }` |
+| `POST /api/events/:id/staffing/slots/:slotId/assignees` | 割り当て。`{ userId }` |
+| `DELETE /api/events/:id/staffing/slots/:slotId/assignees/:assigneeId` | 割り当てを外す |
+
+- **タイムテーブルの版番号 (#340) に乗せない。** あちらが全件差分＋版なのは表計算型の
+  編集画面を持つから。持ち場は「チップを1つ付ける」「1人割り当てる」の単発操作が主で、
+  乗せるとチップ1つに全項目を送り返すことになる（#393 6.2 と同じ判断）。
+  同時編集は行単位の後勝ちでよい。タイムテーブル側の保存が項目を消せば
+  持ち場は CASCADE で消える——セッションを消したのに持ち場だけ残る状態を作らない
+- `PUT items/:itemId` は**宣言型**（送られた集合に合わせる）。サーバーは `duty_id` で
+  差分を取り、**残る持ち場の割り当て行は保持する**（人数だけ変えても人は外れない）。
+  送られなかった持ち場は削除（割り当てごと消える。画面は割り当てが付いた持ち場を
+  消すとき確認を取る）
+- `assigneeUserId` を持ち場の作成に混ぜない。2段階（要件2）が API の形にも残る
+
+### 6.3 `GET /api/events/:id/staffing` のレスポンス
+
+```ts
+export interface EventStaffingPayload {
+  duties: StaffDuty[];              // { id, name, sortOrder }
+  /** 持ち場。項目の中に入れ子にせず平らに返す。画面はタイムテーブル
+   * （staff audience の useEventSchedule）と itemId で突き合わせて描く */
+  slots: DutySlot[];
+  /** 割り当てられる人（= confirmed staff、退会者を除く）。eventTodos の
+   * assignableStaff と同じ契約なので、実装は eventMembers.ts に1本へ寄せて共用する */
+  assignable: DutyCandidate[];
+}
+
+export interface DutySlot {
+  id: string;
+  itemId: string;
+  dutyId: string;
+  requiredCount: number;
+  assignees: DutyAssignee[];
+}
+
+export interface DutyAssignee {
+  id: string;                       // 割り当て行の id（外す操作はこれで指す）
+  state: "active" | "left";
+  /** "active" のときだけ入る。"left" では必ず null（名前も userId も返さない。
+   *  除名・降格・退会申請が混ざり、退会者の秘匿が最優先。#393 6.3 と同じ規則） */
+  user: DutyCandidate | null;
+}
+```
+
+- 充足はサーバーで計算して返さない（3.7。クライアントの純関数で導出）
+- `assignableStaff` は現在 `eventTodos.ts` に居るが、**「担当に指定できる人」の契約が
+  2か所になる**ので `eventMembers.ts` へ移して両方から使う（`event_todo` の SQL では
+  ないので #393 の監査は動じない。関数の置き場が変わるだけ）
+
+### 6.4 エラー
+
+| コード | いつ |
+|---|---|
+| `duty_limit` | `EVENT_DUTY_LIMIT` を超える役割の追加 |
+| `duty_name_taken` | 同名の役割（UNIQUE 違反を 400 で返す） |
+| `duty_slot_limit` | `DUTY_SLOTS_PER_ITEM` 超過 |
+| `duty_required_range` | `required` が 1〜`DUTY_REQUIRED_MAX` の外 |
+| `duty_assignee_not_staff` | confirmed staff・非退会 (6.3) 以外を割り当て |
+| `duty_assignee_limit` | `DUTY_ASSIGNEES_PER_SLOT` 超過 |
+| `duty_assignee_dup` | 同じ人を同じ持ち場へ二重に割り当て |
+| `not_found` | 他イベントの `itemId` / `dutyId` / `slotId` / `assigneeId`（**403 でなく 404**。他イベントの id の存在を教えない） |
+
+**子リソースの所有チェックを全ルートで行う**（`slotId` → item → event、
+`dutyId` → event、`assigneeId` → slot → item → event）。セキュリティ点検で
+「必須」と決まっている項目 (#393 6.5 と同じ)。
+
+---
+
+## 7. イベントの複製（役割の定義だけコピーする）
+
+`routes/events.ts` の複製ハンドラに
+`await eventDutiesRepo.copyForDuplicate(src.id, created.id)` を1行足す。
+
+- コピーする: `event_staff_duty` の `name` / `sort_order`
+- コピーしない（**できない**）: 持ち場と割り当て。複製はタイムテーブルを
+  コピーしない (2.6) ので、ぶら下げる先の項目が複製先に存在しない
+- 割り当てをコピーしないのは、できたとしても正しい: 複製先は開催日時 0 の下書きで、
+  スタッフ集めもこれから。#393 が担当・日付をコピーしなかったのと同じ向き
+
+これが 3.4 の「テンプレートを持たない」の代わりである。**将来タイムテーブルの複製が
+入ったら、持ち場（`event_duty_slot`）もコピー対象に含めること**（割り当ては含めない）。
+その注記を複製ハンドラのコメントに書いておく。
+
+---
+
+## 8. 画面（相談の結果: **v1 は案S2 の独立ページのみ**）
+
+### 8.1 割り当ての操作をどこに置くか
+
+- **案S1 … スタッフ用格子（`EventTimetablePage`）に統合。**
+  staff の格子の帯に役割チップ「受付 1/2」を出し、帯をクリックすると持ち場の
+  ダイアログ（役割×人数の編集＋人の割り当て）。役割の定義はページ上部の小ダイアログ
+  （`ScheduleTrackManager` 121行と同型）。
+  - 利点: 「時間帯に当てる」が画面の形そのもの。ページを増やさない
+  - 欠点: 表示専用だった格子に操作が乗る。`EventTimetablePage` 267行 + ダイアログ2つで
+    1ファイルに収まるかは分割前提。**「埋まっていない持ち場の一覧性」は弱い**
+    （格子を目で走査することになる）
+- **案S2 … 独立ページ `/events/:id/staffing`（#393 案P1 の型）。**
+  時刻順の項目一覧（staff audience の `useEventSchedule`）に役割チップを並べ、
+  そこで持ち場の編集と割り当てを行う。上部に集計「埋まっていない持ち場 N」＋
+  「不足のみ」「自分の持ち場」フィルタ。
+  - 利点: 既存ページを太らせない。不足の一覧性が高い（要件3に最も強い）。
+    `EventTodoPage`（253行）の型がそのまま使える
+  - 欠点: 格子から1クリック遠い
+- 案S3 … 人×時間帯のマトリクス（シフト表）。読みやすいが作りが大きく、v1 では過剰
+
+**決定（v1）: 案S2 の独立ページのみ。格子（`TimetableGrid`）と `EventSchedule`
+（一覧）への読み取り専用チップ表示も見送る。**
+参加者と共有する部品にスタッフだけの追加取得（`useEventStaffing`）を混ぜない
+ため（当初案では読み取り専用チップだけ足すとしていたが、意図して落とした）。
+staging で実物を見てから、必要になったときに足す。持ち場は itemId で突き合わせる
+だけなので、**表示側を後から足しても API・スキーマは変わらない**。
+S1 の「格子から直接ダイアログを開く」も同様に S2 の後から足せる
+（同じダイアログを使い回す）。
+「埋まっていない持ち場」を並べて潰していく作業動線が要件3の中心で、
+格子はそれの確認画面という役割分担。
+
+### 8.2 タグの見え方（要件4）
+
+- staffing ページの項目一覧に、役割チップを出す（v1。格子・`EventSchedule` へは
+  8.1 の決定により出さない）:
+  「受付 1/2」（不足 = warning 色）/「受付 2/2」（充足 = 通常）/ 超過はそのまま「3/2」
+- 「外れた担当」が居る持ち場は「受付 1/2 ⚠」＋「外れた割り当てがあります。外して
+  再割り当てしてください」（名前は出さない。6.3）
+- **自分に付いたタグ**: staffing ページの「自分の持ち場」フィルタと、
+  チップの強調（自分が入っている持ち場は塗る）。これが「割り当てられた
+  スタッフにタグが付いて見える」の実体
+- 役割の**色分けはしない**（無彩色チップ＋名前だけ）。`trackColors` の教訓 (2.9):
+  本数から作る色は増減で全員の色が変わる。役割に固定色を持たせるなら列の追加になる
+  ので、要望が出てから（10.）
+
+### 8.3 参加者側は何も変わらない
+
+参加者のタイムテーブル・イベント詳細・投影の格子にはチップを描く条件すら足さない
+（データが来ないので描けない、が正しい状態）。`useEventStaffing` フックは
+**`myRole === "staff"` のときだけ有効化**する（参加者で叩くと 403 が返り、
+コンソールにノイズが出る。権限判定は画面では `myRole` だけを見る——`isAdmin` を混ぜない）。
+
+### 8.4 文言
+
+タイムテーブルに混ざる語が入るときは `schedule.ts`、staffing ページの語は
+`staffOps.ts`（#383 7.5 / #393 8.6 の線引きのとおり）。v1 はタイムテーブル側に
+何も出さない（8.1）ので、**文言はすべて `staffOps.ts` に入り、`schedule.ts` は
+変更なし**。`ja` / `en` の2つ。`duty` / `slot` / `assignee` の実装語を UI に
+出さない（「役割」「持ち場」「担当」）。
+
+### 8.5 相談した点（決定済み）
+
+1. 置き場: **案S2 のみ**。S1 併用はしない（格子からの導線は必要になってから）
+2. 格子・`EventSchedule` へのチップ表示: **v1 では出さない**（8.1 の決定）
+3. **兼務の重なり警告**（同じ人が時間の重なる2つの持ち場に居る）: **見送り**。
+   時刻は `computeScheduleTimes` の結果から出せるので画面側の導出だけで書けるが、
+   裏方の時刻は明示のみ（#383 3.3）なので「時刻の無い持ち場」は判定から漏れる。
+   やるなら画面側の導出のみで別 issue（10. に仮置き）
+
+---
+
+## 9. テストで確かめること
+
+新規 `apps/server/test/staff-duty.test.ts` と `staff-duty-sql-audit.test.ts`。
+
+### 9.1 参加者に漏れない（役割ごと・ルートごとに1本ずつ。まとめない）
+
+1. `participant` / `judge` / `observer` / 非メンバーが `GET /:id/staffing` → **403**
+2. 未ログイン → 401
+3. `staff` は 200 で全件（絞りすぎていないことの確認）
+4. **書き込み7本すべて**について `participant` が 403（#393 9.1 と同じく1本ずつ。
+   「4か所のうち1か所だけ直っていた」事故の再発防止）
+
+### 9.2 参加者向けの既存レスポンスに混ざらない
+
+役割「受付」を公開セッションに当て、人を割り当てたイベントを作り、参加者として
+2.7 の経路（イベント詳細 / `GET /:id/timetable` / リマインダーメール本文 / 出席 CSV /
+フィード / 公開ページ）を取り、**役割名の文字列が本文に現れない**ことを1本ずつ確かめる
+（id でなく文字列で照合。#383 9.1 と同じ理由）。
+**公開セッションに当てた場合**を必ず含める（3.3 で範囲を広げた分の担保）。
+
+### 9.3 「登壇 N 回」に影響しない
+
+公開セッションの持ち場に割り当てられただけの人の `spoken`（公開プロフィール・名刺×2・
+ゲーミフィケーション）が**増えない**こと。別の表なので構造上増えないが、
+「割り当て＝登壇」と誤って `speaker_user_id` に書く実装を将来させないための杭。
+
+### 9.4 SQL 監査（2本）
+
+- **新規 `staff-duty-sql-audit.test.ts`**: `event_staff_duty` / `event_duty_slot` /
+  `event_duty_assignee` を含む SQL が `db/repositories/eventDuties.ts` 以外に
+  1つも無い（`sqlScan.ts` を共有。#393 9.3 と同じ形）
+- **既存 `staff-timeline-sql-audit.test.ts`**: `eventDuties.ts` の SQL は
+  `event_schedule_item` に JOIN する（所有チェック・イベント単位の一覧）ので
+  `EXPECTED_STATEMENTS`（現在 13）が増える。**増えた文ごとに `ALLOWED` へ
+  「staff 限定ルート（requireEventRole で配下ごと閉鎖）からしか呼ばれない」旨を
+  1行ずつ書く**。数字だけ直さない
+
+### 9.5 担当者が外れる4通り（#393 9.5 と同じ並び）
+
+1. staff でない人・未確定 staff・退会申請中の人を割り当て → 400 `duty_assignee_not_staff`
+2. **除名** → `state === "left"` / `user === null` / 持ち場と行は残る / **充足に数えない**
+3. **降格**（staff → participant）→ 同上
+4. **退会申請**（`deleted_at` を立てる。`event_member` は残る）→ 同上
+   （**ここが落ちやすい**。`event_member` だけ見る実装だと active のまま名前が出る）
+5. **完全削除**（`user` 行を消す）→ 割り当て行が**消え**、持ち場は空きに戻る
+   （`CASCADE` の証拠。`SET NULL` なら「誰でもない行」が残ってここで落ちる）
+6. `assignable` に退会申請中・未確定・participant が**含まれない**
+7. **アカウント統合**: 勝ち側に付け替わる。勝ち負け両方が同じ持ち場に居るとき
+   1行に潰れる（`uniqueKeyed` の証拠。`simple` に書くと UNIQUE 違反でここで落ちる）
+
+### 9.6 整合と上限
+
+1. 他イベントの `itemId` / `dutyId` / `slotId` / `assigneeId` → **404**（所有チェック）
+2. 各上限 (4.2) 超過 → 400。上限ちょうどは通る
+3. 同名の役割 → 400 `duty_name_taken`
+4. `PUT items/:itemId` で人数だけ変えたとき**割り当てが残る**。
+   持ち場を外したときは割り当てごと消える
+5. 役割の削除で持ち場・割り当てが CASCADE で消える
+6. 項目の削除（タイムテーブル保存で送らない）で持ち場が消える
+7. **トラック削除で項目が `unassigned` に落ちても持ち場が残り**、
+   配置し直すとそのまま見える（3.3 の担保）
+
+### 9.7 フロント（表示だけ。絞り込みのテストは書かない — #383 9.11 と同じ）
+
+- 不足チップの表示（1/2 が warning、2/2 が通常）と集計「埋まっていない持ち場 N」
+- 「外れた担当」の表示に**名前が出ない**こと
+- 充足の導出（`lib/dutyBoard.ts` の純関数）: left を数えない・超過の表示・
+  割り当て0件の持ち場が「不足」になる
+
+---
+
+## 10. やらないこと（範囲の線引き）
+
+- **既定のテンプレートを持たない**（3.4。#364 の結論待ち。#393 と同じ判断）。
+  複製がその役を務める。#364 決着後に「入力時に訳を確定して文字列で保存する」形
+  （`SCHEDULE_TEMPLATES` の型）で足すかを判断する
+- **参加者に役割を見せる機能を作らない。** 司会の公表はセッションの説明文・登壇者欄の
+  仕事。「一部の役割だけ公開」を作ると見え方の軸が増え、3.5 の閉じた形が崩れる
+- **TODO (#393) と繋がない。** `event_todo` に役割・人数を足さない（あちらの 10. と相互）
+- **シフトの自動編成・充足の最適化をしない。** 割り当ては人が決める
+- **兼務の時間重なり検出は v1 でやらない**（8.5 で見送りに決定。やるなら画面側の導出のみで別 issue）
+- **格子・`EventSchedule` へのチップ表示は v1 でやらない**（8.1 で決定。
+  参加者と共有する部品にスタッフだけの追加取得を混ぜない。後から表示側だけ足せる）
+- **上限・重複の事前チェックを排他にしない**（第三者レビューの指摘・記録のみ）。
+  同名の役割・二重割り当て・上限は SELECT で先に見てから書く方式なので、
+  同時操作が競合したその瞬間だけ UNIQUE 違反が 400 でなく 500 で返りうる。
+  データは DB の UNIQUE 制約が守るので壊れず、既存機能（#393 ほか）も同じ形。
+  見落としではなく、400 に写し替えるための例外捕捉・再試行は**意図して足さない**
+- **通知を出さない。** 「受付に割り当てられました」を `notification` に焼き込むと、
+  外れた後もスタッフ専用の情報が残る（#393 10. と同じ理由）。足すなら本文に
+  役割名を入れない形の設計から
+- **役割の色・アイコンを持たない**（8.2）。要望が出てから列を足す
+- **持ち場単位のメモ・引き継ぎ書を持たない。** 項目の説明文で足りる
+- **横断（全イベント）の「自分の持ち場」画面を作らない**（#393 8.4 と同じ理由）
+- **`event_member.role` に触れない。** 割り当てても権限は変わらない。逆も無い
+- **監査ログを足さない。** タイムテーブル編集と同じ扱い
+- **人数の下限・充足チェックで保存を止めない。** 不足は印で見せる（警告であって門ではない）
+
+---
+
+## 11. 変更するファイル
+
+| ファイル | 変更 |
+|---|---|
+| `apps/server/migrations/0074_staff_duty.sql` | **新規**（表3つ・索引2つ） |
+| `packages/shared/src/eventDuty.ts` | **新規**（型・zod・上限 4.2） |
+| `packages/shared/src/index.ts` | 再エクスポート |
+| `apps/server/src/db/repositories/eventDuties.ts` | **新規**（3表の SQL の唯一の置き場。複製・所有チェック含む） |
+| `apps/server/src/db/repositories/eventMembers.ts` | `assignableStaff` をここへ移す（6.3） |
+| `apps/server/src/db/repositories/eventTodos.ts` | 移した `assignableStaff` を使う側に |
+| `apps/server/src/routes/eventDuties.ts` | **新規**（6.2 の8本。権限は 6.1） |
+| `apps/server/src/worker.ts` | `api.route("/events", eventDutyRoutes)` |
+| `apps/server/src/db/repositories/users.ts` | `mergeUsers` の `uniqueKeyed` に1組（5.） |
+| `apps/server/src/routes/events.ts` | 複製に `copyForDuplicate` の1行（7.） |
+| `packages/shared/src/i18n/messages/staffOps.ts` | 文言（8.4。v1 は `schedule.ts` に変更なし） |
+| `apps/web/src/api/dutyHooks.ts` | **新規**（staff のときだけ有効化。8.3） |
+| `apps/web/src/lib/dutyBoard.ts` | **新規**（充足の導出の純関数） |
+| `apps/web/src/pages/EventStaffingPage.tsx` ほか（案S2） | **新規** |
+| （`TimetableGrid.tsx` / `EventSchedule.tsx`） | **触らない**（v1 はチップ表示を見送り。8.1） |
+| `apps/web/src/App.tsx` / `EventDetailPage.tsx` | 子ルート1行・導線ボタン1つ |
+| `apps/server/test/staff-duty.test.ts` | **新規**（9.1〜9.3・9.5。9.6 は `staff-duty-slots.test.ts`、共通土台は `test/lib/staffDutyHelpers.ts`。800行制約で分割） |
+| `apps/server/test/staff-duty-sql-audit.test.ts` | **新規**（9.4） |
+| `apps/server/test/staff-timeline-sql-audit.test.ts` | `ALLOWED` 追記＋`EXPECTED_STATEMENTS` 更新（9.4） |
+| `apps/server/test/merge-user-columns.test.ts` | 期待値の更新（5.） |
+| `apps/server/test/event-duplicate.test.ts` | 役割の定義がコピーされること・持ち場は無いこと |
+| `apps/web/src/lib/dutyBoard.test.ts` ほか | 9.7 |
+
+新しい依存は無し。新規ファイルはいずれも 800 行以内に収める見込み
+（最大は `EventStaffingPage` 系で、`EventTodoPage` の型に倣って分割する）。
+
+---
+
+## 12. 実装の順番
+
+1. `0074` と `packages/shared/src/eventDuty.ts`（型・上限）
+2. `db/repositories/eventDuties.ts` と `assignableStaff` の移設。
+   外れた担当の導出 (3.6) をリポジトリ単体で固める
+3. `routes/eventDuties.ts` と `worker.ts`。**9.1・9.2 の漏れないテストを先に書く**
+   （#383 / #393 と同じ: 漏れの担保はサーバーだけで完結させてから画面へ）
+4. `staff-duty-sql-audit.test.ts` と #383 監査の `ALLOWED` / `EXPECTED_STATEMENTS`。
+   **この時点で**書く（後回しにすると許可リストが緩む）
+5. `mergeUsers` の1組 (5.) と 9.5 の 7 番
+6. 複製 (7.) と `event-duplicate.test.ts`
+7. `dutyHooks.ts` → staffing ページ（案S2）。格子・一覧のチップ表示は見送り（8.1）
