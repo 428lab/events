@@ -577,6 +577,10 @@ export const usersRepo = {
       ["event_schedule_item", "speaker_user_id"],
       // 招待した人 (#339)。付け替えないと (9) の user 削除で招待ごと消える
       ["event_staff_invite", "invited_by"],
+      // 準備 TODO の担当と作成者 (#393)。付け替えないと (9) の user 削除で
+      // ON DELETE SET NULL が発火し、統合したはずの担当が黙って未割り当てになる
+      ["event_todo", "assignee_user_id"],
+      ["event_todo", "created_by"],
       ["bgm_track", "owner_id"],
       ["event", "created_by"],
       ["event_request", "created_by"],

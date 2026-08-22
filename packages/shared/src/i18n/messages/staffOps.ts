@@ -288,6 +288,62 @@ const ja = {
   meetRankingTitle: "出会いランキング",
   meetRankingNote:
     "「出会った！」の記録数です（スタッフのみ閲覧できます）。景品の参考にどうぞ。",
+
+  /* ── 準備の段取り (#393) ────────────────────────────────
+   * **実装上の語を出さない。**「待ち」「担当者が外れています」のように
+   * 振る舞いで書く（`assigneeState` / `dep` / `blocked` は利用者の語彙ではない） */
+  todoTitle: "準備TODO",
+  todoStaffOnly: "準備TODOはスタッフ専用です。",
+  /** 当日の段取り (#383) との線引き。TODO 側とタイムライン側の両方に出す */
+  todoScopeNote:
+    "日付だけで決める当日より前の仕事はここに。時刻があり当日の段取りになるものはタイムラインへ。",
+  todoToTimetable: "当日のタイムラインへ",
+  todoFromTimetable: "準備TODOへ",
+  todoEmpty: "まだ登録がありません。",
+  todoFilterNone: "この条件に合う仕事はありません。",
+  /** 進み具合。百分率は持たず、この4つの数で見せる */
+  todoCountOpen: "未完了 {{n}}",
+  todoCountOverdue: "遅れ {{n}}",
+  todoCountBlocked: "待ち {{n}}",
+  todoCountDone: "完了 {{n}}",
+  /** 絞り込みのチップ。集計チップ（「遅れ 3」）や行の印（「遅れ」）と
+   * **同じ綴りにしない**。同じ画面に同じ言葉のものが3つ並ぶと、
+   * どれを押すと何が起きるのかが読めない */
+  todoFilterMine: "自分の担当",
+  todoFilterUnassigned: "未割り当てのみ",
+  todoFilterLeft: "担当者が外れた",
+  todoFilterOverdue: "遅れだけ",
+  todoFilterShowDone: "完了を含める",
+  todoUnassigned: "未割り当て",
+  /** 担当を外れた人の名前は**出さない**（退会が混ざるため） */
+  todoAssigneeLeft: "担当者が外れています（要再割り当て）",
+  todoBlockedChip: "待ち",
+  todoOverdueChip: "遅れ",
+  todoCycleChip: "先の仕事が輪になっています",
+  todoNoDates: "日付未定",
+  todoDependsOnChip: "⟵ {{title}}",
+  todoDeleteConfirm: "「{{title}}」を削除しますか？",
+  todoFieldTitle: "やること",
+  todoFieldNote: "補足",
+  todoFieldStartsOn: "開始日",
+  todoFieldDueOn: "期限",
+  todoFieldAssignee: "担当",
+  todoDepsField: "先に終わらせる仕事",
+  todoDepsHelp: "ここで選んだ仕事が終わるまで、この仕事は待ちになります。",
+  todoGanttTitle: "日程",
+  todoGanttEmpty: "開始日か期限を入れると、ここに帯が出ます。",
+  todoGanttOutside: "この期間の外にある仕事が {{n}} 件あります（一覧には出ます）。",
+  todoGanttToday: "今日",
+  todoGanttSelectHint: "行を選ぶと、つながる仕事との線が出ます。",
+  /** 目盛りの月。細い列のときは月だけを書く */
+  todoGanttMonth: "{{n}}月",
+  todoSaveFailed: "保存できませんでした。",
+  todoLimitError: "このイベントに登録できる数の上限に達しています。",
+  todoDepLimitError: "先に終わらせる仕事を、これ以上は選べません。",
+  todoDepCycleError: "その組み合わせは、お互いを待ち合う輪になってしまいます。",
+  todoAssigneeNotStaffError:
+    "担当にできるのは、このイベントのスタッフとして参加が確定している人だけです。",
+  todoBadRangeError: "開始日が期限より後になっています。",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -511,6 +567,53 @@ const en: Record<keyof typeof ja, string> = {
   meetRankingTitle: "Meet ranking",
   meetRankingNote:
     "How many meets each person recorded (organizers only). Handy when handing out prizes.",
+
+  todoTitle: "Prep to-dos",
+  todoStaffOnly: "Prep to-dos are for organizers only.",
+  todoScopeNote:
+    "Work that happens before the day, decided by date, belongs here. Anything with a time on the day itself belongs in the timetable.",
+  todoToTimetable: "Go to the timetable",
+  todoFromTimetable: "Go to prep to-dos",
+  todoEmpty: "Nothing here yet.",
+  todoFilterNone: "Nothing matches these filters.",
+  todoCountOpen: "{{n}} to do",
+  todoCountOverdue: "{{n}} late",
+  todoCountBlocked: "{{n}} waiting",
+  todoCountDone: "{{n}} done",
+  todoFilterMine: "Assigned to me",
+  todoFilterUnassigned: "Unassigned only",
+  todoFilterLeft: "Owner stepped down",
+  todoFilterOverdue: "Late only",
+  todoFilterShowDone: "Include finished",
+  todoUnassigned: "Nobody assigned",
+  todoAssigneeLeft: "The person who owned this stepped down — assign someone.",
+  todoBlockedChip: "Waiting",
+  todoOverdueChip: "Late",
+  todoCycleChip: "These jobs wait on each other in a loop",
+  todoNoDates: "No dates yet",
+  todoDependsOnChip: "⟵ {{title}}",
+  todoDeleteConfirm: "Delete “{{title}}”?",
+  todoFieldTitle: "What needs doing",
+  todoFieldNote: "Notes",
+  todoFieldStartsOn: "Start date",
+  todoFieldDueOn: "Due date",
+  todoFieldAssignee: "Owner",
+  todoDepsField: "Finish these first",
+  todoDepsHelp: "This job waits until everything you pick here is finished.",
+  todoGanttTitle: "Dates",
+  todoGanttEmpty: "Add a start or due date and a bar shows up here.",
+  todoGanttOutside:
+    "{{n}} job(s) fall outside this range (they are still in the list).",
+  todoGanttToday: "Today",
+  todoGanttSelectHint: "Pick a row to see the lines to the jobs it connects to.",
+  todoGanttMonth: "M{{n}}",
+  todoSaveFailed: "Could not save that.",
+  todoLimitError: "This event has reached the limit for prep to-dos.",
+  todoDepLimitError: "You cannot pick any more jobs to finish first.",
+  todoDepCycleError: "That would leave these jobs waiting on each other forever.",
+  todoAssigneeNotStaffError:
+    "Only organizers whose place at this event is confirmed can own a job.",
+  todoBadRangeError: "The start date is after the due date.",
 };
 
 /**

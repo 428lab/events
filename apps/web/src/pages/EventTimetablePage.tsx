@@ -1,6 +1,7 @@
 import { Box, Button, Chip, Stack, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ChecklistIcon from "@mui/icons-material/Checklist";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useEvent } from "../api/hooks.js";
@@ -62,6 +63,27 @@ export function EventTimetablePage() {
           {event.title}
         </Typography>
       </Box>
+
+      {/* 準備の段取り (#393) との行き来。**データでは繋がない**（設計 3.6）ので
+          リンクだけ。コマが1つも無いときは、時刻を持たない準備の仕事を
+          ここに置こうとして迷うので、線引きを添える */}
+      {eventData.myRole === "staff" && (
+        <Box>
+          <Button
+            component={RouterLink}
+            to={`/events/${id}/todos`}
+            size="small"
+            startIcon={<ChecklistIcon />}
+          >
+            {t("staffOps.todoFromTimetable")}
+          </Button>
+          {layout.blocks.length === 0 && (
+            <Typography variant="body2" color="text.secondary">
+              {t("staffOps.todoScopeNote")}
+            </Typography>
+          )}
+        </Box>
+      )}
 
       {layout.tracks.length === 0 ? (
         <Typography variant="body2" color="text.secondary">

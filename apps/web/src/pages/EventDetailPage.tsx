@@ -27,6 +27,7 @@ import {
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import CampaignIcon from "@mui/icons-material/Campaign";
+import ChecklistIcon from "@mui/icons-material/Checklist";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import CheckIcon from "@mui/icons-material/Check";
@@ -871,6 +872,17 @@ export function EventDetailPage() {
               to={`/events/${id}/broadcast`}
             >
               {t("eventDetail.broadcast")}
+            </Button>
+          )}
+          {/* 準備の段取り (#393)。スタッフ専用の独立ページへの導線 */}
+          {isStaff && (
+            <Button
+              variant="outlined"
+              startIcon={<ChecklistIcon />}
+              component={RouterLink}
+              to={`/events/${id}/todos`}
+            >
+              {t("staffOps.todoTitle")}
             </Button>
           )}
           {isStaff && (

@@ -2,6 +2,7 @@ import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import type {
   AwardRank,
+  EventTodosPayload,
   Event,
   EventMemberWithUser,
   ParticipationSlot,
@@ -286,6 +287,105 @@ describe("イベントの複製 (#7)", () => {
     expect("members_note" in got.event).toBe(false);
   });
 });
+
+/* ===== 準備 TODO の複製 (#393 9.6) ===== */
+
+describe("複製で準備 TODO を持ち越す (#393 7.)", () => {
+  /** 題名・補足・依存の辺・並び順はコピーする。
+   * **日付・担当・状態はコピーしない**（複製は開催日時を 0 に戻すので、
+   * 期限を持ち越すと「作った瞬間に全部が遅れになった段取り」ができる。
+   * 募集締切と抽選日時をコピーしないのとまったく同じ理由） */
+  it("題名と依存はコピーされ、日付・担当・完了はコピーされない", async () => {
+    const cookie = await loginDev();
+    const src = await setupSourceEvent(cookie);
+    const staff = await makeMember(src, "staff");
+
+    const mk = async (body: Record<string, unknown>): Promise<string> => {
+      const res = await SELF.fetch(`${BASE}/api/events/${src}/todos`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify(body),
+      });
+      expect(res.status, await res.clone().text()).toBe(201);
+      return ((await res.json()) as { id: string }).id;
+    };
+    const venue = await mk({
+      title: "会場を押さえる",
+      note: "電話は◯◯さん",
+      startsOn: "2026-09-01",
+      dueOn: "2026-09-05",
+      assigneeUserId: staff.userId,
+    });
+    const notice = await mk({ title: "告知を出す", dueOn: "2026-09-10" });
+    // 「告知を出す」は「会場を押さえる」を待つ
+    const dep = await SELF.fetch(
+      `${BASE}/api/events/${src}/todos/${notice}/deps`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ dependsOnId: venue }),
+      },
+    );
+    expect(dep.status).toBe(201);
+    // 複製元では1件を完了にしておく
+    const done = await SELF.fetch(`${BASE}/api/events/${src}/todos/${venue}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ status: "done" }),
+    });
+    expect(done.status).toBe(200);
+
+    const dup = await SELF.fetch(`${BASE}/api/events/${src}/duplicate`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(dup.status).toBe(201);
+    const copyId = ((await dup.json()) as { event: { id: string } }).event.id;
+
+    const get = async (eventId: string): Promise<EventTodosPayload> => {
+      const res = await SELF.fetch(`${BASE}/api/events/${eventId}/todos`, {
+        headers: { cookie },
+      });
+      expect(res.status).toBe(200);
+      return (await res.json()) as EventTodosPayload;
+    };
+    const copied = await get(copyId);
+
+    expect(copied.todos.map((t) => t.title)).toEqual([
+      "会場を押さえる",
+      "告知を出す",
+    ]);
+    expect(copied.todos[0]!.note).toBe("電話は◯◯さん");
+    for (const t of copied.todos) {
+      expect(t.startsOn).toBeNull();
+      expect(t.dueOn).toBeNull();
+      expect(t.status).toBe("open");
+      expect(t.doneAt).toBeNull();
+      expect(t.assigneeState).toBe("unassigned");
+      expect(t.assignee).toBeNull();
+    }
+
+    // **辺は複製先の id を指す**（複製元の id を指していない）
+    const newIds = copied.todos.map((t) => t.id);
+    expect(copied.deps).toHaveLength(1);
+    expect(newIds).toContain(copied.deps[0]!.todoId);
+    expect(newIds).toContain(copied.deps[0]!.dependsOnId);
+    expect([venue, notice]).not.toContain(copied.deps[0]!.todoId);
+    expect([venue, notice]).not.toContain(copied.deps[0]!.dependsOnId);
+    const byId = new Map(copied.todos.map((t) => [t.id, t.title]));
+    expect(byId.get(copied.deps[0]!.todoId)).toBe("告知を出す");
+    expect(byId.get(copied.deps[0]!.dependsOnId)).toBe("会場を押さえる");
+
+    // 複製元は変わっていない
+    const origin = await get(src);
+    expect(origin.todos.find((t) => t.id === venue)!.status).toBe("done");
+    expect(origin.todos.find((t) => t.id === venue)!.dueOn).toBe("2026-09-05");
+    expect(origin.todos.find((t) => t.id === venue)!.assignee!.id).toBe(
+      staff.userId,
+    );
+  });
+});
+
 
 describe("日程調整中イベントの直接日時確定 (#138)", () => {
   it("PATCH scheduling:false で調整終了＋日時確定。日時なしは 400", async () => {

@@ -1,4 +1,9 @@
 import { describe, it, expect } from "vitest";
+import {
+  literalsOf,
+  scanStatements,
+  type Statement,
+} from "./lib/sqlScan.js";
 
 /**
  * 新しい経路が増えたときに気づく仕掛け (#383 設計 9.10)。
@@ -16,18 +21,9 @@ import { describe, it, expect } from "vitest";
  * 0067 は経路6のコメントに「ここでも数えない」と書いたが、そのあとに書かれた／
  * 見落とされた4か所には入らなかった (#394)。機械に見張らせる。
  *
- * ## この走査が自分自身に課している条件
- *
- * 走査は「素朴に書くと肝心なところを見ない」形をいくつも持っている。実際に踏んだので
- * 3つとも塞いである。**緩めるときは、緩めた状態で実装を壊して落ちることを確かめること。**
- *
- * 1. **コメントを根拠にしない。** SQL コメントに `publicItemWhere` と書いてあるだけで
- *    合格していた（実装中に踏んだ）。JS/SQL どちらのコメントも先に落とす
- * 2. **組み立てた SQL も見る。** 本体の取得は `` `${SELECT} WHERE …` `` の形で、
- *    リテラル自身は `FROM event_schedule_item` を持たない。素朴に走査すると
- *    **絞り込みを消しても緑のまま通る**。断片を展開してから判定する
- * 3. **SELECT 句に列名があるだけでは認めない。** `s.visibility` を選んでいることと
- *    `WHERE` で絞っていることは別。比較として現れているときだけ認める
+ * 切り出しの実装（コメント除去・断片の展開・リテラルの走査）は
+ * `test/lib/sqlScan.ts` が持つ。**#393 の監査と共有している**ので、
+ * 走査を緩めると両方が同時に緩む。緩めるときは実装を壊して落ちることを確かめること。
  */
 
 // ソースはビルド時に文字列として取り込む（workerd の中にファイルシステムは無い）
@@ -72,158 +68,11 @@ const GUARDS: RegExp[] = [
   /\bvisibility\s*(?:=|!=|<>|\bIN\b|\bNOT\b)/i,
 ];
 
-/** 1つの文字列リテラル（ソース上の見た目のまま） */
-interface Literal {
-  /** 中身（クォートを除いたソースの文字。`${…}` はそのまま残る） */
-  body: string;
-  /** `const NAME = <このリテラル>` の NAME。そうでなければ null */
-  constName: string | null;
-}
-
-/**
- * ソースを1文字ずつ走って、**コメントの外にある**文字列リテラルを切り出す。
- *
- * 正規表現で切ると、**コメント中のバッククォート1個**でその先の対応がずれて
- * SQL を丸ごと取りこぼす。このリポジトリの注釈はバッククォートだらけなので、
- * 「いまはコメントの中か」を持って歩くしかない。
- */
-function literalsOf(src: string): Literal[] {
-  const out: Literal[] = [];
-  let i = 0;
-  const n = src.length;
-  /** 直前の非空白コード（`const X =` を見つけるために使う） */
-  let codeSoFar = "";
-
-  /** 開始位置 quote の文字列を読み飛ばし、中身を返す */
-  const readString = (start: number, quote: string): [string, number] => {
-    let j = start + 1;
-    let body = "";
-    let depth = 0; // テンプレートの `${` の入れ子
-    while (j < n) {
-      const c = src[j]!;
-      if (c === "\\") {
-        body += c + (src[j + 1] ?? "");
-        j += 2;
-        continue;
-      }
-      if (quote === "`" && c === "$" && src[j + 1] === "{") {
-        depth++;
-        body += "${";
-        j += 2;
-        continue;
-      }
-      if (quote === "`" && depth > 0) {
-        // `${…}` の中は式。入れ子の文字列・テンプレートもここで読み飛ばす
-        if (c === "}") {
-          depth--;
-          body += c;
-          j++;
-          continue;
-        }
-        if (c === "'" || c === '"' || c === "`") {
-          const [inner, next] = readString(j, c);
-          body += c + inner + c;
-          j = next;
-          continue;
-        }
-        body += c;
-        j++;
-        continue;
-      }
-      if (c === quote) return [body, j + 1];
-      if (quote !== "`" && c === "\n") return [body, j + 1]; // 壊れた入力の保険
-      body += c;
-      j++;
-    }
-    return [body, n];
-  };
-
-  while (i < n) {
-    const c = src[i]!;
-    const next = src[i + 1];
-    if (c === "/" && next === "/") {
-      while (i < n && src[i] !== "\n") i++;
-      continue;
-    }
-    if (c === "/" && next === "*") {
-      i += 2;
-      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      i += 2;
-      continue;
-    }
-    if (c === "'" || c === '"' || c === "`") {
-      const [body, after] = readString(i, c);
-      const decl = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*$/.exec(
-        codeSoFar,
-      );
-      out.push({ body, constName: decl?.[1] ?? null });
-      i = after;
-      codeSoFar = "";
-      continue;
-    }
-    codeSoFar += c;
-    if (codeSoFar.length > 200) codeSoFar = codeSoFar.slice(-200);
-    i++;
-  }
-  return out;
-}
-
-/** SQL 文の中のコメント (`-- …`) を落とす。**コメントを根拠に採らない** */
-function stripSqlComments(sql: string): string {
-  return sql.replace(/--[^\n]*/g, "");
-}
-
-/** `${NAME}` を、同じファイルの `const NAME = "…"` の中身で置き換える。
- * 本体の取得は `` `${SELECT} WHERE …` `` の形で組み立てているので、
- * 展開しないと **`FROM event_schedule_item` を持つ文として見えない** */
-function expand(body: string, byName: Map<string, string>): string {
-  let out = body;
-  for (let round = 0; round < 3; round++) {
-    const next = out.replace(/\$\{\s*([A-Za-z_$][\w$]*)\s*\}/g, (m, name: string) =>
-      byName.has(name) ? byName.get(name)! : m,
-    );
-    if (next === out) break;
-    out = next;
-  }
-  return out;
-}
-
 const READS_ITEMS = /\b(?:FROM|JOIN)\s+event_schedule_item\b/i;
 
-interface Statement {
-  file: string;
-  /** 展開済み・コメント除去済み（判定に使う） */
-  sql: string;
-  /** ソース上の見た目（報告に使う） */
-  raw: string;
-}
-
-/** `event_schedule_item` を読んでいる SQL 文を全部集める。
- * **他のリテラルに埋め込まれる断片は、埋め込んだ先で見るのでここでは数えない** */
+/** `event_schedule_item` を読んでいる SQL 文を全部集める */
 function statements(): Statement[] {
-  const out: Statement[] = [];
-  for (const [file, src] of Object.entries(sources)) {
-    if (!src.includes("event_schedule_item")) continue;
-    const literals = literalsOf(src);
-    const byName = new Map<string, string>();
-    for (const l of literals) {
-      if (l.constName) byName.set(l.constName, l.body);
-    }
-    // 他のリテラルから `${NAME}` で参照されている断片の名前
-    const embedded = new Set<string>();
-    for (const l of literals) {
-      for (const m of l.body.matchAll(/\$\{\s*([A-Za-z_$][\w$]*)\s*\}/g)) {
-        if (byName.has(m[1]!)) embedded.add(m[1]!);
-      }
-    }
-    for (const l of literals) {
-      if (l.constName && embedded.has(l.constName)) continue;
-      const sql = stripSqlComments(expand(l.body, byName));
-      if (!READS_ITEMS.test(sql)) continue;
-      out.push({ file, sql, raw: l.body });
-    }
-  }
-  return out;
+  return scanStatements(sources, "event_schedule_item", READS_ITEMS);
 }
 
 /**

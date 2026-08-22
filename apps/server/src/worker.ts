@@ -90,6 +90,7 @@ import { sendEventReminders } from "./lib/reminders.js";
 import { purgeDeletedAccounts } from "./lib/purgeDeleted.js";
 import { drainBroadcastEmails } from "./lib/broadcast.js";
 import { eventBroadcastRoutes } from "./routes/eventBroadcast.js";
+import { eventTodoRoutes } from "./routes/eventTodos.js";
 import {
   adminBroadcastEmailRoutes,
   adminPurgeDeletedRoutes,
@@ -171,6 +172,9 @@ api.route("/events", eventBroadcastRoutes);
 // 出会った記録 (#189)（参加確定メンバー同士。要認証）
 api.route("/events", meetEventRoutes);
 api.route("/events", eventScheduleRoutes);
+// 準備の段取り TODO とガントチャート (#393)（そのイベントのスタッフのみ。要認証。
+// 参加者向けの経路は1本も作らない）
+api.route("/events", eventTodoRoutes);
 // 事前アンケート (#152)（質問保存・回答・スタッフ閲覧。要認証）
 api.route("/events", eventSurveyRoutes);
 // 入館名簿CSV (#154)（staff または成立会場の運営者。要認証）
