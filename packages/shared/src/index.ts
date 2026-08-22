@@ -16,6 +16,7 @@ export * from "./liveSets.js";
 export * from "./photos.js";
 export * from "./eventBroadcast.js";
 export * from "./eventChat.js";
+export * from "./staffChat.js";
 export * from "./eventComments.js";
 export * from "./eventLikes.js";
 export * from "./eventMeets.js";

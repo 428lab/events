@@ -198,13 +198,13 @@ const UNRESOLVED: Array<{ column: Column; breaks: string }> = [
  * 増減したらこの数を直すこと。**直す前に、増えた列が mergeUsers で
  * 扱われているかを必ず読むこと。**
  */
-const EXPECTED_USER_COLUMNS = 44;
+const EXPECTED_USER_COLUMNS = 45;
 
 /**
  * `mergeUsers` が扱う `table.column` の数（user 参照でない列も含む生の抽出数）。
  * 走査そのものが空振りしていないことの担保。
  */
-const EXPECTED_HANDLED_PAIRS = 43;
+const EXPECTED_HANDLED_PAIRS = 44;
 
 describe("アカウント統合の対象列の走査 (#396)", () => {
   const body = mergeUsersBody(Object.values(repoSources)[0]!);

@@ -52,6 +52,7 @@ import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
 import { eventSurveyRepo } from "../db/repositories/eventSurvey.js";
 import { usersRepo } from "../db/repositories/users.js";
+import { staffChatRepo } from "../db/repositories/staffChat.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
 import { formatDateRangeJa } from "../lib/dateFormat.js";
 import {
@@ -615,6 +616,14 @@ async function leaveEvent(
   }
   // 事前アンケートの回答は離脱と同時に削除（入館用氏名等のPIIを残さない）
   await eventSurveyRepo.deleteAnswersForUser(event.id, leaving.userId);
+  // スタッフ資格の喪失 (#382)。スタッフチャットの共通鍵を1世代進め、本人の
+  // signer を失効させる（部屋が無ければ何もしない）。DELETE /join と
+  // ロール変更→participant の両方がここを通る（残る経路は「staff → 他ロール」の
+  // setRole・退会申請・退会 purge で、それぞれロール変更ハンドラと
+  // users.ts の requestDeletion / deleteAccount にある）
+  if (leaving.role === "staff") {
+    await staffChatRepo.onStaffLost(event.id, leaving.userId);
+  }
   return leaving.slotId && leaving.status === "confirmed"
     ? promoteFromWaitlist(event, leaving.slotId)
     : null;
@@ -682,6 +691,12 @@ eventRoutes.patch(
 
     const member = await eventMembersRepo.setRole(eventId, userId, role);
     if (!member) return c.json({ error: "not_found" }, 404);
+    // 降格（staff → judge/observer）はスタッフ資格の喪失 (#382)。
+    // スタッフチャットの共通鍵を1世代進め、本人の signer を失効させる
+    // （staff → participant は上の leaveEvent の中で同じフックを通っている）
+    if (before.role === "staff" && role !== "staff") {
+      await staffChatRepo.onStaffLost(eventId, userId);
+    }
     // 先着枠の確定者だったなら席が空いたので繰り上げる
     const promotedUserId =
       before.slotId && before.status === "confirmed"

@@ -1,6 +1,7 @@
 import type { User } from "@eventer/shared";
 import { DELETED_USER_DISPLAY_NAME } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
+import { staffChatRepo } from "./staffChat.js";
 
 interface UserRow {
   id: string;
@@ -438,6 +439,11 @@ export const usersRepo = {
       // できない（勝ち負け両方が同じ持ち場に居ると UPDATE が UNIQUE 違反で落ちる）。
       // 両方に同じ持ち場の割り当てがあれば負け側を捨てる
       ["event_duty_assignee", "user_id", ["slot_id"]],
+      // スタッフチャットの発言用一時鍵 (#382)。PK (event_id, audience, user_id)。
+      // 両方が同じ部屋に signer を持つときだけ負け側を捨てる（勝ち側の鍵を残す＝
+      // 配布済みの鍵を替えずに済む。event_chat_key の統合 (1b) と同じ判断）。
+      // 資格は (0) で勝ち側に引き継がれるのでローテーションは不要（設計 7.4）
+      ["event_group_chat_signer", "user_id", ["event_id", "audience"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols
@@ -667,6 +673,14 @@ export const usersRepo = {
    * 単一 batch なので「セッションだけ消えて退会状態にならない」中途半端な
    * 状態にはならない。既に申請済みなら時刻は上書きしない（猶予の延長防止） */
   async requestDeletion(userId: string, now: number): Promise<void> {
+    // スタッフチャットのローテーション (#382)。**申請の時点で**回す:
+    // purge（31日後）まで待つと、申請前に配られた鍵が手元に生きているので、
+    // 猶予期間のあいだ外部クライアントから新しい発言を読み続けられてしまう。
+    // 復帰 (restore) した人はゲートを再び通って全世代を受け取り直せる。
+    // batch より先に回す: 逆順だと「申請は成立したのにローテーションだけ
+    // 失敗して穴が残る」が起きうる。この順なら失敗した時点で申請ごと失敗し、
+    // 先に回ってしまっても本人はまだ staff なので新しい鍵を受け取れるだけ
+    await staffChatRepo.onStaffLostEverywhere(userId);
     await batch([
       {
         sql: `UPDATE user SET deleted_at = ? WHERE id = ? AND ${ACTIVE}`,
@@ -712,8 +726,19 @@ export const usersRepo = {
   /** 退会（アカウント削除） (#244)。単一トランザクション（D1 batch）で
    * 「共有コンテンツを『退会済みユーザー』(ghost) に付け替え → 個人データ削除 →
    * user 行削除（FK CASCADE で残りが消える）」を行う。
-   * R2 オブジェクトの掃除は呼び出し側（routes/me.ts）が行削除前にキーを控えて行う */
-  async deleteAccount(userId: string, ghostId: string): Promise<void> {
+   * R2 オブジェクトの掃除は呼び出し側（routes/me.ts）が行削除前にキーを控えて行う。
+   * @returns 自分の batch **以外**に消費したサブリクエスト数
+   *          （スタッフチャットのローテーション分。purge の実行予算に積む） */
+  async deleteAccount(userId: string, ghostId: string): Promise<number> {
+    // (0) スタッフチャットのローテーション (#382)。本来は退会申請
+    //     (requestDeletion) の時点で回っているが、purge はロール変更・参加解除の
+    //     ルートを通らないので多重防御としてここでも回す（申請時に回っていれば
+    //     1世代余分に進むだけで害は無い。signer 行自体は下の user 削除の CASCADE
+    //     で消える）。SQL は staffChat リポジトリの外に書かない
+    //     （staff-chat-sql-audit.test.ts）。先に走っても user 行が残って失敗した
+    //     場合に害は無い（鍵が1世代進むだけで、翌日の再試行で完結する）
+    const rotationCost = await staffChatRepo.onStaffLostEverywhere(userId);
+
     const stmts: Array<{ sql: string; args?: unknown[] }> = [];
 
     // (1) 共有コンテンツは ghost 名義に付け替えて残す（参加者の履歴・予定を
@@ -800,6 +825,7 @@ export const usersRepo = {
     stmts.push({ sql: "DELETE FROM user WHERE id = ?", args: [userId] });
 
     await batch(stmts);
+    return rotationCost;
   },
 
   /** 表示名/アイコンが未設定の場合のみ補完（Nostrプロフィール等の反映用） */

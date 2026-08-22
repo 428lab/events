@@ -115,14 +115,17 @@ export function buildChannelCreateTemplate(eventTitle: string): EventTemplate {
   };
 }
 
-/** NIP-28 チャンネルメッセージ（kind:42）。relayHint は e タグに載せる推奨リレー */
+/** NIP-28 チャンネルメッセージ（kind:42）。relayHint は e タグに載せる推奨リレー。
+ * kind はスタッフチャット (#382) が独自 kind（GROUP_CHAT_KIND）で同じ形を使うため
+ * 引数化してある（既定は 42。既存の呼び出しは無変更） */
 export function buildChannelMessageTemplate(
   channelId: string,
   content: string,
   relayHint: string = CHAT_RELAYS[0],
+  kind: number = 42,
 ): EventTemplate {
   return {
-    kind: 42,
+    kind,
     created_at: Math.floor(Date.now() / 1000),
     tags: [["e", channelId, relayHint, "root"]],
     content,
@@ -139,6 +142,8 @@ export interface ChatRelayStatus {
 /** 購読の状態（再接続時の張り直しに使う） */
 interface SubState {
   channelId: string;
+  /** 購読する kind（既定 42。スタッフチャット #382 は独自 kind） */
+  kind: number;
   onEvent: (ev: NostrEvent) => void;
   /** リレー間・再購読間の重複排除（イベントID） */
   seen: Set<string>;
@@ -278,14 +283,19 @@ export class ChatRelayPool {
   }
 
   /**
-   * チャンネルの kind:42 を購読する（履歴 limit 200＋新着）。
+   * チャンネルのメッセージを購読する（履歴 limit 200＋新着。既定は kind:42）。
    * リレー間・再購読間の重複はイベントIDで除去。再接続時は自動で
    * since（最終受信時刻−マージン）付きで張り直す。戻り値は購読停止関数。
    * 契約: 同時に持てる購読は1つ（再呼び出しは前の購読を置き換える）。
    */
-  subscribe(channelId: string, onEvent: (ev: NostrEvent) => void): () => void {
+  subscribe(
+    channelId: string,
+    onEvent: (ev: NostrEvent) => void,
+    kind = 42,
+  ): () => void {
     const sub: SubState = {
       channelId,
+      kind,
       onEvent,
       seen: new Set(),
       lastSeen: 0,
@@ -322,7 +332,7 @@ export class ChatRelayPool {
       "#e": string[];
       limit: number;
       since?: number;
-    } = { kinds: [42], "#e": [sub.channelId], limit: 200 };
+    } = { kinds: [sub.kind], "#e": [sub.channelId], limit: 200 };
     // 再購読は受信済み時刻−マージンから再開（投稿者の時計ずれで created_at が
     // 過去のイベントも取りこぼさない。重なった分はIDで重複排除される）
     if (sub.lastSeen > 0) {

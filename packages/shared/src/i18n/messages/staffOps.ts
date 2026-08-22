@@ -347,6 +347,16 @@ const ja = {
     "担当にできるのは、このイベントのスタッフとして参加が確定している人だけです。",
   todoBadRangeError: "開始日が期限より後になっています。",
 
+  /* ── スタッフチャット (#382) ─────────────────────────────
+   * **実装技術名（Nostr・暗号方式・リレー等）は出さない。** 振る舞い
+   * （スタッフだけが読める・運営サービスには見える）だけを伝える */
+  staffChatTitle: "スタッフチャット",
+  staffChatStaffOnly: "スタッフチャットはこのイベントのスタッフ専用です。",
+  staffChatNotice:
+    "このチャットはスタッフだけが読めます。内容は暗号化されて外部サーバーに保存されます（運営サービスには内容が見えます）。",
+  staffChatOpenFailed:
+    "チャットを開けませんでした。ページを再読み込みしてもう一度お試しください。",
+
   /* ── 役割と持ち場 (#384) ────────────────────────────────
    * **実装上の語を出さない。** duty / slot / assignee は利用者の語彙ではないので
    * 「役割」「持ち場」「担当」で書く。タグ本体（「受付 1/2」）は名前と数字の
@@ -670,6 +680,12 @@ const en: Record<keyof typeof ja, string> = {
   todoAssigneeNotStaffError:
     "Only organizers whose place at this event is confirmed can own a job.",
   todoBadRangeError: "The start date is after the due date.",
+
+  staffChatTitle: "Staff chat",
+  staffChatStaffOnly: "The staff chat is only for this event's organizers.",
+  staffChatNotice:
+    "Only organizers can read this chat. Messages are encrypted and stored on an external server (the service operator can read them).",
+  staffChatOpenFailed: "Could not open the chat. Reload the page and try again.",
 
   dutyTitle: "Roles & posts",
   dutyStaffOnly: "Roles and posts are for organizers only.",
