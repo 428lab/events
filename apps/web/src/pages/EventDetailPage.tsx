@@ -28,6 +28,7 @@ import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import CampaignIcon from "@mui/icons-material/Campaign";
 import ChecklistIcon from "@mui/icons-material/Checklist";
+import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import AssignmentIndOutlinedIcon from "@mui/icons-material/AssignmentIndOutlined";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
@@ -884,6 +885,18 @@ export function EventDetailPage() {
               to={`/events/${id}/todos`}
             >
               {t("staffOps.todoTitle")}
+            </Button>
+          )}
+          {/* スタッフチャット (#382)。公開前から使える運営専用の部屋。
+              myRole === "staff" のときだけ描画（isAdmin は混ぜない #275） */}
+          {isStaff && (
+            <Button
+              variant="outlined"
+              startIcon={<ForumOutlinedIcon />}
+              component={RouterLink}
+              to={`/events/${id}/staff-chat`}
+            >
+              {t("staffOps.staffChatTitle")}
             </Button>
           )}
           {/* 役割と持ち場 (#384)。スタッフ専用の独立ページへの導線 */}

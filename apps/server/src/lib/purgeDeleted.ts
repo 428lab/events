@@ -33,10 +33,11 @@ const SUBREQUEST_BUDGET = 40;
  * ＋ collectUserObjects の D1 4（decks / live_set / bgm / event_photo）
  * ＋ プロフィールカードの R2 list 1
  * ＋ deleteAccount の batch 1
+ * ＋ deleteAccount 内のスタッフチャット列挙 (#382) 1（部屋があれば +1/部屋）
  * ＋ recordAudit 2（INSERT と保存期間の掃除）
- * ＝ 9。R2 に実体があれば delete でさらに 1 以上増えるので 10 で見積もる。
+ * ＝ 10。R2 に実体があれば delete でさらに 1 以上増えるので 11 で見積もる。
  * 次の1件がこれ以下の余裕しか無ければ打ち切る */
-const MIN_COST_PER_USER = 10;
+const MIN_COST_PER_USER = 11;
 
 /** 1回の実行で見に行く候補の最大数。実際には予算のほうが先に効くが、
  * listPurgeTargets が無制限に行を読まないための保険 */

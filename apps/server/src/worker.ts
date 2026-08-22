@@ -39,6 +39,7 @@ import {
 } from "./routes/eventComments.js";
 import { eventLikeRoutes } from "./routes/eventLikes.js";
 import { eventChatRoutes } from "./routes/eventChat.js";
+import { staffChatRoutes } from "./routes/staffChat.js";
 import { eventQaRoutes } from "./routes/eventQa.js";
 import {
   meetEventRoutes,
@@ -166,6 +167,9 @@ api.route("/events", eventCommentRoutes);
 api.route("/events", eventLikeRoutes);
 // Nostrイベントチャットの紐付け (#199)（参加確定メンバーのみ。要認証）
 api.route("/events", eventChatRoutes);
+// スタッフ用チャットルームの鍵配布 (#382)（そのイベントの参加確定スタッフのみ。要認証。
+// 参加者向けの経路は1本も作らない。公開前から使える）
+api.route("/events", staffChatRoutes);
 // Q&A (#216)（質問の投稿・投票は参加確定メンバー、回答済み・ピックアップ・非表示は staff。要認証）
 api.route("/events", eventQaRoutes);
 // 参加者への一斉連絡 (#172)（送信・履歴閲覧ともそのイベントのスタッフのみ。要認証）

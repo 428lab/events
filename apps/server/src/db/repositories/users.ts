@@ -1,6 +1,7 @@
 import type { User } from "@eventer/shared";
 import { DELETED_USER_DISPLAY_NAME } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
+import { staffChatRepo } from "./staffChat.js";
 
 interface UserRow {
   id: string;
@@ -438,6 +439,11 @@ export const usersRepo = {
       // できない（勝ち負け両方が同じ持ち場に居ると UPDATE が UNIQUE 違反で落ちる）。
       // 両方に同じ持ち場の割り当てがあれば負け側を捨てる
       ["event_duty_assignee", "user_id", ["slot_id"]],
+      // スタッフチャットの発言用一時鍵 (#382)。PK (event_id, audience, user_id)。
+      // 両方が同じ部屋に signer を持つときだけ負け側を捨てる（勝ち側の鍵を残す＝
+      // 配布済みの鍵を替えずに済む。event_chat_key の統合 (1b) と同じ判断）。
+      // 資格は (0) で勝ち側に引き継がれるのでローテーションは不要（設計 7.4）
+      ["event_group_chat_signer", "user_id", ["event_id", "audience"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols
@@ -714,6 +720,13 @@ export const usersRepo = {
    * user 行削除（FK CASCADE で残りが消える）」を行う。
    * R2 オブジェクトの掃除は呼び出し側（routes/me.ts）が行削除前にキーを控えて行う */
   async deleteAccount(userId: string, ghostId: string): Promise<void> {
+    // (0) スタッフチャットのローテーション (#382)。purge はロール変更・参加解除の
+    //     ルートを通らないので、資格喪失のフックをここに置く（signer 行自体は
+    //     下の user 削除の CASCADE で消える）。SQL は staffChat リポジトリの外に
+    //     書かない（staff-chat-sql-audit.test.ts）。先に走っても user 行が残って
+    //     失敗した場合に害は無い（鍵が1世代進むだけで、翌日の再試行で完結する）
+    await staffChatRepo.onUserPurged(userId);
+
     const stmts: Array<{ sql: string; args?: unknown[] }> = [];
 
     // (1) 共有コンテンツは ghost 名義に付け替えて残す（参加者の履歴・予定を
