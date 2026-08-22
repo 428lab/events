@@ -1,27 +1,21 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Box, Button, Chip, Divider, Stack, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { useTranslation } from "react-i18next";
 import { countTodos, type TodoDerived } from "../lib/todoGantt.js";
+import type { TodoFilter, TodoOwnerFilter } from "../lib/todoFilter.js";
 import { TodoRow } from "./TodoRow.js";
 
 /**
  * 準備 TODO の一覧 (#393)。集計チップ・絞り込み・並べ替え。
  *
- * **絞り込みはすべてここ（画面側）でやる。** サーバーに絞り込みの口を増やすと、
- * この表を読む経路が1本では無くなる（設計 3.5・8.4）。
- *
- * 絞り込みはガントには効かない。ガントの行 index は `derived` の並びそのものなので、
- * 一覧だけを絞る。「一覧で目当ての1件を探し、下の帯で前後関係を見る」使い方になる。
+ * 絞り込みの**判定は持たない**。`useTodoFilter` (#400) が絞った結果
+ * (`filter.shown`) をそのまま並べ、チップはその状態を切り替えるだけ。
+ * 同じ結果をガントも使うので、一覧とガントの見え方は必ず一致する。
  */
-
-/** 担当で絞る3つ。**この3つは互いに排他**（1つの仕事が「自分の」でも
- * 「未割り当て」でもあることは無い）なので、選んだもののどれかに当てはまれば残す */
-type OwnerFilter = "mine" | "unassigned" | "left";
-
 export function TodoList({
   derived,
-  meId,
+  filter,
   selectedId,
   busy,
   onSelect,
@@ -31,8 +25,9 @@ export function TodoList({
   onDelete,
   onMove,
 }: {
+  /** 絞り込む前の全件。集計と並べ替えの端の判定はこちらで行う */
   derived: TodoDerived[];
-  meId: string | null;
+  filter: TodoFilter;
   selectedId: string | null;
   busy: boolean;
   onSelect: (id: string) => void;
@@ -43,9 +38,6 @@ export function TodoList({
   onMove: (d: TodoDerived, delta: -1 | 1) => void;
 }) {
   const { t } = useTranslation();
-  const [owners, setOwners] = useState<OwnerFilter[]>([]);
-  const [overdueOnly, setOverdueOnly] = useState(false);
-  const [showDone, setShowDone] = useState(false);
 
   // 進み具合は**絞り込む前の全件**で数える。絞ったぶんだけ数が減ると、
   // 「未完了が3件になった」のか「3件だけ表示している」のかが読めない
@@ -54,33 +46,21 @@ export function TodoList({
     () => new Map(derived.map((d) => [d.todo.id, d.todo.title])),
     [derived],
   );
+  const shown = filter.shown;
 
-  const ownerOf = (d: TodoDerived): OwnerFilter | null => {
-    if (d.todo.assigneeState === "left") return "left";
-    if (d.todo.assigneeState === "unassigned") return "unassigned";
-    return d.todo.assignee?.id === meId ? "mine" : null;
+  /** チェックの取り次ぎ。完了にする行を「残す」集合へ入れてから親に渡す (#400) */
+  const toggleDone = (d: TodoDerived) => {
+    filter.noteToggleDone(d);
+    onToggleDone(d);
   };
-  const shown = derived.filter((d) => {
-    if (!showDone && d.todo.status === "done") return false;
-    if (overdueOnly && !d.overdue) return false;
-    if (owners.length === 0) return true;
-    const owner = ownerOf(d);
-    return owner !== null && owners.includes(owner);
-  });
 
-  const toggleOwner = (value: OwnerFilter) =>
-    setOwners((prev) =>
-      prev.includes(value)
-        ? prev.filter((v) => v !== value)
-        : [...prev, value],
-    );
-  const ownerChip = (value: OwnerFilter, label: string) => (
+  const ownerChip = (value: TodoOwnerFilter, label: string) => (
     <Chip
       size="small"
       label={label}
-      variant={owners.includes(value) ? "filled" : "outlined"}
-      color={owners.includes(value) ? "primary" : "default"}
-      onClick={() => toggleOwner(value)}
+      variant={filter.owners.includes(value) ? "filled" : "outlined"}
+      color={filter.owners.includes(value) ? "primary" : "default"}
+      onClick={() => filter.toggleOwner(value)}
     />
   );
 
@@ -118,16 +98,16 @@ export function TodoList({
         <Chip
           size="small"
           label={t("staffOps.todoFilterOverdue")}
-          variant={overdueOnly ? "filled" : "outlined"}
-          color={overdueOnly ? "error" : "default"}
-          onClick={() => setOverdueOnly((v) => !v)}
+          variant={filter.overdueOnly ? "filled" : "outlined"}
+          color={filter.overdueOnly ? "error" : "default"}
+          onClick={filter.toggleOverdue}
         />
         <Chip
           size="small"
           label={t("staffOps.todoFilterShowDone")}
-          variant={showDone ? "filled" : "outlined"}
-          color={showDone ? "primary" : "default"}
-          onClick={() => setShowDone((v) => !v)}
+          variant={filter.showDone ? "filled" : "outlined"}
+          color={filter.showDone ? "primary" : "default"}
+          onClick={filter.toggleShowDone}
         />
         <Box sx={{ flex: 1 }} />
         <Button
@@ -163,7 +143,7 @@ export function TodoList({
                 busy={busy}
                 titleOf={(id) => titles.get(id) ?? ""}
                 onSelect={() => onSelect(d.todo.id)}
-                onToggleDone={() => onToggleDone(d)}
+                onToggleDone={() => toggleDone(d)}
                 onEdit={() => onEdit(d)}
                 onDelete={() => onDelete(d)}
                 onMove={(delta) => onMove(d, delta)}

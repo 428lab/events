@@ -20,6 +20,7 @@ import {
   useUpdateTodo,
 } from "../api/todoHooks.js";
 import { deriveTodos, layoutGantt, type TodoDerived } from "../lib/todoGantt.js";
+import { useTodoFilter } from "../lib/todoFilter.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { TodoList } from "../components/TodoList.js";
 import { TodoGantt } from "../components/TodoGantt.js";
@@ -75,7 +76,13 @@ export function EventTodoPage() {
     () => deriveTodos(todos ?? [], deps ?? [], today),
     [todos, deps, today],
   );
-  const layout = useMemo(() => layoutGantt(derived, today), [derived, today]);
+  // 絞り込みの判定は useTodoFilter の1か所。**絞った結果を一覧とガントの
+  // 両方に渡す**（一覧だけに効かせると「帯はあるのに行が無い」が起きる・#400）
+  const filter = useTodoFilter(derived, me?.id ?? null);
+  const layout = useMemo(
+    () => layoutGantt(filter.shown, today),
+    [filter.shown, today],
+  );
 
   if (!eventData) return <Typography>{t("common.loading")}</Typography>;
   if (!isStaff) {
@@ -193,7 +200,7 @@ export function EventTodoPage() {
 
       <TodoList
         derived={derived}
-        meId={me?.id ?? null}
+        filter={filter}
         selectedId={selectedId}
         busy={busy}
         onSelect={(todoId) =>
@@ -218,7 +225,7 @@ export function EventTodoPage() {
         </Typography>
         <TodoGantt
           layout={layout}
-          derived={derived}
+          derived={filter.shown}
           selectedId={selectedId}
           onSelect={(todoId) =>
             setSelectedId((prev) => (prev === todoId ? null : todoId))

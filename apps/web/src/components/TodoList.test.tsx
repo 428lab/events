@@ -1,7 +1,9 @@
+import { useMemo, useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { EventTodo, EventTodoDep } from "@eventer/shared";
-import { deriveTodos } from "../lib/todoGantt.js";
+import { deriveTodos, type TodoDerived } from "../lib/todoGantt.js";
+import { useTodoFilter } from "../lib/todoFilter.js";
 import { TodoList } from "./TodoList.js";
 
 /**
@@ -38,21 +40,39 @@ function todo(id: string, patch: Partial<EventTodo> = {}): EventTodo {
   };
 }
 
-function show(todos: EventTodo[], deps: EventTodoDep[] = []) {
-  return render(
+/** ページ（EventTodoPage）の配線の代わり。絞り込みは useTodoFilter が持つ */
+function ListHost({
+  todos,
+  deps = [],
+  onToggleDone = () => {},
+}: {
+  todos: EventTodo[];
+  deps?: EventTodoDep[];
+  onToggleDone?: (d: TodoDerived) => void;
+}) {
+  const derived = useMemo(
+    () => deriveTodos(todos, deps, TODAY),
+    [todos, deps],
+  );
+  const filter = useTodoFilter(derived, ME);
+  return (
     <TodoList
-      derived={deriveTodos(todos, deps, TODAY)}
-      meId={ME}
+      derived={derived}
+      filter={filter}
       selectedId={null}
       busy={false}
       onSelect={vi.fn()}
-      onToggleDone={vi.fn()}
+      onToggleDone={onToggleDone}
       onAdd={vi.fn()}
       onEdit={vi.fn()}
       onDelete={vi.fn()}
       onMove={vi.fn()}
-    />,
+    />
   );
+}
+
+function show(todos: EventTodo[], deps: EventTodoDep[] = []) {
+  return render(<ListHost todos={todos} deps={deps} />);
 }
 
 /** 一覧に並んでいる TODO の題名（チェックボックスの aria-label が題名） */
@@ -255,5 +275,73 @@ describe("フィルタのチップで一覧が絞られる (#393 8.4)", () => {
     // 1件も無い場合の案内とは別の文言（同じにすると、絞り込みで消えているのか
     // まだ何も登録していないのかが読めない）
     expect(screen.queryByText(/まだ登録がありません/)).not.toBeInTheDocument();
+  });
+});
+
+describe("この画面で完了にした行はその場に残る (#400)", () => {
+  /** 親（EventTodoPage）の代わり。チェックで status を切り替えて渡し直す */
+  function Harness({ initial }: { initial: EventTodo[] }) {
+    const [todos, setTodos] = useState(initial);
+    const toggle = (d: TodoDerived) =>
+      setTodos((prev) =>
+        prev.map((x) =>
+          x.id === d.todo.id
+            ? { ...x, status: x.status === "done" ? "open" : "done" }
+            : x,
+        ),
+      );
+    return <ListHost todos={todos} onToggleDone={toggle} />;
+  }
+
+  it("完了にチェックを入れても、行はその場から消えない（打ち消し線つき）", () => {
+    render(<Harness initial={[todo("片づける仕事"), todo("残る仕事")]} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "片づける仕事" }));
+
+    // 「完了を隠す」既定のままでも、いま自分が完了にした行は残る
+    expect(listedTitles()).toEqual(["片づける仕事", "残る仕事"]);
+    expect(
+      screen.getByRole("checkbox", { name: "片づける仕事" }),
+    ).toBeChecked();
+    // 打ち消し線（完了の見た目）になっている
+    expect(screen.getByText("片づける仕事")).toHaveStyle(
+      "text-decoration: line-through",
+    );
+  });
+
+  it("チェックを外すと元に戻る（開き直せる）", () => {
+    render(<Harness initial={[todo("誤操作の仕事")]} />);
+    const box = () => screen.getByRole("checkbox", { name: "誤操作の仕事" });
+    fireEvent.click(box());
+    expect(box()).toBeChecked();
+
+    fireEvent.click(box());
+    expect(box()).not.toBeChecked();
+    expect(listedTitles()).toEqual(["誤操作の仕事"]);
+    expect(screen.getByText("誤操作の仕事")).not.toHaveStyle(
+      "text-decoration: line-through",
+    );
+  });
+
+  it("次の表示（再マウント）ではフィルタに従い、完了は隠れる", () => {
+    const { unmount } = render(<Harness initial={[todo("済ませる仕事")]} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "済ませる仕事" }));
+    expect(listedTitles()).toEqual(["済ませる仕事"]);
+    unmount();
+
+    // ページを開き直した状態。完了済みなので既定の「完了を隠す」が効く
+    render(<Harness initial={[todo("済ませる仕事", { status: "done" })]} />);
+    expect(listedTitles()).toEqual([]);
+  });
+
+  it("「完了を含める」チップを明示的に操作したら、以後はチップの状態に従う", () => {
+    render(<Harness initial={[todo("済ませる仕事"), todo("残る仕事")]} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "済ませる仕事" }));
+    expect(listedTitles()).toEqual(["済ませる仕事", "残る仕事"]);
+
+    // チップを点けて消す＝「完了は隠す」を自分で選んだ。例外はもう要らない
+    fireEvent.click(screen.getByText("完了を含める"));
+    expect(listedTitles()).toEqual(["済ませる仕事", "残る仕事"]);
+    fireEvent.click(screen.getByText("完了を含める"));
+    expect(listedTitles()).toEqual(["残る仕事"]);
   });
 });
