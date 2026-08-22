@@ -1,0 +1,33 @@
+name: Flaky probe (#371)
+
+# CI の server テストが変更と無関係に落ちる頻度を数えるための一時ワークフロー。
+# 直す前と直した後で同じ回数だけ回し、落ちた回数を比べる。
+# 計測が終わったら削除する。
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: runner の資源
+        run: |
+          echo "nproc=$(nproc)"
+          free -m
+      - name: server テスト
+        run: pnpm --filter @eventer/server test
+      - name: workerd の残骸
+        if: always()
+        run: |
+          echo "workerd 残存数: $(pgrep -c workerd || echo 0)"
