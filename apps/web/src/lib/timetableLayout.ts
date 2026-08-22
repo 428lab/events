@@ -1,4 +1,4 @@
-import { computeScheduleTimes } from "@eventer/shared";
+import { computeScheduleTimes, publicTracks } from "@eventer/shared";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 
 /** 格子の1マスの分数。細かすぎると行数が増えて重く、粗いと短いコマが潰れる */
@@ -134,15 +134,12 @@ export function buildTimetableLayout(
   tracks: EventTrack[],
   eventStartsAt: number | null,
 ): TimetableLayout {
-  // 時刻を連鎖させる列は**公開トラックだけ** (#383)。格子の列にはスタッフ用の
-  // 列も並べるが、時刻の計算とは別物として扱う。混ぜると、全トラック共通が見る
-  // Math.max(...) にスタッフ用トラックのカーソルが入り、**staff の画面でだけ**
-  // 全トラック共通の時刻が後ろへずれる（参加者と時刻が食い違う）
+  // 格子の列にはスタッフ用の列も並べるが、**時刻を連鎖させる列とは別物**として扱う
+  // (#383。理由は @eventer/shared の publicTracks に書いてある)
   const times = computeScheduleTimes(
     items,
     eventStartsAt,
-    // 許可リストで書く（値が増えたときに新しい列が黙って混ざらないように）
-    tracks.filter((t) => t.visibility === "public").map((t) => t.id),
+    publicTracks(tracks).map((t) => t.id),
   );
   const indexOfTrack = new Map(tracks.map((t, i) => [t.id, i]));
   const allIndexes = tracks.map((_, i) => i);

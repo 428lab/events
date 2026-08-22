@@ -122,7 +122,6 @@ const ja = {
   staffTrackToggle: "運営用の列にする",
   staffTrackHint:
     "受付や控え室のように、表のセッションに紐づかない持ち場の列です。参加者には出ません。",
-  staffOnlyHeading: "運営だけの段取り",
 
   /** 編集画面の骨組み */
   unassignedSection: "未割り当て（ネタ出し）",
@@ -293,7 +292,6 @@ const en: Record<keyof typeof ja, string> = {
   staffTrackToggle: "Make this an organizers-only column",
   staffTrackHint:
     "A column for posts that aren't tied to a session — the front desk, the green room. Participants never see it.",
-  staffOnlyHeading: "Organizers-only plan",
 
   // ここの "idea" はタイムテーブルの「ネタ」。イベントのたまご（`egg.*` の
   // "egg" #378）とは別物なので、この綴りのまま残す

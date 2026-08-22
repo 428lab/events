@@ -248,21 +248,31 @@ export const eventScheduleRepo = {
     // 添字 → そのトラックがスタッフ用か (#383)。下の 4.2 の正規化で使う
     const trackIsStaffByIndex: boolean[] = [];
     if (tracks) {
-      const existingTracks = await many<{ id: string }>(
-        "SELECT id FROM event_track WHERE event_id = ?",
+      const existingTracks = await many<{ id: string; visibility: string }>(
+        "SELECT id, visibility FROM event_track WHERE event_id = ?",
         eventId,
       );
-      const trackIds = new Set(existingTracks.map((t) => t.id));
+      const trackVisibility = new Map(
+        existingTracks.map((t) => [t.id, toVisibility(t.visibility)]),
+      );
       const keptTracks = new Set<string>();
       tracks.forEach((t, i) => {
-        trackIsStaffByIndex.push(t.visibility === "staff");
         // 項目と同じく、既存 ID との一致だけを更新扱いにする
-        if (t.id && trackIds.has(t.id) && !keptTracks.has(t.id)) {
-          keptTracks.add(t.id);
-          trackIdByIndex.push(t.id);
+        const isExisting =
+          t.id !== null && trackVisibility.has(t.id) && !keptTracks.has(t.id);
+        // **省略は「いまの値を保つ」** (#383)。`visibility` を送らない古い
+        // クライアントの保存で運営用の列が表の列に戻り、列名が参加者に出るのを防ぐ。
+        // 新規の列は保つ相手がいないので `'public'`（表の列）から始める
+        const visibility =
+          t.visibility ??
+          (isExisting ? (trackVisibility.get(t.id!) ?? "public") : "public");
+        trackIsStaffByIndex.push(visibility === "staff");
+        if (isExisting) {
+          keptTracks.add(t.id!);
+          trackIdByIndex.push(t.id!);
           trackStmts.push({
             sql: "UPDATE event_track SET name = ?, sort_order = ?, visibility = ? WHERE id = ? AND event_id = ?",
-            args: [t.name, i, t.visibility, t.id, eventId],
+            args: [t.name, i, visibility, t.id, eventId],
           });
           return;
         }
@@ -270,7 +280,7 @@ export const eventScheduleRepo = {
         trackIdByIndex.push(id);
         trackStmts.push({
           sql: "INSERT INTO event_track (id, event_id, name, sort_order, created_at, visibility) VALUES (?, ?, ?, ?, ?, ?)",
-          args: [id, eventId, t.name, i, now, t.visibility],
+          args: [id, eventId, t.name, i, now, visibility],
         });
       });
       // 送られなかった既存トラックは削除。対応表の行は FK の CASCADE で消える。
@@ -299,10 +309,13 @@ export const eventScheduleRepo = {
      * **割り当て先が空なら未割り当て**。トラックを消して載る先が無くなった場合も、
      * 編集画面でチップを全部外した場合も、規則はこの1つだけ。
      *
-     * **見え方も tracks 未指定なら既存値のまま**にする (#383)。トラックを知らない
-     * クライアントは裏方のことも知らず、`visibility` の既定値 `'public'` を送ってくる。
-     * それを素直に書くと、**入力済みの裏方が黙って参加者に出る**（`placement` を
-     * 既存値のままにしているのとまったく同じ理由）。 */
+     * **見え方は `visibility` を送ってきたときだけ変える** (#383)。
+     * 省略は「いまの値を保つ」。`visibility` を知らない古いクライアントは
+     * このキーを送らないので、**入力済みの裏方が黙って参加者に出る**のを防げる。
+     *
+     * 判定に `tracks` の有無を使ってはいけない。**`tracks` は送るが `visibility` は
+     * 送らない**ビルドが実在する（#338 で tracks が入り、#383 で visibility が入った
+     * 間のビルド）。見分けるのは `visibility` の有無そのもの1本にする。 */
     const placeOf = (
       it: SaveScheduleItemInput,
       current: { placement: string; visibility: string } | undefined,
@@ -311,25 +324,25 @@ export const eventScheduleRepo = {
       visibility: ScheduleVisibility;
       trackIds: string[];
     } => {
+      // 省略なら既存値、既存が無い（新規）なら 'public'。
+      // 新規は保つ相手がいないので、いまと同じ見え方＝参加者にも見せるから始める
+      const visibility =
+        it.visibility ?? toVisibility(current?.visibility ?? "public");
       if (!tracks) {
         return {
           placement: toPlacement(current?.placement ?? "all"),
-          visibility: toVisibility(current?.visibility ?? "public"),
+          visibility,
           trackIds: [],
         };
       }
       if (it.placement === "unassigned") {
         // 未割り当ては placement だけで参加者から外れる。visibility は触らない
         // （配置し直したときに元の見え方へ戻れるよう、運営の入力を捨てない）
-        return {
-          placement: "unassigned",
-          visibility: it.visibility,
-          trackIds: [],
-        };
+        return { placement: "unassigned", visibility, trackIds: [] };
       }
       if (it.placement === "all") {
         // 全トラック共通の裏方（全体の設営など）は正しい組み合わせ。そのまま通す
-        return { placement: "all", visibility: it.visibility, trackIds: [] };
+        return { placement: "all", visibility, trackIds: [] };
       }
       const picked = [
         ...new Set(
@@ -337,11 +350,7 @@ export const eventScheduleRepo = {
         ),
       ];
       if (picked.length === 0) {
-        return {
-          placement: "unassigned",
-          visibility: it.visibility,
-          trackIds: [],
-        };
+        return { placement: "unassigned", visibility, trackIds: [] };
       }
       // 4.2 規則1: **スタッフ用トラックにしか載っていない項目は裏方に格上げする**。
       // 参加者に見せると決まっている項目が、参加者に見えない列にだけ置かれている
@@ -353,7 +362,7 @@ export const eventScheduleRepo = {
       );
       return {
         placement: "tracks",
-        visibility: onlyStaffTracks ? "staff" : it.visibility,
+        visibility: onlyStaffTracks ? "staff" : visibility,
         trackIds: picked.map((n) => trackIdByIndex[n]!),
       };
     };

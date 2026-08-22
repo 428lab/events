@@ -110,13 +110,19 @@ export const saveScheduleItemInput = z.object({
   /** 配置状態 (#338)。既定は `all`（＝いまと同じ見え方）。
    * `tracks` なのに `trackIndexes` が空ならサーバーが `unassigned` に落とす */
   placement: schedulePlacementSchema.default("all"),
-  /** 誰に見せるか (#383)。既定は `public`（＝いまと同じ見え方）。
-   * 既定を `staff` にすると、既存クライアントが送った項目が黙って参加者から消える。
+  /** 誰に見せるか (#383)。
    *
-   * **`tracks` を送らないクライアントからの保存ではこの値を見ない**
-   * （`placement` と同じ扱い。トラックを知らない＝裏方も知らないクライアントの
-   * 既定値で、入力済みの裏方が参加者に出てしまうため）。 */
-  visibility: scheduleVisibilitySchema.default("public"),
+   * **既定値を持たせない。省略は「いまの値を保つ」** で、`'public'` ではない。
+   * `.default("public")` にすると、**`visibility` を知らない古いクライアント**
+   * （このキーを送らないビルド）からの保存が1回通っただけで、そのイベントの裏方が
+   * 全件公開になる。zod が `'public'` を埋め、差分保存がそのまま書くため。
+   * 参加者のイベント詳細・資料ギャラリー・投影の格子・**リマインダーのメール**に
+   * 「会場設営」「撤収」が並び、差分保存なので元に戻せない。
+   *
+   * 「古いクライアントか」を `tracks` の有無で見分けてはいけない。
+   * **`tracks` は送るが `visibility` は送らない**ビルドが実在する（#338〜#383 の間）。
+   * 見分けるなら**この値の有無そのもの**で見る。 */
+  visibility: scheduleVisibilitySchema.optional(),
   /** 割り当て先を **同じ保存に入っている tracks 配列の添字** で指す。
    * 新規追加したトラックはまだ ID が無い（サーバーが採番する）ので、
    * クライアントが ID をでっち上げずに済むようにここは添字で受ける。
@@ -131,9 +137,11 @@ export const saveScheduleTrackInput = z.object({
    * 項目と同じく、サーバーは自分のイベントの既存 ID のみ採用する */
   id: z.string().max(64).nullable().default(null),
   name: z.string().trim().min(1).max(50),
-  /** 誰に見せる列か (#383)。既定は `public`（＝いまと同じ見え方）。
-   * `staff` にすると表には出ない列になり、参加者向けの一覧には入らない */
-  visibility: scheduleVisibilitySchema.default("public"),
+  /** 誰に見せる列か (#383)。
+   * 項目と同じく**省略は「いまの値を保つ」**（既定値を持たせない）。
+   * `'public'` を既定にすると、この値を送らない古いクライアントの保存で
+   * 運営用の列が表の列に戻り、列名が参加者に出る */
+  visibility: scheduleVisibilitySchema.optional(),
 });
 export type SaveScheduleTrackInput = z.infer<typeof saveScheduleTrackInput>;
 
@@ -208,6 +216,24 @@ export const saveScheduleInput = z.object({
 });
 export type SaveScheduleInput = z.infer<typeof saveScheduleInput>;
 
+/** **時刻の連鎖に使ってよい列**（＝参加者にも見える列）だけに絞る (#383)。
+ *
+ * `computeScheduleTimes` の第3引数にスタッフ用トラックを混ぜると、
+ * 全トラック共通 (`all`) が見る `Math.max(...)` にスタッフ用トラックのカーソルが入り、
+ * **staff の画面でだけ**その時刻が後ろへずれる。参加者に配る時刻と食い違い、
+ * 会場の進行と参加者の手元がずれる。
+ *
+ * **この絞り込みを各画面で書き写さないこと。** 呼ぶ場所はサーバー・投影の格子・
+ * イベント詳細・編集画面のプレビューと散らばっていて、新しい画面が素直に
+ * 「全部のトラック」を渡すと、そこだけ静かにずれる。契約はこの1か所が持つ。
+ *
+ * 必ず**許可リスト**（`=== "public"`）で判定する。省略は `'public'` 扱い。 */
+export function publicTracks<T extends { visibility?: ScheduleVisibility }>(
+  tracks: T[],
+): T[] {
+  return tracks.filter((t) => (t.visibility ?? "public") === "public");
+}
+
 /** computeScheduleTimes が見る項目。placement を省いた呼び出しは
  * 全項目 `all`（＝トラックを使っていないイベント）として扱う */
 export interface ScheduleTimeItem {
@@ -276,11 +302,16 @@ export function computeScheduleTimes(
       .filter((v): v is number => v !== null);
     const start = it.startsAt ?? (known.length > 0 ? Math.max(...known) : null);
     out.push(start);
-    // 裏方 (#383) は参加者に返らない。カーソルを進めると、抜けた側と抜けていない側で
-    // 同じセッションの時刻がずれる。**読むが進めない**（上の不変条件）。
+    // 参加者に返らない項目 (#383) はカーソルを進めない。進めると、抜けた側と
+    // 抜けていない側で同じセッションの時刻がずれる。**読むが進めない**（上の不変条件）。
+    //
+    // **許可リストで書く**（`!== "public"`）。`=== "staff"` と書くと、将来
+    // 値が増えたときに新しい値がカーソルを進めてしまい、参加者に配る時刻が壊れる。
+    // 省略は `'public'` 扱い（トラックを使っていない既存の呼び出し元がそのまま動く）。
+    //
     // 代償として裏方どうしは自動で連鎖しない（続けて置くと同じ時刻から始まる）。
     // 連鎖の規則が2種類あるとどちらが効いているか読めなくなるので、v1 では足さない
-    if (it.visibility === "staff") continue;
+    if ((it.visibility ?? "public") !== "public") continue;
     const next = start === null ? null : start + it.durationMin * 60_000;
     for (const id of cols) cursors.set(id, next);
   }

@@ -8,6 +8,7 @@
  * 色の差はトラックが増えるほど詰まる。5本を超えると隣どうしの区別は
  * ほとんど付かないので、**色は補助・見出しが主** という前提で使うこと。 */
 
+import { publicTracks } from "@eventer/shared";
 import type { ScheduleVisibility } from "@eventer/shared";
 
 interface Hsl {
@@ -88,16 +89,13 @@ export function trackColorsForTracks(
   secondary: string,
   tracks: Array<{ visibility: ScheduleVisibility }>,
 ): Array<string | null> {
-  // **許可リストで書く**。`!== "staff"`（拒否リスト）だと、将来 visibility に
-  // 値が増えたとき、新しい値の列が黙って公開トラックとして色を1本取り、
-  // 参加者の画面と色の対応がずれる。参加者に見せる側へ倒さない
-  const publicColors = trackColors(
-    primary,
-    secondary,
-    tracks.filter((track) => track.visibility === "public").length,
-  );
+  // 「表の列」の判定は @eventer/shared の publicTracks が1か所で持つ（許可リスト）
+  const count = publicTracks(tracks).length;
+  const colors = trackColors(primary, secondary, count);
   let at = 0;
+  // 配る側も同じ判定で書く。ここだけ拒否リストにすると、将来値が増えたときに
+  // 新しい値の列が色を1本取り、公開トラックの色が1つずつ後ろへずれる
   return tracks.map((track) =>
-    track.visibility === "public" ? (publicColors[at++] ?? null) : null,
+    track.visibility === "public" ? (colors[at++] ?? null) : null,
   );
 }

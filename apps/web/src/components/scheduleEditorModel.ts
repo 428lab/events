@@ -12,9 +12,15 @@ import { SCHEDULE_DEFAULT_DURATION_MIN } from "@eventer/shared";
  * 割り当て先は**トラックの ID ではなく編集中のキー**で持つ (#338)。
  * 追加したばかりのトラックはまだ ID が無く（保存時にサーバーが採番する）、
  * ID で持つとその1本だけ割り当てられないため */
-export interface Row extends Omit<SaveScheduleItemInput, "trackIndexes"> {
+export interface Row
+  extends Omit<SaveScheduleItemInput, "trackIndexes" | "visibility"> {
   key: string;
   trackKeys: string[];
+  /** 誰に見せるか (#383)。保存の入力では**省略＝いまの値を保つ**ため任意だが、
+   * 編集画面は必ず値を持つ（開いた時点の値を持ち回り、保存で必ず送る）。
+   * ここを任意にすると、値を落とした行が「保つ」扱いになって
+   * 画面で切り替えたはずの見え方が保存されない */
+  visibility: ScheduleVisibility;
 }
 
 /** 編集中のトラック1本。id が null なら未保存（新規追加） */

@@ -621,15 +621,57 @@ describe("保存が作らせない状態 (#383 4.2)", () => {
     expect(res.status).toBe(403);
   });
 
+  it("visibility を送らない古いクライアントの保存でも、裏方は裏方のまま", async () => {
+    const cookie = await loginDev();
+    const eventId = await setupEvent(cookie);
+    const saved = await seedMixedTimetable(eventId, cookie);
+    const staffTrack = saved.tracks.find((t) => t.name === STAFF_TRACK_NAME)!;
+
+    // **`tracks` は送るが `visibility` は送らない**保存。#338（トラック）が入って
+    // から #383（裏方）が入るまでのビルドがこの形で、実在する。
+    // 「古いクライアントか」を tracks の有無で見分けると、この経路が素通りして
+    // **1回の保存でイベントの裏方が全件公開になる**（差分保存なので戻せない）
+    const after = await putTimetable(eventId, cookie, {
+      tracks: saved.tracks.map((t) => ({ id: t.id, name: t.name })),
+      items: saved.items.map((it) => ({
+        id: it.id,
+        title: it.title,
+        durationMin: it.durationMin,
+        placement: it.placement,
+        trackIndexes: it.trackIds
+          .map((id) => saved.tracks.findIndex((t) => t.id === id))
+          .filter((n) => n >= 0),
+      })),
+    });
+
+    // 項目の見え方が保たれている
+    expect(
+      after.items
+        .filter((it) => STAFF_TITLES.includes(it.title))
+        .map((it) => it.visibility),
+    ).toEqual(["staff", "staff"]);
+    // 運営用の列も表の列に戻っていない（戻ると列名が参加者に出る）
+    expect(
+      after.tracks.find((t) => t.id === staffTrack.id)!.visibility,
+    ).toBe("staff");
+
+    const member = await makeMember(eventId, "participant");
+    const seen = await getTimetableRaw(eventId, member.cookie);
+    for (const title of STAFF_TITLES) {
+      expect(seen.text).not.toContain(title);
+    }
+    expect(seen.text).not.toContain(STAFF_TRACK_NAME);
+    expect(seen.body.tracks).toHaveLength(1);
+  });
+
   it("トラックを送らない保存では、入力済みの裏方が参加者に出ない", async () => {
     const cookie = await loginDev();
     const eventId = await setupEvent(cookie);
     const saved = await seedMixedTimetable(eventId, cookie);
 
-    // **トラックを知らないクライアント**からの保存。トラックを知らない＝
-    // 裏方も知らないので、`visibility` の既定値 'public' を送ってくる。
-    // それを素直に書くと入力済みの裏方が黙って参加者に出る（placement を
-    // 既存値のままにしているのとまったく同じ理由でここも触らない）
+    // **トラックすら知らないクライアント**からの保存（更に古い形）。
+    // 上のテストと合わせて、`visibility` を送らない保存はどの形でも
+    // 「いまの値を保つ」ことを固定する
     const again = await putTimetable(eventId, cookie, {
       items: saved.items.map((it) => ({
         id: it.id,

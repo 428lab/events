@@ -23,7 +23,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import ViewWeekOutlinedIcon from "@mui/icons-material/ViewWeekOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
-import { computeScheduleTimes } from "@eventer/shared";
+import { computeScheduleTimes, publicTracks } from "@eventer/shared";
 import type { ScheduleItem } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
 import {
@@ -77,14 +77,13 @@ export function EventSchedule({
   if (items.length === 0 && !isStaff) return null;
 
   // スタッフ用の列 (#383) は「並んでいる列」ではあるが、**時刻を連鎖させる列には
-  // 入れない**。入れると、全トラック共通のコマが見る Math.max(...) にその列の
-  // カーソルが混ざり、staff の画面でだけ時刻が後ろへずれる（参加者と食い違う）
-  // 許可リストで書く（値が増えたときに新しい列が黙って混ざらないように）
-  const publicTracks = tracks.filter((track) => track.visibility === "public");
+  // 入れない**（理由は @eventer/shared の publicTracks に書いてある）。
+  // トラック別に見る導線の本数も同じ数え方でそろえる
+  const shownTracks = publicTracks(tracks);
   const times = computeScheduleTimes(
     items,
     eventStartsAt,
-    publicTracks.map((track) => track.id),
+    shownTracks.map((track) => track.id),
   );
   const trackName = new Map(tracks.map((track) => [track.id, track.name]));
   // 担当が全行空なら列ごと非表示（モバイルで内容欄を広く使う）
@@ -111,7 +110,7 @@ export function EventSchedule({
                 トラックが2本以上ないと格子にする意味がないので出さない。
                 数えるのは**公開トラックだけ** (#383)。スタッフ用の列を1本
                 足しただけで staff にだけ導線が生えるのは分かりにくい */}
-            {publicTracks.length >= 2 && !editing && (
+            {shownTracks.length >= 2 && !editing && (
               <Button
                 component={RouterLink}
                 to={`/events/${eventId}/timetable`}

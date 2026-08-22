@@ -18,6 +18,7 @@ import {
   SCHEDULE_TEMPLATES,
   computeScheduleTimes,
   findTrackOverlaps,
+  publicTracks,
 } from "@eventer/shared";
 import { useEventMembers, useMe } from "../api/hooks.js";
 import {
@@ -123,16 +124,13 @@ export function ScheduleEditor({
   }));
 
   // 時刻はトラックごとの連鎖。未割り当ては時刻を持たない (#338)。
-  // 連鎖させる列は**表の列だけ** (#383)。運営用の列を混ぜると、全トラック共通の
-  // コマが見る Math.max(...) にその列のカーソルが入り、プレビューの時刻だけが
-  // 保存後の（＝参加者に見える）時刻とずれる
+  // 連鎖させる列は**表の列だけ** (#383。理由は @eventer/shared の publicTracks)。
+  // ここを間違えるとプレビューの時刻だけが保存後の（＝参加者に見える）時刻とずれる。
+  // トラックはまだ ID を持たないものがあるので、編集中のキーを列として渡す
   const times = computeScheduleTimes(
     toTimeItems(rows),
     eventStartsAt,
-    // 許可リストで書く（値が増えたときに新しい列が黙って混ざらないように）
-    tracks
-      .filter((track) => track.visibility === "public")
-      .map((track) => track.key),
+    publicTracks(tracks).map((track) => track.key),
   );
   // 同一トラック内の重なりは保存を止めず、警告だけ出す (#338)。
   // トラックはまだ ID を持たないものがあるので、編集中のキーを ID として渡す
