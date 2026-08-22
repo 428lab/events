@@ -3,8 +3,11 @@ name: Flaky probe (#371)
 # CI の server テストが変更と無関係に落ちる頻度を数えるための一時ワークフロー。
 # 直す前と直した後で同じ回数だけ回し、落ちた回数を比べる。
 # 計測が終わったら削除する。
+# workflow_dispatch は既定ブランチに無いと起動できないので、この作業ブランチへの
+# push で起動する
 on:
-  workflow_dispatch:
+  push:
+    branches: [fix/flaky-ci-371]
 
 jobs:
   probe:
