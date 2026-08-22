@@ -320,6 +320,38 @@ describe("ガントの配置 (#393 8.3)", () => {
     ]);
     expect(l.columns[0]!.monthStart).toBe(9);
     expect(l.columns[1]!.monthStart).toBeNull();
+    // 2026-09-10〜14 に祝日は無い
+    expect(l.columns.every((c) => c.holiday === null)).toBe(true);
+  });
+
+  it("祝日の列に祝日名が付く（元日。前後の日にずれない） (#401)", () => {
+    // 2026-01-01（元日）は木曜。前後の平日は null のまま＝
+    // Date 変換のタイムゾーンずれで隣の日が祝日にならないことの確認
+    const l = layoutGantt(
+      derive([todo("A", { startsOn: "2025-12-31", dueOn: "2026-01-02" })]),
+      "2025-12-31",
+    );
+    expect(l.columns.map((c) => c.date)).toEqual([
+      "2025-12-31",
+      "2026-01-01",
+      "2026-01-02",
+    ]);
+    // 祝日名は japanese-holidays の日本語のまま（訳さない）
+    expect(l.columns.map((c) => c.holiday)).toEqual([null, "元日", null]);
+    // 平日の祝日。isWeekend とは独立に立つ
+    expect(l.columns[1]!.isWeekend).toBe(false);
+  });
+
+  it("振替休日も祝日として扱う (#401)", () => {
+    // 2026-05-03（憲法記念日）は日曜 → 5/6(水) が振替休日
+    const l = layoutGantt(
+      derive([todo("A", { startsOn: "2026-05-06", dueOn: "2026-05-07" })]),
+      "2026-05-06",
+    );
+    expect(l.columns.map((c) => [c.date, c.holiday])).toEqual([
+      ["2026-05-06", "振替休日"],
+      ["2026-05-07", null],
+    ]);
   });
 
   it("今日が予定の外でも、窓に収まるなら線を出す", () => {
