@@ -43,4 +43,5 @@ jobs:
         run: pnpm --filter @eventer/server test
       - name: workerd の残骸
         if: always()
-        run: echo "workerd 残存数: $(pgrep -c workerd || echo 0)"
+        run: |
+          echo "workerd 残存数: $(pgrep -c workerd || echo 0)"
