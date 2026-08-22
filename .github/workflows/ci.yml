@@ -1,0 +1,70 @@
+name: CI
+
+# 型チェックとテストは **すべての PR** で走る (#387)。
+# デプロイはブランチ連動で、push のときだけ:
+#   production ブランチ → 本番（eventer / events.kojira.io）
+#   staging ブランチ    → staging（eventer-staging / *.workers.dev・管理者限定）
+#
+# 検証とデプロイを1つのワークフロー・1つのジョブに置いているのは、
+# 分けると checkout / pnpm / node / 依存の導入 と web のビルドが2か所に
+# 重複するため（別ジョブは別 runner なので node_modules も dist も引き継げない）。
+# 契約を1つにして、デプロイ側は末尾の2ステップだけを `if:` で切り分ける。
+on:
+  pull_request:
+  push:
+    branches: [production, staging]
+
+# 同じ PR に push を重ねたら、古い実行は打ち切る。
+# デプロイ（production / staging への push）は途中で止めると中途半端な状態に
+# なりうるので打ち切らない。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # バージョンは root package.json の "packageManager" を参照（version 指定と重複させない）
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # 型チェックとテスト。ここで落ちればデプロイまで進まない。
+      # web は後段の build でも tsc が走るが、テスト（3分ほどかかる）を待たずに
+      # 型で落とすため先に単体で回す
+      - run: pnpm --filter @eventer/shared typecheck
+      - run: pnpm --filter @eventer/server typecheck
+      - run: pnpm --filter @eventer/web typecheck
+      - run: pnpm --filter @eventer/server test
+      # web のテスト (#215)。投影用画面・登壇者サイドパネルに参加UIやスタッフ操作、
+      # 匿名投稿者の実名が出ないことの退行防止（jsdom で実際に描画して確かめる）
+      - run: pnpm --filter @eventer/web test
+
+      # フロントをビルド（tsc も走る。
+      # Worker の ASSETS バインディングが apps/web/dist を配信する）
+      # 閲覧数の計測 (#328) の識別子はここで渡す。
+      # シークレット未設定のリポジトリでは空になり、計測は自動で無効になる
+      - run: pnpm --filter @eventer/web build
+        env:
+          VITE_WEB_ANALYTICS_TOKEN: ${{ secrets.WEB_ANALYTICS_TOKEN }}
+
+      # ここから下だけがデプロイ。PR では github.event_name が pull_request なので走らない
+      - name: Deploy to production
+        if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+        run: pnpm --filter @eventer/server run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Deploy to staging
+        if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+        run: pnpm --filter @eventer/server run deploy:staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
