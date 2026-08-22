@@ -1,3 +1,4 @@
+import { isHoliday } from "japanese-holidays";
 import {
   TODO_GANTT_WINDOW_DAYS,
   addDays,
@@ -204,8 +205,33 @@ export interface GanttColumn {
   date: string;
   isWeekend: boolean;
   isToday: boolean;
+  /** 祝日名（振替休日を含む）。祝日でなければ null (#401)。
+   * 名前は日本の祝日なので訳さない（`SchedulePanel.tsx` の先例どおり）。
+   * 描画側は網掛けの有無とツールチップにこれを使うだけで、判定は持たない */
+  holiday: string | null;
   /** 月が変わる列に入る 'M月' 相当の数値。それ以外は null */
   monthStart: number | null;
+}
+
+/**
+ * 'YYYY-MM-DD' の祝日名。祝日でなければ null。
+ *
+ * `new Date("YYYY-MM-DD")` は **UTC 深夜の解釈**になり、`isHoliday` は
+ * ローカルの年月日を読むので、UTC より西のタイムゾーンでは前日として
+ * 判定されてしまう。年月日を数値でローカルの Date に組めば、どの
+ * タイムゾーンでもその日のまま判定できる（`SchedulePanel.tsx` の
+ * カレンダーと同じ流儀）。
+ */
+function holidayNameOf(date: string): string | null {
+  return (
+    isHoliday(
+      new Date(
+        Number(date.slice(0, 4)),
+        Number(date.slice(5, 7)) - 1,
+        Number(date.slice(8, 10)),
+      ),
+    ) ?? null
+  );
 }
 
 export interface GanttLayout {
@@ -311,6 +337,7 @@ export function layoutGantt(
       date,
       isWeekend: dow === 0 || dow === 6,
       isToday: date === today,
+      holiday: holidayNameOf(date),
       monthStart: i === 0 || day === 1 ? Number(date.slice(5, 7)) : null,
     });
   }

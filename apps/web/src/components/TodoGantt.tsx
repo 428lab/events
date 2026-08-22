@@ -83,14 +83,19 @@ export function TodoGantt({
             gridTemplateRows: `${HEAD_PX}px repeat(${rows}, ${TODO_ROW_PX}px)`,
           }}
         >
-          {/* 土日の網掛け。帯より下に敷く */}
+          {/* 土日・祝日の網掛け。帯より下に敷く (#401)。祝日は僅かに赤寄りにして
+              土日と見分けられるようにする（SchedulePanel の「祝日=赤」と同系）。
+              判定は layout（todoGantt.ts）が済ませていて、ここは色を選ぶだけ */}
           {layout.columns.map((col, i) =>
-            col.isWeekend ? (
+            col.isWeekend || col.holiday !== null ? (
               <Box
-                key={`we-${col.date}`}
+                key={`shade-${col.date}`}
                 style={{ gridColumn: String(i + 2), gridRow: "2 / -1" }}
                 sx={{
-                  bgcolor: alpha(theme.palette.text.primary, 0.05),
+                  bgcolor:
+                    col.holiday !== null
+                      ? alpha(theme.palette.error.main, 0.07)
+                      : alpha(theme.palette.text.primary, 0.05),
                   pointerEvents: "none",
                 }}
               />
@@ -128,11 +133,14 @@ export function TodoGantt({
               borderColor: "divider",
             }}
           />
-          {/* 日付の目盛り。細い列では月が変わるところだけ書く */}
+          {/* 日付の目盛り。細い列では月が変わるところだけ書く。
+              祝日名は title で出す（網掛け自体は pointerEvents:none なので
+              ホバーはここで受ける）。名前は日本の祝日なので訳さない */}
           {layout.columns.map((col, i) => (
             <Box
               key={`head-${col.date}`}
               style={{ gridColumn: String(i + 2), gridRow: "1" }}
+              title={col.holiday ?? undefined}
               sx={{
                 position: "sticky",
                 top: 0,
@@ -149,7 +157,13 @@ export function TodoGantt({
               <Typography
                 sx={{ fontSize: "0.6rem", lineHeight: 1 }}
                 fontWeight={col.monthStart !== null ? 700 : 400}
-                color={col.isToday ? "primary.main" : "text.secondary"}
+                color={
+                  col.isToday
+                    ? "primary.main"
+                    : col.holiday !== null
+                      ? "error.main"
+                      : "text.secondary"
+                }
               >
                 {col.monthStart !== null
                   ? t("staffOps.todoGanttMonth", { n: col.monthStart })
