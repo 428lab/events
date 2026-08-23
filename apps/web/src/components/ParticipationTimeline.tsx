@@ -31,22 +31,6 @@ import {
 } from "../lib/format.js";
 import { i18next } from "../i18n/index.js";
 
-/** 区分フィルタの値。役割は「主催・運営」と「参加」の2つに寄せる（配色もこの2つ） */
-type RoleFilter = "all" | "host" | "join";
-type WhenFilter = "all" | "upcoming" | "past";
-
-/** 絞り込みの見え方。表は持たず引くたびに辞書から取る（言語を切り替えても追随する） */
-function roleFilterLabel(value: RoleFilter): string {
-  if (value === "host") return i18next.t("profile.filterHost");
-  if (value === "join") return i18next.t("profile.filterJoin");
-  return i18next.t("profile.filterAll");
-}
-function whenFilterLabel(value: WhenFilter): string {
-  if (value === "upcoming") return i18next.t("profile.filterUpcoming");
-  if (value === "past") return i18next.t("profile.filterPast");
-  return i18next.t("profile.filterAll");
-}
-
 /** 狭い幅では中央縦線をやめて左寄せの1カラムに畳む */
 const NARROW = "@media (max-width:640px)";
 
@@ -542,54 +526,11 @@ function TimelineCard({
   );
 }
 
-/** 区分フィルタのチップ1つ。件数を添える */
-function FilterChip({
-  label,
-  count,
-  selected,
-  swatch,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  selected: boolean;
-  swatch?: "primary" | "secondary";
-  onClick: () => void;
-}) {
-  return (
-    <Chip
-      clickable
-      onClick={onClick}
-      aria-pressed={selected}
-      color={selected ? "primary" : "default"}
-      variant={selected ? "filled" : "outlined"}
-      // 0件は薄く。ただし選択中は薄くしない（いまどこにいるか分からなくなる）
-      sx={{
-        fontWeight: 700,
-        opacity: count === 0 && !selected ? 0.5 : 1,
-      }}
-      icon={
-        swatch ? (
-          <Box
-            sx={{
-              width: 9,
-              height: 9,
-              borderRadius: "50%",
-              bgcolor: `${swatch}.main`,
-              ml: 1.25,
-            }}
-          />
-        ) : undefined
-      }
-      label={`${label} ${count}`}
-    />
-  );
-}
-
 /**
  * 参加履歴の年表 (#308, #315)。中央の縦線に対してカードを左右交互に置き、
  * 年はピル型ラベルで区切る。狭い幅では1カラムに畳む。
- * 区分（主催・運営／参加）と時期（これから／過去）で絞り込める。
+ * 区分・時期の絞り込みは持たない（プロフィールのタブがその軸を持つ #407）。
+ * 渡されたイベント列をそのまま年表として描く。
  */
 export function ParticipationTimeline({
   events,
@@ -609,8 +550,6 @@ export function ParticipationTimeline({
   now?: number;
 }) {
   const { t } = useTranslation();
-  const [role, setRole] = useState<RoleFilter>("all");
-  const [when, setWhen] = useState<WhenFilter>("all");
   const [open, setOpen] = useState<OpenPhoto | null>(null);
 
   const items = useMemo<TimelineItem[]>(() => {
@@ -630,18 +569,12 @@ export function ParticipationTimeline({
 
   if (events.length === 0) return null;
 
-  const match = (it: TimelineItem, r: RoleFilter, w: WhenFilter) =>
-    (r === "all" || it.kind === r) && (w === "all" || it.when === w);
-  const count = (r: RoleFilter, w: WhenFilter) =>
-    items.filter((it) => match(it, r, w)).length;
+  const groups = groupByYear(items);
+  // カードの出会い数の合計。同じ人と別のイベントで会えば2件と数える延べ件数
+  // なので、プロフィール上部の「出会った人（実人数）」とは別物として出す
+  const metTotal = items.reduce((s, it) => s + it.meets, 0);
 
-  const visible = items.filter((it) => match(it, role, when));
-  const groups = groupByYear(visible);
-  // 表示中のカードの出会い数の合計。同じ人と別のイベントで会えば2件と数える
-  // 延べ件数なので、プロフィール上部の「出会った人（実人数）」とは別物として出す
-  const metTotal = visible.reduce((s, it) => s + it.meets, 0);
-
-  // 左右交互は「見えている順」で振り直す（絞り込んでも片側に偏らない）
+  // 左右交互は「見えている順」で振り直す
   let seq = 0;
 
   return (
@@ -649,159 +582,75 @@ export function ParticipationTimeline({
       <Typography variant="h6" gutterBottom>
         {t("profile.timelineHeading")}
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        {t("profile.timelineHint")}
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        role="status"
+        sx={{ mb: 3 }}
+      >
+        {t("profile.timelineSummary", { n: items.length, m: metTotal })}
       </Typography>
 
       <Box
         sx={{
-          p: 1.75,
-          mb: 3,
-          border: 1,
-          borderColor: "divider",
-          borderRadius: 1,
-          display: "flex",
-          flexDirection: "column",
-          gap: 1.25,
+          position: "relative",
+          pt: 0.5,
+          pb: 1,
+          "&::before": {
+            content: '""',
+            position: "absolute",
+            left: "50%",
+            top: 0,
+            bottom: 0,
+            width: 2,
+            transform: "translateX(-1px)",
+            opacity: 0.55,
+            background: (theme) =>
+              `linear-gradient(180deg, transparent 0, ${theme.palette.primary.main} 7%, ${theme.palette.secondary.main} 93%, transparent 100%)`,
+            [NARROW]: { left: 14, transform: "none" },
+          },
         }}
       >
-        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ fontWeight: 800, letterSpacing: "0.08em", width: 44 }}
-          >
-            {t("profile.timelineRoleLabel")}
-          </Typography>
-          {(["all", "host", "join"] as const).map((v) => (
-            <FilterChip
-              key={v}
-              label={roleFilterLabel(v)}
-              count={count(v, when)}
-              selected={role === v}
-              swatch={v === "host" ? "primary" : v === "join" ? "secondary" : undefined}
-              onClick={() => setRole(v)}
-            />
-          ))}
-        </Stack>
-        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ fontWeight: 800, letterSpacing: "0.08em", width: 44 }}
-          >
-            {t("profile.timelineWhenLabel")}
-          </Typography>
-          {(["all", "upcoming", "past"] as const).map((v) => (
-            <FilterChip
-              key={v}
-              label={whenFilterLabel(v)}
-              count={count(role, v)}
-              selected={when === v}
-              onClick={() => setWhen(v)}
-            />
-          ))}
-        </Stack>
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          role="status"
-          sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}
-        >
-          {t("profile.timelineSummary", { n: visible.length, m: metTotal })}
-        </Typography>
-      </Box>
-
-      {visible.length === 0 ? (
-        <Box
-          sx={{
-            textAlign: "center",
-            py: 5,
-            px: 2.5,
-            border: "1px dashed",
-            borderColor: "divider",
-            borderRadius: 1,
-          }}
-          role="status"
-        >
-          <Typography fontWeight={800} gutterBottom>
-            {role === "all" && when === "all"
-              ? t("profile.timelineEmpty")
-              : t("profile.timelineEmptyFiltered", {
-                  filters: [
-                    when === "all" ? null : whenFilterLabel(when),
-                    role === "all" ? null : roleFilterLabel(role),
-                  ]
-                    .filter(Boolean)
-                    .join(" × "),
-                })}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {t("profile.timelineEmptyHint")}
-          </Typography>
-        </Box>
-      ) : (
-        <Box
-          sx={{
-            position: "relative",
-            pt: 0.5,
-            pb: 1,
-            "&::before": {
-              content: '""',
-              position: "absolute",
-              left: "50%",
-              top: 0,
-              bottom: 0,
-              width: 2,
-              transform: "translateX(-1px)",
-              opacity: 0.55,
-              background: (theme) =>
-                `linear-gradient(180deg, transparent 0, ${theme.palette.primary.main} 7%, ${theme.palette.secondary.main} 93%, transparent 100%)`,
-              [NARROW]: { left: 14, transform: "none" },
-            },
-          }}
-        >
-          {groups.map((group) => (
-            <Box key={group.key}>
-              <Box
+        {groups.map((group) => (
+          <Box key={group.key}>
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "center",
+                mb: 2.75,
+                position: "relative",
+                zIndex: 2,
+              }}
+            >
+              <Typography
+                component="span"
                 sx={{
-                  display: "flex",
-                  justifyContent: "center",
-                  mb: 2.75,
-                  position: "relative",
-                  zIndex: 2,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: "0.16em",
+                  fontVariantNumeric: "tabular-nums",
+                  px: 2.25,
+                  py: 0.75,
+                  borderRadius: 999,
+                  border: 1,
+                  borderColor: "divider",
+                  bgcolor: "background.paper",
                 }}
               >
-                <Typography
-                  component="span"
-                  sx={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    letterSpacing: "0.16em",
-                    fontVariantNumeric: "tabular-nums",
-                    px: 2.25,
-                    py: 0.75,
-                    borderRadius: 999,
-                    border: 1,
-                    borderColor: "divider",
-                    bgcolor: "background.paper",
-                  }}
-                >
-                  {group.label}
-                </Typography>
-              </Box>
-              {group.items.map((item) => (
-                <TimelineCard
-                  key={item.event.id}
-                  item={item}
-                  side={seq++ % 2 === 0 ? "left" : "right"}
-                  onOpenPhoto={setOpen}
-                />
-              ))}
+                {group.label}
+              </Typography>
             </Box>
-          ))}
-        </Box>
-      )}
+            {group.items.map((item) => (
+              <TimelineCard
+                key={item.event.id}
+                item={item}
+                side={seq++ % 2 === 0 ? "left" : "right"}
+                onOpenPhoto={setOpen}
+              />
+            ))}
+          </Box>
+        ))}
+      </Box>
 
       <PhotoLightbox open={open} onChange={setOpen} onClose={() => setOpen(null)} />
     </Box>

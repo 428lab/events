@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -170,37 +170,54 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     expect(screen.queryByTestId("big-qr")).toBeNull();
   });
 
-  it("本人のページの一覧には下書きも出る（マイページ相当）", async () => {
+  it("本人のページはタブに自分用の一覧が出る（下書き・過去とも。マイページ相当）", async () => {
     renderProfile(profile());
+    // 既定は参加予定タブ。母集団は下書きも含む自分用の一覧 (#407)。
+    // 下書きタブは自分用の一覧（/me/events）が届いてから現れる
+    expect(
+      await screen.findByRole("tab", { name: "下書き（1）" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("tab", { name: "参加した過去イベント（1）" }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "参加した過去イベント（1）" }));
     // 画像の無いイベントはカードのサムネにもタイトルを敷くので複数出る
-    expect((await screen.findAllByText("下書きイベント")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("公開イベント").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("tab", { name: "下書き（1）" }));
+    expect(screen.getAllByText("下書きイベント").length).toBeGreaterThan(0);
   });
 
   it("他人のページには公開イベントだけを出す", async () => {
     renderProfile(profile({ isMe: false, id: "u-other", handle: "other" }));
-    expect((await screen.findAllByText("公開イベント")).length).toBeGreaterThan(0);
+    fireEvent.click(
+      await screen.findByRole("tab", { name: "参加した過去イベント（1）" }),
+    );
+    expect(screen.getAllByText("公開イベント").length).toBeGreaterThan(0);
     await waitFor(() =>
       expect(screen.queryAllByText("下書きイベント").length).toBe(0),
     );
   });
 
-  it("本人のページでは下書きを独立したまとまりに出す (#348)", async () => {
+  it("本人のページでは下書きを独立したタブに出す (#348, #407)", async () => {
     renderProfile(profile());
-    await screen.findAllByText("下書きイベント");
+    fireEvent.click(await screen.findByRole("tab", { name: "下書き（1）" }));
     expect(screen.getByText("下書きのイベント（1）")).toBeTruthy();
-    // 公開済みの分類には混ざらない（公開イベントは過去の参加1件のみ）
-    expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
+    expect(
+      screen.getByText("まだ公開していません。あなたと運営だけが見られます。"),
+    ).toBeTruthy();
     // カードにも印が付く
     expect(screen.getAllByText("下書き")).toHaveLength(1);
+    // 公開済みのタブには混ざらない（公開イベントは過去の参加1件のみ）
+    expect(
+      screen.getByRole("tab", { name: "参加した過去イベント（1）" }),
+    ).toBeTruthy();
   });
 
-  it("他人のページには下書きのまとまりを出さない (#348)", async () => {
+  it("他人のページには下書きタブを出さない (#348, #407)", async () => {
     renderProfile(profile({ isMe: false, id: "u-other", handle: "other" }));
-    await screen.findAllByText("公開イベント");
-    await waitFor(() =>
-      expect(screen.queryByText(/下書きのイベント/)).toBeNull(),
-    );
+    await screen.findByRole("tab", { name: "参加した過去イベント（1）" });
+    expect(screen.queryByRole("tab", { name: /下書き/ })).toBeNull();
     expect(screen.queryByText("下書き")).toBeNull();
   });
 
@@ -213,9 +230,9 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     expect(screen.getByText("出会った人")).toBeTruthy();
   });
 
-  it("通算のイベント数は直下の一覧と同じ母集団を数える", async () => {
+  it("通算のイベント数はタブの母集団全体を数える（絞り込みに追随しない）", async () => {
     renderProfile(profile());
-    await screen.findAllByText("下書きイベント");
+    await screen.findByRole("tab", { name: "下書き（1）" });
     // 本人のページは下書きを含む2件。公開ぶんだけの1件にはしない
     const totals = screen.getByText("イベント").previousSibling;
     expect(totals?.textContent).toBe("2");
