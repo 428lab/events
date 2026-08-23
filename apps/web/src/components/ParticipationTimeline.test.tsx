@@ -152,46 +152,16 @@ describe("参加履歴の年表", () => {
     expect(screen.getAllByText("参加").length).toBeGreaterThan(0);
   });
 
-  describe("区分フィルタ", () => {
-    const events = [
+  it("区分・時期の絞り込みは持たない（プロフィールのタブがその軸を持つ #407）", () => {
+    renderTimeline([
       ev({ id: "h-past", title: "主催した回", myRole: "staff", createdBy: ME }),
-      ev({
-        id: "h-future",
-        title: "主催する回",
-        myRole: "staff",
-        createdBy: ME,
-        ...past("2026-12-01T10:00:00+09:00"),
-      }),
       ev({ id: "j-past", title: "参加した回" }),
-    ];
-
-    it("チップに件数が出て、押すと絞り込まれる", () => {
-      renderTimeline(events);
-      // 初期はすべて表示
-      expect(screen.getByText("表示中 3 件 ・ 出会いの記録 0 件")).toBeTruthy();
-
-      fireEvent.click(screen.getByText("主催・運営 2"));
-      // 画像の無いイベントはバナーにもタイトルを敷くので2か所に出る
-      expect(screen.getAllByText("主催した回").length).toBeGreaterThan(0);
-      expect(screen.queryByText("参加した回")).toBeNull();
-      expect(screen.getByText("表示中 2 件 ・ 出会いの記録 0 件")).toBeTruthy();
-    });
-
-    it("件数はもう一方の絞り込みを反映する", () => {
-      renderTimeline(events);
-      fireEvent.click(screen.getByText("これから 1"));
-      // これから に絞ると、区分の件数も その中での数 になる
-      expect(screen.getByText("主催・運営 1")).toBeTruthy();
-      expect(screen.getByText("参加 0")).toBeTruthy();
-    });
-
-    it("組み合わせて0件になったら空状態を出す", () => {
-      renderTimeline(events);
-      fireEvent.click(screen.getByText("これから 1"));
-      fireEvent.click(screen.getByText("参加 0"));
-      expect(screen.getByText("これから × 参加 の履歴はまだありません")).toBeTruthy();
-      expect(screen.queryByText("主催する回")).toBeNull();
-    });
+    ]);
+    // 全件がそのまま出て、件数の集計だけが添う
+    expect(screen.getByText("表示中 2 件 ・ 出会いの記録 0 件")).toBeTruthy();
+    expect(screen.queryByText("区分")).toBeNull();
+    expect(screen.queryByText("時期")).toBeNull();
+    expect(screen.queryByText(/^すべて/)).toBeNull();
   });
 
   describe("出会い数", () => {

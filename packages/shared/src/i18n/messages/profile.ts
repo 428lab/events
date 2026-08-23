@@ -64,6 +64,19 @@ const ja = {
   noFollowing:
     "まだ誰もフォローしていません。気になる人のプロフィールからフォローしてみましょう。",
 
+  /** プロフィールのタブ (#407)。イベント系タブの見出しには sectionCount で
+   * 件数を添える。メディアだけ開くまで取得しないので件数を添えない */
+  tabUpcoming: "参加予定",
+  tabPast: "参加した過去イベント",
+  tabHosted: "主催したイベント",
+  tabDrafts: "下書き",
+  tabMedia: "投稿したメディア",
+  /** タブの中身が空のとき */
+  tabEmptyUpcoming: "参加予定のイベントはまだありません。",
+  tabEmptyPast: "参加した過去イベントはまだありません。",
+  tabEmptyHosted: "主催・運営したイベントはまだありません。",
+  tabEmptyMedia: "投稿したメディアはまだありません。",
+
   /** 参加履歴（一覧と年表の切り替え） */
   historyViewToggle: "参加履歴の表示切替",
   tabList: "一覧",
@@ -77,25 +90,17 @@ const ja = {
   sectionHosted: "主催・運営したイベント",
   sectionJoined: "参加したイベント",
 
-  /** 年表 */
+  /** 年表。絞り込みは持たない（タブが区分・時期の軸を持つ #407） */
   timelineHeading: "参加履歴の年表",
-  timelineHint: "区分で絞り込めます。件数は、もう一方の絞り込みを反映した数です。",
-  timelineRoleLabel: "区分",
-  timelineWhenLabel: "時期",
   timelineSummary: "表示中 {{n}} 件 ・ 出会いの記録 {{m}} 件",
-  timelineEmpty: "履歴はまだありません",
-  timelineEmptyFiltered: "{{filters}} の履歴はまだありません",
-  timelineEmptyHint: "「すべて」に戻すと、ほかの履歴が表示されます。",
   metCount: "出会った {{n}} 人",
 
-  /** 絞り込みの値。区分の2つ（主催・運営／参加）は通算バーの見出しと
-   * 年表のチップにも使う（同じことを指すので言い方を分けない） */
-  filterAll: "すべて",
+  /** 区分の2つ（主催・運営／参加）は通算バーの見出しと年表のチップに使う
+   * （同じことを指すので言い方を分けない） */
   filterHost: "主催・運営",
   filterJoin: "参加",
-  /** 時期。「これから」は年表のカードのチップにも使う */
+  /** 「これから」は年表のカードのチップに使う */
   filterUpcoming: "これから",
-  filterPast: "過去",
 
   /** 年表だけの関わり方。スタッフ・審査員・観覧者は role.* が持つ */
   roleHost: "主催",
@@ -166,6 +171,16 @@ const en: Record<keyof typeof ja, string> = {
   noFollowing:
     "You aren't following anyone yet. Open someone's profile to follow them.",
 
+  tabUpcoming: "Upcoming",
+  tabPast: "Past events attended",
+  tabHosted: "Events organized",
+  tabDrafts: "Drafts",
+  tabMedia: "Media",
+  tabEmptyUpcoming: "No upcoming events yet.",
+  tabEmptyPast: "No past events yet.",
+  tabEmptyHosted: "No organized events yet.",
+  tabEmptyMedia: "No media posted yet.",
+
   historyViewToggle: "Switch how the history is shown",
   tabList: "List",
   tabTimeline: "Timeline",
@@ -178,21 +193,12 @@ const en: Record<keyof typeof ja, string> = {
   sectionJoined: "Events you attended",
 
   timelineHeading: "History timeline",
-  timelineHint:
-    "Filter by category. Each count already reflects the other filter.",
-  timelineRoleLabel: "Type",
-  timelineWhenLabel: "When",
   timelineSummary: "Showing {{n}} · {{m}} meetings recorded",
-  timelineEmpty: "No history yet",
-  timelineEmptyFiltered: "No history yet for {{filters}}",
-  timelineEmptyHint: "Set the filters back to “All” to see the rest.",
   metCount: "Met {{n}} people",
 
-  filterAll: "All",
   filterHost: "Organized",
   filterJoin: "Joined",
   filterUpcoming: "Upcoming",
-  filterPast: "Past",
 
   roleHost: "Host",
   roleSpeaker: "Speaker",

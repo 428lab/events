@@ -7,7 +7,6 @@ import {
   Card,
   CardContent,
   Chip,
-  Dialog,
   IconButton,
   Link,
   Stack,
@@ -17,13 +16,10 @@ import {
 import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
 import QrCode2Icon from "@mui/icons-material/QrCode2";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import CloseIcon from "@mui/icons-material/Close";
-import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import MilitaryTechIcon from "@mui/icons-material/MilitaryTech";
 import MilitaryTechOutlinedIcon from "@mui/icons-material/MilitaryTechOutlined";
 import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
-import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import HandymanOutlinedIcon from "@mui/icons-material/HandymanOutlined";
@@ -38,13 +34,11 @@ import type {
   Gamification,
   ParticipationStats,
   UserAward,
-  UserPhoto,
   UserProfile,
 } from "@eventer/shared";
 import { useSetFollow, useUserProfile } from "../api/userHooks.js";
 import { useMe, useMyPage } from "../api/hooks.js";
-import { useUserPhotos } from "../api/eventPhotoHooks.js";
-import { ParticipationHistory } from "../components/ParticipationHistory.js";
+import { ProfileTabs } from "../components/profile/ProfileTabs.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
 import { ProfileCardPanel } from "../components/licenseCard/ProfileCardPanel.js";
@@ -466,10 +460,8 @@ export function UserProfilePage() {
 
       <AwardsSection awards={data.awards} profileName={data.name} />
 
-      <PhotoGallerySection handle={data.handle ?? id} />
-
       {/* コミュニティもカードに出るが、カード上は上位5件までの飾りでリンクにならない。
-          役割つきで辿れるのはここだけ (#334) */}
+          役割つきで辿れるのはここだけ (#334)。素性なので実績と同じヘッダ側に置く */}
       {data.communities.length > 0 && (
         <Box>
           <Typography variant="h6" gutterBottom>
@@ -503,145 +495,18 @@ export function UserProfilePage() {
         </Box>
       )}
 
-      {/* 参加履歴 (#315)。主役は4分類の一覧で、年表はタブで切り替える。
-          本人のページではマイページ相当の一覧（下書き等も含む）を出す (#319) */}
-      {historyEvents.length === 0 ? (
-        <Typography color="text.secondary">
-          {data.isMe
-            ? t("profile.noOngoingEvents")
-            : t("profile.noPublicEvents")}
-        </Typography>
-      ) : (
-        <ParticipationHistory
-          events={historyEvents}
-          userId={data.id}
-          speakerEventIds={data.speakerEventIds ?? []}
-          meetCounts={data.meetCounts}
-          eventPhotos={data.eventPhotos}
-        />
-      )}
+      {/* その人が関わった物の一覧はすべてタブの中 (#407)。既定は参加予定で、
+          本人のページではマイページ相当の一覧（下書き等も含む）が母集団 (#319) */}
+      <ProfileTabs
+        events={historyEvents}
+        userId={data.id}
+        speakerEventIds={data.speakerEventIds ?? []}
+        meetCounts={data.meetCounts}
+        eventPhotos={data.eventPhotos}
+        isMe={data.isMe === true}
+        handle={data.handle ?? id}
+      />
     </Stack>
   );
 }
 
-const userPhotoUrl = (p: UserPhoto) =>
-  `/api/events/${p.eventId}/photos/${p.id}/image`;
-
-/** 公開イベントに投稿した写真ギャラリー */
-function PhotoGallerySection({ handle }: { handle: string }) {
-  const { t } = useTranslation();
-  const { data: photos } = useUserPhotos(handle);
-  const [open, setOpen] = useState<UserPhoto | null>(null);
-  if (!photos || photos.length === 0) return null;
-  return (
-    <Box>
-      <Typography
-        variant="h6"
-        gutterBottom
-        sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
-      >
-        <PhotoCameraIcon fontSize="small" />
-        {t("profile.photosHeading", { n: photos.length })}
-      </Typography>
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: {
-            xs: "repeat(3, 1fr)",
-            sm: "repeat(4, 1fr)",
-            md: "repeat(6, 1fr)",
-          },
-          gap: 0.75,
-        }}
-      >
-        {photos.map((p) => (
-          <Box
-            key={p.id}
-            onClick={() => setOpen(p)}
-            sx={{
-              position: "relative",
-              aspectRatio: "1",
-              borderRadius: 1,
-              overflow: "hidden",
-              cursor: "pointer",
-              bgcolor: "action.hover",
-            }}
-          >
-            <Box
-              component="img"
-              src={userPhotoUrl(p)}
-              alt=""
-              loading="lazy"
-              sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            />
-            {p.commentCount > 0 && (
-              <Stack
-                direction="row"
-                spacing={0.25}
-                alignItems="center"
-                sx={{
-                  position: "absolute",
-                  top: 2,
-                  left: 2,
-                  px: 0.5,
-                  borderRadius: 1,
-                  bgcolor: "rgba(0,0,0,0.6)",
-                  color: "#fff",
-                  pointerEvents: "none",
-                }}
-              >
-                <ChatBubbleOutlineIcon sx={{ fontSize: 12 }} />
-                <Typography sx={{ fontSize: 11, lineHeight: 1.6 }}>
-                  {p.commentCount}
-                </Typography>
-              </Stack>
-            )}
-          </Box>
-        ))}
-      </Box>
-
-      <Dialog open={Boolean(open)} onClose={() => setOpen(null)} maxWidth="lg">
-        {open && (
-          <Box sx={{ position: "relative", bgcolor: "#000" }}>
-            <IconButton
-              onClick={() => setOpen(null)}
-              sx={{ position: "absolute", top: 8, right: 8, color: "#fff", zIndex: 1 }}
-            >
-              <CloseIcon />
-            </IconButton>
-            <Box
-              component="img"
-              src={userPhotoUrl(open)}
-              alt=""
-              sx={{
-                display: "block",
-                maxWidth: "90vw",
-                maxHeight: "85vh",
-                objectFit: "contain",
-              }}
-            />
-            <Box
-              sx={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: 0,
-                p: 1,
-                bgcolor: "rgba(0,0,0,0.55)",
-              }}
-            >
-              <Link
-                component={RouterLink}
-                to={`/events/${open.eventId}`}
-                sx={{ color: "#fff" }}
-                underline="hover"
-              >
-                {t("profile.viewEvent", { title: open.eventTitle })}
-              </Link>
-            </Box>
-          </Box>
-        )}
-      </Dialog>
-    </Box>
-  );
-}
