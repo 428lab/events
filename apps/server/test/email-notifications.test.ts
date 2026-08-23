@@ -15,7 +15,7 @@ import {
 } from "../src/lib/emailTemplates.js";
 import { emailRepo } from "../src/db/repositories/email.js";
 import { notificationsRepo } from "../src/db/repositories/notifications.js";
-import { sendEventReminders } from "../src/lib/reminders.js";
+import { reminderSubjectPrefix, sendEventReminders } from "../src/lib/reminders.js";
 
 const BASE = "https://example.com";
 
@@ -228,7 +228,7 @@ describe("通知作成時のメール送信 (#126)", () => {
 });
 
 describe("前日リマインダーの対象抽出 (#126)", () => {
-  it("24時間以内・オプトイン・未送信のみが選ばれる", async () => {
+  it("窓の中(本日・明日)・オプトイン・未送信のみが選ばれる", async () => {
     const now = Date.now();
     const host = await makeUser();
 
@@ -263,8 +263,8 @@ describe("前日リマインダーの対象抽出 (#126)", () => {
     await setEmailPref(canceled.userId, true);
     await addMember(ev, canceled.userId, { status: "canceled" });
 
-    // 除外: 開始が24時間より先のイベント
-    const far = await makeEvent({ createdBy: host.userId, startsAt: now + 30 * 3600_000 });
+    // 除外: 開始が窓の外（明後日以降。+48h は実行時刻によらず JST の明日より先）(#411)
+    const far = await makeEvent({ createdBy: host.userId, startsAt: now + 48 * 3600_000 });
     await addMember(far, target.userId);
 
     // 除外: 下書きイベント
@@ -344,6 +344,152 @@ describe("cron エンドポイント (#129)", () => {
       method: "POST",
     });
     expect(none.status).toBe(403);
+  });
+});
+
+describe("リマインダーの窓と件名は JST の暦日で判定 (#411)", () => {
+  const HOUR = 3600_000;
+  // JST 2026/9/1(火) 09:00 = UTC 2026/9/1 00:00（cron の定時 JST 9:00 相当）
+  const NOW9 = Date.UTC(2026, 8, 1, 0, 0, 0);
+
+  it("前日9時の実行で、翌日17時開催が対象になる", async () => {
+    const host = await makeUser();
+    const u = await makeUser();
+    await addIdentity(u.userId, "nextday17@example.com");
+    await setEmailPref(u.userId, true);
+    // JST 9/2 17:00 開始（NOW9 の32時間後）。旧実装の24時間窓では対象外だった
+    const ev = await makeEvent({ createdBy: host.userId, startsAt: NOW9 + 32 * HOUR });
+    const memberId = await addMember(ev, u.userId);
+
+    const targets = await emailRepo.listReminderTargets(NOW9, 200);
+    expect(targets.some((t) => t.memberId === memberId)).toBe(true);
+    // 前日に届くので件名は「明日開催」のまま正しい
+    expect(reminderSubjectPrefix(NOW9 + 32 * HOUR, NOW9)).toBe("明日開催");
+  });
+
+  it("当日9時の実行で、未送信の当日17時開催は「本日開催」で対象・前日送信済みは対象外", async () => {
+    const host = await makeUser();
+    // JST 9/1 17:00 開始（公開が遅れた等で前日に送れなかった想定）
+    const ev = await makeEvent({ createdBy: host.userId, startsAt: NOW9 + 8 * HOUR });
+
+    const unsent = await makeUser();
+    await addIdentity(unsent.userId, "today-unsent@example.com");
+    await setEmailPref(unsent.userId, true);
+    const unsentMemberId = await addMember(ev, unsent.userId);
+
+    // 前日の実行で送信済みのメンバーは今日の実行では対象外（二重送信しない）
+    const sentYesterday = await makeUser();
+    await addIdentity(sentYesterday.userId, "today-sent@example.com");
+    await setEmailPref(sentYesterday.userId, true);
+    await addMember(ev, sentYesterday.userId, {
+      reminderSentAt: NOW9 - 24 * HOUR,
+    });
+
+    const targets = await emailRepo.listReminderTargets(NOW9, 200);
+    const mine = targets.filter((t) =>
+      [unsent.userId, sentYesterday.userId].includes(t.userId),
+    );
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.memberId).toBe(unsentMemberId);
+    // 当日に届く取りこぼし分の件名は「本日開催」
+    expect(reminderSubjectPrefix(NOW9 + 8 * HOUR, NOW9)).toBe("本日開催");
+  });
+
+  it("窓の境界: 明日0:00は入り、明後日0:00と開始済みは入らない", async () => {
+    const host = await makeUser();
+    const u = await makeUser();
+    await addIdentity(u.userId, "boundary@example.com");
+    await setEmailPref(u.userId, true);
+
+    // JST 9/2 0:00 ちょうど → 「明日」に入る
+    const tomorrowMidnight = await makeEvent({
+      createdBy: host.userId,
+      startsAt: NOW9 + 15 * HOUR,
+    });
+    const inId = await addMember(tomorrowMidnight, u.userId);
+
+    // JST 9/3 0:00 ちょうど → 明後日なので入らない
+    const dayAfter = await makeEvent({
+      createdBy: host.userId,
+      startsAt: NOW9 + 39 * HOUR,
+    });
+    const outId = await addMember(dayAfter, u.userId);
+
+    // 開始済み（今朝 8:00）→ 入らない
+    const started = await makeEvent({
+      createdBy: host.userId,
+      startsAt: NOW9 - 1 * HOUR,
+    });
+    const startedId = await addMember(started, u.userId);
+
+    const ids = (await emailRepo.listReminderTargets(NOW9, 200)).map(
+      (t) => t.memberId,
+    );
+    expect(ids).toContain(inId);
+    expect(ids).not.toContain(outId);
+    expect(ids).not.toContain(startedId);
+    expect(reminderSubjectPrefix(NOW9 + 15 * HOUR, NOW9)).toBe("明日開催");
+  });
+
+  it("JST 境界: UTC ではまだ前日の時刻に実行しても暦日がずれない", async () => {
+    // JST 2026/9/1 05:00 = UTC 2026/8/31 20:00（UTC の日付は前日）
+    const now5 = Date.UTC(2026, 7, 31, 20, 0, 0);
+    const host = await makeUser();
+    const u = await makeUser();
+    await addIdentity(u.userId, "utc-boundary@example.com");
+    await setEmailPref(u.userId, true);
+
+    // JST 9/2 10:00 → 明日
+    const tomorrow = await makeEvent({
+      createdBy: host.userId,
+      startsAt: Date.UTC(2026, 8, 2, 1, 0, 0),
+    });
+    const tomorrowId = await addMember(tomorrow, u.userId);
+    // JST 9/1 23:00 → 本日
+    const today = await makeEvent({
+      createdBy: host.userId,
+      startsAt: Date.UTC(2026, 8, 1, 14, 0, 0),
+    });
+    const todayId = await addMember(today, u.userId);
+    // JST 9/3 0:30 → 窓の外
+    const dayAfter = await makeEvent({
+      createdBy: host.userId,
+      startsAt: Date.UTC(2026, 8, 2, 15, 30, 0),
+    });
+    const dayAfterId = await addMember(dayAfter, u.userId);
+
+    const ids = (await emailRepo.listReminderTargets(now5, 200)).map(
+      (t) => t.memberId,
+    );
+    expect(ids).toContain(tomorrowId);
+    expect(ids).toContain(todayId);
+    expect(ids).not.toContain(dayAfterId);
+    expect(reminderSubjectPrefix(Date.UTC(2026, 8, 2, 1, 0, 0), now5)).toBe(
+      "明日開催",
+    );
+    expect(reminderSubjectPrefix(Date.UTC(2026, 8, 1, 14, 0, 0), now5)).toBe(
+      "本日開催",
+    );
+  });
+
+  it("早朝開催: 前日に送信済みなら当日の実行で対象外（二重送信なし）", async () => {
+    const host = await makeUser();
+    const u = await makeUser();
+    await addIdentity(u.userId, "early@example.com");
+    await setEmailPref(u.userId, true);
+    // JST 9/2 07:00 開催（当日の cron 9:00 より前に始まる）
+    const ev = await makeEvent({ createdBy: host.userId, startsAt: NOW9 + 22 * HOUR });
+    const memberId = await addMember(ev, u.userId);
+
+    // 前日 9:00 の実行で対象になり「明日開催」で送られる
+    const before = await emailRepo.listReminderTargets(NOW9, 200);
+    expect(before.some((t) => t.memberId === memberId)).toBe(true);
+    expect(reminderSubjectPrefix(NOW9 + 22 * HOUR, NOW9)).toBe("明日開催");
+    await emailRepo.markReminderSent(memberId);
+
+    // 当日 9:00 の実行（NOW9+24h）では対象外
+    const after = await emailRepo.listReminderTargets(NOW9 + 24 * HOUR, 200);
+    expect(after.some((t) => t.memberId === memberId)).toBe(false);
   });
 });
 

@@ -1,4 +1,5 @@
 import { emailRepo } from "../db/repositories/email.js";
+import { jstDayStart } from "./dateFormat.js";
 import { sendNotificationEmailTo } from "./email.js";
 import { venueText } from "./emailTemplates.js";
 
@@ -21,7 +22,16 @@ function startText(ms: number): string {
   }).format(ms);
 }
 
-/** 24時間以内に開催されるイベントの参加者へ前日リマインダーを送る。
+/** 件名の接頭辞 (#411)。JST の暦日で「明日」開始なら「明日開催」、
+ * それ以外（＝本日中の取りこぼし拾い直し）は「本日開催」 */
+export function reminderSubjectPrefix(
+  startsAt: number,
+  now: number,
+): "明日開催" | "本日開催" {
+  return startsAt >= jstDayStart(now, 1) ? "明日開催" : "本日開催";
+}
+
+/** JST の暦日で明日開催（＋本日中の未送信分）のイベントの参加者へリマインダーを送る (#411)。
  * 対象: メール通知ON・検証済みメール有り・未送信の confirmed メンバー */
 export async function sendEventReminders(now = Date.now()): Promise<number> {
   const targets = await emailRepo.listReminderTargets(now, MAX_SENDS_PER_RUN);
@@ -31,7 +41,7 @@ export async function sendEventReminders(now = Date.now()): Promise<number> {
       const ok = await sendNotificationEmailTo(
         t.userId,
         t.email,
-        `明日開催:「${t.title}」`,
+        `${reminderSubjectPrefix(t.startsAt, now)}:「${t.title}」`,
         `${startText(t.startsAt)} 開始 ／ ${venueText(t.venueType, t.venueOffline)}`,
         `/events/${t.eventId}`,
         // リマインダーはイベントカードに加えてタイムテーブルも載せる (#134)
