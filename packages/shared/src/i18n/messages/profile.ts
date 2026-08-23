@@ -65,7 +65,10 @@ const ja = {
     "まだ誰もフォローしていません。気になる人のプロフィールからフォローしてみましょう。",
 
   /** プロフィールのタブ (#407)。イベント系タブの見出しには sectionCount で
-   * 件数を添える。メディアだけ開くまで取得しないので件数を添えない */
+   * 件数を添える。メディアだけ開くまで取得しないので件数を添えない。
+   * 「すべて」はイベント系タブの合算（メディアは含めない）。先頭に置くが
+   * 既定タブは「参加予定」のまま */
+  tabAll: "すべて",
   tabUpcoming: "参加予定",
   tabPast: "参加した過去イベント",
   tabHosted: "主催したイベント",
@@ -182,6 +185,7 @@ const en: Record<keyof typeof ja, string> = {
   noFollowing:
     "You aren't following anyone yet. Open someone's profile to follow them.",
 
+  tabAll: "All",
   tabUpcoming: "Upcoming",
   tabPast: "Past events attended",
   tabHosted: "Events organized",

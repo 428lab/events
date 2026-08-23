@@ -189,7 +189,63 @@ describe("プロフィールのタブ (#407)", () => {
     fireEvent.click(screen.getByRole("button", { name: "年表" }));
     expect(screen.queryByText("区分")).toBeNull();
     expect(screen.queryByText("時期")).toBeNull();
-    expect(screen.queryByText(/^すべて/)).toBeNull();
+    // 旧フィルタチップは「すべて 4」の形だった（合算タブの「すべて（4）」とは別物）
+    expect(screen.queryByText(/^すべて \d/)).toBeNull();
+  });
+});
+
+describe("「すべて」タブ (#407)", () => {
+  it("先頭に出るが、既定タブは「参加予定」のまま", () => {
+    renderTabs();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[0].textContent).toBe("すべて（4）");
+    expect(tab("参加予定（1）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("すべて（4）").getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("中身はイベント系タブの合算で、旧4分類＋下書きのまとまりで出る", () => {
+    renderTabs([...EVENTS, DRAFT]);
+    fireEvent.click(tab("すべて（5）"));
+    expect(screen.getByText("下書きのイベント（1）")).toBeTruthy();
+    expect(screen.getByText("主催・運営するイベント（1）")).toBeTruthy();
+    expect(screen.getByText("参加予定のイベント（1）")).toBeTruthy();
+    expect(screen.getByText("主催・運営したイベント（1）")).toBeTruthy();
+    expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
+  });
+
+  it("他人のページの合算は公開分のみ（下書きのまとまりも出ない）", () => {
+    renderTabs([...EVENTS, DRAFT], { isMe: false });
+    fireEvent.click(tab("すべて（4）"));
+    expect(screen.queryByText(/下書きのイベント/)).toBeNull();
+    expect(screen.queryByText("下書きの回")).toBeNull();
+    expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
+  });
+
+  it("同じイベントが二重に来ても1回しか数えない・出さない", () => {
+    renderTabs([...EVENTS, { ...EVENTS[3] }]);
+    fireEvent.click(tab("すべて（4）"));
+    expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
+  });
+
+  it("?tab=all で URL に載り、開き直しでも選ばれる", () => {
+    renderTabs();
+    fireEvent.click(tab("すべて（4）"));
+    expect(screen.getByTestId("loc").textContent).toBe("?tab=all");
+
+    renderTabs(EVENTS, { url: "/users/tester2?tab=all" });
+    expect(
+      screen
+        .getAllByRole("tab", { name: "すべて（4）" })
+        .some((el) => el.getAttribute("aria-selected") === "true"),
+    ).toBe(true);
+  });
+
+  it("一覧⇄年表の切替が効く（母集団は合算）", () => {
+    renderTabs();
+    fireEvent.click(tab("すべて（4）"));
+    fireEvent.click(screen.getByRole("button", { name: "年表" }));
+    expect(screen.getByText("参加履歴の年表")).toBeTruthy();
+    expect(screen.getByText("表示中 4 件 ・ 出会いの記録 0 件")).toBeTruthy();
   });
 });
 
