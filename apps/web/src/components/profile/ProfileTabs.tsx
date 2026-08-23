@@ -140,8 +140,10 @@ function EventTabBody({
 
 /**
  * プロフィールのタブ (#407)。参加予定（既定）／過去／主催／下書き（本人のみ）／
- * メディアに分ける。母集団の切り方は旧4分類 (#315) をそのまま引き継ぎ、
- * 1イベントはちょうど1タブに出る（主催イベントは予定でも過去でも「主催」）。
+ * メディアに分ける。時間の軸（予定/過去）と役割の軸（主催）は独立 (#416):
+ * 主催イベントは「主催」タブに出たまま、開催時期に応じて「参加予定」または
+ * 「過去」にも重ねて出る。下書きだけは時間のタブに混ぜない（公開前のものが
+ * 「参加予定」に出ると紛らわしい #348）。
  *
  * - 選択中のタブは `?tab=` で URL に載る（共有・リロードで残る）。
  *   既定タブはパラメータ無し。履歴は置き換えるので戻るボタンは前のページへ
@@ -186,6 +188,12 @@ export function ProfileTabs({
   const joined = live.filter((e) => e.myRole !== "staff");
   const joinedUpcoming = joined.filter(upcoming);
   const joinedPast = joined.filter((e) => !upcoming(e));
+  const hostedUpcoming = hosted.filter(upcoming);
+  const hostedPast = hosted.filter((e) => !upcoming(e));
+  // 時間タブの母集団。主催イベントも開催時期に応じて重ねて出す (#416)。
+  // 主催を時間タブから外したくなったら、次の2行の hosted* を除くだけでよい
+  const upcomingEvents = [...hostedUpcoming, ...joinedUpcoming];
+  const pastEvents = [...hostedPast, ...joinedPast];
 
   const draftsVisible = isMe && drafts.length > 0;
   // 「すべて」タブの母集団: イベント系タブの合算（メディアは含めない）。
@@ -235,11 +243,11 @@ export function ProfileTabs({
         />
         <Tab
           value="upcoming"
-          label={countLabel(t("profile.tabUpcoming"), joinedUpcoming.length)}
+          label={countLabel(t("profile.tabUpcoming"), upcomingEvents.length)}
         />
         <Tab
           value="past"
-          label={countLabel(t("profile.tabPast"), joinedPast.length)}
+          label={countLabel(t("profile.tabPast"), pastEvents.length)}
         />
         <Tab
           value="hosted"
@@ -271,12 +279,12 @@ export function ProfileTabs({
               : []),
             {
               title: t("profile.sectionHosting"),
-              events: hosted.filter(upcoming),
+              events: hostedUpcoming,
             },
             { title: t("profile.sectionJoining"), events: joinedUpcoming },
             {
               title: t("profile.sectionHosted"),
-              events: hosted.filter((e) => !upcoming(e)),
+              events: hostedPast,
             },
             { title: t("profile.sectionJoined"), events: joinedPast },
           ]}
@@ -290,13 +298,15 @@ export function ProfileTabs({
           timeline={timeline}
         />
       )}
+      {/* 時間の2タブは主催ぶんも含む (#416)。主催を先に出す並びは「すべて」と同じ */}
       {tab === "upcoming" && (
         <EventTabBody
           sections={[
+            { title: t("profile.sectionHosting"), events: hostedUpcoming },
             { title: t("profile.sectionJoining"), events: joinedUpcoming },
           ]}
           emptyText={emptyAll ?? t("profile.tabEmptyUpcoming")}
-          events={joinedUpcoming}
+          events={upcomingEvents}
           view={view}
           onViewChange={setView}
           timeline={timeline}
@@ -304,9 +314,12 @@ export function ProfileTabs({
       )}
       {tab === "past" && (
         <EventTabBody
-          sections={[{ title: t("profile.sectionJoined"), events: joinedPast }]}
+          sections={[
+            { title: t("profile.sectionHosted"), events: hostedPast },
+            { title: t("profile.sectionJoined"), events: joinedPast },
+          ]}
           emptyText={emptyAll ?? t("profile.tabEmptyPast")}
-          events={joinedPast}
+          events={pastEvents}
           view={view}
           onViewChange={setView}
           timeline={timeline}
@@ -317,11 +330,11 @@ export function ProfileTabs({
           sections={[
             {
               title: t("profile.sectionHosting"),
-              events: hosted.filter(upcoming),
+              events: hostedUpcoming,
             },
             {
               title: t("profile.sectionHosted"),
-              events: hosted.filter((e) => !upcoming(e)),
+              events: hostedPast,
             },
           ]}
           emptyText={emptyAll ?? t("profile.tabEmptyHosted")}
