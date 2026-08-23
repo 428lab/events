@@ -94,8 +94,15 @@ function profile(over: Partial<UserProfile> = {}): UserProfile {
 
 function renderProfile(p: UserProfile) {
   getMock.mockImplementation((path: string) => {
-    if (path.startsWith("/public/users/") && path.endsWith("/photos")) {
-      return Promise.resolve({ photos: [] });
+    if (path.startsWith("/public/users/") && path.includes("/photos")) {
+      return Promise.resolve({
+        photos: [],
+        total: 0,
+        page: 1,
+        limit: 24,
+        hasMore: false,
+        facets: { events: [], communities: [] },
+      });
     }
     if (path.startsWith("/public/users/")) return Promise.resolve(p);
     if (path === "/me/events") {

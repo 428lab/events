@@ -2,6 +2,7 @@ import type {
   EventPhoto,
   EventTimelinePhotos,
   UserPhoto,
+  UserPhotoFacets,
 } from "@eventer/shared";
 import { many, one, run } from "../client.js";
 
@@ -48,6 +49,53 @@ const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at,
   FROM event_photo p JOIN user u ON u.id = p.user_id
     AND u.deleted_at IS NULL
   WHERE p.admin_hidden_at IS NULL`;
+
+// 公開プロフィールに出してよい写真の条件（p=event_photo, e=event を JOIN 済み前提）。
+// 本人の投稿・写真公開設定のイベント・公開済みイベント・運営非表示でない、の4つ。
+// **公開プロフィール向けの経路は必ずこの断片を使うこと**（別に書くと条件がずれて、
+// 下書き・非公開イベントの写真が漏れる）。フィルタは buildUserPhotoWhere が
+// この断片に AND で足すだけなので、どのパラメータでも公開範囲は緩まない (#407)
+const PUBLIC_USER_PHOTO_COND = `p.user_id = ? AND e.photos_public = 1
+  AND e.status = 'published' AND p.admin_hidden_at IS NULL`;
+
+/** メディアタブのフィルタ (#407)。すべて公開範囲の条件に AND される */
+export interface UserPhotoFilter {
+  eventId?: string;
+  communityId?: string;
+  /** コメントありのみ */
+  commented?: boolean;
+  /** 写真の投稿日時 (created_at) に対する期間。ms */
+  from?: number;
+  to?: number;
+}
+
+function buildUserPhotoWhere(
+  userId: string,
+  f: UserPhotoFilter,
+): { where: string; args: (string | number)[] } {
+  const conds = [PUBLIC_USER_PHOTO_COND];
+  const args: (string | number)[] = [userId];
+  if (f.eventId) {
+    conds.push("p.event_id = ?");
+    args.push(f.eventId);
+  }
+  if (f.communityId) {
+    conds.push("e.community_id = ?");
+    args.push(f.communityId);
+  }
+  if (f.commented) {
+    conds.push(`${COMMENT_COUNT_EXPR} > 0`);
+  }
+  if (f.from != null) {
+    conds.push("p.created_at >= ?");
+    args.push(f.from);
+  }
+  if (f.to != null) {
+    conds.push("p.created_at <= ?");
+    args.push(f.to);
+  }
+  return { where: conds.join(" AND "), args };
+}
 
 export const eventPhotosRepo = {
   async listByEvent(eventId: string): Promise<EventPhoto[]> {
@@ -131,8 +179,18 @@ export const eventPhotosRepo = {
     return rows.map((r) => ({ id: r.id, eventId: r.event_id }));
   },
 
-  /** 公開プロフィール用: ユーザーが公開設定イベントに投稿した写真 */
-  async listPublicByUser(userId: string): Promise<UserPhoto[]> {
+  /** 公開プロフィール用: ユーザーが公開設定イベントに投稿した写真（ページング #407）。
+   * 公開範囲は PUBLIC_USER_PHOTO_COND、フィルタは buildUserPhotoWhere 参照。
+   * コメント数は一覧と同じ COMMENT_COUNT を使う。ここだけ別に書いていたため
+   * 退会申請中 (#250) の投稿者ぶんが数から落ちておらず、「3件」と出て
+   * 2件しか並ばないズレがあった（どちらも p が event_photo なのでそのまま使える） */
+  async listPublicByUserPaged(
+    userId: string,
+    filter: UserPhotoFilter,
+    limit: number,
+    offset: number,
+  ): Promise<UserPhoto[]> {
+    const { where, args } = buildUserPhotoWhere(userId, filter);
     const rows = await many<{
       id: string;
       event_id: string;
@@ -140,17 +198,16 @@ export const eventPhotosRepo = {
       created_at: number;
       comment_count: number;
     }>(
-      // コメント数は一覧と同じ COMMENT_COUNT を使う。ここだけ別に書いていたため
-      // 退会申請中 (#250) の投稿者ぶんが数から落ちておらず、「3件」と出て
-      // 2件しか並ばないズレがあった（どちらも p が event_photo なのでそのまま使える）
       `SELECT p.id, p.event_id, e.title AS event_title, p.created_at,
               ${COMMENT_COUNT}
        FROM event_photo p
        JOIN event e ON e.id = p.event_id
-       WHERE p.user_id = ? AND e.photos_public = 1 AND e.status = 'published'
-         AND p.admin_hidden_at IS NULL
-       ORDER BY p.created_at DESC`,
-      userId,
+       WHERE ${where}
+       ORDER BY p.created_at DESC
+       LIMIT ? OFFSET ?`,
+      ...args,
+      limit,
+      offset,
     );
     return rows.map((r) => ({
       id: r.id,
@@ -161,10 +218,60 @@ export const eventPhotosRepo = {
     }));
   },
 
+  /** listPublicByUserPaged と同じ WHERE の件数（ページング契約の total 用） */
+  async countPublicByUser(
+    userId: string,
+    filter: UserPhotoFilter,
+  ): Promise<number> {
+    const { where, args } = buildUserPhotoWhere(userId, filter);
+    const row = await one<{ n: number }>(
+      `SELECT COUNT(1) AS n
+         FROM event_photo p
+         JOIN event e ON e.id = p.event_id
+        WHERE ${where}`,
+      ...args,
+    );
+    return row?.n ?? 0;
+  },
+
+  /** メディアタブのフィルタ選択肢 (#407)。**フィルタ適用前**の母集団
+   * （= 公開範囲の条件だけ）から出す。絞った結果で選択肢が痩せないため。
+   * 公開範囲の条件を共有しているので、下書き・非公開イベントの名前が
+   * 選択肢に漏れることもない */
+  async photoFacetsForUser(userId: string): Promise<UserPhotoFacets> {
+    const events = await many<{ id: string; title: string; n: number }>(
+      `SELECT e.id, e.title, COUNT(1) AS n
+         FROM event_photo p
+         JOIN event e ON e.id = p.event_id
+        WHERE ${PUBLIC_USER_PHOTO_COND}
+        GROUP BY e.id
+        ORDER BY n DESC, e.title`,
+      userId,
+    );
+    const communities = await many<{ id: string; name: string; n: number }>(
+      `SELECT c.id, c.name, COUNT(1) AS n
+         FROM event_photo p
+         JOIN event e ON e.id = p.event_id
+         JOIN community c ON c.id = e.community_id
+        WHERE ${PUBLIC_USER_PHOTO_COND}
+        GROUP BY c.id
+        ORDER BY n DESC, c.name`,
+      userId,
+    );
+    return {
+      events: events.map((r) => ({ id: r.id, title: r.title, count: r.n })),
+      communities: communities.map((r) => ({
+        id: r.id,
+        name: r.name,
+        count: r.n,
+      })),
+    };
+  },
+
   /** 年表用: 本人が公開設定イベントに投稿した写真を、イベントごとに
    * コメントの多い順で上位 perEvent 枚だけ返す (#315)。
    *
-   * 公開範囲は listPublicByUser とまったく同じ条件（photos_public=1 の公開イベント・
+   * 公開範囲は PUBLIC_USER_PHOTO_COND（photos_public=1 の公開イベント・
    * 本人の投稿・運営非表示を除く）。イベントフォトは本来「閲覧も参加者のみ」なので、
    * この条件を緩めてはいけない。
    *
@@ -189,8 +296,7 @@ export const eventPhotosRepo = {
                 COUNT(*) OVER (PARTITION BY p.event_id) AS total
            FROM event_photo p
            JOIN event e ON e.id = p.event_id
-          WHERE p.user_id = ? AND e.photos_public = 1 AND e.status = 'published'
-            AND p.admin_hidden_at IS NULL
+          WHERE ${PUBLIC_USER_PHOTO_COND}
        )
        WHERE rn <= ?
        ORDER BY event_id, rn`,

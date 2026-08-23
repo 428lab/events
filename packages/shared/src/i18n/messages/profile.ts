@@ -77,6 +77,17 @@ const ja = {
   tabEmptyHosted: "主催・運営したイベントはまだありません。",
   tabEmptyMedia: "投稿したメディアはまだありません。",
 
+  /** メディアタブの絞り込み (#407)。期間は写真の投稿日に対して効く */
+  mediaFilterEvent: "イベント",
+  mediaFilterCommunity: "コミュニティ",
+  mediaFilterAll: "すべて",
+  mediaFilterCommented: "コメントありのみ",
+  mediaFilterFrom: "投稿日（以降）",
+  mediaFilterTo: "投稿日（まで）",
+  mediaFilterClear: "条件をクリア",
+  /** 絞り込んで1件も無いとき（未投稿の tabEmptyMedia とは区別する） */
+  mediaFilterNoMatch: "条件に一致するメディアはありません。",
+
   /** 参加履歴（一覧と年表の切り替え） */
   historyViewToggle: "参加履歴の表示切替",
   tabList: "一覧",
@@ -180,6 +191,15 @@ const en: Record<keyof typeof ja, string> = {
   tabEmptyPast: "No past events yet.",
   tabEmptyHosted: "No organized events yet.",
   tabEmptyMedia: "No media posted yet.",
+
+  mediaFilterEvent: "Event",
+  mediaFilterCommunity: "Community",
+  mediaFilterAll: "All",
+  mediaFilterCommented: "With comments only",
+  mediaFilterFrom: "Posted on or after",
+  mediaFilterTo: "Posted on or before",
+  mediaFilterClear: "Clear filters",
+  mediaFilterNoMatch: "No media match the filters.",
 
   historyViewToggle: "Switch how the history is shown",
   tabList: "List",

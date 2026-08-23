@@ -42,6 +42,30 @@ export const userPhotoSchema = z.object({
 });
 export type UserPhoto = z.infer<typeof userPhotoSchema>;
 
+/** メディアタブのフィルタ選択肢 (#407)。フィルタ適用前の母集団（本人の公開写真
+ * 全体）から出す。絞った結果で選択肢が痩せないようにするための別枠 */
+export const userPhotoFacetsSchema = z.object({
+  events: z.array(
+    z.object({ id: z.string(), title: z.string(), count: z.number() }),
+  ),
+  communities: z.array(
+    z.object({ id: z.string(), name: z.string(), count: z.number() }),
+  ),
+});
+export type UserPhotoFacets = z.infer<typeof userPhotoFacetsSchema>;
+
+/** `GET /public/users/:handle/photos` のページングつきレスポンス (#407)。
+ * ページング契約（page/limit/total/hasMore）は `/public/events/search` と同じ形 */
+export const userPhotosPageSchema = z.object({
+  photos: z.array(userPhotoSchema),
+  total: z.number(),
+  page: z.number(),
+  limit: z.number(),
+  hasMore: z.boolean(),
+  facets: userPhotoFacetsSchema,
+});
+export type UserPhotosPage = z.infer<typeof userPhotosPageSchema>;
+
 /** 公開プロフィールの年表に添えるサムネイル1枚 (#315)。
  * 出どころは userPhotoSchema と同じ（本人が公開設定イベントに投稿した写真）で、
  * 年表では枚数を絞るので eventTitle 等は持たせない。
