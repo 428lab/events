@@ -65,7 +65,10 @@ const ja = {
     "まだ誰もフォローしていません。気になる人のプロフィールからフォローしてみましょう。",
 
   /** プロフィールのタブ (#407)。イベント系タブの見出しには sectionCount で
-   * 件数を添える。メディアだけ開くまで取得しないので件数を添えない */
+   * 件数を添える。メディアだけ開くまで取得しないので件数を添えない。
+   * 「すべて」はイベント系タブの合算（メディアは含めない）。先頭に置くが
+   * 既定タブは「参加予定」のまま */
+  tabAll: "すべて",
   tabUpcoming: "参加予定",
   tabPast: "参加した過去イベント",
   tabHosted: "主催したイベント",
@@ -76,6 +79,17 @@ const ja = {
   tabEmptyPast: "参加した過去イベントはまだありません。",
   tabEmptyHosted: "主催・運営したイベントはまだありません。",
   tabEmptyMedia: "投稿したメディアはまだありません。",
+
+  /** メディアタブの絞り込み (#407)。期間は写真の投稿日に対して効く */
+  mediaFilterEvent: "イベント",
+  mediaFilterCommunity: "コミュニティ",
+  mediaFilterAll: "すべて",
+  mediaFilterCommented: "コメントありのみ",
+  mediaFilterFrom: "投稿日（以降）",
+  mediaFilterTo: "投稿日（まで）",
+  mediaFilterClear: "条件をクリア",
+  /** 絞り込んで1件も無いとき（未投稿の tabEmptyMedia とは区別する） */
+  mediaFilterNoMatch: "条件に一致するメディアはありません。",
 
   /** 参加履歴（一覧と年表の切り替え） */
   historyViewToggle: "参加履歴の表示切替",
@@ -171,6 +185,7 @@ const en: Record<keyof typeof ja, string> = {
   noFollowing:
     "You aren't following anyone yet. Open someone's profile to follow them.",
 
+  tabAll: "All",
   tabUpcoming: "Upcoming",
   tabPast: "Past events attended",
   tabHosted: "Events organized",
@@ -180,6 +195,15 @@ const en: Record<keyof typeof ja, string> = {
   tabEmptyPast: "No past events yet.",
   tabEmptyHosted: "No organized events yet.",
   tabEmptyMedia: "No media posted yet.",
+
+  mediaFilterEvent: "Event",
+  mediaFilterCommunity: "Community",
+  mediaFilterAll: "All",
+  mediaFilterCommented: "With comments only",
+  mediaFilterFrom: "Posted on or after",
+  mediaFilterTo: "Posted on or before",
+  mediaFilterClear: "Clear filters",
+  mediaFilterNoMatch: "No media match the filters.",
 
   historyViewToggle: "Switch how the history is shown",
   tabList: "List",

@@ -16,8 +16,9 @@ import { isDraftEvent } from "../DraftChip.js";
 import { ParticipationTimeline } from "../ParticipationTimeline.js";
 import { ProfileMediaTab } from "./ProfileMediaTab.js";
 
-/** タブの値。URL の `?tab=` にそのまま載る（既定の upcoming は載せない） */
-const TAB_KEYS = ["upcoming", "past", "hosted", "drafts", "media"] as const;
+/** タブの値。URL の `?tab=` にそのまま載る（既定の upcoming は載せない）。
+ * all は並びの先頭だが既定ではない（既定は「参加予定」のまま） */
+const TAB_KEYS = ["all", "upcoming", "past", "hosted", "drafts", "media"] as const;
 export type ProfileTabKey = (typeof TAB_KEYS)[number];
 
 /** `?tab=` の解釈。不正な値と、出せない drafts は既定タブに落とす
@@ -86,7 +87,7 @@ function EventTabBody({
   onViewChange,
   timeline,
 }: {
-  sections: { title: string; events: MyEventSummary[] }[];
+  sections: { title: string; events: MyEventSummary[]; note?: string }[];
   emptyText: string;
   events: MyEventSummary[];
   view: "list" | "timeline";
@@ -115,7 +116,12 @@ function EventTabBody({
       {view === "list" ? (
         <Stack spacing={3}>
           {sections.map((s) => (
-            <Section key={s.title} title={s.title} events={s.events} />
+            <Section
+              key={s.title}
+              title={s.title}
+              events={s.events}
+              note={s.note}
+            />
           ))}
         </Stack>
       ) : (
@@ -170,15 +176,22 @@ export function ProfileTabs({
 
   // 日程調整中（endsAt未確定=0）は「これから」側に含める
   const upcoming = (e: MyEventSummary) => e.scheduling || e.endsAt >= now;
-  // 公開前は時間の軸とは別の状態なので、他のタブには混ぜない (#348)
-  const drafts = events.filter(isDraftEvent);
-  const live = events.filter((e) => !isDraftEvent(e));
+  // 合算の「すべて」タブで同じイベントが二重に出ないよう id で一意化しておく
+  // （個別タブは母集団が排他なので影響しない）
+  const unique = [...new Map(events.map((e) => [e.id, e] as const)).values()];
+  // 公開前は時間の軸とは別の状態なので、個別タブには混ぜない (#348)
+  const drafts = unique.filter(isDraftEvent);
+  const live = unique.filter((e) => !isDraftEvent(e));
   const hosted = live.filter((e) => e.myRole === "staff");
   const joined = live.filter((e) => e.myRole !== "staff");
   const joinedUpcoming = joined.filter(upcoming);
   const joinedPast = joined.filter((e) => !upcoming(e));
 
   const draftsVisible = isMe && drafts.length > 0;
+  // 「すべて」タブの母集団: イベント系タブの合算（メディアは含めない）。
+  // 下書きは drafts タブと同じ出し分け（本人のみ）。他人のデータ源は
+  // もともと公開分だけだが、表示側でも同じ線を守る
+  const allEvents = isMe ? unique : live;
   const tab = resolveTab(searchParams.get("tab"), draftsVisible);
 
   const selectTab = (next: ProfileTabKey) => {
@@ -215,6 +228,11 @@ export function ProfileTabs({
         allowScrollButtonsMobile
         sx={{ mb: 2, borderBottom: 1, borderColor: "divider" }}
       >
+        {/* 並びの先頭は合算の「すべて」。ただし既定タブは「参加予定」のまま */}
+        <Tab
+          value="all"
+          label={countLabel(t("profile.tabAll"), allEvents.length)}
+        />
         <Tab
           value="upcoming"
           label={countLabel(t("profile.tabUpcoming"), joinedUpcoming.length)}
@@ -237,6 +255,41 @@ export function ProfileTabs({
         <Tab value="media" label={t("profile.tabMedia")} />
       </Tabs>
 
+      {/* 合算の「すべて」。まとまりの切り方は旧4分類＋下書き (#315, #348) をそのまま
+          再現する（1イベントはどれか1まとまりにだけ出る） */}
+      {tab === "all" && (
+        <EventTabBody
+          sections={[
+            ...(isMe
+              ? [
+                  {
+                    title: t("profile.sectionDrafts"),
+                    events: drafts,
+                    note: t("profile.sectionDraftsNote"),
+                  },
+                ]
+              : []),
+            {
+              title: t("profile.sectionHosting"),
+              events: hosted.filter(upcoming),
+            },
+            { title: t("profile.sectionJoining"), events: joinedUpcoming },
+            {
+              title: t("profile.sectionHosted"),
+              events: hosted.filter((e) => !upcoming(e)),
+            },
+            { title: t("profile.sectionJoined"), events: joinedPast },
+          ]}
+          emptyText={
+            emptyAll ??
+            t(isMe ? "profile.noOngoingEvents" : "profile.noPublicEvents")
+          }
+          events={allEvents}
+          view={view}
+          onViewChange={setView}
+          timeline={timeline}
+        />
+      )}
       {tab === "upcoming" && (
         <EventTabBody
           sections={[

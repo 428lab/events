@@ -133,14 +133,43 @@ publicRoutes.get("/users/:handle", async (c) => {
   });
 });
 
-/** 公開: ユーザーが公開設定イベントに投稿した写真ギャラリー（未ログイン可） */
+/** 公開: ユーザーが公開設定イベントに投稿した写真ギャラリー（未ログイン可）。
+ * ページングとフィルタ (#407)。契約は /events/search と同じ page/limit/total/hasMore。
+ * フィルタは公開範囲の条件（リポジトリの PUBLIC_USER_PHOTO_COND）に常に AND される
+ * だけなので、eventId に下書きイベントの id を直接指定しても 0 件になる */
 publicRoutes.get("/users/:handle/photos", async (c) => {
   const handle = c.req.param("handle");
   const user =
     (await usersRepo.findByUsername(handle)) ??
     (await usersRepo.findById(handle));
   if (!user) return c.json({ error: "not_found" }, 404);
-  return c.json({ photos: await eventPhotosRepo.listPublicByUser(user.id) });
+  const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);
+  const limit = Math.min(50, Math.max(1, Number(c.req.query("limit") ?? 24) || 24));
+  const offset = (page - 1) * limit;
+  const filter = {
+    eventId: c.req.query("eventId") || undefined,
+    communityId: c.req.query("communityId") || undefined,
+    commented: c.req.query("commented") === "1",
+    from: c.req.query("from") ? Number(c.req.query("from")) : undefined,
+    to: c.req.query("to") ? Number(c.req.query("to")) : undefined,
+  };
+  const total = await eventPhotosRepo.countPublicByUser(user.id, filter);
+  const photos = await eventPhotosRepo.listPublicByUserPaged(
+    user.id,
+    filter,
+    limit,
+    offset,
+  );
+  return c.json({
+    photos,
+    total,
+    page,
+    limit,
+    hasMore: offset + photos.length < total,
+    // フィルタの選択肢。フィルタ適用前の母集団から出す（絞ると選択肢が痩せて
+    // 戻せなくなるため）。公開範囲の条件は同じなので下書きの名前は漏れない
+    facets: await eventPhotosRepo.photoFacetsForUser(user.id),
+  });
 });
 
 /** 公開イベント検索（キーワード/期間/コミュニティ/並び替え・ページング） */

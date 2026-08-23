@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import type { MyEventSummary } from "@eventer/shared";
@@ -107,9 +107,19 @@ function renderTabs(
 
 const tab = (name: string | RegExp) => screen.getByRole("tab", { name });
 
+/** 写真APIのページングつき空レスポンス (#407) */
+const emptyPhotosPage = {
+  photos: [],
+  total: 0,
+  page: 1,
+  limit: 24,
+  hasMore: false,
+  facets: { events: [], communities: [] },
+};
+
 beforeEach(() => {
   getMock.mockReset();
-  getMock.mockResolvedValue({ photos: [] });
+  getMock.mockResolvedValue(emptyPhotosPage);
   localStorage.clear();
 });
 
@@ -179,7 +189,63 @@ describe("プロフィールのタブ (#407)", () => {
     fireEvent.click(screen.getByRole("button", { name: "年表" }));
     expect(screen.queryByText("区分")).toBeNull();
     expect(screen.queryByText("時期")).toBeNull();
-    expect(screen.queryByText(/^すべて/)).toBeNull();
+    // 旧フィルタチップは「すべて 4」の形だった（合算タブの「すべて（4）」とは別物）
+    expect(screen.queryByText(/^すべて \d/)).toBeNull();
+  });
+});
+
+describe("「すべて」タブ (#407)", () => {
+  it("先頭に出るが、既定タブは「参加予定」のまま", () => {
+    renderTabs();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[0].textContent).toBe("すべて（4）");
+    expect(tab("参加予定（1）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("すべて（4）").getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("中身はイベント系タブの合算で、旧4分類＋下書きのまとまりで出る", () => {
+    renderTabs([...EVENTS, DRAFT]);
+    fireEvent.click(tab("すべて（5）"));
+    expect(screen.getByText("下書きのイベント（1）")).toBeTruthy();
+    expect(screen.getByText("主催・運営するイベント（1）")).toBeTruthy();
+    expect(screen.getByText("参加予定のイベント（1）")).toBeTruthy();
+    expect(screen.getByText("主催・運営したイベント（1）")).toBeTruthy();
+    expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
+  });
+
+  it("他人のページの合算は公開分のみ（下書きのまとまりも出ない）", () => {
+    renderTabs([...EVENTS, DRAFT], { isMe: false });
+    fireEvent.click(tab("すべて（4）"));
+    expect(screen.queryByText(/下書きのイベント/)).toBeNull();
+    expect(screen.queryByText("下書きの回")).toBeNull();
+    expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
+  });
+
+  it("同じイベントが二重に来ても1回しか数えない・出さない", () => {
+    renderTabs([...EVENTS, { ...EVENTS[3] }]);
+    fireEvent.click(tab("すべて（4）"));
+    expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
+  });
+
+  it("?tab=all で URL に載り、開き直しでも選ばれる", () => {
+    renderTabs();
+    fireEvent.click(tab("すべて（4）"));
+    expect(screen.getByTestId("loc").textContent).toBe("?tab=all");
+
+    renderTabs(EVENTS, { url: "/users/tester2?tab=all" });
+    expect(
+      screen
+        .getAllByRole("tab", { name: "すべて（4）" })
+        .some((el) => el.getAttribute("aria-selected") === "true"),
+    ).toBe(true);
+  });
+
+  it("一覧⇄年表の切替が効く（母集団は合算）", () => {
+    renderTabs();
+    fireEvent.click(tab("すべて（4）"));
+    fireEvent.click(screen.getByRole("button", { name: "年表" }));
+    expect(screen.getByText("参加履歴の年表")).toBeTruthy();
+    expect(screen.getByText("表示中 4 件 ・ 出会いの記録 0 件")).toBeTruthy();
   });
 });
 
@@ -223,9 +289,12 @@ describe("メディアタブ", () => {
   it("タブを開くまで写真を取りに行かず、開くとギャラリーが出る", async () => {
     renderTabs();
     // ほかの部品（コミュニティ等）の取得は関知しない。写真だけを見る
-    expect(getMock).not.toHaveBeenCalledWith("/public/users/tester/photos");
+    expect(getMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("/public/users/tester/photos"),
+    );
 
     getMock.mockResolvedValue({
+      ...emptyPhotosPage,
       photos: [
         {
           id: "ph-1",
@@ -235,9 +304,14 @@ describe("メディアタブ", () => {
           createdAt: NOW - 86400_000,
         },
       ],
+      total: 1,
+      facets: {
+        events: [{ id: "j-past", title: "参加した回", count: 1 }],
+        communities: [],
+      },
     });
     fireEvent.click(tab("投稿したメディア"));
-    expect(getMock).toHaveBeenCalledWith("/public/users/tester/photos");
+    expect(getMock).toHaveBeenCalledWith("/public/users/tester/photos?page=1");
     expect(await screen.findByText("投稿した写真（1）")).toBeTruthy();
     expect(
       document.querySelector('img[src="/api/events/j-past/photos/ph-1/image"]'),
@@ -250,6 +324,66 @@ describe("メディアタブ", () => {
     expect(
       await screen.findByText("投稿したメディアはまだありません。"),
     ).toBeTruthy();
+  });
+
+  it("1ページに収まらなければページ番号が出て、送りは page パラメータで取りに行く", async () => {
+    const photo = (i: number) => ({
+      id: `ph-${i}`,
+      eventId: "j-past",
+      eventTitle: "参加した回",
+      commentCount: 0,
+      createdAt: NOW - i * 1000,
+    });
+    getMock.mockResolvedValue({
+      ...emptyPhotosPage,
+      photos: Array.from({ length: 24 }, (_v, i) => photo(i)),
+      total: 30,
+      hasMore: true,
+      facets: {
+        events: [{ id: "j-past", title: "参加した回", count: 30 }],
+        communities: [],
+      },
+    });
+    renderTabs();
+    fireEvent.click(tab("投稿したメディア"));
+    expect(await screen.findByText("投稿した写真（30）")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Go to page 2" }));
+    await waitFor(() =>
+      expect(getMock).toHaveBeenCalledWith(
+        "/public/users/tester/photos?page=2",
+      ),
+    );
+  });
+
+  it("コメントありのみのトグルは commented=1 で取りに行き、1ページ目へ戻る", async () => {
+    getMock.mockResolvedValue({
+      ...emptyPhotosPage,
+      photos: [
+        {
+          id: "ph-1",
+          eventId: "j-past",
+          eventTitle: "参加した回",
+          commentCount: 2,
+          createdAt: NOW,
+        },
+      ],
+      total: 1,
+      facets: {
+        events: [{ id: "j-past", title: "参加した回", count: 1 }],
+        communities: [],
+      },
+    });
+    renderTabs();
+    fireEvent.click(tab("投稿したメディア"));
+    await screen.findByText("投稿した写真（1）");
+
+    fireEvent.click(screen.getByText("コメントありのみ"));
+    await waitFor(() =>
+      expect(getMock).toHaveBeenCalledWith(
+        "/public/users/tester/photos?commented=1&page=1",
+      ),
+    );
   });
 });
 
