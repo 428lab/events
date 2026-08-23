@@ -7,9 +7,10 @@ import type { MyEventSummary } from "@eventer/shared";
 /**
  * プロフィールのタブ (#407)。
  *
- * 旧4分類 (#315, ParticipationHistory) をタブに再配置した。母集団の切り方は
- * 4分類のまま（1イベントはちょうど1タブ）。既定は参加予定で、選択中のタブは
- * `?tab=` で URL に載る。下書きタブは本人だけ (#319, #348)。
+ * 旧4分類 (#315, ParticipationHistory) をタブに再配置した。時間の軸（予定/過去）と
+ * 役割の軸（主催）は独立で、主催イベントは時期に応じて時間のタブにも重ねて出る
+ * (#416)。既定は参加予定で、選択中のタブは `?tab=` で URL に載る。
+ * 下書きタブは本人だけ (#319, #348)。
  * ここでは既定タブ・出し分け・URL との同期・年表切替の共有を確かめる。
  */
 
@@ -126,24 +127,25 @@ beforeEach(() => {
 describe("プロフィールのタブ (#407)", () => {
   it("既定は参加予定タブで、タブ見出しに件数が付く", () => {
     renderTabs();
-    expect(tab("参加予定（1）").getAttribute("aria-selected")).toBe("true");
-    expect(tab("参加した過去イベント（1）")).toBeTruthy();
+    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("参加した過去イベント（2）")).toBeTruthy();
     expect(tab("主催したイベント（2）")).toBeTruthy();
     // メディアは開くまで取得しないので件数を添えない
     expect(tab("投稿したメディア")).toBeTruthy();
-    // 中身は参加予定だけ。過去や主催の回は出ない
+    // 中身はこれからの回だけ（主催の予定も含む #416）。過去の回は出ない
     expect(screen.getAllByText("参加予定の回").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("主催する回").length).toBeGreaterThan(0);
     expect(screen.queryByText("参加した回")).toBeNull();
-    expect(screen.queryByText("主催する回")).toBeNull();
+    expect(screen.queryByText("主催した回")).toBeNull();
   });
 
   it("タブを切り替えると URL の ?tab= が置き換わり、既定に戻すと消える", () => {
     renderTabs();
-    fireEvent.click(tab("参加した過去イベント（1）"));
+    fireEvent.click(tab("参加した過去イベント（2）"));
     expect(screen.getAllByText("参加した回").length).toBeGreaterThan(0);
     expect(screen.getByTestId("loc").textContent).toBe("?tab=past");
 
-    fireEvent.click(tab("参加予定（1）"));
+    fireEvent.click(tab("参加予定（2）"));
     expect(screen.getByTestId("loc").textContent).toBe("");
   });
 
@@ -166,7 +168,7 @@ describe("プロフィールのタブ (#407)", () => {
 
   it("不正な ?tab= は既定タブに落とす", () => {
     renderTabs(EVENTS, { url: "/users/tester?tab=nonsense" });
-    expect(tab("参加予定（1）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
   });
 
   it("一覧⇄年表の切替はタブをまたいで共有される", () => {
@@ -175,10 +177,10 @@ describe("プロフィールのタブ (#407)", () => {
     expect(screen.getByText("参加履歴の年表")).toBeTruthy();
     expect(screen.queryByText("参加予定のイベント（1）")).toBeNull();
 
-    // 別のタブへ移っても年表のまま。母集団はそのタブのもの
-    fireEvent.click(tab("参加した過去イベント（1）"));
+    // 別のタブへ移っても年表のまま。母集団はそのタブのもの（主催の過去も含む #416）
+    fireEvent.click(tab("参加した過去イベント（2）"));
     expect(screen.getByText("参加履歴の年表")).toBeTruthy();
-    expect(screen.getByText("表示中 1 件 ・ 出会いの記録 0 件")).toBeTruthy();
+    expect(screen.getByText("表示中 2 件 ・ 出会いの記録 0 件")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "一覧" }));
     expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
@@ -194,12 +196,57 @@ describe("プロフィールのタブ (#407)", () => {
   });
 });
 
+describe("時間タブに主催イベントも出す (#416)", () => {
+  it("過去の主催イベントが「過去」と「主催」の両方に出る", () => {
+    renderTabs();
+    fireEvent.click(tab("参加した過去イベント（2）"));
+    expect(screen.getByText("主催・運営したイベント（1）")).toBeTruthy();
+    expect(screen.getAllByText("主催した回").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("参加した回").length).toBeGreaterThan(0);
+    // 主催タブにも従来どおり出る
+    fireEvent.click(tab("主催したイベント（2）"));
+    expect(screen.getAllByText("主催した回").length).toBeGreaterThan(0);
+  });
+
+  it("未来の主催イベントが「参加予定」と「主催」の両方に出る", () => {
+    renderTabs();
+    // 既定タブ（参加予定）に主催予定のセクションが加わる
+    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("主催・運営するイベント（1）")).toBeTruthy();
+    expect(screen.getAllByText("主催する回").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("参加予定の回").length).toBeGreaterThan(0);
+    fireEvent.click(tab("主催したイベント（2）"));
+    expect(screen.getAllByText("主催する回").length).toBeGreaterThan(0);
+  });
+
+  it("下書きは時期のタブに混ざらない（従来どおり下書きタブのみ）", () => {
+    // DRAFT は未来の主催イベントだが、参加予定タブには出ない
+    renderTabs([...EVENTS, DRAFT]);
+    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByText("下書きの回")).toBeNull();
+  });
+
+  it("年表の母集団も追随する（過去タブは主催＋参加の2件）", () => {
+    renderTabs();
+    fireEvent.click(tab("参加した過去イベント（2）"));
+    fireEvent.click(screen.getByRole("button", { name: "年表" }));
+    expect(screen.getByText("表示中 2 件 ・ 出会いの記録 0 件")).toBeTruthy();
+  });
+
+  it("「すべて」タブは従来どおり重複しない", () => {
+    renderTabs();
+    fireEvent.click(tab("すべて（4）"));
+    expect(screen.getByText("主催・運営したイベント（1）")).toBeTruthy();
+    expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
+  });
+});
+
 describe("「すべて」タブ (#407)", () => {
   it("先頭に出るが、既定タブは「参加予定」のまま", () => {
     renderTabs();
     const tabs = screen.getAllByRole("tab");
     expect(tabs[0].textContent).toBe("すべて（4）");
-    expect(tab("参加予定（1）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
     expect(tab("すべて（4）").getAttribute("aria-selected")).toBe("false");
   });
 
@@ -280,7 +327,7 @@ describe("下書きタブ (#319, #348)", () => {
 
   it("他人のページで ?tab=drafts を開いても既定タブに落とす", () => {
     renderTabs(EVENTS, { isMe: false, url: "/users/tester?tab=drafts" });
-    expect(tab("参加予定（1）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
     expect(screen.getAllByText("参加予定の回").length).toBeGreaterThan(0);
   });
 });
