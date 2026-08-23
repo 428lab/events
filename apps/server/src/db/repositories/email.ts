@@ -1,4 +1,5 @@
 import { many, one, run } from "../client.js";
+import { jstDayStart } from "../../lib/dateFormat.js";
 
 /** 前日リマインダーの送信対象（イベント×参加者） (#126) */
 export interface ReminderTarget {
@@ -81,9 +82,11 @@ export const emailRepo = {
     return row?.email ?? null;
   },
 
-  /** 前日リマインダーの対象を抽出 (#126)。
-   * 公開済み・日程確定・開始が (now, now+24h] のイベントの confirmed メンバーのうち、
-   * 未送信・メール通知ON・検証済みメール有りのみ */
+  /** 前日リマインダーの対象を抽出 (#126, #411)。
+   * 公開済み・日程確定・開始が now より後〜JST の「明日」の終わり（明後日 0:00 JST）
+   * のイベントの confirmed メンバーのうち、未送信・メール通知ON・検証済みメール有りのみ。
+   * 窓を暦日で切るので夕方開催も前日の実行で対象になる。本日中の未送信分
+   * （公開が遅れた等）も拾う（#128 の取りこぼし対策。件名は呼び出し側で出し分け） */
   async listReminderTargets(now: number, limit: number): Promise<ReminderTarget[]> {
     const rows = await many<ReminderRow>(
       `SELECT em.id AS member_id, em.user_id AS user_id,
@@ -98,7 +101,7 @@ export const emailRepo = {
        -- 退会申請中 (#250) には送らない
        JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
        WHERE e.status = 'published' AND e.scheduling = 0
-         AND e.starts_at > ? AND e.starts_at <= ?
+         AND e.starts_at > ? AND e.starts_at < ?
          AND em.status = 'confirmed'
          AND em.reminder_sent_at IS NULL
          AND EXISTS (SELECT 1 FROM identity i
@@ -106,7 +109,7 @@ export const emailRepo = {
        ORDER BY e.starts_at ASC
        LIMIT ?`,
       now,
-      now + 24 * 3600_000,
+      jstDayStart(now, 2),
       limit,
     );
     return rows.map((r) => ({
