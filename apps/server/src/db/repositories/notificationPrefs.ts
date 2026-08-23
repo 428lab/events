@@ -4,7 +4,8 @@ import type {
 } from "@eventer/shared";
 import { one, run } from "../client.js";
 
-/** 通知設定 (#21 PR3)。行が無ければ既定値（フォロー通知ON・メールOFF） */
+/** 通知設定 (#21 PR3)。行が無ければ既定値（フォロー通知ON・メールON #414）。
+ * 明示的にオフにした人だけ行が email_enabled=0 で残る */
 export const notificationPrefsRepo = {
   async get(userId: string): Promise<NotificationPrefs> {
     const row = await one<{
@@ -18,7 +19,7 @@ export const notificationPrefsRepo = {
     return {
       followeeCreated: row ? row.followee_created === 1 : true,
       followeeJoined: row ? row.followee_joined === 1 : true,
-      emailEnabled: row ? row.email_enabled === 1 : false,
+      emailEnabled: row ? row.email_enabled === 1 : true,
     };
   },
 

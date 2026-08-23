@@ -26,25 +26,29 @@ interface ReminderRow {
   venue_online: string | null;
 }
 
-/** メール通知 (#126)。オプトイン済み宛先の解決と前日リマインダーの対象抽出 */
+/** メール通知 (#126)。宛先の解決と前日リマインダーの対象抽出。
+ * メール通知の既定はオン (#414): 設定行なし＝オン、明示オフ（email_enabled=0 の行あり）だけ除外。
+ * この既定は全経路（通知メール・一斉連絡・リマインダー）で `COALESCE(p.email_enabled, 1) = 1`
+ * に統一する。経路ごとに既定が割れると「届く/届かない」が経路で変わる事故になる */
 export const emailRepo = {
-  /** メール通知ON かつ 検証済みメールを持つユーザーの宛先を返す（無ければ null）。
+  /** メール通知が有効 かつ 検証済みメールを持つユーザーの宛先を返す（無ければ null）。
    * メールは最後に作成された identity のものを使う */
   async findRecipient(userId: string): Promise<string | null> {
     const row = await one<{ email: string }>(
       // 退会申請中 (#250) には通知メールを送らない
       `SELECT i.email AS email
-       FROM notification_pref p
-       JOIN identity i ON i.user_id = p.user_id
-       JOIN user u ON u.id = p.user_id AND u.deleted_at IS NULL
-       WHERE p.user_id = ? AND p.email_enabled = 1 AND i.email IS NOT NULL
+       FROM user u
+       JOIN identity i ON i.user_id = u.id
+       LEFT JOIN notification_pref p ON p.user_id = u.id
+       WHERE u.id = ? AND u.deleted_at IS NULL
+         AND COALESCE(p.email_enabled, 1) = 1 AND i.email IS NOT NULL
        ORDER BY i.created_at DESC LIMIT 1`,
       userId,
     );
     return row?.email ?? null;
   },
 
-  /** 複数ユーザーのうちオプトイン済み宛先を一括解決（createForMany 用） */
+  /** 複数ユーザーのうちメール通知が有効な宛先を一括解決（createForMany 用） */
   async findRecipientsAmong(
     userIds: string[],
   ): Promise<Array<{ userId: string; email: string }>> {
@@ -55,13 +59,14 @@ export const emailRepo = {
       const chunk = userIds.slice(i, i + CHUNK);
       const placeholders = chunk.map(() => "?").join(",");
       const rows = await many<{ user_id: string; email: string | null }>(
-        `SELECT p.user_id AS user_id,
+        `SELECT u.id AS user_id,
                 (SELECT i.email FROM identity i
-                 WHERE i.user_id = p.user_id AND i.email IS NOT NULL
+                 WHERE i.user_id = u.id AND i.email IS NOT NULL
                  ORDER BY i.created_at DESC LIMIT 1) AS email
-         FROM notification_pref p
-         JOIN user u ON u.id = p.user_id AND u.deleted_at IS NULL
-         WHERE p.user_id IN (${placeholders}) AND p.email_enabled = 1`,
+         FROM user u
+         LEFT JOIN notification_pref p ON p.user_id = u.id
+         WHERE u.id IN (${placeholders}) AND u.deleted_at IS NULL
+           AND COALESCE(p.email_enabled, 1) = 1`,
         ...chunk,
       );
       for (const r of rows) {
@@ -97,10 +102,12 @@ export const emailRepo = {
               e.venue_type, e.venue_offline, e.venue_online
        FROM event e
        JOIN event_member em ON em.event_id = e.id
-       JOIN notification_pref p ON p.user_id = em.user_id AND p.email_enabled = 1
+       -- 設定行なしは既定オン (#414)。明示オフだけ除外する
+       LEFT JOIN notification_pref p ON p.user_id = em.user_id
        -- 退会申請中 (#250) には送らない
        JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
-       WHERE e.status = 'published' AND e.scheduling = 0
+       WHERE COALESCE(p.email_enabled, 1) = 1
+         AND e.status = 'published' AND e.scheduling = 0
          AND e.starts_at > ? AND e.starts_at < ?
          AND em.status = 'confirmed'
          AND em.reminder_sent_at IS NULL

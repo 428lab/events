@@ -58,7 +58,7 @@ export function NotificationPrefsCard() {
           <FormControlLabel
             control={
               <Switch
-                checked={prefs?.emailEnabled ?? false}
+                checked={prefs?.emailEnabled ?? true}
                 disabled={!prefs || !email || update.isPending}
                 onChange={(e) =>
                   update.mutate({ emailEnabled: e.target.checked })
