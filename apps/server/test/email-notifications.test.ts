@@ -171,7 +171,7 @@ describe("通知設定 API のメール項目 (#126)", () => {
     const u = await makeUser();
     await addIdentity(u.userId, "user@example.com");
 
-    // 初期値: メールOFF・宛先は連携メール
+    // 初期値: 行なしでもメールON (#414)・宛先は連携メール
     const res1 = await SELF.fetch(`${BASE}/api/me/notification-prefs`, {
       headers: { cookie: u.cookie },
     });
@@ -180,19 +180,29 @@ describe("通知設定 API のメール項目 (#126)", () => {
       prefs: { emailEnabled: boolean };
       email: string | null;
     };
-    expect(body1.prefs.emailEnabled).toBe(false);
+    expect(body1.prefs.emailEnabled).toBe(true);
     expect(body1.email).toBe("user@example.com");
 
-    // ONに更新 → 永続化される
+    // OFFに更新 → 行が作られて永続化される（明示オフ）
     const res2 = await SELF.fetch(`${BASE}/api/me/notification-prefs`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie: u.cookie },
+      body: JSON.stringify({ emailEnabled: false }),
+    });
+    expect(res2.status).toBe(200);
+    const body2 = (await res2.json()) as typeof body1;
+    expect(body2.prefs.emailEnabled).toBe(false);
+    expect(body2.email).toBe("user@example.com");
+    expect(await emailPref(u.userId)).toBe(0);
+
+    // ONに戻す切り替えも従来どおり効く
+    const res3 = await SELF.fetch(`${BASE}/api/me/notification-prefs`, {
       method: "PUT",
       headers: { "content-type": "application/json", cookie: u.cookie },
       body: JSON.stringify({ emailEnabled: true }),
     });
-    expect(res2.status).toBe(200);
-    const body2 = (await res2.json()) as typeof body1;
-    expect(body2.prefs.emailEnabled).toBe(true);
-    expect(body2.email).toBe("user@example.com");
+    expect(res3.status).toBe(200);
+    expect(((await res3.json()) as typeof body1).prefs.emailEnabled).toBe(true);
     expect(await emailPref(u.userId)).toBe(1);
   });
 
@@ -321,6 +331,75 @@ describe("前日リマインダーの対象抽出 (#126)", () => {
       .bind(memberId)
       .first<{ r: number | null }>();
     expect(row?.r).toBeNull();
+  });
+});
+
+describe("メール通知の既定はオン (#414)", () => {
+  it("設定行なし＋メールありの参加者がリマインダー対象に入る", async () => {
+    const now = Date.now();
+    const host = await makeUser();
+    const noRow = await makeUser();
+    await addIdentity(noRow.userId, "norow@example.com");
+    // notification_pref の行は作らない（既定＝オン）
+    const ev = await makeEvent({
+      createdBy: host.userId,
+      startsAt: now + 12 * 3600_000,
+    });
+    const memberId = await addMember(ev, noRow.userId);
+
+    const targets = await emailRepo.listReminderTargets(now, 200);
+    const mine = targets.filter((t) => t.userId === noRow.userId);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.memberId).toBe(memberId);
+    expect(mine[0]!.email).toBe("norow@example.com");
+  });
+
+  it("設定行なし＋メールありは宛先解決（通知・一斉連絡の経路）でも対象になる", async () => {
+    const noRow = await makeUser();
+    await addIdentity(noRow.userId, "norow2@example.com");
+    expect(await emailRepo.findRecipient(noRow.userId)).toBe(
+      "norow2@example.com",
+    );
+    expect(await emailRepo.findRecipientsAmong([noRow.userId])).toEqual([
+      { userId: noRow.userId, email: "norow2@example.com" },
+    ]);
+  });
+
+  it("明示オフはどの経路でも対象外・明示オンは従来どおり", async () => {
+    const now = Date.now();
+    const host = await makeUser();
+    const off = await makeUser();
+    await addIdentity(off.userId, "explicit-off@example.com");
+    await setEmailPref(off.userId, false);
+    const on = await makeUser();
+    await addIdentity(on.userId, "explicit-on@example.com");
+    await setEmailPref(on.userId, true);
+    const ev = await makeEvent({
+      createdBy: host.userId,
+      startsAt: now + 12 * 3600_000,
+    });
+    const offMemberId = await addMember(ev, off.userId);
+    const onMemberId = await addMember(ev, on.userId);
+
+    expect(await emailRepo.findRecipient(off.userId)).toBeNull();
+    expect(await emailRepo.findRecipient(on.userId)).toBe(
+      "explicit-on@example.com",
+    );
+    expect(
+      await emailRepo.findRecipientsAmong([off.userId, on.userId]),
+    ).toEqual([{ userId: on.userId, email: "explicit-on@example.com" }]);
+    const ids = (await emailRepo.listReminderTargets(now, 200)).map(
+      (t) => t.memberId,
+    );
+    expect(ids).not.toContain(offMemberId);
+    expect(ids).toContain(onMemberId);
+  });
+
+  it("行なしでも連携メールが無ければ宛先にならない", async () => {
+    const noEmail = await makeUser();
+    await addIdentity(noEmail.userId, null);
+    expect(await emailRepo.findRecipient(noEmail.userId)).toBeNull();
+    expect(await emailRepo.findRecipientsAmong([noEmail.userId])).toEqual([]);
   });
 });
 

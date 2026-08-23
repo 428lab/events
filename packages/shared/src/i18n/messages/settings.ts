@@ -43,6 +43,10 @@ const ja = {
   /** 通知設定カード */
   notificationsTitle: "通知設定",
   notificationsDescription: "フォローしている相手の活動を通知欄に表示します。",
+  // アプリ内とメールを見出しで分ける (#413)。届く場所も既定も違うのに
+  // スイッチが同列に並んでいて取り違えが起きた
+  notifyInAppHeading: "アプリ内",
+  notifyEmailHeading: "メール",
   notifyFolloweeCreated: "フォロー相手がイベントを公開したとき",
   notifyFolloweeJoined: "フォロー相手がイベントに参加したとき",
   notifyEmail: "メール通知（通知と参加イベントの前日リマインダー）",
@@ -169,6 +173,8 @@ const en: Record<keyof typeof ja, string> = {
   notificationsTitle: "Notifications",
   notificationsDescription:
     "Show activity from the people you follow in your notifications.",
+  notifyInAppHeading: "In-app",
+  notifyEmailHeading: "Email",
   notifyFolloweeCreated: "Someone you follow publishes an event",
   notifyFolloweeJoined: "Someone you follow joins an event",
   notifyEmail:
