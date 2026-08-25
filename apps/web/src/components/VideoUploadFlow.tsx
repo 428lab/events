@@ -280,7 +280,8 @@ export function VideoUploadFlow({
             </Typography>
             <LinearProgress variant="determinate" value={percent} />
           </DialogContent>
-          <DialogActions>
+          {/* 第1段階と同じ構造なので、こちらも折り返し可能にしておく */}
+          <DialogActions sx={{ flexWrap: "wrap", gap: 1, "& > :not(:first-of-type)": { ml: 0 } }}>
             {multi && (
               <Button onClick={cancelCurrent}>
                 {t("eventSocial.videoQueueStopOne")}

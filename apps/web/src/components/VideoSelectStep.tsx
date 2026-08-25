@@ -286,7 +286,9 @@ export function VideoSelectStep({
         )}
         {phase === "error" && error && <Alert severity="warning">{error}</Alert>}
       </DialogContent>
-      <DialogActions>
+      {/* スマホ幅ではボタン3つが1行に収まらないため折り返す (#427 実機崩れ)。
+          MUI 既定の隣接マージンは折り返し行に効かないので gap で間隔を取る */}
+      <DialogActions sx={{ flexWrap: "wrap", gap: 1, "& > :not(:first-of-type)": { ml: 0 } }}>
         {phase === "trim" && (
           <Button variant="contained" onClick={confirmTrim}>
             {t("eventSocial.videoTrimConfirm")}
