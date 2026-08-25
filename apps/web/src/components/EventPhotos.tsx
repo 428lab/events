@@ -45,16 +45,16 @@ import {
 const photoUrl = (eventId: string, photoId: string) =>
   `/api/events/${eventId}/photos/${photoId}/image`;
 
-/** 動画の投稿フロー (#408)。変換ライブラリ（mediabunny）が大きいので、
+/** 動画の投稿フロー (#408, #427)。変換ライブラリ（mediabunny）が大きいので、
  * 動画を選んだときだけ遅延読み込みする */
-const VideoUploadDialog = lazy(() =>
-  import("./VideoUploadDialog.js").then((m) => ({
-    default: m.VideoUploadDialog,
+const VideoUploadFlow = lazy(() =>
+  import("./VideoUploadFlow.js").then((m) => ({
+    default: m.VideoUploadFlow,
   })),
 );
 
-/** 選択されたファイル群から動画を1本だけ拾う (#408)。
- * 複数選択に混ざっていた場合は写真は全部・動画は1本目のみ処理する */
+/** 動画かどうか (#408)。複数選ばれたら2段階のフロー
+ * （全本の範囲選択 → 1本ずつ変換・アップロード）で処理する (#427) */
 const isVideoFile = (f: File) =>
   f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(f.name);
 
@@ -86,13 +86,25 @@ export function EventPhotos({
   const [lightbox, setLightbox] = useState<EventPhoto | null>(null);
   const [uploading, setUploading] = useState(0);
   const [dragOver, setDragOver] = useState(false);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoBatch, setVideoBatch] = useState<File[] | null>(null);
+  /** フロー実行中に追加で選ばれた動画。今のフローが終わったら次のフローで流す */
+  const nextVideosRef = useRef<File[]>([]);
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
-      // 動画 (#408) は専用フロー（変換＋進捗ダイアログ）へ。1回の操作で1本のみ
-      const video = files.find(isVideoFile);
-      if (video) setVideoFile(video);
+      // 動画 (#408) は専用フロー（範囲選択→変換→アップロードの2段階 #427）へ。
+      // フロー実行中の追加選択は次のフローに回す（積み替えで混ざると
+      // 「N本中M本目」の分母が動いて混乱するため）
+      const videos = files.filter(isVideoFile);
+      if (videos.length > 0) {
+        setVideoBatch((active) => {
+          if (active) {
+            nextVideosRef.current.push(...videos);
+            return active;
+          }
+          return videos;
+        });
+      }
       const images = files.filter((f) => f.type.startsWith("image/"));
       if (images.length === 0) return;
       setError(null);
@@ -145,6 +157,14 @@ export function EventPhotos({
   };
 
   const canDelete = (p: EventPhoto) => p.userId === me?.id || isStaff;
+
+  /** 動画フローが閉じた (#427)。実行中に追加選択があれば次のフローを始める。
+   * 成否のまとめ・50枠切れの扱いはフロー側（VideoUploadFlow）が持つ */
+  const handleVideoFlowClose = () => {
+    const next = nextVideosRef.current;
+    nextVideosRef.current = [];
+    setVideoBatch(next.length > 0 ? next : null);
+  };
 
   return (
     <Card variant="outlined">
@@ -401,13 +421,14 @@ export function EventPhotos({
         }}
       />
 
-      {/* 動画の変換＋アップロード (#408)。選ばれたときだけ読み込む */}
-      {videoFile && (
+      {/* 動画の投稿フロー (#408, #427)。選ばれたときだけ読み込む。
+          範囲選択→1本ずつ変換・アップロードの2段階はフロー側が持つ */}
+      {videoBatch && (
         <Suspense fallback={null}>
-          <VideoUploadDialog
+          <VideoUploadFlow
             eventId={eventId}
-            file={videoFile}
-            onClose={() => setVideoFile(null)}
+            files={videoBatch}
+            onClose={handleVideoFlowClose}
           />
         </Suspense>
       )}
