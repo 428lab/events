@@ -53,6 +53,8 @@ export interface VideoUploadPayload {
   durationMs: number;
   /** 送信バイトの進捗 0–1（進捗バーのアップロード区間用） */
   onProgress?: (fraction: number) => void;
+  /** キャンセル用。abort すると XHR を中断し、投稿は成立しない */
+  signal?: AbortSignal;
 }
 
 /** 動画アップロード。fetch でなく XHR なのは upload.onprogress のため
@@ -94,6 +96,14 @@ export function useUploadEventVideo(eventId: string) {
           reject(new Error(error));
         };
         xhr.onerror = () => reject(new Error("network_error"));
+        xhr.onabort = () => reject(new Error("aborted"));
+        if (p.signal) {
+          if (p.signal.aborted) {
+            reject(new Error("aborted"));
+            return;
+          }
+          p.signal.addEventListener("abort", () => xhr.abort(), { once: true });
+        }
         xhr.send(fd);
       }),
     onSuccess: () =>

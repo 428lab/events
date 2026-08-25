@@ -74,6 +74,7 @@ export function VideoUploadDialog({
   const preparedRef = useRef<Prepared | null>(null);
   const pendingRef = useRef<{ probed: ProbedVideo; plan: EncodePlan } | null>(null);
   const handleRef = useRef<VideoEncoder408Handle | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const startedRef = useRef(false);
   const closedRef = useRef(false);
 
@@ -89,6 +90,10 @@ export function VideoUploadDialog({
     async (prepared: Prepared) => {
       setPhase("uploading");
       setProgress(0.7);
+      // キャンセルで XHR ごと中断できるようにする（閉じるだけだと
+      // 裏で送信が完走して、キャンセルしたはずの動画が投稿されてしまう）
+      const abort = new AbortController();
+      abortRef.current = abort;
       try {
         await upload.mutateAsync({
           video: prepared.blob,
@@ -96,6 +101,7 @@ export function VideoUploadDialog({
           poster: prepared.poster,
           durationMs: prepared.durationMs,
           onProgress: (f) => setProgress(0.7 + 0.3 * f),
+          signal: abort.signal,
         });
         onClose();
       } catch (e) {
@@ -201,6 +207,7 @@ export function VideoUploadDialog({
   const handleCancel = () => {
     closedRef.current = true;
     void handleRef.current?.cancel();
+    abortRef.current?.abort();
     onClose();
   };
 

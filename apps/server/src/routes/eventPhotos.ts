@@ -115,6 +115,8 @@ function parseByteRange(
   const offset = Number(s);
   if (offset >= size) return "unsatisfiable";
   const endPos = e === "" ? size - 1 : Math.min(Number(e), size - 1);
+  // bytes=5-2 のような逆転は RFC 9110 上は「不正 → 無視して 200」が正だが、
+  // ブラウザが送る形ではないので単純に 416 に倒している
   if (endPos < offset) return "unsatisfiable";
   return { offset, length: endPos - offset + 1 };
 }
@@ -377,22 +379,26 @@ eventPhotoRoutes.post(
     // 「行はあるのに実体がない」壊れ方を避ける
     const videoId = crypto.randomUUID();
     const bucket = getBucket();
-    await bucket.put(videoR2Key(eventId, videoId), bytes, {
-      httpMetadata: { contentType: mime },
-    });
-    if (poster instanceof File && posterMime) {
-      await bucket.put(videoPosterR2Key(eventId, videoId), await poster.arrayBuffer(), {
-        httpMetadata: { contentType: posterMime },
-      });
-    }
     try {
+      await bucket.put(videoR2Key(eventId, videoId), bytes, {
+        httpMetadata: { contentType: mime },
+      });
+      if (poster instanceof File && posterMime) {
+        await bucket.put(
+          videoPosterR2Key(eventId, videoId),
+          await poster.arrayBuffer(),
+          { httpMetadata: { contentType: posterMime } },
+        );
+      }
       await eventPhotosRepo.createVideo(videoId, eventId, c.get("user").id, {
         durationMs,
         bytes: bytes.byteLength,
         mime,
       });
     } catch (e) {
-      // D1 insert に失敗したら R2 を掃除する（best-effort。残骸はログで追える）
+      // ポスター put か D1 insert に失敗したら R2 を掃除する（best-effort。
+      // 残骸はログで追える）。行が無い動画は削除 API にも purge にも乗らないため、
+      // ここで消し損ねると誰にも辿れない孤児になる。put 前に消しても無害
       try {
         await bucket.delete([
           videoR2Key(eventId, videoId),
