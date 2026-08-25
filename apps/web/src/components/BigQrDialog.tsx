@@ -146,11 +146,17 @@ export function BigQrDialog({
   useEffect(() => {
     if (!meetToken) return;
     setCurrent(meetToken.token);
-    if (!meetToken.consumed) return;
-    setJustRead(true);
+    if (meetToken.consumed) setJustRead(true);
+  }, [meetToken]);
+
+  // 合図を消すタイマーは合図の状態に結びつける (#420)。
+  // 上の effect に同居させると、次の応答（新しいデータオブジェクト）が
+  // 2.5秒以内に届いたとき cleanup がタイマーを消し、合図が出っぱなしになる
+  useEffect(() => {
+    if (!justRead) return;
     const timer = setTimeout(() => setJustRead(false), 2500);
     return () => clearTimeout(timer);
-  }, [meetToken]);
+  }, [justRead]);
 
   // 閉じたら次に開いたときのために持ち越さない（古いQRを描かないため）
   useEffect(() => {

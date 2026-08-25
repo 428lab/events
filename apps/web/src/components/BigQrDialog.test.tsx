@@ -139,6 +139,96 @@ describe("大きなQR表示 (#330)", () => {
     }
   });
 
+  it("ブラウザが「裏」扱いを報告していても見張りを止めない", async () => {
+    // 本番のスマホで「読まれても画面が変わらず、QRも切り替わらない」の原因 (#420)。
+    // 画面ロック・アプリ切替・ホーム画面追加・アプリ内ブラウザでは、表示中でも
+    // visibilityState が hidden のまま残る／visibilitychange が飛ばないことがある。
+    // ポーリングの実行を可視状態に依存させると、その間は3秒タイマーが空振りし続け、
+    // 復帰の refetchOnWindowFocus も同じ visibilitychange 頼みなので一緒に死ぬ。
+    // ダイアログを出している間は、可視状態の報告と無関係に見張り続けること
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    try {
+      const first = {
+        token: "mt1.u-1.1700000000.aaaa",
+        expiresAt: Date.now() + 600_000,
+        consumed: false,
+      };
+      getMock.mockResolvedValue(first);
+      renderDialog();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(
+        screen.getByTestId("big-qr").getAttribute("data-qr-url"),
+      ).toContain("aaaa");
+
+      // hidden のままでも3秒ごとの見張りが動くこと
+      await vi.advanceTimersByTimeAsync(MEET_TOKEN_POLL_MS + 100);
+      expect(getMock).toHaveBeenLastCalledWith(
+        `/meet/token?current=${encodeURIComponent(first.token)}`,
+        expect.objectContaining({ timeoutMs: expect.any(Number) }),
+      );
+
+      // 読まれたら hidden のままでも描き替わること
+      getMock.mockResolvedValue({
+        token: "mt1.u-1.1700000000.bbbb",
+        expiresAt: Date.now() + 600_000,
+        consumed: true,
+      });
+      await vi.advanceTimersByTimeAsync(MEET_TOKEN_POLL_MS + 100);
+      expect(
+        screen.getByTestId("big-qr").getAttribute("data-qr-url"),
+      ).toContain("bbbb");
+    } finally {
+      delete (document as { visibilityState?: unknown }).visibilityState;
+      vi.useRealTimers();
+    }
+  });
+
+  it("「読み取られました」は次のpoll応答が早く来ても出っぱなしにならない", async () => {
+    // 表示を消すタイマーがトークン監視の effect に同居していると、次の応答
+    // （新しいデータオブジェクト）が2.5秒以内に届いたとき cleanup がタイマーを
+    // 消してしまい、合図が出っぱなしになりうる (#420)。タイマーは合図の状態に
+    // 結びつけ、応答の到着とは独立に必ず消えることを保証する
+    vi.useFakeTimers();
+    try {
+      const first = {
+        token: "mt1.u-1.1700000000.aaaa",
+        expiresAt: Date.now() + 600_000,
+        consumed: false,
+      };
+      getMock.mockResolvedValue(first);
+      renderDialog();
+      await vi.advanceTimersByTimeAsync(50);
+
+      // 読まれた合図が「遅れて」届く（会場の回線で応答に2.9秒かかった想定）。
+      // 次の tick の応答が合図の 2.5 秒以内に重なる
+      const second = {
+        token: "mt1.u-1.1700000000.bbbb",
+        expiresAt: Date.now() + 600_000,
+        consumed: true,
+      };
+      getMock.mockImplementationOnce(
+        () => new Promise((r) => setTimeout(() => r(second), 2_900)),
+      );
+      // 以降の poll はすぐ返る（bbbb のまま・未読）
+      getMock.mockResolvedValue({ ...second, consumed: false });
+
+      // tick(3s) → 応答は 5.9s に到着、合図は 8.4s まで。次の tick(6s) の
+      // 応答は 6s すぎに届く
+      await vi.advanceTimersByTimeAsync(6_200);
+      expect(screen.getByText(/読み取られました/)).toBeTruthy();
+
+      // 合図の 2.5 秒が過ぎたら消えること（出っぱなしにならない）
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(screen.queryByText(/読み取られました/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("閉じている間はトークンを取りに行かない", () => {
     getMock.mockResolvedValue({ token: "mt1.x.1.y", expiresAt: 0, consumed: false });
     renderDialog(false);

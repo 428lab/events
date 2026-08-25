@@ -9,7 +9,7 @@ import { api } from "./client.js";
  * 最中に変わると失敗し続けるし、行列の2人目以降が使用済みで弾かれる）。
  * 代わりに「読まれたか」を短い間隔で確かめ、読まれた直後だけ描き替える。
  * 3秒にしたのは、次の人にQRを向け直すまでの間に新しいものが出ていてほしい
- * ため。表示している間だけ・画面が見えている間だけ動かす。
+ * ため。表示している間だけ動かす（enabled ＝ ダイアログの開閉に連動）。
  */
 export const MEET_TOKEN_POLL_MS = 3_000;
 
@@ -35,8 +35,18 @@ export function useMyMeetToken(enabled: boolean, current: string | null) {
         { timeoutMs: MEET_REQUEST_TIMEOUT_MS },
       ),
     refetchInterval: enabled ? MEET_TOKEN_POLL_MS : false,
-    // 裏に回っている間は見張らない（無駄に叩き続けない）
-    refetchIntervalInBackground: false,
+    // ブラウザが報告する可視状態には依存させない (#420)。
+    //
+    // false（既定）だと、実行が focusManager.isFocused()（= visibilityState）
+    // 頼みになる。スマホでは画面ロック・アプリ切替・ホーム画面追加・アプリ内
+    // ブラウザで visibilityState が hidden のまま残る／visibilitychange が
+    // 飛ばないことがあり、そうなると表示中なのに見張りが完全に止まる。
+    // しかも復帰経路の refetchOnWindowFocus も同じ visibilitychange 頼みなので、
+    // 一緒に死ぬ＝「読まれても合図が出ず、QRも切り替わらない」になる。
+    // 見張りの期間は enabled（ダイアログの開閉）で既に閉じているので、
+    // ここで可視状態の門を重ねる必要はない。本当に裏へ回った間はブラウザ側が
+    // タイマーを止める・間引くため、叩きすぎにもならない
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
     gcTime: 0,
     staleTime: 0,
