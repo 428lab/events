@@ -294,12 +294,18 @@ export const adminModerationRepo = {
   async findPhotoForAdmin(
     eventId: string,
     photoId: string,
-  ): Promise<{ id: string; eventId: string } | null> {
-    const row = await one<{ id: string; event_id: string }>(
-      "SELECT id, event_id FROM event_photo WHERE id = ? AND event_id = ?",
+  ): Promise<{ id: string; eventId: string; kind: "photo" | "video" } | null> {
+    const row = await one<{ id: string; event_id: string; kind: string }>(
+      "SELECT id, event_id, kind FROM event_photo WHERE id = ? AND event_id = ?",
       photoId,
       eventId,
     );
-    return row ? { id: row.id, eventId: row.event_id } : null;
+    return row
+      ? {
+          id: row.id,
+          eventId: row.event_id,
+          kind: row.kind === "video" ? "video" : "photo",
+        }
+      : null;
   },
 };

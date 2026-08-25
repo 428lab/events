@@ -19,9 +19,16 @@ import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { UserPhoto, UserPhotoFacets } from "@eventer/shared";
 import { useUserPhotos } from "../../api/eventPhotoHooks.js";
+import {
+  VideoThumbOverlay,
+  eventMediaPosterUrl,
+  eventMediaThumbUrl,
+  eventMediaVideoUrl,
+} from "../videoThumb.js";
 
+/** サムネイル（動画はポスター画像 #408） */
 const userPhotoUrl = (p: UserPhoto) =>
-  `/api/events/${p.eventId}/photos/${p.id}/image`;
+  eventMediaThumbUrl(p.eventId, p.id, p.kind);
 
 /** date input の値（ローカル日付）→ その日の始まり/終わりの ms */
 const dayStart = (d: string) =>
@@ -231,8 +238,17 @@ export function ProfileMediaTab({ handle }: { handle: string }) {
                 src={userPhotoUrl(p)}
                 alt=""
                 loading="lazy"
+                onError={
+                  p.kind === "video"
+                    ? (e) => {
+                        // ポスターなし動画はグレー地＋再生アイコンをプレースホルダに
+                        e.currentTarget.style.display = "none";
+                      }
+                    : undefined
+                }
                 sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
               />
+              {p.kind === "video" && <VideoThumbOverlay durationMs={p.durationMs} />}
               {p.commentCount > 0 && (
                 <Stack
                   direction="row"
@@ -280,17 +296,30 @@ export function ProfileMediaTab({ handle }: { handle: string }) {
             >
               <CloseIcon />
             </IconButton>
-            <Box
-              component="img"
-              src={userPhotoUrl(open)}
-              alt=""
-              sx={{
-                display: "block",
-                maxWidth: "90vw",
-                maxHeight: "85vh",
-                objectFit: "contain",
-              }}
-            />
+            {open.kind === "video" ? (
+              // 自動再生はしない（controls からの操作のみ #408）
+              <Box
+                component="video"
+                controls
+                playsInline
+                preload="metadata"
+                poster={eventMediaPosterUrl(open.eventId, open.id)}
+                src={eventMediaVideoUrl(open.eventId, open.id)}
+                sx={{ display: "block", maxWidth: "90vw", maxHeight: "85vh" }}
+              />
+            ) : (
+              <Box
+                component="img"
+                src={userPhotoUrl(open)}
+                alt=""
+                sx={{
+                  display: "block",
+                  maxWidth: "90vw",
+                  maxHeight: "85vh",
+                  objectFit: "contain",
+                }}
+              />
+            )}
             <Box
               sx={{
                 position: "absolute",

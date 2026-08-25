@@ -1,25 +1,18 @@
 import { useMemo, useState } from "react";
-import {
-  Box,
-  ButtonBase,
-  Chip,
-  Dialog,
-  IconButton,
-  Link,
-  Stack,
-  Typography,
-} from "@mui/material";
+import { Box, Chip, Link, Stack, Typography } from "@mui/material";
 import type { Theme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import CloseIcon from "@mui/icons-material/Close";
 import PersonAddAlt1Icon from "@mui/icons-material/PersonAddAlt1";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import type { EventTimelinePhotos, MyEventSummary } from "@eventer/shared";
+import {
+  TimelinePhotoLightbox,
+  TimelinePhotoStrip,
+  type OpenPhoto,
+} from "./TimelinePhotoStrip.js";
 import { eventImageUrl } from "../api/hooks.js";
 import { eventColor } from "./EventCard.js";
 import { DraftChip, isDraftEvent } from "./DraftChip.js";
@@ -160,113 +153,6 @@ function Meta({
       {icon}
       {children}
     </Box>
-  );
-}
-
-const photoUrl = (eventId: string, photoId: string) =>
-  `/api/events/${eventId}/photos/${photoId}/image`;
-
-/** 拡大表示中の写真 */
-interface OpenPhoto {
-  eventId: string;
-  eventTitle: string;
-  photoIds: string[];
-  index: number;
-}
-
-/** カードに添える公開写真のサムネイル。コメントが多い順に数枚だけ並べ、
- * コメント数そのものは出さない（並び順の基準としてしか使わない）。
- * 残りは「+N」でだけ示す */
-function PhotoStrip({
-  eventId,
-  eventTitle,
-  photos,
-  onOpen,
-}: {
-  eventId: string;
-  eventTitle: string;
-  photos: EventTimelinePhotos;
-  onOpen: (p: OpenPhoto) => void;
-}) {
-  const { t } = useTranslation();
-  // 取得に失敗した写真。イベントの公開設定が読み込み後に変わると 403/404 に
-  // なり得るので、壊れた画像アイコンではなく無地の枠で出す
-  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
-  // サーバーも同じ順で返すが、並び順はこの画面の約束なのでここでも保証しておく
-  const ids = [...photos.photos]
-    .sort((a, b) => b.commentCount - a.commentCount)
-    .map((p) => p.id);
-  const rest = Math.max(0, photos.total - ids.length);
-  if (ids.length === 0) return null;
-  return (
-    <Stack
-      direction="row"
-      spacing={0.625}
-      alignItems="center"
-      sx={{ ml: "auto" }}
-      aria-label={t("profile.photoStrip")}
-    >
-      {ids.map((id, i) => (
-        <ButtonBase
-          key={id}
-          onClick={() => onOpen({ eventId, eventTitle, photoIds: ids, index: i })}
-          aria-label={t("profile.photoOpen", { n: i + 1 })}
-          sx={{
-            width: { xs: 31, sm: 36 },
-            height: { xs: 31, sm: 36 },
-            flexShrink: 0,
-            borderRadius: "9px",
-            overflow: "hidden",
-            bgcolor: "action.hover",
-            transition: "transform .14s ease, box-shadow .14s ease",
-            "&:hover, &.Mui-focusVisible": {
-              transform: "scale(1.14)",
-              zIndex: 3,
-              boxShadow: (theme) => `0 0 0 2px ${theme.palette.primary.main}`,
-            },
-          }}
-        >
-          {!failed.has(id) && (
-            <Box
-              component="img"
-              src={photoUrl(eventId, id)}
-              alt=""
-              loading="lazy"
-              onError={() =>
-                setFailed((prev) => new Set(prev).add(id))
-              }
-              sx={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-              }}
-            />
-          )}
-        </ButtonBase>
-      ))}
-      {rest > 0 && (
-        <Box
-          component="span"
-          title={t("profile.photoMore", { n: rest })}
-          sx={{
-            width: { xs: 31, sm: 36 },
-            height: { xs: 31, sm: 36 },
-            flexShrink: 0,
-            borderRadius: "9px",
-            display: "grid",
-            placeItems: "center",
-            fontSize: 11,
-            fontWeight: 800,
-            color: "text.secondary",
-            border: "1px dashed",
-            borderColor: "divider",
-          }}
-        >
-          +{rest}
-        </Box>
-      )}
-    </Stack>
   );
 }
 
@@ -494,7 +380,7 @@ function TimelineCard({
             />
           )}
           {photos && (
-            <PhotoStrip
+            <TimelinePhotoStrip
               eventId={event.id}
               eventTitle={event.title}
               photos={photos}
@@ -652,126 +538,8 @@ export function ParticipationTimeline({
         ))}
       </Box>
 
-      <PhotoLightbox open={open} onChange={setOpen} onClose={() => setOpen(null)} />
+      <TimelinePhotoLightbox open={open} onChange={setOpen} onClose={() => setOpen(null)} />
     </Box>
   );
 }
 
-/** 写真の拡大表示。開くのはクリック/タップのみ（hover では開かない） */
-function PhotoLightbox({
-  open,
-  onChange,
-  onClose,
-}: {
-  open: OpenPhoto | null;
-  onChange: (p: OpenPhoto) => void;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  if (!open) return null;
-  const { eventId, eventTitle, photoIds, index } = open;
-  const step = (d: number) =>
-    onChange({
-      ...open,
-      index: (index + d + photoIds.length) % photoIds.length,
-    });
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      maxWidth="lg"
-      aria-label={t("profile.photoLightbox")}
-      // ←→ で前後の写真へ。閉じるは Esc と背景クリック（Dialog 側）と
-      // 閉じるボタン。閉じたときのフォーカス戻しも Dialog に任せる
-      onKeyDown={(e) => {
-        if (photoIds.length < 2) return;
-        if (e.key === "ArrowLeft") step(-1);
-        else if (e.key === "ArrowRight") step(1);
-      }}
-    >
-      <Box sx={{ position: "relative", bgcolor: "#000" }}>
-        <IconButton
-          onClick={onClose}
-          aria-label={t("common.close")}
-          sx={{ position: "absolute", top: 8, right: 8, color: "#fff", zIndex: 1 }}
-        >
-          <CloseIcon />
-        </IconButton>
-        {photoIds.length > 1 && (
-          <>
-            <IconButton
-              onClick={() => step(-1)}
-              aria-label={t("profile.photoPrev")}
-              sx={{
-                position: "absolute",
-                top: "50%",
-                left: 8,
-                transform: "translateY(-50%)",
-                color: "#fff",
-                zIndex: 1,
-              }}
-            >
-              <ChevronLeftIcon />
-            </IconButton>
-            <IconButton
-              onClick={() => step(1)}
-              aria-label={t("profile.photoNext")}
-              sx={{
-                position: "absolute",
-                top: "50%",
-                right: 8,
-                transform: "translateY(-50%)",
-                color: "#fff",
-                zIndex: 1,
-              }}
-            >
-              <ChevronRightIcon />
-            </IconButton>
-          </>
-        )}
-        <Box
-          component="img"
-          src={photoUrl(eventId, photoIds[index])}
-          alt=""
-          sx={{
-            display: "block",
-            maxWidth: "90vw",
-            maxHeight: "85vh",
-            objectFit: "contain",
-          }}
-        />
-        <Box
-          sx={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            p: 1,
-            bgcolor: "rgba(0,0,0,0.55)",
-            display: "flex",
-            alignItems: "center",
-            gap: 1,
-          }}
-        >
-          <Link
-            component={RouterLink}
-            to={`/events/${eventId}`}
-            sx={{ color: "#fff", minWidth: 0 }}
-            underline="hover"
-            noWrap
-          >
-            {t("profile.viewEvent", { title: eventTitle })}
-          </Link>
-          {photoIds.length > 1 && (
-            <Typography
-              sx={{ color: "#fff", ml: "auto", fontVariantNumeric: "tabular-nums" }}
-              variant="body2"
-            >
-              {index + 1} / {photoIds.length}
-            </Typography>
-          )}
-        </Box>
-      </Box>
-    </Dialog>
-  );
-}

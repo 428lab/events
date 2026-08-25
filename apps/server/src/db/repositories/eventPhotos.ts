@@ -11,10 +11,18 @@ interface Row {
   event_id: string;
   user_id: string;
   created_at: number;
+  kind: string;
+  duration_ms: number | null;
   username: string;
   global_name: string | null;
   avatar_url: string | null;
   comment_count: number;
+}
+
+/** DB の kind 列 → API の型。既存行は DEFAULT 'photo' なので null は来ないが、
+ * 想定外の値でも video 扱いにはしない（動画配信ルートに乗せない側へ倒す） */
+function toKind(kind: string | null): "photo" | "video" {
+  return kind === "video" ? "video" : "photo";
 }
 
 function toPhoto(row: Row): EventPhoto {
@@ -26,6 +34,8 @@ function toPhoto(row: Row): EventPhoto {
     userAvatarUrl: row.avatar_url,
     commentCount: row.comment_count ?? 0,
     createdAt: row.created_at,
+    kind: toKind(row.kind),
+    durationMs: row.duration_ms,
   };
 }
 
@@ -44,7 +54,7 @@ const COMMENT_COUNT = `${COMMENT_COUNT_EXPR} AS comment_count`;
 // WHERE をここに含めておくことで、呼び出し側は AND で足すだけになり、
 // 経路が増えたときに除外を書き忘れられないようにしている
 // （非表示のものを見られるのは管理画面の adminModeration 専用クエリだけ）
-const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at,
+const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at, p.kind, p.duration_ms,
   u.username, u.global_name, u.avatar_url, ${COMMENT_COUNT}
   FROM event_photo p JOIN user u ON u.id = p.user_id
     AND u.deleted_at IS NULL
@@ -119,14 +129,16 @@ export const eventPhotosRepo = {
     eventId: string;
     userId: string;
     adminHidden: boolean;
+    kind: "photo" | "video";
   } | null> {
     const row = await one<{
       id: string;
       event_id: string;
       user_id: string;
       admin_hidden_at: number | null;
+      kind: string;
     }>(
-      "SELECT id, event_id, user_id, admin_hidden_at FROM event_photo WHERE id = ?",
+      "SELECT id, event_id, user_id, admin_hidden_at, kind FROM event_photo WHERE id = ?",
       id,
     );
     return row
@@ -135,6 +147,7 @@ export const eventPhotosRepo = {
           eventId: row.event_id,
           userId: row.user_id,
           adminHidden: row.admin_hidden_at !== null,
+          kind: toKind(row.kind),
         }
       : null;
   },
@@ -162,21 +175,48 @@ export const eventPhotosRepo = {
     return id;
   },
 
+  /** 動画の行を作る (#408)。写真と違い R2 put が先・D1 insert が後
+   * （大きいオブジェクトほど put 失敗の確率が高く、「行はあるのに実体がない」
+   * 壊れ方を避けたい）ので、R2 キーに使った id を呼び出し側から受け取る */
+  async createVideo(
+    id: string,
+    eventId: string,
+    userId: string,
+    meta: { durationMs: number; bytes: number; mime: string },
+  ): Promise<void> {
+    await run(
+      `INSERT INTO event_photo (id, event_id, user_id, created_at, kind, duration_ms, bytes, mime)
+       VALUES (?, ?, ?, ?, 'video', ?, ?, ?)`,
+      id,
+      eventId,
+      userId,
+      Date.now(),
+      meta.durationMs,
+      meta.bytes,
+      meta.mime,
+    );
+  },
+
   async delete(id: string): Promise<void> {
     await run("DELETE FROM event_photo WHERE id = ?", id);
   },
 
-  /** 退会時のR2掃除用: 本人が投稿した写真の (id, eventId) 一覧 (#244)。
+  /** 退会時のR2掃除用: 本人が投稿した写真・動画の (id, eventId, kind) 一覧 (#244)。
    * ここは表示ではなく実体の掃除なので、運営が非表示にした写真 (#278) も必ず含める
-   * （除外すると R2 にファイルだけが残る） */
+   * （除外すると R2 にファイルだけが残る）。
+   * kind は R2 キーの組み立てに使う（video は本体＋poster の2キー #408） */
   async listIdsByUser(
     userId: string,
-  ): Promise<Array<{ id: string; eventId: string }>> {
-    const rows = await many<{ id: string; event_id: string }>(
-      "SELECT id, event_id FROM event_photo WHERE user_id = ?",
+  ): Promise<Array<{ id: string; eventId: string; kind: "photo" | "video" }>> {
+    const rows = await many<{ id: string; event_id: string; kind: string }>(
+      "SELECT id, event_id, kind FROM event_photo WHERE user_id = ?",
       userId,
     );
-    return rows.map((r) => ({ id: r.id, eventId: r.event_id }));
+    return rows.map((r) => ({
+      id: r.id,
+      eventId: r.event_id,
+      kind: toKind(r.kind),
+    }));
   },
 
   /** 公開プロフィール用: ユーザーが公開設定イベントに投稿した写真（ページング #407）。
@@ -196,10 +236,12 @@ export const eventPhotosRepo = {
       event_id: string;
       event_title: string;
       created_at: number;
+      kind: string;
+      duration_ms: number | null;
       comment_count: number;
     }>(
       `SELECT p.id, p.event_id, e.title AS event_title, p.created_at,
-              ${COMMENT_COUNT}
+              p.kind, p.duration_ms, ${COMMENT_COUNT}
        FROM event_photo p
        JOIN event e ON e.id = p.event_id
        WHERE ${where}
@@ -215,6 +257,8 @@ export const eventPhotosRepo = {
       eventTitle: r.event_title,
       commentCount: r.comment_count ?? 0,
       createdAt: r.created_at,
+      kind: toKind(r.kind),
+      durationMs: r.duration_ms,
     }));
   },
 
@@ -284,11 +328,13 @@ export const eventPhotosRepo = {
     const rows = await many<{
       id: string;
       event_id: string;
+      kind: string;
+      duration_ms: number | null;
       comment_count: number;
       total: number;
     }>(
-      `SELECT id, event_id, comment_count, total FROM (
-         SELECT p.id, p.event_id, p.created_at, ${COMMENT_COUNT},
+      `SELECT id, event_id, kind, duration_ms, comment_count, total FROM (
+         SELECT p.id, p.event_id, p.created_at, p.kind, p.duration_ms, ${COMMENT_COUNT},
                 ROW_NUMBER() OVER (
                   PARTITION BY p.event_id
                   ORDER BY ${COMMENT_COUNT_EXPR} DESC, p.created_at DESC, p.id
@@ -310,7 +356,12 @@ export const eventPhotosRepo = {
         group = { eventId: r.event_id, photos: [], total: r.total };
         byEvent.set(r.event_id, group);
       }
-      group.photos.push({ id: r.id, commentCount: r.comment_count ?? 0 });
+      group.photos.push({
+        id: r.id,
+        commentCount: r.comment_count ?? 0,
+        kind: toKind(r.kind),
+        durationMs: r.duration_ms,
+      });
     }
     return [...byEvent.values()];
   },

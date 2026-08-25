@@ -274,3 +274,56 @@ describe("フィルタ (#407)", () => {
     );
   });
 });
+
+/**
+ * 動画 (#408) も同じ公開範囲の断片（PUBLIC_USER_PHOTO_COND）に乗ることの固定。
+ * 写真と別ユーザーで独立させ、上のフィクスチャの厳密一致を壊さない。
+ * 断片から絞り（例: e.status = 'published'）を外すと、
+ * ここの「不在」の検証が落ちる（#407 PR2 と同じ型の実証）。
+ */
+describe("動画も同じ公開範囲に乗る (#408)", () => {
+  /** 動画の行を直接入れる（R2 実体はこのテストでは見ない） */
+  async function insertVideo(
+    id: string,
+    eventId: string,
+    userId: string,
+    createdAt: number,
+    adminHiddenAt: number | null = null,
+  ): Promise<void> {
+    await env.DB.prepare(
+      "INSERT INTO event_photo (id, event_id, user_id, created_at, admin_hidden_at, kind, duration_ms, bytes, mime) VALUES (?, ?, ?, ?, ?, 'video', 42000, 100, 'video/webm')",
+    )
+      .bind(id, eventId, userId, createdAt, adminHiddenAt)
+      .run();
+  }
+
+  it("公開イベントの動画だけが kind つきで出る。下書き・写真非公開・運営非表示は不在", async () => {
+    const uid = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at) VALUES (?, ?, ?, NULL, NULL, ?)",
+    )
+      .bind(uid, `nostr:${uid}`, `v_${uid.slice(0, 6)}`, Date.now())
+      .run();
+    await insertVideo("vPub", fx.pubA, uid, 1000);
+    await insertVideo("vDraft", fx.draftE, uid, 2000);
+    await insertVideo("vPriv", fx.privE, uid, 3000);
+    await insertVideo("vHidden", fx.pubA, uid, 4000, 9999);
+
+    const res = await SELF.fetch(`${BASE}/api/public/users/${uid}/photos`);
+    expect(res.status).toBe(200);
+    const page = (await res.json()) as UserPhotosPage;
+    expect(page.photos.map((p) => p.id)).toEqual(["vPub"]);
+    expect(page.total).toBe(1);
+    expect(page.photos[0]).toMatchObject({ kind: "video", durationMs: 42000 });
+    // facets にも下書き・非公開イベントの名前が漏れない
+    expect(page.facets.events.map((e) => e.id)).toEqual([fx.pubA]);
+
+    // 下書きイベントの id 直指定でも 0 件（公開条件は AND のまま）
+    const direct = await SELF.fetch(
+      `${BASE}/api/public/users/${uid}/photos?eventId=${fx.draftE}`,
+    );
+    const directPage = (await direct.json()) as UserPhotosPage;
+    expect(directPage.photos).toEqual([]);
+    expect(directPage.total).toBe(0);
+  });
+});

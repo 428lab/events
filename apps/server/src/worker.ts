@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { bindEnv, getAssets, env, type Env } from "./runtime.js";
-import { gamificationFromStats } from "@eventer/shared";
+import {
+  EVENT_PHOTO_MAX_BYTES,
+  EVENT_VIDEO_MAX_BYTES,
+  gamificationFromStats,
+} from "@eventer/shared";
 import type { Event, User } from "@eventer/shared";
 import { authRoutes } from "./routes/auth.js";
 import { eventRoutes } from "./routes/events.js";
@@ -31,6 +35,8 @@ import {
   eventPhotoRoutes,
   getEventPhotos,
   getEventPhotoImage,
+  getEventPhotoVideo,
+  getEventPhotoPoster,
   getPhotoComments,
 } from "./routes/eventPhotos.js";
 import {
@@ -110,14 +116,22 @@ import { adminModerationRoutes } from "./routes/adminModeration.js";
 import { adminTrendingRoutes } from "./routes/adminTrending.js";
 
 const api = new Hono();
-// リクエストボディの上限（最大の画像アップロード 6MB より少し上）
-api.use(
-  "*",
-  bodyLimit({
-    maxSize: 8 * 1024 * 1024,
-    onError: (c) => c.json({ error: "too_large" }, 413),
-  }),
-);
+// リクエストボディの上限。既定は最大の画像アップロード 6MB より少し上。
+// 動画アップロード (#408) のパスだけ、本体＋ポスター＋multipart 境界ぶんまで広げる。
+// 門はこの1枚だけ（ルート側に別の bodyLimit を重ねない）。ルート内の
+// 個別上限（EVENT_VIDEO_MAX_BYTES 等）はこの門をくぐった後の検証
+const DEFAULT_BODY_MAX = 8 * 1024 * 1024;
+const VIDEO_BODY_MAX =
+  EVENT_VIDEO_MAX_BYTES + EVENT_PHOTO_MAX_BYTES + 1024 * 1024;
+const VIDEO_UPLOAD_PATH = /^\/api\/events\/[^/]+\/videos$/;
+api.use("*", (c, next) => {
+  const isVideoUpload =
+    c.req.method === "POST" && VIDEO_UPLOAD_PATH.test(c.req.path);
+  return bodyLimit({
+    maxSize: isVideoUpload ? VIDEO_BODY_MAX : DEFAULT_BODY_MAX,
+    onError: (cc) => cc.json({ error: "too_large" }, 413),
+  })(c, next);
+});
 api.get("/health", (c) =>
   c.json({ ok: true, discordConfigured: env.discordConfigured }),
 );
@@ -145,9 +159,11 @@ api.get("/events/:id/image", getEventImage);
 api.get("/events/:id/awards", getEventAwards);
 // 公開: 採点結果一覧（締切後/終了後のみ。eventRoutes より先に登録）
 api.get("/events/:id/scores/results", getEventScoreResults);
-// 公開/参加者限定: イベント写真（photos_public 判定は各ハンドラ内。eventRoutes より先に登録）
+// 公開/参加者限定: イベント写真・動画（photos_public 判定は各ハンドラ内。eventRoutes より先に登録）
 api.get("/events/:id/photos", getEventPhotos);
 api.get("/events/:id/photos/:photoId/image", getEventPhotoImage);
+api.get("/events/:id/photos/:photoId/video", getEventPhotoVideo);
+api.get("/events/:id/photos/:photoId/poster", getEventPhotoPoster);
 api.get("/events/:id/photos/:photoId/comments", getPhotoComments);
 // 公開: イベントコメント一覧（下書きはメンバーのみ。eventRoutes より先に登録）
 api.get("/events/:id/comments", getEventComments);

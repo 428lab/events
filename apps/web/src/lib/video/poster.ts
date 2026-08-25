@@ -1,4 +1,5 @@
 import { CanvasSink } from "mediabunny";
+import { EVENT_PHOTO_MAX_BYTES } from "@eventer/shared";
 import { computeTargetDims } from "./plan.js";
 import type { ProbedVideo } from "./probe.js";
 
@@ -35,7 +36,15 @@ export async function extractVideoPoster(probed: ProbedVideo): Promise<Blob | nu
     const wrapped = (await sink.getCanvas(t)) ?? (await sink.getCanvas(0));
     if (!wrapped) return null;
 
-    return await canvasToImageBlob(wrapped.canvas);
+    // サーバーの上限（EVENT_PHOTO_MAX_BYTES）は送信前にここで担保する。
+    // 超えたまま送ると 40MB の本体を送り切った後に全体が 413 で失敗し、
+    // 再送しても同じ結果になる。品質を落として再試行し、それでも
+    // 収まらなければポスターなしで送る（プレースホルダ表示になるだけ）
+    for (const quality of [0.8, 0.5]) {
+      const blob = await canvasToImageBlob(wrapped.canvas, quality);
+      if (blob && blob.size <= EVENT_PHOTO_MAX_BYTES) return blob;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -43,17 +52,18 @@ export async function extractVideoPoster(probed: ProbedVideo): Promise<Blob | nu
 
 async function canvasToImageBlob(
   canvas: HTMLCanvasElement | OffscreenCanvas,
+  quality: number,
 ): Promise<Blob | null> {
   if (typeof OffscreenCanvas !== "undefined" && canvas instanceof OffscreenCanvas) {
     try {
-      return await canvas.convertToBlob({ type: "image/webp", quality: 0.8 });
+      return await canvas.convertToBlob({ type: "image/webp", quality });
     } catch {
-      return await canvas.convertToBlob({ type: "image/jpeg", quality: 0.8 });
+      return await canvas.convertToBlob({ type: "image/jpeg", quality });
     }
   }
   const el = canvas as HTMLCanvasElement;
   const toBlob = (type: string) =>
-    new Promise<Blob | null>((resolve) => el.toBlob(resolve, type, 0.8));
+    new Promise<Blob | null>((resolve) => el.toBlob(resolve, type, quality));
   const webp = await toBlob("image/webp");
   // toBlob は非対応形式だと別形式（PNG）で返すことがあるので型を確かめる
   if (webp && webp.type === "image/webp") return webp;

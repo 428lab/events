@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-/** イベントフォト（参加者がアップロード。閲覧も参加者のみ） */
+/** メディアの種別 (#408)。event_photo テーブルに写真と動画が混在する */
+export const mediaKindSchema = z.enum(["photo", "video"]);
+export type MediaKind = z.infer<typeof mediaKindSchema>;
+
+/** イベントフォト（参加者がアップロード。閲覧も参加者のみ）。
+ * #408 から動画も同じ行・同じ一覧に混ざる（kind で見分ける） */
 export const eventPhotoSchema = z.object({
   id: z.string(),
   eventId: z.string(),
@@ -11,6 +16,9 @@ export const eventPhotoSchema = z.object({
   /** この写真へのコメント数（サムネのオーバーレイ表示用） */
   commentCount: z.number(),
   createdAt: z.number(),
+  kind: mediaKindSchema,
+  /** video のみ。長さバッジ表示用（クライアント申告値。photo は null） */
+  durationMs: z.number().nullable(),
 });
 export type EventPhoto = z.infer<typeof eventPhotoSchema>;
 
@@ -32,13 +40,15 @@ export const createPhotoCommentInput = z.object({
 });
 export type CreatePhotoCommentInput = z.infer<typeof createPhotoCommentInput>;
 
-/** 公開プロフィールのギャラリー用（公開設定イベントに投稿した写真） */
+/** 公開プロフィールのギャラリー用（公開設定イベントに投稿した写真・動画） */
 export const userPhotoSchema = z.object({
   id: z.string(),
   eventId: z.string(),
   eventTitle: z.string(),
   commentCount: z.number(),
   createdAt: z.number(),
+  kind: mediaKindSchema,
+  durationMs: z.number().nullable(),
 });
 export type UserPhoto = z.infer<typeof userPhotoSchema>;
 
@@ -73,6 +83,8 @@ export type UserPhotosPage = z.infer<typeof userPhotosPageSchema>;
 export const timelinePhotoSchema = z.object({
   id: z.string(),
   commentCount: z.number(),
+  kind: mediaKindSchema,
+  durationMs: z.number().nullable(),
 });
 export type TimelinePhoto = z.infer<typeof timelinePhotoSchema>;
 

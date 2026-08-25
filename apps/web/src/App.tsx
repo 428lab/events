@@ -97,7 +97,8 @@ const NameCardPrintPage = lazy(() =>
   })),
 );
 
-/** 動画エンコードの実機計測 (#408 の一時ページ)。ナビには載せず URL 直打ちのみ。
+/** 動画エンコードの実機計測 (#408)。新端末の検証用に維持。
+ * ナビには載せず URL 直打ちのみ。
  * 変換ライブラリ（mediabunny）が大きいため遅延読み込みで分離する */
 const DevVideoEncodePage = lazy(() =>
   import("./pages/DevVideoEncodePage.js").then((m) => ({
@@ -351,7 +352,7 @@ export function App() {
         <Route path="/notifications" element={<NotificationsPage />} />
         {/* 運営への招待 (#339)。承諾するまでイベントページは開けないのでここで返事する */}
         <Route path="/staff-invites" element={<StaffInvitesPage />} />
-        {/* 動画エンコード計測 (#408 の一時ページ)。ログイン必須・URL直打ちのみ */}
+        {/* 動画エンコード計測 (#408)。検証用に維持。ログイン必須・URL直打ちのみ */}
         <Route
           path="/dev/video-encode"
           element={

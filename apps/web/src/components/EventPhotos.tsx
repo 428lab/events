@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -35,9 +35,28 @@ import {
 import { CounterTextField } from "./CounterTextField.js";
 import { encodeImageForUpload } from "../lib/encodeImage.js";
 import { formatDateTime } from "../lib/format.js";
+import {
+  VideoThumbOverlay,
+  eventMediaPosterUrl,
+  eventMediaThumbUrl,
+  eventMediaVideoUrl,
+} from "./videoThumb.js";
 
 const photoUrl = (eventId: string, photoId: string) =>
   `/api/events/${eventId}/photos/${photoId}/image`;
+
+/** 動画の投稿フロー (#408)。変換ライブラリ（mediabunny）が大きいので、
+ * 動画を選んだときだけ遅延読み込みする */
+const VideoUploadDialog = lazy(() =>
+  import("./VideoUploadDialog.js").then((m) => ({
+    default: m.VideoUploadDialog,
+  })),
+);
+
+/** 選択されたファイル群から動画を1本だけ拾う (#408)。
+ * 複数選択に混ざっていた場合は写真は全部・動画は1本目のみ処理する */
+const isVideoFile = (f: File) =>
+  f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(f.name);
 
 /** イベントフォトギャラリー（参加者は常に、公開設定時は誰でも閲覧） */
 export function EventPhotos({
@@ -67,9 +86,13 @@ export function EventPhotos({
   const [lightbox, setLightbox] = useState<EventPhoto | null>(null);
   const [uploading, setUploading] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
+      // 動画 (#408) は専用フロー（変換＋進捗ダイアログ）へ。1回の操作で1本のみ
+      const video = files.find(isVideoFile);
+      if (video) setVideoFile(video);
       const images = files.filter((f) => f.type.startsWith("image/"));
       if (images.length === 0) return;
       setError(null);
@@ -181,7 +204,7 @@ export function EventPhotos({
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
             hidden
             onChange={onFileInput}
@@ -263,11 +286,22 @@ export function EventPhotos({
               >
                 <Box
                   component="img"
-                  src={photoUrl(eventId, p.id)}
+                  src={eventMediaThumbUrl(eventId, p.id, p.kind)}
                   alt=""
                   loading="lazy"
+                  onError={
+                    p.kind === "video"
+                      ? (e) => {
+                          // ポスターなし動画はグレー地＋再生アイコンをプレースホルダに
+                          e.currentTarget.style.display = "none";
+                        }
+                      : undefined
+                  }
                   sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                 />
+                {p.kind === "video" && (
+                  <VideoThumbOverlay durationMs={p.durationMs} />
+                )}
                 {/* コメント数バッジ */}
                 {p.commentCount > 0 && (
                   <Stack
@@ -366,6 +400,17 @@ export function EventPhotos({
           }
         }}
       />
+
+      {/* 動画の変換＋アップロード (#408)。選ばれたときだけ読み込む */}
+      {videoFile && (
+        <Suspense fallback={null}>
+          <VideoUploadDialog
+            eventId={eventId}
+            file={videoFile}
+            onClose={() => setVideoFile(null)}
+          />
+        </Suspense>
+      )}
     </Card>
   );
 }
@@ -442,17 +487,34 @@ function PhotoLightbox({
             >
               <CloseIcon />
             </IconButton>
-            <Box
-              component="img"
-              src={photoUrl(eventId, photo.id)}
-              alt=""
-              sx={{
-                display: "block",
-                maxWidth: "100%",
-                maxHeight: { xs: "50vh", md: "85vh" },
-                objectFit: "contain",
-              }}
-            />
+            {photo.kind === "video" ? (
+              // 自動再生はしない（controls からの操作のみ）
+              <Box
+                component="video"
+                controls
+                playsInline
+                preload="metadata"
+                poster={eventMediaPosterUrl(eventId, photo.id)}
+                src={eventMediaVideoUrl(eventId, photo.id)}
+                sx={{
+                  display: "block",
+                  maxWidth: "100%",
+                  maxHeight: { xs: "50vh", md: "85vh" },
+                }}
+              />
+            ) : (
+              <Box
+                component="img"
+                src={photoUrl(eventId, photo.id)}
+                alt=""
+                sx={{
+                  display: "block",
+                  maxWidth: "100%",
+                  maxHeight: { xs: "50vh", md: "85vh" },
+                  objectFit: "contain",
+                }}
+              />
+            )}
           </Box>
 
           {/* コメント欄 */}

@@ -120,9 +120,9 @@ export async function createVideoConversion(
       const buffer = target.buffer;
       if (!buffer) throw new Error("変換結果が空でした");
       if (buffer.byteLength > EVENT_VIDEO_MAX_BYTES) {
-        throw new Error(
-          `変換後のサイズが上限を超えました (${buffer.byteLength} > ${EVENT_VIDEO_MAX_BYTES})`,
-        );
+        // 呼び出し側が文言に変換するエラーコード（720p/30fps に絞った上で
+        // 超えるのは想定外に長い/複雑な映像だけ）
+        throw new Error("video_output_too_large");
       }
       return {
         blob: new Blob([buffer], { type: mime }),

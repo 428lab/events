@@ -44,6 +44,73 @@ export function useUploadEventPhoto(eventId: string) {
   });
 }
 
+/** 動画アップロード (#408) の入力。変換済みの Blob を multipart で送る */
+export interface VideoUploadPayload {
+  video: Blob;
+  mime: string;
+  /** ポスター画像。切り出せない環境では null（サーバーは省略可で受ける） */
+  poster: Blob | null;
+  durationMs: number;
+  /** 送信バイトの進捗 0–1（進捗バーのアップロード区間用） */
+  onProgress?: (fraction: number) => void;
+  /** キャンセル用。abort すると XHR を中断し、投稿は成立しない */
+  signal?: AbortSignal;
+}
+
+/** 動画アップロード。fetch でなく XHR なのは upload.onprogress のため
+ * （動画は分オーダーになり得るので進捗表示が必須） */
+export function useUploadEventVideo(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (p: VideoUploadPayload) =>
+      new Promise<void>((resolve, reject) => {
+        const fd = new FormData();
+        fd.append("video", new File([p.video], "video", { type: p.mime }));
+        if (p.poster) {
+          fd.append(
+            "poster",
+            new File([p.poster], "poster", {
+              type: p.poster.type || "image/webp",
+            }),
+          );
+        }
+        fd.append("durationMs", String(Math.round(p.durationMs)));
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/api/events/${eventId}/videos`);
+        xhr.withCredentials = true;
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) p.onProgress?.(e.loaded / e.total);
+        };
+        xhr.onload = () => {
+          if (xhr.status === 201) {
+            resolve();
+            return;
+          }
+          let error = "upload_failed";
+          try {
+            const body = JSON.parse(xhr.responseText) as { error?: string };
+            error = body.error ?? error;
+          } catch {
+            // JSON でない応答はそのまま汎用エラー
+          }
+          reject(new Error(error));
+        };
+        xhr.onerror = () => reject(new Error("network_error"));
+        xhr.onabort = () => reject(new Error("aborted"));
+        if (p.signal) {
+          if (p.signal.aborted) {
+            reject(new Error("aborted"));
+            return;
+          }
+          p.signal.addEventListener("abort", () => xhr.abort(), { once: true });
+        }
+        xhr.send(fd);
+      }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["event", eventId, "photos"] }),
+  });
+}
+
 export function useDeleteEventPhoto(eventId: string) {
   const qc = useQueryClient();
   return useMutation({

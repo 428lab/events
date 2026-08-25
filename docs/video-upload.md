@@ -207,16 +207,22 @@ ALTER TABLE event_photo ADD COLUMN mime TEXT;            -- video のみ。'vide
     （実装技術名は UI 文言に出さない）
 - ffmpeg.wasm の遅延ロード代替は採用しない（§2.4）
 - サムネイルが切り出せない環境（経路 3 と重なる）ではポスターなしを許容する
-  （一覧はプレースホルダ表示、§8）
+  （一覧はプレースホルダ表示、§8）。既知: 管理画面（adminModeration）の
+  コンテンツ一覧はポスターなし動画で壊れた画像アイコンになる（判断には
+  イベント側のギャラリーを開けば足りるため対応しない）
 
 ---
 
 ## 5. サムネイル（ポスター）
 
-- クライアントで 1 フレーム切り出す。mediabunny の frame sink で先頭付近
-  （0.5 秒地点、なければ先頭）のフレームを canvas に描き、既存の
-  `encodeImageForUpload`（`apps/web/src/lib/encodeImage.ts`、1600px・WebP・
-  品質 0.8）を通して画像化する。`<video>` + seek ではなく mediabunny を使うのは、
+- クライアントで 1 フレーム切り出す。mediabunny の CanvasSink で先頭付近
+  （0.5 秒地点、なければ先頭）のフレームを長辺 1600px に収めた canvas に描き、
+  そこから直接 WebP（非対応なら JPEG）品質 0.8 で画像化する（canvas が既に
+  手元にあるため `encodeImageForUpload` は通さない。同関数は <img> 経由の
+  読み込みが前提で、ここでは二度手間になる）。1.5MB を超えたら品質 0.5 で
+  再試行し、それでも収まらなければポスターなしで送る（超過したまま送ると
+  本体を送り切った後に全体が 413 になるため、上限は送信前に担保する）。
+  `<video>` + seek ではなく mediabunny を使うのは、
   変換と同じデコード経路なので「変換できるのにポスターだけ失敗」を避けられるため
   （`<video>` からの canvas 描画の先行例は `CheckinPage.tsx:346` の QR スキャン）
 - 動画本体と同じ multipart リクエストで一緒に上げる（§7.1）。上限は写真と同じ
