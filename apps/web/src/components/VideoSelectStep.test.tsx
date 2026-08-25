@@ -137,6 +137,22 @@ describe("VideoSelectStep (#427)", () => {
     expect(onResult.mock.calls[0]![0]).toEqual({ kind: "skip" });
   });
 
+  it("ボタン行は折り返し可能（スマホ幅で3つ全部が見えるように）", async () => {
+    // jsdom では 375px 幅のレイアウトを再現できないため、崩れの原因だった
+    // 「MUI 既定の nowrap」を上書きしていること（flex-wrap: wrap）を確かめる
+    probeMock.mockResolvedValue(probedOf(90_000));
+    renderStep({ index: 1, total: 2 });
+    await waitFor(() =>
+      expect(screen.getByTestId("trim-frame")).toBeInTheDocument(),
+    );
+    // 3ボタンが同じ行に居る
+    expect(screen.getByRole("button", { name: "この範囲で決定" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "すべてキャンセル" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "この動画をやめる" })).toBeInTheDocument();
+    const actions = document.querySelector(".MuiDialogActions-root");
+    expect(actions).toHaveStyle({ flexWrap: "wrap" });
+  });
+
   it("すべてキャンセル", async () => {
     probeMock.mockResolvedValue(probedOf(30_000));
     const onResult = renderStep({ index: 2, total: 3 });
