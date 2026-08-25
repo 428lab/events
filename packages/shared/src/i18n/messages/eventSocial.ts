@@ -223,6 +223,12 @@ const ja = {
   /** 変換済みデータは保持しているので、再送は変換なしでやり直せる */
   videoRetryUpload: "再送する",
 
+  /* ===== 複数本のキュー (#427) ===== */
+  videoQueueProgress: "動画 {{n}} 本中 {{m}} 本目",
+  videoQueueCancelAll: "すべてキャンセル",
+  /** キューを流し終えたときのまとめ（失敗があったときだけ出す） */
+  videoQueueSummary: "動画 {{ok}} 本を投稿しました（{{ng}} 本は失敗）。",
+
   /* ===== トリム (#425) ===== */
   videoTrimIntro:
     "動画が{{s}}秒を超えています。投稿する範囲（最大{{s}}秒）を選んでください。",
@@ -402,6 +408,10 @@ const en: Record<keyof typeof ja, string> = {
   videoDropAudioPost: "Post without sound",
   videoUploadFailed: "Failed to upload the video.",
   videoRetryUpload: "Retry",
+
+  videoQueueProgress: "Video {{m}} of {{n}}",
+  videoQueueCancelAll: "Cancel all",
+  videoQueueSummary: "Posted {{ok}} video(s) ({{ng}} failed).",
 
   videoTrimIntro:
     "The video is longer than {{s}} seconds. Choose the range to post (up to {{s}} seconds).",

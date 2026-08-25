@@ -52,11 +52,21 @@ const VideoUploadDialog = lazy(() =>
     default: m.VideoUploadDialog,
   })),
 );
+// 型だけの import はチャンク分割に影響しない
+import type { VideoUploadOutcome } from "./VideoUploadDialog.js";
 
-/** 選択されたファイル群から動画を1本だけ拾う (#408)。
- * 複数選択に混ざっていた場合は写真は全部・動画は1本目のみ処理する */
+/** 動画かどうか (#408)。複数選ばれたらキューで1本ずつ処理する (#427) */
 const isVideoFile = (f: File) =>
   f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(f.name);
+
+/** 動画キュー (#427)。files[0] が処理中の1本。total は今回の一連の本数で、
+ * 「N本中M本目」の分母（M = total - files.length + 1） */
+interface VideoQueue {
+  files: File[];
+  total: number;
+  uploaded: number;
+  failed: number;
+}
 
 /** イベントフォトギャラリー（参加者は常に、公開設定時は誰でも閲覧） */
 export function EventPhotos({
@@ -86,13 +96,24 @@ export function EventPhotos({
   const [lightbox, setLightbox] = useState<EventPhoto | null>(null);
   const [uploading, setUploading] = useState(0);
   const [dragOver, setDragOver] = useState(false);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoQueue, setVideoQueue] = useState<VideoQueue | null>(null);
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
-      // 動画 (#408) は専用フロー（変換＋進捗ダイアログ）へ。1回の操作で1本のみ
-      const video = files.find(isVideoFile);
-      if (video) setVideoFile(video);
+      // 動画 (#408) は専用フロー（変換＋進捗ダイアログ）へ。複数本は
+      // キューに積んで1本ずつ順に処理する（並行変換はしない #427）
+      const videos = files.filter(isVideoFile);
+      if (videos.length > 0) {
+        setVideoQueue((prev) =>
+          prev
+            ? {
+                ...prev,
+                files: [...prev.files, ...videos],
+                total: prev.total + videos.length,
+              }
+            : { files: videos, total: videos.length, uploaded: 0, failed: 0 },
+        );
+      }
       const images = files.filter((f) => f.type.startsWith("image/"));
       if (images.length === 0) return;
       setError(null);
@@ -145,6 +166,29 @@ export function EventPhotos({
   };
 
   const canDelete = (p: EventPhoto) => p.userId === me?.id || isStaff;
+
+  /** 動画キューの1本が終わった (#427)。結果を数えて次の1本へ。
+   * 50枠切れ（limit）は以降も同じ結果になるので残りを中止する */
+  const handleVideoDone = (outcome: VideoUploadOutcome) => {
+    if (!videoQueue) return;
+    const uploaded = videoQueue.uploaded + (outcome === "uploaded" ? 1 : 0);
+    const failed = videoQueue.failed + (outcome === "failed" ? 1 : 0);
+    const rest =
+      outcome === "cancelAll" || outcome === "limit"
+        ? []
+        : videoQueue.files.slice(1);
+    if (outcome === "limit") {
+      setError(t("eventSocial.photoLimit", { n: EVENT_PHOTO_LIMIT }));
+    } else if (rest.length === 0 && failed > 0) {
+      // 最後に結果が分かるように、失敗があったときだけまとめを出す
+      setError(t("eventSocial.videoQueueSummary", { ok: uploaded, ng: failed }));
+    }
+    setVideoQueue(
+      rest.length === 0
+        ? null
+        : { files: rest, total: videoQueue.total, uploaded, failed },
+    );
+  };
 
   return (
     <Card variant="outlined">
@@ -401,13 +445,20 @@ export function EventPhotos({
         }}
       />
 
-      {/* 動画の変換＋アップロード (#408)。選ばれたときだけ読み込む */}
-      {videoFile && (
+      {/* 動画の変換＋アップロード (#408)。選ばれたときだけ読み込む。
+          複数本はキューで1本ずつ (#427)。key で本ごとにマウントし直す
+          （ダイアログは1ファイル1回のフローを前提に作られている） */}
+      {videoQueue && videoQueue.files[0] && (
         <Suspense fallback={null}>
           <VideoUploadDialog
+            key={videoQueue.total - videoQueue.files.length}
             eventId={eventId}
-            file={videoFile}
-            onClose={() => setVideoFile(null)}
+            file={videoQueue.files[0]}
+            queue={{
+              index: videoQueue.total - videoQueue.files.length + 1,
+              total: videoQueue.total,
+            }}
+            onClose={handleVideoDone}
           />
         </Suspense>
       )}

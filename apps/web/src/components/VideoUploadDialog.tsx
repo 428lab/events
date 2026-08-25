@@ -70,14 +70,28 @@ interface Prepared {
   durationMs: number;
 }
 
+/** 1本ぶんの結末 (#427)。キュー（EventPhotos）が次へ進むかを決める。
+ * - uploaded: 投稿できた / canceled: この1本をやめた / failed: 失敗した
+ * - limit: 50枠切れ。以降の本も同じ結果になるので残りは中止
+ * - cancelAll: キューごと中止 */
+export type VideoUploadOutcome =
+  | "uploaded"
+  | "canceled"
+  | "failed"
+  | "limit"
+  | "cancelAll";
+
 export function VideoUploadDialog({
   eventId,
   file,
+  queue,
   onClose,
 }: {
   eventId: string;
   file: File;
-  onClose: () => void;
+  /** 複数本キューの現在位置 (#427)。単発（total=1 相当）では渡さない */
+  queue?: { index: number; total: number };
+  onClose: (outcome: VideoUploadOutcome) => void;
 }) {
   const { t } = useTranslation();
   const upload = useUploadEventVideo(eventId);
@@ -104,6 +118,8 @@ export function VideoUploadDialog({
   const abortRef = useRef<AbortController | null>(null);
   const startedRef = useRef(false);
   const closedRef = useRef(false);
+  /** 50枠切れで失敗したか。閉じるときの結末（limit）に使う */
+  const limitRef = useRef(false);
 
   const maxSec = Math.round(EVENT_VIDEO_MAX_DURATION_MS / 1000);
   const maxMb = Math.round(EVENT_VIDEO_MAX_BYTES / 1024 / 1024);
@@ -130,10 +146,11 @@ export function VideoUploadDialog({
           onProgress: (f) => setProgress(0.7 + 0.3 * f),
           signal: abort.signal,
         });
-        onClose();
+        onClose("uploaded");
       } catch (e) {
         if (closedRef.current) return;
         if (e instanceof Error && e.message === "photo_limit") {
+          limitRef.current = true;
           failWith(t("eventSocial.photoLimit", { n: EVENT_PHOTO_LIMIT }));
         } else {
           // 変換済みデータは保持しているので再送できる
@@ -289,11 +306,26 @@ export function VideoUploadDialog({
     setTrim(next);
   };
 
+  /** 閉じる操作の結末。エラー表示から閉じたなら「この1本は失敗」、
+   * それ以外は「この1本をやめた」。50枠切れだけは残りも中止 (#427) */
+  const closeOutcome = (): VideoUploadOutcome => {
+    if (limitRef.current) return "limit";
+    if (phase === "error" || phase === "uploadError") return "failed";
+    return "canceled";
+  };
+
   const handleCancel = () => {
     closedRef.current = true;
     void handleRef.current?.cancel();
     abortRef.current?.abort();
-    onClose();
+    onClose(closeOutcome());
+  };
+
+  const handleCancelAll = () => {
+    closedRef.current = true;
+    void handleRef.current?.cancel();
+    abortRef.current?.abort();
+    onClose(limitRef.current ? "limit" : "cancelAll");
   };
 
   // プレビュー用の URL。トリム段に入ったときだけ作り、閉じたら破棄する
@@ -314,6 +346,11 @@ export function VideoUploadDialog({
   return (
     <Dialog open onClose={handleCancel} maxWidth="xs" fullWidth>
       <DialogContent>
+        {queue && queue.total > 1 && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+            {t("eventSocial.videoQueueProgress", { m: queue.index, n: queue.total })}
+          </Typography>
+        )}
         {phase === "probing" && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
             <CircularProgress size={20} />
@@ -409,6 +446,11 @@ export function VideoUploadDialog({
             }}
           >
             {t("eventSocial.videoRetryUpload")}
+          </Button>
+        )}
+        {queue && queue.total > 1 && (
+          <Button onClick={handleCancelAll}>
+            {t("eventSocial.videoQueueCancelAll")}
           </Button>
         )}
         <Button onClick={handleCancel}>

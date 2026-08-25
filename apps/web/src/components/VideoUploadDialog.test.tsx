@@ -109,10 +109,34 @@ describe("VideoUploadDialog のキャンセル", () => {
     fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
 
     expect(FakeXHR.last?.aborted).toBe(true);
-    expect(onClose).toHaveBeenCalled();
+    // キュー (#427) には「この1本をやめた」と伝わる（次の本へ進める）
+    expect(onClose).toHaveBeenCalledWith("canceled");
     // 中断されたので成功時の一覧更新（invalidateQueries）は走らない
     await Promise.resolve();
     await Promise.resolve();
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  it("複数本キュー (#427): 進捗表示と「すべてキャンセル」", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onClose = vi.fn();
+    render(
+      <QueryClientProvider client={qc}>
+        <VideoUploadDialog
+          eventId="ev-1"
+          file={new File([new Uint8Array(1024)], "v.mp4", { type: "video/mp4" })}
+          queue={{ index: 1, total: 2 }}
+          onClose={onClose}
+        />
+      </QueryClientProvider>,
+    );
+    // 「動画 2 本中 1 本目」
+    expect(screen.getByText("動画 2 本中 1 本目")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/アップロード中/)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "すべてキャンセル" }));
+    expect(FakeXHR.last?.aborted).toBe(true);
+    expect(onClose).toHaveBeenCalledWith("cancelAll");
   });
 });
