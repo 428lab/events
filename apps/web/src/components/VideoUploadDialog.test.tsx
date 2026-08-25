@@ -97,10 +97,12 @@ describe("VideoUploadDialog のキャンセル", () => {
       </QueryClientProvider>,
     );
 
-    // 素通し経路なので変換を挟まずアップロード段に入る
+    // 素通し経路なので変換もトリム (#425) も挟まずアップロード段に入る
+    // （素通しでは切り出せないため、トリム UI はこの経路には出さない）
     await waitFor(() => {
       expect(screen.getByText(/アップロード中/)).toBeInTheDocument();
     });
+    expect(screen.queryByTestId("trim-frame")).toBeNull();
     expect(FakeXHR.last?.sent).toBe(true);
     expect(FakeXHR.last?.aborted).toBe(false);
 

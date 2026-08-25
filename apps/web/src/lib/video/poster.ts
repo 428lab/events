@@ -1,6 +1,6 @@
 import { CanvasSink } from "mediabunny";
 import { EVENT_PHOTO_MAX_BYTES } from "@eventer/shared";
-import { computeTargetDims } from "./plan.js";
+import { computeTargetDims, type VideoTrim } from "./plan.js";
 import type { ProbedVideo } from "./probe.js";
 
 /**
@@ -17,8 +17,12 @@ const POSTER_MAX_DIM = 1600;
 /** 先頭は真っ黒なことが多いので少し進めた地点を使う */
 const POSTER_TIMESTAMP_SEC = 0.5;
 
-/** ポスター画像（WebP、非対応なら JPEG）を切り出す。切り出せなければ null */
-export async function extractVideoPoster(probed: ProbedVideo): Promise<Blob | null> {
+/** ポスター画像（WebP、非対応なら JPEG）を切り出す。切り出せなければ null。
+ * trim (#425) があるときは選んだ範囲の中から切り出す */
+export async function extractVideoPoster(
+  probed: ProbedVideo,
+  trim: VideoTrim | null = null,
+): Promise<Blob | null> {
   try {
     const { input, probe } = probed;
     const track = await input.getPrimaryVideoTrack();
@@ -31,9 +35,11 @@ export async function extractVideoPoster(probed: ProbedVideo): Promise<Blob | nu
       fit: "contain",
     });
 
-    const durationSec = probe.durationMs / 1000;
-    const t = Math.min(POSTER_TIMESTAMP_SEC, Math.max(0, durationSec - 0.01));
-    const wrapped = (await sink.getCanvas(t)) ?? (await sink.getCanvas(0));
+    const baseSec = (trim?.startMs ?? 0) / 1000;
+    const durationSec = (trim ? trim.endMs - trim.startMs : probe.durationMs) / 1000;
+    const t =
+      baseSec + Math.min(POSTER_TIMESTAMP_SEC, Math.max(0, durationSec - 0.01));
+    const wrapped = (await sink.getCanvas(t)) ?? (await sink.getCanvas(baseSec));
     if (!wrapped) return null;
 
     // サーバーの上限（EVENT_PHOTO_MAX_BYTES）は送信前にここで担保する。

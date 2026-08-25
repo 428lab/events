@@ -191,7 +191,9 @@ ALTER TABLE event_photo ADD COLUMN mime TEXT;            -- video のみ。'vide
 
 1. ファイル選択（`accept="image/*,video/*"`。既存の `<input>` を拡張、§8）
 2. mediabunny の demux でメタデータ取得（長さ・解像度・コーデック）。
-   **長さ > 上限なら即エラー**（トリミング UI は作らない。§12）
+   長さ > 上限なら、変換経路に乗れる場合はトリム UI（#425。枠の両端伸縮＋
+   中身ドラッグ移動、上限60秒）で範囲を選ばせる。変換できない環境/入力は
+   切り出せないため即エラー（端末側での編集を案内）
 3. `decideVideoPlan` で経路決定。変換系なら Conversion 実行（`onProgress` で進捗表示）
 4. サムネイル切り出し（§5）
 5. multipart で一括アップロード（§7.1）。`XMLHttpRequest` の `upload.onprogress` で進捗表示
@@ -403,7 +405,8 @@ event-videos/${eventId}/${videoId}-poster   … ポスター画像
 
 - **サーバ側の変換・トランスコード**（Workers では不可能。前提）
 - **外部の動画配信・変換サービスとの連携**（コスト・依存が増える。R2 直配信で足りる）
-- **編集機能**（トリミング・フィルタ・BGM 合成など。60 秒超は再撮影/端末側編集を促す）
+- **編集機能**（フィルタ・BGM 合成など。トリムだけは #425 で実装済み:
+  変換経路のみ・両端選択・上限60秒。素通し経路の 60 秒超は端末側編集を促す）
 - **ffmpeg.wasm**（§2.4）
 - **resumable / multipart アップロード**（40MB では過剰）
 - **HLS/DASH などのアダプティブ配信・ストリーミング録画**（`<video>` + Range 直配信で十分）
