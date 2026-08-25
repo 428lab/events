@@ -205,8 +205,11 @@ const ja = {
   videoPreparing: "動画を確認中…",
   videoEncoding: "動画を変換中… {{p}}%",
   videoUploading: "アップロード中… {{p}}%",
-  /** 上限は固定の定数（60秒・40MB）なので値はキー側に埋め込まない */
-  videoTooLong: "動画は{{s}}秒以内にしてください。",
+  /** 上限は固定の定数（60秒・40MB）なので値はキー側に埋め込まない。
+   * トリム (#425) で救える経路では出ない＝これが出るのは切り出し不可の
+   * 環境/入力なので、端末側での編集を案内する */
+  videoTooLong:
+    "動画は{{s}}秒以内にしてください。このブラウザではこの動画の切り出しができないため、{{s}}秒以内に編集してからお試しください。",
   videoTooLarge: "動画が大きすぎます（{{mb}}MBまで）。",
   /** 変換できない環境/入力。実装技術名は出さない */
   videoCannotProcess:
@@ -219,6 +222,17 @@ const ja = {
   videoUploadFailed: "動画のアップロードに失敗しました。",
   /** 変換済みデータは保持しているので、再送は変換なしでやり直せる */
   videoRetryUpload: "再送する",
+
+  /* ===== トリム (#425) ===== */
+  videoTrimIntro:
+    "動画が{{s}}秒を超えています。投稿する範囲（最大{{s}}秒）を選んでください。",
+  /** 上限以内の動画でも任意でトリムを開ける（既定は全範囲で畳む） */
+  videoTrimToggle: "範囲を選ぶ（トリム）",
+  videoTrimRange: "開始 {{from}} ／ 終了 {{to}} ／ 長さ {{len}}",
+  videoTrimConfirm: "この範囲で投稿",
+  videoTrimHandleStart: "開始位置",
+  videoTrimHandleEnd: "終了位置",
+  videoTrimMove: "選択範囲を移動",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -377,7 +391,8 @@ const en: Record<keyof typeof ja, string> = {
   videoPreparing: "Checking the video…",
   videoEncoding: "Converting the video… {{p}}%",
   videoUploading: "Uploading… {{p}}%",
-  videoTooLong: "Videos must be {{s}} seconds or shorter.",
+  videoTooLong:
+    "Videos must be {{s}} seconds or shorter. This browser cannot trim this video, so please edit it down to {{s}} seconds and try again.",
   videoTooLarge: "The video is too large (up to {{mb}} MB).",
   videoCannotProcess:
     "This browser cannot convert this video. Please try a video of {{s}} seconds or shorter from another browser.",
@@ -387,6 +402,15 @@ const en: Record<keyof typeof ja, string> = {
   videoDropAudioPost: "Post without sound",
   videoUploadFailed: "Failed to upload the video.",
   videoRetryUpload: "Retry",
+
+  videoTrimIntro:
+    "The video is longer than {{s}} seconds. Choose the range to post (up to {{s}} seconds).",
+  videoTrimToggle: "Choose a range (trim)",
+  videoTrimRange: "Start {{from}} / End {{to}} / Length {{len}}",
+  videoTrimConfirm: "Post this range",
+  videoTrimHandleStart: "Start position",
+  videoTrimHandleEnd: "End position",
+  videoTrimMove: "Move the selected range",
 };
 
 export const eventSocial = { ja, en };

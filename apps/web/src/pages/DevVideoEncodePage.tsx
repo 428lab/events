@@ -21,17 +21,26 @@ import {
 } from "@mui/material";
 import {
   decideVideoPlan,
+  defaultVideoTrim,
+  needsVideoTrim,
   type VideoCapability,
   type VideoInputProbe,
   type VideoPlan,
+  type VideoTrim,
 } from "../lib/video/plan.js";
-import { detectVideoCapability, probeVideoFile } from "../lib/video/probe.js";
+import {
+  detectVideoCapability,
+  probeVideoFile,
+  type ProbedVideo,
+} from "../lib/video/probe.js";
 import {
   createVideoConversion,
   type EncodePlan,
   type VideoEncoder408Handle,
 } from "../lib/video/encode.js";
 import { extractVideoPoster } from "../lib/video/poster.js";
+import { VideoTrimBar } from "../components/VideoTrimBar.js";
+import { formatVideoDuration } from "../components/videoThumb.js";
 
 /**
  * 動画エンコードの実機計測ページ (#408)。
@@ -141,6 +150,13 @@ export function DevVideoEncodePage() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [results, setResults] = useState<RunResult[]>([]);
+  /** 解析済みのファイル (#425)。トリム範囲を変えて再計測できるよう保持する */
+  const [loaded, setLoaded] = useState<{
+    file: File;
+    probed: ProbedVideo;
+    support: VideoCapability;
+  } | null>(null);
+  const [trim, setTrim] = useState<VideoTrim | null>(null);
   const handleRef = useRef<VideoEncoder408Handle | null>(null);
   const urlsRef = useRef<string[]>([]);
 
@@ -160,13 +176,14 @@ export function DevVideoEncodePage() {
     setter(url);
   };
 
-  const run = async (file: File) => {
+  /** ファイルを解析してトリム範囲を用意する (#425)。60秒以内なら従来どおり
+   * そのまま計測まで進み、60秒超は範囲を選んでから「計測実行」してもらう */
+  const prepare = async (file: File) => {
     setRunning(true);
     setError(null);
     setNotice(null);
-    setProgress(null);
-    setVideoUrl(null);
-    setPosterUrl(null);
+    setLoaded(null);
+    setTrim(null);
     try {
       setPhase("解析中…");
       const probed = await probeVideoFile(file);
@@ -180,13 +197,48 @@ export function DevVideoEncodePage() {
           `Opus: ${support.canEncodeOpus ? "○" : "×"}`,
         ].join(" / "),
       );
+      const lo = { file, probed, support };
+      setLoaded(lo);
+      const total = probed.probe.durationMs;
+      setTrim(defaultVideoTrim(total));
+      if (needsVideoTrim(total)) {
+        setNotice("60秒超の動画です。トリム範囲を選んで「この範囲で計測実行」を押してください。");
+        setRunning(false);
+        setPhase("");
+        return;
+      }
+      await runMeasurement(lo, null);
+    } catch (e) {
+      const detail = e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ""}` : String(e);
+      setError(detail);
+      setRunning(false);
+      setPhase("");
+    }
+  };
 
-      const autoPlan = decideVideoPlan(support, probed.probe);
+  const runMeasurement = async (
+    lo: { file: File; probed: ProbedVideo; support: VideoCapability },
+    trimRange: VideoTrim | null,
+  ) => {
+    const { file, probed, support } = lo;
+    setRunning(true);
+    setError(null);
+    setProgress(null);
+    setVideoUrl(null);
+    setPosterUrl(null);
+    try {
+      const autoPlan = decideVideoPlan(support, probed.probe, trimRange);
       setAutoPlanText(planLabel(autoPlan));
 
       const p = probed.probe;
+      /** トリム後の実効長（実時間比の分子はこちら） */
+      const effectiveMs = trimRange ? trimRange.endMs - trimRange.startMs : p.durationMs;
       const inputDims = `${p.width}x${p.height}`;
-      const routeLabel = ROUTE_LABEL[route];
+      const routeLabel =
+        ROUTE_LABEL[route] +
+        (trimRange
+          ? ` [${formatVideoDuration(trimRange.startMs)}〜${formatVideoDuration(trimRange.endMs)}]`
+          : "");
 
       // 実行する plan を決める（強制は画面側で差し替える）
       let effective: VideoPlan;
@@ -238,6 +290,7 @@ export function DevVideoEncodePage() {
       const handle = await createVideoConversion(probed, effective, {
         onProgress: (v) => setProgress(v),
         forceTranscodeVideo: route === "force-mp4-reencode",
+        trim: trimRange,
       });
       handleRef.current = handle;
       if (handle.invalidReason) {
@@ -251,7 +304,7 @@ export function DevVideoEncodePage() {
 
       setPhase("ポスター切り出し中…");
       const tp0 = performance.now();
-      const poster = await extractVideoPoster(probed);
+      const poster = await extractVideoPoster(probed, trimRange);
       const posterMs = performance.now() - tp0;
       setObjectUrl(setPosterUrl, poster);
 
@@ -277,7 +330,7 @@ export function DevVideoEncodePage() {
           route: routeLabel,
           planLabel: planLabel(effective),
           elapsedMs,
-          realtimeRatio: p.durationMs > 0 ? p.durationMs / elapsedMs : null,
+          realtimeRatio: effectiveMs > 0 ? effectiveMs / elapsedMs : null,
           inputBytes: file.size,
           outputBytes: out.blob.size,
           inputDims,
@@ -330,7 +383,7 @@ export function DevVideoEncodePage() {
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 e.target.value = "";
-                if (f) void run(f);
+                if (f) void prepare(f);
               }}
             />
           </Button>
@@ -345,6 +398,40 @@ export function DevVideoEncodePage() {
             </Button>
           )}
         </Stack>
+        {/* トリム (#425)。範囲を変えて同じファイルを再計測できる */}
+        {loaded && trim && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2">
+              トリム範囲（{loaded.file.name} ／ 全長{" "}
+              {fmtDuration(loaded.probed.probe.durationMs)}）
+            </Typography>
+            <VideoTrimBar
+              totalMs={loaded.probed.probe.durationMs}
+              value={trim}
+              onChange={setTrim}
+            />
+            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Typography variant="body2">
+                開始 {formatVideoDuration(trim.startMs)} ／ 終了{" "}
+                {formatVideoDuration(trim.endMs)} ／ 長さ{" "}
+                {formatVideoDuration(trim.endMs - trim.startMs)}
+              </Typography>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={running}
+                onClick={() => {
+                  const total = loaded.probed.probe.durationMs;
+                  const effective =
+                    trim.startMs === 0 && trim.endMs === total ? null : trim;
+                  void runMeasurement(loaded, effective);
+                }}
+              >
+                この範囲で計測実行
+              </Button>
+            </Stack>
+          </Box>
+        )}
         {running && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2">{phase}</Typography>

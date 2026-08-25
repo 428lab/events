@@ -15,6 +15,7 @@ import {
   VIDEO_TARGET_FPS,
   computeTargetDims,
   type VideoPlan,
+  type VideoTrim,
 } from "./plan.js";
 import type { ProbedVideo } from "./probe.js";
 
@@ -51,6 +52,9 @@ export type CreateVideoConversionOptions = {
   onProgress?: (progress: number) => void;
   /** true なら入力が条件を満たしていても映像を再エンコードする（計測用） */
   forceTranscodeVideo?: boolean;
+  /** トリム範囲 (#425)。mediabunny の Conversion trim は入力段で効くため、
+   * 映像と音声が同じ範囲で切れる（ずれない） */
+  trim?: VideoTrim | null;
 };
 
 /** 変換を準備する。実行は返り値の execute() で行う */
@@ -90,6 +94,14 @@ export async function createVideoConversion(
     output,
     video,
     audio,
+    ...(options.trim
+      ? {
+          trim: {
+            start: options.trim.startMs / 1000,
+            end: options.trim.endMs / 1000,
+          },
+        }
+      : {}),
     showWarnings: false,
   });
 

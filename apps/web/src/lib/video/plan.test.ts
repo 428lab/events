@@ -4,8 +4,13 @@ import {
   EVENT_VIDEO_MAX_DURATION_MS,
 } from "@eventer/shared";
 import {
+  MIN_TRIM_MS,
   computeTargetDims,
   decideVideoPlan,
+  defaultVideoTrim,
+  moveVideoTrim,
+  needsVideoTrim,
+  normalizeVideoTrim,
   type VideoCapability,
   type VideoInputProbe,
 } from "./plan.js";
@@ -229,5 +234,151 @@ describe("computeTargetDims", () => {
     const dims = computeTargetDims(1279, 719);
     expect(dims.width % 2).toBe(0);
     expect(dims.height % 2).toBe(0);
+  });
+});
+
+/** トリム (#425)。枠の伸縮（normalizeVideoTrim）と移動（moveVideoTrim）が
+ * 「0〜全長・上限60秒・最短1秒」に必ず収まることの固定 */
+describe("normalizeVideoTrim（枠の伸縮）", () => {
+  const MAX = EVENT_VIDEO_MAX_DURATION_MS;
+
+  it("範囲内の入力はそのまま", () => {
+    expect(normalizeVideoTrim(5_000, 30_000, 90_000, "start")).toEqual({
+      startMs: 5_000,
+      endMs: 30_000,
+    });
+  });
+
+  it("全長の外にはみ出した端はクランプされる", () => {
+    expect(normalizeVideoTrim(-5_000, 30_000, 90_000, "start")).toEqual({
+      startMs: 0,
+      endMs: 30_000,
+    });
+    expect(normalizeVideoTrim(50_000, 99_000_000, 90_000, "end")).toEqual({
+      startMs: 50_000,
+      endMs: 90_000,
+    });
+  });
+
+  it("start を左に広げて60秒を超えると end が追従する（超える範囲は作れない）", () => {
+    // end=70s のまま start を 0 に → 70秒 > 上限 → end が start+60s に詰まる
+    expect(normalizeVideoTrim(0, 70_000, 90_000, "start")).toEqual({
+      startMs: 0,
+      endMs: MAX,
+    });
+  });
+
+  it("end を右に広げて60秒を超えると start が追従する", () => {
+    expect(normalizeVideoTrim(10_000, 90_000, 90_000, "end")).toEqual({
+      startMs: 90_000 - MAX,
+      endMs: 90_000,
+    });
+  });
+
+  it("ちょうど60秒は作れる", () => {
+    expect(normalizeVideoTrim(10_000, 10_000 + MAX, 90_000, "end")).toEqual({
+      startMs: 10_000,
+      endMs: 10_000 + MAX,
+    });
+  });
+
+  it("最短長（1秒）より短い範囲は作れない", () => {
+    const r = normalizeVideoTrim(29_900, 30_000, 90_000, "start");
+    expect(r.endMs - r.startMs).toBe(MIN_TRIM_MS);
+    const r2 = normalizeVideoTrim(10_000, 10_100, 90_000, "end");
+    expect(r2.endMs - r2.startMs).toBe(MIN_TRIM_MS);
+  });
+
+  it("端が逆転した入力は入れ替えて扱う", () => {
+    const r = normalizeVideoTrim(40_000, 20_000, 90_000, "start");
+    expect(r.startMs).toBeLessThan(r.endMs);
+  });
+
+  it("全長が最短長より短い動画では全長まで縮む", () => {
+    expect(normalizeVideoTrim(0, 500, 500, "end")).toEqual({
+      startMs: 0,
+      endMs: 500,
+    });
+  });
+});
+
+describe("moveVideoTrim（枠の移動）", () => {
+  it("長さを保ったまま動く", () => {
+    expect(moveVideoTrim({ startMs: 10_000, endMs: 40_000 }, 5_000, 90_000)).toEqual({
+      startMs: 15_000,
+      endMs: 45_000,
+    });
+  });
+
+  it("左端・右端で止まる（長さは変わらない）", () => {
+    expect(moveVideoTrim({ startMs: 10_000, endMs: 40_000 }, -99_000, 90_000)).toEqual({
+      startMs: 0,
+      endMs: 30_000,
+    });
+    expect(moveVideoTrim({ startMs: 10_000, endMs: 40_000 }, 99_000, 90_000)).toEqual({
+      startMs: 60_000,
+      endMs: 90_000,
+    });
+  });
+});
+
+describe("defaultVideoTrim / needsVideoTrim", () => {
+  it("60秒超は先頭から60秒、以内は全範囲", () => {
+    expect(defaultVideoTrim(90_000)).toEqual({
+      startMs: 0,
+      endMs: EVENT_VIDEO_MAX_DURATION_MS,
+    });
+    expect(defaultVideoTrim(30_000)).toEqual({ startMs: 0, endMs: 30_000 });
+  });
+
+  it("needsVideoTrim は上限超のみ真", () => {
+    expect(needsVideoTrim(EVENT_VIDEO_MAX_DURATION_MS)).toBe(false);
+    expect(needsVideoTrim(EVENT_VIDEO_MAX_DURATION_MS + 1)).toBe(true);
+  });
+});
+
+describe("decideVideoPlan × トリム (#425)", () => {
+  const long = { ...base, durationMs: 90_000 };
+  const trim60 = { startMs: 0, endMs: EVENT_VIDEO_MAX_DURATION_MS };
+
+  it("60秒超でもトリムつきなら変換経路に乗る", () => {
+    expect(decideVideoPlan(full, long, trim60)).toMatchObject({
+      kind: "encode",
+      container: "webm",
+    });
+    expect(decideVideoPlan(videoOnly, long, trim60)).toMatchObject({
+      kind: "encode",
+      container: "mp4",
+    });
+  });
+
+  it("トリムつきでも範囲が60秒を超えていれば弾く（防御）", () => {
+    expect(
+      decideVideoPlan(full, long, { startMs: 0, endMs: 61_000 }),
+    ).toEqual({ kind: "reject", reason: "too-long" });
+  });
+
+  it("変換できない環境ではトリムで救えない（素通しに乗せず too-long）", () => {
+    // WebCodecs なし × MP4 入力: trim なしなら素通しだが、trim 前提では不可
+    const p = { ...long, container: "mp4" as const, canDecodeVideo: false, canDecodeAudio: false };
+    expect(decideVideoPlan(none, p, trim60)).toEqual({
+      kind: "reject",
+      reason: "too-long",
+    });
+  });
+
+  it("映像がデコードできない入力もトリムで救えない", () => {
+    const p = { ...long, container: "mp4" as const, videoCodec: "hevc", canDecodeVideo: false };
+    expect(decideVideoPlan(full, p, trim60)).toEqual({
+      kind: "reject",
+      reason: "too-long",
+    });
+  });
+
+  it("トリムなしの60秒超は従来どおり too-long（呼び出し側がトリムを提案する）", () => {
+    expect(decideVideoPlan(full, long)).toEqual({
+      kind: "reject",
+      reason: "too-long",
+    });
   });
 });
