@@ -591,4 +591,150 @@ describe("アカウント統合 (#240)", () => {
       ),
     ).toBe(0);
   });
+
+  /** Q&A と一斉連絡 (#398)。付け替えリストに無いと ON DELETE CASCADE が発火し、
+   * 負け側の質問・票・一斉連絡の履歴・未送信メールが行ごと消える */
+  it("負け側の Q&A の質問・票と一斉連絡が消えずに勝ち側へ移る (#398)", async () => {
+    const a = await makeUser(); // 負け側（質問・票・一斉連絡の持ち主）
+    const b = await makeUser(); // 勝ち側
+
+    // A が主催（staff）・B は参加者。統合後は B が staff を引き継ぐので
+    // 一斉連絡の履歴（staff 限定）を B で読める
+    const eventId = await makeEvent(a.userId);
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at) VALUES (?, ?, ?, 'staff', NULL, 'confirmed', ?)",
+    )
+      .bind(crypto.randomUUID(), eventId, a.userId, Date.now())
+      .run();
+    await joinEvent(eventId, b.userId);
+
+    // 質問: A の質問（q1）に A と B の両方が投票（付け替えると PK
+    // (question_id, user_id) で衝突する組）。B の質問（q2）には A だけが投票
+    const q1 = crypto.randomUUID();
+    const q2 = crypto.randomUUID();
+    for (const [qid, userId] of [
+      [q1, a.userId],
+      [q2, b.userId],
+    ] as const) {
+      await env.DB.prepare(
+        "INSERT INTO event_question (id, event_id, user_id, body, anonymous, answered, hidden, created_at) VALUES (?, ?, ?, '質問', 0, 0, 0, ?)",
+      )
+        .bind(qid, eventId, userId, Date.now())
+        .run();
+    }
+    for (const [qid, userId] of [
+      [q1, a.userId],
+      [q1, b.userId],
+      [q2, a.userId],
+    ] as const) {
+      await env.DB.prepare(
+        "INSERT INTO event_question_vote (question_id, user_id, created_at) VALUES (?, ?, ?)",
+      )
+        .bind(qid, userId, Date.now())
+        .run();
+    }
+
+    // 一斉連絡: A が送信済み。未送信メールは A 宛と B 宛が1行ずつ
+    // （両方が同じイベントの参加者なので、同じ連絡に両アカウント分あり得る）
+    const broadcastId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO event_broadcast (id, event_id, created_by, segment, title, body, recipient_count, email_pending, created_at) VALUES (?, ?, ?, 'all', '連絡', '本文', 2, 2, ?)",
+    )
+      .bind(broadcastId, eventId, a.userId, Date.now())
+      .run();
+    for (const userId of [a.userId, b.userId]) {
+      await env.DB.prepare(
+        "INSERT INTO event_broadcast_email (id, broadcast_id, user_id, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
+      )
+        .bind(crypto.randomUUID(), broadcastId, userId, Date.now())
+        .run();
+    }
+
+    const code = await issueCode(a.cookie);
+    expect((await postMerge(b.cookie, { code, keep: "me" })).status).toBe(200);
+
+    // 質問は本文ごと残り、勝ち側の名義になっている
+    const q1Row = await env.DB.prepare(
+      "SELECT user_id FROM event_question WHERE id = ?",
+    )
+      .bind(q1)
+      .first<{ user_id: string }>();
+    expect(q1Row?.user_id).toBe(b.userId);
+
+    // 両アカウントで投票していた質問は勝ち側の1票に集約（UNIQUE 衝突で落ちない）
+    expect(
+      await count(
+        "SELECT COUNT(*) AS n FROM event_question_vote WHERE question_id = ?",
+        q1,
+      ),
+    ).toBe(1);
+    // 負け側だけが投票していた質問の票は勝ち側の票として残る
+    const q2Vote = await env.DB.prepare(
+      "SELECT user_id FROM event_question_vote WHERE question_id = ?",
+    )
+      .bind(q2)
+      .first<{ user_id: string }>();
+    expect(q2Vote?.user_id).toBe(b.userId);
+    expect(
+      await count(
+        "SELECT COUNT(*) AS n FROM event_question_vote WHERE user_id = ?",
+        a.userId,
+      ),
+    ).toBe(0);
+
+    // 一斉連絡の履歴は本文ごと残り、勝ち側の名義になっている
+    const bc = await env.DB.prepare(
+      "SELECT created_by FROM event_broadcast WHERE id = ?",
+    )
+      .bind(broadcastId)
+      .first<{ created_by: string }>();
+    expect(bc?.created_by).toBe(b.userId);
+
+    // 未送信メールは2行とも勝ち側宛として残る（重複は消さない: 行を消すと
+    // email_pending カウンタとズレて定期実行が空回りする。詳細は users.ts）
+    expect(
+      await count(
+        "SELECT COUNT(*) AS n FROM event_broadcast_email WHERE broadcast_id = ? AND user_id = ?",
+        broadcastId,
+        b.userId,
+      ),
+    ).toBe(2);
+    expect(
+      await count(
+        "SELECT COUNT(*) AS n FROM event_broadcast_email WHERE user_id = ?",
+        a.userId,
+      ),
+    ).toBe(0);
+
+    // 表示: 質問一覧では勝ち側の名前で見える（票数もそのまま）
+    const qaRes = await SELF.fetch(`${BASE}/api/events/${eventId}/questions`, {
+      headers: { cookie: b.cookie },
+    });
+    expect(qaRes.status).toBe(200);
+    const qa = (await qaRes.json()) as {
+      questions: Array<{
+        id: string;
+        votes: number;
+        votedByMe: boolean;
+        author: { id: string; username: string } | null;
+      }>;
+    };
+    const shown = qa.questions.find((q) => q.id === q1);
+    expect(shown?.author?.id).toBe(b.userId);
+    expect(shown?.author?.username).toBe(`t_${b.userId.slice(0, 8)}`);
+    expect(shown?.votes).toBe(1);
+    expect(shown?.votedByMe).toBe(true);
+
+    // 表示: 一斉連絡の履歴も勝ち側の名前で見える
+    const bcRes = await SELF.fetch(`${BASE}/api/events/${eventId}/broadcasts`, {
+      headers: { cookie: b.cookie },
+    });
+    expect(bcRes.status).toBe(200);
+    const history = (await bcRes.json()) as {
+      broadcasts: Array<{ id: string; senderName: string | null }>;
+    };
+    expect(
+      history.broadcasts.find((x) => x.id === broadcastId)?.senderName,
+    ).toBe(`t_${b.userId.slice(0, 8)}`);
+  });
 });

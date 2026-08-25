@@ -161,36 +161,12 @@ const INTENTIONAL: Array<{ column: Column; why: string }> = [
 /**
  * **扱えていない**列。ここに入っている＝統合で静かに壊れるということ。
  *
- * #396 が予告したとおりの見落としが、この走査を書いた時点で既に4本あった。
- * 直すのは #393 の範囲外なので、**壊れ方を書いて残す**。
- * `breaks` を空にできない形にしてあるので、黙って足すことはできない。
+ * #396 が予告したとおりの見落としが、この走査を書いた時点で既に4本あった
+ * （Q&A の質問・票と一斉連絡の履歴・未送信メール）。#398 で全部 mergeUsers に
+ * 登録したので、いまは空。`breaks` を空にできない形にしてあるので、
+ * 黙って足すことはできない。
  */
-const UNRESOLVED: Array<{ column: Column; breaks: string }> = [
-  {
-    column: "event_question.user_id",
-    breaks:
-      "ON DELETE CASCADE。統合で負け側の user 行を消した瞬間に、その人が " +
-      "投稿した Q&A の質問 (#216) が票ごと全部消える",
-  },
-  {
-    column: "event_question_vote.user_id",
-    breaks:
-      "ON DELETE CASCADE。負け側が投じた票が消え、質問の優先順位が変わる。" +
-      "主キーが (question_id, user_id) なので、直すなら uniqueKeyed 側",
-  },
-  {
-    column: "event_broadcast.created_by",
-    breaks:
-      "ON DELETE CASCADE。負け側が送った一斉連絡 (#172) の履歴が本文ごと消える。" +
-      "「同じ内容をもう一度送ると二重に届く」の判断材料が失われる",
-  },
-  {
-    column: "event_broadcast_email.user_id",
-    breaks:
-      "ON DELETE CASCADE。負け側宛に積まれた未送信のメールが消え、" +
-      "その人にだけ連絡が届かないまま送信済みとして残る",
-  },
-];
+const UNRESOLVED: Array<{ column: Column; breaks: string }> = [];
 
 /**
  * `user(id)` を参照する列の数。**下限ではなく実数で固定する。**
@@ -204,7 +180,7 @@ const EXPECTED_USER_COLUMNS = 45;
  * `mergeUsers` が扱う `table.column` の数（user 参照でない列も含む生の抽出数）。
  * 走査そのものが空振りしていないことの担保。
  */
-const EXPECTED_HANDLED_PAIRS = 44;
+const EXPECTED_HANDLED_PAIRS = 48;
 
 describe("アカウント統合の対象列の走査 (#396)", () => {
   const body = mergeUsersBody(Object.values(repoSources)[0]!);
