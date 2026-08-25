@@ -182,7 +182,7 @@ const ja = {
   likeCaptionCommunity: "コミュニティ",
 
   /* ===== 写真 ===== */
-  photoAdd: "写真を追加",
+  photoAdd: "写真・動画を追加",
   photoUploading: "アップロード中… 残り{{n}}",
   photoUploadFailed: "アップロードに失敗しました。",
   /** 上限は固定の定数（50枚・100件）なので英語の単数用キーは要らない */
@@ -193,13 +193,32 @@ const ja = {
   photosDropHint: " ドラッグ&ドロップや貼り付け（Ctrl/⌘+V）でも追加できます。",
   photosPublicToggle: "参加者以外にも写真を公開する",
   photosEmpty: "まだ写真がありません。",
-  photosEmptyHint: "「写真を追加」やドラッグ&ドロップで共有しましょう。",
+  photosEmptyHint: "「写真・動画を追加」やドラッグ&ドロップで共有しましょう。",
   photoDelete: "写真を削除",
   photoCommentDelete: "このコメントを削除",
   photoCommentPlaceholder: "コメントを追加…",
   photoCommentLimit: "コメントは1枚につき{{n}}件までです。",
   photoCommentMembersOnly:
     "コメントするにはこのイベントの参加者である必要があります。",
+
+  /* ===== 動画 (#408) ===== */
+  videoPreparing: "動画を確認中…",
+  videoEncoding: "動画を変換中… {{p}}%",
+  videoUploading: "アップロード中… {{p}}%",
+  /** 上限は固定の定数（60秒・40MB）なので値はキー側に埋め込まない */
+  videoTooLong: "動画は{{s}}秒以内にしてください。",
+  videoTooLarge: "動画が大きすぎます（{{mb}}MBまで）。",
+  /** 変換できない環境/入力。実装技術名は出さない */
+  videoCannotProcess:
+    "このブラウザでは動画を変換できません。{{s}}秒以内の動画を別のブラウザからお試しください。",
+  videoNotVideo: "動画ファイルを選んでください。",
+  /** 音声が扱えない入力を映像だけで投稿するかの確認 */
+  videoDropAudioConfirm:
+    "この動画の音声はこの端末では扱えません。音声なしで投稿しますか？",
+  videoDropAudioPost: "音声なしで投稿",
+  videoUploadFailed: "動画のアップロードに失敗しました。",
+  /** 変換済みデータは保持しているので、再送は変換なしでやり直せる */
+  videoRetryUpload: "再送する",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -338,7 +357,7 @@ const en: Record<keyof typeof ja, string> = {
   likeCaptionHost: "Host",
   likeCaptionCommunity: "Community",
 
-  photoAdd: "Add photos",
+  photoAdd: "Add photos & videos",
   photoUploading: "Uploading… {{n}} left",
   photoUploadFailed: "Could not upload.",
   photoLimit: "An event can have at most {{n}} photos.",
@@ -348,12 +367,26 @@ const en: Record<keyof typeof ja, string> = {
   photosDropHint: " You can also drag and drop, or paste (Ctrl/⌘+V).",
   photosPublicToggle: "Show the photos to people outside the event",
   photosEmpty: "No photos yet.",
-  photosEmptyHint: " Use “Add photos”, or drag and drop, to share some.",
+  photosEmptyHint: " Use “Add photos & videos”, or drag and drop, to share some.",
   photoDelete: "Delete this photo",
   photoCommentDelete: "Delete this comment",
   photoCommentPlaceholder: "Add a comment…",
   photoCommentLimit: "A photo can have at most {{n}} comments.",
   photoCommentMembersOnly: "You need to be at this event to comment.",
+
+  videoPreparing: "Checking the video…",
+  videoEncoding: "Converting the video… {{p}}%",
+  videoUploading: "Uploading… {{p}}%",
+  videoTooLong: "Videos must be {{s}} seconds or shorter.",
+  videoTooLarge: "The video is too large (up to {{mb}} MB).",
+  videoCannotProcess:
+    "This browser cannot convert this video. Please try a video of {{s}} seconds or shorter from another browser.",
+  videoNotVideo: "Please choose a video file.",
+  videoDropAudioConfirm:
+    "This device cannot handle the audio in this video. Post it without sound?",
+  videoDropAudioPost: "Post without sound",
+  videoUploadFailed: "Failed to upload the video.",
+  videoRetryUpload: "Retry",
 };
 
 export const eventSocial = { ja, en };

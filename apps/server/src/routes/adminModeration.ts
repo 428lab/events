@@ -19,7 +19,7 @@ import { eventChatRepo } from "../db/repositories/eventChat.js";
 import { eventQaRepo } from "../db/repositories/eventQa.js";
 import { getChatRelays } from "../db/repositories/appSettings.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
-import { photoR2Key } from "./eventPhotos.js";
+import { photoR2Key, videoPosterR2Key } from "./eventPhotos.js";
 
 /** 運営によるイベント内コンテンツの非表示 (#278)。app admin のみ。
  *
@@ -88,7 +88,13 @@ adminModerationRoutes.get(
       c.req.param("photoId"),
     );
     if (!photo) return c.json({ error: "not_found" }, 404);
-    const obj = await getBucket().get(photoR2Key(photo.eventId, photo.id));
+    // 動画 (#408) はポスター画像で中身を確認する（サムネイルが判断材料）。
+    // ポスターなし投稿の動画は 404 になり、管理画面はプレースホルダを出す
+    const obj = await getBucket().get(
+      photo.kind === "video"
+        ? videoPosterR2Key(photo.eventId, photo.id)
+        : photoR2Key(photo.eventId, photo.id),
+    );
     if (!obj) return c.json({ error: "not_found" }, 404);
     return new Response(obj.body as unknown as ReadableStream, {
       headers: {

@@ -192,9 +192,9 @@ describe("参加履歴の年表", () => {
       {
         eventId: "p-ev",
         photos: [
-          { id: "ph-mid", commentCount: 8 },
-          { id: "ph-top", commentCount: 12 },
-          { id: "ph-low", commentCount: 1 },
+          { id: "ph-mid", commentCount: 8, kind: "photo", durationMs: null },
+          { id: "ph-top", commentCount: 12, kind: "photo", durationMs: null },
+          { id: "ph-low", commentCount: 1, kind: "photo", durationMs: null },
         ],
         total: 5,
       },

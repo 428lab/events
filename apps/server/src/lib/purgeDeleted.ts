@@ -5,6 +5,11 @@ import { decksRepo } from "../db/repositories/decks.js";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { bgmTracksRepo } from "../db/repositories/bgmTracks.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
+import {
+  photoR2Key,
+  videoPosterR2Key,
+  videoR2Key,
+} from "../routes/eventPhotos.js";
 import { avatarKey } from "./avatarStore.js";
 
 /** 退会猶予期間 (#250) を過ぎたアカウントの完全削除。
@@ -65,7 +70,15 @@ async function collectUserObjects(
   const keys = await bgmTracksRepo.listKeysByOwner(userId);
   const photos = await eventPhotosRepo.listIdsByUser(userId);
   budget.spent += 4;
-  for (const p of photos) keys.push(`event-photos/${p.eventId}/${p.id}`);
+  // 動画 (#408) は本体＋ポスターの2キー。ポスターなし投稿でも
+  // 存在しないキーの削除は無害なので分岐しない
+  for (const p of photos) {
+    if (p.kind === "video") {
+      keys.push(videoR2Key(p.eventId, p.id), videoPosterR2Key(p.eventId, p.id));
+    } else {
+      keys.push(photoR2Key(p.eventId, p.id));
+    }
+  }
   // 自前保管のアイコン (#312) は 1ユーザー1キー固定なので list は要らない。
   // 保管していなければ存在しないキーを消すだけ（削除は下でまとめて投げるので費用ゼロ）
   keys.push(avatarKey(userId));
