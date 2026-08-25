@@ -444,6 +444,9 @@ export const usersRepo = {
       // 配布済みの鍵を替えずに済む。event_chat_key の統合 (1b) と同じ判断）。
       // 資格は (0) で勝ち側に引き継がれるのでローテーションは不要（設計 7.4）
       ["event_group_chat_signer", "user_id", ["event_id", "audience"]],
+      // Q&A の票 (#398)。PK (question_id, user_id)。両アカウントで同じ質問に
+      // 投票していると UPDATE が UNIQUE 違反になるので、負け側の票を捨てる
+      ["event_question_vote", "user_id", ["question_id"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols
@@ -591,6 +594,16 @@ export const usersRepo = {
       // ON DELETE SET NULL が発火し、統合したはずの担当が黙って未割り当てになる
       ["event_todo", "assignee_user_id"],
       ["event_todo", "created_by"],
+      // Q&A の質問と一斉連絡の履歴 (#398)。付け替えないと (9) の user 削除で
+      // ON DELETE CASCADE が発火し、本文ごと行が消える
+      ["event_question", "user_id"],
+      ["event_broadcast", "created_by"],
+      // 未送信メール (#398) も同じく消える。同じ連絡に両アカウント宛の行が
+      // あり得るが、user 列を含む UNIQUE が無いので付け替えは落ちない。
+      // 重複行はあえて消さない: 行を消すと event_broadcast.email_pending と
+      // ズレて、定期実行がその連絡を空回りで拾い続ける。統合の一度きりの
+      // 二重送信のほうが軽い
+      ["event_broadcast_email", "user_id"],
       ["bgm_track", "owner_id"],
       ["event", "created_by"],
       ["event_request", "created_by"],
