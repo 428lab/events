@@ -4,16 +4,16 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 
 /**
- * 動画の複数選択はキューで1本ずつ処理する (#427)。
+ * 動画の複数選択はフロー（2段階 #427）へまとめて渡す。
  * 以前は uploadFiles が先頭の1本だけ拾い、残りを黙って捨てていた。
- * ダイアログ本体は別テスト（VideoUploadDialog.*.test）が見るのでモックし、
- * ここでは「順に出ること・キャンセルで次へ進むこと・画像と混在できること・
- * 50枠切れで残りを中止すること」の配線だけを固定する。
+ * フロー内部の順序・キャンセルは VideoUploadFlow.test が見るのでモックし、
+ * ここでは「全本渡ること・画像と併走すること・実行中の追加選択が
+ * 次のフローに回ること」の配線だけを固定する。
  */
 
-const { getMock, dialogSpy } = vi.hoisted(() => ({
+const { getMock, flowSpy } = vi.hoisted(() => ({
   getMock: vi.fn(),
-  dialogSpy: vi.fn(),
+  flowSpy: vi.fn(),
 }));
 
 vi.mock("../api/client.js", async (importOriginal) => {
@@ -29,27 +29,16 @@ vi.mock("../lib/encodeImage.js", () => ({
   encodeImageForUpload: vi.fn(async (f: Blob) => f),
 }));
 
-// 動画ダイアログはモックし、onClose の結果をボタンで注入できるようにする
-vi.mock("./VideoUploadDialog.js", () => ({
-  VideoUploadDialog: (props: {
-    file: File;
-    queue?: { index: number; total: number };
-    onClose: (outcome?: string) => void;
-  }) => {
-    dialogSpy(props.file.name, props.queue);
+// フローはモックし、受け取ったファイル一覧と onClose だけを見る
+vi.mock("./VideoUploadFlow.js", () => ({
+  VideoUploadFlow: (props: { files: File[]; onClose: () => void }) => {
+    flowSpy(props.files.map((f) => f.name));
     return (
-      <div data-testid="video-dialog">
-        <span data-testid="dialog-file">{props.file.name}</span>
-        {props.queue && (
-          <span data-testid="dialog-queue">
-            {props.queue.index}/{props.queue.total}
-          </span>
-        )}
-        <button onClick={() => props.onClose("uploaded")}>mock-upload</button>
-        <button onClick={() => props.onClose("canceled")}>mock-cancel</button>
-        <button onClick={() => props.onClose("failed")}>mock-fail</button>
-        <button onClick={() => props.onClose("limit")}>mock-limit</button>
-        <button onClick={() => props.onClose("cancelAll")}>mock-cancel-all</button>
+      <div data-testid="video-flow">
+        <span data-testid="flow-files">
+          {props.files.map((f) => f.name).join(",")}
+        </span>
+        <button onClick={() => props.onClose()}>mock-flow-close</button>
       </div>
     );
   },
@@ -83,7 +72,6 @@ function renderAsMember() {
   return { ...view, input };
 }
 
-/** 隠しファイル入力に選択をシミュレートする */
 function pickFiles(input: Element, files: File[]) {
   fireEvent.change(input, { target: { files } });
 }
@@ -99,7 +87,7 @@ beforeEach(() => {
     if (url === `/events/${EVENT_ID}/photos`) return Promise.resolve({ photos: [] });
     return Promise.reject(new Error(`unexpected ${url}`));
   });
-  dialogSpy.mockClear();
+  flowSpy.mockClear();
   fetchMock.mockClear();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -108,95 +96,43 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("動画キュー (#427)", () => {
-  it("動画2本を選ぶと、1本目→2本目の順に両方処理される（N本中M本目つき）", async () => {
-    const { input } = renderAsMember();
-    pickFiles(input, [video("a.mp4"), video("b.mp4")]);
-
-    // 1本目
-    await waitFor(() =>
-      expect(screen.getByTestId("dialog-file")).toHaveTextContent("a.mp4"),
-    );
-    expect(screen.getByTestId("dialog-queue")).toHaveTextContent("1/2");
-
-    // 投稿完了 → 2本目が続けて出る
-    fireEvent.click(screen.getByText("mock-upload"));
-    await waitFor(() =>
-      expect(screen.getByTestId("dialog-file")).toHaveTextContent("b.mp4"),
-    );
-    expect(screen.getByTestId("dialog-queue")).toHaveTextContent("2/2");
-
-    // 2本目も完了 → ダイアログが閉じる
-    fireEvent.click(screen.getByText("mock-upload"));
-    await waitFor(() =>
-      expect(screen.queryByTestId("video-dialog")).toBeNull(),
-    );
-  });
-
-  it("1本目をキャンセルしても2本目のダイアログが出る", async () => {
+describe("動画キューの配線 (#427)", () => {
+  it("動画2本を選ぶと、2本ともフローに渡る（捨てない）", async () => {
     const { input } = renderAsMember();
     pickFiles(input, [video("a.mp4"), video("b.mp4")]);
     await waitFor(() =>
-      expect(screen.getByTestId("dialog-file")).toHaveTextContent("a.mp4"),
+      expect(screen.getByTestId("flow-files")).toHaveTextContent("a.mp4,b.mp4"),
     );
-    fireEvent.click(screen.getByText("mock-cancel"));
+    // フローが閉じたら消える
+    fireEvent.click(screen.getByText("mock-flow-close"));
     await waitFor(() =>
-      expect(screen.getByTestId("dialog-file")).toHaveTextContent("b.mp4"),
+      expect(screen.queryByTestId("video-flow")).toBeNull(),
     );
   });
 
-  it("「すべてキャンセル」で残りも中止する", async () => {
-    const { input } = renderAsMember();
-    pickFiles(input, [video("a.mp4"), video("b.mp4")]);
-    await waitFor(() =>
-      expect(screen.getByTestId("dialog-file")).toHaveTextContent("a.mp4"),
-    );
-    fireEvent.click(screen.getByText("mock-cancel-all"));
-    await waitFor(() =>
-      expect(screen.queryByTestId("video-dialog")).toBeNull(),
-    );
-  });
-
-  it("画像と混在: 画像は従来どおりアップロードし、動画はキューに乗る", async () => {
+  it("画像と混在: 画像は従来どおり写真経路、動画はフローへ", async () => {
     const { input } = renderAsMember();
     pickFiles(input, [image("x.png"), video("a.mp4"), video("b.mp4")]);
-
     await waitFor(() =>
-      expect(screen.getByTestId("dialog-file")).toHaveTextContent("a.mp4"),
+      expect(screen.getByTestId("flow-files")).toHaveTextContent("a.mp4,b.mp4"),
     );
-    expect(screen.getByTestId("dialog-queue")).toHaveTextContent("1/2");
-    // 画像は写真のアップロード経路（fetch POST）に流れている
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   });
 
-  it("失敗した本はスキップして次へ進み、最後にまとめが出る", async () => {
+  it("フロー実行中の追加選択は、今のフローが閉じた後に次のフローで流れる", async () => {
     const { input } = renderAsMember();
-    pickFiles(input, [video("a.mp4"), video("b.mp4")]);
+    pickFiles(input, [video("a.mp4")]);
     await waitFor(() =>
-      expect(screen.getByTestId("dialog-file")).toHaveTextContent("a.mp4"),
+      expect(screen.getByTestId("flow-files")).toHaveTextContent("a.mp4"),
     );
-    fireEvent.click(screen.getByText("mock-fail"));
+    // 実行中に追加（ドラッグ&ドロップ相当）
+    pickFiles(input, [video("c.mp4")]);
+    // 今のフローの表示は変わらない（分母が動かない）
+    expect(screen.getByTestId("flow-files")).toHaveTextContent(/^a\.mp4$/);
+    // 閉じると次のフローが c.mp4 で始まる
+    fireEvent.click(screen.getByText("mock-flow-close"));
     await waitFor(() =>
-      expect(screen.getByTestId("dialog-file")).toHaveTextContent("b.mp4"),
+      expect(screen.getByTestId("flow-files")).toHaveTextContent(/^c\.mp4$/),
     );
-    fireEvent.click(screen.getByText("mock-upload"));
-    await waitFor(() =>
-      expect(screen.queryByTestId("video-dialog")).toBeNull(),
-    );
-    // 1本投稿・1本失敗のまとめ
-    expect(screen.getByText(/1 本は失敗/)).toBeInTheDocument();
-  });
-
-  it("50枠切れ（photo_limit）が出たら残りの動画は中止する", async () => {
-    const { input } = renderAsMember();
-    pickFiles(input, [video("a.mp4"), video("b.mp4")]);
-    await waitFor(() =>
-      expect(screen.getByTestId("dialog-file")).toHaveTextContent("a.mp4"),
-    );
-    fireEvent.click(screen.getByText("mock-limit"));
-    await waitFor(() =>
-      expect(screen.queryByTestId("video-dialog")).toBeNull(),
-    );
-    expect(screen.getByText(/50/)).toBeInTheDocument();
   });
 });

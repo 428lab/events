@@ -45,28 +45,18 @@ import {
 const photoUrl = (eventId: string, photoId: string) =>
   `/api/events/${eventId}/photos/${photoId}/image`;
 
-/** 動画の投稿フロー (#408)。変換ライブラリ（mediabunny）が大きいので、
+/** 動画の投稿フロー (#408, #427)。変換ライブラリ（mediabunny）が大きいので、
  * 動画を選んだときだけ遅延読み込みする */
-const VideoUploadDialog = lazy(() =>
-  import("./VideoUploadDialog.js").then((m) => ({
-    default: m.VideoUploadDialog,
+const VideoUploadFlow = lazy(() =>
+  import("./VideoUploadFlow.js").then((m) => ({
+    default: m.VideoUploadFlow,
   })),
 );
-// 型だけの import はチャンク分割に影響しない
-import type { VideoUploadOutcome } from "./VideoUploadDialog.js";
 
-/** 動画かどうか (#408)。複数選ばれたらキューで1本ずつ処理する (#427) */
+/** 動画かどうか (#408)。複数選ばれたら2段階のフロー
+ * （全本の範囲選択 → 1本ずつ変換・アップロード）で処理する (#427) */
 const isVideoFile = (f: File) =>
   f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(f.name);
-
-/** 動画キュー (#427)。files[0] が処理中の1本。total は今回の一連の本数で、
- * 「N本中M本目」の分母（M = total - files.length + 1） */
-interface VideoQueue {
-  files: File[];
-  total: number;
-  uploaded: number;
-  failed: number;
-}
 
 /** イベントフォトギャラリー（参加者は常に、公開設定時は誰でも閲覧） */
 export function EventPhotos({
@@ -96,23 +86,24 @@ export function EventPhotos({
   const [lightbox, setLightbox] = useState<EventPhoto | null>(null);
   const [uploading, setUploading] = useState(0);
   const [dragOver, setDragOver] = useState(false);
-  const [videoQueue, setVideoQueue] = useState<VideoQueue | null>(null);
+  const [videoBatch, setVideoBatch] = useState<File[] | null>(null);
+  /** フロー実行中に追加で選ばれた動画。今のフローが終わったら次のフローで流す */
+  const nextVideosRef = useRef<File[]>([]);
 
   const uploadFiles = useCallback(
     async (files: File[]) => {
-      // 動画 (#408) は専用フロー（変換＋進捗ダイアログ）へ。複数本は
-      // キューに積んで1本ずつ順に処理する（並行変換はしない #427）
+      // 動画 (#408) は専用フロー（範囲選択→変換→アップロードの2段階 #427）へ。
+      // フロー実行中の追加選択は次のフローに回す（積み替えで混ざると
+      // 「N本中M本目」の分母が動いて混乱するため）
       const videos = files.filter(isVideoFile);
       if (videos.length > 0) {
-        setVideoQueue((prev) =>
-          prev
-            ? {
-                ...prev,
-                files: [...prev.files, ...videos],
-                total: prev.total + videos.length,
-              }
-            : { files: videos, total: videos.length, uploaded: 0, failed: 0 },
-        );
+        setVideoBatch((active) => {
+          if (active) {
+            nextVideosRef.current.push(...videos);
+            return active;
+          }
+          return videos;
+        });
       }
       const images = files.filter((f) => f.type.startsWith("image/"));
       if (images.length === 0) return;
@@ -167,27 +158,12 @@ export function EventPhotos({
 
   const canDelete = (p: EventPhoto) => p.userId === me?.id || isStaff;
 
-  /** 動画キューの1本が終わった (#427)。結果を数えて次の1本へ。
-   * 50枠切れ（limit）は以降も同じ結果になるので残りを中止する */
-  const handleVideoDone = (outcome: VideoUploadOutcome) => {
-    if (!videoQueue) return;
-    const uploaded = videoQueue.uploaded + (outcome === "uploaded" ? 1 : 0);
-    const failed = videoQueue.failed + (outcome === "failed" ? 1 : 0);
-    const rest =
-      outcome === "cancelAll" || outcome === "limit"
-        ? []
-        : videoQueue.files.slice(1);
-    if (outcome === "limit") {
-      setError(t("eventSocial.photoLimit", { n: EVENT_PHOTO_LIMIT }));
-    } else if (rest.length === 0 && failed > 0) {
-      // 最後に結果が分かるように、失敗があったときだけまとめを出す
-      setError(t("eventSocial.videoQueueSummary", { ok: uploaded, ng: failed }));
-    }
-    setVideoQueue(
-      rest.length === 0
-        ? null
-        : { files: rest, total: videoQueue.total, uploaded, failed },
-    );
+  /** 動画フローが閉じた (#427)。実行中に追加選択があれば次のフローを始める。
+   * 成否のまとめ・50枠切れの扱いはフロー側（VideoUploadFlow）が持つ */
+  const handleVideoFlowClose = () => {
+    const next = nextVideosRef.current;
+    nextVideosRef.current = [];
+    setVideoBatch(next.length > 0 ? next : null);
   };
 
   return (
@@ -445,20 +421,14 @@ export function EventPhotos({
         }}
       />
 
-      {/* 動画の変換＋アップロード (#408)。選ばれたときだけ読み込む。
-          複数本はキューで1本ずつ (#427)。key で本ごとにマウントし直す
-          （ダイアログは1ファイル1回のフローを前提に作られている） */}
-      {videoQueue && videoQueue.files[0] && (
+      {/* 動画の投稿フロー (#408, #427)。選ばれたときだけ読み込む。
+          範囲選択→1本ずつ変換・アップロードの2段階はフロー側が持つ */}
+      {videoBatch && (
         <Suspense fallback={null}>
-          <VideoUploadDialog
-            key={videoQueue.total - videoQueue.files.length}
+          <VideoUploadFlow
             eventId={eventId}
-            file={videoQueue.files[0]}
-            queue={{
-              index: videoQueue.total - videoQueue.files.length + 1,
-              total: videoQueue.total,
-            }}
-            onClose={handleVideoDone}
+            files={videoBatch}
+            onClose={handleVideoFlowClose}
           />
         </Suspense>
       )}

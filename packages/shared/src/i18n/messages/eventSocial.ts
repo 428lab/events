@@ -226,6 +226,10 @@ const ja = {
   /* ===== 複数本のキュー (#427) ===== */
   videoQueueProgress: "動画 {{n}} 本中 {{m}} 本目",
   videoQueueCancelAll: "すべてキャンセル",
+  /** 第1段階（範囲選択）: この本を飛ばして次へ */
+  videoQueueSkipOne: "この動画をやめる",
+  /** 第2段階（処理中）: 現在の本を中止して次へ */
+  videoQueueStopOne: "この動画を中止",
   /** キューを流し終えたときのまとめ（失敗があったときだけ出す） */
   videoQueueSummary: "動画 {{ok}} 本を投稿しました（{{ng}} 本は失敗）。",
 
@@ -235,7 +239,7 @@ const ja = {
   /** 上限以内の動画でも任意でトリムを開ける（既定は全範囲で畳む） */
   videoTrimToggle: "範囲を選ぶ（トリム）",
   videoTrimRange: "開始 {{from}} ／ 終了 {{to}} ／ 長さ {{len}}",
-  videoTrimConfirm: "この範囲で投稿",
+  videoTrimConfirm: "この範囲で決定",
   videoTrimHandleStart: "開始位置",
   videoTrimHandleEnd: "終了位置",
   videoTrimMove: "選択範囲を移動",
@@ -411,13 +415,15 @@ const en: Record<keyof typeof ja, string> = {
 
   videoQueueProgress: "Video {{m}} of {{n}}",
   videoQueueCancelAll: "Cancel all",
+  videoQueueSkipOne: "Skip this video",
+  videoQueueStopOne: "Stop this video",
   videoQueueSummary: "Posted {{ok}} video(s) ({{ng}} failed).",
 
   videoTrimIntro:
     "The video is longer than {{s}} seconds. Choose the range to post (up to {{s}} seconds).",
   videoTrimToggle: "Choose a range (trim)",
   videoTrimRange: "Start {{from}} / End {{to}} / Length {{len}}",
-  videoTrimConfirm: "Post this range",
+  videoTrimConfirm: "Use this range",
   videoTrimHandleStart: "Start position",
   videoTrimHandleEnd: "End position",
   videoTrimMove: "Move the selected range",
