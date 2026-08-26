@@ -21,6 +21,7 @@ export * from "./eventComments.js";
 export * from "./eventLikes.js";
 export * from "./eventMeets.js";
 export * from "./meetPrizes.js";
+export * from "./bingo.js";
 export * from "./eventQa.js";
 export * from "./eventSchedule.js";
 export * from "./eventTodo.js";

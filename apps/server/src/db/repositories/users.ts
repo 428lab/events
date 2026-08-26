@@ -453,6 +453,9 @@ export const usersRepo = {
       ["event_prize_redemption", "user_id", ["prize_id"]],
       // 1位の確定 (#431)。PK (event_id, user_id)。同率で両方が勝者なら負け側を捨てる
       ["event_meet_winner", "user_id", ["event_id"]],
+      // ビンゴのカード (#436)。PK (event_id, user_id)。両方が持っていたら
+      // 負け側を捨てる（勝ち側のカードで判定が続く）
+      ["event_bingo_card", "user_id", ["event_id"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols
