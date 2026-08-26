@@ -52,12 +52,19 @@ export function hasImageMagicBytes(head: Uint8Array, mime: string): boolean {
         head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 &&
         head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50
       );
-    case "image/avif":
-      // ISOBMFF: offset 4 に "ftyp"（MP4 と同じ箱構造。ブランドまでは見ない）
-      return (
-        head.length >= 8 &&
-        head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70
-      );
+    case "image/avif": {
+      // ISOBMFF: offset 4 に "ftyp"、offset 8 のブランドが AVIF 系
+      // （avif / avis(連番) / mif1(HEIF 汎用)）であること。ftyp だけだと
+      // MP4 動画も通ってしまう
+      if (
+        head.length < 12 ||
+        head[4] !== 0x66 || head[5] !== 0x74 || head[6] !== 0x79 || head[7] !== 0x70
+      ) {
+        return false;
+      }
+      const brand = String.fromCharCode(head[8]!, head[9]!, head[10]!, head[11]!);
+      return brand === "avif" || brand === "avis" || brand === "mif1";
+    }
     default:
       return false;
   }

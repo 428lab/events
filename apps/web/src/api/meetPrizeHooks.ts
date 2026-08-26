@@ -139,18 +139,19 @@ export function useClearMeetWinners(eventId: string) {
 }
 
 /** 景品画像のアップロード (#434)。イベント画像 (useUploadEventImage) と同じ
- * 生バイナリ PUT（api.post は JSON 前提なので使わない） */
+ * 生バイナリ PUT（api.post は JSON 前提なので使わない）。
+ * blob は ImageCropField がクロップ・縮小済みのもの */
 export function useUploadMeetPrizeImage(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ prizeId, file }: { prizeId: string; file: File }) => {
+    mutationFn: async ({ prizeId, blob }: { prizeId: string; blob: Blob }) => {
       const res = await fetch(
         `/api/events/${eventId}/meet-prizes/${prizeId}/image`,
         {
           method: "PUT",
-          headers: { "Content-Type": file.type },
+          headers: { "Content-Type": blob.type },
           credentials: "include",
-          body: file,
+          body: blob,
         },
       );
       if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));

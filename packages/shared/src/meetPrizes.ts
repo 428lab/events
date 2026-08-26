@@ -23,6 +23,14 @@ export const MEET_PRIZE_THRESHOLD_PRESETS = [5, 10, 20] as const;
 /** 1イベントに作れる景品の上限。公開ページに並ぶので無制限にしない */
 export const MEET_PRIZE_MAX = 20;
 
+/** 景品画像 (#434)。カードの正方形サムネイル用のクロップ先サイズと最大バイト数
+ * （イベント画像 EVENT_IMAGE と同じ形の契約。値の流用はしない——役割が別） */
+export const MEET_PRIZE_IMAGE = {
+  width: 512,
+  height: 512,
+  maxBytes: 1024 * 1024, // 1MB
+} as const;
+
 /** 景品の定義（staff の編集画面・デスク画面が使う内部形） */
 export interface MeetPrize {
   id: string;
@@ -34,7 +42,8 @@ export interface MeetPrize {
   threshold: number | null;
   /** 在庫総数（残数は引き換え記録から導出） */
   stock: number;
-  /** 景品画像の R2 キー（任意 #434）。公開応答には載せない（URL だけ出す） */
+  /** 景品画像の R2 キー（任意 #434）。バケットは公開しない前提（配信は必ず
+   * API 経由の門を通す）。公開応答に載るのは配信 URL だけ */
   imageKey: string | null;
   createdAt: number;
 }

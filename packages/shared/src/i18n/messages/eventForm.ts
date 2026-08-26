@@ -123,8 +123,10 @@ const ja = {
   meetPrizeImageSet: "画像を設定",
   meetPrizeImageChange: "画像を変更",
   meetPrizeImageRemove: "画像を削除",
-  meetPrizeImageHelp: "1MBまでの画像（PNG・JPEG・WebP・GIF・AVIF）。",
+  meetPrizeImageHelp: "1MBまでの画像。",
   meetPrizeImageFailed: "画像のアップロードに失敗しました。",
+  meetPrizeImageTooLarge: "画像が大きすぎます（1MBまで）。",
+  meetPrizeImageInvalid: "画像として読み取れませんでした。",
 
   /** 作成ページの結び。たまご（あったらいいな）から作った場合の紐付け失敗も含む */
   createSubmit: "作成",
@@ -392,8 +394,10 @@ const en: Record<keyof typeof ja, string> = {
   meetPrizeImageSet: "Set an image",
   meetPrizeImageChange: "Change the image",
   meetPrizeImageRemove: "Remove the image",
-  meetPrizeImageHelp: "An image up to 1MB (PNG, JPEG, WebP, GIF, or AVIF).",
+  meetPrizeImageHelp: "An image up to 1MB.",
   meetPrizeImageFailed: "Failed to upload the image.",
+  meetPrizeImageTooLarge: "The image is too large (up to 1MB).",
+  meetPrizeImageInvalid: "Could not read the file as an image.",
 
   createSubmit: "Create",
   createError: "Could not create the event. Please check what you entered.",

@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import type { MeetPrize, MeetPrizeList } from "@eventer/shared";
+import { MEET_PRIZE_IMAGE } from "@eventer/shared";
 
 const BASE = "https://example.com";
 
@@ -132,6 +133,19 @@ describe("景品画像のアップロード (#434)", () => {
     );
     expect(fake.status).toBe(400);
     expect(await fake.json()).toEqual({ error: "invalid_image" });
+    expect(await imageKeyOf(eventId, prizeId, staff.cookie)).toBeNull();
+  });
+
+  it("1MB を超える画像は 413（上限の契約は MEET_PRIZE_IMAGE の1か所）", async () => {
+    const { staff, eventId, prizeId } = await setup();
+    const big = new Uint8Array(MEET_PRIZE_IMAGE.maxBytes + 1);
+    big.set(pngBytes()); // 先頭は正しい PNG シグネチャ（サイズだけで弾かれること）
+    const res = await putImage(eventId, prizeId, staff.cookie, big, "image/png");
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({
+      error: "too_large",
+      maxBytes: MEET_PRIZE_IMAGE.maxBytes,
+    });
     expect(await imageKeyOf(eventId, prizeId, staff.cookie)).toBeNull();
   });
 

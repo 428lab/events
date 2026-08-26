@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   Alert,
   Box,
@@ -18,15 +18,17 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import HideImageOutlinedIcon from "@mui/icons-material/HideImageOutlined";
-import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { MeetPrize, MeetPrizeCondition } from "@eventer/shared";
 import {
+  MEET_PRIZE_IMAGE,
   MEET_PRIZE_MAX,
   MEET_PRIZE_THRESHOLD_PRESETS,
   meetPrizeImageUrl,
 } from "@eventer/shared";
+import { ImageCropField } from "./ImageCropField.js";
+import { errorMessage } from "../lib/errorMessage.js";
 import {
   useCreateMeetPrize,
   useDeleteMeetPrize,
@@ -79,10 +81,7 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
   const removeImage = useDeleteMeetPrizeImage(eventId);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [failed, setFailed] = useState(false);
-  const [imageFailed, setImageFailed] = useState(false);
-  // 隠しファイル入力は1つだけ置き、どの景品への設定かを ref で覚える
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const imageTargetRef = useRef<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
   const busy =
     create.isPending ||
     update.isPending ||
@@ -90,9 +89,24 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
     uploadImage.isPending ||
     removeImage.isPending;
 
-  const pickImage = (prizeId: string) => {
-    imageTargetRef.current = prizeId;
-    fileInputRef.current?.click();
+  /** クロップ済みの画像を上げる。失敗は理由別の文言で出す（サイズ超過は
+   * クロップ側の縮小でまず起きないが、起きたときに原因が分かるように） */
+  const uploadCropped = (prizeId: string, blob: Blob) => {
+    setImageError(null);
+    uploadImage.mutate(
+      { prizeId, blob },
+      {
+        onError: (e) =>
+          setImageError(
+            errorMessage(e, {
+              too_large: t("eventForm.meetPrizeImageTooLarge"),
+              invalid_image: t("eventForm.meetPrizeImageInvalid"),
+              invalid_content_type: t("eventForm.meetPrizeImageInvalid"),
+              default: t("eventForm.meetPrizeImageFailed"),
+            }),
+          ),
+      },
+    );
   };
 
   const prizes = data?.prizes ?? [];
@@ -176,19 +190,21 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
             >
               <EditOutlinedIcon fontSize="small" />
             </IconButton>
-            <IconButton
-              size="small"
-              aria-label={
+            {/* 画像はイベント画像と同じ部品でクロップ・縮小してから上げる
+                （カードは正方形サムネイルなので 512×512。スマホの大きな写真も
+                ここで 1MB 以内に収まる） */}
+            <ImageCropField
+              label={
                 prize.imageKey
                   ? t("eventForm.meetPrizeImageChange")
                   : t("eventForm.meetPrizeImageSet")
               }
-              title={t("eventForm.meetPrizeImageHelp")}
-              disabled={busy}
-              onClick={() => pickImage(prize.id)}
-            >
-              <ImageOutlinedIcon fontSize="small" />
-            </IconButton>
+              busy={busy}
+              outWidth={MEET_PRIZE_IMAGE.width}
+              outHeight={MEET_PRIZE_IMAGE.height}
+              maxBytes={MEET_PRIZE_IMAGE.maxBytes}
+              onCropped={(blob) => uploadCropped(prize.id, blob)}
+            />
             {prize.imageKey && (
               <IconButton
                 size="small"
@@ -196,7 +212,12 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
                 disabled={busy}
                 onClick={() =>
                   removeImage.mutate(prize.id, {
-                    onError: () => setImageFailed(true),
+                    onError: (e) =>
+                      setImageError(
+                        errorMessage(e, {
+                          default: t("eventForm.meetPrizeImageFailed"),
+                        }),
+                      ),
                   })
                 }
               >
@@ -218,32 +239,14 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
           </Stack>
         ))}
       </Stack>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
-        hidden
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          const prizeId = imageTargetRef.current;
-          // 同じファイルをもう一度選べるように毎回リセットする
-          e.target.value = "";
-          if (!file || !prizeId) return;
-          setImageFailed(false);
-          uploadImage.mutate(
-            { prizeId, file },
-            { onError: () => setImageFailed(true) },
-          );
-        }}
-      />
       {failed && (
         <Alert severity="error" sx={{ mt: 1 }} onClose={() => setFailed(false)}>
           {t("eventForm.meetPrizeSaveFailed")}
         </Alert>
       )}
-      {imageFailed && (
-        <Alert severity="error" sx={{ mt: 1 }} onClose={() => setImageFailed(false)}>
-          {t("eventForm.meetPrizeImageFailed")} {t("eventForm.meetPrizeImageHelp")}
+      {imageError && (
+        <Alert severity="error" sx={{ mt: 1 }} onClose={() => setImageError(null)}>
+          {imageError}
         </Alert>
       )}
       {prizes.length >= MEET_PRIZE_MAX ? (

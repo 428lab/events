@@ -2,15 +2,17 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type {
   CreateMeetPrizeInput,
+  Event,
   MeetPrize,
   MeetPrizeList,
   MeetPrizeStatus,
   MeetPrizeView,
   RedeemMeetPrizeInput,
   UpdateMeetPrizeInput,
+  User,
 } from "@eventer/shared";
 import {
-  EVENT_IMAGE,
+  MEET_PRIZE_IMAGE,
   MEET_PRIZE_MAX,
   createMeetPrizeInput,
   meetPrizeImageUrl,
@@ -69,8 +71,7 @@ const prizeImageKey = (prizeId: string) =>
 /**
  * 公開: 景品画像の取得（未ログイン可）。イベント画像 (routes/images.ts) と同じ
  * 配信の型（R2 ストリーム＋許可リスト固定の Content-Type＋nosniff＋ETag）。
- * 見せてよい相手も公開一覧と同じ門（オフ・不可視は 404）だが、staff だけは
- * オフでも見られる（編集・デスクのプレビューが仕込み中に使う）。
+ * 見せてよい相手は公開一覧と同じ meetPrizeAudience の1か所で判定する。
  */
 export async function getMeetPrizeImage(c: Context) {
   const eventId = c.req.param("id")!;
@@ -82,11 +83,8 @@ export async function getMeetPrizeImage(c: Context) {
     return c.json({ error: "not_found" }, 404);
   }
   const user = await currentUser(c);
-  const visible =
-    event.meetPrizes && (await canViewEvent(event, user));
-  if (!visible && !(user && (await canManageEvent(eventId, user)))) {
-    return c.json({ error: "not_found" }, 404);
-  }
+  const audience = await meetPrizeAudience(event, user);
+  if (!audience) return c.json({ error: "not_found" }, 404);
 
   // キー末尾はアップロードごとの乱数なので、そのまま ETag になる
   const etag = `"${prize.imageKey.split("/").pop()}"`;
@@ -99,42 +97,63 @@ export async function getMeetPrizeImage(c: Context) {
     headers: {
       "Content-Type": safeServeMime(obj.httpMetadata?.contentType),
       "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "public, max-age=60",
+      // 設定オフ・下書きを staff 例外で通した応答は共有キャッシュに置かせない
+      "Cache-Control":
+        audience === "staff" ? "private, max-age=60" : "public, max-age=60",
       ETag: etag,
     },
   });
 }
 
 /** イベント複製用: 景品画像を別の景品へコピー（元が無ければ何もしない）。
- * キーは新しく振る（共有すると片方の削除で共倒れするため） */
+ * キーは新しく振る（共有すると片方の削除で共倒れするため）。
+ * 失敗は握りつぶして**画像なしで複製を完了**させる（画像1枚のために
+ * 複製 API 全体を 500 にしない。ログで追える） */
 export async function copyMeetPrizeImage(
   src: MeetPrize,
   dstPrizeId: string,
 ): Promise<void> {
   if (!src.imageKey) return;
-  const obj = await getBucket().get(src.imageKey);
-  if (!obj) return;
-  // 画像は 1MB 以内（EVENT_IMAGE と同じ上限）なのでメモリに載せてコピーする
-  const body = await obj.arrayBuffer();
-  const newKey = prizeImageKey(dstPrizeId);
-  await getBucket().put(newKey, body, {
-    httpMetadata: { contentType: obj.httpMetadata?.contentType },
-  });
-  await eventMeetPrizesRepo.setImageKey(dstPrizeId, newKey);
+  try {
+    const obj = await getBucket().get(src.imageKey);
+    if (!obj) return;
+    // 画像は MEET_PRIZE_IMAGE.maxBytes（1MB）以内なのでメモリに載せてコピーする
+    const body = await obj.arrayBuffer();
+    const newKey = prizeImageKey(dstPrizeId);
+    await getBucket().put(newKey, body, {
+      httpMetadata: { contentType: obj.httpMetadata?.contentType },
+    });
+    await eventMeetPrizesRepo.setImageKey(dstPrizeId, newKey);
+  } catch (e) {
+    console.error("[meet-prize] image copy failed", src.imageKey, e);
+  }
+}
+
+/**
+ * 景品が誰に見えるか（**オフの隠蔽の門の述語はこれ1つ**。公開一覧と画像 GET が共用）。
+ * - "public": 設定オンで、イベント自体を見られる人（未ログイン含む）
+ * - "staff": 設定オフ・下書きでも運営できる人（仕込み中の編集・プレビュー用）
+ * - null: 見せない（イベント不存在と同一の 404 で存在ごと隠す）
+ */
+async function meetPrizeAudience(
+  event: Event,
+  user: User | null,
+): Promise<"public" | "staff" | null> {
+  if (event.meetPrizes && (await canViewEvent(event, user))) return "public";
+  if (user && (await canManageEvent(event.id, user))) return "staff";
+  return null;
 }
 
 /**
  * 公開: 景品一覧（未ログイン可。awards の canView と同じ基準）。
- * オフのイベント・見られないイベントは 404 not_found（存在ごと隠す門はここ1か所）。
+ * 見せてよい相手かは meetPrizeAudience の1か所で判定する。
  */
 export async function getEventMeetPrizes(c: Context) {
   const eventId = c.req.param("id")!;
   const event = await eventsRepo.findById(eventId);
-  if (!event || !event.meetPrizes) return c.json({ error: "not_found" }, 404);
+  if (!event) return c.json({ error: "not_found" }, 404);
   const user = await currentUser(c);
-  // 下書きの可視判定は canViewEvent の1か所（判定の写しを持たない）。
-  // 見られない人には 404（オフの隠蔽と同じ応答）
-  if (!(await canViewEvent(event, user))) {
+  if (!(await meetPrizeAudience(event, user))) {
     return c.json({ error: "not_found" }, 404);
   }
 
@@ -230,7 +249,7 @@ meetPrizeRoutes.delete(
 /**
  * 景品画像のアップロード (#434)（staff のみ・生バイナリ）。
  * 検証はイベント画像 (routes/images.ts putEventImage) と同じ契約
- * （MIME 許可リスト imageMime.ts・EVENT_IMAGE.maxBytes）＋マジックバイト検査。
+ * （MIME 許可リスト imageMime.ts・MEET_PRIZE_IMAGE.maxBytes）＋マジックバイト検査。
  *
  * 掃除の順序（put 失敗時に孤児を残さない — PR #423 の教訓）:
  * 新キーに put → D1 の参照を差し替え（失敗したら新キーを消して投げ直す）→
@@ -247,13 +266,13 @@ meetPrizeRoutes.put(
     const mime = normalizeImageMime(c.req.header("content-type"));
     if (!mime) return c.json({ error: "invalid_content_type" }, 400);
     const declared = Number(c.req.header("content-length") ?? "0");
-    if (declared > EVENT_IMAGE.maxBytes) {
-      return c.json({ error: "too_large", maxBytes: EVENT_IMAGE.maxBytes }, 413);
+    if (declared > MEET_PRIZE_IMAGE.maxBytes) {
+      return c.json({ error: "too_large", maxBytes: MEET_PRIZE_IMAGE.maxBytes }, 413);
     }
     const body = await c.req.arrayBuffer();
     if (body.byteLength === 0) return c.json({ error: "empty_body" }, 400);
-    if (body.byteLength > EVENT_IMAGE.maxBytes) {
-      return c.json({ error: "too_large", maxBytes: EVENT_IMAGE.maxBytes }, 413);
+    if (body.byteLength > MEET_PRIZE_IMAGE.maxBytes) {
+      return c.json({ error: "too_large", maxBytes: MEET_PRIZE_IMAGE.maxBytes }, 413);
     }
     const head = new Uint8Array(body, 0, Math.min(12, body.byteLength));
     if (!hasImageMagicBytes(head, mime)) {
