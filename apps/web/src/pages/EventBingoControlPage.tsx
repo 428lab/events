@@ -213,6 +213,15 @@ export function EventBingoControlPage() {
                       {t("staffOps.bingoDelete")}
                     </Button>
                   </Stack>
+                  {data.status === "running" && data.drawnNumbers.length > 0 && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ mt: 1, display: "block" }}
+                    >
+                      {t("staffOps.bingoUndoHelp")}
+                    </Typography>
+                  )}
                   <Box sx={{ mt: 1.5 }}>
                     <Chip
                       size="small"

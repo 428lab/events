@@ -71,19 +71,28 @@ eventBingoRoutes.get("/:id/bingo", async (c) => {
     } satisfies BingoState);
   }
   const drawn = drawnNumbers(game);
-  // counts は全カードの導出から数える（名前はここで捨てる）
-  const rows = await eventBingoRepo.statusRows(game.eventId, drawn);
+  // counts は数字だけの数え上げ専用クエリから導出する。名前・アバターを
+  // そもそも取得しないことで、参加者応答への漏れ事故の芽を摘む
+  const allCards = await eventBingoRepo.cardNumbersForEvent(game.eventId);
+  const derivedAll = allCards.map((n) => deriveBingoCard(n, drawn));
   const card = await eventBingoRepo.findCard(game.eventId, c.get("user").id);
   const mine = card ? deriveBingoCard(card, drawn) : null;
+  // 自分の順位＝自分より早い手番で完成した人数 + 1（statusRows の競技順位と同じ規則）
   const myRank =
-    rows.find((r) => r.userId === c.get("user").id)?.rank ?? null;
+    mine?.completedAtSeq != null
+      ? derivedAll.filter(
+          (d) =>
+            d.completedAtSeq !== null &&
+            d.completedAtSeq < mine.completedAtSeq!,
+        ).length + 1
+      : null;
   return c.json({
     status: game.status,
     drawnNumbers: drawn,
     counts: {
-      cards: rows.length,
-      bingo: rows.filter((r) => r.bingo).length,
-      reach: rows.filter((r) => r.reach).length,
+      cards: derivedAll.length,
+      bingo: derivedAll.filter((d) => d.bingo).length,
+      reach: derivedAll.filter((d) => d.reach).length,
     },
     card,
     me: mine
@@ -140,7 +149,9 @@ eventBingoRoutes.post(
   },
 );
 
-/** 次を引く。変更行数 0 なら状態を読み直して理由を分ける（在庫確保と同じ型） */
+/** 次を引く。RETURNING で受けた**自分の手番**から番号を決める。
+ * UPDATE 後に読み直すと、同時に引いた2応答が同じ番号を名乗ってしまう
+ * （draw_order は start 以降不変なので、先に読んでおいてよい） */
 eventBingoRoutes.post(
   "/:id/bingo/draw",
   requireEventRole(["staff"]),
@@ -148,7 +159,8 @@ eventBingoRoutes.post(
     const eventId = c.req.param("id");
     const game = await eventBingoRepo.findGame(eventId);
     if (!game) return c.json({ error: "not_found" }, 404);
-    if (!(await eventBingoRepo.draw(eventId))) {
+    const myCount = await eventBingoRepo.draw(eventId);
+    if (myCount === null) {
       const now = await eventBingoRepo.findGame(eventId);
       return c.json(
         {
@@ -158,9 +170,11 @@ eventBingoRoutes.post(
         409,
       );
     }
-    const after = (await eventBingoRepo.findGame(eventId))!;
-    const drawn = drawnNumbers(after);
-    return c.json({ number: drawn[drawn.length - 1], drawnNumbers: drawn });
+    const order = game.drawOrder ?? [];
+    return c.json({
+      number: order[myCount - 1],
+      drawnNumbers: order.slice(0, myCount),
+    });
   },
 );
 

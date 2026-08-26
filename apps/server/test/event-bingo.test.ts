@@ -127,7 +127,21 @@ async function setCard(
     .run();
 }
 
+/** 門のソース監査（変異のトリップワイヤ）。挙動の証明は下の 404 テストが担い、
+ * こちらは「確定メンバーの条件が bingoAudience から消えた」リファクタを
+ * コンパイル前に気づかせるだけの安い網 */
+const routeSources = import.meta.glob("../src/routes/eventBingo.ts", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
 describe("門と見える範囲 (#436)", () => {
+  it("bingoAudience が確定メンバーを要求している（ソース監査）", () => {
+    const src = Object.values(routeSources)[0]!;
+    expect(src).toContain('member?.status === "confirmed"');
+  });
+
   it("ゲーム行が無ければ参加者に 404（存在しないイベントと同一ボディ）。staff は 'none' を見る", async () => {
     const staff = await makeUser();
     const eventId = await insertEvent(staff.userId);
@@ -255,7 +269,7 @@ describe("抽選（事前順列 + 条件付き UPDATE の1文）", () => {
     expect(undo.drawnNumbers).toEqual([d1.number]);
   });
 
-  it("同時に2回引いても、番号は飛ばず・重複せず・ちょうど2進む", async () => {
+  it("同時に2回引いても、番号は飛ばず・重複せず・ちょうど2進む。各応答は自分の番号を受け取る", async () => {
     const { eventId, staff } = await setup();
     await post(`${bingoUrl(eventId)}/start`, staff.cookie);
     const [r1, r2] = await Promise.all([
@@ -274,6 +288,15 @@ describe("抽選（事前順列 + 条件付き UPDATE の1文）", () => {
       await SELF.fetch(`${bingoUrl(eventId)}/status`, { headers: { cookie: staff.cookie } })
     ).json()) as BingoStatus;
     expect(new Set(state.drawnNumbers).size).toBe(2);
+    // RETURNING で受けた自分の手番から番号を決めるので、2応答は**別の番号**を
+    // 名乗り、合わせるとちょうど公開済みの2個になる（同じ番号を二重発表しない・
+    // どの応答にも出ない番号を作らない。レビュー指摘の回帰防止）
+    const n1 = ((await r1.json()) as { number: number }).number;
+    const n2 = ((await r2.json()) as { number: number }).number;
+    expect(n1).not.toBe(n2);
+    expect([n1, n2].sort((a, b) => a - b)).toEqual(
+      [...state.drawnNumbers].sort((a, b) => a - b),
+    );
   });
 
   it("75 個引き切ったら exhausted", async () => {

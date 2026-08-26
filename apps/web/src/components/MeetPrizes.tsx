@@ -23,25 +23,34 @@ import { useMeetPrizes } from "../api/meetPrizeHooks.js";
  * 防御ではない（門は docs/meet-prizes.md §3.9）。
  */
 
-/** 本人がこの景品を達成しているか（表示用の導出。判定の正は引き換え時のサーバー） */
-function achieved(prize: MeetPrizeView, me: MeetPrizeMe): boolean {
+/** 本人がこの景品を達成しているか（表示用の導出。判定の正は引き換え時のサーバー）。
+ * bingo はプール全体で1人1つなので、どれかを受け取ったら他の bingo 景品を
+ * 「達成！」のままにしない（poolTaken） */
+function achieved(
+  prize: MeetPrizeView,
+  me: MeetPrizeMe,
+  poolTaken: boolean,
+): boolean {
   if (prize.conditionType === "meet_count") {
     return me.count >= (prize.threshold ?? Infinity);
   }
-  return prize.conditionType === "top_rank" ? me.won : me.bingo;
+  if (prize.conditionType === "top_rank") return me.won;
+  return me.bingo && !poolTaken;
 }
 
 function PrizeRow({
   prize,
   me,
   winnersDecided,
+  poolTaken,
 }: {
   prize: MeetPrizeView;
   me: MeetPrizeMe | null;
   winnersDecided: boolean;
+  poolTaken: boolean;
 }) {
   const { t } = useTranslation();
-  const done = me ? achieved(prize, me) : false;
+  const done = me ? achieved(prize, me, poolTaken) : false;
   const redeemed = me ? me.redeemedPrizeIds.includes(prize.id) : false;
   const soldOut = prize.stockLeft === 0;
   return (
@@ -119,10 +128,15 @@ export function MeetPrizePanel({ eventId }: { eventId: string }) {
   if (!data || data.prizes.length === 0) return null;
 
   const me = data.me;
+  // ビンゴ景品プール (#436)。1人1つの選び取りなので、まとまりで見せる
+  const poolPrizes = data.prizes.filter((p) => p.conditionType === "bingo");
+  const regularPrizes = data.prizes.filter((p) => p.conditionType !== "bingo");
+  const poolTaken =
+    me !== null && poolPrizes.some((p) => me.redeemedPrizeIds.includes(p.id));
   const hasUnredeemed =
     me !== null &&
     data.prizes.some(
-      (p) => achieved(p, me) && !me.redeemedPrizeIds.includes(p.id),
+      (p) => achieved(p, me, poolTaken) && !me.redeemedPrizeIds.includes(p.id),
     );
 
   return (
@@ -148,15 +162,34 @@ export function MeetPrizePanel({ eventId }: { eventId: string }) {
           </Alert>
         )}
         <Stack spacing={1}>
-          {data.prizes.map((p) => (
+          {regularPrizes.map((p) => (
             <PrizeRow
               key={p.id}
               prize={p}
               me={me}
               winnersDecided={data.winnersDecided}
+              poolTaken={poolTaken}
             />
           ))}
         </Stack>
+        {poolPrizes.length > 0 && (
+          <Box sx={{ mt: regularPrizes.length > 0 ? 1.5 : 0 }}>
+            <Typography variant="subtitle2" sx={{ mb: 0.75 }}>
+              {t("eventSocial.meetPrizePoolHeading")}
+            </Typography>
+            <Stack spacing={1}>
+              {poolPrizes.map((p) => (
+                <PrizeRow
+                  key={p.id}
+                  prize={p}
+                  me={me}
+                  winnersDecided={data.winnersDecided}
+                  poolTaken={poolTaken}
+                />
+              ))}
+            </Stack>
+          </Box>
+        )}
       </CardContent>
     </Card>
   );

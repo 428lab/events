@@ -120,16 +120,19 @@ export const eventBingoRepo = {
     return changes > 0;
   },
 
-  /** 「次を引く」。running でない・引き切りは変更行数 0（在庫確保 #431 と同じ型）。
-   * 同時に2回押しても2回進むだけで、飛び・重複は構造的に起きない */
-  async draw(eventId: string): Promise<boolean> {
-    const changes = await runCount(
+  /** 「次を引く」。running でない・引き切りは null（在庫確保 #431 と同じ1文の型）。
+   * RETURNING で**自分が進めた手番**を原子的に受け取る。UPDATE 後に読み直すと、
+   * 同時に引いた2つの応答が同じ「最新の番号」を名乗り、間の1つがどの応答にも
+   * 出ない（0回発表）ことがある（レビュー指摘） */
+  async draw(eventId: string): Promise<number | null> {
+    const r = await one<{ drawn_count: number }>(
       `UPDATE event_bingo_game
           SET drawn_count = drawn_count + 1
-        WHERE event_id = ? AND status = 'running' AND drawn_count < ${BINGO_MAX_NUMBER}`,
+        WHERE event_id = ? AND status = 'running' AND drawn_count < ${BINGO_MAX_NUMBER}
+        RETURNING drawn_count`,
       eventId,
     );
-    return changes > 0;
+    return r?.drawn_count ?? null;
   },
 
   /** 直前の1個を取り消す（staff の誤操作訂正）。0 のときは変更行数 0 */
@@ -258,12 +261,17 @@ export const eventBingoRepo = {
     return [...winners, ...reach, ...rest];
   },
 
-  /** 発行済みカード数（参加者向けの counts 用） */
-  async countCards(eventId: string): Promise<number> {
-    const r = await one<{ v: number }>(
-      "SELECT COUNT(*) AS v FROM event_bingo_card WHERE event_id = ?",
+  /** 参加者向けの数え上げ専用: カードの数字だけを返す（名前・アバターを引かない。
+   * 個人を指す値をそもそも取得しないことで、参加者応答への漏れ事故の芽を摘む）。
+   * 退会者の除外は statusRows と同じ条件（JOIN で deleted_at IS NULL） */
+  async cardNumbersForEvent(eventId: string): Promise<number[][]> {
+    const rows = await many<{ numbers: string }>(
+      `SELECT c.numbers
+         FROM event_bingo_card c
+         JOIN user u ON u.id = c.user_id AND u.deleted_at IS NULL
+        WHERE c.event_id = ?`,
       eventId,
     );
-    return r?.v ?? 0;
+    return rows.map((r) => JSON.parse(r.numbers) as number[]);
   },
 };

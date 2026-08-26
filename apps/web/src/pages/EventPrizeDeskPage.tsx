@@ -471,20 +471,26 @@ export function EventPrizeDeskPage() {
           <WinnersCard eventId={id} status={data} onError={setFailure} />
           {/* ビンゴ景品プール (#436)。bingo 条件の景品はここに集約（下の一覧には出さない） */}
           <BingoPoolCard eventId={id} status={data} onError={setFailure} />
-          {data.prizes.length === 0 ? (
-            <Alert severity="info">{t("staffOps.prizeDeskEmpty")}</Alert>
-          ) : (
-            <>
-              <TextField
-                size="small"
-                label={t("staffOps.prizeDeskSearch")}
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                sx={{ maxWidth: 320 }}
-              />
-              {data.prizes
-                .filter((row) => row.prize.conditionType !== "bingo")
-                .map((row) => (
+          {(() => {
+            const regular = data.prizes.filter(
+              (row) => row.prize.conditionType !== "bingo",
+            );
+            if (regular.length === 0) {
+              // ビンゴ景品だけの回では、空の絞り込み欄と空一覧を出さない
+              return data.prizes.length === 0 ? (
+                <Alert severity="info">{t("staffOps.prizeDeskEmpty")}</Alert>
+              ) : null;
+            }
+            return (
+              <>
+                <TextField
+                  size="small"
+                  label={t("staffOps.prizeDeskSearch")}
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  sx={{ maxWidth: 320 }}
+                />
+                {regular.map((row) => (
                   <PrizeCard
                     key={row.prize.id}
                     eventId={id}
@@ -493,8 +499,9 @@ export function EventPrizeDeskPage() {
                     onError={setFailure}
                   />
                 ))}
-            </>
-          )}
+              </>
+            );
+          })()}
         </>
       )}
     </Stack>

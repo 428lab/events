@@ -329,6 +329,7 @@ const ja = {
   bingoDraw: "次を引く",
   bingoUndoDraw: "直前の1個を取り消す",
   bingoUndoConfirm: "直前に引いた番号を取り消しますか？",
+  bingoUndoHelp: "取り消した番号は、次を引くと同じ番号がもう一度出ます。",
   bingoEnd: "終了する",
   bingoEndConfirm:
     "抽選を終了しますか？結果が固定されます。景品の引き換えは続けられます。",
@@ -729,6 +730,7 @@ const en: Record<keyof typeof ja, string> = {
   bingoDraw: "Draw next",
   bingoUndoDraw: "Undo last draw",
   bingoUndoConfirm: "Undo the last drawn number?",
+  bingoUndoHelp: "An undone number comes up again on the next draw.",
   bingoEnd: "End the game",
   bingoEndConfirm:
     "End the game? Results freeze. Prizes can still be redeemed.",
