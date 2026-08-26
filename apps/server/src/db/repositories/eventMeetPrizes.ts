@@ -26,7 +26,6 @@ interface PrizeRow {
   condition_type: string;
   threshold: number | null;
   stock: number;
-  sort_order: number;
   created_at: number;
 }
 
@@ -38,7 +37,6 @@ const toPrize = (r: PrizeRow): MeetPrize => ({
   conditionType: r.condition_type as MeetPrize["conditionType"],
   threshold: r.threshold,
   stock: r.stock,
-  sortOrder: r.sort_order,
   createdAt: r.created_at,
 });
 
@@ -48,7 +46,7 @@ export const eventMeetPrizesRepo = {
   async listByEvent(eventId: string): Promise<MeetPrize[]> {
     return (
       await many<PrizeRow>(
-        "SELECT * FROM event_prize WHERE event_id = ? ORDER BY sort_order ASC, created_at ASC, rowid ASC",
+        "SELECT * FROM event_prize WHERE event_id = ? ORDER BY created_at ASC, rowid ASC",
         eventId,
       )
     ).map(toPrize);
@@ -74,8 +72,8 @@ export const eventMeetPrizesRepo = {
     const id = crypto.randomUUID();
     await run(
       `INSERT INTO event_prize
-         (id, event_id, name, description, condition_type, threshold, stock, sort_order, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, event_id, name, description, condition_type, threshold, stock, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
       eventId,
       input.name,
@@ -83,7 +81,6 @@ export const eventMeetPrizesRepo = {
       input.conditionType,
       input.conditionType === "meet_count" ? input.threshold : null,
       input.stock,
-      input.sortOrder,
       Date.now(),
     );
     return (await this.findById(id))!;
@@ -95,13 +92,12 @@ export const eventMeetPrizesRepo = {
   ): Promise<MeetPrize | null> {
     await run(
       `UPDATE event_prize SET name = ?, description = ?, condition_type = ?,
-              threshold = ?, stock = ?, sort_order = ? WHERE id = ?`,
+              threshold = ?, stock = ? WHERE id = ?`,
       input.name,
       input.description,
       input.conditionType,
       input.conditionType === "meet_count" ? input.threshold : null,
       input.stock,
-      input.sortOrder,
       id,
     );
     return this.findById(id);
@@ -184,6 +180,33 @@ export const eventMeetPrizesRepo = {
     return new Map(rows.map((r) => [r.prize_id, r.n]));
   },
 
+  /** イベント内の引き換え記録を1文でまとめて返す（prize_id → user_id → 引き換え時刻）。
+   * デスク画面は景品×達成者ぶんの行を出すので、1件ずつ findRedemption を
+   * 呼ぶと人数×景品数の N+1 になる（100人×16景品で1,600クエリを5秒おき）。
+   * 呼び出し側はこの Map を1回組んで引く */
+  async redemptionsForEvent(
+    eventId: string,
+  ): Promise<Map<string, Map<string, number>>> {
+    const rows = await many<{
+      prize_id: string;
+      user_id: string;
+      created_at: number;
+    }>(
+      `SELECT r.prize_id, r.user_id, r.created_at
+         FROM event_prize_redemption r
+         JOIN event_prize p ON p.id = r.prize_id
+        WHERE p.event_id = ?`,
+      eventId,
+    );
+    const map = new Map<string, Map<string, number>>();
+    for (const r of rows) {
+      let inner = map.get(r.prize_id);
+      if (!inner) map.set(r.prize_id, (inner = new Map()));
+      inner.set(r.user_id, r.created_at);
+    }
+    return map;
+  },
+
   /** 本人が交換済みの景品 id（公開一覧の me 用） */
   async redeemedPrizeIdsForUser(
     eventId: string,
@@ -205,8 +228,17 @@ export const eventMeetPrizesRepo = {
   /**
    * 1位を確定する（締め直し＝全置換。同率1位は全員が勝者）。
    * DELETE+INSERT を batch でアトミックに行う。
+   *
+   * 出会いが1件も無いときは**何も消さずに** 0 を返す。先に DELETE してから
+   * 気づくと、「締めた後に出会いが全部取り消された」状態からの締め直しで
+   * 既存の勝者が黙って消える（409 を返すのに確定は失われている）。
    * @returns 勝者の人数（0 なら誰も出会っていない＝呼び出し側が締めを断る） */
   async closeWinners(eventId: string, now: number): Promise<number> {
+    const any = await one<{ v: number }>(
+      "SELECT 1 AS v FROM event_meet WHERE event_id = ? LIMIT 1",
+      eventId,
+    );
+    if (!any) return 0;
     const [, inserted] = await batch([
       {
         sql: "DELETE FROM event_meet_winner WHERE event_id = ?",

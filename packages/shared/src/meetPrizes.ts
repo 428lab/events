@@ -34,7 +34,6 @@ export interface MeetPrize {
   threshold: number | null;
   /** 在庫総数（残数は引き換え記録から導出） */
   stock: number;
-  sortOrder: number;
   createdAt: number;
 }
 
@@ -44,7 +43,6 @@ const prizeFields = {
   conditionType: z.enum(MEET_PRIZE_CONDITIONS),
   threshold: z.number().int().min(1).max(1000).nullable().optional(),
   stock: z.number().int().min(0).max(1000),
-  sortOrder: z.number().int().min(0).max(1000).default(0),
 };
 
 /** meet_count なのに人数が無い／top_rank なのに人数がある、を作らせない */
@@ -96,7 +94,6 @@ export interface MeetPrizeView {
   stock: number;
   /** 残数（0未満にはならない。在庫を後から減らした場合は 0 に丸める） */
   stockLeft: number;
-  sortOrder: number;
 }
 
 /** 公開一覧に添える本人の状態（確定メンバーだけ。他人の分は返さない）。

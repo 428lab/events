@@ -8,6 +8,10 @@
   - 公開一覧の `me` は `{ count, won, redeemedPrizeIds }`。達成の表示は
     クライアントが導出する（判定の正は引き換え時のサーバー再検証で変わらず）
   - デスク画面のルートは `/events/:id/prize-desk`（`EventPrizeDeskPage`）
+  - レビュー反映: `sort_order` 列は**持たない**（誰も設定できない値を5層に貫通させない。
+    並び順は作成順。並び替えが要るときに足す）。`event_prize` に threshold と条件の
+    整合を CHECK 制約で強制。参加者カードの進捗バーは未実装（自分の件数の文のみ）。
+    締めは出会い0件なら**既存の確定に触らず** 409
 - 前提: #418（出会いランキング）は**マージ済み**。集計の土台
   `PER_USER_COUNTS_SQL`（`eventMeets.ts`）と `rankingForEvent` をそのまま使う
 - 決定済み（issue #431 本文 + コメント 2026-08-26）:

@@ -17,8 +17,7 @@ import {
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { currentUser, requireAuth } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
-import { isAppAdmin } from "../auth/admin.js";
+import { canViewEvent, requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -48,7 +47,6 @@ function toView(prize: MeetPrize, redeemed: number): MeetPrizeView {
     stock: prize.stock,
     // 在庫を後から引き換え済み数より減らしても負にしない（表示は 0 に丸める）
     stockLeft: Math.max(0, prize.stock - redeemed),
-    sortOrder: prize.sortOrder,
   };
 }
 
@@ -61,12 +59,10 @@ export async function getEventMeetPrizes(c: Context) {
   const event = await eventsRepo.findById(eventId);
   if (!event || !event.meetPrizes) return c.json({ error: "not_found" }, 404);
   const user = await currentUser(c);
-  if (event.status !== "published") {
-    // 下書きはメンバーとアプリ管理者だけ（公開前の仕込みの確認用）
-    const allowed =
-      user &&
-      (isAppAdmin(user) || (await eventMembersRepo.find(eventId, user.id)));
-    if (!allowed) return c.json({ error: "not_found" }, 404);
+  // 下書きの可視判定は canViewEvent の1か所（判定の写しを持たない）。
+  // 見られない人には 404（オフの隠蔽と同じ応答）
+  if (!(await canViewEvent(event, user))) {
+    return c.json({ error: "not_found" }, 404);
   }
 
   const prizes = await eventMeetPrizesRepo.listByEvent(eventId);
@@ -148,6 +144,20 @@ meetPrizeRoutes.delete(
   },
 );
 
+/** 景品の定義一覧（staff のみ・編集画面用）。達成者や在庫の集計はしない軽い口。
+ * オフのイベントでも動く（仕込み用） */
+meetPrizeRoutes.get(
+  "/:id/meet-prizes/list",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const eventId = c.req.param("id");
+    if (!(await eventsRepo.findById(eventId))) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    return c.json({ prizes: await eventMeetPrizesRepo.listByEvent(eventId) });
+  },
+);
+
 /** デスク画面: 景品ごとの達成者と交換状況（staff のみ。名前入りは運営にだけ返す） */
 meetPrizeRoutes.get(
   "/:id/meet-prizes/status",
@@ -158,12 +168,15 @@ meetPrizeRoutes.get(
       return c.json({ error: "not_found" }, 404);
     }
     const prizes = await eventMeetPrizesRepo.listByEvent(eventId);
-    const redeemed = await eventMeetPrizesRepo.redemptionCounts(eventId);
     const winners = await eventMeetPrizesRepo.listWinners(eventId);
+    // 引き換え記録はイベント単位で1回だけ引く。達成者×景品の入れ子で
+    // 1件ずつ問い合わせると N+1（人数×景品数）になる（レビュー指摘）
+    const redemptions = await eventMeetPrizesRepo.redemptionsForEvent(eventId);
 
     const rows = [];
     for (const prize of prizes) {
-      // 達成者: meet_count は件数から、top_rank は確定済みの勝者から導出
+      // 達成者: meet_count は件数から、top_rank は確定済みの勝者から導出。
+      // クエリは景品ごとに高々1本（threshold は CHECK 制約で meet_count に必ず入る）
       const base =
         prize.conditionType === "meet_count"
           ? await eventMeetPrizesRepo.achieversAtLeast(
@@ -171,20 +184,17 @@ meetPrizeRoutes.get(
               prize.threshold ?? 1,
             )
           : winners;
-      const achievers = [];
-      for (const a of base) {
-        const r = await eventMeetPrizesRepo.findRedemption(prize.id, a.userId);
-        achievers.push({
-          userId: a.userId,
-          username: a.username,
-          name: a.name,
-          avatarUrl: a.avatarUrl,
-          count: a.count,
-          redeemed: Boolean(r),
-          redeemedAt: r?.createdAt ?? null,
-        });
-      }
-      const n = redeemed.get(prize.id) ?? 0;
+      const byUser = redemptions.get(prize.id);
+      const achievers = base.map((a) => ({
+        userId: a.userId,
+        username: a.username,
+        name: a.name,
+        avatarUrl: a.avatarUrl,
+        count: a.count,
+        redeemed: byUser?.has(a.userId) ?? false,
+        redeemedAt: byUser?.get(a.userId) ?? null,
+      }));
+      const n = byUser?.size ?? 0;
       rows.push({
         prize,
         stockLeft: Math.max(0, prize.stock - n),
@@ -218,10 +228,11 @@ meetPrizeRoutes.post(
       return c.json({ error: "not_confirmed" }, 409);
     }
 
+    // threshold は CHECK 制約で meet_count に必ず入る（?? 1 は型の絞り込みだけ）
     const achieved =
       prize.conditionType === "meet_count"
         ? (await eventMeetsRepo.countedMeetsForUser(eventId, userId)) >=
-          (prize.threshold ?? Infinity)
+          (prize.threshold ?? 1)
         : await eventMeetPrizesRepo.isWinner(eventId, userId);
     if (!achieved) return c.json({ error: "not_achieved" }, 409);
 

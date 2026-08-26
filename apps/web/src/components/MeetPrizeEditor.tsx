@@ -27,7 +27,7 @@ import {
 import {
   useCreateMeetPrize,
   useDeleteMeetPrize,
-  useMeetPrizeStatus,
+  useMeetPrizeDefinitions,
   useUpdateMeetPrize,
 } from "../api/meetPrizeHooks.js";
 
@@ -36,7 +36,8 @@ import {
  *
  * イベント本体のフォームと違い、**追加・変更は即保存**される（表彰の CRUD と
  * 同じ型）。オフのイベントでも編集できる（オフのまま仕込んで当日オンにする運用）
- * ため、一覧はオフでも動く staff 用の status API から読む。
+ * ため、一覧はオフでも動く staff 用の定義一覧から読む（達成者まで数える
+ * デスク用の重い口は使わない）。
  */
 
 interface Draft {
@@ -65,7 +66,7 @@ function conditionLabel(prize: MeetPrize, t: TFunction): string {
 
 export function MeetPrizeEditor({ eventId }: { eventId: string }) {
   const { t } = useTranslation();
-  const { data } = useMeetPrizeStatus(eventId, Boolean(eventId));
+  const { data } = useMeetPrizeDefinitions(eventId, Boolean(eventId));
   const create = useCreateMeetPrize(eventId);
   const update = useUpdateMeetPrize(eventId);
   const remove = useDeleteMeetPrize(eventId);
@@ -73,7 +74,7 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
   const [failed, setFailed] = useState(false);
   const busy = create.isPending || update.isPending || remove.isPending;
 
-  const prizes = data?.prizes.map((p) => p.prize) ?? [];
+  const prizes = data?.prizes ?? [];
 
   const save = () => {
     if (!draft) return;
@@ -84,8 +85,6 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
       threshold:
         draft.conditionType === "meet_count" ? Number(draft.threshold) : null,
       stock: Number(draft.stock),
-      // 並び順は作成順のまま（凝った並び替えは要らない。名前と条件で読める）
-      sortOrder: 0,
     };
     setFailed(false);
     const done = {

@@ -88,6 +88,8 @@ async function setupSourceEvent(cookie: string): Promise<string> {
       attendanceCheck: true,
       // 出会いランキング (#418) の設定もコピーされること
       meetRanking: "anonymous",
+      // 出会いの景品 (#431) の設定もコピーされること
+      meetPrizes: true,
     }),
   });
   expect(patch.status).toBe(200);
@@ -167,6 +169,7 @@ describe("イベントの複製 (#7)", () => {
     expect(event.photosPublic).toBe(true);
     expect(event.attendanceCheck).toBe(true);
     expect(event.meetRanking).toBe("anonymous");
+    expect(event.meetPrizes).toBe(true);
     expect(event.startsAt).toBe(0);
     expect(event.endsAt).toBe(0);
     expect(event.scheduling).toBe(true);

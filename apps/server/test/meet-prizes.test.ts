@@ -123,7 +123,6 @@ async function createPrize(
     conditionType: "meet_count",
     threshold: 2,
     stock: 5,
-    sortOrder: 0,
     ...input,
   });
   expect(res.status).toBe(201);
@@ -230,7 +229,6 @@ describe("景品の CRUD（staff・オフでも動く）", () => {
         conditionType: "meet_count",
         threshold: 3,
         stock: 2,
-        sortOrder: 1,
       }),
     });
     expect(patch.status).toBe(200);
@@ -272,7 +270,6 @@ describe("景品の CRUD（staff・オフでも動く）", () => {
         conditionType: "meet_count",
         threshold: 1,
         stock: 0,
-        sortOrder: 0,
       }),
     });
     expect(patch.status).toBe(404);
@@ -531,6 +528,31 @@ describe("1位の確定（締め）", () => {
     expect(clear.status).toBe(200);
     const pub = (await (await SELF.fetch(listUrl(eventId))).json()) as MeetPrizeList;
     expect(pub.winnersDecided).toBe(false);
+  });
+});
+
+describe("1位の確定（締め）の失敗経路", () => {
+  it("締めた後に出会いが全部取り消されても、締め直しの 409 で既存の勝者は消えない", async () => {
+    const { eventId, staff, alice, bob } = await setup();
+    const closeUrl = `${BASE}/api/events/${eventId}/meets/winners/close`;
+    await insertMeet(eventId, alice.userId, bob.userId);
+    expect((await post(closeUrl, staff.cookie)).status).toBe(200);
+
+    // 取り消し (#330) で出会いが全部消えた状態からの締め直し
+    await deleteMeet(eventId, alice.userId, bob.userId);
+    const reclose = await post(closeUrl, staff.cookie);
+    expect(reclose.status).toBe(409);
+    expect(await reclose.json()).toEqual({ error: "no_meets" });
+
+    // 既存の確定（締めた時点のスナップショット）はそのまま残っている
+    const status = (await (
+      await SELF.fetch(`${listUrl(eventId)}/status`, {
+        headers: { cookie: staff.cookie },
+      })
+    ).json()) as MeetPrizeStatus;
+    expect(status.winners.map((w) => w.userId).sort()).toEqual(
+      [alice.userId, bob.userId].sort(),
+    );
   });
 });
 

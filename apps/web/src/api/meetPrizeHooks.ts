@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CreateMeetPrizeInput,
+  MeetPrize,
   MeetPrizeList,
   MeetPrizeStatus,
   UpdateMeetPrizeInput,
@@ -22,15 +23,30 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
   void qc.invalidateQueries({
     queryKey: ["event", eventId, "meet-prize-status"],
   });
+  void qc.invalidateQueries({ queryKey: ["event", eventId, "meet-prize-defs"] });
 };
 
-/** 公開の景品一覧（確定メンバーには me 付き） */
+/** 公開の景品一覧（確定メンバーには me 付き）。
+ * 開いている間は5秒で取り直す：窓口の目の前でQRを読み合った直後に
+ * 達成バッジ（＝引換券）が出ないと、この画面を見せる流れが止まるため */
 export function useMeetPrizes(eventId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["event", eventId, "meet-prizes"],
     enabled: Boolean(eventId) && enabled,
     queryFn: () => api.get<MeetPrizeList>(`/events/${eventId}/meet-prizes`),
     retry: false,
+    refetchInterval: (query) =>
+      query.state.error ? false : MEET_RANKING_POLL_MS,
+  });
+}
+
+/** 景品の定義一覧（staff・編集画面用）。オフのイベントでも動く軽い口 */
+export function useMeetPrizeDefinitions(eventId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["event", eventId, "meet-prize-defs"],
+    enabled: Boolean(eventId) && enabled,
+    queryFn: () =>
+      api.get<{ prizes: MeetPrize[] }>(`/events/${eventId}/meet-prizes/list`),
   });
 }
 

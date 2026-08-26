@@ -490,7 +490,6 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
       conditionType: prize.conditionType,
       threshold: prize.threshold,
       stock: prize.stock,
-      sortOrder: prize.sortOrder,
     });
   }
 
