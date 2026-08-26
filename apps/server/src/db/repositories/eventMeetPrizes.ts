@@ -26,6 +26,7 @@ interface PrizeRow {
   condition_type: string;
   threshold: number | null;
   stock: number;
+  image_key: string | null;
   created_at: number;
 }
 
@@ -37,6 +38,7 @@ const toPrize = (r: PrizeRow): MeetPrize => ({
   conditionType: r.condition_type as MeetPrize["conditionType"],
   threshold: r.threshold,
   stock: r.stock,
+  imageKey: r.image_key,
   createdAt: r.created_at,
 });
 
@@ -104,8 +106,14 @@ export const eventMeetPrizesRepo = {
   },
 
   async delete(id: string): Promise<void> {
-    // 引き換え記録は FK CASCADE で消える（UI 側が消す前に警告する）
+    // 引き換え記録は FK CASCADE で消える（UI 側が消す前に警告する）。
+    // 画像の R2 オブジェクトはルート側が消す（imageKey を知っているのは呼び出し側）
     await run("DELETE FROM event_prize WHERE id = ?", id);
+  },
+
+  /** 景品画像の R2 キーを差し替える（null で画像なしに戻す） (#434) */
+  async setImageKey(id: string, imageKey: string | null): Promise<void> {
+    await run("UPDATE event_prize SET image_key = ? WHERE id = ?", imageKey, id);
   },
 
   /* ---- 引き換え（在庫の早い者勝ちの正） ---- */

@@ -45,6 +45,7 @@ import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { awardsRepo } from "../db/repositories/awards.js";
 import { eventMeetPrizesRepo } from "../db/repositories/eventMeetPrizes.js";
+import { copyMeetPrizeImage } from "./eventMeetPrizes.js";
 import { eventTodosRepo } from "../db/repositories/eventTodos.js";
 import { eventDutiesRepo } from "../db/repositories/eventDuties.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -482,15 +483,18 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
     });
   }
 
-  // 出会いの景品の定義 (#431)（引き換え記録・1位の確定は除く）
+  // 出会いの景品の定義 (#431)（引き換え記録・1位の確定は除く）。
+  // 画像 (#434) は R2 オブジェクトごとコピーして新しいキーを振る
+  // （キーを共有すると片方の削除で共倒れするため）
   for (const prize of await eventMeetPrizesRepo.listByEvent(src.id)) {
-    await eventMeetPrizesRepo.create(created.id, {
+    const copied = await eventMeetPrizesRepo.create(created.id, {
       name: prize.name,
       description: prize.description,
       conditionType: prize.conditionType,
       threshold: prize.threshold,
       stock: prize.stock,
     });
+    await copyMeetPrizeImage(prize, copied.id);
   }
 
   // 表彰の定義（受賞結果は除く）

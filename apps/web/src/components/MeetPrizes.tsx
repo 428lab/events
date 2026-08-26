@@ -54,6 +54,14 @@ function PrizeRow({
       }}
     >
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        {prize.imageUrl && (
+          <Box
+            component="img"
+            src={prize.imageUrl}
+            alt={prize.name}
+            sx={{ width: 56, height: 56, objectFit: "cover", borderRadius: 1 }}
+          />
+        )}
         {prize.conditionType === "top_rank" && (
           <EmojiEventsIcon fontSize="small" sx={{ color: "#FFD54F" }} />
         )}

@@ -147,13 +147,19 @@ async function setup(meetPrizes: 0 | 1 = 1) {
 
 describe("公開一覧とオフの門 (#431)", () => {
   it("オフのイベントは、存在しないイベントと同一の 404（存在ごと隠す）", async () => {
-    const { eventId } = await setup(0);
+    const { eventId, staff } = await setup(0);
     const offRes = await SELF.fetch(listUrl(eventId));
     const missingRes = await SELF.fetch(listUrl(crypto.randomUUID()));
     expect(offRes.status).toBe(404);
     expect(missingRes.status).toBe(404);
     // ステータスだけでなくボディも同一（外から設定の有無を判別できないこと）
     expect(await offRes.json()).toEqual(await missingRes.json());
+    // staff にも公開経路は 404（staff がオフで読めるのは /list と画像 GET だけ。
+    // Cookie なしのテストだけだと、この契約の退行が素通りする）
+    const staffRes = await SELF.fetch(listUrl(eventId), {
+      headers: { cookie: staff.cookie },
+    });
+    expect(staffRes.status).toBe(404);
   });
 
   it("オンなら未ログインでも景品と残数が見える。個人を指す値は載せない", async () => {

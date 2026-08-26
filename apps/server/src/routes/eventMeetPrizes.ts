@@ -2,22 +2,28 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type {
   CreateMeetPrizeInput,
+  Event,
   MeetPrize,
   MeetPrizeList,
   MeetPrizeStatus,
   MeetPrizeView,
   RedeemMeetPrizeInput,
   UpdateMeetPrizeInput,
+  User,
 } from "@eventer/shared";
 import {
+  MEET_PRIZE_IMAGE,
   MEET_PRIZE_MAX,
   createMeetPrizeInput,
+  meetPrizeImageUrl,
   redeemMeetPrizeInput,
   updateMeetPrizeInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { currentUser, requireAuth } from "../auth/session.js";
-import { canViewEvent, requireEventRole } from "../auth/roles.js";
+import { canManageEvent, canViewEvent, requireEventRole } from "../auth/roles.js";
+import { getBucket } from "../runtime.js";
+import { hasImageMagicBytes, normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -47,21 +53,109 @@ function toView(prize: MeetPrize, redeemed: number): MeetPrizeView {
     stock: prize.stock,
     // 在庫を後から引き換え済み数より減らしても負にしない（表示は 0 に丸める）
     stockLeft: Math.max(0, prize.stock - redeemed),
+    // 公開応答に R2 キーは載せない（URL だけ #434）
+    imageUrl: meetPrizeImageUrl(prize.eventId, prize.id, prize.imageKey),
   };
+}
+
+/* =========================================================
+ *  景品画像 (#434)。本体は R2、キーは event_prize.image_key
+ * =======================================================*/
+
+/** R2 キー。アップロードごとに新しい乱数を振る:
+ * 同じキーへの上書きだと差し替え失敗時に新旧が混ざり、複製でキーを共有すると
+ * 片方の削除で共倒れする。掃除は「参照を外してから旧キーを消す」の一方向 */
+const prizeImageKey = (prizeId: string) =>
+  `prize-images/${prizeId}/${crypto.randomUUID()}`;
+
+/**
+ * 公開: 景品画像の取得（未ログイン可）。イベント画像 (routes/images.ts) と同じ
+ * 配信の型（R2 ストリーム＋許可リスト固定の Content-Type＋nosniff＋ETag）。
+ * 見せてよい相手は公開一覧と同じ meetPrizeAudience の1か所で判定する。
+ */
+export async function getMeetPrizeImage(c: Context) {
+  const eventId = c.req.param("id")!;
+  const event = await eventsRepo.findById(eventId);
+  const prize = event
+    ? await eventMeetPrizesRepo.findById(c.req.param("prizeId")!)
+    : null;
+  if (!event || !prize || prize.eventId !== eventId || !prize.imageKey) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  const user = await currentUser(c);
+  const audience = await meetPrizeAudience(event, user);
+  if (!audience) return c.json({ error: "not_found" }, 404);
+
+  // キー末尾はアップロードごとの乱数なので、そのまま ETag になる
+  const etag = `"${prize.imageKey.split("/").pop()}"`;
+  if (c.req.header("if-none-match") === etag) {
+    return new Response(null, { status: 304 });
+  }
+  const obj = await getBucket().get(prize.imageKey);
+  if (!obj) return c.json({ error: "not_found" }, 404);
+  return new Response(obj.body as unknown as ReadableStream, {
+    headers: {
+      "Content-Type": safeServeMime(obj.httpMetadata?.contentType),
+      "X-Content-Type-Options": "nosniff",
+      // 設定オフ・下書きを staff 例外で通した応答は共有キャッシュに置かせない
+      "Cache-Control":
+        audience === "staff" ? "private, max-age=60" : "public, max-age=60",
+      ETag: etag,
+    },
+  });
+}
+
+/** イベント複製用: 景品画像を別の景品へコピー（元が無ければ何もしない）。
+ * キーは新しく振る（共有すると片方の削除で共倒れするため）。
+ * 失敗は握りつぶして**画像なしで複製を完了**させる（画像1枚のために
+ * 複製 API 全体を 500 にしない。ログで追える） */
+export async function copyMeetPrizeImage(
+  src: MeetPrize,
+  dstPrizeId: string,
+): Promise<void> {
+  if (!src.imageKey) return;
+  try {
+    const obj = await getBucket().get(src.imageKey);
+    if (!obj) return;
+    // 画像は MEET_PRIZE_IMAGE.maxBytes（1MB）以内なのでメモリに載せてコピーする
+    const body = await obj.arrayBuffer();
+    const newKey = prizeImageKey(dstPrizeId);
+    await getBucket().put(newKey, body, {
+      httpMetadata: { contentType: obj.httpMetadata?.contentType },
+    });
+    await eventMeetPrizesRepo.setImageKey(dstPrizeId, newKey);
+  } catch (e) {
+    console.error("[meet-prize] image copy failed", src.imageKey, e);
+  }
+}
+
+/**
+ * 景品が誰に見えるか（**オフの隠蔽の門の述語はこれ1つ**。公開一覧と画像 GET が共用）。
+ * - "public": 設定オンで、イベント自体を見られる人（未ログイン含む）
+ * - "staff": 設定オフ・下書きでも運営できる人（仕込み中の編集・プレビュー用）
+ * - null: 見せない（イベント不存在と同一の 404 で存在ごと隠す）
+ */
+async function meetPrizeAudience(
+  event: Event,
+  user: User | null,
+): Promise<"public" | "staff" | null> {
+  if (event.meetPrizes && (await canViewEvent(event, user))) return "public";
+  if (user && (await canManageEvent(event.id, user))) return "staff";
+  return null;
 }
 
 /**
  * 公開: 景品一覧（未ログイン可。awards の canView と同じ基準）。
- * オフのイベント・見られないイベントは 404 not_found（存在ごと隠す門はここ1か所）。
+ * 見せてよい相手かは meetPrizeAudience の1か所で判定する。
+ * **この公開経路はオフなら staff にも一律 404**（設計 §3.9。staff の例外が
+ * 効くのは staff 用ルートと画像 GET だけ。staff はオフでも /list を読める）。
  */
 export async function getEventMeetPrizes(c: Context) {
   const eventId = c.req.param("id")!;
   const event = await eventsRepo.findById(eventId);
-  if (!event || !event.meetPrizes) return c.json({ error: "not_found" }, 404);
+  if (!event) return c.json({ error: "not_found" }, 404);
   const user = await currentUser(c);
-  // 下書きの可視判定は canViewEvent の1か所（判定の写しを持たない）。
-  // 見られない人には 404（オフの隠蔽と同じ応答）
-  if (!(await canViewEvent(event, user))) {
+  if ((await meetPrizeAudience(event, user)) !== "public") {
     return c.json({ error: "not_found" }, 404);
   }
 
@@ -138,8 +232,93 @@ meetPrizeRoutes.delete(
   "/:id/meet-prizes/:prizeId",
   requireEventRole(["staff"]),
   async (c) => {
-    if (!(await prizeOf(c))) return c.json({ error: "not_found" }, 404);
-    await eventMeetPrizesRepo.delete(c.req.param("prizeId"));
+    const prize = await prizeOf(c);
+    if (!prize) return c.json({ error: "not_found" }, 404);
+    await eventMeetPrizesRepo.delete(prize.id);
+    // 行が消えた画像は誰にも辿れない孤児になるので、ここで R2 も消す (#434)。
+    // best-effort（失敗してもログで追える。参照は既に無いので配信はされない）
+    if (prize.imageKey) {
+      try {
+        await getBucket().delete(prize.imageKey);
+      } catch (e) {
+        console.error("[meet-prize] image cleanup failed", prize.imageKey, e);
+      }
+    }
+    return c.json({ ok: true });
+  },
+);
+
+/**
+ * 景品画像のアップロード (#434)（staff のみ・生バイナリ）。
+ * 検証はイベント画像 (routes/images.ts putEventImage) と同じ契約
+ * （MIME 許可リスト imageMime.ts・MEET_PRIZE_IMAGE.maxBytes）＋マジックバイト検査。
+ *
+ * 掃除の順序（put 失敗時に孤児を残さない — PR #423 の教訓）:
+ * 新キーに put → D1 の参照を差し替え（失敗したら新キーを消して投げ直す）→
+ * 旧キーを best-effort で削除。どこで落ちても「参照されない新オブジェクト」か
+ * 「参照が旧のまま」にしかならず、参照先が消えている状態を作らない。
+ */
+meetPrizeRoutes.put(
+  "/:id/meet-prizes/:prizeId/image",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const prize = await prizeOf(c);
+    if (!prize) return c.json({ error: "not_found" }, 404);
+
+    const mime = normalizeImageMime(c.req.header("content-type"));
+    if (!mime) return c.json({ error: "invalid_content_type" }, 400);
+    const declared = Number(c.req.header("content-length") ?? "0");
+    if (declared > MEET_PRIZE_IMAGE.maxBytes) {
+      return c.json({ error: "too_large", maxBytes: MEET_PRIZE_IMAGE.maxBytes }, 413);
+    }
+    const body = await c.req.arrayBuffer();
+    if (body.byteLength === 0) return c.json({ error: "empty_body" }, 400);
+    if (body.byteLength > MEET_PRIZE_IMAGE.maxBytes) {
+      return c.json({ error: "too_large", maxBytes: MEET_PRIZE_IMAGE.maxBytes }, 413);
+    }
+    const head = new Uint8Array(body, 0, Math.min(12, body.byteLength));
+    if (!hasImageMagicBytes(head, mime)) {
+      return c.json({ error: "invalid_image" }, 400);
+    }
+
+    const bucket = getBucket();
+    const newKey = prizeImageKey(prize.id);
+    await bucket.put(newKey, body, { httpMetadata: { contentType: mime } });
+    try {
+      await eventMeetPrizesRepo.setImageKey(prize.id, newKey);
+    } catch (e) {
+      // 参照の差し替えに失敗したら、置いたばかりの新キーを消して投げ直す
+      try {
+        await bucket.delete(newKey);
+      } catch (cleanupError) {
+        console.error("[meet-prize] image cleanup failed", newKey, cleanupError);
+      }
+      throw e;
+    }
+    if (prize.imageKey) {
+      try {
+        await bucket.delete(prize.imageKey);
+      } catch (e) {
+        console.error("[meet-prize] old image cleanup failed", prize.imageKey, e);
+      }
+    }
+    return c.json({ prize: await eventMeetPrizesRepo.findById(prize.id) });
+  },
+);
+
+/** 景品画像の削除 (#434)（staff のみ）。参照を外してから R2 を best-effort で消す */
+meetPrizeRoutes.delete(
+  "/:id/meet-prizes/:prizeId/image",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const prize = await prizeOf(c);
+    if (!prize || !prize.imageKey) return c.json({ error: "not_found" }, 404);
+    await eventMeetPrizesRepo.setImageKey(prize.id, null);
+    try {
+      await getBucket().delete(prize.imageKey);
+    } catch (e) {
+      console.error("[meet-prize] image cleanup failed", prize.imageKey, e);
+    }
     return c.json({ ok: true });
   },
 );

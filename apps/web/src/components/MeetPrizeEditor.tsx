@@ -17,18 +17,25 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import HideImageOutlinedIcon from "@mui/icons-material/HideImageOutlined";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { MeetPrize, MeetPrizeCondition } from "@eventer/shared";
 import {
+  MEET_PRIZE_IMAGE,
   MEET_PRIZE_MAX,
   MEET_PRIZE_THRESHOLD_PRESETS,
+  meetPrizeImageUrl,
 } from "@eventer/shared";
+import { ImageCropField } from "./ImageCropField.js";
+import { errorMessage } from "../lib/errorMessage.js";
 import {
   useCreateMeetPrize,
   useDeleteMeetPrize,
+  useDeleteMeetPrizeImage,
   useMeetPrizeDefinitions,
   useUpdateMeetPrize,
+  useUploadMeetPrizeImage,
 } from "../api/meetPrizeHooks.js";
 
 /**
@@ -70,9 +77,37 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
   const create = useCreateMeetPrize(eventId);
   const update = useUpdateMeetPrize(eventId);
   const remove = useDeleteMeetPrize(eventId);
+  const uploadImage = useUploadMeetPrizeImage(eventId);
+  const removeImage = useDeleteMeetPrizeImage(eventId);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [failed, setFailed] = useState(false);
-  const busy = create.isPending || update.isPending || remove.isPending;
+  const [imageError, setImageError] = useState<string | null>(null);
+  const busy =
+    create.isPending ||
+    update.isPending ||
+    remove.isPending ||
+    uploadImage.isPending ||
+    removeImage.isPending;
+
+  /** クロップ済みの画像を上げる。失敗は理由別の文言で出す（サイズ超過は
+   * クロップ側の縮小でまず起きないが、起きたときに原因が分かるように） */
+  const uploadCropped = (prizeId: string, blob: Blob) => {
+    setImageError(null);
+    uploadImage.mutate(
+      { prizeId, blob },
+      {
+        onError: (e) =>
+          setImageError(
+            errorMessage(e, {
+              too_large: t("eventForm.meetPrizeImageTooLarge", { mb: MEET_PRIZE_IMAGE.maxBytes / (1024 * 1024) }),
+              invalid_image: t("eventForm.meetPrizeImageInvalid"),
+              invalid_content_type: t("eventForm.meetPrizeImageInvalid"),
+              default: t("eventForm.meetPrizeImageFailed"),
+            }),
+          ),
+      },
+    );
+  };
 
   const prizes = data?.prizes ?? [];
 
@@ -108,7 +143,8 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
   return (
     <Box sx={{ pl: 3, mt: 1 }}>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-        {t("eventForm.meetPrizeSaveNote")}
+        {t("eventForm.meetPrizeSaveNote")}{" "}
+        {t("eventForm.meetPrizeImageHelp", { mb: MEET_PRIZE_IMAGE.maxBytes / (1024 * 1024) })}
       </Typography>
       <Stack spacing={0.75}>
         {prizes.map((prize) => (
@@ -120,6 +156,13 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
             flexWrap="wrap"
             useFlexGap
           >
+            {prize.imageKey && (
+              <img
+                src={meetPrizeImageUrl(eventId, prize.id, prize.imageKey) ?? undefined}
+                alt={prize.name}
+                style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4 }}
+              />
+            )}
             <Typography variant="body2" fontWeight={600}>
               {prize.name}
             </Typography>
@@ -148,6 +191,41 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
             >
               <EditOutlinedIcon fontSize="small" />
             </IconButton>
+            {/* 画像はイベント画像と同じ部品でクロップ・縮小してから上げる
+                （カードは正方形サムネイルなので 512×512。スマホの大きな写真も
+                ここで 1MB 以内に収まる） */}
+            <ImageCropField
+              label={
+                prize.imageKey
+                  ? t("eventForm.meetPrizeImageChange")
+                  : t("eventForm.meetPrizeImageSet")
+              }
+              busy={busy}
+              size="small"
+              outWidth={MEET_PRIZE_IMAGE.width}
+              outHeight={MEET_PRIZE_IMAGE.height}
+              maxBytes={MEET_PRIZE_IMAGE.maxBytes}
+              onCropped={(blob) => uploadCropped(prize.id, blob)}
+            />
+            {prize.imageKey && (
+              <IconButton
+                size="small"
+                aria-label={t("eventForm.meetPrizeImageRemove")}
+                disabled={busy}
+                onClick={() =>
+                  removeImage.mutate(prize.id, {
+                    onError: (e) =>
+                      setImageError(
+                        errorMessage(e, {
+                          default: t("eventForm.meetPrizeImageFailed"),
+                        }),
+                      ),
+                  })
+                }
+              >
+                <HideImageOutlinedIcon fontSize="small" />
+              </IconButton>
+            )}
             <IconButton
               size="small"
               aria-label={t("common.delete")}
@@ -166,6 +244,11 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
       {failed && (
         <Alert severity="error" sx={{ mt: 1 }} onClose={() => setFailed(false)}>
           {t("eventForm.meetPrizeSaveFailed")}
+        </Alert>
+      )}
+      {imageError && (
+        <Alert severity="error" sx={{ mt: 1 }} onClose={() => setImageError(null)}>
+          {imageError}
         </Alert>
       )}
       {prizes.length >= MEET_PRIZE_MAX ? (

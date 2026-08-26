@@ -23,6 +23,14 @@ export const MEET_PRIZE_THRESHOLD_PRESETS = [5, 10, 20] as const;
 /** 1イベントに作れる景品の上限。公開ページに並ぶので無制限にしない */
 export const MEET_PRIZE_MAX = 20;
 
+/** 景品画像 (#434)。カードの正方形サムネイル用のクロップ先サイズと最大バイト数
+ * （イベント画像 EVENT_IMAGE と同じ形の契約。値の流用はしない——役割が別） */
+export const MEET_PRIZE_IMAGE = {
+  width: 512,
+  height: 512,
+  maxBytes: 1024 * 1024, // 1MB
+} as const;
+
 /** 景品の定義（staff の編集画面・デスク画面が使う内部形） */
 export interface MeetPrize {
   id: string;
@@ -34,6 +42,9 @@ export interface MeetPrize {
   threshold: number | null;
   /** 在庫総数（残数は引き換え記録から導出） */
   stock: number;
+  /** 景品画像の R2 キー（任意 #434）。バケットは公開しない前提（配信は必ず
+   * API 経由の門を通す）。公開応答に載るのは配信 URL だけ */
+  imageKey: string | null;
   createdAt: number;
 }
 
@@ -94,6 +105,22 @@ export interface MeetPrizeView {
   stock: number;
   /** 残数（0未満にはならない。在庫を後から減らした場合は 0 に丸める） */
   stockLeft: number;
+  /** 景品画像の URL（無ければ null #434） */
+  imageUrl: string | null;
+}
+
+/** 景品画像の URL (#434)。サーバーの公開応答（imageUrl）と、staff 画面が
+ * MeetPrize.imageKey から組む URL の**唯一の**組み立て場所。
+ * `v=` はキー末尾（アップロードごとに変わる乱数）で、差し替え後に古い
+ * キャッシュを見続けないためのもの */
+export function meetPrizeImageUrl(
+  eventId: string,
+  prizeId: string,
+  imageKey: string | null,
+): string | null {
+  if (!imageKey) return null;
+  const tail = imageKey.split("/").pop()!;
+  return `/api/events/${eventId}/meet-prizes/${prizeId}/image?v=${tail}`;
 }
 
 /** 公開一覧に添える本人の状態（確定メンバーだけ。他人の分は返さない）。

@@ -7,7 +7,7 @@ import type {
   UpdateMeetPrizeInput,
 } from "@eventer/shared";
 import { MEET_RANKING_POLL_MS } from "@eventer/shared";
-import { api } from "./client.js";
+import { ApiError, api } from "./client.js";
 
 /**
  * 出会いの景品引き換え (#431)。
@@ -134,6 +134,39 @@ export function useClearMeetWinners(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.del(`/events/${eventId}/meets/winners`),
+    onSuccess: () => invalidate(qc, eventId),
+  });
+}
+
+/** 景品画像のアップロード (#434)。イベント画像 (useUploadEventImage) と同じ
+ * 生バイナリ PUT（api.post は JSON 前提なので使わない）。
+ * blob は ImageCropField がクロップ・縮小済みのもの */
+export function useUploadMeetPrizeImage(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ prizeId, blob }: { prizeId: string; blob: Blob }) => {
+      const res = await fetch(
+        `/api/events/${eventId}/meet-prizes/${prizeId}/image`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": blob.type },
+          credentials: "include",
+          body: blob,
+        },
+      );
+      if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+      return res.json();
+    },
+    onSuccess: () => invalidate(qc, eventId),
+  });
+}
+
+/** 景品画像の削除 (#434) */
+export function useDeleteMeetPrizeImage(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (prizeId: string) =>
+      api.del(`/events/${eventId}/meet-prizes/${prizeId}/image`),
     onSuccess: () => invalidate(qc, eventId),
   });
 }
