@@ -290,6 +290,7 @@ SELECT ?, ?, ?, ?, ?
 | `POST /api/events/:id/meet-prizes` | staff | 景品作成（`name`/`description`/`conditionType`/`threshold`/`stock`/`sortOrder`）。上限 `MEET_PRIZE_MAX` 超で 409 |
 | `PATCH /api/events/:id/meet-prizes/:prizeId` | staff | 更新（子リソースの eventId 所有チェック → 不一致 404） |
 | `DELETE /api/events/:id/meet-prizes/:prizeId` | staff | 削除（redemption は CASCADE。引き換え済みがあれば UI で警告） |
+| `GET /api/events/:id/meet-prizes/list` | staff | 定義一覧だけの軽い口（編集画面用。達成者・在庫の集計はしない。オフでも動く） |
 | `GET /api/events/:id/meet-prizes/status` | staff | 引き換えデスク用: 景品ごとの達成者一覧（名前・件数・交換済みか・残数）。達成者は `PER_USER_COUNTS_SQL` と winner 行から導出 |
 | `POST /api/events/:id/meet-prizes/:prizeId/redeem` | staff | `{ userId }` を交換済みに（§3.5 の1文）。409: `already_redeemed` / `out_of_stock` / `not_achieved` / `not_confirmed` |
 | `DELETE /api/events/:id/meet-prizes/:prizeId/redeem/:userId` | staff | 交換済みの取り消し（誤操作訂正。在庫が戻る） |

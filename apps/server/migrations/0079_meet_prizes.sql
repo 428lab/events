@@ -12,9 +12,10 @@ CREATE TABLE event_prize (
   stock INTEGER NOT NULL,         -- 在庫総数（0以上。残数は引き換え行から導出）
   created_at INTEGER NOT NULL,
   -- 「meet_count なのに人数が無い / top_rank なのに人数がある」行を作れなくする。
-  -- NULL の解釈（1? 無限?）をコードに2つ作らないための、状態そのものの排除
-  CHECK ((condition_type = 'meet_count' AND threshold IS NOT NULL)
-      OR (condition_type = 'top_rank' AND threshold IS NULL))
+  -- NULL の解釈（1? 無限?）をコードに2つ作らないための、状態そのものの排除。
+  -- 否定形で書いてあるのは、条件の種別を将来足すときにテーブル再構築を要しないため
+  CHECK ((condition_type <> 'meet_count' OR threshold IS NOT NULL)
+     AND (condition_type <> 'top_rank' OR threshold IS NULL))
 );
 CREATE INDEX idx_event_prize_event ON event_prize(event_id);
 

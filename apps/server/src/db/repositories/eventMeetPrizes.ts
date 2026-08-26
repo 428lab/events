@@ -229,13 +229,17 @@ export const eventMeetPrizesRepo = {
    * 1位を確定する（締め直し＝全置換。同率1位は全員が勝者）。
    * DELETE+INSERT を batch でアトミックに行う。
    *
-   * 出会いが1件も無いときは**何も消さずに** 0 を返す。先に DELETE してから
-   * 気づくと、「締めた後に出会いが全部取り消された」状態からの締め直しで
+   * 勝者になれる人が1人も居ないときは**何も消さずに** 0 を返す。先に DELETE
+   * してから気づくと、「締めた後に出会いが全部取り消された」状態からの締め直しで
    * 既存の勝者が黙って消える（409 を返すのに確定は失われている）。
-   * @returns 勝者の人数（0 なら誰も出会っていない＝呼び出し側が締めを断る） */
+   * 事前チェックは INSERT と同じ PER_USER_COUNTS_SQL を見る（母集団の定義を
+   * 2つ持つと、全員退会済みのような縁のケースで「チェックは通るのに1人も
+   * 入らない」が復活する）。
+   * @returns 勝者の人数（0 なら誰も居ない＝呼び出し側が締めを断る） */
   async closeWinners(eventId: string, now: number): Promise<number> {
     const any = await one<{ v: number }>(
-      "SELECT 1 AS v FROM event_meet WHERE event_id = ? LIMIT 1",
+      `SELECT 1 AS v FROM (${PER_USER_COUNTS_SQL}) t LIMIT 1`,
+      eventId,
       eventId,
     );
     if (!any) return 0;

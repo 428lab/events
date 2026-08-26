@@ -27,8 +27,10 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
 };
 
 /** 公開の景品一覧（確定メンバーには me 付き）。
- * 開いている間は5秒で取り直す：窓口の目の前でQRを読み合った直後に
- * 達成バッジ（＝引換券）が出ないと、この画面を見せる流れが止まるため */
+ * 5秒で取り直すのは応答に me が付く人（確定メンバー）だけ：窓口の目の前で
+ * QRを読み合った直後に達成バッジ（＝引換券）が出ないと、この画面を見せる
+ * 流れが止まるため。未ログインや非メンバーの閲覧者は残数が多少古くても
+ * 困らないので、公開ハンドラを5秒おきに踏ませない */
 export function useMeetPrizes(eventId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["event", eventId, "meet-prizes"],
@@ -36,7 +38,7 @@ export function useMeetPrizes(eventId: string, enabled: boolean) {
     queryFn: () => api.get<MeetPrizeList>(`/events/${eventId}/meet-prizes`),
     retry: false,
     refetchInterval: (query) =>
-      query.state.error ? false : MEET_RANKING_POLL_MS,
+      query.state.error || !query.state.data?.me ? false : MEET_RANKING_POLL_MS,
   });
 }
 
