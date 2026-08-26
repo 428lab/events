@@ -236,8 +236,6 @@ const ja = {
   /* ===== トリム (#425) ===== */
   videoTrimIntro:
     "動画が{{s}}秒を超えています。投稿する範囲（最大{{s}}秒）を選んでください。",
-  /** 上限以内の動画でも任意でトリムを開ける（既定は全範囲で畳む） */
-  videoTrimToggle: "範囲を選ぶ（トリム）",
   videoTrimRange: "開始 {{from}} ／ 終了 {{to}} ／ 長さ {{len}}",
   videoTrimConfirm: "この範囲で決定",
   videoTrimHandleStart: "開始位置",
@@ -421,7 +419,6 @@ const en: Record<keyof typeof ja, string> = {
 
   videoTrimIntro:
     "The video is longer than {{s}} seconds. Choose the range to post (up to {{s}} seconds).",
-  videoTrimToggle: "Choose a range (trim)",
   videoTrimRange: "Start {{from}} / End {{to}} / Length {{len}}",
   videoTrimConfirm: "Use this range",
   videoTrimHandleStart: "Start position",

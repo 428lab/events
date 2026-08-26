@@ -91,18 +91,35 @@ describe("VideoSelectStep (#427)", () => {
     expect(r.probed.probe.durationMs).toBe(90_000);
   });
 
-  it("60秒以内: トリムは畳んだ任意項目。既定（全範囲）なら trim なし", async () => {
+  it("60秒以内: トリム UI を出さず自動確定（全範囲 = trim なし）", async () => {
+    // 「短い動画も任意でトリム」は落とした（元要望は60秒超のみ。
+    // キューの全本で決定タップを要求する代償に見合わない）
     probeMock.mockResolvedValue(probedOf(30_000));
     const onResult = renderStep();
-    const toggle = await screen.findByText("範囲を選ぶ（トリム）");
-    expect(screen.queryByText(/動画が60秒を超えています/)).toBeNull();
-    expect(screen.getByTestId("trim-frame")).not.toBeVisible();
-    fireEvent.click(toggle);
-    await waitFor(() => expect(screen.getByTestId("trim-frame")).toBeVisible());
-
-    fireEvent.click(screen.getByRole("button", { name: "この範囲で決定" }));
+    await waitFor(() => expect(onResult).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId("trim-frame")).toBeNull();
     const r = onResult.mock.calls[0]![0];
     expect(r).toMatchObject({ kind: "ready", trim: null });
+    expect(r.plan).toMatchObject({ kind: "encode" });
+  });
+
+  it("60秒以内でも音声を落とす経路は確認を出す（黙って無音にしない）", async () => {
+    const base = probedOf(30_000);
+    probeMock.mockResolvedValue({
+      ...base,
+      probe: { ...base.probe, audioCodec: "unknown", canDecodeAudio: false },
+    });
+    const onResult = renderStep();
+    await waitFor(() =>
+      expect(screen.getByText(/音声なしで投稿しますか/)).toBeInTheDocument(),
+    );
+    expect(onResult).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "音声なしで投稿" }));
+    expect(onResult.mock.calls[0]![0]).toMatchObject({
+      kind: "ready",
+      trim: null,
+      plan: { kind: "encode", audio: "none" },
+    });
   });
 
   it("素通し経路: 選ぶものが無いので UI を出さずにそのまま確定する", async () => {
@@ -130,9 +147,11 @@ describe("VideoSelectStep (#427)", () => {
   });
 
   it("複数本のとき: 「この動画をやめる」と「すべてキャンセル」を返し分ける", async () => {
-    probeMock.mockResolvedValue(probedOf(30_000));
+    probeMock.mockResolvedValue(probedOf(90_000));
     const onResult = renderStep({ index: 1, total: 2 });
-    await screen.findByText("範囲を選ぶ（トリム）");
+    await waitFor(() =>
+      expect(screen.getByTestId("trim-frame")).toBeInTheDocument(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "この動画をやめる" }));
     expect(onResult.mock.calls[0]![0]).toEqual({ kind: "skip" });
   });
@@ -153,10 +172,25 @@ describe("VideoSelectStep (#427)", () => {
     expect(actions).toHaveStyle({ flexWrap: "wrap" });
   });
 
+  it("長さが取れない入力（duration 0）は壊れたトリム UI を出さずエラーにする", async () => {
+    // 実機の iOS で複数選択の2本目のメタデータが読めず全長0になると、
+    // 幅0の枠・空のプレビューという壊れたトリム段が出ていた症状への防御
+    probeMock.mockResolvedValue(probedOf(0));
+    const onResult = renderStep();
+    await waitFor(() =>
+      expect(screen.getByText(/このブラウザでは動画を変換できません/)).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("trim-frame")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "閉じる" }));
+    expect(onResult.mock.calls[0]![0]).toMatchObject({ kind: "failed" });
+  });
+
   it("すべてキャンセル", async () => {
-    probeMock.mockResolvedValue(probedOf(30_000));
+    probeMock.mockResolvedValue(probedOf(90_000));
     const onResult = renderStep({ index: 2, total: 3 });
-    await screen.findByText("範囲を選ぶ（トリム）");
+    await waitFor(() =>
+      expect(screen.getByTestId("trim-frame")).toBeInTheDocument(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "すべてキャンセル" }));
     expect(onResult.mock.calls[0]![0]).toEqual({ kind: "cancelAll" });
   });

@@ -133,7 +133,18 @@ afterEach(() => {
 });
 
 describe("2段階フロー (#427)", () => {
-  it("2本: 範囲選択が全部先に終わってから、1本ずつ変換→アップロードされる", async () => {
+  it("60秒以内のみ2本: 範囲選択ステップを出さず（決定タップなし）で即キューに入る", async () => {
+    // どちらも 30 秒 → トリム不要。止まらずに変換→アップロードまで進むこと
+    const onClose = renderFlow([video("a.mp4"), video("b.mp4")]);
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(conversionMock).toHaveBeenCalledTimes(2);
+    expect(FakeXHR.instances.length).toBe(2);
+    // 「この範囲で決定」を一度も要求していない
+    expect(screen.queryByRole("button", { name: "この範囲で決定" })).toBeNull();
+  });
+
+  it("2本(60秒超): 範囲選択が全部先に終わってから、1本ずつ変換→アップロードされる", async () => {
+    probeMock.mockImplementation(async () => probedOf(90_000));
     const onClose = renderFlow([video("a.mp4"), video("b.mp4")]);
 
     // 1本目の選択。「動画 2 本中 1 本目」
@@ -154,7 +165,24 @@ describe("2段階フロー (#427)", () => {
     expect(probeMock).toHaveBeenCalledTimes(2);
   });
 
+  it("混在(30s/90s/30s): 60秒超だけ選択で止まり、分母は動画総数のまま", async () => {
+    probeMock
+      .mockResolvedValueOnce(probedOf(30_000))
+      .mockResolvedValueOnce(probedOf(90_000))
+      .mockResolvedValueOnce(probedOf(31_000));
+    const onClose = renderFlow([video("a.mp4"), video("b.mp4"), video("c.mp4")]);
+    // 止まるのは2本目（60秒超）だけ。「動画 3 本中 2 本目」の表示でずれない
+    expect(await screen.findByText("動画 3 本中 2 本目")).toBeInTheDocument();
+    expect(screen.getByTestId("trim-frame")).toBeInTheDocument();
+    await confirmSelect();
+    // 3本とも処理される（30秒の2本は決定タップなし）
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(conversionMock).toHaveBeenCalledTimes(3);
+    expect(FakeXHR.instances.length).toBe(3);
+  });
+
   it("1本目の選択をやめても2本目に進み、2本目だけ処理される", async () => {
+    probeMock.mockImplementation(async () => probedOf(90_000));
     const onClose = renderFlow([video("a.mp4"), video("b.mp4")]);
     await screen.findByText("動画 2 本中 1 本目");
     fireEvent.click(
@@ -168,6 +196,7 @@ describe("2段階フロー (#427)", () => {
   });
 
   it("選択段の「すべてキャンセル」で何も処理せず閉じる", async () => {
+    probeMock.mockImplementation(async () => probedOf(90_000));
     const onClose = renderFlow([video("a.mp4"), video("b.mp4")]);
     await screen.findByText("動画 2 本中 1 本目");
     fireEvent.click(
@@ -179,6 +208,7 @@ describe("2段階フロー (#427)", () => {
   });
 
   it("50枠切れ: 1本目で photo_limit が出たら残りを中止し、まとめが出る", async () => {
+    probeMock.mockImplementation(async () => probedOf(90_000));
     FakeXHR.nextResponses = [
       { status: 409, body: JSON.stringify({ error: "photo_limit" }) },
     ];
@@ -207,6 +237,7 @@ describe("2段階フロー (#427)", () => {
       }
     }
     vi.stubGlobal("XMLHttpRequest", IdleXHR);
+    probeMock.mockImplementation(async () => probedOf(90_000));
     const onClose = renderFlow([video("a.mp4"), video("b.mp4")]);
     await confirmSelect();
     await confirmSelect();
