@@ -35,6 +35,7 @@ import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import CheckIcon from "@mui/icons-material/Check";
 import EggIcon from "@mui/icons-material/Egg";
 import LiveTvIcon from "@mui/icons-material/LiveTv";
+import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import LockIcon from "@mui/icons-material/Lock";
@@ -77,6 +78,7 @@ import { EventMaterials } from "../components/EventMaterials.js";
 import { EventFeedback } from "../components/EventFeedback.js";
 import { EventQa } from "../components/EventQa.js";
 import { MeetRankingPanel } from "../components/MeetRanking.js";
+import { MeetPrizePanel } from "../components/MeetPrizes.js";
 import { useRecordView } from "../api/analyticsHooks.js";
 import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
@@ -651,6 +653,10 @@ export function EventDetailPage() {
         <MeetRankingPanel eventId={id} />
       )}
 
+      {/* 出会いの景品 (#431)。設定がオンなら誰でも見える（参加の動機）。
+          達成・交換済みの本人分はサーバーが確定メンバーにだけ添える */}
+      {event.meetPrizes && <MeetPrizePanel eventId={id} />}
+
       {/* 参加者限定のお知らせ（サーバーが閲覧可の人にだけ返す） */}
       {membersNote && (
         <Card variant="outlined" sx={{ borderColor: "warning.main" }}>
@@ -915,6 +921,17 @@ export function EventDetailPage() {
               to={`/events/${id}/staffing`}
             >
               {t("staffOps.dutyTitle")}
+            </Button>
+          )}
+          {/* 景品の引き換えデスク (#431)。スタッフ専用の独立ページへの導線 */}
+          {isStaff && (
+            <Button
+              variant="outlined"
+              startIcon={<CardGiftcardIcon />}
+              component={RouterLink}
+              to={`/events/${id}/prize-desk`}
+            >
+              {t("staffOps.prizeDeskTitle")}
             </Button>
           )}
           {isStaff && (

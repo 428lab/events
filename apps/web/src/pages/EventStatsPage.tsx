@@ -588,6 +588,15 @@ function MeetRankingCard({
             {t("eventSocial.meetRankingOpenScreen")}
           </Button>
         )}
+        {/* 景品の引き換えデスク (#431)。「景品の参考にどうぞ」の行き先 */}
+        <Button
+          size="small"
+          component={RouterLink}
+          to={`/events/${eventId}/prize-desk`}
+          sx={{ mb: 1 }}
+        >
+          {t("staffOps.prizeDeskTitle")}
+        </Button>
         <Stack spacing={0.75}>
           {data.ranking.map((r, i) => (
             <Stack

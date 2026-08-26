@@ -289,6 +289,36 @@ const ja = {
   meetRankingNote:
     "「出会った！」の記録数です。参加者向けランキングの設定に依らず、スタッフはここで全順位を名前入りで見られます。景品の参考にどうぞ。",
 
+  /* ── 出会いの景品の引き換えデスク (#431) ──────────────────
+   * 実装の語を出さない。「交換済みにする」「1位を確定する」のように操作で書く */
+  prizeDeskTitle: "景品の引き換え",
+  prizeDeskStaffOnly: "景品の引き換えはスタッフ専用です。",
+  prizeDeskLead:
+    "参加者の達成画面と名前を突き合わせて、景品を渡したら「交換済みにする」を押してください。在庫は引き換えた順の早い者勝ちです。",
+  prizeDeskEmpty: "景品がまだ登録されていません。イベント編集から追加できます。",
+  prizeDeskStock: "在庫 残り{{left}}（全{{total}}）",
+  prizeDeskAchieversCount: "達成 {{n}}人",
+  prizeDeskNoAchievers: "まだ達成した人はいません。",
+  prizeDeskSearch: "名前で絞り込み",
+  prizeDeskRedeem: "交換済みにする",
+  prizeDeskUnredeem: "交換を取り消す",
+  prizeDeskUnredeemConfirm: "この交換の記録を取り消しますか？（在庫が1つ戻ります）",
+  prizeDeskWinnersTitle: "ランキング1位",
+  prizeDeskWinnersUndecided: "1位はまだ確定していません。",
+  prizeDeskCloseWinners: "1位を確定する",
+  prizeDeskRecloseWinners: "1位を締め直す",
+  prizeDeskCloseConfirm:
+    "いま締めると、この時点で最も多く出会った人（同数なら全員）が1位として確定します。締めた後の出会いは1位に影響しません。",
+  prizeDeskClearWinners: "確定を取り消す",
+  prizeDeskClearConfirm: "1位の確定を取り消して未確定に戻しますか？",
+  prizeDeskNoMeets: "まだ誰も出会いを記録していないため、1位を確定できません。",
+  /** 引き換えが断られた理由。窓口でその人に何を案内するかが分かる文言にする */
+  prizeRedeemAlready: "この景品は交換済みです。",
+  prizeRedeemOutOfStock: "在庫がありません。",
+  prizeRedeemNotAchieved: "条件を満たしていません。",
+  prizeRedeemNotConfirmed: "参加が確定していないため引き換えできません。",
+  prizeRedeemFailed: "引き換えに失敗しました。",
+
   /* ── 準備の段取り (#393) ────────────────────────────────
    * **実装上の語を出さない。**「待ち」「担当者が外れています」のように
    * 振る舞いで書く（`assigneeState` / `dep` / `blocked` は利用者の語彙ではない） */
@@ -631,6 +661,33 @@ const en: Record<keyof typeof ja, string> = {
   meetRankingTitle: "Meet ranking",
   meetRankingNote:
     "How many meets each person recorded. Organizers always see every rank with names here, whatever the participant-facing ranking setting is. Handy when handing out prizes.",
+
+  prizeDeskTitle: "Prize desk",
+  prizeDeskStaffOnly: "The prize desk is for organizers only.",
+  prizeDeskLead:
+    "Match the participant's achievement screen with their name, hand over the prize, then press \"Mark redeemed\". Stock goes to whoever redeems first.",
+  prizeDeskEmpty: "No prizes yet. Add them from the event edit page.",
+  prizeDeskStock: "Stock: {{left}} of {{total}} left",
+  prizeDeskAchieversCount: "Achieved: {{n}}",
+  prizeDeskNoAchievers: "No one has achieved this yet.",
+  prizeDeskSearch: "Filter by name",
+  prizeDeskRedeem: "Mark redeemed",
+  prizeDeskUnredeem: "Undo redemption",
+  prizeDeskUnredeemConfirm: "Undo this redemption? (Returns one to stock.)",
+  prizeDeskWinnersTitle: "Ranking winner",
+  prizeDeskWinnersUndecided: "The winner has not been decided yet.",
+  prizeDeskCloseWinners: "Decide the winner",
+  prizeDeskRecloseWinners: "Decide the winner again",
+  prizeDeskCloseConfirm:
+    "Closing now locks in whoever has met the most people at this moment (everyone, if tied). Meets after closing do not change the winner.",
+  prizeDeskClearWinners: "Undo the decision",
+  prizeDeskClearConfirm: "Undo the winner decision and go back to undecided?",
+  prizeDeskNoMeets: "No meets have been recorded yet, so the winner cannot be decided.",
+  prizeRedeemAlready: "This prize has already been redeemed.",
+  prizeRedeemOutOfStock: "Out of stock.",
+  prizeRedeemNotAchieved: "The condition is not met.",
+  prizeRedeemNotConfirmed: "Cannot redeem because participation is not confirmed.",
+  prizeRedeemFailed: "Failed to redeem.",
 
   todoTitle: "Prep to-dos",
   todoStaffOnly: "Prep to-dos are for organizers only.",

@@ -38,6 +38,7 @@ import { useMyCommunities } from "../api/communityHooks.js";
 import { generateEventImageBlob } from "../lib/imageTemplates.js";
 import { CounterTextField } from "../components/CounterTextField.js";
 import { EventImageEditor } from "../components/EventImageEditor.js";
+import { MeetPrizeEditor } from "../components/MeetPrizeEditor.js";
 import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
 import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
@@ -96,6 +97,8 @@ export function EditEventPage() {
   // 出会いランキング (#418)。既定OFF（名前が会場に大写しになりうる機能なので、
   // 出したいイベントだけが明示的にONにする）
   const [meetRanking, setMeetRanking] = useState<MeetRankingMode>("off");
+  // 出会いの景品引き換え (#431)。既定OFF。景品の定義はオフでも仕込める
+  const [meetPrizes, setMeetPrizes] = useState(false);
   const [venueWanted, setVenueWanted] = useState(false);
   const [communityId, setCommunityId] = useState("");
   const myCommunitiesQuery = useMyCommunities();
@@ -130,6 +133,7 @@ export function EditEventPage() {
       setQaEnabled(e.qaEnabled);
       setQaAnonymity(e.qaAnonymity);
       setMeetRanking(e.meetRanking);
+      setMeetPrizes(e.meetPrizes);
       setVenueWanted(e.venueWanted);
       setCommunityId(e.communityId ?? "");
       setInitialized(true);
@@ -208,6 +212,7 @@ export function EditEventPage() {
         qaEnabled,
         qaAnonymity,
         meetRanking,
+        meetPrizes,
         venueWanted,
         communityId: communityId || null,
       },
@@ -528,6 +533,24 @@ export function EditEventPage() {
                 </Typography>
               </Box>
             )}
+          </Box>
+
+          {/* 出会いの景品引き換え (#431)。景品の定義（下の編集）は即保存され、
+              オフのままでも仕込める。表示のオン/オフだけがこのフォームの保存対象 */}
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={meetPrizes}
+                  onChange={(e) => setMeetPrizes(e.target.checked)}
+                />
+              }
+              label={t("eventForm.meetPrizes")}
+            />
+            <Typography variant="caption" color="text.secondary" display="block">
+              {t("eventForm.meetPrizesHelp")}
+            </Typography>
+            <MeetPrizeEditor eventId={id} />
           </Box>
 
           <Box>

@@ -102,6 +102,25 @@ const ja = {
   meetRankingAnonymous: "匿名",
   meetRankingAnonymousHelp: "名前は出さず、人数だけを表示します。",
 
+  /* 出会いの景品引き換え (#431)。実装の語は出さず振る舞いで書く */
+  meetPrizes: "出会いの景品引き換え",
+  meetPrizesHelp:
+    "オンにすると、イベントページに景品が表示され、達成した参加者がスタッフのところで景品と引き換えられます。オフの間は参加者には一切表示されません（オフのまま下で仕込んでおけます）。",
+  meetPrizeAdd: "景品を追加",
+  meetPrizeEdit: "編集",
+  meetPrizeName: "景品名",
+  meetPrizeDescription: "説明（任意）",
+  meetPrizeCondition: "達成条件",
+  meetPrizeConditionCount: "決めた人数と出会う",
+  meetPrizeConditionTop: "ランキング1位",
+  meetPrizeThreshold: "必要人数",
+  meetPrizeStock: "在庫数",
+  meetPrizeStockHelp: "在庫は引き換えた順の早い者勝ちです。",
+  meetPrizeSaveNote: "景品の追加・変更はすぐに保存されます。",
+  meetPrizeDeleteConfirm: "この景品を削除しますか？交換済みの記録も一緒に消えます。",
+  meetPrizeSaveFailed: "景品の保存に失敗しました。",
+  meetPrizeTooMany: "景品は最大{{n}}件までです。",
+
   /** 作成ページの結び。たまご（あったらいいな）から作った場合の紐付け失敗も含む */
   createSubmit: "作成",
   createError: "作成に失敗しました。入力内容を確認してください。",
@@ -347,6 +366,24 @@ const en: Record<keyof typeof ja, string> = {
   meetRankingNamedHelp: "Names and avatars appear large on the venue screen.",
   meetRankingAnonymous: "Anonymous",
   meetRankingAnonymousHelp: "Shows counts only, without names.",
+
+  meetPrizes: "Meet rewards",
+  meetPrizesHelp:
+    "When this is on, prizes appear on the event page and participants who reach a goal can redeem them with staff. While it is off, participants see nothing (you can prepare prizes below in the meantime).",
+  meetPrizeAdd: "Add a prize",
+  meetPrizeEdit: "Edit",
+  meetPrizeName: "Prize name",
+  meetPrizeDescription: "Description (optional)",
+  meetPrizeCondition: "Condition",
+  meetPrizeConditionCount: "Meet a set number of people",
+  meetPrizeConditionTop: "Top of the ranking",
+  meetPrizeThreshold: "People required",
+  meetPrizeStock: "Stock",
+  meetPrizeStockHelp: "Stock goes to whoever redeems first.",
+  meetPrizeSaveNote: "Prize changes are saved immediately.",
+  meetPrizeDeleteConfirm: "Delete this prize? Its redemption records are removed too.",
+  meetPrizeSaveFailed: "Failed to save the prize.",
+  meetPrizeTooMany: "Up to {{n}} prizes per event.",
 
   createSubmit: "Create",
   createError: "Could not create the event. Please check what you entered.",
