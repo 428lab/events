@@ -23,10 +23,11 @@ export interface MeetablePair extends MeetableEvent {
  * イベント内の「1人あたりの出会い件数」（両方向を合算）のサブクエリ (#418)。
  * プレースホルダは eventId ×2。
  *
- * ランキング系（named・anonymous・本人の順位・母数）はすべてこの1本を土台にする。
- * 同じ集計を別の場所に書かないこと（docs/meet-ranking.md §3.8 の経路表を守る要）。
+ * ランキング系（named・anonymous・本人の順位・母数）と景品の達成判定 (#431) は
+ * すべてこの1本を土台にする。同じ集計を別の場所に書かないこと
+ * （docs/meet-ranking.md §3.8 の経路表を守る要）。
  */
-const PER_USER_COUNTS_SQL = `
+export const PER_USER_COUNTS_SQL = `
   SELECT u.id, u.username, u.global_name, u.avatar_url, COUNT(*) AS n
     FROM (
       SELECT user_low AS uid FROM event_meet WHERE event_id = ?

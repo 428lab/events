@@ -447,6 +447,12 @@ export const usersRepo = {
       // Q&A の票 (#398)。PK (question_id, user_id)。両アカウントで同じ質問に
       // 投票していると UPDATE が UNIQUE 違反になるので、負け側の票を捨てる
       ["event_question_vote", "user_id", ["question_id"]],
+      // 景品の引き換え (#431)。UNIQUE (prize_id, user_id)。両方が同じ景品を
+      // 交換済みなら負け側を捨てる（付け替えないと (9) の user 削除で行ごと消え、
+      // 在庫の導出値が実在庫とずれる）
+      ["event_prize_redemption", "user_id", ["prize_id"]],
+      // 1位の確定 (#431)。PK (event_id, user_id)。同率で両方が勝者なら負け側を捨てる
+      ["event_meet_winner", "user_id", ["event_id"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols
@@ -597,6 +603,9 @@ export const usersRepo = {
       // Q&A の質問と一斉連絡の履歴 (#398)。付け替えないと (9) の user 削除で
       // ON DELETE CASCADE が発火し、本文ごと行が消える
       ["event_question", "user_id"],
+      // 引き換えを付けた staff (#431)。付け替えないと (9) の user 削除で
+      // ON DELETE SET NULL が発火し、誰が配ったかの記録が黙って消える
+      ["event_prize_redemption", "redeemed_by"],
       ["event_broadcast", "created_by"],
       // 未送信メール (#398) も同じく消える。同じ連絡に両アカウント宛の行が
       // あり得るが、user 列を含む UNIQUE が無いので付け替えは落ちない。

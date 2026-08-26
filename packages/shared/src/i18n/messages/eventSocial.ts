@@ -257,6 +257,19 @@ const ja = {
   /** 本人の順位（本人の画面にだけ出す） */
   meetRankingMe: "あなたは {{rank}}位（{{count}}人）",
   meetRankingOpenScreen: "投影画面を開く",
+
+  /* ===== 出会いの景品 (#431) ===== */
+  meetPrizesHeading: "出会いの景品",
+  meetPrizeCondCount: "{{n}}人と出会う",
+  meetPrizeCondTop: "出会った人数ランキング1位",
+  meetPrizeTopUndecided: "1位はイベント中に確定します。",
+  meetPrizeStockLeft: "残り{{n}}",
+  meetPrizeOutOfStock: "なくなりました",
+  meetPrizeAchieved: "達成！",
+  meetPrizeRedeemed: "交換済み",
+  meetPrizeMyCount: "これまでに{{n}}人と出会いました。",
+  meetPrizeYouWon: "あなたがランキング1位です！",
+  meetPrizeShowStaff: "達成した景品は、この画面をスタッフに見せて受け取ってください。",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -449,6 +462,19 @@ const en: Record<keyof typeof ja, string> = {
   meetRankingAnonPeople: "×{{n}}",
   meetRankingMe: "You are #{{rank}} ({{count}} met)",
   meetRankingOpenScreen: "Open the projection view",
+
+  /* ===== Meet rewards (#431) ===== */
+  meetPrizesHeading: "Meet rewards",
+  meetPrizeCondCount: "Meet {{n}} people",
+  meetPrizeCondTop: "Top of the meet ranking",
+  meetPrizeTopUndecided: "The top spot is decided during the event.",
+  meetPrizeStockLeft: "{{n}} left",
+  meetPrizeOutOfStock: "All gone",
+  meetPrizeAchieved: "Achieved!",
+  meetPrizeRedeemed: "Redeemed",
+  meetPrizeMyCount: "You have met {{n}} people so far.",
+  meetPrizeYouWon: "You are at the top of the ranking!",
+  meetPrizeShowStaff: "Show this screen to a staff member to receive rewards you achieved.",
 };
 
 export const eventSocial = { ja, en };

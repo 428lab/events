@@ -23,6 +23,7 @@ import { ScoreResultsPage } from "./pages/ScoreResultsPage.js";
 import { LotteryAdminPage } from "./pages/LotteryAdminPage.js";
 import { EventBroadcastPage } from "./pages/EventBroadcastPage.js";
 import { EventTodoPage } from "./pages/EventTodoPage.js";
+import { EventPrizeDeskPage } from "./pages/EventPrizeDeskPage.js";
 import { EventStaffingPage } from "./pages/EventStaffingPage.js";
 import { AccountPage } from "./pages/AccountPage.js";
 import { AccountRestorePage } from "./pages/AccountRestorePage.js";
@@ -441,6 +442,8 @@ export function App() {
           <Route path="todos" element={<EventTodoPage />} />
           {/* 役割と持ち場 (#384)。スタッフ専用 */}
           <Route path="staffing" element={<EventStaffingPage />} />
+          {/* 景品の引き換えデスク (#431)。スタッフ専用 */}
+          <Route path="prize-desk" element={<EventPrizeDeskPage />} />
         </Route>
         <Route path="*" element={<Navigate to={myPath} replace />} />
       </Routes>

@@ -206,6 +206,8 @@ export function EventStatsPage() {
         enabled={Boolean(eventData) && isStaff}
         // 参加者向けランキング (#418) がオンなら投影ページへの入口も出す
         showScreenLink={eventData?.event.meetRanking !== "off"}
+        // 景品モード (#431) がオンなら引き換えデスクへの入口も出す
+        showDeskLink={eventData?.event.meetPrizes === true}
       />
     </Stack>
   );
@@ -556,10 +558,12 @@ function MeetRankingCard({
   eventId,
   enabled,
   showScreenLink,
+  showDeskLink,
 }: {
   eventId: string;
   enabled: boolean;
   showScreenLink: boolean;
+  showDeskLink: boolean;
 }) {
   const { t } = useTranslation();
   const { data } = useMeetRanking(eventId, enabled);
@@ -586,6 +590,17 @@ function MeetRankingCard({
             sx={{ mb: 1 }}
           >
             {t("eventSocial.meetRankingOpenScreen")}
+          </Button>
+        )}
+        {/* 景品の引き換えデスク (#431)。「景品の参考にどうぞ」の行き先 */}
+        {showDeskLink && (
+          <Button
+            size="small"
+            component={RouterLink}
+            to={`/events/${eventId}/prize-desk`}
+            sx={{ mb: 1 }}
+          >
+            {t("staffOps.prizeDeskTitle")}
           </Button>
         )}
         <Stack spacing={0.75}>

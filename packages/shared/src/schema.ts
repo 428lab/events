@@ -83,6 +83,10 @@ export const eventSchema = z.object({
   /** 出会いランキングの表示 (#418)。既定は 'off'（出したいイベントだけオンにする）。
    * off のイベントでは参加者向けランキングAPIごと存在を隠す */
   meetRanking: z.enum(MEET_RANKING_MODES),
+  /** 出会いの景品引き換え (#431)。既定はオフ。オンでイベントページに景品を表示。
+   * ランキングの表示設定 (meetRanking) とは独立（1位の判定は同じ集計を使うだけ）。
+   * オフのイベントでは参加者向け景品APIごと存在を隠す */
+  meetPrizes: z.boolean(),
   /** 募集の締切日時（epoch ms）。null = 締切なしで、従来どおりイベント終了まで
    * 受け付ける。締切後に止まるのは新規の参加登録だけ (#269) */
   registrationDeadline: z.number().nullable(),
@@ -145,6 +149,8 @@ export const updateEventInput = z.object({
   qaAnonymity: z.enum(QA_ANONYMITY_MODES).optional(),
   /** 出会いランキングの表示 (#418)。編集でのみ設定（作成直後は 'off'） */
   meetRanking: z.enum(MEET_RANKING_MODES).optional(),
+  /** 出会いの景品引き換え (#431)。編集でのみ設定（作成直後はオフ） */
+  meetPrizes: z.boolean().optional(),
   /** 募集の締切日時（epoch ms）。null を送ると締切を解除する (#269)。
    * chatEnabled 等と同じくイベント編集でのみ設定する項目なので createEventInput
    * には入れない（作成直後は締切なし＝従来の振る舞い）。

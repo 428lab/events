@@ -20,6 +20,7 @@ export * from "./staffChat.js";
 export * from "./eventComments.js";
 export * from "./eventLikes.js";
 export * from "./eventMeets.js";
+export * from "./meetPrizes.js";
 export * from "./eventQa.js";
 export * from "./eventSchedule.js";
 export * from "./eventTodo.js";
