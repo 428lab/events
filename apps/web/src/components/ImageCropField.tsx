@@ -26,6 +26,7 @@ export function ImageCropField({
   outWidth = EVENT_IMAGE.width,
   outHeight = EVENT_IMAGE.height,
   maxBytes = EVENT_IMAGE.maxBytes,
+  size,
 }: {
   label: string;
   busy?: boolean;
@@ -33,6 +34,8 @@ export function ImageCropField({
   outWidth?: number;
   outHeight?: number;
   maxBytes?: number;
+  /** ピッカーを開くボタンの大きさ（行内に置くときは "small"）。既定は従来どおり */
+  size?: "small" | "medium" | "large";
 }) {
   const { t } = useTranslation();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -82,6 +85,7 @@ export function ImageCropField({
     <>
       <Button
         variant="outlined"
+        size={size}
         disabled={busy}
         onClick={() => fileRef.current?.click()}
       >

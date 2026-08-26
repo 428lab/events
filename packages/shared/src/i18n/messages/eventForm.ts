@@ -123,9 +123,9 @@ const ja = {
   meetPrizeImageSet: "画像を設定",
   meetPrizeImageChange: "画像を変更",
   meetPrizeImageRemove: "画像を削除",
-  meetPrizeImageHelp: "1MBまでの画像。",
+  meetPrizeImageHelp: "{{mb}}MBまでの画像。",
   meetPrizeImageFailed: "画像のアップロードに失敗しました。",
-  meetPrizeImageTooLarge: "画像が大きすぎます（1MBまで）。",
+  meetPrizeImageTooLarge: "画像が大きすぎます（{{mb}}MBまで）。",
   meetPrizeImageInvalid: "画像として読み取れませんでした。",
 
   /** 作成ページの結び。たまご（あったらいいな）から作った場合の紐付け失敗も含む */
@@ -394,9 +394,9 @@ const en: Record<keyof typeof ja, string> = {
   meetPrizeImageSet: "Set an image",
   meetPrizeImageChange: "Change the image",
   meetPrizeImageRemove: "Remove the image",
-  meetPrizeImageHelp: "An image up to 1MB.",
+  meetPrizeImageHelp: "An image up to {{mb}}MB.",
   meetPrizeImageFailed: "Failed to upload the image.",
-  meetPrizeImageTooLarge: "The image is too large (up to 1MB).",
+  meetPrizeImageTooLarge: "The image is too large (up to {{mb}}MB).",
   meetPrizeImageInvalid: "Could not read the file as an image.",
 
   createSubmit: "Create",

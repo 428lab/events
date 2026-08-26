@@ -99,7 +99,7 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
         onError: (e) =>
           setImageError(
             errorMessage(e, {
-              too_large: t("eventForm.meetPrizeImageTooLarge"),
+              too_large: t("eventForm.meetPrizeImageTooLarge", { mb: MEET_PRIZE_IMAGE.maxBytes / (1024 * 1024) }),
               invalid_image: t("eventForm.meetPrizeImageInvalid"),
               invalid_content_type: t("eventForm.meetPrizeImageInvalid"),
               default: t("eventForm.meetPrizeImageFailed"),
@@ -143,7 +143,8 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
   return (
     <Box sx={{ pl: 3, mt: 1 }}>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-        {t("eventForm.meetPrizeSaveNote")}
+        {t("eventForm.meetPrizeSaveNote")}{" "}
+        {t("eventForm.meetPrizeImageHelp", { mb: MEET_PRIZE_IMAGE.maxBytes / (1024 * 1024) })}
       </Typography>
       <Stack spacing={0.75}>
         {prizes.map((prize) => (
@@ -200,6 +201,7 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
                   : t("eventForm.meetPrizeImageSet")
               }
               busy={busy}
+              size="small"
               outWidth={MEET_PRIZE_IMAGE.width}
               outHeight={MEET_PRIZE_IMAGE.height}
               maxBytes={MEET_PRIZE_IMAGE.maxBytes}

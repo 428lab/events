@@ -147,13 +147,15 @@ async function meetPrizeAudience(
 /**
  * 公開: 景品一覧（未ログイン可。awards の canView と同じ基準）。
  * 見せてよい相手かは meetPrizeAudience の1か所で判定する。
+ * **この公開経路はオフなら staff にも一律 404**（設計 §3.9。staff の例外が
+ * 効くのは staff 用ルートと画像 GET だけ。staff はオフでも /list を読める）。
  */
 export async function getEventMeetPrizes(c: Context) {
   const eventId = c.req.param("id")!;
   const event = await eventsRepo.findById(eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
   const user = await currentUser(c);
-  if (!(await meetPrizeAudience(event, user))) {
+  if ((await meetPrizeAudience(event, user)) !== "public") {
     return c.json({ error: "not_found" }, 404);
   }
 
