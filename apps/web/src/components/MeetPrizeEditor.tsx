@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -17,18 +17,23 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import HideImageOutlinedIcon from "@mui/icons-material/HideImageOutlined";
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { MeetPrize, MeetPrizeCondition } from "@eventer/shared";
 import {
   MEET_PRIZE_MAX,
   MEET_PRIZE_THRESHOLD_PRESETS,
+  meetPrizeImageUrl,
 } from "@eventer/shared";
 import {
   useCreateMeetPrize,
   useDeleteMeetPrize,
+  useDeleteMeetPrizeImage,
   useMeetPrizeDefinitions,
   useUpdateMeetPrize,
+  useUploadMeetPrizeImage,
 } from "../api/meetPrizeHooks.js";
 
 /**
@@ -70,9 +75,25 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
   const create = useCreateMeetPrize(eventId);
   const update = useUpdateMeetPrize(eventId);
   const remove = useDeleteMeetPrize(eventId);
+  const uploadImage = useUploadMeetPrizeImage(eventId);
+  const removeImage = useDeleteMeetPrizeImage(eventId);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [failed, setFailed] = useState(false);
-  const busy = create.isPending || update.isPending || remove.isPending;
+  const [imageFailed, setImageFailed] = useState(false);
+  // 隠しファイル入力は1つだけ置き、どの景品への設定かを ref で覚える
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageTargetRef = useRef<string | null>(null);
+  const busy =
+    create.isPending ||
+    update.isPending ||
+    remove.isPending ||
+    uploadImage.isPending ||
+    removeImage.isPending;
+
+  const pickImage = (prizeId: string) => {
+    imageTargetRef.current = prizeId;
+    fileInputRef.current?.click();
+  };
 
   const prizes = data?.prizes ?? [];
 
@@ -120,6 +141,13 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
             flexWrap="wrap"
             useFlexGap
           >
+            {prize.imageKey && (
+              <img
+                src={meetPrizeImageUrl(eventId, prize.id, prize.imageKey) ?? undefined}
+                alt={prize.name}
+                style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4 }}
+              />
+            )}
             <Typography variant="body2" fontWeight={600}>
               {prize.name}
             </Typography>
@@ -150,6 +178,33 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
             </IconButton>
             <IconButton
               size="small"
+              aria-label={
+                prize.imageKey
+                  ? t("eventForm.meetPrizeImageChange")
+                  : t("eventForm.meetPrizeImageSet")
+              }
+              title={t("eventForm.meetPrizeImageHelp")}
+              disabled={busy}
+              onClick={() => pickImage(prize.id)}
+            >
+              <ImageOutlinedIcon fontSize="small" />
+            </IconButton>
+            {prize.imageKey && (
+              <IconButton
+                size="small"
+                aria-label={t("eventForm.meetPrizeImageRemove")}
+                disabled={busy}
+                onClick={() =>
+                  removeImage.mutate(prize.id, {
+                    onError: () => setImageFailed(true),
+                  })
+                }
+              >
+                <HideImageOutlinedIcon fontSize="small" />
+              </IconButton>
+            )}
+            <IconButton
+              size="small"
               aria-label={t("common.delete")}
               disabled={busy}
               onClick={() => {
@@ -163,9 +218,32 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
           </Stack>
         ))}
       </Stack>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          const prizeId = imageTargetRef.current;
+          // 同じファイルをもう一度選べるように毎回リセットする
+          e.target.value = "";
+          if (!file || !prizeId) return;
+          setImageFailed(false);
+          uploadImage.mutate(
+            { prizeId, file },
+            { onError: () => setImageFailed(true) },
+          );
+        }}
+      />
       {failed && (
         <Alert severity="error" sx={{ mt: 1 }} onClose={() => setFailed(false)}>
           {t("eventForm.meetPrizeSaveFailed")}
+        </Alert>
+      )}
+      {imageFailed && (
+        <Alert severity="error" sx={{ mt: 1 }} onClose={() => setImageFailed(false)}>
+          {t("eventForm.meetPrizeImageFailed")} {t("eventForm.meetPrizeImageHelp")}
         </Alert>
       )}
       {prizes.length >= MEET_PRIZE_MAX ? (

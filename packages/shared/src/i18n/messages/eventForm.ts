@@ -120,6 +120,11 @@ const ja = {
   meetPrizeDeleteConfirm: "この景品を削除しますか？交換済みの記録も一緒に消えます。",
   meetPrizeSaveFailed: "景品の保存に失敗しました。",
   meetPrizeTooMany: "景品は最大{{n}}件までです。",
+  meetPrizeImageSet: "画像を設定",
+  meetPrizeImageChange: "画像を変更",
+  meetPrizeImageRemove: "画像を削除",
+  meetPrizeImageHelp: "1MBまでの画像（PNG・JPEG・WebP・GIF・AVIF）。",
+  meetPrizeImageFailed: "画像のアップロードに失敗しました。",
 
   /** 作成ページの結び。たまご（あったらいいな）から作った場合の紐付け失敗も含む */
   createSubmit: "作成",
@@ -384,6 +389,11 @@ const en: Record<keyof typeof ja, string> = {
   meetPrizeDeleteConfirm: "Delete this prize? Its redemption records are removed too.",
   meetPrizeSaveFailed: "Failed to save the prize.",
   meetPrizeTooMany: "Up to {{n}} prizes per event.",
+  meetPrizeImageSet: "Set an image",
+  meetPrizeImageChange: "Change the image",
+  meetPrizeImageRemove: "Remove the image",
+  meetPrizeImageHelp: "An image up to 1MB (PNG, JPEG, WebP, GIF, or AVIF).",
+  meetPrizeImageFailed: "Failed to upload the image.",
 
   createSubmit: "Create",
   createError: "Could not create the event. Please check what you entered.",

@@ -53,6 +53,7 @@ import {
 } from "./routes/eventMeets.js";
 import {
   getEventMeetPrizes,
+  getMeetPrizeImage,
   meetPrizeRoutes,
 } from "./routes/eventMeetPrizes.js";
 import {
@@ -164,6 +165,8 @@ api.get("/events/:id/awards", getEventAwards);
 // 公開: 出会いの景品一覧 (#431)（認証不要。オフのイベントは404で存在ごと隠す。
 // eventRoutes より先に登録）
 api.get("/events/:id/meet-prizes", getEventMeetPrizes);
+// 公開: 景品画像 (#434)（認証不要。オフのイベントは staff 以外 404）
+api.get("/events/:id/meet-prizes/:prizeId/image", getMeetPrizeImage);
 // 公開: 採点結果一覧（締切後/終了後のみ。eventRoutes より先に登録）
 api.get("/events/:id/scores/results", getEventScoreResults);
 // 公開/参加者限定: イベント写真・動画（photos_public 判定は各ハンドラ内。eventRoutes より先に登録）

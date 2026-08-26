@@ -10,14 +10,18 @@ import type {
   UpdateMeetPrizeInput,
 } from "@eventer/shared";
 import {
+  EVENT_IMAGE,
   MEET_PRIZE_MAX,
   createMeetPrizeInput,
+  meetPrizeImageUrl,
   redeemMeetPrizeInput,
   updateMeetPrizeInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { currentUser, requireAuth } from "../auth/session.js";
-import { canViewEvent, requireEventRole } from "../auth/roles.js";
+import { canManageEvent, canViewEvent, requireEventRole } from "../auth/roles.js";
+import { getBucket } from "../runtime.js";
+import { hasImageMagicBytes, normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -47,7 +51,76 @@ function toView(prize: MeetPrize, redeemed: number): MeetPrizeView {
     stock: prize.stock,
     // 在庫を後から引き換え済み数より減らしても負にしない（表示は 0 に丸める）
     stockLeft: Math.max(0, prize.stock - redeemed),
+    // 公開応答に R2 キーは載せない（URL だけ #434）
+    imageUrl: meetPrizeImageUrl(prize.eventId, prize.id, prize.imageKey),
   };
+}
+
+/* =========================================================
+ *  景品画像 (#434)。本体は R2、キーは event_prize.image_key
+ * =======================================================*/
+
+/** R2 キー。アップロードごとに新しい乱数を振る:
+ * 同じキーへの上書きだと差し替え失敗時に新旧が混ざり、複製でキーを共有すると
+ * 片方の削除で共倒れする。掃除は「参照を外してから旧キーを消す」の一方向 */
+const prizeImageKey = (prizeId: string) =>
+  `prize-images/${prizeId}/${crypto.randomUUID()}`;
+
+/**
+ * 公開: 景品画像の取得（未ログイン可）。イベント画像 (routes/images.ts) と同じ
+ * 配信の型（R2 ストリーム＋許可リスト固定の Content-Type＋nosniff＋ETag）。
+ * 見せてよい相手も公開一覧と同じ門（オフ・不可視は 404）だが、staff だけは
+ * オフでも見られる（編集・デスクのプレビューが仕込み中に使う）。
+ */
+export async function getMeetPrizeImage(c: Context) {
+  const eventId = c.req.param("id")!;
+  const event = await eventsRepo.findById(eventId);
+  const prize = event
+    ? await eventMeetPrizesRepo.findById(c.req.param("prizeId")!)
+    : null;
+  if (!event || !prize || prize.eventId !== eventId || !prize.imageKey) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  const user = await currentUser(c);
+  const visible =
+    event.meetPrizes && (await canViewEvent(event, user));
+  if (!visible && !(user && (await canManageEvent(eventId, user)))) {
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  // キー末尾はアップロードごとの乱数なので、そのまま ETag になる
+  const etag = `"${prize.imageKey.split("/").pop()}"`;
+  if (c.req.header("if-none-match") === etag) {
+    return new Response(null, { status: 304 });
+  }
+  const obj = await getBucket().get(prize.imageKey);
+  if (!obj) return c.json({ error: "not_found" }, 404);
+  return new Response(obj.body as unknown as ReadableStream, {
+    headers: {
+      "Content-Type": safeServeMime(obj.httpMetadata?.contentType),
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "public, max-age=60",
+      ETag: etag,
+    },
+  });
+}
+
+/** イベント複製用: 景品画像を別の景品へコピー（元が無ければ何もしない）。
+ * キーは新しく振る（共有すると片方の削除で共倒れするため） */
+export async function copyMeetPrizeImage(
+  src: MeetPrize,
+  dstPrizeId: string,
+): Promise<void> {
+  if (!src.imageKey) return;
+  const obj = await getBucket().get(src.imageKey);
+  if (!obj) return;
+  // 画像は 1MB 以内（EVENT_IMAGE と同じ上限）なのでメモリに載せてコピーする
+  const body = await obj.arrayBuffer();
+  const newKey = prizeImageKey(dstPrizeId);
+  await getBucket().put(newKey, body, {
+    httpMetadata: { contentType: obj.httpMetadata?.contentType },
+  });
+  await eventMeetPrizesRepo.setImageKey(dstPrizeId, newKey);
 }
 
 /**
@@ -138,8 +211,93 @@ meetPrizeRoutes.delete(
   "/:id/meet-prizes/:prizeId",
   requireEventRole(["staff"]),
   async (c) => {
-    if (!(await prizeOf(c))) return c.json({ error: "not_found" }, 404);
-    await eventMeetPrizesRepo.delete(c.req.param("prizeId"));
+    const prize = await prizeOf(c);
+    if (!prize) return c.json({ error: "not_found" }, 404);
+    await eventMeetPrizesRepo.delete(prize.id);
+    // 行が消えた画像は誰にも辿れない孤児になるので、ここで R2 も消す (#434)。
+    // best-effort（失敗してもログで追える。参照は既に無いので配信はされない）
+    if (prize.imageKey) {
+      try {
+        await getBucket().delete(prize.imageKey);
+      } catch (e) {
+        console.error("[meet-prize] image cleanup failed", prize.imageKey, e);
+      }
+    }
+    return c.json({ ok: true });
+  },
+);
+
+/**
+ * 景品画像のアップロード (#434)（staff のみ・生バイナリ）。
+ * 検証はイベント画像 (routes/images.ts putEventImage) と同じ契約
+ * （MIME 許可リスト imageMime.ts・EVENT_IMAGE.maxBytes）＋マジックバイト検査。
+ *
+ * 掃除の順序（put 失敗時に孤児を残さない — PR #423 の教訓）:
+ * 新キーに put → D1 の参照を差し替え（失敗したら新キーを消して投げ直す）→
+ * 旧キーを best-effort で削除。どこで落ちても「参照されない新オブジェクト」か
+ * 「参照が旧のまま」にしかならず、参照先が消えている状態を作らない。
+ */
+meetPrizeRoutes.put(
+  "/:id/meet-prizes/:prizeId/image",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const prize = await prizeOf(c);
+    if (!prize) return c.json({ error: "not_found" }, 404);
+
+    const mime = normalizeImageMime(c.req.header("content-type"));
+    if (!mime) return c.json({ error: "invalid_content_type" }, 400);
+    const declared = Number(c.req.header("content-length") ?? "0");
+    if (declared > EVENT_IMAGE.maxBytes) {
+      return c.json({ error: "too_large", maxBytes: EVENT_IMAGE.maxBytes }, 413);
+    }
+    const body = await c.req.arrayBuffer();
+    if (body.byteLength === 0) return c.json({ error: "empty_body" }, 400);
+    if (body.byteLength > EVENT_IMAGE.maxBytes) {
+      return c.json({ error: "too_large", maxBytes: EVENT_IMAGE.maxBytes }, 413);
+    }
+    const head = new Uint8Array(body, 0, Math.min(12, body.byteLength));
+    if (!hasImageMagicBytes(head, mime)) {
+      return c.json({ error: "invalid_image" }, 400);
+    }
+
+    const bucket = getBucket();
+    const newKey = prizeImageKey(prize.id);
+    await bucket.put(newKey, body, { httpMetadata: { contentType: mime } });
+    try {
+      await eventMeetPrizesRepo.setImageKey(prize.id, newKey);
+    } catch (e) {
+      // 参照の差し替えに失敗したら、置いたばかりの新キーを消して投げ直す
+      try {
+        await bucket.delete(newKey);
+      } catch (cleanupError) {
+        console.error("[meet-prize] image cleanup failed", newKey, cleanupError);
+      }
+      throw e;
+    }
+    if (prize.imageKey) {
+      try {
+        await bucket.delete(prize.imageKey);
+      } catch (e) {
+        console.error("[meet-prize] old image cleanup failed", prize.imageKey, e);
+      }
+    }
+    return c.json({ prize: await eventMeetPrizesRepo.findById(prize.id) });
+  },
+);
+
+/** 景品画像の削除 (#434)（staff のみ）。参照を外してから R2 を best-effort で消す */
+meetPrizeRoutes.delete(
+  "/:id/meet-prizes/:prizeId/image",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const prize = await prizeOf(c);
+    if (!prize || !prize.imageKey) return c.json({ error: "not_found" }, 404);
+    await eventMeetPrizesRepo.setImageKey(prize.id, null);
+    try {
+      await getBucket().delete(prize.imageKey);
+    } catch (e) {
+      console.error("[meet-prize] image cleanup failed", prize.imageKey, e);
+    }
     return c.json({ ok: true });
   },
 );

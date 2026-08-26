@@ -34,6 +34,8 @@ export interface MeetPrize {
   threshold: number | null;
   /** 在庫総数（残数は引き換え記録から導出） */
   stock: number;
+  /** 景品画像の R2 キー（任意 #434）。公開応答には載せない（URL だけ出す） */
+  imageKey: string | null;
   createdAt: number;
 }
 
@@ -94,6 +96,22 @@ export interface MeetPrizeView {
   stock: number;
   /** 残数（0未満にはならない。在庫を後から減らした場合は 0 に丸める） */
   stockLeft: number;
+  /** 景品画像の URL（無ければ null #434） */
+  imageUrl: string | null;
+}
+
+/** 景品画像の URL (#434)。サーバーの公開応答（imageUrl）と、staff 画面が
+ * MeetPrize.imageKey から組む URL の**唯一の**組み立て場所。
+ * `v=` はキー末尾（アップロードごとに変わる乱数）で、差し替え後に古い
+ * キャッシュを見続けないためのもの */
+export function meetPrizeImageUrl(
+  eventId: string,
+  prizeId: string,
+  imageKey: string | null,
+): string | null {
+  if (!imageKey) return null;
+  const tail = imageKey.split("/").pop()!;
+  return `/api/events/${eventId}/meet-prizes/${prizeId}/image?v=${tail}`;
 }
 
 /** 公開一覧に添える本人の状態（確定メンバーだけ。他人の分は返さない）。

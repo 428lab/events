@@ -23,3 +23,42 @@ export function safeServeMime(mime: string | undefined | null): string {
   const m = (mime ?? "").split(";")[0]!.trim().toLowerCase();
   return ALLOWED_IMAGE_MIMES.has(m) ? m : "application/octet-stream";
 }
+
+/** 先頭バイトが宣言 MIME の画像形式に見えるか（videoMime.ts の型に倣う）。
+ * 偽装ファイルが通っても配信側は許可リスト固定＋nosniff で無害化されるが、
+ * 「画像でないもの」を保存する意味が無いので入口で弾く (#434)。
+ * 既存の画像アップロード経路（イベント画像・写真等）はこの検査より前からあり、
+ * 追加は別作業（振る舞いが変わるため）。 */
+export function hasImageMagicBytes(head: Uint8Array, mime: string): boolean {
+  switch (mime) {
+    case "image/png":
+      return (
+        head.length >= 8 &&
+        head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47 &&
+        head[4] === 0x0d && head[5] === 0x0a && head[6] === 0x1a && head[7] === 0x0a
+      );
+    case "image/jpeg":
+      return head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+    case "image/gif":
+      // "GIF8"
+      return (
+        head.length >= 4 &&
+        head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x38
+      );
+    case "image/webp":
+      // "RIFF" .... "WEBP"
+      return (
+        head.length >= 12 &&
+        head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 &&
+        head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50
+      );
+    case "image/avif":
+      // ISOBMFF: offset 4 に "ftyp"（MP4 と同じ箱構造。ブランドまでは見ない）
+      return (
+        head.length >= 8 &&
+        head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70
+      );
+    default:
+      return false;
+  }
+}

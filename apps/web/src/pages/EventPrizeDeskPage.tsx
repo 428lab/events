@@ -17,6 +17,7 @@ import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { MeetPrizeStatusRow } from "@eventer/shared";
+import { meetPrizeImageUrl } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
 import {
   useClearMeetWinners,
@@ -80,6 +81,14 @@ function PrizeCard({
     <Card variant="outlined">
       <CardContent>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          {row.prize.imageKey && (
+            <Box
+              component="img"
+              src={meetPrizeImageUrl(eventId, row.prize.id, row.prize.imageKey) ?? undefined}
+              alt={row.prize.name}
+              sx={{ width: 40, height: 40, objectFit: "cover", borderRadius: 1 }}
+            />
+          )}
           {row.prize.conditionType === "top_rank" && (
             <EmojiEventsIcon fontSize="small" sx={{ color: "#FFD54F" }} />
           )}
