@@ -98,11 +98,21 @@ export function EventBingoScreenPage() {
         data && (
           <>
             <Box sx={{ flexShrink: 0, textAlign: "center" }}>
-              <Typography sx={{ fontSize: 18 * scale, color: BOARD_SUB }} noWrap>
+              <Typography
+                sx={{
+                  fontSize: `clamp(12px, 4vw, ${18 * scale}px)`,
+                  color: BOARD_SUB,
+                }}
+                noWrap
+              >
                 {eventData.event.title}
               </Typography>
               <Typography
-                sx={{ fontSize: 36 * scale, fontWeight: 800, color: BOARD_TEXT }}
+                sx={{
+                  fontSize: `clamp(22px, 7vw, ${36 * scale}px)`,
+                  fontWeight: 800,
+                  color: BOARD_TEXT,
+                }}
               >
                 {t("eventSocial.bingoTitle")}
               </Typography>
@@ -111,13 +121,18 @@ export function EventBingoScreenPage() {
             {/* 直近の番号（特大） */}
             <Box sx={{ textAlign: "center", my: 1 }}>
               {data.status === "setup" ? (
-                <Typography sx={{ fontSize: 40 * scale, color: BOARD_SUB }}>
+                <Typography
+                  sx={{
+                    fontSize: `clamp(18px, 5.5vw, ${40 * scale}px)`,
+                    color: BOARD_SUB,
+                  }}
+                >
                   {t("eventSocial.bingoWaiting")}
                 </Typography>
               ) : (
                 <Typography
                   sx={{
-                    fontSize: 160 * scale,
+                    fontSize: `clamp(96px, 28vw, ${160 * scale}px)`,
                     fontWeight: 800,
                     color: BOARD_ACCENT,
                     lineHeight: 1,
@@ -128,15 +143,29 @@ export function EventBingoScreenPage() {
               )}
             </Box>
 
-            {/* 履歴: B〜O の行に 15 個ずつ。出た番号だけ明るく */}
+            {/* 履歴: B〜O の行に 15 個ずつ。出た番号だけ明るく。
+                丸は固定 px でなく grid の 1fr + aspect-ratio で描き、
+                スマホでは縮んで15列全部が必ずビューポート幅に収まる
+                （横スクロールで逃げない）。プロジェクターでは maxWidth の
+                上限が効いて従来と同等の大きさになる */}
             <Box sx={{ flex: 1, minHeight: 0, display: "flex", justifyContent: "center" }}>
-              <Stack spacing={0.5 * scale}>
+              <Stack
+                spacing={`clamp(2px, 0.6vw, ${4 * scale}px)`}
+                sx={{ width: "100%", maxWidth: `${15 * 38 * scale + 40}px` }}
+              >
                 {BINGO_COLUMN_RANGES.map(([lo, hi], col) => (
-                  <Stack key={col} direction="row" spacing={0.5 * scale} alignItems="center">
+                  <Box
+                    key={col}
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: `clamp(16px, 4vw, ${28 * scale}px) repeat(15, minmax(0, 1fr))`,
+                      gap: `clamp(2px, 0.6vw, ${4 * scale}px)`,
+                      alignItems: "center",
+                    }}
+                  >
                     <Typography
                       sx={{
-                        width: 28 * scale,
-                        fontSize: 20 * scale,
+                        fontSize: `clamp(12px, 3vw, ${20 * scale}px)`,
                         fontWeight: 800,
                         color: BOARD_ACCENT,
                       }}
@@ -147,13 +176,13 @@ export function EventBingoScreenPage() {
                       <Box
                         key={n}
                         sx={{
-                          width: 34 * scale,
-                          height: 34 * scale,
+                          width: "100%",
+                          aspectRatio: "1 / 1",
                           borderRadius: "50%",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          fontSize: 15 * scale,
+                          fontSize: `clamp(8px, 1.9vw, ${15 * scale}px)`,
                           fontWeight: 700,
                           color: drawnSet.has(n) ? BOARD_BG : BOARD_SUB,
                           bgcolor: drawnSet.has(n) ? BOARD_ACCENT : "transparent",
@@ -163,13 +192,18 @@ export function EventBingoScreenPage() {
                         {n}
                       </Box>
                     ))}
-                  </Stack>
+                  </Box>
                 ))}
               </Stack>
             </Box>
 
             <Box sx={{ flexShrink: 0, textAlign: "center" }}>
-              <Typography sx={{ fontSize: 18 * scale, color: BOARD_SUB }}>
+              <Typography
+                sx={{
+                  fontSize: `clamp(12px, 3.5vw, ${18 * scale}px)`,
+                  color: BOARD_SUB,
+                }}
+              >
                 {t("eventSocial.bingoCounts", {
                   cards: data.counts.cards,
                   bingo: data.counts.bingo,
