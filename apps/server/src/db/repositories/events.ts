@@ -41,6 +41,7 @@ interface EventRow {
   qa_anonymity: string;
   /** 出会いランキングの表示設定 (#418)。off / anonymous / named */
   meet_ranking: string;
+  meet_prizes: number;
   /** Q&A の「いまこの質問」。toEvent には含めない（questions API で返す） */
   qa_picked_question_id: string | null;
   /** 募集の締切日時（epoch ms）。NULL = 締切なし (#269) */
@@ -139,6 +140,7 @@ function toEvent(row: EventRow): Event {
     )
       ? (row.meet_ranking as Event["meetRanking"])
       : "off",
+    meetPrizes: row.meet_prizes === 1,
     // 未設定は NULL。?? null で undefined（列追加前の行）も NULL に寄せる
     registrationDeadline: row.registration_deadline ?? null,
   };
@@ -413,7 +415,7 @@ export const eventsRepo = {
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
          photos_public = ?, attendance_check = ?, venue_wanted = ?,
          chat_enabled = ?, chat_urls_allowed = ?, qa_enabled = ?, qa_anonymity = ?,
-         meet_ranking = ?,
+         meet_ranking = ?, meet_prizes = ?,
          members_note = ?, scheduling = ?,
          registration_deadline = ?
        WHERE id = ?`,
@@ -439,6 +441,7 @@ export const eventsRepo = {
       next.qaEnabled ? 1 : 0,
       next.qaAnonymity,
       next.meetRanking,
+      next.meetPrizes ? 1 : 0,
       membersNote,
       next.scheduling ? 1 : 0,
       // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る

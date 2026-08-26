@@ -52,6 +52,10 @@ import {
   meetScanRoutes,
 } from "./routes/eventMeets.js";
 import {
+  getEventMeetPrizes,
+  meetPrizeRoutes,
+} from "./routes/eventMeetPrizes.js";
+import {
   eventScheduleRoutes,
   getEventTimetable,
 } from "./routes/eventSchedule.js";
@@ -157,6 +161,9 @@ api.route("/venue-offers", venueOfferRoutes);
 api.get("/events/:id/image", getEventImage);
 // 公開: 表彰内容（認証不要。eventRoutes より先に登録）
 api.get("/events/:id/awards", getEventAwards);
+// 公開: 出会いの景品一覧 (#431)（認証不要。オフのイベントは404で存在ごと隠す。
+// eventRoutes より先に登録）
+api.get("/events/:id/meet-prizes", getEventMeetPrizes);
 // 公開: 採点結果一覧（締切後/終了後のみ。eventRoutes より先に登録）
 api.get("/events/:id/scores/results", getEventScoreResults);
 // 公開/参加者限定: イベント写真・動画（photos_public 判定は各ハンドラ内。eventRoutes より先に登録）
@@ -192,6 +199,8 @@ api.route("/events", eventQaRoutes);
 api.route("/events", eventBroadcastRoutes);
 // 出会った記録 (#189)（参加確定メンバー同士。要認証）
 api.route("/events", meetEventRoutes);
+// 出会いの景品引き換え (#431)（設定・デスク・締めはそのイベントのスタッフのみ。要認証）
+api.route("/events", meetPrizeRoutes);
 api.route("/events", eventScheduleRoutes);
 // 準備の段取り TODO とガントチャート (#393)（そのイベントのスタッフのみ。要認証。
 // 参加者向けの経路は1本も作らない）

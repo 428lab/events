@@ -44,6 +44,7 @@ import { canViewEvent as canView, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { awardsRepo } from "../db/repositories/awards.js";
+import { eventMeetPrizesRepo } from "../db/repositories/eventMeetPrizes.js";
 import { eventTodosRepo } from "../db/repositories/eventTodos.js";
 import { eventDutiesRepo } from "../db/repositories/eventDuties.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -456,6 +457,8 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
     qaAnonymity: src.qaAnonymity,
     // 出会いランキング (#418) も設定だけコピーする（出会いの記録はコピーしない）
     meetRanking: src.meetRanking,
+    // 出会いの景品 (#431) も設定と定義だけコピー（下）。引き換え記録・1位はコピーしない
+    meetPrizes: src.meetPrizes,
     membersNote: await eventsRepo.membersNoteFor(src.id),
   });
 
@@ -476,6 +479,18 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
       name: cr.name,
       description: cr.description,
       maxLevel: cr.maxLevel,
+    });
+  }
+
+  // 出会いの景品の定義 (#431)（引き換え記録・1位の確定は除く）
+  for (const prize of await eventMeetPrizesRepo.listByEvent(src.id)) {
+    await eventMeetPrizesRepo.create(created.id, {
+      name: prize.name,
+      description: prize.description,
+      conditionType: prize.conditionType,
+      threshold: prize.threshold,
+      stock: prize.stock,
+      sortOrder: prize.sortOrder,
     });
   }
 
