@@ -209,6 +209,7 @@ describe("公開一覧とオフの門 (#431)", () => {
     expect(mine.me).toEqual({
       count: 1,
       won: false,
+      bingo: false,
       redeemedPrizeIds: [prizeId],
     });
 
@@ -451,7 +452,12 @@ describe("出会いの取り消し (#330) との関係", () => {
     const mine = (await (
       await SELF.fetch(listUrl(eventId), { headers: { cookie: alice.cookie } })
     ).json()) as MeetPrizeList;
-    expect(mine.me).toEqual({ count: 0, won: false, redeemedPrizeIds: [redeemed] });
+    expect(mine.me).toEqual({
+      count: 0,
+      won: false,
+      bingo: false,
+      redeemedPrizeIds: [redeemed],
+    });
   });
 });
 

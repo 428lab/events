@@ -270,6 +270,23 @@ const ja = {
   meetPrizeMyCount: "これまでに{{n}}人と出会いました。",
   meetPrizeYouWon: "あなたがランキング1位です！",
   meetPrizeShowStaff: "達成した景品は、この画面をスタッフに見せて受け取ってください。",
+
+  /* ===== 数字ビンゴ (#436) ===== */
+  bingoTitle: "ビンゴ",
+  bingoFree: "FREE",
+  bingoGetCard: "カードを受け取る",
+  bingoWaiting: "まもなく始まります。カードを受け取って待ちましょう。",
+  bingoEnded: "このゲームは終了しました。",
+  bingoReach: "リーチ！",
+  bingoBingo: "ビンゴ！",
+  bingoYourRank: "あなたは{{rank}}番目のビンゴです。",
+  bingoShowStaff: "スタッフのところで好きな景品を1つ選んでください。",
+  bingoCounts: "カード{{cards}}枚 ・ ビンゴ{{bingo}}人 ・ リーチ{{reach}}人",
+  bingoLatest: "最新の番号",
+  bingoNoDraws: "抽選を待っています…",
+  bingoHistory: "出た番号",
+  bingoDetailLink: "ビンゴ会場へ",
+  meetPrizeCondBingo: "ビンゴ達成（1人1つ）",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -475,6 +492,22 @@ const en: Record<keyof typeof ja, string> = {
   meetPrizeMyCount: "You have met {{n}} people so far.",
   meetPrizeYouWon: "You are at the top of the ranking!",
   meetPrizeShowStaff: "Show this screen to a staff member to receive rewards you achieved.",
+
+  bingoTitle: "Bingo",
+  bingoFree: "FREE",
+  bingoGetCard: "Get your card",
+  bingoWaiting: "Starting soon. Grab your card and get ready.",
+  bingoEnded: "This game has ended.",
+  bingoReach: "Reach!",
+  bingoBingo: "BINGO!",
+  bingoYourRank: "You are bingo #{{rank}}.",
+  bingoShowStaff: "Pick one prize of your choice at the staff desk.",
+  bingoCounts: "{{cards}} cards / {{bingo}} bingo / {{reach}} reach",
+  bingoLatest: "Latest number",
+  bingoNoDraws: "Waiting for the first number…",
+  bingoHistory: "Numbers so far",
+  bingoDetailLink: "Open bingo",
+  meetPrizeCondBingo: "Bingo (one per person)",
 };
 
 export const eventSocial = { ja, en };

@@ -25,9 +25,10 @@ import { useMeetPrizes } from "../api/meetPrizeHooks.js";
 
 /** 本人がこの景品を達成しているか（表示用の導出。判定の正は引き換え時のサーバー） */
 function achieved(prize: MeetPrizeView, me: MeetPrizeMe): boolean {
-  return prize.conditionType === "meet_count"
-    ? me.count >= (prize.threshold ?? Infinity)
-    : me.won;
+  if (prize.conditionType === "meet_count") {
+    return me.count >= (prize.threshold ?? Infinity);
+  }
+  return prize.conditionType === "top_rank" ? me.won : me.bingo;
 }
 
 function PrizeRow({
@@ -74,7 +75,9 @@ function PrizeRow({
           label={
             prize.conditionType === "meet_count"
               ? t("eventSocial.meetPrizeCondCount", { n: prize.threshold ?? 0 })
-              : t("eventSocial.meetPrizeCondTop")
+              : prize.conditionType === "top_rank"
+                ? t("eventSocial.meetPrizeCondTop")
+                : t("eventSocial.meetPrizeCondBingo")
           }
         />
         <Chip
