@@ -4,7 +4,6 @@ import {
   Box,
   Button,
   CircularProgress,
-  Collapse,
   DialogActions,
   DialogContent,
   Typography,
@@ -71,7 +70,6 @@ export function VideoSelectStep({
   const [error, setError] = useState<string | null>(null);
   const [trim, setTrim] = useState<VideoTrim | null>(null);
   const [trimTotalMs, setTrimTotalMs] = useState(0);
-  const [trimOpen, setTrimOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const previewRef = useRef<HTMLVideoElement | null>(null);
   const ctxRef = useRef<{
@@ -113,6 +111,12 @@ export function VideoSelectStep({
           probed.probe.height,
         );
         const totalMs = probed.probe.durationMs;
+        if (!(totalMs > 0)) {
+          // 長さが取れない入力はトリム UI が成立しない（枠の幅を算出できず、
+          // 幅0の枠と空のプレビューという壊れた画面になる。iOS の複数選択で
+          // 2本目のメタデータが読めないケースを実機で確認）。エラーに倒す
+          return failWith(t("eventSocial.videoCannotProcess", { s: maxSec }));
+        }
         const mustTrim = needsVideoTrim(totalMs);
         // 60秒超はトリム前提（既定: 先頭から60秒）で経路を判定する。
         // 変換経路に乗れなければ trim では救えない → too-long（編集の案内）
@@ -141,10 +145,23 @@ export function VideoSelectStep({
           finish({ kind: "ready", probed, plan, trim: null });
           return;
         }
+        if (!mustTrim) {
+          // 60秒以内はトリム不要 → 止まらず自動確定（全範囲）。
+          // 「短い動画も任意でトリム」は落とした（元要望は60秒超のみで、
+          // キューの全本で決定タップを要求する代償に見合わない）。
+          // ただし音声を落とす経路だけは黙って進めない（確認を出す）
+          const ready = { kind: "ready", probed, plan, trim: null } as const;
+          if (plan.confirmDropAudio) {
+            pendingRef.current = ready;
+            setPhase("confirmAudio");
+            return;
+          }
+          finish(ready);
+          return;
+        }
         ctxRef.current = { probed, support };
         setTrimTotalMs(totalMs);
         setTrim(defaultVideoTrim(totalMs));
-        setTrimOpen(mustTrim);
         setPhase("trim");
       } catch {
         // demux 不能（壊れたファイル等）
@@ -164,7 +181,7 @@ export function VideoSelectStep({
     setPreviewUrl(url);
     return () => {
       setPreviewUrl(null);
-      URL.revokeObjectURL(url);
+      if (typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(url);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase === "trim"]);
@@ -239,16 +256,10 @@ export function VideoSelectStep({
         )}
         {phase === "trim" && trim && (
           <Box>
-            {needsVideoTrim(trimTotalMs) ? (
-              <Typography sx={{ mb: 1 }}>
-                {t("eventSocial.videoTrimIntro", { s: maxSec })}
-              </Typography>
-            ) : (
-              <Button size="small" onClick={() => setTrimOpen((o) => !o)}>
-                {t("eventSocial.videoTrimToggle")}
-              </Button>
-            )}
-            <Collapse in={trimOpen}>
+            <Typography sx={{ mb: 1 }}>
+              {t("eventSocial.videoTrimIntro", { s: maxSec })}
+            </Typography>
+            <Box>
               {previewUrl && (
                 <Box
                   component="video"
@@ -278,7 +289,7 @@ export function VideoSelectStep({
                   len: formatVideoDuration(trim.endMs - trim.startMs),
                 })}
               </Typography>
-            </Collapse>
+            </Box>
           </Box>
         )}
         {phase === "confirmAudio" && (
