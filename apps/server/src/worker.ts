@@ -56,6 +56,7 @@ import {
   getMeetPrizeImage,
   meetPrizeRoutes,
 } from "./routes/eventMeetPrizes.js";
+import { eventBingoRoutes } from "./routes/eventBingo.js";
 import {
   eventScheduleRoutes,
   getEventTimetable,
@@ -204,6 +205,8 @@ api.route("/events", eventBroadcastRoutes);
 api.route("/events", meetEventRoutes);
 // 出会いの景品引き換え (#431)（設定・デスク・締めはそのイベントのスタッフのみ。要認証）
 api.route("/events", meetPrizeRoutes);
+// 数字ビンゴ (#436)（確定メンバーのみ。公開の口は無い。要認証）
+api.route("/events", eventBingoRoutes);
 api.route("/events", eventScheduleRoutes);
 // 準備の段取り TODO とガントチャート (#393)（そのイベントのスタッフのみ。要認証。
 // 参加者向けの経路は1本も作らない）

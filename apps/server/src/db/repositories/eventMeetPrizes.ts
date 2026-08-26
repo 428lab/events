@@ -165,6 +165,81 @@ export const eventMeetPrizesRepo = {
     return r ? { id: r.id, createdAt: r.created_at } : null;
   },
 
+  /**
+   * ビンゴ景品プールからの引き換え (#436)。docs/bingo.md §3.7。
+   * 通常の redeem と違い、「**プール全体で1人1回**」を NOT EXISTS で塞ぐ
+   * （既存の UNIQUE (prize_id, user_id) は同じ景品の2回目しか塞げない。
+   * 最後の砦としてはそのまま残る）。WHERE が条件種別で変わる2つの契約なので、
+   * redeem と1本に混ぜない。
+   * @returns true=引き換えた / false=既にプールで交換済みか在庫切れ
+   *          （findBingoPoolRedemption で読み直して区別する） */
+  async redeemFromBingoPool(
+    eventId: string,
+    prizeId: string,
+    userId: string,
+    redeemedBy: string,
+  ): Promise<boolean> {
+    const changes = await runCount(
+      `INSERT INTO event_prize_redemption (id, prize_id, user_id, redeemed_by, created_at)
+       SELECT ?, ?, ?, ?, ?
+        WHERE NOT EXISTS (
+                SELECT 1 FROM event_prize_redemption r
+                  JOIN event_prize p ON p.id = r.prize_id
+                 WHERE r.user_id = ? AND p.event_id = ? AND p.condition_type = 'bingo')
+          AND (SELECT COUNT(*) FROM event_prize_redemption WHERE prize_id = ?)
+              < (SELECT stock FROM event_prize WHERE id = ?)`,
+      crypto.randomUUID(),
+      prizeId,
+      userId,
+      redeemedBy,
+      Date.now(),
+      userId,
+      eventId,
+      prizeId,
+      prizeId,
+    );
+    return changes > 0;
+  },
+
+  /** 本人がビンゴ景品プールから選んで交換済みの行（無ければ null） (#436) */
+  async findBingoPoolRedemption(
+    eventId: string,
+    userId: string,
+  ): Promise<{ prizeId: string; createdAt: number } | null> {
+    const r = await one<{ prize_id: string; created_at: number }>(
+      `SELECT r.prize_id, r.created_at
+         FROM event_prize_redemption r
+         JOIN event_prize p ON p.id = r.prize_id
+        WHERE r.user_id = ? AND p.event_id = ? AND p.condition_type = 'bingo'`,
+      userId,
+      eventId,
+    );
+    return r ? { prizeId: r.prize_id, createdAt: r.created_at } : null;
+  },
+
+  /** ビンゴ景品プールの引き換えを user_id で引ける形に（デスクの達成者一覧用） (#436) */
+  async bingoPoolRedemptions(
+    eventId: string,
+  ): Promise<Map<string, { prizeId: string; createdAt: number }>> {
+    const rows = await many<{
+      user_id: string;
+      prize_id: string;
+      created_at: number;
+    }>(
+      `SELECT r.user_id, r.prize_id, r.created_at
+         FROM event_prize_redemption r
+         JOIN event_prize p ON p.id = r.prize_id
+        WHERE p.event_id = ? AND p.condition_type = 'bingo'`,
+      eventId,
+    );
+    return new Map(
+      rows.map((r) => [
+        r.user_id,
+        { prizeId: r.prize_id, createdAt: r.created_at },
+      ]),
+    );
+  },
+
   /** 交換済みの取り消し（誤操作訂正）。在庫は導出なので自然に1戻る */
   async deleteRedemption(prizeId: string, userId: string): Promise<boolean> {
     const changes = await runCount(

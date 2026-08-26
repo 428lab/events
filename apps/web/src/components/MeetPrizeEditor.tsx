@@ -66,9 +66,12 @@ const emptyDraft: Draft = {
 };
 
 function conditionLabel(prize: MeetPrize, t: TFunction): string {
-  return prize.conditionType === "meet_count"
-    ? t("eventSocial.meetPrizeCondCount", { n: prize.threshold ?? 0 })
-    : t("eventSocial.meetPrizeCondTop");
+  if (prize.conditionType === "meet_count") {
+    return t("eventSocial.meetPrizeCondCount", { n: prize.threshold ?? 0 });
+  }
+  return prize.conditionType === "top_rank"
+    ? t("eventSocial.meetPrizeCondTop")
+    : t("eventSocial.meetPrizeCondBingo");
 }
 
 export function MeetPrizeEditor({ eventId }: { eventId: string }) {
@@ -135,7 +138,7 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
     draft.name.trim().length > 0 &&
     /^\d+$/.test(draft.stock) &&
     Number(draft.stock) <= 1000 &&
-    (draft.conditionType === "top_rank" ||
+    (draft.conditionType !== "meet_count" ||
       (/^\d+$/.test(draft.threshold) &&
         Number(draft.threshold) >= 1 &&
         Number(draft.threshold) <= 1000));
@@ -308,6 +311,9 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
                 </MenuItem>
                 <MenuItem value="top_rank">
                   {t("eventForm.meetPrizeConditionTop")}
+                </MenuItem>
+                <MenuItem value="bingo">
+                  {t("eventForm.meetPrizeConditionBingo")}
                 </MenuItem>
               </TextField>
               {draft.conditionType === "meet_count" && (

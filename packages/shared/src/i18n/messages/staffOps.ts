@@ -319,6 +319,38 @@ const ja = {
   prizeRedeemNotConfirmed: "参加が確定していないため引き換えできません。",
   prizeRedeemFailed: "引き換えに失敗しました。",
 
+  /* ── 数字ビンゴの抽選コントロール (#436) ────────────────── */
+  bingoControlTitle: "ビンゴ抽選",
+  bingoControlStaffOnly: "ビンゴの操作はスタッフ専用です。",
+  bingoCreate: "ビンゴを準備する",
+  bingoCreateNote: "準備すると参加者がカードを受け取れるようになります。",
+  bingoStart: "抽選を開始する",
+  bingoStartConfirm: "抽選を開始しますか？（開始後もカードは受け取れます）",
+  bingoDraw: "次を引く",
+  bingoUndoDraw: "直前の1個を取り消す",
+  bingoUndoConfirm: "直前に引いた番号を取り消しますか？",
+  bingoUndoHelp: "取り消した番号は、次を引くと同じ番号がもう一度出ます。",
+  bingoEnd: "終了する",
+  bingoEndConfirm:
+    "抽選を終了しますか？結果が固定されます。景品の引き換えは続けられます。",
+  bingoReset: "リセット（カード再配布）",
+  bingoResetConfirm:
+    "リセットしますか？全員のカードが無効になり、達成も消えます。引き換え済みの景品はそのまま残ります。",
+  bingoDelete: "ビンゴをやめる",
+  bingoDeleteConfirm:
+    "ビンゴをやめますか？カードごと消え、参加者からは見えなくなります。",
+  bingoExhausted: "すべての番号を引き切りました。",
+  bingoOpFailed: "操作に失敗しました。",
+  bingoAchieversTitle: "リーチ・ビンゴの一覧（読み上げ用）",
+  bingoRankN: "ビンゴ {{rank}}番目",
+  bingoNoRows: "カードを受け取った人はまだいません。",
+  /* ── ビンゴ景品プール（デスク #436） ── */
+  prizeDeskBingoTitle: "ビンゴ景品（選び取り）",
+  prizeDeskBingoNote:
+    "達成した順に、在庫が残っている景品から1つ選んでもらいます。同着の順番決めは現場で。",
+  prizeDeskBingoNone: "ビンゴ達成者はまだいません。",
+  prizeDeskBingoChoose: "この景品と交換",
+
   /* ── 準備の段取り (#393) ────────────────────────────────
    * **実装上の語を出さない。**「待ち」「担当者が外れています」のように
    * 振る舞いで書く（`assigneeState` / `dep` / `blocked` は利用者の語彙ではない） */
@@ -688,6 +720,36 @@ const en: Record<keyof typeof ja, string> = {
   prizeRedeemNotAchieved: "The condition is not met.",
   prizeRedeemNotConfirmed: "Cannot redeem because participation is not confirmed.",
   prizeRedeemFailed: "Failed to redeem.",
+
+  bingoControlTitle: "Bingo draw",
+  bingoControlStaffOnly: "Bingo controls are for organizers only.",
+  bingoCreate: "Set up bingo",
+  bingoCreateNote: "Once set up, participants can get their cards.",
+  bingoStart: "Start drawing",
+  bingoStartConfirm: "Start drawing? (Cards can still be issued after starting.)",
+  bingoDraw: "Draw next",
+  bingoUndoDraw: "Undo last draw",
+  bingoUndoConfirm: "Undo the last drawn number?",
+  bingoUndoHelp: "An undone number comes up again on the next draw.",
+  bingoEnd: "End the game",
+  bingoEndConfirm:
+    "End the game? Results freeze. Prizes can still be redeemed.",
+  bingoReset: "Reset (redeal cards)",
+  bingoResetConfirm:
+    "Reset? Everyone's cards are voided and achievements are cleared. Redeemed prizes remain.",
+  bingoDelete: "Remove bingo",
+  bingoDeleteConfirm:
+    "Remove bingo? Cards are deleted and participants no longer see it.",
+  bingoExhausted: "All numbers have been drawn.",
+  bingoOpFailed: "The operation failed.",
+  bingoAchieversTitle: "Reach & bingo list (for announcements)",
+  bingoRankN: "Bingo #{{rank}}",
+  bingoNoRows: "No one has taken a card yet.",
+  prizeDeskBingoTitle: "Bingo prizes (pick one)",
+  prizeDeskBingoNote:
+    "Achievers pick one prize, in order, while stock lasts. Settle ties on the spot.",
+  prizeDeskBingoNone: "No bingo achievers yet.",
+  prizeDeskBingoChoose: "Redeem this prize",
 
   todoTitle: "Prep to-dos",
   todoStaffOnly: "Prep to-dos are for organizers only.",

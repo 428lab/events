@@ -13,8 +13,10 @@ import { z } from "zod";
 
 /** 達成条件の種類。
  * - meet_count: N人と出会う（N は自由入力。5/10/20 は編集UIの既定候補）
- * - top_rank: 出会った人数ランキング1位（主催者が締めて確定した人） */
-export const MEET_PRIZE_CONDITIONS = ["meet_count", "top_rank"] as const;
+ * - top_rank: 出会った人数ランキング1位（主催者が締めて確定した人）
+ * - bingo: ビンゴ達成 (#436)。この種別の景品は「ビンゴ景品プール」で、
+ *   達成者はプールから好きな1つを選ぶ（プール全体で1人1回） */
+export const MEET_PRIZE_CONDITIONS = ["meet_count", "top_rank", "bingo"] as const;
 export type MeetPrizeCondition = (typeof MEET_PRIZE_CONDITIONS)[number];
 
 /** 編集UIに出す「N人到達」の既定候補（issue の 5/10/20） */
@@ -56,7 +58,9 @@ const prizeFields = {
   stock: z.number().int().min(0).max(1000),
 };
 
-/** meet_count なのに人数が無い／top_rank なのに人数がある、を作らせない */
+/** meet_count なのに人数が無い／top_rank・bingo なのに人数がある、を作らせない。
+ * bingo の NULL 強制は DB の CHECK では縛れない（変更は再構築になる）ので、
+ * この zod が正の門（docs/bingo.md §3.7） */
 function thresholdMatchesCondition(v: {
   conditionType: MeetPrizeCondition;
   threshold?: number | null;
@@ -131,6 +135,8 @@ export interface MeetPrizeMe {
   count: number;
   /** 確定済みの1位に自分が入っているか（未確定なら false） */
   won: boolean;
+  /** ビンゴを達成しているか (#436)。ゲームが無ければ false */
+  bingo: boolean;
   /** 交換済みの景品 id */
   redeemedPrizeIds: string[];
 }
@@ -173,8 +179,24 @@ export interface MeetWinner {
   decidedAt: number;
 }
 
+/** デスクのビンゴ景品プールの達成者1行 (#436)。達成順（同着は同順位）で並べる。
+ * 選び取りの順序はシステムで裁かず、staff が引き換えを付けた順が記録に残る */
+export interface MeetPrizeBingoAchiever {
+  userId: string;
+  username: string;
+  name: string;
+  avatarUrl: string | null;
+  rank: number;
+  completedAtSeq: number;
+  /** プールから選んで交換済みの景品 id（未交換は null） */
+  redeemedPrizeId: string | null;
+  redeemedAt: number | null;
+}
+
 /** GET /api/events/:id/meet-prizes/status のレスポンス（staff のみ） */
 export interface MeetPrizeStatus {
   prizes: MeetPrizeStatusRow[];
   winners: MeetWinner[];
+  /** ビンゴ景品プールの達成者（達成順）。ゲームやプール景品が無ければ空 (#436) */
+  bingoAchievers: MeetPrizeBingoAchiever[];
 }

@@ -1,0 +1,330 @@
+# 数字ビンゴ (#436)
+
+- 対象: `apps/server`（D1 スキーマ・新ルート・新リポジトリ）、`packages/shared`（型・入力・文言）、
+  `apps/web`（参加者のカード画面・スタッフの抽選コントロール・投影画面・景品条件の追加）
+- ステータス: **設計のみ**（実装はこの設計のレビュー後）
+- 決定済み（ユーザー指示）:
+  - **数字ビンゴ**（出会いビンゴではない）。主催者が抽選し、参加者はスマホのカードで
+    自動マーク、リーチ/ビンゴをリアルタイム判定
+  - **景品 (#431) と連動・「選び取り」方式**（2026-08-26 確定）: ビンゴが早かった順に、
+    本人が**ビンゴ用の景品プールから好きなものを1つ選ぶ**。条件と景品の1対1紐づけではない
+  - **同着はシステムで裁かない**: 同時ビンゴの順位決めは現場でジャンケン等。システムは
+    同着をそのまま記録し、**デスクで引き換えた順序＝実際の選択順**とする
+
+---
+
+## 1. なぜ作るか
+
+出会いの記録・ランキング (#418)・景品 (#431) で「交流の見返り」は作った。ビンゴは
+交流と独立に**全員が同時に参加できる山場**を作る道具で、懇親会の定番。紙のカードと
+ガラガラの代わりに、スマホのカードとプロジェクターの抽選画面で完結させる。
+
+---
+
+## 2. 調査結果（乗る土台）
+
+| 土台 | 使う型 |
+|------|--------|
+| 投影画面 | `MeetRankingScreenPage`（全画面・文字サイズ倍率・カーソル自動非表示・`MEET_RANKING_POLL_MS`=5秒ポーリング） |
+| 「導出で持つ」思想 | #431「達成は保存せず導出」。ビンゴの判定・達成順も**引いた列×カード配置から毎回導出**する（§3.5） |
+| 原子的な1操作 | 在庫確保の「1文＋変更行数で成否判定」（`runCount`）。「次を引く」も同じ型（§3.4） |
+| 隠蔽の門 | #431 `meetPrizeAudience` の「述語1つ・404で存在ごと隠す」。ビンゴは**ゲーム行の有無**が門（§3.8） |
+| 景品の条件 | `condition_type` の CHECK は否定形（#435 レビューで種別追加に耐える形へ変更済み）。`'bingo'` は**テーブル再構築なしで**足せる（§3.7） |
+| mergeUsers | UNIQUE キー付き表は `uniqueKeyed` 登録＋`merge-user-columns.test.ts` の実数更新 |
+| 複製・削除 | 複製は「定義だけコピー・記録はコピーしない」。削除は FK CASCADE |
+
+---
+
+## 3. 設計
+
+### 3.1 データモデル: ゲーム1・抽選列・カード（達成の表は持たない）
+
+マイグレーション `apps/server/migrations/0081_bingo.sql`:
+
+```sql
+-- 数字ビンゴ (#436)。イベントにつき同時に1ゲーム
+CREATE TABLE event_bingo_game (
+  event_id TEXT PRIMARY KEY REFERENCES event(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'setup',   -- 'setup'（受付中）| 'running' | 'ended'
+  -- 抽選順の全列（1..75 の順列 JSON）。開始時にサーバーが生成し、以後不変。
+  -- 「引く」= drawn_count を1増やして先頭 drawn_count 個を公開済みにする
+  draw_order TEXT,
+  drawn_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  ended_at INTEGER
+);
+
+-- 参加者のカード（1人1枚・サーバー生成）
+CREATE TABLE event_bingo_card (
+  event_id TEXT NOT NULL REFERENCES event_bingo_game(event_id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  -- 24個の数字（5x5・中央FREE除く）。列ごとの標準範囲
+  -- B:1-15 / I:16-30 / N:31-45 / G:46-60 / O:61-75、列内重複なし
+  numbers TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (event_id, user_id)
+);
+```
+
+- **達成（リーチ・ビンゴ・達成順）の表は持たない。** すべて
+  「公開済みの番号列 × カード配置」から読むたびに導出する（§3.5）。
+  #431 と同じ理由: 保存すると、リセットや締めのたびに整合を追いかける
+  2つ目の契約が生まれる
+- **抽選ごとの行（draw テーブル）も持たない。** 開始時に 1..75 の順列を作って
+  `draw_order` に固定し、「引く」は `drawn_count` を進めるだけにする（§3.4 で比較）
+- ゲームはイベントにつき**同時に1つ**（PK = event_id）。「もう1回戦」はリセット（§3.6）
+- mergeUsers: `event_bingo_card` は PK (event_id, user_id) なので
+  **`uniqueKeyed` に `["event_bingo_card", "user_id", ["event_id"]]`** を追加し、
+  `merge-user-columns.test.ts` の実数（列数・組数）を更新する
+
+### 3.2 カードの生成と発行（不正防止の要）
+
+- **カードはサーバー生成**（`crypto.getRandomValues` で列ごとの範囲から重複なしに5個ずつ、
+  N列は4個+FREE）。クライアントは表示するだけで、**カードの正当性は常に DB の行が正**
+- 発行は `POST /api/events/:id/bingo/card`（確定メンバーのみ・冪等: 既にあれば同じカードを
+  返す）。「カードを受け取る」を参加者が明示的に押す（GET に書き込みを混ぜない）
+- **発行できるのは `status != 'ended'` の間ずっと**（途中参加も受け取れる）。
+  途中発行のカードにも公開済みの番号は全部効く。サーバー乱数の一様なカードである限り、
+  いつ発行しても当たりやすさは変わらない（遅く来た人が不利にならない、が唯一の非自明点。
+  「発行済みの番号を避けて配る」ような補正は**しない**——複雑さの割に公平性を歪める）
+- マーク操作は**存在しない**（自動マーク）。「まだ読んでいない番号を隠す」等の
+  ゲーム性はスコープ外（§6）
+
+不正の面: クライアントからの書き込みは「カードを受け取る」1本だけ（内容はサーバーが決める）。
+判定・順位・抽選のすべてがサーバー側の値から導出されるので、**申告を信じる場所が無い**。
+
+### 3.3 ライフサイクル: setup → running → ended（→ リセット）
+
+| 状態 | できること | 遷移 |
+|------|-----------|------|
+| （ゲーム行なし） | 何も見えない（参加者には 404。§3.8） | staff が `POST /:id/bingo` で作成 → setup |
+| setup | カード発行・投影画面に「まもなく」表示 | staff が `start` → running（このとき `draw_order` を生成） |
+| running | 抽選（draw）・カード発行・判定 | staff が `end` → ended |
+| ended | 閲覧のみ（判定は凍結。景品の引き換えは続けられる） | staff が `reset`（§3.6）または放置 |
+
+- start 前に引けない・ended 後に引けないは、`draw` の条件付き UPDATE の WHERE が守る（§3.4）
+- 「一時停止」は作らない（引かなければ止まっているのと同じ。状態を増やさない）
+
+### 3.4 抽選: 事前順列 + 条件付き UPDATE の1文（採用案）
+
+**start 時に 1..75 の順列を生成して固定し、「次を引く」は1文の UPDATE にする。**
+
+```sql
+-- 「次を引く」。running でない・引き切ったときは変更行数 0（在庫確保と同じ型）
+UPDATE event_bingo_game
+   SET drawn_count = drawn_count + 1
+ WHERE event_id = ? AND status = 'running' AND drawn_count < 75
+```
+
+比較した2案:
+
+| | 案D1: 引くたびに乱数で draw 行を INSERT | 案D2: 事前順列 + drawn_count（**採用**） |
+|---|---|---|
+| 競合安全 | UNIQUE(event_id, number) を砦に、衝突時リトライが要る | **1文の条件付き UPDATE**。2人の staff が同時に押しても2回進むだけ（二重発表にならない） |
+| 実装量 | 表1つ＋残数計算＋リトライ | 列2本。判定側は `draw_order` の先頭 `drawn_count` 個を読むだけ |
+| 弱点 | — | 未来の番号が DB に存在する（DB を覗ける人には見える）。**staff はそもそも抽選の主催側**なので脅威モデル上の問題にならない |
+
+「引いた番号列がゲームの正」という要件は、案D2 では
+**`draw_order` の先頭 `drawn_count` 個**がそれに当たる（順序も集合もこの2値で一意）。
+取り消し（誤って引いた）は `drawn_count - 1` の条件付き UPDATE（staff の誤操作訂正。
+発表済みの番号を戻すかは運用判断なので、ボタンは「取り消す」1つに留める）。
+
+### 3.5 判定と達成順: すべて導出（同時到達は同順位）
+
+役物は **12ライン**（横5・縦5・斜め2、中央FREEは常にマーク扱い）。
+
+- マーク集合 = カードの24数字 ∩ 公開済み番号（+FREE）
+- **ビンゴ** = いずれかのラインが5マス完成
+- **リーチ** = 完成ラインは無いが、4マス埋まったラインがある
+- **達成順**はカードごとに「最初にラインが完成した抽選手番」から導出する:
+  `completedAtSeq = min(ライン毎の max(セルの手番))`（FREE は手番0）。
+  順位はこの手番の昇順・**競技順位**（同じ手番で完成した人は同順位、次は人数分飛ぶ。
+  #418 §3.6 と同じ規則）
+
+**同時到達の扱いがこれで決まる**: 同じ番号の読み上げで複数人が同時にビンゴした場合、
+全員が同じ順位。クライアントの申告時刻や通信の速さは一切使わないので、
+「電波が速い人が勝つ」問題が構造的に存在しない。
+
+導出のコストは カード数 × 12ライン の集合演算で、100人でも Workers の1リクエストに
+収まる軽さ。順位一覧が要る staff 向け応答（§3.8）だけが全カードを走査し、参加者向けは
+自分のカード1枚ぶんで済む。
+
+### 3.6 リセット: ended からのみ・カードと抽選を消して作り直す
+
+`POST /api/events/:id/bingo/reset`（staff・**ended のときだけ** 409 で守る）:
+
+- `event_bingo_card` の全行と `draw_order`/`drawn_count`/`started_at`/`ended_at` を消し、
+  status を setup に戻す（**カード再配布**: 参加者は次のゲームで受け取り直す）
+- 副作用の規則は #431 と同じ:
+  - ビンゴ達成は導出なので**自然に全員未達成に戻る**
+  - **引き換え済みの景品はそのまま**（redemption 行には触らない。物は渡っている）
+  - 未引き換えの「ビンゴ達成」は消える（2回戦で取り直す）
+- running からのリセットは**させない**（誤操作で進行中のゲームが飛ぶ事故を防ぐ。
+  先に end を押させる2段階）
+- ゲーム行そのものの削除（ビンゴをやめる）は `DELETE /api/events/:id/bingo`
+  （staff・CASCADE でカードも消える）。参加者には元の「404＝存在しない」に戻る
+
+### 3.7 景品 (#431) との連動: 「ビンゴ景品プール」から選び取り
+
+**条件と景品を1対1に紐づけない。** `condition_type = 'bingo'` の景品は
+「ビンゴ景品プール」の1品で、ビンゴ達成者は**プールの中から在庫が残っている
+好きな1つ**と引き換えられる。**1人1つまで**（プール全体で1回）。
+
+- `MEET_PRIZE_CONDITIONS` に **`'bingo'`** を追加。**threshold は常に NULL**
+  （順位条件は持たない——順位で絞る案も検討したが、ユーザー決定は「早い順に選び取り」。
+  順位の強制は同着の裁定をシステムに持ち込むので、あえて持たない）
+- 0079 の CHECK は否定形なので `'bingo'` は再構築なしで通る（#435 レビューの回収）。
+  DB 制約は bingo の threshold を縛れない（CHECK の変更は再構築になる）ため、
+  **NULL の強制は zod（`thresholdMatchesCondition` に top_rank と同じ規則で追加）が担う**
+
+#### 1人1つ（プール全体）の原子的な保証
+
+既存の UNIQUE (prize_id, user_id) は「同じ景品を2回」しか塞げない。選び取りでは
+「プール内の**別の**景品をもう1つ」を塞ぐ必要があるので、bingo 用の引き換えだけ
+**1文の INSERT の WHERE を「プール全体で未引き換え」に広げる**（#431 §3.5 の型のまま）:
+
+```sql
+INSERT INTO event_prize_redemption (id, prize_id, user_id, redeemed_by, created_at)
+SELECT ?, ?, ?, ?, ?
+ WHERE NOT EXISTS (          -- プール全体で1人1回
+         SELECT 1 FROM event_prize_redemption r
+           JOIN event_prize p ON p.id = r.prize_id
+          WHERE r.user_id = ? AND p.event_id = ? AND p.condition_type = 'bingo')
+   AND (SELECT COUNT(*) FROM event_prize_redemption WHERE prize_id = ?)
+       < (SELECT stock FROM event_prize WHERE id = ?)
+```
+
+- 変更行数 0 のときの区別: プール内に本人の行があれば `already_redeemed`、
+  無ければ `out_of_stock`（窓口の案内が変わる）
+- UNIQUE (prize_id, user_id) は**最後の砦として残る**（プール規則の部分集合）
+- リポジトリは既存 `redeem`（meet_count / top_rank 用）と並べて
+  `redeemFromBingoPool` を置き、**ルートが conditionType で呼び分ける**。
+  1本に混ぜない（WHERE が条件種別で変わる2つの契約を1つの SQL に畳むと読めなくなる）
+- 引き換えの取り消し（誤操作）は既存の DELETE がそのまま効き、
+  在庫もプールの「1人1回」枠も自然に戻る（導出なので何も更新しない）
+
+#### 引き換え時の再検証と順序
+
+- サーバーが検証するのは「**ビンゴを達成しているか**」（§3.5 の導出）と上の1文だけ。
+  **達成順は強制しない**——同着の裁定（ジャンケン等）は現場が行い、
+  **スタッフがデスクで引き換えを付けた順序がそのまま選択の順序**として記録に残る
+  （`event_prize_redemption.created_at`）。システムが順位で窓口を止めると、
+  現場で裁いた結果を入力し直す羽目になる
+- ゲームが ended でも引き換えは通る（発表後に窓口へ並ぶ流れ）。リセット後は達成が
+  消えるので 409 `not_achieved`（#431 の取り消しと同じ縁の挙動）
+
+#### 見せ方
+
+- 公開の景品一覧: bingo プールの景品は「ビンゴ景品（達成した人から1つ選べます）」の
+  まとまりで表示（残数つき・在庫切れ表示は既存のまま）
+- 参加者のビンゴ達成バナー: 「スタッフのところで好きな景品を1つ選んでください」
+- デスク: **ビンゴ達成者を達成順（同着は同順位のまま）に並べたリスト**を出し、
+  各行に「プール内の在庫が残っている景品」のセレクト＋「この景品と交換」ボタン。
+  引き換え済みの行は選んだ景品名を表示。取り消しも同じ行から
+- 景品編集: 条件セレクトに「ビンゴ景品（プール）」を追加。人数・順位の入力は無し
+
+### 3.8 API と見える範囲（オフ→404 の門）
+
+すべて `routes/eventBingo.ts`（新規）+ `db/repositories/eventBingo.ts`（新規）。
+**門の述語は `bingoAudience(event, user)` の1つ**（#435 の `meetPrizeAudience` と同じ型）:
+
+- `"participant"`: ゲーム行があり、確定メンバー（staff 含む）
+- `"staff"`: ゲーム行が無くても運営できる人（作成ボタンを出すため。`canManageEvent`）
+- `null`: 404（イベント不存在と同一応答。ゲームの存在ごと隠す）
+
+| メソッド/パス | 誰が | 何をする |
+|---|---|---|
+| `GET /api/events/:id/bingo` | 確定メンバー | ゲーム状態・公開済み番号列・**自分の**カード・導出（マーク/リーチ/ビンゴ/順位）・達成人数。ゲーム行が無ければ 404 |
+| `POST /api/events/:id/bingo/card` | 確定メンバー | カード発行（冪等）。ended 中は 409 |
+| `POST /api/events/:id/bingo` | staff | ゲーム作成（setup）。既にあれば 409 |
+| `POST /api/events/:id/bingo/start` | staff | 順列生成 + running へ（1文の条件付き UPDATE で二重 start を防ぐ） |
+| `POST /api/events/:id/bingo/draw` | staff | §3.4 の1文。変更行数 0 なら 409（not_running / exhausted を読み直して区別） |
+| `POST /api/events/:id/bingo/draw/undo` | staff | 直前の1個を取り消す（drawn_count - 1・0 なら 409） |
+| `POST /api/events/:id/bingo/end` / `reset` | staff | §3.3 / §3.6 |
+| `DELETE /api/events/:id/bingo` | staff | ゲームごと削除（参加者は 404 に戻る） |
+| `GET /api/events/:id/bingo/status` | staff | 全カードの導出一覧（名前・リーチ/ビンゴ・順位）。抽選コントロールとデスクが使う |
+
+見える範囲の規則（#431 §3.9 と同じ姿勢）:
+
+- **他人のカード・他人の達成は参加者に見せない。** 参加者向け応答に載る他人由来の値は
+  「ビンゴ n人・リーチ n人」の人数だけ
+- 名前入りの達成一覧は **staff のみ**（`/bingo/status`）。会場での「○○さんビンゴ！」の
+  発表は、コントロール画面を見た司会が口頭で行う（投影に名前を出す設定は将来
+  `meet_ranking` の named/anonymous と同じ型で足せる。v1 では作らない）
+- 未ログイン・非メンバーはすべて 404。**公開の口は作らない**（景品一覧 (#431) が
+  公開なのは参加動機のためで、ビンゴのカード・進行は参加者の中に閉じる情報）
+- イベント設定の列は**足さない**。「ゲーム行があるか」が唯一の状態で、
+  オン/オフの2つ目の口を作らない（staff がゲームを作る＝オン、消す＝オフ）
+
+### 3.9 画面
+
+| 画面 | 場所 | 内容 |
+|------|------|------|
+| 参加者のカード | `/events/:id/bingo`（`EventBingoPage`。EventLayout 子ルート）+ EventDetailPage に小カード（導線 + 状態バッジ） | 5x5 カード（公開済みは自動マーク・FREE 中央）。リーチ/ビンゴでバナー（ビンゴ時は順位と「スタッフに見せてください」——景品カード (#431) の引換券の型）。5秒ポーリング |
+| 抽選コントロール | `/events/:id/bingo/control`（staff。`EventPrizeDeskPage` の型） | 状態遷移ボタン（作成/開始/終了/リセット/削除・確認ダイアログ）・**「次を引く」**（直近の番号を特大表示）・取り消し・リーチ/ビンゴの名前入り一覧（読み上げ用）・カード発行数 |
+| 投影 | `/events/:id/bingo/screen`（`MeetRankingScreenPage` の型: 全画面・倍率・カーソル非表示・確定メンバーのみ・5秒ポーリング） | **直近の番号を画面中央に特大**・履歴をB/I/N/G/O列のグリッドで一覧・「ビンゴ n人 / リーチ n人」。setup 中は「まもなく始まります」 |
+| 景品編集 | `MeetPrizeEditor`（既存）に条件「ビンゴ景品（プール）」を追加（人数・順位入力なし） | §3.7 |
+
+抽選の体感: staff が「次を引く」→ コントロール画面は即時（mutation 応答）、
+投影と参加者のカードは最大5秒遅れで追いつく。読み上げは人間がやるので5秒で足りる
+（#418 §3.4 と同じ判断。1秒ポーリングを全参加者に張る理由が無い）。
+
+### 3.10 複製・削除・i18n
+
+- **複製: ビンゴは何もコピーしない。** ゲーム・カード・抽選列はすべて開催当日の
+  記録（meets と同じ扱い）。条件 `bingo` の景品定義は #431 の複製でそのままコピーされる
+  （複製先はゲーム未作成なので達成者0人から始まる——整合する）
+- イベント削除: FK CASCADE で全部消える（R2 は使わないので孤児の心配なし）
+- i18n: 参加者向けは `eventSocial.ts`（カード・リーチ/ビンゴ・バナー）、staff 向けは
+  `staffOps.ts`（コントロール・確認文言）、景品条件の文言は `eventForm.ts`。
+  実装技術の語は出さない（「サーバー」「乱数」等を UI に書かない）
+
+---
+
+## 4. 変更ファイル一覧（実装フェーズの計画）
+
+| 層 | ファイル | 変更 |
+|----|---------|------|
+| DB | `apps/server/migrations/0081_bingo.sql` | 新規。`event_bingo_game` / `event_bingo_card` |
+| shared | `packages/shared/src/bingo.ts` | 新規。型・カード生成の定数（列範囲）・ライン定義・導出関数（web と server で共用） |
+| shared | `packages/shared/src/meetPrizes.ts` | `MEET_PRIZE_CONDITIONS` に `'bingo'`（threshold は NULL 固定）を追加 |
+| server | `db/repositories/eventBingo.ts` | 新規。ゲーム CRUD・カード発行（冪等）・draw の1文・全カード読み出し |
+| server | `routes/eventBingo.ts` | 新規。§3.8 の10本 + `bingoAudience` |
+| server | `routes/eventMeetPrizes.ts` | redeem を conditionType で呼び分け（bingo は `redeemFromBingoPool`）・status にビンゴ達成者一覧 |
+| server | `db/repositories/eventMeetPrizes.ts` | `redeemFromBingoPool`（プール全体で1人1回の1文） |
+| server | `db/repositories/users.ts` | `uniqueKeyed` に `event_bingo_card` |
+| server | `worker.ts` | ルート登録 |
+| web | `pages/EventBingoPage.tsx` / `EventBingoControlPage.tsx` / `EventBingoScreenPage.tsx` | 新規（§3.9） |
+| web | `components/BingoCard.tsx` | カード描画（ページと詳細ページの小カードが共用） |
+| web | `api/bingoHooks.ts` | query/mutation 一式（5秒ポーリング） |
+| web | `App.tsx` / `EventDetailPage.tsx` / `MeetPrizeEditor.tsx` | ルート・導線・条件追加 |
+| i18n | `eventSocial.ts` / `staffOps.ts` / `eventForm.ts` | ja/en |
+| test | `merge-user-columns.test.ts` | 実数更新 |
+
+## 5. テスト観点（server）
+
+- **カード生成**: 列ごとの範囲（B1-15…O61-75）・列内重複なし・24個+FREE。発行の冪等性
+  （2回目は同じカード）。ended 中の発行 409。非メンバー・未確定は 404
+- **draw の競合**: 同時に2回押して drawn_count がちょうど2進む（1文の条件付き UPDATE）。
+  not_running / 75個引き切りで 409。undo が 0 で 409
+- **導出**: リーチ/ビンゴの判定・FREE 込みのライン・`completedAtSeq` の正しさ・
+  **同じ手番で完成した2人が同順位**（競技順位）・後から発行したカードにも既出番号が効く
+- **リセット**: ended 以外から 409。リセットでカードが消え達成が消える。
+  **引き換え済みの redemption は残る**（#431 の規則）
+- **景品プール bingo**: 未達成 409・リセット後 409。**プール全体で1人1回**——
+  同じ人が別のプール景品を2つ目に取ろうとして `already_redeemed`、
+  同一人の2景品同時引き換えで片方だけ成立（1文の原子性）。プール景品ごとの在庫競合は
+  既存どおり。取り消しで枠と在庫が戻る。threshold 付きの bingo 景品が zod で 400。
+  デスクの達成者一覧が達成順（同着は同順位）で返る
+- **門**: ゲーム行なし・非メンバー・未確定メンバーで 404（イベント不存在と同一ボディ）。
+  述語を1か所外すと落ちる変異テスト（#431 と同じ実証をする）
+- **複製**: ゲーム・カードがコピーされないこと。mergeUsers の実数
+
+## 6. やらないこと（今回の範囲外）
+
+- 手動マーク・「聞き逃し防止で自動マークを切る」等のゲーム性オプション（自動マーク一択）
+- 投影画面に達成者名を出す設定（named/anonymous の型で将来足せる。v1 は人数のみ）
+- 複数ゲームの並行開催・過去ゲームの履歴保存（リセットは上書き）
+- 抽選の自動進行（タイマー）・演出強化（ルーレットアニメーション程度は実装時の裁量）
+- 出会いビンゴ（マスが「人」のビンゴ）——別企画。カード表現から別物になる

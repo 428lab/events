@@ -36,6 +36,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import EggIcon from "@mui/icons-material/Egg";
 import LiveTvIcon from "@mui/icons-material/LiveTv";
 import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
+import CasinoOutlinedIcon from "@mui/icons-material/CasinoOutlined";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import LockIcon from "@mui/icons-material/Lock";
@@ -79,6 +80,7 @@ import { EventFeedback } from "../components/EventFeedback.js";
 import { EventQa } from "../components/EventQa.js";
 import { MeetRankingPanel } from "../components/MeetRanking.js";
 import { MeetPrizePanel } from "../components/MeetPrizes.js";
+import { BingoPanel } from "../components/BingoCard.js";
 import { useRecordView } from "../api/analyticsHooks.js";
 import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
@@ -657,6 +659,10 @@ export function EventDetailPage() {
           達成・交換済みの本人分はサーバーが確定メンバーにだけ添える */}
       {event.meetPrizes && <MeetPrizePanel eventId={id} />}
 
+      {/* 数字ビンゴ (#436)。ゲームがあるイベントの確定メンバーにだけ出る
+          （出し分けは利便。防御はサーバーの404） */}
+      {canComment && <BingoPanel eventId={id} />}
+
       {/* 参加者限定のお知らせ（サーバーが閲覧可の人にだけ返す） */}
       {membersNote && (
         <Card variant="outlined" sx={{ borderColor: "warning.main" }}>
@@ -932,6 +938,17 @@ export function EventDetailPage() {
               to={`/events/${id}/prize-desk`}
             >
               {t("staffOps.prizeDeskTitle")}
+            </Button>
+          )}
+          {/* ビンゴの抽選コントロール (#436)。スタッフ専用の独立ページへの導線 */}
+          {isStaff && (
+            <Button
+              variant="outlined"
+              startIcon={<CasinoOutlinedIcon />}
+              component={RouterLink}
+              to={`/events/${id}/bingo/control`}
+            >
+              {t("staffOps.bingoControlTitle")}
             </Button>
           )}
           {isStaff && (

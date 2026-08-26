@@ -29,6 +29,11 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { eventMeetsRepo } from "../db/repositories/eventMeets.js";
 import { eventMeetPrizesRepo } from "../db/repositories/eventMeetPrizes.js";
+import {
+  drawnNumbers,
+  eventBingoRepo,
+} from "../db/repositories/eventBingo.js";
+import { deriveBingoCard } from "@eventer/shared";
 
 /**
  * 出会いの景品引き換え (#431)。設計は docs/meet-prizes.md。
@@ -144,6 +149,16 @@ async function meetPrizeAudience(
   return null;
 }
 
+/** 本人がビンゴを達成しているか (#436)。ゲームと自分のカードから導出する
+ * （達成テーブルは無い。me の表示と redeem の再検証が同じこの1つを使う） */
+async function hasBingo(eventId: string, userId: string): Promise<boolean> {
+  const game = await eventBingoRepo.findGame(eventId);
+  if (!game) return false;
+  const card = await eventBingoRepo.findCard(eventId, userId);
+  if (!card) return false;
+  return deriveBingoCard(card, drawnNumbers(game)).bingo;
+}
+
 /**
  * 公開: 景品一覧（未ログイン可。awards の canView と同じ基準）。
  * 見せてよい相手かは meetPrizeAudience の1か所で判定する。
@@ -170,6 +185,7 @@ export async function getEventMeetPrizes(c: Context) {
       ? {
           count: await eventMeetsRepo.countedMeetsForUser(eventId, user.id),
           won: await eventMeetPrizesRepo.isWinner(eventId, user.id),
+          bingo: await hasBingo(eventId, user.id),
           redeemedPrizeIds: await eventMeetPrizesRepo.redeemedPrizeIdsForUser(
             eventId,
             user.id,
@@ -352,9 +368,35 @@ meetPrizeRoutes.get(
     // 1件ずつ問い合わせると N+1（人数×景品数）になる（レビュー指摘）
     const redemptions = await eventMeetPrizesRepo.redemptionsForEvent(eventId);
 
+    // ビンゴ景品プール (#436): 達成者は達成順の1本のリスト（景品ごとに繰り返さない）。
+    // デスクは「達成者が在庫のあるプール景品から1つ選ぶ」UIを組む
+    const hasBingoPrize = prizes.some((p) => p.conditionType === "bingo");
+    const bingoGame = hasBingoPrize
+      ? await eventBingoRepo.findGame(eventId)
+      : null;
+    const bingoRows = bingoGame
+      ? await eventBingoRepo.statusRows(eventId, drawnNumbers(bingoGame))
+      : [];
+    const poolTaken = hasBingoPrize
+      ? await eventMeetPrizesRepo.bingoPoolRedemptions(eventId)
+      : new Map<string, { prizeId: string; createdAt: number }>();
+    const bingoAchievers = bingoRows
+      .filter((r) => r.bingo)
+      .map((r) => ({
+        userId: r.userId,
+        username: r.username,
+        name: r.name,
+        avatarUrl: r.avatarUrl,
+        rank: r.rank ?? 0,
+        completedAtSeq: r.completedAtSeq ?? 0,
+        redeemedPrizeId: poolTaken.get(r.userId)?.prizeId ?? null,
+        redeemedAt: poolTaken.get(r.userId)?.createdAt ?? null,
+      }));
+
     const rows = [];
     for (const prize of prizes) {
       // 達成者: meet_count は件数から、top_rank は確定済みの勝者から導出。
+      // bingo はプールの1本（bingoAchievers）に出すので per-prize では空。
       // クエリは景品ごとに高々1本（threshold は CHECK 制約で meet_count に必ず入る）
       const base =
         prize.conditionType === "meet_count"
@@ -362,7 +404,9 @@ meetPrizeRoutes.get(
               eventId,
               prize.threshold ?? 1,
             )
-          : winners;
+          : prize.conditionType === "top_rank"
+            ? winners
+            : [];
       const byUser = redemptions.get(prize.id);
       const achievers = base.map((a) => ({
         userId: a.userId,
@@ -381,7 +425,11 @@ meetPrizeRoutes.get(
         achievers,
       });
     }
-    return c.json({ prizes: rows, winners } satisfies MeetPrizeStatus);
+    return c.json({
+      prizes: rows,
+      winners,
+      bingoAchievers,
+    } satisfies MeetPrizeStatus);
   },
 );
 
@@ -407,21 +455,34 @@ meetPrizeRoutes.post(
       return c.json({ error: "not_confirmed" }, 409);
     }
 
-    // threshold は CHECK 制約で meet_count に必ず入る（?? 1 は型の絞り込みだけ）
+    // threshold は CHECK 制約で meet_count に必ず入る（?? 1 は型の絞り込みだけ）。
+    // bingo の達成順はここで検証しない（同着の裁定は現場。docs/bingo.md §3.7）
     const achieved =
       prize.conditionType === "meet_count"
         ? (await eventMeetsRepo.countedMeetsForUser(eventId, userId)) >=
           (prize.threshold ?? 1)
-        : await eventMeetPrizesRepo.isWinner(eventId, userId);
+        : prize.conditionType === "top_rank"
+          ? await eventMeetPrizesRepo.isWinner(eventId, userId)
+          : await hasBingo(eventId, userId);
     if (!achieved) return c.json({ error: "not_achieved" }, 409);
 
     const me = c.get("user");
-    if (!(await eventMeetPrizesRepo.redeem(prize.id, userId, me.id))) {
+    // bingo はプール全体で1人1回（redeemFromBingoPool の1文）。他は景品ごとに1回
+    const ok =
+      prize.conditionType === "bingo"
+        ? await eventMeetPrizesRepo.redeemFromBingoPool(
+            eventId,
+            prize.id,
+            userId,
+            me.id,
+          )
+        : await eventMeetPrizesRepo.redeem(prize.id, userId, me.id);
+    if (!ok) {
       // 入らなかった理由を読み直して区別（窓口の案内文言が変わる）
-      const already = await eventMeetPrizesRepo.findRedemption(
-        prize.id,
-        userId,
-      );
+      const already =
+        prize.conditionType === "bingo"
+          ? await eventMeetPrizesRepo.findBingoPoolRedemption(eventId, userId)
+          : await eventMeetPrizesRepo.findRedemption(prize.id, userId);
       return c.json(
         { error: already ? "already_redeemed" : "out_of_stock" },
         409,
