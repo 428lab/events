@@ -241,6 +241,22 @@ const ja = {
   videoTrimHandleStart: "開始位置",
   videoTrimHandleEnd: "終了位置",
   videoTrimMove: "選択範囲を移動",
+
+  /* ===== 出会いランキング (#418) =====
+   * イベント設定がオンのときだけ出る。名前を出すか（named/anonymous）は設定次第 */
+  meetRankingHeading: "出会いランキング",
+  meetRankingEmpty: "最初の出会いを待っています…",
+  /** 投影の下部に出す全体感。n = 1件以上記録した人数 */
+  meetRankingTotal: "これまでに {{n}} 人が出会いを記録",
+  /** named の件数表示 */
+  meetRankingCount: "{{n}}人",
+  /** anonymous の1行。件数ごとに集約して出す */
+  meetRankingAnonRow: "{{n}}人と出会った",
+  /** anonymous で同数が複数人いるとき */
+  meetRankingAnonPeople: "×{{n}}人",
+  /** 本人の順位（本人の画面にだけ出す） */
+  meetRankingMe: "あなたは {{rank}}位（{{count}}人）",
+  meetRankingOpenScreen: "投影画面を開く",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -424,6 +440,15 @@ const en: Record<keyof typeof ja, string> = {
   videoTrimHandleStart: "Start position",
   videoTrimHandleEnd: "End position",
   videoTrimMove: "Move the selected range",
+
+  meetRankingHeading: "Meet ranking",
+  meetRankingEmpty: "Waiting for the first meet…",
+  meetRankingTotal: "{{n}} people have recorded a meet so far",
+  meetRankingCount: "{{n}}",
+  meetRankingAnonRow: "Met {{n}} people",
+  meetRankingAnonPeople: "×{{n}}",
+  meetRankingMe: "You are #{{rank}} ({{count}} met)",
+  meetRankingOpenScreen: "Open the projection view",
 };
 
 export const eventSocial = { ja, en };

@@ -19,6 +19,23 @@ export interface MeetablePair extends MeetableEvent {
   targetAttended: boolean;
 }
 
+/**
+ * イベント内の「1人あたりの出会い件数」（両方向を合算）のサブクエリ (#418)。
+ * プレースホルダは eventId ×2。
+ *
+ * ランキング系（named・anonymous・本人の順位・母数）はすべてこの1本を土台にする。
+ * 同じ集計を別の場所に書かないこと（docs/meet-ranking.md §3.8 の経路表を守る要）。
+ */
+const PER_USER_COUNTS_SQL = `
+  SELECT u.id, u.username, u.global_name, u.avatar_url, COUNT(*) AS n
+    FROM (
+      SELECT user_low AS uid FROM event_meet WHERE event_id = ?
+      UNION ALL
+      SELECT user_high FROM event_meet WHERE event_id = ?
+    ) m
+    JOIN user u ON u.id = m.uid AND u.deleted_at IS NULL
+   GROUP BY u.id`;
+
 /** 参加者同士の「出会った」記録 (#189)。ペアはイベントごとに1回（順序に依らず正規化して保存） */
 export const eventMeetsRepo = {
   /** 出会いを記録する。ペアを (小,大) に正規化し INSERT OR IGNORE で冪等。
@@ -42,9 +59,16 @@ export const eventMeetsRepo = {
     return { created: changes > 0 };
   },
 
-  /** イベント内の出会い数ランキング（スタッフ運営用・景品配布の参考）。両方向を合算 */
-  async rankingForEvent(eventId: string): Promise<
+  /** イベント内の出会い数ランキング（名前入り）。
+   * スタッフ運営用（景品配布の参考・上位100）と、named モードの投影 (#418・上位10) が共用する。
+   * rank は競技順位（同数は同順位、次は人数分飛ぶ）。表示順の第2キーを username に
+   * 固定しているのは、ポーリングのたびに同率内で行が入れ替わってちらつかないようにするため */
+  async rankingForEvent(
+    eventId: string,
+    limit = 100,
+  ): Promise<
     {
+      rank: number;
       userId: string;
       username: string;
       name: string;
@@ -58,27 +82,76 @@ export const eventMeetsRepo = {
       global_name: string | null;
       avatar_url: string | null;
       n: number;
+      rnk: number;
     }>(
-      `SELECT u.id, u.username, u.global_name, u.avatar_url, COUNT(*) AS n
-         FROM (
-           SELECT user_low AS uid FROM event_meet WHERE event_id = ?
-           UNION ALL
-           SELECT user_high FROM event_meet WHERE event_id = ?
-         ) m
-         JOIN user u ON u.id = m.uid AND u.deleted_at IS NULL
-        GROUP BY u.id
-        ORDER BY n DESC, u.username ASC
-        LIMIT 100`,
+      `SELECT id, username, global_name, avatar_url, n,
+              RANK() OVER (ORDER BY n DESC) AS rnk
+         FROM (${PER_USER_COUNTS_SQL}) t
+        ORDER BY n DESC, username ASC
+        LIMIT ?`,
       eventId,
       eventId,
+      limit,
     );
     return rows.map((r) => ({
+      rank: r.rnk,
       userId: r.id,
       username: r.username,
       name: r.global_name ?? r.username,
       avatarUrl: r.avatar_url,
       count: r.n,
     }));
+  },
+
+  /** 匿名モードのランキング (#418)。件数ごとに集約し、個人を指す値を一切返さない。
+   * 匿名を名乗る以上、名前を落とすのはクライアントではなくここ（サーバー側）の責務 */
+  async anonymousRankingForEvent(
+    eventId: string,
+    limit: number,
+  ): Promise<{ rank: number; count: number; people: number }[]> {
+    const rows = await many<{ n: number; people: number }>(
+      `SELECT n, COUNT(*) AS people
+         FROM (${PER_USER_COUNTS_SQL}) t
+        GROUP BY n
+        ORDER BY n DESC
+        LIMIT ?`,
+      eventId,
+      eventId,
+      limit,
+    );
+    // 競技順位: その件数の順位 = それより多い件数の人数 + 1
+    let above = 0;
+    return rows.map((r) => {
+      const rank = above + 1;
+      above += r.people;
+      return { rank, count: r.n, people: r.people };
+    });
+  },
+
+  /** 1件以上記録した人数 (#418)。投影の「これまでに N 人が出会いを記録」用 */
+  async countRankedForEvent(eventId: string): Promise<number> {
+    const row = await one<{ v: number }>(
+      `SELECT COUNT(*) AS v FROM (${PER_USER_COUNTS_SQL}) t`,
+      eventId,
+      eventId,
+    );
+    return row?.v ?? 0;
+  },
+
+  /** 本人の順位と件数 (#418)。0件なら null（圏外ではなく「まだ記録が無い」） */
+  async rankForUser(
+    eventId: string,
+    userId: string,
+  ): Promise<{ rank: number; count: number } | null> {
+    const count = await this.countedMeetsForUser(eventId, userId);
+    if (count === 0) return null;
+    const above = await one<{ v: number }>(
+      `SELECT COUNT(*) AS v FROM (${PER_USER_COUNTS_SQL}) t WHERE t.n > ?`,
+      eventId,
+      eventId,
+      count,
+    );
+    return { rank: (above?.v ?? 0) + 1, count };
   },
 
   /** 両者がいま出会いを記録できる共通イベントを、双方のロール・出席状況つきで返す。

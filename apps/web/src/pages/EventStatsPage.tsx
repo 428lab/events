@@ -201,7 +201,12 @@ export function EventStatsPage() {
 
       {/* 事前アンケートの回答一覧 (#152)。質問がある場合のみ表示 */}
       <SurveyAnswersCard eventId={id} enabled={Boolean(eventData) && isStaff} />
-      <MeetRankingCard eventId={id} enabled={Boolean(eventData) && isStaff} />
+      <MeetRankingCard
+        eventId={id}
+        enabled={Boolean(eventData) && isStaff}
+        // 参加者向けランキング (#418) がオンなら投影ページへの入口も出す
+        showScreenLink={eventData?.event.meetRanking !== "off"}
+      />
     </Stack>
   );
 }
@@ -550,9 +555,11 @@ function BarList({
 function MeetRankingCard({
   eventId,
   enabled,
+  showScreenLink,
 }: {
   eventId: string;
   enabled: boolean;
+  showScreenLink: boolean;
 }) {
   const { t } = useTranslation();
   const { data } = useMeetRanking(eventId, enabled);
@@ -571,6 +578,16 @@ function MeetRankingCard({
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
           {t("staffOps.meetRankingNote")}
         </Typography>
+        {showScreenLink && (
+          <Button
+            size="small"
+            component={RouterLink}
+            to={`/events/${eventId}/meet-ranking/screen`}
+            sx={{ mb: 1 }}
+          >
+            {t("eventSocial.meetRankingOpenScreen")}
+          </Button>
+        )}
         <Stack spacing={0.75}>
           {data.ranking.map((r, i) => (
             <Stack

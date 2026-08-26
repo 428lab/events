@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { MeetScanResult, MeetToken } from "@eventer/shared";
+import type { MeetRankingLive, MeetScanResult, MeetToken } from "@eventer/shared";
+import { MEET_RANKING_POLL_MS } from "@eventer/shared";
 import { api } from "./client.js";
 
 /**
@@ -92,5 +93,22 @@ export function useMeetRanking(eventId: string, enabled: boolean) {
     enabled: Boolean(eventId) && enabled,
     queryFn: () =>
       api.get<{ ranking: MeetRankingRow[] }>(`/events/${eventId}/meets/ranking`),
+  });
+}
+
+/** 参加者向けの出会いランキング (#418)。投影ページ・詳細パネルが使う。
+ *
+ * 設定がオフのイベント・非メンバーには 404 が返る（存在ごと隠す門はサーバー側）。
+ * その間は refetch を止める：ポーリングを続けても 404 のままで、開きっぱなしの
+ * タブから5秒おきの無駄打ちになるだけのため。設定が後からオンになったケースは
+ * イベント情報の再取得で enabled が立ち直ってから拾う */
+export function useMeetRankingLive(eventId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["event", eventId, "meet-ranking-live"],
+    enabled: Boolean(eventId) && enabled,
+    queryFn: () =>
+      api.get<MeetRankingLive>(`/events/${eventId}/meets/ranking/live`),
+    refetchInterval: (query) =>
+      query.state.error ? false : MEET_RANKING_POLL_MS,
   });
 }

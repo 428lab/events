@@ -94,3 +94,63 @@ export const meetUndoInput = z.object({
   undoToken: z.string().min(10).max(4096),
 });
 export type MeetUndoInput = z.infer<typeof meetUndoInput>;
+
+/** ---- 出会いランキングの投影 (#418) ---- */
+
+/**
+ * 出会いランキングの表示設定（イベントごと）。
+ * - off: 出さない。参加者向けAPIは404（イベント不存在と同一応答）で存在ごと隠す
+ * - anonymous: 件数のみ（個人を特定できる値はサーバー応答に載せない）
+ * - named: 名前・アバター入り（会場に大写しになる前提の設定）
+ */
+export const MEET_RANKING_MODES = ["off", "anonymous", "named"] as const;
+export type MeetRankingMode = (typeof MEET_RANKING_MODES)[number];
+
+/** 投影ページ・詳細パネルがランキングをポーリングする間隔。
+ * live-state の1秒（配信のシーン切替）に乗せないのは、ランキングはQRを
+ * 読み合う人間の速度でしか変わらず、参加者全員が手元でも開きうるため */
+export const MEET_RANKING_POLL_MS = 5_000;
+
+/** ランキングに出す行数。プロジェクターで読める限界に合わせて固定 */
+export const MEET_RANKING_TOP_N = 10;
+
+/** named モードの1行。rank は競技順位（同数は同順位、次は人数分飛ぶ） */
+export interface MeetRankingNamedRow {
+  rank: number;
+  userId: string;
+  username: string;
+  name: string;
+  avatarUrl: string | null;
+  count: number;
+}
+
+/** anonymous モードの1行。件数ごとに集約する（個人を指す値を持たない） */
+export interface MeetRankingAnonymousRow {
+  rank: number;
+  /** 出会った人数 */
+  count: number;
+  /** その件数の人が何人いるか */
+  people: number;
+}
+
+/** 呼び出した本人の順位。本人自身の値なので匿名モードでも返す */
+export interface MeetRankingMe {
+  rank: number;
+  count: number;
+}
+
+/** GET /api/events/:id/meets/ranking/live のレスポンス。
+ * mode により行の形が変わる（匿名で名前入りの行を返さないのはサーバー側の保証） */
+export type MeetRankingLive =
+  | {
+      mode: "named";
+      ranking: MeetRankingNamedRow[];
+      totalRanked: number;
+      me: MeetRankingMe | null;
+    }
+  | {
+      mode: "anonymous";
+      ranking: MeetRankingAnonymousRow[];
+      totalRanked: number;
+      me: MeetRankingMe | null;
+    };

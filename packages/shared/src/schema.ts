@@ -6,6 +6,7 @@ import {
   VENUE_TYPES,
 } from "./constants.js";
 import { QA_ANONYMITY_MODES } from "./eventQa.js";
+import { MEET_RANKING_MODES } from "./eventMeets.js";
 import { isDatetimeOrderInvalid } from "./datetimeOrder.js";
 
 const url = z.string().url();
@@ -79,6 +80,9 @@ export const eventSchema = z.object({
   qaEnabled: z.boolean(),
   /** Q&A の匿名の扱い。既定は 'choice'（投稿ごとに参加者が選ぶ） (#216) */
   qaAnonymity: z.enum(QA_ANONYMITY_MODES),
+  /** 出会いランキングの表示 (#418)。既定は 'off'（出したいイベントだけオンにする）。
+   * off のイベントでは参加者向けランキングAPIごと存在を隠す */
+  meetRanking: z.enum(MEET_RANKING_MODES),
   /** 募集の締切日時（epoch ms）。null = 締切なしで、従来どおりイベント終了まで
    * 受け付ける。締切後に止まるのは新規の参加登録だけ (#269) */
   registrationDeadline: z.number().nullable(),
@@ -139,6 +143,8 @@ export const updateEventInput = z.object({
   qaEnabled: z.boolean().optional(),
   /** Q&A の匿名の扱い (#216) */
   qaAnonymity: z.enum(QA_ANONYMITY_MODES).optional(),
+  /** 出会いランキングの表示 (#418)。編集でのみ設定（作成直後は 'off'） */
+  meetRanking: z.enum(MEET_RANKING_MODES).optional(),
   /** 募集の締切日時（epoch ms）。null を送ると締切を解除する (#269)。
    * chatEnabled 等と同じくイベント編集でのみ設定する項目なので createEventInput
    * には入れない（作成直後は締切なし＝従来の振る舞い）。
