@@ -36,7 +36,7 @@ export function EventBingoScreenPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData, isLoading, isError } = useEvent(id);
-  const state = useBingoState(id, Boolean(eventData));
+  const state = useBingoState(id, Boolean(eventData), true);
 
   const [scale, setScale] = useState(readScale);
   const changeScale = (dir: 1 | -1) => {
@@ -143,15 +143,29 @@ export function EventBingoScreenPage() {
               )}
             </Box>
 
-            {/* 履歴: B〜O の行に 15 個ずつ。出た番号だけ明るく。
-                丸は固定 px でなく grid の 1fr + aspect-ratio で描き、
-                スマホでは縮んで15列全部が必ずビューポート幅に収まる
-                （横スクロールで逃げない）。プロジェクターでは maxWidth の
-                上限が効いて従来と同等の大きさになる */}
-            <Box sx={{ flex: 1, minHeight: 0, display: "flex", justifyContent: "center" }}>
+            {/* 履歴。広い画面は従来どおり B〜O の行×15列。
+                スマホ（sm未満）で15列を縮めて収めると丸20px・数字10pxで読めない
+                （実機フィードバックで却下）ため、**縦に転置**する:
+                B/I/N/G/O の5列を横に並べ、1〜15 を縦に並べる。丸が約70pxになり
+                読める。はみ出すぶんは縦スクロールのみ（横は絶対に出さない） */}
+            <Box
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                justifyContent: "center",
+                overflowY: "auto",
+                overflowX: "hidden",
+              }}
+            >
+              {/* 横長: 15列×5行 */}
               <Stack
                 spacing={`clamp(2px, 0.6vw, ${4 * scale}px)`}
-                sx={{ width: "100%", maxWidth: `${15 * 38 * scale + 40}px` }}
+                sx={{
+                  width: "100%",
+                  maxWidth: `${15 * 38 * scale + 40}px`,
+                  display: { xs: "none", sm: "flex" },
+                }}
               >
                 {BINGO_COLUMN_RANGES.map(([lo, hi], col) => (
                   <Box
@@ -195,6 +209,54 @@ export function EventBingoScreenPage() {
                   </Box>
                 ))}
               </Stack>
+              {/* 縦長スマホ: 転置（5列×15行）。見出しの B〜O が上に並ぶ */}
+              <Box
+                sx={{
+                  display: { xs: "grid", sm: "none" },
+                  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                  gap: "clamp(3px, 1.2vw, 8px)",
+                  width: "100%",
+                  maxWidth: 420,
+                  alignSelf: "flex-start",
+                  alignContent: "start",
+                }}
+              >
+                {BINGO_COLUMNS.map((label) => (
+                  <Typography
+                    key={label}
+                    align="center"
+                    sx={{ fontSize: 20, fontWeight: 800, color: BOARD_ACCENT }}
+                  >
+                    {label}
+                  </Typography>
+                ))}
+                {Array.from({ length: 15 }, (_v, r) =>
+                  BINGO_COLUMN_RANGES.map(([lo], col) => {
+                    const n = lo + r;
+                    void col;
+                    return (
+                      <Box
+                        key={n}
+                        sx={{
+                          width: "100%",
+                          aspectRatio: "1 / 1",
+                          borderRadius: "50%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "clamp(14px, 4.5vw, 22px)",
+                          fontWeight: 700,
+                          color: drawnSet.has(n) ? BOARD_BG : BOARD_SUB,
+                          bgcolor: drawnSet.has(n) ? BOARD_ACCENT : "transparent",
+                          border: `1px solid ${drawnSet.has(n) ? BOARD_ACCENT : BOARD_SUB}44`,
+                        }}
+                      >
+                        {n}
+                      </Box>
+                    );
+                  }),
+                )}
+              </Box>
             </Box>
 
             <Box sx={{ flexShrink: 0, textAlign: "center" }}>

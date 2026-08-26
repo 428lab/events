@@ -17,7 +17,7 @@ export function EventBingoPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
-  const state = useBingoState(id, Boolean(eventData));
+  const state = useBingoState(id, Boolean(eventData), true);
   const issue = useIssueBingoCard(id);
 
   const data = state.data;
@@ -80,9 +80,9 @@ export function EventBingoPage() {
             <Alert severity="info">{t("eventSocial.bingoEnded")}</Alert>
           )}
 
-          {/* 直近の番号と出た番号 */}
+          {/* 直近の番号と出た番号。参加者はほぼスマホなので中央寄せ */}
           {data.status !== "setup" && (
-            <Box>
+            <Box sx={{ textAlign: "center" }}>
               <Typography variant="caption" color="text.secondary">
                 {t("eventSocial.bingoLatest")}
               </Typography>
@@ -102,14 +102,15 @@ export function EventBingoPage() {
             </Box>
           )}
 
-          {/* カード。無ければ受け取るボタン（ended 中は出さない） */}
+          {/* カード。無ければ受け取るボタン（ended 中は出さない）。
+              スマホで左に寄っていた実機フィードバックを受けて横位置は常に中央 */}
           {data.card ? (
-            <Box>
+            <Box sx={{ display: "flex", justifyContent: "center" }}>
               <BingoCard numbers={data.card} drawn={data.drawnNumbers} />
             </Box>
           ) : (
             data.status !== "ended" && (
-              <Box>
+              <Box sx={{ display: "flex", justifyContent: "center" }}>
                 <Button
                   variant="contained"
                   disabled={issue.isPending}
@@ -122,7 +123,7 @@ export function EventBingoPage() {
           )}
 
           <Chip
-            sx={{ alignSelf: "flex-start" }}
+            sx={{ alignSelf: "center" }}
             size="small"
             variant="outlined"
             label={t("eventSocial.bingoCounts", {

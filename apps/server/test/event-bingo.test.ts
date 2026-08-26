@@ -253,6 +253,9 @@ describe("抽選（事前順列 + 条件付き UPDATE の1文）", () => {
       number: number;
       drawnNumbers: number[];
     };
+    // 初回（drawn_count=1）の応答に番号が入ること（実機フィードバック #436 の明示固定）
+    expect(typeof d1.number).toBe("number");
+    expect(d1.number).toBeGreaterThanOrEqual(1);
     expect(d1.drawnNumbers).toEqual([d1.number]);
     const d2 = (await (await post(`${bingoUrl(eventId)}/draw`, staff.cookie)).json()) as {
       number: number;
