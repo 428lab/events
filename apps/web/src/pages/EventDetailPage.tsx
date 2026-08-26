@@ -76,6 +76,7 @@ import { EventSchedule } from "../components/EventSchedule.js";
 import { EventMaterials } from "../components/EventMaterials.js";
 import { EventFeedback } from "../components/EventFeedback.js";
 import { EventQa } from "../components/EventQa.js";
+import { MeetRankingPanel } from "../components/MeetRanking.js";
 import { useRecordView } from "../api/analyticsHooks.js";
 import { useAwards } from "../api/awardHooks.js";
 import { EventSlots } from "../components/EventSlots.js";
@@ -642,6 +643,12 @@ export function EventDetailPage() {
           投影用画面・プレゼンターのサイドパネル (#215) から再利用する */}
       {canComment && event.qaEnabled && (
         <EventQa eventId={id} canPost={canComment} />
+      )}
+
+      {/* 出会いランキング (#418)。設定がオンのイベントの確定メンバーのみ。
+          この出し分けは利便のためで、防御はサーバー側の 404（存在ごと隠す）が担う */}
+      {canComment && event.meetRanking !== "off" && (
+        <MeetRankingPanel eventId={id} />
       )}
 
       {/* 参加者限定のお知らせ（サーバーが閲覧可の人にだけ返す） */}

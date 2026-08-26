@@ -56,6 +56,7 @@ import { DecksPage } from "./pages/DecksPage.js";
 import { LiveSetsPage } from "./pages/LiveSetsPage.js";
 import { LiveSetEditorPage } from "./pages/LiveSetEditorPage.js";
 import { LiveScreenPage } from "./pages/LiveScreenPage.js";
+import { MeetRankingScreenPage } from "./pages/MeetRankingScreenPage.js";
 import { LiveControlPage } from "./pages/LiveControlPage.js";
 import { EventStatsPage } from "./pages/EventStatsPage.js";
 import { EventTimetablePage } from "./pages/EventTimetablePage.js";
@@ -414,6 +415,11 @@ export function App() {
         <Route path="/events/:id/chat" element={<EventChatPage />} />
         {/* 投影用画面 (#215)。配信画面と同じくモード強制遷移を受けない位置に置く */}
         <Route path="/events/:id/chat/screen" element={<EventChatScreenPage />} />
+        {/* 出会いランキングの投影 (#418)。同じくモード強制遷移を受けない位置 */}
+        <Route
+          path="/events/:id/meet-ranking/screen"
+          element={<MeetRankingScreenPage />}
+        />
         {/* スタッフチャット (#382)。リレー接続を維持するため EventLayout の外 */}
         <Route path="/events/:id/staff-chat" element={<StaffChatPage />} />
         <Route path="/events/:id" element={<EventLayout />}>

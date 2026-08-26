@@ -5,7 +5,11 @@ import type {
   MeetUndoInput,
   User,
 } from "@eventer/shared";
-import { meetScanInput, meetUndoInput } from "@eventer/shared";
+import {
+  MEET_RANKING_TOP_N,
+  meetScanInput,
+  meetUndoInput,
+} from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
@@ -42,7 +46,9 @@ import { usersRepo } from "../db/repositories/users.js";
 export const meetEventRoutes = new Hono<AppEnv>();
 meetEventRoutes.use("*", requireAuth);
 
-/** 出会い数ランキング（スタッフのみ・景品配布などの運営用） */
+/** 出会い数ランキング（スタッフのみ・景品配布などの運営用）。
+ * meet_ranking 設定 (#418) には従わない：これは #418 以前からある運営機能で、
+ * 匿名設定のイベントでも運営には景品配布のため名前入りの全順位が要る */
 meetEventRoutes.get(
   "/:id/meets/ranking",
   requireEventRole(["staff"]),
@@ -54,6 +60,50 @@ meetEventRoutes.get(
     return c.json({ ranking: await eventMeetsRepo.rankingForEvent(eventId) });
   },
 );
+
+/**
+ * 参加者向けの出会いランキング (#418)。投影ページと詳細パネルが5秒ポーリングする。
+ *
+ * **オフ（meet_ranking = 'off'）の隠蔽の門はここ1か所**（docs/meet-ranking.md §3.8）。
+ * イベント不存在と同一の応答（404 not_found）にし、外から設定の有無を判別できなくする。
+ * 参加確定メンバー以外にも同じ 404 を返す：named モードの名前・件数を
+ * そのイベントの参加者の中に閉じ、非メンバーには機能の存在ごと見せない。
+ */
+meetEventRoutes.get("/:id/meets/ranking/live", async (c) => {
+  const me = c.get("user");
+  const eventId = c.req.param("id");
+  const event = await eventsRepo.findById(eventId);
+  const member = event
+    ? await eventMembersRepo.find(eventId, me.id)
+    : undefined;
+  if (!event || event.meetRanking === "off" || member?.status !== "confirmed") {
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  const totalRanked = await eventMeetsRepo.countRankedForEvent(eventId);
+  // 本人自身の順位・件数。公開プロフィールが既に本人の件数を出しているので、
+  // 匿名モードでも返してよい（他人のものは返さない）
+  const meRank = await eventMeetsRepo.rankForUser(eventId, me.id);
+
+  if (event.meetRanking === "named") {
+    return c.json({
+      mode: "named",
+      ranking: await eventMeetsRepo.rankingForEvent(eventId, MEET_RANKING_TOP_N),
+      totalRanked,
+      me: meRank,
+    });
+  }
+  // anonymous: 件数ごとの集約行だけ。個人を指す値（userId 等）は載せない
+  return c.json({
+    mode: "anonymous",
+    ranking: await eventMeetsRepo.anonymousRankingForEvent(
+      eventId,
+      MEET_RANKING_TOP_N,
+    ),
+    totalRanked,
+    me: meRank,
+  });
+});
 
 /** 相手にも通知（両者にXPが入るため）。失敗しても記録自体は成功扱い。
  * 読み取りで相手の受付（出席）も済ませたときは、それも本文に載せる。

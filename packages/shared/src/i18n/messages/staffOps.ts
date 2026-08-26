@@ -287,7 +287,7 @@ const ja = {
   /** 出会い数ランキング */
   meetRankingTitle: "出会いランキング",
   meetRankingNote:
-    "「出会った！」の記録数です（スタッフのみ閲覧できます）。景品の参考にどうぞ。",
+    "「出会った！」の記録数です。参加者向けランキングの設定に依らず、スタッフはここで全順位を名前入りで見られます。景品の参考にどうぞ。",
 
   /* ── 準備の段取り (#393) ────────────────────────────────
    * **実装上の語を出さない。**「待ち」「担当者が外れています」のように
@@ -630,7 +630,7 @@ const en: Record<keyof typeof ja, string> = {
   surveyNotJoined: "Not registered",
   meetRankingTitle: "Meet ranking",
   meetRankingNote:
-    "How many meets each person recorded (organizers only). Handy when handing out prizes.",
+    "How many meets each person recorded. Organizers always see every rank with names here, whatever the participant-facing ranking setting is. Handy when handing out prizes.",
 
   todoTitle: "Prep to-dos",
   todoStaffOnly: "Prep to-dos are for organizers only.",

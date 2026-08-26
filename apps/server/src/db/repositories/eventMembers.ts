@@ -6,7 +6,8 @@ import type {
   TodoAssignee,
   User,
 } from "@eventer/shared";
-import { QA_ANONYMITY_MODES } from "@eventer/shared";
+import { MEET_RANKING_MODES,
+  QA_ANONYMITY_MODES } from "@eventer/shared";
 import { many, one, run } from "../client.js";
 import {
   ATTENDED_COUNT_SQL,
@@ -484,6 +485,11 @@ function mapMyEventSummary(
     )
       ? (row.qa_anonymity as MyEventSummary["qaAnonymity"])
       : "choice",
+    meetRanking: MEET_RANKING_MODES.includes(
+      row.meet_ranking as MyEventSummary["meetRanking"],
+    )
+      ? (row.meet_ranking as MyEventSummary["meetRanking"])
+      : "off",
     registrationDeadline: (row.registration_deadline as number | null) ?? null,
     slug: (row.slug as string | null) ?? "",
     myRole: row.my_role as EventRole,

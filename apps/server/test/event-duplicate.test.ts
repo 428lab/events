@@ -86,6 +86,8 @@ async function setupSourceEvent(cookie: string): Promise<string> {
       membersNote: "参加者限定メモ: https://example.com/discord",
       photosPublic: true,
       attendanceCheck: true,
+      // 出会いランキング (#418) の設定もコピーされること
+      meetRanking: "anonymous",
     }),
   });
   expect(patch.status).toBe(200);
@@ -164,6 +166,7 @@ describe("イベントの複製 (#7)", () => {
     expect(event.scheduleAnonymous).toBe(true);
     expect(event.photosPublic).toBe(true);
     expect(event.attendanceCheck).toBe(true);
+    expect(event.meetRanking).toBe("anonymous");
     expect(event.startsAt).toBe(0);
     expect(event.endsAt).toBe(0);
     expect(event.scheduling).toBe(true);

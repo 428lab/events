@@ -23,6 +23,7 @@ import {
   QA_ANONYMITY_MODES,
   VENUE_TYPES,
   isDatetimeOrderInvalid,
+  type MeetRankingMode,
   type QaAnonymity,
   type VenueType,
 } from "@eventer/shared";
@@ -92,6 +93,9 @@ export function EditEventPage() {
   // Q&A (#216)。チャットと同じく使いたいイベントだけONにする。既定OFF
   const [qaEnabled, setQaEnabled] = useState(false);
   const [qaAnonymity, setQaAnonymity] = useState<QaAnonymity>("choice");
+  // 出会いランキング (#418)。既定OFF（名前が会場に大写しになりうる機能なので、
+  // 出したいイベントだけが明示的にONにする）
+  const [meetRanking, setMeetRanking] = useState<MeetRankingMode>("off");
   const [venueWanted, setVenueWanted] = useState(false);
   const [communityId, setCommunityId] = useState("");
   const myCommunitiesQuery = useMyCommunities();
@@ -125,6 +129,7 @@ export function EditEventPage() {
       setChatUrlsAllowed(e.chatUrlsAllowed);
       setQaEnabled(e.qaEnabled);
       setQaAnonymity(e.qaAnonymity);
+      setMeetRanking(e.meetRanking);
       setVenueWanted(e.venueWanted);
       setCommunityId(e.communityId ?? "");
       setInitialized(true);
@@ -202,6 +207,7 @@ export function EditEventPage() {
         chatUrlsAllowed,
         qaEnabled,
         qaAnonymity,
+        meetRanking,
         venueWanted,
         communityId: communityId || null,
       },
@@ -471,6 +477,54 @@ export function EditEventPage() {
                   sx={{ mt: 1 }}
                 >
                   {t("eventForm.qaAnonymityHelp")}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+
+          {/* 出会いランキング (#418)。オンにする行為が「盛り上げに使う」明示的な選択なので、
+              オンの初期値は名前入り。オフに戻すと表示・取得の口ごと消える */}
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={meetRanking !== "off"}
+                  onChange={(e) =>
+                    setMeetRanking(e.target.checked ? "named" : "off")
+                  }
+                />
+              }
+              label={t("eventForm.meetRanking")}
+            />
+            <Typography variant="caption" color="text.secondary" display="block">
+              {t("eventForm.meetRankingHelp")}
+            </Typography>
+            {meetRanking !== "off" && (
+              <Box sx={{ pl: 3, mt: 1 }}>
+                <TextField
+                  select
+                  size="small"
+                  label={t("eventForm.meetRankingMode")}
+                  value={meetRanking}
+                  onChange={(e) =>
+                    setMeetRanking(e.target.value as MeetRankingMode)
+                  }
+                  sx={{ minWidth: 220 }}
+                >
+                  <MenuItem value="named">{t("eventForm.meetRankingNamed")}</MenuItem>
+                  <MenuItem value="anonymous">
+                    {t("eventForm.meetRankingAnonymous")}
+                  </MenuItem>
+                </TextField>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  display="block"
+                  sx={{ mt: 1 }}
+                >
+                  {meetRanking === "named"
+                    ? t("eventForm.meetRankingNamedHelp")
+                    : t("eventForm.meetRankingAnonymousHelp")}
                 </Typography>
               </Box>
             )}

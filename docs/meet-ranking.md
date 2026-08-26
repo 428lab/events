@@ -2,7 +2,7 @@
 
 - 対象: `apps/server`（D1 スキーマ・ルート・リポジトリ）、`packages/shared`（設定の型・入力）、
   `apps/web`（投影ページ・イベント編集のトグル）
-- ステータス: **設計**（実装前）
+- ステータス: **実装済み**（本ブランチ。設計どおり。差分は §3.5/§3.8 の「非メンバーも 404」への強化のみ）
 - 決定済み（issue コメント 2026-08-26、ユーザー指示）:
   - 出すかどうかは**イベントごとの設定**。オフなら表示・API とも**存在ごと出さない**
   - **名前を出すか・匿名で出すかも設定**で切り替える
@@ -81,15 +81,15 @@
 - 既存の `qa_anonymity` も enum 1列で、shared に enum を置く型が確立している
 
 列2本の利点は「オフにしても名前/匿名の選択が残る」ことだけ。再オンのとき選び直せば済む
-（編集UIのラジオ1つ）ので、この利点のために不正な状態空間を持ち込まない。
+（編集UIの選択1つ）ので、この利点のために不正な状態空間を持ち込まない。
 
 **既定は `'off'`。** 理由: 名前が会場に大写しになりうる機能で、ランキングを望まない場
 （もくもく会・勉強会など交流が主目的でないイベント）のほうが多い。出したいイベントだけが
 明示的にオンにするのが安全側。既存の `photosPublic`（既定オフ）とも姿勢が揃う。
 
-編集UIで**オンにしたときのラジオの初期値は `'named'`** を提案する。オンにする行為自体が
+編集UIで**オンにしたときの初期値は `'named'`**（承認済み）とする。オンにする行為自体が
 「盛り上げに使う」という明示的な選択であり、主用途（名前入りで競う）に一致するため。
-慎重な場は匿名を選べる。ラジオの説明文に「名前とアイコンが会場に大写しになります」と
+慎重な場は匿名を選べる。選択肢の説明文に「名前とアイコンが会場に大写しになります」と
 振る舞いで書く（実装技術の語は出さない）。
 
 マイグレーション `apps/server/migrations/0078_meet_ranking.sql`:
@@ -111,7 +111,7 @@ meetRanking: z.enum(MEET_RANKING_MODES).optional(),
 
 反映箇所（先例どおり）: `events.ts` リポジトリの行マッピングと `update` の UPDATE 文、
 イベント複製のコピーリスト（設定だけコピー。記録はコピーしない —— `qaEnabled` と同じ扱い）、
-`EditEventPage.tsx` のスイッチ + ラジオ（chat/Q&A トグル群の並び）。
+`EditEventPage.tsx` のスイッチ + named/anonymous のセレクト（chat/Q&A トグル群の並び）。
 
 ### 3.2 どこに出すか: 専用投影ページを主軸
 
@@ -157,8 +157,10 @@ anonymous: { mode: "anonymous",
 共通:      me: { rank, count } | null              // 呼び出した本人の順位（0件なら null）
 ```
 
-- **`meet_ranking = 'off'` なら `{ error: "not_found" }, 404`** —— イベントIDが存在しない
-  ときと同一のステータス・同一のボディにし、外から設定の有無を判別できないようにする（§3.8）
+- **`meet_ranking = 'off'`・非メンバー・未確定メンバーはいずれも `{ error: "not_found" }, 404`**
+  —— イベントIDが存在しないときと同一のステータス・同一のボディにし、外から設定の有無も
+  機能の存在も判別できないようにする（§3.8）。未ログインは他の `/api/events` 配下と同じく
+  `requireAuth` の 401（何も明かさない）
 - 匿名モードで名前入りの行を返さないのはサーバ側で保証する（クライアントで伏せるのは偽の匿名）。
   匿名の応答には `userId` すら載せない
 - `me` は本人自身の値なので匿名モードでも返してよい（公開プロフィールが既に本人の件数を
@@ -201,7 +203,8 @@ react-query の `refetchInterval` により投影ページがポーリングす�
 
 認可の実装は既存の `requireEventRole` をそのまま使えない（participant も通すが
 「確定メンバーのみ」の条件が要る）。`eventMembersRepo.find` で
-`status === 'confirmed'` を確かめる（`eventQa.ts` など既存の member 判定の型に合わせる）。
+`status === 'confirmed'` を確かめ、満たさないときは **403 ではなく設定オフと同じ 404**
+を返す（機能の存在ごと非メンバーに見せない。§3.8）。
 
 ### 3.6 同率の扱い: 同順位・次はスキップ
 
@@ -234,7 +237,7 @@ named モードの表示順は `count DESC, username ASC`（既存 `rankingForEv
 
 | 経路 | 門 |
 |------|----|
-| `GET /:id/meets/ranking/live`（新設） | ルート先頭で `event.meetRanking === 'off'` なら **404 not_found**（イベント不存在と同一応答）。**サーバ側のこの1か所が正**の門 |
+| `GET /:id/meets/ranking/live`（新設） | ルート先頭で `event.meetRanking === 'off'` または確定メンバーでないなら **404 not_found**（イベント不存在と同一応答）。**サーバ側のこの1か所が正**の門 |
 | `GET /:id/meets/ranking`（既存 staff 用） | 従来どおり staff 限定。設定には従わない（運営用。§3.3） |
 
 - Web 側（投影ページ・詳細パネル・リンク）は `event.meetRanking !== 'off'` のときだけ
@@ -281,7 +284,7 @@ messages に追加し、**振る舞いで書く**（「名前とアイコンが�
 | web | `pages/MeetRankingScreenPage.tsx` | 新規。投影ページ（`MeetRankingBoard` 部品 + 全画面枠） |
 | web | `App.tsx` | `/events/:id/meet-ranking/screen` の Route |
 | web | `api/eventMeetHooks.ts` | `useMeetRankingLive(eventId, enabled)`（refetchInterval 5s） |
-| web | `pages/EditEventPage.tsx` | スイッチ + named/anonymous ラジオ |
+| web | `pages/EditEventPage.tsx` | スイッチ + named/anonymous の選択（Q&A の匿名設定と同じセレクト） |
 | web | `pages/EventDetailPage.tsx` | 従属パネル（上位3 + 自分の順位 + 投影ページへのリンク） |
 | web | `pages/EventStatsPage.tsx` | staff カードに投影ページへのリンク・注記の文言修正 |
 | i18n | `eventSocial.ts` ほか | ja/en 追加 |

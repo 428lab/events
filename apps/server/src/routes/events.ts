@@ -454,6 +454,8 @@ eventRoutes.post("/:id/duplicate", requireEventRole(["staff"]), async (c) => {
     // Q&A (#216) は設定だけコピーする（質問・票は複製元のもの）
     qaEnabled: src.qaEnabled,
     qaAnonymity: src.qaAnonymity,
+    // 出会いランキング (#418) も設定だけコピーする（出会いの記録はコピーしない）
+    meetRanking: src.meetRanking,
     membersNote: await eventsRepo.membersNoteFor(src.id),
   });
 

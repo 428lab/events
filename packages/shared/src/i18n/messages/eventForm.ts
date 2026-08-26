@@ -92,6 +92,15 @@ const ja = {
   qaAnonymityReal: "実名のみ",
   qaAnonymityAnon: "匿名のみ",
   qaAnonymityChoice: "参加者が選べる",
+  /* 出会いランキング (#418)。実装の語は出さず振る舞いで書く */
+  meetRanking: "出会いランキング",
+  meetRankingHelp:
+    "オンにすると、参加確定メンバーが「出会った！」の数のランキングを見られます。会場に映せる投影画面つき。オフのイベントではランキングは一切表示されません。",
+  meetRankingMode: "名前の出し方",
+  meetRankingNamed: "名前入り",
+  meetRankingNamedHelp: "名前とアイコンが会場に大写しになります。",
+  meetRankingAnonymous: "匿名",
+  meetRankingAnonymousHelp: "名前は出さず、人数だけを表示します。",
 
   /** 作成ページの結び。たまご（あったらいいな）から作った場合の紐付け失敗も含む */
   createSubmit: "作成",
@@ -330,6 +339,14 @@ const en: Record<keyof typeof ja, string> = {
   qaAnonymityReal: "Real names only",
   qaAnonymityAnon: "Anonymous only",
   qaAnonymityChoice: "Let the asker choose",
+  meetRanking: "Meet ranking",
+  meetRankingHelp:
+    "When this is on, confirmed participants can see a ranking of recorded meets, with a projection view for the venue screen. When it is off, the ranking is not shown anywhere.",
+  meetRankingMode: "How names are shown",
+  meetRankingNamed: "With names",
+  meetRankingNamedHelp: "Names and avatars appear large on the venue screen.",
+  meetRankingAnonymous: "Anonymous",
+  meetRankingAnonymousHelp: "Shows counts only, without names.",
 
   createSubmit: "Create",
   createError: "Could not create the event. Please check what you entered.",
