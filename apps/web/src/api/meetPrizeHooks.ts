@@ -71,13 +71,16 @@ export function useMeetPrizeStatus(
 }
 
 /** 引き換え履歴 (#441)（staff のみ・全景品種別・新しい順）。
- * 引き換え/取り消しの invalidate に乗るのでポーリングは持たない */
-export function useMeetPrizeLog(eventId: string, enabled: boolean) {
+ * 自分の操作は invalidate で即時、**他の窓口**の引き換えは5秒ポーリングで
+ * 追いつかせる（デスクを2台以上並べる運用がある。status と同じ形） */
+export function useMeetPrizeLog(eventId: string, enabled: boolean, poll = false) {
   return useQuery({
     queryKey: ["event", eventId, "meet-prize-log"],
     enabled: Boolean(eventId) && enabled,
     queryFn: () =>
       api.get<{ log: MeetPrizeLogRow[] }>(`/events/${eventId}/meet-prizes/log`),
+    refetchInterval: (query) =>
+      poll && !query.state.error ? MEET_RANKING_POLL_MS : false,
   });
 }
 

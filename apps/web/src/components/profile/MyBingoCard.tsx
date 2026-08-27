@@ -65,7 +65,8 @@ export function MyBingoCard({ isMe }: { isMe: boolean }) {
           )}
         </Stack>
         <Stack spacing={0.75}>
-          {data.results.map((r) => (
+          {/* 一覧は直近100件まで（集計チップは全件から計算済み） */}
+          {data.results.slice(0, 100).map((r) => (
             <Box key={`${r.eventId}:${r.endedAt}`}>
               <Link
                 component={RouterLink}
@@ -89,6 +90,11 @@ export function MyBingoCard({ isMe }: { isMe: boolean }) {
               </Typography>
             </Box>
           ))}
+          {data.results.length > 100 && (
+            <Typography variant="caption" color="text.secondary">
+              {t("profile.bingoMore", { n: data.results.length - 100 })}
+            </Typography>
+          )}
         </Stack>
       </CardContent>
     </Card>

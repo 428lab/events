@@ -309,7 +309,10 @@ export const eventMeetPrizesRepo = {
 
   /** デスクの引き換え履歴 (#441)。全景品種別を新しい順で（staff のみが読む）。
    * 母体は redemption 表そのもの＝取り消した行は出ない（「いま有効な引き換え」）。
-   * redeemed_by は退会で SET NULL になるため表示名は null を許容 */
+   * 受け取り手は LEFT JOIN：退会（soft delete）でも**配布の記録は消さない**
+   * （行は完全削除の CASCADE までは残る。名前は出さず「退会」を示す null）。
+   * redeemed_by は退会で SET NULL になるため表示名は null を許容。
+   * 上限 100 件（窓口の確認用途。それ以上は古い順に切る） */
   async redemptionLog(eventId: string): Promise<
     {
       prizeId: string;
@@ -326,7 +329,7 @@ export const eventMeetPrizesRepo = {
       prize_id: string;
       prize_name: string;
       user_id: string;
-      username: string;
+      username: string | null;
       global_name: string | null;
       avatar_url: string | null;
       by_username: string | null;
@@ -339,18 +342,19 @@ export const eventMeetPrizesRepo = {
               r.created_at
          FROM event_prize_redemption r
          JOIN event_prize p ON p.id = r.prize_id
-         JOIN user u ON u.id = r.user_id
+         LEFT JOIN user u ON u.id = r.user_id AND u.deleted_at IS NULL
          LEFT JOIN user rb ON rb.id = r.redeemed_by AND rb.deleted_at IS NULL
         WHERE p.event_id = ?
-        ORDER BY r.created_at DESC`,
+        ORDER BY r.created_at DESC
+        LIMIT 100`,
       eventId,
     );
     return rows.map((r) => ({
       prizeId: r.prize_id,
       prizeName: r.prize_name,
       userId: r.user_id,
-      username: r.username,
-      name: r.global_name ?? r.username,
+      username: r.username ?? "",
+      name: r.global_name ?? r.username ?? "",
       avatarUrl: r.avatar_url,
       redeemedByName: r.by_username ? (r.by_global_name ?? r.by_username) : null,
       redeemedAt: r.created_at,

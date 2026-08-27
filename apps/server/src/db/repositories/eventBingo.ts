@@ -154,13 +154,26 @@ export const eventBingoRepo = {
    * 終了（判定の凍結。景品の引き換えは続けられる）と同時に、その回の
    * per-user 成績をスナップショットする (#441 docs/bingo-history.md §3.1)。
    *
-   * 条件付き UPDATE（running→ended）と INSERT OR IGNORE を **1つの batch
-   * （D1 のトランザクション）**で行う。同時に2人が end を押しても、
+   * INSERT と条件付き UPDATE（running→ended）を **1つの batch（D1 の
+   * トランザクション）**で行う。同時に2人が end を押しても、
    * UNIQUE (event_id, started_at, user_id) が同じラウンドの二重保存を塞ぎ、
    * 負けた側は UPDATE の変更行数 0（＝呼び出し側が 409）になる。
    * 保存後は追記のみ（reset / ゲーム削除では消さない）。
    *
-   * @param rows 終了時点の導出（全カード保有者。未達成は rank/seq が null） */
+   * **並び順と drawn_count の門が要点**: 材料（rows・drawnTotal）は batch の
+   * 外で導出するため、その直後に draw が入ると古いスナップショットになりうる。
+   * そこで各 INSERT に「いまも running で drawn_count が導出時と同じ」の
+   * EXISTS を持たせて **INSERT を先・UPDATE を後**に並べ、UPDATE にも
+   * `drawn_count = ?` を足す。競合していたら何も入らず・閉じずに false
+   * （＝409。押し直せば新しい導出で正しく取れる）。UPDATE だけに条件を
+   * 足す形は不可：古い INSERT が先に確定してしまう。
+   *
+   * batch の規模: 1文あたりバインド10個（SQLite の1文上限 999 に対し余裕）、
+   * 文数は参加人数+1（200人でも201文。D1 の batch 上限＝数千文よりずっと
+   * 小さい）。chunk 化はトランザクションを壊すのでしない。
+   *
+   * @param rows 終了時点の導出（全カード保有者。未達成は rank/seq が null）
+   * @param drawnTotal 導出時点の drawn_count（この値のまま閉じられた時だけ保存） */
   async endGame(
     eventId: string,
     startedAt: number,
@@ -168,16 +181,14 @@ export const eventBingoRepo = {
     rows: { userId: string; rank: number | null; completedAtSeq: number | null }[],
   ): Promise<boolean> {
     const now = Date.now();
-    const [updated] = await batch([
-      {
-        sql: `UPDATE event_bingo_game SET status = 'ended', ended_at = ?
-               WHERE event_id = ? AND status = 'running'`,
-        args: [now, eventId],
-      },
+    const changes = await batch([
       ...rows.map((r) => ({
         sql: `INSERT OR IGNORE INTO event_bingo_result
                 (id, event_id, user_id, started_at, ended_at, rank, completed_at_seq, drawn_total)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              SELECT ?, ?, ?, ?, ?, ?, ?, ?
+               WHERE EXISTS (SELECT 1 FROM event_bingo_game
+                              WHERE event_id = ? AND status = 'running'
+                                AND drawn_count = ?)`,
         args: [
           crypto.randomUUID(),
           eventId,
@@ -187,10 +198,17 @@ export const eventBingoRepo = {
           r.rank,
           r.completedAtSeq,
           drawnTotal,
+          eventId,
+          drawnTotal,
         ],
       })),
+      {
+        sql: `UPDATE event_bingo_game SET status = 'ended', ended_at = ?
+               WHERE event_id = ? AND status = 'running' AND drawn_count = ?`,
+        args: [now, eventId, drawnTotal],
+      },
     ]);
-    return (updated ?? 0) > 0;
+    return (changes[changes.length - 1] ?? 0) > 0;
   },
 
   /** 本人のビンゴ成績（新しい順）。イベント名は JOIN で取る（行が生きて

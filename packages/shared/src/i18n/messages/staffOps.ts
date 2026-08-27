@@ -335,7 +335,7 @@ const ja = {
     "抽選を締めて、この回の結果（順位）を確定・保存します。景品の引き換えは続けられます。終了後にリセットすれば2回戦ができます。",
   bingoReset: "リセット（カード再配布）",
   bingoResetConfirm:
-    "リセットしますか？全員のカードが無効になり、達成も消えます。引き換え済みの景品はそのまま残ります。",
+    "リセットしますか？全員のカードが無効になり、達成も消えます。引き換え済みの景品と保存済みの成績はそのまま残ります。",
   bingoDelete: "ビンゴを削除する",
   bingoDeleteConfirm:
     "ビンゴのゲームを削除しますか？参加者からビンゴが見えなくなり、カードと抽選の記録も消えます（終了済みの回の成績は残ります）。",
@@ -354,6 +354,7 @@ const ja = {
   prizeLogTitle: "引き換え履歴",
   prizeLogEmpty: "まだ引き換えはありません。",
   prizeLogBy: "対応: {{name}}",
+  prizeLogDeletedUser: "退会したユーザー",
 
   /* ── 準備の段取り (#393) ────────────────────────────────
    * **実装上の語を出さない。**「待ち」「担当者が外れています」のように
@@ -740,7 +741,7 @@ const en: Record<keyof typeof ja, string> = {
     "Close the draw and finalize this round's results (ranks are saved). Prizes can still be redeemed. Reset afterwards to play another round.",
   bingoReset: "Reset (redeal cards)",
   bingoResetConfirm:
-    "Reset? Everyone's cards are voided and achievements are cleared. Redeemed prizes remain.",
+    "Reset? Everyone's cards are voided and achievements are cleared. Redeemed prizes and saved results remain.",
   bingoDelete: "Delete bingo",
   bingoDeleteConfirm:
     "Delete the bingo game? Participants will no longer see it, and cards and draw records are removed (results of finished rounds are kept).",
@@ -757,6 +758,7 @@ const en: Record<keyof typeof ja, string> = {
   prizeLogTitle: "Redemption log",
   prizeLogEmpty: "No redemptions yet.",
   prizeLogBy: "By {{name}}",
+  prizeLogDeletedUser: "Deleted user",
 
   todoTitle: "Prep to-dos",
   todoStaffOnly: "Prep to-dos are for organizers only.",

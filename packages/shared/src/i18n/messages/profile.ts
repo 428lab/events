@@ -155,6 +155,7 @@ const ja = {
   bingoAvgSeq: "平均 {{n}}回目でビンゴ",
   bingoRowDone: "{{total}}回中{{seq}}回目でビンゴ・{{rank}}位",
   bingoRowMissed: "未達成（{{total}}回抽選）",
+  bingoMore: "ほか {{n}}件",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -266,6 +267,7 @@ const en: Record<keyof typeof ja, string> = {
   bingoAvgSeq: "Avg. bingo on draw {{n}}",
   bingoRowDone: "Bingo on draw {{seq}} of {{total}}, rank #{{rank}}",
   bingoRowMissed: "No bingo ({{total}} draws)",
+  bingoMore: "and {{n}} more",
 };
 
 export const profile = { ja, en };

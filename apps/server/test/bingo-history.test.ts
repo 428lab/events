@@ -1,6 +1,8 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import type { MeetPrizeLogRow, MyBingoResults } from "@eventer/shared";
+import { bindEnv, type Env } from "../src/runtime.js";
+import { eventBingoRepo } from "../src/db/repositories/eventBingo.js";
 
 const BASE = "https://example.com";
 
@@ -153,10 +155,12 @@ describe("end のスナップショット (#441)", () => {
       completedAtSeq: null,
       drawnTotal: 5,
     });
-    // 本人の行だけ（alice の達成が bob の応答に混ざらない）
+    // 本人の行だけ（alice の達成が bob の応答に混ざらない・逆も）
     expect(theirs.results).toHaveLength(1);
     expect(theirs.games).toBe(1);
     expect(theirs.achieved).toBe(0);
+    expect(mine.games).toBe(1);
+    expect(mine.achieved).toBe(1); // alice 側にも自分の1行だけ
   });
 
   it("同時に2人が end を押しても、保存は1回ぶんだけ（batch + UNIQUE）", async () => {
@@ -174,6 +178,49 @@ describe("end のスナップショット (#441)", () => {
       .bind(eventId)
       .first<{ n: number }>();
     expect(row?.n).toBe(1); // alice の1行だけ（二重保存なし）
+  });
+
+  it("導出の直後に draw が入ったら、古いスナップショットを保存せず 409 相当（false）で終わる", async () => {
+    // ルートは「rows を導出 → endGame の batch」の2段で、その隙間に draw が
+    // 入りうる。endGame は INSERT に「drawn_count が導出時と同じ」の EXISTS を
+    // 持つので、競合時は**何も保存せず・閉じずに** false を返す（押し直しで
+    // 新しい導出が正しく入る）。古い rows が rank NULL のまま確定しないこと
+    const { eventId, staff, alice } = await setup();
+    void staff;
+    await setCard(eventId, alice.userId, [1, 2, 3, 4, 5]);
+    await setDraws(eventId, [1, 2, 3, 4, 5], 4, Date.now()); // 4個時点＝リーチ
+
+    bindEnv(env as unknown as Env);
+    const game = (await eventBingoRepo.findGame(eventId))!;
+    const rows = await eventBingoRepo.statusRows(eventId, [1, 2, 3, 4]);
+    expect(rows[0].rank).toBeNull(); // 導出時点では未達成
+
+    // 隙間に draw が入る（5個目＝alice がビンゴする番号）
+    expect(await eventBingoRepo.draw(eventId)).toBe(5);
+
+    const ended = await eventBingoRepo.endGame(
+      eventId,
+      game.startedAt!,
+      game.drawnCount, // 導出時点の 4
+      rows.map((r) => ({
+        userId: r.userId,
+        rank: r.rank,
+        completedAtSeq: r.completedAtSeq,
+      })),
+    );
+    expect(ended).toBe(false); // 閉じない（ルートは 409 を返す）
+    const saved = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM event_bingo_result WHERE event_id = ?",
+    )
+      .bind(eventId)
+      .first<{ n: number }>();
+    expect(saved?.n).toBe(0); // 古いスナップショットは1行も入らない
+    const still = await env.DB.prepare(
+      "SELECT status FROM event_bingo_game WHERE event_id = ?",
+    )
+      .bind(eventId)
+      .first<{ status: string }>();
+    expect(still?.status).toBe("running"); // 押し直せば正しく取れる
   });
 
   it("reset 後の2回戦は別ラウンドとして追記され、保存済みは消えない。集計の分母も契約どおり", async () => {
@@ -295,5 +342,15 @@ describe("引き換えログ (#441)", () => {
       await SELF.fetch(logUrl, { headers: { cookie: staff.cookie } })
     ).json()) as { log: MeetPrizeLogRow[] });
     expect(log[0].redeemedByName).toBeNull();
+
+    // 受け取り手の退会（soft delete）でも配布の記録は消えず、名前だけ伏せる
+    await env.DB.prepare("UPDATE user SET deleted_at = ? WHERE id = ?")
+      .bind(Date.now(), bob.userId)
+      .run();
+    ({ log } = (await (
+      await SELF.fetch(logUrl, { headers: { cookie: staff.cookie } })
+    ).json()) as { log: MeetPrizeLogRow[] });
+    expect(log).toHaveLength(1); // 行は残る
+    expect(log[0].name).toBe(""); // 名前は出さない（UI が「退会したユーザー」を出す）
   });
 });

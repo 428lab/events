@@ -350,7 +350,7 @@ function BingoPoolCard({
  * なので、取り消した引き換えは一覧から消える（「いま有効な引き換え」のログ） */
 function RedemptionLogCard({ eventId, enabled }: { eventId: string; enabled: boolean }) {
   const { t } = useTranslation();
-  const { data } = useMeetPrizeLog(eventId, enabled);
+  const { data } = useMeetPrizeLog(eventId, enabled, true);
   if (!data) return null;
   return (
     <Card variant="outlined">
@@ -370,16 +370,20 @@ function RedemptionLogCard({ eventId, enabled }: { eventId: string; enabled: boo
                 direction="row"
                 spacing={1.5}
                 alignItems="center"
+                flexWrap="wrap"
+                useFlexGap
               >
                 <Typography variant="caption" color="text.secondary" sx={{ width: 110, flexShrink: 0 }}>
                   {formatDateTime(row.redeemedAt)}
                 </Typography>
                 <Avatar src={row.avatarUrl ?? undefined} sx={{ width: 24, height: 24 }}>
-                  {row.name.slice(0, 1)}
+                  {(row.name || "?").slice(0, 1)}
                 </Avatar>
                 <Box sx={{ minWidth: 0, flex: 1 }}>
                   <Typography variant="body2" noWrap>
-                    <b>{row.name}</b> — {row.prizeName}
+                    {/* 退会（soft delete）でも配布の記録は消さない。名前だけ伏せる */}
+                    <b>{row.name || t("staffOps.prizeLogDeletedUser")}</b> —{" "}
+                    {row.prizeName}
                   </Typography>
                   {row.redeemedByName && (
                     <Typography variant="caption" color="text.secondary" noWrap>
