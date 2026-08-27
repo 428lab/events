@@ -1,4 +1,8 @@
-import type { BingoGameStatus, BingoStatusRow } from "@eventer/shared";
+import type {
+  BingoGameStatus,
+  BingoStatusRow,
+  MyBingoResultRow,
+} from "@eventer/shared";
 import {
   BINGO_COLUMN_RANGES,
   BINGO_MAX_NUMBER,
@@ -146,15 +150,78 @@ export const eventBingoRepo = {
     return changes > 0;
   },
 
-  /** 終了（判定の凍結。景品の引き換えは続けられる） */
-  async endGame(eventId: string): Promise<boolean> {
-    const changes = await runCount(
-      `UPDATE event_bingo_game SET status = 'ended', ended_at = ?
-        WHERE event_id = ? AND status = 'running'`,
-      Date.now(),
-      eventId,
+  /**
+   * 終了（判定の凍結。景品の引き換えは続けられる）と同時に、その回の
+   * per-user 成績をスナップショットする (#441 docs/bingo-history.md §3.1)。
+   *
+   * 条件付き UPDATE（running→ended）と INSERT OR IGNORE を **1つの batch
+   * （D1 のトランザクション）**で行う。同時に2人が end を押しても、
+   * UNIQUE (event_id, started_at, user_id) が同じラウンドの二重保存を塞ぎ、
+   * 負けた側は UPDATE の変更行数 0（＝呼び出し側が 409）になる。
+   * 保存後は追記のみ（reset / ゲーム削除では消さない）。
+   *
+   * @param rows 終了時点の導出（全カード保有者。未達成は rank/seq が null） */
+  async endGame(
+    eventId: string,
+    startedAt: number,
+    drawnTotal: number,
+    rows: { userId: string; rank: number | null; completedAtSeq: number | null }[],
+  ): Promise<boolean> {
+    const now = Date.now();
+    const [updated] = await batch([
+      {
+        sql: `UPDATE event_bingo_game SET status = 'ended', ended_at = ?
+               WHERE event_id = ? AND status = 'running'`,
+        args: [now, eventId],
+      },
+      ...rows.map((r) => ({
+        sql: `INSERT OR IGNORE INTO event_bingo_result
+                (id, event_id, user_id, started_at, ended_at, rank, completed_at_seq, drawn_total)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          crypto.randomUUID(),
+          eventId,
+          r.userId,
+          startedAt,
+          now,
+          r.rank,
+          r.completedAtSeq,
+          drawnTotal,
+        ],
+      })),
+    ]);
+    return (updated ?? 0) > 0;
+  },
+
+  /** 本人のビンゴ成績（新しい順）。イベント名は JOIN で取る（行が生きて
+   * いるうちは event も生きている——CASCADE の向きがそれを保証する） */
+  async resultsForUser(userId: string): Promise<MyBingoResultRow[]> {
+    const rows = await many<{
+      event_id: string;
+      title: string;
+      starts_at: number;
+      ended_at: number;
+      rank: number | null;
+      completed_at_seq: number | null;
+      drawn_total: number;
+    }>(
+      `SELECT r.event_id, e.title, e.starts_at, r.ended_at,
+              r.rank, r.completed_at_seq, r.drawn_total
+         FROM event_bingo_result r
+         JOIN event e ON e.id = r.event_id
+        WHERE r.user_id = ?
+        ORDER BY r.ended_at DESC`,
+      userId,
     );
-    return changes > 0;
+    return rows.map((r) => ({
+      eventId: r.event_id,
+      eventTitle: r.title,
+      eventStartsAt: r.starts_at,
+      endedAt: r.ended_at,
+      rank: r.rank,
+      completedAtSeq: r.completed_at_seq,
+      drawnTotal: r.drawn_total,
+    }));
   },
 
   /**

@@ -145,6 +145,16 @@ const ja = {
   qrPreparing: "QRを準備しています…",
   qrJustRead: "読み取られました。次の人もどうぞ",
   qrHint: "読み取るとその場で交流が記録されます",
+
+  /* ===== ビンゴ成績 (#441)。本人のマイページにだけ出す ===== */
+  bingoHeading: "ビンゴ成績",
+  bingoOwnOnly: "この成績はあなたにだけ表示されています。",
+  bingoGames: "参加 {{n}}回",
+  bingoAchieved: "ビンゴ {{n}}回",
+  bingoAvgRank: "平均 {{n}}位",
+  bingoAvgSeq: "平均 {{n}}回目でビンゴ",
+  bingoRowDone: "{{total}}回中{{seq}}回目でビンゴ・{{rank}}位",
+  bingoRowMissed: "未達成（{{total}}回抽選）",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -247,6 +257,15 @@ const en: Record<keyof typeof ja, string> = {
   qrPreparing: "Preparing the QR code…",
   qrJustRead: "Scanned. Next person, go ahead",
   qrHint: "Scanning records your meeting on the spot",
+
+  bingoHeading: "Bingo record",
+  bingoOwnOnly: "Only you can see this record.",
+  bingoGames: "{{n}} games",
+  bingoAchieved: "{{n}} bingos",
+  bingoAvgRank: "Avg. rank #{{n}}",
+  bingoAvgSeq: "Avg. bingo on draw {{n}}",
+  bingoRowDone: "Bingo on draw {{seq}} of {{total}}, rank #{{rank}}",
+  bingoRowMissed: "No bingo ({{total}} draws)",
 };
 
 export const profile = { ja, en };

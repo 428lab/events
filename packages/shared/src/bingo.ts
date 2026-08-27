@@ -142,3 +142,33 @@ export interface BingoStatus {
   /** 全カード保有者。ビンゴ（rank順）→ リーチ → その他の順 */
   rows: BingoStatusRow[];
 }
+
+/** ---- ビンゴ成績のスナップショット (#441) ---- */
+
+/** 自分の1ラウンドぶんの成績（イベント名は JOIN で常に取れる） */
+export interface MyBingoResultRow {
+  eventId: string;
+  eventTitle: string;
+  /** イベントの開催日時（表示用。未定は 0） */
+  eventStartsAt: number;
+  endedAt: number;
+  /** 競技順位。未達成は null */
+  rank: number | null;
+  /** ビンゴまでの抽選回数。未達成は null */
+  completedAtSeq: number | null;
+  /** その回で引かれた総数 */
+  drawnTotal: number;
+}
+
+/** GET /api/me/bingo-results のレスポンス。集計は行から都度計算（保存しない）。
+ * 分母: 達成率＝全ラウンド / 平均順位・平均抽選回数＝達成ラウンドのみ
+ * （docs/bingo-history.md §3.3） */
+export interface MyBingoResults {
+  results: MyBingoResultRow[];
+  games: number;
+  achieved: number;
+  /** 達成ラウンドの順位平均。達成が無ければ null */
+  avgRank: number | null;
+  /** 達成ラウンドの抽選回数平均。達成が無ければ null */
+  avgSeq: number | null;
+}

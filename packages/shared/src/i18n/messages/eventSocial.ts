@@ -288,6 +288,7 @@ const ja = {
   bingoDetailLink: "ビンゴ会場へ",
   meetPrizeCondBingo: "ビンゴ達成（1人1つ）",
   meetPrizePoolHeading: "ビンゴ景品（達成した人から1つ選べます）",
+  meetPrizeRedeemedAt: "{{at}} に受け取り済み",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -510,6 +511,7 @@ const en: Record<keyof typeof ja, string> = {
   bingoDetailLink: "Open bingo",
   meetPrizeCondBingo: "Bingo (one per person)",
   meetPrizePoolHeading: "Bingo prizes (achievers pick one)",
+  meetPrizeRedeemedAt: "Received at {{at}}",
 };
 
 export const eventSocial = { ja, en };

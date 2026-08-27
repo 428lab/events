@@ -210,7 +210,8 @@ describe("公開一覧とオフの門 (#431)", () => {
       count: 1,
       won: false,
       bingo: false,
-      redeemedPrizeIds: [prizeId],
+      // 受け取り時刻付きの履歴 (#441)
+      redemptions: [{ prizeId, redeemedAt: expect.any(Number) }],
     });
 
     const outsider = await makeUser();
@@ -456,7 +457,7 @@ describe("出会いの取り消し (#330) との関係", () => {
       count: 0,
       won: false,
       bingo: false,
-      redeemedPrizeIds: [redeemed],
+      redemptions: [{ prizeId: redeemed, redeemedAt: expect.any(Number) }],
     });
   });
 });

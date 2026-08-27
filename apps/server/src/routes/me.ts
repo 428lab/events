@@ -16,6 +16,8 @@ import type {
   UpdateUsernameInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
+import type { MyBingoResults } from "@eventer/shared";
+import { eventBingoRepo } from "../db/repositories/eventBingo.js";
 import {
   clearSession,
   pendingDeletionUser,
@@ -41,6 +43,23 @@ import { putMyCardImage } from "./profileCardImages.js";
 export const meRoutes = new Hono<AppEnv>();
 
 meRoutes.use("*", requireAuth);
+
+/** 本人のビンゴ成績 (#441)。**本人のみ**（公開の口は無い。docs/bingo-history.md §3.5）。
+ * 集計は行から都度計算する（保存しない）。分母: 達成率＝全ラウンド /
+ * 平均順位・平均抽選回数＝達成ラウンドのみ（未達成に順位は無い） */
+meRoutes.get("/bingo-results", async (c) => {
+  const results = await eventBingoRepo.resultsForUser(c.get("user").id);
+  const done = results.filter((r) => r.rank !== null);
+  const avg = (xs: number[]) =>
+    xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length;
+  return c.json({
+    results,
+    games: results.length,
+    achieved: done.length,
+    avgRank: avg(done.map((r) => r.rank!)),
+    avgSeq: avg(done.map((r) => r.completedAtSeq!)),
+  } satisfies MyBingoResults);
+});
 
 /** マイページ: 自分が所属する全コミュニティ（参加歴含む・ロール付き） */
 meRoutes.get("/communities", async (c) => {

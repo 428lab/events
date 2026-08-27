@@ -186,7 +186,7 @@ export async function getEventMeetPrizes(c: Context) {
           count: await eventMeetsRepo.countedMeetsForUser(eventId, user.id),
           won: await eventMeetPrizesRepo.isWinner(eventId, user.id),
           bingo: await hasBingo(eventId, user.id),
-          redeemedPrizeIds: await eventMeetPrizesRepo.redeemedPrizeIdsForUser(
+          redemptions: await eventMeetPrizesRepo.redemptionsForUser(
             eventId,
             user.id,
           ),
@@ -350,6 +350,19 @@ meetPrizeRoutes.get(
       return c.json({ error: "not_found" }, 404);
     }
     return c.json({ prizes: await eventMeetPrizesRepo.listByEvent(eventId) });
+  },
+);
+
+/** 引き換え履歴 (#441)（staff のみ）。全景品種別を時刻順（新しい順）で返す */
+meetPrizeRoutes.get(
+  "/:id/meet-prizes/log",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const eventId = c.req.param("id");
+    if (!(await eventsRepo.findById(eventId))) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    return c.json({ log: await eventMeetPrizesRepo.redemptionLog(eventId) });
   },
 );
 

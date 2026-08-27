@@ -456,6 +456,9 @@ export const usersRepo = {
       // ビンゴのカード (#436)。PK (event_id, user_id)。両方が持っていたら
       // 負け側を捨てる（勝ち側のカードで判定が続く）
       ["event_bingo_card", "user_id", ["event_id"]],
+      // ビンゴ成績 (#441)。UNIQUE (event_id, started_at, user_id)。
+      // 同じ回に両アカウントで参加していたら負け側を捨てる
+      ["event_bingo_result", "user_id", ["event_id", "started_at"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols

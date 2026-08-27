@@ -215,18 +215,32 @@ eventBingoRoutes.post(
   },
 );
 
-/** 終了（判定の凍結。景品の引き換えは続けられる） */
+/** 終了（判定の凍結。景品の引き換えは続けられる）。
+ * 成功と同時にその回の成績をスナップショットする (#441)。導出は先に読むが、
+ * 書き込みは repo の batch（条件付き UPDATE + INSERT OR IGNORE）が
+ * 1トランザクションで行い、同時 end の二重保存を塞ぐ */
 eventBingoRoutes.post(
   "/:id/bingo/end",
   requireEventRole(["staff"]),
   async (c) => {
     const eventId = c.req.param("id");
-    if (!(await eventBingoRepo.findGame(eventId))) {
-      return c.json({ error: "not_found" }, 404);
-    }
-    if (!(await eventBingoRepo.endGame(eventId))) {
+    const game = await eventBingoRepo.findGame(eventId);
+    if (!game) return c.json({ error: "not_found" }, 404);
+    if (game.status !== "running" || game.startedAt === null) {
       return c.json({ error: "not_running" }, 409);
     }
+    const rows = await eventBingoRepo.statusRows(eventId, drawnNumbers(game));
+    const ended = await eventBingoRepo.endGame(
+      eventId,
+      game.startedAt,
+      game.drawnCount,
+      rows.map((r) => ({
+        userId: r.userId,
+        rank: r.rank,
+        completedAtSeq: r.completedAtSeq,
+      })),
+    );
+    if (!ended) return c.json({ error: "not_running" }, 409);
     return c.json({ ok: true });
   },
 );
