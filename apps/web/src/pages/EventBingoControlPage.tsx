@@ -149,6 +149,13 @@ export function EventBingoControlPage() {
                   <Typography sx={{ fontSize: 96, fontWeight: 800, lineHeight: 1.1 }}>
                     {latest ?? "—"}
                   </Typography>
+                  {/* 開始で1個目が自動で引かれると誤解した実例があった。
+                      開始直後だけ、次の操作を明示する */}
+                  {data.status === "running" && data.drawnNumbers.length === 0 && (
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      {t("staffOps.bingoFirstDrawHint")}
+                    </Typography>
+                  )}
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     {data.drawnNumbers.length > 0
                       ? `${t("eventSocial.bingoHistory")}: ${data.drawnNumbers.join(" → ")}`

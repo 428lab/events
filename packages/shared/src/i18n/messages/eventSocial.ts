@@ -258,8 +258,8 @@ const ja = {
   meetRankingMe: "あなたは {{rank}}位（{{count}}人）",
   meetRankingOpenScreen: "投影画面を開く",
 
-  /* ===== 出会いの景品 (#431) ===== */
-  meetPrizesHeading: "出会いの景品",
+  /* ===== 景品 (#431)。ビンゴ景品 (#436) も含むため「出会いの〜」とは呼ばない ===== */
+  meetPrizesHeading: "景品",
   meetPrizeCondCount: "{{n}}人と出会う",
   meetPrizeCondTop: "出会った人数ランキング1位",
   meetPrizeTopUndecided: "1位はイベント中に確定します。",
@@ -284,6 +284,7 @@ const ja = {
   bingoCounts: "カード{{cards}}枚 ・ ビンゴ{{bingo}}人 ・ リーチ{{reach}}人",
   bingoLatest: "最新の番号",
   bingoNoDraws: "抽選を待っています…",
+  bingoFirstDrawSoon: "まもなく1個目を引きます",
   bingoHistory: "出た番号",
   bingoDetailLink: "ビンゴ会場へ",
   meetPrizeCondBingo: "ビンゴ達成（1人1つ）",
@@ -482,8 +483,7 @@ const en: Record<keyof typeof ja, string> = {
   meetRankingMe: "You are #{{rank}} ({{count}} met)",
   meetRankingOpenScreen: "Open the projection view",
 
-  /* ===== Meet rewards (#431) ===== */
-  meetPrizesHeading: "Meet rewards",
+  meetPrizesHeading: "Prizes",
   meetPrizeCondCount: "Meet {{n}} people",
   meetPrizeCondTop: "Top of the meet ranking",
   meetPrizeTopUndecided: "The top spot is decided during the event.",
@@ -507,6 +507,7 @@ const en: Record<keyof typeof ja, string> = {
   bingoCounts: "{{cards}} cards / {{bingo}} bingo / {{reach}} reach",
   bingoLatest: "Latest number",
   bingoNoDraws: "Waiting for the first number…",
+  bingoFirstDrawSoon: "The first number is coming up",
   bingoHistory: "Numbers so far",
   bingoDetailLink: "Open bingo",
   meetPrizeCondBingo: "Bingo (one per person)",
