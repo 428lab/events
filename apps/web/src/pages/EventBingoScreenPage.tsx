@@ -130,16 +130,26 @@ export function EventBingoScreenPage() {
                   {t("eventSocial.bingoWaiting")}
                 </Typography>
               ) : (
-                <Typography
-                  sx={{
-                    fontSize: `clamp(96px, 28vw, ${160 * scale}px)`,
-                    fontWeight: 800,
-                    color: BOARD_ACCENT,
-                    lineHeight: 1,
-                  }}
-                >
-                  {latest ?? "—"}
-                </Typography>
+                <>
+                  <Typography
+                    sx={{
+                      fontSize: `clamp(96px, 28vw, ${160 * scale}px)`,
+                      fontWeight: 800,
+                      color: BOARD_ACCENT,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {latest ?? "—"}
+                  </Typography>
+                  {/* 開始直後（まだ0個）は、待ち状態であることを観客にも伝える */}
+                  {data.status === "running" && data.drawnNumbers.length === 0 && (
+                    <Typography
+                      sx={{ fontSize: `clamp(14px, 4vw, ${24 * scale}px)`, color: BOARD_SUB }}
+                    >
+                      {t("eventSocial.bingoFirstDrawSoon")}
+                    </Typography>
+                  )}
+                </>
               )}
             </Box>
 

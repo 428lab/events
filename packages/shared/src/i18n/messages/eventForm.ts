@@ -102,8 +102,9 @@ const ja = {
   meetRankingAnonymous: "匿名",
   meetRankingAnonymousHelp: "名前は出さず、人数だけを表示します。",
 
-  /* 出会いの景品引き換え (#431)。実装の語は出さず振る舞いで書く */
-  meetPrizes: "出会いの景品引き換え",
+  /* 景品引き換え (#431)。ビンゴ景品 (#436) もあるので「出会いの〜」とは呼ばない。
+     キー名・API・DB（meetPrizes 等）は互換のため変えない（文言だけ） */
+  meetPrizes: "景品引き換え",
   meetPrizesHelp:
     "オンにすると、イベントページに景品が表示され、達成した参加者がスタッフのところで景品と引き換えられます。オフの間は参加者には一切表示されません（オフのまま下で仕込んでおけます）。",
   meetPrizeAdd: "景品を追加",
@@ -375,7 +376,7 @@ const en: Record<keyof typeof ja, string> = {
   meetRankingAnonymous: "Anonymous",
   meetRankingAnonymousHelp: "Shows counts only, without names.",
 
-  meetPrizes: "Meet rewards",
+  meetPrizes: "Prizes",
   meetPrizesHelp:
     "When this is on, prizes appear on the event page and participants who reach a goal can redeem them with staff. While it is off, participants see nothing (you can prepare prizes below in the meantime).",
   meetPrizeAdd: "Add a prize",

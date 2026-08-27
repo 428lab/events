@@ -289,7 +289,7 @@ const ja = {
   meetRankingNote:
     "「出会った！」の記録数です。参加者向けランキングの設定に依らず、スタッフはここで全順位を名前入りで見られます。景品の参考にどうぞ。",
 
-  /* ── 出会いの景品の引き換えデスク (#431) ──────────────────
+  /* ── 景品の引き換えデスク (#431) ──────────────────
    * 実装の語を出さない。「交換済みにする」「1位を確定する」のように操作で書く */
   prizeDeskTitle: "景品の引き換え",
   prizeDeskStaffOnly: "景品の引き換えはスタッフ専用です。",
@@ -327,6 +327,7 @@ const ja = {
   bingoStart: "抽選を開始する",
   bingoStartConfirm: "抽選を開始しますか？（開始後もカードは受け取れます）",
   bingoDraw: "次を引く",
+  bingoFirstDrawHint: "「次を引く」で1個目を引きます。",
   bingoUndoDraw: "直前の1個を取り消す",
   bingoUndoConfirm: "直前に引いた番号を取り消しますか？",
   bingoUndoHelp: "取り消した番号は、次を引くと同じ番号がもう一度出ます。",
@@ -733,6 +734,7 @@ const en: Record<keyof typeof ja, string> = {
   bingoStart: "Start drawing",
   bingoStartConfirm: "Start drawing? (Cards can still be issued after starting.)",
   bingoDraw: "Draw next",
+  bingoFirstDrawHint: "Press \"Draw next\" to draw the first number.",
   bingoUndoDraw: "Undo last draw",
   bingoUndoConfirm: "Undo the last drawn number?",
   bingoUndoHelp: "An undone number comes up again on the next draw.",
