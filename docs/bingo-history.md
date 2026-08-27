@@ -1,0 +1,178 @@
+# ビンゴ成績履歴と受け取りログの可視化 (#441)
+
+- 対象: `apps/server`（D1 スキーマ・ルート・リポジトリ）、`packages/shared`（型・文言）、
+  `apps/web`（デスクの引き換え履歴・参加者の受け取り済み表示・本人プロフィールのビンゴ成績）
+- ステータス: **設計のみ**（実装はこの設計のレビュー後）
+- 前提: #436（数字ビンゴ）・#431（景品）はマージ済み。ビンゴの達成・順位は
+  「公開済み番号×カード」から**導出**され、reset / delete でゲームごと消える
+- ユーザー要望（確定）:
+  1. **受け取りログ**: 既にある引き換え記録（`event_prize_redemption`）を見える形に。
+     デスクに時刻順の履歴、参加者本人にも受け取り済み履歴。
+     **受け取りの確定は従来どおり運営操作のみ**（途中退出があるので達成＝自動付与にしない）
+  2. **プロフィールにビンゴ成績**: ゲームごとの順位履歴（イベント名・順位・
+     ビンゴまでの抽選回数）、平均順位、ビンゴまでの平均抽選回数
+
+---
+
+## 1. なぜ作るか
+
+- 引き換えの記録は D1 に揃っているのに、時刻順で見える場所が無い。「誰に渡したか」を
+  後から確かめたい運営と、「受け取ったっけ？」を確かめたい参加者の両方が困る
+- ビンゴの順位は導出値で、リセットや次のイベントで消える。「前回2位だった」のような
+  遊びの記録が残ると、繰り返し参加の動機になる（#315 の年表・#418 の実績と同じ発想）
+
+## 2. 調査結果（既存の姿）
+
+| 事実 | 影響 |
+|------|------|
+| `event_prize_redemption` は (prize, user, redeemed_by, created_at) を全部持つ | 受け取りログは**新テーブル不要**。読み方（JOIN と並び）だけ足せばよい |
+| `redeemed_by` は退会で SET NULL | 履歴表示は「—」を許容する形に |
+| ビンゴの順位・到達手番は**保存されず導出**（docs/bingo.md §3.5） | 成績を残すには**どこかの瞬間の保存（スナップショット）**が要る。ここが本設計の核心（§3.1） |
+| reset は ended からのみ・カードと抽選を消す。delete はゲームごと消す | 「いつ確定するか」は end/reset/delete の3操作との整合で決まる |
+| `event_bingo_game.started_at` は start で入り、そのラウンド中は不変 | **ラウンドの同一性**として使える（§3.2 の UNIQUE の鍵） |
+| プロフィールは「本人ページ＝マイページ、他人には出さない」型が確立（#319・profile-tabs） | 本人のみのタブ/カードの先例に乗れる |
+| mergeUsers は UNIQUE 付き表を `uniqueKeyed` 登録＋実数テスト | 新テーブルは登録と実数更新が必須 |
+
+## 3. 設計
+
+### 3.1 スナップショットの契約: 「end の瞬間に保存。終了した回の成績は残る」
+
+**`POST /:id/bingo/end` が成功した瞬間に、その回の per-user 結果を保存する。**
+以後の reset / delete / 出会いの取り消しに類する操作では**一切書き換えない**（追記のみ）。
+
+| 操作 | 成績への影響 | 理由 |
+|------|------------|------|
+| end | **その回の結果を保存**（カード保有者全員。未達成も rank NULL で入れる） | 「終了」は主催者による結果確定の宣言。1位の締め (#431 §3.4) と同じ「人間が確定する」型 |
+| end 後の reset（2回戦へ） | **保存済みはそのまま**。次の end で別ラウンドとして追記 | 「終了した回の成績は残る」。2回戦が1回戦の記録を消すのは、参加者から見て理不尽 |
+| end せず delete | **何も保存されない** | 終了宣言の無い回は「無かった回」（誤設定でやり直す運用を汚さない）。end 済みラウンドの保存分は消さない |
+| イベント削除 | CASCADE で消える | 参加・出会いなど他の記録と同じ姿勢。イベントが消えれば遊びの記録も消える |
+
+- 代替案「読み取り時に導出し続ける（保存しない）」は不成立: reset/delete で元データが
+  消えるので、成績が消えることが要望と矛盾する。**導出主義（bingo.md）の例外**として、
+  「主催者が終了を宣言した瞬間の値」だけを保存する——#431 の 1位スナップショット
+  （`event_meet_winner`）と同じ位置づけで、契約の型は既にある
+- **保存後の集計（平均順位など）は保存しない**。スナップショット行から読むたびに計算する
+  （導出の写しを作らない。§3.4）
+
+### 3.2 スキーマ
+
+`apps/server/migrations/0082_bingo_results.sql`:
+
+```sql
+-- ビンゴ成績のスナップショット (#441)。end の瞬間に1ラウンドぶんを追記し、以後不変。
+-- ラウンドの同一性は started_at（start で固定され、その回の間は不変）
+CREATE TABLE event_bingo_result (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  started_at INTEGER NOT NULL,    -- ラウンド識別（同一イベントの複数回戦を区別）
+  ended_at INTEGER NOT NULL,
+  rank INTEGER,                   -- ビンゴ順位（競技順位）。未達成は NULL
+  completed_at_seq INTEGER,       -- ビンゴまでの抽選回数。未達成は NULL
+  drawn_total INTEGER NOT NULL    -- その回で引かれた総数（「12回中7回目」の文脈用）
+);
+CREATE UNIQUE INDEX idx_event_bingo_result_round
+  ON event_bingo_result(event_id, started_at, user_id);
+CREATE INDEX idx_event_bingo_result_user ON event_bingo_result(user_id);
+```
+
+- **UNIQUE (event_id, started_at, user_id) が二重保存の砦**。end の実装は
+  「導出 → `batch([条件付き UPDATE（running→ended）, INSERT OR IGNORE ×人数])`」の
+  1トランザクションにする。同時に2人が end を押しても、started_at が同じなので
+  2本目の INSERT は全部 IGNORE され、UPDATE の変更行数 0 で 409 が返る（既存の型）
+- **未達成者も rank NULL で保存する**。理由: (a) 達成率（後述）の分母になる
+  (b)「参加したのに記録が無い」と「参加していない」を区別できる
+  (c) 保存しない案だと分母の定義が「達成者のみ」に固定され、後から変えられない
+- イベント名は保存しない（event_id の JOIN で常に取れる。行が生きているうちは
+  event も生きている——CASCADE の向きがそれを保証する）
+- mergeUsers: **`uniqueKeyed` に `["event_bingo_result", "user_id", ["event_id", "started_at"]]`**
+  を追加（同じ回に両アカウントで参加していたら負け側を捨てる）。
+  `merge-user-columns.test.ts` の実数を +1/+1 更新
+
+### 3.3 集計の定義（分母を先に決めておく）
+
+| 指標 | 定義 | 分母 |
+|------|------|------|
+| 参加ゲーム数 | 自分の result 行数 | — |
+| 達成数 / 達成率 | rank が NULL でない行 / 全行 | **カードを持って参加した全ラウンド** |
+| 平均順位 | rank の平均 | **達成したラウンドのみ**（未達成を「最下位扱い」で混ぜると、参加人数の違う回をまたいだ瞬間に意味を失う） |
+| ビンゴまでの平均抽選回数 | completed_at_seq の平均 | 達成したラウンドのみ |
+
+未達成を平均順位の分母に入れる案は捨てる（NULL に順位は無い。悪く見せたい訳でもない）。
+その代わり達成率を並記して「未達成が隠れる」誤解を防ぐ。
+
+### 3.4 API
+
+| メソッド/パス | 誰が | 内容 |
+|---|---|---|
+| `GET /api/me/bingo-results` | 本人（requireAuth の meRoutes） | 自分の全ラウンド（イベント名・開催日・rank・completed_at_seq・drawn_total）新しい順 + 集計（§3.3 の4指標）。集計はサーバーが行から都度計算 |
+| `GET /api/events/:id/meet-prizes/log` | staff | **全景品種別**の引き換え履歴（時刻順・新しい順）: 景品名・受け取った人・付けた staff（退会は null）・時刻。母体は `event_prize_redemption` そのまま（取り消しで行ごと消える現行仕様も、履歴が「いま有効な引き換え」を映す仕様としてそのまま） |
+| `GET /api/events/:id/meet-prizes`（既存・公開） | 変更 | `me.redeemedPrizeIds` を `me.redemptions: [{ prizeId, redeemedAt }]` に置き換え（本人の受け取り済み履歴。時刻付きの上位互換。web の参照2か所も同時に更新） |
+
+- 成績の**書き込み口は end の1か所だけ**。読み出しは me 配下の1本だけ
+- 受け取りログに**新しい集計 SQL は書かない**（redemption 表の JOIN と ORDER BY のみ）
+
+### 3.5 プロフィールの公開範囲: **本人のみ（推奨・採用）**
+
+| 案 | 内容 | 評価 |
+|----|------|------|
+| 案V1: 本人のみ（**推奨**） | 本人プロフィール（＝マイページ #319）にだけ「ビンゴ」欄。他人のプロフィール・公開プロフィールには一切出さない | ビンゴ成績は**ゲーム内の遊びの比較記録**で、出会い数のような「本人の実績」より競争的。負け（未達成・低順位）も含む記録を本人の同意なく公開しない。イベント内ですら他人の達成は staff にしか見せていない（bingo.md §3.8）ので、イベント外で公開する方が閉じた設計と矛盾する |
+| 案V2: プロフィール公開設定に従う | 既存の公開プロフィールの一部として出す | 「勝ち自慢」ニーズには合うが、未達成の履歴まで見えるのは本人に不利。出すなら「見せる/見せない」の**新しい**設定が要り、設定が1つ増える。v1 の需要が確認できてからで遅くない |
+
+案V1 で実装し、公開したいニーズが実際に出たら「公開する」オプトインを別 issue で足す
+（オフ→オンの一方向は足しやすい。最初から公開して後から隠すのは、見られた後では遅い）。
+
+**門**: `GET /api/me/bingo-results` は requireAuth + 自分の行だけ（user_id = 本人）。
+他人の成績が出る経路はどこにも作らない（サーバー応答に載らないことをテストで固定）。
+
+### 3.6 画面
+
+| 画面 | 場所 | 内容 |
+|------|------|------|
+| 引き換え履歴（staff） | `EventPrizeDeskPage` に「引き換え履歴」カードを追加 | 時刻順（新しい順）: 時刻・景品名・受け取った人（アバター＋名前）・付けた staff。5秒ポーリングは不要（既存 status の refetch と同じ invalidate に乗せ、引き換え操作後に更新） |
+| 受け取り済み（参加者） | `MeetPrizePanel`（イベントページ） | 自分の交換済み景品に受け取り時刻を添える（`me.redemptions`）。一覧の形は現状のチップ表示を維持し、時刻はツールチップ/キャプションで |
+| ビンゴ成績（本人） | 本人プロフィール（マイページ）に「ビンゴ」セクション（profile-tabs の本人のみタブの型。`drafts` タブと同じ「本人だけに出す」分岐） | 集計4指標 + ラウンド一覧（イベント名リンク・日付・「12回中7回目でビンゴ・2位」/「未達成」） |
+
+### 3.7 i18n・複製・削除
+
+- i18n: staff 向け（履歴カード）は `staffOps.ts`、参加者向け（受け取り時刻）は
+  `eventSocial.ts`、プロフィールは `profile.ts`。ja/en 両方
+- イベント複製: 成績・引き換えは記録なのでコピーしない（現行どおり。変更なし）
+- イベント削除: `event_bingo_result` は CASCADE で消える（§3.1 の表）。
+  ユーザー完全削除: user_id CASCADE で本人の成績ごと消える（遊びの記録は本人に付随）
+
+## 4. 変更ファイル一覧（実装フェーズの計画）
+
+| 層 | ファイル | 変更 |
+|----|---------|------|
+| DB | `apps/server/migrations/0082_bingo_results.sql` | 新規（§3.2） |
+| server | `db/repositories/eventBingo.ts` | end のスナップショット（batch）・`resultsForUser` |
+| server | `routes/eventBingo.ts` | end ルートで導出→batch 保存 |
+| server | `routes/me.ts` | `GET /me/bingo-results`（集計込み） |
+| server | `routes/eventMeetPrizes.ts` + repo | `GET /:id/meet-prizes/log`・`me.redemptions` 置き換え |
+| server | `db/repositories/users.ts` + `test/merge-user-columns.test.ts` | uniqueKeyed +1・実数更新 |
+| web | `EventPrizeDeskPage` / `MeetPrizes.tsx` / プロフィール本人ページ | §3.6 の3画面 |
+| web | `api/bingoHooks.ts` ほか | クエリ追加 |
+| i18n | `staffOps.ts` / `eventSocial.ts` / `profile.ts` | ja/en |
+
+## 5. テスト観点（server）
+
+- **end でスナップショット**: 達成者は rank/seq 入り・未達成者は NULL・drawn_total。
+  同時 end で二重保存されない（UNIQUE + batch。片方 409）
+- **reset 後の2回戦**: end → reset → end で2ラウンドぶん残る（started_at が別）。
+  reset・ゲーム delete で保存済みが消えないこと
+- end せず delete した回は保存されないこと
+- `GET /me/bingo-results`: 自分の行だけ・集計の定義（達成率の分母＝全行、平均順位の
+  分母＝達成行）・イベント削除後に行ごと消えること・**他人の成績が応答に混ざらない**
+- 引き換えログ: 全景品種別が時刻順で返る・staff 以外 403・取り消した行は出ない・
+  redeemed_by 退会で null
+- mergeUsers: result 行の付け替え・同一ラウンド衝突で負け側破棄・実数
+
+## 6. やらないこと
+
+- 成績の公開（案V2）・「見せる」設定 —— 需要が出たら別 issue でオプトイン追加
+- 過去ラウンドの詳細リプレイ（カード・番号列の保存はしない。保存するのは結果の行だけ）
+- 引き換えの「取り消し履歴」（redemption 行の削除ログ）。誤操作訂正の頻度が低く、
+  要るなら監査ログ (#audit) の型で別途
+- ビンゴ以外の景品達成（meet_count/top_rank）のプロフィール掲載 —— 出会い数は既に
+  公開実績があり、二重掲載になる
