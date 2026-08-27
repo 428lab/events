@@ -272,6 +272,23 @@ describe("抽選（事前順列 + 条件付き UPDATE の1文）", () => {
     expect(undo.drawnNumbers).toEqual([d1.number]);
   });
 
+  it("ビンゴが成立する draw の応答に、引いた直後の counts が入る（#436 実機: 人数が増えない）", async () => {
+    const { eventId, staff, alice } = await setup();
+    await setCard(eventId, alice.userId, [1, 2, 3, 4, 5]);
+    await setDraws(eventId, [1, 2, 3, 4, 5], 4); // B列あと1つ（リーチ）
+    const res = await post(`${bingoUrl(eventId)}/draw`, staff.cookie);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      number: number;
+      drawnNumbers: number[];
+      counts: { cards: number; bingo: number; reach: number };
+    };
+    expect(body.number).toBe(5); // 5個目＝仕込んだ順列の5
+    // 引いた直後の導出値。これが無いと、直書きした画面の人数が
+    // 次のポーリングまで古いまま残る
+    expect(body.counts).toEqual({ cards: 1, bingo: 1, reach: 0 });
+  });
+
   it("同時に2回引いても、番号は飛ばず・重複せず・ちょうど2進む。各応答は自分の番号を受け取る", async () => {
     const { eventId, staff } = await setup();
     await post(`${bingoUrl(eventId)}/start`, staff.cookie);

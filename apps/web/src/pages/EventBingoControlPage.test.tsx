@@ -65,7 +65,11 @@ describe("ビンゴ抽選コントロール (#436)", () => {
       counts: { cards: 3, bingo: 0, reach: 0 },
       rows: [],
     });
-    apiPost.mockResolvedValue({ number: 42, drawnNumbers: [42] });
+    apiPost.mockResolvedValue({
+      number: 42,
+      drawnNumbers: [42],
+      counts: { cards: 3, bingo: 0, reach: 0 },
+    });
 
     renderPage();
     const drawButton = await screen.findByRole("button", { name: "次を引く" });
@@ -77,6 +81,30 @@ describe("ビンゴ抽選コントロール (#436)", () => {
     expect(apiPost).toHaveBeenCalledWith("/events/e-1/bingo/draw");
   });
 
+  it("draw 直後に「ビンゴ n人」も応答の値で更新される（#436 実機: 人数が増えない）", async () => {
+    // /status は常に古い counts（bingo 0）を返す最悪ケース
+    apiGet.mockResolvedValue({
+      status: "running",
+      drawnNumbers: [1, 2, 3, 4],
+      counts: { cards: 3, bingo: 0, reach: 1 },
+      rows: [],
+    });
+    apiPost.mockResolvedValue({
+      number: 5,
+      drawnNumbers: [1, 2, 3, 4, 5],
+      counts: { cards: 3, bingo: 1, reach: 0 },
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "次を引く" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("カード3枚 ・ ビンゴ1人 ・ リーチ0人"),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("取り消しも応答の列で巻き戻す（表示が取り直し待ちにならない）", async () => {
     apiGet.mockResolvedValue({
       status: "running",
@@ -84,7 +112,10 @@ describe("ビンゴ抽選コントロール (#436)", () => {
       counts: { cards: 3, bingo: 0, reach: 0 },
       rows: [],
     });
-    apiPost.mockResolvedValue({ drawnNumbers: [42] });
+    apiPost.mockResolvedValue({
+      drawnNumbers: [42],
+      counts: { cards: 3, bingo: 0, reach: 0 },
+    });
 
     renderPage();
     const undoButton = await screen.findByRole("button", {

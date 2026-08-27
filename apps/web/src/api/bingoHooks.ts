@@ -73,25 +73,34 @@ export const useStartBingo = (eventId: string) => useBingoOp(eventId, "/start");
 export const useEndBingo = (eventId: string) => useBingoOp(eventId, "/end");
 export const useResetBingo = (eventId: string) => useBingoOp(eventId, "/reset");
 
-/** 抽選応答の番号列をその場でキャッシュに書く（draw / undo 共通）。
+/** draw / undo 応答の共通形。counts はサーバーが引いた直後に導出した人数 */
+interface DrawResult {
+  drawnNumbers: number[];
+  counts: { cards: number; bingo: number; reach: number };
+}
+
+/** 抽選応答の番号列と人数をその場でキャッシュに書く（draw / undo 共通）。
  *
- * 引いた番号の正は**応答**（サーバーが RETURNING で確定した自分の手番）。
+ * 引いた番号と人数の正は**応答**（サーバーが引いた直後に確定・導出した値）。
  * invalidate 後の取り直しだけに頼ると、取り直しがレース・失敗・遅延したとき
  * 司会の画面が「—」のまま残る（初回の draw で番号が出ない実機報告 #436）。
- * ここでは応答を直書きするだけにし、リーチ/ビンゴ等の残りは5秒ポーリングが
- * 追いつかせる（即時 invalidate すると、遅れて返る古い応答が番号を巻き戻しうる） */
-function applyDrawnNumbers(
+ * 番号列だけ直書きすると今度は「ビンゴ n人」が次のポーリングまで増えない
+ * （同・実機報告2）ので、応答には counts も入れて一緒に書く。
+ * 名前入りの一覧（rows）だけは5秒ポーリングが追いつかせる */
+function applyDrawResult(
   qc: ReturnType<typeof useQueryClient>,
   eventId: string,
-  drawnNumbers: number[],
+  res: DrawResult,
 ) {
-  qc.setQueryData<BingoStatus>(
-    ["event", eventId, "bingo-status"],
-    (old) =>
-      old && old.status !== "none" ? { ...old, drawnNumbers } : old,
+  qc.setQueryData<BingoStatus>(["event", eventId, "bingo-status"], (old) =>
+    old && old.status !== "none"
+      ? { ...old, drawnNumbers: res.drawnNumbers, counts: res.counts }
+      : old,
   );
   qc.setQueryData<BingoState>(["event", eventId, "bingo"], (old) =>
-    old && old.status !== "none" ? { ...old, drawnNumbers } : old,
+    old && old.status !== "none"
+      ? { ...old, drawnNumbers: res.drawnNumbers, counts: res.counts }
+      : old,
   );
 }
 
@@ -99,10 +108,10 @@ export function useDrawBingo(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api.post<{ number: number; drawnNumbers: number[] }>(
+      api.post<{ number: number } & DrawResult>(
         `/events/${eventId}/bingo/draw`,
       ),
-    onSuccess: (res) => applyDrawnNumbers(qc, eventId, res.drawnNumbers),
+    onSuccess: (res) => applyDrawResult(qc, eventId, res),
   });
 }
 
@@ -110,10 +119,8 @@ export function useUndoBingoDraw(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api.post<{ drawnNumbers: number[] }>(
-        `/events/${eventId}/bingo/draw/undo`,
-      ),
-    onSuccess: (res) => applyDrawnNumbers(qc, eventId, res.drawnNumbers),
+      api.post<DrawResult>(`/events/${eventId}/bingo/draw/undo`),
+    onSuccess: (res) => applyDrawResult(qc, eventId, res),
   });
 }
 

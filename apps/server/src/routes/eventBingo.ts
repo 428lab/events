@@ -54,6 +54,23 @@ async function load(eventId: string, user: User) {
   return { event, game, audience };
 }
 
+/** 全カードの導出（数字だけの数え上げ専用クエリ。名前は取得しない） */
+async function deriveAllCards(eventId: string, drawn: number[]) {
+  const all = await eventBingoRepo.cardNumbersForEvent(eventId);
+  return all.map((n) => deriveBingoCard(n, drawn));
+}
+
+/** 導出配列 → 人数（カード枚数・ビンゴ・リーチ）。
+ * draw/undo の応答にも同じ値を入れる：画面は応答を正として直書きするので、
+ * 番号列だけ返すと人数が次のポーリングまで古いまま残る（#436 実機報告） */
+function countsOf(derived: { bingo: boolean; reach: boolean }[]) {
+  return {
+    cards: derived.length,
+    bingo: derived.filter((d) => d.bingo).length,
+    reach: derived.filter((d) => d.reach).length,
+  };
+}
+
 /** 参加者向けの状態（カード画面・投影画面が5秒ポーリング）。
  * 自分のカードと判定・人数だけを返す（他人のカード・名前は返さない） */
 eventBingoRoutes.get("/:id/bingo", async (c) => {
@@ -73,8 +90,7 @@ eventBingoRoutes.get("/:id/bingo", async (c) => {
   const drawn = drawnNumbers(game);
   // counts は数字だけの数え上げ専用クエリから導出する。名前・アバターを
   // そもそも取得しないことで、参加者応答への漏れ事故の芽を摘む
-  const allCards = await eventBingoRepo.cardNumbersForEvent(game.eventId);
-  const derivedAll = allCards.map((n) => deriveBingoCard(n, drawn));
+  const derivedAll = await deriveAllCards(game.eventId, drawn);
   const card = await eventBingoRepo.findCard(game.eventId, c.get("user").id);
   const mine = card ? deriveBingoCard(card, drawn) : null;
   // 自分の順位＝自分より早い手番で完成した人数 + 1（statusRows の競技順位と同じ規則）
@@ -89,11 +105,7 @@ eventBingoRoutes.get("/:id/bingo", async (c) => {
   return c.json({
     status: game.status,
     drawnNumbers: drawn,
-    counts: {
-      cards: derivedAll.length,
-      bingo: derivedAll.filter((d) => d.bingo).length,
-      reach: derivedAll.filter((d) => d.reach).length,
-    },
+    counts: countsOf(derivedAll),
     card,
     me: mine
       ? { bingo: mine.bingo, reach: mine.reach, rank: myRank }
@@ -171,9 +183,13 @@ eventBingoRoutes.post(
       );
     }
     const order = game.drawOrder ?? [];
+    const drawn = order.slice(0, myCount);
     return c.json({
       number: order[myCount - 1],
-      drawnNumbers: order.slice(0, myCount),
+      drawnNumbers: drawn,
+      // 引いた直後の人数。画面は応答を正として直書きするので、これが無いと
+      // 「ビンゴ n人」が次のポーリングまで増えない（#436 実機報告）
+      counts: countsOf(await deriveAllCards(eventId, drawn)),
     });
   },
 );
@@ -191,7 +207,11 @@ eventBingoRoutes.post(
       return c.json({ error: "nothing_to_undo" }, 409);
     }
     const after = (await eventBingoRepo.findGame(eventId))!;
-    return c.json({ drawnNumbers: drawnNumbers(after) });
+    const drawn = drawnNumbers(after);
+    return c.json({
+      drawnNumbers: drawn,
+      counts: countsOf(await deriveAllCards(eventId, drawn)),
+    });
   },
 );
 
