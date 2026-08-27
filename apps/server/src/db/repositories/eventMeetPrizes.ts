@@ -290,20 +290,75 @@ export const eventMeetPrizesRepo = {
     return map;
   },
 
-  /** 本人が交換済みの景品 id（公開一覧の me 用） */
-  async redeemedPrizeIdsForUser(
+  /** 本人の受け取り済み履歴（公開一覧の me 用・時刻付き #441） */
+  async redemptionsForUser(
     eventId: string,
     userId: string,
-  ): Promise<string[]> {
-    const rows = await many<{ prize_id: string }>(
-      `SELECT r.prize_id
+  ): Promise<{ prizeId: string; redeemedAt: number }[]> {
+    const rows = await many<{ prize_id: string; created_at: number }>(
+      `SELECT r.prize_id, r.created_at
          FROM event_prize_redemption r
          JOIN event_prize p ON p.id = r.prize_id
-        WHERE p.event_id = ? AND r.user_id = ?`,
+        WHERE p.event_id = ? AND r.user_id = ?
+        ORDER BY r.created_at DESC`,
       eventId,
       userId,
     );
-    return rows.map((r) => r.prize_id);
+    return rows.map((r) => ({ prizeId: r.prize_id, redeemedAt: r.created_at }));
+  },
+
+  /** デスクの引き換え履歴 (#441)。全景品種別を新しい順で（staff のみが読む）。
+   * 母体は redemption 表そのもの＝取り消した行は出ない（「いま有効な引き換え」）。
+   * 受け取り手は LEFT JOIN：退会（soft delete）でも**配布の記録は消さない**
+   * （行は完全削除の CASCADE までは残る。名前は出さず「退会」を示す null）。
+   * redeemed_by は退会で SET NULL になるため表示名は null を許容。
+   * 上限 100 件（窓口の確認用途。それ以上は古い順に切る） */
+  async redemptionLog(eventId: string): Promise<
+    {
+      prizeId: string;
+      prizeName: string;
+      userId: string;
+      username: string;
+      name: string;
+      avatarUrl: string | null;
+      redeemedByName: string | null;
+      redeemedAt: number;
+    }[]
+  > {
+    const rows = await many<{
+      prize_id: string;
+      prize_name: string;
+      user_id: string;
+      username: string | null;
+      global_name: string | null;
+      avatar_url: string | null;
+      by_username: string | null;
+      by_global_name: string | null;
+      created_at: number;
+    }>(
+      `SELECT r.prize_id, p.name AS prize_name,
+              r.user_id, u.username, u.global_name, u.avatar_url,
+              rb.username AS by_username, rb.global_name AS by_global_name,
+              r.created_at
+         FROM event_prize_redemption r
+         JOIN event_prize p ON p.id = r.prize_id
+         LEFT JOIN user u ON u.id = r.user_id AND u.deleted_at IS NULL
+         LEFT JOIN user rb ON rb.id = r.redeemed_by AND rb.deleted_at IS NULL
+        WHERE p.event_id = ?
+        ORDER BY r.created_at DESC
+        LIMIT 100`,
+      eventId,
+    );
+    return rows.map((r) => ({
+      prizeId: r.prize_id,
+      prizeName: r.prize_name,
+      userId: r.user_id,
+      username: r.username ?? "",
+      name: r.global_name ?? r.username ?? "",
+      avatarUrl: r.avatar_url,
+      redeemedByName: r.by_username ? (r.by_global_name ?? r.by_username) : null,
+      redeemedAt: r.created_at,
+    }));
   },
 
   /* ---- 1位の確定（締めた時点のスナップショット） ---- */

@@ -1,4 +1,8 @@
-import type { BingoGameStatus, BingoStatusRow } from "@eventer/shared";
+import type {
+  BingoGameStatus,
+  BingoStatusRow,
+  MyBingoResultRow,
+} from "@eventer/shared";
 import {
   BINGO_COLUMN_RANGES,
   BINGO_MAX_NUMBER,
@@ -146,15 +150,96 @@ export const eventBingoRepo = {
     return changes > 0;
   },
 
-  /** 終了（判定の凍結。景品の引き換えは続けられる） */
-  async endGame(eventId: string): Promise<boolean> {
-    const changes = await runCount(
-      `UPDATE event_bingo_game SET status = 'ended', ended_at = ?
-        WHERE event_id = ? AND status = 'running'`,
-      Date.now(),
-      eventId,
+  /**
+   * 終了（判定の凍結。景品の引き換えは続けられる）と同時に、その回の
+   * per-user 成績をスナップショットする (#441 docs/bingo-history.md §3.1)。
+   *
+   * INSERT と条件付き UPDATE（running→ended）を **1つの batch（D1 の
+   * トランザクション）**で行う。同時に2人が end を押しても、
+   * UNIQUE (event_id, started_at, user_id) が同じラウンドの二重保存を塞ぎ、
+   * 負けた側は UPDATE の変更行数 0（＝呼び出し側が 409）になる。
+   * 保存後は追記のみ（reset / ゲーム削除では消さない）。
+   *
+   * **並び順と drawn_count の門が要点**: 材料（rows・drawnTotal）は batch の
+   * 外で導出するため、その直後に draw が入ると古いスナップショットになりうる。
+   * そこで各 INSERT に「いまも running で drawn_count が導出時と同じ」の
+   * EXISTS を持たせて **INSERT を先・UPDATE を後**に並べ、UPDATE にも
+   * `drawn_count = ?` を足す。競合していたら何も入らず・閉じずに false
+   * （＝409。押し直せば新しい導出で正しく取れる）。UPDATE だけに条件を
+   * 足す形は不可：古い INSERT が先に確定してしまう。
+   *
+   * batch の規模: 1文あたりバインド10個（SQLite の1文上限 999 に対し余裕）、
+   * 文数は参加人数+1（200人でも201文。D1 の batch 上限＝数千文よりずっと
+   * 小さい）。chunk 化はトランザクションを壊すのでしない。
+   *
+   * @param rows 終了時点の導出（全カード保有者。未達成は rank/seq が null）
+   * @param drawnTotal 導出時点の drawn_count（この値のまま閉じられた時だけ保存） */
+  async endGame(
+    eventId: string,
+    startedAt: number,
+    drawnTotal: number,
+    rows: { userId: string; rank: number | null; completedAtSeq: number | null }[],
+  ): Promise<boolean> {
+    const now = Date.now();
+    const changes = await batch([
+      ...rows.map((r) => ({
+        sql: `INSERT OR IGNORE INTO event_bingo_result
+                (id, event_id, user_id, started_at, ended_at, rank, completed_at_seq, drawn_total)
+              SELECT ?, ?, ?, ?, ?, ?, ?, ?
+               WHERE EXISTS (SELECT 1 FROM event_bingo_game
+                              WHERE event_id = ? AND status = 'running'
+                                AND drawn_count = ?)`,
+        args: [
+          crypto.randomUUID(),
+          eventId,
+          r.userId,
+          startedAt,
+          now,
+          r.rank,
+          r.completedAtSeq,
+          drawnTotal,
+          eventId,
+          drawnTotal,
+        ],
+      })),
+      {
+        sql: `UPDATE event_bingo_game SET status = 'ended', ended_at = ?
+               WHERE event_id = ? AND status = 'running' AND drawn_count = ?`,
+        args: [now, eventId, drawnTotal],
+      },
+    ]);
+    return (changes[changes.length - 1] ?? 0) > 0;
+  },
+
+  /** 本人のビンゴ成績（新しい順）。イベント名は JOIN で取る（行が生きて
+   * いるうちは event も生きている——CASCADE の向きがそれを保証する） */
+  async resultsForUser(userId: string): Promise<MyBingoResultRow[]> {
+    const rows = await many<{
+      event_id: string;
+      title: string;
+      starts_at: number;
+      ended_at: number;
+      rank: number | null;
+      completed_at_seq: number | null;
+      drawn_total: number;
+    }>(
+      `SELECT r.event_id, e.title, e.starts_at, r.ended_at,
+              r.rank, r.completed_at_seq, r.drawn_total
+         FROM event_bingo_result r
+         JOIN event e ON e.id = r.event_id
+        WHERE r.user_id = ?
+        ORDER BY r.ended_at DESC`,
+      userId,
     );
-    return changes > 0;
+    return rows.map((r) => ({
+      eventId: r.event_id,
+      eventTitle: r.title,
+      eventStartsAt: r.starts_at,
+      endedAt: r.ended_at,
+      rank: r.rank,
+      completedAtSeq: r.completed_at_seq,
+      drawnTotal: r.drawn_total,
+    }));
   },
 
   /**

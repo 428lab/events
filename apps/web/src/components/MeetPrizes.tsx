@@ -12,6 +12,7 @@ import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import { useTranslation } from "react-i18next";
 import type { MeetPrizeMe, MeetPrizeView } from "@eventer/shared";
 import { useMeetPrizes } from "../api/meetPrizeHooks.js";
+import { formatDateTime } from "../lib/format.js";
 
 /**
  * 出会いの景品 (#431) のイベントページ用カード。
@@ -51,7 +52,8 @@ function PrizeRow({
 }) {
   const { t } = useTranslation();
   const done = me ? achieved(prize, me, poolTaken) : false;
-  const redeemed = me ? me.redeemedPrizeIds.includes(prize.id) : false;
+  const redemption = me?.redemptions.find((r) => r.prizeId === prize.id);
+  const redeemed = Boolean(redemption);
   const soldOut = prize.stockLeft === 0;
   return (
     <Box
@@ -100,7 +102,19 @@ function PrizeRow({
           }
         />
         {redeemed ? (
-          <Chip size="small" color="default" label={t("eventSocial.meetPrizeRedeemed")} />
+          <Chip
+            size="small"
+            color="default"
+            label={t("eventSocial.meetPrizeRedeemed")}
+            // 受け取り時刻 (#441)。チップの見た目は変えず、時刻は title で添える
+            title={
+              redemption
+                ? t("eventSocial.meetPrizeRedeemedAt", {
+                    at: formatDateTime(redemption.redeemedAt),
+                  })
+                : undefined
+            }
+          />
         ) : (
           done && (
             <Chip size="small" color="success" label={t("eventSocial.meetPrizeAchieved")} />
@@ -132,11 +146,14 @@ export function MeetPrizePanel({ eventId }: { eventId: string }) {
   const poolPrizes = data.prizes.filter((p) => p.conditionType === "bingo");
   const regularPrizes = data.prizes.filter((p) => p.conditionType !== "bingo");
   const poolTaken =
-    me !== null && poolPrizes.some((p) => me.redeemedPrizeIds.includes(p.id));
+    me !== null &&
+    poolPrizes.some((p) => me.redemptions.some((r) => r.prizeId === p.id));
   const hasUnredeemed =
     me !== null &&
     data.prizes.some(
-      (p) => achieved(p, me, poolTaken) && !me.redeemedPrizeIds.includes(p.id),
+      (p) =>
+        achieved(p, me, poolTaken) &&
+        !me.redemptions.some((r) => r.prizeId === p.id),
     );
 
   return (

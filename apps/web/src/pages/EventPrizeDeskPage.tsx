@@ -23,12 +23,14 @@ import { useEvent } from "../api/hooks.js";
 import {
   useClearMeetWinners,
   useCloseMeetWinners,
+  useMeetPrizeLog,
   useMeetPrizeStatus,
   useRedeemMeetPrize,
   useUnredeemMeetPrize,
 } from "../api/meetPrizeHooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { errorMessage } from "../lib/errorMessage.js";
+import { formatDateTime } from "../lib/format.js";
 import { i18next } from "../i18n/index.js";
 
 /**
@@ -126,11 +128,18 @@ function PrizeCard({
         ) : (
           <Stack spacing={0.75} sx={{ mt: 1.5 }}>
             {achievers.map((a) => (
-              <Stack key={a.userId} direction="row" spacing={1.5} alignItems="center">
+              <Stack
+                key={a.userId}
+                direction="row"
+                spacing={1.5}
+                alignItems="center"
+                flexWrap="wrap"
+                useFlexGap
+              >
                 <Avatar src={a.avatarUrl ?? undefined} sx={{ width: 28, height: 28 }}>
                   {a.name.slice(0, 1)}
                 </Avatar>
-                <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Box sx={{ minWidth: 140, flex: 1 }}>
                   <Typography variant="body2" fontWeight={600} noWrap>
                     {a.name}
                   </Typography>
@@ -247,7 +256,16 @@ function BingoPoolCard({
               const selected =
                 choice[a.userId] ?? available[0]?.prize.id ?? "";
               return (
-                <Stack key={a.userId} direction="row" spacing={1.5} alignItems="center">
+                // スマホでは「チップ＋名前」と「セレクト＋ボタン」が2段に折り返す
+                // （横一列固定だと右端のボタンが画面外に切れる。実機フィードバック）
+                <Stack
+                  key={a.userId}
+                  direction="row"
+                  spacing={1.5}
+                  alignItems="center"
+                  flexWrap="wrap"
+                  useFlexGap
+                >
                   <Chip
                     size="small"
                     color="success"
@@ -256,7 +274,7 @@ function BingoPoolCard({
                   <Avatar src={a.avatarUrl ?? undefined} sx={{ width: 28, height: 28 }}>
                     {a.name.slice(0, 1)}
                   </Avatar>
-                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Box sx={{ minWidth: 140, flex: 1 }}>
                     <Typography variant="body2" fontWeight={600} noWrap>
                       {a.name}
                     </Typography>
@@ -321,6 +339,60 @@ function BingoPoolCard({
                 </Stack>
               );
             })}
+          </Stack>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** 引き換え履歴 (#441)。全景品種別を新しい順で。母体は redemption 表そのもの
+ * なので、取り消した引き換えは一覧から消える（「いま有効な引き換え」のログ） */
+function RedemptionLogCard({ eventId, enabled }: { eventId: string; enabled: boolean }) {
+  const { t } = useTranslation();
+  const { data } = useMeetPrizeLog(eventId, enabled, true);
+  if (!data) return null;
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Typography variant="h6" gutterBottom>
+          {t("staffOps.prizeLogTitle")}
+        </Typography>
+        {data.log.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            {t("staffOps.prizeLogEmpty")}
+          </Typography>
+        ) : (
+          <Stack spacing={0.75}>
+            {data.log.map((row) => (
+              <Stack
+                key={`${row.prizeId}:${row.userId}`}
+                direction="row"
+                spacing={1.5}
+                alignItems="center"
+                flexWrap="wrap"
+                useFlexGap
+              >
+                <Typography variant="caption" color="text.secondary" sx={{ width: 110, flexShrink: 0 }}>
+                  {formatDateTime(row.redeemedAt)}
+                </Typography>
+                <Avatar src={row.avatarUrl ?? undefined} sx={{ width: 24, height: 24 }}>
+                  {(row.name || "?").slice(0, 1)}
+                </Avatar>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography variant="body2" noWrap>
+                    {/* 退会（soft delete）でも配布の記録は消さない。名前だけ伏せる */}
+                    <b>{row.name || t("staffOps.prizeLogDeletedUser")}</b> —{" "}
+                    {row.prizeName}
+                  </Typography>
+                  {row.redeemedByName && (
+                    <Typography variant="caption" color="text.secondary" noWrap>
+                      {t("staffOps.prizeLogBy", { name: row.redeemedByName })}
+                    </Typography>
+                  )}
+                </Box>
+              </Stack>
+            ))}
           </Stack>
         )}
       </CardContent>
@@ -502,6 +574,8 @@ export function EventPrizeDeskPage() {
               </>
             );
           })()}
+          {/* 引き換え履歴 (#441)。渡し漏れ・二重渡しの確認用に一番下へ */}
+          <RedemptionLogCard eventId={id} enabled={isStaff} />
         </>
       )}
     </Stack>

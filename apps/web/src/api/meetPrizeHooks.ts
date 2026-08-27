@@ -3,6 +3,7 @@ import type {
   CreateMeetPrizeInput,
   MeetPrize,
   MeetPrizeList,
+  MeetPrizeLogRow,
   MeetPrizeStatus,
   UpdateMeetPrizeInput,
 } from "@eventer/shared";
@@ -24,6 +25,7 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
     queryKey: ["event", eventId, "meet-prize-status"],
   });
   void qc.invalidateQueries({ queryKey: ["event", eventId, "meet-prize-defs"] });
+  void qc.invalidateQueries({ queryKey: ["event", eventId, "meet-prize-log"] });
 };
 
 /** 公開の景品一覧（確定メンバーには me 付き）。
@@ -63,6 +65,20 @@ export function useMeetPrizeStatus(
     enabled: Boolean(eventId) && enabled,
     queryFn: () =>
       api.get<MeetPrizeStatus>(`/events/${eventId}/meet-prizes/status`),
+    refetchInterval: (query) =>
+      poll && !query.state.error ? MEET_RANKING_POLL_MS : false,
+  });
+}
+
+/** 引き換え履歴 (#441)（staff のみ・全景品種別・新しい順）。
+ * 自分の操作は invalidate で即時、**他の窓口**の引き換えは5秒ポーリングで
+ * 追いつかせる（デスクを2台以上並べる運用がある。status と同じ形） */
+export function useMeetPrizeLog(eventId: string, enabled: boolean, poll = false) {
+  return useQuery({
+    queryKey: ["event", eventId, "meet-prize-log"],
+    enabled: Boolean(eventId) && enabled,
+    queryFn: () =>
+      api.get<{ log: MeetPrizeLogRow[] }>(`/events/${eventId}/meet-prizes/log`),
     refetchInterval: (query) =>
       poll && !query.state.error ? MEET_RANKING_POLL_MS : false,
   });

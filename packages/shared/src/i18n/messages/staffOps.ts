@@ -330,15 +330,15 @@ const ja = {
   bingoUndoDraw: "直前の1個を取り消す",
   bingoUndoConfirm: "直前に引いた番号を取り消しますか？",
   bingoUndoHelp: "取り消した番号は、次を引くと同じ番号がもう一度出ます。",
-  bingoEnd: "終了する",
+  bingoEnd: "この回を終了する（結果を確定）",
   bingoEndConfirm:
-    "抽選を終了しますか？結果が固定されます。景品の引き換えは続けられます。",
+    "抽選を締めて、この回の結果（順位）を確定・保存します。景品の引き換えは続けられます。終了後にリセットすれば2回戦ができます。",
   bingoReset: "リセット（カード再配布）",
   bingoResetConfirm:
-    "リセットしますか？全員のカードが無効になり、達成も消えます。引き換え済みの景品はそのまま残ります。",
-  bingoDelete: "ビンゴをやめる",
+    "リセットしますか？全員のカードが無効になり、達成も消えます。引き換え済みの景品と保存済みの成績はそのまま残ります。",
+  bingoDelete: "ビンゴを削除する",
   bingoDeleteConfirm:
-    "ビンゴをやめますか？カードごと消え、参加者からは見えなくなります。",
+    "ビンゴのゲームを削除しますか？参加者からビンゴが見えなくなり、カードと抽選の記録も消えます（終了済みの回の成績は残ります）。",
   bingoExhausted: "すべての番号を引き切りました。",
   bingoOpFailed: "操作に失敗しました。",
   bingoAchieversTitle: "リーチ・ビンゴの一覧（読み上げ用）",
@@ -350,6 +350,11 @@ const ja = {
     "達成した順に、在庫が残っている景品から1つ選んでもらいます。同着の順番決めは現場で。",
   prizeDeskBingoNone: "ビンゴ達成者はまだいません。",
   prizeDeskBingoChoose: "この景品と交換",
+  /* ── 引き換え履歴 (#441) ── */
+  prizeLogTitle: "引き換え履歴",
+  prizeLogEmpty: "まだ引き換えはありません。",
+  prizeLogBy: "対応: {{name}}",
+  prizeLogDeletedUser: "退会したユーザー",
 
   /* ── 準備の段取り (#393) ────────────────────────────────
    * **実装上の語を出さない。**「待ち」「担当者が外れています」のように
@@ -731,15 +736,15 @@ const en: Record<keyof typeof ja, string> = {
   bingoUndoDraw: "Undo last draw",
   bingoUndoConfirm: "Undo the last drawn number?",
   bingoUndoHelp: "An undone number comes up again on the next draw.",
-  bingoEnd: "End the game",
+  bingoEnd: "End this round (finalize results)",
   bingoEndConfirm:
-    "End the game? Results freeze. Prizes can still be redeemed.",
+    "Close the draw and finalize this round's results (ranks are saved). Prizes can still be redeemed. Reset afterwards to play another round.",
   bingoReset: "Reset (redeal cards)",
   bingoResetConfirm:
-    "Reset? Everyone's cards are voided and achievements are cleared. Redeemed prizes remain.",
-  bingoDelete: "Remove bingo",
+    "Reset? Everyone's cards are voided and achievements are cleared. Redeemed prizes and saved results remain.",
+  bingoDelete: "Delete bingo",
   bingoDeleteConfirm:
-    "Remove bingo? Cards are deleted and participants no longer see it.",
+    "Delete the bingo game? Participants will no longer see it, and cards and draw records are removed (results of finished rounds are kept).",
   bingoExhausted: "All numbers have been drawn.",
   bingoOpFailed: "The operation failed.",
   bingoAchieversTitle: "Reach & bingo list (for announcements)",
@@ -750,6 +755,10 @@ const en: Record<keyof typeof ja, string> = {
     "Achievers pick one prize, in order, while stock lasts. Settle ties on the spot.",
   prizeDeskBingoNone: "No bingo achievers yet.",
   prizeDeskBingoChoose: "Redeem this prize",
+  prizeLogTitle: "Redemption log",
+  prizeLogEmpty: "No redemptions yet.",
+  prizeLogBy: "By {{name}}",
+  prizeLogDeletedUser: "Deleted user",
 
   todoTitle: "Prep to-dos",
   todoStaffOnly: "Prep to-dos are for organizers only.",

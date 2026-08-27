@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { BingoState, BingoStatus } from "@eventer/shared";
+import type { BingoState, BingoStatus, MyBingoResults } from "@eventer/shared";
 import { BINGO_POLL_MS } from "@eventer/shared";
 import { api } from "./client.js";
 
@@ -47,6 +47,15 @@ export function useBingoStatus(eventId: string, enabled: boolean) {
     enabled: Boolean(eventId) && enabled,
     queryFn: () => api.get<BingoStatus>(`/events/${eventId}/bingo/status`),
     refetchInterval: (query) => (query.state.error ? false : BINGO_POLL_MS),
+  });
+}
+
+/** 本人のビンゴ成績 (#441)。本人プロフィール（マイページ）だけが使う */
+export function useMyBingoResults(enabled: boolean) {
+  return useQuery({
+    queryKey: ["me", "bingo-results"],
+    enabled,
+    queryFn: () => api.get<MyBingoResults>("/me/bingo-results"),
   });
 }
 

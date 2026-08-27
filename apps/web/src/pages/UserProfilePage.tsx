@@ -39,6 +39,7 @@ import type {
 import { useSetFollow, useUserProfile } from "../api/userHooks.js";
 import { useMe, useMyPage } from "../api/hooks.js";
 import { ProfileTabs } from "../components/profile/ProfileTabs.js";
+import { MyBingoCard } from "../components/profile/MyBingoCard.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
 import { ProfileCardPanel } from "../components/licenseCard/ProfileCardPanel.js";
@@ -494,6 +495,9 @@ export function UserProfilePage() {
           </Stack>
         </Box>
       )}
+
+      {/* ビンゴ成績 (#441)。本人にだけ出す（サーバーも /me 配下で本人の行のみ） */}
+      <MyBingoCard isMe={data.isMe === true} />
 
       {/* その人が関わった物の一覧はすべてタブの中 (#407)。既定は参加予定で、
           本人のページではマイページ相当の一覧（下書き等も含む）が母集団 (#319) */}

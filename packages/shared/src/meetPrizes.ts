@@ -137,8 +137,8 @@ export interface MeetPrizeMe {
   won: boolean;
   /** ビンゴを達成しているか (#436)。ゲームが無ければ false */
   bingo: boolean;
-  /** 交換済みの景品 id */
-  redeemedPrizeIds: string[];
+  /** 自分の受け取り済み履歴（時刻付き #441）。景品 id と受け取り時刻 */
+  redemptions: { prizeId: string; redeemedAt: number }[];
 }
 
 /** GET /api/events/:id/meet-prizes のレスポンス。
@@ -191,6 +191,19 @@ export interface MeetPrizeBingoAchiever {
   /** プールから選んで交換済みの景品 id（未交換は null） */
   redeemedPrizeId: string | null;
   redeemedAt: number | null;
+}
+
+/** デスクの引き換え履歴1行 (#441)。全景品種別を時刻順で出す（staff のみ） */
+export interface MeetPrizeLogRow {
+  prizeId: string;
+  prizeName: string;
+  userId: string;
+  username: string;
+  name: string;
+  avatarUrl: string | null;
+  /** 付けた staff の表示名（退会などで不明なら null） */
+  redeemedByName: string | null;
+  redeemedAt: number;
 }
 
 /** GET /api/events/:id/meet-prizes/status のレスポンス（staff のみ） */
