@@ -3,11 +3,13 @@
 - 対象: `apps/web`（エンコードパイプライン・投稿 UI・ギャラリー/メディアタブ表示）、
   `apps/server`（アップロード/配信 API・Range 対応・purge）、`packages/shared`（型・定数）
 - 前提: #407（プロフィールのタブ化・メディアタブ）はマージ済み。メディアタブは
-  「動画が増えても収まる命名・構造にする」前提で作られている（`docs/profile-tabs.md` §11）
+  「動画が増えても収まる命名・構造にする」前提で作られている（`docs/profile-tabs.md` §12）
 - 決定済み（issue コメント 2026-08-26）: **保存形式は WebM を狙う**。
   **ブラウザ内でエンコードしてからアップロード**（Workers ではトランスコード不可）。
-  方式は WebCodecs 優先で検討し、ffmpeg.wasm と比較して決める
-- 本書は調査と設計のみ。実装は含まない
+  方式は WebCodecs 優先で検討し、ffmpeg.wasm と比較して決めた
+- ステータス: **実装済み**（PR #422 変換パイプライン＋実機計測ページ /
+  PR #423 アップロード・保存・表示 / PR #426 トリミング = issue #425 /
+  PR #428〜#430 複数本キュー等の実機フィードバック対応 = issue #427。§11 差分参照）
 
 ---
 
@@ -110,8 +112,8 @@ Safari は 16.4 から VideoEncoder/VideoDecoder を持ち、**VP8/VP9/H.264 の
 
 - リクエストボディ上限は **100MB**（Free/Pro プラン。
   [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)）。
-  現状のアプリ側 `bodyLimit` は 8MB（`apps/server/src/worker.ts:113-120`）なので、
-  動画ルートだけ上限を広げる必要がある（§7.1）
+  アプリ側のグローバル `bodyLimit`（`worker.ts`）は 8MB だったので、
+  動画ルートだけ上限を広げた（§7.1）
 - R2 の `get()` は `range` オプションに **`Headers` オブジェクトをそのまま渡せる**
   （[R2 Workers API reference](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)）。
   返る `R2ObjectBody` は `range`（実際に返した範囲）と `writeHttpMetadata()` を持つ。
@@ -147,7 +149,7 @@ SQL 文字列に波及するので今回はやらない（やるなら別 issue 
 ```sql
 -- #408 動画投稿。event_photo を写真/動画共通のメディア行として拡張する。
 ALTER TABLE event_photo ADD COLUMN kind TEXT NOT NULL DEFAULT 'photo'; -- 'photo' | 'video'
-ALTER TABLE event_photo ADD COLUMN duration_ms INTEGER;  -- video のみ。表示用（クライアント申告）
+ALTER TABLE event_photo ADD COLUMN duration_ms INTEGER;  -- video のみ。表示用（クライアント申告値）
 ALTER TABLE event_photo ADD COLUMN bytes INTEGER;        -- video のみ。容量把握用
 ALTER TABLE event_photo ADD COLUMN mime TEXT;            -- video のみ。'video/webm' | 'video/mp4'
 ```
@@ -161,15 +163,24 @@ ALTER TABLE event_photo ADD COLUMN mime TEXT;            -- video のみ。'vide
 
 ## 4. クライアント側エンコードパイプライン
 
-新規ディレクトリ `apps/web/src/lib/video/` に置く（`EventPhotos.tsx` は既に 595 行あり、
-動画フローを足すと 800 行を超えるため、最初から分離する）:
+エンコード系は `apps/web/src/lib/video/` に分離した（`EventPhotos.tsx` に動画フローを
+足すと 800 行を超えるため）:
 
-- `plan.ts` — **`decideVideoPlan(support, probe): VideoPlan`（純関数）**。
+- `plan.ts` — **`decideVideoPlan(support, probe, trim): VideoPlan`（純関数）**。
   ブラウザ能力（`VideoEncoder`/`AudioEncoder` の有無、`canEncode` の結果）と
   入力情報（コンテナ・コーデック・長さ・解像度・サイズ）から経路を決める。
+  トリム範囲の正規化（`normalizeVideoTrim` / `moveVideoTrim`、#425）もここ。
   ユニットテストの主対象（§10）
-- `encode.ts` — mediabunny の Conversion をラップ。進捗コールバックとキャンセルを公開
+- `probe.ts` — ブラウザ能力の実測（`detectVideoCapability`）と入力の demux
+  （`probeVideoFile`）。demux 済みの結果は後段が使い回す（同じ File を2回解析しない）
+- `encode.ts` — mediabunny の Conversion をラップ。進捗コールバックとキャンセルを公開。
+  出力が `EVENT_VIDEO_MAX_BYTES` を超えたら送信せずに弾く（`video_output_too_large`）
 - `poster.ts` — サムネイル切り出し（§5）
+
+UI は `apps/web/src/components/` の `VideoUploadFlow`（フロー全体・キュー #427）・
+`VideoSelectStep`（範囲選択）・`VideoTrimBar`（トリム #425）・`videoThumb`
+（一覧のオーバーレイと配信 URL 組み立て）。実機計測用に `/dev/video-encode`
+（`DevVideoEncodePage`。ナビに載せず URL 直打ちのみ）を検証用に維持している。
 
 ### 4.1 出力ターゲット
 
@@ -187,16 +198,20 @@ ALTER TABLE event_photo ADD COLUMN mime TEXT;            -- video のみ。'vide
 - 入力のコーデックが既に出力条件を満たす場合（例: 720p 以下の VP9 WebM）は
   mediabunny が無変換コピーする（速い・劣化なし）
 
-### 4.2 実行の流れ
+### 4.2 実行の流れ（2段階 #427）
 
-1. ファイル選択（`accept="image/*,video/*"`。既存の `<input>` を拡張、§8）
-2. mediabunny の demux でメタデータ取得（長さ・解像度・コーデック）。
-   長さ > 上限なら、変換経路に乗れる場合はトリム UI（#425。枠の両端伸縮＋
-   中身ドラッグ移動、上限60秒）で範囲を選ばせる。変換できない環境/入力は
-   切り出せないため即エラー（端末側での編集を案内）
-3. `decideVideoPlan` で経路決定。変換系なら Conversion 実行（`onProgress` で進捗表示）
-4. サムネイル切り出し（§5）
-5. multipart で一括アップロード（§7.1）。`XMLHttpRequest` の `upload.onprogress` で進捗表示
+1. ファイル選択（`accept="image/*,video/*"`。既存の `<input>` を拡張、§8）。
+   動画は複数選択可で、全本が `VideoUploadFlow` のキューに入る
+2. **第1段階: 範囲選択**（`VideoSelectStep` を1本ずつ。エンコードはまだしない）。
+   mediabunny の demux でメタデータ取得（長さ・解像度・コーデック）→ 能力実測 →
+   `decideVideoPlan` で経路決定。60秒超は必須でトリム UI（#425。枠の両端伸縮＋
+   中身ドラッグ移動、上限60秒・最短1秒）で範囲を選ばせ、60秒以内は止まらず
+   自動確定する（#427 実機FB）。音声を落とす経路だけは確認を挟む。
+   変換できない環境/入力の60秒超は切り出せないため即エラー（端末側での編集を案内）
+3. **第2段階: 処理**（確定した本を1本ずつ順に。並行しない）。
+   Conversion 実行（`onProgress` で進捗表示）→ サムネイル切り出し（§5。選んだ
+   範囲の中から）→ multipart で一括アップロード（§7.1）。`XMLHttpRequest` の
+   `upload.onprogress` で進捗表示
 
 ### 4.3 フォールバック（経路 3 とエラー）
 
@@ -217,8 +232,9 @@ ALTER TABLE event_photo ADD COLUMN mime TEXT;            -- video のみ。'vide
 
 ## 5. サムネイル（ポスター）
 
-- クライアントで 1 フレーム切り出す。mediabunny の CanvasSink で先頭付近
-  （0.5 秒地点、なければ先頭）のフレームを長辺 1600px に収めた canvas に描き、
+- クライアントで 1 フレーム切り出す。mediabunny の CanvasSink で、選んだ範囲
+  （トリム #425。トリムなしなら全体）の先頭から 0.5 秒進めた地点（取れなければ
+  範囲の先頭）のフレームを長辺 1600px に収めた canvas に描き、
   そこから直接 WebP（非対応なら JPEG）品質 0.8 で画像化する（canvas が既に
   手元にあるため `encodeImageForUpload` は通さない。同関数は <img> 経由の
   読み込みが前提で、ここでは二度手間になる）。1.5MB を超えたら品質 0.5 で
@@ -258,19 +274,22 @@ Workers リクエスト課金のみ。当面問題にならない。
 - **multipart/form-data**（`c.req.parseBody()`。先行例: `routes/bgm.ts`）:
   - `video`: File（`video/webm` | `video/mp4`）
   - `poster`: File（画像。既存 `normalizeImageMime` を通す）。省略可（§4.3 の環境向け）
-  - `durationMs`: クライアント申告値（表示用。真の制限はバイト数で担保）
-  - `caption`: 省略可（写真と同じ扱い）
+  - `durationMs`: クライアント申告値（表示用。実効的なサイズ制限はバイト数上限が
+    担保するが、欠落・非整数・上限超過の申告は `invalid_duration` 400 で弾く）
 - multipart を選ぶ理由: 動画＋ポスターを **1 リクエストで原子的に**受けられ、
   「本体はあるがポスターがない」中間状態を API 上に作らない
-- サーバ側検証（写真の流儀を踏襲し、順に弾く）:
-  1. MIME 許可リスト: 新設 `apps/server/src/lib/videoMime.ts`（`video/webm` /
-     `video/mp4`。`;codecs=` パラメータは正規化して落とす。`safeServeMime` 相当も同居）
-  2. **マジックバイト検査**: WebM は先頭 `1A 45 DF A3`（EBML）、MP4 は offset 4 に
+- サーバ側検証（写真の流儀を踏襲し、順に弾く。読み込みが要るものを後ろに）:
+  1. MIME 許可リスト: `apps/server/src/lib/videoMime.ts`（`video/webm` /
+     `video/mp4`。`;codecs=` パラメータは正規化して落とす。`safeServeVideoMime` も同居）
+  2. `EVENT_VIDEO_MAX_BYTES`・`durationMs ≤ EVENT_VIDEO_MAX_DURATION_MS`・
+     ポスターの MIME とサイズ（`EVENT_PHOTO_MAX_BYTES`）・
+     `EVENT_PHOTO_LIMIT`（写真と合算）
+  3. **マジックバイト検査**: WebM は先頭 `1A 45 DF A3`（EBML）、MP4 は offset 4 に
      `ftyp`。画像より偽装リスクが高い（`<video>` 直配信）ので宣言 MIME だけを信じない
-  3. `EVENT_VIDEO_MAX_BYTES`、`EVENT_PHOTO_LIMIT`（写真と合算）、`durationMs ≤ 60_000`
 - 保存順序は **R2 put（video → poster）→ D1 insert**。写真（D1 → R2）と逆だが、
   大きいオブジェクトほど put 失敗の確率が上がるため「行はあるのに実体がない」壊れ方を
-  避ける。D1 insert 失敗時は best-effort で R2 を消す
+  避ける。ポスター put か D1 insert に失敗したら本体＋ポスターの2キーを
+  best-effort で消す（行が無い動画は削除 API にも purge にも乗らない孤児になるため）
 - **グローバル `bodyLimit`（8MB）の扱い**: `worker.ts` の 1 か所で、パスが
   `POST …/videos` のときだけ `maxSize` を `EVENT_VIDEO_MAX_BYTES + EVENT_PHOTO_MAX_BYTES
   + 余白(1MB)` に切り替える。門を 2 枚にしない（ルート側に別の bodyLimit を重ねない）
@@ -278,15 +297,20 @@ Workers リクエスト課金のみ。当面問題にならない。
 ### 7.2 配信（Range 対応 — コードベース初）
 
 **`GET /api/events/:id/photos/:photoId/video`**（公開 GET。`worker.ts` の photo image
-ルートの隣に登録し、`canViewPhotos` で写真と同じ可視性判定）
+ルートの隣に登録し、`canViewPhotos` で写真と同じ可視性判定。`kind !== "video"` の
+行は 404 で動画配信ルートに乗せない）
 
-```
-obj = bucket.get(key, { range: request.headers, onlyIf: request.headers })
-```
-
-- `If-None-Match` 一致 → 304（event cover image の既存 ETag 実装が先行例）
-- `Range` あり → **206** + `Content-Range: bytes start-end/total` + 部分 body
-  （`obj.range` から組み立て）。不正な範囲は 416
+- `Range` は R2 に Headers を丸投げせず、**Worker 側の `parseByteRange` で自前解釈**
+  する（単一範囲のみ）。満たせない範囲で throw する R2 の仕様にエラー処理を
+  委ねると分岐が読めなくなるため。`Range` があるときは先に `head` でサイズを取る
+- 文法不正・複数範囲 → RFC 9110 に従い無視して **200 全量**。ただし逆転範囲
+  （`bytes=5-2`）だけは RFC 上「不正 → 200」が正だが、ブラウザが送る形ではない
+  ので単純に **416** に倒している。
+  満たせない範囲（開始がサイズ以上等） → **416** + `Content-Range: bytes */total`
+- 正しい `Range` → **206** + `Content-Range: bytes start-end/total` + 部分 body
+- 条件付きヘッダ（`If-None-Match` 等）があるときだけ `onlyIf` を渡し、
+  前提条件が満たされなければ body なし → **304**
+  （event cover image の既存 ETag 実装が先行例）
 - `Range` なし → 200 + 全量ストリーム
 - 常時: `Accept-Ranges: bytes`、`ETag: obj.httpEtag`、
   `Content-Type: safeServeVideoMime(...)`、`X-Content-Type-Options: nosniff`、
@@ -326,17 +350,21 @@ event-videos/${eventId}/${videoId}-poster   … ポスター画像
 ## 8. 画面
 
 - **投稿**: `EventPhotos.tsx` の `<input>` を `accept="image/*,video/*"` にし、動画
-  ファイルは新設の `VideoUploadFlow`（別コンポーネント）に渡す。ドラッグ&ドロップも
-  同じ分岐。動画は 1 回の操作で 1 本のみ（写真の複数選択と混在したら写真だけ処理して
-  動画は 1 本目のみ受ける）
+  ファイルは `VideoUploadFlow`（別コンポーネント。遅延ロード）に渡す。
+  ドラッグ&ドロップも同じ分岐。**複数選択可**で、動画は全本がキューに入り
+  §4.2 の2段階で直列処理する（#427）。写真と混在したら写真は従来どおり処理し、
+  動画はキューへ。フロー実行中に追加選択された動画は、いまのフローが
+  閉じてから続けて処理する
 - **進捗**: ダイアログに 1 本のプログレスバー。エンコード（mediabunny `onProgress`）を
   0–70%、アップロード（XHR `upload.onprogress`）を 70–100% に割り付ける。写真の
-  「枚数カウントのみ」と違い、分オーダーになり得るため割合表示は必須。キャンセル
-  ボタンで Conversion を中断できる
-- **途中離脱・失敗時の再開**: サーバに中間状態を作らない（§7.1 の原子性）ので、
-  失敗＝何も残らない＝**最初からやり直しが正**。ただしエンコード済み Blob は
-  ダイアログを閉じるまでメモリに保持し、アップロードだけの失敗（電波切れ等）は
-  **再エンコードなしで再送**できるようにする。resumable/multipart アップロードは
+  「枚数カウントのみ」と違い、分オーダーになり得るため割合表示は必須。
+  「この動画を中止（次へ進む）」で Conversion / XHR を中断でき、
+  「すべてキャンセル」も置く。ボタン行はスマホ幅で折り返す（#427 実機崩れ、PR #429）
+- **途中離脱・失敗**: サーバに中間状態を作らない（§7.1 の原子性）ので、
+  失敗＝何も残らない＝**最初からやり直しが正**。キューも永続化しない（タブを
+  閉じたら消える。40MB×複数本の中間データを保存する価値がない）。失敗した本は
+  最後にまとめ画面へ理由つきで出す。50枠切れ（`photo_limit`）が出たら以降も
+  同じ結果になるので残りを中止する。resumable/multipart アップロードは
   40MB 上限では過剰なのでやらない
 - **一覧（イベントギャラリー・メディアタブ・年表）**: ポスター画像を写真と同じ
   グリッドに出し、再生アイコンと `0:42` 形式の長さバッジを重ねる。タップで
@@ -363,22 +391,28 @@ event-videos/${eventId}/${videoId}-poster   … ポスター画像
 **線引き: エンコード（WebCodecs）はブラウザ実装依存なので実機で見る。それ以外
 （経路決定・サーバの門・配信）はユニットで固める。**
 
-ユニット（server、vitest-pool-workers。実 D1/R2 バインディングで動く既存流儀）:
+ユニット（server、vitest-pool-workers。実 D1/R2 バインディングで動く既存流儀。
+`event-videos.test.ts`）:
 
-- アップロードの門: MIME 許可リスト・マジックバイト・サイズ上限・本数上限・
-  ロール要件・非メンバー拒否（既存 `photos-attendance.test.ts` の並び）
+- アップロードの門: MIME 許可リスト・マジックバイト・サイズ上限・長さの申告・
+  ポスター上限・本数上限・bodyLimit の拡張が動画ルートだけであること・
+  ロール要件・非メンバー拒否
 - **Range**: 200 全量 / 206 + `Content-Range` の境界値（先頭・末尾・suffix）/ 416 /
-  `If-None-Match` 304 / `Accept-Ranges` ヘッダ
-- 公開範囲: `photos_public` オフのイベントの動画が公開プロフィールに漏れない
-  （既存 `profile-photos-paging.test.ts` に kind 混在ケースを追加）
-- purge: 削除ユーザーの動画本体＋poster の 2 キーが列挙される
+  `If-None-Match` 304 / `Accept-Ranges` ヘッダ / 写真の id に `/video` を叩いても 404
+- 公開範囲: `photos_public` オフのイベントの動画が漏れない。公開プロフィール側は
+  `profile-photos-paging.test.ts` の kind 混在ケース
+- purge: 退会時に動画本体＋poster の 2 キーが消える（`account-deletion.test.ts`）
 - 削除 API: 動画で R2 が 2 オブジェクト消えること
 
-ユニット（web、純関数）:
+ユニット（web）:
 
-- `decideVideoPlan` のマトリクス: （WebCodecs フル / video のみ / なし）×（WebM 入力 /
-  H.264 mov / HEVC mov / 上限超過）→ 期待経路（WebM / MP4+AAC パススルー / 音声なし
-  確認 / そのまま受理 / エラー）を全列挙
+- `decideVideoPlan` のマトリクス（`plan.test.ts`）: （WebCodecs フル / video のみ /
+  なし）×（WebM 入力 / H.264 mov / HEVC mov / 上限超過）→ 期待経路（WebM /
+  MP4+AAC パススルー / 音声なし確認 / そのまま受理 / エラー）を全列挙。
+  トリムの正規化（`normalizeVideoTrim` / `moveVideoTrim`）もここ
+- コンポーネント: `encode.test.ts` / `VideoSelectStep.test.tsx` /
+  `VideoTrimBar.test.tsx` / `VideoUploadFlow.test.tsx`・`VideoUploadFlow.reinit.test.tsx` /
+  `EventPhotos.queue.test.tsx`・`EventPhotos.video.test.tsx` / `videoThumb.test.tsx`
 
 実機（手動マトリクス。リリース前チェックリストとして本書に紐づける）:
 
@@ -391,15 +425,39 @@ event-videos/${eventId}/${videoId}-poster   … ポスター画像
 - 保存済み WebM の iOS 15–18 実機での再生（§1 の再生互換の裏取り）
 - 60 秒 720p のエンコード所要時間の実測（進捗配分 70/30 の妥当性確認）
 
-## 11. 実装順（PR 分割案）
+## 11. 設計からの差分
 
-1. **server + shared**: migration 0077・型に `kind`/`durationMs`・upload/serve
-   （Range）・purge・ユニットテスト一式。この時点で API は完成し curl で通る
-2. **web パイプライン**: mediabunny 導入・`lib/video/`（plan/encode/poster）・
-   `decideVideoPlan` テスト・投稿 UI と進捗ダイアログ
-3. **web 表示**: ギャラリー/メディアタブ/年表のポスター表示・ライトボックス再生・文言
+レビュー・実機フィードバックで設計から変えた判断（いずれもコード/PR で確認済み）:
 
-各 PR は独立レビュー・staging 確認を経る（既存フロー）。
+- **トリミング UI の追加**（issue #425 → PR #426）: 設計時は「60秒超は端末側での
+  編集を案内してエラー」だったが、枠の両端伸縮＋中身ドラッグのトリム UI を追加した
+  （§4.2）。変換経路のみ・上限60秒・最短1秒。素通し経路は切り出せないので従来どおり
+  エラー。ポスターも選んだ範囲の中から切り出す（§5）
+- **複数本アップロードのキュー直列化**（issue #427 → PR #428）: 設計は
+  「1回の操作で1本のみ」。実装後の実機フィードバックで複数選択を受けるよう変え、
+  **範囲選択を全本先に済ませてから、1本ずつ順に変換→アップロード**の2段階にした
+  （§4.2、§8）。demux 結果は両段階で使い回し、同じ File を2回解析しない
+- **60秒以内は範囲選択ステップを出さず自動確定**（#427 実機FB → PR #430）:
+  「短い動画も任意でトリム」は、キューの全本で決定タップを要求する代償に
+  見合わないため落とした。音声を落とす経路だけは確認を挟む
+- **ダイアログのボタン行をスマホ幅で折り返す**（#427 実機崩れ → PR #429）
+- **「アップロードだけの失敗は再エンコードなしで再送」はやめた**: キュー化に伴い、
+  失敗した本はまとめ画面に理由を出して最初からやり直す方式にした（§8）。
+  キューは永続化しない
+- **レビュー対応**（PR #423 内）: ポスター put 失敗時も含め R2 の2キーを best-effort
+  で掃除して孤児を防ぐ（§7.1）、アップロードを `AbortController` で中断できるように、
+  ポスターは送信前に上限 1.5MB を担保（品質 0.8 → 0.5 で再試行。§5）
+- **`durationMs` のサーバ検証**: 設計は「表示用のみ」だったが、欠落・非整数・
+  明らかな超過申告は `invalid_duration` で弾く（§7.1。実効的な制限はバイト数のまま）
+- **Range の解釈は Worker 側で自前パース**: R2 の `get(key, { range: headers })` に
+  委ねる案から、`parseByteRange` での判定に変えた（§7.2）
+- **`caption` パラメータは無し**: 写真の投稿にキャプションが無いのに合わせ、
+  動画にも付けなかった（§7.1）
+- **エンコード出力の 40MB 超はクライアント側でも送信前に弾く**
+  （`video_output_too_large`。§4）
+
+実装 PR: #422（変換パイプライン＋実機計測ページ）→ #423（アップロード・保存・表示）
+→ #426 → #428 → #429 → #430。各 PR は独立レビュー・staging 確認を経た（既存フロー）。
 
 ## 12. やらないこと
 
