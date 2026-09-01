@@ -115,5 +115,5 @@ export const EVENT_PHOTO_MAX_BYTES = 1.5 * 1024 * 1024;
  * 変換できない環境の原本受け入れ（フォールバック）もこの上限で制限する。 */
 export const EVENT_VIDEO_MAX_BYTES = 40 * 1024 * 1024;
 /** 動画1本あたりの上限の長さ (#408)。短尺クリップ想定。
- * 超える場合は端末側で編集してもらう（トリミングUIは作らない）。 */
+ * 超える場合はアップロード前のトリミング UI（VideoTrimBar, #425）でこの長さに収める。 */
 export const EVENT_VIDEO_MAX_DURATION_MS = 60_000;
