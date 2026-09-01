@@ -25,6 +25,10 @@ const ja = {
 
   /** 自由記述のプレースホルダ */
   textPlaceholder: "自由にご記入ください",
+
+  /** 記名回答の同意チェック (#448)。ログイン中の人にだけ出る。既定オフ。
+   * チェックしない限りアカウントは一切ひもづかない（保存もしない） */
+  namedOptIn: "アカウントで回答する（表示名が主催者に伝わります）",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -43,6 +47,8 @@ const en: Record<keyof typeof ja, string> = {
   doneNote: "Thank you! You can close this page.",
 
   textPlaceholder: "Write freely",
+
+  namedOptIn: "Answer with my account (your display name is shared with the organizer)",
 };
 
 export const preSurvey = { ja, en };

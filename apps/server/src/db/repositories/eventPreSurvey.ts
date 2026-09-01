@@ -1,5 +1,6 @@
 import type {
   PreSurveyQuestion,
+  PreSurveyResponseRowView,
   PreSurveyResults,
   PreSurveyStatus,
   SavePreSurveyInput,
@@ -283,17 +284,58 @@ export const eventPreSurveyRepo = {
     }
   },
 
-  /** 集計（staff のみが読む）。回答者の名前は返さない（内訳は人数だけ） */
+  /** 回答一覧 (#447・staff のみが読む)。行=1送信・新しい順。
+   * 表示名が出るのは**回答者が同意した記名回答だけ** (#448。それ以外は
+   * user_id 自体を保存していないので出しようがない。退会も null）。
+   * 上限1000件（insertResponse の門）なのでページングは持たない */
+  async responseRows(surveyId: string): Promise<PreSurveyResponseRowView[]> {
+    const rows = await many<{
+      id: string;
+      created_at: number;
+      username: string | null;
+      global_name: string | null;
+      question_id: string | null;
+      value: string | null;
+    }>(
+      `SELECT r.id, r.created_at, u.username, u.global_name,
+              a.question_id, a.value
+         FROM event_pre_survey_response r
+         LEFT JOIN user u ON u.id = r.user_id AND u.deleted_at IS NULL
+         LEFT JOIN event_pre_survey_answer a ON a.response_id = r.id
+        WHERE r.survey_id = ?
+        ORDER BY r.created_at DESC, r.id ASC`,
+      surveyId,
+    );
+    const byResponse = new Map<string, PreSurveyResponseRowView>();
+    const order: string[] = [];
+    for (const r of rows) {
+      let row = byResponse.get(r.id);
+      if (!row) {
+        row = {
+          createdAt: r.created_at,
+          respondent: r.username ? (r.global_name ?? r.username) : null,
+          answers: {},
+        };
+        byResponse.set(r.id, row);
+        order.push(r.id);
+      }
+      if (r.question_id !== null) row.answers[r.question_id] = r.value ?? "";
+    }
+    return order.map((id) => byResponse.get(id)!);
+  },
+
+  /** 集計（staff のみが読む）。回答者の名前は返さない（内訳は件数だけ）。
+   * named = 回答者が同意して user_id が保存された記名回答の数 (#448) */
   async results(surveyId: string): Promise<PreSurveyResults> {
     const questions = await this.listQuestions(surveyId);
-    const totals = await one<{ total: number; logged_in: number }>(
+    const totals = await one<{ total: number; named: number }>(
       `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN user_id IS NOT NULL THEN 1 ELSE 0 END) AS logged_in
+              SUM(CASE WHEN user_id IS NOT NULL THEN 1 ELSE 0 END) AS named
          FROM event_pre_survey_response WHERE survey_id = ?`,
       surveyId,
     );
     const total = totals?.total ?? 0;
-    const loggedIn = totals?.logged_in ?? 0;
+    const named = totals?.named ?? 0;
 
     const rows = await many<{
       question_id: string;
@@ -333,6 +375,6 @@ export const eventPreSurveyRepo = {
       }
       choices.push({ question: q, counts, answered: answers.length });
     }
-    return { total, loggedIn, anonymous: total - loggedIn, choices, texts };
+    return { total, named, choices, texts };
   },
 };

@@ -370,7 +370,7 @@ const ja = {
   preSurveySaveFailed: "保存に失敗しました。",
   preSurveyShareHeading: "共有URL",
   preSurveyShareNote:
-    "このURLを知っている人は誰でも回答できます（1人1回の制限はありません。厳密な投票には使えません）。",
+    "このURLを知っている人は誰でも回答できます（1人1回の制限はありません。厳密な投票には使えません）。回答は匿名で、回答者が自分で選んだときだけ記名になります。",
   preSurveyCopyUrl: "URLをコピー",
   preSurveyCopied: "コピーしました。",
   preSurveyRotate: "URLを再発行",
@@ -383,8 +383,15 @@ const ja = {
   preSurveyDeleteConfirm:
     "アンケートを削除しますか？集まった回答もすべて消えます。",
   preSurveyResponses: "回答 {{n}}件",
-  preSurveyBreakdown: "ログイン回答 {{loggedIn}} ・ 匿名 {{anonymous}}",
+  preSurveyNamedCount: "記名 {{n}}件",
   preSurveyResultsHeading: "結果",
+  preSurveyViewSummary: "集計",
+  preSurveyViewTable: "回答一覧",
+  preSurveyColTime: "回答日時",
+  preSurveyColRespondent: "回答者",
+  preSurveyAnonRespondent: "匿名",
+  preSurveyCsvDownload: "CSVをダウンロード",
+  preSurveyCsvFileName: "開催前アンケート回答.csv",
   preSurveyNoResponses: "まだ回答はありません。",
   preSurveyEditNote:
     "質問の変更は保存した時点で反映されます。質問を削除するとその回答も消えます。",
@@ -808,7 +815,7 @@ const en: Record<keyof typeof ja, string> = {
   preSurveySaveFailed: "Failed to save.",
   preSurveyShareHeading: "Share URL",
   preSurveyShareNote:
-    "Anyone with this URL can respond (no one-per-person limit; not suitable for strict voting).",
+    "Anyone with this URL can respond (no one-per-person limit; not suitable for strict voting). Responses are anonymous unless the respondent chooses to attach their account.",
   preSurveyCopyUrl: "Copy URL",
   preSurveyCopied: "Copied.",
   preSurveyRotate: "Regenerate URL",
@@ -821,8 +828,15 @@ const en: Record<keyof typeof ja, string> = {
   preSurveyDeleteConfirm:
     "Delete this survey? All collected responses will be removed.",
   preSurveyResponses: "{{n}} responses",
-  preSurveyBreakdown: "Signed-in {{loggedIn}} / anonymous {{anonymous}}",
+  preSurveyNamedCount: "Named: {{n}}",
   preSurveyResultsHeading: "Results",
+  preSurveyViewSummary: "Summary",
+  preSurveyViewTable: "Responses",
+  preSurveyColTime: "Submitted at",
+  preSurveyColRespondent: "Respondent",
+  preSurveyAnonRespondent: "Anonymous",
+  preSurveyCsvDownload: "Download CSV",
+  preSurveyCsvFileName: "pre-event-survey-responses.csv",
   preSurveyNoResponses: "No responses yet.",
   preSurveyEditNote:
     "Question changes take effect when you save. Deleting a question also deletes its answers.",

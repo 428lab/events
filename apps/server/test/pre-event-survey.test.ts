@@ -1,6 +1,11 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import type { PreSurveyAdminView, PreSurveyResults, PublicPreSurvey } from "@eventer/shared";
+import type {
+  PreSurveyAdminView,
+  PreSurveyResponseRowView,
+  PreSurveyResults,
+  PublicPreSurvey,
+} from "@eventer/shared";
 import { PRE_SURVEY_MAX_RESPONSES } from "@eventer/shared";
 
 const BASE = "https://example.com";
@@ -163,24 +168,34 @@ describe("漏れ防止とトークンの門 (#444)", () => {
 });
 
 describe("回答（未ログイン可・送信1回きり）", () => {
-  it("未ログインで回答できて user_id は NULL。ログイン済みは user_id が入る。同じ人の2回目も通る", async () => {
+  it("user_id が保存されるのは「ログイン中かつ named（明示同意）」だけ (#448)。2回目の送信も通る", async () => {
     const { survey } = await setup();
     const url = `${publicUrl(survey.token)}/responses`;
-    expect((await post(url, validAnswers(survey))).status).toBe(201);
-
     const alice = await makeUser();
+
+    // 1: 未ログイン → NULL
+    expect((await post(url, validAnswers(survey))).status).toBe(201);
+    // 2: 未ログインで named を名乗っても NULL（ログインが無ければ紐づけようがない）
+    expect(
+      (await post(url, { named: true, ...validAnswers(survey) })).status,
+    ).toBe(201);
+    // 3: ログイン中でも同意チェック無しなら NULL（見せないだけでなく持たない）
     expect((await post(url, validAnswers(survey), alice.cookie)).status).toBe(201);
-    // 1人1回は担保しない割り切り（2回目も通る）
-    expect((await post(url, validAnswers(survey), alice.cookie)).status).toBe(201);
+    // 4: ログイン中 + named の同意があるときだけ保存（1人1回は担保しない＝2回目）
+    expect(
+      (await post(url, { named: true, ...validAnswers(survey) }, alice.cookie))
+        .status,
+    ).toBe(201);
 
     const rows = await env.DB.prepare(
-      "SELECT user_id FROM event_pre_survey_response WHERE survey_id = ? ORDER BY created_at",
+      "SELECT user_id FROM event_pre_survey_response WHERE survey_id = ? ORDER BY created_at, rowid",
     )
       .bind(survey.id)
       .all<{ user_id: string | null }>();
     expect(rows.results.map((r) => r.user_id)).toEqual([
       null,
-      alice.userId,
+      null,
+      null,
       alice.userId,
     ]);
   });
@@ -324,7 +339,7 @@ describe("門のソース監査 (#444)", () => {
 });
 
 describe("集計と後始末", () => {
-  it("選択式は選択肢ごとの件数・自由記述は一覧・ログイン/匿名の内訳。名前は返さない", async () => {
+  it("選択式は選択肢ごとの件数・自由記述は一覧・記名の件数。名前は返さない", async () => {
     const { staff, eventId, survey } = await setup();
     const url = `${publicUrl(survey.token)}/responses`;
     const alice = await makeUser();
@@ -332,6 +347,7 @@ describe("集計と後始末", () => {
     await post(
       url,
       {
+        named: true, // 記名の同意 (#448)
         answers: [
           { questionId: survey.questions[0].id, value: "日曜" },
           { questionId: survey.questions[1].id, value: ["開発"] },
@@ -347,8 +363,7 @@ describe("集計と後始末", () => {
     const raw = await res.text();
     const { results } = JSON.parse(raw) as { results: PreSurveyResults };
     expect(results.total).toBe(2);
-    expect(results.loggedIn).toBe(1);
-    expect(results.anonymous).toBe(1);
+    expect(results.named).toBe(1); // 同意した記名回答だけが数えられる
     expect(results.choices[0].counts).toEqual([1, 1]); // 土曜1・日曜1
     expect(results.choices[1].counts).toEqual([2, 0, 1]); // 開発2・デザイン0・雑談1
     expect(results.choices[0].answered).toBe(2);
@@ -358,6 +373,46 @@ describe("集計と後始末", () => {
     // 回答者の名前・IDは結果に載せない（匿名回答と扱いを揃える）
     expect(raw).not.toContain(alice.userId);
     expect(raw).not.toContain(alice.username);
+  });
+
+  it("回答一覧 (#447): 行=1送信・新しい順・未ログインは respondent null・質問と値の対応。staff 以外 403", async () => {
+    const { staff, eventId, survey } = await setup();
+    const url = `${publicUrl(survey.token)}/responses`;
+    await post(url, validAnswers(survey)); // 匿名
+    const alice = await makeUser();
+    await post(
+      url,
+      {
+        named: true, // 記名の同意 (#448)。同意なしなら表示名は出ない
+        answers: [
+          { questionId: survey.questions[0].id, value: "日曜" },
+          { questionId: survey.questions[1].id, value: ["開発", "雑談"] },
+        ],
+      },
+      alice.cookie,
+    );
+
+    const listUrl = `${adminUrl(eventId)}/responses`;
+    const outsider = await makeUser();
+    expect(
+      (await SELF.fetch(listUrl, { headers: { cookie: outsider.cookie } })).status,
+    ).toBe(403);
+
+    const { rows } = (await (
+      await SELF.fetch(listUrl, { headers: { cookie: staff.cookie } })
+    ).json()) as { rows: PreSurveyResponseRowView[] };
+    expect(rows).toHaveLength(2);
+    // 新しい順: 先頭は alice（**同意した記名回答**＝表示名あり）
+    expect(rows[0].respondent).toBe(`表示名_${alice.username}`);
+    expect(rows[0].answers[survey.questions[0].id]).toBe("日曜");
+    expect(rows[0].answers[survey.questions[1].id]).toBe(
+      JSON.stringify(["開発", "雑談"]),
+    );
+    expect(rows[0].answers[survey.questions[2].id]).toBeUndefined(); // 未回答はキーなし
+    // 2件目は匿名（respondent null）
+    expect(rows[1].respondent).toBeNull();
+    expect(rows[1].answers[survey.questions[0].id]).toBe("土曜");
+    expect(rows[1].answers[survey.questions[2].id]).toBe("楽しみにしています");
   });
 
   it("質問を消す保存で回答が CASCADE。イベント削除でアンケートごと消える", async () => {
