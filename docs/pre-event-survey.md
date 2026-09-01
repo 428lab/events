@@ -59,6 +59,8 @@ survey メタを足すことになる。**アクセスモデルが根本から�
 
 ### 3.1 スキーマ
 
+本節の SQL のコメント行は本書向けの要約（DDL 本文は migration と同一）。
+
 `apps/server/migrations/0083_pre_event_survey.sql`:
 
 ```sql
@@ -218,7 +220,7 @@ GET /api/public/pre-surveys/:token →
 | `PUT /api/events/:id/pre-survey` | staff | 作成/更新（title・description・questions 一括。#152 の保存の型） |
 | `POST /api/events/:id/pre-survey/rotate` | staff | トークン再発行（旧URL即無効） |
 | `POST /api/events/:id/pre-survey/close` / `reopen` | staff | 手動クローズ/再オープン |
-| `GET /api/events/:id/pre-survey/results` | staff | 集計: 選択式は選択肢ごとの件数と割合、自由記述は新しい順の一覧。回答総数・記名の件数 |
+| `GET /api/events/:id/pre-survey/results` | staff | 集計: 選択式は選択肢ごとの件数（割合の % は管理ページの UI 側で計算）、自由記述は新しい順の一覧。回答総数・記名の件数 |
 | `GET /api/events/:id/pre-survey/responses` | staff | 回答一覧 (#447): 行=1送信・新しい順。記名回答は表示名・匿名は null。表ビューと CSV の元データ |
 | `GET /api/events/:id/pre-survey/access` | staff | 日毎のアクセス (#450): のべ表示・初回訪問・回答数。新しい順 |
 | `DELETE /api/events/:id/pre-survey` | staff | アンケートごと削除（回答も CASCADE。確認ダイアログ必須） |

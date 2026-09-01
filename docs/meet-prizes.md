@@ -115,7 +115,8 @@ shared（`packages/shared/src/schema.ts`）: `eventSchema` に `meetPrizes: z.bo
 
 ### 3.2 データモデル: 定義・引き換え・1位確定の3表
 
-マイグレーション `apps/server/migrations/0079_meet_prizes.sql`:
+マイグレーション `apps/server/migrations/0079_meet_prizes.sql`
+（SQL のコメント行は要約。DDL 本文は migration と同一）:
 
 ```sql
 -- 景品引き換えモード (#431)。オンでイベントページに景品を表示

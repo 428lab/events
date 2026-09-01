@@ -31,10 +31,10 @@
 
 | # | 経路 | 見える人 | 見える内容 |
 |---|------|---------|-----------|
-| 1 | `GET /events/:id/meets/ranking`（`routes/eventMeets.ts:46`） | **staff のみ** | 名前・アバター・件数（上位100） |
+| 1 | `GET /events/:id/meets/ranking`（`routes/eventMeets.ts`） | **staff のみ** | 名前・アバター・件数（上位100） |
 | 2 | スキャン結果・通知（`/api/meet/scan`） | **当事者ペアのみ** | 相手の名前 |
-| 3 | 公開プロフィール（`routes/public.ts:86-106`） | 誰でも | **本人の**イベント別件数・通算人数。**相手は出ない** |
-| 4 | イベント統計ページの `MeetRankingCard`（`EventStatsPage.tsx:550`） | staff のみ（経路1のUI） | 同上 |
+| 3 | 公開プロフィール（`routes/public.ts`） | 誰でも | **本人の**イベント別件数・通算人数。**相手は出ない** |
+| 4 | イベント統計ページの `MeetRankingCard`（`EventStatsPage.tsx`） | staff のみ（経路1のUI） | 同上 |
 
 つまり既存の設計姿勢は「**件数は本人の公開実績、名前入りランキングは staff 限定**」。
 参加者全員（まして会場全体）に名前つき順位を見せるのは**新しい露出**であり、
@@ -62,9 +62,9 @@
 - 列追加: `migrations/0021_photos_public.sql`（`ALTER TABLE event ADD COLUMN ... NOT NULL DEFAULT 0`）。次番号は **0078**
 - 3値の設定: `qa_anonymity`（`QA_ANONYMITY_MODES` の enum を shared に置く）
 - 反映箇所: `packages/shared/src/schema.ts`（`eventSchema` + `updateEventInput`）、
-  `events.ts` リポジトリの行マッピング（:121 付近）と `update`（:394 付近）、
-  イベント複製のコピーリスト（`routes/events.ts:448` 付近）、`EditEventPage.tsx` のトグル群
-- オフ時のサーバ側ガードの先例: `eventQa.ts:151` の `if (!event.qaEnabled) return 409`。
+  `events.ts` リポジトリの行マッピングと `update`、
+  イベント複製（`POST /:id/duplicate`）のコピーリスト、`EditEventPage.tsx` のトグル群
+- オフ時のサーバ側ガードの先例: `eventQa.ts` の `if (!event.qaEnabled) return 409`。
   ただし本件は「存在ごと出さない」なので 409 ではなく **404（イベント不存在と同一応答）** にする
 
 ---
@@ -95,7 +95,8 @@
 慎重な場は匿名を選べる。選択肢の説明文に「名前とアイコンが会場に大写しになります」と
 振る舞いで書く（実装技術の語は出さない）。
 
-マイグレーション `apps/server/migrations/0078_meet_ranking.sql`:
+マイグレーション `apps/server/migrations/0078_meet_ranking.sql`
+（SQL のコメント行は要約。DDL 本文は migration と同一）:
 
 ```sql
 -- 出会いランキングの表示設定 (#418)。off=出さない / anonymous=件数のみ / named=名前入り
