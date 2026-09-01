@@ -23,6 +23,7 @@ import {
   usePublicPreSurvey,
   useSubmitPreSurvey,
 } from "../api/preSurveyHooks.js";
+import { LinkifiedText } from "../components/LinkifiedText.js";
 import { useMe } from "../api/hooks.js";
 import { errorMessage } from "../lib/errorMessage.js";
 import { i18next } from "../i18n/index.js";
@@ -117,7 +118,8 @@ export function PreSurveyPage() {
       </Typography>
       {data.description && (
         <Typography color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
-          {data.description}
+          {/* 説明中の URL は新しいタブで開くリンクに（判定は shared を共用） */}
+          <LinkifiedText text={data.description} />
         </Typography>
       )}
       <Stack spacing={2}>
