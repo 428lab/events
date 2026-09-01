@@ -1,4 +1,9 @@
-import { SELF, env } from "cloudflare:test";
+import {
+  SELF,
+  createExecutionContext,
+  env,
+  waitOnExecutionContext,
+} from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import type {
   PreSurveyAccessRow,
@@ -344,13 +349,28 @@ describe("共有URLのアクセス数 (#450)", () => {
   const countRows = (eventId: string, cookie: string) =>
     SELF.fetch(accessUrl(eventId), { headers: { cookie } });
 
+  /** 公開GETを1回踏む。カウントは waitUntil に逃げているので、
+   * worker.fetch を直接叩いて waitOnExecutionContext で完了を待つ
+   * （last-seen.test.ts と同じ型。SELF.fetch だと書き込み完了を待てない） */
+  async function visit(token: string): Promise<Response> {
+    const { default: worker } = await import("../src/worker.js");
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(
+      new Request(publicUrl(token)),
+      env as never,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+    return res;
+  }
+
   it("同日2アクセスで count=2（1文 upsert）。404 は数えず、closed でも数える", async () => {
     const { staff, eventId, survey } = await setup();
-    await SELF.fetch(publicUrl(survey.token));
-    await SELF.fetch(publicUrl(survey.token));
-    await SELF.fetch(publicUrl("0".repeat(32))); // 不明トークン＝数えない
+    await visit(survey.token);
+    await visit(survey.token);
+    await visit("0".repeat(32)); // 不明トークン＝数えない
     await post(`${adminUrl(eventId)}/close`, {}, staff.cookie);
-    await SELF.fetch(publicUrl(survey.token)); // closed の表示も数える
+    await visit(survey.token); // closed の表示も数える
 
     const { rows } = (await (
       await countRows(eventId, staff.cookie)
@@ -391,10 +411,10 @@ describe("共有URLのアクセス数 (#450)", () => {
 
   it("トークン再発行をまたいで同じ集計に積まれる。staff 以外は 403", async () => {
     const { staff, eventId, survey } = await setup();
-    await SELF.fetch(publicUrl(survey.token));
+    await visit(survey.token);
     const rotate = await post(`${adminUrl(eventId)}/rotate`, {}, staff.cookie);
     const { token: newToken } = (await rotate.json()) as { token: string };
-    await SELF.fetch(publicUrl(newToken));
+    await visit(newToken);
 
     const { rows } = (await (
       await countRows(eventId, staff.cookie)
@@ -408,10 +428,7 @@ describe("共有URLのアクセス数 (#450)", () => {
 
   it("同時アクセスでも欠損しない（upsert 2本同時で合計が一致）", async () => {
     const { staff, eventId, survey } = await setup();
-    await Promise.all([
-      SELF.fetch(publicUrl(survey.token)),
-      SELF.fetch(publicUrl(survey.token)),
-    ]);
+    await Promise.all([visit(survey.token), visit(survey.token)]);
     const { rows } = (await (
       await countRows(eventId, staff.cookie)
     ).json()) as { rows: PreSurveyAccessRow[] };

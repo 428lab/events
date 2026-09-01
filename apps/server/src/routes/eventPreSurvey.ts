@@ -18,6 +18,7 @@ import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventPreSurveyRepo } from "../db/repositories/eventPreSurvey.js";
 import { jstDay } from "../lib/lastSeen.js";
+import { deferBackground } from "../runtime.js";
 
 /**
  * 開催前アンケート (#444)。設計は docs/pre-event-survey.md。
@@ -37,12 +38,17 @@ export async function getPublicPreSurvey(c: Context<AppEnv>) {
   if (!survey) return c.json({ error: "not_found" }, 404);
   // アクセス数 (#450)。トークン解決に成功した表示だけ数える（404 は数えない。
   // closed の「締め切りました」表示も配布URLが見られた事実なので数える）。
-  // 集計の失敗で回答ページ自体を落とさない（ログだけ）
-  try {
-    await eventPreSurveyRepo.recordAccess(survey.id, jstDay(Date.now()));
-  } catch (e) {
-    console.error("[pre-survey] access count failed", survey.id, e);
-  }
+  // 書き込みは lastSeen (#257) と同じ方針で waitUntil に逃がし、レスポンスを
+  // ブロックしない（deferBackground の既存の口を使う）。失敗は握りつぶして
+  // ログだけ——集計のために回答ページを落とさない。catch は Promise 側に
+  // 付ける（waitUntil の中で投げると unhandled rejection になる）
+  await deferBackground(
+    eventPreSurveyRepo
+      .recordAccess(survey.id, jstDay(Date.now()))
+      .catch((e) =>
+        console.error("[pre-survey] access count failed", survey.id, e),
+      ),
+  );
   if (survey.status === "closed") {
     return c.json({
       status: "closed",
