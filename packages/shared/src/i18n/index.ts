@@ -25,6 +25,7 @@ import { meet, meetFailure } from "./messages/meet.js";
 import { nav } from "./messages/nav.js";
 import { notifications } from "./messages/notifications.js";
 import { communityRole, profile } from "./messages/profile.js";
+import { preSurvey } from "./messages/preSurvey.js";
 import { schedule } from "./messages/schedule.js";
 import { linkError, settings } from "./messages/settings.js";
 import { studio } from "./messages/studio.js";
@@ -66,6 +67,7 @@ export const translations = {
     eventRun: eventRun.ja,
     eventSocial: eventSocial.ja,
     schedule: schedule.ja,
+    preSurvey: preSurvey.ja,
     staffOps: staffOps.ja,
     staffInviteError: staffInviteError.ja,
     staffInviteStatus: staffInviteStatus.ja,
@@ -102,6 +104,7 @@ export const translations = {
     eventRun: eventRun.en,
     eventSocial: eventSocial.en,
     schedule: schedule.en,
+    preSurvey: preSurvey.en,
     staffOps: staffOps.en,
     staffInviteError: staffInviteError.en,
     staffInviteStatus: staffInviteStatus.en,

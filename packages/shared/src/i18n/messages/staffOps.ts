@@ -357,6 +357,40 @@ const ja = {
   prizeLogBy: "対応: {{name}}",
   prizeLogDeletedUser: "退会したユーザー",
 
+  /* ── 開催前アンケート (#444)。実装の語は出さず振る舞いで書く ── */
+  preSurveyTitle: "開催前アンケート",
+  preSurveyStaffOnly: "開催前アンケートはスタッフ専用です。",
+  preSurveyIntro:
+    "公開前のイベントについて、URLを知っている人に匿名で聞けるアンケートです。イベント本体の情報（タイトル・日時など）は回答ページに表示されません。伝えたいことはアンケートのタイトルや説明に書いてください。",
+  preSurveyCreate: "アンケートを作る",
+  preSurveyFormTitle: "アンケートのタイトル",
+  preSurveyFormDescription: "説明（回答ページに表示されます）",
+  preSurveySave: "保存",
+  preSurveySaved: "保存しました。",
+  preSurveySaveFailed: "保存に失敗しました。",
+  preSurveyShareHeading: "共有URL",
+  preSurveyShareNote:
+    "このURLを知っている人は誰でも回答できます（1人1回の制限はありません。厳密な投票には使えません）。",
+  preSurveyCopyUrl: "URLをコピー",
+  preSurveyCopied: "コピーしました。",
+  preSurveyRotate: "URLを再発行",
+  preSurveyRotateConfirm:
+    "URLを再発行しますか？いま配布済みのURLは使えなくなります（回答は残ります）。",
+  preSurveyClose: "回答を締め切る",
+  preSurveyCloseConfirm: "回答を締め切りますか？（あとで再開できます）",
+  preSurveyReopen: "受付を再開する",
+  preSurveyDelete: "アンケートを削除",
+  preSurveyDeleteConfirm:
+    "アンケートを削除しますか？集まった回答もすべて消えます。",
+  preSurveyResponses: "回答 {{n}}件",
+  preSurveyBreakdown: "ログイン回答 {{loggedIn}} ・ 匿名 {{anonymous}}",
+  preSurveyResultsHeading: "結果",
+  preSurveyNoResponses: "まだ回答はありません。",
+  preSurveyEditNote:
+    "質問の変更は保存した時点で反映されます。質問を削除するとその回答も消えます。",
+  preSurveyPublishedNote:
+    "イベントは公開済みです。役目を終えたら締め切りましょう。",
+
   /* ── 準備の段取り (#393) ────────────────────────────────
    * **実装上の語を出さない。**「待ち」「担当者が外れています」のように
    * 振る舞いで書く（`assigneeState` / `dep` / `blocked` は利用者の語彙ではない） */
@@ -761,6 +795,39 @@ const en: Record<keyof typeof ja, string> = {
   prizeLogEmpty: "No redemptions yet.",
   prizeLogBy: "By {{name}}",
   prizeLogDeletedUser: "Deleted user",
+
+  preSurveyTitle: "Pre-event survey",
+  preSurveyStaffOnly: "The pre-event survey is for organizers only.",
+  preSurveyIntro:
+    "Ask people who have the URL about your unpublished event, anonymously. The event itself (title, dates, etc.) is never shown on the answer page — put anything you want to share in the survey title or description.",
+  preSurveyCreate: "Create a survey",
+  preSurveyFormTitle: "Survey title",
+  preSurveyFormDescription: "Description (shown on the answer page)",
+  preSurveySave: "Save",
+  preSurveySaved: "Saved.",
+  preSurveySaveFailed: "Failed to save.",
+  preSurveyShareHeading: "Share URL",
+  preSurveyShareNote:
+    "Anyone with this URL can respond (no one-per-person limit; not suitable for strict voting).",
+  preSurveyCopyUrl: "Copy URL",
+  preSurveyCopied: "Copied.",
+  preSurveyRotate: "Regenerate URL",
+  preSurveyRotateConfirm:
+    "Regenerate the URL? Links you have already shared will stop working (responses are kept).",
+  preSurveyClose: "Close responses",
+  preSurveyCloseConfirm: "Close responses? (You can reopen later.)",
+  preSurveyReopen: "Reopen responses",
+  preSurveyDelete: "Delete survey",
+  preSurveyDeleteConfirm:
+    "Delete this survey? All collected responses will be removed.",
+  preSurveyResponses: "{{n}} responses",
+  preSurveyBreakdown: "Signed-in {{loggedIn}} / anonymous {{anonymous}}",
+  preSurveyResultsHeading: "Results",
+  preSurveyNoResponses: "No responses yet.",
+  preSurveyEditNote:
+    "Question changes take effect when you save. Deleting a question also deletes its answers.",
+  preSurveyPublishedNote:
+    "The event is published. Close the survey once it has served its purpose.",
 
   todoTitle: "Prep to-dos",
   todoStaffOnly: "Prep to-dos are for organizers only.",
