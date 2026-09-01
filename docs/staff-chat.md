@@ -261,6 +261,9 @@ CREATE TABLE event_group_chat_signer (
 -- 同じ部屋で同じ pubkey を2人が持てない（乱数衝突の保険。既存 0066 と同じ考え）
 CREATE UNIQUE INDEX idx_event_group_chat_signer_pubkey
   ON event_group_chat_signer (event_id, audience, pubkey);
+-- mergeUsers の付け替えと退会 purge の列挙で user 起点に引く向き
+CREATE INDEX idx_event_group_chat_signer_user
+  ON event_group_chat_signer (user_id);
 ```
 
 設計上の決定:
@@ -367,7 +370,7 @@ CREATE UNIQUE INDEX idx_event_group_chat_signer_pubkey
 | メソッド | パス | 内容 |
 |---|---|---|
 | GET | `/api/events/:id/staff-chat` | 部屋が有れば payload（下記）を返す。無ければ 404。自分の signer が**未発行・失効中**なら payload の `myKey` を null で返す（クライアントは POST で発行/再有効化） |
-| POST | `/api/events/:id/staff-chat` | 部屋・v1 鍵・自分の signer を無ければ作り（先勝ち・冪等）、GET と同じ payload を返す。失効中の signer は再有効化する（7.3）。生成した pubkey が同じ部屋で他人に使用済みのときだけ 409（乱数256bitなので現実には起きない保険） |
+| POST | `/api/events/:id/staff-chat` | 部屋・v1 鍵・自分の signer を無ければ作り（先勝ち・冪等）、GET と同じ payload を返す。失効中の signer は再有効化する（7.3）。生成した pubkey が同じ部屋で他人に使用済みのとき 409（乱数256bitなので現実には起きない保険）。発行後の読み直しで `myKey` が取れないときも防御的に 409 |
 
 ```ts
 // packages/shared/src/staffChat.ts
