@@ -27,6 +27,8 @@ import { EventPrizeDeskPage } from "./pages/EventPrizeDeskPage.js";
 import { EventBingoPage } from "./pages/EventBingoPage.js";
 import { EventBingoControlPage } from "./pages/EventBingoControlPage.js";
 import { EventBingoScreenPage } from "./pages/EventBingoScreenPage.js";
+import { PreSurveyPage } from "./pages/PreSurveyPage.js";
+import { EventPreSurveyAdminPage } from "./pages/EventPreSurveyAdminPage.js";
 import { EventStaffingPage } from "./pages/EventStaffingPage.js";
 import { AccountPage } from "./pages/AccountPage.js";
 import { AccountRestorePage } from "./pages/AccountRestorePage.js";
@@ -336,6 +338,17 @@ export function App() {
             </PublicLayout>
           }
         />
+        {/* 開催前アンケート (#444)。**未ログインで回答できることが主目的**なので、
+            こちらの（未ログイン側の）Routes に必ず置く。ログイン側だけに書いた
+            退行が実機で出た（回答者全員がトップへ飛ばされる） */}
+        <Route
+          path="/s/:token"
+          element={
+            <PublicLayout>
+              <PreSurveyPage />
+            </PublicLayout>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
@@ -396,6 +409,8 @@ export function App() {
         <Route path="/live-sets/:id/edit" element={<LiveSetEditorPage />} />
         <Route path="/d/:slug" element={<DeckViewerPage />} />
         <Route path="/e/:slug" element={<ShortEventPage />} />
+        {/* 開催前アンケートの回答ページ (#444)。未ログイン可・トークンが門 */}
+        <Route path="/s/:token" element={<PreSurveyPage />} />
         <Route path="/r/:slug" element={<ShortRequestPage />} />
         {/* 旧 /events はトップに統合 (#165)。ブックマーク互換のためリダイレクト */}
         <Route path="/events" element={<Navigate to="/" replace />} />
@@ -452,6 +467,8 @@ export function App() {
           {/* 数字ビンゴ (#436)。カードは確定メンバー・抽選コントロールはスタッフ専用 */}
           <Route path="bingo" element={<EventBingoPage />} />
           <Route path="bingo/control" element={<EventBingoControlPage />} />
+          {/* 開催前アンケートの管理 (#444)。スタッフ専用 */}
+          <Route path="pre-survey" element={<EventPreSurveyAdminPage />} />
         </Route>
         <Route path="*" element={<Navigate to={myPath} replace />} />
       </Routes>

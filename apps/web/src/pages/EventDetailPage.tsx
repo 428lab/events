@@ -37,6 +37,7 @@ import EggIcon from "@mui/icons-material/Egg";
 import LiveTvIcon from "@mui/icons-material/LiveTv";
 import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
 import CasinoOutlinedIcon from "@mui/icons-material/CasinoOutlined";
+import PollOutlinedIcon from "@mui/icons-material/PollOutlined";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import LockIcon from "@mui/icons-material/Lock";
@@ -949,6 +950,17 @@ export function EventDetailPage() {
               to={`/events/${id}/bingo/control`}
             >
               {t("staffOps.bingoControlTitle")}
+            </Button>
+          )}
+          {/* 開催前アンケート (#444)。スタッフ専用の独立ページへの導線 */}
+          {isStaff && (
+            <Button
+              variant="outlined"
+              startIcon={<PollOutlinedIcon />}
+              component={RouterLink}
+              to={`/events/${id}/pre-survey`}
+            >
+              {t("staffOps.preSurveyTitle")}
             </Button>
           )}
           {isStaff && (

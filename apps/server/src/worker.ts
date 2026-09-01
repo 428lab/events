@@ -65,6 +65,11 @@ import {
   eventSurveyRoutes,
   getEventSurvey,
 } from "./routes/eventSurvey.js";
+import {
+  eventPreSurveyRoutes,
+  getPublicPreSurvey,
+  postPublicPreSurveyResponse,
+} from "./routes/eventPreSurvey.js";
 import { attendanceCsvRoutes } from "./routes/attendanceCsv.js";
 import { nameCardRoutes } from "./routes/nameCards.js";
 import {
@@ -146,6 +151,10 @@ api.route("/auth", authRoutes);
 api.route("/email", emailRoutes);
 // 公開: 開催前イベント一覧（認証不要）
 api.route("/public", publicRoutes);
+// 公開: 開催前アンケート (#444)（認証不要。門は128bitトークン。
+// 応答にイベント本体の情報は一切載せない）
+api.get("/public/pre-surveys/:token", getPublicPreSurvey);
+api.post("/public/pre-surveys/:token/responses", postPublicPreSurveyResponse);
 // 公開: イベントのたまご一覧・詳細（認証不要）
 api.route("/public/event-requests", publicEventRequestRoutes);
 // イベントのたまご（投稿・賛同・開催宣言。要認証）
@@ -216,6 +225,8 @@ api.route("/events", eventTodoRoutes);
 api.route("/events", eventDutyRoutes);
 // 事前アンケート (#152)（質問保存・回答・スタッフ閲覧。要認証）
 api.route("/events", eventSurveyRoutes);
+// 開催前アンケート (#444) の管理（そのイベントのスタッフのみ。要認証）
+api.route("/events", eventPreSurveyRoutes);
 // 入館名簿CSV (#154)（staff または成立会場の運営者。要認証）
 api.route("/events", attendanceCsvRoutes);
 // 名札の一括印刷 (#304)（そのイベントの参加確定スタッフのみ。要認証）
