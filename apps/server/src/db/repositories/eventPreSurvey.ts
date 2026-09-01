@@ -1,4 +1,5 @@
 import type {
+  PreSurveyAccessRow,
   PreSurveyQuestion,
   PreSurveyResponseRowView,
   PreSurveyResults,
@@ -10,6 +11,7 @@ import {
   parseCheckboxValue,
 } from "@eventer/shared";
 import { batch, many, one, run, runCount } from "../client.js";
+import { jd } from "./kpi.js";
 
 /**
  * 開催前アンケート (#444)。設計は docs/pre-event-survey.md。
@@ -322,6 +324,45 @@ export const eventPreSurveyRepo = {
       if (r.question_id !== null) row.answers[r.question_id] = r.value ?? "";
     }
     return order.map((id) => byResponse.get(id)!);
+  },
+
+  /** 共有URLの表示を1回数える (#450)。**1文の upsert** なので同時アクセスでも
+   * 欠損しない（読んでから書く2文にしない）。日毎の件数だけを持ち、
+   * IP・UA 等は保存しない。day は jstDay()（呼び出し側）で作る */
+  async recordAccess(surveyId: string, day: string): Promise<void> {
+    await run(
+      `INSERT INTO event_pre_survey_access (survey_id, day, count)
+       VALUES (?, ?, 1)
+       ON CONFLICT(survey_id, day) DO UPDATE SET count = count + 1`,
+      surveyId,
+      day,
+    );
+  },
+
+  /** 日毎のアクセスと回答数 (#450・staff のみが読む)。新しい順。
+   * responses は response.created_at から JST 日毎に導出（新しい保存はしない。
+   * 日付変換は kpi.ts の jd() を共用——写しを作らない） */
+  async accessStats(surveyId: string): Promise<PreSurveyAccessRow[]> {
+    const views = await many<{ day: string; count: number }>(
+      "SELECT day, count FROM event_pre_survey_access WHERE survey_id = ?",
+      surveyId,
+    );
+    const responses = await many<{ day: string; n: number }>(
+      `SELECT ${jd("created_at")} AS day, COUNT(*) AS n
+         FROM event_pre_survey_response
+        WHERE survey_id = ?
+        GROUP BY day`,
+      surveyId,
+    );
+    const byDay = new Map<string, PreSurveyAccessRow>();
+    const rowOf = (day: string) => {
+      let row = byDay.get(day);
+      if (!row) byDay.set(day, (row = { day, views: 0, responses: 0 }));
+      return row;
+    };
+    for (const v of views) rowOf(v.day).views = v.count;
+    for (const r of responses) rowOf(r.day).responses = r.n;
+    return [...byDay.values()].sort((a, b) => (a.day < b.day ? 1 : -1));
   },
 
   /** 集計（staff のみが読む）。回答者の名前は返さない（内訳は件数だけ）。

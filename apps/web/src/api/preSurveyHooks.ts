@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  PreSurveyAccessRow,
   PreSurveyAdminView,
   PreSurveyResponseRowView,
   PreSurveyResults,
@@ -108,6 +109,19 @@ export function usePreSurveyResponses(eventId: string, enabled: boolean) {
     queryFn: () =>
       api.get<{ rows: PreSurveyResponseRowView[] }>(
         `/events/${eventId}/pre-survey/responses`,
+      ),
+    retry: false,
+  });
+}
+
+/** 日毎のアクセスと回答数 (#450・staff のみ) */
+export function usePreSurveyAccess(eventId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["event", eventId, "pre-survey-access"],
+    enabled: Boolean(eventId) && enabled,
+    queryFn: () =>
+      api.get<{ rows: PreSurveyAccessRow[] }>(
+        `/events/${eventId}/pre-survey/access`,
       ),
     retry: false,
   });

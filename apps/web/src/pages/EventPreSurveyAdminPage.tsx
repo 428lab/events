@@ -40,6 +40,7 @@ import {
 } from "../api/preSurveyHooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { PreSurveyResponsesTable } from "../components/PreSurveyResponsesTable.js";
+import { PreSurveyAccessCard } from "../components/PreSurveyAccessCard.js";
 
 /** 回答形式 → 翻訳キー（#152 の編集UIと同じ表を使う） */
 const QTYPE_KEY = {
@@ -507,6 +508,9 @@ export function EventPreSurveyAdminPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* 日毎アクセス (#450)。アンケート作成済みのときだけ */}
+      {survey && <PreSurveyAccessCard eventId={id} enabled={isStaff} />}
     </Stack>
   );
 }

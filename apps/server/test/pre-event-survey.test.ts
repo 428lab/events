@@ -1,6 +1,12 @@
-import { SELF, env } from "cloudflare:test";
+import {
+  SELF,
+  createExecutionContext,
+  env,
+  waitOnExecutionContext,
+} from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import type {
+  PreSurveyAccessRow,
   PreSurveyAdminView,
   PreSurveyResponseRowView,
   PreSurveyResults,
@@ -335,6 +341,98 @@ describe("門のソース監査 (#444)", () => {
   it("findByToken がトークン照合を持っている", () => {
     const src = Object.values(repoSources)[0]!;
     expect(src).toContain("WHERE token = ?");
+  });
+});
+
+describe("共有URLのアクセス数 (#450)", () => {
+  const accessUrl = (eventId: string) => `${adminUrl(eventId)}/access`;
+  const countRows = (eventId: string, cookie: string) =>
+    SELF.fetch(accessUrl(eventId), { headers: { cookie } });
+
+  /** 公開GETを1回踏む。カウントは waitUntil に逃げているので、
+   * worker.fetch を直接叩いて waitOnExecutionContext で完了を待つ
+   * （last-seen.test.ts と同じ型。SELF.fetch だと書き込み完了を待てない） */
+  async function visit(token: string): Promise<Response> {
+    const { default: worker } = await import("../src/worker.js");
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(
+      new Request(publicUrl(token)),
+      env as never,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+    return res;
+  }
+
+  it("同日2アクセスで count=2（1文 upsert）。404 は数えず、closed でも数える", async () => {
+    const { staff, eventId, survey } = await setup();
+    await visit(survey.token);
+    await visit(survey.token);
+    await visit("0".repeat(32)); // 不明トークン＝数えない
+    await post(`${adminUrl(eventId)}/close`, {}, staff.cookie);
+    await visit(survey.token); // closed の表示も数える
+
+    const { rows } = (await (
+      await countRows(eventId, staff.cookie)
+    ).json()) as { rows: PreSurveyAccessRow[] };
+    expect(rows).toHaveLength(1); // 今日の1行だけ
+    expect(rows[0].views).toBe(3);
+    expect(rows[0].day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // 個人を特定する情報が無い（保存列は day と count だけ）
+    const cols = await env.DB.prepare(
+      "SELECT * FROM event_pre_survey_access LIMIT 1",
+    ).first<Record<string, unknown>>();
+    expect(Object.keys(cols ?? {}).sort()).toEqual(["count", "day", "survey_id"]);
+  });
+
+  it("日ごとに別の行になり、views と responses が日毎に対応する", async () => {
+    const { staff, eventId, survey } = await setup();
+    // 過去日ぶんを直接仕込む（ルートは常に「今日」を使うため）
+    await env.DB.prepare(
+      "INSERT INTO event_pre_survey_access (survey_id, day, count) VALUES (?, '2026-08-30', 5), (?, '2026-08-31', 2)",
+    )
+      .bind(survey.id, survey.id)
+      .run();
+    // 8/30 JST の回答を1件（created_at を直接指定）
+    await env.DB.prepare(
+      "INSERT INTO event_pre_survey_response (id, survey_id, user_id, created_at) VALUES (?, ?, NULL, ?)",
+    )
+      .bind(crypto.randomUUID(), survey.id, Date.parse("2026-08-30T12:00:00+09:00"))
+      .run();
+
+    const { rows } = (await (
+      await countRows(eventId, staff.cookie)
+    ).json()) as { rows: PreSurveyAccessRow[] };
+    // 新しい順
+    expect(rows.map((r) => r.day)).toEqual(["2026-08-31", "2026-08-30"]);
+    expect(rows[0]).toEqual({ day: "2026-08-31", views: 2, responses: 0 });
+    expect(rows[1]).toEqual({ day: "2026-08-30", views: 5, responses: 1 });
+  });
+
+  it("トークン再発行をまたいで同じ集計に積まれる。staff 以外は 403", async () => {
+    const { staff, eventId, survey } = await setup();
+    await visit(survey.token);
+    const rotate = await post(`${adminUrl(eventId)}/rotate`, {}, staff.cookie);
+    const { token: newToken } = (await rotate.json()) as { token: string };
+    await visit(newToken);
+
+    const { rows } = (await (
+      await countRows(eventId, staff.cookie)
+    ).json()) as { rows: PreSurveyAccessRow[] };
+    expect(rows).toHaveLength(1);
+    expect(rows[0].views).toBe(2); // 再発行の前後が合算される（キーは survey_id）
+
+    const outsider = await makeUser();
+    expect((await countRows(eventId, outsider.cookie)).status).toBe(403);
+  });
+
+  it("同時アクセスでも欠損しない（upsert 2本同時で合計が一致）", async () => {
+    const { staff, eventId, survey } = await setup();
+    await Promise.all([visit(survey.token), visit(survey.token)]);
+    const { rows } = (await (
+      await countRows(eventId, staff.cookie)
+    ).json()) as { rows: PreSurveyAccessRow[] };
+    expect(rows[0].views).toBe(2);
   });
 });
 
