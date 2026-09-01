@@ -1,8 +1,9 @@
 # 通知の actor を列として持つ (#380)
 
 - 対象: `apps/server`（D1 スキーマ・通知リポジトリ・通知を作る側）
-- 前提: i18n 第3段階（通知を種別＋値に作り直す）の**着手前**に入れること
-- ステータス: 設計（実装は別 PR）
+- 前提: i18n 第3段階（通知を種別＋値に作り直す）より**先に**入れる（PR #385 で満たした）
+- ステータス: **実装済み**（PR #385。マイグレーション 0070 の適用・埋め戻しも実施済み）。
+  実装で設計から変えた点は 11. にまとめた
 
 ---
 
@@ -365,7 +366,7 @@ actor_id が NULL になり、**統合後に勝ち側が退会しても通知が
 
 ---
 
-## 8. 移行の順序（この節が本設計でいちばん壊れやすい）
+## 8. 移行の順序（実施済み。手順の記録として残す）
 
 このリポジトリは **デプロイ前に必ずマイグレーションを適用する** 運用で、
 CI はマイグレーションを流さない（人が実行する）。したがって次の窓が空く。
@@ -508,16 +509,15 @@ t0 に両方走ってしまい意味が無い）。
 
 ---
 
-## 9. テストで確かめること
+## 9. テストが守っていること
 
-`apps/server/test/account-deletion-grace.test.ts` の該当箇所を作り直す。
-いまのテストは生 INSERT で旧形式の行を手で作っているため、
-**「文言を変えても消える」の証拠にならない**。
+旧テスト（`account-deletion-grace.test.ts` の生 INSERT 版）は、旧形式の行を手で作って
+いたため**「文言を変えても消える」の証拠にならない**。作り直した。
 
-なお 9.1〜9.4 の置き場所は、**新規ファイル `apps/server/test/notification-actor.test.ts`**
-とした（11. の表を参照）。`account-deletion-grace.test.ts` は着手時点で 907 行あり、
-実経路を通す 9.1〜9.4 を足すと 1100 行を超えて「1ファイル800行」に反するため。
-同ファイルからは旧テスト（生 INSERT 版）の削除だけを行っている。
+9.1〜9.4 の置き場所は**新規ファイル `apps/server/test/notification-actor.test.ts`**。
+`account-deletion-grace.test.ts` は着手時点で 907 行あり、実経路を通す 9.1〜9.4 を
+足すと「1ファイル800行」に反するため。同ファイルからは旧テストの削除だけを行った。
+9.5 は `notification-actor-backfill.test.ts`。
 
 ### 9.1 通知の文言を変えても消える
 
@@ -592,21 +592,21 @@ SQL の二重管理になるが一度きりの処理なので許容する。
 
 ---
 
-## 11. 変更するファイル
+## 11. 設計からの差分（実装・レビューで変えた判断）
 
-| ファイル | 変更 |
-|---|---|
-| `apps/server/migrations/0070_notification_actor.sql` | 新規（列・索引・埋め戻し） |
-| `apps/server/src/db/repositories/notifications.ts` | `create`/`createForMany` に `actorId`、`deleteByActor` 書き換え、`deleteMeetSince` 書き換え、`ACTOR_ERASED_TYPES` |
-| `apps/server/src/db/repositories/users.ts` | `mergeUsers` の `simple` に `["notification","actor_id"]` |
-| `apps/server/src/routes/me.ts` | `deleteByActor(me)` → `deleteByActor(me.id)` |
-| `apps/server/src/routes/follows.ts` | 2か所に `{ actorId }` |
-| `apps/server/src/routes/eventMeets.ts` | `notifyMeet` に `{ actorId }`、`deleteMeetSince` の引数 |
-| `apps/server/src/routes/eventStaffInvites.ts` | 2か所に `{ actorId }` |
-| `apps/server/test/notification-actor.test.ts` | **新規**（9.1〜9.4） |
-| `apps/server/test/account-deletion-grace.test.ts` | 旧テスト（生 INSERT 版）の削除のみ |
-| `apps/server/test/notification-actor-backfill.test.ts` | 新規（9.5・0070 との SQL 照合） |
-| `apps/server/test/account-merge.test.ts` | 9.6 |
-| `apps/server/test/meet-scan.test.ts` | 9.7 |
-
-新しい依存は無し。
+- **埋め戻し (2) の ghost 除外を `!=` から `NOT IN` にした**。ghost（完全削除の受け皿
+  ユーザー）は遅延生成されるため、まだ一度も完全削除が走っていない DB では副問い合わせが
+  NULL を返す。`!=` だと NULL 比較で全体が NULL になり、正常な行まで1件も埋まらない
+  （0070 のコメントに理由を書いた）
+- **埋め戻し (1) にガードを足さない判断を明文化し、前提を手順と照合で担保した**（4.3・8.1）。
+  ハンドルの引き継ぎによる誤結び付きは「一度きりの操作」なので SQL を複雑にせず、
+  流す前の事前確認 SQL（候補2人以上・出会いが通知より後）で 0件を確かめる形にした。
+  設計作成時点の対象データで確認済み・該当0件
+- **テストの置き場所を新規ファイルに変えた**（9. 冒頭）。`account-deletion-grace.test.ts`
+  に足すと 800 行制約に反するため、`notification-actor.test.ts` /
+  `notification-actor-backfill.test.ts` に分けた
+- **埋め戻し SQL の二重管理には照合を実在させた**（9.5）。backfill テストは 0070 の
+  マイグレーションファイルを読み込み、テスト内に写した SQL と文字単位で一致することを
+  検証する（本数も含めて）
+- 8. の移行手順（事前確認 → 適用 → デプロイ → 埋め戻し再実行 → 猶予期間中の回収）は
+  staging・本番とも実施済み

@@ -2,8 +2,9 @@
 
 - 対象: `apps/server`（D1 スキーマ・スケジュールのリポジトリ・タイムテーブルのルート）、
   `packages/shared`（時刻の計算・保存の入力）、`apps/web`（編集と表示）
-- 前提: #384（スタッフの役割タグ）の**着手前**に入れること。あちらは本設計の時間帯に役割を当てる
-- ステータス: **実装済み**。見せ方 (7.) は相談して決めた（7. の頭に結論を書いた）
+- 前提: #384（スタッフの役割タグ）より先に入れる。あちらは本設計の時間帯に役割を当てる
+- ステータス: **実装済み**（PR #395。既存不具合 #394「登壇 N 回」の修正を含む）。
+  見せ方 (7.) は相談して決めた（7. の頭に結論）。実装で設計から変えた点は 11. にまとめた
 
 ---
 
@@ -464,9 +465,9 @@ const audience: ScheduleAudience = (await canManageEvent2(eventId, c)) ? "staff"
 
 `saveScheduleItemInput` に `visibility`、`saveScheduleTrackInput` に `visibility` を足す。
 
-~~どちらも `.default("public")`（`placement` の既定と同じ考え方）~~
-→ **どちらも `.optional()`。省略は「いまの値を保つ」。** 既定値 `'public'` は
-**古いクライアントからの保存で裏方を全件公開にする**（4.2 の規則4。実装中に判明）。
+**どちらも `.optional()`。省略は「いまの値を保つ」。** 既定値 `'public'` は
+**古いクライアントからの保存で裏方を全件公開にする**（4.2 の規則4。実装中に判明。
+当初の設計は `placement` に倣って `.default("public")` としていた——11. の差分）。
 既定が裏方だと既存クライアントの項目が黙って消える、という当初の心配は
 「省略＝保つ」なら起きない（新規の項目・列だけ `'public'` から始める）。
 
@@ -703,43 +704,22 @@ SQL 文字列を抽出して、`visibility` を参照していないものを列
 
 ---
 
-## 11. 変更するファイル
+## 11. 設計からの差分（実装・相談で変えた判断）
 
-| ファイル | 変更 |
-|---|---|
-| `apps/server/migrations/0072_staff_timeline.sql` | **新規**（2列・索引の張り替え） |
-| `apps/server/src/db/repositories/eventSchedule.ts` | `audience` を必須引数に、`publicItemWhere`、`listByEvent` / `listTracks` / 対応表 JOIN / `findItem` / `listPublicSpokenEventIds` / `listNeedingOgRefresh`、保存時の正規化（4.2） |
-| `apps/server/src/routes/eventSchedule.ts` | `canEditTimetable` を削除して `canManageEvent` に寄せる、`audience` の決定1か所、`filter` の削除、`PATCH material` の対象を public 限定 |
-| `apps/server/src/auth/roles.ts` | `Context` から引く薄い包みを1つ足す |
-| `apps/server/src/lib/email.ts` | `listByEvent(id, "public")` に変え、`filter` を削除 |
-| `apps/server/src/db/repositories/eventMembers.ts` | `spoken` の SQL に `publicItemWhere("si")`（経路 10） |
-| `apps/server/src/db/repositories/nameCards.ts` | `spoken` の SQL 2本に同じ（経路 11・12） |
-| `apps/server/src/db/repositories/gamification.ts` | `spoken` の SQL に同じ（経路 13） |
-| `packages/shared/src/eventSchedule.ts` | `scheduleVisibilitySchema`、`ScheduleAudience`、`ScheduleItem` / `EventTrack` / 保存入力に `visibility`、`computeScheduleTimes` の1行（3.3）、`findTrackOverlaps` の扱い |
-| `packages/shared/src/i18n/messages/schedule.ts` | 文言（`ja` / `en`） |
-| `apps/web/src/components/ScheduleEditor.tsx` / `ScheduleItemRow.tsx` / `scheduleEditorModel.ts` | 編集（7.1 で決めた案） |
-| `apps/web/src/components/EventSchedule.tsx` | 裏方の印（7.2 案V2） |
-| `apps/web/src/lib/timetableLayout.ts` / `components/TimetableGrid.tsx` / `TimetableTrackTabs.tsx` | 格子（7.2 案V1） |
-| `apps/web/src/lib/trackColors.ts` | 公開トラックの本数で色を作る（7.3） |
-| `apps/server/test/staff-timeline.test.ts` | **新規**（9.1〜9.9） |
-| `apps/server/test/staff-timeline-sql-audit.test.ts` | **新規**（9.10） |
-| `apps/web/src/components/*.test.tsx` ほか | 9.11 |
-
-新しい依存は無し。既存ファイルはいずれも 800 行を超えない
-（最大は `ScheduleEditor.tsx` の 418 行）。
-
----
-
-## 12. 実装の順番
-
-1. `0072` と `packages/shared` の型（`visibility` を持つが、まだ誰も使わない）
-2. `computeScheduleTimes` の 3.3 と、その単体テスト（9.2 の土台）。
-   **ここが先**。あとから足すと、絞り込みを入れた瞬間に時刻がずれる
-3. リポジトリの `audience` 必須化。**この時点で全呼び出し元がコンパイルエラーになる**ので、
-   2.2 の表と突き合わせて1つずつ埋める。
-   `publicItemWhere` の `export` と、経路 10〜13 の4本の SQL もここで直す
-   （8. の件数次第では、この4本だけ先に別 PR）
-4. ルート・メールの `filter` 削除、`canManageEvent` への一本化
-5. 9.1〜9.10（**画面より先**。漏れの担保はサーバーだけで完結させる）
-6. 保存入力と 4.2 の正規化
-7. 画面（7. の相談で決めた案）
+- **保存入力の `visibility` は `.default("public")` ではなく `.optional()`**（4.2 の規則4・6.2。
+  実装中に判明した穴）。既定値を埋めると、`visibility` を知らない古いクライアントの保存が
+  裏方を全件公開に戻す。「省略＝いまの値を保つ」に変え、古いクライアントの見分けは
+  `visibility` キーの有無1本にした（`tracks` の有無で見分けてはいけない——
+  `tracks` は送るが `visibility` は送らないビルドが実在する）
+- **裏方の時刻は明示のみとし、自動で連鎖させない**（3.3 で v1 として決定）。
+  スタッフ用トラック内だけで連鎖させる案は、連鎖の規則が2種類になり読めなくなるので採らず
+- **公開トラックの絞り込みは `packages/shared` の `publicTracks` に1か所化**（3.3）。
+  `computeScheduleTimes` に渡す列を各画面で書き写すと、新しい画面がスタッフ用トラックを
+  混ぜて `all` の時刻だけが静かにずれる
+- **既存不具合 #394 の修正を同じ PR に含めた**（2.2 の経路 10〜13）。未割り当ての
+  コマの担当が「登壇 N 回」に数えられていた4か所へ `publicItemWhere` を足した
+  （テストは `staff-timeline-spoken.test.ts`）
+- **編集は案E3・表示は案V1＋V2・色は 7.3 のとおり**（7. 冒頭の決定）
+- SQL 監査は `staff-timeline-sql-audit.test.ts`（9.10）。以後、`event_schedule_item` を
+  読む SQL を足すときは `ALLOWED` に理由を書き、`EXPECTED_STATEMENTS` を更新する
+  （#384 の持ち場がこの監査の最初の追記例になった）

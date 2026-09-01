@@ -4,9 +4,7 @@
   `packages/shared`（kind・型・入力スキーマ）、`apps/web`（暗号化チャット画面）
 - 前提: #339（スタッフ招待）は**マージ済み**。#205（参加者向け非公開チャット）は**未着手**。
   本設計は #205 の方式をスタッフ範囲で先に実装するもので、#205 が後から同じ土台に乗る
-- ステータス: **実装済み**（PR #406）。マイグレーションは設計時の 0074 ではなく
-  **0075**（0074 は #384 が使用済み）。第三者レビューで加わった決定は
-  2.6 / 7.3 の「退会申請」経路と、7.3 末尾のバックデートの限界の明記
+- ステータス: **実装済み**（PR #406）。実装で設計から変えた点は 13. にまとめた
 
 ---
 
@@ -263,6 +261,9 @@ CREATE TABLE event_group_chat_signer (
 -- 同じ部屋で同じ pubkey を2人が持てない（乱数衝突の保険。既存 0066 と同じ考え）
 CREATE UNIQUE INDEX idx_event_group_chat_signer_pubkey
   ON event_group_chat_signer (event_id, audience, pubkey);
+-- mergeUsers の付け替えと退会 purge の列挙で user 起点に引く向き
+CREATE INDEX idx_event_group_chat_signer_user
+  ON event_group_chat_signer (user_id);
 ```
 
 設計上の決定:
@@ -368,8 +369,8 @@ CREATE UNIQUE INDEX idx_event_group_chat_signer_pubkey
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| GET | `/api/events/:id/staff-chat` | 部屋が有れば payload（下記）を返す。無ければ 404。自分の signer が未発行なら payload の `myKey` を null で返す（クライアントは POST で発行） |
-| POST | `/api/events/:id/staff-chat` | 部屋・v1 鍵・自分の signer を無ければ作り（先勝ち・冪等）、GET と同じ payload を返す |
+| GET | `/api/events/:id/staff-chat` | 部屋が有れば payload（下記）を返す。無ければ 404。自分の signer が**未発行・失効中**なら payload の `myKey` を null で返す（クライアントは POST で発行/再有効化） |
+| POST | `/api/events/:id/staff-chat` | 部屋・v1 鍵・自分の signer を無ければ作り（先勝ち・冪等）、GET と同じ payload を返す。失効中の signer は再有効化する（7.3）。生成した pubkey が同じ部屋で他人に使用済みのとき 409（乱数256bitなので現実には起きない保険）。発行後の読み直しで `myKey` が取れないときも防御的に 409 |
 
 ```ts
 // packages/shared/src/staffChat.ts
@@ -507,11 +508,19 @@ web（純粋関数・`staffChatCrypto.test.ts`）:
 
 ---
 
-## 13. 実装の分割（目安）
+## 13. 設計からの差分（実装・レビューで変えた判断）
 
-1. **PR1（server）**: 0075 マイグレーション＋リポジトリ＋ routes/staffChat.ts ＋
-   ローテーションフック3箇所＋テスト 1–7
-2. **PR2（web）**: nostrChat.ts の kind 引数化＋ staffChatCrypto.ts ＋ StaffChat.tsx ＋
-   ページ・導線＋テスト 8–9
-
-どのファイルも 800 行以内に収まる見込み（最大は StaffChat.tsx の〜400行）。
+- **マイグレーションは 0074 ではなく `0075_staff_chat.sql`**（0074 は #384 が先に使用）
+- **退会申請（soft delete）もローテーション経路に加えた**（2.6 / 7.3。第三者レビューの指摘）。
+  申請前に受け取った鍵は手元に生きているため、purge まで待つと猶予期間中の新規発言を
+  外部クライアントで読み続けられる
+- **バックデート注入の限界を明記した**（7.3 末尾。第三者レビューの指摘）。失効判定は
+  `created_at`（自己申告の時刻）に依存し、時刻を偽装した書き込みの注入までは防がない
+- **受信バッファのあふれ対策**（5.2）: 許可リスト外の野良投稿から先に捨てる
+  `apps/web/src/lib/staffChatBuffer.ts` を追加した（あふれるまでは捨てない）
+- **POST に 409 を追加**: 生成した pubkey が同じ部屋で他人に使用済みのとき（8.）。
+  同時発行のレースは先勝ちで、payload の読み直しで収束する
+- **SQL 監査は専用テスト**: 3表を触る SQL が `db/repositories/staffChat.ts` の外に
+  無いことを `test/staff-chat-sql-audit.test.ts` が機械で守る（#384 の監査と同じ仕掛け）。
+  `event_group_chat_signer` は `mergeUsers` の `uniqueKeyed` に登録し、
+  `test/merge-user-columns.test.ts` (#396) が登録漏れを落とす
