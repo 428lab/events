@@ -4,7 +4,7 @@
   `packages/shared`（型・入力スキーマ・上限・文言）、`apps/web`（割り当て画面とタグ表示）
 - 前提: #383（スタッフ用タイムライン）は**マージ済み**。役割を当てる先は
   あちらが作った `event_schedule_item`（`visibility` 付き）である
-- ステータス: **実装済み**（PR #405）。見せ方 (8.) は相談の結果 **v1 は案S2 のみ**（8.1）
+- ステータス: **実装済み**（PR #405）。実装で設計から変えた点は 11. にまとめた
 
 ---
 
@@ -673,47 +673,18 @@ S1 の「格子から直接ダイアログを開く」も同様に S2 の後か�
 
 ---
 
-## 11. 変更するファイル
+## 11. 設計からの差分（実装・レビューで変えた判断）
 
-| ファイル | 変更 |
-|---|---|
-| `apps/server/migrations/0074_staff_duty.sql` | **新規**（表3つ・索引2つ） |
-| `packages/shared/src/eventDuty.ts` | **新規**（型・zod・上限 4.2） |
-| `packages/shared/src/index.ts` | 再エクスポート |
-| `apps/server/src/db/repositories/eventDuties.ts` | **新規**（3表の SQL の唯一の置き場。複製・所有チェック含む） |
-| `apps/server/src/db/repositories/eventMembers.ts` | `assignableStaff` をここへ移す（6.3） |
-| `apps/server/src/db/repositories/eventTodos.ts` | 移した `assignableStaff` を使う側に |
-| `apps/server/src/routes/eventDuties.ts` | **新規**（6.2 の8本。権限は 6.1） |
-| `apps/server/src/worker.ts` | `api.route("/events", eventDutyRoutes)` |
-| `apps/server/src/db/repositories/users.ts` | `mergeUsers` の `uniqueKeyed` に1組（5.） |
-| `apps/server/src/routes/events.ts` | 複製に `copyForDuplicate` の1行（7.） |
-| `packages/shared/src/i18n/messages/staffOps.ts` | 文言（8.4。v1 は `schedule.ts` に変更なし） |
-| `apps/web/src/api/dutyHooks.ts` | **新規**（staff のときだけ有効化。8.3） |
-| `apps/web/src/lib/dutyBoard.ts` | **新規**（充足の導出の純関数） |
-| `apps/web/src/pages/EventStaffingPage.tsx` ほか（案S2） | **新規** |
-| （`TimetableGrid.tsx` / `EventSchedule.tsx`） | **触らない**（v1 はチップ表示を見送り。8.1） |
-| `apps/web/src/App.tsx` / `EventDetailPage.tsx` | 子ルート1行・導線ボタン1つ |
-| `apps/server/test/staff-duty.test.ts` | **新規**（9.1〜9.3・9.5。9.6 は `staff-duty-slots.test.ts`、共通土台は `test/lib/staffDutyHelpers.ts`。800行制約で分割） |
-| `apps/server/test/staff-duty-sql-audit.test.ts` | **新規**（9.4） |
-| `apps/server/test/staff-timeline-sql-audit.test.ts` | `ALLOWED` 追記＋`EXPECTED_STATEMENTS` 更新（9.4） |
-| `apps/server/test/merge-user-columns.test.ts` | 期待値の更新（5.） |
-| `apps/server/test/event-duplicate.test.ts` | 役割の定義がコピーされること・持ち場は無いこと |
-| `apps/web/src/lib/dutyBoard.test.ts` ほか | 9.7 |
-
-新しい依存は無し。新規ファイルはいずれも 800 行以内に収める見込み
-（最大は `EventStaffingPage` 系で、`EventTodoPage` の型に倣って分割する）。
-
----
-
-## 12. 実装の順番
-
-1. `0074` と `packages/shared/src/eventDuty.ts`（型・上限）
-2. `db/repositories/eventDuties.ts` と `assignableStaff` の移設。
-   外れた担当の導出 (3.6) をリポジトリ単体で固める
-3. `routes/eventDuties.ts` と `worker.ts`。**9.1・9.2 の漏れないテストを先に書く**
-   （#383 / #393 と同じ: 漏れの担保はサーバーだけで完結させてから画面へ）
-4. `staff-duty-sql-audit.test.ts` と #383 監査の `ALLOWED` / `EXPECTED_STATEMENTS`。
-   **この時点で**書く（後回しにすると許可リストが緩む）
-5. `mergeUsers` の1組 (5.) と 9.5 の 7 番
-6. 複製 (7.) と `event-duplicate.test.ts`
-7. `dutyHooks.ts` → staffing ページ（案S2）。格子・一覧のチップ表示は見送り（8.1）
+- **v1 の画面は案S2（独立ページ `/events/:id/staffing`）のみ**（8.1・8.5）。当初案にあった
+  格子・`EventSchedule` への読み取り専用チップ表示は意図して落とした。参加者と共有する
+  部品にスタッフだけの追加取得（`useEventStaffing`）を混ぜないため。表示側は後から
+  API・スキーマを変えずに足せる
+- **兼務の時間重なり警告は見送り**（8.5）。裏方の時刻は明示のみ（#383 3.3）なので
+  「時刻の無い持ち場」が判定から漏れる。やるなら画面側の導出のみで別 issue
+- **上限・重複の事前チェックは排他にしない**（第三者レビューの指摘を記録して意図的に不採用。
+  10.）。同時操作が競合した瞬間だけ UNIQUE 違反が 400 でなく 500 で返りうるが、
+  データは DB の制約が守る。既存機能（#393 ほか）と同じ形
+- **`assignableStaff` は `db/repositories/eventMembers.ts` へ移した**（6.3 のとおり実装。
+  「担当に指定できる人」の契約が eventTodos と staffing の2か所に割れない）
+- サーバーのテストは `staff-duty.test.ts` / `staff-duty-slots.test.ts`（800行制約で分割。
+  共通土台は `test/lib/staffDutyHelpers.ts`）と `staff-duty-sql-audit.test.ts` に置いた

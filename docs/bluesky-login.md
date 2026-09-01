@@ -2,7 +2,8 @@
 
 - 対象: `apps/server`（認証）・`apps/web`（ログイン画面・アカウント設定）・D1 スキーマ
 - 範囲: **ログインと連携だけ。投稿は範囲外**（したがってトークンを保存しない）
-- ステータス: 設計（実装は別 PR）。**スパイク通過済み（4.2）。実装に入ってよい**
+- ステータス: **実装済み**（土台の抽出は PR #386、本体は PR #388、staging で見つけた
+  コールバックの修正は PR #390）。実装で設計から変えた点は 17. にまとめた
 
 ---
 
@@ -55,8 +56,8 @@ AT Protocol の OAuth はこの2つでは表現できない。差分は次のと
   「`@atproto/oauth-client`(core) を Web Crypto + fetch で自前 adapter する」方針が書かれているが、
   該当実装は無い。
 
-**したがって「core が workerd で動く」ことの実機証拠はまだ無い。** 第4章のスパイクが必要な理由。
-**→ 4.2 で確認した。core は workerd で動く。**
+当時は「core が workerd で動く」ことの実機証拠が無かった。**実装前の実測で確認した。
+core は workerd で動く**（4.）。
 
 ### 2.3 その他、拾った実測
 
@@ -76,7 +77,7 @@ AT Protocol の OAuth はこの2つでは表現できない。差分は次のと
 |---|---|---|---|
 | フローを回す場所 | ブラウザ | **Worker** | 我々は自前のセッション（D1 の `session`）を発行する。ブラウザで完結させると DID を我々のサーバーに証明できない（3.2 参照） |
 | client metadata | ビルド時に静的生成 | **Worker のルートで動的生成** | eventer は Worker が SPA も配信し `APP_BASE_URL` が `wrangler.toml` にある。ビルド時環境変数を増やすより素直 |
-| ハンドル解決 | `https://bsky.social` の XRPC | **DoH（DNS TXT + `.well-known`）** | 仕様に忠実で単一ベンダーに依存しない。ライブラリ同梱で fetch だけで動く。XRPC は代替（DoH が実機で通ったので採らない——4.2） |
+| ハンドル解決 | `https://bsky.social` の XRPC | **DoH（DNS TXT + `.well-known`）** | 仕様に忠実で単一ベンダーに依存しない。ライブラリ同梱で fetch だけで動く。XRPC は代替（DoH が実機で通ったので採らない——4. S2） |
 | トークン | 保持・refresh | **保存しない** | 範囲がログインと連携だけ |
 
 ---
@@ -96,7 +97,7 @@ AT Protocol の OAuth はこの2つでは表現できない。差分は次のと
    staging ゲートは `/api/auth/` を既に免除しているので**許可リストは触らない**。
 7. **state は D1 の新テーブル**（TTL 10分）＋ **ブラウザ紐付け用 cookie**。
 8. **`redirect: 'error'` の回避策は2枚**（fetch ラッパ＋自前 `didResolver`）。
-   どちらも上流バグの回避策として、消せる条件つきで隔離する（8章。4.2 の実測で確定）。
+   どちらも上流バグの回避策として、消せる条件つきで隔離する（8章。実測で確定——4. S2）。
 
 ### 3.1 なぜ public client でよいか
 
@@ -126,45 +127,20 @@ aozoraquest の形（ブラウザが public client として認可を受ける�
 
 ---
 
-## 4. 最初に実機で確かめること（スパイク）
+## 4. 実行環境で確定した事実（2026-08-13 実測。`wrangler dev` = ローカル workerd + `nodejs_compat`）
 
-**ここが崩れると方式ごと変わる。実装より先に、この順で確かめる。**
-確認は `wrangler dev` に一時的な probe ルートを置いて行う
-（aozoraquest の `apps/edge/src/oauth-probe.ts` と同じやり方。probe は本実装前に消す）。
+**結論: `@atproto/oauth-client`（ランタイム非依存の core）で進める。自前実装は要らない。**
+確かめたのは次の5点で、崩れたら方式ごと変わるものだった。
 
-| # | 確かめること | 落ちたときの分岐 |
+| # | 確かめたこと | 結果 |
 |---|---|---|
-| S1 | `@atproto/oauth-client` が workerd で **import 評価を通る**か（`core-js/es/symbol/dispose.js` を引いている） | 自前実装へ（4.1） |
-| S2 | **fetch ラッパで `redirect: 'error'` を回避できる**か。実アカウントで `wrangler dev`（127.0.0.1）から最後までログインできるか | 自前実装へ |
-| S3 | バンドルサイズと起動 CPU。`wrangler deploy --dry-run --outdir` で計測。**Workers の 1MB（圧縮後）上限**に対する余裕 | 自前実装へ（依存が桁違いに小さい） |
-| S4 | DPoP 鍵の JWK 往復（`extractable: true` で生成 → `key.privateJwk` → `JoseKey.fromJWK`）が認可開始とコールバックを跨いで成立するか | 鍵の持ち方を変える（PKCS#8 で持つ等） |
-| S5 | サーバー供給 nonce の貼り直しが期待どおり1往復で決まるか（PAR とトークン交換の両方） | ラッパで nonce を明示的に扱う |
+| S1 | core が workerd で **import 評価を通る**か | **通った**。`import 'core-js/es/symbol/dispose.js'` は `nodejs_compat` 下で評価を通る。`@atproto/oauth-client-node` が落ちた原因（undici の `process.env.NODE_DEBUG`）は core には無い |
+| S2 | `redirect: 'error'` を回避して最後まで通せるか | **通った（ただし fetch ラッパだけでは足りない）**。ハンドル → DID → PDS → 認可サーバー → PAR → authorize URL まで実在ハンドル2件で通した。回避策の形は 8. のとおり2枚（fetch ラッパ＋自前 `didResolver`） |
+| S3 | バンドルサイズと起動 CPU | **通った**。gzip 後 +76.7 KiB（Workers の上限に対し桁で余裕）。モジュール評価は core が 6 ms、残り2つ合わせて 1 ms |
+| S4 | DPoP 鍵の JWK 往復が認可開始とコールバックを跨いで成立するか | **通った**。`WebcryptoKey.generate(['ES256'], undefined, { extractable: true })` → `privateJwk` → `JoseKey.fromJWK` で同じ鍵に戻る。**`extractable: true` を渡さないと `privateJwk` が取れない** |
+| S5 | サーバー供給 nonce の貼り直し | **通った**。PAR の1回目は必ず 400 `use_dpop_nonce`（`DPoP-Nonce` 付き）、貼り直して2回目で 201。**1往復で決まる** |
 
-### 4.1 自前実装に切り替える場合（Plan B）
-
-public client のログイン専用フローは、仕様が明確なので自前でも書ける（見積り約300行）。
-
-1. ハンドル解決（DoH の TXT `_atproto.<handle>` → 失敗したら `https://<handle>/.well-known/atproto-did`）
-2. DID 解決（`did:plc` は `https://plc.directory/<did>`、`did:web` は `/.well-known/did.json`）
-3. DID ドキュメントの `service` から PDS を取り、`/.well-known/oauth-protected-resource` →
-   `authorization_servers[0]` → `/.well-known/oauth-authorization-server`
-4. WebCrypto で ES256 鍵を生成し DPoP proof を作る（nonce 400 で1回リトライ）
-5. PAR → authorize へ redirect
-6. コールバック: `iss` 照合、PKCE verifier つきでトークン交換
-7. `sub`（DID）を再解決して PDS → 認可サーバーの対応と `issuer` 一致を確認
-
-Plan B に倒す場合も、**5章以降のモジュール分割・state の持ち方・ルート・UI・引き取り規則は変わらない**。
-差し替わるのは `auth/bluesky/client.ts` の中身だけ。この境界を保つように書く。
-
-### 4.2 スパイクの結果（2026-08-13 実測）
-
-**結論: ライブラリ方式で進める。Plan B（4.1）は採らない。** ただし
-**8章の fetch ラッパの想定は誤っていた**ので、8章を実測に合わせて書き直した（下記「S2 の詳細」）。
-
-計測環境: `wrangler dev`（wrangler 4.85.0 / ローカル workerd / `nodejs_compat`）に
-使い捨ての probe worker を置いて実行。probe は本ブランチにコミットしない。
-
-使ったパッケージ（`apps/server` の直接依存として追加）:
+採用したパッケージ（`apps/server` の直接依存）:
 
 | パッケージ | 版 |
 |---|---|
@@ -173,126 +149,18 @@ Plan B に倒す場合も、**5章以降のモジュール分割・state の持�
 | `@atproto/jwk-jose` | 0.2.4 |
 | `@atproto-labs/handle-resolver` | 0.4.8 |
 
-**0.8.3 が出ているが `minimumReleaseAge`（7日）が効いて 0.8.2 が入った。**
-主な推移依存: `@atproto-labs/did-resolver` 0.3.7 / `@atproto-labs/fetch` 0.3.5 /
-`@atproto-labs/identity-resolver` 0.4.7 / `@atproto/jwk` 0.7.4 /
-`@atproto/oauth-types` 0.7.5 / `jose` 5.10.0 / `core-js` 3.50.0。
+（当時 0.8.3 が出ていたが `minimumReleaseAge`（7日）が効いて 0.8.2 が入った。）
 
-| # | 結果 | 要点 |
-|---|---|---|
-| S1 | **通った** | `import 'core-js/es/symbol/dispose.js'` は `nodejs_compat` 下の workerd で評価を通る。`@atproto/oauth-client-node` が落ちた原因（undici の `process.env.NODE_DEBUG`）は core には無い |
-| S2 | **通った（ただし回避策の形が変わる）** | ハンドル → DID → PDS → 認可サーバー → PAR → authorize URL まで実在ハンドル2件で通した |
-| S3 | **通った** | gzip 後 +76.7 KiB。上限に対して桁で余裕 |
-| S4 | **通った** | `extractable: true` → `privateJwk` → `JoseKey.fromJWK` で同じ鍵に戻る |
-| S5 | **通った** | PAR は 400（`use_dpop_nonce`）→ 貼り直して 201。**1往復で決まる** |
+補足:
 
-#### S2 の詳細（本丸）
+- **認可 URL に載るのは `client_id` と `request_uri` だけ**（7.3 の前提のとおり。
+  `state` は URL に出ない）。localhost 例外（9.）も PAR に受理された
+- DPoP nonce のキャッシュ（`dpopNonceCache`）は `OAuthClient` インスタンスごと。
+  モジュールスコープに置いて同一アイソレート内で使い回すが、Workers はアイソレートが
+  短命なので「認可開始ごとに余計な 400 が1往復増える」前提で見る（実測 2.1〜2.4 秒）
+- 自前実装（public client のログイン専用フローを WebCrypto + fetch で書く案）は
+  **採らなかった**。core が動く以上、仕様の追従をライブラリに任せられる
 
-**8章の「fetch ラッパで吸収する」は成立しない。** workerd は
-`redirect: 'error'` を **`new Request()` の構築時点で** 拒否する。
-`fetch()` を呼ぶ前に落ちるので、注入した fetch には制御が渡ってこない。
-
-```
-TypeError: Invalid redirect value, must be one of "follow" or "manual"
-("error" won't be implemented since it does not make sense at the edge;
- use "manual" and check the response status code).
-```
-
-そして `@atproto-labs/fetch` の `bindFetch()` は、**注入した fetch を呼ぶ前に**
-`asRequest(input, init)`（＝ `new Request(url, { redirect: 'error', ... })`）を実行する。
-素の fetch を渡した probe（対照）の生の出力:
-
-```
-TypeError: Invalid redirect value, must be one of "follow" or "manual" ...
-    at asRequest (.../bluesky.js:8542:10)
-    at DidPlcMethod.fetch (.../bluesky.js:8535:42)
-    at DidPlcMethod.resolve (.../bluesky.js:8954:17)
-    at DidResolverCommon.resolve (.../bluesky.js:8916:40)
-  → Error: Failed to resolve identity: bsky.app
-```
-
-つまり**経路によって効く回避策が違う**。実測で分けると:
-
-| 経路 | 呼び方 | fetch ラッパで直せるか |
-|---|---|---|
-| `handle-resolver` の `well-known-handler-resolver.js` | 注入した fetch を `(url, init)` で直接呼ぶ | **直せる**（ラッパが `init.redirect` を書き換えてから `Request` を作ればよい） |
-| `did-resolver` の `methods/plc.js`・`methods/web.js` | `bindFetch()` 経由。Request は上流で組まれる | **直せない** |
-| `handle-resolver` の `xrpc-handle-resolver.js` | 同上 | 直せない（**DoH を使うので通らない**） |
-| `oauth-client.js` の静的 `fetchMetadata` | 同上 | 直せない（**自分の metadata は自分で書くので呼ばない**） |
-
-**必須の経路である `plc.js` が直せない**ので、追加の手当てが要る。probe で2案とも実機で通した。
-
-- **案A: 自前の `didResolver` を差し込む**（`OAuthClient` の `didResolver` オプション）。
-  `did:plc` は `https://plc.directory/<did>`、`did:web` は `/.well-known/did.json` を
-  `redirect: 'manual'` で取り、3xx は自分で例外にする。ライブラリの
-  `DidPlcMethod` / `DidWebMethod` を通らなくなるので `bindFetch` の問題が消える。**約40行。**
-- **案B: `globalThis.Request` を Proxy で差し替える**（`redirect: 'error'` を `'manual'` に読み替え、
-  その Request を `WeakSet` に覚えておいてラッパ側で3xx を例外にする）。ライブラリを無改造で使える。
-
-**案Aを採る。** 案Bは Worker のアイソレート全体のグローバルを書き換えるため、
-Bluesky と無関係な既存ルートまで影響範囲に入る。副作用の説明コストが実装量の差に見合わない。
-
-案Aで通した実測（`bsky.app`。`kojira.io` でも同じ順序で成功、所要 2.4 秒）:
-
-```
-GET  https://cloudflare-dns.com/dns-query?type=TXT&name=_atproto.bsky.app   200
-GET  https://bsky.app/.well-known/atproto-did                              (DNS が先に解決したので中断)
-GET  https://plc.directory/did%3Aplc%3Az72i7hdynmk6r22z27h6tvur            200
-GET  https://puffball.us-east.host.bsky.network/.well-known/oauth-protected-resource  200
-GET  https://bsky.social/.well-known/oauth-authorization-server            200
-POST https://bsky.social/oauth/par                                         400  (DPoP-Nonce 付き)
-POST https://bsky.social/oauth/par                                         201
-→ https://bsky.social/oauth/authorize?client_id=...&request_uri=urn:ietf:params:oauth:request_uri:req-...
-```
-
-**認可 URL に載るのは `client_id` と `request_uri` だけ**で、設計7.3 の前提（`state` は URL に出ない）は
-実測どおりだった。localhost 例外（`client_id` はポート無しの `http://localhost?...`、
-`redirect_uri` は `http://127.0.0.1:4380/callback`）も PAR に受理された。
-
-**認可画面は通していない。** 実際のログイン（`callback()` / トークン交換 / `iss` 照合）は
-staging で確認する（設計17章 PR4）。
-
-#### S3 の詳細
-
-`wrangler deploy --dry-run --outdir` の実測。
-
-| 対象 | 生 | gzip |
-|---|---|---|
-| いまの Worker | 996.16 KiB | 231.87 KiB |
-| いまの Worker + Bluesky 一式 | 1438.78 KiB | **308.60 KiB** |
-| 差分 | +442.62 KiB | **+76.73 KiB** |
-
-Workers の上限は圧縮後 3 MiB（無料プランは 1 MiB）。**どちらに対しても余裕がある。**
-
-起動 CPU の代替計測として、workerd 内でモジュール評価（トップレベルの動的 import）を測った:
-`@atproto/oauth-client` が **6 ms**、`@atproto/jwk-webcrypto` と `@atproto-labs/handle-resolver` が
-合わせて **1 ms**（ローカル workerd）。上限 400 ms に対して十分だが、
-**実機の startup CPU は実デプロイ時に Cloudflare が報告する値で確認する**（staging で見る）。
-
-#### S4 の詳細
-
-`WebcryptoKey.generate(['ES256'], undefined, { extractable: true })` →
-`key.privateJwk` → `JoseKey.fromJWK()` で往復し、`kid` の一致・公開 JWK の一致・
-同じヘッダ/ペイロードの JWT を作れることを確認した。**`extractable: true` を渡さないと
-`privateJwk` が取れない**ので、`runtimeImplementation.createKey` でこれを必ず指定する。
-
-#### S5 の詳細
-
-PAR の1回目は必ず 400 `use_dpop_nonce`（`DPoP-Nonce` ヘッダ付き）で返り、
-ライブラリが nonce を貼り直して2回目で 201。**1往復で決まる。**
-
-ただし nonce のキャッシュ（`dpopNonceCache`）は `OAuthClient` インスタンスごとなので、
-**リクエストごとにクライアントを作ると毎回この余計な400が1回入る**（実測で認可開始が約2.1〜2.4秒）。
-実装では `dpopNonceCache` をモジュールスコープに置いて同一アイソレート内で使い回す。
-それでも Workers はアイソレートが短命なので、**「毎回1往復増える」前提で見積もる**。
-
-#### 設計へ反映した変更
-
-- **8章を全面的に書き直した**（fetch ラッパだけでは足りない、自前 `didResolver` が要る）。
-- 5章に `auth/bluesky/didResolver.ts` を追加した。
-- 14章のテスト6に自前 `didResolver` の検証を追加した。
-
----
 
 ## 5. モジュールの分割
 
@@ -310,12 +178,12 @@ PAR の1回目は必ず 400 `use_dpop_nonce`（`DPoP-Nonce` ヘッダ付き）�
 | `apps/server/src/auth/bluesky/index.ts` | 外向きの2関数 `startLogin(handle, appState)` / `finishLogin(params)` とエラーコードの正規化 | 120行 |
 | `apps/server/src/routes/authBluesky.ts` | Hono サブアプリ。`GET /client-metadata.json` / `GET /login` / `GET /callback` の**配線だけ**。`auth/bluesky/index.js` は**動的 import**（下記） | 190行 |
 | `apps/server/src/db/repositories/blueskyAuthState.ts` | state 行の CRUD と掃除（生 SQL はここだけ） | 60行 |
-| `apps/server/migrations/00XX_bluesky_oauth_state.sql` | state テーブル | — |
+| `apps/server/migrations/0071_bluesky_oauth_state.sql` | state テーブル | — |
 
 **`auth/bluesky/index.ts` はルートから動的 import で読む**（設計から変えた点）。
 `@atproto/oauth-client` は core-js を含む大きな依存を引くので、静的に繋ぐと
 **Bluesky を使わないリクエストでも評価され、Worker の起動 CPU を無駄に使う**
-（gzip 後 +76.7 KiB、モジュール評価 6ms — 4.2 の S1・S3）。
+（gzip 後 +76.7 KiB、モジュール評価 6ms — 4. の S1・S3）。
 そのぶん Bluesky の入口をこのファイル1つに揃え、境界を増やさないこと。
 型だけの import は消えるので静的でよい。
 
@@ -439,6 +307,8 @@ cookie に全部入れる案もあるが、**DPoP 秘密鍵をブラウザに預
 
 ### 7.1 テーブル
 
+`apps/server/migrations/0071_bluesky_oauth_state.sql`:
+
 ```sql
 -- Bluesky ログイン (#381) の認可開始〜コールバック間の持ち越し。
 --
@@ -451,7 +321,15 @@ cookie に全部入れる案もあるが、**DPoP 秘密鍵をブラウザに預
 -- ブラウザとの紐付け (CSRF 対策) は別途 cookie で行う (routes/authBluesky.ts)。
 --
 -- data は JSON。DPoP 鍵は JWK にして入れる (Key オブジェクトはそのままでは保存できない)。
--- 秘密鍵が入るので、行は使用時に必ず削除し、TTL を過ぎたものは掃除する。
+--
+-- 秘密鍵が入るので、行はできるだけ早く消す。消す経路は4つ:
+--   1. 使ったとき      ライブラリが検証の前に del を呼ぶ (リプレイ防止)
+--   2. 認可開始が失敗   PAR は行を書いた後に走るので、失敗したら開始側で消す
+--   3. コールバックで弾く  期限切れ・cookie の tag 不一致はその場で消す
+--   4. 掃除            上のどれにも当たらない (コールバックに来ないまま
+--                      放置された・処理が途中で落ちた) 行は残る。次の認可開始の
+--                      ついでに TTL の2倍 (20分) より古いものを消すので、
+--                      **最大 20 分は残りうる**。cron は増やさない。
 CREATE TABLE bluesky_oauth_state (
   state TEXT PRIMARY KEY,
   data TEXT NOT NULL,
@@ -497,7 +375,7 @@ TTL の知識をルートへ漏らさないようにしている。
 
 ---
 
-## 8. `redirect: 'error'` の回避策（4.2 の実測で確定）
+## 8. `redirect: 'error'` の回避策（実測で確定——4. S2）
 
 `@atproto/oauth-client` とその依存は、リダイレクトを拒否するために
 `redirect: 'error'` を使う。**workerd はこの値を `new Request()` の構築時点で拒否して
@@ -534,8 +412,8 @@ TypeError: Invalid redirect value, must be one of "follow" or "manual"
 - `redirect: 'manual'` で取り、**3xx は自分で例外にする**（元の意図を保つ）
 - `@atproto/did` の `didDocumentValidator` で DID ドキュメントを検証し、
   **`doc.id` が要求した DID と一致すること**を確かめる。ライブラリ側の検証を落とさないため
-- 目安40行。**グローバル（`globalThis.Request`）は書き換えない**——
-  アイソレート全体に影響し、Bluesky と無関係な既存ルートまで巻き込むため（4.2 の案B、却下）
+- 目安40行。**グローバル（`globalThis.Request`）を Proxy で差し替える対案は却下した**——
+  アイソレート全体に影響し、Bluesky と無関係な既存ルートまで巻き込むため
 
 ### 8.3 通らない経路（手当て不要）
 
@@ -549,9 +427,6 @@ workerd が `redirect: 'error'` を受け付けるようになったら、8.1 �
 素の `fetch` とライブラリ既定の DID 解決に戻す。判定は
 `new Request(url, { redirect: 'error' })` が投げないことを `wrangler dev` で確かめるだけでよい。
 **この判定を 8.1 のコメントに書いておく。**
-
----
-
 
 ### 8.5 `cache: 'no-cache'` — 互換性フラグで通す（実機で判明）
 
@@ -599,6 +474,8 @@ Request に触れない。`signal` は健全で、`AbortSignal.timeout` も
 
 **消せる条件**: workerd が既定で `cache: 'no-cache'` を受けるようになったらフラグを外せる。
 判定は `new Request(url, { cache: 'no-cache' })` が投げないことを確かめるだけでよい。
+
+---
 
 ## 9. dev の扱い
 
@@ -797,7 +674,7 @@ Request に触れない。`signal` は健全で、`AbortSignal.timeout` も
 | 9 | 解除 | `DELETE /api/auth/identities/bluesky` が 404 にならない / 最後の1つは 409 |
 
 **やらないテスト**: 認可サーバーとの実通信、DPoP nonce の往復、PAR。
-これらはスパイク（4章）と staging での手動確認で見る。モックを積み上げても
+これらは実装前の実測（4.）と staging での手動確認で見た。モックを積み上げても
 「上流ライブラリが workerd で動くか」という肝心の問いには答えられない。
 
 ---
@@ -838,21 +715,31 @@ Request に触れない。`signal` は健全で、`AbortSignal.timeout` も
 
 ---
 
-## 17. 実装の順番
+## 17. 設計からの差分（実装・実機で変えた判断）
 
-| PR | 内容 | 検証 |
-|---|---|---|
-| 0 | **スパイク**（4章）。probe ルートで S1〜S5。結果を本書に追記 | **完了（4.2）**。`wrangler dev` で実在ハンドル2件の PAR まで通した |
-| 1 | `accountLink.ts` の抽出（**振る舞い変更なし**）。`routes/auth.ts` が短くなる | 既存テストが無変更で通ること |
-| 2 | マイグレーション + state リポジトリ + state ストア + fetch ラッパ（**ルートはまだ生やさない**） | ユニット（5・6） |
-| 3 | `auth/bluesky/*` 本体 + `routes/authBluesky.ts` + client-metadata | テスト 1〜4・9 |
-| 4 | UI（ログイン画面・アカウント設定・staging ゲート） | 手動。staging で本番相当の URL でログイン・連携・解除・引き取り |
+- **`auth/bluesky/index.ts` はルートから動的 import**（5.）。core は core-js を含む大きな
+  依存を引くので、静的に繋ぐと Bluesky を使わないリクエストでも評価される
+- **fetch ラッパだけでは足りず、自前 `didResolver` を追加した**（8. を実測に合わせて
+  全面的に書き直した）。workerd は `redirect: 'error'` を `new Request()` の構築時点で
+  拒否し、`bindFetch()` を通る経路（DID 解決）には注入した fetch の制御が渡らない
+- **`cache: 'no-cache'` は互換性フラグで通した**（8.5。staging で発覚 → PR #390）。
+  コールバックの `verifyIssuer()` が `noCache: true` をハードコードしており、既定の
+  workerd は `new Request()` の構築時点で拒否する。`wrangler.toml` の
+  `compatibility_flags` に `cache_no_cache_enabled` を足した
+- **cookie の照合はトークン交換より先**（7.3・10. の 5〜6）。当初は `callback()` の後に
+  置いていたが、CSRF や期限切れのために外部と1往復してしまう。覗くだけの `peekState` を
+  state ストアに置き、TTL の知識をルートへ漏らさない
+- **`state` の異常は画面に出さず 400**（12.）。当初はすべて `bluesky_error` で画面へ
+  返す形だった。リプレイ・tag 不一致は利用者の操作では起こらないので
+  `invalid_oauth_state`（既存 OAuth と同じ扱い）、期限切れだけ画面へ返す
+- **戻り先（`next`）は `safeRedirectPath` で組み直す**（10. 補足）。形の検査ではなく
+  組み直しでないと、改行入りの値で「セッションは発行済みなのにリダイレクトが返らない」
+  が起きる
+- **`GET /login` に 10 秒のタイムアウト**（13.4）。未認証のまま外部 fetch と D1 書き込みが
+  走る入口なので、既存の `/:provider/login` とコスト特性が違う。回数制限は意図して
+  入れず、入れるなら Cloudflare 側の Rate Limiting Rules と判断した
+- **アイコンの取り込みは `lib/avatarStore.ts` へ移して共用**（5.2。純粋な移動）
 
-PR1 と PR2 は Bluesky の実装が失敗しても単独で意味がある（前者は重複の解消、後者は未使用のまま無害）。
-PR0 は通ったので **PR3 はライブラリ方式で書く**（Plan B は採らない）。
-PR2 の範囲に **8.2 の自前 `didResolver`** が加わる（fetch ラッパと同じ「回避策」の枠）。
-
----
 
 ## 18. 出典
 
@@ -863,7 +750,7 @@ PR2 の範囲に **8.2 の自前 `didResolver`** が加わる（fetch ラッパ�
 
 ライブラリ（`@atproto/oauth-client`）:
 
-- 版は **0.8.2**（4.2 で実測。0.8.3 は `minimumReleaseAge` により未採用）
+- 版は **0.8.2**（4. で実測。0.8.3 は `minimumReleaseAge` により未採用）
 - `authorize()` / `callback()`（PAR・state・iss 照合・`sub` 再解決）
 - `InternalStateData` に `iss` / `dpopKey` / `verifier` / `appState`
 - `token_endpoint_auth_method: 'none'` を正式にサポート
