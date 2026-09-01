@@ -138,7 +138,11 @@ export interface PreSurveyResponseRowView {
 export interface PreSurveyAccessRow {
   /** JST の 'YYYY-MM-DD' */
   day: string;
+  /** のべ表示数 */
   views: number;
+  /** 初回訪問数（クライアントの localStorage 申告による分析用途の値。
+   * トークン再発行後は「新しいURLで配り直した」とみなし再び初回扱い） */
+  firstVisits: number;
   responses: number;
 }
 

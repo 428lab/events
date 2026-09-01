@@ -40,7 +40,9 @@ const { AppThemeProvider } = await import("../theme/ThemeContext.js");
 describe("開催前アンケートの未ログイン経路 (#444)", () => {
   it("未ログインで /s/:token を開くと回答フォームが出る（トップへ飛ばされない）", async () => {
     apiGet.mockImplementation((path: string) =>
-      path === "/public/pre-surveys/tok123"
+      // 初回訪問フラグ (#450) が付くことがあるので、クエリは許容する
+      path === "/public/pre-surveys/tok123" ||
+      path === "/public/pre-surveys/tok123?first=1"
         ? Promise.resolve({
             status: "open",
             title: "秋のもくもく会、興味ありますか？",

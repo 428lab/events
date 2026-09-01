@@ -26,12 +26,44 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
   });
 };
 
-/** 回答ページ（未ログイン可）。404 は「無い」であって再試行しない */
+/** 訪問済みマークのキー（トークン単位）。トークン再発行後は別キーになり
+ * 再び初回扱い＝「新しいURLで配り直した」とみなす仕様 (#450 フォローアップ) */
+const visitedKey = (token: string) => `eventer:preSurveyVisited:${token}`;
+
+/** この端末で初めての訪問か。localStorage が使えない環境（プライベート
+ * ブラウズ等）では常に初回扱いでよい（分析用途の割り切り） */
+export function isFirstPreSurveyVisit(token: string): boolean {
+  try {
+    return localStorage.getItem(visitedKey(token)) === null;
+  } catch {
+    return true;
+  }
+}
+
+/** 訪問済みマークを付ける（読み込みが成功したときだけ呼ぶ） */
+export function markPreSurveyVisited(token: string): void {
+  try {
+    localStorage.setItem(visitedKey(token), "1");
+  } catch {
+    // 保存できない環境では次回も初回扱いになるだけ（実害なし）
+  }
+}
+
+/** 回答ページ（未ログイン可）。404 は「無い」であって再試行しない。
+ * 初回訪問（マーク無し）のときだけ ?first=1 を付け、成功したらマークを保存
+ * →以後のフェッチ（再訪・refetch）はフラグ無しになる */
 export function usePublicPreSurvey(token: string) {
   return useQuery({
     queryKey: ["pre-survey", token],
     enabled: Boolean(token),
-    queryFn: () => api.get<PublicPreSurvey>(`/public/pre-surveys/${token}`),
+    queryFn: async () => {
+      const first = isFirstPreSurveyVisit(token);
+      const data = await api.get<PublicPreSurvey>(
+        `/public/pre-surveys/${token}${first ? "?first=1" : ""}`,
+      );
+      markPreSurveyVisited(token);
+      return data;
+    },
     retry: false,
   });
 }
