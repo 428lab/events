@@ -1,5 +1,6 @@
 import type {
   PreSurveyQuestion,
+  PreSurveyResponseRowView,
   PreSurveyResults,
   PreSurveyStatus,
   SavePreSurveyInput,
@@ -281,6 +282,46 @@ export const eventPreSurveyRepo = {
       }
       throw e;
     }
+  },
+
+  /** 回答一覧 (#447・staff のみが読む)。行=1送信・新しい順。
+   * ログイン回答者は表示名を出す（結果画面の匿名集計と違い、一覧は
+   * 「誰が答えたか」を運営が確認する画面。未ログイン・退会は null）。
+   * 上限1000件（insertResponse の門）なのでページングは持たない */
+  async responseRows(surveyId: string): Promise<PreSurveyResponseRowView[]> {
+    const rows = await many<{
+      id: string;
+      created_at: number;
+      username: string | null;
+      global_name: string | null;
+      question_id: string | null;
+      value: string | null;
+    }>(
+      `SELECT r.id, r.created_at, u.username, u.global_name,
+              a.question_id, a.value
+         FROM event_pre_survey_response r
+         LEFT JOIN user u ON u.id = r.user_id AND u.deleted_at IS NULL
+         LEFT JOIN event_pre_survey_answer a ON a.response_id = r.id
+        WHERE r.survey_id = ?
+        ORDER BY r.created_at DESC, r.id ASC`,
+      surveyId,
+    );
+    const byResponse = new Map<string, PreSurveyResponseRowView>();
+    const order: string[] = [];
+    for (const r of rows) {
+      let row = byResponse.get(r.id);
+      if (!row) {
+        row = {
+          createdAt: r.created_at,
+          respondent: r.username ? (r.global_name ?? r.username) : null,
+          answers: {},
+        };
+        byResponse.set(r.id, row);
+        order.push(r.id);
+      }
+      if (r.question_id !== null) row.answers[r.question_id] = r.value ?? "";
+    }
+    return order.map((id) => byResponse.get(id)!);
   },
 
   /** 集計（staff のみが読む）。回答者の名前は返さない（内訳は人数だけ） */

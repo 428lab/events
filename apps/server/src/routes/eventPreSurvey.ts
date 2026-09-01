@@ -202,6 +202,17 @@ eventPreSurveyRoutes.get(
   },
 );
 
+/** 回答一覧 (#447・staff のみ)。行=1送信・新しい順。表ビューとCSVの元データ */
+eventPreSurveyRoutes.get(
+  "/:id/pre-survey/responses",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const survey = await eventPreSurveyRepo.findByEvent(c.req.param("id"));
+    if (!survey) return c.json({ error: "not_found" }, 404);
+    return c.json({ rows: await eventPreSurveyRepo.responseRows(survey.id) });
+  },
+);
+
 /** アンケートごと削除（回答も CASCADE。UI が確認ダイアログを出す） */
 eventPreSurveyRoutes.delete(
   "/:id/pre-survey",

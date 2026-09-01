@@ -1,6 +1,11 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import type { PreSurveyAdminView, PreSurveyResults, PublicPreSurvey } from "@eventer/shared";
+import type {
+  PreSurveyAdminView,
+  PreSurveyResponseRowView,
+  PreSurveyResults,
+  PublicPreSurvey,
+} from "@eventer/shared";
 import { PRE_SURVEY_MAX_RESPONSES } from "@eventer/shared";
 
 const BASE = "https://example.com";
@@ -358,6 +363,45 @@ describe("集計と後始末", () => {
     // 回答者の名前・IDは結果に載せない（匿名回答と扱いを揃える）
     expect(raw).not.toContain(alice.userId);
     expect(raw).not.toContain(alice.username);
+  });
+
+  it("回答一覧 (#447): 行=1送信・新しい順・未ログインは respondent null・質問と値の対応。staff 以外 403", async () => {
+    const { staff, eventId, survey } = await setup();
+    const url = `${publicUrl(survey.token)}/responses`;
+    await post(url, validAnswers(survey)); // 匿名
+    const alice = await makeUser();
+    await post(
+      url,
+      {
+        answers: [
+          { questionId: survey.questions[0].id, value: "日曜" },
+          { questionId: survey.questions[1].id, value: ["開発", "雑談"] },
+        ],
+      },
+      alice.cookie,
+    );
+
+    const listUrl = `${adminUrl(eventId)}/responses`;
+    const outsider = await makeUser();
+    expect(
+      (await SELF.fetch(listUrl, { headers: { cookie: outsider.cookie } })).status,
+    ).toBe(403);
+
+    const { rows } = (await (
+      await SELF.fetch(listUrl, { headers: { cookie: staff.cookie } })
+    ).json()) as { rows: PreSurveyResponseRowView[] };
+    expect(rows).toHaveLength(2);
+    // 新しい順: 先頭は alice（ログイン回答＝表示名あり）
+    expect(rows[0].respondent).toBe(`表示名_${alice.username}`);
+    expect(rows[0].answers[survey.questions[0].id]).toBe("日曜");
+    expect(rows[0].answers[survey.questions[1].id]).toBe(
+      JSON.stringify(["開発", "雑談"]),
+    );
+    expect(rows[0].answers[survey.questions[2].id]).toBeUndefined(); // 未回答はキーなし
+    // 2件目は匿名（respondent null）
+    expect(rows[1].respondent).toBeNull();
+    expect(rows[1].answers[survey.questions[0].id]).toBe("土曜");
+    expect(rows[1].answers[survey.questions[2].id]).toBe("楽しみにしています");
   });
 
   it("質問を消す保存で回答が CASCADE。イベント削除でアンケートごと消える", async () => {

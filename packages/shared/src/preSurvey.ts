@@ -117,6 +117,17 @@ export interface PreSurveyResults {
   texts: PreSurveyTextResult[];
 }
 
+/** 回答一覧の1行 (#447)。行=1送信。値は保存形のまま（checkbox は JSON array 文字列。
+ * 表示は surveyValueLabel の1か所で「、」連結する——写しを作らない） */
+export interface PreSurveyResponseRowView {
+  /** 送信日時 */
+  createdAt: number;
+  /** ログイン回答者の表示名。未ログイン・退会は null */
+  respondent: string | null;
+  /** questionId → 保存値（未回答の質問はキーなし） */
+  answers: Record<string, string>;
+}
+
 /** 送信値の型が qtype に合っているか（text/select は文字列、checkbox は配列） */
 export function preSurveyValueMatches(
   qtype: SurveyQtype,

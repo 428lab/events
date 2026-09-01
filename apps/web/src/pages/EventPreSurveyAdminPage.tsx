@@ -3,6 +3,8 @@ import {
   Alert,
   Box,
   Button,
+  ToggleButton,
+  ToggleButtonGroup,
   Card,
   CardContent,
   Chip,
@@ -37,6 +39,7 @@ import {
   useSavePreSurvey,
 } from "../api/preSurveyHooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
+import { PreSurveyResponsesTable } from "../components/PreSurveyResponsesTable.js";
 
 /** 回答形式 → 翻訳キー（#152 の編集UIと同じ表を使う） */
 const QTYPE_KEY = {
@@ -104,6 +107,8 @@ export function EventPreSurveyAdminPage() {
   const [description, setDescription] = useState("");
   const [rows, setRows] = useState<Row[]>([newRow()]);
   const [notice, setNotice] = useState<string | null>(null);
+  // 結果の見せ方 (#447): 集計（既定）か、回答ごとの表か
+  const [resultsView, setResultsView] = useState<"summary" | "table">("summary");
   const [failure, setFailure] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const busy =
@@ -421,7 +426,29 @@ export function EventPreSurveyAdminPage() {
                 anonymous: res.anonymous,
               })}
             </Typography>
-            {res.total === 0 ? (
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={resultsView}
+              onChange={(_e, v: "summary" | "table" | null) => {
+                if (v) setResultsView(v);
+              }}
+              sx={{ mb: 1.5 }}
+            >
+              <ToggleButton value="summary">
+                {t("staffOps.preSurveyViewSummary")}
+              </ToggleButton>
+              <ToggleButton value="table">
+                {t("staffOps.preSurveyViewTable")}
+              </ToggleButton>
+            </ToggleButtonGroup>
+            {resultsView === "table" ? (
+              <PreSurveyResponsesTable
+                eventId={id}
+                questions={survey.questions}
+                enabled={isStaff}
+              />
+            ) : res.total === 0 ? (
               <Typography variant="body2" color="text.secondary">
                 {t("staffOps.preSurveyNoResponses")}
               </Typography>

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   PreSurveyAdminView,
+  PreSurveyResponseRowView,
   PreSurveyResults,
   PublicPreSurvey,
   SavePreSurveyInput,
@@ -18,6 +19,9 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
   void qc.invalidateQueries({ queryKey: ["event", eventId, "pre-survey"] });
   void qc.invalidateQueries({
     queryKey: ["event", eventId, "pre-survey-results"],
+  });
+  void qc.invalidateQueries({
+    queryKey: ["event", eventId, "pre-survey-rows"],
   });
 };
 
@@ -91,6 +95,19 @@ export function usePreSurveyResults(eventId: string, enabled: boolean) {
     queryFn: () =>
       api.get<{ results: PreSurveyResults }>(
         `/events/${eventId}/pre-survey/results`,
+      ),
+    retry: false,
+  });
+}
+
+/** 回答一覧 (#447・staff のみ)。表ビューと CSV が同じデータを使う */
+export function usePreSurveyResponses(eventId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["event", eventId, "pre-survey-rows"],
+    enabled: Boolean(eventId) && enabled,
+    queryFn: () =>
+      api.get<{ rows: PreSurveyResponseRowView[] }>(
+        `/events/${eventId}/pre-survey/responses`,
       ),
     retry: false,
   });
