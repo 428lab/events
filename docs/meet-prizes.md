@@ -2,17 +2,11 @@
 
 - 対象: `apps/server`（D1 スキーマ・新ルート・新リポジトリ）、`packages/shared`（型・入力・文言）、
   `apps/web`（イベントページの景品カード・スタッフの引き換えデスク・イベント編集の景品設定）
-- ステータス: **実装済み**（本ブランチ。設計からの差分は3点だけ）
-  - **0件での締めは 409 `no_meets`**。「確定済みか」を winner 行の有無で表すため、
-    勝者0人の「確定済み」という状態を作らない（§3.4 の「勝者0人」を許す案から変更）
-  - 公開一覧の `me` は `{ count, won, redeemedPrizeIds }`。達成の表示は
-    クライアントが導出する（判定の正は引き換え時のサーバー再検証で変わらず）
-  - デスク画面のルートは `/events/:id/prize-desk`（`EventPrizeDeskPage`）
-  - レビュー反映: `sort_order` 列は**持たない**（誰も設定できない値を5層に貫通させない。
-    並び順は作成順。並び替えが要るときに足す）。`event_prize` に threshold と条件の
-    整合を CHECK 制約で強制。参加者カードの進捗バーは未実装（自分の件数の文のみ）。
-    締めは出会い0件なら**既存の確定に触らず** 409
-- 前提: #418（出会いランキング）は**マージ済み**。集計の土台
+- ステータス: **実装済み**（PR #433 / issue #431）。その後の拡張:
+  景品の任意画像は PR #435（issue #434）、ビンゴ景品プール（条件種別 `bingo`）は
+  PR #437（issue #436）、引き換え履歴は PR #442（issue #441）。
+  設計から変えた点は §7「設計からの差分」
+- 前提: #418（出会いランキング、PR #432）は**マージ済み**。集計の土台
   `PER_USER_COUNTS_SQL`（`eventMeets.ts`）と `rankingForEvent` をそのまま使う
 - 決定済み（issue #431 本文 + コメント 2026-08-26）:
   - 達成条件は **5人到達 / 10人到達 / 20人到達 / ランキング1位**
@@ -111,7 +105,7 @@ named/anonymous ランキング・本人の順位・母数がすべてこれを�
 - オンにすると: イベントページに景品カードが出る（公開。§3.9）
 - オフのとき: **参加者向けの読み取りは 404**（イベント不存在と同一応答。#418 と同じ姿勢で
   存在ごと出さない）。**staff の設定 CRUD・引き換えデスクはオフでも動く**
-  （開催前に景品を仕込んでおき、当日オンにする運用のため。門は公開GETの1か所。§3.9）
+  （開催前に景品を仕込んでおき、当日オンにする運用のため。門の述語は1つ。§3.9）
 - 3値 enum にしない: #418 は「出す/出さない × 名前/匿名」の2軸を1列に畳む必要が
   あったが、本件の公開情報は景品の定義だけで見せ方の軸が無い。boolean で足りる
 
@@ -124,7 +118,7 @@ shared（`packages/shared/src/schema.ts`）: `eventSchema` に `meetPrizes: z.bo
 マイグレーション `apps/server/migrations/0079_meet_prizes.sql`:
 
 ```sql
--- 出会いの景品引き換えモード (#431)。オンでイベントページに景品を表示
+-- 景品引き換えモード (#431)。オンでイベントページに景品を表示
 ALTER TABLE event ADD COLUMN meet_prizes INTEGER NOT NULL DEFAULT 0;
 
 -- 景品の定義（イベントごとに主催者が作る）
@@ -136,8 +130,12 @@ CREATE TABLE event_prize (
   condition_type TEXT NOT NULL,   -- 'meet_count' | 'top_rank'
   threshold INTEGER,              -- meet_count のとき必要人数（1以上）。top_rank は NULL
   stock INTEGER NOT NULL,         -- 在庫総数（0以上。残数は引き換え行から導出）
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  -- 「meet_count なのに人数が無い / top_rank なのに人数がある」行を作れなくする。
+  -- NULL の解釈（1? 無限?）をコードに2つ作らないための、状態そのものの排除。
+  -- 否定形で書いてあるのは、条件の種別を将来足すときにテーブル再構築を要しないため
+  CHECK ((condition_type <> 'meet_count' OR threshold IS NOT NULL)
+     AND (condition_type <> 'top_rank' OR threshold IS NULL))
 );
 CREATE INDEX idx_event_prize_event ON event_prize(event_id);
 
@@ -162,16 +160,22 @@ CREATE TABLE event_meet_winner (
 );
 ```
 
-- 条件は **`meet_count`（N人到達。N は自由入力）と `top_rank`（1位）の2種**。
+- `0080_meet_prize_images.sql`（#434）で `event_prize` に **`image_key TEXT`** を追加
+  （R2 のオブジェクトキー。NULL＝画像なし。キーはアップロードごとに新しく振る。§7）
+- 条件は **`meet_count`（N人到達。N は自由入力）と `top_rank`（1位）の2種**で始め、
+  #436 で **`bingo`（ビンゴ達成。ビンゴ景品プール）** が加わり3種（TEXT 列なので
+  マイグレーション不要。`bingo` の threshold NULL 強制は上の CHECK では縛れないため、
+  shared の zod `thresholdMatchesCondition` が正の門。詳細は §7 と `docs/bingo.md`）。
   5/10/20 は編集UIの**既定候補（プリセットボタン）**であって DB 上の制約ではない。
   「3人で参加賞」「50人の猛者賞」もイベント規模に合わせて作れる。
   同じ閾値の景品を複数作ることも止めない（UNIQUE を張らない）
 - **在庫の残数・達成済みかは列に持たない。** 残数は `stock - COUNT(redemption)`、
   達成は件数から、そのつど導出する（「充足は保存せず導出」`docs/staff-roles.md` 3.7 と同じ。
   保存すると #330 の取り消しや在庫訂正のたびに整合を追いかける2つ目の契約になる）
-- `threshold` の入力検証は 1〜1000（`meetCountThreshold`）。`stock` は 0〜1000。
-  名前 100 字・説明 500 字（awards の入力と同水準）。景品数はイベントあたり最大 20
-  （`MEET_PRIZE_MAX` を shared に。条件4種×数個で足りる。無制限だと公開ページに並ぶ）
+- `threshold` の入力検証は 1〜1000。`stock` は 0〜1000。
+  名前 100 字・説明 500 字（awards の入力と同水準。`packages/shared/src/meetPrizes.ts` の zod）。
+  景品数はイベントあたり最大 20
+  （`MEET_PRIZE_MAX` を shared に。条件数種×数個で足りる。無制限だと公開ページに並ぶ）
 
 ### 3.3 達成の判定は導出（保存しない）
 
@@ -195,7 +199,9 @@ CREATE TABLE event_meet_winner (
 締める操作をする、が安全」）。表彰のタイミング（結果発表・懇親会の頭）は
 イベントごとに違うので、人間が決めるのが正しい。
 
-`POST /api/events/:id/meets/winners/close`（staff）:
+`POST /api/events/:id/meets/winners/close`（staff）。実装は `closeWinners()`
+（`db/repositories/eventMeetPrizes.ts`）。先に `PER_USER_COUNTS_SQL` で母集団の有無を
+確かめ（0 なら**何も消さずに**断る）、その後:
 
 ```sql
 -- batch() で2文をアトミックに（締め直し＝全置換）
@@ -215,7 +221,10 @@ SELECT ?, t.id, t.n, ?
   変わったと分かったら締め直せばよい。**ただし引き換え済みの行には触らない**（§3.6。
   景品は物理的に渡っている）。締め直しで勝者から外れた未引き換えの人は達成が消える
 - `DELETE /api/events/:id/meets/winners`（staff）で未確定に戻せる（誤操作用）
-- 0件（誰も出会っていない）で締めると勝者0人。UI は締める前に警告を出す
+- 0件（誰も出会っていない）での締めは **409 `no_meets`**。「確定済みか」を winner 行の
+  有無で表すため、勝者0人の「確定済み」という状態を作らない。母集団の確認は DELETE
+  より**先**に行い、既存の確定には触らない（締めた後に出会いが全部取り消された状態から
+  締め直しても、勝者が黙って消えない）
 - 記録の窓はイベント終了2時間後に自然に閉まる（#418 §3.7 と同じ理屈）ので、
   「締めた後も QR を読み合える」こと自体は問題にしない——締め＝景品の確定であって
   記録の停止ではない。締めた後の記録はランキングには映るが1位の景品には効かない
@@ -272,7 +281,8 @@ SELECT ?, ?, ?, ?, ?
 - **付けるのは staff だけ**（`requireEventRole(["staff"])`）。参加者の自己申告 POST は
   作らない（物を渡すのは staff なので、押す人と渡す人を一致させる。出席チェックと同じ）
 - サーバーは引き換え時に**達成を再検証**する（`meet_count`: 現在の件数 >= threshold /
-  `top_rank`: winner 行の存在）。画面に出ていたかは信用しない
+  `top_rank`: winner 行の存在 / `bingo`: ゲームとカードからの導出 #436）。
+  画面に出ていたかは信用しない
 - 対象は**確定メンバーのみ**（attendance と同じ 409 `not_confirmed`）
 - 本人確認は「参加者が自分の達成画面（名前・アバター入り）を見せ、staff が一覧の
   名前と突き合わせる」で足りる（v1）。チェックインの署名付きQRを読む厳密な型は、
@@ -282,19 +292,24 @@ SELECT ?, ?, ?, ?, ?
 ### 3.8 API 一覧
 
 すべて `routes/eventMeetPrizes.ts`（新規。`eventMeets.ts` は既に大きく、責務も
-「記録・ランキング」と「景品」で分かれる）。
+「記録・ランキング」と「景品」で分かれる）。公開の2本（一覧・画像）は
+`worker.ts` で api に直接登録する（awards の `getEventAwards` と同じ型）。
 
 | メソッド/パス | 誰が | 何をする |
 |---|---|---|
-| `GET /api/events/:id/meet-prizes` | 公開（イベントが見られる人。awards の `canView` 型で api に直接登録） | 景品一覧 + 残数 + 1位確定済みか。ログイン済み確定メンバーには `me`（景品ごとの `achieved`/`redeemed`、自分の件数）も返す。**`meet_prizes` オフなら 404**（存在ごと隠す門はここ1か所） |
-| `POST /api/events/:id/meet-prizes` | staff | 景品作成（`name`/`description`/`conditionType`/`threshold`/`stock`/`sortOrder`）。上限 `MEET_PRIZE_MAX` 超で 409 |
-| `PATCH /api/events/:id/meet-prizes/:prizeId` | staff | 更新（子リソースの eventId 所有チェック → 不一致 404） |
-| `DELETE /api/events/:id/meet-prizes/:prizeId` | staff | 削除（redemption は CASCADE。引き換え済みがあれば UI で警告） |
+| `GET /api/events/:id/meet-prizes` | 公開(イベントが見られる人。未ログイン可) | 景品一覧 + 残数 + 画像URL + 1位確定済みか。ログイン済み確定メンバーには `me`（自分の件数・1位か・ビンゴ達成か・受け取り済み履歴）も返す。**`meet_prizes` オフなら staff にも 404**（存在ごと隠す門。§3.9） |
+| `GET /api/events/:id/meet-prizes/:prizeId/image` | 公開（同上。#434） | 景品画像の配信（R2 ストリーム + MIME 許可リスト + nosniff + ETag）。オフのとき staff だけは例外で見られる（仕込み中のプレビュー用。共有キャッシュには置かせない） |
+| `POST /api/events/:id/meet-prizes` | staff | 景品作成（`name`/`description`/`conditionType`/`threshold`/`stock`）。上限 `MEET_PRIZE_MAX` 超で 409 `too_many` |
+| `PATCH /api/events/:id/meet-prizes/:prizeId` | staff | 更新（子リソースの eventId 所有チェック → 不一致 404。全項目送りの非部分更新） |
+| `DELETE /api/events/:id/meet-prizes/:prizeId` | staff | 削除（redemption は CASCADE。画像の R2 オブジェクトもここで削除。引き換え済みがあれば UI で警告） |
+| `PUT /api/events/:id/meet-prizes/:prizeId/image` | staff | 画像アップロード（生バイナリ。MIME 許可リスト + マジックバイト検査 + `MEET_PRIZE_IMAGE.maxBytes`＝1MB。#434） |
+| `DELETE /api/events/:id/meet-prizes/:prizeId/image` | staff | 画像の削除（参照を外してから R2 を best-effort で削除。#434） |
 | `GET /api/events/:id/meet-prizes/list` | staff | 定義一覧だけの軽い口（編集画面用。達成者・在庫の集計はしない。オフでも動く） |
-| `GET /api/events/:id/meet-prizes/status` | staff | 引き換えデスク用: 景品ごとの達成者一覧（名前・件数・交換済みか・残数）。達成者は `PER_USER_COUNTS_SQL` と winner 行から導出 |
-| `POST /api/events/:id/meet-prizes/:prizeId/redeem` | staff | `{ userId }` を交換済みに（§3.5 の1文）。409: `already_redeemed` / `out_of_stock` / `not_achieved` / `not_confirmed` |
+| `GET /api/events/:id/meet-prizes/log` | staff | 引き換え履歴（全景品種別・新しい順・上限100。#441） |
+| `GET /api/events/:id/meet-prizes/status` | staff | 引き換えデスク用: 景品ごとの達成者一覧（名前・件数・交換済みか・残数）+ 確定済み勝者 + ビンゴ景品プールの達成者（#436）。達成者は `PER_USER_COUNTS_SQL` と winner 行から導出 |
+| `POST /api/events/:id/meet-prizes/:prizeId/redeem` | staff | `{ userId }` を交換済みに（§3.5 の1文。`bingo` はプール全体で1人1回の別の1文）。409: `already_redeemed` / `out_of_stock` / `not_achieved` / `not_confirmed` |
 | `DELETE /api/events/:id/meet-prizes/:prizeId/redeem/:userId` | staff | 交換済みの取り消し（誤操作訂正。在庫が戻る） |
-| `POST /api/events/:id/meets/winners/close` | staff | 1位を確定（全置換。§3.4） |
+| `POST /api/events/:id/meets/winners/close` | staff | 1位を確定（全置換。0件は 409 `no_meets`。§3.4） |
 | `DELETE /api/events/:id/meets/winners` | staff | 確定を取り消して未確定に戻す |
 
 staff 系はオン/オフに**従わない**（準備・後片付けで使う。staff 用ランキングと同じ姿勢）。
@@ -305,9 +320,10 @@ staff 系はオン/オフに**従わない**（準備・後片付けで使う。
 
 | 経路 | 見える人 | 見える内容 |
 |------|---------|-----------|
-| `GET /:id/meet-prizes`（公開） | イベントを見られる全員 | 景品名・説明・条件・**残数**。個人を指す値は一切載せない（1位も「確定済みか」の bool だけで**勝者名は載せない**。#418 匿名モードと同じ責務分担: 落とすのはサーバー） |
-| 同上の `me` | 本人（確定メンバー） | 自分の件数・達成・交換済み |
-| `GET /:id/meet-prizes/status` | staff のみ | 達成者の名前・件数・交換状況（配布運営に必要） |
+| `GET /:id/meet-prizes`（公開） | イベントを見られる全員 | 景品名・説明・条件・**残数**・画像URL。個人を指す値は一切載せない（1位も「確定済みか」の bool だけで**勝者名は載せない**。#418 匿名モードと同じ責務分担: 落とすのはサーバー） |
+| 同上の `me` | 本人（確定メンバー） | 自分の件数・1位か・ビンゴ達成か・受け取り済み履歴 |
+| `GET /:id/meet-prizes/:prizeId/image`（公開 #434） | 一覧と同じ相手（門の述語 `meetPrizeAudience` を共用） | 景品画像。オフのとき staff だけは例外で見られる（プレビュー用。`private` キャッシュ） |
+| `GET /:id/meet-prizes/status`・`/log` | staff のみ | 達成者・引き換え履歴の名前・件数・交換状況（配布運営に必要） |
 
 - **他人の達成状況・交換状況は参加者に見せない**（誰が何個交換したかは競争を
   煽る情報ではなく個人の行動記録。#418 が名前入りランキングを設定の門の内側に
@@ -315,48 +331,52 @@ staff 系はオン/オフに**従わない**（準備・後片付けで使う。
   ランキング画面で実質分かるが、**景品の公開応答には混ぜない**（契約を1つに保つ）
 - 残数は公開する（「残り2個」が早い者勝ちの動機そのもの。在庫切れは
   「なくなりました」表示にして景品自体は消さない——何が出ていたかは残す）
-- オフ→404 の門は公開 GET の**サーバー側1か所**。Web 側の出し分けは利便であって
-  防御ではない（#418 §3.8 と同じ）
+- オフ→404 の門の述語はサーバー側の**1つ**（`meetPrizeAudience`。公開一覧と画像 GET が
+  共用）。Web 側の出し分けは利便であって防御ではない（#418 §3.8 と同じ）
 
 ### 3.10 画面
 
 | 画面 | 場所 | 内容 |
 |------|------|------|
-| 景品カード（参加者・公開） | `EventDetailPage` に追加 | 景品一覧（条件・残数・在庫切れ表示）。確定メンバーには自分の進捗バー（「あと3人で達成」）・達成バッジ・「交換済み」表示。達成があると「スタッフに見せて受け取ってください」の案内 |
+| 景品カード（参加者・公開） | `EventDetailPage` に追加（`components/MeetPrizes.tsx` の `MeetPrizePanel`） | 景品一覧（条件・残数・在庫切れ表示・画像）。確定メンバーには自分の件数の文・達成バッジ・「交換済み」表示（進捗バーは無し）。達成があると「スタッフに見せて受け取ってください」の案内 |
 | 引き換えデスク（staff） | `/events/:id/prize-desk`（新規 `EventPrizeDeskPage.tsx`。`EventTodoPage` と同じ `EventLayout` 子ルート + 詳細ページに導線ボタン） | 景品ごとの達成者一覧（検索つき）・「交換済みにする/戻す」・残数・**「1位を確定する」ボタン**（確定済みなら勝者と締め直し）。`MEET_RANKING_POLL_MS`（5秒）で再取得し、窓口で読み合った直後の達成が出る |
-| 景品の設定（staff） | `EditEventPage` にセクション追加 | オン/オフのスイッチ + 景品の CRUD（条件セレクト: 「N人と出会う」（プリセット 5/10/20 + 自由入力）/「ランキング1位」、在庫数、並び順）。表彰・参加枠の編集UIの型 |
+| 景品の設定（staff） | `EditEventPage` にセクション追加（`components/MeetPrizeEditor.tsx`） | オン/オフのスイッチ + 景品の CRUD（条件セレクト: 「N人と出会う」（プリセット 5/10/20 + 自由入力）/「ランキング1位」/ビンゴ、在庫数、画像）。並び順の入力は無し（作成順で並ぶ）。表彰・参加枠の編集UIの型 |
 | `EventStatsPage` | `MeetRankingCard` | 引き換えデスクへのリンクを1つ足す（「景品配布などの運営用」の注記が既にあり、行き先ができる） |
 
 ### 3.11 i18n・文言
 
-- 参加者向け（`eventSocial.ts` か新規 `meetPrizes.ts`）: 景品カードの見出し・条件の文
-  （「5人と出会うと」「出会った人数ランキング1位」）・進捗・達成・交換済み・在庫切れ
-- staff 向け（`staffOps.ts`）: デスク画面・締め操作の確認（「いま締めると 3人が同率1位に
-  なります。締めた後の出会いは1位に影響しません」）・409 の案内文言
+- 参加者向け（`eventSocial.ts`）: 景品カードの見出し・条件の文
+  （「5人と出会うと」「出会った人数ランキング1位」）・自分の件数・達成・交換済み・在庫切れ
+- 編集画面（`eventForm.ts`）: オン/オフのスイッチ・景品 CRUD・画像の文言
+- staff 向け（`staffOps.ts`）: デスク画面・締め操作の確認・409 の案内文言
   （交換済みです/在庫がありません/条件を満たしていません/参加が確定していません）
 - UI に実装技術の語を出さない・競合名を書かない（既存方針どおり）
 
 ---
 
-## 4. 変更ファイル一覧（実装フェーズの計画）
+## 4. 変更ファイル一覧
 
 | 層 | ファイル | 変更 |
 |----|---------|------|
 | DB | `apps/server/migrations/0079_meet_prizes.sql` | 新規。`meet_prizes` 列 + 3表（§3.2） |
-| shared | `packages/shared/src/eventMeets.ts` か新規 `meetPrizes.ts` | 条件 enum・入力スキーマ・`MEET_PRIZE_MAX`・応答型 |
+| DB | `apps/server/migrations/0080_meet_prize_images.sql` | 新規。`event_prize.image_key`（#434） |
+| shared | `packages/shared/src/meetPrizes.ts` | 新規。条件 enum・入力スキーマ・`MEET_PRIZE_MAX`・`MEET_PRIZE_IMAGE`・応答型・画像URLの組み立て |
 | shared | `packages/shared/src/schema.ts` | `eventSchema`/`updateEventInput` に `meetPrizes` |
 | server | `db/repositories/events.ts` | 行マッピング・UPDATE に `meet_prizes` |
-| server | `db/repositories/eventMeetPrizes.ts` | 新規。CRUD・達成/残数の導出・§3.5 の確保・§3.4 の締め |
-| server | `routes/eventMeetPrizes.ts` | 新規。§3.8 の9本（公開GETは api 直登録） |
-| server | `routes/events.ts` | 複製のコピーリストに `meetPrizes` 設定 + 景品定義のコピー |
-| server | `db/repositories/users.ts` | `mergeUsers` の `uniqueKeyed` に redemption・winner を追加 |
+| server | `db/repositories/eventMeetPrizes.ts` | 新規。CRUD・達成/残数の導出・§3.5 の確保・§3.4 の締め・履歴（#441）・ビンゴプール（#436） |
+| server | `routes/eventMeetPrizes.ts` | 新規。§3.8 の一覧（公開の2本は `worker.ts` で api 直登録） |
+| server | `routes/events.ts` | 複製のコピーリストに `meetPrizes` 設定 + 景品定義・画像のコピー |
+| server | `db/repositories/users.ts` | `mergeUsers` の `uniqueKeyed` に redemption・winner を追加。`redeemed_by` も付け替え |
 | web | `pages/EventPrizeDeskPage.tsx` | 新規。引き換えデスク（§3.10） |
+| web | `components/MeetPrizes.tsx` | 新規。参加者向け景品カード（`MeetPrizePanel`） |
+| web | `components/MeetPrizeEditor.tsx` | 新規。景品 CRUD + 画像アップロード |
 | web | `pages/EventDetailPage.tsx` | 景品カード + staff 導線 |
 | web | `pages/EditEventPage.tsx` | オン/オフ + 景品 CRUD セクション |
 | web | `pages/EventStatsPage.tsx` | デスクへのリンク |
-| web | `api/`（hooks） | 景品の query/mutation 一式 |
-| i18n | `eventSocial.ts`/`staffOps.ts` ほか | ja/en 追加 |
+| web | `api/meetPrizeHooks.ts` | 新規。景品の query/mutation 一式（`MEET_RANKING_POLL_MS` の5秒ポーリング） |
+| i18n | `eventSocial.ts`・`eventForm.ts`・`staffOps.ts` | ja/en 追加 |
 | test | `merge-user-columns.test.ts` | 実数の更新（理由をコミットに書く） |
+| test | `meet-prizes.test.ts`・`meet-prize-images.test.ts` | 新規。§5 の観点 |
 
 ## 5. テスト観点（server）
 
@@ -367,8 +387,9 @@ staff 系はオン/オフに**従わない**（準備・後片付けで使う。
 - **達成の検証**: threshold ちょうどで可・1未満で `not_achieved`。`top_rank` は締め前
   `not_achieved`・締め後は winner のみ可。未確定メンバーは `not_confirmed`
 - **取り消しとの絡み**: 引き換え後に #330 の undo で件数が閾値を下回っても redemption は
-  残る。未引き換えなら `me.achieved` が false に戻り redeem が 409
-- **1位の締め**: 同率で複数行・締め直しで全置換・0件で勝者0・winner の DELETE で未確定に戻る
+  残る。未引き換えなら `me.count` が減って達成表示が消え、redeem が 409
+- **1位の締め**: 同率で複数行・締め直しで全置換・0件は 409 `no_meets`（既存の確定に
+  触らない）・winner の DELETE で未確定に戻る
 - **オフ時の隠蔽**: `meet_prizes=0` で公開 GET が 404（存在しないイベントと同一応答）。
   staff 系はオフでも通る。公開応答に userId・勝者名など個人を指す値が**含まれない**こと
 - **子リソースの所有チェック**: 別イベントの prizeId で PATCH/DELETE/redeem → 404
@@ -382,6 +403,41 @@ staff 系はオン/オフに**従わない**（準備・後片付けで使う。
   「達成したのに引き換えに来ない」が実際に起きたら、scan 後の閾値跨ぎ検出で足せる）
 - **署名付きQRによる引き換えの本人確認**（§3.7。デスク画面が checkin の部品を
   流用できる形にはしておく）
-- **条件の追加種別**（「特定の人と会う」「スタッフ全員と会う」等はビンゴ的な別企画。
-  `condition_type` を enum にしてあるので表は拡張に耐える）
+- **条件の追加種別**（「特定の人と会う」「スタッフ全員と会う」等は範囲外。
+  `condition_type` を enum にして拡張に耐える形にしてあり、実際に #436 で
+  `bingo` が追加された。§7）
 - **ランキング投影ページへの景品表示の混在**（投影は #418 の責務のまま）
+
+## 7. 設計からの差分
+
+レビュー・実機確認・後続PRで設計から変えた点（いずれもコードで確認済み）:
+
+実装時（PR #433）のレビュー・実機反映:
+
+- **`sort_order` 列は持たない**（誰も設定できない値を5層に貫通させない。並び順は
+  作成順 `ORDER BY created_at ASC, rowid ASC`。並び替えが要るときに足す）
+- **threshold と条件の整合を CHECK 制約でも強制**（§3.2。入力の zod と DB の二段）
+- **0件での締めは 409 `no_meets`**（§3.4。勝者0人の「確定済み」を作らず、母集団の
+  確認を DELETE より先にして既存の確定に触らない）
+- 公開一覧の `me` は `{ count, won, bingo, redemptions }`（`MeetPrizeMe`）。達成の表示は
+  クライアントが導出する（判定の正は引き換え時のサーバー再検証で変わらず）
+- 参加者カードの**進捗バーは未実装**（自分の件数の文のみ）
+- デスク画面のルートは `/events/:id/prize-desk`（`EventPrizeDeskPage`）
+- オフの隠蔽の門は述語1つ（`meetPrizeAudience`）に寄せ、公開一覧はオフなら
+  **staff にも 404**（staff の例外が効くのは staff 用ルートと画像 GET だけ）
+- デスクの引き換え記録はイベント単位で1回だけ引く（`redemptionsForEvent`。
+  達成者×景品の N+1 回避）
+
+後続PRでの拡張:
+
+- **景品に任意の画像**（issue #434 / PR #435）: `event_prize.image_key`（0080）に R2 の
+  オブジェクトキー。アップロード PUT / 削除 DELETE / 公開 GET（§3.8）。MIME 許可リスト
+  ＋マジックバイト検査＋1MB 上限（`MEET_PRIZE_IMAGE`）。キーはアップロードごとに
+  新しく振り（差し替えの取り違えと複製時の共倒れを防ぐ）、複製では画像もコピーする
+- **ビンゴ景品プール**（issue #436 / PR #437）: 条件種別に `bingo` を追加。この種別の
+  景品は「プール」で、達成者は在庫のあるプール景品から**1つ選ぶ**（プール全体で
+  1人1回。`redeemFromBingoPool` の1文で塞ぐ）。達成はビンゴのゲームとカードから
+  読むたびに導出し、達成順の裁定はサーバーでは行わない（同着の裁定は現場。
+  `docs/bingo.md`）
+- **引き換え履歴**（issue #441 / PR #442）: staff 用 `GET …/meet-prizes/log`
+  （全景品種別・新しい順・上限100）と、公開一覧 `me.redemptions` の時刻付き化

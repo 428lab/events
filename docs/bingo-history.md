@@ -2,7 +2,7 @@
 
 - 対象: `apps/server`（D1 スキーマ・ルート・リポジトリ）、`packages/shared`（型・文言）、
   `apps/web`（デスクの引き換え履歴・参加者の受け取り済み表示・本人プロフィールのビンゴ成績）
-- ステータス: **設計のみ**（実装はこの設計のレビュー後）
+- ステータス: **実装済み**（PR #442）。レビュー・実機で変えた判断は §4
 - 前提: #436（数字ビンゴ）・#431（景品）はマージ済み。ビンゴの達成・順位は
   「公開済み番号×カード」から**導出**され、reset / delete でゲームごと消える
 - ユーザー要望（確定）:
@@ -77,9 +77,14 @@ CREATE INDEX idx_event_bingo_result_user ON event_bingo_result(user_id);
 ```
 
 - **UNIQUE (event_id, started_at, user_id) が二重保存の砦**。end の実装は
-  「導出 → `batch([条件付き UPDATE（running→ended）, INSERT OR IGNORE ×人数])`」の
+  「導出 → `batch([INSERT OR IGNORE ×人数, 条件付き UPDATE（running→ended）])`」の
   1トランザクションにする。同時に2人が end を押しても、started_at が同じなので
   2本目の INSERT は全部 IGNORE され、UPDATE の変更行数 0 で 409 が返る（既存の型）
+- **draw 競合の門（レビューで追加）**: 材料（導出行・drawn_total）は batch の外で
+  作るため、その直後に draw が入ると古いスナップショットになりうる。各 INSERT に
+  「いまも running かつ drawn_count が導出時と同じ」の EXISTS ガードを持たせて
+  **INSERT を先・UPDATE を後**に並べ、UPDATE にも `drawn_count = ?` を足す。
+  競合していたら何も保存せず・閉じずに 409（押し直せば新しい導出で正しく取れる）
 - **未達成者も rank NULL で保存する**。理由: (a) 達成率（後述）の分母になる
   (b)「参加したのに記録が無い」と「参加していない」を区別できる
   (c) 保存しない案だと分母の定義が「達成者のみ」に固定され、後から変えられない
@@ -106,7 +111,7 @@ CREATE INDEX idx_event_bingo_result_user ON event_bingo_result(user_id);
 | メソッド/パス | 誰が | 内容 |
 |---|---|---|
 | `GET /api/me/bingo-results` | 本人（requireAuth の meRoutes） | 自分の全ラウンド（イベント名・開催日・rank・completed_at_seq・drawn_total）新しい順 + 集計（§3.3 の4指標）。集計はサーバーが行から都度計算 |
-| `GET /api/events/:id/meet-prizes/log` | staff | **全景品種別**の引き換え履歴（時刻順・新しい順）: 景品名・受け取った人・付けた staff（退会は null）・時刻。母体は `event_prize_redemption` そのまま（取り消しで行ごと消える現行仕様も、履歴が「いま有効な引き換え」を映す仕様としてそのまま） |
+| `GET /api/events/:id/meet-prizes/log` | staff | **全景品種別**の引き換え履歴（時刻順・新しい順・上限100件）: 景品名・受け取った人（LEFT JOIN——退会でも配布の記録は残し、名前は「退会したユーザー」表示）・付けた staff（退会は null）・時刻。母体は `event_prize_redemption` そのまま（取り消しで行ごと消える現行仕様も、履歴が「いま有効な引き換え」を映す仕様としてそのまま） |
 | `GET /api/events/:id/meet-prizes`（既存・公開） | 変更 | `me.redeemedPrizeIds` を `me.redemptions: [{ prizeId, redeemedAt }]` に置き換え（本人の受け取り済み履歴。時刻付きの上位互換。web の参照2か所も同時に更新） |
 
 - 成績の**書き込み口は end の1か所だけ**。読み出しは me 配下の1本だけ
@@ -129,7 +134,7 @@ CREATE INDEX idx_event_bingo_result_user ON event_bingo_result(user_id);
 
 | 画面 | 場所 | 内容 |
 |------|------|------|
-| 引き換え履歴（staff） | `EventPrizeDeskPage` に「引き換え履歴」カードを追加 | 時刻順（新しい順）: 時刻・景品名・受け取った人（アバター＋名前）・付けた staff。5秒ポーリングは不要（既存 status の refetch と同じ invalidate に乗せ、引き換え操作後に更新） |
+| 引き換え履歴（staff） | `EventPrizeDeskPage` に「引き換え履歴」カードを追加 | 時刻順（新しい順）: 時刻・景品名・受け取った人（アバター＋名前）・付けた staff。5秒ポーリング（複数窓口で他方の引き換えが見えるように。レビューで invalidate 方式から変更） |
 | 受け取り済み（参加者） | `MeetPrizePanel`（イベントページ） | 自分の交換済み景品に受け取り時刻を添える（`me.redemptions`）。一覧の形は現状のチップ表示を維持し、時刻はツールチップ/キャプションで |
 | ビンゴ成績（本人） | 本人プロフィール（マイページ）に「ビンゴ」セクション（profile-tabs の本人のみタブの型。`drafts` タブと同じ「本人だけに出す」分岐） | 集計4指標 + ラウンド一覧（イベント名リンク・日付・「12回中7回目でビンゴ・2位」/「未達成」） |
 
@@ -141,19 +146,23 @@ CREATE INDEX idx_event_bingo_result_user ON event_bingo_result(user_id);
 - イベント削除: `event_bingo_result` は CASCADE で消える（§3.1 の表）。
   ユーザー完全削除: user_id CASCADE で本人の成績ごと消える（遊びの記録は本人に付随）
 
-## 4. 変更ファイル一覧（実装フェーズの計画）
+## 4. 設計からの差分（レビュー・実機で変えた判断）
 
-| 層 | ファイル | 変更 |
-|----|---------|------|
-| DB | `apps/server/migrations/0082_bingo_results.sql` | 新規（§3.2） |
-| server | `db/repositories/eventBingo.ts` | end のスナップショット（batch）・`resultsForUser` |
-| server | `routes/eventBingo.ts` | end ルートで導出→batch 保存 |
-| server | `routes/me.ts` | `GET /me/bingo-results`（集計込み） |
-| server | `routes/eventMeetPrizes.ts` + repo | `GET /:id/meet-prizes/log`・`me.redemptions` 置き換え |
-| server | `db/repositories/users.ts` + `test/merge-user-columns.test.ts` | uniqueKeyed +1・実数更新 |
-| web | `EventPrizeDeskPage` / `MeetPrizes.tsx` / プロフィール本人ページ | §3.6 の3画面 |
-| web | `api/bingoHooks.ts` ほか | クエリ追加 |
-| i18n | `staffOps.ts` / `eventSocial.ts` / `profile.ts` | ja/en |
+- **end スナップショットに EXISTS ガードを追加**（§3.2。PR #442 レビュー）:
+  各 INSERT に「running かつ drawn_count が導出時と同じ」を持たせて INSERT を先・
+  UPDATE を後に並べ、UPDATE にも drawn_count 条件を足す。導出直後の draw 割り込みで
+  古いスナップショットが保存されるのを塞ぐ（競合時は何も保存せず 409）
+- **引き換え履歴は5秒ポーリング**（PR #442 レビュー）: invalidate 方式では複数窓口で
+  他方の引き換えが見えなかった
+- **履歴の受け取り手は LEFT JOIN・上限100件**（PR #442 レビュー）: 退会（soft delete）
+  でも配布の記録は残し、名前は「退会したユーザー」と表示。100件超は古い順に切る
+- **デスクのビンゴ達成者行をスマホ幅で折り返す**（PR #442 実機）: 右端の交換ボタンが
+  画面外に切れていた
+- **終了/削除の文言を明確化**（PR #442 実機）: 「この回を終了する（結果を確定）」
+  「ビンゴを削除する」に変え、確認文で成績が残る/消える範囲を明示。リセットの
+  確認文にも「保存済みの成績は残ります」を追加
+- **成績カードは成績が1件も無ければ出さない**（`MyBingoCard`。空のカードを
+  マイページに常設しない）
 
 ## 5. テスト観点（server）
 

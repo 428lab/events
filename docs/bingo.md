@@ -2,7 +2,8 @@
 
 - 対象: `apps/server`（D1 スキーマ・新ルート・新リポジトリ）、`packages/shared`（型・入力・文言）、
   `apps/web`（参加者のカード画面・スタッフの抽選コントロール・投影画面・景品条件の追加）
-- ステータス: **設計のみ**（実装はこの設計のレビュー後）
+- ステータス: **実装済み**（本体 PR #437。フォローアップ PR #438/#439/#440/#443。
+  成績履歴は #441 → docs/bingo-history.md / PR #442）。レビュー・実機で変えた判断は §4
 - 決定済み（ユーザー指示）:
   - **数字ビンゴ**（出会いビンゴではない）。主催者が抽選し、参加者はスマホのカードで
     自動マーク、リーチ/ビンゴをリアルタイム判定
@@ -105,6 +106,8 @@ CREATE TABLE event_bingo_card (
 
 - start 前に引けない・ended 後に引けないは、`draw` の条件付き UPDATE の WHERE が守る（§3.4）
 - 「一時停止」は作らない（引かなければ止まっているのと同じ。状態を増やさない）
+- end の成功と同時に、その回の per-user 成績をスナップショットする
+  （#441。契約は docs/bingo-history.md §3.1）
 
 ### 3.4 抽選: 事前順列 + 条件付き UPDATE の1文（採用案）
 
@@ -115,7 +118,13 @@ CREATE TABLE event_bingo_card (
 UPDATE event_bingo_game
    SET drawn_count = drawn_count + 1
  WHERE event_id = ? AND status = 'running' AND drawn_count < 75
+ RETURNING drawn_count
 ```
+
+`RETURNING` で**自分が進めた手番**を原子的に受け取り、そこから番号を決める
+（`draw_order` は start 以降不変なので先に読んでおいてよい）。UPDATE 後に
+読み直す形だと、同時に引いた2応答が同じ「最新の番号」を名乗り、間の1つが
+どの応答にも出ないことがある（PR #437 レビューで変更）。
 
 比較した2案:
 
@@ -127,8 +136,9 @@ UPDATE event_bingo_game
 
 「引いた番号列がゲームの正」という要件は、案D2 では
 **`draw_order` の先頭 `drawn_count` 個**がそれに当たる（順序も集合もこの2値で一意）。
-取り消し（誤って引いた）は `drawn_count - 1` の条件付き UPDATE（staff の誤操作訂正。
-発表済みの番号を戻すかは運用判断なので、ボタンは「取り消す」1つに留める）。
+取り消し（誤って引いた）は `drawn_count - 1` の条件付き UPDATE（**running 中のみ**・
+0 なら変更行数 0。staff の誤操作訂正。発表済みの番号を戻すかは運用判断なので、
+ボタンは「取り消す」1つに留める）。
 
 ### 3.5 判定と達成順: すべて導出（同時到達は同順位）
 
@@ -235,15 +245,15 @@ SELECT ?, ?, ?, ?, ?
 
 | メソッド/パス | 誰が | 何をする |
 |---|---|---|
-| `GET /api/events/:id/bingo` | 確定メンバー | ゲーム状態・公開済み番号列・**自分の**カード・導出（マーク/リーチ/ビンゴ/順位）・達成人数。ゲーム行が無ければ 404 |
+| `GET /api/events/:id/bingo` | 確定メンバー | ゲーム状態・公開済み番号列・**自分の**カード・導出（マーク/リーチ/ビンゴ/順位）・達成人数。ゲーム行が無いときは staff にだけ `status: "none"`（作成ボタン用）、他は 404 |
 | `POST /api/events/:id/bingo/card` | 確定メンバー | カード発行（冪等）。ended 中は 409 |
 | `POST /api/events/:id/bingo` | staff | ゲーム作成（setup）。既にあれば 409 |
 | `POST /api/events/:id/bingo/start` | staff | 順列生成 + running へ（1文の条件付き UPDATE で二重 start を防ぐ） |
-| `POST /api/events/:id/bingo/draw` | staff | §3.4 の1文。変更行数 0 なら 409（not_running / exhausted を読み直して区別） |
+| `POST /api/events/:id/bingo/draw` | staff | §3.4 の1文。応答に引いた番号・番号列・人数（counts）。変更行数 0 なら 409（not_running / exhausted を読み直して区別） |
 | `POST /api/events/:id/bingo/draw/undo` | staff | 直前の1個を取り消す（drawn_count - 1・0 なら 409） |
 | `POST /api/events/:id/bingo/end` / `reset` | staff | §3.3 / §3.6 |
 | `DELETE /api/events/:id/bingo` | staff | ゲームごと削除（参加者は 404 に戻る） |
-| `GET /api/events/:id/bingo/status` | staff | 全カードの導出一覧（名前・リーチ/ビンゴ・順位）。抽選コントロールとデスクが使う |
+| `GET /api/events/:id/bingo/status` | staff | 全カードの導出一覧（名前・リーチ/ビンゴ・順位。ビンゴ→リーチ→その他の順）。ゲーム行が無ければ `status: "none"` の空応答。抽選コントロールとデスクが使う |
 
 見える範囲の規則（#431 §3.9 と同じ姿勢）:
 
@@ -282,25 +292,32 @@ SELECT ?, ?, ?, ?, ?
 
 ---
 
-## 4. 変更ファイル一覧（実装フェーズの計画）
+## 4. 設計からの差分（レビュー・実機で変えた判断）
 
-| 層 | ファイル | 変更 |
-|----|---------|------|
-| DB | `apps/server/migrations/0081_bingo.sql` | 新規。`event_bingo_game` / `event_bingo_card` |
-| shared | `packages/shared/src/bingo.ts` | 新規。型・カード生成の定数（列範囲）・ライン定義・導出関数（web と server で共用） |
-| shared | `packages/shared/src/meetPrizes.ts` | `MEET_PRIZE_CONDITIONS` に `'bingo'`（threshold は NULL 固定）を追加 |
-| server | `db/repositories/eventBingo.ts` | 新規。ゲーム CRUD・カード発行（冪等）・draw の1文・全カード読み出し |
-| server | `routes/eventBingo.ts` | 新規。§3.8 の10本 + `bingoAudience` |
-| server | `routes/eventMeetPrizes.ts` | redeem を conditionType で呼び分け（bingo は `redeemFromBingoPool`）・status にビンゴ達成者一覧 |
-| server | `db/repositories/eventMeetPrizes.ts` | `redeemFromBingoPool`（プール全体で1人1回の1文） |
-| server | `db/repositories/users.ts` | `uniqueKeyed` に `event_bingo_card` |
-| server | `worker.ts` | ルート登録 |
-| web | `pages/EventBingoPage.tsx` / `EventBingoControlPage.tsx` / `EventBingoScreenPage.tsx` | 新規（§3.9） |
-| web | `components/BingoCard.tsx` | カード描画（ページと詳細ページの小カードが共用） |
-| web | `api/bingoHooks.ts` | query/mutation 一式（5秒ポーリング） |
-| web | `App.tsx` / `EventDetailPage.tsx` / `MeetPrizeEditor.tsx` | ルート・導線・条件追加 |
-| i18n | `eventSocial.ts` / `staffOps.ts` / `eventForm.ts` | ja/en |
-| test | `merge-user-columns.test.ts` | 実数更新 |
+- **draw は `UPDATE ... RETURNING drawn_count` に**（§3.4）。応答が自分の進めた
+  手番の番号を原子的に受け取り、同時 draw での二重発表・0回発表を塞ぐ
+  （PR #437 レビュー）
+- **参加者向け `GET /bingo` は名前・アバターを引かない数え上げ専用クエリに**
+  （`cardNumbersForEvent`）。個人を指す値をそもそも取得しないことで、
+  参加者応答への漏れ事故の芽を摘む（PR #437 レビュー）
+- **ビンゴ景品はプールで1つ受け取ったら、他の bingo 景品を「達成！」の
+  ままにしない**（参加者の景品カードが本人のプール引き換え済みを見る。
+  PR #437 レビュー）
+- **投影ページのスマホ幅は履歴グリッドを縦に転置**: 15列を縮める案は丸20pxで
+  読めず却下（実機）。sm 未満は B〜O の5列×15行にし、はみ出しは縦スクロールのみ
+  （PR #438 / #439）
+- **専用ページは 404 の間もポーリングを継続**: ゲーム作成前に投影/カード画面を
+  開くとポーリングが恒久停止し、作成後も更新されなかった。404 でも回し続けて
+  自動復帰する（PR #439 実機）
+- **draw/undo の応答を正としてキャッシュに直書きし、応答に counts を含める**:
+  番号列だけ直書きすると「ビンゴ n人」が次の5秒ポーリングまで古いまま残る
+  （PR #439 / #440 実機）。名前入りの一覧（rows）だけはポーリングが追いつかせる
+- **開始直後（running・0個）のヒント表示**: 開始で1個目が自動で引かれると誤解
+  した実例への対応。コントロールは「『次を引く』で1個目を引きます」、投影は
+  「まもなく1個目を引きます」（PR #443）
+- **UI 文言を機能名付きの旧称から「景品」に統一**（ビンゴ景品もあるため）。
+  キー名・API・DB は互換のため変えない（PR #443）
+- **end はその回の成績スナップショットを伴う**（#441 で追加。docs/bingo-history.md）
 
 ## 5. テスト観点（server）
 

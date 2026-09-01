@@ -2,7 +2,10 @@
 
 - 対象: `apps/server`（D1 スキーマ・ルート・リポジトリ）、`packages/shared`（設定の型・入力）、
   `apps/web`（投影ページ・イベント編集のトグル）
-- ステータス: **実装済み**（本ブランチ。設計どおり。差分は §3.5/§3.8 の「非メンバーも 404」への強化のみ）
+- ステータス: **実装済み**（PR #432 / issue #418、コミット 11393dd）。設計から変えた点は
+  §5「設計からの差分」
+- 関連修正: 出会いQRの見張りをブラウザの可視状態に依存させない修正は PR #421
+  （issue #420。記録経路（QR表示）側の修正で、ランキング本体には影響しない）
 - 決定済み（issue コメント 2026-08-26、ユーザー指示）:
   - 出すかどうかは**イベントごとの設定**。オフなら表示・API とも**存在ごと出さない**
   - **名前を出すか・匿名で出すかも設定**で切り替える
@@ -99,7 +102,7 @@
 ALTER TABLE event ADD COLUMN meet_ranking TEXT NOT NULL DEFAULT 'off';
 ```
 
-shared（`packages/shared/src/schema.ts`）:
+shared（enum は `packages/shared/src/eventMeets.ts` に置き、`schema.ts` が import する）:
 
 ```ts
 export const MEET_RANKING_MODES = ["off", "anonymous", "named"] as const;
@@ -270,24 +273,26 @@ messages に追加し、**振る舞いで書く**（「名前とアイコンが�
 
 ---
 
-## 4. 変更ファイル一覧（実装フェーズの計画）
+## 4. 変更ファイル一覧
 
 | 層 | ファイル | 変更 |
 |----|---------|------|
 | DB | `apps/server/migrations/0078_meet_ranking.sql` | 新規。`meet_ranking` 列 |
-| shared | `packages/shared/src/schema.ts` | `MEET_RANKING_MODES`・`eventSchema`・`updateEventInput` |
-| shared | `packages/shared/src/`（定数） | `MEET_RANKING_POLL_MS = 5000`（liveSets.ts でなく meets 系の置き場に） |
+| shared | `packages/shared/src/schema.ts` | `eventSchema`/`updateEventInput` に `meetRanking` |
+| shared | `packages/shared/src/eventMeets.ts` | `MEET_RANKING_MODES`・`MEET_RANKING_POLL_MS = 5000`・`MEET_RANKING_TOP_N = 10`・live 応答の型 |
 | server | `db/repositories/events.ts` | 行マッピング・UPDATE 文に `meet_ranking` |
 | server | `db/repositories/eventMeets.ts` | `rankingForEvent` に rank 追加、`anonymousRankingForEvent`・`rankForUser` 新設 |
 | server | `routes/eventMeets.ts` | `GET /:id/meets/ranking/live` 新設（off→404 / 確定メンバー判定 / mode 別応答） |
 | server | `routes/events.ts` | 複製のコピーリストに `meetRanking` |
-| web | `pages/MeetRankingScreenPage.tsx` | 新規。投影ページ（`MeetRankingBoard` 部品 + 全画面枠） |
+| web | `pages/MeetRankingScreenPage.tsx` | 新規。投影ページ（全画面枠。描画は `MeetRankingBoard`） |
+| web | `components/MeetRanking.tsx` | 新規。`MeetRankingBoard`（投影の描画）+ `MeetRankingPanel`（詳細ページの小カード） |
 | web | `App.tsx` | `/events/:id/meet-ranking/screen` の Route |
 | web | `api/eventMeetHooks.ts` | `useMeetRankingLive(eventId, enabled)`（refetchInterval 5s） |
 | web | `pages/EditEventPage.tsx` | スイッチ + named/anonymous の選択（Q&A の匿名設定と同じセレクト） |
 | web | `pages/EventDetailPage.tsx` | 従属パネル（上位3 + 自分の順位 + 投影ページへのリンク） |
 | web | `pages/EventStatsPage.tsx` | staff カードに投影ページへのリンク・注記の文言修正 |
-| i18n | `eventSocial.ts` ほか | ja/en 追加 |
+| i18n | `eventSocial.ts`・`eventForm.ts`・`staffOps.ts` | ja/en 追加（参加者向け・設定トグル・staff カード注記） |
+| test | `apps/server/test/meet-ranking.test.ts` | 新規。下記の観点 |
 
 ### テスト観点（server）
 
@@ -299,7 +304,25 @@ messages に追加し、**振る舞いで書く**（「名前とアイコンが�
 
 ---
 
-## 5. やらないこと
+## 5. 設計からの差分
+
+レビュー・実装で設計から変えた点（いずれもコードで確認済み）:
+
+- **非メンバー・未確定メンバーにも 404**（§3.5/§3.8 の強化）。403 を返さず、設定オフ・
+  イベント不存在と同一応答にして機能の存在ごと隠す（`routes/eventMeets.ts` の
+  `/:id/meets/ranking/live` 先頭の1判定）
+- 上位10件は定数 **`MEET_RANKING_TOP_N`** として shared に置いた（ルートとUIで数字を
+  2か所に書かない）
+- 定数・enum の置き場は `schema.ts` ではなく **`packages/shared/src/eventMeets.ts`**
+  （`MEET_RANKING_MODES`・`MEET_RANKING_POLL_MS`・応答型を同居させ、`schema.ts` は import）
+- 投影の描画（`MeetRankingBoard`）と詳細ページの小カード（`MeetRankingPanel`）は
+  **`components/MeetRanking.tsx` に同居**（データ取得は同じ live API の5秒ポーリング）
+- ポーリングは**エラー時に停止**する（`api/eventMeetHooks.ts` の `refetchInterval`。
+  オフ・非メンバーの 404 に5秒おきに当たり続けない）
+
+---
+
+## 6. やらないこと
 
 - 配信セットのシーン化（`LIVE_ELEMENT_TYPES` への追加）。後から `MeetRankingBoard` を
   包むだけで足せる形にはしておく
