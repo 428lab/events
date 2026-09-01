@@ -277,8 +277,11 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
         {draft && (
           <DialogContent>
             <Stack spacing={2} sx={{ mt: 1 }}>
+              {/* shrink 固定は #57 と同じ型（webfont 遅延でノッチがラベルに重なる対策。
+                  詳細は EventPreSurveyAdminPage の同コメント） */}
               <TextField
                 label={t("eventForm.meetPrizeName")}
+                slotProps={{ inputLabel: { shrink: true } }}
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 inputProps={{ maxLength: 100 }}
@@ -286,6 +289,7 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
               />
               <TextField
                 label={t("eventForm.meetPrizeDescription")}
+                slotProps={{ inputLabel: { shrink: true } }}
                 value={draft.description}
                 onChange={(e) =>
                   setDraft({ ...draft, description: e.target.value })
@@ -320,6 +324,7 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
                 <Box>
                   <TextField
                     label={t("eventForm.meetPrizeThreshold")}
+                    slotProps={{ inputLabel: { shrink: true } }}
                     value={draft.threshold}
                     onChange={(e) =>
                       setDraft({ ...draft, threshold: e.target.value })
@@ -348,6 +353,7 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
               <Box>
                 <TextField
                   label={t("eventForm.meetPrizeStock")}
+                  slotProps={{ inputLabel: { shrink: true } }}
                   value={draft.stock}
                   onChange={(e) => setDraft({ ...draft, stock: e.target.value })}
                   inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
