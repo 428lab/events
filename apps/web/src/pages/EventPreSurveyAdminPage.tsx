@@ -309,8 +309,14 @@ export function EventPreSurveyAdminPage() {
       <Card variant="outlined">
         <CardContent>
           <Stack spacing={2}>
+            {/* ラベル付き・初期値が空の欄は shrink を固定する（#57 と同じ型）。
+                webfont（Plus Jakarta Sans, font-display: swap）の適用が初回描画より
+                遅れると、枠線の切り欠き（legend）がラベル幅と合わず線が文字を貫通する
+                （タブ復帰の再描画で直る、が再現条件）。常時シュリンクなら値あり
+                フィールドと同じ描画になり、切り欠きは最初から開いている */}
             <TextField
               label={t("staffOps.preSurveyFormTitle")}
+              slotProps={{ inputLabel: { shrink: true } }}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               inputProps={{ maxLength: 100 }}
@@ -318,6 +324,7 @@ export function EventPreSurveyAdminPage() {
             />
             <TextField
               label={t("staffOps.preSurveyFormDescription")}
+              slotProps={{ inputLabel: { shrink: true } }}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               inputProps={{ maxLength: 2000 }}
@@ -332,6 +339,7 @@ export function EventPreSurveyAdminPage() {
                     <TextField
                       size="small"
                       label={t("eventForm.surveyQuestion")}
+                      slotProps={{ inputLabel: { shrink: true } }}
                       value={row.question}
                       onChange={(e) => setRow(row.key, { question: e.target.value })}
                       inputProps={{ maxLength: 200 }}
@@ -369,6 +377,7 @@ export function EventPreSurveyAdminPage() {
                       <TextField
                         size="small"
                         label={t("eventForm.surveyOptions")}
+                        slotProps={{ inputLabel: { shrink: true } }}
                         placeholder={t("eventForm.surveyOptionsExample")}
                         value={row.optionsText}
                         onChange={(e) => setRow(row.key, { optionsText: e.target.value })}

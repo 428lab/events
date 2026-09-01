@@ -558,6 +558,7 @@ export function EventPrizeDeskPage() {
                 <TextField
                   size="small"
                   label={t("staffOps.prizeDeskSearch")}
+                  slotProps={{ inputLabel: { shrink: true } }}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   sx={{ maxWidth: 320 }}
