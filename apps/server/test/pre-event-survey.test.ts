@@ -269,6 +269,60 @@ describe("回答（未ログイン可・送信1回きり）", () => {
   });
 });
 
+describe("入力の縁 (#445 レビュー)", () => {
+  it("checkbox の重複値は1つに潰して保存する（集計の水増し防止）", async () => {
+    const { staff, eventId, survey } = await setup();
+    const url = `${publicUrl(survey.token)}/responses`;
+    const res = await post(url, {
+      answers: [
+        { questionId: survey.questions[0].id, value: "土曜" },
+        { questionId: survey.questions[1].id, value: ["開発", "開発", "雑談"] },
+      ],
+    });
+    expect(res.status).toBe(201);
+    const results = (await (
+      await SELF.fetch(`${adminUrl(eventId)}/results`, {
+        headers: { cookie: staff.cookie },
+      })
+    ).json()) as { results: PreSurveyResults };
+    expect(results.results.choices[1].counts).toEqual([1, 0, 1]); // 開発は2でなく1
+  });
+
+  it("自由記述は2000字まで（境界: 2000字は通り、2001字は400）", async () => {
+    const { survey } = await setup();
+    const url = `${publicUrl(survey.token)}/responses`;
+    const base = {
+      questionId: survey.questions[0].id,
+      value: "土曜",
+    };
+    const text = (n: number) => ({
+      questionId: survey.questions[2].id,
+      value: "あ".repeat(n),
+    });
+    expect(
+      (await post(url, { answers: [base, text(2000)] })).status,
+    ).toBe(201);
+    expect(
+      (await post(url, { answers: [base, text(2001)] })).status,
+    ).toBe(400);
+  });
+});
+
+/** 門のソース監査（変異のトリップワイヤ）。挙動の証明は「不明トークンは404」の
+ * テストが担い、こちらは「トークン照合が repo から消えた」リファクタに
+ * 気づかせるだけの安い網（#436 と同じ型） */
+const repoSources = import.meta.glob(
+  "../src/db/repositories/eventPreSurvey.ts",
+  { query: "?raw", import: "default", eager: true },
+) as Record<string, string>;
+
+describe("門のソース監査 (#444)", () => {
+  it("findByToken がトークン照合を持っている", () => {
+    const src = Object.values(repoSources)[0]!;
+    expect(src).toContain("WHERE token = ?");
+  });
+});
+
 describe("集計と後始末", () => {
   it("選択式は選択肢ごとの件数・自由記述は一覧・ログイン/匿名の内訳。名前は返さない", async () => {
     const { staff, eventId, survey } = await setup();

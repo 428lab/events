@@ -338,6 +338,17 @@ export function App() {
             </PublicLayout>
           }
         />
+        {/* 開催前アンケート (#444)。**未ログインで回答できることが主目的**なので、
+            こちらの（未ログイン側の）Routes に必ず置く。ログイン側だけに書いた
+            退行が実機で出た（回答者全員がトップへ飛ばされる） */}
+        <Route
+          path="/s/:token"
+          element={
+            <PublicLayout>
+              <PreSurveyPage />
+            </PublicLayout>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );

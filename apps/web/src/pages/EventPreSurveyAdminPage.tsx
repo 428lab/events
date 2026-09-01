@@ -25,6 +25,7 @@ import PollOutlinedIcon from "@mui/icons-material/PollOutlined";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { PreSurveyAdminView, SurveyQtype } from "@eventer/shared";
+import { ApiError } from "../api/client.js";
 import { useEvent } from "../api/hooks.js";
 import {
   useClosePreSurvey,
@@ -85,9 +86,12 @@ export function EventPreSurveyAdminPage() {
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const isStaff = eventData?.myRole === "staff";
-  const { data, isError } = usePreSurveyAdmin(id, isStaff);
+  const { data, error, refetch } = usePreSurveyAdmin(id, isStaff);
   const survey = data?.survey ?? null;
-  const notCreated = isError && !survey;
+  // 「未作成」と言い切れるのは 404 だけ。一時失敗（500・回線断）を未作成扱いに
+  // すると、空フォームの保存が既存の質問と回答を全置換で消してしまう（レビュー指摘）
+  const notCreated = error instanceof ApiError && error.status === 404;
+  const loadFailed = Boolean(error) && !notCreated && !survey;
 
   const save = useSavePreSurvey(id);
   const rotate = useRotatePreSurveyToken(id);
@@ -117,6 +121,21 @@ export function EventPreSurveyAdminPage() {
   if (eventData && !isStaff) {
     return <Alert severity="warning">{t("staffOps.preSurveyStaffOnly")}</Alert>;
   }
+  if (loadFailed) {
+    // 読み込み失敗時に編集フォームを出さない（空のまま保存→全置換の事故を防ぐ）
+    return (
+      <Alert
+        severity="error"
+        action={
+          <Button color="inherit" size="small" onClick={() => void refetch()}>
+            {t("common.retry")}
+          </Button>
+        }
+      >
+        {t("common.loadErrorReload")}
+      </Alert>
+    );
+  }
 
   const setRow = (key: string, patch: Partial<Row>) =>
     setRows((cur) => cur.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -144,7 +163,19 @@ export function EventPreSurveyAdminPage() {
     save.mutate(
       { title: title.trim(), description, questions },
       {
-        onSuccess: () => setNotice(t("staffOps.preSurveySaved")),
+        onSuccess: (res) => {
+          setNotice(t("staffOps.preSurveySaved"));
+          // 応答の id を編集中の行へ反映する。反映しないと（特に新規作成の直後）
+          // 次の保存が「id なし＝全部新規」になり、既存質問の全 DELETE →
+          // 回答の CASCADE 消滅を引き起こす（レビュー指摘）
+          if (res.survey) {
+            setRows(
+              res.survey.questions.length > 0
+                ? rowsFrom(res.survey)
+                : [newRow()],
+            );
+          }
+        },
         onError: () => setFailure(t("staffOps.preSurveySaveFailed")),
       },
     );
@@ -154,6 +185,20 @@ export function EventPreSurveyAdminPage() {
     if (!window.confirm(message)) return;
     setNotice(null);
     mutation.mutate(undefined);
+  };
+
+  const onDelete = () => {
+    if (!window.confirm(t("staffOps.preSurveyDeleteConfirm"))) return;
+    setNotice(null);
+    remove.mutate(undefined, {
+      onSuccess: () => {
+        // 消した後のフォームに旧内容を残さない（そのまま保存すると復活してしまう）
+        setTitle("");
+        setDescription("");
+        setRows([newRow()]);
+        setLoaded(false);
+      },
+    });
   };
 
   const shareUrl = survey
@@ -247,12 +292,7 @@ export function EventPreSurveyAdminPage() {
                   {t("staffOps.preSurveyReopen")}
                 </Button>
               )}
-              <Button
-                size="small"
-                color="error"
-                disabled={busy}
-                onClick={() => confirmed(t("staffOps.preSurveyDeleteConfirm"), remove)}
-              >
+              <Button size="small" color="error" disabled={busy} onClick={onDelete}>
                 {t("staffOps.preSurveyDelete")}
               </Button>
             </Stack>

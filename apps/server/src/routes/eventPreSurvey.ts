@@ -87,7 +87,8 @@ export async function postPublicPreSurveyResponse(c: Context<AppEnv>) {
       return c.json({ error: "invalid_input" }, 400);
     }
     if (q.qtype === "checkbox") {
-      const picked = value as string[];
+      // 重複値（["開発","開発"]）は1つに潰す（集計の水増し防止）
+      const picked = [...new Set(value as string[])];
       if (picked.some((v) => !q.options.includes(v))) {
         return c.json({ error: "invalid_input" }, 400);
       }
@@ -139,11 +140,7 @@ eventPreSurveyRoutes.get(
   "/:id/pre-survey",
   requireEventRole(["staff"]),
   async (c) => {
-    const eventId = c.req.param("id");
-    if (!(await eventsRepo.findById(eventId))) {
-      return c.json({ error: "not_found" }, 404);
-    }
-    const view = await adminView(eventId);
+    const view = await adminView(c.req.param("id"));
     if (!view) return c.json({ error: "not_found" }, 404);
     return c.json({ survey: view });
   },
@@ -156,6 +153,8 @@ eventPreSurveyRoutes.put(
   zValidator("json", savePreSurveyInput),
   async (c) => {
     const eventId = c.req.param("id");
+    // 存在しないイベントへの INSERT を FK 違反（500）にせず 404 で返すための前置。
+    // GET と違い、こちらは書き込みが走るので残す
     if (!(await eventsRepo.findById(eventId))) {
       return c.json({ error: "not_found" }, 404);
     }
