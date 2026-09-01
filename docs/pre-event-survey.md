@@ -150,10 +150,13 @@ GET /api/public/pre-surveys/:token →
 - 荒らし耐性は3段: (1) 128bit トークン（無差別砲撃が届かない）
   (2) **回答数上限 1000 件/アンケート**（超過は 409 `survey_full`。溢れさせる荒らしの
   打ち止め） (3) 気付いたら**再発行 or クローズ**（配布済みURLごと無効化）
-- ログイン済み回答者の `user_id` は記録する（結果画面で「ログイン回答 n / 匿名 n」を
-  出せる。名前は結果に出さない——匿名回答と扱いを揃え、回答側の見え方を1つにする）
-- 回答者の名前が欲しい主催者は「お名前（任意）」を**自由記述の質問として**足せばよい
-  （機能を足さずに要件を満たす口が既にある）
+- **記名は回答者の選択だけで決まる (#448)**: 回答は既定で匿名。ログイン中の回答者に
+  「アカウントで回答する（表示名が主催者に伝わります）」の同意チェック（既定オフ）を
+  出し、**チェックした送信だけ `user_id` を保存**する。同意が無ければログイン中でも
+  保存しない（見せないだけでなく**持たない**）。主催者側の設定は作らない
+  （設定の口を増やさない。記名を必須にしたい主催者は説明文でお願いする）
+- 結果画面の内訳は「記名 n件」。一覧 (#447) の回答者列は記名回答だけ表示名、
+  それ以外は「匿名」
 
 ### 3.4 回答の契約: 送信1回きり・編集なし
 
@@ -181,12 +184,13 @@ GET /api/public/pre-surveys/:token →
 | メソッド/パス | 誰が | 内容 |
 |---|---|---|
 | `GET /api/public/pre-surveys/:token` | 誰でも（トークンが門） | §3.2 の形。`worker.ts` に直接登録（`/api/public` 配下の既存の型） |
-| `POST /api/public/pre-surveys/:token/responses` | 誰でも | 回答送信。`currentUser` があれば user_id を記録。closed 409 / 上限 409 `survey_full` / 検証 400 |
+| `POST /api/public/pre-surveys/:token/responses` | 誰でも | 回答送信。`named`（回答者の同意 #448）とログインが揃うときだけ user_id を保存。closed 409 / 上限 409 `survey_full` / 検証 400 |
 | `GET /api/events/:id/pre-survey` | staff | 設定・質問・トークン・回答数（管理ページ用） |
 | `PUT /api/events/:id/pre-survey` | staff | 作成/更新（title・description・questions 一括。#152 の保存の型） |
 | `POST /api/events/:id/pre-survey/rotate` | staff | トークン再発行（旧URL即無効） |
 | `POST /api/events/:id/pre-survey/close` / `reopen` | staff | 手動クローズ/再オープン |
-| `GET /api/events/:id/pre-survey/results` | staff | 集計: 選択式は選択肢ごとの件数と割合、自由記述は新しい順の一覧。回答総数・ログイン/匿名の内訳 |
+| `GET /api/events/:id/pre-survey/results` | staff | 集計: 選択式は選択肢ごとの件数と割合、自由記述は新しい順の一覧。回答総数・記名の件数 |
+| `GET /api/events/:id/pre-survey/responses` | staff | 回答一覧 (#447): 行=1送信・新しい順。記名回答は表示名・匿名は null。表ビューと CSV の元データ |
 | `DELETE /api/events/:id/pre-survey` | staff | アンケートごと削除（回答も CASCADE。確認ダイアログ必須） |
 
 - 集計は**読むたびに answer 行から計算**する（集計列を持たない。導出の写しを作らない）
@@ -240,7 +244,8 @@ GET /api/public/pre-surveys/:token →
 
 ## 6. やらないこと
 
-- CSV エクスポート（結果画面のコピーで足りる。要望が出たら別 issue）
+- ~~CSV エクスポート~~ → #447 で実装済み（表ビュー＋クライアント生成 CSV。
+  BOM 付き・RFC 4180・数式インジェクション対策）
 - 1人1回の厳密な担保・CAPTCHA・レート制限（§3.3 の割り切り。荒らしは再発行＋
   クローズ＋上限で受ける）
 - 複数アンケート/イベント・締切日時の自動クローズ・回答の編集/削除（回答者側）

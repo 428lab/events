@@ -421,10 +421,7 @@ export function EventPreSurveyAdminPage() {
             </Typography>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
               {t("staffOps.preSurveyResponses", { n: res.total })} ・{" "}
-              {t("staffOps.preSurveyBreakdown", {
-                loggedIn: res.loggedIn,
-                anonymous: res.anonymous,
-              })}
+              {t("staffOps.preSurveyNamedCount", { n: res.named })}
             </Typography>
             <ToggleButtonGroup
               size="small"

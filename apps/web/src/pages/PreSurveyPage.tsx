@@ -23,6 +23,7 @@ import {
   usePublicPreSurvey,
   useSubmitPreSurvey,
 } from "../api/preSurveyHooks.js";
+import { useMe } from "../api/hooks.js";
 import { errorMessage } from "../lib/errorMessage.js";
 import { i18next } from "../i18n/index.js";
 
@@ -38,8 +39,11 @@ export function PreSurveyPage() {
   const { token = "" } = useParams();
   const { data, isLoading, isError } = usePublicPreSurvey(token);
   const submit = useSubmitPreSurvey(token);
+  const { data: me } = useMe();
   // 質問ID → 入力値（select/text は string、checkbox は string[]）
   const [values, setValues] = useState<Record<string, string | string[]>>({});
+  // 記名の同意 (#448)。既定オフ。チェックしない限りアカウントは保存されない
+  const [named, setNamed] = useState(false);
   const [done, setDone] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -86,6 +90,7 @@ export function PreSurveyPage() {
     }
     submit.mutate(
       {
+        named: Boolean(me) && named,
         answers: data.questions
           .filter((q) => values[q.id] !== undefined)
           .map((q) => ({ questionId: q.id, value: values[q.id]! })),
@@ -125,6 +130,16 @@ export function PreSurveyPage() {
           />
         ))}
       </Stack>
+      {/* 記名の同意 (#448)。ログイン中の人にだけ出す。チェックしなければ
+          匿名のまま（アカウント情報は送信されない・保存されない） */}
+      {me && (
+        <FormControlLabel
+          control={
+            <Checkbox checked={named} onChange={(e) => setNamed(e.target.checked)} />
+          }
+          label={t("preSurvey.namedOptIn")}
+        />
+      )}
       {failure && (
         <Alert severity="error" onClose={() => setFailure(null)}>
           {failure}

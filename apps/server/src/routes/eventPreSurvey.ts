@@ -50,7 +50,8 @@ export async function getPublicPreSurvey(c: Context<AppEnv>) {
 
 /**
  * 回答の送信（未ログイン可・送信1回きり・編集なし）。
- * ログイン済みなら user_id を記録する（結果の内訳表示用。名前は結果に出さない）。
+ * **user_id を保存するのは「ログイン中かつ named（回答者の明示同意）」のときだけ**
+ * (#448)。それ以外は NULL＝そもそも持たない（見せないだけの匿名にしない）。
  * 1人1回は担保しない（設計 §3.3 の割り切り）。上限・closed はリポジトリの
  * 1文の条件付き INSERT が原子的に守る。
  */
@@ -98,7 +99,9 @@ export async function postPublicPreSurveyResponse(c: Context<AppEnv>) {
     normalized.push({ questionId: q.id, value: value as string });
   }
 
-  const user = await currentUser(c);
+  // 記名は回答者の明示同意（named）があるときだけ。同意なしはログイン中でも
+  // 匿名として保存する（アカウントの紐づけは回答者の選択だけで決まる）
+  const user = input.named ? await currentUser(c) : null;
   const responseId = await eventPreSurveyRepo.insertResponse(
     survey.id,
     user?.id ?? null,

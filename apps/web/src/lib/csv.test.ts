@@ -15,6 +15,18 @@ describe("CSV 生成 (#447)", () => {
     expect(toCsv([["a,b", 'q"t'], ["x", "y"]])).toBe('"a,b","q""t"\r\nx,y');
   });
 
+  it("数式インジェクション対策: 先頭の = + - @ TAB CR に ' を前置する", () => {
+    expect(escapeCsvField("=SUM(A1:A9)")).toBe("'=SUM(A1:A9)");
+    expect(escapeCsvField("+81-90-0000")).toBe("'+81-90-0000");
+    expect(escapeCsvField("-1")).toBe("'-1");
+    expect(escapeCsvField("@cmd")).toBe("'@cmd");
+    expect(escapeCsvField("\t=1")).toBe("'\t=1");
+    // 前置後にカンマ等があれば通常どおりクォートもされる
+    expect(escapeCsvField("=1,2")).toBe(`"'=1,2"`);
+    // 文中の = は無害なのでそのまま
+    expect(escapeCsvField("a=b")).toBe("a=b");
+  });
+
   it("複数選択（checkbox の保存値）は surveyValueLabel の「、」連結をそのまま1セルにする", () => {
     const cell = surveyValueLabel("checkbox", JSON.stringify(["開発", "雑談"]));
     expect(cell).toBe("開発、雑談");

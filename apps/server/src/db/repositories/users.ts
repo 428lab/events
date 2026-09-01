@@ -619,9 +619,10 @@ export const usersRepo = {
       // ズレて、定期実行がその連絡を空回りで拾い続ける。統合の一度きりの
       // 二重送信のほうが軽い
       ["event_broadcast_email", "user_id"],
-      // 開催前アンケートの回答者 (#444)。未ログイン回答は NULL なので UNIQUE 無し。
-      // 付け替えないと (9) の user 削除で SET NULL が発火し「ログイン回答」の
-      // 内訳が統合しただけで痩せる
+      // 開催前アンケートの回答者 (#444/#448)。user_id が入るのは回答者が
+      // 同意した記名回答だけで、匿名は NULL・UNIQUE 無し → simple でよい。
+      // 付け替えないと (9) の user 削除で SET NULL が発火し、統合しただけで
+      // 記名が匿名に痩せる（本人の同意した紐づけは統合先へ引き継ぐ）
       ["event_pre_survey_response", "user_id"],
       ["bgm_track", "owner_id"],
       ["event", "created_by"],

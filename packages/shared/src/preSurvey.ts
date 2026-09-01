@@ -78,6 +78,10 @@ export type SavePreSurveyInput = z.infer<typeof savePreSurveyInput>;
 /** 回答の送信入力（送信1回きり・編集なし）。
  * checkbox は string[]（サーバーで JSON 文字列に正規化して保存） */
 export const submitPreSurveyInput = z.object({
+  /** 記名で回答する（回答者の明示同意 #448）。**ログイン中かつこれが true の
+   * ときだけ** user_id が保存される（アカウントの紐づけは回答者の選択だけで
+   * 決まる。主催者側の設定は無い）。それ以外は保存しない＝持たない */
+  named: z.boolean().default(false),
   answers: z
     .array(
       z.object({
@@ -111,8 +115,8 @@ export interface PreSurveyTextResult {
  * 回答者の名前は出さない（匿名回答と扱いを揃える）。内訳は人数だけ */
 export interface PreSurveyResults {
   total: number;
-  loggedIn: number;
-  anonymous: number;
+  /** 記名回答の件数（同意して user_id が保存された送信 #448） */
+  named: number;
   choices: PreSurveyChoiceResult[];
   texts: PreSurveyTextResult[];
 }
@@ -122,7 +126,7 @@ export interface PreSurveyResults {
 export interface PreSurveyResponseRowView {
   /** 送信日時 */
   createdAt: number;
-  /** ログイン回答者の表示名。未ログイン・退会は null */
+  /** 記名回答者の表示名 (#448)。匿名（未同意・未ログイン）・退会は null */
   respondent: string | null;
   /** questionId → 保存値（未回答の質問はキーなし） */
   answers: Record<string, string>;

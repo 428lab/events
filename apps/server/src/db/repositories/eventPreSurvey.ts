@@ -285,8 +285,8 @@ export const eventPreSurveyRepo = {
   },
 
   /** 回答一覧 (#447・staff のみが読む)。行=1送信・新しい順。
-   * ログイン回答者は表示名を出す（結果画面の匿名集計と違い、一覧は
-   * 「誰が答えたか」を運営が確認する画面。未ログイン・退会は null）。
+   * 表示名が出るのは**回答者が同意した記名回答だけ** (#448。それ以外は
+   * user_id 自体を保存していないので出しようがない。退会も null）。
    * 上限1000件（insertResponse の門）なのでページングは持たない */
   async responseRows(surveyId: string): Promise<PreSurveyResponseRowView[]> {
     const rows = await many<{
@@ -324,17 +324,18 @@ export const eventPreSurveyRepo = {
     return order.map((id) => byResponse.get(id)!);
   },
 
-  /** 集計（staff のみが読む）。回答者の名前は返さない（内訳は人数だけ） */
+  /** 集計（staff のみが読む）。回答者の名前は返さない（内訳は件数だけ）。
+   * named = 回答者が同意して user_id が保存された記名回答の数 (#448) */
   async results(surveyId: string): Promise<PreSurveyResults> {
     const questions = await this.listQuestions(surveyId);
-    const totals = await one<{ total: number; logged_in: number }>(
+    const totals = await one<{ total: number; named: number }>(
       `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN user_id IS NOT NULL THEN 1 ELSE 0 END) AS logged_in
+              SUM(CASE WHEN user_id IS NOT NULL THEN 1 ELSE 0 END) AS named
          FROM event_pre_survey_response WHERE survey_id = ?`,
       surveyId,
     );
     const total = totals?.total ?? 0;
-    const loggedIn = totals?.logged_in ?? 0;
+    const named = totals?.named ?? 0;
 
     const rows = await many<{
       question_id: string;
@@ -374,6 +375,6 @@ export const eventPreSurveyRepo = {
       }
       choices.push({ question: q, counts, answered: answers.length });
     }
-    return { total, loggedIn, anonymous: total - loggedIn, choices, texts };
+    return { total, named, choices, texts };
   },
 };

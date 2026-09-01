@@ -168,24 +168,34 @@ describe("漏れ防止とトークンの門 (#444)", () => {
 });
 
 describe("回答（未ログイン可・送信1回きり）", () => {
-  it("未ログインで回答できて user_id は NULL。ログイン済みは user_id が入る。同じ人の2回目も通る", async () => {
+  it("user_id が保存されるのは「ログイン中かつ named（明示同意）」だけ (#448)。2回目の送信も通る", async () => {
     const { survey } = await setup();
     const url = `${publicUrl(survey.token)}/responses`;
-    expect((await post(url, validAnswers(survey))).status).toBe(201);
-
     const alice = await makeUser();
+
+    // 1: 未ログイン → NULL
+    expect((await post(url, validAnswers(survey))).status).toBe(201);
+    // 2: 未ログインで named を名乗っても NULL（ログインが無ければ紐づけようがない）
+    expect(
+      (await post(url, { named: true, ...validAnswers(survey) })).status,
+    ).toBe(201);
+    // 3: ログイン中でも同意チェック無しなら NULL（見せないだけでなく持たない）
     expect((await post(url, validAnswers(survey), alice.cookie)).status).toBe(201);
-    // 1人1回は担保しない割り切り（2回目も通る）
-    expect((await post(url, validAnswers(survey), alice.cookie)).status).toBe(201);
+    // 4: ログイン中 + named の同意があるときだけ保存（1人1回は担保しない＝2回目）
+    expect(
+      (await post(url, { named: true, ...validAnswers(survey) }, alice.cookie))
+        .status,
+    ).toBe(201);
 
     const rows = await env.DB.prepare(
-      "SELECT user_id FROM event_pre_survey_response WHERE survey_id = ? ORDER BY created_at",
+      "SELECT user_id FROM event_pre_survey_response WHERE survey_id = ? ORDER BY created_at, rowid",
     )
       .bind(survey.id)
       .all<{ user_id: string | null }>();
     expect(rows.results.map((r) => r.user_id)).toEqual([
       null,
-      alice.userId,
+      null,
+      null,
       alice.userId,
     ]);
   });
@@ -329,7 +339,7 @@ describe("門のソース監査 (#444)", () => {
 });
 
 describe("集計と後始末", () => {
-  it("選択式は選択肢ごとの件数・自由記述は一覧・ログイン/匿名の内訳。名前は返さない", async () => {
+  it("選択式は選択肢ごとの件数・自由記述は一覧・記名の件数。名前は返さない", async () => {
     const { staff, eventId, survey } = await setup();
     const url = `${publicUrl(survey.token)}/responses`;
     const alice = await makeUser();
@@ -337,6 +347,7 @@ describe("集計と後始末", () => {
     await post(
       url,
       {
+        named: true, // 記名の同意 (#448)
         answers: [
           { questionId: survey.questions[0].id, value: "日曜" },
           { questionId: survey.questions[1].id, value: ["開発"] },
@@ -352,8 +363,7 @@ describe("集計と後始末", () => {
     const raw = await res.text();
     const { results } = JSON.parse(raw) as { results: PreSurveyResults };
     expect(results.total).toBe(2);
-    expect(results.loggedIn).toBe(1);
-    expect(results.anonymous).toBe(1);
+    expect(results.named).toBe(1); // 同意した記名回答だけが数えられる
     expect(results.choices[0].counts).toEqual([1, 1]); // 土曜1・日曜1
     expect(results.choices[1].counts).toEqual([2, 0, 1]); // 開発2・デザイン0・雑談1
     expect(results.choices[0].answered).toBe(2);
@@ -373,6 +383,7 @@ describe("集計と後始末", () => {
     await post(
       url,
       {
+        named: true, // 記名の同意 (#448)。同意なしなら表示名は出ない
         answers: [
           { questionId: survey.questions[0].id, value: "日曜" },
           { questionId: survey.questions[1].id, value: ["開発", "雑談"] },
@@ -391,7 +402,7 @@ describe("集計と後始末", () => {
       await SELF.fetch(listUrl, { headers: { cookie: staff.cookie } })
     ).json()) as { rows: PreSurveyResponseRowView[] };
     expect(rows).toHaveLength(2);
-    // 新しい順: 先頭は alice（ログイン回答＝表示名あり）
+    // 新しい順: 先頭は alice（**同意した記名回答**＝表示名あり）
     expect(rows[0].respondent).toBe(`表示名_${alice.username}`);
     expect(rows[0].answers[survey.questions[0].id]).toBe("日曜");
     expect(rows[0].answers[survey.questions[1].id]).toBe(
