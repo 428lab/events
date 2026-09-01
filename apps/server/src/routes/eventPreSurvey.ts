@@ -41,10 +41,12 @@ export async function getPublicPreSurvey(c: Context<AppEnv>) {
   // 書き込みは lastSeen (#257) と同じ方針で waitUntil に逃がし、レスポンスを
   // ブロックしない（deferBackground の既存の口を使う）。失敗は握りつぶして
   // ログだけ——集計のために回答ページを落とさない。catch は Promise 側に
-  // 付ける（waitUntil の中で投げると unhandled rejection になる）
+  // 付ける（waitUntil の中で投げると unhandled rejection になる）。
+  // ?first=1 は「その端末での初回訪問」のクライアント申告（localStorage の
+  // 訪問済みマークが無いときだけ付く。#450 フォローアップ・分析用途の割り切り）
   await deferBackground(
     eventPreSurveyRepo
-      .recordAccess(survey.id, jstDay(Date.now()))
+      .recordAccess(survey.id, jstDay(Date.now()), c.req.query("first") === "1")
       .catch((e) =>
         console.error("[pre-survey] access count failed", survey.id, e),
       ),

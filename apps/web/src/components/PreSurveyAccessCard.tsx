@@ -20,7 +20,7 @@ export function fillDayGaps(rows: PreSurveyAccessRow[]): PreSurveyAccessRow[] {
   const out: PreSurveyAccessRow[] = [];
   for (let back = 0; back <= diffDays(oldest, newest); back++) {
     const day = addDays(newest, -back);
-    out.push(byDay.get(day) ?? { day, views: 0, responses: 0 });
+    out.push(byDay.get(day) ?? { day, views: 0, firstVisits: 0, responses: 0 });
   }
   return out;
 }
@@ -56,7 +56,8 @@ export function PreSurveyAccessCard({
     );
   }
   const rows = fillDayGaps(data.rows);
-  const max = Math.max(1, ...rows.map((r) => r.views));
+  // バーは「初回訪問」基準（のべ表示はリロードで膨らむため推移の主役にしない）
+  const max = Math.max(1, ...rows.map((r) => r.firstVisits));
 
   return (
     <Card variant="outlined">
@@ -78,8 +79,11 @@ export function PreSurveyAccessCard({
               <Typography variant="caption" color="text.secondary" sx={{ width: 92 }}>
                 {t("staffOps.preSurveyAccessDay")}
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ width: 56, textAlign: "right" }}>
                 {t("staffOps.preSurveyAccessViews")}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+                {t("staffOps.preSurveyAccessFirst")}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ width: 48, textAlign: "right" }}>
                 {t("staffOps.preSurveyAccessResponses")}
@@ -90,7 +94,10 @@ export function PreSurveyAccessCard({
                 <Typography variant="body2" sx={{ width: 92, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
                   {r.day}
                 </Typography>
-                {/* CSSのみの簡易バー（最大表示数を100%として比率で塗る） */}
+                <Typography variant="body2" sx={{ width: 56, textAlign: "right", flexShrink: 0 }}>
+                  {r.views}
+                </Typography>
+                {/* CSSのみの簡易バー（初回訪問の最大値を100%として比率で塗る） */}
                 <Box sx={{ flex: 1, display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
                   <Box
                     sx={{
@@ -98,12 +105,12 @@ export function PreSurveyAccessCard({
                       borderRadius: 5,
                       bgcolor: "primary.main",
                       opacity: 0.7,
-                      width: `${(r.views / max) * 100}%`,
-                      minWidth: r.views > 0 ? 4 : 0,
+                      width: `${(r.firstVisits / max) * 100}%`,
+                      minWidth: r.firstVisits > 0 ? 4 : 0,
                     }}
                   />
                   <Typography variant="body2" sx={{ flexShrink: 0 }}>
-                    {r.views}
+                    {r.firstVisits}
                   </Typography>
                 </Box>
                 <Typography variant="body2" sx={{ width: 48, textAlign: "right", flexShrink: 0 }}>

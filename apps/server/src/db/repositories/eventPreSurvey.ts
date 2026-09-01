@@ -328,14 +328,24 @@ export const eventPreSurveyRepo = {
 
   /** 共有URLの表示を1回数える (#450)。**1文の upsert** なので同時アクセスでも
    * 欠損しない（読んでから書く2文にしない）。日毎の件数だけを持ち、
-   * IP・UA 等は保存しない。day は jstDay()（呼び出し側）で作る */
-  async recordAccess(surveyId: string, day: string): Promise<void> {
+   * IP・UA 等は保存しない。day は jstDay()（呼び出し側）で作る。
+   * first は「その端末での初回訪問」（クライアントの localStorage 申告＝
+   * 分析用途の割り切り。厳密な一意訪問者数ではない） */
+  async recordAccess(
+    surveyId: string,
+    day: string,
+    first: boolean,
+  ): Promise<void> {
+    const firstInc = first ? 1 : 0;
     await run(
-      `INSERT INTO event_pre_survey_access (survey_id, day, count)
-       VALUES (?, ?, 1)
-       ON CONFLICT(survey_id, day) DO UPDATE SET count = count + 1`,
+      `INSERT INTO event_pre_survey_access (survey_id, day, count, first_count)
+       VALUES (?, ?, 1, ?)
+       ON CONFLICT(survey_id, day)
+       DO UPDATE SET count = count + 1, first_count = first_count + ?`,
       surveyId,
       day,
+      firstInc,
+      firstInc,
     );
   },
 
@@ -343,8 +353,8 @@ export const eventPreSurveyRepo = {
    * responses は response.created_at から JST 日毎に導出（新しい保存はしない。
    * 日付変換は kpi.ts の jd() を共用——写しを作らない） */
   async accessStats(surveyId: string): Promise<PreSurveyAccessRow[]> {
-    const views = await many<{ day: string; count: number }>(
-      "SELECT day, count FROM event_pre_survey_access WHERE survey_id = ?",
+    const views = await many<{ day: string; count: number; first_count: number }>(
+      "SELECT day, count, first_count FROM event_pre_survey_access WHERE survey_id = ?",
       surveyId,
     );
     const responses = await many<{ day: string; n: number }>(
@@ -357,10 +367,16 @@ export const eventPreSurveyRepo = {
     const byDay = new Map<string, PreSurveyAccessRow>();
     const rowOf = (day: string) => {
       let row = byDay.get(day);
-      if (!row) byDay.set(day, (row = { day, views: 0, responses: 0 }));
+      if (!row) {
+        byDay.set(day, (row = { day, views: 0, firstVisits: 0, responses: 0 }));
+      }
       return row;
     };
-    for (const v of views) rowOf(v.day).views = v.count;
+    for (const v of views) {
+      const row = rowOf(v.day);
+      row.views = v.count;
+      row.firstVisits = v.first_count;
+    }
     for (const r of responses) rowOf(r.day).responses = r.n;
     return [...byDay.values()].sort((a, b) => (a.day < b.day ? 1 : -1));
   },
