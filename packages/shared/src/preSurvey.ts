@@ -132,6 +132,16 @@ export interface PreSurveyResponseRowView {
   answers: Record<string, string>;
 }
 
+/** 共有URLの日毎アクセス (#450)。views は表示数（日毎件数のみ保存。
+ * IP や UA などの個人情報は持たない）、responses は回答数（既存の
+ * response.created_at から導出） */
+export interface PreSurveyAccessRow {
+  /** JST の 'YYYY-MM-DD' */
+  day: string;
+  views: number;
+  responses: number;
+}
+
 /** 送信値の型が qtype に合っているか（text/select は文字列、checkbox は配列） */
 export function preSurveyValueMatches(
   qtype: SurveyQtype,

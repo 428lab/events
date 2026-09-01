@@ -17,6 +17,7 @@ import { requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventPreSurveyRepo } from "../db/repositories/eventPreSurvey.js";
+import { jstDay } from "../lib/lastSeen.js";
 
 /**
  * 開催前アンケート (#444)。設計は docs/pre-event-survey.md。
@@ -34,6 +35,14 @@ import { eventPreSurveyRepo } from "../db/repositories/eventPreSurvey.js";
 export async function getPublicPreSurvey(c: Context<AppEnv>) {
   const survey = await eventPreSurveyRepo.findByToken(c.req.param("token")!);
   if (!survey) return c.json({ error: "not_found" }, 404);
+  // アクセス数 (#450)。トークン解決に成功した表示だけ数える（404 は数えない。
+  // closed の「締め切りました」表示も配布URLが見られた事実なので数える）。
+  // 集計の失敗で回答ページ自体を落とさない（ログだけ）
+  try {
+    await eventPreSurveyRepo.recordAccess(survey.id, jstDay(Date.now()));
+  } catch (e) {
+    console.error("[pre-survey] access count failed", survey.id, e);
+  }
   if (survey.status === "closed") {
     return c.json({
       status: "closed",
@@ -202,6 +211,17 @@ eventPreSurveyRoutes.get(
     const survey = await eventPreSurveyRepo.findByEvent(c.req.param("id"));
     if (!survey) return c.json({ error: "not_found" }, 404);
     return c.json({ results: await eventPreSurveyRepo.results(survey.id) });
+  },
+);
+
+/** 日毎のアクセスと回答数 (#450・staff のみ)。日毎件数のみで個人情報は無い */
+eventPreSurveyRoutes.get(
+  "/:id/pre-survey/access",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const survey = await eventPreSurveyRepo.findByEvent(c.req.param("id"));
+    if (!survey) return c.json({ error: "not_found" }, 404);
+    return c.json({ rows: await eventPreSurveyRepo.accessStats(survey.id) });
   },
 );
 
