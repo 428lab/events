@@ -19,11 +19,11 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - バックエンド: Hono on **Cloudflare Workers**（単一 Worker が SPA 配信・OG 注入・API を担当）
 - DB: **Cloudflare D1**（SQLite）+ 自前の薄いリポジトリ層 ／ 画像・動画: **R2**
 - 認証: Discord / Google / GitHub / X OAuth2 + **Bluesky (OAuth)** + **Nostr NIP-07**（複数連携可）、セッション Cookie
-- リアルタイム: 短周期ポーリング（採点 2秒・配信 1秒・投影／タイムテーブル 5秒 など）
+- リアルタイム: 短周期ポーリング（採点 2秒・配信 1秒・投影 5秒・タイムテーブル編集状態 5秒 など）
 - デプロイ: GitHub Actions（`staging` / `production` ブランチへの push で wrangler deploy）
 - モノレポ: pnpm workspace（`apps/web` / `apps/server` / `packages/shared`）、TypeScript 7
 
-当初の設計ドキュメントは `docs/design.md`（冒頭に現在の実装との差分あり）、デザインルールは `DESIGN.md`。機能ごとの設計は[設計ドキュメント](#設計ドキュメント)を参照。
+デザインルールは `DESIGN.md`。全体設計と機能ごとの設計は[設計ドキュメント](#設計ドキュメント)を参照。
 
 ## ロードマップ / 実装状況
 
@@ -125,8 +125,8 @@ git push origin main:production   # → 本番 (https://events.kojira.io)。stag
 マイグレーションはデプロイ前に手動で適用します（`wrangler.toml` はリポジトリ直下のみ。**リポジトリ直下で実行**）。
 
 ```bash
-pnpm exec wrangler d1 migrations apply eventer-staging --env staging --remote  # staging
-pnpm exec wrangler d1 migrations apply eventer --remote                        # 本番
+npx wrangler d1 migrations apply eventer-staging --env staging --remote  # staging
+npx wrangler d1 migrations apply eventer --remote                        # 本番
 ```
 
 ### メール通知（Resend）
@@ -142,7 +142,10 @@ npx wrangler secret put RESEND_API_KEY --env staging   # staging
 ```
 
 - 差出人は既定で `events lab <noreply@events.kojira.io>`（Resend で認証済みのドメインに合わせる）。変える場合は環境変数 `EMAIL_FROM` を設定。
-- 前日リマインダーは cron トリガー（毎日 UTC 0:00 = JST 9:00）で送信される。
+- 前日リマインダー（#129）は GitHub Actions の定時実行
+  （`.github/workflows/reminders.yml`。毎日 UTC 0:00 = JST 9:00）が
+  `POST /api/cron/reminders` を叩いて送信する（Workers Free は cron トリガーが
+  アカウント5個上限のため、Workers の cron ではなく GitHub Actions から叩く）。
 - 一斉連絡（#172）のメールは送信待ちに積まれ、GitHub Actions の定時実行
   （`.github/workflows/broadcast-emails.yml`。5分おき）が
   `POST /api/cron/broadcast-emails` を叩いて順次送信する。1回で送れるのは
