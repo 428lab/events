@@ -8,6 +8,7 @@
  * 追加するときは `messages/` に**領域ごとのファイル**を作り、その中に
  * 日本語と英語を並べて書く。片方だけ足すと型で落ちる。
  */
+import { adminSettings } from "./messages/adminSettings.js";
 import { common } from "./messages/common.js";
 import { community } from "./messages/community.js";
 import { egg } from "./messages/egg.js";
@@ -89,6 +90,7 @@ export const translations = {
     meetFailure: meetFailure.ja,
     studio: studio.ja,
     kpi: kpi.ja,
+    adminSettings: adminSettings.ja,
     ...labels.ja,
   },
   en: {
@@ -126,6 +128,7 @@ export const translations = {
     meetFailure: meetFailure.en,
     studio: studio.en,
     kpi: kpi.en,
+    adminSettings: adminSettings.en,
     ...labels.en,
   },
 } satisfies Record<AppLanguage, Record<string, Record<string, string>>>;

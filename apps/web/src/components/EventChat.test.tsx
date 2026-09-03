@@ -104,7 +104,7 @@ vi.mock("../api/eventChatHooks.js", () => ({
   useHideChatNote: () => ({ isPending: false, mutate: vi.fn() }),
   // 自動再参加 (#223) の一時鍵。投影用画面ではこれに頼らない
   fetchEphemeralChatKey: vi.fn(async () => ephemeralKey),
-  createOfficialChannelEvent: vi.fn(),
+  useCreateChatChannel: () => ({ mutateAsync: vi.fn() }),
 }));
 
 vi.mock("../lib/nostrChat.js", () => {

@@ -19,12 +19,14 @@ import {
   verifyChatKeyProof,
   verifyEventSignature,
 } from "../auth/nostr.js";
+import type { NostrEvent } from "../auth/nostr.js";
 import {
   generateChatKey,
   serviceKeyConfigured,
   servicePubkey,
   signWithServiceKey,
 } from "../lib/nostrSign.js";
+import { nostrRelay } from "../lib/nostrRelay.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
@@ -253,14 +255,43 @@ eventChatRoutes.get(
   },
 );
 
-/** 公式サービス鍵で署名した kind:40（チャンネル作成）を発行する (#199)。
+/** チャンネル登録の一本化 (#460)。主催者 NIP-07 経路（HTTP 登録）も
+ * 公式鍵経路（サーバー発行）も、必ずこの関数を通って DB に登録される。
+ *
+ * 検証は「kind:40・署名正当・NIP-70 の `["-"]` タグ必須・著者 pubkey が
+ * 許可リスト内」。許可する著者は**呼び出し側が計算して渡す**
+ * （HTTP 登録は主催者の登録済み鍵だけ、サーバー発行は公式鍵だけ）。
+ * `["-"]` 無しの kind:40 は新規登録では 400（既に DB 登録済みの
+ * チャンネルには影響しない）。決着は従来どおり setChannelOnce の先勝ち */
+async function registerVerifiedChannel(
+  c: Context<AppEnv>,
+  eventId: string,
+  channelEvent: NostrEvent,
+  allowedAuthors: readonly string[],
+): Promise<Response> {
+  if (
+    channelEvent.kind !== 40 ||
+    !verifyEventSignature(channelEvent) ||
+    !channelEvent.tags.some((t) => t[0] === "-") ||
+    !allowedAuthors.includes(channelEvent.pubkey)
+  ) {
+    return c.json({ error: "invalid_channel_event" }, 400);
+  }
+  const settled = await eventChatRepo.setChannelOnce(eventId, channelEvent.id);
+  return c.json({ channelId: settled });
+}
+
+/** 公式サービス鍵でチャンネル（kind:40）を開設する (#460)。
  * 主催者が NIP-07 で自ら署名するケース以外はこの鍵でチャンネルを作る
  * （参加者個人の鍵にチャンネルを紐付けない）。
  * 部屋を開設するかどうかはスタッフが決める (#221) ため、そのイベントの staff 限定。
- * ここでは登録しない: クライアントがリレーへの受理を確認してから
- * POST /:id/chat-channel で先勝ち登録する */
+ *
+ * NIP-70 の「AUTH 済み pubkey ＝ イベントの pubkey」を満たすため、署名も
+ * リレーへの発行もサーバー（Workers）が行い、1台以上の OK を確認してから
+ * 同一リクエスト内で登録する。発行と登録が閉じたので、旧 /official 時代の
+ * pending 機構（発行済み id の控え #221）は不要になった */
 eventChatRoutes.post(
-  "/:id/chat-channel/official",
+  "/:id/chat-channel/create",
   requireEventRole(["staff"]),
   async (c) => {
     const denied = await staffAndNotBlocked(c);
@@ -275,24 +306,55 @@ eventChatRoutes.post(
     if (!event.chatEnabled || event.status !== "published") {
       return c.json({ error: "chat_disabled" }, 409);
     }
+    // 既存チャンネルがあれば発行せず既存を返す（先勝ち）
+    const existing = await eventChatRepo.channelIdFor(eventId);
+    if (existing) return c.json({ channelId: existing });
     const channelEvent = signWithServiceKey({
       kind: 40,
       created_at: Math.floor(Date.now() / 1000),
-      tags: [],
+      // NIP-70 (#460): 著者本人の AUTH 済み接続以外からの持ち込みを
+      // 対応リレーが拒否する
+      tags: [["-"]],
       content: JSON.stringify({
         name: event.title,
         about: CHAT_CHANNEL_ABOUT,
       }),
     });
-    // 発行した id をイベントに控え、登録時に一致を要求する（別イベント向け・
-    // 過去発行分の kind:40 持ち込み防止。再発行で上書き）
-    await eventChatRepo.setPendingChannel(eventId, channelEvent.id);
-    return c.json({ channelEvent });
+    // 接続先は管理者設定由来の getChatRelays() のみ（SSRF 防止。lib/nostrRelay.ts）
+    const report = await nostrRelay.publishToRelays(
+      await getChatRelays(),
+      channelEvent,
+      signWithServiceKey,
+    );
+    if (!report.ok) {
+      // 全滅。詳細は staff 向けのデバッグ情報として返す（リレー URL は
+      // chat-members で参加者にも配っている公開値）
+      console.error(
+        `chat-channel create failed (event=${eventId}):`,
+        JSON.stringify(report.relays),
+      );
+      return c.json(
+        { error: "relay_publish_failed", relays: report.relays },
+        502,
+      );
+    }
+    // 一部失敗はログに残すだけで、成功応答には含めない
+    const failed = report.relays.filter((r) => r.outcome !== "ok");
+    if (failed.length > 0) {
+      console.warn(
+        `chat-channel create partial (event=${eventId}):`,
+        JSON.stringify(failed),
+      );
+    }
+    // servicePubkey() は serviceKeyConfigured() 確認済みなので非 null
+    return registerVerifiedChannel(c, eventId, channelEvent, [
+      servicePubkey()!,
+    ]);
   },
 );
 
-/** NIP-28 チャンネル（kind:40）の登録。先勝ちで1回だけ設定され、
- * 2件目以降は既存のチャンネルIDをそのまま返す。
+/** NIP-28 チャンネル（kind:40）の登録（主催者 NIP-07 経路）。先勝ちで1回だけ
+ * 設定され、2件目以降は既存のチャンネルIDをそのまま返す。
  * 開設はそのイベントのスタッフの操作でのみ行う (#221) */
 eventChatRoutes.post(
   "/:id/chat-channel",
@@ -306,41 +368,28 @@ eventChatRoutes.post(
     // 先勝ち: 既に設定済みなら検証せず既存IDを返す（後着は無視）
     const existing = await eventChatRepo.channelIdFor(eventId);
     if (existing) return c.json({ channelId: existing });
-    // 署名済みの kind:40 のみ（無関係な既存チャンネルの紐付け防止）
-    if (!verifyEventSignature(channelEvent) || channelEvent.kind !== 40) {
-      return c.json({ error: "invalid_channel_event" }, 400);
-    }
-    // 署名者は「公式サービス鍵」または「主催者(createdBy)が登録済みの鍵」のみ (#199)。
-    // 参加者個人の鍵で作ったチャンネルは受け付けない（鍵の持ち主が消えると
-    // チャンネルの管理者が不在になるため、公式鍵/主催者鍵に限定する）
     const event = await eventsRepo.findById(eventId);
     if (!event) return c.json({ error: "not_found" }, 404);
-    const isServiceSigned = channelEvent.pubkey === servicePubkey();
-    if (isServiceSigned) {
-      // 公式鍵署名は「このイベント向けに /official が発行した id」のみ受理 (#221)
-      const pending = await eventChatRepo.pendingChannelFor(eventId);
-      if (!pending || pending !== channelEvent.id) {
-        return c.json({ error: "invalid_channel_event" }, 400);
-      }
-    } else {
-      const bound = await eventChatRepo.pubkeyOwner(
-        eventId,
-        channelEvent.pubkey,
-      );
-      if (!bound || bound !== event.createdBy) {
-        return c.json({ error: "invalid_channel_event" }, 400);
-      }
+    // HTTP 登録で受け付ける著者は「主催者(createdBy)の登録済み鍵」のみ (#199)。
+    // 参加者個人の鍵で作ったチャンネルは受け付けない（鍵の持ち主が消えると
+    // チャンネルの管理者が不在になるため）。
+    // 公式鍵署名の body も**受け付けない** (#460)。公式鍵の kind:40 はサーバーが
+    // リレーへ発行するので第三者も読めるが、それを登録 body に流用される穴
+    // （#221 が pending で塞いでいたもの）を、許可リストから外すことで塞ぐ
+    if (servicePubkey() === channelEvent.pubkey) {
+      return c.json({ error: "invalid_channel_event" }, 400);
     }
-    const settled = await eventChatRepo.setChannelOnce(
-      eventId,
-      channelEvent.id,
-    );
-    return c.json({ channelId: settled });
+    const bound = await eventChatRepo.pubkeyOwner(eventId, channelEvent.pubkey);
+    const allowedAuthors =
+      bound && bound === event.createdBy ? [channelEvent.pubkey] : [];
+    return registerVerifiedChannel(c, eventId, channelEvent, allowedAuthors);
   },
 );
 
 /** チャンネルIDをリセットする（そのイベントの staff のみ）。
- * NIP-70時代にリレーへ保存されなかった kind:40 を参照し続けるケース等の復旧用。
+ * リレー側でチャンネル（kind:40）が失われた・部屋を作り直したい、といった
+ * 復旧用（どちらの開設経路もリレーの受理を確認してから登録するため、
+ * 「リレーに保存されなかった id を参照し続ける」旧来の主因は消えている）。
  * リセット後、次にチャットを開いたメンバーが新しいチャンネルを作成する */
 eventChatRoutes.delete(
   "/:id/chat-channel",

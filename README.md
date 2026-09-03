@@ -183,7 +183,9 @@ npx wrangler secret put RESEND_API_KEY --env staging   # staging
 
 Nostr イベントチャット（#199）のチャンネル作成（kind:40）は、主催者本人が
 NIP-07 で署名する場合を除き、events lab の公式サービス鍵でサーバーが署名します
-（参加者個人の鍵にはチャンネルを紐付けない）。秘密鍵は 64 桁 hex で、
+（参加者個人の鍵にはチャンネルを紐付けない）。NIP-70 適用（#460）以降、
+公式鍵経路はリレーへの発行までサーバー（Workers）が行い、公式鍵で NIP-42 AUTH
+した接続から書き込みます（`docs/nip70-protected-chat.md`）。秘密鍵は 64 桁 hex で、
 環境（本番 / staging）ごとに別の鍵をシークレットとして登録します。
 
 ```bash
@@ -193,8 +195,11 @@ npx wrangler secret put NOSTR_SERVICE_KEY --env staging   # staging
 
 - 鍵は `node scripts/mine-npub.mjs <prefix>` で vanity npub をマイニングして作れる
   （出力の `hexsec:` の値をそのまま登録する。`nsec` 形式は受け付けないので注意）。
-- 未設定の環境では公式署名エンドポイントは 503 (`service_key_unset`) を返し、
+- 未設定の環境ではチャンネル開設 API は 503 (`service_key_unset`) を返し、
   主催者の NIP-07 経路以外ではチャンネルを作成できない。
+- チャットに使うリレーは **NIP-42（接続認証）と NIP-70（保護イベント）への
+  対応が必須**（#460）。対応していないリレーは、チャンネルの開設や発言の
+  書き込みを拒否する。
 
 ## 設計ドキュメント
 
@@ -209,6 +214,7 @@ npx wrangler secret put NOSTR_SERVICE_KEY --env staging   # staging
 | [docs/bluesky-login.md](docs/bluesky-login.md) | Bluesky でログイン・連携（トークンは保存しない） |
 | [docs/meet-prizes.md](docs/meet-prizes.md) | 景品（達成条件つきの引き換え・スタッフの引き換えデスク） |
 | [docs/meet-ranking.md](docs/meet-ranking.md) | 出会いランキングのリアルタイム投影 |
+| [docs/nip70-protected-chat.md](docs/nip70-protected-chat.md) | チャットの Nostr イベントへの NIP-70 適用（再放流の拒否・サーバー発行経路） |
 | [docs/notification-actor.md](docs/notification-actor.md) | 通知の actor を列として持つスキーマ変更 |
 | [docs/pre-event-survey.md](docs/pre-event-survey.md) | 開催前アンケート（回答ページ・管理・導線） |
 | [docs/profile-tabs.md](docs/profile-tabs.md) | プロフィールのタブ化とメディアのページング／フィルタ |

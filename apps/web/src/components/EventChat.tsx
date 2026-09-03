@@ -37,9 +37,9 @@ import type { Event as NostrEvent } from "nostr-tools/pure";
 import { useMe } from "../api/hooks.js";
 import { api, ApiError } from "../api/client.js";
 import {
-  createOfficialChannelEvent,
   fetchEphemeralChatKey,
   useChatMembers,
+  useCreateChatChannel,
   useCreateEphemeralChatKey,
   useHideChatNote,
   useRegisterChatChannel,
@@ -279,6 +279,7 @@ export function EventChat({
   const registerKey = useRegisterChatKey(eventId);
   const ephemeralKey = useCreateEphemeralChatKey(eventId);
   const registerChannel = useRegisterChatChannel(eventId);
+  const createChannel = useCreateChatChannel(eventId);
   const resetChannel = useResetChatChannel(eventId);
   const hideNote = useHideChatNote(eventId);
 
@@ -402,45 +403,49 @@ export function EventChat({
       await pool.connect();
       if (disposed) return;
 
-      // チャンネルIDを確定する（未登録ならスタッフが kind:40 を発行して先勝ちで登録）
+      // チャンネルIDを確定する（未登録ならスタッフの操作で開設して先勝ちで登録）
       let cid = chatRef.current?.channelId ?? serverChannelId;
       if (!cid) {
         try {
           // チャンネル作成鍵の方針 (#199): 参加者個人の鍵では作らない。
-          // - 主催者(createdBy)本人が NIP-07 で参加している → 主催者の鍵で署名
-          // - それ以外（参加者が最初に開いた等） → 公式サービス鍵（サーバー署名）
+          // NIP-70 (#460) の「AUTH 済み pubkey ＝ イベントの pubkey」を満たすため、
+          // 署名した鍵の持ち主の接続から発行する:
+          // - 主催者(createdBy)本人が NIP-07 で参加している → 主催者の鍵で署名し、
+          //   本人の AUTH 済み接続（このプール）から発行して登録する
+          // - それ以外（参加者が最初に開いた等） → サーバーが公式サービス鍵で
+          //   署名・リレー発行・登録まで行う（/chat-channel/create 1発）
           const organizerNip07 =
             signerIsNip07Ref.current &&
             meRef.current?.id === event.createdBy;
-          const created: NostrEvent = organizerNip07
-            ? await activeSigner.signEvent(
-                buildChannelCreateTemplate(event.title),
-              )
-            : (await createOfficialChannelEvent(eventId)).channelEvent;
-          // リレーに受理されたことを確認してからサーバーへ登録する
-          // （不達のまま登録すると「リレー上に存在しない部屋」を参照し続けてしまう）
-          //
-          // 注意（リレーポリシーのリスク）: 公式鍵署名の kind:40 は「参加者の
-          // 接続」から発行する。リレー/プロキシが NIP-42 で
-          // 「AUTH済みpubkey == イベントのpubkey」を書き込み条件にしていると
-          // 拒否される。その場合は下の joinError が表示されるので、リレー側で
-          // 公式鍵のイベントを任意のAUTH済み接続から許可する設定と併せて運用する
-          const accepted = await pool.publish(created);
-          if (!accepted) {
-            if (!disposed) {
-              setJoinError(t("eventSocial.chatChannelCreateRejected"));
+          if (organizerNip07) {
+            const created: NostrEvent = await activeSigner.signEvent(
+              buildChannelCreateTemplate(event.title),
+            );
+            // リレーに受理されたことを確認してからサーバーへ登録する
+            // （不達のまま登録すると「リレー上に存在しない部屋」を参照し続けてしまう）
+            const accepted = await pool.publish(created);
+            if (!accepted) {
+              if (!disposed) {
+                setJoinError(t("eventSocial.chatChannelCreateRejected"));
+              }
+              return;
             }
-            return;
+            const { channelId: settled } =
+              await registerChannel.mutateAsync(created);
+            cid = settled ?? created.id;
+          } else {
+            const { channelId: settled } = await createChannel.mutateAsync();
+            if (!settled) throw new Error("channel_not_settled");
+            cid = settled;
           }
-          const { channelId: settled } =
-            await registerChannel.mutateAsync(created);
-          cid = settled ?? created.id;
         } catch (err) {
           if (!disposed) {
             setJoinError(
               err instanceof ApiError && err.status === 503
                 ? t("eventSocial.chatChannelCreateNoServiceKey")
-                : t("eventSocial.chatChannelCreateFailed"),
+                : err instanceof ApiError && err.status === 502
+                  ? t("eventSocial.chatChannelCreateRejected")
+                  : t("eventSocial.chatChannelCreateFailed"),
             );
           }
           return;
@@ -463,7 +468,8 @@ export function EventChat({
       setMessages([]);
       setChannelId(null);
     };
-    // registerChannel（mutation オブジェクト）は毎レンダーで変わるため依存に含めない
+    // registerChannel / createChannel（mutation オブジェクト）は
+    // 毎レンダーで変わるため依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     activeSigner,

@@ -15,8 +15,10 @@ import { CHAT_CHANNEL_ABOUT, CHAT_RELAYS } from "@eventer/shared";
  * Nostrイベントチャット (#199) の薄いラッパー。
  * - ブラウザ⇔リレー直通（サーバーはチャット本文を経由しない）
  * - NIP-28: kind:40 でチャンネル作成、kind:42 でメッセージ
- * - NIP-70 は不採用（strfry がコアで protected イベントを拒否するため）。
- *   封じ込めは「書き込みは自リレー2台限定＋NIP-42 AUTH」で担保する
+ * - NIP-70 (#460): リレーへ発行するイベントには `["-"]` タグを付け、
+ *   第三者による他リレーへの持ち込みを対応リレーが拒否する
+ *   （docs/nip70-protected-chat.md）。封じ込めは「書き込みは自リレー限定＋
+ *   NIP-42 AUTH」に加えて、この protected 宣言で担保する
  * - NIP-42: リレーの AUTH チャレンジに投稿と同じ鍵で署名して応答する
  */
 
@@ -107,7 +109,8 @@ export function buildChannelCreateTemplate(eventTitle: string): EventTemplate {
   return {
     kind: 40,
     created_at: Math.floor(Date.now() / 1000),
-    tags: [],
+    // NIP-70 (#460): 著者本人の AUTH 済み接続以外からの持ち込みを拒否させる
+    tags: [["-"]],
     content: JSON.stringify({
       name: eventTitle,
       about: CHAT_CHANNEL_ABOUT,
@@ -127,7 +130,12 @@ export function buildChannelMessageTemplate(
   return {
     kind,
     created_at: Math.floor(Date.now() / 1000),
-    tags: [["e", channelId, relayHint, "root"]],
+    // NIP-70 の ["-"] は kind:42 とスタッフチャット (#382 GROUP_CHAT_KIND) の
+    // 両方にここ1か所で付く（sealStaffChatMessage も この builder を通る）
+    tags: [
+      ["e", channelId, relayHint, "root"],
+      ["-"],
+    ],
     content,
   };
 }

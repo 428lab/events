@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import { useTranslation } from "react-i18next";
 import {
   CHAT_RELAYS,
   CHAT_RELAY_MAX,
@@ -23,6 +24,9 @@ import {
 
 /** 管理者向け: アプリ全体の運用設定（チャットリレー #199 / 退会予定の削除 #250） */
 export function AdminSettingsPage() {
+  // ページ本体は ja ハードコードのまま (#460)。新しく足した文だけ共有辞書経由
+  // （全体の i18n 化は別 issue のスコープ）
+  const { t } = useTranslation();
   const isAdmin = useIsAdmin();
   const { data, isLoading } = useAdminSettings(isAdmin);
   const update = useUpdateChatRelays();
@@ -116,6 +120,7 @@ export function AdminSettingsPage() {
             イベントチャット (Nostr)
             の読み書きに使うリレーです。1行に1つ、wss:// で始まるURLを最大
             {CHAT_RELAY_MAX}件まで指定できます。
+            {t("adminSettings.relayRequirements")}
           </Typography>
 
           {isLoading || !data ? (

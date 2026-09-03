@@ -31,6 +31,7 @@ describe("暗号化→復号の往復 (#382 11.8)", () => {
     const tmpl = sealStaffChatMessage(ROOM, keys, "公開前の相談ごと", RELAY)!;
     expect(tmpl.kind).toBe(GROUP_CHAT_KIND);
     expect(tmpl.tags).toContainEqual(["e", ROOM, RELAY, "root"]);
+    expect(tmpl.tags).toContainEqual(["-"]); // kind 9807 も protected (#460)
     expect(tmpl.tags).toContainEqual(["v", "2"]); // 常に最新 version
     expect(tmpl.content).not.toContain("公開前の相談ごと"); // 平文が漏れていない
     expect(openStaffChatMessage(keys, tmpl)).toBe("公開前の相談ごと");

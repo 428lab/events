@@ -418,18 +418,42 @@ PR-1 だけが本番に居る期間は、旧 web が `/official`（404）と `["
 
 ## 9. 設計からの差分（実装・レビューで変えた判断）
 
-（実装 PR で追記する）
+- **PR は 1 本にまとめた**（5. は 2 分割の計画だった）。PR-1 だけが本番にいる期間は
+  旧 web が `/official`（404）と `["-"]` 無しの登録（400）を呼ぶため、チャンネル
+  新規開設が一時的に失敗する。分割の利得（レビュー単位）より、この壊れ窓を
+  作らない方を取った。
+- **`chat_channel_pending` 列は残した**（コード参照はすべて削除）。列を消す
+  マイグレーションは、消して得るものが無い（無害な未使用列）割に手順が増えるため
+  見送り。将来スキーマ掃除をするときに落とせばよい。
+- **登録関数の許可著者リスト**は、HTTP 登録側では「body の pubkey の持ち主が
+  createdBy なら [その pubkey]、でなければ []」を route が計算して渡す形にした
+  （主催者の全登録鍵を列挙する repo メソッドを増やさない）。公式鍵 body の拒否は
+  この許可リスト計算より**前**に明示チェックとして置き、公式鍵が（何かの誤りで）
+  発言鍵として DB に載っても素通りしないことを境界テストで固定した。
+- **プロトコル単体テストの差し替え点**は、socket 生成の工場関数
+  （`OpenSocket`）を `publishToRelaysVia` の引数として注入する形にした
+  （4.1 の「module 内の関数分割」の具体化。公開 API の
+  `nostrRelay.publishToRelays` は工場関数を固定して委譲するだけ）。
+- **`apps/server/scripts/run-tests.mjs` の引数順を修正**（同 PR）。
+  `vitest list --json` が直後の引数を出力先パスとして解釈するため、
+  `pnpm test -- <テストファイル>` がそのファイルを JSON で上書きしてしまう
+  既存の欠陥を実装中に踏んだ。フィルタ引数を `--json` より前に置いて修正。
 
 ---
 
-## 10. 未確認の点（実装の最初に確認する）
+## 10. 未確認の点（実装の最初に確認した結果）
 
-1. **workerd の `new WebSocket(url)` で `wss://` の外部リレーに繋がるか**（本番 Workers
-   と、ローカル `wrangler dev` の両方）。docs でコンストラクタの存在は確認済みだが、
-   実接続は smoke していない。ダメなら `fetch(https…, { Upgrade })` + `accept()` へ
-   差し替え（3.3 に退路を書いた。`fetch()` が `wss://` scheme を受けない点も
-   このとき併せて確認する）。
-2. **strfry が AUTH チャレンジを接続直後に送るか、要求時のみか**。状態機械（3.3）は
-   どちらでも動く形にしてあるが、実機ログで確認して doc に残す。
-3. **vitest-pool-workers 内で `new WebSocket` がどう振る舞うか**。4.1 はソケットを
-   フェイクに差し替える方針なので依存はしないが、工場関数の分離位置に影響する。
+1. **確認済み（2026-09-04、実装時）**: ローカル `wrangler dev`（wrangler 4.103.0 /
+   workerd、compatibility_date 2025-05-01）から `new WebSocket("wss://…")` で
+   `wss://r.kojira.io`・`wss://x.kojira.io` の両方に接続でき、読み取りのみの
+   REQ に EVENT / EOSE が返ることを検証用の使い捨てワーカーで確認した
+   （イベントの publish はしていない）。退路の
+   `fetch(https…, { Upgrade: "websocket" })` + `response.webSocket.accept()` も
+   status 101 で同様に動作した（`wss://` → `https://` の scheme 変換が必要）。
+   本番 Workers での接続は staging の実機確認（4.3）で見る。
+2. **確認済み（同上）**: strfry は接続直後には AUTH チャレンジを**送ってこなかった**
+   （読み取りの REQ はチャレンジ無しで応答）。書き込み等で auth-required を返す
+   要求時に送るものとして扱う。状態機械（3.3）はどちらでも動く形のまま。
+3. **依存を切った**: vitest-pool-workers 内の `new WebSocket` の振る舞いは
+   未確認のままでよい。テストは socket 生成の工場関数（`OpenSocket`）を
+   `publishToRelaysVia` に注入してフェイクに差し替える（9. 参照）。
