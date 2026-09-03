@@ -175,7 +175,15 @@ export function publishOverSocket(
     });
     socket.addEventListener("close", () => settle("unreachable", "connection closed"));
     socket.addEventListener("error", () => settle("unreachable", "connection error"));
-    sendEvent();
+    // open 直後に CLOSING/CLOSED へ遷移していると send が同期 throw する。
+    // executor 内の throw は Promise の reject になり、呼び出し側
+    // （publishToRelaysVia の pending 集計）が決着を待ち続けてしまうため、
+    // ここで捕まえて unreachable として決着させる
+    try {
+      sendEvent();
+    } catch (err) {
+      settle("unreachable", err instanceof Error ? err.message : String(err));
+    }
   });
 }
 

@@ -272,7 +272,7 @@ async function registerVerifiedChannel(
   if (
     channelEvent.kind !== 40 ||
     !verifyEventSignature(channelEvent) ||
-    !channelEvent.tags.some((t) => t[0] === "-") ||
+    !channelEvent.tags.some((t) => t.length === 1 && t[0] === "-") ||
     !allowedAuthors.includes(channelEvent.pubkey)
   ) {
     return c.json({ error: "invalid_channel_event" }, 400);

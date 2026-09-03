@@ -173,6 +173,20 @@ describe("1リレーの会話 (publishOverSocket)", () => {
     expect(s.closed).toBe(true);
   });
 
+  it("初回 send が同期 throw（open 直後に CLOSING/CLOSED）なら unreachable で決着する", async () => {
+    const s = new FakeSocket();
+    s.onSend = () => {
+      throw new Error("socket already closing");
+    };
+    const p = publishOverSocket(s, URL1, EVENT, recordingSignAuth([]), 1_000);
+    await expect(p).resolves.toEqual({
+      url: URL1,
+      outcome: "unreachable",
+      message: "socket already closing",
+    });
+    expect(s.closed).toBe(true);
+  });
+
   it("決着前の切断は unreachable", async () => {
     const s = new FakeSocket();
     const p = publishOverSocket(s, URL1, EVENT, recordingSignAuth([]), 1_000);
@@ -214,6 +228,30 @@ describe("並列発行と grace 打ち切り (publishToRelaysVia)", () => {
       { url: URL2, outcome: "timeout" },
     ]);
     expect(sockets.get(URL2)!.closed).toBe(true);
+  });
+
+  it("send が throw するリレーは unreachable としてハングせず決着する（reject が pending に乗る）", async () => {
+    // 修正を戻す（publishOverSocket 末尾の try/catch を外す）と、
+    // Promise が reject して pending が減らず、このテストがタイムアウトする
+    const open = async () => {
+      const s = new FakeSocket();
+      s.onSend = () => {
+        throw new Error("socket already closing");
+      };
+      return s;
+    };
+    const report = await publishToRelaysVia(
+      open,
+      [URL1, URL2],
+      EVENT,
+      recordingSignAuth([]),
+      { publishTimeoutMs: 1_000, graceMs: 30 },
+    );
+    expect(report.ok).toBe(false);
+    expect(report.relays).toEqual([
+      { url: URL1, outcome: "unreachable", message: "socket already closing" },
+      { url: URL2, outcome: "unreachable", message: "socket already closing" },
+    ]);
   });
 
   it("接続できないリレーは unreachable。全滅なら ok: false", async () => {
