@@ -17,7 +17,7 @@ const ja = {
 
   /** 見出しと接続状態 */
   chatHeading: "チャット",
-  chatConnected: "接続中",
+  chatConnected: "接続済み",
   chatOffline: "オフライン",
   chatOpenInPage: "チャット画面で開く",
 
