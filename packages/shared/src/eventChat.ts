@@ -55,13 +55,6 @@ export const registerChatChannelInput = z.object({
 });
 export type RegisterChatChannelInput = z.infer<typeof registerChatChannelInput>;
 
-/** POST /events/:id/chat-channel/official のレスポンス。
- * 公式サービス鍵で署名済みの kind:40（クライアントがリレーへ発行してから
- * /chat-channel で登録する） */
-export interface OfficialChannelPayload {
-  channelEvent: NostrEventInput;
-}
-
 /** アプリ側で非表示にするメッセージ（kind:42 の note id）。staff のみ */
 export const hideChatNoteInput = z.object({
   noteId: hex64,

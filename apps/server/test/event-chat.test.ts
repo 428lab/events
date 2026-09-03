@@ -4,10 +4,34 @@ import {
   createExecutionContext,
   waitOnExecutionContext,
 } from "cloudflare:test";
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import type { ChatMembersPayload, Event } from "@eventer/shared";
+import { nostrRelay } from "../src/lib/nostrRelay.js";
+import type { PublishReport } from "../src/lib/nostrRelay.js";
 
 const BASE = "https://example.com";
+
+// /chat-channel/create のテストはリレー発行を spy で差し替える
+// （外向きの実 WebSocket はテスト環境で張らない。docs/nip70-protected-chat.md 4.1）
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+/** リレー発行の spy。ok なら全リレー受理、そうでなければ全滅の報告を返す */
+function spyPublish(ok: boolean) {
+  return vi
+    .spyOn(nostrRelay, "publishToRelays")
+    .mockImplementation(async (relayUrls): Promise<PublishReport> => {
+      return {
+        ok,
+        relays: relayUrls.map((url) => ({
+          url,
+          outcome: ok ? ("ok" as const) : ("rejected" as const),
+          ...(ok ? {} : { message: "blocked: unsupported" }),
+        })),
+      };
+    });
+}
 
 /** 一般ユーザーを1人作る（セッション付き）。
  * admin=true なら discord_id を ADMIN_DISCORD_IDS(=dev-user) に一致させる */
@@ -685,97 +709,82 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     expect(((await r2.json()) as { channelId: string }).channelId).toBe(ev1.id);
   });
 
-  it("chat-channel: 開設は staff のみ (#221)。公式鍵署名でも参加者からは403", async () => {
+  it("chat-channel: NIP-70 の [\"-\"] タグが無い kind:40 は登録できない (#460)", async () => {
     const owner = await makeUser();
-    const a = await makeUser();
-    const staff2 = await makeUser();
     const eventId = await insertEvent(owner.userId);
-    await addMember(eventId, a.userId);
-    await addMember(eventId, staff2.userId, "staff");
+    await addMember(eventId, owner.userId, "staff");
+    const po = await chatKeyProof(eventId);
+    await linkKey(owner.userId, po.key.pubkey);
+    await postJson(`/events/${eventId}/chat-key`, owner.cookie, { proof: po.proof });
 
-    // /official で発行（pending としてイベントに束縛される）
-    const issued = await postJson(
-      `/events/${eventId}/chat-channel/official`,
-      staff2.cookie,
-      {},
-    );
-    expect(issued.status).toBe(200);
-    const { channelEvent } = (await issued.json()) as {
-      channelEvent: { id: string };
-    };
-
-    // 参加者は公式鍵署名のイベントを持っていても登録できない
-    const rParticipant = await postJson(`/events/${eventId}/chat-channel`, a.cookie, {
-      channelEvent,
+    // 主催者の登録鍵で署名していても、タグ無しは 400（protected でない
+    // チャンネル作成イベントを新規に増やさない）
+    const evNoTag = signNostrEvent(po.key.sk, po.key.pubkey, 40, [], "{}");
+    const r = await postJson(`/events/${eventId}/chat-channel`, owner.cookie, {
+      channelEvent: evNoTag,
     });
-    expect(rParticipant.status).toBe(403);
-
-    // staff（主催者本人でなくてもよい）からは受理
-    const r = await postJson(`/events/${eventId}/chat-channel`, staff2.cookie, {
-      channelEvent,
-    });
-    expect(r.status).toBe(200);
-    expect(((await r.json()) as { channelId: string }).channelId).toBe(
-      channelEvent.id,
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as { error: string }).error).toBe(
+      "invalid_channel_event",
     );
+    // 登録されていない
+    const members = (await (
+      await getChatMembers(eventId, owner.cookie)
+    ).json()) as ChatMembersPayload;
+    expect(members.channelId).toBeNull();
   });
 
-  it("chat-channel: 公式鍵署名でも /official 未発行・別イベント向けの kind:40 は登録できない (#221)", async () => {
-    const ownerA = await makeUser();
-    const ownerB = await makeUser();
-    const eventA = await insertEvent(ownerA.userId);
-    const eventB = await insertEvent(ownerB.userId);
-    await addMember(eventA, ownerA.userId, "staff");
-    await addMember(eventB, ownerB.userId, "staff");
-
-    // /official を通さず自前で公式鍵署名した kind:40 → 400（pending 不一致）
-    const forged = signNostrEvent(SERVICE_KEY.sk, SERVICE_KEY.pubkey, 40, [], "{}");
-    expect(
-      (
-        await postJson(`/events/${eventA}/chat-channel`, ownerA.cookie, {
-          channelEvent: forged,
-        })
-      ).status,
-    ).toBe(400);
-
-    // イベントA向けに発行した kind:40 をイベントBに持ち込む → 400
-    const issuedA = await postJson(
-      `/events/${eventA}/chat-channel/official`,
-      ownerA.cookie,
-      {},
-    );
-    const { channelEvent: evA } = (await issuedA.json()) as {
-      channelEvent: { id: string };
-    };
-    expect(
-      (
-        await postJson(`/events/${eventB}/chat-channel`, ownerB.cookie, {
-          channelEvent: evA,
-        })
-      ).status,
-    ).toBe(400);
-
-    // 本来のイベントAには登録できる
-    const rA = await postJson(`/events/${eventA}/chat-channel`, ownerA.cookie, {
-      channelEvent: evA,
-    });
-    expect(rA.status).toBe(200);
-    expect(((await rA.json()) as { channelId: string }).channelId).toBe(evA.id);
-  });
-
-  it("official: チャット無効イベントでは発行できない (#221)", async () => {
+  it("chat-channel: 公式鍵署名の body は staff でも登録できない (#460 持ち込み防止)", async () => {
     const owner = await makeUser();
     const eventId = await insertEvent(owner.userId);
     await addMember(eventId, owner.userId, "staff");
 
-    // staff がチャットをオフにすると /official は 409
+    // 公式鍵の kind:40 はサーバーがリレーへ発行するので第三者も読める。
+    // それを HTTP 登録の body に流用する経路（#221 が pending で塞いでいた穴）は、
+    // pending 廃止後は「HTTP 登録の許可著者から公式鍵を外す」ことで塞ぐ
+    const official = signNostrEvent(
+      SERVICE_KEY.sk,
+      SERVICE_KEY.pubkey,
+      40,
+      [["-"]],
+      "{}",
+    );
+    const r = await postJson(`/events/${eventId}/chat-channel`, owner.cookie, {
+      channelEvent: official,
+    });
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as { error: string }).error).toBe(
+      "invalid_channel_event",
+    );
+
+    // 境界の回帰テスト: 公式鍵が（何かの誤りで）主催者の発言鍵として DB に
+    // 載っていても、HTTP 登録の公式鍵拒否は**それより前**で効く。
+    // 「登録済みの主催者鍵」判定に公式鍵が紛れ込んでも素通りしないこと
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO event_chat_key (event_id, user_id, pubkey, secret, created_at) VALUES (?, ?, ?, NULL, ?)",
+    )
+      .bind(eventId, owner.userId, SERVICE_KEY.pubkey, Date.now())
+      .run();
+    const r2 = await postJson(`/events/${eventId}/chat-channel`, owner.cookie, {
+      channelEvent: official,
+    });
+    expect(r2.status).toBe(400);
+  });
+
+  it("chat-channel/create: チャット無効イベントでは開設できない (#221)", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, owner.userId, "staff");
+
+    // staff がチャットをオフにすると /create は 409（公式鍵の署名オラクル化防止）
     await SELF.fetch(`${BASE}/api/events/${eventId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json", cookie: owner.cookie },
       body: JSON.stringify({ chatEnabled: false }),
     });
+    const publish = spyPublish(true);
     const res = await postJson(
-      `/events/${eventId}/chat-channel/official`,
+      `/events/${eventId}/chat-channel/create`,
       owner.cookie,
       {},
     );
@@ -783,6 +792,7 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
     expect(((await res.json()) as { error: string }).error).toBe(
       "chat_disabled",
     );
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("chat-hidden: staff のみ追加/解除でき、chat-members に反映される", async () => {
@@ -956,7 +966,7 @@ describe("Nostrイベントチャットの紐付け (#199)", () => {
   });
 });
 
-describe("公式チャンネル署名 (#199)", () => {
+describe("公式チャンネル開設 (#460)", () => {
   interface SignedNostrEvent {
     id: string;
     pubkey: string;
@@ -967,26 +977,31 @@ describe("公式チャンネル署名 (#199)", () => {
     content: string;
   }
 
-  it("official: 公式鍵で署名済みの kind:40 を返す（この時点では登録しない）", async () => {
+  it("create: 公式鍵で [\"-\"] 付き kind:40 を署名・リレー発行し、受理確認後に登録する", async () => {
     const owner = await makeUser();
     const a = await makeUser();
     const eventId = await insertEvent(owner.userId);
     // 開設は staff のみ (#221)
     await addMember(eventId, a.userId, "staff");
 
+    const publish = spyPublish(true);
     const res = await postJson(
-      `/events/${eventId}/chat-channel/official`,
+      `/events/${eventId}/chat-channel/create`,
       a.cookie,
       {},
     );
     expect(res.status).toBe(200);
-    const { channelEvent } = (await res.json()) as {
-      channelEvent: SignedNostrEvent;
-    };
+    expect(publish).toHaveBeenCalledTimes(1);
+    const [relayUrls, channelEvent] = publish.mock.calls[0] as unknown as [
+      string[],
+      SignedNostrEvent,
+    ];
+    // 接続先は運用設定の実効値のみ（テスト環境は既定の2台）
+    expect(relayUrls).toEqual(["wss://r.kojira.io", "wss://x.kojira.io"]);
 
-    // kind:40・タグ無し・公式鍵の pubkey
+    // kind:40・NIP-70 の ["-"] タグ・公式鍵の pubkey
     expect(channelEvent.kind).toBe(40);
-    expect(channelEvent.tags).toEqual([]);
+    expect(channelEvent.tags).toEqual([["-"]]);
     expect(channelEvent.pubkey).toBe(SERVICE_KEY.pubkey);
 
     // content は {name: イベントタイトル, about: 固定文言}
@@ -1017,23 +1032,70 @@ describe("公式チャンネル署名 (#199)", () => {
       ),
     ).toBe(true);
 
-    // この時点では未登録（クライアントがリレー発行後に /chat-channel で登録する）
+    // 発行イベントの id がそのまま channelId として登録されている
+    expect(((await res.json()) as { channelId: string }).channelId).toBe(
+      channelEvent.id,
+    );
     const members = (await (
       await getChatMembers(eventId, a.cookie)
     ).json()) as ChatMembersPayload;
-    expect(members.channelId).toBeNull();
-
-    // 返ってきたイベントをそのまま登録できる
-    const reg = await postJson(`/events/${eventId}/chat-channel`, a.cookie, {
-      channelEvent,
-    });
-    expect(reg.status).toBe(200);
-    expect(((await reg.json()) as { channelId: string }).channelId).toBe(
-      channelEvent.id,
-    );
+    expect(members.channelId).toBe(channelEvent.id);
   });
 
-  it("official: 非メンバー・未確定メンバー・参加者は403", async () => {
+  it("create: 全リレー失敗なら 502 で、DB には登録しない", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, owner.userId, "staff");
+
+    spyPublish(false);
+    const res = await postJson(
+      `/events/${eventId}/chat-channel/create`,
+      owner.cookie,
+      {},
+    );
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as {
+      error: string;
+      relays: { url: string; outcome: string; message?: string }[];
+    };
+    expect(body.error).toBe("relay_publish_failed");
+    // staff 向けのデバッグ情報としてリレーごとの内訳が返る
+    expect(body.relays.map((r) => r.outcome)).toEqual(["rejected", "rejected"]);
+
+    // 受理確認前に登録しない不変条件: channelId は未設定のまま
+    const members = (await (
+      await getChatMembers(eventId, owner.cookie)
+    ).json()) as ChatMembersPayload;
+    expect(members.channelId).toBeNull();
+  });
+
+  it("create: 既存チャンネルがあれば発行せず既存IDを返す", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, owner.userId, "staff");
+
+    const publish = spyPublish(true);
+    const first = await postJson(
+      `/events/${eventId}/chat-channel/create`,
+      owner.cookie,
+      {},
+    );
+    const { channelId } = (await first.json()) as { channelId: string };
+
+    const second = await postJson(
+      `/events/${eventId}/chat-channel/create`,
+      owner.cookie,
+      {},
+    );
+    expect(second.status).toBe(200);
+    expect(((await second.json()) as { channelId: string }).channelId).toBe(
+      channelId,
+    );
+    // 2回目はリレーへ発行していない
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
+  it("create: 非メンバー・未確定メンバー・参加者は403", async () => {
     const owner = await makeUser();
     const outsider = await makeUser();
     const waitlisted = await makeUser();
@@ -1042,43 +1104,30 @@ describe("公式チャンネル署名 (#199)", () => {
     await addMember(eventId, waitlisted.userId, "participant", "waitlist");
     await addMember(eventId, participant.userId);
 
+    const publish = spyPublish(true);
     // 確定済み参加者でも開設は staff のみ (#221)
-    expect(
-      (
-        await postJson(
-          `/events/${eventId}/chat-channel/official`,
-          participant.cookie,
-          {},
-        )
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await postJson(
-          `/events/${eventId}/chat-channel/official`,
-          outsider.cookie,
-          {},
-        )
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await postJson(
-          `/events/${eventId}/chat-channel/official`,
-          waitlisted.cookie,
-          {},
-        )
-      ).status,
-    ).toBe(403);
+    for (const cookie of [
+      participant.cookie,
+      outsider.cookie,
+      waitlisted.cookie,
+    ]) {
+      expect(
+        (
+          await postJson(`/events/${eventId}/chat-channel/create`, cookie, {})
+        ).status,
+      ).toBe(403);
+    }
+    expect(publish).not.toHaveBeenCalled();
   });
 
-  it("official: NOSTR_SERVICE_KEY 未設定なら 503 (service_key_unset)", async () => {
+  it("create: NOSTR_SERVICE_KEY 未設定なら 503 (service_key_unset)", async () => {
     const owner = await makeUser();
     const a = await makeUser();
     const eventId = await insertEvent(owner.userId);
     await addMember(eventId, a.userId, "staff");
 
     // SELF のバインディングは変えられないため、worker.fetch を鍵なしの env で直接呼ぶ
+    const publish = spyPublish(true);
     const { default: worker } = await import("../src/worker.js");
     const keyless = {
       ...(env as Record<string, unknown>),
@@ -1086,7 +1135,7 @@ describe("公式チャンネル署名 (#199)", () => {
     };
     const ctx = createExecutionContext();
     const res = await worker.fetch(
-      new Request(`${BASE}/api/events/${eventId}/chat-channel/official`, {
+      new Request(`${BASE}/api/events/${eventId}/chat-channel/create`, {
         method: "POST",
         headers: { cookie: a.cookie },
       }),
@@ -1098,6 +1147,19 @@ describe("公式チャンネル署名 (#199)", () => {
     expect(((await res.json()) as { error: string }).error).toBe(
       "service_key_unset",
     );
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("chat-channel/official は廃止 (#460)。旧クライアントには 404", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId);
+    await addMember(eventId, owner.userId, "staff");
+    const res = await postJson(
+      `/events/${eventId}/chat-channel/official`,
+      owner.cookie,
+      {},
+    );
+    expect(res.status).toBe(404);
   });
 
   it("chat-channel: NOSTR_SERVICE_KEY 未設定環境では公式鍵署名でも素通りせず 400", async () => {
@@ -1107,7 +1169,13 @@ describe("公式チャンネル署名 (#199)", () => {
 
     // servicePubkey() が null の環境で、鍵署名の kind:40 が「公式扱い」で
     // 受理されないこと（null との比較が偽になる境界の回帰テスト）
-    const ev = signNostrEvent(SERVICE_KEY.sk, SERVICE_KEY.pubkey, 40, [], "{}");
+    const ev = signNostrEvent(
+      SERVICE_KEY.sk,
+      SERVICE_KEY.pubkey,
+      40,
+      [["-"]],
+      "{}",
+    );
     const { default: worker } = await import("../src/worker.js");
     const keyless = {
       ...(env as Record<string, unknown>),
@@ -1141,9 +1209,11 @@ describe("チャンネルのリセット (#199)", () => {
 
     // 鍵登録→チャンネル登録
     const po = await chatKeyProof(eventId);
+    await linkKey(owner.userId, po.key.pubkey);
     await postJson(`/events/${eventId}/chat-key`, owner.cookie, { proof: po.proof });
-    const ev40 = signNostrEvent(po.key.sk, po.key.pubkey, 40, [], "{}");
-    await postJson(`/events/${eventId}/chat-channel`, owner.cookie, { channelEvent: ev40 });
+    const ev40 = signNostrEvent(po.key.sk, po.key.pubkey, 40, [["-"]], "{}");
+    const reg = await postJson(`/events/${eventId}/chat-channel`, owner.cookie, { channelEvent: ev40 });
+    expect(reg.status).toBe(200);
 
     // 参加者のリセットは403
     const forbidden = await SELF.fetch(
@@ -1189,24 +1259,19 @@ describe("チャットのスタッフ操作はイベントの staff のみ (#275
     const eventId = await insertEvent(staff.userId, communityId);
     await addMember(eventId, staff.userId, "staff");
 
-    // 部屋の開設（公式鍵の署名発行）
+    // 部屋の開設（公式鍵経路のサーバー発行 #460）
+    const publish = spyPublish(true);
     expect(
-      (await postJson(`/events/${eventId}/chat-channel/official`, owner.cookie, {})).status,
+      (await postJson(`/events/${eventId}/chat-channel/create`, owner.cookie, {})).status,
     ).toBe(403);
     expect(
-      (await postJson(`/events/${eventId}/chat-channel/official`, admin.cookie, {})).status,
+      (await postJson(`/events/${eventId}/chat-channel/create`, admin.cookie, {})).status,
     ).toBe(403);
+    expect(publish).not.toHaveBeenCalled();
 
-    // staff が発行した kind:40 を横から登録することもできない
-    const issued = await postJson(
-      `/events/${eventId}/chat-channel/official`,
-      staff.cookie,
-      {},
-    );
-    expect(issued.status).toBe(200);
-    const { channelEvent } = (await issued.json()) as {
-      channelEvent: { id: string };
-    };
+    // 署名済みの kind:40 を持っていても、staff でなければ登録もできない
+    const stray = makeNostrKey();
+    const channelEvent = signNostrEvent(stray.sk, stray.pubkey, 40, [["-"]], "{}");
     for (const cookie of [owner.cookie, admin.cookie]) {
       expect(
         (await postJson(`/events/${eventId}/chat-channel`, cookie, { channelEvent }))
@@ -1217,17 +1282,20 @@ describe("チャットのスタッフ操作はイベントの staff のみ (#275
     expect((await chatState(eventId, staff.cookie)).channelId).toBeNull();
 
     // staff は開設できる
-    const opened = await postJson(`/events/${eventId}/chat-channel`, staff.cookie, {
-      channelEvent,
-    });
+    const opened = await postJson(
+      `/events/${eventId}/chat-channel/create`,
+      staff.cookie,
+      {},
+    );
     expect(opened.status).toBe(200);
-    expect((await chatState(eventId, staff.cookie)).channelId).toBe(channelEvent.id);
+    const { channelId } = (await opened.json()) as { channelId: string };
+    expect((await chatState(eventId, staff.cookie)).channelId).toBe(channelId);
 
     // チャンネルの作り直し（リセット）
     for (const cookie of [owner.cookie, admin.cookie]) {
       expect((await del(`/events/${eventId}/chat-channel`, cookie)).status).toBe(403);
     }
-    expect((await chatState(eventId, staff.cookie)).channelId).toBe(channelEvent.id);
+    expect((await chatState(eventId, staff.cookie)).channelId).toBe(channelId);
 
     // メッセージの非表示
     for (const cookie of [owner.cookie, admin.cookie]) {
@@ -1268,7 +1336,7 @@ describe("チャットのスタッフ操作はイベントの staff のみ (#275
     await addMember(eventId, onHold.userId, "staff", "waitlist");
 
     expect(
-      (await postJson(`/events/${eventId}/chat-channel/official`, onHold.cookie, {})).status,
+      (await postJson(`/events/${eventId}/chat-channel/create`, onHold.cookie, {})).status,
     ).toBe(403);
     expect(
       (await postJson(`/events/${eventId}/chat-hidden`, onHold.cookie, { noteId: hex64("b") }))

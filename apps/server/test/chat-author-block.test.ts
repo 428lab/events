@@ -356,7 +356,7 @@ describe("チャットの発言者単位の締め出し (#283)", () => {
       (await deleteReq(`/events/${eventId}/chat-channel`, staff.cookie)).status,
     ).toBe(403);
     expect(
-      (await postJson(`/events/${eventId}/chat-channel/official`, staff.cookie))
+      (await postJson(`/events/${eventId}/chat-channel/create`, staff.cookie))
         .status,
     ).toBe(403);
     expect(

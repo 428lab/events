@@ -52,8 +52,11 @@ function vitest(args, opts = {}) {
 }
 
 // 何本あるかを先に数える。--filesOnly は pool を起動しない（workerd は立たない）ので
-// ここでは資源を使わない
-const list = vitest(["list", "--filesOnly", "--json", ...passthrough], {
+// ここでは資源を使わない。
+// --json は直後の引数を「出力先ファイルのパス」として食う（そこに上書き保存する）
+// ため、フィルタ引数より**後ろ**に置くこと。前に置くと
+// `pnpm test -- test/foo.test.ts` が foo.test.ts を JSON で潰す
+const list = vitest(["list", "--filesOnly", ...passthrough, "--json"], {
   stdio: ["ignore", "pipe", "inherit"],
   encoding: "utf8",
 });
