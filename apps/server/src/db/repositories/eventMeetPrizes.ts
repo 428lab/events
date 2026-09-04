@@ -111,6 +111,17 @@ export const eventMeetPrizesRepo = {
     await run("DELETE FROM event_prize WHERE id = ?", id);
   },
 
+  /** イベント削除時のR2掃除用: そのイベントの景品画像の R2 キー一覧 (#424)。
+   * キーは乱数入りで D1 にしか無いので、行が消えた後は誰も辿れない。
+   * event 行を消すと FK CASCADE で一緒に消えるため、**削除の前に**呼ぶこと */
+  async listImageKeysByEvent(eventId: string): Promise<string[]> {
+    const rows = await many<{ image_key: string }>(
+      "SELECT image_key FROM event_prize WHERE event_id = ? AND image_key IS NOT NULL",
+      eventId,
+    );
+    return rows.map((r) => r.image_key);
+  },
+
   /** 景品画像の R2 キーを差し替える（null で画像なしに戻す） (#434) */
   async setImageKey(id: string, imageKey: string | null): Promise<void> {
     await run("UPDATE event_prize SET image_key = ? WHERE id = ?", imageKey, id);

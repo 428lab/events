@@ -15,6 +15,7 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { deleteEventImage, putEventImage } from "./images.js";
+import { collectEventObjects, deleteObjects } from "../lib/mediaCleanup.js";
 import { notifyRequestsOnPublish } from "./eventRequests.js";
 import { notifyFollowersOnPublish } from "./follows.js";
 import { checkRegistrationDeadline } from "../lib/registrationDeadline.js";
@@ -144,8 +145,14 @@ eventCrudRoutes.post("/:id/publish", requireEventRole(["staff"]), async (c) => {
   return c.json({ event });
 });
 
-/** イベント削除（staff のみ。関連データは FK CASCADE で削除） */
+/** イベント削除（staff のみ）。D1 の関連データは FK CASCADE で消えるが、
+ * **R2 の実体は CASCADE では消えない** (#424)。表紙画像・写真・動画（本体＋ポスター）・
+ * 景品画像のキーを D1 から集めてから行を消し、最後に R2 をベストエフォートで消す。
+ * 順序と失敗方向の理由は lib/mediaCleanup.ts */
 eventCrudRoutes.delete("/:id", requireEventRole(["staff"]), async (c) => {
-  await eventsRepo.delete(c.req.param("id"));
+  const eventId = c.req.param("id");
+  const keys = await collectEventObjects(eventId);
+  await eventsRepo.delete(eventId);
+  await deleteObjects(keys, `[event-delete] event=${eventId}`);
   return c.json({ ok: true });
 });

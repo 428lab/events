@@ -6,11 +6,7 @@ import { decksRepo } from "../db/repositories/decks.js";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { bgmTracksRepo } from "../db/repositories/bgmTracks.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
-import {
-  photoR2Key,
-  videoPosterR2Key,
-  videoR2Key,
-} from "../routes/eventPhotos.js";
+import { deleteObjects, photoObjectKeys } from "./mediaCleanup.js";
 import { avatarKey } from "./avatarStore.js";
 
 /** 退会猶予期間 (#250) を過ぎたアカウントの完全削除。
@@ -71,15 +67,8 @@ async function collectUserObjects(
   const keys = await bgmTracksRepo.listKeysByOwner(userId);
   const photos = await eventPhotosRepo.listIdsByUser(userId);
   budget.spent += 4;
-  // 動画 (#408) は本体＋ポスターの2キー。ポスターなし投稿でも
-  // 存在しないキーの削除は無害なので分岐しない
-  for (const p of photos) {
-    if (p.kind === "video") {
-      keys.push(videoR2Key(p.eventId, p.id), videoPosterR2Key(p.eventId, p.id));
-    } else {
-      keys.push(photoR2Key(p.eventId, p.id));
-    }
-  }
+  // 動画 (#408) は本体＋ポスターの2キー。組み立ては mediaCleanup の1か所 (#424)
+  for (const p of photos) keys.push(...photoObjectKeys(p));
   // 自前保管のアイコン (#312) は 1ユーザー1キー固定なので list は要らない。
   // 保管していなければ存在しないキーを消すだけ（削除は下でまとめて投げるので費用ゼロ）
   keys.push(avatarKey(userId));
@@ -158,16 +147,11 @@ export async function purgeDeletedAccounts(
           requestedAt: user.deletedAt,
         },
       });
-      // R2 の掃除はベストエフォート（失敗しても削除自体は成立。残骸はログで追える）
-      try {
-        const bucket = getBucket();
-        for (let i = 0; i < objectKeys.length; i += 1000) {
-          budget.spent += 1;
-          await bucket.delete(objectKeys.slice(i, i + 1000));
-        }
-      } catch (e) {
-        console.error(`[account-purge] R2 cleanup failed for user=${userId}`, e);
-      }
+      // R2 の掃除はベストエフォート（失敗しても削除自体は成立。残骸はログで追える）。
+      // deleteObjects は 1000 キーごとに1回 delete を呼び、空配列なら
+      // サブリクエストを使わない。同じ数え方で予算に積む (#424)
+      budget.spent += Math.ceil(objectKeys.length / 1000);
+      await deleteObjects(objectKeys, `[account-purge] user=${userId}`);
       purged += 1;
     } catch (e) {
       // DB 側で失敗した場合は deleted_at が残るため、翌日の実行で再試行される

@@ -219,6 +219,25 @@ export const eventPhotosRepo = {
     }));
   },
 
+  /** イベント削除時のR2掃除用: そのイベントの写真・動画の (id, eventId, kind) 一覧 (#424)。
+   * listIdsByUser と同じ理由で **共有の SELECT を使わない**。あれは運営が
+   * 非表示にした写真 (#278) を落とすので、通すと非表示ぶんの R2 実体だけが
+   * 残る（イベントが消えて誰からも辿れない孤児になる）。
+   * event 行を消すと FK CASCADE で一緒に消えるため、**削除の前に**呼ぶこと */
+  async listIdsByEvent(
+    eventId: string,
+  ): Promise<Array<{ id: string; eventId: string; kind: "photo" | "video" }>> {
+    const rows = await many<{ id: string; event_id: string; kind: string }>(
+      "SELECT id, event_id, kind FROM event_photo WHERE event_id = ?",
+      eventId,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      eventId: r.event_id,
+      kind: toKind(r.kind),
+    }));
+  },
+
   /** 公開プロフィール用: ユーザーが公開設定イベントに投稿した写真（ページング #407）。
    * 公開範囲は PUBLIC_USER_PHOTO_COND、フィルタは buildUserPhotoWhere 参照。
    * コメント数は一覧と同じ COMMENT_COUNT を使う。ここだけ別に書いていたため
