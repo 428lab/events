@@ -63,9 +63,12 @@ interface Budget {
  * 対象: スライド画像・配信セット画像・BGM 音源・イベント写真・プロフィールカードPNG・
  * 自前保管のアイコン (#312)・**完全削除で消える下書きイベントの持ち物** (#424)。
  * デッキ数・配信セット数だけ R2 list が、下書きイベント数だけ D1 が増えるので、
- * 消費数を budget に積む */
+ * 消費数を budget に積む。
+ * `ghostId` は下書きイベントの列挙に要る（deleteAccount の DELETE が付け替え後の
+ * ghost 名義を見るため。詳細は accountDeletion.ts） */
 async function collectUserObjects(
   userId: string,
+  ghostId: string,
   budget: Budget,
 ): Promise<string[]> {
   const bucket = getBucket();
@@ -81,12 +84,18 @@ async function collectUserObjects(
   keys.push(avatarKey(userId));
   // 完全削除では「参加者のいない下書きイベント」の行も消える (#244) ので、
   // そのイベントの持ち物（表紙画像・写真・動画・景品画像）も一緒に消さないと
-  // #424 が塞いだはずの孤児がここから出る。**どのイベントが消えるかの条件は
-  // accountDeletion.ts に1つだけ置き**、DELETE と同じ WHERE を引いた SELECT で
-  // 受け取る（条件を書き写すと片方だけずれて実体が残る）
+  // #424 が塞いだはずの孤児がここから出る。
+  //
+  // 消える行を**1つ残らず**受け取るのが要件で、条件の文字列を共有するだけでは
+  // 足りない。DELETE は付け替え後の ghost 名義を見るので、既に ghost 名義に
+  // なっている下書き（過去の退会で移り、その後に第三者の参加者が抜けたもの）まで
+  // 消す＝本人の持ち物だけ集めても足りない。条件・引数ごと揃える理由と、
+  // 2つの集合が等しくなる根拠は accountDeletion.ts の ORPHAN_DRAFT_EVENT_WHERE
   budget.spent += 1;
-  const draftEventIds =
-    await accountDeletionRepo.listDeletableDraftEventIds(userId);
+  const draftEventIds = await accountDeletionRepo.listDeletableDraftEventIds(
+    userId,
+    ghostId,
+  );
   for (const eventId of draftEventIds) {
     // collectEventObjects は D1 を2回引く（イベント写真＋景品画像）
     budget.spent += 2;
@@ -149,7 +158,7 @@ export async function purgeDeletedAccounts(
       const user = await usersRepo.findByIdIncludingDeleted(userId);
       if (!user || user.deletedAt === null) continue; // 直前に復帰した
       attemptedAny = true;
-      const objectKeys = await collectUserObjects(userId, budget);
+      const objectKeys = await collectUserObjects(userId, ghost.id, budget);
       console.log(
         `[account-purge] user=${userId} handle=${user.username} ghost=${ghost.id} r2Objects=${objectKeys.length}`,
       );

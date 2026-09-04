@@ -1,5 +1,5 @@
 import { SELF, env } from "cloudflare:test";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 
 const BASE = "https://example.com";
 const GHOST_DISCORD_ID = "system:deleted-user";
@@ -90,6 +90,51 @@ async function count(sql: string, ...args: unknown[]): Promise<number> {
     .first<{ n: number }>();
   return row?.n ?? 0;
 }
+
+/** 表紙画像と景品画像（＝R2 の実体つき）を持つイベントを1件作る (#424) */
+async function eventWithMedia(
+  ownerId: string,
+  status: "draft" | "published",
+): Promise<{ eventId: string; coverKey: string; prizeKey: string }> {
+  const eventId = crypto.randomUUID();
+  await env.DB.prepare(
+    "INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, created_by, created_at) VALUES (?, '掃除テスト', 1, 2, 'offline', ?, ?, ?)",
+  )
+    .bind(eventId, status, ownerId, Date.now())
+    .run();
+  await env.DB.prepare(
+    "INSERT INTO event_image (event_id, mime, updated_at) VALUES (?, 'image/png', ?)",
+  )
+    .bind(eventId, Date.now())
+    .run();
+  const coverKey = `event-images/${eventId}`;
+  await env.BUCKET.put(coverKey, "cover-bytes");
+
+  const prizeId = crypto.randomUUID();
+  const prizeKey = `prize-images/${prizeId}/${crypto.randomUUID()}`;
+  await env.DB.prepare(
+    `INSERT INTO event_prize
+       (id, event_id, name, description, condition_type, threshold, stock, image_key, created_at)
+     VALUES (?, ?, '景品', '', 'meet_count', 1, 1, ?, ?)`,
+  )
+    .bind(prizeId, eventId, prizeKey, Date.now())
+    .run();
+  await env.BUCKET.put(prizeKey, "prize-bytes");
+  return { eventId, coverKey, prizeKey };
+}
+
+/** イベントから抜ける（参加行を消す） */
+async function leaveEvent(eventId: string, userId: string): Promise<void> {
+  await env.DB.prepare(
+    "DELETE FROM event_member WHERE event_id = ? AND user_id = ?",
+  )
+    .bind(eventId, userId)
+    .run();
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 async function ghostRow(): Promise<{ id: string; username: string } | null> {
   return env.DB.prepare(
@@ -376,43 +421,12 @@ describe("退会（アカウント削除） (#244, #250)", () => {
     const a = await makeUser();
     const b = await makeUser();
 
-    /** 表紙画像と景品画像を持つイベントを1件作る */
-    async function eventWithMedia(
-      status: "draft" | "published",
-    ): Promise<{ eventId: string; coverKey: string; prizeKey: string }> {
-      const eventId = crypto.randomUUID();
-      await env.DB.prepare(
-        "INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, created_by, created_at) VALUES (?, '掃除テスト', 1, 2, 'offline', ?, ?, ?)",
-      )
-        .bind(eventId, status, a.userId, Date.now())
-        .run();
-      await env.DB.prepare(
-        "INSERT INTO event_image (event_id, mime, updated_at) VALUES (?, 'image/png', ?)",
-      )
-        .bind(eventId, Date.now())
-        .run();
-      const coverKey = `event-images/${eventId}`;
-      await env.BUCKET.put(coverKey, "cover-bytes");
-
-      const prizeId = crypto.randomUUID();
-      const prizeKey = `prize-images/${prizeId}/${crypto.randomUUID()}`;
-      await env.DB.prepare(
-        `INSERT INTO event_prize
-           (id, event_id, name, description, condition_type, threshold, stock, image_key, created_at)
-         VALUES (?, ?, '景品', '', 'meet_count', 1, 1, ?, ?)`,
-      )
-        .bind(prizeId, eventId, prizeKey, Date.now())
-        .run();
-      await env.BUCKET.put(prizeKey, "prize-bytes");
-      return { eventId, coverKey, prizeKey };
-    }
-
     // 消える: 本人が作った、本人以外の参加者が居ない下書き
-    const orphan = await eventWithMedia("draft");
+    const orphan = await eventWithMedia(a.userId, "draft");
     // 残る(1): 公開済み＝「退会済みユーザー」名義に付け替えて残る
-    const published = await eventWithMedia("published");
+    const published = await eventWithMedia(a.userId, "published");
     // 残る(2): 下書きでも第三者が参加していれば消えない
-    const shared = await eventWithMedia("draft");
+    const shared = await eventWithMedia(a.userId, "draft");
     await joinEvent(shared.eventId, a.userId);
     await joinEvent(shared.eventId, b.userId);
 
@@ -433,6 +447,89 @@ describe("退会（アカウント削除） (#244, #250)", () => {
       expect(await env.BUCKET.head(e.coverKey)).not.toBeNull();
       expect(await env.BUCKET.head(e.prizeKey)).not.toBeNull();
     }
+  });
+
+  it("他人の退会で消える『退会済みユーザー』名義の下書きも実体ごと消える (#424)", async () => {
+    // 完全削除の DELETE は本人のイベントに限定されておらず、条件に合う
+    // ghost 名義の下書きを**すべて**消す。そのため次の3手で、無関係な人の
+    // 退会が他人の残した下書きの行だけを消し、実体を孤児にできてしまう:
+    //   1. A の下書き（第三者 B が参加）は A の退会では消えず ghost 名義になる
+    //   2. B がイベントから抜ける → 参加者ゼロの ghost 名義の下書きになる
+    //   3. 無関係な C が退会すると、その DELETE がこの行を消す
+    // 収集側が「本人の持ち物」しか見ていないと 3 で実体だけが残る。
+    // 収集と削除が同じ集合を指していることを、この経路で固定する
+    const a = await makeUser();
+    const b = await makeUser();
+    const c = await makeUser();
+
+    const carried = await eventWithMedia(a.userId, "draft");
+    await joinEvent(carried.eventId, a.userId);
+    await joinEvent(carried.eventId, b.userId);
+    // 対照: 参加者が残り続ける ghost 名義の下書き。行が残る＝実体も残る
+    const stillJoined = await eventWithMedia(a.userId, "draft");
+    await joinEvent(stillJoined.eventId, a.userId);
+    await joinEvent(stillJoined.eventId, b.userId);
+
+    // 1. A の退会。B が参加しているのでどちらの下書きも消えず ghost 名義になる
+    expect((await deleteAndPurge(a.cookie, a.userId)).status).toBe(200);
+    const ghost = await ghostRow();
+    for (const e of [carried, stillJoined]) {
+      const row = await env.DB.prepare(
+        "SELECT created_by FROM event WHERE id = ?",
+      )
+        .bind(e.eventId)
+        .first<{ created_by: string }>();
+      expect(row?.created_by).toBe(ghost!.id);
+      expect(await env.BUCKET.head(e.coverKey)).not.toBeNull();
+    }
+
+    // 2. B が carried から抜ける（参加者ゼロの ghost 名義の下書きになる）
+    await leaveEvent(carried.eventId, b.userId);
+
+    // 3. 無関係な C が退会する
+    expect((await deleteAndPurge(c.cookie, c.userId)).status).toBe(200);
+
+    // 行が消えたなら実体も消えていること
+    expect(
+      await count("SELECT COUNT(*) AS n FROM event WHERE id = ?", carried.eventId),
+    ).toBe(0);
+    expect(await env.BUCKET.head(carried.coverKey)).toBeNull();
+    expect(await env.BUCKET.head(carried.prizeKey)).toBeNull();
+
+    // 参加者が残っている方は行も実体も無傷（集めすぎていない）
+    expect(
+      await count(
+        "SELECT COUNT(*) AS n FROM event WHERE id = ?",
+        stillJoined.eventId,
+      ),
+    ).toBe(1);
+    expect(await env.BUCKET.head(stillJoined.coverKey)).not.toBeNull();
+    expect(await env.BUCKET.head(stillJoined.prizeKey)).not.toBeNull();
+  });
+
+  it("R2 を消しに行く時点で D1 の行は既に消えている (#424)", async () => {
+    // 削除4経路のうち退会ぶん。順序が逆だと「実体は消えたのに行が残る」瞬間が
+    // でき、そこで D1 が落ちれば参照先の無い行が確定する
+    const a = await makeUser();
+    const orphan = await eventWithMedia(a.userId, "draft");
+
+    const rowsAtDelete: Array<{ user: number; event: number }> = [];
+    const original = env.BUCKET.delete.bind(env.BUCKET);
+    vi.spyOn(env.BUCKET, "delete").mockImplementation(async (keys) => {
+      rowsAtDelete.push({
+        user: await count("SELECT COUNT(*) AS n FROM user WHERE id = ?", a.userId),
+        event: await count(
+          "SELECT COUNT(*) AS n FROM event WHERE id = ?",
+          orphan.eventId,
+        ),
+      });
+      return original(keys as string | string[]);
+    });
+
+    expect((await deleteAndPurge(a.cookie, a.userId)).status).toBe(200);
+    // 呼ばれていないなら「順序が正しい」は何も確かめていない
+    expect(rowsAtDelete.length).toBeGreaterThan(0);
+    for (const at of rowsAtDelete) expect(at).toEqual({ user: 0, event: 0 });
   });
 
   it("会場・オファーの連絡先は消え、未応答のオファーは辞退になる", async () => {

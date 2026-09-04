@@ -1,5 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect, afterEach, vi } from "vitest";
+import { bindEnv, type Env } from "../src/runtime.js";
+import { deleteObjects } from "../src/lib/mediaCleanup.js";
 
 const BASE = "https://example.com";
 
@@ -273,6 +275,31 @@ describe("イベント削除で R2 の実体も消す (#424)", () => {
 });
 
 describe("表紙画像の単体削除でも実体を残さない (#424)", () => {
+  it("R2 を消しに行く時点で D1 の行は既に消えている（順序そのものを固定する）", async () => {
+    const cookie = await loginDev();
+    const eventId = await setupEvent(cookie);
+    await putCoverImage(eventId, cookie);
+
+    const rowsAtDelete: number[] = [];
+    const original = env.BUCKET.delete.bind(env.BUCKET);
+    vi.spyOn(env.BUCKET, "delete").mockImplementation(async (keys) => {
+      rowsAtDelete.push(
+        await rowCount(
+          "SELECT COUNT(1) AS n FROM event_image WHERE event_id = ?",
+          eventId,
+        ),
+      );
+      return original(keys as string | string[]);
+    });
+
+    const res = await SELF.fetch(`${BASE}/api/events/${eventId}/image`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(res.status).toBe(200);
+    expect(rowsAtDelete).toEqual([0]);
+  });
+
   it("R2 の削除が落ちても ok を返し、D1 の行は消える", async () => {
     // #424 以前は R2 の失敗がそのまま 500 になり、行だけ消えた状態で
     // 呼び出し側にはエラーが返っていた。今は他の削除経路と同じ
@@ -351,5 +378,48 @@ describe("写真1枚の削除でも実体を残さない (#424)", () => {
       await rowCount("SELECT COUNT(1) AS n FROM event_photo WHERE id = ?", videoId),
     ).toBe(0);
     expect(await env.BUCKET.head(videoKey(eventId, videoId))).not.toBeNull();
+  });
+});
+
+describe("deleteObjects の分割契約 (#424)", () => {
+  /** 本番の R2 は multi-delete 1回につき 1000 キーまでで、超えると丸ごと拒否する。
+   * テスト環境の R2 は何個でも受け取るので、「実体が消えたか」を見ても
+   * 上限超えには気づけない（`deleteObjects` は例外を握り潰すため、
+   * 本番では全部が静かに孤児になる）。R2 に渡した配列そのものを見る。
+   *
+   * 返り値の回数も同時に固定する。退会の掃除 (#244) はこれをサブリクエスト
+   * 予算に積んでおり、少なく返すと MIN_COST_PER_USER の見積もりが壊れて
+   * 上限 50 を超え、同じリクエスト内の以降の呼び出しが全部失敗する */
+  it("1回の delete に 1000 キーを超えて渡さず、投げた回数を返す", async () => {
+    bindEnv(env as unknown as Env);
+    const keys = Array.from(
+      { length: 2500 },
+      (_, i) => `event-photos/e/${i}`,
+    );
+    const sizes: number[] = [];
+    vi.spyOn(env.BUCKET, "delete").mockImplementation(async (k) => {
+      sizes.push(Array.isArray(k) ? k.length : 1);
+    });
+
+    const calls = await deleteObjects(keys, "[test]");
+
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(1000);
+    expect(sizes).toEqual([1000, 1000, 500]);
+    // 予算に積む数＝実際に投げた回数
+    expect(calls).toBe(3);
+    expect(calls).toBe(sizes.length);
+  });
+
+  it("空配列ならサブリクエストを使わず 0 を返す", async () => {
+    bindEnv(env as unknown as Env);
+    const spy = vi.spyOn(env.BUCKET, "delete");
+    expect(await deleteObjects([], "[test]")).toBe(0);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("失敗しても投げた回数を返す（予算は必ず積まれる）", async () => {
+    bindEnv(env as unknown as Env);
+    vi.spyOn(env.BUCKET, "delete").mockRejectedValue(new Error("R2 down"));
+    expect(await deleteObjects(["event-images/e"], "[test]")).toBe(1);
   });
 });

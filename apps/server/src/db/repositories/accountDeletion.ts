@@ -18,15 +18,26 @@ const DELETED_USER_DISCORD_ID = "system:deleted-user";
 /** 「参加者のいない下書きイベント」の条件 (#244)。誰にも見えず誰も消せない
  * 孤児になるため退会の完全削除で消す。
  *
- * **この条件を2か所に書かない** (#424)。R2 の実体（表紙画像・写真・景品画像）は
- * 行が消えると辿れなくなるので削除の**前に**キーを集める必要があり、集める側は
- * 「どのイベントが消えるか」を知らなければならない。条件を書き写すと片方だけ
- * ずれて実体が孤児になるので、DELETE と収集用の SELECT で同じ文字列を使う。
+ * この条件に対する要求は **DELETE と、その前に R2 のキーを集める SELECT が
+ * 同じ集合を指すこと** (#424)。行が消えるとキーを辿れないので収集は削除より
+ * 前に走るしかなく、集合がずれた分だけ実体が孤児になる。
  *
- * `?` は順に created_by と「本人以外の参加者」の user_id。created_by に何を
- * 渡すかだけが両者で違う: DELETE は (1) で ghost に付け替えた**後**なので
- * ghost、収集は付け替え**前**に走るので本人。 */
-const ORPHAN_DRAFT_EVENT_WHERE = `created_by = ? AND status = 'draft'
+ * **同じ文字列を共有するだけでは足りない。同じ引数で呼べることが要る。**
+ * 素直に書くと所有者の指定が両者で食い違う:
+ *   - DELETE は (1) の付け替えの**後**なので、本人の下書きは既に ghost 名義。
+ *   - しかも DELETE は本人のイベントに限定されておらず、条件に合う ghost 名義の
+ *     下書きを**すべて**消す。過去の退会で ghost に移った下書きから後になって
+ *     第三者の参加者が抜けると、無関係な人の退会でその行が消える。
+ *   - 収集は付け替えの**前**なので、本人名義のものはまだ本人名義。
+ * 所有者の条件を `created_by IN (本人, ghost)` にすると、両者を**同じ引数**で
+ * 呼べる。付け替えは status も event_member も触らないので
+ *   「付け替え後に created_by = ghost」⇔「付け替え前に created_by ∈ {本人, ghost}」
+ * が成り立ち、2つの集合は似ているのではなく**同一**になる。
+ * （付け替え前に created_by = 本人 のものは付け替えで ghost になり、
+ *   既に ghost のものはそのまま。それ以外は ghost にならない）
+ *
+ * `?` は順に 本人 / ghost / 「本人以外の参加者」の user_id。 */
+const ORPHAN_DRAFT_EVENT_WHERE = `created_by IN (?, ?) AND status = 'draft'
          AND NOT EXISTS (SELECT 1 FROM event_member m
                           WHERE m.event_id = event.id AND m.user_id != ?)`;
 
@@ -110,15 +121,17 @@ export const accountDeletionRepo = {
 
   /** `deleteAccount` が消す下書きイベントの id (#424)。R2 の実体を消すために
    * **deleteAccount を呼ぶ前に**呼ぶこと（行が消えるとキーを辿れない）。
-   * 条件は DELETE と同じ ORPHAN_DRAFT_EVENT_WHERE を引く。まだ ghost へ
-   * 付け替える前なので created_by は本人。
-   *
-   * 付け替え済みの ghost 名義の下書き（過去の退会の取りこぼし）はここには出ない。
-   * それは prefix を舐める掃除の話で、この経路の担当ではない */
-  async listDeletableDraftEventIds(userId: string): Promise<string[]> {
+   * 条件も引数も DELETE 側と同一（等しくなる理由は
+   * ORPHAN_DRAFT_EVENT_WHERE）。ghost 名義に移っている下書きも対象に入る＝
+   * DELETE が消す行を1つ残らず含む */
+  async listDeletableDraftEventIds(
+    userId: string,
+    ghostId: string,
+  ): Promise<string[]> {
     const rows = await many<{ id: string }>(
       `SELECT id FROM event WHERE ${ORPHAN_DRAFT_EVENT_WHERE}`,
       userId,
+      ghostId,
       userId,
     );
     return rows.map((r) => r.id);
@@ -186,11 +199,12 @@ export const accountDeletionRepo = {
     });
 
     // (1-d) 参加者のいない下書きイベントは誰にも見えず誰も消せない孤児になるため削除。
-    //     条件は ORPHAN_DRAFT_EVENT_WHERE（R2 のキー収集と共有）。ここでは (1) で
-    //     付け替えた後なので created_by は ghost
+    //     条件も引数も R2 のキー収集（listDeletableDraftEventIds）と同一にする。
+    //     (1) の付け替え後なので本人名義の分は既に ghost 名義だが、
+    //     `IN (本人, ghost)` なのでどちらでも同じ行に当たる
     stmts.push({
       sql: `DELETE FROM event WHERE ${ORPHAN_DRAFT_EVENT_WHERE}`,
-      args: [ghostId, userId],
+      args: [userId, ghostId, userId],
     });
 
     // (2) FK RESTRICT の個人資産 live_set は user 削除前に明示削除。
