@@ -1,6 +1,11 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import type { Entry, Event, ParticipationSlot } from "@eventer/shared";
+import type {
+  Entry,
+  Event,
+  EventMember,
+  ParticipationSlot,
+} from "@eventer/shared";
 
 const BASE = "https://example.com";
 const DAY = 86400000;
@@ -151,6 +156,46 @@ describe("参加枠は親イベントの所有を検証する (#466)", () => {
     expect(await errorOf(res)).toBe("not_found");
   });
 
+  it("申込んでいない枠からは当落を動かせない（404。参加状態は元のまま）", async () => {
+    const cookie = await loginDev();
+    const eventId = await createEvent(cookie, "枠が2つあるイベント");
+    const slotA = await createSlot(cookie, eventId, "lottery");
+    const slotB = await createSlot(cookie, eventId, "lottery");
+    await publish(cookie, eventId);
+
+    // 参加者は slotA に申し込む（抽選枠なので applied で入る）
+    const outsider = await makeOutsider();
+    const join = await SELF.fetch(`${BASE}/api/events/${eventId}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: outsider },
+      body: JSON.stringify({ slotId: slotA.id }),
+    });
+    expect(join.status).toBe(201);
+    const { member } = (await join.json()) as { member: EventMember };
+    expect(member.status).toBe("applied");
+
+    // slotB の当落として当選させようとしても通らない
+    const res = await SELF.fetch(
+      `${BASE}/api/events/${eventId}/slots/${slotB.id}/members/${member.userId}/status`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ status: "confirmed" }),
+      },
+    );
+    expect(res.status).toBe(404);
+    expect(await errorOf(res)).toBe("not_found");
+
+    // 参加状態が動いていないことまで見る
+    const list = await SELF.fetch(`${BASE}/api/events/${eventId}/members`, {
+      headers: { cookie },
+    });
+    const { members } = (await list.json()) as { members: EventMember[] };
+    const after = members.find((m) => m.userId === member.userId)!;
+    expect(after.status).toBe("applied");
+    expect(after.slotId).toBe(slotA.id);
+  });
+
   it("自分のイベントの枠なら通る（親の検証が全部を塞いでいない）", async () => {
     const cookie = await loginDev();
     const eventId = await createEvent(cookie, "自分のイベント");
@@ -200,6 +245,49 @@ describe("成果物は親イベントの所有を検証する (#466)", () => {
     );
     expect(res.status).toBe(404);
     expect(await errorOf(res)).toBe("not_found");
+  });
+
+  it("同じイベントでも、他人の Entry には成果物を保存できない（403）", async () => {
+    const cookie = await loginDev();
+    const eventId = await createEvent(cookie, "成果物の持ち主テスト");
+    await publish(cookie, eventId);
+
+    // 参加者を2人入れる。個人参加なので Entry は1人1つできる
+    const owner = await makeOutsider();
+    const other = await makeOutsider();
+    for (const c of [owner, other]) {
+      const join = await SELF.fetch(`${BASE}/api/events/${eventId}/join`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: c },
+        body: JSON.stringify({}),
+      });
+      expect(join.status).toBe(201);
+    }
+
+    const list = await SELF.fetch(`${BASE}/api/events/${eventId}/entries`, {
+      headers: { cookie: owner },
+    });
+    const { entries } = (await list.json()) as { entries: Entry[] };
+    expect(entries).toHaveLength(2);
+
+    // owner が両方の Entry に保存を試みる。**自分のぶんだけ 200、他人のぶんは 403**。
+    // owner はこのイベントの参加確定メンバーなので、
+    // 「イベントに入っていれば誰の成果物でも書ける」になっていないことを見る
+    const statuses: number[] = [];
+    for (const entry of entries) {
+      const res = await SELF.fetch(
+        `${BASE}/api/events/${eventId}/entries/${entry.id}/submission`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json", cookie: owner },
+          body: JSON.stringify({ presentationUrl: "https://example.com/x" }),
+        },
+      );
+      if (res.status === 403) expect(await errorOf(res)).toBe("forbidden");
+      statuses.push(res.status);
+    }
+    expect(statuses.filter((s) => s === 200)).toHaveLength(1);
+    expect(statuses.filter((s) => s === 403)).toHaveLength(1);
   });
 });
 
