@@ -44,7 +44,7 @@ export function todoErrorMessage(error: unknown): string {
     todo_dep_cycle: i18next.t("staffOps.todoDepCycleError"),
     todo_bad_range: i18next.t("staffOps.todoBadRangeError"),
     todo_assignee_not_staff: i18next.t("staffOps.todoAssigneeNotStaffError"),
-    default: i18next.t("staffOps.todoSaveFailed"),
+    default: i18next.t("staffOps.saveFailed"),
   });
 }
 

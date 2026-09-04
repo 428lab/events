@@ -1,7 +1,8 @@
 import { Box, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import type { UserProfile } from "@eventer/shared";
-import { LicenseCardSvg, toCardData } from "./LicenseCardSvg.js";
+import { LicenseCardSvg } from "./LicenseCardSvg.js";
+import { toCardData } from "./cardData.js";
 import { cardLook } from "./cardLook.js";
 
 /** カードの表示幅の上限。名刺なので大きすぎると画面を占領する。
