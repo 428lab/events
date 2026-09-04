@@ -166,6 +166,19 @@ const RECONNECT_MAX_MS = 30_000;
 const WATCHDOG_INTERVAL_MS = 15_000;
 /** 接続試行のタイムアウト（nostr-tools はデフォルト無制限のため必須） */
 const CONNECT_TIMEOUT_MS = 8_000;
+/**
+ * NIP-42 AUTH 1往復の上限 (#464)。署名ダイアログを人が操作する時間を含むので
+ * 接続やEVENTの待ち（nostr-tools 既定 4.4 秒）より長く取る。
+ *
+ * nostr-tools 2.24.1 の `relay.auth()` は署名器が投げたときに resolve も reject も
+ * せず、その promise を `authPromise` として使い回す（abstract-relay.js の
+ * `catch { console.warn(...) }`）。NIP-70 (#460) で全発言が protected になり
+ * AUTH が毎回走るようになったため、NIP-07 の署名を拒否・放置されると
+ * `publish` がそのまま永久に待ち、送信が成功とも失敗とも表示されなくなる。
+ * 待ちの期限はこの定数1つで決め、publish と再購読の両方が同じ経路
+ * （`authenticate`）を通る。
+ */
+const AUTH_TIMEOUT_MS = 15_000;
 /** 再購読時に since から引くマージン。投稿者の時計ずれで
  * created_at が過去になったイベントの取りこぼし防止（重複はIDで排除） */
 const RESUBSCRIBE_MARGIN_SEC = 300;
@@ -260,6 +273,41 @@ export class ChatRelayPool {
     } finally {
       this.connecting.delete(url);
     }
+  }
+
+  /**
+   * NIP-42 AUTH を行う。成功で resolve、拒否・時間切れで reject する (#464)。
+   * AUTH を待つ場所（publish の auth-required リトライ、購読の張り直し）は
+   * すべてここを通す。
+   *
+   * nostr-tools は署名器の例外を握り潰して promise を宙吊りにするので、
+   * 例外はここで捕まえて待ちを終わらせる（拒否は即時失敗）。ダイアログを
+   * 放置された場合だけ AUTH_TIMEOUT_MS で切る。
+   */
+  private authenticate(relay: Relay): Promise<void> {
+    let onSignerError: (err: unknown) => void = () => {};
+    const signerFailed = new Promise<never>((_, reject) => {
+      onSignerError = (err) =>
+        reject(err instanceof Error ? err : new Error("auth_sign_failed"));
+    });
+    const authed = relay.auth(async (template) => {
+      try {
+        return await this.signer.signEvent(template);
+      } catch (err) {
+        onSignerError(err);
+        throw err;
+      }
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error("auth_timeout")),
+        AUTH_TIMEOUT_MS,
+      );
+    });
+    return Promise.race([authed, signerFailed, timedOut])
+      .then(() => undefined)
+      .finally(() => clearTimeout(timer));
   }
 
   private scheduleReconnect(url: string): void {
@@ -373,8 +421,9 @@ export class ChatRelayPool {
             authRetries < 3
           ) {
             authRetries++;
-            relay
-              .auth((t) => this.signer.signEvent(t))
+            // AUTH は authenticate で期限付き (#464)。宙吊りの promise に
+            // 再購読をぶら下げたままにしない（時間切れなら張り直さない）
+            this.authenticate(relay)
               .then(() => {
                 if (!this.closed && this.sub === sub) start();
               })
@@ -395,12 +444,15 @@ export class ChatRelayPool {
    * 署名済みイベントを全リレーへ発行する。auth-required で拒否されたら
    * NIP-42 AUTH を行ってからリトライ。全リレー切断なら即時再接続を試み、
    * もう一度だけ発行し直す。1つ以上のリレーが受理したら true。
+   * AUTH は `authenticate` で期限付きなので、署名を拒否・放置されても
+   * 待ち続けずに false になる (#464)。
    * （サーバー署名の公式イベントも通すため VerifiedEvent ではなく NostrEvent）
    */
   async publish(event: NostrEvent): Promise<boolean> {
+    let authFailed = false;
     const attempt = async (): Promise<boolean> => {
       const results = await Promise.all(
-        [...this.relays.values()].map(async (relay) => {
+        [...this.relays.entries()].map(async ([url, relay]) => {
           if (!relay.connected) return false;
           try {
             await relay.publish(event);
@@ -411,7 +463,16 @@ export class ChatRelayPool {
               err.message.startsWith("auth-required:")
             ) {
               try {
-                await relay.auth((t) => this.signer.signEvent(t));
+                // 期限付きの AUTH (#464)。拒否・放置で false を返し、
+                // 送信側（EventChat.send）が失敗を表示できるようにする
+                await this.authenticate(relay);
+              } catch {
+                authFailed = true;
+                this.dropForReauth(url, relay);
+                return false;
+              }
+              // AUTH は通ったので、ここから先の失敗は接続の問題ではない
+              try {
                 await relay.publish(event);
                 return true;
               } catch {
@@ -425,10 +486,28 @@ export class ChatRelayPool {
       return results.some(Boolean);
     };
     if (await attempt()) return true;
-    if (this.closed) return false;
+    // AUTH を断られた・放置されたのなら、繋ぎ直して即やり直しても同じ結果に
+    // なるうえ署名ダイアログをもう一度出すことになるので、ここで失敗にする
+    if (this.closed || authFailed) return false;
     // 全滅していたら即時再接続してから1回だけリトライ (#225)
     await Promise.all(this.relayUrls.map((url) => this.connectOne(url)));
     return attempt();
+  }
+
+  /**
+   * AUTH に失敗した接続を捨てて張り直す (#464)。nostr-tools は署名器が失敗した
+   * ときの `authPromise` をその接続が生きているあいだ使い回すので、放っておくと
+   * 以後の送信では署名を求められないまま毎回時間切れになる。`connect()` は
+   * `authPromise` を捨てるので、繋ぎ直せば次の送信で署名からやり直せる。
+   */
+  private dropForReauth(url: string, relay: Relay): void {
+    try {
+      relay.close();
+    } catch {
+      /* noop */
+    }
+    this.onstatus?.();
+    this.scheduleReconnect(url);
   }
 
   close(): void {
