@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { UserProfile } from "@eventer/shared";
+import { i18next } from "../i18n/index.js";
 
 /**
  * カードのデザイン画面 (#334)。
@@ -125,6 +126,23 @@ describe("カードのデザイン画面 (#334)", () => {
     expect(
       screen.getByRole("button", { name: "PNGをダウンロード" }),
     ).toBeTruthy();
+  });
+
+  /**
+   * 背景と配色の呼び名は辞書から引く (#475)。カタログに日本語を直に書いていた
+   * ころは、英語で見ている人にも「ロゼット」「インディゴ」が出ていた。
+   * カタログ側の見張りは components/licenseCard/cardTheme.test.ts にある。
+   */
+  it("英語で見ると背景・配色の名前も英語になる", async () => {
+    await i18next.changeLanguage("en");
+    renderCardPage(profile());
+    expect(await screen.findByText("Rosette")).toBeTruthy();
+    expect(screen.getByText("Contours")).toBeTruthy();
+    expect(screen.getByText("Indigo")).toBeTruthy();
+    expect(screen.getByText("Monochrome")).toBeTruthy();
+    // 直書きに戻ると日本語がそのまま出る
+    expect(screen.queryByText("ロゼット")).toBeNull();
+    expect(screen.queryByText("インディゴ")).toBeNull();
   });
 
   it("保存済みの見た目で描く（手元の既定で上書きしない）", async () => {

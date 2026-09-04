@@ -6,7 +6,19 @@
  * 以前は描画コンポーネントのファイルに同居していたため、色の一覧が欲しいだけの
  * `cardLook.ts` が React コンポーネントを import していた (#466 で切り出し)。
  *
- * 値はすべて承認済みモックアップ type-T1.svg 由来。 */
+ * 値はすべて承認済みモックアップ type-T1.svg 由来。
+ *
+ * 選択肢の**呼び名はここに書かない** (#475)。表示名は辞書
+ * (`packages/shared/src/i18n/messages/profile.ts`) が持ち、ここが持つのは
+ * その引き先のキーだけ。日本語を直に書くと英語で見ている人に日本語が出る。 */
+import type { TranslationResource } from "@eventer/shared/i18n";
+
+/** 見た目の選択肢に付けられる辞書キー。
+ * 辞書に無いキーも、カード以外のキーも、ここで型が落とす */
+export type CardLookLabelKey = Extract<
+  `profile.${Extract<keyof TranslationResource["profile"], string>}`,
+  `profile.cardBg${string}` | `profile.cardTheme${string}`
+>;
 
 /** 見出し系フォント。モックの Avenir Next はmacOS限定のため、
  * アプリ同梱の Plus Jakarta Sans（700/600）で置き換える */
@@ -21,11 +33,11 @@ export const INK_FAINT = "#6B7499";
 
 /** 背景パターンの選択肢。rosette がデフォルト（type-T1.svg 本体の背景） */
 export const BG_VARIANTS = [
-  { key: "rosette", label: "ロゼット" },
-  { key: "topo", label: "等高線" },
-  { key: "arcs", label: "円弧" },
-  { key: "flow", label: "流線" },
-] as const;
+  { key: "rosette", labelKey: "profile.cardBgRosette" },
+  { key: "topo", labelKey: "profile.cardBgTopo" },
+  { key: "arcs", labelKey: "profile.cardBgArcs" },
+  { key: "flow", labelKey: "profile.cardBgFlow" },
+] as const satisfies readonly { key: string; labelKey: CardLookLabelKey }[];
 export type CardBgVariant = (typeof BG_VARIANTS)[number]["key"];
 
 /** カード配色テーマ。
@@ -38,7 +50,6 @@ export type CardBgVariant = (typeof BG_VARIANTS)[number]["key"];
  * インク（文字）色とバッジの金色はテーマ間で共通 */
 export interface CardTheme {
   key: string;
-  name: string;
   paper: readonly [string, string, string];
   accentA: string;
   accentB: string;
@@ -47,11 +58,17 @@ export interface CardTheme {
   watermark: string;
 }
 
+/** 配色テーマの選択肢。`CardTheme`（描画に要る色）に、ピッカーが引く
+ * 辞書キーを足したもの。描く側は色しか見ないので `CardTheme` には入れない */
+export interface CardThemeChoice extends CardTheme {
+  nameKey: CardLookLabelKey;
+}
+
 /** 配色テーマの選択肢。indigo がデフォルト（従来配色そのまま） */
 export const CARD_THEMES = [
   {
     key: "indigo",
-    name: "インディゴ",
+    nameKey: "profile.cardThemeIndigo",
     paper: ["#C9D2EC", "#DFE5F6", "#BFC9E8"],
     accentA: "#4F46E5",
     accentB: "#0EA5A0",
@@ -61,7 +78,7 @@ export const CARD_THEMES = [
   },
   {
     key: "teal",
-    name: "ティール",
+    nameKey: "profile.cardThemeTeal",
     paper: ["#C7E4E0", "#E0F3F0", "#BBDCD7"],
     accentA: "#0D9488",
     accentB: "#4F46E5",
@@ -71,7 +88,7 @@ export const CARD_THEMES = [
   },
   {
     key: "rose",
-    name: "ローズ",
+    nameKey: "profile.cardThemeRose",
     paper: ["#EED2DE", "#F8E6EE", "#E5C4D4"],
     accentA: "#DB2777",
     accentB: "#7C3AED",
@@ -81,7 +98,7 @@ export const CARD_THEMES = [
   },
   {
     key: "amber",
-    name: "アンバー",
+    nameKey: "profile.cardThemeAmber",
     paper: ["#EBDFC7", "#F6EEDC", "#E2D4B8"],
     accentA: "#B45309",
     accentB: "#4F46E5",
@@ -91,7 +108,7 @@ export const CARD_THEMES = [
   },
   {
     key: "mono",
-    name: "モノクロ",
+    nameKey: "profile.cardThemeMono",
     paper: ["#D9DDE4", "#EDF0F4", "#CDD2DA"],
     accentA: "#334155",
     accentB: "#64748B",
@@ -99,7 +116,7 @@ export const CARD_THEMES = [
     accentDeep: "#1E293B",
     watermark: "#3A4356",
   },
-] as const satisfies readonly CardTheme[];
+] as const satisfies readonly CardThemeChoice[];
 export type CardThemeKey = (typeof CARD_THEMES)[number]["key"];
 
 /** patternData.ts に焼き込まれたストローク色をテーマ色へ差し替える。
