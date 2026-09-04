@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   appendChatMessage,
+  bufferAllowPredicate,
   clampToDisplayMax,
   MESSAGE_BUFFER_MAX,
   MESSAGE_DISPLAY_MAX,
@@ -61,6 +62,41 @@ describe("appendChatMessage (#382)", () => {
     expect(flooded.filter((m) => m.pubkey === STAFF)).toHaveLength(100);
     // 捨てられたのは一番古いゴミ
     expect(flooded.some((m) => m.id === "junk0")).toBe(false);
+  });
+
+  it("満杯のバッファに参加したての本人が発言しても、その発言は捨てない", () => {
+    // 混雑したイベント（上限まで本物で埋まっている）に入って、すぐ発言した人。
+    // 許可リストは〜5秒遅れて届くので、この瞬間の本人はリスト上「部外者」に見える。
+    // ここで自分の発言が捨てられると、リレーは再送しないので二度と出ない
+    const NEWCOMER = "c".repeat(64);
+    const full = Array.from({ length: MESSAGE_BUFFER_MAX }, (_, i) =>
+      msg(`real${i}`, STAFF, i),
+    );
+    const keep = bufferAllowPredicate(new Set([STAFF]), NEWCOMER);
+    const after = appendChatMessage(full, msg("mine", NEWCOMER, 9999), keep);
+
+    expect(after).toHaveLength(MESSAGE_BUFFER_MAX);
+    expect(after.some((m) => m.id === "mine")).toBe(true);
+    // 代わりに落ちるのは一番古い1件だけ（それ以外の履歴は残る）
+    expect(after.some((m) => m.id === "real0")).toBe(false);
+    expect(after.some((m) => m.id === "real1")).toBe(true);
+  });
+
+  it("本人を守っても、部外者の野良投稿は本物より先に捨てられる", () => {
+    // 上の「本人を守る」が、ゴミを守ることになっていないか
+    const NEWCOMER = "c".repeat(64);
+    const keep = bufferAllowPredicate(new Set([STAFF]), NEWCOMER);
+    let buf = Array.from({ length: MESSAGE_BUFFER_MAX - 1 }, (_, i) =>
+      msg(`real${i}`, STAFF, i),
+    );
+    buf = appendChatMessage(buf, msg("junk", STRANGER, 500), keep);
+    buf = appendChatMessage(buf, msg("mine", NEWCOMER, 9999), keep);
+
+    expect(buf).toHaveLength(MESSAGE_BUFFER_MAX);
+    // 捨てられたのはゴミ。自分の発言も本物の履歴も残っている
+    expect(buf.some((m) => m.id === "junk")).toBe(false);
+    expect(buf.some((m) => m.id === "mine")).toBe(true);
+    expect(buf.some((m) => m.id === "real0")).toBe(true);
   });
 
   it("全員が許可リスト内であふれたら、従来どおり古い側から捨てる", () => {
@@ -134,5 +170,22 @@ describe("clampToDisplayMax", () => {
     const kept = clampToDisplayMax(xs);
     expect(kept).toHaveLength(MESSAGE_DISPLAY_MAX);
     expect(kept[0]).toBe(2);
+  });
+});
+
+describe("bufferAllowPredicate", () => {
+  const NEWCOMER = "c".repeat(64);
+
+  it("許可リストに載っている人と、自分だけを守る", () => {
+    const keep = bufferAllowPredicate(new Set([STAFF]), NEWCOMER);
+    expect(keep(STAFF)).toBe(true);
+    expect(keep(NEWCOMER)).toBe(true);
+    expect(keep(STRANGER)).toBe(false);
+  });
+
+  it("自分の鍵が無い（未参加・投影用）なら許可リストだけを見る", () => {
+    const keep = bufferAllowPredicate(new Set([STAFF]), null);
+    expect(keep(STAFF)).toBe(true);
+    expect(keep(NEWCOMER)).toBe(false);
   });
 });

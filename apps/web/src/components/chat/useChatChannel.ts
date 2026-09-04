@@ -8,7 +8,10 @@ import {
 } from "../../api/eventChatHooks.js";
 import { chatChannelErrorKey } from "../../lib/chatApiErrors.js";
 import type { ChatChannelErrorKey } from "../../lib/chatApiErrors.js";
-import { appendChatMessage } from "../../lib/chatMessageBuffer.js";
+import {
+  appendChatMessage,
+  bufferAllowPredicate,
+} from "../../lib/chatMessageBuffer.js";
 import {
   ChatRelayPool,
   buildChannelCreateTemplate,
@@ -88,12 +91,16 @@ export function useChatChannel({
   // 受信バッファの捨てる順序に使う許可リスト（chatMessageBuffer.ts）。
   // チャンネルIDは公開値なので部外者がゴミ投稿を流し込める。購読コールバックは
   // effect 内で閉じるので、ポーリングで更新される最新の集合を ref 経由で見せる
-  const allowedPubkeysRef = useRef<Set<string>>(new Set());
-  allowedPubkeysRef.current = new Set(
-    (chat?.members ?? []).map((m) => m.pubkey),
+  // 自分の鍵も「捨ててよくない」側に入れる: 許可リストは〜5秒遅れて届くので、
+  // 入った直後に発言した本人はリスト上まだ部外者に見え、満杯のバッファでは
+  // いま送った自分の発言が真っ先に捨てられてしまう (#335 レビュー指摘)
+  const keepRef = useRef<(pubkey: string) => boolean>(() => true);
+  keepRef.current = bufferAllowPredicate(
+    new Set((chat?.members ?? []).map((m) => m.pubkey)),
+    signer?.pubkey,
   );
   const append = (prev: NostrEvent[], ev: NostrEvent) =>
-    appendChatMessage(prev, ev, (pk) => allowedPubkeysRef.current.has(pk));
+    appendChatMessage(prev, ev, (pk) => keepRef.current(pk));
 
   // サーバーに登録済みのチャンネルID（未開設は null。ポーリングで反映）
   const serverChannelId = chat?.channelId ?? null;

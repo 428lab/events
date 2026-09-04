@@ -30,6 +30,7 @@ import {
 } from "../lib/staffChatCrypto.js";
 import {
   appendChatMessage,
+  bufferAllowPredicate,
   clampToDisplayMax,
 } from "../lib/chatMessageBuffer.js";
 import { formatChatTime } from "../lib/chatTime.js";
@@ -113,14 +114,16 @@ export function StaffChat({ eventId }: { eventId: string }) {
   // 受信バッファの捨てる順序に使う許可リスト（chatMessageBuffer.ts）。
   // 購読コールバックは effect 内で閉じるので、ポーリングで更新される
   // 最新の集合を ref 経由で見せる
-  const allowedPubkeysRef = useRef<Set<string>>(new Set());
+  // 自分の鍵も「捨ててよくない」側に入れる（理由は chatMessageBuffer.ts）
+  const keepRef = useRef<(pubkey: string) => boolean>(() => true);
   useEffect(() => {
-    allowedPubkeysRef.current = new Set(
-      (chat?.members ?? []).map((m) => m.pubkey),
+    keepRef.current = bufferAllowPredicate(
+      new Set((chat?.members ?? []).map((m) => m.pubkey)),
+      signer?.pubkey,
     );
-  }, [chat]);
+  }, [chat, signer]);
   const appendToBuffer = (prev: NostrEvent[], ev: NostrEvent) =>
-    appendChatMessage(prev, ev, (pk) => allowedPubkeysRef.current.has(pk));
+    appendChatMessage(prev, ev, (pk) => keepRef.current(pk));
 
   // 接続・購読。署名器と部屋が決まったら開始し、unmount で切断
   useEffect(() => {

@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { Event as NostrEvent } from "nostr-tools/pure";
 import type { ChatMembersPayload, Event } from "@eventer/shared";
+import {
+  CHAT_WINDOW_AFTER_MS,
+  CHAT_WINDOW_BEFORE_MS,
+} from "@eventer/shared";
 import { ApiError } from "../api/client.js";
 import { EventChat } from "./EventChat.js";
 
@@ -652,5 +656,59 @@ describe("URL投稿の送信ガード (#241)", () => {
     // 入力欄が空になるだけでなく、自分の発言が一覧に出ていること
     // （購読側の折返しは来ないので、出るのは即時表示の分だけ）
     expect(await screen.findByText("よろしくお願いします")).toBeInTheDocument();
+  });
+});
+
+/**
+ * 書き込み可能時間帯 (#199)。開始30分前〜終了2時間後だけ書ける。
+ *
+ * 会場を出たあとの深夜に書き込みが続いたり、準備期間に本番用の部屋が
+ * 使われ始めたりしないための門。**上下どちらの端も**確かめる
+ * （片方を落としても気づけない状態にしない）。
+ */
+describe("書き込み可能時間帯 (#199)", () => {
+  async function renderAt(at: number) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(at);
+    // 一時鍵で参加している人＝入力欄まで出る状態
+    ephemeralKey = { secret: "00" };
+    const view = render(
+      <MemoryRouter>
+        <EventChat eventId="e-1" event={EVENT} myRole="staff" variant="page" />
+      </MemoryRouter>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    return view;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const STARTS = 1_700_000_000_000;
+  const ENDS = 1_700_003_600_000;
+
+  it("開始30分前より前は書けない", async () => {
+    await renderAt(STARTS - CHAT_WINDOW_BEFORE_MS - 60_000);
+    expect(await screen.findByRole("textbox")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
+  });
+
+  it("開始30分前を過ぎたら書ける", async () => {
+    await renderAt(STARTS - CHAT_WINDOW_BEFORE_MS + 60_000);
+    expect(await screen.findByRole("textbox")).toBeEnabled();
+  });
+
+  it("終了2時間後までは書ける", async () => {
+    await renderAt(ENDS + CHAT_WINDOW_AFTER_MS - 60_000);
+    expect(await screen.findByRole("textbox")).toBeEnabled();
+  });
+
+  it("終了2時間後を過ぎたら書けない", async () => {
+    await renderAt(ENDS + CHAT_WINDOW_AFTER_MS + 60_000);
+    expect(await screen.findByRole("textbox")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
   });
 });
