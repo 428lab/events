@@ -4,7 +4,11 @@ import {
   waitOnExecutionContext,
 } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import { bindEnv, type Env } from "../src/runtime.js";
+import {
+  bindEnv,
+  runWithExecutionContext,
+  type Env,
+} from "../src/runtime.js";
 import { usersRepo } from "../src/db/repositories/users.js";
 import {
   jstDay,
@@ -232,8 +236,8 @@ describe("usersRepo.touchLastSeen (#257)", () => {
 
 describe("recordLastSeen のバックグラウンド実行が失敗したとき (#257)", () => {
   it("waitUntil が投げても認証を壊さず、その日の記録も落ちない", async () => {
-    // runtime.ts の _ctx はモジュールグローバルなので、並行リクエスト下では
-    // 別リクエストの ExecutionContext になり得る＝ waitUntil が投げ得る。
+    // ExecutionContext は Worker ランタイムから渡ってくるもので、
+    // 既に切れている等の理由で waitUntil が投げ得る。
     // そのとき「記録済み」の印が残ると、このアイソレートが生きている間
     // そのユーザーのその日の記録が二度と行われない
     const u = await makeUser();
@@ -247,11 +251,13 @@ describe("recordLastSeen のバックグラウンド実行が失敗したとき 
       },
       passThroughOnException: () => {},
     } as unknown as ExecutionContext;
-    bindEnv(env as unknown as Env, broken);
+    bindEnv(env as unknown as Env);
 
     let thrown: unknown = null;
     try {
-      await recordLastSeen(u.userId, null, now);
+      await runWithExecutionContext(broken, () =>
+        recordLastSeen(u.userId, null, now),
+      );
     } catch (e) {
       thrown = e;
     }
@@ -265,7 +271,7 @@ describe("recordLastSeen のバックグラウンド実行が失敗したとき 
       .bind(u.userId)
       .run();
 
-    bindEnv(env as unknown as Env); // ctx 無し＝その場で await
+    // 実行文脈を張らない＝その場で await
     await recordLastSeen(u.userId, null, now);
     // 印が取り消されていれば同じ日でも再試行されて記録が入る
     expect(await lastSeen(u.userId)).toBe(now);

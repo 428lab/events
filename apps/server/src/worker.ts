@@ -1,7 +1,13 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { bindEnv, getAssets, env, type Env } from "./runtime.js";
+import {
+  bindEnv,
+  getAssets,
+  runWithExecutionContext,
+  env,
+  type Env,
+} from "./runtime.js";
 import {
   EVENT_PHOTO_MAX_BYTES,
   EVENT_VIDEO_MAX_BYTES,
@@ -631,9 +637,12 @@ export default {
     ctx: ExecutionContext,
   ): Promise<Response> {
     // バインディングをリクエスト先頭で束ねる（getDb/getBucket/env が参照）。
-    // ctx も束ね、メール送信等を waitUntil でレスポンス外に逃がせるようにする
-    bindEnv(workerEnv, ctx);
-    return app.fetch(request, workerEnv, ctx);
+    // 実行文脈はこのリクエストの中だけに閉じ込める。並行リクエストと混ざると
+    // メール送信等の背景処理が他のリクエストの ctx に付いてしまう (#317)
+    bindEnv(workerEnv);
+    return runWithExecutionContext(ctx, () =>
+      app.fetch(request, workerEnv, ctx),
+    );
   },
 
   // cron（毎日 UTC 0:00 = JST 9:00）: 前日リマインダーメール (#126)
@@ -646,6 +655,8 @@ export default {
     // staging はDBが本番コピーになり得るため cron 送信しない（二重送信防止）。
     // staging での動作確認は POST /api/admin/run-reminders を使う
     if (env.isStaging) return;
-    ctx.waitUntil(sendEventReminders());
+    // cron も自分の実行文脈を張る。張らないと中の deferBackground が
+    // 文脈なしで await に落ち、リマインダー送信がレスポンス外へ逃げられない (#317)
+    ctx.waitUntil(runWithExecutionContext(ctx, () => sendEventReminders()));
   },
 } satisfies ExportedHandler<Env>;
