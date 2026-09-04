@@ -4,7 +4,6 @@ import {
   Avatar,
   Box,
   IconButton,
-  Link,
   Stack,
   TextField,
   Typography,
@@ -29,17 +28,12 @@ import {
   sealStaffChatMessage,
   visibleAfterRevocation,
 } from "../lib/staffChatCrypto.js";
-import { appendStaffChatMessage } from "../lib/staffChatBuffer.js";
-
-/** 実際に描画する件数の上限（EventChat と同じ値。#215 の判断を引き継ぐ） */
-const MESSAGE_DISPLAY_MAX = 200;
-
-/** メッセージ時刻の表示（HH:mm:ss） */
-function formatTime(createdAtSec: number): string {
-  const d = new Date(createdAtSec * 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
+import {
+  appendChatMessage,
+  clampToDisplayMax,
+} from "../lib/chatMessageBuffer.js";
+import { formatChatTime } from "../lib/chatTime.js";
+import { ChatUrlLink } from "./chat/ChatMessageBody.js";
 
 /** 復号済みの本文。URLはリンク化のみ（スタッフ同士なので常にリンクにする。
  * インライン画像・投影用の装飾は持たない＝必要最小 #382 設計 9.2） */
@@ -53,15 +47,7 @@ function MessageBody({ text }: { text: string }) {
         tok.type === "text" ? (
           <span key={i}>{tok.value}</span>
         ) : (
-          <Link
-            key={i}
-            href={tok.value}
-            target="_blank"
-            rel="noopener noreferrer"
-            sx={{ wordBreak: "break-all" }}
-          >
-            {tok.value}
-          </Link>
+          <ChatUrlLink key={i} url={tok.value} />
         ),
       )}
     </Typography>
@@ -77,8 +63,8 @@ function MessageBody({ text }: { text: string }) {
  *   復号できないメッセージはそのまま出さない（エラーにもしない）
  * - 発言は**サーバー管理の専用一時鍵のみ**（NIP-07 の選択肢は出さない。
  *   本鍵で書くと運営の相談が全 Nostr 圏の本人と紐付く。設計 3.1）
- * - EventChat.tsx (#360 で800行超) には足さない。共有するのはリレー接続
- *   （ChatRelayPool の kind 引数化）と暗号まわりの純粋関数だけ
+ * - EventChat.tsx には足さない。共有するのはリレー接続（ChatRelayPool の
+ *   kind 引数化）と、上限・時刻書式・URLリンクなどの純粋な部品だけ (#335)
  */
 export function StaffChat({ eventId }: { eventId: string }) {
   const { t } = useTranslation();
@@ -124,7 +110,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
   const relaysKey = relays.join(" ");
   const roomId = chat?.roomId ?? null;
 
-  // 受信バッファの捨てる順序に使う許可リスト（staffChatBuffer.ts）。
+  // 受信バッファの捨てる順序に使う許可リスト（chatMessageBuffer.ts）。
   // 購読コールバックは effect 内で閉じるので、ポーリングで更新される
   // 最新の集合を ref 経由で見せる
   const allowedPubkeysRef = useRef<Set<string>>(new Set());
@@ -134,7 +120,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
     );
   }, [chat]);
   const appendToBuffer = (prev: NostrEvent[], ev: NostrEvent) =>
-    appendStaffChatMessage(prev, ev, (pk) => allowedPubkeysRef.current.has(pk));
+    appendChatMessage(prev, ev, (pk) => allowedPubkeysRef.current.has(pk));
 
   // 接続・購読。署名器と部屋が決まったら開始し、unmount で切断
   useEffect(() => {
@@ -200,9 +186,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
       if (text === null || text.length > CHAT_MESSAGE_MAX) continue;
       kept.push({ ev, member, text });
     }
-    return kept.length > MESSAGE_DISPLAY_MAX
-      ? kept.slice(kept.length - MESSAGE_DISPLAY_MAX)
-      : kept;
+    return clampToDisplayMax(kept);
     // keysKey が keys の変化を値で代表する
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, memberByPubkey, keysKey]);
@@ -306,7 +290,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
                       {member.name}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {formatTime(ev.created_at)}
+                      {formatChatTime(ev.created_at)}
                     </Typography>
                   </Stack>
                   <MessageBody text={text} />

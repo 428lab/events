@@ -33,7 +33,7 @@
 | サーバー側 | `apps/server/src/routes/eventChat.ts` (392行) | 鍵の紐付け・チャンネルID・非表示リストのみ。**本文は一切通らない** |
 | 鍵の保管 | `event_chat_key` 表（0066） | その人がイベントで使った鍵ぜんぶ＋サーバー管理一時鍵の secret (#223/#332) |
 | 表示の絞り込み | `chat-members` API | 許可リストに載った pubkey の発言だけ描画（野良投稿はアプリに出ない） |
-| 画面 | `EventChat.tsx` (**959行**, #360) | 800行制約を既に超過。**ここには足さない** |
+| 画面 | `EventChat.tsx` ＋ `components/chat/`（#335 で責務ごとに分割） | 鍵の選択・接続・一覧・入力が別モジュール。**スタッフ部屋をここに足さない**（下記 9.2） |
 
 重要な性質: **本文はブラウザ⇔リレー直通**で、サーバーはメッセージを見ない。
 封じ込めは「書き込みは自リレー2台限定（`wss://r.kojira.io` / `wss://x.kojira.io`）＋
@@ -200,7 +200,7 @@ roomId の秘匿性は「イベントとの対応を隠す」ためのもので�
 外部の人が同じ roomId に野良投稿しても、(a) 表示許可リストに無い pubkey は描画されず、
 (b) 復号にも失敗するので、アプリの画面には出ない（既存チャットの許可リスト方式と同じ）。
 受信バッファ（500件）が野良投稿で埋まって本物の履歴が押し出されないよう、
-あふれたときは**許可リスト外の投稿から先に捨てる**（`staffChatBuffer.ts`。
+あふれたときは**許可リスト外の投稿から先に捨てる**（`chatMessageBuffer.ts`。
 あふれるまでは捨てない：参加したての staff の発言が許可リストに載る前の
 数秒間に届いても失わないため）。
 
@@ -420,12 +420,13 @@ export interface StaffChatPayload {
 
 公開後のスタッフには「チャット」（参加者向け）と「スタッフチャット」が並ぶ。
 
-### 9.2 構成（EventChat.tsx には足さない #360）
+### 9.2 構成（EventChat.tsx には足さない #360 / #335）
 
 | ファイル | 内容 | 目安 |
 |---|---|---|
 | `apps/web/src/pages/StaffChatPage.tsx`（新規） | `/events/:id/staff-chat`。myRole === "staff" 以外にはリンクも出さず、直接開かれたら 403 相当の案内 | 〜100行 |
 | `apps/web/src/components/StaffChat.tsx`（新規） | 部屋の表示・暗号化送信・復号表示。EventChat.tsx から**コピーせず**、必要最小（一時鍵固定・非表示/締め出しUI無し・投影画面無し）で書く | 〜400行 |
+| `apps/web/src/lib/chatMessageBuffer.ts` / `chatTime.ts` / `components/chat/ChatMessageBody.tsx`（#335） | 両画面で**同じ契約**になる部分（件数の上限・あふれたときの捨て方・時刻書式・URLリンク）はここ1か所。リンク化の方針そのものは共有しない（スタッフ部屋はインライン画像を出さない＝上の必要最小） | - |
 | `apps/web/src/api/staffChatHooks.ts`（新規） | GET/POST のフック | 〜60行 |
 | `apps/web/src/lib/nostrChat.ts`（変更） | `subscribe()` と `buildChannelMessageTemplate()` に kind 引数を足す（既定 42。既存呼び出しは無変更） | +10行程度 |
 | `apps/web/src/lib/staffChatCrypto.ts`（新規） | `nostr-tools/nip44` の encrypt/decrypt と v タグ・version 引きの薄い関数（純粋関数、テスト対象） | 〜80行 |
@@ -520,7 +521,8 @@ web（純粋関数・`staffChatCrypto.test.ts`）:
 - **バックデート注入の限界を明記した**（7.3 末尾。第三者レビューの指摘）。失効判定は
   `created_at`（自己申告の時刻）に依存し、時刻を偽装した書き込みの注入までは防がない
 - **受信バッファのあふれ対策**（5.2）: 許可リスト外の野良投稿から先に捨てる
-  `apps/web/src/lib/staffChatBuffer.ts` を追加した（あふれるまでは捨てない）
+  `apps/web/src/lib/staffChatBuffer.ts` を追加した（あふれるまでは捨てない）。
+  #335 でイベントチャットと同じ契約だと分かり `chatMessageBuffer.ts` に統合
 - **POST に 409 を追加**: 生成した pubkey が同じ部屋で他人に使用済みのとき（8.）。
   同時発行のレースは先勝ちで、payload の読み直しで収束する
 - **SQL 監査は専用テスト**: 3表を触る SQL が `db/repositories/staffChat.ts` の外に

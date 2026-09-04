@@ -133,7 +133,6 @@ export function EventChatScreenPage() {
                 eventId={id}
                 event={event}
                 myRole={myRole}
-                canChat={canChat}
                 variant="display"
                 fontScale={scale}
               />

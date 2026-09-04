@@ -28,7 +28,7 @@ const EventChat = lazy(() =>
 export function EventChatPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
-  const { event, myRole, canChat, chatAvailable, isLoading, isError } =
+  const { event, myRole, chatAvailable, isLoading, isError } =
     useEventChatAccess(id);
 
   if (isLoading) {
@@ -91,7 +91,6 @@ export function EventChatPage() {
             eventId={id}
             event={event}
             myRole={myRole}
-            canChat={canChat}
             variant="page"
           />
         </Suspense>

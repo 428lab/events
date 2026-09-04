@@ -163,7 +163,6 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
                   eventId={eventId}
                   event={event}
                   myRole={myRole}
-                  canChat={canChat}
                   variant="page"
                 />
               </Suspense>
