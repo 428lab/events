@@ -157,7 +157,7 @@ UPDATE notification SET actor_id = (
 --     ghost を actor にすると、以後 ghost 名義の一括削除が効きうる。
 --
 --     NOT IN であって != ではない。ghost は完全削除が初めて起きたときに
---     遅延生成される (usersRepo.ensureDeletedUser) ので、まだ一度も完全削除が
+--     遅延生成される (accountDeletionRepo.ensureDeletedUser) ので、まだ一度も完全削除が
 --     走っていない DB では副問い合わせが NULL を返す。!= だと NULL 比較の結果が
 --     NULL になり、正常な行まで含めて1件も埋まらない。NOT IN は空集合で TRUE。
 --     副問い合わせが返すのは 0 行か非 NULL の1行だけなので、
@@ -342,7 +342,7 @@ async deleteMeetSince(userId: string, actorId: string, since: number): Promise<v
 
 ### 6.2 `mergeUsers` に1行足す（見落とすと壊れる）
 
-`db/repositories/users.ts` の「UNIQUE の無い参照列は単純に付け替え」の
+`db/repositories/accountMerge.ts` の「UNIQUE の無い参照列は単純に付け替え」の
 `simple` リストに `["notification", "actor_id"]` を追加する。
 
 足さないと、負け側の user 行を削除したときに FK の `ON DELETE SET NULL` が発火して

@@ -79,7 +79,7 @@ named/anonymous ランキング・本人の順位・母数がすべてこれを�
 - 複製（`routes/eventDuplicate.ts` `POST /:id/duplicate`）: 参加枠・採点基準・表彰・TODO を
   コピーする。景品の**定義**も同列（イベント設計の一部）なのでコピーする。
   引き換え記録・1位の確定は当然コピーしない
-- `mergeUsers`（`users.ts`）: UNIQUE キーを持つ表は `uniqueKeyed` の3つ組で付け替える。
+- `mergeUsers`（`accountMerge.ts`）: UNIQUE キーを持つ表は `uniqueKeyed` の3つ組で付け替える。
   引き換えは (prize, user) で UNIQUE、1位確定は (event, user) が PK なので**両方
   `uniqueKeyed`** に足す。`test/merge-user-columns.test.ts` が列数・組数を実数で
   固定しているので、**数字だけ直して素通りしない**こと（設計に書いておく理由）
@@ -367,7 +367,7 @@ staff 系はオン/オフに**従わない**（準備・後片付けで使う。
 | server | `db/repositories/eventMeetPrizes.ts` | 新規。CRUD・達成/残数の導出・§3.5 の確保・§3.4 の締め・履歴（#441）・ビンゴプール（#436） |
 | server | `routes/eventMeetPrizes.ts` | 新規。§3.8 の一覧（公開の2本は `worker.ts` で api 直登録） |
 | server | `routes/eventDuplicate.ts` | 複製のコピーリストに `meetPrizes` 設定 + 景品定義・画像のコピー |
-| server | `db/repositories/users.ts` | `mergeUsers` の `uniqueKeyed` に redemption・winner を追加。`redeemed_by` も付け替え |
+| server | `db/repositories/accountMerge.ts` | `mergeUsers` の `uniqueKeyed` に redemption・winner を追加。`redeemed_by` も付け替え |
 | web | `pages/EventPrizeDeskPage.tsx` | 新規。引き換えデスク（§3.10） |
 | web | `components/MeetPrizes.tsx` | 新規。参加者向け景品カード（`MeetPrizePanel`） |
 | web | `components/MeetPrizeEditor.tsx` | 新規。景品 CRUD + 画像アップロード |

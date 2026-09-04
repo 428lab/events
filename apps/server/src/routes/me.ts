@@ -30,6 +30,8 @@ import {
 } from "../auth/mergeCode.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
+import { accountDeletionRepo } from "../db/repositories/accountDeletion.js";
+import { accountMergeRepo } from "../db/repositories/accountMerge.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { followsRepo } from "../db/repositories/follows.js";
@@ -169,7 +171,7 @@ meRoutes.post("/merge", zValidator("json", mergeAccountInput), async (c) => {
   console.log(
     `[account-merge] executor=${me.id} codeIssuer=${otherId} winner=${winnerId} loser=${loserId}`,
   );
-  await usersRepo.mergeUsers(winnerId, loserId);
+  await accountMergeRepo.mergeUsers(winnerId, loserId);
   // 負け側が自前保管していたアイコン (#312) の実体を消す。勝ち側は自分のものを
   // 引き続き使うので移し替えは不要。行が消えたあとはキーを辿れず孤児になる
   try {
@@ -196,12 +198,12 @@ meRoutes.delete("/", zValidator("json", deleteAccountInput), async (c) => {
   const me = c.get("user");
   // 「退会済みユーザー」(ghost) 自身は identity が無くログイン不可のはずだが、
   // 共有コンテンツの引き受け先が消えると困るので多重防御で弾く
-  const ghost = await usersRepo.ensureDeletedUser();
+  const ghost = await accountDeletionRepo.ensureDeletedUser();
   if (me.id === ghost.id) return c.json({ error: "forbidden" }, 403);
 
   const now = Date.now();
   console.log(`[account-delete-requested] user=${me.id} handle=${me.username}`);
-  await usersRepo.requestDeletion(me.id, now);
+  await accountDeletionRepo.requestDeletion(me.id, now);
   // 他の人の通知一覧に残る「◯◯ さんが…」を消す (#250)。タイトルに表示名を
   // 焼き込んでいるため、user 行を隠すだけでは名前とプロフィールリンクが残る。
   // 通知を消すこと自体は退会の成否に影響させない（ベストエフォート）
@@ -240,7 +242,7 @@ export async function postRestoreAccount(c: Context<AppEnv>): Promise<Response> 
   if (Date.now() - pending.deletedAt > env.deletionGraceMs) {
     return c.json({ error: "grace_period_expired" }, 410);
   }
-  await usersRepo.restore(pending.id);
+  await accountDeletionRepo.restore(pending.id);
   console.log(`[account-restore] user=${pending.id} handle=${pending.username}`);
   await recordAudit({
     action: "account_restore",

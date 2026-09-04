@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { deferBackground, getBucket } from "../runtime.js";
 import { safeServeMime } from "../lib/imageMime.js";
-import { usersRepo } from "../db/repositories/users.js";
+import { userAvatarsRepo } from "../db/repositories/userAvatars.js";
 import { avatarKey } from "../lib/avatarStore.js";
 
 /** ?v={更新時刻} 付きで来たとき。中身が変わると ?v= ごと変わる＝同じURLの
@@ -52,7 +52,7 @@ export async function getUserAvatarImage(c: Context) {
   }
 
   // 退会申請中 (#250) は findAvatarImage が null を返す＝ここで 404 になる
-  const meta = await usersRepo.findAvatarImage(userId);
+  const meta = await userAvatarsRepo.findAvatarImage(userId);
   if (!meta) return c.json({ error: "not_found" }, 404);
 
   const etag = `"${meta.updatedAt}"`;

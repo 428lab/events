@@ -148,11 +148,15 @@ describe("退会（アカウント削除） (#244, #250)", () => {
     )
       .bind(crypto.randomUUID(), eventId, a.userId, Date.now())
       .run();
-    await env.DB.prepare(
-      "INSERT INTO event_like (id, event_id, user_id, kind, target_key, created_at) VALUES (?, ?, ?, 'host', ?, ?)",
-    )
-      .bind(crypto.randomUUID(), eventId, b.userId, a.userId, Date.now())
-      .run();
+    // target_key がユーザーIDになる kind は host だけではない (#466)。
+    // 1種でも削除から漏れると、存在しない id を指す行が残る
+    for (const kind of ["host", "staff", "participant"]) {
+      await env.DB.prepare(
+        "INSERT INTO event_like (id, event_id, user_id, kind, target_key, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      )
+        .bind(crypto.randomUUID(), eventId, b.userId, kind, a.userId, Date.now())
+        .run();
+    }
     await env.DB.prepare(
       "INSERT INTO event_comment (id, event_id, user_id, body, created_at) VALUES (?, ?, ?, 'こんにちは', ?)",
     )

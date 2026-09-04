@@ -1,4 +1,5 @@
 import { env, getBucket } from "../runtime.js";
+import { accountDeletionRepo } from "../db/repositories/accountDeletion.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
 import { decksRepo } from "../db/repositories/decks.js";
@@ -109,11 +110,11 @@ export async function purgeDeletedAccounts(
 ): Promise<{ purged: number; failed: number; remaining: number }> {
   const cutoff = now - env.deletionGraceMs;
   const budget: Budget = { spent: 1 }; // listPurgeTargets
-  const ids = await usersRepo.listPurgeTargets(cutoff, MAX_CANDIDATES_PER_RUN);
+  const ids = await accountDeletionRepo.listPurgeTargets(cutoff, MAX_CANDIDATES_PER_RUN);
   if (ids.length === 0) return { purged: 0, failed: 0, remaining: 0 };
 
   // 共有コンテンツの引き受け先。対象が居るときだけ作る（無駄な ghost を作らない）
-  const ghost = await usersRepo.ensureDeletedUser();
+  const ghost = await accountDeletionRepo.ensureDeletedUser();
   budget.spent += 1;
   let purged = 0;
   let failed = 0;
@@ -145,7 +146,7 @@ export async function purgeDeletedAccounts(
       );
       // deleteAccount は自分の batch(1) に加えて、スタッフチャットの
       // ローテーション (#382) で消費した数を返す（部屋の数だけ増える）
-      budget.spent += 1 + (await usersRepo.deleteAccount(userId, ghost.id));
+      budget.spent += 1 + (await accountDeletionRepo.deleteAccount(userId, ghost.id));
       // 監査ログ (#248)。user 行は消えるが FK を張っていないので記録は残る
       budget.spent += 2;
       await recordAudit({
@@ -187,7 +188,7 @@ export async function purgeDeletedAccounts(
   // サブリクエストを1つ無駄にする）。失敗して deleted_at が残っている分も
   // ここに含まれ、翌日再試行される
   const exhausted = stoppedForBudget || ids.length === MAX_CANDIDATES_PER_RUN;
-  const remaining = exhausted ? await usersRepo.countPurgeTargets(cutoff) : failed;
+  const remaining = exhausted ? await accountDeletionRepo.countPurgeTargets(cutoff) : failed;
   if (remaining > 0) {
     console.warn(
       `[account-purge] remaining=${remaining} (purged=${purged} failed=${failed} subrequests=${budget.spent}/${SUBREQUEST_BUDGET})`,

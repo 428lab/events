@@ -140,7 +140,7 @@ describe("event_staff_duty / event_duty_slot / event_duty_assignee を触る SQL
       OWNER,
       // mergeUsers の uniqueKeyed 配列リテラル（#396）。SQL は組み立てだが、
       // 対象列の網羅は merge-user-columns.test.ts が別に守っている
-      "../src/db/repositories/users.ts",
+      "../src/db/repositories/accountMerge.ts",
     ]);
     const TABLE_NAMES = ["event_staff_duty", "event_duty_slot", "event_duty_assignee"];
     const offenders: string[] = [];

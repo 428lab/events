@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import type { User } from "@eventer/shared";
+import { accountDeletionRepo } from "../db/repositories/accountDeletion.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { identitiesRepo } from "../db/repositories/identities.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
@@ -23,10 +24,10 @@ export async function takeoverEmptyAccount(
   if ((await identitiesRepo.countByUser(existingUserId)) !== 1) {
     return "already_linked";
   }
-  if (await usersRepo.hasActivity(existingUserId)) {
+  if (await accountDeletionRepo.hasActivity(existingUserId)) {
     return "account_in_use";
   }
-  await usersRepo.deleteById(existingUserId);
+  await accountDeletionRepo.deleteById(existingUserId);
   // 自前保管したアイコン (#312) の実体も消す。行が消えるとキーを辿れなくなり、
   // R2 に孤児が残り続ける（退会の完全削除 purgeDeleted.ts と同じ後始末）
   try {

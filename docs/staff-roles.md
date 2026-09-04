@@ -73,7 +73,7 @@ d だけ FK の設定が効く（3.6 で `CASCADE` を選ぶ。TODO の `SET NUL
 
 ### 2.5 `mergeUsers` と #396 の走査
 
-`users.ts` の `mergeUsers` は、UNIQUE キーを持つ表を `uniqueKeyed`
+`accountMerge.ts` の `mergeUsers` は、UNIQUE キーを持つ表を `uniqueKeyed`
 （`["event_member", "user_id", ["event_id"]]` のような3つ組）で付け替える。
 今回の割り当ては（持ち場, user）で UNIQUE を張るので **`simple` ではなく
 `uniqueKeyed`** に足す。忘れても `test/merge-user-columns.test.ts` (#396) が
@@ -367,7 +367,7 @@ CREATE INDEX idx_event_duty_assignee_user ON event_duty_assignee(user_id);
 
 ## 5. `mergeUsers` に1組足す（`simple` ではない）
 
-`users.ts` の **`uniqueKeyed`** に足す。
+`accountMerge.ts` の **`uniqueKeyed`** に足す。
 
 ```ts
 // 持ち場の割り当て (#384)。(slot_id, user_id) の UNIQUE があるので simple にできない

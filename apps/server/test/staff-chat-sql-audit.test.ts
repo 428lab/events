@@ -128,7 +128,7 @@ describe("event_group_chat_room / _key / _signer を触る SQL の走査 (#382 1
       OWNER,
       // mergeUsers の uniqueKeyed 配列リテラル（#396）。SQL は組み立てだが、
       // 対象列の網羅は merge-user-columns.test.ts が別に守っている
-      "../src/db/repositories/users.ts",
+      "../src/db/repositories/accountMerge.ts",
     ]);
     const TABLE_NAMES = [
       "event_group_chat_room",

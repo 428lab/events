@@ -121,6 +121,10 @@ describe("アカウント統合 (#240)", () => {
     await like(eventId, c.userId, "host", a.userId);
     await like(eventId, c.userId, "host", b.userId);
     await like(eventId, a.userId, "host", b.userId);
+    // target_key がユーザーIDになる kind は host だけではない (#466)。
+    // 1種でも付け替えから漏れると、統合後に存在しない id を指す行が残る
+    await like(eventId, c.userId, "staff", a.userId);
+    await like(eventId, c.userId, "participant", a.userId);
 
     // フォロー: A⇔B 相互（統合後は自己フォロー）・C→A/C→B（重複）・A→C/B→C（重複）
     await follow(a.userId, b.userId);
@@ -221,6 +225,16 @@ describe("アカウント統合 (#240)", () => {
         b.userId,
       ),
     ).toBe(1);
+    // staff / participant の「もらったいいね」も B へ付け替わっている (#466)
+    for (const kind of ["staff", "participant"]) {
+      expect(
+        await count(
+          `SELECT COUNT(*) AS n FROM event_like WHERE kind = '${kind}' AND target_key = ?`,
+          b.userId,
+        ),
+        kind,
+      ).toBe(1);
+    }
     expect(
       await count(
         "SELECT COUNT(*) AS n FROM event_like WHERE user_id = ? OR target_key = ?",

@@ -256,7 +256,7 @@ GET /api/public/pre-surveys/:token →
 | shared | `packages/shared/src/preSurvey.ts` | 型・入力（質問部品は eventSurvey.ts から import）・上限定数（回答 1000 件・自由記述 2000 字） |
 | server | `src/db/repositories/eventPreSurvey.ts` / `src/routes/eventPreSurvey.ts` | §3.6 の公開2本＋staff 9本 |
 | server | `src/worker.ts` | 公開2本の直接登録 + `/events` への staff ルート登録 |
-| server | `src/db/repositories/users.ts` + `test/merge-user-columns.test.ts` | mergeUsers `simple` に `["event_pre_survey_response", "user_id"]` |
+| server | `src/db/repositories/accountMerge.ts` + `test/merge-user-columns.test.ts` | mergeUsers `simple` に `["event_pre_survey_response", "user_id"]` |
 | web | `pages/PreSurveyPage.tsx` / `pages/EventPreSurveyAdminPage.tsx` / `components/PreSurveyResponsesTable.tsx` / `components/PreSurveyAccessCard.tsx` / `components/LinkifiedText.tsx` / `api/preSurveyHooks.ts` | 回答・管理・表/CSV・アクセス表・説明文リンク化・API フック（初回訪問マークもここ） |
 | web | `App.tsx` / `components/EventActionButtons.tsx` | ルート（`/s/:token`・`pre-survey` 子ルート）・staff 導線 |
 | i18n | `packages/shared/src/i18n/messages/preSurvey.ts` / `staffOps.ts` | ja/en |
