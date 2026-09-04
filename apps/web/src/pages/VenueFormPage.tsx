@@ -46,6 +46,10 @@ export function VenueFormPage() {
   const [open, setOpen] = useState(true);
   const [imageBlob, setImageBlob] = useState<Blob | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  // 訳した文言ではなく真偽値で持つ（言語を切り替えたときに前の言語が残らないように）
+  const [imageFailed, setImageFailed] = useState(false);
+  // 作成後に写真だけ失敗したとき、再submitで会場を二重作成しないための保存済みID
+  const [savedId, setSavedId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // 編集時は既存値をロード（1回だけ）
@@ -67,6 +71,8 @@ export function VenueFormPage() {
     setOpen(v.status === "open");
   }, [existing.data, isEdit]);
 
+  // フックはすべてこの上で呼ぶ。ここから下は早期 return があるので、
+  // 下でフックを足すと読み込み中と権限判明後で呼ぶ数が変わってしまう (#372)
   if (
     isEdit &&
     existing.data &&
@@ -108,11 +114,6 @@ export function VenueFormPage() {
       return false;
     }
   };
-
-  // 訳した文言ではなく真偽値で持つ（言語を切り替えたときに前の言語が残らないように）
-  const [imageFailed, setImageFailed] = useState(false);
-  // 作成後に写真だけ失敗したとき、再submitで会場を二重作成しないための保存済みID
-  const [savedId, setSavedId] = useState<string | null>(null);
 
   const afterSave = async (venueId: string) => {
     setSavedId(venueId);
