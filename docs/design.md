@@ -118,8 +118,12 @@ Cloudflare Workers の `ExecutionContext.waitUntil` に載り、レスポンス�
 ### メディアの実体（R2）の後始末 (#424)
 
 D1 の行は FK の `ON DELETE CASCADE` で消えるが、**R2 のオブジェクトを消すものは誰もいない**。
-削除する経路がそれぞれ好きな順序で書くと必ずどこかが漏れるので、契約を1つに定める
+削除する経路がそれぞれ好きな順序で書くと必ずどこかが漏れるので、
+**イベントが持つメディア**については契約を1つに定める
 （実装は `apps/server/src/lib/mediaCleanup.ts`。キーの組み立てもここに集約する）。
+ユーザー・会場が持つメディアを消す経路（`routes/bgm.ts` の曲削除、
+`routes/venues.ts` の会場削除・会場画像・会場写真）は**まだこの順序に揃っておらず、
+R2 を先に消している**。同じ契約へ寄せるのは別件 (#483)。
 
 - **順序は「D1 からキーを集める → D1 を消す → R2 をベストエフォートで消す」。**
   行が消えた後はキーを辿れないので、収集は削除より前でなければならない。
@@ -139,8 +143,17 @@ D1 の行は FK の `ON DELETE CASCADE` で消えるが、**R2 のオブジェ�
 - **イベントが持つ prefix は4つだけ**: `event-images/{eventId}` /
   `event-photos/{eventId}/{photoId}` / `event-videos/{eventId}/{videoId}`（＋ `-poster` #408） /
   `event_prize.image_key` に入る `prize-images/{prizeId}/{uuid}`。
-  `bgm/` `deck-images/` `live-set-images/` `avatars/` `profile-cards/` `venue-*` は
-  ユーザーか会場の持ち物で、退会時の掃除 (#244) 側が見る。
+  それ以外はユーザー・会場・コミュニティの持ち物で、掃除する主体が別々に分かれている:
+  - **退会時の掃除 (#244) が見る**のは `deck-images/` `live-set-images/` `bgm/`
+    `avatars/` `profile-cards/` と、退会で消える写真・**参加者のいない下書きイベント**の
+    持ち物（上の4つを `collectEventObjects` で辿る #424）。
+  - **`venue-images/` `venue-photos/` は退会時の掃除の対象外**。会場は退会者から
+    「退会済みユーザー」名義へ付け替えて残るので、実体を消すのは会場側の削除経路
+    (`routes/venues.ts`) の担当。
+  - **`community-icons/` `community-banners/` は今のところ誰も消していない**。
+    コミュニティも退会では名義を付け替えて残るので掃除の対象外だが、
+    コミュニティ削除 (`routes/communities.ts`) が D1 の行しか消しておらず、
+    実体が孤児になる。これも上と同じ別件 (#483) で揃える。
 
 ### リアルタイム方針の補足
 

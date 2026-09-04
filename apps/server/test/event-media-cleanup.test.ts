@@ -104,6 +104,20 @@ async function seedPrizeImage(eventId: string): Promise<string> {
   return key;
 }
 
+/** 画像を持たない景品（`image_key` が NULL）を1件仕込む。
+ * 掃除用の SELECT が NULL を弾いていないと、キー配列に null が混ざって
+ * R2 の multi-delete がまるごと失敗する（`deleteObjects` が握り潰すので
+ * 静かに全部が孤児になる）。画像ありの景品と並べて置くことでその穴を塞ぐ */
+async function seedPrizeWithoutImage(eventId: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO event_prize
+       (id, event_id, name, description, condition_type, threshold, stock, image_key, created_at)
+     VALUES (?, ?, '画像なし景品', '', 'meet_count', 1, 1, NULL, ?)`,
+  )
+    .bind(crypto.randomUUID(), eventId, Date.now())
+    .run();
+}
+
 /** 運営が非表示にした写真 (#278) にする */
 async function hidePhoto(photoId: string): Promise<void> {
   await env.DB.prepare(
@@ -145,6 +159,12 @@ describe("イベント削除で R2 の実体も消す (#424)", () => {
     const photoId = await uploadPhoto(eventId, cookie);
     const videoId = await uploadVideo(eventId, cookie);
     const prizeKey = await seedPrizeImage(eventId);
+    // 画像を持たない景品 (#434) を混ぜる。列挙が NULL を弾いていないと
+    // キー配列に null が入る。本番の R2 は null キーを受け付けず multi-delete が
+    // まるごと落ちる（`deleteObjects` が握り潰すので静かに全部が孤児になる）が、
+    // テスト環境の R2 は素通しするので「実体が消えたか」では捕まらない。
+    // R2 に渡ったキーそのものを見る
+    await seedPrizeWithoutImage(eventId);
 
     // 前提: 実体が揃っている
     expect(await env.BUCKET.head(coverKey(eventId))).not.toBeNull();
@@ -155,8 +175,22 @@ describe("イベント削除で R2 の実体も消す (#424)", () => {
     ).not.toBeNull();
     expect(await env.BUCKET.head(prizeKey)).not.toBeNull();
 
+    const passedKeys: unknown[] = [];
+    const originalDelete = env.BUCKET.delete.bind(env.BUCKET);
+    vi.spyOn(env.BUCKET, "delete").mockImplementation(async (keys) => {
+      passedKeys.push(...(Array.isArray(keys) ? keys : [keys]));
+      return originalDelete(keys as string | string[]);
+    });
+
     const res = await deleteEvent(eventId, cookie);
     expect(res.status).toBe(200);
+
+    // R2 に渡すのは文字列のキーだけ（画像なしの景品ぶんの null を混ぜない）
+    expect(passedKeys.length).toBeGreaterThan(0);
+    expect(
+      passedKeys.filter((k) => typeof k !== "string"),
+      "R2 に文字列でないキーを渡している",
+    ).toEqual([]);
 
     expect(await env.BUCKET.head(coverKey(eventId))).toBeNull();
     expect(await env.BUCKET.head(photoKey(eventId, photoId))).toBeNull();
@@ -235,6 +269,38 @@ describe("イベント削除で R2 の実体も消す (#424)", () => {
 
     expect((await deleteEvent(eventId, cookie)).status).toBe(200);
     expect(eventRowsAtDelete).toEqual([0]);
+  });
+});
+
+describe("表紙画像の単体削除でも実体を残さない (#424)", () => {
+  it("R2 の削除が落ちても ok を返し、D1 の行は消える", async () => {
+    // #424 以前は R2 の失敗がそのまま 500 になり、行だけ消えた状態で
+    // 呼び出し側にはエラーが返っていた。今は他の削除経路と同じ
+    // ベストエフォート（握り潰して孤児に倒す）に揃えてある。
+    // 意図した契約なので、握り潰していること自体をここで固定する
+    const cookie = await loginDev();
+    const eventId = await setupEvent(cookie);
+    await putCoverImage(eventId, cookie);
+    expect(
+      await rowCount("SELECT COUNT(1) AS n FROM event_image WHERE event_id = ?", eventId),
+    ).toBe(1);
+
+    const spy = vi
+      .spyOn(env.BUCKET, "delete")
+      .mockRejectedValue(new Error("R2 down"));
+
+    const res = await SELF.fetch(`${BASE}/api/events/${eventId}/image`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(spy).toHaveBeenCalled();
+    // 参照（D1）は消える。残るのは誰からも参照されない実体だけ
+    expect(
+      await rowCount("SELECT COUNT(1) AS n FROM event_image WHERE event_id = ?", eventId),
+    ).toBe(0);
+    expect(await env.BUCKET.head(coverKey(eventId))).not.toBeNull();
   });
 });
 

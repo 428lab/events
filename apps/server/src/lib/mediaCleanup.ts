@@ -74,20 +74,31 @@ export async function collectEventObjects(eventId: string): Promise<string[]> {
   return keys;
 }
 
+/** R2 の multi-delete の上限（1回のリクエストで消せるキー数） */
+const MAX_KEYS_PER_DELETE = 1000;
+
 /** R2 の削除（ベストエフォート）。失敗しても throw しない＝呼び出し側の
  * 削除そのものは成立させる。残骸はログの label で追える。
- * 空配列ならサブリクエストを使わずに戻る。R2 の multi-delete は1回 1000 キーまで */
+ * 空配列ならサブリクエストを使わずに戻る。
+ *
+ * @returns 消費したサブリクエスト数。退会の掃除 (#244) はこれを実行予算に積む。
+ *   刻み幅を呼び出し側に数え直させると「1000」が2か所に散り、片方を変えたときに
+ *   予算だけ静かにずれる。分割した本人が数えて返す。
+ *   失敗しても既に消費済みなので、途中で落ちても投げる予定だった回数を返す
+ *   （＝予算は必ず積まれる） */
 export async function deleteObjects(
   keys: string[],
   label: string,
-): Promise<void> {
-  if (keys.length === 0) return;
+): Promise<number> {
+  if (keys.length === 0) return 0;
+  const calls = Math.ceil(keys.length / MAX_KEYS_PER_DELETE);
   try {
     const bucket = getBucket();
-    for (let i = 0; i < keys.length; i += 1000) {
-      await bucket.delete(keys.slice(i, i + 1000));
+    for (let i = 0; i < keys.length; i += MAX_KEYS_PER_DELETE) {
+      await bucket.delete(keys.slice(i, i + MAX_KEYS_PER_DELETE));
     }
   } catch (e) {
     console.error(`${label} R2 cleanup failed (${keys.length} keys)`, e);
   }
+  return calls;
 }

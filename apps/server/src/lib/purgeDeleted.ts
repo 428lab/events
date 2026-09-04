@@ -6,7 +6,11 @@ import { decksRepo } from "../db/repositories/decks.js";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { bgmTracksRepo } from "../db/repositories/bgmTracks.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
-import { deleteObjects, photoObjectKeys } from "./mediaCleanup.js";
+import {
+  collectEventObjects,
+  deleteObjects,
+  photoObjectKeys,
+} from "./mediaCleanup.js";
 import { avatarKey } from "./avatarStore.js";
 
 /** 退会猶予期間 (#250) を過ぎたアカウントの完全削除。
@@ -16,7 +20,8 @@ import { avatarKey } from "./avatarStore.js";
  * ■ サブリクエスト予算について
  * Workers Free のサブリクエスト上限は 1リクエストあたり 50 で、D1 / R2 への
  * 呼び出しもここに含まれる。1件あたりの消費数は
- *   9（固定）＋ デッキ数 ＋ 配信セット数 ＋ ceil(R2キー数 / 1000)
+ *   10（固定）＋ デッキ数 ＋ 配信セット数 ＋ 消える下書きイベント数×2
+ *   ＋ ceil(R2キー数 / 1000)
  * とユーザーの持ちデータ量に比例するため、「1回に N 件」という件数固定では
  * 上限を守れない（デッキを 40 個持つ人が1人居るだけで超過する）。しかも上限を
  * 超えると同一リクエスト内の以降のサブリクエストが全部失敗するので、
@@ -32,15 +37,16 @@ const SUBREQUEST_BUDGET = 40;
 
 /** 1件あたりの最小消費数（データを何も持たないユーザーの場合）。
  *   findByIdIncludingDeleted 1
- * ＋ collectUserObjects の D1 4（decks / live_set / bgm / event_photo）
+ * ＋ collectUserObjects の D1 5（decks / live_set / bgm / event_photo ＋
+ *   消える下書きイベントの列挙 #424。イベントがあれば +2/件）
  * ＋ プロフィールカードの R2 list 1
  * ＋ deleteAccount の batch 1
  * ＋ deleteAccount 内のスタッフチャット列挙 (#382) 1
  *   （部屋があれば +1/部屋。実消費は deleteAccount の戻り値で budget に積む）
  * ＋ recordAudit 2（INSERT と保存期間の掃除）
- * ＝ 10。R2 に実体があれば delete でさらに 1 以上増えるので 11 で見積もる。
+ * ＝ 11。R2 に実体があれば delete でさらに 1 以上増えるので 12 で見積もる。
  * 次の1件がこれ以下の余裕しか無ければ打ち切る */
-const MIN_COST_PER_USER = 11;
+const MIN_COST_PER_USER = 12;
 
 /** 1回の実行で見に行く候補の最大数。実際には予算のほうが先に効くが、
  * listPurgeTargets が無制限に行を読まないための保険 */
@@ -55,8 +61,9 @@ interface Budget {
 /** 退会するユーザー由来の R2 オブジェクトキーを列挙する (#244)。
  * 行削除後はキーを辿れなくなるため、DB 削除前に呼ぶこと。
  * 対象: スライド画像・配信セット画像・BGM 音源・イベント写真・プロフィールカードPNG・
- * 自前保管のアイコン (#312)。
- * デッキ数・配信セット数だけ R2 list が増えるので、消費数を budget に積む */
+ * 自前保管のアイコン (#312)・**完全削除で消える下書きイベントの持ち物** (#424)。
+ * デッキ数・配信セット数だけ R2 list が、下書きイベント数だけ D1 が増えるので、
+ * 消費数を budget に積む */
 async function collectUserObjects(
   userId: string,
   budget: Budget,
@@ -72,6 +79,19 @@ async function collectUserObjects(
   // 自前保管のアイコン (#312) は 1ユーザー1キー固定なので list は要らない。
   // 保管していなければ存在しないキーを消すだけ（削除は下でまとめて投げるので費用ゼロ）
   keys.push(avatarKey(userId));
+  // 完全削除では「参加者のいない下書きイベント」の行も消える (#244) ので、
+  // そのイベントの持ち物（表紙画像・写真・動画・景品画像）も一緒に消さないと
+  // #424 が塞いだはずの孤児がここから出る。**どのイベントが消えるかの条件は
+  // accountDeletion.ts に1つだけ置き**、DELETE と同じ WHERE を引いた SELECT で
+  // 受け取る（条件を書き写すと片方だけずれて実体が残る）
+  budget.spent += 1;
+  const draftEventIds =
+    await accountDeletionRepo.listDeletableDraftEventIds(userId);
+  for (const eventId of draftEventIds) {
+    // collectEventObjects は D1 を2回引く（イベント写真＋景品画像）
+    budget.spent += 2;
+    keys.push(...(await collectEventObjects(eventId)));
+  }
   const prefixes = [
     ...decks.map((d) => `deck-images/${d.id}/`),
     ...liveSets.map((s) => `live-set-images/${s.id}/`),
@@ -148,10 +168,13 @@ export async function purgeDeletedAccounts(
         },
       });
       // R2 の掃除はベストエフォート（失敗しても削除自体は成立。残骸はログで追える）。
-      // deleteObjects は 1000 キーごとに1回 delete を呼び、空配列なら
-      // サブリクエストを使わない。同じ数え方で予算に積む (#424)
-      budget.spent += Math.ceil(objectKeys.length / 1000);
-      await deleteObjects(objectKeys, `[account-purge] user=${userId}`);
+      // 消費したサブリクエスト数は deleteObjects が返す（刻み幅をここで数え直すと
+      // 「1000」が2か所に散り、片方を変えたときに予算だけ静かにずれる #424）。
+      // deleteObjects は内部で握り潰す＝throw しないので、失敗しても必ず積まれる
+      budget.spent += await deleteObjects(
+        objectKeys,
+        `[account-purge] user=${userId}`,
+      );
       purged += 1;
     } catch (e) {
       // DB 側で失敗した場合は deleted_at が残るため、翌日の実行で再試行される

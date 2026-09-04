@@ -367,6 +367,74 @@ describe("退会（アカウント削除） (#244, #250)", () => {
     ).toBe(1); // 本人の行だけ消える
   });
 
+  it("完全削除で消える下書きイベントの R2 の実体も消える (#424)", async () => {
+    // 退会の完全削除は「参加者のいない下書きイベント」の行ごと消す。
+    // 行が消えると表紙画像・景品画像のキーは D1 から辿れなくなるので、
+    // 消す前にキーを集めていないと、まさに #424 が塞いだはずの孤児が
+    // この経路から出る。逆に集めすぎる（消えないイベントの実体まで消す）と
+    // 「行はあるのに実体が無い」になるので、残る側も同時に見張る
+    const a = await makeUser();
+    const b = await makeUser();
+
+    /** 表紙画像と景品画像を持つイベントを1件作る */
+    async function eventWithMedia(
+      status: "draft" | "published",
+    ): Promise<{ eventId: string; coverKey: string; prizeKey: string }> {
+      const eventId = crypto.randomUUID();
+      await env.DB.prepare(
+        "INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, created_by, created_at) VALUES (?, '掃除テスト', 1, 2, 'offline', ?, ?, ?)",
+      )
+        .bind(eventId, status, a.userId, Date.now())
+        .run();
+      await env.DB.prepare(
+        "INSERT INTO event_image (event_id, mime, updated_at) VALUES (?, 'image/png', ?)",
+      )
+        .bind(eventId, Date.now())
+        .run();
+      const coverKey = `event-images/${eventId}`;
+      await env.BUCKET.put(coverKey, "cover-bytes");
+
+      const prizeId = crypto.randomUUID();
+      const prizeKey = `prize-images/${prizeId}/${crypto.randomUUID()}`;
+      await env.DB.prepare(
+        `INSERT INTO event_prize
+           (id, event_id, name, description, condition_type, threshold, stock, image_key, created_at)
+         VALUES (?, ?, '景品', '', 'meet_count', 1, 1, ?, ?)`,
+      )
+        .bind(prizeId, eventId, prizeKey, Date.now())
+        .run();
+      await env.BUCKET.put(prizeKey, "prize-bytes");
+      return { eventId, coverKey, prizeKey };
+    }
+
+    // 消える: 本人が作った、本人以外の参加者が居ない下書き
+    const orphan = await eventWithMedia("draft");
+    // 残る(1): 公開済み＝「退会済みユーザー」名義に付け替えて残る
+    const published = await eventWithMedia("published");
+    // 残る(2): 下書きでも第三者が参加していれば消えない
+    const shared = await eventWithMedia("draft");
+    await joinEvent(shared.eventId, a.userId);
+    await joinEvent(shared.eventId, b.userId);
+
+    expect((await deleteAndPurge(a.cookie, a.userId)).status).toBe(200);
+
+    // 行が消えたイベントは実体も消えている（孤児を残さない）
+    expect(
+      await count("SELECT COUNT(*) AS n FROM event WHERE id = ?", orphan.eventId),
+    ).toBe(0);
+    expect(await env.BUCKET.head(orphan.coverKey)).toBeNull();
+    expect(await env.BUCKET.head(orphan.prizeKey)).toBeNull();
+
+    // 残るイベントの実体は消さない（消すと「開けない画像」になる）
+    for (const e of [published, shared]) {
+      expect(
+        await count("SELECT COUNT(*) AS n FROM event WHERE id = ?", e.eventId),
+      ).toBe(1);
+      expect(await env.BUCKET.head(e.coverKey)).not.toBeNull();
+      expect(await env.BUCKET.head(e.prizeKey)).not.toBeNull();
+    }
+  });
+
   it("会場・オファーの連絡先は消え、未応答のオファーは辞退になる", async () => {
     const a = await makeUser();
     const owner = await makeUser();

@@ -15,6 +15,21 @@ import {
  * identity の provider_user_id からしかユーザーを解決しないため対象にならない */
 const DELETED_USER_DISCORD_ID = "system:deleted-user";
 
+/** 「参加者のいない下書きイベント」の条件 (#244)。誰にも見えず誰も消せない
+ * 孤児になるため退会の完全削除で消す。
+ *
+ * **この条件を2か所に書かない** (#424)。R2 の実体（表紙画像・写真・景品画像）は
+ * 行が消えると辿れなくなるので削除の**前に**キーを集める必要があり、集める側は
+ * 「どのイベントが消えるか」を知らなければならない。条件を書き写すと片方だけ
+ * ずれて実体が孤児になるので、DELETE と収集用の SELECT で同じ文字列を使う。
+ *
+ * `?` は順に created_by と「本人以外の参加者」の user_id。created_by に何を
+ * 渡すかだけが両者で違う: DELETE は (1) で ghost に付け替えた**後**なので
+ * ghost、収集は付け替え**前**に走るので本人。 */
+const ORPHAN_DRAFT_EVENT_WHERE = `created_by = ? AND status = 'draft'
+         AND NOT EXISTS (SELECT 1 FROM event_member m
+                          WHERE m.event_id = event.id AND m.user_id != ?)`;
+
 /** 退会の一連（申請 → 猶予期間 → 完全削除）と、その手前で使う
  * 「利用実績があるか」の判定 (#238)。触る表の一覧は userTables.ts と共有する
  * （統合 accountMerge.ts と同じ定義を読む） */
@@ -93,6 +108,22 @@ export const accountDeletionRepo = {
     return row?.n ?? 0;
   },
 
+  /** `deleteAccount` が消す下書きイベントの id (#424)。R2 の実体を消すために
+   * **deleteAccount を呼ぶ前に**呼ぶこと（行が消えるとキーを辿れない）。
+   * 条件は DELETE と同じ ORPHAN_DRAFT_EVENT_WHERE を引く。まだ ghost へ
+   * 付け替える前なので created_by は本人。
+   *
+   * 付け替え済みの ghost 名義の下書き（過去の退会の取りこぼし）はここには出ない。
+   * それは prefix を舐める掃除の話で、この経路の担当ではない */
+  async listDeletableDraftEventIds(userId: string): Promise<string[]> {
+    const rows = await many<{ id: string }>(
+      `SELECT id FROM event WHERE ${ORPHAN_DRAFT_EVENT_WHERE}`,
+      userId,
+      userId,
+    );
+    return rows.map((r) => r.id);
+  },
+
   /** 退会（アカウント削除） (#244)。単一トランザクション（D1 batch）で
    * 「共有コンテンツを『退会済みユーザー』(ghost) に付け替え → 個人データ削除 →
    * user 行削除（FK CASCADE で残りが消える）」を行う。
@@ -154,12 +185,11 @@ export const accountDeletionRepo = {
       args: [userId],
     });
 
-    // (1-d) 参加者のいない下書きイベントは誰にも見えず誰も消せない孤児になるため削除
+    // (1-d) 参加者のいない下書きイベントは誰にも見えず誰も消せない孤児になるため削除。
+    //     条件は ORPHAN_DRAFT_EVENT_WHERE（R2 のキー収集と共有）。ここでは (1) で
+    //     付け替えた後なので created_by は ghost
     stmts.push({
-      sql: `DELETE FROM event
-             WHERE created_by = ? AND status = 'draft'
-               AND NOT EXISTS (SELECT 1 FROM event_member m
-                                WHERE m.event_id = event.id AND m.user_id != ?)`,
+      sql: `DELETE FROM event WHERE ${ORPHAN_DRAFT_EVENT_WHERE}`,
       args: [ghostId, userId],
     });
 
