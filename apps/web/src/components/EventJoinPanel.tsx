@@ -16,6 +16,7 @@ import { useEventState } from "../api/scoringHooks.js";
 import { useEventSurvey } from "../api/eventSurveyHooks.js";
 import { ApiError } from "../api/client.js";
 import { participationStatusLabel } from "../lib/format.js";
+import { findMyMembership } from "../lib/eventMembership.js";
 import type { EventTiming } from "../lib/useEventTiming.js";
 import { EventSlots } from "./EventSlots.js";
 import { EntranceQrDialog } from "./EntranceQrDialog.js";
@@ -64,7 +65,7 @@ export function EventJoinPanel({
   const [joinError, setJoinError] = useState("");
 
   const isMember = Boolean(myRole);
-  const myMembership = members?.find((m) => me && m.user.id === me.id);
+  const myMembership = findMyMembership(members, me);
   const hasSurvey = (surveyQuestions?.length ?? 0) > 0;
   const hasSlots = Boolean(slots && slots.length > 0);
   const { ended, registrationClosed } = timing;

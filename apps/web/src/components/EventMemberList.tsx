@@ -36,6 +36,7 @@ import {
 import { errorMessage } from "../lib/errorMessage.js";
 import { i18next } from "../i18n/index.js";
 import { participationStatusLabel, roleLabel } from "../lib/format.js";
+import { isMyMembership } from "../lib/eventMembership.js";
 
 /** ロール変更が断られた理由を、その場で直せる形の文言にする (#281)。
  * 何が起きたか（なぜ変えられないか）と、次に何をすればよいかまで書く。
@@ -99,7 +100,7 @@ export function EventMemberList({
               member={m}
               isStaff={isStaff}
               attendanceCheck={attendanceCheck}
-              isMe={me?.id === m.user.id}
+              isMe={isMyMembership(m, me)}
             />
           ))}
         </List>

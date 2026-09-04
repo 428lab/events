@@ -1,5 +1,6 @@
 import type { Event, EventRole } from "@eventer/shared";
 import { useEvent, useEventMembers, useMe } from "../api/hooks.js";
+import { findMyMembership } from "./eventMembership.js";
 
 export interface EventChatAccess {
   event: Event | null;
@@ -24,7 +25,7 @@ export function useEventChatAccess(eventId: string): EventChatAccess {
 
   const event = data?.event ?? null;
   const myRole = data?.myRole ?? null;
-  const myMembership = members?.find((m) => me && m.userId === me.id);
+  const myMembership = findMyMembership(members, me);
   const canChat = myMembership
     ? myMembership.status === "confirmed"
     : Boolean(myRole);

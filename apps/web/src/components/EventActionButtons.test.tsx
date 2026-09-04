@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { EventActionButtons } from "./EventActionButtons.js";
@@ -11,12 +11,21 @@ import { EventActionButtons } from "./EventActionButtons.js";
  * 誰に何が出るかを遷移先で押さえておく。
  */
 
+// 進行状態はテストごとに差し替える（進行中モードで出る行があるため）
+const { stateMock } = vi.hoisted(() => ({
+  stateMock: vi.fn(() => ({ mode: "normal", scoringLocked: false })),
+}));
+
 vi.mock("../api/hooks.js", () => ({
   useMe: () => ({ data: { id: "u-1" } }),
 }));
 vi.mock("../api/scoringHooks.js", () => ({
-  useEventState: () => ({ data: { mode: "normal", scoringLocked: false } }),
+  useEventState: () => ({ data: stateMock() }),
 }));
+
+beforeEach(() => {
+  stateMock.mockReturnValue({ mode: "normal", scoringLocked: false });
+});
 
 function draw(
   over: Partial<Parameters<typeof EventActionButtons>[0]> = {},
@@ -92,5 +101,56 @@ describe("行ごとの条件", () => {
     expect(paths()).toContain("criteria");
     expect(paths()).toContain("control");
     expect(paths()).toContain("awards");
+  });
+});
+
+describe("進行中のモード（表の中で唯一 props だけでは決まらない行）", () => {
+  it("プレゼン中は飛び込み口と進行中のバッジが出る", () => {
+    stateMock.mockReturnValue({ mode: "presentation", scoringLocked: false });
+    draw({ contest: true });
+
+    expect(paths()).toContain("present");
+    expect(paths()).not.toContain("awards");
+    expect(screen.getByText("進行中: プレゼン")).toBeInTheDocument();
+  });
+
+  it("表彰中は表彰式への飛び込み口が出る（プレゼンのほうは出ない）", () => {
+    stateMock.mockReturnValue({ mode: "awards", scoringLocked: false });
+    draw({ contest: true });
+
+    expect(paths()).toContain("awards");
+    expect(paths()).not.toContain("present");
+    expect(screen.getByText("進行中: 表彰")).toBeInTheDocument();
+  });
+
+  it("集計中はバッジだけで、飛び込み口は出ない", () => {
+    stateMock.mockReturnValue({ mode: "aggregation", scoringLocked: false });
+    draw({ contest: true });
+
+    expect(paths()).not.toContain("present");
+    expect(paths()).not.toContain("awards");
+    expect(screen.getByText("進行中: 集計")).toBeInTheDocument();
+  });
+
+  it("通常進行ではバッジを出さない", () => {
+    draw({ contest: true });
+    expect(screen.queryByText(/進行中:/)).not.toBeInTheDocument();
+  });
+
+  it("コンテストでなければ、進行中でもバッジも飛び込み口も出ない", () => {
+    stateMock.mockReturnValue({ mode: "presentation", scoringLocked: false });
+    draw({ contest: false, isStaff: true });
+
+    expect(paths()).not.toContain("present");
+    expect(screen.queryByText(/進行中:/)).not.toBeInTheDocument();
+  });
+
+  it("表彰中のスタッフには、飛び込み口と表彰の設定が別々に出る", () => {
+    stateMock.mockReturnValue({ mode: "awards", scoringLocked: false });
+    draw({ contest: true, isStaff: true });
+
+    // 同じ /awards でも「表彰式へ」と「表彰の設定」で役割が違うので2つ出る
+    expect(paths().filter((p) => p === "awards")).toHaveLength(2);
+    expect(screen.getByText("表彰式へ")).toBeInTheDocument();
   });
 });
