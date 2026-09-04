@@ -89,7 +89,7 @@ d は FK の設定次第。`notification.actor_id` (#380) と `venue_photo.user_
 
 ### 2.5 イベントの複製は何をコピーしているか
 
-`apps/server/src/routes/events.ts:401` の `POST /:id/duplicate`。
+`apps/server/src/routes/eventDuplicate.ts` の `POST /:id/duplicate`。
 コピーするのは基本情報・参加枠の定義・採点基準・表彰の定義・イベント画像。
 コピーしないのは参加者・投票・受賞結果・**タイムテーブル**、そして
 **募集締切 (`registrationDeadline`) と抽選日時 (`drawAt`)**。
@@ -589,7 +589,7 @@ export interface EventTodo {
 
 ### 7.3 実装
 
-`routes/events.ts` の複製ハンドラの末尾（表彰の定義のコピーの後）に
+`routes/eventDuplicate.ts` の複製ハンドラの末尾（表彰の定義のコピーの後）に
 `await eventTodosRepo.copyForDuplicate(src.id, created.id, user.id)` を1行足す。
 辺の張り替え（旧 id → 新 id の対応表）は**リポジトリの中に閉じる**
 （3.5 の不変条件を破らない）。
