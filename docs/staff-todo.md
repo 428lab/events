@@ -430,7 +430,7 @@ CREATE INDEX idx_event_todo_dep_reverse ON event_todo_dep(depends_on_id);
 
 ```ts
 export const eventTodoRoutes = new Hono<AppEnv>();
-eventTodoRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）が持つ。ここでは重ねない (#472、3.1)
 // 一覧・作成（/:id/todos）と、その配下すべてに同じ権限をかける（eventBroadcast.ts と同じ形）
 eventTodoRoutes.use("/:id/todos", requireEventRole(["staff"]));
 eventTodoRoutes.use("/:id/todos/*", requireEventRole(["staff"]));

@@ -13,7 +13,6 @@ import {
   type UpdateTodoInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventTodosRepo, type TodoPatch } from "../db/repositories/eventTodos.js";
@@ -34,7 +33,7 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
  * （担当は「そのイベントのスタッフとして名前が並んでいる人」に限る）。意図した非対称。
  */
 export const eventTodoRoutes = new Hono<AppEnv>();
-eventTodoRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 // 一覧・作成（/:id/todos）と、その配下すべてに同じ権限をかける
 // （eventBroadcast.ts と同じ形。2行のうち片方を落とすと配下が素通しになる）
 eventTodoRoutes.use("/:id/todos", requireEventRole(["staff"]));

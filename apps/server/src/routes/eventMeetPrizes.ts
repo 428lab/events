@@ -20,7 +20,7 @@ import {
   updateMeetPrizeInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { currentUser, requireAuth } from "../auth/session.js";
+import { currentUser } from "../auth/session.js";
 import { canManageEvent, canViewEvent, requireEventRole } from "../auth/roles.js";
 import { getBucket } from "../runtime.js";
 import { hasImageMagicBytes, normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
@@ -202,7 +202,7 @@ export async function getEventMeetPrizes(c: Context) {
 
 /** /api/events 配下（要認証・staff のみ）。設定 CRUD・デスク・引き換え・1位の締め */
 export const meetPrizeRoutes = new Hono<AppEnv>();
-meetPrizeRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** 子リソースの所有チェック（別イベントの prizeId の差し込みは 404） */
 async function prizeOf(

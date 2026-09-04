@@ -3,7 +3,7 @@ import type { Context } from "hono";
 import { EVENT_COMMENT_LIMIT, createEventCommentInput } from "@eventer/shared";
 import type { CreateEventCommentInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth, currentUser } from "../auth/session.js";
+import { currentUser } from "../auth/session.js";
 import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -38,7 +38,7 @@ export async function getEventComments(c: Context<AppEnv>) {
 /* ===== 書き込み（要認証。投稿・削除はメンバーのみ） ===== */
 
 export const eventCommentRoutes = new Hono<AppEnv>();
-eventCommentRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** コメント投稿（参加確定メンバーのみ） */
 eventCommentRoutes.post(

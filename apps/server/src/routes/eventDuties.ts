@@ -17,7 +17,6 @@ import {
   type ReorderDutiesInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventDutiesRepo } from "../db/repositories/eventDuties.js";
@@ -41,7 +40,7 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
  * CASCADE で消える（セッションを消したのに持ち場だけ残る状態を作らない）。
  */
 export const eventDutyRoutes = new Hono<AppEnv>();
-eventDutyRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 // 一覧（/:id/staffing）と、その配下すべてに同じ権限をかける
 // （eventBroadcast.ts / eventTodos.ts と同じ形。片方を落とすと配下が素通しになる）
 eventDutyRoutes.use("/:id/staffing", requireEventRole(["staff"]));

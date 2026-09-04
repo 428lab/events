@@ -6,7 +6,6 @@ import {
 } from "@eventer/shared";
 import type { LiveSet, UpdateEventLiveStateInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
@@ -15,7 +14,7 @@ import { decksRepo } from "../db/repositories/decks.js";
 
 /** イベントの配信ランタイム状態（コントロールタブ→配信画面タブの同期点）。staff専用 */
 export const liveControlRoutes = new Hono<AppEnv>();
-liveControlRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** 現在の配信状態（配信画面タブが1秒ポーリング） */
 liveControlRoutes.get(

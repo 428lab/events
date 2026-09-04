@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { isConfirmedEventStaff } from "../auth/roles.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { nameCardsRepo } from "../db/repositories/nameCards.js";
@@ -25,7 +24,7 @@ const requireEventStaff: MiddlewareHandler<AppEnv> = async (c, next) => {
 };
 
 export const nameCardRoutes = new Hono<AppEnv>();
-nameCardRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 nameCardRoutes.use("/:id/name-cards", requireEventStaff);
 
 nameCardRoutes.get("/:id/name-cards", async (c) => {

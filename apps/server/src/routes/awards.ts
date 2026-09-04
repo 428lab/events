@@ -16,7 +16,7 @@ import type {
   UpdateSpecialAwardInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { currentUser, requireAuth } from "../auth/session.js";
+import { currentUser } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -67,7 +67,7 @@ export async function getEventAwards(c: Context) {
   return c.json({ ranks, specials, criteria: summary.criteria, results });
 }
 
-awardRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /* ランク賞 CRUD */
 awardRoutes.post(

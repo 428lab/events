@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import type { Event, User, BingoState, BingoStatus } from "@eventer/shared";
 import { deriveBingoCard } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { canManageEvent, requireEventRole } from "../auth/roles.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -42,7 +41,7 @@ async function bingoAudience(
 }
 
 export const eventBingoRoutes = new Hono<AppEnv>();
-eventBingoRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** ゲーム・イベント・観客種別をまとめて引く（全ルートの入口） */
 async function load(eventId: string, user: User) {
