@@ -284,7 +284,7 @@ messages に追加し、**振る舞いで書く**（「名前とアイコンが�
 | server | `db/repositories/events.ts` | 行マッピング・UPDATE 文に `meet_ranking` |
 | server | `db/repositories/eventMeets.ts` | `rankingForEvent` に rank 追加、`anonymousRankingForEvent`・`rankForUser` 新設 |
 | server | `routes/eventMeets.ts` | `GET /:id/meets/ranking/live` 新設（off→404 / 確定メンバー判定 / mode 別応答） |
-| server | `routes/events.ts` | 複製のコピーリストに `meetRanking` |
+| server | `routes/eventDuplicate.ts` | 複製のコピーリストに `meetRanking` |
 | web | `pages/MeetRankingScreenPage.tsx` | 新規。投影ページ（全画面枠。描画は `MeetRankingBoard`） |
 | web | `components/MeetRanking.tsx` | 新規。`MeetRankingBoard`（投影の描画）+ `MeetRankingPanel`（詳細ページの小カード） |
 | web | `App.tsx` | `/events/:id/meet-ranking/screen` の Route |

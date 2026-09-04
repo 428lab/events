@@ -82,7 +82,7 @@
 - 投影/配信の画面（`LiveScreenPage` / `PresentPage` / `LiveControlPage` / `EventChatScreenPage`）
   — `useEventSchedule` を呼んでいない
 - 公開ページ (`routes/public.ts`) — 6 の `listPublicSpokenEventIds` しか呼んでいない
-- イベントの複製 (`routes/events.ts:410-495`) — 参加枠・採点基準・表彰はコピーするが
+- イベントの複製 (`routes/eventDuplicate.ts`) — 参加枠・採点基準・表彰はコピーするが
   **タイムテーブルはコピーしない**
 
 タイムテーブルの `useEventSchedule`（`api/eventScheduleHooks.ts`）を呼んでいる画面は

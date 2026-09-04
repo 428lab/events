@@ -82,7 +82,7 @@ d だけ FK の設定が効く（3.6 で `CASCADE` を選ぶ。TODO の `SET NUL
 
 ### 2.6 イベントの複製は何をコピーしているか
 
-`routes/events.ts` の `POST /:id/duplicate` は参加枠・採点基準・表彰・TODO (#393) を
+`routes/eventDuplicate.ts` の `POST /:id/duplicate` は参加枠・採点基準・表彰・TODO (#393) を
 コピーし、**タイムテーブルはコピーしない**。したがって時間帯に紐づくもの
 （役割×人数、スタッフの割り当て）は**コピーのしようがない**。
 コピーできるのはイベント直下の**役割の定義だけ**（7.）。
@@ -486,7 +486,7 @@ export interface DutyAssignee {
 
 ## 7. イベントの複製（役割の定義だけコピーする）
 
-`routes/events.ts` の複製ハンドラに
+`routes/eventDuplicate.ts` の複製ハンドラに
 `await eventDutiesRepo.copyForDuplicate(src.id, created.id)` を1行足す。
 
 - コピーする: `event_staff_duty` の `name` / `sort_order`
