@@ -28,10 +28,27 @@ import { requireAdmin } from "../src/auth/admin.js";
  * 全部の requireAuth が順に走る**。#472 の時点で最大23回、1回あたり
  * セッションとユーザーで2クエリ＝1リクエストで D1 を46回引いていた。
  * 重ねても安全側に倒れるだけで動きは変わらないので、見張らないと静かに戻る。
+ *
+ * ## `OPEN_ROUTES` に1行足すのは、認可の変更である
+ *
+ * この表がこの検査の唯一の抜け道になっている。境界の外へ経路を1本出しても、
+ * その鍵を表に足せば検査は通る（サブアプリ丸ごとなら全パスぶん足すことになるので
+ * 通らないが、1本なら通る）。**だから、`OPEN_ROUTES` への追加は
+ * 「この経路を未ログインに開く」という宣言として読み、認可の変更としてレビューすること。**
+ * 「テストを通すために足す」は禁止。落ちたときに最初に疑うのは表ではなく、
+ * 足した経路が本当に公開でよいのかの方。
+ *
+ * 事故で足せないよう、行数（`EXPECTED_OPEN_COUNT`）も一致を見ている。
+ * 表を触ると必ずこの数も動かすことになるので、差分に必ず現れる。
  */
 
-/** 未ログインで通ってよい経路。ここに無い経路は requireAuth を通ること */
+/**
+ * 未ログインで通ってよい経路。ここに無い経路は requireAuth を通ること。
+ * **足すことは認可の変更**（上の前口上）。用途ごとに固めてあるので、
+ * 足すときはどの塊に属するかを選ぶこと。属せないなら、たぶん公開すべきではない。
+ */
 const OPEN_ROUTES = new Set<string>([
+  /* ── ログイン前に通らないとログインできないもの ───────────── */
   "GET /api/auth/:provider/callback",
   "GET /api/auth/:provider/login",
   "GET /api/auth/bluesky/callback",
@@ -40,11 +57,54 @@ const OPEN_ROUTES = new Set<string>([
   "GET /api/auth/me",
   "GET /api/auth/nostr/challenge",
   "GET /api/auth/providers",
-  "GET /api/bgm/:id/audio",
-  "GET /api/communities/:id/banner",
-  "GET /api/communities/:id/icon",
-  "GET /api/decks/:id/images/:imageId",
+  "POST /api/auth/dev-login",
+  "POST /api/auth/logout",
+  "POST /api/auth/nostr/login",
+
+  /* ── 死活監視 ──────────────────────────────────────── */
+  "GET /api/health",
+
+  /* ── GitHub Actions から叩く定時実行 (#129)。門は CRON_SECRET ── */
+  "POST /api/cron/broadcast-emails",
+  "POST /api/cron/detect-abuse",
+  "POST /api/cron/purge-deleted",
+  "POST /api/cron/reminders",
+
+  /* ── メールから未ログインで開かれる (#126) ────────────────── */
   "GET /api/email/unsubscribe",
+  "POST /api/email/unsubscribe",
+
+  /* ── 開催前アンケート (#444)。門は128bitトークン ─────────── */
+  "GET /api/public/pre-surveys/:token",
+  "POST /api/public/pre-surveys/:token/responses",
+
+  /* ── 退会猶予期間の復帰 (#250)。requireAuth が通らない人が使う ── */
+  "POST /api/me/restore",
+
+  /* ── 計測ビーコン（誰が見たかを問わない）───────────────── */
+  "POST /api/events/:id/view",
+
+  /* ── 公開の読み取り: /api/public（認証なしで読ませる面）─────── */
+  "GET /api/public/communities",
+  "GET /api/public/communities/:slug",
+  "GET /api/public/communities/:slug/members",
+  "GET /api/public/decks/:slug",
+  "GET /api/public/event-requests",
+  "GET /api/public/event-requests/:id",
+  "GET /api/public/event-requests/by-slug/:slug",
+  "GET /api/public/events",
+  "GET /api/public/events/by-slug/:slug",
+  "GET /api/public/events/past",
+  "GET /api/public/events/scheduling",
+  "GET /api/public/events/search",
+  "GET /api/public/users/:handle",
+  "GET /api/public/users/:handle/photos",
+  "GET /api/public/venues",
+  "GET /api/public/venues/:id",
+  "GET /api/public/venues/wanted",
+
+  /* ── 公開の読み取り: イベント配下。境界より前に登録してある。
+   *    下書き・非公開の出し分けは各ハンドラが自分で行う ─────── */
   "GET /api/events/:id",
   "GET /api/events/:id/awards",
   "GET /api/events/:id/comments",
@@ -64,31 +124,21 @@ const OPEN_ROUTES = new Set<string>([
   "GET /api/events/:id/submissions",
   "GET /api/events/:id/survey",
   "GET /api/events/:id/timetable",
-  "GET /api/health",
+
+  /* ── 公開の読み取り: メディアの実体。未ログインで見える一覧や
+   *    OGクローラ・メールクライアントから直接引かれる ─────── */
+  "GET /api/bgm/:id/audio",
+  "GET /api/communities/:id/banner",
+  "GET /api/communities/:id/icon",
+  "GET /api/decks/:id/images/:imageId",
   "GET /api/live-sets/:id/images/:imageId",
-  "GET /api/public/communities",
-  "GET /api/public/communities/:slug",
-  "GET /api/public/communities/:slug/members",
-  "GET /api/public/decks/:slug",
-  "GET /api/public/event-requests",
-  "GET /api/public/event-requests/:id",
-  "GET /api/public/event-requests/by-slug/:slug",
-  "GET /api/public/events",
-  "GET /api/public/events/by-slug/:slug",
-  "GET /api/public/events/past",
-  "GET /api/public/events/scheduling",
-  "GET /api/public/events/search",
-  "GET /api/public/pre-surveys/:token",
-  "GET /api/public/users/:handle",
-  "GET /api/public/users/:handle/photos",
-  "GET /api/public/venues",
-  "GET /api/public/venues/:id",
-  "GET /api/public/venues/wanted",
   "GET /api/users/:id/avatar",
   "GET /api/users/:id/card-image",
   "GET /api/venues/:id/image",
   "GET /api/venues/:id/photos",
   "GET /api/venues/:id/photos/:photoId/image",
+
+  /* ── /api の外: SPA の HTML（OGメタ注入）とフィード ─────── */
   "GET /e/:slug",
   "GET /events/:id",
   "GET /feed/events.ics",
@@ -100,18 +150,11 @@ const OPEN_ROUTES = new Set<string>([
   "GET /r/:slug",
   "GET /requests/:id",
   "GET /users/:handle",
-  "POST /api/auth/dev-login",
-  "POST /api/auth/logout",
-  "POST /api/auth/nostr/login",
-  "POST /api/cron/broadcast-emails",
-  "POST /api/cron/detect-abuse",
-  "POST /api/cron/purge-deleted",
-  "POST /api/cron/reminders",
-  "POST /api/email/unsubscribe",
-  "POST /api/events/:id/view",
-  "POST /api/me/restore",
-  "POST /api/public/pre-surveys/:token/responses",
 ]);
+
+/** `OPEN_ROUTES` の件数。表を1行足すとここも動かすことになるので、
+ * 「テストを通すためにこっそり1本開ける」が差分に必ず現れる */
+const EXPECTED_OPEN_COUNT = 79;
 
 const UUID = "00000000-0000-4000-8000-000000000000";
 const probe = (p: string) =>
@@ -135,14 +178,29 @@ function chainOf(method: string, path: string): Function[] {
   });
 }
 
+const routesOf = () => (app as unknown as { routes: RouteEntry[] }).routes;
+
+/**
+ * 歩けないルート＝パスにワイルドカードを含むもの。`:id` と違って代表パスを
+ * 作れないため、ルーターに引かせる形に落とせない。
+ *
+ * ここに入るのはほぼ全部 `use("*")`・`use("/:id/todos/*")` のミドルウェア登録で、
+ * ミドルウェアは終端ではないので歩けなくても穴にならない。**穴になるのは
+ * ワイルドカードに終端ハンドラを載せた場合だけ**なので、それを下の検査で見張る。
+ *
+ * `api.all("/x", h)` のような「メソッドが ALL の終端ハンドラ」は歩ける側に入れて
+ * ある（ワイルドカードでなければ代表パスを作れる）。Hono の登録表では
+ * `use(path, mw)` と `all(path, h)` は見分けが付かないが、どちらも
+ * 「requireAuth を通っているか」を同じ基準で見てよいので分ける必要が無い。
+ */
+const skipped = () => routesOf().filter((r) => r.path.includes("*"));
+
 /** 登録済みルートを1本ずつ、そのハンドラに届くまでに通る requireAuth の数へ畳む */
 function walk(): { key: string; authN: number }[] {
-  const routes = (app as unknown as { routes: RouteEntry[] }).routes;
   const out: { key: string; authN: number }[] = [];
-  for (const r of routes) {
-    // ワイルドカードと ALL はミドルウェアの登録そのもので、終端ではない
-    if (r.path.includes("*") || r.method === "ALL") continue;
-    // `.get(path, requireAuth, handler)` の形で積んだ認証自身も終端ではない
+  for (const r of routesOf()) {
+    if (r.path.includes("*")) continue;
+    // `.get(path, requireAuth, handler)` の形で積んだ認証自身は終端ではない
     if (r.handler === requireAuth || r.handler === requireAdmin) continue;
     const chain = chainOf(r.method, probe(r.path));
     const pos = chain.indexOf(r.handler);
@@ -159,8 +217,24 @@ const uniq = (xs: string[]) => [...new Set(xs)].sort();
 
 describe("認証の境界", () => {
   it("登録済みのルートを歩けている（歩けていないと以下の検査が空振りする）", () => {
-    // #472 時点で 533 本。増える方向にしか動かない
+    // #472 時点で 538 本。増える方向にしか動かない
     expect(walk().length).toBeGreaterThan(400);
+  });
+
+  it("ワイルドカードに載った終端ハンドラは資産のフォールバック1本だけ", () => {
+    // ワイルドカードのルートは歩けない（上の skipped 参照）。ミドルウェアなら
+    // 終端ではないので穴にならないが、終端ハンドラを載せると検査を素通りする。
+    // ミドルウェアは next を受け取る＝引数2つ、終端ハンドラは c だけ＝引数1つ。
+    // これで見分け、終端ハンドラは worker.ts 末尾の ASSETS フォールバックだけに保つ。
+    // ここが増えたら、その1本は誰にも認証を確かめられていない。
+    const terminal = skipped()
+      .filter((r) => r.handler.length < 2)
+      .map((r) => `${r.method} ${r.path}`);
+    expect(uniq(terminal)).toEqual(["ALL /*"]);
+  });
+
+  it("公開してよい経路の表の件数（足したら必ず差分に出る）", () => {
+    expect(OPEN_ROUTES.size).toBe(EXPECTED_OPEN_COUNT);
   });
 
   it("表に無い経路は必ず requireAuth を通る", () => {
