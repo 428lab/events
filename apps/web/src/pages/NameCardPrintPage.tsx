@@ -32,14 +32,12 @@ import type { EventNameCard } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
 import { useEventNameCards } from "../api/nameCardHooks.js";
 import { roleLabel } from "../lib/format.js";
-import {
-  LicenseCardSvg,
-  toCardData,
-} from "../components/licenseCard/LicenseCardSvg.js";
+import { LicenseCardSvg } from "../components/licenseCard/LicenseCardSvg.js";
+import { toCardData } from "../components/licenseCard/cardData.js";
 import type {
   CardBgVariant,
   CardThemeKey,
-} from "../components/licenseCard/LicenseCardSvg.js";
+} from "../components/licenseCard/cardTheme.js";
 import {
   cardLook,
   loadLocalCardLook,

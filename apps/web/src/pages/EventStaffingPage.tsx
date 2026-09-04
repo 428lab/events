@@ -177,7 +177,7 @@ export function EventStaffingPage() {
           size="small"
           startIcon={<EventNoteIcon />}
         >
-          {t("staffOps.dutyToTimetable")}
+          {t("staffOps.toTimetable")}
         </Button>
       </Box>
 

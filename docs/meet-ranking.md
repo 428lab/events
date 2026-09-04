@@ -292,7 +292,7 @@ messages に追加し、**振る舞いで書く**（「名前とアイコンが�
 | web | `pages/EditEventPage.tsx` | スイッチ + named/anonymous の選択（Q&A の匿名設定と同じセレクト） |
 | web | `pages/EventDetailPage.tsx` | 従属パネル（上位3 + 自分の順位 + 投影ページへのリンク） |
 | web | `pages/EventStatsPage.tsx` | staff カードに投影ページへのリンク・注記の文言修正 |
-| i18n | `eventSocial.ts`・`eventForm.ts`・`staffOps.ts` | ja/en 追加（参加者向け・設定トグル・staff カード注記） |
+| i18n | `eventSocial.ts`・`eventForm.ts`・`staffOps/nameCards.ts` | ja/en 追加（参加者向け・設定トグル・staff カード注記） |
 | test | `apps/server/test/meet-ranking.test.ts` | 新規。下記の観点 |
 
 ### テスト観点（server）

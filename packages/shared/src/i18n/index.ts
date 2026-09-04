@@ -42,10 +42,16 @@ import {
   staffInviteError,
   staffInviteStatus,
   staffOps,
-} from "./messages/staffOps.js";
+} from "./messages/staffOps/index.js";
 import type { AppLanguage } from "./languages.js";
 
 export * from "./languages.js";
+
+/**
+ * 運営画面の文言は画面ごとのファイルに分かれている (#466)。繋ぎ目で
+ * キーが重なっていないことを数えるテストのために、断片のまま出しておく。
+ */
+export { staffOpsParts } from "./messages/staffOps/index.js";
 
 /**
  * 言語ごとの辞書。i18next には `resources` としてこのまま渡せる形。

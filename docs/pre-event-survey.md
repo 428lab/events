@@ -244,7 +244,7 @@ GET /api/public/pre-surveys/:token →
 ### 3.8 i18n ほか
 
 - 文言: 回答ページは新規 namespace `preSurvey`（回答者向け・ja/en）、管理は
-  `staffOps.ts`。「イベント本体の情報は表示されません」等の説明は振る舞いで書く
+  `staffOps/survey.ts`。「イベント本体の情報は表示されません」等の説明は振る舞いで書く
 - 複製 (#duplicate): **コピーしない**。トークン・回答は完全にその回のもの。質問だけ
   コピーする価値はあるが、複製先で誤って同じURLを配る事故の芽と引き換えにしない（§6）
 
@@ -259,7 +259,7 @@ GET /api/public/pre-surveys/:token →
 | server | `src/db/repositories/accountMerge.ts` + `test/merge-user-columns.test.ts` | mergeUsers `simple` に `["event_pre_survey_response", "user_id"]` |
 | web | `pages/PreSurveyPage.tsx` / `pages/EventPreSurveyAdminPage.tsx` / `components/PreSurveyResponsesTable.tsx` / `components/PreSurveyAccessCard.tsx` / `components/LinkifiedText.tsx` / `api/preSurveyHooks.ts` | 回答・管理・表/CSV・アクセス表・説明文リンク化・API フック（初回訪問マークもここ） |
 | web | `App.tsx` / `components/EventActionButtons.tsx` | ルート（`/s/:token`・`pre-survey` 子ルート）・staff 導線 |
-| i18n | `packages/shared/src/i18n/messages/preSurvey.ts` / `staffOps.ts` | ja/en |
+| i18n | `packages/shared/src/i18n/messages/preSurvey.ts` / `staffOps/survey.ts` | ja/en |
 | test | `apps/server/test/pre-event-survey.test.ts` | §5 の観点 |
 
 ## 5. テスト観点（server）

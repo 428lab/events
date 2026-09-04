@@ -1,5 +1,5 @@
-import { BG_VARIANTS, CARD_THEMES } from "./LicenseCardSvg.js";
-import type { CardBgVariant, CardThemeKey } from "./LicenseCardSvg.js";
+import { BG_VARIANTS, CARD_THEMES } from "./cardTheme.js";
+import type { CardBgVariant, CardThemeKey } from "./cardTheme.js";
 
 /**
  * カードの見た目（背景×配色）の決め方を1か所に置く (#334)。

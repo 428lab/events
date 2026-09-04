@@ -349,7 +349,7 @@ staff 系はオン/オフに**従わない**（準備・後片付けで使う。
 - 参加者向け（`eventSocial.ts`）: 景品カードの見出し・条件の文
   （「5人と出会うと」「出会った人数ランキング1位」）・自分の件数・達成・交換済み・在庫切れ
 - 編集画面（`eventForm.ts`）: オン/オフのスイッチ・景品 CRUD・画像の文言
-- staff 向け（`staffOps.ts`）: デスク画面・締め操作の確認・409 の案内文言
+- staff 向け（`staffOps/prizes.ts`）: デスク画面・締め操作の確認・409 の案内文言
   （交換済みです/在庫がありません/条件を満たしていません/参加が確定していません）
 - UI に実装技術の語を出さない・競合名を書かない（既存方針どおり）
 
@@ -375,7 +375,7 @@ staff 系はオン/オフに**従わない**（準備・後片付けで使う。
 | web | `pages/EditEventPage.tsx` | オン/オフ + 景品 CRUD セクション |
 | web | `pages/EventStatsPage.tsx` | デスクへのリンク |
 | web | `api/meetPrizeHooks.ts` | 新規。景品の query/mutation 一式（`MEET_RANKING_POLL_MS` の5秒ポーリング） |
-| i18n | `eventSocial.ts`・`eventForm.ts`・`staffOps.ts` | ja/en 追加 |
+| i18n | `eventSocial.ts`・`eventForm.ts`・`staffOps/prizes.ts` | ja/en 追加 |
 | test | `merge-user-columns.test.ts` | 実数の更新（理由をコミットに書く） |
 | test | `meet-prizes.test.ts`・`meet-prize-images.test.ts` | 新規。§5 の観点 |
 

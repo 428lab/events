@@ -35,7 +35,7 @@ export function dutyErrorMessage(error: unknown): string {
     duty_assignee_not_staff: i18next.t("staffOps.dutyAssigneeNotStaffError"),
     duty_assignee_limit: i18next.t("staffOps.dutyAssigneeLimitError"),
     duty_assignee_dup: i18next.t("staffOps.dutyAssigneeDupError"),
-    default: i18next.t("staffOps.dutySaveFailed"),
+    default: i18next.t("staffOps.saveFailed"),
   });
 }
 

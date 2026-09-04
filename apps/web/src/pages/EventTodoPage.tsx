@@ -188,7 +188,7 @@ export function EventTodoPage() {
           size="small"
           startIcon={<EventNoteIcon />}
         >
-          {t("staffOps.todoToTimetable")}
+          {t("staffOps.toTimetable")}
         </Button>
       </Box>
 

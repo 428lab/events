@@ -15,18 +15,17 @@ import QrCode2Icon from "@mui/icons-material/QrCode2";
 import { Link as RouterLink, Navigate, useParams } from "react-router-dom";
 import { useUserProfile } from "../api/userHooks.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
+import { LicenseCardSvg } from "../components/licenseCard/LicenseCardSvg.js";
+import { toCardData } from "../components/licenseCard/cardData.js";
+import { EXPORT_H, EXPORT_W } from "../components/licenseCard/cardLayout.js";
 import {
   BG_VARIANTS,
   CARD_THEMES,
-  EXPORT_H,
-  EXPORT_W,
-  LicenseCardSvg,
-  toCardData,
-} from "../components/licenseCard/LicenseCardSvg.js";
+} from "../components/licenseCard/cardTheme.js";
 import type {
   CardBgVariant,
   CardThemeKey,
-} from "../components/licenseCard/LicenseCardSvg.js";
+} from "../components/licenseCard/cardTheme.js";
 import {
   cardLook,
   cardLookKey,
