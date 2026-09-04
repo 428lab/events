@@ -3,7 +3,6 @@ import type { Event } from "@eventer/shared";
 import { setEventLikeInput } from "@eventer/shared";
 import type { SetEventLikeInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventLikesRepo } from "../db/repositories/eventLikes.js";
@@ -11,7 +10,7 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 
 /** いいね (#155)。参加確定メンバーのみ（集計に自分の状態 mine を含むため公開しない） */
 export const eventLikeRoutes = new Hono<AppEnv>();
-eventLikeRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** 参加確定メンバーなら行を返す（管理者バイパスなし。イベント配下UIと同じく本人のロールのみ見る） */
 async function confirmedMember(eventId: string, userId: string) {

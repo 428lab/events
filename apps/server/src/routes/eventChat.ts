@@ -13,7 +13,6 @@ import type {
   RegisterChatPubkeyInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import {
   verifyChatKeyProof,
@@ -59,7 +58,7 @@ const MAX_CHAT_KEYS_PER_USER = 10;
  * どちらの段にも締め出し (#283) を通す。締め出された人はチャットから切り離された
  * 人なので、読む・書く・運営するのいずれもできない */
 export const eventChatRoutes = new Hono<AppEnv>();
-eventChatRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** requireEventRole はロールのみ見るため、確定済み（status=confirmed）を追加チェック。
  * （メンバー行がない=appAdmin/コミュニティ管理者バイパスはそのまま許可。

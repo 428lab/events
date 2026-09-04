@@ -396,7 +396,7 @@ CREATE INDEX idx_event_duty_assignee_user ON event_duty_assignee(user_id);
 ### 6.1 権限
 
 ```ts
-eventDutyRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）が持つ。ここでは重ねない (#472、3.1)
 // eventBroadcast.ts / eventTodos.ts と同じ形で配下ごと閉じる
 eventDutyRoutes.use("/:id/staffing", requireEventRole(["staff"]));
 eventDutyRoutes.use("/:id/staffing/*", requireEventRole(["staff"]));

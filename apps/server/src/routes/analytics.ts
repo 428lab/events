@@ -87,7 +87,7 @@ export async function recordEventView(c: Context<AppEnv>) {
 
 /** イベント統計（staff）。/events にマウント */
 export const analyticsRoutes = new Hono<AppEnv>();
-analyticsRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** ?days=N を JST の since 日付に。未指定/0以下は全期間（'0000'）。
  * 上限を設けないと ?days=1e9 で Date が範囲外になり toISOString() が投げる */

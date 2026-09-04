@@ -15,7 +15,7 @@ import type {
   UpdateCriterionInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth, currentUser } from "../auth/session.js";
+import { currentUser } from "../auth/session.js";
 import { canViewEvent, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -57,7 +57,7 @@ export async function getEventScoreResults(c: Context) {
   return c.json({ available: true, ...summary });
 }
 
-scoringRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** イベント配下の GET を「そのイベントを見てよい人」に限る。
  * 下書きのイベントIDは招待された人にも渡る (#339) ので、メンバーでない人に

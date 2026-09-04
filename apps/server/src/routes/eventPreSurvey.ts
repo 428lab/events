@@ -12,7 +12,7 @@ import {
   submitPreSurveyInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { currentUser, requireAuth } from "../auth/session.js";
+import { currentUser } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
@@ -138,7 +138,7 @@ export async function postPublicPreSurveyResponse(c: Context<AppEnv>) {
 /* ===== staff（主催者の管理）。/api/events 配下 ===== */
 
 export const eventPreSurveyRoutes = new Hono<AppEnv>();
-eventPreSurveyRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 async function adminView(eventId: string): Promise<PreSurveyAdminView | null> {
   const survey = await eventPreSurveyRepo.findByEvent(eventId);

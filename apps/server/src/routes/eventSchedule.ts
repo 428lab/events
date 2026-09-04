@@ -7,7 +7,7 @@ import type {
   UpdateScheduleMaterialInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth, currentUser } from "../auth/session.js";
+import { currentUser } from "../auth/session.js";
 import { canManageEventAs, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -66,7 +66,7 @@ export async function getEventTimetable(c: Context<AppEnv>) {
 /* ===== 書き込み（要認証。staff のみ） ===== */
 
 export const eventScheduleRoutes = new Hono<AppEnv>();
-eventScheduleRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** タイムテーブルの保存（全項目を送り、サーバーが差分で反映する。staff のみ #340）。
  * 既存項目の ID を送れば更新扱いになり、ID が保存をまたいで変わらない。

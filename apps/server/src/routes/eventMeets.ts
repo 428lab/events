@@ -44,7 +44,7 @@ import { usersRepo } from "../db/repositories/users.js";
 
 /** /api/events 配下: 出会いの集計（読み取り専用） */
 export const meetEventRoutes = new Hono<AppEnv>();
-meetEventRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** 出会い数ランキング（スタッフのみ・景品配布などの運営用）。
  * meet_ranking 設定 (#418) には従わない：これは #418 以前からある運営機能で、

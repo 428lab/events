@@ -385,7 +385,9 @@ document.getElementById("nostr").onclick = async () => {
 </script></body></html>`;
 }
 
-const app = new Hono();
+/** ルーターの実体。認証境界の検査（test/auth-boundary.test.ts）が
+ * 登録済みルートを1本ずつ歩くために公開している。配信の入口は default export */
+export const app = new Hono();
 
 // 全レスポンスに基本セキュリティヘッダを付与（MIMEスニッフ抑止・クリックジャッキング防止）
 app.use("*", async (c, next) => {

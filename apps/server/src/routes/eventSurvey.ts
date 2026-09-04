@@ -11,7 +11,7 @@ import type {
   SurveyQuestion,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth, currentUser } from "../auth/session.js";
+import { currentUser } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -49,7 +49,7 @@ export async function getEventSurvey(c: Context<AppEnv>) {
 /* ===== 要認証ルート ===== */
 
 export const eventSurveyRoutes = new Hono<AppEnv>();
-eventSurveyRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** 質問の一括保存（staff のみ）。id 一致の既存質問は回答を保持したまま更新 */
 eventSurveyRoutes.put(

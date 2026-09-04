@@ -9,7 +9,6 @@ import {
   type SendBroadcastResult,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { isConfirmedEventStaff } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { drainBroadcastEmails, sendBroadcast } from "../lib/broadcast.js";
@@ -37,7 +36,7 @@ const requireBroadcastStaff: MiddlewareHandler<AppEnv> = async (c, next) => {
 };
 
 export const eventBroadcastRoutes = new Hono<AppEnv>();
-eventBroadcastRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 // 一覧・送信（/:id/broadcasts）と、その配下すべてに同じ権限をかける
 eventBroadcastRoutes.use("/:id/broadcasts", requireBroadcastStaff);
 eventBroadcastRoutes.use("/:id/broadcasts/*", requireBroadcastStaff);

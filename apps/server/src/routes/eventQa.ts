@@ -16,7 +16,6 @@ import type {
   UpdateQuestionInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
@@ -34,7 +33,7 @@ const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
  * - モデレーション・実名の開示: **そのイベントの staff メンバーだけ**（isEventStaff）。
  *   アプリ運営管理者もコミュニティ管理者も、staff でなければ操作できない */
 export const eventQaRoutes = new Hono<AppEnv>();
-eventQaRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** requireEventRole はロールのみ見るため、確定済み（status=confirmed）を追加チェック。
  * （メンバー行がない=appAdmin/コミュニティ管理者バイパスはそのまま許可。

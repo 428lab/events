@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { StaffChatPayload } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { isConfirmedEventStaff } from "../auth/roles.js";
 import { generateChatKey } from "../lib/nostrSign.js";
 import { staffChatRepo } from "../db/repositories/staffChat.js";
@@ -21,7 +20,7 @@ import { getChatRelays } from "../db/repositories/appSettings.js";
  * イベントの状態によらず一律 `forbidden` で、roomId・鍵・signer・メンバーの
  * どれも staff 以外に返る経路が無い（test/staff-chat.test.ts が両側から守る） */
 export const staffChatRoutes = new Hono<AppEnv>();
-staffChatRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** staff ゲート。通らない相手には**常に同じ 403** を返す（存在の秘匿）。
  * イベントが無い場合もメンバー行が無い＝この 403 に落ちる */

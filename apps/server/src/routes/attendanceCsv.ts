@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { surveyValueLabel } from "@eventer/shared";
 import type { EventMemberWithUser, User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth } from "../auth/session.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -19,7 +18,7 @@ import {
  * スタッフに加えて、成立オファーで会場を提供している会場運営者もダウンロードできる */
 
 export const attendanceCsvRoutes = new Hono<AppEnv>();
-attendanceCsvRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 const ROLE_LABEL: Record<string, string> = {
   participant: "参加者",

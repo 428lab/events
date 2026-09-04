@@ -80,7 +80,7 @@ async function notifyInviteResult(
  * =======================================================*/
 
 export const eventStaffInviteRoutes = new Hono<AppEnv>();
-eventStaffInviteRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** 招待の一覧（そのイベントの運営のみ）。取り消したものは含まない */
 eventStaffInviteRoutes.get(

@@ -10,7 +10,7 @@ import {
 } from "@eventer/shared";
 import type { CreatePhotoCommentInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireAuth, currentUser } from "../auth/session.js";
+import { currentUser } from "../auth/session.js";
 import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { getBucket } from "../runtime.js";
@@ -239,7 +239,7 @@ export async function getPhotoComments(c: Context<AppEnv>) {
 /* ===== 書き込み（要認証。アップロード・コメント・削除はメンバーのみ） ===== */
 
 export const eventPhotoRoutes = new Hono<AppEnv>();
-eventPhotoRoutes.use("*", requireAuth);
+// 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** コメント投稿（メンバー。他人の写真にも複数可） */
 eventPhotoRoutes.post(
