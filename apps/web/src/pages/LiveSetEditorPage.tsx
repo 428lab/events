@@ -1,500 +1,227 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Button,
-  Divider,
   Fab,
   IconButton,
-  MenuItem,
-  Slider,
   Stack,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
-import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
-import TextFieldsIcon from "@mui/icons-material/TextFields";
-import ImageIcon from "@mui/icons-material/Image";
-import VideocamIcon from "@mui/icons-material/Videocam";
-import SlideshowIcon from "@mui/icons-material/Slideshow";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import FormatBoldIcon from "@mui/icons-material/FormatBold";
-import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
-import FlipToFrontIcon from "@mui/icons-material/FlipToFront";
-import FlipToBackIcon from "@mui/icons-material/FlipToBack";
+import UndoIcon from "@mui/icons-material/Undo";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Rnd } from "react-rnd";
-import { EVENT_INFO_FIELDS, LIVE_H, LIVE_W } from "@eventer/shared";
-import type {
-  EventInfoField,
-  LiveElement,
-  LiveScene,
-  LiveSetContent,
-} from "@eventer/shared";
+import type { LiveElement, LiveScene, LiveSetContent } from "@eventer/shared";
 import {
   useLiveSet,
   useUpdateLiveSet,
   useUploadLiveSetImage,
 } from "../api/liveSetHooks.js";
 import { useBgmTracks } from "../api/bgmHooks.js";
-import { LiveElementContent, LiveSceneStage } from "../components/LiveStage.js";
-import { ensureDeckFont, useDeckFontOptions } from "../lib/deckFonts.js";
-import { encodeImageForUpload } from "../lib/encodeImage.js";
+import { LiveCanvas } from "../components/LiveCanvas.js";
+import { LiveElementPanel } from "../components/LiveElementPanel.js";
+import { LiveSceneList } from "../components/LiveSceneList.js";
+import { LiveSceneToolbar } from "../components/LiveSceneToolbar.js";
+import {
+  copyScene,
+  newImageElement,
+  newScene,
+} from "../lib/liveScenes.js";
+import type {
+  LiveElementCommands,
+  LiveSceneCommands,
+} from "../lib/liveScenes.js";
+import {
+  applyPositions,
+  copyByIds,
+  insertAfter,
+  mapElementsAt,
+  moveZ,
+  nudgeByIds,
+  patchAt,
+  patchById,
+  removeAt,
+  removeByIds,
+  swapAt,
+  toBack,
+  toFront,
+} from "../lib/editor/collection.js";
+import { useAutoSave } from "../lib/editor/useAutoSave.js";
+import { useEditorHistory } from "../lib/editor/useEditorHistory.js";
+import { useEditorKeyboard } from "../lib/editor/useEditorKeyboard.js";
+import { useImagePicker } from "../lib/editor/useImagePicker.js";
 
-const uid = () => crypto.randomUUID();
-const THUMB_W = 150;
-
-/** イベント情報の項目名。**訳した文字列ではなくキーを持つ**ので、
- * 言語を切り替えたときに前の言語のまま残らない (#367) */
-const INFO_LABEL_KEY = {
-  title: "studio.infoFieldTitle",
-  datetime: "studio.infoFieldDatetime",
-  participants: "studio.infoFieldParticipants",
-  community: "studio.infoFieldCommunity",
-} as const satisfies Record<EventInfoField, string>;
-
-/** 要素の種類の呼び名。同じく翻訳キーを持つ */
-const TYPE_LABEL_KEY = {
-  text: "studio.elementText",
-  image: "studio.elementImage",
-  camera: "studio.elementCamera",
-  deck: "studio.elementDeck",
-  eventInfo: "studio.elementEventInfo",
-} as const satisfies Record<LiveElement["type"], string>;
-
-/** 背景プリセット（Natsumatsuri トーン）。色と並び順は文言ではないのでコード側に残す */
-const BG_PRESETS = [
-  { labelKey: "studio.bgNightSky", value: "#0E1426" },
-  { labelKey: "studio.bgBlack", value: "#000000" },
-  {
-    labelKey: "studio.bgFestivalGradient",
-    value: "linear-gradient(135deg, #0B3A34 0%, #0E1426 60%)",
-  },
-  {
-    labelKey: "studio.bgDuskGradient",
-    value: "linear-gradient(135deg, #0E1426 40%, #0B3A34 100%)",
-  },
-  { labelKey: "studio.bgWhite", value: "#ffffff" },
-] as const;
-
+/**
+ * 配信セットの編集画面。
+ *
+ * ここが持つのは「いま何を編集しているか」（開いているシーン・選んでいる要素）と、
+ * 各部への結線だけ。並びを変える式は lib/editor/collection.ts、配信セット固有の
+ * 既定値は lib/liveScenes.ts に純粋な関数として置き、履歴・自動保存・キーボード・
+ * 画像の差し込みは lib/editor/ にまとめてある
+ * （スライドの編集画面と同じ仕掛けなので、契約を2つ持たない）。
+ */
 export function LiveSetEditorPage() {
   const { t } = useTranslation();
-  const fontOptions = useDeckFontOptions();
   const { id = "" } = useParams();
   const { data: liveSet, isLoading, isError } = useLiveSet(id);
   const update = useUpdateLiveSet(id);
   const upload = useUploadLiveSetImage(id);
   const { data: bgmTracks } = useBgmTracks();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const onPicked = useRef<(url: string) => void>(() => {});
-  const resizeRef = useRef<{
-    elId: string;
-    corner: string;
-    sx: number;
-    sy: number;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null>(null);
 
   const [name, setName] = useState("");
   const [content, setContent] = useState<LiveSetContent | null>(null);
   const [sceneIdx, setSceneIdx] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dragXY, setDragXY] = useState<{ id: string; x: number; y: number } | null>(
-    null,
-  );
-  const inited = useRef(false);
+  const loaded = useRef(false);
 
-  // 履歴（Undo/Redo）
-  const undoStack = useRef<LiveSetContent[]>([]);
-  const redoStack = useRef<LiveSetContent[]>([]);
-  const lastCommitted = useRef<LiveSetContent | null>(null);
-  const histTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [histVer, setHistVer] = useState(0);
+  const history = useEditorHistory<LiveSetContent>({
+    content,
+    setContent,
+    // 戻した先に無い要素を選んだままにしない
+    onRestore: () => setSelectedId(null),
+  });
 
   useEffect(() => {
-    if (liveSet && !inited.current) {
-      setName(liveSet.name);
-      setContent(liveSet.content);
-      lastCommitted.current = liveSet.content;
-      inited.current = true;
-    }
+    if (!liveSet || loaded.current) return;
+    setName(liveSet.name);
+    setContent(liveSet.content);
+    history.reset(liveSet.content);
+    loaded.current = true;
+    // history は ref だけを触るので、毎レンダの作り直しでは追わない
   }, [liveSet]);
 
-  useEffect(() => {
-    if (content === null || lastCommitted.current === null) return;
-    if (content === lastCommitted.current) return;
-    if (histTimer.current) clearTimeout(histTimer.current);
-    histTimer.current = setTimeout(() => {
-      undoStack.current.push(lastCommitted.current!);
-      if (undoStack.current.length > 100) undoStack.current.shift();
-      lastCommitted.current = content;
-      redoStack.current = [];
-      setHistVer((v) => v + 1);
-    }, 500);
-  }, [content]);
+  useAutoSave({
+    ready: content !== null,
+    deps: [content, name],
+    onSave: () => {
+      if (content) update.mutate({ name, content });
+    },
+  });
 
-  // 自動保存
-  const firstSave = useRef(true);
-  useEffect(() => {
-    if (content === null) return;
-    if (firstSave.current) {
-      firstSave.current = false;
-      return;
-    }
-    const t = setTimeout(() => update.mutate({ name, content }), 800);
-    return () => clearTimeout(t);
-  }, [content, name]);
+  const picker = useImagePicker(upload.mutateAsync);
 
-  const keydownRef = useRef<(e: KeyboardEvent) => void>(() => {});
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => keydownRef.current(e);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const [cw, setCw] = useState(0);
-  useLayoutEffect(() => {
-    const el = canvasRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setCw(el.clientWidth));
-    ro.observe(el);
-    setCw(el.clientWidth);
-    return () => ro.disconnect();
-  }, [content]);
-
-  if (isError) return <Typography>{t("studio.liveSetNotFound")}</Typography>;
-  if (isLoading || !content) return <Typography>{t("common.loading")}</Typography>;
-
-  const scenes = content.scenes;
+  // ここから下は content が無い間も素通りできる形にしておく
+  // （フックを早期 return より後ろに置けないため）
+  const scenes = content?.scenes ?? [];
   const idx = Math.min(sceneIdx, scenes.length - 1);
   const scene: LiveScene | undefined = scenes[idx];
-  const scale = cw > 0 ? cw / LIVE_W : 0;
   const els = scene?.elements ?? [];
   const selected = els.find((e) => e.id === selectedId) ?? null;
 
-  const hs = Math.max(12, Math.round(24 / (scale || 1)));
-  const hb = Math.max(1, Math.round(2 / (scale || 1)));
-
-  const flushHistory = () => {
-    if (histTimer.current) {
-      clearTimeout(histTimer.current);
-      histTimer.current = null;
-    }
-    if (lastCommitted.current && content !== lastCommitted.current) {
-      undoStack.current.push(lastCommitted.current);
-      lastCommitted.current = content;
-      redoStack.current = [];
-    }
-  };
-  const undo = () => {
-    flushHistory();
-    const prev = undoStack.current.pop();
-    if (prev === undefined || lastCommitted.current === null) return;
-    redoStack.current.push(lastCommitted.current);
-    lastCommitted.current = prev;
-    setContent(prev);
-    setSelectedId(null);
-    setHistVer((v) => v + 1);
-  };
-  const redo = () => {
-    flushHistory();
-    const next = redoStack.current.pop();
-    if (next === undefined || lastCommitted.current === null) return;
-    undoStack.current.push(lastCommitted.current);
-    lastCommitted.current = next;
-    setContent(next);
-    setSelectedId(null);
-    setHistVer((v) => v + 1);
-  };
-  keydownRef.current = (e: KeyboardEvent) => {
-    const tag = (document.activeElement?.tagName ?? "").toLowerCase();
-    const typing = tag === "input" || tag === "textarea";
-    if (e.metaKey || e.ctrlKey) {
-      const k = e.key.toLowerCase();
-      if ((k === "z" || k === "y") && !typing) {
-        e.preventDefault();
-        if (k === "y" || (k === "z" && e.shiftKey)) redo();
-        else undo();
-      } else if (k === "d" && selectedId && !typing) {
-        e.preventDefault();
-        duplicateSelected();
-      }
-      return;
-    }
-    if (typing || !selectedId) return;
-    if (e.key === "Delete" || e.key === "Backspace") {
-      e.preventDefault();
-      deleteSelected();
-      return;
-    }
-    const step = e.shiftKey ? 10 : 1;
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      moveSelected(-step, 0);
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      moveSelected(step, 0);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      moveSelected(0, -step);
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      moveSelected(0, step);
-    }
-  };
-  void histVer;
-  const canUndo =
-    undoStack.current.length > 0 ||
-    (lastCommitted.current !== null && content !== lastCommitted.current);
-  const canRedo = redoStack.current.length > 0;
-
-  const setScenes = (fn: (s: LiveScene[]) => LiveScene[]) =>
+  const editScenes = (fn: (s: LiveScene[]) => LiveScene[]) =>
     setContent((c) => (c ? { ...c, scenes: fn(c.scenes) } : c));
-  const patchScene = (i: number, patch: Partial<LiveScene>) =>
-    setScenes((s) => s.map((sc, j) => (j === i ? { ...sc, ...patch } : sc)));
-  const mapCurrentScene = (fn: (els: LiveElement[]) => LiveElement[]) =>
-    setScenes((s) =>
-      s.map((sc, j) => (j === idx ? { ...sc, elements: fn(sc.elements) } : sc)),
-    );
-  const patchElement = (elId: string, patch: Partial<LiveElement>) =>
-    mapCurrentScene((arr) =>
-      arr.map((e) => (e.id === elId ? { ...e, ...patch } : e)),
-    );
+  const editEls = (fn: (arr: LiveElement[]) => LiveElement[]) =>
+    editScenes((s) => mapElementsAt(s, idx, fn));
+
   const addElement = (el: LiveElement) => {
-    mapCurrentScene((arr) => [...arr, el]);
+    editEls((arr) => [...arr, el]);
     setSelectedId(el.id);
   };
-  const moveZ = (elId: string, dir: 1 | -1) =>
-    mapCurrentScene((arr) => {
-      const a = [...arr];
-      const i = a.findIndex((e) => e.id === elId);
-      const to = i + dir;
-      if (i < 0 || to < 0 || to >= a.length) return arr;
-      [a[i], a[to]] = [a[to], a[i]];
-      return a;
-    });
-  const moveSelected = (dx: number, dy: number) =>
-    mapCurrentScene((arr) =>
-      arr.map((e) =>
-        e.id === selectedId ? { ...e, x: e.x + dx, y: e.y + dy } : e,
-      ),
-    );
-  const deleteSelected = () => {
-    if (!selectedId) return;
-    (document.activeElement as HTMLElement | null)?.blur?.();
-    mapCurrentScene((arr) => arr.filter((e) => e.id !== selectedId));
-    setSelectedId(null);
-  };
-  const duplicateSelected = () => {
-    const src = els.find((e) => e.id === selectedId);
-    if (!src) return;
-    const copy = { ...src, id: uid(), x: src.x + 20, y: src.y + 20 };
-    mapCurrentScene((arr) => [...arr, copy]);
-    setSelectedId(copy.id);
-  };
-  const frontSelected = () =>
-    mapCurrentScene((arr) => [
-      ...arr.filter((e) => e.id !== selectedId),
-      ...arr.filter((e) => e.id === selectedId),
-    ]);
-  const backSelected = () =>
-    mapCurrentScene((arr) => [
-      ...arr.filter((e) => e.id === selectedId),
-      ...arr.filter((e) => e.id !== selectedId),
-    ]);
 
-  // 自前リサイズ
-  const startResize = (e: React.PointerEvent, el: LiveElement, corner: string) => {
-    e.stopPropagation();
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setSelectedId(el.id);
-    resizeRef.current = {
-      elId: el.id,
-      corner,
-      sx: e.clientX,
-      sy: e.clientY,
-      x: el.x,
-      y: el.y,
-      w: el.w,
-      h: el.h,
-    };
-  };
-  const moveResize = (e: React.PointerEvent) => {
-    const r = resizeRef.current;
-    if (!r) return;
-    const s = scale || 1;
-    const dx = (e.clientX - r.sx) / s;
-    const dy = (e.clientY - r.sy) / s;
-    let { x, y, w, h } = r;
-    if (r.corner.includes("e")) w = r.w + dx;
-    if (r.corner.includes("w")) w = r.w - dx;
-    w = Math.max(20, w);
-    if (r.corner.includes("w")) x = r.x + (r.w - w);
-    if (r.corner.includes("s")) h = r.h + dy;
-    if (r.corner.includes("n")) h = r.h - dy;
-    h = Math.max(20, h);
-    if (r.corner.includes("n")) y = r.y + (r.h - h);
-    patchElement(r.elId, { x, y, w, h });
-  };
-  const endResize = () => {
-    resizeRef.current = null;
+  const sceneCommands: LiveSceneCommands = {
+    add: () => {
+      editScenes((s) => insertAfter(s, idx, newScene(scenes.length)));
+      setSceneIdx(idx + 1);
+      setSelectedId(null);
+    },
+    duplicate: () => {
+      if (!scene) return;
+      editScenes((s) => insertAfter(s, idx, copyScene(scene)));
+      setSceneIdx(idx + 1);
+    },
+    remove: () => {
+      if (scenes.length <= 1) return;
+      editScenes((s) => removeAt(s, idx));
+      setSceneIdx(Math.max(0, idx - 1));
+      setSelectedId(null);
+    },
+    move: (d) => {
+      const to = idx + d;
+      if (to < 0 || to >= scenes.length) return;
+      editScenes((s) => swapAt(s, idx, to));
+      setSceneIdx(to);
+    },
   };
 
-  const addText = () =>
-    addElement({
-      id: uid(),
-      type: "text",
-      x: 120,
-      y: 200,
-      w: 480,
-      h: 100,
-      rotation: 0,
-      /** 保存されるデータ。訳す方針は #364 (#367) */
-      text: "テキスト",
-      fontSize: 40,
-      color: "#EAF0F7",
-      align: "left",
-    });
-  const pickImage = (cb: (url: string) => void) => {
-    onPicked.current = cb;
-    fileRef.current?.click();
-  };
-  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    try {
-      const encoded = await encodeImageForUpload(file);
-      const { url } = await upload.mutateAsync(encoded);
-      onPicked.current(url);
-    } catch {
-      window.alert(t("studio.imageUploadFailed"));
-    }
-  };
-  const addImage = () =>
-    pickImage((url) =>
-      addElement({
-        id: uid(),
-        type: "image",
-        x: 200,
-        y: 120,
-        w: 400,
-        h: 300,
-        rotation: 0,
-        src: url,
-      }),
-    );
-  const addCamera = () =>
-    addElement({
-      id: uid(),
-      type: "camera",
-      x: 640,
-      y: 340,
-      w: 280,
-      h: 180,
-      rotation: 0,
-      fit: "cover",
-      radius: 12,
-    });
-  const addDeck = () =>
-    addElement({
-      id: uid(),
-      type: "deck",
-      x: 0,
-      y: 0,
-      w: 720,
-      h: 405,
-      rotation: 0,
-    });
-  const addEventInfo = () =>
-    addElement({
-      id: uid(),
-      type: "eventInfo",
-      field: "title",
-      x: 120,
-      y: 40,
-      w: 720,
-      h: 80,
-      rotation: 0,
-      fontSize: 36,
-      color: "#EAF0F7",
-      bold: true,
-      align: "center",
-    });
-
-  const addScene = () => {
-    const ns: LiveScene = {
-      id: uid(),
-      /** 保存されるデータ。訳す方針は #364 (#367) */
-      name: `シーン ${scenes.length + 1}`,
-      background: "#0E1426",
-      elements: [],
-    };
-    setScenes((s) => [...s.slice(0, idx + 1), ns, ...s.slice(idx + 1)]);
-    setSceneIdx(idx + 1);
-    setSelectedId(null);
-  };
-  const dupScene = () => {
-    const copy: LiveScene = {
-      ...scene!,
-      id: uid(),
-      /** 保存されるデータ。訳す方針は #364 (#367) */
-      name: `${scene!.name}のコピー`,
-      elements: scene!.elements.map((e) => ({ ...e, id: uid() })),
-    };
-    setScenes((s) => [...s.slice(0, idx + 1), copy, ...s.slice(idx + 1)]);
-    setSceneIdx(idx + 1);
-  };
-  const delScene = () => {
-    if (scenes.length <= 1) return;
-    setScenes((s) => s.filter((_, j) => j !== idx));
-    setSceneIdx(Math.max(0, idx - 1));
-    setSelectedId(null);
-  };
-  const moveScene = (d: number) => {
-    const to = idx + d;
-    if (to < 0 || to >= scenes.length) return;
-    setScenes((s) => {
-      const a = [...s];
-      [a[idx], a[to]] = [a[to], a[idx]];
-      return a;
-    });
-    setSceneIdx(to);
+  /** 選択している1つに効く操作。選んでいなければ何もしない */
+  const forSelected = (fn: (elId: string) => void) => () => {
+    if (selectedId) fn(selectedId);
   };
 
-  const bgIsColor = /^#[0-9a-fA-F]{3,8}$/.test(scene?.background ?? "");
+  const elementCommands: LiveElementCommands = {
+    patch: (elId, patch) => editEls((arr) => patchById(arr, elId, patch)),
+    remove: forSelected((elId) => {
+      // 消したボタンからフォーカスが外れたままにしない
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      editEls((arr) => removeByIds(arr, [elId]));
+      setSelectedId(null);
+    }),
+    duplicate: forSelected((elId) => {
+      const copies = copyByIds(els, [elId]);
+      if (copies.length === 0) return;
+      editEls((arr) => [...arr, ...copies]);
+      // 続けて動かせるよう、写した側に選択を移す
+      setSelectedId(copies[0].id);
+    }),
+    toFront: forSelected((elId) => editEls((arr) => toFront(arr, [elId]))),
+    toBack: forSelected((elId) => editEls((arr) => toBack(arr, [elId]))),
+    moveZ: (elId, dir) => editEls((arr) => moveZ(arr, elId, dir)),
+    nudge: (dx, dy) => {
+      if (selectedId) editEls((arr) => nudgeByIds(arr, [selectedId], dx, dy));
+    },
+    moveTo: (elId, x, y) =>
+      editEls((arr) => applyPositions(arr, [{ id: elId, x, y }])),
+  };
+
+  useEditorKeyboard({
+    undo: history.undo,
+    redo: history.redo,
+    hasSelection: selectedId !== null,
+    remove: elementCommands.remove,
+    duplicate: elementCommands.duplicate,
+    nudge: elementCommands.nudge,
+    // まとめる操作は配信セットには無い（選択が常に1つ）ので渡さない
+  });
+
+  if (isError) return <Typography>{t("studio.liveSetNotFound")}</Typography>;
+  if (isLoading || !content)
+    return <Typography>{t("common.loading")}</Typography>;
 
   return (
     <Stack spacing={2}>
-      <input ref={fileRef} type="file" accept="image/*" hidden onChange={onFile} />
+      {picker.input}
+
       {/* 上部バー */}
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+      >
         <Button size="small" component={RouterLink} to="/live-sets">
           {t("studio.backToList")}
         </Button>
         <Tooltip title={t("studio.undoTip")}>
           <span>
-            <IconButton size="small" onClick={undo} disabled={!canUndo}>
+            <IconButton
+              size="small"
+              onClick={history.undo}
+              disabled={!history.canUndo}
+            >
               <UndoIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
         <Tooltip title={t("studio.redoTip")}>
           <span>
-            <IconButton size="small" onClick={redo} disabled={!canRedo}>
+            <IconButton
+              size="small"
+              onClick={history.redo}
+              disabled={!history.canRedo}
+            >
               <RedoIcon fontSize="small" />
             </IconButton>
           </span>
@@ -512,507 +239,48 @@ export function LiveSetEditorPage() {
       </Stack>
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-        {/* シーン一覧 */}
         <Stack spacing={1} sx={{ width: { md: 168 }, flexShrink: 0 }}>
-          {scenes.map((s, j) => (
-            <Box
-              key={s.id}
-              onClick={() => {
-                setSceneIdx(j);
-                setSelectedId(null);
-              }}
-              sx={{
-                cursor: "pointer",
-                border: "2px solid",
-                borderColor: j === idx ? "primary.main" : "divider",
-                borderRadius: 1,
-                position: "relative",
-                overflow: "hidden",
-                lineHeight: 0,
-              }}
-            >
-              <Box sx={{ pointerEvents: "none" }}>
-                <LiveSceneStage scene={s} width={THUMB_W} />
-              </Box>
-              <Typography
-                variant="caption"
-                sx={{
-                  position: "absolute",
-                  bottom: 2,
-                  left: 4,
-                  right: 4,
-                  px: 0.5,
-                  borderRadius: 0.5,
-                  bgcolor: "rgba(0,0,0,0.55)",
-                  color: "#fff",
-                  lineHeight: 1.5,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {s.name}
-              </Typography>
-            </Box>
-          ))}
-          <Button size="small" onClick={addScene}>
-            {t("studio.addScene")}
-          </Button>
-          <Stack direction="row" spacing={0.5} justifyContent="center">
-            <Tooltip title={t("studio.duplicate")}>
-              <IconButton size="small" onClick={dupScene}>
-                <ContentCopyIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t("studio.moveUpShort")}>
-              <IconButton size="small" onClick={() => moveScene(-1)}>
-                <ArrowUpwardIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t("studio.moveDownShort")}>
-              <IconButton size="small" onClick={() => moveScene(1)}>
-                <ArrowDownwardIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t("common.delete")}>
-              <IconButton size="small" onClick={delScene} disabled={scenes.length <= 1}>
-                <DeleteOutlineIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Stack>
+          <LiveSceneList
+            scenes={scenes}
+            current={idx}
+            onSelect={(j) => {
+              setSceneIdx(j);
+              setSelectedId(null);
+            }}
+            commands={sceneCommands}
+          />
         </Stack>
 
-        {/* キャンバス */}
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Stack
-            direction="row"
-            spacing={1}
-            sx={{ mb: 1 }}
-            alignItems="center"
-            flexWrap="wrap"
-            useFlexGap
-          >
-            <TextField
-              size="small"
-              label={t("studio.sceneName")}
-              value={scene?.name ?? ""}
-              onChange={(e) => patchScene(idx, { name: e.target.value })}
-              sx={{ width: 160 }}
-            />
-            <Button size="small" startIcon={<TextFieldsIcon />} onClick={addText}>
-              {t("studio.elementText")}
-            </Button>
-            <Button size="small" startIcon={<ImageIcon />} onClick={addImage}>
-              {t("studio.elementImage")}
-            </Button>
-            <Button size="small" startIcon={<VideocamIcon />} onClick={addCamera}>
-              {t("studio.elementCamera")}
-            </Button>
-            <Button size="small" startIcon={<SlideshowIcon />} onClick={addDeck}>
-              {t("studio.elementDeck")}
-            </Button>
-            <Button size="small" startIcon={<InfoOutlinedIcon />} onClick={addEventInfo}>
-              {t("studio.elementEventInfo")}
-            </Button>
-          </Stack>
-          <Stack
-            direction="row"
-            spacing={1}
-            sx={{ mb: 1 }}
-            alignItems="center"
-            flexWrap="wrap"
-            useFlexGap
-          >
-            <Typography variant="caption">{t("common.background")}</Typography>
-            <input
-              type="color"
-              value={bgIsColor ? scene!.background : "#0E1426"}
-              onChange={(e) => patchScene(idx, { background: e.target.value })}
-            />
-            <TextField
-              select
-              size="small"
-              value={
-                BG_PRESETS.find((p) => p.value === scene?.background)?.value ?? ""
-              }
-              onChange={(e) => patchScene(idx, { background: e.target.value })}
-              sx={{ width: 140 }}
-              SelectProps={{ displayEmpty: true }}
-            >
-              <MenuItem value="" disabled>
-                {t("studio.bgPreset")}
-              </MenuItem>
-              {BG_PRESETS.map((p) => (
-                <MenuItem key={p.value} value={p.value}>
-                  {t(p.labelKey)}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              select
-              size="small"
-              label={t("studio.sceneBgm")}
-              value={
-                scene?.bgmTrackId === undefined
-                  ? "__keep"
-                  : (scene.bgmTrackId ?? "__stop")
-              }
-              onChange={(e) =>
-                patchScene(idx, {
-                  bgmTrackId:
-                    e.target.value === "__keep"
-                      ? undefined
-                      : e.target.value === "__stop"
-                        ? null
-                        : e.target.value,
-                })
-              }
-              sx={{ minWidth: 180 }}
-              helperText={t("studio.sceneBgmHelp")}
-            >
-              <MenuItem value="__keep">{t("studio.sceneBgmKeep")}</MenuItem>
-              <MenuItem value="__stop">{t("studio.sceneBgmStop")}</MenuItem>
-              {(bgmTracks ?? []).map((track) => (
-                <MenuItem key={track.id} value={track.id}>
-                  {track.ownerId === null ? (
-                    <Box
-                      component="span"
-                      sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
-                    >
-                      <CardGiftcardIcon fontSize="small" />
-                      {track.name}
-                    </Box>
-                  ) : (
-                    track.name
-                  )}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Stack>
-          <Box
-            ref={canvasRef}
-            sx={{ width: "100%", maxWidth: "calc(80vh * 16 / 9)" }}
-          >
-            {scene && scale > 0 && (
-              <Box
-                onMouseDown={() => setSelectedId(null)}
-                sx={{
-                  position: "relative",
-                  width: cw,
-                  height: LIVE_H * scale,
-                  bgcolor: "grey.300",
-                  overflow: "hidden",
-                  borderRadius: 1,
-                }}
-              >
-                <Box
-                  sx={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: LIVE_W,
-                    height: LIVE_H,
-                    transform: `scale(${scale})`,
-                    transformOrigin: "top left",
-                    background: scene.background,
-                  }}
-                >
-                  {scene.elements.map((el) => (
-                    <Rnd
-                      key={el.id}
-                      scale={scale}
-                      bounds="parent"
-                      size={{ width: el.w, height: el.h }}
-                      position={{ x: el.x, y: el.y }}
-                      enableResizing={false}
-                      onDrag={(_e, d) => setDragXY({ id: el.id, x: d.x, y: d.y })}
-                      onDragStop={(_e, d) => {
-                        if (d.x !== el.x || d.y !== el.y) {
-                          patchElement(el.id, { x: d.x, y: d.y });
-                        }
-                        setDragXY(null);
-                      }}
-                      onMouseDown={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        setSelectedId(el.id);
-                      }}
-                      style={{
-                        outline:
-                          selectedId === el.id
-                            ? "2px solid #2563eb"
-                            : "1px dashed rgba(148,163,184,0.4)",
-                        touchAction: "none",
-                      }}
-                    >
-                      <LiveElementContent el={el} />
-                    </Rnd>
-                  ))}
-
-                  {selected &&
-                    (
-                      [
-                        ["nw", "nwse-resize"],
-                        ["ne", "nesw-resize"],
-                        ["sw", "nesw-resize"],
-                        ["se", "nwse-resize"],
-                      ] as const
-                    ).map(([corner, cursor]) => {
-                      const bx = dragXY?.id === selected.id ? dragXY.x : selected.x;
-                      const by = dragXY?.id === selected.id ? dragXY.y : selected.y;
-                      const left =
-                        (corner.includes("w") ? bx : bx + selected.w) - hs / 2;
-                      const top =
-                        (corner.includes("n") ? by : by + selected.h) - hs / 2;
-                      return (
-                        <div
-                          key={corner}
-                          onPointerDown={(e) => startResize(e, selected, corner)}
-                          onPointerMove={moveResize}
-                          onPointerUp={endResize}
-                          style={{
-                            position: "absolute",
-                            left,
-                            top,
-                            width: hs,
-                            height: hs,
-                            borderRadius: "50%",
-                            background: "#2563eb",
-                            border: `${hb}px solid #fff`,
-                            boxSizing: "border-box",
-                            cursor,
-                            touchAction: "none",
-                            zIndex: 10,
-                          }}
-                        />
-                      );
-                    })}
-                </Box>
-              </Box>
-            )}
-          </Box>
+          <LiveSceneToolbar
+            scene={scene}
+            bgmTracks={bgmTracks}
+            onPatchScene={(patch) => editScenes((s) => patchAt(s, idx, patch))}
+            onAdd={addElement}
+            onAddImage={() =>
+              picker.pick((url) => addElement(newImageElement(url)))
+            }
+          />
+          <LiveCanvas
+            scene={scene}
+            selected={selected}
+            commands={elementCommands}
+            onSelect={setSelectedId}
+            onSelectNone={() => setSelectedId(null)}
+          />
         </Box>
 
-        {/* プロパティ */}
         <Stack spacing={1.5} sx={{ width: { md: 240 }, flexShrink: 0 }}>
-          {!selected ? (
-            <Typography variant="caption" color="text.secondary">
-              {t("studio.liveEditorHint")}
-            </Typography>
-          ) : (
-            <>
-              <Typography variant="subtitle2">
-                {t(TYPE_LABEL_KEY[selected.type])}
-              </Typography>
-
-              {selected.type === "text" && (
-                <TextField
-                  size="small"
-                  label={t("studio.textContent")}
-                  multiline
-                  minRows={2}
-                  value={selected.text ?? ""}
-                  onChange={(e) => patchElement(selected.id, { text: e.target.value })}
-                />
-              )}
-
-              {selected.type === "eventInfo" && (
-                <TextField
-                  select
-                  size="small"
-                  label={t("studio.infoFieldLabel")}
-                  value={selected.field ?? "title"}
-                  onChange={(e) =>
-                    patchElement(selected.id, {
-                      field: e.target.value as EventInfoField,
-                    })
-                  }
-                >
-                  {EVENT_INFO_FIELDS.map((f) => (
-                    <MenuItem key={f} value={f}>
-                      {t(INFO_LABEL_KEY[f])}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              )}
-
-              {(selected.type === "text" || selected.type === "eventInfo") && (
-                <>
-                  <TextField
-                    select
-                    size="small"
-                    label={t("common.font")}
-                    value={selected.fontFamily ?? ""}
-                    onChange={(e) => {
-                      ensureDeckFont(e.target.value);
-                      patchElement(selected.id, { fontFamily: e.target.value });
-                    }}
-                  >
-                    {fontOptions.map((f) => (
-                      <MenuItem
-                        key={f.family}
-                        value={f.family}
-                        onMouseEnter={() => ensureDeckFont(f.family)}
-                        style={{ fontFamily: f.family || undefined }}
-                      >
-                        {f.label}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">
-                      {t("studio.fontSizeValue", { n: selected.fontSize ?? 40 })}
-                    </Typography>
-                    <Slider
-                      size="small"
-                      min={12}
-                      max={160}
-                      value={selected.fontSize ?? 40}
-                      onChange={(_e, v) =>
-                        patchElement(selected.id, { fontSize: v as number })
-                      }
-                    />
-                  </Box>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <Typography variant="caption">{t("studio.color")}</Typography>
-                    <input
-                      type="color"
-                      value={selected.color ?? "#EAF0F7"}
-                      onChange={(e) =>
-                        patchElement(selected.id, { color: e.target.value })
-                      }
-                    />
-                    <ToggleButton
-                      size="small"
-                      value="bold"
-                      selected={Boolean(selected.bold)}
-                      onChange={() =>
-                        patchElement(selected.id, { bold: !selected.bold })
-                      }
-                    >
-                      <FormatBoldIcon fontSize="small" />
-                    </ToggleButton>
-                  </Box>
-                  <ToggleButtonGroup
-                    size="small"
-                    exclusive
-                    value={selected.align ?? "left"}
-                    onChange={(_e, v) => v && patchElement(selected.id, { align: v })}
-                  >
-                    <ToggleButton value="left">{t("studio.alignLeft")}</ToggleButton>
-                    <ToggleButton value="center">{t("studio.alignCenter")}</ToggleButton>
-                    <ToggleButton value="right">{t("studio.alignRight")}</ToggleButton>
-                  </ToggleButtonGroup>
-                </>
-              )}
-
-              {selected.type === "image" && (
-                <>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<ImageIcon />}
-                    disabled={upload.isPending}
-                    onClick={() =>
-                      pickImage((url) => patchElement(selected.id, { src: url }))
-                    }
-                  >
-                    {upload.isPending
-                      ? t("common.uploading")
-                      : t("studio.replaceImage")}
-                  </Button>
-                  <TextField
-                    size="small"
-                    label={t("studio.imageUrlLabel")}
-                    value={selected.src ?? ""}
-                    onChange={(e) =>
-                      patchElement(selected.id, { src: e.target.value })
-                    }
-                  />
-                </>
-              )}
-
-              {selected.type === "camera" && (
-                <>
-                  <ToggleButtonGroup
-                    size="small"
-                    exclusive
-                    value={selected.fit ?? "cover"}
-                    onChange={(_e, v) => v && patchElement(selected.id, { fit: v })}
-                  >
-                    <ToggleButton value="cover">
-                      {t("studio.cameraFitCover")}
-                    </ToggleButton>
-                    <ToggleButton value="contain">
-                      {t("studio.cameraFitContain")}
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">
-                      {t("studio.cameraRadiusValue", { n: selected.radius ?? 0 })}
-                    </Typography>
-                    <Slider
-                      size="small"
-                      min={0}
-                      max={200}
-                      value={selected.radius ?? 0}
-                      onChange={(_e, v) =>
-                        patchElement(selected.id, { radius: v as number })
-                      }
-                    />
-                  </Box>
-                  <Typography variant="caption" color="text.secondary">
-                    {t("studio.cameraHint")}
-                  </Typography>
-                </>
-              )}
-
-              {selected.type === "deck" && (
-                <Typography variant="caption" color="text.secondary">
-                  {t("studio.deckElementHint")}
-                </Typography>
-              )}
-
-              <Divider />
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Button
-                  size="small"
-                  startIcon={<ContentCopyIcon />}
-                  onClick={duplicateSelected}
-                >
-                  {t("studio.duplicate")}
-                </Button>
-              </Stack>
-              <Typography variant="caption" color="text.secondary">
-                {t("studio.zOrder")}
-              </Typography>
-              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                <Button size="small" startIcon={<FlipToFrontIcon />} onClick={frontSelected}>
-                  {t("studio.toFront")}
-                </Button>
-                <Button size="small" onClick={() => moveZ(selected.id, 1)}>
-                  {t("studio.forward")}
-                </Button>
-                <Button size="small" onClick={() => moveZ(selected.id, -1)}>
-                  {t("studio.backward")}
-                </Button>
-                <Button size="small" startIcon={<FlipToBackIcon />} onClick={backSelected}>
-                  {t("studio.toBack")}
-                </Button>
-              </Stack>
-              <Button
-                size="small"
-                color="error"
-                startIcon={<DeleteOutlineIcon />}
-                onClick={deleteSelected}
-              >
-                {t("studio.deleteElement")}
-              </Button>
-            </>
-          )}
+          <LiveElementPanel
+            selected={selected}
+            commands={elementCommands}
+            pickImage={picker.pick}
+            uploading={upload.isPending}
+          />
         </Stack>
       </Stack>
 
-      {/* スマホ用：画面下に固定の Undo/Redo */}
+      {/* スマホ用：画面下に固定の Undo/Redo（上部バーが隠れるため） */}
       <Box
         sx={{
           display: { xs: "flex", md: "none" },
@@ -1020,13 +288,13 @@ export function LiveSetEditorPage() {
           bottom: 16,
           right: 16,
           gap: 1,
-          zIndex: (t) => t.zIndex.fab,
+          zIndex: (theme) => theme.zIndex.fab,
         }}
       >
-        <Fab size="small" onClick={undo} disabled={!canUndo}>
+        <Fab size="small" onClick={history.undo} disabled={!history.canUndo}>
           <UndoIcon />
         </Fab>
-        <Fab size="small" onClick={redo} disabled={!canRedo}>
+        <Fab size="small" onClick={history.redo} disabled={!history.canRedo}>
           <RedoIcon />
         </Fab>
       </Box>

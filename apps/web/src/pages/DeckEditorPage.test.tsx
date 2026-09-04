@@ -72,8 +72,25 @@ const twoPages = (groupId?: string): DeckSlide[] => [
   { id: "s2", background: "#ffffff", elements: [] },
 ];
 
+/** 1ページに3つ。重なり順は「後ろほど手前」なので 奥→手前 の並び */
+const threeStacked = (): DeckSlide[] => [
+  {
+    id: "s1",
+    background: "#ffffff",
+    elements: [text("e1", "奥"), text("e2", "中"), text("e3", "手前")],
+  },
+];
+
 const click = (name: string | RegExp) =>
   fireEvent.click(screen.getByText(name));
+
+/** 最後に保存された1ページ目の並び（奥→手前） */
+const savedOrder = (): string[] => {
+  const calls = mocks.update.mock.calls;
+  return calls[calls.length - 1][0].content.slides[0].elements.map(
+    (e: { id: string }) => e.id,
+  );
+};
 
 /**
  * レイヤー一覧の中だけを見る。
@@ -161,6 +178,56 @@ describe("レイヤーと設定欄", () => {
     clickLayer("ようこそ");
     expect(screen.getByText("2個を選択中")).toBeInTheDocument();
     expect(screen.getByText("2個を削除")).toBeInTheDocument();
+  });
+});
+
+/**
+ * 重なり順のボタンと中身の式の結線。
+ *
+ * ここは**間違えても画面がそれらしく描かれてしまう**所。「最前面」と「最背面」は
+ * 同じ形の関数なので取り違えても型が通り、1段ずつの前後は向きを逆にしても通る。
+ * どちらも「押したのに逆へ動く」という壊れ方をするので、**真ん中の要素**を
+ * 動かして並びそのものを見る（端の要素だと逆へ動いても見分けが付かない）。
+ */
+describe("重なり順の結線", () => {
+  it("「最前面」で選んだ要素が並びの末尾（手前）へ移る", () => {
+    draw(threeStacked());
+    clickLayer("中");
+    click("最前面");
+    settle();
+    expect(savedOrder()).toEqual(["e1", "e3", "e2"]);
+  });
+
+  it("「最背面」で選んだ要素が並びの先頭（奥）へ移る", () => {
+    draw(threeStacked());
+    clickLayer("中");
+    click("最背面");
+    settle();
+    expect(savedOrder()).toEqual(["e2", "e1", "e3"]);
+  });
+
+  it("「前面へ」は1つ手前の要素とだけ入れ替わる", () => {
+    draw(threeStacked());
+    clickLayer("中");
+    click("前面へ");
+    settle();
+    expect(savedOrder()).toEqual(["e1", "e3", "e2"]);
+  });
+
+  it("「背面へ」は1つ奥の要素とだけ入れ替わる", () => {
+    draw(threeStacked());
+    clickLayer("中");
+    click("背面へ");
+    settle();
+    expect(savedOrder()).toEqual(["e2", "e1", "e3"]);
+  });
+
+  it("一覧は手前が上に出る（並びと逆）", () => {
+    draw(threeStacked());
+    const labels = layers()
+      .getAllByText(/奥|中|手前/)
+      .map((n) => n.textContent);
+    expect(labels).toEqual(["手前", "中", "奥"]);
   });
 });
 
