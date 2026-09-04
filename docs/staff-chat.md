@@ -430,7 +430,8 @@ export interface StaffChatPayload {
 | `apps/web/src/lib/nostrChat.ts`（変更） | `subscribe()` と `buildChannelMessageTemplate()` に kind 引数を足す（既定 42。既存呼び出しは無変更） | +10行程度 |
 | `apps/web/src/lib/staffChatCrypto.ts`（新規） | `nostr-tools/nip44` の encrypt/decrypt と v タグ・version 引きの薄い関数（純粋関数、テスト対象） | 〜80行 |
 
-- 導線: EventDetailPage のスタッフ向けメニュー（TODO #393・裏方 #383 と同じ並び）に
+- 導線: イベント詳細のスタッフ向けメニュー（`components/EventActionButtons.tsx` の表。
+  TODO #393・裏方 #383 と同じ並び）に
   「スタッフチャット」。**myRole === "staff" のときだけ描画**（管理者UI方針に従い
   isAdmin は混ぜない）
 - nostr-tools は既存同様 lazy import（メインバンドルに混ぜない）

@@ -24,7 +24,7 @@ vi.mock("../api/client.js", async (importOriginal) => {
   };
 });
 
-const { MemberRow } = await import("./EventDetailPage.js");
+const { MemberRow } = await import("./EventMemberList.js");
 const { ApiError } = await import("../api/client.js");
 
 const MEMBER: EventMemberWithUser = {

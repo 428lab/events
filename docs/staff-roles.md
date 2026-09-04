@@ -113,7 +113,7 @@ d だけ FK の設定が効く（3.6 で `CASCADE` を選ぶ。TODO の `SET NUL
 - タイムテーブルの編集（`ScheduleEditor.tsx` 480行）は**版番号付きの全件差分保存** (#340)。
   ここに役割の編集を混ぜると、チップ1つ付けるのに全項目を送り返すことになる
 - スタッフ専用の独立ページの型は `EventTodoPage.tsx` (#393 案P1) が手本。
-  `EventLayout` の子ルート＋`EventDetailPage` に導線ボタン1つ
+  `EventLayout` の子ルート＋`components/EventActionButtons.tsx` の表に導線1行
 - 色: `trackColors.ts` は**公開トラックの本数だけ**から色を作る（#383 7.3 の教訓:
   本数に依存する色は、見る人によって同じものの色が変わる）。役割の色にも同じ罠がある
 
