@@ -1,14 +1,16 @@
 import type { DeckElement, DeckSlide } from "@eventer/shared";
+import { copyByIds } from "./editor/collection.js";
 import { uid } from "./editor/uid.js";
 
 /**
- * スライドの中身をいじる操作。
+ * スライド **固有** の操作。
  *
- * 画面から切り離した純粋な関数として置く。並べ替え・重なり順・グループ化は
- * 「見た目は同じでも中身の並びが違う」という壊れ方をするため、画面を描かずに
- * 確かめられる形にしておきたい。React にも MUI にも依存しない。
+ * 画面から切り離した純粋な関数として置く。グループ化は「見た目は同じでも中身が
+ * 違う」という壊れ方をするため、画面を描かずに確かめられる形にしておきたい。
+ * React にも MUI にも依存しない。
  *
- * 要素の配列は「後ろほど手前」。z 座標は持たず、並び順がそのまま重なり順。
+ * 差し込む・入れ替える・重なり順・まとめて動かす、といった型を見ない式は
+ * 配信セット編集と共通なので `editor/collection.ts` にある。ここには置かない。
  */
 
 // ===== ページ（スライド） =====
@@ -16,62 +18,6 @@ import { uid } from "./editor/uid.js";
 /** 白紙のページ */
 export function newSlide(): DeckSlide {
   return { id: uid(), background: "#ffffff", elements: [] };
-}
-
-/**
- * ページの写し。中の要素の id も振り直す。
- * 同じ id が2枚に跨って存在すると、選択や差し替えがもう一方にも及んでしまう。
- */
-export function copySlide(slide: DeckSlide): DeckSlide {
-  return {
-    ...slide,
-    id: uid(),
-    elements: slide.elements.map((e) => ({ ...e, id: uid() })),
-  };
-}
-
-/** i の直後に差し込む。差し込んだページの位置は i+1 */
-export function insertSlideAfter(
-  slides: DeckSlide[],
-  i: number,
-  slide: DeckSlide,
-): DeckSlide[] {
-  return [...slides.slice(0, i + 1), slide, ...slides.slice(i + 1)];
-}
-
-export function removeSlideAt(slides: DeckSlide[], i: number): DeckSlide[] {
-  return slides.filter((_, j) => j !== i);
-}
-
-/** i と j を入れ替える。どちらも範囲内であること（呼ぶ側で確かめる） */
-export function swapSlides(
-  slides: DeckSlide[],
-  i: number,
-  j: number,
-): DeckSlide[] {
-  const a = [...slides];
-  [a[i], a[j]] = [a[j], a[i]];
-  return a;
-}
-
-/** i 枚目そのものの設定（背景など）を差し替える */
-export function patchSlide(
-  slides: DeckSlide[],
-  i: number,
-  patch: Partial<DeckSlide>,
-): DeckSlide[] {
-  return slides.map((sl, j) => (j === i ? { ...sl, ...patch } : sl));
-}
-
-/** i 枚目の要素だけを差し替える。他のページはそのまま */
-export function mapSlideElements(
-  slides: DeckSlide[],
-  i: number,
-  fn: (els: DeckElement[]) => DeckElement[],
-): DeckSlide[] {
-  return slides.map((sl, j) =>
-    j === i ? { ...sl, elements: fn(sl.elements) } : sl,
-  );
 }
 
 // ===== 置いたばかりの要素 =====
@@ -163,104 +109,20 @@ export function toggleSelection(
 
 // ===== 要素 =====
 
-export function patchElement(
-  els: DeckElement[],
-  elId: string,
-  patch: Partial<DeckElement>,
-): DeckElement[] {
-  return els.map((e) => (e.id === elId ? { ...e, ...patch } : e));
-}
-
-/** 1段だけ前後へ。隣と入れ替える。端なら何もしない */
-export function moveElementZ(
-  els: DeckElement[],
-  elId: string,
-  dir: 1 | -1,
-): DeckElement[] {
-  const a = [...els];
-  const i = a.findIndex((e) => e.id === elId);
-  const to = i + dir;
-  if (i < 0 || to < 0 || to >= a.length) return els;
-  [a[i], a[to]] = [a[to], a[i]];
-  return a;
-}
-
-/** 選択を最前面へ。選択どうしの並びは保つ */
-export function bringToFront(
-  els: DeckElement[],
-  ids: readonly string[],
-): DeckElement[] {
-  const set = new Set(ids);
-  return [
-    ...els.filter((e) => !set.has(e.id)),
-    ...els.filter((e) => set.has(e.id)),
-  ];
-}
-
-/** 選択を最背面へ。選択どうしの並びは保つ */
-export function sendToBack(
-  els: DeckElement[],
-  ids: readonly string[],
-): DeckElement[] {
-  const set = new Set(ids);
-  return [
-    ...els.filter((e) => set.has(e.id)),
-    ...els.filter((e) => !set.has(e.id)),
-  ];
-}
-
-export function removeElements(
-  els: DeckElement[],
-  ids: readonly string[],
-): DeckElement[] {
-  const set = new Set(ids);
-  return els.filter((e) => !set.has(e.id));
-}
-
-/** 選択をまとめて動かす */
-export function nudgeElements(
-  els: DeckElement[],
-  ids: readonly string[],
-  dx: number,
-  dy: number,
-): DeckElement[] {
-  const set = new Set(ids);
-  return els.map((e) =>
-    set.has(e.id) ? { ...e, x: e.x + dx, y: e.y + dy } : e,
-  );
-}
-
-/** つかんで動かし終えた位置をまとめて反映する */
-export function applyPositions(
-  els: DeckElement[],
-  moves: readonly { id: string; x: number; y: number }[],
-): DeckElement[] {
-  const byId = new Map(moves.map((m) => [m.id, m] as const));
-  return els.map((e) => {
-    const m = byId.get(e.id);
-    return m ? { ...e, x: m.x, y: m.y } : e;
-  });
-}
-
 /**
- * 選択の写し。少しずらして重なりを分かるようにする。
- * 2つ以上なら写した側を新しいグループにする（元のグループと混ざらないように）。
+ * 選択の写し。ずらす量と id の振り直しは共通の `copyByIds` に任せ、
+ * ここは **2つ以上なら写した側を新しいグループにする** ぶんだけを足す
+ * （元のグループと混ざると、片方を動かしたときにもう片方まで付いてくる）。
  * 戻り値は写しだけ。並べるのは呼ぶ側。
  */
 export function copyElements(
   els: DeckElement[],
   ids: readonly string[],
 ): DeckElement[] {
-  const set = new Set(ids);
-  const targets = els.filter((e) => set.has(e.id));
-  const newGroupId = targets.length > 1 ? uid() : undefined;
-  return targets.map((e) => ({
-    ...e,
-    id: uid(),
-    x: e.x + 20,
-    y: e.y + 20,
-    groupId: newGroupId ?? e.groupId,
-  }));
+  const copies = copyByIds(els, ids);
+  if (copies.length < 2) return copies;
+  const newGroupId = uid();
+  return copies.map((e) => ({ ...e, groupId: newGroupId }));
 }
 
 /** 選択を1つのグループにする */

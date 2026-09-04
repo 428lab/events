@@ -25,29 +25,31 @@ import { DeckLayerList } from "../components/DeckLayerList.js";
 import { DeckSlideList } from "../components/DeckSlideList.js";
 import { DeckToolbar } from "../components/DeckToolbar.js";
 import {
-  applyPositions,
-  bringToFront,
   copyElements,
-  copySlide,
   expandGroup,
   groupElements,
-  insertSlideAfter,
-  mapSlideElements,
-  moveElementZ,
   newImageElement,
   newSlide,
   newTextElement,
-  nudgeElements,
-  patchElement,
-  patchSlide,
   readSelection,
-  removeElements,
-  removeSlideAt,
-  sendToBack,
-  swapSlides,
   toggleSelection,
   ungroupElements,
 } from "../lib/deckSlides.js";
+import {
+  applyPositions,
+  copyPage,
+  insertAfter,
+  mapElementsAt,
+  moveZ,
+  nudgeByIds,
+  patchAt,
+  patchById,
+  removeAt,
+  removeByIds,
+  swapAt,
+  toBack,
+  toFront,
+} from "../lib/editor/collection.js";
 import type {
   DeckElementCommands,
   DeckSlideCommands,
@@ -120,7 +122,7 @@ export function DeckEditorPage() {
   const editSlides = (fn: (s: DeckSlide[]) => DeckSlide[]) =>
     setContent((c) => (c ? { ...c, slides: fn(c.slides) } : c));
   const editEls = (fn: (arr: DeckElement[]) => DeckElement[]) =>
-    editSlides((s) => mapSlideElements(s, idx, fn));
+    editSlides((s) => mapElementsAt(s, idx, fn));
 
   const selectElement = (elId: string, additive: boolean) => {
     const members = expandGroup(els, elId);
@@ -136,37 +138,37 @@ export function DeckEditorPage() {
 
   const slideCommands: DeckSlideCommands = {
     add: () => {
-      editSlides((s) => insertSlideAfter(s, idx, newSlide()));
+      editSlides((s) => insertAfter(s, idx, newSlide()));
       setSlideIdx(idx + 1);
       setSelectedIds([]);
     },
     duplicate: () => {
       if (!slide) return;
-      editSlides((s) => insertSlideAfter(s, idx, copySlide(slide)));
+      editSlides((s) => insertAfter(s, idx, copyPage(slide)));
       setSlideIdx(idx + 1);
     },
     remove: () => {
       if (slides.length <= 1) return;
-      editSlides((s) => removeSlideAt(s, idx));
+      editSlides((s) => removeAt(s, idx));
       setSlideIdx(Math.max(0, idx - 1));
       setSelectedIds([]);
     },
     move: (d) => {
       const to = idx + d;
       if (to < 0 || to >= slides.length) return;
-      editSlides((s) => swapSlides(s, idx, to));
+      editSlides((s) => swapAt(s, idx, to));
       setSlideIdx(to);
     },
   };
 
   const elementCommands: DeckElementCommands = {
-    patch: (elId, patch) => editEls((arr) => patchElement(arr, elId, patch)),
+    patch: (elId, patch) => editEls((arr) => patchById(arr, elId, patch)),
     remove: () => {
       if (selectedIds.length === 0) return;
       // 消したボタンからフォーカスが外れると画面が上へ跳ねるので、位置を戻す
       (document.activeElement as HTMLElement | null)?.blur?.();
       const y = window.scrollY;
-      editEls((arr) => removeElements(arr, selectedIds));
+      editEls((arr) => removeByIds(arr, selectedIds));
       setSelectedIds([]);
       requestAnimationFrame(() => window.scrollTo(0, y));
     },
@@ -182,11 +184,11 @@ export function DeckEditorPage() {
       editEls((arr) => groupElements(arr, selectedIds));
     },
     ungroup: () => editEls((arr) => ungroupElements(arr, selectedIds)),
-    toFront: () => editEls((arr) => bringToFront(arr, selectedIds)),
-    toBack: () => editEls((arr) => sendToBack(arr, selectedIds)),
-    moveZ: (elId, dir) => editEls((arr) => moveElementZ(arr, elId, dir)),
+    toFront: () => editEls((arr) => toFront(arr, selectedIds)),
+    toBack: () => editEls((arr) => toBack(arr, selectedIds)),
+    moveZ: (elId, dir) => editEls((arr) => moveZ(arr, elId, dir)),
     nudge: (dx, dy) =>
-      editEls((arr) => nudgeElements(arr, selectedIds, dx, dy)),
+      editEls((arr) => nudgeByIds(arr, selectedIds, dx, dy)),
     moveTo: (moves) => editEls((arr) => applyPositions(arr, moves)),
   };
 
@@ -292,7 +294,7 @@ export function DeckEditorPage() {
             }
             background={slide?.background ?? "#ffffff"}
             onBackgroundChange={(color) =>
-              editSlides((s) => patchSlide(s, idx, { background: color }))
+              editSlides((s) => patchAt(s, idx, { background: color }))
             }
             multiSelect={multiSelect}
             onToggleMultiSelect={() => setMultiSelect((m) => !m)}
