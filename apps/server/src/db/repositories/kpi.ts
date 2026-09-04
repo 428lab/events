@@ -1,108 +1,50 @@
 import {
   KPI_DAILY_MAX_DAYS,
-  type KpiDailyPoint,
-  type KpiDistributionBucket,
   type KpiPayload,
   type KpiPreviousValues,
   type KpiProviderCount,
-  addDays,
 } from "@eventer/shared";
 import { many, one } from "../client.js";
+import {
+  type AggPick,
+  COUNT_BUCKET_COLUMNS,
+  type CountBucketRow,
+  DAILY_HELD_EVENTS,
+  DAILY_PARTICIPATIONS,
+  DAY_PERIOD,
+  type Dual,
+  HELD_EVENT_COUNTS,
+  HELD_METRIC_COLUMNS,
+  HELD_PERIOD,
+  type HeldEventAgg,
+  type HostAgg,
+  HOST_COUNT_COLUMNS,
+  JOINED,
+  MEMBER_USER_ACTIVE,
+  N,
+  REGISTRATION_COLUMNS,
+  REGISTRATION_SOURCE,
+  REPEAT_PEOPLE_COLUMNS,
+  type RegistrationAgg,
+  type RepeatAgg,
+  type ViewAgg,
+  countDistribution,
+  dual,
+  jd,
+  picker,
+  rate,
+  sharedMetrics,
+} from "./kpiMetrics.js";
+import {
+  type ActiveRow,
+  type DailyRow,
+  fillDailySeries,
+  jstDay,
+} from "./kpiSeries.js";
 
-/** epoch ms のカラムを JST の 'YYYY-MM-DD' に。既存の jstDay() と同じ基準 */
-export function jd(col: string): string {
-  return `strftime('%Y-%m-%d', ${col} / 1000 + 32400, 'unixepoch')`;
-}
-
-/** 率。分母0は null（画面は「—」表示）。NaN/Infinity を返さない */
-export function rate(numerator: number, denominator: number): number | null {
-  return denominator > 0 ? numerator / denominator : null;
-}
-
-/** 退会申請中 (#250) を除く条件。成長・定着系の分母から外す */
-export const MEMBER_USER_ACTIVE =
-  "EXISTS (SELECT 1 FROM user u WHERE u.id = m.user_id AND u.deleted_at IS NULL)";
-
-/** 退会申請中 (#250) を除く条件（任意のユーザーID列に対して） */
-export const USER_ACTIVE = (col: string) =>
-  `EXISTS (SELECT 1 FROM user u WHERE u.id = ${col} AND u.deleted_at IS NULL)`;
-
-/** 「参加した人」の行の条件。除くのは運営側の staff 行だけで、
- * 審査員 (judge)・観覧者 (observer) は実際にイベントに来る人なので参加者として数える。
- * staff を除くのは、イベント作成時に作成者の staff 行が必ず作られるため
- * （絞らないとイベントを1件作るたびに参加登録が +1 される）。 */
-export const JOINED = (t: string) => `${t}.role <> 'staff'`;
-
-/** 出席チェックを有効にしたのに出席記録が1件も無いイベント（＝運営が記録し忘れた）。
- * 参加者数が 0 と出てしまうため、不発率の分母から外す。バインド不要 */
-export const ATTENDANCE_UNRECORDED = (idCol: string) =>
-  `NOT EXISTS (SELECT 1 FROM event_member em WHERE em.event_id = ${idCol} AND em.attended = 1)`;
-
-/** 開催済み（期間内に終了した公開イベント・日程確定済み）の条件。
- * ends_at = 0（開催日未設定）を除くのは既存の集計（eventMembers.participationStats,
- * events.isEventEnded）と揃えるため。除かないと全期間指定で日付未設定イベントが
- * 「開催完了」に混ざる。
- * バインド順: now, sinceDay */
-export const HELD = (t: string) =>
-  `(${t}.status = 'published' AND ${t}.scheduling = 0 AND ${t}.ends_at > 0 AND ${t}.ends_at < ? AND ${jd(`${t}.ends_at`)} >= ?)`;
-
-/** 期間フラグ (#266)。1=今期間 [sinceDay, ) / 2=前期間 [prevSinceDay, sinceDay) / 0=対象外。
- * 「注目」(#259, trending.ts) の period() と同じ考え方だが、KPI は日次推移と
- * 期間の切り方を揃えるため **JST の日付文字列**で比べる。
- *
- * 全期間（sinceDay='0000'）のときは prevSinceDay も '0000' を渡す。すべての行が
- * 1本目の CASE に吸われ、前期間は必ず 0 件になる（画面も前期間比を出さない）。
- *
- * バインド順: sinceDay, prevSinceDay, sinceDay */
-export const DAY_PERIOD = (expr: string) =>
-  `CASE WHEN ${expr} >= ? THEN 1 WHEN ${expr} >= ? AND ${expr} < ? THEN 2 ELSE 0 END`;
-
-/** HELD の期間フラグ版。開催日 (ends_at) で今期間/前期間に振り分ける。
- * バインド順: now, sinceDay, prevSinceDay, sinceDay */
-export const HELD_PERIOD = (t: string) =>
-  `CASE WHEN ${t}.status = 'published' AND ${t}.scheduling = 0
-             AND ${t}.ends_at > 0 AND ${t}.ends_at < ?
-        THEN ${DAY_PERIOD(jd(`${t}.ends_at`))} ELSE 0 END`;
-
-/** 今期間と前期間の2列をまとめて生成する (#266)。
- * 期間ごとにクエリを分けると本数が倍になるので、1回のスキャンで両方数える。
- * @param p 期間フラグの列（1=今期間 / 2=前期間）
- * @param cond 期間以外の条件（省略可）
- * @param val 数える値（省略時は 1 = 件数） */
-export const dual = (
-  name: string,
-  p: string,
-  cond?: string,
-  val = "1",
-): string => {
-  const c = cond ? ` AND (${cond})` : "";
-  return `COALESCE(SUM(CASE WHEN ${p} = 1${c} THEN ${val} ELSE 0 END), 0) AS ${name},
-         COALESCE(SUM(CASE WHEN ${p} = 2${c} THEN ${val} ELSE 0 END), 0) AS prev_${name}`;
-};
-
-/** dual() で生えた prev_* 列を含む行の型 */
-export type Dual<T> = T & {
-  [K in keyof T & string as `prev_${K}`]: number;
-};
-
-export const N = (v: number | null | undefined): number => v ?? 0;
-
-/** 今期間 / 前期間のどちらを読むかを切り替えるアクセサ。
- * 同じ計算式を2回書かないための入口で、これがあるおかげで
- * 「今期間だけ数え方を直して前期間が古いまま」が起きない */
-export type AggPick<T> = <K extends keyof T & string>(key: K) => number;
-
-export const picker =
-  <T,>(row: Dual<T> | null, prefix: "" | "prev_"): AggPick<T> =>
-  (key) =>
-    N((row as Record<string, number | null> | null)?.[`${prefix}${key}`]);
-
-interface EventAgg {
-  held_events: number;
-  held_participations: number;
-  held_participants: number;
-  dud_events: number;
-  attendance_unrecorded_events: number;
+/** 開催の5指標 (HeldEventAgg) に、運営ダッシュボードだけが出す
+ * 主催者ファネル・機能利用率・会場募集を足したもの */
+interface EventAgg extends HeldEventAgg {
   created_events: number;
   draft_events: number;
   published_events: number;
@@ -117,40 +59,8 @@ interface EventAgg {
   venue_wanted_filled: number;
 }
 
-interface MemberAgg {
-  registrations: number;
-  confirmed_registrations: number;
-  canceled: number;
-  canceled_late: number;
-  attendance_expected: number;
-  attended: number;
-}
-
-interface ViewAgg {
-  unique_viewers: number;
-  total_views: number;
-}
-
-interface RepeatAgg {
-  people: number;
-  repeaters: number;
-}
-
 /** 参加回数の分布は今期間ぶんだけ（前期間の分布は画面に出さない） */
-interface RepeatRow extends Dual<RepeatAgg> {
-  c1: number;
-  c2: number;
-  c3: number;
-  c45: number;
-  c610: number;
-  c11: number;
-}
-
-interface HostAgg {
-  hosts: number;
-  repeat_hosts: number;
-  total_held: number;
-}
+interface RepeatRow extends Dual<RepeatAgg>, CountBucketRow {}
 
 interface UserAgg {
   signups: number;
@@ -185,22 +95,6 @@ interface HealthRow extends Dual<HealthAgg> {
   pending_deletion: number;
 }
 
-interface DailyRow {
-  day: string;
-  signups: number;
-  joins: number;
-  held_events: number;
-  participations: number;
-}
-
-interface ActiveRow {
-  day: string;
-  dau: number;
-  /** 週次表示になる長さのときは週の最終日（日曜）以外 null（＝算出していない） */
-  mau: number | null;
-  measured_from: string | null;
-}
-
 export const kpiRepo = {
   /** 運営ダッシュボードの全指標をまとめて取得（sinceDay は '0000' で全期間）。
    * Workers のサブリクエスト上限を意識し、1指標1クエリにせず 11 本にまとめている。
@@ -226,37 +120,12 @@ export const kpiRepo = {
          FROM event e
        ),
        ev AS (
-         -- 相関サブクエリは開催済みイベントでだけ評価する（下書き・未来のイベントで
-         -- 数えても捨てるだけなので CASE で短絡させる）
          SELECT b.*,
-                CASE WHEN b.held_p > 0 THEN (
-                  -- 実際に集まった人数（主催・スタッフを含む）。イベントページの
-                  -- participantCount は確定メンバー数なので、ここは意図的に別定義 (#297)
-                  SELECT COUNT(1) FROM event_member em
-                   WHERE em.event_id = b.id AND em.status = 'confirmed'
-                     AND (b.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant')
-                     AND ${USER_ACTIVE("em.user_id")}
-                ) ELSE 0 END AS pcount,
-                CASE WHEN b.held_p > 0 THEN (
-                  -- 不発判定用。主催・スタッフを含めるとチーム規模でしきい値がぶれる。
-                  -- 審査員・観覧者は実際に来る人なので参加者として数える
-                  SELECT COUNT(1) FROM event_member em
-                   WHERE em.event_id = b.id AND em.status = 'confirmed'
-                     AND ${JOINED("em")}
-                     AND (b.attendance_check = 0 OR em.attended = 1)
-                     AND ${USER_ACTIVE("em.user_id")}
-                ) ELSE 0 END AS ppl,
-                CASE WHEN b.held_p > 0 AND b.attendance_check = 1
-                       AND ${ATTENDANCE_UNRECORDED("b.id")}
-                     THEN 1 ELSE 0 END AS unrecorded
+                ${HELD_EVENT_COUNTS("b")}
          FROM base b
        )
        SELECT
-         ${dual("held_events", "held_p")},
-         ${dual("held_participations", "held_p", undefined, "pcount")},
-         ${dual("held_participants", "held_p", undefined, "ppl")},
-         ${dual("dud_events", "held_p", "unrecorded = 0 AND ppl <= 3")},
-         ${dual("attendance_unrecorded_events", "held_p", "unrecorded = 1")},
+         ${HELD_METRIC_COLUMNS},
          ${dual("created_events", "created_p")},
          ${dual("draft_events", "created_p", "status = 'draft'")},
          ${dual("published_events", "created_p", "status = 'published'")},
@@ -280,29 +149,12 @@ export const kpiRepo = {
     );
 
     // --- (2) 参加登録: 登録数・キャンセル・出席 ---
-    // 登録/キャンセルは「登録の作成日」基準、出席は「イベントの終了日」基準なので
-    // 期間フラグを2本立てる。主催・スタッフの行（イベント作成時に自動で作られる）と
-    // 下書きイベントは除く。除かないとイベントを1件作るたびに参加登録が+1され、
-    // キャンセル率が過小に出る。審査員・観覧者は参加登録として数える。
-    const memberAgg = await one<Dual<MemberAgg>>(
+    const memberAgg = await one<Dual<RegistrationAgg>>(
       `WITH reg AS (
-         SELECT ${DAY_PERIOD(jd("m.created_at"))} AS reg_p,
-                ${HELD_PERIOD("e")} AS held_p,
-                m.status AS status, m.attended AS attended,
-                m.canceled_scheduling AS canceled_scheduling,
-                m.canceled_at AS canceled_at,
-                e.scheduling AS e_scheduling, e.starts_at AS e_starts_at,
-                e.attendance_check AS e_attendance_check
-         FROM event_member m JOIN event e ON e.id = m.event_id
-         WHERE ${JOINED("m")} AND e.status = 'published' AND ${MEMBER_USER_ACTIVE}
+         ${REGISTRATION_SOURCE()}
        )
        SELECT
-         ${dual("registrations", "reg_p")},
-         ${dual("confirmed_registrations", "reg_p", "status = 'confirmed'")},
-         ${dual("canceled", "reg_p", "status = 'canceled' AND canceled_scheduling = 0")},
-         ${dual("canceled_late", "reg_p", "status = 'canceled' AND canceled_scheduling = 0 AND e_scheduling = 0 AND canceled_at >= e_starts_at - 86400000")},
-         ${dual("attendance_expected", "held_p", "e_attendance_check = 1 AND status = 'confirmed'")},
-         ${dual("attended", "held_p", "e_attendance_check = 1 AND status = 'confirmed' AND attended = 1")}
+         ${REGISTRATION_COLUMNS}
        FROM reg`,
       sinceDay,
       prevSinceDay,
@@ -357,16 +209,8 @@ export const kpiRepo = {
          WHERE held_p > 0
          GROUP BY uid
        )
-       SELECT COALESCE(SUM(CASE WHEN n >= 1 THEN 1 ELSE 0 END), 0) AS people,
-              COALESCE(SUM(CASE WHEN prev_n >= 1 THEN 1 ELSE 0 END), 0) AS prev_people,
-              COALESCE(SUM(CASE WHEN n >= 2 THEN 1 ELSE 0 END), 0) AS repeaters,
-              COALESCE(SUM(CASE WHEN prev_n >= 2 THEN 1 ELSE 0 END), 0) AS prev_repeaters,
-              COALESCE(SUM(CASE WHEN n = 1 THEN 1 ELSE 0 END), 0) AS c1,
-              COALESCE(SUM(CASE WHEN n = 2 THEN 1 ELSE 0 END), 0) AS c2,
-              COALESCE(SUM(CASE WHEN n = 3 THEN 1 ELSE 0 END), 0) AS c3,
-              COALESCE(SUM(CASE WHEN n BETWEEN 4 AND 5 THEN 1 ELSE 0 END), 0) AS c45,
-              COALESCE(SUM(CASE WHEN n BETWEEN 6 AND 10 THEN 1 ELSE 0 END), 0) AS c610,
-              COALESCE(SUM(CASE WHEN n >= 11 THEN 1 ELSE 0 END), 0) AS c11
+       SELECT ${REPEAT_PEOPLE_COLUMNS},
+              ${COUNT_BUCKET_COLUMNS}
        FROM pc`,
       now,
       sinceDay,
@@ -388,12 +232,7 @@ export const kpiRepo = {
          WHERE held_p > 0
          GROUP BY uid
        )
-       SELECT COALESCE(SUM(CASE WHEN n >= 1 THEN 1 ELSE 0 END), 0) AS hosts,
-              COALESCE(SUM(CASE WHEN prev_n >= 1 THEN 1 ELSE 0 END), 0) AS prev_hosts,
-              COALESCE(SUM(CASE WHEN n >= 2 THEN 1 ELSE 0 END), 0) AS repeat_hosts,
-              COALESCE(SUM(CASE WHEN prev_n >= 2 THEN 1 ELSE 0 END), 0) AS prev_repeat_hosts,
-              COALESCE(SUM(n), 0) AS total_held,
-              COALESCE(SUM(prev_n), 0) AS prev_total_held
+       SELECT ${HOST_COUNT_COLUMNS}
        FROM hc`,
       now,
       sinceDay,
@@ -455,13 +294,10 @@ export const kpiRepo = {
            AND ${MEMBER_USER_ACTIVE}
          UNION ALL
          SELECT ${jd("e.ends_at")}, 0, 0, 1, 0
-         FROM event e WHERE ${HELD("e")}
+         ${DAILY_HELD_EVENTS()}
          UNION ALL
          SELECT ${jd("e.ends_at")}, 0, 0, 0, 1
-         FROM event_member m JOIN event e ON e.id = m.event_id
-         WHERE m.status = 'confirmed'
-           AND (e.attendance_check = 0 OR m.attended = 1 OR m.role <> 'participant')
-           AND ${MEMBER_USER_ACTIVE} AND ${HELD("e")}
+         ${DAILY_PARTICIPATIONS()}
        )
        GROUP BY day ORDER BY day`,
       sinceDay,
@@ -602,16 +438,13 @@ export const kpiRepo = {
   },
 };
 
-/** epoch ms → JST の 'YYYY-MM-DD'（SQL の jd() と同じ基準） */
-export function jstDay(at: number): string {
-  return new Date(at + 9 * 3600 * 1000).toISOString().slice(0, 10);
-}
-
 /** 1つの期間ぶんの指標。今期間・前期間の両方でこの関数を通すので、
- * 片方だけ数え方がずれることがない */
+ * 片方だけ数え方がずれることがない。
+ * 両方の画面に出るタイルは sharedMetrics()（＝コミュニティKPIと同じ式）。
+ * 全体KPIは母数ゲートを掛けないので rate をそのまま渡す */
 function periodMetrics(s: {
   event: AggPick<EventAgg>;
-  member: AggPick<MemberAgg>;
+  member: AggPick<RegistrationAgg>;
   view: AggPick<ViewAgg>;
   repeat: AggPick<RepeatAgg>;
   host: AggPick<HostAgg>;
@@ -619,27 +452,7 @@ function periodMetrics(s: {
   health: AggPick<HealthAgg>;
   matching: AggPick<MatchingAgg>;
 }) {
-  const heldEvents = s.event("held_events");
-  const participations = s.event("held_participations");
-  // 出席チェックを有効にしたのに記録が0件のイベントは「不発」ではなく「未記録」。
-  // 参加者数が構造的に0になるため、分子・分母の両方から外す
-  const attendanceUnrecordedEvents = s.event("attendance_unrecorded_events");
-  const dudEvents = s.event("dud_events");
-  const dudBaseEvents = heldEvents - attendanceUnrecordedEvents;
-
-  const registrations = s.member("registrations");
-  const canceled = s.member("canceled");
-  const canceledLate = s.member("canceled_late");
-  const attendanceExpected = s.member("attendance_expected");
-  const attended = s.member("attended");
-  const attendanceRate = rate(attended, attendanceExpected);
-
-  const uniqueViewers = s.view("unique_viewers");
-  const people = s.repeat("people");
-  const repeaters = s.repeat("repeaters");
-
-  const hosts = s.host("hosts");
-  const heldEventsWithActiveHost = s.host("total_held");
+  const shared = sharedMetrics(s, rate);
 
   const signups = s.user("signups");
   const activatedParticipant = s.user("activated_participant");
@@ -662,28 +475,7 @@ function periodMetrics(s: {
   const eggsConverted = s.matching("eggs_converted");
 
   return {
-    participations,
-    heldParticipants: s.event("held_participants"),
-    heldEvents,
-    avgParticipantsPerEvent: rate(participations, heldEvents),
-
-    registrations,
-    confirmedRegistrations: s.member("confirmed_registrations"),
-    uniqueViewers,
-    totalViews: s.view("total_views"),
-    viewToJoinRate: rate(registrations, uniqueViewers),
-    attendanceExpected,
-    attended,
-    attendanceRate,
-    noShowRate: attendanceRate === null ? null : 1 - attendanceRate,
-    canceled,
-    cancelRate: rate(canceled, registrations),
-    canceledLate,
-    canceledEarly: canceled - canceledLate,
-    lateCancelRate: rate(canceledLate, canceled),
-    uniqueParticipants: people,
-    repeatParticipants: repeaters,
-    repeatRate: rate(repeaters, people),
+    ...shared,
 
     createdEvents: s.event("created_events"),
     draftEvents: s.event("draft_events"),
@@ -692,15 +484,6 @@ function periodMetrics(s: {
     schedulingUsedEvents: schedulingUsed,
     schedulingConfirmedEvents: schedulingConfirmed,
     schedulingConfirmRate: rate(schedulingConfirmed, schedulingUsed),
-    dudEvents,
-    attendanceUnrecordedEvents,
-    dudBaseEvents,
-    dudRate: rate(dudEvents, dudBaseEvents),
-    hosts,
-    heldEventsWithActiveHost,
-    repeatHosts: s.host("repeat_hosts"),
-    repeatHostRate: rate(s.host("repeat_hosts"), hosts),
-    avgEventsPerHost: rate(heldEventsWithActiveHost, hosts),
 
     signups,
     activatedParticipant,
@@ -788,66 +571,13 @@ export function previousValues(m: PeriodMetrics): KpiPreviousValues {
   };
 }
 
-/** 日次系列の最大点数。?days=3650 のような長い指定でも点数に上限を掛ける。
- * **切り捨てるのは古い側**（開始日をクランプする）。ループの途中で break すると
- * 落ちるのが新しい側になり、直近ぶんが警告も無くグラフから消える。 */
-export const MAX_SERIES_POINTS = 3000;
-
-/** 系列の開始日。上限を超える長さのときは「新しい側を必ず残す」ように古い側を切る */
-export function clampSeriesStart(first: string, today: string): string {
-  const limit = addDays(today, -(MAX_SERIES_POINTS - 1));
-  return first < limit ? limit : first;
-}
-
-/** 日次の系列を「抜けの無い日付」に整える (#266)。
- * 活動ゼロの日は 0 で埋める。DAU/MAU は計測開始 (#257) より前を null にして、
- * 「0人だった日」と「まだ計測していない日」を区別する。
- *
- * @param from 期間の開始日。'0000'（全期間）のときはデータのある最初の日 */
-export function fillDailySeries(
-  from: string,
-  today: string,
-  daily: DailyRow[],
-  active: ActiveRow[],
-): KpiDailyPoint[] {
-  const measuredFrom = active[0]?.measured_from ?? null;
-  const byDay = new Map(daily.map((d) => [d.day, d]));
-  const activeByDay = new Map(active.map((a) => [a.day, a]));
-  const start =
-    from !== "0000"
-      ? from
-      : [daily[0]?.day, active[0]?.day].filter((d): d is string => !!d).sort()[0];
-  if (!start || start > today) return [];
-  const first = clampSeriesStart(start, today);
-
-  const out: KpiDailyPoint[] = [];
-  for (let day = first; day <= today; day = addDays(day, 1)) {
-    const d = byDay.get(day);
-    const a = activeByDay.get(day);
-    const measured = measuredFrom !== null && day >= measuredFrom;
-    out.push({
-      day,
-      signups: N(d?.signups),
-      joins: N(d?.joins),
-      heldEvents: N(d?.held_events),
-      participations: N(d?.participations),
-      dau: measured ? N(a?.dau) : null,
-      // MAU は週次表示になる長さのとき週の最終日ぶんだけ算出する（クエリ (8) 参照）。
-      // 「計測済みだが算出していない日」を 0 で埋めると MAU が落ちたように見えるので
-      // null のまま返す（週次まとめは週の最終の既知値を採る）
-      mau: measured ? (a?.mau ?? null) : null,
-    });
-  }
-  return out;
-}
-
 function buildPayload(src: {
   days: number | null;
   sinceDay: string;
   prevSinceDay: string;
   today: string;
   eventAgg: Dual<EventAgg> | null;
-  memberAgg: Dual<MemberAgg> | null;
+  memberAgg: Dual<RegistrationAgg> | null;
   viewAgg: Dual<ViewAgg> | null;
   repeatAgg: RepeatRow | null;
   hostAgg: Dual<HostAgg> | null;
@@ -860,7 +590,7 @@ function buildPayload(src: {
 }): KpiPayload {
   const sources = (prefix: "" | "prev_") => ({
     event: picker<EventAgg>(src.eventAgg, prefix),
-    member: picker<MemberAgg>(src.memberAgg, prefix),
+    member: picker<RegistrationAgg>(src.memberAgg, prefix),
     view: picker<ViewAgg>(src.viewAgg, prefix),
     repeat: picker<RepeatAgg>(src.repeatAgg, prefix),
     host: picker<HostAgg>(src.hostAgg, prefix),
@@ -872,16 +602,6 @@ function buildPayload(src: {
   // 全期間は比べる過去が無い（前期間の集計は必ず 0 件になるので出さない）
   const previous =
     src.days === null ? null : previousValues(periodMetrics(sources("prev_")));
-
-  const r = src.repeatAgg;
-  const countDistribution: KpiDistributionBucket[] = [
-    { label: "1回", users: N(r?.c1) },
-    { label: "2回", users: N(r?.c2) },
-    { label: "3回", users: N(r?.c3) },
-    { label: "4〜5回", users: N(r?.c45) },
-    { label: "6〜10回", users: N(r?.c610) },
-    { label: "11回以上", users: N(r?.c11) },
-  ];
 
   return {
     days: src.days,
@@ -913,7 +633,7 @@ function buildPayload(src: {
       uniqueParticipants: m.uniqueParticipants,
       repeatParticipants: m.repeatParticipants,
       repeatRate: m.repeatRate,
-      countDistribution,
+      countDistribution: countDistribution(src.repeatAgg),
     },
     organizers: {
       createdEvents: m.createdEvents,

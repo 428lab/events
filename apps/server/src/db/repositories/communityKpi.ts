@@ -3,29 +3,41 @@ import {
   type CommunityKpiDailyPoint,
   type CommunityKpiOverlapItem,
   type CommunityKpiPayload,
-  type KpiDistributionBucket,
   type KpiPreviousValues,
   addDays,
 } from "@eventer/shared";
 import { many, one } from "../client.js";
 import {
-  ATTENDANCE_UNRECORDED,
   type AggPick,
-  DAY_PERIOD,
+  COUNT_BUCKET_COLUMNS,
+  type CountBucketRow,
+  DAILY_HELD_EVENTS,
+  DAILY_PARTICIPATIONS,
   type Dual,
   HELD,
+  HELD_EVENT_COUNTS,
+  HELD_METRIC_COLUMNS,
   HELD_PERIOD,
+  type HeldEventAgg,
+  type HostAgg as HostCountAgg,
+  HOST_COUNT_COLUMNS,
   JOINED,
   MEMBER_USER_ACTIVE,
   N,
+  REGISTRATION_COLUMNS,
+  REGISTRATION_SOURCE,
+  REPEAT_PEOPLE_COLUMNS,
+  type RegistrationAgg,
+  type RepeatAgg as RepeatCountAgg,
   USER_ACTIVE,
-  clampSeriesStart,
-  dual,
+  type ViewAgg,
+  countDistribution,
   jd,
-  jstDay,
   picker,
   rate,
-} from "./kpi.js";
+  sharedMetrics,
+} from "./kpiMetrics.js";
+import { clampSeriesStart, jstDay } from "./kpiSeries.js";
 
 /** 母数が小さいときは率を出さない。3人中1人が新規で 33% のように極端に振れて、
  * 主催者の評価のように誤読されるのを防ぐ（画面は「母数が少ないため非表示」）。
@@ -58,48 +70,19 @@ const JOINED_HELD_IN_COMMUNITY_PERIOD = (m: string, e: string) =>
      AND (${e}.attendance_check = 0 OR ${m}.attended = 1)
      AND ${e}.community_id = ?`;
 
-interface EventAgg {
-  held_events: number;
-  held_participations: number;
-  held_participants: number;
-  dud_events: number;
-  attendance_unrecorded_events: number;
-}
+/** コミュニティKPIの開催指標は全体KPIの5指標そのまま（追加の列は無い） */
+type EventAgg = HeldEventAgg;
 
-interface MemberAgg {
-  registrations: number;
-  confirmed_registrations: number;
-  canceled: number;
-  canceled_late: number;
-  attendance_expected: number;
-  attended: number;
-}
-
-interface ViewAgg {
-  unique_viewers: number;
-  total_views: number;
-}
-
-interface RepeatAgg {
-  people: number;
-  repeaters: number;
+/** 全体KPIのリピート集計に「初参加」を足したもの */
+interface RepeatAgg extends RepeatCountAgg {
   newcomers: number;
 }
 
 /** 参加回数の分布は今期間ぶんだけ */
-interface RepeatRow extends Dual<RepeatAgg> {
-  c1: number;
-  c2: number;
-  c3: number;
-  c45: number;
-  c610: number;
-  c11: number;
-}
+interface RepeatRow extends Dual<RepeatAgg>, CountBucketRow {}
 
-interface HostAgg {
-  hosts: number;
-  repeat_hosts: number;
-  total_held: number;
+/** 全体KPIの主催集計に「上位1人の開催数」（バス係数）を足したもの */
+interface HostAgg extends HostCountAgg {
   top_host_events: number;
 }
 
@@ -128,8 +111,9 @@ interface DailyRow {
 }
 
 export const communityKpiRepo = {
-  /** コミュニティ運営者向けのKPI (#262)。数え方は全体KPI (kpi.ts) と同じヘルパーを
-   * 使っており、同じ期間なら community KPI の各数字は全体KPIの部分集合になる。
+  /** コミュニティ運営者向けのKPI (#262)。数え方は全体KPI (kpi.ts) と同じ断片
+   * (kpiMetrics.ts) を使っており、同じ期間なら community KPI の各数字は
+   * 全体KPIの部分集合になる。
    * Workers のサブリクエスト上限を意識して 8 本にまとめている
    * （前期間 (#266) は本数を増やさず各クエリの CASE で同時に数える）。 */
   async overview(
@@ -153,33 +137,11 @@ export const communityKpiRepo = {
        ),
        ev AS (
          SELECT b.*,
-                CASE WHEN b.held_p > 0 THEN (
-                  -- 実際に集まった人数（主催・スタッフを含む）。イベントページの
-                  -- participantCount は確定メンバー数なので、ここは意図的に別定義 (#297)
-                  SELECT COUNT(1) FROM event_member em
-                   WHERE em.event_id = b.id AND em.status = 'confirmed'
-                     AND (b.attendance_check = 0 OR em.attended = 1 OR em.role <> 'participant')
-                     AND ${USER_ACTIVE("em.user_id")}
-                ) ELSE 0 END AS pcount,
-                CASE WHEN b.held_p > 0 THEN (
-                  -- 不発判定用。主催・スタッフを含めるとチーム規模でしきい値がぶれる
-                  SELECT COUNT(1) FROM event_member em
-                   WHERE em.event_id = b.id AND em.status = 'confirmed'
-                     AND ${JOINED("em")}
-                     AND (b.attendance_check = 0 OR em.attended = 1)
-                     AND ${USER_ACTIVE("em.user_id")}
-                ) ELSE 0 END AS ppl,
-                CASE WHEN b.held_p > 0 AND b.attendance_check = 1
-                       AND ${ATTENDANCE_UNRECORDED("b.id")}
-                     THEN 1 ELSE 0 END AS unrecorded
+                ${HELD_EVENT_COUNTS("b")}
          FROM base b
        )
        SELECT
-         ${dual("held_events", "held_p")},
-         ${dual("held_participations", "held_p", undefined, "pcount")},
-         ${dual("held_participants", "held_p", undefined, "ppl")},
-         ${dual("dud_events", "held_p", "unrecorded = 0 AND ppl <= 3")},
-         ${dual("attendance_unrecorded_events", "held_p", "unrecorded = 1")}
+         ${HELD_METRIC_COLUMNS}
        FROM ev`,
       now,
       sinceDay,
@@ -189,26 +151,12 @@ export const communityKpiRepo = {
     );
 
     // --- (2) 参加登録: 登録数・キャンセル・出席 ---
-    const memberAgg = await one<Dual<MemberAgg>>(
+    const memberAgg = await one<Dual<RegistrationAgg>>(
       `WITH reg AS (
-         SELECT ${DAY_PERIOD(jd("m.created_at"))} AS reg_p,
-                ${HELD_PERIOD("e")} AS held_p,
-                m.status AS status, m.attended AS attended,
-                m.canceled_scheduling AS canceled_scheduling,
-                m.canceled_at AS canceled_at,
-                e.scheduling AS e_scheduling, e.starts_at AS e_starts_at,
-                e.attendance_check AS e_attendance_check
-         FROM event_member m JOIN event e ON e.id = m.event_id
-         WHERE ${JOINED("m")} AND e.status = 'published' AND ${MEMBER_USER_ACTIVE}
-           AND e.community_id = ?
+         ${REGISTRATION_SOURCE("e.community_id = ?")}
        )
        SELECT
-         ${dual("registrations", "reg_p")},
-         ${dual("confirmed_registrations", "reg_p", "status = 'confirmed'")},
-         ${dual("canceled", "reg_p", "status = 'canceled' AND canceled_scheduling = 0")},
-         ${dual("canceled_late", "reg_p", "status = 'canceled' AND canceled_scheduling = 0 AND e_scheduling = 0 AND canceled_at >= e_starts_at - 86400000")},
-         ${dual("attendance_expected", "held_p", "e_attendance_check = 1 AND status = 'confirmed'")},
-         ${dual("attended", "held_p", "e_attendance_check = 1 AND status = 'confirmed' AND attended = 1")}
+         ${REGISTRATION_COLUMNS}
        FROM reg`,
       sinceDay,
       prevSinceDay,
@@ -288,18 +236,10 @@ export const communityKpiRepo = {
          WHERE held_p > 0
          GROUP BY uid
        )
-       SELECT COALESCE(SUM(CASE WHEN n >= 1 THEN 1 ELSE 0 END), 0) AS people,
-              COALESCE(SUM(CASE WHEN prev_n >= 1 THEN 1 ELSE 0 END), 0) AS prev_people,
-              COALESCE(SUM(CASE WHEN n >= 2 THEN 1 ELSE 0 END), 0) AS repeaters,
-              COALESCE(SUM(CASE WHEN prev_n >= 2 THEN 1 ELSE 0 END), 0) AS prev_repeaters,
+       SELECT ${REPEAT_PEOPLE_COLUMNS},
               COALESCE(SUM(CASE WHEN n >= 1 THEN is_new ELSE 0 END), 0) AS newcomers,
               COALESCE(SUM(CASE WHEN prev_n >= 1 THEN prev_is_new ELSE 0 END), 0) AS prev_newcomers,
-              COALESCE(SUM(CASE WHEN n = 1 THEN 1 ELSE 0 END), 0) AS c1,
-              COALESCE(SUM(CASE WHEN n = 2 THEN 1 ELSE 0 END), 0) AS c2,
-              COALESCE(SUM(CASE WHEN n = 3 THEN 1 ELSE 0 END), 0) AS c3,
-              COALESCE(SUM(CASE WHEN n BETWEEN 4 AND 5 THEN 1 ELSE 0 END), 0) AS c45,
-              COALESCE(SUM(CASE WHEN n BETWEEN 6 AND 10 THEN 1 ELSE 0 END), 0) AS c610,
-              COALESCE(SUM(CASE WHEN n >= 11 THEN 1 ELSE 0 END), 0) AS c11
+              ${COUNT_BUCKET_COLUMNS}
        FROM pc`,
       now,
       sinceDay,
@@ -326,12 +266,7 @@ export const communityKpiRepo = {
          WHERE held_p > 0
          GROUP BY uid
        )
-       SELECT COALESCE(SUM(CASE WHEN n >= 1 THEN 1 ELSE 0 END), 0) AS hosts,
-              COALESCE(SUM(CASE WHEN prev_n >= 1 THEN 1 ELSE 0 END), 0) AS prev_hosts,
-              COALESCE(SUM(CASE WHEN n >= 2 THEN 1 ELSE 0 END), 0) AS repeat_hosts,
-              COALESCE(SUM(CASE WHEN prev_n >= 2 THEN 1 ELSE 0 END), 0) AS prev_repeat_hosts,
-              COALESCE(SUM(n), 0) AS total_held,
-              COALESCE(SUM(prev_n), 0) AS prev_total_held,
+       SELECT ${HOST_COUNT_COLUMNS},
               COALESCE(MAX(n), 0) AS top_host_events,
               COALESCE(MAX(prev_n), 0) AS prev_top_host_events
        FROM hc`,
@@ -414,13 +349,10 @@ export const communityKpiRepo = {
       `SELECT day, SUM(held_events) AS held_events, SUM(participations) AS participations
        FROM (
          SELECT ${jd("e.ends_at")} AS day, 1 AS held_events, 0 AS participations
-         FROM event e WHERE ${HELD("e")} AND e.community_id = ?
+         ${DAILY_HELD_EVENTS(" AND e.community_id = ?")}
          UNION ALL
          SELECT ${jd("e.ends_at")}, 0, 1
-         FROM event_member m JOIN event e ON e.id = m.event_id
-         WHERE m.status = 'confirmed'
-           AND (e.attendance_check = 0 OR m.attended = 1 OR m.role <> 'participant')
-           AND ${MEMBER_USER_ACTIVE} AND ${HELD("e")} AND e.community_id = ?
+         ${DAILY_PARTICIPATIONS(" AND e.community_id = ?")}
        )
        GROUP BY day ORDER BY day`,
       now,
@@ -450,11 +382,13 @@ export const communityKpiRepo = {
 };
 
 /** 1つの期間ぶんの指標。今期間・前期間の両方でこの関数を通すので、
- * 片方だけ数え方や母数ゲートがずれることがない */
+ * 片方だけ数え方や母数ゲートがずれることがない。
+ * 全体KPIにも出るタイルは sharedMetrics()（＝kpi.ts と同じ式）。
+ * こちらは母数が小さいので、率のゲートに rateMin を渡す */
 function periodMetrics(
   s: {
     event: AggPick<EventAgg>;
-    member: AggPick<MemberAgg>;
+    member: AggPick<RegistrationAgg>;
     view: AggPick<ViewAgg>;
     repeat: AggPick<RepeatAgg>;
     host: AggPick<HostAgg>;
@@ -464,71 +398,18 @@ function periodMetrics(
   /** 全期間（days=null）は「期間より前」が無く全員が初参加になるトートロジー */
   allTime: boolean,
 ) {
-  const heldEvents = s.event("held_events");
-  const participations = s.event("held_participations");
-  const attendanceUnrecordedEvents = s.event("attendance_unrecorded_events");
-  const dudEvents = s.event("dud_events");
-  const dudBaseEvents = heldEvents - attendanceUnrecordedEvents;
+  const shared = sharedMetrics(s, rateMin);
 
-  const registrations = s.member("registrations");
-  const canceled = s.member("canceled");
-  const canceledLate = s.member("canceled_late");
-  const attendanceExpected = s.member("attendance_expected");
-  const attended = s.member("attended");
-  const attendanceRate = rate(attended, attendanceExpected);
-
-  const uniqueViewers = s.view("unique_viewers");
-  const people = s.repeat("people");
-  const repeaters = s.repeat("repeaters");
+  const people = shared.uniqueParticipants;
   const newcomers = s.repeat("newcomers");
-
-  const hosts = s.host("hosts");
-  const heldEventsWithActiveHost = s.host("total_held");
-  const repeatHosts = s.host("repeat_hosts");
   const topHostEvents = s.host("top_host_events");
-
   const activeMembers = s.dormant("active_members");
 
   return {
-    participations,
-    heldParticipants: s.event("held_participants"),
-    heldEvents,
-    avgParticipantsPerEvent: rate(participations, heldEvents),
+    ...shared,
 
-    registrations,
-    confirmedRegistrations: s.member("confirmed_registrations"),
-    uniqueViewers,
-    totalViews: s.view("total_views"),
-    viewToJoinRate: rate(registrations, uniqueViewers),
-    attendanceExpected,
-    attended,
-    attendanceRate,
-    noShowRate: attendanceRate === null ? null : 1 - attendanceRate,
-    canceled,
-    cancelRate: rate(canceled, registrations),
-    canceledLate,
-    canceledEarly: canceled - canceledLate,
-    lateCancelRate: rate(canceledLate, canceled),
-    uniqueParticipants: people,
-    repeatParticipants: repeaters,
-    // 分母は新規流入と同じ「期間内に参加した実人数」。全体KPIでは素の rate だが、
-    // ここは新規流入と同じセクションに並ぶので同じゲートを通す
-    repeatRate: rateMin(repeaters, people),
-
-    dudEvents,
-    attendanceUnrecordedEvents,
-    dudBaseEvents,
-    // 開催1件で1件が不発なら100% になる。立ち上げ期の主催者が最初に見る数字なので
-    // 特にゲートを効かせる（件数はそのまま出す）
-    dudRate: rateMin(dudEvents, dudBaseEvents),
-    hosts,
-    heldEventsWithActiveHost,
-    repeatHosts,
-    repeatHostRate: rateMin(repeatHosts, hosts),
-    // 平均は「率」ではなく件数÷人数の目安なので、母数ゲートは掛けない
-    avgEventsPerHost: rate(heldEventsWithActiveHost, hosts),
     topHostEvents,
-    topHostShare: rateMin(topHostEvents, heldEventsWithActiveHost),
+    topHostShare: rateMin(topHostEvents, shared.heldEventsWithActiveHost),
 
     newcomers,
     regulars: people - newcomers,
@@ -608,7 +489,7 @@ function buildPayload(src: {
   prevSinceDay: string;
   today: string;
   eventAgg: Dual<EventAgg> | null;
-  memberAgg: Dual<MemberAgg> | null;
+  memberAgg: Dual<RegistrationAgg> | null;
   viewAgg: Dual<ViewAgg> | null;
   repeatAgg: RepeatRow | null;
   hostAgg: Dual<HostAgg> | null;
@@ -619,7 +500,7 @@ function buildPayload(src: {
   const members = N(src.dormantAgg?.members);
   const sources = (prefix: "" | "prev_") => ({
     event: picker<EventAgg>(src.eventAgg, prefix),
-    member: picker<MemberAgg>(src.memberAgg, prefix),
+    member: picker<RegistrationAgg>(src.memberAgg, prefix),
     view: picker<ViewAgg>(src.viewAgg, prefix),
     repeat: picker<RepeatAgg>(src.repeatAgg, prefix),
     host: picker<HostAgg>(src.hostAgg, prefix),
@@ -630,16 +511,6 @@ function buildPayload(src: {
     src.days === null
       ? null
       : previousValues(periodMetrics(sources("prev_"), members, false));
-
-  const cur = src.repeatAgg;
-  const countDistribution: KpiDistributionBucket[] = [
-    { label: "1回", users: N(cur?.c1) },
-    { label: "2回", users: N(cur?.c2) },
-    { label: "3回", users: N(cur?.c3) },
-    { label: "4〜5回", users: N(cur?.c45) },
-    { label: "6〜10回", users: N(cur?.c610) },
-    { label: "11回以上", users: N(cur?.c11) },
-  ];
 
   // 重なっている人数が少ない行は出さない。コミュニティのメンバー一覧は誰でも
   // 見られるので、「1人が重なっています（@dee）」まで出すと突き合わせで
@@ -688,7 +559,7 @@ function buildPayload(src: {
       uniqueParticipants: m.uniqueParticipants,
       repeatParticipants: m.repeatParticipants,
       repeatRate: m.repeatRate,
-      countDistribution,
+      countDistribution: countDistribution(src.repeatAgg),
     },
     organizers: {
       heldEvents: m.heldEvents,

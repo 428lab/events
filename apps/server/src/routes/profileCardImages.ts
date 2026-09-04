@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { CARD_COMBO_RE, PROFILE_CARD_IMAGE } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { getBucket } from "../runtime.js";
+import { userAvatarsRepo } from "../db/repositories/userAvatars.js";
 import { usersRepo } from "../db/repositories/users.js";
 
 /** R2 のオブジェクトキー。組み合わせ（背景-色）ごとに別ファイルで保存する (#201)。
@@ -47,7 +48,7 @@ export async function putMyCardImage(c: Context<AppEnv>) {
     httpMetadata: { contentType: "image/png" },
   });
   const updatedAt = Date.now();
-  await usersRepo.setCardImage(userId, updatedAt, combo);
+  await userAvatarsRepo.setCardImage(userId, updatedAt, combo);
   return c.json({ ok: true, updatedAt, key: combo });
 }
 

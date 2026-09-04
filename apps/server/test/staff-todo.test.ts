@@ -3,7 +3,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import type { EventTodosPayload } from "@eventer/shared";
 import { bindEnv, type Env } from "../src/runtime.js";
 import { buildEventExtraHtml } from "../src/lib/email.js";
-import { usersRepo } from "../src/db/repositories/users.js";
+import { accountDeletionRepo } from "../src/db/repositories/accountDeletion.js";
+import { accountMergeRepo } from "../src/db/repositories/accountMerge.js";
 
 /**
  * スタッフ向けの準備 TODO (#393)。
@@ -497,7 +498,7 @@ describe("担当者が外れたとき (#393 9.5)", () => {
     // `event_member` だけを見る実装は、**ここで "active" のまま名前を出す**。
     // #250 の目的（他の利用者から見えなくなる）が果たされない
     const { cookie, eventId, staff } = await setupWithAssignee();
-    await usersRepo.requestDeletion(staff.userId, Date.now());
+    await accountDeletionRepo.requestDeletion(staff.userId, Date.now());
     const member = await env.DB.prepare(
       "SELECT role FROM event_member WHERE event_id = ? AND user_id = ?",
     )
@@ -536,7 +537,7 @@ describe("担当者が外れたとき (#393 9.5)", () => {
     const pending = await makeMember(eventId, "staff", "applied");
     const participant = await makeMember(eventId, "participant");
     const leaving = await makeMember(eventId, "staff");
-    await usersRepo.requestDeletion(leaving.userId, Date.now());
+    await accountDeletionRepo.requestDeletion(leaving.userId, Date.now());
 
     const seen = await getTodos(eventId, cookie);
     const ids = seen.assignable.map((a) => a.id);
@@ -559,7 +560,7 @@ describe("担当者が外れたとき (#393 9.5)", () => {
       assigneeUserId: loser.userId,
     });
 
-    await usersRepo.mergeUsers(winner.userId, loser.userId);
+    await accountMergeRepo.mergeUsers(winner.userId, loser.userId);
 
     const seen = await getTodos(eventId, cookie);
     expect(seen.todos[0]!.assigneeState).toBe("active");

@@ -94,10 +94,10 @@ staff だけ。appAdmin・コミュニティ管理者は**通らない**）に�
 |---|---|---|
 | 降格（staff→他ロール） | `routes/eventMembers.ts` PATCH `/:id/members/:userId/role` | `setRole` または `leaveEvent`。**最後の staff は降ろせない**（`last_staff` 409）ので staff は常に1人以上残る |
 | 本人の参加解除 | `routes/eventMembers.ts` DELETE `/:id/join` → `leaveEvent` | メンバー行を削除 |
-| 退会申請（soft delete） | `users.ts` `requestDeletion`（#250） | メンバー行は残るがセッション全削除で API を叩けなくなる。**申請前に受け取った鍵は手元に生きている**ので、purge（31日後）まで回さないと猶予期間中の新規発言を外部クライアントで読み続けられる（レビュー指摘）。ここにもフックが要る |
-| 退会（完全削除） | `users.ts` `deleteAccount`（purge #250） | event_member は FK CASCADE で消える。**ルートを通らない**のでここにもフックが要る（申請時に回っていれば多重防御として1世代余分に進むだけ） |
+| 退会申請（soft delete） | `accountDeletion.ts` `requestDeletion`（#250） | メンバー行は残るがセッション全削除で API を叩けなくなる。**申請前に受け取った鍵は手元に生きている**ので、purge（31日後）まで回さないと猶予期間中の新規発言を外部クライアントで読み続けられる（レビュー指摘）。ここにもフックが要る |
+| 退会（完全削除） | `accountDeletion.ts` `deleteAccount`（purge #250） | event_member は FK CASCADE で消える。**ルートを通らない**のでここにもフックが要る（申請時に回っていれば多重防御として1世代余分に進むだけ） |
 
-アカウント統合は「負け側が staff なら勝ち側を staff に引き上げる」（`users.ts` (0)）ので
+アカウント統合は「負け側が staff なら勝ち側を staff に引き上げる」（`accountMerge.ts` (0)）ので
 資格は失われず、ローテーション不要。
 
 ---
@@ -325,8 +325,8 @@ CREATE INDEX idx_event_group_chat_signer_user
 |---|---|
 | 降格 | `routes/eventMembers.ts` のロール変更ハンドラ。`before.role === "staff"` かつ新ロールが staff 以外のとき |
 | 参加解除 | `leaveEvent()` 内。`leaving.role === "staff"` のとき（DELETE /join とロール変更→participant の両方がここを通る） |
-| 退会申請 | `users.ts` `requestDeletion` 内。「confirmed staff だったイベント」を列挙して各部屋を回す（`onStaffLostEverywhere`）。**申請の時点で回す**：purge まで待つと猶予期間（30日）のあいだ、申請前に配られた鍵で新規発言を読み続けられる。復帰（restore）した人はゲートを再び通って全世代を受け取り直すので両立する |
-| 退会 purge | `users.ts` `deleteAccount` 内。申請時と同じ列挙で各部屋を回す（signer 行自体は CASCADE で消える）。申請時に回っていれば1世代余分に進むだけの**多重防御**。消費サブリクエスト数を返し、purge の実行予算（`lib/purgeDeleted.ts`）に実数で積む |
+| 退会申請 | `accountDeletion.ts` `requestDeletion` 内。「confirmed staff だったイベント」を列挙して各部屋を回す（`onStaffLostEverywhere`）。**申請の時点で回す**：purge まで待つと猶予期間（30日）のあいだ、申請前に配られた鍵で新規発言を読み続けられる。復帰（restore）した人はゲートを再び通って全世代を受け取り直すので両立する |
+| 退会 purge | `accountDeletion.ts` `deleteAccount` 内。申請時と同じ列挙で各部屋を回す（signer 行自体は CASCADE で消える）。申請時に回っていれば1世代余分に進むだけの**多重防御**。消費サブリクエスト数を返し、purge の実行予算（`lib/purgeDeleted.ts`）に実数で積む |
 
 ローテーションの意味と限界（承知のうえ。#205 と同じ割り切り）:
 

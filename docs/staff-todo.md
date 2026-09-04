@@ -66,7 +66,7 @@ API に、参加者に見せない行が混ざる」形だったが、今回は*
 |---|---|---|---|
 | a. イベントから除名・自分で脱退 | `eventMembersRepo.remove` = `DELETE FROM event_member`（`eventMembers.ts:239`） | 残る | **消える** |
 | b. staff → participant に降格 | `event_member.role` の UPDATE | 残る | 残る（role が変わる） |
-| c. 退会申請 (#250) | `usersRepo.requestDeletion` = `user.deleted_at` を立てるだけ（`users.ts:661`） | **残る（deleted_at 付き）** | **残る** |
+| c. 退会申請 (#250) | `accountDeletionRepo.requestDeletion` = `user.deleted_at` を立てるだけ（`accountDeletion.ts`） | **残る（deleted_at 付き）** | **残る** |
 | d. 30日後の完全削除 (#244) | `DELETE FROM user`（FK が発火） | **消える** | CASCADE で消える |
 
 **c が最も危ない。** 退会しても `event_member` の staff 行は残るので、
@@ -82,7 +82,7 @@ d は FK の設定次第。`notification.actor_id` (#380) と `venue_photo.user_
 
 ### 2.4 アカウント統合で付け替えが要る（#380 6.2 と同じ罠）
 
-`users.ts` の `mergeUsers` に「UNIQUE の無い参照列は単純に付け替え」の `simple`
+`accountMerge.ts` の `mergeUsers` に「UNIQUE の無い参照列は単純に付け替え」の `simple`
 リストがある。**ここに足し忘れると、負け側の `user` 行を消した瞬間に
 `ON DELETE SET NULL` が発火し、統合したはずの担当が黙って未割り当てになる**
 （#380 が `notification.actor_id` の行に同じ注意書きを残している）。
@@ -406,7 +406,7 @@ CREATE INDEX idx_event_todo_dep_reverse ON event_todo_dep(depends_on_id);
 
 ## 5. `mergeUsers` に2行足す（忘れると壊れる）
 
-`apps/server/src/db/repositories/users.ts:567` の `simple` に足す。
+`apps/server/src/db/repositories/accountMerge.ts` の `simple` に足す。
 
 ```ts
 // 準備 TODO の担当と作成者 (#393)。付け替えないと (9) の user 削除で

@@ -3,7 +3,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import type { EventStaffingPayload } from "@eventer/shared";
 import { bindEnv, type Env } from "../src/runtime.js";
 import { buildEventExtraHtml } from "../src/lib/email.js";
-import { usersRepo } from "../src/db/repositories/users.js";
+import { accountDeletionRepo } from "../src/db/repositories/accountDeletion.js";
+import { accountMergeRepo } from "../src/db/repositories/accountMerge.js";
 import { eventMembersRepo } from "../src/db/repositories/eventMembers.js";
 import {
   BASE,
@@ -290,7 +291,7 @@ describe("担当者が外れたとき (#384 9.5)", () => {
     const participant = await makeMember(eventId, "participant");
     const pending = await makeMember(eventId, "staff", "applied");
     const leaving = await makeMember(eventId, "staff");
-    await usersRepo.requestDeletion(leaving.userId, Date.now());
+    await accountDeletionRepo.requestDeletion(leaving.userId, Date.now());
     for (const u of [participant, pending, leaving]) {
       const r = await addAssignee(eventId, cookie, slotId, u.userId);
       expect(r.status).toBe(400);
@@ -326,7 +327,7 @@ describe("担当者が外れたとき (#384 9.5)", () => {
   it("退会申請（メンバー行は残る）— ここが最も落ちやすい", async () => {
     // `event_member` だけを見る実装は、**ここで "active" のまま名前を出す**
     const { cookie, eventId, staff } = await setupAssigned();
-    await usersRepo.requestDeletion(staff.userId, Date.now());
+    await accountDeletionRepo.requestDeletion(staff.userId, Date.now());
     const member = await env.DB.prepare(
       "SELECT role FROM event_member WHERE event_id = ? AND user_id = ?",
     )
@@ -364,7 +365,7 @@ describe("担当者が外れたとき (#384 9.5)", () => {
     const pending = await makeMember(eventId, "staff", "applied");
     const participant = await makeMember(eventId, "participant");
     const leaving = await makeMember(eventId, "staff");
-    await usersRepo.requestDeletion(leaving.userId, Date.now());
+    await accountDeletionRepo.requestDeletion(leaving.userId, Date.now());
 
     const seen = await getStaffing(eventId, cookie);
     const ids = seen.assignable.map((a) => a.id);
@@ -398,7 +399,7 @@ describe("担当者が外れたとき (#384 9.5)", () => {
     expect((await addAssignee(eventId, cookie, slotId, winner.userId)).status).toBe(201);
     expect((await addAssignee(eventId, cookie, slotB, loser.userId)).status).toBe(201);
 
-    await usersRepo.mergeUsers(winner.userId, loser.userId);
+    await accountMergeRepo.mergeUsers(winner.userId, loser.userId);
 
     const seen = await getStaffing(eventId, cookie);
     const reception = seen.slots.find((s) => s.id === slotId)!;

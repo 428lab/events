@@ -134,7 +134,7 @@ async function leaveEvent(
   // signer を失効させる（部屋が無ければ何もしない）。DELETE /join と
   // ロール変更→participant の両方がここを通る（残る経路は「staff → 他ロール」の
   // setRole・退会申請・退会 purge で、それぞれロール変更ハンドラと
-  // users.ts の requestDeletion / deleteAccount にある）
+  // accountDeletion.ts の requestDeletion / deleteAccount にある）
   if (leaving.role === "staff") {
     await staffChatRepo.onStaffLost(event.id, leaving.userId);
   }

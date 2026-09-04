@@ -147,7 +147,7 @@ describe("event_todo を触る SQL の走査 (#393 9.3)", () => {
       OWNER,
       // mergeUsers / 各テストが読む配列リテラル（#396）。SQL は組み立てだが、
       // 対象列の網羅は merge-user-columns.test.ts が別に守っている
-      "../src/db/repositories/users.ts",
+      "../src/db/repositories/accountMerge.ts",
     ]);
     const offenders: string[] = [];
     for (const [file, src] of Object.entries(sources)) {

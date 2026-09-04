@@ -11,7 +11,7 @@ import {
   parseCheckboxValue,
 } from "@eventer/shared";
 import { batch, many, one, run, runCount } from "../client.js";
-import { jd } from "./kpi.js";
+import { jd } from "./kpiMetrics.js";
 
 /**
  * 開催前アンケート (#444)。設計は docs/pre-event-survey.md。
@@ -351,7 +351,7 @@ export const eventPreSurveyRepo = {
 
   /** 日毎のアクセスと回答数 (#450・staff のみが読む)。新しい順。
    * responses は response.created_at から JST 日毎に導出（新しい保存はしない。
-   * 日付変換は kpi.ts の jd() を共用——写しを作らない） */
+   * 日付変換は kpiMetrics.ts の jd() を共用——写しを作らない） */
   async accessStats(surveyId: string): Promise<PreSurveyAccessRow[]> {
     const views = await many<{ day: string; count: number; first_count: number }>(
       "SELECT day, count, first_count FROM event_pre_survey_access WHERE survey_id = ?",

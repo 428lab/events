@@ -23,7 +23,7 @@ import { literalsOf, scanStatements, type Statement } from "./lib/sqlScan.js";
  * **変数から組む表名は映らない。** `mergeUsers` (#396) の uniqueKeyed のように
  * 表名が配列リテラルから来る SQL は走査を素通りする。そこで「表名の文字列
  * リテラルがどのファイルに現れるか」の補助チェックを置き、抜け道ごと見張る。
- * users.ts の uniqueKeyed（統合の付け替え）はその補助チェック側で許可してある。
+ * accountMerge.ts の uniqueKeyed（統合の付け替え）はその補助チェック側で許可してある。
  */
 
 // ソースはビルド時に文字列として取り込む（workerd の中にファイルシステムは無い）
@@ -128,7 +128,7 @@ describe("event_group_chat_room / _key / _signer を触る SQL の走査 (#382 1
       OWNER,
       // mergeUsers の uniqueKeyed 配列リテラル（#396）。SQL は組み立てだが、
       // 対象列の網羅は merge-user-columns.test.ts が別に守っている
-      "../src/db/repositories/users.ts",
+      "../src/db/repositories/accountMerge.ts",
     ]);
     const TABLE_NAMES = [
       "event_group_chat_room",

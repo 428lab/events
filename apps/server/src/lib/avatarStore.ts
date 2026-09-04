@@ -2,7 +2,7 @@ import { AVATAR_IMAGE } from "@eventer/shared";
 import { deferBackground, getBucket } from "../runtime.js";
 import { normalizeImageMime } from "./imageMime.js";
 import { MAX_REDIRECTS, isPrivateHost } from "./urlGuard.js";
-import { usersRepo } from "../db/repositories/users.js";
+import { userAvatarsRepo } from "../db/repositories/userAvatars.js";
 
 /** アイコン本体の R2 キー。1ユーザー1枚（更新は上書き） (#312)。
  * 世代を分けないのは、退会時の後始末 (purgeDeleted.ts) を1キーで済ませるため。
@@ -204,7 +204,7 @@ export async function syncAvatarFromSource(
   try {
     // 現在の状態は最初に1回だけ引く（スロットル判定・ハッシュ比較・取得元URLの
     // 比較で共用）
-    const state = await usersRepo.findAvatarSyncState(userId);
+    const state = await userAvatarsRepo.findAvatarSyncState(userId);
     const minInterval = opts.minIntervalMs ?? 0;
     if (minInterval > 0) {
       const now = Date.now();
@@ -216,7 +216,7 @@ export async function syncAvatarFromSource(
       }
       // 取得の前に記録する。成否に関わらずここで刻んでおかないと、
       // 失敗し続けるURLを指定して連打されたときに抑止できない
-      await usersRepo.touchAvatarSyncAttempt(userId, now);
+      await userAvatarsRepo.touchAvatarSyncAttempt(userId, now);
     }
     const current =
       state && state.updatedAt !== null
@@ -254,7 +254,7 @@ export async function syncAvatarFromSource(
       // ?v= は進めない（同じ画像を再ダウンロードさせない）が、切り戻し用に
       // 控えているURLが既に404のものになっていると復元できないので追随させる
       if (state?.sourceUrl !== url.toString()) {
-        await usersRepo.setAvatarSourceUrl(userId, url.toString());
+        await userAvatarsRepo.setAvatarSourceUrl(userId, url.toString());
       }
       return false;
     }
@@ -265,7 +265,7 @@ export async function syncAvatarFromSource(
     });
     // R2 に入れてから D1 を更新する。逆にすると、間で失敗したときに
     // 「URL は自ドメインを指すのに実体が無い」＝アイコンが消えた状態になる
-    await usersRepo.setAvatarImage(
+    await userAvatarsRepo.setAvatarImage(
       userId,
       avatarUrlFor(userId, updatedAt),
       updatedAt,
