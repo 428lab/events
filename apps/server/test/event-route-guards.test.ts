@@ -349,3 +349,102 @@ describe("公開GETの閲覧権限と断り方 (#466)", () => {
     }
   });
 });
+
+/**
+ * イベントの更新は staff だけ (#471)。
+ *
+ * 「イベントのメンバーであること」と「そのイベントを運営できること」は別の軸で、
+ * 混ざると **参加者が自分の参加しているイベントの日程・会場・公開状態を書き換えられる**。
+ * `requireEventRole(["staff"])` のロール一覧が広がっても気づけるように、
+ * staff 以外の**全ロール**を1本ずつ確かめる（増えたロールの取りこぼしを防ぐ）。
+ *
+ * アプリ運営管理者とコミュニティ管理者は `requireEventRole` が意図的に通すので、
+ * ここでは素のイベントメンバー（管理者ではない）だけを見ている。
+ */
+describe("イベント更新は staff 以外を断る (#471)", () => {
+  /** 公開イベントを作り、指定ロールのメンバーを1人用意する */
+  async function memberWithRole(
+    role: "participant" | "judge" | "observer" | "staff",
+  ): Promise<{ staffCookie: string; eventId: string; cookie: string }> {
+    const staffCookie = await loginDev();
+    const eventId = await createEvent(staffCookie, "元のタイトル");
+    await publish(staffCookie, eventId);
+
+    const cookie = await makeOutsider();
+    const join = await SELF.fetch(`${BASE}/api/events/${eventId}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({}),
+    });
+    expect(join.status).toBe(201);
+    const { member, status } = (await join.json()) as {
+      member: EventMember;
+      status: string;
+    };
+    // 枠が無いので参加は即確定。参加確定でも更新は通らない、を見たい
+    expect(status).toBe("confirmed");
+
+    if (role !== "participant") {
+      const patch = await SELF.fetch(
+        `${BASE}/api/events/${eventId}/members/${member.userId}/role`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json", cookie: staffCookie },
+          body: JSON.stringify({ role }),
+        },
+      );
+      expect(patch.status).toBe(200);
+    }
+    return { staffCookie, eventId, cookie };
+  }
+
+  /** イベント更新を試みる */
+  function updateEvent(
+    eventId: string,
+    cookie: string,
+    title: string,
+  ): Promise<Response> {
+    return SELF.fetch(`${BASE}/api/events/${eventId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ title }),
+    });
+  }
+
+  async function titleOf(eventId: string): Promise<string> {
+    const res = await SELF.fetch(`${BASE}/api/events/${eventId}`);
+    return ((await res.json()) as { event: Event }).event.title;
+  }
+
+  for (const role of ["participant", "judge", "observer"] as const) {
+    it(`${role} はイベントを更新できない（403。タイトルは元のまま）`, async () => {
+      const { eventId, cookie } = await memberWithRole(role);
+      const res = await updateEvent(eventId, cookie, "書き換えたタイトル");
+      expect(res.status).toBe(403);
+      expect(await errorOf(res)).toBe("forbidden");
+      // 403 を返しつつ書き換わっていた、を防ぐ
+      expect(await titleOf(eventId)).toBe("元のタイトル");
+    });
+  }
+
+  it("メンバーですらない相手も更新できない（403）", async () => {
+    const staffCookie = await loginDev();
+    const eventId = await createEvent(staffCookie, "元のタイトル");
+    await publish(staffCookie, eventId);
+    const res = await updateEvent(
+      eventId,
+      await makeOutsider(),
+      "書き換えたタイトル",
+    );
+    expect(res.status).toBe(403);
+    expect(await errorOf(res)).toBe("forbidden");
+    expect(await titleOf(eventId)).toBe("元のタイトル");
+  });
+
+  it("staff なら更新できる（ロールの門が全部を塞いでいない）", async () => {
+    const { eventId, cookie } = await memberWithRole("staff");
+    const res = await updateEvent(eventId, cookie, "staffが書き換えた");
+    expect(res.status).toBe(200);
+    expect(await titleOf(eventId)).toBe("staffが書き換えた");
+  });
+});

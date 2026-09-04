@@ -30,7 +30,7 @@ export const eventCrudRoutes = new Hono<AppEnv>();
  * /communities/:id/membership）ので、「メンバーか」では素通しになってしまう。
  * イベント作成フォームの選択肢も GET /communities/mine（= owner/admin）なので、
  * 画面上の仕様とも一致する。 */
-export async function canAttachCommunity(
+async function canAttachCommunity(
   communityId: string,
   user: User,
 ): Promise<boolean> {
