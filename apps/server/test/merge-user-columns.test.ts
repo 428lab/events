@@ -112,26 +112,45 @@ function mergeUsersBody(src: string): string {
  * 配列リテラルのほうを読む。3 は文字列に出るので `UPDATE` 側を読む。
  *
  * 2 のうち共有コンテンツの所有者列は `userTables.ts` に定義があり
- * （退会側と同じ定義を使うため）、`simple` へは spread で入る。
- * 定義元のファイルも一緒に読む。
+ * （退会側と同じ定義を使うため）、`simple` へは spread で入る。定義元のファイルも
+ * 読むが、**`simple` に spread が実際にあるときだけ**credit する。無条件に
+ * 定義元を読むと、spread を外しても5本を「扱っている」と答えてしまい、
+ * この走査は自分で確かめていない網羅を報告することになる（それは根拠ではない）。
  */
+
+/** 配列リテラル `name … = [ … ];` の中身。読めなければその場で落とす */
+function arrayBody(name: string, src: string): string {
+  const m = new RegExp(`${name}[^=]*=\\s*\\[([\\s\\S]*?)\\n *\\];`).exec(src);
+  expect(m, `${name} の配列を読めなかった（走査が壊れている）`).not.toBeNull();
+  return m![1]!;
+}
+
+/** `simple` が userTables.ts の定義を差し込んでいる印。これが無ければ
+ * 共有コンテンツの5本は「扱われていない」 */
+const SHARED_SPREAD = "...SHARED_CONTENT_OWNER_COLUMNS";
+
 function handledColumns(body: string, tables: string): Set<Column> {
   const out = new Set<Column>();
+  const simple = arrayBody("simple", body);
   // 各要素の形が違うので、リストごとに別の形で読む。
   // `["t", "c"]` の2要素だけを拾う形にすると uniqueKeyed の keyCols
   // （`["entry_id", "criterion_id"]`）まで表.列として数えてしまう
-  const lists: Array<[name: string, src: string, entry: RegExp]> = [
+  const lists: Array<[name: string, text: string, entry: RegExp]> = [
     // ["表", "user 列", ["キー列", …]]
-    ["uniqueKeyed", body, /\["(\w+)",\s*"(\w+)",\s*\[/g],
+    ["uniqueKeyed", arrayBody("uniqueKeyed", body), /\["(\w+)",\s*"(\w+)",\s*\[/g],
     // ["表", "列"]
-    ["simple", body, /\["(\w+)",\s*"(\w+)"\]/g],
-    // ["表", "列"]（userTables.ts の定義。simple へ spread される）
-    ["SHARED_CONTENT_OWNER_COLUMNS", tables, /\["(\w+)",\s*"(\w+)"\]/g],
+    ["simple", simple, /\["(\w+)",\s*"(\w+)"\]/g],
   ];
-  for (const [name, src, entry] of lists) {
-    const m = new RegExp(`${name}[^=]*=\\s*\\[([\\s\\S]*?)\\n *\\];`).exec(src);
-    expect(m, `${name} の配列を読めなかった（走査が壊れている）`).not.toBeNull();
-    const found = [...m![1]!.matchAll(entry)];
+  if (simple.includes(SHARED_SPREAD)) {
+    // ["表", "列"]（userTables.ts の定義。simple へ spread されているときだけ読む）
+    lists.push([
+      "SHARED_CONTENT_OWNER_COLUMNS",
+      arrayBody("SHARED_CONTENT_OWNER_COLUMNS", tables),
+      /\["(\w+)",\s*"(\w+)"\]/g,
+    ]);
+  }
+  for (const [name, text, entry] of lists) {
+    const found = [...text.matchAll(entry)];
     expect(
       found.length,
       `${name} から1件も読めなかった（走査が壊れている）`,
@@ -266,7 +285,7 @@ describe("アカウント統合の対象列の走査 (#396)", () => {
     );
     expect(handledColumns(body, tables).has("event_todo.assignee_user_id")).toBe(true);
 
-    // その1行だけを抜いた「壊れた users.ts」を作って同じ走査にかける
+    // その1行だけを抜いた「壊れた accountMerge.ts」を作って同じ走査にかける
     const broken = body.replace(line, "");
     const handledAfter = handledColumns(broken, tables);
     expect(
@@ -314,6 +333,53 @@ describe("アカウント統合の対象列の走査 (#396)", () => {
       missing,
       "uniqueKeyed の登録を1行外したのに、検出された未登録列が空だった",
     ).toEqual(["event_duty_assignee.user_id"]);
+  });
+
+  it("共有コンテンツの spread を外すと、その5本が未登録として落ちる", () => {
+    // 走査は userTables.ts の定義も読む。**mergeUsers が本当に差し込んでいるか**を
+    // 見ずに credit すると、spread を消しても5本を「扱っている」と答えてしまい、
+    // この走査は自分で確かめていない網羅を報告することになる。
+    // simple / uniqueKeyed と同じように、外したら落ちることを毎回ためす
+    const spread = `${SHARED_SPREAD},`;
+    expect(
+      body,
+      `${spread} が mergeUsers に無い（共有コンテンツの差し込みが消えている）`,
+    ).toContain(spread);
+
+    // userTables.ts が唯一の定義なので、期待値はそこから導かずに書き出す
+    const shared: Column[] = [
+      "community.owner_id",
+      "event.created_by",
+      "event_request.created_by",
+      "venue.owner_id",
+      "venue_offer.created_by",
+    ];
+    const handled = handledColumns(body, tables);
+    for (const c of shared) {
+      expect(handled.has(c), `${c} を走査が拾えていない`).toBe(true);
+    }
+
+    const broken = body.replace(spread, "");
+    const handledAfter = handledColumns(broken, tables);
+    for (const c of shared) {
+      expect(
+        handledAfter.has(c),
+        `spread を外したのに、走査はまだ ${c} を「扱われている」と答えた。` +
+          `userTables.ts を無条件に読んでいる（走査が緩んでいる）`,
+      ).toBe(false);
+    }
+
+    const excused = new Set<Column>([
+      ...INTENTIONAL.map((e) => e.column),
+      ...UNRESOLVED.map((e) => e.column),
+    ]);
+    const missing = userColumns().filter(
+      (c) => !handledAfter.has(c) && !excused.has(c),
+    );
+    expect(
+      missing,
+      "spread を外したのに、検出された未登録列が共有コンテンツの5本にならなかった",
+    ).toEqual(shared);
   });
 
   it("SQL コメントの中の REFERENCES を根拠にしない", () => {

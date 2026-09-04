@@ -705,7 +705,7 @@ describe("アカウント統合 (#240)", () => {
     expect(bc?.created_by).toBe(b.userId);
 
     // 未送信メールは2行とも勝ち側宛として残る（重複は消さない: 行を消すと
-    // email_pending カウンタとズレて定期実行が空回りする。詳細は users.ts）
+    // email_pending カウンタとズレて定期実行が空回りする。詳細は accountMerge.ts）
     expect(
       await count(
         "SELECT COUNT(*) AS n FROM event_broadcast_email WHERE broadcast_id = ? AND user_id = ?",

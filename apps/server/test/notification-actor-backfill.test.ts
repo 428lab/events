@@ -47,7 +47,7 @@ const BACKFILL_SQL = [
   // (2) followee_created_event: link 先のイベントの作成者。
   //     完全削除で ghost に付け替わったイベントは除く。
   //     NOT IN であって != ではない。ghost は完全削除が初めて起きたときに
-  //     遅延生成される (usersRepo.ensureDeletedUser) ので、未生成の DB では
+  //     遅延生成される (accountDeletionRepo.ensureDeletedUser) ので、未生成の DB では
   //     副問い合わせが NULL になり、!= だと NULL 比較で正常な行まで全部落ちる。
   //     NOT IN は空集合で TRUE。
   `UPDATE notification SET actor_id = (
@@ -321,7 +321,7 @@ describe("埋め戻し (2) followee_created_event", () => {
   });
 
   it("ghost 行がまだ無い DB でも作成者が埋まる", async () => {
-    // ghost は完全削除が1回でも起きたときに初めて作られる (usersRepo.ensureDeletedUser)。
+    // ghost は完全削除が1回でも起きたときに初めて作られる (accountDeletionRepo.ensureDeletedUser)。
     // 未作成の DB では除外の副問い合わせが0行を返す。
     // **0070 (2) が `NOT IN` であることを守るテスト。`!=` に戻すとここが落ちる**
     // （`created_by != NULL` が NULL に評価され、正常な行まで1件も埋まらなくなる）。
