@@ -25,17 +25,18 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import { eventPhotoCommentsRepo } from "../db/repositories/eventPhotoComments.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
+// R2 のキーと掃除の契約は lib/mediaCleanup.ts に集約している (#424)。
+// 管理画面 (#278)・退会時の purge (#244)・イベント削除も同じ実体を扱うので、
+// キーの組み立てを写し取らない
+import {
+  deleteObjects,
+  photoObjectKeys,
+  photoR2Key,
+  videoPosterR2Key,
+  videoR2Key,
+} from "../lib/mediaCleanup.js";
 
 const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
-/** R2 のキー。管理画面 (#278) と退会時の purge (#244) も同じ実体を
- * 扱うので、キーの組み立てはここに集約する */
-export const photoR2Key = (eventId: string, photoId: string) =>
-  `event-photos/${eventId}/${photoId}`;
-export const videoR2Key = (eventId: string, videoId: string) =>
-  `event-videos/${eventId}/${videoId}`;
-/** ポスター（サムネイル画像）は本体の兄弟キーに置く (#408) */
-export const videoPosterR2Key = (eventId: string, videoId: string) =>
-  `${videoR2Key(eventId, videoId)}-poster`;
 
 /** 写真を閲覧できるか。photos_public 公開イベントは誰でも、
  * それ以外はメンバー/管理者のみ */
@@ -399,14 +400,10 @@ eventPhotoRoutes.post(
       // ポスター put か D1 insert に失敗したら R2 を掃除する（best-effort。
       // 残骸はログで追える）。行が無い動画は削除 API にも purge にも乗らないため、
       // ここで消し損ねると誰にも辿れない孤児になる。put 前に消しても無害
-      try {
-        await bucket.delete([
-          videoR2Key(eventId, videoId),
-          videoPosterR2Key(eventId, videoId),
-        ]);
-      } catch (cleanupError) {
-        console.error("[event-video] R2 cleanup failed", videoId, cleanupError);
-      }
+      await deleteObjects(
+        photoObjectKeys({ eventId, id: videoId, kind: "video" }),
+        `[event-video] video=${videoId}`,
+      );
       throw e;
     }
     return c.json({ photo: await eventPhotosRepo.findById(videoId) }, 201);
@@ -437,14 +434,11 @@ eventPhotoRoutes.delete(
     // 非表示を落とす findById で判定すると 404 になり、投稿者には
     // 「なぜか消せない」としか見えない）
     if (photo.adminHidden) return c.json({ error: "content_hidden" }, 409);
-    // 動画は本体＋ポスターの2オブジェクト (#408)。ポスターなし投稿でも
-    // 存在しないキーの削除は無害
-    await getBucket().delete(
-      photo.kind === "video"
-        ? [videoR2Key(eventId, photo.id), videoPosterR2Key(eventId, photo.id)]
-        : [photoR2Key(eventId, photo.id)],
-    );
+    // **行を消してから実体を消す** (#424)。逆順だと R2 の削除に成功して D1 が
+    // 失敗したとき、一覧に出るのに開けない写真が残る（回復不能）。
+    // 順序と失敗方向の理由は lib/mediaCleanup.ts
     await eventPhotosRepo.delete(photo.id);
+    await deleteObjects(photoObjectKeys(photo), `[event-photo] photo=${photo.id}`);
     return c.json({ ok: true });
   },
 );

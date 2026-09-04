@@ -19,7 +19,7 @@ import { eventChatRepo } from "../db/repositories/eventChat.js";
 import { eventQaRepo } from "../db/repositories/eventQa.js";
 import { getChatRelays } from "../db/repositories/appSettings.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
-import { photoR2Key, videoPosterR2Key } from "./eventPhotos.js";
+import { photoR2Key, videoPosterR2Key } from "../lib/mediaCleanup.js";
 
 /** 運営によるイベント内コンテンツの非表示 (#278)。app admin のみ。
  *

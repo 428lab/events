@@ -23,6 +23,7 @@ import type { AppEnv } from "../types.js";
 import { currentUser } from "../auth/session.js";
 import { canManageEvent, canViewEvent, requireEventRole } from "../auth/roles.js";
 import { getBucket } from "../runtime.js";
+import { deleteObjects } from "../lib/mediaCleanup.js";
 import { hasImageMagicBytes, normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
@@ -253,13 +254,10 @@ meetPrizeRoutes.delete(
     await eventMeetPrizesRepo.delete(prize.id);
     // 行が消えた画像は誰にも辿れない孤児になるので、ここで R2 も消す (#434)。
     // best-effort（失敗してもログで追える。参照は既に無いので配信はされない）
-    if (prize.imageKey) {
-      try {
-        await getBucket().delete(prize.imageKey);
-      } catch (e) {
-        console.error("[meet-prize] image cleanup failed", prize.imageKey, e);
-      }
-    }
+    await deleteObjects(
+      prize.imageKey ? [prize.imageKey] : [],
+      `[meet-prize] prize=${prize.id}`,
+    );
     return c.json({ ok: true });
   },
 );
@@ -304,20 +302,13 @@ meetPrizeRoutes.put(
       await eventMeetPrizesRepo.setImageKey(prize.id, newKey);
     } catch (e) {
       // 参照の差し替えに失敗したら、置いたばかりの新キーを消して投げ直す
-      try {
-        await bucket.delete(newKey);
-      } catch (cleanupError) {
-        console.error("[meet-prize] image cleanup failed", newKey, cleanupError);
-      }
+      await deleteObjects([newKey], `[meet-prize] new prize=${prize.id}`);
       throw e;
     }
-    if (prize.imageKey) {
-      try {
-        await bucket.delete(prize.imageKey);
-      } catch (e) {
-        console.error("[meet-prize] old image cleanup failed", prize.imageKey, e);
-      }
-    }
+    await deleteObjects(
+      prize.imageKey ? [prize.imageKey] : [],
+      `[meet-prize] old prize=${prize.id}`,
+    );
     return c.json({ prize: await eventMeetPrizesRepo.findById(prize.id) });
   },
 );
@@ -330,11 +321,7 @@ meetPrizeRoutes.delete(
     const prize = await prizeOf(c);
     if (!prize || !prize.imageKey) return c.json({ error: "not_found" }, 404);
     await eventMeetPrizesRepo.setImageKey(prize.id, null);
-    try {
-      await getBucket().delete(prize.imageKey);
-    } catch (e) {
-      console.error("[meet-prize] image cleanup failed", prize.imageKey, e);
-    }
+    await deleteObjects([prize.imageKey], `[meet-prize] prize=${prize.id}`);
     return c.json({ ok: true });
   },
 );

@@ -7,10 +7,10 @@ import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { bgmTracksRepo } from "../db/repositories/bgmTracks.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import {
-  photoR2Key,
-  videoPosterR2Key,
-  videoR2Key,
-} from "../routes/eventPhotos.js";
+  collectEventObjects,
+  deleteObjects,
+  photoObjectKeys,
+} from "./mediaCleanup.js";
 import { avatarKey } from "./avatarStore.js";
 
 /** 退会猶予期間 (#250) を過ぎたアカウントの完全削除。
@@ -20,7 +20,8 @@ import { avatarKey } from "./avatarStore.js";
  * ■ サブリクエスト予算について
  * Workers Free のサブリクエスト上限は 1リクエストあたり 50 で、D1 / R2 への
  * 呼び出しもここに含まれる。1件あたりの消費数は
- *   9（固定）＋ デッキ数 ＋ 配信セット数 ＋ ceil(R2キー数 / 1000)
+ *   10（固定）＋ デッキ数 ＋ 配信セット数 ＋ 消える下書きイベント数×2
+ *   ＋ ceil(R2キー数 / 1000)
  * とユーザーの持ちデータ量に比例するため、「1回に N 件」という件数固定では
  * 上限を守れない（デッキを 40 個持つ人が1人居るだけで超過する）。しかも上限を
  * 超えると同一リクエスト内の以降のサブリクエストが全部失敗するので、
@@ -36,15 +37,16 @@ const SUBREQUEST_BUDGET = 40;
 
 /** 1件あたりの最小消費数（データを何も持たないユーザーの場合）。
  *   findByIdIncludingDeleted 1
- * ＋ collectUserObjects の D1 4（decks / live_set / bgm / event_photo）
+ * ＋ collectUserObjects の D1 5（decks / live_set / bgm / event_photo ＋
+ *   消える下書きイベントの列挙 #424。イベントがあれば +2/件）
  * ＋ プロフィールカードの R2 list 1
  * ＋ deleteAccount の batch 1
  * ＋ deleteAccount 内のスタッフチャット列挙 (#382) 1
  *   （部屋があれば +1/部屋。実消費は deleteAccount の戻り値で budget に積む）
  * ＋ recordAudit 2（INSERT と保存期間の掃除）
- * ＝ 10。R2 に実体があれば delete でさらに 1 以上増えるので 11 で見積もる。
+ * ＝ 11。R2 に実体があれば delete でさらに 1 以上増えるので 12 で見積もる。
  * 次の1件がこれ以下の余裕しか無ければ打ち切る */
-const MIN_COST_PER_USER = 11;
+const MIN_COST_PER_USER = 12;
 
 /** 1回の実行で見に行く候補の最大数。実際には予算のほうが先に効くが、
  * listPurgeTargets が無制限に行を読まないための保険 */
@@ -59,10 +61,14 @@ interface Budget {
 /** 退会するユーザー由来の R2 オブジェクトキーを列挙する (#244)。
  * 行削除後はキーを辿れなくなるため、DB 削除前に呼ぶこと。
  * 対象: スライド画像・配信セット画像・BGM 音源・イベント写真・プロフィールカードPNG・
- * 自前保管のアイコン (#312)。
- * デッキ数・配信セット数だけ R2 list が増えるので、消費数を budget に積む */
+ * 自前保管のアイコン (#312)・**完全削除で消える下書きイベントの持ち物** (#424)。
+ * デッキ数・配信セット数だけ R2 list が、下書きイベント数だけ D1 が増えるので、
+ * 消費数を budget に積む。
+ * `ghostId` は下書きイベントの列挙に要る（deleteAccount の DELETE が付け替え後の
+ * ghost 名義を見るため。詳細は accountDeletion.ts） */
 async function collectUserObjects(
   userId: string,
+  ghostId: string,
   budget: Budget,
 ): Promise<string[]> {
   const bucket = getBucket();
@@ -71,18 +77,30 @@ async function collectUserObjects(
   const keys = await bgmTracksRepo.listKeysByOwner(userId);
   const photos = await eventPhotosRepo.listIdsByUser(userId);
   budget.spent += 4;
-  // 動画 (#408) は本体＋ポスターの2キー。ポスターなし投稿でも
-  // 存在しないキーの削除は無害なので分岐しない
-  for (const p of photos) {
-    if (p.kind === "video") {
-      keys.push(videoR2Key(p.eventId, p.id), videoPosterR2Key(p.eventId, p.id));
-    } else {
-      keys.push(photoR2Key(p.eventId, p.id));
-    }
-  }
+  // 動画 (#408) は本体＋ポスターの2キー。組み立ては mediaCleanup の1か所 (#424)
+  for (const p of photos) keys.push(...photoObjectKeys(p));
   // 自前保管のアイコン (#312) は 1ユーザー1キー固定なので list は要らない。
   // 保管していなければ存在しないキーを消すだけ（削除は下でまとめて投げるので費用ゼロ）
   keys.push(avatarKey(userId));
+  // 完全削除では「参加者のいない下書きイベント」の行も消える (#244) ので、
+  // そのイベントの持ち物（表紙画像・写真・動画・景品画像）も一緒に消さないと
+  // #424 が塞いだはずの孤児がここから出る。
+  //
+  // 消える行を**1つ残らず**受け取るのが要件で、条件の文字列を共有するだけでは
+  // 足りない。DELETE は付け替え後の ghost 名義を見るので、既に ghost 名義に
+  // なっている下書き（過去の退会で移り、その後に第三者の参加者が抜けたもの）まで
+  // 消す＝本人の持ち物だけ集めても足りない。条件・引数ごと揃える理由と、
+  // 2つの集合が等しくなる根拠は accountDeletion.ts の ORPHAN_DRAFT_EVENT_WHERE
+  budget.spent += 1;
+  const draftEventIds = await accountDeletionRepo.listDeletableDraftEventIds(
+    userId,
+    ghostId,
+  );
+  for (const eventId of draftEventIds) {
+    // collectEventObjects は D1 を2回引く（イベント写真＋景品画像）
+    budget.spent += 2;
+    keys.push(...(await collectEventObjects(eventId)));
+  }
   const prefixes = [
     ...decks.map((d) => `deck-images/${d.id}/`),
     ...liveSets.map((s) => `live-set-images/${s.id}/`),
@@ -140,7 +158,7 @@ export async function purgeDeletedAccounts(
       const user = await usersRepo.findByIdIncludingDeleted(userId);
       if (!user || user.deletedAt === null) continue; // 直前に復帰した
       attemptedAny = true;
-      const objectKeys = await collectUserObjects(userId, budget);
+      const objectKeys = await collectUserObjects(userId, ghost.id, budget);
       console.log(
         `[account-purge] user=${userId} handle=${user.username} ghost=${ghost.id} r2Objects=${objectKeys.length}`,
       );
@@ -158,16 +176,14 @@ export async function purgeDeletedAccounts(
           requestedAt: user.deletedAt,
         },
       });
-      // R2 の掃除はベストエフォート（失敗しても削除自体は成立。残骸はログで追える）
-      try {
-        const bucket = getBucket();
-        for (let i = 0; i < objectKeys.length; i += 1000) {
-          budget.spent += 1;
-          await bucket.delete(objectKeys.slice(i, i + 1000));
-        }
-      } catch (e) {
-        console.error(`[account-purge] R2 cleanup failed for user=${userId}`, e);
-      }
+      // R2 の掃除はベストエフォート（失敗しても削除自体は成立。残骸はログで追える）。
+      // 消費したサブリクエスト数は deleteObjects が返す（刻み幅をここで数え直すと
+      // 「1000」が2か所に散り、片方を変えたときに予算だけ静かにずれる #424）。
+      // deleteObjects は内部で握り潰す＝throw しないので、失敗しても必ず積まれる
+      budget.spent += await deleteObjects(
+        objectKeys,
+        `[account-purge] user=${userId}`,
+      );
       purged += 1;
     } catch (e) {
       // DB 側で失敗した場合は deleted_at が残るため、翌日の実行で再試行される

@@ -3,11 +3,9 @@ import { EVENT_IMAGE } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { getBucket } from "../runtime.js";
 import { normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
+import { deleteObjects, eventImageR2Key } from "../lib/mediaCleanup.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventImagesRepo } from "../db/repositories/eventImages.js";
-
-/** R2 のオブジェクトキー（イベントごとに1枚） */
-const imageKey = (eventId: string) => `event-images/${eventId}`;
 
 /** 公開: イベント画像の取得（認証不要。OGクローラ/表示用。本体は R2、メタは D1） */
 export async function getEventImage(c: Context) {
@@ -19,7 +17,7 @@ export async function getEventImage(c: Context) {
   if (c.req.header("if-none-match") === etag) {
     return new Response(null, { status: 304 });
   }
-  const obj = await getBucket().get(imageKey(eventId));
+  const obj = await getBucket().get(eventImageR2Key(eventId));
   if (!obj) return c.json({ error: "not_found" }, 404);
   return new Response(obj.body as unknown as ReadableStream, {
     headers: {
@@ -51,7 +49,7 @@ export async function putEventImage(c: Context<AppEnv>) {
   if (body.byteLength > EVENT_IMAGE.maxBytes) {
     return c.json({ error: "too_large", maxBytes: EVENT_IMAGE.maxBytes }, 413);
   }
-  await getBucket().put(imageKey(eventId), body, {
+  await getBucket().put(eventImageR2Key(eventId), body, {
     httpMetadata: { contentType: mime },
   });
   const updatedAt = await eventImagesRepo.upsert(eventId, mime);
@@ -65,20 +63,22 @@ export async function copyEventImage(
 ): Promise<void> {
   const meta = await eventImagesRepo.getMeta(srcEventId);
   if (!meta) return;
-  const obj = await getBucket().get(imageKey(srcEventId));
+  const obj = await getBucket().get(eventImageR2Key(srcEventId));
   if (!obj) return;
   // イベント画像は 1MB 以内なのでメモリに載せてコピーする
   const body = await obj.arrayBuffer();
-  await getBucket().put(imageKey(dstEventId), body, {
+  await getBucket().put(eventImageR2Key(dstEventId), body, {
     httpMetadata: { contentType: meta.mime },
   });
   await eventImagesRepo.upsert(dstEventId, meta.mime);
 }
 
-/** staff/admin: イベント画像の削除 */
+/** staff/admin: イベント画像の削除。**参照を外してから実体を消す** (#424)。
+ * 逆順だと R2 だけ消えて行が残り、一覧に出るのに開けない画像になる
+ * （順序と失敗方向の理由は lib/mediaCleanup.ts） */
 export async function deleteEventImage(c: Context<AppEnv>) {
   const eventId = c.req.param("id")!;
-  await getBucket().delete(imageKey(eventId));
   await eventImagesRepo.delete(eventId);
+  await deleteObjects([eventImageR2Key(eventId)], `[event-image] event=${eventId}`);
   return c.json({ ok: true });
 }
