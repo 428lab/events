@@ -13,6 +13,7 @@ import PrintIcon from "@mui/icons-material/Print";
 import DownloadIcon from "@mui/icons-material/Download";
 import QrCode2Icon from "@mui/icons-material/QrCode2";
 import { Link as RouterLink, Navigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useUserProfile } from "../api/userHooks.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
 import { LicenseCardSvg } from "../components/licenseCard/LicenseCardSvg.js";
@@ -163,6 +164,7 @@ function downloadBlob(png: Blob, fileName: string): void {
 // ---------------------------------------------------------------------------
 
 export function LicenseCardPage() {
+  const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data, isLoading, isError } = useUserProfile(id);
   // 表示中の見た目。保存済みの値が届くまでは手元の既定で描く
@@ -332,7 +334,7 @@ export function LicenseCardPage() {
           {BG_VARIANTS.map((v) => (
             <Chip
               key={v.key}
-              label={v.label}
+              label={t(v.labelKey)}
               color={variant === v.key ? "primary" : "default"}
               variant={variant === v.key ? "filled" : "outlined"}
               onClick={() => selectVariant(v.key)}
@@ -345,13 +347,13 @@ export function LicenseCardPage() {
           <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32 }}>
             色
           </Typography>
-          {CARD_THEMES.map((t) => (
+          {CARD_THEMES.map((th) => (
             <Chip
-              key={t.key}
-              label={t.name}
-              color={theme === t.key ? "primary" : "default"}
-              variant={theme === t.key ? "filled" : "outlined"}
-              onClick={() => selectTheme(t.key)}
+              key={th.key}
+              label={t(th.nameKey)}
+              color={theme === th.key ? "primary" : "default"}
+              variant={theme === th.key ? "filled" : "outlined"}
+              onClick={() => selectTheme(th.key)}
             />
           ))}
         </Stack>

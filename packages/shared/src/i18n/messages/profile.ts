@@ -138,6 +138,20 @@ const ja = {
     "あなたのプロフィールカード。印刷（91×55mm）や画像の書き出しは「デザインを変える」から",
   cardOtherHint: "このカードは本人が選んだ見た目で表示しています",
 
+  /** カードの見た目を選ぶチップの名前 (#475)。背景パターンと配色テーマ。
+   * 色や模様の呼び名なので、直訳ではなくその言語で通じる呼び方にする。
+   * キーの綴りは apps/web の cardTheme.ts が型で縛っている（`profile.cardBg*`
+   * `profile.cardTheme*` 以外を書くと落ちる） */
+  cardBgRosette: "ロゼット",
+  cardBgTopo: "等高線",
+  cardBgArcs: "円弧",
+  cardBgFlow: "流線",
+  cardThemeIndigo: "インディゴ",
+  cardThemeTeal: "ティール",
+  cardThemeRose: "ローズ",
+  cardThemeAmber: "アンバー",
+  cardThemeMono: "モノクロ",
+
   /** 交流用の大きなQR */
   qrLabel: "{{name}} の交流用QRコード",
   qrError:
@@ -251,6 +265,16 @@ const en: Record<keyof typeof ja, string> = {
   cardOwnHint:
     "Your profile card. Printing (91×55mm) and image export are under “Change the design”.",
   cardOtherHint: "This card is shown with the look its owner chose.",
+
+  cardBgRosette: "Rosette",
+  cardBgTopo: "Contours",
+  cardBgArcs: "Arcs",
+  cardBgFlow: "Flow",
+  cardThemeIndigo: "Indigo",
+  cardThemeTeal: "Teal",
+  cardThemeRose: "Rose",
+  cardThemeAmber: "Amber",
+  cardThemeMono: "Monochrome",
 
   qrLabel: "{{name}}'s meet-up QR code",
   qrError:
