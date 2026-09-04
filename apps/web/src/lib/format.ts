@@ -109,6 +109,20 @@ export function venueLabel(venue: VenueType | string): string {
   return tDynamic(`venueType.${venue}`, String(venue));
 }
 
+/** 申込の状態 → 翻訳キー。知らない値はそのまま出す（サーバーが増やしても壊れない） */
+const STATUS_KEY: Record<string, string> = {
+  confirmed: "statusConfirmed",
+  waitlist: "statusWaitlist",
+  applied: "statusApplied",
+  lost: "statusLost",
+};
+
+/** 申込の状態のラベル。イベント詳細と参加者一覧が同じ表を見るためにここに置く */
+export function participationStatusLabel(status: string): string {
+  const key = STATUS_KEY[status];
+  return key ? tDynamic(`eventDetail.${key}`, status) : status;
+}
+
 /** 人数表示に使うイベント項目 */
 type CountableEvent = Pick<
   Event,

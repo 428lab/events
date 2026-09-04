@@ -239,7 +239,7 @@ GET /api/public/pre-surveys/:token →
 |------|------|------|
 | 回答ページ | `/s/:token`（`PreSurveyPage`。`/e/:slug` と同じ最上位ルート・未ログイン可） | タイトル・説明（URL は新タブで開くリンク化 #453）・質問フォーム・記名同意チェック (#448)・送信→完了画面。closed は「締め切りました」のみ |
 | 管理ページ | `/events/:id/pre-survey`（staff。EventLayout 子ルート・`EventPreSurveyAdminPage`） | 質問編集・共有URLのコピー・再発行・クローズ/再オープン・結果（サマリー/表の切替 #447。件数バー＋自由記述一覧・表ビューは CSV ダウンロード付き）・日毎アクセスの表 (#450)・削除 |
-| 導線 | `EventDetailPage` の staff ボタン群 | 「開催前アンケート」（下書き・公開を問わず staff に表示） |
+| 導線 | `components/EventActionButtons.tsx` の staff ボタン群 | 「開催前アンケート」（下書き・公開を問わず staff に表示） |
 
 ### 3.8 i18n ほか
 
@@ -258,7 +258,7 @@ GET /api/public/pre-surveys/:token →
 | server | `src/worker.ts` | 公開2本の直接登録 + `/events` への staff ルート登録 |
 | server | `src/db/repositories/users.ts` + `test/merge-user-columns.test.ts` | mergeUsers `simple` に `["event_pre_survey_response", "user_id"]` |
 | web | `pages/PreSurveyPage.tsx` / `pages/EventPreSurveyAdminPage.tsx` / `components/PreSurveyResponsesTable.tsx` / `components/PreSurveyAccessCard.tsx` / `components/LinkifiedText.tsx` / `api/preSurveyHooks.ts` | 回答・管理・表/CSV・アクセス表・説明文リンク化・API フック（初回訪問マークもここ） |
-| web | `App.tsx` / `EventDetailPage.tsx` | ルート（`/s/:token`・`pre-survey` 子ルート）・staff 導線 |
+| web | `App.tsx` / `components/EventActionButtons.tsx` | ルート（`/s/:token`・`pre-survey` 子ルート）・staff 導線 |
 | i18n | `packages/shared/src/i18n/messages/preSurvey.ts` / `staffOps.ts` | ja/en |
 | test | `apps/server/test/pre-event-survey.test.ts` | §5 の観点 |
 

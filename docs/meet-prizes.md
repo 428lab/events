@@ -371,7 +371,7 @@ staff 系はオン/オフに**従わない**（準備・後片付けで使う。
 | web | `pages/EventPrizeDeskPage.tsx` | 新規。引き換えデスク（§3.10） |
 | web | `components/MeetPrizes.tsx` | 新規。参加者向け景品カード（`MeetPrizePanel`） |
 | web | `components/MeetPrizeEditor.tsx` | 新規。景品 CRUD + 画像アップロード |
-| web | `pages/EventDetailPage.tsx` | 景品カード + staff 導線 |
+| web | `pages/EventDetailPage.tsx` / `components/EventActionButtons.tsx` | 景品カード + staff 導線 |
 | web | `pages/EditEventPage.tsx` | オン/オフ + 景品 CRUD セクション |
 | web | `pages/EventStatsPage.tsx` | デスクへのリンク |
 | web | `api/meetPrizeHooks.ts` | 新規。景品の query/mutation 一式（`MEET_RANKING_POLL_MS` の5秒ポーリング） |
