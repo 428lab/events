@@ -682,8 +682,9 @@ export interface EventTodo {
 
 ### 8.6 文言
 
-`packages/shared/src/i18n/messages/staffOps.ts` に足す（`ja` / `en`）。
-スタッフ専用画面の文言はこのファイルが持つ、と自身のコメントに書いてある。
+`packages/shared/src/i18n/messages/staffOps/prep.ts` に足す。名前空間は
+`staffOps` のままなので呼び出し側は変わらない。`ja` と `en` は同じファイルの
+中で隣り合い、対応は型で守られる。
 **実装上の語（`assigneeState` / `dep` / `blocked`）を利用者向けの文言に出さない。**
 「待ち」「担当者が外れています」「先に終わらせる仕事」のように振る舞いで書く。
 

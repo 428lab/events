@@ -140,7 +140,7 @@ CREATE INDEX idx_event_bingo_result_user ON event_bingo_result(user_id);
 
 ### 3.7 i18n・複製・削除
 
-- i18n: staff 向け（履歴カード）は `staffOps.ts`、参加者向け（受け取り時刻）は
+- i18n: staff 向け（履歴カード）は `staffOps/prizes.ts`、参加者向け（受け取り時刻）は
   `eventSocial.ts`、プロフィールは `profile.ts`。ja/en 両方
 - イベント複製: 成績・引き換えは記録なのでコピーしない（現行どおり。変更なし）
 - イベント削除: `event_bingo_result` は CASCADE で消える（§3.1 の表）。
