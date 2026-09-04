@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { configure, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -11,6 +11,10 @@ import type { UserProfile } from "@eventer/shared";
  * 印刷も無い。他人が直接URLを開いたらプロフィールへ戻すこと、本人のときは
  * 保存済みの見た目で描く（手元の既定で上書きしない）ことを固定する。
  */
+
+// このファイルは描き終わるのを待って確かめる。既定の1秒はフルスイートの
+// 混み合った時に足りず、内容とは関係なく落ちることがあるので広げておく
+configure({ asyncUtilTimeout: 5000 });
 
 const { getMock } = vi.hoisted(() => ({ getMock: vi.fn() }));
 

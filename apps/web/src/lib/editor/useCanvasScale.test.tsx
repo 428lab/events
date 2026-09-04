@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render } from "@testing-library/react";
+import { DeckCanvas } from "../../components/DeckCanvas.js";
+import { LiveCanvas } from "../../components/LiveCanvas.js";
+import type { DeckElementCommands } from "../deckSlides.js";
+import type { LiveElementCommands } from "../liveScenes.js";
 import { useCanvasScale } from "./useCanvasScale.js";
 
 /**
@@ -73,5 +77,51 @@ describe("実測幅から倍率を出す", () => {
     } finally {
       delete (HTMLDivElement.prototype as { clientWidth?: number }).clientWidth;
     }
+  });
+});
+
+/**
+ * 使う側が前提を守っているか。
+ *
+ * このフックには「ref を付けた要素を、呼ぶ部品の中で必ず描く」という前提がある。
+ * 守れているかは**そのフックだけを見ても分からない**ので、実際の2つの
+ * キャンバスを一番何も無い状態（描くページ／シーンがまだ無い）で描いて、
+ * それでも測りに行くことを確かめる。
+ *
+ * ここが落ちるときの意味は「測る要素より前に早期 return が入った」。
+ * そのまま出すと、中身が入っても倍率が 0 のままで**真っ白なキャンバス**になり、
+ * エラーが出ないので気づけない。以前あった `ready` 引数はこの落とし穴を
+ * 呼ぶ側に押し付けるものだったので落とした。前提を守らせるのはこのテスト。
+ */
+describe("キャンバスの部品が前提を守っているか", () => {
+  /** 何も描くものが無い状態では手も触れられないので、中身は空で構わない */
+  const noCommands = {} as DeckElementCommands & LiveElementCommands;
+
+  it("スライド編集：ページがまだ無くても測りに行く", () => {
+    render(
+      <DeckCanvas
+        slide={undefined}
+        selection={{ ids: [], els: [], one: null }}
+        multiSelect={false}
+        commands={noCommands}
+        onSelect={() => {}}
+        onSelectOnly={() => {}}
+        onSelectNone={() => {}}
+      />,
+    );
+    expect(observed).toBe(1);
+  });
+
+  it("配信セット編集：シーンがまだ無くても測りに行く", () => {
+    render(
+      <LiveCanvas
+        scene={undefined}
+        selected={null}
+        commands={noCommands}
+        onSelect={() => {}}
+        onSelectNone={() => {}}
+      />,
+    );
+    expect(observed).toBe(1);
   });
 });

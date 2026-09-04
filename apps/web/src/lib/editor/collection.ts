@@ -89,16 +89,21 @@ export function patchById<T extends Identified>(
   return items.map((item) => (item.id === id ? { ...item, ...patch } : item));
 }
 
-/** 1 段だけ前後へ。隣と入れ替える。端なら何もしない */
+/**
+ * 1 段だけ前後へ。隣と入れ替える。
+ * 端まで来ているときと、居ない要素を指したときは**入力をそのまま返す**
+ * （ここだけ新しい配列を返すと、呼ぶ側が同一性で「変わっていない」を
+ * 見分けられなくなる。中身は書き換えないので共有して構わない）。
+ */
 export function moveZ<T extends Identified>(
   items: readonly T[],
   id: string,
   dir: 1 | -1,
 ): T[] {
-  const a = [...items];
-  const i = a.findIndex((e) => e.id === id);
+  const i = items.findIndex((e) => e.id === id);
   const to = i + dir;
-  if (i < 0 || to < 0 || to >= a.length) return [...items];
+  if (i < 0 || to < 0 || to >= items.length) return items as T[];
+  const a = [...items];
   [a[i], a[to]] = [a[to], a[i]];
   return a;
 }

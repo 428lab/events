@@ -156,6 +156,13 @@ describe("重なり順", () => {
     expect(ids(moveZ(els, "zz", 1))).toEqual(["a", "b", "c", "d"]);
   });
 
+  it("動かせないときは入力をそのまま返す（変わっていないと分かるように）", () => {
+    expect(moveZ(els, "d", 1)).toBe(els);
+    expect(moveZ(els, "zz", 1)).toBe(els);
+    // 動いたときは別の配列
+    expect(moveZ(els, "b", 1)).not.toBe(els);
+  });
+
   it("最前面へ出すとき、選んだもの同士の並びは保つ", () => {
     expect(ids(toFront(els, ["a", "c"]))).toEqual(["b", "d", "a", "c"]);
   });
