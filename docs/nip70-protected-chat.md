@@ -31,7 +31,7 @@ NIP-70 の `["-"]` タグは「このイベントは著者本人の AUTH 済み�
 
 | kind | 用途 | 組み立て | 署名 | リレーへの発行 |
 |------|------|----------|------|----------------|
-| 40 | チャンネル作成 | `routes/eventChat.ts`（公式鍵）/ `nostrChat.ts` `buildChannelCreateTemplate`（主催者 NIP-07） | 公式鍵 or 主催者鍵 | **参加者のブラウザ**（`EventChat.tsx` の `pool.publish(created)`） |
+| 40 | チャンネル作成 | `routes/eventChat.ts`（公式鍵）/ `nostrChat.ts` `buildChannelCreateTemplate`（主催者 NIP-07） | 公式鍵 or 主催者鍵 | **参加者のブラウザ**（`components/chat/useChatChannel.ts` の `pool.publish(created)`） |
 | 42 | イベントチャット発言 | `nostrChat.ts` `buildChannelMessageTemplate` | 発言者の鍵 | 発言者のブラウザ |
 | 9807 | スタッフチャット発言 | `staffChatCrypto.ts` `sealStaffChatMessage` → **同じ `buildChannelMessageTemplate`** | 専用一時鍵 | 発言者のブラウザ |
 | 27888 | 鍵の所有証明 | `nostrChat.ts` `buildChatKeyProofTemplate` | 発言者の鍵 | **発行しない**（API へ送るだけ） |
@@ -39,8 +39,8 @@ NIP-70 の `["-"]` タグは「このイベントは著者本人の AUTH 済み�
 
 - kind:42 と 9807 は builder が 1 つに共有されているので、**タグ付与は 1 か所**で済む。
 - kind:40 だけが「署名者（公式鍵）と発行接続（参加者）が別人」で、NIP-70 の
-  「AUTH 済み pubkey ＝ イベントの pubkey」制約に反する。`EventChat.tsx:423-427` に
-  このリスクの注記が既にある（リレー側の特例設定で運用する前提だった）。
+  「AUTH 済み pubkey ＝ イベントの pubkey」制約に反する。`components/chat/useChatChannel.ts` の
+  チャンネル確定処理にこのリスクの注記が既にある（リレー側の特例設定で運用する前提だった）。
 
 ### 2.2 kind:40 の現行フロー（3 段階・契約が 2 か所）
 
@@ -54,7 +54,7 @@ staff のブラウザ ── POST /:id/chat-channel/official ──→ サーバ
 - `/chat-channel` の登録検証は「公式鍵署名＋pending 一致」または
   「主催者(createdBy)の登録済み鍵の署名」の 2 系統（`routes/eventChat.ts:313-333`）。
 - 主催者が NIP-07 で参加している場合はブラウザが `buildChannelCreateTemplate` で
-  自ら署名する分岐がある（`EventChat.tsx:412-419`）。
+  自ら署名する分岐がある（`components/chat/useChatChannel.ts` の `isOrganizerNip07`）。
 - `setPendingChannel` / `pendingChannelFor` は「クライアントに発行を委ねる」ための
   持ち込み防止装置（発行済み id 以外の登録を拒否 #221）。
 
@@ -151,8 +151,8 @@ NIP-70 の制約は「イベントの pubkey ＝ AUTH 済み接続の pubkey」�
 **残すもの**:
 
 - `POST /:id/chat-channel`（主催者経路の登録。`registerChatChannelInput` の body）と
-  `buildChannelCreateTemplate`（`["-"]` 付きに変更）、`EventChat.tsx` の
-  `organizerNip07` 分岐。
+  `buildChannelCreateTemplate`（`["-"]` 付きに変更）、`components/chat/useChatChannel.ts` の
+  主催者 NIP-07 分岐。
 - 両 API の入口条件はそのまま: `requireEventRole(["staff"])` ＋ `staffAndNotBlocked`。
   サーバ発行 API はさらに `chatEnabled && status === "published"`（公式鍵の署名オラクル
   化防止 #221）＋ `serviceKeyConfigured()`（`/official` の条件を引き継ぐ）。
@@ -285,7 +285,7 @@ export const nostrRelay = {
 
 | 案 | 判断 |
 |----|-----------|
-| リレー側に「公式鍵のイベントは誰の接続からでも受理」の特例を入れる（現行コメント `EventChat.tsx:423` の運用案） | 封じ込めの契約がアプリの外（リレー設定）に漏れる。カスタムリレー運用者に同じ特例を要求することになり、素の NIP-42/70 対応だけで動く、という 3.5 の要件文が書けなくなる |
+| リレー側に「公式鍵のイベントは誰の接続からでも受理」の特例を入れる（現行コメント `components/chat/useChatChannel.ts` の運用案） | 封じ込めの契約がアプリの外（リレー設定）に漏れる。カスタムリレー運用者に同じ特例を要求することになり、素の NIP-42/70 対応だけで動く、という 3.5 の要件文が書けなくなる |
 | kind:40 だけ `["-"]` を付けない | 「発行するチャット関連イベントすべてに付ける」という issue の決定に反する。チャンネル作成イベントだけ他リレーへ運べる状態が残る |
 | 発行をサーバに一本化し主催者 NIP-07 経路を廃止する | 発行経路が 1 本になる利点はあるが、**主催者が自分の鍵で部屋を作れ、他の Nostr クライアントとアイデンティティが一貫する**価値を失う。**残すと決定（ユーザー決定 2026-09-04）**。経路は 2 本のまま、契約の一本化は署名後の登録・検証関数（3.2）で担保する |
 
@@ -360,7 +360,7 @@ export const nostrRelay = {
      `OfficialChannelPayload` の削除、route/プロトコルのテスト
 2. **PR-2: web の追随と文言・docs 同期**（web + shared + docs）
    - `buildChannelMessageTemplate` / `buildChannelCreateTemplate` に `["-"]`、
-     `EventChat.tsx` の公式鍵側フローの置き換え（`createOfficialChannelEvent` +
+     チャンネル確定処理（#335 以降は `components/chat/useChatChannel.ts`）の公式鍵側フローの置き換え（`createOfficialChannelEvent` +
      `pool.publish` + 登録 → `POST /chat-channel/create` 1 発。`organizerNip07` 分岐は
      維持）、`nostrChat.ts` 冒頭コメント、管理者 UI の文言（ja/en）、web テスト、
      `docs/staff-chat.md`・README・本ドキュメントの同期（8.）
@@ -377,7 +377,7 @@ PR-1 だけが本番に居る期間は、旧 web が `/official`（404）と `["
 | 場所 | 変更 |
 |------|------|
 | `apps/web/src/lib/nostrChat.ts` | `buildChannelMessageTemplate` と `buildChannelCreateTemplate` に `["-"]`。冒頭コメント更新 |
-| `apps/web/src/components/EventChat.tsx` | 公式鍵側の「署名取得→publish→登録」を `POST /chat-channel/create` 1 発に置き換え（`organizerNip07` 分岐は維持） |
+| `apps/web/src/components/chat/useChatChannel.ts`（#335 で `EventChat.tsx` から分割） | 公式鍵側の「署名取得→publish→登録」を `POST /chat-channel/create` 1 発に置き換え（`organizerNip07` 分岐は維持） |
 | `apps/web/src/api/eventChatHooks.ts` | `createOfficialChannelEvent` → `useCreateChatChannel`（body 無し）。`useRegisterChatChannel` は維持 |
 | `apps/web/src/pages/AdminSettingsPage.tsx` | リレー要件の 1 文（i18n キー経由） |
 | `apps/server/src/lib/nostrRelay.ts` | **新設**。WebSocket 発行・NIP-42 AUTH・タイムアウト |

@@ -1,8 +1,12 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { Event as NostrEvent } from "nostr-tools/pure";
 import type { ChatMembersPayload, Event } from "@eventer/shared";
+import {
+  CHAT_WINDOW_AFTER_MS,
+  CHAT_WINDOW_BEFORE_MS,
+} from "@eventer/shared";
 import { ApiError } from "../api/client.js";
 import { EventChat } from "./EventChat.js";
 
@@ -108,7 +112,22 @@ vi.mock("../api/eventChatHooks.js", () => ({
 }));
 
 vi.mock("../lib/nostrChat.js", () => {
-  const signer = { pubkey: "pk-me", signEvent: vi.fn() };
+  // 署名は「テンプレートに id と pubkey が付いた Nostr イベント」を返す。
+  // 送信は折返しを待たず即時表示するので、undefined を返す偽物だと
+  // 送信経路の確認ができない
+  let signed = 0;
+  const signer = {
+    pubkey: "pk-me",
+    signEvent: vi.fn(async (tmpl: { content?: string } | undefined) => ({
+      id: `sent-${++signed}`,
+      pubkey: "pk-me",
+      created_at: 1_700_000_050,
+      kind: 42,
+      tags: [],
+      content: tmpl?.content ?? "",
+      sig: "",
+    })),
+  };
   return {
     ChatRelayPool: class {
       onstatus: (() => void) | null = null;
@@ -127,7 +146,12 @@ vi.mock("../lib/nostrChat.js", () => {
     },
     buildChannelCreateTemplate: vi.fn(),
     buildChatKeyProofTemplate: vi.fn(),
-    buildChannelMessageTemplate: vi.fn(),
+    buildChannelMessageTemplate: vi.fn((_channelId: string, text: string) => ({
+      kind: 42,
+      content: text,
+      tags: [],
+      created_at: 0,
+    })),
     localSignerFromHex: () => signer,
     nip07Signer: async () => signer,
     randomLocalSigner: () => ({ pubkey: "pk-readonly", signEvent: vi.fn() }),
@@ -150,7 +174,6 @@ async function renderChat(variant: "display" | "page") {
         eventId="e-1"
         event={EVENT}
         myRole="staff"
-        canChat
         variant={variant}
       />
     </MemoryRouter>,
@@ -539,5 +562,153 @@ describe("参加ボタンが 403 で失敗したとき (#283)", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(NOT_CONFIRMED_TEXT)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * URL投稿の送信ガード (#241)。
+ *
+ * 表示側のリンク化と同じ判定を送信前にも掛ける。スタッフは制限を受けない
+ * （案内やスライドのURLを貼るのが仕事）。参加者は、URL投稿を許可した
+ * イベントでだけ貼れる。
+ */
+describe("URL投稿の送信ガード (#241)", () => {
+  /** 書き込み可能時間帯の中に時計を合わせて描画する */
+  async function renderComposer(
+    myRole: "participant" | "staff",
+    chatUrlsAllowed: boolean,
+  ) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(1_700_000_100_000);
+    // 一時鍵で参加している人＝自動再参加が成立して入力欄まで出る状態
+    ephemeralKey = { secret: "00" };
+    const view = render(
+      <MemoryRouter>
+        <EventChat
+          eventId="e-1"
+          event={{ ...EVENT, chatUrlsAllowed } as unknown as Event}
+          myRole={myRole}
+          variant="page"
+        />
+      </MemoryRouter>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    return view;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function type(text: string) {
+    const box = await screen.findByRole("textbox");
+    await act(async () => {
+      fireEvent.change(box, { target: { value: text } });
+    });
+    await act(async () => {
+      fireEvent.keyDown(box, { key: "Enter" });
+    });
+  }
+
+  it("参加者がURLを送ろうとすると、送らずに理由を出す", async () => {
+    await renderComposer("participant", false);
+    await type("資料は https://example.com/a です");
+
+    expect(
+      await screen.findByText("URLの投稿はこのイベントでは許可されていません。"),
+    ).toBeInTheDocument();
+    // 送信していないので入力は残る（打ち直しにならない）
+    expect(await screen.findByRole("textbox")).toHaveValue(
+      "資料は https://example.com/a です",
+    );
+  });
+
+  it("URL投稿を許可したイベントでは参加者も送れる", async () => {
+    await renderComposer("participant", true);
+    await type("資料は https://example.com/a です");
+
+    expect(
+      screen.queryByText("URLの投稿はこのイベントでは許可されていません。"),
+    ).not.toBeInTheDocument();
+    expect(await screen.findByRole("textbox")).toHaveValue("");
+  });
+
+  it("スタッフは制限を受けない（上の確認が空振りでないこと）", async () => {
+    await renderComposer("staff", false);
+    await type("資料は https://example.com/a です");
+
+    expect(
+      screen.queryByText("URLの投稿はこのイベントでは許可されていません。"),
+    ).not.toBeInTheDocument();
+    expect(await screen.findByRole("textbox")).toHaveValue("");
+  });
+
+  it("URLを含まない発言はそのまま送れ、リレーの折返しを待たずに出る", async () => {
+    await renderComposer("participant", false);
+    await type("よろしくお願いします");
+
+    expect(
+      screen.queryByText("URLの投稿はこのイベントでは許可されていません。"),
+    ).not.toBeInTheDocument();
+    expect(await screen.findByRole("textbox")).toHaveValue("");
+    // 入力欄が空になるだけでなく、自分の発言が一覧に出ていること
+    // （購読側の折返しは来ないので、出るのは即時表示の分だけ）
+    expect(await screen.findByText("よろしくお願いします")).toBeInTheDocument();
+  });
+});
+
+/**
+ * 書き込み可能時間帯 (#199)。開始30分前〜終了2時間後だけ書ける。
+ *
+ * 会場を出たあとの深夜に書き込みが続いたり、準備期間に本番用の部屋が
+ * 使われ始めたりしないための門。**上下どちらの端も**確かめる
+ * （片方を落としても気づけない状態にしない）。
+ */
+describe("書き込み可能時間帯 (#199)", () => {
+  async function renderAt(at: number) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(at);
+    // 一時鍵で参加している人＝入力欄まで出る状態
+    ephemeralKey = { secret: "00" };
+    const view = render(
+      <MemoryRouter>
+        <EventChat eventId="e-1" event={EVENT} myRole="staff" variant="page" />
+      </MemoryRouter>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    return view;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const STARTS = 1_700_000_000_000;
+  const ENDS = 1_700_003_600_000;
+
+  it("開始30分前より前は書けない", async () => {
+    await renderAt(STARTS - CHAT_WINDOW_BEFORE_MS - 60_000);
+    expect(await screen.findByRole("textbox")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
+  });
+
+  it("開始30分前を過ぎたら書ける", async () => {
+    await renderAt(STARTS - CHAT_WINDOW_BEFORE_MS + 60_000);
+    expect(await screen.findByRole("textbox")).toBeEnabled();
+  });
+
+  it("終了2時間後までは書ける", async () => {
+    await renderAt(ENDS + CHAT_WINDOW_AFTER_MS - 60_000);
+    expect(await screen.findByRole("textbox")).toBeEnabled();
+  });
+
+  it("終了2時間後を過ぎたら書けない", async () => {
+    await renderAt(ENDS + CHAT_WINDOW_AFTER_MS + 60_000);
+    expect(await screen.findByRole("textbox")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
   });
 });

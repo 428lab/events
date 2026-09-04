@@ -318,7 +318,6 @@ export function EventDetailPage() {
             eventId={id}
             event={event}
             myRole={myRole}
-            canChat={canChat}
           />
         </Suspense>
       )}
