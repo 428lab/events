@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { D1Database, R2Bucket, Fetcher } from "@cloudflare/workers-types";
 import { ACCOUNT_DELETION_GRACE_MS } from "@eventer/shared";
 
@@ -32,7 +33,6 @@ export interface Env {
 // Worker のバインディングはアイソレート内で安定（リクエスト間で同一ハンドル）なので、
 // リクエスト先頭で束ねたモジュール変数を参照しても並行リクエストで競合しない。
 let _env: Env | null = null;
-let _ctx: ExecutionContext | null = null;
 // 1リクエストあたりのメール送信予算（サブリクエスト上限の安全弁）。
 // アイソレート内の並行リクエストで共有されるためベストエフォートの近似だが、
 // 目的は暴走防止なので十分。bindEnv のたびにリセットする。
@@ -42,16 +42,34 @@ const EMAIL_BUDGET_PER_REQUEST = 20;
 let _ogFetchBudget = 0;
 const OG_FETCH_BUDGET_PER_REQUEST = 20;
 
-export function bindEnv(e: Env, ctx: ExecutionContext | null = null): void {
+export function bindEnv(e: Env): void {
   _env = e;
-  _ctx = ctx;
   _emailBudget = EMAIL_BUDGET_PER_REQUEST;
   _ogFetchBudget = OG_FETCH_BUDGET_PER_REQUEST;
 }
 
-/** レスポンスをブロックせずにバックグラウンド実行する（waitUntil が無い環境では await） */
+// ExecutionContext はバインディングと違い「その1リクエスト（その1回の cron）」に
+// 属する。モジュール変数に置くとアイソレートを共有する並行リクエストで上書きされ、
+// A が await している間に B が入ると A の deferBackground が B の ctx に
+// waitUntil してしまう。B のレスポンスが先に終われば A の背景処理は打ち切られる (#317)。
+// そのため実行文脈だけは AsyncLocalStorage でリクエストごとに持つ。
+// 到達経路をこの一本に絞るため、モジュール変数の控えは置かない。
+const ctxStore = new AsyncLocalStorage<ExecutionContext>();
+
+/** 1リクエスト（または cron 1回）の実行文脈を張る。この中で走るコードだけが
+ * deferBackground で waitUntil に逃がせる。Worker のエントリで1回だけ呼ぶ */
+export function runWithExecutionContext<T>(
+  ctx: ExecutionContext,
+  fn: () => T,
+): T {
+  return ctxStore.run(ctx, fn);
+}
+
+/** レスポンスをブロックせずにバックグラウンド実行する（実行文脈の外では await）。
+ * 文脈は呼び出し元のリクエストのものが自動で引き継がれる */
 export async function deferBackground(p: Promise<unknown>): Promise<void> {
-  if (_ctx) _ctx.waitUntil(p);
+  const ctx = ctxStore.getStore();
+  if (ctx) ctx.waitUntil(p);
   else await p;
 }
 
