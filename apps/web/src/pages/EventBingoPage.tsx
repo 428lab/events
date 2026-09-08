@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useEvent } from "../api/hooks.js";
 import { useBingoState, useIssueBingoCard } from "../api/bingoHooks.js";
 import { BingoCard } from "../components/BingoCard.js";
+import { BingoWithChat } from "../components/BingoWithChat.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
 /**
@@ -27,6 +28,7 @@ export function EventBingoPage() {
       : null;
 
   return (
+    <BingoWithChat eventId={id}>
     <Stack spacing={2}>
       {eventData && (
         <EventBreadcrumbs
@@ -135,5 +137,6 @@ export function EventBingoPage() {
         </>
       )}
     </Stack>
+    </BingoWithChat>
   );
 }
