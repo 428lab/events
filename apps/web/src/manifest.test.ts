@@ -56,6 +56,24 @@ describe("web app manifest (#490)", () => {
     );
   });
 
+  it("サーバーテストの fixture が本物と同じ内容（コピーなので乖離を検出する）", () => {
+    // apps/server/test/web-manifest.test.ts は fixture を配って display 等を見る。
+    // 本物だけ直すと、サーバー側のテストは古い値のまま通り続ける
+    const fixture = JSON.parse(
+      readFileSync(
+        path.join(appDir, "..", "server", "test", "fixtures", "assets", "manifest.webmanifest"),
+        "utf-8",
+      ),
+    ) as unknown;
+    expect(fixture).toEqual(manifest);
+  });
+
+  it("iOS のステータスバーは不透明（black-translucent は AppBar の上端を隠す）", () => {
+    expect(indexHtml).toContain(
+      '<meta name="apple-mobile-web-app-status-bar-style" content="default" />',
+    );
+  });
+
   it("配色は DESIGN.md の background（夜祭の空）に合わせる", () => {
     expect(manifest.theme_color).toBe("#0E1426");
     expect(manifest.background_color).toBe("#0E1426");

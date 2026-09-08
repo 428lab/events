@@ -14,7 +14,9 @@
          アイコン下に出る名前も iOS はここを見る -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- black-translucent にするとステータスバーの下まで描画され、AppBar
+         （position: static・safe-area 未対応）の上端がバーに隠れて押せなくなる -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="events lab" />
     <title>events lab</title>
     <meta name="description" content="募集から配信まで全部やる。あらゆるイベントをまるごと運営できる、events lab（ベータ）。" />
