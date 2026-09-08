@@ -235,16 +235,20 @@ export function EventCard({
         to={`/events/${event.id}`}
         sx={{
           display: "flex",
-          // モバイルは縦積み（画像が上に全幅）、PCは横並び
-          flexDirection: { xs: "column", sm: "row" },
+          // 幅を問わず横並び。以前はモバイルだけ縦積み（画像が上に全幅）で、
+          // 1画面に 1〜1.5 件しか入らず一覧を見渡せなかった (#488)
+          flexDirection: "row",
           alignItems: "stretch",
         }}
       >
         <Box
           sx={{
             flexShrink: 0,
-            width: { xs: "100%", sm: 200 },
-            aspectRatio: "1200 / 630",
+            width: { xs: 112, sm: 200 },
+            // 高さは本文側に合わせて伸ばす。aspectRatio で固定すると、
+            // 狭い画面でサムネだけが極端に低くなって余白が空く
+            alignSelf: "stretch",
+            minHeight: { xs: 84, sm: 105 },
             ...(img
               ? {
                   backgroundImage: `url(${img})`,
@@ -266,7 +270,7 @@ export function EventCard({
                 sx={{
                   color: "#F1F5F9",
                   fontWeight: 700,
-                  fontSize: { xs: 20, sm: 14 },
+                  fontSize: { xs: 12, sm: 14 },
                   lineHeight: 1.3,
                   display: "-webkit-box",
                   WebkitLineClamp: 3,
@@ -279,7 +283,7 @@ export function EventCard({
               <Typography
                 sx={{
                   color: color.fg,
-                  fontSize: { xs: 8, sm: 10 },
+                  fontSize: { xs: 7, sm: 10 },
                   fontWeight: 600,
                   opacity: 0.9,
                 }}
