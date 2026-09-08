@@ -177,15 +177,18 @@ authRoutes.post("/nostr/profile", requireAuth, async (c) => {
   const linkedUserId = await identitiesRepo.findUserId("nostr", profile.pubkey);
   if (linkedUserId !== user.id) return c.json({ error: "forbidden" }, 403);
   // 表示名は本人が変更できる (#232) ため、これまで通り未設定のときだけ補完する。
-  // アイコンはまず未設定なら連携先のURLで埋め（取り込みに失敗したときの見え方を
-  // 従来どおりに保つ）、そのうえで自前保管を試みて自ドメインのURLへ差し替える (#312)
+  // アイコンは未設定なら連携先URLで埋め、取り込み失敗時の見え方も維持する (#312)。
+  // 補完前の値を見る。補完後だと、今回初めて入ったURLの自前保管まで止めてしまう (#389)。
+  const needsAvatar = !user.avatarUrl;
   await usersRepo.fillProfile(user.id, profile.name, profile.picture);
-  // 取得元URLは本人が何度でも書き換えられるうえ、この API は回数制限が無い。
-  // ハッシュ比較では外向きの取得（1MB）までは止められないので、
-  // 直近に「試みた」時刻を基準に一定時間は取りに行かない (#313)
-  await syncAvatarInBackground(user.id, profile.picture, {
-    minIntervalMs: AVATAR_SYNC_MIN_INTERVAL_MS,
-  });
+  // 補完APIは設定済みアイコンを追従更新しない。fillProfileだけで守っても、
+  // バックグラウンド取り込みがDB/R2を上書きしてしまうため、呼出自体を止める。
+  if (needsAvatar) {
+    // 取得元URLは本人が変更できるため、初回補完でも試行時刻による制限を維持 (#313)。
+    await syncAvatarInBackground(user.id, profile.picture, {
+      minIntervalMs: AVATAR_SYNC_MIN_INTERVAL_MS,
+    });
+  }
   return c.json({ ok: true });
 });
 
