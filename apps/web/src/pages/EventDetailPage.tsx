@@ -21,6 +21,7 @@ import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
 import { ShareButton } from "../components/ShareButton.js";
+import { AddToCalendarButton } from "../components/AddToCalendarButton.js";
 import { eventImageUrl, useEvent, useMe, usePublishEvent } from "../api/hooks.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 import { useEventTiming } from "../lib/useEventTiming.js";
@@ -196,6 +197,8 @@ export function EventDetailPage() {
           {event.scheduling
             ? t("eventDetail.schedulingTbd")
             : formatDateRange(event.startsAt, event.endsAt)}
+          {/* 日程が確定しているときだけ出る (#487)。判断はボタン側が持つ */}
+          {event.status === "published" && <AddToCalendarButton event={event} />}
         </Typography>
         {/* 募集締切 (#269)。設定されているときだけ出す（未設定は従来の見た目のまま） */}
         {deadline !== null && (

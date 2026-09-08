@@ -118,6 +118,9 @@ const ja = {
   attendanceErrorNotConfirmed:
     "参加が確定している人だけ出席にできます。参加枠の「申込者の管理」で先に参加を確定にしてください。",
   attendanceErrorNotFound: "対象が見つかりませんでした。画面を更新してください。",
+
+  /** Google カレンダーへの追加 (#487)。日程が確定しているイベントにだけ出る */
+  addToGoogleCalendar: "Google カレンダーに追加",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -224,6 +227,7 @@ const en: Record<keyof typeof ja, string> = {
   attendanceErrorNotConfirmed:
     "Only confirmed participants can be marked as attended. Confirm them first from the applicant list.",
   attendanceErrorNotFound: "That was not found. Please reload the page.",
+  addToGoogleCalendar: "Add to Google Calendar",
 };
 
 export const eventDetail = { ja, en };
