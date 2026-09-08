@@ -6,6 +6,18 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- ホーム画面に追加してアプリのように使う (#490)。Service Worker は使わない -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- ブラウザのUI色。DESIGN.md の background（夜祭の空）に合わせる -->
+    <meta name="theme-color" content="#0E1426" />
+    <!-- iOS は manifest の display を見ない機種が残るため、こちらでも指定する。
+         アイコン下に出る名前も iOS はここを見る -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- black-translucent にするとステータスバーの下まで描画され、AppBar
+         （position: static・safe-area 未対応）の上端がバーに隠れて押せなくなる -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="events lab" />
     <title>events lab</title>
     <meta name="description" content="募集から配信まで全部やる。あらゆるイベントをまるごと運営できる、events lab（ベータ）。" />
     <meta property="og:type" content="website" />
