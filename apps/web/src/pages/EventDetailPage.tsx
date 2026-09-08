@@ -21,6 +21,7 @@ import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
 import { ShareButton } from "../components/ShareButton.js";
+import { AddToCalendarButton } from "../components/AddToCalendarButton.js";
 import { eventImageUrl, useEvent, useMe, usePublishEvent } from "../api/hooks.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 import { useEventTiming } from "../lib/useEventTiming.js";
@@ -204,6 +205,8 @@ export function EventDetailPage() {
             ? t("eventDetail.schedulingTbd")
             : formatDateRange(event.startsAt, event.endsAt)}
         </Typography>
+        {/* Google カレンダーに追加 (#487)。出す条件はボタン側が全部持つ */}
+        <AddToCalendarButton event={event} />
         {/* 募集締切 (#269)。設定されているときだけ出す（未設定は従来の見た目のまま） */}
         {deadline !== null && (
           <Typography
