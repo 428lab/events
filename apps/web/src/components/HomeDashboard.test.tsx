@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { i18next } from "../i18n/index.js";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -12,9 +13,16 @@ const DAY = 24 * HOUR;
 const myPage = vi.hoisted(() => ({ value: undefined as unknown }));
 const invites = vi.hoisted(() => ({ value: [] as unknown[] }));
 const loading = vi.hoisted(() => ({ value: false }));
+const failed = vi.hoisted(() => ({ value: false }));
+const refetch = vi.hoisted(() => ({ fn: vi.fn() }));
 
 vi.mock("../api/hooks.js", () => ({
-  useMyPage: () => ({ data: myPage.value, isLoading: loading.value }),
+  useMyPage: () => ({
+    data: failed.value ? undefined : myPage.value,
+    isLoading: loading.value,
+    isError: failed.value,
+    refetch: refetch.fn,
+  }),
 }));
 vi.mock("../api/staffInviteHooks.js", () => ({
   useMyStaffInvites: () => ({ data: invites.value }),
@@ -40,6 +48,7 @@ function ev(over: Partial<MyEventSummary> = {}): MyEventSummary {
     endsAt: NOW + DAY + 3 * HOUR,
     venueType: "offline",
     myRole: "participant",
+    myStatus: "confirmed",
     attended: false,
     ...over,
   } as MyEventSummary;
@@ -62,9 +71,12 @@ beforeEach(() => {
   myPage.value = { ongoing: [], past: [] };
   invites.value = [];
   loading.value = false;
+  failed.value = false;
+  refetch.fn.mockReset();
 });
-afterEach(() => {
+afterEach(async () => {
   vi.useRealTimers();
+  await i18next.changeLanguage("ja");
 });
 
 describe("HomeDashboard (#489)", () => {
@@ -116,6 +128,43 @@ describe("HomeDashboard (#489)", () => {
     loading.value = true;
     const { container } = renderDashboard();
     expect(container.textContent).toBe("");
+  });
+
+  it("開始までの残り時間が二重にならない（ja）", () => {
+    myPage.value = { ongoing: [ev({ startsAt: NOW + 5 * HOUR, endsAt: NOW + 8 * HOUR })], past: [] };
+    renderDashboard();
+    // formatRemaining が「あと5時間」まで組む。辞書で包み直すと「あと あと5時間」
+    expect(screen.getByText("あと5時間")).toBeTruthy();
+    expect(screen.queryByText(/あと あと/)).toBeNull();
+  });
+
+  it("開始までの残り時間が二重にならない（en）", async () => {
+    await i18next.changeLanguage("en");
+    myPage.value = { ongoing: [ev({ startsAt: NOW + 5 * HOUR, endsAt: NOW + 8 * HOUR })], past: [] };
+    renderDashboard();
+    expect(screen.getByText("5h left")).toBeTruthy();
+    expect(screen.queryByText(/in 5h left/)).toBeNull();
+  });
+
+  it("取得に失敗したら「予定なし」ではなくエラーを出す", () => {
+    failed.value = true;
+    renderDashboard();
+    expect(screen.getByText("参加予定を読み込めませんでした。")).toBeTruthy();
+    // 正常な空配列と同じ案内を出してはいけない
+    expect(screen.queryByText("参加予定のイベントはまだありません")).toBeNull();
+  });
+
+  it("エラー時の再読み込みボタンが refetch を呼ぶ", async () => {
+    failed.value = true;
+    renderDashboard();
+    screen.getByText("再読み込み").click();
+    expect(refetch.fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("参加未確定のイベントしか無ければオンボーディングを出す", () => {
+    myPage.value = { ongoing: [ev({ myStatus: "applied" })], past: [] };
+    renderDashboard();
+    expect(screen.getByText("参加予定のイベントはまだありません")).toBeTruthy();
   });
 
   it("日程調整中は別の見出しにまとめる", () => {

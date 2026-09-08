@@ -7,10 +7,6 @@ const ja = {
   scheduling: "日程調整中",
   todo: "要対応",
 
-  /** 「次のイベント」に添える相対時間。日時は Intl が組み立てたものを差し込む */
-  startsIn: "あと {{remaining}}",
-  today: "今日",
-  tomorrow: "明日",
 
   /** 当日の導線 */
   openEvent: "イベントを開く",
@@ -25,6 +21,10 @@ const ja = {
     "気になるイベントを探して参加するか、自分でイベントを立ててみましょう。",
   emptyBrowse: "イベントを探す",
   emptyCreate: "イベントを作る",
+
+  /** 予定の取得に失敗したとき。「予定なし」と誤案内しない */
+  loadError: "参加予定を読み込めませんでした。",
+  reload: "再読み込み",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -34,9 +34,6 @@ const en: Record<keyof typeof ja, string> = {
   scheduling: "Picking a date",
   todo: "Needs your reply",
 
-  startsIn: "in {{remaining}}",
-  today: "Today",
-  tomorrow: "Tomorrow",
 
   openEvent: "Open event",
 
@@ -47,6 +44,9 @@ const en: Record<keyof typeof ja, string> = {
   emptyBody: "Find an event to join, or host one of your own.",
   emptyBrowse: "Browse events",
   emptyCreate: "Create an event",
+
+  loadError: "Couldn't load your upcoming events.",
+  reload: "Reload",
 };
 
 export const home = { ja, en };

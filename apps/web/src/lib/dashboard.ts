@@ -22,6 +22,14 @@ export interface DashboardBuckets {
 /** 下書きはホームに出さない（公開前の準備物で、プロフィールの下書きタブが持ち場） */
 const isPublished = (e: MyEventSummary) => e.status === "published";
 
+/**
+ * 参加が確定しているか。`status` はイベントの公開状態で、本人の参加状態は
+ * `myStatus`。`/api/me/events` には抽選待ち (applied)・キャンセル待ち (waitlist)・
+ * 落選 (lost) も載るので、ここで絞らないと「行けるか分からないイベント」が
+ * 「次のイベント」として出る
+ */
+const isConfirmed = (e: MyEventSummary) => e.myStatus === "confirmed";
+
 /** 開催中か。終了時刻を過ぎていない、かつ開始済み */
 export function isLive(e: MyEventSummary, now: number): boolean {
   return !e.scheduling && e.startsAt <= now && e.endsAt >= now;
@@ -38,7 +46,7 @@ export function dashboardBuckets(
   ongoing: MyEventSummary[] | undefined,
   now: number,
 ): DashboardBuckets {
-  const mine = (ongoing ?? []).filter(isPublished);
+  const mine = (ongoing ?? []).filter((e) => isPublished(e) && isConfirmed(e));
 
   const scheduling = mine.filter((e) => e.scheduling);
   const dated = mine

@@ -47,6 +47,8 @@ function FeatureCard({
   now: number;
 }) {
   const { t } = useTranslation();
+  // formatRemaining は「あと5時間」「5h left」まで組み立てて返す。
+  // 辞書で「あと {{remaining}}」のように包むと「あと あと5時間」になる
   const remaining = !live && event.startsAt > now ? formatRemaining(event.startsAt, now) : "";
   return (
     <Card
@@ -60,9 +62,7 @@ function FeatureCard({
       <CardContent>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap" useFlexGap>
           {live && <Chip size="small" color="secondary" label={t("home.liveNow")} />}
-          {remaining && (
-            <Chip size="small" variant="outlined" label={t("home.startsIn", { remaining })} />
-          )}
+          {remaining && <Chip size="small" variant="outlined" label={remaining} />}
         </Stack>
         <Typography variant="h6" sx={{ lineHeight: 1.3 }}>
           {event.title}
@@ -97,7 +97,7 @@ function FeatureCard({
  */
 export function HomeDashboard() {
   const { t } = useTranslation();
-  const { data: myPage, isLoading } = useMyPage();
+  const { data: myPage, isLoading, isError, refetch } = useMyPage();
   const { data: invites } = useMyStaffInvites();
 
   // 開催中・締切の境目をまたいでも表示が切り替わるように時計を持つ。
@@ -114,6 +114,23 @@ export function HomeDashboard() {
   // 読み込み中は何も出さない。プレースホルダを出すと、下の一覧が
   // 読み終わったあとに上から押し下げられて視線が飛ぶ
   if (isLoading) return null;
+
+  // 取得失敗を「参加予定なし」と案内しない。空配列（正常）と data 無し（失敗）は別
+  if (isError) {
+    return (
+      <Alert
+        severity="error"
+        sx={{ mb: 4 }}
+        action={
+          <Button color="inherit" size="small" onClick={() => void refetch()}>
+            {t("home.reload")}
+          </Button>
+        }
+      >
+        {t("home.loadError")}
+      </Alert>
+    );
+  }
 
   const empty = isDashboardEmpty(buckets);
   if (empty && pendingInvites === 0) {

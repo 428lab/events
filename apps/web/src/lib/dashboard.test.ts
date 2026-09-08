@@ -15,6 +15,7 @@ function ev(over: Partial<MyEventSummary> = {}): MyEventSummary {
     startsAt: NOW + DAY,
     endsAt: NOW + DAY + 3 * HOUR,
     myRole: "participant",
+    myStatus: "confirmed",
     attended: false,
     ...over,
   } as MyEventSummary;
@@ -98,6 +99,28 @@ describe("dashboardBuckets", () => {
     const b = dashboardBuckets([join, staff], NOW);
     expect(b.next?.title).toBe("主催");
     expect(b.upcoming.map((e) => e.title)).toEqual(["参加"]);
+  });
+
+  it("参加が確定していないものは次のイベントにしない（レビュー指摘 #494）", () => {
+    // /api/me/events は canceled 以外を全部返す。イベントが published でも
+    // 本人が抽選待ち・キャンセル待ち・落選なら「行ける」とは言えない
+    const applied = ev({ title: "抽選待ち", myStatus: "applied", startsAt: NOW + HOUR });
+    const waitlist = ev({ title: "キャンセル待ち", myStatus: "waitlist", startsAt: NOW + 2 * HOUR });
+    const lost = ev({ title: "落選", myStatus: "lost", startsAt: NOW + 3 * HOUR });
+    const confirmed = ev({ title: "確定", myStatus: "confirmed", startsAt: NOW + 4 * HOUR });
+    const b = dashboardBuckets([applied, waitlist, lost, confirmed], NOW);
+    expect(b.next?.title).toBe("確定");
+    expect(b.upcoming).toEqual([]);
+    expect(b.live).toEqual([]);
+  });
+
+  it("開催中でも参加未確定なら開催中に出さない", () => {
+    const b = dashboardBuckets(
+      [ev({ title: "抽選待ちで開催中", myStatus: "applied", startsAt: NOW - HOUR, endsAt: NOW + HOUR })],
+      NOW,
+    );
+    expect(b.live).toEqual([]);
+    expect(isDashboardEmpty(b)).toBe(true);
   });
 
   it("空でも落ちない", () => {
