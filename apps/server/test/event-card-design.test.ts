@@ -112,7 +112,10 @@ describe("event-only card documents (#506)", () => {
     expect(read.headers.get("cache-control")).toBe("private, no-store");
     expect(new Uint8Array(await read.arrayBuffer())).toEqual(png);
     const outsider = await member(eventId, "participant", "confirmed");
-    expect((await SELF.fetch(`${base}${image.url}`, { headers: { cookie: outsider } })).status).toBe(403);
+    const privateRead = await SELF.fetch(`${base}${image.url}`, { headers: { cookie: outsider } });
+    // Drain even an unexpected successful response so an auth mutant cannot leak an R2 stream.
+    await privateRead.arrayBuffer();
+    expect(privateRead.status).toBe(403);
     expect((await upload(eventId, outsider)).status).toBe(403);
     const d = createCardTemplate("name"); d.common.background.assetId = image.id;
     expect((await request(eventId, cookie, d)).status).toBe(200);
@@ -123,6 +126,28 @@ describe("event-only card documents (#506)", () => {
     expect(deleted.status).toBe(200);
     expect(await env.BUCKET.get(key)).toBeNull();
     expect(await env.DB.prepare("SELECT * FROM event_card_design WHERE event_id = ?").bind(eventId).first()).toBeNull();
+  });
+
+  it("copies image bytes only for staff of both events and survives deleting the source", async () => {
+    const source = await setup(), target = await setup();
+    const response = await upload(source.eventId, source.cookie);
+    const { asset: image } = await response.json() as { asset: { id: string } };
+    const copy = (cookie: string) => SELF.fetch(`${base}/api/events/${target.eventId}/name-card-assets/copy`, {
+      method: "POST", headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ sourceEventId: source.eventId, assetId: image.id }),
+    });
+    const targetOnly = await member(target.eventId, "staff", "confirmed");
+    expect((await copy(targetOnly)).status).toBe(403);
+    const copied = await copy(target.cookie);
+    expect(copied.status).toBe(201);
+    const { asset: result } = await copied.json() as { asset: { id: string; url: string } };
+    expect(result.id).not.toBe(image.id);
+    await SELF.fetch(`${base}/api/events/${source.eventId}`, { method: "DELETE", headers: { cookie: source.cookie } });
+    const read = await SELF.fetch(`${base}${result.url}`, { headers: { cookie: target.cookie } });
+    expect(read.status).toBe(200);
+    expect(new Uint8Array(await read.arrayBuffer())).toEqual(png);
+    const d = createCardTemplate("name"); d.common.background.assetId = result.id;
+    expect((await request(target.eventId, target.cookie, d)).status).toBe(200);
   });
 
   it("rejects SVG, MIME spoofing and excessive pixel dimensions", async () => {

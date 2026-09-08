@@ -36,6 +36,9 @@ export const eventNameCardSchema = z.object({
   id: z.string(),
   /** イベント内の役割（一覧で「誰を外すか」を選ぶときの手がかり） */
   role: z.enum(EVENT_ROLES),
+  /** Current event slot; optional for older cached payloads. */
+  slotId: z.string().nullable().optional(),
+  slotName: z.string().nullable().optional(),
   /** プロフィールURLに使うハンドル（QRの飛び先） */
   handle: z.string(),
   name: z.string(),

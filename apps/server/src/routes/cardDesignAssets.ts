@@ -3,9 +3,11 @@ import type { AppEnv } from "../types.js";
 import { getBucket } from "../runtime.js";
 import { requireNameCardStaff } from "./nameCards.js";
 import { cardDesignsRepo, type CardAssetRow } from "../db/repositories/cardDesigns.js";
-import { run, runCount } from "../db/client.js";
+import { z } from "zod";
 import { cardImageDimensions } from "../lib/cardImageDimensions.js";
-import { deleteObjects, eventCardAssetR2Key } from "../lib/mediaCleanup.js";
+import { deleteObjects } from "../lib/mediaCleanup.js";
+import { storeCardAsset } from "../lib/cardAssetStorage.js";
+import { isConfirmedEventStaff } from "../auth/roles.js";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -30,28 +32,31 @@ cardDesignAssetRoutes.post("/:id/name-card-assets", async c => {
   if (body.byteLength > MAX_BYTES) return c.json({ error: "too_large" }, 413);
   const dimensions = cardImageDimensions(new Uint8Array(body), mime);
   if (!dimensions) return c.json({ error: "invalid_image" }, 400);
-  const id = crypto.randomUUID();
-  const objectKey = eventCardAssetR2Key(eventId, id);
-  // Reserve capacity atomically before R2 work; pending files cannot be saved in a design.
-  const inserted = await runCount(`INSERT INTO event_card_asset
-    (id, event_id, object_key, content_type, width, height, created_at)
-    SELECT ?, ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM event_card_asset WHERE event_id = ?) < 64`,
-    id, eventId, objectKey, mime, dimensions.width, dimensions.height, Date.now(), eventId);
-  if (!inserted) return c.json({ error: "card_asset_limit" }, 409);
-  try {
-    await getBucket().put(objectKey, body, { httpMetadata: { contentType: mime } });
-    if (!await runCount("UPDATE event_card_asset SET ready = 1 WHERE id = ? AND event_id = ?", id, eventId))
-      throw new Error("event_removed_during_upload");
-  } catch (error) {
-    // Also covers a concurrent event deletion between reserving metadata and R2 put.
-    try { await getBucket().delete(objectKey); }
-    catch (cleanupError) { console.error("card_asset_cleanup_failed", { eventId, id, cleanupError }); }
-    await run("DELETE FROM event_card_asset WHERE id = ? AND event_id = ?", id, eventId);
-    throw error;
-  }
+  const asset = await storeCardAsset(eventId, body, mime, dimensions);
+  if (!asset) return c.json({ error: "card_asset_limit" }, 409);
   c.header("Cache-Control", "private, no-store");
-  return c.json({ asset: { id, ...dimensions, contentType: mime,
-    url: `/api/events/${encodeURIComponent(eventId)}/name-card-assets/${id}` } }, 201);
+  return c.json({ asset }, 201);
+});
+
+// One image per request keeps copying a large template within request/I/O budgets.
+cardDesignAssetRoutes.post("/:id/name-card-assets/copy", async c => {
+  const parsed = z.object({ sourceEventId: z.string().uuid(), assetId: z.string().uuid() }).strict()
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "invalid_copy" }, 400);
+  const { sourceEventId, assetId } = parsed.data;
+  if (!await isConfirmedEventStaff(sourceEventId, c.get("user").id)) return c.json({ error: "forbidden" }, 403);
+  const row = await cardDesignsRepo.asset(sourceEventId, assetId);
+  if (!row || !MIME.has(row.content_type)) return c.json({ error: "not_found" }, 404);
+  const object = await getBucket().get(row.object_key);
+  if (!object) return c.json({ error: "not_found" }, 404);
+  if (object.size > MAX_BYTES) { await object.body.cancel(); return c.json({ error: "too_large" }, 413); }
+  const body = await object.arrayBuffer();
+  const dimensions = cardImageDimensions(new Uint8Array(body), row.content_type);
+  if (!dimensions) return c.json({ error: "invalid_image" }, 400);
+  const asset = await storeCardAsset(c.req.param("id"), body, row.content_type, dimensions);
+  if (!asset) return c.json({ error: "card_asset_limit" }, 409);
+  c.header("Cache-Control", "private, no-store");
+  return c.json({ asset }, 201);
 });
 
 cardDesignAssetRoutes.delete("/:id/name-card-assets/:assetId", async c => {

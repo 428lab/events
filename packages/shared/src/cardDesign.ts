@@ -47,6 +47,7 @@ const ruleSchema = z.object({
   background: cardBackgroundSchema.optional(),
   parts: parts.default([]),
   hiddenIds: z.array(id).max(CARD_DESIGN_MAX_PARTS).default([]),
+  order: z.array(id).max(CARD_DESIGN_MAX_PARTS).refine(ids => new Set(ids).size === ids.length).optional(),
 }).strict();
 export const cardDesignSchema = z.object({
   version: z.literal(1),
@@ -72,11 +73,19 @@ export const cardDesignSchema = z.object({
   doc.slots.forEach((s, i) => check(s.rule.parts, ["slots", i, "rule", "parts"]));
   if (new Set(doc.slots.map(s => s.slotId)).size !== doc.slots.length)
     ctx.addIssue({ code: "custom", message: "duplicate_slot_rule", path: ["slots"] });
+  if (cardDesignAssetIds(doc).length > 64)
+    ctx.addIssue({ code: "custom", message: "too_many_assets" });
   // Bound the resolved layout too: rules can add blocks as well as replace them.
   for (const slot of [null, ...doc.slots.map(s => s.slotId)]) {
     for (const role of ["participant", "staff"]) {
-      if (resolveCardLayout(doc, role, slot).parts.length > CARD_DESIGN_MAX_PARTS)
+      const resolved = resolveCardLayout(doc, role, slot).parts;
+      if (resolved.length > CARD_DESIGN_MAX_PARTS)
         ctx.addIssue({ code: "custom", message: "too_many_resolved_parts" });
+      resolved.forEach((p, i) => {
+        if (p.kind === "qr" && resolved.slice(i + 1).some(q => q.opacity > 0 &&
+          q.x < p.x + p.width && q.x + q.width > p.x && q.y < p.y + p.height && q.y + q.height > p.y))
+          ctx.addIssue({ code: "custom", message: "qr_obscured", path: ["common", "parts", p.id] });
+      });
     }
   }
 });
@@ -90,13 +99,15 @@ export function applyCardRule(layout: CardLayout, rule?: CardRule): CardLayout {
   const replacements = new Map(rule.parts.map(p => [p.id, p]));
   const hidden = new Set(rule.hiddenIds);
   const existing = new Set(layout.parts.map(p => p.id));
-  return {
-    background: rule.background ?? layout.background,
-    parts: [
-      ...layout.parts.map(p => replacements.get(p.id) ?? p),
-      ...rule.parts.filter(p => !existing.has(p.id)),
-    ].filter(p => !hidden.has(p.id)),
-  };
+  const parts = [
+    ...layout.parts.map(p => replacements.get(p.id) ?? p),
+    ...rule.parts.filter(p => !existing.has(p.id)),
+  ].filter(p => !hidden.has(p.id));
+  if (rule.order) {
+    const ranks = new Map(rule.order.map((id, i) => [id, i]));
+    parts.sort((a, b) => (ranks.get(a.id) ?? parts.length) - (ranks.get(b.id) ?? parts.length));
+  }
+  return { background: rule.background ?? layout.background, parts };
 }
 
 /** slotId must come from the event's current membership, not a caller-selected rule. */

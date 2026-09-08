@@ -52,6 +52,13 @@ describe("event card design contract (#506)", () => {
     expect(cardDesignSchema.safeParse(qr).success).toBe(false);
   });
 
+  it("rejects a foreground part covering the QR quiet zone", () => {
+    const d = createCardTemplate("name");
+    const qr = d.common.parts.find(p => p.kind === "qr")!;
+    d.common.parts.push({ ...qr, id: "cover", kind: "rect", color: "#FFFFFF", radius: 0 });
+    expect(cardDesignSchema.safeParse(d).success).toBe(false);
+  });
+
   it("bounds resolved parts, not only each individual rule", () => {
     const d = createCardTemplate("name");
     const block = d.common.parts[0];
