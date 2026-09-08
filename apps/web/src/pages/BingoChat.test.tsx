@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Event } from "@eventer/shared";
 import { EventBingoPage } from "./EventBingoPage.js";
 import { EventBingoControlPage } from "./EventBingoControlPage.js";
@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   error: false,
   loading: false,
   numbers: [] as number[],
+  mobile: false,
   send: vi.fn(),
   channel: vi.fn(),
   draw: vi.fn(),
@@ -64,7 +65,11 @@ vi.mock("../components/chat/useChatChannel.js", () => ({
   },
 }));
 
+afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => {
+  state.mobile = false;
+  vi.stubGlobal("matchMedia", () => ({ matches: state.mobile, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  vi.stubGlobal("visualViewport", Object.assign(new EventTarget(), { height: 844, width: 390, offsetTop: 0, offsetLeft: 0 }));
   state.event = {
     id: "event", title: "ビンゴ検証", status: "published", chatEnabled: true,
     scheduling: false, startsAt: Date.now() - 60_000, endsAt: Date.now() + 3_600_000,
@@ -117,7 +122,29 @@ describe("ビンゴ画面へのチャット併設 (#499)", () => {
     expect(state.channel.mock.calls[0][0].eventId).toBe("event");
   });
 
-  it.each(["disabled", "draft", "scheduling", "undated", "unconfirmed"])("%sでは接続しない", async (reason) => {
+  it.each([false, true])("スマホ control=%s: 下部固定がキーボードの表示領域へ追従し、入力を維持する", async (control) => {
+    state.mobile = true;
+    if (!control) state.role = "participant";
+    mount(control);
+    const input = await screen.findByRole("textbox");
+    fireEvent.change(input, { target: { value: "抽選しながら会話" } });
+    const chat = screen.getByRole("complementary", { name: "チャット" });
+    expect(chat).toHaveStyle({ position: "fixed", top: "524px", height: "320px" });
+    expect(chat.parentElement).toHaveStyle({ paddingBottom: "336px" });
+    Object.assign(window.visualViewport!, { height: 400, offsetTop: 12 });
+    act(() => { window.visualViewport!.dispatchEvent(new Event("resize")); });
+    expect(chat).toHaveStyle({ top: "212px", height: "200px" });
+    expect(chat.parentElement).toHaveStyle({ paddingBottom: "216px" });
+    expect(screen.getByRole("textbox")).toBe(input);
+    expect(input).toHaveValue("抽選しながら会話");
+    Object.assign(window.visualViewport!, { height: 844, offsetTop: 0 });
+    act(() => { window.visualViewport!.dispatchEvent(new Event("scroll")); });
+    expect(chat).toHaveStyle({ top: "524px", height: "320px" });
+    expect(input).toHaveValue("抽選しながら会話");
+  });
+
+  it.each(["disabled", "draft", "scheduling", "undated", "unconfirmed"])("%sでは接続・下部固定しない", async (reason) => {
+    state.mobile = true;
     if (reason === "disabled") state.event.chatEnabled = false;
     if (reason === "draft") state.event.status = "draft";
     if (reason === "scheduling") state.event.scheduling = true;
@@ -125,6 +152,7 @@ describe("ビンゴ画面へのチャット併設 (#499)", () => {
     if (reason === "unconfirmed") state.memberStatus = "applied";
     mount();
     expect(screen.getByRole("complementary", { name: "チャット" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary")).not.toHaveStyle({ position: "fixed" });
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(state.channel).not.toHaveBeenCalled();
   });

@@ -35,12 +35,13 @@ export function BingoCard({
 }) {
   const { t } = useTranslation();
   const drawnSet = new Set(drawn);
+  const size = `var(--bingo-card-cell-size, ${cellSize}px)`;
   return (
     <Box sx={{ display: "inline-block" }}>
       <Box
         sx={{
           display: "grid",
-          gridTemplateColumns: `repeat(5, ${cellSize}px)`,
+          gridTemplateColumns: `repeat(5, ${size})`,
           gap: 0.5,
           mb: 0.5,
         }}
@@ -49,7 +50,7 @@ export function BingoCard({
           <Typography
             key={label}
             align="center"
-            sx={{ fontWeight: 800, color: "primary.main", fontSize: cellSize * 0.4 }}
+            sx={{ fontWeight: 800, color: "primary.main", fontSize: `calc(${size} * 0.4)` }}
           >
             {label}
           </Typography>
@@ -58,8 +59,8 @@ export function BingoCard({
       <Box
         sx={{
           display: "grid",
-          gridTemplateColumns: `repeat(5, ${cellSize}px)`,
-          gridTemplateRows: `repeat(5, ${cellSize}px)`,
+          gridTemplateColumns: `repeat(5, ${size})`,
+          gridTemplateRows: `repeat(5, ${size})`,
           gap: 0.5,
         }}
       >
@@ -85,7 +86,7 @@ export function BingoCard({
                 bgcolor: marked ? "primary.main" : "background.paper",
                 color: marked ? "primary.contrastText" : "text.primary",
                 fontWeight: 700,
-                fontSize: free ? cellSize * 0.28 : cellSize * 0.36,
+                fontSize: `calc(${size} * ${free ? 0.28 : 0.36})`,
               }}
             >
               {free ? t("eventSocial.bingoFree") : n}
