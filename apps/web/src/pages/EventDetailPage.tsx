@@ -40,6 +40,7 @@ import { EventActionButtons } from "../components/EventActionButtons.js";
 import { EventAwards } from "../components/EventAwards.js";
 import { EventJoinPanel } from "../components/EventJoinPanel.js";
 import { EventMemberList } from "../components/EventMemberList.js";
+import { EventDetailSidebar } from "../components/EventDetailSidebar.js";
 import { EventSubmissions } from "../components/EventSubmissions.js";
 import {
   formatDateRange,
@@ -416,26 +417,15 @@ export function EventDetailPage() {
       </Grid>
 
       <Grid item xs={12} md={4}>
-        {/* 画面に貼り付けたままにするので、中身が画面高を超えたら
-            この列だけを縦スクロールさせる。そうしないと参加者一覧の下端に
-            到達できなくなる（招待カードが加わって届かなくなりやすくなった） */}
-        <Stack
-          spacing={2}
-          sx={{
-            position: { md: "sticky" },
-            top: { md: 16 },
-            maxHeight: { md: "calc(100vh - 32px)" },
-            overflowY: { md: "auto" },
-          }}
-        >
-        {/* 運営を指名して招く (#339)。公開前でも一緒に準備できるようにする入口 */}
-        {isStaff && <EventStaffInvitesCard eventId={id} />}
-        <EventMemberList
-          eventId={id}
-          isStaff={isStaff}
-          attendanceCheck={event.attendanceCheck}
-        />
-        </Stack>
+        <EventDetailSidebar>
+          {/* 運営を指名して招く (#339)。公開前でも一緒に準備できるようにする入口 */}
+          {isStaff && <EventStaffInvitesCard eventId={id} />}
+          <EventMemberList
+            eventId={id}
+            isStaff={isStaff}
+            attendanceCheck={event.attendanceCheck}
+          />
+        </EventDetailSidebar>
       </Grid>
     </Grid>
   );

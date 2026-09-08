@@ -161,12 +161,8 @@ export function MemberRow({
       />
     ) : null;
 
-  return (
-    <ListItem
-      key={m.id}
-      disableGutters
-      secondaryAction={
-        <Stack direction="row" spacing={0.5} alignItems="center">
+  const actions = (
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
           {showCheck ? (
             /* 押せない理由はその場で読めるようにする。無効なチェックボックスだけ
                置くと「押しても何も起きない」に見えるため (#286) */
@@ -250,12 +246,16 @@ export function MemberRow({
             </>
           )}
         </Stack>
-      }
-    >
+  );
+
+  return (
+    // secondaryAction は行と内側のボタンに固定余白を二重に取るため使わない。
+    // 操作は通常のflex項目にして、実際に必要な幅だけを名前から差し引く (#497)。
+    <ListItem disableGutters disablePadding>
       <ListItemButton
         component={RouterLink}
         to={`/users/${m.user.username}`}
-        sx={{ borderRadius: 1 }}
+        sx={{ borderRadius: 1, minWidth: 0, px: 1 }}
       >
         <ListItemAvatar>
           <Avatar
@@ -268,8 +268,10 @@ export function MemberRow({
         <ListItemText
           primary={m.user.globalName ?? m.user.username}
           secondary={roleLabel(m.role)}
+          primaryTypographyProps={{ sx: { overflowWrap: "anywhere" } }}
         />
       </ListItemButton>
+      {actions}
     </ListItem>
   );
 }
