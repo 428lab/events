@@ -197,9 +197,13 @@ export function EventDetailPage() {
           {event.scheduling
             ? t("eventDetail.schedulingTbd")
             : formatDateRange(event.startsAt, event.endsAt)}
-          {/* 日程が確定しているときだけ出る (#487)。判断はボタン側が持つ */}
-          {event.status === "published" && <AddToCalendarButton event={event} />}
         </Typography>
+        {/* 日程が確定しているときだけ出る (#487)。判断はボタン側が持つ */}
+        {event.status === "published" && (
+          <Box sx={{ mt: 1 }}>
+            <AddToCalendarButton event={event} />
+          </Box>
+        )}
         {/* 募集締切 (#269)。設定されているときだけ出す（未設定は従来の見た目のまま） */}
         {deadline !== null && (
           <Typography

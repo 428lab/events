@@ -1,4 +1,4 @@
-import { IconButton, Tooltip } from "@mui/material";
+import { Button } from "@mui/material";
 import EventAvailableIcon from "@mui/icons-material/EventAvailable";
 import { useTranslation } from "react-i18next";
 import type { Event } from "@eventer/shared";
@@ -11,7 +11,8 @@ import { googleCalendarUrl } from "../lib/googleCalendar.js";
  * このボタン自体が出ない。押しても何も起きない状態を作らないため、
  * 出す・出さないの判断は URL を作れるかどうかに一本化してある。
  *
- * 置き場所は日時表示のとなり（`EventDetailPage`）。日時を見た流れで押せる位置。
+ * アイコンだけだと何が起きるか伝わらないので文言を付ける。置き場所は
+ * 日時表示の直下（`EventDetailPage`）。日時を見た流れで押せる位置。
  */
 export function AddToCalendarButton({ event }: { event: Event }) {
   const { t } = useTranslation();
@@ -21,17 +22,16 @@ export function AddToCalendarButton({ event }: { event: Event }) {
   if (!href) return null;
 
   return (
-    <Tooltip title={t("eventDetail.addToGoogleCalendar")}>
-      <IconButton
-        component="a"
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={t("eventDetail.addToGoogleCalendar")}
-        size="small"
-      >
-        <EventAvailableIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
+    <Button
+      component="a"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      size="small"
+      variant="outlined"
+      startIcon={<EventAvailableIcon />}
+    >
+      {t("eventDetail.addToGoogleCalendar")}
+    </Button>
   );
 }
