@@ -49,12 +49,13 @@ export function EventList({
       <Box
         sx={{
           display: "grid",
-          // 列数は上限を決め打つ (#488)。auto-fill だと広い画面で5列以上に増え、
-          // 1枚が小さくなりすぎてタイトルも日時も読めなくなっていた
-          gridTemplateColumns: {
-            xs: "repeat(2, minmax(0, 1fr))",
-            md: "repeat(3, minmax(0, 1fr))",
-          },
+          // 列数は 2〜3 に収める (#488)。素の auto-fill だと広い画面で5列以上に
+          // 増えて1枚が読めなくなる。ビューポートではなく**この箱の幅**で決めるので、
+          // どこに埋め込んでも同じ規則で並ぶ。
+          //   下限 150px: これ未満だと日時が省略される。320px 幅の端末は 1 列に落ちる
+          //   上限 3 列 : (100% - gap×2) / 3 を最小幅にすると 4 列目が入らない
+          gridTemplateColumns:
+            "repeat(auto-fill, minmax(max(150px, calc((100% - 24px) / 3)), 1fr))",
           gap: 1.5,
         }}
       >
@@ -65,7 +66,7 @@ export function EventList({
     );
   }
   return (
-    <Stack spacing={2}>
+    <Stack spacing={{ xs: 1, sm: 2 }}>
       {events.map((e) => (
         <EventCard key={e.id} event={e} role={e.myRole ?? role} />
       ))}
