@@ -1,3 +1,4 @@
+import { useId } from "react";
 import {
   Box,
   Button,
@@ -14,6 +15,7 @@ import {
   BINGO_COLUMNS,
   BINGO_FREE_CELL,
   cellToCardIndex,
+  type EventRole,
 } from "@eventer/shared";
 import { useBingoState } from "../api/bingoHooks.js";
 
@@ -99,35 +101,43 @@ export function BingoCard({
  * イベント詳細ページのビンゴ導線カード (#436)。ゲームがあるイベントの
  * 確定メンバーにだけ出る（無ければサーバーの404でクエリが止まり、何も描かない）。
  */
-export function BingoPanel({ eventId }: { eventId: string }) {
+export function BingoPanel({
+  eventId,
+  myRole,
+}: {
+  eventId: string;
+  myRole: EventRole | null;
+}) {
   const { t } = useTranslation();
+  const headingId = useId();
   const { data } = useBingoState(eventId, Boolean(eventId));
   if (!data || data.status === "none") return null;
+  const statusLabel = data.status === "setup"
+    ? t("eventSocial.bingoStatusSetup")
+    : data.status === "running"
+      ? t("eventSocial.bingoStatusRunning")
+      : t("eventSocial.bingoStatusEnded");
   return (
-    <Card variant="outlined">
+    <Card component="section" aria-labelledby={headingId} variant="outlined" sx={{ borderColor: "primary.main" }}>
       <CardContent>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <Typography
-            variant="h6"
-            sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+            id={headingId}
+            component="h2"
+            variant="h5"
+            sx={{ display: "flex", alignItems: "center", gap: 1, fontWeight: 700 }}
           >
-            <CasinoOutlinedIcon fontSize="small" />
-            {t("eventSocial.bingoTitle")}
+            <CasinoOutlinedIcon color="primary" />
+            {t("eventSocial.bingoSectionTitle")}
           </Typography>
+          <Chip size="small" variant="outlined" label={statusLabel} />
           {data.me?.bingo ? (
             <Chip size="small" color="success" label={t("eventSocial.bingoBingo")} />
           ) : data.me?.reach ? (
             <Chip size="small" color="warning" label={t("eventSocial.bingoReach")} />
           ) : null}
-          <Button
-            size="small"
-            component={RouterLink}
-            to={`/events/${eventId}/bingo`}
-          >
-            {t("eventSocial.bingoDetailLink")}
-          </Button>
         </Stack>
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
           {data.status === "setup"
             ? t("eventSocial.bingoWaiting")
             : data.status === "ended"
@@ -138,6 +148,23 @@ export function BingoPanel({ eventId }: { eventId: string }) {
                   reach: data.counts.reach,
                 })}
         </Typography>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 2 }}>
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={<CasinoOutlinedIcon />}
+            component={RouterLink}
+            to={`/events/${eventId}/bingo`}
+            sx={{ width: { xs: "100%", sm: "auto" }, minHeight: 48 }}
+          >
+            {t("eventSocial.bingoDetailLink")}
+          </Button>
+          {myRole === "staff" && (
+            <Button component={RouterLink} to={`/events/${eventId}/bingo/control`}>
+              {t("eventSocial.bingoControlLink")}
+            </Button>
+          )}
+        </Stack>
       </CardContent>
     </Card>
   );

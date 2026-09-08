@@ -294,6 +294,9 @@ export function EventDetailPage() {
         </Card>
       )}
 
+      {/* ビンゴ会場の入口は長いチャットや景品一覧に埋もれない位置へ (#500)。 */}
+      {canChat && <BingoPanel eventId={id} myRole={myRole} />}
+
       {/* タイムテーブル（閲覧はイベントが見える人全員、編集は staff） */}
       <EventSchedule
         eventId={id}
@@ -338,10 +341,6 @@ export function EventDetailPage() {
       {/* 出会いの景品 (#431)。設定がオンなら誰でも見える（参加の動機）。
           達成・交換済みの本人分はサーバーが確定メンバーにだけ添える */}
       {event.meetPrizes && <MeetPrizePanel eventId={id} />}
-
-      {/* 数字ビンゴ (#436)。ゲームがあるイベントの確定メンバーにだけ出る
-          （出し分けは利便。防御はサーバーの404） */}
-      {canChat && <BingoPanel eventId={id} />}
 
       {/* 参加者限定のお知らせ（サーバーが閲覧可の人にだけ返す） */}
       {membersNote && (
