@@ -17,6 +17,7 @@ import { eventDetail } from "./messages/eventDetail.js";
 import { eventForm } from "./messages/eventForm.js";
 import { eventRun } from "./messages/eventRun.js";
 import { eventSocial } from "./messages/eventSocial.js";
+import { home } from "./messages/home.js";
 import { events } from "./messages/events.js";
 import { inquiries, inquiryStatus } from "./messages/inquiries.js";
 import { kpi } from "./messages/kpi.js";
@@ -68,6 +69,7 @@ export const translations = {
     login: login.ja,
     blueskyError: blueskyError.ja,
     events: events.ja,
+    home: home.ja,
     egg: egg.ja,
     eventDetail: eventDetail.ja,
     eventForm: eventForm.ja,
@@ -106,6 +108,7 @@ export const translations = {
     login: login.en,
     blueskyError: blueskyError.en,
     events: events.en,
+    home: home.en,
     egg: egg.en,
     eventDetail: eventDetail.en,
     eventForm: eventForm.en,
