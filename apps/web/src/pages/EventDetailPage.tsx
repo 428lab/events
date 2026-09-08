@@ -33,6 +33,7 @@ import { EventQa } from "../components/EventQa.js";
 import { MeetRankingPanel } from "../components/MeetRanking.js";
 import { MeetPrizePanel } from "../components/MeetPrizes.js";
 import { BingoPanel } from "../components/BingoCard.js";
+import { useBingoState } from "../api/bingoHooks.js";
 import { useRecordView } from "../api/analyticsHooks.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
 import { EventStaffInvitesCard } from "../components/EventStaffInvitesCard.js";
@@ -63,6 +64,8 @@ export function EventDetailPage() {
   // 参加確定メンバーか（コメント・チャット・Q&A の条件）と、チャットが実際に
   // 使えるか。同じ式を専用ページ側と2か所に持たないため hook に寄せてある (#215)
   const { canChat, chatAvailable } = useEventChatAccess(id);
+  // 表示位置と内容は同じ状態を見る。位置変更でポーリングを作り直さない (#500)。
+  const { data: bingo } = useBingoState(id, canChat);
   // 終了・締切の判定と1分ごとの時計。ページで1回だけ呼んで子に配る
   const timing = useEventTiming(data?.event);
   const publish = usePublishEvent();
@@ -84,6 +87,9 @@ export function EventDetailPage() {
   const isStaff = myRole === "staff";
   const contest = event.contestMode;
   const deadline = event.registrationDeadline;
+  const bingoPanel = canChat
+    ? <BingoPanel eventId={id} myRole={myRole} data={bingo} />
+    : null;
 
   return (
     <Grid container spacing={3}>
@@ -294,12 +300,17 @@ export function EventDetailPage() {
         </Card>
       )}
 
+      {/* 受付中・抽選中は入口を優先する。終了後はタイムテーブルの下へ (#500)。 */}
+      {bingo?.status !== "ended" && bingoPanel}
+
       {/* タイムテーブル（閲覧はイベントが見える人全員、編集は staff） */}
       <EventSchedule
         eventId={id}
         eventStartsAt={event.scheduling ? null : event.startsAt}
         isStaff={isStaff}
       />
+
+      {bingo?.status === "ended" && bingoPanel}
 
       {/* 登壇資料ギャラリー（資料URLのあるコマだけ。無ければ非表示） */}
       <EventMaterials eventId={id} />
@@ -338,10 +349,6 @@ export function EventDetailPage() {
       {/* 出会いの景品 (#431)。設定がオンなら誰でも見える（参加の動機）。
           達成・交換済みの本人分はサーバーが確定メンバーにだけ添える */}
       {event.meetPrizes && <MeetPrizePanel eventId={id} />}
-
-      {/* 数字ビンゴ (#436)。ゲームがあるイベントの確定メンバーにだけ出る
-          （出し分けは利便。防御はサーバーの404） */}
-      {canChat && <BingoPanel eventId={id} />}
 
       {/* 参加者限定のお知らせ（サーバーが閲覧可の人にだけ返す） */}
       {membersNote && (
