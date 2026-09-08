@@ -79,12 +79,12 @@ export function EventCard({
             sx={{
               width: "100%",
               aspectRatio: "1200 / 630",
+              // 画像は背景ではなく <img loading="lazy"> で置く。背景画像は DOM に
+              // ある分すべて即時に取りに行くので、見えている分だけ読む
+              position: "relative",
+              overflow: "hidden",
               ...(img
-                ? {
-                    backgroundImage: `url(${img})`,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                  }
+                ? {}
                 : {
                     bgcolor: color.bg,
                     display: "flex",
@@ -94,6 +94,22 @@ export function EventCard({
                   }),
             }}
           >
+            {img && (
+              <Box
+                component="img"
+                src={img}
+                alt=""
+                loading="lazy"
+                sx={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: "block",
+                }}
+              />
+            )}
             {!img && (
               <>
                 <Typography
@@ -235,8 +251,7 @@ export function EventCard({
         to={`/events/${event.id}`}
         sx={{
           display: "flex",
-          // 幅を問わず横並び。以前はモバイルだけ縦積み（画像が上に全幅）で、
-          // 1画面に 1〜1.5 件しか入らず一覧を見渡せなかった (#488)
+          // 幅を問わず横並び（左サムネ＋右情報）(#488)
           flexDirection: "row",
           alignItems: "stretch",
         }}
@@ -245,16 +260,15 @@ export function EventCard({
           sx={{
             flexShrink: 0,
             width: { xs: 112, sm: 200 },
-            // 高さは本文側に合わせて伸ばす。aspectRatio で固定すると、
-            // 狭い画面でサムネだけが極端に低くなって余白が空く
-            alignSelf: "stretch",
-            minHeight: { xs: 84, sm: 105 },
+            // 縦横比は固定する。本文の高さに伸ばすと 1200×630 の画像が行ごとに
+            // 違う形で切り取られ、Studio で作った画像はタイトルが消える。
+            // 狭い画面は正方形（本文の高さに近い）、それ以外は OG と同じ比
+            aspectRatio: { xs: "1 / 1", sm: "1200 / 630" },
+            alignSelf: "center",
+            position: "relative",
+            overflow: "hidden",
             ...(img
-              ? {
-                  backgroundImage: `url(${img})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }
+              ? {}
               : {
                   bgcolor: color.bg,
                   display: "flex",
@@ -264,6 +278,22 @@ export function EventCard({
                 }),
           }}
         >
+          {img && (
+            <Box
+              component="img"
+              src={img}
+              alt=""
+              loading="lazy"
+              sx={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+          )}
           {!img && (
             <>
               <Typography
@@ -283,7 +313,7 @@ export function EventCard({
               <Typography
                 sx={{
                   color: color.fg,
-                  fontSize: { xs: 7, sm: 10 },
+                  fontSize: { xs: 8, sm: 10 },
                   fontWeight: 600,
                   opacity: 0.9,
                 }}
@@ -321,9 +351,11 @@ export function EventCard({
             </Stack>
           )}
           <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
+            // 横並びにしたぶん本文の幅が減った。チップを横に置いたままだと
+            // 狭い画面でタイトルが数文字しか残らないので、xs では下に落とす
+            direction={{ xs: "column", sm: "row" }}
+            spacing={{ xs: 0.5, sm: 1 }}
+            alignItems={{ xs: "flex-start", sm: "center" }}
             justifyContent="space-between"
           >
             <Typography
@@ -344,7 +376,7 @@ export function EventCard({
                 direction="row"
                 spacing={0.5}
                 flexWrap="wrap"
-                justifyContent="flex-end"
+                justifyContent={{ xs: "flex-start", sm: "flex-end" }}
                 useFlexGap
                 sx={{ flexShrink: 0 }}
               >
@@ -370,7 +402,8 @@ export function EventCard({
               mt: 0.25,
               fontSize: { xs: "0.72rem", sm: "0.875rem" },
               display: "-webkit-box",
-              WebkitLineClamp: 2,
+              // 狭い幅では日時＋会場＋人数が 2 行に収まらず末尾の人数が消える
+              WebkitLineClamp: { xs: 3, sm: 2 },
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
             }}
