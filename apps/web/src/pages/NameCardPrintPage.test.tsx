@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   CARDS_PER_SHEET,
+  createCardTemplate,
   NAME_CARD_GAP_MM,
   NAME_CARD_H_MM,
   NAME_CARD_W_MM,
@@ -13,7 +14,7 @@ import {
   SHEET_ROWS,
   SHEET_W_MM,
 } from "@eventer/shared";
-import type { EventNameCard, EventRole } from "@eventer/shared";
+import type { CardDesign, EventNameCard, EventRole } from "@eventer/shared";
 
 /**
  * 名札の一括印刷 (#304)。
@@ -83,8 +84,9 @@ function card(over: Partial<EventNameCard> = {}): EventNameCard {
 }
 
 /** イベント詳細（myRole）と名札一覧の2本を出し分ける */
-function mockApi(myRole: EventRole | null, cards: EventNameCard[]): void {
+function mockApi(myRole: EventRole | null, cards: EventNameCard[], design: CardDesign | null = null): void {
   getMock.mockImplementation((path: string) => {
+    if (path === `/events/${EVENT_ID}/name-card-design`) return Promise.resolve({ revision: design ? 1 : 0, design });
     if (path === `/events/${EVENT_ID}/name-cards`) {
       // 権限のない相手にはサーバーが 403 を返すので、ここでは呼ばれないこと自体が期待値
       return Promise.resolve({ cards });
@@ -129,6 +131,32 @@ beforeEach(() => {
   getMock.mockReset();
   cardRenders.mockClear();
   localStorage.clear();
+});
+
+describe("イベントデザインの印刷 (#506)", () => {
+  it("uses event overrides instead of personal themes, with unique SVG definitions", async () => {
+    mockApi("staff", [card({ id: "staff", role: "staff", cardImageKey: "rosette-rose" }), card()], createCardTemplate("name"));
+    const { container } = renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeEnabled());
+    expect(container.querySelectorAll('[data-card-part="role-band"] rect[fill="#9D174D"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-card-part="role-band"] rect[fill="#0F766E"]')).toHaveLength(1);
+    const ids = [...container.querySelectorAll("clipPath")].map(el => el.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(cardRenders).not.toHaveBeenCalled();
+  });
+
+  it("blocks printing until images load, and again on an image error", async () => {
+    const design = createCardTemplate("name"); design.common.background.assetId = "test-image";
+    mockApi("staff", [card()], design);
+    const { container } = renderPage();
+    await waitFor(() => expect(container.querySelector("image")).not.toBeNull());
+    expect(screen.getByRole("button", { name: "印刷する" })).toBeDisabled();
+    fireEvent.load(container.querySelector("image")!);
+    await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeEnabled());
+    fireEvent.error(container.querySelector("image")!);
+    await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeDisabled());
+    expect(container.querySelector(".name-card-page")).toHaveAttribute("data-print-ready", "false");
+  });
 });
 
 describe("名札の印刷: 誰を刷るか (#304)", () => {
@@ -223,7 +251,7 @@ describe("名札の印刷: 本人が設定したカードで刷る (#304)", () =
       card({ id: "u-2", name: "鈴木", cardImageKey: "flow-amber" }),
     ]);
     renderPage();
-    await screen.findByText(/2 人/);
+    await waitFor(() => expect(document.querySelectorAll(".name-card-cell svg")).toHaveLength(2));
     const svgs = document.querySelectorAll(".name-card-cell svg");
     expect(svgs).toHaveLength(2);
     // 背景の描き分けが実際に違うこと（同じ見た目で刷られていない）
@@ -233,8 +261,7 @@ describe("名札の印刷: 本人が設定したカードで刷る (#304)", () =
   it("カードを保存していない人は既定の見た目で描く（欠けても壊れない）", async () => {
     mockApi("staff", [card({ id: "u-1", name: "田中", cardImageKey: null })]);
     renderPage();
-    await screen.findByText(/1 人/);
-    expect(document.querySelectorAll(".name-card-cell svg")).toHaveLength(1);
+    await waitFor(() => expect(document.querySelectorAll(".name-card-cell svg")).toHaveLength(1));
   });
 
   it("アイコンが読み込めないときは名前の1文字目に戻す", async () => {
@@ -242,7 +269,7 @@ describe("名札の印刷: 本人が設定したカードで刷る (#304)", () =
       card({ id: "u-1", name: "田中", avatarUrl: "https://example.com/x.png" }),
     ]);
     renderPage();
-    await screen.findByText(/1 人/);
+    await waitFor(() => expect(document.querySelector('[data-avatar="1"]')).not.toBeNull());
     const img = document.querySelector('[data-avatar="1"]');
     expect(img).toBeTruthy();
     // 読み込み失敗を通知すると画像が消え、下に描いてあるイニシャルが見える

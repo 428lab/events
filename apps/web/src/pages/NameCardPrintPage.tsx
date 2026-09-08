@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -28,7 +28,10 @@ import {
   SHEET_MARGIN_Y_MM,
   SHEET_W_MM,
 } from "@eventer/shared";
-import type { EventNameCard } from "@eventer/shared";
+import type { CardDesign, EventNameCard } from "@eventer/shared";
+import { useCardDesign } from "../api/cardDesignHooks.js";
+import { PrintableEventCard, type CardPrintStatus } from "../components/cardEditor/PrintableEventCard.js";
+import type { EventCardContext } from "../components/licenseCard/EventCardSvg.js";
 import { useEvent } from "../api/hooks.js";
 import { useEventNameCards } from "../api/nameCardHooks.js";
 import { roleLabel } from "../lib/format.js";
@@ -144,18 +147,26 @@ function PrintStyles() {
  * 並ぶ。今は全カードが同じテーマ＝同じ定義なのでどれを参照しても結果が変わらず問題ないが、
  * カードごとにテーマや背景を変えられるようにするなら、id をカード単位で一意にしないと
  * すべてのカードが先頭カードの色で描かれる。 */
+interface EventPrintProps {
+  design: CardDesign | null;
+  context: EventCardContext;
+  onStatus: (id: string, status: CardPrintStatus) => void;
+}
+
 const NameCardCell = memo(function NameCardCell({
   card,
   variant,
   theme,
   origin,
   host,
+  eventPrint,
 }: {
   card: EventNameCard;
   variant: CardBgVariant;
   theme: CardThemeKey;
   origin: string;
   host: string;
+  eventPrint: EventPrintProps;
 }) {
   const data = useMemo(
     () => toCardData(card, card.handle, host),
@@ -172,12 +183,12 @@ const NameCardCell = memo(function NameCardCell({
         overflow: "hidden",
       }}
     >
-      <LicenseCardSvg
+      {eventPrint.design ? <PrintableEventCard design={eventPrint.design} card={card} context={eventPrint.context} onStatus={eventPrint.onStatus} /> : <LicenseCardSvg
         card={data}
         variant={variant}
         theme={theme}
         qrUrl={`${origin}/users/${card.handle}?ref=card`}
-      />
+      />}
     </Box>
   );
 });
@@ -192,6 +203,7 @@ const Sheet = memo(SheetInner, (a, b) => {
     a.theme !== b.theme ||
     a.origin !== b.origin ||
     a.host !== b.host ||
+    a.eventPrint !== b.eventPrint ||
     a.cards.length !== b.cards.length
   ) {
     return false;
@@ -205,12 +217,14 @@ function SheetInner({
   theme,
   origin,
   host,
+  eventPrint,
 }: {
   cards: EventNameCard[];
   variant: CardBgVariant;
   theme: CardThemeKey;
   origin: string;
   host: string;
+  eventPrint: EventPrintProps;
 }) {
   return (
     <Box
@@ -239,6 +253,7 @@ function SheetInner({
         return (
           <NameCardCell
             key={c.id}
+            eventPrint={eventPrint}
             card={c}
             variant={look.variant}
             theme={look.theme}
@@ -257,6 +272,13 @@ export function NameCardPrintPage() {
   const { data: eventData, isLoading: eventLoading } = useEvent(id);
   // イベント配下の画面はサイト管理者かどうかを混ぜず、イベント内の役割だけで判定する
   const isStaff = eventData?.myRole === "staff";
+  const eventDesign = useCardDesign(id, isStaff);
+  const [printStatuses, setPrintStatuses] = useState<Record<string, CardPrintStatus>>({});
+  const sheetRoot = useRef<HTMLDivElement>(null);
+  const [smallText, setSmallText] = useState(false);
+  const onPrintStatus = useCallback((memberId: string, status: CardPrintStatus) => {
+    setPrintStatuses(previous => previous[memberId] === status ? previous : { ...previous, [memberId]: status });
+  }, []);
   const {
     data,
     isLoading,
@@ -298,6 +320,17 @@ export function NameCardPrintPage() {
   const origin = useRef(window.location.origin).current;
   const host = useRef(window.location.host).current;
   const sheets = useMemo(() => toSheets(visible), [visible]);
+  const eventPrint = useMemo<EventPrintProps>(() => ({
+    design: eventDesign.data?.design?.enabled ? eventDesign.data.design : null,
+    context: { eventId: eventData?.event.id ?? id, title: eventData?.event.title ?? "", origin,
+      eventUrl: `${origin}/events/${encodeURIComponent(eventData?.event.slug || id)}`,
+      communityName: eventData?.community?.name ?? "", communityLogo: eventData?.community?.iconUrl ?? null },
+    onStatus: onPrintStatus,
+  }), [eventDesign.data, eventData, id, origin, onPrintStatus]);
+  const imageError = Boolean(eventPrint.design && selected.some(c => printStatuses[c.id] === "error"));
+  const resourcesReady = !eventPrint.design || selected.every(c => printStatuses[c.id] === "ready");
+  const canPrint = ready && Boolean(eventDesign.data) && !eventDesign.isError && resourcesReady;
+  useEffect(() => { setSmallText(Boolean(sheetRoot.current?.querySelector('[data-small-text="true"]'))); }, [visible, eventPrint]);
 
   const toggle = (userId: string) =>
     setExcluded((prev) => {
@@ -316,8 +349,13 @@ export function NameCardPrintPage() {
   }
 
   return (
-    <Box className="name-card-page" sx={{ maxWidth: 1100, mx: "auto" }}>
+    <Box className="name-card-page" data-print-ready={canPrint ? "true" : "false"} sx={{ maxWidth: 1100, mx: "auto" }}>
       <PrintStyles />
+      <GlobalStyles styles={{ "@media print": {
+        ".name-card-page[data-print-ready='false'] #name-card-sheets": { display: "none !important" },
+        ".name-card-page[data-print-ready='false'] .name-card-not-ready": { display: "block !important" },
+      } }} />
+      <Box className="name-card-not-ready" sx={{ display: "none" }}>{t("staffOps.cardEditorImageLoading")}</Box>
       <Stack spacing={2} className="name-card-controls">
         <Box>
           <Typography variant="h5" fontWeight={700}>
@@ -332,7 +370,12 @@ export function NameCardPrintPage() {
           </Typography>
         </Box>
 
-        {isLoading && <CircularProgress size={24} />}
+        <Button component={RouterLink} to={`/events/${id}/name-cards/design`}>{t("staffOps.cardEditorOpen")}</Button>
+        {eventDesign.isError && <Alert severity="error">{t("staffOps.cardEditorLoadFailed")}</Alert>}
+        {imageError && <Alert severity="error">{t("staffOps.cardEditorImageFailed")}</Alert>}
+        {smallText && <Alert severity="warning">{t("staffOps.cardEditorSmallText")}</Alert>}
+        {!resourcesReady && !imageError && <Alert severity="info">{t("staffOps.cardEditorImageLoading")}</Alert>}
+        {(isLoading || eventDesign.isLoading) && <CircularProgress size={24} />}
 
         {!isLoading && all.length === 0 && (
           <Alert severity="info">{t("staffOps.nameCardNoMembers")}</Alert>
@@ -371,7 +414,7 @@ export function NameCardPrintPage() {
               <Button
                 variant="contained"
                 startIcon={<PrintIcon />}
-                disabled={selected.length === 0 || !ready}
+                disabled={selected.length === 0 || !canPrint}
                 onClick={() => window.print()}
               >
                 {t("staffOps.nameCardPrint")}
@@ -464,11 +507,12 @@ export function NameCardPrintPage() {
       </Stack>
 
       {/* 用紙そのもの。印刷ではこれだけが出る */}
-      <Stack id="name-card-sheets" spacing={2} sx={{ mt: 2, overflowX: "auto" }}>
-        {sheets.map((cards, i) => (
+      <Stack ref={sheetRoot} id="name-card-sheets" spacing={2} sx={{ mt: 2, overflowX: "auto" }}>
+        {eventDesign.data && sheets.map((cards, i) => (
           <Sheet
             key={i}
             cards={cards}
+            eventPrint={eventPrint}
             variant={variant}
             theme={theme}
             origin={origin}

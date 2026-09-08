@@ -139,6 +139,8 @@ function CheckinRoute() {
   );
 }
 
+const EventCardEditorPage = lazy(() => import("./pages/EventCardEditorPage.js").then(m => ({ default: m.EventCardEditorPage })));
+
 function NameCardPrintRoute() {
   return (
     <Suspense fallback={<LazyFallback />}>
@@ -430,6 +432,7 @@ export function App() {
         <Route path="/events/:id/checkin" element={<CheckinRoute />} />
         {/* 名札の一括印刷 (#304)。印刷用の面付けを邪魔しないよう EventLayout の外に置く */}
         <Route path="/events/:id/name-cards" element={<NameCardPrintRoute />} />
+        <Route path="/events/:id/name-cards/design" element={<Suspense fallback={<LazyFallback />}><EventCardEditorPage /></Suspense>} />
         {/* チャット専用ページ (#215)。リレー接続を維持するため EventLayout の外 */}
         <Route path="/events/:id/chat" element={<EventChatPage />} />
         {/* 投影用画面 (#215)。配信画面と同じくモード強制遷移を受けない位置に置く */}

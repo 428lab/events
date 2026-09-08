@@ -78,6 +78,8 @@ import {
 } from "./routes/eventPreSurvey.js";
 import { attendanceCsvRoutes } from "./routes/attendanceCsv.js";
 import { nameCardRoutes } from "./routes/nameCards.js";
+import { cardDesignRoutes } from "./routes/cardDesigns.js";
+import { cardDesignAssetRoutes } from "./routes/cardDesignAssets.js";
 import {
   analyticsRoutes,
   adminStatsRoutes,
@@ -237,6 +239,8 @@ api.route("/events", eventPreSurveyRoutes);
 api.route("/events", attendanceCsvRoutes);
 // 名札の一括印刷 (#304)（そのイベントの参加確定スタッフのみ。要認証）
 api.route("/events", nameCardRoutes);
+api.route("/events", cardDesignRoutes);
+api.route("/events", cardDesignAssetRoutes);
 api.route("/events", analyticsRoutes);
 // 運営スタッフへの招待 (#339)（招待・取り消しはそのイベントのスタッフのみ。要認証）
 api.route("/events", eventStaffInviteRoutes);

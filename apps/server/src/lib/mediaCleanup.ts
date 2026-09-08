@@ -1,6 +1,7 @@
 import { getBucket } from "../runtime.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import { eventMeetPrizesRepo } from "../db/repositories/eventMeetPrizes.js";
+import { cardDesignsRepo } from "../db/repositories/cardDesigns.js";
 
 /**
  * D1 の行と R2 の実体の後始末を1本の契約にまとめる (#424)。
@@ -28,10 +29,13 @@ import { eventMeetPrizesRepo } from "../db/repositories/eventMeetPrizes.js";
  * テストとレスポンスから見える。
  */
 
-/** R2 のキー。**イベントが持つ prefix はこの4つだけ**（bgm / deck-images /
+/** R2 のキー。イベント画像・写真/動画・景品に加えてカード素材もイベント所有 (#506)。
+ * （bgm / deck-images /
  * live-set-images / avatars / profile-cards / venue-* はユーザーか会場の持ち物）。
  * 組み立てをここに集約しているので、掃除する側が形を書き写さずに済む */
 export const eventImageR2Key = (eventId: string) => `event-images/${eventId}`;
+export const eventCardAssetR2Key = (eventId: string, assetId: string) =>
+  `event-card-assets/${eventId}/${assetId}`;
 export const photoR2Key = (eventId: string, photoId: string) =>
   `event-photos/${eventId}/${photoId}`;
 export const videoR2Key = (eventId: string, videoId: string) =>
@@ -71,6 +75,7 @@ export async function collectEventObjects(eventId: string): Promise<string[]> {
     keys.push(...photoObjectKeys(p));
   }
   keys.push(...(await eventMeetPrizesRepo.listImageKeysByEvent(eventId)));
+  keys.push(...(await cardDesignsRepo.objectKeys(eventId)));
   return keys;
 }
 
