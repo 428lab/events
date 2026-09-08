@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   game: "running" as string | undefined,
   bingo: false,
   reach: false,
+  query: vi.fn(),
 }));
 vi.mock("../api/hooks.js", () => ({
   useMe: () => ({ data: { id: "me", isAdmin: true } }),
@@ -25,10 +26,13 @@ vi.mock("../api/hooks.js", () => ({
   eventImageUrl: () => null,
 }));
 vi.mock("../api/bingoHooks.js", () => ({
-  useBingoState: () => ({ data: state.game ? {
-    status: state.game, counts: { cards: 30, bingo: 2, reach: 4 },
-    me: { bingo: state.bingo, reach: state.reach },
-  } : undefined }),
+  useBingoState: (id: string, enabled: boolean) => {
+    state.query(id, enabled);
+    return { data: state.game ? {
+      status: state.game, counts: { cards: 30, bingo: 2, reach: 4 },
+      me: { bingo: state.bingo, reach: state.reach },
+    } : undefined };
+  },
 }));
 vi.mock("../lib/useEventChatAccess.js", () => ({
   useEventChatAccess: () => ({ canChat: state.canChat, chatAvailable: false }),
@@ -59,15 +63,19 @@ beforeEach(() => {
   state.game = "running";
   state.bingo = false;
   state.reach = false;
+  state.query.mockClear();
 });
 function mount() {
-  return render(<MemoryRouter initialEntries={["/events/event"]}>
+  const element = () => <MemoryRouter initialEntries={["/events/event"]}>
     <Routes><Route path="/events/:id" element={<EventDetailPage />} /></Routes>
-  </MemoryRouter>);
+  </MemoryRouter>;
+  const view = render(element());
+  return { ...view, refresh: () => view.rerender(element()) };
 }
 
 describe("ビンゴ会場への目立つ入口 (#500)", () => {
-  it("説明・会場の直後、タイムテーブルより前に1か所だけ表示する", () => {
+  it.each(["setup", "running"])("%sは説明・会場の直後、タイムテーブルより前に1か所だけ表示する", (status) => {
+    state.game = status;
     mount();
     const sections = screen.getAllByRole("region", { name: "ビンゴ会場" });
     expect(sections).toHaveLength(1);
@@ -79,6 +87,30 @@ describe("ビンゴ会場への目立つ入口 (#500)", () => {
     const button = screen.getByRole("link", { name: "ビンゴ会場へ" });
     expect(button).toHaveAttribute("href", "/events/event/bingo");
     expect(button).toHaveClass("MuiButton-contained", "MuiButton-sizeLarge");
+  });
+
+  it("終了済みで開くとタイムテーブルの後ろに1か所だけ表示する", () => {
+    state.game = "ended";
+    mount();
+    const sections = screen.getAllByRole("region", { name: "ビンゴ会場" });
+    expect(sections).toHaveLength(1);
+    const schedule = screen.getByRole("region", { name: "タイムテーブル" });
+    expect(schedule.compareDocumentPosition(sections[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("link", { name: "ビンゴ会場へ" })).toHaveAttribute("href", "/events/event/bingo");
+  });
+
+  it("開いたまま終了・リセットすると状態と配置が一緒に切り替わり、重複しない", () => {
+    const view = mount();
+    for (const status of ["ended", "setup", "running", "ended"]) {
+      state.game = status;
+      view.refresh();
+      const sections = screen.getAllByRole("region", { name: "ビンゴ会場" });
+      expect(sections).toHaveLength(1);
+      const schedule = screen.getByRole("region", { name: "タイムテーブル" });
+      const [before, after] = status === "ended" ? [schedule, sections[0]!] : [sections[0]!, schedule];
+      expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.getByText(status === "ended" ? "終了" : status === "setup" ? "受付中" : "抽選中")).toBeInTheDocument();
+    }
   });
 
   it.each(["participant", "judge", "observer", null])("%sには抽選操作を出さない（サイト管理者も同じ）", (role) => {
@@ -106,9 +138,11 @@ describe("ビンゴ会場への目立つ入口 (#500)", () => {
     expect(screen.queryByRole("region", { name: "ビンゴ会場" })).toBeNull();
   });
 
-  it("参加確定でなければゲームデータがあっても入口を出さない", () => {
+  it.each(["running", "ended"])("参加未確定なら%sのキャッシュがあっても取得・表示しない", (status) => {
+    state.game = status;
     state.canChat = false;
     mount();
+    expect(state.query).toHaveBeenLastCalledWith("event", false);
     expect(screen.queryByRole("region", { name: "ビンゴ会場" })).toBeNull();
   });
 

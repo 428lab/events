@@ -33,6 +33,7 @@ import { EventQa } from "../components/EventQa.js";
 import { MeetRankingPanel } from "../components/MeetRanking.js";
 import { MeetPrizePanel } from "../components/MeetPrizes.js";
 import { BingoPanel } from "../components/BingoCard.js";
+import { useBingoState } from "../api/bingoHooks.js";
 import { useRecordView } from "../api/analyticsHooks.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
 import { EventStaffInvitesCard } from "../components/EventStaffInvitesCard.js";
@@ -62,6 +63,8 @@ export function EventDetailPage() {
   // 参加確定メンバーか（コメント・チャット・Q&A の条件）と、チャットが実際に
   // 使えるか。同じ式を専用ページ側と2か所に持たないため hook に寄せてある (#215)
   const { canChat, chatAvailable } = useEventChatAccess(id);
+  // 表示位置と内容は同じ状態を見る。位置変更でポーリングを作り直さない (#500)。
+  const { data: bingo } = useBingoState(id, canChat);
   // 終了・締切の判定と1分ごとの時計。ページで1回だけ呼んで子に配る
   const timing = useEventTiming(data?.event);
   const publish = usePublishEvent();
@@ -83,6 +86,9 @@ export function EventDetailPage() {
   const isStaff = myRole === "staff";
   const contest = event.contestMode;
   const deadline = event.registrationDeadline;
+  const bingoPanel = canChat
+    ? <BingoPanel eventId={id} myRole={myRole} data={bingo} />
+    : null;
 
   return (
     <Grid container spacing={3}>
@@ -293,8 +299,8 @@ export function EventDetailPage() {
         </Card>
       )}
 
-      {/* ビンゴ会場の入口は長いチャットや景品一覧に埋もれない位置へ (#500)。 */}
-      {canChat && <BingoPanel eventId={id} myRole={myRole} />}
+      {/* 受付中・抽選中は入口を優先する。終了後はタイムテーブルの下へ (#500)。 */}
+      {bingo?.status !== "ended" && bingoPanel}
 
       {/* タイムテーブル（閲覧はイベントが見える人全員、編集は staff） */}
       <EventSchedule
@@ -302,6 +308,8 @@ export function EventDetailPage() {
         eventStartsAt={event.scheduling ? null : event.startsAt}
         isStaff={isStaff}
       />
+
+      {bingo?.status === "ended" && bingoPanel}
 
       {/* 登壇資料ギャラリー（資料URLのあるコマだけ。無ければ非表示） */}
       <EventMaterials eventId={id} />
