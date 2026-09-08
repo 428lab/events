@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   EVENT_ROLES,
   EVENT_STATUSES,
+  MEMBER_STATUSES,
   PARTICIPATION_TYPES,
   VENUE_TYPES,
 } from "./constants.js";
@@ -224,6 +225,10 @@ export type UpdateSubmissionInput = z.infer<typeof updateSubmissionInput>;
 /** ---- My page ---- */
 export const myEventSummary = eventSchema.extend({
   myRole: z.enum(EVENT_ROLES),
+  /** 自分の参加状態 (#489)。`status`（イベントの公開状態）とは別。
+   * マイページには抽選待ち・キャンセル待ち・落選も載るので、
+   * 「参加が確定しているか」はこちらで見る（canceled は API 側で除かれる） */
+  myStatus: z.enum(MEMBER_STATUSES),
   /** 自分が出席チェック済みか */
   attended: z.boolean(),
 });

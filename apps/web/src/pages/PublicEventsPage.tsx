@@ -13,6 +13,7 @@ import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { EventsBrowser } from "../components/EventsBrowser.js";
 import { EggTabs } from "../components/EggTabs.js";
+import { HomeDashboard } from "../components/HomeDashboard.js";
 import { useMe } from "../api/hooks.js";
 
 /** イベント一覧のフィード購読導線（RSS / JSON Feed / iCalendar）。
@@ -58,6 +59,9 @@ export function PublicEventsPage() {
   const { data: me } = useMe();
   return (
     <Box>
+      {/* ログイン中は「次に自分が行くイベント」を先に出す (#489)。
+          未ログインは今までどおり一覧だけ */}
+      {me && <HomeDashboard />}
       <EggTabs value="events" />
       <Stack spacing={4}>
         {/* 開催予定/日程調整中/過去タブ・絞り込み・10件ページング (#234) */}
