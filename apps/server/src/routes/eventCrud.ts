@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { valid, zValidator } from "../lib/validator.js";
-import { createEventInput, updateEventInput } from "@eventer/shared";
+import { createEventInput, isDatetimeOrderInvalid, updateEventInput } from "@eventer/shared";
 import type {
   CreateEventInput,
   Event,
@@ -106,6 +106,15 @@ eventCrudRoutes.patch(
       if (!(startsAt > 0 && endsAt > startsAt)) {
         return c.json({ error: "invalid_date" }, 400);
       }
+    }
+    // 部分更新では片側だけが来るため、スキーマ単独では日時順を検証できない (#495)。
+    // 日時変更時は保存済みの反対側と組にする。通常の更新は作成と同じく同時刻を許す。
+    if (
+      prior &&
+      (input.startsAt !== undefined || input.endsAt !== undefined) &&
+      isDatetimeOrderInvalid(input.startsAt ?? prior.startsAt, input.endsAt ?? prior.endsAt)
+    ) {
+      return c.json({ error: "invalid_date" }, 400);
     }
     // 募集締切 (#269) は「更新後の状態」で検証する。入力に含まれない項目は
     // 現在値が残るので、締切だけを送る編集でも、開始日時だけを前倒しする編集でも
