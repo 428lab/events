@@ -16,8 +16,8 @@ import {
   BINGO_FREE_CELL,
   cellToCardIndex,
   type EventRole,
+  type BingoState,
 } from "@eventer/shared";
-import { useBingoState } from "../api/bingoHooks.js";
 
 /**
  * ビンゴカードの描画 (#436)。参加者のカード画面と投影の見本が共用する。
@@ -98,19 +98,20 @@ export function BingoCard({
 }
 
 /**
- * イベント詳細ページのビンゴ導線カード (#436)。ゲームがあるイベントの
- * 確定メンバーにだけ出る（無ければサーバーの404でクエリが止まり、何も描かない）。
+ * イベント詳細ページのビンゴ導線カード (#436/#500)。
+ * 配置を決める親が取得した状態を表示する。ゲームなしでは何も描かない。
  */
 export function BingoPanel({
   eventId,
   myRole,
+  data,
 }: {
   eventId: string;
   myRole: EventRole | null;
+  data: BingoState | undefined;
 }) {
   const { t } = useTranslation();
   const headingId = useId();
-  const { data } = useBingoState(eventId, Boolean(eventId));
   if (!data || data.status === "none") return null;
   const statusLabel = data.status === "setup"
     ? t("eventSocial.bingoStatusSetup")
