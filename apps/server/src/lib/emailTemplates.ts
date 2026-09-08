@@ -23,20 +23,10 @@ export function emailHeaderHtml(baseUrl: string): string {
     </p>`;
 }
 
-/** Markdown をざっくりプレーンテキスト化する（説明冒頭の抜粋用）。
- * リンクはテキストだけ残し、画像・記号マーカーは除去、空白は1つに畳む */
-export function stripMarkdown(src: string): string {
-  return src
-    .replace(/```[\s\S]*?```/g, " ") // コードブロック
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ") // 画像
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // リンク → テキストのみ
-    .replace(/^#{1,6}\s+/gm, "") // 見出しマーカー
-    .replace(/^\s{0,3}>\s?/gm, "") // 引用マーカー
-    .replace(/^\s*[-*+]\s+/gm, "") // 箇条書きマーカー
-    .replace(/[*_~`]/g, "") // 強調・コード記号
-    .replace(/\s+/g, " ")
-    .trim();
-}
+/** Markdown のプレーンテキスト化は shared に移した (#487)。
+ * Google カレンダーの本文でも同じものを使う。既存の呼び出し元のためにここからも出す */
+import { stripMarkdown } from "@eventer/shared";
+export { stripMarkdown };
 
 /** 説明の冒頭抜粋（プレーンテキスト・最大 max 文字。超えたら … を付ける） */
 export function descriptionExcerpt(description: string, max = 200): string {
