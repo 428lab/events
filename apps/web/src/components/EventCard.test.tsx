@@ -87,3 +87,28 @@ describe("グリッド表示のカード", () => {
     expect(screen.getByText(/参加 5 人/)).toBeTruthy();
   });
 });
+
+/** リスト表示（1列）の密度 (#488)。
+ * 以前は xs だけ flexDirection: column で画像が全幅に載り、スマホの1画面に
+ * 1〜1.5件しか入らなかった。横並びを固定していることを、指定そのものを見て確かめる
+ * （jsdom はブレークポイントを解決しないので、見た目の幅では検証できない）。 */
+describe("リスト表示のカード (#488)", () => {
+  it("狭い画面でも縦積みに戻さない", () => {
+    const { container } = renderCard(ev(), false);
+    const area = container.querySelector("a.MuiCardActionArea-root");
+    expect(area).toBeTruthy();
+    expect(getComputedStyle(area!).flexDirection).toBe("row");
+  });
+
+  it("タイトルと日時が出る", () => {
+    renderCard(ev(), false);
+    // 画像なしイベントはサムネ面にもタイトルを敷くので2か所に出る
+    expect(screen.getAllByText("テストイベント").length).toBeGreaterThan(0);
+    expect(screen.getByText(/13:00/)).toBeTruthy();
+  });
+
+  it("日程調整中はその旨が出る", () => {
+    renderCard(ev({ scheduling: true, startsAt: 0, endsAt: 0 }), false);
+    expect(screen.getByText(/日程調整中/)).toBeTruthy();
+  });
+});

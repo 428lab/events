@@ -49,8 +49,12 @@ export function EventList({
       <Box
         sx={{
           display: "grid",
-          // 横幅に合わせて自動で列数が決まる（1枚あたり最小170px）
-          gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+          // 列数は上限を決め打つ (#488)。auto-fill だと広い画面で5列以上に増え、
+          // 1枚が小さくなりすぎてタイトルも日時も読めなくなっていた
+          gridTemplateColumns: {
+            xs: "repeat(2, minmax(0, 1fr))",
+            md: "repeat(3, minmax(0, 1fr))",
+          },
           gap: 1.5,
         }}
       >
