@@ -25,6 +25,8 @@ vi.mock("../api/client.js", () => ({
   NetworkError: class NetworkError extends Error {},
 }));
 vi.mock("../api/hooks.js", () => ({
+  useMe: () => ({ data: null }),
+  useEventMembers: () => ({ data: [] }),
   useEvent: () => ({
     data: { event: { id: "e-1", title: "テスト" }, myRole: "staff" },
     isLoading: false,

@@ -26,6 +26,7 @@ import {
   useUndoBingoDraw,
 } from "../api/bingoHooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
+import { BingoWithChat } from "../components/BingoWithChat.js";
 import { errorMessage } from "../lib/errorMessage.js";
 import { i18next } from "../i18n/index.js";
 
@@ -86,6 +87,7 @@ export function EventBingoControlPage() {
       : null;
 
   return (
+    <BingoWithChat eventId={id}>
     <Stack spacing={2}>
       {eventData && (
         <EventBreadcrumbs
@@ -156,7 +158,7 @@ export function EventBingoControlPage() {
                       {t("staffOps.bingoFirstDrawHint")}
                     </Typography>
                   )}
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxHeight: "var(--bingo-history-height, none)", overflowY: "auto" }}>
                     {data.drawnNumbers.length > 0
                       ? `${t("eventSocial.bingoHistory")}: ${data.drawnNumbers.join(" → ")}`
                       : t("eventSocial.bingoNoDraws")}
@@ -298,5 +300,6 @@ export function EventBingoControlPage() {
         </>
       )}
     </Stack>
+    </BingoWithChat>
   );
 }
