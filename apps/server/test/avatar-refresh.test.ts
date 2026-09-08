@@ -164,6 +164,7 @@ async function postNostrProfile(
 interface Row {
   id: string;
   avatar_url: string | null;
+  global_name: string | null;
   avatar_image_updated_at: number | null;
   avatar_image_mime: string | null;
   avatar_image_hash: string | null;
@@ -457,6 +458,40 @@ describe("連携先アイコンの取り込みと配信 (#312)", () => {
     expect(row!.src).toBe(t.fetchedUrl);
   });
 
+  it.each(["custom", "stored"])("プロフィール補完は設定済みアイコン(%s)を時間経過後も上書きしない (#389)", async (kind) => {
+    const sk = schnorr.utils.randomSecretKey();
+    const cookie = await loginWithNostr(sk);
+    const first = newCase();
+    mockAvatar(first.origin, first.path, 200, IMAGE_A);
+    expect((await postNostrProfile(sk, cookie, first.fetchedUrl)).status).toBe(200);
+    const userId = await nostrUserId(sk);
+    const initial = (await userRow(userId))!;
+    const chosen = kind === "custom" ? "https://chosen.example.net/avatar.png" : initial.avatar_url;
+    // 連打制限だけで偽グリーンにならないよう試行時刻を期限外へ。
+    // 表示名が空なら、アイコン保護中でも名前の補完は続ける。
+    await env.DB.prepare("UPDATE user SET avatar_url = ?, avatar_sync_attempted_at = 0, global_name = NULL WHERE id = ?")
+      .bind(chosen, userId).run();
+    const before = (await userRow(userId))!;
+    const next = newCase();
+    let fetched = 0;
+    fetchMock.get(next.origin).intercept({ path: next.path }).reply(200, () => {
+      fetched += 1;
+      return IMAGE_B;
+    }, { headers: { "content-type": "image/png" } });
+
+    expect((await postNostrProfile(sk, cookie, next.fetchedUrl)).status).toBe(200);
+    const after = (await userRow(userId))!;
+    expect(after.avatar_url).toBe(chosen);
+    expect(after.avatar_image_hash).toBe(before.avatar_image_hash);
+    expect(after.avatar_image_updated_at).toBe(before.avatar_image_updated_at);
+    expect(after.avatar_source_url).toBe(before.avatar_source_url);
+    expect(after.avatar_sync_attempted_at).toBe(0);
+    expect(after.global_name).toBe("n");
+    expect(fetched).toBe(0);
+    const stored = await env.BUCKET.get(`avatars/${userId}`);
+    expect(await stored!.text()).toBe(asText(IMAGE_A));
+  });
+
   it("プロフィール更新の連打では取り込み直さない（毎回違う画像でも）", async () => {
     const sk = schnorr.utils.randomSecretKey();
     const cookie = await loginWithNostr(sk);
@@ -468,6 +503,8 @@ describe("連携先アイコンの取り込みと配信 (#312)", () => {
     const before = await userRow(userId);
     expect(before!.avatar_image_updated_at).not.toBeNull();
 
+    // #389の設定済みガードではなく、未設定に戻っても試行間隔の制限が効くことを見る。
+    await env.DB.prepare("UPDATE user SET avatar_url = NULL WHERE id = ?").bind(userId).run();
     // 取得元URLは本人が自由に書けるので、毎回違うバイト列を返すURLを指定すれば
     // ハッシュ比較が効かず、取得も書き込みも連打できてしまう
     const t2 = newCase();
@@ -494,6 +531,8 @@ describe("連携先アイコンの取り込みと配信 (#312)", () => {
     const before = await userRow(userId);
     expect(before!.avatar_sync_attempted_at).not.toBeNull();
 
+    // 設定済みガードだけで通らないよう、再び補完対象の状態にする (#389)。
+    await env.DB.prepare("UPDATE user SET avatar_url = NULL WHERE id = ?").bind(userId).run();
     // 中身が同じだと avatar_image_updated_at は進まない。これを基準にすると
     // スロットルが一度も発火せず、外向きの取得だけ無制限に踏ませられる
     const t2 = newCase();
