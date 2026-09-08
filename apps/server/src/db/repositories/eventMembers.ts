@@ -407,7 +407,7 @@ export const eventMembersRepo = {
   /** ユーザーが参加している全イベントを role 付きで返す（マイページ用） */
   async listEventsForUser(userId: string): Promise<MyEventSummary[]> {
     const rows = await many<Record<string, unknown> & { my_role: string }>(
-      `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
+      `SELECT e.*, m.role AS my_role, m.attended AS my_attended, m.status AS my_status,
                 ${PARTICIPANT_COUNT_SQL("e.id")} AS participant_count,
                 ${ATTENDED_COUNT_SQL("e.id")} AS attended_count,
                 ${CAPACITY_TOTAL_SQL("e.id")} AS capacity_total
@@ -429,7 +429,7 @@ export const eventMembersRepo = {
     now: number,
   ): Promise<MyEventSummary[]> {
     const rows = await many<Record<string, unknown> & { my_role: string }>(
-      `SELECT e.*, m.role AS my_role, m.attended AS my_attended,
+      `SELECT e.*, m.role AS my_role, m.attended AS my_attended, m.status AS my_status,
                 ${PARTICIPANT_COUNT_SQL("e.id")} AS participant_count,
                 ${ATTENDED_COUNT_SQL("e.id")} AS attended_count,
                 ${CAPACITY_TOTAL_SQL("e.id")} AS capacity_total
@@ -494,6 +494,9 @@ function mapMyEventSummary(
     registrationDeadline: (row.registration_deadline as number | null) ?? null,
     slug: (row.slug as string | null) ?? "",
     myRole: row.my_role as EventRole,
+    // 本人の参加状態 (#489)。イベントの公開状態（status）とは別物で、
+    // 抽選待ち・キャンセル待ち・落選もマイページには載る（canceled だけ除く）
+    myStatus: row.my_status as MyEventSummary["myStatus"],
     attended: (row.my_attended as number) === 1,
   };
 }
