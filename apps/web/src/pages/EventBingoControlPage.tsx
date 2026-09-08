@@ -158,7 +158,7 @@ export function EventBingoControlPage() {
                       {t("staffOps.bingoFirstDrawHint")}
                     </Typography>
                   )}
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxHeight: "var(--bingo-history-height, none)", overflowY: "auto" }}>
                     {data.drawnNumbers.length > 0
                       ? `${t("eventSocial.bingoHistory")}: ${data.drawnNumbers.join(" → ")}`
                       : t("eventSocial.bingoNoDraws")}

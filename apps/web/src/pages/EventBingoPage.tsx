@@ -92,7 +92,7 @@ export function EventBingoPage() {
                 {latest ?? "—"}
               </Typography>
               {data.drawnNumbers.length > 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxHeight: "var(--bingo-history-height, none)", overflowY: "auto" }}>
                   {t("eventSocial.bingoHistory")}:{" "}
                   {data.drawnNumbers.join(" → ")}
                 </Typography>
