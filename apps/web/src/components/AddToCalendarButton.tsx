@@ -1,4 +1,4 @@
-import { Button } from "@mui/material";
+import { Box, Button } from "@mui/material";
 import EventAvailableIcon from "@mui/icons-material/EventAvailable";
 import { useTranslation } from "react-i18next";
 import type { Event } from "@eventer/shared";
@@ -7,31 +7,36 @@ import { googleCalendarUrl } from "../lib/googleCalendar.js";
 /**
  * Google カレンダーの予定作成画面を開くボタン (#487)。
  *
- * 日程が未確定（`scheduling`）のイベントでは `googleCalendarUrl` が null を返し、
- * このボタン自体が出ない。押しても何も起きない状態を作らないため、
- * 出す・出さないの判断は URL を作れるかどうかに一本化してある。
+ * 出す・出さないは `googleCalendarUrl` が null を返すかどうかに一本化してある
+ * （公開前・日程調整中・終了済みは出ない）。押しても何も起きない状態を作らない。
+ * 呼び出し側には条件を書かない。
  *
- * アイコンだけだと何が起きるか伝わらないので文言を付ける。置き場所は
- * 日時表示の直下（`EventDetailPage`）。日時を見た流れで押せる位置。
+ * 余白の Box もここで持つ。外で包むと、出ないときに空の div だけが残って
+ * 8px の段差になる。
  */
 export function AddToCalendarButton({ event }: { event: Event }) {
   const { t } = useTranslation();
-  // 本文に載せるのは短いシェアURL。カレンダーから開き直す導線になる
-  const eventUrl = `${window.location.origin}/e/${event.slug}`;
+  // 本文に載せるのは短いシェア URL。カレンダーから開き直す導線になる。
+  // slug が無い行（旧データ）は通常の URL に落とす
+  const eventUrl = event.slug
+    ? `${window.location.origin}/e/${event.slug}`
+    : `${window.location.origin}/events/${event.id}`;
   const href = googleCalendarUrl(event, eventUrl);
   if (!href) return null;
 
   return (
-    <Button
-      component="a"
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      size="small"
-      variant="outlined"
-      startIcon={<EventAvailableIcon />}
-    >
-      {t("eventDetail.addToGoogleCalendar")}
-    </Button>
+    <Box sx={{ mt: 1 }}>
+      <Button
+        component="a"
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        size="small"
+        variant="outlined"
+        startIcon={<EventAvailableIcon />}
+      >
+        {t("eventDetail.addToGoogleCalendar")}
+      </Button>
+    </Box>
   );
 }

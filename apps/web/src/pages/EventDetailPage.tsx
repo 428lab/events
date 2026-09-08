@@ -198,12 +198,8 @@ export function EventDetailPage() {
             ? t("eventDetail.schedulingTbd")
             : formatDateRange(event.startsAt, event.endsAt)}
         </Typography>
-        {/* 日程が確定しているときだけ出る (#487)。判断はボタン側が持つ */}
-        {event.status === "published" && (
-          <Box sx={{ mt: 1 }}>
-            <AddToCalendarButton event={event} />
-          </Box>
-        )}
+        {/* Google カレンダーに追加 (#487)。出す条件はボタン側が全部持つ */}
+        <AddToCalendarButton event={event} />
         {/* 募集締切 (#269)。設定されているときだけ出す（未設定は従来の見た目のまま） */}
         {deadline !== null && (
           <Typography

@@ -40,6 +40,7 @@ export * from "./notificationPrefs.js";
 export * from "./staffInvites.js";
 export * from "./venues.js";
 export * from "./chatText.js";
+export * from "./markdownText.js";
 export * from "./audit.js";
 export * from "./abuse.js";
 export * from "./moderation.js";
