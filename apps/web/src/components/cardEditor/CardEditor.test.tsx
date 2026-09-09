@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createCardTemplate, resolveCardLayout } from "@eventer/shared";
 import { CardEditor } from "./CardEditor.js";
@@ -76,6 +76,31 @@ describe("card editor operations (#506)", () => {
       await screen.findByText("保存しました");
       expect(put).toHaveBeenCalledWith("/events/event/name-card-design", { revision: 1, design: expected });
     } finally { put.mockRestore(); }
+  });
+
+  it.each([false, true])("returns to printing and confirms only unsaved edits: dirty=%s", async dirty => {
+    const qc = new QueryClient();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    try {
+      render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/events/event/name-cards/design"]}><Routes>
+        <Route path="/events/:id/name-cards/design" element={<CardEditor initial={{ revision: 1, design: createCardTemplate("name") }}
+          context={{ eventId: "event", title: "Event", eventUrl: "https://example.com/events/event", origin: "https://example.com", communityName: "", communityLogo: null }}
+          members={[]} assets={[]} slots={[]} />} />
+        <Route path="/events/:id/name-cards" element={<h1>印刷画面</h1>} />
+      </Routes></MemoryRouter></QueryClientProvider>);
+      const back = screen.getByRole("button", { name: "名札印刷へ戻る" });
+      if (dirty) {
+        fireEvent.click(screen.getByRole("button", { name: "4. 表示名" }));
+        fireEvent.change(screen.getByRole("spinbutton", { name: "X" }), { target: { value: "88" } });
+        expect(back).toBeEnabled();
+        fireEvent.click(back);
+        expect(screen.getByRole("spinbutton", { name: "X" })).toHaveValue(88);
+        expect(screen.queryByText("印刷画面")).toBeNull();
+      }
+      fireEvent.click(back);
+      await screen.findByText("印刷画面");
+      expect(confirm).toHaveBeenCalledTimes(dirty ? 2 : 0);
+    } finally { confirm.mockRestore(); }
   });
 
   it("keeps conflicted edits until the owner explicitly reloads the latest document", async () => {

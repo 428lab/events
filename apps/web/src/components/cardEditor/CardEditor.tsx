@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, Divider, FormControlLabel, List, ListItemButton, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { cardDesignAssetIds, cardDesignSchema, cardTemplateIds, createCardTemplate, type CardDesign, type CardPart, type EventNameCard, type SavedCardDesign, type CardTemplateId } from "@eventer/shared";
 import { api, ApiError } from "../../api/client.js";
 import { cardAssetsKey, cardDesignKey, uploadCardAsset, type CardAsset } from "../../api/cardDesignHooks.js";
@@ -64,6 +65,11 @@ export function CardEditor({ initial, context, members, assets, slots }: {
     window.addEventListener("beforeunload", unload); document.addEventListener("click", link, true);
     return () => { window.removeEventListener("beforeunload", unload); document.removeEventListener("click", link, true); };
   }, [dirty, t]);
+  const backToPrint = () => {
+    if (saving || uploading || copying) return;
+    if (dirty && !window.confirm(t("staffOps.cardEditorDiscard"))) return;
+    navigate(`/events/${context.eventId}/name-cards`);
+  };
   const change = (next: CardDesign) => { history.edit(next); setMessage(null); };
   const changePart = (p: CardPart) => change(editPart(design, target, p));
   const save = async () => {
@@ -133,6 +139,9 @@ export function CardEditor({ initial, context, members, assets, slots }: {
     event: t("staffOps.cardEditorEvent"), community: t("staffOps.cardEditorCommunity"), role: t("staffOps.cardEditorRole"), slot: t("staffOps.cardEditorSlot"),
   };
   return <Stack spacing={2} sx={{ maxWidth: 1500, mx: "auto" }}>
+    <Button startIcon={<ArrowBackIcon />} sx={{ alignSelf: "flex-start" }} disabled={saving || uploading || copying} onClick={backToPrint}>
+      {t("staffOps.cardEditorPrint")}
+    </Button>
     <Typography variant="h5">{t("staffOps.cardEditorTitle")}</Typography>
     <Typography color="text.secondary">{t("staffOps.cardEditorIntro")}</Typography>
     <FormControlLabel label={t("staffOps.cardEditorEnabled")} control={<Checkbox checked={design.enabled} onChange={(_, enabled) => change({ ...design, enabled })} />} />
@@ -146,7 +155,6 @@ export function CardEditor({ initial, context, members, assets, slots }: {
       <Button disabled={!history.canUndo} onClick={history.undo}>{t("staffOps.cardEditorUndo")}</Button>
       <Button disabled={!history.canRedo} onClick={history.redo}>{t("staffOps.cardEditorRedo")}</Button>
       <Button variant="contained" disabled={saving || uploading || !dirty} onClick={() => void save()}>{t("staffOps.cardEditorSave")}</Button>
-      <Button disabled={dirty || saving} onClick={() => navigate(`/events/${context.eventId}/name-cards`)}>{t("staffOps.cardEditorPrint")}</Button>
     </Stack>
     <Accordion><AccordionSummary>{t("staffOps.cardEditorCopy")}</AccordionSummary><AccordionDetails>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
