@@ -58,10 +58,11 @@ const ja = {
   create: "イベント作成",
 
   /** 1列⇔2列の表示切替（アイコンだけなので読み上げ用の名前が要る） */
-  /** 一覧の見せ方。グリッドは幅に応じて 2〜3 列になるので、列数では呼ばない (#488) */
-  columns: "表示形式",
-  columnsOne: "リスト表示",
-  columnsTwo: "グリッド表示",
+  /** 一覧の見せ方 (#488)。キーは useListView の値と対応（view_<値>） */
+  view: "表示形式",
+  view_list: "リスト表示",
+  view_compact: "コンパクト表示",
+  view_grid: "グリッド表示",
 
   /** カードで開催日時の代わりに出す印 */
   schedulingBadge: "日程調整中",
@@ -112,9 +113,10 @@ const en: Record<keyof typeof ja, string> = {
 
   create: "Create event",
 
-  columns: "Layout",
-  columnsOne: "List",
-  columnsTwo: "Grid",
+  view: "Layout",
+  view_list: "List",
+  view_compact: "Compact",
+  view_grid: "Grid",
 
   schedulingBadge: "Date TBD",
   draftBadge: "Draft",
