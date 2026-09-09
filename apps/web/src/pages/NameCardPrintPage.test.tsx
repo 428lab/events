@@ -1,9 +1,10 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   CARDS_PER_SHEET,
+  createCardTemplate,
   NAME_CARD_GAP_MM,
   NAME_CARD_H_MM,
   NAME_CARD_W_MM,
@@ -13,7 +14,7 @@ import {
   SHEET_ROWS,
   SHEET_W_MM,
 } from "@eventer/shared";
-import type { EventNameCard, EventRole } from "@eventer/shared";
+import type { CardDesign, EventNameCard, EventRole } from "@eventer/shared";
 
 /**
  * 名札の一括印刷 (#304)。
@@ -24,9 +25,14 @@ import type { EventNameCard, EventRole } from "@eventer/shared";
  * 見た目は既存のプロフィールカード (#178) をそのまま使う（新しい意匠は作らない）。
  */
 
-const { getMock, cardRenders } = vi.hoisted(() => ({
+const { getMock, cardRenders, fontLoad } = vi.hoisted(() => ({
   getMock: vi.fn(),
   cardRenders: vi.fn(),
+  fontLoad: vi.fn(),
+}));
+vi.mock("../lib/cardFonts.js", async importOriginal => ({
+  ...await importOriginal<typeof import("../lib/cardFonts.js")>(),
+  loadCardFont: (...args: unknown[]) => fontLoad(...args),
 }));
 
 vi.mock("../api/client.js", async (importOriginal) => {
@@ -83,8 +89,9 @@ function card(over: Partial<EventNameCard> = {}): EventNameCard {
 }
 
 /** イベント詳細（myRole）と名札一覧の2本を出し分ける */
-function mockApi(myRole: EventRole | null, cards: EventNameCard[]): void {
+function mockApi(myRole: EventRole | null, cards: EventNameCard[], design: CardDesign | null = null): void {
   getMock.mockImplementation((path: string) => {
+    if (path === `/events/${EVENT_ID}/name-card-design`) return Promise.resolve({ revision: design ? 1 : 0, design });
     if (path === `/events/${EVENT_ID}/name-cards`) {
       // 権限のない相手にはサーバーが 403 を返すので、ここでは呼ばれないこと自体が期待値
       return Promise.resolve({ cards });
@@ -99,6 +106,33 @@ function mockApi(myRole: EventRole | null, cards: EventNameCard[]): void {
     throw new Error(`unexpected path: ${path}`);
   });
 }
+
+it.each(["ready", "error"])("keeps custom-font printing blocked until glyph loading settles: %s", async outcome => {
+  let finish!: () => void, fail!: (error: Error) => void;
+  fontLoad.mockReset();
+  fontLoad.mockReturnValue(new Promise<void>((resolve, reject) => { finish = resolve; fail = reject; }));
+  const design = createCardTemplate("name");
+  design.common.parts.find(p => p.kind === "text")!.font = "Noto Serif JP";
+  mockApi("staff", [card()], design);
+  const canvas = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+  try {
+    const { container } = renderPage();
+    const print = await screen.findByRole("button", { name: "印刷する" });
+    await waitFor(() => expect(fontLoad).toHaveBeenCalled());
+    expect(print).toBeDisabled();
+    expect(container.querySelector('[data-print-ready="true"]')).toBeNull();
+    if (outcome === "ready") {
+      finish();
+      await waitFor(() => expect(print).toBeEnabled());
+      expect(container.querySelector('[data-print-ready="true"]')).not.toBeNull();
+    } else {
+      fail(new Error("font_unavailable"));
+      await screen.findByText(/画像またはフォントを読み込めない/);
+      expect(print).toBeDisabled();
+      expect(container.querySelector('[data-print-ready="true"]')).toBeNull();
+    }
+  } finally { canvas.mockRestore(); }
+});
 
 function renderPage() {
   const qc = new QueryClient({
@@ -129,6 +163,80 @@ beforeEach(() => {
   getMock.mockReset();
   cardRenders.mockClear();
   localStorage.clear();
+});
+
+describe("イベントデザインの印刷 (#506)", () => {
+  it("retains off-page selections and changes the print set only on explicit actions", async () => {
+    const cards = Array.from({ length: 21 }, (_, i) => card({ id: `u-${i}`, name: `参加者${i}` }));
+    mockApi("staff", cards, createCardTemplate("name"));
+    const { container } = renderPage();
+    await waitFor(() => expect(printedNames()).toHaveLength(21));
+    expect(container.querySelectorAll('[data-name-card-selection] input')).toHaveLength(20);
+    fireEvent.click(screen.getByRole("checkbox", { name: "参加者0 を印刷する" }));
+    fireEvent.click(screen.getByRole("button", { name: "次のページ" }));
+    expect(screen.getByRole("checkbox", { name: "参加者20 を印刷する" })).toBeChecked();
+    expect(printedNames()).toHaveLength(20);
+    fireEvent.change(screen.getByRole("textbox", { name: "名前・ハンドルを検索" }), { target: { value: "handle-u-19" } });
+    expect(screen.getByRole("checkbox", { name: "参加者19 を印刷する" })).toBeChecked();
+    expect(printedNames()).toHaveLength(20);
+    fireEvent.click(screen.getByRole("button", { name: "絞り込み結果だけ選択" }));
+    await waitFor(() => expect(printedNames()).toEqual(["参加者19"]));
+    fireEvent.change(screen.getByRole("textbox", { name: "名前・ハンドルを検索" }), { target: { value: "" } });
+    expect(screen.getByRole("checkbox", { name: "参加者0 を印刷する" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "参加者19 を印刷する" })).toBeChecked();
+  });
+
+  it("toggles cutting guides without changing the finished card size and restores legacy stock spacing", async () => {
+    mockApi("staff", [card()], createCardTemplate("name"));
+    const { container } = renderPage();
+    await waitFor(() => expect(printedNames()).toHaveLength(1));
+    const sheet = container.querySelector<HTMLElement>(".name-card-sheet")!;
+    const originalPadding = sheet.style.padding;
+    const guides = screen.getByRole("checkbox", { name: "裁断ガイドと白余白を付ける" });
+    fireEvent.click(guides);
+    expect(container.querySelectorAll('[data-cut-guide]')).toHaveLength(1);
+    const lines = [...container.querySelectorAll('[data-cut-guide] line')];
+    expect(lines).toHaveLength(14);
+    expect(lines.slice(0, 4).map(line => [line.getAttribute('x1'), line.getAttribute('x2'), line.getAttribute('y1'), line.getAttribute('y2')]))
+      .toEqual(['13', '104', '106', '197'].map(x => [x, x, '0', '297']));
+    expect(lines.slice(4).map(line => [line.getAttribute('y1'), line.getAttribute('y2'), line.getAttribute('x1'), line.getAttribute('x2')]))
+      .toEqual(['7', '62', '64', '119', '121', '176', '178', '233', '235', '290'].map(y => [y, y, '0', '210']));
+    expect(container.querySelector('.name-card-cell [data-cut-guide]')).toBeNull();
+    expect(sheet.style.gap).toBe("2mm");
+    expect(sheet.style.padding).toBe("7mm 13mm");
+    const cell = container.querySelector<HTMLElement>(".name-card-cell")!;
+    expect([cell.style.width, cell.style.height]).toEqual(["91mm", "55mm"]);
+    fireEvent.click(guides);
+    expect(container.querySelector('[data-cut-guide]')).toBeNull();
+    expect(sheet.style.gap).toBe(`${NAME_CARD_GAP_MM}mm`);
+    expect(sheet.style.padding).toBe(originalPadding);
+  });
+
+  it("uses event overrides instead of personal themes, with unique SVG definitions", async () => {
+    mockApi("staff", [card({ id: "staff", role: "staff", cardImageKey: "rosette-rose" }), card()], createCardTemplate("name"));
+    const { container } = renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeEnabled());
+    expect(container.querySelectorAll('[data-card-part="role-band"] rect[fill="#9D174D"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-card-part="role-band"] rect[fill="#0F766E"]')).toHaveLength(1);
+    const ids = [...container.querySelectorAll("clipPath")].map(el => el.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(cardRenders).not.toHaveBeenCalled();
+    // Event text must retain the font's natural glyph proportions, like personal cards.
+    expect(container.querySelectorAll('[data-card-part] text[textLength]')).toHaveLength(0);
+  });
+
+  it("blocks printing until images load, and again on an image error", async () => {
+    const design = createCardTemplate("name"); design.common.background.assetId = "test-image";
+    mockApi("staff", [card()], design);
+    const { container } = renderPage();
+    await waitFor(() => expect(container.querySelector("image")).not.toBeNull());
+    expect(screen.getByRole("button", { name: "印刷する" })).toBeDisabled();
+    fireEvent.load(container.querySelector("image")!);
+    await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeEnabled());
+    fireEvent.error(container.querySelector("image")!);
+    await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeDisabled());
+    expect(container.querySelector(".name-card-page")).toHaveAttribute("data-print-ready", "false");
+  });
 });
 
 describe("名札の印刷: 誰を刷るか (#304)", () => {
@@ -176,7 +284,7 @@ describe("名札の印刷: 誰を刷るか (#304)", () => {
     renderPage();
     await waitFor(() => expect(printedNames()).toHaveLength(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "すべて外す" }));
+    fireEvent.click(screen.getByRole("button", { name: "全員の選択を解除" }));
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /印刷する/ })).toBeDisabled(),
@@ -223,7 +331,7 @@ describe("名札の印刷: 本人が設定したカードで刷る (#304)", () =
       card({ id: "u-2", name: "鈴木", cardImageKey: "flow-amber" }),
     ]);
     renderPage();
-    await screen.findByText(/2 人/);
+    await waitFor(() => expect(document.querySelectorAll(".name-card-cell svg")).toHaveLength(2));
     const svgs = document.querySelectorAll(".name-card-cell svg");
     expect(svgs).toHaveLength(2);
     // 背景の描き分けが実際に違うこと（同じ見た目で刷られていない）
@@ -233,8 +341,7 @@ describe("名札の印刷: 本人が設定したカードで刷る (#304)", () =
   it("カードを保存していない人は既定の見た目で描く（欠けても壊れない）", async () => {
     mockApi("staff", [card({ id: "u-1", name: "田中", cardImageKey: null })]);
     renderPage();
-    await screen.findByText(/1 人/);
-    expect(document.querySelectorAll(".name-card-cell svg")).toHaveLength(1);
+    await waitFor(() => expect(document.querySelectorAll(".name-card-cell svg")).toHaveLength(1));
   });
 
   it("アイコンが読み込めないときは名前の1文字目に戻す", async () => {
@@ -242,7 +349,10 @@ describe("名札の印刷: 本人が設定したカードで刷る (#304)", () =
       card({ id: "u-1", name: "田中", avatarUrl: "https://example.com/x.png" }),
     ]);
     renderPage();
-    await screen.findByText(/1 人/);
+    await waitFor(() => expect(document.querySelector('[data-avatar="1"]')).not.toBeNull());
+    // The async card mount also initializes avatarFailed in a passive effect.
+    // Flush that initialization before simulating a subsequent network error.
+    await act(async () => {});
     const img = document.querySelector('[data-avatar="1"]');
     expect(img).toBeTruthy();
     // 読み込み失敗を通知すると画像が消え、下に描いてあるイニシャルが見える

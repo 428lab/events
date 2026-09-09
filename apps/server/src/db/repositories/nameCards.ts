@@ -238,6 +238,8 @@ async function communitiesFor(
 }
 
 interface MemberRow {
+  slot_id: string | null;
+  slot_name: string | null;
   user_id: string;
   role: string;
   username: string;
@@ -269,12 +271,13 @@ export const nameCardsRepo = {
   async listForEvent(eventId: string, now: number): Promise<EventNameCard[]> {
     const [members, gm, pm, communities] = await Promise.all([
       many<MemberRow>(
-        `SELECT m.user_id AS user_id, m.role AS role, u.username AS username,
+        `SELECT m.user_id AS user_id, m.role AS role, ps.id AS slot_id, ps.name AS slot_name, u.username AS username,
                 u.global_name AS global_name, u.avatar_url AS avatar_url,
                 u.card_image_key AS card_image_key,
                 u.created_at AS created_at
            FROM event_member m
            JOIN user u ON u.id = m.user_id
+           LEFT JOIN participation_slot ps ON ps.id = m.slot_id AND ps.event_id = m.event_id
           WHERE m.event_id = ? AND m.status = 'confirmed'
             AND u.deleted_at IS NULL
           ORDER BY m.created_at ASC`,
@@ -294,6 +297,8 @@ export const nameCardsRepo = {
       return {
         id: m.user_id,
         role: m.role as EventRole,
+        slotId: m.slot_id,
+        slotName: m.slot_name,
         handle: m.username,
         name: m.global_name ?? m.username,
         avatarUrl: m.avatar_url,

@@ -1,3 +1,5 @@
+import { DISPLAY_FONTS } from "@eventer/shared";
+
 /** イベント画像（1200×630）をテンプレートから生成するための定義とレンダラ。 */
 export const OG_W = 1200;
 export const OG_H = 630;
@@ -10,34 +12,7 @@ export interface FontDef {
 }
 
 /** Google Fonts（オンデマンド読込）。日本語対応の表示用フォントを幅広く。 */
-export const FONTS: FontDef[] = [
-  { label: "Noto Sans", family: "Noto Sans JP", weight: 700, category: "ゴシック" },
-  { label: "M PLUS 1p", family: "M PLUS 1p", weight: 800, category: "ゴシック" },
-  { label: "BIZ UDPGothic", family: "BIZ UDPGothic", weight: 700, category: "ゴシック" },
-  { label: "Sawarabi Gothic", family: "Sawarabi Gothic", weight: 400, category: "ゴシック" },
-  { label: "Zen Kaku Gothic", family: "Zen Kaku Gothic New", weight: 700, category: "ゴシック" },
-  { label: "IBM Plex Sans", family: "IBM Plex Sans JP", weight: 700, category: "ゴシック" },
-  { label: "M PLUS Rounded", family: "M PLUS Rounded 1c", weight: 800, category: "丸ゴシック" },
-  { label: "Zen Maru Gothic", family: "Zen Maru Gothic", weight: 700, category: "丸ゴシック" },
-  { label: "Kosugi Maru", family: "Kosugi Maru", weight: 400, category: "丸ゴシック" },
-  { label: "Mochiy Pop", family: "Mochiy Pop One", weight: 400, category: "丸ゴシック" },
-  { label: "RocknRoll One", family: "RocknRoll One", weight: 400, category: "丸ゴシック" },
-  { label: "Noto Serif", family: "Noto Serif JP", weight: 700, category: "明朝" },
-  { label: "Shippori Mincho", family: "Shippori Mincho", weight: 700, category: "明朝" },
-  { label: "Zen Old Mincho", family: "Zen Old Mincho", weight: 700, category: "明朝" },
-  { label: "Sawarabi Mincho", family: "Sawarabi Mincho", weight: 400, category: "明朝" },
-  { label: "Kaisei Decol", family: "Kaisei Decol", weight: 700, category: "明朝" },
-  { label: "Shippori Antique", family: "Shippori Antique", weight: 400, category: "明朝" },
-  { label: "Dela Gothic", family: "Dela Gothic One", weight: 400, category: "手書き・個性派" },
-  { label: "Reggae One", family: "Reggae One", weight: 400, category: "手書き・個性派" },
-  { label: "Train One", family: "Train One", weight: 400, category: "手書き・個性派" },
-  { label: "Yuji Syuku", family: "Yuji Syuku", weight: 400, category: "手書き・個性派" },
-  { label: "Yusei Magic", family: "Yusei Magic", weight: 400, category: "手書き・個性派" },
-  { label: "Hachi Maru Pop", family: "Hachi Maru Pop", weight: 400, category: "手書き・個性派" },
-  { label: "Klee One", family: "Klee One", weight: 600, category: "手書き・個性派" },
-  { label: "Stick", family: "Stick", weight: 400, category: "手書き・個性派" },
-  { label: "DotGothic16", family: "DotGothic16", weight: 400, category: "手書き・個性派" },
-];
+export const FONTS: FontDef[] = DISPLAY_FONTS.map(font => ({ ...font }));
 
 /** 背景の識別子。**呼び名は辞書 (`eventForm.imageBg*`) が持つ** (#363)。
  * ここに日本語の label を戻すと、英語表示のイベント画像の仕立てに日本語が並ぶ */

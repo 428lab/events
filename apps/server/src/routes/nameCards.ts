@@ -14,7 +14,7 @@ import { nameCardsRepo } from "../db/repositories/nameCards.js";
  * アプリ運営管理者やコミュニティ管理者は通さない。
  */
 
-const requireEventStaff: MiddlewareHandler<AppEnv> = async (c, next) => {
+export const requireNameCardStaff: MiddlewareHandler<AppEnv> = async (c, next) => {
   const eventId = c.req.param("id");
   if (!eventId) return c.json({ error: "event_id_required" }, 400);
   if (!(await isConfirmedEventStaff(eventId, c.get("user").id))) {
@@ -25,7 +25,7 @@ const requireEventStaff: MiddlewareHandler<AppEnv> = async (c, next) => {
 
 export const nameCardRoutes = new Hono<AppEnv>();
 // 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
-nameCardRoutes.use("/:id/name-cards", requireEventStaff);
+nameCardRoutes.use("/:id/name-cards", requireNameCardStaff);
 
 nameCardRoutes.get("/:id/name-cards", async (c) => {
   const eventId = c.req.param("id");

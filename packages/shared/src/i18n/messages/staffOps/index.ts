@@ -31,6 +31,7 @@ import { broadcast } from "./broadcast.js";
 import { checkin } from "./checkin.js";
 import { invites } from "./invites.js";
 import { nameCards } from "./nameCards.js";
+import { cardEditor } from "./cardEditor.js";
 import { prep } from "./prep.js";
 import { prizes } from "./prizes.js";
 import { slots } from "./slots.js";
@@ -53,6 +54,7 @@ export const staffOps = {
     ...invites.ja,
     ...broadcast.ja,
     ...nameCards.ja,
+    ...cardEditor.ja,
     ...prizes.ja,
     ...survey.ja,
     ...prep.ja,
@@ -63,6 +65,7 @@ export const staffOps = {
     ...invites.en,
     ...broadcast.en,
     ...nameCards.en,
+    ...cardEditor.en,
     ...prizes.en,
     ...survey.en,
     ...prep.en,
@@ -76,6 +79,7 @@ export const staffOpsParts = [
   invites,
   broadcast,
   nameCards,
+  cardEditor,
   prizes,
   survey,
   prep,
