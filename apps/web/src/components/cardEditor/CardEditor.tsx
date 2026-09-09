@@ -23,6 +23,8 @@ export function CardEditor({ initial, context, members, assets, slots }: {
   const [baseline, setBaseline] = useState(() => JSON.stringify(history.design));
   const [revision, setRevision] = useState(initial.revision);
   const [selected, setSelected] = useState<string | null>(null);
+  const [snapToGrid, setSnapToGrid] = useState(false);
+  const [gridSize, setGridSize] = useState(16);
   const [target, setTarget] = useState<EditTarget>("common");
   const [template, setTemplate] = useState<CardTemplateId>("name");
   const [kind, setKind] = useState<CardPart["kind"]>("text");
@@ -164,9 +166,16 @@ export function CardEditor({ initial, context, members, assets, slots }: {
         <MenuItem value="">{t("staffOps.cardEditorSample")}</MenuItem>{members.map(m => <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>)}
       </TextField>
     </Stack>
+    <Stack direction="row" spacing={2} useFlexGap flexWrap="wrap" alignItems="center">
+      <FormControlLabel label={t("staffOps.cardEditorSnapGrid")} control={<Checkbox checked={snapToGrid} onChange={(_, checked) => setSnapToGrid(checked)} />} />
+      <TextField type="number" size="small" label={t("staffOps.cardEditorGridSize")} value={gridSize}
+        inputProps={{ min: 1, max: 100, step: 1 }} sx={{ width: 160 }}
+        onChange={e => { const n = Number(e.target.value); if (Number.isInteger(n) && n >= 1 && n <= 100) setGridSize(n); }} />
+      <Typography variant="caption" color="text.secondary">{t("staffOps.cardEditorGridHint")}</Typography>
+    </Stack>
     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0,1fr)", md: "220px minmax(0,1fr)" },
       gridTemplateAreas: { xs: '"canvas" "settings" "parts"', md: '"canvas canvas" "parts settings"' }, gap: 2, alignItems: "start" }}>
-      <Box sx={{ minWidth: 0, gridArea: "canvas" }}><CardCanvas key={target} layout={layout} card={card} context={context} selected={selected} onSelect={setSelected} onChange={changePart} /></Box>
+      <Box sx={{ minWidth: 0, gridArea: "canvas" }}><CardCanvas key={target} layout={layout} card={card} context={context} selected={selected} onSelect={setSelected} onChange={changePart} gridSize={snapToGrid ? gridSize : 0} /></Box>
       <Paper variant="outlined" sx={{ p: 2, minWidth: 0, gridArea: "parts" }}>
         <Typography variant="h6">{t("staffOps.cardEditorParts")}</Typography>
         <List dense>{layout.parts.map((p, i) => <ListItemButton key={p.id} selected={selected === p.id} onClick={() => setSelected(p.id)}>{i + 1}. {p.kind === "text" ? sourceLabels[p.source] : kindLabels[p.kind]}{p.kind === "text" && p.source === "literal" ? `: ${p.text.slice(0, 12)}` : ""}</ListItemButton>)}</List>

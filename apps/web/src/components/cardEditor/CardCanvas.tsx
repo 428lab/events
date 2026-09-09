@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { Alert, Box, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import type { CardLayout, CardPart, EventNameCard } from "@eventer/shared";
@@ -6,11 +6,12 @@ import { cardImageUrls, EventCardSvg, type EventCardContext } from "../licenseCa
 import { movePart } from "./model.js";
 import type { CardFontStatus } from "../../lib/cardFonts.js";
 
-export function CardCanvas({ layout, card, context, selected, onSelect, onChange }: {
+export function CardCanvas({ layout, card, context, selected, onSelect, onChange, gridSize = 0 }: {
   layout: CardLayout; card: EventNameCard; context: EventCardContext; selected: string | null;
-  onSelect: (id: string) => void; onChange: (part: CardPart) => void;
+  onSelect: (id: string) => void; onChange: (part: CardPart) => void; gridSize?: number;
 }) {
   const { t } = useTranslation();
+  const gridId = `card-grid-${useId().replace(/:/g, "")}`;
   const svg = useRef<SVGSVGElement>(null);
   const [smallText, setSmallText] = useState(false);
   const [fontStates, setFontStates] = useState<Record<string, CardFontStatus>>({});
@@ -33,7 +34,7 @@ export function CardCanvas({ layout, card, context, selected, onSelect, onChange
   };
   const move = (e: PointerEvent<SVGRectElement>) => {
     const d = drag.current, p = point(e); if (!d || !p) return;
-    d.current = movePart(d.part, Math.round(p.x - d.x), Math.round(p.y - d.y), d.resize);
+    d.current = movePart(d.part, Math.round(p.x - d.x), Math.round(p.y - d.y), d.resize, gridSize);
     setPreview(d.current);
   };
   const finish = () => {
@@ -49,9 +50,15 @@ export function CardCanvas({ layout, card, context, selected, onSelect, onChange
   const fontError = texts.some(p => fontStates[p.id] === "error");
   const fontLoading = texts.some(p => fontStates[p.id] === "loading");
   const events = { onPointerMove: move, onPointerUp: finish, onPointerCancel: cancel, onLostPointerCapture: cancel };
-  return <Box>
+  return <Box sx={{ "@media print": { "& [data-editor-grid]": { display: "none" } } }}>
     <Box sx={{ border: "1px solid", borderColor: "divider", background: "#fff", userSelect: "none" }}>
     <EventCardSvg svgRef={svg} layout={shown} card={card} context={context} onImageStatus={imageStatus} onFontStatus={fontStatus}>
+      {gridSize > 0 && <g pointerEvents="none" data-editor-grid="true">
+        <defs><pattern id={gridId} width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
+          <path d={`M${gridSize} 0H0V${gridSize}`} fill="none" stroke="#64748B" strokeOpacity={0.3} strokeWidth={0.8} />
+        </pattern></defs>
+        <rect width={1074} height={650} fill={`url(#${gridId})`} />
+      </g>}
       <path d="M537 0V650M0 325H1074" stroke="#64748B" strokeDasharray="8 8" strokeOpacity={0.25} pointerEvents="none" />
       {shown.parts.map(p => <rect key={p.id} x={p.x} y={p.y} width={p.width} height={p.height}
         fill="transparent" stroke={p.id === selected ? "#2563EB" : "none"} strokeWidth={3}

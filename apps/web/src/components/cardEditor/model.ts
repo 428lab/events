@@ -62,9 +62,15 @@ export function newPart(kind: CardPart["kind"]): CardPart {
     default: return { ...box, kind, source: "name", text: "", color: "#101827", fontSize: 48, bold: false, align: "start" };
   }
 }
-export function movePart(part: CardPart, dx: number, dy: number, resize: boolean): CardPart {
-  if (!resize) return { ...part, x: Math.max(0, Math.min(1074 - part.width, part.x + dx)),
-    y: Math.max(0, Math.min(650 - part.height, part.y + dy)) };
+export function movePart(part: CardPart, dx: number, dy: number, resize: boolean, gridSize = 0): CardPart {
+  if (dx === 0 && dy === 0) return part;
+  if (!resize) {
+    const snap = (value: number) => Number.isInteger(gridSize) && gridSize > 0
+      ? Math.round(value / gridSize) * gridSize : value;
+    // Snap absolute card coordinates, then prioritize staying inside the card at its edges.
+    return { ...part, x: Math.max(0, Math.min(1074 - part.width, snap(part.x + dx))),
+      y: Math.max(0, Math.min(650 - part.height, snap(part.y + dy))) };
+  }
   const width = Math.max(part.kind === "qr" ? 120 : 8, Math.min(1074 - part.x, part.width + dx));
   const height = Math.max(part.kind === "qr" ? 120 : 8, Math.min(650 - part.y, part.height + dy));
   return { ...part, width: part.kind === "qr" ? Math.min(width, height) : width,

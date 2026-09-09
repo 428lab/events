@@ -35,6 +35,8 @@ export function PartSettings({ part, assets, onChange }: { part: CardPart; asset
     {part.kind !== "qr" && number(t("staffOps.cardEditorOpacity"), part.opacity,
       opacity => onChange({ ...part, opacity }), 0, 1)}
     {color}{font}
+    {part.kind === "rect" && number(t("staffOps.cardEditorRadius"), part.radius,
+      radius => onChange({ ...part, radius }), 0, 100)}
     {part.kind === "text" && <>
       <TextField select size="small" label={t("staffOps.cardEditorFont")} value={part.font ?? "default"}
         onChange={e => onChange({ ...part, font: e.target.value as CardFont })}>
