@@ -27,10 +27,11 @@ describe("organizer card fonts", () => {
     expect(() => parseCardFontCss("body { background: url(https://example.com); }")).toThrow("missing_font_faces");
   });
 
-  it("waits for actual glyphs after registration and does not request fonts for the legacy choice", async () => {
+  it("waits for actual glyphs after registration and does not request Google Fonts for the legacy choice", async () => {
     const original = Object.getOwnPropertyDescriptor(document, "fonts");
     let finish!: (faces: FontFace[]) => void;
     const load = vi.fn((_font: string, _text: string) => new Promise<FontFace[]>(resolve => { finish = resolve; }));
+    load.mockResolvedValueOnce([]);
     const add = vi.fn();
     Object.defineProperty(document, "fonts", { configurable: true, value: { load, add } });
     vi.stubGlobal("FontFace", class { constructor(public family: string) {} });
@@ -38,11 +39,12 @@ describe("organizer card fonts", () => {
     try {
       await loadCardFont(undefined, true, "𠮷野 龍之介");
       expect(fetcher).not.toHaveBeenCalled();
+      expect(load.mock.calls[0]?.[0]).toContain("Plus Jakarta Sans");
       let ready = false;
       const pending = loadCardFont("Noto Serif JP", false, "𠮷野 龍之介").then(() => { ready = true; });
-      await vi.waitFor(() => expect(load).toHaveBeenCalled());
+      await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
       expect(ready).toBe(false);
-      expect(load.mock.calls[0]).toEqual(['400 64px "EventCardFont11"', "𠮷野 龍之介"]);
+      expect(load.mock.calls[1]).toEqual(['400 64px "EventCardFont11"', "𠮷野 龍之介"]);
       expect(fetcher).toHaveBeenCalledTimes(1);
       expect(String(fetcher.mock.calls[0]?.[0])).not.toContain("龍");
       finish([]); await pending;

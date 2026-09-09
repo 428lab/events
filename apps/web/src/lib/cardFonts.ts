@@ -64,9 +64,13 @@ function withTimeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
   });
 }
 export async function loadCardFont(font: CardFont | undefined, bold: boolean, text: string): Promise<void> {
-  if (!font || font === "default" || !text.trim()) return;
-  await registerFont(font);
+  if (!text.trim()) return;
   const spec = cardFontSpec(font, bold);
+  if (!font || font === "default") {
+    if (document.fonts?.load) await withTimeout(document.fonts.load(`${spec.weight} 64px ${spec.family}`, text), 15000);
+    return;
+  }
+  await registerFont(font);
   // The text argument is local range selection in the browser, not an HTTP query.
   await withTimeout(document.fonts.load(`${spec.weight} 64px "${spec.alias}"`, text), 15000);
 }

@@ -4,7 +4,8 @@ import { loadCardFont, type CardFontStatus } from "../../lib/cardFonts.js";
 
 export function useCardFont(font: CardFont | undefined, bold: boolean, text: string): CardFontStatus {
   const key = JSON.stringify([font, bold, text]);
-  const needed = !!font && font !== "default" && !!text.trim();
+  const custom = !!font && font !== "default";
+  const needed = !!text.trim() && (custom || (typeof document !== "undefined" && typeof document.fonts?.load === "function"));
   const [result, setResult] = useState<{ key: string; status: CardFontStatus }>();
   useEffect(() => {
     if (!needed) return;

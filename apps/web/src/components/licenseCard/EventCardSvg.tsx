@@ -52,8 +52,9 @@ function FitText({ text, part, onFontStatus }: { text: string; part: Extract<Car
   const status = useCardFont(part.font, part.bold, text);
   useLayoutEffect(() => { onFontStatus?.(part.id, status); }, [part.id, status, onFontStatus]);
   const spec = cardFontSpec(part.font, part.bold);
-  const { lines, size, widths } = useMemo(() => {
-    const ctx = spec.alias && status === "ready" ? document.createElement("canvas").getContext("2d") : null;
+  const { lines, size } = useMemo(() => {
+    const ctx = status === "ready" && typeof CanvasRenderingContext2D !== "undefined"
+      ? document.createElement("canvas").getContext("2d") : null;
     if (ctx) ctx.font = `${spec.weight} 64px ${spec.family}`;
     const cache = new Map<string, number>();
     const measure = ctx ? (value: string) => {
@@ -61,15 +62,12 @@ function FitText({ text, part, onFontStatus }: { text: string; part: Extract<Car
       if (width === undefined) { width = ctx.measureText(value).width / 64; cache.set(value, width); }
       return width;
     } : textUnits;
-    const fitted = fitCardText(text, part.width, part.height, part.fontSize, measure);
-    return { ...fitted, widths: fitted.lines.map(line => measure(line) * fitted.size) };
+    return fitCardText(text, part.width, part.height, part.fontSize, measure);
   }, [text, part.width, part.height, part.fontSize, spec.alias, spec.family, spec.weight, status]);
   return <g data-font-status={status} data-small-text={text && size < 18 ? "true" : undefined} fontFamily={spec.family} fontSize={size} fontWeight={spec.weight} fill={part.color}>
     {lines.map((line, i) => <text key={i}
       x={part.x + (part.align === "middle" ? part.width / 2 : part.align === "end" ? part.width : 0)}
-      y={part.y + size + i * size * 1.25} textAnchor={part.align}
-      textLength={line ? Math.min(part.width, widths[i]!) : undefined}
-      lengthAdjust="spacingAndGlyphs">{line}</text>)}
+      y={part.y + size + i * size * 1.25} textAnchor={part.align}>{line}</text>)}
   </g>;
 }
 
