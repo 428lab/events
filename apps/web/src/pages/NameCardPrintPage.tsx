@@ -1,11 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  Avatar,
   Box,
   Button,
   Checkbox,
-  Chip,
   CircularProgress,
   FormControlLabel,
   GlobalStyles,
@@ -23,6 +21,7 @@ import {
   NAME_CARD_H_MM,
   NAME_CARD_W_MM,
   SHEET_COLS,
+  SHEET_ROWS,
   SHEET_H_MM,
   SHEET_MARGIN_X_MM,
   SHEET_MARGIN_Y_MM,
@@ -34,7 +33,7 @@ import { PrintableEventCard, type CardPrintStatus } from "../components/cardEdit
 import type { EventCardContext } from "../components/licenseCard/EventCardSvg.js";
 import { useEvent } from "../api/hooks.js";
 import { useEventNameCards } from "../api/nameCardHooks.js";
-import { roleLabel } from "../lib/format.js";
+import { NameCardSelection } from "../components/cardEditor/NameCardSelection.js";
 import { LicenseCardSvg } from "../components/licenseCard/LicenseCardSvg.js";
 import { toCardData } from "../components/licenseCard/cardData.js";
 import type {
@@ -160,8 +159,10 @@ const NameCardCell = memo(function NameCardCell({
   origin,
   host,
   eventPrint,
+  cutGuides,
 }: {
   card: EventNameCard;
+  cutGuides: boolean;
   variant: CardBgVariant;
   theme: CardThemeKey;
   origin: string;
@@ -180,15 +181,24 @@ const NameCardCell = memo(function NameCardCell({
       style={{
         width: `${NAME_CARD_W_MM}mm`,
         height: `${NAME_CARD_H_MM}mm`,
-        overflow: "hidden",
+        overflow: cutGuides ? "visible" : "hidden",
+        position: "relative",
+        boxSizing: "border-box",
+        padding: cutGuides ? "1.1mm" : 0,
       }}
     >
+      <Box className="name-card-art" sx={cutGuides ? { width: "100%", height: "100%", "& > svg": { width: "100% !important", height: "100% !important" } } : undefined}>
       {eventPrint.design ? <PrintableEventCard design={eventPrint.design} card={card} context={eventPrint.context} onStatus={eventPrint.onStatus} /> : <LicenseCardSvg
         card={data}
         variant={variant}
         theme={theme}
         qrUrl={`${origin}/users/${card.handle}?ref=card`}
       />}
+      </Box>
+      {cutGuides && <svg data-cut-guide="true" aria-hidden="true" viewBox={`0 0 ${NAME_CARD_W_MM} ${NAME_CARD_H_MM}`}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
+        <rect width={NAME_CARD_W_MM} height={NAME_CARD_H_MM} fill="none" stroke="#777777" strokeWidth={0.15} strokeDasharray="0.8 0.6" />
+      </svg>}
     </Box>
   );
 });
@@ -204,6 +214,7 @@ const Sheet = memo(SheetInner, (a, b) => {
     a.origin !== b.origin ||
     a.host !== b.host ||
     a.eventPrint !== b.eventPrint ||
+    a.cutGuides !== b.cutGuides ||
     a.cards.length !== b.cards.length
   ) {
     return false;
@@ -212,6 +223,7 @@ const Sheet = memo(SheetInner, (a, b) => {
 });
 
 function SheetInner({
+  cutGuides,
   cards,
   variant,
   theme,
@@ -220,6 +232,7 @@ function SheetInner({
   eventPrint,
 }: {
   cards: EventNameCard[];
+  cutGuides: boolean;
   variant: CardBgVariant;
   theme: CardThemeKey;
   origin: string;
@@ -234,12 +247,14 @@ function SheetInner({
         width: `${SHEET_W_MM}mm`,
         height: `${SHEET_H_MM}mm`,
         boxSizing: "border-box",
-        padding: `${SHEET_MARGIN_Y_MM}mm ${SHEET_MARGIN_X_MM}mm`,
+        padding: cutGuides
+          ? `${(SHEET_H_MM - SHEET_ROWS * NAME_CARD_H_MM - (SHEET_ROWS - 1) * 2) / 2}mm ${(SHEET_W_MM - SHEET_COLS * NAME_CARD_W_MM - (SHEET_COLS - 1) * 2) / 2}mm`
+          : `${SHEET_MARGIN_Y_MM}mm ${SHEET_MARGIN_X_MM}mm`,
         display: "grid",
         gridTemplateColumns: `repeat(${SHEET_COLS}, ${NAME_CARD_W_MM}mm)`,
         gridAutoRows: `${NAME_CARD_H_MM}mm`,
         // 切り離しやすいようカードどうしを少しあける（余白は定数側で調整済み）
-        gap: `${NAME_CARD_GAP_MM}mm`,
+        gap: `${cutGuides ? 2 : NAME_CARD_GAP_MM}mm`,
         background: "#fff",
         marginLeft: "auto",
         marginRight: "auto",
@@ -253,6 +268,7 @@ function SheetInner({
         return (
           <NameCardCell
             key={c.id}
+            cutGuides={cutGuides}
             eventPrint={eventPrint}
             card={c}
             variant={look.variant}
@@ -291,6 +307,7 @@ export function NameCardPrintPage() {
   const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
   /** 何枚まで描いたか。100人規模で一度に描くと固まるので少しずつ増やす */
   const [rendered, setRendered] = useState(0);
+  const [cutGuides, setCutGuides] = useState(false);
 
   const all = useMemo(() => data?.cards ?? [], [data]);
   const selected = useMemo(
@@ -444,58 +461,13 @@ export function NameCardPrintPage() {
               <Typography variant="subtitle2" gutterBottom>
                 {t("staffOps.nameCardPeopleHeading")}
               </Typography>
-              <Box
-                sx={{
-                  display: "grid",
-                  gridTemplateColumns: {
-                    xs: "1fr",
-                    sm: "1fr 1fr",
-                    md: "1fr 1fr 1fr",
-                  },
-                  gap: 0.5,
-                }}
-              >
-                {all.map((c) => (
-                  <FormControlLabel
-                    key={c.id}
-                    control={
-                      <Checkbox
-                        size="small"
-                        checked={!excluded.has(c.id)}
-                        onChange={() => toggle(c.id)}
-                        inputProps={{
-                          "aria-label": t("staffOps.nameCardPrintCheckbox", {
-                            name: c.name,
-                          }),
-                        }}
-                      />
-                    }
-                    label={
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        alignItems="center"
-                        sx={{ minWidth: 0 }}
-                      >
-                        <Avatar
-                          src={c.avatarUrl ?? undefined}
-                          sx={{ width: 24, height: 24 }}
-                        >
-                          {[...c.name][0] ?? "?"}
-                        </Avatar>
-                        <Typography variant="body2" noWrap>
-                          {c.name}
-                        </Typography>
-                        {c.role !== "participant" && (
-                          <Chip size="small" label={roleLabel(c.role)} />
-                        )}
-                      </Stack>
-                    }
-                  />
-                ))}
-              </Box>
+              <NameCardSelection cards={all} excluded={excluded} onToggle={toggle}
+                onSelectOnly={ids => { const included = new Set(ids); setExcluded(new Set(all.filter(c => !included.has(c.id)).map(c => c.id))); }} />
             </Box>
 
+            <FormControlLabel control={<Checkbox checked={cutGuides} onChange={(_, checked) => setCutGuides(checked)} />}
+              label={t("staffOps.nameCardCutGuides")} />
+            {cutGuides && <Typography variant="caption" color="text.secondary">{t("staffOps.nameCardCutGuidesHint")}</Typography>}
             <Typography variant="subtitle2">
               {t("staffOps.nameCardPreviewHeading")}
             </Typography>
@@ -512,6 +484,7 @@ export function NameCardPrintPage() {
           <Sheet
             key={i}
             cards={cards}
+            cutGuides={cutGuides}
             eventPrint={eventPrint}
             variant={variant}
             theme={theme}

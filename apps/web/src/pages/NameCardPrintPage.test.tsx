@@ -166,6 +166,45 @@ beforeEach(() => {
 });
 
 describe("イベントデザインの印刷 (#506)", () => {
+  it("retains off-page selections and changes the print set only on explicit actions", async () => {
+    const cards = Array.from({ length: 21 }, (_, i) => card({ id: `u-${i}`, name: `参加者${i}` }));
+    mockApi("staff", cards, createCardTemplate("name"));
+    const { container } = renderPage();
+    await waitFor(() => expect(printedNames()).toHaveLength(21));
+    expect(container.querySelectorAll('[data-name-card-selection] input')).toHaveLength(20);
+    fireEvent.click(screen.getByRole("checkbox", { name: "参加者0 を印刷する" }));
+    fireEvent.click(screen.getByRole("button", { name: "次のページ" }));
+    expect(screen.getByRole("checkbox", { name: "参加者20 を印刷する" })).toBeChecked();
+    expect(printedNames()).toHaveLength(20);
+    fireEvent.change(screen.getByRole("textbox", { name: "名前・ハンドルを検索" }), { target: { value: "handle-u-19" } });
+    expect(screen.getByRole("checkbox", { name: "参加者19 を印刷する" })).toBeChecked();
+    expect(printedNames()).toHaveLength(20);
+    fireEvent.click(screen.getByRole("button", { name: "絞り込み結果だけ選択" }));
+    await waitFor(() => expect(printedNames()).toEqual(["参加者19"]));
+    fireEvent.change(screen.getByRole("textbox", { name: "名前・ハンドルを検索" }), { target: { value: "" } });
+    expect(screen.getByRole("checkbox", { name: "参加者0 を印刷する" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "参加者19 を印刷する" })).toBeChecked();
+  });
+
+  it("toggles cutting guides without changing the finished card size and restores legacy stock spacing", async () => {
+    mockApi("staff", [card()], createCardTemplate("name"));
+    const { container } = renderPage();
+    await waitFor(() => expect(printedNames()).toHaveLength(1));
+    const sheet = container.querySelector<HTMLElement>(".name-card-sheet")!;
+    const originalPadding = sheet.style.padding;
+    const guides = screen.getByRole("checkbox", { name: "裁断ガイドと白余白を付ける" });
+    fireEvent.click(guides);
+    expect(container.querySelectorAll('[data-cut-guide]')).toHaveLength(1);
+    expect(sheet.style.gap).toBe("2mm");
+    expect(sheet.style.padding).toBe("7mm 13mm");
+    const cell = container.querySelector<HTMLElement>(".name-card-cell")!;
+    expect([cell.style.width, cell.style.height]).toEqual(["91mm", "55mm"]);
+    fireEvent.click(guides);
+    expect(container.querySelector('[data-cut-guide]')).toBeNull();
+    expect(sheet.style.gap).toBe(`${NAME_CARD_GAP_MM}mm`);
+    expect(sheet.style.padding).toBe(originalPadding);
+  });
+
   it("uses event overrides instead of personal themes, with unique SVG definitions", async () => {
     mockApi("staff", [card({ id: "staff", role: "staff", cardImageKey: "rosette-rose" }), card()], createCardTemplate("name"));
     const { container } = renderPage();
@@ -238,7 +277,7 @@ describe("名札の印刷: 誰を刷るか (#304)", () => {
     renderPage();
     await waitFor(() => expect(printedNames()).toHaveLength(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "すべて外す" }));
+    fireEvent.click(screen.getByRole("button", { name: "全員の選択を解除" }));
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /印刷する/ })).toBeDisabled(),
