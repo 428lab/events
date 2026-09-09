@@ -175,6 +175,8 @@ describe("イベントデザインの印刷 (#506)", () => {
     const ids = [...container.querySelectorAll("clipPath")].map(el => el.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(cardRenders).not.toHaveBeenCalled();
+    // Event text must retain the font's natural glyph proportions, like personal cards.
+    expect(container.querySelectorAll('[data-card-part] text[textLength]')).toHaveLength(0);
   });
 
   it("blocks printing until images load, and again on an image error", async () => {
