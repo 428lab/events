@@ -37,6 +37,11 @@ describe("card editor operations (#506)", () => {
     expect(fitted.lines.join("")).toBe(text);
     expect(fitted.size).toBeGreaterThan(30);
     expect(fitted.lines.length * fitted.size * 1.25).toBeLessThanOrEqual(132);
+    const wideMeasure = (line: string) => [...line].length * 4;
+    const wide = fitCardText(text, 730, 132, 104, wideMeasure);
+    expect(wide.lines.join("")).toBe(text);
+    expect(Math.max(...wide.lines.map(wideMeasure)) * wide.size).toBeLessThanOrEqual(730);
+    expect(wide.size).toBeLessThan(fitted.size);
   });
 
   it("keeps conflicted edits until the owner explicitly reloads the latest document", async () => {

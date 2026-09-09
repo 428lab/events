@@ -1,8 +1,9 @@
-import { useId, useMemo, type ReactNode, type Ref } from "react";
+import { useId, useLayoutEffect, useMemo, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 import { BADGE_DEFS, CARD_DESIGN_HEIGHT, CARD_DESIGN_WIDTH, type CardLayout, type CardPart, type EventNameCard } from "@eventer/shared";
-import { FONT_SANS } from "./cardTheme.js";
+import { cardFontSpec, type CardFontStatus } from "../../lib/cardFonts.js";
+import { useCardFont } from "./useCardFont.js";
 import { textUnits } from "./cardText.js";
 import { fitCardText } from "./eventCardText.js";
 import { roleLabel } from "../../lib/format.js";
@@ -45,19 +46,35 @@ function CardQr({ url, part }: { url: string; part: CardPart }) {
     <path d={qr.path} fill="#000" shapeRendering="crispEdges" />
   </svg>;
 }
-function FitText({ text, part }: { text: string; part: Extract<CardPart, { kind: "text" }> }) {
-  const { lines, size } = fitCardText(text, part.width, part.height, part.fontSize);
-  return <g data-small-text={text && size < 18 ? "true" : undefined} fontFamily={FONT_SANS} fontSize={size} fontWeight={part.bold ? 700 : 400} fill={part.color}>
+function FitText({ text, part, onFontStatus }: { text: string; part: Extract<CardPart, { kind: "text" }>;
+  onFontStatus?: (id: string, status: CardFontStatus) => void;
+}) {
+  const status = useCardFont(part.font, part.bold, text);
+  useLayoutEffect(() => { onFontStatus?.(part.id, status); }, [part.id, status, onFontStatus]);
+  const spec = cardFontSpec(part.font, part.bold);
+  const { lines, size, widths } = useMemo(() => {
+    const ctx = spec.alias && status === "ready" ? document.createElement("canvas").getContext("2d") : null;
+    if (ctx) ctx.font = `${spec.weight} 64px ${spec.family}`;
+    const cache = new Map<string, number>();
+    const measure = ctx ? (value: string) => {
+      let width = cache.get(value);
+      if (width === undefined) { width = ctx.measureText(value).width / 64; cache.set(value, width); }
+      return width;
+    } : textUnits;
+    const fitted = fitCardText(text, part.width, part.height, part.fontSize, measure);
+    return { ...fitted, widths: fitted.lines.map(line => measure(line) * fitted.size) };
+  }, [text, part.width, part.height, part.fontSize, spec.alias, spec.family, spec.weight, status]);
+  return <g data-font-status={status} data-small-text={text && size < 18 ? "true" : undefined} fontFamily={spec.family} fontSize={size} fontWeight={spec.weight} fill={part.color}>
     {lines.map((line, i) => <text key={i}
       x={part.x + (part.align === "middle" ? part.width / 2 : part.align === "end" ? part.width : 0)}
       y={part.y + size + i * size * 1.25} textAnchor={part.align}
-      textLength={line ? Math.min(part.width, textUnits(line) * size) : undefined}
+      textLength={line ? Math.min(part.width, widths[i]!) : undefined}
       lengthAdjust="spacingAndGlyphs">{line}</text>)}
   </g>;
 }
 
 /** Event-only drawing. The legacy personal card remains independent. */
-export function EventCardSvg({ layout, card, context, svgRef, children, imageData, onImageStatus }: {
+export function EventCardSvg({ layout, card, context, svgRef, children, imageData, onImageStatus, onFontStatus }: {
   layout: CardLayout;
   card: EventNameCard;
   context: EventCardContext;
@@ -66,6 +83,7 @@ export function EventCardSvg({ layout, card, context, svgRef, children, imageDat
   /** Optional preloaded/embedded images used by print/export. */
   imageData?: Readonly<Record<string, string>>;
   onImageStatus?: (url: string, ok: boolean) => void;
+  onFontStatus?: (id: string, status: CardFontStatus) => void;
 }) {
   const uid = useId().replace(/:/g, "");
   const { t, i18n } = useTranslation();
@@ -78,7 +96,7 @@ export function EventCardSvg({ layout, card, context, svgRef, children, imageDat
   })[p.source];
   const render = (p: CardPart): ReactNode => {
     if (p.kind === "rect") return <rect x={p.x} y={p.y} width={p.width} height={p.height} rx={p.radius} fill={p.color} />;
-    if (p.kind === "text") return <FitText text={sourceText(p)} part={p} />;
+    if (p.kind === "text") return <FitText text={sourceText(p)} part={p} onFontStatus={onFontStatus} />;
     if (p.kind === "image") {
       const url = partImageUrl(p, card, context);
       return url ? picture(url, { x: p.x, y: p.y, width: p.width, height: p.height,

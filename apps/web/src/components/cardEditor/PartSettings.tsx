@@ -1,10 +1,16 @@
-import { Button, Checkbox, FormControlLabel, MenuItem, Stack, TextField } from "@mui/material";
+import { Button, Checkbox, FormControlLabel, ListSubheader, MenuItem, Stack, TextField } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import type { CardPart } from "@eventer/shared";
+import { DISPLAY_FONTS, type CardPart, type CardFont } from "@eventer/shared";
 import type { CardAsset } from "../../api/cardDesignHooks.js";
+
+const fontCategory = {
+  ゴシック: "eventForm.imageFontGothic", 丸ゴシック: "eventForm.imageFontRounded",
+  明朝: "eventForm.imageFontMincho", "手書き・個性派": "eventForm.imageFontDisplay",
+} as const;
 
 export function PartSettings({ part, assets, onChange }: { part: CardPart; assets: CardAsset[]; onChange: (part: CardPart) => void }) {
   const { t } = useTranslation();
+  const fixedWeight = part.kind === "text" && DISPLAY_FONTS.find(f => f.family === part.font)?.weight === 400;
   const number = (label: string, value: number, change: (n: number) => void, min = 0, max = 1074) =>
     <TextField label={label} type="number" size="small" value={value} inputProps={{ min, max, step: max === 1 ? 0.05 : 1 }}
       onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n)) change(Math.max(min, Math.min(max, n))); }} />;
@@ -30,6 +36,15 @@ export function PartSettings({ part, assets, onChange }: { part: CardPart; asset
       opacity => onChange({ ...part, opacity }), 0, 1)}
     {color}{font}
     {part.kind === "text" && <>
+      <TextField select size="small" label={t("staffOps.cardEditorFont")} value={part.font ?? "default"}
+        onChange={e => onChange({ ...part, font: e.target.value as CardFont })}>
+        <MenuItem value="default">{t("staffOps.cardEditorDefaultFont")}</MenuItem>
+        {DISPLAY_FONTS.flatMap((f, i) => [
+          DISPLAY_FONTS[i - 1]?.category !== f.category
+            ? <ListSubheader key={f.category}>{t(fontCategory[f.category])}</ListSubheader> : null,
+          <MenuItem key={f.family} value={f.family}>{f.label}</MenuItem>,
+        ])}
+      </TextField>
       <TextField select size="small" label={t("staffOps.cardEditorSource")} value={part.source}
         onChange={e => onChange({ ...part, source: e.target.value as typeof part.source })}>
         {([
@@ -39,7 +54,8 @@ export function PartSettings({ part, assets, onChange }: { part: CardPart; asset
       </TextField>
       {part.source === "literal" && <TextField multiline minRows={2} label={t("staffOps.cardEditorLiteral")} value={part.text}
         inputProps={{ maxLength: 300 }} onChange={e => onChange({ ...part, text: e.target.value })} />}
-      <FormControlLabel label={t("staffOps.cardEditorBold")} control={<Checkbox checked={part.bold} onChange={(_, bold) => onChange({ ...part, bold })} />} />
+      <FormControlLabel label={t(fixedWeight ? "staffOps.cardEditorFixedWeight" : "staffOps.cardEditorBold")}
+        control={<Checkbox disabled={fixedWeight} checked={!fixedWeight && part.bold} onChange={(_, bold) => onChange({ ...part, bold })} />} />
       <TextField select size="small" label={t("staffOps.cardEditorAlign")} value={part.align}
         onChange={e => onChange({ ...part, align: e.target.value as typeof part.align })}>
         {(["start", "middle", "end"] as const).map((value, i) => <MenuItem key={value} value={value}>{t([

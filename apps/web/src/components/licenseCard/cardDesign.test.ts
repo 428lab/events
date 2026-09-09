@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cardDesignAssetIds, cardDesignSchema, cardTemplateIds, createCardTemplate,
-  resolveCardLayout,
+  resolveCardLayout, DISPLAY_FONTS,
 } from "@eventer/shared";
 
 describe("event card design contract (#506)", () => {
@@ -25,6 +25,19 @@ describe("event card design contract (#506)", () => {
     expect(staff.parts.some(p => p.id === "handle")).toBe(false);
     expect(staff.parts.find(p => p.id === "name")).toEqual(d.common.parts.find(p => p.id === "name"));
     expect(resolveCardLayout(d, "participant", null)).toEqual(d.common);
+  });
+
+  it("accepts every image-studio font while preserving legacy documents and rejecting arbitrary CSS", () => {
+    const design = createCardTemplate("name");
+    const part = design.common.parts.find(p => p.kind === "text")!;
+    expect(cardDesignSchema.parse(design)).toEqual(design);
+    for (const font of DISPLAY_FONTS) {
+      part.font = font.family;
+      expect(cardDesignSchema.parse(design)).toEqual(design);
+    }
+    expect(cardDesignSchema.safeParse({ ...design, common: { ...design.common,
+      parts: [{ ...part, font: 'url(https://example.com/font.woff)' }],
+    } }).success).toBe(false);
   });
 
   it("tracks assets even in hidden or overridden blocks for ownership checks", () => {

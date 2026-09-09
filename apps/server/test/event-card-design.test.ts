@@ -53,6 +53,7 @@ describe("event-only card documents (#506)", () => {
     expect(await (await request(eventId, cookie)).json()).toEqual({ revision: 0, design: null });
     const before = await env.DB.prepare("SELECT id, card_image_key FROM user ORDER BY id").all();
     const design = createCardTemplate("name");
+    design.common.parts.find(p => p.kind === "text")!.font = "Klee One";
     expect((await request(eventId, cookie, design)).status).toBe(200);
     expect(await (await request(eventId, cookie)).json()).toEqual({ revision: 1, design });
     expect((await env.DB.prepare("SELECT id, card_image_key FROM user ORDER BY id").all()).results).toEqual(before.results);

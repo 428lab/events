@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { CardLayout, CardPart, EventNameCard } from "@eventer/shared";
 import { cardImageUrls, EventCardSvg, type EventCardContext } from "../licenseCard/EventCardSvg.js";
 import { movePart } from "./model.js";
+import type { CardFontStatus } from "../../lib/cardFonts.js";
 
 export function CardCanvas({ layout, card, context, selected, onSelect, onChange }: {
   layout: CardLayout; card: EventNameCard; context: EventCardContext; selected: string | null;
@@ -12,6 +13,10 @@ export function CardCanvas({ layout, card, context, selected, onSelect, onChange
   const { t } = useTranslation();
   const svg = useRef<SVGSVGElement>(null);
   const [smallText, setSmallText] = useState(false);
+  const [fontStates, setFontStates] = useState<Record<string, CardFontStatus>>({});
+  const fontStatus = useCallback((id: string, status: CardFontStatus) => {
+    setFontStates(old => old[id] === status ? old : { ...old, [id]: status });
+  }, []);
   const [images, setImages] = useState<Record<string, boolean>>({});
   const imageStatus = useCallback((url: string, ok: boolean) => setImages(old => old[url] === ok ? old : { ...old, [url]: ok }), []);
   const drag = useRef<{ part: CardPart; x: number; y: number; resize: boolean; current: CardPart } | null>(null);
@@ -38,12 +43,15 @@ export function CardCanvas({ layout, card, context, selected, onSelect, onChange
   const cancel = () => { drag.current = null; setPreview(null); };
   const shown = preview ? { ...layout, parts: layout.parts.map(p => p.id === preview.id ? preview : p) } : layout;
   const active = shown.parts.find(p => p.id === selected);
-  useLayoutEffect(() => { setSmallText(Boolean(svg.current?.querySelector('[data-small-text="true"]'))); }, [shown, card]);
+  useLayoutEffect(() => { setSmallText(Boolean(svg.current?.querySelector('[data-small-text="true"]'))); }, [shown, card, fontStates]);
   const imageError = cardImageUrls(shown, card, context).some(url => images[url] === false);
+  const texts = shown.parts.filter(p => p.kind === "text");
+  const fontError = texts.some(p => fontStates[p.id] === "error");
+  const fontLoading = texts.some(p => fontStates[p.id] === "loading");
   const events = { onPointerMove: move, onPointerUp: finish, onPointerCancel: cancel, onLostPointerCapture: cancel };
   return <Box>
     <Box sx={{ border: "1px solid", borderColor: "divider", background: "#fff", userSelect: "none" }}>
-    <EventCardSvg svgRef={svg} layout={shown} card={card} context={context} onImageStatus={imageStatus}>
+    <EventCardSvg svgRef={svg} layout={shown} card={card} context={context} onImageStatus={imageStatus} onFontStatus={fontStatus}>
       <path d="M537 0V650M0 325H1074" stroke="#64748B" strokeDasharray="8 8" strokeOpacity={0.25} pointerEvents="none" />
       {shown.parts.map(p => <rect key={p.id} x={p.x} y={p.y} width={p.width} height={p.height}
         fill="transparent" stroke={p.id === selected ? "#2563EB" : "none"} strokeWidth={3}
@@ -56,5 +64,7 @@ export function CardCanvas({ layout, card, context, selected, onSelect, onChange
     <Typography variant="caption" color="text.secondary">{t("staffOps.cardEditorEditPreview")}</Typography>
     {smallText && <Alert severity="warning">{t("staffOps.cardEditorSmallText")}</Alert>}
     {imageError && <Alert severity="error">{t("staffOps.cardEditorImageFailed")}</Alert>}
+    {fontLoading && <Alert severity="info">{t("staffOps.cardEditorFontLoading")}</Alert>}
+    {fontError && <Alert severity="error">{t("staffOps.cardEditorFontFailed")}</Alert>}
   </Box>;
 }

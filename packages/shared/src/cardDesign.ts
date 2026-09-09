@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cardFontSchema } from "./displayFonts.js";
 
 /** Event-only card documents. No HTML, CSS, external URLs or executable markup. */
 export const CARD_DESIGN_WIDTH = 1074;
@@ -22,6 +23,7 @@ export const cardTextSources = [
 export const cardPartSchema = z.discriminatedUnion("kind", [
   z.object({ ...box, kind: z.literal("text"), source: z.enum(cardTextSources),
     text: z.string().max(300).default(""), color, fontSize: number(10, 144),
+    font: cardFontSchema.optional(),
     bold: z.boolean().default(false), align: z.enum(["start", "middle", "end"]).default("start"),
   }).strict(),
   z.object({ ...box, kind: z.literal("image"), source: z.enum(["avatar", "community", "asset"]),

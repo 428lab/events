@@ -25,9 +25,14 @@ import type { CardDesign, EventNameCard, EventRole } from "@eventer/shared";
  * 見た目は既存のプロフィールカード (#178) をそのまま使う（新しい意匠は作らない）。
  */
 
-const { getMock, cardRenders } = vi.hoisted(() => ({
+const { getMock, cardRenders, fontLoad } = vi.hoisted(() => ({
   getMock: vi.fn(),
   cardRenders: vi.fn(),
+  fontLoad: vi.fn(),
+}));
+vi.mock("../lib/cardFonts.js", async importOriginal => ({
+  ...await importOriginal<typeof import("../lib/cardFonts.js")>(),
+  loadCardFont: (...args: unknown[]) => fontLoad(...args),
 }));
 
 vi.mock("../api/client.js", async (importOriginal) => {
@@ -101,6 +106,33 @@ function mockApi(myRole: EventRole | null, cards: EventNameCard[], design: CardD
     throw new Error(`unexpected path: ${path}`);
   });
 }
+
+it.each(["ready", "error"])("keeps custom-font printing blocked until glyph loading settles: %s", async outcome => {
+  let finish!: () => void, fail!: (error: Error) => void;
+  fontLoad.mockReset();
+  fontLoad.mockReturnValue(new Promise<void>((resolve, reject) => { finish = resolve; fail = reject; }));
+  const design = createCardTemplate("name");
+  design.common.parts.find(p => p.kind === "text")!.font = "Noto Serif JP";
+  mockApi("staff", [card()], design);
+  const canvas = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+  try {
+    const { container } = renderPage();
+    const print = await screen.findByRole("button", { name: "印刷する" });
+    await waitFor(() => expect(fontLoad).toHaveBeenCalled());
+    expect(print).toBeDisabled();
+    expect(container.querySelector('[data-print-ready="true"]')).toBeNull();
+    if (outcome === "ready") {
+      finish();
+      await waitFor(() => expect(print).toBeEnabled());
+      expect(container.querySelector('[data-print-ready="true"]')).not.toBeNull();
+    } else {
+      fail(new Error("font_unavailable"));
+      await screen.findByText(/画像またはフォントを読み込めない/);
+      expect(print).toBeDisabled();
+      expect(container.querySelector('[data-print-ready="true"]')).toBeNull();
+    }
+  } finally { canvas.mockRestore(); }
+});
 
 function renderPage() {
   const qc = new QueryClient({
