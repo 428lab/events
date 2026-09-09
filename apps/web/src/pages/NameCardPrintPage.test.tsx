@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -302,6 +302,9 @@ describe("名札の印刷: 本人が設定したカードで刷る (#304)", () =
     ]);
     renderPage();
     await waitFor(() => expect(document.querySelector('[data-avatar="1"]')).not.toBeNull());
+    // The async card mount also initializes avatarFailed in a passive effect.
+    // Flush that initialization before simulating a subsequent network error.
+    await act(async () => {});
     const img = document.querySelector('[data-avatar="1"]');
     expect(img).toBeTruthy();
     // 読み込み失敗を通知すると画像が消え、下に描いてあるイニシャルが見える
