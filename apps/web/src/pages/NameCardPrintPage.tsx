@@ -57,6 +57,25 @@ import {
 
 /** 一度に描き足す枚数。100人規模でも入力が固まらないよう小分けにする */
 const RENDER_STEP = 6;
+const CUT_GAP_MM = 2;
+const CUT_MARGIN_X_MM = (SHEET_W_MM - SHEET_COLS * NAME_CARD_W_MM - (SHEET_COLS - 1) * CUT_GAP_MM) / 2;
+const CUT_MARGIN_Y_MM = (SHEET_H_MM - SHEET_ROWS * NAME_CARD_H_MM - (SHEET_ROWS - 1) * CUT_GAP_MM) / 2;
+
+function CuttingGuides() {
+  return <svg data-cut-guide="true" aria-hidden="true" viewBox={`0 0 ${SHEET_W_MM} ${SHEET_H_MM}`}
+    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+    <g stroke="#777777" strokeWidth={0.15} strokeDasharray="0.8 0.6">
+      {Array.from({ length: SHEET_COLS * 2 }, (_, i) => {
+        const x = CUT_MARGIN_X_MM + Math.floor(i / 2) * (NAME_CARD_W_MM + CUT_GAP_MM) + (i % 2) * NAME_CARD_W_MM;
+        return <line key={`x${i}`} x1={x} x2={x} y1={0} y2={SHEET_H_MM} />;
+      })}
+      {Array.from({ length: SHEET_ROWS * 2 }, (_, i) => {
+        const y = CUT_MARGIN_Y_MM + Math.floor(i / 2) * (NAME_CARD_H_MM + CUT_GAP_MM) + (i % 2) * NAME_CARD_H_MM;
+        return <line key={`y${i}`} y1={y} y2={y} x1={0} x2={SHEET_W_MM} />;
+      })}
+    </g>
+  </svg>;
+}
 
 /** 10枚ずつのページに割る（A4 1枚分＝10面） */
 export function toSheets<T>(cards: T[], perSheet = CARDS_PER_SHEET): T[][] {
@@ -195,10 +214,7 @@ const NameCardCell = memo(function NameCardCell({
         qrUrl={`${origin}/users/${card.handle}?ref=card`}
       />}
       </Box>
-      {cutGuides && <svg data-cut-guide="true" aria-hidden="true" viewBox={`0 0 ${NAME_CARD_W_MM} ${NAME_CARD_H_MM}`}
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
-        <rect width={NAME_CARD_W_MM} height={NAME_CARD_H_MM} fill="none" stroke="#777777" strokeWidth={0.15} strokeDasharray="0.8 0.6" />
-      </svg>}
+
     </Box>
   );
 });
@@ -244,17 +260,18 @@ function SheetInner({
       className="name-card-sheet"
       // 面付けの寸法はテーマに左右されない印刷の実寸なので、そのまま style に置く
       style={{
+        position: "relative",
         width: `${SHEET_W_MM}mm`,
         height: `${SHEET_H_MM}mm`,
         boxSizing: "border-box",
         padding: cutGuides
-          ? `${(SHEET_H_MM - SHEET_ROWS * NAME_CARD_H_MM - (SHEET_ROWS - 1) * 2) / 2}mm ${(SHEET_W_MM - SHEET_COLS * NAME_CARD_W_MM - (SHEET_COLS - 1) * 2) / 2}mm`
+          ? `${CUT_MARGIN_Y_MM}mm ${CUT_MARGIN_X_MM}mm`
           : `${SHEET_MARGIN_Y_MM}mm ${SHEET_MARGIN_X_MM}mm`,
         display: "grid",
         gridTemplateColumns: `repeat(${SHEET_COLS}, ${NAME_CARD_W_MM}mm)`,
         gridAutoRows: `${NAME_CARD_H_MM}mm`,
         // 切り離しやすいようカードどうしを少しあける（余白は定数側で調整済み）
-        gap: `${cutGuides ? 2 : NAME_CARD_GAP_MM}mm`,
+        gap: `${cutGuides ? CUT_GAP_MM : NAME_CARD_GAP_MM}mm`,
         background: "#fff",
         marginLeft: "auto",
         marginRight: "auto",
@@ -278,6 +295,7 @@ function SheetInner({
           />
         );
       })}
+      {cutGuides && <CuttingGuides />}
     </Box>
   );
 }
