@@ -195,6 +195,13 @@ describe("イベントデザインの印刷 (#506)", () => {
     const guides = screen.getByRole("checkbox", { name: "裁断ガイドと白余白を付ける" });
     fireEvent.click(guides);
     expect(container.querySelectorAll('[data-cut-guide]')).toHaveLength(1);
+    const lines = [...container.querySelectorAll('[data-cut-guide] line')];
+    expect(lines).toHaveLength(14);
+    expect(lines.slice(0, 4).map(line => [line.getAttribute('x1'), line.getAttribute('x2'), line.getAttribute('y1'), line.getAttribute('y2')]))
+      .toEqual(['13', '104', '106', '197'].map(x => [x, x, '0', '297']));
+    expect(lines.slice(4).map(line => [line.getAttribute('y1'), line.getAttribute('y2'), line.getAttribute('x1'), line.getAttribute('x2')]))
+      .toEqual(['7', '62', '64', '119', '121', '176', '178', '233', '235', '290'].map(y => [y, y, '0', '210']));
+    expect(container.querySelector('.name-card-cell [data-cut-guide]')).toBeNull();
     expect(sheet.style.gap).toBe("2mm");
     expect(sheet.style.padding).toBe("7mm 13mm");
     const cell = container.querySelector<HTMLElement>(".name-card-cell")!;
