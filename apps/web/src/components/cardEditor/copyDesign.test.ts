@@ -9,6 +9,7 @@ const targetId = "22222222-2222-4222-8222-222222222222";
 function source() {
   const design = createCardTemplate("name");
   design.common.background.assetId = "one";
+  design.common.parts.find(p => p.kind === "text")!.font = "Reggae One";
   design.slots = [{ slotId: "old-slot", rule: { parts: [], hiddenIds: [], background: { ...design.common.background, assetId: "two" } } }];
   vi.spyOn(api, "get").mockResolvedValueOnce({ event: { id: sourceId } })
     .mockResolvedValueOnce({ revision: 1, design }).mockResolvedValueOnce({ slots: [{ id: "old-slot", name: "General" }] });
@@ -25,6 +26,7 @@ describe("copying reusable event designs (#506)", () => {
     expect(result.design.slots[0].slotId).toBe("new-slot");
     expect(result.design.slots[0].rule.background?.assetId).toBe("new-two");
     expect(original.common.background.assetId).toBe("one");
+    expect(result.design.common.parts).toEqual(original.common.parts);
     expect(post).toHaveBeenCalledWith(`/events/${targetId}/name-card-assets/copy`, { sourceEventId: sourceId, assetId: "one" });
   });
   it("cleans up already-copied files if a later copy fails", async () => {

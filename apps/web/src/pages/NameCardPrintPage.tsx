@@ -372,7 +372,7 @@ export function NameCardPrintPage() {
 
         <Button component={RouterLink} to={`/events/${id}/name-cards/design`}>{t("staffOps.cardEditorOpen")}</Button>
         {eventDesign.isError && <Alert severity="error">{t("staffOps.cardEditorLoadFailed")}</Alert>}
-        {imageError && <Alert severity="error">{t("staffOps.cardEditorImageFailed")}</Alert>}
+        {imageError && <Alert severity="error">{t("staffOps.cardEditorResourcesFailed")}</Alert>}
         {smallText && <Alert severity="warning">{t("staffOps.cardEditorSmallText")}</Alert>}
         {!resourcesReady && !imageError && <Alert severity="info">{t("staffOps.cardEditorImageLoading")}</Alert>}
         {(isLoading || eventDesign.isLoading) && <CircularProgress size={24} />}
