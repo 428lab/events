@@ -357,7 +357,7 @@ export function SchedulePanel({
     if (!visible && !isStaff) return null;
   }
 
-  const collapsible = finalized && isStaff && !visible;
+  const collapsible = finalized;
   return (
     <Card variant="outlined">
       <CardContent component={collapsible ? "details" : "div"} key={eventId}
