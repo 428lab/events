@@ -38,10 +38,18 @@ describe("private finalized schedule results", () => {
     fireEvent.click(container.querySelector("summary")!);
     expect(details.open).toBe(false);
   });
-  it.each([{ visible: true }, { finalized: false }])("keeps public or active polls expanded: %o", overrides => {
-    const { container } = setup(overrides);
+  it.each([{ isStaff: true }, { isStaff: false }])("collapses public finalized results for either role: %o", overrides => {
+    const { container } = setup({ ...overrides, visible: true });
+    const details = container.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(screen.getByText("日程調整の結果")).toBeVisible();
+    fireEvent.click(container.querySelector("summary")!);
+    expect(details.open).toBe(true);
+  });
+  it("keeps active polls expanded", () => {
+    const { container } = setup({ finalized: false });
     expect(container.querySelector("details")).toBeNull();
-    expect(screen.getByText(overrides.finalized === false ? "日程調整" : "日程調整の結果")).toBeVisible();
+    expect(screen.getByText("日程調整")).toBeVisible();
   });
   it("still hides private results from participants", () => {
     const { container } = setup({ isStaff: false });
