@@ -1,4 +1,4 @@
-import { one, run } from "../client.js";
+import { one, run, runCount } from "../client.js";
 import { ACTIVE } from "./users.js";
 
 /** 自前保管したアイコン (#312/#313) とプロフィールカードPNG (#193) の**メタ情報**。
@@ -11,21 +11,24 @@ export const userAvatarsRepo = {
    * 退会申請中 (#250) は null＝配信しない（他の参照系と同じ扱い） */
   async findAvatarImage(userId: string): Promise<{
     updatedAt: number;
+    uploadedKey: string | null;
     mime: string | null;
     hash: string | null;
   } | null> {
     const row = await one<{
       avatar_image_updated_at: number | null;
+      avatar_uploaded_key: string | null;
       avatar_image_mime: string | null;
       avatar_image_hash: string | null;
     }>(
-      `SELECT avatar_image_updated_at, avatar_image_mime, avatar_image_hash
+      `SELECT avatar_image_updated_at, avatar_uploaded_key, avatar_image_mime, avatar_image_hash
        FROM user WHERE id = ? AND ${ACTIVE}`,
       userId,
     );
     if (!row?.avatar_image_updated_at) return null;
     return {
       updatedAt: row.avatar_image_updated_at,
+      uploadedKey: row.avatar_uploaded_key,
       mime: row.avatar_image_mime,
       hash: row.avatar_image_hash,
     };
@@ -37,6 +40,7 @@ export const userAvatarsRepo = {
    * 表す null を返すのに対し、こちらは画像が無くても行の状態が要るため */
   async findAvatarSyncState(userId: string): Promise<{
     updatedAt: number | null;
+    uploadedKey: string | null;
     mime: string | null;
     hash: string | null;
     sourceUrl: string | null;
@@ -48,9 +52,10 @@ export const userAvatarsRepo = {
       avatar_image_hash: string | null;
       avatar_source_url: string | null;
       avatar_sync_attempted_at: number | null;
+      avatar_uploaded_key: string | null;
     }>(
       `SELECT avatar_image_updated_at, avatar_image_mime, avatar_image_hash,
-              avatar_source_url, avatar_sync_attempted_at
+              avatar_source_url, avatar_sync_attempted_at, avatar_uploaded_key
        FROM user WHERE id = ? AND ${ACTIVE}`,
       userId,
     );
@@ -59,6 +64,7 @@ export const userAvatarsRepo = {
       updatedAt: row.avatar_image_updated_at,
       mime: row.avatar_image_mime,
       hash: row.avatar_image_hash,
+      uploadedKey: row.avatar_uploaded_key,
       sourceUrl: row.avatar_source_url,
       attemptedAt: row.avatar_sync_attempted_at,
     };
@@ -69,7 +75,7 @@ export const userAvatarsRepo = {
    * 「毎回同じ画像を返すURL」でも外向き fetch ごと抑止できる */
   async touchAvatarSyncAttempt(userId: string, at: number): Promise<void> {
     await run(
-      "UPDATE user SET avatar_sync_attempted_at = ? WHERE id = ?",
+      "UPDATE user SET avatar_sync_attempted_at = ? WHERE id = ? AND avatar_uploaded_key IS NULL",
       at,
       userId,
     );
@@ -81,7 +87,7 @@ export const userAvatarsRepo = {
    * 切り戻し用に控えているURLが既に404のものになるのは避けたい */
   async setAvatarSourceUrl(userId: string, sourceUrl: string): Promise<void> {
     await run(
-      "UPDATE user SET avatar_source_url = ? WHERE id = ?",
+      "UPDATE user SET avatar_source_url = ? WHERE id = ? AND avatar_uploaded_key IS NULL",
       sourceUrl,
       userId,
     );
@@ -104,7 +110,7 @@ export const userAvatarsRepo = {
     await run(
       `UPDATE user SET avatar_url = ?, avatar_image_updated_at = ?,
          avatar_image_mime = ?, avatar_image_hash = ?, avatar_source_url = ?
-       WHERE id = ?`,
+       WHERE id = ? AND avatar_uploaded_key IS NULL AND ${ACTIVE}`,
       avatarUrl,
       updatedAt,
       mime,
@@ -112,6 +118,14 @@ export const userAvatarsRepo = {
       sourceUrl,
       userId,
     );
+  },
+
+  async setUploadedAvatar(userId: string, previousKey: string | null, previousAt: number | null,
+    key: string, url: string, at: number, hash: string, mime: string): Promise<boolean> {
+    return (await runCount(`UPDATE user SET avatar_uploaded_key = ?, avatar_url = ?,
+      avatar_image_updated_at = ?, avatar_image_mime = ?, avatar_image_hash = ?
+      WHERE id = ? AND ${ACTIVE} AND avatar_uploaded_key IS ? AND avatar_image_updated_at IS ?`,
+      key, url, at, mime, hash, userId, previousKey, previousAt)) === 1;
   },
 
   /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻と選択中の組み合わせを記録 (#193, #201) */

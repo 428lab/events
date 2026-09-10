@@ -4,8 +4,7 @@ import { accountDeletionRepo } from "../db/repositories/accountDeletion.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { identitiesRepo } from "../db/repositories/identities.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
-import { avatarKey } from "../lib/avatarStore.js";
-import { getBucket } from "../runtime.js";
+import { deleteUserAvatarObjects } from "../lib/avatarUploadStorage.js";
 import { currentUser, issueSession } from "./session.js";
 
 /** 連携の引き取り (#238)。相手が「唯一の連携 かつ 利用実績なし」の空アカウント
@@ -31,7 +30,7 @@ export async function takeoverEmptyAccount(
   // 自前保管したアイコン (#312) の実体も消す。行が消えるとキーを辿れなくなり、
   // R2 に孤児が残り続ける（退会の完全削除 purgeDeleted.ts と同じ後始末）
   try {
-    await getBucket().delete(avatarKey(existingUserId));
+    await deleteUserAvatarObjects(existingUserId);
   } catch (e) {
     console.warn(`[avatar] 引き取り時の削除に失敗 user=${existingUserId}`, e);
   }

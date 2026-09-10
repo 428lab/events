@@ -22,6 +22,7 @@ import {
   useMe,
   useUnlinkIdentity,
 } from "../api/hooks.js";
+import { AvatarUploadCard } from "../components/AvatarUploadCard.js";
 import { UsernameCard } from "../components/UsernameCard.js";
 import { NotificationPrefsCard } from "../components/NotificationPrefsCard.js";
 import { LanguageCard } from "../components/LanguageCard.js";
@@ -120,6 +121,8 @@ export function AccountPage() {
       </Typography>
 
       <UsernameCard />
+
+      <AvatarUploadCard />
 
       <LanguageCard />
 
