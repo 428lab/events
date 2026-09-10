@@ -1,6 +1,7 @@
 import { env, createExecutionContext, waitOnExecutionContext, fetchMock } from "cloudflare:test";
 import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import { avatarWebp } from "./fixtures/avatarWebp.js";
+import { pngAvatar, jpegAvatar } from "./fixtures/avatarFallback.js";
 import { userAvatarsRepo } from "../src/db/repositories/userAvatars.js";
 import { avatarKey, syncAvatarFromSource } from "../src/lib/avatarStore.js";
 import { uploadedAvatarKeys } from "../src/lib/avatarUploadStorage.js";
@@ -52,6 +53,16 @@ describe("personal WebP avatar upload (#511)", () => {
     const purge = await hit("/api/cron/purge-deleted", { method: "POST", headers: { "x-cron-key": "test-cron-secret" } });
     expect(purge.status).toBe(200); await purge.arrayBuffer();
     expect(await uploadedAvatarKeys(id)).toEqual([]);
+  });
+  it.each([["image/png", pngAvatar], ["image/jpeg", jpegAvatar]] as const)("stores and serves fallback bytes and MIME: %s", async (mime, bytes) => {
+    const { id, cookie } = await login();
+    const result = await upload(cookie, bytes, mime);
+    expect(result.status).toBe(200);
+    const { avatarUrl } = await result.json() as { avatarUrl: string };
+    const response = await hit(avatarUrl);
+    expect(response.headers.get("content-type")).toBe(mime);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
+    expect((await userAvatarsRepo.findAvatarSyncState(id))?.mime).toBe(mime);
   });
   it("keeps the previous image and cleans the candidate when the DB save fails", async () => {
     const { id, cookie } = await login();

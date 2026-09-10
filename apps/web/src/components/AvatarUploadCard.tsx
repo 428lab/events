@@ -36,10 +36,9 @@ export function AvatarUploadCard() {
     if (!src || !area || busy) return;
     setBusy(true); setError(false);
     try {
-      const blob = await cropToImage(src, area, 512, 512, 1024 * 1024);
-      // Canvas can silently fall back to PNG on browsers without WebP encoding.
-      if (blob.type !== "image/webp" || blob.size > 1024 * 1024) throw new Error("webp_required");
-      const response = await fetch("/api/me/avatar", { method: "PUT", credentials: "include", headers: { "Content-Type": "image/webp" }, body: blob });
+      const blob = await cropToImage(src, area, 512, 512, 1024 * 1024, true);
+      if (!["image/webp", "image/png", "image/jpeg"].includes(blob.type) || blob.size > 1024 * 1024) throw new Error("invalid_encoded_image");
+      const response = await fetch("/api/me/avatar", { method: "PUT", credentials: "include", headers: { "Content-Type": blob.type }, body: blob });
       if (!response.ok) throw new Error("avatar_upload_failed");
       const result = await response.json() as { avatarUrl: string };
       await qc.cancelQueries({ queryKey: ["me"] });
