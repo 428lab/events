@@ -27,6 +27,7 @@ export async function cropToImage(
   outW: number,
   outH: number,
   maxBytes: number,
+  smallestFallback = false,
 ): Promise<Blob> {
   const image = await loadImage(imageSrc);
   const canvas = document.createElement("canvas");
@@ -48,6 +49,26 @@ export async function cropToImage(
 
   let quality = 0.9;
   let blob = await toBlob(quality);
+  if (smallestFallback && blob.type !== "image/webp") {
+    const encode = (target: HTMLCanvasElement, mime: string, q = 0.9): Promise<Blob> =>
+      new Promise((resolve, reject) => target.toBlob(b => b && b.type === mime
+        ? resolve(b) : reject(new Error("image encoding failed")), mime, q));
+    const png = await encode(canvas, "image/png");
+    // JPEG has no alpha channel: composite transparent pixels onto white explicitly.
+    const opaque = document.createElement("canvas");
+    opaque.width = outW; opaque.height = outH;
+    const opaqueCtx = opaque.getContext("2d");
+    if (!opaqueCtx) throw new Error("canvas context unavailable");
+    opaqueCtx.fillStyle = "#ffffff";
+    opaqueCtx.fillRect(0, 0, outW, outH);
+    opaqueCtx.drawImage(canvas, 0, 0);
+    let jpeg = await encode(opaque, "image/jpeg", quality);
+    while (jpeg.size > maxBytes && quality > 0.3) {
+      quality -= 0.1;
+      jpeg = await encode(opaque, "image/jpeg", quality);
+    }
+    return png.size <= jpeg.size ? png : jpeg;
+  }
   while (blob.size > maxBytes && quality > 0.3) {
     quality -= 0.1;
     blob = await toBlob(quality);

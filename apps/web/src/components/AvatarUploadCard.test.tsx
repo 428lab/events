@@ -39,15 +39,16 @@ it("keeps the crop and old avatar on failure, then saves WebP and updates the ne
   await screen.findByText("アイコンを保存しました。");
   expect(qc.getQueryData(["me"])).toEqual({ user: { id: "self", avatarUrl: "/new.webp" }, isAdmin: true });
   expect(fetcher.mock.calls[1][1]).toMatchObject({ method: "PUT", headers: { "Content-Type": "image/webp" } });
-  expect(cropToImage).toHaveBeenCalledWith("blob:avatar", expect.any(Object), 512, 512, 1024 * 1024);
+  expect(cropToImage).toHaveBeenCalledWith("blob:avatar", expect.any(Object), 512, 512, 1024 * 1024, true);
 });
-it("does not upload a browser PNG fallback", async () => {
-  vi.mocked(cropToImage).mockResolvedValue(new Blob(["fallback"], { type: "image/png" }));
-  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+it.each(["image/png", "image/jpeg"])("uploads the selected fallback with its actual MIME: %s", async mime => {
+  vi.mocked(cropToImage).mockResolvedValue(new Blob(["fallback"], { type: mime }));
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ avatarUrl: "/new" })));
+  vi.stubGlobal("fetch", fetcher);
   const { container } = setup(); await choose(container);
   fireEvent.click(screen.getByRole("button", { name: "保存" }));
-  await waitFor(() => expect(screen.getByRole("alert")).toBeVisible());
-  expect(fetcher).not.toHaveBeenCalled();
+  await screen.findByText("アイコンを保存しました。");
+  expect(fetcher.mock.calls[0][1].headers["Content-Type"]).toBe(mime);
 });
 it("rejects unsupported input before decoding", async () => {
   const { container } = setup();

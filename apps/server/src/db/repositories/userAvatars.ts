@@ -121,11 +121,11 @@ export const userAvatarsRepo = {
   },
 
   async setUploadedAvatar(userId: string, previousKey: string | null, previousAt: number | null,
-    key: string, url: string, at: number, hash: string): Promise<boolean> {
+    key: string, url: string, at: number, hash: string, mime: string): Promise<boolean> {
     return (await runCount(`UPDATE user SET avatar_uploaded_key = ?, avatar_url = ?,
-      avatar_image_updated_at = ?, avatar_image_mime = 'image/webp', avatar_image_hash = ?
+      avatar_image_updated_at = ?, avatar_image_mime = ?, avatar_image_hash = ?
       WHERE id = ? AND ${ACTIVE} AND avatar_uploaded_key IS ? AND avatar_image_updated_at IS ?`,
-      key, url, at, hash, userId, previousKey, previousAt)) === 1;
+      key, url, at, mime, hash, userId, previousKey, previousAt)) === 1;
   },
 
   /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻と選択中の組み合わせを記録 (#193, #201) */

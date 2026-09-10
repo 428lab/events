@@ -16,10 +16,10 @@
  */
 const ja = {
   avatarTitle: "プロフィールアイコン",
-  avatarHelp: "PNG・JPEG・WebP（5MBまで）を選択できます。正方形に切り抜き、512×512のWebPで保存します。ログインし直しても連携先のアイコンで上書きされません。",
+  avatarHelp: "PNG・JPEG・WebP（5MBまで）を選択できます。正方形（512×512）に切り抜き、WebPで保存します。WebP変換に非対応の場合はPNGとJPEGの小さい方を保存します（JPEGの透明部分は白になります）。ログインし直しても連携先のアイコンで上書きされません。",
   avatarChoose: "画像を選ぶ",
   avatarPreviewHelp: "この正方形の範囲を保存します。プロフィールや参加者一覧などに公開表示されます。",
-  avatarError: "画像を読み込めないか、保存できませんでした。形式・サイズを確認して再試行してください。保存形式はWebPのみ対応しています。",
+  avatarError: "画像を読み込めないか、保存できませんでした。形式・サイズを確認して再試行してください。",
   avatarSaved: "アイコンを保存しました。",
   languageTitle: "表示言語",
   languageDescription:
@@ -154,10 +154,10 @@ const ja = {
 
 const en: Record<keyof typeof ja, string> = {
   avatarTitle: "Profile picture",
-  avatarHelp: "Choose a PNG, JPEG or WebP (up to 5 MB). Crop to a square and save as a 512 × 512 WebP. Signing in again will not replace it with your linked account picture.",
+  avatarHelp: "Choose a PNG, JPEG or WebP (up to 5 MB). Crop to 512 × 512 and save as WebP. If WebP encoding is unavailable, the smaller PNG or JPEG is saved (transparency becomes white in JPEG). Signing in again will not replace it with your linked account picture.",
   avatarChoose: "Choose image",
   avatarPreviewHelp: "This square will be saved and displayed publicly on your profile and participant lists.",
-  avatarError: "Could not read or save the image. Check its format and size, then retry. WebP encoding is required.",
+  avatarError: "Could not read or save the image. Check its format and size, then retry.",
   avatarSaved: "Profile picture saved.",
   languageTitle: "Display language",
   languageDescription:
