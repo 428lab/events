@@ -12,6 +12,7 @@ import {
   photoObjectKeys,
 } from "./mediaCleanup.js";
 import { avatarKey } from "./avatarStore.js";
+import { uploadedAvatarKeys } from "./avatarUploadStorage.js";
 
 /** 退会猶予期間 (#250) を過ぎたアカウントの完全削除。
  * GitHub Actions の定時実行から POST /api/cron/purge-deleted 経由で呼ばれる
@@ -44,9 +45,9 @@ const SUBREQUEST_BUDGET = 40;
  * ＋ deleteAccount 内のスタッフチャット列挙 (#382) 1
  *   （部屋があれば +1/部屋。実消費は deleteAccount の戻り値で budget に積む）
  * ＋ recordAudit 2（INSERT と保存期間の掃除）
- * ＝ 11。R2 に実体があれば delete でさらに 1 以上増えるので 12 で見積もる。
+ * ＝ 11。アップロードアイコンの list 1 と R2 delete 1 を加え、13で見積もる。
  * 次の1件がこれ以下の余裕しか無ければ打ち切る */
-const MIN_COST_PER_USER = 12;
+const MIN_COST_PER_USER = 13; // includes at least one uploaded-avatar R2 list
 
 /** 1回の実行で見に行く候補の最大数。実際には予算のほうが先に効くが、
  * listPurgeTargets が無制限に行を読まないための保険 */
@@ -81,7 +82,7 @@ async function collectUserObjects(
   for (const p of photos) keys.push(...photoObjectKeys(p));
   // 自前保管のアイコン (#312) は 1ユーザー1キー固定なので list は要らない。
   // 保管していなければ存在しないキーを消すだけ（削除は下でまとめて投げるので費用ゼロ）
-  keys.push(avatarKey(userId));
+  keys.push(avatarKey(userId), ...await uploadedAvatarKeys(userId, () => { budget.spent += 1; }));
   // 完全削除では「参加者のいない下書きイベント」の行も消える (#244) ので、
   // そのイベントの持ち物（表紙画像・写真・動画・景品画像）も一緒に消さないと
   // #424 が塞いだはずの孤児がここから出る。

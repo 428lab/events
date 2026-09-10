@@ -65,7 +65,7 @@ export async function getUserAvatarImage(c: Context) {
       headers: { ETag: etag, "Cache-Control": cacheControl },
     });
   }
-  const obj = await getBucket().get(avatarKey(userId));
+  const obj = await getBucket().get(meta.uploadedKey ?? avatarKey(userId));
   if (!obj) return c.json({ error: "not_found" }, 404);
   const res = new Response(obj.body as unknown as ReadableStream, {
     headers: {

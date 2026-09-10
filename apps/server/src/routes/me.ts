@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import { env, getBucket } from "../runtime.js";
-import { avatarKey } from "../lib/avatarStore.js";
+import { env } from "../runtime.js";
+import { deleteUserAvatarObjects } from "../lib/avatarUploadStorage.js";
+import { putMyAvatar } from "./avatarUpload.js";
 import type { Context } from "hono";
 import {
   deleteAccountInput,
@@ -125,6 +126,7 @@ meRoutes.get("/events", async (c) => {
 
 /** プロフィールカードPNGのアップロード（OG画像用キャッシュ） (#193) */
 meRoutes.put("/card-image", putMyCardImage);
+meRoutes.put("/avatar", putMyAvatar);
 
 /** ユーザー名（プロフィールURLのハンドル）を変更。他ユーザーと被る場合は 409 */
 meRoutes.put(
@@ -175,7 +177,7 @@ meRoutes.post("/merge", zValidator("json", mergeAccountInput), async (c) => {
   // 負け側が自前保管していたアイコン (#312) の実体を消す。勝ち側は自分のものを
   // 引き続き使うので移し替えは不要。行が消えたあとはキーを辿れず孤児になる
   try {
-    await getBucket().delete(avatarKey(loserId));
+    await deleteUserAvatarObjects(loserId);
   } catch (e) {
     console.warn(`[avatar] 統合時の削除に失敗 user=${loserId}`, e);
   }
