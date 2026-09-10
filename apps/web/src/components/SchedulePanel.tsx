@@ -22,6 +22,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import CheckIcon from "@mui/icons-material/Check";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import StarIcon from "@mui/icons-material/Star";
@@ -356,16 +357,24 @@ export function SchedulePanel({
     if (!visible && !isStaff) return null;
   }
 
+  const collapsible = finalized && isStaff && !visible;
   return (
     <Card variant="outlined">
-      <CardContent>
+      <CardContent component={collapsible ? "details" : "div"} key={eventId}
+        sx={collapsible ? {
+          "& > summary": { cursor: "pointer", listStyle: "none", "&::-webkit-details-marker": { display: "none" } },
+          "&[open] > summary": { mb: 2 },
+          "&[open] > summary .schedule-expand-icon": { transform: "rotate(180deg)" },
+        } : undefined}>
         <Typography
+          component={collapsible ? "summary" : "h6"}
           variant="h6"
-          gutterBottom
+          gutterBottom={!collapsible}
           sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
         >
           <CalendarMonthIcon fontSize="small" />
           {finalized ? t("schedule.pollResultTitle") : t("schedule.pollTitle")}
+          {collapsible && <ExpandMoreIcon className="schedule-expand-icon" sx={{ ml: "auto" }} />}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {finalized ? t("schedule.pollFinalizedLead") : t("schedule.pollLead")}
