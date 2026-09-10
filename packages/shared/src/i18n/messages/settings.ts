@@ -15,6 +15,12 @@
  * 落ちる。
  */
 const ja = {
+  avatarTitle: "プロフィールアイコン",
+  avatarHelp: "PNG・JPEG・WebP（5MBまで）を選択できます。正方形に切り抜き、512×512のWebPで保存します。ログインし直しても連携先のアイコンで上書きされません。",
+  avatarChoose: "画像を選ぶ",
+  avatarPreviewHelp: "この正方形の範囲を保存します。プロフィールや参加者一覧などに公開表示されます。",
+  avatarError: "画像を読み込めないか、保存できませんでした。形式・サイズを確認して再試行してください。保存形式はWebPのみ対応しています。",
+  avatarSaved: "アイコンを保存しました。",
   languageTitle: "表示言語",
   languageDescription:
     "画面の表示言語を選べます。選んだ言語はこの端末にだけ残り、ほかの端末には影響しません。",
@@ -147,6 +153,12 @@ const ja = {
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
+  avatarTitle: "Profile picture",
+  avatarHelp: "Choose a PNG, JPEG or WebP (up to 5 MB). Crop to a square and save as a 512 × 512 WebP. Signing in again will not replace it with your linked account picture.",
+  avatarChoose: "Choose image",
+  avatarPreviewHelp: "This square will be saved and displayed publicly on your profile and participant lists.",
+  avatarError: "Could not read or save the image. Check its format and size, then retry. WebP encoding is required.",
+  avatarSaved: "Profile picture saved.",
   languageTitle: "Display language",
   languageDescription:
     "Choose the language of the interface. Your choice stays on this device only and does not affect your other devices.",

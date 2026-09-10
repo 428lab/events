@@ -205,6 +205,7 @@ export async function syncAvatarFromSource(
     // 現在の状態は最初に1回だけ引く（スロットル判定・ハッシュ比較・取得元URLの
     // 比較で共用）
     const state = await userAvatarsRepo.findAvatarSyncState(userId);
+    if (!state || state.uploadedKey) return false;
     const minInterval = opts.minIntervalMs ?? 0;
     if (minInterval > 0) {
       const now = Date.now();
