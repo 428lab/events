@@ -14,7 +14,10 @@ import type { AppEnv } from "../types.js";
 import { requireEventRole } from "../auth/roles.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { schedulingRepo } from "../db/repositories/scheduling.js";
-import { notificationsRepo } from "../db/repositories/notifications.js";
+import { scheduleRegistrationRepo } from "../db/repositories/scheduleRegistration.js";
+import { many } from "../db/client.js";
+import { deferBackground } from "../runtime.js";
+import { sendNotificationEmailIfOptedIn } from "../lib/email.js";
 import { formatDateRangeJa } from "../lib/dateFormat.js";
 import { checkRegistrationDeadline } from "../lib/registrationDeadline.js";
 
@@ -90,7 +93,11 @@ eventDateOptionRoutes.put(
   },
 );
 
-/** 日程を確定（staff）。候補の日時をイベント開催日時に設定し調整完了 */
+eventDateOptionRoutes.get("/:id/schedule-registration", requireEventRole(["staff"]), async c => {
+  return c.json({ results: await scheduleRegistrationRepo.results(c.req.param("id")) });
+});
+
+/** 日程と参加登録とアプリ通知を同じトランザクションで確定 */
 eventDateOptionRoutes.post(
   "/:id/finalize-date",
   requireEventRole(["staff"]),
@@ -113,26 +120,23 @@ eventDateOptionRoutes.post(
       startsAt: opt.startsAt,
     });
     if (violation) return c.json({ error: violation }, 400);
-    const event = await eventsRepo.finalizeDate(
-      eventId,
-      opt.startsAt,
-      opt.endsAt,
-    );
-    // 日程調整の回答者へ確定を通知（確定操作をした本人は除く）
-    if (event) {
-      const me = c.get("user").id;
-      const when = formatDateRangeJa(opt.startsAt, opt.endsAt);
-      for (const userId of await schedulingRepo.listVoterIds(eventId)) {
-        if (userId === me) continue;
-        await notificationsRepo.create(
-          userId,
-          "schedule_finalized",
-          "日程が確定しました",
-          `「${event.title}」の開催日時が ${when} に決定しました`,
-          `/events/${eventId}`,
-        );
-      }
+    const optionId = valid<FinalizeDateInput>(c, "json").optionId;
+    const changed = await scheduleRegistrationRepo.finalize(eventId, optionId, c.get("user").id,
+      `「${current.title}」の開催日時が ${formatDateRangeJa(opt.startsAt, opt.endsAt)} に決定しました`);
+    const event = await eventsRepo.findById(eventId);
+    if (!changed && (event?.scheduling || (await scheduleRegistrationRepo.receipt(eventId))?.option_id !== optionId)) {
+      return c.json({ error: "schedule_finalized" }, 409);
     }
-    return c.json({ event });
+    // App notifications are already committed. Email is best-effort, bounded
+    // like the existing bulk notifier, and never re-sent by a finalize retry.
+    if (changed) await deferBackground((async () => {
+      const notices = await many<{ user_id: string; title: string; body: string; link: string }>(
+        `SELECT n.user_id,n.title,n.body,n.link FROM notification n
+         JOIN event_schedule_finalization f ON f.created_at=n.created_at
+         WHERE f.event_id=? AND n.link=? AND n.type='schedule_finalized' ORDER BY n.id LIMIT 50`,
+        eventId, `/events/${eventId}`);
+      for (const n of notices) await sendNotificationEmailIfOptedIn(n.user_id,n.title,n.body,n.link);
+    })().catch(() => console.error("schedule finalization email delivery failed")));
+    return c.json({ event, results: await scheduleRegistrationRepo.results(eventId) });
   },
 );
