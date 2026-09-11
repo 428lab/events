@@ -116,7 +116,7 @@ export const eventMembersRepo = {
         `UPDATE event_member
             SET role = ?, slot_id = ?, status = ${statusSql}, attended = 0, attended_at = NULL,
                 canceled_at = NULL, canceled_scheduling = 0, created_at = ?
-          WHERE id = ?`,
+          WHERE id = ? AND status = 'canceled'`,
         role,
         slotId,
         ...statusArgs,
@@ -200,7 +200,7 @@ export const eventMembersRepo = {
       `SELECT m.id, m.user_id FROM event_member m
          JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
         WHERE m.slot_id = ? AND m.status = ? AND m.role = 'participant'
-        ORDER BY m.created_at ASC`,
+        ORDER BY m.created_at ASC, m.rowid ASC`,
       slotId,
       status,
     );

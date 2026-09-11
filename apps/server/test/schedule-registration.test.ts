@@ -1,7 +1,117 @@
 import { SELF, env } from "cloudflare:test";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { eventMembersRepo } from "../src/db/repositories/eventMembers.js";
+import { bindEnv } from "../src/runtime.js";
 const base = "https://example.com";
 const day = 86400000;
+
+it("two canceled-row reads cannot demote a concurrent successful rejoin", async () => {
+  const s = await setup(),
+    a = await user(),
+    slot = crypto.randomUUID();
+  bindEnv(env as never);
+  await sql(
+    "INSERT INTO participation_slot(id,event_id,name,capacity,created_at) VALUES(?,?,'一般',1,?)",
+    slot,
+    s.eventId,
+    Date.now(),
+  );
+  await sql(
+    "INSERT INTO event_member(id,event_id,user_id,role,status,created_at) VALUES(?,?,?,'participant','canceled',?)",
+    crypto.randomUUID(),
+    s.eventId,
+    a.id,
+    Date.now(),
+  );
+  const stale = await eventMembersRepo.findIncludingCanceled(s.eventId, a.id);
+  let release!: () => void;
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reads = 0;
+  const staleRead = async () => {
+    if (++reads === 2) release();
+    await barrier;
+    return stale;
+  };
+  const spy = vi
+    .spyOn(eventMembersRepo, "findIncludingCanceled")
+    .mockImplementationOnce(staleRead)
+    .mockImplementationOnce(staleRead);
+  try {
+    const rows = await Promise.all([
+      eventMembersRepo.add(
+        s.eventId,
+        a.id,
+        "participant",
+        slot,
+        "confirmed",
+        true,
+      ),
+      eventMembersRepo.add(
+        s.eventId,
+        a.id,
+        "participant",
+        slot,
+        "confirmed",
+        true,
+      ),
+    ]);
+    expect(rows.map((r) => r.status)).toEqual(["confirmed", "confirmed"]);
+    expect((await members(s.eventId))[0].status).toBe("confirmed");
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+it("promotes existing waiters before the response-ordered automatic cohort", async () => {
+  const s = await setup(),
+    old = await user(),
+    slot = crypto.randomUUID();
+  // Deliberately reverse PK order: an unordered receipt scan must not
+  // accidentally satisfy the expected response order.
+  const [late, second, first] = [await user(), await user(), await user()].sort((a,b) => a.id.localeCompare(b.id));
+  bindEnv(env as never);
+  await sql(
+    "INSERT INTO participation_slot(id,event_id,name,capacity,created_at) VALUES(?,?,'一般',1,?)",
+    slot,
+    s.eventId,
+    Date.now(),
+  );
+  await sql(
+    "INSERT INTO event_member(id,event_id,user_id,role,status,slot_id,created_at) VALUES(?,?,?,'participant','waitlist',?,?)",
+    crypto.randomUUID(),
+    s.eventId,
+    old.id,
+    slot,
+    Date.now() - 1000,
+  );
+  for (const [u, time] of [
+    [late, 30],
+    [first, 10],
+    [second, 20],
+  ] as const) {
+    await vote(s.eventId, s.optionId, u);
+    await sql(
+      "UPDATE event_date_vote SET created_at=? WHERE option_id=? AND user_id=?",
+      time,
+      s.optionId,
+      u.id,
+    );
+  }
+  expect((await finish(s)).status).toBe(200);
+  expect(
+    (await eventMembersRepo.membersBySlotStatus(slot, "waitlist")).map(
+      (r) => r.userId,
+    ),
+  ).toEqual([old.id, second.id, late.id]);
+  expect(
+    (await req(`/events/${s.eventId}/join`, first.cookie, "DELETE")).status,
+  ).toBe(200);
+  expect(
+    (await members(s.eventId)).find((r) => r.user_id === old.id)?.status,
+  ).toBe("confirmed");
+});
 const req = (path: string, cookie: string, method = "GET", body?: unknown) =>
   SELF.fetch(base + "/api" + path, {
     method,

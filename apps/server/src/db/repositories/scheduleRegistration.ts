@@ -86,9 +86,13 @@ export const scheduleRegistrationRepo = {
       },
       {
         sql: `INSERT INTO event_member(id,event_id,user_id,role,slot_id,status,created_at)
-          SELECT member_id,event_id,user_id,'participant',slot_id,status,?
-          FROM event_schedule_registration WHERE event_id=? AND outcome='registered' AND ${owned}`,
-        args: [now, eventId, eventId, token],
+          SELECT r.member_id,r.event_id,r.user_id,'participant',r.slot_id,r.status,?
+          FROM event_schedule_registration r JOIN event_date_vote v ON v.user_id=r.user_id AND v.option_id=?
+          WHERE r.event_id=? AND r.outcome='registered' AND ${owned}
+          ORDER BY v.created_at,r.user_id`,
+        // Preserve response order in insertion order. Promotion uses rowid as
+        // the stable tie-break for equal millisecond registration timestamps.
+        args: [now, optionId, eventId, eventId, token],
       },
       {
         sql: `INSERT INTO entry(id,event_id,kind,name,created_at)
