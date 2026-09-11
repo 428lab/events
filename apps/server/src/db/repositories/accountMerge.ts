@@ -45,6 +45,7 @@ export const accountMergeRepo = {
       ["score", "judge_user_id", ["entry_id", "criterion_id"]],
       ["community_member", "user_id", ["community_id"]],
       ["event_date_vote", "user_id", ["option_id"]],
+      ["event_schedule_registration", "user_id", ["event_id"]],
       ["event_request_reaction", "user_id", ["request_id", "kind"]],
       ["venue_admin", "user_id", ["venue_id"]],
       ["event_survey_answer", "user_id", ["question_id"]],

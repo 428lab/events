@@ -98,19 +98,28 @@ export const eventMembersRepo = {
     role: EventRole,
     slotId: string | null = null,
     status = "confirmed",
+    enforceSlotRules = false,
   ): Promise<EventMember> {
+    // A normal join can race automatic registration. Decide capacity/lottery
+    // at the write, not from the route's earlier slot snapshot.
+    const statusSql = enforceSlotRules && slotId && role === "participant"
+      ? `(SELECT CASE WHEN s.selection_type='lottery' THEN 'applied'
+           WHEN (SELECT COUNT(*) FROM event_member WHERE slot_id=s.id AND status='confirmed') < s.capacity
+             THEN 'confirmed' ELSE 'waitlist' END FROM participation_slot s WHERE s.id=? AND s.event_id=?)`
+      : "?";
+    const statusArgs = enforceSlotRules && slotId && role === "participant" ? [slotId,eventId] : [status];
     const existing = await this.findIncludingCanceled(eventId, userId);
     if (existing && existing.status !== "canceled") return existing;
     if (existing) {
       // キャンセル済みの再参加: 行を復活させる（並び順の公平のため参加日時は今）
       await run(
         `UPDATE event_member
-            SET role = ?, slot_id = ?, status = ?, attended = 0, attended_at = NULL,
+            SET role = ?, slot_id = ?, status = ${statusSql}, attended = 0, attended_at = NULL,
                 canceled_at = NULL, canceled_scheduling = 0, created_at = ?
           WHERE id = ?`,
         role,
         slotId,
-        status,
+        ...statusArgs,
         Date.now(),
         existing.id,
       );
@@ -119,13 +128,13 @@ export const eventMembersRepo = {
     const id = crypto.randomUUID();
     await run(
       `INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ${statusSql}, ?) ${enforceSlotRules ? "ON CONFLICT(event_id,user_id) DO NOTHING" : ""}`,
       id,
       eventId,
       userId,
       role,
       slotId,
-      status,
+      ...statusArgs,
       Date.now(),
     );
     return (await this.find(eventId, userId))!;
