@@ -34,6 +34,7 @@ import { useEvent, useMe, useUpdateEvent, useUploadEventImage } from "../api/hoo
 import { generateEventImageBlob } from "../lib/imageTemplates.js";
 import { formatDateRange } from "../lib/format.js";
 import { UserLink } from "./UserLink.js";
+import { ScheduleRegistrationResults } from "./ScheduleRegistrationResults.js";
 import {
   useAddDateOption,
   useDeleteDateOption,
@@ -304,6 +305,7 @@ export function SchedulePanel({
   const [endTime, setEndTime] = useState("21:00");
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [showRegistrationResults, setShowRegistrationResults] = useState(false);
 
   const optionDays = useMemo(() => {
     const s = new Set<string>();
@@ -360,6 +362,9 @@ export function SchedulePanel({
   const collapsible = finalized;
   return (
     <Card variant="outlined">
+      {isStaff && finalized && <Button onClick={() => setShowRegistrationResults(true)} sx={{ m: 1 }}>{t("schedule.autoJoinResults")}</Button>}
+      {isStaff && showRegistrationResults && <ScheduleRegistrationResults eventId={eventId} open onClose={() => setShowRegistrationResults(false)} />}
+      {finalize.isError && <Alert severity="error">{t("schedule.autoJoinFailed")}</Alert>}
       <CardContent component={collapsible ? "details" : "div"} key={eventId}
         sx={collapsible ? {
           "& > summary": { cursor: "pointer", listStyle: "none", "&::-webkit-details-marker": { display: "none" } },
@@ -516,6 +521,7 @@ export function SchedulePanel({
                             return;
                           finalize.mutate(o.id, {
                             onSuccess: async () => {
+                              setShowRegistrationResults(true);
                               // 自動生成画像に「日程調整中」が焼き込まれている場合があるため、
                               // 確定日時入りでの作り直しを提案する
                               const title = eventData?.event.title;

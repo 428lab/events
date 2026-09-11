@@ -92,7 +92,9 @@ eventMemberRoutes.post(
       "participant",
       slotId,
       status,
+      true,
     );
+    status = member.status;
     if (status === "confirmed") {
       await entriesRepo.createIndividual(
         eventId,

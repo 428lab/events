@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { MemberStatus } from "./constants.js";
 import { isDatetimeOrderInvalid } from "./datetimeOrder.js";
 
 export const VOTE_CHOICES = ["yes", "maybe", "no"] as const;
@@ -47,3 +48,12 @@ export type VoteInput = z.infer<typeof voteInput>;
 
 export const finalizeDateInput = z.object({ optionId: z.string() });
 export type FinalizeDateInput = z.infer<typeof finalizeDateInput>;
+
+/** Staff-only snapshot of the last schedule finalization, not current attendance. */
+export interface ScheduleRegistrationResult {
+  userId: string;
+  name: string;
+  outcome: "registered" | "existing" | "action_required";
+  status: MemberStatus | null;
+  reason: "canceled" | "event_ended" | "registration_closed" | "survey_required" | "slot_required" | null;
+}

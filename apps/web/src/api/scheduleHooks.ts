@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AddDateOptionInput,
   ScheduleView,
+  ScheduleRegistrationResult,
   VoteChoice,
 } from "@eventer/shared";
 import { api } from "./client.js";
@@ -50,8 +51,9 @@ export function useFinalizeDate(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (optionId: string) =>
-      api.post(`/events/${id}/finalize-date`, { optionId }),
-    onSuccess: () => {
+      api.post<{ results: ScheduleRegistrationResult[] }>(`/events/${id}/finalize-date`, { optionId }),
+    onSuccess: (data) => {
+      qc.setQueryData(["scheduleRegistration", id], { results: data.results });
       qc.invalidateQueries({ queryKey: ["event", id] });
       qc.invalidateQueries({ queryKey: ["eventSchedule", id] });
     },
