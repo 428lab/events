@@ -52,8 +52,8 @@ const media: EventPhoto[] = [
 beforeEach(() => {
   getMock.mockReset();
   getMock.mockImplementation((url: string) => {
-    if (url === `/events/${EVENT_ID}/photos`) {
-      return Promise.resolve({ photos: media });
+    if (url === `/events/${EVENT_ID}/photos?page=1`) {
+      return Promise.resolve({ photos: media, total: media.length, page: 1, limit: 24 });
     }
     if (typeof url === "string" && url.includes("/comments")) {
       return Promise.resolve({ comments: [] });
