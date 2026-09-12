@@ -444,7 +444,7 @@ function EventPhotosGallery({
             sx={{ mt: 2 }}
           >
             <Button
-              disabled={page <= 1 || isFetching || outOfRange}
+              disabled={page <= 1 || isFetching || (outOfRange && !isError)}
               onClick={() => { setLightbox(null); setPage((p) => p - 1); }}
             >
               {t("eventSocial.photosPrevious")}

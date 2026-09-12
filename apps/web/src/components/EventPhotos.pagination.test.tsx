@@ -140,6 +140,34 @@ describe("EventPhotos pagination", () => {
     expect(next()).toBeDisabled();
   });
 
+  it("allows Previous after a cached out-of-range page refetch fails", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { container, qc } = gallery("staff");
+    await screen.findByText("写真（25）");
+    fireEvent.click(next());
+    await waitFor(() => expect(images(container)).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "写真を削除" }));
+    await screen.findByText("写真（24）");
+    await waitFor(() => expect(images(container)).toHaveLength(24));
+    rows.unshift({ ...media(1)[0], id: "new-upload" });
+    await act(async () => { await qc.invalidateQueries({ queryKey: ["event", "ev", "photos"] }); });
+    await screen.findByText("写真（25）");
+    let reject!: (reason: Error) => void;
+    getMock.mockImplementationOnce(() => new Promise<EventPhotosPage>((_, r) => { reject = r; }));
+    fireEvent.click(next());
+    await screen.findByText("読み込み中…");
+    expect(previous()).toBeDisabled();
+    await act(async () => { reject(new Error("offline")); });
+    await screen.findByText("読み込めませんでした。再読み込みしてください。");
+    expect(previous()).toBeEnabled();
+    expect(next()).toBeDisabled();
+    fireEvent.click(previous());
+    await waitFor(() => expect(images(container)).toHaveLength(24));
+    expect(screen.getByText("1 / 2 ページ（新しい順）")).toBeInTheDocument();
+    expect(screen.queryByText("読み込めませんでした。再読み込みしてください。")).not.toBeInTheDocument();
+    expect(previous()).toBeDisabled();
+  });
+
   it("event switch resets page/lightbox and does not request old IDs in the new event", async () => {
     const view = gallery();
     await screen.findByText("写真（25）");
