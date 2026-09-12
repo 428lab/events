@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
  * - 第1段階: 全本の範囲選択が**先に**終わる（それまでエンコードしない）
  * - 第2段階: 1本ずつ順にエンコード→アップロード
  * - キャンセル系: この本をやめて次へ / すべてキャンセル
- * - 50枠切れで残りを中止し、まとめが出る
+ * - 200枠切れで残りを中止し、まとめが出る
  * WebCodecs は jsdom に無いので probe/encode/poster をモックする。
  */
 
@@ -207,7 +207,7 @@ describe("2段階フロー (#427)", () => {
     expect(FakeXHR.instances.length).toBe(0);
   });
 
-  it("50枠切れ: 1本目で photo_limit が出たら残りを中止し、まとめが出る", async () => {
+  it("200枠切れ: 1本目で photo_limit が出たら残りを中止し、まとめが出る", async () => {
     probeMock.mockImplementation(async () => probedOf(90_000));
     FakeXHR.nextResponses = [
       { status: 409, body: JSON.stringify({ error: "photo_limit" }) },
@@ -216,11 +216,11 @@ describe("2段階フロー (#427)", () => {
     await confirmSelect();
     await confirmSelect();
 
-    // まとめ: 成功0・失敗1（50枠）。2本目は変換すらされない
+    // まとめ: 成功0・失敗1（200枠）。2本目は変換すらされない
     await waitFor(() =>
       expect(screen.getByText(/0 本を投稿しました（1 本は失敗）/)).toBeInTheDocument(),
     );
-    expect(screen.getByText(/50/)).toBeInTheDocument();
+    expect(screen.getByText(/写真は1イベント200枚までです。/)).toBeInTheDocument();
     expect(conversionMock).toHaveBeenCalledTimes(1);
     expect(FakeXHR.instances.length).toBe(1);
     expect(onClose).not.toHaveBeenCalled();
