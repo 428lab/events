@@ -86,7 +86,7 @@ describe("EventPhotos pagination", () => {
     fireEvent.click(screen.getByRole("button", { name: "写真を削除" }));
     await screen.findByText("写真（24）");
     await waitFor(() => expect(images(container)).toHaveLength(24));
-    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("navigation")).not.toBeInTheDocument());
     rows = [];
     await act(async () => { await qc.invalidateQueries({ queryKey: ["event", "ev", "photos"] }); });
     await waitFor(() => expect(images(container)).toHaveLength(0));
