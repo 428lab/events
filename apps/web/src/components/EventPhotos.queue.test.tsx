@@ -83,7 +83,9 @@ const fetchMock = vi.fn<typeof fetch>(async () =>
 beforeEach(() => {
   getMock.mockReset();
   getMock.mockImplementation((url: string) => {
-    if (url === `/events/${EVENT_ID}/photos`) return Promise.resolve({ photos: [] });
+    if (url === `/events/${EVENT_ID}/photos?page=1`) {
+      return Promise.resolve({ photos: [], total: 0, page: 1, limit: 24 });
+    }
     return Promise.reject(new Error(`unexpected ${url}`));
   });
   flowSpy.mockClear();
