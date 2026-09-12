@@ -21,6 +21,7 @@ import {
 import { useCommunities } from "../api/communityHooks.js";
 import { DraftChip, isDraftEvent } from "./DraftChip.js";
 import { Avatar } from "@mui/material";
+import type { ListView } from "../lib/useListView.js";
 
 /** イベントごとに決定的に選ぶ落ち着いた配色（画像なし時のタイトルカード用） */
 const PALETTE = [
@@ -40,18 +41,26 @@ export function eventColor(id: string) {
   return PALETTE[h % PALETTE.length];
 }
 
-/** イベント一覧で共通利用するカード（左サムネ＋右情報、任意でロール/状態チップ）。
- * compact: 2列グリッド用の縦型タイル（上に画像・下に最小限の情報。subtitle/説明は省略）。 */
+/**
+ * イベント一覧で共通利用するカード（任意でロール/状態チップ）。
+ * - list（既定）: 従来の表示。狭い画面では画像が全幅で上に載り、広い画面では左サムネ
+ * - compact: 幅を問わず左サムネ（狭い画面は正方形）＋右情報。1画面に多く入れる (#488)
+ * - grid: 縦型タイル（上に画像・下に最小限の情報。subtitle/説明は省略）
+ */
 export function EventCard({
   event,
   role,
-  compact = false,
+  variant = "list",
 }: {
   event: Event;
   role?: EventRole;
-  compact?: boolean;
+  variant?: ListView;
 }) {
   const { t } = useTranslation();
+  const compact = variant === "grid";
+  // 密度を上げる表示は選んだ人だけ。画像に文字を書き込んでいるイベントは
+  // 小さいサムネで読めなくなるので、既定（list）は従来の寸法のまま
+  const dense = variant === "compact";
   const img = eventImageUrl(event);
   const color = eventColor(event.id);
   // 公開前は一覧のどこに出ても1枚で分かるようにする (#348)
@@ -79,12 +88,12 @@ export function EventCard({
             sx={{
               width: "100%",
               aspectRatio: "1200 / 630",
+              // 画像は背景ではなく <img loading="lazy"> で置く。背景画像は DOM に
+              // ある分すべて即時に取りに行くので、見えている分だけ読む
+              position: "relative",
+              overflow: "hidden",
               ...(img
-                ? {
-                    backgroundImage: `url(${img})`,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                  }
+                ? {}
                 : {
                     bgcolor: color.bg,
                     display: "flex",
@@ -94,6 +103,22 @@ export function EventCard({
                   }),
             }}
           >
+            {img && (
+              <Box
+                component="img"
+                src={img}
+                alt=""
+                loading="lazy"
+                sx={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: "block",
+                }}
+              />
+            )}
             {!img && (
               <>
                 <Typography
@@ -235,22 +260,25 @@ export function EventCard({
         to={`/events/${event.id}`}
         sx={{
           display: "flex",
-          // モバイルは縦積み（画像が上に全幅）、PCは横並び
-          flexDirection: { xs: "column", sm: "row" },
+          // list: 狭い画面は縦積み（画像が上に全幅）、広い画面は横並び（従来）
+          // compact: 幅を問わず横並び（左サムネ＋右情報）(#488)
+          flexDirection: dense ? "row" : { xs: "column", sm: "row" },
           alignItems: "stretch",
         }}
       >
         <Box
           sx={{
             flexShrink: 0,
-            width: { xs: "100%", sm: 200 },
-            aspectRatio: "1200 / 630",
+            width: dense ? { xs: 112, sm: 200 } : { xs: "100%", sm: 200 },
+            // 縦横比は固定する。本文の高さに伸ばすと 1200×630 の画像が行ごとに
+            // 違う形で切り取られ、Studio で作った画像はタイトルが消える。
+            // compact の狭い画面だけ正方形（本文の高さに近い）
+            aspectRatio: dense ? { xs: "1 / 1", sm: "1200 / 630" } : "1200 / 630",
+            ...(dense ? { alignSelf: "center" } : {}),
+            position: "relative",
+            overflow: "hidden",
             ...(img
-              ? {
-                  backgroundImage: `url(${img})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }
+              ? {}
               : {
                   bgcolor: color.bg,
                   display: "flex",
@@ -260,13 +288,30 @@ export function EventCard({
                 }),
           }}
         >
+          {img && (
+            <Box
+              component="img"
+              src={img}
+              alt=""
+              loading="lazy"
+              sx={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+          )}
           {!img && (
             <>
               <Typography
                 sx={{
                   color: "#F1F5F9",
                   fontWeight: 700,
-                  fontSize: { xs: 20, sm: 14 },
+                  // 全幅（list の xs）は大きく、112px 幅（compact の xs）は小さく
+                  fontSize: dense ? { xs: 12, sm: 14 } : { xs: 20, sm: 14 },
                   lineHeight: 1.3,
                   display: "-webkit-box",
                   WebkitLineClamp: 3,
@@ -317,9 +362,11 @@ export function EventCard({
             </Stack>
           )}
           <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
+            // compact は横並びにしたぶん本文の幅が減る。チップを横に置いたままだと
+            // 狭い画面でタイトルが数文字しか残らないので、xs では下に落とす
+            direction={dense ? { xs: "column", sm: "row" } : "row"}
+            spacing={dense ? { xs: 0.5, sm: 1 } : 1}
+            alignItems={dense ? { xs: "flex-start", sm: "center" } : "center"}
             justifyContent="space-between"
           >
             <Typography
@@ -340,7 +387,7 @@ export function EventCard({
                 direction="row"
                 spacing={0.5}
                 flexWrap="wrap"
-                justifyContent="flex-end"
+                justifyContent={dense ? { xs: "flex-start", sm: "flex-end" } : "flex-end"}
                 useFlexGap
                 sx={{ flexShrink: 0 }}
               >
@@ -366,7 +413,8 @@ export function EventCard({
               mt: 0.25,
               fontSize: { xs: "0.72rem", sm: "0.875rem" },
               display: "-webkit-box",
-              WebkitLineClamp: 2,
+              // compact の狭い幅では日時＋会場＋人数が 2 行に収まらず末尾の人数が消える
+              WebkitLineClamp: dense ? { xs: 3, sm: 2 } : 2,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
             }}
