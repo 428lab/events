@@ -24,7 +24,7 @@ import { cardDesignsRepo } from "../db/repositories/cardDesigns.js";
  * ■ なぜ deferBackground に逃がさないか
  * 収集は D1 削除より前でなければならない＝どのみちインラインになる。残る R2 側は
  * まとめて1回の multi-delete（R2 は1回 1000 キー、イベント写真は
- * EVENT_PHOTO_LIMIT=50 本＝最大 100 キー＋景品＋表紙1枚）なので、
+ * EVENT_PHOTO_LIMIT=200 本＝最大 400 キー＋景品＋表紙1枚）なので、
  * サブリクエスト予算 50 に対して余裕がある。インラインなら失敗が
  * テストとレスポンスから見える。
  */

@@ -247,19 +247,47 @@ describe("動画アップロードの門", () => {
     expect(svg.status).toBe(400);
   });
 
-  it("本数上限は写真と共有の枠（50件で 409）", async () => {
-    const cookie = await loginDev();
-    const eventId = await setupEvent(cookie);
-    const stmt = env.DB.prepare(
-      "INSERT INTO event_photo (id, event_id, user_id, created_at) SELECT ?, ?, id, ? FROM user LIMIT 1",
-    );
-    for (let i = 0; i < EVENT_PHOTO_LIMIT; i++) {
-      await stmt.bind(crypto.randomUUID(), eventId, Date.now()).run();
-    }
-    const res = await uploadVideo(cookie, eventId);
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: string }).error).toBe("photo_limit");
-  });
+  it.each(["photo", "video"] as const)(
+    "%s: 写真・動画の共有枠で51件目と200件目は成功、201件目は409",
+    async (kind) => {
+      expect(EVENT_PHOTO_LIMIT).toBe(200);
+      const cookie = await loginDev();
+      const eventId = await setupEvent(cookie);
+      const stmt = env.DB.prepare(
+        "INSERT INTO event_photo (id, event_id, user_id, kind, created_at) SELECT ?, ?, id, ?, ? FROM user LIMIT 1",
+      );
+      // 大量アップロードではなく、写真・動画混在の行だけで境界を用意する。
+      const seed = async (count: number) => {
+        await env.DB.batch(
+          Array.from({ length: count }, (_, i) =>
+            stmt.bind(crypto.randomUUID(), eventId, i % 2 ? "video" : "photo", Date.now()),
+          ),
+        );
+      };
+      const upload = () =>
+        kind === "video"
+          ? uploadVideo(cookie, eventId)
+          : SELF.fetch(`${BASE}/api/events/${eventId}/photos`, {
+              method: "POST",
+              headers: { cookie, "content-type": "image/png" },
+              body: PNG,
+            });
+
+      await seed(50);
+      expect((await upload()).status).toBe(201);
+      await seed(148);
+      expect((await upload()).status).toBe(201);
+      const res = await upload();
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "photo_limit", limit: 200 });
+      const row = await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM event_photo WHERE event_id = ?",
+      )
+        .bind(eventId)
+        .first<{ count: number }>();
+      expect(row?.count).toBe(200);
+    },
+  );
 
   it("非メンバーは 403・未ログインは 401", async () => {
     const cookie = await loginDev();

@@ -102,8 +102,8 @@ export type EventTimelinePhotos = z.infer<typeof eventTimelinePhotosSchema>;
  * これを超える分は「+N」だけ出す */
 export const TIMELINE_PHOTOS_PER_EVENT = 3;
 
-/** 1イベントあたりの上限枚数（いたずら対策） */
-export const EVENT_PHOTO_LIMIT = 50;
+/** 1イベントあたりの写真・動画の合計上限件数（いたずら対策） */
+export const EVENT_PHOTO_LIMIT = 200;
 /** 1枚あたりのコメント上限件数（いたずら対策） */
 export const PHOTO_COMMENT_LIMIT = 100;
 /** 1枚あたりの上限バイト数。クライアントは長辺1600px/WebP画質0.8に縮小して
