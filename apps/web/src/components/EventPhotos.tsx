@@ -159,7 +159,7 @@ export function EventPhotos({
   const canDelete = (p: EventPhoto) => p.userId === me?.id || isStaff;
 
   /** 動画フローが閉じた (#427)。実行中に追加選択があれば次のフローを始める。
-   * 成否のまとめ・50枠切れの扱いはフロー側（VideoUploadFlow）が持つ */
+   * 成否のまとめ・200枠切れの扱いはフロー側（VideoUploadFlow）が持つ */
   const handleVideoFlowClose = () => {
     const next = nextVideosRef.current;
     nextVideosRef.current = [];

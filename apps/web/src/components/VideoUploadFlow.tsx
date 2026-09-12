@@ -36,7 +36,7 @@ import { VideoSelectStep, type VideoSelectResult } from "./VideoSelectStep.js";
  * 第1段階で demux 済みの probed（mediabunny の Input）を第2段階がそのまま使い、
  * 同じ File を2回解析しない。キューは永続化しない（タブを閉じたら消える。
  * 40MB×複数本の中間データを保存する価値がなく、やり直しで足りる）。
- * 50枠切れ（photo_limit）が出たら以降も同じ結果になるので残りを中止する。
+ * 200枠切れ（photo_limit）が出たら以降も同じ結果になるので残りを中止する。
  */
 
 interface ReadyItem {
@@ -171,7 +171,7 @@ export function VideoUploadFlow({
           reason,
         });
         if (message === "photo_limit") {
-          // 50枠切れ: 以降も同じ結果になるので残りを中止する
+          // 200枠切れ: 以降も同じ結果になるので残りを中止する
           for (const rest of items.slice(i + 1)) {
             resultsRef.current.push({ name: rest.file.name, status: "canceled" });
           }

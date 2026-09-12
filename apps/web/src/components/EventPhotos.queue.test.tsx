@@ -76,10 +76,9 @@ function pickFiles(input: Element, files: File[]) {
   fireEvent.change(input, { target: { files } });
 }
 
-const fetchMock = vi.fn(async () => ({
-  ok: true,
-  json: async () => ({ photo: { id: "p" } }),
-}));
+const fetchMock = vi.fn<typeof fetch>(async () =>
+  new Response(JSON.stringify({ photo: { id: "p" } }), { status: 201 }),
+);
 
 beforeEach(() => {
   getMock.mockReset();
@@ -97,6 +96,15 @@ afterEach(() => {
 });
 
 describe("動画キューの配線 (#427)", () => {
+  it("写真の上限エラーには200件の上限を表示する", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "photo_limit", limit: 200 }), { status: 409 }),
+    );
+    const { input } = renderAsMember();
+    pickFiles(input, [image("x.png")]);
+    expect(await screen.findByText("写真は1イベント200枚までです。")).toBeInTheDocument();
+  });
+
   it("動画2本を選ぶと、2本ともフローに渡る（捨てない）", async () => {
     const { input } = renderAsMember();
     pickFiles(input, [video("a.mp4"), video("b.mp4")]);
