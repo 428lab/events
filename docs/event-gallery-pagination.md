@@ -41,7 +41,9 @@ populations and must remain different. Existing unpaged API consumers must work.
   Disable paging while fetching. Show controls only when multiple pages exist.
 - After deletion/moderation reduces total, clamp to the last valid page (or 1 when
   empty) and refetch. Do not present an out-of-range response as a genuine empty
-  gallery. Upload refresh stays on the current page and updates its total; new
+  gallery. Clamp only after a successful refetch settles: an inactive cached
+  last page can have an obsolete total after an upload recreates it.
+  Upload refresh stays on the current page and updates its total; new
   items appear first on page 1. Existing video queue sequencing is unchanged.
 - Key the gallery's stateful body by event ID: switching events resets page,
   lightbox, selection and queue and never combines old media IDs with new URLs.
@@ -60,3 +62,10 @@ posters/lightbox and existing video queue. Run relevant typechecks/build and
 browser interaction at mobile/desktop widths in Japanese/English; mutate an
 implementation in a disposable copy and show the relevant regression test fails.
 Full repository gates run on the feature PR CI. Stop before merge/deploy.
+
+### Validation discovery
+
+Browser testing reproduced delete-last-item → upload → Next reading the inactive
+page's stale empty result and clamping too early. Waiting for the refetch before
+clamping preserves the designed UX without adding state or changing the API. A
+focused UI regression delays that refetch to ensure the recreated page opens.

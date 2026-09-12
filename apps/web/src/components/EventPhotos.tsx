@@ -21,14 +21,14 @@ import SendIcon from "@mui/icons-material/Send";
 import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { EventPhoto, EventRole } from "@eventer/shared";
-import { EVENT_PHOTO_LIMIT, PHOTO_COMMENT_LIMIT } from "@eventer/shared";
+import { EVENT_PHOTO_LIMIT, EVENT_PHOTO_PAGE_SIZE, PHOTO_COMMENT_LIMIT } from "@eventer/shared";
 import { ApiError } from "../api/client.js";
 import { useMe, useUpdateEvent } from "../api/hooks.js";
 import {
   useAddPhotoComment,
   useDeleteEventPhoto,
   useDeletePhotoComment,
-  useEventPhotos,
+  useEventPhotosPage,
   usePhotoComments,
   useUploadEventPhoto,
 } from "../api/eventPhotoHooks.js";
@@ -58,18 +58,25 @@ const VideoUploadFlow = lazy(() =>
 const isVideoFile = (f: File) =>
   f.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(f.name);
 
-/** イベントフォトギャラリー（参加者は常に、公開設定時は誰でも閲覧） */
-export function EventPhotos({
-  eventId,
-  myRole,
-  photosPublic,
-  published,
-}: {
+interface EventPhotosProps {
   eventId: string;
   myRole: EventRole | null;
   photosPublic: boolean;
   published: boolean;
-}) {
+}
+
+/** Event-local state (including lightbox and upload queue) must not cross events. */
+export function EventPhotos(props: EventPhotosProps) {
+  return <EventPhotosGallery key={props.eventId} {...props} />;
+}
+
+/** イベントフォトギャラリー（参加者は常に、公開設定時は誰でも閲覧） */
+function EventPhotosGallery({
+  eventId,
+  myRole,
+  photosPublic,
+  published,
+}: EventPhotosProps) {
   const { t } = useTranslation();
   const { data: me } = useMe();
   const isMember = Boolean(myRole);
@@ -77,7 +84,17 @@ export function EventPhotos({
   const isStaff = myRole === "staff";
   // 公開設定なら誰でも閲覧、そうでなければ参加者のみ
   const canView = isMember || (photosPublic && published);
-  const { data: photos } = useEventPhotos(eventId, canView);
+  const [page, setPage] = useState(1);
+  const { data, isPending, isFetching, isError, refetch } =
+    useEventPhotosPage(eventId, page, canView);
+  const photos = data?.photos;
+  const pages = data ? Math.max(1, Math.ceil(data.total / EVENT_PHOTO_PAGE_SIZE)) : page;
+  const outOfRange = Boolean(data && page > pages);
+  useEffect(() => {
+    // An inactive page may still cache a pre-upload total. Let its refetch finish
+    // before clamping, otherwise a newly recreated last page cannot be opened.
+    if (outOfRange && !isFetching && !isError) setPage(pages);
+  }, [outOfRange, pages, isFetching, isError]);
   const upload = useUploadEventPhoto(eventId);
   const del = useDeleteEventPhoto(eventId);
   const updateEvent = useUpdateEvent(eventId);
@@ -219,7 +236,7 @@ export function EventPhotos({
             }}
           >
             <PhotoCameraIcon fontSize="small" />
-            {t("common.photosHeading", { n: photos?.length ?? 0 })}
+            {data ? t("common.photosHeading", { n: data.total }) : t("common.photos")}
           </Typography>
           <input
             ref={fileRef}
@@ -273,7 +290,17 @@ export function EventPhotos({
           </Alert>
         )}
 
-        {!photos || photos.length === 0 ? (
+        {isError ? (
+          <Alert severity="warning" action={
+            <Button color="inherit" onClick={() => void refetch()}>
+              {t("common.retry")}
+            </Button>
+          }>
+            {t("common.loadErrorReload")}
+          </Alert>
+        ) : isPending || outOfRange ? (
+          <Typography role="status" color="text.secondary">{t("common.loading")}</Typography>
+        ) : !photos || photos.length === 0 ? (
           <Typography color="text.secondary">
             {t("eventSocial.photosEmpty")}
             {isMember && t("eventSocial.photosEmptyHint")}
@@ -403,6 +430,35 @@ export function EventPhotos({
               </Box>
             ))}
           </Box>
+        )}
+        {(pages > 1 || page > 1) && (
+          <Stack
+            component="nav"
+            aria-label={t("eventSocial.photosPagination")}
+            direction="row"
+            alignItems="center"
+            justifyContent="center"
+            spacing={1}
+            useFlexGap
+            flexWrap="wrap"
+            sx={{ mt: 2 }}
+          >
+            <Button
+              disabled={page <= 1 || isFetching || outOfRange}
+              onClick={() => { setLightbox(null); setPage((p) => p - 1); }}
+            >
+              {t("eventSocial.photosPrevious")}
+            </Button>
+            <Typography variant="body2" role="status">
+              {t("eventSocial.photosPage", { page, pages })}
+            </Typography>
+            <Button
+              disabled={!data || page >= pages || isFetching || outOfRange}
+              onClick={() => { setLightbox(null); setPage((p) => p + 1); }}
+            >
+              {t("eventSocial.photosNext")}
+            </Button>
+          </Stack>
         )}
       </CardContent>
 

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import {
   EVENT_PHOTO_LIMIT,
+  EVENT_PHOTO_PAGE_SIZE,
   EVENT_PHOTO_MAX_BYTES,
   EVENT_VIDEO_MAX_BYTES,
   EVENT_VIDEO_MAX_DURATION_MS,
@@ -69,6 +70,19 @@ export async function getEventPhotos(c: Context<AppEnv>) {
   if (!(await canViewPhotos(eventId, c))) {
     return c.json({ error: "forbidden" }, 403);
   }
+  const pageParam = c.req.query("page");
+  if (pageParam !== undefined) {
+    const page = Number(pageParam);
+    if (
+      !/^[1-9]\d*$/.test(pageParam) ||
+      !Number.isSafeInteger(page) ||
+      !Number.isSafeInteger((page - 1) * EVENT_PHOTO_PAGE_SIZE)
+    ) {
+      return c.json({ error: "invalid_page" }, 400);
+    }
+    return c.json(await eventPhotosRepo.listByEventPaged(eventId, page));
+  }
+  // Preserve the unpaged contract for existing consumers.
   return c.json({ photos: await eventPhotosRepo.listByEvent(eventId) });
 }
 

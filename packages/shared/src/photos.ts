@@ -22,6 +22,15 @@ export const eventPhotoSchema = z.object({
 });
 export type EventPhoto = z.infer<typeof eventPhotoSchema>;
 
+/** Event gallery page size; unrelated to the shared photo/video upload cap. */
+export const EVENT_PHOTO_PAGE_SIZE = 24;
+export interface EventPhotosPage {
+  photos: EventPhoto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 /** 写真へのコメント */
 export const photoCommentSchema = z.object({
   id: z.string(),
