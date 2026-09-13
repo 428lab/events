@@ -1,4 +1,4 @@
-"""Explicitly approved staging mutations; durable intent precedes every first PUT.
+"""Explicitly approved target mutations; durable intent precedes every first PUT.
 
 D1/R2 are not one transaction. Resume reconciliation is mandatory after uncertainty.
 Only one operator workspace may own a target batch; see runbook crash limits.

@@ -143,7 +143,7 @@ class BackfillTests(unittest.TestCase):
             core.image_format(b'\x00\x00\x00\x20ftypisom' + b'\x00' * 40)
         self.assertTrue(core.keys({**self.row, 'kind': 'video'})[0].endswith('-poster'))
 
-    def test_production_and_wrong_targets_rejected(self):
+    def test_mixed_and_wrong_targets_rejected(self):
         for field in core.TARGET:
             args = argparse.Namespace(**{**core.TARGET, field: 'production'})
             with self.assertRaises(core.SafetyError):
@@ -263,6 +263,7 @@ class BackfillTests(unittest.TestCase):
 class DownloadTransport(core.Cloudflare):
     """Official list JSON plus observed GET attachment header, not echo metadata."""
     def __init__(self, backend):
+        self.target = core.TARGET.copy()
         self.backend = backend
         self.allow_write = True
         self.requests = []

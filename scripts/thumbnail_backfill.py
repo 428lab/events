@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Staging-only thumbnail backfill. Dry-run by default; see the scoped runbook."""
+"""Pinned staging/production thumbnail backfill. Dry-run by default; see runbook."""
 import argparse
 import collections
 import contextlib
@@ -24,6 +24,12 @@ import urllib.request
 TARGET = dict(environment="staging", account="b9cec3916d500760a7c7b9c31c720d80",
               database="389e4625-8e13-4a41-9530-3ab3be10cee5",
               bucket="eventer-images-staging")
+# Keep TARGET/default transport staging-only for existing rehearsal drivers.
+TARGETS = {'staging': TARGET,
+           'production': dict(environment='production', account=TARGET['account'],
+                              database='977fc3ef-3806-48fe-9019-918f54989279',
+                              bucket='eventer-images')}
+DATABASE_NAMES = {'staging': 'eventer-staging', 'production': 'eventer'}
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BYTES = 128 * 1024
 MAX_SOURCE = 10 * 1024 * 1024
@@ -59,15 +65,17 @@ def save(path, value):
 
 
 def check_target(args):
-    if any(getattr(args, k) != v for k, v in TARGET.items()):
-        raise SafetyError('target_mismatch_production_rejected')
+    target = TARGETS.get(args.environment)
+    if target is None or any(getattr(args, k) != v for k, v in target.items()):
+        raise SafetyError('target_mismatch')
     c = tomllib.loads((ROOT / 'wrangler.toml').read_text())
-    stage = c['env']['staging']
-    if (c['account_id'] != TARGET['account'] or stage['vars']['ENVIRONMENT'] != 'staging'
-            or stage['d1_databases'][0]['database_id'] != TARGET['database']
-            or stage['d1_databases'][0]['database_name'] != 'eventer-staging'
-            or stage['r2_buckets'][0]['bucket_name'] != TARGET['bucket']):
+    config = c['env']['staging'] if args.environment == 'staging' else c
+    if (c['account_id'] != target['account'] or config['vars']['ENVIRONMENT'] != args.environment
+            or config['d1_databases'][0]['database_id'] != target['database']
+            or config['d1_databases'][0]['database_name'] != DATABASE_NAMES[args.environment]
+            or config['r2_buckets'][0]['bucket_name'] != target['bucket']):
         raise SafetyError('repository_target_mismatch')
+    return target.copy()
 
 
 def credential():
@@ -88,10 +96,11 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 class Cloudflare:
     """Same account-scoped REST endpoints used by Wrangler; never logs responses."""
-    def __init__(self, allow_write=False):
+    def __init__(self, allow_write=False, *, target=None):
+        self.target = check_target(argparse.Namespace(**(TARGET if target is None else target)))
         self.token = credential()
         self.allow_write = allow_write
-        self.base = 'https://api.cloudflare.com/client/v4/accounts/' + TARGET['account']
+        self.base = 'https://api.cloudflare.com/client/v4/accounts/' + self.target['account']
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def request(self, path, method='GET', data=None, headers=None, missing=False):
@@ -122,7 +131,7 @@ class Cloudflare:
         read = sql.lstrip().startswith('SELECT ')
         if not read and not self.allow_write:
             raise SafetyError('remote_write_disabled')
-        result = self.json('/d1/database/' + TARGET['database'] + '/query', 'POST',
+        result = self.json('/d1/database/' + self.target['database'] + '/query', 'POST',
                            {'sql': sql, 'params': list(params)})
         if not result or not result[0].get('success'):
             raise SafetyError('d1_query_failure')
@@ -131,9 +140,11 @@ class Cloudflare:
         return result[0]
 
     def preflight(self):
-        db = self.json('/d1/database/' + TARGET['database'])
-        bucket = self.json('/r2/buckets/' + TARGET['bucket'])
-        if db.get('uuid') != TARGET['database'] or db.get('name') != 'eventer-staging' or bucket.get('name') != TARGET['bucket']:
+        db = self.json('/d1/database/' + self.target['database'])
+        bucket = self.json('/r2/buckets/' + self.target['bucket'])
+        if (db.get('uuid') != self.target['database']
+                or db.get('name') != DATABASE_NAMES[self.target['environment']]
+                or bucket.get('name') != self.target['bucket']):
             raise SafetyError('remote_target_mismatch')
         cols = self.query("SELECT name FROM pragma_table_info('event_photo')")['results']
         if 'has_thumbnail' not in [r['name'] for r in cols]:
@@ -142,7 +153,7 @@ class Cloudflare:
     def stored_metadata(self, key):
         # Official List Objects JSON exposes persisted metadata; download response
         # headers do not (notably their synthetic attachment Content-Disposition).
-        response = self.json('/r2/buckets/' + TARGET['bucket'] + '/objects?' +
+        response = self.json('/r2/buckets/' + self.target['bucket'] + '/objects?' +
                              urllib.parse.urlencode({'prefix': key, 'per_page': 25}), full=True)
         records = response['result']
         if not isinstance(records, list) or len(records) > 25:
@@ -191,7 +202,7 @@ class Cloudflare:
         before = self.stored_metadata(key) if method == 'GET' else None
         if method == 'GET' and before is None:
             return None
-        result = self.request('/r2/buckets/' + TARGET['bucket'] + '/objects/' +
+        result = self.request('/r2/buckets/' + self.target['bucket'] + '/objects/' +
                               urllib.parse.quote(key, safe='/'), method, data, metadata, missing=method == 'GET')
         if method != 'GET':
             return None  # PUT/DELETE response is not object evidence.
@@ -360,6 +371,8 @@ def dry_run(api, state, path, batch):
 
 def import_read_only_v1(api, source_path, destination):
     """Metadata-only migration of an untouched v1 dry-run into a NEW workspace."""
+    if api.target != TARGET:
+        raise SafetyError('v1_import_staging_only')
     if source_path.is_symlink() or source_path.name != 'manifest.json' or source_path.parent.resolve() == destination.parent.resolve():
         raise SafetyError('invalid_v1_import_path')
     with workspace(source_path.parent):
@@ -415,16 +428,22 @@ def main():
     parser.add_argument('--mode', choices=['dry-run', 'apply', 'reconcile', 'rollback'], default='dry-run')
     parser.add_argument('--batch', type=int, default=5)
     parser.add_argument('--approve-staging-writes', action='store_true')
+    parser.add_argument('--approve-production-writes', action='store_true')
     parser.add_argument('--import-v1', type=Path, help='Read-only metadata refresh of untouched v1 manifest into new workspace')
     args = parser.parse_args()
-    check_target(args)
+    target = check_target(args)
     if not 1 <= args.batch <= 25:
         raise SafetyError('batch_must_be_1_to_25')
     writes = args.mode != 'dry-run'
     if args.import_v1 and writes:
         raise SafetyError('v1_import_is_read_only')
-    if writes and not args.approve_staging_writes:
-        raise SafetyError('explicit_staging_write_approval_required')
+    if args.import_v1 and target != TARGET:
+        raise SafetyError('v1_import_staging_only')
+    approvals = {'staging': args.approve_staging_writes, 'production': args.approve_production_writes}
+    if any(approved and environment != args.environment for environment, approved in approvals.items()):
+        raise SafetyError('write_approval_environment_mismatch')
+    if writes and not approvals[args.environment]:
+        raise SafetyError('explicit_' + args.environment + '_write_approval_required')
     with workspace(args.workspace) as directory:
         path = directory / 'manifest.json'
         if path.is_symlink():
@@ -432,10 +451,10 @@ def main():
         if args.import_v1 and path.exists():
             raise SafetyError('v1_import_requires_new_workspace')
         state = json.loads(path.read_text()) if path.exists() else {
-            'version': VERSION, 'target': TARGET, 'created_at': int(time.time()), 'entries': []}
-        if state['target'] != TARGET or state['version'] != VERSION:
+            'version': VERSION, 'target': target, 'created_at': int(time.time()), 'entries': []}
+        if state['target'] != target or state['version'] != VERSION:
             raise SafetyError('manifest_target_or_version_mismatch')
-        api = Cloudflare(writes)
+        api = Cloudflare(writes, target=target)
         api.preflight()
         if args.import_v1:
             state = import_read_only_v1(api, args.import_v1, path)

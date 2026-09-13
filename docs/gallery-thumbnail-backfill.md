@@ -1,10 +1,12 @@
-# Staging thumbnail backfill (#521)
+# Gallery thumbnail backfill (#521)
 
-Preparation/rehearsal, stacked on thumbnail PR #520 (`4b0e181`), itself dependent
-on pagination #518. This document supersedes the earlier **no backfill** scope
-only for this separately authorized work. Eventual production rollout **must
-include backfill**, but this tool rejects production; no production operation,
-deployment, migration or maintenance window is authorized here.
+Stacked on thumbnail PR #520 (`4b0e181`), itself dependent on pagination #518.
+This document supersedes the earlier **no backfill** scope for separately authorized
+backfill. The owner accepted staging and approved production pagination, centered
+320×320 thumbnails **and mandatory existing-media backfill**. Production target
+support is prepared below; exact-head independent review is still required before
+any production migration, backfill write, merge or deployment. CLI acknowledgement
+switches do not themselves grant operational approval.
 
 **Current state:** staging backfill/recovery rehearsal completed on independently
 approved script head `3981e130` (review `ba62c1fb`: READY, no findings). All23 rows
@@ -78,10 +80,12 @@ operator --batch 5                 # default dry-run, no PUT/DELETE/UPDATE
 # Repeat until inventory_complete=true; each invocation advances a durable cursor.
 ```
 
-Targets are checked against pinned staging values, repository `wrangler.toml`,
-remote DB UUID/name and bucket name in that account. Missing migration0089 fails
-closed; it is never applied automatically. Production arguments are rejected
-before credential access. D1 reads assert zero rows written.
+Targets are checked against pinned environment-specific values, repository
+`wrangler.toml`, remote DB UUID/name and bucket name in that account. Missing
+migration0089 fails closed; it is never applied automatically. Unknown/mixed targets
+are rejected before credential access. D1 reads assert zero rows written. Existing
+staging arguments and the default staging transport remain unchanged. Every mode
+rejects a manifest from the other environment before credential access.
 
 The 0700 workspace is flocked; manifest/checkpoints are private, atomically replaced
 and fsynced. Inventory is a cursor-based observation, not a global DB snapshot.
@@ -89,6 +93,93 @@ Apply rechecks rows and source/target bytes, so a stale inventory is not authori
 to mutate. A changed source/row is skipped; re-inventory later in a **new** workspace
 only after resolving the old journal. Do not edit status fields or delete a journal
 to bypass reconciliation. Dry-run failure entries require investigation/new inventory.
+
+## Production preparation and release gate
+
+Production uses the root Wrangler bindings, **not** `--env production` and never
+the staging deployment branch. Its pinned account is the same account as staging,
+but its D1 UUID/name and R2 bucket are distinct. Use a **new production-only** private
+workspace; never copy, retarget or edit the completed staging manifest/backups.
+Version2 inventory has no total25-row ceiling: only each invocation is bounded
+(default5, maximum25). Repeat dry-run until `inventory_complete=true`, including
+an empty final page when the row count is an exact multiple of the batch size.
+The legacy v1 import remains staging-only and limited to its original25 entries;
+production always starts a fresh version2 inventory.
+
+```bash
+# Preparation only: these commands do not authorize remote writes.
+umask 077
+export PRODUCTION_BACKFILL_DIR="$(mktemp -d "${TMPDIR:-/tmp}/thumbnail-production.XXXXXX")"
+production_operator() {
+  PYTHONDONTWRITEBYTECODE=1 python3 scripts/thumbnail_backfill.py \
+    --environment production \
+    --account b9cec3916d500760a7c7b9c31c720d80 \
+    --database 977fc3ef-3806-48fe-9019-918f54989279 \
+    --bucket eventer-images \
+    --workspace "$PRODUCTION_BACKFILL_DIR" "$@"
+}
+production_operator --batch 5  # default dry-run; requires schema0089 already present
+```
+
+Production apply/reconcile/rollback each requires **`--approve-production-writes`**.
+Staging acknowledgement cannot authorize production or vice versa; supplying both
+is rejected, including in dry-run. No production fallback to staging is allowed.
+The same journals, fsynced replacement backups, source/target rechecks, flag CAS,
+pending-intent priority, metadata refusal and recovery apply in both environments.
+Existing main photos, saved posters and video bodies remain immutable; local
+encoding reads only saved photos/posters, never a video body or paid processor.
+
+Required dependency/release order after review (not executed by this preparation):
+
+1. Require independent review of the exact support diff and exact-head PR CI.
+   Merge #518 to main, then retarget/review/merge #520 to main, then #522 to main,
+   preserving/rechecking the reviewed dependency content. Do not merge staging:
+   it has environment-only history. Record the final release SHA and old production
+   SHA, and recheck no unrelated changes entered the release.
+2. With authorized credentials, read production target identity, schema and
+   `d1_migrations` using SELECT queries before planning DDL. If0089 is absent,
+   stop the ordinary backfill preflight; **do not spoof a flag column or migrate
+   from the backfill tool**. Confirm the complete pending set first. After the
+   review gate and release authorization, apply only the reviewed pending
+   migrations with `wrangler d1 migrations apply eventer --remote` from the final
+   release checkout. Verify `has_thumbnail` exists/default0 and0089 is recorded.
+   Workflow deploy steps do not apply migrations automatically.
+3. Push only the reviewed final release SHA to `production` (non-force), watch CI
+   by that exact SHA, require success and verify the actual deployed version plus
+   health. The existing CI runs deploy only on production/staging branch pushes;
+   a feature PR push does not deploy. Do not force-rewind a deployment branch to
+   retrigger a missing workflow; investigate separately.
+4. Complete the fresh production dry-run in bounded invocations and review all
+   counts/skips/failures privately. Under the reviewed production-write approval,
+   pilot batch1 cases (new photo, replacement if present, video poster if present),
+   then bounded batches5 only after pilot/recovery evidence. No overlapping
+   thumbnail writers/workspaces. Historical staging reapply below is pinned to
+   its old script head; it intentionally refuses this changed tool and is **not**
+   a production reapply command. Any production rollback/reapply pilot needs a
+   separately reviewed invocation, not hand-edited statuses.
+5. Mandatory backfill is part of release acceptance, not a deferred follow-up:
+   require a full bounded reconciliation sweep and aggregate D1/output/source
+   evidence, with all eligible rows accounted for and no unexplained failure,
+   conflict or pending intent. Keep the production manifest/backups for recovery.
+   Validate authenticated gallery paging, fresh320-square grid/cache refresh,
+   original lightbox, video playback/poster and visibility; health alone is not
+   acceptance. Report exceptions explicitly rather than counting them as success.
+
+After the gate, using the **same** production workspace and reviewed tool head:
+
+```bash
+production_operator --mode apply --batch 1 --approve-production-writes
+production_operator --mode reconcile --batch 1 --approve-production-writes
+# After pilot acceptance:
+production_operator --mode apply --batch 5 --approve-production-writes
+production_operator --mode reconcile --batch 5 --approve-production-writes
+# Recovery only when required/approved; repeat boundedly, preserve evidence:
+production_operator --mode rollback --batch 1 --approve-production-writes
+```
+
+On unknown outcomes stop new work and reconcile first. Application rollback is
+separate from thumbnail rollback; retain the additive0089 column and all backups.
+No transactional D1/R2 or overlapping-writer guarantee is introduced.
 
 ### Old rehearsal manifest: required version2 migration
 
@@ -310,7 +401,14 @@ MIME/signature, target/write rejection, object-before-flag, replacement restorat
 new-object rollback ordering, unknown PUT recovery, post-PUT/flag deletion,
 source changes and recovery conflicts. They do not substitute for reviewed staging
 mutation/rollback. That staging rehearsal is now complete; authenticated UI
-acceptance remains open before eventual separately approved production backfill. No production target switch is provided.
+acceptance was an operator limitation; the owner has since accepted staging.
+Production support is separately gated above. Focused offline target tests cover
+both-environment endpoint routing, mixed bindings/acknowledgements/manifests,
+missing0089 refusal and a60-row inventory resumed with batches5 and25.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_thumbnail_backfill*.py' -v
+```
 
 References retrieved for preparation: [Wrangler commands](https://developers.cloudflare.com/workers/wrangler/commands/),
 [R2 Workers API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/),
