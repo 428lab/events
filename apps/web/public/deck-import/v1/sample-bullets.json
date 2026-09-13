@@ -1,0 +1,40 @@
+{
+  "format": "events-lab-deck",
+  "version": 1,
+  "title": "小さく始める",
+  "slides": [
+    {
+      "background": "#FFFFFF",
+      "elements": [
+        {
+          "type": "text",
+          "x": 48,
+          "y": 48,
+          "w": 864,
+          "h": 96,
+          "text": "小さく始める",
+          "fontSize": 44,
+          "font": "default",
+          "color": "#172B24",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 48,
+          "y": 180,
+          "w": 864,
+          "h": 280,
+          "text": "・テーマを一つ決める\n・小さく集まる\n・次の予定を決める",
+          "fontSize": 28,
+          "font": "default",
+          "color": "#172B24",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    }
+  ]
+}

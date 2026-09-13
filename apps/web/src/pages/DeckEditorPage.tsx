@@ -55,7 +55,8 @@ import type {
   DeckSlideCommands,
 } from "../lib/deckSlides.js";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
-import { useAutoSave } from "../lib/editor/useAutoSave.js";
+import { useDeckSave } from "../lib/useDeckSave.js";
+import { useDeckLeaveWarning } from "../lib/useDeckLeaveWarning.js";
 import { useEditorHistory } from "../lib/editor/useEditorHistory.js";
 import { useEditorKeyboard } from "../lib/editor/useEditorKeyboard.js";
 import { useImagePicker } from "../lib/editor/useImagePicker.js";
@@ -101,13 +102,8 @@ export function DeckEditorPage() {
     // history は ref だけを触るので、毎レンダの作り直しでは追わない
   }, [deck]);
 
-  useAutoSave({
-    ready: content !== null,
-    deps: [content, title],
-    onSave: () => {
-      if (content) update.mutate({ title, content });
-    },
-  });
+  const saving = useDeckSave(title, content, update.mutateAsync);
+  useDeckLeaveWarning(content !== null && !saving.saved, t("deckImport.leave"));
 
   const picker = useImagePicker(upload.mutateAsync);
 
@@ -252,13 +248,15 @@ export function DeckEditorPage() {
           sx={{ flex: 1, minWidth: 180 }}
         />
         <Typography variant="caption" color="text.secondary">
-          {update.isPending ? t("studio.saving") : t("studio.autoSaved")}
+          {t(`deckImport.${saving.status}`)}
         </Typography>
+        {saving.status === "editorFailed" && <Button onClick={saving.retry}>{t("deckImport.editorRetry")}</Button>}
         {deck && (
           <Button
             size="small"
             variant="outlined"
             component={RouterLink}
+            disabled={!saving.saved || upload.isPending}
             to={`/d/${deck.slug}`}
             target="_blank"
           >
@@ -267,6 +265,7 @@ export function DeckEditorPage() {
         )}
       </Stack>
 
+      <Typography variant="caption">{t("deckImport.tabs")}</Typography>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
         <Stack spacing={1} sx={{ width: { md: 168 }, flexShrink: 0 }}>
           <DeckSlideList

@@ -1,6 +1,10 @@
 # LLM生成スライドのJSON取り込み設計（#523）
 
-- 状態: **設計レビュー待ち。実装・配備・mainマージの承認ではない。**
+- 状態: **オーナーが設計 `7ee1d70` の実装を承認。共有契約・保存APIの実装途中。配備・mainマージは未承認。**
+- 実装チェックポイント: strict共通parser/validator/converter、v1配布物、原子的保存API、`0090_deck_import_receipt.sql` とfocusedテストを追加。取り込み画面・worker検証・sessionStorage再試行・全ページpreviewと警告・deck専用ACK保存も追加。全体の独立レビューと実環境での保存→編集→画像差替→発表の受入は未完了。migrationはテスト用D1以外に未適用。
+- アカウント統合の補足方針は実装中に確認・承認された（§7.4）。共有契約・API・統合方針を含め、独立実装レビュー前に配備しない。
+- ローカル受入: 実Worker・隔離D1/R2・ビルド済み通常UIで、一覧→プロンプトコピー→不正貼付→UTF-8ファイル→3ページpreview→公開確認→201保存→画像差替→本文ACK→再読込→匿名公開ビューアのページ送り／全画面を確認。PATCHの503応答注入では発表gateが閉じ、再試行の実PATCH成功で開く。実POST commit後の応答喪失も注入し、再読込・owner切替の非表示・同owner同key再試行200・同タブの確認付き2回目201・取消／storage失敗の書込なしを確認。外部環境への配備・migrationやデータ書込ではない。独立レビューと全受入条件の完了は別とする。
+- 以下の「将来」「今回は設計のみ」は承認された設計時点の記録。実装完了の主張ではない。
 - Issue: https://github.com/428lab/events/issues/523
 - 正本: `design/lab-llm-slides-523` ブランチの本Markdown。Issue・PRにはリンクだけを置き、本文を複製しない。
 - 今回の成果は設計のみ。以下の「採用」「追加」は将来の実装契約であり、現行機能との区別を各節で示す。
@@ -205,10 +209,12 @@ UTF-16では絵文字の多くは2単位。ページ数は依頼の数を守り�
 | 保存準備 | エラー0かつpreview全ページが選択可能になったら、全ページ確認と公開範囲の2チェックを有効化。閲覧履歴による強制ページ踏破はしない。匿名なら「ログインして保存」から認証後同じ画面へ戻り、チェックをやり直す |
 | 保存中 | 入力・確認・保存・取消を無効化。スピナー＋「保存処理中。画面を閉じても保存されることがあります」。同時要求は1本。20秒でUI待機を打ち切り「結果未確認」へ（サーバー取消を意味しない） |
 | 結果未確認 | 入力と保存キーを固定して保持。「同じ保存を確認／再試行」だけを許す。新規キーへの切替・入力修正・二重作成はさせない。離脱は警告付きで可能、次回同じタブで復旧する |
-| 保存成功 | idを確認して一覧queryをinvalidate、原稿をブラウザ領域から削除しreceiptだけ保持、editorへreplace遷移。成功画面を戻る操作で再送しても同じreceiptの「編集を開く」になる |
+| 保存成功 | この画面でPOSTが成功した時だけidを確認して一覧queryをinvalidate、原稿をブラウザ領域から削除しreceiptだけ保持、editorへreplace遷移。後から再訪・再読込した時は同じreceiptの「編集を開く」と確認付き「別デッキとして取り込む」を表示し、自動遷移・自動POST・新キー発行をしない |
 | 保存拒否が確定 | 400/413/415/422は原稿保持して修正へ。401は同じ所有者で再ログインし同じキー再試行。429は待機し同じキー。403は権限／Origin案内で保存不可。409/410は§7の対応。通信失敗・5xxは必ず結果未確認 |
 
 保存前の取消は「入力を破棄して一覧へ」で確認し、メモリ／sessionStorageを消す。永続deck/R2は変わらない（通常のログイン・アクセス計測は別）。保存中／結果未確認では「保存の取消」は提供せず、離脱だけを案内。後からサーバー成功を削除で補償しない。
+
+実装時のローカル受入で、成功receiptの読込時にも自動遷移すると「1回目の保存→一覧→取り込み」が旧editorへ戻り続け、同じタブで2回目を明示開始できないことを確認した。上表の区別は「新規操作は明示開始」「再送は同一deck」という既存契約を満たすための承認済み補足で、独立レビュー対象とする。新規開始で以前のdeckを変更・削除しない。送信中／結果未確認や別ownerの記録からこのボタンを出さない。受入では同一タブの1回目→一覧→確認付き2回目と、receipt再訪・再読込だけではPOSTもdeck増加も起きないことを確認する。
 
 ### 5.2 再読み込み・認証・重複タブ
 
@@ -217,6 +223,13 @@ UTF-16では絵文字の多くは2単位。ページ数は依頼の数を守り�
 - ownerIdが現在のユーザーと違えば元原稿を画面に出さず、元ユーザーでログインするかローカル記録を破棄する。別アカウントへ同じ保存操作を引き継がない。認証前原稿は認証後のユーザーへ明示確認の上で結び付ける。
 - タブ複製が送信済みsessionStorageをコピーした場合は同一keyなので同一deckへ収束する。独立タブ／未送信タブでそれぞれ新規保存を明示した場合は別操作＝別deck。本文ハッシュだけで意図した複製を禁止しない。
 - タブを閉じた／ブラウザがsessionStorageを失った場合の原稿復旧は保証しない。画面にその旨とJSONダウンロード導線を常設。結果未確認で領域を失った場合は**まずスライド一覧を確認**し、結果不明のまま新規保存しないよう案内する。ブラウザ状態喪失後の同一性推測・自動重複削除は対象外。
+
+### 5.2.1 独立レビューで判明した競合の修正契約（承認済み、再レビュー対象）
+
+- **cached A / cookie B**: 認証表示はキャッシュされ、Cookieは別タブのログインで切り替わるため、画面内owner比較だけではAに結び付けた原稿がBの公開deckとして保存され得る。新規・再試行とも元のownerIdを必須ヘッダー `X-Deck-Import-Owner` としてraw JSONの外に送る。サーバーはこのPOST自身の認証済み `user.id` と照合してからreceipt照会・作成へ進む。欠落／不一致は403 `import_owner_mismatch`、本文や他owner情報は返さず作成ゼロ。実際の所有者・SQL bindは常に認証結果から採る。Cookieはこのリクエストで固定された値であり、照合と保存で別の認証状態を使わない。クライアントだけの認証preflightを原子的保証としない。
+- 不一致時は元raw/key/ownerのpending記録を保持し、新キー生成・別ownerへの再結合をしない。原稿を即座に隠して認証queryを更新し、元ownerでの同じ操作の確認／再試行へ戻す。importerだけ認証のmount/focus/定期更新を有効にして表示を更新する（全アプリの認証既定値は変更しない）。
+- **古いmountの遅延応答**: 送信後にSPAで離脱・再訪し、新しいmountで同key再試行→成功→別取り込みを開始すると、古いPromiseが新原稿を上書きできた。cleanupでmount generationを無効化し、完了処理はgeneration・現在のoperation・sessionStorageの送信時pending記録の一致をすべて確認した場合だけ適用する。古い成功／HTTP失敗／通信失敗は保存領域・画面・query・遷移に副作用を残さない。送信済みpending記録は離脱時に消さず、サーバーdeckのDELETE等で補償しない。
+- 受入: Aの画面を再読込せず実CookieだけBへ替え、first-save／pending-retryの両方が403になりBのdeck/receiptが増えないこと。欠落ヘッダーも拒否する。unmount後、再mountで同key再試行を完了し別原稿／別pendingを保持した後に旧Promiseをresolve/rejectしても新storageがbyte単位で不変であること。同一mountでも保存領域が別operationへ替わった場合は旧完了を適用しない。認証表示・owner非表示境界もfocused/local確認する。
 
 ### 5.3 修正できるエラーとpreview警告
 
@@ -263,7 +276,7 @@ previewは`SlideStage`を使用し、editor/history/useAutoSaveを一切マウ�
 
 **`POST /api/decks/import`**。既存deckRoutesのrequireAuth配下、`/:id`系より先に明示登録。
 
-- セッションcookie、`Content-Type: application/json`（charsetは省略またはutf-8のみ）、`X-Deck-Import-Key: <小文字canonical UUID v4>`。keyはUIが初回保存クリック時に一度だけ採番する内部の操作識別子で、LLM入力ではない。
+- セッションcookie、必須 `X-Deck-Import-Owner: <この操作に結び付けたownerId>`（§5.2.1）、`Content-Type: application/json`（charsetは省略またはutf-8のみ）、`X-Deck-Import-Key: <小文字canonical UUID v4>`。keyはUIが初回保存クリック時に一度だけ採番する内部の操作識別子で、LLM入力ではない。
 - bodyは§3の**元UTF-8 JSONそのもの**。envelope、DeckContent、ユーザー指定IDは送らない。JSON.stringifyで再整形しない。§3.4の例をそのままbodyとして使用できる。
 - same-origin UI専用。OriginはリクエストURLと同じoriginを必須とし、不在／null／不一致は403 `forbidden_origin`。CORS許可を追加しない。CSRF対策をCookie SameSiteだけに依存しない。公開仕様を配ることは書込APIの匿名開放ではない。
 - 新規作成成功 **201**、同一操作の再送 **200**。両方とも `{ "id": "<deck UUID>", "slug": "<10桁hex>", "replayed": false }`（再送はtrue）。Locationは`/api/decks/<id>`。タイトル・本文・ownerIdを応答に複製しない。editorは既存GETで最新内容を読む。成功応答はサーバー検証・原子保存の完了を意味する。
@@ -275,6 +288,7 @@ previewは`SlideStage`を使用し、editor/history/useAutoSaveを一切マウ�
 | --- | --- |
 | 400 `invalid_json` / `invalid_encoding` / `invalid_import_key` | 構文・UTF-8・BOM・重複キー・深度またはkey不正。保存されない。原稿修正／key不正ならクライアント不整合を案内 |
 | 401 `unauthorized` | 未認証・失効・退会申請中。保存しない。同じownerで認証し再試行 |
+| 403 `import_owner_mismatch` | expected-owner欠落／POSTの認証ownerと不一致。新規作成ゼロ、元raw/keyを保持して認証表示を更新し、元ownerで同じ操作を再試行 |
 | 403 `forbidden_origin` / `forbidden` | Origin不正／記録のdeck所有者不一致。自動で別keyを生成せず止める |
 | 413 `too_large` | 元bodyが1MiB超過。減量して再検証 |
 | 415 `unsupported_media_type` | Content-TypeやContent-Encoding不正。圧縮bodyは許可しない（identity/未指定のみ） |
@@ -287,7 +301,7 @@ previewは`SlideStage`を使用し、editor/history/useAutoSaveを一切マウ�
 ### 7.3 サーバー処理と資源制限
 
 1. 共通bodyLimitに`POST /api/decks/import`完全一致の1MiB分岐を追加。Content-Lengthを信用せずストリーム累積でも拒否する。圧縮は受け付けない。既存の8MiB等を全ルートで狭めない。
-2. 認証・Origin・ヘッダーを確認後、受理サイズ内のraw bytesをSHA-256。まずowner/keyの既存receiptを照会。成功済みならhash一致で同じ結果、相違で409、対象消失なら410を返す。既存deck内容は再変換もPATCHもしない。再送は以前サーバー検証済みの同一bytesとの照合であり、ブラウザ判定の信頼ではない。
+2. 認証・Origin・ヘッダー（expected-ownerとこのPOSTの認証ownerの一致を含む）を確認後、受理サイズ内のraw bytesをSHA-256。まずowner/keyの既存receiptを照会。成功済みならhash一致で同じ結果、相違で409、対象消失なら410を返す。既存deck内容は再変換もPATCHもしない。再送は以前サーバー検証済みの同一bytesとの照合であり、ブラウザ判定の信頼ではない。
 3. 初回keyは両環境共通パーサーとstrict v1 validatorで**サーバー再検証必須**。全入力制約・合計数・変換後制約まで検証し、合格前のSQL作成/R2操作はゼロ。previewの合否やチェック値は送らせない。
 4. UUIDとslugを採番し、完成本文を構成。下記receipt挿入とdeck INSERTをD1 batchで原子的に実行。INSERT前の存在確認だけで並行性を保証しない。
 5. owner/key unique競合ならbatch全体をrollbackして既存receiptを再読込し、所有者・hash・対象deckを通常の再送と同じ契約で照合して200/409/410（所有者不一致は403）。batchの変更行数が両方0の場合も、429を返す前に同owner/keyのreceiptを再照会し、存在すれば同じ照合経路へ進む。再照会でreceiptが存在しない場合だけ429とし、再照会のDB障害は503。slugまたは採番したdeck ID unique競合だけなら新しく採番して最大3回までbatchを試す（raw/keyは固定）。他DB障害を「重複」として握りつぶさず503にする。
@@ -311,6 +325,14 @@ receiptは原稿／本文／slugを複製せず、成功操作だけ1件保持�
 日次quota判定も競合しないよう、同じbatchの第1文を「ownerの日次COUNT<100のときだけreceiptをINSERTするINSERT…SELECT」、第2文を「その新しいdeck_idに対応するreceiptが存在するときだけ完成deckをINSERTするINSERT…SELECT」とする。batchの変更行数が両方1なら成功。両方0なら手順5のreceipt再照会を必ず行い、未存在と確認できた場合だけ429とする。部分結果は契約違反として失敗扱い。D1の同一batch原子性によりreceiptだけが残る状態を作らない。並行同keyはPK違反になる場合に加え、先行要求が日次上限の最後の枠を使うと後続のINSERTが両方0になる場合があるため、両経路を同じ再送照合に収束させる。並行別keyの日次判定は書込transaction内で直列化される。
 
 SQLは全値bind、ログにはraw/text/title/キー/本文hashを出さない。記録するのは固定エラーコード・bytes・ページ数・要素数など必要最小限。入力指定のネットワーク取得・HTML評価・eval・CSS注入・R2書込はこのAPIで一切行わない。公開仕様GETと保存APIは別の権限境界。
+
+### 7.4 アカウント統合・削除の補足（実装時承認、独立レビュー対象）
+
+現行 `accountMerge.ts` はuserを含む一意キーの衝突を勝ち側優先で整理し、個人資産のdeckは両側とも勝ち側へ移してから負け側userを削除する。これに合わせ、非衝突receiptは勝ち側ownerへ移管する。同じimport_keyが双方にある場合は勝ち側receiptを保持して負け側receiptだけを削除し、統合をブロックしない。勝ち側のhash・deck_id・created_atは変更しない。衝突した双方のdeck本体も通常どおり移管し、削除・本文更新しない。全処理は既存mergeの原子的batch内で行う。
+
+冪等キーはownerスコープであり、負け側アカウントの削除でそのアカウントの寿命は終了する。別ownerへ同じ保存操作を引き継がない§5.2の契約に従い、クライアントは統合後に負け側ownerのraw/keyを勝ち側として自動再送しない。アカウントの実削除はFK cascadeでreceiptも削除し、deck単体の削除ではtombstoneを保持する。
+
+受入: 非衝突receiptの移管、衝突時の勝ち側receipt完全保持、双方deckの移管と本文保持、負け側user削除、FK整合、退会の実削除でreceipt消去をテストする。owner切替を止めるUI復旧実装・テストを追加し、統合後の実ブラウザ復旧も独立受入で確認する。この補足解釈は独立レビューの対象とする。
 
 ## 8. 互換性・移行・復旧
 
