@@ -79,6 +79,20 @@ describe("DeckImportPage real user entry", () => {
     expect(await screen.findByText("拡張子.jsonのファイルを1つ選んでください。")).toBeInTheDocument();
     expect(screen.getByLabelText("スライドJSON")).toHaveValue("keep this");
   });
+  it("revisiting a successful receipt offers explicit new import without automatic redirect or POST", () => {
+    const receipt = { id: "11111111-1111-4111-8111-111111111111", slug: "0123456789", replayed: false };
+    mocks.user = { id: "owner" };
+    writeImportDraft(sessionStorage, { ...emptyImportDraft(), ownerId: "owner", key: receipt.id, state: "success", receipt });
+    mount();
+    expect(screen.getByRole("link", { name: "編集を開く" })).toHaveAttribute("href", `/decks/${receipt.id}/edit`);
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "別デッキとして取り込む" }));
+    expect(window.confirm).toHaveBeenCalled();
+    expect(screen.getByLabelText("スライドJSON")).toHaveValue("");
+    expect(sessionStorage.getItem("deck-import-v1")).toBeNull();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
   it("ordinary English screen uses translated controls", async () => {
     await i18next.changeLanguage("en"); mount();
     expect(screen.getByText("Create with an LLM / import")).toBeInTheDocument();

@@ -29,8 +29,8 @@ export function DeckImportPage() {
   useEffect(() => { setReviewed(false); setPublicAccepted(false); }, [draft.revision, me?.id, result]);
   useEffect(() => { if (result && !result.ok) errorRef.current?.focus(); }, [result]);
   useEffect(() => {
-    if (draft.state === "success" && draft.receipt && owned && !model.storageError) navigate(`/decks/${draft.receipt.id}/edit`, { replace: true });
-  }, [draft.state, draft.receipt, owned, model.storageError, navigate]);
+    if (model.savedHere && draft.state === "success" && draft.receipt && owned && !model.storageError) navigate(`/decks/${draft.receipt.id}/edit`, { replace: true });
+  }, [model.savedHere, draft.state, draft.receipt, owned, model.storageError, navigate]);
   useEffect(() => {
     if (!draft.retryAt) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -117,6 +117,6 @@ export function DeckImportPage() {
     {draft.state === "blocked" && <Button onClick={discard}>{t("deckImport.discard")}</Button>}
     {draft.state === "success" && <Alert severity="success">{t("deckImport.success")}</Alert>}
     {draft.receipt && <Button href={`/decks/${draft.receipt.id}/edit`}>{t("deckImport.open")}</Button>}
-    {draft.state === "blocked" && [409, 410].includes(draft.status!) && <Button onClick={() => { if (window.confirm(t("deckImport.restartConfirm"))) model.reset(); }}>{t("deckImport.restart")}</Button>}
+    {(draft.state === "success" || (draft.state === "blocked" && [409, 410].includes(draft.status!))) && <Button onClick={() => { if (window.confirm(t("deckImport.restartConfirm"))) model.reset(); }}>{t("deckImport.restart")}</Button>}
   </Stack>;
 }

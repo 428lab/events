@@ -19,6 +19,7 @@ export function useDeckImport(ownerId: string | null) {
   const [result, setResult] = useState<ImportValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedHere, setSavedHere] = useState(false);
   const sending = useRef(false);
   const worker = useRef<Worker | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -71,7 +72,7 @@ export function useDeckImport(ownerId: string | null) {
       sessionStorage.removeItem(DECK_IMPORT_STORAGE_KEY);
       if (sessionStorage.getItem(DECK_IMPORT_STORAGE_KEY) !== null) throw new Error("storage_unavailable");
     } catch { setStorageError(true); return false; }
-    cancelValidation();
+    cancelValidation(); setSavedHere(false);
     current.current = emptyImportDraft(); setDraft(current.current); setStorageError(false);
     return true;
   }
@@ -87,6 +88,7 @@ export function useDeckImport(ownerId: string | null) {
     try {
       const receipt = await saveDeckImport(pending.raw, pending.key!);
       persist({ ...pending, raw: "", state: "success", receipt });
+      setSavedHere(true);
       void qc.invalidateQueries({ queryKey: ["decks", "mine"] });
     } catch (error) {
       if (error instanceof ApiError) {
@@ -102,6 +104,6 @@ export function useDeckImport(ownerId: string | null) {
       } // Network, timeout and malformed success remain the persisted pending operation.
     } finally { sending.current = false; setSaving(false); }
   }
-  return { draft, owned, locked, storageError, result, validating, saving, edit, replace, validate, cancelValidation, bindOwner, reset, save,
+  return { draft, owned, locked, storageError, result, validating, saving, savedHere, edit, replace, validate, cancelValidation, bindOwner, reset, save,
     backup: () => persist(current.current) };
 }
