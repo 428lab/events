@@ -11,7 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
  * WebCodecs は jsdom に無いので probe/encode/poster をモックする。
  */
 
-const { probeMock, capabilityMock, conversionMock, posterMock } = vi.hoisted(
+const { probeMock, capabilityMock, conversionMock, posterMock, thumbnailMock } = vi.hoisted(
   () => ({
     probeMock: vi.fn(),
     capabilityMock: vi.fn(async () => ({
@@ -32,7 +32,8 @@ const { probeMock, capabilityMock, conversionMock, posterMock } = vi.hoisted(
       }),
       cancel: async () => {},
     })),
-    posterMock: vi.fn(async () => null),
+    posterMock: vi.fn<() => Promise<Blob | null>>(async () => null),
+    thumbnailMock: vi.fn<() => Promise<Blob | null>>(async () => null),
   }),
 );
 
@@ -46,6 +47,8 @@ vi.mock("../lib/video/encode.js", () => ({
 vi.mock("../lib/video/poster.js", () => ({
   extractVideoPoster: posterMock,
 }));
+
+vi.mock("../lib/galleryThumbnail.js", () => ({ encodeGalleryThumbnail: thumbnailMock }));
 
 const { VideoUploadFlow } = await import("./VideoUploadFlow.js");
 
@@ -82,7 +85,9 @@ class FakeXHR {
   onabort: (() => void) | null = null;
   aborted = false;
   open() {}
-  send() {
+  body?: FormData;
+  send(body: FormData) {
+    this.body = body;
     FakeXHR.instances.push(this);
     const res = FakeXHR.nextResponses.shift() ?? { status: 201, body: "{}" };
     setTimeout(() => {
@@ -122,7 +127,8 @@ beforeEach(() => {
   probeMock.mockReset();
   probeMock.mockImplementation(async () => probedOf(30_000));
   conversionMock.mockClear();
-  posterMock.mockClear();
+  posterMock.mockReset().mockResolvedValue(null);
+  thumbnailMock.mockReset().mockResolvedValue(null);
   FakeXHR.instances = [];
   FakeXHR.nextResponses = [];
   vi.stubGlobal("XMLHttpRequest", FakeXHR);
@@ -133,6 +139,21 @@ afterEach(() => {
 });
 
 describe("2段階フロー (#427)", () => {
+  it("sends separate poster and small image with their actual MIME", async () => {
+    const poster = new Blob(["main-poster"], { type: "image/jpeg" });
+    const thumbnail = new Blob(["small"], { type: "image/webp" });
+    posterMock.mockResolvedValue(poster);
+    thumbnailMock.mockResolvedValue(thumbnail);
+    const onClose = renderFlow([video("a.mp4")]);
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    const body = FakeXHR.instances[0]!.body!;
+    expect((body.get("poster") as File).type).toBe("image/jpeg");
+    expect((body.get("poster") as File).size).toBe(poster.size);
+    expect((body.get("thumbnail") as File).type).toBe("image/webp");
+    expect((body.get("thumbnail") as File).size).toBe(thumbnail.size);
+    expect(thumbnailMock).toHaveBeenCalledWith(poster);
+  });
+
   it("60秒以内のみ2本: 範囲選択ステップを出さず（決定タップなし）で即キューに入る", async () => {
     // どちらも 30 秒 → トリム不要。止まらずに変換→アップロードまで進むこと
     const onClose = renderFlow([video("a.mp4"), video("b.mp4")]);

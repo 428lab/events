@@ -14,6 +14,7 @@ interface Row {
   user_id: string;
   created_at: number;
   kind: string;
+  has_thumbnail: number;
   duration_ms: number | null;
   username: string;
   global_name: string | null;
@@ -36,6 +37,7 @@ function toPhoto(row: Row): EventPhoto {
     userAvatarUrl: row.avatar_url,
     commentCount: row.comment_count ?? 0,
     createdAt: row.created_at,
+    hasThumbnail: row.has_thumbnail === 1,
     kind: toKind(row.kind),
     durationMs: row.duration_ms,
   };
@@ -59,7 +61,7 @@ const COMMENT_COUNT = `${COMMENT_COUNT_EXPR} AS comment_count`;
 const VISIBLE_FROM = `FROM event_photo p JOIN user u ON u.id = p.user_id
     AND u.deleted_at IS NULL
   WHERE p.admin_hidden_at IS NULL`;
-const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at, p.kind, p.duration_ms,
+const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at, p.kind, p.duration_ms, p.has_thumbnail,
   u.username, u.global_name, u.avatar_url, ${COMMENT_COUNT}
   ${VISIBLE_FROM}`;
 
@@ -184,31 +186,32 @@ export const eventPhotosRepo = {
     return row?.n ?? 0;
   },
 
-  async create(eventId: string, userId: string): Promise<string> {
-    const id = crypto.randomUUID();
+  async create(eventId: string, userId: string, options: { id?: string; hasThumbnail?: boolean } = {}): Promise<string> {
+    const id = options.id ?? crypto.randomUUID();
     await run(
-      `INSERT INTO event_photo (id, event_id, user_id, created_at)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO event_photo (id, event_id, user_id, created_at, has_thumbnail)
+       VALUES (?, ?, ?, ?, ?)`,
       id,
       eventId,
       userId,
       Date.now(),
+      options.hasThumbnail ? 1 : 0,
     );
     return id;
   },
 
-  /** 動画の行を作る (#408)。写真と違い R2 put が先・D1 insert が後
+  /** 動画の行を作る (#408)。R2 put が先・D1 insert が後
    * （大きいオブジェクトほど put 失敗の確率が高く、「行はあるのに実体がない」
    * 壊れ方を避けたい）ので、R2 キーに使った id を呼び出し側から受け取る */
   async createVideo(
     id: string,
     eventId: string,
     userId: string,
-    meta: { durationMs: number; bytes: number; mime: string },
+    meta: { durationMs: number; bytes: number; mime: string; hasThumbnail?: boolean },
   ): Promise<void> {
     await run(
-      `INSERT INTO event_photo (id, event_id, user_id, created_at, kind, duration_ms, bytes, mime)
-       VALUES (?, ?, ?, ?, 'video', ?, ?, ?)`,
+      `INSERT INTO event_photo (id, event_id, user_id, created_at, kind, duration_ms, bytes, mime, has_thumbnail)
+       VALUES (?, ?, ?, ?, 'video', ?, ?, ?, ?)`,
       id,
       eventId,
       userId,
@@ -216,6 +219,7 @@ export const eventPhotosRepo = {
       meta.durationMs,
       meta.bytes,
       meta.mime,
+      meta.hasThumbnail ? 1 : 0,
     );
   },
 

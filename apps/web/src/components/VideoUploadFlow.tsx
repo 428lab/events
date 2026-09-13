@@ -20,6 +20,7 @@ import {
   createVideoConversion,
   type VideoEncoder408Handle,
 } from "../lib/video/encode.js";
+import { encodeGalleryThumbnail } from "../lib/galleryThumbnail.js";
 import { extractVideoPoster } from "../lib/video/poster.js";
 import { VideoSelectStep, type VideoSelectResult } from "./VideoSelectStep.js";
 
@@ -138,6 +139,8 @@ export function VideoUploadFlow({
         }
         // ポスターは選んだ範囲の中から切り出す
         const poster = await extractVideoPoster(item.probed, item.trim);
+        const thumbnail = poster ? await encodeGalleryThumbnail(poster) : null;
+        if (cancelCurrentRef.current || stopAllRef.current) throw new Error("aborted");
         setCurrent({ num: i + 1, total: items.length, uploading: true });
         setProgress(0.7);
         const abort = new AbortController();
@@ -146,6 +149,7 @@ export function VideoUploadFlow({
           video: blob,
           mime,
           poster,
+          thumbnail,
           durationMs,
           onProgress: (f) => setProgress(0.7 + 0.3 * f),
           signal: abort.signal,

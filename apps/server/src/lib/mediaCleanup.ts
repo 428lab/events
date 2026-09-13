@@ -24,7 +24,7 @@ import { cardDesignsRepo } from "../db/repositories/cardDesigns.js";
  * ■ なぜ deferBackground に逃がさないか
  * 収集は D1 削除より前でなければならない＝どのみちインラインになる。残る R2 側は
  * まとめて1回の multi-delete（R2 は1回 1000 キー、イベント写真は
- * EVENT_PHOTO_LIMIT=200 本＝最大 400 キー＋景品＋表紙1枚）なので、
+ * EVENT_PHOTO_LIMIT=200 本＝最大 600 キー＋景品＋表紙1枚）なので、
  * サブリクエスト予算 50 に対して余裕がある。インラインなら失敗が
  * テストとレスポンスから見える。
  */
@@ -44,8 +44,12 @@ export const videoR2Key = (eventId: string, videoId: string) =>
 export const videoPosterR2Key = (eventId: string, videoId: string) =>
   `${videoR2Key(eventId, videoId)}-poster`;
 
-/** 1件の投稿が持つ R2 オブジェクトのキー。動画 (#408) は本体＋ポスターの2つ。
- * ポスターなしで投稿された動画でも存在しないキーの削除は無害なので分岐しない
+/** Small grid variant; distinct from the main photo/video poster. */
+export const photoThumbnailR2Key = (p: { eventId: string; id: string; kind: "photo" | "video" }) =>
+  `${p.kind === "video" ? videoR2Key(p.eventId, p.id) : photoR2Key(p.eventId, p.id)}-thumbnail`;
+
+/** 1件の投稿が持つ R2 オブジェクトのキー。本体・動画ポスター・小さい一覧画像。
+ * ポスター/一覧画像なしでも存在しないキーの削除は無害なので分岐しない
  * （分岐を増やすと「ポスターだけ残る」取りこぼしが生まれる）。
  * **写真・動画のキーを組み立てる経路は必ずここを通すこと** */
 export function photoObjectKeys(p: {
@@ -54,8 +58,8 @@ export function photoObjectKeys(p: {
   kind: "photo" | "video";
 }): string[] {
   return p.kind === "video"
-    ? [videoR2Key(p.eventId, p.id), videoPosterR2Key(p.eventId, p.id)]
-    : [photoR2Key(p.eventId, p.id)];
+    ? [videoR2Key(p.eventId, p.id), videoPosterR2Key(p.eventId, p.id), photoThumbnailR2Key(p)]
+    : [photoR2Key(p.eventId, p.id), photoThumbnailR2Key(p)];
 }
 
 /** イベントが持つ R2 オブジェクトのキーを D1 から列挙する (#424)。

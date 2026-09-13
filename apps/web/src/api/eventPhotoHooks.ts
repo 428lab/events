@@ -34,12 +34,14 @@ export function useEventPhotosPage(eventId: string, page: number, enabled: boole
 export function useUploadEventPhoto(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (blob: Blob) => {
+    mutationFn: async ({ photo, thumbnail }: { photo: Blob; thumbnail: Blob | null }) => {
+      const body = new FormData();
+      body.append("photo", photo, "photo");
+      if (thumbnail) body.append("thumbnail", thumbnail, "thumbnail");
       const res = await fetch(`/api/events/${eventId}/photos`, {
         method: "POST",
-        headers: { "Content-Type": blob.type || "image/webp" },
         credentials: "include",
-        body: blob,
+        body,
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as {
@@ -60,10 +62,11 @@ export interface VideoUploadPayload {
   mime: string;
   /** ポスター画像。切り出せない環境では null（サーバーは省略可で受ける） */
   poster: Blob | null;
+  thumbnail?: Blob | null;
   durationMs: number;
   /** 送信バイトの進捗 0–1（進捗バーのアップロード区間用） */
   onProgress?: (fraction: number) => void;
-  /** キャンセル用。abort すると XHR を中断し、投稿は成立しない */
+  /** Cancels transport; a cancellation racing server commit may still post. */
   signal?: AbortSignal;
 }
 
@@ -84,6 +87,7 @@ export function useUploadEventVideo(eventId: string) {
             }),
           );
         }
+        if (p.thumbnail) fd.append("thumbnail", p.thumbnail, "thumbnail");
         fd.append("durationMs", String(Math.round(p.durationMs)));
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `/api/events/${eventId}/videos`);

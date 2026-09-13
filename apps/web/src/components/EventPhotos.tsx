@@ -33,6 +33,7 @@ import {
   useUploadEventPhoto,
 } from "../api/eventPhotoHooks.js";
 import { CounterTextField } from "./CounterTextField.js";
+import { encodeGalleryThumbnail } from "../lib/galleryThumbnail.js";
 import { encodeImageForUpload } from "../lib/encodeImage.js";
 import { formatDateTime } from "../lib/format.js";
 import {
@@ -130,7 +131,8 @@ function EventPhotosGallery({
         for (const file of images) {
           // 長辺1600px・WebP画質0.8に縮小（容量削減。典型 ~250KB）
           const encoded = await encodeImageForUpload(file, 1600, 0.8);
-          await upload.mutateAsync(encoded);
+          const thumbnail = await encodeGalleryThumbnail(encoded);
+          await upload.mutateAsync({ photo: encoded, thumbnail });
           setUploading((n) => n - 1);
         }
       } catch (err) {
@@ -333,7 +335,7 @@ function EventPhotosGallery({
               >
                 <Box
                   component="img"
-                  src={eventMediaThumbUrl(eventId, p.id, p.kind)}
+                  src={eventMediaThumbUrl(eventId, p.id, p.kind, p.hasThumbnail)}
                   alt=""
                   loading="lazy"
                   onError={

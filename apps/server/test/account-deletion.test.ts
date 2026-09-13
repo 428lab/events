@@ -265,6 +265,7 @@ describe("退会（アカウント削除） (#244, #250)", () => {
       .run();
     const photoKey = `event-photos/${eventId}/${photoId}`;
     await env.BUCKET.put(photoKey, "jpg-bytes");
+    await env.BUCKET.put(`${photoKey}-thumbnail`, "small-photo");
     const videoId = crypto.randomUUID();
     await env.DB.prepare(
       "INSERT INTO event_photo (id, event_id, user_id, created_at, kind, duration_ms, bytes, mime) VALUES (?, ?, ?, ?, 'video', 1000, 9, 'video/webm')",
@@ -274,6 +275,7 @@ describe("退会（アカウント削除） (#244, #250)", () => {
     const videoKey = `event-videos/${eventId}/${videoId}`;
     await env.BUCKET.put(videoKey, "webm-bytes");
     await env.BUCKET.put(`${videoKey}-poster`, "poster-bytes");
+    await env.BUCKET.put(`${videoKey}-thumbnail`, "small-poster");
 
     // ログイン情報: identity と予備セッション
     await env.DB.prepare(
@@ -344,6 +346,8 @@ describe("退会（アカウント削除） (#244, #250)", () => {
     // 動画は本体とポスターの両方 (#408)
     expect(await env.BUCKET.get(videoKey)).toBeNull();
     expect(await env.BUCKET.get(`${videoKey}-poster`)).toBeNull();
+    expect(await env.BUCKET.get(`${videoKey}-thumbnail`)).toBeNull();
+    expect(await env.BUCKET.get(`${photoKey}-thumbnail`)).toBeNull();
 
     // 第三者 B の参加行は残る
     expect(
