@@ -1,5 +1,11 @@
 # Event gallery thumbnails (#519)
 
+Separate follow-up #521 now prepares/rehearses staging backfill; see
+[the scoped operator runbook](gallery-thumbnail-backfill.md). The no-backfill
+statements below describe this original feature/crop PR, not the eventual rollout:
+production must include separately approved backfill. No remote mutation or deployment
+is authorized by the preparation PR.
+
 Approved: new photo uploads and video posters get a separate browser-encoded image
 center-cropped to the visible square, then encoded at exactly 320×320px (including
 upscaling small sources). This matches the grid's square `object-fit: cover` with
