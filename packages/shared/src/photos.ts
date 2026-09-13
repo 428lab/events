@@ -129,7 +129,7 @@ export const EVENT_VIDEO_MAX_BYTES = 40 * 1024 * 1024;
  * 超える場合はアップロード前のトリミング UI（VideoTrimBar, #425）でこの長さに収める。 */
 export const EVENT_VIDEO_MAX_DURATION_MS = 60_000;
 
-/** New browser-generated event grid variant (not the main image/poster). */
+/** Side length of the center-cropped square grid variant (not the main image/poster). */
 export const EVENT_THUMBNAIL_ENCODE_DIM = 320;
 /** Keep accepting thumbnails from older clients that still encode at 480px. */
 export const EVENT_THUMBNAIL_MAX_DIM = 480;
