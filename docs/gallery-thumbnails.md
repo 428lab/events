@@ -3,8 +3,11 @@
 Separate follow-up #521 now prepares/rehearses staging backfill; see
 [the scoped operator runbook](gallery-thumbnail-backfill.md). The no-backfill
 statements below describe this original feature/crop PR, not the eventual rollout:
-production must include separately approved backfill. No remote mutation or deployment
-is authorized by the preparation PR.
+production must include separately approved backfill. The preparation PR did not
+authorize remote writes; the subsequent independently reviewed and explicitly
+approved staging rehearsal has now backfilled/reconciled23 rows, including actual
+rollback/reapply checks. No production operation or deployment was performed.
+Authenticated staging UI acceptance remains open; see the runbook evidence.
 
 Approved: new photo uploads and video posters get a separate browser-encoded image
 center-cropped to the visible square, then encoded at exactly 320×320px (including

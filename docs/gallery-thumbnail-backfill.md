@@ -6,10 +6,12 @@ only for this separately authorized work. Eventual production rollout **must
 include backfill**, but this tool rejects production; no production operation,
 deployment, migration or maintenance window is authorized here.
 
-**Current gate:** read-only staging inventory and real local encoding completed.
-No remote mutation has been performed. Independent review of the exact head must
-precede an explicitly approved staging pilot. The write switches below are not
-approval by themselves. Do not deploy or push a deployment branch for this tool.
+**Current state:** staging backfill/recovery rehearsal completed on independently
+approved script head `3981e130` (review `ba62c1fb`: READY, no findings). All23 rows
+are verified after actual writes and full reconciliation; see evidence below.
+Exact-head CI passed before expansion; both deploy steps were skipped. This does
+not authorize future writes or production. The switches below are not approval
+by themselves. Do not deploy or push a deployment branch for this tool.
 
 ## Fixed contract
 
@@ -111,7 +113,7 @@ objects, previously attempted writes, or larger manifests require investigation 
 fresh version2 dry-run inventory, not forced conversion. Metadata-only changes are
 observed as the new dry-run baseline, not interpreted as their historical state.
 
-## Reviewed pilot, resume, verification (NOT executed yet)
+## Reviewed pilot, resume, verification
 
 After independent exact-head review and explicit staging-write approval, reuse
 the reviewed private manifest and the same encoder/tool head:
@@ -194,6 +196,89 @@ is never recreated; only owned orphan compensation is allowed. Rollback refuses
 unknown hashes, corrupt/missing backups and CAS conflicts. Backups/journal must
 survive interruptions. `rolled_back` entries are not automatically reapplied.
 
+### Reapply a rolled-back pilot without editing its manifest
+
+The CLI intentionally does not turn `rolled_back` into new work. For this rehearsal
+the supervisor approved the following narrow invocation of the existing reviewed
+`apply()` function, **one previously rolled-back entry only**. No statuses are
+manually changed. Reapproval is needed for later use; never use this for pending,
+conflicting or unreviewed states. `BACKFILL_DIR` must be the same version2 workspace;
+`ROLLED_BACK_INDEX` is its privately checked zero-based entry index. Run from the
+repository root. Script changes relative to the reviewed head are rejected, while
+documentation-only commits are allowed.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 - "$ROLLED_BACK_INDEX" --approve-staging-writes <<'PY'
+import argparse, json, os, subprocess, sys
+from pathlib import Path
+subprocess.run(['git', 'diff', '--exit-code', '3981e130', '--',
+                'scripts/thumbnail_backfill.py', 'scripts/thumbnail_backfill_writer.py'],
+               check=True, stdout=subprocess.DEVNULL)
+sys.path.insert(0, str(Path.cwd() / 'scripts'))
+import thumbnail_backfill as b
+import thumbnail_backfill_writer as w
+os.umask(0o077)
+if sys.flags.optimize:
+    raise SystemExit('Run without Python optimization')
+assert len(sys.argv) == 3 and sys.argv[2] == '--approve-staging-writes'
+b.check_target(argparse.Namespace(**b.TARGET))
+with b.workspace(Path(os.environ['BACKFILL_DIR'])) as directory:
+    path = directory / 'manifest.json'
+    assert not path.is_symlink()
+    state = json.loads(path.read_text())
+    assert state['version'] == 2 and state['target'] == b.TARGET and state['inventory_complete']
+    assert not any(e['status'] in ('intent', 'rollback_intent') for e in state['entries'])
+    index = int(sys.argv[1])
+    assert 0 <= index < len(state['entries'])
+    entry = state['entries'][index]
+    assert entry['status'] == 'rolled_back'
+    api = b.Cloudflare(allow_write=True)
+    api.preflight()
+    row = b.current(api, entry['row'])
+    assert b.alive(row, entry['row']) and row['has_thumbnail'] == entry['row']['has_thumbnail']
+    assert w.same(api.object(b.keys(row)[0]), entry['source'])
+    assert w.same(api.object(b.keys(row)[1]), entry['old'])
+    w.apply(api, state, path, entry)
+    assert entry['status'] == 'verified'
+    print(json.dumps({'kind': row['kind'], 'status': entry['status']}))
+PY
+```
+
+This retains staging preflight, complete inventory, workspace lock, original flag,
+source/old-object checks, backup integrity and a fresh durable intent. It is not a
+general status-reset command. A pre-existing dangling flag repaired to0 on rollback
+will deliberately fail the original-flag assertion; investigate rather than bypass.
+
+## Actual staging rehearsal evidence
+
+Executed on2026-09-13 with approved script head `3981e130`; production untouched.
+Initial pilot was batch1: two video-poster new targets, one photo replacement and
+one missing-photo new target. Actual new-object rollback restored absence/flag0;
+replacement rollback restored exact old bytes/HTTP metadata/flag1. All four unique
+pilot rows were reapplied with the guarded invocation above. Five rollback/reapply
+cycles were observed (the initial video pilot was repeated once); no conflict,
+failure, skip or pending intent remained. Rollback evidence retained privately.
+
+After pilot/recovery and exact-head CI success, remaining19 rows were applied in
+batches5,5,5,4 (concurrency1). A full subsequent reconciliation covered all23 rows
+in bounded slices5,5,5,5,2,1. Final D1:12 photos and11 videos, all `has_thumbnail=1`.
+Success classes:8 missing-photo targets,4 non-square photo replacements,11 video
+poster targets. Every thumbnail readback matched generated hash/persisted MIME/
+bytes and decoded320×320; all23 saved source hashes and metadata remained unchanged.
+No video bodies were read/decoded, originals modified, migration or deployment run.
+
+Four original-thumbnail backups (320,819 bytes) and the version2 journal remain in
+the private workspace for rollback; no temporary media directories remain. Retain
+these until rollback is no longer required. Final output totals319,278 bytes.
+
+**Application acceptance limitation:** no existing authorized application session
+was available to the operator. No sessions were created, credentials extracted from
+browser profiles/D1, or authentication bypassed. Anonymous gallery and cache-busted
+thumbnail requests both returned403 with private/no-store headers; this proves the
+observed denial boundary, not authenticated serving or which edge/application gate
+rejected them. Direct R2/D1 proof is complete; authenticated grid/lightbox/video,
+visibility and browser-cache acceptance still require an authorized staging user.
+
 ## Evidence and cleanup
 
 Read-only staging observation: 23 rows, 12 photos (8 flag0/4 flag1), 11 videos
@@ -201,7 +286,8 @@ Read-only staging observation: 23 rows, 12 photos (8 flag0/4 flag1), 11 videos
 non-square (two360×480, two480×360), no proven compliant squares. All23 sources
 present and decoded successfully:12 main photos +11 posters, no video body read.
 Generated23 verified local320×320 WebPs, individual3,002–35,530B; totals216,376B
-photos +102,902B posters. This is **dry-run readiness, not backfill completion**.
+photos +102,902B posters. These describe the initial read-only baseline; actual
+backfill and rollback/reconciliation results are recorded above.
 
 Normal completion/error removes each `media-*` temporary directory. SIGKILL may
 leave one; after confirming no process owns the workspace lock, inspect and remove
@@ -223,8 +309,8 @@ Synthetic real-encoder checks and fake-D1/R2 fault injection cover crop/upscale,
 MIME/signature, target/write rejection, object-before-flag, replacement restoration,
 new-object rollback ordering, unknown PUT recovery, post-PUT/flag deletion,
 source changes and recovery conflicts. They do not substitute for reviewed staging
-mutation/rollback, which remains a gate before eventual separately approved production
-backfill. No production target switch is provided.
+mutation/rollback. That staging rehearsal is now complete; authenticated UI
+acceptance remains open before eventual separately approved production backfill. No production target switch is provided.
 
 References retrieved for preparation: [Wrangler commands](https://developers.cloudflare.com/workers/wrangler/commands/),
 [R2 Workers API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/),
