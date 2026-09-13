@@ -1,5 +1,17 @@
 # Event gallery thumbnails (#519)
 
+Separate follow-up #521 covers backfill and pinned production preparation; see
+[the scoped operator runbook](gallery-thumbnail-backfill.md). The no-backfill
+statements below describe this original feature/crop PR, not the eventual rollout:
+production must include separately approved backfill. The preparation PR did not
+authorize remote writes; the subsequent independently reviewed and explicitly
+approved staging rehearsal has now backfilled/reconciled23 rows, including actual
+rollback/reapply checks. No production operation or deployment was performed.
+The operator lacked an authenticated staging UI session; the owner has since
+accepted staging and approved production paging/thumbnails plus mandatory backfill.
+Production writes/merge/deploy remain gated on independent support review; see
+the runbook for target isolation and dependency/release order.
+
 Approved: new photo uploads and video posters get a separate browser-encoded image
 center-cropped to the visible square, then encoded at exactly 320×320px (including
 upscaling small sources). This matches the grid's square `object-fit: cover` with
