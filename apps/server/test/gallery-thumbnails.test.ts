@@ -55,18 +55,18 @@ describe("gallery thumbnail byte validation", () => {
     expect(validThumbnailBytes(webp.slice(0, -1), "image/webp")).toBe(false);
     expect(validThumbnailBytes(new Uint8Array(EVENT_THUMBNAIL_MAX_BYTES + 1), "image/jpeg")).toBe(false);
   });
-  it("bounds encoded dimensions (not client metadata), including zero and 481px", () => {
-    for (const width of [0, 480, 481]) {
+  it("accepts new 320px and legacy 480px dimensions, but rejects zero and 481px", () => {
+    for (const width of [0, 320, 480, 481]) {
       const bytes = jpeg.slice();
       const sof = bytes.findIndex((b, i) => b === 0xff && bytes[i + 1] === 0xc0);
       expect(sof).toBeGreaterThan(0);
       bytes[sof + 7] = width >> 8; bytes[sof + 8] = width & 255;
-      expect(validThumbnailBytes(bytes, "image/jpeg")).toBe(width === 480);
+      expect(validThumbnailBytes(bytes, "image/jpeg")).toBe(width === 320 || width === 480);
       const wp = webp.slice();
       const chunk = wp.findIndex((b, i) => b === 0x56 && wp[i + 1] === 0x50 && wp[i + 2] === 0x38 && wp[i + 3] === 0x20);
       expect(chunk).toBeGreaterThan(0);
       wp[chunk + 14] = width & 255; wp[chunk + 15] = width >> 8;
-      expect(validThumbnailBytes(wp, "image/webp")).toBe(width === 480);
+      expect(validThumbnailBytes(wp, "image/webp")).toBe(width === 320 || width === 480);
     }
   });
 });
