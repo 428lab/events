@@ -97,15 +97,20 @@ export function useDeckImport(ownerId: string | null, authUpdatedAt = 0) {
       try { return sessionStorage.getItem(DECK_IMPORT_STORAGE_KEY) === persistedPending; }
       catch { return false; }
     };
+    const completeCurrentOperation = () => {
+      if (!isCurrentOperation()) return false;
+      sending.current = false; setSaving(false);
+      return true;
+    };
     sending.current = true; setSaving(true);
     try {
       const receipt = await saveDeckImport(pending.raw, pending.key!, pending.ownerId!);
-      if (!isCurrentOperation()) return;
+      if (!completeCurrentOperation()) return;
       persist({ ...pending, raw: "", state: "success", receipt });
       setSavedHere(true);
       void qc.invalidateQueries({ queryKey: ["decks", "mine"] });
     } catch (error) {
-      if (!isCurrentOperation()) return;
+      if (!completeCurrentOperation()) return;
       if (error instanceof ApiError) {
         const status = error.status;
         const body = error.body as { error?: string; id?: string; slug?: string; retryAfter?: number };
@@ -121,9 +126,6 @@ export function useDeckImport(ownerId: string | null, authUpdatedAt = 0) {
           persist({ ...pending, state: "blocked", status, ...(isImportReceipt(receipt) ? { receipt } : {}) });
         } else persist({ ...pending, status, retryAt: status === 429 ? Date.now() + Math.max(1, body?.retryAfter ?? 1) * 1000 : undefined });
       } // Network, timeout and malformed success remain the persisted pending operation.
-    } finally {
-      // A detached mount must not update its screen or another mount's recovery.
-      if (generation.current === requestGeneration) { sending.current = false; setSaving(false); }
     }
   }
   return { draft, owned, locked, storageError, result, validating, saving, savedHere, edit, replace, validate, cancelValidation, bindOwner, reset, save,

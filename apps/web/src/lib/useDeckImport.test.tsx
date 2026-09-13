@@ -167,6 +167,7 @@ describe("useDeckImport recovery and identity", () => {
     await act(async () => resolve(receipt));
     expect(sessionStorage.getItem(DECK_IMPORT_STORAGE_KEY)).toBe(before);
     expect(hook.result.current.savedHere).toBe(false);
+    expect(hook.result.current.saving).toBe(true); // no stale UI completion either
   });
   it("corrupt storage is not silently treated as safe to send", () => {
     sessionStorage.setItem(DECK_IMPORT_STORAGE_KEY, "not JSON");
