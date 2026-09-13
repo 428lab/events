@@ -62,10 +62,12 @@ async function canvasToImageBlob(
 ): Promise<Blob | null> {
   if (typeof OffscreenCanvas !== "undefined" && canvas instanceof OffscreenCanvas) {
     try {
-      return await canvas.convertToBlob({ type: "image/webp", quality });
+      const blob = await canvas.convertToBlob({ type: "image/webp", quality });
+      if (blob.type === "image/webp") return blob;
     } catch {
-      return await canvas.convertToBlob({ type: "image/jpeg", quality });
+      // Try JPEG below, including Safari's silent PNG fallback.
     }
+    return await canvas.convertToBlob({ type: "image/jpeg", quality });
   }
   const el = canvas as HTMLCanvasElement;
   const toBlob = (type: string) =>

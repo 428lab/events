@@ -24,8 +24,9 @@ export const eventMediaThumbUrl = (
   eventId: string,
   id: string,
   kind: MediaKind,
+  hasThumbnail = false,
 ) =>
-  kind === "video"
+  hasThumbnail ? `/api/events/${eventId}/photos/${id}/thumbnail` : kind === "video"
     ? eventMediaPosterUrl(eventId, id)
     : eventMediaImageUrl(eventId, id);
 

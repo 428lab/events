@@ -117,6 +117,7 @@ const OPEN_ROUTES = new Set<string>([
   "GET /api/events/:id/photos/:photoId/comments",
   "GET /api/events/:id/photos/:photoId/image",
   "GET /api/events/:id/photos/:photoId/poster",
+  "GET /api/events/:id/photos/:photoId/thumbnail",
   "GET /api/events/:id/photos/:photoId/video",
   "GET /api/events/:id/schedule",
   "GET /api/events/:id/scores/results",
@@ -154,7 +155,7 @@ const OPEN_ROUTES = new Set<string>([
 
 /** `OPEN_ROUTES` の件数。表を1行足すとここも動かすことになるので、
  * 「テストを通すためにこっそり1本開ける」が差分に必ず現れる */
-const EXPECTED_OPEN_COUNT = 79;
+const EXPECTED_OPEN_COUNT = 80;
 
 const UUID = "00000000-0000-4000-8000-000000000000";
 const probe = (p: string) =>

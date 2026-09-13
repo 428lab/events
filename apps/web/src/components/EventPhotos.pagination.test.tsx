@@ -57,6 +57,30 @@ const next = () => screen.getByRole("button", { name: "次へ" });
 const previous = () => screen.getByRole("button", { name: "前へ" });
 
 describe("EventPhotos pagination", () => {
+  it("uses small variants only in the grid, keeps legacy URLs and main lightbox media across pages", async () => {
+    rows[0]!.hasThumbnail = true;
+    rows[1] = { ...rows[1]!, kind: "video", durationMs: 1000, hasThumbnail: true };
+    rows[24]!.hasThumbnail = true;
+    const { container } = gallery();
+    await screen.findByText("写真（25）");
+    expect(images(container)[0]).toHaveAttribute("src", "/api/events/ev/photos/ev-25/thumbnail");
+    expect(images(container)[1]).toHaveAttribute("src", "/api/events/ev/photos/ev-24/thumbnail");
+    expect(images(container)[2]).toHaveAttribute("src", "/api/events/ev/photos/ev-23/image");
+    fireEvent.click(images(container)[0]!);
+    expect((await screen.findByRole("dialog")).querySelector('img[src$="/image"]')).toHaveAttribute("src", "/api/events/ev/photos/ev-25/image");
+    fireEvent.click(screen.getByRole("button", { name: "閉じる" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    fireEvent.click(images(container)[1]!);
+    const video = (await screen.findByRole("dialog")).querySelector("video");
+    expect(video).toHaveAttribute("src", "/api/events/ev/photos/ev-24/video");
+    expect(video).toHaveAttribute("poster", "/api/events/ev/photos/ev-24/poster");
+    fireEvent.click(screen.getByRole("button", { name: "閉じる" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    fireEvent.click(next());
+    await waitFor(() => expect(images(container)).toHaveLength(1));
+    expect(images(container)[0]).toHaveAttribute("src", "/api/events/ev/photos/ev-1/thumbnail");
+  });
+
   it("renders 24, then the last item with correct total/boundaries; supports English controls", async () => {
     const { container } = gallery();
     await screen.findByText("写真（25）");

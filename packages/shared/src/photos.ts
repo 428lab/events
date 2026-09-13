@@ -16,6 +16,8 @@ export const eventPhotoSchema = z.object({
   /** この写真へのコメント数（サムネのオーバーレイ表示用） */
   commentCount: z.number(),
   createdAt: z.number(),
+  /** Separate small image exists; absent/false preserves legacy display. */
+  hasThumbnail: z.boolean().optional(),
   kind: mediaKindSchema,
   /** video のみ。長さバッジ表示用（クライアント申告値。photo は null） */
   durationMs: z.number().nullable(),
@@ -126,3 +128,9 @@ export const EVENT_VIDEO_MAX_BYTES = 40 * 1024 * 1024;
 /** 動画1本あたりの上限の長さ (#408)。短尺クリップ想定。
  * 超える場合はアップロード前のトリミング UI（VideoTrimBar, #425）でこの長さに収める。 */
 export const EVENT_VIDEO_MAX_DURATION_MS = 60_000;
+
+/** Side length of the center-cropped square grid variant (not the main image/poster). */
+export const EVENT_THUMBNAIL_ENCODE_DIM = 320;
+/** Keep accepting thumbnails from older clients that still encode at 480px. */
+export const EVENT_THUMBNAIL_MAX_DIM = 480;
+export const EVENT_THUMBNAIL_MAX_BYTES = 128 * 1024;

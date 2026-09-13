@@ -16,6 +16,7 @@ import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { getBucket } from "../runtime.js";
 import { valid, zValidator } from "../lib/validator.js";
+import { readGalleryThumbnail } from "../lib/galleryThumbnail.js";
 import { normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import {
   hasVideoMagicBytes,
@@ -33,6 +34,7 @@ import {
   deleteObjects,
   photoObjectKeys,
   photoR2Key,
+  photoThumbnailR2Key,
   videoPosterR2Key,
   videoR2Key,
 } from "../lib/mediaCleanup.js";
@@ -97,6 +99,25 @@ export async function getEventPhotoImage(c: Context<AppEnv>) {
     return c.json({ error: "not_found" }, 404);
   }
   const obj = await getBucket().get(photoR2Key(photo.eventId, photo.id));
+  if (!obj) return c.json({ error: "not_found" }, 404);
+  return new Response(obj.body as unknown as ReadableStream, {
+    headers: {
+      "Content-Type": safeServeMime(obj.httpMetadata?.contentType),
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, max-age=3600",
+    },
+  });
+}
+
+/** Small variant uses precisely the same visibility gate as the main media. */
+export async function getEventPhotoThumbnail(c: Context<AppEnv>) {
+  const eventId = c.req.param("id")!;
+  if (!(await canViewPhotos(eventId, c))) return c.json({ error: "forbidden" }, 403);
+  const photo = await eventPhotosRepo.findById(c.req.param("photoId")!);
+  if (!photo || photo.eventId !== eventId || !photo.hasThumbnail) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  const obj = await getBucket().get(photoThumbnailR2Key(photo));
   if (!obj) return c.json({ error: "not_found" }, 404);
   return new Response(obj.body as unknown as ReadableStream, {
     headers: {
@@ -305,29 +326,51 @@ eventPhotoRoutes.delete(
   },
 );
 
-/** アップロード（生バイナリ） */
+/** Photo upload: legacy raw body or main + optional thumbnail multipart. */
 eventPhotoRoutes.post(
   "/:id/photos",
   requireEventRole([...MEMBER_ROLES]),
   async (c) => {
     const eventId = c.req.param("id");
-    const mime = normalizeImageMime(c.req.header("content-type"));
-    if (!mime) return c.json({ error: "invalid_content_type" }, 400);
-    if (Number(c.req.header("content-length") ?? "0") > EVENT_PHOTO_MAX_BYTES) {
-      return c.json({ error: "too_large", maxBytes: EVENT_PHOTO_MAX_BYTES }, 413);
-    }
     if ((await eventPhotosRepo.countByEvent(eventId)) >= EVENT_PHOTO_LIMIT) {
       return c.json({ error: "photo_limit", limit: EVENT_PHOTO_LIMIT }, 409);
     }
-    const body = await c.req.arrayBuffer();
+    const multipart = c.req.header("content-type")?.toLowerCase().startsWith("multipart/form-data");
+    const form = multipart ? await c.req.parseBody() : null;
+    const file = form?.["photo"];
+    if (form && !(file instanceof File)) return c.json({ error: "photo_required" }, 400);
+    const mime = normalizeImageMime(file instanceof File ? file.type : c.req.header("content-type"));
+    if (!mime) return c.json({ error: "invalid_content_type" }, 400);
+    const size = file instanceof File ? file.size : Number(c.req.header("content-length") ?? "0");
+    if (size > EVENT_PHOTO_MAX_BYTES) {
+      return c.json({ error: "too_large", maxBytes: EVENT_PHOTO_MAX_BYTES }, 413);
+    }
+    const thumbnail = await readGalleryThumbnail(form?.["thumbnail"]);
+    if (thumbnail === "invalid") return c.json({ error: "invalid_thumbnail" }, 400);
+    const body = file instanceof File ? await file.arrayBuffer() : await c.req.arrayBuffer();
     if (body.byteLength === 0) return c.json({ error: "empty_body" }, 400);
     if (body.byteLength > EVENT_PHOTO_MAX_BYTES) {
       return c.json({ error: "too_large", maxBytes: EVENT_PHOTO_MAX_BYTES }, 413);
     }
-    const photoId = await eventPhotosRepo.create(eventId, c.get("user").id);
-    await getBucket().put(photoR2Key(eventId, photoId), body, {
-      httpMetadata: { contentType: mime },
-    });
+    const photoId = crypto.randomUUID();
+    const media = { eventId, id: photoId, kind: "photo" as const };
+    const bucket = getBucket();
+    try {
+      await bucket.put(photoR2Key(eventId, photoId), body, {
+        httpMetadata: { contentType: mime },
+      });
+      if (thumbnail) {
+        await bucket.put(photoThumbnailR2Key(media), thumbnail.bytes, {
+          httpMetadata: { contentType: thumbnail.mime },
+        });
+      }
+      await eventPhotosRepo.create(eventId, c.get("user").id, {
+        id: photoId, hasThumbnail: Boolean(thumbnail),
+      });
+    } catch (e) {
+      await deleteObjects(photoObjectKeys(media), `[event-photo] photo=${photoId}`);
+      throw e;
+    }
     return c.json({ photo: await eventPhotosRepo.findById(photoId) }, 201);
   },
 );
@@ -344,6 +387,10 @@ eventPhotoRoutes.post(
     const body = await c.req.parseBody();
     const video = body["video"];
     const poster = body["poster"];
+    const thumbnail = await readGalleryThumbnail(body["thumbnail"]);
+    if (thumbnail === "invalid" || (thumbnail && !(poster instanceof File))) {
+      return c.json({ error: "invalid_thumbnail" }, 400);
+    }
     if (!(video instanceof File)) return c.json({ error: "video_required" }, 400);
 
     // 検証は写真の流儀で順に弾く: MIME 許可リスト → サイズ → 長さ → ポスター
@@ -389,7 +436,7 @@ eventPhotoRoutes.post(
       return c.json({ error: "invalid_video" }, 400);
     }
 
-    // 保存順序は R2 put（video → poster）→ D1 insert。写真（D1 → R2）と逆だが、
+    // Save all R2 objects before D1 insertion, as for photos.
     // 大きいオブジェクトほど put 失敗の確率が上がるため
     // 「行はあるのに実体がない」壊れ方を避ける
     const videoId = crypto.randomUUID();
@@ -405,7 +452,13 @@ eventPhotoRoutes.post(
           { httpMetadata: { contentType: posterMime } },
         );
       }
+      if (thumbnail) {
+        await bucket.put(photoThumbnailR2Key({ eventId, id: videoId, kind: "video" }), thumbnail.bytes, {
+          httpMetadata: { contentType: thumbnail.mime },
+        });
+      }
       await eventPhotosRepo.createVideo(videoId, eventId, c.get("user").id, {
+        hasThumbnail: Boolean(thumbnail),
         durationMs,
         bytes: bytes.byteLength,
         mime,

@@ -23,18 +23,20 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  * アップロード前にクライアント側でエンコード。
  * WebP 対応ブラウザなら WebP、非対応なら JPEG に変換する。
  * 長辺は maxDim に収め、失敗時は元の Blob をそのまま返す。
+ * centerCropSquare はグリッドの中央 cover 表示用。小さい入力も maxDim 四方にする。
  */
 export async function encodeImageForUpload(
   file: Blob,
   maxDim = 1920,
   quality = 0.85,
+  centerCropSquare = false,
 ): Promise<Blob> {
   const url = URL.createObjectURL(file);
   try {
     const img = await loadImage(url);
     const scale = Math.min(1, maxDim / Math.max(img.width, img.height) || 1);
-    const width = Math.max(1, Math.round(img.width * scale));
-    const height = Math.max(1, Math.round(img.height * scale));
+    const width = centerCropSquare ? maxDim : Math.max(1, Math.round(img.width * scale));
+    const height = centerCropSquare ? maxDim : Math.max(1, Math.round(img.height * scale));
 
     const canvas = document.createElement("canvas");
     canvas.width = width;
@@ -48,7 +50,14 @@ export async function encodeImageForUpload(
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, width, height);
     }
-    ctx.drawImage(img, 0, 0, width, height);
+    if (centerCropSquare) {
+      // Match the gallery's square object-fit: cover with default center position.
+      const side = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2,
+        side, side, 0, 0, width, height);
+    } else {
+      ctx.drawImage(img, 0, 0, width, height);
+    }
 
     const type = webp ? "image/webp" : "image/jpeg";
     const blob = await new Promise<Blob | null>((resolve) =>
