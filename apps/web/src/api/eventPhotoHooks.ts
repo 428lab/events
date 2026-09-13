@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import type {
   EventPhoto,
+  EventPhotosPage,
   PhotoComment,
   UserPhotosPage,
 } from "@eventer/shared";
@@ -18,6 +19,15 @@ export function useEventPhotos(eventId: string, enabled: boolean) {
     queryFn: async () =>
       (await api.get<{ photos: EventPhoto[] }>(`/events/${eventId}/photos`))
         .photos,
+  });
+}
+
+export function useEventPhotosPage(eventId: string, page: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ["event", eventId, "photos", "page", page],
+    enabled: enabled && Boolean(eventId),
+    queryFn: () =>
+      api.get<EventPhotosPage>(`/events/${eventId}/photos?page=${page}`),
   });
 }
 

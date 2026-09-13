@@ -1,10 +1,12 @@
 import type {
   EventPhoto,
+  EventPhotosPage,
   EventTimelinePhotos,
   UserPhoto,
   UserPhotoFacets,
 } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { EVENT_PHOTO_PAGE_SIZE } from "@eventer/shared";
+import { getDb, many, one, run } from "../client.js";
 
 interface Row {
   id: string;
@@ -54,11 +56,12 @@ const COMMENT_COUNT = `${COMMENT_COUNT_EXPR} AS comment_count`;
 // WHERE をここに含めておくことで、呼び出し側は AND で足すだけになり、
 // 経路が増えたときに除外を書き忘れられないようにしている
 // （非表示のものを見られるのは管理画面の adminModeration 専用クエリだけ）
-const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at, p.kind, p.duration_ms,
-  u.username, u.global_name, u.avatar_url, ${COMMENT_COUNT}
-  FROM event_photo p JOIN user u ON u.id = p.user_id
+const VISIBLE_FROM = `FROM event_photo p JOIN user u ON u.id = p.user_id
     AND u.deleted_at IS NULL
   WHERE p.admin_hidden_at IS NULL`;
+const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at, p.kind, p.duration_ms,
+  u.username, u.global_name, u.avatar_url, ${COMMENT_COUNT}
+  ${VISIBLE_FROM}`;
 
 // 公開プロフィールに出してよい写真の条件（p=event_photo, e=event を JOIN 済み前提）。
 // 本人の投稿・写真公開設定のイベント・公開済みイベント・運営非表示でない、の4つ。
@@ -110,10 +113,29 @@ function buildUserPhotoWhere(
 export const eventPhotosRepo = {
   async listByEvent(eventId: string): Promise<EventPhoto[]> {
     const rows = await many<Row>(
-      `${SELECT} AND p.event_id = ? ORDER BY p.created_at DESC`,
+      `${SELECT} AND p.event_id = ? ORDER BY p.created_at DESC, p.id DESC`,
       eventId,
     );
     return rows.map(toPhoto);
+  },
+
+  /** Visible total and bounded rows share one snapshot, including empty pages.
+   * Do not use countByEvent: hidden rows still consume upload slots, not pages. */
+  async listByEventPaged(eventId: string, page: number): Promise<EventPhotosPage> {
+    const db = getDb();
+    const [count, items] = await db.batch([
+      db.prepare(`SELECT COUNT(1) AS n ${VISIBLE_FROM} AND p.event_id = ?`)
+        .bind(eventId),
+      db.prepare(`${SELECT} AND p.event_id = ?
+        ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?`)
+        .bind(eventId, EVENT_PHOTO_PAGE_SIZE, (page - 1) * EVENT_PHOTO_PAGE_SIZE),
+    ]);
+    return {
+      photos: (items.results as unknown as Row[]).map(toPhoto),
+      total: (count.results[0] as { n: number }).n,
+      page,
+      limit: EVENT_PHOTO_PAGE_SIZE,
+    };
   },
 
   async findById(id: string): Promise<EventPhoto | null> {
