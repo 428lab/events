@@ -3,6 +3,9 @@
 import argparse
 import collections
 import contextlib
+import copy
+import datetime
+import email.utils
 import fcntl
 import hashlib
 import json
@@ -24,7 +27,12 @@ TARGET = dict(environment="staging", account="b9cec3916d500760a7c7b9c31c720d80",
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BYTES = 128 * 1024
 MAX_SOURCE = 10 * 1024 * 1024
-VERSION = 1
+VERSION = 2
+HTTP_METADATA = {
+    'contentType': 'content-type', 'contentDisposition': 'content-disposition',
+    'contentEncoding': 'content-encoding', 'contentLanguage': 'content-language',
+    'cacheControl': 'cache-control', 'cacheExpiry': 'expires',
+}
 
 
 class SafetyError(Exception):
@@ -102,13 +110,13 @@ class Cloudflare:
         except (urllib.error.URLError, TimeoutError):
             raise SafetyError('cloudflare_transport_unknown_outcome') from None
 
-    def json(self, path, method='GET', data=None):
+    def json(self, path, method='GET', data=None, full=False):
         raw, _ = self.request(path, method, json.dumps(data).encode() if data else None,
                               {'Content-Type': 'application/json'})
         result = json.loads(raw)
         if not result.get('success'):
             raise SafetyError('cloudflare_api_failure')
-        return result['result']
+        return result if full else result['result']
 
     def query(self, sql, params=()):
         read = sql.lstrip().startswith('SELECT ')
@@ -131,22 +139,71 @@ class Cloudflare:
         if 'has_thumbnail' not in [r['name'] for r in cols]:
             raise SafetyError('migration_0089_required_no_auto_migration')
 
+    def stored_metadata(self, key):
+        # Official List Objects JSON exposes persisted metadata; download response
+        # headers do not (notably their synthetic attachment Content-Disposition).
+        response = self.json('/r2/buckets/' + TARGET['bucket'] + '/objects?' +
+                             urllib.parse.urlencode({'prefix': key, 'per_page': 25}), full=True)
+        records = response['result']
+        if not isinstance(records, list) or len(records) > 25:
+            raise SafetyError('unexpected_metadata_response')
+        exact = [record for record in records if record.get('key') == key]
+        if not exact:
+            info = response.get('result_info', {})
+            if len(records) == 25 or info.get('is_truncated') or info.get('cursor'):
+                raise SafetyError('metadata_prefix_ambiguous')
+            return None
+        if len(exact) != 1:
+            raise SafetyError('unexpected_metadata_response')
+        record = exact[0]
+        http = record.get('http_metadata')
+        if not isinstance(http, dict) or 'custom_metadata' not in record:
+            raise SafetyError('persisted_metadata_missing')
+        # Wrangler's supported PUT headers cannot round-trip custom metadata.
+        # Refuse these objects instead of silently discarding genuine fields.
+        if record['custom_metadata'] != {} or set(http) - HTTP_METADATA.keys():
+            raise SafetyError('unsupported_persisted_metadata')
+        if record.get('storage_class') != 'Standard' or record.get('ssec'):
+            raise SafetyError('unsupported_object_storage_attributes')
+        if not isinstance(record.get('etag'), str) or not record['etag'] or not isinstance(record.get('size'), int):
+            raise SafetyError('metadata_identity_missing')
+        metadata = {}
+        for name, value in http.items():
+            if not isinstance(value, str) or '\r' in value or '\n' in value:
+                raise SafetyError('invalid_persisted_metadata')
+            if name == 'cacheExpiry':
+                try:
+                    expiry = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+                    if expiry.utcoffset() is None or expiry.microsecond:
+                        raise ValueError()
+                    value = email.utils.format_datetime(expiry.astimezone(datetime.timezone.utc), usegmt=True)
+                except ValueError:
+                    raise SafetyError('unsupported_cache_expiry') from None
+            metadata[HTTP_METADATA[name]] = value
+        return {'metadata': metadata, 'etag': record['etag'], 'bytes': record['size'],
+                'last_modified': record.get('last_modified')}
+
     def object(self, key, method='GET', data=None, metadata=None):
         if method != 'GET' and not self.allow_write:
             raise SafetyError('remote_write_disabled')
         if method != 'GET' and not re.fullmatch(r'event-(photos|videos)/[\w-]+/[\w-]+-thumbnail', key):
             raise SafetyError('only_thumbnail_mutation_allowed')
+        before = self.stored_metadata(key) if method == 'GET' else None
+        if method == 'GET' and before is None:
+            return None
         result = self.request('/r2/buckets/' + TARGET['bucket'] + '/objects/' +
                               urllib.parse.quote(key, safe='/'), method, data, metadata, missing=method == 'GET')
+        if method != 'GET':
+            return None  # PUT/DELETE response is not object evidence.
         if result is None:
-            return None
+            raise SafetyError('object_changed_during_download')
         body, headers = result
         headers = {k.lower(): v for k, v in headers.items()}
-        return {'data': body, 'sha256': digest(body), 'bytes': len(body),
-                'metadata': {k: v for k, v in headers.items() if k in (
-                    'content-type', 'cache-control', 'content-disposition', 'content-encoding',
-                    'content-language', 'expires') or k.startswith('x-amz-meta-')},
-                'etag': headers.get('etag')}
+        after = self.stored_metadata(key)
+        if (before != after or headers.get('etag', '').strip('"') != before['etag']
+                or len(body) != before['bytes']):
+            raise SafetyError('object_changed_during_download')
+        return {'data': body, 'sha256': digest(body), **before}
 
 
 def keys(row):
@@ -301,6 +358,38 @@ def dry_run(api, state, path, batch):
     save(path, state)
 
 
+def import_read_only_v1(api, source_path, destination):
+    """Metadata-only migration of an untouched v1 dry-run into a NEW workspace."""
+    if source_path.is_symlink() or source_path.name != 'manifest.json' or source_path.parent.resolve() == destination.parent.resolve():
+        raise SafetyError('invalid_v1_import_path')
+    with workspace(source_path.parent):
+        raw = source_path.read_bytes()
+        previous = json.loads(raw)
+        if (previous.get('version') != 1 or previous.get('target') != TARGET
+                or not previous.get('inventory_complete') or not 1 <= len(previous.get('entries', [])) <= 25
+                or any(e['status'] != 'ready' for e in previous['entries'])
+                or any(source_path.parent.glob('backup-*'))):
+            raise SafetyError('import_requires_untouched_ready_v1_dry_run')
+        state = copy.deepcopy(previous)
+        for entry in state['entries']:
+            row = entry['row']
+            now = current(api, row)
+            if not alive(now, row) or now != row:
+                raise SafetyError('v1_row_changed_new_inventory_required')
+            for name, key in zip(('source', 'old'), keys(row)):
+                recorded = entry[name]
+                actual = api.stored_metadata(key)
+                if recorded is None and actual is None:
+                    continue
+                if (not recorded or not actual or recorded.get('etag', '').strip('"') != actual['etag']
+                        or recorded['bytes'] != actual['bytes']):
+                    raise SafetyError('v1_object_changed_new_inventory_required')
+                entry[name] = {**recorded, **actual}
+        state.update(version=VERSION, imported_v1_sha256=digest(raw), metadata_refreshed_at=int(time.time()))
+        save(destination, state)
+        return state
+
+
 @contextlib.contextmanager
 def workspace(path):
     path = path.absolute()
@@ -326,24 +415,31 @@ def main():
     parser.add_argument('--mode', choices=['dry-run', 'apply', 'reconcile', 'rollback'], default='dry-run')
     parser.add_argument('--batch', type=int, default=5)
     parser.add_argument('--approve-staging-writes', action='store_true')
+    parser.add_argument('--import-v1', type=Path, help='Read-only metadata refresh of untouched v1 manifest into new workspace')
     args = parser.parse_args()
     check_target(args)
     if not 1 <= args.batch <= 25:
         raise SafetyError('batch_must_be_1_to_25')
     writes = args.mode != 'dry-run'
+    if args.import_v1 and writes:
+        raise SafetyError('v1_import_is_read_only')
     if writes and not args.approve_staging_writes:
         raise SafetyError('explicit_staging_write_approval_required')
     with workspace(args.workspace) as directory:
         path = directory / 'manifest.json'
         if path.is_symlink():
             raise SafetyError('manifest_symlink_rejected')
+        if args.import_v1 and path.exists():
+            raise SafetyError('v1_import_requires_new_workspace')
         state = json.loads(path.read_text()) if path.exists() else {
             'version': VERSION, 'target': TARGET, 'created_at': int(time.time()), 'entries': []}
         if state['target'] != TARGET or state['version'] != VERSION:
             raise SafetyError('manifest_target_or_version_mismatch')
         api = Cloudflare(writes)
         api.preflight()
-        if args.mode == 'dry-run':
+        if args.import_v1:
+            state = import_read_only_v1(api, args.import_v1, path)
+        elif args.mode == 'dry-run':
             if not state.get('inventory_complete'):
                 dry_run(api, state, path, args.batch)
         else:

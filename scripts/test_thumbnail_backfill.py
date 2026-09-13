@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.parse
 from unittest.mock import patch
 
 import thumbnail_backfill as core
@@ -257,6 +258,136 @@ class BackfillTests(unittest.TestCase):
         self.apply()
         self.assertEqual(second['status'], 'ready')
         self.assertEqual(self.entry['status'], 'verified')
+
+
+class DownloadTransport(core.Cloudflare):
+    """Official list JSON plus observed GET attachment header, not echo metadata."""
+    def __init__(self, backend):
+        self.backend = backend
+        self.allow_write = True
+        self.requests = []
+        self.custom_metadata = {}
+
+    def __getattr__(self, name):
+        return getattr(self.backend, name)
+
+    def __setattr__(self, name, value):
+        if name in ('row', 'after_put', 'after_flag', 'fail_put'):
+            setattr(self.backend, name, value)
+        else:
+            object.__setattr__(self, name, value)
+
+    def query(self, sql, params):
+        return self.backend.query(sql, params)
+
+    def request(self, path, method='GET', data=None, headers=None, missing=False):
+        self.requests.append((method, path))
+        parsed = urllib.parse.urlsplit(path)
+        if parsed.query:
+            query = urllib.parse.parse_qs(parsed.query)
+            assert query['per_page'] == ['25']
+            key = query['prefix'][0]
+            value = self.backend.objects.get(key)
+            records = []
+            if value is not None:
+                http = {}
+                inverse = {v: k for k, v in core.HTTP_METADATA.items()}
+                for name, field in value['metadata'].items():
+                    if name == 'expires':
+                        field = core.email.utils.parsedate_to_datetime(field).isoformat().replace('+00:00', 'Z')
+                    http[inverse[name]] = field
+                records = [dict(key=key, size=value['bytes'], etag=value['sha256'],
+                                http_metadata=http, custom_metadata=self.custom_metadata,
+                                last_modified='2026-09-13T00:00:00Z', storage_class='Standard')]
+            # Real prefix listings need not return the exact source first.
+            records.insert(0, {'key': key + '-thumbnail'})
+            return json.dumps({'success': True, 'result': records}).encode(), {}
+        key = urllib.parse.unquote(parsed.path.split('/objects/', 1)[1])
+        result = self.backend.object(key, method, data, headers)
+        if method != 'GET':
+            return b'{}', {}
+        if result is None:
+            return None
+        return result['data'], {'ETag': '"' + result['sha256'] + '"',
+                                'Content-Type': 'application/octet-stream',
+                                'Content-Disposition': 'attachment; filename="synthetic-download"'}
+
+
+class TransportBackfillTests(BackfillTests):
+    # Run every apply/unknown PUT/deletion/rollback test through the real adapter.
+    def setUp(self):
+        super().setUp()
+        self.api = DownloadTransport(self.api)
+
+    def test_true_disposition_and_all_http_metadata_rollback(self):
+        old = obj(b'old-thumbnail', 'image/jpeg')
+        old['metadata'].update({'content-disposition': 'inline; filename="genuine.jpg"',
+                                'cache-control': 'private, max-age=123', 'content-language': 'ja',
+                                'content-encoding': 'identity', 'expires': 'Mon, 14 Sep 2026 00:00:00 GMT'})
+        self.api.objects[self.api.key] = old
+        self.entry['old'] = core.evidence(self.api.object(self.api.key))
+        self.assertEqual(self.entry['old']['metadata'], old['metadata'])
+        self.apply()
+        writer.operate(self.api, self.state, self.path, 'rollback', 1)
+        self.assertEqual(self.api.objects[self.api.key]['metadata'], old['metadata'])
+        self.assertNotIn('synthetic-download', json.dumps(self.api.objects[self.api.key]['metadata']))
+
+    def test_custom_metadata_rejected_not_dropped(self):
+        self.api.custom_metadata = {'genuine': 'keep'}
+        with self.assertRaisesRegex(core.SafetyError, 'unsupported_persisted_metadata'):
+            self.api.object(self.api.source_key)
+        self.assertEqual(self.api.writes, [])
+
+    def test_metadata_race_during_download_rejected(self):
+        original = self.api.request
+        def changing(path, *args, **kwargs):
+            response = original(path, *args, **kwargs)
+            if '/objects/' in path:
+                self.api.objects[self.api.source_key]['metadata']['content-language'] = 'changed'
+            return response
+        with patch.object(self.api, 'request', changing):
+            with self.assertRaisesRegex(core.SafetyError, 'object_changed_during_download'):
+                self.api.object(self.api.source_key)
+
+    def test_download_etag_mismatch_rejected(self):
+        original = self.api.request
+        def changed_etag(path, *args, **kwargs):
+            body, headers = original(path, *args, **kwargs)
+            if '/objects/' in path:
+                headers['ETag'] = '"different-version"'
+            return body, headers
+        with patch.object(self.api, 'request', changed_etag):
+            with self.assertRaisesRegex(core.SafetyError, 'object_changed_during_download'):
+                self.api.object(self.api.source_key)
+
+    def test_truncated_metadata_is_not_absence(self):
+        with patch.object(self.api, 'json', return_value={
+                'result': [{'key': self.api.key + '-other'}],
+                'result_info': {'is_truncated': True, 'cursor': 'next'}}):
+            with self.assertRaisesRegex(core.SafetyError, 'metadata_prefix_ambiguous'):
+                self.api.stored_metadata(self.api.key)
+
+    def test_v1_import_refreshes_only_metadata_into_new_manifest(self):
+        with tempfile.TemporaryDirectory() as old_directory:
+            old_path = Path(old_directory) / 'manifest.json'
+            previous = {**copy.deepcopy(self.state), 'version': 1, 'target': core.TARGET}
+            source = previous['entries'][0]['source']
+            source.update(etag='"' + self.source['sha256'] + '"')
+            source['metadata']['content-disposition'] = 'attachment; filename="synthetic-download"'
+            old_path.write_text(json.dumps(previous))
+            original_bytes = old_path.read_bytes()
+            with patch.object(core, 'current', lambda api, row: copy.deepcopy(api.row)):
+                refreshed = core.import_read_only_v1(self.api, old_path, self.path)
+            self.assertEqual(refreshed['version'], 2)
+            self.assertEqual(refreshed['entries'][0]['source']['metadata'], self.source['metadata'])
+            self.assertEqual(refreshed['entries'][0]['source']['sha256'], source['sha256'])
+            self.assertEqual(old_path.read_bytes(), original_bytes)
+            self.assertTrue(all(method == 'GET' and '?' in path for method, path in self.api.requests))
+            source['etag'] = 'changed'
+            old_path.write_text(json.dumps(previous))
+            with patch.object(core, 'current', lambda api, row: copy.deepcopy(api.row)):
+                with self.assertRaisesRegex(core.SafetyError, 'v1_object_changed'):
+                    core.import_read_only_v1(self.api, old_path, self.path)
 
 
 if __name__ == '__main__':

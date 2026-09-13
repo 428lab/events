@@ -45,6 +45,19 @@ read-only Wrangler command with logs directed to the private workspace. REST cal
 use the same account-scoped D1/R2 endpoints as Wrangler; they retain object MIME
 and bytes without putting private response bodies in Wrangler's global logs.
 
+**Persisted metadata, not download headers:** official R2 List Objects JSON provides
+`http_metadata`/`custom_metadata`. Each object GET brackets its body download with
+exact-key metadata reads (prefix/per_page25, no assumed result order), requiring
+unchanged metadata/ETag/size/last-modified and matching download ETag/body length.
+A truncated/ambiguous prefix fails closed. Download `Content-Disposition` can be a
+synthetic attachment header and is never replayed as stored metadata. Genuine stored
+Content-Disposition, Content-Type, Cache-Control, Content-Encoding, Content-Language
+and cache expiry are retained and compared; expiry is losslessly rendered as an
+HTTP-date for PUT. Hash/MIME/dimension validation and exact metadata checks remain.
+Unknown HTTP fields, nonempty custom metadata, non-Standard storage or encrypted
+objects fail closed: the current Wrangler-compatible PUT surface has no verified
+round-trip contract for them. These fields are **not** silently stripped.
+
 From the repository root, choose a new **private directory outside every checkout**
 on encrypted local storage, not a shared/synced directory:
 
@@ -74,6 +87,29 @@ Apply rechecks rows and source/target bytes, so a stale inventory is not authori
 to mutate. A changed source/row is skipped; re-inventory later in a **new** workspace
 only after resolving the old journal. Do not edit status fields or delete a journal
 to bypass reconciliation. Dry-run failure entries require investigation/new inventory.
+
+### Old rehearsal manifest: required version2 migration
+
+Version1 mistakenly captured transport headers. It is rejected before remote
+preflight by this version; **never use it for apply/reconcile/rollback** or simply
+edit its version/headers. An untouched, fully ready v1 dry-run (1..25 entries, no
+backup files) can be imported read-only into a **new** private workspace:
+
+```bash
+# Save the old private workspace path before switching BACKFILL_DIR.
+export OLD_BACKFILL_DIR="$BACKFILL_DIR"
+export BACKFILL_DIR="$(mktemp -d "${TMPDIR:-/tmp}/thumbnail-rehearsal-v2.XXXXXX")"
+operator --import-v1 "$OLD_BACKFILL_DIR/manifest.json"
+```
+
+This rechecks current row identity/flags and refreshes persisted metadata only,
+requiring each source/old-object ETag and size to equal the recorded evidence and
+previously absent thumbnails to remain absent. It preserves original SHA256/local
+encoding evidence without downloading media again; records the original manifest
+hash; leaves v1 unchanged. No partial new manifest is saved on failure. Changed rows,
+objects, previously attempted writes, or larger manifests require investigation and
+fresh version2 dry-run inventory, not forced conversion. Metadata-only changes are
+observed as the new dry-run baseline, not interpreted as their historical state.
 
 ## Reviewed pilot, resume, verification (NOT executed yet)
 
@@ -192,5 +228,6 @@ backfill. No production target switch is provided.
 
 References retrieved for preparation: [Wrangler commands](https://developers.cloudflare.com/workers/wrangler/commands/),
 [R2 Workers API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/),
-installed Wrangler4.103.0 account-scoped object helpers, `eventPhotos.ts` serving/
+[R2 List Objects persisted metadata](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/subresources/objects/methods/list/),
+installed Wrangler4.103.0 `putHeaderKeys`/account-scoped object helpers, `eventPhotos.ts` serving/
 visibility, `mediaCleanup.ts`/`purgeDeleted.ts` deletion, and migration0089.
