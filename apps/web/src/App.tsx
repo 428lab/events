@@ -58,6 +58,7 @@ import { FollowingPage } from "./pages/FollowingPage.js";
 import { VenuesPage } from "./pages/VenuesPage.js";
 import { VenueDetailPage } from "./pages/VenueDetailPage.js";
 import { VenueFormPage } from "./pages/VenueFormPage.js";
+import { DeckImportPage } from "./pages/DeckImportPage.js";
 import { DecksPage } from "./pages/DecksPage.js";
 import { LiveSetsPage } from "./pages/LiveSetsPage.js";
 import { LiveSetEditorPage } from "./pages/LiveSetEditorPage.js";
@@ -185,6 +186,7 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/decks/import" element={<PublicLayout><DeckImportPage /></PublicLayout>} />
         {/* 未ログインの公開ページ */}
         <Route
           path="/"
@@ -406,6 +408,7 @@ export function App() {
         {/* コミュニティ別KPI (#262)。管理者・運営管理者のみ（ページ側でも判定） */}
         <Route path="/c/:slug/kpi" element={<CommunityKpiPage />} />
         <Route path="/decks" element={<DecksPage />} />
+        <Route path="/decks/import" element={<DeckImportPage />} />
         <Route path="/decks/:id/edit" element={<DeckEditorPage />} />
         <Route path="/live-sets" element={<LiveSetsPage />} />
         <Route path="/live-sets/:id/edit" element={<LiveSetEditorPage />} />

@@ -1,7 +1,7 @@
 # LLM生成スライドのJSON取り込み設計（#523）
 
 - 状態: **オーナーが設計 `7ee1d70` の実装を承認。共有契約・保存APIの実装途中。配備・mainマージは未承認。**
-- 実装チェックポイント: strict共通parser/validator/converter、v1配布物、原子的保存API、`0090_deck_import_receipt.sql` とfocusedテストを追加。UI・編集保存状態は未実装。migrationはテスト用D1以外に未適用。
+- 実装チェックポイント: strict共通parser/validator/converter、v1配布物、原子的保存API、`0090_deck_import_receipt.sql` とfocusedテストを追加。取り込み画面・worker検証・sessionStorage再試行・全ページpreviewと警告・deck専用ACK保存も追加。全体の独立レビューと実環境での保存→編集→画像差替→発表の受入は未完了。migrationはテスト用D1以外に未適用。
 - アカウント統合の補足方針は実装中に確認・承認された（§7.4）。共有契約・API・統合方針を含め、独立実装レビュー前に配備しない。
 - 以下の「将来」「今回は設計のみ」は承認された設計時点の記録。実装完了の主張ではない。
 - Issue: https://github.com/428lab/events/issues/523
@@ -321,7 +321,7 @@ SQLは全値bind、ログにはraw/text/title/キー/本文hashを出さない�
 
 冪等キーはownerスコープであり、負け側アカウントの削除でそのアカウントの寿命は終了する。別ownerへ同じ保存操作を引き継がない§5.2の契約に従い、クライアントは統合後に負け側ownerのraw/keyを勝ち側として自動再送しない。アカウントの実削除はFK cascadeでreceiptも削除し、deck単体の削除ではtombstoneを保持する。
 
-受入: 非衝突receiptの移管、衝突時の勝ち側receipt完全保持、双方deckの移管と本文保持、負け側user削除、FK整合、退会の実削除でreceipt消去をテストする。owner切替を止めるUI復旧実装は次フェーズで確認する。この補足解釈は独立レビューの対象とする。
+受入: 非衝突receiptの移管、衝突時の勝ち側receipt完全保持、双方deckの移管と本文保持、負け側user削除、FK整合、退会の実削除でreceipt消去をテストする。owner切替を止めるUI復旧実装・テストを追加し、統合後の実ブラウザ復旧も独立受入で確認する。この補足解釈は独立レビューの対象とする。
 
 ## 8. 互換性・移行・復旧
 

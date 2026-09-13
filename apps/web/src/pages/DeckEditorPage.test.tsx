@@ -27,7 +27,7 @@ vi.mock("../api/deckHooks.js", () => ({
     isLoading: mocks.deck === null,
     isError: false,
   }),
-  useUpdateDeck: () => ({ mutate: mocks.update, isPending: false }),
+  useUpdateDeck: () => ({ mutateAsync: mocks.update, isPending: false }),
   useUploadDeckImage: () => ({ mutateAsync: mocks.upload, isPending: false }),
 }));
 
@@ -103,11 +103,12 @@ const layers = () =>
 const clickLayer = (name: string) =>
   fireEvent.click(layers().getByText(name));
 /** 待ち時間を過ぎさせる（履歴の 500ms・保存の 800ms） */
-const settle = () => act(() => void vi.advanceTimersByTime(1500));
+const settle = () => act(async () => { vi.advanceTimersByTime(1500); });
 
 beforeEach(() => {
   vi.useFakeTimers();
   mocks.update.mockReset();
+  vi.stubGlobal("scrollTo", vi.fn());
   // jsdom には無いので、幅を測る仕掛けだけ差し替える（測れた幅は 0 のまま）
   vi.stubGlobal(
     "ResizeObserver",
@@ -125,20 +126,20 @@ afterEach(() => {
 });
 
 describe("ページの一覧", () => {
-  it("枚数ぶんの番号が出る", () => {
+  it("枚数ぶんの番号が出る", async () => {
     draw(twoPages());
     expect(screen.getByText("1")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.queryByText("3")).not.toBeInTheDocument();
   });
 
-  it("ページを足すと増える", () => {
+  it("ページを足すと増える", async () => {
     draw(twoPages());
     click("＋ ページ追加");
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
-  it("最後の1枚は消させない", () => {
+  it("最後の1枚は消させない", async () => {
     draw([{ id: "s1", background: "#ffffff", elements: [] }]);
     // 中身の無いスライドを作らせないための歯止め
     expect(screen.getByTestId("DeleteOutlineIcon").closest("button")).toBeDisabled();
@@ -146,25 +147,25 @@ describe("ページの一覧", () => {
 });
 
 describe("レイヤーと設定欄", () => {
-  it("編集しているページの要素だけが並ぶ", () => {
+  it("編集しているページの要素だけが並ぶ", async () => {
     draw(twoPages());
     expect(layers().getByText("ようこそ")).toBeInTheDocument();
     expect(layers().getByText("本文")).toBeInTheDocument();
   });
 
-  it("別のページへ移ると、そのページの要素に入れ替わる", () => {
+  it("別のページへ移ると、そのページの要素に入れ替わる", async () => {
     draw(twoPages());
     click("2");
     expect(layers().queryByText("ようこそ")).not.toBeInTheDocument();
     expect(layers().getByText("要素なし")).toBeInTheDocument();
   });
 
-  it("何も選んでいなければ選び方の案内を出す", () => {
+  it("何も選んでいなければ選び方の案内を出す", async () => {
     draw(twoPages());
     expect(screen.getByText(/要素を選ぶと編集できます/)).toBeInTheDocument();
   });
 
-  it("選ぶとその要素の設定が出る", () => {
+  it("選ぶとその要素の設定が出る", async () => {
     draw(twoPages());
     clickLayer("ようこそ");
     expect(screen.getByText("この要素を削除")).toBeInTheDocument();
@@ -173,7 +174,7 @@ describe("レイヤーと設定欄", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("グループの一員を選ぶと相方も一緒に選ばれる", () => {
+  it("グループの一員を選ぶと相方も一緒に選ばれる", async () => {
     draw(twoPages("g1"));
     clickLayer("ようこそ");
     expect(screen.getByText("2個を選択中")).toBeInTheDocument();
@@ -190,39 +191,39 @@ describe("レイヤーと設定欄", () => {
  * 動かして並びそのものを見る（端の要素だと逆へ動いても見分けが付かない）。
  */
 describe("重なり順の結線", () => {
-  it("「最前面」で選んだ要素が並びの末尾（手前）へ移る", () => {
+  it("「最前面」で選んだ要素が並びの末尾（手前）へ移る", async () => {
     draw(threeStacked());
     clickLayer("中");
     click("最前面");
-    settle();
+    await settle();
     expect(savedOrder()).toEqual(["e1", "e3", "e2"]);
   });
 
-  it("「最背面」で選んだ要素が並びの先頭（奥）へ移る", () => {
+  it("「最背面」で選んだ要素が並びの先頭（奥）へ移る", async () => {
     draw(threeStacked());
     clickLayer("中");
     click("最背面");
-    settle();
+    await settle();
     expect(savedOrder()).toEqual(["e2", "e1", "e3"]);
   });
 
-  it("「前面へ」は1つ手前の要素とだけ入れ替わる", () => {
+  it("「前面へ」は1つ手前の要素とだけ入れ替わる", async () => {
     draw(threeStacked());
     clickLayer("中");
     click("前面へ");
-    settle();
+    await settle();
     expect(savedOrder()).toEqual(["e1", "e3", "e2"]);
   });
 
-  it("「背面へ」は1つ奥の要素とだけ入れ替わる", () => {
+  it("「背面へ」は1つ奥の要素とだけ入れ替わる", async () => {
     draw(threeStacked());
     clickLayer("中");
     click("背面へ");
-    settle();
+    await settle();
     expect(savedOrder()).toEqual(["e2", "e1", "e3"]);
   });
 
-  it("一覧は手前が上に出る（並びと逆）", () => {
+  it("一覧は手前が上に出る（並びと逆）", async () => {
     draw(threeStacked());
     const labels = layers()
       .getAllByText(/奥|中|手前/)
@@ -232,7 +233,22 @@ describe("重なり順の結線", () => {
 });
 
 describe("編集した結果", () => {
-  it("消した要素は一覧から消える", () => {
+  it("failed save disables the public viewer until an explicit retry ACK", async () => {
+    mocks.update.mockRejectedValue(new Error("offline"));
+    draw(twoPages());
+    const viewer = screen.getByRole("link", { name: "公開ビューア" });
+    expect(viewer).not.toHaveAttribute("aria-disabled", "true");
+    fireEvent.change(screen.getByPlaceholderText("スライドのタイトル"), { target: { value: "changed" } });
+    expect(viewer).toHaveAttribute("aria-disabled", "true");
+    await settle();
+    expect(screen.getByText(/保存失敗/)).toBeInTheDocument();
+    expect(viewer).toHaveAttribute("aria-disabled", "true");
+    mocks.update.mockResolvedValue({});
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "保存を再試行" })));
+    expect(viewer).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("消した要素は一覧から消える", async () => {
     draw(twoPages());
     clickLayer("ようこそ");
     click("この要素を削除");
@@ -240,11 +256,11 @@ describe("編集した結果", () => {
     expect(layers().getByText("本文")).toBeInTheDocument();
   });
 
-  it("しばらくすると自動で保存される", () => {
+  it("しばらくすると自動で保存される", async () => {
     draw(twoPages());
     clickLayer("ようこそ");
     click("この要素を削除");
-    settle();
+    await settle();
     expect(mocks.update).toHaveBeenCalledTimes(1);
     const saved = mocks.update.mock.calls[0][0];
     expect(saved.content.slides[0].elements.map((e: { id: string }) => e.id)).toEqual(
@@ -252,17 +268,17 @@ describe("編集した結果", () => {
     );
   });
 
-  it("開いただけでは保存しない", () => {
+  it("開いただけでは保存しない", async () => {
     draw(twoPages());
-    settle();
+    await settle();
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it("Ctrl+Z で戻せる", () => {
+  it("Ctrl+Z で戻せる", async () => {
     draw(twoPages());
     clickLayer("ようこそ");
     click("この要素を削除");
-    settle();
+    await settle();
     fireEvent.keyDown(window, { key: "z", ctrlKey: true });
     expect(layers().getByText("ようこそ")).toBeInTheDocument();
   });
