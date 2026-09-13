@@ -1,0 +1,40 @@
+{
+  "format": "events-lab-deck",
+  "version": 1,
+  "title": "地域勉強会のはじめ方",
+  "slides": [
+    {
+      "background": "#FFFFFF",
+      "elements": [
+        {
+          "type": "text",
+          "x": 48,
+          "y": 120,
+          "w": 864,
+          "h": 100,
+          "text": "地域勉強会のはじめ方",
+          "fontSize": 44,
+          "font": "default",
+          "color": "#172B24",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 48,
+          "y": 250,
+          "w": 864,
+          "h": 120,
+          "text": "小さく始めて、無理なく続ける",
+          "fontSize": 28,
+          "font": "default",
+          "color": "#172B24",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    }
+  ]
+}

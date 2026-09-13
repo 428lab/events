@@ -6,10 +6,12 @@ import { requireAuth } from "../auth/session.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { decksRepo } from "../db/repositories/decks.js";
 import { putDeckImage } from "./deckImages.js";
+import { postDeckImport } from "./deckImport.js";
 
 /** /api/decks（作成・編集・削除・自分の一覧）。閲覧は /api/public/decks/:slug */
 export const deckRoutes = new Hono<AppEnv>();
 deckRoutes.use("*", requireAuth);
+deckRoutes.post("/import", postDeckImport);
 
 /** スライド画像アップロード（owner） */
 deckRoutes.put("/:id/images", putDeckImage);

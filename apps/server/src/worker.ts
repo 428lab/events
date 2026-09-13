@@ -9,6 +9,7 @@ import {
   type Env,
 } from "./runtime.js";
 import {
+  DECK_IMPORT_MAX_BYTES,
   EVENT_PHOTO_MAX_BYTES,
   EVENT_THUMBNAIL_MAX_BYTES,
   EVENT_VIDEO_MAX_BYTES,
@@ -148,8 +149,17 @@ const VIDEO_UPLOAD_PATH = /^\/api\/events\/[^/]+\/videos$/;
 api.use("*", (c, next) => {
   const isVideoUpload =
     c.req.method === "POST" && VIDEO_UPLOAD_PATH.test(c.req.path);
+  const isDeckImport = c.req.method === "POST" && c.req.path === "/api/decks/import";
+  if (isDeckImport) {
+    c.header("Cache-Control", "no-store");
+    // Hono skips cumulative reading when Content-Length is present. Force this
+    // one gate to count the actual stream, even for a misleading declared size.
+    const headers = new Headers(c.req.raw.headers);
+    headers.delete("Content-Length");
+    c.req.raw = new Request(c.req.raw, { headers });
+  }
   return bodyLimit({
-    maxSize: isVideoUpload ? VIDEO_BODY_MAX : DEFAULT_BODY_MAX,
+    maxSize: isDeckImport ? DECK_IMPORT_MAX_BYTES : isVideoUpload ? VIDEO_BODY_MAX : DEFAULT_BODY_MAX,
     onError: (cc) => cc.json({ error: "too_large" }, 413),
   })(c, next);
 });

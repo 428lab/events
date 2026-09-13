@@ -93,7 +93,7 @@ const EXPECTED_BLOCKING_COLUMNS = 5;
 
 /** user(id) を参照する列の総数（merge-user-columns.test.ts と同じ数）。
  * こちらの走査が空振りしていないことの担保 */
-const EXPECTED_USER_COLUMNS = 52; // #513: per-user schedule registration receipt
+const EXPECTED_USER_COLUMNS = 53; // #523: deck import receipt owner (cascade on user deletion)
 
 /* ── 2. 定義の期待値（**定義から導かない**。手で書いて固定する） ───────── */
 
