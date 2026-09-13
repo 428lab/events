@@ -215,9 +215,13 @@ describe("イベント削除で R2 の実体も消す (#424)", () => {
     const videoId = await uploadVideo(eventId, cookie);
     await hidePhoto(photoId);
     await hidePhoto(videoId);
+    await env.BUCKET.put(`${photoKey(eventId, photoId)}-thumbnail`, "small-photo");
+    await env.BUCKET.put(`${videoKey(eventId, videoId)}-thumbnail`, "small-poster");
 
     expect((await deleteEvent(eventId, cookie)).status).toBe(200);
 
+    expect(await env.BUCKET.head(`${photoKey(eventId, photoId)}-thumbnail`)).toBeNull();
+    expect(await env.BUCKET.head(`${videoKey(eventId, videoId)}-thumbnail`)).toBeNull();
     expect(await env.BUCKET.head(photoKey(eventId, photoId))).toBeNull();
     expect(await env.BUCKET.head(videoKey(eventId, videoId))).toBeNull();
     expect(

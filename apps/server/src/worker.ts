@@ -10,6 +10,7 @@ import {
 } from "./runtime.js";
 import {
   EVENT_PHOTO_MAX_BYTES,
+  EVENT_THUMBNAIL_MAX_BYTES,
   EVENT_VIDEO_MAX_BYTES,
   gamificationFromStats,
 } from "@eventer/shared";
@@ -43,6 +44,7 @@ import {
   getEventPhotoImage,
   getEventPhotoVideo,
   getEventPhotoPoster,
+  getEventPhotoThumbnail,
   getPhotoComments,
 } from "./routes/eventPhotos.js";
 import {
@@ -141,7 +143,7 @@ const api = new Hono();
 // 個別上限（EVENT_VIDEO_MAX_BYTES 等）はこの門をくぐった後の検証
 const DEFAULT_BODY_MAX = 8 * 1024 * 1024;
 const VIDEO_BODY_MAX =
-  EVENT_VIDEO_MAX_BYTES + EVENT_PHOTO_MAX_BYTES + 1024 * 1024;
+  EVENT_VIDEO_MAX_BYTES + EVENT_PHOTO_MAX_BYTES + EVENT_THUMBNAIL_MAX_BYTES + 1024 * 1024;
 const VIDEO_UPLOAD_PATH = /^\/api\/events\/[^/]+\/videos$/;
 api.use("*", (c, next) => {
   const isVideoUpload =
@@ -192,6 +194,7 @@ api.get("/events/:id/photos", getEventPhotos);
 api.get("/events/:id/photos/:photoId/image", getEventPhotoImage);
 api.get("/events/:id/photos/:photoId/video", getEventPhotoVideo);
 api.get("/events/:id/photos/:photoId/poster", getEventPhotoPoster);
+api.get("/events/:id/photos/:photoId/thumbnail", getEventPhotoThumbnail);
 api.get("/events/:id/photos/:photoId/comments", getPhotoComments);
 // 公開: イベントコメント一覧（下書きはメンバーのみ。eventRoutes より先に登録）
 api.get("/events/:id/comments", getEventComments);
