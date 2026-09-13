@@ -5,7 +5,7 @@ import { encodeImageForUpload } from "./encodeImage.js";
  * small variant; omit it and retain legacy display instead. */
 export async function encodeGalleryThumbnail(source: Blob): Promise<Blob | null> {
   for (const quality of [0.8, 0.5]) {
-    const blob = await encodeImageForUpload(source, EVENT_THUMBNAIL_ENCODE_DIM, quality);
+    const blob = await encodeImageForUpload(source, EVENT_THUMBNAIL_ENCODE_DIM, quality, true);
     if (blob === source) return null;
     if (blob.size > 0 && blob.size <= EVENT_THUMBNAIL_MAX_BYTES &&
         ["image/webp", "image/jpeg"].includes(blob.type)) return blob;
