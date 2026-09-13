@@ -11,10 +11,10 @@ import { DeckImportPreview } from "../components/DeckImportPreview.js";
 
 export function DeckImportPage() {
   const { t } = useTranslation();
-  const { data: me, isLoading } = useMe();
+  const { data: me, isLoading, dataUpdatedAt } = useMe({ refetchOnMount: "always", refetchOnWindowFocus: "always", refetchInterval: 30000 });
   const navigate = useNavigate();
   const logout = useLogout();
-  const model = useDeckImport(me?.id ?? null);
+  const model = useDeckImport(me?.id ?? null, dataUpdatedAt);
   const { draft, result, owned, locked, validating, saving } = model;
   const [reviewed, setReviewed] = useState(false), [publicAccepted, setPublicAccepted] = useState(false);
   const [notice, setNotice] = useState("");
@@ -76,6 +76,7 @@ export function DeckImportPage() {
   return <Stack spacing={3}>
     <Typography variant="h5" fontWeight={700}>{t("deckImport.title")}</Typography>
     <Typography>{t("deckImport.intro")}</Typography>
+    {me && <Typography variant="body2">{t("deckImport.currentAccount", { name: me.globalName || me.username })}</Typography>}
     <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
       <Link href="/deck-import/v1/spec.md" target="_blank" rel="noreferrer">{t("deckImport.spec")}</Link>
       <Link href="/deck-import/v1/spec.md" download>{t("deckImport.downloadSpec")}</Link>

@@ -26,6 +26,9 @@ export async function postDeckImport(c: Context<AppEnv>) {
   const key = c.req.header("X-Deck-Import-Key") ?? "";
   if (!IMPORT_KEY.test(key)) return c.json({ error: "invalid_import_key" }, 400);
   const ownerId = c.get("user").id;
+  // Compare against this POST's authenticated session, never a client preflight.
+  // The header is a precondition, not an authority for the INSERT owner.
+  if (c.req.header("X-Deck-Import-Owner") !== ownerId) return c.json({ error: "import_owner_mismatch" }, 403);
   try {
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     if (bytes.byteLength > DECK_IMPORT_MAX_BYTES) return c.json({ error: "too_large", maxBytes: DECK_IMPORT_MAX_BYTES }, 413);

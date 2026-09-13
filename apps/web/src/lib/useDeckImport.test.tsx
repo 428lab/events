@@ -56,7 +56,7 @@ describe("useDeckImport recovery and identity", () => {
     expect(save).toHaveBeenCalledTimes(1);
     save.mockResolvedValue(receipt);
     await act(async () => recovered.result.current.save());
-    expect(save).toHaveBeenLastCalledWith("  original bytes\n", key);
+    expect(save).toHaveBeenLastCalledWith("  original bytes\n", key, "owner");
     expect(readImportDraft(sessionStorage)).toMatchObject({ state: "success", raw: "", receipt });
   });
   it("storage failure or readback mismatch prevents POST, preserving source", async () => {
@@ -97,6 +97,76 @@ describe("useDeckImport recovery and identity", () => {
     await act(async () => hook.result.current.save());
     expect(hook.result.current.draft.state).toBe("blocked");
     expect(save).toHaveBeenCalledTimes(1);
+  });
+  it("owner mismatch preserves the operation and hides it until authentication updates", async () => {
+    const hook = ready(); save.mockRejectedValue(new ApiError(403, { error: "import_owner_mismatch" }));
+    await act(async () => hook.result.current.save());
+    const stored = readImportDraft(sessionStorage);
+    expect(stored).toMatchObject({ state: "pending", ownerId: "owner", raw: "  original bytes\n", status: 403 });
+    expect(stored.key).not.toBeNull();
+    expect(save).toHaveBeenLastCalledWith(stored.raw, stored.key, "owner");
+    expect(hook.result.current.owned).toBe(false);
+    await act(async () => hook.result.current.save());
+    expect(save).toHaveBeenCalledTimes(1);
+    hook.rerender({ owner: "other" });
+    expect(hook.result.current.owned).toBe(false);
+    hook.rerender({ owner: "owner" });
+    expect(hook.result.current.owned).toBe(true);
+    save.mockResolvedValue(receipt);
+    await act(async () => hook.result.current.save());
+    expect(save).toHaveBeenLastCalledWith(stored.raw, stored.key, "owner");
+  });
+  it.each([
+    ["resolve", "draft"], ["http-reject", "draft"], ["network-reject", "draft"],
+    ["resolve", "pending"], ["http-reject", "pending"], ["network-reject", "pending"],
+  ])("detached save %s cannot overwrite a remounted %s", async (completion, state) => {
+    let resolve!: (value: unknown) => void, reject!: (error: unknown) => void;
+    save.mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const first = ready();
+    act(() => { void first.result.current.save(); });
+    const original = readImportDraft(sessionStorage);
+    first.unmount();
+    expect(readImportDraft(sessionStorage)).toEqual(original);
+    const next = renderHook(() => useDeckImport("owner"), { wrapper });
+    save.mockResolvedValue(receipt);
+    await act(async () => next.result.current.save());
+    act(() => { next.result.current.reset(); next.result.current.edit("new private source"); next.result.current.bindOwner(); next.result.current.validate(); });
+    act(() => ValidatorWorker.workers.at(-1)!.valid(next.result.current.draft.revision));
+    // Protect both an unsent draft and a newer potentially committed operation.
+    if (state === "pending") {
+      save.mockImplementationOnce(() => new Promise(() => {}));
+      act(() => { void next.result.current.save(); });
+    }
+    const before = sessionStorage.getItem(DECK_IMPORT_STORAGE_KEY);
+    expect(readImportDraft(sessionStorage).key).not.toBe(original.key);
+    await act(async () => {
+      if (completion === "resolve") resolve(receipt);
+      else reject(completion === "http-reject" ? new ApiError(422, {}) : new NetworkError(false));
+    });
+    expect(sessionStorage.getItem(DECK_IMPORT_STORAGE_KEY)).toBe(before);
+    expect(next.result.current.draft.raw).toBe("new private source");
+    expect(next.result.current.draft.state).toBe(state === "pending" ? "pending" : "input");
+  });
+  it.each(["resolve", "reject"])("unmount alone invalidates late %s while preserving pending recovery", async (completion) => {
+    let resolve!: (value: unknown) => void, reject!: (error: unknown) => void;
+    save.mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const hook = ready(); act(() => { void hook.result.current.save(); });
+    const before = sessionStorage.getItem(DECK_IMPORT_STORAGE_KEY);
+    hook.unmount();
+    await act(async () => { if (completion === "resolve") resolve(receipt); else reject(new ApiError(400, {})); });
+    expect(sessionStorage.getItem(DECK_IMPORT_STORAGE_KEY)).toBe(before);
+    expect(readImportDraft(sessionStorage).state).toBe("pending");
+  });
+  it("even an active mount cannot complete over a replaced storage operation", async () => {
+    let resolve!: (value: unknown) => void;
+    save.mockImplementationOnce(() => new Promise((yes) => { resolve = yes; }));
+    const hook = ready(); act(() => { void hook.result.current.save(); });
+    const replacement = { ...emptyImportDraft(), raw: "newer draft", ownerId: "owner" };
+    writeImportDraft(sessionStorage, replacement);
+    const before = sessionStorage.getItem(DECK_IMPORT_STORAGE_KEY);
+    await act(async () => resolve(receipt));
+    expect(sessionStorage.getItem(DECK_IMPORT_STORAGE_KEY)).toBe(before);
+    expect(hook.result.current.savedHere).toBe(false);
   });
   it("corrupt storage is not silently treated as safe to send", () => {
     sessionStorage.setItem(DECK_IMPORT_STORAGE_KEY, "not JSON");

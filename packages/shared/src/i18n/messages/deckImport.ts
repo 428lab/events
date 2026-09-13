@@ -1,4 +1,5 @@
 const ja = {
+  currentAccount: "現在のアカウント: {{name}}",
   title: "LLMで作る／取り込む", intro: "仕様入りプロンプトを普段のLLMへ渡し、返ったJSONを取り込めます。APIキーやサービス連携は不要です。",
   spec: "仕様を読む", downloadSpec: "仕様をダウンロード", prompt: "生成プロンプトをコピー", sampleTitle: "表紙サンプル", sampleBullets: "箇条書きサンプル", sampleComparison: "比較サンプル",
   raw: "スライドJSON", file: "JSONファイルを選ぶ", validate: "検証してプレビュー", validating: "検証中…", cancelValidation: "検証を中止", edit: "入力を直す", repair: "LLMへの修正依頼をコピー", download: "JSONをダウンロード",
@@ -23,6 +24,7 @@ const ja = {
   constraint: "指定の型・範囲・必須キーを仕様で確認してください。座標はx+w≤960、y+h≤540、寸法は20以上の整数です。例: x=800ならw≤160。",
 };
 const en: Record<keyof typeof ja, string> = {
+  currentAccount: "Current account: {{name}}",
   title: "Create with an LLM / import", intro: "Give the self-contained prompt to your usual LLM, then import its JSON. No API key or service connection is needed.",
   spec: "Read specification", downloadSpec: "Download specification", prompt: "Copy generation prompt", sampleTitle: "Title sample", sampleBullets: "Bullet sample", sampleComparison: "Comparison sample",
   raw: "Slide JSON", file: "Choose JSON file", validate: "Validate and preview", validating: "Validating…", cancelValidation: "Stop validation", edit: "Edit input", repair: "Copy repair request for LLM", download: "Download JSON",

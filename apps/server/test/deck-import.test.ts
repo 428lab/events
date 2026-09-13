@@ -8,14 +8,16 @@ import type { AppEnv } from "../src/types.js";
 
 const BASE = "https://example.com";
 const raw = JSON.stringify({ format: "events-lab-deck", version: 1, title: "Import", slides: [{ background: "#FFFFFF", elements: [{ type: "image-placeholder", x: 0, y: 0, w: 20, h: 20 }] }] });
+const ownersByCookie = new Map<string, string>();
 async function user() {
   const id = crypto.randomUUID(), sid = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO user (id, discord_id, username, created_at) VALUES (?, ?, 'test', ?)").bind(id, `test:${id}`, Date.now()).run();
   await env.DB.prepare("INSERT INTO session (id, user_id, expires_at) VALUES (?, ?, ?)").bind(sid, id, Date.now() + 86400000).run();
+  ownersByCookie.set(`eventer_session=${sid}`, id);
   return { id, cookie: `eventer_session=${sid}` };
 }
 function request(cookie: string, key = crypto.randomUUID(), body = raw, headers: Record<string, string> = {}) {
-  return SELF.fetch(`${BASE}/api/decks/import`, { method: "POST", headers: { cookie, origin: BASE, "content-type": "application/json", "x-deck-import-key": key, ...headers }, body });
+  return SELF.fetch(`${BASE}/api/decks/import`, { method: "POST", headers: { cookie, origin: BASE, "content-type": "application/json", "x-deck-import-key": key, "x-deck-import-owner": ownersByCookie.get(cookie) ?? "", ...headers }, body });
 }
 async function count(table: "deck" | "deck_import_receipt", owner: string) {
   return (await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE owner_id = ?`).bind(owner).first<{ n: number }>())!.n;
@@ -78,6 +80,25 @@ describe("POST /api/decks/import", () => {
     expect((await request(b.cookie, key)).status).toBe(201);
     await env.DB.prepare("UPDATE deck SET owner_id = ? WHERE id = ?").bind(b.id, first.id).run();
     expect((await request(a.cookie, key)).status).toBe(403);
+  });
+  it("rejects a cached A operation sent with B's session before first create or replay", async () => {
+    const a = await user(), b = await user(), key = crypto.randomUUID();
+    const first = await request(b.cookie, key, raw, { "x-deck-import-owner": a.id });
+    expect(first.status).toBe(403);
+    expect(await first.json()).toEqual({ error: "import_owner_mismatch" });
+    expect(await count("deck", b.id)).toBe(0);
+    expect(await count("deck_import_receipt", b.id)).toBe(0);
+    expect(await count("deck", a.id)).toBe(0);
+    const missing = await request(a.cookie, key, raw, { "x-deck-import-owner": "" });
+    expect(missing.status).toBe(403);
+    expect(await count("deck_import_receipt", a.id)).toBe(0);
+    expect((await request(a.cookie, key)).status).toBe(201);
+    const retry = await request(b.cookie, key, raw, { "x-deck-import-owner": a.id });
+    expect(retry.status).toBe(403);
+    expect(await retry.json()).toEqual({ error: "import_owner_mismatch" });
+    expect(await count("deck", b.id)).toBe(0);
+    expect(await count("deck_import_receipt", b.id)).toBe(0);
+    expect((await request(a.cookie, key)).status).toBe(200);
   });
   it("concurrent same-key requests converge", async () => {
     const u = await user(), key = crypto.randomUUID();
@@ -145,7 +166,7 @@ describe("deck import 0/0 quota race classification", () => {
     const app = new Hono<AppEnv>();
     app.use("*", async (c, next) => { c.set("user", { id: "owner" } as AppEnv["Variables"]["user"]); await next(); });
     app.post("/api/decks/import", postDeckImport);
-    const response = await app.request(`${BASE}/api/decks/import`, { method: "POST", headers: { origin: BASE, "content-type": "application/json", "x-deck-import-key": crypto.randomUUID() }, body: raw });
+    const response = await app.request(`${BASE}/api/decks/import`, { method: "POST", headers: { origin: BASE, "content-type": "application/json", "x-deck-import-key": crypto.randomUUID(), "x-deck-import-owner": "owner" }, body: raw });
     expect(response.status).toBe({ same: 200, different: 409, deleted: 410, missing: 429, "db-failure": 503 }[kind]);
     expect(find).toHaveBeenCalledTimes(2);
   });
