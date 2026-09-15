@@ -67,6 +67,10 @@ eventCrudRoutes.get("/", async (c) => {
 eventCrudRoutes.post("/", zValidator("json", createEventInput), async (c) => {
   const user = c.get("user");
   const input = valid<CreateEventInput>(c, "json");
+  // §9.2: do not open nonpublic creation before the entire access matrix is ready.
+  if (input.visibility !== "public") {
+    return c.json({ error: "private_events_unavailable" }, 409);
+  }
   if (
     input.communityId &&
     !(await canAttachCommunity(input.communityId, user))
@@ -87,6 +91,9 @@ eventCrudRoutes.patch(
   async (c) => {
     const prior = await eventsRepo.findById(c.req.param("id"));
     const input = valid<UpdateEventInput>(c, "json");
+    if (input.visibility !== undefined) {
+      return c.json({ error: "private_events_unavailable" }, 409);
+    }
     // 紐づけ先コミュニティを「変える」ときだけ権限を見る (#264)。
     // 編集フォームは現在値をそのまま送り返すので、変更がなければ通す
     // （コミュニティの owner/admin ではないイベントstaffが編集できなくなるため）。

@@ -78,3 +78,6 @@ export const ACTIVITY_TABLES: ReadonlyArray<[table: string, col: string]> = [
   ["event_comment", "user_id"],
   ["inquiry", "user_id"],
 ];
+
+// event_access_invite: user_id CASCADE / invited_by SET NULL on account deletion.
+// Neither is shared content; mergeUsers resolves grant conflicts before transfer.

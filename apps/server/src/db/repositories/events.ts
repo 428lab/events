@@ -20,6 +20,8 @@ interface EventRow {
   aggregate_self_entry: number;
   contest_mode: number;
   status: string;
+  visibility: string;
+  access_revision: number;
   created_by: string;
   created_at: number;
   image_updated_at: number | null;
@@ -111,6 +113,8 @@ function toEvent(row: EventRow): Event {
     aggregateSelfEntry: row.aggregate_self_entry === 1,
     contestMode: row.contest_mode === 1,
     status: row.status as Event["status"],
+    visibility: (row.visibility ?? "public") as Event["visibility"],
+    accessRevision: row.access_revision ?? 0,
     createdBy: row.created_by,
     createdAt: row.created_at,
     imageUpdatedAt: row.image_updated_at,
@@ -178,7 +182,7 @@ function buildSearchWhere(o: EventSearchOpts): {
   where: string;
   args: (string | number)[];
 } {
-  const conds = ["status = 'published'"];
+  const conds = ["status = 'published' AND visibility = 'public'"];
   const args: (string | number)[] = [];
   if (o.q) {
     conds.push("(title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')");
@@ -239,7 +243,7 @@ export const eventsRepo = {
 
   async listPublished(): Promise<Event[]> {
     const rows = await many<EventRow>(
-      `${SELECT_EVENT} WHERE status = 'published' ORDER BY starts_at DESC`,
+      `${SELECT_EVENT} WHERE status = 'published' AND visibility = 'public' ORDER BY starts_at DESC`,
     );
     return rows.map(toEvent);
   },
@@ -247,7 +251,7 @@ export const eventsRepo = {
   /** コミュニティに所属する公開イベント（開始の降順） */
   async listByCommunity(communityId: string): Promise<Event[]> {
     const rows = await many<EventRow>(
-      `${SELECT_EVENT} WHERE community_id = ? AND status = 'published' ORDER BY starts_at DESC`,
+      `${SELECT_EVENT} WHERE community_id = ? AND status = 'published' AND visibility = 'public' ORDER BY starts_at DESC`,
       communityId,
     );
     return rows.map(toEvent);
@@ -261,7 +265,7 @@ export const eventsRepo = {
   ): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT}
-         WHERE status = 'published' AND scheduling = 0 AND ends_at > ?
+         WHERE status = 'published' AND visibility = 'public' AND scheduling = 0 AND ends_at > ?
          ORDER BY starts_at ASC
          LIMIT ? OFFSET ?`,
       now,
@@ -273,7 +277,7 @@ export const eventsRepo = {
 
   async countUpcomingPublished(now: number): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND scheduling = 0 AND ends_at > ?",
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND visibility = 'public' AND scheduling = 0 AND ends_at > ?",
       now,
     );
     return row?.n ?? 0;
@@ -283,7 +287,7 @@ export const eventsRepo = {
   async listSchedulingPublished(limit: number, offset: number): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT}
-         WHERE status = 'published' AND scheduling = 1
+         WHERE status = 'published' AND visibility = 'public' AND scheduling = 1
          ORDER BY created_at DESC
          LIMIT ? OFFSET ?`,
       limit,
@@ -294,7 +298,7 @@ export const eventsRepo = {
 
   async countSchedulingPublished(): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND scheduling = 1",
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND visibility = 'public' AND scheduling = 1",
     );
     return row?.n ?? 0;
   },
@@ -307,7 +311,7 @@ export const eventsRepo = {
   ): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT}
-         WHERE status = 'published' AND scheduling = 0 AND ends_at <= ?
+         WHERE status = 'published' AND visibility = 'public' AND scheduling = 0 AND ends_at <= ?
          ORDER BY ends_at DESC
          LIMIT ? OFFSET ?`,
       now,
@@ -319,7 +323,7 @@ export const eventsRepo = {
 
   async countPastPublished(now: number): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND scheduling = 0 AND ends_at <= ?",
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND visibility = 'public' AND scheduling = 0 AND ends_at <= ?",
       now,
     );
     return row?.n ?? 0;
@@ -368,8 +372,8 @@ export const eventsRepo = {
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
          community_id, scheduling, schedule_anonymous, slug, venue_wanted,
-         chat_enabled)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0)`,
+         chat_enabled, visibility)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
       id,
       input.title,
       input.subtitle ?? "",
@@ -388,6 +392,7 @@ export const eventsRepo = {
       input.scheduleAnonymous ? 1 : 0,
       slug,
       input.venueWanted ? 1 : 0,
+      input.visibility ?? "public",
     );
     return (await this.findById(id))!;
   },

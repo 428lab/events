@@ -104,7 +104,7 @@ const OPEN_ROUTES = new Set<string>([
   "GET /api/public/venues/wanted",
 
   /* ── 公開の読み取り: イベント配下。境界より前に登録してある。
-   *    下書き・非公開の出し分けは各ハンドラが自分で行う ─────── */
+   *    イベントの閲覧権はworkerの共通門、子権限は各ハンドラで判定する ─────── */
   "GET /api/events/:id",
   "GET /api/events/:id/awards",
   "GET /api/events/:id/comments",

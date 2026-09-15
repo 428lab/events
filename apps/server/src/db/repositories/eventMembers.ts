@@ -473,6 +473,8 @@ function mapMyEventSummary(
     aggregateSelfEntry: (row.aggregate_self_entry as number) === 1,
     contestMode: (row.contest_mode as number) === 1,
     status: row.status as MyEventSummary["status"],
+    visibility: (row.visibility ?? "public") as MyEventSummary["visibility"],
+    accessRevision: (row.access_revision as number) ?? 0,
     createdBy: row.created_by as string,
     createdAt: row.created_at as number,
     imageUpdatedAt: (row.image_updated_at as number | null) ?? null,

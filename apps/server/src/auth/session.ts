@@ -9,6 +9,7 @@ import { recordLastSeen } from "../lib/lastSeen.js";
 const COOKIE_NAME = "eventer_session";
 
 export async function issueSession(c: Context, userId: string): Promise<void> {
+  currentUsers.delete(c);
   const session = await sessionsRepo.create(userId);
   setCookie(c, COOKIE_NAME, session.id, {
     httpOnly: true,
@@ -20,6 +21,7 @@ export async function issueSession(c: Context, userId: string): Promise<void> {
 }
 
 export async function clearSession(c: Context): Promise<void> {
+  currentUsers.delete(c);
   const id = getCookie(c, COOKIE_NAME);
   if (id) await sessionsRepo.delete(id);
   deleteCookie(c, COOKIE_NAME, { path: "/" });
@@ -35,7 +37,18 @@ export async function clearSession(c: Context): Promise<void> {
  * 行う。全リクエストの認証が通る唯一の場所なので計測地点として過不足がない。
  * 書き込みは JST の日付が変わった最初の1回だけ・waitUntil でレスポンス外
  * （lib/lastSeen.ts 参照）。 */
-export async function currentUser(c: Context): Promise<User | null> {
+const currentUsers = new WeakMap<Context, Promise<User | null>>();
+
+export function currentUser(c: Context): Promise<User | null> {
+  let pending = currentUsers.get(c);
+  if (!pending) {
+    pending = resolveCurrentUser(c);
+    currentUsers.set(c, pending);
+  }
+  return pending;
+}
+
+async function resolveCurrentUser(c: Context): Promise<User | null> {
   const id = getCookie(c, COOKIE_NAME);
   if (!id) return null;
   const session = await sessionsRepo.find(id);

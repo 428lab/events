@@ -36,6 +36,9 @@ eventDuplicateRoutes.post(
   async (c) => {
     const src = await eventsRepo.findById(c.req.param("id"));
     if (!src) return c.json({ error: "not_found" }, 404);
+    if (src.visibility !== "public") {
+      return c.json({ error: "private_events_unavailable" }, 409);
+    }
     const user = c.get("user");
 
     // タイトル末尾に「のコピー」（200字上限を超えるなら切り詰めてから付与）
@@ -51,6 +54,7 @@ eventDuplicateRoutes.post(
     const created = await eventsRepo.create(
       {
         title: base + suffix,
+        visibility: src.visibility,
         subtitle: src.subtitle,
         description: src.description,
         startsAt: 0,
