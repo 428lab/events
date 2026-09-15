@@ -1,8 +1,9 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import type { EventMemberWithUser } from "@eventer/shared";
+import type { EventMemberWithUser, ParticipationSlot } from "@eventer/shared";
+import { i18next } from "../i18n/index.js";
 
 /**
  * ロール変更メニューの破壊的操作の確認 (#281)。
@@ -24,7 +25,7 @@ vi.mock("../api/client.js", async (importOriginal) => {
   };
 });
 
-const { MemberRow } = await import("./EventMemberList.js");
+const { EventMemberList, MemberRow } = await import("./EventMemberList.js");
 const { ApiError } = await import("../api/client.js");
 
 const MEMBER: EventMemberWithUser = {
@@ -229,5 +230,81 @@ describe("出席チェックの対象 (#286)", () => {
         /参加が確定している人だけ出席にできます。参加枠の「申込者の管理」で先に参加を確定にしてください。/,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+/** 一覧の分類は参加確定の有無ではなく保存済み申込枠 (#530)。 */
+describe("参加者一覧の申込枠", () => {
+  const slots: ParticipationSlot[] = [
+    { id: "b", eventId: "e-1", name: "午後の枠 / Afternoon", sortOrder: 0,
+      selectionType: "lottery", capacity: 10, confirmedCount: 1, appliedCount: 1,
+      waitlistCount: 0, drawAt: null },
+    { id: "a", eventId: "e-1", name: "午前の枠 / Morning", sortOrder: 1,
+      selectionType: "lottery", capacity: 10, confirmedCount: 1, appliedCount: 1,
+      waitlistCount: 1, drawAt: null },
+  ];
+  const members = [
+    ["a-confirmed", "a", "confirmed"],
+    ["b-applied", "b", "applied"],
+    ["a-applied", "a", "applied"],
+    ["b-confirmed", "b", "confirmed"],
+    ["a-waitlist", "a", "waitlist"],
+    ["b-lost", "b", "lost"],
+    ["legacy", null, "confirmed"],
+    ["unknown-slot", "missing", "applied"],
+    ["staff", null, "confirmed"],
+  ].map(([id, slotId, status]): EventMemberWithUser => ({
+    ...MEMBER, id: id!, userId: id!, slotId, status: status!,
+    role: id === "staff" ? "staff" : "participant",
+    user: { ...MEMBER.user, id: id!, username: id!, globalName: id! },
+  }));
+
+  function drawList(slotData: ParticipationSlot[] | undefined) {
+    const client = new QueryClient({ defaultOptions: {
+      queries: { retry: false, staleTime: Infinity, enabled: false },
+    } });
+    client.setQueryData(["me"], { user: null, isAdmin: false });
+    client.setQueryData(["event", "e-1", "members"], members);
+    if (slotData) client.setQueryData(["event", "e-1", "slots"], slotData);
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <EventMemberList eventId="e-1" isStaff={false} attendanceCheck={false} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  afterEach(async () => { await act(async () => { await i18next.changeLanguage("ja"); }); });
+
+  it.each(["ja", "en"])("%s: 枠の順序を保ち、抽選中もその枠に表示して状態を区別する", async (lang) => {
+    await i18next.changeLanguage(lang);
+    drawList(slots);
+    const other = lang === "ja" ? "その他" : "Other";
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent))
+      .toEqual([slots[0].name, slots[1].name, other]);
+    const names = (label: string) => within(screen.getByRole("list", { name: label }))
+      .getAllByRole("link").map((link) => link.getAttribute("href"));
+    expect(names(slots[0].name)).toEqual(["/users/b-applied", "/users/b-confirmed", "/users/b-lost"]);
+    expect(names(slots[1].name)).toEqual(["/users/a-confirmed", "/users/a-applied", "/users/a-waitlist"]);
+    expect(names(other)).toEqual(["/users/legacy", "/users/unknown-slot", "/users/staff"]);
+    expect(screen.getAllByRole("listitem")).toHaveLength(members.length);
+    for (const member of members) {
+      const row = screen.getByText(member.id, { exact: true }).closest("a");
+      const labels = lang === "ja"
+        ? { confirmed: "確定", applied: "抽選申込中", waitlist: "キャンセル待ち", lost: "落選" }
+        : { confirmed: "Confirmed", applied: "In the lottery", waitlist: "Waitlisted", lost: "Not selected" };
+      expect(row).toHaveTextContent(labels[member.status as keyof typeof labels]);
+    }
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByTitle(i18next.t("eventDetail.changeRole"))).not.toBeInTheDocument();
+  });
+
+  it.each([[], undefined])("枠なし・枠未取得でも全員を平坦な一覧に残す: %j", (slotData) => {
+    drawList(slotData);
+    expect(screen.getAllByRole("list")).toHaveLength(1);
+    expect(screen.queryByRole("heading", { level: 3 })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link").map((link) => link.getAttribute("href")))
+      .toEqual(members.map((member) => `/users/${member.user.username}`));
   });
 });

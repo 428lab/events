@@ -86,6 +86,7 @@ const ja = {
 
   /** 参加者一覧 */
   participantsWithCount: "参加者一覧（{{n}}）",
+  participantsOther: "その他",
   attendanceModeNotice:
     "出席チェックモード：チェックされた人だけが参加者として記録されます。",
   attendanceModeNoticeStaff:
@@ -198,6 +199,7 @@ const en: Record<keyof typeof ja, string> = {
   submissionCode: "Code",
 
   participantsWithCount: "Participants ({{n}})",
+  participantsOther: "Other",
   attendanceModeNotice:
     "Attendance check is on: only people who are checked in count as participants.",
   attendanceModeNoticeStaff:
