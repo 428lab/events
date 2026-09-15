@@ -24,7 +24,7 @@
 | 参加申込 | 閲覧可能＋published＋ログインが前提。必須参加アンケート→枠選択→既存join。先着/待機/抽選申込/落選をそのまま区別し、招待＝当選や席確保にはしない |
 | 日程調整 | 閲覧権のある人だけ投票可。○/△からの自動登録への説明は維持。確定時に最新閲覧権を再確認し、失効者を登録/通知しない |
 | 参加取消 | 既存の取消操作（開催終了前のみ）。席解放・繰上げ・回答削除は維持。private閲覧権は残る。再参加には通常の条件が必要 |
-| 閲覧から退出 | privateの「このイベントの閲覧をやめる」。開催前は参加取消と閲覧権失効を原子的に実行。終了後は過去の参加/出席記録を保持し閲覧権のみ失効。新たな招待の承諾まで戻れない |
+| 閲覧から退出 | privateの「このイベントの閲覧をやめる」。本人のaccepted行が根拠であり、draft/archivedで本体が見えなくても `/event-invites` の「承諾済みの閲覧権」から退出可能。開催前は参加取消と閲覧権失効を原子的に実行。終了後は過去の参加/出席記録を保持し閲覧権のみ失効。新たな招待の承諾まで戻れない |
 | 主催者: 招待取消 | pendingを取り消しても参加には影響しない。acceptedは「閲覧を取り消す」と表示し、開催前なら参加も取消/席解放する旨を確認。終了後は参加履歴を残し閲覧だけ失効 |
 | 主催者・運営を外す | 閲覧招待取消でstaff/コミュニティ管理者/app adminの権限は消せない。409で専用管理へ誘導。先に既存staffロール変更/コミュニティ権限変更を行う |
 | 開催終了 | endsAt経過で公開範囲は変えない。privateの承諾済み閲覧権は残り写真/結果は元の子権限にも従う。新規参加不可。終了後の新規閲覧招待/承諾も可（過去資料の共有用） |
@@ -92,7 +92,7 @@
 | `/api/public/events`, `/past`, `/scheduling`, `/search`、認証済`GET /api/events` | S routes/public.ts, routes/eventCrud.ts; R events.ts | public discovery条件をWHEREへ。count/total/hasMore/検索facetにも同条件。クライアントでの後filter不可 |
 | コミュニティ詳細のupcoming/past、たまごの関連イベント/event_count | S routes/public.ts, routes/eventRequests.ts; R eventRequests.ts, events.ts | publicのみ。たまごにリンク済み非publicも名前/id/件数/公開通知を隠す。非public化でたまご自体の利用者自由記述は書換えない |
 | 公開プロフィール/年表/受賞/登壇/写真ギャラリー・facet | S routes/public.ts; R eventMembers.ts, eventSchedule.ts, awards.ts, eventPhotos.ts, eventMeets.ts | 非publicは投稿者本人がこの公開APIを呼んでも非掲載。別ユーザーAPIへeventId差込みで漏れない |
-| 公開の実績/いいね/XP・OGプロフィール/PNG | S worker.ts, routes/profileCardImages.ts; R gamification.ts, eventLikes.ts, eventMembers.ts, eventMeets.ts | 公開集計にはpublicのみ（件数からも漏らさない）。ゲーム内参加記録は消さない。既存PNGは派生キャッシュなので非public化時に関係userのカード参照を無効化、通常カード生成で再生成。外部保存済PNGは回収不可 |
+| 公開の実績/いいね/XP・OGプロフィール/PNG | S worker.ts, routes/profileCardImages.ts; R gamification.ts, eventLikes.ts, eventMembers.ts, eventMeets.ts | 公開集計にはpublicのみ（件数からも漏らさない）。ゲーム内参加記録は消さない。§6.1の局所寄与user集合について、非public化と同じtransactionでuser別カード世代を回転。§5.3の現行世代のみ配信し、旧組合せ/legacyを再生成で復活させない。外部保存済PNGは回収不可 |
 | `/api/me/events`, `/api/me/bingo-results` | S routes/me.ts; R eventMembers.ts, eventBingo.ts | 本人の管理/参加一覧は非public可だが各event閲覧権を再確認。失効後はイベント情報を除く。過去記録をDBから消す意味ではない |
 | おすすめ/注目 | S routes/adminTrending.ts; R trending.ts; W pages/PublicEventsPage.tsx | 最新mainには独立の一般向けrecommendation APIは見当たらない。既存一般リストにpublic条件。adminTrendingは認可済運営用で維持。将来おすすめが増える場合もpublic述語必須 |
 | RSS/JSON Feed/ICS `/feed/events.*` | S worker.ts, routes/feeds.ts; R events.ts | publicのみ。フィルタ・過去・日程調整・件数も同じ。非publicの購読URLは新設しない |
@@ -103,6 +103,7 @@
 | image/awards/meet-prizes/image/scores/results/comments/timetable/survey/view | S worker.tsにeventRoutesより前の登録; routes/images.ts, awards.ts, eventMeetPrizes.ts, scoring.ts, eventComments.ts, eventSchedule.ts, eventSurvey.ts, analytics.ts | **workerの前段共通門**で保護。認証済ルートだけの修正では穴が残る。ビーコンも不許可404で集計しない |
 | photos/image/video/poster/thumbnail/comments | S routes/eventPhotos.ts; R eventPhotos.ts | canViewEvent AND canViewPhotos。一覧JSONと全派生バイナリに門。photosPublic=trueもprivate認可の迂回不可。HEAD/Range/If-None-Matchも認可を先行 |
 | join/解除/member role/attendance/checkin/slot抽選/entries/date投票/確定 | S routes/eventMembers.ts, eventCheckin.ts, eventSlots.ts, eventEntries.ts, eventDateOptions.ts | 共通閲覧門＋既存role条件。書込み時の最新private資格をSQL条件に含める（§7） |
+| `/api/meet/scan`, `/api/meet/undo`（親event IDのないQR経路） | S worker.ts, routes/eventMeets.ts; R eventMeets.ts; S lib/meetToken.ts, lib/usedNonce.ts | §7.3。共通event選定・診断SQL・各書込み・応答/undoToken・通知に双方の最新canViewEvent。終了後もconfirmed履歴が残る失効eventは対象外。複数共通eventの一部失効はそのeventだけ除外 |
 | scoring/award/live/like/meet/prize/bingo/qa/survey/todo/duty/schedule/broadcast/pre-survey/name-card-assets/analytics/staff-invites | S worker.tsのevent関連route登録と各routes/*.ts | `/api/events/:id/*` の共通閲覧門を漏れなく継承し、各既存role/status/子所有者条件を維持。copy元にもcanViewEvent＋既存source staff確認 |
 | `/api/events/:id/attendance.csv` とvenue-offersのevent情報 | S routes/attendanceCsv.ts, venueOffers.ts; R venueOffers.ts | privateでは会場提供資格だけで詳細/名簿を渡さない。先に閲覧招待承諾が必要、その上で従来の成立会場運営者条件。会場側オファー一覧は閲覧不可eventのタイトル等を伏せ、業務用offerの状態のみ残す |
 | 開催前アンケート `/api/public/pre-surveys/:token` GET/POSTと`/s/:token` | S worker.ts, routes/eventPreSurvey.ts; R eventPreSurvey.ts; docs/pre-event-survey.md | privateでは既存共有tokenの両APIも404（closedタイトルも返さない）。private化でtokenを回転しstatus=closed、public/unlistedに戻しても再開は手動。管理結果はstaff可。unlistedでは独立共有フォームとして既存仕様維持 |
@@ -116,7 +117,9 @@
 
 新規 `S auth/eventAccess.ts` にserver判定/認可済contextを置き、roles.tsのcanViewEventはここを呼ぶ。SQLで必要な資格述語もこのモジュールの同じ仕様から組み立て、別実装の意味を増やさない。
 
-`S worker.ts` の **最初の `/api/events/:id` と `/api/events/:id/*` 登録より前** にイベント解決/optional currentUser/閲覧門を置く。リスト・作成の`/api/events`はこの門の対象外。現在のevents.tsのrequireAuth境界はその後に維持（authを全ルートに重複追加しない）。`currentUser`のリクエスト内キャッシュを使う。HTML/slug/共有アンケート/その他親IDでない経路は明示アダプタを置く。存在しないrouteのfallbackにもevent情報を入れない。
+`S worker.ts` の **最初の `/api/events/:id` と `/api/events/:id/*` 登録より前** にイベント解決/optional currentUser/閲覧門を置く。リスト・作成の`/api/events`はこの門の対象外。現在のevents.tsのrequireAuth境界はその後に維持（authを全ルートに重複追加しない）。`currentUser`のリクエスト内キャッシュを使う。HTML/slug/共有アンケート/`/api/meet/scan`・`/undo`等の親IDでない経路は明示アダプタを置く。存在しないrouteのfallbackにもevent情報を入れない。
+
+唯一の本人退出例外は **DELETE `/api/events/:id/access`だけ** を共通閲覧門より前に登録し、requireAuth→event存在と本人accepted/revoked行所有→manager拒否→§7の退出処理で閉じる。GET/他verb/他の子APIには例外を適用しない。draft/archivedの本体閲覧不可を維持したままaccepted本人の退出とrevoked本人の再送を許す。共通門はこの一致済みハンドラ以外を一切素通しにしない。
 
 `test/auth-boundary.test.ts` の実ルーター走査に、全event path/verbの不許可privateリクエストが404になるケースを追加する。親IDを持たない間接経路は表にある専用テストで担保する。未知のvisibilityはpublic扱いせずfail-closed。
 
@@ -137,6 +140,19 @@
 - 現行cacheはevent表紙60秒、写真/動画private max-age=3600、公開プロフィールPNG3600秒、独立deck/live画像1年immutable。新headerは既に配信したcacheを書き換えない。導入時に管理下CDN cacheをpurgeし、イベント由来旧cacheの最大TTL（少なくとも1時間、実配備設定も承認時確認）の経過を確認するまで非public作成/変更の公開を止める。独立素材1年は保証対象外。
 - クライアントのquery cacheはログアウト/アカウント切替/アクセス退出・取消/visibility変更時にevent・子queryをremove。詳細の15秒再検証＋focus時再検証、失敗時は非publicデータを表示継続しない。localStorageへ新たに本文を保存しない。
 - レスポンス開始前/新規Rangeは最新資格で拒否できる。一度開始したHTTP動画stream/保存済ファイル/スクリーンショット/印刷/外部検索cache/メールは回収できない。転送、アカウント共有、管理運営者のアクセスも防がない。**絶対秘密・即時の全端末消去を保証しない**。
+
+### 5.3 プロフィールPNGのuser別世代（レビューP1-2修正）
+
+現行 `S routes/profileCardImages.ts` はcomboごとのR2キーとlegacyキーを持つがGETの門はuser共通cardImageUpdatedAtだけ。参照クリア→Aだけ再生成で旧Bが復活するため、時刻クリアだけでは不十分。以下を一つの配信契約にする。
+
+- `user.card_image_generation` は128bit乱数32hex（作成時も必ず採番）、変更時に再利用しない。R2は `profile-cards/{userId}/generations/{generation}/{combo}.png`。従来のcombo/legacyキーは新しいGETから一切参照しない。旧全組合せは物理削除の成否によらず到達不能。
+- 公開プロフィールAPI（カード生成データ取得元）に `cardImageGeneration` を追加。generationを先に読む→既存public集計を実行→同じuserのgenerationを再読取りし、不一致なら本文を返さず409 `card_generation_changed`。一致した集計とgenerationを同一payloadで返す。これは世代更新を伴うvisibility/寄与関係更新と交差したsnapshotを棄却するため。全体時計による統計の即時同期までは要求しない。
+- `W pages/LicenseCardPage.tsx` はこのpayload一式からSVG/PNGを生成し、非同期生成開始時のgenerationを保持して `PUT /api/me/card-image?k={combo}&g={generation}` の生PNGで送る。表示payloadが変われば古い生成を破棄。uploadedVariantsRefは(userId,generation,combo)単位。409なら同じPNGへ新世代を付け替えず、profileを再取得しSVGから生成し直す。
+- PUTはactive本人・combo/MIME/sizeに加えてg必須（欠落400 generation_required、不正形式400 invalid_generation）。①現在世代一致を確認 ②指定世代のR2キーへ保存 ③ `UPDATE user SET card_image_updated_at=?, card_image_key=? WHERE id=? AND card_image_generation=? AND deleted_at IS NULL` のCAS。更新0件なら409 card_generation_changed（または退会後404）、保存した旧世代をbest-effort削除して終わり。成功200 `{ok:true,updatedAt,key,generation}`。新世代をserverが勝手に代入して旧bodyを採用しない。
+- visibility変更が①②③のどこに割り込んでも旧PNGは新世代のキーに置かれない。③成功後の変更は同じuser行の世代回転＋updatedAt=NULLで失効する。同一世代/同一comboの通常並行uploadはlast-write-wins（同じ公開資格snapshotの画像であり秘密の旧世代復活とは別）。
+- GET `/api/users/:id/card-image?k={combo}&g={generation}&v={updatedAt}` はactive user・生成済みupdatedAt・gが現在世代と一致することを確認し、現在世代の指定comboだけ取得（存在しないcomboは404、別combo/legacyへfallback不可）。g省略の旧URLは現在世代のみへ解決し、k省略は選択中comboのみ。不正g/kは404。旧g明示は常に404。A再生成後でも未生成Bは404で、Bを新世代で生成した後なら旧gなしB URLは新Bだけを返す。
+- R2取得後にも世代を再確認してから200/HEAD/304を返す。不一致はbody破棄して404。ETagは世代/combination/updatedAtを含み、判定前に304を返さない。全PNG応答と拒否はno-store。OG注入は現行generationの生成済みcardだけ新g付きURLを採用、未生成なら汎用OG。送信開始後の画像streamを回収する保証はしない。
+- 世代回転ではupdatedAtだけNULL化し、cardImageKeyの選択は残す。新世代に一枚もない間は汎用OG。user別の局所失効集合/過去寄与への対策は§6.1。全ユーザー共通世代は採用しない。
 
 ## 6. データ・型・不変条件（将来実装時の具体schema）
 
@@ -168,6 +184,10 @@ CREATE INDEX idx_event_access_invite_user_status
   ON event_access_invite(user_id, status, created_at);
 ALTER TABLE notification ADD COLUMN event_id TEXT REFERENCES event(id) ON DELETE CASCADE;
 CREATE INDEX idx_notification_event_user ON notification(event_id, user_id);
+ALTER TABLE user ADD COLUMN card_image_generation TEXT NOT NULL DEFAULT '';
+-- 旧PNGとの互換は配信ではなく一度の再生成。世代は128bit乱数32hex、再利用しない。
+UPDATE user SET card_image_generation = lower(hex(randomblob(16))),
+  card_image_updated_at = NULL;
 ```
 
 - shared `EVENT_VISIBILITIES` / `EventVisibility`、`Event.visibility`、`Event.accessRevision` を追加。createEventInput.visibilityは省略時public、updateEventInput.visibilityはoptional（省略で上書きしない）。未知enum/nullは400。visibilityを含む更新はexpectedAccessRevision必須。
@@ -178,6 +198,31 @@ CREATE INDEX idx_notification_event_user ON notification(event_id, user_id);
 - アカウント統合では対象user_idを勝者userへ移す。pair重複はrevokedが最優先、次にaccepted、pendingは期限が新しい方、declinedの順。同状態の同時刻はidの辞書順。これで取消を古いacceptedで復活させない。invited_byは単純付替え。既存member統合がstaffを保持するのは別管理権限として維持。
 - `R accountMerge.ts`, `userTables.ts` の対象列とFK監査テストを更新。手動リスト監査を回避しない。notification.event_idはuser列ではない。
 - 通知の既存event link（`/events/<uuid>` とその子・query）をevent_idに対応付けるmigrationを用意。新しいevent関連通知はevent_id必須（§8）。対応不能な旧メッセージの自由記述中の名前/URLは既に公開済み情報の限界であり推測SQLで書換えない。
+
+### 6.1 PNG寄与user集合と過去関係（user別失効の根拠）
+
+実際のPNG生成は `W pages/LicenseCardPage.tsx` → `components/licenseCard/cardData.ts:toCardData` → LicenseCardSvg。event由来の入力はparticipation.attended/noShow/hosted/spoken、gamification(level/XP/badges)、communities.myEventCountによる並び。`R eventMembers.ts:participationStats`、`gamification.ts:statsForUser`、`communities.ts:listForUser` のSQLが根拠。cardDataはentries/awards/eventPhotosを読まないので、受賞者/写真投稿者の依存を推測で追加しない（一般プロフィールJSONの認可filterは別に必要）。
+
+局所集合 `cardContributors(eventId)` は以下のUNION（重複除去）とする。現時点のconfirmed/公開日程/有効4人/終了済み/active条件で絞らず、過去の寄与を見落とさない保守的集合。NULL・存在しないuserを最終JOINで除くが退会申請中userも更新する。
+
+```sql
+SELECT user_id FROM event_member WHERE event_id = :eventId
+UNION SELECT speaker_user_id FROM event_schedule_item WHERE event_id = :eventId
+UNION SELECT target_key FROM event_like
+  WHERE event_id = :eventId AND kind IN ('host','staff','participant')
+UNION SELECT user_low FROM event_meet WHERE event_id = :eventId
+UNION SELECT user_high FROM event_meet WHERE event_id = :eventId
+```
+
+主催/スタッフ/参加率とcommunity.myEventCountはmembershipで包含（`R communities.ts:listForUser` のmy_event_countと、コミュニティ抽出WHERE内のevent_member由来UNIONの両方へpublic/publishedをANDし、非publicによるカードの並び/所属表示を防ぐ。本人の明示community_member由来所属は維持）、memberでなくても登壇はspeaker、被いいね/出会いのXPはtarget/両端で包含する。いいね送信者は自分にXPを得ないが、その退会による受信者XP変化のevent特定には `event_like.user_id` を使用する。membership数による有効4人の判定の変化も当該eventの全寄与userを失効させる。
+
+**現存関係だけを非public化時に拾う方式でも過去のPNGを完全には特定できない。** 現行 `R eventMembers.ts:remove`、`eventSchedule.ts:saveAll` の削除/担当置換、`eventLikes.ts` のtoggle削除、`eventMeets.ts:deleteMeet` は関係を消す。そこで汎用依存履歴表は作らず、次の局所失効を導入条件にする。
+
+1. 導入migrationで全旧combo/legacyを一度隔離し新世代へコピーしない（§9）。旧版で消えた関係の履歴は復元不能だが、その時代のPNGは以後配信しない。これは導入時の一度限りの互換変更であり、毎回全員失効する方式ではない。
+2. 導入後、eventのvisibility/status/削除に加え、上の寄与関係の作成/更新/削除、日時・出席設定/出席・role/status・日程公開条件・community紐付けの変更は、変更**前**のcardContributors集合のuser世代を回転し、次に本体更新、変更**後**の集合も回転する同一D1 batchにする（同じuserが二度回転しても中間世代はtransaction外に出ない）。visibility変更のCAS失敗時は回転しない。event削除/CASCADEは削除前の集合だけ回転する。これで関係を失った元speaker/member/like対象/meet相手の旧画像も関係が消える時点で失効し、後の非public化で追跡し直す必要がない。
+3. 書込み元には通常join/leave/抽選/staff招待、日程確定batch、timetable編集、like、meet scan/undo、管理モデレーション・アカウント削除/統合も含む。退会/統合はmembership/speaker/like（送信者とtarget）/meet両端から関連eventを変更前後に抽出し、そのeventの集合を回転する。統合でuser.cardImageGeneration/旧PNGを勝者へコピーせず、勝者自身も新世代にする。関係破壊をraw SQLで世代処理なしに行う経路は実装受入不可。
+4. publicから非publicへの変更は当該eventのこの集合だけを回転し、無関係userの世代/PNGを維持する。少なくとも関係数に比例するD1更新であり全user走査はしない。世代更新は `UPDATE user SET card_image_generation=lower(hex(randomblob(16))), card_image_updated_at=NULL WHERE id IN (...)`、user PKと既存event関係索引を使用する。
+5. 境界sourceは上記SQL/mapperと `R userAvatars.ts:setCardImage`, `users.ts`, `accountDeletion.ts`, `accountMerge.ts`、shared UserProfile型。user作成時も新32hex世代を明示し、migrationのdefault空文字を持つuserはPNG生成/配信をfail-closedにする。空文字を配信世代には使わない。将来cardDataに新たなevent由来入力を増やす時だけ、この集合と失効経路を同じPRで更新する。
 
 ## 7. API・状態遷移・競合
 
@@ -192,14 +237,16 @@ CREATE INDEX idx_notification_event_user ON notification(event_id, user_id);
 | `POST /api/events/:id/access-invites/:inviteId/reissue` | {expectedAccessRevision} | pending/expired/declined/revokedのみ。200 {invite,accessRevision}。旧id消失 |
 | `DELETE /api/events/:id/access-invites/:inviteId` | {expectedAccessRevision,confirmCancelParticipation:true}（acceptedの場合） | 200 {ok:true,accessRevision}。pending取消にはconfirm不要。同じrevokedへの再送は200、存在しない/他eventは404 |
 | `GET /api/me/event-invites` | requireAuth、cursor?、limit既定20/最大50 | 200 {invites:[id,title,inviterName,expiresAt,status],nextCursor}。本人pendingのみ（期限内）。event詳細の代替レスポンスにしない |
-| `GET /api/me/event-invites/:inviteId` | requireAuth＋本人所有 | 200 {id,title,inviterName,expiresAt,status}。expired/declined/revokedはイベント名なし、状態だけ |
+| `GET /api/me/event-invites/:inviteId` | requireAuth＋本人所有 | pending期限内だけ200 {id,title,inviterName,expiresAt,status}。acceptedは{id,status,canOpenEvent}のみ（本体情報はdetail認可後に取得）。expired/declined/revokedは{id,status}のみ |
 | `POST /api/me/event-invites/:inviteId/accept` | 空JSON | 200 {eventId,status:"accepted",canOpenEvent}。同じaccepted再送200、期限超過409 invite_expired、辞退/取消409 invite_unavailable |
 | `POST /api/me/event-invites/:inviteId/decline` | 空JSON | 200 {ok:true}。同じdeclined再送200、acceptedは409（退出を案内） |
-| `GET /api/me/event-access` | cursor?、limit既定20/最大50 | 200 {events,nextCursor}。現在閲覧可能なacceptedのprivate一覧。draft/archived不可なら本体を返さない |
-| `DELETE /api/events/:id/access` | {confirmCancelParticipation:true} | 本人退出。200 {ok:true}。失効後の再送だけはrequireAuth＋当該本人revokedを確認する例外で200、他者は404 |
+| `GET /api/me/event-access` | requireAuth、cursor?、limit既定20/最大50 | 200 {accesses:[{id,eventId,status:"accepted",createdAt,canOpenEvent,canLeave}],nextCursor}。privateの本人accepted全行を返す（draft/archivedを除外しない）。title/日時/場所/招待者/本文は一切含めない。canLeave=falseはmanagerのみ |
+| `DELETE /api/events/:id/access` | {confirmCancelParticipation:true} | requireAuth＋本人accepted/revoked所有の限定例外（§4.1）。本体のcanViewEvent不要。200 {ok:true}だけ返す。acceptedを原子的に退出、revoked再送200。manager409 managed_access、行なし/別本人404 |
 | 既存detail/join/date-votes/子API | 出力にevent.visibility/accessRevision、detailにcanView/canApply、myAccessStatusを追加 | roleやmembershipに閲覧権を混ぜない。canApplyはUI案内であって認可の根拠ではない |
 
 一覧cursorは(created_at,id)の降順keyset。招待者/対象者のメール・外部identity・秘密鍵等は返さない。招待作成は既存pendingとの競合で409を返し通知二重送信しない。
+
+`/event-invites` はログイン済み本人のpending欄に加え「承諾済みの閲覧権」欄を持つ。再ログイン後もナビ/ダッシュボードから到達でき、safe local redirectでここへ戻す。§3のcanViewEventがfalseの行は汎用「承諾済み・本体閲覧不可（募集開始待ち等）」と承諾日時/招待ID短縮表示・退出ボタンだけ（draftかarchivedかというevent状態も返さない）。canOpenEvent=trueだけ詳細APIからタイトル等を別取得してリンクを出す。本文不可のまま退出確認→DELETEが完了し、行を除去する。eventIdは本人の退出対象識別子であり本体への認可を与えない。
 
 ### 7.1 状態遷移
 
@@ -215,13 +262,26 @@ CREATE INDEX idx_notification_event_user ON notification(event_id, user_id);
 D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COMMITを別HTTP呼出しに分けない。新しい課金/汎用transaction基盤は作らない。
 
 1. access_revisionはvisibility/status、招待状態、member作成/取消/role変更で増やす。private化確認が古いmember集合を使わないため、全member書込み（staff招待/抽選/自動参加含む）で同じbatch内に増分する。
-2. visibility変更は期待revを条件に更新し、**その更新が成功したbatchだけ**member seed、参加者chat停止、開催前survey閉鎖/token回転、private離脱時の招待削除、公開プロフィールPNG参照無効化を行う。更新数0なら全副作用をしない。
+2. visibility変更は期待revを条件に更新し、**その更新が成功したbatchだけ**member seed、参加者chat停止、開催前survey閉鎖/token回転、private離脱時の招待削除、§6.1の寄与user集合のプロフィールPNG世代回転を行う。更新数0なら全副作用をしない。
 3. D1 batchの所有権は先頭の条件付きUPDATEの `RETURNING` と、後続SQLの `changes()` を専用ガードにするだけでは足りない（後続のchangesが変わる）。既存schedule finalizationのtoken方式に合わせ、§6の短命な `access_operation_token` 列（NULL許可）を使い、先頭UPDATEでランダムUUIDをセット、後続各SQLは一致EXISTS条件、最後に一致時のみNULLへ戻す。batch失敗は全ロールバック。この列はAPIに出さない。
 4. 招待承諾はpending/期限/target user/招待者資格/privateを条件にUPDATE。statusと閲覧権が同じ行なので「承諾したが権限なし」は生じない。reissue/revokeと同時ならD1の先勝ち。revokeはacceptedにも作用するので承諾直後の撤回も最終的に失効する。
 5. join・投票・参加アンケート・抽選・繰上げ・Entry作成は、書込みSQLのEXISTSで最新event/active user/private acceptedかmanagerを確認。HTTP middlewareの読取りだけを信じない。member結果からEntryを作る既存の分割箇所は同じbatchに寄せて、取消後の孤児Entryを防ぐ。
 6. 日程確定は既存scheduleRegistrationの一括SQLに資格を追加。参加者選定時と通知SQLの両方で検査。既存受領再送は保存済結果を返し再参加/再通知しない。既存の定員順序（初回答日時、同時はuser ID）、抽選/複数枠/必須アンケート/取消履歴は維持。
 7. 撤回と席解放は原子的。繰上げは既存waitlistの条件付きUPDATEを再実行可能にし、失効者は飛ばす。通知は状態が実際に遷移した場合だけ作る。処理中例外でrollbackしたら5xx、同じ入力を再送可。通信切断後も上記idempotent応答を返す。409は自動blind retryせずUIで再取得/再確認。
 8. コミュニティ資格変更/退会は他表のためrevだけに依存しない。manager資格/active userも書込SQL内で再評価。read済responseや開始済streamまで撤回しない。
+
+### 7.3 親event IDを持たないQR scan/undo（レビューP1-1修正）
+
+`S worker.ts` の `/api/meet` はevent共通門外。現行 `R eventMeets.ts:meetablePairsBetween` は終了後2時間までpublished/双方confirmedから選ぶため、終了後のgrant撤回でconfirmed履歴を残す契約と組み合わせると漏れる。以下は新たなmember権限ではなく、既存操作に **双方のcanViewEvent** をANDする修正。
+
+- `POST /api/meet/scan {token}` の署名/期限/self/used判定は維持。meetablePairsBetweenの選定SQLにscanner/targetのactive userと双方canViewEventを追加。診断 `diagnoseUnmeetable` のtiming/pending両SQLも同じ双方条件を追加し、失効eventをoutside_window/not_confirmed_target等の根拠に使わない。可視共通eventがない場合は既存409 `{error:"no_shared_event"}`のみ（eventの存在/失効を区別しない）、QRは消費しない。
+- 選定後にも撤回があり得る。scanは既存のnonce確保を維持した上で、選定済event ID集合を入力にした**一回のD1 batch**で、双方最新資格/confirmed/日時窓を再評価して出会いINSERT、出席UPDATE、event_id付きアプリ通知INSERTを行う。各文が同一の適格集合をCTEで再評価する（batch内は他writerが割り込まない）。memberからの読取り済みroleを信用しない。出席を付ける一件も、この適格集合内で現行順序（開始済み最新、なければ開始直近）で選び直す。除外eventに代わり全件へ出席を付けない。
+- 書込み結果はRETURNINGで得たevent ID/実際のmeet・attendance変更のみを持ち、未変更の既存meetを含む可視eventも同じbatchの最終SELECTから返す。各候補eventのINSERT用meet UUIDをbatch前に生成し、通知INSERTはそのUUIDで今回実際に作られたmeetへのEXISTSに限定する（既存meetとのON CONFLICTで通知を繰り返さない）。§6.1のPNG世代処理も同じbatch。DB例外は全書込みrollback、確保したnonceだけreleaseして5xx。書込みゼロも現行どおりreleaseする。途中で適格eventがゼロならno_shared_eventとしてevent/target詳細やundoTokenを返さない。
+- 応答直前に結果eventへ双方canViewEventをもう一度SQLで適用し、見えなくなったeventのid/title/出席フラグをevents配列と**署名前のundoToken.grants**の両方から落とす。全件除外なら409 no_shared_event（実際の書込みがあればnonceは消費済みのまま）。結果SELECT後に成立した撤回以前の書込みを後から勝手に戻さない。送信開始後の応答copyを回収しない点は§5.2と同じ。
+- notifyMeetの呼出しはeventIdを渡す形へ変更。新しいmeet通知はevent_idとactor_idを持ち、private本文は汎用。通知一覧は受信者だけでなくactorの現在閲覧資格も当該eventで確認、送信直前にも双方を確認する。§8の通常通知処理だけに任せ、scanの事前pairsからメールを送らない。外部送信との不可分性は§8の限界に従う。
+- `POST /api/meet/undo {undoToken}` は既存署名/期限/scanner本人/記録されたgrant範囲を維持。各grantのscanner/target双方active・canViewEvent・confirmedを、削除と出席取消の**書込みSQL内**で確認する一回のbatch。開催後にgrantが撤回されたeventは履歴がconfirmedでも除外し、event_meet/出席を変えない。既存「そのscanが作ったmeetが実際に消えた場合だけ出席を戻す」とstaff条件を維持する。削除済meetへの再送はno-op。
+- undoの通知削除は現行deleteMeetSince(target,actor,since)の横断削除を使わず、実際に取り消した **event_id集合 AND target AND actor AND 発行時刻以後** に限定し、同じbatchで行う。資格失効で除外したeventの通知/記録を一緒に消さない。応答直前にも双方の閲覧資格を再確認し、200 `{undone,attendanceRevoked}` はその時点で見えるeventの実変更分だけを集計する。全件除外/再送は `{undone:0,attendanceRevoked:false}`。失効eventの件数/ID/理由を返さない。
+- 複数共通eventで一部失効しても全scanを無条件拒否せず、双方が見えるeventだけ処理する。DB書込み時に資格があった場合のみ先勝ち成立、その後撤回された場合の取得済応答や既存undoTokenのevent IDは回収不能だが、**以後の新規scan/undoが旧tokenを認可として使うことはない**。
 
 ## 8. 通知・公開の副作用
 
@@ -230,17 +290,19 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - 新規event関連通知はevent_id必須。通知repoの一覧/未読数は現在の資格をSQLでfilterする。非public一般通知の受信者はmanager、有効memberかaccepted閲覧者に限る（業務対象の絞込みはさらに既存条件）。pending招待通知は本人受取資格で例外。既存staff招待もprivateでは汎用通知とし本人の招待一覧だけに最小情報を表示。
 - 開催リマインダー/日程確定/一斉連絡は現行の対象者・設定を維持した上で最新資格を追加。`S lib/broadcast.ts` のキュー消化時にも再検査し失効分を送らず処理済/skipにする。privateメールは画像/会場/参加者一覧/詳細本文を載せず「イベントの更新があります」＋ログイン先URLのみ。主催者自由入力の一斉連絡本文もprivateメールには載せずアプリ内で読む。unlistedもフォロワー大量告知はしないが対象者業務メールは従来本文可。
 - 送信直前判定と外部メール送信は単一DB transactionにできないため、その間の失効競合は残る。privateメールを汎用にすることで内容漏えいを小さくする。旧public時に送信/保存済みのメール・push通知・既に表示された通知は回収不可。
-- 公開プロフィールのPNGアップロードはクライアント生成cacheである (`S routes/profileCardImages.ts`)。非public化時に既存参照を無効化するが、利用者が古い画像/内容を再アップロードする行為まで禁止しない。公開素材に秘密を手動で書いた場合は保証対象外。
+- 公開プロフィールのPNGアップロードはクライアント生成cacheである (`S routes/profileCardImages.ts`)。§5.3の世代分離/CASで通常の先行生成uploadと旧全組合せの再配信を拒否する。利用者が新snapshotの世代を指定しつつ意図的に古い画像内容を再アップロードすることまでは判別できない（画像内容の検証/再描画は本件外）。これと、何も再uploadしなくても旧組合せが復活するサーバーの穴は区別する。既に配信済みcopy/外部cacheの回収も別の限界。
 
 ## 9. 互換・導入・切戻し
 
 1. DEFAULT publicで既存全イベントの公開範囲は維持。status、参加枠、回答、写真設定のdataは変換しない。unknown visibilityをpublicへ自動矯正しない。
 2. 実装時はschemaと全読取り経路の認可対応を先に用意し、非public作成/更新入口は閉じて検証する。旧serverと非publicを扱うserverの混在期間を作らない。入口開放は別途配備承認後、cache旧TTL経過・全アクセス面gate成功後のみ。
 3. migration番号の再確認/空DB・旧schema fixtureでの適用/foreign_key_checkは実装PRで行う。本設計PRでは実DBを照会しない。
-4. 旧clientはvisibilityを送らなければpublic作成、既存編集はvisibilityを維持。更新repoが全rowを書き戻す箇所 (`R events.ts`) は古いreadでvisibilityを上書きしないよう変更対象。非public処理に対応しない旧clientもserverの認可で拒否される。
-5. 失敗時は入口を閉じる。**非publicを知らない旧serverへrollback禁止**（published扱いで漏れる）。認可対応済み版へforward fix/切戻し。必要ならイベントAPI/HTML/メディアを一時メンテナンス404にしてから復旧する。privateをpublicへ変換して復旧しない。
-6. schemaの列/表はadditiveのまま保持し、down migrationで権限dataを捨てない。バックアップ復元にも公開範囲と招待状態が一組で必要。古いバックアップでrevokeが戻り得る場合は復旧前に非publicを閉じて運営確認する。
-7. migration/配備/本番操作はこの設計承認とは別承認。現在のユーザーcheckout・staging・productionを操作しない。
+4. PNG migrationでは旧世代を識別できない全既存組合せ/legacyを一度配信停止し、card_image_updated_atをNULLにする（card_image_keyの見た目選択は維持）。旧画像から新世代へコピー/フォールバックしない。以降の非public化は§6.1の当該event寄与userだけ失効し、無関係userは再生成不要。generation未指定の旧PNG PUTは400 generation_requiredで再読込を案内、旧GETの?k/legacy URLは§5.3に従い旧オブジェクトを読まない。
+5. 旧clientはvisibilityを送らなければpublic作成、既存編集はvisibilityを維持。更新repoが全rowを書き戻す箇所 (`R events.ts`) は古いreadでvisibilityを上書きしないよう変更対象。非public処理に対応しない旧clientもserverの認可で拒否される。
+6. 失敗時は入口を閉じる。**非publicを知らない旧serverへrollback禁止**（published扱いで漏れる）。認可対応済み版へforward fix/切戻し。必要ならイベントAPI/HTML/メディアを一時メンテナンス404にしてから復旧する。privateをpublicへ変換して復旧しない。
+7. schemaの列/表はadditiveのまま保持し、down migrationで権限dataを捨てない。バックアップ復元にも公開範囲と招待状態が一組で必要。古いバックアップでrevokeが戻り得る場合は復旧前に非publicを閉じて運営確認する。
+8. PNG世代を古いバックアップへ戻すと旧R2キーが復活し得るため、バックアップ復元時は画像配信入口を閉じ、復元対象userに新しい乱数世代を発行・更新時刻NULL化してから開く。R2残存旧世代を復元後の現行世代として参照しない。
+9. migration/配備/本番操作はこの設計承認とは別承認。現在のユーザーcheckout・staging・productionを操作しない。
 
 ## 10. 将来の有料化（ユーザーの事業意図）
 
@@ -257,7 +319,7 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 ### 11.1 将来の変更箇所（このPRの変更ではない）
 
 - shared: constants.ts/schema.ts/index.ts、eventAccessInvites.ts、notification型とi18n。visibility/accessRevisionを全Event mapperへ追加。
-- server: §4のroute/SQL全系統、auth/eventAccess.ts、roles.ts、worker.ts/events.ts、eventAccessInvites route/repo、member/日程確定/通知/accountMerge/userTables、migration。1ファイル800行規約を守り認可をrouteへ複製しない。
+- server: §4のroute/SQL全系統、auth/eventAccess.ts、roles.ts、worker.ts/events.ts、eventAccessInvites route/repo、member/日程確定/通知/accountMerge/userTables、migration。P1修正対象は親門外のeventMeets scan/undoとnotifyMeet/deleteMeetSince、profileCardImages/userAvatars/users/PublicProfileの世代契約、§6.1の寄与関係書込み。1ファイル800行規約を守り認可をrouteへ複製しない。
 - web: CreateEventPage/EditEventPage、詳細/EventLayout/一覧カード/ダッシュボード、App.tsx、StaffInvitesPageを参考にEventInvitesPageと主催者招待管理、API hooks/cache、googleCalendar確認、チャット利用判定、公開プロフィール集計/画像更新、ja/en文言。
 - 既存設計: docs/pre-event-survey.md, schedule-auto-registration.md, staff-chat.md等の契約差分を実装PRで同期（今は変更しない）。
 
@@ -275,6 +337,10 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 | 通知/メール漏れ | private/unlistedのfollowee作成/参加通知ゼロ、たまご公開通知ゼロ。queued一斉メールの失効skip、private本文汎用化、旧eventリンク通知の権限filterと未読count一致、期限切れ招待にevent名なし |
 | キャッシュ/外部接続 | public→privateで管理下cache purge/旧TTLの確認、非publicレスポンスno-store、ETagで404を304にできない、新規Range拒否。アカウント切替でquery cache破棄。非publicで参加者chat API不可/公式client購読停止、外部旧WSの限界説明表示 |
 | 失敗/移行/復旧 | migration前fixture全件public、foreign_key_check、user FK監査/account merge。batch途中の意図的例外でvisibility/grant/member/通知全rollback。旧serverへrollbackしない手順と入口停止を検証 |
+| 親event IDなしのQR経路（P1-1） | private終了後にAを撤回（confirmed履歴を保持）、終了後2時間内にA→BとB→Aでscanしても409 no_shared_event、タイトル/id/undoToken/通知/meet/出席の新規変化なし。診断だけoutside_window等に漏れない。scan→A撤回→undoは失効event no-op。共通E1/E2のE1だけ失効ならscan/出席選択/undo/通知削除はE2のみ。SQL直前の撤回race、batch途中例外rollback、再送も確認 |
+| PNGの旧組合せ復活（P1-2） | public時にA/Bとlegacyを用意→非public化→Aだけ新世代生成→旧gのA/B・未再生成B・legacy objectを参照する経路は404。gなしURLでも旧Bへfallbackしない。後でBを新世代生成しても旧g付きBは404。先行snapshot→visibility変更→旧g PUT、およびR2 put/CAS前後の変更raceは旧bodyを新世代へ置かない。If-None-Match/HEADも世代判定後に処理 |
+| 局所PNG失効・過去関係（P1-2） | canceled member、memberでないspeaker、like target、meet両端それぞれのカードを生成→関係削除/担当差替えで旧世代404→非public化→別combo再生成でも復活なし。有効4人割れ/退会/統合とcommunity.myEventCountを確認。無関係userのgenerationとPNGは変わらない。移行前に既に関係消失した旧画像/legacyは導入時一度の隔離で全経路404 |
+| 本体不可の本人退出（P1-3） | draftでaccepted未参加→ログアウト→再ログイン→event-invitesの本文なし管理行→退出200。publishedで承諾のみ→archived→同じ退出200。本体/他子APIは終始404のまま。GET等の別verb、別user/行なしは例外不可。revoked再送200、manager409、再取得で行が消える。公開範囲変更/削除との競合でも本文を返さない |
 | 将来課金と認可の分離 | 課金未導入で決済依存なし。将来利用資格失効の仕様レビューで自動public化/閲覧者課金/取消禁止が入らない。初期無料をUIに未承認で表示しない |
 
 認可の共通門・public SQL条件・join書込み時資格条件をそれぞれ隔離コピーで一箇所外し、対応するテストが落ちる変異証拠を実装レビューに添える。アプリ全テストが本設計PRの検証条件ではない。文書はdiff/link/source存在/行数/Markdown静的検証のみ、既存PR自動CIは許容。
@@ -290,3 +356,15 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 5. 将来有料化の事業意図と上記境界。将来の価格未定は認可の技術判断の穴ではないが、初期提供条件はリリース前に別途確定する。
 
 この5点と独立レビューの承認が済むまで実装不可。アプリ実装・DB・配備・mainマージの承認は本設計PRとは別。レビュー完了前のworktreeはレビュー用に保持する。
+
+## 13. 独立レビューへの設計修正記録
+
+初版head `62502972e30b5202ad9ce84b99ae8e5860b6cb79` は独立レビューでP1三点によりblocked。以下はsource/契約の照合による再現条件であり、アプリを実行して再現したとの主張ではない。本修正もMarkdownのみ、実装/DB操作/配備なし。修正版の独立再レビューと§12のユーザー承認が済むまでblocked扱いを解除しない。
+
+| 指摘 | 再現条件・不足 | 修正設計 / 受入への変更 |
+| --- | --- | --- |
+| P1-1 親eventパス外QRの撤回漏れ | 終了後撤回ではconfirmed履歴を残す一方、meetablePairsBetweenは終了2時間後まで履歴だけで選ぶ。scanはタイトル応答/meet/出席を書き、undoも同じ門を通らない | §4/§7.3で選定・診断・書込み・応答・署名前undoToken・通知に双方最新資格。複数共通eventの適格分だけ処理、undo通知も実削除eventで限定。§11.2に終了後撤回・途中撤回・一部失効の受入追加 |
+| P1-2 PNG参照クリアだけでは旧Bが復活 | combo A/B保存→参照クリア→Aだけ再生成でuser共通updatedAtが復活し旧Bを配信できる。現行関係削除後の過去寄与userも現存関係だけでは拾えない | §5.3/§6/§6.1/§7.2/§8/§9でuser別世代・R2 namespace・snapshot/PUT CAS・現行世代GET、局所寄与集合と関係消失時の原子的回転、旧版全画像の導入時隔離。無関係userの毎回失効は不採用。§11.2に旧combo/legacy・先行生成race・過去寄与の受入追加 |
+| P1-3 accepted本人がdraft/archivedから退出不能 | 本体閲覧不可なのでevent共通門に拒否され、declineもacceptedに409。本人一覧からも消えるため再ログイン後の入口なし | §1/§4.1/§7でDELETE本人accepted/revoked行だけ限定例外、本文を返さない本人管理一覧と再ログイン導線。一般canViewEventは変更しない。§11.2にdraft/archived退出・他verb/他user拒否の受入追加 |
+
+将来有料化境界・§12のユーザー最終承認事項は初版から維持。レビュー修正はその承認や実装/配備の許可を代替しない。
