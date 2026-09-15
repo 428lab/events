@@ -381,3 +381,5 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 
 - ここまでの完了: additive schema、Eventのvisibility/accessRevision、共通SQL閲覧述語/イベントAPI門、eventsRepoの公開一覧/検索/件数、招待行統合の取消優先、public作成互換。招待受取API/UI・全member書込みのrevision/CAS・PNG世代配信/局所回転・間接経路・通知・チャット/クライアント再検証は未完了であり、非public入口を開けない。
 - 検証: D1ローカルの実router全event verbの不許可404、private grant状態と子権限、公開一覧/feedの非public除外、FK/統合監査、空DB/旧schema移行fixtureを確認。共通門を隔離コピーで外すとawardsが200となり負例テストが失敗する。実ブラウザはローカル開発アカウントで既存作成画面→public下書き→詳細だけ確認。招待限定の利用者一巡や認証済staging受入は未実施。
+
+- 最初の全体CIで、旧来の下書き/不存在401・403および画像max-ageを期待する既存テストが不一致になった。§3.3/§5.2の404/no-store契約へ対象テストだけを同期する。閲覧できるmemberの子権限不足403とstaffチャットの鍵世代更新検査は維持する。

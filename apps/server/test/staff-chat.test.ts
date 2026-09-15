@@ -119,12 +119,12 @@ describe("staff 以外は部屋の存在ごと見えない (#382 11.1)", () => {
     });
   }
 
-  it("メンバーでない利用者は 403", async () => {
+  it("下書きの非メンバーは404", async () => {
     const owner = await makeUser();
     const eventId = await createDraftEvent(owner);
     const stranger = await makeUser();
-    expect((await getChat(eventId, stranger.cookie)).status).toBe(403);
-    expect((await postChat(eventId, stranger.cookie)).status).toBe(403);
+    expect((await getChat(eventId, stranger.cookie)).status).toBe(404);
+    expect((await postChat(eventId, stranger.cookie)).status).toBe(404);
   });
 
   it("アプリ運営管理者でも、そのイベントの staff でなければ 403 (#275)", async () => {
@@ -144,11 +144,11 @@ describe("staff 以外は部屋の存在ごと見えない (#382 11.1)", () => {
     expect((await postChat(eventId, pendingStaff.cookie)).status).toBe(403);
   });
 
-  it("未ログインは 401", async () => {
+  it("下書きへの未ログインは404", async () => {
     const owner = await makeUser();
     const eventId = await createDraftEvent(owner);
     const res = await SELF.fetch(`${BASE}/api/events/${eventId}/staff-chat`);
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(404);
   });
 
   it("403 の応答が部屋の有無で変わらない（存在の秘匿）", async () => {
@@ -298,13 +298,13 @@ describe("資格喪失でローテーションが効く (#382 11.5)", () => {
   }
 
   /** 3経路共通の検査: (a) 鍵が1世代進む (b) 対象者の signer に revoked_at が付く
-   * (c) 対象者の GET / POST が 403（＝新しい鍵を取れない） */
-  async function assertRotated(eventId: string, lost: TestUser): Promise<void> {
+   * (c) 対象者の GET / POST は拒否。memberの降格は403、下書きから退出は404 */
+  async function assertRotated(eventId: string, lost: TestUser, denied: 403 | 404 = 403): Promise<void> {
     expect(await keyVersions(eventId)).toEqual([1, 2]);
     const signer = await signerRow(eventId, lost.userId);
     expect(signer!.revoked_at).not.toBeNull();
-    expect((await getChat(eventId, lost.cookie)).status).toBe(403);
-    expect((await postChat(eventId, lost.cookie)).status).toBe(403);
+    expect((await getChat(eventId, lost.cookie)).status).toBe(denied);
+    expect((await postChat(eventId, lost.cookie)).status).toBe(denied);
   }
 
   it("降格（staff → judge）で鍵が1世代進み、抜けた人は新しい鍵を取れない", async () => {
@@ -327,7 +327,7 @@ describe("資格喪失でローテーションが効く (#382 11.5)", () => {
       headers: { cookie: second.cookie },
     });
     expect(res.status).toBe(200);
-    await assertRotated(eventId, second);
+    await assertRotated(eventId, second, 404);
   });
 
   it("ロール変更 → participant（leaveEvent 経由）でも鍵が1世代進む", async () => {
@@ -335,7 +335,7 @@ describe("資格喪失でローテーションが効く (#382 11.5)", () => {
     expect(
       (await setRole(eventId, owner, second.userId, "participant")).status,
     ).toBe(200);
-    await assertRotated(eventId, second);
+    await assertRotated(eventId, second, 404);
   });
 
   it("退会申請（soft delete）の時点で鍵が1世代進む（猶予中に読ませない）", async () => {
@@ -494,15 +494,15 @@ describe("承諾していない招待では鍵を取れない (#382 11.7)", () =
     };
   }
 
-  it("pending / declined / 取り消し済みのどの状態でも 403 のまま", async () => {
+  it("pending / declined / 取り消し済みの下書きは404", async () => {
     const owner = await makeUser();
     const eventId = await createDraftEvent(owner);
     await payload(await postChat(eventId, owner.cookie));
 
     // pending: 承諾するまでメンバー行が無い
     const pending = await invitedUser(eventId, owner);
-    expect((await getChat(eventId, pending.user.cookie)).status).toBe(403);
-    expect((await postChat(eventId, pending.user.cookie)).status).toBe(403);
+    expect((await getChat(eventId, pending.user.cookie)).status).toBe(404);
+    expect((await postChat(eventId, pending.user.cookie)).status).toBe(404);
 
     // declined: 断った人
     const declined = await invitedUser(eventId, owner);
@@ -511,7 +511,7 @@ describe("承諾していない招待では鍵を取れない (#382 11.7)", () =
       { method: "POST", headers: { cookie: declined.user.cookie } },
     );
     expect(dec.status).toBe(200);
-    expect((await getChat(eventId, declined.user.cookie)).status).toBe(403);
+    expect((await getChat(eventId, declined.user.cookie)).status).toBe(404);
 
     // revoked: 運営が取り消した招待
     const revoked = await invitedUser(eventId, owner);
@@ -520,7 +520,7 @@ describe("承諾していない招待では鍵を取れない (#382 11.7)", () =
       { method: "DELETE", headers: { cookie: owner.cookie } },
     );
     expect(rev.status).toBe(200);
-    expect((await getChat(eventId, revoked.user.cookie)).status).toBe(403);
-    expect((await postChat(eventId, revoked.user.cookie)).status).toBe(403);
+    expect((await getChat(eventId, revoked.user.cookie)).status).toBe(404);
+    expect((await postChat(eventId, revoked.user.cookie)).status).toBe(404);
   });
 });

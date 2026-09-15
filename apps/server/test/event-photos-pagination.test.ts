@@ -108,6 +108,6 @@ describe("event gallery bounded pagination", () => {
     expect((await SELF.fetch(`${fx.url}?page=invalid`)).status).toBe(403);
     expect((await SELF.fetch(`${fx.url}?page=1`, { headers: { cookie: fx.cookie } })).status).toBe(200);
     await env.DB.prepare("UPDATE event SET photos_public = 1, status = 'draft' WHERE id = ?").bind(fx.eventId).run();
-    expect((await SELF.fetch(`${fx.url}?page=1`)).status).toBe(403);
+    expect((await SELF.fetch(`${fx.url}?page=1`)).status).toBe(404);
   });
 });

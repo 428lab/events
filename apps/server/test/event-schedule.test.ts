@@ -204,10 +204,10 @@ describe("イベントのタイムテーブル (#116)", () => {
     const { event } = (await create.json()) as { event: { id: string } };
     await putTimetable(event.id, admin, [{ title: "内緒の進行", durationMin: 5 }]);
 
-    expect((await getTimetable(event.id)).status).toBe(403);
+    expect((await getTimetable(event.id)).status).toBe(404);
 
     const outsider = await makeUser();
-    expect((await getTimetable(event.id, outsider.cookie)).status).toBe(403);
+    expect((await getTimetable(event.id, outsider.cookie)).status).toBe(404);
 
     // メンバー（下書きイベントの staff=作成者）は読める
     const staffGet = await getTimetable(event.id, admin);
@@ -753,7 +753,7 @@ describe("資料編集の権限とSSRFガード強化（レビュー対応）", 
         body: JSON.stringify({ materialUrl: "https://example.com/deck" }),
       },
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it("isPrivateHost: IPv4射影・リンクローカルv6は拒否、fc2.com等の通常ホストは許可", async () => {

@@ -221,7 +221,7 @@ describe("編集中ステータス (#340)", () => {
 
     const claimed = await editingState(eventId, alice.cookie, "POST");
     expect(claimed.editor?.userId).toBe(alice.userId);
-    expect((await editing(eventId, outsider.cookie, "GET")).status).toBe(403);
+    expect((await editing(eventId, outsider.cookie, "GET")).status).toBe(404);
   });
 
   it("解除しても版は消えない（同じ行に持っているため）", async () => {
