@@ -164,14 +164,11 @@ export const communitiesRepo = {
   },
 
   async delete(id: string): Promise<void> {
-    // event.community_id はFK制約を張っていないため手動で外す
-    await run("UPDATE event SET community_id = NULL WHERE community_id = ?", id);
-    // たまごは全体たまご化（メンバー限定は所属先が消えるので限定も解除）
-    await run(
-      "UPDATE event_request SET community_id = NULL, members_only = 0 WHERE community_id = ?",
-      id,
-    );
-    await run("DELETE FROM community WHERE id = ?", id);
+    await batch([
+      { sql: "UPDATE event SET community_id = NULL, access_revision = access_revision + 1 WHERE community_id = ?", args: [id] },
+      { sql: "UPDATE event_request SET community_id = NULL, members_only = 0 WHERE community_id = ?", args: [id] },
+      { sql: "DELETE FROM community WHERE id = ?", args: [id] },
+    ]);
   },
 
   async memberRole(
@@ -198,26 +195,12 @@ export const communitiesRepo = {
     userId: string,
     role: "admin" | "member",
   ): Promise<void> {
-    const existing = await this.memberRole(communityId, userId);
-    if (existing === "owner") return; // owner は変更不可
-    if (existing == null) {
-      await run(
-        `INSERT INTO community_member (id, community_id, user_id, role, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        crypto.randomUUID(),
-        communityId,
-        userId,
-        role,
-        Date.now(),
-      );
-      return;
-    }
-    await run(
-      "UPDATE community_member SET role = ? WHERE community_id = ? AND user_id = ?",
-      role,
-      communityId,
-      userId,
-    );
+    await batch([
+      { sql: `INSERT INTO community_member(id,community_id,user_id,role,created_at) VALUES(?,?,?,?,?)
+          ON CONFLICT(community_id,user_id) DO UPDATE SET role = excluded.role WHERE community_member.role <> 'owner'`,
+        args: [crypto.randomUUID(), communityId, userId, role, Date.now()] },
+      { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE community_id = ? AND changes() > 0", args: [communityId] },
+    ]);
   },
 
   /** オーナー譲渡: toUser を owner、旧 owner を admin に。community.owner_id も更新 */
@@ -239,6 +222,7 @@ export const communitiesRepo = {
         sql: "UPDATE community SET owner_id = ? WHERE id = ?",
         args: [toUserId, communityId],
       },
+      { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE community_id = ? AND changes() > 0", args: [communityId] },
     ]);
   },
 
@@ -294,11 +278,10 @@ export const communitiesRepo = {
 
   /** オーナーは離脱不可（owner ロールは残す） */
   async leave(communityId: string, userId: string): Promise<void> {
-    await run(
-      "DELETE FROM community_member WHERE community_id = ? AND user_id = ? AND role <> 'owner'",
-      communityId,
-      userId,
-    );
+    await batch([
+      { sql: "DELETE FROM community_member WHERE community_id = ? AND user_id = ? AND role <> 'owner'", args: [communityId, userId] },
+      { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE community_id = ? AND changes() > 0", args: [communityId] },
+    ]);
   },
 
   /** 明示メンバー ∪ 所属イベントの確定参加者。参加のみの人は role='member' */

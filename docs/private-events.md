@@ -394,3 +394,14 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - この保存単位では管理用招待API、本人受取/承諾/辞退、本文なしの承諾済み一覧、draft/archived本人退出、実際の `/event-invites` と主催者UIを接続した。既存exactプロフィール確認→ID一致検査→本人のHTTP承諾をローカルDB/実ブラウザで通し、承諾時の参加/Entryなし、別操作の参加→参加取消後も閲覧可→閲覧退出404、再発行/辞退、draft承諾/本文なし退出、別アカウントでの非表示を確認した。承諾済みgrantの直接投入は成功フローに使っていない。staging受入ではない。
 - privateの通常joinは最新資格・状態・締切・枠定員を再確認する一つのbatchでmemberと個人Entryを作る。招待系とこのjoin、基本member追加/状態/role/取消、staff招待承諾、event status、日程確定にはrevision更新を入れた。accept/revoke、accept/reissue、最終席同時join、参加取消batch途中失敗rollbackの対象テストを追加した。
 - なお§7.2全体は完了していない。既存の投票/参加アンケート/抽選/通常参加取消に伴う繰上げ/日程自動登録の最新資格SQL・Entry原子性、およびcommunity/account変化のrevision追随を次の保存単位で閉じる必要がある。上記の基本writer更新を「全writer対応」とは扱わない。PNG/QR/間接経路/通知/チャット、公開範囲変更とそのUIも未完了。機能全体の提供・merge・配備は引き続き不可。
+
+### 14.2 継続レビュー後の書込み境界
+
+- c4adb35の独立レビューは継続実装可・全体提供不可。具体的な修正は、重なる本人退出の同一招待revoked再読取による200と、内容を保持したQueryClientを再作成しないログアウト/切替テスト。以前のブラウザ切替確認は空の一覧でdocumentをreloadしており、メモリキャッシュ破棄の証明にはならない。
+- sourceではglobal `refetchOnWindowFocus:false` が設定されている。招待・閲覧権とevent detailには明示的なfocus再検証が必要。これは全クライアント経路の対応を意味しない。
+- 日程確定の既存batchは受領・member・Entry・通知を原子化しているが、投票者の最新閲覧資格も操作者の最新manager資格もSQLで確認していない。既存の初回答順/同時user ID順、再送受領を維持し、失効者は `access_revoked` として登録/通知から外す。投票/参加アンケートも現行のroute検査だけでは撤回後の書込みを防げないため、対象の書込みSQLに現在資格を追加する。revisionを増やすだけではこの問題は解決しない。
+- この保存単位でも非public作成/visibility入口は開けない。抽選・通常繰上げ等の残るwriter、community/account変化とPNG/QR/間接経路/通知・チャット全体は、対応した実コードと未対応を区別して記録する。
+- 通常の繰上げも現行はcandidate読取→member→Entry→通知の別書込みである。ここを定員・現在資格で所有権を取る一つのbatchに置換し、順序はcreated_at/rowidのまま維持する。前の参加者を取り消す呼出し元の処理まで原子化したと誤認しない。日程確定/この繰上げのメールだけは送信前のevent資格検査と非public汎用化を付ける。他のメール呼出しは後続対応のまま。
+- community role/退出・eventのcommunity付替え、およびaccount統合/退会/復帰は現状access revisionを変更しない。関連event集合だけを同じbatchで増分する。全管理者は全eventに資格を持つため、そのaccountの資格変更だけは全eventが関連集合になる。これはPNG世代更新ではない。manager/active判定は引き続きwriter内SQLで再確認する。
+- 実装/対象検証済み: 同一退出の制御付き競合と再発行409、populated QueryClientの破棄/既知のaccount切替/focus、投票と回答の撤回後書込み拒否、確定時のaccess_revoked・順序・再送、通常繰上げの競合/Entry失敗rollback、community/accountの関連event revision。ローカルの既存public日程登録・参加枠・メール・account/community回帰も対象検査した。全ローカルsuite/ブラウザ一巡は繰り返していない。
+- この保存単位の残り: 抽選/手動参加状態/role変更とそのEntry副作用の最新資格・原子性、通常leaveのEntry/member/回答削除と席解放/繰上げの一体化、staff招待後の補助処理と直接Entry writerの監査。通常繰上げ単体のbatch化をこれらの完了とは扱わない。全体提供不可は維持する。

@@ -1,7 +1,10 @@
 import { SELF, env } from "cloudflare:test";
 import { joinPrivateEvent } from "../src/db/repositories/privateEventJoin.js";
 import { bindEnv, type Env } from "../src/runtime.js";
-import { describe, expect, it } from "vitest";
+import { app } from "../src/worker.js";
+import { eventAccessInvitesRepo } from "../src/db/repositories/eventAccessInvites.js";
+import * as exits from "../src/db/repositories/eventAccessExit.js";
+import { describe, expect, it, vi } from "vitest";
 
 const base = "https://example.com";
 const DAY = 86_400_000;
@@ -246,6 +249,52 @@ describe("identity-bound viewing invitations over HTTP", () => {
     })).status).toBe(413);
     expect(await revision(eventId, host)).toBe(before);
     expect((await json(await req(`/me/event-invites/${id}`, target))).status).toBe("accepted");
+  });
+
+  it("overlapping self-exits both succeed with only one cleanup and promotion", async () => {
+    const { host, target, eventId } = await setup(), waiting = await user();
+    await accept(await invite(eventId, host, target), target);
+    await accept(await invite(eventId, host, waiting), waiting);
+    const { slot } = await json(await req(`/events/${eventId}/slots`, host, "POST", { name: "Seat", capacity: 1, selectionType: "first_come" }), 201);
+    for (const u of [target, waiting]) await json(await req(`/events/${eventId}/join`, u, "POST", { slotId: slot.id }), 201);
+    const before = await revision(eventId, host);
+    bindEnv(env as unknown as Env);
+    const original = eventAccessInvitesRepo.findForUser.bind(eventAccessInvitesRepo);
+    let reads = 0, release!: () => void;
+    const bothRead = new Promise<void>(resolve => { release = resolve; });
+    const spy = vi.spyOn(eventAccessInvitesRepo, "findForUser").mockImplementation(async (...args) => {
+      const row = await original(...args);
+      if (++reads <= 2) { if (reads === 2) release(); await bothRead; }
+      return row;
+    });
+    try {
+      const send = () => app.request(`${base}/api/events/${eventId}/access`, { method: "DELETE",
+        headers: { cookie: target.cookie, "content-type": "application/json" }, body: JSON.stringify({ confirmCancelParticipation: true }) }, env);
+      for (const response of await Promise.all([send(), send()])) await json(response);
+    } finally { spy.mockRestore(); }
+    expect(reads).toBe(3); // two accepted snapshots, then one replay reread
+    expect(await revision(eventId, host)).toBe(before + 1);
+    expect(await count("entry", eventId)).toBe(1);
+    expect((await env.DB.prepare("SELECT COUNT(*) n FROM notification WHERE event_id=? AND type='waitlist_promoted'").bind(eventId).first())!.n).toBe(1);
+    expect((await env.DB.prepare("SELECT status FROM event_member WHERE event_id=? AND user_id=?").bind(eventId, waiting.id).first())!.status).toBe("confirmed");
+  });
+
+  it("does not acknowledge a different reissued invitation as the completed exit", async () => {
+    const { host, target, eventId } = await setup();
+    const id = await invite(eventId, host, target); await accept(id, target);
+    bindEnv(env as unknown as Env);
+    const original = exits.revokeEventAccess;
+    const spy = vi.spyOn(exits, "revokeEventAccess").mockImplementationOnce(async (row, actor) => {
+      expect(await original(row, actor)).toBe(true);
+      const rev = (await env.DB.prepare("SELECT access_revision r FROM event WHERE id=?").bind(eventId).first<{r:number}>())!.r;
+      expect(await eventAccessInvitesRepo.issue(eventId, host.id, target.id, rev, target.handle)).toBeTruthy();
+      return false; // another request revoked, then a manager reissued before our reread
+    });
+    try {
+      const response = await app.request(`${base}/api/events/${eventId}/access`, { method: "DELETE",
+        headers: { cookie: target.cookie, "content-type": "application/json" }, body: JSON.stringify({ confirmCancelParticipation: true }) }, env);
+      expect(await json(response, 409)).toEqual({ error: "access_changed" });
+    } finally { spy.mockRestore(); }
   });
 
 });

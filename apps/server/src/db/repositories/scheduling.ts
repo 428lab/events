@@ -1,5 +1,7 @@
 import type { DateOption, VoteChoice } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { eventViewSql } from "../../auth/eventAccess.js";
+import { adminIds } from "./eventAccessInvites.js";
+import { many, one, run, runCount } from "../client.js";
 
 interface OptionRow {
   id: string;
@@ -118,19 +120,20 @@ export const schedulingRepo = {
   },
 
   async vote(
+    eventId: string,
     optionId: string,
     userId: string,
     choice: VoteChoice,
-  ): Promise<void> {
-    await run(
+  ): Promise<boolean> {
+    return (await runCount(
       `INSERT INTO event_date_vote (id, option_id, user_id, choice, created_at)
-       VALUES (?, ?, ?, ?, ?)
+       SELECT ?, o.id, u.id, ?, ? FROM event_date_option o
+       JOIN event e ON e.id = o.event_id
+       JOIN user u ON u.id = ? AND u.deleted_at IS NULL
+       WHERE o.id = ? AND e.id = ? AND e.scheduling = 1
+         AND ${eventViewSql("e", "u.id", "?")}
        ON CONFLICT(option_id, user_id) DO UPDATE SET choice = excluded.choice`,
-      crypto.randomUUID(),
-      optionId,
-      userId,
-      choice,
-      Date.now(),
-    );
+      crypto.randomUUID(), choice, Date.now(), userId, optionId, eventId, adminIds(),
+    )) > 0;
   },
 };

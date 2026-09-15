@@ -1,3 +1,5 @@
+import { eventViewSql } from "../../auth/eventAccess.js";
+import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import { batch, many, one } from "../client.js";
 import type { ScheduleRegistrationResult } from "@eventer/shared";
 
@@ -34,18 +36,19 @@ export const scheduleRegistrationRepo = {
     // competing finalize, changed votes, cancellation, survey and slot capacity.
     const ready = `EXISTS (SELECT 1 FROM event e JOIN event_date_option o ON o.event_id=e.id
       WHERE e.id=? AND o.id=? AND e.scheduling=1
+      AND ${activeManagerSql("e", "?")}
       AND (e.registration_deadline IS NULL OR e.registration_deadline<=o.starts_at))`;
     const changes = await batch([
       // An explicitly reopened poll starts a new receipt. A retry while finalized
       // keeps the old receipt and cannot re-register someone who later canceled.
       {
         sql: `DELETE FROM event_schedule_finalization WHERE event_id=? AND ${ready}`,
-        args: [eventId, eventId, optionId],
+        args: [eventId, eventId, optionId, actorId, adminIds()],
       },
       {
         sql: `INSERT INTO event_schedule_finalization(event_id,option_id,token,created_at)
           SELECT ?,?,?,? WHERE ${ready} ON CONFLICT(event_id) DO NOTHING`,
-        args: [eventId, optionId, token, now, eventId, optionId],
+        args: [eventId, optionId, token, now, eventId, optionId, actorId, adminIds()],
       },
       {
         sql: `INSERT INTO event_schedule_registration(event_id,user_id,outcome,status,reason,slot_id,member_id,entry_id)
@@ -54,6 +57,7 @@ export const scheduleRegistrationRepo = {
             (SELECT COUNT(*) FROM participation_slot WHERE event_id=e.id) AS slots,
             (SELECT id FROM participation_slot WHERE event_id=e.id ORDER BY id LIMIT 1) AS slot_id,
             CASE
+              WHEN NOT ${eventViewSql("e", "v.user_id", "?")} THEN 'access_revoked'
               WHEN m.status IS NOT NULL AND m.status<>'canceled' THEN NULL
               WHEN m.status='canceled' THEN 'canceled'
               WHEN o.ends_at<? THEN 'event_ended'
@@ -75,14 +79,14 @@ export const scheduleRegistrationRepo = {
         )
         SELECT ?,user_id,
           CASE WHEN reason IS NOT NULL THEN 'action_required' WHEN existing_status IS NOT NULL THEN 'existing' ELSE 'registered' END,
-          CASE WHEN existing_status IS NOT NULL THEN existing_status WHEN reason IS NOT NULL THEN NULL
+          CASE WHEN reason = 'access_revoked' THEN NULL WHEN existing_status IS NOT NULL THEN existing_status WHEN reason IS NOT NULL THEN NULL
             WHEN slots=0 THEN 'confirmed'
             WHEN (SELECT selection_type FROM participation_slot WHERE id=ranked.slot_id)='lottery' THEN 'applied'
             WHEN rank <= (SELECT capacity FROM participation_slot WHERE id=ranked.slot_id) -
               (SELECT COUNT(*) FROM event_member WHERE slot_id=ranked.slot_id AND status='confirmed') THEN 'confirmed'
             ELSE 'waitlist' END,
           reason,slot_id,${uuid},${uuid} FROM ranked`,
-        args: [now, now, eventId, optionId, eventId, token, eventId],
+        args: [adminIds(), now, now, eventId, optionId, eventId, token, eventId],
       },
       {
         sql: `INSERT INTO event_member(id,event_id,user_id,role,slot_id,status,created_at)
@@ -110,8 +114,8 @@ export const scheduleRegistrationRepo = {
         args: [eventId, eventId, token],
       },
       {
-        sql: `INSERT INTO notification(id,user_id,type,title,body,link,read_at,created_at)
-          SELECT ${uuid},v.user_id,'schedule_finalized','日程が確定しました',? ||
+        sql: `INSERT INTO notification(id,user_id,type,title,body,link,read_at,created_at,event_id)
+          SELECT ${uuid},v.user_id,'schedule_finalized','日程が確定しました',CASE WHEN e.visibility <> 'public' THEN 'イベントの更新があります' ELSE ? ||
           CASE WHEN r.outcome='registered' THEN CASE r.status
             WHEN 'confirmed' THEN '。○・△の回答に基づいて参加登録しました。変更する場合はイベントページから参加を取り消せます。'
             WHEN 'waitlist' THEN '。満員のためキャンセル待ちとして登録しました。'
@@ -122,11 +126,13 @@ export const scheduleRegistrationRepo = {
             WHEN 'slot_required' THEN '。参加登録には参加枠の選択が必要です。'
             WHEN 'event_ended' THEN '。終了済みのため参加登録していません。必要な場合は主催者に確認してください。'
             ELSE '。募集締切後のため参加登録していません。必要な場合は主催者に確認してください。' END
-          ELSE '' END,?,0,?
+          ELSE '' END END,?,0,?,e.id
           FROM (SELECT DISTINCT v.user_id FROM event_date_vote v JOIN event_date_option o ON o.id=v.option_id
             JOIN user u ON u.id=v.user_id AND u.deleted_at IS NULL WHERE o.event_id=?) v
-          LEFT JOIN event_schedule_registration r ON r.event_id=? AND r.user_id=v.user_id
-          WHERE (v.user_id<>? OR r.outcome IN ('registered','action_required')) AND ${owned}`,
+          JOIN event e ON e.id=?
+          LEFT JOIN event_schedule_registration r ON r.event_id=e.id AND r.user_id=v.user_id
+          WHERE (v.user_id<>? OR r.outcome IN ('registered','action_required')) AND ${owned}
+            AND ${eventViewSql("e", "v.user_id", "?")}`,
         args: [
           dateMessage,
           `/events/${eventId}`,
@@ -136,6 +142,7 @@ export const scheduleRegistrationRepo = {
           actorId,
           eventId,
           token,
+          adminIds(),
         ],
       },
       {

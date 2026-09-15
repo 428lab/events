@@ -414,7 +414,7 @@ export const eventsRepo = {
     const membersNote = input.membersNote ?? (await this.membersNoteFor(id));
     await run(
       `UPDATE event SET
-         access_revision = access_revision + CASE WHEN status <> ? THEN 1 ELSE 0 END,
+         access_revision = access_revision + CASE WHEN status <> ? OR community_id IS NOT ? THEN 1 ELSE 0 END,
          title = ?, subtitle = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
@@ -426,6 +426,7 @@ export const eventsRepo = {
          registration_deadline = ?
        WHERE id = ?`,
       next.status,
+      next.communityId ?? null,
       next.title,
       next.subtitle,
       next.description,

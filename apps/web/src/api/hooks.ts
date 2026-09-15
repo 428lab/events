@@ -226,6 +226,7 @@ export function useEvent(id: string) {
   const { data: viewer } = useMe();
   return useQuery({
     queryKey: ["event", id, "viewer", viewer?.id],
+    refetchOnWindowFocus: "always",
     retry: false,
     refetchInterval: 15_000,
     queryFn: () =>

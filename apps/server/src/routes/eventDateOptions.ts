@@ -84,11 +84,13 @@ eventDateOptionRoutes.put(
     if (!(await schedulingRepo.getOption(eventId, optionId))) {
       return c.json({ error: "not_found" }, 404);
     }
-    await schedulingRepo.vote(
+    const changed = await schedulingRepo.vote(
+      eventId,
       optionId,
       c.get("user").id,
       valid<VoteInput>(c, "json").choice,
     );
+    if (!changed) return c.json({ error: "access_changed" }, 409);
     return c.json({ ok: true });
   },
 );
@@ -135,7 +137,7 @@ eventDateOptionRoutes.post(
          JOIN event_schedule_finalization f ON f.created_at=n.created_at
          WHERE f.event_id=? AND n.link=? AND n.type='schedule_finalized' ORDER BY n.id LIMIT 50`,
         eventId, `/events/${eventId}`);
-      for (const n of notices) await sendNotificationEmailIfOptedIn(n.user_id,n.title,n.body,n.link);
+      for (const n of notices) await sendNotificationEmailIfOptedIn(n.user_id,n.title,n.body,n.link, { authorizationEventId: eventId });
     })().catch(() => console.error("schedule finalization email delivery failed")));
     return c.json({ event, results: await scheduleRegistrationRepo.results(eventId) });
   },

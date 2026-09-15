@@ -55,5 +55,5 @@ export interface ScheduleRegistrationResult {
   name: string;
   outcome: "registered" | "existing" | "action_required";
   status: MemberStatus | null;
-  reason: "canceled" | "event_ended" | "registration_closed" | "survey_required" | "slot_required" | null;
+  reason: "access_revoked" | "canceled" | "event_ended" | "registration_closed" | "survey_required" | "slot_required" | null;
 }

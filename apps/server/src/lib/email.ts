@@ -1,3 +1,5 @@
+import { canViewEvent } from "../auth/eventAccess.js";
+import { usersRepo } from "../db/repositories/users.js";
 import { env, takeEmailSlot } from "../runtime.js";
 import { emailRepo } from "../db/repositories/email.js";
 import { eventsRepo } from "../db/repositories/events.js";
@@ -15,8 +17,10 @@ import {
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
-/** メール表示だけに使う付加情報 (#134)。DB には保存しない */
+/** メールの表示情報 (#134) と、対応済み送信元の直前認可。DBには保存しない */
 export interface EmailExtras {
+  /** Current-event qualification for finalization and waitlist promotion. */
+  authorizationEventId?: string;
   /** 「◯◯ さんが…」通知の ◯◯（プロフィールへリンクする） */
   actorName?: string;
   /** actor のプロフィールパス（例: /users/alice） */
@@ -190,7 +194,7 @@ export async function buildEventExtraHtml(
 }
 
 /** 通知メールを1通組み立てて送る（宛先解決済みの内部ヘルパー）。
- * extras はメール表示のみに使う（アプリ内通知や DB には影響しない） */
+ * extras は表示と送信直前の認可に使う（アプリ内通知やDBは変更しない） */
 export async function sendNotificationEmailTo(
   userId: string,
   to: string,
@@ -221,9 +225,9 @@ export async function sendNotificationEmailToWithOutcome(
   }
   const unsub = await unsubscribeUrl(userId);
   // リッチ化 (#134): イベントカード＋（リマインダーなら）タイムテーブル
-  const extraHtml = await buildEventExtraHtml(link, extras?.timetable === true);
+  let extraHtml = await buildEventExtraHtml(link, extras?.timetable === true);
   // 「◯◯ さんが…」の ◯◯ をプロフィールへリンク（該当しなければプレーン表示）
-  const titleHtml =
+  let titleHtml =
     extras?.actorName && extras.actorPath
       ? actorTitleHtml({
           baseUrl: env.appBaseUrl,
@@ -232,6 +236,19 @@ export async function sendNotificationEmailToWithOutcome(
           actorPath: extras.actorPath,
         })
       : null;
+  if (extras?.authorizationEventId) {
+    const event = await eventsRepo.findById(extras.authorizationEventId);
+    const user = await usersRepo.findById(userId);
+    // This is the last DB check before constructing/sending the email. External
+    // delivery cannot be atomic with revocation; nonpublic content is generic.
+    if (!event || !user || !(await canViewEvent(event, user))) return { ok: false, retryable: false };
+    if (event.visibility !== "public") {
+      title = "イベントの更新があります";
+      body = "イベントページで最新の情報をご確認ください";
+      extraHtml = "";
+      titleHtml = null;
+    }
+  }
   const html = notificationEmailHtml({
     baseUrl: env.appBaseUrl,
     title,

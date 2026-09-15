@@ -75,7 +75,14 @@ export async function deleteMyEventAccess(c: Context<AppEnv>) {
     const parsed = leaveEventAccessInput.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "confirmation_required" }, 400);
     if (invite.status === "revoked") return c.json({ ok: true });
-    if (!(await revokeEventAccess(invite, user.id))) return c.json({ error: "access_changed" }, 409);
+    if (!(await revokeEventAccess(invite, user.id))) {
+      const current = await invites.findForUser(eventId, user.id);
+      // A concurrent identical exit is successful, but a new invitation is not
+      // this operation's grant and must never be mistaken for its replay.
+      if (current?.id !== invite.id || current.status !== "revoked") {
+        return c.json({ error: "access_changed" }, 409);
+      }
+    }
     return c.json({ ok: true });
   } finally { eventResponseHeaders(c, true); }
 }

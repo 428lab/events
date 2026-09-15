@@ -3,6 +3,8 @@ import type {
   SurveyPhase,
   SurveyQuestion,
 } from "@eventer/shared";
+import { eventViewSql } from "../../auth/eventAccess.js";
+import { adminIds } from "./eventAccessInvites.js";
 import { batch, many, one, run } from "../client.js";
 
 interface QuestionRow {
@@ -154,19 +156,27 @@ export const eventSurveyRepo = {
     eventId: string,
     userId: string,
     answers: Array<{ questionId: string; value: string }>,
-  ): Promise<void> {
-    if (answers.length === 0) return;
-    const now = Date.now();
-    await batch(
+  ): Promise<boolean> {
+    if (answers.length === 0) return true;
+    const now = Date.now(), questionIds = JSON.stringify(answers.map(a => a.questionId));
+    const changes = await batch(
       answers.map((a) => ({
         sql: `INSERT INTO event_survey_answer
           (id, question_id, event_id, user_id, value, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?)
+          SELECT ?, ?, e.id, u.id, ?, ? FROM event e
+          JOIN user u ON u.id = ? AND u.deleted_at IS NULL
+          WHERE e.id = ? AND ${eventViewSql("e", "u.id", "?")}
+            AND (e.status = 'published' OR u.discord_id IN (SELECT value FROM json_each(?))
+              OR EXISTS (SELECT 1 FROM event_member m WHERE m.event_id = e.id
+                AND m.user_id = u.id AND m.status <> 'canceled'))
+            AND NOT EXISTS (SELECT 1 FROM json_each(?) requested WHERE NOT EXISTS (
+              SELECT 1 FROM event_survey_question q WHERE q.id = requested.value AND q.event_id = e.id AND q.phase = 'pre'))
           ON CONFLICT(question_id, user_id)
           DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-        args: [crypto.randomUUID(), a.questionId, eventId, userId, a.value, now],
+        args: [crypto.randomUUID(), a.questionId, a.value, now, userId, eventId, adminIds(), adminIds(), questionIds],
       })),
     );
+    return changes.every(n => n > 0);
   },
 
   /** 必須の質問すべてに空でない回答があるか（参加登録のブロック判定 #152） */

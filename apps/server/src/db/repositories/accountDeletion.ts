@@ -1,3 +1,4 @@
+import { accountAccessRevision } from "./accessRevisions.js";
 import type { User } from "@eventer/shared";
 import { DELETED_USER_DISPLAY_NAME } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
@@ -61,7 +62,7 @@ export const accountDeletionRepo = {
 
   /** ユーザー行を削除（関連行は FK CASCADE）。空アカウントの引き取り時の後始末用 (#238) */
   async deleteById(id: string): Promise<void> {
-    await run("DELETE FROM user WHERE id = ?", id);
+    await batch([accountAccessRevision([id]), { sql: "DELETE FROM user WHERE id = ?", args: [id] }]);
   },
 
   /** 退会リクエスト (#250)。データは消さず deleted_at を立て、セッションを
@@ -78,6 +79,7 @@ export const accountDeletionRepo = {
     // 先に回ってしまっても本人はまだ staff なので新しい鍵を受け取れるだけ
     await staffChatRepo.onStaffLostEverywhere(userId);
     await batch([
+      accountAccessRevision([userId]),
       {
         sql: `UPDATE user SET deleted_at = ? WHERE id = ? AND ${ACTIVE}`,
         args: [now, userId],
@@ -88,10 +90,9 @@ export const accountDeletionRepo = {
 
   /** 猶予期間中の退会申請を取り消して復帰する (#250) */
   async restore(userId: string): Promise<void> {
-    await run(
-      "UPDATE user SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
-      userId,
-    );
+    await batch([accountAccessRevision([userId]), {
+      sql: "UPDATE user SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL", args: [userId],
+    }]);
   },
 
   /** 猶予期間 (#250) を過ぎた退会申請の id を古い順に返す。日次バッチ用。
@@ -153,7 +154,7 @@ export const accountDeletionRepo = {
     //     場合に害は無い（鍵が1世代進むだけで、翌日の再試行で完結する）
     const rotationCost = await staffChatRepo.onStaffLostEverywhere(userId);
 
-    const stmts: Array<{ sql: string; args?: unknown[] }> = [];
+    const stmts: Array<{ sql: string; args?: unknown[] }> = [accountAccessRevision([userId])];
 
     // (1) 共有コンテンツは ghost 名義に付け替えて残す（参加者の履歴・予定を
     //     壊さない）。いずれも user 列を含む UNIQUE キーが無いため、mergeUsers の

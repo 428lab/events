@@ -1,3 +1,4 @@
+import { accountAccessRevision } from "./accessRevisions.js";
 import type { User } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
 
@@ -213,7 +214,10 @@ export const usersRepo = {
 
   /** Discord 連携時に discord_id を実IDへ更新（管理者判定を効かせる） */
   async setDiscordId(userId: string, discordId: string): Promise<void> {
-    await run("UPDATE user SET discord_id = ? WHERE id = ?", discordId, userId);
+    // Both old and new admin identity can affect the event set.
+    await batch([accountAccessRevision([userId]),
+      { sql: "UPDATE user SET discord_id = ? WHERE id = ?", args: [discordId, userId] },
+      accountAccessRevision([userId])]);
   },
 
   /** ユーザー名（ハンドル）を変更 */
