@@ -29,6 +29,7 @@ import type { EventMemberWithUser, EventRole } from "@eventer/shared";
 import { EVENT_ROLES } from "@eventer/shared";
 import {
   useEventMembers,
+  useEventSlots,
   useMe,
   useSetAttendance,
   useSetEventMemberRole,
@@ -75,7 +76,30 @@ export function EventMemberList({
   const { t } = useTranslation();
   const { data: me } = useMe();
   const { data: members } = useEventMembers(eventId, true);
+  const { data: slots } = useEventSlots(eventId);
   if (!members) return null;
+
+  // 申込枠と参加状態は別物。抽選前も保存済みの枠でまとめる (#530)。
+  const groups = (slots ?? []).map((slot) => ({
+    id: slot.id,
+    name: slot.name,
+    members: members.filter((m) => m.slotId === slot.id),
+  }));
+  const remaining = members.filter((m) => !slots?.some((slot) => slot.id === m.slotId));
+  const memberList = (items: EventMemberWithUser[], label?: string) => (
+    <List dense aria-label={label}>
+      {items.map((m) => (
+        <MemberRow
+          key={m.id}
+          eventId={eventId}
+          member={m}
+          isStaff={isStaff}
+          attendanceCheck={attendanceCheck}
+          isMe={isMyMembership(m, me)}
+        />
+      ))}
+    </List>
+  );
 
   return (
     <Card variant="outlined">
@@ -92,18 +116,26 @@ export function EventMemberList({
             )}
           </Alert>
         )}
-        <List dense>
-          {members.map((m) => (
-            <MemberRow
-              key={m.id}
-              eventId={eventId}
-              member={m}
-              isStaff={isStaff}
-              attendanceCheck={attendanceCheck}
-              isMe={isMyMembership(m, me)}
-            />
-          ))}
-        </List>
+        {groups.length > 0 ? (
+          <>
+            {groups.filter((group) => group.members.length > 0).map((group) => (
+              <section key={group.id}>
+                <Typography component="h3" variant="subtitle2" sx={{ mt: 1, overflowWrap: "anywhere" }}>
+                  {group.name}
+                </Typography>
+                {memberList(group.members, group.name)}
+              </section>
+            ))}
+            {remaining.length > 0 && (
+              <section>
+                <Typography component="h3" variant="subtitle2" sx={{ mt: 1 }}>
+                  {t("eventDetail.participantsOther")}
+                </Typography>
+                {memberList(remaining, t("eventDetail.participantsOther"))}
+              </section>
+            )}
+          </>
+        ) : memberList(members)}
       </CardContent>
     </Card>
   );
@@ -267,7 +299,7 @@ export function MemberRow({
         </ListItemAvatar>
         <ListItemText
           primary={m.user.globalName ?? m.user.username}
-          secondary={roleLabel(m.role)}
+          secondary={roleLabel(m.role) + t("common.dotSeparator") + status}
           primaryTypographyProps={{ sx: { overflowWrap: "anywhere" } }}
         />
       </ListItemButton>
