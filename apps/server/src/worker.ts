@@ -139,15 +139,19 @@ import { adminModerationRoutes } from "./routes/adminModeration.js";
 import { adminTrendingRoutes } from "./routes/adminTrending.js";
 
 const api = new Hono();
-// Exact ownership-only exit; all other verbs remain behind the event gate.
-api.delete("/events/:id/access", requireAuth, deleteMyEventAccess);
+const DEFAULT_BODY_MAX = 8 * 1024 * 1024;
+// This terminal ownership-only exit precedes the common gates, so apply the
+// same body cap here as well. No other verb bypasses the event gate.
+api.delete("/events/:id/access", requireAuth, bodyLimit({
+  maxSize: DEFAULT_BODY_MAX,
+  onError: (c) => c.json({ error: "too_large" }, 413),
+}), deleteMyEventAccess);
 // All event paths share a visibility gate, before media and body processing.
 api.use("/events/:id/*", requireEventAccess);
 // リクエストボディの上限。既定は最大の画像アップロード 6MB より少し上。
 // 動画アップロード (#408) のパスだけ、本体＋ポスター＋multipart 境界ぶんまで広げる。
-// 門はこの1枚だけ（ルート側に別の bodyLimit を重ねない）。ルート内の
+// 通常の門はこの1枚（先行する本人退出だけは上で同じ上限）。ルート内の
 // 個別上限（EVENT_VIDEO_MAX_BYTES 等）はこの門をくぐった後の検証
-const DEFAULT_BODY_MAX = 8 * 1024 * 1024;
 const VIDEO_BODY_MAX =
   EVENT_VIDEO_MAX_BYTES + EVENT_PHOTO_MAX_BYTES + EVENT_THUMBNAIL_MAX_BYTES + 1024 * 1024;
 const VIDEO_UPLOAD_PATH = /^\/api\/events\/[^/]+\/videos$/;

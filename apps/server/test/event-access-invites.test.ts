@@ -237,4 +237,15 @@ describe("identity-bound viewing invitations over HTTP", () => {
     expect(await count("entry", eventId)).toBe(1);
   });
 
+  it("keeps the normal request size cap on the pre-gate self-exit route", async () => {
+    const { host, target, eventId } = await setup();
+    const id = await invite(eventId, host, target); await accept(id, target);
+    const before = await revision(eventId, host);
+    expect((await req(`/events/${eventId}/access`, target, "DELETE", {
+      confirmCancelParticipation: true, padding: "x".repeat(8 * 1024 * 1024),
+    })).status).toBe(413);
+    expect(await revision(eventId, host)).toBe(before);
+    expect((await json(await req(`/me/event-invites/${id}`, target))).status).toBe("accepted");
+  });
+
 });
