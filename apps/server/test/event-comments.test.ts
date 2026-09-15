@@ -164,14 +164,14 @@ describe("イベントコメント (#72)", () => {
     const { event } = (await create.json()) as { event: { id: string } };
 
     const anon = await SELF.fetch(`${BASE}/api/events/${event.id}/comments`);
-    expect(anon.status).toBe(403);
+    expect(anon.status).toBe(404);
 
     const outsider = await makeUser();
     const outsiderGet = await SELF.fetch(
       `${BASE}/api/events/${event.id}/comments`,
       { headers: { cookie: outsider.cookie } },
     );
-    expect(outsiderGet.status).toBe(403);
+    expect(outsiderGet.status).toBe(404);
 
     // メンバー（下書きイベントの staff=作成者）は読める
     const staffGet = await SELF.fetch(

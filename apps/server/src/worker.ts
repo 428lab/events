@@ -1,3 +1,4 @@
+import { requireEventAccess } from "./auth/eventAccess.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -137,6 +138,8 @@ import { adminModerationRoutes } from "./routes/adminModeration.js";
 import { adminTrendingRoutes } from "./routes/adminTrending.js";
 
 const api = new Hono();
+// All event paths share a visibility gate, before media and body processing.
+api.use("/events/:id/*", requireEventAccess);
 // リクエストボディの上限。既定は最大の画像アップロード 6MB より少し上。
 // 動画アップロード (#408) のパスだけ、本体＋ポスター＋multipart 境界ぶんまで広げる。
 // 門はこの1枚だけ（ルート側に別の bodyLimit を重ねない）。ルート内の
@@ -408,7 +411,7 @@ app.use("*", async (c, next) => {
   const set = (h: Headers) => {
     h.set("X-Content-Type-Options", "nosniff");
     h.set("X-Frame-Options", "DENY");
-    h.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    if (!h.has("Referrer-Policy")) h.set("Referrer-Policy", "strict-origin-when-cross-origin");
   };
   try {
     set(c.res.headers);

@@ -156,20 +156,20 @@ describe("漏れ防止とトークンの門 (#444)", () => {
     expect(answer.status).toBe(201);
   });
 
-  it("管理系は staff のみ（参加者 403・未ログイン 401）", async () => {
+  it("下書きの管理系は部外者・未ログインに404", async () => {
     const { eventId } = await setup();
     const other = await makeUser();
     expect(
       (await put(adminUrl(eventId), other.cookie, { title: "x", questions: [] })).status,
-    ).toBe(403);
+    ).toBe(404);
     expect(
       (
         await SELF.fetch(`${adminUrl(eventId)}/results`, {
           headers: { cookie: other.cookie },
         })
       ).status,
-    ).toBe(403);
-    expect((await SELF.fetch(adminUrl(eventId))).status).toBe(401);
+    ).toBe(404);
+    expect((await SELF.fetch(adminUrl(eventId))).status).toBe(404);
   });
 });
 
@@ -425,7 +425,7 @@ describe("共有URLのアクセス数 (#450)", () => {
     });
   });
 
-  it("トークン再発行をまたいで同じ集計に積まれる（初回は再カウント）。staff 以外は 403", async () => {
+  it("トークン再発行をまたいで同じ集計に積まれる（初回は再カウント）。下書きの部外者は404", async () => {
     const { staff, eventId, survey } = await setup();
     await visit(survey.token, true);
     const rotate = await post(`${adminUrl(eventId)}/rotate`, {}, staff.cookie);
@@ -442,7 +442,7 @@ describe("共有URLのアクセス数 (#450)", () => {
     expect(rows[0].firstVisits).toBe(2); // 初回は配り直しとして再カウント
 
     const outsider = await makeUser();
-    expect((await countRows(eventId, outsider.cookie)).status).toBe(403);
+    expect((await countRows(eventId, outsider.cookie)).status).toBe(404);
   });
 
   it("同時アクセス（フラグ混在）でも欠損しない（upsert 2本同時で両カウント一致）", async () => {
@@ -493,7 +493,7 @@ describe("集計と後始末", () => {
     expect(raw).not.toContain(alice.username);
   });
 
-  it("回答一覧 (#447): 行=1送信・新しい順・未ログインは respondent null・質問と値の対応。staff 以外 403", async () => {
+  it("回答一覧 (#447): 行=1送信・新しい順・未ログインは respondent null・質問と値の対応。下書きの部外者は404", async () => {
     const { staff, eventId, survey } = await setup();
     const url = `${publicUrl(survey.token)}/responses`;
     await post(url, validAnswers(survey)); // 匿名
@@ -514,7 +514,7 @@ describe("集計と後始末", () => {
     const outsider = await makeUser();
     expect(
       (await SELF.fetch(listUrl, { headers: { cookie: outsider.cookie } })).status,
-    ).toBe(403);
+    ).toBe(404);
 
     const { rows } = (await (
       await SELF.fetch(listUrl, { headers: { cookie: staff.cookie } })

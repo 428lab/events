@@ -34,23 +34,15 @@ export const eventPublicRoutes = new Hono<PublicEventEnv>();
  * ここに1本化した。`canViewEvent` を通し忘れると **下書きイベントの中身が
  * 未ログインで読める**ので、増やすときも必ずこれを通すこと。
  *
- * 断り方が2通りあるのは意図（どちらも従来の振る舞い）:
- * - `404` … イベントそのもの（詳細・日程調整）。下書きは存在ごと隠す
- * - `403` … イベント配下の一覧。存在は詳細 GET で分かるので隠す意味がない
- *
- * どちらで断るかを引数に出しているのは、**登録行を見れば分かる**ようにするため。
+ * #526: 共通門の後で資格が変わった場合も、本文/子一覧を同じ404で隠す。
  */
-function viewableEvent(
-  deny: 403 | 404,
-): MiddlewareHandler<PublicEventEnv, "/:id"> {
+function viewableEvent(): MiddlewareHandler<PublicEventEnv, "/:id"> {
   return async (c, next) => {
     const event = await eventsRepo.findById(c.req.param("id"));
     if (!event) return c.json({ error: "not_found" }, 404);
     const viewer = await currentUser(c);
     if (!(await canViewEvent(event, viewer))) {
-      return deny === 404
-        ? c.json({ error: "not_found" }, 404)
-        : c.json({ error: "forbidden" }, 403);
+      return c.json({ error: "not_found" }, 404);
     }
     c.set("event", event);
     c.set("viewer", viewer);
@@ -82,7 +74,7 @@ async function canSeeMembersNote(
 }
 
 /** イベント詳細（公開イベントは未ログインでも閲覧可） */
-eventPublicRoutes.get("/:id", viewableEvent(404), async (c) => {
+eventPublicRoutes.get("/:id", viewableEvent(), async (c) => {
   const event = c.get("event");
   const user = c.get("viewer");
   const member = user ? await eventMembersRepo.find(event.id, user.id) : null;
@@ -110,12 +102,12 @@ eventPublicRoutes.get("/:id", viewableEvent(404), async (c) => {
 });
 
 /** Entry 一覧（公開イベントは未ログインでも閲覧可） */
-eventPublicRoutes.get("/:id/entries", viewableEvent(403), async (c) => {
+eventPublicRoutes.get("/:id/entries", viewableEvent(), async (c) => {
   return c.json({ entries: await entriesRepo.listByEvent(c.get("event").id) });
 });
 
 /** 成果物集約（公開イベントは未ログインでも閲覧可。提出済みのみ） */
-eventPublicRoutes.get("/:id/submissions", viewableEvent(403), async (c) => {
+eventPublicRoutes.get("/:id/submissions", viewableEvent(), async (c) => {
   const entries = (await entriesRepo.listByEvent(c.get("event").id)).filter(
     (e) => e.submission,
   );
@@ -123,21 +115,21 @@ eventPublicRoutes.get("/:id/submissions", viewableEvent(403), async (c) => {
 });
 
 /** 参加者一覧（公開イベントは未ログインでも閲覧可） */
-eventPublicRoutes.get("/:id/members", viewableEvent(403), async (c) => {
+eventPublicRoutes.get("/:id/members", viewableEvent(), async (c) => {
   return c.json({
     members: await eventMembersRepo.listWithUsers(c.get("event").id),
   });
 });
 
 /** 参加枠一覧（公開イベントは未ログインでも閲覧可） */
-eventPublicRoutes.get("/:id/slots", viewableEvent(403), async (c) => {
+eventPublicRoutes.get("/:id/slots", viewableEvent(), async (c) => {
   return c.json({
     slots: await participationSlotsRepo.listByEvent(c.get("event").id),
   });
 });
 
 /** 日程調整（候補日と集計。公開イベントは未ログイン可。ログイン時は自分の回答付き） */
-eventPublicRoutes.get("/:id/schedule", viewableEvent(404), async (c) => {
+eventPublicRoutes.get("/:id/schedule", viewableEvent(), async (c) => {
   const event = c.get("event");
   const user = c.get("viewer");
   const options = await schedulingRepo.listOptions(event.id);

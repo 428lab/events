@@ -10,6 +10,9 @@ export type VenueType = (typeof VENUE_TYPES)[number];
 export const PARTICIPATION_TYPES = ["individual", "team"] as const;
 export type ParticipationType = (typeof PARTICIPATION_TYPES)[number];
 
+export const EVENT_VISIBILITIES = ["public", "unlisted", "private"] as const;
+export type EventVisibility = (typeof EVENT_VISIBILITIES)[number];
+
 export const EVENT_STATUSES = ["draft", "published", "archived"] as const;
 export type EventStatus = (typeof EVENT_STATUSES)[number];
 

@@ -109,6 +109,7 @@ export function CreateEventPage() {
   const submit = () => {
     createEvent.mutate(
       {
+        visibility: "public",
         title,
         subtitle,
         description,

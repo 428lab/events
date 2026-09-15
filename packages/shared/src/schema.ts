@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   EVENT_ROLES,
   EVENT_STATUSES,
+  EVENT_VISIBILITIES,
   MEMBER_STATUSES,
   PARTICIPATION_TYPES,
   VENUE_TYPES,
@@ -45,6 +46,8 @@ export const eventSchema = z.object({
   /** コンテスト形式（採点・成果物・表彰などを使う）。オフ＝告知/募集のみの一般イベント */
   contestMode: z.boolean(),
   status: z.enum(EVENT_STATUSES),
+  visibility: z.enum(EVENT_VISIBILITIES),
+  accessRevision: z.number().int().nonnegative(),
   createdBy: z.string(),
   createdAt: z.number(),
   imageUpdatedAt: z.number().nullable(),
@@ -96,6 +99,7 @@ export type Event = z.infer<typeof eventSchema>;
 
 export const createEventInput = z
   .object({
+    visibility: z.enum(EVENT_VISIBILITIES).default("public"),
     title: z.string().min(1).max(200),
     subtitle: z.string().max(200).default(""),
     description: z.string().max(20000).default(""),
@@ -121,6 +125,9 @@ export const createEventInput = z
 export type CreateEventInput = z.infer<typeof createEventInput>;
 
 export const updateEventInput = z.object({
+  visibility: z.enum(EVENT_VISIBILITIES).optional(),
+  expectedAccessRevision: z.number().int().nonnegative().optional(),
+  confirmVisibilityChange: z.boolean().optional(),
   title: z.string().min(1).max(200).optional(),
   subtitle: z.string().max(200).optional(),
   description: z.string().max(20000).optional(),

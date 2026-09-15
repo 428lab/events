@@ -275,11 +275,11 @@ describe("名札の一括印刷: 対象メンバー (#304)", () => {
     expect(ids).not.toContain(leaving.userId);
   });
 
-  it("存在しないイベントも 403（イベントの有無を漏らさない）", async () => {
+  it("存在しないイベントは404（共通閲覧境界で存在を隠す）", async () => {
     const missing = crypto.randomUUID();
     const stranger = await makeUser();
     // 権限が先に落ちる（イベントの有無を漏らさない）
-    expect((await fetchCards(missing, stranger.cookie)).status).toBe(403);
+    expect((await fetchCards(missing, stranger.cookie)).status).toBe(404);
   });
 });
 

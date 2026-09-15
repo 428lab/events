@@ -37,6 +37,29 @@ export const accountMergeRepo = {
       args: [winnerId, loserId],
     });
 
+    // Viewing grants have a different conflict rule from membership: a revoke
+    // must never be resurrected by an older acceptance on the other account.
+    const accessRank = (alias: string) => `CASE ${alias}.status
+      WHEN 'revoked' THEN 4 WHEN 'accepted' THEN 3 WHEN 'pending' THEN 2 ELSE 1 END`;
+    const accessTime = (alias: string) => `CASE WHEN ${alias}.status = 'pending'
+      THEN ${alias}.expires_at ELSE COALESCE(${alias}.responded_at, ${alias}.created_at) END`;
+    stmts.push({
+      sql: `DELETE FROM event_access_invite WHERE user_id IN (?, ?)
+        AND EXISTS (SELECT 1 FROM event_access_invite better
+          WHERE better.event_id = event_access_invite.event_id
+            AND better.user_id IN (?, ?) AND (
+              ${accessRank("better")} > ${accessRank("event_access_invite")}
+              OR (${accessRank("better")} = ${accessRank("event_access_invite")} AND (
+                ${accessTime("better")} > ${accessTime("event_access_invite")}
+                OR (${accessTime("better")} = ${accessTime("event_access_invite")}
+                  AND better.id > event_access_invite.id)))))`,
+      args: [winnerId, loserId, winnerId, loserId],
+    });
+    stmts.push({
+      sql: "UPDATE event_access_invite SET user_id = ? WHERE user_id = ?",
+      args: [winnerId, loserId],
+    });
+
     // (1) UNIQUE キー（user 列 + keyCols）を持つテーブル。
     //     勝ち側に同キーの行が既にあれば、負け側の行を捨ててから付け替える
     const uniqueKeyed: Array<[table: string, userCol: string, keyCols: string[]]> = [
@@ -218,6 +241,7 @@ export const accountMergeRepo = {
       ["event_schedule_item", "speaker_user_id"],
       // 招待した人 (#339)。付け替えないと (9) の user 削除で招待ごと消える
       ["event_staff_invite", "invited_by"],
+      ["event_access_invite", "invited_by"],
       // 準備 TODO の担当と作成者 (#393)。付け替えないと (9) の user 削除で
       // ON DELETE SET NULL が発火し、統合したはずの担当が黙って未割り当てになる
       ["event_todo", "assignee_user_id"],
