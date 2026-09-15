@@ -122,7 +122,9 @@ export function LicenseCardSvg({
         <rect x={0} y={0} width={CARD_W} height={8} fill={theme.accentA} />
 
         {/* ヘッダー: ロゴ＋ワードマーク＋シリアル */}
-        <g transform={`translate(${MARGIN_X},44) scale(1.35)`}>
+        {/* グリフの見た目の中心をワードマークの大文字の中心へ揃える (#505)。
+            64px枠の上端ではなく、実描画範囲 y=12.9〜55.2 の中心で合わせる。 */}
+        <g transform={`translate(${MARGIN_X},24) scale(1.35)`}>
           <LogoGlyph color={theme.accentA} />
         </g>
         <text
