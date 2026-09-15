@@ -80,7 +80,7 @@ eventCrudRoutes.post("/", zValidator("json", createEventInput), async (c) => {
   const event = await eventsRepo.create(input, user.id);
   await eventMembersRepo.add(event.id, user.id, "staff");
   await scoringCriteriaRepo.seedDefaults(event.id);
-  return c.json({ event }, 201);
+  return c.json({ event: (await eventsRepo.findById(event.id))! }, 201);
 });
 
 /** イベント更新（staff のみ） */

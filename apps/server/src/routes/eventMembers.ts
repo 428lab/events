@@ -13,6 +13,8 @@ import type {
   UpdateMemberRoleInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
+import { joinPrivateEvent } from "../db/repositories/privateEventJoin.js";
+import { canViewEvent } from "../auth/eventAccess.js";
 import { requireEventRole } from "../auth/roles.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
@@ -84,6 +86,14 @@ eventMemberRoutes.post(
       } else {
         status = slot.confirmedCount < slot.capacity ? "confirmed" : "waitlist";
       }
+    }
+
+    if (event.visibility === "private") {
+      await joinPrivateEvent(eventId, user.id, slotId);
+      if (!(await canViewEvent(event, user))) return c.json({ error: "not_found" }, 404);
+      const member = await eventMembersRepo.find(eventId, user.id);
+      if (!member) return c.json({ error: "access_changed" }, 409);
+      return c.json({ member, status: member.status }, 201);
     }
 
     const member = await eventMembersRepo.add(

@@ -383,3 +383,14 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - 検証: D1ローカルの実router全event verbの不許可404、private grant状態と子権限、公開一覧/feedの非public除外、FK/統合監査、空DB/旧schema移行fixtureを確認。共通門を隔離コピーで外すとawardsが200となり負例テストが失敗する。実ブラウザはローカル開発アカウントで既存作成画面→public下書き→詳細だけ確認。招待限定の利用者一巡や認証済staging受入は未実施。
 
 - 最初の全体CIで、旧来の下書き/不存在401・403および画像max-ageを期待する既存テストが不一致になった。§3.3/§5.2の404/no-store契約へ対象テストだけを同期する。閲覧できるmemberの子権限不足403とstaffチャットの鍵世代更新検査は維持する。
+
+### 14.1 閲覧招待ライフサイクルの実装単位
+
+- 基盤70365bdの独立レビューは継続実装可、全体CIも成功。非public入口は引き続き閉鎖し、この単位はローカルfixtureだけで実HTTP招待・本人UI・通常参加との分離を検証する。
+- handle確認後にhandleが他userへ移る競合への対策として、POSTの入力にoptional `expectedUserId` を追加する。UIは既存exactプロフィール取得の確認IDを必ず送信し、handle編集で確認を破棄する。サーバーはhandleを再解決したIDとの一致だけを検査し、不一致409 `handle_changed`では招待/revision/通知を一切変更しない。IDを招待先指定や認可として使わない。optionalは既存設計入力との互換であり、この確認保証はIDを送る確認フローに適用する。409時は相手が変わった旨を表示して再確認し、自動再送しない。
+- 現行leaveEvent/promoteFromWaitlistは複数の独立書込みであり、閲覧権失効にはそのまま利用できない。grant失効と終了前のEntry/参加回答処理・membership取消/削除・条件付き先着繰上げを、access_operation_tokenで所有する単一D1 batchにする。終了条件は現行同様 `scheduling=0 AND ends_at<now`。終了後はgrantだけ変更して履歴を維持する。
+- 招待通知は作成/再発行と同じbatch内の汎用アプリ通知だけ。既存通知createのメール副作用を通さない。残りのevent通知/PNG寄与集合/QR等は後続必須であり、この単位でも一般の非public作成を開けない。
+
+- この保存単位では管理用招待API、本人受取/承諾/辞退、本文なしの承諾済み一覧、draft/archived本人退出、実際の `/event-invites` と主催者UIを接続した。既存exactプロフィール確認→ID一致検査→本人のHTTP承諾をローカルDB/実ブラウザで通し、承諾時の参加/Entryなし、別操作の参加→参加取消後も閲覧可→閲覧退出404、再発行/辞退、draft承諾/本文なし退出、別アカウントでの非表示を確認した。承諾済みgrantの直接投入は成功フローに使っていない。staging受入ではない。
+- privateの通常joinは最新資格・状態・締切・枠定員を再確認する一つのbatchでmemberと個人Entryを作る。招待系とこのjoin、基本member追加/状態/role/取消、staff招待承諾、event status、日程確定にはrevision更新を入れた。accept/revoke、accept/reissue、最終席同時join、参加取消batch途中失敗rollbackの対象テストを追加した。
+- なお§7.2全体は完了していない。既存の投票/参加アンケート/抽選/通常参加取消に伴う繰上げ/日程自動登録の最新資格SQL・Entry原子性、およびcommunity/account変化のrevision追随を次の保存単位で閉じる必要がある。上記の基本writer更新を「全writer対応」とは扱わない。PNG/QR/間接経路/通知/チャット、公開範囲変更とそのUIも未完了。機能全体の提供・merge・配備は引き続き不可。

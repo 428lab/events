@@ -104,7 +104,7 @@ export function useLogout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post("/auth/logout"),
-    onSuccess: () => qc.invalidateQueries(),
+    onSuccess: async () => { await qc.cancelQueries(); qc.clear(); qc.setQueryData(["me"], { user: null, isAdmin: false }); },
   });
 }
 
@@ -223,14 +223,18 @@ export interface EventCommunityRef {
 }
 
 export function useEvent(id: string) {
+  const { data: viewer } = useMe();
   return useQuery({
-    queryKey: ["event", id],
+    queryKey: ["event", id, "viewer", viewer?.id],
+    retry: false,
+    refetchInterval: 15_000,
     queryFn: () =>
       api.get<{
         event: Event;
         /** 参加者限定の文章。確定メンバー・staff・作成者・管理者にのみ返る */
         membersNote?: string;
         myRole: EventRole | null;
+        canManageAccess?: boolean;
         community: EventCommunityRef | null;
         /** 生まれ元のたまご（あったらいいな）。通常は0〜1件（旧レスポンスでは欠落しうる） */
         fromRequests?: EventRequest[];

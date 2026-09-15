@@ -140,7 +140,7 @@ export const scheduleRegistrationRepo = {
       },
       {
         sql: `UPDATE event SET starts_at=(SELECT starts_at FROM event_date_option WHERE id=?),
-          ends_at=(SELECT ends_at FROM event_date_option WHERE id=?),scheduling=0 WHERE id=? AND ${owned}`,
+          ends_at=(SELECT ends_at FROM event_date_option WHERE id=?),scheduling=0,access_revision=access_revision+1 WHERE id=? AND ${owned}`,
         args: [optionId, optionId, eventId, eventId, token],
       },
     ]);

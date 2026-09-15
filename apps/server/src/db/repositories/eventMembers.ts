@@ -8,7 +8,7 @@ import type {
 } from "@eventer/shared";
 import { MEET_RANKING_MODES,
   QA_ANONYMITY_MODES } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { batch, many, one, run } from "../client.js";
 import {
   ATTENDED_COUNT_SQL,
   CAPACITY_TOTAL_SQL,
@@ -68,6 +68,12 @@ function toUser(row: MemberUserRow): User {
   };
 }
 
+// The revision statement immediately follows the member mutation in the same
+// batch; changes() refers only to that mutation, never to a later side effect.
+async function memberWrite(eventId: string, sql: string, ...args: unknown[]) {
+  await batch([{ sql, args }, { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE id = ? AND changes() > 0", args: [eventId] }]);
+}
+
 export const eventMembersRepo = {
   /** 現役メンバーを返す（キャンセル済みはメンバー扱いしない） */
   async find(eventId: string, userId: string): Promise<EventMember | null> {
@@ -112,7 +118,7 @@ export const eventMembersRepo = {
     if (existing && existing.status !== "canceled") return existing;
     if (existing) {
       // キャンセル済みの再参加: 行を復活させる（並び順の公平のため参加日時は今）
-      await run(
+      await memberWrite(eventId,
         `UPDATE event_member
             SET role = ?, slot_id = ?, status = ${statusSql}, attended = 0, attended_at = NULL,
                 canceled_at = NULL, canceled_scheduling = 0, created_at = ?
@@ -126,7 +132,7 @@ export const eventMembersRepo = {
       return (await this.find(eventId, userId))!;
     }
     const id = crypto.randomUUID();
-    await run(
+    await memberWrite(eventId,
       `INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at)
        VALUES (?, ?, ?, ?, ?, ${statusSql}, ?) ${enforceSlotRules ? "ON CONFLICT(event_id,user_id) DO NOTHING" : ""}`,
       id,
@@ -150,9 +156,11 @@ export const eventMembersRepo = {
    * 取消済み(canceled)は触らない。「出席したあとで取り消した」順序は実際に起こる
    * ので、参加履歴として残す方針 (0061・0063) に揃える。 */
   async setStatus(memberId: string, status: string): Promise<void> {
+    const row = await one<{ event_id: string }>("SELECT event_id FROM event_member WHERE id = ?", memberId);
+    if (!row) return;
     const clearsAttendance =
       status === "lost" || status === "applied" || status === "waitlist";
-    await run(
+    await memberWrite(row.event_id,
       clearsAttendance
         ? `UPDATE event_member
               SET status = ?, attended = 0, attended_at = NULL
@@ -270,7 +278,7 @@ export const eventMembersRepo = {
     userId: string,
     role: NonParticipantRole,
   ): Promise<EventMember | null> {
-    await run(
+    await memberWrite(eventId,
       `UPDATE event_member SET role = ?, slot_id = NULL, status = 'confirmed'
          WHERE event_id = ? AND user_id = ? AND status <> 'canceled'`,
       role,
@@ -281,7 +289,7 @@ export const eventMembersRepo = {
   },
 
   async remove(eventId: string, userId: string): Promise<void> {
-    await run(
+    await memberWrite(eventId,
       "DELETE FROM event_member WHERE event_id = ? AND user_id = ?",
       eventId,
       userId,
@@ -294,7 +302,7 @@ export const eventMembersRepo = {
     userId: string,
     wasScheduling: boolean,
   ): Promise<void> {
-    await run(
+    await memberWrite(eventId,
       `UPDATE event_member
           SET status = 'canceled', canceled_at = ?, canceled_scheduling = ?
         WHERE event_id = ? AND user_id = ?`,

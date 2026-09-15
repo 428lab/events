@@ -1,3 +1,4 @@
+import { isEventManager } from "../auth/eventAccess.js";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { Event, EventMember, User } from "@eventer/shared";
@@ -88,6 +89,7 @@ eventPublicRoutes.get("/:id", viewableEvent(), async (c) => {
       ? { membersNote: await eventsRepo.membersNoteFor(event.id) }
       : {}),
     myRole: member?.role ?? null,
+    ...(event.visibility === "private" ? { canManageAccess: user ? await isEventManager(event.id, user) : false } : {}),
     community: community
       ? {
           id: community.id,

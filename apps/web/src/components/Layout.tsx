@@ -252,6 +252,7 @@ export function Layout({
                 </IconButton>
               </Tooltip>
             )}
+            <Tooltip title={t("eventAccess.title")}><IconButton color="inherit" component={RouterLink} to="/event-invites" aria-label={t("eventAccess.title")}><GroupAddIcon /></IconButton></Tooltip>
             <NotificationBell />
             <ThemeSwitcher />
             {/* 自分のページを開く。設定は横並びナビ／メニューの「設定」から (#319) */}

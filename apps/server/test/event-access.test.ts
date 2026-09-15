@@ -1,5 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
+import { deleteMyEventAccess } from "../src/routes/eventAccessInvites.js";
+import { requireAuth } from "../src/auth/session.js";
 import { app } from "../src/worker.js";
 import { bindEnv, type Env } from "../src/runtime.js";
 import { eventsRepo } from "../src/db/repositories/events.js";
@@ -41,7 +43,7 @@ beforeAll(async () => {
   expect(res.status).toBe(201);
   const { event } = await res.json() as { event: { id: string; visibility: string; accessRevision: number } };
   expect(event.visibility).toBe("public");
-  expect(event.accessRevision).toBe(0);
+  expect(event.accessRevision).toBe(1);
   eventId = event.id;
   // Local D1 fixture only: the unfinished feature's mutation entrance stays closed.
   await env.DB.prepare("UPDATE event SET visibility = 'private', status = 'published' WHERE id = ?").bind(eventId).run();
@@ -80,6 +82,13 @@ describe("eventAccess: the actual router's private boundary", () => {
       const path = route.path.replace(/:id(?=\/|$)/g, eventId).replace(/:[^/]+/g, crypto.randomUUID());
       const match = (app as any).router.match(route.method, path)[0];
       const handlers = match.map((entry: any) => entry[0][0]);
+      if (route.handler === deleteMyEventAccess) {
+        expect(route.method).toBe("DELETE");
+        expect(route.path).toBe("/api/events/:id/access");
+        expect(handlers.indexOf(requireAuth)).toBeLessThan(handlers.indexOf(route.handler));
+        expect(handlers.indexOf(requireEventAccess)).toBeGreaterThan(handlers.indexOf(route.handler));
+        continue;
+      }
       expect(handlers.filter((h: unknown) => h === requireEventAccess).length, `${route.method} ${route.path}`).toBe(1);
       expect(handlers.indexOf(requireEventAccess)).toBeLessThan(handlers.indexOf(route.handler));
     }

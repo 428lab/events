@@ -1,4 +1,5 @@
-import { requireEventAccess } from "./auth/eventAccess.js";
+import { deleteMyEventAccess, eventAccessInviteRoutes, myEventInviteRoutes, myEventAccessRoutes } from "./routes/eventAccessInvites.js";
+import { eventResponseHeaders, requireEventAccess } from "./auth/eventAccess.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -88,7 +89,7 @@ import {
   adminStatsRoutes,
   recordEventView,
 } from "./routes/analytics.js";
-import { currentUser, pendingDeletionUser } from "./auth/session.js";
+import { currentUser, pendingDeletionUser, requireAuth } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
 import { usersRepo } from "./db/repositories/users.js";
@@ -138,6 +139,8 @@ import { adminModerationRoutes } from "./routes/adminModeration.js";
 import { adminTrendingRoutes } from "./routes/adminTrending.js";
 
 const api = new Hono();
+// Exact ownership-only exit; all other verbs remain behind the event gate.
+api.delete("/events/:id/access", requireAuth, deleteMyEventAccess);
 // All event paths share a visibility gate, before media and body processing.
 api.use("/events/:id/*", requireEventAccess);
 // リクエストボディの上限。既定は最大の画像アップロード 6MB より少し上。
@@ -250,6 +253,9 @@ api.route("/events", cardDesignAssetRoutes);
 api.route("/events", analyticsRoutes);
 // 運営スタッフへの招待 (#339)（招待・取り消しはそのイベントのスタッフのみ。要認証）
 api.route("/events", eventStaffInviteRoutes);
+api.route("/events", eventAccessInviteRoutes);
+api.route("/me/event-invites", myEventInviteRoutes);
+api.route("/me/event-access", myEventAccessRoutes);
 // 招待された本人の受け取り口 (#339)。requireAuth 付きの meRoutes より先に登録する
 api.route("/me/staff-invites", myStaffInviteRoutes);
 // 退会の取り消し（復帰） (#250)。猶予期間中は requireAuth が通らないため、
@@ -408,6 +414,7 @@ export const app = new Hono();
 // 全レスポンスに基本セキュリティヘッダを付与（MIMEスニッフ抑止・クリックジャッキング防止）
 app.use("*", async (c, next) => {
   await next();
+  if (c.req.method === "DELETE" && /^\/api\/events\/[^/]+\/access$/.test(c.req.path)) eventResponseHeaders(c, true);
   const set = (h: Headers) => {
     h.set("X-Content-Type-Options", "nosniff");
     h.set("X-Frame-Options", "DENY");

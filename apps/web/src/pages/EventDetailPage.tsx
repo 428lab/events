@@ -37,6 +37,7 @@ import { BingoPanel } from "../components/BingoCard.js";
 import { useBingoState } from "../api/bingoHooks.js";
 import { useRecordView } from "../api/analyticsHooks.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
+import { EventAccessInvitesCard } from "../components/EventAccessInvitesCard.js";
 import { EventStaffInvitesCard } from "../components/EventStaffInvitesCard.js";
 import { EventActionButtons } from "../components/EventActionButtons.js";
 import { EventAwards } from "../components/EventAwards.js";
@@ -429,6 +430,7 @@ export function EventDetailPage() {
       <Grid item xs={12} md={4}>
         <EventDetailSidebar>
           {/* 運営を指名して招く (#339)。公開前でも一緒に準備できるようにする入口 */}
+          {data.canManageAccess && event.visibility === "private" && <EventAccessInvitesCard eventId={id} />}
           {isStaff && <EventStaffInvitesCard eventId={id} />}
           <EventMemberList
             eventId={id}

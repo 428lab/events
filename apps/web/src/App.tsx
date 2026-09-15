@@ -34,6 +34,7 @@ import { AccountPage } from "./pages/AccountPage.js";
 import { AccountRestorePage } from "./pages/AccountRestorePage.js";
 import { InquiriesPage } from "./pages/InquiriesPage.js";
 import { NotificationsPage } from "./pages/NotificationsPage.js";
+import { EventInvitesPage } from "./pages/EventInvitesPage.js";
 import { StaffInvitesPage } from "./pages/StaffInvitesPage.js";
 import { InquiryThreadPage } from "./pages/InquiryThreadPage.js";
 import { AdminInquiriesPage } from "./pages/AdminInquiriesPage.js";
@@ -185,6 +186,7 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/event-invites" element={<Navigate to="/login?next=%2Fevent-invites" replace />} />
         {/* 未ログインの公開ページ */}
         <Route
           path="/"
@@ -372,6 +374,7 @@ export function App() {
         <Route path="/notifications" element={<NotificationsPage />} />
         {/* 運営への招待 (#339)。承諾するまでイベントページは開けないのでここで返事する */}
         <Route path="/staff-invites" element={<StaffInvitesPage />} />
+        <Route path="/event-invites" element={<EventInvitesPage />} />
         {/* 動画エンコード計測 (#408)。検証用に維持。ログイン必須・URL直打ちのみ */}
         <Route
           path="/dev/video-encode"

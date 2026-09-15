@@ -65,6 +65,7 @@ const notificationTypeEn: Record<NotificationType, string> = {
   abuse_flag: "Operations",
   event_broadcast: "Event announcement",
   staff_invite: "Organizer invite",
+  event_access_invite: "Viewing invitation",
   staff_invite_result: "Organizer invite",
   info: "Notice",
 };

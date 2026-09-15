@@ -414,6 +414,7 @@ export const eventsRepo = {
     const membersNote = input.membersNote ?? (await this.membersNoteFor(id));
     await run(
       `UPDATE event SET
+         access_revision = access_revision + CASE WHEN status <> ? THEN 1 ELSE 0 END,
          title = ?, subtitle = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
@@ -424,6 +425,7 @@ export const eventsRepo = {
          members_note = ?, scheduling = ?,
          registration_deadline = ?
        WHERE id = ?`,
+      next.status,
       next.title,
       next.subtitle,
       next.description,
@@ -457,7 +459,7 @@ export const eventsRepo = {
   },
 
   async setStatus(id: string, status: Event["status"]): Promise<Event | null> {
-    await run("UPDATE event SET status = ? WHERE id = ?", status, id);
+    await run("UPDATE event SET status = ?, access_revision = access_revision + 1 WHERE id = ? AND status <> ?", status, id, status);
     return this.findById(id);
   },
 

@@ -216,6 +216,7 @@ export const eventStaffInvitesRepo = {
                WHERE event_id = ? AND user_id = ? AND ${acceptedNow}`,
         args: [now, eventId, userId, ...guard],
       },
+      { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE id = ? AND changes() > 0", args: [eventId] },
     ]);
     return (changed ?? 0) > 0;
   },

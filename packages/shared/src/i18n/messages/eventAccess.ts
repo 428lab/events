@@ -1,0 +1,31 @@
+const ja = {
+  title: "閲覧への招待", intro: "承諾すると閲覧できます。参加申込・席の確保や運営への参加は別の操作です。",
+  accepted: "承諾済みの閲覧権", empty: "返事待ちの招待はありません。", noAccess: "承諾済みの閲覧権はありません。",
+  accept: "閲覧を承諾", decline: "辞退", leave: "閲覧をやめる", open: "イベントを開く", more: "もっと見る",
+  unavailable: "承諾済み・本体閲覧不可（募集開始待ち等）", identity: "招待 {{id}} · 承諾 {{date}}",
+  from: "{{name}} さんから · 期限 {{date}}", unknown: "退会済みの招待者",
+  leaveConfirm: "閲覧をやめますか？終了前なら参加も取り消され、席が解放されます。再び見るには新しい招待の承諾が必要です。",
+  revokeConfirm: "{{name}} さんの閲覧を取り消しますか？終了前ならこの方の参加も取り消され、席が解放されます。",
+  declineConfirm: "この閲覧招待を辞退しますか？", managed: "運営権限があるため、ここでは閲覧を取り消せません。",
+  handle: "登録済みのユーザー名（@handle）", preview: "相手を確認", send: "閲覧に招待", reissue: "再発行", revoke: "招待を取り消す", revokeAccess: "閲覧を取り消す",
+  recipient: "招待先: {{name}} (@{{handle}})", registerFirst: "未登録の方は先にログインして、プロフィールのユーザー名を教えてもらってください。招待の有効期間は7日です。",
+  managerEmpty: "閲覧招待はまだありません。", pending: "返事待ち", expired: "期限切れ", declined: "辞退済み", revoked: "取消済み", acceptedStatus: "承諾済み",
+  error: "操作できませんでした。最新の状態を確認してからお試しください。",
+  handleChanged: "確認した相手と現在のユーザー名の持ち主が異なります。相手をもう一度確認してください。",
+};
+const en: Record<keyof typeof ja, string> = {
+  title: "Viewing invitations", intro: "Accept to view. Registration, a reserved seat and organizer access are separate.",
+  accepted: "Accepted viewing access", empty: "No invitations awaiting a reply.", noAccess: "No accepted viewing access.",
+  accept: "Accept viewing access", decline: "Decline", leave: "Leave viewing access", open: "Open event", more: "Load more",
+  unavailable: "Accepted · event unavailable (it may not be open yet)", identity: "Invite {{id}} · accepted {{date}}",
+  from: "From {{name}} · expires {{date}}", unknown: "Former account",
+  leaveConfirm: "Stop viewing this event? Before it ends, your registration is also canceled and your seat released. You will need to accept a new invitation to return.",
+  revokeConfirm: "Revoke viewing access for {{name}}? Before the event ends, their registration is also canceled and their seat released.",
+  declineConfirm: "Decline this viewing invitation?", managed: "Organizer access cannot be removed here.",
+  handle: "Registered username (@handle)", preview: "Confirm recipient", send: "Invite to view", reissue: "Reissue", revoke: "Cancel invitation", revokeAccess: "Revoke viewing access",
+  recipient: "Recipient: {{name}} (@{{handle}})", registerFirst: "New users must sign in first and share their profile username. Invitations expire after seven days.",
+  managerEmpty: "No viewing invitations yet.", pending: "Pending", expired: "Expired", declined: "Declined", revoked: "Revoked", acceptedStatus: "Accepted",
+  error: "This action could not be completed. Check the latest state before trying again.",
+  handleChanged: "This username now belongs to a different account. Confirm the recipient again before sending.",
+};
+export const eventAccess = { ja, en };

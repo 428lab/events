@@ -9,6 +9,7 @@
  * 日本語と英語を並べて書く。片方だけ足すと型で落ちる。
  */
 import { adminSettings } from "./messages/adminSettings.js";
+import { eventAccess } from "./messages/eventAccess.js";
 import { common } from "./messages/common.js";
 import { community } from "./messages/community.js";
 import { egg } from "./messages/egg.js";
@@ -64,6 +65,7 @@ export { staffOpsParts } from "./messages/staffOps/index.js";
 export const translations = {
   ja: {
     common: common.ja,
+    eventAccess: eventAccess.ja,
     nav: nav.ja,
     themeName: themeName.ja,
     login: login.ja,
@@ -103,6 +105,7 @@ export const translations = {
   },
   en: {
     common: common.en,
+    eventAccess: eventAccess.en,
     nav: nav.en,
     themeName: themeName.en,
     login: login.en,
