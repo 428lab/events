@@ -26,12 +26,15 @@ it('visibility CAS seeds only existing members, closes/rotates shared survey and
  await sql('UPDATE event SET nonpublic_eligible=1,chat_enabled=1 WHERE id=?',e.id);
  await sql("INSERT INTO event_member(id,event_id,user_id,role,status,created_at) VALUES(?,?,?,'participant','waitlist',1)",crypto.randomUUID(),e.id,member.id);
  const survey=crypto.randomUUID();await sql("INSERT INTO event_pre_survey(id,event_id,token,title,description,status,created_at) VALUES(?,?,'old-token','Form','','open',1)",survey,e.id);
+ await sql("INSERT INTO event_access_invite(id,event_id,user_id,invited_by,status,source,created_at) VALUES(?,?,?,?,'accepted','invite',1)",crypto.randomUUID(),e.id,owner.id,outsider.id);
  const before=(await eventsRepo.findById(e.id))!;
  expect(await eventsRepo.update(e.id,{visibility:'private',confirmVisibilityChange:true,expectedAccessRevision:before.accessRevision+1},owner.id)).toBeNull();
  expect(await eventsRepo.update(e.id,{visibility:'private',confirmVisibilityChange:true,expectedAccessRevision:before.accessRevision},owner.id)).toMatchObject({visibility:'private',chatEnabled:false});
  expect((await req(`/api/events/${e.id}`,member)).status).toBe(200);expect((await req(`/api/events/${e.id}`,outsider)).status).toBe(404);
  const form=await env.DB.prepare('SELECT token,status FROM event_pre_survey WHERE id=?').bind(survey).first();expect(form!.status).toBe('closed');expect(form!.token).not.toBe('old-token');
  const count=await env.DB.prepare('SELECT count(*) n FROM event_access_invite WHERE event_id=?').bind(e.id).first();expect(count!.n).toBe(2);
+ expect(await env.DB.prepare('SELECT invited_by,source FROM event_access_invite WHERE event_id=? AND user_id=?').bind(e.id,member.id).first()).toEqual({invited_by:owner.id,source:'existing_member'});
+ expect(await env.DB.prepare('SELECT invited_by,source FROM event_access_invite WHERE event_id=? AND user_id=?').bind(e.id,owner.id).first()).toEqual({invited_by:outsider.id,source:'invite'});
  const current=(await eventsRepo.findById(e.id))!;expect(await eventsRepo.update(e.id,{visibility:'unlisted',confirmVisibilityChange:true,expectedAccessRevision:current.accessRevision},owner.id)).not.toBeNull();
  expect((await env.DB.prepare('SELECT count(*) n FROM event_access_invite WHERE event_id=?').bind(e.id).first())!.n).toBe(0);
  expect((await env.DB.prepare('SELECT status FROM event_member WHERE event_id=? AND user_id=?').bind(e.id,member.id).first())!.status).toBe('waitlist');
@@ -46,4 +49,41 @@ it('failed visibility side effect rolls back visibility, grants, revision and PN
  expect(await eventsRepo.findById(e.id)).toMatchObject({visibility:'public',accessRevision:before.accessRevision});
  expect(await env.DB.prepare('SELECT card_image_generation g FROM user WHERE id=?').bind(owner.id).first()).toEqual(g);
  expect((await env.DB.prepare('SELECT count(*) n FROM event_access_invite WHERE event_id=?').bind(e.id).first())!.n).toBe(0);
+});
+
+it.each(['public','private'])('scoring keeps participant/judge/staff non-canceled roles and target restrictions (%s)',async visibility=>{
+ const host=await user(),participant=await user(),outsider=await user(),e=await event(host,visibility);
+ await sql("INSERT INTO event_member(id,event_id,user_id,role,status,created_at) VALUES(?,?,?,'participant','confirmed',1)",crypto.randomUUID(),e.id,participant.id);
+ if(visibility==='private')await grant(e.id,participant);
+ const entry=crypto.randomUUID(),criterion=crypto.randomUUID();
+ await sql("INSERT INTO entry(id,event_id,name,created_at) VALUES(?,?,'Other entry',1)",entry,e.id);
+ await sql("INSERT INTO scoring_criterion(id,event_id,name) VALUES(?,?,'Quality')",criterion,e.id);
+ const score={entryId:entry,criterionId:criterion,value:3},path=`/api/events/${e.id}/scores`;
+ for(const role of ['participant','judge','staff'])for(const status of ['confirmed','pending','waitlist']){
+  await sql('UPDATE event_member SET role=?,status=? WHERE event_id=? AND user_id=?',role,status,e.id,participant.id);
+  expect((await req(path,participant,'PUT',score)).status).toBe(200);
+ }
+ expect((await env.DB.prepare('SELECT value FROM score WHERE event_id=? AND judge_user_id=?').bind(e.id,participant.id).first())!.value).toBe(3);
+ for(const [role,status] of [['observer','confirmed'],['participant','canceled']]){
+  await sql('UPDATE event_member SET role=?,status=? WHERE event_id=? AND user_id=?',role,status,e.id,participant.id);
+  expect((await req(path,participant,'PUT',{...score,value:1})).status).toBe(403);
+ }
+ await sql("UPDATE event_member SET role='participant',status='confirmed' WHERE event_id=? AND user_id=?",e.id,participant.id);
+ expect((await req(path,outsider,'PUT',score)).status).toBe(visibility==='private'?404:403);
+ const other=await event(host,visibility),otherEntry=crypto.randomUUID(),otherCriterion=crypto.randomUUID();
+ await sql("INSERT INTO entry(id,event_id,name,created_at) VALUES(?,?,'Foreign entry',1)",otherEntry,other.id);
+ await sql("INSERT INTO scoring_criterion(id,event_id,name) VALUES(?,?,'Foreign criterion')",otherCriterion,other.id);
+ expect((await req(path,participant,'PUT',{...score,entryId:otherEntry})).status).toBe(404);
+ expect((await req(path,participant,'PUT',{...score,criterionId:otherCriterion})).status).toBe(404);
+ await sql('INSERT INTO entry_member(id,entry_id,user_id) VALUES(?,?,?)',crypto.randomUUID(),entry,participant.id);
+ expect((await req(path,participant,'PUT',score)).status).toBe(403);
+ await sql('DELETE FROM entry_member WHERE entry_id=?',entry);
+ await sql('UPDATE event_state SET scoring_locked=1 WHERE event_id=?',e.id);
+ expect((await req(path,participant,'PUT',score)).status).toBe(409);
+ await sql('UPDATE event_state SET scoring_locked=0 WHERE event_id=?',e.id);
+ if(visibility==='private'){
+  await sql("UPDATE event_access_invite SET status='revoked' WHERE event_id=? AND user_id=?",e.id,participant.id);
+  expect((await req(path,participant,'PUT',{...score,value:1})).status).toBe(404);
+ }
+ expect((await env.DB.prepare('SELECT value FROM score WHERE event_id=? AND judge_user_id=?').bind(e.id,participant.id).first())!.value).toBe(3);
 });

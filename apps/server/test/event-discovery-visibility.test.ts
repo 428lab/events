@@ -23,6 +23,8 @@ beforeAll(async () => {
   communityId = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO community (id, slug, name, owner_id, created_at) VALUES (?, ?, ?, ?, ?)")
     .bind(communityId, communityId, "visibility-fixture", ownerId, now).run();
+  await env.DB.prepare("INSERT INTO community_member(id,community_id,user_id,role,created_at) VALUES(?,?,?,'owner',?)")
+    .bind(crypto.randomUUID(),communityId,ownerId,now).run();
   for (const visibility of ["public", "unlisted", "private"] as const) {
     const event = await eventsRepo.create(createEventInput.parse({
       title: `visibility-${visibility}`, visibility, communityId,

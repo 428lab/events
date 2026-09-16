@@ -288,7 +288,7 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - 一般向けフォロワー作成/参加通知、たまご賛同者への公開通知はpublic/publishedのみ。claimFollowersNotifyにも条件を含める。private/unlisted→publicで初めてdiscoverableになる時は従来の初回一度だけ通知、再public化ではfollowers_notified_atを戻さない。
 - 新規閲覧招待はevent_id付き **アプリ内のみ** の専用 `event_access_invite` 通知（招待一覧へ、本文は「閲覧への招待が届きました」の汎用文）。create/再発行と同じbatchで一度だけ保存し既存create()の自動メールを通さない。期限切れ/取消通知は画面上で汎用表示し名前を出さない。
 - 新規event関連通知はevent_id必須。通知repoの一覧/未読数は現在の資格をSQLでfilterする。非public一般通知の受信者はmanager、有効memberかaccepted閲覧者に限る（業務対象の絞込みはさらに既存条件）。pending招待通知は本人受取資格で例外。既存staff招待もprivateでは汎用通知とし本人の招待一覧だけに最小情報を表示。
-- 開催リマインダー/日程確定/一斉連絡は現行の対象者・設定を維持した上で最新資格を追加。`S lib/broadcast.ts` のキュー消化時にも再検査し失効分を送らず処理済/skipにする。privateメールは画像/会場/参加者一覧/詳細本文を載せず「イベントの更新があります」＋ログイン先URLのみ。主催者自由入力の一斉連絡本文もprivateメールには載せずアプリ内で読む。unlistedもフォロワー大量告知はしないが対象者業務メールは従来本文可。
+- 開催リマインダー/日程確定/一斉連絡は現行の対象者・設定を維持した上で最新資格を追加。`S lib/broadcast.ts` のキュー消化時にも再検査し失効分を送らず処理済/skipにする。privateメールは画像/会場/参加者一覧/詳細本文を載せず「イベントの更新があります」＋ログイン先URLのみ。主催者自由入力の一斉連絡本文もprivateメールには載せずアプリ内で読む。`event_broadcast` の原題/全文は宛先本人のnotification行に保持し、現在のevent閲覧資格・受信者本人・送信者資格を満たす通知一覧だけに返す。既存の通知ページで全文を表示し、staff送信履歴は開放しない。unlistedもフォロワー大量告知はしないが対象者業務メールは従来本文可。
 - 送信直前判定と外部メール送信は単一DB transactionにできないため、その間の失効競合は残る。privateメールを汎用にすることで内容漏えいを小さくする。旧public時に送信/保存済みのメール・push通知・既に表示された通知は回収不可。
 - 公開プロフィールのPNGアップロードはクライアント生成cacheである (`S routes/profileCardImages.ts`)。§5.3の世代分離/CASで通常の先行生成uploadと旧全組合せの再配信を拒否する。利用者が新snapshotの世代を指定しつつ意図的に古い画像内容を再アップロードすることまでは判別できない（画像内容の検証/再描画は本件外）。これと、何も再uploadしなくても旧組合せが復活するサーバーの穴は区別する。既に配信済みcopy/外部cacheの回収も別の限界。
 
@@ -442,7 +442,7 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 ### 14.6 通知/chat/client継続単位
 
 - QR reviewのP2を先に修正し、`/events/upcoming` と `/events/new` をevent ID判定より先に通常SPAとして登録。GET/HEADの200と未知event子404を対象検査。a013dのCI35042676465は一度だけ確認し成功。
-- 現sourceの通知constructorとraw INSERTを列挙。汎用repo以外のmeet/参加枠/繰上げ/日程確定/閲覧招待は既にevent_id付き。staff招待とevent由来venue通知は非eventリンクのためIDを明示、通常event URLは境界一致で解決する。通知一覧/count/unread/新規INSERT/送信直前は同じ資格SQLで検査し、private通知とメールは汎用、unlisted業務メール本文は§8に従い維持。broadcastはqueueの元actorを読み直してmanager条件も追加する。既存budget/preferences/backgroundを維持。
+- 現sourceの通知constructorとraw INSERTを列挙。汎用repo以外のmeet/参加枠/繰上げ/日程確定/閲覧招待は既にevent_id付き。staff招待とevent由来venue通知は非eventリンクのためIDを明示、通常event URLは境界一致で解決する。通知一覧/count/unread/新規INSERT/送信直前は同じ資格SQLで検査し、private一般通知とメールは汎用（一斉連絡のアプリ内原文は§8の宛先限定例外）、unlisted業務メール本文は§8に従い維持。broadcastはqueueの元actorを読み直してmanager条件も追加する。既存budget/preferences/backgroundを維持。
 - ユーザーの追加判断: **導入前から存在するイベントはpublic→非public変更不可**。終了時刻による判定ではない。旧通知の曖昧な行は原本/表示/既読を維持し、追加汎用化は不要。確実なevent pathだけ紐付ける（fragmentも含む）。本番旧通知数は未照会で、多数あるという根拠はない。
 - 承認済みの最小区別: local migration0094で `event.nonpublic_eligible NOT NULL DEFAULT 0`。既存行と旧writerは0、導入後の通常create/copyだけ明示1。API入力/通常updateで変更不可、created_at/旧通知本文で推測しない。既存public→非public要求には409 `legacy_visibility_locked` を現行全体閉鎖より先に返す。既存publicの普通の編集と、新規eventの設計済み遷移は維持する。**後続visibility writerは実書込みSQL内でもnonpublic_eligible=1を条件にする**。copyは新規eventだが元eventの認可/非publicコピー入口閉鎖を迂回しない。配備/remote migrationは未承認。
 - 参加者の平文relay routerだけpublic限定にし、staff暗号chatは別router/既存鍵処理を維持。公式clientは再検証失敗/非public化/identity・資格変更で接続を閉じる。外部relayの旧平文/コピー回収や第三者client停止は保証せず、ja/enで説明する。
@@ -458,3 +458,11 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - 作成/編集にJA/ENの公開範囲選択を接続し、旧eventの変更不可、二段階確認、revision競合案内、平文relay/独立素材の限界を表示。新規private作成・copy・visibility更新の一時409閉鎖をこのローカル候補版から除去した。**環境への配備・本番入口開放を実行した意味ではない**。上記各節の「未完了/閉鎖」は過去単位の記録であり、この単位の候補状態は本段落を参照。
 - 実Chrome/ローカル合成sessionで実作成UI→private下書き→招待→編集UIで募集開始→受信者承諾(member0)→閲覧/参加→参加取消(閲覧保持)→host撤回→受信者/匿名404、既存画面の再検証後非表示を通した。public匿名200、JA選択肢、編集UIのprivate→unlisted二段階確認/revision送信/匿名200も確認。staging受入ではない。独立統合reviewとexact-head CIは別ゲートで、配備/merge/remote migrationは未承認。
 - 最新ユーザー指定: 通常導線と未招待者拒否を優先し、共有ブラウザ救済・認証全般・旧通知研究・稀な競合の新規探索/追加機構・本筋外のついで修正をしない。今回の変更起因の通常操作回帰だけ修正。本筋外の問題は再現事実/仮説、被害者/具体的影響/頻度を分けてIssue候補へ分離し、攻撃が成立するものは必要な防御対象としてreviewする。既存防御を外す大規模再設計もしない。
+
+
+### 14.8 統合reviewの通常利用回帰修正
+- scoring writerの`scorer`は既存HTTP契約どおりnon-canceledのparticipant/judge/staff（および従来manager）を許可し、現在のactive/view資格をbatch内で維持する。observer/canceledは対象外で、自己採点・別eventのEntry/criterion・採点締切の既存制約は変えない。
+- private一斉連絡は一般通知の本文消去対象から除外し、宛先本人の既存通知UIで原題/全文を読めるようにする。メール汎用化/送信先segment/現在資格/送信者資格/スタッフ専用履歴は変更しない。新しい配信framework/公開reader/旧通知復元は作らない。
+- privateへの互換grant seedは遷移actorをinvited_byへbindする。既存grantはON CONFLICT DO NOTHINGで原本を維持する。
+- exact CI35047196599の変更起因の失敗のみ修正: community作成fixtureに通常必須のowner member行を追加。参加取消でdraft閲覧を失う場合も成功確認だけ200を返し、後段のアクセス拒否で破棄する旧Responseは先に新Responseへ交換してからbodyをcancelする（header再構築時のdisturbed stream500を避ける）。staff鍵ローテーションは変更しない。
+- 通常本筋以外の修正/共有ブラウザ救済/edge探索は追加しない。ローカル合成利用者による通知UI確認・対象テストは環境受入/配備承認ではない。

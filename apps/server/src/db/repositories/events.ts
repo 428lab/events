@@ -471,7 +471,7 @@ export const eventsRepo = {
       // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る
       next.registrationDeadline ?? null,
       id, input.expectedAccessRevision ?? current.accessRevision, next.visibility,actorId, adminIds(), next.communityId ?? null, next.communityId ?? null, actorId, adminIds(), next.communityId ?? null,
-    ]},...(token ? visibilityChangeStatements(id,token,current.visibility,next.visibility):[])]);
+    ]},...(token ? visibilityChangeStatements(id,token,actorId,current.visibility,next.visibility):[])]);
     return changed ? this.findById(id) : null;
   },
 

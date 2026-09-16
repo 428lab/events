@@ -42,7 +42,7 @@ it.each(['recipient','actor'])('queued broadcast rechecks %s after claim and bef
 });
 it('private delivery has no title/body/card/venue or query link; public mail retains detail',async()=>{
  const host=await user(),u=await user(),e=await event(host,'private');await grant(e.id,u);await mail(u);bind();const send=vi.fn().mockResolvedValue(new Response('{}'));vi.stubGlobal('fetch',send);
- expect((await sendNotificationEmailToWithOutcome(u.id,'test@example.com','SECRET TITLE','SECRET BODY',`/events/${e.id}?secret=token`)).ok).toBe(true);
+ expect((await sendNotificationEmailToWithOutcome(u.id,'test@example.com','SECRET TITLE','SECRET BODY',`/events/${e.id}?secret=token`,{authorizationEventId:e.id,authorizationActorId:host.id,notificationType:'event_broadcast'})).ok).toBe(true);
  expect(send.mock.calls[0]![1].body).not.toMatch(/SECRET|secret=token|UNIQUE/);
  await sql("UPDATE event SET visibility='public' WHERE id=?",e.id);await sendNotificationEmailToWithOutcome(u.id,'test@example.com','Public positive','Body',`/events/${e.id}`);expect(send.mock.calls[1]![1].body).toContain('Public positive');
 });
@@ -63,4 +63,20 @@ it('migration eligibility cannot be forged; legacy editing and new copy remain p
  expect(await(await req(`/api/events/${fresh.id}`,host,'PATCH',{visibility:'private'})).json()).toEqual({error:'visibility_confirmation_required'});
  const copy=await req(`/api/events/${old.id}/duplicate`,host,'POST',{});expect(copy.status).toBe(201);const copied=(await copy.json() as any).event;
  expect((await env.DB.prepare('SELECT nonpublic_eligible n FROM event WHERE id=?').bind(copied.id).first())!.n).toBe(1);
+});
+
+it('private broadcast originals are readable only by their currently authorized notification recipient',async()=>{
+ const host=await user(),recipient=await user(),other=await user(),outsider=await user(),e=await event(host,'private');
+ for(const u of [recipient,other])await grant(e.id,u);
+ await sql("INSERT INTO event_member(id,event_id,user_id,role,status,created_at) VALUES(?,?,?,'participant','confirmed',1)",crypto.randomUUID(),e.id,recipient.id);
+ const title='Organizer arrival instructions',body='Use the east entrance.\n'+('Full logistical details. '.repeat(40))+'FINAL PRIVATE INSTRUCTION';
+ const sent=await req(`/api/events/${e.id}/broadcasts`,host,'POST',{segment:'confirmed',title,body});expect(sent.status).toBe(200);
+ expect((await req(`/api/events/${e.id}/broadcasts`,recipient)).status).toBe(403);
+ const list=async(u:Actor)=>(await(await req('/api/notifications',u)).json() as {notifications:{id:string;title:string;body:string}[]});
+ const notices=(await list(recipient)).notifications;expect(notices).toHaveLength(1);expect(notices[0]).toMatchObject({title,body});
+ expect((await list(other)).notifications).toHaveLength(0);expect((await list(outsider)).notifications).toHaveLength(0);
+ expect((await req(`/api/events/${e.id}`,other)).status).toBe(200); // viewing alone is not receipt
+ await sql("UPDATE event_access_invite SET status='revoked' WHERE event_id=? AND user_id=?",e.id,recipient.id);
+ expect((await list(recipient)).notifications).toHaveLength(0);
+ expect((await req(`/api/events/${e.id}/broadcasts`,recipient)).status).toBe(404);
 });

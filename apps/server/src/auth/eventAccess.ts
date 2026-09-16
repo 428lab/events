@@ -87,12 +87,15 @@ export const requireEventAccess: MiddlewareHandler = async (c, next) => {
       return c.json({ error: "not_found" }, 404);
     }
     await next();
-    // Successful deletion returns only {ok:true}; its qualified writer already removed the event.
+    // Successful event deletion returns only {ok:true}; its qualified writer removed the event.
     if (c.req.method === "DELETE" && c.req.path === `/api/events/${event.id}` && c.res.ok) return;
     const latest = await eventsRepo.findById(event.id);
     if (!latest || !(await canViewEvent(latest, await currentUser(c)))) {
-      await c.res.body?.cancel().catch(()=>{});
-      return c.json({error:"not_found"},404);
+      const body = c.res.body;
+      // A committed self-leave may remove draft/private viewing. Acknowledge only the leave, not promotion details.
+      const left = c.req.method === "DELETE" && c.req.path === `/api/events/${event.id}/join` && c.res.ok;
+      c.res = left ? c.json({ok:true}) : c.json({error:"not_found"},404);
+      await body?.cancel().catch(()=>{});
     }
   } finally {
     // Child media handlers must not replace this with their old cache headers.

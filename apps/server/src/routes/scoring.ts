@@ -151,7 +151,7 @@ scoringRoutes.put(
       input.entryId,
       input.criterionId,
       user.id,
-      input.value, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"judge"});
+      input.value, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"scorer"});
     return c.json({ ok: true });
   },
 );

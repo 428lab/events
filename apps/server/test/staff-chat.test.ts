@@ -327,6 +327,7 @@ describe("資格喪失でローテーションが効く (#382 11.5)", () => {
       headers: { cookie: second.cookie },
     });
     expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ok:true}); // draft閲覧を失った後は取消確認だけ返す
     await assertRotated(eventId, second, 404);
   });
 

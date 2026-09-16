@@ -44,7 +44,8 @@ interface NotificationRow {
 }
 
 function toNotification(r: NotificationRow): Notification {
-  if (r.event_id && r.visibility === "private") Object.assign(r, genericEventNotice(r.event_id, r.type));
+  // Broadcast originals belong only to their qualified notification recipient.
+  if (r.event_id && r.visibility === "private" && r.type !== "event_broadcast") Object.assign(r, genericEventNotice(r.event_id, r.type));
   return {
     id: r.id,
     type: r.type,
@@ -73,8 +74,8 @@ const visibleSql = notificationVisibleSql();
 const insertNoticeSql = `WITH notification AS (SELECT ?2 id,?3 user_id,?4 type,?5 title,?6 body,?7 link,?8 created_at,?9 actor_id,?10 event_id)
   INSERT INTO notification(id,user_id,type,title,body,link,created_at,actor_id,event_id)
   SELECT id,user_id,type,
-    CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private' THEN 'イベントの更新があります' ELSE title END,
-    CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private' THEN '' ELSE body END,
+    CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private' AND type<>'event_broadcast' THEN 'イベントの更新があります' ELSE title END,
+    CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private' AND type<>'event_broadcast' THEN '' ELSE body END,
     CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private'
       THEN CASE WHEN type='staff_invite' THEN '/staff-invites' ELSE '/events/'||event_id END ELSE link END,
     created_at,actor_id,event_id FROM notification WHERE ${visibleSql}`;
