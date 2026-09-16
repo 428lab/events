@@ -10,6 +10,5 @@ export function EventVisibilityField({value,onChange,locked=false}:{value:Event[
       <FormControlLabel value="private" control={<Radio/>} label={t("eventAccess.private")}/>
     </RadioGroup></FormControl>
     {locked && <Alert severity="info">{t("eventAccess.legacyLocked")}</Alert>}
-    {value!=="public" && <><Alert severity="info">{t("eventAccess.chatPrivacy")}</Alert><Alert severity="warning">{t("eventAccess.materialPrivacy")}</Alert></>}
   </Stack>;
 }

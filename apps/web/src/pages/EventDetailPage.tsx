@@ -180,6 +180,9 @@ export function EventDetailPage() {
           {event.status !== "published" && (
             <Chip size="small" color="warning" label={event.status} />
           )}
+          {event.visibility !== "public" && (
+            <Chip size="small" label={t(`eventAccess.${event.visibility}`)} />
+          )}
           {myRole && <Chip size="small" label={roleLabel(myRole)} />}
           {event.status === "published" && (
             <ShareButton slug={event.slug} title={event.title} />
@@ -328,7 +331,6 @@ export function EventDetailPage() {
       />
 
       {/* 参加者チャット (#199)。確定メンバー＋公開＋日程確定のみ。本文はNostrリレー直通 */}
-      {event.visibility !== "public" && <Alert severity="info">{t("eventAccess.chatPrivacy")} {t("eventAccess.materialPrivacy")}</Alert>}
       {chatAvailable && (
         <Suspense fallback={null}>
           <EventChat
