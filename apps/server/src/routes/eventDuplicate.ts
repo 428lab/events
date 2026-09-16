@@ -91,7 +91,7 @@ eventDuplicateRoutes.post(
       // 出会いの景品 (#431) も設定と定義だけコピー（下）。引き換え記録・1位はコピーしない
       meetPrizes: src.meetPrizes,
       membersNote: await eventsRepo.membersNoteFor(src.id),
-    });
+    }, user.id);
 
     // 参加枠の定義（参加者は除く）。listByEvent は sort_order 順なので順序が保たれる
     for (const slot of await participationSlotsRepo.listByEvent(src.id)) {

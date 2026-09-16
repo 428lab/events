@@ -1,3 +1,8 @@
+import { eventMembersRepo } from "./eventMembers.js";
+import { currentMemberSnapshotSql, memberSnapshot } from "./membershipChange.js";
+import { accessOperationGuard, activeManagerSql, adminIds } from "./eventAccessInvites.js";
+import { waitlistPromotionStatements } from "./waitlistPromotion.js";
+import { finishWaitlistPromotion } from "../../lib/waitlist.js";
 import type {
   MyStaffInvite,
   StaffInvite,
@@ -170,55 +175,41 @@ export const eventStaffInvitesRepo = {
    * **1回のバッチにまとめる**のが肝。別々に書くと、間で失敗したときに
    * 「招待だけ消費されて運営になっていない」行が残り、本人には直す手立てが無い。
    *
-   * 2文目以降は「この呼び出しで承諾できた場合だけ」書くよう、1文目が立てた
-   * responded_at と同じ値を条件に入れてある。単に status='accepted' を見るだけだと
-   * 前回の承諾で立った値にも当たり、二重実行でメンバー行を書き直してしまう。
+   * 2文目以降はeventの短命tokenが一致するbatchだけが書く。日時一致を
+   * 所有権として使わず、招待者の現資格と対象のactive状態もSQLで再確認する。
    *
    * メンバー行の扱いは eventMembersRepo の add / setRole に合わせる。
    * 取消済みの行は参加日時を今にして復活させ（並び順の公平のため）、出席の記録も
    * 落とす。生きている行はロールだけ staff にして枠を外し、参加確定に揃える (#277)。
    *
-   * @returns 承諾が成立したら true（返事待ちでなければ false）
+   * @returns 成立した場合は繰上げ結果、それ以外はnull
    */
   async accept(
     inviteId: string,
     eventId: string,
     userId: string,
-  ): Promise<boolean> {
-    const now = Date.now();
-    // 「今回この呼び出しで承諾された招待か」。2文目以降のガード
-    const acceptedNow = `EXISTS (SELECT 1 FROM event_staff_invite i
-                                  WHERE i.id = ? AND i.event_id = ? AND i.user_id = ?
-                                    AND i.status = 'accepted' AND i.responded_at = ?)`;
-    const guard = [inviteId, eventId, userId, now];
+  ): Promise<{ promotedUserId: string | null } | null> {
+    const now = Date.now(), token = crypto.randomUUID(), noticeId = crypto.randomUUID();
+    const before = await eventMembersRepo.find(eventId, userId);
+    const guard = [eventId, token];
     const [changed] = await batch([
-      {
-        sql: `UPDATE event_staff_invite SET status = 'accepted', responded_at = ?
-               WHERE id = ? AND status = 'pending'`,
-        args: [now, inviteId],
-      },
-      {
-        sql: `INSERT INTO event_member
-                (id, event_id, user_id, role, slot_id, status, created_at)
-              SELECT ?, ?, ?, 'staff', NULL, 'confirmed', ?
-               WHERE ${acceptedNow}
-                 AND NOT EXISTS (SELECT 1 FROM event_member
-                                  WHERE event_id = ? AND user_id = ?)`,
-        args: [crypto.randomUUID(), eventId, userId, now, ...guard, eventId, userId],
-      },
-      {
-        sql: `UPDATE event_member
-                 SET role = 'staff', slot_id = NULL, status = 'confirmed',
-                     attended = CASE WHEN status = 'canceled' THEN 0 ELSE attended END,
-                     attended_at = CASE WHEN status = 'canceled' THEN NULL ELSE attended_at END,
-                     canceled_at = NULL, canceled_scheduling = 0,
-                     created_at = CASE WHEN status = 'canceled' THEN ? ELSE created_at END
-               WHERE event_id = ? AND user_id = ? AND ${acceptedNow}`,
-        args: [now, eventId, userId, ...guard],
-      },
-      { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE id = ? AND changes() > 0", args: [eventId] },
+      { sql: `UPDATE event AS e SET access_operation_token=?,access_revision=access_revision+1 WHERE e.id=?
+          AND EXISTS (SELECT 1 FROM user u WHERE u.id=? AND u.deleted_at IS NULL)
+          AND EXISTS (SELECT 1 FROM event_staff_invite i WHERE i.id=? AND i.event_id=e.id AND i.user_id=? AND i.status='pending'
+            AND ${activeManagerSql("e", "i.invited_by")}) AND ${currentMemberSnapshotSql}`,
+        args: [token, eventId, userId, inviteId, userId, adminIds(), userId, memberSnapshot(before)] },
+      { sql: `UPDATE event_staff_invite SET status='accepted',responded_at=? WHERE id=? AND ${accessOperationGuard}`, args: [now, inviteId, ...guard] },
+      { sql: `INSERT INTO event_member(id,event_id,user_id,role,slot_id,status,created_at)
+          SELECT ?,?,?,'staff',NULL,'confirmed',? WHERE ${accessOperationGuard}
+          ON CONFLICT(event_id,user_id) DO UPDATE SET role='staff',slot_id=NULL,status='confirmed',
+            attended=CASE WHEN event_member.status='canceled' THEN 0 ELSE event_member.attended END,
+            attended_at=CASE WHEN event_member.status='canceled' THEN NULL ELSE event_member.attended_at END,
+            canceled_at=NULL,canceled_scheduling=0,created_at=CASE WHEN event_member.status='canceled' THEN excluded.created_at ELSE event_member.created_at END`,
+        args: [crypto.randomUUID(), eventId, userId, now, ...guard] },
+      ...(before?.slotId && before.status === "confirmed" ? waitlistPromotionStatements(eventId, before.slotId, token, noticeId, now) : []),
+      { sql: "UPDATE event SET access_operation_token=NULL WHERE id=? AND access_operation_token=?", args: guard },
     ]);
-    return (changed ?? 0) > 0;
+    return changed ? { promotedUserId: await finishWaitlistPromotion(eventId, noticeId) } : null;
   },
 
   /** 運営側の一覧から片付ける（取り消し／断られた行の始末）。

@@ -405,3 +405,14 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - community role/退出・eventのcommunity付替え、およびaccount統合/退会/復帰は現状access revisionを変更しない。関連event集合だけを同じbatchで増分する。全管理者は全eventに資格を持つため、そのaccountの資格変更だけは全eventが関連集合になる。これはPNG世代更新ではない。manager/active判定は引き続きwriter内SQLで再確認する。
 - 実装/対象検証済み: 同一退出の制御付き競合と再発行409、populated QueryClientの破棄/既知のaccount切替/focus、投票と回答の撤回後書込み拒否、確定時のaccess_revoked・順序・再送、通常繰上げの競合/Entry失敗rollback、community/accountの関連event revision。ローカルの既存public日程登録・参加枠・メール・account/community回帰も対象検査した。全ローカルsuite/ブラウザ一巡は繰り返していない。
 - この保存単位の残り: 抽選/手動参加状態/role変更とそのEntry副作用の最新資格・原子性、通常leaveのEntry/member/回答削除と席解放/繰上げの一体化、staff招待後の補助処理と直接Entry writerの監査。通常繰上げ単体のbatch化をこれらの完了とは扱わない。全体提供不可は維持する。
+
+### 14.3 member/Entry書込みの継続
+
+- 3c80f51の独立レビューはsubset継続可・全体提供不可。新規P2は通常繰上げがメール外部送信を直接awaitする変更。既存 `notificationsRepo.create` と同じ `deferBackground` に戻し、ExecutionContext内で外部fetchを停止させてもmember/Entry/通知を確定した操作が返る回帰テストを先に追加する。
+- 現行抽選はJSでappliedをshuffleし、定員数を選んでからmember/Entry/通知を別々に更新する。手動当落も同様。対象と操作者の現在資格をbatch内で検査し、結果とEntryを一緒に確定する必要がある。JSのshuffle順を入力順として保持する。手動確定は従来どおり運営判断による定員超過を許す。既存confirmedがある追加抽選では空席だけを割り当てる（定員を増やした再抽選でも過剰割当しない）。
+- 通常leave、role変更、staff招待承諾後の繰上げにはまだ独立した書込みが残る。staff暗号鍵のローテーション呼出しを変更・省略せず、member/Entry/回答/席/繰上げのDB境界を揃える。直接Entry/成果物、候補日/質問定義/一般event更新は対象call siteを個別監査し、実装済みと残存を分けて報告する。非public入口は引き続き閉鎖。
+- 実call site監査で、通常public joinだけがmember→個人Entryの分割を使い、その他のcreateIndividual呼出しは抽選/手動当落に限られた。joinを同じ原子的writerへ統一し、canApplyのpublished/active/必須回答/枠をSQLで再確認する。直接成果物PUTはEntry所属だけを見ていたため、event所有と最新閲覧資格も保存SQLに追加する。
+- 通常参加のDB一括化により、staff喪失時の既存onStaffLost呼出しは成功したDB変更の直後、メール配送前に維持する（以前の分割DB処理の途中ではなく一括変更後）。暗号SQLや鍵方式を別repoへ複製しない。
+- 候補日定義、質問定義、一般event update/publish/deleteは現状routeのmanager検査だけ。actor IDを必須にしてwriterでも共有manager SQLを検査する。eventのcommunity付替えは付替え先の現資格も検査する。画像R2/他子APIまで対応したとは扱わない。
+- この保存単位の検証: 遅延メールをwaitUntilへ逃がすP2再現、8件のmember書込みテスト（撤回済みtarget・降格actor、抽選順と既存席、抽選/手動Entry失敗rollback、通常取消+回答+繰上げrollback、staff招待acceptの繰上げrollback、終了後Entryへの不許可PUT、候補/質問/eventの降格後拒否）。既存publicの参加枠・staff招待・staff鍵ローテーション・日程・複製・R2回収等は対象テストで確認。隔離コピーで抽選actorのSQL門を外すと、降格したactorが当選を作り負例が失敗する。
+- 今回の残存範囲: 新規event/copy時のcreator staff初期化は従来経路（非public作成は閉鎖）。staff招待の結果通知等はなお独立した通知経路であり、通知全体のevent_id/汎用化/再認可は後続。出席/check-in/QR、画像/R2と他の子リソースwriter、公開範囲遷移・PNG/間接経路・relay/全クライアントcacheまで完了したという意味ではない。一般event updateには読取revisionを条件にするが、visibility transitionの副作用プロトコルは未実装。

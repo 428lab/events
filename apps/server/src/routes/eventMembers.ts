@@ -7,22 +7,19 @@ import {
 } from "@eventer/shared";
 import type {
   Event,
-  EventMember,
   JoinEventInput,
   SetAttendanceInput,
   UpdateMemberRoleInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { joinPrivateEvent } from "../db/repositories/privateEventJoin.js";
+import { joinEventAtomically } from "../db/repositories/eventJoin.js";
 import { canViewEvent } from "../auth/eventAccess.js";
 import { requireEventRole } from "../auth/roles.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
-import { entriesRepo } from "../db/repositories/entries.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
 import { eventSurveyRepo } from "../db/repositories/eventSurvey.js";
-import { staffChatRepo } from "../db/repositories/staffChat.js";
-import { promoteFromWaitlist } from "../lib/waitlist.js";
+import { changeMembership } from "../db/repositories/membershipChange.js";
 import { notifyFollowersOnJoin } from "./follows.js";
 
 /** 参加登録・参加解除・ロール変更・出席チェック */
@@ -75,85 +72,24 @@ eventMemberRoutes.post(
     const input = valid<JoinEventInput>(c, "json");
     const slots = await participationSlotsRepo.listByEvent(eventId);
     let slotId: string | null = null;
-    let status = "confirmed";
 
     if (slots.length > 0) {
       const slot = slots.find((s) => s.id === input.slotId);
       if (!slot) return c.json({ error: "slot_required" }, 400);
       slotId = slot.id;
-      if (slot.selectionType === "lottery") {
-        status = "applied";
-      } else {
-        status = slot.confirmedCount < slot.capacity ? "confirmed" : "waitlist";
-      }
+
     }
 
-    if (event.visibility === "private") {
-      await joinPrivateEvent(eventId, user.id, slotId);
-      if (!(await canViewEvent(event, user))) return c.json({ error: "not_found" }, 404);
-      const member = await eventMembersRepo.find(eventId, user.id);
-      if (!member) return c.json({ error: "access_changed" }, 409);
-      return c.json({ member, status: member.status }, 201);
-    }
-
-    const member = await eventMembersRepo.add(
-      eventId,
-      user.id,
-      "participant",
-      slotId,
-      status,
-      true,
-    );
-    status = member.status;
-    if (status === "confirmed") {
-      await entriesRepo.createIndividual(
-        eventId,
-        user.id,
-        user.globalName ?? user.username,
-      );
-      // フォロワーへ「参加した」通知（公開イベントのみ）
+    const changed = await joinEventAtomically(eventId, user.id, slotId);
+    if (!(await canViewEvent(event, user))) return c.json({ error: "not_found" }, 404);
+    const member = await eventMembersRepo.find(eventId, user.id);
+    if (!member) return c.json({ error: "access_changed" }, 409);
+    if (changed && member.status === "confirmed" && event.visibility === "public") {
       await notifyFollowersOnJoin(event, user.id);
     }
-    return c.json({ member, status }, 201);
+    return c.json({ member, status: member.status }, 201);
   },
 );
-
-/** 参加を取り消して「参加していない状態」に戻す (#281)。
- * 本人の参加解除 (DELETE /join) と、運営が一般参加者に戻すときで共有する。
- *
- * 確定参加者の取消だけはキャンセル履歴として行を残す（参加実績の集計用）。
- * それ以外（申込中・キャンセル待ち・落選や、参加者以外のロール）は行ごと消す。
- * 行が残ると本人が再度申し込めない（POST /join は既存メンバーで打ち切る）。
- *
- * @returns 繰り上げた人の userId（繰り上げなしなら null） */
-async function leaveEvent(
-  event: Event,
-  leaving: EventMember,
-): Promise<string | null> {
-  await entriesRepo.removeIndividualEntry(event.id, leaving.userId);
-  if (
-    leaving.role === "participant" &&
-    leaving.status === "confirmed" &&
-    event.status === "published"
-  ) {
-    await eventMembersRepo.cancel(event.id, leaving.userId, event.scheduling);
-  } else {
-    await eventMembersRepo.remove(event.id, leaving.userId);
-  }
-  // 事前アンケートの回答は離脱と同時に削除（入館用氏名等のPIIを残さない）
-  await eventSurveyRepo.deleteAnswersForUser(event.id, leaving.userId);
-  // スタッフ資格の喪失 (#382)。スタッフチャットの共通鍵を1世代進め、本人の
-  // signer を失効させる（部屋が無ければ何もしない）。DELETE /join と
-  // ロール変更→participant の両方がここを通る（残る経路は「staff → 他ロール」の
-  // setRole・退会申請・退会 purge で、それぞれロール変更ハンドラと
-  // accountDeletion.ts の requestDeletion / deleteAccount にある）
-  if (leaving.role === "staff") {
-    await staffChatRepo.onStaffLost(event.id, leaving.userId);
-  }
-  return leaving.slotId && leaving.status === "confirmed"
-    ? promoteFromWaitlist(event, leaving.slotId)
-    : null;
-}
 
 /** 参加解除（メンバーと個人 Entry を削除）。先着枠なら待機を自動繰り上げ。 */
 eventMemberRoutes.delete("/:id/join", async (c) => {
@@ -164,15 +100,9 @@ eventMemberRoutes.delete("/:id/join", async (c) => {
   // 終了済みイベントは参加解除できない（参加履歴を残す）
   if (isEventEnded(event)) return c.json({ error: "event_ended" }, 409);
   const leaving = await eventMembersRepo.find(eventId, user.id);
-  if (!leaving) {
-    // メンバー行がない場合も後始末だけはしておく（Entry の取り残し防止）
-    await entriesRepo.removeIndividualEntry(eventId, user.id);
-    await eventMembersRepo.remove(eventId, user.id);
-    await eventSurveyRepo.deleteAnswersForUser(eventId, user.id);
-    return c.json({ ok: true, promotedUserId: null });
-  }
-  const promotedUserId = await leaveEvent(event, leaving);
-  return c.json({ ok: true, promotedUserId });
+  const result = await changeMembership(eventId, user.id, user.id, leaving);
+  if (!result) return c.json({ error: "access_changed" }, 409);
+  return c.json({ ok: true, ...result });
 });
 
 /** ロール変更（staff のみ）。
@@ -211,24 +141,14 @@ eventMemberRoutes.patch(
       // 終了済みイベントでは参加履歴を消さない（DELETE /join と同じ扱い）。
       // 終了後は本人が申し込み直せないので、消すと戻す手段が無くなる
       if (isEventEnded(event)) return c.json({ error: "event_ended" }, 409);
-      const promotedUserId = await leaveEvent(event, before);
-      return c.json({ member: null, promotedUserId });
+      const result = await changeMembership(eventId, c.get("user").id, userId, before, role);
+      if (!result) return c.json({ error: "access_changed" }, 409);
+      return c.json({ member: null, ...result });
     }
 
-    const member = await eventMembersRepo.setRole(eventId, userId, role);
-    if (!member) return c.json({ error: "not_found" }, 404);
-    // 降格（staff → judge/observer）はスタッフ資格の喪失 (#382)。
-    // スタッフチャットの共通鍵を1世代進め、本人の signer を失効させる
-    // （staff → participant は上の leaveEvent の中で同じフックを通っている）
-    if (before.role === "staff" && role !== "staff") {
-      await staffChatRepo.onStaffLost(eventId, userId);
-    }
-    // 先着枠の確定者だったなら席が空いたので繰り上げる
-    const promotedUserId =
-      before.slotId && before.status === "confirmed"
-        ? await promoteFromWaitlist(event, before.slotId)
-        : null;
-    return c.json({ member, promotedUserId });
+    const result = await changeMembership(eventId, c.get("user").id, userId, before, role);
+    if (!result) return c.json({ error: "access_changed" }, 409);
+    return c.json({ member: await eventMembersRepo.find(eventId, userId), ...result });
   },
 );
 

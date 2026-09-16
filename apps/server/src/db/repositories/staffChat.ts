@@ -170,7 +170,7 @@ export const staffChatRepo = {
    * 呼び出し箇所は資格を失う4経路すべて（漏れると「抜けた人が新しい発言を
    * 読める」が残る。test/staff-chat.test.ts がそれぞれの経路を落とす）:
    * - 降格: routes/events.ts のロール変更ハンドラ
-   * - 参加解除: routes/events.ts の leaveEvent()（DELETE /join とロール変更→
+   * - 参加解除: membershipChange.ts の changeMembership()（DELETE /join とロール変更→
    *   participant の両方がここを通る）
    * - 退会申請 (soft delete): accountDeletion.ts requestDeletion → onStaffLostEverywhere
    * - 退会 purge: accountDeletion.ts deleteAccount → onStaffLostEverywhere（多重防御）

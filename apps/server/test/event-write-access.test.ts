@@ -5,7 +5,7 @@ import { eventsRepo } from "../src/db/repositories/events.js";
 import { communitiesRepo } from "../src/db/repositories/communities.js";
 import { accountDeletionRepo } from "../src/db/repositories/accountDeletion.js";
 import { accountMergeRepo } from "../src/db/repositories/accountMerge.js";
-import { bindEnv } from "../src/runtime.js";
+import { bindEnv, runWithExecutionContext } from "../src/runtime.js";
 import { schedulingRepo } from "../src/db/repositories/scheduling.js";
 import { eventSurveyRepo } from "../src/db/repositories/eventSurvey.js";
 import { scheduleRegistrationRepo } from "../src/db/repositories/scheduleRegistration.js";
@@ -163,7 +163,7 @@ it("community qualification changes revise only linked events and a demoted mana
   const s = await setup(), unrelated = await setup(), target = await user();
   const community = await communitiesRepo.create({ slug: `c-${s.eventId}`, name: "Community" }, s.host.id);
   const before = (await eventsRepo.findById(s.eventId))!.accessRevision;
-  await eventsRepo.update(s.eventId, { communityId: community.id });
+  await eventsRepo.update(s.eventId, { communityId: community.id }, s.host.id);
   expect((await eventsRepo.findById(s.eventId))!.accessRevision).toBe(before + 1);
   const otherRev = (await eventsRepo.findById(unrelated.eventId))!.accessRevision;
   await communitiesRepo.setMemberRole(community.id, target.id, "admin");
@@ -191,4 +191,32 @@ it("account deletion, restoration, merge and final deletion invalidate only rela
   await accountDeletionRepo.deleteById(winner.id);
   expect((await eventsRepo.findById(s.eventId))!.accessRevision).toBe(initial + 4);
   expect((await eventsRepo.findById(unrelated.eventId))!.accessRevision).toBe(other);
+});
+
+
+it("promotion returns committed results while a stalled email remains in waitUntil", async () => {
+  const s = await setup(), target = await user(); await grant(s, target);
+  const { slot } = await json(await request(`/events/${s.eventId}/slots`, s.host, "POST", { name: "Seat", capacity: 1, selectionType: "first_come" }), 201);
+  await sql("INSERT INTO event_member(id,event_id,user_id,role,status,slot_id,created_at) VALUES(?,?,?,'participant','waitlist',?,1)", crypto.randomUUID(), s.eventId, target.id, slot.id);
+  await sql("INSERT INTO identity(id,user_id,provider,provider_user_id,email,created_at) VALUES(?,?,'google',?,'fixture@example.com',1)", crypto.randomUUID(), target.id, crypto.randomUUID());
+  await sql("INSERT INTO notification_pref(user_id,email_enabled,updated_at) VALUES(?,1,1)", target.id);
+  bindEnv({ ...env, RESEND_API_KEY: "fixture" } as never);
+  let release!: (r: Response) => void;
+  const held = new Promise<Response>(resolve => { release = resolve; });
+  const outbound = vi.spyOn(globalThis, "fetch").mockReturnValue(held);
+  const pending: Promise<unknown>[] = [];
+  const context = { waitUntil: (p: Promise<unknown>) => pending.push(p) };
+  let returned = false;
+  const event = (await eventsRepo.findById(s.eventId))!;
+  const operation = runWithExecutionContext(context as never, () => promoteFromWaitlist(event, slot.id));
+  void operation.then(() => { returned = true; });
+  try {
+    await vi.waitFor(() => expect(outbound).toHaveBeenCalledTimes(1));
+    expect(returned).toBe(true);
+    expect(pending).toHaveLength(1);
+    expect(await operation).toBe(target.id);
+    expect((await eventMembersRepo.find(s.eventId, target.id))!.status).toBe("confirmed");
+    expect(await count("entry", s.eventId)).toBe(1);
+    expect((await env.DB.prepare("SELECT COUNT(*) n FROM notification WHERE event_id=? AND type='waitlist_promoted'").bind(s.eventId).first())!.n).toBe(1);
+  } finally { release(new Response('{}')); await Promise.all([...pending, operation]); outbound.mockRestore(); }
 });

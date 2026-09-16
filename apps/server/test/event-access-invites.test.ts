@@ -1,5 +1,5 @@
 import { SELF, env } from "cloudflare:test";
-import { joinPrivateEvent } from "../src/db/repositories/privateEventJoin.js";
+import { joinEventAtomically } from "../src/db/repositories/eventJoin.js";
 import { bindEnv, type Env } from "../src/runtime.js";
 import { app } from "../src/worker.js";
 import { eventAccessInvitesRepo } from "../src/db/repositories/eventAccessInvites.js";
@@ -186,7 +186,7 @@ describe("identity-bound viewing invitations over HTTP", () => {
     expect((await req(`/events/${eventId}`, target)).status).toBe(200);
     await json(await leave(eventId, target));
     bindEnv(env as unknown as Env);
-    expect(await joinPrivateEvent(eventId, target.id, null)).toBe(false);
+    expect(await joinEventAtomically(eventId, target.id, null)).toBe(false);
     expect(await count("entry", eventId)).toBe(0);
     expect(await count("event_member", eventId)).toBe(1);
     expect((await req(`/events/${eventId}/join`, target, "POST", {})).status).toBe(404);

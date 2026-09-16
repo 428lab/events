@@ -14,12 +14,10 @@ import type {
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireEventRole } from "../auth/roles.js";
-import { eventsRepo } from "../db/repositories/events.js";
+import { drawMemberSlots, setMemberSlotStatus } from "../db/repositories/memberSlotResults.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
-import { entriesRepo } from "../db/repositories/entries.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
 import { usersRepo } from "../db/repositories/users.js";
-import { notificationsRepo } from "../db/repositories/notifications.js";
 
 /** 参加枠の定義・抽選・当落（すべて staff のみ）。一覧の GET は `eventsPublic.ts` */
 export const eventSlotRoutes = new Hono<AppEnv>();
@@ -39,37 +37,6 @@ async function loadSlot(
 ): Promise<ParticipationSlot | null> {
   const slot = await participationSlotsRepo.findById(c.req.param("slotId"));
   return slot && slot.eventId === c.req.param("id") ? slot : null;
-}
-
-/** 当選の通知。文面は経路で違う（抽選の結果／運営が手で確定）ので呼び出し側が渡す */
-async function notifyLotteryWon(
-  userId: string,
-  eventId: string,
-  title: string,
-  body: string,
-): Promise<void> {
-  await notificationsRepo.create(
-    userId,
-    "lottery_won",
-    title,
-    body,
-    `/events/${eventId}`,
-  );
-}
-
-/** 落選の通知。抽選の実行と手動の当落で**文面まで同じ**なのでここに1本だけ持つ */
-async function notifyLotteryLost(
-  userId: string,
-  eventId: string,
-  eventTitle: string,
-): Promise<void> {
-  await notificationsRepo.create(
-    userId,
-    "lottery_lost",
-    "抽選結果のお知らせ",
-    `「${eventTitle}」は今回は落選となりました`,
-    `/events/${eventId}`,
-  );
 }
 
 /** 参加枠の作成（staff のみ） */
@@ -133,38 +100,9 @@ eventSlotRoutes.post(
       "applied",
     );
     const shuffled = [...applied].sort(() => Math.random() - 0.5);
-    const winners = shuffled.slice(0, slot.capacity);
-    const winnerIds = new Set(winners.map((w) => w.id));
-    const event = await eventsRepo.findById(eventId);
-    const title = event?.title ?? "イベント";
-
-    for (const m of applied) {
-      if (winnerIds.has(m.id)) {
-        await eventMembersRepo.setStatus(m.id, "confirmed");
-        const u = await usersRepo.findById(m.userId);
-        if (u) {
-          await entriesRepo.createIndividual(
-            eventId,
-            m.userId,
-            u.globalName ?? u.username,
-          );
-        }
-        await notifyLotteryWon(
-          m.userId,
-          eventId,
-          "抽選に当選しました",
-          `「${title}」の抽選に当選しました。参加が確定です`,
-        );
-      } else {
-        await eventMembersRepo.setStatus(m.id, "lost");
-        await notifyLotteryLost(m.userId, eventId, title);
-      }
-    }
-    return c.json({
-      drawn: applied.length,
-      confirmed: winners.length,
-      lost: applied.length - winners.length,
-    });
+    const result = await drawMemberSlots(eventId, c.get("user").id, slot.id, shuffled.map(m => m.id));
+    if (!result) return c.json({ error: "access_changed" }, 409);
+    return c.json(result);
   },
 );
 
@@ -199,31 +137,8 @@ eventSlotRoutes.patch(
     const target = await usersRepo.findById(userId);
     if (!target) return c.json({ error: "not_found" }, 404);
     const status = valid<SetMemberSlotStatusInput>(c, "json").status;
-    await eventMembersRepo.setStatus(member.id, status);
-    // Entry 同期: 確定なら個人Entry作成、それ以外は削除
-    if (status === "confirmed") {
-      await entriesRepo.createIndividual(
-        eventId,
-        userId,
-        target.globalName ?? target.username,
-      );
-    } else {
-      await entriesRepo.removeIndividualEntry(eventId, userId);
-    }
-    // 確定/落選はユーザーへ通知
-    if (status === "confirmed" || status === "lost") {
-      const event = await eventsRepo.findById(eventId);
-      const title = event?.title ?? "イベント";
-      if (status === "confirmed") {
-        await notifyLotteryWon(
-          userId,
-          eventId,
-          "参加が確定しました",
-          `「${title}」への参加が確定しました`,
-        );
-      } else {
-        await notifyLotteryLost(userId, eventId, title);
-      }
+    if (!(await setMemberSlotStatus(eventId, c.get("user").id, c.req.param("slotId"), userId, status))) {
+      return c.json({ error: "access_changed" }, 409);
     }
     return c.json({ ok: true });
   },

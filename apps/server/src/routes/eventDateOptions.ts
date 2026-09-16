@@ -52,7 +52,9 @@ eventDateOptionRoutes.post(
       eventId,
       input.startsAt,
       input.endsAt,
+      c.get("user").id,
     );
+    if (!id) return c.json({ error: "access_changed" }, 409);
     return c.json({ id }, 201);
   },
 );
@@ -62,10 +64,12 @@ eventDateOptionRoutes.delete(
   "/:id/date-options/:optionId",
   requireEventRole(["staff"]),
   async (c) => {
-    await schedulingRepo.deleteOption(
+    const changed = await schedulingRepo.deleteOption(
       c.req.param("id"),
       c.req.param("optionId"),
+      c.get("user").id,
     );
+    if (!changed) return c.json({ error: "access_changed" }, 409);
     return c.json({ ok: true });
   },
 );

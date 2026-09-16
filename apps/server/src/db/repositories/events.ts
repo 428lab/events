@@ -1,3 +1,4 @@
+import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import type {
   CreateEventInput,
   Event,
@@ -406,14 +407,14 @@ export const eventsRepo = {
     return row?.members_note ?? "";
   },
 
-  async update(id: string, input: UpdateEventInput): Promise<Event | null> {
+  async update(id: string, input: UpdateEventInput, actorId: string): Promise<Event | null> {
     const current = await this.findById(id);
     if (!current) return null;
     const next = { ...current, ...input };
     // membersNote は Event(eventSchema) に含まれないため個別にマージ
     const membersNote = input.membersNote ?? (await this.membersNoteFor(id));
-    await run(
-      `UPDATE event SET
+    const changed = await runCount(
+      `UPDATE event AS e SET
          access_revision = access_revision + CASE WHEN status <> ? OR community_id IS NOT ? THEN 1 ELSE 0 END,
          title = ?, subtitle = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
@@ -424,7 +425,10 @@ export const eventsRepo = {
          meet_ranking = ?, meet_prizes = ?,
          members_note = ?, scheduling = ?,
          registration_deadline = ?
-       WHERE id = ?`,
+       WHERE e.id = ? AND e.access_revision = ? AND ${activeManagerSql("e", "?")}
+         AND (e.community_id IS ? OR ? IS NULL OR EXISTS (SELECT 1 FROM user u WHERE u.id=? AND (
+           u.discord_id IN (SELECT value FROM json_each(?)) OR EXISTS (SELECT 1 FROM community_member cm
+             WHERE cm.user_id=u.id AND cm.community_id=? AND cm.role IN ('owner','admin')))))`,
       next.status,
       next.communityId ?? null,
       next.title,
@@ -454,14 +458,15 @@ export const eventsRepo = {
       next.scheduling ? 1 : 0,
       // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る
       next.registrationDeadline ?? null,
-      id,
+      id, current.accessRevision, actorId, adminIds(), next.communityId ?? null, next.communityId ?? null, actorId, adminIds(), next.communityId ?? null,
     );
-    return this.findById(id);
+    return changed ? this.findById(id) : null;
   },
 
-  async setStatus(id: string, status: Event["status"]): Promise<Event | null> {
-    await run("UPDATE event SET status = ?, access_revision = access_revision + 1 WHERE id = ? AND status <> ?", status, id, status);
-    return this.findById(id);
+  async setStatus(id: string, status: Event["status"], actorId: string): Promise<Event | null> {
+    const changed = await runCount(`UPDATE event AS e SET status=?,access_revision=access_revision + CASE WHEN status<>? THEN 1 ELSE 0 END
+      WHERE e.id=? AND ${activeManagerSql("e", "?")}`, status, status, id, actorId, adminIds());
+    return changed ? this.findById(id) : null;
   },
 
   /** フォロワーへの公開通知を未送信なら送信済みに切り替える（原子的・1回だけ true） */
@@ -474,23 +479,8 @@ export const eventsRepo = {
     return changes > 0;
   },
 
-  /** 日程調整を確定：開始/終了日時を設定し scheduling を解除 */
-  async finalizeDate(
-    id: string,
-    startsAt: number,
-    endsAt: number,
-  ): Promise<Event | null> {
-    await run(
-      "UPDATE event SET starts_at = ?, ends_at = ?, scheduling = 0 WHERE id = ?",
-      startsAt,
-      endsAt,
-      id,
-    );
-    return this.findById(id);
-  },
-
-  async delete(id: string): Promise<void> {
-    // 関連（メンバー/エントリー/採点/画像/状態）は FK の ON DELETE CASCADE で削除
-    await run("DELETE FROM event WHERE id = ?", id);
+  async delete(id: string, actorId: string): Promise<boolean> {
+    // Related database rows still cascade; the route removes R2 only on success.
+    return (await runCount(`DELETE FROM event AS e WHERE e.id=? AND ${activeManagerSql("e", "?")}`, id, actorId, adminIds())) > 0;
   },
 };

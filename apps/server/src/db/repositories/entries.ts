@@ -1,6 +1,8 @@
+import { eventViewSql } from "../../auth/eventAccess.js";
+import { adminIds } from "./eventAccessInvites.js";
 import type { Entry, Submission } from "@eventer/shared";
 import { DELETED_USER_DISPLAY_NAME } from "@eventer/shared";
-import { one, many, run, batch } from "../client.js";
+import { one, many, runCount } from "../client.js";
 
 interface EntryRow {
   id: string;
@@ -128,36 +130,6 @@ export const entriesRepo = {
     return row ? await toEntry(row) : null;
   },
 
-  /** 個人 Entry を作成（参加登録時）。既にあればそれを返す */
-  async createIndividual(
-    eventId: string,
-    userId: string,
-    name: string,
-  ): Promise<Entry> {
-    const existing = await this.findIndividualEntry(eventId, userId);
-    if (existing) return existing;
-    const id = crypto.randomUUID();
-    await batch([
-      {
-        sql: `INSERT INTO entry (id, event_id, kind, name, created_at)
-         VALUES (?, ?, 'individual', ?, ?)`,
-        args: [id, eventId, name, Date.now()],
-      },
-      {
-        sql: `INSERT INTO entry_member (id, entry_id, user_id, is_leader)
-         VALUES (?, ?, ?, 1)`,
-        args: [crypto.randomUUID(), id, userId],
-      },
-    ]);
-    return (await this.findById(id))!;
-  },
-
-  /** 個人参加解除: そのユーザーの個人 Entry を削除 */
-  async removeIndividualEntry(eventId: string, userId: string): Promise<void> {
-    const entry = await this.findIndividualEntry(eventId, userId);
-    if (entry) await run("DELETE FROM entry WHERE id = ?", entry.id);
-  },
-
   async isMember(entryId: string, userId: string): Promise<boolean> {
     const row = await one(
       "SELECT 1 FROM entry_member WHERE entry_id = ? AND user_id = ?",
@@ -168,34 +140,21 @@ export const entriesRepo = {
   },
 
   async upsertSubmission(
+    eventId: string,
     entryId: string,
+    userId: string,
     presentationUrl: string | null,
     sourceCodeUrl: string | null,
-  ): Promise<Submission> {
-    const existing = await one<{ id: string }>(
-      "SELECT id FROM submission WHERE entry_id = ?",
-      entryId,
+  ): Promise<Submission | null> {
+    const changed = await runCount(
+      `INSERT INTO submission(id,entry_id,presentation_url,source_code_url,updated_at)
+        SELECT ?,en.id,?,?,? FROM entry en JOIN event e ON e.id=en.event_id
+        JOIN entry_member em ON em.entry_id=en.id JOIN user u ON u.id=em.user_id AND u.deleted_at IS NULL
+        WHERE en.id=? AND e.id=? AND u.id=? AND ${eventViewSql("e", "u.id", "?")}
+        ON CONFLICT(entry_id) DO UPDATE SET presentation_url=excluded.presentation_url,
+          source_code_url=excluded.source_code_url,updated_at=excluded.updated_at`,
+      crypto.randomUUID(), presentationUrl, sourceCodeUrl, Date.now(), entryId, eventId, userId, adminIds(),
     );
-    if (existing) {
-      await run(
-        `UPDATE submission SET presentation_url = ?, source_code_url = ?, updated_at = ?
-         WHERE entry_id = ?`,
-        presentationUrl,
-        sourceCodeUrl,
-        Date.now(),
-        entryId,
-      );
-    } else {
-      await run(
-        `INSERT INTO submission (id, entry_id, presentation_url, source_code_url, updated_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        crypto.randomUUID(),
-        entryId,
-        presentationUrl,
-        sourceCodeUrl,
-        Date.now(),
-      );
-    }
-    return (await submissionFor(entryId))!;
+    return changed ? submissionFor(entryId) : null;
   },
 };

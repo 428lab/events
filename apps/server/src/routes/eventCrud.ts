@@ -137,7 +137,7 @@ eventCrudRoutes.patch(
       startsAt: input.startsAt ?? prior?.startsAt ?? 0,
     });
     if (violation) return c.json({ error: violation }, 400);
-    const event = await eventsRepo.update(c.req.param("id"), input);
+    const event = await eventsRepo.update(c.req.param("id"), input, c.get("user").id);
     if (!event) return c.json({ error: "not_found" }, 404);
     await notifyOnPublish(prior, event);
     return c.json({ event });
@@ -155,7 +155,7 @@ eventCrudRoutes.delete(
 /** 公開（staff のみ） */
 eventCrudRoutes.post("/:id/publish", requireEventRole(["staff"]), async (c) => {
   const prior = await eventsRepo.findById(c.req.param("id"));
-  const event = await eventsRepo.setStatus(c.req.param("id"), "published");
+  const event = await eventsRepo.setStatus(c.req.param("id"), "published", c.get("user").id);
   if (!event) return c.json({ error: "not_found" }, 404);
   await notifyOnPublish(prior, event);
   return c.json({ event });
@@ -168,7 +168,7 @@ eventCrudRoutes.post("/:id/publish", requireEventRole(["staff"]), async (c) => {
 eventCrudRoutes.delete("/:id", requireEventRole(["staff"]), async (c) => {
   const eventId = c.req.param("id");
   const keys = await collectEventObjects(eventId);
-  await eventsRepo.delete(eventId);
+  if (!(await eventsRepo.delete(eventId, c.get("user").id))) return c.json({ error: "access_changed" }, 409);
   await deleteObjects(keys, `[event-delete] event=${eventId}`);
   return c.json({ ok: true });
 });

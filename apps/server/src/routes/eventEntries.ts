@@ -32,10 +32,13 @@ eventEntryRoutes.put(
     const input = valid<UpdateSubmissionInput>(c, "json");
     const norm = (v: string | null | undefined) => (v ? v : null);
     const submission = await entriesRepo.upsertSubmission(
+      entry.eventId,
       entryId,
+      user.id,
       norm(input.presentationUrl),
       norm(input.sourceCodeUrl),
     );
+    if (!submission) return c.json({ error: "access_changed" }, 409);
     return c.json({ submission });
   },
 );

@@ -4,7 +4,7 @@ import type {
   SurveyQuestion,
 } from "@eventer/shared";
 import { eventViewSql } from "../../auth/eventAccess.js";
-import { adminIds } from "./eventAccessInvites.js";
+import { activeManagerSql, accessOperationGuard, adminIds } from "./eventAccessInvites.js";
 import { batch, many, one, run } from "../client.js";
 
 interface QuestionRow {
@@ -75,7 +75,8 @@ export const eventSurveyRepo = {
     eventId: string,
     phase: SurveyPhase,
     items: SaveSurveyQuestionItem[],
-  ): Promise<SurveyQuestion[]> {
+    actorId: string,
+  ): Promise<SurveyQuestion[] | null> {
     const now = Date.now();
     const existing = await this.listQuestions(eventId, phase);
     const existingIds = new Set(existing.map((q) => q.id));
@@ -84,15 +85,17 @@ export const eventSurveyRepo = {
     const keptIds = items
       .map((it) => it.id)
       .filter((id): id is string => Boolean(id && existingIds.has(id)));
-    await batch([
+    const token = crypto.randomUUID(), guard = [eventId, token];
+    const [changed] = await batch([
+      { sql: `UPDATE event AS e SET access_operation_token=?,access_revision=access_revision+1 WHERE e.id=? AND ${activeManagerSql("e", "?")}`, args: [token, eventId, actorId, adminIds()] },
       {
         sql: `DELETE FROM event_survey_question
           WHERE event_id = ? AND phase = ?${
             keptIds.length > 0
               ? ` AND id NOT IN (${keptIds.map(() => "?").join(",")})`
               : ""
-          }`,
-        args: [eventId, phase, ...keptIds],
+          } AND ${accessOperationGuard}`,
+        args: [eventId, phase, ...keptIds, ...guard],
       },
       // qtype が変わった既存質問の回答は破棄（旧型式の値が「必須回答済み」扱いになるのを防ぐ）
       ...items
@@ -103,8 +106,8 @@ export const eventSurveyRepo = {
             existingById.get(it.id)?.qtype !== it.qtype,
         )
         .map((it) => ({
-          sql: "DELETE FROM event_survey_answer WHERE question_id = ?",
-          args: [it.id as string],
+          sql: `DELETE FROM event_survey_answer WHERE question_id = ? AND ${accessOperationGuard}`,
+          args: [it.id as string, ...guard],
         })),
       ...items.map((it, i) => {
         const options = JSON.stringify(it.options);
@@ -113,14 +116,14 @@ export const eventSurveyRepo = {
           return {
             sql: `UPDATE event_survey_question
               SET question = ?, qtype = ?, options = ?, required = ?, sort_order = ?
-              WHERE id = ? AND event_id = ?`,
-            args: [it.question, it.qtype, options, required, i, it.id, eventId],
+              WHERE id = ? AND event_id = ? AND ${accessOperationGuard}`,
+            args: [it.question, it.qtype, options, required, i, it.id, eventId, ...guard],
           };
         }
         return {
           sql: `INSERT INTO event_survey_question
             (id, event_id, phase, question, qtype, options, required, sort_order, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${accessOperationGuard}`,
           args: [
             crypto.randomUUID(),
             eventId,
@@ -131,10 +134,13 @@ export const eventSurveyRepo = {
             required,
             i,
             now,
+            ...guard,
           ],
         };
       }),
+      { sql: "UPDATE event SET access_operation_token=NULL WHERE id=? AND access_operation_token=?", args: guard },
     ]);
+    if (!changed) return null;
     return this.listQuestions(eventId, phase);
   },
 
