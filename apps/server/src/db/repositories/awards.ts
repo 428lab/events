@@ -163,7 +163,7 @@ export const awardsRepo = {
        JOIN entry en ON en.id = ar.entry_id
        JOIN entry_member em ON em.entry_id = en.id AND em.user_id = ?
        JOIN event e ON e.id = ar.event_id
-            AND e.status = 'published' AND e.ends_at < ?
+            AND e.status = 'published' AND e.visibility = 'public' AND e.ends_at < ?
        LEFT JOIN award_rank r ON r.id = ar.award_rank_id
        LEFT JOIN special_award s ON s.id = ar.special_award_id
        WHERE ar.award_rank_id IS NOT NULL OR ar.special_award_id IS NOT NULL

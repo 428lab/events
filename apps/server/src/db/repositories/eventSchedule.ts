@@ -566,7 +566,7 @@ export const eventScheduleRepo = {
     const rows = await many<{ event_id: string }>(
       `SELECT DISTINCT si.event_id FROM event_schedule_item si
          JOIN event e ON e.id = si.event_id
-        WHERE si.speaker_user_id = ? AND e.status = 'published'
+        WHERE si.speaker_user_id = ? AND e.status = 'published' AND e.visibility = 'public'
           AND ${publicItemWhere("si")}`,
       userId,
     );

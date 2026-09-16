@@ -71,7 +71,7 @@ const SELECT = `SELECT p.id, p.event_id, p.user_id, p.created_at, p.kind, p.dura
 // 下書き・非公開イベントの写真が漏れる）。フィルタは buildUserPhotoWhere が
 // この断片に AND で足すだけなので、どのパラメータでも公開範囲は緩まない (#407)
 const PUBLIC_USER_PHOTO_COND = `p.user_id = ? AND e.photos_public = 1
-  AND e.status = 'published' AND p.admin_hidden_at IS NULL`;
+  AND e.status = 'published' AND e.visibility = 'public' AND p.admin_hidden_at IS NULL`;
 
 /** メディアタブのフィルタ (#407)。すべて公開範囲の条件に AND される */
 export interface UserPhotoFilter {

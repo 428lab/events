@@ -245,8 +245,8 @@ export const accountDeletionRepo = {
     if (existing) return existing;
     try {
       await run(
-        `INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at)
-         VALUES (?, ?, ?, ?, NULL, ?)`,
+        `INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at, card_image_generation)
+         VALUES (?, ?, ?, ?, NULL, ?, lower(hex(randomblob(16))))`,
         crypto.randomUUID(),
         DELETED_USER_DISCORD_ID,
         await usersRepo.availableUsername("deleted-user"),

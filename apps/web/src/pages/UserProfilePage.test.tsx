@@ -88,6 +88,7 @@ function profile(over: Partial<UserProfile> = {}): UserProfile {
     isMe: true,
     cardImageUpdatedAt: null,
     cardImageKey: null,
+    cardImageGeneration: "1234567890abcdef1234567890abcdef",
     ...over,
   } as UserProfile;
 }

@@ -23,12 +23,12 @@ export async function changeMembership(eventId: string, actorId: string, userId:
   const [changed] = await batch([
     { sql: `UPDATE event AS e SET access_operation_token=?,access_revision=access_revision+1 WHERE e.id=?
         AND ${role === undefined ? "? = ?" : activeManagerSql("e", "?")}
-        AND EXISTS (SELECT 1 FROM user u WHERE u.id=? AND u.deleted_at IS NULL AND ${eventViewSql("e", "u.id", "?")})
+        ${role === "participant" ? "" : `AND EXISTS (SELECT 1 FROM user u WHERE u.id=? AND u.deleted_at IS NULL AND ${eventViewSql("e", "u.id", "?")})`}
         AND ${currentMemberSnapshotSql}
         ${leaving ? "AND (e.scheduling=1 OR e.ends_at >= ?)" : ""}
         ${staffLoss && role !== undefined ? `AND (SELECT COUNT(*) FROM event_member staff JOIN user su ON su.id=staff.user_id AND su.deleted_at IS NULL
           WHERE staff.event_id=e.id AND staff.role='staff' AND staff.status <> 'canceled') > 1` : ""}`,
-      args: [token, eventId, ...(role === undefined ? [actorId, userId] : [actorId, adminIds()]), userId, adminIds(), userId, memberSnapshot(before), ...(leaving ? [now] : [])] },
+      args: [token, eventId, ...(role === undefined ? [actorId, userId] : [actorId, adminIds()]), ...(role === "participant" ? [] : [userId, adminIds()]), userId, memberSnapshot(before), ...(leaving ? [now] : [])] },
     ...(leaving ? [
       { sql: `DELETE FROM entry WHERE event_id=? AND kind='individual' AND id IN (SELECT entry_id FROM entry_member WHERE user_id=?) AND ${accessOperationGuard}`, args: [eventId, userId, ...guard] },
       { sql: `DELETE FROM event_survey_answer WHERE event_id=? AND user_id=? AND ${accessOperationGuard}`, args: [eventId, userId, ...guard] },

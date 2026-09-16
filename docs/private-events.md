@@ -416,3 +416,16 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - 候補日定義、質問定義、一般event update/publish/deleteは現状routeのmanager検査だけ。actor IDを必須にしてwriterでも共有manager SQLを検査する。eventのcommunity付替えは付替え先の現資格も検査する。画像R2/他子APIまで対応したとは扱わない。
 - この保存単位の検証: 遅延メールをwaitUntilへ逃がすP2再現、8件のmember書込みテスト（撤回済みtarget・降格actor、抽選順と既存席、抽選/手動Entry失敗rollback、通常取消+回答+繰上げrollback、staff招待acceptの繰上げrollback、終了後Entryへの不許可PUT、候補/質問/eventの降格後拒否）。既存publicの参加枠・staff招待・staff鍵ローテーション・日程・複製・R2回収等は対象テストで確認。隔離コピーで抽選actorのSQL門を外すと、降格したactorが当選を作り負例が失敗する。
 - 今回の残存範囲: 新規event/copy時のcreator staff初期化は従来経路（非public作成は閉鎖）。staff招待の結果通知等はなお独立した通知経路であり、通知全体のevent_id/汎用化/再認可は後続。出席/check-in/QR、画像/R2と他の子リソースwriter、公開範囲遷移・PNG/間接経路・relay/全クライアントcacheまで完了したという意味ではない。一般event updateには読取revisionを条件にするが、visibility transitionの副作用プロトコルは未実装。
+
+### 14.4 PNG/public profile隔離の実装単位
+
+- e8f221dのreview指摘を先に修正する。managerによる除去は権限付与でないので、target閲覧資格を要求しない（actor現資格・snapshot・終了/最後のstaff保護は維持）。抽選メールは受信者ごとに独立してdeferする。
+- 実sourceは旧combo/legacyキーをGETし、newuserのgeneration採番がない。公開profileは複数repo集計の後に世代を再確認していない。§5.3の新キー/PUT CAS/GET再確認へ移し、§6.1の寄与集合と公開集計を同時に実装する。migration0091の既存user隔離は既にあるが、これだけで安全とは扱わない。
+
+#### §6.1実行方式の承認済み補足
+
+2026-09-16の実装調整で、上記「同じD1 batch」の局所回転を限定列挙SQLite triggerで実行する方式を承認。アプリの任意SQLを解析する仕組みは作らない。eventの公開条件/日時/出席運用/community/作成者、event_member、event_schedule_itemと公開track関係、event_like（user対象）、event_meetのINSERT/UPDATE/DELETEを対象とし、OLD側BEFOREとNEW側AFTERで上記UNIONを回転する。userのdeleted_at変更/DELETEは関係が消える前にmembership/speaker/like送信者・対象/meet両端からeventを取得して回転。account mergeは既存の子行移動triggerで双方集合を捕捉し、勝者自身も同じbatchで新世代にする。FK CASCADEはBEFORE側で旧関係がある間に捕捉し、triggerの実行順に依存しない。世代列更新自体はtrigger対象列から除外し再帰させず、アプリの各writerへ重複する回転を追加しない。既存0091の全旧画像隔離は導入一回限り、以降は局所集合のみ。独立レビューと実D1のrollback/cascade検証前には配備不可。
+- 追加source監査: nameCardsRepoは公開プロフィールの実績/community集計をbulkで複製していたため、同じpublic条件へ揃える（名札のevent参加者選定は変更しない）。公開communityの暗黙所属member一覧もcountと同じ条件へ。speaker_user_idとlike送信者user_idの局所参照には索引を追加する。
+- この単位の検証: review P1/P2の実HTTP二段階除去・2受信者送信開始、workerd/D1で旧B/legacy非復活、PUT中/GET中/集計中の世代変更、寄与関係消失/置換・track公開条件・cascade/merge・rollback・失敗CAS・無関係user不変を確認。publicの実績/XP/受賞/登壇/写真facet/limit/community/たまごも負例と正例を検査。初期0091は旧schema fixtureで選択combo保持＋timestamp隔離を確認。D1のcompound SELECT上限に合わせuser自身は追加UNIONでなく外側OR条件にした。PNG列更新はtriggerを再発火しない。
+- clientは表示snapshot変更で未完PNGを破棄し、409ではprofileを再取得してSVGから作り直す。(user,generation,combo)の送信管理と同世代の表示更新も回帰検査。元の描画関数はprofileCardPng.tsへそのまま分離した（汎用cache層は作らない）。ブラウザ実描画journey/staging検証を今回再実行したとは扱わない。
+- なお配備不可。QRの双方認可、event HTML/slug/calendar、通知全体、participant relay/chat、全client cache/identity検知、creator/slot/attendance等の残るwriter、visibility遷移と開放UIが必要。trigger導入の独立review・配備時旧cache purge/TTL確認も必須。

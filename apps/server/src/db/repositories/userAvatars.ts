@@ -129,12 +129,10 @@ export const userAvatarsRepo = {
   },
 
   /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻と選択中の組み合わせを記録 (#193, #201) */
-  async setCardImage(userId: string, ts: number, key: string): Promise<void> {
-    await run(
-      "UPDATE user SET card_image_updated_at = ?, card_image_key = ? WHERE id = ?",
-      ts,
-      key,
-      userId,
-    );
+  async setCardImage(userId: string, ts: number, key: string, generation: string): Promise<boolean> {
+    return (await runCount(
+      "UPDATE user SET card_image_updated_at=?,card_image_key=? WHERE id=? AND card_image_generation=? AND deleted_at IS NULL",
+      ts, key, userId, generation,
+    )) === 1;
   },
 };

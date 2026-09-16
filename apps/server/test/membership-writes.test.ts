@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { afterEach, expect, it, vi } from "vitest";
-import { bindEnv } from "../src/runtime.js";
+import { bindEnv, runWithExecutionContext } from "../src/runtime.js";
 import { drawMemberSlots, setMemberSlotStatus } from "../src/db/repositories/memberSlotResults.js";
 import { changeMembership } from "../src/db/repositories/membershipChange.js";
 import { eventMembersRepo } from "../src/db/repositories/eventMembers.js";
@@ -161,4 +161,35 @@ it("late demotion blocks candidate/question definitions and general event edits/
   expect((await eventsRepo.findById(s.eventId))!.accessRevision).toBe(before.accessRevision);
   expect(await count("event_date_option", s.eventId)).toBe(1);
   expect(await count("event_survey_question", s.eventId)).toBe(0);
+});
+
+it("manager can remove a judge after demotion loses staff-only private access", async () => {
+  const s = await setup(), target = await user();
+  await json(await request(`/events/${s.eventId}/staff-invites`, s.host, "POST", { handle: target.handle }), 201);
+  const invite = (await eventStaffInvitesRepo.find(s.eventId, target.id))!;
+  expect(await eventStaffInvitesRepo.accept(invite.id, s.eventId, target.id)).toBeTruthy();
+  await json(await request(`/events/${s.eventId}/members/${target.id}/role`, s.host, "PATCH", { role: "judge" }));
+  expect((await request(`/events/${s.eventId}`, target)).status).toBe(404);
+  await json(await request(`/events/${s.eventId}/members/${target.id}/role`, s.host, "PATCH", { role: "participant" }));
+  expect(await eventMembersRepo.find(s.eventId, target.id)).toBeNull();
+});
+
+it("lottery defers each recipient independently while the first provider response is held", async () => {
+  const s = await setup(), id = await slot(s, "lottery", 2), a = await user(), b = await user();
+  const ma = await join(s,a,id), mb = await join(s,b,id);
+  for (const u of [a,b]) {
+    await sql("INSERT INTO identity(id,user_id,provider,provider_user_id,email,created_at) VALUES(?,?,'google',?, ?,1)", crypto.randomUUID(),u.id,crypto.randomUUID(),u.id+"@example.com");
+    await sql("INSERT INTO notification_pref(user_id,email_enabled,updated_at) VALUES(?,1,1)",u.id);
+  }
+  bindEnv({ ...env, RESEND_API_KEY: "fixture" } as never);
+  let release!: (r: Response) => void;
+  const held = new Promise<Response>(resolve => { release=resolve; });
+  const outbound=vi.spyOn(globalThis,"fetch").mockReturnValueOnce(held).mockResolvedValue(new Response('{}'));
+  const pending: Promise<unknown>[]=[];
+  const op=runWithExecutionContext({waitUntil:(p:Promise<unknown>)=>pending.push(p)} as never,()=>drawMemberSlots(s.eventId,s.host.id,id,[ma.id,mb.id]));
+  try {
+    await vi.waitFor(()=>expect(outbound).toHaveBeenCalledTimes(2));
+    expect((await op)!.confirmed).toBe(2);
+    expect(pending).toHaveLength(2);
+  } finally { release(new Response('{}')); await Promise.all([...pending,op]); }
 });

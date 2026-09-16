@@ -345,7 +345,7 @@ export const eventMembersRepo = {
                    AND m.canceled_at >= e.starts_at - ${DAY} THEN 1 ELSE 0 END) AS cancel_late
        FROM event_member m
        JOIN event e ON e.id = m.event_id
-       WHERE m.user_id = ? AND m.role = 'participant' AND e.status = 'published'`,
+       WHERE m.user_id = ? AND m.role = 'participant' AND e.status = 'published' AND e.visibility = 'public'`,
       now,
       now,
       userId,
@@ -356,7 +356,7 @@ export const eventMembersRepo = {
       `SELECT COUNT(*) AS v FROM event_member m
         JOIN event e ON e.id = m.event_id
         WHERE m.user_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
-          AND e.created_by = m.user_id AND e.status = 'published'
+          AND e.created_by = m.user_id AND e.status = 'published' AND e.visibility = 'public'
           AND e.ends_at > 0 AND e.ends_at < ?`,
       userId,
       now,
@@ -365,7 +365,7 @@ export const eventMembersRepo = {
       `SELECT COUNT(*) AS v FROM event_member m
         JOIN event e ON e.id = m.event_id
         WHERE m.user_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
-          AND e.created_by <> m.user_id AND e.status = 'published'
+          AND e.created_by <> m.user_id AND e.status = 'published' AND e.visibility = 'public'
           AND e.ends_at > 0 AND e.ends_at < ?`,
       userId,
       now,
@@ -377,7 +377,7 @@ export const eventMembersRepo = {
     const spoken = await one<{ v: number }>(
       `SELECT COUNT(DISTINCT e.id) AS v FROM event_schedule_item si
         JOIN event e ON e.id = si.event_id
-        WHERE si.speaker_user_id = ? AND e.status = 'published'
+        WHERE si.speaker_user_id = ? AND e.status = 'published' AND e.visibility = 'public'
           AND e.ends_at > 0 AND e.ends_at < ?
           AND ${publicItemWhere("si")}`,
       userId,
@@ -452,7 +452,7 @@ export const eventMembersRepo = {
                 ${CAPACITY_TOTAL_SQL("e.id")} AS capacity_total
          FROM event_member m
          JOIN event e ON e.id = m.event_id
-         WHERE m.user_id = ? AND m.status = 'confirmed' AND e.status = 'published'
+         WHERE m.user_id = ? AND m.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public'
            AND (e.attendance_check = 0 OR m.attended = 1 OR m.role <> 'participant'
                 OR e.ends_at <= 0 OR e.ends_at >= ?)
          ORDER BY e.starts_at DESC`,

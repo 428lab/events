@@ -18,7 +18,7 @@ import { useUserProfile } from "../api/userHooks.js";
 import { BigQrDialog } from "../components/BigQrDialog.js";
 import { LicenseCardSvg } from "../components/licenseCard/LicenseCardSvg.js";
 import { toCardData } from "../components/licenseCard/cardData.js";
-import { EXPORT_H, EXPORT_W } from "../components/licenseCard/cardLayout.js";
+import { generateCardPng, OG_UPLOAD_W } from "../components/licenseCard/profileCardPng.js";
 import {
   BG_VARIANTS,
   CARD_THEMES,
@@ -34,9 +34,6 @@ import {
   saveLocalCardLook,
 } from "../components/licenseCard/cardLook.js";
 // PNG書き出し時にSVGへ埋め込むフォント（SVG-as-image はページのフォントを参照できない）
-import jakarta600Url from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-600-normal.woff2?url";
-import jakarta700Url from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-700-normal.woff2?url";
-
 /** プロフィールカードのデザイン画面 (#178)。
  * カード本体の描画は components/licenseCard/LicenseCardSvg.tsx にあり、
  * ここでは背景パターン選択・印刷・PNG書き出しなどページの振る舞いを担当する。
@@ -48,107 +45,6 @@ import jakarta700Url from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans
 // ---------------------------------------------------------------------------
 // 書き出し（PNG）と印刷
 // ---------------------------------------------------------------------------
-
-/** URLの内容を dataURL 化する（フォント・アバターのSVG埋め込み用） */
-async function fetchAsDataUrl(url: string): Promise<string> {
-  const res = await fetch(url, { mode: "cors" });
-  if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
-  const blob = await res.blob();
-  return await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-}
-
-/** 表示中のSVGを自己完結した文字列へシリアライズする。
- * - フォントを dataURL の @font-face として埋め込む（SVG-as-image対策）
- * - アバターを dataURL に差し替える（外部URLのままだと canvas が汚染されPNG化できない。
- *   Discord CDN は ACAO:* を返すため fetch で取得できる。失敗時は image を除去して
- *   下のイニシャル矩形で出力を続行する） */
-async function buildExportSvg(svgEl: SVGSVGElement): Promise<string> {
-  const clone = svgEl.cloneNode(true) as SVGSVGElement;
-  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-  try {
-    const [w600, w700] = await Promise.all([
-      fetchAsDataUrl(jakarta600Url),
-      fetchAsDataUrl(jakarta700Url),
-    ]);
-    const style = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "style",
-    );
-    style.textContent =
-      `@font-face{font-family:'Plus Jakarta Sans';font-weight:600;src:url(${w600}) format('woff2')}` +
-      `@font-face{font-family:'Plus Jakarta Sans';font-weight:700;src:url(${w700}) format('woff2')}`;
-    clone.insertBefore(style, clone.firstChild);
-  } catch {
-    /* フォントが取得できなくてもシステムフォントで出力を続行 */
-  }
-  // コミュニティアイコン等、SVG内の全imageを dataURL 化（SVG-as-image は外部参照を読まない）
-  for (const img of Array.from(clone.querySelectorAll("image:not([data-avatar])"))) {
-    const href = img.getAttribute("href");
-    if (!href || href.startsWith("data:")) continue;
-    try {
-      img.setAttribute("href", await fetchAsDataUrl(href));
-    } catch {
-      img.remove(); // 取得失敗時は下地（イニシャル/プレースホルダ）を見せる
-    }
-  }
-  const avatar = clone.querySelector("image[data-avatar]");
-  if (avatar) {
-    try {
-      const href = avatar.getAttribute("href");
-      if (!href) throw new Error("no avatar href");
-      avatar.setAttribute("href", await fetchAsDataUrl(href));
-    } catch {
-      avatar.remove();
-    }
-  }
-  return new XMLSerializer().serializeToString(clone);
-}
-
-/** シェア時のOG画像に使う幅。
- *
- * ダウンロード用の 2148px をそのまま送ると 2MB の上限を超えて 413 で弾かれる
- * （実際に保存できていなかった）。OG画像は表示上 1200px あれば足りるので、
- * 保存用だけ小さくする。ダウンロードは印刷にも使えるよう高解像度のまま */
-const OG_UPLOAD_W = 1200;
-
-/** 表示中のSVGをPNG Blob にラスタライズする。
- * ダウンロードとOG画像アップロード (#193) の両方で同じ生成経路を使う */
-async function generateCardPng(
-  svgEl: SVGSVGElement,
-  width: number = EXPORT_W,
-): Promise<Blob> {
-  const svgText = await buildExportSvg(svgEl);
-  const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
-  const svgUrl = URL.createObjectURL(svgBlob);
-  try {
-    const img = new Image();
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("SVGの読み込みに失敗しました"));
-      img.src = svgUrl;
-    });
-    const canvas = document.createElement("canvas");
-    // 縦横比はカードのまま保つ
-    const height = Math.round((width * EXPORT_H) / EXPORT_W);
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("canvas を初期化できませんでした");
-    ctx.drawImage(img, 0, 0, width, height);
-    const png = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/png"),
-    );
-    if (!png) throw new Error("PNGの生成に失敗しました");
-    return png;
-  } finally {
-    URL.revokeObjectURL(svgUrl);
-  }
-}
 
 /** PNG Blob をファイルとしてダウンロードさせる */
 function downloadBlob(png: Blob, fileName: string): void {
@@ -166,7 +62,7 @@ function downloadBlob(png: Blob, fileName: string): void {
 export function LicenseCardPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
-  const { data, isLoading, isError } = useUserProfile(id);
+  const { data, isLoading, isError, refetch } = useUserProfile(id);
   // 表示中の見た目。保存済みの値が届くまでは手元の既定で描く
   const [variant, setVariant] = useState<CardBgVariant>(
     () => loadLocalCardLook().variant,
@@ -204,7 +100,11 @@ export function LicenseCardPage() {
   // 失敗してもページ利用には影響させない（既定OG画像のまま）
   const isMe = data?.isMe ?? false;
   useEffect(() => {
-    const uploadKey = cardLookKey({ variant, theme });
+    const combo = cardLookKey({ variant, theme });
+    const generation = data?.cardImageGeneration;
+    if (!generation || !profileId) return;
+    const uploadKey = `${profileId}:${generation}:${combo}`;
+    let canceled = false, completed = false;
     if (!isMe || uploadedVariantsRef.current.has(uploadKey)) return;
     // 描画直後の連打（背景・配色切り替え）をまとめるための小さなディレイ
     const timer = setTimeout(() => {
@@ -215,12 +115,19 @@ export function LicenseCardPage() {
       void (async () => {
         try {
           const png = await generateCardPng(svgEl, OG_UPLOAD_W);
-          const res = await fetch(`/api/me/card-image?k=${uploadKey}`, {
+          if (canceled) return;
+          const res = await fetch(`/api/me/card-image?k=${combo}&g=${generation}`, {
             method: "PUT",
             credentials: "include",
             headers: { "Content-Type": "image/png" },
             body: png,
           });
+          if (res.status === 409) {
+            uploadedVariantsRef.current.delete(uploadKey);
+            if (!canceled) await refetch();
+            return;
+          }
+          if (canceled) return;
           if (!res.ok) {
             // 理由が分からないと直しようがないので、状態から言葉にする
             throw new Error(
@@ -229,15 +136,18 @@ export function LicenseCardPage() {
                 : `保存に失敗しました（${res.status}）`,
             );
           }
+          completed = true;
           setOgStatus("done");
         } catch (e) {
+          if (canceled) return;
+          uploadedVariantsRef.current.delete(uploadKey);
           console.warn("プロフィールカードのOG画像更新に失敗しました", e);
           setOgStatus("error");
         }
       })();
     }, 800);
-    return () => clearTimeout(timer);
-  }, [isMe, variant, theme]);
+    return () => { canceled = true; clearTimeout(timer); if (!completed) uploadedVariantsRef.current.delete(uploadKey); };
+  }, [isMe, variant, theme, data, profileId, refetch]);
 
   if (isError) return <Alert severity="info">ユーザーが見つかりません。</Alert>;
   if (isLoading || !data) return <Typography>読み込み中…</Typography>;

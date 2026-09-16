@@ -292,7 +292,7 @@ export const eventMeetsRepo = {
   async countsByEventForUser(userId: string): Promise<Map<string, number>> {
     const rows = await many<{ event_id: string; n: number }>(
       `SELECT event_id, COUNT(*) AS n FROM event_meet
-        WHERE user_low = ? OR user_high = ?
+        WHERE (user_low = ? OR user_high = ?) AND EXISTS (SELECT 1 FROM event e WHERE e.id=event_meet.event_id AND e.status='published' AND e.visibility='public')
         GROUP BY event_id`,
       userId,
       userId,
@@ -311,7 +311,7 @@ export const eventMeetsRepo = {
     const row = await one<{ v: number }>(
       `SELECT COUNT(DISTINCT CASE WHEN user_low = ? THEN user_high ELSE user_low END) AS v
          FROM event_meet
-        WHERE user_low = ? OR user_high = ?`,
+        WHERE (user_low = ? OR user_high = ?) AND EXISTS (SELECT 1 FROM event e WHERE e.id=event_meet.event_id AND e.status='published' AND e.visibility='public')`,
       userId,
       userId,
       userId,

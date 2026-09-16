@@ -21,7 +21,8 @@ export const accountMergeRepo = {
    * フォールバックしても途中失敗でログイン手段が失われないよう、
    * 「子テーブル移行 → session/identity → user 削除」の順序を守る。 */
   async mergeUsers(winnerId: string, loserId: string): Promise<void> {
-    const stmts: Array<{ sql: string; args?: unknown[] }> = [accountAccessRevision([winnerId, loserId])];
+    const stmts: Array<{ sql: string; args?: unknown[] }> = [accountAccessRevision([winnerId, loserId]),
+      { sql: "UPDATE user SET card_image_generation=lower(hex(randomblob(16))),card_image_updated_at=NULL WHERE id=?", args: [winnerId] }];
 
     // (0) event_member の重複破棄でスタッフ権限が落ちないよう、負け側が staff の
     //     イベントでは勝ち側の既存行を先に staff へ引き上げる。

@@ -135,7 +135,7 @@ export const eventLikesRepo = {
         JOIN event e ON e.id = l.event_id
         JOIN user u ON u.id = l.user_id AND u.deleted_at IS NULL
         WHERE l.kind IN ('host', 'staff', 'participant') AND l.target_key = ?
-          AND e.status = 'published'`,
+          AND e.status = 'published' AND e.visibility = 'public'`,
       userId,
     );
     return row?.v ?? 0;
@@ -148,7 +148,7 @@ export const eventLikesRepo = {
         JOIN event e ON e.id = l.event_id
         JOIN user u ON u.id = l.user_id AND u.deleted_at IS NULL
         WHERE l.kind = 'community' AND l.target_key = ?
-          AND e.status = 'published'`,
+          AND e.status = 'published' AND e.visibility = 'public'`,
       communityId,
     );
     return row?.v ?? 0;

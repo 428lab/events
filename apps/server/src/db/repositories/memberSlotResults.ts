@@ -7,9 +7,7 @@ import { sendNotificationEmailIfOptedIn } from "../../lib/email.js";
 interface ResultNotice { user_id: string; type: string; title: string; body: string; link: string }
 async function deliver(eventId: string, ids: string[]) {
   const notices = await many<ResultNotice>("SELECT user_id,type,title,body,link FROM notification WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids));
-  await deferBackground((async () => {
-    for (const n of notices) await sendNotificationEmailIfOptedIn(n.user_id, n.title, n.body, n.link, { authorizationEventId: eventId });
-  })());
+  await Promise.all(notices.map(n => deferBackground(sendNotificationEmailIfOptedIn(n.user_id, n.title, n.body, n.link, { authorizationEventId: eventId }))));
   return notices;
 }
 

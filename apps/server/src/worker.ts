@@ -139,6 +139,9 @@ import { adminModerationRoutes } from "./routes/adminModeration.js";
 import { adminTrendingRoutes } from "./routes/adminTrending.js";
 
 const api = new Hono();
+// PNG denial headers must precede authentication and the global body limit.
+for (const path of ["/me/card-image", "/users/:id/card-image"])
+  api.use(path, async (c, next) => { c.header("Cache-Control", "private, no-store"); c.header("Vary", "Cookie"); await next(); });
 const DEFAULT_BODY_MAX = 8 * 1024 * 1024;
 // This terminal ownership-only exit precedes the common gates, so apply the
 // same body cap here as well. No other verb bypasses the event gate.
@@ -590,10 +593,10 @@ function injectProfileOg(
   const title = escapeHtml(`${user.globalName ?? user.username} ・ events lab`);
   const desc = escapeHtml(summary);
   const image = escapeHtml(
-    user.cardImageUpdatedAt
+    /^[0-9a-f]{32}$/.test(user.cardImageGeneration ?? "") && user.cardImageUpdatedAt
       ? `${env.appBaseUrl}/api/users/${user.id}/card-image?${
           user.cardImageKey ? `k=${user.cardImageKey}&` : ""
-        }v=${user.cardImageUpdatedAt}`
+        }g=${user.cardImageGeneration}&v=${user.cardImageUpdatedAt}`
       : `${env.appBaseUrl}/og-default.png`,
   );
   const tags = [
@@ -613,6 +616,7 @@ function injectProfileOg(
 
 // /users/:handle（公開プロフィール）に OG メタを注入 (#193)
 app.get("/users/:handle", async (c) => {
+  c.header("Cache-Control", "private, no-store");
   const html = await loadIndexHtml(c.req.url);
   const handle = c.req.param("handle");
   // 公開プロフィールAPIと同じ解決順: username 優先、UUID直指定も後方互換で許可
@@ -622,6 +626,8 @@ app.get("/users/:handle", async (c) => {
   if (!user) return c.html(html); // 存在しないユーザーは素の SPA HTML
   // 実績サマリー（有効イベント基準）。1クエリで済む statsForUser のみ使う
   const stats = await gamificationRepo.statsForUser(user.id, Date.now());
+  const current = await usersRepo.findById(user.id);
+  if (!current || current.cardImageGeneration !== user.cardImageGeneration) return c.html(html);
   const level = gamificationFromStats(stats).level;
   const summary = `Lv.${level} ・ 主催${stats.hosted} ・ 登壇${stats.spoken} ・ 参加${stats.attendedQualifying}`;
   return c.html(injectProfileOg(html, user, summary));

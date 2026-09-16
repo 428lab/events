@@ -20,6 +20,8 @@ import {
 } from "@eventer/shared";
 
 export const publicRoutes = new Hono<AppEnv>();
+for (const path of ["/users/*", "/communities", "/communities/*"])
+  publicRoutes.use(path, async (c, next) => { c.header("Cache-Control", "private, no-store"); await next(); });
 
 /** 公開: スライドデッキの閲覧（未ログイン可） */
 publicRoutes.get("/decks/:slug", async (c) => {
@@ -88,7 +90,7 @@ publicRoutes.get("/users/:handle", async (c) => {
   for (const [eventId, n] of meetCountsByEvent) {
     if (publicEventIds.has(eventId)) meetCounts[eventId] = n;
   }
-  return c.json({
+  const payload = {
     id: user.id,
     handle: user.username,
     name: user.globalName ?? user.username,
@@ -130,7 +132,12 @@ publicRoutes.get("/users/:handle", async (c) => {
     // 持ち主が選んだカードの見た目（背景-配色） (#334)。プロフィールに載せるカードは
     // 見る人の設定ではなく、これで描く。未設定（一度も保存していない）は null
     cardImageKey: user.cardImageKey,
-  });
+    cardImageGeneration: user.cardImageGeneration,
+  };
+  const current = await usersRepo.findById(user.id);
+  if (!current) return c.json({ error: "not_found" }, 404);
+  if (current.cardImageGeneration !== user.cardImageGeneration) return c.json({ error: "card_generation_changed" }, 409);
+  return c.json(payload);
 });
 
 /** 公開: ユーザーが公開設定イベントに投稿した写真ギャラリー（未ログイン可）。

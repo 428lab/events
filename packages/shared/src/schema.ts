@@ -26,6 +26,7 @@ export const userSchema = z.object({
    * メンバー一覧などのJOIN由来ペイロードでは省略される (#193) */
   cardImageUpdatedAt: z.number().nullable().optional(),
   cardImageKey: z.string().nullable().optional(),
+  cardImageGeneration: z.string().optional(),
 });
 export type User = z.infer<typeof userSchema>;
 

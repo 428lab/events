@@ -38,7 +38,7 @@ const IDS_CTE = `ids AS (
 const QUAL_CTE = `qual AS (
    SELECT e.id, e.created_by, e.attendance_check
      FROM event e
-    WHERE e.status = 'published' AND e.ends_at > 0 AND e.ends_at < ?
+    WHERE e.status = 'published' AND e.visibility = 'public' AND e.ends_at > 0 AND e.ends_at < ?
       AND (SELECT COUNT(*) FROM event_member m
             JOIN user mu ON mu.id = m.user_id AND mu.deleted_at IS NULL
             WHERE m.event_id = e.id AND m.status = 'confirmed') >= 4
@@ -136,7 +136,7 @@ async function participationMetrics(
        FROM event_member m JOIN event e ON e.id = m.event_id
        JOIN ids ON ids.id = m.user_id
       WHERE m.role = 'participant' AND m.status = 'confirmed'
-        AND e.status = 'published' AND e.ends_at > 0 AND e.ends_at < ?
+        AND e.status = 'published' AND e.visibility = 'public' AND e.ends_at > 0 AND e.ends_at < ?
         AND (e.attendance_check = 0 OR m.attended = 1)
       GROUP BY m.user_id
      UNION ALL
@@ -144,7 +144,7 @@ async function participationMetrics(
        FROM event_member m JOIN event e ON e.id = m.event_id
        JOIN ids ON ids.id = m.user_id
       WHERE m.role = 'participant' AND m.status = 'confirmed'
-        AND e.status = 'published' AND e.ends_at > 0 AND e.ends_at < ?
+        AND e.status = 'published' AND e.visibility = 'public' AND e.ends_at > 0 AND e.ends_at < ?
         AND e.attendance_check = 1 AND m.attended = 0
       GROUP BY m.user_id`,
     eventId,
@@ -157,14 +157,14 @@ async function participationMetrics(
        FROM event_member m JOIN event e ON e.id = m.event_id
        JOIN ids ON ids.id = m.user_id
       WHERE m.role = 'staff' AND m.status = 'confirmed'
-        AND e.created_by = m.user_id AND e.status = 'published'
+        AND e.created_by = m.user_id AND e.status = 'published' AND e.visibility = 'public'
         AND e.ends_at > 0 AND e.ends_at < ?
       GROUP BY m.user_id
      UNION ALL
      SELECT si.speaker_user_id, 'spoken', COUNT(DISTINCT e.id)
        FROM event_schedule_item si JOIN event e ON e.id = si.event_id
        JOIN ids ON ids.id = si.speaker_user_id
-      WHERE e.status = 'published' AND e.ends_at > 0 AND e.ends_at < ?
+      WHERE e.status = 'published' AND e.visibility = 'public' AND e.ends_at > 0 AND e.ends_at < ?
         AND ${publicItemWhere("si")}
       GROUP BY si.speaker_user_id`,
     eventId,
@@ -197,7 +197,7 @@ async function communitiesFor(
        SELECT em.user_id, e.community_id
          FROM event_member em JOIN event e ON e.id = em.event_id
          JOIN ids ON ids.id = em.user_id
-        WHERE em.status = 'confirmed' AND e.community_id IS NOT NULL
+        WHERE em.status = 'confirmed' AND e.community_id IS NOT NULL AND e.status = 'published' AND e.visibility = 'public'
      ),
      counted AS (
        SELECT mine.uid AS uid, c.id AS cid, c.name AS name,
@@ -206,7 +206,7 @@ async function communitiesFor(
               (SELECT COUNT(*) FROM event_member em2
                  JOIN event e2 ON e2.id = em2.event_id
                 WHERE e2.community_id = c.id AND em2.user_id = mine.uid
-                  AND em2.status = 'confirmed' AND e2.status = 'published') AS cnt
+                  AND em2.status = 'confirmed' AND e2.status = 'published' AND e2.visibility = 'public') AS cnt
          FROM mine JOIN community c ON c.id = mine.cid
          LEFT JOIN community_member cm
                 ON cm.community_id = c.id AND cm.user_id = mine.uid

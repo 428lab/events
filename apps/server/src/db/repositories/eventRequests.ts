@@ -30,7 +30,7 @@ const SELECT_REQUEST = `SELECT er.*,
   (SELECT COUNT(1) FROM event_request_reaction r
     WHERE r.request_id = er.id AND r.kind = 'host') AS host_count,
   (SELECT COUNT(1) FROM event_request_event e
-    WHERE e.request_id = er.id) AS event_count
+    WHERE e.request_id = er.id AND EXISTS (SELECT 1 FROM event pe WHERE pe.id=e.event_id AND pe.status='published' AND pe.visibility='public')) AS event_count
   FROM event_request er`;
 
 function toRequest(row: EventRequestRow): EventRequest {
@@ -336,7 +336,7 @@ export const eventRequestsRepo = {
   /** リンク済みイベントID一覧（新しい順） */
   async linkedEventIds(requestId: string): Promise<string[]> {
     const rows = await many<{ event_id: string }>(
-      "SELECT event_id FROM event_request_event WHERE request_id = ? ORDER BY created_at DESC",
+      "SELECT event_id FROM event_request_event WHERE request_id = ? AND EXISTS (SELECT 1 FROM event pe WHERE pe.id=event_request_event.event_id AND pe.status='published' AND pe.visibility='public') ORDER BY created_at DESC",
       requestId,
     );
     return rows.map((r) => r.event_id);
