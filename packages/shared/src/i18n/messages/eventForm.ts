@@ -33,7 +33,7 @@ const ja = {
   /** 主催コミュニティ */
   community: "コミュニティ（任意）",
   communityHelp:
-    "主催コミュニティに紐付けると、そのコミュニティページに表示されます",
+    "コミュニティページには、公開イベントのみ表示されます。",
   communityNone: "なし",
 
   /** 日程 */
@@ -313,7 +313,7 @@ const en: Record<keyof typeof ja, string> = {
 
   community: "Community (optional)",
   communityHelp:
-    "Linking the event to a community you run makes it show up on that community's page",
+    "Only public events appear on the community page.",
   communityNone: "None",
 
   scheduling:
