@@ -1,3 +1,5 @@
+import { HTTPException } from "hono/http-exception";
+import { eventWrite } from "./eventWriteGuard.js";
 import { eventViewSql } from "../../auth/eventAccess.js";
 import { adminIds } from "./eventAccessInvites.js";
 import type { Entry, Submission } from "@eventer/shared";
@@ -128,6 +130,40 @@ export const entriesRepo = {
       userId,
     );
     return row ? await toEntry(row) : null;
+  },
+
+  /** Staff powers and membership stay unchanged; only the caller's individual Entry changes. */
+  async setSelfParticipation(eventId: string, userId: string, participating: boolean): Promise<Entry | null> {
+    const entryId = crypto.randomUUID();
+    const ownEntries = `SELECT en.id FROM entry en JOIN entry_member em ON em.entry_id=en.id
+      WHERE en.event_id=? AND en.kind='individual' AND em.user_id=?`;
+    try {
+      await eventWrite({ eventId, actorId: userId, permission: "staff" }, [
+        { sql: `SELECT CASE WHEN EXISTS (SELECT 1 FROM event WHERE id=?
+            AND contest_mode=1 AND participation_type='individual') THEN 1
+            ELSE json_extract('{}','event_access_changed') END`, args: [eventId] },
+        ...(participating ? [
+          { sql: `INSERT INTO entry(id,event_id,kind,name,created_at)
+              SELECT ?,?,'individual',COALESCE(u.global_name,u.username),? FROM user u
+              WHERE u.id=? AND NOT EXISTS (${ownEntries})`,
+            args: [entryId, eventId, Date.now(), userId, eventId, userId] },
+          { sql: `INSERT INTO entry_member(id,entry_id,user_id,is_leader)
+              SELECT ?,?,?,1 WHERE EXISTS (SELECT 1 FROM entry WHERE id=?)`,
+            args: [crypto.randomUUID(), entryId, userId, entryId] },
+        ] : [
+          // This assertion and DELETE share the D1 transaction: a saved score must never cascade away.
+          { sql: `SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM score WHERE entry_id IN (${ownEntries}))
+              THEN 1 ELSE json_extract('{}','entry_already_scored') END`, args: [eventId, userId] },
+          { sql: `DELETE FROM entry WHERE id IN (${ownEntries})`, args: [eventId, userId] },
+        ]),
+      ]);
+    } catch (error) {
+      if (String(error).includes("entry_already_scored") || String((error as Error).cause).includes("entry_already_scored")) {
+        throw new HTTPException(409, { res: Response.json({ error: "entry_already_scored" }, { status: 409 }) });
+      }
+      throw error;
+    }
+    return this.findIndividualEntry(eventId, userId);
   },
 
   async isMember(entryId: string, userId: string): Promise<boolean> {

@@ -507,6 +507,17 @@ export function useDeleteEventImage(eventId: string) {
   });
 }
 
+export function useSelfEntryParticipation(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (participating: boolean) =>
+      api.put<{ entry: Entry | null }>(
+        `/events/${eventId}/entries/self/participation`, { participating },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["event", eventId, "entries"] }),
+  });
+}
+
 export function useUpdateSubmission(eventId: string) {
   const qc = useQueryClient();
   return useMutation({

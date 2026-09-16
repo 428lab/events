@@ -224,6 +224,11 @@ export const entrySchema = z.object({
 });
 export type Entry = z.infer<typeof entrySchema>;
 
+export const selfEntryParticipationInput = z.object({
+  participating: z.boolean(),
+}).strict();
+export type SelfEntryParticipationInput = z.infer<typeof selfEntryParticipationInput>;
+
 export const updateSubmissionInput = z.object({
   presentationUrl: optionalUrl,
   sourceCodeUrl: optionalUrl,

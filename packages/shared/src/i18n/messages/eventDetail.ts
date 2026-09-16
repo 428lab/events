@@ -75,6 +75,10 @@ const ja = {
   awards: "表彰式",
 
   /** 成果物 */
+  selfScoringParticipation: "自分も採点対象として参加する",
+  selfScoringOffConfirm: "採点対象への参加を取り消しますか？提出済みのURLも削除されます。",
+  selfScoringAlreadyScored: "採点済みのため参加を取り消せません。",
+  selfScoringChangeFailed: "採点対象への参加を変更できませんでした。もう一度お試しください。",
   mySubmission: "あなたの成果物",
   presentationUrl: "プレゼン資料 URL",
   sourceCodeUrl: "ソースコード URL",
@@ -190,6 +194,10 @@ const en: Record<keyof typeof ja, string> = {
   criteria: "Scoring criteria",
   awards: "Awards ceremony",
 
+  selfScoringParticipation: "Include my entry in scoring",
+  selfScoringOffConfirm: "Stop participating in scoring? Your submitted URLs will also be deleted.",
+  selfScoringAlreadyScored: "You cannot stop participating because your entry has already been scored.",
+  selfScoringChangeFailed: "Could not change your scoring participation. Please try again.",
   mySubmission: "Your submission",
   presentationUrl: "Slides URL",
   sourceCodeUrl: "Source code URL",

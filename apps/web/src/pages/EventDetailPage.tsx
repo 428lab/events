@@ -426,7 +426,7 @@ export function EventDetailPage() {
       <EventComments eventId={id} myRole={myRole} canComment={canChat} />
 
       {/* コンテストの提出物（自分のぶんの編集と、みんなの一覧） */}
-      <EventSubmissions eventId={id} event={event} contest={contest} />
+      <EventSubmissions eventId={id} event={event} contest={contest} myRole={myRole} />
         </Stack>
       </Grid>
 
