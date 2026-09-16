@@ -102,4 +102,3 @@ export async function generateCardPng(
     URL.revokeObjectURL(svgUrl);
   }
 }
-

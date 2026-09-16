@@ -160,3 +160,15 @@ it("public awards and speaking preserve public contributions, and failed visibil
   const g=await generation(u.id);
   await sql("UPDATE event SET visibility='private' WHERE id=? AND access_revision=-1",pub);expect(await generation(u.id)).toBe(g);
 });
+
+it("generation is mandatory and validated; HEAD and conditional GET remain no-store",async()=>{
+  const u=await user(),g=await generation(u.id);
+  for(const [suffix,error] of [["","generation_required"],["&g=","invalid_generation"],["&g=bad","invalid_generation"]]){
+    const r=await SELF.fetch(`${base}/me/card-image?k=rosette-indigo${suffix}`,{method:"PUT",headers:{cookie:u.cookie,"content-type":"image/png"},body:png});
+    expect(r.status).toBe(400);expect(await r.json()).toEqual({error});expect(r.headers.get('cache-control')).toContain('no-store');
+  }
+  expect((await upload(u,g)).status).toBe(200);const current=await image(u.id,g);
+  const url=`${base}/users/${u.id}/card-image?g=${g}`;
+  const head=await SELF.fetch(url,{method:'HEAD'});expect(head.status).toBe(200);expect((await head.arrayBuffer()).byteLength).toBe(0);
+  const conditional=await SELF.fetch(url,{headers:{'if-none-match':current.headers.get('etag')!}});expect(conditional.status).toBe(304);expect(conditional.headers.get('cache-control')).toContain('no-store');
+});
