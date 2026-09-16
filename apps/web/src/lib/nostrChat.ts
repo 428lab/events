@@ -152,6 +152,7 @@ interface SubState {
   channelId: string;
   /** 購読する kind（既定 42。スタッフチャット #382 は独自 kind） */
   kind: number;
+  author?: string;
   onEvent: (ev: NostrEvent) => void;
   /** リレー間・再購読間の重複排除（イベントID） */
   seen: Set<string>;
@@ -420,10 +421,12 @@ export class ChatRelayPool {
     channelId: string,
     onEvent: (ev: NostrEvent) => void,
     kind = 42,
+    author?: string,
   ): () => void {
     const sub: SubState = {
       channelId,
       kind,
+      author,
       onEvent,
       seen: new Set(),
       lastSeen: 0,
@@ -460,7 +463,9 @@ export class ChatRelayPool {
       "#e": string[];
       limit: number;
       since?: number;
+      authors?: string[];
     } = { kinds: [sub.kind], "#e": [sub.channelId], limit: 200 };
+    if (sub.author) filter.authors = [sub.author];
     // 再購読は受信済み時刻−マージンから再開（投稿者の時計ずれで created_at が
     // 過去のイベントも取りこぼさない。重なった分はIDで重複排除される）
     if (sub.lastSeen > 0) {
@@ -471,6 +476,7 @@ export class ChatRelayPool {
     const start = () => {
       const s = relay.subscribe([filter], {
         onevent: (ev) => {
+          if (sub.author && ev.pubkey !== sub.author) return;
           if (sub.seen.has(ev.id)) return;
           sub.seen.add(ev.id);
           // Set は挿入順に反復するので、あふれた分は古い側から捨てられる

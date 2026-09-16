@@ -98,6 +98,7 @@ const ja = {
   awardKindSpecial: "特別賞",
   awardKindRank: "ランキング",
   drumroll: "受賞は…？",
+  awardsRefreshFailed: "表彰結果を取得できませんでした。もう一度お試しください。",
   /** 点数。英語で "1 points" にならないよう単数と複数でキーを分ける */
   totalPointOne: "合計 {{n}} 点",
   totalPoints: "合計 {{n}} 点",
@@ -198,6 +199,7 @@ const en: Record<keyof typeof ja, string> = {
   awardKindSpecial: "Special award",
   awardKindRank: "Ranking",
   drumroll: "And the winner is…",
+  awardsRefreshFailed: "Could not load the award results. Please try again.",
   totalPointOne: "{{n}} point in total",
   totalPoints: "{{n}} points in total",
   revealProgress: "{{n}} of {{total}} revealed",

@@ -79,6 +79,7 @@ const { fakeRelays, relayConfig, FakeRelay } = vi.hoisted(() => {
     onclose: (() => void) | null = null;
     authed = false;
     subParams: SubParams | null = null;
+    filters: unknown;
     subscribeCalls = 0;
     private challenge: string | null = null;
     private authPromise: Promise<string> | null = null;
@@ -122,7 +123,8 @@ const { fakeRelays, relayConfig, FakeRelay } = vi.hoisted(() => {
       });
       return this.authPromise;
     }
-    subscribe(_filters: unknown, params: SubParams): { close: () => void } {
+    subscribe(filters: unknown, params: SubParams): { close: () => void } {
+      this.filters = filters;
       this.subscribeCalls++;
       this.subParams = params;
       return { close: () => undefined };
@@ -166,6 +168,23 @@ function makeSigner(
 const REJECT = () => Promise.reject(new Error("user rejected"));
 const NEVER = () => new Promise<never>(() => undefined);
 const SIGNED = () => Promise.resolve(SIGNED_EVENT as never);
+
+it("an optional trusted author restricts both relay filters and incoming events", async () => {
+  const pool = new ChatRelayPool(makeSigner(SIGNED), [RELAY_URL]);
+  const receive = vi.fn();
+  try {
+    await pool.connect();
+    pool.subscribe(CHANNEL, receive, 27889, SIGNED_EVENT.pubkey);
+    const relay = fakeRelays.at(-1)!;
+    expect(relay.filters).toEqual([{ kinds: [27889], "#e": [CHANNEL], authors: [SIGNED_EVENT.pubkey], limit: 200 }]);
+    relay.subParams!.onevent({ ...SIGNED_EVENT, pubkey: "wrong-author" });
+    expect(receive).not.toHaveBeenCalled();
+    relay.subParams!.onevent(SIGNED_EVENT);
+    expect(receive).toHaveBeenCalledOnce();
+  } finally {
+    pool.close();
+  }
+});
 
 describe("NIP-07 の署名待ちで送信が固まらない (#464)", () => {
   beforeEach(() => {
