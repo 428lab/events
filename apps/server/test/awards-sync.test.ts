@@ -53,7 +53,7 @@ it("only authenticated viewers get an opaque topic; private invitations do not u
   expect((await request(id, "/awards-sync", viewer.cookie)).status).toBe(404);
 });
 
-it("advance/reset commit first, then send only a signed ephemeral wake-up; viewers cannot emit it", async () => {
+it("advance/reset commit first, then send only a signed unprotected ephemeral wake-up; viewers cannot emit it", async () => {
   const { host, viewer, id } = await setup("private");
   const cfg = await config(id, host.cookie);
   const committed: number[] = [];
@@ -72,7 +72,7 @@ it("advance/reset commit first, then send only a signed ephemeral wake-up; viewe
     expect(signal.kind).toBe(AWARDS_SYNC_KIND);
     expect(signal.content).toBe("");
     expect(signal.pubkey).toBe(cfg.pubkey);
-    expect(signal.tags).toEqual([["e", cfg.topic], ["-"], ["nonce", expect.any(String)]]);
+    expect(signal.tags).toEqual([["e", cfg.topic], ["nonce", expect.any(String)]]);
     expect(JSON.stringify(signal)).not.toContain(id);
     expect(JSON.stringify(signal)).not.toContain("Secret ceremony");
     expect(verifyEventSignature(signal)).toBe(true);

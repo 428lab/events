@@ -27,7 +27,7 @@ export const awardsSync = {
       const signal = signWithServiceKey({
         kind: config.kind,
         created_at: Math.floor(Date.now() / 1000),
-        tags: [["e", config.topic], ["-"], ["nonce", crypto.randomUUID()]],
+        tags: [["e", config.topic], ["nonce", crypto.randomUUID()]],
         content: "",
       });
       const report = await nostrRelay.publishToRelays(config.relays, signal, signWithServiceKey);

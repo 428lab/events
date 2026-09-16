@@ -17,7 +17,7 @@
 ## 合図契約
 
 - 表彰専用 `AWARDS_SYNC_KIND = 27889`（ephemeral範囲20000–29999。既存の27888鍵所有証明/22242 AUTH/42参加者chat/9807 staff chatとは別）。履歴・永続queueは持たない。
-- `content: ""`, tagsは `e: <opaque topic>`、`-`、同秒操作のイベントID重複を避けるランダムnonceのみ。タイトル、賞名、受賞者、点数、event ID、URL、cursorは含めない。
+- `content: ""`, tagsは `e: <opaque topic>`、同秒操作のイベントID重複を避けるランダムnonceのみ。内容なしの合図にはprotected (`-`) タグを付けない。chat/staffメッセージの保護は変更しない。タイトル、賞名、受賞者、点数、event ID、URL、cursorは含めない。
 - topic: `HMAC-SHA256(既存NOSTR_SERVICE_KEY, "eventer/awards-sync/v1:" + event.id + ":" + event.accessRevision)` のhex。用途を分けて導出し、新しい保存鍵/列は作らない。topicは権限ではなく購読の絞込み。リレー上の合図の存在・時刻・相互対応は隠せない。既取得topicを知る失効者にも内容は渡らない。
 - 署名は既存 `signWithServiceKey`、送信は `nostrRelay.publishToRelays(getChatRelays(), ..., signWithServiceKey)`。成功したadvance/resetのDB書込後のみ `deferBackground`（既存request-local waitUntil）で送る。通信失敗/鍵未設定は操作済みDBを巻き戻さず、既存pollで追随する。新しいrelay URL入力や任意署名APIを作らない。
 
@@ -42,7 +42,7 @@
 - web: `api/awardHooks.ts` と表彰専用購読hook、`AwardsPage.tsx`、`lib/effects.ts`、`lib/nostrChat.ts`の任意authorフィルタ。必要なja/en表示文言のみ。
 - 関連テスト: 公開/招待限定の設定API認可、DB保存後の内容なしephemeral発行、鍵未設定/relay失敗、信頼署名/topic検証、開いた待機画面の結果再取得と次の発表・音拒否時表示。
 - 確認: 関連testとtypecheck、主催+別ユーザーの通常2画面で保存→発表→演出→結果→次賞。実ブラウザのローカルfixture/mock relay検証と実relay検証を区別して記録する。実sessionを使わない。
-- 実relay確認では、両既定relayとも購読REQ（kind27889/#e/author）→EOSEの後に送信し、送信側のNIP-42 AUTH成功→再送OK trueまで確認した。しかし購読側はEVENT未受信（CLOSED/追加AUTH要求もなし）。**原因未確定であり、relay側制約とは断定しない**。実アプリの公式service鍵や実sessionは使わず、使い捨て検証鍵・ランダムtopic・空contentのみを用いた。追加送信・フィルタ緩和・設定変更は停止。次の調査点は購読が有効な状態でのkind27889の転送経路と、この購読フィルタとの適合性に限定する。
+- 初回のprotected付き実relay確認では、両既定relayとも購読REQ（kind27889/#e/author）→EOSEの後に送信し、送信側のNIP-42 AUTH成功→再送OK trueまで確認した。しかし購読側はEVENT未受信（CLOSED/追加AUTH要求もなし）。承認されたprotected除去後の再確認でも、`r.kojira.io` / `x.kojira.io` へ対応する実EOSE後に各1通だけ送信し、両方OK trueだが10秒以上の観測窓でEVENT・検証済callbackとも未受信だった。全socketを閉じ、実アプリ2画面検証へは進まず停止した。**原因未確定であり、relay側制約とは断定しない**。実アプリの公式service鍵や実sessionは使わず、使い捨て検証鍵・ランダムtopic・空contentのみを用いた。追加送信・フィルタ緩和・設定変更は停止。
 
 schema移行不要。失敗時は既存pollに戻り、永続状態は既存event_state/award_resultのみ。配備はレビュー・staging確認・本番GOを別々に扱う。
 
