@@ -88,9 +88,10 @@ function card(over: Partial<EventNameCard> = {}): EventNameCard {
   };
 }
 
-/** イベント詳細（myRole）と名札一覧の2本を出し分ける */
+/** 閲覧ユーザー、イベント詳細（myRole）、名札一覧、デザインを出し分ける */
 function mockApi(myRole: EventRole | null, cards: EventNameCard[], design: CardDesign | null = null): void {
   getMock.mockImplementation((path: string) => {
+    if (path === "/auth/me") return Promise.resolve({ user: { id: "staff-1" }, isAdmin: false });
     if (path === `/events/${EVENT_ID}/name-card-design`) return Promise.resolve({ revision: design ? 1 : 0, design });
     if (path === `/events/${EVENT_ID}/name-cards`) {
       // 権限のない相手にはサーバーが 403 を返すので、ここでは呼ばれないこと自体が期待値
