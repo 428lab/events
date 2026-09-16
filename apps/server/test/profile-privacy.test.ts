@@ -172,3 +172,20 @@ it("generation is mandatory and validated; HEAD and conditional GET remain no-st
   const head=await SELF.fetch(url,{method:'HEAD'});expect(head.status).toBe(200);expect((await head.arrayBuffer()).byteLength).toBe(0);
   const conditional=await SELF.fetch(url,{headers:{'if-none-match':current.headers.get('etag')!}});expect(conditional.status).toBe(304);expect(conditional.headers.get('cache-control')).toContain('no-store');
 });
+
+it("unchanged event and timetable saves preserve contributor generations and in-flight snapshots",async()=>{
+  const u=await user(),e=await event(u.id);await member(e,u.id);
+  await sql("INSERT INTO event_schedule_item(id,event_id,title,speaker_user_id,sort_order,created_at,placement) VALUES('unchanged',?,'Talk',?,0,1,'tracks')",e,u.id);
+  await sql("INSERT INTO event_track(id,event_id,name,sort_order,created_at) VALUES('unchanged-track',?,'Track',0,1)",e);
+  await sql("INSERT INTO event_schedule_item_track(item_id,track_id) VALUES('unchanged','unchanged-track')");
+  const g=await generation(u.id);
+  await sql("UPDATE event SET title='renamed',status=status,starts_at=starts_at,ends_at=ends_at,community_id=community_id,attendance_check=attendance_check WHERE id=?",e);
+  expect(await generation(u.id)).toBe(g);
+  const {eventScheduleRepo}=await import('../src/db/repositories/eventSchedule.js');
+  const current=await eventScheduleRepo.listByEvent(e,'staff');
+  const tracks=await eventScheduleRepo.listTracks(e,'staff');
+  await eventScheduleRepo.saveAll(e,current.map(i=>({...i,trackIndexes:[0]})),tracks);
+  expect(await generation(u.id)).toBe(g); // updated_at is NULL: a render can still be pending
+  await sql("UPDATE event_schedule_item SET speaker_user_id=NULL WHERE id='unchanged'");
+  expect(await generation(u.id)).not.toBe(g);
+});

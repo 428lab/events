@@ -1,3 +1,5 @@
+import { eventPairViewSql } from "../../auth/eventAccess.js";
+import { adminIds } from "./eventAccessInvites.js";
 import type { Notification, NotificationType } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
 import { deferBackground } from "../../runtime.js";
@@ -63,7 +65,18 @@ const ACTOR_ERASED_TYPES = [
   "followee_joined_event",
 ] as const satisfies readonly NotificationType[];
 
+// Only event-linked meet rows are handled here; the full notification matrix is separate.
+const meetVisibleSql = `(type<>'meet' OR event_id IS NULL OR EXISTS (SELECT 1 FROM event e
+  WHERE e.id=notification.event_id AND ${eventPairViewSql("e", "notification.actor_id", "notification.user_id", "?")}))`;
+
 export const notificationsRepo = {
+  async deliverMeetNotifications(ids: string[]): Promise<void> {
+    const rows=await many<{user_id:string;actor_id:string;event_id:string;title:string;body:string;link:string}>(
+      `SELECT * FROM notification WHERE id IN(SELECT value FROM json_each(?)) AND ${meetVisibleSql}`, JSON.stringify(ids),adminIds(),adminIds());
+    await Promise.all(rows.map(n=>deferBackground(sendNotificationEmailIfOptedIn(n.user_id,n.title,n.body,n.link,
+      {authorizationEventId:n.event_id,authorizationActorId:n.actor_id}))));
+  },
+
   async create(
     userId: string,
     type: NotificationType,
@@ -194,8 +207,8 @@ export const notificationsRepo = {
     offset = 0,
   ): Promise<Notification[]> {
     const rows = await many<NotificationRow>(
-      "SELECT * FROM notification WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
-      userId,
+      `SELECT * FROM notification WHERE user_id = ? AND ${meetVisibleSql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+      userId, adminIds(), adminIds(),
       limit,
       offset,
     );
@@ -205,16 +218,16 @@ export const notificationsRepo = {
   /** 本人の通知の総数（一覧のページ数計算用） */
   async countByUser(userId: string): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM notification WHERE user_id = ?",
-      userId,
+      `SELECT COUNT(1) AS n FROM notification WHERE user_id = ? AND ${meetVisibleSql}`,
+      userId, adminIds(), adminIds(),
     );
     return row?.n ?? 0;
   },
 
   async unreadCount(userId: string): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM notification WHERE user_id = ? AND read_at = 0",
-      userId,
+      `SELECT COUNT(1) AS n FROM notification WHERE user_id = ? AND read_at = 0 AND ${meetVisibleSql}`,
+      userId, adminIds(), adminIds(),
     );
     return row?.n ?? 0;
   },

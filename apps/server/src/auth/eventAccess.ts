@@ -40,6 +40,13 @@ export function eventViewSql(event: string, userId: string, adminIds: string): s
       ))))`;
 }
 
+/** Parentless encounters require BOTH active users, not just the caller. */
+export function eventPairViewSql(event: string, scanner: string, target: string, admins: string): string {
+  return `(EXISTS (SELECT 1 FROM user pair_scanner WHERE pair_scanner.id=${scanner} AND pair_scanner.deleted_at IS NULL)
+    AND EXISTS (SELECT 1 FROM user pair_target WHERE pair_target.id=${target} AND pair_target.deleted_at IS NULL)
+    AND ${eventViewSql(event, scanner, admins)} AND ${eventViewSql(event, target, admins)})`;
+}
+
 export async function canViewEvent(event: Event, user: User | null): Promise<boolean> {
   const row = await one<{ allowed: number }>(
     `SELECT ${eventViewSql("e", "?", "?")} AS allowed FROM event e WHERE e.id = ?`,

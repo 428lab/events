@@ -340,7 +340,7 @@ const repoSources = import.meta.glob(
 describe("門のソース監査 (#444)", () => {
   it("findByToken がトークン照合を持っている", () => {
     const src = Object.values(repoSources)[0]!;
-    expect(src).toContain("WHERE token = ?");
+    expect(src).toContain("WHERE s.token = ?");
   });
 });
 

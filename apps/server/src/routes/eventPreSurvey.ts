@@ -1,3 +1,4 @@
+import { eventResponseHeaders } from "../auth/eventAccess.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type {
@@ -34,6 +35,7 @@ import { deferBackground } from "../runtime.js";
 
 /** アンケートの表示（トークンが門）。closed はタイトルと状態だけ */
 export async function getPublicPreSurvey(c: Context<AppEnv>) {
+  eventResponseHeaders(c,true);
   const survey = await eventPreSurveyRepo.findByToken(c.req.param("token")!);
   if (!survey) return c.json({ error: "not_found" }, 404);
   // アクセス数 (#450)。トークン解決に成功した表示だけ数える（404 は数えない。
@@ -73,6 +75,7 @@ export async function getPublicPreSurvey(c: Context<AppEnv>) {
  * 1文の条件付き INSERT が原子的に守る。
  */
 export async function postPublicPreSurveyResponse(c: Context<AppEnv>) {
+  eventResponseHeaders(c,true);
   const survey = await eventPreSurveyRepo.findByToken(c.req.param("token")!);
   if (!survey) return c.json({ error: "not_found" }, 404);
 

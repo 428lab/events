@@ -1,3 +1,4 @@
+import { canViewEvent } from "../auth/eventAccess.js";
 import { Hono } from "hono";
 import { surveyValueLabel } from "@eventer/shared";
 import type { EventMemberWithUser, User } from "@eventer/shared";
@@ -34,11 +35,12 @@ async function canDownloadAttendance(
   eventId: string,
   user: User,
 ): Promise<boolean> {
+  const event = await eventsRepo.findById(eventId);
+  if (!event || !(await canViewEvent(event,user))) return false;
   if (isAppAdmin(user)) return true;
   const member = await eventMembersRepo.find(eventId, user.id);
   if (member?.role === "staff") return true;
-  const event = await eventsRepo.findById(eventId);
-  if (!event) return false;
+
   if (
     event.communityId &&
     (await communitiesRepo.isManager(event.communityId, user.id))

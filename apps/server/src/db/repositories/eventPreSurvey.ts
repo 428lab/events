@@ -100,7 +100,7 @@ export const eventPreSurveyRepo = {
 
   async findByToken(token: string): Promise<PreSurvey | null> {
     const r = await one<SurveyRow>(
-      "SELECT * FROM event_pre_survey WHERE token = ?",
+      "SELECT s.* FROM event_pre_survey s JOIN event e ON e.id=s.event_id WHERE s.token = ? AND e.visibility IN ('public','unlisted')",
       token,
     );
     return r ? toSurvey(r) : null;
@@ -247,7 +247,7 @@ export const eventPreSurveyRepo = {
       `INSERT INTO event_pre_survey_response (id, survey_id, user_id, created_at)
        SELECT ?, ?, ?, ?
         WHERE EXISTS (SELECT 1 FROM event_pre_survey
-                       WHERE id = ? AND status = 'open')
+                       WHERE id = ? AND status = 'open' AND EXISTS(SELECT 1 FROM event e WHERE e.id=event_pre_survey.event_id AND e.visibility IN ('public','unlisted')))
           AND (SELECT COUNT(*) FROM event_pre_survey_response WHERE survey_id = ?)
               < ${PRE_SURVEY_MAX_RESPONSES}`,
       id,

@@ -215,7 +215,7 @@ const EXPECTED_USER_COLUMNS = 54; // #513: event_schedule_registration.user_id
  * `mergeUsers` が扱う `table.column` の数（user 参照でない列も含む生の抽出数）。
  * 走査そのものが空振りしていないことの担保。
  */
-const EXPECTED_HANDLED_PAIRS = 57; // #513: same-event receipt deduplication
+const EXPECTED_HANDLED_PAIRS = 59; // #526: winner card_image_generation/card_image_updated_at rotation
 
 describe("アカウント統合の対象列の走査 (#396)", () => {
   const body = mergeUsersBody(Object.values(mergeSources)[0]!);

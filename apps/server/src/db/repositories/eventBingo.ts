@@ -1,3 +1,5 @@
+import { eventViewSql } from "../../auth/eventAccess.js";
+import { adminIds } from "./eventAccessInvites.js";
 import type {
   BingoGameStatus,
   BingoStatusRow,
@@ -227,9 +229,9 @@ export const eventBingoRepo = {
               r.rank, r.completed_at_seq, r.drawn_total
          FROM event_bingo_result r
          JOIN event e ON e.id = r.event_id
-        WHERE r.user_id = ?
+        WHERE r.user_id = ? AND ${eventViewSql("e", "r.user_id", "?")}
         ORDER BY r.ended_at DESC`,
-      userId,
+      userId, adminIds(),
     );
     return rows.map((r) => ({
       eventId: r.event_id,

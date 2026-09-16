@@ -429,3 +429,12 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - この単位の検証: review P1/P2の実HTTP二段階除去・2受信者送信開始、workerd/D1で旧B/legacy非復活、PUT中/GET中/集計中の世代変更、寄与関係消失/置換・track公開条件・cascade/merge・rollback・失敗CAS・無関係user不変を確認。publicの実績/XP/受賞/登壇/写真facet/limit/community/たまごも負例と正例を検査。初期0091は旧schema fixtureで選択combo保持＋timestamp隔離を確認。D1のcompound SELECT上限に合わせuser自身は追加UNIONでなく外側OR条件にした。PNG列更新はtriggerを再発火しない。
 - clientは表示snapshot変更で未完PNGを破棄し、409ではprofileを再取得してSVGから作り直す。(user,generation,combo)の送信管理と同世代の表示更新も回帰検査。元の描画関数はprofileCardPng.tsへそのまま分離した（汎用cache層は作らない）。ブラウザ実描画journey/staging検証を今回再実行したとは扱わない。
 - なお配備不可。QRの双方認可、event HTML/slug/calendar、通知全体、participant relay/chat、全client cache/identity検知、creator/slot/attendance等の残るwriter、visibility遷移と開放UIが必要。trigger導入の独立review・配備時旧cache purge/TTL確認も必須。
+
+### 14.5 QR/間接経路の実装単位
+
+- profile reviewのP2を先に修正: watched UPDATEはNULL-safeなOLD/NEW差分がある場合だけPNG世代を回し、タイムテーブルの未変更linkは保持する。生成済みtimestamp有無で失効を省略しない。
+- 0089bab CIの具体的失敗はheader middlewareを終端として数える認証監査、merge SQL走査の期待列数、新契約に反する非published出会い集計の旧期待値。対象の監査/期待値だけを直し、認証除外を広げない。
+- 現QRはread後に出会い/出席/通知を個別書込みし、undoも横断通知削除。§7.3の双方資格を共通SQLから組立て、選定・診断・原子的writer・応答・署名前grantsへ適用する。非public入口は開けない。
+- 間接経路の実source監査: 個人向けICS endpointは無く、公開/feed/events.icsとclient Google Calendarリンクが存在。前者は既存public discovery SQLを維持しno-store、後者は非public時に外部転送確認を挟む。event HTML/slug/childSPAはAPIと別のcanViewアダプタを追加し、非public OGは本人にも汎用。個人event/bingo一覧はSQLで再認可。共有pre-surveyはprivate/未知visibilityのtoken解決と新規回答を拒否。venue offerの業務statusは残して不可視event/id/連絡先を伏せ、venue提供資格だけでevent/CSVを解放しない。既存publicの作成者/venue側業務roleを別policyに置換しない。
+- 検証: P2/先行CI修正42件、既存scan28件、新QR9件（選定後双方失効・書込み後失効・混在event・undo・診断・rollback/nonce返却・public退会race）、間接HTTP4件、survey/venue回帰33件、calendar28件、全package型検査が成功。隔離copyでQR writerのtarget検査をscanner検査へ置換すると、失効targetのmeetが作られて負例が失敗する。実ブラウザや認証済stagingの検証は今回行わない。
+- 残存: 通知全体（特にevent_id不明の旧通知、他種別、broadcast/reminder/venue通知とqueued mail）、participant relay/chat、全client cache、creator/slot/attendance等writer、visibility CAS/互換grant/停止副作用とcreate/edit入口が未完了。survey回答の全副作用やvenue offer書込みを一括化したとは扱わない。genuine bulk変更のtriggerコストは未計測。

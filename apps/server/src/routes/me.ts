@@ -1,3 +1,4 @@
+import { eventResponseHeaders } from "../auth/eventAccess.js";
 import { Hono } from "hono";
 import { env } from "../runtime.js";
 import { deleteUserAvatarObjects } from "../lib/avatarUploadStorage.js";
@@ -51,6 +52,7 @@ meRoutes.use("*", requireAuth);
  * 集計は行から都度計算する（保存しない）。分母: 達成率＝全ラウンド /
  * 平均順位・平均抽選回数＝達成ラウンドのみ（未達成に順位は無い） */
 meRoutes.get("/bingo-results", async (c) => {
+  eventResponseHeaders(c,true);
   const results = await eventBingoRepo.resultsForUser(c.get("user").id);
   const done = results.filter((r) => r.rank !== null);
   const avg = (xs: number[]) =>
@@ -109,6 +111,7 @@ meRoutes.put(
 
 /** マイページ: 開催中 / 過去参加イベント */
 meRoutes.get("/events", async (c) => {
+  eventResponseHeaders(c,true);
   const user = c.get("user");
   const now = Date.now();
   const all = await eventMembersRepo.listEventsForUser(user.id);

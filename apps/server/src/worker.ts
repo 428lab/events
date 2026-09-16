@@ -1,5 +1,6 @@
+import { eventPreSurveyRepo } from "./db/repositories/eventPreSurvey.js";
 import { deleteMyEventAccess, eventAccessInviteRoutes, myEventInviteRoutes, myEventAccessRoutes } from "./routes/eventAccessInvites.js";
-import { eventResponseHeaders, requireEventAccess } from "./auth/eventAccess.js";
+import { canViewEvent, eventResponseHeaders, requireEventAccess } from "./auth/eventAccess.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -511,24 +512,23 @@ function injectEventOg(html: string, event: Event): string {
   return cleaned.replace("</head>", `${tags.join("\n")}\n</head>`);
 }
 
-// /events/:id（イベント詳細）には OG メタを注入した index.html を返す
-app.get("/events/:id", async (c) => {
-  const html = await loadIndexHtml(c.req.url);
-  const event = await eventsRepo.findById(c.req.param("id"));
-  if (event && event.status === "published") {
-    return c.html(injectEventOg(html, event));
-  }
-  return c.html(html);
-});
+// Direct HTML and child SPA routes obey the same access gate; nonpublic OG is always generic.
+for (const path of ["/events/:id", "/events/:id/*", "/e/:slug"]) {
+  app.get(path, async (c) => {
+    const event = c.req.param("slug") ? await eventsRepo.findBySlug(c.req.param("slug")!) : await eventsRepo.findById(c.req.param("id")!);
+    eventResponseHeaders(c, !event || event.visibility !== "public");
+    let html = await loadIndexHtml(c.req.url);
+    if (!event || event.visibility !== "public") html=html.replace("</head>",'<meta name="robots" content="noindex,nofollow,noarchive" /></head>');
+    if (!event || !(await canViewEvent(event,await currentUser(c)))) return c.html(html,404);
+    return c.html(event.visibility === "public" && event.status === "published" ? injectEventOg(html,event) : html);
+  });
+}
 
-// /e/:slug（短いシェアURL）にも OG メタを注入
-app.get("/e/:slug", async (c) => {
-  const html = await loadIndexHtml(c.req.url);
-  const event = await eventsRepo.findBySlug(c.req.param("slug"));
-  if (event && event.status === "published") {
-    return c.html(injectEventOg(html, event));
-  }
-  return c.html(html);
+app.get("/s/:token", async (c) => {
+  eventResponseHeaders(c,true);
+  const survey=await eventPreSurveyRepo.findByToken(c.req.param("token"));
+  const html=(await loadIndexHtml(c.req.url)).replace("</head>",'<meta name="robots" content="noindex,nofollow,noarchive" /></head>');
+  return c.html(html,survey ? 200 : 404);
 });
 
 /** たまご用の OG メタ注入。メンバー限定はタイトルを漏らさないため注入しない */

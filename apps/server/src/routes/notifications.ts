@@ -1,3 +1,4 @@
+import { eventResponseHeaders } from "../auth/eventAccess.js";
 import { Hono } from "hono";
 import { NOTIFICATION_PAGE_SIZE } from "@eventer/shared";
 import type { NotificationsPayload } from "@eventer/shared";
@@ -7,6 +8,7 @@ import { notificationsRepo } from "../db/repositories/notifications.js";
 
 /** ユーザー向け: /api/notifications（アプリ内通知。push ではない） */
 export const notificationRoutes = new Hono<AppEnv>();
+notificationRoutes.use("*", async(c,next)=>{eventResponseHeaders(c,true);await next();});
 notificationRoutes.use("*", requireAuth);
 
 notificationRoutes.get("/unread-count", async (c) => {

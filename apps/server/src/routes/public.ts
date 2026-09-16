@@ -1,3 +1,4 @@
+import { canViewEvent, eventResponseHeaders } from "../auth/eventAccess.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../types.js";
 import { currentUser } from "../auth/session.js";
@@ -232,9 +233,8 @@ publicRoutes.get("/events/scheduling", async (c) => {
 /** 短いシェアURLの解決（未ログイン可）。公開イベントのみ */
 publicRoutes.get("/events/by-slug/:slug", async (c) => {
   const event = await eventsRepo.findBySlug(c.req.param("slug"));
-  if (!event || event.status !== "published") {
-    return c.json({ error: "not_found" }, 404);
-  }
+  eventResponseHeaders(c,!event || event.visibility !== "public");
+  if (!event || !(await canViewEvent(event,await currentUser(c)))) return c.json({error:"not_found"},404);
   return c.json({ id: event.id });
 });
 

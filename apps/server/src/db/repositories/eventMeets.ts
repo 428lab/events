@@ -1,3 +1,5 @@
+import { eventPairViewSql } from "../../auth/eventAccess.js";
+import { adminIds } from "./eventAccessInvites.js";
 import type { MeetableEvent } from "@eventer/shared";
 import { many, one, runCount } from "../client.js";
 
@@ -185,13 +187,14 @@ export const eventMeetsRepo = {
           AND mv.user_id = ? AND mv.status = 'confirmed'
          JOIN event_member mt ON mt.event_id = e.id
           AND mt.user_id = ? AND mt.status = 'confirmed'
-        WHERE e.status = 'published' AND e.scheduling = 0
+        WHERE e.status = 'published' AND ${eventPairViewSql("e", "mv.user_id", "mt.user_id", "?")} AND e.scheduling = 0
           AND e.starts_at > 0 AND e.ends_at > 0
           AND ? >= e.starts_at - ${MEET_WINDOW_BEFORE_MS}
           AND ? <= e.ends_at + ${MEET_WINDOW_AFTER_MS}
         ORDER BY e.starts_at ASC`,
       viewerId,
       targetId,
+      adminIds(), adminIds(),
       now,
       now,
     );
@@ -231,11 +234,12 @@ export const eventMeetsRepo = {
           AND mv.user_id = ? AND mv.status = 'confirmed'
          JOIN event_member mt ON mt.event_id = e.id
           AND mt.user_id = ? AND mt.status = 'confirmed'
-        WHERE e.status = 'published' AND e.scheduling = 0
+        WHERE e.status = 'published' AND ${eventPairViewSql("e", "mv.user_id", "mt.user_id", "?")} AND e.scheduling = 0
           AND e.starts_at > 0 AND e.ends_at > 0
         LIMIT 1`,
       viewerId,
       targetId,
+      adminIds(), adminIds(),
     );
     if (timing) return "outside_window";
     // 参加状態を問わず両者がメンバー行を持つ公開イベントを探し、
@@ -246,9 +250,10 @@ export const eventMeetsRepo = {
          FROM event e
          JOIN event_member mv ON mv.event_id = e.id AND mv.user_id = ?
          JOIN event_member mt ON mt.event_id = e.id AND mt.user_id = ?
-        WHERE e.status = 'published'`,
+        WHERE e.status = 'published' AND ${eventPairViewSql("e", "mv.user_id", "mt.user_id", "?")}`,
       viewerId,
       targetId,
+      adminIds(), adminIds(),
     );
     if (!pending || pending.viewer_ok === null) return "no_shared_event";
     // 両方が未確定なら、まず自分の側を案内する（自分で動かせるのはこちらだけ）

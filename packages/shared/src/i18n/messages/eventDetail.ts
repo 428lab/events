@@ -122,6 +122,7 @@ const ja = {
 
   /** Google カレンダーへの追加 (#487)。日程が確定しているイベントにだけ出る */
   addToGoogleCalendar: "Google カレンダーに追加",
+  confirmExternalCalendar: "このイベントのタイトル・場所・URLを外部カレンダーへ渡します。追加済み情報は回収できません。続けますか？",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -230,6 +231,7 @@ const en: Record<keyof typeof ja, string> = {
     "Only confirmed participants can be marked as attended. Confirm them first from the applicant list.",
   attendanceErrorNotFound: "That was not found. Please reload the page.",
   addToGoogleCalendar: "Add to Google Calendar",
+  confirmExternalCalendar: "This sends the event title, location and URL to an external calendar. Previously added information cannot be recalled. Continue?",
 };
 
 export const eventDetail = { ja, en };

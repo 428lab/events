@@ -1,3 +1,5 @@
+import { eventViewSql } from "../../auth/eventAccess.js";
+import { adminIds } from "./eventAccessInvites.js";
 import type {
   EventMember,
   EventMemberWithUser,
@@ -430,9 +432,9 @@ export const eventMembersRepo = {
                 ${CAPACITY_TOTAL_SQL("e.id")} AS capacity_total
          FROM event_member m
          JOIN event e ON e.id = m.event_id
-         WHERE m.user_id = ? AND m.status <> 'canceled'
+         WHERE m.user_id = ? AND m.status <> 'canceled' AND ${eventViewSql("e", "m.user_id", "?")}
          ORDER BY e.starts_at DESC`,
-      userId,
+      userId, adminIds(),
     );
     return rows.map(mapMyEventSummary);
   },

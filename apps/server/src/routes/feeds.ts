@@ -119,7 +119,7 @@ function selfUrl(c: Context, ext: string, name = "events"): string {
   return `${env.appBaseUrl}/feed/${name}.${ext}${u.search}`;
 }
 
-const CACHE = "public, max-age=300";
+const CACHE = "private, no-store";
 
 /** RSS 2.0 */
 export async function feedRss(c: Context<AppEnv>) {

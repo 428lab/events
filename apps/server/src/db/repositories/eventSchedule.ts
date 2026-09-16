@@ -440,19 +440,20 @@ export const eventScheduleRepo = {
       });
     });
 
-    // 対応表は毎回このイベントぶんを消してから入れ直す。
-    // 差分を取っても行数は変わらず、消し忘れだけが増えるため
+    // Preserve unchanged links: deleting/reinserting them would invalidate every contributor PNG.
     const linkStmts: Array<{ sql: string; args: unknown[] }> = [];
     if (tracks) {
       linkStmts.push({
         sql: `DELETE FROM event_schedule_item_track WHERE item_id IN
-              (SELECT id FROM event_schedule_item WHERE event_id = ?)`,
-        args: [eventId],
+              (SELECT id FROM event_schedule_item WHERE event_id = ?)
+              AND NOT EXISTS (SELECT 1 FROM json_each(?) j
+                WHERE json_extract(j.value,'$.itemId')=item_id AND json_extract(j.value,'$.trackId')=track_id)`,
+        args: [eventId, JSON.stringify(linksByItem.flatMap(link => link.trackIds.map(trackId => ({ itemId: link.itemId, trackId }))))],
       });
       for (const link of linksByItem) {
         for (const trackId of link.trackIds) {
           linkStmts.push({
-            sql: "INSERT INTO event_schedule_item_track (item_id, track_id) VALUES (?, ?)",
+            sql: "INSERT INTO event_schedule_item_track (item_id, track_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
             args: [link.itemId, trackId],
           });
         }

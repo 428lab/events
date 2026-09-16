@@ -21,6 +21,7 @@ const RESEND_ENDPOINT = "https://api.resend.com/emails";
 export interface EmailExtras {
   /** Current-event qualification for finalization and waitlist promotion. */
   authorizationEventId?: string;
+  authorizationActorId?: string;
   /** 「◯◯ さんが…」通知の ◯◯（プロフィールへリンクする） */
   actorName?: string;
   /** actor のプロフィールパス（例: /users/alice） */
@@ -242,6 +243,10 @@ export async function sendNotificationEmailToWithOutcome(
     // This is the last DB check before constructing/sending the email. External
     // delivery cannot be atomic with revocation; nonpublic content is generic.
     if (!event || !user || !(await canViewEvent(event, user))) return { ok: false, retryable: false };
+    if (extras.authorizationActorId) {
+      const actor = await usersRepo.findById(extras.authorizationActorId);
+      if (!actor || !(await canViewEvent(event, actor))) return { ok: false, retryable: false };
+    }
     if (event.visibility !== "public") {
       title = "イベントの更新があります";
       body = "イベントページで最新の情報をご確認ください";
