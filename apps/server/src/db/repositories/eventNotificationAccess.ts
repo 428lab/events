@@ -26,7 +26,7 @@ export function notificationVisibleSql(n = "notification"): string {
     )) ))`;
 }
 export function eventIdFromNotificationLink(link: string): string | undefined {
-  return /^\/events\/([^/?#]+)(?:[/?#]|$)/.exec(link)?.[1];
+  return /^\/events\/([0-9a-f-]{36})(?:[/?#]|$)/.exec(link)?.[1];
 }
 export async function notificationDeliveryEvent(userId: string, eventId: string, type: string, actorId?: string) {
   return one<{ visibility: string }>(`WITH notice AS (SELECT ?2 user_id,?3 event_id,?4 type,?5 actor_id)

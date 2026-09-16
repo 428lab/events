@@ -225,7 +225,7 @@ describe("通知作成時のメール送信 (#126)", () => {
 
     // API キーが無いので送信はスキップされるが、例外にはならず通知行は作られる
     await expect(
-      notificationsRepo.create(u.userId, "info", "テスト通知", "本文", "/notifications"),
+      notificationsRepo.create(u.userId, "info", "テスト通知", "本文", "/events/x"),
     ).resolves.toBeUndefined();
 
     const row = await env.DB.prepare(
