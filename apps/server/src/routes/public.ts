@@ -230,7 +230,7 @@ publicRoutes.get("/events/scheduling", async (c) => {
   });
 });
 
-/** 短いシェアURLの解決（未ログイン可）。公開イベントのみ */
+/** Direct share URL, not public discovery: resolve only when the caller can view. */
 publicRoutes.get("/events/by-slug/:slug", async (c) => {
   const event = await eventsRepo.findBySlug(c.req.param("slug"));
   eventResponseHeaders(c,!event || event.visibility !== "public");

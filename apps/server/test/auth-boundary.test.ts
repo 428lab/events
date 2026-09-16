@@ -227,7 +227,7 @@ describe("認証の境界", () => {
     // ワイルドカードのルートは歩けない（上の skipped 参照）。ミドルウェアなら
     // 終端ではないので穴にならないが、終端ハンドラを載せると検査を素通りする。
     // ミドルウェアは next を受け取る＝引数2つ、終端ハンドラは c だけ＝引数1つ。
-    // これで見分け、終端ハンドラは worker.ts 末尾の ASSETS フォールバックだけに保つ。
+    // 終端は資産fallbackと、明示的に閲覧資格を検査するevent SPAだけに保つ。
     // Event SPA is explicitly access-checked and covered by indirect-private-access.test.ts.
     // Any additional terminal wildcard requires its own boundary review.
     const terminal = skipped()
