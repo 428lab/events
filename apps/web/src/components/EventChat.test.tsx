@@ -66,7 +66,7 @@ const MESSAGE = {
 const EVENT = {
   id: "e-1",
   title: "テストイベント",
-  status: "published",
+  status: "published", visibility: "public",
   chatEnabled: true,
   chatUrlsAllowed: false,
   scheduling: false,
@@ -466,16 +466,17 @@ describe("チャットに繋がせない状態 (#283)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("403 でも別の理由ならこの文言は出さない", async () => {
+  it("別の403でも取得失敗として接続を止める", async () => {
     chatQuery = { error: new ApiError(403, { error: "forbidden" }) };
     await renderChat("page");
 
     expect(
       screen.queryByText("このイベントのチャットに接続できません。"),
-    ).not.toBeInTheDocument();
+    ).toBeInTheDocument();
+    expect(deliver).toBeNull();
   });
 
-  it("同じ error 名でも 403 以外ならこの文言は出さない", async () => {
+  it("取得失敗ならstatusに依らず接続を止める", async () => {
     // 別のエンドポイントが同じ名前を別のステータスで返し始めても、
     // 無関係な失敗をこの画面に吸い込ませない
     chatQuery = { error: new ApiError(500, { error: "chat_unavailable" }) };
@@ -483,7 +484,8 @@ describe("チャットに繋がせない状態 (#283)", () => {
 
     expect(
       screen.queryByText("このイベントのチャットに接続できません。"),
-    ).not.toBeInTheDocument();
+    ).toBeInTheDocument();
+    expect(deliver).toBeNull();
   });
 });
 
