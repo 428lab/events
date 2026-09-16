@@ -54,6 +54,8 @@ export function useMe() {
   return useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 15_000,
     retry: false,
     select: (d) => d?.user ?? null,
   });
@@ -64,6 +66,8 @@ export function useDeletionGraceMs(): number {
   const { data } = useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 15_000,
     retry: false,
   });
   return data?.deletionGraceMs ?? ACCOUNT_DELETION_GRACE_MS;
@@ -74,6 +78,8 @@ export function usePendingDeletion(): PendingDeletion | null {
   const { data } = useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 15_000,
     retry: false,
     select: (d) => d?.pendingDeletion ?? null,
   });
@@ -94,6 +100,8 @@ export function useIsAdmin(): boolean {
   const { data } = useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 15_000,
     retry: false,
     select: (d) => d?.isAdmin ?? false,
   });

@@ -1,4 +1,4 @@
-import { eventPairViewSql } from "../../auth/eventAccess.js";
+import { notificationVisibleSql, eventIdFromNotificationLink, genericEventNotice } from "./eventNotificationAccess.js";
 import { adminIds } from "./eventAccessInvites.js";
 import type { Notification, NotificationType } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
@@ -39,9 +39,12 @@ interface NotificationRow {
   link: string;
   read_at: number;
   created_at: number;
+  event_id: string | null;
+  visibility: string | null;
 }
 
 function toNotification(r: NotificationRow): Notification {
+  if (r.event_id && r.visibility === "private") Object.assign(r, genericEventNotice(r.event_id, r.type));
   return {
     id: r.id,
     type: r.type,
@@ -65,16 +68,23 @@ const ACTOR_ERASED_TYPES = [
   "followee_joined_event",
 ] as const satisfies readonly NotificationType[];
 
-// Only event-linked meet rows are handled here; the full notification matrix is separate.
-const meetVisibleSql = `(type<>'meet' OR event_id IS NULL OR EXISTS (SELECT 1 FROM event e
-  WHERE e.id=notification.event_id AND ${eventPairViewSql("e", "notification.actor_id", "notification.user_id", "?")}))`;
+const visibleSql = notificationVisibleSql();
+
+const insertNoticeSql = `WITH notification AS (SELECT ?2 id,?3 user_id,?4 type,?5 title,?6 body,?7 link,?8 created_at,?9 actor_id,?10 event_id)
+  INSERT INTO notification(id,user_id,type,title,body,link,created_at,actor_id,event_id)
+  SELECT id,user_id,type,
+    CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private' THEN 'イベントの更新があります' ELSE title END,
+    CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private' THEN '' ELSE body END,
+    CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private'
+      THEN CASE WHEN type='staff_invite' THEN '/staff-invites' ELSE '/events/'||event_id END ELSE link END,
+    created_at,actor_id,event_id FROM notification WHERE ${visibleSql}`;
 
 export const notificationsRepo = {
   async deliverMeetNotifications(ids: string[]): Promise<void> {
     const rows=await many<{user_id:string;actor_id:string;event_id:string;title:string;body:string;link:string}>(
-      `SELECT * FROM notification WHERE id IN(SELECT value FROM json_each(?)) AND ${meetVisibleSql}`, JSON.stringify(ids),adminIds(),adminIds());
+      `SELECT * FROM notification WHERE id IN(SELECT value FROM json_each(?2)) AND ${visibleSql}`, adminIds(),JSON.stringify(ids));
     await Promise.all(rows.map(n=>deferBackground(sendNotificationEmailIfOptedIn(n.user_id,n.title,n.body,n.link,
-      {authorizationEventId:n.event_id,authorizationActorId:n.actor_id}))));
+      {authorizationEventId:n.event_id,authorizationActorId:n.actor_id,notificationType:"meet"}))));
   },
 
   async create(
@@ -86,20 +96,12 @@ export const notificationsRepo = {
     // メール表示のみに使う付加情報 (#134)。DB スキーマは変えない
     extras?: EmailExtras,
     // その通知の主語になっている利用者 (#380)。主語が人でないときは渡さない
-    opts?: { actorId?: string },
+    opts?: { actorId?: string; eventId?: string },
   ): Promise<void> {
-    await run(
-      `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at, actor_id)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-      crypto.randomUUID(),
-      userId,
-      type,
-      title,
-      body,
-      link,
-      Date.now(),
-      opts?.actorId ?? null,
-    );
+    const eventId = opts?.eventId ?? extras?.authorizationEventId ?? eventIdFromNotificationLink(link);
+    extras = { ...extras, authorizationEventId: eventId, authorizationActorId: opts?.actorId, notificationType: type };
+    await run(insertNoticeSql, adminIds(), crypto.randomUUID(), userId, type, title, body, link,
+      Date.now(), opts?.actorId ?? null, eventId ?? null);
     // メール通知ONのユーザーには同内容をメールでも送る (#126)。
     // レスポンスをブロックしないよう waitUntil に逃がす（失敗しても通知作成は成功扱い）
     await deferBackground(
@@ -122,8 +124,10 @@ export const notificationsRepo = {
     // ここに任せると上限 (MAX_BULK_EMAILS) で静かに打ち切られ、
     // 「誰に届いていないか」も残らない
     // actorId: その通知の主語になっている利用者 (#380)。主語が人でないときは渡さない
-    opts?: { skipEmail?: boolean; actorId?: string },
+    opts?: { skipEmail?: boolean; actorId?: string; eventId?: string },
   ): Promise<void> {
+    const eventId = opts?.eventId ?? extras?.authorizationEventId ?? eventIdFromNotificationLink(link);
+    extras = { ...extras, authorizationEventId: eventId, authorizationActorId: opts?.actorId, notificationType: type };
     const now = Date.now();
     const CHUNK = 50;
     for (let i = 0; i < userIds.length; i += CHUNK) {
@@ -131,18 +135,8 @@ export const notificationsRepo = {
       try {
         await batch(
           chunk.map((userId) => ({
-            sql: `INSERT INTO notification (id, user_id, type, title, body, link, read_at, created_at, actor_id)
-                  VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-            args: [
-              crypto.randomUUID(),
-              userId,
-              type,
-              title,
-              body,
-              link,
-              now,
-              opts?.actorId ?? null,
-            ],
+            sql: insertNoticeSql,
+            args: [adminIds(), crypto.randomUUID(),userId,type,title,body,link,now,opts?.actorId??null,eventId??null],
           })),
         );
       } catch (e) {
@@ -207,8 +201,8 @@ export const notificationsRepo = {
     offset = 0,
   ): Promise<Notification[]> {
     const rows = await many<NotificationRow>(
-      `SELECT * FROM notification WHERE user_id = ? AND ${meetVisibleSql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
-      userId, adminIds(), adminIds(),
+      `SELECT notification.*, (SELECT visibility FROM event WHERE id=notification.event_id) visibility FROM notification WHERE user_id = ?2 AND ${visibleSql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+      adminIds(), userId,
       limit,
       offset,
     );
@@ -218,16 +212,16 @@ export const notificationsRepo = {
   /** 本人の通知の総数（一覧のページ数計算用） */
   async countByUser(userId: string): Promise<number> {
     const row = await one<{ n: number }>(
-      `SELECT COUNT(1) AS n FROM notification WHERE user_id = ? AND ${meetVisibleSql}`,
-      userId, adminIds(), adminIds(),
+      `SELECT COUNT(1) AS n FROM notification WHERE user_id = ?2 AND ${visibleSql}`,
+      adminIds(), userId,
     );
     return row?.n ?? 0;
   },
 
   async unreadCount(userId: string): Promise<number> {
     const row = await one<{ n: number }>(
-      `SELECT COUNT(1) AS n FROM notification WHERE user_id = ? AND read_at = 0 AND ${meetVisibleSql}`,
-      userId, adminIds(), adminIds(),
+      `SELECT COUNT(1) AS n FROM notification WHERE user_id = ?2 AND read_at = 0 AND ${visibleSql}`,
+      adminIds(), userId,
     );
     return row?.n ?? 0;
   },

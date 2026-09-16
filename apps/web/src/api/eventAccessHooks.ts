@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EventAccessInviteList, MyEventAccessList, MyEventInviteList } from "@eventer/shared";
-import { api } from "./client.js";
+import { api, invalidateEventResponses } from "./client.js";
 import { useMe } from "./hooks.js";
 
 export function useMyEventInvites() {
@@ -25,6 +25,7 @@ export function useEventAccessInvites(eventId: string) {
 export function useAccessMutation<T, R = unknown>(mutationFn: (input: T) => Promise<R>) {
   const qc = useQueryClient();
   return useMutation({ mutationFn, onSuccess: async () => {
+    invalidateEventResponses();
     await qc.cancelQueries({ queryKey: ["event"] });
     qc.removeQueries({ queryKey: ["event"] });
     // Do not wait for the list refetch to unmount the responding card before

@@ -328,6 +328,7 @@ export function EventDetailPage() {
       />
 
       {/* 参加者チャット (#199)。確定メンバー＋公開＋日程確定のみ。本文はNostrリレー直通 */}
+      {event.visibility !== "public" && <Alert severity="info">{t("eventAccess.chatPrivacy")}</Alert>}
       {chatAvailable && (
         <Suspense fallback={null}>
           <EventChat

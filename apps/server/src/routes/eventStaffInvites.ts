@@ -46,7 +46,7 @@ async function notifyInvited(
     "/staff-invites",
     undefined,
     // 本文に招待者名が出るので actor を残す (#380)
-    { actorId: inviter.id },
+    { actorId: inviter.id, eventId: event.id },
   );
 }
 
@@ -70,7 +70,7 @@ async function notifyInviteResult(
     `/events/${event.id}`,
     undefined,
     // 本文に応答者名が出るので actor を残す (#380)
-    { actorId: respondent.id },
+    { actorId: respondent.id, eventId: event.id },
   );
 }
 

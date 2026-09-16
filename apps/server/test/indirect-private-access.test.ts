@@ -44,3 +44,10 @@ it('venue provider keeps offer status but needs event viewing access before even
  expect((await req(`/api/events/${e.id}/attendance.csv`,provider)).status).toBe(404);
  await grant(e.id,provider);expect((await req(`/api/events/${e.id}/attendance.csv`,provider)).status).toBe(200);expect(JSON.stringify(await(await req(`/api/venue-offers/for-venue/${venue}`,provider)).json())).toContain('UNIQUE SECRET TITLE');
 });
+
+it.each(['/events/upcoming','/events/new'])('ordinary SPA %s keeps GET/HEAD200 without private-event robots',async path=>{
+ for(const method of ['GET','HEAD']){
+  const r=await req(path,undefined,method);expect(r.status).toBe(200);expect(r.headers.get('x-robots-tag')).toBeNull();expect(await r.text()).not.toContain('noindex,nofollow,noarchive');
+ }
+ expect((await req('/events/missing-event/photos')).status).toBe(404);
+});

@@ -45,7 +45,7 @@ export async function sendEventReminders(now = Date.now()): Promise<number> {
         `${startText(t.startsAt)} 開始 ／ ${venueText(t.venueType, t.venueOffline)}`,
         `/events/${t.eventId}`,
         // リマインダーはイベントカードに加えてタイムテーブルも載せる (#134)
-        { timetable: true },
+        { timetable: true, authorizationEventId: t.eventId },
       );
       if (ok) {
         await emailRepo.markReminderSent(t.memberId);

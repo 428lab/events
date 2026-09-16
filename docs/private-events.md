@@ -438,3 +438,12 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - 間接経路の実source監査: 個人向けICS endpointは無く、公開/feed/events.icsとclient Google Calendarリンクが存在。前者は既存public discovery SQLを維持しno-store、後者は非public時に外部転送確認を挟む。event HTML/slug/childSPAはAPIと別のcanViewアダプタを追加し、非public OGは本人にも汎用。個人event/bingo一覧はSQLで再認可。共有pre-surveyはprivate/未知visibilityのtoken解決と新規回答を拒否。venue offerの業務statusは残して不可視event/id/連絡先を伏せ、venue提供資格だけでevent/CSVを解放しない。既存publicの作成者/venue側業務roleを別policyに置換しない。
 - 検証: P2/先行CI修正42件、既存scan28件、新QR9件（選定後双方失効・書込み後失効・混在event・undo・診断・rollback/nonce返却・public退会race）、間接HTTP4件、survey/venue回帰33件、calendar28件、全package型検査が成功。隔離copyでQR writerのtarget検査をscanner検査へ置換すると、失効targetのmeetが作られて負例が失敗する。実ブラウザや認証済stagingの検証は今回行わない。
 - 残存: 通知全体（特にevent_id不明の旧通知、他種別、broadcast/reminder/venue通知とqueued mail）、participant relay/chat、全client cache、creator/slot/attendance等writer、visibility CAS/互換grant/停止副作用とcreate/edit入口が未完了。survey回答の全副作用やvenue offer書込みを一括化したとは扱わない。genuine bulk変更のtriggerコストは未計測。
+
+### 14.6 通知/chat/client継続単位
+
+- QR reviewのP2を先に修正し、`/events/upcoming` と `/events/new` をevent ID判定より先に通常SPAとして登録。GET/HEADの200と未知event子404を対象検査。a013dのCI35042676465は一度だけ確認し成功。
+- 現sourceの通知constructorとraw INSERTを列挙。汎用repo以外のmeet/参加枠/繰上げ/日程確定/閲覧招待は既にevent_id付き。staff招待とevent由来venue通知は非eventリンクのためIDを明示、通常event URLは境界一致で解決する。通知一覧/count/unread/新規INSERT/送信直前は同じ資格SQLで検査し、private通知とメールは汎用、unlisted業務メール本文は§8に従い維持。broadcastはqueueの元actorを読み直してmanager条件も追加する。既存budget/preferences/backgroundを維持。
+- ユーザーの追加判断: **導入前から存在するイベントはpublic→非public変更不可**。終了時刻による判定ではない。旧通知の曖昧な行は原本/表示/既読を維持し、追加汎用化は不要。確実なevent pathだけ紐付ける（fragmentも含む）。本番旧通知数は未照会で、多数あるという根拠はない。
+- 承認済みの最小区別: local migration0094で `event.nonpublic_eligible NOT NULL DEFAULT 0`。既存行と旧writerは0、導入後の通常create/copyだけ明示1。API入力/通常updateで変更不可、created_at/旧通知本文で推測しない。既存public→非public要求には409 `legacy_visibility_locked` を現行全体閉鎖より先に返す。既存publicの普通の編集と、新規eventの設計済み遷移は維持する。**後続visibility writerは実書込みSQL内でもnonpublic_eligible=1を条件にする**。copyは新規eventだが元eventの認可/非publicコピー入口閉鎖を迂回しない。配備/remote migrationは未承認。
+- 参加者の平文relay routerだけpublic限定にし、staff暗号chatは別router/既存鍵処理を維持。公式clientは再検証失敗/非public化/identity・資格変更で接続を閉じる。外部relayの旧平文/コピー回収や第三者client停止は保証せず、ja/enで説明する。
+- QueryClientのevent/子/招待のcancel→reset→removeをidentity/revision/失効に接続し、API応答epochで既開始の旧event応答を拒否。認証はfocus/15秒で再確認し、公的一覧offline cacheは保持。全authセッションのlogoutや本番設定変更ではない。

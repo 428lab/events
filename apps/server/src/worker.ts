@@ -512,6 +512,10 @@ function injectEventOg(html: string, event: Event): string {
   return cleaned.replace("</head>", `${tags.join("\n")}\n</head>`);
 }
 
+// Ordinary SPA routes must precede the event-id pattern.
+for (const path of ["/events/upcoming", "/events/new"])
+  app.get(path, async (c) => c.html(await loadIndexHtml(c.req.url)));
+
 // Direct HTML and child SPA routes obey the same access gate; nonpublic OG is always generic.
 for (const path of ["/events/:id", "/events/:id/*", "/e/:slug"]) {
   app.get(path, async (c) => {

@@ -147,7 +147,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
         GROUP_CHAT_KIND,
       );
     })();
-    return () => {
+    const stop = () => {
       disposed = true;
       unsubscribe?.();
       pool.close();
@@ -155,7 +155,13 @@ export function StaffChat({ eventId }: { eventId: string }) {
       setRelayConnected(false);
       setMessages([]);
     };
-  }, [signer, roomId, relaysKey, forbidden]);
+    const onReset = (e: Event) => {
+      const id = (e as CustomEvent<string | undefined>).detail;
+      if (!id || id === eventId) stop();
+    };
+    window.addEventListener("event-access-reset",onReset);
+    return () => { window.removeEventListener("event-access-reset",onReset); stop(); };
+  }, [signer, roomId, relaysKey, forbidden, eventId]);
 
   const memberByPubkey = useMemo(
     () =>

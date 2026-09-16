@@ -49,6 +49,8 @@ export function useRevokeStaffInvite(eventId: string) {
 export function useMyStaffInvites(enabled = true) {
   return useQuery({
     queryKey: myKey,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 15_000,
     enabled,
     retry: false,
     queryFn: async () =>

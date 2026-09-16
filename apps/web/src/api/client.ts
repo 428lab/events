@@ -1,3 +1,9 @@
+let eventResponseEpoch = 0;
+export function invalidateEventResponses(eventId?: string) {
+  eventResponseEpoch++;
+  window.dispatchEvent(new CustomEvent("event-access-reset", {detail:eventId}));
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -33,6 +39,7 @@ async function request<T>(
   body?: unknown,
   opts?: RequestOptions,
 ): Promise<T> {
+  const epoch = eventResponseEpoch;
   let res: Response;
   try {
     res = await fetch(`/api${path}`, {
@@ -49,6 +56,7 @@ async function request<T>(
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
+  if (epoch !== eventResponseEpoch && /^\/(events|me|notifications)(?:\/|$)/.test(path)) throw new ApiError(409,{error:"stale_event_response"});
   if (!res.ok) throw new ApiError(res.status, data);
   return data as T;
 }

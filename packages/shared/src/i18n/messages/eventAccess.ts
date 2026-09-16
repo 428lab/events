@@ -1,4 +1,5 @@
 const ja = {
+  chatPrivacy: "非公開・限定公開イベントでは参加者チャットを利用できません。以前に外部リレーへ送信した本文やコピーは回収できず、外部クライアントの接続や投稿は停止できません。",
   title: "閲覧への招待", intro: "承諾すると閲覧できます。参加申込・席の確保や運営への参加は別の操作です。",
   accepted: "承諾済みの閲覧権", empty: "返事待ちの招待はありません。", noAccess: "承諾済みの閲覧権はありません。",
   accept: "閲覧を承諾", decline: "辞退", leave: "閲覧をやめる", open: "イベントを開く", more: "もっと見る",
@@ -14,6 +15,7 @@ const ja = {
   handleChanged: "確認した相手と現在のユーザー名の持ち主が異なります。相手をもう一度確認してください。",
 };
 const en: Record<keyof typeof ja, string> = {
+  chatPrivacy: "Participant chat is unavailable for private or unlisted events. Earlier plaintext messages and copies on external relays cannot be recalled; third-party connections or posts cannot be stopped.",
   title: "Viewing invitations", intro: "Accept to view. Registration, a reserved seat and organizer access are separate.",
   accepted: "Accepted viewing access", empty: "No invitations awaiting a reply.", noAccess: "No accepted viewing access.",
   accept: "Accept viewing access", decline: "Decline", leave: "Leave viewing access", open: "Open event", more: "Load more",

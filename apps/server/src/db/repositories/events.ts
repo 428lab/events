@@ -130,7 +130,7 @@ function toEvent(row: EventRow): Event {
     attendanceCheck: row.attendance_check === 1,
     slug: row.slug ?? "",
     venueWanted: row.venue_wanted === 1,
-    chatEnabled: row.chat_enabled === 1,
+    chatEnabled: row.visibility === "public" && row.chat_enabled === 1,
     chatUrlsAllowed: row.chat_urls_allowed === 1,
     qaEnabled: row.qa_enabled === 1,
     // 未知の値（手作業のDB更新など）は既定の 'choice' に寄せる
@@ -373,8 +373,8 @@ export const eventsRepo = {
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
          community_id, scheduling, schedule_anonymous, slug, venue_wanted,
-         chat_enabled, visibility)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+         chat_enabled, visibility, nonpublic_eligible)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?, 1)`,
       id,
       input.title,
       input.subtitle ?? "",
@@ -405,6 +405,10 @@ export const eventsRepo = {
       id,
     );
     return row?.members_note ?? "";
+  },
+
+  async nonpublicEligible(id: string): Promise<boolean> {
+    return (await one<{allowed:number}>("SELECT nonpublic_eligible allowed FROM event WHERE id=?",id))?.allowed === 1;
   },
 
   async update(id: string, input: UpdateEventInput, actorId: string): Promise<Event | null> {
@@ -448,7 +452,7 @@ export const eventsRepo = {
       next.photosPublic ? 1 : 0,
       next.attendanceCheck ? 1 : 0,
       next.venueWanted ? 1 : 0,
-      next.chatEnabled ? 1 : 0,
+      next.visibility === "public" && next.chatEnabled ? 1 : 0,
       next.chatUrlsAllowed ? 1 : 0,
       next.qaEnabled ? 1 : 0,
       next.qaAnonymity,

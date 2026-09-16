@@ -277,6 +277,8 @@ async function notifyRequestLinked(
   req: EventRequest,
   event: { id: string; title: string; createdBy: string },
 ): Promise<void> {
+  const current = await eventsRepo.findById(event.id);
+  if (current?.visibility !== "public" || current.status !== "published") return;
   const targets = new Set(await eventRequestsRepo.reactorUserIds(req.id));
   targets.add(req.createdBy);
   targets.delete(event.createdBy);

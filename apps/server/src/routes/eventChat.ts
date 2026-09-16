@@ -58,6 +58,14 @@ const MAX_CHAT_KEYS_PER_USER = 10;
  * どちらの段にも締め出し (#283) を通す。締め出された人はチャットから切り離された
  * 人なので、読む・書く・運営するのいずれもできない */
 export const eventChatRoutes = new Hono<AppEnv>();
+// Plaintext participant relays cannot protect nonpublic events. This router
+// contains participant chat only; encrypted staffChat is deliberately separate.
+for (const path of ["/:id/chat-members", "/:id/chat-key", "/:id/chat-key/ephemeral", "/:id/chat-channel", "/:id/chat-channel/create", "/:id/chat-hidden", "/:id/chat-hidden/:noteId"]) eventChatRoutes.use(path, async (c,next) => {
+  const event = await eventsRepo.findById(c.req.param("id") ?? "");
+  if (!event || event.visibility !== "public") return c.json({error:"chat_unavailable"},403);
+  await next();
+});
+
 // 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** requireEventRole はロールのみ見るため、確定済み（status=confirmed）を追加チェック。

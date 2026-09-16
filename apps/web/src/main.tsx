@@ -11,10 +11,13 @@ import { syncDocumentLanguage } from "./i18n/index.js";
 import { AppThemeProvider } from "./theme/ThemeContext.js";
 import { setupWebAnalytics } from "./lib/webAnalytics.js";
 import { App } from "./App.js";
+import { installEventAccessLifecycle } from "./api/eventAccessLifecycle.js";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },
 });
+
+installEventAccessLifecycle(queryClient);
 
 // 表示言語 (#352)。決めるのは import 時（i18n/index.ts）で、ここでは
 // <html lang> を実際の言語に合わせるだけ

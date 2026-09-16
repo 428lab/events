@@ -88,7 +88,7 @@ export function EventChat({
    * 回線を疑って時間を無駄にするし、後で分かったときに嘘をついたことになる。
    * 理由を明かさず、事実として正しい文言（`eventSocial.chatUnavailable`）だけを
    * 出す。理由は書かないが、嘘も書かない。 */
-  const chatUnavailable = isChatUnavailable(chatError);
+  const chatUnavailable = isChatUnavailable(chatError) || Boolean(chatError) || !me || event.visibility !== "public" || chat?.chatEnabled === false;
   const resetChannel = useResetChatChannel(eventId);
   const hideNote = useHideChatNote(eventId);
 

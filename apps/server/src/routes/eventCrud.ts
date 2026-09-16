@@ -91,6 +91,9 @@ eventCrudRoutes.patch(
   async (c) => {
     const prior = await eventsRepo.findById(c.req.param("id"));
     const input = valid<UpdateEventInput>(c, "json");
+    if (prior?.visibility === "public" && input.visibility && input.visibility !== "public" && !(await eventsRepo.nonpublicEligible(prior.id))) {
+      return c.json({error:"legacy_visibility_locked"},409);
+    }
     if (input.visibility !== undefined) {
       return c.json({ error: "private_events_unavailable" }, 409);
     }

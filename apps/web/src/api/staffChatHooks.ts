@@ -13,6 +13,7 @@ export function useStaffChat(eventId: string, enabled: boolean) {
     queryKey: ["event", eventId, "staffChat"],
     enabled: enabled && Boolean(eventId),
     refetchInterval: 5000,
+    refetchOnWindowFocus: "always",
     // 403（資格喪失）は再試行しても結果が変わらないので既定の3回リトライを
     // 待たずに画面へ返す。ポーリング自体は続くため、staff に戻れば次の周回で
     // 自動的に元に戻る（eventChatHooks の useChatMembers と同じ判断）

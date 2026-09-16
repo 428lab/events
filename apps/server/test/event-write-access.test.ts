@@ -114,6 +114,8 @@ it("schedule email rechecks access at delivery and strips nonpublic body/cards",
   const s = await setup(), target = await user(); await grant(s, target);
   bindEnv({ ...env, RESEND_API_KEY: "fixture-key" } as never);
   const send = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response('{}', { status: 200 }));
+  await sql("INSERT INTO identity(id,user_id,provider,provider_user_id,email,created_at) VALUES(?,?,'google',?,'fixture@example.com',1)",crypto.randomUUID(),target.id,target.id);
+  await sql("INSERT INTO notification_pref(user_id,email_enabled,updated_at) VALUES(?,1,1)",target.id);
   const extras = { authorizationEventId: s.eventId };
   expect((await sendNotificationEmailToWithOutcome(target.id, "fixture@example.com", "SECRET title", "SECRET body", `/events/${s.eventId}`, extras)).ok).toBe(true);
   expect(send).toHaveBeenCalledTimes(1);
@@ -122,7 +124,7 @@ it("schedule email rechecks access at delivery and strips nonpublic body/cards",
   send.mockRestore(); await exit(s.eventId, target);
   bindEnv({ ...env, RESEND_API_KEY: "fixture-key" } as never);
   const late = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response('{}', { status: 200 }));
-  expect(await sendNotificationEmailToWithOutcome(target.id, "fixture@example.com", "SECRET title", "SECRET body", `/events/${s.eventId}`, extras)).toEqual({ ok: false, retryable: false });
+  expect(await sendNotificationEmailToWithOutcome(target.id, "fixture@example.com", "SECRET title", "SECRET body", `/events/${s.eventId}`, extras)).toEqual({ ok: false, retryable: false, skipped: true });
   expect(late).not.toHaveBeenCalled();
 });
 

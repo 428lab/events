@@ -78,6 +78,7 @@ export function useChatChannel({
     useState<ChatChannelErrorKey | null>(null);
   const poolRef = useRef<ChatRelayPool | null>(null);
 
+
   const relays = useMemo(
     () => (chat?.relays?.length ? chat.relays : [...CHAT_RELAYS]),
     [chat],
@@ -171,7 +172,7 @@ export function useChatChannel({
       });
     })();
 
-    return () => {
+    const stop = () => {
       disposed = true;
       unsubscribe?.();
       pool.close();
@@ -180,6 +181,12 @@ export function useChatChannel({
       setMessages([]);
       setChannelId(null);
     };
+    const onReset = (e: Event) => {
+      const id = (e as CustomEvent<string | undefined>).detail;
+      if (!id || id === eventId) stop();
+    };
+    window.addEventListener("event-access-reset",onReset);
+    return () => { window.removeEventListener("event-access-reset",onReset); stop(); };
     // registerChannel / createChannel（mutation オブジェクト）は
     // 毎レンダーで変わるため依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,7 +202,7 @@ export function useChatChannel({
   /** 発言する。**署名は signer（参加した鍵）だけ**で行う
    * ＝投影用の読み取り専用鍵では送信できない (#215) */
   const send = async (text: string): Promise<ChatSendResult> => {
-    if (!signer || !channelId) return "failed";
+    if (chatUnavailable || !signer || !channelId) return "failed";
     try {
       const ev = await signer.signEvent(
         buildChannelMessageTemplate(channelId, text, relays[0]),

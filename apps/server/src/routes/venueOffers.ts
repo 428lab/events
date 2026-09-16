@@ -191,7 +191,7 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
       "venue_offer",
       "会場の提供オファーが届きました🏟️",
       `「${targetTitle}」に会場「${venue.name}」の提供オファー`,
-      link,
+      link, undefined, { eventId: input.eventId },
     );
   } else {
     // 運営（オーナー＋管理者）全員へ通知
@@ -204,7 +204,7 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
       "venue_offer",
       "会場の利用オファーが届きました🏟️",
       `「${targetTitle}」の主催者が会場「${venue.name}」を使いたいそうです`,
-      `/venues/${venue.id}`,
+      `/venues/${venue.id}`, undefined, { eventId: input.eventId },
     );
   }
   return c.json({ offer }, 201);
@@ -269,7 +269,7 @@ venueOfferRoutes.post(
           ? offer.eventId
             ? `/events/${offer.eventId}`
             : `/requests/${offer.requestId}`
-          : "",
+          : "", undefined, { eventId: offer.eventId ?? undefined },
       );
     }
     return c.json({ ok: true, status: accepted ? "accepted" : "declined" });

@@ -33,6 +33,7 @@ export function useEventChatAccess(eventId: string): EventChatAccess {
     event !== null &&
     canChat &&
     event.chatEnabled &&
+    event.visibility === "public" &&
     !event.scheduling &&
     event.startsAt > 0 &&
     event.status === "published";
