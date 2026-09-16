@@ -83,8 +83,7 @@ scoringRoutes.post(
   async (c) => {
     const criterion = await scoringCriteriaRepo.create(
       c.req.param("id"),
-      valid<CreateCriterionInput>(c, "json"),
-    );
+      valid<CreateCriterionInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ criterion }, 201);
   },
 );
@@ -100,8 +99,7 @@ scoringRoutes.patch(
     }
     const criterion = await scoringCriteriaRepo.update(
       c.req.param("cid"),
-      valid<UpdateCriterionInput>(c, "json"),
-    );
+      valid<UpdateCriterionInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (!criterion) return c.json({ error: "not_found" }, 404);
     return c.json({ criterion });
   },
@@ -112,7 +110,7 @@ scoringRoutes.delete("/:id/criteria/:cid", requireEventRole(["staff"]), async (c
   if (!existing || existing.eventId !== c.req.param("id")) {
     return c.json({ error: "not_found" }, 404);
   }
-  await scoringCriteriaRepo.delete(c.req.param("cid"));
+  await scoringCriteriaRepo.delete(c.req.param("cid"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
   return c.json({ ok: true });
 });
 
@@ -153,8 +151,7 @@ scoringRoutes.put(
       input.entryId,
       input.criterionId,
       user.id,
-      input.value,
-    );
+      input.value, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"judge"});
     return c.json({ ok: true });
   },
 );
@@ -200,8 +197,7 @@ scoringRoutes.patch(
     const eventId = c.req.param("id");
     const state = await eventStateRepo.setMode(
       eventId,
-      valid<SetModeInput>(c, "json").mode,
-    );
+      valid<SetModeInput>(c, "json").mode, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json(state);
   },
 );
@@ -214,8 +210,7 @@ scoringRoutes.patch(
     const eventId = c.req.param("id");
     const state = await eventStateRepo.setPresenting(
       eventId,
-      valid<SetPresentingInput>(c, "json").presentingEntryId,
-    );
+      valid<SetPresentingInput>(c, "json").presentingEntryId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json(state);
   },
 );
@@ -226,7 +221,7 @@ scoringRoutes.post(
   async (c) => {
     const eventId = c.req.param("id");
     const current = await eventStateRepo.getOrInit(eventId);
-    const state = await eventStateRepo.setScoringLocked(eventId, !current.scoringLocked);
+    const state = await eventStateRepo.setScoringLocked(eventId, !current.scoringLocked, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json(state);
   },
 );

@@ -1,3 +1,4 @@
+import {one} from "../db/client.js";
 import { Hono } from "hono";
 import { valid, zValidator } from "../lib/validator.js";
 import { createEventInput, isDatetimeOrderInvalid, updateEventInput } from "@eventer/shared";
@@ -11,7 +12,6 @@ import type { AppEnv } from "../types.js";
 import { requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
-import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { deleteEventImage, putEventImage } from "./images.js";
@@ -53,7 +53,7 @@ async function notifyOnPublish(
   // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
   await notifyRequestsOnPublish(event);
   // 作成者のフォロワーへ公開通知（draft→published の実遷移時のみ・初回のみ）
-  if (prior?.status !== "published") {
+  if (prior?.status !== "published" || prior?.visibility !== "public") {
     await notifyFollowersOnPublish(event);
   }
 }
@@ -67,10 +67,6 @@ eventCrudRoutes.get("/", async (c) => {
 eventCrudRoutes.post("/", zValidator("json", createEventInput), async (c) => {
   const user = c.get("user");
   const input = valid<CreateEventInput>(c, "json");
-  // §9.2: do not open nonpublic creation before the entire access matrix is ready.
-  if (input.visibility !== "public") {
-    return c.json({ error: "private_events_unavailable" }, 409);
-  }
   if (
     input.communityId &&
     !(await canAttachCommunity(input.communityId, user))
@@ -78,9 +74,19 @@ eventCrudRoutes.post("/", zValidator("json", createEventInput), async (c) => {
     return c.json({ error: "forbidden" }, 403);
   }
   const event = await eventsRepo.create(input, user.id);
-  await eventMembersRepo.add(event.id, user.id, "staff");
-  await scoringCriteriaRepo.seedDefaults(event.id);
+  if (!event) return c.json({error:"access_changed"},409);
+  await scoringCriteriaRepo.seedDefaults(event.id, {eventId:event.id,actorId:c.get("user").id,permission:"manager"});
   return c.json({ event: (await eventsRepo.findById(event.id))! }, 201);
+});
+
+/** The confirmation snapshot is a count only; the PATCH CAS checks its revision. */
+eventCrudRoutes.get("/:id/visibility-preview",requireEventRole(["staff"]),async c=>{
+  const preview=await one<{accessRevision:number;members:number;voters:number}>(`SELECT e.access_revision accessRevision,
+    (SELECT COUNT(*) FROM event_member m WHERE m.event_id=e.id AND m.status<>'canceled') members,
+    (SELECT COUNT(DISTINCT v.user_id) FROM event_date_vote v JOIN event_date_option o ON o.id=v.option_id WHERE o.event_id=e.id AND NOT EXISTS(
+      SELECT 1 FROM event_member m WHERE m.event_id=e.id AND m.user_id=v.user_id AND m.status<>'canceled')) voters
+    FROM event e WHERE e.id=?`,c.req.param("id"));
+  return c.json(preview);
 });
 
 /** イベント更新（staff のみ） */
@@ -94,8 +100,8 @@ eventCrudRoutes.patch(
     if (prior?.visibility === "public" && input.visibility && input.visibility !== "public" && !(await eventsRepo.nonpublicEligible(prior.id))) {
       return c.json({error:"legacy_visibility_locked"},409);
     }
-    if (input.visibility !== undefined) {
-      return c.json({ error: "private_events_unavailable" }, 409);
+    if (input.visibility !== undefined && input.visibility !== prior?.visibility) {
+      if (input.expectedAccessRevision === undefined || !input.confirmVisibilityChange) return c.json({error:"visibility_confirmation_required"},409);
     }
     // 紐づけ先コミュニティを「変える」ときだけ権限を見る (#264)。
     // 編集フォームは現在値をそのまま送り返すので、変更がなければ通す
@@ -141,7 +147,7 @@ eventCrudRoutes.patch(
     });
     if (violation) return c.json({ error: violation }, 400);
     const event = await eventsRepo.update(c.req.param("id"), input, c.get("user").id);
-    if (!event) return c.json({ error: "not_found" }, 404);
+    if (!event) return c.json({ error: "access_changed" }, 409);
     await notifyOnPublish(prior, event);
     return c.json({ event });
   },

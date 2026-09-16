@@ -1,4 +1,12 @@
 const ja = {
+  published:"募集開始",
+  visibility:"公開範囲", public:"公開", unlisted:"限定公開（URLを知る人）", private:"招待限定",
+  legacyLocked:"導入前のイベントは公開範囲を変更できません。新しく作成したイベントでご利用ください。",
+  materialPrivacy:"独立したスライド・配信素材・会場写真や外部リンクは招待制限の対象外です。秘密の資料をアップロードしないでください。",
+  visibilityWarning:"公開範囲を変更しますか？配布済みの情報や外部コピーは回収できません。非公開・限定公開では参加者チャットが停止します。",
+  visibilityMembers:"現在の参加登録 {{members}} 人は閲覧を維持します。日程投票だけの {{voters}} 人には別途閲覧招待が必要です。招待限定を離れると閲覧招待は無効になります。変更しますか？",
+  visibilityConflict:"参加者や閲覧権が変更されました。最新の内容を再取得し、もう一度確認してください。",
+
   chatPrivacy: "非公開・限定公開イベントでは参加者チャットを利用できません。以前に外部リレーへ送信した本文やコピーは回収できず、外部クライアントの接続や投稿は停止できません。",
   title: "閲覧への招待", intro: "承諾すると閲覧できます。参加申込・席の確保や運営への参加は別の操作です。",
   accepted: "承諾済みの閲覧権", empty: "返事待ちの招待はありません。", noAccess: "承諾済みの閲覧権はありません。",
@@ -15,6 +23,14 @@ const ja = {
   handleChanged: "確認した相手と現在のユーザー名の持ち主が異なります。相手をもう一度確認してください。",
 };
 const en: Record<keyof typeof ja, string> = {
+  published:"Open registration",
+  visibility:"Visibility", public:"Public", unlisted:"Unlisted (anyone with the URL)", private:"Invitation only",
+  legacyLocked:"Pre-introduction events must remain public. Use a newly created event for restricted visibility.",
+  materialPrivacy:"Standalone slides, streaming assets, venue photos and external links are not protected by event invitations. Do not upload confidential material there.",
+  visibilityWarning:"Change visibility? Previously shared information and external copies cannot be recalled. Participant chat stops for private or unlisted events.",
+  visibilityMembers:"The {{members}} current members keep viewing access. The {{voters}} date-only voters need separate viewing invitations. Leaving private visibility invalidates viewing invitations. Continue?",
+  visibilityConflict:"Membership or access has changed. Reload the latest information and confirm again.",
+
   chatPrivacy: "Participant chat is unavailable for private or unlisted events. Earlier plaintext messages and copies on external relays cannot be recalled; third-party connections or posts cannot be stopped.",
   title: "Viewing invitations", intro: "Accept to view. Registration, a reserved seat and organizer access are separate.",
   accepted: "Accepted viewing access", empty: "No invitations awaiting a reply.", noAccess: "No accepted viewing access.",

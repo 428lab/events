@@ -173,7 +173,7 @@ eventChatRoutes.post(
     if (taken && taken !== userId) return c.json({ error: "pubkey_taken" }, 409);
     // 先勝ち: 同時発行のレースでは先着の鍵が残るので、確定値を読み直して返す。
     // 読み直して見つからないのは、その一瞬に他人が同じ鍵を押さえたときだけ
-    await eventChatRepo.addEphemeral(eventId, userId, pubkey, secret);
+    await eventChatRepo.addEphemeral(eventId, userId, pubkey, secret, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-member"});
     const settled = await eventChatRepo.ephemeralFor(eventId, userId);
     if (!settled) return c.json({ error: "pubkey_taken" }, 409);
     return c.json(settled);
@@ -236,7 +236,7 @@ eventChatRoutes.post(
         return c.json({ error: "too_many_keys" }, 409);
       }
     }
-    await eventChatRepo.addPubkey(eventId, userId, pubkey);
+    await eventChatRepo.addPubkey(eventId, userId, pubkey, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-member"});
     return c.json({ ok: true });
   },
 );
@@ -284,7 +284,7 @@ async function registerVerifiedChannel(
   ) {
     return c.json({ error: "invalid_channel_event" }, 400);
   }
-  const settled = await eventChatRepo.setChannelOnce(eventId, channelEvent.id);
+  const settled = await eventChatRepo.setChannelOnce(eventId, channelEvent.id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-staff"});
   return c.json({ channelId: settled });
 }
 
@@ -405,7 +405,7 @@ eventChatRoutes.delete(
     const denied = await staffAndNotBlocked(c);
     if (denied) return denied;
     const eventId = c.req.param("id");
-    await eventChatRepo.clearChannel(eventId);
+    await eventChatRepo.clearChannel(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-staff"});
     // 監査ログ (#248)。参加者から見ると履歴が消えたように見える操作なので記録する
     const me = c.get("user");
     await recordAudit({
@@ -426,7 +426,7 @@ eventChatRoutes.post(
     const denied = await staffAndNotBlocked(c);
     if (denied) return denied;
     const { noteId } = valid<HideChatNoteInput>(c, "json");
-    await eventChatRepo.hideNote(c.req.param("id"), noteId);
+    await eventChatRepo.hideNote(c.req.param("id"), noteId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-staff"});
     return c.json({ ok: true });
   },
 );
@@ -442,7 +442,7 @@ eventChatRoutes.delete(
     if (!/^[0-9a-f]{64}$/.test(noteId)) {
       return c.json({ error: "invalid_note_id" }, 400);
     }
-    await eventChatRepo.unhideNote(c.req.param("id"), noteId);
+    await eventChatRepo.unhideNote(c.req.param("id"), noteId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-staff"});
     return c.json({ ok: true });
   },
 );

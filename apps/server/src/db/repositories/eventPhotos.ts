@@ -1,3 +1,4 @@
+import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type {
   EventPhoto,
   EventPhotosPage,
@@ -6,7 +7,7 @@ import type {
   UserPhotoFacets,
 } from "@eventer/shared";
 import { EVENT_PHOTO_PAGE_SIZE } from "@eventer/shared";
-import { getDb, many, one, run } from "../client.js";
+import { getDb, many, one, } from "../client.js";
 
 interface Row {
   id: string;
@@ -186,9 +187,9 @@ export const eventPhotosRepo = {
     return row?.n ?? 0;
   },
 
-  async create(eventId: string, userId: string, options: { id?: string; hasThumbnail?: boolean } = {}): Promise<string> {
+  async create(eventId: string, userId: string, options: { id?: string; hasThumbnail?: boolean }, writer: EventWriter): Promise<string> {
     const id = options.id ?? crypto.randomUUID();
-    await run(
+    await eventRun(writer,
       `INSERT INTO event_photo (id, event_id, user_id, created_at, has_thumbnail)
        VALUES (?, ?, ?, ?, ?)`,
       id,
@@ -207,9 +208,8 @@ export const eventPhotosRepo = {
     id: string,
     eventId: string,
     userId: string,
-    meta: { durationMs: number; bytes: number; mime: string; hasThumbnail?: boolean },
-  ): Promise<void> {
-    await run(
+    meta: { durationMs: number; bytes: number; mime: string; hasThumbnail?: boolean }, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       `INSERT INTO event_photo (id, event_id, user_id, created_at, kind, duration_ms, bytes, mime, has_thumbnail)
        VALUES (?, ?, ?, ?, 'video', ?, ?, ?, ?)`,
       id,
@@ -223,8 +223,8 @@ export const eventPhotosRepo = {
     );
   },
 
-  async delete(id: string): Promise<void> {
-    await run("DELETE FROM event_photo WHERE id = ?", id);
+  async delete(id: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"DELETE FROM event_photo WHERE id = ?", id);
   },
 
   /** 退会時のR2掃除用: 本人が投稿した写真・動画の (id, eventId, kind) 一覧 (#244)。

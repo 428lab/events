@@ -92,7 +92,7 @@ eventTodoRoutes.post(
       startsOn,
       dueOn,
       assigneeUserId,
-    });
+    }, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ id }, 201);
   },
 );
@@ -132,7 +132,7 @@ eventTodoRoutes.patch(
       patch.assigneeUserId = input.assigneeUserId;
     }
     if (input.status !== undefined) patch.status = input.status;
-    await eventTodosRepo.update(todoId, patch);
+    await eventTodosRepo.update(todoId, patch, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );
@@ -143,7 +143,7 @@ eventTodoRoutes.delete("/:id/todos/:todoId", async (c) => {
   if (!(await eventTodosRepo.findInEvent(todoId, eventId))) {
     return c.json({ error: "not_found" }, 404);
   }
-  await eventTodosRepo.remove(todoId);
+  await eventTodosRepo.remove(todoId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
   return c.json({ ok: true });
 });
 
@@ -155,7 +155,7 @@ eventTodoRoutes.put(
   async (c) => {
     const eventId = c.req.param("id");
     const input = valid<ReorderTodosInput>(c, "json");
-    await eventTodosRepo.reorder(eventId, input.ids);
+    await eventTodosRepo.reorder(eventId, input.ids, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );
@@ -187,7 +187,7 @@ eventTodoRoutes.post(
     if (await eventTodosRepo.canReach(eventId, dependsOnId, todoId)) {
       return c.json({ error: "todo_dep_cycle" }, 400);
     }
-    await eventTodosRepo.addDep(todoId, dependsOnId);
+    await eventTodosRepo.addDep(todoId, dependsOnId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true }, 201);
   },
 );
@@ -200,7 +200,7 @@ eventTodoRoutes.delete(
     if (!(await eventTodosRepo.findInEvent(todoId, eventId))) {
       return c.json({ error: "not_found" }, 404);
     }
-    await eventTodosRepo.removeDep(todoId, c.req.param("dependsOnId"));
+    await eventTodosRepo.removeDep(todoId, c.req.param("dependsOnId"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );

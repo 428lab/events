@@ -32,7 +32,7 @@ cardDesignAssetRoutes.post("/:id/name-card-assets", async c => {
   if (body.byteLength > MAX_BYTES) return c.json({ error: "too_large" }, 413);
   const dimensions = cardImageDimensions(new Uint8Array(body), mime);
   if (!dimensions) return c.json({ error: "invalid_image" }, 400);
-  const asset = await storeCardAsset(eventId, body, mime, dimensions);
+  const asset = await storeCardAsset(eventId, body, mime, dimensions,{eventId,actorId:c.get("user").id,permission:"staff"});
   if (!asset) return c.json({ error: "card_asset_limit" }, 409);
   c.header("Cache-Control", "private, no-store");
   return c.json({ asset }, 201);
@@ -53,7 +53,7 @@ cardDesignAssetRoutes.post("/:id/name-card-assets/copy", async c => {
   const body = await object.arrayBuffer();
   const dimensions = cardImageDimensions(new Uint8Array(body), row.content_type);
   if (!dimensions) return c.json({ error: "invalid_image" }, 400);
-  const asset = await storeCardAsset(c.req.param("id"), body, row.content_type, dimensions);
+  const asset = await storeCardAsset(c.req.param("id"), body, row.content_type, dimensions,{eventId:c.req.param("id"),actorId:c.get("user").id,permission:"staff"});
   if (!asset) return c.json({ error: "card_asset_limit" }, 409);
   c.header("Cache-Control", "private, no-store");
   return c.json({ asset }, 201);
@@ -63,7 +63,7 @@ cardDesignAssetRoutes.delete("/:id/name-card-assets/:assetId", async c => {
   const eventId = c.req.param("id"), id = c.req.param("assetId");
   const row = await cardDesignsRepo.asset(eventId, id);
   if (!row) return c.json({ error: "not_found" }, 404);
-  if (!await cardDesignsRepo.removeUnusedAsset(eventId, id))
+  if (!await cardDesignsRepo.removeUnusedAsset(eventId, id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"staff"}))
     return c.json({ error: "card_asset_in_use" }, 409);
   await deleteObjects([row.object_key], `[card-asset-delete] event=${eventId}`);
   return c.json({ ok: true });

@@ -178,13 +178,14 @@ it("unchanged event and timetable saves preserve contributor generations and in-
   await sql("INSERT INTO event_schedule_item(id,event_id,title,speaker_user_id,sort_order,created_at,placement) VALUES('unchanged',?,'Talk',?,0,1,'tracks')",e,u.id);
   await sql("INSERT INTO event_track(id,event_id,name,sort_order,created_at) VALUES('unchanged-track',?,'Track',0,1)",e);
   await sql("INSERT INTO event_schedule_item_track(item_id,track_id) VALUES('unchanged','unchanged-track')");
+  await sql("UPDATE event_member SET role='staff' WHERE event_id=? AND user_id=?",e,u.id);
   const g=await generation(u.id);
   await sql("UPDATE event SET title='renamed',status=status,starts_at=starts_at,ends_at=ends_at,community_id=community_id,attendance_check=attendance_check WHERE id=?",e);
   expect(await generation(u.id)).toBe(g);
   const {eventScheduleRepo}=await import('../src/db/repositories/eventSchedule.js');
   const current=await eventScheduleRepo.listByEvent(e,'staff');
   const tracks=await eventScheduleRepo.listTracks(e,'staff');
-  await eventScheduleRepo.saveAll(e,current.map(i=>({...i,trackIndexes:[0]})),tracks);
+  await eventScheduleRepo.saveAll(e,current.map(i=>({...i,trackIndexes:[0]})),tracks,{eventId:e,actorId:u.id,permission:"manager"});
   expect(await generation(u.id)).toBe(g); // updated_at is NULL: a render can still be pending
   await sql("UPDATE event_schedule_item SET speaker_user_id=NULL WHERE id='unchanged'");
   expect(await generation(u.id)).not.toBe(g);

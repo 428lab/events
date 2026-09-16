@@ -294,8 +294,7 @@ eventPhotoRoutes.post(
     const comment = await eventPhotoCommentsRepo.create(
       photo.id,
       c.get("user").id,
-      valid<CreatePhotoCommentInput>(c, "json").body,
-    );
+      valid<CreatePhotoCommentInput>(c, "json").body, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"registered"});
     return c.json({ comment }, 201);
   },
 );
@@ -310,7 +309,8 @@ eventPhotoRoutes.delete(
     const eventId = c.req.param("id");
     const user = c.get("user");
     const comment = await eventPhotoCommentsRepo.meta(c.req.param("commentId"));
-    if (!comment || comment.photoId !== c.req.param("photoId")) {
+    const photo = await eventPhotosRepo.meta(c.req.param("photoId"));
+    if (!photo || photo.eventId !== eventId || !comment || comment.photoId !== photo.id) {
       return c.json({ error: "not_found" }, 404);
     }
     if (
@@ -321,7 +321,7 @@ eventPhotoRoutes.delete(
     }
     // 運営が対処したコメント (#278) は消せない。理由が分かるように 409（写真と同じ）
     if (comment.adminHidden) return c.json({ error: "content_hidden" }, 409);
-    await eventPhotoCommentsRepo.delete(comment.id);
+    await eventPhotoCommentsRepo.delete(comment.id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:comment.userId === user.id ? "registered" : "staff"});
     return c.json({ ok: true });
   },
 );
@@ -366,7 +366,7 @@ eventPhotoRoutes.post(
       }
       await eventPhotosRepo.create(eventId, c.get("user").id, {
         id: photoId, hasThumbnail: Boolean(thumbnail),
-      });
+      }, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"registered"});
     } catch (e) {
       await deleteObjects(photoObjectKeys(media), `[event-photo] photo=${photoId}`);
       throw e;
@@ -462,7 +462,7 @@ eventPhotoRoutes.post(
         durationMs,
         bytes: bytes.byteLength,
         mime,
-      });
+      }, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"registered"});
     } catch (e) {
       // ポスター put か D1 insert に失敗したら R2 を掃除する（best-effort。
       // 残骸はログで追える）。行が無い動画は削除 API にも purge にも乗らないため、
@@ -504,7 +504,7 @@ eventPhotoRoutes.delete(
     // **行を消してから実体を消す** (#424)。逆順だと R2 の削除に成功して D1 が
     // 失敗したとき、一覧に出るのに開けない写真が残る（回復不能）。
     // 順序と失敗方向の理由は lib/mediaCleanup.ts
-    await eventPhotosRepo.delete(photo.id);
+    await eventPhotosRepo.delete(photo.id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:photo.userId === user.id ? "registered" : "staff"});
     await deleteObjects(photoObjectKeys(photo), `[event-photo] photo=${photo.id}`);
     return c.json({ ok: true });
   },

@@ -72,7 +72,7 @@ eventDutyRoutes.post(
     if (await eventDutiesRepo.findDutyByName(eventId, input.name)) {
       return c.json({ error: "duty_name_taken" }, 400);
     }
-    const id = await eventDutiesRepo.createDuty(eventId, input.name);
+    const id = await eventDutiesRepo.createDuty(eventId, input.name, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ id }, 201);
   },
 );
@@ -91,7 +91,7 @@ eventDutyRoutes.patch(
     if (taken && taken.id !== dutyId) {
       return c.json({ error: "duty_name_taken" }, 400);
     }
-    await eventDutiesRepo.renameDuty(dutyId, input.name);
+    await eventDutiesRepo.renameDuty(dutyId, input.name, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );
@@ -104,7 +104,7 @@ eventDutyRoutes.put(
   async (c) => {
     const eventId = c.req.param("id");
     const input = valid<ReorderDutiesInput>(c, "json");
-    await eventDutiesRepo.reorderDuties(eventId, input.ids);
+    await eventDutiesRepo.reorderDuties(eventId, input.ids, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );
@@ -117,7 +117,7 @@ eventDutyRoutes.delete("/:id/staffing/duties/:dutyId", async (c) => {
   if (!(await eventDutiesRepo.findDutyInEvent(dutyId, eventId))) {
     return c.json({ error: "not_found" }, 404);
   }
-  await eventDutiesRepo.removeDuty(dutyId);
+  await eventDutiesRepo.removeDuty(dutyId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
   return c.json({ ok: true });
 });
 
@@ -151,7 +151,7 @@ eventDutyRoutes.put(
         return c.json({ error: "not_found" }, 404);
       }
     }
-    await eventDutiesRepo.setSlotsForItem(itemId, input.slots);
+    await eventDutiesRepo.setSlotsForItem(itemId, input.slots, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );
@@ -185,7 +185,7 @@ eventDutyRoutes.post(
         400,
       );
     }
-    const id = await eventDutiesRepo.addAssignee(slotId, input.userId);
+    const id = await eventDutiesRepo.addAssignee(slotId, input.userId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ id }, 201);
   },
 );
@@ -201,7 +201,7 @@ eventDutyRoutes.delete(
     if (!(await eventDutiesRepo.assigneeInSlot(assigneeId, slotId, eventId))) {
       return c.json({ error: "not_found" }, 404);
     }
-    await eventDutiesRepo.removeAssignee(assigneeId);
+    await eventDutiesRepo.removeAssignee(assigneeId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );

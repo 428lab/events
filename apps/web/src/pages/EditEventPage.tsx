@@ -1,3 +1,6 @@
+import {EventVisibilityField} from "../components/EventVisibilityField.js";
+import {api} from "../api/client.js";
+import type {Event} from "@eventer/shared";
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -65,13 +68,15 @@ export function EditEventPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { data, isLoading } = useEvent(id);
+  const { data, isLoading, refetch } = useEvent(id);
   const isAdmin = useIsAdmin();
   const update = useUpdateEvent(id);
   const del = useDeleteEvent(id);
   const duplicate = useDuplicateEvent(id);
 
   const [status, setStatus] = useState<"draft" | "published">("draft");
+  const [visibility,setVisibility]=useState<Event["visibility"]>("public");
+  const [visibilityError,setVisibilityError]=useState(false);
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [description, setDescription] = useState("");
@@ -116,6 +121,7 @@ export function EditEventPage() {
     if (data?.event && !initialized) {
       const e = data.event;
       setStatus(e.status === "published" ? "published" : "draft");
+      setVisibility(e.visibility);
       setTitle(e.title);
       setSubtitle(e.subtitle);
       setDescription(e.description);
@@ -182,9 +188,20 @@ export function EditEventPage() {
     deadline_after_start: t("eventForm.deadlineAfterStart"),
   });
 
-  const save = () => {
+  const save = async () => {
+    let expectedAccessRevision:number|undefined;
+    setVisibilityError(false);
+    if (visibility !== event.visibility) {
+      if (!window.confirm(t("eventAccess.visibilityWarning"))) return;
+      try {
+        const preview=await api.get<{accessRevision:number;members:number;voters:number}>(`/events/${id}/visibility-preview`);
+        if (!window.confirm(t("eventAccess.visibilityMembers",preview))) return;
+        expectedAccessRevision=preview.accessRevision;
+      } catch { setVisibilityError(true); return; }
+    }
     update.mutate(
       {
+        ...(expectedAccessRevision === undefined ? {} : {visibility,expectedAccessRevision,confirmVisibilityChange:true}),
         status,
         title,
         subtitle,
@@ -207,7 +224,7 @@ export function EditEventPage() {
         venueOnline: venueOnline || null,
         contestMode,
         attendanceCheck,
-        chatEnabled,
+        chatEnabled:visibility === "public" && chatEnabled,
         chatUrlsAllowed,
         qaEnabled,
         qaAnonymity,
@@ -216,7 +233,7 @@ export function EditEventPage() {
         venueWanted,
         communityId: communityId || null,
       },
-      { onSuccess: () => navigate(`/events/${id}`) },
+      { onSuccess: () => navigate(`/events/${id}`), onError:()=>{if(expectedAccessRevision!==undefined){setVisibilityError(true);void refetch();}} },
     );
   };
 
@@ -227,6 +244,8 @@ export function EditEventPage() {
           {t("eventForm.editTitle")}
         </Typography>
         <Stack spacing={2.5} sx={{ mt: 2 }}>
+          <EventVisibilityField value={visibility} onChange={setVisibility} locked={data.nonpublicEligible===false}/>
+          {visibilityError && <Alert severity="warning">{t("eventAccess.visibilityConflict")}</Alert>}
           <Box>
             <Typography variant="subtitle2" gutterBottom>
               {t("eventForm.statusHeading")}
@@ -242,7 +261,7 @@ export function EditEventPage() {
                 {t("eventForm.statusDraft")}
               </ToggleButton>
               <ToggleButton value="published">
-                {t("eventForm.statusPublished")}
+                {visibility === "public" ? t("eventForm.statusPublished") : t("eventAccess.published")}
               </ToggleButton>
             </ToggleButtonGroup>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>

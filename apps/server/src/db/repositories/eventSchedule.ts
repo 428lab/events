@@ -1,3 +1,5 @@
+import {activeManagerSql,adminIds} from "./eventAccessInvites.js";
+import { eventRun, eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import type {
   EventTrack,
   SaveScheduleItemInput,
@@ -7,7 +9,7 @@ import type {
   ScheduleItem,
   ScheduleVisibility,
 } from "@eventer/shared";
-import { batch, many, one, run } from "../client.js";
+import { many, one, run } from "../client.js";
 
 interface Row {
   id: string;
@@ -228,8 +230,7 @@ export const eventScheduleRepo = {
   async saveAll(
     eventId: string,
     items: SaveScheduleItemInput[],
-    tracks?: SaveScheduleTrackInput[],
-  ): Promise<ScheduleItem[]> {
+    tracks: SaveScheduleTrackInput[] | undefined, writer: EventWriter): Promise<ScheduleItem[]> {
     const now = Date.now();
     const existing = await many<{
       id: string;
@@ -461,7 +462,7 @@ export const eventScheduleRepo = {
     }
 
     const removed = existing.filter((r) => !kept.has(r.id)).map((r) => r.id);
-    await batch([
+    await eventWrite(writer,[
       ...removed.map((id) => ({
         sql: "DELETE FROM event_schedule_item WHERE id = ? AND event_id = ?",
         args: [id, eventId],
@@ -511,15 +512,15 @@ export const eventScheduleRepo = {
   async updateMaterial(
     eventId: string,
     itemId: string,
-    url: string,
-  ): Promise<void> {
-    await run(
+    url: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       `UPDATE event_schedule_item
         SET material_url = ?, material_og_image = '', material_og_url = ''
-        WHERE id = ? AND event_id = ?`,
+        WHERE id = ? AND event_id = ? AND (EXISTS(SELECT 1 FROM event e WHERE e.id=event_id AND ${activeManagerSql("e","?")})
+          OR (speaker_user_id=? AND EXISTS(SELECT 1 FROM event_member m WHERE m.event_id=event_schedule_item.event_id AND m.user_id=? AND m.status<>'canceled')))`,
       url,
       itemId,
-      eventId,
+      eventId,writer.actorId,adminIds(),writer.actorId,writer.actorId,
     );
   },
 

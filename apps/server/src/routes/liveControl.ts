@@ -38,7 +38,7 @@ liveControlRoutes.patch(
         return c.json({ error: "live_set_not_found" }, 404);
       }
     }
-    return c.json(await eventLiveStateRepo.update(c.req.param("id"), input));
+    return c.json(await eventLiveStateRepo.update(c.req.param("id"), input, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}));
   },
 );
 

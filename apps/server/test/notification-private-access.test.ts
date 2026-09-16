@@ -60,7 +60,7 @@ it('migration eligibility cannot be forged; legacy editing and new copy remain p
  expect((await env.DB.prepare('SELECT nonpublic_eligible n FROM event WHERE id=?').bind(old.id).first())!.n).toBe(0);
  const created=await req('/api/events',host,'POST',{title:'New public',venueType:'online',startsAt:Date.now()+60000,endsAt:Date.now()+3600000,nonpublicEligible:false});expect(created.status).toBe(201);const fresh=(await created.json() as any).event;
  expect((await env.DB.prepare('SELECT nonpublic_eligible n FROM event WHERE id=?').bind(fresh.id).first())!.n).toBe(1);
- expect(await(await req(`/api/events/${fresh.id}`,host,'PATCH',{visibility:'private'})).json()).toEqual({error:'private_events_unavailable'});
+ expect(await(await req(`/api/events/${fresh.id}`,host,'PATCH',{visibility:'private'})).json()).toEqual({error:'visibility_confirmation_required'});
  const copy=await req(`/api/events/${old.id}/duplicate`,host,'POST',{});expect(copy.status).toBe(201);const copied=(await copy.json() as any).event;
  expect((await env.DB.prepare('SELECT nonpublic_eligible n FROM event WHERE id=?').bind(copied.id).first())!.n).toBe(1);
 });

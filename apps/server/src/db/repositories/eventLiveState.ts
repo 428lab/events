@@ -1,3 +1,4 @@
+import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type { EventLiveState, UpdateEventLiveStateInput } from "@eventer/shared";
 import { one, run } from "../client.js";
 
@@ -44,11 +45,10 @@ export const eventLiveStateRepo = {
 
   async update(
     eventId: string,
-    input: UpdateEventLiveStateInput,
-  ): Promise<EventLiveState> {
+    input: UpdateEventLiveStateInput, writer: EventWriter): Promise<EventLiveState> {
     const cur = await this.getOrInit(eventId);
     const next = { ...cur, ...input };
-    await run(
+    await eventRun(writer,
       `UPDATE event_live_state SET
          live_set_id = ?, active_scene_id = ?, deck_id = ?, deck_page = ?,
          bgm_track_id = ?, bgm_playing = ?, bgm_volume = ?, updated_at = ?

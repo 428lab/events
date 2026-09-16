@@ -1,5 +1,6 @@
+import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
+import { eventPairViewSql } from "../../auth/eventAccess.js";
 import { eventViewSql } from "../../auth/eventAccess.js";
-import { adminIds } from "./eventAccessInvites.js";
 import type {
   EventMember,
   EventMemberWithUser,
@@ -10,7 +11,7 @@ import type {
 } from "@eventer/shared";
 import { MEET_RANKING_MODES,
   QA_ANONYMITY_MODES } from "@eventer/shared";
-import { batch, many, one, run } from "../client.js";
+import { runCount, batch, many, one } from "../client.js";
 import {
   ATTENDED_COUNT_SQL,
   CAPACITY_TOTAL_SQL,
@@ -181,19 +182,22 @@ export const eventMembersRepo = {
     userId: string,
     attended: boolean,
     attendedAt: number | null,
+    actorId: string,
   ): Promise<EventMember | null> {
-    await run(
+    const changed = await runCount(
       `UPDATE event_member
           SET attended = ?,
               attended_at = CASE WHEN ? = 1 THEN COALESCE(attended_at, ?) ELSE NULL END
-        WHERE event_id = ? AND user_id = ? AND status <> 'canceled'`,
+        WHERE event_id = ? AND user_id = ? AND status <> 'canceled' AND (?=0 OR status='confirmed')
+          AND EXISTS(SELECT 1 FROM event e WHERE e.id=event_id AND ${activeManagerSql('e','?')}
+            AND ${eventPairViewSql('e','?','event_member.user_id','?')})`,
       attended ? 1 : 0,
       attended ? 1 : 0,
       attendedAt,
       eventId,
-      userId,
+      userId, attended ? 1 : 0, actorId,adminIds(),actorId,actorId,adminIds(),adminIds(),
     );
-    return this.find(eventId, userId);
+    return changed ? this.find(eventId, userId) : null;
   },
 
   /** 枠の特定状態のメンバー（抽選・繰り上げ用）。

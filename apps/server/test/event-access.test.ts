@@ -176,17 +176,17 @@ describe("eventAccess: the actual router's private boundary", () => {
     expect(await canViewEvent(event, user)).toBe(false);
   });
 
-  it("nonpublic creation, copying and visibility updates remain explicitly closed", async () => {
+  it("nonpublic creation/copy work while visibility changes need confirmation", async () => {
     for (const visibility of ["unlisted", "private"]) {
       const res = await SELF.fetch(`${BASE}/api/events`, {
         method: "POST", headers: { cookie: owner.cookie, "content-type": "application/json" },
-        body: JSON.stringify({ title: "not-created", venueType: "online", visibility }),
+        body: JSON.stringify({ title: "new restricted draft", venueType: "online", visibility }),
       });
-      expect(res.status).toBe(409);
-      expect(await res.json()).toEqual({ error: "private_events_unavailable" });
+      expect(res.status).toBe(201);
+      expect((await res.json() as {event:{visibility:string}}).event.visibility).toBe(visibility);
     }
     expect((await request("", owner.cookie, "PATCH", { visibility: "public" })).status).toBe(409);
-    expect((await request("/duplicate", owner.cookie, "POST")).status).toBe(409);
+    expect((await request("/duplicate", owner.cookie, "POST")).status).toBe(201);
     for (const visibility of [null, "secret"]) {
       expect((await request("", owner.cookie, "PATCH", { visibility })).status).toBe(400);
     }

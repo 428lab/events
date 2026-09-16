@@ -181,6 +181,7 @@ eventMemberRoutes.patch(
       attended,
       // 出席にした時刻を記録（解除では NULL に戻る） (#154)
       attended ? Date.now() : null,
+      c.get("user").id,
     );
     if (!member) return c.json({ error: "not_found" }, 404);
     return c.json({ member });

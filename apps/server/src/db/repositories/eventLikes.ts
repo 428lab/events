@@ -1,9 +1,10 @@
+import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type {
   EventLikeKind,
   EventLikeUserTarget,
   EventLikesSummary,
 } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { many, one, } from "../client.js";
 
 interface TargetUserRow {
   id: string;
@@ -30,10 +31,9 @@ export const eventLikesRepo = {
     userId: string,
     kind: EventLikeKind,
     targetKey: string,
-    on: boolean,
-  ): Promise<void> {
+    on: boolean, writer: EventWriter): Promise<void> {
     if (on) {
-      await run(
+      await eventRun(writer,
         `INSERT OR IGNORE INTO event_like (id, event_id, user_id, kind, target_key, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
         crypto.randomUUID(),
@@ -44,7 +44,7 @@ export const eventLikesRepo = {
         Date.now(),
       );
     } else {
-      await run(
+      await eventRun(writer,
         "DELETE FROM event_like WHERE event_id = ? AND user_id = ? AND kind = ? AND target_key = ?",
         eventId,
         userId,

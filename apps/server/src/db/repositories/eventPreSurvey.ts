@@ -1,3 +1,4 @@
+import {eventWrite,eventRun,type EventWriter} from "./eventWriteGuard.js";
 import type {
   PreSurveyAccessRow,
   PreSurveyQuestion,
@@ -10,7 +11,7 @@ import {
   PRE_SURVEY_MAX_RESPONSES,
   parseCheckboxValue,
 } from "@eventer/shared";
-import { batch, many, one, run, runCount } from "../client.js";
+import { batch, many, one, run } from "../client.js";
 import { jd } from "./kpiMetrics.js";
 
 /**
@@ -119,37 +120,20 @@ export const eventPreSurveyRepo = {
   /** 作成/更新の一括保存（#152 replaceQuestions と同じ型）。
    * id 一致の既存質問は UPDATE（回答を保持）、入力に無い既存行は DELETE
    * （回答は CASCADE）、qtype が変わった質問の回答は破棄 */
-  async save(eventId: string, input: SavePreSurveyInput): Promise<PreSurvey> {
-    const now = Date.now();
-    let survey = await this.findByEvent(eventId);
-    if (!survey) {
-      await run(
-        `INSERT INTO event_pre_survey (id, event_id, token, title, description, status, created_at)
-         VALUES (?, ?, ?, ?, ?, 'open', ?)`,
-        crypto.randomUUID(),
-        eventId,
-        generatePreSurveyToken(),
-        input.title,
-        input.description,
-        now,
-      );
-      survey = (await this.findByEvent(eventId))!;
-    } else {
-      await run(
-        "UPDATE event_pre_survey SET title = ?, description = ? WHERE id = ?",
-        input.title,
-        input.description,
-        survey.id,
-      );
-    }
-
+  async save(eventId: string, input: SavePreSurveyInput, writer:EventWriter): Promise<PreSurvey> {
+    const now=Date.now(), prior=await this.findByEvent(eventId);
+    const survey=prior ?? {id:crypto.randomUUID()};
+    const metadata=prior ? {sql:"UPDATE event_pre_survey SET title=?,description=? WHERE id=?",args:[input.title,input.description,survey.id]} :
+      {sql:`INSERT INTO event_pre_survey(id,event_id,token,title,description,status,created_at)
+        SELECT ?,id,?,?,?,CASE WHEN visibility='private' THEN 'closed' ELSE 'open' END,? FROM event WHERE id=?`,
+        args:[survey.id,generatePreSurveyToken(),input.title,input.description,now,eventId]};
     const existing = await this.listQuestions(survey.id);
     const existingIds = new Set(existing.map((q) => q.id));
     const existingById = new Map(existing.map((q) => [q.id, q]));
     const keptIds = input.questions
       .map((it) => it.id)
       .filter((id): id is string => Boolean(id && existingIds.has(id)));
-    await batch([
+    await eventWrite(writer,[metadata,
       {
         sql: `DELETE FROM event_pre_survey_question
                WHERE survey_id = ?${
@@ -198,13 +182,13 @@ export const eventPreSurveyRepo = {
         };
       }),
     ]);
-    return survey;
+    return (await this.findByEvent(eventId))!;
   },
 
   /** トークン再発行。旧URLはこの1文で即 404 になる */
-  async rotateToken(surveyId: string): Promise<string> {
+  async rotateToken(surveyId: string, writer:EventWriter): Promise<string> {
     const token = generatePreSurveyToken();
-    await run(
+    await eventRun(writer,
       "UPDATE event_pre_survey SET token = ? WHERE id = ?",
       token,
       surveyId,
@@ -212,18 +196,18 @@ export const eventPreSurveyRepo = {
     return token;
   },
 
-  async setStatus(surveyId: string, status: PreSurveyStatus): Promise<void> {
-    await run(
-      "UPDATE event_pre_survey SET status = ?, closed_at = ? WHERE id = ?",
+  async setStatus(surveyId: string, status: PreSurveyStatus, writer:EventWriter): Promise<void> {
+    await eventRun(writer,
+      `UPDATE event_pre_survey SET status = ?, closed_at = ? WHERE id = ? AND (?='closed' OR EXISTS(SELECT 1 FROM event e WHERE e.id=event_id AND e.visibility<>'private'))`,
       status,
       status === "closed" ? Date.now() : null,
-      surveyId,
+      surveyId, status,
     );
   },
 
-  async delete(surveyId: string): Promise<void> {
+  async delete(surveyId: string, writer:EventWriter): Promise<void> {
     // 質問・回答は FK CASCADE で消える
-    await run("DELETE FROM event_pre_survey WHERE id = ?", surveyId);
+    await eventRun(writer,"DELETE FROM event_pre_survey WHERE id = ?", surveyId);
   },
 
   async responseCount(surveyId: string): Promise<number> {
@@ -238,52 +222,17 @@ export const eventPreSurveyRepo = {
    * 回答の受け付け。response の挿入を**1文の条件付き INSERT**にし、
    * 「open のまま・上限未満」のときだけ入る（同時送信で上限を超えない）。
    * @returns 挿入できた response id（closed か上限到達なら null） */
-  async insertResponse(
-    surveyId: string,
-    userId: string | null,
-  ): Promise<string | null> {
-    const id = crypto.randomUUID();
-    const changes = await runCount(
-      `INSERT INTO event_pre_survey_response (id, survey_id, user_id, created_at)
-       SELECT ?, ?, ?, ?
-        WHERE EXISTS (SELECT 1 FROM event_pre_survey
-                       WHERE id = ? AND status = 'open' AND EXISTS(SELECT 1 FROM event e WHERE e.id=event_pre_survey.event_id AND e.visibility IN ('public','unlisted')))
-          AND (SELECT COUNT(*) FROM event_pre_survey_response WHERE survey_id = ?)
-              < ${PRE_SURVEY_MAX_RESPONSES}`,
-      id,
-      surveyId,
-      userId,
-      Date.now(),
-      surveyId,
-      surveyId,
-    );
-    return changes > 0 ? id : null;
-  },
-
-  /** 回答本体の保存。失敗したら response ごと消して投げ直す（孤児を残さない） */
-  async insertAnswers(
-    responseId: string,
-    answers: { questionId: string; value: string }[],
-  ): Promise<void> {
-    try {
-      await batch(
-        answers.map((a) => ({
-          sql: `INSERT INTO event_pre_survey_answer (id, response_id, question_id, value)
-                VALUES (?, ?, ?, ?)`,
-          args: [crypto.randomUUID(), responseId, a.questionId, a.value],
-        })),
-      );
-    } catch (e) {
-      try {
-        await run(
-          "DELETE FROM event_pre_survey_response WHERE id = ?",
-          responseId,
-        );
-      } catch (cleanupError) {
-        console.error("[pre-survey] response cleanup failed", cleanupError);
-      }
-      throw e;
-    }
+  async submitResponse(surveyId:string, token:string, userId:string|null, answers:{questionId:string;value:string}[]):Promise<string|null> {
+    const id=crypto.randomUUID();
+    const [inserted]=await batch([{sql:`INSERT INTO event_pre_survey_response(id,survey_id,user_id,created_at)
+      SELECT ?,s.id,?,? FROM event_pre_survey s JOIN event e ON e.id=s.event_id
+      WHERE s.id=? AND s.token=? AND s.status='open' AND e.visibility IN ('public','unlisted')
+      AND (SELECT COUNT(*) FROM event_pre_survey_response WHERE survey_id=s.id)<${PRE_SURVEY_MAX_RESPONSES}`,
+      args:[id,userId,Date.now(),surveyId,token]},
+      ...answers.map(a=>({sql:`INSERT INTO event_pre_survey_answer(id,response_id,question_id,value)
+        SELECT ?,r.id,(SELECT id FROM event_pre_survey_question WHERE id=? AND survey_id=r.survey_id),?
+        FROM event_pre_survey_response r WHERE r.id=?`,args:[crypto.randomUUID(),a.questionId,a.value,id]}))]);
+    return inserted ? id : null;
   },
 
   /** 回答一覧 (#447・staff のみが読む)。行=1送信・新しい順。

@@ -47,8 +47,9 @@ eventSlotRoutes.post(
   async (c) => {
     const slot = await participationSlotsRepo.create(
       c.req.param("id"),
-      valid<CreateSlotInput>(c, "json"),
+      valid<CreateSlotInput>(c, "json"), c.get("user").id,
     );
+    if (!slot) return c.json({error:"access_changed"},409);
     return c.json({ slot }, 201);
   },
 );
@@ -62,7 +63,7 @@ eventSlotRoutes.patch(
     if (!(await loadSlot(c))) return c.json({ error: "not_found" }, 404);
     const slot = await participationSlotsRepo.update(
       c.req.param("slotId"),
-      valid<UpdateSlotInput>(c, "json"),
+      valid<UpdateSlotInput>(c, "json"), c.req.param("id"), c.get("user").id,
     );
     if (!slot) return c.json({ error: "not_found" }, 404);
     return c.json({ slot });
@@ -75,7 +76,7 @@ eventSlotRoutes.delete(
   requireEventRole(["staff"]),
   async (c) => {
     if (!(await loadSlot(c))) return c.json({ error: "not_found" }, 404);
-    await participationSlotsRepo.delete(c.req.param("slotId"));
+    if (!(await participationSlotsRepo.delete(c.req.param("slotId"), c.req.param("id"), c.get("user").id))) return c.json({error:"access_changed"},409);
     return c.json({ ok: true });
   },
 );

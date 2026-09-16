@@ -1,4 +1,6 @@
-import { many, one, run } from "../client.js";
+import {eventViewSql} from "../../auth/eventAccess.js";
+import {adminIds} from "./eventAccessInvites.js";
+import { many, one, runCount } from "../client.js";
 
 export interface VenueOfferRow {
   id: string;
@@ -40,6 +42,13 @@ function toOffer(r: VenueOfferRow): VenueOffer {
     respondedAt: r.responded_at,
   };
 }
+
+const venueManager = `(v.owner_id=u.id OR EXISTS(SELECT 1 FROM venue_admin va WHERE va.venue_id=v.id AND va.user_id=u.id))`;
+const appAdmin = `u.discord_id IN(SELECT value FROM json_each(?1))`;
+const organizer = `COALESCE((${appAdmin} OR e.created_by=u.id OR EXISTS(SELECT 1 FROM event_member m WHERE m.event_id=e.id AND m.user_id=u.id AND m.role='staff' AND m.status<>'canceled') OR r.created_by=u.id),0)`;
+const currentParties = `FROM user u JOIN venue v ON v.id=o.venue_id
+  LEFT JOIN event e ON e.id=o.event_id LEFT JOIN event_request r ON r.id=o.request_id
+  WHERE u.id=?2 AND u.deleted_at IS NULL AND (o.event_id IS NULL OR ${eventViewSql("e","u.id","?1")})`;
 
 export const venueOffersRepo = {
   async findById(id: string): Promise<VenueOffer | null> {
@@ -92,45 +101,28 @@ export const venueOffersRepo = {
     direction: VenueOffer["direction"];
     organizerContact: string;
     createdBy: string;
-  }): Promise<VenueOffer> {
+  }): Promise<VenueOffer | null> {
     const id = crypto.randomUUID();
-    await run(
-      `INSERT INTO venue_offer
-        (id, venue_id, event_id, request_id, direction, status, organizer_contact, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-      id,
-      offer.venueId,
-      offer.eventId,
-      offer.requestId,
-      offer.direction,
-      offer.organizerContact,
-      offer.createdBy,
-      Date.now(),
-    );
+    const changed=await runCount(`WITH o AS(SELECT ?3 venue_id,?4 event_id,?5 request_id,?6 direction)
+      INSERT INTO venue_offer(id,venue_id,event_id,request_id,direction,status,organizer_contact,created_by,created_at)
+      SELECT ?7,venue_id,event_id,request_id,direction,'pending',?8,?2,?9 FROM o WHERE EXISTS(
+        SELECT 1 ${currentParties} AND EXISTS(SELECT 1 FROM user owner WHERE owner.id=v.owner_id AND owner.deleted_at IS NULL)
+        AND ((o.event_id IS NOT NULL AND e.status='published') OR (o.event_id IS NULL AND r.status='open' AND r.members_only=0))
+        AND CASE WHEN direction='venue_to_event' THEN ${venueManager} AND NOT ${organizer} AND v.status='open' AND COALESCE(e.venue_wanted,r.venue_wanted)=1
+          ELSE ${organizer} AND NOT ${venueManager} END)`,
+      adminIds(),offer.createdBy,offer.venueId,offer.eventId,offer.requestId,offer.direction,id,offer.organizerContact,Date.now());
+    if (!changed) return null;
+
     return (await this.findById(id))!;
   },
 
-  async respond(
-    id: string,
-    status: "accepted" | "declined",
-    organizerContact?: string,
-  ): Promise<void> {
-    if (organizerContact != null) {
-      await run(
-        "UPDATE venue_offer SET status = ?, responded_at = ?, organizer_contact = ? WHERE id = ?",
-        status,
-        Date.now(),
-        organizerContact,
-        id,
-      );
-    } else {
-      await run(
-        "UPDATE venue_offer SET status = ?, responded_at = ? WHERE id = ?",
-        status,
-        Date.now(),
-        id,
-      );
-    }
+  async respond(id:string,status:"accepted"|"declined",organizerContact:string|undefined,actorId:string):Promise<boolean> {
+    return (await runCount(`UPDATE venue_offer AS o SET status=?3,responded_at=?4,organizer_contact=COALESCE(?5,organizer_contact)
+      WHERE o.id=?6 AND o.status='pending' AND EXISTS(SELECT 1 ${currentParties}
+        AND CASE WHEN o.direction='venue_to_event' THEN ${organizer} ELSE (${venueManager} OR ${appAdmin}) END
+        AND (?3<>'accepted' OR (EXISTS(SELECT 1 FROM user sender WHERE sender.id=o.created_by AND sender.deleted_at IS NULL)
+          AND EXISTS(SELECT 1 FROM user owner WHERE owner.id=v.owner_id AND owner.deleted_at IS NULL))))`,
+      adminIds(),actorId,status,Date.now(),organizerContact??null,id)) > 0;
   },
 
   /** 会場側のオファー一覧（その会場に届いた/送った） */

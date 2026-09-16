@@ -1,5 +1,6 @@
+import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type { EventQuestion } from "@eventer/shared";
-import { many, one, run, runCount } from "../client.js";
+import { many, one, } from "../client.js";
 
 /** 一覧の1行（投稿者・票数・自分の投票つき）。表示上の出し分け（匿名の author 落とし）は
  * ルート側で行う。ここでは「実データ」をそのまま返す */
@@ -110,10 +111,9 @@ export const eventQaRepo = {
     eventId: string,
     userId: string,
     body: string,
-    anonymous: boolean,
-  ): Promise<string> {
+    anonymous: boolean, writer: EventWriter): Promise<string> {
     const id = crypto.randomUUID();
-    await run(
+    await eventRun(writer,
       `INSERT INTO event_question
         (id, event_id, user_id, body, anonymous, answered, hidden, created_at)
        VALUES (?, ?, ?, ?, ?, 0, 0, ?)`,
@@ -129,13 +129,13 @@ export const eventQaRepo = {
 
   /** 質問の削除（投稿者本人による取り消し）。
    * 票は event_question_vote の外部キー ON DELETE CASCADE で一緒に消える */
-  async delete(id: string): Promise<void> {
-    await run("DELETE FROM event_question WHERE id = ?", id);
+  async delete(id: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"DELETE FROM event_question WHERE id = ?", id);
   },
 
   /** 投票（冪等。二重投票は主キーで弾かれる） */
-  async vote(questionId: string, userId: string): Promise<void> {
-    await run(
+  async vote(questionId: string, userId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       `INSERT OR IGNORE INTO event_question_vote (question_id, user_id, created_at)
        VALUES (?, ?, ?)`,
       questionId,
@@ -145,8 +145,8 @@ export const eventQaRepo = {
   },
 
   /** 投票の取り消し（冪等） */
-  async unvote(questionId: string, userId: string): Promise<void> {
-    await run(
+  async unvote(questionId: string, userId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       "DELETE FROM event_question_vote WHERE question_id = ? AND user_id = ?",
       questionId,
       userId,
@@ -156,8 +156,7 @@ export const eventQaRepo = {
   /** 回答済み / 非表示の更新（staff）。渡された項目だけ変える */
   async updateFlags(
     questionId: string,
-    flags: { answered?: boolean; hidden?: boolean },
-  ): Promise<void> {
+    flags: { answered?: boolean; hidden?: boolean }, writer: EventWriter): Promise<void> {
     const sets: string[] = [];
     const args: unknown[] = [];
     if (flags.answered !== undefined) {
@@ -171,7 +170,7 @@ export const eventQaRepo = {
     if (sets.length === 0) return;
     // 運営が非表示にした質問 (#278) はスタッフの操作では動かせない。
     // ルート側でも 409 を返しているが、経路が増えたときのために SQL でも閉じる
-    await run(
+    await eventRun(writer,
       `UPDATE event_question SET ${sets.join(", ")}
         WHERE id = ? AND admin_hidden_at IS NULL`,
       ...args,
@@ -188,8 +187,8 @@ export const eventQaRepo = {
     return row?.qa_picked_question_id ?? null;
   },
 
-  async setPicked(eventId: string, questionId: string | null): Promise<void> {
-    await run(
+  async setPicked(eventId: string, questionId: string | null, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       "UPDATE event SET qa_picked_question_id = ? WHERE id = ?",
       questionId,
       eventId,
@@ -197,8 +196,8 @@ export const eventQaRepo = {
   },
 
   /** その質問がピックアップ中なら解除する（非表示にしたときの後始末） */
-  async clearPickedIf(eventId: string, questionId: string): Promise<number> {
-    return runCount(
+  async clearPickedIf(eventId: string, questionId: string, writer: EventWriter): Promise<number> {
+    return eventRun(writer,
       "UPDATE event SET qa_picked_question_id = NULL WHERE id = ? AND qa_picked_question_id = ?",
       eventId,
       questionId,

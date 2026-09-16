@@ -1,3 +1,4 @@
+import {eventRun} from "./eventWriteGuard.js";
 import { eventMembersRepo } from "./eventMembers.js";
 import { currentMemberSnapshotSql, memberSnapshot } from "./membershipChange.js";
 import { accessOperationGuard, activeManagerSql, adminIds } from "./eventAccessInvites.js";
@@ -9,7 +10,7 @@ import type {
   StaffInviteStatus,
   User,
 } from "@eventer/shared";
-import { batch, many, one, run, runCount } from "../client.js";
+import { batch, many, one, runCount } from "../client.js";
 
 /** 運営スタッフへの招待 (#339)。
  *
@@ -128,7 +129,7 @@ export const eventStaffInvitesRepo = {
     invitedBy: string,
   ): Promise<StaffInviteRecord> {
     const now = Date.now();
-    await run(
+    await eventRun({eventId,actorId:invitedBy,permission:"manager"},
       `INSERT INTO event_staff_invite
          (id, event_id, user_id, invited_by, status, created_at, responded_at)
        VALUES (?, ?, ?, ?, 'pending', ?, NULL)
@@ -218,8 +219,8 @@ export const eventStaffInvitesRepo = {
    * 権限は変わらない＝「消したのに運営のまま」という取り違えを招くため。
    *
    * @returns 実際に片付けられたら true */
-  async revoke(id: string): Promise<boolean> {
-    const changed = await runCount(
+  async revoke(id: string,eventId:string,actorId:string): Promise<boolean> {
+    const changed = await eventRun({eventId,actorId,permission:"manager"},
       `UPDATE event_staff_invite SET status = 'revoked', responded_at = ?
         WHERE id = ? AND status IN ('pending', 'declined')`,
       Date.now(),

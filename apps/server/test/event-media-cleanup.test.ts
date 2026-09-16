@@ -4,6 +4,7 @@ import { bindEnv, type Env } from "../src/runtime.js";
 import { deleteObjects } from "../src/lib/mediaCleanup.js";
 
 const BASE = "https://example.com";
+const coverKeys = new Map<string,string>();
 
 /**
  * イベント削除と R2 の実体の後始末 (#424)。固定したい契約:
@@ -64,6 +65,8 @@ async function putCoverImage(eventId: string, cookie: string): Promise<void> {
     body: PNG,
   });
   expect(res.status).toBe(200);
+  const row=await env.DB.prepare("SELECT object_key FROM event_image WHERE event_id=?").bind(eventId).first<{object_key:string}>();
+  coverKeys.set(eventId,row!.object_key);
 }
 
 async function uploadPhoto(eventId: string, cookie: string): Promise<string> {
@@ -143,7 +146,7 @@ async function rowCount(sql: string, ...args: unknown[]): Promise<number> {
   return row?.n ?? 0;
 }
 
-const coverKey = (eventId: string) => `event-images/${eventId}`;
+const coverKey = (eventId: string) => coverKeys.get(eventId) ?? `event-images/${eventId}`;
 const photoKey = (eventId: string, id: string) =>
   `event-photos/${eventId}/${id}`;
 const videoKey = (eventId: string, id: string) =>

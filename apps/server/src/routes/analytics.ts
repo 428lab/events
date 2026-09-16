@@ -81,7 +81,7 @@ export async function recordEventView(c: Context<AppEnv>) {
     });
   }
 
-  await eventViewsRepo.record(eventId, jstDay(), source, country, vid);
+  await eventViewsRepo.record(eventId, jstDay(), source, country, vid,user?.id??null);
   return c.body(null, 204);
 }
 

@@ -1,3 +1,4 @@
+import { eventRun, eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import type {
   AwardRank,
   CreateAwardRankInput,
@@ -7,7 +8,7 @@ import type {
   UpdateSpecialAwardInput,
   UserAward,
 } from "@eventer/shared";
-import { batch, many, one, run } from "../client.js";
+import { many, one, } from "../client.js";
 import { entryAnonymizedSql, entryDisplayName } from "./entries.js";
 
 interface RankRow {
@@ -63,30 +64,30 @@ export const awardsRepo = {
     );
     return r ? toRank(r) : null;
   },
-  async createRank(eventId: string, input: CreateAwardRankInput): Promise<AwardRank> {
+  async createRank(eventId: string, input: CreateAwardRankInput, writer: EventWriter): Promise<AwardRank> {
     const id = crypto.randomUUID();
     const next = (await one<{ n: number }>(
       "SELECT COALESCE(MAX(rank_order), 0) + 1 AS n FROM award_rank WHERE event_id = ?",
       eventId,
     ))!.n;
-    await run(
+    await eventRun(writer,
       "INSERT INTO award_rank (id, event_id, name, content, rank_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
       id, eventId, input.name, input.content ?? null, next, Date.now(),
     );
     return (await this.findRank(id))!;
   },
-  async updateRank(id: string, input: UpdateAwardRankInput): Promise<AwardRank | null> {
+  async updateRank(id: string, input: UpdateAwardRankInput, writer: EventWriter): Promise<AwardRank | null> {
     const cur = await this.findRank(id);
     if (!cur) return null;
     const next = { ...cur, ...input };
-    await run(
+    await eventRun(writer,
       "UPDATE award_rank SET name = ?, content = ?, rank_order = ? WHERE id = ?",
       next.name, next.content ?? null, next.rankOrder, id,
     );
     return this.findRank(id);
   },
-  async deleteRank(id: string): Promise<void> {
-    await run("DELETE FROM award_rank WHERE id = ?", id);
+  async deleteRank(id: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"DELETE FROM award_rank WHERE id = ?", id);
   },
 
   /* specials */
@@ -98,13 +99,13 @@ export const awardsRepo = {
       )
     ).map(toSpecial);
   },
-  async createSpecial(eventId: string, input: CreateSpecialAwardInput): Promise<SpecialAward> {
+  async createSpecial(eventId: string, input: CreateSpecialAwardInput, writer: EventWriter): Promise<SpecialAward> {
     const id = crypto.randomUUID();
     const next = (await one<{ n: number }>(
       "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM special_award WHERE event_id = ?",
       eventId,
     ))!.n;
-    await run(
+    await eventRun(writer,
       "INSERT INTO special_award (id, event_id, name, content, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
       id, eventId, input.name, input.content ?? null, next, Date.now(),
     );
@@ -121,18 +122,18 @@ export const awardsRepo = {
     );
     return r ? toSpecial(r) : null;
   },
-  async updateSpecial(id: string, input: UpdateSpecialAwardInput): Promise<SpecialAward | null> {
+  async updateSpecial(id: string, input: UpdateSpecialAwardInput, writer: EventWriter): Promise<SpecialAward | null> {
     const cur = await this.findSpecial(id);
     if (!cur) return null;
     const next = { ...cur, ...input };
-    await run(
+    await eventRun(writer,
       "UPDATE special_award SET name = ?, content = ?, sort_order = ? WHERE id = ?",
       next.name, next.content ?? null, next.sortOrder, id,
     );
     return this.findSpecial(id);
   },
-  async deleteSpecial(id: string): Promise<void> {
-    await run("DELETE FROM special_award WHERE id = ?", id);
+  async deleteSpecial(id: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"DELETE FROM special_award WHERE id = ?", id);
   },
 
   /* results */
@@ -183,9 +184,9 @@ export const awardsRepo = {
       }));
   },
   /** ランク賞の受賞者を設定（1賞1エントリー。null で解除） */
-  async setRankWinner(eventId: string, rankId: string, entryId: string | null): Promise<void> {
+  async setRankWinner(eventId: string, rankId: string, entryId: string | null, writer: EventWriter): Promise<void> {
     if (entryId) {
-      await batch([
+      await eventWrite(writer,[
         { sql: "DELETE FROM award_result WHERE award_rank_id = ?", args: [rankId] },
         {
           sql: "INSERT INTO award_result (id, event_id, entry_id, award_rank_id) VALUES (?, ?, ?, ?)",
@@ -193,14 +194,14 @@ export const awardsRepo = {
         },
       ]);
     } else {
-      await batch([
+      await eventWrite(writer,[
         { sql: "DELETE FROM award_result WHERE award_rank_id = ?", args: [rankId] },
       ]);
     }
   },
-  async setSpecialWinner(eventId: string, specialId: string, entryId: string | null): Promise<void> {
+  async setSpecialWinner(eventId: string, specialId: string, entryId: string | null, writer: EventWriter): Promise<void> {
     if (entryId) {
-      await batch([
+      await eventWrite(writer,[
         { sql: "DELETE FROM award_result WHERE special_award_id = ?", args: [specialId] },
         {
           sql: "INSERT INTO award_result (id, event_id, entry_id, special_award_id) VALUES (?, ?, ?, ?)",
@@ -208,7 +209,7 @@ export const awardsRepo = {
         },
       ]);
     } else {
-      await batch([
+      await eventWrite(writer,[
         { sql: "DELETE FROM award_result WHERE special_award_id = ?", args: [specialId] },
       ]);
     }

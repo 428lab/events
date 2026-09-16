@@ -181,6 +181,7 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
     createdBy: user.id,
   });
 
+  if (!offer) return c.json({error:"access_changed"},409);
   // 受け手へ通知
   const link = input.eventId
     ? `/events/${input.eventId}`
@@ -249,12 +250,13 @@ venueOfferRoutes.post(
       }
     }
     // 主催者が承諾する側（venue_to_event）なら連絡先を添えられる
-    await venueOffersRepo.respond(
+    const changed=await venueOffersRepo.respond(
       offer.id,
       accepted ? "accepted" : "declined",
-      offer.direction === "venue_to_event" ? (input.contact ?? "") : undefined,
+      offer.direction === "venue_to_event" ? (input.contact ?? "") : undefined, user.id,
     );
 
+    if (!changed) return c.json({error:"access_changed"},409);
     // オファーした側へ結果通知
     const venue = await venuesRepo.findById(offer.venueId);
     if (offer.createdBy !== user.id) {

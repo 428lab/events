@@ -117,7 +117,7 @@ export async function getMeetPrizeImage(c: Context) {
  * 複製 API 全体を 500 にしない。ログで追える） */
 export async function copyMeetPrizeImage(
   src: MeetPrize,
-  dstPrizeId: string,
+  dstPrizeId: string, eventId: string, actorId: string,
 ): Promise<void> {
   if (!src.imageKey) return;
   try {
@@ -129,7 +129,7 @@ export async function copyMeetPrizeImage(
     await getBucket().put(newKey, body, {
       httpMetadata: { contentType: obj.httpMetadata?.contentType },
     });
-    await eventMeetPrizesRepo.setImageKey(dstPrizeId, newKey);
+    await eventMeetPrizesRepo.setImageKey(dstPrizeId, newKey, {eventId,actorId,permission:"manager"});
   } catch (e) {
     console.error("[meet-prize] image copy failed", src.imageKey, e);
   }
@@ -225,8 +225,7 @@ meetPrizeRoutes.post(
     }
     const prize = await eventMeetPrizesRepo.create(
       eventId,
-      valid<CreateMeetPrizeInput>(c, "json"),
-    );
+      valid<CreateMeetPrizeInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ prize }, 201);
   },
 );
@@ -239,8 +238,7 @@ meetPrizeRoutes.patch(
     if (!(await prizeOf(c))) return c.json({ error: "not_found" }, 404);
     const prize = await eventMeetPrizesRepo.update(
       c.req.param("prizeId"),
-      valid<UpdateMeetPrizeInput>(c, "json"),
-    );
+      valid<UpdateMeetPrizeInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ prize });
   },
 );
@@ -251,7 +249,7 @@ meetPrizeRoutes.delete(
   async (c) => {
     const prize = await prizeOf(c);
     if (!prize) return c.json({ error: "not_found" }, 404);
-    await eventMeetPrizesRepo.delete(prize.id);
+    await eventMeetPrizesRepo.delete(prize.id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     // 行が消えた画像は誰にも辿れない孤児になるので、ここで R2 も消す (#434)。
     // best-effort（失敗してもログで追える。参照は既に無いので配信はされない）
     await deleteObjects(
@@ -299,7 +297,7 @@ meetPrizeRoutes.put(
     const newKey = prizeImageKey(prize.id);
     await bucket.put(newKey, body, { httpMetadata: { contentType: mime } });
     try {
-      await eventMeetPrizesRepo.setImageKey(prize.id, newKey);
+      await eventMeetPrizesRepo.setImageKey(prize.id, newKey, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     } catch (e) {
       // 参照の差し替えに失敗したら、置いたばかりの新キーを消して投げ直す
       await deleteObjects([newKey], `[meet-prize] new prize=${prize.id}`);
@@ -320,7 +318,7 @@ meetPrizeRoutes.delete(
   async (c) => {
     const prize = await prizeOf(c);
     if (!prize || !prize.imageKey) return c.json({ error: "not_found" }, 404);
-    await eventMeetPrizesRepo.setImageKey(prize.id, null);
+    await eventMeetPrizesRepo.setImageKey(prize.id, null, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     await deleteObjects([prize.imageKey], `[meet-prize] prize=${prize.id}`);
     return c.json({ ok: true });
   },
@@ -474,9 +472,8 @@ meetPrizeRoutes.post(
             eventId,
             prize.id,
             userId,
-            me.id,
-          )
-        : await eventMeetPrizesRepo.redeem(prize.id, userId, me.id);
+            me.id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"})
+        : await eventMeetPrizesRepo.redeem(prize.id, userId, me.id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (!ok) {
       // 入らなかった理由を読み直して区別（窓口の案内文言が変わる）
       const already =
@@ -500,8 +497,7 @@ meetPrizeRoutes.delete(
     if (!(await prizeOf(c))) return c.json({ error: "not_found" }, 404);
     const undone = await eventMeetPrizesRepo.deleteRedemption(
       c.req.param("prizeId"),
-      c.req.param("userId"),
-    );
+      c.req.param("userId"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (!undone) return c.json({ error: "not_found" }, 404);
     return c.json({ ok: true });
   },
@@ -520,7 +516,7 @@ meetPrizeRoutes.post(
     if (!(await eventsRepo.findById(eventId))) {
       return c.json({ error: "not_found" }, 404);
     }
-    const n = await eventMeetPrizesRepo.closeWinners(eventId, Date.now());
+    const n = await eventMeetPrizesRepo.closeWinners(eventId, Date.now(), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (n === 0) return c.json({ error: "no_meets" }, 409);
     return c.json({ winners: await eventMeetPrizesRepo.listWinners(eventId) });
   },
@@ -531,7 +527,7 @@ meetPrizeRoutes.delete(
   "/:id/meets/winners",
   requireEventRole(["staff"]),
   async (c) => {
-    await eventMeetPrizesRepo.clearWinners(c.req.param("id"));
+    await eventMeetPrizesRepo.clearWinners(c.req.param("id"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );

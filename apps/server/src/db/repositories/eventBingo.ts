@@ -1,5 +1,6 @@
+import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
+import { eventRun, eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import { eventViewSql } from "../../auth/eventAccess.js";
-import { adminIds } from "./eventAccessInvites.js";
 import type {
   BingoGameStatus,
   BingoStatusRow,
@@ -10,7 +11,7 @@ import {
   BINGO_MAX_NUMBER,
   deriveBingoCard,
 } from "@eventer/shared";
-import { batch, many, one, run, runCount } from "../client.js";
+import { many, one, } from "../client.js";
 
 /**
  * 数字ビンゴ (#436)。設計は docs/bingo.md。
@@ -104,8 +105,8 @@ export const eventBingoRepo = {
   },
 
   /** ゲーム作成（setup）。既にあれば false（INSERT OR IGNORE の変更行数で判定） */
-  async createGame(eventId: string): Promise<boolean> {
-    const changes = await runCount(
+  async createGame(eventId: string, writer: EventWriter): Promise<boolean> {
+    const changes = await eventRun(writer,
       "INSERT OR IGNORE INTO event_bingo_game (event_id, status, drawn_count, created_at) VALUES (?, 'setup', 0, ?)",
       eventId,
       Date.now(),
@@ -114,8 +115,8 @@ export const eventBingoRepo = {
   },
 
   /** 開始。順列を固定して running へ。1文の条件付き UPDATE で二重 start を防ぐ */
-  async startGame(eventId: string): Promise<boolean> {
-    const changes = await runCount(
+  async startGame(eventId: string, writer: EventWriter): Promise<boolean> {
+    const changes = await eventRun(writer,
       `UPDATE event_bingo_game
           SET status = 'running', draw_order = ?, started_at = ?
         WHERE event_id = ? AND status = 'setup'`,
@@ -130,20 +131,21 @@ export const eventBingoRepo = {
    * RETURNING で**自分が進めた手番**を原子的に受け取る。UPDATE 後に読み直すと、
    * 同時に引いた2つの応答が同じ「最新の番号」を名乗り、間の1つがどの応答にも
    * 出ない（0回発表）ことがある（レビュー指摘） */
-  async draw(eventId: string): Promise<number | null> {
+  async draw(eventId: string, actorId:string): Promise<number | null> {
     const r = await one<{ drawn_count: number }>(
       `UPDATE event_bingo_game
           SET drawn_count = drawn_count + 1
         WHERE event_id = ? AND status = 'running' AND drawn_count < ${BINGO_MAX_NUMBER}
+        AND EXISTS(SELECT 1 FROM event e WHERE e.id=event_id AND ${activeManagerSql("e","?")})
         RETURNING drawn_count`,
-      eventId,
+      eventId, actorId, adminIds(),
     );
     return r?.drawn_count ?? null;
   },
 
   /** 直前の1個を取り消す（staff の誤操作訂正）。0 のときは変更行数 0 */
-  async undoDraw(eventId: string): Promise<boolean> {
-    const changes = await runCount(
+  async undoDraw(eventId: string, writer: EventWriter): Promise<boolean> {
+    const changes = await eventRun(writer,
       `UPDATE event_bingo_game
           SET drawn_count = drawn_count - 1
         WHERE event_id = ? AND status = 'running' AND drawn_count > 0`,
@@ -180,10 +182,9 @@ export const eventBingoRepo = {
     eventId: string,
     startedAt: number,
     drawnTotal: number,
-    rows: { userId: string; rank: number | null; completedAtSeq: number | null }[],
-  ): Promise<boolean> {
+    rows: { userId: string; rank: number | null; completedAtSeq: number | null }[], writer: EventWriter): Promise<boolean> {
     const now = Date.now();
-    const changes = await batch([
+    const changes = await eventWrite(writer,[
       ...rows.map((r) => ({
         sql: `INSERT OR IGNORE INTO event_bingo_result
                 (id, event_id, user_id, started_at, ended_at, rank, completed_at_seq, drawn_total)
@@ -249,8 +250,8 @@ export const eventBingoRepo = {
    * D1 batch はトランザクションなので「カードだけ消えて状態はそのまま」を作らない。
    * 達成は導出なので自然に全員未達成へ。引き換え済みの景品には触らない（#431 の規則）
    */
-  async resetGame(eventId: string): Promise<boolean> {
-    const [, changed] = await batch([
+  async resetGame(eventId: string, writer: EventWriter): Promise<boolean> {
+    const [, changed] = await eventWrite(writer,[
       {
         sql: `DELETE FROM event_bingo_card
                WHERE event_id = ? AND EXISTS (
@@ -270,15 +271,15 @@ export const eventBingoRepo = {
   },
 
   /** ゲームごと削除（カードは CASCADE）。参加者には 404（存在しない）に戻る */
-  async deleteGame(eventId: string): Promise<void> {
-    await run("DELETE FROM event_bingo_game WHERE event_id = ?", eventId);
+  async deleteGame(eventId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"DELETE FROM event_bingo_game WHERE event_id = ?", eventId);
   },
 
   /* ---- カード ---- */
 
   /** カード発行（冪等）。内容はサーバー乱数で、2回目以降は同じカードを返す */
-  async issueCard(eventId: string, userId: string): Promise<number[]> {
-    await run(
+  async issueCard(eventId: string, userId: string, writer: EventWriter): Promise<number[]> {
+    await eventRun(writer,
       `INSERT OR IGNORE INTO event_bingo_card (event_id, user_id, numbers, created_at)
        VALUES (?, ?, ?, ?)`,
       eventId,

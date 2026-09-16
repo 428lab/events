@@ -87,6 +87,13 @@ export const requireEventAccess: MiddlewareHandler = async (c, next) => {
       return c.json({ error: "not_found" }, 404);
     }
     await next();
+    // Successful deletion returns only {ok:true}; its qualified writer already removed the event.
+    if (c.req.method === "DELETE" && c.req.path === `/api/events/${event.id}` && c.res.ok) return;
+    const latest = await eventsRepo.findById(event.id);
+    if (!latest || !(await canViewEvent(latest, await currentUser(c)))) {
+      await c.res.body?.cancel().catch(()=>{});
+      return c.json({error:"not_found"},404);
+    }
   } finally {
     // Child media handlers must not replace this with their old cache headers.
     eventResponseHeaders(c, !event || event.visibility !== "public");

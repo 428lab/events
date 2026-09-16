@@ -1,10 +1,11 @@
+import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type {
   EntryScoreSummary,
   JudgeProgress,
   Score,
   ScoringCriterion,
 } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { many, one, } from "../client.js";
 import { scoringCriteriaRepo } from "./scoringCriteria.js";
 import { entryAnonymizedSql, entryDisplayName } from "./entries.js";
 
@@ -34,8 +35,7 @@ export const scoresRepo = {
     entryId: string,
     criterionId: string,
     judgeUserId: string,
-    value: number,
-  ): Promise<void> {
+    value: number, writer: EventWriter): Promise<void> {
     const existing = await one<{ id: string }>(
       "SELECT id FROM score WHERE entry_id = ? AND criterion_id = ? AND judge_user_id = ?",
       entryId,
@@ -43,14 +43,14 @@ export const scoresRepo = {
       judgeUserId,
     );
     if (existing) {
-      await run(
+      await eventRun(writer,
         "UPDATE score SET value = ?, updated_at = ? WHERE id = ?",
         value,
         Date.now(),
         existing.id,
       );
     } else {
-      await run(
+      await eventRun(writer,
         `INSERT INTO score (id, event_id, entry_id, criterion_id, judge_user_id, value, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         crypto.randomUUID(),

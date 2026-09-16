@@ -1,3 +1,4 @@
+import {eventRun} from "./eventWriteGuard.js";
 import {
   BROADCAST_SEGMENTS,
   type BroadcastEmailStats,
@@ -196,7 +197,7 @@ export const eventBroadcastsRepo = {
     recipientCount: number;
   }): Promise<string> {
     const id = crypto.randomUUID();
-    await run(
+    await eventRun({eventId:input.eventId,actorId:input.createdBy,permission:"manager"},
       `INSERT INTO event_broadcast
          (id, event_id, created_by, segment, title, body, recipient_count, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,

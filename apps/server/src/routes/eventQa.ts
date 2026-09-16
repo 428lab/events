@@ -173,7 +173,7 @@ eventQaRoutes.post(
         : event.qaAnonymity === "real"
           ? false
           : input.anonymous;
-    const id = await eventQaRepo.create(eventId, me.id, input.body, anonymous);
+    const id = await eventQaRepo.create(eventId, me.id, input.body, anonymous, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
     const row = await eventQaRepo.findById(id, me.id);
     if (!row) return c.json({ error: "not_found" }, 404);
     const member = await eventMembersRepo.find(eventId, me.id);
@@ -204,7 +204,7 @@ eventQaRoutes.post(
     // 非表示の質問は一覧に出ないが、IDを知っていれば叩けてしまう。
     // 票が溜まると解除したときにいきなり上位に並ぶので、ここで弾く
     if (meta.hidden) return c.json({ error: "question_hidden" }, 409);
-    await eventQaRepo.vote(qid, c.get("user").id);
+    await eventQaRepo.vote(qid, c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
     return c.json({ ok: true });
   },
 );
@@ -226,7 +226,7 @@ eventQaRoutes.delete(
     if (!meta || meta.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
     }
-    await eventQaRepo.unvote(qid, c.get("user").id);
+    await eventQaRepo.unvote(qid, c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
     return c.json({ ok: true });
   },
 );
@@ -255,10 +255,10 @@ eventQaRoutes.delete(
     // countByUser が削除済みを数えないため1人あたりの上限もすり抜けられる。
     // 他の参加者にはすでに見えていないので、取り下げの目的は達成されている
     if (meta.hidden) return c.json({ error: "question_hidden" }, 409);
-    await eventQaRepo.delete(qid);
+    await eventQaRepo.delete(qid, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"view"});
     // 消した質問がピックアップ中なら解除する
     // （event.qa_picked_question_id には FK がないので自分で片付ける）
-    await eventQaRepo.clearPickedIf(eventId, qid);
+    await eventQaRepo.clearPickedIf(eventId, qid, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"view"});
     return c.json({ ok: true });
   },
 );
@@ -282,11 +282,11 @@ eventQaRoutes.patch(
     // 閉じてある。ここで先に弾いてもレスポンス（下の findById が null で 404）は
     // 同じなので、判定は1箇所だけに置く
     const input = valid<UpdateQuestionInput>(c, "json");
-    await eventQaRepo.updateFlags(qid, input);
+    await eventQaRepo.updateFlags(qid, input, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"staff"});
     // 非表示にした質問がピックアップ中なら解除する
     // （投影画面に「非表示のはずの質問」が出続けないように）
     if (input.hidden === true) {
-      await eventQaRepo.clearPickedIf(eventId, qid);
+      await eventQaRepo.clearPickedIf(eventId, qid, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"view"});
     }
     const me = c.get("user");
     const row = await eventQaRepo.findById(qid, me.id);
@@ -328,7 +328,7 @@ eventQaRoutes.put(
         return c.json({ error: "question_hidden" }, 409);
       }
     }
-    await eventQaRepo.setPicked(eventId, questionId);
+    await eventQaRepo.setPicked(eventId, questionId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"staff"});
     return c.json({ pickedQuestionId: questionId });
   },
 );

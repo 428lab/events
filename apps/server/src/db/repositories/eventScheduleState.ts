@@ -1,6 +1,7 @@
+import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import { SCHEDULE_EDIT_EXPIRE_MS } from "@eventer/shared";
 import type { ScheduleEditingState, ScheduleEditingUser } from "@eventer/shared";
-import { one, run, runCount } from "../client.js";
+import { one, run, } from "../client.js";
 
 /**
  * タイムテーブルの同時編集の状態 (#340)。イベントごとに1行。
@@ -85,8 +86,8 @@ export const eventScheduleStateRepo = {
    * 通るのは片方だけになる。事前に読んで比べるだけでは、読んでから書くまでの
    * 隙間に両方が通ってしまう。
    */
-  async bumpVersion(eventId: string, expected: number): Promise<number | null> {
-    const changed = await runCount(
+  async bumpVersion(eventId: string, expected: number, writer: EventWriter): Promise<number | null> {
+    const changed = await eventRun(writer,
       "UPDATE event_schedule_state SET version = version + 1, updated_at = ? WHERE event_id = ? AND version = ?",
       Date.now(),
       eventId,
@@ -99,9 +100,9 @@ export const eventScheduleStateRepo = {
    * こちらは全体を上書きするわけではないので止める必要は無いが、
    * **staff が編集画面に抱えている版は古くなる**ので進めておく。
    * これで、編集開始時点の古いURLで全体保存して巻き戻す事故が止まる */
-  async touch(eventId: string): Promise<void> {
+  async touch(eventId: string, writer: EventWriter): Promise<void> {
     await this.getOrInit(eventId);
-    await run(
+    await eventRun(writer,
       "UPDATE event_schedule_state SET version = version + 1, updated_at = ? WHERE event_id = ?",
       Date.now(),
       eventId,
@@ -117,12 +118,11 @@ export const eventScheduleStateRepo = {
    */
   async claimEditor(
     eventId: string,
-    userId: string,
-  ): Promise<ScheduleEditingState> {
+    userId: string, writer: EventWriter): Promise<ScheduleEditingState> {
     await this.getOrInit(eventId);
     const now = Date.now();
     const alive = now - SCHEDULE_EDIT_EXPIRE_MS;
-    await run(
+    await eventRun(writer,
       `UPDATE event_schedule_state
           SET editor_user_id = ?,
               -- 続けて編集している間は開始時刻を据え置く（「◯時◯分から編集中」を保つ）
@@ -151,9 +151,8 @@ export const eventScheduleStateRepo = {
    * **自分が持っているときだけ**外す。行は消さない（版が消えるため） */
   async releaseEditor(
     eventId: string,
-    userId: string,
-  ): Promise<ScheduleEditingState> {
-    await run(
+    userId: string, writer: EventWriter): Promise<ScheduleEditingState> {
+    await eventRun(writer,
       `UPDATE event_schedule_state
           SET editor_user_id = NULL, editor_since = NULL, editor_seen_at = NULL,
               updated_at = ?

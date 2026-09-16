@@ -83,7 +83,9 @@ eventCheckinRoutes.post(
         user.id,
         true,
         Date.now(),
+        c.get("user").id,
       );
+      if (!member) return c.json({error:"access_changed"},409);
       result = "checked_in";
     }
     return c.json({

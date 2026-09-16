@@ -1,3 +1,5 @@
+import {EventVisibilityField} from "../components/EventVisibilityField.js";
+import type {Event} from "@eventer/shared";
 import { useEffect, useRef, useState } from "react";
 import {
   Box,
@@ -48,6 +50,7 @@ export function CreateEventPage() {
   const linkRequest = useLinkRequestEvent();
 
   const [communityId, setCommunityId] = useState("");
+  const [visibility,setVisibility]=useState<Event["visibility"]>("public");
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [description, setDescription] = useState("");
@@ -109,7 +112,7 @@ export function CreateEventPage() {
   const submit = () => {
     createEvent.mutate(
       {
-        visibility: "public",
+        visibility,
         title,
         subtitle,
         description,
@@ -169,6 +172,7 @@ export function CreateEventPage() {
           {t("eventForm.createTitle")}
         </Typography>
         <Stack spacing={2.5} sx={{ mt: 2 }}>
+          <EventVisibilityField value={visibility} onChange={setVisibility}/>
           <CounterTextField
             label={t("eventForm.title")}
             value={title}

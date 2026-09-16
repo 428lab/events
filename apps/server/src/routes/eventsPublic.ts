@@ -89,6 +89,7 @@ eventPublicRoutes.get("/:id", viewableEvent(), async (c) => {
       ? { membersNote: await eventsRepo.membersNoteFor(event.id) }
       : {}),
     myRole: member?.role ?? null,
+    nonpublicEligible: await eventsRepo.nonpublicEligible(event.id),
     ...(event.visibility === "private" ? { canManageAccess: user ? await isEventManager(event.id, user) : false } : {}),
     community: community
       ? {

@@ -125,8 +125,7 @@ eventBingoRoutes.post("/:id/bingo/card", async (c) => {
   }
   const numbers = await eventBingoRepo.issueCard(
     loaded.game.eventId,
-    c.get("user").id,
-  );
+    c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
   return c.json({ card: numbers });
 });
 
@@ -138,7 +137,7 @@ eventBingoRoutes.post("/:id/bingo", requireEventRole(["staff"]), async (c) => {
   if (!(await eventsRepo.findById(eventId))) {
     return c.json({ error: "not_found" }, 404);
   }
-  if (!(await eventBingoRepo.createGame(eventId))) {
+  if (!(await eventBingoRepo.createGame(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
     return c.json({ error: "already_exists" }, 409);
   }
   return c.json({ ok: true }, 201);
@@ -153,7 +152,7 @@ eventBingoRoutes.post(
     if (!(await eventBingoRepo.findGame(eventId))) {
       return c.json({ error: "not_found" }, 404);
     }
-    if (!(await eventBingoRepo.startGame(eventId))) {
+    if (!(await eventBingoRepo.startGame(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
       return c.json({ error: "not_setup" }, 409);
     }
     return c.json({ ok: true });
@@ -170,7 +169,7 @@ eventBingoRoutes.post(
     const eventId = c.req.param("id");
     const game = await eventBingoRepo.findGame(eventId);
     if (!game) return c.json({ error: "not_found" }, 404);
-    const myCount = await eventBingoRepo.draw(eventId);
+    const myCount = await eventBingoRepo.draw(eventId, c.get("user").id);
     if (myCount === null) {
       const now = await eventBingoRepo.findGame(eventId);
       return c.json(
@@ -202,7 +201,7 @@ eventBingoRoutes.post(
     if (!(await eventBingoRepo.findGame(eventId))) {
       return c.json({ error: "not_found" }, 404);
     }
-    if (!(await eventBingoRepo.undoDraw(eventId))) {
+    if (!(await eventBingoRepo.undoDraw(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
       return c.json({ error: "nothing_to_undo" }, 409);
     }
     const after = (await eventBingoRepo.findGame(eventId))!;
@@ -237,8 +236,7 @@ eventBingoRoutes.post(
         userId: r.userId,
         rank: r.rank,
         completedAtSeq: r.completedAtSeq,
-      })),
-    );
+      })), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (!ended) return c.json({ error: "not_running" }, 409);
     return c.json({ ok: true });
   },
@@ -253,7 +251,7 @@ eventBingoRoutes.post(
     if (!(await eventBingoRepo.findGame(eventId))) {
       return c.json({ error: "not_found" }, 404);
     }
-    if (!(await eventBingoRepo.resetGame(eventId))) {
+    if (!(await eventBingoRepo.resetGame(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
       return c.json({ error: "not_ended" }, 409);
     }
     return c.json({ ok: true });
@@ -265,7 +263,7 @@ eventBingoRoutes.delete(
   "/:id/bingo",
   requireEventRole(["staff"]),
   async (c) => {
-    await eventBingoRepo.deleteGame(c.req.param("id"));
+    await eventBingoRepo.deleteGame(c.req.param("id"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );

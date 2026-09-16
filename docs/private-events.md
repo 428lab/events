@@ -107,7 +107,7 @@
 | scoring/award/live/like/meet/prize/bingo/qa/survey/todo/duty/schedule/broadcast/pre-survey/name-card-assets/analytics/staff-invites | S worker.tsのevent関連route登録と各routes/*.ts | `/api/events/:id/*` の共通閲覧門を漏れなく継承し、各既存role/status/子所有者条件を維持。copy元にもcanViewEvent＋既存source staff確認 |
 | `/api/events/:id/attendance.csv` とvenue-offersのevent情報 | S routes/attendanceCsv.ts, venueOffers.ts; R venueOffers.ts | privateでは会場提供資格だけで詳細/名簿を渡さない。先に閲覧招待承諾が必要、その上で従来の成立会場運営者条件。会場側オファー一覧は閲覧不可eventのタイトル等を伏せ、業務用offerの状態のみ残す |
 | 開催前アンケート `/api/public/pre-surveys/:token` GET/POSTと`/s/:token` | S worker.ts, routes/eventPreSurvey.ts; R eventPreSurvey.ts; docs/pre-event-survey.md | privateでは既存共有tokenの両APIも404（closedタイトルも返さない）。private化でtokenを回転しstatus=closed、public/unlistedに戻しても再開は手動。管理結果はstaff可。unlistedでは独立共有フォームとして既存仕様維持 |
-| 参加者チャットAPIと外部WS | S routes/eventChat.ts, lib/nostrRelay.ts; W lib/nostrChat.ts, lib/useEventChatAccess.ts | 非publicでは参加者チャットを使用不可。§5。APIの鍵/channel/memberリスト取得・変更も認可後409 `chat_requires_public`。UIだけで無効化しない |
+| 参加者チャットAPIと外部WS | S routes/eventChat.ts, lib/nostrRelay.ts; W lib/nostrChat.ts, lib/useEventChatAccess.ts | 非publicでは参加者チャットを使用不可。§5。APIの鍵/channel/memberリスト取得・変更も認可後403 `chat_unavailable`（既存chatの停止応答へ統一）。UIだけで無効化しない |
 | staffチャット | S routes/staffChat.ts; R staffChat.ts; W lib/staffChatCrypto.ts; docs/staff-chat.md | 既存の暗号化/確定staff限定を維持＋イベント門。一般閲覧招待では鍵を配らない。staff喪失時の世代更新維持。過去鍵/取得済ログの回収は不可 |
 | 通知一覧/未読数/通知メール、リマインダー、一斉メール、フォロワー、日程確定 | S routes/notifications.ts, follows.ts, eventBroadcast.ts; R notifications.ts, scheduleRegistration.ts; S lib/email.ts, reminders.ts, broadcast.ts | §8。非publicを一般フォロワー/たまご賛同者へ流さない。本人・参加者への業務連絡も送信直前に資格確認 |
 | 独立素材: decks、deck-images、live-set-images、BGM、会場写真 | S routes/public.ts, deckImages.ts, liveSetImages.ts, bgm.ts, venues.ts; R decks.ts, liveSets.ts, venuePhotos.ts | event_idを持たない独立素材。private化はこれらの公開URLを保護しない。イベントへの参照取得はイベント門で保護するが素材自体は既存公開契約。非publicの素材選択UIで警告。秘密資料はアップロードしない (§5) |
@@ -447,3 +447,14 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - 承認済みの最小区別: local migration0094で `event.nonpublic_eligible NOT NULL DEFAULT 0`。既存行と旧writerは0、導入後の通常create/copyだけ明示1。API入力/通常updateで変更不可、created_at/旧通知本文で推測しない。既存public→非public要求には409 `legacy_visibility_locked` を現行全体閉鎖より先に返す。既存publicの普通の編集と、新規eventの設計済み遷移は維持する。**後続visibility writerは実書込みSQL内でもnonpublic_eligible=1を条件にする**。copyは新規eventだが元eventの認可/非publicコピー入口閉鎖を迂回しない。配備/remote migrationは未承認。
 - 参加者の平文relay routerだけpublic限定にし、staff暗号chatは別router/既存鍵処理を維持。公式clientは再検証失敗/非public化/identity・資格変更で接続を閉じる。外部relayの旧平文/コピー回収や第三者client停止は保証せず、ja/enで説明する。
 - QueryClientのevent/子/招待のcancel→reset→removeをidentity/revision/失効に接続し、API応答epochで既開始の旧event応答を拒否。認証はfocus/15秒で再確認し、公的一覧offline cacheは保持。全authセッションのlogoutや本番設定変更ではない。
+
+### 14.7 完成導線に向けた書込みと遷移
+
+- 2026-09-16の承認済み実装補足: 既存D1 batchの先頭へevent専用SQL assertion（active actor＋canView＋writer所要role）を置き、同一transactionで拒否時全rollbackする方式を使用可。個々の子所属・target資格・定員・revision条件は置換しない。固有の不正JSON pathによる拒否だけ409 access_changedへ変換し他のSQL障害は再throw。実D1で拒否時の後続書込み/PNG triggerゼロを先に検査。R2や外部メールをこのDB batchで保護したとは扱わない。
+
+- 新規eventとcreator staffはactive actor/現在community権限/copy元資格を検査した同一batchに統合。参加枠定義・出席/check-in、採点/表彰/進行/日程/担当/todo/写真/コメント/いいね/Q&A/ビンゴ/景品/チャット/card設計等の子writerは明示actorと既存roleに応じたbatch guardへ接続。子ID所属の既存検査は維持し、写真コメント削除ではphoto自身のevent所属も検査。参加者暗号化を新設せずstaff-chatの鍵処理は維持。
+- R2表紙は上書き固定キーから、新規uploadだけランダムobject_key→資格付きDB参照公開へ変更（0095、既存NULLは旧キー互換）。拒否時は新objectだけ回収し旧byteを上書きしない。card/photo/prizeは既存の個別objectと公開参照/cleanupを資格付きにする。共有surveyのresponse/answersは最新token/public-or-unlistedを条件に一括INSERT、管理saveはmetadata/questionsを一括処理。venue offerの作成/応答は現在の業務資格とevent閲覧/active当事者をSQLで確認。
+- visibilityは通常event更新と同じCAS batch。expectedAccessRevision/確認フラグとimmutable eligibilityをwriter内でも検査し、private化の非canceled member seed・共有survey閉鎖/旧token失効・非public chat停止、private離脱時の全閲覧grant削除、既存PNG triggerを所有tokenに結び付ける。公開復帰の発見通知は従来の一度限りを維持。確認APIはmemberと投票のみ人数を返す。
+- 作成/編集にJA/ENの公開範囲選択を接続し、旧eventの変更不可、二段階確認、revision競合案内、平文relay/独立素材の限界を表示。新規private作成・copy・visibility更新の一時409閉鎖をこのローカル候補版から除去した。**環境への配備・本番入口開放を実行した意味ではない**。上記各節の「未完了/閉鎖」は過去単位の記録であり、この単位の候補状態は本段落を参照。
+- 実Chrome/ローカル合成sessionで実作成UI→private下書き→招待→編集UIで募集開始→受信者承諾(member0)→閲覧/参加→参加取消(閲覧保持)→host撤回→受信者/匿名404、既存画面の再検証後非表示を通した。public匿名200、JA選択肢、編集UIのprivate→unlisted二段階確認/revision送信/匿名200も確認。staging受入ではない。独立統合reviewとexact-head CIは別ゲートで、配備/merge/remote migrationは未承認。
+- 最新ユーザー指定: 通常導線と未招待者拒否を優先し、共有ブラウザ救済・認証全般・旧通知研究・稀な競合の新規探索/追加機構・本筋外のついで修正をしない。今回の変更起因の通常操作回帰だけ修正。本筋外の問題は再現事実/仮説、被害者/具体的影響/頻度を分けてIssue候補へ分離し、攻撃が成立するものは必要な防御対象としてreviewする。既存防御を外す大規模再設計もしない。

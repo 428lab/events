@@ -7,7 +7,6 @@ import { eventMeetPrizesRepo } from "../db/repositories/eventMeetPrizes.js";
 import { copyMeetPrizeImage } from "./eventMeetPrizes.js";
 import { eventTodosRepo } from "../db/repositories/eventTodos.js";
 import { eventDutiesRepo } from "../db/repositories/eventDuties.js";
-import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
 import { copyEventImage } from "./images.js";
@@ -36,9 +35,6 @@ eventDuplicateRoutes.post(
   async (c) => {
     const src = await eventsRepo.findById(c.req.param("id"));
     if (!src) return c.json({ error: "not_found" }, 404);
-    if (src.visibility !== "public") {
-      return c.json({ error: "private_events_unavailable" }, 409);
-    }
     const user = c.get("user");
 
     // タイトル末尾に「のコピー」（200字上限を超えるなら切り詰めてから付与）
@@ -72,9 +68,9 @@ eventDuplicateRoutes.post(
         scheduleAnonymous: src.scheduleAnonymous,
         venueWanted: src.venueWanted,
       },
-      user.id,
+      user.id, src.id,
     );
-    await eventMembersRepo.add(created.id, user.id, "staff");
+    if (!created) return c.json({error:"access_changed"},409);
 
     // create が受け取らない設定と参加者限定の文章は update で反映
     await eventsRepo.update(created.id, {
@@ -101,7 +97,7 @@ eventDuplicateRoutes.post(
         selectionType: slot.selectionType,
         // 抽選日時は旧イベントの絶対時刻なのでコピーしない（日程リセットと整合）
         drawAt: null,
-      });
+      }, user.id);
     }
 
     // 採点基準（デフォルトのシードではなく元イベントの内容をコピー）
@@ -110,7 +106,7 @@ eventDuplicateRoutes.post(
         name: cr.name,
         description: cr.description,
         maxLevel: cr.maxLevel,
-      });
+      }, {eventId:created.id,actorId:c.get("user").id,permission:"manager"});
     }
 
     // 出会いの景品の定義 (#431)（引き換え記録・1位の確定は除く）。
@@ -123,8 +119,8 @@ eventDuplicateRoutes.post(
         conditionType: prize.conditionType,
         threshold: prize.threshold,
         stock: prize.stock,
-      });
-      await copyMeetPrizeImage(prize, copied.id);
+      }, {eventId:created.id,actorId:c.get("user").id,permission:"manager"});
+      await copyMeetPrizeImage(prize, copied.id, created.id, user.id);
     }
 
     // 表彰の定義（受賞結果は除く）
@@ -132,19 +128,19 @@ eventDuplicateRoutes.post(
       await awardsRepo.createRank(created.id, {
         name: rank.name,
         content: rank.content,
-      });
+      }, {eventId:created.id,actorId:c.get("user").id,permission:"manager"});
     }
     for (const special of await awardsRepo.listSpecials(src.id)) {
       await awardsRepo.createSpecial(created.id, {
         name: special.name,
         content: special.content,
-      });
+      }, {eventId:created.id,actorId:c.get("user").id,permission:"manager"});
     }
 
     // 準備の段取り TODO (#393)。題名・補足・依存の辺・並び順だけを持ち越す
     // （日付・担当・状態はコピーしない。理由はファイル冒頭）。
     // 辺の張り替えはリポジトリに閉じる
-    await eventTodosRepo.copyForDuplicate(src.id, created.id, user.id);
+    await eventTodosRepo.copyForDuplicate(src.id, created.id, user.id, {eventId:created.id,actorId:c.get("user").id,permission:"manager"});
 
     // スタッフの役割の定義 (#384)。名前と並び順だけをコピーする。
     // 持ち場（時間帯×役割×人数）と割り当てはコピー**できない**: 複製は
@@ -152,10 +148,10 @@ eventDuplicateRoutes.post(
     // **将来タイムテーブルの複製が入ったら、持ち場（event_duty_slot）も
     // コピー対象に含めること**（割り当ては含めない。複製先は開催日時 0 の
     // 下書きで、スタッフ集めもこれからのため）。
-    await eventDutiesRepo.copyForDuplicate(src.id, created.id);
+    await eventDutiesRepo.copyForDuplicate(src.id, created.id, {eventId:created.id,actorId:c.get("user").id,permission:"manager"});
 
     // イベント画像（元画像が無ければスキップ）
-    await copyEventImage(src.id, created.id);
+    await copyEventImage(src.id, created.id, user.id);
 
     return c.json({ event: await eventsRepo.findById(created.id) }, 201);
   },

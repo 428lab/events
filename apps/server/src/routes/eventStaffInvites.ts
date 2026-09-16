@@ -139,7 +139,7 @@ eventStaffInviteRoutes.delete(
     if (!invite || invite.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
     }
-    if (!(await eventStaffInvitesRepo.revoke(invite.id))) {
+    if (!(await eventStaffInvitesRepo.revoke(invite.id,c.req.param("id"),c.get("user").id))) {
       return c.json({ error: "not_pending" }, 409);
     }
     return c.json({ invites: await eventStaffInvitesRepo.listByEvent(eventId) });

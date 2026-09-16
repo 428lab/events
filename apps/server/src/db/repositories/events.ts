@@ -1,3 +1,4 @@
+import {visibilityChangeStatements} from "./eventVisibility.js";
 import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import type {
   CreateEventInput,
@@ -5,7 +6,7 @@ import type {
   UpdateEventInput,
 } from "@eventer/shared";
 import { MEET_RANKING_MODES, QA_ANONYMITY_MODES } from "@eventer/shared";
-import { many, one, run, runCount } from "../client.js";
+import { batch, many, one, runCount } from "../client.js";
 
 interface EventRow {
   id: string;
@@ -363,18 +364,20 @@ export const eventsRepo = {
     return rows.map(toEvent);
   },
 
-  async create(input: CreateEventInput, createdBy: string): Promise<Event> {
+  async create(input: CreateEventInput, createdBy: string, sourceEventId?: string): Promise<Event | null> {
     const id = crypto.randomUUID();
     let slug = genEventSlug();
     while (await this.findBySlug(slug)) slug = genEventSlug();
-    await run(
-      `INSERT INTO event
+    const [created] = await batch([{ sql: `INSERT INTO event
         (id, title, subtitle, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
          community_id, scheduling, schedule_anonymous, slug, venue_wanted,
-         chat_enabled, visibility, nonpublic_eligible)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?, 1)`,
+         chat_enabled, visibility, nonpublic_eligible, access_revision)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 1 WHERE EXISTS(SELECT 1 FROM user u WHERE u.id=? AND u.deleted_at IS NULL
+         AND (? IS NULL OR EXISTS(SELECT 1 FROM event source WHERE source.id=? AND ${activeManagerSql("source","?")}))
+         AND (? IS NULL OR u.discord_id IN(SELECT value FROM json_each(?)) OR EXISTS(SELECT 1 FROM community_member cm WHERE cm.community_id=? AND cm.user_id=u.id AND cm.role IN('owner','admin'))
+           OR EXISTS(SELECT 1 FROM event source WHERE source.id=? AND source.community_id=? AND ${activeManagerSql("source","?")})))`, args: [
       id,
       input.title,
       input.subtitle ?? "",
@@ -394,8 +397,9 @@ export const eventsRepo = {
       slug,
       input.venueWanted ? 1 : 0,
       input.visibility ?? "public",
-    );
-    return (await this.findById(id))!;
+      createdBy, sourceEventId??null,sourceEventId??null,createdBy,adminIds(), input.communityId??null,adminIds(),input.communityId??null,sourceEventId??null,input.communityId??null,createdBy,adminIds(),
+    ]}, {sql:`INSERT INTO event_member(id,event_id,user_id,role,status,created_at) SELECT ?,id,created_by,'staff','confirmed',? FROM event WHERE id=?`,args:[crypto.randomUUID(),Date.now(),id]}]);
+    return created ? this.findById(id) : null;
   },
 
   /** 参加者限定の文章のみ取得（eventSchema には含めないため単独メソッド） */
@@ -415,11 +419,15 @@ export const eventsRepo = {
     const current = await this.findById(id);
     if (!current) return null;
     const next = { ...current, ...input };
+    const visibilityChanged = next.visibility !== current.visibility;
+    if (visibilityChanged && (input.expectedAccessRevision !== current.accessRevision || !input.confirmVisibilityChange)) return null;
+    const token = visibilityChanged ? crypto.randomUUID() : null;
     // membersNote は Event(eventSchema) に含まれないため個別にマージ
     const membersNote = input.membersNote ?? (await this.membersNoteFor(id));
-    const changed = await runCount(
+    const [changed] = await batch([{sql:
       `UPDATE event AS e SET
-         access_revision = access_revision + CASE WHEN status <> ? OR community_id IS NOT ? THEN 1 ELSE 0 END,
+         access_revision = access_revision + CASE WHEN status <> ? OR community_id IS NOT ? OR visibility <> ? THEN 1 ELSE 0 END,
+         visibility = ?, access_operation_token = ?,
          title = ?, subtitle = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
@@ -429,12 +437,12 @@ export const eventsRepo = {
          meet_ranking = ?, meet_prizes = ?,
          members_note = ?, scheduling = ?,
          registration_deadline = ?
-       WHERE e.id = ? AND e.access_revision = ? AND ${activeManagerSql("e", "?")}
+       WHERE e.id = ? AND e.access_revision = ? AND (e.visibility=? OR e.nonpublic_eligible=1) AND ${activeManagerSql("e", "?")}
          AND (e.community_id IS ? OR ? IS NULL OR EXISTS (SELECT 1 FROM user u WHERE u.id=? AND (
            u.discord_id IN (SELECT value FROM json_each(?)) OR EXISTS (SELECT 1 FROM community_member cm
-             WHERE cm.user_id=u.id AND cm.community_id=? AND cm.role IN ('owner','admin')))))`,
+             WHERE cm.user_id=u.id AND cm.community_id=? AND cm.role IN ('owner','admin')))))`,args:[
       next.status,
-      next.communityId ?? null,
+      next.communityId ?? null, next.visibility, next.visibility,token,
       next.title,
       next.subtitle,
       next.description,
@@ -462,8 +470,8 @@ export const eventsRepo = {
       next.scheduling ? 1 : 0,
       // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る
       next.registrationDeadline ?? null,
-      id, current.accessRevision, actorId, adminIds(), next.communityId ?? null, next.communityId ?? null, actorId, adminIds(), next.communityId ?? null,
-    );
+      id, input.expectedAccessRevision ?? current.accessRevision, next.visibility,actorId, adminIds(), next.communityId ?? null, next.communityId ?? null, actorId, adminIds(), next.communityId ?? null,
+    ]},...(token ? visibilityChangeStatements(id,token,current.visibility,next.visibility):[])]);
     return changed ? this.findById(id) : null;
   },
 
