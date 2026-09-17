@@ -40,12 +40,25 @@ function renderCard(event: Event, compact = true) {
   );
 }
 
-describe.each([true, false])("private card indicator (compact=%s)", (compact) => {
+describe.each([true, false])("card visibility indicator (compact=%s)", (compact) => {
   it("shows a real lock with the localized private name", () => {
     renderCard(ev({ visibility: "private" }), compact);
     const icon = screen.getByRole("img", { name: "招待限定" });
     expect(icon.tagName.toLowerCase()).toBe("svg");
     expect(icon.getAttribute("data-testid")).toBe("LockIcon");
+  });
+
+  it("shows a real link with the localized unlisted name", () => {
+    renderCard(ev({ visibility: "unlisted" }), compact);
+    const icon = screen.getByRole("img", { name: "限定公開（URLを知る人）" });
+    expect(icon.tagName.toLowerCase()).toBe("svg");
+    expect(icon.getAttribute("data-testid")).toBe("LinkIcon");
+  });
+
+  it("shows no visibility icon for public events", () => {
+    renderCard(ev({ visibility: "public" }), compact);
+    expect(screen.queryByTestId("LinkIcon")).toBeNull();
+    expect(screen.queryByTestId("LockIcon")).toBeNull();
   });
 
   it.each(["public", "unlisted"] as const)("does not mislabel %s as private", (visibility) => {

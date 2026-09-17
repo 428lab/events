@@ -12,6 +12,7 @@ import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import LockIcon from "@mui/icons-material/Lock";
+import LinkIcon from "@mui/icons-material/Link";
 import type { Event, EventRole } from "@eventer/shared";
 import { eventImageUrl } from "../api/hooks.js";
 import {
@@ -58,10 +59,17 @@ export function EventCard({
   const color = eventColor(event.id);
   // 公開前は一覧のどこに出ても1枚で分かるようにする (#348)
   const draft = isDraftEvent(event);
-  const privateIndicator = event.visibility === "private" ? (
+  const visibilityIndicator = event.visibility === "private" ? (
     <Tooltip title={t("eventAccess.private")}>
       <LockIcon
         titleAccess={t("eventAccess.private")}
+        sx={{ fontSize: compact ? 16 : 18, color: "text.secondary", flexShrink: 0 }}
+      />
+    </Tooltip>
+  ) : event.visibility === "unlisted" ? (
+    <Tooltip title={t("eventAccess.unlisted")}>
+      <LinkIcon
+        titleAccess={t("eventAccess.unlisted")}
         sx={{ fontSize: compact ? 16 : 18, color: "text.secondary", flexShrink: 0 }}
       />
     </Tooltip>
@@ -185,7 +193,7 @@ export function EventCard({
               >
                 {event.title}
               </Typography>
-              {(draft || role || privateIndicator) && (
+              {(draft || role || visibilityIndicator) && (
                 <Stack
                   direction="row"
                   spacing={0.5}
@@ -194,7 +202,7 @@ export function EventCard({
                   useFlexGap
                   sx={{ flexShrink: 0 }}
                 >
-                  {privateIndicator}
+                  {visibilityIndicator}
                   {draft && <DraftChip compact />}
                   {role && (
                     <Chip
@@ -346,7 +354,7 @@ export function EventCard({
             >
               {event.title}
             </Typography>
-            {(draft || role || privateIndicator) && (
+            {(draft || role || visibilityIndicator) && (
               <Stack
                 direction="row"
                 spacing={0.5}
@@ -355,7 +363,7 @@ export function EventCard({
                 useFlexGap
                 sx={{ flexShrink: 0 }}
               >
-                {privateIndicator}
+                {visibilityIndicator}
                 {draft && <DraftChip />}
                 {role && <Chip size="small" label={roleLabel(role)} />}
               </Stack>

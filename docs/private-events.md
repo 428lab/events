@@ -484,7 +484,7 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - 実際の入口は `CommunityPage → EventsBrowser → useEventSearch`。専用の `GET /api/public/communities/:slug/events` を追加し、CommunityPageがslugを渡したブラウザだけ接続する。一般 `/public/events/search` にcommunityIdを指定してもpublic限定のまま。専用ルートを選ぶ理由は、同じ検索UIの一般community絞込みまで意味を変更しないため。新しい認証方式は不要。
 - 入出力・キーワード/日付/phase/sort/page/limitは既存検索と同じ。communityはslugからサーバーで固定し、query側communityIdでは上書き不可。不明slugは既存同様404。検索条件生成/並び替え/ページングは既存実装を再利用する。
 - コミュニティ検索と詳細APIのupcoming/past配列は `published AND (public OR (private AND eventViewSql) OR (unlisted AND active user AND (非canceled event_member OR eventManagerSql)))` をSQLで適用する。viewer IDは既存 `currentUser` からbind。privateのaccepted、非canceled staff、community owner/admin、app admin、active user条件を再実装しない。unlistedは既存自己一覧の参加資格または既存manager資格に限定し、単なるcommunity member/URLを知る人には列挙しない。eventViewSqlだけではpublished/unlistedを全員に許可するためdiscovery条件の代わりにしない。開催予定/過去/日程調整中は同じWHEREを使い、draft/archivedや日程境界を変えない。
-- privateの共通イベントカード（通常/compact）は小さいMUI Lockアイコンと既存 `eventAccess.private` の翻訳tooltip/accessible名で識別する。unlistedにprivateの鍵やラベルを付けない。
+- privateの共通イベントカード（通常/compact）は小さいMUI Lockアイコンと既存 `eventAccess.private` の翻訳tooltip/accessible名で識別する。unlistedは同じサイズ・色のMUI Linkアイコンと既存 `eventAccess.unlisted` の翻訳tooltip/accessible名で識別し、publicはアイコンなしとする。
 - 詳細の `eventCount` は同じ認可WHEREによる全対象件数（配列のlengthやページ上限に依存しない）。検索一覧/totalは同じWHERE。詳細配列だけ直して実画面の検索を放置しない。一般検索/feed/プロフィール/たまご/いいね集計は変更しない。
 
 ### キャッシュ・失敗・互換
@@ -495,7 +495,7 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 ### 受入証拠
 
 - 合成D1 fixture/実HTTP: public viewerでもprivate/unlisted確定参加者が重複排除で人数に増える一方、名前・イベント・eventCount/search totalは制限される。明示所属との重複、退会/confirmed以外、draft/archivedを検査。
-- accepted/有効staffはコミュニティprivateを取得。匿名/無権限/一般community member/revokedは不可。撤回後のconfirmed履歴は人数に残る。unlistedは有効な非canceled参加者/既存managerのみ全phaseで取得し、一覧とcountを一致させる。一般検索・公開プロフィールの非public所属は増えない。通常/compactカードでprivateだけ鍵と翻訳名が表示される。
+- accepted/有効staffはコミュニティprivateを取得。匿名/無権限/一般community member/revokedは不可。撤回後のconfirmed履歴は人数に残る。unlistedは有効な非canceled参加者/既存managerのみ全phaseで取得し、一覧とcountを一致させる。一般検索・公開プロフィールの非public所属は増えない。通常/compactカードでprivateは鍵、unlistedはリンクと各翻訳名が表示され、publicはアイコンなし。
 - CommunityPageのヘッダ/過去タブから専用APIへの実React経路、名簿は従来制限、queryの権利変更再検証を局所テストで確認する。既存profile privacy回帰は集約人数の期待だけ更新し、識別情報の期待を維持する。重点テストを受入証拠とし、隔離変異テストは必須化しない。実アカウント/本番cookieは使わない。
 
 - 2026-09-17 staging受入の局所設計訂正（親承認）: 利用者が示したイベントの限定SELECTでpublished/unlisted・開催予定・対象community一致を確認。旧条件は全phaseでunlistedを除外しており、過去限定対応ではなかった。既存自己一覧/manager資格に限定する上記unlisted分岐と、追加要望のprivate鍵表示へ訂正する。実データの公開範囲変更・権限新設・配備は行わない。
