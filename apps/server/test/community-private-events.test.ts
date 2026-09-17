@@ -68,7 +68,7 @@ it("public aggregate counts private/unlisted confirmed people once, without publ
 
 it("authorized past private appears in the actual community search and header, never ordinary search", async () => {
   const { owner, event } = await fixture();
-  const pub = await event("public"), hidden = await event("private"), unlisted = await event("unlisted");
+  const pub = await event("public"), hidden = await event("private");
   await event("private", "draft"); await event("private", "archived");
   const accepted = await user(), staff = await user(), outsider = await user(), communityMember = await user();
   await grant(hidden, accepted); await member(hidden, accepted);
@@ -84,7 +84,6 @@ it("authorized past private appears in the actual community search and header, n
     const detail = await get("/communities/group", actor);
     expect(detail.eventCount).toBe(2);
     expect(detail.pastEvents.map((e: any) => e.id).sort()).toEqual([pub, hidden].sort());
-    expect(JSON.stringify(detail)).not.toContain(unlisted);
     const ordinary = await get("/events/search?communityId=group&phase=past", actor);
     expect(ordinary.total).toBe(1);
     expect(ordinary.events.map((e: any) => e.id)).toEqual([pub]);
@@ -123,4 +122,54 @@ it("community scope, phase/filter pagination and response privacy remain server-
   }
   const missing = await request("/communities/missing/events", owner);
   expect(missing.status).toBe(404); await missing.text();
+});
+
+it("unlisted discovery requires existing participation or management in every community phase", async () => {
+  const { owner, event } = await fixture();
+  const participant = await user(), staff = await user(), communityAdmin = await user(), admin = await user("dev-user");
+  const outsider = await user(), canceled = await user(), communityMember = await user(), deleted = await user();
+  for (const [actor, role] of [[communityAdmin, "admin"], [communityMember, "member"]] as const) {
+    await sql("INSERT INTO community_member(id,community_id,user_id,role,created_at) VALUES(?,'group',?,?,1)", crypto.randomUUID(), actor.id, role);
+  }
+  const phases = [
+    ["past", await event("unlisted")],
+    ["upcoming", await event("unlisted", "published", 0, Date.now() + 86400000)],
+    ["scheduling", await event("unlisted", "published", 1, 0)],
+  ] as const;
+  await event("unlisted", "draft"); await event("unlisted", "archived");
+  for (const [, id] of phases) {
+    await member(id, participant);
+    await member(id, staff, "confirmed", "staff");
+    await member(id, canceled, "canceled");
+    await member(id, deleted);
+  }
+  await sql("UPDATE user SET deleted_at=1 WHERE id=?", deleted.id);
+  for (const actor of [participant, staff, owner, communityAdmin, admin]) {
+    for (const [phase, id] of phases) {
+      const page = await get(`/communities/group/events?phase=${phase}`, actor);
+      expect(page).toMatchObject({ total: 1, hasMore: false });
+      expect(page.events.map((e: any) => e.id)).toEqual([id]);
+      expect((await get(`/events/search?communityId=group&phase=${phase}`, actor)).total).toBe(0);
+    }
+    const detail = await get("/communities/group", actor);
+    expect(detail.eventCount).toBe(3);
+    expect(detail.pastEvents.map((e: any) => e.id)).toEqual([phases[0][1]]);
+    expect(detail.upcomingEvents.map((e: any) => e.id).sort()).toEqual([phases[1][1], phases[2][1]].sort());
+    const first = await get("/communities/group/events?limit=2", actor);
+    const last = await get("/communities/group/events?limit=2&page=2", actor);
+    expect(first).toMatchObject({ total: 3, hasMore: true });
+    expect(last).toMatchObject({ total: 3, hasMore: false });
+    expect([...first.events, ...last.events].map((e: any) => e.id).sort()).toEqual(phases.map(([, id]) => id).sort());
+  }
+  for (const actor of [undefined, outsider, canceled, communityMember, deleted]) {
+    for (const [phase] of phases) {
+      expect(await get(`/communities/group/events?phase=${phase}`, actor)).toMatchObject({ events: [], total: 0, hasMore: false });
+    }
+    expect(await get("/communities/group", actor)).toMatchObject({ eventCount: 0, upcomingEvents: [], pastEvents: [] });
+  }
+  // Match existing self-list status semantics, not just confirmed participants.
+  for (const status of ["waitlist", "applied", "lost", "canceled"]) {
+    await sql("UPDATE event_member SET status=? WHERE user_id=?", status, participant.id);
+    expect((await get("/communities/group/events", participant)).total).toBe(status === "canceled" ? 0 : 3);
+  }
 });

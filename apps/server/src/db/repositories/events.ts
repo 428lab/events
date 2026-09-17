@@ -1,4 +1,4 @@
-import { eventViewSql } from "../../auth/eventAccess.js";
+import { eventManagerSql, eventViewSql } from "../../auth/eventAccess.js";
 import {visibilityChangeStatements} from "./eventVisibility.js";
 import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import type {
@@ -181,14 +181,22 @@ export interface EventSearchOpts {
   offset: number;
 }
 
-/** Only community-scoped discovery may include authorized private events. */
+/** Only community-scoped discovery may include qualified nonpublic events. */
 interface CommunityEventViewer { userId: string | null }
 
 function communityDiscovery(viewer: CommunityEventViewer) {
   return {
     where: `event.status = 'published' AND (event.visibility = 'public'
-      OR (event.visibility = 'private' AND ${eventViewSql("event", "?", "?")}))`,
-    args: [viewer.userId, adminIds()],
+      OR (event.visibility = 'private' AND ${eventViewSql("event", "?", "?")})
+      OR (event.visibility = 'unlisted' AND EXISTS (
+        SELECT 1 FROM user discovery_user
+        WHERE discovery_user.id = ? AND discovery_user.deleted_at IS NULL AND (
+          ${eventManagerSql("event", "discovery_user", "?")}
+          OR EXISTS (SELECT 1 FROM event_member discovery_member
+            WHERE discovery_member.event_id = event.id
+              AND discovery_member.user_id = discovery_user.id
+              AND discovery_member.status <> 'canceled')))))`,
+    args: [viewer.userId, adminIds(), viewer.userId, adminIds()],
   };
 }
 
@@ -263,7 +271,7 @@ export const eventsRepo = {
     return rows.map(toEvent);
   },
 
-  /** Published community events, optionally including viewer-authorized private events. */
+  /** Published community events, optionally including qualified nonpublic events. */
   async listByCommunity(communityId: string, viewer?: CommunityEventViewer): Promise<Event[]> {
     const { where, args } = buildSearchWhere({ communityId, limit: 0, offset: 0 }, viewer);
     const rows = await many<EventRow>(

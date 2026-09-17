@@ -5,11 +5,13 @@ import {
   CardContent,
   Chip,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import LockIcon from "@mui/icons-material/Lock";
 import type { Event, EventRole } from "@eventer/shared";
 import { eventImageUrl } from "../api/hooks.js";
 import {
@@ -56,6 +58,14 @@ export function EventCard({
   const color = eventColor(event.id);
   // 公開前は一覧のどこに出ても1枚で分かるようにする (#348)
   const draft = isDraftEvent(event);
+  const privateIndicator = event.visibility === "private" ? (
+    <Tooltip title={t("eventAccess.private")}>
+      <LockIcon
+        titleAccess={t("eventAccess.private")}
+        sx={{ fontSize: compact ? 16 : 18, color: "text.secondary", flexShrink: 0 }}
+      />
+    </Tooltip>
+  ) : null;
   // 一覧全体で1クエリ（react-queryキャッシュ共有）。コミュニティ名とアイコンを解決
   const { data: communities } = useCommunities();
   const community = event.communityId
@@ -175,7 +185,7 @@ export function EventCard({
               >
                 {event.title}
               </Typography>
-              {(draft || role) && (
+              {(draft || role || privateIndicator) && (
                 <Stack
                   direction="row"
                   spacing={0.5}
@@ -184,6 +194,7 @@ export function EventCard({
                   useFlexGap
                   sx={{ flexShrink: 0 }}
                 >
+                  {privateIndicator}
                   {draft && <DraftChip compact />}
                   {role && (
                     <Chip
@@ -335,7 +346,7 @@ export function EventCard({
             >
               {event.title}
             </Typography>
-            {(draft || role) && (
+            {(draft || role || privateIndicator) && (
               <Stack
                 direction="row"
                 spacing={0.5}
@@ -344,6 +355,7 @@ export function EventCard({
                 useFlexGap
                 sx={{ flexShrink: 0 }}
               >
+                {privateIndicator}
                 {draft && <DraftChip />}
                 {role && <Chip size="small" label={roleLabel(role)} />}
               </Stack>

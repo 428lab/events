@@ -468,7 +468,7 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - 通常本筋以外の修正/共有ブラウザ救済/edge探索は追加しない。ローカル合成利用者による通知UI確認・対象テストは環境受入/配備承認ではない。
 
 
-## 15. コミュニティ人数と過去イベントの局所修正 (#548)
+## 15. コミュニティ人数とイベント一覧の局所修正 (#548)
 
 最新要件「メンバー数は非公開イベントでも増えて欲しい」を優先する。マイページでは見える過去privateイベントがコミュニティで消える問題も対象。以下は§1/§3/§4の一般公開発見条件に対する**コミュニティ内表示だけの例外**であり、既存設計の全体再変更ではない。親レビュー承認済み。配備・main/環境ブランチへのマージは別ゲート。
 
@@ -483,7 +483,8 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 
 - 実際の入口は `CommunityPage → EventsBrowser → useEventSearch`。専用の `GET /api/public/communities/:slug/events` を追加し、CommunityPageがslugを渡したブラウザだけ接続する。一般 `/public/events/search` にcommunityIdを指定してもpublic限定のまま。専用ルートを選ぶ理由は、同じ検索UIの一般community絞込みまで意味を変更しないため。新しい認証方式は不要。
 - 入出力・キーワード/日付/phase/sort/page/limitは既存検索と同じ。communityはslugからサーバーで固定し、query側communityIdでは上書き不可。不明slugは既存同様404。検索条件生成/並び替え/ページングは既存実装を再利用する。
-- コミュニティ検索と詳細APIのupcoming/past配列は `published AND (public OR (private AND eventViewSql))` をSQLで適用する。viewer IDは既存 `currentUser` からbind。privateのaccepted、非canceled staff、community owner/admin、app admin、active user条件を再実装しない。単なるcommunity member/元参加者では不可。unlistedは今回も列挙しない。draft/archivedや日程境界を変えない。
+- コミュニティ検索と詳細APIのupcoming/past配列は `published AND (public OR (private AND eventViewSql) OR (unlisted AND active user AND (非canceled event_member OR eventManagerSql)))` をSQLで適用する。viewer IDは既存 `currentUser` からbind。privateのaccepted、非canceled staff、community owner/admin、app admin、active user条件を再実装しない。unlistedは既存自己一覧の参加資格または既存manager資格に限定し、単なるcommunity member/URLを知る人には列挙しない。eventViewSqlだけではpublished/unlistedを全員に許可するためdiscovery条件の代わりにしない。開催予定/過去/日程調整中は同じWHEREを使い、draft/archivedや日程境界を変えない。
+- privateの共通イベントカード（通常/compact）は小さいMUI Lockアイコンと既存 `eventAccess.private` の翻訳tooltip/accessible名で識別する。unlistedにprivateの鍵やラベルを付けない。
 - 詳細の `eventCount` は同じ認可WHEREによる全対象件数（配列のlengthやページ上限に依存しない）。検索一覧/totalは同じWHERE。詳細配列だけ直して実画面の検索を放置しない。一般検索/feed/プロフィール/たまご/いいね集計は変更しない。
 
 ### キャッシュ・失敗・互換
@@ -494,7 +495,9 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 ### 受入証拠
 
 - 合成D1 fixture/実HTTP: public viewerでもprivate/unlisted確定参加者が重複排除で人数に増える一方、名前・イベント・eventCount/search totalは制限される。明示所属との重複、退会/confirmed以外、draft/archivedを検査。
-- accepted/有効staffはコミュニティ過去privateを取得。匿名/無権限/一般community member/revokedは不可。撤回後のconfirmed履歴は人数に残る。unlistedはmanagerにも列挙せず、一般検索・公開プロフィールの非public所属は増えない。
+- accepted/有効staffはコミュニティprivateを取得。匿名/無権限/一般community member/revokedは不可。撤回後のconfirmed履歴は人数に残る。unlistedは有効な非canceled参加者/既存managerのみ全phaseで取得し、一覧とcountを一致させる。一般検索・公開プロフィールの非public所属は増えない。通常/compactカードでprivateだけ鍵と翻訳名が表示される。
 - CommunityPageのヘッダ/過去タブから専用APIへの実React経路、名簿は従来制限、queryの権利変更再検証を局所テストで確認する。既存profile privacy回帰は集約人数の期待だけ更新し、識別情報の期待を維持する。重点テストを受入証拠とし、隔離変異テストは必須化しない。実アカウント/本番cookieは使わない。
 
-- 局所実装確認: workerd/D1の実HTTP 20件（新規3件＋公開プロフィール/間接経路回帰）、Reactの実CommunityPage→過去→名簿と既存cache再検証、全workspace型検査を確認。実アカウント/本番cookie/DBは未使用。独立レビュー・exact-head CI・環境受入は別ゲートで、配備済みとは扱わない。
+- 2026-09-17 staging受入の局所設計訂正（親承認）: 利用者が示したイベントの限定SELECTでpublished/unlisted・開催予定・対象community一致を確認。旧条件は全phaseでunlistedを除外しており、過去限定対応ではなかった。既存自己一覧/manager資格に限定する上記unlisted分岐と、追加要望のprivate鍵表示へ訂正する。実データの公開範囲変更・権限新設・配備は行わない。
+
+- 局所実装確認（訂正前）: workerd/D1の実HTTP 20件（新規3件＋公開プロフィール/間接経路回帰）、Reactの実CommunityPage→過去→名簿と既存cache再検証、全workspace型検査を確認。実アカウント/本番cookie/DBは未使用。独立レビュー・exact-head CI・環境受入は別ゲートで、配備済みとは扱わない。
