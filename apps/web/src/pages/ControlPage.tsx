@@ -277,7 +277,7 @@ function ContestControl({ id }: { id: string }) {
             {t("eventRun.summaryHeading")}
           </Typography>
           <Box sx={{ overflowX: "auto" }}>
-          <Table size="small">
+          <Table size="small" sx={{ minWidth: 640 }}>
             <TableHead>
               <TableRow>
                 <TableCell>{t("eventRun.teamColumn")}</TableCell>
