@@ -4,19 +4,21 @@ import {
   Alert,
   Avatar,
   Box,
-  Button,
   Card,
   CardContent,
   Chip,
   Grid,
+  IconButton,
   Link,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import EggIcon from "@mui/icons-material/Egg";
 import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import LockIcon from "@mui/icons-material/Lock";
+import SettingsIcon from "@mui/icons-material/Settings";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
@@ -165,9 +167,11 @@ export function EventDetailPage() {
           {event.title}
         </Typography>
         {(isStaff || (event.visibility === "private" && data.canManageAccess)) && (
-          <Button id="contest-operations" size="small" component={RouterLink} to={`/events/${id}/manage`}>
-            {t("eventManagement.title")}
-          </Button>
+          <Tooltip title={t("eventManagement.title")}>
+            <IconButton id="contest-operations" size="large" color="primary" component={RouterLink} to={`/events/${id}/manage`} aria-label={t("eventManagement.title")}>
+              <SettingsIcon />
+            </IconButton>
+          </Tooltip>
         )}
         {event.subtitle && (
           <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 0.5 }}>

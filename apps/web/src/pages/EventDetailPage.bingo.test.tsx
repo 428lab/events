@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { i18next } from "../i18n/index.js";
@@ -119,13 +119,20 @@ describe("ビンゴ会場への目立つ入口 (#500)", () => {
     state.role = role;
     mount();
     expect(screen.queryByRole("link", { name: "抽選を操作する" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "管理" })).toBeNull();
   });
 
-  it("staffにも会場だけを出し、管理はタイトル付近の入口に分離する", () => {
+  it("staffにも会場だけを出し、管理はタイトル付近の設定アイコンに分離する", async () => {
     state.role = "staff";
     mount();
     expect(screen.queryByRole("link", { name: "抽選を操作する" })).toBeNull();
-    expect(screen.getByRole("link", { name: "管理" })).toHaveAttribute("href", "/events/event/manage");
+    const management = screen.getByRole("link", { name: "管理" });
+    expect(management).toHaveAttribute("href", "/events/event/manage");
+    expect(management).toHaveAttribute("aria-label", "管理");
+    expect(management.textContent).toBe("");
+    expect(within(management).getByTestId("SettingsIcon")).toHaveAttribute("aria-hidden", "true");
+    fireEvent.mouseOver(management);
+    expect(await screen.findByRole("tooltip", { name: "管理" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "ビンゴ会場へ" })).toHaveLength(1);
   });
 
@@ -176,5 +183,7 @@ it("preserves the private nonstaff access-manager entrance without granting publ
   expect(screen.getAllByRole("link", { name: "管理" })).toHaveLength(1);
   expect(screen.getByRole("link", { name: "管理" })).toHaveAttribute("id", "contest-operations");
   state.visibility = "public"; view.refresh();
+  expect(screen.queryByRole("link", { name: "管理" })).toBeNull();
+  state.visibility = "private"; state.access = false; view.refresh();
   expect(screen.queryByRole("link", { name: "管理" })).toBeNull();
 });
