@@ -204,7 +204,7 @@ export function AwardsEditor({ eventId, onBlockedChange }: {
                 <IconButton
                   color="error"
                   aria-label={t("common.delete")}
-                  disabled={writesDisabled}
+                  disabled={writesDisabled || saving.blocked}
                   onClick={() => void saving.run(`delete:${r.id}`, () => deleteRank.mutateAsync(r.id))}
                 >
                   <DeleteIcon />
@@ -299,7 +299,7 @@ export function AwardsEditor({ eventId, onBlockedChange }: {
                 <IconButton
                   color="error"
                   aria-label={t("common.delete")}
-                  disabled={writesDisabled}
+                  disabled={writesDisabled || saving.blocked}
                   onClick={() => void saving.run(`delete:${s.id}`, () => deleteSpecial.mutateAsync(s.id))}
                 >
                   <DeleteIcon />

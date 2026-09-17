@@ -121,10 +121,13 @@ it("restoring a failed blur edit resets the local field even if its server initi
   fireEvent.change(name, { target: { value: "未保存の名前" } }); fireEvent.blur(name);
   await screen.findByText("保存できませんでした。入力内容は未保存です。");
   expect(name).toHaveValue("未保存の名前");
+  // Do not remove the only row offering recovery for its failed edit.
+  expect(screen.getByRole("button", { name: "削除" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "保存済みの内容に戻す" }));
   await waitFor(() => expect(screen.getByLabelText("賞の名前")).toHaveValue("最優秀賞"));
   expect(api.patch).toHaveBeenCalledTimes(1);
   expect(switchMode()).toBeEnabled();
+  expect(screen.getByRole("button", { name: "削除" })).toBeEnabled();
 });
 
 it.each(["normal", "awards"] as const)("ordinary blur → ceremony click is guarded in %s mode", async (mode) => {
