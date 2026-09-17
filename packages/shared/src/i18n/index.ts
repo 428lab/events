@@ -16,6 +16,7 @@ import { egg } from "./messages/egg.js";
 import { errors } from "./messages/errors.js";
 import { eventDetail } from "./messages/eventDetail.js";
 import { eventForm } from "./messages/eventForm.js";
+import { eventManagement } from "./messages/eventManagement.js";
 import { eventRun } from "./messages/eventRun.js";
 import { eventSocial } from "./messages/eventSocial.js";
 import { home } from "./messages/home.js";
@@ -76,6 +77,7 @@ export const translations = {
     eventDetail: eventDetail.ja,
     eventForm: eventForm.ja,
     eventRun: eventRun.ja,
+    eventManagement: eventManagement.ja,
     eventSocial: eventSocial.ja,
     schedule: schedule.ja,
     preSurvey: preSurvey.ja,
@@ -116,6 +118,7 @@ export const translations = {
     eventDetail: eventDetail.en,
     eventForm: eventForm.en,
     eventRun: eventRun.en,
+    eventManagement: eventManagement.en,
     eventSocial: eventSocial.en,
     schedule: schedule.en,
     preSurvey: preSurvey.en,

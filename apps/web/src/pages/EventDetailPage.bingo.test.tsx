@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   bingo: false,
   reach: false,
   query: vi.fn(),
+  visibility: "public", access: false,
 }));
 vi.mock("../api/hooks.js", () => ({
   useMe: () => ({ data: { id: "me", isAdmin: true } }),
@@ -19,8 +20,8 @@ vi.mock("../api/hooks.js", () => ({
       id: "event", title: "イベント", description: "説明の本文", status: "published",
       startsAt: 1_800_000_000_000, endsAt: 1_800_003_600_000,
       venueType: "offline", venueOffline: "確認用会場", registrationDeadline: null,
-      scheduling: false, contestMode: false, meetRanking: "off", meetPrizes: false,
-    }, myRole: state.role,
+      visibility: state.visibility, scheduling: false, contestMode: false, meetRanking: "off", meetPrizes: false,
+    }, myRole: state.role, canManageAccess: state.access,
   } }),
   usePublishEvent: () => ({ isPending: false, mutate: vi.fn() }),
   eventImageUrl: () => null,
@@ -58,6 +59,7 @@ vi.mock("../components/EventMemberList.js", () => ({ EventMemberList: () => null
 vi.mock("../components/EventSubmissions.js", () => ({ EventSubmissions: () => null }));
 
 beforeEach(() => {
+  state.visibility = "public"; state.access = false;
   state.role = "participant";
   state.canChat = true;
   state.game = "running";
@@ -65,8 +67,8 @@ beforeEach(() => {
   state.reach = false;
   state.query.mockClear();
 });
-function mount() {
-  const element = () => <MemoryRouter initialEntries={["/events/event"]}>
+function mount(hash = "") {
+  const element = () => <MemoryRouter initialEntries={[`/events/event${hash}`]}>
     <Routes><Route path="/events/:id" element={<EventDetailPage />} /></Routes>
   </MemoryRouter>;
   const view = render(element());
@@ -119,10 +121,11 @@ describe("ビンゴ会場への目立つ入口 (#500)", () => {
     expect(screen.queryByRole("link", { name: "抽選を操作する" })).toBeNull();
   });
 
-  it("staffには会場と区別した抽選操作の入口を出す", () => {
+  it("staffにも会場だけを出し、管理はタイトル付近の入口に分離する", () => {
     state.role = "staff";
     mount();
-    expect(screen.getByRole("link", { name: "抽選を操作する" })).toHaveAttribute("href", "/events/event/bingo/control");
+    expect(screen.queryByRole("link", { name: "抽選を操作する" })).toBeNull();
+    expect(screen.getByRole("link", { name: "管理" })).toHaveAttribute("href", "/events/event/manage");
     expect(screen.getAllByRole("link", { name: "ビンゴ会場へ" })).toHaveLength(1);
   });
 
@@ -159,7 +162,19 @@ describe("ビンゴ会場への目立つ入口 (#500)", () => {
     await act(() => i18next.changeLanguage("en"));
     expect(screen.getByRole("region", { name: "Bingo" })).toBeInTheDocument();
     expect(screen.getByText("Drawing numbers")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Run the draw" })).toHaveAttribute("href", "/events/event/bingo/control");
+    expect(screen.queryByRole("link", { name: "Run the draw" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Management" })).toHaveAttribute("href", "/events/event/manage");
     expect(screen.getByRole("link", { name: "Open bingo" })).toHaveAttribute("href", "/events/event/bingo");
   });
+});
+
+
+it("preserves the private nonstaff access-manager entrance without granting public/admin access", () => {
+  state.role = null; state.access = true; state.visibility = "private";
+  const view = mount("#contest-operations");
+  expect(document.activeElement).toHaveAttribute("id", "contest-operations");
+  expect(screen.getAllByRole("link", { name: "管理" })).toHaveLength(1);
+  expect(screen.getByRole("link", { name: "管理" })).toHaveAttribute("id", "contest-operations");
+  state.visibility = "public"; view.refresh();
+  expect(screen.queryByRole("link", { name: "管理" })).toBeNull();
 });

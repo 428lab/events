@@ -56,6 +56,7 @@ export function EventChat({
   myRole,
   variant = "card",
   fontScale = 1,
+  showManagementActions = true,
 }: {
   eventId: string;
   event: Event;
@@ -65,6 +66,7 @@ export function EventChat({
   variant?: "card" | "page" | "display";
   /** display のときの文字サイズ倍率（投影距離に合わせて呼び出し側が変える） */
   fontScale?: number;
+  showManagementActions?: boolean;
 }) {
   const { t } = useTranslation();
   const { data: me } = useMe();
@@ -77,7 +79,7 @@ export function EventChat({
   const fullHeight = variant === "page" || display;
   /** スタッフ用の操作UIを出してよいか。**スタッフ向けのUIを足すときは必ずこの
    * フラグで囲むこと**（isStaff を直接見ると投影用画面に漏れる） */
-  const showStaffActions = isStaff && !display;
+  const showStaffActions = isStaff && !display && showManagementActions;
 
   const { data: chat, error: chatError } = useChatMembers(eventId, true);
   /** チャットに繋がせない状態か (#283)。
@@ -95,7 +97,7 @@ export function EventChat({
   const signerState = useChatSigner({ eventId, display, chat, me });
   const { signer, activeSigner, joinErrorKey } = signerState;
   // 部屋の開設はスタッフの操作 (#221)。投影用は見せるだけなので開設もしない
-  const canOpenChannel = isStaff && !display;
+  const canOpenChannel = isStaff && !display && showManagementActions;
   const { messages, channelId, relayConnected, channelErrorKey, send } =
     useChatChannel({
       eventId,
@@ -243,7 +245,7 @@ export function EventChat({
       )}
       {/* 投影用はどちらの分岐にも入らず、常にメッセージ一覧だけを出す (#215)。
           参加操作は戻り先の通常のチャット画面に任せる */}
-      {!display && chat && !serverChannelId && !isStaff ? (
+      {!display && chat && !serverChannelId && !canOpenChannel ? (
         // 部屋の開設はスタッフの操作のみ (#221)。それまで参加UIは出さない
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
           {t("eventSocial.chatRoomNotOpenYet")}

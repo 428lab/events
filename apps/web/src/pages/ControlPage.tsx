@@ -89,6 +89,8 @@ function ContestControl({ id }: { id: string }) {
     return <Alert severity="info">{t("eventRun.controlStaffOnly")}</Alert>;
   }
 
+  const canManage = eventData.myRole === "staff" || (eventData.event.visibility === "private" && eventData.canManageAccess);
+
   return (
     <Stack spacing={3}>
       <EventBreadcrumbs
@@ -100,7 +102,9 @@ function ContestControl({ id }: { id: string }) {
         {t("eventRun.operationsTitle")}
       </Typography>
 
-      <Button component={RouterLink} to={`/events/${id}#contest-operations`}>{t("eventRun.backToDetailOperations")}</Button>
+      <Button component={RouterLink} to={`/events/${id}${canManage ? "/manage" : ""}`}>
+        {t(canManage ? "eventManagement.backToManagement" : "eventManagement.backToInfo")}
+      </Button>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
         <Button component={RouterLink} to="#scoring">{t("eventRun.scoringSection")}</Button>
         <Button component={RouterLink} to="#awards">{t("eventRun.awardsSection")}</Button>

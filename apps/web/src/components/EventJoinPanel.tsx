@@ -202,7 +202,7 @@ export function EventJoinPanel({
       )}
 
       {/* 採点への導線。参加操作と参加枠の間に出す（参加者としての行動なので） */}
-      {contest && isMember && myRole !== "staff" && state && !state.scoringLocked && (
+      {contest && isMember && state && !state.scoringLocked && (
         <Alert
           severity="info"
           sx={{ alignItems: "center", "& .MuiAlert-message": { flex: 1 } }}

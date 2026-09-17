@@ -51,6 +51,7 @@ const MEMBER: EventMemberWithUser = {
 function draw(
   member: EventMemberWithUser = MEMBER,
   attendanceCheck = false,
+  showManagementActions = true,
 ) {
   const qc = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
@@ -62,6 +63,7 @@ function draw(
           eventId="e-1"
           member={member}
           isStaff
+          showManagementActions={showManagementActions}
           attendanceCheck={attendanceCheck}
           isMe={false}
         />
@@ -307,4 +309,13 @@ describe("参加者一覧の申込枠", () => {
     expect(screen.getAllByRole("link").map((link) => link.getAttribute("href")))
       .toEqual(members.map((member) => `/users/${member.user.username}`));
   });
+});
+
+
+it("information preserves role/status/attendance display but not member management", () => {
+  draw({ ...MEMBER, attended: true }, true, false);
+  expect(screen.getByText("運営の人")).toBeInTheDocument();
+  expect(screen.queryByTitle("ロールを変更")).toBeNull();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.getByText("出席")).toBeInTheDocument();
 });

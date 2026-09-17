@@ -67,10 +67,12 @@ export function attendanceErrorMessage(err: unknown): string {
 export function EventMemberList({
   eventId,
   isStaff,
+  showManagementActions = true,
   attendanceCheck,
 }: {
   eventId: string;
   isStaff: boolean;
+  showManagementActions?: boolean;
   attendanceCheck: boolean;
 }) {
   const { t } = useTranslation();
@@ -94,6 +96,7 @@ export function EventMemberList({
           eventId={eventId}
           member={m}
           isStaff={isStaff}
+          showManagementActions={showManagementActions}
           attendanceCheck={attendanceCheck}
           isMe={isMyMembership(m, me)}
         />
@@ -110,7 +113,7 @@ export function EventMemberList({
         {attendanceCheck && (
           <Alert severity="info" sx={{ mb: 1, py: 0 }}>
             {t(
-              isStaff
+              isStaff && showManagementActions
                 ? "eventDetail.attendanceModeNoticeStaff"
                 : "eventDetail.attendanceModeNotice",
             )}
@@ -146,12 +149,14 @@ export function MemberRow({
   eventId,
   member: m,
   isStaff,
+  showManagementActions = true,
   attendanceCheck,
   isMe,
 }: {
   eventId: string;
   member: EventMemberWithUser;
   isStaff: boolean;
+  showManagementActions?: boolean;
   attendanceCheck: boolean;
   isMe: boolean;
 }) {
@@ -163,7 +168,7 @@ export function MemberRow({
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const [roleError, setRoleError] = useState("");
   const [attendError, setAttendError] = useState("");
-  const showCheck = attendanceCheck && isStaff;
+  const showCheck = attendanceCheck && isStaff && showManagementActions;
   const memberName = m.user.globalName ?? m.user.username;
   /** 出席にできるのは参加確定の人だけ (#286)。staff/judge/observer は
    * ロール変更時に確定になる (#277) ので、ここで弾かれるのは
@@ -237,7 +242,7 @@ export function MemberRow({
             message={attendError}
           />
           {/* 自分自身のロールは誤操作防止のため変更不可 */}
-          {isStaff && !isMe && (
+          {isStaff && showManagementActions && !isMe && (
             <>
               <IconButton
                 size="small"

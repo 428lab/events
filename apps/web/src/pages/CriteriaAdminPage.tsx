@@ -59,6 +59,8 @@ export function CriteriaAdminPage() {
     );
   };
 
+  const canManage = eventData.myRole === "staff" || (eventData.event.visibility === "private" && eventData.canManageAccess);
+
   return (
     <Stack spacing={3}>
       <EventBreadcrumbs
@@ -66,7 +68,9 @@ export function CriteriaAdminPage() {
         eventTitle={eventData.event.title}
         current={t("eventDetail.criteria")}
       />
-      <Button component={RouterLink} to={`/events/${id}/control`}>{t("eventRun.backToOperations")}</Button>
+      <Button component={RouterLink} to={`/events/${id}${canManage ? "/manage" : "/control"}`}>
+        {t(canManage ? "eventManagement.backToManagement" : "eventRun.backToOperations")}
+      </Button>
       <Typography variant="h5" fontWeight={700}>
         {t("eventRun.criteriaTitle")}
       </Typography>

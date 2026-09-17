@@ -267,6 +267,8 @@ function MiniCalendar({
 export function SchedulePanel({
   eventId,
   isStaff,
+  showManagementActions = true,
+  showEmptyState = false,
   anonymous,
   finalized,
   visible,
@@ -275,6 +277,9 @@ export function SchedulePanel({
 }: {
   eventId: string;
   isStaff: boolean;
+  showManagementActions?: boolean;
+  /** Management accordion must not open to a blank body. */
+  showEmptyState?: boolean;
   anonymous: boolean;
   /** 日程確定済み（結果の閲覧のみ。回答・候補編集は不可） */
   finalized: boolean;
@@ -285,9 +290,10 @@ export function SchedulePanel({
   eventEndsAt: number;
 }) {
   const { t } = useTranslation();
+  const canManage = isStaff && showManagementActions;
   const { data: me } = useMe();
   const { data: eventData } = useEvent(eventId);
-  const { data, isLoading } = useEventSchedule(eventId);
+  const { data, isLoading, isError } = useEventSchedule(eventId);
   const vote = useVoteDateOption(eventId);
   const addOption = useAddDateOption(eventId);
   const delOption = useDeleteDateOption(eventId);
@@ -354,16 +360,19 @@ export function SchedulePanel({
 
   // 確定済み: 候補が無い（＝日程調整を使っていない）イベントや、
   // 表示オフのイベントでは何も出さない（主催者には設定用に表示する）
+  if (showEmptyState && isError) return <Alert severity="error">{t("eventManagement.loadFailed")}</Alert>;
+  if (showEmptyState && (isLoading || !data)) return <Typography>{t("common.loading")}</Typography>;
   if (finalized) {
-    if (isLoading || !data || data.options.length === 0) return null;
-    if (!visible && !isStaff) return null;
+    if (isLoading || !data) return null;
+    if (data.options.length === 0) return showEmptyState ? <Typography>{t("eventManagement.noDatePoll")}</Typography> : null;
+    if (!visible && !canManage) return null;
   }
 
   const collapsible = finalized;
   return (
     <Card variant="outlined">
-      {isStaff && finalized && <Button onClick={() => setShowRegistrationResults(true)} sx={{ m: 1 }}>{t("schedule.autoJoinResults")}</Button>}
-      {isStaff && showRegistrationResults && <ScheduleRegistrationResults eventId={eventId} open onClose={() => setShowRegistrationResults(false)} />}
+      {canManage && finalized && <Button onClick={() => setShowRegistrationResults(true)} sx={{ m: 1 }}>{t("schedule.autoJoinResults")}</Button>}
+      {canManage && showRegistrationResults && <ScheduleRegistrationResults eventId={eventId} open onClose={() => setShowRegistrationResults(false)} />}
       {finalize.isError && <Alert severity="error">{t("schedule.autoJoinFailed")}</Alert>}
       <CardContent component={collapsible ? "details" : "div"} key={eventId}
         sx={collapsible ? {
@@ -385,7 +394,7 @@ export function SchedulePanel({
           {finalized ? t("schedule.pollFinalizedLead") : t("schedule.pollLead")}
         </Typography>
 
-        {finalized && isStaff && !visible && (
+        {finalized && canManage && !visible && (
           <Alert severity="info" sx={{ mb: 2 }}>
             {t("schedule.resultStaffOnly")}
           </Alert>
@@ -395,7 +404,7 @@ export function SchedulePanel({
           <Typography>{t("common.loading")}</Typography>
         ) : data.options.length === 0 ? (
           <Typography color="text.secondary">
-            {isStaff ? t("schedule.noOptionsStaff") : t("schedule.noOptions")}
+            {canManage ? t("schedule.noOptionsStaff") : t("schedule.noOptions")}
           </Typography>
         ) : (
           <Stack spacing={1.5}>
@@ -509,7 +518,7 @@ export function SchedulePanel({
                       ))}
                     </ToggleButtonGroup>
                   )}
-                  {isStaff && !finalized && (
+                  {canManage && !finalized && (
                     <>
                       <Button
                         size="small"
@@ -636,7 +645,7 @@ export function SchedulePanel({
           </Typography>
         )}
 
-        {isStaff && finalized && (
+        {canManage && finalized && (
           <>
             <Divider sx={{ my: 2 }} />
             <FormControlLabel
@@ -654,7 +663,7 @@ export function SchedulePanel({
           </>
         )}
 
-        {isStaff && !finalized && (
+        {canManage && !finalized && (
           <>
             <Divider sx={{ my: 2 }} />
             <FormControlLabel

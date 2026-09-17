@@ -63,12 +63,12 @@ describe("誰に出るか", () => {
     expect(paths()).toEqual([]);
   });
 
-  it("スタッフには運営の導線が出る", () => {
+  it("スタッフにも詳細では運営の導線を出さない", () => {
     draw({ isStaff: true });
-    expect(paths()).toContain("edit");
-    expect(paths()).toContain("staff-chat");
-    expect(paths()).toContain("todos");
-    expect(paths()).toContain("name-cards");
+    expect(paths()).not.toContain("edit");
+    expect(paths()).not.toContain("staff-chat");
+    expect(paths()).not.toContain("todos");
+    expect(paths()).not.toContain("name-cards");
   });
 });
 
@@ -78,9 +78,9 @@ describe("行ごとの条件", () => {
     expect(paths()).not.toContain("checkin");
   });
 
-  it("出席チェックがオンなら受付の導線が出る", () => {
+  it("受付の導線は出席チェックがオンでも管理に置く", () => {
     draw({ isStaff: true, attendanceCheck: true });
-    expect(paths()).toContain("checkin");
+    expect(paths()).not.toContain("checkin");
   });
 
   it("コンテストでなければ採点も審査の設定も出ない", () => {
@@ -96,12 +96,12 @@ describe("行ごとの条件", () => {
     expect(paths()).not.toContain("criteria");
   });
 
-  it("コンテストのスタッフの採点・設定は上部カードに集約する", () => {
+  it("コンテストのスタッフにも本人の採点を残す", () => {
     draw({ isStaff: true, contest: true });
     expect(paths()).not.toContain("criteria");
     expect(paths()).not.toContain("control");
     expect(paths()).not.toContain("awards");
-    expect(paths()).not.toContain("scoring");
+    expect(paths()).toContain("scoring");
   });
 });
 
@@ -146,11 +146,11 @@ describe("進行中のモード（表の中で唯一 props だけでは決まら
     expect(screen.queryByText(/進行中:/)).not.toBeInTheDocument();
   });
 
-  it("表彰中のスタッフに重複するリンクや状態を出さない", () => {
+  it("表彰中のスタッフにも共通のリンクと状態を出す", () => {
     stateMock.mockReturnValue({ mode: "awards", scoringLocked: false });
     draw({ contest: true, isStaff: true });
 
-    expect(paths()).not.toContain("awards");
-    expect(screen.queryByText(/進行中:/)).not.toBeInTheDocument();
+    expect(paths()).toContain("awards");
+    expect(screen.getByText("進行中: 表彰")).toBeInTheDocument();
   });
 });

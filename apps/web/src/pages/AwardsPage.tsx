@@ -315,6 +315,9 @@ export function AwardsPage() {
               )}
             </Typography>
           )}
+          {(eventData?.myRole === "staff" || (eventData?.event.visibility === "private" && eventData.canManageAccess)) && (
+            <Button color="inherit" size="small" component={RouterLink} to={`/events/${id}/manage`}>{t("eventManagement.backToManagement")}</Button>
+          )}
           <Button
             size="small"
             color="inherit"

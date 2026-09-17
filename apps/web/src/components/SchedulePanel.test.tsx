@@ -1,16 +1,17 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SchedulePanel } from "./SchedulePanel.js";
 
-const { update } = vi.hoisted(() => ({ update: vi.fn() }));
+const { update, poll } = vi.hoisted(() => ({ update: vi.fn(), poll: { empty: false, loading: false, error: false } }));
+beforeEach(() => { poll.empty = false; poll.loading = false; poll.error = false; });
 vi.mock("../api/hooks.js", () => ({
   useMe: () => ({ data: null }), useEvent: () => ({ data: null }),
   useUpdateEvent: () => ({ mutate: update }), useUploadEventImage: () => ({}),
 }));
 vi.mock("../api/scheduleHooks.js", () => ({
-  useEventSchedule: () => ({ isLoading: false, data: { myVotes: {}, options: [
+  useEventSchedule: () => ({ isLoading: poll.loading, isError: poll.error, data: { myVotes: {}, options: poll.empty ? [] : [
     { id: "option", startsAt: 1800000000000, endsAt: 1800003600000, counts: { yes: 1, maybe: 0, no: 0 }, voters: [] },
   ] } }),
   useVoteDateOption: () => ({}), useAddDateOption: () => ({}),
@@ -51,8 +52,33 @@ describe("private finalized schedule results", () => {
     expect(container.querySelector("details")).toBeNull();
     expect(screen.getByText("日程調整")).toBeVisible();
   });
+  it("hides private finalized results even from staff on information", () => {
+    const { container } = setup({ showManagementActions: false });
+    expect(container).toBeEmptyDOMElement();
+  });
+  it("active information poll omits candidate and settings controls", () => {
+    setup({ finalized: false, showManagementActions: false });
+    expect(screen.getByText("日程調整")).toBeVisible();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByText("候補を追加")).toBeNull();
+  });
   it("still hides private results from participants", () => {
     const { container } = setup({ isStaff: false });
     expect(container).toBeEmptyDOMElement();
   });
+});
+
+
+it("management distinguishes finalized empty poll from loading/error; detail defaults remain hidden", () => {
+  poll.empty = true;
+  const legacy = setup(); expect(legacy.container).toBeEmptyDOMElement(); legacy.unmount();
+  const empty = setup({ showEmptyState: true });
+  expect(screen.getByText("日程は確定済みです。日程調整の候補はありません。")).toBeInTheDocument(); empty.unmount();
+  poll.loading = true;
+  const loading = setup({ showEmptyState: true });
+  expect(screen.getByText("読み込み中…")).toBeInTheDocument(); loading.unmount();
+  poll.loading = false; poll.error = true;
+  setup({ showEmptyState: true });
+  expect(screen.getByRole("alert")).toBeInTheDocument();
+  expect(screen.queryByText("日程は確定済みです。日程調整の候補はありません。")).toBeNull();
 });

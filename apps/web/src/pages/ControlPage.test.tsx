@@ -6,11 +6,11 @@ import type { AwardsView, EventState } from "@eventer/shared";
 import { api } from "../api/client.js";
 import { ControlPage } from "./ControlPage.js";
 
-const fixture = vi.hoisted(() => ({ role: "staff", contest: true, entries: [{ id: "entry", name: "作品A", memberUserIds: ["u"] }] }));
+const fixture = vi.hoisted(() => ({ role: "staff", admin: false, visibility: "public", access: false, contest: true, entries: [{ id: "entry", name: "作品A", memberUserIds: ["u"] }] }));
 vi.mock("../api/hooks.js", () => ({
-  useEvent: () => ({ data: { event: { title: "Contest", contestMode: fixture.contest }, myRole: fixture.role } }),
+  useEvent: () => ({ data: { event: { title: "Contest", contestMode: fixture.contest, visibility: fixture.visibility }, myRole: fixture.role, canManageAccess: fixture.access } }),
   useEventEntries: () => ({ data: fixture.entries }),
-  useIsAdmin: () => false,
+  useIsAdmin: () => fixture.admin,
 }));
 vi.mock("../lib/entryUser.js", () => ({ useEntryUserResolver: () => () => null }));
 let awards: AwardsView;
@@ -40,7 +40,7 @@ function savedWinner() {
 }
 beforeEach(() => {
   vi.restoreAllMocks();
-  fixture.role = "staff"; fixture.contest = true;
+  fixture.role = "staff"; fixture.admin = false; fixture.visibility = "public"; fixture.access = false; fixture.contest = true;
   fixture.entries = [{ id: "entry", name: "作品A", memberUserIds: ["u"] }];
   state = { mode: "normal", scoringLocked: false, presentingEntryId: null, awardsRevealCursor: 0, eventId: "e", updatedAt: 0 };
   awards = { ranks: [{ id: "rank", eventId: "e", name: "最優秀賞", content: "賞品", rankOrder: 1 }], specials: [], results: [], criteria: [] };
@@ -229,4 +229,14 @@ it("special awards allow no recipient while scoring remains open", async () => {
   fireEvent.click(switchMode());
   await waitFor(() => expect(openCeremony()).not.toHaveAttribute("aria-disabled"));
   expect(api.put).not.toHaveBeenCalled();
+});
+
+
+it("staff return to management; admin-only exceptions retain a reachable information backlink", async () => {
+  const view = draw(); await ready();
+  expect(screen.getByRole("link", { name: "管理へ戻る" })).toHaveAttribute("href", "/events/e/manage");
+  view.unmount(); fixture.role = "participant"; fixture.admin = true;
+  draw(); await ready();
+  expect(screen.queryByRole("link", { name: "管理へ戻る" })).toBeNull();
+  expect(screen.getByRole("link", { name: "イベント情報へ戻る" })).toHaveAttribute("href", "/events/e");
 });

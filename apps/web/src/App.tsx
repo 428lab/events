@@ -7,6 +7,7 @@ import { PublicLayout } from "./components/PublicLayout.js";
 import { EventLayout } from "./components/EventLayout.js";
 import { LoginPage } from "./pages/LoginPage.js";
 
+import { EventManagePage } from "./pages/EventManagePage.js";
 import { EventDetailPage } from "./pages/EventDetailPage.js";
 import { EventChatPage } from "./pages/EventChatPage.js";
 import { EventChatScreenPage } from "./pages/EventChatScreenPage.js";
@@ -437,6 +438,7 @@ export function App() {
         <Route path="/events/:id/name-cards" element={<NameCardPrintRoute />} />
         <Route path="/events/:id/name-cards/design" element={<Suspense fallback={<LazyFallback />}><EventCardEditorPage /></Suspense>} />
         {/* チャット専用ページ (#215)。リレー接続を維持するため EventLayout の外 */}
+        <Route path="/events/:id/manage" element={<EventManagePage />} />
         <Route path="/events/:id/chat" element={<EventChatPage />} />
         {/* 投影用画面 (#215)。配信画面と同じくモード強制遷移を受けない位置に置く */}
         <Route path="/events/:id/chat/screen" element={<EventChatScreenPage />} />

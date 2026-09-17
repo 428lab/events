@@ -45,7 +45,7 @@ export function ScoringPage() {
         current={t("eventDetail.scoring")}
       />
       {role === "staff" && (
-      <Button component={RouterLink} to={`/events/${id}/control`}>{t("eventRun.backToOperations")}</Button>
+      <Button component={RouterLink} to={`/events/${id}/manage`}>{t("eventManagement.backToManagement")}</Button>
       )}
       <Typography variant="h5" fontWeight={700}>
         {t("eventDetail.scoring")}

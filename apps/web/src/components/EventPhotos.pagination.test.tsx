@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import type { EventPhoto, EventPhotosPage, EventRole } from "@eventer/shared";
@@ -42,11 +42,11 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-function gallery(role: EventRole | null = null) {
+function gallery(role: EventRole | null = null, showManagementActions = true) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   const tree = (eventId: string) => (
     <QueryClientProvider client={qc}><MemoryRouter>
-      <EventPhotos eventId={eventId} myRole={role} photosPublic published />
+      <EventPhotos eventId={eventId} myRole={role} photosPublic published showManagementActions={showManagementActions} />
     </MemoryRouter></QueryClientProvider>
   );
   const view = render(tree("ev"));
@@ -228,4 +228,25 @@ describe("EventPhotos pagination", () => {
     await waitFor(() => expect(images(container)).toHaveLength(1));
     expect(next()).toBeDisabled();
   });
+});
+
+
+it.each([false, true])("staff photo and nested lightbox comment moderation is presentation-scoped (%s), own actions survive", async (management) => {
+  rows = media(2);
+  rows[1]!.userId = "other";
+  const original = getMock.getMockImplementation()!;
+  getMock.mockImplementation(async (url: string) => url.includes("/comments") ? { comments: [
+    { id: "mine", userId: "owner", userName: "私", body: "自分のコメント", createdAt: 1 },
+    { id: "other", userId: "other", userName: "別の人", body: "他人のコメント", createdAt: 1 },
+  ] } : original(url));
+  const { container } = gallery("staff", management);
+  await screen.findByText("写真（2）");
+  expect(screen.queryAllByRole("checkbox")).toHaveLength(management ? 1 : 0);
+  expect(container.querySelector('input[type="file"]')).not.toBeNull();
+  expect(screen.getAllByRole("button", { name: "写真を削除" })).toHaveLength(management ? 2 : 1);
+  fireEvent.click(images(container)[0]!);
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByText("他人のコメント");
+  expect(within(dialog).getAllByRole("button", { name: "このコメントを削除" })).toHaveLength(management ? 2 : 1);
+  expect(within(dialog).getByRole("textbox")).toBeInTheDocument();
 });

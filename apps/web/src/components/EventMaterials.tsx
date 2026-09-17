@@ -20,14 +20,15 @@ import { UserLink } from "./UserLink.js";
 
 /** 登壇資料のギャラリー (#149)。タイムテーブルのコマのうち資料URLがあるものを
  * OGサムネイル付きカードで一覧する。資料が1件もなければ非表示。 */
-export function EventMaterials({ eventId }: { eventId: string }) {
+export function EventMaterials({ eventId, showManagementActions = true }: { eventId: string; showManagementActions?: boolean }) {
   const { t } = useTranslation();
   const { data } = useEventSchedule(eventId);
   const { data: me } = useMe();
   const [editing, setEditing] = useState<ScheduleItem | null>(null);
 
-  // 未割り当て（ネタ出し中 #338）はサーバーが staff にしか返さないので、ここでは絞らない
-  const materials = (data?.items ?? []).filter((it) => it.materialUrl !== "");
+  // Filter for display only; never change the shared schedule query.
+  const materials = (data?.items ?? []).filter((it) => it.materialUrl !== "" &&
+    (showManagementActions || (it.visibility !== "staff" && it.placement !== "unassigned")));
   if (materials.length === 0) return null;
 
   return (

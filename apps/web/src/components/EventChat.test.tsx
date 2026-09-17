@@ -24,6 +24,8 @@ import { EventChat } from "./EventChat.js";
  * 「そもそも出ない状態」を通過してしまわないようにしている。
  */
 
+const { createChannel, registerChannel } = vi.hoisted(() => ({ createChannel: vi.fn(), registerChannel: vi.fn() }));
+
 const ME = { id: "u-1", username: "me", name: "わたし" };
 
 /** チャンネルの購読で受け取ったコールバック（テストから配信するため保持する） */
@@ -103,12 +105,12 @@ vi.mock("../api/eventChatHooks.js", () => ({
     isPending: false,
     mutateAsync: () => joinResult(),
   }),
-  useRegisterChatChannel: () => ({ mutateAsync: vi.fn() }),
+  useRegisterChatChannel: () => ({ mutateAsync: registerChannel }),
   useResetChatChannel: () => ({ isPending: false, mutate: vi.fn() }),
   useHideChatNote: () => ({ isPending: false, mutate: vi.fn() }),
   // 自動再参加 (#223) の一時鍵。投影用画面ではこれに頼らない
   fetchEphemeralChatKey: vi.fn(async () => ephemeralKey),
-  useCreateChatChannel: () => ({ mutateAsync: vi.fn() }),
+  useCreateChatChannel: () => ({ mutateAsync: createChannel }),
 }));
 
 vi.mock("../lib/nostrChat.js", () => {
@@ -136,7 +138,8 @@ vi.mock("../lib/nostrChat.js", () => {
       subscribe(_channelId: string, onEvent: (ev: NostrEvent) => void) {
         deliver = onEvent;
         return () => {
-          deliver = null;
+          createChannel.mockReset(); registerChannel.mockReset();
+  deliver = null;
         };
       }
       async publish() {
@@ -167,7 +170,7 @@ beforeEach(() => {
 });
 
 /** 描画して、非同期の自動再参加・リレー接続が落ち着くまで待つ */
-async function renderChat(variant: "display" | "page") {
+async function renderChat(variant: "display" | "page" | "card", showManagementActions = true) {
   const view = render(
     <MemoryRouter>
       <EventChat
@@ -175,6 +178,7 @@ async function renderChat(variant: "display" | "page") {
         event={EVENT}
         myRole="staff"
         variant={variant}
+        showManagementActions={showManagementActions}
       />
     </MemoryRouter>,
   );
@@ -713,4 +717,30 @@ describe("書き込み可能時間帯 (#199)", () => {
     expect(await screen.findByRole("textbox")).toBeDisabled();
     expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
   });
+});
+
+
+it("information staff cannot auto-open a room despite a saved signer; dedicated page retains opening", async () => {
+  ephemeralKey = { secret: "00" };
+  chatQuery = { data: { ...CHAT, channelId: null } };
+  const view = await renderChat("card", false);
+  expect(screen.getByText(/まだ開設されていません/)).toBeInTheDocument();
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(createChannel).not.toHaveBeenCalled();
+  expect(registerChannel).not.toHaveBeenCalled();
+  view.unmount();
+  createChannel.mockResolvedValue({ channelId: "opened" });
+  await renderChat("page");
+  await waitFor(() => expect(createChannel).toHaveBeenCalledOnce());
+});
+
+it("information staff retain their normal composer and messages without moderation", async () => {
+  ephemeralKey = { secret: "00" };
+  await renderChat("card", false);
+  await waitFor(() => expect(deliver).not.toBeNull());
+  await act(async () => deliver!(MESSAGE));
+  expect(screen.getByText("会場からの発言")).toBeInTheDocument();
+  expect(screen.getByRole("textbox")).toBeInTheDocument();
+  expect(screen.queryAllByTestId("VisibilityOffOutlinedIcon")).toHaveLength(0);
+  expect(screen.queryByRole("button", { name: "チャンネルを作り直す" })).toBeNull();
 });
