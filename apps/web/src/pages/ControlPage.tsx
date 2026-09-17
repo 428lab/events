@@ -334,7 +334,7 @@ function ContestControl({ id }: { id: string }) {
             {awardTotal === 0 && <Typography>{t("eventRun.addAwardFirst")}</Typography>}
             <Typography variant="body2">{t("eventRun.unassignedAwardsHelp")}</Typography>
             <Button component={RouterLink} to="#awards">{t("eventRun.reviewWinners")}</Button>
-            {setMode.isError && <Alert severity="error">{t("eventRun.awardsModeFailed")}</Alert>}
+            {setMode.isError && setMode.variables === "awards" && <Alert severity="error">{t("eventRun.awardsModeFailed")}</Alert>}
             <Button variant="outlined" disabled={ceremonyBlocked || awardTotal === 0 || state.mode === "awards"}
               onClick={() => {
                 if (!saveBlockedRef.current && !ceremonyBlocked && awardTotal > 0) setMode.mutate("awards");

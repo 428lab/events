@@ -159,20 +159,33 @@ it("a failed award creation retains the name, while no awards prevents ceremony 
   expect(name).toHaveValue("新しい賞");
 });
 
-it("keeps all reorder writes busy, even when one fails before the other completes", async () => {
+it("waits for all failed reorder writes, then restores unchanged server order without another write", async () => {
   awards.ranks.push({ ...awards.ranks[0], id: "second", name: "二等賞", rankOrder: 2 });
   const first = deferred<unknown>(); const second = deferred<unknown>();
   vi.mocked(api.patch).mockImplementationOnce(() => first.promise as never).mockImplementationOnce(() => second.promise as never);
   draw(); await screen.findByDisplayValue("二等賞");
+  const displayedOrder = () => screen.getAllByLabelText<HTMLInputElement>("賞の名前").map((field) => field.value);
+  expect(displayedOrder()).toEqual(["最優秀賞", "二等賞"]);
   const cards = screen.getAllByLabelText("賞の名前").map((field) => field.closest('[draggable="true"]')!);
   fireEvent.dragStart(cards[0]); fireEvent.dragOver(cards[1]); fireEvent.drop(cards[1]); fireEvent.dragEnd(cards[0]);
+  expect(displayedOrder()).toEqual(["二等賞", "最優秀賞"]);
   await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(2));
   await act(async () => first.reject(new Error("offline")));
   expect(switchMode()).toBeDisabled();
   expect(screen.getByText("保存中…")).toBeInTheDocument();
-  await act(async () => second.resolve({}));
+  await act(async () => second.reject(new Error("offline")));
   await screen.findByText("保存できませんでした。入力内容は未保存です。");
   expect(switchMode()).toBeDisabled();
+  expect(displayedOrder()).toEqual(["二等賞", "最優秀賞"]);
+  const readsBeforeRestore = vi.mocked(api.get).mock.calls.filter(([path]) => path.endsWith("/awards")).length;
+  fireEvent.click(screen.getByRole("button", { name: "保存済みの内容に戻す" }));
+  await waitFor(() => expect(displayedOrder()).toEqual(["最優秀賞", "二等賞"]));
+  expect(vi.mocked(api.get).mock.calls.filter(([path]) => path.endsWith("/awards"))).toHaveLength(readsBeforeRestore + 1);
+  expect(api.patch).toHaveBeenCalledTimes(2);
+  expect(api.put).not.toHaveBeenCalled();
+  expect(api.post).not.toHaveBeenCalled();
+  expect(screen.queryByText("保存できませんでした。入力内容は未保存です。")).not.toBeInTheDocument();
+  expect(switchMode()).toBeEnabled();
 });
 
 it("does not add the editor to non-contests or show controls to participants", async () => {
@@ -190,6 +203,21 @@ it("mode failure stays local and never enables ceremony navigation", async () =>
   await screen.findByText("表彰式に切り替えられませんでした。もう一度お試しください。");
   expect(openCeremony()).toHaveAttribute("aria-disabled", "true");
   expect(api.patch).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ["normal", "通常"], ["presentation", "プレゼン"], ["aggregation", "集計"],
+] as const)("does not show a ceremony-switch error when leaving awards for %s fails", async (mode, label) => {
+  state.mode = "awards";
+  const write = deferred<unknown>();
+  vi.mocked(api.patch).mockImplementationOnce(() => write.promise as never);
+  draw(); await ready();
+  fireEvent.click(screen.getByRole("button", { name: label }));
+  await waitFor(() => expect(api.patch).toHaveBeenCalledExactlyOnceWith("/events/e/state/mode", { mode }));
+  await act(async () => write.reject(new Error("offline")));
+  await waitFor(() => expect(openCeremony()).not.toHaveAttribute("aria-disabled"));
+  expect(screen.queryByText("表彰式に切り替えられませんでした。もう一度お試しください。")).not.toBeInTheDocument();
+  expect(state.mode).toBe("awards");
 });
 
 it("special awards allow no recipient while scoring remains open", async () => {

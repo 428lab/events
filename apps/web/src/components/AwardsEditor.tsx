@@ -51,7 +51,9 @@ export function AwardsEditor({ eventId, onBlockedChange }: {
   const restore = () => {
     if (saving.isBusy()) return;
     void saving.run("restore", async () => {
-      await refetch({ throwOnError: true });
+      const { data: restoredAwards } = await refetch({ throwOnError: true });
+      // Unchanged query data may keep its reference, so reset local drag order explicitly.
+      if (restoredAwards) setRanks(restoredAwards.ranks);
       setWinnerDrafts({});
       setRankName("");
       setSpecialName("");
