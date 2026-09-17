@@ -87,6 +87,8 @@ const OPEN_ROUTES = new Set<string>([
   /* ── 公開の読み取り: /api/public（認証なしで読ませる面）─────── */
   "GET /api/public/communities",
   "GET /api/public/communities/:slug",
+  // #548: anonymous public discovery; private rows require currentUser + eventViewSql.
+  "GET /api/public/communities/:slug/events",
   "GET /api/public/communities/:slug/members",
   "GET /api/public/decks/:slug",
   "GET /api/public/event-requests",
@@ -158,7 +160,7 @@ const OPEN_ROUTES = new Set<string>([
 
 /** `OPEN_ROUTES` の件数。表を1行足すとここも動かすことになるので、
  * 「テストを通すためにこっそり1本開ける」が差分に必ず現れる */
-const EXPECTED_OPEN_COUNT = 83;
+const EXPECTED_OPEN_COUNT = 84;
 
 const UUID = "00000000-0000-4000-8000-000000000000";
 const probe = (p: string) =>
