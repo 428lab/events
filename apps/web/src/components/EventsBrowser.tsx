@@ -82,11 +82,14 @@ function CommunityFilterField({
  */
 export function EventsBrowser({
   communityId,
+  communitySlug,
   title,
   actions,
 }: {
   /** 指定時はそのコミュニティのイベントに固定 */
   communityId?: string;
+  /** Community page only: use viewer-authorized discovery, not the public filter. */
+  communitySlug?: string;
   /** 見出し（既定: イベント） */
   title?: string;
   /** 見出し行の右端に置く追加アクション（作成ボタン等） */
@@ -128,7 +131,7 @@ export function EventsBrowser({
     }),
     [tab, q, from, to, dateFilters, communityId, communityFilter, sort, page],
   );
-  const search = useEventSearch(params, true);
+  const search = useEventSearch(params, true, communitySlug);
 
   const change = (fn: () => void) => {
     setPage(1);

@@ -206,7 +206,7 @@ export function CommunityPage() {
       <Divider />
 
       {/* イベント（検索APIベース: タブ・絞り込み・10件ページング） */}
-      <EventsBrowser communityId={c.id} />
+      <EventsBrowser communityId={c.id} communitySlug={c.slug} />
 
       {/* イベントのたまご（あったらいいな） */}
       {(c.requests.length > 0 || c.isMember) && (

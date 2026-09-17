@@ -43,13 +43,13 @@ export function communityImageUrl(
 }
 
 // メンバー数＝明示メンバー ∪ 所属イベントの確定参加者（重複排除）。
-// 退会申請中 (#250) はメンバー一覧に出さないので数からも外す（数字が合わなくなる）
+// 非public参加者も公開集約値に含める。名簿の公開範囲とは別。退会申請中 (#250) は除外。
 const SELECT_COMMUNITY = `SELECT c.*,
   (SELECT COUNT(*) FROM (
      SELECT user_id FROM community_member WHERE community_id = c.id
      UNION
      SELECT em.user_id FROM event_member em JOIN event e ON e.id = em.event_id
-       WHERE e.community_id = c.id AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public'
+       WHERE e.community_id = c.id AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility IN ('public', 'private', 'unlisted')
    ) ids JOIN user u ON u.id = ids.user_id AND u.deleted_at IS NULL) AS member_count,
   (SELECT COUNT(1) FROM event e WHERE e.community_id = c.id AND e.status = 'published' AND e.visibility = 'public') AS event_count
   FROM community c`;

@@ -1,5 +1,5 @@
 import { canViewEvent, eventResponseHeaders } from "../auth/eventAccess.js";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { AppEnv } from "../types.js";
 import { currentUser } from "../auth/session.js";
 import { eventsRepo } from "../db/repositories/events.js";
@@ -38,16 +38,20 @@ publicRoutes.get("/communities", async (c) => {
 
 /** 公開コミュニティ詳細（未ログイン可。ログイン時は所属/オーナー判定付き） */
 publicRoutes.get("/communities/:slug", async (c) => {
+  eventResponseHeaders(c);
   const community = await communitiesRepo.findBySlug(c.req.param("slug"));
   if (!community) return c.json({ error: "not_found" }, 404);
   const user = await currentUser(c);
   const role = user
     ? await communitiesRepo.memberRole(community.id, user.id)
     : null;
-  const events = await eventsRepo.listByCommunity(community.id);
+  const viewer = { userId: user?.id ?? null };
+  const events = await eventsRepo.listByCommunity(community.id, viewer);
+  const eventCount = await eventsRepo.countSearchPublished({ communityId: community.id, limit: 0, offset: 0 }, viewer);
   const now = Date.now();
   return c.json({
     ...community,
+    eventCount,
     isOwner: user ? community.ownerId === user.id : false,
     isMember: Boolean(role),
     myRole: role,
@@ -181,7 +185,18 @@ publicRoutes.get("/users/:handle/photos", async (c) => {
 });
 
 /** 公開イベント検索（キーワード/期間/コミュニティ/並び替え・ページング） */
-publicRoutes.get("/events/search", async (c) => {
+publicRoutes.get("/events/search", (c) => searchEvents(c));
+
+/** Community-only discovery; ordinary search stays public even with communityId. */
+publicRoutes.get("/communities/:slug/events", async (c) => {
+  eventResponseHeaders(c);
+  const community = await communitiesRepo.findBySlug(c.req.param("slug"));
+  if (!community) return c.json({ error: "not_found" }, 404);
+  const user = await currentUser(c);
+  return searchEvents(c, { communityId: community.id, userId: user?.id ?? null });
+});
+
+async function searchEvents(c: Context<AppEnv>, community?: { communityId: string; userId: string | null }) {
   const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);
   const limit = Math.min(50, Math.max(1, Number(c.req.query("limit") ?? 12) || 12));
   const offset = (page - 1) * limit;
@@ -191,7 +206,7 @@ publicRoutes.get("/events/search", async (c) => {
     from: c.req.query("from") ? Number(c.req.query("from")) : undefined,
     to: c.req.query("to") ? Number(c.req.query("to")) : undefined,
     after: c.req.query("after") ? Number(c.req.query("after")) : undefined,
-    communityId: c.req.query("communityId") || undefined,
+    communityId: community?.communityId ?? (c.req.query("communityId") || undefined),
     phase:
       c.req.query("phase") === "upcoming" ||
       c.req.query("phase") === "scheduling" ||
@@ -203,8 +218,8 @@ publicRoutes.get("/events/search", async (c) => {
     limit,
     offset,
   } as const;
-  const total = await eventsRepo.countSearchPublished(opts);
-  const events = await eventsRepo.searchPublished(opts);
+  const total = await eventsRepo.countSearchPublished(opts, community);
+  const events = await eventsRepo.searchPublished(opts, community);
   return c.json({
     events,
     total,
@@ -212,7 +227,7 @@ publicRoutes.get("/events/search", async (c) => {
     limit,
     hasMore: offset + events.length < total,
   });
-});
+}
 
 /** 日程調整中の公開イベント一覧（未ログイン可・新着順・ページング） */
 publicRoutes.get("/events/scheduling", async (c) => {

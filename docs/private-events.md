@@ -90,7 +90,7 @@
 | 経路・露出面 | 現行根拠 | 確定する扱い |
 | --- | --- | --- |
 | `/api/public/events`, `/past`, `/scheduling`, `/search`、認証済`GET /api/events` | S routes/public.ts, routes/eventCrud.ts; R events.ts | public discovery条件をWHEREへ。count/total/hasMore/検索facetにも同条件。クライアントでの後filter不可 |
-| コミュニティ詳細のupcoming/past、たまごの関連イベント/event_count | S routes/public.ts, routes/eventRequests.ts; R eventRequests.ts, events.ts | publicのみ。たまごにリンク済み非publicも名前/id/件数/公開通知を隠す。非public化でたまご自体の利用者自由記述は書換えない |
+| コミュニティ詳細のupcoming/past、たまごの関連イベント/event_count | S routes/public.ts, routes/eventRequests.ts; R eventRequests.ts, events.ts | コミュニティ内表示のみ§15の現在閲覧権を適用。たまごはpublicのみで、リンク済み非publicの名前/id/件数/公開通知を隠す。非public化でたまご自体の利用者自由記述は書換えない |
 | 公開プロフィール/年表/受賞/登壇/写真ギャラリー・facet | S routes/public.ts; R eventMembers.ts, eventSchedule.ts, awards.ts, eventPhotos.ts, eventMeets.ts | 非publicは投稿者本人がこの公開APIを呼んでも非掲載。別ユーザーAPIへeventId差込みで漏れない |
 | 公開の実績/いいね/XP・OGプロフィール/PNG | S worker.ts, routes/profileCardImages.ts; R gamification.ts, eventLikes.ts, eventMembers.ts, eventMeets.ts | 公開集計にはpublicのみ（件数からも漏らさない）。ゲーム内参加記録は消さない。§6.1の局所寄与user集合について、非public化と同じtransactionでuser別カード世代を回転。§5.3の現行世代のみ配信し、旧組合せ/legacyを再生成で復活させない。外部保存済PNGは回収不可 |
 | `/api/me/events`, `/api/me/bingo-results` | S routes/me.ts; R eventMembers.ts, eventBingo.ts | 本人の管理/参加一覧は非public可だが各event閲覧権を再確認。失効後はイベント情報を除く。過去記録をDBから消す意味ではない |
@@ -466,3 +466,35 @@ D1の既存batchパターンを使用（`S db/client.ts`）。任意のBEGIN/COM
 - privateへの互換grant seedは遷移actorをinvited_byへbindする。既存grantはON CONFLICT DO NOTHINGで原本を維持する。
 - exact CI35047196599の変更起因の失敗のみ修正: community作成fixtureに通常必須のowner member行を追加。参加取消でdraft閲覧を失う場合も成功確認だけ200を返し、後段のアクセス拒否で破棄する旧Responseは先に新Responseへ交換してからbodyをcancelする（header再構築時のdisturbed stream500を避ける）。staff鍵ローテーションは変更しない。
 - 通常本筋以外の修正/共有ブラウザ救済/edge探索は追加しない。ローカル合成利用者による通知UI確認・対象テストは環境受入/配備承認ではない。
+
+
+## 15. コミュニティ人数と過去イベントの局所修正 (#548)
+
+最新要件「メンバー数は非公開イベントでも増えて欲しい」を優先する。マイページでは見える過去privateイベントがコミュニティで消える問題も対象。以下は§1/§3/§4の一般公開発見条件に対する**コミュニティ内表示だけの例外**であり、既存設計の全体再変更ではない。親レビュー承認済み。配備・main/環境ブランチへのマージは別ゲート。
+
+### 数字と識別情報を分離する
+
+- コミュニティの `memberCount` は全閲覧者共通の公開集約値。明示 `community_member` UNION 同コミュニティの **published の public/private/unlisted** イベントの `confirmed` 参加者を数える。同一userは一人、退会者は除外。閲覧招待だけでは加算せず、終了後に閲覧権を撤回して参加履歴が残る場合は人数も残す。draft/archived、confirmed以外は従来どおり除外。
+- `SELECT_COMMUNITY` の人数条件のみ変更し、詳細・コミュニティ一覧で同じ数字を返す。公開プロフィールの所属抽出・`myEventCount` はpublic限定のまま。人数変更を理由に所属・名前を追加しない。
+- `/public/communities/:slug/members` の名簿は既存の明示所属＋published/public参加者のまま。**名簿の行数と総メンバー数は一致しなくてよい**。今回新しい名簿閲覧権やUIは作らない。
+- `eventCount` / 検索 `total` / `hasMore` は人数ではない。一般一覧ではpublicのみ。コミュニティ詳細ヘッダではその閲覧者が一覧で見られるpublishedイベントだけを数え、隠れたイベントを数字でも公開しない。
+
+### UI/API と既存SQLの接続
+
+- 実際の入口は `CommunityPage → EventsBrowser → useEventSearch`。専用の `GET /api/public/communities/:slug/events` を追加し、CommunityPageがslugを渡したブラウザだけ接続する。一般 `/public/events/search` にcommunityIdを指定してもpublic限定のまま。専用ルートを選ぶ理由は、同じ検索UIの一般community絞込みまで意味を変更しないため。新しい認証方式は不要。
+- 入出力・キーワード/日付/phase/sort/page/limitは既存検索と同じ。communityはslugからサーバーで固定し、query側communityIdでは上書き不可。不明slugは既存同様404。検索条件生成/並び替え/ページングは既存実装を再利用する。
+- コミュニティ検索と詳細APIのupcoming/past配列は `published AND (public OR (private AND eventViewSql))` をSQLで適用する。viewer IDは既存 `currentUser` からbind。privateのaccepted、非canceled staff、community owner/admin、app admin、active user条件を再実装しない。単なるcommunity member/元参加者では不可。unlistedは今回も列挙しない。draft/archivedや日程境界を変えない。
+- 詳細の `eventCount` は同じ認可WHEREによる全対象件数（配列のlengthやページ上限に依存しない）。検索一覧/totalは同じWHERE。詳細配列だけ直して実画面の検索を放置しない。一般検索/feed/プロフィール/たまご/いいね集計は変更しない。
+
+### キャッシュ・失敗・互換
+
+- 詳細/専用検索に既存 `eventResponseHeaders` のprivate/no-store・Vary: Cookieを使う。viewer別query key、focus/既存15秒間隔で再取得、private検索で前の結果placeholderを使わない。既存event access lifecycle/失効mutation/応答epochの対象へcommunity詳細と専用検索だけを追加し、既知の退出/撤回・identity変更時に古いprivate結果を破棄する。新規認証framework・共有ログイン救済・cache lockは作らない。
+- 失敗は既存query error表示/再取得。DB変更・migration・新しい状態遷移・実データ操作は不要。既存APIの型は維持し、追加ルートとoptional browser引数で接続する。復旧はこの局所コード差分のrevertで可能。
+
+### 受入証拠
+
+- 合成D1 fixture/実HTTP: public viewerでもprivate/unlisted確定参加者が重複排除で人数に増える一方、名前・イベント・eventCount/search totalは制限される。明示所属との重複、退会/confirmed以外、draft/archivedを検査。
+- accepted/有効staffはコミュニティ過去privateを取得。匿名/無権限/一般community member/revokedは不可。撤回後のconfirmed履歴は人数に残る。unlistedはmanagerにも列挙せず、一般検索・公開プロフィールの非public所属は増えない。
+- CommunityPageのヘッダ/過去タブから専用APIへの実React経路、名簿は従来制限、queryの権利変更再検証を局所テストで確認する。既存profile privacy回帰は集約人数の期待だけ更新し、識別情報の期待を維持する。重点テストを受入証拠とし、隔離変異テストは必須化しない。実アカウント/本番cookieは使わない。
+
+- 局所実装確認: workerd/D1の実HTTP 20件（新規3件＋公開プロフィール/間接経路回帰）、Reactの実CommunityPage→過去→名簿と既存cache再検証、全workspace型検査を確認。実アカウント/本番cookie/DBは未使用。独立レビュー・exact-head CI・環境受入は別ゲートで、配備済みとは扱わない。

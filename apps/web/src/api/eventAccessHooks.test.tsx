@@ -1,7 +1,7 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useMyEventAccess, useMyEventInvites } from "./eventAccessHooks.js";
+import { useAccessMutation, useMyEventAccess, useMyEventInvites } from "./eventAccessHooks.js";
 import { useEvent, useLogout, useMe } from "./hooks.js";
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("./client.js", async (original) => {
@@ -68,4 +68,16 @@ describe("populated invitation cache without rebuilding the application", () => 
     });
     qc.clear();
   });
+});
+
+it("successful access change discards community snapshots before refetch completes", async () => {
+  const qc = populatedClient();
+  const keys = [["community", "group", "viewer", "old-user"], ["communityEventSearch", "group", "old-user", "phase=past"]];
+  for (const key of keys) qc.setQueryData(key, { secret: "OLD" });
+  const { result, unmount } = renderHook(() => useAccessMutation(async () => ({})), {
+    wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+  });
+  await act(async () => { await result.current.mutateAsync(undefined); });
+  for (const key of keys) expect(qc.getQueryData(key)).toBeUndefined();
+  unmount(); qc.clear();
 });

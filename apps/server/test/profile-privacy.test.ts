@@ -121,13 +121,13 @@ it("private/unlisted profile activity, XP, likes, photos, facets and request cou
   const {eventRequestsRepo}=await import('../src/db/repositories/eventRequests.js');expect((await eventRequestsRepo.findById('request'))!.eventCount).toBe(1);expect(await eventRequestsRepo.linkedEventIds('request')).toEqual([pub]);
 });
 
-it("community-derived membership and count include only public events; explicit affiliation survives",async()=>{
+it("community identities stay public-only while aggregate membership includes private participants",async()=>{
   const owner=await user(),u=await user(),e=await event(owner.id,'private');await member(e,u.id);
   await sql("INSERT INTO community(id,slug,name,owner_id,created_at) VALUES('group','group','Group',?,1)",owner.id);
   await sql("UPDATE event SET community_id='group' WHERE id=?",e);
   const {communitiesRepo}=await import('../src/db/repositories/communities.js');
   expect(await communitiesRepo.listForUser(u.id)).toEqual([]);expect(await communitiesRepo.listMembers('group')).toEqual([]);
-  expect((await communitiesRepo.findBySlug('group'))!.eventCount).toBe(0);
+  expect(await communitiesRepo.findBySlug('group')).toMatchObject({memberCount:1,eventCount:0});
   await sql("INSERT INTO community_member(id,community_id,user_id,role,created_at) VALUES('cm','group',?,'member',1)",u.id);
   expect((await communitiesRepo.listForUser(u.id))[0]!.myEventCount).toBe(0);
   await sql("UPDATE event SET visibility='public' WHERE id=?",e);

@@ -28,6 +28,10 @@ export function useAccessMutation<T, R = unknown>(mutationFn: (input: T) => Prom
     invalidateEventResponses();
     await qc.cancelQueries({ queryKey: ["event"] });
     qc.removeQueries({ queryKey: ["event"] });
+    for (const key of ["community", "communityEventSearch"]) {
+      await qc.cancelQueries({ queryKey: [key] });
+      void qc.resetQueries({ queryKey: [key] });
+    }
     // Do not wait for the list refetch to unmount the responding card before
     // its successful-accept navigation callback runs.
     for (const key of ["eventInvites", "eventAccess", "myPage", "notifications"]) void qc.invalidateQueries({ queryKey: [key] });

@@ -1,3 +1,4 @@
+import { eventViewSql } from "../../auth/eventAccess.js";
 import {visibilityChangeStatements} from "./eventVisibility.js";
 import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import type {
@@ -180,12 +181,24 @@ export interface EventSearchOpts {
   offset: number;
 }
 
-function buildSearchWhere(o: EventSearchOpts): {
+/** Only community-scoped discovery may include authorized private events. */
+interface CommunityEventViewer { userId: string | null }
+
+function communityDiscovery(viewer: CommunityEventViewer) {
+  return {
+    where: `event.status = 'published' AND (event.visibility = 'public'
+      OR (event.visibility = 'private' AND ${eventViewSql("event", "?", "?")}))`,
+    args: [viewer.userId, adminIds()],
+  };
+}
+
+function buildSearchWhere(o: EventSearchOpts, viewer?: CommunityEventViewer): {
   where: string;
-  args: (string | number)[];
+  args: (string | number | null)[];
 } {
-  const conds = ["status = 'published' AND visibility = 'public'"];
-  const args: (string | number)[] = [];
+  const discovery = viewer && o.communityId ? communityDiscovery(viewer) : undefined;
+  const conds = [discovery?.where ?? "status = 'published' AND visibility = 'public'"];
+  const args: (string | number | null)[] = discovery?.args ?? [];
   if (o.q) {
     conds.push("(title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')");
     // LIKE のワイルドカード（% _）をリテラル扱いに
@@ -250,11 +263,12 @@ export const eventsRepo = {
     return rows.map(toEvent);
   },
 
-  /** コミュニティに所属する公開イベント（開始の降順） */
-  async listByCommunity(communityId: string): Promise<Event[]> {
+  /** Published community events, optionally including viewer-authorized private events. */
+  async listByCommunity(communityId: string, viewer?: CommunityEventViewer): Promise<Event[]> {
+    const { where, args } = buildSearchWhere({ communityId, limit: 0, offset: 0 }, viewer);
     const rows = await many<EventRow>(
-      `${SELECT_EVENT} WHERE community_id = ? AND status = 'published' AND visibility = 'public' ORDER BY starts_at DESC`,
-      communityId,
+      `${SELECT_EVENT} WHERE ${where} ORDER BY starts_at DESC`,
+      ...args,
     );
     return rows.map(toEvent);
   },
@@ -332,8 +346,8 @@ export const eventsRepo = {
   },
 
   /** 公開イベントの検索（キーワード・期間・コミュニティ・並び替え） */
-  async searchPublished(o: EventSearchOpts): Promise<Event[]> {
-    const { where, args } = buildSearchWhere(o);
+  async searchPublished(o: EventSearchOpts, viewer?: CommunityEventViewer): Promise<Event[]> {
+    const { where, args } = buildSearchWhere(o, viewer);
     const order =
       o.sort === "recent"
         ? "starts_at DESC"
@@ -349,8 +363,8 @@ export const eventsRepo = {
     return rows.map(toEvent);
   },
 
-  async countSearchPublished(o: EventSearchOpts): Promise<number> {
-    const { where, args } = buildSearchWhere(o);
+  async countSearchPublished(o: EventSearchOpts, viewer?: CommunityEventViewer): Promise<number> {
+    const { where, args } = buildSearchWhere(o, viewer);
     const row = await one<{ n: number }>(
       `SELECT COUNT(1) AS n FROM event WHERE ${where}`,
       ...args,

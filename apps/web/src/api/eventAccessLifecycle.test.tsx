@@ -9,14 +9,14 @@ const deferred=<T,>()=>{let resolve!:(v:T)=>void;const promise=new Promise<T>(r=
 function setup(){const qc=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});qc.setQueryData(['me'],{user:{id:'A'}});installEventAccessLifecycle(qc);return qc;}
 it('account switch cancels populated detail/children/invites and cannot accept held old response, without app reload',async()=>{
  const qc=setup(),held=deferred<unknown>();
- for(const key of [['event','E','members'],['eventInvites','A'],['eventAccess','A']])qc.setQueryData(key,{secret:'OLD'});
+ for(const key of [['event','E','members'],['eventInvites','A'],['eventAccess','A'],['community','group','viewer','A'],['communityEventSearch','group','A','phase=past']])qc.setQueryData(key,{secret:'OLD'});
  qc.setQueryData(['events'],{public:'offline'});
  const pending=qc.fetchQuery({queryKey:['event','E','photos'],queryFn:()=>held.promise}).catch(()=>undefined);
  qc.setQueryData(['me'],{user:{id:'B'}});held.resolve({secret:'OLD async'});await pending;
- expect(qc.getQueryCache().findAll({queryKey:['event']})).toHaveLength(0);expect(qc.getQueryData(['eventInvites','A'])).toBeUndefined();expect(qc.getQueryData(['events'])).toEqual({public:'offline'});qc.clear();
+ expect(qc.getQueryCache().findAll({queryKey:['event']})).toHaveLength(0);expect(qc.getQueryData(['eventInvites','A'])).toBeUndefined();expect(qc.getQueryData(['events'])).toEqual({public:'offline'});expect(qc.getQueryData(['community','group','viewer','A'])).toBeUndefined();expect(qc.getQueryData(['communityEventSearch','group','A','phase=past'])).toBeUndefined();qc.clear();
 });
-it('API response already in flight is rejected on identity/access epoch change',async()=>{
- const held=deferred<Response>();vi.stubGlobal('fetch',vi.fn(()=>held.promise));const pending=api.get('/events/E/photos');invalidateEventResponses();held.resolve(new Response('{"secret":"old"}'));
+it.each(['/events/E/photos','/public/communities/group','/public/communities/group/events?phase=past'])('in-flight %s response is rejected on identity/access epoch change',async path=>{
+ const held=deferred<Response>();vi.stubGlobal('fetch',vi.fn(()=>held.promise));const pending=api.get(path);invalidateEventResponses();held.resolve(new Response('{"secret":"old"}'));
  await expect(pending).rejects.toMatchObject({status:409});
 });
 it('revision change clears children and emits relay stop, but preserves revalidated detail',()=>{
@@ -38,4 +38,22 @@ it('explicit denial also clears formerly public detail and children',async()=>{
  const qc=setup();qc.setQueryData(['event','E','viewer','A'],{event:{visibility:'public',accessRevision:1}});qc.setQueryData(['event','E','photos'],{secret:'CHILD'});
  await qc.fetchQuery({queryKey:['event','E','viewer','A'],staleTime:0,queryFn:()=>Promise.reject(new ApiError(404,{}))}).catch(()=>{});
  expect(qc.getQueryData(['event','E','photos'])).toBeUndefined();qc.clear();
+});
+
+it('community revalidation failure drops private snapshots but preserves retryable error',async()=>{
+ const qc=setup();
+ for(const key of [['community','group','viewer','A'],['communityEventSearch','group','A','phase=past']]) {
+  qc.setQueryData(key,{secret:'OLD'});
+  await qc.fetchQuery({queryKey:key,staleTime:0,queryFn:()=>Promise.reject(new Error('offline'))}).catch(()=>{});
+  expect(qc.getQueryData(key)).toBeUndefined();expect(qc.getQueryState(key)?.status).toBe('error');
+ }
+ qc.clear();
+});
+it('known event revocation clears community detail/search as well as the event children',async()=>{
+ const qc=setup();
+ qc.setQueryData(['event','E','viewer','A'],{event:{visibility:'private',accessRevision:1}});
+ for(const key of [['community','group','viewer','A'],['communityEventSearch','group','A','phase=past']])qc.setQueryData(key,{secret:'OLD'});
+ await qc.fetchQuery({queryKey:['event','E','viewer','A'],staleTime:0,queryFn:()=>Promise.reject(new ApiError(404,{}))}).catch(()=>{});
+ expect(qc.getQueryData(['community','group','viewer','A'])).toBeUndefined();
+ expect(qc.getQueryData(['communityEventSearch','group','A','phase=past'])).toBeUndefined();qc.clear();
 });

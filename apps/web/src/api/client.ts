@@ -56,7 +56,7 @@ async function request<T>(
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
-  if (epoch !== eventResponseEpoch && /^\/(events|me|notifications)(?:\/|$)/.test(path)) throw new ApiError(409,{error:"stale_event_response"});
+  if (epoch !== eventResponseEpoch && /^\/(events|me|notifications|public\/communities\/[^/?]+)(?:[/?]|$)/.test(path)) throw new ApiError(409,{error:"stale_event_response"});
   if (!res.ok) throw new ApiError(res.status, data);
   return data as T;
 }

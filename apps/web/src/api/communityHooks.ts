@@ -8,6 +8,7 @@ import type {
   UpdateCommunityInput,
 } from "@eventer/shared";
 import { api } from "./client.js";
+import { useMe } from "./hooks.js";
 
 export function useCommunities() {
   return useQuery({
@@ -19,8 +20,11 @@ export function useCommunities() {
 }
 
 export function useCommunity(slug: string) {
+  const { data: user } = useMe();
   return useQuery({
-    queryKey: ["community", slug],
+    queryKey: ["community", slug, "viewer", user?.id],
+    refetchOnWindowFocus: "always",
+    refetchInterval: 15_000,
     enabled: Boolean(slug),
     queryFn: () => api.get<CommunityDetail>(`/public/communities/${slug}`),
   });
