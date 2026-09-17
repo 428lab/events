@@ -64,16 +64,16 @@ export function EventActionButtons({
       labelKey: "eventDetail.toPresentation",
       variant: "contained",
       color: "error",
-      show: contest && state?.mode === "presentation",
+      show: contest && !isStaff && state?.mode === "presentation",
     },
     {
       path: "awards",
       labelKey: "eventDetail.toAwards",
       variant: "contained",
       color: "secondary",
-      show: contest && state?.mode === "awards",
+      show: contest && !isStaff && state?.mode === "awards",
     },
-    { path: "scoring", labelKey: "eventDetail.scoring", show: contest },
+    { path: "scoring", labelKey: "eventDetail.scoring", show: contest && !isStaff },
     { path: "edit", labelKey: "common.edit", variant: "contained", show: isStaff },
     // ここから運営用（myRole === "staff" のときだけ。isAdmin は混ぜない #275）
     { path: "live/control", labelKey: "eventDetail.live", icon: <LiveTvIcon />, show: isStaff },
@@ -92,15 +92,11 @@ export function EventActionButtons({
       show: isStaff && attendanceCheck,
     },
     { path: "name-cards", labelKey: "eventDetail.nameCards", icon: <BadgeIcon />, show: isStaff },
-    // コンテストの運営設定
-    { path: "control", labelKey: "eventDetail.control", show: contest && isStaff },
-    { path: "criteria", labelKey: "eventDetail.criteria", show: contest && isStaff },
-    { path: "awards", labelKey: "eventDetail.awards", show: contest && isStaff },
   ];
 
   return (
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-      {contest && state && state.mode !== "normal" && (
+      {contest && !isStaff && state && state.mode !== "normal" && (
         <Chip
           color={state.mode === "presentation" ? "error" : "primary"}
           label={t("eventDetail.modeRunning", {

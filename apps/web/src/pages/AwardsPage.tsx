@@ -319,7 +319,7 @@ export function AwardsPage() {
             size="small"
             color="inherit"
             component={RouterLink}
-            to={`/events/${id}/control`}
+            to={`/events/${id}/control#ceremony`}
           >
             {t("eventRun.backToControl")}
           </Button>

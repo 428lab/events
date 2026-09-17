@@ -44,6 +44,7 @@ import { EventAwards } from "../components/EventAwards.js";
 import { EventJoinPanel } from "../components/EventJoinPanel.js";
 import { EventMemberList } from "../components/EventMemberList.js";
 import { EventDetailSidebar } from "../components/EventDetailSidebar.js";
+import { ContestOperationsSection } from "../components/ContestOperationsSection.js";
 import { EventSubmissions } from "../components/EventSubmissions.js";
 import {
   formatDateRange,
@@ -271,6 +272,8 @@ export function EventDetailPage() {
           />
         </Alert>
       )}
+
+      {isStaff && contest && <ContestOperationsSection key={id} eventId={id} event={event} myRole={myRole} />}
 
       {/* 調整中は常に表示。確定後は候補があり表示オンなら結果を表示（パネル側で判定） */}
       <SchedulePanel

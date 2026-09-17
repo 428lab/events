@@ -12,7 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
-import { useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import {
@@ -66,6 +66,7 @@ export function CriteriaAdminPage() {
         eventTitle={eventData.event.title}
         current={t("eventDetail.criteria")}
       />
+      <Button component={RouterLink} to={`/events/${id}/control`}>{t("eventRun.backToOperations")}</Button>
       <Typography variant="h5" fontWeight={700}>
         {t("eventRun.criteriaTitle")}
       </Typography>

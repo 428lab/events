@@ -89,7 +89,7 @@ it("an open waiting screen refreshes winners on the trusted signal and follows t
   await act(async () => { finishDrumroll(); });
   await screen.findByText("Bob");
   expect(mocks.fanfare).toHaveBeenCalledTimes(2);
-  fireEvent.click(screen.getByRole("button", { name: "リセット" }));
+  fireEvent.click(screen.getByRole("button", { name: "発表を最初からに戻す" }));
   await screen.findByText("まもなく発表します…");
 });
 

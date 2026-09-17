@@ -96,11 +96,12 @@ describe("行ごとの条件", () => {
     expect(paths()).not.toContain("criteria");
   });
 
-  it("コンテストのスタッフには審査の設定が出る", () => {
+  it("コンテストのスタッフの採点・設定は上部カードに集約する", () => {
     draw({ isStaff: true, contest: true });
-    expect(paths()).toContain("criteria");
-    expect(paths()).toContain("control");
-    expect(paths()).toContain("awards");
+    expect(paths()).not.toContain("criteria");
+    expect(paths()).not.toContain("control");
+    expect(paths()).not.toContain("awards");
+    expect(paths()).not.toContain("scoring");
   });
 });
 
@@ -145,12 +146,11 @@ describe("進行中のモード（表の中で唯一 props だけでは決まら
     expect(screen.queryByText(/進行中:/)).not.toBeInTheDocument();
   });
 
-  it("表彰中のスタッフには、飛び込み口と表彰の設定が別々に出る", () => {
+  it("表彰中のスタッフに重複するリンクや状態を出さない", () => {
     stateMock.mockReturnValue({ mode: "awards", scoringLocked: false });
     draw({ contest: true, isStaff: true });
 
-    // 同じ /awards でも「表彰式へ」と「表彰の設定」で役割が違うので2つ出る
-    expect(paths().filter((p) => p === "awards")).toHaveLength(2);
-    expect(screen.getByText("表彰式へ")).toBeInTheDocument();
+    expect(paths()).not.toContain("awards");
+    expect(screen.queryByText(/進行中:/)).not.toBeInTheDocument();
   });
 });

@@ -1,11 +1,12 @@
 import {
   Alert,
+  Button,
   Card,
   CardContent,
   Stack,
   Typography,
 } from "@mui/material";
-import { useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useEvent, useEventEntries, useIsAdmin, useMe } from "../api/hooks.js";
 import {
@@ -43,6 +44,9 @@ export function ScoringPage() {
         eventTitle={eventData.event.title}
         current={t("eventDetail.scoring")}
       />
+      {role === "staff" && (
+      <Button component={RouterLink} to={`/events/${id}/control`}>{t("eventRun.backToOperations")}</Button>
+      )}
       <Typography variant="h5" fontWeight={700}>
         {t("eventDetail.scoring")}
       </Typography>

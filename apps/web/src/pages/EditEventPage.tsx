@@ -21,7 +21,7 @@ import {
 import StadiumIcon from "@mui/icons-material/Stadium";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import {
   QA_ANONYMITY_MODES,
   VENUE_TYPES,
@@ -45,7 +45,6 @@ import { MeetPrizeEditor } from "../components/MeetPrizeEditor.js";
 import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
 import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
-import { AwardsEditor } from "../components/AwardsEditor.js";
 import { fromDateTimeLocal, venueLabel } from "../lib/format.js";
 import { errorMessage } from "../lib/errorMessage.js";
 
@@ -604,7 +603,12 @@ export function EditEventPage() {
           {contestMode && (
             <>
               <Divider />
-              <AwardsEditor eventId={id} />
+              <Typography>{t("eventRun.awardsMoved")}</Typography>
+              {event.contestMode ? (
+                <Button component={RouterLink} to={`/events/${id}/control#awards`}>
+                  {t("eventRun.setupAwards")}
+                </Button>
+              ) : <Typography>{t("eventRun.saveEventForAwards")}</Typography>}
             </>
           )}
 

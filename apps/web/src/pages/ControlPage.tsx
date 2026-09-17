@@ -1,3 +1,4 @@
+import { useCallback, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -30,6 +31,8 @@ import {
   useToggleScoringLock,
 } from "../api/scoringHooks.js";
 import { useAwards } from "../api/awardHooks.js";
+import { AwardsEditor } from "../components/AwardsEditor.js";
+import { useContestAnchor } from "../lib/useContestAnchor.js";
 import { roleLabel } from "../lib/format.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { UserLink } from "../components/UserLink.js";
@@ -46,8 +49,12 @@ const MODE_LABEL_KEY = {
 } as const satisfies Record<EventMode, string>;
 
 export function ControlPage() {
-  const { t } = useTranslation();
   const { id = "" } = useParams();
+  return <ContestControl key={id} id={id} />;
+}
+
+function ContestControl({ id }: { id: string }) {
+  const { t } = useTranslation();
   const { data: eventData } = useEvent(id);
   const { data: state } = useEventState(id);
   const { data: entries } = useEventEntries(id);
@@ -60,7 +67,18 @@ export function ControlPage() {
   const isStaff = eventData?.myRole === "staff" || isAdmin;
   const { data: summary } = useScoreSummary(id, Boolean(isStaff));
   const { data: progress } = useScoreProgress(id, Boolean(isStaff));
-  const { data: awards } = useAwards(id);
+  const { data: awards, isError: awardsError } = useAwards(id);
+  const [saveBlocked, setSaveBlocked] = useState(false);
+  const saveBlockedRef = useRef(false);
+  const onBlockedChange = useCallback((blocked: boolean) => {
+    saveBlockedRef.current = blocked;
+    setSaveBlocked(blocked);
+  }, []);
+  const ready = Boolean(eventData && state && entries && isStaff);
+  useContestAnchor("scoring", ready);
+  useContestAnchor("awards", ready);
+  useContestAnchor("ceremony", ready);
+  const ceremonyBlocked = saveBlocked || !awards || awardsError || setMode.isPending;
   /** 賞の総数（ランキング賞＋特別枠）。英語の単数・複数はこの数だけで決まる */
   const awardTotal = awards ? awards.ranks.length + awards.specials.length : 0;
 
@@ -76,19 +94,33 @@ export function ControlPage() {
       <EventBreadcrumbs
         eventId={id}
         eventTitle={eventData.event.title}
-        current={t("eventDetail.control")}
+        current={t("eventRun.operationsTitle")}
       />
       <Typography variant="h5" fontWeight={700}>
-        {t("eventDetail.control")}
+        {t("eventRun.operationsTitle")}
       </Typography>
 
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+      <Button component={RouterLink} to={`/events/${id}#contest-operations`}>{t("eventRun.backToDetailOperations")}</Button>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+        <Button component={RouterLink} to="#scoring">{t("eventRun.scoringSection")}</Button>
+        <Button component={RouterLink} to="#awards">{t("eventRun.awardsSection")}</Button>
+        <Button component={RouterLink} to="#ceremony" disabled={ceremonyBlocked} onClick={(e) => { if (saveBlockedRef.current) e.preventDefault(); }}>{t("eventRun.ceremonySection")}</Button>
+      </Stack>
+      <Typography variant="h6" component="h2">{t("eventRun.preparationSection")}</Typography>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+        <Button variant="outlined" component={RouterLink} to={`/events/${id}/criteria`}>{t("eventRun.setupCriteria")}</Button>
+        <Button variant="outlined" component={RouterLink} to="#awards">{t("eventRun.setupAwards")}</Button>
+      </Stack>
+      <Typography id="scoring" tabIndex={-1} sx={{ scrollMarginTop: 88 }} variant="h6" component="h2">{t("eventRun.scoringSection")}</Typography>
+      <Typography>{t("eventRun.entryCount", { n: entries.length })}</Typography>
+      {entries.length === 0 && <Typography>{t("eventRun.noEntriesYet")}</Typography>}
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
         <Button
           variant="contained"
           component={RouterLink}
           to={`/events/${id}/scoring`}
         >
-          {t("eventRun.toScoring")}
+          {t("eventRun.scorePersonally")}
         </Button>
         {state.mode === "presentation" && (
           <Button
@@ -105,10 +137,10 @@ export function ControlPage() {
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            {t("eventRun.modeHeading")}
+            {t("eventRun.modeHeading")}: {t(MODE_LABEL_KEY[state.mode])}
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            {EVENT_MODES.map((m) => (
+            {EVENT_MODES.filter((m) => m !== "awards").map((m) => (
               <Button
                 key={m}
                 variant={state.mode === m ? "contained" : "outlined"}
@@ -182,7 +214,7 @@ export function ControlPage() {
                     color="inherit"
                     size="small"
                     component={RouterLink}
-                    to={`/events/${id}/edit`}
+                    to="#awards"
                   >
                     {t("eventRun.setWinnersAction")}
                   </Button>
@@ -244,6 +276,7 @@ export function ControlPage() {
           <Typography variant="h6" gutterBottom>
             {t("eventRun.summaryHeading")}
           </Typography>
+          <Box sx={{ overflowX: "auto" }}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -277,88 +310,41 @@ export function ControlPage() {
               ))}
             </TableBody>
           </Table>
+          </Box>
         </CardContent>
       </Card>
 
+      <Button component={RouterLink} to="#awards">{t("eventRun.chooseFromSummary")}</Button>
+
+      <Typography id="awards" tabIndex={-1} sx={{ scrollMarginTop: 88 }} variant="h6" component="h2">{t("eventRun.awardsSection")}</Typography>
+      {eventData.event.contestMode && <AwardsEditor eventId={id} onBlockedChange={onBlockedChange} />}
+      <Button component={RouterLink} to="#scoring">{t("eventRun.backToSummary")}</Button>
+      <Button component={RouterLink} to="#ceremony" disabled={ceremonyBlocked}
+        onClick={(e) => { if (saveBlockedRef.current) e.preventDefault(); }}>{t("eventRun.prepareCeremony")}</Button>
+      {saveBlocked && <Typography aria-live="polite">{t("eventRun.confirmBeforeCeremony")}</Typography>}
+
       <Card variant="outlined">
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            {t("eventDetail.modeAwards")}
-          </Typography>
-          {/* ①②③ は言語で変わらない番号記号。下のチップと対応している */}
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {t("eventRun.awardsSteps")}
-          </Typography>
           <Stack spacing={2}>
-            <Stack
-              direction="row"
-              spacing={1.5}
-              alignItems="center"
-              flexWrap="wrap"
-              useFlexGap
-            >
-              <Chip size="small" label="①" />
-              <Typography variant="body2" sx={{ flex: 1, minWidth: 140 }}>
-                {t(
-                  awardTotal === 1
-                    ? "eventRun.setWinnersCountOne"
-                    : "eventRun.setWinnersCount",
-                  { n: awards ? awards.results.length : 0, total: awardTotal },
-                )}
-              </Typography>
-              <Button
-                size="small"
-                variant="outlined"
-                component={RouterLink}
-                to={`/events/${id}/edit`}
-              >
-                {t("eventRun.setWinners")}
-              </Button>
-            </Stack>
-
-            <Stack
-              direction="row"
-              spacing={1.5}
-              alignItems="center"
-              flexWrap="wrap"
-              useFlexGap
-            >
-              <Chip size="small" label="②" />
-              <Typography variant="body2" sx={{ flex: 1, minWidth: 140 }}>
-                {t("eventRun.switchToAwardsMode")}
-                {state.mode === "awards" && t("eventRun.currentModeSuffix")}
-              </Typography>
-              <Button
-                size="small"
-                variant={state.mode === "awards" ? "contained" : "outlined"}
-                disabled={state.mode === "awards"}
-                onClick={() => setMode.mutate("awards")}
-              >
-                {t("eventRun.switchToAwardsMode")}
-              </Button>
-            </Stack>
-
-            <Stack
-              direction="row"
-              spacing={1.5}
-              alignItems="center"
-              flexWrap="wrap"
-              useFlexGap
-            >
-              <Chip size="small" label="③" />
-              <Typography variant="body2" sx={{ flex: 1, minWidth: 140 }}>
-                {t("eventRun.runCeremony")}
-              </Typography>
-              <Button
-                size="small"
-                variant="contained"
-                color="secondary"
-                component={RouterLink}
-                to={`/events/${id}/awards`}
-              >
-                {t("eventRun.toCeremonyControls")}
-              </Button>
-            </Stack>
+            <Typography id="ceremony" tabIndex={-1} sx={{ scrollMarginTop: 88 }} variant="h6" component="h2">{t("eventRun.ceremonySection")}</Typography>
+            <Typography>{t(awardTotal === 1 ? "eventRun.setWinnersCountOne" : "eventRun.setWinnersCount", {
+              n: awards?.results.filter((r) => r.entryId !== null).length ?? 0, total: awardTotal,
+            })}</Typography>
+            <Typography>{t(state.scoringLocked ? "eventRun.scoringLockedNotice" : "eventDetail.scoringOpen")}</Typography>
+            {awardTotal === 0 && <Typography>{t("eventRun.addAwardFirst")}</Typography>}
+            <Typography variant="body2">{t("eventRun.unassignedAwardsHelp")}</Typography>
+            <Button component={RouterLink} to="#awards">{t("eventRun.reviewWinners")}</Button>
+            {setMode.isError && <Alert severity="error">{t("eventRun.awardsModeFailed")}</Alert>}
+            <Button variant="outlined" disabled={ceremonyBlocked || awardTotal === 0 || state.mode === "awards"}
+              onClick={() => {
+                if (!saveBlockedRef.current && !ceremonyBlocked && awardTotal > 0) setMode.mutate("awards");
+              }}>{t(state.mode === "awards" ? "eventRun.awardsModeActive" : "eventRun.switchParticipantsToAwards")}</Button>
+            {state.mode !== "awards" && <Typography variant="body2">{t("eventRun.switchBeforeOpening")}</Typography>}
+            <Button variant="contained" component={RouterLink} to={`/events/${id}/awards`}
+              disabled={ceremonyBlocked || state.mode !== "awards"}
+              onClick={(e) => {
+                if (saveBlockedRef.current || ceremonyBlocked || state.mode !== "awards") e.preventDefault();
+              }}>{t("eventRun.openCeremony")}</Button>
           </Stack>
         </CardContent>
       </Card>

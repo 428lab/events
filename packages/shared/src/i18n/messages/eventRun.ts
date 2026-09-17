@@ -12,6 +12,44 @@
 // 数の入れ替えは {{n}} を使う。i18next の `count` は複数形の仕組みを
 // 起動してしまい、`_other` を用意していないキーで挙動が読みにくくなるため。
 const ja = {
+  operationsTitle: "コンテスト運営",
+  preparationSection: "1 準備",
+  scoringSection: "2 エントリー・採点",
+  awardsSection: "3 賞・受賞者",
+  ceremonySection: "4 表彰式",
+  setupCriteria: "採点項目を設定",
+  setupAwards: "賞・賞品を設定",
+  entryProgress: "エントリー・採点状況を見る",
+  scorePersonally: "自分で採点する",
+  selfEntryHelp: "自分の作品を採点対象に含めます。他の作品の採点とは別の操作です。",
+  mySubmissionLink: "自分の提出物へ",
+  chooseFromSummary: "集計を見て受賞者を選ぶ",
+  prepareCeremony: "表彰式の準備・進行へ",
+  backToOperations: "コンテスト運営へ戻る",
+  backToDetailOperations: "イベント詳細のコンテスト運営へ戻る",
+  backToSummary: "採点の集計へ",
+  entryCount: "エントリー {{n}} 件",
+  noEntriesYet: "採点対象のエントリーはまだありません",
+  awardsMoved: "賞・受賞者の設定はコンテスト運営で行います",
+  saveEventForAwards: "イベントを保存すると設定できます",
+  awardSaveHelp: "受賞者は選ぶと保存されます。賞名・内容は入力欄を離れると保存されます。",
+  awardSaving: "保存中…",
+  awardSaved: "保存済み",
+  awardSaveFailed: "保存できませんでした。入力内容は未保存です。",
+  awardUnconfirmed: "保存内容を確認できませんでした",
+  retryAwardSave: "再試行",
+  restoreAwards: "保存済みの内容に戻す",
+  reloadAwards: "再読み込み",
+  confirmBeforeCeremony: "保存を確認してから進めます",
+  addAwardFirst: "まず賞を追加してください",
+  unassignedAwardsHelp: "受賞者未設定の賞は「該当者なし」として表示されます",
+  reviewWinners: "受賞者を確認・変更",
+  awardsModeFailed: "表彰式に切り替えられませんでした。もう一度お試しください。",
+  awardsModeActive: "表彰式に切替済み",
+  switchParticipantsToAwards: "参加者の画面を表彰式に切り替える",
+  switchBeforeOpening: "先に参加者の画面を表彰式に切り替えてください",
+  openCeremony: "表彰式を開く",
+
   /* ── この範囲の画面をまたいで使うもの ─────────────────────── */
   /** 選択肢の先頭に置く「まだ選んでいない」項目（発表中のチーム・受賞チーム） */
   notSelected: "（未選択）",
@@ -48,11 +86,11 @@ const ja = {
   setWinnersAction: "受賞者を設定する",
 
   /** 採点進捗。立場のラベルは lib/format.ts の roleLabel が訳す */
-  progressHeading: "採点進捗",
+  progressHeading: "採点者ごとの進捗",
   noJudges: "採点者がいません",
   judgeNameWithRole: "{{name}}（{{role}}）",
 
-  summaryHeading: "集計プレビュー",
+  summaryHeading: "エントリーごとの集計",
 
   /** 表彰の準備。説明文の ①②③ は下に並ぶチップと対応している */
   awardsSteps:
@@ -103,7 +141,7 @@ const ja = {
   totalPointOne: "合計 {{n}} 点",
   totalPoints: "合計 {{n}} 点",
   revealProgress: "発表 {{n}} / {{total}}",
-  revealReset: "リセット",
+  revealReset: "発表を最初からに戻す",
   revealAllDone: "すべて発表済み",
   revealNext: "次を発表",
   revealedHeading: "発表済み",
@@ -113,14 +151,14 @@ const ja = {
   notifiedWinnerOne: "受賞者 {{n}} 人に通知しました",
   notifiedWinners: "受賞者 {{n}} 人に通知しました",
   /** 矢印つきの戻り導線。矢印も言語ごとに持つ */
-  backToControl: "← 進行コントロールへ戻る",
+  backToControl: "← 受賞者・表彰の準備に戻る",
 
-  /* ── 表彰の編集（イベント編集の中） ───────────────────────── */
+  /* ── 賞・受賞者の編集（コンテスト運営） ───────────────────────── */
   awardsEditorTitle: "表彰（ランキング賞・特別枠）",
   rankAwardsHeading: "ランキング賞（ドラッグで並び替え・上が上位）",
   awardName: "賞の名前",
   awardContent: "賞の内容（任意）",
-  winnerTeam: "受賞チーム",
+  awardWinner: "受賞者",
   rankAwardNamePlaceholder: "賞の名前（例: 最優秀賞）",
   addRankAward: "賞を追加",
   specialAwardsHeading: "特別枠（ランキング外）",
@@ -131,6 +169,44 @@ const ja = {
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
+  operationsTitle: "Contest operations",
+  preparationSection: "1 Preparation",
+  scoringSection: "2 Entries and scoring",
+  awardsSection: "3 Awards and winners",
+  ceremonySection: "4 Ceremony",
+  setupCriteria: "Set scoring criteria",
+  setupAwards: "Set up awards and prizes",
+  entryProgress: "View entries and scoring progress",
+  scorePersonally: "Score entries yourself",
+  selfEntryHelp: "Include your own work as an entry. This is separate from scoring other entries.",
+  mySubmissionLink: "Go to your submission",
+  chooseFromSummary: "Review scores and choose winners",
+  prepareCeremony: "Prepare and run the ceremony",
+  backToOperations: "Back to contest operations",
+  backToDetailOperations: "Back to contest operations on the event page",
+  backToSummary: "Back to the score summary",
+  entryCount: "Entries: {{n}}",
+  noEntriesYet: "There are no entries to score yet.",
+  awardsMoved: "Set up awards and winners in contest operations.",
+  saveEventForAwards: "Save the event first to set up awards.",
+  awardSaveHelp: "Winners save when selected. Award names and contents save when you leave the field.",
+  awardSaving: "Saving…",
+  awardSaved: "Saved",
+  awardSaveFailed: "Could not save. Your changes are not saved.",
+  awardUnconfirmed: "Could not confirm saved contents.",
+  retryAwardSave: "Retry",
+  restoreAwards: "Restore saved contents",
+  reloadAwards: "Reload",
+  confirmBeforeCeremony: "Confirm saved changes before proceeding.",
+  addAwardFirst: "Add an award first.",
+  unassignedAwardsHelp: "Awards without a winner are shown as “No recipient”.",
+  reviewWinners: "Review or change winners",
+  awardsModeFailed: "Could not switch to the ceremony. Please try again.",
+  awardsModeActive: "Ceremony mode is active",
+  switchParticipantsToAwards: "Switch participants to the ceremony",
+  switchBeforeOpening: "Switch participants to the ceremony before opening it.",
+  openCeremony: "Open the ceremony",
+
   notSelected: "(none selected)",
   teamColumn: "Team",
   totalColumn: "Total",
@@ -158,11 +234,11 @@ const en: Record<keyof typeof ja, string> = {
     "Scoring is closed. Set the winners and get ready for the ceremony.",
   setWinnersAction: "Set the winners",
 
-  progressHeading: "Scoring progress",
+  progressHeading: "Progress by scorer",
   noJudges: "Nobody is scoring yet",
   judgeNameWithRole: "{{name}} ({{role}})",
 
-  summaryHeading: "Tally preview",
+  summaryHeading: "Scores by entry",
 
   awardsSteps:
     "① Set the winners → ② switch to awards mode, which sends everyone to the ceremony view → ③ reveal the awards one by one from the ceremony screen.",
@@ -203,7 +279,7 @@ const en: Record<keyof typeof ja, string> = {
   totalPointOne: "{{n}} point in total",
   totalPoints: "{{n}} points in total",
   revealProgress: "{{n}} of {{total}} revealed",
-  revealReset: "Reset",
+  revealReset: "Restart the reveals",
   revealAllDone: "Everything is revealed",
   revealNext: "Reveal the next one",
   revealedHeading: "Already revealed",
@@ -211,14 +287,14 @@ const en: Record<keyof typeof ja, string> = {
   notifyAfterAll: "(You can notify them once everything is revealed)",
   notifiedWinnerOne: "Notified {{n}} winner",
   notifiedWinners: "Notified {{n}} winners",
-  backToControl: "← Back to the event controls",
+  backToControl: "← Back to winners and ceremony preparation",
 
   awardsEditorTitle: "Awards (ranked awards and special awards)",
   rankAwardsHeading:
     "Ranked awards. Drag to reorder; the top one is the highest.",
   awardName: "Award name",
   awardContent: "What the award includes (optional)",
-  winnerTeam: "Winning team",
+  awardWinner: "Winner",
   rankAwardNamePlaceholder: "Award name (e.g. Grand Prize)",
   addRankAward: "Add an award",
   specialAwardsHeading: "Special awards (outside the ranking)",

@@ -7,9 +7,6 @@ import {
   Card,
   CardContent,
   Divider,
-  FormControlLabel,
-  LinearProgress,
-  Switch,
   Link,
   List,
   ListItem,
@@ -19,13 +16,15 @@ import {
   Typography,
 } from "@mui/material";
 import type { Entry, Event, EventRole } from "@eventer/shared";
-import { useEventEntries, useMe, useUpdateSubmission, useSelfEntryParticipation } from "../api/hooks.js";
-import { ApiError } from "../api/client.js";
+import { useEventEntries, useMe, useUpdateSubmission } from "../api/hooks.js";
+
+import { useContestAnchor } from "../lib/useContestAnchor.js";
 
 /** 自分のエントリの提出物（発表資料・ソース）の編集フォーム */
 function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry }) {
   const { t } = useTranslation();
   const update = useUpdateSubmission(eventId);
+  useContestAnchor("submissions");
   const [presentationUrl, setPresentationUrl] = useState(
     entry.submission?.presentationUrl ?? "",
   );
@@ -34,7 +33,7 @@ function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry })
   );
 
   return (
-    <Card variant="outlined">
+    <Card id="submissions" tabIndex={-1} sx={{ scrollMarginTop: 88 }} variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
           {t("eventDetail.mySubmission")}
@@ -90,7 +89,6 @@ export function EventSubmissions({
   eventId,
   event,
   contest,
-  myRole,
 }: {
   eventId: string;
   event: Event;
@@ -100,39 +98,15 @@ export function EventSubmissions({
   const { t } = useTranslation();
   const { data: me } = useMe();
   const { data: entries } = useEventEntries(eventId);
-  const participation = useSelfEntryParticipation(eventId);
 
   if (!contest) return null;
   const myEntry = entries?.find((e) => me && e.memberUserIds.includes(me.id));
-  const myIndividualEntry = entries?.find((e) => e.kind === "individual" && me && e.memberUserIds.includes(me.id));
-  const alreadyScored = participation.error instanceof ApiError &&
-    (participation.error.body as { error?: string } | null)?.error === "entry_already_scored";
   const showList =
     (event.venueType === "online" || event.venueType === "hybrid") &&
     Boolean(entries);
 
   return (
     <>
-      {myRole === "staff" && event.participationType === "individual" && (
-        <Box>
-          <FormControlLabel
-            label={t("eventDetail.selfScoringParticipation")}
-            control={<Switch
-              checked={Boolean(myIndividualEntry)}
-              disabled={!entries || participation.isPending}
-              onChange={(_, checked) => {
-                if (checked || window.confirm(t("eventDetail.selfScoringOffConfirm"))) {
-                  participation.mutate(checked);
-                }
-              }}
-            />}
-          />
-          {participation.isPending && <LinearProgress />}
-          {participation.isError && <Alert severity="error">
-            {t(alreadyScored ? "eventDetail.selfScoringAlreadyScored" : "eventDetail.selfScoringChangeFailed")}
-          </Alert>}
-        </Box>
-      )}
       {myEntry && <SubmissionEditor key={myEntry.id} eventId={eventId} entry={myEntry} />}
 
       {showList && entries && (
