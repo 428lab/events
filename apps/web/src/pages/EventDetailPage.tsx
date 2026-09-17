@@ -166,13 +166,6 @@ export function EventDetailPage() {
         <Typography variant="h5" fontWeight={700}>
           {event.title}
         </Typography>
-        {(isStaff || (event.visibility === "private" && data.canManageAccess)) && (
-          <Tooltip title={t("eventManagement.title")}>
-            <IconButton id="contest-operations" size="large" color="primary" component={RouterLink} to={`/events/${id}/manage`} aria-label={t("eventManagement.title")}>
-              <SettingsIcon />
-            </IconButton>
-          </Tooltip>
-        )}
         {event.subtitle && (
           <Typography variant="subtitle1" color="text.secondary" sx={{ mt: 0.5 }}>
             {event.subtitle}
@@ -195,6 +188,13 @@ export function EventDetailPage() {
           {myRole && <Chip size="small" label={roleLabel(myRole)} />}
           {event.status === "published" && (
             <ShareButton slug={event.slug} title={event.title} />
+          )}
+          {(isStaff || (event.visibility === "private" && data.canManageAccess)) && (
+            <Tooltip title={t("eventManagement.title")}>
+              <IconButton id="contest-operations" size="large" color="primary" component={RouterLink} to={`/events/${id}/manage`} aria-label={t("eventManagement.title")}>
+                <SettingsIcon />
+              </IconButton>
+            </Tooltip>
           )}
         </Stack>
         <Typography
