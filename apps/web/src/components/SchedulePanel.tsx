@@ -414,7 +414,7 @@ export function SchedulePanel({
           <Typography>{t("common.loading")}</Typography>
         ) : data.options.length === 0 ? (
           <Typography color="text.secondary">
-            {canManage ? t("schedule.noOptionsStaff") : t("schedule.noOptions")}
+            {finalized ? t("eventManagement.noDatePoll") : canManage ? t("schedule.noOptionsStaff") : t("schedule.noOptions")}
           </Typography>
         ) : (
           <Stack spacing={1.5}>

@@ -73,7 +73,7 @@ it("management distinguishes finalized empty poll from loading/error; detail def
   poll.empty = true;
   const legacy = setup({ showManagementActions: false }); expect(legacy.container).toBeEmptyDOMElement(); legacy.unmount();
   const empty = setup({ showEmptyState: true });
-  expect(screen.getByText("候補日はまだありません。下のカレンダーから追加してください。")).toBeInTheDocument(); empty.unmount();
+  expect(screen.getByText("日程は確定済みです。日程調整の候補はありません。")).toBeInTheDocument(); empty.unmount();
   poll.loading = true;
   const loading = setup({ showEmptyState: true });
   expect(screen.getByText("読み込み中…")).toBeInTheDocument(); loading.unmount();
