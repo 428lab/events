@@ -45,12 +45,18 @@ export function EventManagePage() {
   const { event, myRole } = data;
   const isStaff = myRole === "staff";
   const canInvite = event.visibility === "private" && Boolean(data.canManageAccess);
-  if (!isStaff && !canInvite) return <Stack spacing={2}><Alert severity="info">{t("eventManagement.denied")}</Alert>{back}</Stack>;
+  if (!isStaff && !canInvite && !data.canManageSchedule) return <Stack spacing={2}><Alert severity="info">{t("eventManagement.denied")}</Alert>{back}</Stack>;
   return <Stack spacing={3}>
     <Typography variant="h5" component="h1" fontWeight={700}>{event.title} / {t("eventManagement.title")}</Typography>
     {back}
     {isStaff ? <StaffManagement key={id} eventId={id} event={event} myRole={myRole} canInvite={canInvite} /> : (
-      <ManagementSection id="invites" title={t("eventManagement.invites")}><EventAccessInvitesCard eventId={id} /></ManagementSection>
+      <Stack>
+        {data.canManageSchedule && <ManagementSection id="date-poll" title={t("eventManagement.datePoll")}>
+          <SchedulePanel showEmptyState eventId={id} isStaff={false} canManageSchedule anonymous={event.scheduleAnonymous}
+            finalized={!event.scheduling} visible={event.scheduleVisible} eventStartsAt={event.startsAt} eventEndsAt={event.endsAt} />
+        </ManagementSection>}
+        {canInvite && <ManagementSection id="invites" title={t("eventManagement.invites")}><EventAccessInvitesCard eventId={id} /></ManagementSection>}
+      </Stack>
     )}
   </Stack>;
 }

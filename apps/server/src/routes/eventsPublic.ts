@@ -79,6 +79,7 @@ eventPublicRoutes.get("/:id", viewableEvent(), async (c) => {
   const event = c.get("event");
   const user = c.get("viewer");
   const member = user ? await eventMembersRepo.find(event.id, user.id) : null;
+  const canManageSchedule = user ? await isEventManager(event.id, user) : false;
   const community = event.communityId
     ? await communitiesRepo.findById(event.communityId)
     : null;
@@ -89,8 +90,9 @@ eventPublicRoutes.get("/:id", viewableEvent(), async (c) => {
       ? { membersNote: await eventsRepo.membersNoteFor(event.id) }
       : {}),
     myRole: member?.role ?? null,
+    canManageSchedule,
     nonpublicEligible: await eventsRepo.nonpublicEligible(event.id),
-    ...(event.visibility === "private" ? { canManageAccess: user ? await isEventManager(event.id, user) : false } : {}),
+    ...(event.visibility === "private" ? { canManageAccess: canManageSchedule } : {}),
     community: community
       ? {
           id: community.id,

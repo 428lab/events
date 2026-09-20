@@ -46,7 +46,7 @@ export type AddDateOptionInput = z.infer<typeof addDateOptionInput>;
 export const voteInput = z.object({ choice: z.enum(VOTE_CHOICES) });
 export type VoteInput = z.infer<typeof voteInput>;
 
-export const finalizeDateInput = z.object({ optionId: z.string() });
+export const finalizeDateInput = z.object({ optionId: z.string(), expectedAccessRevision: z.number().int().nonnegative() });
 export type FinalizeDateInput = z.infer<typeof finalizeDateInput>;
 
 /** Staff-only snapshot of the last schedule finalization, not current attendance. */
@@ -57,3 +57,9 @@ export interface ScheduleRegistrationResult {
   status: MemberStatus | null;
   reason: "access_revoked" | "canceled" | "event_ended" | "registration_closed" | "survey_required" | "slot_required" | null;
 }
+
+export const reopenSchedulingInput = z.object({
+  expectedAccessRevision: z.number().int().nonnegative(),
+  clearRegistrationDeadline: z.literal(true).optional(),
+});
+export type ReopenSchedulingInput = z.infer<typeof reopenSchedulingInput>;

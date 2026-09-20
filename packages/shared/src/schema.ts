@@ -168,7 +168,11 @@ export const updateEventInput = z.object({
   registrationDeadline: z.number().int().positive().nullable().optional(),
   /** 参加者限定の文章（確定メンバー＋staffにのみ表示。eventSchema には含めない） */
   membersNote: z.string().max(20000).optional(),
-});
+}).refine(input =>
+  ![input.startsAt, input.endsAt, input.scheduling, input.registrationDeadline].some(v => v !== undefined)
+    || input.expectedAccessRevision !== undefined,
+  { message: "Reload the event before editing its schedule", path: ["expectedAccessRevision"] },
+);
 export type UpdateEventInput = z.infer<typeof updateEventInput>;
 
 /** ---- Membership ---- */

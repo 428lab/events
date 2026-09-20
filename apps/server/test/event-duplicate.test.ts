@@ -502,7 +502,7 @@ describe("日程調整中イベントの直接日時確定 (#138)", () => {
     const bad = await SELF.fetch(`${BASE}/api/events/${event.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ scheduling: false }),
+      body: JSON.stringify({ scheduling: false, expectedAccessRevision: 1 }),
     });
     expect(bad.status).toBe(400);
 
@@ -513,6 +513,7 @@ describe("日程調整中イベントの直接日時確定 (#138)", () => {
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({
         scheduling: false,
+        expectedAccessRevision: 1,
         startsAt: now + 3600_000,
         endsAt: now + 7200_000,
       }),

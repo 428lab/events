@@ -189,7 +189,7 @@ export function EventDetailPage() {
           {event.status === "published" && (
             <ShareButton slug={event.slug} title={event.title} />
           )}
-          {(isStaff || (event.visibility === "private" && data.canManageAccess)) && (
+          {(isStaff || data.canManageSchedule || (event.visibility === "private" && data.canManageAccess)) && (
             <Tooltip title={t("eventManagement.title")}>
               <IconButton id="contest-operations" size="large" color="primary" component={RouterLink} to={`/events/${id}/manage`} aria-label={t("eventManagement.title")}>
                 <SettingsIcon />

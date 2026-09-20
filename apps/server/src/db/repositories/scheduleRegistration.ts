@@ -29,13 +29,14 @@ export const scheduleRegistrationRepo = {
     optionId: string,
     actorId: string,
     dateMessage: string,
+    expectedAccessRevision: number,
   ): Promise<boolean> {
     const token = crypto.randomUUID();
     const now = Date.now();
     // All guards are evaluated inside the same D1 transaction, including a
     // competing finalize, changed votes, cancellation, survey and slot capacity.
     const ready = `EXISTS (SELECT 1 FROM event e JOIN event_date_option o ON o.event_id=e.id
-      WHERE e.id=? AND o.id=? AND e.scheduling=1
+      WHERE e.id=? AND o.id=? AND e.scheduling=1 AND e.access_revision=?
       AND ${activeManagerSql("e", "?")}
       AND (e.registration_deadline IS NULL OR e.registration_deadline<=o.starts_at))`;
     const changes = await batch([
@@ -43,12 +44,12 @@ export const scheduleRegistrationRepo = {
       // keeps the old receipt and cannot re-register someone who later canceled.
       {
         sql: `DELETE FROM event_schedule_finalization WHERE event_id=? AND ${ready}`,
-        args: [eventId, eventId, optionId, actorId, adminIds()],
+        args: [eventId, eventId, optionId, expectedAccessRevision, actorId, adminIds()],
       },
       {
         sql: `INSERT INTO event_schedule_finalization(event_id,option_id,token,created_at)
           SELECT ?,?,?,? WHERE ${ready} ON CONFLICT(event_id) DO NOTHING`,
-        args: [eventId, optionId, token, now, eventId, optionId, actorId, adminIds()],
+        args: [eventId, optionId, token, now, eventId, optionId, expectedAccessRevision, actorId, adminIds()],
       },
       {
         sql: `INSERT INTO event_schedule_registration(event_id,user_id,outcome,status,reason,slot_id,member_id,entry_id)
@@ -126,9 +127,13 @@ export const scheduleRegistrationRepo = {
             WHEN 'slot_required' THEN '。参加登録には参加枠の選択が必要です。'
             WHEN 'event_ended' THEN '。終了済みのため参加登録していません。必要な場合は主催者に確認してください。'
             ELSE '。募集締切後のため参加登録していません。必要な場合は主催者に確認してください。' END
+          WHEN EXISTS(SELECT 1 FROM event_member m WHERE m.event_id=e.id AND m.user_id=v.user_id AND m.status<>'canceled')
+            THEN '。参加登録は維持されています。参加できない場合はイベントページから参加を取り消してください。'
           ELSE '' END END,?,0,?,e.id
           FROM (SELECT DISTINCT v.user_id FROM event_date_vote v JOIN event_date_option o ON o.id=v.option_id
-            JOIN user u ON u.id=v.user_id AND u.deleted_at IS NULL WHERE o.event_id=?) v
+            JOIN user u ON u.id=v.user_id AND u.deleted_at IS NULL WHERE o.event_id=?
+            UNION SELECT m.user_id FROM event_member m JOIN user u ON u.id=m.user_id AND u.deleted_at IS NULL
+              WHERE m.event_id=? AND m.status<>'canceled') v
           JOIN event e ON e.id=?
           LEFT JOIN event_schedule_registration r ON r.event_id=e.id AND r.user_id=v.user_id
           WHERE (v.user_id<>? OR r.outcome IN ('registered','action_required')) AND ${owned}
@@ -137,6 +142,7 @@ export const scheduleRegistrationRepo = {
           dateMessage,
           `/events/${eventId}`,
           now,
+          eventId,
           eventId,
           eventId,
           actorId,

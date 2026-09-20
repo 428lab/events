@@ -97,6 +97,8 @@ eventCrudRoutes.patch(
   async (c) => {
     const prior = await eventsRepo.findById(c.req.param("id"));
     const input = valid<UpdateEventInput>(c, "json");
+    const scheduleInput = [input.startsAt, input.endsAt, input.scheduling, input.registrationDeadline].some(v => v !== undefined);
+    if (scheduleInput && input.expectedAccessRevision !== prior?.accessRevision) return c.json({ error: "schedule_changed" }, 409);
     if (prior?.visibility === "public" && input.visibility && input.visibility !== "public" && !(await eventsRepo.nonpublicEligible(prior.id))) {
       return c.json({error:"legacy_visibility_locked"},409);
     }
@@ -136,7 +138,7 @@ eventCrudRoutes.patch(
     // 現在値が残るので、締切だけを送る編集でも、開始日時だけを前倒しする編集でも
     // 同じ不変条件を保てる。
     // なお scheduling は false にしか変更できない（updateEventInput が z.literal(false)）
-    // ため「締切が入ったまま日程調整へ戻る」経路は存在せず、クリア処理は要らない
+    // 再開は専用APIで、明示確認と同じbatch内で締切を解除する。
     const violation = checkRegistrationDeadline({
       deadline:
         input.registrationDeadline !== undefined
@@ -147,7 +149,7 @@ eventCrudRoutes.patch(
     });
     if (violation) return c.json({ error: violation }, 400);
     const event = await eventsRepo.update(c.req.param("id"), input, c.get("user").id);
-    if (!event) return c.json({ error: "access_changed" }, 409);
+    if (!event) return c.json({ error: scheduleInput ? "schedule_changed" : "access_changed" }, 409);
     await notifyOnPublish(prior, event);
     return c.json({ event });
   },

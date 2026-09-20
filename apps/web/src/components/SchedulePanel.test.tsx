@@ -7,7 +7,7 @@ import { SchedulePanel } from "./SchedulePanel.js";
 const { update, poll } = vi.hoisted(() => ({ update: vi.fn(), poll: { empty: false, loading: false, error: false } }));
 beforeEach(() => { poll.empty = false; poll.loading = false; poll.error = false; });
 vi.mock("../api/hooks.js", () => ({
-  useMe: () => ({ data: null }), useEvent: () => ({ data: null }),
+  useIsAdmin: () => false, useMe: () => ({ data: null }), useEvent: () => ({ data: null }),
   useUpdateEvent: () => ({ mutate: update }), useUploadEventImage: () => ({}),
 }));
 vi.mock("../api/scheduleHooks.js", () => ({
@@ -71,9 +71,9 @@ describe("private finalized schedule results", () => {
 
 it("management distinguishes finalized empty poll from loading/error; detail defaults remain hidden", () => {
   poll.empty = true;
-  const legacy = setup(); expect(legacy.container).toBeEmptyDOMElement(); legacy.unmount();
+  const legacy = setup({ showManagementActions: false }); expect(legacy.container).toBeEmptyDOMElement(); legacy.unmount();
   const empty = setup({ showEmptyState: true });
-  expect(screen.getByText("日程は確定済みです。日程調整の候補はありません。")).toBeInTheDocument(); empty.unmount();
+  expect(screen.getByText("候補日はまだありません。下のカレンダーから追加してください。")).toBeInTheDocument(); empty.unmount();
   poll.loading = true;
   const loading = setup({ showEmptyState: true });
   expect(screen.getByText("読み込み中…")).toBeInTheDocument(); loading.unmount();

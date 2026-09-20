@@ -249,6 +249,7 @@ export function useEvent(id: string) {
         membersNote?: string;
         myRole: EventRole | null;
         canManageAccess?: boolean;
+        canManageSchedule?: boolean;
         nonpublicEligible?: boolean;
         community: EventCommunityRef | null;
         /** 生まれ元のたまご（あったらいいな）。通常は0〜1件（旧レスポンスでは欠落しうる） */

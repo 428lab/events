@@ -16,10 +16,12 @@ import { api } from "../api/client.js";
 export function ScheduleRegistrationResults({
   eventId,
   open,
+  previous = false,
   onClose,
 }: {
   eventId: string;
   open: boolean;
+  previous?: boolean;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -33,7 +35,7 @@ export function ScheduleRegistrationResults({
   });
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{t("schedule.autoJoinResults")}</DialogTitle>
+      <DialogTitle>{t(previous ? "schedule.previousResults" : "schedule.autoJoinResults")}</DialogTitle>
       <DialogContent>
         <Typography variant="body2" sx={{ mb: 2 }}>
           {t("schedule.autoJoinSnapshot")}

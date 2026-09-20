@@ -157,3 +157,20 @@ describe("イベント編集の日時順序の警告 (#399)", () => {
     expect(saveButton()).toBeDisabled();
   });
 });
+
+it("submits the revision that initialized the form, not a newer background response", () => {
+  eventData = makeEventData({ accessRevision: 7 });
+  const view = draw();
+  eventData = makeEventData({ accessRevision: 8 });
+  view.rerender(<MemoryRouter initialEntries={["/events/e-1/edit"]}><Routes><Route path="/events/:id/edit" element={<EditEventPage />} /></Routes></MemoryRouter>);
+  fireEvent.click(saveButton());
+  expect(updateMutate.mock.calls[0][0].expectedAccessRevision).toBe(7);
+});
+
+it("does not present the retained old dates as current when reopened", () => {
+  eventData = makeEventData({ scheduling: true, accessRevision: 9 });
+  draw();
+  fireEvent.click(screen.getByRole("button", { name: "日時を直接設定する" }));
+  expect(screen.getByLabelText("開始日時")).toHaveValue("");
+  expect(screen.getByLabelText("終了日時")).toHaveValue("");
+});

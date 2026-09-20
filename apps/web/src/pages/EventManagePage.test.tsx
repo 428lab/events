@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -99,4 +99,60 @@ it("staff private invitations still require canManageAccess, while staff-invite 
   await screen.findByRole("heading", { name: "運営に招く" });
   expect(screen.queryByLabelText("登録済みのユーザー名（@handle）")).toBeNull();
   expect(api.get).not.toHaveBeenCalledWith("/events/e/access-invites");
+});
+
+it("management reopens with explicit deadline consent, keeps own anonymous answers selected and re-finalizes into registration results", async () => {
+  const fixed = { id: "e", title: "夏の発表会", status: "published", visibility: "public", scheduling: false,
+    scheduleAnonymous: true, scheduleVisible: false, startsAt: 1900000000000, endsAt: 1900003600000,
+    registrationDeadline: 1890000000000, accessRevision: 4, imageUpdatedAt: null };
+  eventResult = async () => ({ event: { ...fixed }, myRole: "staff", canManageSchedule: true });
+  const original = vi.mocked(api.get).getMockImplementation()!;
+  vi.mocked(api.get).mockImplementation(async path => {
+    if (path.endsWith("/schedule")) return { myVotes: { option: "yes" }, options: [
+      { id: "option", startsAt: fixed.startsAt, endsAt: fixed.endsAt, counts: { yes: 1, maybe: 0, no: 1 }, voters: [] },
+    ] } as never;
+    if (path.endsWith("/schedule-registration")) return { results: [{ userId: "other", name: "参加者A", outcome: "existing", status: "confirmed", reason: null }] } as never;
+    return original(path);
+  });
+  vi.mocked(api.post).mockImplementation(async (path, input) => {
+    if (path.endsWith("/reopen-scheduling")) {
+      expect(input).toEqual({ expectedAccessRevision: 4, clearRegistrationDeadline: true });
+      fixed.scheduling = true; fixed.accessRevision++; fixed.registrationDeadline = null as never;
+      return { event: fixed } as never;
+    }
+    if (path.endsWith("/finalize-date")) {
+      expect(input).toEqual({ optionId: "option", expectedAccessRevision: 5 });
+      fixed.scheduling = false; fixed.accessRevision++;
+      return { event: fixed, results: [{ userId: "other", name: "参加者A", outcome: "existing", status: "confirmed", reason: null }] } as never;
+    }
+    throw new Error(`Unexpected POST ${path}`);
+  });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(true).mockReturnValueOnce(false);
+  draw("#date-poll");
+  fireEvent.click(await screen.findByRole("button", { name: "日程調整に戻す" }));
+  expect(screen.getByText(/募集締切（/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
+  expect(api.post).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "日程調整に戻す" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "日程調整に戻す" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(await screen.findByRole("button", { name: "○" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByText(/匿名回答でも登録後の名前/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "前回の日程確定時の参加登録結果" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "この日程に決定" }));
+  expect(await screen.findByRole("dialog")).toBeVisible();
+  expect(screen.getByText("参加者A — 参加確定")).toBeVisible();
+  expect(confirm.mock.calls[0][0]).toContain("×・未回答の人も維持");
+});
+
+it("a nonstaff schedule manager gets only the date section, including direct-date reopening with no candidates", async () => {
+  eventResult = async () => ({ event: { id: "e", title: "夏の発表会", scheduling: false, startsAt: 1900000000000,
+    endsAt: 1900003600000, registrationDeadline: null, accessRevision: 1 }, myRole: null, canManageSchedule: true });
+  const original = vi.mocked(api.get).getMockImplementation()!;
+  vi.mocked(api.get).mockImplementation(async path => path.endsWith("/schedule") ? { options: [], myVotes: {} } as never : original(path));
+  draw("#date-poll");
+  expect(await screen.findByRole("button", { name: "日程調整に戻す" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "参加者" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "編集" })).toBeNull();
 });

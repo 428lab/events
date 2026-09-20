@@ -6,6 +6,7 @@ import { communitiesRepo } from "../src/db/repositories/communities.js";
 import { accountDeletionRepo } from "../src/db/repositories/accountDeletion.js";
 import { accountMergeRepo } from "../src/db/repositories/accountMerge.js";
 import { bindEnv, runWithExecutionContext } from "../src/runtime.js";
+import { reopenSchedulingRepo } from "../src/db/repositories/reopenScheduling.js";
 import { schedulingRepo } from "../src/db/repositories/scheduling.js";
 import { eventSurveyRepo } from "../src/db/repositories/eventSurvey.js";
 import { scheduleRegistrationRepo } from "../src/db/repositories/scheduleRegistration.js";
@@ -71,7 +72,7 @@ it("finalization skips revoked voters, retains ordering and creates only qualifi
   await json(await request(`/events/${s.eventId}/slots`, s.host, "POST", { name: "One seat", capacity: 1, selectionType: "first_come" }), 201);
   await exit(s.eventId, revoked);
   const before = (await json(await request(`/events/${s.eventId}/access-invites`, s.host))).accessRevision;
-  const result = await json(await request(`/events/${s.eventId}/finalize-date`, s.host, "POST", { optionId: s.optionId }));
+  const result = await json(await request(`/events/${s.eventId}/finalize-date`, s.host, "POST", { optionId: s.optionId, expectedAccessRevision: before }));
   expect(result.results.find((r: any) => r.userId === revoked.id)).toMatchObject({ outcome: "action_required", reason: "access_revoked", status: null });
   const eligible = [a.id, b.id].sort();
   expect(result.results.find((r: any) => r.userId === eligible[0]).status).toBe("confirmed");
@@ -83,7 +84,7 @@ it("finalization skips revoked voters, retains ordering and creates only qualifi
   expect(notices.results.some(n => n.user_id === revoked.id)).toBe(false);
   expect(JSON.stringify(notices.results)).not.toContain("SECRET");
   expect(await schedulingRepo.vote(s.eventId, s.optionId, a.id, "no")).toBe(false); // finalized in SQL
-  const replay = await json(await request(`/events/${s.eventId}/finalize-date`, s.host, "POST", { optionId: s.optionId }));
+  const replay = await json(await request(`/events/${s.eventId}/finalize-date`, s.host, "POST", { optionId: s.optionId, expectedAccessRevision: before }));
   expect(replay.results).toEqual(result.results);
   expect(await count("entry", s.eventId)).toBe(1);
 });
@@ -93,7 +94,7 @@ it("a demoted finalizer cannot claim a receipt or change date/member/revision af
   expect(await schedulingRepo.vote(s.eventId, s.optionId, target.id, "yes")).toBe(true);
   await eventMembersRepo.remove(s.eventId, s.host.id);
   const before = await env.DB.prepare("SELECT access_revision,scheduling FROM event WHERE id=?").bind(s.eventId).first();
-  expect(await scheduleRegistrationRepo.finalize(s.eventId, s.optionId, s.host.id, "SECRET")).toBe(false);
+  expect(await scheduleRegistrationRepo.finalize(s.eventId, s.optionId, s.host.id, "SECRET", (await eventsRepo.findById(s.eventId))!.accessRevision)).toBe(false);
   expect(await count("event_schedule_finalization", s.eventId)).toBe(0);
   expect(await count("entry", s.eventId)).toBe(0);
   expect(await env.DB.prepare("SELECT access_revision,scheduling FROM event WHERE id=?").bind(s.eventId).first()).toEqual(before);
@@ -172,7 +173,7 @@ it("community qualification changes revise only linked events and a demoted mana
   const adminRev = (await eventsRepo.findById(s.eventId))!.accessRevision;
   await communitiesRepo.setMemberRole(community.id, target.id, "member");
   expect((await eventsRepo.findById(s.eventId))!.accessRevision).toBe(adminRev + 1);
-  expect(await scheduleRegistrationRepo.finalize(s.eventId, s.optionId, target.id, "private")).toBe(false);
+  expect(await scheduleRegistrationRepo.finalize(s.eventId, s.optionId, target.id, "private", adminRev)).toBe(false);
   await communitiesRepo.leave(community.id, target.id);
   await communitiesRepo.delete(community.id);
   expect((await eventsRepo.findById(s.eventId))!.communityId).toBeNull();
@@ -221,4 +222,41 @@ it("promotion returns committed results while a stalled email remains in waitUnt
     expect(await count("entry", s.eventId)).toBe(1);
     expect((await env.DB.prepare("SELECT COUNT(*) n FROM notification WHERE event_id=? AND type='waitlist_promoted'").bind(s.eventId).first())!.n).toBe(1);
   } finally { release(new Response('{}')); await Promise.all([...pending, operation]); outbound.mockRestore(); }
+});
+
+
+it("reopening enforces real staff/community/admin permissions and private-safe recipient authorization", async () => {
+  const s = await setup(), qualified = await user(), revoked = await user(), outsider = await user();
+  for (const u of [qualified, revoked]) {
+    await grant(s, u);
+    expect(await schedulingRepo.vote(s.eventId, s.optionId, u.id, "yes")).toBe(true);
+  }
+  await exit(s.eventId, revoked);
+  let revision = (await eventsRepo.findById(s.eventId))!.accessRevision;
+  await json(await request(`/events/${s.eventId}/finalize-date`, s.host, "POST", { optionId: s.optionId, expectedAccessRevision: revision }));
+  revision++;
+  expect((await request(`/events/${s.eventId}/reopen-scheduling`, outsider, "POST", { expectedAccessRevision: revision })).status).toBe(404);
+  expect((await request(`/events/${s.eventId}/reopen-scheduling`, qualified, "POST", { expectedAccessRevision: revision })).status).toBe(403);
+  expect((await request(`/events/${s.eventId}/reopen-scheduling`, revoked, "POST", { expectedAccessRevision: revision })).status).toBe(404);
+  await json(await request(`/events/${s.eventId}/reopen-scheduling`, s.host, "POST", { expectedAccessRevision: revision }));
+  const notices = (await env.DB.prepare("SELECT user_id,title,body FROM notification WHERE event_id=? AND type='info'").bind(s.eventId).all()).results;
+  expect(notices).toEqual([{ user_id: qualified.id, title: "日程調整を再開しました", body: "イベントの更新があります" }]);
+  expect((await json(await request(`/events/${s.eventId}`, qualified))).canManageSchedule).toBe(false);
+  expect((await json(await request(`/events/${s.eventId}`, s.host))).canManageSchedule).toBe(true);
+  // Even a previously authorized write loses its SQL grant after demotion.
+  await eventMembersRepo.remove(s.eventId, s.host.id);
+  expect((await reopenSchedulingRepo.reopen(s.eventId, s.host.id, { expectedAccessRevision: revision })).error).toBe("schedule_changed");
+
+  const community = await communitiesRepo.create({ slug: `reopen-${s.eventId}`, name: "Synthetic" }, outsider.id);
+  await sql("UPDATE event SET community_id=?,scheduling=0 WHERE id=?", community.id, s.eventId);
+  const managerView = await json(await request(`/events/${s.eventId}`, outsider));
+  expect(managerView.myRole).toBeNull();
+  expect(managerView.canManageSchedule).toBe(true);
+  await json(await request(`/events/${s.eventId}/reopen-scheduling`, outsider, "POST", { expectedAccessRevision: managerView.event.accessRevision }));
+  await sql("UPDATE event SET scheduling=0 WHERE id=?", s.eventId);
+  const login = await SELF.fetch(base + "/auth/dev-login", { method: "POST" });
+  const cookie = login.headers.get("set-cookie")!.split(";")[0];
+  const adminView = await json(await SELF.fetch(base + `/events/${s.eventId}`, { headers: { cookie } }));
+  expect(adminView.canManageSchedule).toBe(true);
+  expect((await SELF.fetch(base + `/events/${s.eventId}/reopen-scheduling`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ expectedAccessRevision: adminView.event.accessRevision }) })).status).toBe(200);
 });

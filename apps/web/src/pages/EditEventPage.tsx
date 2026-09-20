@@ -1,5 +1,5 @@
 import {EventVisibilityField} from "../components/EventVisibilityField.js";
-import {api} from "../api/client.js";
+import {api, ApiError} from "../api/client.js";
 import type {Event} from "@eventer/shared";
 import { useEffect, useState } from "react";
 import {
@@ -108,6 +108,7 @@ export function EditEventPage() {
   const myCommunitiesQuery = useMyCommunities();
   const myCommunities = myCommunitiesQuery.data;
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [formRevision, setFormRevision] = useState(0);
   const [initialized, setInitialized] = useState(false);
 
   // 複製後に /events/:newId/edit へ遷移してもコンポーネントは再マウントされないため、
@@ -125,8 +126,10 @@ export function EditEventPage() {
       setSubtitle(e.subtitle);
       setDescription(e.description);
       setMembersNote(data.membersNote ?? "");
-      setStartsAt(toLocalInput(e.startsAt));
-      setEndsAt(toLocalInput(e.endsAt));
+      setFormRevision(e.accessRevision);
+      setDirectDate(false);
+      setStartsAt(e.scheduling ? "" : toLocalInput(e.startsAt));
+      setEndsAt(e.scheduling ? "" : toLocalInput(e.endsAt));
       setRegistrationDeadline(toLocalInput(e.registrationDeadline ?? 0));
       setVenueType(e.venueType);
       setVenueOffline(e.venueOffline ?? "");
@@ -183,6 +186,7 @@ export function EditEventPage() {
   // この画面だけの言い方を overrides で渡す (#269)
   const saveErrorMessage = errorMessage(update.error, {
     default: t("eventForm.saveError"),
+    schedule_changed: t("schedule.changed"),
     deadline_requires_fixed_date: t("eventForm.deadlineNeedsDate"),
     deadline_after_start: t("eventForm.deadlineAfterStart"),
   });
@@ -195,11 +199,13 @@ export function EditEventPage() {
       try {
         const preview=await api.get<{accessRevision:number;members:number;voters:number}>(`/events/${id}/visibility-preview`);
         if (!window.confirm(t("eventAccess.visibilityMembers",preview))) return;
+        if (preview.accessRevision !== formRevision) { setVisibilityError(true); await refetch(); setInitialized(false); return; }
         expectedAccessRevision=preview.accessRevision;
       } catch { setVisibilityError(true); return; }
     }
     update.mutate(
       {
+        ...((startsAtMs !== null && endsAtMs !== null) || deadlineEditable ? { expectedAccessRevision: formRevision } : {}),
         ...(expectedAccessRevision === undefined ? {} : {visibility,expectedAccessRevision,confirmVisibilityChange:true}),
         status,
         title,
@@ -232,7 +238,10 @@ export function EditEventPage() {
         venueWanted,
         communityId: communityId || null,
       },
-      { onSuccess: () => navigate(`/events/${id}`), onError:()=>{if(expectedAccessRevision!==undefined){setVisibilityError(true);void refetch();}} },
+      { onSuccess: () => navigate(`/events/${id}`), onError: async error => {
+        if (expectedAccessRevision !== undefined) setVisibilityError(true);
+        if (error instanceof ApiError && error.status === 409) { await refetch(); setInitialized(false); }
+      } },
     );
   };
 

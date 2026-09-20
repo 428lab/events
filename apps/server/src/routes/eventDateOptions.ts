@@ -3,11 +3,13 @@ import { valid, zValidator } from "../lib/validator.js";
 import {
   addDateOptionInput,
   finalizeDateInput,
+  reopenSchedulingInput,
   voteInput,
 } from "@eventer/shared";
 import type {
   AddDateOptionInput,
   FinalizeDateInput,
+  ReopenSchedulingInput,
   VoteInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
@@ -15,7 +17,9 @@ import { requireEventRole } from "../auth/roles.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { schedulingRepo } from "../db/repositories/scheduling.js";
 import { scheduleRegistrationRepo } from "../db/repositories/scheduleRegistration.js";
-import { many } from "../db/client.js";
+import { reopenSchedulingRepo } from "../db/repositories/reopenScheduling.js";
+import { activeManagerSql, adminIds } from "../db/repositories/eventAccessInvites.js";
+import { one, many } from "../db/client.js";
 import { deferBackground } from "../runtime.js";
 import { sendNotificationEmailIfOptedIn } from "../lib/email.js";
 import { formatDateRangeJa } from "../lib/dateFormat.js";
@@ -103,6 +107,19 @@ eventDateOptionRoutes.get("/:id/schedule-registration", requireEventRole(["staff
   return c.json({ results: await scheduleRegistrationRepo.results(c.req.param("id")) });
 });
 
+eventDateOptionRoutes.post("/:id/reopen-scheduling", requireEventRole(["staff"]),
+  zValidator("json", reopenSchedulingInput), async c => {
+    const eventId = c.req.param("id");
+    const result = await reopenSchedulingRepo.reopen(eventId, c.get("user").id, valid<ReopenSchedulingInput>(c, "json"));
+    if (result.error) return c.json({ error: result.error }, 409);
+    if (result.token) await deferBackground((async () => {
+      const notices = await many<{ user_id: string; title: string; body: string; link: string }>(
+        "SELECT user_id,title,body,link FROM notification WHERE event_id=? AND substr(id,1,36)=? ORDER BY id LIMIT 50", eventId, result.token);
+      for (const n of notices) await sendNotificationEmailIfOptedIn(n.user_id,n.title,n.body,n.link, { authorizationEventId: eventId });
+    })().catch(() => console.error("schedule reopening email delivery failed")));
+    return c.json({ event: await eventsRepo.findById(eventId) });
+  });
+
 /** 日程と参加登録とアプリ通知を同じトランザクションで確定 */
 eventDateOptionRoutes.post(
   "/:id/finalize-date",
@@ -110,28 +127,30 @@ eventDateOptionRoutes.post(
   zValidator("json", finalizeDateInput),
   async (c) => {
     const eventId = c.req.param("id");
-    const opt = await schedulingRepo.getOption(
-      eventId,
-      valid<FinalizeDateInput>(c, "json").optionId,
-    );
+    const { optionId, expectedAccessRevision } = valid<FinalizeDateInput>(c, "json");
+    const opt = await schedulingRepo.getOption(eventId, optionId);
     if (!opt) return c.json({ error: "not_found" }, 404);
     const current = await eventsRepo.findById(eventId);
     if (!current) return c.json({ error: "not_found" }, 404);
-    // 確定で開催日時が動くので、確定後の状態で締切の不変条件を見る (#269)。
-    // 候補日の追加は締切ありなら弾いているが、「候補日あり → PATCH で日程確定＋
-    // 締切設定 → 古い候補で finalize」の経路が残るため、確定側にも置く
+    if (current.scheduling ? current.accessRevision !== expectedAccessRevision
+      : current.accessRevision !== expectedAccessRevision + 1 || (await scheduleRegistrationRepo.receipt(eventId))?.option_id !== optionId) {
+      return c.json({ error: "schedule_changed" }, 409);
+    }
+    // Reopening clears deadlines; still validate the resulting date here and
+    // in the transaction so finalization cannot break the deadline invariant.
     const violation = checkRegistrationDeadline({
       deadline: current.registrationDeadline,
       scheduling: false,
       startsAt: opt.startsAt,
     });
     if (violation) return c.json({ error: violation }, 400);
-    const optionId = valid<FinalizeDateInput>(c, "json").optionId;
     const changed = await scheduleRegistrationRepo.finalize(eventId, optionId, c.get("user").id,
-      `「${current.title}」の開催日時が ${formatDateRangeJa(opt.startsAt, opt.endsAt)} に決定しました`);
+      `「${current.title}」の開催日時が ${formatDateRangeJa(opt.startsAt, opt.endsAt)} に決定しました`, expectedAccessRevision);
     const event = await eventsRepo.findById(eventId);
-    if (!changed && (event?.scheduling || (await scheduleRegistrationRepo.receipt(eventId))?.option_id !== optionId)) {
-      return c.json({ error: "schedule_finalized" }, 409);
+    if (!changed && (event?.scheduling || event?.accessRevision !== expectedAccessRevision + 1
+      || (await scheduleRegistrationRepo.receipt(eventId))?.option_id !== optionId
+      || !await one(`SELECT 1 FROM event e WHERE e.id=? AND ${activeManagerSql("e", "?")}`, eventId, c.get("user").id, adminIds()))) {
+      return c.json({ error: "schedule_changed" }, 409);
     }
     // App notifications are already committed. Email is best-effort, bounded
     // like the existing bulk notifier, and never re-sent by a finalize retry.

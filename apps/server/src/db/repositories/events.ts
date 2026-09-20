@@ -6,7 +6,8 @@ import type {
   Event,
   UpdateEventInput,
 } from "@eventer/shared";
-import { MEET_RANKING_MODES, QA_ANONYMITY_MODES } from "@eventer/shared";
+import { checkRegistrationDeadline } from "../../lib/registrationDeadline.js";
+import { MEET_RANKING_MODES, QA_ANONYMITY_MODES, isDatetimeOrderInvalid } from "@eventer/shared";
 import { batch, many, one, runCount } from "../client.js";
 
 interface EventRow {
@@ -441,6 +442,12 @@ export const eventsRepo = {
     const current = await this.findById(id);
     if (!current) return null;
     const next = { ...current, ...input };
+    const scheduleInput = [input.startsAt, input.endsAt, input.scheduling, input.registrationDeadline].some(v => v !== undefined);
+    if (scheduleInput && input.expectedAccessRevision !== current.accessRevision) return null;
+    if (scheduleInput && (isDatetimeOrderInvalid(next.startsAt, next.endsAt)
+      || (input.scheduling === false && !(next.startsAt > 0 && next.endsAt > next.startsAt))
+      || checkRegistrationDeadline({ deadline: next.registrationDeadline, scheduling: next.scheduling, startsAt: next.startsAt }))) return null;
+    const dateChanged = next.startsAt !== current.startsAt || next.endsAt !== current.endsAt || next.scheduling !== current.scheduling;
     const visibilityChanged = next.visibility !== current.visibility;
     if (visibilityChanged && (input.expectedAccessRevision !== current.accessRevision || !input.confirmVisibilityChange)) return null;
     const token = visibilityChanged ? crypto.randomUUID() : null;
@@ -448,7 +455,7 @@ export const eventsRepo = {
     const membersNote = input.membersNote ?? (await this.membersNoteFor(id));
     const [changed] = await batch([{sql:
       `UPDATE event AS e SET
-         access_revision = access_revision + CASE WHEN status <> ? OR community_id IS NOT ? OR visibility <> ? THEN 1 ELSE 0 END,
+         access_revision = access_revision + CASE WHEN status <> ? OR community_id IS NOT ? OR visibility <> ? OR starts_at <> ? OR ends_at <> ? OR scheduling <> ? OR registration_deadline IS NOT ? THEN 1 ELSE 0 END,
          visibility = ?, access_operation_token = ?,
          title = ?, subtitle = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
@@ -464,7 +471,7 @@ export const eventsRepo = {
            u.discord_id IN (SELECT value FROM json_each(?)) OR EXISTS (SELECT 1 FROM community_member cm
              WHERE cm.user_id=u.id AND cm.community_id=? AND cm.role IN ('owner','admin')))))`,args:[
       next.status,
-      next.communityId ?? null, next.visibility, next.visibility,token,
+      next.communityId ?? null, next.visibility, next.startsAt, next.endsAt, next.scheduling ? 1 : 0, next.registrationDeadline, next.visibility,token,
       next.title,
       next.subtitle,
       next.description,
@@ -493,7 +500,7 @@ export const eventsRepo = {
       // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る
       next.registrationDeadline ?? null,
       id, input.expectedAccessRevision ?? current.accessRevision, next.visibility,actorId, adminIds(), next.communityId ?? null, next.communityId ?? null, actorId, adminIds(), next.communityId ?? null,
-    ]},...(token ? visibilityChangeStatements(id,token,actorId,current.visibility,next.visibility):[])]);
+    ]}, ...(dateChanged ? [{sql: "DELETE FROM event_schedule_finalization WHERE event_id=? AND changes()>0", args: [id]}] : []),...(token ? visibilityChangeStatements(id,token,actorId,current.visibility,next.visibility):[])]);
     return changed ? this.findById(id) : null;
   },
 

@@ -1,0 +1,30 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { beforeEach, expect, it, vi } from "vitest";
+import type { Event } from "@eventer/shared";
+import { api, ApiError } from "../api/client.js";
+import { ReopenSchedulingButton } from "./ReopenSchedulingButton.js";
+const event = { id: "e", startsAt: 1900000000000, endsAt: 1900003600000, accessRevision: 4, registrationDeadline: null } as Event;
+beforeEach(() => vi.restoreAllMocks());
+it.each([409, 500])("keeps the confirmation open on %s; conflicts require reviewing fresh data, failures allow retry", async status => {
+  const post = vi.spyOn(api, "post").mockRejectedValue(new ApiError(status, { error: status === 409 ? "schedule_changed" : "failed" }));
+  let reject!: (e: Error) => void;
+  post.mockImplementationOnce(() => new Promise((_, no) => { reject = no; }));
+  const qc = new QueryClient();
+  const invalidation = vi.spyOn(qc, "invalidateQueries");
+  render(<QueryClientProvider client={qc}><ReopenSchedulingButton event={event} /></QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "日程調整に戻す" }));
+  const button = within(screen.getByRole("dialog")).getByRole("button", { name: "日程調整に戻す" });
+  fireEvent.click(button);
+  await waitFor(() => expect(button).toBeDisabled());
+  fireEvent.click(button);
+  expect(post).toHaveBeenCalledTimes(1);
+  reject(new ApiError(status, {}));
+  expect(await screen.findByRole("alert")).toHaveTextContent(status === 409 ? "日程が更新されています" : "もう一度お試しください");
+  expect(screen.getByRole("dialog")).toBeVisible();
+  expect(post).toHaveBeenCalledWith("/events/e/reopen-scheduling", { expectedAccessRevision: 4 });
+  if (status === 409) {
+    expect(button).toBeDisabled();
+    expect(invalidation).toHaveBeenCalledWith({ queryKey: ["event", "e"] });
+  } else expect(button).toBeEnabled();
+});
