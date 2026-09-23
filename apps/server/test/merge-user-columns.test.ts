@@ -36,9 +36,9 @@ const mergeSources = import.meta.glob("../src/db/repositories/accountMerge.ts", 
   eager: true,
 }) as Record<string, string>;
 
-/** 共有コンテンツの所有者列（`event.created_by` など5本）は userTables.ts が
+/** 共有コンテンツの所有者列（`event.created_by` など6本）は userTables.ts が
  * 唯一の定義で、`mergeUsers` は spread で差し込む。ここを読まないと
- * その5本を「扱っていない」と誤検出する */
+ * その6本を「扱っていない」と誤検出する */
 const tableSources = import.meta.glob("../src/db/repositories/userTables.ts", {
   query: "?raw",
   import: "default",
@@ -114,7 +114,7 @@ function mergeUsersBody(src: string): string {
  * 2 のうち共有コンテンツの所有者列は `userTables.ts` に定義があり
  * （退会側と同じ定義を使うため）、`simple` へは spread で入る。定義元のファイルも
  * 読むが、**`simple` に spread が実際にあるときだけ**credit する。無条件に
- * 定義元を読むと、spread を外しても5本を「扱っている」と答えてしまい、
+ * 定義元を読むと、spread を外しても6本を「扱っている」と答えてしまい、
  * この走査は自分で確かめていない網羅を報告することになる（それは根拠ではない）。
  */
 
@@ -126,8 +126,20 @@ function arrayBody(name: string, src: string): string {
 }
 
 /** `simple` が userTables.ts の定義を差し込んでいる印。これが無ければ
- * 共有コンテンツの5本は「扱われていない」 */
+ * 共有コンテンツの6本は「扱われていない」 */
 const SHARED_SPREAD = "...SHARED_CONTENT_OWNER_COLUMNS";
+
+/** 割り勘の帳簿の当事者 (#556) を付け替える SQL は userTables.ts の
+ * LEDGER_PARTY_REASSIGN_SQL が唯一の定義で、`mergeUsers` はそれを回す。
+ * これが本体に無ければ、その SQL が付け替える列は「扱われていない」 */
+const LEDGER_LOOP = "of LEDGER_PARTY_REASSIGN_SQL";
+
+/** 配列リテラル `name … = [ … ];` の中身（要素がテンプレート文字列の配列用） */
+function ledgerSqlBody(src: string): string {
+  const m = /LEDGER_PARTY_REASSIGN_SQL[^=]*=\s*\[([\s\S]*?)\n\];/.exec(src);
+  expect(m, "LEDGER_PARTY_REASSIGN_SQL の配列を読めなかった（走査が壊れている）").not.toBeNull();
+  return m![1]!;
+}
 
 function handledColumns(body: string, tables: string): Set<Column> {
   const out = new Set<Column>();
@@ -157,9 +169,13 @@ function handledColumns(body: string, tables: string): Set<Column> {
     ).toBeGreaterThan(0);
     for (const e of found) out.add(`${e[1]!}.${e[2]!}`);
   }
+  // 帳簿の当事者 (#556)。userTables.ts の SQL を、本体が回しているときだけ読む
+  // （spread と同じ理由で、無条件に読むと自分で確かめていない網羅を報告する）
+  const updateTexts = [body];
+  if (body.includes(LEDGER_LOOP)) updateTexts.push(ledgerSqlBody(tables));
   // `UPDATE t SET c = …, d = …` の代入先。WHERE より手前だけを見る
   // （`WHERE user_id = ?` は「付け替えた」証拠にならない）
-  for (const m of body.matchAll(/UPDATE\s+(\w+)\s+SET\s+([\s\S]*?)(?:WHERE|RETURNING|`)/gi)) {
+  for (const m of updateTexts.join("\n").matchAll(/UPDATE\s+(\w+)\s+SET\s+([\s\S]*?)(?:WHERE|RETURNING|`)/gi)) {
     for (const c of m[2]!.matchAll(/(?:^|,)\s*(\w+)\s*=/g)) {
       out.add(`${m[1]!}.${c[1]!}`);
     }
@@ -209,13 +225,17 @@ const UNRESOLVED: Array<{ column: Column; breaks: string }> = [];
  * 増減したらこの数を直すこと。**直す前に、増えた列が mergeUsers で
  * 扱われているかを必ず読むこと。**
  */
-const EXPECTED_USER_COLUMNS = 54; // #513: event_schedule_registration.user_id
+const EXPECTED_USER_COLUMNS = 61; // #556: 割り勘の 4 表で 7 本
 
 /**
  * `mergeUsers` が扱う `table.column` の数（user 参照でない列も含む生の抽出数）。
  * 走査そのものが空振りしていないことの担保。
  */
-const EXPECTED_HANDLED_PAIRS = 59; // #526: winner card_image_generation/card_image_updated_at rotation
+// #556: simple +3（event_expense.created_by / event_settlement_payment.recorded_by /
+// event_payout_method.user_id）、共有コンテンツ +1（event_expense.payer_user_id）、
+// LEDGER_PARTY_REASSIGN_SQL +4（event_expense_share.user_id / .weight（重みの足し込み）/
+// event_settlement_payment.from_user_id / .to_user_id）
+const EXPECTED_HANDLED_PAIRS = 67;
 
 describe("アカウント統合の対象列の走査 (#396)", () => {
   const body = mergeUsersBody(Object.values(mergeSources)[0]!);
@@ -335,9 +355,9 @@ describe("アカウント統合の対象列の走査 (#396)", () => {
     ).toEqual(["event_duty_assignee.user_id"]);
   });
 
-  it("共有コンテンツの spread を外すと、その5本が未登録として落ちる", () => {
+  it("共有コンテンツの spread を外すと、その6本が未登録として落ちる", () => {
     // 走査は userTables.ts の定義も読む。**mergeUsers が本当に差し込んでいるか**を
-    // 見ずに credit すると、spread を消しても5本を「扱っている」と答えてしまい、
+    // 見ずに credit すると、spread を消しても6本を「扱っている」と答えてしまい、
     // この走査は自分で確かめていない網羅を報告することになる。
     // simple / uniqueKeyed と同じように、外したら落ちることを毎回ためす
     const spread = `${SHARED_SPREAD},`;
@@ -350,6 +370,7 @@ describe("アカウント統合の対象列の走査 (#396)", () => {
     const shared: Column[] = [
       "community.owner_id",
       "event.created_by",
+      "event_expense.payer_user_id",
       "event_request.created_by",
       "venue.owner_id",
       "venue_offer.created_by",
@@ -378,8 +399,39 @@ describe("アカウント統合の対象列の走査 (#396)", () => {
     );
     expect(
       missing,
-      "spread を外したのに、検出された未登録列が共有コンテンツの5本にならなかった",
+      "spread を外したのに、検出された未登録列が共有コンテンツの6本にならなかった",
     ).toEqual(shared);
+  });
+
+  it("帳簿の当事者の付け替え (#556) を外すと、その3本が未登録として落ちる", () => {
+    // LEDGER_PARTY_REASSIGN_SQL も userTables.ts に定義がある。spread と同じく、
+    // mergeUsers が本当に回しているかを見ずに credit すると走査が緩む
+    const loop = `for (const sql ${LEDGER_LOOP})`;
+    expect(body, `${loop} が mergeUsers に無い（帳簿の付け替えが消えている）`).toContain(loop);
+
+    const ledger: Column[] = [
+      "event_expense_share.user_id",
+      "event_settlement_payment.from_user_id",
+      "event_settlement_payment.to_user_id",
+    ];
+    const handled = handledColumns(body, tables);
+    for (const c of ledger) {
+      expect(handled.has(c), `${c} を走査が拾えていない`).toBe(true);
+    }
+
+    const broken = body.replace(loop, "for (const sql of [])");
+    const handledAfter = handledColumns(broken, tables);
+    const excused = new Set<Column>([
+      ...INTENTIONAL.map((e) => e.column),
+      ...UNRESOLVED.map((e) => e.column),
+    ]);
+    const missing = userColumns().filter(
+      (c) => !handledAfter.has(c) && !excused.has(c),
+    );
+    expect(
+      missing,
+      "帳簿の付け替えを外したのに、検出された未登録列が帳簿の当事者の3本にならなかった",
+    ).toEqual(ledger);
   });
 
   it("SQL コメントの中の REFERENCES を根拠にしない", () => {

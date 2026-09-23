@@ -2,6 +2,7 @@ import { accountAccessRevision } from "./accessRevisions.js";
 import { batch } from "../client.js";
 import {
   EVENT_LIKE_USER_KINDS,
+  LEDGER_PARTY_REASSIGN_SQL,
   SHARED_CONTENT_OWNER_COLUMNS,
 } from "./userTables.js";
 
@@ -229,6 +230,13 @@ export const accountMergeRepo = {
       args: [winnerId, loserId, winnerId, loserId, loserId, loserId],
     });
 
+    // (5-b) 割り勘の帳簿の当事者 (#556)。同じ立替の負担行は重みを合算し、
+    //     負け↔勝ち間の支払記録（統合後の自分→自分）は先に消す。
+    //     SQL は userTables.ts の LEDGER_PARTY_REASSIGN_SQL（退会側と共有。文の順序が仕様）
+    for (const sql of LEDGER_PARTY_REASSIGN_SQL) {
+      stmts.push({ sql, args: [loserId, winnerId] });
+    }
+
     // (6) UNIQUE の無い参照列は単純に付け替え
     const simple: Array<[table: string, col: string]> = [
       ["event_photo", "user_id"],
@@ -267,6 +275,13 @@ export const accountMergeRepo = {
       // 記名が匿名に痩せる（本人の同意した紐づけは統合先へ引き継ぐ）
       ["event_pre_survey_response", "user_id"],
       ["bgm_track", "owner_id"],
+      // 割り勘 (#556) の入力者・記録者。付け替えないと (9) の user 削除で
+      // SET NULL が発火し、「入力: ◯◯」と編集権が黙って消える
+      ["event_expense", "created_by"],
+      ["event_settlement_payment", "recorded_by"],
+      // 割り勘の受け取り先 (#556)。付け替えないと (9) の user 削除で CASCADE が
+      // 発火して消える。5件を超えても表示は全件（次の PUT で5件以下にする）
+      ["event_payout_method", "user_id"],
       // 共有コンテンツの所有者列 (userTables.ts)。退会 (deleteAccount) が
       // ghost へ付け替えるのと**同じ表**でなければならないので、定義は1本にして
       // ここへ差し込む。並びは userTables.ts の順＝この batch の文順
