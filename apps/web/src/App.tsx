@@ -26,6 +26,7 @@ import { EventBroadcastPage } from "./pages/EventBroadcastPage.js";
 import { EventTodoPage } from "./pages/EventTodoPage.js";
 import { EventPrizeDeskPage } from "./pages/EventPrizeDeskPage.js";
 import { EventBingoPage } from "./pages/EventBingoPage.js";
+import { EventWarikanPage } from "./pages/EventWarikanPage.js";
 import { EventBingoControlPage } from "./pages/EventBingoControlPage.js";
 import { EventBingoScreenPage } from "./pages/EventBingoScreenPage.js";
 import { PreSurveyPage } from "./pages/PreSurveyPage.js";
@@ -475,6 +476,8 @@ export function App() {
           {/* 数字ビンゴ (#436)。カードは確定メンバー・抽選コントロールはスタッフ専用 */}
           <Route path="bingo" element={<EventBingoPage />} />
           <Route path="bingo/control" element={<EventBingoControlPage />} />
+          {/* 割り勘 (#556)。確定メンバーと帳簿の当事者（門はサーバー） */}
+          <Route path="warikan" element={<EventWarikanPage />} />
           {/* 開催前アンケートの管理 (#444)。スタッフ専用 */}
           <Route path="pre-survey" element={<EventPreSurveyAdminPage />} />
         </Route>

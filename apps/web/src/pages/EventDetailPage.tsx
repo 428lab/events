@@ -42,6 +42,7 @@ import { useRecordView } from "../api/analyticsHooks.js";
 import { OfferVenueButton } from "../components/VenueOffers.js";
 import { EventActionButtons } from "../components/EventActionButtons.js";
 import { EventAwards } from "../components/EventAwards.js";
+import { WarikanSummaryCard } from "../components/WarikanSummaryCard.js";
 import { EventJoinPanel } from "../components/EventJoinPanel.js";
 import { EventMemberList } from "../components/EventMemberList.js";
 import { EventDetailSidebar } from "../components/EventDetailSidebar.js";
@@ -260,6 +261,10 @@ export function EventDetailPage() {
         </Typography>
       </Box>
 
+      {/* 割り勘 (#556)。自分に未精算の行があるときだけ出る（出し分けはカード側）。
+          督促の通知を作らないので、気づける場所として見出しの直後に置く */}
+      {canChat && <WarikanSummaryCard eventId={id} />}
+
       {/* 調整中は常に表示。確定後は候補があり表示オンなら結果を表示（パネル側で判定） */}
       <SchedulePanel
         showManagementActions={false}
@@ -392,6 +397,7 @@ export function EventDetailPage() {
       <EventActionButtons
         eventId={id}
         isMember={isMember}
+        isConfirmed={canChat}
         isStaff={isStaff}
         contest={contest}
         attendanceCheck={event.attendanceCheck}
