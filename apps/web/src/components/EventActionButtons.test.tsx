@@ -73,6 +73,16 @@ describe("誰に出るか", () => {
 });
 
 describe("行ごとの条件", () => {
+  it("割り勘は確定メンバーにだけ出す（myRole があっても未確定なら出ない） (#556)", () => {
+    draw({ isConfirmed: false });
+    expect(paths()).not.toContain("warikan");
+  });
+
+  it("確定メンバーには割り勘の導線が常に出る (#556)", () => {
+    draw({ isConfirmed: true });
+    expect(paths()).toContain("warikan");
+  });
+
   it("出席チェックがオフなら受付の導線は出ない", () => {
     draw({ isStaff: true, attendanceCheck: false });
     expect(paths()).not.toContain("checkin");

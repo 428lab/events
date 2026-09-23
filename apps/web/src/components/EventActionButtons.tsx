@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { ParseKeys } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Button, Chip, Stack } from "@mui/material";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import { Link as RouterLink } from "react-router-dom";
 import { useMe } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
@@ -23,10 +24,13 @@ interface ActionLink {
 export function EventActionButtons({
   eventId,
   isMember,
+  isConfirmed = false,
   contest,
 }: {
   eventId: string;
   isMember: boolean;
+  /** 参加確定メンバーか（useEventChatAccess の canChat）。割り勘の導線の条件 (#556) */
+  isConfirmed?: boolean;
   isStaff: boolean;
   contest: boolean;
   attendanceCheck: boolean;
@@ -55,6 +59,13 @@ export function EventActionButtons({
       show: contest && state?.mode === "awards",
     },
     { path: "scoring", labelKey: "eventDetail.scoring", show: contest },
+    // 割り勘 (#556)。確定メンバーには常に出す（オン/オフの設定は持たない）
+    {
+      path: "warikan",
+      labelKey: "warikan.title",
+      icon: <ReceiptLongIcon />,
+      show: isConfirmed,
+    },
 
   ];
 
