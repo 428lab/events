@@ -183,6 +183,10 @@ describe("割り勘の門 (#556 §3.7.1)", () => {
     expect(netOf(await ledgerOf(eventId, a))).toEqual({ [a.id]: 2000, [b.id]: -1000, [c.id]: -1000 });
 
     const party = await addExpense(eventId, b, b.id, 600, [a.id, b.id, c.id]);
+    // 同じミリ秒に入ると並びが id 順になるので、会場費を確実に古くしておく
+    await env.DB.prepare("UPDATE event_expense SET created_at = created_at - 1000 WHERE id = ?")
+      .bind(venue)
+      .run();
     const ledger = await ledgerOf(eventId, c);
     expect(netOf(ledger)).toEqual({ [a.id]: 1800, [b.id]: -600, [c.id]: -1200 });
     const bToA = ledger.settlements.find((s) => s.fromUserId === b.id && s.toUserId === a.id)!;
