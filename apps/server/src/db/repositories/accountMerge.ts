@@ -230,8 +230,7 @@ export const accountMergeRepo = {
       args: [winnerId, loserId, winnerId, loserId, loserId, loserId],
     });
 
-    // (5-b) 割り勘の帳簿の当事者 (#556)。同じ立替の負担行は重みを合算し、
-    //     負け↔勝ち間の支払記録（統合後の自分→自分）は先に消す。
+    // (5-b) 割り勘の帳簿の当事者 (#556)。同じ立替の負担行は重みを合算する。
     //     SQL は userTables.ts の LEDGER_PARTY_REASSIGN_SQL（退会側と共有。文の順序が仕様）
     for (const sql of LEDGER_PARTY_REASSIGN_SQL) {
       stmts.push({ sql, args: [loserId, winnerId] });
@@ -275,10 +274,9 @@ export const accountMergeRepo = {
       // 記名が匿名に痩せる（本人の同意した紐づけは統合先へ引き継ぐ）
       ["event_pre_survey_response", "user_id"],
       ["bgm_track", "owner_id"],
-      // 割り勘 (#556) の入力者・記録者。付け替えないと (9) の user 削除で
+      // 割り勘 (#556) の入力者。付け替えないと (9) の user 削除で
       // SET NULL が発火し、「入力: ◯◯」と編集権が黙って消える
       ["event_expense", "created_by"],
-      ["event_settlement_payment", "recorded_by"],
       // 割り勘の受け取り先 (#556)。付け替えないと (9) の user 削除で CASCADE が
       // 発火して消える。5件を超えても表示は全件（次の PUT で5件以下にする）
       ["event_payout_method", "user_id"],

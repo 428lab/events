@@ -225,17 +225,16 @@ const UNRESOLVED: Array<{ column: Column; breaks: string }> = [];
  * 増減したらこの数を直すこと。**直す前に、増えた列が mergeUsers で
  * 扱われているかを必ず読むこと。**
  */
-const EXPECTED_USER_COLUMNS = 61; // #556: 割り勘の 4 表で 7 本
+const EXPECTED_USER_COLUMNS = 58; // #556: 割り勘の 3 表で 4 本
 
 /**
  * `mergeUsers` が扱う `table.column` の数（user 参照でない列も含む生の抽出数）。
  * 走査そのものが空振りしていないことの担保。
  */
-// #556: simple +3（event_expense.created_by / event_settlement_payment.recorded_by /
-// event_payout_method.user_id）、共有コンテンツ +1（event_expense.payer_user_id）、
-// LEDGER_PARTY_REASSIGN_SQL +4（event_expense_share.user_id / .weight（重みの足し込み）/
-// event_settlement_payment.from_user_id / .to_user_id）
-const EXPECTED_HANDLED_PAIRS = 67;
+// #556: simple +2（event_expense.created_by / event_payout_method.user_id）、
+// 共有コンテンツ +1（event_expense.payer_user_id）、
+// LEDGER_PARTY_REASSIGN_SQL +2（event_expense_share.user_id / .weight（重みの足し込み））
+const EXPECTED_HANDLED_PAIRS = 64;
 
 describe("アカウント統合の対象列の走査 (#396)", () => {
   const body = mergeUsersBody(Object.values(mergeSources)[0]!);
@@ -403,17 +402,13 @@ describe("アカウント統合の対象列の走査 (#396)", () => {
     ).toEqual(shared);
   });
 
-  it("帳簿の当事者の付け替え (#556) を外すと、その3本が未登録として落ちる", () => {
+  it("帳簿の当事者の付け替え (#556) を外すと、その1本が未登録として落ちる", () => {
     // LEDGER_PARTY_REASSIGN_SQL も userTables.ts に定義がある。spread と同じく、
     // mergeUsers が本当に回しているかを見ずに credit すると走査が緩む
     const loop = `for (const sql ${LEDGER_LOOP})`;
     expect(body, `${loop} が mergeUsers に無い（帳簿の付け替えが消えている）`).toContain(loop);
 
-    const ledger: Column[] = [
-      "event_expense_share.user_id",
-      "event_settlement_payment.from_user_id",
-      "event_settlement_payment.to_user_id",
-    ];
+    const ledger: Column[] = ["event_expense_share.user_id"];
     const handled = handledColumns(body, tables);
     for (const c of ledger) {
       expect(handled.has(c), `${c} を走査が拾えていない`).toBe(true);
@@ -430,7 +425,7 @@ describe("アカウント統合の対象列の走査 (#396)", () => {
     );
     expect(
       missing,
-      "帳簿の付け替えを外したのに、検出された未登録列が帳簿の当事者の3本にならなかった",
+      "帳簿の付け替えを外したのに、検出された未登録列が帳簿の当事者の1本にならなかった",
     ).toEqual(ledger);
   });
 

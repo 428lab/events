@@ -2,7 +2,7 @@
 -- このアプリは送金も金銭の預託も換算もしない。持つのは帳簿と受け取り先の掲示だけ（設計 §3.1）
 -- event 側にオン/オフの列は持たない（設計 §3.3）
 --
--- 帳簿の当事者（payer / share / from / to）の user FK には ON DELETE を付けない
+-- 帳簿の当事者（payer / share）の user FK には ON DELETE を付けない
 -- （= user 行の削除をブロックする）。退会では ghost へ、統合では勝ち側へ
 -- 必ず付け替えてから user を消す（設計 §3.3「退会・統合」）。付け替えを
 -- 忘れた経路は黙って他人の金額を動かすのではなく、FK 違反で止まる
@@ -48,19 +48,3 @@ CREATE TABLE event_payout_method (
   CHECK (kind IN ('url', 'lightning'))
 );
 CREATE INDEX idx_event_payout_method_owner ON event_payout_method(event_id, user_id);
-
--- 支払いの記録（**当事者の自己申告**。アプリが確認したものではない。§3.1）。
--- 自由記述のメモは持たない（振込先を書く場所として使われやすいため。§3.6.2）
-CREATE TABLE event_settlement_payment (
-  id TEXT PRIMARY KEY,
-  event_id TEXT NOT NULL REFERENCES event(id) ON DELETE CASCADE,
-  from_user_id TEXT NOT NULL REFERENCES user(id),     -- 払った人
-  to_user_id   TEXT NOT NULL REFERENCES user(id),     -- 受け取った人
-  amount INTEGER NOT NULL,                            -- 円（整数）
-  recorded_by TEXT REFERENCES user(id) ON DELETE SET NULL,
-  created_at INTEGER NOT NULL,
-  CHECK (amount > 0 AND from_user_id <> to_user_id)
-);
-CREATE INDEX idx_event_settlement_event ON event_settlement_payment(event_id, created_at);
-CREATE INDEX idx_event_settlement_from ON event_settlement_payment(from_user_id);
-CREATE INDEX idx_event_settlement_to ON event_settlement_payment(to_user_id);

@@ -2,28 +2,21 @@ import { eventRun, eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import type {
   EventRole,
   ExpenseInput,
-  PaymentInput,
   PayoutKind,
   PayoutMethodInput,
   WarikanExpense,
   WarikanLedger,
   WarikanMember,
-  WarikanPayment,
   WarikanPayout,
 } from "@eventer/shared";
-import {
-  WARIKAN_EXPENSE_MAX,
-  WARIKAN_PAYMENT_MAX,
-  allocateShares,
-  settle,
-} from "@eventer/shared";
+import { WARIKAN_EXPENSE_MAX, allocateShares, settle } from "@eventer/shared";
 import { many, one } from "../client.js";
 import { DELETED_USER_DISCORD_ID } from "./accountDeletion.js";
 
 /**
  * 割り勘 (#556)。設計は docs/warikan.md。
  *
- * 表は4つ（立替・負担・支払記録・受け取り先）だが、按分と精算という1つの手続きを
+ * 表は3つ（立替・負担・受け取り先）だが、按分と精算という1つの手続きを
  * 共有するので1ファイルに置く。**計算は shared の純関数**（allocateShares / settle）で、
  * ここは行を読んで渡すだけ。各人の負担額・収支・精算の提案は列に持たず、読むたびに導出する。
  *
@@ -33,8 +26,8 @@ import { DELETED_USER_DISCORD_ID } from "./accountDeletion.js";
 
 /**
  * 帳簿を見られる人（warikanAudience。設計 §3.7.1）。`event` と `user` は SQL の式。
- * そのイベントの確定メンバー（role 不問）か、帳簿の当事者（立替者・負担者・支払記録の
- * from / to）。閲覧権（canViewEvent）は前段の requireEventAccess と eventWrite の先頭が見る。
+ * そのイベントの確定メンバー（role 不問）か、帳簿の当事者（立替者・負担者）。
+ * 閲覧権（canViewEvent）は前段の requireEventAccess と eventWrite の先頭が見る。
  */
 export const LEDGER_AUDIENCE_SQL = (event: string, user: string): string => `(
   EXISTS (SELECT 1 FROM event_member am
@@ -43,10 +36,7 @@ export const LEDGER_AUDIENCE_SQL = (event: string, user: string): string => `(
               WHERE ax.event_id = ${event} AND ax.payer_user_id = ${user})
   OR EXISTS (SELECT 1 FROM event_expense_share asx
                JOIN event_expense ax ON ax.id = asx.expense_id
-              WHERE ax.event_id = ${event} AND asx.user_id = ${user})
-  OR EXISTS (SELECT 1 FROM event_settlement_payment ap
-              WHERE ap.event_id = ${event}
-                AND (ap.from_user_id = ${user} OR ap.to_user_id = ${user})))`;
+              WHERE ax.event_id = ${event} AND asx.user_id = ${user}))`;
 
 interface ExpenseRow {
   id: string;
@@ -65,16 +55,6 @@ interface ShareRow {
   expense_id: string;
   user_id: string;
   weight: number;
-}
-
-interface PaymentRow {
-  id: string;
-  event_id: string;
-  from_user_id: string;
-  to_user_id: string;
-  amount: number;
-  recorded_by: string | null;
-  created_at: number;
 }
 
 interface PayoutRow {
@@ -118,14 +98,6 @@ export interface ExpenseMeta {
   shareUserIds: string[];
 }
 
-export interface PaymentMeta {
-  id: string;
-  eventId: string;
-  fromUserId: string;
-  toUserId: string;
-  recordedBy: string | null;
-}
-
 export interface PayoutMeta {
   id: string;
   eventId: string;
@@ -137,20 +109,6 @@ const STANDING_ORDER: Record<WarikanMember["standing"], number> = {
   former: 1,
   deleted: 2,
 };
-
-function toPayment(r: PaymentRow, viewer: WarikanViewer): WarikanPayment {
-  return {
-    id: r.id,
-    fromUserId: r.from_user_id,
-    toUserId: r.to_user_id,
-    amount: r.amount,
-    recordedBy: r.recorded_by,
-    createdAt: r.created_at,
-    canDelete:
-      viewer.isStaff ||
-      [r.recorded_by, r.from_user_id, r.to_user_id].includes(viewer.userId),
-  };
-}
 
 function toPayout(r: PayoutRow, viewer: WarikanViewer): WarikanPayout {
   return {
@@ -255,19 +213,6 @@ export const eventWarikanRepo = {
     };
   },
 
-  async findPayment(id: string): Promise<PaymentMeta | null> {
-    const row = await one<PaymentRow>("SELECT * FROM event_settlement_payment WHERE id = ?", id);
-    return row
-      ? {
-          id: row.id,
-          eventId: row.event_id,
-          fromUserId: row.from_user_id,
-          toUserId: row.to_user_id,
-          recordedBy: row.recorded_by,
-        }
-      : null;
-  },
-
   async findPayoutMethod(id: string): Promise<PayoutMeta | null> {
     const row = await one<PayoutRow>("SELECT * FROM event_payout_method WHERE id = ?", id);
     return row ? { id: row.id, eventId: row.event_id, userId: row.user_id } : null;
@@ -282,11 +227,6 @@ export const eventWarikanRepo = {
       id,
     );
     return toExpense(row, shares, viewer);
-  },
-
-  async paymentView(id: string, viewer: WarikanViewer): Promise<WarikanPayment | null> {
-    const row = await one<PaymentRow>("SELECT * FROM event_settlement_payment WHERE id = ?", id);
-    return row ? toPayment(row, viewer) : null;
   },
 
   async payoutMethodsOf(
@@ -398,77 +338,6 @@ export const eventWarikanRepo = {
     return changed > 0;
   },
 
-  async countPayments(eventId: string): Promise<number> {
-    const row = await one<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM event_settlement_payment WHERE event_id = ?",
-      eventId,
-    );
-    return row?.n ?? 0;
-  },
-
-  /** 支払いの記録（当事者の自己申告）。件数の上限と「from・to の双方が帳簿を見られる人」を
-   * 1文の INSERT の WHERE に畳む。partyActorId を渡すと「その人が from か to」も条件に足す
-   * （当事者本人としての記録。staff の代理記録では null）。
-   * @returns 作成した id。条件で入らなければ null（理由は呼び出し側が数えて区別する） */
-  async createPayment(
-    eventId: string,
-    actorId: string,
-    input: PaymentInput,
-    partyActorId: string | null,
-    writer: EventWriter,
-  ): Promise<string | null> {
-    const id = crypto.randomUUID();
-    const [inserted] = await eventWrite(writer, [
-      {
-        sql: `INSERT INTO event_settlement_payment
-                (id, event_id, from_user_id, to_user_id, amount, recorded_by, created_at)
-              SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
-               WHERE (SELECT COUNT(*) FROM event_settlement_payment WHERE event_id = ?2) < ?8
-                 AND ${LEDGER_AUDIENCE_SQL("?2", "?3")}
-                 AND ${LEDGER_AUDIENCE_SQL("?2", "?4")}
-                 ${partyActorId ? "AND ?9 IN (?3, ?4)" : ""}`,
-        args: [
-          id,
-          eventId,
-          input.fromUserId,
-          input.toUserId,
-          input.amount,
-          actorId,
-          Date.now(),
-          WARIKAN_PAYMENT_MAX,
-          ...(partyActorId ? [partyActorId] : []),
-        ],
-      },
-    ]);
-    return inserted ? id : null;
-  },
-
-  /** 支払記録の取り消し。partyActorId を渡すと記録者・from・to のどれかがその人の行だけに当たる */
-  async deletePayment(
-    id: string,
-    eventId: string,
-    partyActorId: string | null,
-    writer: EventWriter,
-  ): Promise<boolean> {
-    const changed = partyActorId
-      ? await eventRun(
-          writer,
-          `DELETE FROM event_settlement_payment
-            WHERE id = ?1 AND event_id = ?2
-              AND ?3 IN (recorded_by, from_user_id, to_user_id)`,
-          id,
-          eventId,
-          partyActorId,
-        )
-      : await eventRun(
-          writer,
-          "DELETE FROM event_settlement_payment WHERE id = ? AND event_id = ?",
-          id,
-          eventId,
-        );
-    return changed > 0;
-  },
-
   /** 自分の受け取り先を置換する（本人だけ。帳簿を見られる人であることを同じ batch で確かめる） */
   async replacePayoutMethods(
     eventId: string,
@@ -529,15 +398,11 @@ export const eventWarikanRepo = {
         WHERE x.event_id = ? ORDER BY s.rowid`,
       eventId,
     );
-    const paymentRows = await many<PaymentRow>(
-      "SELECT * FROM event_settlement_payment WHERE event_id = ? ORDER BY created_at DESC, id DESC",
-      eventId,
-    );
     const payoutRows = await many<PayoutRow>(
       "SELECT * FROM event_payout_method WHERE event_id = ? ORDER BY user_id, created_at, rowid",
       eventId,
     );
-    // 確定メンバー全員 ∪ 帳簿のどこかに登場する全員（入力者・記録者・受け取り先の持ち主を含む）。
+    // 確定メンバー全員 ∪ 帳簿のどこかに登場する全員（入力者・受け取り先の持ち主を含む）。
     // 帳簿側の id は読んだ行から集めて JSON で渡す（D1 は UNION の項数に上限があるため）
     const ledgerIds = new Set<string>();
     for (const r of expenseRows) {
@@ -545,11 +410,6 @@ export const eventWarikanRepo = {
       if (r.created_by) ledgerIds.add(r.created_by);
     }
     for (const r of shareRows) ledgerIds.add(r.user_id);
-    for (const r of paymentRows) {
-      ledgerIds.add(r.from_user_id);
-      ledgerIds.add(r.to_user_id);
-      if (r.recorded_by) ledgerIds.add(r.recorded_by);
-    }
     for (const r of payoutRows) ledgerIds.add(r.user_id);
     const memberRows = await many<MemberRow>(
       `SELECT u.id AS user_id, u.username, u.global_name, u.avatar_url,
@@ -600,18 +460,11 @@ export const eventWarikanRepo = {
           weight: s.weight,
         })),
       })),
-      payments: paymentRows.map((r) => ({
-        id: r.id,
-        fromUserId: r.from_user_id,
-        toUserId: r.to_user_id,
-        amount: r.amount,
-      })),
     });
 
     return {
       members,
       expenses: expenseRows.map((r) => toExpense(r, sharesByExpense.get(r.id) ?? [], viewer)),
-      payments: paymentRows.map((r) => toPayment(r, viewer)),
       payoutMethods: payoutRows.map((r) => toPayout(r, viewer)),
       balances: result.balances,
       settlements: result.settlements,
