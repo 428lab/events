@@ -26,6 +26,8 @@ const ja = {
   payToAction: "{{name}} さんに {{amount}} 支払う",
   receiveFromAction: "{{name}} さんから {{amount}} 受け取る",
   moreRows: "ほか {{n}} 件",
+  groupPay: "あなたが支払う（{{n}}件・合計 {{amount}}）",
+  groupReceive: "あなたが受け取る（{{n}}件・合計 {{amount}}）",
   copyAmount: "金額をコピー",
   copied: "コピーしました",
   recordPaid: "支払ったことを記録する",
@@ -36,7 +38,6 @@ const ja = {
   breakdownTotal: "= {{amount}}",
   noPayoutMethod:
     "受け取り先が登録されていません。振込先は相手から個別に聞いてください。このアプリには書かないでください。",
-  chatNudge: "チャットで声をかける",
   counterpartDeleted: "退会済みのため精算できません",
   registerPayout: "受け取り先を登録する",
   noSettlements: "あなたの精算はありません",
@@ -50,6 +51,7 @@ const ja = {
   recordOverConfirm:
     "残りの {{remaining}} より多い金額です。記録すると、逆向きの精算が生まれます。このまま記録しますか？",
   record: "記録する",
+  recorded: "記録しました",
 
   /** 立替の一覧 */
   expenses: "立替の一覧",
@@ -66,6 +68,7 @@ const ja = {
 
   /** 全員の収支 */
   balances: "全員の収支",
+  scrollHint: "横にスクロールできます",
   colName: "名前",
   colPaid: "立て替えた",
   colOwed: "負担",
@@ -88,8 +91,10 @@ const ja = {
   /** 自分の受け取り先 */
   payoutHeading: "自分の受け取り先",
   payoutCaption: "あなたにお金を返す人に表示されます",
-  kindUrl: "受け取り用リンク（PayPay・Kyash など）",
+  kindUrl: "受け取り用リンク",
   kindLightning: "Lightning アドレス",
+  kindUrlHelp: "PayPay・Kyash などの受け取り用リンク",
+  kindLightningHelp: "Lightning ウォレットのアドレス",
   payoutValueUrl: "https:// から始まるリンク",
   payoutValueLightning: "LN アドレスまたは LNURL",
   addPayout: "受け取り先を追加",
@@ -101,7 +106,7 @@ const ja = {
   /** 受け取り先の表示 */
   openLink: "リンクを開く",
   openWallet: "ウォレットで開く",
-  copy: "コピー",
+  copyAddress: "アドレスをコピー",
   showQr: "QRを表示",
   satsNote: "金額の記録は円のみです。送る sat の額はご自身で決めてください。",
 
@@ -157,6 +162,8 @@ const en: Record<keyof typeof ja, string> = {
   payToAction: "Pay {{name}} {{amount}}",
   receiveFromAction: "Receive {{amount}} from {{name}}",
   moreRows: "{{n}} more",
+  groupPay: "You pay ({{n}}, {{amount}} in total)",
+  groupReceive: "You receive ({{n}}, {{amount}} in total)",
   copyAmount: "Copy amount",
   copied: "Copied",
   recordPaid: "Record that you paid",
@@ -167,7 +174,6 @@ const en: Record<keyof typeof ja, string> = {
   breakdownTotal: "= {{amount}}",
   noPayoutMethod:
     "No payment destination is registered. Ask them directly where to send it. Please do not write it in this app.",
-  chatNudge: "Say hello in the chat",
   counterpartDeleted: "This account was deleted, so it cannot be settled",
   registerPayout: "Add where you get paid",
   noSettlements: "Nothing for you to settle",
@@ -180,6 +186,7 @@ const en: Record<keyof typeof ja, string> = {
   recordOverConfirm:
     "This is more than the remaining {{remaining}}. Recording it will create a settlement in the other direction. Record anyway?",
   record: "Record",
+  recorded: "Recorded",
 
   expenses: "Expenses",
   addExpense: "Add expense",
@@ -194,6 +201,7 @@ const en: Record<keyof typeof ja, string> = {
   deleteExpenseConfirm: "Delete this expense?",
 
   balances: "Everyone's totals",
+  scrollHint: "Scroll sideways to see more",
   colName: "Name",
   colPaid: "Paid",
   colOwed: "Share",
@@ -214,8 +222,10 @@ const en: Record<keyof typeof ja, string> = {
 
   payoutHeading: "Where you get paid",
   payoutCaption: "Shown to people who owe you",
-  kindUrl: "Payment link (PayPay, Kyash, etc.)",
+  kindUrl: "Payment link",
   kindLightning: "Lightning address",
+  kindUrlHelp: "A link for getting paid, such as PayPay or Kyash",
+  kindLightningHelp: "The address of your Lightning wallet",
   payoutValueUrl: "Link starting with https://",
   payoutValueLightning: "LN address or LNURL",
   addPayout: "Add",
@@ -226,7 +236,7 @@ const en: Record<keyof typeof ja, string> = {
 
   openLink: "Open link",
   openWallet: "Open in wallet",
-  copy: "Copy",
+  copyAddress: "Copy address",
   showQr: "Show QR",
   satsNote: "Amounts are recorded in yen only. Decide the amount of sats to send yourself.",
 

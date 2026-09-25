@@ -8,7 +8,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Link,
   Snackbar,
   Stack,
   TextField,
@@ -17,7 +16,6 @@ import {
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
-import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { Settlement, WarikanLedger } from "@eventer/shared";
 import { WARIKAN_AMOUNT_MAX, formatYen } from "@eventer/shared";
@@ -69,11 +67,13 @@ export function useMemberName(
   };
 }
 
-/** 自分が当事者の精算の行 */
+/** 自分が当事者の精算の行。自分が支払う行を先、受け取る行を後に並べる */
 export function mySettlements(ledger: WarikanLedger): Settlement[] {
-  return ledger.settlements.filter(
-    (s) => s.fromUserId === ledger.me.userId || s.toUserId === ledger.me.userId,
-  );
+  const me = ledger.me.userId;
+  return [
+    ...ledger.settlements.filter((s) => s.fromUserId === me),
+    ...ledger.settlements.filter((s) => s.toUserId === me),
+  ];
 }
 
 /** 金額をクリップボードへ（向こうのアプリで金額を打つため） */
@@ -114,6 +114,7 @@ function RecordPaymentDialog({
   iPay,
   open,
   onClose,
+  onRecorded,
 }: {
   eventId: string;
   settlement: Settlement;
@@ -121,6 +122,8 @@ function RecordPaymentDialog({
   iPay: boolean;
   open: boolean;
   onClose: () => void;
+  /** 記録できたとき（行が消えることがあるので、合図は呼び出し側で出す） */
+  onRecorded: () => void;
 }) {
   const { t } = useTranslation();
   const yen = useYen();
@@ -144,7 +147,10 @@ function RecordPaymentDialog({
     record.mutate(
       { fromUserId: settlement.fromUserId, toUserId: settlement.toUserId, amount: value },
       {
-        onSuccess: onClose,
+        onSuccess: () => {
+          onRecorded();
+          onClose();
+        },
         onError: (e) => setError(errorMessage(e, overrides)),
       },
     );
@@ -191,12 +197,12 @@ export function WarikanSettlementRow({
   eventId,
   ledger,
   settlement,
-  chatAvailable,
+  onRecorded,
 }: {
   eventId: string;
   ledger: WarikanLedger;
   settlement: Settlement;
-  chatAvailable: boolean;
+  onRecorded: () => void;
 }) {
   const { t } = useTranslation();
   const yen = useYen();
@@ -228,6 +234,27 @@ export function WarikanSettlementRow({
     });
   };
 
+  const recordButton = (
+    <Button
+      size="medium"
+      variant="outlined"
+      sx={{ minHeight: 44 }}
+      onClick={() => setRecording(true)}
+    >
+      {iPay ? t("warikan.recordPaid") : t("warikan.recordReceived")}
+    </Button>
+  );
+  const breakdownButton = (
+    <Button
+      size="small"
+      endIcon={openBreakdown ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+      onClick={() => setOpenBreakdown((v) => !v)}
+      aria-expanded={openBreakdown}
+    >
+      {t("warikan.breakdown")}
+    </Button>
+  );
+
   return (
     <Box sx={{ py: 1.5, borderBottom: 1, borderColor: "divider" }}>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
@@ -236,54 +263,59 @@ export function WarikanSettlementRow({
             ? t("warikan.payTo", { name: counterpartName, amount: yen(settlement.amount) })
             : t("warikan.receiveFrom", { name: counterpartName, amount: yen(settlement.amount) })}
         </Typography>
-        <CopyAmountButton amount={settlement.amount} />
+        {/* コピーは向こうのアプリで金額を打つための道具なので、支払う側だけ（§3.6.4） */}
+        {iPay && <CopyAmountButton amount={settlement.amount} />}
       </Stack>
 
-      {counterpartDeleted ? (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          {t("warikan.counterpartDeleted")}
-        </Typography>
-      ) : (
-        <Stack spacing={1} sx={{ mt: 1 }}>
-          {iPay &&
-            (theirPayouts.length > 0 ? (
-              theirPayouts.map((m) => <PayoutMethodView key={m.id} method={m} />)
-            ) : (
-              <Box>
+      {iPay ? (
+        <>
+          {counterpartDeleted ? (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {t("warikan.counterpartDeleted")}
+            </Typography>
+          ) : (
+            <Stack spacing={1} sx={{ mt: 1 }}>
+              {theirPayouts.length > 0 ? (
+                theirPayouts.map((m) => <PayoutMethodView key={m.id} method={m} />)
+              ) : (
                 <Typography variant="body2" color="text.secondary">
                   {t("warikan.noPayoutMethod")}
                 </Typography>
-                {chatAvailable && (
-                  <Link component={RouterLink} to={`/events/${eventId}/chat`} variant="body2">
-                    {t("warikan.chatNudge")}
-                  </Link>
-                )}
-              </Box>
-            ))}
-          {!iPay && myPayouts.length === 0 && (
-            <Box>
+              )}
+              <Box>{recordButton}</Box>
+            </Stack>
+          )}
+          <Box sx={{ mt: 0.5 }}>{breakdownButton}</Box>
+        </>
+      ) : (
+        <>
+          {counterpartDeleted && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {t("warikan.counterpartDeleted")}
+            </Typography>
+          )}
+          {!counterpartDeleted && myPayouts.length === 0 && (
+            <Box sx={{ mt: 1 }}>
               <Button size="small" href="#warikan-payout">
                 {t("warikan.registerPayout")}
               </Button>
             </Box>
           )}
-          <Box>
-            <Button size="small" variant="outlined" onClick={() => setRecording(true)}>
-              {iPay ? t("warikan.recordPaid") : t("warikan.recordReceived")}
-            </Button>
-          </Box>
-        </Stack>
+          {/* 受け取る側は「記録する」と「内訳」を1段に並べる */}
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+            sx={{ mt: 1 }}
+          >
+            {!counterpartDeleted && recordButton}
+            {breakdownButton}
+          </Stack>
+        </>
       )}
 
-      <Button
-        size="small"
-        sx={{ mt: 0.5 }}
-        endIcon={openBreakdown ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-        onClick={() => setOpenBreakdown((v) => !v)}
-        aria-expanded={openBreakdown}
-      >
-        {t("warikan.breakdown")}
-      </Button>
       <Collapse in={openBreakdown}>
         <Stack spacing={0.25} sx={{ pl: 1 }}>
           {settlement.breakdown.map((item) => (
@@ -311,6 +343,7 @@ export function WarikanSettlementRow({
           iPay={iPay}
           open={recording}
           onClose={() => setRecording(false)}
+          onRecorded={onRecorded}
         />
       )}
     </Box>

@@ -7,6 +7,7 @@ import {
   CardContent,
   Collapse,
   Link,
+  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -21,7 +22,7 @@ import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import AddIcon from "@mui/icons-material/Add";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import type { Event, WarikanExpense, WarikanLedger } from "@eventer/shared";
+import type { Event, Settlement, WarikanExpense, WarikanLedger } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
 import { useDeletePayment, useWarikan } from "../api/warikanHooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
@@ -35,8 +36,7 @@ import {
   useYen,
 } from "../components/WarikanSettlementRow.js";
 import { errorMessage } from "../lib/errorMessage.js";
-import { formatDateTime } from "../lib/format.js";
-import { useEventChatAccess } from "../lib/useEventChatAccess.js";
+import { formatDateTime, formatMonthDay } from "../lib/format.js";
 
 /**
  * 割り勘のページ (#556 §3.9)。見られるのは確定メンバーと帳簿の当事者（門はサーバー）。
@@ -48,7 +48,6 @@ export function EventWarikanPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
-  const { chatAvailable } = useEventChatAccess(id);
   const { data: ledger, isError, isLoading } = useWarikan(id, Boolean(eventData));
 
   return (
@@ -71,12 +70,7 @@ export function EventWarikanPage() {
       {isError && <Alert severity="info">{t("eventSocial.screenMembersOnly")}</Alert>}
       {isLoading && <Typography>{t("common.loading")}</Typography>}
       {ledger && eventData && (
-        <LedgerView
-          eventId={id}
-          ledger={ledger}
-          event={eventData.event}
-          chatAvailable={chatAvailable}
-        />
+        <LedgerView eventId={id} ledger={ledger} event={eventData.event} />
       )}
     </Stack>
   );
@@ -105,18 +99,27 @@ function LedgerView({
   eventId,
   ledger,
   event,
-  chatAvailable,
 }: {
   eventId: string;
   ledger: WarikanLedger;
   event: Event;
-  chatAvailable: boolean;
 }) {
   const { t } = useTranslation();
+  const yen = useYen();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<WarikanExpense | null>(null);
+  const [recorded, setRecorded] = useState(false);
   const rows = mySettlements(ledger);
   const me = ledger.me.userId;
+  // 自分が支払う行 → 受け取る行の2グループ（自分が動く行を先に）
+  const groups: {
+    key: string;
+    label: "warikan.groupPay" | "warikan.groupReceive";
+    rows: Settlement[];
+  }[] = [
+    { key: "pay", label: "warikan.groupPay", rows: rows.filter((s) => s.fromUserId === me) },
+    { key: "receive", label: "warikan.groupReceive", rows: rows.filter((s) => s.toUserId === me) },
+  ];
   // 帳簿に自分が登場していて、いまの行が無い＝全部済んだ（登場していなければ関係なし）
   const hadDealings = ledger.balances.some((b) => b.userId === me);
 
@@ -133,15 +136,27 @@ function LedgerView({
               {hadDealings ? t("warikan.allSettled") : t("warikan.noSettlements")}
             </Typography>
           ) : (
-            rows.map((s) => (
-              <WarikanSettlementRow
-                key={`${s.fromUserId}:${s.toUserId}`}
-                eventId={eventId}
-                ledger={ledger}
-                settlement={s}
-                chatAvailable={chatAvailable}
-              />
-            ))
+            groups
+              .filter((g) => g.rows.length > 0)
+              .map((g) => (
+                <Box key={g.key} sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2" fontWeight={700} color="text.secondary">
+                    {t(g.label, {
+                      n: g.rows.length,
+                      amount: yen(g.rows.reduce((sum, s) => sum + s.amount, 0)),
+                    })}
+                  </Typography>
+                  {g.rows.map((s) => (
+                    <WarikanSettlementRow
+                      key={`${s.fromUserId}:${s.toUserId}`}
+                      eventId={eventId}
+                      ledger={ledger}
+                      settlement={s}
+                      onRecorded={() => setRecorded(true)}
+                    />
+                  ))}
+                </Box>
+              ))
           )}
         </CardContent>
       </Card>
@@ -175,6 +190,13 @@ function LedgerView({
           onClose={() => setFormOpen(false)}
         />
       )}
+
+      <Snackbar
+        open={recorded}
+        autoHideDuration={3000}
+        onClose={() => setRecorded(false)}
+        message={t("warikan.recorded")}
+      />
     </>
   );
 }
@@ -203,7 +225,13 @@ function ExpenseList({
           </Typography>
           {/* observer には追加ボタンを出さない */}
           {ledger.me.canAddExpense && (
-            <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={onAdd}>
+            <Button
+              size="medium"
+              variant="contained"
+              sx={{ minHeight: 44 }}
+              startIcon={<AddIcon />}
+              onClick={onAdd}
+            >
               {t("warikan.addExpense")}
             </Button>
           )}
@@ -235,7 +263,7 @@ function ExpenseList({
                     t(e.shares.length === 1 ? "warikan.shareCountOne" : "warikan.shareCount", {
                       n: e.shares.length,
                     }),
-                    e.spentOn,
+                    e.spentOn && formatSpentOn(e.spentOn),
                     t("warikan.enteredBy", { name: nameOf(e.createdBy) }),
                   ]
                     .filter(Boolean)
@@ -288,7 +316,15 @@ function ExpenseList({
   );
 }
 
+/** 立替の日付（'YYYY-MM-DD'）を他の画面と同じ月日の表記に。端末のローカル日付として読む */
+function formatSpentOn(spentOn: string): string {
+  const [y, m, d] = spentOn.split("-").map(Number);
+  return formatMonthDay(new Date(y, m - 1, d).getTime());
+}
+
 /** 全員の収支（§3.5 の5列）。差引の正負は語で表す */
+const stickyName = { position: "sticky", left: 0, zIndex: 1, bgcolor: "background.paper" } as const;
+
 function BalanceTable({ ledger }: { ledger: WarikanLedger }) {
   const { t } = useTranslation();
   const yen = useYen();
@@ -297,14 +333,23 @@ function BalanceTable({ ledger }: { ledger: WarikanLedger }) {
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>
+        <Typography variant="h6" fontWeight={700}>
           {t("warikan.balances")}
         </Typography>
+        {/* 表が収まる PC 幅では出さない */}
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: { xs: "block", md: "none" }, mb: 1 }}
+        >
+          {t("warikan.scrollHint")}
+        </Typography>
+        {/* スマホでは横スクロール前提。セルを折り返さず、名前列は左に固定する */}
         <TableContainer>
-          <Table size="small">
+          <Table size="small" sx={{ minWidth: 560, "& .MuiTableCell-root": { whiteSpace: "nowrap" } }}>
             <TableHead>
               <TableRow>
-                <TableCell>{t("warikan.colName")}</TableCell>
+                <TableCell sx={stickyName}>{t("warikan.colName")}</TableCell>
                 <TableCell align="right">{t("warikan.colPaid")}</TableCell>
                 <TableCell align="right">{t("warikan.colOwed")}</TableCell>
                 <TableCell align="right">{t("warikan.colSent")}</TableCell>
@@ -315,7 +360,7 @@ function BalanceTable({ ledger }: { ledger: WarikanLedger }) {
             <TableBody>
               {ledger.balances.map((b) => (
                 <TableRow key={b.userId}>
-                  <TableCell>{nameOf(b.userId)}</TableCell>
+                  <TableCell sx={stickyName}>{nameOf(b.userId)}</TableCell>
                   <TableCell align="right">{yen(b.paid)}</TableCell>
                   <TableCell align="right">{yen(b.owed)}</TableCell>
                   <TableCell align="right">{yen(b.sent)}</TableCell>
