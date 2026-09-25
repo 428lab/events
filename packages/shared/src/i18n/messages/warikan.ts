@@ -17,7 +17,7 @@ const ja = {
   disclaimer: "お金のやりとりは当事者どうしで行います。このアプリはお金を預かりません。",
   disclaimerMore: "詳しく",
   disclaimerDetail:
-    "このアプリが記録するのは、誰が何にいくら立て替え、誰が誰にいくら返すかという帳簿と、受け取り先の表示だけです。お金を受け取ったり、預かったり、送ったりはしません。受け取り先はリンクを開くだけで、アプリの中で支払いの画面は出しません。支払いの記録は当事者の申告で、アプリが確かめたものではありません。",
+    "このアプリが記録するのは、誰が何にいくら立て替え、誰が誰にいくら返すかという帳簿と、受け取り先の表示だけです。お金を受け取ったり、預かったり、送ったりはしません。受け取り先はリンクを開くだけで、アプリの中で支払いの画面は出しません。",
 
   /** あなたの精算 */
   mySettlements: "あなたの精算",
@@ -30,11 +30,8 @@ const ja = {
   groupReceive: "あなたが受け取る（{{n}}件・合計 {{amount}}）",
   copyAmount: "金額をコピー",
   copied: "コピーしました",
-  recordPaid: "支払ったことを記録する",
-  recordReceived: "受け取ったことを記録する",
   breakdown: "内訳",
   breakdownYourExpense: "{{title}}（あなたの立替）",
-  breakdownPayment: "記録（{{date}}）",
   breakdownTotal: "= {{amount}}",
   noPayoutMethod:
     "受け取り先が登録されていません。振込先は相手から個別に聞いてください。このアプリには書かないでください。",
@@ -42,16 +39,6 @@ const ja = {
   registerPayout: "受け取り先を登録する",
   noSettlements: "あなたの精算はありません",
   allSettled: "精算は完了しています",
-
-  /** 記録ダイアログ */
-  recordPaidTitle: "{{name}} さんに支払ったことを記録",
-  recordReceivedTitle: "{{name}} さんから受け取ったことを記録",
-  recordAmount: "金額（円）",
-  recordSelfReport: "記録は本人の申告です。アプリが確かめるものではありません。",
-  recordOverConfirm:
-    "残りの {{remaining}} より多い金額です。記録すると、逆向きの精算が生まれます。このまま記録しますか？",
-  record: "記録する",
-  recorded: "記録しました",
 
   /** 立替の一覧 */
   expenses: "立替の一覧",
@@ -72,21 +59,10 @@ const ja = {
   colName: "名前",
   colPaid: "立て替えた",
   colOwed: "負担",
-  colSent: "支払った",
-  colReceived: "受け取った",
   colNet: "差引",
   netReceive: "{{amount}} 受け取る",
   netPay: "{{amount}} 支払う",
   netZero: "なし",
-
-  /** 支払いの記録 */
-  payments: "支払いの記録",
-  paymentLine: "{{from}} → {{to}}　{{amount}}",
-  recordedBy: "記録: {{name}}",
-  selfReportNote: "本人の申告にもとづく記録です",
-  noPayments: "まだ記録はありません",
-  undoPayment: "取り消す",
-  undoPaymentConfirm: "この記録を取り消しますか？",
 
   /** 自分の受け取り先 */
   payoutHeading: "自分の受け取り先",
@@ -141,7 +117,6 @@ const ja = {
   /** サーバーのエラーごとの案内（§3.8.2） */
   errorInvalidParty: "割り勘に加えられない人が含まれています。参加が確定した人を選んでください。",
   errorTooManyExpenses: "立替の件数が上限に達しています。",
-  errorTooManyPayments: "支払いの記録の件数が上限に達しています。",
   errorAccessChanged: "参加の状態が変わったため保存できませんでした。画面を読み込み直してください。",
   errorInvalidInput: "入力内容を確かめてください。",
 } as const;
@@ -154,7 +129,7 @@ const en: Record<keyof typeof ja, string> = {
   disclaimer: "Money is exchanged directly between the people involved. This app never holds money.",
   disclaimerMore: "Details",
   disclaimerDetail:
-    "This app only keeps a ledger of who paid how much for what and who owes whom, and shows where people want to be paid. It never receives, holds or sends money. Payment destinations only open as links, and no payment screen is shown inside the app. Records of payments are what the people involved reported; the app does not verify them.",
+    "This app only keeps a ledger of who paid how much for what and who owes whom, and shows where people want to be paid. It never receives, holds or sends money. Payment destinations only open as links, and no payment screen is shown inside the app.",
 
   mySettlements: "Your settlements",
   payTo: "To {{name}}: {{amount}}",
@@ -166,11 +141,8 @@ const en: Record<keyof typeof ja, string> = {
   groupReceive: "You receive ({{n}}, {{amount}} in total)",
   copyAmount: "Copy amount",
   copied: "Copied",
-  recordPaid: "Record that you paid",
-  recordReceived: "Record that you received",
   breakdown: "Breakdown",
   breakdownYourExpense: "{{title}} (you paid)",
-  breakdownPayment: "Record ({{date}})",
   breakdownTotal: "= {{amount}}",
   noPayoutMethod:
     "No payment destination is registered. Ask them directly where to send it. Please do not write it in this app.",
@@ -179,14 +151,6 @@ const en: Record<keyof typeof ja, string> = {
   noSettlements: "Nothing for you to settle",
   allSettled: "You are all settled",
 
-  recordPaidTitle: "Record that you paid {{name}}",
-  recordReceivedTitle: "Record that you received from {{name}}",
-  recordAmount: "Amount (JPY)",
-  recordSelfReport: "Records are self-reported. The app does not verify them.",
-  recordOverConfirm:
-    "This is more than the remaining {{remaining}}. Recording it will create a settlement in the other direction. Record anyway?",
-  record: "Record",
-  recorded: "Recorded",
 
   expenses: "Expenses",
   addExpense: "Add expense",
@@ -205,20 +169,11 @@ const en: Record<keyof typeof ja, string> = {
   colName: "Name",
   colPaid: "Paid",
   colOwed: "Share",
-  colSent: "Sent",
-  colReceived: "Received",
   colNet: "Net",
   netReceive: "Receives {{amount}}",
   netPay: "Pays {{amount}}",
   netZero: "None",
 
-  payments: "Payment records",
-  paymentLine: "{{from}} to {{to}}: {{amount}}",
-  recordedBy: "Recorded by {{name}}",
-  selfReportNote: "Based on what the people involved reported",
-  noPayments: "No records yet",
-  undoPayment: "Undo",
-  undoPaymentConfirm: "Undo this record?",
 
   payoutHeading: "Where you get paid",
   payoutCaption: "Shown to people who owe you",
@@ -269,7 +224,6 @@ const en: Record<keyof typeof ja, string> = {
 
   errorInvalidParty: "Someone who cannot be included was selected. Choose confirmed participants.",
   errorTooManyExpenses: "The maximum number of expenses has been reached.",
-  errorTooManyPayments: "The maximum number of payment records has been reached.",
   errorAccessChanged: "Your participation changed, so this could not be saved. Please reload the page.",
   errorInvalidInput: "Please check what you entered.",
 };

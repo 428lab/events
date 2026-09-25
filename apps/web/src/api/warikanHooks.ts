@@ -1,11 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   ExpenseInput,
-  PaymentInput,
   PayoutMethodInput,
   WarikanExpense,
   WarikanLedger,
-  WarikanPayment,
   WarikanPayout,
 } from "@eventer/shared";
 import { api } from "./client.js";
@@ -58,23 +56,6 @@ export function useDeleteExpense(eventId: string) {
   const invalidate = useInvalidate(eventId);
   return useMutation({
     mutationFn: (id: string) => api.del(`/events/${eventId}/warikan/expenses/${id}`),
-    onSuccess: invalidate,
-  });
-}
-
-export function useRecordPayment(eventId: string) {
-  const invalidate = useInvalidate(eventId);
-  return useMutation({
-    mutationFn: (input: PaymentInput) =>
-      api.post<{ payment: WarikanPayment }>(`/events/${eventId}/warikan/payments`, input),
-    onSuccess: invalidate,
-  });
-}
-
-export function useDeletePayment(eventId: string) {
-  const invalidate = useInvalidate(eventId);
-  return useMutation({
-    mutationFn: (id: string) => api.del(`/events/${eventId}/warikan/payments/${id}`),
     onSuccess: invalidate,
   });
 }
