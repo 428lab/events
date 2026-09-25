@@ -55,7 +55,6 @@ const ja = {
 
   /** 全員の収支 */
   balances: "全員の収支",
-  scrollHint: "横にスクロールできます",
   colName: "名前",
   colPaid: "立て替えた",
   colOwed: "負担",
@@ -165,7 +164,6 @@ const en: Record<keyof typeof ja, string> = {
   deleteExpenseConfirm: "Delete this expense?",
 
   balances: "Everyone's totals",
-  scrollHint: "Scroll sideways to see more",
   colName: "Name",
   colPaid: "Paid",
   colOwed: "Share",

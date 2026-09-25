@@ -321,17 +321,10 @@ function BalanceTable({ ledger }: { ledger: WarikanLedger }) {
         <Typography variant="h6" fontWeight={700}>
           {t("warikan.balances")}
         </Typography>
-        {/* 表が収まる PC 幅では出さない */}
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ display: { xs: "block", md: "none" }, mb: 1 }}
-        >
-          {t("warikan.scrollHint")}
-        </Typography>
-        {/* スマホでは横スクロール前提。セルを折り返さず、名前列は左に固定する */}
+        {/* 4列なので 375px 幅でも収まる。それより狭い端末だけ横スクロールになるので、
+            セルは折り返さず名前列を左に固定しておく（支払記録の撤去で列が減った） */}
         <TableContainer>
-          <Table size="small" sx={{ minWidth: 560, "& .MuiTableCell-root": { whiteSpace: "nowrap" } }}>
+          <Table size="small" sx={{ "& .MuiTableCell-root": { whiteSpace: "nowrap" } }}>
             <TableHead>
               <TableRow>
                 <TableCell sx={stickyName}>{t("warikan.colName")}</TableCell>
