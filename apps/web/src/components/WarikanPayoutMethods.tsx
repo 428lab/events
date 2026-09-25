@@ -55,8 +55,9 @@ export function PayoutMethodView({ method }: { method: WarikanPayout }) {
     return (
       <Box>
         <Button
-          size="small"
+          size="medium"
           variant="contained"
+          sx={{ minHeight: 44 }}
           startIcon={<LinkOutlinedIcon />}
           href={method.value}
           target="_blank"
@@ -83,15 +84,24 @@ export function PayoutMethodView({ method }: { method: WarikanPayout }) {
   return (
     <Box>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-        <Button size="small" variant="contained" startIcon={<BoltOutlinedIcon />} href={uri}>
+        <Button
+          size="medium"
+          variant="contained"
+          sx={{ minHeight: 44 }}
+          startIcon={<BoltOutlinedIcon />}
+          href={uri}
+        >
           {t("warikan.openWallet")}
         </Button>
-        <Button size="small" startIcon={<ContentCopyIcon />} onClick={copy}>
-          {t("warikan.copy")}
-        </Button>
-        <Button size="small" onClick={() => setQrOpen(true)}>
-          {t("warikan.showQr")}
-        </Button>
+        {/* 幅が足りないときは「コピー」と「QR」をまとめて次の段へ（QR だけ落とさない） */}
+        <Stack direction="row" spacing={1}>
+          <Button size="small" startIcon={<ContentCopyIcon />} onClick={copy}>
+            {t("warikan.copyAddress")}
+          </Button>
+          <Button size="small" onClick={() => setQrOpen(true)}>
+            {t("warikan.showQr")}
+          </Button>
+        </Stack>
       </Stack>
       <Typography
         variant="caption"
@@ -232,6 +242,7 @@ export function WarikanPayoutMethods({
               placeholder={
                 kind === "url" ? t("warikan.payoutValueUrl") : t("warikan.payoutValueLightning")
               }
+              helperText={kind === "url" ? t("warikan.kindUrlHelp") : t("warikan.kindLightningHelp")}
               inputProps={{ "aria-label": kindLabel(kind) }}
             />
             <Button variant="outlined" onClick={add} disabled={!value.trim() || save.isPending}>

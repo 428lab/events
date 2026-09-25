@@ -11,9 +11,11 @@ import { EventWarikanPage } from "../pages/EventWarikanPage.js";
 
 /**
  * 割り勘の画面 (#556 §5.3 の受け入れ条件)。
- * - カードは自分に未精算の行があるときだけ。差引ではなく相手ごとの行（最大2行＋「ほか n 件」）
+ * - カードは自分に未精算の行があるときだけ。差引ではなく相手ごとの行（最大2行＋「ほか n 件」）。
+ *   自分が支払う行を先に並べる
  * - observer に「立替を追加」が出ない
- * - プリセットは初期チェックを決めるだけで、後から外せる。編集で開くとプリセット未選択
+ * - 新規は「全員」をチェックして開く。プリセットは初期チェックを決めるだけで、後から外せる。
+ *   編集で開くとプリセット未選択
  * - 受け取り先に表示名の入力が無く、「銀行口座はこのアプリに保存できません。」が出る
  */
 
@@ -79,7 +81,7 @@ describe("割り勘カード", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("相手ごとの行を最大2行、残りは「ほか n 件」で出す（差引は出さない）", async () => {
+  it("相手ごとの行を支払う行から最大2行、残りは「ほか n 件」で出す（差引は出さない）", async () => {
     vi.spyOn(api, "get").mockResolvedValue(
       ledger({
         settlements: [
@@ -92,10 +94,10 @@ describe("割り勘カード", () => {
     );
     withProviders(<WarikanSummaryCard eventId="e" />);
     expect(await screen.findByText("A さんに 800円 支払う")).toBeInTheDocument();
-    expect(screen.getByText("B さんから 200円 受け取る")).toBeInTheDocument();
-    expect(screen.queryByText(/C さん/)).toBeNull();
+    expect(screen.getByText("C さんに 100円 支払う")).toBeInTheDocument();
+    expect(screen.queryByText(/B さん/)).toBeNull();
     expect(screen.getByText("ほか 2 件")).toBeInTheDocument();
-    expect(screen.queryByText(/600円/)).toBeNull();
+    expect(screen.queryByText(/650円/)).toBeNull();
     expect(screen.getByRole("link", { name: "割り勘を開く" })).toHaveAttribute(
       "href",
       "/events/e/warikan",
@@ -136,22 +138,36 @@ describe("割り勘ページ", () => {
     expect(screen.getByRole("button", { name: "支払ったことを記録する" })).toBeInTheDocument();
     expect(screen.queryByText(/精算する/)).toBeNull();
   });
+
+  it("支払う行 → 受け取る行の2グループで、金額のコピーは支払う行だけ", async () => {
+    drawPage(
+      ledger({ settlements: [settlement("b", "me", 200), settlement("me", "a", 800)] }),
+    );
+    const pay = await screen.findByText("あなたが支払う（1件・合計 800円）");
+    const receive = screen.getByText("あなたが受け取る（1件・合計 200円）");
+    expect(pay.compareDocumentPosition(receive) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "金額をコピー" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "受け取ったことを記録する" })).toBeInTheDocument();
+  });
 });
 
 describe("立替フォーム", () => {
   const event = { id: "e", scheduling: false, startsAt: 0, attendanceCheck: true } as Event;
 
-  it("プリセットを押した後に個別に外せる", () => {
+  it("新規は「全員」をチェックして開き、個別に外せる", () => {
     const l = ledger({
       members: [member("me", { attended: true }), member("a", { attended: true }), member("b")],
     });
     withProviders(
       <WarikanExpenseForm eventId="e" event={event} ledger={l} open onClose={() => {}} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "全員" }));
+    expect(screen.getByRole("checkbox", { name: "ME" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "A" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "B" })).toBeChecked();
-    expect(screen.getByText("3 人・1人あたり約 0円")).toBeInTheDocument();
+    // 金額が未入力のうちは「1人あたり約 0円」を出さない
+    expect(screen.queryByText(/1人あたり/)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/金額（円）/), { target: { value: "900" } });
+    expect(screen.getByText("3 人・1人あたり約 300円")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "B" }));
     expect(screen.getByRole("checkbox", { name: "B" })).not.toBeChecked();
@@ -162,6 +178,9 @@ describe("立替フォーム", () => {
     expect(screen.getByRole("checkbox", { name: "ME" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "A" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "B" })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "全員" }));
+    expect(screen.getByRole("checkbox", { name: "B" })).toBeChecked();
   });
 
   it("出席チェックがオフのイベントでは「出席した人」を出さない", () => {
@@ -232,6 +251,6 @@ describe("自分の受け取り先", () => {
     withProviders(<WarikanPayoutMethods eventId="e" ledger={ledger()} />);
     fireEvent.mouseDown(screen.getByRole("combobox"));
     const options = screen.getAllByRole("option").map((o) => o.textContent);
-    expect(options).toEqual(["受け取り用リンク（PayPay・Kyash など）", "Lightning アドレス"]);
+    expect(options).toEqual(["受け取り用リンク", "Lightning アドレス"]);
   });
 });

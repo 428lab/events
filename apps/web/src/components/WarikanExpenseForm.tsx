@@ -45,6 +45,7 @@ function eventStartDate(event: Event): string | null {
  * 立替の追加・編集フォーム (#556 §3.9)。スマホでは全画面。
  *
  * プリセット（全員／出席した人）は**初期チェックを決めるだけ**で、その後は個別に外せる。
+ * 新規は「全員」をチェックした状態で開く。
  * 編集で開いたときはプリセットを選んだ状態にしない（保存されているのは負担者の明示リスト）。
  * 既存の負担者・立替者は、取消した人や退会済みユーザーでもそのまま残せる（§3.7.3）。
  */
@@ -81,8 +82,11 @@ export function WarikanExpenseForm({
     payer: expense?.payerUserId ?? me,
     note: expense?.note ?? "",
     spentOn: expense ? (expense.spentOn ?? "") : (eventStartDate(event) ?? ""),
+    // 新規は「全員」にチェックした状態で開く（最頻のケース。後から個別に外せる）
     weights: new Map<string, number>(
-      expense ? expense.shares.map((s) => [s.userId, s.weight]) : [],
+      expense
+        ? expense.shares.map((s) => [s.userId, s.weight])
+        : presetShareUserIds(ledger.members, "all").map((id) => [id, 1]),
     ),
   });
   const [form, setForm] = useState(initial);
@@ -245,12 +249,15 @@ export function WarikanExpenseForm({
                   />
                 ))}
               </Stack>
-              <Typography variant="body2" color="text.secondary">
-                {t(checked.length === 1 ? "warikan.perPersonOne" : "warikan.perPerson", {
-                  n: checked.length,
-                  amount: yen(perPerson),
-                })}
-              </Typography>
+              {/* 金額が未入力のうちは「約 0円」を出さない */}
+              {amount > 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  {t(checked.length === 1 ? "warikan.perPersonOne" : "warikan.perPerson", {
+                    n: checked.length,
+                    amount: yen(perPerson),
+                  })}
+                </Typography>
+              )}
               <Typography variant="caption" color="text.secondary">
                 {t("warikan.remainderRule")}
               </Typography>
