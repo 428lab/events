@@ -41,7 +41,6 @@ function ledger(over: Partial<WarikanLedger> = {}): WarikanLedger {
   return {
     members: [member("me"), member("a"), member("b"), member("c"), member("d")],
     expenses: [],
-    payments: [],
     payoutMethods: [],
     balances: [],
     settlements: [],
@@ -131,11 +130,11 @@ describe("割り勘ページ", () => {
     expect(screen.getByText("あなたの精算はありません")).toBeInTheDocument();
   });
 
-  it("受け取り先が無い相手に払う行は、固定文を出す（ボタンは「精算する」ではなく記録）", async () => {
+  it("受け取り先が無い相手に払う行は、固定文を出す（「精算する」も記録のボタンも出さない）", async () => {
     drawPage(ledger({ settlements: [settlement("me", "a", 800)] }));
     expect(await screen.findByText("A さんに 800円")).toBeInTheDocument();
     expect(screen.getByText(/受け取り先が登録されていません。/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "支払ったことを記録する" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /記録/ })).toBeNull();
     expect(screen.queryByText(/精算する/)).toBeNull();
   });
 
@@ -147,7 +146,7 @@ describe("割り勘ページ", () => {
     const receive = screen.getByText("あなたが受け取る（1件・合計 200円）");
     expect(pay.compareDocumentPosition(receive) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "金額をコピー" })).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "受け取ったことを記録する" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /記録/ })).toBeNull();
   });
 });
 

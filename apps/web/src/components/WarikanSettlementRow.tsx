@@ -1,34 +1,18 @@
 import { useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Collapse,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Snackbar,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
+import { Box, Button, Collapse, Snackbar, Stack, Typography } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { useTranslation } from "react-i18next";
 import type { Settlement, WarikanLedger } from "@eventer/shared";
-import { WARIKAN_AMOUNT_MAX, formatYen } from "@eventer/shared";
-import { useRecordPayment } from "../api/warikanHooks.js";
-import { errorMessage } from "../lib/errorMessage.js";
-import { formatMonthDay } from "../lib/format.js";
+import { formatYen } from "@eventer/shared";
 import { PayoutMethodView } from "./WarikanPayoutMethods.js";
 
 /**
  * 割り勘の精算の行 (#556 §3.9「あなたの精算」)。
  *
- * 金額の正負は色ではなく語（「支払う」「受け取る」）で表す。記録は本人の申告で、
- * アプリは確かめない。ボタンは「精算する」ではなく「支払ったことを記録する」。
+ * 金額の正負は色ではなく語（「支払う」「受け取る」）で表す。
+ * 支払い自体は他のアプリで行うので、ここは相手・金額・受け取り先・内訳を出すだけ。
  */
 
 /** サーバーのエラーコードのうち、割り勘の画面だけで言い方を変えるもの（§3.8.2） */
@@ -37,7 +21,6 @@ export function useWarikanErrors(): Record<string, string> {
   return {
     invalid_party: t("warikan.errorInvalidParty"),
     too_many_expenses: t("warikan.errorTooManyExpenses"),
-    too_many_payments: t("warikan.errorTooManyPayments"),
     access_changed: t("warikan.errorAccessChanged"),
     validation_error: t("warikan.errorInvalidInput"),
   };
@@ -106,110 +89,19 @@ function CopyAmountButton({ amount }: { amount: number }) {
   );
 }
 
-/** 支払い／受け取りの記録ダイアログ。金額の初期値はその行の残り */
-function RecordPaymentDialog({
-  eventId,
-  settlement,
-  counterpartName,
-  iPay,
-  open,
-  onClose,
-  onRecorded,
-}: {
-  eventId: string;
-  settlement: Settlement;
-  counterpartName: string;
-  iPay: boolean;
-  open: boolean;
-  onClose: () => void;
-  /** 記録できたとき（行が消えることがあるので、合図は呼び出し側で出す） */
-  onRecorded: () => void;
-}) {
-  const { t } = useTranslation();
-  const yen = useYen();
-  const overrides = useWarikanErrors();
-  const record = useRecordPayment(eventId);
-  const [amount, setAmount] = useState(String(settlement.amount));
-  const [error, setError] = useState<string | null>(null);
-
-  const value = Number(amount);
-  const valid = Number.isInteger(value) && value >= 1 && value <= WARIKAN_AMOUNT_MAX;
-
-  const submit = () => {
-    if (!valid) return;
-    // 残りを超える記録は逆向きの行を生むので、保存前に確かめる
-    if (
-      value > settlement.amount &&
-      !window.confirm(t("warikan.recordOverConfirm", { remaining: yen(settlement.amount) }))
-    ) {
-      return;
-    }
-    record.mutate(
-      { fromUserId: settlement.fromUserId, toUserId: settlement.toUserId, amount: value },
-      {
-        onSuccess: () => {
-          onRecorded();
-          onClose();
-        },
-        onError: (e) => setError(errorMessage(e, overrides)),
-      },
-    );
-  };
-
-  return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>
-        {iPay
-          ? t("warikan.recordPaidTitle", { name: counterpartName })
-          : t("warikan.recordReceivedTitle", { name: counterpartName })}
-      </DialogTitle>
-      <DialogContent>
-        <TextField
-          autoFocus
-          fullWidth
-          margin="dense"
-          label={t("warikan.recordAmount")}
-          value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ""))}
-          inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
-        />
-        <Typography variant="caption" color="text.secondary">
-          {t("warikan.recordSelfReport")}
-        </Typography>
-        {error && (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {error}
-          </Alert>
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>{t("common.cancel")}</Button>
-        <Button variant="contained" onClick={submit} disabled={!valid || record.isPending}>
-          {t("warikan.record")}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-}
-
 /** 「あなたの精算」の1行 */
 export function WarikanSettlementRow({
-  eventId,
   ledger,
   settlement,
-  onRecorded,
 }: {
-  eventId: string;
   ledger: WarikanLedger;
   settlement: Settlement;
-  onRecorded: () => void;
 }) {
   const { t } = useTranslation();
   const yen = useYen();
   const signed = useSignedYen();
   const nameOf = useMemberName(ledger);
   const [openBreakdown, setOpenBreakdown] = useState(false);
-  const [recording, setRecording] = useState(false);
 
   const me = ledger.me.userId;
   const iPay = settlement.fromUserId === me;
@@ -221,29 +113,11 @@ export function WarikanSettlementRow({
   const myPayouts = ledger.payoutMethods.filter((m) => m.userId === me);
 
   const breakdownLabel = (item: Settlement["breakdown"][number]): string => {
-    if (item.kind === "expense") {
-      const expense = ledger.expenses.find((e) => e.id === item.expenseId);
-      const title = expense?.title ?? "";
-      return expense?.payerUserId === me
-        ? t("warikan.breakdownYourExpense", { title })
-        : title;
-    }
-    const payment = ledger.payments.find((p) => p.id === item.paymentId);
-    return t("warikan.breakdownPayment", {
-      date: payment ? formatMonthDay(payment.createdAt) : "",
-    });
+    const expense = ledger.expenses.find((e) => e.id === item.expenseId);
+    const title = expense?.title ?? "";
+    return expense?.payerUserId === me ? t("warikan.breakdownYourExpense", { title }) : title;
   };
 
-  const recordButton = (
-    <Button
-      size="medium"
-      variant="outlined"
-      sx={{ minHeight: 44 }}
-      onClick={() => setRecording(true)}
-    >
-      {iPay ? t("warikan.recordPaid") : t("warikan.recordReceived")}
-    </Button>
-  );
   const breakdownButton = (
     <Button
       size="small"
@@ -282,7 +156,6 @@ export function WarikanSettlementRow({
                   {t("warikan.noPayoutMethod")}
                 </Typography>
               )}
-              <Box>{recordButton}</Box>
             </Stack>
           )}
           <Box sx={{ mt: 0.5 }}>{breakdownButton}</Box>
@@ -301,18 +174,7 @@ export function WarikanSettlementRow({
               </Button>
             </Box>
           )}
-          {/* 受け取る側は「記録する」と「内訳」を1段に並べる */}
-          <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
-            flexWrap="wrap"
-            useFlexGap
-            sx={{ mt: 1 }}
-          >
-            {!counterpartDeleted && recordButton}
-            {breakdownButton}
-          </Stack>
+          <Box sx={{ mt: 1 }}>{breakdownButton}</Box>
         </>
       )}
 
@@ -320,7 +182,7 @@ export function WarikanSettlementRow({
         <Stack spacing={0.25} sx={{ pl: 1 }}>
           {settlement.breakdown.map((item) => (
             <Stack
-              key={item.kind === "expense" ? `e:${item.expenseId}` : `p:${item.paymentId}`}
+              key={item.expenseId}
               direction="row"
               justifyContent="space-between"
               spacing={2}
@@ -334,18 +196,6 @@ export function WarikanSettlementRow({
           </Typography>
         </Stack>
       </Collapse>
-
-      {recording && (
-        <RecordPaymentDialog
-          eventId={eventId}
-          settlement={settlement}
-          counterpartName={counterpartName}
-          iPay={iPay}
-          open={recording}
-          onClose={() => setRecording(false)}
-          onRecorded={onRecorded}
-        />
-      )}
     </Box>
   );
 }

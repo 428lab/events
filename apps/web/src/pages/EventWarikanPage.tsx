@@ -7,7 +7,6 @@ import {
   CardContent,
   Collapse,
   Link,
-  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -24,7 +23,7 @@ import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { Event, Settlement, WarikanExpense, WarikanLedger } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
-import { useDeletePayment, useWarikan } from "../api/warikanHooks.js";
+import { useWarikan } from "../api/warikanHooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { WarikanExpenseForm } from "../components/WarikanExpenseForm.js";
 import { WarikanPayoutMethods } from "../components/WarikanPayoutMethods.js";
@@ -32,17 +31,15 @@ import {
   WarikanSettlementRow,
   mySettlements,
   useMemberName,
-  useWarikanErrors,
   useYen,
 } from "../components/WarikanSettlementRow.js";
-import { errorMessage } from "../lib/errorMessage.js";
-import { formatDateTime, formatMonthDay } from "../lib/format.js";
+import { formatMonthDay } from "../lib/format.js";
 
 /**
  * 割り勘のページ (#556 §3.9)。見られるのは確定メンバーと帳簿の当事者（門はサーバー）。
  *
- * 並び: 免責 → あなたの精算 → 立替の一覧 → 全員の収支 → 支払いの記録 → 自分の受け取り先。
- * このアプリはお金を預からない。記録は当事者の申告で、アプリは確かめない。
+ * 並び: 免責 → あなたの精算 → 立替の一覧 → 全員の収支 → 自分の受け取り先。
+ * このアプリはお金を預からない。立替と負担から精算額を出すだけで、支払いは他のアプリで行う。
  */
 export function EventWarikanPage() {
   const { t } = useTranslation();
@@ -108,7 +105,6 @@ function LedgerView({
   const yen = useYen();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<WarikanExpense | null>(null);
-  const [recorded, setRecorded] = useState(false);
   const rows = mySettlements(ledger);
   const me = ledger.me.userId;
   // 自分が支払う行 → 受け取る行の2グループ（自分が動く行を先に）
@@ -149,10 +145,8 @@ function LedgerView({
                   {g.rows.map((s) => (
                     <WarikanSettlementRow
                       key={`${s.fromUserId}:${s.toUserId}`}
-                      eventId={eventId}
                       ledger={ledger}
                       settlement={s}
-                      onRecorded={() => setRecorded(true)}
                     />
                   ))}
                 </Box>
@@ -175,8 +169,6 @@ function LedgerView({
 
       <BalanceTable ledger={ledger} />
 
-      <PaymentList eventId={eventId} ledger={ledger} />
-
       <WarikanPayoutMethods eventId={eventId} ledger={ledger} />
 
       {formOpen && (
@@ -190,13 +182,6 @@ function LedgerView({
           onClose={() => setFormOpen(false)}
         />
       )}
-
-      <Snackbar
-        open={recorded}
-        autoHideDuration={3000}
-        onClose={() => setRecorded(false)}
-        message={t("warikan.recorded")}
-      />
     </>
   );
 }
@@ -322,7 +307,7 @@ function formatSpentOn(spentOn: string): string {
   return formatMonthDay(new Date(y, m - 1, d).getTime());
 }
 
-/** 全員の収支（§3.5 の5列）。差引の正負は語で表す */
+/** 全員の収支（立て替えた − 負担 ＝ 差引）。差引の正負は語で表す */
 const stickyName = { position: "sticky", left: 0, zIndex: 1, bgcolor: "background.paper" } as const;
 
 function BalanceTable({ ledger }: { ledger: WarikanLedger }) {
@@ -352,8 +337,6 @@ function BalanceTable({ ledger }: { ledger: WarikanLedger }) {
                 <TableCell sx={stickyName}>{t("warikan.colName")}</TableCell>
                 <TableCell align="right">{t("warikan.colPaid")}</TableCell>
                 <TableCell align="right">{t("warikan.colOwed")}</TableCell>
-                <TableCell align="right">{t("warikan.colSent")}</TableCell>
-                <TableCell align="right">{t("warikan.colReceived")}</TableCell>
                 <TableCell align="right">{t("warikan.colNet")}</TableCell>
               </TableRow>
             </TableHead>
@@ -363,8 +346,6 @@ function BalanceTable({ ledger }: { ledger: WarikanLedger }) {
                   <TableCell sx={stickyName}>{nameOf(b.userId)}</TableCell>
                   <TableCell align="right">{yen(b.paid)}</TableCell>
                   <TableCell align="right">{yen(b.owed)}</TableCell>
-                  <TableCell align="right">{yen(b.sent)}</TableCell>
-                  <TableCell align="right">{yen(b.received)}</TableCell>
                   <TableCell align="right">
                     {b.net > 0
                       ? t("warikan.netReceive", { amount: yen(b.net) })
@@ -377,73 +358,6 @@ function BalanceTable({ ledger }: { ledger: WarikanLedger }) {
             </TableBody>
           </Table>
         </TableContainer>
-      </CardContent>
-    </Card>
-  );
-}
-
-/** 支払いの記録（新しい順）。記録は本人の申告 */
-function PaymentList({ eventId, ledger }: { eventId: string; ledger: WarikanLedger }) {
-  const { t } = useTranslation();
-  const yen = useYen();
-  const nameOf = useMemberName(ledger);
-  const overrides = useWarikanErrors();
-  const remove = useDeletePayment(eventId);
-  const [error, setError] = useState<string | null>(null);
-
-  return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="h6" fontWeight={700}>
-          {t("warikan.payments")}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-          {t("warikan.selfReportNote")}
-        </Typography>
-        {ledger.payments.length === 0 && (
-          <Typography color="text.secondary">{t("warikan.noPayments")}</Typography>
-        )}
-        {ledger.payments.map((p) => (
-          <Stack
-            key={p.id}
-            direction="row"
-            alignItems="center"
-            spacing={1}
-            sx={{ py: 0.75, borderBottom: 1, borderColor: "divider" }}
-          >
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="body2">
-                {t("warikan.paymentLine", {
-                  from: nameOf(p.fromUserId),
-                  to: nameOf(p.toUserId),
-                  amount: yen(p.amount),
-                })}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {[t("warikan.recordedBy", { name: nameOf(p.recordedBy) }), formatDateTime(p.createdAt)].join(
-                  t("common.dotSeparator"),
-                )}
-              </Typography>
-            </Box>
-            {p.canDelete && (
-              <Button
-                size="small"
-                disabled={remove.isPending}
-                onClick={() => {
-                  if (!window.confirm(t("warikan.undoPaymentConfirm"))) return;
-                  remove.mutate(p.id, { onError: (e) => setError(errorMessage(e, overrides)) });
-                }}
-              >
-                {t("warikan.undoPayment")}
-              </Button>
-            )}
-          </Stack>
-        ))}
-        {error && (
-          <Alert severity="error" sx={{ mt: 1 }}>
-            {error}
-          </Alert>
-        )}
       </CardContent>
     </Card>
   );
