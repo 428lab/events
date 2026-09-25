@@ -5,7 +5,6 @@ import {
   presetShareUserIds,
   settle,
   type CalcExpense,
-  type CalcPayment,
   type WarikanMember,
 } from "@eventer/shared";
 
@@ -125,7 +124,7 @@ describe("settle: 立替者への直接返済とペア相殺 (§3.5)", () => {
   };
 
   it("検算例1: A の会場費 3,000円を3人 → A +2,000 / B −1,000 / C −1,000", () => {
-    const r = settle({ expenses: [venue], payments: [] });
+    const r = settle({ expenses: [venue] });
     expect(netOf(r.balances)).toEqual({ A: 2000, B: -1000, C: -1000 });
     expect(r.settlements).toEqual([
       { fromUserId: "B", toUserId: "A", amount: 1000, breakdown: [{ kind: "expense", expenseId: "venue", amount: 1000 }] },
@@ -134,17 +133,18 @@ describe("settle: 立替者への直接返済とペア相殺 (§3.5)", () => {
     expect(r.allocations.venue!.shares.map((s) => s.amount)).toEqual([1000, 1000, 1000]);
   });
 
-  it("検算例2: B が A に 1,000円を記録 → A +1,000 / B 0 / C −1,000、精算は C→A だけ", () => {
-    const r = settle({
-      expenses: [venue],
-      payments: [{ id: "p1", fromUserId: "B", toUserId: "A", amount: 1000 }],
-    });
-    expect(netOf(r.balances)).toEqual({ A: 1000, B: 0, C: -1000 });
-    expect(r.settlements.map((s) => [s.fromUserId, s.toUserId, s.amount])).toEqual([["C", "A", 1000]]);
+  it("精算は常に全額: 同じ立替なら何度読んでも B→A・C→A の 1,000円ずつのまま", () => {
+    const first = settle({ expenses: [venue] });
+    const second = settle({ expenses: [venue] });
+    expect(second).toEqual(first);
+    expect(first.settlements.map((s) => [s.fromUserId, s.toUserId, s.amount])).toEqual([
+      ["B", "A", 1000],
+      ["C", "A", 1000],
+    ]);
   });
 
   it("検算例3: B の打ち上げ 600円を足す → B→A 800（+1,000 / −200）、C→A 1,000、C→B 200", () => {
-    const r = settle({ expenses: [venue, party], payments: [] });
+    const r = settle({ expenses: [venue, party] });
     expect(netOf(r.balances)).toEqual({ A: 1800, B: -600, C: -1200 });
     expect(r.settlements).toEqual([
       {
@@ -173,7 +173,6 @@ describe("settle: 立替者への直接返済とペア相殺 (§3.5)", () => {
         { id: "x", payerUserId: "B", amount: 500, shares: [{ userId: "A", weight: 1 }] },
         { id: "y", payerUserId: "A", amount: 300, shares: [{ userId: "B", weight: 1 }] },
       ],
-      payments: [],
     });
     expect(r.settlements).toEqual([
       {
@@ -188,23 +187,14 @@ describe("settle: 立替者への直接返済とペア相殺 (§3.5)", () => {
     ]);
   });
 
-  it("支払いすぎ: 債務 500 に 800 を記録 → 逆向きに 300", () => {
+  it("精算行は立替だけから出る: 債務 500 の行は 500 のまま、内訳は立替の1件だけ", () => {
     const r = settle({
       expenses: [{ id: "x", payerUserId: "B", amount: 500, shares: [{ userId: "A", weight: 1 }] }],
-      payments: [{ id: "p", fromUserId: "A", toUserId: "B", amount: 800 }],
     });
     expect(r.settlements).toEqual([
-      {
-        fromUserId: "B",
-        toUserId: "A",
-        amount: 300,
-        breakdown: [
-          { kind: "expense", expenseId: "x", amount: -500 },
-          { kind: "payment", paymentId: "p", amount: 800 },
-        ],
-      },
+      { fromUserId: "A", toUserId: "B", amount: 500, breakdown: [{ kind: "expense", expenseId: "x", amount: 500 }] },
     ]);
-    expect(netOf(r.balances)).toEqual({ A: 300, B: -300 });
+    expect(netOf(r.balances)).toEqual({ A: -500, B: 500 });
   });
 
   it("端数をかぶった立替者: owed に absorbedByPayer が入り、net が手順4と一致する", () => {
@@ -212,13 +202,12 @@ describe("settle: 立替者への直接返済とペア相殺 (§3.5)", () => {
       expenses: [
         { id: "x", payerUserId: "A", amount: 1000, shares: ["B", "C", "D"].map((userId) => ({ userId, weight: 1 })) },
       ],
-      payments: [],
     });
     const a = r.balances.find((b) => b.userId === "A")!;
-    expect(a).toEqual({ userId: "A", paid: 1000, owed: 1, sent: 0, received: 0, net: 999 });
+    expect(a).toEqual({ userId: "A", paid: 1000, owed: 1, net: 999 });
   });
 
-  function randomInput(seed: number): { expenses: CalcExpense[]; payments: CalcPayment[] } {
+  function randomInput(seed: number): { expenses: CalcExpense[] } {
     const rand = rng(seed);
     const users = Array.from({ length: 2 + Math.floor(rand() * 6) }, (_, i) => `u${i}`);
     const pick = () => users[Math.floor(rand() * users.length)]!;
@@ -232,22 +221,15 @@ describe("settle: 立替者への直接返済とペア相殺 (§3.5)", () => {
         shares: shareUsers.map((userId) => ({ userId, weight: 1 + Math.floor(rand() * 3) })),
       };
     });
-    const payments: CalcPayment[] = [];
-    for (let i = 0; i < Math.floor(rand() * 5); i++) {
-      const from = pick();
-      const to = pick();
-      if (from === to) continue;
-      payments.push({ id: `p${i}`, fromUserId: from, toUserId: to, amount: 1 + Math.floor(rand() * 20_000) });
-    }
-    return { expenses, payments };
+    return { expenses };
   }
 
-  it("Σ net = 0、net = paid − owed + sent − received = 精算の行から見た受け取り − 支払い（乱数 500 件）", () => {
+  it("Σ net = 0、net = paid − owed = 精算の行から見た受け取り − 支払い（乱数 500 件）", () => {
     for (let seed = 1; seed <= 500; seed++) {
       const r = settle(randomInput(seed));
       expect(r.balances.reduce((s, b) => s + b.net, 0)).toBe(0);
       for (const b of r.balances) {
-        expect(b.net).toBe(b.paid - b.owed + b.sent - b.received);
+        expect(b.net).toBe(b.paid - b.owed);
         const fromRows =
           r.settlements.filter((s) => s.toUserId === b.userId).reduce((s, x) => s + x.amount, 0) -
           r.settlements.filter((s) => s.fromUserId === b.userId).reduce((s, x) => s + x.amount, 0);
@@ -265,7 +247,6 @@ describe("settle: 立替者への直接返済とペア相殺 (§3.5)", () => {
       const input = randomInput(seed);
       const shuffled = {
         expenses: [...input.expenses].reverse().map((e) => ({ ...e, shares: [...e.shares].reverse() })),
-        payments: [...input.payments].reverse(),
       };
       const a = settle(input);
       const b = settle(shuffled);
