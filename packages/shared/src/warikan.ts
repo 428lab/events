@@ -18,13 +18,11 @@ export type PayoutKind = (typeof PAYOUT_KINDS)[number];
 
 /** 1イベントの立替の上限（1文の条件付き INSERT で守る） */
 export const WARIKAN_EXPENSE_MAX = 200;
-/** 1イベントの支払記録の上限（1文の条件付き INSERT で守る） */
-export const WARIKAN_PAYMENT_MAX = 500;
 /** 1件の立替の負担者の上限 */
 export const WARIKAN_SHARES_MAX = 500;
 /** 1人がイベントごとに登録できる受け取り先の上限 */
 export const WARIKAN_PAYOUT_MAX = 5;
-/** 金額の上限（円）。打ち間違いを弾くため。立替・支払記録とも */
+/** 金額の上限（円）。打ち間違いを弾くため */
 export const WARIKAN_AMOUNT_MAX = 10_000_000;
 /** 重みの上限（入力時のみ。統合で合算された行は超えうる） */
 export const WARIKAN_WEIGHT_MAX = 100;
@@ -52,16 +50,6 @@ export const expenseInput = z.object({
     }),
 });
 export type ExpenseInput = z.infer<typeof expenseInput>;
-
-/** 支払いの記録（当事者の自己申告。アプリが確かめたものではない） */
-export const paymentInput = z
-  .object({
-    fromUserId: z.string().min(1),
-    toUserId: z.string().min(1),
-    amount: z.number().int().min(1).max(WARIKAN_AMOUNT_MAX),
-  })
-  .refine((p) => p.fromUserId !== p.toUserId, { message: "same_party" });
-export type PaymentInput = z.infer<typeof paymentInput>;
 
 export const payoutMethodInput = z.discriminatedUnion("kind", [
   // 受け取り用リンク（PayPay / Kyash 等）。https のみ。アプリは開くだけで叩かない（§3.1）
@@ -130,17 +118,6 @@ export const warikanExpenseSchema = z.object({
 });
 export type WarikanExpense = z.infer<typeof warikanExpenseSchema>;
 
-export const warikanPaymentSchema = z.object({
-  id: z.string(),
-  fromUserId: z.string(),
-  toUserId: z.string(),
-  amount: z.number().int(),
-  recordedBy: z.string().nullable(),
-  createdAt: z.number(),
-  canDelete: z.boolean(),
-});
-export type WarikanPayment = z.infer<typeof warikanPaymentSchema>;
-
 export const warikanPayoutSchema = z.object({
   id: z.string(),
   userId: z.string(),
@@ -151,21 +128,17 @@ export const warikanPayoutSchema = z.object({
 export type WarikanPayout = z.infer<typeof warikanPayoutSchema>;
 
 export const warikanLedgerSchema = z.object({
-  /** 確定メンバー全員 ∪ 帳簿のどこかに登場する全員（入力者・記録者・受け取り先の持ち主を含む）。
+  /** 確定メンバー全員 ∪ 帳簿のどこかに登場する全員（入力者・受け取り先の持ち主を含む）。
    * 並びは confirmed → former → deleted、その中は参加登録順（表示のためだけ。計算には使わない） */
   members: z.array(warikanMemberSchema),
   /** 新しい順 */
   expenses: z.array(warikanExpenseSchema),
-  /** 新しい順 */
-  payments: z.array(warikanPaymentSchema),
   payoutMethods: z.array(warikanPayoutSchema),
   balances: z.array(
     z.object({
       userId: z.string(),
       paid: z.number().int(),
       owed: z.number().int(),
-      sent: z.number().int(),
-      received: z.number().int(),
       net: z.number().int(),
     }),
   ),
@@ -175,10 +148,7 @@ export const warikanLedgerSchema = z.object({
       toUserId: z.string(),
       amount: z.number().int(),
       breakdown: z.array(
-        z.discriminatedUnion("kind", [
-          z.object({ kind: z.literal("expense"), expenseId: z.string(), amount: z.number().int() }),
-          z.object({ kind: z.literal("payment"), paymentId: z.string(), amount: z.number().int() }),
-        ]),
+        z.object({ kind: z.literal("expense"), expenseId: z.string(), amount: z.number().int() }),
       ),
     }),
   ),
@@ -197,12 +167,6 @@ export interface CalcExpense {
   payerUserId: string;
   amount: number;
   shares: CalcShare[];
-}
-export interface CalcPayment {
-  id: string;
-  fromUserId: string;
-  toUserId: string;
-  amount: number;
 }
 
 export interface Allocation {
@@ -236,11 +200,8 @@ export function allocateShares(expense: CalcExpense): Allocation {
   };
 }
 
-export type BreakdownItem =
-  /** 符号付き。正 = from→to の債務を増やす */
-  | { kind: "expense"; expenseId: string; amount: number }
-  /** 符号付き。from が払った記録は負 */
-  | { kind: "payment"; paymentId: string; amount: number };
+/** 符号付き。正 = from→to の債務を増やす */
+export type BreakdownItem = { kind: "expense"; expenseId: string; amount: number };
 
 export interface Settlement {
   fromUserId: string;
@@ -255,9 +216,7 @@ export interface Balance {
   userId: string;
   paid: number;
   owed: number;
-  sent: number;
-  received: number;
-  /** paid − owed + sent − received。正 = まだ受け取る */
+  /** paid − owed。正 = 受け取る */
   net: number;
 }
 
@@ -269,9 +228,9 @@ function cmp(a: string, b: string): number {
 /**
  * §3.5 の精算。立替者への直接返済を積み上げ、双方向の債務を差額に相殺する。
  * 出力の並び: balances は入力に登場した userId の辞書順、settlements は (from, to) の辞書順。
- * 各行の breakdown は立替 → 支払記録の順、その中は id の辞書順（入力の並びに依存しない）
+ * 各行の breakdown は立替の id の辞書順（入力の並びに依存しない）
  */
-export function settle(input: { expenses: CalcExpense[]; payments: CalcPayment[] }): {
+export function settle(input: { expenses: CalcExpense[] }): {
   allocations: Record<string, Allocation>;
   balances: Balance[];
   settlements: Settlement[];
@@ -281,7 +240,7 @@ export function settle(input: { expenses: CalcExpense[]; payments: CalcPayment[]
   const balanceOf = (userId: string): Balance => {
     let b = balances.get(userId);
     if (!b) {
-      b = { userId, paid: 0, owed: 0, sent: 0, received: 0, net: 0 };
+      b = { userId, paid: 0, owed: 0, net: 0 };
       balances.set(userId, b);
     }
     return b;
@@ -318,18 +277,7 @@ export function settle(input: { expenses: CalcExpense[]; payments: CalcPayment[]
     }
   }
 
-  // 2. 支払記録を引く（from → to の債務を減らす）
-  for (const payment of input.payments) {
-    balanceOf(payment.fromUserId).sent += payment.amount;
-    balanceOf(payment.toUserId).received += payment.amount;
-    addToPair(payment.fromUserId, payment.toUserId, {
-      kind: "payment",
-      paymentId: payment.id,
-      amount: -payment.amount,
-    });
-  }
-
-  // 3. 双方向を相殺する
+  // 2. 双方向を相殺する
   const settlements: Settlement[] = [];
   const seen = new Set<string>();
   for (const { debtor, creditor } of pairs.values()) {
@@ -348,12 +296,7 @@ export function settle(input: { expenses: CalcExpense[]; payments: CalcPayment[]
     const sign = d > 0 ? 1 : -1;
     const breakdown = items
       .map((item): BreakdownItem => ({ ...item, amount: item.amount * sign }))
-      .sort((a, b) => {
-        if (a.kind !== b.kind) return a.kind === "expense" ? -1 : 1;
-        const ida = a.kind === "expense" ? a.expenseId : a.paymentId;
-        const idb = b.kind === "expense" ? b.expenseId : b.paymentId;
-        return cmp(ida, idb);
-      });
+      .sort((a, b) => cmp(a.expenseId, b.expenseId));
     settlements.push({
       fromUserId: d > 0 ? x : y,
       toUserId: d > 0 ? y : x,
@@ -363,9 +306,9 @@ export function settle(input: { expenses: CalcExpense[]; payments: CalcPayment[]
   }
   settlements.sort((a, b) => cmp(a.fromUserId, b.fromUserId) || cmp(a.toUserId, b.toUserId));
 
-  // 4. 収支
+  // 3. 収支
   const balanceList = [...balances.values()].sort((a, b) => cmp(a.userId, b.userId));
-  for (const b of balanceList) b.net = b.paid - b.owed + b.sent - b.received;
+  for (const b of balanceList) b.net = b.paid - b.owed;
 
   return { allocations, balances: balanceList, settlements };
 }
