@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ACTIVITY_TABLES,
   EVENT_LIKE_USER_KINDS,
+  LEDGER_PARTY_REASSIGN_SQL,
   SHARED_CONTENT_OWNER_COLUMNS,
 } from "../src/db/repositories/userTables.js";
 
@@ -89,11 +90,11 @@ function userColumnActions(): Map<string, string> {
  * **実数で固定する。** 増えたときは、増えた列を deleteAccount と hasActivity で
  * 扱ってからこの数を直すこと。減ったときは走査が壊れている疑いが強い。
  */
-const EXPECTED_BLOCKING_COLUMNS = 5;
+const EXPECTED_BLOCKING_COLUMNS = 7; // #556: 割り勘の帳簿の当事者 2 本
 
 /** user(id) を参照する列の総数（merge-user-columns.test.ts と同じ数）。
  * こちらの走査が空振りしていないことの担保 */
-const EXPECTED_USER_COLUMNS = 54; // #513: per-user schedule registration receipt
+const EXPECTED_USER_COLUMNS = 58; // #556: 割り勘の 3 表で 4 本
 
 /* ── 2. 定義の期待値（**定義から導かない**。手で書いて固定する） ───────── */
 
@@ -106,10 +107,17 @@ const EXPECTED_USER_COLUMNS = 54; // #513: per-user schedule registration receip
 const EXPECTED_SHARED_CONTENT = [
   "community.owner_id",
   "event.created_by",
+  "event_expense.payer_user_id",
   "event_request.created_by",
   "venue.owner_id",
   "venue_offer.created_by",
 ];
+
+/**
+ * 割り勘の帳簿の当事者列 (#556)。LEDGER_PARTY_REASSIGN_SQL が付け替える列。
+ * 同じ理由で手で書いて固定する（SQL の `UPDATE t SET c = ?2 WHERE c = ?1` から読んだ組と比べる）
+ */
+const EXPECTED_LEDGER_PARTY = ["event_expense_share.user_id"];
 
 /** 利用実績 (#238) を見る表。同じ理由で手で書いて固定する */
 const EXPECTED_ACTIVITY = [
@@ -119,6 +127,8 @@ const EXPECTED_ACTIVITY = [
   "entry_member.user_id",
   "event.created_by",
   "event_comment.user_id",
+  "event_expense.payer_user_id",
+  "event_expense_share.user_id",
   "event_member.user_id",
   "event_request.created_by",
   "inquiry.user_id",
@@ -133,6 +143,19 @@ const EXPECTED_LIKE_KINDS = ["host", "staff", "participant"];
 
 const pairs = (list: ReadonlyArray<readonly [string, string]>): string[] =>
   list.map(([t, c]) => `${t}.${c}`).sort();
+
+/** LEDGER_PARTY_REASSIGN_SQL が移す元から移す先へ付け替える列（`UPDATE t SET c = ?2 WHERE c = ?1`）。
+ * 重みの足し込み（SET weight = …）は付け替えではないので数えない */
+const ledgerPartyColumns = (): string[] =>
+  [
+    ...new Set(
+      LEDGER_PARTY_REASSIGN_SQL.flatMap((sql) =>
+        [...sql.matchAll(/UPDATE\s+(\w+)\s+SET\s+(\w+)\s*=\s*\?2\s+WHERE\s+\2\s*=\s*\?1/gi)].map(
+          (m) => `${m[1]!}.${m[2]!}`,
+        ),
+      ),
+    ),
+  ].sort();
 
 describe("user を参照する表の一覧 (#466)", () => {
   it("マイグレーションの走査が空振りしていない", () => {
@@ -158,11 +181,16 @@ describe("user を参照する表の一覧 (#466)", () => {
         blocking.map((c) => `  - ${c}`).join("\n"),
     ).toBe(EXPECTED_BLOCKING_COLUMNS);
 
-    // 解消の手は2つ。ghost へ付け替える（共有コンテンツ）か、明示的に消すか
+    // 解消の手は3つ。ghost へ付け替える（共有コンテンツ）か、帳簿の当事者として
+    // ghost へ付け替える（LEDGER_PARTY_REASSIGN_SQL。#556）か、明示的に消すか。
+    // 帳簿の SQL にも `DELETE FROM` があるので、3つ目の判定に偶然引っかからないよう
+    // 2つ目を列ごとに明示的に数える
     const reassigned = new Set(pairs(SHARED_CONTENT_OWNER_COLUMNS));
+    const ledger = new Set(ledgerPartyColumns());
     const deletion = src("accountDeletion");
     const unresolved = blocking.filter((col) => {
       if (reassigned.has(col)) return false;
+      if (ledger.has(col)) return false;
       const table = col.split(".")[0]!;
       // `DELETE FROM t WHERE …` が deleteAccount の中にあるか
       return !new RegExp(`DELETE FROM ${table}\\b`).test(deletion);
@@ -201,6 +229,14 @@ describe("user を参照する表の一覧 (#466)", () => {
     ).toEqual(EXPECTED_SHARED_CONTENT);
   });
 
+  it("帳簿の当事者の付け替えが、期待どおりの表と列である (#556)", () => {
+    expect(
+      ledgerPartyColumns(),
+      "LEDGER_PARTY_REASSIGN_SQL が付け替える列が変わった。統合と退会の**両方**の\n" +
+        "振る舞いが変わる。意図した変更なら、このテストの期待値も直すこと。",
+    ).toEqual(EXPECTED_LEDGER_PARTY);
+  });
+
   it("実績判定の一覧が、期待どおりの表と列である", () => {
     expect(
       pairs(ACTIVITY_TABLES),
@@ -214,6 +250,7 @@ describe("user を参照する表の一覧 (#466)", () => {
     for (const col of [
       ...pairs(SHARED_CONTENT_OWNER_COLUMNS),
       ...pairs(ACTIVITY_TABLES),
+      ...ledgerPartyColumns(),
     ]) {
       expect(cols.has(col), `${col} は user(id) を参照していない（綴り間違い？）`).toBe(
         true,
@@ -250,6 +287,28 @@ describe("user を参照する表の一覧 (#466)", () => {
           body.includes(inline),
           `${name} に ${inline} が直接書かれている。` +
             `userTables.ts の定義を使うこと（2か所に書くと片方だけ直る）`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("統合も退会も、帳簿の当事者の付け替えを書き写さずに import している (#556)", () => {
+    // 共有コンテンツと同じ型。書き写すと、片方だけ直る事故が戻ってくる。
+    // 退会側の見張り（ブロックする列の解消）が LEDGER_PARTY_REASSIGN_SQL を
+    // 根拠にしている以上、実際に回していることもここで確かめる
+    for (const [name, body] of [
+      ["accountMerge.ts", src("accountMerge")],
+      ["accountDeletion.ts", src("accountDeletion")],
+    ] as const) {
+      expect(
+        body.includes("of LEDGER_PARTY_REASSIGN_SQL"),
+        `${name} が LEDGER_PARTY_REASSIGN_SQL をそのまま回していない`,
+      ).toBe(true);
+      for (const table of ["event_expense_share"]) {
+        expect(
+          new RegExp(`(UPDATE|DELETE FROM)\\s+${table}\\b`).test(body),
+          `${name} に ${table} の付け替え SQL が直接書かれている。` +
+            `userTables.ts の LEDGER_PARTY_REASSIGN_SQL を使うこと（2か所に書くと片方だけ直る）`,
         ).toBe(false);
       }
     }

@@ -7,6 +7,7 @@ import { ACTIVE, usersRepo } from "./users.js";
 import {
   ACTIVITY_TABLES,
   EVENT_LIKE_USER_KINDS,
+  LEDGER_PARTY_REASSIGN_SQL,
   SHARED_CONTENT_OWNER_COLUMNS,
 } from "./userTables.js";
 
@@ -14,7 +15,7 @@ import {
  * 実IDと衝突しない合成値（ADMIN_DISCORD_IDS にも決して一致しない）。
  * identity を持たない＝ログイン不可で、連携の引き取り (#238) や統合 (#240) は
  * identity の provider_user_id からしかユーザーを解決しないため対象にならない */
-const DELETED_USER_DISCORD_ID = "system:deleted-user";
+export const DELETED_USER_DISCORD_ID = "system:deleted-user";
 
 /** 「参加者のいない下書きイベント」の条件 (#244)。誰にも見えず誰も消せない
  * 孤児になるため退会の完全削除で消す。
@@ -167,6 +168,12 @@ export const accountDeletionRepo = {
         args: [ghostId, userId],
       });
     }
+    // (1-a) 割り勘の帳簿の当事者 (#556) も ghost 名義へ。負担行は重みを合算する
+    //     （第三者の負担額と収支を動かさない）。
+    //     SQL は userTables.ts の LEDGER_PARTY_REASSIGN_SQL（統合側と共有。文の順序が仕様）
+    for (const sql of LEDGER_PARTY_REASSIGN_SQL) {
+      stmts.push({ sql, args: [userId, ghostId] });
+    }
 
     // (1-b) 付け替えた共有コンテンツに残る本人の連絡先を消す。
     //     venue_offer.organizer_contact は承諾成立後に会場側へ開示されるため、
@@ -229,8 +236,9 @@ export const accountDeletionRepo = {
     //      venue_admin / event_survey_answer / event_chat_key / event_like /
     //      user_follow / event_meet / event_photo / event_photo_comment /
     //      event_comment / notification / notification_pref / inquiry /
-    //      deck / bgm_track）。venue_photo.user_id と
+    //      deck / bgm_track / event_payout_method）。venue_photo.user_id と
     //      event_schedule_item.speaker_user_id は SET NULL で匿名化される
+    //      （割り勘の event_expense.created_by も SET NULL）
     stmts.push({ sql: "DELETE FROM user WHERE id = ?", args: [userId] });
 
     await batch(stmts);

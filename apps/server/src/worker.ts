@@ -68,6 +68,7 @@ import {
   meetPrizeRoutes,
 } from "./routes/eventMeetPrizes.js";
 import { eventBingoRoutes } from "./routes/eventBingo.js";
+import { eventWarikanRoutes } from "./routes/eventWarikan.js";
 import {
   eventScheduleRoutes,
   getEventTimetable,
@@ -241,6 +242,8 @@ api.route("/events", meetEventRoutes);
 api.route("/events", meetPrizeRoutes);
 // 数字ビンゴ (#436)（確定メンバーのみ。公開の口は無い。要認証）
 api.route("/events", eventBingoRoutes);
+// 割り勘 (#556)（確定メンバーと帳簿の当事者のみ。公開の口は無い。要認証）
+api.route("/events", eventWarikanRoutes);
 api.route("/events", eventScheduleRoutes);
 // 準備の段取り TODO とガントチャート (#393)（そのイベントのスタッフのみ。要認証。
 // 参加者向けの経路は1本も作らない）
