@@ -168,8 +168,8 @@ export const accountDeletionRepo = {
         args: [ghostId, userId],
       });
     }
-    // (1-a) 割り勘の帳簿の当事者 (#556) も ghost 名義へ。負担行は重みを合算し、
-    //     本人↔ghost 間の支払記録は先に消す（第三者の負担額と収支を動かさない）。
+    // (1-a) 割り勘の帳簿の当事者 (#556) も ghost 名義へ。負担行は重みを合算する
+    //     （第三者の負担額と収支を動かさない）。
     //     SQL は userTables.ts の LEDGER_PARTY_REASSIGN_SQL（統合側と共有。文の順序が仕様）
     for (const sql of LEDGER_PARTY_REASSIGN_SQL) {
       stmts.push({ sql, args: [userId, ghostId] });
@@ -238,7 +238,7 @@ export const accountDeletionRepo = {
     //      event_comment / notification / notification_pref / inquiry /
     //      deck / bgm_track / event_payout_method）。venue_photo.user_id と
     //      event_schedule_item.speaker_user_id は SET NULL で匿名化される
-    //      （割り勘の event_expense.created_by / event_settlement_payment.recorded_by も SET NULL）
+    //      （割り勘の event_expense.created_by も SET NULL）
     stmts.push({ sql: "DELETE FROM user WHERE id = ?", args: [userId] });
 
     await batch(stmts);

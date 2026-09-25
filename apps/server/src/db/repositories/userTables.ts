@@ -67,13 +67,6 @@ export const LEDGER_PARTY_REASSIGN_SQL: ReadonlyArray<string> = [
       AND expense_id IN (SELECT expense_id FROM event_expense_share WHERE user_id = ?2)`,
   // (c) 残りを付け替える（もう PK は衝突しない）
   `UPDATE event_expense_share SET user_id = ?2 WHERE user_id = ?1`,
-  // (d) 付け替えると自分→自分になる支払記録を**先に**消す
-  //     （CHECK 違反で batch ごと落ちるのを防ぐ。user_follow (4) の型）
-  `DELETE FROM event_settlement_payment
-    WHERE (from_user_id = ?1 AND to_user_id = ?2) OR (from_user_id = ?2 AND to_user_id = ?1)`,
-  // (e)(f) 付け替え
-  `UPDATE event_settlement_payment SET from_user_id = ?2 WHERE from_user_id = ?1`,
-  `UPDATE event_settlement_payment SET to_user_id = ?2 WHERE to_user_id = ?1`,
 ];
 
 /**
@@ -116,8 +109,6 @@ export const ACTIVITY_TABLES: ReadonlyArray<[table: string, col: string]> = [
   // イベントから外された後に帳簿の行だけが残った人を「実績なし」にしない
   ["event_expense", "payer_user_id"],
   ["event_expense_share", "user_id"],
-  ["event_settlement_payment", "from_user_id"],
-  ["event_settlement_payment", "to_user_id"],
 ];
 
 // event_access_invite: user_id CASCADE / invited_by SET NULL on account deletion.

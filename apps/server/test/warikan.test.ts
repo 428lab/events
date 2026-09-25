@@ -152,7 +152,7 @@ describe("割り勘の門 (#556 §3.7.1)", () => {
     }
   });
 
-  it("当事者だが取消した人は 200 で自分の行が見え、支払いを記録できる", async () => {
+  it("当事者だが取消した人は 200 で自分の行が見える", async () => {
     const { eventId, a, b, c } = await setup();
     await addExpense(eventId, a, a.id, 3000, [a.id, b.id, c.id]);
     await setStatus(eventId, b.id, "canceled");
@@ -166,18 +166,9 @@ describe("割り勘の門 (#556 §3.7.1)", () => {
       standing: "former",
       selectable: false,
     });
-
-    await json(
-      await req(`/events/${eventId}/warikan/payments`, b, "POST", {
-        fromUserId: b.id,
-        toUserId: a.id,
-        amount: 1000,
-      }),
-      201,
-    );
   });
 
-  it("§3.5 の検算例: 会場費 3,000円を3人 → 支払い記録 → 打ち上げ 600円", async () => {
+  it("§3.5 の検算例: 会場費 3,000円を3人 → 打ち上げ 600円", async () => {
     const { eventId, a, b, c } = await setup();
     const venue = await addExpense(eventId, a, a.id, 3000, [a.id, b.id, c.id]);
     expect(netOf(await ledgerOf(eventId, a))).toEqual({ [a.id]: 2000, [b.id]: -1000, [c.id]: -1000 });
@@ -268,19 +259,12 @@ describe("割り勘の権限 (#556 §3.7.2)", () => {
     }
   });
 
-  it("入力の形: 重複した負担者は duplicate_share、from = to は same_party", async () => {
+  it("入力の形: 重複した負担者は duplicate_share", async () => {
     const { eventId, a } = await setup();
     const dup = await req(`/events/${eventId}/warikan/expenses`, a, "POST", expenseBody(a.id, 100, [a.id, a.id]));
     const body = await json(dup, 400);
     expect(body.error).toBe("validation_error");
     expect(body.issues.map((i: { message: string }) => i.message)).toContain("duplicate_share");
-
-    const same = await req(`/events/${eventId}/warikan/payments`, a, "POST", {
-      fromUserId: a.id,
-      toUserId: a.id,
-      amount: 100,
-    });
-    expect((await json(same, 400)).issues.map((i: { message: string }) => i.message)).toContain("same_party");
   });
 
   it("PATCH は新しく加わる人だけを検証する（取消した既存の負担者を残したままタイトルを直せる）", async () => {
@@ -309,50 +293,6 @@ describe("割り勘の権限 (#556 §3.7.2)", () => {
     expect(await json(bad, 400)).toEqual({ error: "invalid_party" });
   });
 
-  it("支払記録: 第三者の記録は 403、staff は代理で記録できる、受け取り側（to）が相手の記録を取り消せる", async () => {
-    const { eventId, staff, a, b, c } = await setup();
-    await addExpense(eventId, a, a.id, 3000, [a.id, b.id, c.id]);
-
-    const third = await req(`/events/${eventId}/warikan/payments`, c, "POST", {
-      fromUserId: b.id,
-      toUserId: a.id,
-      amount: 1000,
-    });
-    expect(third.status).toBe(403);
-
-    const byStaff = await json(
-      await req(`/events/${eventId}/warikan/payments`, staff, "POST", {
-        fromUserId: c.id,
-        toUserId: a.id,
-        amount: 1000,
-      }),
-      201,
-    );
-    expect(byStaff.payment.recordedBy).toBe(staff.id);
-
-    const { payment } = await json(
-      await req(`/events/${eventId}/warikan/payments`, b, "POST", {
-        fromUserId: b.id,
-        toUserId: a.id,
-        amount: 1000,
-      }),
-      201,
-    );
-    expect((await req(`/events/${eventId}/warikan/payments/${payment.id}`, c, "DELETE")).status).toBe(403);
-    await json(await req(`/events/${eventId}/warikan/payments/${payment.id}`, a, "DELETE"));
-    expect(await count("SELECT COUNT(*) AS n FROM event_settlement_payment WHERE id = ?", payment.id)).toBe(0);
-  });
-
-  it("支払記録の当事者が門の外なら 400 invalid_party", async () => {
-    const { eventId, a } = await setup();
-    const outsider = await makeUser();
-    const res = await req(`/events/${eventId}/warikan/payments`, a, "POST", {
-      fromUserId: a.id,
-      toUserId: outsider.id,
-      amount: 100,
-    });
-    expect(await json(res, 400)).toEqual({ error: "invalid_party" });
-  });
 });
 
 describe("受け取り先 (#556 §3.6)", () => {
@@ -469,18 +409,10 @@ describe("上限と子リソース (#556 §3.3)", () => {
     ).toBe(WARIKAN_EXPENSE_MAX);
   });
 
-  it("別イベントの立替・支払記録・受け取り先の id は 404", async () => {
+  it("別イベントの立替・受け取り先の id は 404", async () => {
     const first = await setup();
     const second = await setup();
     const expenseId = await addExpense(first.eventId, first.a, first.a.id, 100, [first.a.id, first.b.id]);
-    const { payment } = await json(
-      await req(`/events/${first.eventId}/warikan/payments`, first.b, "POST", {
-        fromUserId: first.b.id,
-        toUserId: first.a.id,
-        amount: 50,
-      }),
-      201,
-    );
     const saved = await json(
       await req(`/events/${first.eventId}/warikan/payout-methods`, first.a, "PUT", {
         methods: [{ kind: "lightning", value: "a@example.com" }],
@@ -493,7 +425,6 @@ describe("上限と子リソース (#556 §3.3)", () => {
       (await req(`/events/${e}/warikan/expenses/${expenseId}`, s, "PATCH", expenseBody(s.id, 100, [s.id]))).status,
     ).toBe(404);
     expect((await req(`/events/${e}/warikan/expenses/${expenseId}`, s, "DELETE")).status).toBe(404);
-    expect((await req(`/events/${e}/warikan/payments/${payment.id}`, s, "DELETE")).status).toBe(404);
     expect(
       (await req(`/events/${e}/warikan/payout-methods/${saved.payoutMethods[0].id}`, s, "DELETE")).status,
     ).toBe(404);
@@ -529,28 +460,12 @@ describe("上限と子リソース (#556 §3.3)", () => {
 });
 
 describe("統合・退会 (#556 §3.3)", () => {
-  it("統合: loser↔winner 間の支払記録があっても成功し、その記録は消える。同じ立替の負担は重みが合算され、第三者の額は変わらない", async () => {
+  it("統合: 同じ立替の負担は重みが合算され、第三者の額は変わらない", async () => {
     const { eventId, a, b, c } = await setup();
     const loser = await makeUser();
     await addMember(eventId, loser.id);
     // 1,000円を A・B(winner)・C・loser の4人で
     const id = await addExpense(eventId, a, a.id, 1000, [a.id, b.id, c.id, loser.id]);
-    await json(
-      await req(`/events/${eventId}/warikan/payments`, loser, "POST", {
-        fromUserId: loser.id,
-        toUserId: b.id,
-        amount: 100,
-      }),
-      201,
-    );
-    await json(
-      await req(`/events/${eventId}/warikan/payments`, loser, "POST", {
-        fromUserId: loser.id,
-        toUserId: a.id,
-        amount: 50,
-      }),
-      201,
-    );
     const before = await ledgerOf(eventId, c);
     const cShareBefore = before.expenses[0]!.shares.find((s) => s.userId === c.id)!.amount;
 
@@ -563,24 +478,14 @@ describe("統合・退会 (#556 §3.3)", () => {
     expect(shares.some((s) => s.userId === loser.id)).toBe(false);
     expect(shares.find((s) => s.userId === c.id)!.amount).toBe(cShareBefore);
     expect(netOf(after)[c.id]).toBe(netOf(before)[c.id]);
-    // loser↔winner の記録は消え、loser→A の記録は winner→A に付け替わる
-    expect(after.payments.map((p) => [p.fromUserId, p.toUserId, p.amount])).toEqual([[b.id, a.id, 50]]);
   });
 
-  it("退会（完全削除）: 当事者が ghost になり、第三者の負担額と収支は変わらない。退会者どうしの記録と受け取り先は消える", async () => {
+  it("退会（完全削除）: 当事者が ghost になり、第三者の負担額と収支は変わらない。受け取り先は消える", async () => {
     const { eventId, a, b, c } = await setup();
     const d = await makeUser("D");
     await addMember(eventId, d.id);
     const venue = await addExpense(eventId, a, a.id, 1000, [a.id, b.id, c.id, d.id]);
     const taxi = await addExpense(eventId, b, b.id, 700, [b.id, d.id, c.id]);
-    await json(
-      await req(`/events/${eventId}/warikan/payments`, b, "POST", { fromUserId: b.id, toUserId: c.id, amount: 30 }),
-      201,
-    );
-    await json(
-      await req(`/events/${eventId}/warikan/payments`, d, "POST", { fromUserId: d.id, toUserId: a.id, amount: 250 }),
-      201,
-    );
     await json(
       await req(`/events/${eventId}/warikan/payout-methods`, b, "PUT", {
         methods: [{ kind: "lightning", value: "b@example.com" }],
@@ -609,8 +514,6 @@ describe("統合・退会 (#556 §3.3)", () => {
     }
     expect(netOf(after)[a.id]).toBe(netOf(before)[a.id]);
     expect(netOf(after)[d.id]).toBe(netOf(before)[d.id]);
-    // 退会者どうし（B→C）の記録は消え、D→A は残る
-    expect(after.payments.map((p) => [p.fromUserId, p.toUserId, p.amount])).toEqual([[d.id, a.id, 250]]);
     // 受け取り先は消える
     expect(await count("SELECT COUNT(*) AS n FROM event_payout_method WHERE event_id = ?", eventId)).toBe(0);
     expect(after.members.find((m) => m.userId === ghost.id)).toMatchObject({

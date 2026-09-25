@@ -1,12 +1,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { ExpenseInput, PaymentInput, UpsertPayoutMethodsInput } from "@eventer/shared";
-import {
-  WARIKAN_PAYMENT_MAX,
-  expenseInput,
-  paymentInput,
-  upsertPayoutMethodsInput,
-} from "@eventer/shared";
+import type { ExpenseInput, UpsertPayoutMethodsInput } from "@eventer/shared";
+import { expenseInput, upsertPayoutMethodsInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { isConfirmedEventStaff } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -23,7 +18,7 @@ import { eventWarikanRepo, type WarikanViewer } from "../db/repositories/eventWa
  *   LEDGER_AUDIENCE_SQL の1か所で、通らない相手は 404
  * - 「staff」は常に isConfirmedEventStaff（そのイベントの confirmed staff）。
  *   コミュニティ管理者・アプリ管理者は含めない（#275）
- * - 子リソース（expenseId / paymentId / methodId）は eventId の一致を確かめ、不一致は 404
+ * - 子リソース（expenseId / methodId）は eventId の一致を確かめ、不一致は 404
  */
 export const eventWarikanRoutes = new Hono<AppEnv>();
 // 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
@@ -134,69 +129,6 @@ eventWarikanRoutes.delete("/:id/warikan/expenses/:expenseId", async (c) => {
     eventId,
     asOwner ? viewer.userId : null,
     { eventId, actorId: viewer.userId, permission: asOwner ? "member" : "staff" },
-  );
-  if (!deleted) return notFound(c);
-  return c.json({ ok: true });
-});
-
-/** 支払いの記録（当事者本人 / staff）。記録は自己申告で、アプリは確かめない（§3.1） */
-eventWarikanRoutes.post(
-  "/:id/warikan/payments",
-  zValidator("json", paymentInput),
-  async (c) => {
-    const viewer = await loadViewer(c);
-    if (!viewer) return notFound(c);
-    const eventId = c.req.param("id");
-    const input = valid<PaymentInput>(c, "json");
-    const asParty = !viewer.isStaff;
-    // 第三者どうしの記録は staff だけ
-    if (asParty && input.fromUserId !== viewer.userId && input.toUserId !== viewer.userId) {
-      return forbidden(c);
-    }
-    // from・to の双方が帳簿を見られる人でなければならない
-    for (const party of [input.fromUserId, input.toUserId]) {
-      if (!(await eventWarikanRepo.isAudience(eventId, party))) return invalidParty(c);
-    }
-
-    const id = await eventWarikanRepo.createPayment(
-      eventId,
-      viewer.userId,
-      input,
-      asParty ? viewer.userId : null,
-      { eventId, actorId: viewer.userId, permission: asParty ? "view" : "staff" },
-    );
-    if (!id) {
-      // 1文の INSERT が入らなかった理由を区別する（上限か、当事者が門の外に出たか）
-      if ((await eventWarikanRepo.countPayments(eventId)) >= WARIKAN_PAYMENT_MAX) {
-        return c.json({ error: "too_many_payments" }, 409);
-      }
-      return invalidParty(c);
-    }
-    const payment = await eventWarikanRepo.paymentView(id, viewer);
-    if (!payment) return notFound(c);
-    return c.json({ payment }, 201);
-  },
-);
-
-/** 支払記録の取り消し（記録者・from・to のどれか / staff。虚偽の記録を受け取り側も消せる） */
-eventWarikanRoutes.delete("/:id/warikan/payments/:paymentId", async (c) => {
-  const viewer = await loadViewer(c);
-  if (!viewer) return notFound(c);
-  const eventId = c.req.param("id");
-  const existing = await eventWarikanRepo.findPayment(c.req.param("paymentId"));
-  if (!existing || existing.eventId !== eventId) return notFound(c);
-  const asParty = !viewer.isStaff;
-  if (
-    asParty &&
-    ![existing.recordedBy, existing.fromUserId, existing.toUserId].includes(viewer.userId)
-  ) {
-    return forbidden(c);
-  }
-  const deleted = await eventWarikanRepo.deletePayment(
-    existing.id,
-    eventId,
-    asParty ? viewer.userId : null,
-    { eventId, actorId: viewer.userId, permission: asParty ? "view" : "staff" },
   );
   if (!deleted) return notFound(c);
   return c.json({ ok: true });
