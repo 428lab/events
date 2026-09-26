@@ -39,6 +39,14 @@ it('explicit denial also clears formerly public detail and children',async()=>{
  await qc.fetchQuery({queryKey:['event','E','viewer','A'],staleTime:0,queryFn:()=>Promise.reject(new ApiError(404,{}))}).catch(()=>{});
  expect(qc.getQueryData(['event','E','photos'])).toBeUndefined();qc.clear();
 });
+it('mounted detail page on a deleted event (404) does not refetch in a loop',async()=>{
+ const qc=setup();const fetchMock=vi.fn(async()=>new Response('{"error":"not_found"}',{status:404}));vi.stubGlobal('fetch',fetchMock);
+ const wrapper=({children}:{children:React.ReactNode})=><QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+ const {result,unmount}=renderHook(()=>useEvent('E'),{wrapper});
+ await waitFor(()=>expect(result.current.isError).toBe(true));
+ await new Promise(r=>setTimeout(r,300));
+ expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(2);expect(result.current.isError).toBe(true);unmount();qc.clear();
+});
 
 it('community revalidation failure drops private snapshots but preserves retryable error',async()=>{
  const qc=setup();

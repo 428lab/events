@@ -35,7 +35,10 @@ export function installEventAccessLifecycle(client: QueryClient) {
     if (query.state.status === "error") {
       const error = query.state.error;
       if (event?.visibility !== "public" || (error instanceof ApiError && [401,403,404].includes(error.status))) {
-        clear(q => (q.queryKey[0] === "event" && q.queryKey[1] === id) || ["eventInvites","eventAccess","eventSchedule","eventNameCards","community","communityEventSearch"].includes(String(q.queryKey[0])), id);
+        clear(q => q !== query && ((q.queryKey[0] === "event" && q.queryKey[1] === id) || ["eventInvites","eventAccess","eventSchedule","eventNameCards","community","communityEventSearch"].includes(String(q.queryKey[0]))), id);
+        // Keep the failed detail query itself (data dropped, error kept). Removing it made
+        // the still-mounted page recreate and refetch it at once, looping on 404.
+        if (query.state.data !== undefined) { clearing = true; query.setState({data:undefined,dataUpdatedAt:0}); clearing = false; }
       }
     } else if (query.state.status === "success" && event) {
       const previous = revisions.get(id);
