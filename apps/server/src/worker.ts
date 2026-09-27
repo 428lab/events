@@ -668,6 +668,22 @@ app.get("/llms.txt", async (c) => {
   });
 });
 
+// Safari が .md の UTF-8 を誤判定しないよう、実際の仕様アセットの MIME に charset を付ける。
+app.get("/deck-import/v1/spec.md", async (c) => {
+  const res = await getAssets().fetch(c.req.raw);
+  const contentType = res.headers.get("Content-Type");
+  if (!res.ok || !contentType || !/^text\/(?:markdown|plain)(?:\s*;|\s*$)/i.test(contentType)) {
+    return res;
+  }
+  const headers = new Headers(res.headers);
+  headers.set("Content-Type", `${contentType.split(";")[0].trim()}; charset=utf-8`);
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+});
+
 // それ以外（静的アセット & SPA ルート）は ASSETS から配信
 app.all("*", (c) => getAssets().fetch(c.req.raw));
 
