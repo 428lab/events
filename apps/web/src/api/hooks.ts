@@ -50,7 +50,7 @@ async function fetchMe(): Promise<MeResponse | null> {
 }
 
 /** ログインユーザー（未ログインなら null）。data は User を返す（従来互換） */
-export function useMe() {
+export function useMe(refresh?: { refetchOnMount?: "always"; refetchOnWindowFocus?: "always"; refetchInterval?: number }) {
   return useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
@@ -58,6 +58,7 @@ export function useMe() {
     refetchInterval: 15_000,
     retry: false,
     select: (d) => d?.user ?? null,
+    ...refresh,
   });
 }
 

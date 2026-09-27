@@ -1,0 +1,634 @@
+{
+  "format": "events-lab-deck",
+  "version": 2,
+  "title": "「やりたい」を、一日に。 | events lab",
+  "slides": [
+    {
+      "background": "#0E1426",
+      "elements": [
+        {
+          "type": "image-url",
+          "x": 68,
+          "y": 57,
+          "w": 824,
+          "h": 433,
+          "src": "https://events.kojira.io/og-default.png"
+        }
+      ]
+    },
+    {
+      "background": "#0E1426",
+      "elements": [
+        {
+          "type": "text",
+          "x": 56,
+          "y": 36,
+          "w": 480,
+          "h": 38,
+          "text": "01 / ひらく",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#2DD4BF",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 88,
+          "w": 848,
+          "h": 70,
+          "text": "「やりたい」を、一日に変えよう。",
+          "fontSize": 40,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 176,
+          "w": 438,
+          "h": 246,
+          "text": "告知から当日の舞台まで。\n主催する人も、参加する人も、\n同じイベントで出会える。",
+          "fontSize": 28,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 544,
+          "y": 155,
+          "w": 360,
+          "h": 296,
+          "src": "https://events.kojira.io/deck-import/v2/intro-journey.png"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 472,
+          "w": 848,
+          "h": 32,
+          "text": "その一日は、ひとつの思いつきから。",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#97A3BC",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": "#1A2238",
+      "elements": [
+        {
+          "type": "text",
+          "x": 56,
+          "y": 36,
+          "w": 480,
+          "h": 38,
+          "text": "02 / 告知",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#2DD4BF",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 88,
+          "w": 848,
+          "h": 70,
+          "text": "その思いつきに、入口を。",
+          "fontSize": 40,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 176,
+          "w": 438,
+          "h": 246,
+          "text": "イベントを作り、内容を公開。\nまだ会ったことのない誰かにも、\n参加のきっかけを届ける。",
+          "fontSize": 28,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 544,
+          "y": 155,
+          "w": 360,
+          "h": 296,
+          "src": "https://events.kojira.io/deck-import/v2/intro-publish.png"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 472,
+          "w": 848,
+          "h": 32,
+          "text": "まずは、見つけてもらうところから。",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#97A3BC",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": "#0E1426",
+      "elements": [
+        {
+          "type": "text",
+          "x": 56,
+          "y": 36,
+          "w": 480,
+          "h": 38,
+          "text": "03 / 集まる",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#2DD4BF",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 88,
+          "w": 848,
+          "h": 70,
+          "text": "「行ける日」から、一緒に。",
+          "fontSize": 40,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 176,
+          "w": 438,
+          "h": 246,
+          "text": "候補日を聞いて日程を決める。\n参加登録まで、同じイベントで。",
+          "fontSize": 28,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 544,
+          "y": 155,
+          "w": 360,
+          "h": 296,
+          "src": "https://events.kojira.io/deck-import/v2/intro-calendar.png"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 472,
+          "w": 848,
+          "h": 32,
+          "text": "集まる前から、もう始まっている。",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#97A3BC",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": "#1A2238",
+      "elements": [
+        {
+          "type": "text",
+          "x": 56,
+          "y": 36,
+          "w": 480,
+          "h": 38,
+          "text": "04 / 支える",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#2DD4BF",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 88,
+          "w": 848,
+          "h": 70,
+          "text": "当日は、ひとりで抱えない。",
+          "fontSize": 40,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 176,
+          "w": 438,
+          "h": 246,
+          "text": "TODOとスタッフの持ち場を整え、\nタイムテーブルを共有する。",
+          "fontSize": 28,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 544,
+          "y": 155,
+          "w": 360,
+          "h": 296,
+          "src": "https://events.kojira.io/deck-import/v2/intro-crew.png"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 472,
+          "w": 848,
+          "h": 32,
+          "text": "準備が見えると、舞台が近づく。",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#97A3BC",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": "#0E1426",
+      "elements": [
+        {
+          "type": "text",
+          "x": 56,
+          "y": 36,
+          "w": 480,
+          "h": 38,
+          "text": "05 / 迎える",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#2DD4BF",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 88,
+          "w": 848,
+          "h": 70,
+          "text": "いよいよ、会場で会おう。",
+          "fontSize": 40,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 176,
+          "w": 438,
+          "h": 246,
+          "text": "QRでチェックイン。\n準備してきた一日が、動き出す。",
+          "fontSize": 28,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 544,
+          "y": 155,
+          "w": 360,
+          "h": 296,
+          "src": "https://events.kojira.io/deck-import/v2/intro-checkin.png"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 472,
+          "w": 848,
+          "h": 32,
+          "text": "ここから、同じ時間を過ごす。",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#97A3BC",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": "#1A2238",
+      "elements": [
+        {
+          "type": "text",
+          "x": 56,
+          "y": 36,
+          "w": 480,
+          "h": 38,
+          "text": "06 / 分かち合う",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#2DD4BF",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 88,
+          "w": 848,
+          "h": 70,
+          "text": "聞くだけで、終わらせない。",
+          "fontSize": 40,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 176,
+          "w": 438,
+          "h": 246,
+          "text": "発表を進め、参加者が採点。\nみんなの視点が、結果につながる。",
+          "fontSize": 28,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 544,
+          "y": 155,
+          "w": 360,
+          "h": 296,
+          "src": "https://events.kojira.io/deck-import/v2/intro-stage.png"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 472,
+          "w": 848,
+          "h": 32,
+          "text": "参加した声も、この日の一部。",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#97A3BC",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": "#0E1426",
+      "elements": [
+        {
+          "type": "text",
+          "x": 56,
+          "y": 36,
+          "w": 480,
+          "h": 38,
+          "text": "07 / たたえる",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#FB923C",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 88,
+          "w": 848,
+          "h": 70,
+          "text": "拍手の行き先を、つくろう。",
+          "fontSize": 40,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 191,
+          "w": 416,
+          "h": 208,
+          "text": "結果を確かめて、表彰へ。\n発表した一日を、祝う一日に。",
+          "fontSize": 32,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 526,
+          "y": 180,
+          "w": 378,
+          "h": 290,
+          "src": "https://events.kojira.io/deck-import/v2/intro-awards.png"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 472,
+          "w": 848,
+          "h": 32,
+          "text": "主役を照らす、最後のひと幕。",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#FB923C",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": "#1A2238",
+      "elements": [
+        {
+          "type": "text",
+          "x": 56,
+          "y": 36,
+          "w": 480,
+          "h": 38,
+          "text": "08 / 届ける",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#2DD4BF",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 88,
+          "w": 848,
+          "h": 70,
+          "text": "会場の景色を、配信画面にも。",
+          "fontSize": 40,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 176,
+          "w": 438,
+          "h": 246,
+          "text": "配信セットと画面を組み、\nOBSでキャプチャして届ける。",
+          "fontSize": 28,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 544,
+          "y": 155,
+          "w": 360,
+          "h": 296,
+          "src": "https://events.kojira.io/deck-import/v2/intro-stream.png"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 472,
+          "w": 848,
+          "h": 32,
+          "text": "画面の向こうへ渡す、もう一つの舞台。",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#97A3BC",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": "#0E1426",
+      "elements": [
+        {
+          "type": "text",
+          "x": 56,
+          "y": 36,
+          "w": 480,
+          "h": 38,
+          "text": "09 / あなたへ",
+          "fontSize": 20,
+          "font": "default",
+          "color": "#2DD4BF",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "text",
+          "x": 56,
+          "y": 88,
+          "w": 848,
+          "h": 70,
+          "text": "次は、あなたのイベントへ。",
+          "fontSize": 40,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-placeholder",
+          "x": 56,
+          "y": 176,
+          "w": 390,
+          "h": 270
+        },
+        {
+          "type": "text",
+          "x": 500,
+          "y": 188,
+          "w": 404,
+          "h": 205,
+          "text": "この空の画像枠を、\nあなたの一枚に。\n保存後、編集画面で\n画像をアップロードできます。",
+          "fontSize": 28,
+          "font": "default",
+          "color": "#EAF0F7",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 800,
+          "y": 416,
+          "w": 88,
+          "h": 88,
+          "src": "https://events.kojira.io/icon-512.png"
+        }
+      ]
+    }
+  ]
+}

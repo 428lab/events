@@ -12,6 +12,7 @@ import {
   type Env,
 } from "./runtime.js";
 import {
+  DECK_IMPORT_MAX_BYTES,
   EVENT_PHOTO_MAX_BYTES,
   EVENT_THUMBNAIL_MAX_BYTES,
   EVENT_VIDEO_MAX_BYTES,
@@ -162,8 +163,17 @@ const VIDEO_UPLOAD_PATH = /^\/api\/events\/[^/]+\/videos$/;
 api.use("*", (c, next) => {
   const isVideoUpload =
     c.req.method === "POST" && VIDEO_UPLOAD_PATH.test(c.req.path);
+  const isDeckImport = c.req.method === "POST" && c.req.path === "/api/decks/import";
+  if (isDeckImport) {
+    c.header("Cache-Control", "no-store");
+    // Hono skips cumulative reading when Content-Length is present. Force this
+    // one gate to count the actual stream, even for a misleading declared size.
+    const headers = new Headers(c.req.raw.headers);
+    headers.delete("Content-Length");
+    c.req.raw = new Request(c.req.raw, { headers });
+  }
   return bodyLimit({
-    maxSize: isVideoUpload ? VIDEO_BODY_MAX : DEFAULT_BODY_MAX,
+    maxSize: isDeckImport ? DECK_IMPORT_MAX_BYTES : isVideoUpload ? VIDEO_BODY_MAX : DEFAULT_BODY_MAX,
     onError: (cc) => cc.json({ error: "too_large" }, 413),
   })(c, next);
 });
@@ -656,6 +666,48 @@ app.get("/llms.txt", async (c) => {
     "Content-Type": "text/plain; charset=utf-8",
     "Cache-Control": "public, max-age=300",
   });
+});
+
+// Safari が .md の UTF-8 を誤判定しないよう、実際の仕様アセットの MIME に charset を付ける。
+app.get("/deck-import/v1/spec.md", async (c) => {
+  const res = await getAssets().fetch(c.req.raw);
+  const contentType = res.headers.get("Content-Type");
+  if (!res.ok || !contentType || !/^text\/(?:markdown|plain)(?:\s*;|\s*$)/i.test(contentType)) {
+    return res;
+  }
+  const headers = new Headers(res.headers);
+  headers.set("Content-Type", `${contentType.split(";")[0].trim()}; charset=utf-8`);
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+});
+
+// The bundled introduction has production URLs at rest. Only its eight exact
+// first-party illustrations change origin for authenticated staging previews.
+const introNames = ["journey", "publish", "calendar", "crew", "checkin", "stage", "awards", "stream"];
+const introOrigin = "https://events.kojira.io";
+// Exact reviewed bundle: do not serve an unreviewed revision or silently remap it.
+const introSha256 = "f810e4d9493004db024cd91f649d32e2a0598465a6ebfe0013598467bfbab109";
+app.get("/deck-import/v2/sample-events-lab-intro.json", async (c) => {
+  const failure = () => c.json({ error: "sample_unavailable" }, 503, { "Cache-Control": "no-store" });
+  const asset = await getAssets().fetch(c.req.raw);
+  if (!asset.ok || !/^application\/json(?:\s*;|\s*$)/i.test(asset.headers.get("Content-Type") ?? "")) return failure();
+  const raw = await asset.text();
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw))), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (digest !== introSha256) return failure();
+  let sample: unknown;
+  try { sample = JSON.parse(raw); } catch { return failure(); }
+  if (!sample || typeof sample !== "object" || !("slides" in sample) || !Array.isArray(sample.slides) || sample.slides.length !== 10) return failure();
+  const slides = sample.slides as Array<{ elements?: Array<{ type?: string; src?: string }> }>;
+  const expected = ["/og-default.png", ...introNames.map((name) => `/deck-import/v2/intro-${name}.png`), "/icon-512.png"];
+  const images = slides.flatMap((slide) => slide.elements?.filter((el) => el.type === "image-url") ?? []);
+  if (images.length !== expected.length || images.some((el, i) => el.src !== introOrigin + expected[i]) ||
+      slides.flatMap((slide) => slide.elements ?? []).filter((el) => el.type === "image-placeholder").length !== 1 ||
+      (sample as { format?: string; version?: number }).format !== "events-lab-deck" || (sample as { version?: number }).version !== 2) return failure();
+  if (env.isStaging) for (let i = 0; i < introNames.length; i++) images[i + 1].src = env.appBaseUrl + expected[i + 1];
+  return c.body(JSON.stringify(sample), 200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
 });
 
 // それ以外（静的アセット & SPA ルート）は ASSETS から配信

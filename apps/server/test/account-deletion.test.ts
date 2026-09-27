@@ -243,6 +243,9 @@ describe("退会（アカウント削除） (#244, #250)", () => {
     )
       .bind(deckId, `d-${deckId.slice(0, 8)}`, a.userId, Date.now(), Date.now())
       .run();
+    await env.DB.prepare("INSERT INTO deck_import_receipt VALUES (?, ?, ?, ?, ?)")
+      .bind(a.userId, crypto.randomUUID(), "0".repeat(64), deckId, Date.now())
+      .run();
     const deckImageKey = `deck-images/${deckId}/${crypto.randomUUID()}`;
     await env.BUCKET.put(deckImageKey, "png-bytes");
 
@@ -322,6 +325,7 @@ describe("退会（アカウント削除） (#244, #250)", () => {
       ],
       ["SELECT COUNT(*) AS n FROM live_set WHERE owner_id = ?", a.userId],
       ["SELECT COUNT(*) AS n FROM deck WHERE owner_id = ?", a.userId],
+      ["SELECT COUNT(*) AS n FROM deck_import_receipt WHERE owner_id = ?", a.userId],
       ["SELECT COUNT(*) AS n FROM bgm_track WHERE owner_id = ?", a.userId],
       ["SELECT COUNT(*) AS n FROM session WHERE user_id = ?", a.userId],
       ["SELECT COUNT(*) AS n FROM identity WHERE user_id = ?", a.userId],

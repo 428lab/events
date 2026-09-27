@@ -209,13 +209,13 @@ const UNRESOLVED: Array<{ column: Column; breaks: string }> = [];
  * 増減したらこの数を直すこと。**直す前に、増えた列が mergeUsers で
  * 扱われているかを必ず読むこと。**
  */
-const EXPECTED_USER_COLUMNS = 54; // #513: event_schedule_registration.user_id
+const EXPECTED_USER_COLUMNS = 55; // #523: deck_import_receipt.owner_id alongside main's new user references
 
 /**
  * `mergeUsers` が扱う `table.column` の数（user 参照でない列も含む生の抽出数）。
  * 走査そのものが空振りしていないことの担保。
  */
-const EXPECTED_HANDLED_PAIRS = 59; // #526: winner card_image_generation/card_image_updated_at rotation
+const EXPECTED_HANDLED_PAIRS = 60; // #523: owner-scoped deck import receipts alongside main's merge handling
 
 describe("アカウント統合の対象列の走査 (#396)", () => {
   const body = mergeUsersBody(Object.values(mergeSources)[0]!);
