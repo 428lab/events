@@ -1,6 +1,6 @@
-# events-lab-deck version 2
+# スライドJSONの仕様
 
-960×540の公開スライドJSON仕様。version 1は従来どおり別の仕様です。保存したスライドはURLを知る人ならログインせず閲覧できます。機密情報・個人情報や秘密入り画像URLをLLMやスライドに入れないでください。
+events labに取り込める960×540の公開スライドJSON仕様です。保存したスライドはURLを知る人ならログインせず閲覧できます。機密情報・個人情報や秘密入り画像URLをLLMやスライドに入れないでください。
 
 ## 入力と上限
 
@@ -14,7 +14,7 @@
 | 未設定画像 | `type:"image-placeholder",x,y,w,h`のみ。src不可。保存後に本人が編集画面で画像をアップロードできます。 |
 | URL画像 | `type:"image-url",x,y,w,h,src`のみ。srcは空でない最大500 UTF-16単位のHTTPS絶対URL。孤立サロゲート、U+0000〜001F・U+007F〜009F、URLの認証情報を禁止。baseなしのWHATWG URLとして解析しprotocolが`https:`、username/passwordが空であること。`http:`/`data:`/`blob:`/相対パスは不可。 |
 
-URLは元の表記のまま保存・表示します。大文字host、国際化ドメイン、IP、明示port、fragment、URLパーサーが扱う空白を一律に拒否・正規化しません。query/fragmentも文字数に含みます。ブラウザとサーバーは同じvalidatorで検証し、元原稿／URL／queryをエラーや修正指示に反射しません。version 1ではimage-url/srcは引き続き不可。未知のversionも不可。
+URLは元の表記のまま保存・表示します。大文字host、国際化ドメイン、IP、明示port、fragment、URLパーサーが扱う空白を一律に拒否・正規化しません。query/fragmentも文字数に含みます。ブラウザとサーバーは同じvalidatorで検証し、元原稿／URL／queryをエラーや修正指示に反射しません。
 
 [schema.json](schema.json) はDraft 2020-12ですが、SchemaのmaxLengthはコードポイント単位です。URLのHTTPS・認証情報・制御文字判定、UTF-16長、文字・要素の総数、UTF-8 bytes、座標和、重複キーと深度はschema単体では保証できません。この仕様と共通validatorが正です。[プロンプト](prompt.txt)と[画像付き紹介サンプル](sample-events-lab-intro.json)を利用できます。
 

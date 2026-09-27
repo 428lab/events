@@ -127,6 +127,13 @@ describe("deckImport shared contract", () => {
       ["https://events.kojira.io/icon-512.png"],
     ]);
   });
+  it("the linked specification introduces the current format without an old-version comparison", () => {
+    const spec = import.meta.glob("../../web/public/deck-import/v2/spec.md", { eager: true, query: "?raw", import: "default" }) as Record<string, string>;
+    const text = Object.values(spec)[0];
+    expect(text).toMatch(/^# スライドJSONの仕様\n/);
+    expect(text).not.toMatch(/version [12]|version 1/);
+    expect(text).toContain("`version:2`");
+  });
   it("public schema and samples remain in lockstep with shared definitions", () => {
     const assets = import.meta.glob("../../web/public/deck-import/v1/*.json", { eager: true, query: "?raw", import: "default" }) as Record<string, string>;
     const schema = Object.entries(assets).find(([path]) => path.endsWith("/schema.json"));
