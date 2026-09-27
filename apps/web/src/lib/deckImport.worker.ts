@@ -1,7 +1,7 @@
 import { parseDeckImport, convertDeckImport, previewDeckImportId, DeckImportJsonError } from "@eventer/shared";
 import type { DeckContent, DeckImportIssue } from "@eventer/shared";
 export type ImportValidationResult = { revision: number } & (
-  | { ok: true; title: string; content: DeckContent }
+  | { ok: true; version: 1 | 2; title: string; content: DeckContent }
   | { ok: false; error: string; issues: DeckImportIssue[]; truncated: boolean; line?: number; column?: number }
 );
 self.onmessage = (event: MessageEvent<{ raw: string; revision: number }>) => {
@@ -10,7 +10,7 @@ self.onmessage = (event: MessageEvent<{ raw: string; revision: number }>) => {
   try {
     const parsed = parseDeckImport(raw);
     result = parsed.ok
-      ? { revision, ok: true, ...convertDeckImport(parsed.value, previewDeckImportId) }
+      ? { revision, ok: true, version: parsed.value.version, ...convertDeckImport(parsed.value, previewDeckImportId) }
       : { revision, ok: false, error: "invalid_deck_import", issues: parsed.issues, truncated: parsed.truncated };
   } catch (error) {
     result = { revision, ok: false, error: error instanceof DeckImportJsonError ? error.code : "validation_failed", issues: [], truncated: false,

@@ -1,0 +1,115 @@
+{
+  "format": "events-lab-deck",
+  "version": 2,
+  "title": "events lab の紹介",
+  "slides": [
+    {
+      "background": "#0F172A",
+      "elements": [
+        {
+          "type": "text",
+          "x": 48,
+          "y": 35,
+          "w": 864,
+          "h": 75,
+          "text": "events lab でできること",
+          "fontSize": 42,
+          "font": "default",
+          "color": "#F8FAFC",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 160,
+          "y": 135,
+          "w": 640,
+          "h": 336,
+          "src": "https://events.kojira.io/og-default.png"
+        }
+      ]
+    },
+    {
+      "background": "#F8FAFC",
+      "elements": [
+        {
+          "type": "text",
+          "x": 48,
+          "y": 42,
+          "w": 864,
+          "h": 80,
+          "text": "イベント運営をひとつに",
+          "fontSize": 42,
+          "font": "default",
+          "color": "#172B24",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-url",
+          "x": 72,
+          "y": 170,
+          "w": 265,
+          "h": 265,
+          "src": "https://events.kojira.io/icon-512.png"
+        },
+        {
+          "type": "text",
+          "x": 410,
+          "y": 188,
+          "w": 490,
+          "h": 250,
+          "text": "募集・参加\nプレゼン・配信",
+          "fontSize": 38,
+          "font": "default",
+          "color": "#172B24",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    },
+    {
+      "background": "#F8FAFC",
+      "elements": [
+        {
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "w": 864,
+          "h": 80,
+          "text": "自分のイベントへ",
+          "fontSize": 42,
+          "font": "default",
+          "color": "#172B24",
+          "bold": true,
+          "italic": false,
+          "align": "left"
+        },
+        {
+          "type": "image-placeholder",
+          "x": 72,
+          "y": 150,
+          "w": 390,
+          "h": 290
+        },
+        {
+          "type": "text",
+          "x": 510,
+          "y": 185,
+          "w": 400,
+          "h": 220,
+          "text": "保存後に編集画面で\n自分の画像へ差し替える",
+          "fontSize": 30,
+          "font": "default",
+          "color": "#172B24",
+          "bold": false,
+          "italic": false,
+          "align": "left"
+        }
+      ]
+    }
+  ]
+}

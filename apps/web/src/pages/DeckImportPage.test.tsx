@@ -16,7 +16,7 @@ class WorkerMock {
   constructor() { WorkerMock.current = this; }
   terminate() {}
   postMessage(input: { revision: number; raw: string }) {
-    this.onmessage?.({ data: input.raw === "bad" ? { revision: input.revision, ok: false, error: "invalid_deck_import", issues: [{ path: "slides[0].elements[0].w", code: "out_of_bounds", message: "x+w must be at most 960" }], truncated: false } : { revision: input.revision, ok: true, title: "Preview", content: { slides: [{ id: "preview-slide-1", background: "#FFFFFF", elements: [{ id: "preview-element-1-1", type: "image", x: 0, y: 0, w: 100, h: 100, rotation: 0 }] }] } } });
+    this.onmessage?.({ data: input.raw === "bad" ? { revision: input.revision, ok: false, error: "invalid_deck_import", issues: [{ path: "slides[0].elements[0].w", code: "out_of_bounds", message: "x+w must be at most 960" }], truncated: false } : { revision: input.revision, ok: true, version: input.raw.includes('"version":2') ? 2 : 1, title: "Preview", content: { slides: [{ id: "preview-slide-1", background: "#FFFFFF", elements: [{ id: "preview-element-1-1", type: "image", x: 0, y: 0, w: 100, h: 100, rotation: 0 }] }] } } });
   }
 }
 function mount() { return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><DeckImportPage /></MemoryRouter></QueryClientProvider>); }
@@ -92,6 +92,19 @@ describe("DeckImportPage real user entry", () => {
     expect(screen.getByLabelText("スライドJSON")).toHaveValue("");
     expect(sessionStorage.getItem("deck-import-v1")).toBeNull();
     expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it("offers a distinct v2 image sample and prompt while retaining all three v1 samples", async () => {
+    const fetchAsset = vi.fn(async (path: string) => ({ ok: true, text: async () => path.includes("sample-") ? '{"format":"events-lab-deck","version":2}' : "version 2 prompt" }));
+    vi.stubGlobal("fetch", fetchAsset);
+    mount();
+    expect(screen.getByRole("button", { name: "表紙サンプル" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "箇条書きサンプル" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "比較サンプル" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "仕様を読む" }).map((link) => link.getAttribute("href"))).toEqual(["/deck-import/v1/spec.md", "/deck-import/v2/spec.md"]);
+    fireEvent.click(screen.getByRole("button", { name: "events lab の紹介（画像付き）" }));
+    await waitFor(() => expect(screen.getByLabelText("スライドJSON")).toHaveValue('{"format":"events-lab-deck","version":2}'));
+    expect(fetchAsset).toHaveBeenCalledWith("/deck-import/v2/sample-events-lab-intro.json");
+    expect(screen.getByText(/画像URLは公開デッキに残り/)).toBeInTheDocument();
   });
   it("ordinary English screen uses translated controls", async () => {
     await i18next.changeLanguage("en"); mount();

@@ -22,8 +22,9 @@ export function DeckImportPreview({ content }: { content: DeckContent }) {
   const { ref, width } = useCanvasScale(960);
   const [selected, setSelected] = useState(0);
   const [warnings, setWarnings] = useState<Warning[]>([]);
+  const [failedImages, setFailedImages] = useState<Record<string, true>>({});
   useEffect(() => {
-    setSelected(0); setWarnings([]);
+    setSelected(0); setWarnings([]); setFailedImages({});
     let page = 0;
     const found: Warning[] = [];
     let timer: ReturnType<typeof setTimeout>;
@@ -36,7 +37,7 @@ export function DeckImportPreview({ content }: { content: DeckContent }) {
       const slide = content.slides[page];
       if (!slide.elements.length) found.push({ page, kind: "empty" });
       slide.elements.forEach((el, element) => {
-        if (el.type === "image") { found.push({ page, element, kind: "placeholder" }); return; }
+        if (el.type === "image") { if (!el.src) found.push({ page, element, kind: "placeholder" }); return; }
         if (!(el.text ?? "").trim()) found.push({ page, element, kind: "whitespace" });
         try {
           Object.assign(measure.style, { width: `${el.w}px`, fontFamily: el.fontFamily || (ref.current ? getComputedStyle(ref.current).fontFamily : ""), fontSize: `${el.fontSize}px`, fontWeight: el.bold ? "700" : "400", fontStyle: el.italic ? "italic" : "normal", textAlign: el.align });
@@ -54,6 +55,17 @@ export function DeckImportPreview({ content }: { content: DeckContent }) {
     return () => { clearTimeout(timer); measure.remove(); };
   }, [content, ref]);
   const page = Math.min(selected, content.slides.length - 1);
+  const onImageStatus = (elementId: string, src: string, status: "loaded" | "error") => {
+    if (!content.slides[page].elements.some((el) => el.id === elementId && el.src === src)) return;
+    const key = `${content.slides[page].id}:${elementId}`;
+    setFailedImages((old) => {
+      if (Boolean(old[key]) === (status === "error")) return old;
+      const next = { ...old };
+      if (status === "error") next[key] = true;
+      else delete next[key];
+      return next;
+    });
+  };
   return <Stack spacing={2}>
     <Alert severity="info">{t("deckImport.manual")}</Alert>
     <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
@@ -63,9 +75,10 @@ export function DeckImportPreview({ content }: { content: DeckContent }) {
     </Box>
     <Box ref={ref} tabIndex={0} role="region" aria-label={t("deckImport.page", { n: page + 1 })}
       onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); setSelected(Math.max(0, Math.min(content.slides.length - 1, page + (e.key === "ArrowRight" ? 1 : -1)))); } }} sx={{ width: "100%", minWidth: 0 }}>
-      {width > 0 && <SlideStage slide={content.slides[page]} width={Math.min(width, 960)} />}
+      {width > 0 && <SlideStage slide={content.slides[page]} width={Math.min(width, 960)} onImageStatus={onImageStatus} />}
     </Box>
     <Stack direction="row" spacing={1}><Button disabled={page === 0} onClick={() => setSelected(page - 1)}>{t("deckImport.previous")}</Button><Button disabled={page === content.slides.length - 1} onClick={() => setSelected(page + 1)}>{t("deckImport.next")}</Button></Stack>
     {warnings.map((warning, i) => <Alert key={i} severity="warning">{t("deckImport.page", { n: warning.page + 1 })}{warning.element !== undefined && ` / ${t("deckImport.element", { n: warning.element + 1 })}`}: {t(`deckImport.${warning.kind}`)}</Alert>)}
+    {content.slides.flatMap((slide, slideIndex) => slide.elements.flatMap((el, elementIndex) => failedImages[`${slide.id}:${el.id}`] && el.src ? [<Alert key={`${slide.id}:${el.id}`} severity="warning">{t("deckImport.page", { n: slideIndex + 1 })} / {t("deckImport.element", { n: elementIndex + 1 })}: {t("deckImport.imageFailure")}</Alert>] : []))}
   </Stack>;
 }

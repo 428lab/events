@@ -60,10 +60,29 @@ describe("POST /api/decks/import", () => {
       expect((await request(u.cookie, undefined, raw, headers)).status).toBe(415);
     }
     expect((await request(u.cookie, undefined, '{"format":1,"format":2}')).status).toBe(400);
-    expect((await request(u.cookie, undefined, raw.replace('"version":1', '"version":2'))).status).toBe(422);
+    expect((await request(u.cookie, undefined, raw.replace('"version":1', '"version":3'))).status).toBe(422);
     expect((await request(u.cookie, undefined, " ".repeat(1048577))).status).toBe(413);
     expect(await count("deck", u.id)).toBe(0);
     expect(await count("deck_import_receipt", u.id)).toBe(0);
+  });
+  it("imports v2 URL unchanged to public content and replays without overwriting", async () => {
+    const u = await user(), key = crypto.randomUUID();
+    const src = "https://EXAMPLE.com:443/image.png?x=%20#frag";
+    const image = { type: "image-url", x: 48, y: 180, w: 392, h: 240, src };
+    const body = JSON.stringify({ format: "events-lab-deck", version: 2, title: "Images", slides: [{ background: "#FFFFFF", elements: [image, { type: "image-placeholder", x: 500, y: 180, w: 300, h: 240 }] }] });
+    const v1 = await request(u.cookie, undefined, body.replace('"version":2', '"version":1'));
+    expect(v1.status).toBe(422);
+    const bad = await request(u.cookie, undefined, body.replace(src, "https://user:secret@example.com/private?token=secret"));
+    expect(bad.status).toBe(422);
+    expect(JSON.stringify(await bad.json())).not.toContain("secret");
+    expect(await count("deck", u.id)).toBe(0);
+    const created = await request(u.cookie, key, body);
+    expect(created.status).toBe(201);
+    const receipt = await created.json<{ id: string; slug: string }>();
+    const publicDeck = await (await SELF.fetch(`${BASE}/api/public/decks/${receipt.slug}`)).json<{ content: { slides: { elements: { src?: string }[] }[] } }>();
+    expect(publicDeck.content.slides[0].elements.map((el) => el.src)).toEqual([src, undefined]);
+    expect((await request(u.cookie, key, body)).status).toBe(200);
+    expect(await count("deck", u.id)).toBe(1);
   });
   it("the single body gate counts bytes despite a misleading Content-Length", async () => {
     const req = new Request(`${BASE}/api/decks/import`, { method: "POST", headers: { "Content-Length": "1" }, body: " ".repeat(1048577) });

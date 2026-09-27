@@ -1,24 +1,30 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DECK_H, DECK_W } from "@eventer/shared";
 import type { DeckElement, DeckSlide } from "@eventer/shared";
 
+type ImageStatus = "loaded" | "error";
+type ImageStatusChange = (elementId: string, src: string, status: ImageStatus) => void;
+
+function UrlImage({ el, onImageStatus }: { el: DeckElement & { type: "image"; src: string }; onImageStatus?: ImageStatusChange }) {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<"loading" | ImageStatus>("loading");
+  const update = (next: ImageStatus) => { setStatus(next); onImageStatus?.(el.id, el.src, next); };
+  return <div style={{ width: "100%", height: "100%", position: "relative" }}>
+    <img src={el.src} alt="" draggable={false} onLoad={() => update("loaded")} onError={() => update("error")}
+      style={{ width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none", userSelect: "none", visibility: status === "loaded" ? "visible" : "hidden" }} />
+    {status !== "loaded" && <div role="status" style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 12, textAlign: "center", background: "#e5e7eb", color: "#374151", fontSize: 18 }}>
+      {t(status === "error" ? "deckImport.imageFailed" : "deckImport.imageLoading")}
+    </div>}
+  </div>;
+}
+
 /** 要素の中身（テキスト/画像）。位置・サイズは親が持つ */
-export function ElementContent({ el }: { el: DeckElement }) {
+export function ElementContent({ el, onImageStatus }: { el: DeckElement; onImageStatus?: ImageStatusChange }) {
   const { t } = useTranslation();
   if (el.type === "image") {
     return el.src ? (
-      <img
-        src={el.src}
-        alt=""
-        draggable={false}
-        style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
-          pointerEvents: "none",
-          userSelect: "none",
-        }}
-      />
+      <UrlImage key={el.src} el={el as DeckElement & { type: "image"; src: string }} onImageStatus={onImageStatus} />
     ) : (
       <div
         style={{
@@ -70,9 +76,11 @@ export function ElementContent({ el }: { el: DeckElement }) {
 export function SlideStage({
   slide,
   width,
+  onImageStatus,
 }: {
   slide: DeckSlide;
   width: number;
+  onImageStatus?: ImageStatusChange;
 }) {
   const scale = width / DECK_W;
   return (
@@ -108,7 +116,7 @@ export function SlideStage({
               transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
             }}
           >
-            <ElementContent el={el} />
+            <ElementContent el={el} onImageStatus={onImageStatus} />
           </div>
         ))}
       </div>

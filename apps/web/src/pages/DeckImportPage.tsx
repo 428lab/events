@@ -42,8 +42,8 @@ export function DeckImportPage() {
     try { await navigator.clipboard.writeText(text); setNotice(t("common.copied")); }
     catch { setNotice(t("deckImport.failure")); }
   }
-  async function asset(name: string) {
-    const response = await fetch(`/deck-import/v1/${name}`);
+  async function asset(version: 1 | 2, name: string) {
+    const response = await fetch(`/deck-import/v${version}/${name}`);
     if (!response.ok) throw new Error("unavailable");
     return response.text();
   }
@@ -71,6 +71,7 @@ export function DeckImportPage() {
   if (isLoading) return <Typography>{t("common.loading")}</Typography>;
   if (!owned) return <Stack spacing={2}><Alert severity="warning">{t("deckImport.wrongOwner")}</Alert><Button onClick={login}>{t("deckImport.login")}</Button><Button onClick={discard}>{t("deckImport.discard")}</Button></Stack>;
   const retrySeconds = Math.max(0, Math.ceil(((draft.retryAt ?? 0) - now) / 1000));
+  const isV2 = result?.ok ? result.version === 2 : /"version"\s*:\s*2\b/.test(draft.raw);
   const errorText = result && !result.ok
     ? t(result.error === "invalid_encoding" ? "deckImport.encoding" : result.error === "too_large" ? "deckImport.tooLarge" : result.error === "invalid_json" ? "deckImport.syntax" : "deckImport.constraint") : "";
   return <Stack spacing={3}>
@@ -78,10 +79,18 @@ export function DeckImportPage() {
     <Typography>{t("deckImport.intro")}</Typography>
     {me && <Typography variant="body2">{t("deckImport.currentAccount", { name: me.globalName || me.username })}</Typography>}
     <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
+      <Typography>{t("deckImport.version1")}</Typography>
       <Link href="/deck-import/v1/spec.md" target="_blank" rel="noreferrer">{t("deckImport.spec")}</Link>
       <Link href="/deck-import/v1/spec.md" download>{t("deckImport.downloadSpec")}</Link>
-      <Button onClick={() => void asset("prompt.txt").then(copy).catch(() => setNotice(t("deckImport.failure")))}>{t("deckImport.prompt")}</Button>
-      {(["title", "bullets", "comparison"] as const).map((name) => <Button key={name} disabled={locked || loadingInput || saving} onClick={() => void replace(() => asset(`sample-${name}.json`))}>{t(name === "title" ? "deckImport.sampleTitle" : name === "bullets" ? "deckImport.sampleBullets" : "deckImport.sampleComparison")}</Button>)}
+      <Button onClick={() => void asset(1, "prompt.txt").then(copy).catch(() => setNotice(t("deckImport.failure")))}>{t("deckImport.prompt")}</Button>
+      {(["title", "bullets", "comparison"] as const).map((name) => <Button key={name} disabled={locked || loadingInput || saving} onClick={() => void replace(() => asset(1, `sample-${name}.json`))}>{t(name === "title" ? "deckImport.sampleTitle" : name === "bullets" ? "deckImport.sampleBullets" : "deckImport.sampleComparison")}</Button>)}
+    </Stack>
+    <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
+      <Typography>{t("deckImport.version2")}</Typography>
+      <Link href="/deck-import/v2/spec.md" target="_blank" rel="noreferrer">{t("deckImport.spec")}</Link>
+      <Link href="/deck-import/v2/spec.md" download>{t("deckImport.downloadSpec")}</Link>
+      <Button onClick={() => void asset(2, "prompt.txt").then(copy).catch(() => setNotice(t("deckImport.failure")))}>{t("deckImport.prompt")}</Button>
+      <Button disabled={locked || loadingInput || saving} onClick={() => void replace(() => asset(2, "sample-events-lab-intro.json"))}>{t("deckImport.sampleIntro")}</Button>
     </Stack>
     <Alert severity="info">{t("deckImport.recovery")}</Alert>
     {model.storageError && <Alert severity="error">{t("deckImport.storage")}</Alert>}
@@ -100,13 +109,14 @@ export function DeckImportPage() {
       {result.issues.map((issue, i) => <Typography key={i} sx={{ overflowWrap: "anywhere" }}>{importIssueLocation(issue.path, t)} — {issue.path} / {issue.code}: {describeImportIssue(issue, t)}</Typography>)}
       {result.truncated && <Typography>{t("deckImport.truncated")}</Typography>}
       <Button onClick={() => inputRef.current?.focus()}>{t("deckImport.edit")}</Button>
-      <Button onClick={() => void copy(`${t("deckImport.repairIntro")}\n${errorText}\n${result.issues.map((issue) => `${importIssueLocation(issue.path, t)} / ${issue.path}: ${describeImportIssue(issue, t)}`).join("\n")}`)}>{t("deckImport.repair")}</Button>
+      <Button onClick={() => void copy(`${t(isV2 ? "deckImport.repairIntroV2" : "deckImport.repairIntro")}\n${errorText}\n${result.issues.map((issue) => `${importIssueLocation(issue.path, t)} / ${issue.path}: ${describeImportIssue(issue, t)}`).join("\n")}`)}>{t("deckImport.repair")}</Button>
     </Box>}
     {result?.ok && <DeckImportPreview content={result.content} />}
     {draft.status && <Alert severity="warning">{draft.status >= 500 ? t("deckImport.pending") : draft.status === 429 ? t("deckImport.quota", { n: retrySeconds }) : draft.status === 401 ? t("deckImport.unauthorized") : draft.status === 409 ? t("deckImport.conflict") : draft.status === 410 ? t("deckImport.deleted") : draft.status === 403 ? t("deckImport.forbidden") : [404, 405].includes(draft.status) ? t("deckImport.unavailable") : draft.state === "pending" ? t("deckImport.pending") : t("deckImport.rejected", { status: draft.status })}</Alert>}
     {saving ? <Alert severity="info">{t("deckImport.saving")}</Alert> : draft.state === "pending" ? <Alert severity="warning">{t("deckImport.pending")}</Alert> : null}
     {draft.state === "input" && <Stack>
       <Alert severity="warning">{t("deckImport.publicNotice")}</Alert>
+      {isV2 && <Alert severity="warning">{t("deckImport.srcNotice")}</Alert>}
       {me && draft.ownerId === null && <Button onClick={() => { if (window.confirm(t("deckImport.bindConfirm"))) model.bindOwner(); }}>{t("deckImport.bind")}</Button>}
       <FormControlLabel label={t("deckImport.reviewed")} control={<Checkbox checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} disabled={!result?.ok || saving || (me != null && !draft.ownerId)} />} />
       <FormControlLabel label={t("deckImport.publicCheck")} control={<Checkbox checked={publicAccepted} onChange={(e) => setPublicAccepted(e.target.checked)} disabled={!result?.ok || saving || (me != null && !draft.ownerId)} />} />

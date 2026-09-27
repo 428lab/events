@@ -14,13 +14,19 @@ export interface DeckImportText extends ImportBox {
   bold: boolean; italic: boolean; align: "left" | "center" | "right";
 }
 export interface DeckImportPlaceholder extends ImportBox { type: "image-placeholder" }
+export interface DeckImportImageUrl extends ImportBox { type: "image-url"; src: string }
 export interface DeckImportV1 {
   format: "events-lab-deck"; version: 1; title: string;
   slides: { background: string; elements: (DeckImportText | DeckImportPlaceholder)[] }[];
 }
+export interface DeckImportV2 {
+  format: "events-lab-deck"; version: 2; title: string;
+  slides: { background: string; elements: (DeckImportText | DeckImportPlaceholder | DeckImportImageUrl)[] }[];
+}
+export type DeckImport = DeckImportV1 | DeckImportV2;
 export interface DeckImportIssue { path: string; code: string; message: string; example?: string }
 export type DeckImportValidation =
-  | { ok: true; value: DeckImportV1 }
+  | { ok: true; value: DeckImport }
   | { ok: false; issues: DeckImportIssue[]; truncated: boolean };
 
 /** Public schema is also the structural definition used by the strict validator.
@@ -29,9 +35,10 @@ export type DeckImportValidation =
 const integer = (minimum: number, maximum: number) => ({ type: "integer", minimum, maximum } as const);
 const color = { type: "string", pattern: "^#[0-9A-Fa-f]{6}$" } as const;
 const box = { x: integer(0, 940), y: integer(0, 520), w: integer(20, 960), h: integer(20, 540) };
-const object = (properties: Record<string, unknown>) => ({
+const object = <T extends Record<string, unknown>>(properties: T) => ({
   type: "object", additionalProperties: false, required: Object.keys(properties), properties,
 });
+const imageUrlRule = object({ type: { const: "image-url" }, ...box, src: { type: "string", minLength: 1, maxLength: 500 } });
 export const deckImportJsonSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "/deck-import/v1/schema.json",
@@ -53,6 +60,28 @@ export const deckImportJsonSchema = {
     }) },
   }),
 };
+export const deckImportV2JsonSchema = {
+  ...deckImportJsonSchema,
+  $id: "/deck-import/v2/schema.json",
+  $comment: "Schema alone cannot guarantee acceptance. spec.md and the shared validator additionally enforce UTF-16 lengths, valid Unicode, URL protocol and credentials, control characters, duplicate keys, depth, UTF-8 bytes, coordinate sums and aggregate counts.",
+  properties: {
+    ...deckImportJsonSchema.properties,
+    version: { const: 2 },
+    slides: {
+      ...deckImportJsonSchema.properties.slides,
+      items: {
+        ...deckImportJsonSchema.properties.slides.items,
+        properties: {
+          ...deckImportJsonSchema.properties.slides.items.properties,
+          elements: {
+            ...deckImportJsonSchema.properties.slides.items.properties.elements,
+            items: { oneOf: [...deckImportJsonSchema.properties.slides.items.properties.elements.items.oneOf, imageUrlRule] },
+          },
+        },
+      },
+    },
+  },
+};
 interface Rule {
   type?: string; const?: unknown; enum?: readonly unknown[]; minimum?: number; maximum?: number;
   minLength?: number; maxLength?: number; pattern?: string; minItems?: number; maxItems?: number;
@@ -60,6 +89,8 @@ interface Rule {
 }
 
 export function validateDeckImport(value: unknown): DeckImportValidation {
+  const schema = value && typeof value === "object" && !Array.isArray(value) && (value as Record<string, unknown>).version === 2
+    ? deckImportV2JsonSchema : deckImportJsonSchema;
   const issues: DeckImportIssue[] = [];
   let truncated = false;
   let elementCount = 0;
@@ -73,7 +104,7 @@ export function validateDeckImport(value: unknown): DeckImportValidation {
     if (rule.oneOf) {
       const type = v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>).type : undefined;
       const selected = rule.oneOf.find((r) => r.properties?.type.const === type);
-      if (!selected) { issue(path ? `${path}.type` : "type", "invalid_type", "Use text or image-placeholder."); return; }
+      if (!selected) { issue(path ? `${path}.type` : "type", "invalid_type", schema === deckImportJsonSchema ? "Use text or image-placeholder." : "Use text, image-placeholder or image-url."); return; }
       visit(v, selected, path);
       return;
     }
@@ -91,7 +122,7 @@ export function validateDeckImport(value: unknown): DeckImportValidation {
       for (const key of rule.required!) {
         if (!Object.hasOwn(record, key)) issue(path ? `${path}.${key}` : key, "required", "This key is required.");
       }
-      if (record.type === "text" || record.type === "image-placeholder") {
+      if (record.type === "text" || record.type === "image-placeholder" || record.type === "image-url") {
         for (const [origin, size, max] of [["x", "w", 960], ["y", "h", 540]] as const) {
           if (typeof record[origin] === "number" && typeof record[size] === "number" &&
               (record[origin] as number) + (record[size] as number) > max) {
@@ -116,6 +147,17 @@ export function validateDeckImport(value: unknown): DeckImportValidation {
       else if (v < rule.minimum! || v > rule.maximum!) issue(path, "out_of_range", `Use an integer from ${rule.minimum} to ${rule.maximum}.`);
     } else if (rule.type === "boolean" && typeof v !== "boolean") issue(path, "invalid_type", "Must be true or false, not a string.");
     else if (rule.type === "string") {
+      if (path.endsWith(".src")) {
+        let valid = typeof v === "string" && v.length > 0 && v.length <= 500 && !hasLoneSurrogate(v) && !/[\u0000-\u001f\u007f-\u009f]/.test(v);
+        if (valid) {
+          try {
+            const url = new URL(v as string);
+            valid = url.protocol === "https:" && url.username === "" && url.password === "";
+          } catch { valid = false; }
+        }
+        if (!valid) issue(path, "invalid_image_url", "Use an absolute HTTPS image URL of at most 500 UTF-16 units without controls or credentials.");
+        return;
+      }
       if (typeof v !== "string") { issue(path, "invalid_type", "Must be a string."); return; }
       if (hasLoneSurrogate(v)) issue(path, "invalid_unicode", "Use valid Unicode without lone surrogates.");
       if (v.length < (rule.minLength ?? 0) || v.length > (rule.maxLength ?? Infinity)) issue(path, "invalid_length", `Use ${rule.minLength}–${rule.maxLength} UTF-16 units.`);
@@ -129,8 +171,8 @@ export function validateDeckImport(value: unknown): DeckImportValidation {
       }
     }
   }
-  visit(value, deckImportJsonSchema as Rule, "");
-  return issues.length ? { ok: false, issues, truncated } : { ok: true, value: value as DeckImportV1 };
+  visit(value, schema as Rule, "");
+  return issues.length ? { ok: false, issues, truncated } : { ok: true, value: value as DeckImport };
 }
 
 export function parseDeckImport(input: string | Uint8Array): DeckImportValidation {
@@ -141,13 +183,14 @@ export type DeckImportIdFactory = (kind: "slide" | "element", slideIndex: number
 export const previewDeckImportId: DeckImportIdFactory = (kind, slide, element) =>
   kind === "slide" ? `preview-slide-${slide + 1}` : `preview-element-${slide + 1}-${element! + 1}`;
 
-/** Only validated v1 inputs belong here. Explicit projection keeps all external asset fields absent. */
-export function convertDeckImport(input: DeckImportV1, id: DeckImportIdFactory): { title: string; content: DeckContent } {
+/** Only validated inputs belong here. Project each version's allowed fields explicitly. */
+export function convertDeckImport(input: DeckImport, id: DeckImportIdFactory): { title: string; content: DeckContent } {
   const content: DeckContent = { slides: input.slides.map((slide, si) => ({
     id: id("slide", si), background: slide.background,
     elements: slide.elements.map((el, ei): DeckElement => {
       const base = { id: id("element", si, ei), x: el.x, y: el.y, w: el.w, h: el.h, rotation: 0 };
       if (el.type === "image-placeholder") return { ...base, type: "image" };
+      if (el.type === "image-url") return { ...base, type: "image", src: el.src };
       return { ...base, type: "text", text: el.text, fontSize: el.fontSize,
         fontFamily: el.font === "default" ? "" : el.font, color: el.color,
         bold: el.bold, italic: el.italic, align: el.align };
