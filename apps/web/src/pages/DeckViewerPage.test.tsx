@@ -15,8 +15,10 @@ it("lets mobile viewers read at original size without slide-tap advancement", ()
   expect(region.querySelector("div[style*=\"width: 960px\"]")).toBeTruthy();
   fireEvent.click(region.firstElementChild!);
   expect(screen.getByText("1 / 2")).toBeInTheDocument();
+  region.scrollLeft = 640;
   fireEvent.click(container.querySelectorAll("button")[2]);
   expect(screen.getByRole("region", { name: "2ページ目" })).toBeInTheDocument();
+  expect(region.scrollLeft).toBe(0);
   fireEvent.click(screen.getByRole("button", { name: "拡大表示を閉じる" }));
   expect(screen.queryByRole("region")).not.toBeInTheDocument();
 });

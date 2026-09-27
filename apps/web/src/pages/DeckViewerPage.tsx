@@ -32,6 +32,10 @@ export function DeckViewerPage() {
     if (deck) ensureDeckFonts(deck.content);
   }, [deck]);
 
+  useLayoutEffect(() => {
+    if (reading && wrapRef.current) wrapRef.current.scrollLeft = 0;
+  }, [index, reading]);
+
   const slides = deck?.content.slides ?? [];
   const total = slides.length;
   const go = useCallback(

@@ -54,8 +54,14 @@ describe("URL image render and preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "拡大して読む" }));
     expect(region.querySelector("div[style*=\"width: 960px\"]")).toBeTruthy();
     expect(screen.getByText(/左右にスクロール/)).toBeInTheDocument();
+    region.scrollLeft = 640;
     fireEvent.click(screen.getByRole("button", { name: "次のページ" }));
     expect(screen.getByRole("region", { name: "2ページ目" })).toBeInTheDocument();
+    expect(region.scrollLeft).toBe(0);
+    region.scrollLeft = 640;
+    fireEvent.click(screen.getByRole("button", { name: "1ページ目" }));
+    expect(region.scrollLeft).toBe(0);
+    fireEvent.click(screen.getByRole("button", { name: "2ページ目" }));
     fireEvent.click(screen.getByRole("button", { name: "拡大表示を閉じる" }));
     expect(screen.getByRole("region", { name: "2ページ目" }).querySelector("div[style*=\"width: 320px\"]")).toBeTruthy();
   });

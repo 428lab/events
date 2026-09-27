@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box, Button, Stack, Typography, Alert } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import type { DeckContent, DeckSlide } from "@eventer/shared";
@@ -56,6 +56,9 @@ export function DeckImportPreview({ content }: { content: DeckContent }) {
     return () => { clearTimeout(timer); measure.remove(); };
   }, [content, ref]);
   const page = Math.min(selected, content.slides.length - 1);
+  useLayoutEffect(() => {
+    if (reading && ref.current) ref.current.scrollLeft = 0;
+  }, [page, reading, ref]);
   const onImageStatus = (slideIndex: number, elementId: string, src: string, status: "loaded" | "error") => {
     const slide = content.slides[slideIndex];
     if (!slide?.elements.some((el) => el.id === elementId && el.src === src)) return;
