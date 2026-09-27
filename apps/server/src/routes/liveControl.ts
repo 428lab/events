@@ -13,6 +13,8 @@ import { eventLiveCutinRepo } from "../db/repositories/eventLiveCutin.js";
 import { triggerCutinInput } from "@eventer/shared";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { decksRepo } from "../db/repositories/decks.js";
+import { eventsRepo } from "../db/repositories/events.js";
+import { eventChatRepo } from "../db/repositories/eventChat.js";
 
 /** イベントの配信ランタイム状態（コントロールタブ→配信画面タブの同期点）。staff専用 */
 export const liveControlRoutes = new Hono<AppEnv>();
@@ -34,8 +36,14 @@ liveControlRoutes.patch(
   zValidator("json", updateEventLiveStateInput),
   async (c) => {
     const input = valid<UpdateEventLiveStateInput>(c, "json");
-    if (input.liveIndicatorOn !== undefined && !(await isConfirmedEventStaff(c.req.param("id"), c.get("user").id))) {
+    if ((input.liveIndicatorOn !== undefined || input.chatSource !== undefined) && !(await isConfirmedEventStaff(c.req.param("id"), c.get("user").id))) {
       return c.json({ error: "confirmed_staff_required" }, 403);
+    }
+    if (input.chatSource === "event") {
+      const event = await eventsRepo.findById(c.req.param("id"));
+      if (!event || event.visibility !== "public" || event.status !== "published" || event.scheduling || !event.chatEnabled || await eventChatRepo.isUserBlocked(c.req.param("id"), c.get("user").id)) {
+        return c.json({ error: "chat_unavailable" }, 403);
+      }
     }
     // 存在しない配信セットIDは弾く（DEFAULT は仮想セットなので許可）
     if (input.liveSetId && input.liveSetId !== DEFAULT_LIVE_SET_ID) {

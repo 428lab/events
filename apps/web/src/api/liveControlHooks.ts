@@ -15,6 +15,7 @@ export function useEventLiveState(eventId: string, poll = true) {
     queryKey: ["event", eventId, "liveState"],
     enabled: Boolean(eventId),
     refetchInterval: poll ? LIVE_POLL_MS : false,
+    retry: false,
     // OBS取り込み中はタブが背面にあることが多いので、非表示でもポーリング継続
     refetchIntervalInBackground: true,
     queryFn: () => api.get<EventLiveState>(`/events/${eventId}/live-state`),

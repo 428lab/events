@@ -31,7 +31,11 @@ async function listMembersRows(
       WHERE p.event_id = ? AND u.deleted_at IS NULL${
         withBlocked
           ? ""
-          : ` AND NOT EXISTS (
+          : ` AND EXISTS (
+             SELECT 1 FROM event_member active
+              WHERE active.event_id = p.event_id AND active.user_id = p.user_id
+                AND active.status = 'confirmed'
+           ) AND NOT EXISTS (
              SELECT 1 FROM event_chat_blocked b
                JOIN event_chat_key h
                  ON h.event_id = b.event_id AND h.pubkey = b.pubkey

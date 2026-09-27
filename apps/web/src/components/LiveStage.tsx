@@ -8,6 +8,8 @@ import type { EventInfoField, LiveElement, LiveScene } from "@eventer/shared";
 import { LiveDynamic } from "./LiveDynamic.js";
 import { LiveMotif } from "./LiveMotif.js";
 import { livePalette } from "../lib/livePalette.js";
+import { LiveEventChat } from "./LiveEventChat.js";
+import type { LiveChatRow } from "../lib/liveChat.js";
 
 /** 配信画面タブが実体（カメラ映像・デッキスライド・イベント情報）を差し込むための口。
  * 未指定（エディタ・サムネイル）はプレースホルダー表示になる */
@@ -23,6 +25,7 @@ export interface LiveRuntime {
   liveIndicatorOn?: boolean;
   previewNow?: number;
   pauseMotion?: boolean;
+  chatRows?: LiveChatRow[];
 }
 
 /** 実体が差し込まれないとき（エディタ・サムネイル）に出す見本。
@@ -100,6 +103,8 @@ export function LiveElementContent({
 }) {
   const { t } = useTranslation();
   switch (el.type) {
+    case "chat":
+      return runtime?.chatRows ? <LiveEventChat el={el} rows={runtime.chatRows} light={lightScene} /> : <Placeholder label={t("studio.chatPreview")} icon={null} light={lightScene} />;
     case "image":
       return el.src ? (
         <img

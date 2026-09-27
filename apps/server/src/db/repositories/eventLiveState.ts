@@ -12,6 +12,7 @@ interface Row {
   bgm_playing: number;
   bgm_volume: number;
   live_indicator_on: number;
+  chat_source: "off" | "event";
   updated_at: number;
 }
 
@@ -26,6 +27,7 @@ function toState(row: Row): EventLiveState {
     bgmPlaying: row.bgm_playing === 1,
     bgmVolume: row.bgm_volume,
     liveIndicatorOn: row.live_indicator_on === 1,
+    chatSource: row.chat_source,
     updatedAt: row.updated_at,
   };
 }
@@ -52,11 +54,11 @@ export const eventLiveStateRepo = {
     const columns: Record<keyof UpdateEventLiveStateInput, string> = {
       liveSetId: "live_set_id", activeSceneId: "active_scene_id", deckId: "deck_id",
       deckPage: "deck_page", bgmTrackId: "bgm_track_id", bgmPlaying: "bgm_playing",
-      bgmVolume: "bgm_volume", liveIndicatorOn: "live_indicator_on",
+      bgmVolume: "bgm_volume", liveIndicatorOn: "live_indicator_on", chatSource: "chat_source",
     };
     const fields = Object.entries(input).filter(([, value]) => value !== undefined);
     if (fields.length) {
-      await eventRun(input.liveIndicatorOn !== undefined ? { ...writer, permission: "staff" } : writer,
+      await eventRun(input.liveIndicatorOn !== undefined || input.chatSource !== undefined ? { ...writer, permission: "staff" } : writer,
         `UPDATE event_live_state SET ${fields.map(([key]) => `${columns[key as keyof UpdateEventLiveStateInput]} = ?`).join(", ")}, updated_at = ? WHERE event_id = ?`,
         ...fields.map(([, value]) => typeof value === "boolean" ? Number(value) : value), Date.now(), eventId,
       );

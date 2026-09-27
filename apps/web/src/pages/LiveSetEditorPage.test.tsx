@@ -130,6 +130,22 @@ afterEach(() => {
   delete (HTMLDivElement.prototype as { clientWidth?: number }).clientWidth;
 });
 
+describe("live event comment element", () => {
+  it.each(["glow", "signal", "hakuji"] as const)("adds %s comment layer, edits duration and persists on reopen", async style => {
+    const view = draw(visualLiveSetContent(style).scenes);
+    click("コメント");
+    expect(screen.getByLabelText("表示秒数（10–45秒）")).toHaveValue(20);
+    fireEvent.change(screen.getByLabelText("表示秒数（10–45秒）"), { target: { value: "25" } });
+    await settle();
+    const chat = savedScenes()[0].elements.find(el => el.type === "chat");
+    expect(chat).toMatchObject({ chatStyle: style, chatRows: 3, chatSeconds: 25 });
+    const saved = structuredClone(savedScenes());
+    view.unmount();
+    draw(saved);
+    expect(canvas().getByText("コメント（本番は実投稿のみ）")).toBeInTheDocument();
+  });
+});
+
 describe("完成部品の一操作", () => {
   it("50要素を超えるカードは丸ごと拒否し理由を表示する", async () => {
     draw([{ id: "full", name: "満杯", background: "#0E1426", elements: Array.from({ length: 49 }, (_, i) => text(`filled-${i}`, "")) }]);

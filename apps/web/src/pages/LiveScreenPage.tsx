@@ -13,6 +13,7 @@ import {
 } from "../api/liveControlHooks.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
 import { LiveCutinScreen } from "../components/LiveCutinScreen.js";
+import { useLiveEventChat } from "../components/LiveEventChat.js";
 import { SlideStage } from "../components/SlideStage.js";
 import type { LiveRuntime } from "../components/LiveStage.js";
 import { formatDateRange, participantCountLabel } from "../lib/format.js";
@@ -153,6 +154,8 @@ export function LiveScreenPage() {
     scenes.find((s) => s.id === state?.activeSceneId) ?? scenes[0] ?? null;
 
   const lightScene = scene?.id.startsWith("v1-hakuji-") || scene?.background === "#F6F2EA";
+  const hasChat = Boolean(scene?.elements.some(el => el.type === "chat"));
+  const liveChat = useLiveEventChat(id, state, liveState.dataUpdatedAt, liveState.isError, wallNow, hasChat);
 
   const deckSlide =
     deck?.content.slides[
@@ -160,6 +163,7 @@ export function LiveScreenPage() {
     ] ?? null;
 
   const runtime: LiveRuntime = {
+    chatRows: liveChat.rows,
     // A failed or stale GET never authorizes an ON badge, even when React Query retains old data.
     liveIndicatorOn: canShowLiveIndicator(state, liveState.dataUpdatedAt, liveState.isError, event?.endsAt, wallNow),
     eventStartMs: event?.scheduling ? undefined : event?.startsAt,
@@ -241,8 +245,9 @@ export function LiveScreenPage() {
       )}
 
       <audio ref={audioRef} hidden />
-      {liveState.isError && <Box sx={{ position: "fixed", top: 8, right: 8, bgcolor: "#7f1d1d", color: "white", p: 1 }}>状態取得失敗：LIVE 表示は停止</Box>}
-      {scene?.elements.some(el => el.type === "clock" && clockText(wallNow, el.timezone ?? "Asia/Tokyo", true, false) === null) && <Box sx={{ position: "fixed", top: 8, left: 8, bgcolor: "#7f1d1d", color: "white", p: 1 }}>時計の設定または端末時刻を確認してください</Box>}
+      {hasChat && state?.chatSource === "event" && liveChat.status === "unavailable" && <Box sx={{ position: "fixed", bottom: 8, right: 8, bgcolor: "#7f1d1d", color: "white", p: 1 }}>{t("studio.chatUnavailable")}</Box>}
+      {liveState.isError && <Box sx={{ position: "fixed", top: 8, right: 8, bgcolor: "#7f1d1d", color: "white", p: 1 }}>{t("studio.liveStateUnavailable")}</Box>}
+      {scene?.elements.some(el => el.type === "clock" && clockText(wallNow, el.timezone ?? "Asia/Tokyo", true, false) === null) && <Box sx={{ position: "fixed", top: 8, left: 8, bgcolor: "#7f1d1d", color: "white", p: 1 }}>{t("studio.clockUnavailable")}</Box>}
 
       {/* 自動再生ブロック時: 一度クリックしてもらう（配信者だけが見る画面） */}
       {audioBlocked && (

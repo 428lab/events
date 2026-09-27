@@ -38,6 +38,7 @@ import {
 import { useMyLiveSets } from "../api/liveSetHooks.js";
 import { useMyDecks } from "../api/deckHooks.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
+import { useLiveEventChat } from "../components/LiveEventChat.js";
 import { ManualLiveIndicatorControl } from "../components/ManualLiveIndicatorControl.js";
 import { LiveCutinControl } from "../components/LiveCutinControl.js";
 import {
@@ -65,6 +66,9 @@ export function LiveControlPage() {
   const update = useUpdateEventLiveState(id);
   const bgmFileRef = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
+  const [chatNow, setChatNow] = useState(() => Date.now());
+  useLayoutEffect(() => { const timer = setInterval(() => setChatNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+  const liveChat = useLiveEventChat(id, state, liveState.dataUpdatedAt, liveState.isError, chatNow, state?.chatSource === "event");
   // 登壇者向けサイドパネル (#215)。開閉は発表ビューと共有する
   const [panelOpen] = usePresenterPanel();
 
@@ -148,6 +152,7 @@ export function LiveControlPage() {
         {/* 手動の宣言。API は参加確定 staff のみ受け付ける（admin bypass なし）。 */}
         {eventData?.myRole === "staff" && <ManualLiveIndicatorControl state={state} fetchError={liveState.isError} pending={update.isPending} saveError={update.isError} onToggle={liveIndicatorOn => update.mutate({ liveIndicatorOn })} />}
         {eventData?.myRole === "staff" && <LiveCutinControl key={id} eventId={id} />}
+        {eventData?.myRole === "staff" && <TextField select size="small" label={t("studio.chatSourceLabel")} value={state?.chatSource ?? "off"} disabled={!state || liveState.isError || update.isPending} onChange={e => update.mutate({ chatSource: e.target.value as "off" | "event" })} error={update.isError} helperText={update.isError ? t("studio.chatSaveFailed") : t(`studio.chatStatus${liveChat.status === "on" ? "On" : liveChat.status === "off" ? "Off" : liveChat.status === "connecting" ? "Connecting" : "Unavailable"}`)}><MenuItem value="off">{t("studio.chatOff")}</MenuItem><MenuItem value="event">{t("studio.chatSourceEvent")}</MenuItem></TextField>}
         {/* 配信セット選択 */}
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <TextField
@@ -251,7 +256,7 @@ export function LiveControlPage() {
                     <Chip
                       size="small"
                       color="secondary"
-                      label="選択中"
+                      label={t("studio.selectedScene")}
                       sx={{ height: 16, fontSize: 10, fontWeight: 700 }}
                     />
                   )}

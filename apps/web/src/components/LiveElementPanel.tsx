@@ -40,6 +40,7 @@ const TYPE_LABEL_KEY = {
   camera: "studio.elementCamera",
   deck: "studio.elementDeck",
   eventInfo: "studio.elementEventInfo",
+  chat: "studio.elementChat",
 } as const;
 
 /** 既定値。要素が値を持たないときに画面へ出す見た目と揃える */
@@ -83,57 +84,58 @@ export function LiveElementPanel({
   return (
     <>
       <Typography variant="subtitle2">
-        {selected.type in TYPE_LABEL_KEY ? t(TYPE_LABEL_KEY[selected.type as keyof typeof TYPE_LABEL_KEY]) : ({ shape: "面・線", motif: "装飾", marquee: "流れる案内", clock: "現在時刻", countdown: "カウントダウン", liveIndicator: "配信中表示" } as Record<string, string>)[selected.type]}
+        {selected.type in TYPE_LABEL_KEY ? t(TYPE_LABEL_KEY[selected.type as keyof typeof TYPE_LABEL_KEY]) : t(( { shape: "studio.elementShape", motif: "studio.elementMotif", marquee: "studio.elementMarquee", clock: "studio.elementClock", countdown: "studio.elementCountdown", liveIndicator: "studio.elementLiveIndicator" } as const)[selected.type as "shape" | "motif" | "marquee" | "clock" | "countdown" | "liveIndicator"])}
       </Typography>
 
-      {selected.type === "liveIndicator" && <Typography variant="caption">ON/OFF はイベントの配信コントロールで運営が手動操作します。編集中は OFF です。</Typography>}
-      {(selected.type === "marquee" || selected.type === "liveIndicator") && <TextField size="small" label="表示文言" value={selected.text ?? ""} inputProps={{ maxLength: selected.type === "marquee" ? 120 : 32 }} onChange={e => patch({ text: e.target.value })} />}
+      {selected.type === "chat" && <><Typography variant="caption">{t("studio.chatEditorHint")}</Typography><TextField select size="small" label={t("studio.chatStyleLabel")} value={selected.chatStyle ?? "glow"} onChange={e => patch({ chatStyle: e.target.value as LiveElement["chatStyle"] })}>{(["glow", "signal", "hakuji"] as const).map(style => <MenuItem key={style} value={style}>{t(`studio.chatStyle${style}`)}</MenuItem>)}</TextField><TextField select size="small" label={t("studio.chatRowsLabel")} value={selected.chatRows ?? 3} onChange={e => patch({ chatRows: Number(e.target.value) })}>{[2, 3, 4, 5].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}</TextField><TextField size="small" type="number" label={t("studio.chatSecondsLabel")} inputProps={{ min: 10, max: 45 }} value={selected.chatSeconds ?? 20} onChange={e => { const n = Number(e.target.value); if (n >= 10 && n <= 45) patch({ chatSeconds: n }); }} /></>}
+      {selected.type === "liveIndicator" && <Typography variant="caption">{t("studio.manualLiveEditorHint")}</Typography>}
+      {(selected.type === "marquee" || selected.type === "liveIndicator") && <TextField size="small" label={t("studio.widgetTextLabel")} value={selected.text ?? ""} inputProps={{ maxLength: selected.type === "marquee" ? 120 : 32 }} onChange={e => patch({ text: e.target.value })} />}
       {selected.type === "marquee" && <>
-        <TextField select size="small" label="方向" value={selected.direction ?? "left"} onChange={e => patch({ direction: e.target.value as "left" | "right" })}><MenuItem value="left">左へ</MenuItem><MenuItem value="right">右へ</MenuItem></TextField>
-        <TextField size="small" type="number" label="一周（12–40秒）" inputProps={{ min: 12, max: 40 }} value={selected.seconds ?? 20} onChange={e => { const n = Number(e.target.value); if (n >= 12 && n <= 40) patch({ seconds: n }); }} />
-        <TextField size="small" type="number" label="間隔（24–64px）" inputProps={{ min: 24, max: 64 }} value={selected.gap ?? 32} onChange={e => { const n = Number(e.target.value); if (n >= 24 && n <= 64) patch({ gap: n }); }} />
+        <TextField select size="small" label={t("studio.widgetDirection")} value={selected.direction ?? "left"} onChange={e => patch({ direction: e.target.value as "left" | "right" })}><MenuItem value="left">{t("studio.widgetLeft")}</MenuItem><MenuItem value="right">{t("studio.widgetRight")}</MenuItem></TextField>
+        <TextField size="small" type="number" label={t("studio.marqueeCycle")} inputProps={{ min: 12, max: 40 }} value={selected.seconds ?? 20} onChange={e => { const n = Number(e.target.value); if (n >= 12 && n <= 40) patch({ seconds: n }); }} />
+        <TextField size="small" type="number" label={t("studio.marqueeGap")} inputProps={{ min: 24, max: 64 }} value={selected.gap ?? 32} onChange={e => { const n = Number(e.target.value); if (n >= 24 && n <= 64) patch({ gap: n }); }} />
       </>}
       {(selected.type === "clock" || selected.type === "countdown") && <>
-        <TextField select size="small" label="タイムゾーン（明示選択）" value={selected.timezone ?? "Asia/Tokyo"} onChange={e => patch({ timezone: e.target.value })}>
+        <TextField select size="small" label={t("studio.widgetTimezone")} value={selected.timezone ?? "Asia/Tokyo"} onChange={e => patch({ timezone: e.target.value })}>
           {["Asia/Tokyo", "UTC", "America/New_York", "Europe/London"].map(zone => <MenuItem key={zone} value={zone}>{zone}</MenuItem>)}
         </TextField>
         {selected.type === "clock" ? <>
-          <TextField select size="small" label="時刻表記" value={selected.hour12 ? "12" : "24"} onChange={e => patch({ hour12: e.target.value === "12" })}><MenuItem value="24">24時間</MenuItem><MenuItem value="12">12時間</MenuItem></TextField>
-          <Button onClick={() => patch({ showSeconds: !(selected.showSeconds ?? true) })}>秒を{selected.showSeconds ?? true ? "隠す" : "表示"}</Button>
-          <Button onClick={() => patch({ showDate: !selected.showDate })}>日付を{selected.showDate ? "隠す" : "表示"}</Button>
+          <TextField select size="small" label={t("studio.clockFormat")} value={selected.hour12 ? "12" : "24"} onChange={e => patch({ hour12: e.target.value === "12" })}><MenuItem value="24">{t("studio.clock24Hour")}</MenuItem><MenuItem value="12">{t("studio.clock12Hour")}</MenuItem></TextField>
+          <Button onClick={() => patch({ showSeconds: !(selected.showSeconds ?? true) })}>{t("studio.clockSeconds", { action: t(selected.showSeconds ?? true ? "studio.widgetHide" : "studio.widgetShow") })}</Button>
+          <Button onClick={() => patch({ showDate: !selected.showDate })}>{t("studio.clockDate", { action: t(selected.showDate ? "studio.widgetHide" : "studio.widgetShow") })}</Button>
         </> : <>
-          <TextField select size="small" label="目標" value={selected.target ?? "eventStart"} onChange={e => patch({ target: e.target.value as "eventStart" | "custom" })}><MenuItem value="eventStart">イベント開始日時</MenuItem><MenuItem value="custom">指定日時</MenuItem></TextField>
-          {selected.target !== "custom" && <Typography variant="caption">日程が未確定のイベントでは非表示です。編集画面には対象イベントがないため実際の残秒は配信画面で確認してください。</Typography>}
+          <TextField select size="small" label={t("studio.countdownTarget")} value={selected.target ?? "eventStart"} onChange={e => patch({ target: e.target.value as "eventStart" | "custom" })}><MenuItem value="eventStart">{t("studio.countdownEventStart")}</MenuItem><MenuItem value="custom">{t("studio.countdownCustom")}</MenuItem></TextField>
+          {selected.target !== "custom" && <Typography variant="caption">{t("studio.countdownScheduleHint")}</Typography>}
           {selected.target === "custom" && <>
-            <TextField size="small" type="datetime-local" label="現地日時" InputLabelProps={{ shrink: true }} value={localTarget} onChange={e => setLocalTarget(e.target.value)} />
-            {localTarget && candidates.length === 0 && <Typography color="error">存在しない時刻です。日時を変更してください。</Typography>}
-            {localTarget && selected.targetEpochMs && !candidates.includes(selected.targetEpochMs) && <Typography color="warning.main">確定するまで以前の目標時刻が配信画面に残ります。</Typography>}
-            {candidates.map((epoch, i) => <Button key={epoch} onClick={() => patch({ targetEpochMs: epoch })} variant={epoch === selected.targetEpochMs ? "contained" : "outlined"}>{candidates.length > 1 ? `重複時刻 ${i + 1}: ` : "確定: "}{new Date(epoch).toISOString()}</Button>)}
-            {!selected.targetEpochMs && <Typography color="warning.main">日時を確定するまで本番では非表示です。</Typography>}
+            <TextField size="small" type="datetime-local" label={t("studio.countdownLocalDate")} InputLabelProps={{ shrink: true }} value={localTarget} onChange={e => setLocalTarget(e.target.value)} />
+            {localTarget && candidates.length === 0 && <Typography color="error">{t("studio.countdownInvalidDate")}</Typography>}
+            {localTarget && selected.targetEpochMs && !candidates.includes(selected.targetEpochMs) && <Typography color="warning.main">{t("studio.countdownOldTarget")}</Typography>}
+            {candidates.map((epoch, i) => <Button key={epoch} onClick={() => patch({ targetEpochMs: epoch })} variant={epoch === selected.targetEpochMs ? "contained" : "outlined"}>{t(candidates.length > 1 ? "studio.countdownAmbiguous" : "studio.countdownConfirm", { n: i + 1 })}{new Date(epoch).toISOString()}</Button>)}
+            {!selected.targetEpochMs && <Typography color="warning.main">{t("studio.countdownUnconfirmed")}</Typography>}
           </>}
-          <TextField select size="small" label="ゼロ後" value={selected.zero ?? "stop"} onChange={e => patch({ zero: e.target.value as "stop" | "hide" })}><MenuItem value="stop">00:00で停止</MenuItem><MenuItem value="hide">隠す</MenuItem></TextField>
+          <TextField select size="small" label={t("studio.countdownAfterZero")} value={selected.zero ?? "stop"} onChange={e => patch({ zero: e.target.value as "stop" | "hide" })}><MenuItem value="stop">{t("studio.countdownStop")}</MenuItem><MenuItem value="hide">{t("studio.widgetHide")}</MenuItem></TextField>
         </>}
       </>}
       {(selected.type === "shape" || selected.type === "motif") && <>
-        {selected.type === "shape" ? <TextField select size="small" label="形" value={selected.shape ?? "rectangle"} onChange={e => patch({ shape: e.target.value as LiveElement["shape"] })}>{["rectangle", "ellipse", "line"].map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}</TextField> : <TextField select size="small" label="モチーフ" value={selected.motif ?? "lantern"} onChange={e => patch({ motif: e.target.value as LiveElement["motif"] })}>{["lantern", "halo", "brackets", "grid", "ticks"].map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}</TextField>}
-        <TextField select size="small" label="装飾の動き" value={selected.motion?.kind ?? "none"} onChange={e => patch({ motion: e.target.value === "none" ? undefined : e.target.value === "rotation" ? { kind: "rotation", seconds: 30, direction: "clockwise" } : { kind: "colorCycle", seconds: 18, colors: ["#2DD4BF", "#7DD3FC"] } })}>
-          <MenuItem value="none">停止</MenuItem>{selected.type === "motif" && <MenuItem value="rotation">回転</MenuItem>}<MenuItem value="colorCycle" disabled={selected.w > 180 || selected.h > 180}>色循環（小さな装飾のみ）</MenuItem>
+        {selected.type === "shape" ? <TextField select size="small" label={t("studio.widgetShape")} value={selected.shape ?? "rectangle"} onChange={e => patch({ shape: e.target.value as LiveElement["shape"] })}>{["rectangle", "ellipse", "line"].map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}</TextField> : <TextField select size="small" label={t("studio.widgetMotif")} value={selected.motif ?? "lantern"} onChange={e => patch({ motif: e.target.value as LiveElement["motif"] })}>{["lantern", "halo", "brackets", "grid", "ticks"].map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}</TextField>}
+        <TextField select size="small" label={t("studio.widgetMotion")} value={selected.motion?.kind ?? "none"} onChange={e => patch({ motion: e.target.value === "none" ? undefined : e.target.value === "rotation" ? { kind: "rotation", seconds: 30, direction: "clockwise" } : { kind: "colorCycle", seconds: 18, colors: ["#2DD4BF", "#7DD3FC"] } })}>
+          <MenuItem value="none">{t("studio.widgetStop")}</MenuItem>{selected.type === "motif" && <MenuItem value="rotation">{t("studio.widgetRotation")}</MenuItem>}<MenuItem value="colorCycle" disabled={selected.w > 180 || selected.h > 180}>{t("studio.widgetColorCycle")}</MenuItem>
         </TextField>
-        {selected.motion && <TextField size="small" type="number" label="周期（秒）" inputProps={{ min: selected.motion.kind === "rotation" ? 12 : 8, max: selected.motion.kind === "rotation" ? 60 : 30 }} value={selected.motion.seconds} onChange={e => { const n = Number(e.target.value); const m = selected.motion!; if (n >= (m.kind === "rotation" ? 12 : 8) && n <= (m.kind === "rotation" ? 60 : 30)) patch({ motion: { ...m, seconds: n } }); }} />}
-        {selected.motion?.kind === "rotation" && <Button onClick={() => patch({ motion: { ...selected.motion!, direction: selected.motion?.kind === "rotation" && selected.motion.direction === "clockwise" ? "counterclockwise" : "clockwise" } as LiveElement["motion"] })}>回転方向を変更</Button>}
+        {selected.motion && <TextField size="small" type="number" label={t("studio.widgetMotionCycle")} inputProps={{ min: selected.motion.kind === "rotation" ? 12 : 8, max: selected.motion.kind === "rotation" ? 60 : 30 }} value={selected.motion.seconds} onChange={e => { const n = Number(e.target.value); const m = selected.motion!; if (n >= (m.kind === "rotation" ? 12 : 8) && n <= (m.kind === "rotation" ? 60 : 30)) patch({ motion: { ...m, seconds: n } }); }} />}
+        {selected.motion?.kind === "rotation" && <Button onClick={() => patch({ motion: { ...selected.motion!, direction: selected.motion?.kind === "rotation" && selected.motion.direction === "clockwise" ? "counterclockwise" : "clockwise" } as LiveElement["motion"] })}>{t("studio.widgetReverseRotation")}</Button>}
         {selected.motion?.kind === "colorCycle" && <>
-          <Typography variant="caption">背景や文字を隠さない小さな装飾に限定。安全な装飾色から2–4色を選択。</Typography>
-          <TextField select size="small" label="色数" value={selected.motion.colors.length} onChange={e => { const palette = ["#2DD4BF", "#7DD3FC", "#FB923C", "#FBBF24"]; patch({ motion: { ...selected.motion!, colors: palette.slice(0, Number(e.target.value)) } as LiveElement["motion"] }); }}>{[2, 3, 4].map(n => <MenuItem key={n} value={n}>{n}色</MenuItem>)}</TextField>
-          {selected.motion.colors.map((c, i) => <TextField key={i} select size="small" label={`循環色 ${i + 1}`} value={c} onChange={e => { const m = selected.motion!; if (m.kind === "colorCycle") patch({ motion: { ...m, colors: m.colors.map((color, j) => j === i ? e.target.value : color) } }); }}>{["#2DD4BF", "#7DD3FC", "#FB923C", "#FBBF24"].map(color => <MenuItem key={color} value={color} sx={{ color, bgcolor: "#0E1426" }}>{color}</MenuItem>)}</TextField>)}
+          <Typography variant="caption">{t("studio.widgetColorHint")}</Typography>
+          <TextField select size="small" label={t("studio.widgetColorCount")} value={selected.motion.colors.length} onChange={e => { const palette = ["#2DD4BF", "#7DD3FC", "#FB923C", "#FBBF24"]; patch({ motion: { ...selected.motion!, colors: palette.slice(0, Number(e.target.value)) } as LiveElement["motion"] }); }}>{[2, 3, 4].map(n => <MenuItem key={n} value={n}>{t("studio.widgetColorNumber", { n })}</MenuItem>)}</TextField>
+          {selected.motion.colors.map((c, i) => <TextField key={i} select size="small" label={t("studio.widgetCycleColor", { n: i + 1 })} value={c} onChange={e => { const m = selected.motion!; if (m.kind === "colorCycle") patch({ motion: { ...m, colors: m.colors.map((color, j) => j === i ? e.target.value : color) } }); }}>{["#2DD4BF", "#7DD3FC", "#FB923C", "#FBBF24"].map(color => <MenuItem key={color} value={color} sx={{ color, bgcolor: "#0E1426" }}>{color}</MenuItem>)}</TextField>)}
         </>}
-        {selected.type === "shape" && <TextField size="small" type="number" label="角丸（px）" inputProps={{ min: 0, max: 200 }} value={selected.radius ?? 0} onChange={e => { const n = Number(e.target.value); if (n >= 0 && n <= 200) patch({ radius: n }); }} />}
-        <TextField size="small" type="number" label="線幅" inputProps={{ min: 0, max: 16 }} value={selected.strokeWidth ?? 2} onChange={e => { const n = Number(e.target.value); if (n >= 0 && n <= 16) patch({ strokeWidth: n }); }} />
-        <TextField size="small" type="number" label="透明度（0–1）" inputProps={{ min: 0, max: 1, step: 0.1 }} value={selected.opacity ?? 1} onChange={e => { const n = Number(e.target.value); if (n >= 0 && n <= 1) patch({ opacity: n }); }} />
+        {selected.type === "shape" && <TextField size="small" type="number" label={t("studio.widgetRadius")} inputProps={{ min: 0, max: 200 }} value={selected.radius ?? 0} onChange={e => { const n = Number(e.target.value); if (n >= 0 && n <= 200) patch({ radius: n }); }} />}
+        <TextField size="small" type="number" label={t("studio.widgetStrokeWidth")} inputProps={{ min: 0, max: 16 }} value={selected.strokeWidth ?? 2} onChange={e => { const n = Number(e.target.value); if (n >= 0 && n <= 16) patch({ strokeWidth: n }); }} />
+        <TextField size="small" type="number" label={t("studio.widgetOpacity")} inputProps={{ min: 0, max: 1, step: 0.1 }} value={selected.opacity ?? 1} onChange={e => { const n = Number(e.target.value); if (n >= 0 && n <= 1) patch({ opacity: n }); }} />
       </>}
-      {(["shape", "motif", "marquee", "clock", "countdown", "liveIndicator"] as string[]).includes(selected.type) && <Stack direction="row" spacing={1} alignItems="center"><Typography variant="caption">色</Typography><input aria-label="要素の色" type="color" value={selected.type === "shape" ? selected.fill ?? "#2DD4BF" : selected.color ?? "#EAF0F7"} onChange={e => patch(selected.type === "shape" ? { fill: e.target.value } : { color: e.target.value })} />{selected.type === "shape" && <input aria-label="枠線の色" type="color" value={selected.stroke ?? "#2DD4BF"} onChange={e => patch({ stroke: e.target.value })} />}</Stack>}
+      {(["shape", "motif", "marquee", "clock", "countdown", "liveIndicator"] as string[]).includes(selected.type) && <Stack direction="row" spacing={1} alignItems="center"><Typography variant="caption">{t("studio.widgetColor")}</Typography><input aria-label={t("studio.widgetColor")} type="color" value={selected.type === "shape" ? selected.fill ?? "#2DD4BF" : selected.color ?? "#EAF0F7"} onChange={e => patch(selected.type === "shape" ? { fill: e.target.value } : { color: e.target.value })} />{selected.type === "shape" && <input aria-label={t("studio.widgetStrokeColor")} type="color" value={selected.stroke ?? "#2DD4BF"} onChange={e => patch({ stroke: e.target.value })} />}</Stack>}
       {(["marquee", "clock", "countdown", "liveIndicator"] as string[]).includes(selected.type) && <>
-        <TextField size="small" type="number" label="文字サイズ（16–72px）" inputProps={{ min: 16, max: 72 }} value={selected.fontSize ?? 27} onChange={e => { const n = Number(e.target.value); if (n >= 16 && n <= 72) patch({ fontSize: n }); }} />
-        <Stack direction="row" spacing={1} alignItems="center"><Typography variant="caption">背景色</Typography><input aria-label="背景色" type="color" value={selected.fill ?? "#1A2737"} onChange={e => patch({ fill: e.target.value })} /></Stack>
+        <TextField size="small" type="number" label={t("studio.widgetFontSize")} inputProps={{ min: 16, max: 72 }} value={selected.fontSize ?? 27} onChange={e => { const n = Number(e.target.value); if (n >= 16 && n <= 72) patch({ fontSize: n }); }} />
+        <Stack direction="row" spacing={1} alignItems="center"><Typography variant="caption">{t("studio.widgetBackground")}</Typography><input aria-label={t("studio.widgetBackground")} type="color" value={selected.fill ?? "#1A2737"} onChange={e => patch({ fill: e.target.value })} /></Stack>
       </>}
       {selected.type === "text" && (
         <TextField

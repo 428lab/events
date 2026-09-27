@@ -13,7 +13,7 @@ export const LIVE_ELEMENT_TYPES = [
   "image",
   "camera",
   "deck",
-  "eventInfo", "shape", "motif", "marquee", "clock", "countdown", "liveIndicator",
+  "eventInfo", "shape", "motif", "marquee", "clock", "countdown", "liveIndicator", "chat",
 ] as const;
 export type LiveElementType = (typeof LIVE_ELEMENT_TYPES)[number];
 
@@ -77,10 +77,13 @@ export const liveElementSchema = z.object({
   /** An unconfirmed custom target is saved without an epoch; the runtime hides it. */
   targetEpochMs: z.number().int().min(0).max(8640000000000000).optional(),
   zero: z.enum(["stop", "hide"]).optional(),
+  chatStyle: z.enum(["glow", "signal", "hakuji"]).optional(),
+  chatRows: z.number().int().min(2).max(5).optional(),
+  chatSeconds: z.number().int().min(10).max(45).optional(),
 }).superRefine((el, ctx) => {
   if (el.motion && !((el.type === "motif" && el.motion.kind === "rotation") || ((el.type === "shape" || el.type === "motif") && el.motion.kind === "colorCycle"))) ctx.addIssue({ code: "custom", message: "decorative motion only" });
   if (el.motion?.kind === "colorCycle" && (el.w > 180 || el.h > 180 || el.motion.colors.some(c => !["#FB923C", "#2DD4BF", "#FBBF24", "#7DD3FC"].includes(c)))) ctx.addIssue({ code: "custom", message: "Only small ornaments and legible palette colors can cycle" });
-  if (["shape", "motif", "marquee", "clock", "countdown", "liveIndicator"].includes(el.type) && (el.x < -960 || el.x > 960 || el.y < -540 || el.y > 540 || el.w < 1 || el.w > 960 || el.h < 1 || el.h > 540)) ctx.addIssue({ code: "custom", message: "Invalid visual bounds" });
+  if (["shape", "motif", "marquee", "clock", "countdown", "liveIndicator", "chat"].includes(el.type) && (el.x < -960 || el.x > 960 || el.y < -540 || el.y > 540 || el.w < 1 || el.w > 960 || el.h < 1 || el.h > 540)) ctx.addIssue({ code: "custom", message: "Invalid visual bounds" });
   if (el.type === "motif" && !el.motif || el.type === "shape" && !el.shape) ctx.addIssue({ code: "custom", message: "primitive required" });
   if (el.type === "marquee" && (el.text?.length ?? 0) > 120) ctx.addIssue({ code: "custom", message: "marquee too long" });
   if (el.type === "liveIndicator" && (el.text?.length ?? 0) > 32) ctx.addIssue({ code: "custom", message: "badge text too long" });
@@ -152,6 +155,7 @@ export const eventLiveStateSchema = z.object({
   bgmPlaying: z.boolean(),
   bgmVolume: z.number(),
   liveIndicatorOn: z.boolean(),
+  chatSource: z.enum(["off", "event"]),
   updatedAt: z.number(),
 });
 export type EventLiveState = z.infer<typeof eventLiveStateSchema>;
@@ -165,6 +169,7 @@ export const updateEventLiveStateInput = z.object({
   bgmPlaying: z.boolean().optional(),
   bgmVolume: z.number().min(0).max(1).optional(),
   liveIndicatorOn: z.boolean().optional(),
+  chatSource: z.enum(["off", "event"]).optional(),
 });
 export type UpdateEventLiveStateInput = z.infer<typeof updateEventLiveStateInput>;
 

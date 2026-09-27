@@ -133,8 +133,8 @@ export function LiveSetEditorPage() {
     editScenes((s) => mapElementsAt(s, idx, fn));
 
   const addElements = (elements: LiveElement[]) => {
-    if (els.length + elements.length > 50) { setEditError("1シーンは最大50要素です。不要な要素を削除してください。"); return; }
-    if (els.filter(el => el.motion).length + elements.filter(el => el.motion).length > 2) { setEditError("演出は1シーンに装飾2点までです。既存の演出を停止してください。"); return; }
+    if (els.length + elements.length > 50) { setEditError(t("studio.editorMaxElementsHelp")); return; }
+    if (els.filter(el => el.motion).length + elements.filter(el => el.motion).length > 2) { setEditError(t("studio.editorMaxMotionHelp")); return; }
     setEditError("");
     editEls(arr => [...arr, ...elements]);
     setSelectedId(elements.find(e => e.type === "text" || e.type === "eventInfo")?.id ?? elements[0]?.id ?? null);
@@ -177,7 +177,7 @@ export function LiveSetEditorPage() {
 
   const elementCommands: LiveElementCommands = {
     patch: (elId, patch) => {
-      if (patch.motion && !els.find(el => el.id === elId)?.motion && els.filter(el => el.motion).length >= 2) { setEditError("演出は1シーンに装飾2点までです。"); return; }
+      if (patch.motion && !els.find(el => el.id === elId)?.motion && els.filter(el => el.motion).length >= 2) { setEditError(t("studio.editorMaxMotion")); return; }
       editEls((arr) => patchById(arr, elId, patch));
     },
     remove: forSelected((elId) => {
@@ -189,8 +189,8 @@ export function LiveSetEditorPage() {
     duplicate: forSelected((elId) => {
       const copies = copyByIds(els, [elId]);
       if (copies.length === 0) return;
-      if (els.length + copies.length > 50) { setEditError("1シーンは最大50要素です。"); return; }
-      if (els.filter(el => el.motion).length + copies.filter(el => el.motion).length > 2) { setEditError("演出は1シーンに装飾2点までです。"); return; }
+      if (els.length + copies.length > 50) { setEditError(t("studio.editorMaxElements")); return; }
+      if (els.filter(el => el.motion).length + copies.filter(el => el.motion).length > 2) { setEditError(t("studio.editorMaxMotion")); return; }
       editEls((arr) => [...arr, ...copies]);
       // 続けて動かせるよう、写した側に選択を移す
       setSelectedId(copies[0].id);
@@ -264,13 +264,13 @@ export function LiveSetEditorPage() {
           sx={{ flex: 1, minWidth: 180 }}
         />
         <Typography variant="caption" color="text.secondary">
-          {saveStatus === "saving" ? t("studio.saving") : saveStatus === "saved" ? t("studio.autoSaved") : saveStatus === "error" ? "保存失敗・未保存" : "未保存"}
+          {saveStatus === "saving" ? t("studio.saving") : saveStatus === "saved" ? t("studio.autoSaved") : saveStatus === "error" ? t("studio.editorSaveFailed") : t("studio.editorUnsaved")}
         </Typography>
       </Stack>
 
-      {saveStatus === "error" && <Button color="error" onClick={save}>保存を再試行</Button>}
+      {saveStatus === "error" && <Button color="error" onClick={save}>{t("studio.editorRetrySave")}</Button>}
       {editError && <Typography role="alert" color="error">{editError}</Typography>}
-      <Typography variant="caption">編集中のカメラ・資料・イベント情報は見本です。配信画面はイベントの配信コントロールで選択し、変更は約1秒後に反映されます。</Typography>
+      <Typography variant="caption">{t("studio.editorPreviewHint")}</Typography>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
         <Stack spacing={1} sx={{ width: { md: 168 }, flexShrink: 0 }}>
           <LiveSceneList
@@ -295,9 +295,9 @@ export function LiveSetEditorPage() {
               picker.pick((url) => addElement(newImageElement(url)))
             }
           />
-          <Button size="small" onClick={() => setPauseMotion(p => !p)}>{pauseMotion ? "演出を再生" : "演出を一時停止"}</Button>
-          <Button size="small" onClick={() => setSampleTime(p => !p)}>{sampleTime ? "実時刻を表示" : "見本時刻を表示"}</Button>
-          <Typography variant="caption">{sampleTime ? "時刻の見本（固定値）" : "端末の実時刻"}・LIVE はイベントで OFF の見本です。</Typography>
+          <Button size="small" onClick={() => setPauseMotion(p => !p)}>{t(pauseMotion ? "studio.editorResumeMotion" : "studio.editorPauseMotion")}</Button>
+          <Button size="small" onClick={() => setSampleTime(p => !p)}>{t(sampleTime ? "studio.editorRealTime" : "studio.editorSampleTime")}</Button>
+          <Typography variant="caption">{t(sampleTime ? "studio.editorSampleClock" : "studio.editorRealClock")}</Typography>
           <LiveCanvas
             pauseMotion={pauseMotion}
             previewNow={sampleTime ? Date.UTC(2026, 8, 27, 10, 4, 8) : undefined}

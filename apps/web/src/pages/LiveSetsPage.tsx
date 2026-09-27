@@ -33,13 +33,13 @@ export function LiveSetsPage() {
 
   const newSet = (templateId?: "glow" | "signal" | "hakuji") =>
     create.mutate(
-      { name: templateId === "glow" ? "灯り" : templateId === "signal" ? "輪郭" : templateId === "hakuji" ? "白磁" : "", templateId },
+      { name: templateId === "glow" ? t("studio.chatStyleglow") : templateId === "signal" ? t("studio.chatStylesignal") : templateId === "hakuji" ? t("studio.hakujiParts") : "", templateId },
       { onSuccess: (s) => navigate(`/live-sets/${s.id}/edit`) },
     );
   const duplicateSet = (baseId: string, baseName: string) =>
     create.mutate(
       /** 保存されるデータ。訳す方針は #364 (#367) */
-      { name: `${baseName}のコピー`, baseLiveSetId: baseId },
+      { name: t("studio.liveSetCopyName", { name: baseName }), baseLiveSetId: baseId },
       { onSuccess: (s) => navigate(`/live-sets/${s.id}/edit`) },
     );
 
@@ -75,18 +75,18 @@ export function LiveSetsPage() {
         {([undefined, "glow", "signal", "hakuji"] as const).map(style => (
           <Card key={style ?? "default"} variant="outlined" sx={{ overflow: "hidden" }}>
             <Box sx={{ bgcolor: style === "hakuji" ? "#F6F2EA" : style === "signal" ? "#0A1120" : "#0E1426", color: style === "hakuji" ? "#203146" : "#EAF0F7", p: 1.5 }}>
-              <Typography fontWeight={700}>{style === "glow" ? "灯り / Glow" : style === "signal" ? "輪郭 / Signal" : style === "hakuji" ? t("studio.hakujiStyle") : "デフォルト"}</Typography>
+              <Typography fontWeight={700}>{style === "glow" ? t("studio.glowStyle") : style === "signal" ? t("studio.signalStyle") : style === "hakuji" ? t("studio.hakujiStyle") : t("studio.defaultStyle")}</Typography>
               <Stack direction="row" spacing={0.75} sx={{ mt: 1, overflow: "hidden" }}>
-                {(() => { const scenes = style ? visualLiveSetContent(style).scenes : defaultLiveSetContent().scenes; return [scenes[0], scenes[style ? 2 : 3]].map((scene, i) => <Box key={scene.id} sx={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}><LiveSceneStage scene={scene} width={130} /><Typography variant="caption" color="inherit">{i ? "講演" : "待機"}（見本）</Typography></Box>); })()}
+                {(() => { const scenes = style ? visualLiveSetContent(style).scenes : defaultLiveSetContent().scenes; return [scenes[0], scenes[style ? 2 : 3]].map((scene, i) => <Box key={scene.id} sx={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}><LiveSceneStage scene={scene} width={130} /><Typography variant="caption" color="inherit">{t(i ? "studio.previewTalk" : "studio.previewStandby")}</Typography></Box>); })()}
               </Stack>
             </Box>
-            <CardContent><Typography variant="body2" sx={{ mb: 1 }}>{style === "glow" ? "夜空と琥珀の灯り" : style === "signal" ? "明快な情報レール" : style === "hakuji" ? t("studio.hakujiDescription") : "これまでのシンプルな7シーン"}</Typography>
+            <CardContent><Typography variant="body2" sx={{ mb: 1 }}>{style === "glow" ? t("studio.glowDescription") : style === "signal" ? t("studio.signalDescription") : style === "hakuji" ? t("studio.hakujiDescription") : t("studio.defaultDescription")}</Typography>
               <Button disabled={create.isPending} onClick={() => newSet(style)}>{t("studio.createWithStyle")}</Button>
             </CardContent>
           </Card>
         ))}
       </Box>
-      {create.isError && <Typography color="error">作成できませんでした。再試行してください。</Typography>}
+      {create.isError && <Typography color="error">{t("studio.createStyleFailed")}</Typography>}
       {isLoading || !liveSets ? (
         <Typography>{t("common.loading")}</Typography>
       ) : liveSets.length === 0 ? (
@@ -139,7 +139,7 @@ export function LiveSetsPage() {
                         onClick={(e) => {
                           e.stopPropagation();
                           // 保存されるデータ。訳す方針は #364 (#367)
-                          duplicateSet(s.id, s.name || "配信セット");
+                          duplicateSet(s.id, s.name || t("studio.liveSet"));
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
                       >

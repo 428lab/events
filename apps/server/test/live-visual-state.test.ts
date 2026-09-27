@@ -39,6 +39,39 @@ describe("visual style creation", () => {
   });
 });
 
+describe("event live comment source", () => {
+  it("defaults OFF, accepts only confirmed event staff and eligible public chat, and preserves scene updates", async () => {
+    const f = await fixture();
+    const path = `https://example.com/api/events/${f.eventId}/live-state`;
+    const patch = (chatSource: string) => SELF.fetch(path, { method: "PATCH", headers: { cookie: f.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ chatSource }) });
+    expect((await eventLiveStateRepo.getOrInit(f.eventId)).chatSource).toBe("off");
+    expect((await SELF.fetch(path, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatSource: "event" }) })).status).not.toBe(200);
+    expect((await patch("youtube")).status).toBe(400);
+    expect((await patch("event")).status).toBe(200);
+    expect((await eventLiveStateRepo.getOrInit(f.eventId)).chatSource).toBe("event");
+    const membersPath = `https://example.com/api/events/${f.eventId}/chat-members`;
+    expect((await SELF.fetch(membersPath, { headers: { cookie: f.cookie } })).status).toBe(200);
+    await env.DB.prepare("INSERT INTO event_member(id, event_id, user_id, role, status, attended, created_at) VALUES (?, ?, ?, 'participant', 'confirmed', 0, ?)").bind(crypto.randomUUID(), f.eventId, f.outsider, Date.now()).run();
+    await env.DB.prepare("INSERT INTO event_chat_key(event_id, user_id, pubkey, created_at) VALUES (?, ?, ?, ?)").bind(f.eventId, f.outsider, "a".repeat(64), Date.now()).run();
+    const authors = async () => (await (await SELF.fetch(membersPath, { headers: { cookie: f.cookie } })).json() as { members: { pubkey: string }[] }).members;
+    expect((await authors()).some(m => m.pubkey === "a".repeat(64))).toBe(true);
+    await env.DB.prepare("UPDATE event_member SET status='canceled' WHERE event_id=? AND user_id=?").bind(f.eventId, f.outsider).run();
+    expect((await authors()).some(m => m.pubkey === "a".repeat(64))).toBe(false);
+    await env.DB.prepare("UPDATE event SET chat_enabled=0 WHERE id=?").bind(f.eventId).run();
+    expect((await (await SELF.fetch(membersPath, { headers: { cookie: f.cookie } })).json() as { chatEnabled: boolean }).chatEnabled).toBe(false);
+    await env.DB.prepare("UPDATE event SET chat_enabled=1 WHERE id=?").bind(f.eventId).run();
+    await eventLiveStateRepo.update(f.eventId, { activeSceneId: "scene-2" }, { eventId: f.eventId, actorId: f.staff, permission: "manager" });
+    expect((await eventLiveStateRepo.getOrInit(f.eventId)).chatSource).toBe("event");
+    expect((await patch("off")).status).toBe(200);
+    await env.DB.prepare("UPDATE event SET visibility='private' WHERE id=?").bind(f.eventId).run();
+    expect((await patch("event")).status).toBe(403);
+    expect((await SELF.fetch(membersPath, { headers: { cookie: f.cookie } })).status).toBe(403);
+    await env.DB.prepare("UPDATE event SET visibility='public' WHERE id=?").bind(f.eventId).run();
+    await env.DB.prepare("UPDATE event_member SET status='canceled' WHERE event_id=? AND user_id=?").bind(f.eventId, f.staff).run();
+    expect((await patch("event")).status).toBe(403);
+  });
+});
+
 describe("manual live indicator state", () => {
   it("defaults OFF, rejects outsider and persists confirmed staff ON", async () => {
     const f = await fixture();

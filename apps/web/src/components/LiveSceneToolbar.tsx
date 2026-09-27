@@ -17,6 +17,11 @@ import {
   newTextElement,
 } from "../lib/liveScenes.js";
 
+const PART_TITLE_KEYS = {
+  "glow-name": "studio.glowNamePart", "glow-camera": "studio.glowCameraPart", "glow-chapter": "studio.glowChapterPart", "glow-break": "studio.glowBreakPart",
+  "signal-name": "studio.signalNamePart", "signal-camera": "studio.signalCameraPart", "signal-chapter": "studio.signalChapterPart", "signal-info": "studio.signalInfoPart",
+} as const;
+
 /** 背景プリセット（Natsumatsuri トーン）。色と並び順は文言ではないのでコード側に残す */
 const BG_PRESETS = [
   { labelKey: "studio.bgNightSky", value: "#0E1426" },
@@ -113,15 +118,16 @@ export function LiveSceneToolbar({
           {t("studio.elementDeck")}
         </Button>
         <Button size="small" startIcon={<InfoOutlinedIcon />} onClick={() => onAdd(newEventInfoElement())}>{t("studio.elementEventInfo")}</Button>
-        <Button size="small" onClick={() => setPartsOpen(v => !v)}>部品を追加</Button>
-        <Button size="small" onClick={() => onAdd(make("marquee", { text: "ご案内を入力", seconds: 20, gap: 32, direction: "left", fill: style === "hakuji" ? "#FFFFFF" : style === "glow" ? "#1A2737" : "#18303B", color: style === "hakuji" ? "#203146" : "#EAF0F7" }))}>流れる案内</Button>
-        <Button size="small" onClick={() => onAdd(make("clock", { x: 680, y: 435, w: 210, timezone: "Asia/Tokyo", showSeconds: true, color: style === "hakuji" ? "#203146" : "#EAF0F7", fill: style === "hakuji" ? "#FFFFFF" : undefined }))}>現在時刻</Button>
-        <Button size="small" onClick={() => onAdd(make("countdown", { x: 680, y: 435, w: 210, target: "eventStart", zero: "stop", timezone: "Asia/Tokyo", color: style === "hakuji" ? "#203146" : "#EAF0F7", fill: style === "hakuji" ? "#FFFFFF" : undefined }))}>開始カウント</Button>
-        <Button size="small" onClick={() => onAdd(make("liveIndicator", { x: 760, y: 57, w: 130, h: 36, text: "LIVE", color: style === "hakuji" ? "#FFFFFF" : "#2DD4BF", fill: style === "hakuji" ? "#203146" : undefined }))}>LIVE表示</Button>
-        <Button size="small" onClick={() => onAdd(make("motif", { x: 845, y: 80, w: 55, h: 55, motif: style === "glow" ? "lantern" : "ticks", color: style === "hakuji" ? "#285E91" : style === "glow" ? "#FB923C" : "#2DD4BF", motion: { kind: "rotation", seconds: 30, direction: "clockwise" } }))}>回転装飾</Button>
+        <Button size="small" onClick={() => setPartsOpen(v => !v)}>{t("studio.addParts")}</Button>
+        <Button size="small" onClick={() => onAdd(make("chat", { x: 28, y: 310, w: 380, h: 175, chatStyle: style, chatRows: 3, chatSeconds: 20 }))}>{t("studio.elementChat")}</Button>
+        <Button size="small" onClick={() => onAdd(make("marquee", { text: t("studio.marqueeDefaultText"), seconds: 20, gap: 32, direction: "left", fill: style === "hakuji" ? "#FFFFFF" : style === "glow" ? "#1A2737" : "#18303B", color: style === "hakuji" ? "#203146" : "#EAF0F7" }))}>{t("studio.elementMarquee")}</Button>
+        <Button size="small" onClick={() => onAdd(make("clock", { x: 680, y: 435, w: 210, timezone: "Asia/Tokyo", showSeconds: true, color: style === "hakuji" ? "#203146" : "#EAF0F7", fill: style === "hakuji" ? "#FFFFFF" : undefined }))}>{t("studio.elementClock")}</Button>
+        <Button size="small" onClick={() => onAdd(make("countdown", { x: 680, y: 435, w: 210, target: "eventStart", zero: "stop", timezone: "Asia/Tokyo", color: style === "hakuji" ? "#203146" : "#EAF0F7", fill: style === "hakuji" ? "#FFFFFF" : undefined }))}>{t("studio.elementCountdown")}</Button>
+        <Button size="small" onClick={() => onAdd(make("liveIndicator", { x: 760, y: 57, w: 130, h: 36, text: "LIVE", color: style === "hakuji" ? "#FFFFFF" : "#2DD4BF", fill: style === "hakuji" ? "#203146" : undefined }))}>{t("studio.elementLiveIndicator")}</Button>
+        <Button size="small" onClick={() => onAdd(make("motif", { x: 845, y: 80, w: 55, h: 55, motif: style === "glow" ? "lantern" : "ticks", color: style === "hakuji" ? "#285E91" : style === "glow" ? "#FB923C" : "#2DD4BF", motion: { kind: "rotation", seconds: 30, direction: "clockwise" } }))}>{t("studio.elementMotif")}</Button>
       </Stack>
       {partsOpen && <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(130px, 1fr))", md: "repeat(4, minmax(130px, 1fr))" }, gap: 1, mb: 1 }}>
-        {([style, ...(["glow", "signal", "hakuji"] as VisualStyle[]).filter(family => family !== style)]).flatMap(family => visualParts(family).map(part => <Button key={`${family}-${part.id}`} variant="outlined" sx={{ minHeight: 76, background: family === "hakuji" ? "#F6F2EA" : family === "glow" ? "linear-gradient(120deg, #1A2737, #FB923C)" : "linear-gradient(120deg, #0A1120, #607C83)", color: family === "hakuji" ? "#203146" : "#fff", textAlign: "left" }} onClick={() => onAddPart(part.elements)}>{family === "hakuji" ? t("studio.hakujiParts") : family === "glow" ? "灯り" : "輪郭"} · {family === "hakuji" ? t(part.id === "name" ? "studio.hakujiNameCard" : part.id === "camera" ? "studio.hakujiCameraCard" : part.id === "chapter" ? "studio.hakujiChapterCard" : "studio.hakujiBreakCard") : part.title}（{part.elements.length}層）</Button>))}
+        {([style, ...(["glow", "signal", "hakuji"] as VisualStyle[]).filter(family => family !== style)]).flatMap(family => visualParts(family).map(part => <Button key={`${family}-${part.id}`} variant="outlined" sx={{ minHeight: 76, background: family === "hakuji" ? "#F6F2EA" : family === "glow" ? "linear-gradient(120deg, #1A2737, #FB923C)" : "linear-gradient(120deg, #0A1120, #607C83)", color: family === "hakuji" ? "#203146" : "#fff", textAlign: "left" }} onClick={() => onAddPart(part.elements)}>{family === "hakuji" ? t("studio.hakujiParts") : family === "glow" ? t("studio.chatStyleglow") : t("studio.chatStylesignal")} · {family === "hakuji" ? t(part.id === "name" ? "studio.hakujiNameCard" : part.id === "camera" ? "studio.hakujiCameraCard" : part.id === "chapter" ? "studio.hakujiChapterCard" : "studio.hakujiBreakCard") : t(PART_TITLE_KEYS[`${family}-${part.id}` as keyof typeof PART_TITLE_KEYS])}{t("studio.partLayers", { count: part.elements.length })}</Button>))}
       </Box>}
 
       <Stack

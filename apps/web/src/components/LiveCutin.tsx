@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import type { CutinAction } from "@eventer/shared";
+import { useTranslation } from "react-i18next";
 import "./LiveCutin.css";
 
 /** The name/message are React text nodes, never markup or an image of sample lettering. */
 export function LiveCutin({ action }: { action: Pick<CutinAction, "message"> }) {
+  const { t } = useTranslation();
   const [visible, setVisible] = useState(true);
   const [fontFailed, setFontFailed] = useState(false);
   useEffect(() => {
@@ -27,6 +29,6 @@ export function LiveCutin({ action }: { action: Pick<CutinAction, "message"> }) 
       <path d="M116 470 Q425 357 791 203 T1005 150" />
       <path className="live-cutin-edge" d="M-60 453 Q274 386 584 250 T1010 116" />
     </svg>
-    <div className="live-cutin-words"><span className="live-cutin-label">SPECIAL ENTRANCE <i /> 参戦演出</span><strong>{action.message}</strong><span className="live-cutin-rule" /></div>
+    <div className="live-cutin-words"><span className="live-cutin-label">SPECIAL ENTRANCE <i /> {t("studio.cutinLabel")}</span><strong>{action.message}</strong><span className="live-cutin-rule" /></div>
   </div>;
 }
