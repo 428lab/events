@@ -477,10 +477,10 @@
         },
         {
           "type": "image-url",
-          "x": 510,
-          "y": 166,
-          "w": 394,
-          "h": 307,
+          "x": 526,
+          "y": 180,
+          "w": 378,
+          "h": 290,
           "src": "https://events.kojira.io/deck-import/v2/intro-awards.png"
         },
         {

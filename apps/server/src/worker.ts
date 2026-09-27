@@ -689,7 +689,7 @@ app.get("/deck-import/v1/spec.md", async (c) => {
 const introNames = ["journey", "publish", "calendar", "crew", "checkin", "stage", "awards", "stream"];
 const introOrigin = "https://events.kojira.io";
 // Exact reviewed bundle: do not serve an unreviewed revision or silently remap it.
-const introSha256 = "7cef87ff4901343919795916ffaa3e489d34e86ad101ec6638f804f1320c40a5";
+const introSha256 = "f810e4d9493004db024cd91f649d32e2a0598465a6ebfe0013598467bfbab109";
 app.get("/deck-import/v2/sample-events-lab-intro.json", async (c) => {
   const failure = () => c.json({ error: "sample_unavailable" }, 503, { "Cache-Control": "no-store" });
   const asset = await getAssets().fetch(c.req.raw);
