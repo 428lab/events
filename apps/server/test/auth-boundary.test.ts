@@ -154,6 +154,8 @@ const OPEN_ROUTES = new Set<string>([
   "GET /feed/requests.rss",
   "GET /llms.txt",
   "GET /deck-import/v1/spec.md",
+  // Bundled sample is public in production; staging's outer login gate still applies.
+  "GET /deck-import/v2/sample-events-lab-intro.json",
   "GET /r/:slug",
   "GET /requests/:id",
   "GET /users/:handle",
@@ -161,7 +163,7 @@ const OPEN_ROUTES = new Set<string>([
 
 /** `OPEN_ROUTES` の件数。表を1行足すとここも動かすことになるので、
  * 「テストを通すためにこっそり1本開ける」が差分に必ず現れる */
-const EXPECTED_OPEN_COUNT = 85;
+const EXPECTED_OPEN_COUNT = 86;
 
 const UUID = "00000000-0000-4000-8000-000000000000";
 const probe = (p: string) =>
