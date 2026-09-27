@@ -38,6 +38,7 @@ import {
 import { useMyLiveSets } from "../api/liveSetHooks.js";
 import { useMyDecks } from "../api/deckHooks.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
+import { ManualLiveIndicatorControl } from "../components/ManualLiveIndicatorControl.js";
 import {
   PresenterPanelToggle,
   PresenterSidePanel,
@@ -51,7 +52,8 @@ export function LiveControlPage() {
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const isAdmin = useIsAdmin();
-  const { data: state } = useEventLiveState(id);
+  const liveState = useEventLiveState(id);
+  const { data: state } = liveState;
   const { data: liveSet } = useEventLiveSetContent(id, state?.liveSetId);
   const { data: mySets } = useMyLiveSets();
   const { data: myDecks } = useMyDecks();
@@ -142,6 +144,8 @@ export function LiveControlPage() {
           {t("studio.obsHint", { action: t("studio.openLiveScreen") })}
         </Alert>
 
+        {/* 手動の宣言。API は参加確定 staff のみ受け付ける（admin bypass なし）。 */}
+        {eventData?.myRole === "staff" && <ManualLiveIndicatorControl state={state} fetchError={liveState.isError} pending={update.isPending} saveError={update.isError} onToggle={liveIndicatorOn => update.mutate({ liveIndicatorOn })} />}
         {/* 配信セット選択 */}
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <TextField
@@ -245,7 +249,7 @@ export function LiveControlPage() {
                     <Chip
                       size="small"
                       color="secondary"
-                      label="ON AIR"
+                      label="選択中"
                       sx={{ height: 16, fontSize: 10, fontWeight: 700 }}
                     />
                   )}

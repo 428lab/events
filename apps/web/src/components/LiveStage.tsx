@@ -5,6 +5,9 @@ import MonitorIcon from "@mui/icons-material/Monitor";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import { LIVE_H, LIVE_W } from "@eventer/shared";
 import type { EventInfoField, LiveElement, LiveScene } from "@eventer/shared";
+import { LiveDynamic } from "./LiveDynamic.js";
+import { LiveMotif } from "./LiveMotif.js";
+import { livePalette } from "../lib/livePalette.js";
 
 /** 配信画面タブが実体（カメラ映像・デッキスライド・イベント情報）を差し込むための口。
  * 未指定（エディタ・サムネイル）はプレースホルダー表示になる */
@@ -15,6 +18,11 @@ export interface LiveRuntime {
   deck?: (el: LiveElement) => ReactNode;
   /** eventInfo のフィールド値 */
   eventInfo?: (field: EventInfoField) => string;
+  eventStartMs?: number;
+  eventDatetimeAvailable?: boolean;
+  liveIndicatorOn?: boolean;
+  previewNow?: number;
+  pauseMotion?: boolean;
 }
 
 /** 実体が差し込まれないとき（エディタ・サムネイル）に出す見本。
@@ -69,7 +77,7 @@ function textStyle(el: LiveElement): React.CSSProperties {
     justifyContent: justify,
     textAlign: el.align ?? "left",
     color: el.color ?? "#EAF0F7",
-    fontFamily: el.fontFamily || undefined,
+    fontFamily: el.fontFamily ? `"${el.fontFamily}", "Noto Sans JP", sans-serif` : '"Noto Sans JP", sans-serif',
     fontSize: el.fontSize ?? 28,
     fontWeight: el.bold ? 700 : 400,
     fontStyle: el.italic ? "italic" : "normal",
@@ -139,11 +147,22 @@ export function LiveElementContent({
           />
         )
       );
+    case "shape": {
+      const cycle = el.motion?.kind === "colorCycle" && el.w <= 180 && el.h <= 180 ? livePalette(el.motion.colors, "background-color") : null;
+      return <><div className={cycle ? "live-decoration live-decoration-cycle" : "live-decoration"} style={{ background: cycle ? el.motion?.kind === "colorCycle" ? el.motion.colors[0] : el.fill : el.fill ?? "transparent", border: el.stroke ? `${el.strokeWidth ?? 2}px solid ${el.stroke}` : undefined, borderRadius: el.shape === "ellipse" ? "50%" : el.radius ?? 0, opacity: el.opacity ?? 1, height: el.shape === "line" ? Math.max(1, el.h) : "100%", animationName: cycle?.name, animationDuration: cycle ? `${el.motion?.seconds}s` : undefined, animationIterationCount: cycle ? "infinite" : undefined, animationTimingFunction: "linear", animationPlayState: runtime?.pauseMotion ? "paused" : "running" }} />{cycle && <style>{cycle.css}</style>}</>;
+    }
+    case "motif": return <LiveMotif el={el} paused={runtime?.pauseMotion} />;
+    case "marquee": case "clock": case "countdown": case "liveIndicator":
+      return <LiveDynamic el={el} runtime={runtime} />;
     case "eventInfo": {
       const field = el.field ?? "title";
       const value =
         runtime?.eventInfo?.(field) ??
         t(PLACEHOLDER_INFO_KEY[field], { n: PLACEHOLDER_PARTICIPANTS });
+      if (field === "title" && el.id.startsWith("v1-")) {
+        const footer = el.id.endsWith("-key-event") || el.id.endsWith("-cam-event") || el.id.endsWith("-date-title");
+        return <div style={textStyle(el)}><span title={value} style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: footer ? 1 : 2, overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", maxHeight: "100%" }}>{value}</span></div>;
+      }
       return <div style={textStyle(el)}>{value}</div>;
     }
     default:
@@ -183,7 +202,7 @@ export function LiveSceneStage({
           background: scene.background || "#0E1426",
         }}
       >
-        {scene.elements.map((el) => (
+        {scene.elements.filter(el => !el.requiresEventDatetime || runtime?.eventDatetimeAvailable !== false).map((el) => (
           <div
             key={el.id}
             style={{

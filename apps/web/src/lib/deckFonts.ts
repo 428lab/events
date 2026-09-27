@@ -22,6 +22,7 @@ type DeckFontOption = {
 
 const DECK_FONTS: DeckFontOption[] = [
   { labelKey: "studio.fontDefault", family: "" },
+  { label: "Plus Jakarta Sans", family: "Plus Jakarta Sans" },
   { labelKey: "studio.fontSerif", family: "serif" },
   { labelKey: "studio.fontMono", family: "monospace" },
   ...FONTS.map((f) => ({ label: f.label, family: f.family })),
@@ -47,7 +48,7 @@ const loaded = new Set<string>();
 
 /** Google Fonts を必要時に読み込む（フルウェイト。スライド本文は任意の文字を含むため text 部分集合は使わない） */
 export function ensureDeckFont(family?: string): void {
-  if (!family || family === "serif" || family === "monospace") return;
+  if (!family || family === "serif" || family === "monospace" || family === "Plus Jakarta Sans") return;
   if (loaded.has(family)) return;
   loaded.add(family);
   const href = `https://fonts.googleapis.com/css2?family=${family.replace(

@@ -11,6 +11,7 @@ interface Row {
   bgm_track_id: string | null;
   bgm_playing: number;
   bgm_volume: number;
+  live_indicator_on: number;
   updated_at: number;
 }
 
@@ -24,6 +25,7 @@ function toState(row: Row): EventLiveState {
     bgmTrackId: row.bgm_track_id,
     bgmPlaying: row.bgm_playing === 1,
     bgmVolume: row.bgm_volume,
+    liveIndicatorOn: row.live_indicator_on === 1,
     updatedAt: row.updated_at,
   };
 }
@@ -46,23 +48,19 @@ export const eventLiveStateRepo = {
   async update(
     eventId: string,
     input: UpdateEventLiveStateInput, writer: EventWriter): Promise<EventLiveState> {
-    const cur = await this.getOrInit(eventId);
-    const next = { ...cur, ...input };
-    await eventRun(writer,
-      `UPDATE event_live_state SET
-         live_set_id = ?, active_scene_id = ?, deck_id = ?, deck_page = ?,
-         bgm_track_id = ?, bgm_playing = ?, bgm_volume = ?, updated_at = ?
-       WHERE event_id = ?`,
-      next.liveSetId ?? null,
-      next.activeSceneId ?? null,
-      next.deckId ?? null,
-      next.deckPage,
-      next.bgmTrackId ?? null,
-      next.bgmPlaying ? 1 : 0,
-      next.bgmVolume,
-      Date.now(),
-      eventId,
-    );
+    await this.getOrInit(eventId);
+    const columns: Record<keyof UpdateEventLiveStateInput, string> = {
+      liveSetId: "live_set_id", activeSceneId: "active_scene_id", deckId: "deck_id",
+      deckPage: "deck_page", bgmTrackId: "bgm_track_id", bgmPlaying: "bgm_playing",
+      bgmVolume: "bgm_volume", liveIndicatorOn: "live_indicator_on",
+    };
+    const fields = Object.entries(input).filter(([, value]) => value !== undefined);
+    if (fields.length) {
+      await eventRun(input.liveIndicatorOn !== undefined ? { ...writer, permission: "staff" } : writer,
+        `UPDATE event_live_state SET ${fields.map(([key]) => `${columns[key as keyof UpdateEventLiveStateInput]} = ?`).join(", ")}, updated_at = ? WHERE event_id = ?`,
+        ...fields.map(([, value]) => typeof value === "boolean" ? Number(value) : value), Date.now(), eventId,
+      );
+    }
     return this.getOrInit(eventId);
   },
 };

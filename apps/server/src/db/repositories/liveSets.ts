@@ -6,7 +6,7 @@ import type {
   UpdateLiveSetInput,
 } from "@eventer/shared";
 import { defaultLiveSetContent } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { many, one, run, runCount } from "../client.js";
 
 interface LiveSetRow {
   id: string;
@@ -82,14 +82,16 @@ export const liveSetsRepo = {
   async update(id: string, input: UpdateLiveSetInput): Promise<LiveSet | null> {
     const current = await this.findById(id);
     if (!current) return null;
-    await run(
-      "UPDATE live_set SET name = ?, content = ?, community_id = ?, updated_at = ? WHERE id = ?",
+    const changed = await runCount(
+      "UPDATE live_set SET name = ?, content = ?, community_id = ?, updated_at = ? WHERE id = ? AND updated_at = ?",
       input.name ?? current.name,
       JSON.stringify(input.content ?? current.content),
       input.communityId !== undefined ? input.communityId : current.communityId,
-      Date.now(),
+      Math.max(Date.now(), current.updatedAt + 1),
       id,
+      current.updatedAt,
     );
+    if (!changed) return null;
     return this.findById(id);
   },
 

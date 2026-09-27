@@ -16,6 +16,8 @@ import { SlideStage } from "../components/SlideStage.js";
 import type { LiveRuntime } from "../components/LiveStage.js";
 import { formatDateRange, participantCountLabel } from "../lib/format.js";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
+import { canShowLiveIndicator } from "../lib/liveIndicator.js";
+import { clockText } from "../lib/liveTime.js";
 
 const DEVICE_KEY = "eventer-live-camera-device";
 
@@ -26,7 +28,10 @@ export function LiveScreenPage() {
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const event = eventData?.event;
-  const { data: state } = useEventLiveState(id);
+  const liveState = useEventLiveState(id);
+  const { data: state } = liveState;
+  const [wallNow, setWallNow] = useState(() => Date.now());
+  useEffect(() => { const timer = setInterval(() => setWallNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const { data: liveSet } = useEventLiveSetContent(id, state?.liveSetId);
   const { data: deck } = useEventLiveDeck(id, state?.deckId);
 
@@ -152,6 +157,10 @@ export function LiveScreenPage() {
     ] ?? null;
 
   const runtime: LiveRuntime = {
+    // A failed or stale GET never authorizes an ON badge, even when React Query retains old data.
+    liveIndicatorOn: canShowLiveIndicator(state, liveState.dataUpdatedAt, liveState.isError, event?.endsAt, wallNow),
+    eventStartMs: event?.scheduling ? undefined : event?.startsAt,
+    eventDatetimeAvailable: Boolean(event && !event.scheduling && Number.isFinite(event.startsAt)),
     camera: (el: LiveElement) => (
       <CameraVideo stream={stream} fit={el.fit ?? "cover"} />
     ),
@@ -236,6 +245,8 @@ export function LiveScreenPage() {
       )}
 
       <audio ref={audioRef} hidden />
+      {liveState.isError && <Box sx={{ position: "fixed", top: 8, right: 8, bgcolor: "#7f1d1d", color: "white", p: 1 }}>状態取得失敗：LIVE 表示は停止</Box>}
+      {scene?.elements.some(el => el.type === "clock" && clockText(wallNow, el.timezone ?? "Asia/Tokyo", true, false) === null) && <Box sx={{ position: "fixed", top: 8, left: 8, bgcolor: "#7f1d1d", color: "white", p: 1 }}>時計の設定または端末時刻を確認してください</Box>}
 
       {/* 自動再生ブロック時: 一度クリックしてもらう（配信者だけが見る画面） */}
       {audioBlocked && (

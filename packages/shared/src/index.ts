@@ -16,6 +16,7 @@ export * from "./communities.js";
 export * from "./decks.js";
 export * from "./scheduling.js";
 export * from "./liveSets.js";
+export * from "./liveVisuals.js";
 export * from "./photos.js";
 export * from "./eventBroadcast.js";
 export * from "./eventChat.js";

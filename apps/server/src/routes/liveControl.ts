@@ -6,7 +6,7 @@ import {
 } from "@eventer/shared";
 import type { LiveSet, UpdateEventLiveStateInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireEventRole } from "../auth/roles.js";
+import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
@@ -32,6 +32,9 @@ liveControlRoutes.patch(
   zValidator("json", updateEventLiveStateInput),
   async (c) => {
     const input = valid<UpdateEventLiveStateInput>(c, "json");
+    if (input.liveIndicatorOn !== undefined && !(await isConfirmedEventStaff(c.req.param("id"), c.get("user").id))) {
+      return c.json({ error: "confirmed_staff_required" }, 403);
+    }
     // 存在しない配信セットIDは弾く（DEFAULT は仮想セットなので許可）
     if (input.liveSetId && input.liveSetId !== DEFAULT_LIVE_SET_ID) {
       if (!(await liveSetsRepo.findById(input.liveSetId))) {

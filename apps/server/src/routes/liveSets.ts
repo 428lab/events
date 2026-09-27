@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { createLiveSetInput, updateLiveSetInput } from "@eventer/shared";
+import { createLiveSetInput, updateLiveSetInput, visualLiveSetContent } from "@eventer/shared";
 import type { CreateLiveSetInput, UpdateLiveSetInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
@@ -28,6 +28,8 @@ liveSetRoutes.post("/", zValidator("json", createLiveSetInput), async (c) => {
       return c.json({ error: "base_not_found" }, 404);
     }
     baseContent = base.content;
+  } else if (input.templateId) {
+    baseContent = visualLiveSetContent(input.templateId);
   }
   const liveSet = await liveSetsRepo.create(input, c.get("user").id, baseContent);
   return c.json(liveSet, 201);
@@ -48,10 +50,13 @@ liveSetRoutes.patch("/:id", zValidator("json", updateLiveSetInput), async (c) =>
   if (liveSet.ownerId !== c.get("user").id) {
     return c.json({ error: "forbidden" }, 403);
   }
-  const updated = await liveSetsRepo.update(
-    liveSet.id,
-    valid<UpdateLiveSetInput>(c, "json"),
-  );
+  const input = valid<UpdateLiveSetInput>(c, "json");
+  const hasVisualElements = liveSet.content.scenes.some(scene => scene.elements.some(el => !["text", "image", "camera", "deck", "eventInfo"].includes(el.type)));
+  if (input.content && ((hasVisualElements && input.baseUpdatedAt === undefined) || (input.baseUpdatedAt !== undefined && input.baseUpdatedAt !== liveSet.updatedAt))) {
+    return c.json({ error: "editor_outdated", message: "新しい部品を保護するため再読み込みしてください" }, 409);
+  }
+  const updated = await liveSetsRepo.update(liveSet.id, input);
+  if (!updated) return c.json({ error: "editor_outdated" }, 409);
   return c.json(updated);
 });
 

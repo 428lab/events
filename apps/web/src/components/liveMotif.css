@@ -1,0 +1,15 @@
+.live-motif { position: relative; box-sizing: border-box; }
+.live-motif-lantern { display: flex; align-items: center; flex-direction: column; filter: drop-shadow(0 0 8px currentColor); }
+.live-motif-lantern::before { content: ""; display: block; width: 1px; height: 18%; background: currentColor; }
+.live-motif-lantern i { width: 42%; height: 3%; background: currentColor; flex: none; border-radius: 6px; }
+.live-motif-lantern b { display: block; width: 35%; height: 50%; border: 2px solid currentColor; border-radius: 40% / 20%; background: color-mix(in srgb, currentColor 23%, transparent); box-shadow: 0 0 22px currentColor; }
+.live-motif-lantern::after { content: ""; width: 2px; height: 10%; background: currentColor; }
+.live-motif-halo, .live-motif-ticks { border: 1px solid currentColor; border-radius: 50%; }
+.live-motif-halo i:first-child, .live-motif-ticks i:first-child { position: absolute; inset: 15%; border: 1px dashed currentColor; border-radius: 50%; }
+.live-motif-halo i:last-child, .live-motif-ticks i:last-child { position: absolute; inset: 39%; border: 2px solid currentColor; border-radius: 50%; }
+.live-motif-ticks::before, .live-motif-ticks::after { content: ""; position: absolute; left: 50%; top: -8%; height: 25%; border-left: 2px solid currentColor; }
+.live-motif-ticks::after { top: auto; bottom: -8%; }
+.live-motif-brackets i:first-child { position: absolute; top: 0; left: 0; width: 55%; height: 55%; border-top: 3px solid currentColor; border-left: 3px solid currentColor; }
+.live-motif-brackets i:last-child { position: absolute; right: 0; bottom: 0; width: 55%; height: 55%; border-bottom: 3px solid currentColor; border-right: 3px solid currentColor; }
+.live-motif-grid { background-image: linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px); background-size: 24px 24px; opacity: .15 !important; }
+@media (prefers-reduced-motion: reduce) { .live-motif { animation: none !important; } }
