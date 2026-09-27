@@ -27,6 +27,8 @@ export function LiveCanvas({
   commands,
   onSelect,
   onSelectNone,
+  pauseMotion = false,
+  previewNow,
 }: {
   /** 編集中のシーン。1つも無い状態では undefined */
   scene: LiveScene | undefined;
@@ -35,6 +37,8 @@ export function LiveCanvas({
   commands: LiveElementCommands;
   onSelect: (elId: string) => void;
   onSelectNone: () => void;
+  pauseMotion?: boolean;
+  previewNow?: number;
 }) {
   const { ref, width, scale } = useCanvasScale(LIVE_W);
   /** 動かしている間の位置。変形ハンドルを追従させるために持つ */
@@ -109,7 +113,7 @@ export function LiveCanvas({
                   touchAction: "none",
                 }}
               >
-                <LiveElementContent el={el} />
+                <div style={{ width: "100%", height: "100%", transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined }}><LiveElementContent el={el} runtime={{ pauseMotion, previewNow }} lightScene={scene.id.startsWith("v1-hakuji-") || scene.background === "#F6F2EA"} /></div>
               </Rnd>
             ))}
 

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LIVE_POLL_MS } from "@eventer/shared";
+import type { CutinAction, CutinStatus } from "@eventer/shared";
 import type {
   EventLiveState,
   LiveSet,
@@ -14,6 +15,7 @@ export function useEventLiveState(eventId: string, poll = true) {
     queryKey: ["event", eventId, "liveState"],
     enabled: Boolean(eventId),
     refetchInterval: poll ? LIVE_POLL_MS : false,
+    retry: false,
     // OBS取り込み中はタブが背面にあることが多いので、非表示でもポーリング継続
     refetchIntervalInBackground: true,
     queryFn: () => api.get<EventLiveState>(`/events/${eventId}/live-state`),
@@ -31,6 +33,20 @@ export function useUpdateEventLiveState(eventId: string) {
     },
   });
 }
+
+export function useLiveCutin(eventId: string) {
+  return useQuery({
+    queryKey: ["event", eventId, "cutin"],
+    enabled: Boolean(eventId),
+    refetchInterval: LIVE_POLL_MS,
+    refetchIntervalInBackground: true,
+    retry: false,
+    queryFn: () => api.get<CutinStatus>(`/events/${eventId}/live-cutin`, { timeoutMs: 4000 }),
+  });
+}
+export const cutinApi = {
+  trigger: (eventId: string, body: { message: string }) => api.post<CutinAction & { serverNow: number }>(`/events/${eventId}/live-cutin`, body),
+};
 
 /** 配信で映すスライド（デッキ）の中身 */
 export function useEventLiveDeck(eventId: string, deckId: string | null | undefined) {

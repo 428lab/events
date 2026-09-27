@@ -13,7 +13,7 @@ export const LIVE_ELEMENT_TYPES = [
   "image",
   "camera",
   "deck",
-  "eventInfo",
+  "eventInfo", "shape", "motif", "marquee", "clock", "countdown", "liveIndicator", "chat",
 ] as const;
 export type LiveElementType = (typeof LIVE_ELEMENT_TYPES)[number];
 
@@ -25,6 +25,10 @@ export const EVENT_INFO_FIELDS = [
   "community",
 ] as const;
 export type EventInfoField = (typeof EVENT_INFO_FIELDS)[number];
+
+const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const rotationMotion = z.object({ kind: z.literal("rotation"), seconds: z.number().min(12).max(60), direction: z.enum(["clockwise", "counterclockwise"]) });
+const colorMotion = z.object({ kind: z.literal("colorCycle"), seconds: z.number().min(8).max(30), colors: z.array(hex).min(2).max(4) });
 
 export const liveElementSchema = z.object({
   id: z.string().max(64),
@@ -42,6 +46,8 @@ export const liveElementSchema = z.object({
   bold: z.boolean().optional(),
   italic: z.boolean().optional(),
   align: z.enum(["left", "center", "right"]).optional(),
+  /** Opt-in two-line clipping for editable name cards; other saved text is unchanged. */
+  maxLines: z.number().int().min(1).max(2).optional(),
   // image
   src: z.string().max(500).optional(),
   // camera: 表示のフィット方法（cover=枠いっぱい/contain=全体表示）
@@ -50,6 +56,38 @@ export const liveElementSchema = z.object({
   radius: z.number().optional(),
   // eventInfo
   field: z.enum(EVENT_INFO_FIELDS).optional(),
+  /** Hide a composed date card when the actual event schedule has not been fixed. */
+  requiresEventDatetime: z.boolean().optional(),
+  // Only predeclared decorative primitives and bounded effects; never user CSS/HTML.
+  shape: z.enum(["rectangle", "ellipse", "line"]).optional(),
+  motif: z.enum(["lantern", "halo", "brackets", "grid", "ticks"]).optional(),
+  fill: hex.optional(),
+  stroke: hex.optional(),
+  strokeWidth: z.number().min(0).max(16).optional(),
+  opacity: z.number().min(0).max(1).optional(),
+  motion: z.discriminatedUnion("kind", [rotationMotion, colorMotion]).optional(),
+  seconds: z.number().min(12).max(40).optional(),
+  gap: z.number().min(24).max(64).optional(),
+  direction: z.enum(["left", "right"]).optional(),
+  timezone: z.string().min(1).max(64).refine(v => { try { new Intl.DateTimeFormat("en", { timeZone: v }); return true; } catch { return false; } }).optional(),
+  hour12: z.boolean().optional(),
+  showSeconds: z.boolean().optional(),
+  showDate: z.boolean().optional(),
+  target: z.enum(["eventStart", "custom"]).optional(),
+  /** An unconfirmed custom target is saved without an epoch; the runtime hides it. */
+  targetEpochMs: z.number().int().min(0).max(8640000000000000).optional(),
+  zero: z.enum(["stop", "hide"]).optional(),
+  chatStyle: z.enum(["glow", "signal", "hakuji"]).optional(),
+  chatRows: z.number().int().min(2).max(5).optional(),
+  chatSeconds: z.number().int().min(10).max(45).optional(),
+}).superRefine((el, ctx) => {
+  if (el.motion && !((el.type === "motif" && el.motion.kind === "rotation") || ((el.type === "shape" || el.type === "motif") && el.motion.kind === "colorCycle"))) ctx.addIssue({ code: "custom", message: "decorative motion only" });
+  if (el.motion?.kind === "colorCycle" && (el.w > 180 || el.h > 180 || el.motion.colors.some(c => !["#FB923C", "#2DD4BF", "#FBBF24", "#7DD3FC"].includes(c)))) ctx.addIssue({ code: "custom", message: "Only small ornaments and legible palette colors can cycle" });
+  if (["shape", "motif", "marquee", "clock", "countdown", "liveIndicator", "chat"].includes(el.type) && (el.x < -960 || el.x > 960 || el.y < -540 || el.y > 540 || el.w < 1 || el.w > 960 || el.h < 1 || el.h > 540)) ctx.addIssue({ code: "custom", message: "Invalid visual bounds" });
+  if (el.type === "motif" && !el.motif || el.type === "shape" && !el.shape) ctx.addIssue({ code: "custom", message: "primitive required" });
+  if (el.type === "marquee" && (el.text?.length ?? 0) > 120) ctx.addIssue({ code: "custom", message: "marquee too long" });
+  if (el.type === "liveIndicator" && (el.text?.length ?? 0) > 32) ctx.addIssue({ code: "custom", message: "badge text too long" });
+  if (["clock", "countdown", "marquee", "liveIndicator"].includes(el.type) && el.fontSize !== undefined && (el.fontSize < 16 || el.fontSize > 72)) ctx.addIssue({ code: "custom", message: "Invalid widget font size" });
 });
 export type LiveElement = z.infer<typeof liveElementSchema>;
 
@@ -61,7 +99,7 @@ export const liveSceneSchema = z.object({
    * undefined=変更しない / null=停止 / trackId=その曲を再生 */
   bgmTrackId: z.string().max(64).nullable().optional(),
   elements: z.array(liveElementSchema).max(50).default([]),
-});
+}).refine(scene => scene.elements.filter(el => el.motion).length <= 2, { message: "Only two decorative effects can run in one scene" });
 export type LiveScene = z.infer<typeof liveSceneSchema>;
 
 export const liveSetContentSchema = z.object({
@@ -92,10 +130,13 @@ export const createLiveSetInput = z.object({
   name: z.string().trim().max(120).default(""),
   /** ベースにする既存セット（自分のセットのみ）。未指定はビルトインテンプレ */
   baseLiveSetId: z.string().optional(),
-});
+  templateId: z.enum(["glow", "signal", "hakuji"]).optional(),
+}).refine(v => !(v.baseLiveSetId && v.templateId), { message: "Cannot combine template and clone" });
 export type CreateLiveSetInput = z.infer<typeof createLiveSetInput>;
 
 export const updateLiveSetInput = z.object({
+  /** New editors send the last persisted revision; old tabs cannot erase new primitives. */
+  baseUpdatedAt: z.number().int().nonnegative().optional(),
   name: z.string().trim().max(120).optional(),
   content: liveSetContentSchema.optional(),
   communityId: z.string().nullable().optional(),
@@ -113,6 +154,8 @@ export const eventLiveStateSchema = z.object({
   bgmTrackId: z.string().nullable(),
   bgmPlaying: z.boolean(),
   bgmVolume: z.number(),
+  liveIndicatorOn: z.boolean(),
+  chatSource: z.enum(["off", "event"]),
   updatedAt: z.number(),
 });
 export type EventLiveState = z.infer<typeof eventLiveStateSchema>;
@@ -125,6 +168,8 @@ export const updateEventLiveStateInput = z.object({
   bgmTrackId: z.string().nullable().optional(),
   bgmPlaying: z.boolean().optional(),
   bgmVolume: z.number().min(0).max(1).optional(),
+  liveIndicatorOn: z.boolean().optional(),
+  chatSource: z.enum(["off", "event"]).optional(),
 });
 export type UpdateEventLiveStateInput = z.infer<typeof updateEventLiveStateInput>;
 

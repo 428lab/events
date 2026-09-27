@@ -12,10 +12,14 @@ import {
   useEventLiveState,
 } from "../api/liveControlHooks.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
+import { LiveCutinScreen } from "../components/LiveCutinScreen.js";
+import { useLiveEventChat } from "../components/LiveEventChat.js";
 import { SlideStage } from "../components/SlideStage.js";
 import type { LiveRuntime } from "../components/LiveStage.js";
 import { formatDateRange, participantCountLabel } from "../lib/format.js";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
+import { canShowLiveIndicator } from "../lib/liveIndicator.js";
+import { clockText } from "../lib/liveTime.js";
 
 const DEVICE_KEY = "eventer-live-camera-device";
 
@@ -26,7 +30,10 @@ export function LiveScreenPage() {
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const event = eventData?.event;
-  const { data: state } = useEventLiveState(id);
+  const liveState = useEventLiveState(id);
+  const { data: state } = liveState;
+  const [wallNow, setWallNow] = useState(() => Date.now());
+  useEffect(() => { const timer = setInterval(() => setWallNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const { data: liveSet } = useEventLiveSetContent(id, state?.liveSetId);
   const { data: deck } = useEventLiveDeck(id, state?.deckId);
 
@@ -146,14 +153,23 @@ export function LiveScreenPage() {
   const scene =
     scenes.find((s) => s.id === state?.activeSceneId) ?? scenes[0] ?? null;
 
+  const lightScene = scene?.id.startsWith("v1-hakuji-") || scene?.background === "#F6F2EA";
+  const hasChat = Boolean(scene?.elements.some(el => el.type === "chat"));
+  const liveChat = useLiveEventChat(id, state, liveState.dataUpdatedAt, liveState.isError, wallNow, hasChat);
+
   const deckSlide =
     deck?.content.slides[
       Math.min(state?.deckPage ?? 0, Math.max(0, (deck?.content.slides.length ?? 1) - 1))
     ] ?? null;
 
   const runtime: LiveRuntime = {
+    chatRows: liveChat.rows,
+    // A failed or stale GET never authorizes an ON badge, even when React Query retains old data.
+    liveIndicatorOn: canShowLiveIndicator(state, liveState.dataUpdatedAt, liveState.isError, event?.endsAt, wallNow),
+    eventStartMs: event?.scheduling ? undefined : event?.startsAt,
+    eventDatetimeAvailable: Boolean(event && !event.scheduling && Number.isFinite(event.startsAt)),
     camera: (el: LiveElement) => (
-      <CameraVideo stream={stream} fit={el.fit ?? "cover"} />
+      <CameraVideo stream={stream} fit={el.fit ?? "cover"} light={Boolean(lightScene)} />
     ),
     deck: (el: LiveElement) =>
       deckSlide ? (
@@ -178,12 +194,12 @@ export function LiveScreenPage() {
             height: "100%",
             display: "grid",
             placeItems: "center",
-            background: "#111827",
-            color: "#64748b",
+            background: lightScene ? "#DCE9DF" : "#111827",
+            color: lightScene ? "#203146" : "#64748b",
             fontSize: 18,
           }}
         >
-          {t("studio.deckUnselected")}
+          {lightScene ? t("studio.hakujiDeckUnavailable") : t("studio.deckUnselected")}
         </div>
       ),
     eventInfo: (field: EventInfoField) => {
@@ -217,25 +233,21 @@ export function LiveScreenPage() {
       }}
     >
       {scene ? (
-        // シーン切替時にフェードイン（key でリマウント）
-        <Box
-          key={scene.id}
-          sx={{
-            lineHeight: 0,
-            animation: "liveFadeIn 400ms ease",
-            "@keyframes liveFadeIn": {
-              from: { opacity: 0 },
-              to: { opacity: 1 },
-            },
-          }}
-        >
-          <LiveSceneStage scene={scene} width={stageW} runtime={runtime} />
+        <Box sx={{ position: "relative", width: stageW, height: stageW * 9 / 16, lineHeight: 0 }}>
+          {/* Only the scene fades; an action remains independent of scene changes. */}
+          <Box key={scene.id} sx={{ animation: "liveFadeIn 400ms ease", "@keyframes liveFadeIn": { from: { opacity: 0 }, to: { opacity: 1 } } }}>
+            <LiveSceneStage scene={scene} width={stageW} runtime={runtime} />
+          </Box>
+          <LiveCutinScreen key={id} eventId={id} />
         </Box>
       ) : (
         <Typography color="#334155">{t("studio.liveSetLoading")}</Typography>
       )}
 
       <audio ref={audioRef} hidden />
+      {hasChat && state?.chatSource === "event" && liveChat.status === "unavailable" && <Box sx={{ position: "fixed", bottom: 8, right: 8, bgcolor: "#7f1d1d", color: "white", p: 1 }}>{t("studio.chatUnavailable")}</Box>}
+      {liveState.isError && <Box sx={{ position: "fixed", top: 8, right: 8, bgcolor: "#7f1d1d", color: "white", p: 1 }}>{t("studio.liveStateUnavailable")}</Box>}
+      {scene?.elements.some(el => el.type === "clock" && clockText(wallNow, el.timezone ?? "Asia/Tokyo", true, false) === null) && <Box sx={{ position: "fixed", top: 8, left: 8, bgcolor: "#7f1d1d", color: "white", p: 1 }}>{t("studio.clockUnavailable")}</Box>}
 
       {/* 自動再生ブロック時: 一度クリックしてもらう（配信者だけが見る画面） */}
       {audioBlocked && (
@@ -310,9 +322,11 @@ export function LiveScreenPage() {
 function CameraVideo({
   stream,
   fit,
+  light = false,
 }: {
   stream: MediaStream | null;
   fit: "cover" | "contain";
+  light?: boolean;
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLVideoElement>(null);
@@ -330,12 +344,12 @@ function CameraVideo({
           height: "100%",
           display: "grid",
           placeItems: "center",
-          background: "#111827",
-          color: "#64748b",
+          background: light ? "#DCE9DF" : "#111827",
+          color: light ? "#203146" : "#64748b",
           fontSize: 16,
         }}
       >
-        {t("studio.cameraWaiting")}
+        {light ? t("studio.hakujiCameraUnavailable") : t("studio.cameraWaiting")}
       </div>
     );
   }

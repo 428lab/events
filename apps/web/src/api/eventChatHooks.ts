@@ -6,11 +6,12 @@ import { api, ApiError } from "./client.js";
 
 /** 表示許可リスト＋チャンネルID＋非表示リスト。
  * 新メンバーの鍵や非表示の反映のため定期的に再取得する */
-export function useChatMembers(eventId: string, enabled: boolean) {
+export function useChatMembers(eventId: string, enabled: boolean, failClosed = false) {
   return useQuery({
     queryKey: ["event", eventId, "chatMembers"],
     enabled: enabled && Boolean(eventId),
     refetchInterval: 5000,
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: "always",
     // 403（繋がせない状態 #283 / 参加確定前）は再試行しても結果が変わらないので
     // 既定の3回リトライを待たずに画面へ返す。ポーリング自体は続くため、
@@ -18,7 +19,7 @@ export function useChatMembers(eventId: string, enabled: boolean) {
     // 403以外は既定のまま: react-query は失敗のたびに 0 から数えた count を渡し、
     // 既定の retry:3 も `count < 3` で判定するので、この式は既定と同じ3回になる
     retry: (count, err) =>
-      !(err instanceof ApiError && [401,403,404].includes(err.status)) && count < 3,
+      !failClosed && !(err instanceof ApiError && [401,403,404].includes(err.status)) && count < 3,
     queryFn: () =>
       api.get<ChatMembersPayload>(`/events/${eventId}/chat-members`),
   });

@@ -1,0 +1,21 @@
+@font-face { font-family: 'Yuji Syuku Cutin'; src: url('/fonts/YujiSyuku-Regular.woff2') format('woff2'); font-display: swap; }
+.live-cutin { position: absolute; inset: 0; overflow: hidden; isolation: isolate; pointer-events: none; container-type: inline-size; color: #fff8e9; }
+.live-cutin-band { position: absolute; inset: 15% -20%; background: linear-gradient(114deg,#09172c 3%,#152b43 42%,#111b32 76%,#071322); transform: rotate(-11deg) scaleX(1.1); box-shadow: 0 0 0 2px #c86649,0 16px 40px #080e1bbf, inset 0 0 90px #040b1c; animation: cutin-band 3.5s cubic-bezier(.2,.7,.2,1) both; }
+.live-cutin-band::before { content: ''; position: absolute; inset: 8% 0; background: repeating-linear-gradient(176deg,transparent 0 20px,#ffffff09 21px 22px,transparent 24px 36px); }
+.live-cutin-brush { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; fill: none; stroke: #c94e35; stroke-width: 24; stroke-linecap: round; opacity: .94; transform: rotate(0deg); }
+.live-cutin-brush path { stroke-dasharray: 1150; stroke-dashoffset: 1150; animation: cutin-ink .52s .18s ease-out forwards; }
+.live-cutin-brush path:nth-child(2) { stroke: #e27b50; stroke-width: 5; animation-delay: .28s; }
+.live-cutin-brush path:nth-child(3) { stroke: #a8332b; stroke-width: 8; animation-delay: .35s; }
+.live-cutin-brush .live-cutin-edge { stroke: #f1ab70; stroke-width: 2; animation-delay: .4s; }
+.live-cutin-words { position: absolute; inset: 24% 6% 23%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: .5cqw; text-shadow: 2px 3px 0 #041325, 0 5px 20px #020a18; animation: cutin-letters 3.5s both; }
+.live-cutin-label { font: 700 clamp(10px,1.5cqw,22px) 'Plus Jakarta Sans',sans-serif; letter-spacing: .26em; color: #f2b390; }
+.live-cutin-label i { display: inline-block; height: 1px; width: 3cqw; background: currentColor; vertical-align: middle; }
+.live-cutin-words strong { display: block; max-width: 100%; font: 700 4cqw/1.35 'Yuji Syuku Cutin','Noto Sans JP',system-ui,sans-serif; font-synthesis: weight; overflow-wrap: anywhere; word-break: normal; text-wrap: balance; max-height: 2.7em; overflow: hidden; }
+.live-cutin-rule { width: 22%; height: 3px; background: linear-gradient(90deg,transparent,#e27b50,transparent); transform: rotate(-4deg); }
+@keyframes cutin-band { 0%,3% { translate: -140% 0; } 15%,82% { translate: 0 0; } 100% { translate: 145% 0; } }
+@keyframes cutin-ink { to { stroke-dashoffset: 0; } }
+@keyframes cutin-letters { 0%,13% { opacity: 0; transform: translate(-4%,8%) skewX(-6deg); } 22%,82% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translate(10%,-3%); } }
+.live-cutin--static .live-cutin-band,.live-cutin--static .live-cutin-words,.live-cutin--static .live-cutin-brush path { animation: none; translate: none; opacity: 1; stroke-dashoffset: 0; }
+.live-cutin--static .live-cutin-band { transform: rotate(-11deg) scaleX(1.1); }
+.live-cutin--static .live-cutin-words { transform: none; }
+@media (prefers-reduced-motion: reduce) { .live-cutin-band,.live-cutin-words,.live-cutin-brush path { animation: none; translate: none; opacity: 1; stroke-dashoffset: 0; } .live-cutin-band { transform: rotate(-11deg) scaleX(1.1); } .live-cutin-words { transform: none; } }

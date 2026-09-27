@@ -251,6 +251,10 @@ eventChatRoutes.get(
     const eventId = c.req.param("id");
     const event = await eventsRepo.findById(eventId);
     if (!event) return c.json({ error: "not_found" }, 404);
+    // Live projection polls this metadata as its authorization boundary. Unpublished
+    // or unscheduled events cannot retain a previously allowed relay view. Disabled
+    // chat remains in the response for existing clients, which honor chatEnabled=false.
+    if (event.status !== "published" || event.scheduling) return c.json({ error: "chat_unavailable" }, 403);
     const payload: ChatMembersPayload = {
       members: await eventChatRepo.listMembers(eventId),
       channelId: await eventChatRepo.channelIdFor(eventId),
