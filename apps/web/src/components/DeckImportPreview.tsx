@@ -70,7 +70,7 @@ export function DeckImportPreview({ content }: { content: DeckContent }) {
   return <Stack spacing={2}>
     <Alert severity="info">{t("deckImport.manual")}</Alert>
     <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-      {content.slides.map((slide, i) => <Button key={slide.id} aria-label={t("deckImport.page", { n: i + 1 })} variant={page === i ? "contained" : "outlined"} onClick={() => setSelected(i)} aria-pressed={page === i} sx={{ display: "block", p: 0.5 }}>
+      {content.slides.map((slide, i) => <Button key={slide.id} aria-label={t("deckImport.page", { n: i + 1 })} variant={page === i ? "contained" : "outlined"} onClick={() => setSelected(i)} aria-pressed={page === i} sx={{ display: "block", p: 0.5, borderRadius: "14px", overflow: "hidden" }}>
         <Thumbnail slide={slide} onImageStatus={(elementId, src, status) => onImageStatus(i, elementId, src, status)} /><Typography variant="caption">{t("deckImport.page", { n: i + 1 })}</Typography>
       </Button>)}
     </Box>
