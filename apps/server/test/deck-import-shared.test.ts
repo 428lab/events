@@ -122,7 +122,9 @@ describe("deckImport shared contract", () => {
     const parsed = parseDeckImport(Object.values(samples)[0]);
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(convertDeckImport(parsed.value, previewDeckImportId).content.slides.map((slide) => slide.elements.filter((el) => el.type === "image" && el.src).map((el) => el.src))).toEqual([
-      ["https://events.kojira.io/og-default.png"], ["https://events.kojira.io/icon-512.png"], [],
+      ["https://events.kojira.io/og-default.png"],
+      ...["journey", "publish", "calendar", "crew", "checkin", "stage", "awards", "stream"].map((name) => [`https://events.kojira.io/deck-import/v2/intro-${name}.png`]),
+      ["https://events.kojira.io/icon-512.png"],
     ]);
   });
   it("public schema and samples remain in lockstep with shared definitions", () => {

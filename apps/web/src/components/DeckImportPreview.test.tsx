@@ -44,6 +44,21 @@ describe("URL image render and preview", () => {
     fireEvent.click(thumbnail);
     expect(screen.getByRole("region", { name: "2ページ目" })).toBeInTheDocument();
   });
+  it("opens a 960px reading surface with page controls and returns to scaled preview", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    const deck: DeckContent = { slides: [content.slides[0], { ...content.slides[0], id: "slide-2" }] };
+    render(<DeckImportPreview content={deck} />);
+    const region = screen.getByRole("region", { name: "1ページ目" });
+    expect(region.querySelector("div[style*=\"width: 320px\"]")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "拡大して読む" }));
+    expect(region.querySelector("div[style*=\"width: 960px\"]")).toBeTruthy();
+    expect(screen.getByText(/左右にスクロール/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "次のページ" }));
+    expect(screen.getByRole("region", { name: "2ページ目" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "拡大表示を閉じる" }));
+    expect(screen.getByRole("region", { name: "2ページ目" }).querySelector("div[style*=\"width: 320px\"]")).toBeTruthy();
+  });
   it("warns for the exact failed page and element and permits review", async () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(960);
     vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });

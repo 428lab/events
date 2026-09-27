@@ -684,6 +684,32 @@ app.get("/deck-import/v1/spec.md", async (c) => {
   });
 });
 
+// The bundled introduction has production URLs at rest. Only its eight exact
+// first-party illustrations change origin for authenticated staging previews.
+const introNames = ["journey", "publish", "calendar", "crew", "checkin", "stage", "awards", "stream"];
+const introOrigin = "https://events.kojira.io";
+// Exact reviewed bundle: do not serve an unreviewed revision or silently remap it.
+const introSha256 = "7cef87ff4901343919795916ffaa3e489d34e86ad101ec6638f804f1320c40a5";
+app.get("/deck-import/v2/sample-events-lab-intro.json", async (c) => {
+  const failure = () => c.json({ error: "sample_unavailable" }, 503, { "Cache-Control": "no-store" });
+  const asset = await getAssets().fetch(c.req.raw);
+  if (!asset.ok || !/^application\/json(?:\s*;|\s*$)/i.test(asset.headers.get("Content-Type") ?? "")) return failure();
+  const raw = await asset.text();
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw))), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (digest !== introSha256) return failure();
+  let sample: unknown;
+  try { sample = JSON.parse(raw); } catch { return failure(); }
+  if (!sample || typeof sample !== "object" || !("slides" in sample) || !Array.isArray(sample.slides) || sample.slides.length !== 10) return failure();
+  const slides = sample.slides as Array<{ elements?: Array<{ type?: string; src?: string }> }>;
+  const expected = ["/og-default.png", ...introNames.map((name) => `/deck-import/v2/intro-${name}.png`), "/icon-512.png"];
+  const images = slides.flatMap((slide) => slide.elements?.filter((el) => el.type === "image-url") ?? []);
+  if (images.length !== expected.length || images.some((el, i) => el.src !== introOrigin + expected[i]) ||
+      slides.flatMap((slide) => slide.elements ?? []).filter((el) => el.type === "image-placeholder").length !== 1 ||
+      (sample as { format?: string; version?: number }).format !== "events-lab-deck" || (sample as { version?: number }).version !== 2) return failure();
+  if (env.isStaging) for (let i = 0; i < introNames.length; i++) images[i + 1].src = env.appBaseUrl + expected[i + 1];
+  return c.body(JSON.stringify(sample), 200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+});
+
 // それ以外（静的アセット & SPA ルート）は ASSETS から配信
 app.all("*", (c) => getAssets().fetch(c.req.raw));
 

@@ -134,7 +134,7 @@ describe("DeckImportPage real user entry", () => {
     expect(screen.getByRole("button", { name: "箇条書きサンプル" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "比較サンプル" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "仕様を読む" }).map((link) => link.getAttribute("href"))).toEqual(["/deck-import/v1/spec.md", "/deck-import/v2/spec.md"]);
-    fireEvent.click(screen.getByRole("button", { name: "events lab の紹介（画像付き）" }));
+    fireEvent.click(screen.getByRole("button", { name: "events lab の紹介（画像付き・10ページ）" }));
     await waitFor(() => expect(screen.getByLabelText("スライドJSON")).toHaveValue('{"format":"events-lab-deck","version":2}'));
     expect(fetchAsset).toHaveBeenCalledWith("/deck-import/v2/sample-events-lab-intro.json");
     expect(screen.getByText(/画像URLは公開デッキに残り/)).toBeInTheDocument();

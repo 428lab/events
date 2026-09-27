@@ -21,10 +21,11 @@ export function DeckImportPreview({ content }: { content: DeckContent }) {
   const { t } = useTranslation();
   const { ref, width } = useCanvasScale(960);
   const [selected, setSelected] = useState(0);
+  const [reading, setReading] = useState(false);
   const [warnings, setWarnings] = useState<Warning[]>([]);
   const [failedImages, setFailedImages] = useState<Record<string, true>>({});
   useEffect(() => {
-    setSelected(0); setWarnings([]); setFailedImages({});
+    setSelected(0); setReading(false); setWarnings([]); setFailedImages({});
     let page = 0;
     const found: Warning[] = [];
     let timer: ReturnType<typeof setTimeout>;
@@ -74,9 +75,11 @@ export function DeckImportPreview({ content }: { content: DeckContent }) {
         <Thumbnail slide={slide} onImageStatus={(elementId, src, status) => onImageStatus(i, elementId, src, status)} /><Typography variant="caption">{t("deckImport.page", { n: i + 1 })}</Typography>
       </Button>)}
     </Box>
+    <Button sx={{ alignSelf: "flex-start" }} variant={reading ? "outlined" : "contained"} onClick={() => setReading(!reading)}>{t(reading ? "deckImport.closeReading" : "deckImport.readFullSize")}</Button>
+    {reading && <Typography variant="body2">{t("deckImport.readingHint", { n: page + 1, total: content.slides.length })}</Typography>}
     <Box ref={ref} tabIndex={0} role="region" aria-label={t("deckImport.page", { n: page + 1 })}
-      onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); setSelected(Math.max(0, Math.min(content.slides.length - 1, page + (e.key === "ArrowRight" ? 1 : -1)))); } }} sx={{ width: "100%", minWidth: 0 }}>
-      {width > 0 && <SlideStage slide={content.slides[page]} width={Math.min(width, 960)} onImageStatus={(elementId, src, status) => onImageStatus(page, elementId, src, status)} />}
+      onKeyDown={(e) => { if (!reading && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); setSelected(Math.max(0, Math.min(content.slides.length - 1, page + (e.key === "ArrowRight" ? 1 : -1)))); } }} sx={{ width: "100%", minWidth: 0, overflowX: reading ? "auto" : "visible", overflowY: reading ? "auto" : "visible" }}>
+      {(reading || width > 0) && <SlideStage slide={content.slides[page]} width={reading ? 960 : Math.min(width, 960)} onImageStatus={(elementId, src, status) => onImageStatus(page, elementId, src, status)} />}
     </Box>
     <Stack direction="row" spacing={1}><Button disabled={page === 0} onClick={() => setSelected(page - 1)}>{t("deckImport.previous")}</Button><Button disabled={page === content.slides.length - 1} onClick={() => setSelected(page + 1)}>{t("deckImport.next")}</Button></Stack>
     {warnings.map((warning, i) => <Alert key={i} severity="warning">{t("deckImport.page", { n: warning.page + 1 })}{warning.element !== undefined && ` / ${t("deckImport.element", { n: warning.element + 1 })}`}: {t(`deckImport.${warning.kind}`)}</Alert>)}
