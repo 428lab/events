@@ -363,3 +363,32 @@ SQLは全値bind、ログにはraw/text/title/キー/本文hashを出さない�
 この設計でIssueの未決だったv1範囲・総量・あふれ警告・保存の原子性／再試行を決定した。実装承認前のレビュー対象は、狭いv1上限、公開保存、追加receipt migrationと日次100件制限、deck編集の保存表示修正を含む本設計一式。**設計レビューで未決や不整合が残れば、その部分は実装GOではない。** 本PRが作成されたこと、CI成功、設計のmain取込みだけでアプリ実装・配備が承認されたとは扱わない。
 
 自己確認（設計時、アプリテスト／画面描画は未実施）: §3.4はroot/slide/text/空枠の全必須キーだけを持ち、1ページ3要素、文字総量・UTF-8総量とも上限内。最大右端912、最大下端420、最小寸法96、文字サイズ44/28、6桁色、font=default、src/内部IDなし。§3.5プロンプトは同じ版・キー・範囲・文字計数・全量を指定する。既存schemaが空枠のsrc省略を許し、編集／ビューアがそれを扱うことをソースと照合した。実ブラウザでの文字あふれ・OS差、D1失敗注入・並行性、LLM出力品質は未確認であり、§10の将来受入で確認する。
+
+## 12. D-523-IMG: 実画像を含む取り込み（**追加設計・オーナー承認待ち**）
+
+この節は上記v1契約を改訂しない。現行の`origin/feat/lab-llm-slides-523`（`c34373a`）はv1のみであり、以下は未実装・未配備。v1の「外部画像不可」「画像は保存後に差し替え」は**version 1に限る**。この節の承認なしにコード・公開仕様・環境を変えない。
+
+### 12.1 使う人の流れと公開サンプル
+
+- `/decks/import`の匿名利用可能なサンプルに「events labの紹介（画像付き）」を追加。押すと**実在する公開画像**を含むversion 2のJSON原稿を読み込み、既存の「検証してプレビュー」→全ページ確認→公開同意→ログインして新規保存→editor→`/d/:slug`の発表まで同じ導線で進む。サンプル読み込み時も既存原稿の上書き確認を維持する。既存の表紙・箇条書き・比較の**v1サンプルはそのまま残す**。別のv2「空枠」サンプルを増やさず、この紹介サンプルに実画像と未設定の画像空枠を両方入れる。
+- 紹介サンプルは`/deck-import/v2/sample-events-lab-intro.json`。表紙は短い「events lab」見出しとアプリの画像（`https://events.kojira.io/og-default.png`、1200×630）、続く「イベント運営」のページには既存のアイコン（`https://events.kojira.io/icon-512.png`、512×512）と短い機能説明、最後の「自分のイベント」のページに`image-placeholder`と「保存後に自分の画像へ差し替える」案内を**text要素**として置く。実画像の全面流用だけでなく各ページで文字が読める960×540の非重複配置にし、画像の文字・ロゴを再入力したような重複見出しは避ける。両画像は`apps/web/public/`に存在する既存のfirst-party PNG（OG画像は`apps/web/index.html`でも指定済み）。紹介文の具体的な機能は現行アプリで利用可能な「募集・参加・プレゼン・配信」に限り、架空イベント・写真・利用者情報を使用しない。配布JSONは固定URLをそのまま持ち、配置先のoriginへ相対化・自動書換しない（stagingからは本番originへの画像要求になる）。本番で画像の内容／パスが変われば公開サンプルも影響を受けるため、配備前に両画像の表示を再確認する。
+- LLMへ渡す新版のプロンプトは「既に自分が公開しているHTTPS画像URLだけを`image-url`へ入れる。未アップロードなら`image-placeholder`を使い、保存後に編集画面でアップロードする」と案内。LLMの架空画像URLや画像を探す／生成する指示はしない。利用者がホスト済みのURLを選び、貼付JSONの`src`を直して再検証する。既存editorの画像URL欄・「画像を差し替え」で保存後に変更可能。アップロード対象は保存済みdeckのownerのみで、プレビュー中にはアップロードしない。
+
+### 12.2 公開JSON version 2の厳密な差分
+
+- rootは`format:"events-lab-deck"`, `version:2`, `title`, `slides`。slide/text/空枠の全必須キー、型、座標、件数、UTF-8 1MiB／合計text 100,000、エラー上限、UTF-16・重複キー・深度・未知キー拒否は§3と同じ。versionは整数の数値で`1`か`2`だけ受理し、**version 1で`image-url`や`src`は引き続き422**。version 2でも`image-placeholder`は`type,x,y,w,h`のみ、`src`不可。`alt`等の追加キーも不可。
+- version 2のみ第3要素: `{"type":"image-url","x":48,"y":180,"w":392,"h":240,"src":"https://events.kojira.io/og-default.png"}`。全6キー必須。座標は§3と同じ。`src`は空でない、最大**500 UTF-16コード単位**（既存`DeckElement.src`の上限）、孤立サロゲート・制御文字・空白・バックスラッシュなしの**ASCII**絶対HTTPS URL。WHATWG `URL`で解析後、`protocol === "https:"`、`url.href === src`（正規化をせず非canonical入力は修正を求める）、`username/password/hash`なし、元文字列にも`#`なし（空fragmentも拒否）、hostはドットで区切った2ラベル以上の小文字ASCII DNS名（各ラベル1〜63文字、`[a-z0-9]`で始まり終わり、中間は`[a-z0-9-]`。IPリテラル・`localhost`・末尾`.local`/`.localhost`/`.internal`/`.test`/`.invalid`/`.example`は拒否）、`url.port === ""`を必須とし、明示portは拒否する（443も`url.href === src`のcanonical条件で拒否）。DNS名の将来の公開到達性までは保証しない。path・queryは許容するが埋め込み認証情報、`data:`/`blob:`、相対パス、`http:`、fragment、改行、文字列以外は拒否する。クエリも500単位に含む。URLの有効期限・コンテンツの存続・実画像であることを構造バリデーターは保証しない。ブラウザはuser-supplied URLを**自分の通信先として読み込む**ため公開DNS名も安全性の証明ではない。全スライド共通の1,000要素上限を画像にも適用し、別途画像数枠は設けない。
+- 同一版の厳密なバリデーターをbrowser workerと認証済み`POST /api/decks/import`で使い、サーバーはrawを再検証し、変換後の既存deckContentSchema＋UTF-8 1MiBも確認する。v2 `image-url`は内部`{id,type:"image",x,y,w,h,rotation:0,src}`へ**明示投影**し、空枠は今まで通りsrc無し。preview仮ID／保存時のサーバー採番、同一key再送・原子保存・public GET・編集時のowner権限は§4〜§8のまま。`src`は通常のdeck本文TEXTに保持し、画像bytes・外部応答・新しいメディアIDは保存しない。既存APIや過去deckへのv2 validator適用はしない。v1の配布物・受理範囲・既存サンプルは不変。
+- 公開配布物は新しい`/deck-import/v2/{spec.md,schema.json,prompt.txt,sample-events-lab-intro.json}`に固定し、UIにv1とv2の版がわかる仕様リンク／プロンプトコピー／サンプル選択を表示。v2 spec・自己完結プロンプト・Draft 2020-12 schemaのoneOfにtext/placeholder/image-urlと全required/additionalProperties=falseを反映する。`src`のschema `maxLength`はコードポイント計数なのでUTF-16上限の保証ではない。URLのcanonical・DNS制約や総数等はschema単体では保証できずspecと共通validatorを正とする。修正指示にはversion 2と`slides[n].elements[m].src`の制約を含め、元URL／queryをコピー・ログ・エラー応答に出さない。未知versionは従来通り拒否する。
+
+### 12.3 画像の表示、失敗と境界
+
+- `SlideStage`はすでに`el.src`を`<img src={el.src} alt="">`で`objectFit:contain`表示し、src無しを灰色の空枠にする。v2でも同じpreview/editor/viewerで描く。URL画像はpreview表示の時点で**閲覧者のブラウザから**送信先へGETされ、保存後は編集者と公開viewerも読み込む。URL、IP、アクセス時刻等が画像ホストに知られ得る（IP等から閲覧環境を推測され得る）。画像付き公開deckのURL／slugをRefererで漏らさないため、**画像要素に`referrerPolicy="no-referrer"`を付ける**（既存の画像要素共通seamで適用し、既存R2画像もリファラ無しになる）。実装時は本番とstagingのContent-Security-Policy `img-src`設定がある場合このUXと整合するか確認し、勝手に全ホスト許可を加えない。CORS許可は単純な`<img>`表示には不要、canvasへ読み出す設計ではない。CSP、ホストのHotlink制限、期限切れ署名、認証必須、リダイレクト、ネットワーク遮断は**GETを失敗させ得る**。ブラウザから見えない外部画像の事前検証をサーバーはしない。ブラウザが後続redirectで別URLを取得する可能性までは入口URLのHTTPS検証では保証できない。
+- URL画像は読み込み前に要素領域へ「画像を読み込み中」、`onError`／読み込み不能時は「画像を表示できません。URLを確認し、保存後なら差し替えてください」と画像枠内に表示（バイト列やURLを画面に反射しない）。`src`変更時は状態を初期化。画面側の状態であり、**失敗で画像要素を削除・空枠型へ変換・`src`を消去しない**。画像失敗は警告（どのページ・要素か）で保存は可能、実画像の表示を確認してから保存するよう促す。ブラウザの`load`は当該環境での一時的成功であり将来の可用性保証ではない。8秒経ってもload/errorがない場合は「画像未確認（読み込み中）」へ変え、プレビュー／保存を停止させず利用者に確認を求める。後からload/errorが来たら現行srcに限って成功／失敗へ更新する。`image-placeholder`はこれと区別して従来の空枠／差替案内を出す。公開viewerで画像が後日消えた場合も壊れたアイコンのみで放置せず同じ失敗枠を描画する。HTML/JS実行、fetchしてdata URL化、R2への自動転送はしない。
+- 保存APIはURLへHEAD/GET/redirect追跡を一切せず、プレビュー時以外もサーバーから外部画像を取得しない。新規upload endpoint、外部画像proxy、事前コピー、CORS設定追加、既存画像の一括移行は不要。URLそのものは公開deckのGETレスポンスに含まれるためsecret付きURLを貼らないよう保存前にも説明する。公開viewerから画像ホストへの直接通信を避けたい場合は**ホストURLでなく、保存後に本人が既存uploadを使う**。
+
+### 12.4 実装対象・検証と運用ゲート（未実施）
+
+実装承認後の対象は`packages/shared/src/deckImport.ts`（版別型・schema・validator・変換）、`apps/web/public/deck-import/v2/`、`DeckImportPage.tsx`（版表示と紹介サンプル）、`DeckImportPreview.tsx`（画像失敗警告）、`SlideStage.tsx`（読込／失敗枠とreferrer）、必要な日英文言と該当テスト。既存`deckImportJson.ts`の1MiB/解析、保存APIの所有者・原子性・receipt、画像アップロードの`deckImages.ts`は変更しない。**migrationなし**。v2を理解しないサーバーにv2 UIを先行配信しない。切戻しはv2入口／配布物を止めて前版へ戻すが、作成済みのURL付きdeckは旧SlideStageで画像自体を描画可能（旧版には今回の失敗枠だけがない）。receiptと既存deckは消さず、v1と通常編集は保つ。
+
+受入証拠は、v1全サンプルが同じraw/意味で合格し`version:1`+`image-url`がbrowser/serverとも拒否、v2紹介JSONとユーザー提供HTTPS URL＋空枠のpreview→原子保存→editorで空枠をownerが既存アップロード→PATCH成功→reload→匿名`/d/:slug`で実画像2枚と差替画像が表示、同一key再送が同一deckになること。v2ではURL長500/501、http/data/blob/相対、userinfo/fragment/port/localhost、非canonical・未知キー・src省略/型違い・座標越え・1MiB越え・変換後1MiB越えをbrowser/serverで対照。URLを壊した画像／hotlink拒否はURLを保ってページ別に失敗を表示、元原稿・個人情報をログ・修正指示へ流さず、アクセス拒否・保存通信失敗は従来の未確認key復旧を維持する。遅い読み込み／画像切替競合／小画面と`no-referrer`（外部画像宛のRefererなし）をブラウザで確認する。公開サンプルの2つのfirst-party URLはstagingの実ブラウザからも表示確認する。コードのassertionはURL受理／変換／失敗表示の条件を1か所変えて対応テストが落ちることも確認する。staging反映後オーナーが目視で原稿・実画像・空枠差替・公開viewer・外部URLの注意表示を受け入れ、**明示的な本番GO**までproductionには出さない。設計レビュー・実装承認、mainマージ、staging配備、本番GOはそれぞれ別のゲート。
