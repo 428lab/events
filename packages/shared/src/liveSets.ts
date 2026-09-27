@@ -72,6 +72,7 @@ export const liveElementSchema = z.object({
   showSeconds: z.boolean().optional(),
   showDate: z.boolean().optional(),
   target: z.enum(["eventStart", "custom"]).optional(),
+  /** An unconfirmed custom target is saved without an epoch; the runtime hides it. */
   targetEpochMs: z.number().int().min(0).max(8640000000000000).optional(),
   zero: z.enum(["stop", "hide"]).optional(),
 }).superRefine((el, ctx) => {
@@ -82,7 +83,6 @@ export const liveElementSchema = z.object({
   if (el.type === "marquee" && (el.text?.length ?? 0) > 120) ctx.addIssue({ code: "custom", message: "marquee too long" });
   if (el.type === "liveIndicator" && (el.text?.length ?? 0) > 32) ctx.addIssue({ code: "custom", message: "badge text too long" });
   if (["clock", "countdown", "marquee", "liveIndicator"].includes(el.type) && el.fontSize !== undefined && (el.fontSize < 16 || el.fontSize > 72)) ctx.addIssue({ code: "custom", message: "Invalid widget font size" });
-  if (el.type === "countdown" && el.target === "custom" && el.targetEpochMs === undefined) ctx.addIssue({ code: "custom", message: "target required" });
 });
 export type LiveElement = z.infer<typeof liveElementSchema>;
 

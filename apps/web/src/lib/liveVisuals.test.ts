@@ -41,7 +41,7 @@ describe("visual live sets", () => {
     expect(liveElementSchema.safeParse({ ...base, motion: { kind: "rotation", seconds: 1, direction: "clockwise" } }).success).toBe(false);
     expect(liveElementSchema.safeParse({ ...base, motion: { kind: "colorCycle", seconds: 18, colors: ["#FFFFFF", "#000000"] } }).success).toBe(false);
     expect(liveElementSchema.safeParse({ ...base, type: "clock", timezone: "Not/AZone" }).success).toBe(false);
-    expect(liveElementSchema.safeParse({ ...base, type: "countdown", target: "custom" }).success).toBe(false);
+    expect(liveElementSchema.safeParse({ ...base, type: "countdown", target: "custom", targetEpochMs: -1 }).success).toBe(false);
     const moving = { ...base, motion: { kind: "rotation", seconds: 30, direction: "clockwise" } };
     expect(liveSceneSchema.safeParse({ id: "scene", name: "scene", background: "#0E1426", elements: [moving, { ...moving, id: "b" }, { ...moving, id: "c" }] }).success).toBe(false);
   });

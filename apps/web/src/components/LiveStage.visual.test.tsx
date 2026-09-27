@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { LiveSceneStage } from "./LiveStage.js";
-import { visualLiveSetContent } from "@eventer/shared";
+import { liveSetContentSchema, visualLiveSetContent } from "@eventer/shared";
 import type { LiveScene } from "@eventer/shared";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -31,6 +31,14 @@ describe("LiveSceneStage runtime", () => {
     expect(headline.style.webkitLineClamp).toBe("2");
     expect(headline.textContent).toBe(title);
     expect(screen.getByText("2026/09/27 19:00")).toBeTruthy();
+  });
+  it("hides a saved pending custom target even if the event has a start time, then renders its confirmed target", () => {
+    vi.useFakeTimers(); vi.setSystemTime(Date.UTC(2026, 0, 1));
+    const pending = liveSetContentSchema.parse({ scenes: [{ id: "scene", name: "scene", elements: [{ ...scene.elements[1], targetEpochMs: undefined }] }] }).scenes[0];
+    const { container, rerender } = render(<LiveSceneStage scene={pending} width={960} runtime={{ eventStartMs: Date.UTC(2026, 0, 1, 0, 0, 30) }} />);
+    expect(container.querySelector(".live-time")).toBeNull();
+    rerender(<LiveSceneStage scene={{ ...pending, elements: [{ ...pending.elements[0], targetEpochMs: Date.UTC(2026, 0, 1, 0, 0, 12) }] }} width={960} runtime={{ eventStartMs: Date.UTC(2026, 0, 1, 0, 0, 30) }} />);
+    expect(screen.getByText("00:00:12")).toBeInTheDocument();
   });
   it("renders actual changing clock/countdown, OFF hidden, motion paused but time still updates", () => {
     vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });

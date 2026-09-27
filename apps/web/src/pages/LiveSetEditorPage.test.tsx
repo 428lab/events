@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { visualLiveSetContent } from "@eventer/shared";
+import { updateLiveSetInput, visualLiveSetContent } from "@eventer/shared";
 import type { LiveScene, LiveSet } from "@eventer/shared";
 import { LiveSetEditorPage } from "./LiveSetEditorPage.js";
 
@@ -156,6 +156,25 @@ describe("完成部品の一操作", () => {
     fireEvent.keyDown(window, { key: "y", ctrlKey: true });
     await settle();
     expect(savedScenes()[0].elements).toHaveLength(ids.length);
+  });
+});
+
+describe("カウントダウンの保存", () => {
+  it("指定日時を未確定のまま選んでも自動保存でき、確定後の時刻も保存できる", async () => {
+    mocks.update.mockImplementation(async input => updateLiveSetInput.parse(input));
+    draw(twoScenes());
+    click("開始カウント");
+    fireEvent.mouseDown(screen.getByLabelText("目標"));
+    fireEvent.click(screen.getByRole("option", { name: "指定日時" }));
+    await settle();
+    expect(screen.getByText("自動保存")).toBeInTheDocument();
+    expect(savedScenes()[0].elements.at(-1)).toMatchObject({ type: "countdown", target: "custom" });
+    expect(savedScenes()[0].elements.at(-1)?.targetEpochMs).toBeUndefined();
+    fireEvent.change(screen.getByLabelText("現地日時"), { target: { value: "2026-01-01T09:00" } });
+    click(/確定: 2026-01-01T00:00:00.000Z/);
+    await settle();
+    expect(screen.getByText("自動保存")).toBeInTheDocument();
+    expect(savedScenes()[0].elements.at(-1)).toMatchObject({ target: "custom", targetEpochMs: Date.UTC(2026, 0, 1) });
   });
 });
 
