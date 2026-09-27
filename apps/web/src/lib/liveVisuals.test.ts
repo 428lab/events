@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createLiveSetInput, liveElementSchema, liveSceneSchema } from "@eventer/shared";
+import { createLiveSetInput, liveElementSchema, liveSceneSchema, liveSetContentSchema } from "@eventer/shared";
 import { visualLiveSetContent } from "@eventer/shared";
 
 describe("visual live sets", () => {
   it.each(["glow", "signal"] as const)("creates seven independent editable %s scenes", (style) => {
-    const scenes = visualLiveSetContent(style).scenes;
+    const content = visualLiveSetContent(style);
+    expect(liveSetContentSchema.safeParse(content).success).toBe(true);
+    const scenes = content.scenes;
     expect(scenes).toHaveLength(7);
     expect(new Set(scenes.flatMap(s => s.elements.map(e => e.id))).size, scenes.flatMap(s => s.elements.map(e => e.id)).filter((id, i, ids) => ids.indexOf(id) !== i).join(", ")).toBe(scenes.flatMap(s => s.elements).length);
     expect(scenes.every(s => s.elements.length <= 50)).toBe(true);
@@ -15,7 +17,15 @@ describe("visual live sets", () => {
     const keynoteFooter = scenes[2].elements.find(e => e.id.endsWith("-key-footer"));
     expect(keynoteFooter).toMatchObject({ y: 435, h: 52 });
     expect(scenes[2].elements.find(e => e.id.endsWith("-key-event"))).toMatchObject({ y: 443, h: 35 });
+    if (style === "glow") {
+      expect(scenes[0].elements.filter(e => e.type === "motif" && e.motif === "lantern")).toHaveLength(3);
+      expect(scenes[0].elements.some(e => e.type === "motif" && e.motif === "halo")).toBe(true);
+      expect(scenes[2].elements.some(e => e.type === "motif" && e.motif === "halo")).toBe(true);
+    }
     if (style === "signal") {
+      expect(scenes[0].elements.some(e => e.type === "motif" && e.motif === "grid")).toBe(true);
+      expect(scenes[2].elements.some(e => e.type === "motif" && e.motif === "grid")).toBe(true);
+      expect(scenes[0].elements.some(e => e.id.endsWith("-rail") && e.h >= 400)).toBe(true);
       const ids = scenes[0].elements.map(e => e.id);
       expect(ids.indexOf("v1-signal-wait-date-panel")).toBeLessThan(ids.indexOf("v1-signal-wait-wait-date"));
       const date = scenes[0].elements.find(e => e.id === "v1-signal-wait-wait-date")!;
