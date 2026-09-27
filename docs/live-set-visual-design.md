@@ -88,7 +88,7 @@
 
 **公式資料と現行コードの根拠（確認済みと未確認を分離）**: `apps/server/src/routes/liveControl.ts` と `packages/shared/src/liveSets.ts` はイベント状態の staff GET/PATCH と1秒画面ポーリング、`apps/web/src/pages/LiveScreenPage.tsx` は描画入口。`apps/server/src/routes/eventChat.ts`, `apps/web/src/lib/useEventChatAccess.ts`, `apps/web/src/components/EventChat.tsx`, `apps/web/src/components/chat/useChatChannel.ts`, `apps/web/src/lib/chatMessageBuffer.ts` は第一者の閲覧/非表示境界。OAuth ログインの現行スコープは `apps/server/src/auth/providers.ts` を参照。[liveBroadcasts.list](https://developers.google.com/youtube/v3/live/docs/liveBroadcasts/list) は OAuth の必要性と許容 read-only scope、[liveBroadcast.snippet.liveChatId](https://developers.google.com/youtube/v3/live/docs/liveBroadcasts#snippet.liveChatId) は放送との接続、[liveChatMessages.list](https://developers.google.com/youtube/v3/live/docs/liveChatMessages/list) は `part`/カーソル/`pollingIntervalMillis`/終了・レートエラーを記載。[liveChatMessage resource](https://developers.google.com/youtube/v3/live/docs/liveChatMessages) は `publishedAt`/種別/tombstone の制約。[streamList](https://developers.google.com/youtube/v3/live/docs/liveChatMessages/streamList) は公式には効率的だが実行環境互換性・料金は未検証。[quota cost table](https://developers.google.com/youtube/v3/determine_quota_cost) は list と broadcasts.list が各1単位と記載、streamList コストは未確認。[Developer Policies](https://developers.google.com/youtube/terms/developer-policies) の Branding とデータ表示/保管条項を正式配備前に確認する。公式公開文書を読むだけでは **chat list の OAuth scope や接続動作/クォータの実環境確認はできていない**。これらを動く YouTube ソース機能の実装承認前ゲートとする。
 
-**段階ゲート**: 同じ完成体験として UI に3つの選択肢を示すのは**両実ソースが動作・認可・帰属表示を満たした時だけ**。段階的に作るなら最初の縦切りは events lab の実メッセージ＋動く部品を実出力で確認するが、YouTube/両方を架空のサンプルや常に失敗する選択肢として公開しない。外部読取の検証が失敗した場合は代替（追加スコープ/対象の縮小など）を設計へ戻して承認を得る。動画の埋込や配信URLの変更は本件の代替にしない。
+**段階ゲート（オーナー承認 2026-09-27）**: 初期リリースは動く画面・編集できる部品・実際の events lab チャット表示までを #562 で完成させる。YouTube 接続と二ソース時系列統合は [#564](https://github.com/428lab/events/issues/564) へ分割し、実ライブで認可・接続が検証できてから追加する。同じ最終体験として UI に3つの選択肢を示すのは**両実ソースが動作・認可・帰属表示を満たした時だけ**。初期 UI は「表示しない／events lab」のみとし、YouTube/両方を架空のサンプルや常に失敗する選択肢として公開しない。外部読取の検証が失敗した場合は代替（追加スコープ/対象の縮小など）を設計へ戻して承認を得る。動画の埋込や配信URLの変更は本件の代替にしない。
 
 ## 七つのシーンを「完成セット」にする処理
 
@@ -122,7 +122,7 @@
 4. 編集のサムネイルと本番が同じ重ね順・書体・色・角丸・画像を示し、イベントタイトル/日付/カメラ/スライドと新しい実時計・残秒だけが意図した実データに入れ替わる。**予定がモックと違うイベント**で、架空の番組表・章番号・自動 ON AIR の生成が無いこと、LIVE は運営操作が ON のときだけ表示されることを確認する。旧セット/ビルトイン既定の再読込・シーン切替・BGMは回帰しない。
 5. 権限のないユーザーが他人のテンプレ元・セット内容・画像登録へアクセスできない。古い編集タブで新要素が失われないことと、アップロード画像を持つセットの複製/削除の結果を確認する。
 6. GIF ではなく実画面で marquee が途切れず流れ、装飾が回り、色が制限内で変わり、秒付き時計/秒なし時計と countdown が実時間で進みゼロで止まる/隠れること。背景タブ復帰、timezone の日付またぎ、時刻のジャンプ、reduced-motion、2つの配信タブで確認する。運営者が LIVE ON/OFF を PATCH し別タブへ伝わり、保存失敗/状態取得失敗では誤表示しない。シーン切替・LIVE・コメント元の並行 PATCH が独立した設定を巻き戻さないことを競合テストで確認する。
-7. 公開イベントの実イベントチャットだけ、接続済みの実 YouTube コメントだけ、両ソース時刻順の3モードを**実出力**で確認する。未接続/空/再接続/一方停止/イベント切替/チャット無効・ブロック・非表示/放送終了/コメント削除通知に応じて表示が変わり、コメント元 OFF や認可取り消しの直後・状態 GET 失敗・5秒超の滞留でも表示と購読を停止して運営者へ知らせ、古い許可済みコメントの残留・別イベント混入・サンプル発言への置換がない。スタッフ以外の接続変更は禁止。YouTube ライブチャットの実権限・ポーリング間隔・帰属表示は公開前に実APIで確認する。
+7. #562 の初期リリースは公開イベントの実イベントチャットを**実出力**で確認する。#564 で接続済みの実 YouTube コメントのみ／両ソース時刻順のモードを追加し、3モードを実出力で確認する。未接続/空/再接続/一方停止/イベント切替/チャット無効・ブロック・非表示/放送終了/コメント削除通知に応じて表示が変わり、コメント元 OFF や認可取り消しの直後・状態 GET 失敗・5秒超の滞留でも表示と購読を停止して運営者へ知らせ、古い許可済みコメントの残留・別イベント混入・サンプル発言への置換がない。スタッフ以外の接続変更は禁止。#564 の公開前には YouTube ライブチャットの実権限・ポーリング間隔・帰属表示を実APIで確認する。
 
 ## オーナー合意が必要な選択
 
