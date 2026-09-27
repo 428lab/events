@@ -46,6 +46,8 @@ export const liveElementSchema = z.object({
   bold: z.boolean().optional(),
   italic: z.boolean().optional(),
   align: z.enum(["left", "center", "right"]).optional(),
+  /** Opt-in two-line clipping for editable name cards; other saved text is unchanged. */
+  maxLines: z.number().int().min(1).max(2).optional(),
   // image
   src: z.string().max(500).optional(),
   // camera: 表示のフィット方法（cover=枠いっぱい/contain=全体表示）
@@ -125,7 +127,7 @@ export const createLiveSetInput = z.object({
   name: z.string().trim().max(120).default(""),
   /** ベースにする既存セット（自分のセットのみ）。未指定はビルトインテンプレ */
   baseLiveSetId: z.string().optional(),
-  templateId: z.enum(["glow", "signal"]).optional(),
+  templateId: z.enum(["glow", "signal", "hakuji"]).optional(),
 }).refine(v => !(v.baseLiveSetId && v.templateId), { message: "Cannot combine template and clone" });
 export type CreateLiveSetInput = z.infer<typeof createLiveSetInput>;
 

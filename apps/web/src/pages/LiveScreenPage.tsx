@@ -152,6 +152,8 @@ export function LiveScreenPage() {
   const scene =
     scenes.find((s) => s.id === state?.activeSceneId) ?? scenes[0] ?? null;
 
+  const lightScene = scene?.id.startsWith("v1-hakuji-") || scene?.background === "#F6F2EA";
+
   const deckSlide =
     deck?.content.slides[
       Math.min(state?.deckPage ?? 0, Math.max(0, (deck?.content.slides.length ?? 1) - 1))
@@ -163,7 +165,7 @@ export function LiveScreenPage() {
     eventStartMs: event?.scheduling ? undefined : event?.startsAt,
     eventDatetimeAvailable: Boolean(event && !event.scheduling && Number.isFinite(event.startsAt)),
     camera: (el: LiveElement) => (
-      <CameraVideo stream={stream} fit={el.fit ?? "cover"} />
+      <CameraVideo stream={stream} fit={el.fit ?? "cover"} light={Boolean(lightScene)} />
     ),
     deck: (el: LiveElement) =>
       deckSlide ? (
@@ -188,12 +190,12 @@ export function LiveScreenPage() {
             height: "100%",
             display: "grid",
             placeItems: "center",
-            background: "#111827",
-            color: "#64748b",
+            background: lightScene ? "#DCE9DF" : "#111827",
+            color: lightScene ? "#203146" : "#64748b",
             fontSize: 18,
           }}
         >
-          {t("studio.deckUnselected")}
+          {lightScene ? t("studio.hakujiDeckUnavailable") : t("studio.deckUnselected")}
         </div>
       ),
     eventInfo: (field: EventInfoField) => {
@@ -315,9 +317,11 @@ export function LiveScreenPage() {
 function CameraVideo({
   stream,
   fit,
+  light = false,
 }: {
   stream: MediaStream | null;
   fit: "cover" | "contain";
+  light?: boolean;
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLVideoElement>(null);
@@ -335,12 +339,12 @@ function CameraVideo({
           height: "100%",
           display: "grid",
           placeItems: "center",
-          background: "#111827",
-          color: "#64748b",
+          background: light ? "#DCE9DF" : "#111827",
+          color: light ? "#203146" : "#64748b",
           fontSize: 16,
         }}
       >
-        {t("studio.cameraWaiting")}
+        {light ? t("studio.hakujiCameraUnavailable") : t("studio.cameraWaiting")}
       </div>
     );
   }

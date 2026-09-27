@@ -39,7 +39,7 @@ const PLACEHOLDER_INFO_KEY = {
 /** 見本に出す参加人数 */
 const PLACEHOLDER_PARTICIPANTS = 12;
 
-function Placeholder({ label, icon }: { label: string; icon: ReactNode }) {
+function Placeholder({ label, icon, light = false }: { label: string; icon: ReactNode; light?: boolean }) {
   return (
     <div
       style={{
@@ -47,9 +47,9 @@ function Placeholder({ label, icon }: { label: string; icon: ReactNode }) {
         height: "100%",
         display: "grid",
         placeItems: "center",
-        background: "rgba(148,163,184,0.15)",
-        border: "1px dashed rgba(148,163,184,0.6)",
-        color: "#94a3b8",
+        background: light ? "#DCE9DF" : "rgba(148,163,184,0.15)",
+        border: light ? "1px dashed #285E91" : "1px dashed rgba(148,163,184,0.6)",
+        color: light ? "#203146" : "#94a3b8",
         fontSize: 20,
         boxSizing: "border-box",
       }}
@@ -92,9 +92,11 @@ function textStyle(el: LiveElement): React.CSSProperties {
 export function LiveElementContent({
   el,
   runtime,
+  lightScene = false,
 }: {
   el: LiveElement;
   runtime?: LiveRuntime;
+  lightScene?: boolean;
 }) {
   const { t } = useTranslation();
   switch (el.type) {
@@ -115,6 +117,7 @@ export function LiveElementContent({
       ) : (
         <Placeholder
           label={t("studio.imageUnset")}
+          light={lightScene}
           icon={<ImageIcon sx={{ fontSize: 36 }} />}
         />
       );
@@ -132,6 +135,7 @@ export function LiveElementContent({
           {inner ?? (
             <Placeholder
               label={t("studio.elementCamera")}
+              light={lightScene}
               icon={<PhotoCameraIcon sx={{ fontSize: 36 }} />}
             />
           )}
@@ -143,6 +147,7 @@ export function LiveElementContent({
         runtime?.deck?.(el) ?? (
           <Placeholder
             label={t("studio.elementDeck")}
+            light={lightScene}
             icon={<MonitorIcon sx={{ fontSize: 36 }} />}
           />
         )
@@ -159,14 +164,14 @@ export function LiveElementContent({
       const value =
         runtime?.eventInfo?.(field) ??
         t(PLACEHOLDER_INFO_KEY[field], { n: PLACEHOLDER_PARTICIPANTS });
-      if (field === "title" && el.id.startsWith("v1-")) {
-        const footer = el.id.endsWith("-key-event") || el.id.endsWith("-cam-event") || el.id.endsWith("-date-title");
-        return <div style={textStyle(el)}><span title={value} style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: footer ? 1 : 2, overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", maxHeight: "100%" }}>{value}</span></div>;
+      if (field === "title" && (el.id.startsWith("v1-") || el.maxLines)) {
+        const footer = el.maxLines === 1 || el.id.endsWith("-key-event") || el.id.endsWith("-cam-event") || el.id.endsWith("-date-title") || el.id.endsWith("-keynote-event") || el.id.endsWith("-camera-event");
+        return <div style={textStyle(el)}><span title={value} style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: el.maxLines ?? (footer ? 1 : 2), overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", maxHeight: "100%" }}>{value}</span></div>;
       }
       return <div style={textStyle(el)}>{value}</div>;
     }
     default:
-      return <div style={textStyle(el)}>{el.text ?? ""}</div>;
+      return <div style={textStyle(el)}>{el.maxLines ? <span title={el.text ?? ""} style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: el.maxLines, overflow: "hidden", maxWidth: "100%", maxHeight: "100%" }}>{el.text ?? ""}</span> : el.text ?? ""}</div>;
   }
 }
 
@@ -214,7 +219,7 @@ export function LiveSceneStage({
               transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
             }}
           >
-            <LiveElementContent el={el} runtime={runtime} />
+            <LiveElementContent el={el} runtime={runtime} lightScene={scene.id.startsWith("v1-hakuji-") || scene.background === "#F6F2EA"} />
           </div>
         ))}
       </div>

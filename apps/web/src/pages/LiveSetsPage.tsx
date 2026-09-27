@@ -31,9 +31,9 @@ export function LiveSetsPage() {
   const create = useCreateLiveSet();
   const del = useDeleteLiveSet();
 
-  const newSet = (templateId?: "glow" | "signal") =>
+  const newSet = (templateId?: "glow" | "signal" | "hakuji") =>
     create.mutate(
-      { name: templateId === "glow" ? "灯り" : templateId === "signal" ? "輪郭" : "", templateId },
+      { name: templateId === "glow" ? "灯り" : templateId === "signal" ? "輪郭" : templateId === "hakuji" ? "白磁" : "", templateId },
       { onSuccess: (s) => navigate(`/live-sets/${s.id}/edit`) },
     );
   const duplicateSet = (baseId: string, baseName: string) =>
@@ -71,17 +71,17 @@ export function LiveSetsPage() {
         </Button>
       </Stack>
 
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" }, gap: 1.5 }}>
-        {([undefined, "glow", "signal"] as const).map(style => (
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 1.5 }}>
+        {([undefined, "glow", "signal", "hakuji"] as const).map(style => (
           <Card key={style ?? "default"} variant="outlined" sx={{ overflow: "hidden" }}>
-            <Box sx={{ bgcolor: style === "signal" ? "#0A1120" : "#0E1426", color: "#EAF0F7", p: 1.5 }}>
-              <Typography fontWeight={700}>{style === "glow" ? "灯り / Glow" : style === "signal" ? "輪郭 / Signal" : "デフォルト"}</Typography>
+            <Box sx={{ bgcolor: style === "hakuji" ? "#F6F2EA" : style === "signal" ? "#0A1120" : "#0E1426", color: style === "hakuji" ? "#203146" : "#EAF0F7", p: 1.5 }}>
+              <Typography fontWeight={700}>{style === "glow" ? "灯り / Glow" : style === "signal" ? "輪郭 / Signal" : style === "hakuji" ? t("studio.hakujiStyle") : "デフォルト"}</Typography>
               <Stack direction="row" spacing={0.75} sx={{ mt: 1, overflow: "hidden" }}>
                 {(() => { const scenes = style ? visualLiveSetContent(style).scenes : defaultLiveSetContent().scenes; return [scenes[0], scenes[style ? 2 : 3]].map((scene, i) => <Box key={scene.id} sx={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}><LiveSceneStage scene={scene} width={130} /><Typography variant="caption" color="inherit">{i ? "講演" : "待機"}（見本）</Typography></Box>); })()}
               </Stack>
             </Box>
-            <CardContent><Typography variant="body2" sx={{ mb: 1 }}>{style === "glow" ? "夜空と琥珀の灯り" : style === "signal" ? "明快な情報レール" : "これまでのシンプルな7シーン"}</Typography>
-              <Button disabled={create.isPending} onClick={() => newSet(style)}>このスタイルで作成</Button>
+            <CardContent><Typography variant="body2" sx={{ mb: 1 }}>{style === "glow" ? "夜空と琥珀の灯り" : style === "signal" ? "明快な情報レール" : style === "hakuji" ? t("studio.hakujiDescription") : "これまでのシンプルな7シーン"}</Typography>
+              <Button disabled={create.isPending} onClick={() => newSet(style)}>{t("studio.createWithStyle")}</Button>
             </CardContent>
           </Card>
         ))}

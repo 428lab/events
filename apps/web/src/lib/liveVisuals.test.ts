@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLiveSetInput, liveElementSchema, liveSceneSchema, liveSetContentSchema } from "@eventer/shared";
+import { createLiveSetInput, defaultLiveSetContent, liveElementSchema, liveSceneSchema, liveSetContentSchema, visualParts } from "@eventer/shared";
 import { visualLiveSetContent } from "@eventer/shared";
 
 describe("visual live sets", () => {
@@ -33,6 +33,32 @@ describe("visual live sets", () => {
       expect(date.requiresEventDatetime).toBe(true);
       expect(date.y + date.h).toBeLessThan(smallTitle.y);
       expect(smallTitle.fontSize).toBeLessThan(date.fontSize!);
+    }
+  });
+  it("creates only the new allowlisted 白磁 template without changing old sets", () => {
+    const legacy = JSON.stringify({ default: defaultLiveSetContent(), glow: visualLiveSetContent("glow"), signal: visualLiveSetContent("signal") });
+    const content = visualLiveSetContent("hakuji");
+    expect(createLiveSetInput.safeParse({ templateId: "hakuji" }).success).toBe(true);
+    expect(createLiveSetInput.safeParse({ templateId: "hakuji", baseLiveSetId: "saved" }).success).toBe(false);
+    expect(createLiveSetInput.safeParse({ templateId: "custom-light" }).success).toBe(false);
+    expect(liveSetContentSchema.parse(JSON.parse(JSON.stringify(content)))).toEqual(content);
+    expect(content.scenes).toHaveLength(7);
+    expect(content.scenes.every(scene => scene.background === "#F6F2EA" && scene.elements.length <= 50)).toBe(true);
+    const ids = content.scenes.flatMap(scene => scene.elements.map(element => element.id));
+    expect(new Set(ids).size).toBe(ids.length);
+    const keynote = content.scenes[2].elements;
+    expect(keynote.filter(element => element.type === "deck" || element.type === "camera").map(element => [element.x, element.y, element.w, element.h])).toEqual([[52, 109, 558, 307], [633, 105, 279, 246]]);
+    expect(content.scenes[0].elements.find(element => element.field === "datetime")?.requiresEventDatetime).toBe(true);
+    expect(content.scenes.every(scene => scene.elements.every(element => !element.text?.includes("役割を入力") && !element.text?.includes("氏名を入力")))).toBe(true);
+    expect(JSON.stringify({ default: defaultLiveSetContent(), glow: visualLiveSetContent("glow"), signal: visualLiveSetContent("signal") })).toBe(legacy);
+  });
+  it("expands four independent 白磁 cards into schema-valid layers", () => {
+    const cards = visualParts("hakuji");
+    expect(cards.map(card => [card.id, card.elements.length])).toEqual([["name", 4], ["camera", 5], ["chapter", 4], ["break", 4]]);
+    expect(cards[0].elements.find(element => element.id === "name")).toMatchObject({ fontSize: 22, maxLines: 2, w: 269 });
+    for (const card of cards) {
+      expect(card.elements.every(element => liveElementSchema.safeParse(element).success)).toBe(true);
+      expect(new Set(card.elements.map(element => element.id)).size).toBe(card.elements.length);
     }
   });
   it("rejects cloning together with a style and arbitrary motion", () => {

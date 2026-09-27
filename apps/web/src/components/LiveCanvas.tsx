@@ -113,7 +113,7 @@ export function LiveCanvas({
                   touchAction: "none",
                 }}
               >
-                <div style={{ width: "100%", height: "100%", transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined }}><LiveElementContent el={el} runtime={{ pauseMotion, previewNow }} /></div>
+                <div style={{ width: "100%", height: "100%", transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined }}><LiveElementContent el={el} runtime={{ pauseMotion, previewNow }} lightScene={scene.id.startsWith("v1-hakuji-") || scene.background === "#F6F2EA"} /></div>
               </Rnd>
             ))}
 

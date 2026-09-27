@@ -140,7 +140,10 @@ export function LiveSetEditorPage() {
     setSelectedId(elements.find(e => e.type === "text" || e.type === "eventInfo")?.id ?? elements[0]?.id ?? null);
   };
   const addElement = (el: LiveElement) => addElements([el]);
-  const addPart = (elements: LiveElement[]) => addElements(elements.map(el => ({ ...el, id: crypto.randomUUID(), x: el.x + 85, y: el.y + 230 })));
+  const addPart = (elements: LiveElement[]) => {
+    const keynoteName = scene?.id === "v1-hakuji-keynote" && elements.some(el => el.id === "name");
+    addElements(elements.map(el => ({ ...el, id: crypto.randomUUID(), x: el.x + (keynoteName ? 633 : 85), y: el.y + (keynoteName ? 356 : 230) })));
+  };
 
   const sceneCommands: LiveSceneCommands = {
     add: () => {

@@ -113,6 +113,16 @@ const ja = {
   liveSetsLead:
     "配信画面のシーン一式（待機画面・OP・スライド＋カメラなど）を作って、イベントの配信で使い回せます。",
   newLiveSet: "新しい配信セット",
+  hakujiStyle: "白磁 / Hakuji",
+  hakujiDescription: "白い紙面と藍の文字で見せる明るい配信画面",
+  createWithStyle: "このスタイルで作成",
+  hakujiParts: "白磁",
+  hakujiNameCard: "藍の氏名札",
+  hakujiCameraCard: "紙縁カメラ",
+  hakujiChapterCard: "章の短冊",
+  hakujiBreakCard: "休憩の案内",
+  hakujiCameraUnavailable: "カメラ映像なし（未許可・未接続）",
+  hakujiDeckUnavailable: "資料未選択",
   untitledLiveSet: "無題の配信セット",
   liveSetsEmpty:
     "まだ配信セットがありません。「{{action}}」を押すと、待機画面・OP・スライド＋カメラなどの定番シーン入りで作成されます。",
@@ -279,6 +289,16 @@ const en: Record<keyof typeof ja, string> = {
   liveSetsLead:
     "Build a set of broadcast scenes (standby, opening, slides with camera, and so on) and reuse it across your events.",
   newLiveSet: "New broadcast set",
+  hakujiStyle: "Hakuji / 白磁",
+  hakujiDescription: "A bright paper canvas with ink-blue typography",
+  createWithStyle: "Create with this style",
+  hakujiParts: "Hakuji",
+  hakujiNameCard: "Indigo name card",
+  hakujiCameraCard: "Paper-framed camera",
+  hakujiChapterCard: "Chapter ribbon",
+  hakujiBreakCard: "Break notice",
+  hakujiCameraUnavailable: "No camera feed (not allowed or disconnected)",
+  hakujiDeckUnavailable: "No slide deck selected",
   untitledLiveSet: "Untitled broadcast set",
   liveSetsEmpty:
     "You don't have any broadcast sets yet. “{{action}}” creates one that already has the usual scenes: standby, opening, slides with camera, and more.",

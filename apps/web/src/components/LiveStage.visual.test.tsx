@@ -13,6 +13,37 @@ const scene: LiveScene = { id: "scene", name: "scene", background: "#0E1426", el
   { id: "marquee", type: "marquee", x: 15, y: 240, w: 300, h: 40, rotation: 0, text: "開催案内" },
 ] };
 describe("LiveSceneStage runtime", () => {
+  it("retains two-line title and readable placeholders when a 白磁 scene is duplicated", () => {
+    const original = visualLiveSetContent("hakuji").scenes[0];
+    const duplicated = { ...original, id: "new-scene-id", elements: original.elements.map((element, index) => ({ ...element, id: `new-${index}` })) };
+    const title = "地域と技術をつなぐ非常に長い日本語のシンポジウムと次世代の学びについて";
+    const { container } = render(<LiveSceneStage scene={duplicated} width={1280} runtime={{ eventInfo: field => field === "title" ? title : "", eventDatetimeAvailable: false }} />);
+    expect((container.querySelector(`[title="${title}"]`) as HTMLElement).style.webkitLineClamp).toBe("2");
+    expect(container.querySelector('[style*="background: rgb(246, 242, 234)"]')).toBeTruthy();
+  });
+  it("renders seven distinct bright scenes at 720/1080 widths with real title, no unknown schedule or invented speaker", () => {
+    const title = "日本語による非常に長い講演タイトルと配信イベントの説明を含む特別なご案内";
+    const scenes = visualLiveSetContent("hakuji").scenes;
+    for (const width of [1280, 1920]) {
+      for (const scene of scenes) {
+        const { container, unmount } = render(<LiveSceneStage scene={scene} width={width} runtime={{ eventDatetimeAvailable: false, eventInfo: field => field === "title" ? title : "" }} />);
+        const stage = container.firstElementChild as HTMLElement;
+        expect(stage.style.height).toBe(`${width * 540 / 960}px`);
+        expect(stage.firstElementChild).toHaveStyle({ background: "#F6F2EA" });
+        expect(screen.queryByText("氏名を入力")).not.toBeInTheDocument();
+        expect(screen.queryByText("役割を入力")).not.toBeInTheDocument();
+        if (scene.id.endsWith("-wait")) {
+          expect(screen.queryByText("イベント日時")).not.toBeInTheDocument();
+          expect(container.querySelector('[title="' + title + '"]')).toHaveStyle({ webkitLineClamp: "2" });
+        }
+        if (scene.id.endsWith("-keynote")) {
+          expect(container.querySelectorAll('[style*="color: rgb(32, 49, 70)"]')).not.toHaveLength(0);
+          expect(screen.getByText("カメラ")).toBeInTheDocument();
+        }
+        unmount();
+      }
+    }
+  });
   it("shows real datetime prominently in Signal standby and hides the entire card if schedule is unknown", () => {
     const scene = visualLiveSetContent("signal").scenes[0];
     const runtime = { eventDatetimeAvailable: true, eventInfo: (field: string) => field === "datetime" ? "2026/09/27 19:00–21:00" : "実際のイベント名" };

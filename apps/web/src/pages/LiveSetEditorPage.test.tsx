@@ -139,6 +139,51 @@ describe("完成部品の一操作", () => {
     await settle();
     expect(mocks.update).not.toHaveBeenCalled();
   });
+  it("白磁の4カードは個別レイヤーの編集・Undo/Redo・保存と再読込に乗る", async () => {
+    const view = draw(visualLiveSetContent("hakuji").scenes);
+    click("部品を追加");
+    const original = visualLiveSetContent("hakuji").scenes[0].elements.length;
+    for (const title of ["藍の氏名札", "紙縁カメラ", "章の短冊", "休憩の案内"]) {
+      click(new RegExp(title));
+      await settle();
+    }
+    expect(savedScenes()[0].elements).toHaveLength(original + 17);
+    const ids = savedScenes()[0].elements.map(element => element.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    selectOnCanvas("氏名を入力");
+    fireEvent.change(screen.getByLabelText("内容"), { target: { value: "山田 花子" } });
+    await settle();
+    expect(savedScenes()[0].elements.find(element => element.text === "山田 花子")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    await settle();
+    expect(savedScenes()[0].elements.find(element => element.text === "氏名を入力")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "y", ctrlKey: true });
+    await settle();
+    expect(savedScenes()[0].elements.find(element => element.text === "山田 花子")).toBeTruthy();
+    const saved = structuredClone(savedScenes());
+    view.unmount();
+    draw(saved);
+    expect(canvas().getByText("山田 花子")).toBeInTheDocument();
+    expect(canvas().getByText("休憩中")).toBeInTheDocument();
+  });
+  it("白磁講演の氏名札をカメラ下の独立帯に置く", async () => {
+    draw(visualLiveSetContent("hakuji").scenes);
+    fireEvent.click(screen.getAllByText("講演").find(element => element.tagName === "SPAN")!);
+    click("部品を追加");
+    click(/藍の氏名札/);
+    await settle();
+    const name = savedScenes()[2].elements.find(element => element.text === "氏名を入力");
+    expect(name).toMatchObject({ x: 640, y: 359, w: 269, fontSize: 22, maxLines: 2 });
+    expect(name!.x + name!.w).toBeLessThanOrEqual(912);
+    expect(name!.y + name!.h).toBeLessThan(451);
+  });
+  it("白磁のカードは50要素を超える前に拒否される", () => {
+    draw([{ ...visualLiveSetContent("hakuji").scenes[0], elements: Array.from({ length: 47 }, (_, i) => text(`filled-${i}`, "")) }]);
+    click("部品を追加");
+    click(/藍の氏名札/);
+    expect(screen.getByRole("alert")).toHaveTextContent("最大50要素");
+    expect(canvas().queryByText("氏名を入力")).not.toBeInTheDocument();
+  });
   it.each(["glow", "signal"] as const)("%s の4部品が別々のレイヤーとして入り、Undo/Redo と保存に乗る", async family => {
     draw(visualLiveSetContent(family).scenes);
     click("部品を追加");

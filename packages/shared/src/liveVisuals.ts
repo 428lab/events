@@ -1,8 +1,9 @@
 import type { LiveElement, LiveScene, LiveSetContent } from "./liveSets.js";
-export type VisualStyle = "glow" | "signal";
+export type VisualStyle = "glow" | "signal" | "hakuji";
 const colors = {
   glow: { bg: "#0E1426", panel: "#1A2737", ink: "#EAF0F7", accent: "#FB923C", pale: "#F4E8DA" },
   signal: { bg: "#0A1120", panel: "#18303B", ink: "#F1F4EF", accent: "#2DD4BF", pale: "#E9F0EC" },
+  hakuji: { bg: "#F6F2EA", panel: "#FFFFFF", ink: "#203146", accent: "#285E91", pale: "#DCE9DF" },
 };
 type P = Partial<LiveElement>;
 function el(id: string, type: LiveElement["type"], x: number, y: number, w: number, h: number, props: P = {}): LiveElement {
@@ -21,6 +22,7 @@ function motif(id: string, kind: "lantern" | "halo" | "brackets" | "grid" | "tic
   return el(id, "motif", x, y, w, h, { motif: kind, color, ...props });
 }
 function parts(style: VisualStyle) {
+  if (style === "hakuji") return hakujiParts();
   const c = colors[style];
   const isGlow = style === "glow";
   const label = (id: string, value: string, x: number, y: number, w: number, h: number, size = 20, color = c.ink) => text(id, value, x, y, w, h, color, size);
@@ -40,6 +42,7 @@ export function visualParts(style: VisualStyle) { return parts(style); }
 
 /** Version 1: fixed editable primitives expanded only at creation, never injected into old sets. */
 export function visualLiveSetContent(style: VisualStyle): LiveSetContent {
+  if (style === "hakuji") return hakujiLiveSetContent();
   const c = colors[style], glow = style === "glow";
   const scene = (id: string, name: string, elements: LiveElement[]): LiveScene => ({ id: `v1-${style}-${id}`, name, background: glow ? id === "op" ? "linear-gradient(125deg, #0E1426 25%, #4A2B27 66%, #0E1426 100%)" : "linear-gradient(130deg, #10263D 0%, #0E1426 54%, #253039 100%)" : c.bg, elements: [...(!glow && ["wait", "op", "keynote", "break", "ed"].includes(id) ? [motif("ambient-grid", "grid", 28, 36, 910, 456, c.accent, { opacity: 0.08 })] : []), ...elements].map(e => ({ ...e, id: `v1-${style}-${id}-${e.id}` })) });
   const top = (id: string) => [
@@ -94,5 +97,101 @@ export function visualLiveSetContent(style: VisualStyle): LiveSetContent {
     scene("camera", "全画面カメラ", [el("full-camera", "camera", 56, 55, 848, 370, { fit: "cover", radius: glow ? 12 : 0 }), shape("cam-footer", 56, 438, 848, 49, c.panel), shape("cam-footer-rail", 56, 438, 5, 49, c.accent), info("cam-event", "title", 79, 445, 795, 34, c.ink, 19), ...foot("cam")]),
     scene("break", "休憩中", [...top("break"), shape("break-panel", 115, 148, 730, 246, c.panel, { radius: glow ? 20 : 0 }), text("break-label", "休憩中", 170, 209, 620, 102, c.ink, 55, { bold: true, align: "center" }), motif("break-center", glow ? "lantern" : "ticks", 772, 181, 45, 57, c.accent), ...foot("break")]),
     scene("ed", "エンディング", [...top("ed"), text("thanks", "ご視聴ありがとうございました", 95, 176, 770, 90, c.ink, 42, { bold: true, align: "center" }), info("ed-title", "title", 115, 299, 730, 75, c.accent, 27, { align: "center" }), ...foot("ed")]),
+  ] };
+}
+
+/** 白磁 is expanded into ordinary editable elements, never a runtime image or a light switch. */
+const paper = { bg: "#F6F2EA", white: "#FFFFFF", ink: "#203146", blue: "#285E91", vermilion: "#BC4933", sage: "#DCE9DF" };
+function hakujiParts() {
+  const p = paper;
+  return [
+    { id: "name", title: "藍の氏名札", elements: [
+      shape("back", 0, 0, 279, 92, p.ink), shape("accent", 0, 0, 5, 92, p.vermilion),
+      text("name", "氏名を入力", 7, 3, 269, 59, p.white, 22, { bold: true, maxLines: 2 }),
+      text("role", "", 10, 65, 262, 22, p.white, 16),
+    ] },
+    { id: "camera", title: "紙縁カメラ", elements: [
+      shape("frame", 0, 0, 332, 206, p.sage),
+      el("camera", "camera", 7, 7, 318, 178, { fit: "cover" }),
+      motif("corner-top", "brackets", 0, 0, 36, 36, p.blue),
+      motif("corner-bottom", "brackets", 296, 149, 36, 36, p.blue, { rotation: 180 }),
+      text("caption", "", 12, 183, 308, 22, p.ink, 16),
+    ] },
+    { id: "chapter", title: "章の短冊", elements: [
+      shape("number-back", 0, 0, 85, 102, p.blue),
+      text("number", "", 13, 25, 62, 53, p.white, 32, { bold: true, align: "center" }),
+      shape("title-back", 85, 0, 405, 102, p.sage),
+      text("title", "章タイトルを入力", 105, 12, 367, 79, p.ink, 30, { bold: true }),
+    ] },
+    { id: "break", title: "休憩の案内", elements: [
+      shape("back", 0, 0, 490, 132, p.white, { stroke: p.ink, strokeWidth: 1 }),
+      text("heading", "休憩中", 24, 15, 437, 66, p.ink, 38, { bold: true }),
+      text("message", "", 24, 84, 437, 34, p.ink, 18),
+      shape("rule", 24, 123, 440, 3, p.vermilion),
+    ] },
+  ];
+}
+function hakujiLiveSetContent(): LiveSetContent {
+  const p = paper;
+  const scene = (id: string, name: string, elements: LiveElement[]): LiveScene => ({
+    id: `v1-hakuji-${id}`, name, background: p.bg,
+    elements: elements.map(element => ({ ...element, id: `v1-hakuji-${id}-${element.id}`, ...(element.type === "eventInfo" && element.field === "title" ? { maxLines: element.id.endsWith("-event") ? 1 : 2 } : {}) })),
+  });
+  const header = (id: string) => [
+    shape(`${id}-paper`, 48, 42, 864, 456, p.white),
+    shape(`${id}-hairline`, 52, 54, 856, 1, p.ink, { opacity: 0.22 }),
+    text(`${id}-brand`, "白磁 / HAKUJI", 56, 63, 222, 27, p.ink, 16, { bold: true }),
+  ];
+  const footer = (id: string) => shape(`${id}-footer-rule`, 52, 483, 856, 1, p.ink, { opacity: 0.22 });
+  const panel = (id: string, x: number, y: number, w: number, h: number) => [
+    shape(`${id}-mat`, x - 4, y - 4, w + 8, h + 8, p.sage),
+    el(`${id}-deck`, "deck", x, y, w, h),
+  ];
+  return { scenes: [
+    scene("wait", "開始前待機", [
+      ...header("wait"), text("wait-kicker", "まもなく開始", 76, 135, 350, 38, p.blue, 20, { bold: true }),
+      shape("wait-accent", 76, 188, 52, 4, p.vermilion),
+      info("wait-title", "title", 76, 205, 644, 136, p.ink, 47, { bold: true }),
+      info("wait-datetime", "datetime", 78, 368, 616, 46, p.ink, 21, { requiresEventDatetime: true }),
+      motif("wait-ring", "halo", 744, 177, 122, 122, p.blue, { opacity: 0.45 }),
+      shape("wait-ring-dot", 837, 301, 14, 14, p.vermilion, { shape: "ellipse" }), footer("wait"),
+    ]),
+    scene("op", "オープニング", [
+      ...header("op"), shape("op-line", 79, 161, 8, 68, p.vermilion),
+      text("op-kicker", "オープニング", 105, 152, 355, 33, p.blue, 18, { bold: true }),
+      info("op-title", "title", 105, 201, 733, 155, p.ink, 50, { bold: true }),
+      text("op-subtitle", "", 105, 375, 700, 41, p.ink, 21), footer("op"),
+    ]),
+    scene("keynote", "講演", [
+      ...header("keynote"), text("keynote-label", "講演", 758, 64, 140, 27, p.blue, 17, { bold: true, align: "right" }),
+      ...panel("keynote", 52, 109, 558, 307),
+      shape("keynote-camera-mat", 629, 101, 287, 254, p.sage),
+      el("keynote-camera", "camera", 633, 105, 279, 246, { fit: "cover" }),
+      // No invented speaker or empty name band: staff may insert the separate editable name card.
+      shape("keynote-info-rule", 633, 451, 279, 2, p.vermilion),
+      info("keynote-event", "title", 633, 456, 279, 25, p.ink, 16),
+      footer("keynote"),
+    ]),
+    scene("deck", "全画面資料", [
+      ...header("deck"), text("deck-label", "資料", 758, 64, 140, 27, p.blue, 17, { bold: true, align: "right" }),
+      ...panel("deck", 56, 105, 848, 366), footer("deck"),
+    ]),
+    scene("camera", "全画面カメラ", [
+      ...header("camera"), shape("camera-mat", 52, 101, 856, 329, p.sage),
+      el("camera-main", "camera", 56, 105, 848, 321, { fit: "cover" }),
+      // An empty speaker band would imply missing metadata. Add the name card when available.
+      info("camera-event", "title", 58, 440, 834, 38, p.ink, 19), footer("camera"),
+    ]),
+    scene("break", "休憩中", [
+      ...header("break"), shape("break-line", 130, 156, 68, 4, p.vermilion),
+      text("break-heading", "休憩中", 130, 191, 700, 95, p.ink, 57, { bold: true, align: "center" }),
+      info("break-event", "title", 160, 307, 640, 75, p.blue, 27, { align: "center" }),
+      text("break-next", "", 162, 399, 636, 40, p.ink, 19, { align: "center" }), footer("break"),
+    ]),
+    scene("ed", "エンディング", [
+      ...header("ed"), shape("ed-line", 438, 163, 84, 3, p.vermilion),
+      text("ed-thanks", "ありがとうございました", 90, 198, 780, 105, p.ink, 46, { bold: true, align: "center" }),
+      info("ed-event", "title", 120, 317, 720, 80, p.blue, 26, { align: "center" }), footer("ed"),
+    ]),
   ] };
 }
