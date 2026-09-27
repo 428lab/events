@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
 import type { Deck, DeckSlide } from "@eventer/shared";
 import { DeckEditorPage } from "./DeckEditorPage.js";
 
@@ -123,6 +123,63 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe("ブラウザの戻る操作と未保存の編集", () => {
+  it("保存失敗後のBackで残ることを選べ、編集を再試行してから離脱できる", async () => {
+    vi.useRealTimers();
+    mocks.deck = {
+      id: "d-1", slug: "abc", ownerId: "u-1", title: "テスト",
+      content: { slides: twoPages() }, createdAt: 0, updatedAt: 0,
+    };
+    mocks.update.mockRejectedValueOnce(new Error("PATCH failed")).mockResolvedValue({});
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.spyOn(window, "alert").mockImplementation(() => {});
+    window.history.replaceState({}, "", "/decks");
+    window.history.pushState({}, "", "/decks/d-1/edit");
+    render(<BrowserRouter><Routes>
+      <Route path="/decks/d-1/edit" element={<DeckEditorPage />} />
+      <Route path="/decks" element={<div>スライド一覧</div>} />
+    </Routes></BrowserRouter>);
+    const title = await screen.findByDisplayValue("テスト");
+    fireEvent.change(title, { target: { value: "編集中のタイトル" } });
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
+    await screen.findByText("保存を再試行");
+
+    act(() => window.history.back());
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(screen.getByDisplayValue("編集中のタイトル")).toBeInTheDocument();
+    expect(screen.queryByText("スライド一覧")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("保存を再試行"));
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText("保存済み")).toBeInTheDocument());
+    await waitFor(() => expect(window.history.state?.__deckLeaveGuard).toBeUndefined());
+    act(() => window.history.back());
+    await screen.findByText("スライド一覧");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    confirm.mockRestore();
+  });
+
+  it("未保存のままBackで離脱を選べる", async () => {
+    vi.useRealTimers();
+    mocks.deck = {
+      id: "d-1", slug: "abc", ownerId: "u-1", title: "テスト",
+      content: { slides: twoPages() }, createdAt: 0, updatedAt: 0,
+    };
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(window, "alert").mockImplementation(() => {});
+    window.history.replaceState({}, "", "/decks");
+    window.history.pushState({}, "", "/decks/d-1/edit");
+    render(<BrowserRouter><Routes>
+      <Route path="/decks/d-1/edit" element={<DeckEditorPage />} />
+      <Route path="/decks" element={<div>スライド一覧</div>} />
+    </Routes></BrowserRouter>);
+    fireEvent.change(await screen.findByDisplayValue("テスト"), { target: { value: "未保存" } });
+    act(() => window.history.back());
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    await screen.findByText("スライド一覧");
+    confirm.mockRestore();
+  });
 });
 
 describe("ページの一覧", () => {

@@ -36,7 +36,7 @@ export function DeckImportPage() {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [draft.retryAt]);
-  useDeckLeaveWarning(owned && (draft.state === "pending" || (draft.state === "input" && !!draft.raw)), t("deckImport.leave"));
+  useDeckLeaveWarning(owned && (draft.state === "pending" || (draft.state === "input" && !!draft.raw)), t("deckImport.leave"), draft.state !== "success");
 
   async function copy(text: string) {
     try { await navigator.clipboard.writeText(text); setNotice(t("common.copied")); }

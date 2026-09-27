@@ -103,7 +103,7 @@ export function DeckEditorPage() {
   }, [deck]);
 
   const saving = useDeckSave(title, content, update.mutateAsync);
-  useDeckLeaveWarning(content !== null && !saving.saved, t("deckImport.leave"));
+  useDeckLeaveWarning(saving.revision > 0 && !saving.saved, t("deckImport.leave"));
 
   const picker = useImagePicker(upload.mutateAsync);
 
