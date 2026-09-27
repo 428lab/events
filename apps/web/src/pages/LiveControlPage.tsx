@@ -39,6 +39,7 @@ import { useMyLiveSets } from "../api/liveSetHooks.js";
 import { useMyDecks } from "../api/deckHooks.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
 import { ManualLiveIndicatorControl } from "../components/ManualLiveIndicatorControl.js";
+import { LiveCutinControl } from "../components/LiveCutinControl.js";
 import {
   PresenterPanelToggle,
   PresenterSidePanel,
@@ -146,6 +147,7 @@ export function LiveControlPage() {
 
         {/* 手動の宣言。API は参加確定 staff のみ受け付ける（admin bypass なし）。 */}
         {eventData?.myRole === "staff" && <ManualLiveIndicatorControl state={state} fetchError={liveState.isError} pending={update.isPending} saveError={update.isError} onToggle={liveIndicatorOn => update.mutate({ liveIndicatorOn })} />}
+        {eventData?.myRole === "staff" && <LiveCutinControl key={id} eventId={id} />}
         {/* 配信セット選択 */}
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <TextField

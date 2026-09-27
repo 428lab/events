@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LIVE_POLL_MS } from "@eventer/shared";
+import type { CutinAction, CutinStatus } from "@eventer/shared";
 import type {
   EventLiveState,
   LiveSet,
@@ -31,6 +32,20 @@ export function useUpdateEventLiveState(eventId: string) {
     },
   });
 }
+
+export function useLiveCutin(eventId: string) {
+  return useQuery({
+    queryKey: ["event", eventId, "cutin"],
+    enabled: Boolean(eventId),
+    refetchInterval: LIVE_POLL_MS,
+    refetchIntervalInBackground: true,
+    retry: false,
+    queryFn: () => api.get<CutinStatus>(`/events/${eventId}/live-cutin`, { timeoutMs: 4000 }),
+  });
+}
+export const cutinApi = {
+  trigger: (eventId: string, body: { message: string }) => api.post<CutinAction & { serverNow: number }>(`/events/${eventId}/live-cutin`, body),
+};
 
 /** 配信で映すスライド（デッキ）の中身 */
 export function useEventLiveDeck(eventId: string, deckId: string | null | undefined) {

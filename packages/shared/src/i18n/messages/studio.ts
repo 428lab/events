@@ -158,6 +158,20 @@ const ja = {
 
   /* ── 配信コントロール ───────────────────────────────── */
   controlHeading: "配信コントロール",
+  cutinHeading: "参戦演出",
+  cutinHint: "入力した架空の演出文だけを表示します。実際の参加状態は変更しません。",
+  cutinName: "名前（任意）",
+  cutinMessage: "表示文（40文字以内）",
+  cutinInvalid: "改行・制御文字・URL・HTMLを含まず、40文字以内で入力してください。",
+  cutinPreview: "見本を確認",
+  cutinLocalOnly: "見本 · 配信には出ません",
+  cutinClose: "閉じる",
+  cutinSend: "配信画面へ出す",
+  cutinPending: "送信中…",
+  cutinSent: "送信しました。配信画面で確認してください",
+  cutinUnknown: "送信を確認できません。配信画面を確認してください",
+  cutinStorageError: "演出の取得状態を確認できません",
+
   controlStaffOnly: "この画面はスタッフ専用です。",
   openLiveScreen: "配信画面を開く",
   /** 案内文はボタンの名前を差し込む */
@@ -304,6 +318,20 @@ const en: Record<keyof typeof ja, string> = {
   imageUnset: "No image set",
 
   controlHeading: "Broadcast control",
+  cutinHeading: "Entrance cut-in",
+  cutinHint: "Only your fictional entrance caption is displayed. This does not change participation status.",
+  cutinName: "Name (optional)",
+  cutinMessage: "Caption (up to 40 characters)",
+  cutinInvalid: "Within 40 characters; no line breaks, controls, URLs or HTML.",
+  cutinPreview: "Local preview",
+  cutinLocalOnly: "Preview · Not on broadcast",
+  cutinClose: "Close",
+  cutinSend: "Show on broadcast screen",
+  cutinPending: "Sending…",
+  cutinSent: "Sent. Check the broadcast screen.",
+  cutinUnknown: "Could not confirm sending. Check the broadcast screen.",
+  cutinStorageError: "Cut-in retrieval status unavailable",
+
   controlStaffOnly: "This screen is for organizers only.",
   openLiveScreen: "Open the broadcast screen",
   obsHint:

@@ -12,6 +12,7 @@ import {
   useEventLiveState,
 } from "../api/liveControlHooks.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
+import { LiveCutinScreen } from "../components/LiveCutinScreen.js";
 import { SlideStage } from "../components/SlideStage.js";
 import type { LiveRuntime } from "../components/LiveStage.js";
 import { formatDateRange, participantCountLabel } from "../lib/format.js";
@@ -226,19 +227,12 @@ export function LiveScreenPage() {
       }}
     >
       {scene ? (
-        // シーン切替時にフェードイン（key でリマウント）
-        <Box
-          key={scene.id}
-          sx={{
-            lineHeight: 0,
-            animation: "liveFadeIn 400ms ease",
-            "@keyframes liveFadeIn": {
-              from: { opacity: 0 },
-              to: { opacity: 1 },
-            },
-          }}
-        >
-          <LiveSceneStage scene={scene} width={stageW} runtime={runtime} />
+        <Box sx={{ position: "relative", width: stageW, height: stageW * 9 / 16, lineHeight: 0 }}>
+          {/* Only the scene fades; an action remains independent of scene changes. */}
+          <Box key={scene.id} sx={{ animation: "liveFadeIn 400ms ease", "@keyframes liveFadeIn": { from: { opacity: 0 }, to: { opacity: 1 } } }}>
+            <LiveSceneStage scene={scene} width={stageW} runtime={runtime} />
+          </Box>
+          <LiveCutinScreen key={id} eventId={id} />
         </Box>
       ) : (
         <Typography color="#334155">{t("studio.liveSetLoading")}</Typography>

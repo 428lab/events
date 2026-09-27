@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import {
   DEFAULT_LIVE_SET_ID,
   defaultLiveSetContent,
@@ -9,6 +9,8 @@ import type { AppEnv } from "../types.js";
 import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
+import { eventLiveCutinRepo } from "../db/repositories/eventLiveCutin.js";
+import { triggerCutinInput } from "@eventer/shared";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { decksRepo } from "../db/repositories/decks.js";
 
@@ -44,6 +46,21 @@ liveControlRoutes.patch(
     return c.json(await eventLiveStateRepo.update(c.req.param("id"), input, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}));
   },
 );
+
+// requireEventRole includes administrators; cut-in operations never do.
+async function confirmed(c: Context<AppEnv>) {
+  return isConfirmedEventStaff(c.req.param("id")!, c.get("user").id);
+}
+liveControlRoutes.get("/:id/live-cutin", requireEventRole(["staff"]), async c => {
+  if (!(await confirmed(c))) return c.json({ error: "confirmed_staff_required" }, 403);
+  return c.json(await eventLiveCutinRepo.get(c.req.param("id"), c.get("user").id));
+});
+liveControlRoutes.post("/:id/live-cutin", requireEventRole(["staff"]), zValidator("json", triggerCutinInput), async c => {
+  if (c.req.header("Origin") !== new URL(c.req.url).origin) return c.json({ error: "forbidden_origin" }, 403);
+  if (!(await confirmed(c))) return c.json({ error: "confirmed_staff_required" }, 403);
+  const result = await eventLiveCutinRepo.trigger(c.req.param("id"), c.get("user").id, valid<{ message: string }>(c, "json").message);
+  return result ? c.json({ ...result, serverNow: Date.now() }, 201) : c.json({ error: "event_ended" }, 409);
+});
 
 /** 配信で映すスライド（デッキ）の中身。staff なら読める（deck要素のレンダリング用） */
 liveControlRoutes.get(
