@@ -40,6 +40,7 @@ vi.mock("../api/client.js", async (importOriginal) => {
 });
 
 const { EventSchedule } = await import("./EventSchedule.js");
+const { EventMaterials } = await import("./EventMaterials.js");
 
 const ME = { id: "u-1", username: "me", globalName: "わたし", avatarUrl: null };
 
@@ -105,17 +106,19 @@ function editor(userId: string, name: string) {
   };
 }
 
-function draw(isStaff: boolean) {
+function draw(isStaff: boolean, showManagementActions = true, withMaterials = false) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <EventSchedule eventId="e-1" eventStartsAt={null} isStaff={isStaff} />
+        <EventSchedule eventId="e-1" eventStartsAt={null} isStaff={isStaff} showManagementActions={showManagementActions} />
+        {withMaterials && <EventMaterials eventId="e-1" showManagementActions={showManagementActions} />}
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return qc;
 }
 
 beforeEach(() => {
@@ -282,4 +285,24 @@ describe("保存したあとの版 (#340)", () => {
     // 取り直しを待たずに開き直しても、送るのは進んだあとの版
     expect((await editAndSave()).version).toBe(4);
   });
+});
+
+
+it("information filters staff/unassigned timetable AND material data locally, preserves own editing and the full query", async () => {
+  items = [
+    { ...ITEM, materialUrl: "https://example.com/open", speaker: ME },
+    { ...ITEM, id: "staff", title: "裏方の資料", materialUrl: "https://example.com/staff", visibility: "staff" },
+    { ...ITEM, id: "draft", title: "未割当の資料", materialUrl: "https://example.com/draft", placement: "unassigned" },
+  ];
+  editingState = editor("other", "編集者");
+  const unfiltered = structuredClone({ items, tracks, version: 3 });
+  const qc = draw(true, false, true);
+  await screen.findAllByText("オープニング");
+  expect(screen.queryByText("裏方の資料")).toBeNull();
+  expect(screen.queryByText("未割当の資料")).toBeNull();
+  expect(screen.queryByTitle("タイムテーブルを編集")).toBeNull();
+  expect(screen.queryByText(/編集者さんが編集中/)).toBeNull();
+  expect(screen.getAllByTitle("資料URLを編集")).toHaveLength(2);
+  expect(qc.getQueryData(["event", "e-1", "timetable"])).toEqual(unfiltered);
+  expect(getMock).not.toHaveBeenCalledWith("/events/e-1/timetable/editing");
 });

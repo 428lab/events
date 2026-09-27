@@ -4,7 +4,8 @@ import type {
   SelectionType,
   UpdateSlotInput,
 } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
+import { many, one, runCount } from "../client.js";
 
 interface SlotRow {
   id: string;
@@ -61,16 +62,17 @@ export const participationSlotsRepo = {
   async create(
     eventId: string,
     input: CreateSlotInput,
-  ): Promise<ParticipationSlot> {
+    actorId: string,
+  ): Promise<ParticipationSlot | null> {
     const id = crypto.randomUUID();
     const r = await one<{ n: number }>(
       "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM participation_slot WHERE event_id = ?",
       eventId,
     );
     const next = r?.n ?? 0;
-    await run(
+    const changed = await runCount(
       `INSERT INTO participation_slot (id, event_id, name, capacity, selection_type, sort_order, draw_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       SELECT ?, ?, ?, ?, ?, ?, ?, ? FROM event e WHERE e.id=? AND ${activeManagerSql("e", "?")}`,
       id,
       eventId,
       input.name,
@@ -78,32 +80,34 @@ export const participationSlotsRepo = {
       input.selectionType,
       next,
       input.drawAt ?? null,
-      Date.now(),
+      Date.now(), eventId, actorId, adminIds(),
     );
-    return (await this.findById(id))!;
+    return changed ? this.findById(id) : null;
   },
 
   async update(
     id: string,
     input: UpdateSlotInput,
+    eventId: string, actorId: string,
   ): Promise<ParticipationSlot | null> {
     const current = await this.findById(id);
     if (!current) return null;
     const next = { ...current, ...input };
-    await run(
+    const changed = await runCount(
       `UPDATE participation_slot SET name = ?, capacity = ?, selection_type = ?, sort_order = ?, draw_at = ?
-       WHERE id = ?`,
+       WHERE id = ? AND event_id=? AND EXISTS(SELECT 1 FROM event e WHERE e.id=event_id AND ${activeManagerSql("e", "?")})`,
       next.name,
       next.capacity,
       next.selectionType,
       next.sortOrder,
       next.drawAt ?? null,
-      id,
+      id, eventId, actorId, adminIds(),
     );
-    return this.findById(id);
+    return changed ? this.findById(id) : null;
   },
 
-  async delete(id: string): Promise<void> {
-    await run("DELETE FROM participation_slot WHERE id = ?", id);
+  async delete(id: string, eventId: string, actorId: string): Promise<boolean> {
+    return (await runCount(`DELETE FROM participation_slot WHERE id = ? AND event_id=?
+      AND EXISTS(SELECT 1 FROM event e WHERE e.id=event_id AND ${activeManagerSql("e", "?")})`, id,eventId,actorId,adminIds())) > 0;
   },
 };

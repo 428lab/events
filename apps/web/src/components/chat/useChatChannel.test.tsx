@@ -189,3 +189,11 @@ describe("満杯のバッファでも自分の発言は残る (#335 レビュー
     expect(result.current.messages).toHaveLength(MESSAGE_BUFFER_MAX);
   });
 });
+
+it("access reset clears messages and stops a connected participant relay",async()=>{
+ const signer=makeSigner(ME);const {result}=setup({signer,activeSigner:signer});
+ await waitFor(()=>expect(deliver).not.toBeNull());
+ await act(async()=>{window.dispatchEvent(new CustomEvent("event-access-reset"));});
+ expect(deliver).toBeNull();expect(result.current.messages).toEqual([]);expect(result.current.channelId).toBeNull();
+ expect(await result.current.send("not sent")).toBe("failed");expect(published).toEqual([]);
+});

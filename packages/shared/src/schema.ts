@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   EVENT_ROLES,
   EVENT_STATUSES,
+  EVENT_VISIBILITIES,
   MEMBER_STATUSES,
   PARTICIPATION_TYPES,
   VENUE_TYPES,
@@ -25,6 +26,7 @@ export const userSchema = z.object({
    * メンバー一覧などのJOIN由来ペイロードでは省略される (#193) */
   cardImageUpdatedAt: z.number().nullable().optional(),
   cardImageKey: z.string().nullable().optional(),
+  cardImageGeneration: z.string().optional(),
 });
 export type User = z.infer<typeof userSchema>;
 
@@ -45,6 +47,8 @@ export const eventSchema = z.object({
   /** コンテスト形式（採点・成果物・表彰などを使う）。オフ＝告知/募集のみの一般イベント */
   contestMode: z.boolean(),
   status: z.enum(EVENT_STATUSES),
+  visibility: z.enum(EVENT_VISIBILITIES),
+  accessRevision: z.number().int().nonnegative(),
   createdBy: z.string(),
   createdAt: z.number(),
   imageUpdatedAt: z.number().nullable(),
@@ -96,6 +100,7 @@ export type Event = z.infer<typeof eventSchema>;
 
 export const createEventInput = z
   .object({
+    visibility: z.enum(EVENT_VISIBILITIES).default("public"),
     title: z.string().min(1).max(200),
     subtitle: z.string().max(200).default(""),
     description: z.string().max(20000).default(""),
@@ -121,6 +126,9 @@ export const createEventInput = z
 export type CreateEventInput = z.infer<typeof createEventInput>;
 
 export const updateEventInput = z.object({
+  visibility: z.enum(EVENT_VISIBILITIES).optional(),
+  expectedAccessRevision: z.number().int().nonnegative().optional(),
+  confirmVisibilityChange: z.boolean().optional(),
   title: z.string().min(1).max(200).optional(),
   subtitle: z.string().max(200).optional(),
   description: z.string().max(20000).optional(),
@@ -160,7 +168,11 @@ export const updateEventInput = z.object({
   registrationDeadline: z.number().int().positive().nullable().optional(),
   /** 参加者限定の文章（確定メンバー＋staffにのみ表示。eventSchema には含めない） */
   membersNote: z.string().max(20000).optional(),
-});
+}).refine(input =>
+  ![input.startsAt, input.endsAt, input.scheduling, input.registrationDeadline].some(v => v !== undefined)
+    || input.expectedAccessRevision !== undefined,
+  { message: "Reload the event before editing its schedule", path: ["expectedAccessRevision"] },
+);
 export type UpdateEventInput = z.infer<typeof updateEventInput>;
 
 /** ---- Membership ---- */
@@ -215,6 +227,11 @@ export const entrySchema = z.object({
   submission: submissionSchema.nullable(),
 });
 export type Entry = z.infer<typeof entrySchema>;
+
+export const selfEntryParticipationInput = z.object({
+  participating: z.boolean(),
+}).strict();
+export type SelfEntryParticipationInput = z.infer<typeof selfEntryParticipationInput>;
 
 export const updateSubmissionInput = z.object({
   presentationUrl: optionalUrl,

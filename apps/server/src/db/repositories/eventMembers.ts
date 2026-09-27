@@ -1,3 +1,6 @@
+import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
+import { eventPairViewSql } from "../../auth/eventAccess.js";
+import { eventViewSql } from "../../auth/eventAccess.js";
 import type {
   EventMember,
   EventMemberWithUser,
@@ -8,7 +11,7 @@ import type {
 } from "@eventer/shared";
 import { MEET_RANKING_MODES,
   QA_ANONYMITY_MODES } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { runCount, batch, many, one } from "../client.js";
 import {
   ATTENDED_COUNT_SQL,
   CAPACITY_TOTAL_SQL,
@@ -68,6 +71,12 @@ function toUser(row: MemberUserRow): User {
   };
 }
 
+// The revision statement immediately follows the member mutation in the same
+// batch; changes() refers only to that mutation, never to a later side effect.
+async function memberWrite(eventId: string, sql: string, ...args: unknown[]) {
+  await batch([{ sql, args }, { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE id = ? AND changes() > 0", args: [eventId] }]);
+}
+
 export const eventMembersRepo = {
   /** 現役メンバーを返す（キャンセル済みはメンバー扱いしない） */
   async find(eventId: string, userId: string): Promise<EventMember | null> {
@@ -112,7 +121,7 @@ export const eventMembersRepo = {
     if (existing && existing.status !== "canceled") return existing;
     if (existing) {
       // キャンセル済みの再参加: 行を復活させる（並び順の公平のため参加日時は今）
-      await run(
+      await memberWrite(eventId,
         `UPDATE event_member
             SET role = ?, slot_id = ?, status = ${statusSql}, attended = 0, attended_at = NULL,
                 canceled_at = NULL, canceled_scheduling = 0, created_at = ?
@@ -126,7 +135,7 @@ export const eventMembersRepo = {
       return (await this.find(eventId, userId))!;
     }
     const id = crypto.randomUUID();
-    await run(
+    await memberWrite(eventId,
       `INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at)
        VALUES (?, ?, ?, ?, ?, ${statusSql}, ?) ${enforceSlotRules ? "ON CONFLICT(event_id,user_id) DO NOTHING" : ""}`,
       id,
@@ -150,9 +159,11 @@ export const eventMembersRepo = {
    * 取消済み(canceled)は触らない。「出席したあとで取り消した」順序は実際に起こる
    * ので、参加履歴として残す方針 (0061・0063) に揃える。 */
   async setStatus(memberId: string, status: string): Promise<void> {
+    const row = await one<{ event_id: string }>("SELECT event_id FROM event_member WHERE id = ?", memberId);
+    if (!row) return;
     const clearsAttendance =
       status === "lost" || status === "applied" || status === "waitlist";
-    await run(
+    await memberWrite(row.event_id,
       clearsAttendance
         ? `UPDATE event_member
               SET status = ?, attended = 0, attended_at = NULL
@@ -171,19 +182,22 @@ export const eventMembersRepo = {
     userId: string,
     attended: boolean,
     attendedAt: number | null,
+    actorId: string,
   ): Promise<EventMember | null> {
-    await run(
+    const changed = await runCount(
       `UPDATE event_member
           SET attended = ?,
               attended_at = CASE WHEN ? = 1 THEN COALESCE(attended_at, ?) ELSE NULL END
-        WHERE event_id = ? AND user_id = ? AND status <> 'canceled'`,
+        WHERE event_id = ? AND user_id = ? AND status <> 'canceled' AND (?=0 OR status='confirmed')
+          AND EXISTS(SELECT 1 FROM event e WHERE e.id=event_id AND ${activeManagerSql('e','?')}
+            AND ${eventPairViewSql('e','?','event_member.user_id','?')})`,
       attended ? 1 : 0,
       attended ? 1 : 0,
       attendedAt,
       eventId,
-      userId,
+      userId, attended ? 1 : 0, actorId,adminIds(),actorId,actorId,adminIds(),adminIds(),
     );
-    return this.find(eventId, userId);
+    return changed ? this.find(eventId, userId) : null;
   },
 
   /** 枠の特定状態のメンバー（抽選・繰り上げ用）。
@@ -270,7 +284,7 @@ export const eventMembersRepo = {
     userId: string,
     role: NonParticipantRole,
   ): Promise<EventMember | null> {
-    await run(
+    await memberWrite(eventId,
       `UPDATE event_member SET role = ?, slot_id = NULL, status = 'confirmed'
          WHERE event_id = ? AND user_id = ? AND status <> 'canceled'`,
       role,
@@ -281,7 +295,7 @@ export const eventMembersRepo = {
   },
 
   async remove(eventId: string, userId: string): Promise<void> {
-    await run(
+    await memberWrite(eventId,
       "DELETE FROM event_member WHERE event_id = ? AND user_id = ?",
       eventId,
       userId,
@@ -294,7 +308,7 @@ export const eventMembersRepo = {
     userId: string,
     wasScheduling: boolean,
   ): Promise<void> {
-    await run(
+    await memberWrite(eventId,
       `UPDATE event_member
           SET status = 'canceled', canceled_at = ?, canceled_scheduling = ?
         WHERE event_id = ? AND user_id = ?`,
@@ -337,7 +351,7 @@ export const eventMembersRepo = {
                    AND m.canceled_at >= e.starts_at - ${DAY} THEN 1 ELSE 0 END) AS cancel_late
        FROM event_member m
        JOIN event e ON e.id = m.event_id
-       WHERE m.user_id = ? AND m.role = 'participant' AND e.status = 'published'`,
+       WHERE m.user_id = ? AND m.role = 'participant' AND e.status = 'published' AND e.visibility = 'public'`,
       now,
       now,
       userId,
@@ -348,7 +362,7 @@ export const eventMembersRepo = {
       `SELECT COUNT(*) AS v FROM event_member m
         JOIN event e ON e.id = m.event_id
         WHERE m.user_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
-          AND e.created_by = m.user_id AND e.status = 'published'
+          AND e.created_by = m.user_id AND e.status = 'published' AND e.visibility = 'public'
           AND e.ends_at > 0 AND e.ends_at < ?`,
       userId,
       now,
@@ -357,7 +371,7 @@ export const eventMembersRepo = {
       `SELECT COUNT(*) AS v FROM event_member m
         JOIN event e ON e.id = m.event_id
         WHERE m.user_id = ? AND m.role = 'staff' AND m.status = 'confirmed'
-          AND e.created_by <> m.user_id AND e.status = 'published'
+          AND e.created_by <> m.user_id AND e.status = 'published' AND e.visibility = 'public'
           AND e.ends_at > 0 AND e.ends_at < ?`,
       userId,
       now,
@@ -369,7 +383,7 @@ export const eventMembersRepo = {
     const spoken = await one<{ v: number }>(
       `SELECT COUNT(DISTINCT e.id) AS v FROM event_schedule_item si
         JOIN event e ON e.id = si.event_id
-        WHERE si.speaker_user_id = ? AND e.status = 'published'
+        WHERE si.speaker_user_id = ? AND e.status = 'published' AND e.visibility = 'public'
           AND e.ends_at > 0 AND e.ends_at < ?
           AND ${publicItemWhere("si")}`,
       userId,
@@ -422,9 +436,9 @@ export const eventMembersRepo = {
                 ${CAPACITY_TOTAL_SQL("e.id")} AS capacity_total
          FROM event_member m
          JOIN event e ON e.id = m.event_id
-         WHERE m.user_id = ? AND m.status <> 'canceled'
+         WHERE m.user_id = ? AND m.status <> 'canceled' AND ${eventViewSql("e", "m.user_id", "?")}
          ORDER BY e.starts_at DESC`,
-      userId,
+      userId, adminIds(),
     );
     return rows.map(mapMyEventSummary);
   },
@@ -444,7 +458,7 @@ export const eventMembersRepo = {
                 ${CAPACITY_TOTAL_SQL("e.id")} AS capacity_total
          FROM event_member m
          JOIN event e ON e.id = m.event_id
-         WHERE m.user_id = ? AND m.status = 'confirmed' AND e.status = 'published'
+         WHERE m.user_id = ? AND m.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public'
            AND (e.attendance_check = 0 OR m.attended = 1 OR m.role <> 'participant'
                 OR e.ends_at <= 0 OR e.ends_at >= ?)
          ORDER BY e.starts_at DESC`,
@@ -473,6 +487,8 @@ function mapMyEventSummary(
     aggregateSelfEntry: (row.aggregate_self_entry as number) === 1,
     contestMode: (row.contest_mode as number) === 1,
     status: row.status as MyEventSummary["status"],
+    visibility: (row.visibility ?? "public") as MyEventSummary["visibility"],
+    accessRevision: (row.access_revision as number) ?? 0,
     createdBy: row.created_by as string,
     createdAt: row.created_at as number,
     imageUpdatedAt: (row.image_updated_at as number | null) ?? null,

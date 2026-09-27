@@ -58,15 +58,16 @@ async function setupEvent(
   return event.id;
 }
 
-function patchEvent(
+async function patchEvent(
   eventId: string,
   cookie: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
+  const { event } = await (await SELF.fetch(`${BASE}/api/events/${eventId}`, { headers: { cookie } })).json() as { event: Event };
   return SELF.fetch(`${BASE}/api/events/${eventId}`, {
     method: "PATCH",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ expectedAccessRevision: event.accessRevision, ...body }),
   });
 }
 
@@ -321,17 +322,17 @@ describe("募集締切 (#269)", () => {
     });
     expect(fixed.status).toBe(200);
 
-    // 締切より前の開催日になる候補で確定しようとしても 400（PATCH と同じ不変条件）
+    // 直接確定後の候補確定は旧receiptと混同せず409。締切も日程も上書きしない。
     const finalize = await SELF.fetch(
       `${BASE}/api/events/${eventId}/finalize-date`,
       {
         method: "POST",
         headers: { "content-type": "application/json", cookie: admin },
-        body: JSON.stringify({ optionId }),
+        body: JSON.stringify({ optionId, expectedAccessRevision: ((await fixed.json()) as { event: Event }).event.accessRevision }),
       },
     );
-    expect(finalize.status).toBe(400);
-    expect(await errorOf(finalize)).toBe("deadline_after_start");
+    expect(finalize.status).toBe(409);
+    expect(await errorOf(finalize)).toBe("schedule_changed");
 
     // 締切があるうちは候補日そのものを足せない
     const addAfter = await SELF.fetch(

@@ -17,8 +17,16 @@ export function useAwards(eventId: string) {
   });
 }
 
-const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) =>
-  qc.invalidateQueries({ queryKey: ["event", eventId, "awards"] });
+export class AwardConfirmationError extends Error {}
+
+const invalidate = async (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
+  try {
+    await qc.invalidateQueries({ queryKey: ["event", eventId, "awards"] }, { throwOnError: true });
+  } catch {
+    // The write succeeded: recovery must read, not repeat the write (especially creation).
+    throw new AwardConfirmationError("Could not confirm saved awards");
+  }
+};
 
 export function useCreateRank(eventId: string) {
   const qc = useQueryClient();
@@ -78,7 +86,15 @@ export function useSetAwardResult(eventId: string) {
   return useMutation({
     mutationFn: (input: SetAwardResultInput) =>
       api.put(`/events/${eventId}/award-results`, input),
-    onSuccess: () => invalidate(qc, eventId),
+    onSuccess: async (_, input) => {
+      await invalidate(qc, eventId);
+      const awards = qc.getQueryData<AwardsView>(["event", eventId, "awards"]);
+      const result = awards?.results.find((r) => input.awardRankId
+        ? r.awardRankId === input.awardRankId : r.specialAwardId === input.specialAwardId);
+      if ((result?.entryId ?? null) !== input.entryId) {
+        throw new AwardConfirmationError("Saved winner did not match");
+      }
+    },
   });
 }
 

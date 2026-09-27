@@ -1,5 +1,6 @@
+import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type { BlockedChatAuthor, ChatMember } from "@eventer/shared";
-import { many, one, run, runCount } from "../client.js";
+import { many, one, runCount } from "../client.js";
 
 /** 表示許可リストの取得本体。withBlocked=true のときだけ締め出し中 (#283) も含める。
  * 参加者向けと管理画面で SQL が分かれると片方に除外漏れが出るので、1箇所に寄せてある。
@@ -73,8 +74,8 @@ const SIBLING_KEYS = `SELECT k2.pubkey FROM event_chat_key k
  * なりすましの穴になる */
 export const eventChatRepo = {
   /** チャンネルIDをクリアする（リレー上に部屋が無い場合の作り直し用） */
-  async clearChannel(eventId: string): Promise<void> {
-    await run(
+  async clearChannel(eventId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       "UPDATE event SET chat_channel_id = NULL WHERE id = ?",
       eventId,
     );
@@ -115,9 +116,8 @@ export const eventChatRepo = {
   async addPubkey(
     eventId: string,
     userId: string,
-    pubkey: string,
-  ): Promise<void> {
-    await run(
+    pubkey: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       `INSERT OR IGNORE INTO event_chat_key (event_id, user_id, pubkey, secret, created_at)
        VALUES (?, ?, ?, NULL, ?)`,
       eventId,
@@ -152,9 +152,8 @@ export const eventChatRepo = {
     eventId: string,
     userId: string,
     pubkey: string,
-    secret: string,
-  ): Promise<void> {
-    await run(
+    secret: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       `INSERT OR IGNORE INTO event_chat_key (event_id, user_id, pubkey, secret, created_at)
        VALUES (?, ?, ?, ?, ?)`,
       eventId,
@@ -322,9 +321,8 @@ export const eventChatRepo = {
    * 既に設定済みなら既存値を返す（後着は無視） */
   async setChannelOnce(
     eventId: string,
-    channelId: string,
-  ): Promise<string | null> {
-    await runCount(
+    channelId: string, writer: EventWriter): Promise<string | null> {
+    await eventRun(writer,
       "UPDATE event SET chat_channel_id = ? WHERE id = ? AND chat_channel_id IS NULL",
       channelId,
       eventId,
@@ -341,8 +339,8 @@ export const eventChatRepo = {
   },
 
   /** メッセージをアプリ側で非表示にする（冪等） */
-  async hideNote(eventId: string, noteId: string): Promise<void> {
-    await run(
+  async hideNote(eventId: string, noteId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       "INSERT OR IGNORE INTO event_chat_hidden (event_id, note_id, created_at) VALUES (?, ?, ?)",
       eventId,
       noteId,
@@ -352,8 +350,8 @@ export const eventChatRepo = {
 
   /** 非表示を解除する（スタッフ）。
    * 運営が対処したもの (#278) は残す。戻せてしまうと対処した意味が無くなる */
-  async unhideNote(eventId: string, noteId: string): Promise<void> {
-    await run(
+  async unhideNote(eventId: string, noteId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       `DELETE FROM event_chat_hidden
         WHERE event_id = ? AND note_id = ? AND admin_hidden_at IS NULL`,
       eventId,

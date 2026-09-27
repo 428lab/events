@@ -150,6 +150,7 @@ export function HomeDashboard() {
             >
               {t("home.emptyCreate")}
             </Button>
+            <Button component={RouterLink} to="/event-invites">{t("eventAccess.title")}</Button>
             <Button startIcon={<SearchIcon />} component={RouterLink} to="/events/upcoming">
               {t("home.emptyBrowse")}
             </Button>
@@ -163,6 +164,7 @@ export function HomeDashboard() {
 
   return (
     <Stack spacing={3} sx={{ mb: 4 }}>
+      <Button component={RouterLink} to="/event-invites">{t("eventAccess.title")}</Button>
       {/* 返事待ち。承諾するまでイベントページを開けないので見落とすと詰む (#339) */}
       {pendingInvites > 0 && (
         <Alert

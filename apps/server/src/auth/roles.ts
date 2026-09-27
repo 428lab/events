@@ -1,9 +1,9 @@
 import type { Context, MiddlewareHandler } from "hono";
-import type { Event, EventRole, User } from "@eventer/shared";
+import type { EventRole, User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
-import { eventsRepo } from "../db/repositories/events.js";
-import { communitiesRepo } from "../db/repositories/communities.js";
+import { isEventManager } from "./eventAccess.js";
+export { canViewEvent } from "./eventAccess.js";
 import { isAppAdmin } from "./admin.js";
 import { currentUser } from "./session.js";
 
@@ -26,7 +26,7 @@ export function requireEventRole(
       return;
     }
     const member = await eventMembersRepo.find(eventId, user.id);
-    if (member && roles.includes(member.role)) {
+    if (member && member.status !== "canceled" && roles.includes(member.role)) {
       await next();
       return;
     }
@@ -52,14 +52,7 @@ export async function canManageEvent(
   eventId: string,
   user: User,
 ): Promise<boolean> {
-  if (isAppAdmin(user)) return true;
-  const member = await eventMembersRepo.find(eventId, user.id);
-  if (member?.role === "staff") return true;
-  const event = await eventsRepo.findById(eventId);
-  return Boolean(
-    event?.communityId &&
-      (await communitiesRepo.isManager(event.communityId, user.id)),
-  );
+  return isEventManager(eventId, user);
 }
 
 /**
@@ -79,23 +72,6 @@ export async function canManageEventAs(
   const user = await currentUser(c);
   if (!user) return false;
   return canManageEvent(eventId, user);
-}
-
-/**
- * イベントの中身を見てよいか。公開イベントは誰でも、下書きはメンバー/管理者のみ。
- *
- * 「メンバー行があるか」で判定する（承諾前の招待は権限を生まない）。招待の情報で
- * 未公開イベントの ID を知れるようになった (#339) ので、イベント配下の GET は
- * 一律これを通すこと。通していないと、承諾する前から中身が読めてしまう。
- */
-export async function canViewEvent(
-  event: Event,
-  user: User | null,
-): Promise<boolean> {
-  if (event.status === "published") return true;
-  if (!user) return false;
-  if (isAppAdmin(user)) return true;
-  return Boolean(await eventMembersRepo.find(event.id, user.id));
 }
 
 /**

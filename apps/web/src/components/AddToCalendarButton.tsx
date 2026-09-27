@@ -27,8 +27,12 @@ export function AddToCalendarButton({ event }: { event: Event }) {
   return (
     <Box sx={{ mt: 1 }}>
       <Button
-        component="a"
-        href={href}
+        component={event.visibility === "public" ? "a" : "button"}
+        href={event.visibility === "public" ? href : undefined}
+        onClick={() => {
+          if (event.visibility !== "public" && window.confirm(t("eventDetail.confirmExternalCalendar")))
+            window.open(href, "_blank", "noopener,noreferrer");
+        }}
         target="_blank"
         rel="noopener noreferrer"
         size="small"

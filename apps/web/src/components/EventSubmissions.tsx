@@ -15,13 +15,16 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import type { Entry, Event } from "@eventer/shared";
+import type { Entry, Event, EventRole } from "@eventer/shared";
 import { useEventEntries, useMe, useUpdateSubmission } from "../api/hooks.js";
+
+import { useContestAnchor } from "../lib/useContestAnchor.js";
 
 /** 自分のエントリの提出物（発表資料・ソース）の編集フォーム */
 function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry }) {
   const { t } = useTranslation();
   const update = useUpdateSubmission(eventId);
+  useContestAnchor("submissions");
   const [presentationUrl, setPresentationUrl] = useState(
     entry.submission?.presentationUrl ?? "",
   );
@@ -30,7 +33,7 @@ function SubmissionEditor({ eventId, entry }: { eventId: string; entry: Entry })
   );
 
   return (
-    <Card variant="outlined">
+    <Card id="submissions" tabIndex={-1} sx={{ scrollMarginTop: 88 }} variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
           {t("eventDetail.mySubmission")}
@@ -90,6 +93,7 @@ export function EventSubmissions({
   eventId: string;
   event: Event;
   contest: boolean;
+  myRole: EventRole | null;
 }) {
   const { t } = useTranslation();
   const { data: me } = useMe();
@@ -103,7 +107,7 @@ export function EventSubmissions({
 
   return (
     <>
-      {myEntry && <SubmissionEditor eventId={eventId} entry={myEntry} />}
+      {myEntry && <SubmissionEditor key={myEntry.id} eventId={eventId} entry={myEntry} />}
 
       {showList && entries && (
         <Card variant="outlined">

@@ -344,7 +344,7 @@ describe("年表に添える出会い数 (#315)", () => {
     expect(Object.hasOwn(body.meetCounts, alone)).toBe(false);
   });
 
-  it("通算は公開プロフィールに載らないイベントぶんも含めて独立に数える", async () => {
+  it("通算もpublic/publishedに限定し、非公開の履歴を数から漏らさない", async () => {
     const owner = await makeUser();
     const u = await makeUser();
     const now = Date.now();
@@ -363,9 +363,9 @@ describe("年表に添える出会い数 (#315)", () => {
     await addMeet(draft, u.userId);
 
     const body = await profile(u.username);
-    // 年表に出るのは1件ぶんだが、通算は2人。表示中の合計とは別物
+    // 非publishedの出会いは公開の通算にも含めない。
     expect(body.meetCounts[shown]).toBe(1);
-    expect(body.meetTotal).toBe(2);
+    expect(body.meetTotal).toBe(1);
   });
 
   it("通算は人数（同じ人と複数のイベントで会っても1人）", async () => {

@@ -1,6 +1,7 @@
+import { eventRun, eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import type { DutyAssignee, DutySlot, StaffDuty } from "@eventer/shared";
 import { EVENT_DUTY_LIMIT } from "@eventer/shared";
-import { batch, many, one, run } from "../client.js";
+import { many, one, } from "../client.js";
 
 /**
  * スタッフの役割タグと持ち場 (#384)。
@@ -134,14 +135,14 @@ export const eventDutiesRepo = {
     return row ? toDuty(row) : null;
   },
 
-  async createDuty(eventId: string, name: string): Promise<string> {
+  async createDuty(eventId: string, name: string, writer: EventWriter): Promise<string> {
     const id = crypto.randomUUID();
     const now = Date.now();
     const row = await one<{ n: number | null }>(
       "SELECT MAX(sort_order) AS n FROM event_staff_duty WHERE event_id = ?",
       eventId,
     );
-    await run(
+    await eventRun(writer,
       `INSERT INTO event_staff_duty
          (id, event_id, name, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -155,8 +156,8 @@ export const eventDutiesRepo = {
     return id;
   },
 
-  async renameDuty(dutyId: string, name: string): Promise<void> {
-    await run(
+  async renameDuty(dutyId: string, name: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       "UPDATE event_staff_duty SET name = ?, updated_at = ? WHERE id = ?",
       name,
       Date.now(),
@@ -165,10 +166,10 @@ export const eventDutiesRepo = {
   },
 
   /** 並べ替え。**そのイベントの行しか動かさない**（他イベントの id が混ざっても効かない） */
-  async reorderDuties(eventId: string, ids: string[]): Promise<void> {
+  async reorderDuties(eventId: string, ids: string[], writer: EventWriter): Promise<void> {
     if (ids.length === 0) return;
     const now = Date.now();
-    await batch(
+    await eventWrite(writer,
       ids.map((id, i) => ({
         sql: "UPDATE event_staff_duty SET sort_order = ?, updated_at = ? WHERE id = ? AND event_id = ?",
         args: [i, now, id, eventId],
@@ -178,8 +179,8 @@ export const eventDutiesRepo = {
 
   /** 役割の削除。持ち場・割り当ては FK CASCADE で消える
    * （画面は使用数を出して確認を取ってから呼ぶ） */
-  async removeDuty(dutyId: string): Promise<void> {
-    await run("DELETE FROM event_staff_duty WHERE id = ?", dutyId);
+  async removeDuty(dutyId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"DELETE FROM event_staff_duty WHERE id = ?", dutyId);
   },
 
   /* ── 持ち場 ────────────────────────────────────────── */
@@ -255,8 +256,7 @@ export const eventDutiesRepo = {
    */
   async setSlotsForItem(
     itemId: string,
-    slots: Array<{ dutyId: string; required: number }>,
-  ): Promise<void> {
+    slots: Array<{ dutyId: string; required: number }>, writer: EventWriter): Promise<void> {
     const current = await many<{ id: string; duty_id: string; required_count: number }>(
       "SELECT id, duty_id, required_count FROM event_duty_slot WHERE item_id = ?",
       itemId,
@@ -288,7 +288,7 @@ export const eventDutiesRepo = {
         args: [crypto.randomUUID(), itemId, s.dutyId, s.required, now, now],
       });
     }
-    if (stmts.length > 0) await batch(stmts);
+    if (stmts.length > 0) await eventWrite(writer,stmts);
   },
 
   /* ── 割り当て ──────────────────────────────────────── */
@@ -312,9 +312,9 @@ export const eventDutiesRepo = {
     return row !== null;
   },
 
-  async addAssignee(slotId: string, userId: string): Promise<string> {
+  async addAssignee(slotId: string, userId: string, writer: EventWriter): Promise<string> {
     const id = crypto.randomUUID();
-    await run(
+    await eventRun(writer,
       `INSERT INTO event_duty_assignee (id, slot_id, user_id, created_at)
        VALUES (?, ?, ?, ?)`,
       id,
@@ -345,8 +345,8 @@ export const eventDutiesRepo = {
     return row !== null;
   },
 
-  async removeAssignee(assigneeId: string): Promise<void> {
-    await run("DELETE FROM event_duty_assignee WHERE id = ?", assigneeId);
+  async removeAssignee(assigneeId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"DELETE FROM event_duty_assignee WHERE id = ?", assigneeId);
   },
 
   /* ── イベントの複製 (#384 設計 7.) ──────────────────── */
@@ -360,8 +360,7 @@ export const eventDutiesRepo = {
    */
   async copyForDuplicate(
     srcEventId: string,
-    destEventId: string,
-  ): Promise<void> {
+    destEventId: string, writer: EventWriter): Promise<void> {
     const rows = await many<{ name: string; sort_order: number }>(
       `SELECT name, sort_order FROM event_staff_duty
         WHERE event_id = ? ORDER BY sort_order ASC, created_at ASC
@@ -371,7 +370,7 @@ export const eventDutiesRepo = {
     );
     if (rows.length === 0) return;
     const now = Date.now();
-    await batch(
+    await eventWrite(writer,
       rows.map((r) => ({
         sql: `INSERT INTO event_staff_duty
                 (id, event_id, name, sort_order, created_at, updated_at)

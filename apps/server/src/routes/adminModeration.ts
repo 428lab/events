@@ -188,7 +188,7 @@ adminModerationRoutes.post(
       // （投影画面に「非表示のはずの質問」が出続けないように。
       // スタッフの非表示 eventQa.ts と同じ後始末）
       if (kind === "question" && changed > 0) {
-        await eventQaRepo.clearPickedIf(eventId, id);
+        await eventQaRepo.clearPickedIf(eventId, id, {eventId,actorId:c.get("user").id,permission:"view"});
       }
     }
     // 既に非表示だった場合も 200（画面の再読込で揃う）。記録は実際に変えたときだけ

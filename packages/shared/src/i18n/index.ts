@@ -10,12 +10,14 @@
  */
 import { adminSettings } from "./messages/adminSettings.js";
 import { deckImport, deckImportIssue, deckImportField } from "./messages/deckImport.js";
+import { eventAccess } from "./messages/eventAccess.js";
 import { common } from "./messages/common.js";
 import { community } from "./messages/community.js";
 import { egg } from "./messages/egg.js";
 import { errors } from "./messages/errors.js";
 import { eventDetail } from "./messages/eventDetail.js";
 import { eventForm } from "./messages/eventForm.js";
+import { eventManagement } from "./messages/eventManagement.js";
 import { eventRun } from "./messages/eventRun.js";
 import { eventSocial } from "./messages/eventSocial.js";
 import { home } from "./messages/home.js";
@@ -65,6 +67,7 @@ export { staffOpsParts } from "./messages/staffOps/index.js";
 export const translations = {
   ja: {
     common: common.ja,
+    eventAccess: eventAccess.ja,
     nav: nav.ja,
     themeName: themeName.ja,
     login: login.ja,
@@ -75,6 +78,7 @@ export const translations = {
     eventDetail: eventDetail.ja,
     eventForm: eventForm.ja,
     eventRun: eventRun.ja,
+    eventManagement: eventManagement.ja,
     eventSocial: eventSocial.ja,
     schedule: schedule.ja,
     preSurvey: preSurvey.ja,
@@ -107,6 +111,7 @@ export const translations = {
   },
   en: {
     common: common.en,
+    eventAccess: eventAccess.en,
     nav: nav.en,
     themeName: themeName.en,
     login: login.en,
@@ -117,6 +122,7 @@ export const translations = {
     eventDetail: eventDetail.en,
     eventForm: eventForm.en,
     eventRun: eventRun.en,
+    eventManagement: eventManagement.en,
     eventSocial: eventSocial.en,
     schedule: schedule.en,
     preSurvey: preSurvey.en,

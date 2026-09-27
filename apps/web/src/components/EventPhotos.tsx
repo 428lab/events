@@ -64,6 +64,7 @@ interface EventPhotosProps {
   myRole: EventRole | null;
   photosPublic: boolean;
   published: boolean;
+  showManagementActions?: boolean;
 }
 
 /** Event-local state (including lightbox and upload queue) must not cross events. */
@@ -77,12 +78,13 @@ function EventPhotosGallery({
   myRole,
   photosPublic,
   published,
+  showManagementActions = true,
 }: EventPhotosProps) {
   const { t } = useTranslation();
   const { data: me } = useMe();
   const isMember = Boolean(myRole);
   // イベント配下のUIは myRole のみで判定（サイト管理者でもイベントスタッフでなければ操作UIを出さない）
-  const isStaff = myRole === "staff";
+  const canModerate = myRole === "staff" && showManagementActions;
   // 公開設定なら誰でも閲覧、そうでなければ参加者のみ
   const canView = isMember || (photosPublic && published);
   const [page, setPage] = useState(1);
@@ -175,7 +177,7 @@ function EventPhotosGallery({
     void uploadFiles(files);
   };
 
-  const canDelete = (p: EventPhoto) => p.userId === me?.id || isStaff;
+  const canDelete = (p: EventPhoto) => p.userId === me?.id || canModerate;
 
   /** 動画フローが閉じた (#427)。実行中に追加選択があれば次のフローを始める。
    * 成否のまとめ・200枠切れの扱いはフロー側（VideoUploadFlow）が持つ */
@@ -270,7 +272,7 @@ function EventPhotosGallery({
           {isMember && t("eventSocial.photosDropHint")}
         </Typography>
 
-        {isStaff && (
+        {canModerate && (
           <FormControlLabel
             sx={{ mb: 1 }}
             control={
@@ -469,7 +471,7 @@ function EventPhotosGallery({
         photo={lightbox}
         onClose={() => setLightbox(null)}
         canComment={isMember}
-        isStaff={isStaff}
+        canModerate={canModerate}
         canDeletePhoto={lightbox ? canDelete(lightbox) : false}
         onDeletePhoto={(id) => {
           if (window.confirm(t("common.photoDeleteConfirm"))) {
@@ -500,7 +502,7 @@ function PhotoLightbox({
   photo,
   onClose,
   canComment,
-  isStaff,
+  canModerate,
   canDeletePhoto,
   onDeletePhoto,
 }: {
@@ -508,7 +510,7 @@ function PhotoLightbox({
   photo: EventPhoto | null;
   onClose: () => void;
   canComment: boolean;
-  isStaff: boolean;
+  canModerate: boolean;
   canDeletePhoto: boolean;
   onDeletePhoto: (id: string) => void;
 }) {
@@ -668,7 +670,7 @@ function PhotoLightbox({
                         {c.body}
                       </Typography>
                     </Box>
-                    {(c.userId === me?.id || isStaff) && (
+                    {(c.userId === me?.id || canModerate) && (
                       <IconButton
                         size="small"
                         onClick={() => delComment.mutate(c.id)}

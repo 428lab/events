@@ -95,7 +95,7 @@ eventLikeRoutes.put(
       return c.json({ error: "self_like" }, 403);
     }
 
-    await eventLikesRepo.setLike(eventId, user.id, kind, targetKey, on);
+    await eventLikesRepo.setLike(eventId, user.id, kind, targetKey, on, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
     return c.json({
       summary: await eventLikesRepo.summaryForEvent(eventId, user.id),
     });

@@ -1,3 +1,6 @@
+import { eventPreSurveyRepo } from "./db/repositories/eventPreSurvey.js";
+import { deleteMyEventAccess, eventAccessInviteRoutes, myEventInviteRoutes, myEventAccessRoutes } from "./routes/eventAccessInvites.js";
+import { canViewEvent, eventResponseHeaders, requireEventAccess } from "./auth/eventAccess.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -88,7 +91,7 @@ import {
   adminStatsRoutes,
   recordEventView,
 } from "./routes/analytics.js";
-import { currentUser, pendingDeletionUser } from "./auth/session.js";
+import { currentUser, pendingDeletionUser, requireAuth } from "./auth/session.js";
 import { PROVIDERS, providerConfigured } from "./auth/providers.js";
 import { eventsRepo } from "./db/repositories/events.js";
 import { usersRepo } from "./db/repositories/users.js";
@@ -138,11 +141,22 @@ import { adminModerationRoutes } from "./routes/adminModeration.js";
 import { adminTrendingRoutes } from "./routes/adminTrending.js";
 
 const api = new Hono();
+// PNG denial headers must precede authentication and the global body limit.
+for (const path of ["/me/card-image", "/users/:id/card-image"])
+  api.use(path, async (c, next) => { c.header("Cache-Control", "private, no-store"); c.header("Vary", "Cookie"); await next(); });
+const DEFAULT_BODY_MAX = 8 * 1024 * 1024;
+// This terminal ownership-only exit precedes the common gates, so apply the
+// same body cap here as well. No other verb bypasses the event gate.
+api.delete("/events/:id/access", requireAuth, bodyLimit({
+  maxSize: DEFAULT_BODY_MAX,
+  onError: (c) => c.json({ error: "too_large" }, 413),
+}), deleteMyEventAccess);
+// All event paths share a visibility gate, before media and body processing.
+api.use("/events/:id/*", requireEventAccess);
 // リクエストボディの上限。既定は最大の画像アップロード 6MB より少し上。
 // 動画アップロード (#408) のパスだけ、本体＋ポスター＋multipart 境界ぶんまで広げる。
-// 門はこの1枚だけ（ルート側に別の bodyLimit を重ねない）。ルート内の
+// 通常の門はこの1枚（先行する本人退出だけは上で同じ上限）。ルート内の
 // 個別上限（EVENT_VIDEO_MAX_BYTES 等）はこの門をくぐった後の検証
-const DEFAULT_BODY_MAX = 8 * 1024 * 1024;
 const VIDEO_BODY_MAX =
   EVENT_VIDEO_MAX_BYTES + EVENT_PHOTO_MAX_BYTES + EVENT_THUMBNAIL_MAX_BYTES + 1024 * 1024;
 const VIDEO_UPLOAD_PATH = /^\/api\/events\/[^/]+\/videos$/;
@@ -257,6 +271,9 @@ api.route("/events", cardDesignAssetRoutes);
 api.route("/events", analyticsRoutes);
 // 運営スタッフへの招待 (#339)（招待・取り消しはそのイベントのスタッフのみ。要認証）
 api.route("/events", eventStaffInviteRoutes);
+api.route("/events", eventAccessInviteRoutes);
+api.route("/me/event-invites", myEventInviteRoutes);
+api.route("/me/event-access", myEventAccessRoutes);
 // 招待された本人の受け取り口 (#339)。requireAuth 付きの meRoutes より先に登録する
 api.route("/me/staff-invites", myStaffInviteRoutes);
 // 退会の取り消し（復帰） (#250)。猶予期間中は requireAuth が通らないため、
@@ -415,10 +432,11 @@ export const app = new Hono();
 // 全レスポンスに基本セキュリティヘッダを付与（MIMEスニッフ抑止・クリックジャッキング防止）
 app.use("*", async (c, next) => {
   await next();
+  if (c.req.method === "DELETE" && /^\/api\/events\/[^/]+\/access$/.test(c.req.path)) eventResponseHeaders(c, true);
   const set = (h: Headers) => {
     h.set("X-Content-Type-Options", "nosniff");
     h.set("X-Frame-Options", "DENY");
-    h.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    if (!h.has("Referrer-Policy")) h.set("Referrer-Policy", "strict-origin-when-cross-origin");
   };
   try {
     set(c.res.headers);
@@ -504,24 +522,27 @@ function injectEventOg(html: string, event: Event): string {
   return cleaned.replace("</head>", `${tags.join("\n")}\n</head>`);
 }
 
-// /events/:id（イベント詳細）には OG メタを注入した index.html を返す
-app.get("/events/:id", async (c) => {
-  const html = await loadIndexHtml(c.req.url);
-  const event = await eventsRepo.findById(c.req.param("id"));
-  if (event && event.status === "published") {
-    return c.html(injectEventOg(html, event));
-  }
-  return c.html(html);
-});
+// Ordinary SPA routes must precede the event-id pattern.
+for (const path of ["/events/upcoming", "/events/new"])
+  app.get(path, async (c) => c.html(await loadIndexHtml(c.req.url)));
 
-// /e/:slug（短いシェアURL）にも OG メタを注入
-app.get("/e/:slug", async (c) => {
-  const html = await loadIndexHtml(c.req.url);
-  const event = await eventsRepo.findBySlug(c.req.param("slug"));
-  if (event && event.status === "published") {
-    return c.html(injectEventOg(html, event));
-  }
-  return c.html(html);
+// Direct HTML and child SPA routes obey the same access gate; nonpublic OG is always generic.
+for (const path of ["/events/:id", "/events/:id/*", "/e/:slug"]) {
+  app.get(path, async (c) => {
+    const event = c.req.param("slug") ? await eventsRepo.findBySlug(c.req.param("slug")!) : await eventsRepo.findById(c.req.param("id")!);
+    eventResponseHeaders(c, !event || event.visibility !== "public");
+    let html = await loadIndexHtml(c.req.url);
+    if (!event || event.visibility !== "public") html=html.replace("</head>",'<meta name="robots" content="noindex,nofollow,noarchive" /></head>');
+    if (!event || !(await canViewEvent(event,await currentUser(c)))) return c.html(html,404);
+    return c.html(event.visibility === "public" && event.status === "published" ? injectEventOg(html,event) : html);
+  });
+}
+
+app.get("/s/:token", async (c) => {
+  eventResponseHeaders(c,true);
+  const survey=await eventPreSurveyRepo.findByToken(c.req.param("token"));
+  const html=(await loadIndexHtml(c.req.url)).replace("</head>",'<meta name="robots" content="noindex,nofollow,noarchive" /></head>');
+  return c.html(html,survey ? 200 : 404);
 });
 
 /** たまご用の OG メタ注入。メンバー限定はタイトルを漏らさないため注入しない */
@@ -586,10 +607,10 @@ function injectProfileOg(
   const title = escapeHtml(`${user.globalName ?? user.username} ・ events lab`);
   const desc = escapeHtml(summary);
   const image = escapeHtml(
-    user.cardImageUpdatedAt
+    /^[0-9a-f]{32}$/.test(user.cardImageGeneration ?? "") && user.cardImageUpdatedAt
       ? `${env.appBaseUrl}/api/users/${user.id}/card-image?${
           user.cardImageKey ? `k=${user.cardImageKey}&` : ""
-        }v=${user.cardImageUpdatedAt}`
+        }g=${user.cardImageGeneration}&v=${user.cardImageUpdatedAt}`
       : `${env.appBaseUrl}/og-default.png`,
   );
   const tags = [
@@ -609,6 +630,7 @@ function injectProfileOg(
 
 // /users/:handle（公開プロフィール）に OG メタを注入 (#193)
 app.get("/users/:handle", async (c) => {
+  c.header("Cache-Control", "private, no-store");
   const html = await loadIndexHtml(c.req.url);
   const handle = c.req.param("handle");
   // 公開プロフィールAPIと同じ解決順: username 優先、UUID直指定も後方互換で許可
@@ -618,6 +640,8 @@ app.get("/users/:handle", async (c) => {
   if (!user) return c.html(html); // 存在しないユーザーは素の SPA HTML
   // 実績サマリー（有効イベント基準）。1クエリで済む statsForUser のみ使う
   const stats = await gamificationRepo.statsForUser(user.id, Date.now());
+  const current = await usersRepo.findById(user.id);
+  if (!current || current.cardImageGeneration !== user.cardImageGeneration) return c.html(html);
   const level = gamificationFromStats(stats).level;
   const summary = `Lv.${level} ・ 主催${stats.hosted} ・ 登壇${stats.spoken} ・ 参加${stats.attendedQualifying}`;
   return c.html(injectProfileOg(html, user, summary));

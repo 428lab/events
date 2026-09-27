@@ -66,7 +66,9 @@ eventSurveyRoutes.put(
       eventId,
       "pre",
       input.questions,
+      c.get("user").id,
     );
+    if (!questions) return c.json({ error: "access_changed" }, 409);
     return c.json({ questions });
   },
 );
@@ -136,7 +138,9 @@ eventSurveyRoutes.put(
       }
     }
 
-    await eventSurveyRepo.upsertAnswers(eventId, user.id, normalized);
+    if (!(await eventSurveyRepo.upsertAnswers(eventId, user.id, normalized))) {
+      return c.json({ error: "access_changed" }, 409);
+    }
     return c.json({ answers: await eventSurveyRepo.myAnswers(eventId, user.id) });
   },
 );

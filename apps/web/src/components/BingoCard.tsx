@@ -105,10 +105,12 @@ export function BingoCard({
 export function BingoPanel({
   eventId,
   myRole,
+  showManagementActions = true,
   data,
 }: {
   eventId: string;
   myRole: EventRole | null;
+  showManagementActions?: boolean;
   data: BingoState | undefined;
 }) {
   const { t } = useTranslation();
@@ -161,7 +163,7 @@ export function BingoPanel({
           >
             {t("eventSocial.bingoDetailLink")}
           </Button>
-          {myRole === "staff" && (
+          {myRole === "staff" && showManagementActions && (
             <Button component={RouterLink} to={`/events/${eventId}/bingo/control`}>
               {t("eventSocial.bingoControlLink")}
             </Button>

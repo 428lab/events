@@ -1,7 +1,7 @@
-import { configure, render, screen } from "@testing-library/react";
+import { configure, render, screen, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { UserProfile } from "@eventer/shared";
 import { i18next } from "../i18n/index.js";
 
@@ -17,7 +17,8 @@ import { i18next } from "../i18n/index.js";
 // 混み合った時に足りず、内容とは関係なく落ちることがあるので広げておく
 configure({ asyncUtilTimeout: 5000 });
 
-const { getMock } = vi.hoisted(() => ({ getMock: vi.fn() }));
+const { getMock, pngMock } = vi.hoisted(() => ({ getMock: vi.fn(), pngMock: vi.fn() }));
+vi.mock("../components/licenseCard/profileCardPng.js", () => ({ generateCardPng: pngMock, OG_UPLOAD_W: 1200 }));
 
 vi.mock("../api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client.js")>();
@@ -69,6 +70,7 @@ function profile(over: Partial<UserProfile> = {}): UserProfile {
     isMe: true,
     cardImageUpdatedAt: null,
     cardImageKey: null,
+    cardImageGeneration: "1234567890abcdef1234567890abcdef",
     ...over,
   } as UserProfile;
 }
@@ -79,7 +81,7 @@ function renderCardPage(p: UserProfile) {
     return Promise.resolve({});
   });
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const view = render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={["/users/tester/card"]}>
         <Routes>
@@ -90,10 +92,12 @@ function renderCardPage(p: UserProfile) {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...view, qc };
 }
 
 beforeEach(() => {
   getMock.mockReset();
+  pngMock.mockReset();
   localStorage.clear();
 });
 
@@ -168,4 +172,30 @@ describe("カードのデザイン画面 (#334)", () => {
     });
     expect(svg.querySelector(`[fill="${ACCENT.teal}"]`)).toBeTruthy();
   });
+});
+
+afterEach(() => vi.restoreAllMocks());
+it("uploads the snapshot generation and on409 rerenders PNG from the refreshed snapshot", async () => {
+  const old = new Blob(["old"]), fresh = new Blob(["fresh"]);
+  pngMock.mockResolvedValueOnce(old).mockResolvedValueOnce(fresh);
+  const outbound = vi.spyOn(globalThis,"fetch").mockResolvedValueOnce(new Response('{}',{status:409})).mockResolvedValue(new Response('{}'));
+  renderCardPage(profile());
+  getMock.mockImplementation(() => Promise.resolve(profile({ cardImageGeneration: "abcdef1234567890abcdef1234567890" })));
+  await waitFor(() => expect(outbound).toHaveBeenCalledTimes(2), {timeout:4000});
+  expect(String(outbound.mock.calls[0]![0])).toContain("g=1234567890abcdef1234567890abcdef");
+  expect(String(outbound.mock.calls[1]![0])).toContain("g=abcdef1234567890abcdef1234567890");
+  expect(outbound.mock.calls[0]![1]!.body).toBe(old);expect(outbound.mock.calls[1]![1]!.body).toBe(fresh);
+  expect(pngMock).toHaveBeenCalledTimes(2);
+});
+it("discards pending PNG when displayed profile changes, including same-generation refresh", async () => {
+  let release!: (png: Blob) => void;
+  pngMock.mockImplementationOnce(() => new Promise<Blob>(resolve => {release=resolve;})).mockResolvedValue(new Blob(["new"]));
+  const outbound=vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response('{}'));
+  const {qc}=renderCardPage(profile());
+  await waitFor(()=>expect(pngMock).toHaveBeenCalledTimes(1),{timeout:3000});
+  await act(async()=>{qc.setQueryData(["userProfile","tester"],profile({name:"Changed"}));});
+  await waitFor(()=>expect(screen.queryAllByText("Changed").length).toBeGreaterThan(0));
+  await act(async()=>{release(new Blob(["obsolete"]));});
+  await waitFor(()=>expect(outbound).toHaveBeenCalledTimes(1),{timeout:3000});
+  expect(pngMock).toHaveBeenCalledTimes(2);
 });

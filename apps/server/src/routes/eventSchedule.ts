@@ -113,8 +113,7 @@ eventScheduleRoutes.put(
     // （読んで比べるだけでは、読んでから書くまでの隙間に両方が通ってしまう）
     const version = await eventScheduleStateRepo.bumpVersion(
       eventId,
-      input.version,
-    );
+      input.version, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (version === null) {
       return c.json(
         { error: "conflict", version: await eventScheduleStateRepo.getVersion(eventId) },
@@ -136,7 +135,7 @@ eventScheduleRoutes.put(
           ? it.speakerUserId
           : null,
     }));
-    const saved = await eventScheduleRepo.saveAll(eventId, items, input.tracks);
+    const saved = await eventScheduleRepo.saveAll(eventId, items, input.tracks, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     // OG サムネイルはレスポンスを待たせずバックグラウンドで取得 (#149)
     await deferBackground(refreshMaterialMeta(eventId));
     // 保存できるのは staff だけなので、返すのも staff 向けの全量
@@ -184,8 +183,7 @@ eventScheduleRoutes.post(
     return c.json(
       await eventScheduleStateRepo.claimEditor(
         c.req.param("id"),
-        c.get("user").id,
-      ),
+        c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}),
     );
   },
 );
@@ -198,8 +196,7 @@ eventScheduleRoutes.delete(
     return c.json(
       await eventScheduleStateRepo.releaseEditor(
         c.req.param("id"),
-        c.get("user").id,
-      ),
+        c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}),
     );
   },
 );
@@ -236,11 +233,11 @@ eventScheduleRoutes.patch(
     }
 
     const input = valid<UpdateScheduleMaterialInput>(c, "json");
-    await eventScheduleRepo.updateMaterial(eventId, itemId, input.materialUrl);
+    await eventScheduleRepo.updateMaterial(eventId, itemId, input.materialUrl, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"view"});
     // 版を進める (#340)。staff が編集画面を開いたまま全体を保存すると、
     // 編集開始時点の古い URL でここの更新を巻き戻してしまう。
     // 版が進んでいれば、その保存は 409 で止まり、読み直しを促せる
-    await eventScheduleStateRepo.touch(eventId);
+    await eventScheduleStateRepo.touch(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"view"});
     // OG サムネイルはバックグラウンドで再取得 (#149)
     await deferBackground(refreshMaterialMeta(eventId));
     const updated = await eventScheduleRepo.findItem(eventId, itemId, "public");

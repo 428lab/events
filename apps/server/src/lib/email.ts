@@ -1,3 +1,4 @@
+import { notificationDeliveryEvent, eventIdFromNotificationLink, genericEventNotice } from "../db/repositories/eventNotificationAccess.js";
 import { env, takeEmailSlot } from "../runtime.js";
 import { emailRepo } from "../db/repositories/email.js";
 import { eventsRepo } from "../db/repositories/events.js";
@@ -15,8 +16,12 @@ import {
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
-/** メール表示だけに使う付加情報 (#134)。DB には保存しない */
+/** メールの表示情報 (#134) と、対応済み送信元の直前認可。DBには保存しない */
 export interface EmailExtras {
+  /** Current-event qualification for finalization and waitlist promotion. */
+  authorizationEventId?: string;
+  notificationType?: string;
+  authorizationActorId?: string;
   /** 「◯◯ さんが…」通知の ◯◯（プロフィールへリンクする） */
   actorName?: string;
   /** actor のプロフィールパス（例: /users/alice） */
@@ -66,6 +71,7 @@ export async function unsubscribeUrl(userId: string): Promise<string> {
 export interface EmailSendOutcome {
   ok: boolean;
   retryable: boolean;
+  skipped?: boolean;
 }
 
 /** レート超過・サーバー側の不調・認証設定のミスは時間をおけば直りうる。
@@ -190,7 +196,7 @@ export async function buildEventExtraHtml(
 }
 
 /** 通知メールを1通組み立てて送る（宛先解決済みの内部ヘルパー）。
- * extras はメール表示のみに使う（アプリ内通知や DB には影響しない） */
+ * extras は表示と送信直前の認可に使う（アプリ内通知やDBは変更しない） */
 export async function sendNotificationEmailTo(
   userId: string,
   to: string,
@@ -221,9 +227,9 @@ export async function sendNotificationEmailToWithOutcome(
   }
   const unsub = await unsubscribeUrl(userId);
   // リッチ化 (#134): イベントカード＋（リマインダーなら）タイムテーブル
-  const extraHtml = await buildEventExtraHtml(link, extras?.timetable === true);
+  let extraHtml = await buildEventExtraHtml(link, extras?.timetable === true);
   // 「◯◯ さんが…」の ◯◯ をプロフィールへリンク（該当しなければプレーン表示）
-  const titleHtml =
+  let titleHtml =
     extras?.actorName && extras.actorPath
       ? actorTitleHtml({
           baseUrl: env.appBaseUrl,
@@ -232,6 +238,18 @@ export async function sendNotificationEmailToWithOutcome(
           actorPath: extras.actorPath,
         })
       : null;
+  const eventId = extras?.authorizationEventId ?? eventIdFromNotificationLink(link);
+  if (eventId) {
+    const type = extras?.notificationType ?? "event_update";
+    if (await emailRepo.findRecipient(userId) !== to) return { ok: false, retryable: false, skipped: true };
+    const event = await notificationDeliveryEvent(userId, eventId, type, extras?.authorizationActorId);
+    if (!event) return { ok: false, retryable: false, skipped: true };
+    if (event.visibility === "private") {
+      ({title, body, link} = genericEventNotice(eventId,type));
+      extraHtml = ""; titleHtml = null;
+    }
+  }
+
   const html = notificationEmailHtml({
     baseUrl: env.appBaseUrl,
     title,

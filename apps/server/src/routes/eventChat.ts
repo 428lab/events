@@ -58,6 +58,14 @@ const MAX_CHAT_KEYS_PER_USER = 10;
  * どちらの段にも締め出し (#283) を通す。締め出された人はチャットから切り離された
  * 人なので、読む・書く・運営するのいずれもできない */
 export const eventChatRoutes = new Hono<AppEnv>();
+// Plaintext participant relays cannot protect nonpublic events. This router
+// contains participant chat only; encrypted staffChat is deliberately separate.
+for (const path of ["/:id/chat-members", "/:id/chat-key", "/:id/chat-key/ephemeral", "/:id/chat-channel", "/:id/chat-channel/create", "/:id/chat-hidden", "/:id/chat-hidden/:noteId"]) eventChatRoutes.use(path, async (c,next) => {
+  const event = await eventsRepo.findById(c.req.param("id") ?? "");
+  if (!event || event.visibility !== "public") return c.json({error:"chat_unavailable"},403);
+  await next();
+});
+
 // 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
 /** requireEventRole はロールのみ見るため、確定済み（status=confirmed）を追加チェック。
@@ -165,7 +173,7 @@ eventChatRoutes.post(
     if (taken && taken !== userId) return c.json({ error: "pubkey_taken" }, 409);
     // 先勝ち: 同時発行のレースでは先着の鍵が残るので、確定値を読み直して返す。
     // 読み直して見つからないのは、その一瞬に他人が同じ鍵を押さえたときだけ
-    await eventChatRepo.addEphemeral(eventId, userId, pubkey, secret);
+    await eventChatRepo.addEphemeral(eventId, userId, pubkey, secret, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-member"});
     const settled = await eventChatRepo.ephemeralFor(eventId, userId);
     if (!settled) return c.json({ error: "pubkey_taken" }, 409);
     return c.json(settled);
@@ -228,7 +236,7 @@ eventChatRoutes.post(
         return c.json({ error: "too_many_keys" }, 409);
       }
     }
-    await eventChatRepo.addPubkey(eventId, userId, pubkey);
+    await eventChatRepo.addPubkey(eventId, userId, pubkey, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-member"});
     return c.json({ ok: true });
   },
 );
@@ -276,7 +284,7 @@ async function registerVerifiedChannel(
   ) {
     return c.json({ error: "invalid_channel_event" }, 400);
   }
-  const settled = await eventChatRepo.setChannelOnce(eventId, channelEvent.id);
+  const settled = await eventChatRepo.setChannelOnce(eventId, channelEvent.id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-staff"});
   return c.json({ channelId: settled });
 }
 
@@ -397,7 +405,7 @@ eventChatRoutes.delete(
     const denied = await staffAndNotBlocked(c);
     if (denied) return denied;
     const eventId = c.req.param("id");
-    await eventChatRepo.clearChannel(eventId);
+    await eventChatRepo.clearChannel(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-staff"});
     // 監査ログ (#248)。参加者から見ると履歴が消えたように見える操作なので記録する
     const me = c.get("user");
     await recordAudit({
@@ -418,7 +426,7 @@ eventChatRoutes.post(
     const denied = await staffAndNotBlocked(c);
     if (denied) return denied;
     const { noteId } = valid<HideChatNoteInput>(c, "json");
-    await eventChatRepo.hideNote(c.req.param("id"), noteId);
+    await eventChatRepo.hideNote(c.req.param("id"), noteId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-staff"});
     return c.json({ ok: true });
   },
 );
@@ -434,7 +442,7 @@ eventChatRoutes.delete(
     if (!/^[0-9a-f]{64}$/.test(noteId)) {
       return c.json({ error: "invalid_note_id" }, 400);
     }
-    await eventChatRepo.unhideNote(c.req.param("id"), noteId);
+    await eventChatRepo.unhideNote(c.req.param("id"), noteId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-staff"});
     return c.json({ ok: true });
   },
 );

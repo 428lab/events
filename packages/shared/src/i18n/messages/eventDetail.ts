@@ -75,6 +75,10 @@ const ja = {
   awards: "表彰式",
 
   /** 成果物 */
+  selfScoringParticipation: "自分も採点対象として参加する",
+  selfScoringOffConfirm: "採点対象への参加を取り消しますか？提出済みのURLも削除されます。",
+  selfScoringAlreadyScored: "採点済みのため参加を取り消せません。",
+  selfScoringChangeFailed: "採点対象への参加を変更できませんでした。もう一度お試しください。",
   mySubmission: "あなたの成果物",
   presentationUrl: "プレゼン資料 URL",
   sourceCodeUrl: "ソースコード URL",
@@ -86,6 +90,7 @@ const ja = {
 
   /** 参加者一覧 */
   participantsWithCount: "参加者一覧（{{n}}）",
+  participantsOther: "その他",
   attendanceModeNotice:
     "出席チェックモード：チェックされた人だけが参加者として記録されます。",
   attendanceModeNoticeStaff:
@@ -121,6 +126,7 @@ const ja = {
 
   /** Google カレンダーへの追加 (#487)。日程が確定しているイベントにだけ出る */
   addToGoogleCalendar: "Google カレンダーに追加",
+  confirmExternalCalendar: "このイベントのタイトル・場所・URLを外部カレンダーへ渡します。追加済み情報は回収できません。続けますか？",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -188,6 +194,10 @@ const en: Record<keyof typeof ja, string> = {
   criteria: "Scoring criteria",
   awards: "Awards ceremony",
 
+  selfScoringParticipation: "Include my entry in scoring",
+  selfScoringOffConfirm: "Stop participating in scoring? Your submitted URLs will also be deleted.",
+  selfScoringAlreadyScored: "You cannot stop participating because your entry has already been scored.",
+  selfScoringChangeFailed: "Could not change your scoring participation. Please try again.",
   mySubmission: "Your submission",
   presentationUrl: "Slides URL",
   sourceCodeUrl: "Source code URL",
@@ -198,6 +208,7 @@ const en: Record<keyof typeof ja, string> = {
   submissionCode: "Code",
 
   participantsWithCount: "Participants ({{n}})",
+  participantsOther: "Other",
   attendanceModeNotice:
     "Attendance check is on: only people who are checked in count as participants.",
   attendanceModeNoticeStaff:
@@ -228,6 +239,7 @@ const en: Record<keyof typeof ja, string> = {
     "Only confirmed participants can be marked as attended. Confirm them first from the applicant list.",
   attendanceErrorNotFound: "That was not found. Please reload the page.",
   addToGoogleCalendar: "Add to Google Calendar",
+  confirmExternalCalendar: "This sends the event title, location and URL to an external calendar. Previously added information cannot be recalled. Continue?",
 };
 
 export const eventDetail = { ja, en };

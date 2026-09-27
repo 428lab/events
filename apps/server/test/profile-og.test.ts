@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 
+const GENERATION = "1234567890abcdef1234567890abcdef";
 const BASE = "https://example.com";
 
 /** PNGのマジックナンバー付きの小さなダミーバイナリ（デコードはしないので中身は問わない） */
@@ -16,7 +17,7 @@ async function makeUser(
   const sid = crypto.randomUUID();
   const username = `u_${uid.slice(0, 8)}`;
   await env.DB.prepare(
-    "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at) VALUES (?, ?, ?, ?, NULL, ?)",
+    "INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at, card_image_generation) VALUES (?, ?, ?, ?, NULL, ?, '1234567890abcdef1234567890abcdef')",
   )
     .bind(uid, `nostr:${uid}`, username, globalName, Date.now())
     .run();
@@ -34,7 +35,7 @@ async function putCard(
   body: BodyInit = PNG_BYTES,
   contentType = "image/png",
 ) {
-  return SELF.fetch(`${BASE}/api/me/card-image?k=rosette-indigo`, {
+  return SELF.fetch(`${BASE}/api/me/card-image?k=rosette-indigo&g=${GENERATION}`, {
     method: "PUT",
     headers: {
       "content-type": contentType,
@@ -48,6 +49,7 @@ describe("プロフィールカードPNGのアップロード/配信 (#193)", ()
   it("PUT は要認証（未ログインは 401）", async () => {
     const res = await putCard(null);
     expect(res.status).toBe(401);
+    expect(res.headers.get("cache-control")).toContain("no-store");
   });
 
   it("PUT で保存され、公開 GET で同じバイト列が返る", async () => {
@@ -62,7 +64,7 @@ describe("プロフィールカードPNGのアップロード/配信 (#193)", ()
     expect(get.status).toBe(200);
     expect(get.headers.get("content-type")).toBe("image/png");
     expect(get.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(get.headers.get("cache-control")).toContain("max-age=3600");
+    expect(get.headers.get("cache-control")).toContain("no-store");
     const bytes = new Uint8Array(await get.arrayBuffer());
     expect(bytes).toEqual(PNG_BYTES);
   });
@@ -108,7 +110,7 @@ describe("プロフィールカードPNGのアップロード/配信 (#193)", ()
       ((await before.json()) as { cardImageKey: string | null }).cardImageKey,
     ).toBeNull();
 
-    const put = await SELF.fetch(`${BASE}/api/me/card-image?k=arcs-rose`, {
+    const put = await SELF.fetch(`${BASE}/api/me/card-image?k=arcs-rose&g=${GENERATION}`, {
       method: "PUT",
       headers: { "content-type": "image/png", cookie: u.cookie },
       body: PNG_BYTES,
@@ -153,7 +155,7 @@ describe("/users/:handle の OG メタ注入 (#193)", () => {
     const { updatedAt } = (await put.json()) as { updatedAt: number };
     const html = await fetchHtml(`/users/${u.username}`);
     expect(html).toContain(
-      `content="http://localhost/api/users/${u.userId}/card-image?k=rosette-indigo&amp;v=${updatedAt}"`,
+      `content="http://localhost/api/users/${u.userId}/card-image?k=rosette-indigo&amp;g=${GENERATION}&amp;v=${updatedAt}"`,
     );
     expect(html).toContain(
       `<meta name="twitter:card" content="summary_large_image" />`,
@@ -203,7 +205,7 @@ describe("組み合わせ別キー (#201)", () => {
     await putCard(u.cookie, png);
     const png2 = new Uint8Array(PNG_BYTES);
     png2[8] = 0x42;
-    const second = await SELF.fetch(`${BASE}/api/me/card-image?k=topo-rose`, {
+    const second = await SELF.fetch(`${BASE}/api/me/card-image?k=topo-rose&g=${GENERATION}`, {
       method: "PUT",
       headers: { "content-type": "image/png", cookie: u.cookie },
       body: png2,
@@ -212,10 +214,10 @@ describe("組み合わせ別キー (#201)", () => {
 
     // k指定でそれぞれのファイルが取れる
     const g1 = await SELF.fetch(
-      `${BASE}/api/users/${u.userId}/card-image?k=rosette-indigo`,
+      `${BASE}/api/users/${u.userId}/card-image?k=rosette-indigo&g=${GENERATION}`,
     );
     const g2 = await SELF.fetch(
-      `${BASE}/api/users/${u.userId}/card-image?k=topo-rose`,
+      `${BASE}/api/users/${u.userId}/card-image?k=topo-rose&g=${GENERATION}`,
     );
     expect(new Uint8Array(await g1.arrayBuffer())[8]).not.toBe(
       new Uint8Array(await g2.arrayBuffer())[8],
@@ -226,7 +228,7 @@ describe("組み合わせ別キー (#201)", () => {
       `${BASE}/api/users/${u.userId}/card-image`,
     );
     expect(new Uint8Array(await gDefault.arrayBuffer())[8]).toBe(
-      new Uint8Array(await (await SELF.fetch(`${BASE}/api/users/${u.userId}/card-image?k=topo-rose`)).arrayBuffer())[8],
+      new Uint8Array(await (await SELF.fetch(`${BASE}/api/users/${u.userId}/card-image?k=topo-rose&g=${GENERATION}`)).arrayBuffer())[8],
     );
 
     // OG は選択中の k を含む

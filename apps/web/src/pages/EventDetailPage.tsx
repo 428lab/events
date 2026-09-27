@@ -1,29 +1,32 @@
 import { Suspense, lazy } from "react";
-import { Trans, useTranslation } from "react-i18next";
+import { useTranslation } from "react-i18next";
 import {
   Alert,
   Avatar,
   Box,
-  Button,
   Card,
   CardContent,
   Chip,
   Grid,
+  IconButton,
   Link,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import EggIcon from "@mui/icons-material/Egg";
 import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import LockIcon from "@mui/icons-material/Lock";
+import SettingsIcon from "@mui/icons-material/Settings";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { AddToCalendarButton } from "../components/AddToCalendarButton.js";
-import { eventImageUrl, useEvent, useMe, usePublishEvent } from "../api/hooks.js";
+import { eventImageUrl, useEvent, useMe } from "../api/hooks.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
+import { useContestAnchor } from "../lib/useContestAnchor.js";
 import { useEventTiming } from "../lib/useEventTiming.js";
 import { EventPhotos } from "../components/EventPhotos.js";
 import { EventComments } from "../components/EventComments.js";
@@ -36,8 +39,7 @@ import { MeetPrizePanel } from "../components/MeetPrizes.js";
 import { BingoPanel } from "../components/BingoCard.js";
 import { useBingoState } from "../api/bingoHooks.js";
 import { useRecordView } from "../api/analyticsHooks.js";
-import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
-import { EventStaffInvitesCard } from "../components/EventStaffInvitesCard.js";
+import { OfferVenueButton } from "../components/VenueOffers.js";
 import { EventActionButtons } from "../components/EventActionButtons.js";
 import { EventAwards } from "../components/EventAwards.js";
 import { EventJoinPanel } from "../components/EventJoinPanel.js";
@@ -69,9 +71,10 @@ export function EventDetailPage() {
   const { data: bingo } = useBingoState(id, canChat);
   // 終了・締切の判定と1分ごとの時計。ページで1回だけ呼んで子に配る
   const timing = useEventTiming(data?.event);
-  const publish = usePublishEvent();
   // 公開イベントの表示を記録（サーバー側で下書き・主催者/管理者は除外）
   useRecordView(id, data?.event.status === "published");
+
+  useContestAnchor("contest-operations", Boolean(data));
 
   if (isError) {
     return <Alert severity="info">{t("eventDetail.notFound")}</Alert>;
@@ -89,7 +92,7 @@ export function EventDetailPage() {
   const contest = event.contestMode;
   const deadline = event.registrationDeadline;
   const bingoPanel = canChat
-    ? <BingoPanel eventId={id} myRole={myRole} data={bingo} />
+    ? <BingoPanel showManagementActions={false} eventId={id} myRole={myRole} data={bingo} />
     : null;
 
   return (
@@ -179,9 +182,19 @@ export function EventDetailPage() {
           {event.status !== "published" && (
             <Chip size="small" color="warning" label={event.status} />
           )}
+          {event.visibility !== "public" && (
+            <Chip size="small" label={t(`eventAccess.${event.visibility}`)} />
+          )}
           {myRole && <Chip size="small" label={roleLabel(myRole)} />}
           {event.status === "published" && (
             <ShareButton slug={event.slug} title={event.title} />
+          )}
+          {(isStaff || data.canManageSchedule || (event.visibility === "private" && data.canManageAccess)) && (
+            <Tooltip title={t("eventManagement.title")}>
+              <IconButton id="contest-operations" size="large" color="primary" component={RouterLink} to={`/events/${id}/manage`} aria-label={t("eventManagement.title")}>
+                <SettingsIcon />
+              </IconButton>
+            </Tooltip>
           )}
         </Stack>
         <Typography
@@ -247,29 +260,9 @@ export function EventDetailPage() {
         </Typography>
       </Box>
 
-      {isStaff && event.status === "draft" && (
-        <Alert
-          severity="warning"
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              disabled={publish.isPending}
-              onClick={() => publish.mutate(event.id)}
-            >
-              {t("eventDetail.publish")}
-            </Button>
-          }
-        >
-          <Trans
-            i18nKey="eventDetail.draftNotice"
-            components={{ b: <strong /> }}
-          />
-        </Alert>
-      )}
-
       {/* 調整中は常に表示。確定後は候補があり表示オンなら結果を表示（パネル側で判定） */}
       <SchedulePanel
+        showManagementActions={false}
         eventId={event.id}
         isStaff={isStaff}
         anonymous={event.scheduleAnonymous}
@@ -308,6 +301,7 @@ export function EventDetailPage() {
 
       {/* タイムテーブル（閲覧はイベントが見える人全員、編集は staff） */}
       <EventSchedule
+        showManagementActions={false}
         eventId={id}
         eventStartsAt={event.scheduling ? null : event.startsAt}
         isStaff={isStaff}
@@ -316,7 +310,7 @@ export function EventDetailPage() {
       {bingo?.status === "ended" && bingoPanel}
 
       {/* 登壇資料ギャラリー（資料URLのあるコマだけ。無ければ非表示） */}
-      <EventMaterials eventId={id} />
+      <EventMaterials showManagementActions={false} eventId={id} />
 
       {/* いいねフィードバック (#155)。参加確定メンバー＋開始後のみ表示 */}
       <EventFeedback
@@ -330,6 +324,7 @@ export function EventDetailPage() {
       {chatAvailable && (
         <Suspense fallback={null}>
           <EventChat
+            showManagementActions={false}
             eventId={id}
             event={event}
             myRole={myRole}
@@ -340,7 +335,7 @@ export function EventDetailPage() {
       {/* Q&A (#216)。確定メンバーのみ。表示は QaQuestionList に切り出してあり
           投影用画面・プレゼンターのサイドパネル (#215) から再利用する */}
       {canChat && event.qaEnabled && (
-        <EventQa eventId={id} canPost={canChat} />
+        <EventQa showManagementActions={false} eventId={id} canPost={canChat} />
       )}
 
       {/* 出会いランキング (#418)。設定がオンのイベントの確定メンバーのみ。
@@ -402,8 +397,7 @@ export function EventDetailPage() {
         attendanceCheck={event.attendanceCheck}
       />
 
-      {/* 会場マッチング: 主催者はオファー確認、会場オーナーは提供オファー */}
-      <VenueOfferPanel kind="for-event" id={id} enabled={isStaff} />
+      {/* 会場オーナー本人の提供オファー。運営の確認操作は管理ページへ。 */}
       {me && !isStaff && event.venueWanted && event.status === "published" && (
         <Box>
           <OfferVenueButton eventId={id} />
@@ -412,6 +406,7 @@ export function EventDetailPage() {
 
       {/* イベントフォト（参加者は常に、公開設定時は誰でも閲覧） */}
       <EventPhotos
+        showManagementActions={false}
         eventId={id}
         myRole={myRole}
         photosPublic={event.photosPublic}
@@ -419,18 +414,17 @@ export function EventDetailPage() {
       />
 
       {/* コメント（閲覧はイベントが見える人全員、投稿は参加確定者のみ） */}
-      <EventComments eventId={id} myRole={myRole} canComment={canChat} />
+      <EventComments showManagementActions={false} eventId={id} myRole={myRole} canComment={canChat} />
 
       {/* コンテストの提出物（自分のぶんの編集と、みんなの一覧） */}
-      <EventSubmissions eventId={id} event={event} contest={contest} />
+      <EventSubmissions eventId={id} event={event} contest={contest} myRole={myRole} />
         </Stack>
       </Grid>
 
       <Grid item xs={12} md={4}>
         <EventDetailSidebar>
-          {/* 運営を指名して招く (#339)。公開前でも一緒に準備できるようにする入口 */}
-          {isStaff && <EventStaffInvitesCard eventId={id} />}
           <EventMemberList
+            showManagementActions={false}
             eventId={id}
             isStaff={isStaff}
             attendanceCheck={event.attendanceCheck}

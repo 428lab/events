@@ -1,3 +1,5 @@
+import {eventViewSql} from "../../auth/eventAccess.js";
+import {adminIds} from "./eventAccessInvites.js";
 import type { AdminStats, EventStats } from "@eventer/shared";
 import { many, one, run } from "../client.js";
 
@@ -8,24 +10,24 @@ export const eventViewsRepo = {
     day: string,
     source: string,
     country: string,
-    visitorId: string,
+    visitorId: string, viewerId:string|null,
   ): Promise<void> {
     await run(
       `INSERT INTO event_view_stat (event_id, day, source, country, views)
-       VALUES (?, ?, ?, ?, 1)
+       SELECT ?, ?, ?, ?, 1 FROM event e WHERE e.id=? AND ${eventViewSql("e","?","?")}
        ON CONFLICT(event_id, day, source, country)
        DO UPDATE SET views = views + 1`,
       eventId,
       day,
       source,
-      country,
+      country,eventId,viewerId,adminIds(),
     );
     await run(
       `INSERT OR IGNORE INTO event_view_unique (event_id, day, visitor_id)
-       VALUES (?, ?, ?)`,
+       SELECT ?, ?, ? FROM event e WHERE e.id=? AND ${eventViewSql("e","?","?")}`,
       eventId,
       day,
-      visitorId,
+      visitorId,eventId,viewerId,adminIds(),
     );
   },
 

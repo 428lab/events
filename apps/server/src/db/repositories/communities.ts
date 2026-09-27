@@ -43,15 +43,15 @@ export function communityImageUrl(
 }
 
 // メンバー数＝明示メンバー ∪ 所属イベントの確定参加者（重複排除）。
-// 退会申請中 (#250) はメンバー一覧に出さないので数からも外す（数字が合わなくなる）
+// 非public参加者も公開集約値に含める。名簿の公開範囲とは別。退会申請中 (#250) は除外。
 const SELECT_COMMUNITY = `SELECT c.*,
   (SELECT COUNT(*) FROM (
      SELECT user_id FROM community_member WHERE community_id = c.id
      UNION
      SELECT em.user_id FROM event_member em JOIN event e ON e.id = em.event_id
-       WHERE e.community_id = c.id AND em.status = 'confirmed'
+       WHERE e.community_id = c.id AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility IN ('public', 'private', 'unlisted')
    ) ids JOIN user u ON u.id = ids.user_id AND u.deleted_at IS NULL) AS member_count,
-  (SELECT COUNT(1) FROM event e WHERE e.community_id = c.id AND e.status = 'published') AS event_count
+  (SELECT COUNT(1) FROM event e WHERE e.community_id = c.id AND e.status = 'published' AND e.visibility = 'public') AS event_count
   FROM community c`;
 
 function toCommunity(row: CommunityRow): Community {
@@ -164,14 +164,11 @@ export const communitiesRepo = {
   },
 
   async delete(id: string): Promise<void> {
-    // event.community_id はFK制約を張っていないため手動で外す
-    await run("UPDATE event SET community_id = NULL WHERE community_id = ?", id);
-    // たまごは全体たまご化（メンバー限定は所属先が消えるので限定も解除）
-    await run(
-      "UPDATE event_request SET community_id = NULL, members_only = 0 WHERE community_id = ?",
-      id,
-    );
-    await run("DELETE FROM community WHERE id = ?", id);
+    await batch([
+      { sql: "UPDATE event SET community_id = NULL, access_revision = access_revision + 1 WHERE community_id = ?", args: [id] },
+      { sql: "UPDATE event_request SET community_id = NULL, members_only = 0 WHERE community_id = ?", args: [id] },
+      { sql: "DELETE FROM community WHERE id = ?", args: [id] },
+    ]);
   },
 
   async memberRole(
@@ -198,26 +195,12 @@ export const communitiesRepo = {
     userId: string,
     role: "admin" | "member",
   ): Promise<void> {
-    const existing = await this.memberRole(communityId, userId);
-    if (existing === "owner") return; // owner は変更不可
-    if (existing == null) {
-      await run(
-        `INSERT INTO community_member (id, community_id, user_id, role, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        crypto.randomUUID(),
-        communityId,
-        userId,
-        role,
-        Date.now(),
-      );
-      return;
-    }
-    await run(
-      "UPDATE community_member SET role = ? WHERE community_id = ? AND user_id = ?",
-      role,
-      communityId,
-      userId,
-    );
+    await batch([
+      { sql: `INSERT INTO community_member(id,community_id,user_id,role,created_at) VALUES(?,?,?,?,?)
+          ON CONFLICT(community_id,user_id) DO UPDATE SET role = excluded.role WHERE community_member.role <> 'owner'`,
+        args: [crypto.randomUUID(), communityId, userId, role, Date.now()] },
+      { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE community_id = ? AND changes() > 0", args: [communityId] },
+    ]);
   },
 
   /** オーナー譲渡: toUser を owner、旧 owner を admin に。community.owner_id も更新 */
@@ -239,6 +222,7 @@ export const communitiesRepo = {
         sql: "UPDATE community SET owner_id = ? WHERE id = ?",
         args: [toUserId, communityId],
       },
+      { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE community_id = ? AND changes() > 0", args: [communityId] },
     ]);
   },
 
@@ -255,14 +239,14 @@ export const communitiesRepo = {
       `SELECT c.id, c.slug, c.name, c.icon_updated_at, COALESCE(cm.role, 'member') AS role,
               (SELECT COUNT(*) FROM event_member em JOIN event e ON e.id = em.event_id
                 WHERE e.community_id = c.id AND em.user_id = ?
-                  AND em.status = 'confirmed' AND e.status = 'published') AS my_event_count
+                  AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public') AS my_event_count
        FROM community c
        LEFT JOIN community_member cm ON cm.community_id = c.id AND cm.user_id = ?
        WHERE c.id IN (
          SELECT community_id FROM community_member WHERE user_id = ?
          UNION
          SELECT e.community_id FROM event_member em JOIN event e ON e.id = em.event_id
-           WHERE em.user_id = ? AND em.status = 'confirmed' AND e.community_id IS NOT NULL
+           WHERE em.user_id = ? AND em.status = 'confirmed' AND e.community_id IS NOT NULL AND e.status = 'published' AND e.visibility = 'public'
        )
        ORDER BY (COALESCE(cm.role,'') = 'owner') DESC,
                 (COALESCE(cm.role,'') = 'admin') DESC, c.created_at DESC`,
@@ -294,11 +278,10 @@ export const communitiesRepo = {
 
   /** オーナーは離脱不可（owner ロールは残す） */
   async leave(communityId: string, userId: string): Promise<void> {
-    await run(
-      "DELETE FROM community_member WHERE community_id = ? AND user_id = ? AND role <> 'owner'",
-      communityId,
-      userId,
-    );
+    await batch([
+      { sql: "DELETE FROM community_member WHERE community_id = ? AND user_id = ? AND role <> 'owner'", args: [communityId, userId] },
+      { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE community_id = ? AND changes() > 0", args: [communityId] },
+    ]);
   },
 
   /** 明示メンバー ∪ 所属イベントの確定参加者。参加のみの人は role='member' */
@@ -316,7 +299,7 @@ export const communitiesRepo = {
          SELECT user_id FROM community_member WHERE community_id = ?
          UNION
          SELECT em.user_id FROM event_member em JOIN event e ON e.id = em.event_id
-           WHERE e.community_id = ? AND em.status = 'confirmed'
+           WHERE e.community_id = ? AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public'
        ) ids
        JOIN user u ON u.id = ids.user_id AND u.deleted_at IS NULL
        LEFT JOIN community_member cm

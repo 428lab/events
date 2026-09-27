@@ -1,3 +1,5 @@
+import {activeManagerSql,adminIds} from "./eventAccessInvites.js";
+import { eventRun, eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import type {
   EventTrack,
   SaveScheduleItemInput,
@@ -7,7 +9,7 @@ import type {
   ScheduleItem,
   ScheduleVisibility,
 } from "@eventer/shared";
-import { batch, many, one, run } from "../client.js";
+import { many, one, run } from "../client.js";
 
 interface Row {
   id: string;
@@ -228,8 +230,7 @@ export const eventScheduleRepo = {
   async saveAll(
     eventId: string,
     items: SaveScheduleItemInput[],
-    tracks?: SaveScheduleTrackInput[],
-  ): Promise<ScheduleItem[]> {
+    tracks: SaveScheduleTrackInput[] | undefined, writer: EventWriter): Promise<ScheduleItem[]> {
     const now = Date.now();
     const existing = await many<{
       id: string;
@@ -440,19 +441,20 @@ export const eventScheduleRepo = {
       });
     });
 
-    // 対応表は毎回このイベントぶんを消してから入れ直す。
-    // 差分を取っても行数は変わらず、消し忘れだけが増えるため
+    // Preserve unchanged links: deleting/reinserting them would invalidate every contributor PNG.
     const linkStmts: Array<{ sql: string; args: unknown[] }> = [];
     if (tracks) {
       linkStmts.push({
         sql: `DELETE FROM event_schedule_item_track WHERE item_id IN
-              (SELECT id FROM event_schedule_item WHERE event_id = ?)`,
-        args: [eventId],
+              (SELECT id FROM event_schedule_item WHERE event_id = ?)
+              AND NOT EXISTS (SELECT 1 FROM json_each(?) j
+                WHERE json_extract(j.value,'$.itemId')=item_id AND json_extract(j.value,'$.trackId')=track_id)`,
+        args: [eventId, JSON.stringify(linksByItem.flatMap(link => link.trackIds.map(trackId => ({ itemId: link.itemId, trackId }))))],
       });
       for (const link of linksByItem) {
         for (const trackId of link.trackIds) {
           linkStmts.push({
-            sql: "INSERT INTO event_schedule_item_track (item_id, track_id) VALUES (?, ?)",
+            sql: "INSERT INTO event_schedule_item_track (item_id, track_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
             args: [link.itemId, trackId],
           });
         }
@@ -460,7 +462,7 @@ export const eventScheduleRepo = {
     }
 
     const removed = existing.filter((r) => !kept.has(r.id)).map((r) => r.id);
-    await batch([
+    await eventWrite(writer,[
       ...removed.map((id) => ({
         sql: "DELETE FROM event_schedule_item WHERE id = ? AND event_id = ?",
         args: [id, eventId],
@@ -510,15 +512,15 @@ export const eventScheduleRepo = {
   async updateMaterial(
     eventId: string,
     itemId: string,
-    url: string,
-  ): Promise<void> {
-    await run(
+    url: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       `UPDATE event_schedule_item
         SET material_url = ?, material_og_image = '', material_og_url = ''
-        WHERE id = ? AND event_id = ?`,
+        WHERE id = ? AND event_id = ? AND (EXISTS(SELECT 1 FROM event e WHERE e.id=event_id AND ${activeManagerSql("e","?")})
+          OR (speaker_user_id=? AND EXISTS(SELECT 1 FROM event_member m WHERE m.event_id=event_schedule_item.event_id AND m.user_id=? AND m.status<>'canceled')))`,
       url,
       itemId,
-      eventId,
+      eventId,writer.actorId,adminIds(),writer.actorId,writer.actorId,
     );
   },
 
@@ -566,7 +568,7 @@ export const eventScheduleRepo = {
     const rows = await many<{ event_id: string }>(
       `SELECT DISTINCT si.event_id FROM event_schedule_item si
          JOIN event e ON e.id = si.event_id
-        WHERE si.speaker_user_id = ? AND e.status = 'published'
+        WHERE si.speaker_user_id = ? AND e.status = 'published' AND e.visibility = 'public'
           AND ${publicItemWhere("si")}`,
       userId,
     );

@@ -35,15 +35,16 @@ import { QaPickedQuestion, QaQuestionList } from "./QaQuestionList.js";
  * 表示部分は QaQuestionList / QaPickedQuestion に切り出してあり、
  * 投影用画面とプレゼンターのサイドパネル (#215) から同じものを使える。
  *
- * 匿名投稿の投稿者を出すのは**この画面だけ**（revealAuthor を渡すのはここだけ）。
- * 投影に使う画面では渡さないこと。 */
+ * 匿名投稿者の運営向け表示は管理側のみ。詳細は投稿・投票・本人操作を残す。 */
 export function EventQa({
   eventId,
   canPost,
+  showManagementActions = true,
 }: {
   eventId: string;
   /** 参加確定メンバーか（閲覧も参加確定メンバーのみ） */
   canPost: boolean;
+  showManagementActions?: boolean;
 }) {
   const { t } = useTranslation();
   const { data } = useEventQa(eventId, canPost);
@@ -58,15 +59,16 @@ export function EventQa({
 
   if (!data) return null;
 
-  // 操作UIの有無と匿名投稿者の見え方は、どちらもサーバーの判定をそのまま使う
-  // （画面側で条件を書くと、サーバーが返す範囲とズレる）。
+  // 表示責務で絞っても、権限の根拠はサーバーの判定のまま。
   // canModerate が true なのは「そのイベントの参加確定 staff メンバー」だけで、
   // サイト管理者やコミュニティ管理者というだけでは操作UIは出ない
   // （登壇者サイドパネル (#215) も同じ値を見ている）
-  const canModerate = data.canModerate;
+  const canModerate = data.canModerate && showManagementActions;
+  const revealAuthor = data.revealsAuthor && showManagementActions;
+  const questions = showManagementActions ? data.questions : data.questions.filter((q) => !q.hidden);
 
   const picked =
-    data.questions.find((q) => q.id === data.pickedQuestionId) ?? null;
+    questions.find((q) => q.id === data.pickedQuestionId) ?? null;
   // choice のときだけ投稿者が選べる。real/anon はサーバーが投稿時に寄せる
   const canChooseAnonymity = data.anonymity === "choice";
   const willBeAnonymous =
@@ -110,7 +112,7 @@ export function EventQa({
         >
           <HelpOutlineIcon fontSize="small" />
           {t("eventSocial.qaHeading", {
-            n: data.questions.filter((q) => !q.answered).length,
+            n: questions.filter((q) => !q.answered).length,
           })}
         </Typography>
         <Typography
@@ -134,7 +136,7 @@ export function EventQa({
             <Box sx={{ py: 2, borderRadius: 2, bgcolor: "action.hover" }}>
               <QaPickedQuestion
                 question={picked}
-                revealAuthor={data.revealsAuthor}
+                revealAuthor={revealAuthor}
                 onClear={canModerate ? () => pick.mutate(null) : undefined}
               />
             </Box>
@@ -215,13 +217,12 @@ export function EventQa({
           )}
 
           <QaQuestionList
-            questions={data.questions}
-            pickedQuestionId={data.pickedQuestionId}
+            questions={questions}
+            pickedQuestionId={picked?.id ?? null}
             canVote={data.canPost}
             isStaff={canModerate}
-            // 本人だけが見ている画面なので、スタッフに届いた投稿者を出してよい
-            // （投影画面・サイドパネル (#215) では渡さないこと）
-            revealAuthor={data.revealsAuthor}
+            // 詳細の通常表示には匿名投稿者の運営向け情報を混ぜない。
+            revealAuthor={revealAuthor}
             onVote={(q, voted) => vote.mutate({ questionId: q.id, voted })}
             onAnswered={
               canModerate

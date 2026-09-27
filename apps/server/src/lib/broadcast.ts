@@ -132,7 +132,7 @@ export async function sendBroadcast(
         undefined,
         // メールは下で送信待ちに積む。ここで送ると上限で静かに打ち切られ、
         // 誰に届いていないかも残らない
-        { skipEmail: true },
+        { skipEmail: true, eventId: input.eventId, actorId: input.actorUserId },
       );
     } catch (e) {
       // 1人も作れていないなら「送れなかった」で正しい。そのまま投げ直して
@@ -259,10 +259,14 @@ export async function drainBroadcastEmails(): Promise<DrainResult> {
         head.title,
         head.body,
         `/events/${head.eventId}`,
+        { authorizationEventId: head.eventId, authorizationActorId: head.createdBy, notificationType: "event_broadcast" },
       );
       if (outcome.ok) {
         await eventBroadcastsRepo.markEmailSent(row.id, row.broadcastId);
         out.sent++;
+      } else if (outcome.skipped) {
+        await eventBroadcastsRepo.markEmailSkipped(row.id, row.broadcastId);
+        out.skipped++;
       } else if (outcome.retryable) {
         await deferOrFail(row, out);
       } else {

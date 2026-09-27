@@ -1,9 +1,10 @@
+import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type {
   EventLikeKind,
   EventLikeUserTarget,
   EventLikesSummary,
 } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { many, one, } from "../client.js";
 
 interface TargetUserRow {
   id: string;
@@ -30,10 +31,9 @@ export const eventLikesRepo = {
     userId: string,
     kind: EventLikeKind,
     targetKey: string,
-    on: boolean,
-  ): Promise<void> {
+    on: boolean, writer: EventWriter): Promise<void> {
     if (on) {
-      await run(
+      await eventRun(writer,
         `INSERT OR IGNORE INTO event_like (id, event_id, user_id, kind, target_key, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
         crypto.randomUUID(),
@@ -44,7 +44,7 @@ export const eventLikesRepo = {
         Date.now(),
       );
     } else {
-      await run(
+      await eventRun(writer,
         "DELETE FROM event_like WHERE event_id = ? AND user_id = ? AND kind = ? AND target_key = ?",
         eventId,
         userId,
@@ -135,7 +135,7 @@ export const eventLikesRepo = {
         JOIN event e ON e.id = l.event_id
         JOIN user u ON u.id = l.user_id AND u.deleted_at IS NULL
         WHERE l.kind IN ('host', 'staff', 'participant') AND l.target_key = ?
-          AND e.status = 'published'`,
+          AND e.status = 'published' AND e.visibility = 'public'`,
       userId,
     );
     return row?.v ?? 0;
@@ -148,7 +148,7 @@ export const eventLikesRepo = {
         JOIN event e ON e.id = l.event_id
         JOIN user u ON u.id = l.user_id AND u.deleted_at IS NULL
         WHERE l.kind = 'community' AND l.target_key = ?
-          AND e.status = 'published'`,
+          AND e.status = 'published' AND e.visibility = 'public'`,
       communityId,
     );
     return row?.v ?? 0;

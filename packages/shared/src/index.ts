@@ -50,3 +50,4 @@ export * from "./moderation.js";
 export * from "./redirect.js";
 
 export * from "./deckImport.js";
+export * from "./eventAccessInvites.js";

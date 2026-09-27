@@ -60,18 +60,23 @@ export function VenueOfferPanel({
   kind,
   id,
   enabled,
+  showEmptyState = false,
 }: {
   kind: "for-event" | "for-request";
   id: string;
   enabled: boolean;
+  showEmptyState?: boolean;
 }) {
   const { t } = useTranslation();
-  const { data: offers } = useVenueOffers(kind, id, enabled);
+  const { data: offers, isError } = useVenueOffers(kind, id, enabled);
   const respond = useRespondVenueOffer();
   const [contact, setContact] = useState("");
   const [acceptTarget, setAcceptTarget] = useState<EnrichedVenueOffer | null>(null);
 
-  if (!enabled || !offers || offers.length === 0) return null;
+  if (!enabled) return null;
+  if (showEmptyState && isError) return <Alert severity="error">{t("eventManagement.loadFailed")}</Alert>;
+  if (!offers) return showEmptyState ? <Typography>{t("common.loading")}</Typography> : null;
+  if (offers.length === 0) return showEmptyState ? <Typography>{t("eventManagement.noVenueOffers")}</Typography> : null;
 
   return (
     <Card variant="outlined">

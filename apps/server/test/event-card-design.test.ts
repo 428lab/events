@@ -73,9 +73,9 @@ describe("event-only card documents (#506)", () => {
     expect((await request(eventId, cookie, createCardTemplate("name"))).status).toBe(403);
   });
 
-  it("requires authentication", async () => {
+  it("hides the draft from anonymous users before child authentication", async () => {
     const { eventId } = await setup();
-    expect((await request(eventId)).status).toBe(401);
+    expect((await request(eventId)).status).toBe(404);
   });
 
   it("allows one concurrent save and preserves the winner's document and asset references", async () => {

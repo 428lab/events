@@ -33,15 +33,17 @@ export function EventComments({
   eventId,
   myRole,
   canComment,
+  showManagementActions = true,
 }: {
   eventId: string;
   myRole: EventRole | null;
   canComment: boolean;
+  showManagementActions?: boolean;
 }) {
   const { t } = useTranslation();
   const { data: me } = useMe();
   // イベント配下のUIは myRole のみで判定（サイト管理者でもイベントスタッフでなければ操作UIを出さない）
-  const isStaff = myRole === "staff";
+  const canModerate = myRole === "staff" && showManagementActions;
   const { data: comments } = useEventComments(eventId, true);
   const addComment = useAddEventComment(eventId);
   const delComment = useDeleteEventComment(eventId);
@@ -111,7 +113,7 @@ export function EventComments({
                   </Stack>
                   <Markdown>{c.body}</Markdown>
                 </Box>
-                {(c.userId === me?.id || isStaff) && (
+                {(c.userId === me?.id || canModerate) && (
                   <IconButton
                     size="small"
                     onClick={() => {

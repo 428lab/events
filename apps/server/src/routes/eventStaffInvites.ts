@@ -13,7 +13,6 @@ import {
 import { eventsRepo } from "../db/repositories/events.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
 import { usersRepo } from "../db/repositories/users.js";
-import { promoteFromWaitlist } from "../lib/waitlist.js";
 
 /**
  * 運営スタッフへの招待 (#339)。
@@ -47,7 +46,7 @@ async function notifyInvited(
     "/staff-invites",
     undefined,
     // 本文に招待者名が出るので actor を残す (#380)
-    { actorId: inviter.id },
+    { actorId: inviter.id, eventId: event.id },
   );
 }
 
@@ -71,7 +70,7 @@ async function notifyInviteResult(
     `/events/${event.id}`,
     undefined,
     // 本文に応答者名が出るので actor を残す (#380)
-    { actorId: respondent.id },
+    { actorId: respondent.id, eventId: event.id },
   );
 }
 
@@ -140,7 +139,7 @@ eventStaffInviteRoutes.delete(
     if (!invite || invite.eventId !== eventId) {
       return c.json({ error: "not_found" }, 404);
     }
-    if (!(await eventStaffInvitesRepo.revoke(invite.id))) {
+    if (!(await eventStaffInvitesRepo.revoke(invite.id,c.req.param("id"),c.get("user").id))) {
       return c.json({ error: "not_pending" }, 409);
     }
     return c.json({ invites: await eventStaffInvitesRepo.listByEvent(eventId) });
@@ -199,16 +198,9 @@ myStaffInviteRoutes.post("/:inviteId/accept", async (c) => {
   // 招待の消費とメンバー行の作成を1回のバッチで行う。別々に書くと、間で失敗した
   // ときに「招待だけ消費されて運営になっていない」状態が残り、本人には直せない。
   // 取り消しと同時押しになった場合もここで負ける（pending のときだけ進む）
-  const before = await eventMembersRepo.find(event.id, user.id);
-  if (!(await eventStaffInvitesRepo.accept(invite.id, event.id, user.id))) {
-    return c.json({ error: "not_found" }, 404);
-  }
-
-  // 先着枠の確定者だったなら席が空いたので繰り上げる (#281)
-  const promotedUserId =
-    before?.slotId && before.status === "confirmed"
-      ? await promoteFromWaitlist(event, before.slotId)
-      : null;
+  const result = await eventStaffInvitesRepo.accept(invite.id, event.id, user.id);
+  if (!result) return c.json({ error: "not_found" }, 404);
+  const { promotedUserId } = result;
 
   await notifyInviteResult(event, invite.invitedBy, user, true);
   return c.json({ eventId: event.id, promotedUserId });

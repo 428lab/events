@@ -23,6 +23,7 @@ export const NOTIFICATION_TYPES = [
   "event_broadcast",
   /** 運営スタッフへの招待が届いた (#339) */
   "staff_invite",
+  "event_access_invite",
   /** 送った招待が承諾/辞退された（招待した本人へ） (#339) */
   "staff_invite_result",
   "info",
@@ -67,6 +68,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   abuse_flag: "運用",
   event_broadcast: "イベントからの連絡",
   staff_invite: "運営への招待",
+  event_access_invite: "閲覧への招待",
   staff_invite_result: "運営への招待",
   info: "お知らせ",
 };

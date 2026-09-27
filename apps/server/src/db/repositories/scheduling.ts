@@ -1,5 +1,7 @@
 import type { DateOption, VoteChoice } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { eventViewSql } from "../../auth/eventAccess.js";
+import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
+import { many, one, runCount } from "../client.js";
 
 interface OptionRow {
   id: string;
@@ -71,26 +73,24 @@ export const schedulingRepo = {
     eventId: string,
     startsAt: number,
     endsAt: number,
-  ): Promise<string> {
+    actorId: string,
+  ): Promise<string | null> {
     const id = crypto.randomUUID();
-    await run(
+    const changed = await runCount(
       `INSERT INTO event_date_option (id, event_id, starts_at, ends_at, sort_order, created_at)
-       VALUES (?, ?, ?, ?, 0, ?)`,
-      id,
-      eventId,
-      startsAt,
-      endsAt,
-      Date.now(),
+       SELECT ?,e.id,?,?,0,? FROM event e WHERE e.id=? AND ${activeManagerSql("e", "?")}`,
+      id, startsAt, endsAt, Date.now(), eventId, actorId, adminIds(),
     );
-    return id;
+    return changed ? id : null;
   },
 
-  async deleteOption(eventId: string, optionId: string): Promise<void> {
-    await run(
-      "DELETE FROM event_date_option WHERE id = ? AND event_id = ?",
-      optionId,
-      eventId,
+  async deleteOption(eventId: string, optionId: string, actorId: string): Promise<boolean> {
+    const changed = await runCount(
+      `DELETE FROM event_date_option WHERE id=? AND event_id=? AND EXISTS (SELECT 1 FROM event e WHERE e.id=event_date_option.event_id AND ${activeManagerSql("e", "?")})`,
+      optionId, eventId, actorId, adminIds(),
     );
+    // Preserve authorized deletion replay without acknowledging a lost manager.
+    return changed > 0 || Boolean(await one(`SELECT 1 FROM event e WHERE e.id=? AND ${activeManagerSql("e", "?")}`, eventId, actorId, adminIds()));
   },
 
   /** その option がイベントに属するか確認しつつ取得 */
@@ -118,19 +118,20 @@ export const schedulingRepo = {
   },
 
   async vote(
+    eventId: string,
     optionId: string,
     userId: string,
     choice: VoteChoice,
-  ): Promise<void> {
-    await run(
+  ): Promise<boolean> {
+    return (await runCount(
       `INSERT INTO event_date_vote (id, option_id, user_id, choice, created_at)
-       VALUES (?, ?, ?, ?, ?)
+       SELECT ?, o.id, u.id, ?, ? FROM event_date_option o
+       JOIN event e ON e.id = o.event_id
+       JOIN user u ON u.id = ? AND u.deleted_at IS NULL
+       WHERE o.id = ? AND e.id = ? AND e.scheduling = 1
+         AND ${eventViewSql("e", "u.id", "?")}
        ON CONFLICT(option_id, user_id) DO UPDATE SET choice = excluded.choice`,
-      crypto.randomUUID(),
-      optionId,
-      userId,
-      choice,
-      Date.now(),
-    );
+      crypto.randomUUID(), choice, Date.now(), userId, optionId, eventId, adminIds(),
+    )) > 0;
   },
 };

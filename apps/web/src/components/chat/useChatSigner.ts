@@ -70,6 +70,7 @@ export function useChatSigner({
   );
   // 現在の signer が NIP-07（Nostrアカウント）か。setSigner の直前に設定する
   const isNip07Ref = useRef(false);
+  useEffect(() => { setSigner(null); isNip07Ref.current = false; }, [me?.id]);
 
   // 登録済みの自分の鍵がサーバー管理の一時鍵なら自動で再参加する (#223)。
   // 許可リストには**これまでに使った鍵が全部**載る (#332) ので、自分の鍵は複数ある。

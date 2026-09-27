@@ -27,18 +27,46 @@ function ev(over: Partial<Event> = {}): Event {
   } as Event;
 }
 
-function renderCard(event: Event) {
+function renderCard(event: Event, compact = true) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <EventCard event={event} compact />
+        <EventCard event={event} compact={compact} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
+
+describe.each([true, false])("card visibility indicator (compact=%s)", (compact) => {
+  it("shows a real lock with the localized private name", () => {
+    renderCard(ev({ visibility: "private" }), compact);
+    const icon = screen.getByRole("img", { name: "招待限定" });
+    expect(icon.tagName.toLowerCase()).toBe("svg");
+    expect(icon.getAttribute("data-testid")).toBe("LockIcon");
+  });
+
+  it("shows a real link with the localized unlisted name", () => {
+    renderCard(ev({ visibility: "unlisted" }), compact);
+    const icon = screen.getByRole("img", { name: "限定公開（URLを知る人）" });
+    expect(icon.tagName.toLowerCase()).toBe("svg");
+    expect(icon.getAttribute("data-testid")).toBe("LinkIcon");
+  });
+
+  it("shows no visibility icon for public events", () => {
+    renderCard(ev({ visibility: "public" }), compact);
+    expect(screen.queryByTestId("LinkIcon")).toBeNull();
+    expect(screen.queryByTestId("LockIcon")).toBeNull();
+  });
+
+  it.each(["public", "unlisted"] as const)("does not mislabel %s as private", (visibility) => {
+    renderCard(ev({ visibility }), compact);
+    expect(screen.queryByRole("img", { name: "招待限定" })).toBeNull();
+    expect(screen.queryByTestId("LockIcon")).toBeNull();
+  });
+});
 
 describe("グリッド表示のカード", () => {
   it("参加人数が出る", () => {

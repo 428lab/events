@@ -13,6 +13,15 @@
 // 数の入れ替えは {{n}} を使う。i18next の `count` は複数形の仕組みを
 // 起動してしまい、`_other` を用意していないキーで挙動が読みにくくなるため。
 const ja = {
+  reopen: "日程調整に戻す",
+  reopenConfirm: "日程調整に戻しますか？候補日・回答・参加登録はそのまま残ります。回答者と参加登録者にお知らせします。",
+  reopenDeadline: "募集締切（{{date}}）も解除します。再確定後に設定し直してください。",
+  reopenEnded: "日程未定となり、通常の参加受付に戻ります。",
+  reopenFailed: "日程調整に戻せませんでした。もう一度お試しください。",
+  changed: "日程が更新されています。最新の内容を確認してください。",
+  previousResults: "前回の日程確定時の参加登録結果",
+  oldImageNote: "画像に以前の日付が含まれている場合があります。",
+  keepExisting: "既存の参加登録は、×・未回答の人も維持します。参加を取り消す場合は参加者一覧で確認してください。",
   /** 日程調整（候補日への○△×投票）の見出しと導入 */
   pollTitle: "日程調整",
   pollResultTitle: "日程調整の結果",
@@ -30,6 +39,7 @@ const ja = {
   autoJoinReason_canceled: "以前の取消を維持。参加する場合は本人が再登録",
   autoJoinReason_survey_required: "必須アンケートへの回答が必要",
   autoJoinReason_slot_required: "参加枠の選択が必要",
+  autoJoinReason_access_revoked: "現在の閲覧権がないため登録していません",
   autoJoinReason_event_ended: "終了済み。必要な場合は主催者へ確認",
   autoJoinReason_registration_closed: "募集締切後。必要な場合は主催者へ確認",
   autoJoinLoading: "登録結果を読み込んでいます…",
@@ -220,6 +230,15 @@ const ja = {
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
+  reopen: "Reopen scheduling",
+  reopenConfirm: "Reopen scheduling? Date options, responses and registrations will be kept. Respondents and registered members will be notified.",
+  reopenDeadline: "The registration deadline ({{date}}) will also be cleared. Set it again after choosing a date.",
+  reopenEnded: "The date will become undecided and normal registration will resume.",
+  reopenFailed: "Could not reopen scheduling. Please try again.",
+  changed: "The schedule has changed. Please review the latest information.",
+  previousResults: "Registration results from the previous date confirmation",
+  oldImageNote: "The image may still contain the previous date.",
+  keepExisting: "Existing registrations are kept, including people who answered No or did not respond. Review the member list before canceling registrations.",
   pollTitle: "Pick a date",
   pollResultTitle: "Date poll results",
   pollLead:
@@ -237,6 +256,7 @@ const en: Record<keyof typeof ja, string> = {
   autoJoinReason_canceled: "Previous cancellation retained; register again to participate",
   autoJoinReason_survey_required: "Complete the required survey",
   autoJoinReason_slot_required: "Choose a participation slot",
+  autoJoinReason_access_revoked: "Not registered: viewing access is no longer available",
   autoJoinReason_event_ended: "Event ended; contact the organizer if needed",
   autoJoinReason_registration_closed: "Registration closed; contact the organizer if needed",
   autoJoinLoading: "Loading registration results…",

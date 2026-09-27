@@ -1,4 +1,5 @@
 import confetti from "canvas-confetti";
+import { AWARDS_DRUMROLL_MS } from "@eventer/shared";
 import drumrollUrl from "../assets/drumroll.mp3";
 import fanfareUrl from "../assets/fanfare.mp3";
 
@@ -19,35 +20,30 @@ const fanfare = new Audio(fanfareUrl);
 drumroll.preload = "auto";
 fanfare.preload = "auto";
 
-/** ドラムロール音源の「じゃ～ん！」が鳴るタイミング（ms） */
-const DRUMROLL_REVEAL_MS = 3000;
-
-/**
- * ドラムロールを再生し、クライマックス（約3秒）の「じゃ～ん！」に合わせて onReveal を呼ぶ。
- * 音はそのまま最後まで鳴らし続ける（途中で止めない）。
- * 自動再生がブロックされた場合は即座に onReveal する。
- */
-export function playDrumroll(onReveal: () => void): void {
-  let done = false;
-  const finish = () => {
-    if (done) return;
-    done = true;
-    onReveal();
+/** 発表のDB書込からの経過位置で再生。音の許可と結果表示のタイマーは分ける。 */
+export function playDrumroll(onReveal: () => void, elapsedMs = 0): () => void {
+  const elapsed = Math.max(0, elapsedMs);
+  if (elapsed < AWARDS_DRUMROLL_MS) {
+    try {
+      drumroll.currentTime = elapsed / 1000;
+      void drumroll.play()?.catch(() => undefined);
+    } catch {
+      // 音が使えなくても他の待機画面と同じ時間だけ結果を待つ。
+    }
+  }
+  const timer = window.setTimeout(onReveal, Math.max(0, AWARDS_DRUMROLL_MS - elapsed));
+  return () => {
+    window.clearTimeout(timer);
+    drumroll.pause();
+    fanfare.pause();
   };
-
-  drumroll.currentTime = 0;
-  const p = drumroll.play();
-  if (p) p.catch(() => finish());
-
-  // 「じゃ～ん！」のタイミングで結果を出す。音は止めず最後まで再生。
-  window.setTimeout(finish, DRUMROLL_REVEAL_MS);
 }
 
 /** ファンファーレを再生 */
 export function playFanfare(): void {
   try {
     fanfare.currentTime = 0;
-    void fanfare.play();
+    void fanfare.play()?.catch(() => undefined);
   } catch {
     /* ignore */
   }

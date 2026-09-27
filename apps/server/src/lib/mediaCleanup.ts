@@ -1,3 +1,4 @@
+import {eventImagesRepo} from "../db/repositories/eventImages.js";
 import { getBucket } from "../runtime.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import { eventMeetPrizesRepo } from "../db/repositories/eventMeetPrizes.js";
@@ -75,6 +76,8 @@ export function photoObjectKeys(p: {
  * `event_image` を引く1サブリクエストを節約できる（退会時の `avatarKey` と同じ手） */
 export async function collectEventObjects(eventId: string): Promise<string[]> {
   const keys = [eventImageR2Key(eventId)];
+  const cover=await eventImagesRepo.getMeta(eventId);
+  if (cover?.objectKey) keys.push(cover.objectKey);
   for (const p of await eventPhotosRepo.listIdsByEvent(eventId)) {
     keys.push(...photoObjectKeys(p));
   }

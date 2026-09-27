@@ -30,10 +30,12 @@ import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { isHoliday } from "japanese-holidays";
 import type { VoteChoice } from "@eventer/shared";
-import { useEvent, useMe, useUpdateEvent, useUploadEventImage } from "../api/hooks.js";
+import { useEvent, useMe, useIsAdmin, useUpdateEvent, useUploadEventImage } from "../api/hooks.js";
 import { generateEventImageBlob } from "../lib/imageTemplates.js";
 import { formatDateRange } from "../lib/format.js";
 import { UserLink } from "./UserLink.js";
+import { ApiError } from "../api/client.js";
+import { ReopenSchedulingButton } from "./ReopenSchedulingButton.js";
 import { ScheduleRegistrationResults } from "./ScheduleRegistrationResults.js";
 import {
   useAddDateOption,
@@ -267,6 +269,9 @@ function MiniCalendar({
 export function SchedulePanel({
   eventId,
   isStaff,
+  canManageSchedule = isStaff,
+  showManagementActions = true,
+  showEmptyState = false,
   anonymous,
   finalized,
   visible,
@@ -275,6 +280,10 @@ export function SchedulePanel({
 }: {
   eventId: string;
   isStaff: boolean;
+  canManageSchedule?: boolean;
+  showManagementActions?: boolean;
+  /** Management accordion must not open to a blank body. */
+  showEmptyState?: boolean;
   anonymous: boolean;
   /** 日程確定済み（結果の閲覧のみ。回答・候補編集は不可） */
   finalized: boolean;
@@ -285,9 +294,12 @@ export function SchedulePanel({
   eventEndsAt: number;
 }) {
   const { t } = useTranslation();
+  const canManage = canManageSchedule && showManagementActions;
   const { data: me } = useMe();
+  const isAdmin = useIsAdmin();
+  const canEditImage = isStaff || isAdmin;
   const { data: eventData } = useEvent(eventId);
-  const { data, isLoading } = useEventSchedule(eventId);
+  const { data, isLoading, isError } = useEventSchedule(eventId);
   const vote = useVoteDateOption(eventId);
   const addOption = useAddDateOption(eventId);
   const delOption = useDeleteDateOption(eventId);
@@ -354,18 +366,25 @@ export function SchedulePanel({
 
   // 確定済み: 候補が無い（＝日程調整を使っていない）イベントや、
   // 表示オフのイベントでは何も出さない（主催者には設定用に表示する）
+  if (showEmptyState && isError) return <Alert severity="error">{t("eventManagement.loadFailed")}</Alert>;
+  if (showEmptyState && (isLoading || !data)) return <Typography>{t("common.loading")}</Typography>;
   if (finalized) {
-    if (isLoading || !data || data.options.length === 0) return null;
-    if (!visible && !isStaff) return null;
+    if (isLoading || !data) return null;
+    if (data.options.length === 0 && !canManage) return showEmptyState ? <Typography>{t("eventManagement.noDatePoll")}</Typography> : null;
+    if (!visible && !canManage) return null;
   }
 
   const collapsible = finalized;
   return (
     <Card variant="outlined">
-      {isStaff && finalized && <Button onClick={() => setShowRegistrationResults(true)} sx={{ m: 1 }}>{t("schedule.autoJoinResults")}</Button>}
-      {isStaff && showRegistrationResults && <ScheduleRegistrationResults eventId={eventId} open onClose={() => setShowRegistrationResults(false)} />}
-      {finalize.isError && <Alert severity="error">{t("schedule.autoJoinFailed")}</Alert>}
-      <CardContent component={collapsible ? "details" : "div"} key={eventId}
+      {canManage && finalized && eventData && <ReopenSchedulingButton event={eventData.event} />}
+      {canManage && !finalized && eventData?.event.imageUpdatedAt && <Typography sx={{ p: 2 }} variant="body2">
+        {t("schedule.oldImageNote")} {canEditImage && <RouterLink to={`/events/${eventId}/edit`}>{t("common.edit")}</RouterLink>}
+      </Typography>}
+      {canManage && <Button onClick={() => setShowRegistrationResults(true)} sx={{ m: 1 }}>{t(finalized ? "schedule.autoJoinResults" : "schedule.previousResults")}</Button>}
+      {canManage && showRegistrationResults && <ScheduleRegistrationResults eventId={eventId} previous={!finalized} open onClose={() => setShowRegistrationResults(false)} />}
+      {finalize.isError && <Alert severity="error">{t(finalize.error instanceof ApiError && finalize.error.status === 409 ? "schedule.changed" : "schedule.autoJoinFailed")}</Alert>}
+      <CardContent component={collapsible ? "details" : "div"} key={`${eventId}-${finalized}`}
         sx={collapsible ? {
           "& > summary": { cursor: "pointer", listStyle: "none", "&::-webkit-details-marker": { display: "none" } },
           "&[open] > summary": { mb: 2 },
@@ -385,7 +404,7 @@ export function SchedulePanel({
           {finalized ? t("schedule.pollFinalizedLead") : t("schedule.pollLead")}
         </Typography>
 
-        {finalized && isStaff && !visible && (
+        {finalized && canManage && !visible && (
           <Alert severity="info" sx={{ mb: 2 }}>
             {t("schedule.resultStaffOnly")}
           </Alert>
@@ -395,7 +414,7 @@ export function SchedulePanel({
           <Typography>{t("common.loading")}</Typography>
         ) : data.options.length === 0 ? (
           <Typography color="text.secondary">
-            {isStaff ? t("schedule.noOptionsStaff") : t("schedule.noOptions")}
+            {finalized ? t("eventManagement.noDatePoll") : canManage ? t("schedule.noOptionsStaff") : t("schedule.noOptions")}
           </Typography>
         ) : (
           <Stack spacing={1.5}>
@@ -509,17 +528,18 @@ export function SchedulePanel({
                       ))}
                     </ToggleButtonGroup>
                   )}
-                  {isStaff && !finalized && (
+                  {canManage && !finalized && (
                     <>
                       <Button
                         size="small"
                         variant="outlined"
                         color="secondary"
-                        disabled={finalize.isPending}
+                        disabled={finalize.isPending || !eventData}
                         onClick={() => {
-                          if (!window.confirm(t("schedule.decideConfirm")))
+                          if (!window.confirm(`${t("schedule.decideConfirm")}\n${t("schedule.keepExisting")}`))
                             return;
-                          finalize.mutate(o.id, {
+                          if (!eventData) return;
+                          finalize.mutate({ optionId: o.id, expectedAccessRevision: eventData.event.accessRevision }, {
                             onSuccess: async () => {
                               setShowRegistrationResults(true);
                               // 自動生成画像に「日程調整中」が焼き込まれている場合があるため、
@@ -636,7 +656,7 @@ export function SchedulePanel({
           </Typography>
         )}
 
-        {isStaff && finalized && (
+        {canManage && finalized && (
           <>
             <Divider sx={{ my: 2 }} />
             <FormControlLabel
@@ -654,7 +674,7 @@ export function SchedulePanel({
           </>
         )}
 
-        {isStaff && !finalized && (
+        {canManage && !finalized && (
           <>
             <Divider sx={{ my: 2 }} />
             <FormControlLabel

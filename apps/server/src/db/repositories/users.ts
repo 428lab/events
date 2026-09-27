@@ -1,3 +1,4 @@
+import { accountAccessRevision } from "./accessRevisions.js";
 import type { User } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
 
@@ -11,6 +12,7 @@ interface UserRow {
   /** プロフィールカードPNG（OG画像キャッシュ）の更新時刻 (#193) */
   card_image_updated_at: number | null;
   card_image_key: string | null;
+  card_image_generation: string;
   /** 退会申請時刻。NULL = 在籍中 (#250) */
   deleted_at: number | null;
   /** 最終アクセス時刻。NULL = 計測開始 (#257) より前からのユーザー */
@@ -31,6 +33,7 @@ function toUser(row: UserRow): User {
     createdAt: row.created_at,
     cardImageUpdatedAt: row.card_image_updated_at ?? null,
     cardImageKey: row.card_image_key ?? null,
+    cardImageGeneration: row.card_image_generation,
   };
 }
 
@@ -199,8 +202,8 @@ export const usersRepo = {
         ? profile.providerUserId
         : `${provider}:${profile.providerUserId}`;
     await run(
-      `INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO user (id, discord_id, username, global_name, avatar_url, created_at, card_image_generation)
+       VALUES (?, ?, ?, ?, ?, ?, lower(hex(randomblob(16))))`,
       id,
       discordId,
       await this.availableUsername(profile.username),
@@ -213,7 +216,10 @@ export const usersRepo = {
 
   /** Discord 連携時に discord_id を実IDへ更新（管理者判定を効かせる） */
   async setDiscordId(userId: string, discordId: string): Promise<void> {
-    await run("UPDATE user SET discord_id = ? WHERE id = ?", discordId, userId);
+    // Both old and new admin identity can affect the event set.
+    await batch([accountAccessRevision([userId]),
+      { sql: "UPDATE user SET discord_id = ? WHERE id = ?", args: [discordId, userId] },
+      accountAccessRevision([userId])]);
   },
 
   /** ユーザー名（ハンドル）を変更 */

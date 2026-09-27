@@ -18,6 +18,7 @@ const EVENT = {
   id: "e-1",
   title: "テストイベント",
   status: "published",
+  visibility: "public",
   chatEnabled: true,
   scheduling: false,
   startsAt: 1_700_000_000_000,
@@ -91,4 +92,8 @@ describe("chatAvailable の各項 (#215 / #335)", () => {
     expect(access().canChat).toBe(true);
     expect(access().chatAvailable).toBe(true);
   });
+});
+
+it.each(["private","unlisted"] as const)("%s never exposes plaintext participant chat",visibility=>{
+ event={...EVENT,visibility};expect(access().chatAvailable).toBe(false);
 });

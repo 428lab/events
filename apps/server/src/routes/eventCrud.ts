@@ -1,3 +1,4 @@
+import {one} from "../db/client.js";
 import { Hono } from "hono";
 import { valid, zValidator } from "../lib/validator.js";
 import { createEventInput, isDatetimeOrderInvalid, updateEventInput } from "@eventer/shared";
@@ -11,7 +12,6 @@ import type { AppEnv } from "../types.js";
 import { requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
-import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { deleteEventImage, putEventImage } from "./images.js";
@@ -53,7 +53,7 @@ async function notifyOnPublish(
   // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
   await notifyRequestsOnPublish(event);
   // 作成者のフォロワーへ公開通知（draft→published の実遷移時のみ・初回のみ）
-  if (prior?.status !== "published") {
+  if (prior?.status !== "published" || prior?.visibility !== "public") {
     await notifyFollowersOnPublish(event);
   }
 }
@@ -74,9 +74,19 @@ eventCrudRoutes.post("/", zValidator("json", createEventInput), async (c) => {
     return c.json({ error: "forbidden" }, 403);
   }
   const event = await eventsRepo.create(input, user.id);
-  await eventMembersRepo.add(event.id, user.id, "staff");
-  await scoringCriteriaRepo.seedDefaults(event.id);
-  return c.json({ event }, 201);
+  if (!event) return c.json({error:"access_changed"},409);
+  await scoringCriteriaRepo.seedDefaults(event.id, {eventId:event.id,actorId:c.get("user").id,permission:"manager"});
+  return c.json({ event: (await eventsRepo.findById(event.id))! }, 201);
+});
+
+/** The confirmation snapshot is a count only; the PATCH CAS checks its revision. */
+eventCrudRoutes.get("/:id/visibility-preview",requireEventRole(["staff"]),async c=>{
+  const preview=await one<{accessRevision:number;members:number;voters:number}>(`SELECT e.access_revision accessRevision,
+    (SELECT COUNT(*) FROM event_member m WHERE m.event_id=e.id AND m.status<>'canceled') members,
+    (SELECT COUNT(DISTINCT v.user_id) FROM event_date_vote v JOIN event_date_option o ON o.id=v.option_id WHERE o.event_id=e.id AND NOT EXISTS(
+      SELECT 1 FROM event_member m WHERE m.event_id=e.id AND m.user_id=v.user_id AND m.status<>'canceled')) voters
+    FROM event e WHERE e.id=?`,c.req.param("id"));
+  return c.json(preview);
 });
 
 /** イベント更新（staff のみ） */
@@ -87,6 +97,14 @@ eventCrudRoutes.patch(
   async (c) => {
     const prior = await eventsRepo.findById(c.req.param("id"));
     const input = valid<UpdateEventInput>(c, "json");
+    const scheduleInput = [input.startsAt, input.endsAt, input.scheduling, input.registrationDeadline].some(v => v !== undefined);
+    if (scheduleInput && input.expectedAccessRevision !== prior?.accessRevision) return c.json({ error: "schedule_changed" }, 409);
+    if (prior?.visibility === "public" && input.visibility && input.visibility !== "public" && !(await eventsRepo.nonpublicEligible(prior.id))) {
+      return c.json({error:"legacy_visibility_locked"},409);
+    }
+    if (input.visibility !== undefined && input.visibility !== prior?.visibility) {
+      if (input.expectedAccessRevision === undefined || !input.confirmVisibilityChange) return c.json({error:"visibility_confirmation_required"},409);
+    }
     // 紐づけ先コミュニティを「変える」ときだけ権限を見る (#264)。
     // 編集フォームは現在値をそのまま送り返すので、変更がなければ通す
     // （コミュニティの owner/admin ではないイベントstaffが編集できなくなるため）。
@@ -120,7 +138,7 @@ eventCrudRoutes.patch(
     // 現在値が残るので、締切だけを送る編集でも、開始日時だけを前倒しする編集でも
     // 同じ不変条件を保てる。
     // なお scheduling は false にしか変更できない（updateEventInput が z.literal(false)）
-    // ため「締切が入ったまま日程調整へ戻る」経路は存在せず、クリア処理は要らない
+    // 再開は専用APIで、明示確認と同じbatch内で締切を解除する。
     const violation = checkRegistrationDeadline({
       deadline:
         input.registrationDeadline !== undefined
@@ -130,8 +148,8 @@ eventCrudRoutes.patch(
       startsAt: input.startsAt ?? prior?.startsAt ?? 0,
     });
     if (violation) return c.json({ error: violation }, 400);
-    const event = await eventsRepo.update(c.req.param("id"), input);
-    if (!event) return c.json({ error: "not_found" }, 404);
+    const event = await eventsRepo.update(c.req.param("id"), input, c.get("user").id);
+    if (!event) return c.json({ error: scheduleInput ? "schedule_changed" : "access_changed" }, 409);
     await notifyOnPublish(prior, event);
     return c.json({ event });
   },
@@ -148,7 +166,7 @@ eventCrudRoutes.delete(
 /** 公開（staff のみ） */
 eventCrudRoutes.post("/:id/publish", requireEventRole(["staff"]), async (c) => {
   const prior = await eventsRepo.findById(c.req.param("id"));
-  const event = await eventsRepo.setStatus(c.req.param("id"), "published");
+  const event = await eventsRepo.setStatus(c.req.param("id"), "published", c.get("user").id);
   if (!event) return c.json({ error: "not_found" }, 404);
   await notifyOnPublish(prior, event);
   return c.json({ event });
@@ -161,7 +179,7 @@ eventCrudRoutes.post("/:id/publish", requireEventRole(["staff"]), async (c) => {
 eventCrudRoutes.delete("/:id", requireEventRole(["staff"]), async (c) => {
   const eventId = c.req.param("id");
   const keys = await collectEventObjects(eventId);
-  await eventsRepo.delete(eventId);
+  if (!(await eventsRepo.delete(eventId, c.get("user").id))) return c.json({ error: "access_changed" }, 409);
   await deleteObjects(keys, `[event-delete] event=${eventId}`);
   return c.json({ ok: true });
 });

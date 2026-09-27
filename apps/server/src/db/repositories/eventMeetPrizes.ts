@@ -1,3 +1,4 @@
+import { eventRun, eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import type {
   CreateMeetPrizeInput,
   MeetPrize,
@@ -5,7 +6,7 @@ import type {
   MeetWinner,
   UpdateMeetPrizeInput,
 } from "@eventer/shared";
-import { batch, many, one, run, runCount } from "../client.js";
+import { many, one, } from "../client.js";
 import { PER_USER_COUNTS_SQL } from "./eventMeets.js";
 
 /**
@@ -69,10 +70,9 @@ export const eventMeetPrizesRepo = {
 
   async create(
     eventId: string,
-    input: CreateMeetPrizeInput,
-  ): Promise<MeetPrize> {
+    input: CreateMeetPrizeInput, writer: EventWriter): Promise<MeetPrize> {
     const id = crypto.randomUUID();
-    await run(
+    await eventRun(writer,
       `INSERT INTO event_prize
          (id, event_id, name, description, condition_type, threshold, stock, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -90,9 +90,8 @@ export const eventMeetPrizesRepo = {
 
   async update(
     id: string,
-    input: UpdateMeetPrizeInput,
-  ): Promise<MeetPrize | null> {
-    await run(
+    input: UpdateMeetPrizeInput, writer: EventWriter): Promise<MeetPrize | null> {
+    await eventRun(writer,
       `UPDATE event_prize SET name = ?, description = ?, condition_type = ?,
               threshold = ?, stock = ? WHERE id = ?`,
       input.name,
@@ -105,10 +104,10 @@ export const eventMeetPrizesRepo = {
     return this.findById(id);
   },
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, writer: EventWriter): Promise<void> {
     // 引き換え記録は FK CASCADE で消える（UI 側が消す前に警告する）。
     // 画像の R2 オブジェクトはルート側が消す（imageKey を知っているのは呼び出し側）
-    await run("DELETE FROM event_prize WHERE id = ?", id);
+    await eventRun(writer,"DELETE FROM event_prize WHERE id = ?", id);
   },
 
   /** イベント削除時のR2掃除用: そのイベントの景品画像の R2 キー一覧 (#424)。
@@ -123,8 +122,8 @@ export const eventMeetPrizesRepo = {
   },
 
   /** 景品画像の R2 キーを差し替える（null で画像なしに戻す） (#434) */
-  async setImageKey(id: string, imageKey: string | null): Promise<void> {
-    await run("UPDATE event_prize SET image_key = ? WHERE id = ?", imageKey, id);
+  async setImageKey(id: string, imageKey: string | null, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"UPDATE event_prize SET image_key = ? WHERE id = ?", imageKey, id);
   },
 
   /* ---- 引き換え（在庫の早い者勝ちの正） ---- */
@@ -142,9 +141,8 @@ export const eventMeetPrizesRepo = {
   async redeem(
     prizeId: string,
     userId: string,
-    redeemedBy: string,
-  ): Promise<boolean> {
-    const changes = await runCount(
+    redeemedBy: string, writer: EventWriter): Promise<boolean> {
+    const changes = await eventRun(writer,
       `INSERT INTO event_prize_redemption (id, prize_id, user_id, redeemed_by, created_at)
        SELECT ?, ?, ?, ?, ?
         WHERE NOT EXISTS (SELECT 1 FROM event_prize_redemption
@@ -188,9 +186,8 @@ export const eventMeetPrizesRepo = {
     eventId: string,
     prizeId: string,
     userId: string,
-    redeemedBy: string,
-  ): Promise<boolean> {
-    const changes = await runCount(
+    redeemedBy: string, writer: EventWriter): Promise<boolean> {
+    const changes = await eventRun(writer,
       `INSERT INTO event_prize_redemption (id, prize_id, user_id, redeemed_by, created_at)
        SELECT ?, ?, ?, ?, ?
         WHERE NOT EXISTS (
@@ -252,8 +249,8 @@ export const eventMeetPrizesRepo = {
   },
 
   /** 交換済みの取り消し（誤操作訂正）。在庫は導出なので自然に1戻る */
-  async deleteRedemption(prizeId: string, userId: string): Promise<boolean> {
-    const changes = await runCount(
+  async deleteRedemption(prizeId: string, userId: string, writer: EventWriter): Promise<boolean> {
+    const changes = await eventRun(writer,
       "DELETE FROM event_prize_redemption WHERE prize_id = ? AND user_id = ?",
       prizeId,
       userId,
@@ -385,14 +382,14 @@ export const eventMeetPrizesRepo = {
    * 2つ持つと、全員退会済みのような縁のケースで「チェックは通るのに1人も
    * 入らない」が復活する）。
    * @returns 勝者の人数（0 なら誰も居ない＝呼び出し側が締めを断る） */
-  async closeWinners(eventId: string, now: number): Promise<number> {
+  async closeWinners(eventId: string, now: number, writer: EventWriter): Promise<number> {
     const any = await one<{ v: number }>(
       `SELECT 1 AS v FROM (${PER_USER_COUNTS_SQL}) t LIMIT 1`,
       eventId,
       eventId,
     );
     if (!any) return 0;
-    const [, inserted] = await batch([
+    const [, inserted] = await eventWrite(writer,[
       {
         sql: "DELETE FROM event_meet_winner WHERE event_id = ?",
         args: [eventId],
@@ -409,8 +406,8 @@ export const eventMeetPrizesRepo = {
   },
 
   /** 確定を取り消して未確定に戻す（誤操作用） */
-  async clearWinners(eventId: string): Promise<void> {
-    await run("DELETE FROM event_meet_winner WHERE event_id = ?", eventId);
+  async clearWinners(eventId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"DELETE FROM event_meet_winner WHERE event_id = ?", eventId);
   },
 
   /** 「1位が確定済みか」は行の有無で表す（別フラグを持たない） */

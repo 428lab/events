@@ -1,6 +1,16 @@
 import { z } from "zod";
 import { scoringCriterionSchema } from "./scoring.js";
 
+/** Ephemeral wake-up only: the authorized HTTP APIs remain the source of truth. */
+export const AWARDS_SYNC_KIND = 27889;
+export const AWARDS_DRUMROLL_MS = 3000;
+export interface AwardsSyncConfig {
+  topic: string;
+  kind: typeof AWARDS_SYNC_KIND;
+  pubkey: string;
+  relays: string[];
+}
+
 export const awardRankSchema = z.object({
   id: z.string(),
   eventId: z.string(),

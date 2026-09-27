@@ -30,7 +30,7 @@ export const gamificationRepo = {
       `WITH qual AS (
          SELECT e.id, e.created_by, e.attendance_check
            FROM event e
-          WHERE e.status = 'published' AND e.ends_at > 0 AND e.ends_at < ?
+          WHERE e.status = 'published' AND e.visibility = 'public' AND e.ends_at > 0 AND e.ends_at < ?
             AND (SELECT COUNT(*) FROM event_member m
                   JOIN user mu ON mu.id = m.user_id AND mu.deleted_at IS NULL
                   WHERE m.event_id = e.id AND m.status = 'confirmed') >= 4

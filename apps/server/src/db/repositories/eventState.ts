@@ -1,3 +1,4 @@
+import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type { EventMode, EventState } from "@eventer/shared";
 import { one, run } from "../client.js";
 
@@ -37,9 +38,9 @@ export const eventStateRepo = {
     return this.getOrInit(eventId);
   },
 
-  async setMode(eventId: string, mode: EventMode): Promise<EventState> {
+  async setMode(eventId: string, mode: EventMode, writer: EventWriter): Promise<EventState> {
     await this.getOrInit(eventId);
-    await run(
+    await eventRun(writer,
       "UPDATE event_state SET mode = ?, updated_at = ? WHERE event_id = ?",
       mode,
       Date.now(),
@@ -50,10 +51,9 @@ export const eventStateRepo = {
 
   async setPresenting(
     eventId: string,
-    presentingEntryId: string | null,
-  ): Promise<EventState> {
+    presentingEntryId: string | null, writer: EventWriter): Promise<EventState> {
     await this.getOrInit(eventId);
-    await run(
+    await eventRun(writer,
       "UPDATE event_state SET presenting_entry_id = ?, updated_at = ? WHERE event_id = ?",
       presentingEntryId,
       Date.now(),
@@ -64,10 +64,9 @@ export const eventStateRepo = {
 
   async setScoringLocked(
     eventId: string,
-    locked: boolean,
-  ): Promise<EventState> {
+    locked: boolean, writer: EventWriter): Promise<EventState> {
     await this.getOrInit(eventId);
-    await run(
+    await eventRun(writer,
       "UPDATE event_state SET scoring_locked = ?, updated_at = ? WHERE event_id = ?",
       locked ? 1 : 0,
       Date.now(),
@@ -78,10 +77,9 @@ export const eventStateRepo = {
 
   async setAwardsCursor(
     eventId: string,
-    cursor: number | null,
-  ): Promise<EventState> {
+    cursor: number | null, writer: EventWriter): Promise<EventState> {
     await this.getOrInit(eventId);
-    await run(
+    await eventRun(writer,
       "UPDATE event_state SET awards_reveal_cursor = ?, updated_at = ? WHERE event_id = ?",
       cursor,
       Date.now(),

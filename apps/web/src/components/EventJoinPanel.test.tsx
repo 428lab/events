@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import type { Event, ParticipationSlot } from "@eventer/shared";
+import type { Event, EventRole, ParticipationSlot } from "@eventer/shared";
 import { ApiError } from "../api/client.js";
 import { EventJoinPanel } from "./EventJoinPanel.js";
 import type { EventTiming } from "../lib/useEventTiming.js";
@@ -24,6 +24,7 @@ const {
   slotsMock,
   surveyMock,
   meMock,
+  stateMock,
 } = vi.hoisted(() => ({
   joinMutate: vi.fn(),
   leaveMutate: vi.fn(),
@@ -31,6 +32,7 @@ const {
   slotsMock: vi.fn(),
   surveyMock: vi.fn(),
   meMock: vi.fn(),
+  stateMock: vi.fn(),
 }));
 
 vi.mock("../api/hooks.js", () => ({
@@ -41,7 +43,7 @@ vi.mock("../api/hooks.js", () => ({
   useLeaveEvent: () => ({ mutate: leaveMutate, isPending: false }),
 }));
 vi.mock("../api/scoringHooks.js", () => ({
-  useEventState: () => ({ data: null }),
+  useEventState: () => ({ data: stateMock() }),
 }));
 vi.mock("../api/eventSurveyHooks.js", () => ({
   useEventSurvey: () => ({ data: surveyMock() }),
@@ -102,7 +104,7 @@ function timing(over: Partial<EventTiming> = {}): EventTiming {
   };
 }
 
-function draw(opts: { myRole?: null; timing?: EventTiming } = {}) {
+function draw(opts: { myRole?: EventRole | null; contest?: boolean; timing?: EventTiming } = {}) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -114,8 +116,8 @@ function draw(opts: { myRole?: null; timing?: EventTiming } = {}) {
         <EventJoinPanel
           eventId="e-1"
           event={EVENT}
-          myRole={null}
-          contest={false}
+          myRole={opts.myRole ?? null}
+          contest={opts.contest ?? false}
           timing={t}
         />
       </MemoryRouter>
@@ -138,6 +140,7 @@ function joinFailsWith(code: string) {
 }
 
 beforeEach(() => {
+  stateMock.mockReturnValue(null);
   joinMutate.mockReset();
   leaveMutate.mockReset();
   meMock.mockReturnValue({ id: "u-1", username: "watashi" });
@@ -317,4 +320,11 @@ describe("締切・終了の表示", () => {
       screen.queryByRole("link", { name: "ログインして参加" }),
     ).not.toBeInTheDocument();
   });
+});
+
+
+it("staff keep their ordinary scoring notice on information", () => {
+  stateMock.mockReturnValue({ scoringLocked: false });
+  draw({ myRole: "staff", contest: true });
+  expect(screen.getByRole("link", { name: "採点する" })).toHaveAttribute("href", "/events/e-1/scoring");
 });

@@ -1,5 +1,6 @@
+import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type { PhotoComment } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { many, one, } from "../client.js";
 
 interface Row {
   id: string;
@@ -88,10 +89,9 @@ export const eventPhotoCommentsRepo = {
   async create(
     photoId: string,
     userId: string,
-    body: string,
-  ): Promise<PhotoComment> {
+    body: string, writer: EventWriter): Promise<PhotoComment> {
     const id = crypto.randomUUID();
-    await run(
+    await eventRun(writer,
       `INSERT INTO event_photo_comment (id, photo_id, user_id, body, created_at)
        VALUES (?, ?, ?, ?, ?)`,
       id,
@@ -103,7 +103,7 @@ export const eventPhotoCommentsRepo = {
     return (await this.findById(id))!;
   },
 
-  async delete(id: string): Promise<void> {
-    await run("DELETE FROM event_photo_comment WHERE id = ?", id);
+  async delete(id: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"DELETE FROM event_photo_comment WHERE id = ?", id);
   },
 };

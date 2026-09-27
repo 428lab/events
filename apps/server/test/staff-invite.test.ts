@@ -146,12 +146,12 @@ describe("運営スタッフへの招待 (#339)", () => {
     const eventId = await createDraftEvent(owner);
 
     const res = await invite(eventId, outsider, target.username);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     // 一覧も運営以外には見せない
     const list = await SELF.fetch(`${BASE}/api/events/${eventId}/staff-invites`, {
       headers: { cookie: outsider.cookie },
     });
-    expect(list.status).toBe(403);
+    expect(list.status).toBe(404);
     // 招待自体も作られていない
     expect(await myInvites(target)).toHaveLength(0);
   });
@@ -162,7 +162,7 @@ describe("運営スタッフへの招待 (#339)", () => {
     // 下書きは非メンバーには存在しないのと同じ扱い
     expect((await getEvent(eventId, guest)).status).toBe(404);
     // 運営の操作も通らない
-    expect((await editEvent(eventId, guest)).status).toBe(403);
+    expect((await editEvent(eventId, guest)).status).toBe(404);
     // メンバー行も作られていない
     const member = await env.DB.prepare(
       "SELECT COUNT(1) AS n FROM event_member WHERE event_id = ? AND user_id = ?",
@@ -212,7 +212,7 @@ describe("運営スタッフへの招待 (#339)", () => {
       const res = await SELF.fetch(`${BASE}/api/events/${eventId}/${path}`, {
         headers: { cookie: guest.cookie },
       });
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(404);
     }
     // 承諾すればメンバーなので読める（運営には元から読める）
     expect((await respond(inviteId, guest, "accept")).status).toBe(200);
@@ -392,7 +392,7 @@ describe("運営スタッフへの招待 (#339)", () => {
       `${BASE}/api/events/${eventId}/staff-invites/${inviteId}`,
       { method: "DELETE", headers: { cookie: guest.cookie } },
     );
-    expect(del.status).toBe(403);
+    expect(del.status).toBe(404);
     expect(await myInvites(guest)).toHaveLength(1);
   });
 

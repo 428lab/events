@@ -1,3 +1,4 @@
+import {eventRun} from "./eventWriteGuard.js";
 import {
   BROADCAST_SEGMENTS,
   type BroadcastEmailStats,
@@ -111,6 +112,7 @@ function toBroadcast(r: BroadcastRow): EventBroadcast {
 
 /** まだメールを送り終わっていない連絡（定期実行が取り出す単位） */
 export interface PendingBroadcast {
+  createdBy: string;
   id: string;
   eventId: string;
   title: string;
@@ -195,7 +197,7 @@ export const eventBroadcastsRepo = {
     recipientCount: number;
   }): Promise<string> {
     const id = crypto.randomUUID();
-    await run(
+    await eventRun({eventId:input.eventId,actorId:input.createdBy,permission:"manager"},
       `INSERT INTO event_broadcast
          (id, event_id, created_by, segment, title, body, recipient_count, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -264,10 +266,11 @@ export const eventBroadcastsRepo = {
     const rows = await many<{
       id: string;
       event_id: string;
+      created_by: string;
       title: string;
       body: string;
     }>(
-      `SELECT id, event_id, title, body
+      `SELECT id, event_id, created_by, title, body
          FROM event_broadcast
         WHERE email_pending > 0
         ORDER BY created_at ASC
@@ -277,6 +280,7 @@ export const eventBroadcastsRepo = {
     return rows.map((r) => ({
       id: r.id,
       eventId: r.event_id,
+      createdBy: r.created_by,
       title: r.title,
       body: r.body,
     }));

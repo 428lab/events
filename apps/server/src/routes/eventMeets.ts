@@ -1,9 +1,7 @@
 import { Hono } from "hono";
 import type {
-  MeetScanEventResult,
   MeetScanInput,
   MeetUndoInput,
-  User,
 } from "@eventer/shared";
 import {
   MEET_RANKING_TOP_N,
@@ -30,7 +28,7 @@ import {
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { eventMeetsRepo } from "../db/repositories/eventMeets.js";
-import { notificationsRepo } from "../db/repositories/notifications.js";
+import { scanMeetBatch, undoMeetBatch, visibleMeetResults } from "../db/repositories/meetOperations.js";
 import { usersRepo } from "../db/repositories/users.js";
 
 /**
@@ -105,40 +103,13 @@ meetEventRoutes.get("/:id/meets/ranking/live", async (c) => {
   });
 });
 
-/** 相手にも通知（両者にXPが入るため）。失敗しても記録自体は成功扱い。
- * 読み取りで相手の受付（出席）も済ませたときは、それも本文に載せる。
- * 読んでもらった参加者に受付完了が伝わらないと、受付に並び直す二度手間になる (#330) */
-async function notifyMeet(
-  me: User,
-  targetId: string,
-  eventTitle: string,
-  attendedTarget: boolean,
-): Promise<void> {
-  const name = me.globalName ?? me.username;
-  const actorPath = `/users/${encodeURIComponent(me.username)}`;
-  try {
-    await notificationsRepo.create(
-      targetId,
-      "meet",
-      `${name} さんと出会いました`,
-      attendedTarget
-        ? `「${eventTitle}」の受付もこれで完了しています`
-        : `「${eventTitle}」`,
-      actorPath,
-      { actorName: name, actorPath },
-      { actorId: me.id },
-    );
-  } catch (err) {
-    console.error("meet notification failed", err);
-  }
-}
-
 /* =========================================================
  *  読み取ったその場で確定する出会い (#330)
  * =======================================================*/
 
 /** /api/meet 配下。QRの発行・読み取り・取り消し */
 export const meetScanRoutes = new Hono<AppEnv>();
+meetScanRoutes.use("*", async (c,next) => { c.header("Cache-Control","private, no-store"); c.header("Referrer-Policy","no-referrer"); await next(); });
 meetScanRoutes.use("*", requireAuth);
 
 /**
@@ -242,57 +213,16 @@ meetScanRoutes.post("/scan", zValidator("json", meetScanInput), async (c) => {
     return c.json({ error: "used" }, 409);
   }
 
-  // 出席を付ける対象は1件。開始済みのうち最も新しく始まった回＝いま居る回と見なす
-  // （pairs は starts_at の昇順）。まだどれも始まっていなければ直近に始まる回
-  const started = pairs.filter((p) => p.startsAt <= now);
-  const attendanceTarget = started.length > 0 ? started[started.length - 1] : pairs[0];
-
-  const events: MeetScanEventResult[] = [];
-  for (const pair of pairs) {
-    const { created } = await eventMeetsRepo.recordMeet(
-      pair.id,
-      me.id,
-      target.id,
-    );
-
-    // 相手が staff なら読み取った側を、自分が staff なら相手を出席にする。
-    // 既に出席済みなら「この読み取りで付けた」とは数えない（取り消しで
-    // 元から付いていた出席まで外さないため）
-    // 出席チェックを使わないイベントには付けない（そちらは「登録＝出席」で
-    // 集計されるので attended を立てる意味が無い）
-    const grant = pair.id === attendanceTarget.id && pair.attendanceCheck;
-    const attendedMe =
-      grant && pair.targetRole === "staff" && !pair.viewerAttended
-        ? Boolean(await eventMembersRepo.setAttended(pair.id, me.id, true, now))
-        : false;
-    const attendedTarget =
-      grant && pair.viewerRole === "staff" && !pair.targetAttended
-        ? Boolean(
-            await eventMembersRepo.setAttended(pair.id, target.id, true, now),
-          )
-        : false;
-
-    // 相手の受付も済んだなら通知でそう伝える（受付に並び直させないため）
-    if (created) await notifyMeet(me, target.id, pair.title, attendedTarget);
-
-    events.push({
-      eventId: pair.id,
-      title: pair.title,
-      meetCreated: created,
-      attendedMe,
-      attendedTarget,
-    });
+  let result;
+  try {
+    result = await scanMeetBatch(me.id,target.id,pairs.map(p=>p.id),now,`/users/${encodeURIComponent(me.username)}`);
+  } catch (error) {
+    await releaseMeetToken(verified.nonce);
+    throw error;
   }
-
-  // 何も書かなかったなら、確保したトークンを返す。
-  // 同じ人が読み直しただけ（記録済みで何も起きない）でQRが潰れると、
-  // 受付の大QRの前で読み続けられて他の参加者が受付できなくなる。
-  // 写真を後から渡されても成立しないことは、この条件でも変わらない
-  // （成立するなら、それは記録が発生する読み取りなので確保したままになる）
-  const wrote = events.some(
-    (e) => e.meetCreated || e.attendedMe || e.attendedTarget,
-  );
-  if (!wrote) await releaseMeetToken(verified.nonce);
+  if (!result.wrote) await releaseMeetToken(verified.nonce);
+  const events = await visibleMeetResults(me.id,target.id,result.events);
+  if (!events.length) return c.json({error:"no_shared_event"},409);
 
   return c.json({
     target: {
@@ -350,46 +280,5 @@ meetScanRoutes.post("/undo", zValidator("json", meetUndoInput), async (c) => {
   if (scannerId !== me.id) return c.json({ error: "invalid" }, 403);
   if (targetId === me.id) return c.json({ error: "invalid" }, 400);
 
-  let undone = 0;
-  let attendanceRevoked = false;
-  for (const grant of grants) {
-    const mine = await eventMembersRepo.find(grant.eventId, me.id);
-    const target = await eventMembersRepo.find(grant.eventId, targetId);
-    if (mine?.status !== "confirmed" || target?.status !== "confirmed") continue;
-
-    // この読み取りが作った出会いだけを消す（元からあった記録には触らない）
-    const deleted =
-      grant.meetCreated &&
-      (await eventMeetsRepo.deleteMeet(grant.eventId, me.id, targetId));
-    if (deleted) undone++;
-
-    // 出席を戻すのは、その回の出会いを実際に取り消せたときだけ。
-    // 出会いを消していないのに出席だけ外せると、受付で正規にチェックイン
-    // された人が「staff を相手にした読み取り」を口実に自分の出席を消せる。
-    // 取り消しの範囲を「この読み取りが書いた行ごと戻す」に閉じる
-    if (deleted && grant.attendedMe && target.role === "staff") {
-      await eventMembersRepo.setAttended(grant.eventId, me.id, false, null);
-      attendanceRevoked = true;
-    }
-    if (deleted && grant.attendedTarget && mine.role === "staff") {
-      await eventMembersRepo.setAttended(grant.eventId, targetId, false, null);
-      attendanceRevoked = true;
-    }
-  }
-
-  // 出会いを消したなら、その読み取りで出した通知も残さない。
-  // 失敗しても取り消し自体は成功扱い（通知が残るだけ）
-  if (undone > 0) {
-    try {
-      await notificationsRepo.deleteMeetSince(
-        targetId,
-        me.id,
-        // トークンの発行時刻。それより前に届いた別の機会の通知は消さない
-        (exp - MEET_UNDO_TTL_SEC) * 1000,
-      );
-    } catch (err) {
-      console.error("meet notification cleanup failed", err);
-    }
-  }
-  return c.json({ undone, attendanceRevoked });
+  return c.json(await undoMeetBatch(me.id,targetId,grants,(exp-MEET_UNDO_TTL_SEC)*1000));
 });

@@ -59,8 +59,7 @@ eventCommentRoutes.post(
     const comment = await eventCommentsRepo.create(
       eventId,
       c.get("user").id,
-      valid<CreateEventCommentInput>(c, "json").body,
-    );
+      valid<CreateEventCommentInput>(c, "json").body, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
     return c.json({ comment }, 201);
   },
 );
@@ -90,7 +89,7 @@ eventCommentRoutes.delete(
     // 非表示を落とす findById で判定すると 404 になり、投稿者には
     // 「なぜか消せない」としか見えない）
     if (comment.adminHidden) return c.json({ error: "content_hidden" }, 409);
-    await eventCommentsRepo.delete(comment.id);
+    await eventCommentsRepo.delete(comment.id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:comment.userId === user.id ? "view" : "staff"});
     return c.json({ ok: true });
   },
 );

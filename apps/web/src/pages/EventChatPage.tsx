@@ -85,6 +85,7 @@ export function EventChatPage() {
           </Button>
         )}
       </Stack>
+      {myRole === "staff" && <Button component={RouterLink} to={`/events/${id}/manage`} sx={{ alignSelf: "flex-start", mb: 1 }}>{t("eventManagement.backToManagement")}</Button>}
       {chatAvailable ? (
         <Suspense fallback={null}>
           <EventChat

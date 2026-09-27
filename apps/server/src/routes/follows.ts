@@ -14,7 +14,7 @@ export async function notifyFollowersOnPublish(event: {
   status: string;
 }): Promise<void> {
   try {
-    if (event.status !== "published") return;
+    if (event.status !== "published" || (await eventsRepo.findById(event.id))?.visibility !== "public") return;
     // 原子的に「未通知→通知済み」へ。並行publishでも1回だけ
     if (!(await eventsRepo.claimFollowersNotify(event.id))) return;
     const followers = await followsRepo.followerIdsWanting(
@@ -52,7 +52,7 @@ export async function notifyFollowersOnJoin(
   userId: string,
 ): Promise<void> {
   try {
-    if (event.status !== "published") return;
+    if (event.status !== "published" || (await eventsRepo.findById(event.id))?.visibility !== "public") return;
     const followers = await followsRepo.followerIdsWanting(
       userId,
       "followee_joined",

@@ -42,7 +42,7 @@ cardDesignRoutes.put("/:id/name-card-design", async c => {
   if (design.slots.some(s => !slotIds.has(s.slotId)))
     return c.json({ error: "invalid_card_slot" }, 400);
   try {
-    if (!await cardDesignsRepo.save(eventId, revision, design))
+    if (!await cardDesignsRepo.save(eventId, revision, design, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"staff"}))
       return c.json({ error: "card_design_conflict" }, 409);
   } catch (error) {
     // An asset can disappear after the ownership read. The FK rolls back the whole write.

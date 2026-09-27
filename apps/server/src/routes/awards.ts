@@ -27,6 +27,8 @@ import { entriesRepo } from "../db/repositories/entries.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
 import { scoresRepo } from "../db/repositories/scores.js";
 import { eventStateRepo } from "../db/repositories/eventState.js";
+import { awardsSync } from "../lib/awardsSync.js";
+import { deferBackground } from "../runtime.js";
 
 export const awardRoutes = new Hono<AppEnv>();
 
@@ -79,8 +81,7 @@ awardRoutes.post(
       {
         rank: await awardsRepo.createRank(
           c.req.param("id"),
-          valid<CreateAwardRankInput>(c, "json"),
-        ),
+          valid<CreateAwardRankInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}),
       },
       201,
     ),
@@ -96,8 +97,7 @@ awardRoutes.patch(
     }
     const rank = await awardsRepo.updateRank(
       c.req.param("rankId"),
-      valid<UpdateAwardRankInput>(c, "json"),
-    );
+      valid<UpdateAwardRankInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (!rank) return c.json({ error: "not_found" }, 404);
     return c.json({ rank });
   },
@@ -107,7 +107,7 @@ awardRoutes.delete("/:id/award-ranks/:rankId", requireEventRole(["staff"]), asyn
   if (!cur || cur.eventId !== c.req.param("id")) {
     return c.json({ error: "not_found" }, 404);
   }
-  await awardsRepo.deleteRank(c.req.param("rankId"));
+  await awardsRepo.deleteRank(c.req.param("rankId"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
   return c.json({ ok: true });
 });
 
@@ -121,8 +121,7 @@ awardRoutes.post(
       {
         special: await awardsRepo.createSpecial(
           c.req.param("id"),
-          valid<CreateSpecialAwardInput>(c, "json"),
-        ),
+          valid<CreateSpecialAwardInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}),
       },
       201,
     ),
@@ -138,8 +137,7 @@ awardRoutes.patch(
     }
     const special = await awardsRepo.updateSpecial(
       c.req.param("specialId"),
-      valid<UpdateSpecialAwardInput>(c, "json"),
-    );
+      valid<UpdateSpecialAwardInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (!special) return c.json({ error: "not_found" }, 404);
     return c.json({ special });
   },
@@ -152,7 +150,7 @@ awardRoutes.delete(
     if (!cur || cur.eventId !== c.req.param("id")) {
       return c.json({ error: "not_found" }, 404);
     }
-    await awardsRepo.deleteSpecial(c.req.param("specialId"));
+    await awardsRepo.deleteSpecial(c.req.param("specialId"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );
@@ -177,13 +175,13 @@ awardRoutes.put(
       if (!rank || rank.eventId !== eventId) {
         return c.json({ error: "rank_not_found" }, 404);
       }
-      await awardsRepo.setRankWinner(eventId, input.awardRankId, input.entryId);
+      await awardsRepo.setRankWinner(eventId, input.awardRankId, input.entryId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     } else if (input.specialAwardId) {
       const special = await awardsRepo.findSpecial(input.specialAwardId);
       if (!special || special.eventId !== eventId) {
         return c.json({ error: "special_not_found" }, 404);
       }
-      await awardsRepo.setSpecialWinner(eventId, input.specialAwardId, input.entryId);
+      await awardsRepo.setSpecialWinner(eventId, input.specialAwardId, input.entryId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     } else {
       return c.json({ error: "rank_or_special_required" }, 400);
     }
@@ -232,14 +230,25 @@ awardRoutes.post(
   },
 );
 
+/** Authenticated event viewers only; no chat membership or secret key is required. */
+awardRoutes.get("/:id/awards-sync", async (c) => {
+  const event = await eventsRepo.findById(c.req.param("id"));
+  if (!event) return c.json({ error: "not_found" }, 404);
+  return c.json({ sync: await awardsSync.config(event) });
+});
+
 /* 表彰の段階発表 */
 awardRoutes.post("/:id/state/awards-advance", requireEventRole(["staff"]), async (c) => {
   const eventId = c.req.param("id");
   const cur = (await eventStateRepo.getOrInit(eventId)).awardsRevealCursor ?? 0;
-  const state = await eventStateRepo.setAwardsCursor(eventId, cur + 1);
+  const state = await eventStateRepo.setAwardsCursor(eventId, cur + 1, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+  const event = await eventsRepo.findById(eventId);
+  if (event) await deferBackground(awardsSync.publish(event));
   return c.json(state);
 });
 awardRoutes.post("/:id/state/awards-reset", requireEventRole(["staff"]), async (c) => {
-  const state = await eventStateRepo.setAwardsCursor(c.req.param("id"), 0);
+  const state = await eventStateRepo.setAwardsCursor(c.req.param("id"), 0, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+  const event = await eventsRepo.findById(c.req.param("id"));
+  if (event) await deferBackground(awardsSync.publish(event));
   return c.json(state);
 });

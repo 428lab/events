@@ -7,6 +7,7 @@ import { PublicLayout } from "./components/PublicLayout.js";
 import { EventLayout } from "./components/EventLayout.js";
 import { LoginPage } from "./pages/LoginPage.js";
 
+import { EventManagePage } from "./pages/EventManagePage.js";
 import { EventDetailPage } from "./pages/EventDetailPage.js";
 import { EventChatPage } from "./pages/EventChatPage.js";
 import { EventChatScreenPage } from "./pages/EventChatScreenPage.js";
@@ -34,6 +35,7 @@ import { AccountPage } from "./pages/AccountPage.js";
 import { AccountRestorePage } from "./pages/AccountRestorePage.js";
 import { InquiriesPage } from "./pages/InquiriesPage.js";
 import { NotificationsPage } from "./pages/NotificationsPage.js";
+import { EventInvitesPage } from "./pages/EventInvitesPage.js";
 import { StaffInvitesPage } from "./pages/StaffInvitesPage.js";
 import { InquiryThreadPage } from "./pages/InquiryThreadPage.js";
 import { AdminInquiriesPage } from "./pages/AdminInquiriesPage.js";
@@ -187,6 +189,7 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/decks/import" element={<PublicLayout><DeckImportPage /></PublicLayout>} />
+        <Route path="/event-invites" element={<Navigate to="/login?next=%2Fevent-invites" replace />} />
         {/* 未ログインの公開ページ */}
         <Route
           path="/"
@@ -374,6 +377,7 @@ export function App() {
         <Route path="/notifications" element={<NotificationsPage />} />
         {/* 運営への招待 (#339)。承諾するまでイベントページは開けないのでここで返事する */}
         <Route path="/staff-invites" element={<StaffInvitesPage />} />
+        <Route path="/event-invites" element={<EventInvitesPage />} />
         {/* 動画エンコード計測 (#408)。検証用に維持。ログイン必須・URL直打ちのみ */}
         <Route
           path="/dev/video-encode"
@@ -437,6 +441,7 @@ export function App() {
         <Route path="/events/:id/name-cards" element={<NameCardPrintRoute />} />
         <Route path="/events/:id/name-cards/design" element={<Suspense fallback={<LazyFallback />}><EventCardEditorPage /></Suspense>} />
         {/* チャット専用ページ (#215)。リレー接続を維持するため EventLayout の外 */}
+        <Route path="/events/:id/manage" element={<EventManagePage />} />
         <Route path="/events/:id/chat" element={<EventChatPage />} />
         {/* 投影用画面 (#215)。配信画面と同じくモード強制遷移を受けない位置に置く */}
         <Route path="/events/:id/chat/screen" element={<EventChatScreenPage />} />

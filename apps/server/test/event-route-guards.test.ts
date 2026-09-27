@@ -22,9 +22,8 @@ const DAY = 86400000;
  *    他人のイベントの子 ID を付けるだけで他人の枠や成果物を触れてしまう。
  *    アプリ運営管理者で試しているので、**権限を最大にしても通らない**ことまで見る。
  *
- * 2. **未ログインでも読める GET の断り方**。イベントそのものは 404
- *    （下書きの存在ごと隠す）、配下の一覧は 403（存在は詳細GETで分かる）。
- *    この違いは意図なので、1本にまとめた前口上で潰れていないことを見る。
+ * 2. **未ログインでも読める GET の断り方**。#526の共通閲覧境界により、
+ *    本体も子一覧も不許可イベントは404で存在ごと隠す。
  */
 
 /** dev-login（DevUser＝イベント作成者＝staff・アプリ運営管理者） */
@@ -313,14 +312,14 @@ describe("公開GETの閲覧権限と断り方 (#466)", () => {
     }
   });
 
-  it("イベント配下の一覧は 403 で断る", async () => {
+  it("イベント配下の一覧も 404 で存在を隠す", async () => {
     const { eventId, outsider } = await draftAndOutsider();
     for (const path of ["/entries", "/submissions", "/members", "/slots"]) {
       const res = await SELF.fetch(`${BASE}/api/events/${eventId}${path}`, {
         headers: { cookie: outsider },
       });
-      expect(res.status, path).toBe(403);
-      expect(await errorOf(res)).toBe("forbidden");
+      expect(res.status, path).toBe(404);
+      expect(await errorOf(res)).toBe("not_found");
     }
   });
 

@@ -42,13 +42,16 @@ export function EventSchedule({
   eventId,
   eventStartsAt,
   isStaff,
+  showManagementActions = true,
 }: {
   eventId: string;
   /** イベント開始時刻（epoch ms）。日程調整中（未定）は null */
   eventStartsAt: number | null;
   isStaff: boolean;
+  showManagementActions?: boolean;
 }) {
   const { t } = useTranslation();
+  const canManage = isStaff && showManagementActions;
   const { data, refetch } = useEventSchedule(eventId);
   const { data: me } = useMe();
   const [editing, setEditing] = useState(false);
@@ -59,22 +62,24 @@ export function EventSchedule({
   // 編集画面を開いている間は、そちら（心拍つき）が同じ状態を取りに行くので止める
   const { data: editState } = useScheduleEditingState(
     eventId,
-    isStaff && !editing,
+    canManage && !editing,
   );
   // 登壇者本人による資料URL編集ダイアログの対象コマ (#148)
   const [materialItem, setMaterialItem] = useState<ScheduleItem | null>(null);
 
   if (!data) return null;
-  // 未割り当て（ネタ出し中 #338）はサーバーが staff にしか返さない。
-  // ここで落とすと同じ判断が2か所になるので、来たものはそのまま扱う
-  const { items, tracks } = data;
+  // Detail derives a public display subset; the shared query and editor retain all items.
+  const items = showManagementActions ? data.items : data.items.filter(
+    (item) => item.visibility !== "staff" && item.placement !== "unassigned",
+  );
+  const tracks = showManagementActions ? data.tracks : publicTracks(data.tracks);
   // 自分の編集中は出さない（編集画面を閉じた直後は期限切れまで残るため）
   const otherEditor =
     editState?.editor && editState.editor.userId !== me?.id
       ? editState.editor
       : null;
   // 空のタイムテーブルは staff にだけ編集導線として見せる
-  if (items.length === 0 && !isStaff) return null;
+  if (items.length === 0 && !canManage) return null;
 
   // スタッフ用の列 (#383) は「並んでいる列」ではあるが、**時刻を連鎖させる列には
   // 入れない**（理由は @eventer/shared の publicTracks に書いてある）。
@@ -120,7 +125,7 @@ export function EventSchedule({
                 {t("schedule.viewByTrack")}
               </Button>
             )}
-            {isStaff && !editing && (
+            {canManage && !editing && (
               <>
                 {/* 編集を始める前に気づけるように、編集ボタンのすぐ隣に出す (#340) */}
                 {otherEditor && (
@@ -270,7 +275,7 @@ export function EventSchedule({
                         )}
                         {/* リンクされた登壇者本人は自分のコマの資料URLを編集できる
                             （staff は上の編集ボタンから全体を編集する） (#148) */}
-                        {!isStaff && me && it.speaker?.id === me.id && (
+                        {!canManage && me && it.speaker?.id === me.id && (
                           <IconButton
                             size="small"
                             onClick={() => setMaterialItem(it)}

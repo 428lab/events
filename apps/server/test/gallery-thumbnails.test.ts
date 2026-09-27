@@ -83,7 +83,7 @@ describe("gallery thumbnail upload, serving and lifecycle", () => {
     expect(small.status).toBe(200);
     expect(small.headers.get("content-type")).toBe("image/webp");
     expect(small.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(small.headers.get("cache-control")).toBe("private, max-age=3600");
+    expect(small.headers.get("cache-control")).toBe("private, no-store");
     expect(new Uint8Array(await small.arrayBuffer())).toEqual(webp);
     const main = await request(`${path}/${kind === "photo" ? "image" : "poster"}`, { headers: { cookie } });
     expect(main.headers.get("content-type")).toBe("image/jpeg");
@@ -131,7 +131,7 @@ describe("gallery thumbnail upload, serving and lifecycle", () => {
     const { eventId, cookie } = await setup();
     const { photo } = await (await upload(eventId, cookie, "photo")).json() as { photo: EventPhoto };
     const url = `${BASE}/api/events/${eventId}/photos/${photo.id}/thumbnail`;
-    expect((await request(url)).status).toBe(403);
+    expect((await request(url)).status).toBe(404);
     await env.DB.prepare("UPDATE event SET photos_public = 1, status = 'published' WHERE id = ?").bind(eventId).run();
     expect((await request(url)).status).toBe(200);
     const other = await setup();

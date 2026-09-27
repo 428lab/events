@@ -87,6 +87,8 @@ const OPEN_ROUTES = new Set<string>([
   /* ── 公開の読み取り: /api/public（認証なしで読ませる面）─────── */
   "GET /api/public/communities",
   "GET /api/public/communities/:slug",
+  // #548: anonymous public discovery; private rows require currentUser + eventViewSql.
+  "GET /api/public/communities/:slug/events",
   "GET /api/public/communities/:slug/members",
   "GET /api/public/decks/:slug",
   "GET /api/public/event-requests",
@@ -104,7 +106,7 @@ const OPEN_ROUTES = new Set<string>([
   "GET /api/public/venues/wanted",
 
   /* ── 公開の読み取り: イベント配下。境界より前に登録してある。
-   *    下書き・非公開の出し分けは各ハンドラが自分で行う ─────── */
+   *    イベントの閲覧権はworkerの共通門、子権限は各ハンドラで判定する ─────── */
   "GET /api/events/:id",
   "GET /api/events/:id/awards",
   "GET /api/events/:id/comments",
@@ -141,6 +143,9 @@ const OPEN_ROUTES = new Set<string>([
 
   /* ── /api の外: SPA の HTML（OGメタ注入）とフィード ─────── */
   "GET /e/:slug",
+  "GET /events/upcoming",
+  "GET /events/new",
+  "GET /s/:token",
   "GET /events/:id",
   "GET /feed/events.ics",
   "GET /feed/events.json",
@@ -155,7 +160,7 @@ const OPEN_ROUTES = new Set<string>([
 
 /** `OPEN_ROUTES` の件数。表を1行足すとここも動かすことになるので、
  * 「テストを通すためにこっそり1本開ける」が差分に必ず現れる */
-const EXPECTED_OPEN_COUNT = 80;
+const EXPECTED_OPEN_COUNT = 84;
 
 const UUID = "00000000-0000-4000-8000-000000000000";
 const probe = (p: string) =>
@@ -200,7 +205,7 @@ const skipped = () => routesOf().filter((r) => r.path.includes("*"));
 function walk(): { key: string; authN: number }[] {
   const out: { key: string; authN: number }[] = [];
   for (const r of routesOf()) {
-    if (r.path.includes("*")) continue;
+    if (r.path.includes("*") || (r.method === "ALL" && r.handler.length >= 2)) continue;
     // `.get(path, requireAuth, handler)` の形で積んだ認証自身は終端ではない
     if (r.handler === requireAuth || r.handler === requireAdmin) continue;
     const chain = chainOf(r.method, probe(r.path));
@@ -222,16 +227,17 @@ describe("認証の境界", () => {
     expect(walk().length).toBeGreaterThan(400);
   });
 
-  it("ワイルドカードに載った終端ハンドラは資産のフォールバック1本だけ", () => {
+  it("ワイルドカード終端は資産と認可付きイベントSPAだけ", () => {
     // ワイルドカードのルートは歩けない（上の skipped 参照）。ミドルウェアなら
     // 終端ではないので穴にならないが、終端ハンドラを載せると検査を素通りする。
     // ミドルウェアは next を受け取る＝引数2つ、終端ハンドラは c だけ＝引数1つ。
-    // これで見分け、終端ハンドラは worker.ts 末尾の ASSETS フォールバックだけに保つ。
-    // ここが増えたら、その1本は誰にも認証を確かめられていない。
+    // 終端は資産fallbackと、明示的に閲覧資格を検査するevent SPAだけに保つ。
+    // Event SPA is explicitly access-checked and covered by indirect-private-access.test.ts.
+    // Any additional terminal wildcard requires its own boundary review.
     const terminal = skipped()
       .filter((r) => r.handler.length < 2)
       .map((r) => `${r.method} ${r.path}`);
-    expect(uniq(terminal)).toEqual(["ALL /*"]);
+    expect(uniq(terminal)).toEqual(["ALL /*", "GET /events/:id/*"]);
   });
 
   it("公開してよい経路の表の件数（足したら必ず差分に出る）", () => {

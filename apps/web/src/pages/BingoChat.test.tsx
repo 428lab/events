@@ -71,7 +71,7 @@ beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({ matches: state.mobile, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   vi.stubGlobal("visualViewport", Object.assign(new EventTarget(), { height: 844, width: 390, offsetTop: 0, offsetLeft: 0 }));
   state.event = {
-    id: "event", title: "ビンゴ検証", status: "published", chatEnabled: true,
+    id: "event", title: "ビンゴ検証", status: "published", visibility: "public", chatEnabled: true,
     scheduling: false, startsAt: Date.now() - 60_000, endsAt: Date.now() + 3_600_000,
     chatUrlsAllowed: false, createdBy: "me",
   } as Event;

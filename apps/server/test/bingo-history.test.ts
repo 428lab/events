@@ -186,7 +186,7 @@ describe("end のスナップショット (#441)", () => {
     // 持つので、競合時は**何も保存せず・閉じずに** false を返す（押し直しで
     // 新しい導出が正しく入る）。古い rows が rank NULL のまま確定しないこと
     const { eventId, staff, alice } = await setup();
-    void staff;
+
     await setCard(eventId, alice.userId, [1, 2, 3, 4, 5]);
     await setDraws(eventId, [1, 2, 3, 4, 5], 4, Date.now()); // 4個時点＝リーチ
 
@@ -196,7 +196,7 @@ describe("end のスナップショット (#441)", () => {
     expect(rows[0].rank).toBeNull(); // 導出時点では未達成
 
     // 隙間に draw が入る（5個目＝alice がビンゴする番号）
-    expect(await eventBingoRepo.draw(eventId)).toBe(5);
+    expect(await eventBingoRepo.draw(eventId,staff.userId)).toBe(5);
 
     const ended = await eventBingoRepo.endGame(
       eventId,
@@ -206,7 +206,7 @@ describe("end のスナップショット (#441)", () => {
         userId: r.userId,
         rank: r.rank,
         completedAtSeq: r.completedAtSeq,
-      })),
+      })), {eventId,actorId:staff.userId,permission:"manager"},
     );
     expect(ended).toBe(false); // 閉じない（ルートは 409 を返す）
     const saved = await env.DB.prepare(

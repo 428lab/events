@@ -1,3 +1,4 @@
+import { canViewEvent, eventResponseHeaders } from "../auth/eventAccess.js";
 import { Hono } from "hono";
 import {
   createVenueOfferInput,
@@ -22,6 +23,7 @@ import { usersRepo } from "../db/repositories/users.js";
  * 連絡先は承諾成立後にのみ相互開示する */
 
 export const venueOfferRoutes = new Hono<AppEnv>();
+venueOfferRoutes.use("*", async(c,next)=>{ eventResponseHeaders(c,true); await next(); });
 venueOfferRoutes.use("*", requireAuth);
 
 /** イベントの主催者権限（staff or 作成者 or admin） */
@@ -99,7 +101,8 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
   let venueWanted = false;
   if (input.eventId) {
     const event = await eventsRepo.findById(input.eventId);
-    if (!event || event.status !== "published") {
+    if (!event || !(await canViewEvent(event,user))) return c.json({error:"not_found"},404);
+    if (event.status !== "published") {
       return c.json({ error: "event_not_found" }, 404);
     }
     targetTitle = event.title;
@@ -178,6 +181,7 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
     createdBy: user.id,
   });
 
+  if (!offer) return c.json({error:"access_changed"},409);
   // 受け手へ通知
   const link = input.eventId
     ? `/events/${input.eventId}`
@@ -188,7 +192,7 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
       "venue_offer",
       "会場の提供オファーが届きました🏟️",
       `「${targetTitle}」に会場「${venue.name}」の提供オファー`,
-      link,
+      link, undefined, { eventId: input.eventId },
     );
   } else {
     // 運営（オーナー＋管理者）全員へ通知
@@ -201,7 +205,7 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
       "venue_offer",
       "会場の利用オファーが届きました🏟️",
       `「${targetTitle}」の主催者が会場「${venue.name}」を使いたいそうです`,
-      `/venues/${venue.id}`,
+      `/venues/${venue.id}`, undefined, { eventId: input.eventId },
     );
   }
   return c.json({ offer }, 201);
@@ -214,8 +218,12 @@ venueOfferRoutes.post(
   async (c) => {
     const offer = await venueOffersRepo.findById(c.req.param("id"));
     if (!offer) return c.json({ error: "not_found" }, 404);
-    if (offer.status !== "pending") return c.json({ error: "already_responded" }, 409);
     const user = c.get("user");
+    if (offer.eventId) {
+      const event=await eventsRepo.findById(offer.eventId);
+      if (!event || !(await canViewEvent(event,user))) return c.json({error:"not_found"},404);
+    }
+    if (offer.status !== "pending") return c.json({ error: "already_responded" }, 409);
 
     // 受け手 = オファー方向の反対側
     const isReceiver =
@@ -242,12 +250,13 @@ venueOfferRoutes.post(
       }
     }
     // 主催者が承諾する側（venue_to_event）なら連絡先を添えられる
-    await venueOffersRepo.respond(
+    const changed=await venueOffersRepo.respond(
       offer.id,
       accepted ? "accepted" : "declined",
-      offer.direction === "venue_to_event" ? (input.contact ?? "") : undefined,
+      offer.direction === "venue_to_event" ? (input.contact ?? "") : undefined, user.id,
     );
 
+    if (!changed) return c.json({error:"access_changed"},409);
     // オファーした側へ結果通知
     const venue = await venuesRepo.findById(offer.venueId);
     if (offer.createdBy !== user.id) {
@@ -262,7 +271,7 @@ venueOfferRoutes.post(
           ? offer.eventId
             ? `/events/${offer.eventId}`
             : `/requests/${offer.requestId}`
-          : "",
+          : "", undefined, { eventId: offer.eventId ?? undefined },
       );
     }
     return c.json({ ok: true, status: accepted ? "accepted" : "declined" });
@@ -270,7 +279,7 @@ venueOfferRoutes.post(
 );
 
 /** オファーの充実化（相手方の情報＋成立時のみ連絡先） */
-async function enrich(offer: VenueOffer, forVenueSide: boolean) {
+async function enrich(offer: VenueOffer, forVenueSide: boolean, viewer: User) {
   const accepted = offer.status === "accepted";
   // 成立後の主催者側にのみ連絡先・非公開住所を含む full ビューを引く（それ以外は公開ビュー1回）
   const revealVenue = !forVenueSide && accepted;
@@ -282,12 +291,14 @@ async function enrich(offer: VenueOffer, forVenueSide: boolean) {
   const request = offer.requestId
     ? await eventRequestsRepo.findById(offer.requestId)
     : null;
+  const visible = !offer.eventId || Boolean(event && await canViewEvent(event,viewer));
   return {
     ...offer,
+    ...(!visible ? { eventId:null,createdBy:"" } : {}),
     // 主催者側の連絡先は成立後・会場側にのみ
-    organizerContact: forVenueSide && accepted ? offer.organizerContact : "",
+    organizerContact: visible && forVenueSide && accepted ? offer.organizerContact : "",
     venue: venue ? { id: venue.id, name: venue.name, area: venue.area } : null,
-    event: event ? { id: event.id, title: event.title } : null,
+    event: visible && event ? { id: event.id, title: event.title } : null,
     request: request ? { id: request.id, title: request.title } : null,
     // 会場の連絡先・住所は成立後・主催者側にのみ
     venueContact: venueFull?.contact ?? "",
@@ -306,19 +317,21 @@ venueOfferRoutes.get("/for-venue/:venueId", async (c) => {
   }
   const offers = await venueOffersRepo.listByVenue(venueId);
   return c.json({
-    offers: await Promise.all(offers.map((o) => enrich(o, true))),
+    offers: await Promise.all(offers.map((o) => enrich(o, true, user))),
   });
 });
 
 /** イベントに関するオファー一覧（主催者のみ） */
 venueOfferRoutes.get("/for-event/:eventId", async (c) => {
   const eventId = c.req.param("eventId");
+  const event=await eventsRepo.findById(eventId);
+  if (!event || !(await canViewEvent(event,c.get("user")))) return c.json({error:"not_found"},404);
   if (!(await isOrganizerOfEvent(eventId, c.get("user")))) {
     return c.json({ error: "forbidden" }, 403);
   }
   const offers = await venueOffersRepo.listByEvent(eventId);
   return c.json({
-    offers: await Promise.all(offers.map((o) => enrich(o, false))),
+    offers: await Promise.all(offers.map((o) => enrich(o, false, c.get("user")))),
   });
 });
 
@@ -332,6 +345,6 @@ venueOfferRoutes.get("/for-request/:requestId", async (c) => {
   }
   const offers = await venueOffersRepo.listByRequest(req.id);
   return c.json({
-    offers: await Promise.all(offers.map((o) => enrich(o, false))),
+    offers: await Promise.all(offers.map((o) => enrich(o, false, c.get("user")))),
   });
 });

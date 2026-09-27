@@ -12,7 +12,7 @@ async function patch(body: Record<string, unknown>) {
   return SELF.fetch(`${BASE}/${event.id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ expectedAccessRevision: event.accessRevision, ...body }),
   });
 }
 

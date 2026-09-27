@@ -1,10 +1,11 @@
+import { eventRun, eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import {
   EVENT_TODO_LIMIT,
   TODO_DEPS_PER_ITEM,
   type EventTodo,
   type EventTodoDep,
 } from "@eventer/shared";
-import { batch, many, one, run } from "../client.js";
+import { many, one, } from "../client.js";
 
 /**
  * スタッフ向けの準備 TODO (#393)。
@@ -166,14 +167,14 @@ export const eventTodosRepo = {
     startsOn: string | null;
     dueOn: string | null;
     assigneeUserId: string | null;
-  }): Promise<string> {
+  }, writer: EventWriter): Promise<string> {
     const id = crypto.randomUUID();
     const now = Date.now();
     const row = await one<{ n: number | null }>(
       "SELECT MAX(sort_order) AS n FROM event_todo WHERE event_id = ?",
       input.eventId,
     );
-    await run(
+    await eventRun(writer,
       `INSERT INTO event_todo
          (id, event_id, title, note, starts_on, due_on, status,
           assignee_user_id, created_by, sort_order, created_at, updated_at)
@@ -199,7 +200,7 @@ export const eventTodosRepo = {
    * `status` を `done` にした時だけ `done_at` を入れ、`open` へ戻すと消す。
    * 状態と時刻を別々に受けると、片方だけ送られたときに矛盾する。
    */
-  async update(todoId: string, patch: TodoPatch): Promise<void> {
+  async update(todoId: string, patch: TodoPatch, writer: EventWriter): Promise<void> {
     const sets: string[] = [];
     const args: unknown[] = [];
     for (const [key, col] of PATCH_COLUMNS) {
@@ -214,19 +215,19 @@ export const eventTodosRepo = {
     if (sets.length === 0) return;
     sets.push("updated_at = ?");
     args.push(Date.now(), todoId);
-    await run(`UPDATE event_todo SET ${sets.join(", ")} WHERE id = ?`, ...args);
+    await eventRun(writer,`UPDATE event_todo SET ${sets.join(", ")} WHERE id = ?`, ...args);
   },
 
   /** 削除。依存の辺は FK CASCADE で消える */
-  async remove(todoId: string): Promise<void> {
-    await run("DELETE FROM event_todo WHERE id = ?", todoId);
+  async remove(todoId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,"DELETE FROM event_todo WHERE id = ?", todoId);
   },
 
   /** 並べ替え。**そのイベントの行しか動かさない**（他イベントの id が混ざっても効かない） */
-  async reorder(eventId: string, ids: string[]): Promise<void> {
+  async reorder(eventId: string, ids: string[], writer: EventWriter): Promise<void> {
     if (ids.length === 0) return;
     const now = Date.now();
-    await batch(
+    await eventWrite(writer,
       ids.map((id, i) => ({
         sql: "UPDATE event_todo SET sort_order = ?, updated_at = ? WHERE id = ? AND event_id = ?",
         args: [i, now, id, eventId],
@@ -278,8 +279,8 @@ export const eventTodosRepo = {
     return false;
   },
 
-  async addDep(todoId: string, dependsOnId: string): Promise<void> {
-    await run(
+  async addDep(todoId: string, dependsOnId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       `INSERT OR IGNORE INTO event_todo_dep (todo_id, depends_on_id, created_at)
        VALUES (?, ?, ?)`,
       todoId,
@@ -288,8 +289,8 @@ export const eventTodosRepo = {
     );
   },
 
-  async removeDep(todoId: string, dependsOnId: string): Promise<void> {
-    await run(
+  async removeDep(todoId: string, dependsOnId: string, writer: EventWriter): Promise<void> {
+    await eventRun(writer,
       "DELETE FROM event_todo_dep WHERE todo_id = ? AND depends_on_id = ?",
       todoId,
       dependsOnId,
@@ -310,8 +311,7 @@ export const eventTodosRepo = {
   async copyForDuplicate(
     srcEventId: string,
     destEventId: string,
-    createdBy: string,
-  ): Promise<void> {
+    createdBy: string, writer: EventWriter): Promise<void> {
     const rows = await many<{ id: string; title: string; note: string | null; sort_order: number }>(
       `SELECT id, title, note, sort_order FROM event_todo
         WHERE event_id = ? ORDER BY sort_order ASC, created_at ASC
@@ -323,7 +323,7 @@ export const eventTodosRepo = {
     const now = Date.now();
     const idMap = new Map<string, string>();
     for (const r of rows) idMap.set(r.id, crypto.randomUUID());
-    await batch(
+    await eventWrite(writer,
       rows.map((r) => ({
         sql: `INSERT INTO event_todo
                 (id, event_id, title, note, starts_on, due_on, status,
@@ -337,7 +337,7 @@ export const eventTodosRepo = {
       .filter((d) => idMap.has(d.todoId) && idMap.has(d.dependsOnId))
       .slice(0, EVENT_TODO_LIMIT * TODO_DEPS_PER_ITEM);
     if (mapped.length === 0) return;
-    await batch(
+    await eventWrite(writer,
       mapped.map((d) => ({
         sql: `INSERT OR IGNORE INTO event_todo_dep (todo_id, depends_on_id, created_at)
               VALUES (?, ?, ?)`,

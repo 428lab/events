@@ -1,5 +1,6 @@
+import { eventRun, eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import { cardDesignAssetIds, cardDesignSchema, type CardDesign, type SavedCardDesign } from "@eventer/shared";
-import { batch, many, one, runCount } from "../client.js";
+import { many, one } from "../client.js";
 
 export interface CardAssetRow {
   id: string;
@@ -22,10 +23,10 @@ export const cardDesignsRepo = {
 
   /** Conditional write + asset references form one transaction. A request-specific token
    * prevents a losing writer from changing the winning writer's reference rows. */
-  async save(eventId: string, revision: number, design: CardDesign): Promise<boolean> {
+  async save(eventId: string, revision: number, design: CardDesign, writer: EventWriter): Promise<boolean> {
     const token = crypto.randomUUID();
     const ownedWrite = "EXISTS (SELECT 1 FROM event_card_design WHERE event_id = ? AND write_token = ?)";
-    const changes = await batch([
+    const changes = await eventWrite(writer,[
       { sql: `INSERT INTO event_card_design (event_id, revision, document_json, write_token, updated_at)
           SELECT ?, 1, ?, ?, ? WHERE ? = 0 OR EXISTS (SELECT 1 FROM event_card_design WHERE event_id = ?)
           ON CONFLICT(event_id) DO UPDATE SET revision = event_card_design.revision + 1,
@@ -56,8 +57,8 @@ export const cardDesignsRepo = {
   },
 
   /** Atomic protection against deleting a file in a concurrently saved design. */
-  async removeUnusedAsset(eventId: string, id: string): Promise<boolean> {
-    return (await runCount(`DELETE FROM event_card_asset WHERE event_id = ? AND id = ?
+  async removeUnusedAsset(eventId: string, id: string, writer: EventWriter): Promise<boolean> {
+    return (await eventRun(writer,`DELETE FROM event_card_asset WHERE event_id = ? AND id = ?
       AND NOT EXISTS (SELECT 1 FROM event_card_design_asset WHERE event_id = ? AND asset_id = ?)`,
       eventId, id, eventId, id)) === 1;
   },

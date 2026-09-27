@@ -1,3 +1,4 @@
+import { eventResponseHeaders } from "../auth/eventAccess.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type {
@@ -34,6 +35,7 @@ import { deferBackground } from "../runtime.js";
 
 /** アンケートの表示（トークンが門）。closed はタイトルと状態だけ */
 export async function getPublicPreSurvey(c: Context<AppEnv>) {
+  eventResponseHeaders(c,true);
   const survey = await eventPreSurveyRepo.findByToken(c.req.param("token")!);
   if (!survey) return c.json({ error: "not_found" }, 404);
   // アクセス数 (#450)。トークン解決に成功した表示だけ数える（404 は数えない。
@@ -73,6 +75,7 @@ export async function getPublicPreSurvey(c: Context<AppEnv>) {
  * 1文の条件付き INSERT が原子的に守る。
  */
 export async function postPublicPreSurveyResponse(c: Context<AppEnv>) {
+  eventResponseHeaders(c,true);
   const survey = await eventPreSurveyRepo.findByToken(c.req.param("token")!);
   if (!survey) return c.json({ error: "not_found" }, 404);
 
@@ -119,9 +122,9 @@ export async function postPublicPreSurveyResponse(c: Context<AppEnv>) {
   // 記名は回答者の明示同意（named）があるときだけ。同意なしはログイン中でも
   // 匿名として保存する（アカウントの紐づけは回答者の選択だけで決まる）
   const user = input.named ? await currentUser(c) : null;
-  const responseId = await eventPreSurveyRepo.insertResponse(
-    survey.id,
-    user?.id ?? null,
+  const responseId = await eventPreSurveyRepo.submitResponse(
+    survey.id, c.req.param("token")!,
+    user?.id ?? null, normalized,
   );
   if (!responseId) {
     // closed か上限か（案内の文言が変わる）。読み直して区別する
@@ -131,7 +134,6 @@ export async function postPublicPreSurveyResponse(c: Context<AppEnv>) {
       409,
     );
   }
-  await eventPreSurveyRepo.insertAnswers(responseId, normalized);
   return c.json({ ok: true }, 201);
 }
 
@@ -178,7 +180,7 @@ eventPreSurveyRoutes.put(
     if (!(await eventsRepo.findById(eventId))) {
       return c.json({ error: "not_found" }, 404);
     }
-    await eventPreSurveyRepo.save(eventId, valid<SavePreSurveyInput>(c, "json"));
+    await eventPreSurveyRepo.save(eventId, valid<SavePreSurveyInput>(c, "json"), {eventId,actorId:c.get("user").id,permission:"manager"});
     return c.json({ survey: await adminView(eventId) });
   },
 );
@@ -190,7 +192,7 @@ eventPreSurveyRoutes.post(
   async (c) => {
     const survey = await eventPreSurveyRepo.findByEvent(c.req.param("id"));
     if (!survey) return c.json({ error: "not_found" }, 404);
-    return c.json({ token: await eventPreSurveyRepo.rotateToken(survey.id) });
+    return c.json({ token: await eventPreSurveyRepo.rotateToken(survey.id, {eventId:c.req.param("id"),actorId:c.get("user").id,permission:"manager"}) });
   },
 );
 
@@ -205,7 +207,7 @@ for (const [path, status] of [
     async (c) => {
       const survey = await eventPreSurveyRepo.findByEvent(c.req.param("id"));
       if (!survey) return c.json({ error: "not_found" }, 404);
-      await eventPreSurveyRepo.setStatus(survey.id, status);
+      await eventPreSurveyRepo.setStatus(survey.id, status, {eventId:c.req.param("id"),actorId:c.get("user").id,permission:"manager"});
       return c.json({ ok: true });
     },
   );
@@ -251,7 +253,7 @@ eventPreSurveyRoutes.delete(
   async (c) => {
     const survey = await eventPreSurveyRepo.findByEvent(c.req.param("id"));
     if (!survey) return c.json({ error: "not_found" }, 404);
-    await eventPreSurveyRepo.delete(survey.id);
+    await eventPreSurveyRepo.delete(survey.id, {eventId:c.req.param("id"),actorId:c.get("user").id,permission:"manager"});
     return c.json({ ok: true });
   },
 );

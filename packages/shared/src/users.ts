@@ -83,6 +83,7 @@ export const userProfileSchema = z.object({
   /** 持ち主が選んだカードの見た目（背景-配色）。未設定は null (#334)。
    * カードは誰が見ても持ち主の意匠で描くので、公開プロフィールに含める */
   cardImageKey: z.string().nullable(),
+  cardImageGeneration: z.string(),
 });
 export type UserProfile = z.infer<typeof userProfileSchema>;
 

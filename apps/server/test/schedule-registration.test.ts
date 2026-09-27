@@ -159,7 +159,7 @@ async function setup() {
   });
   expect(o.status).toBe(201);
   const { id: optionId } = (await o.json()) as { id: string };
-  return { eventId: event.id, cookie, optionId };
+  return { eventId: event.id, cookie, optionId, expectedAccessRevision: 2 };
 }
 async function vote(
   eventId: string,
@@ -180,7 +180,7 @@ async function vote(
 }
 const finish = (s: Awaited<ReturnType<typeof setup>>) =>
   req(`/events/${s.eventId}/finalize-date`, s.cookie, "POST", {
-    optionId: s.optionId,
+    optionId: s.optionId, expectedAccessRevision: s.expectedAccessRevision,
   });
 async function members(id: string) {
   return (
@@ -267,7 +267,7 @@ it("registers only selected yes/maybe, preserves existing and canceled, authoriz
   expect(
     (await req(`/events/${s.eventId}/join`, yes.cookie, "DELETE")).status,
   ).toBe(200);
-  expect((await finish(s)).status).toBe(200);
+  expect((await finish(s)).status).toBe(409);
   expect(
     (await members(s.eventId)).find((m) => m.user_id === yes.id)?.status,
   ).toBe("canceled");
@@ -376,4 +376,110 @@ it("rolls back date, memberships, entries and receipts if notification write fai
   const results = await Promise.all([finish(s), finish(s)]);
   expect(results.map((r) => r.status)).toEqual([200, 200]);
   expect(await members(s.eventId)).toHaveLength(1);
+});
+
+
+async function current(s: Awaited<ReturnType<typeof setup>>) {
+  const response = await req(`/events/${s.eventId}`, s.cookie);
+  expect(response.status).toBe(200);
+  return ((await response.json()) as { event: import("@eventer/shared").Event }).event;
+}
+const reopen = (s: Awaited<ReturnType<typeof setup>>, revision: number, clear = false) =>
+  req(`/events/${s.eventId}/reopen-scheduling`, s.cookie, "POST", {
+    expectedAccessRevision: revision, ...(clear ? { clearRegistrationDeadline: true } : {}),
+  });
+
+it("reopens and re-finalizes without deleting answers, attendance, scoring or existing registrations; notifies manual members too", async () => {
+  const s = await setup(), automatic = await user(), manual = await user(), newcomer = await user(), canceled = await user();
+  const slot = crypto.randomUUID();
+  await sql("INSERT INTO participation_slot(id,event_id,name,capacity,created_at) VALUES(?,?,'Seats',2,1)", slot, s.eventId);
+  await vote(s.eventId, s.optionId, automatic);
+  expect((await finish(s)).status).toBe(200);
+  await sql("UPDATE event_member SET attended=1 WHERE event_id=? AND user_id=?", s.eventId, automatic.id);
+  await sql("INSERT INTO event_member(id,event_id,user_id,role,status,slot_id,created_at) VALUES(?,?,?,'participant','confirmed',?,1)", crypto.randomUUID(), s.eventId, manual.id, slot);
+  await sql("INSERT INTO event_member(id,event_id,user_id,role,status,created_at) VALUES(?,?,?,'participant','canceled',1)", crypto.randomUUID(), s.eventId, canceled.id);
+  const entries = (await env.DB.prepare("SELECT * FROM entry WHERE event_id=?").bind(s.eventId).all()).results;
+  const criterion = crypto.randomUUID();
+  await sql("INSERT INTO scoring_criterion(id,event_id,name,max_level,sort_order) VALUES(?,?,'Score',10,0)", criterion, s.eventId);
+  await sql("INSERT INTO score(id,event_id,entry_id,criterion_id,judge_user_id,value,updated_at) VALUES(?,?,?,?,?,8,1)", crypto.randomUUID(), s.eventId, entries[0].id, criterion, automatic.id);
+  const snapshot = async () => ({
+    votes: (await env.DB.prepare("SELECT v.* FROM event_date_vote v JOIN event_date_option o ON o.id=v.option_id WHERE o.event_id=?").bind(s.eventId).all()).results,
+    members: (await env.DB.prepare("SELECT * FROM event_member WHERE event_id=? ORDER BY id").bind(s.eventId).all()).results,
+    scores: (await env.DB.prepare("SELECT * FROM score WHERE criterion_id=?").bind(criterion).all()).results,
+    entries: (await env.DB.prepare("SELECT * FROM entry WHERE event_id=?").bind(s.eventId).all()).results,
+    receipt: await (await req(`/events/${s.eventId}/schedule-registration`, s.cookie)).json(),
+  });
+  const before = await snapshot(), fixed = await current(s);
+  expect((await reopen(s, fixed.accessRevision)).status).toBe(200);
+  expect(await snapshot()).toEqual(before);
+  expect(await current(s)).toMatchObject({ scheduling: true, startsAt: fixed.startsAt, endsAt: fixed.endsAt, visibility: fixed.visibility });
+  const notices = (await env.DB.prepare("SELECT user_id,body FROM notification WHERE event_id=? AND type='info'").bind(s.eventId).all()).results;
+  expect(notices.map(n => n.user_id).sort()).toEqual([automatic.id, manual.id].sort());
+  expect(notices.every(n => String(n.body).includes("参加登録は維持"))).toBe(true);
+  const own = await req(`/events/${s.eventId}/schedule`, automatic.cookie);
+  expect((await own.json() as { myVotes: Record<string,string> }).myVotes[s.optionId]).toBe("yes");
+  await vote(s.eventId, s.optionId, automatic, "no");
+  await vote(s.eventId, s.optionId, newcomer, "maybe");
+  await vote(s.eventId, s.optionId, canceled);
+  expect((await finish(s)).status).toBe(409); // delayed first-cycle finalization
+  s.expectedAccessRevision = (await current(s)).accessRevision;
+  const result = await finish(s);
+  expect(result.status).toBe(200);
+  expect((await members(s.eventId)).find(m => m.user_id === automatic.id)?.status).toBe("confirmed");
+  expect((await members(s.eventId)).find(m => m.user_id === manual.id)?.status).toBe("confirmed");
+  expect((await members(s.eventId)).find(m => m.user_id === newcomer.id)?.status).toBe("waitlist");
+  expect((await members(s.eventId)).find(m => m.user_id === canceled.id)?.status).toBe("canceled");
+  expect((await snapshot()).scores).toEqual(before.scores);
+  expect((await snapshot()).entries).toEqual(entries);
+  expect((await env.DB.prepare("SELECT attended FROM event_member WHERE event_id=? AND user_id=?").bind(s.eventId, automatic.id).first())?.attended).toBe(1);
+  expect((await env.DB.prepare("SELECT body FROM notification WHERE event_id=? AND user_id=? AND type='schedule_finalized'").bind(s.eventId, manual.id).first())?.body).toContain("参加登録は維持");
+  expect((await reopen(s, fixed.accessRevision)).status).toBe(409); // delayed reopening cannot reopen cycle two
+});
+
+it("explicitly clears the deadline atomically, rejects stale edits, and makes concurrent reopen retries no-ops", async () => {
+  const s = await setup(), a = await user();
+  await vote(s.eventId, s.optionId, a);
+  expect((await finish(s)).status).toBe(200);
+  const revision = (await current(s)).accessRevision;
+  const patch = await req(`/events/${s.eventId}`, s.cookie, "PATCH", { registrationDeadline: Date.now() + day, expectedAccessRevision: revision });
+  expect(patch.status).toBe(200);
+  expect((await reopen(s, revision, true)).status).toBe(409);
+  const fixed = await current(s);
+  expect(await (await reopen(s, fixed.accessRevision)).json()).toEqual({ error: "deadline_clear_confirmation_required" });
+  await sql("CREATE TRIGGER fail_reopen_notice BEFORE INSERT ON notification WHEN NEW.type='info' BEGIN SELECT RAISE(ABORT,'reopen test failure'); END");
+  try {
+    expect((await reopen(s, fixed.accessRevision, true)).status).toBe(500);
+    expect(await current(s)).toEqual(fixed);
+  } finally { await sql("DROP TRIGGER fail_reopen_notice"); }
+  expect((await Promise.all([reopen(s, fixed.accessRevision, true), reopen(s, fixed.accessRevision, true)])).map(r => r.status)).toEqual([200,200]);
+  const open = await current(s);
+  expect(open).toMatchObject({ scheduling: true, registrationDeadline: null, accessRevision: fixed.accessRevision + 1 });
+  expect((await reopen(s, open.accessRevision)).status).toBe(200);
+  expect((await env.DB.prepare("SELECT COUNT(*) n FROM notification WHERE event_id=? AND type='info'").bind(s.eventId).first())?.n).toBe(1);
+  expect((await req(`/events/${s.eventId}`, s.cookie, "PATCH", { startsAt: fixed.startsAt, scheduling: false, registrationDeadline: fixed.registrationDeadline, expectedAccessRevision: fixed.accessRevision })).status).toBe(409);
+  expect(await current(s)).toEqual(open);
+  // The direct-date path replaces the old receipt, not participants or Entries.
+  expect((await req(`/events/${s.eventId}`, s.cookie, "PATCH", { startsAt: open.startsAt, endsAt: open.endsAt, scheduling: false, expectedAccessRevision: open.accessRevision })).status).toBe(200);
+  expect(await env.DB.prepare("SELECT * FROM event_schedule_finalization WHERE event_id=?").bind(s.eventId).first()).toBeNull();
+  expect(await (await req(`/events/${s.eventId}/schedule-registration`, s.cookie)).json()).toEqual({ results: [] });
+  expect(await members(s.eventId)).toHaveLength(1);
+  expect((await finish(s)).status).toBe(409);
+});
+
+it.each(["draft", "published", "archived"])("reopens ended direct-date %s events with no fabricated options, preserving publication and poll settings", async status => {
+  const s = await setup();
+  await sql("DELETE FROM event_date_option WHERE event_id=?", s.eventId);
+  await sql("UPDATE event SET scheduling=0,starts_at=1,ends_at=2,status=?,schedule_anonymous=1,schedule_visible=0 WHERE id=?", status, s.eventId);
+  const prior = await current(s);
+  expect((await reopen(s, prior.accessRevision)).status).toBe(200);
+  expect(await current(s)).toMatchObject({ status, scheduling: true, startsAt: 1, endsAt: 2, scheduleAnonymous: true, scheduleVisible: false });
+  expect((await (await req(`/events/${s.eventId}/schedule`, s.cookie)).json() as { options: unknown[] }).options).toEqual([]);
+});
+
+it("requires a revision from legacy clients for finalize and date/deadline PATCH", async () => {
+  const s = await setup();
+  expect((await req(`/events/${s.eventId}/finalize-date`, s.cookie, "POST", { optionId: s.optionId })).status).toBe(400);
+  expect((await req(`/events/${s.eventId}/reopen-scheduling`, s.cookie, "POST", {})).status).toBe(400);
+  expect((await req(`/events/${s.eventId}`, s.cookie, "PATCH", { registrationDeadline: null })).status).toBe(400);
+  expect((await req(`/events/${s.eventId}`, s.cookie, "PATCH", { title: "unrelated edit" })).status).toBe(200);
 });

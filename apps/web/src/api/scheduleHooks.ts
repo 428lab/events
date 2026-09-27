@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AddDateOptionInput,
+  FinalizeDateInput,
+  ReopenSchedulingInput,
   ScheduleView,
   ScheduleRegistrationResult,
   VoteChoice,
 } from "@eventer/shared";
-import { api } from "./client.js";
+import { api, ApiError } from "./client.js";
 
 export function useEventSchedule(id: string, enabled = true) {
   return useQuery({
@@ -47,15 +49,30 @@ export function useVoteDateOption(id: string) {
   });
 }
 
+function invalidateSchedule(qc: ReturnType<typeof useQueryClient>, id: string) {
+  for (const queryKey of [["event", id], ["eventSchedule", id], ["scheduleRegistration", id], ["events"], ["eventSearch"], ["communityEventSearch"], ["myPage"]]) {
+    void qc.invalidateQueries({ queryKey });
+  }
+}
+
+export function useReopenScheduling(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ReopenSchedulingInput) => api.post(`/events/${id}/reopen-scheduling`, input),
+    onSuccess: () => invalidateSchedule(qc, id),
+    onError: error => { if (error instanceof ApiError && error.status === 409) invalidateSchedule(qc, id); },
+  });
+}
+
 export function useFinalizeDate(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (optionId: string) =>
-      api.post<{ results: ScheduleRegistrationResult[] }>(`/events/${id}/finalize-date`, { optionId }),
+    mutationFn: (input: FinalizeDateInput) =>
+      api.post<{ results: ScheduleRegistrationResult[] }>(`/events/${id}/finalize-date`, input),
+    onError: error => { if (error instanceof ApiError && error.status === 409) invalidateSchedule(qc, id); },
     onSuccess: (data) => {
       qc.setQueryData(["scheduleRegistration", id], { results: data.results });
-      qc.invalidateQueries({ queryKey: ["event", id] });
-      qc.invalidateQueries({ queryKey: ["eventSchedule", id] });
+      invalidateSchedule(qc, id);
     },
   });
 }

@@ -1,10 +1,14 @@
+import { eventManagerSql, eventViewSql } from "../../auth/eventAccess.js";
+import {visibilityChangeStatements} from "./eventVisibility.js";
+import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import type {
   CreateEventInput,
   Event,
   UpdateEventInput,
 } from "@eventer/shared";
-import { MEET_RANKING_MODES, QA_ANONYMITY_MODES } from "@eventer/shared";
-import { many, one, run, runCount } from "../client.js";
+import { checkRegistrationDeadline } from "../../lib/registrationDeadline.js";
+import { MEET_RANKING_MODES, QA_ANONYMITY_MODES, isDatetimeOrderInvalid } from "@eventer/shared";
+import { batch, many, one, runCount } from "../client.js";
 
 interface EventRow {
   id: string;
@@ -20,6 +24,8 @@ interface EventRow {
   aggregate_self_entry: number;
   contest_mode: number;
   status: string;
+  visibility: string;
+  access_revision: number;
   created_by: string;
   created_at: number;
   image_updated_at: number | null;
@@ -111,6 +117,8 @@ function toEvent(row: EventRow): Event {
     aggregateSelfEntry: row.aggregate_self_entry === 1,
     contestMode: row.contest_mode === 1,
     status: row.status as Event["status"],
+    visibility: (row.visibility ?? "public") as Event["visibility"],
+    accessRevision: row.access_revision ?? 0,
     createdBy: row.created_by,
     createdAt: row.created_at,
     imageUpdatedAt: row.image_updated_at,
@@ -125,7 +133,7 @@ function toEvent(row: EventRow): Event {
     attendanceCheck: row.attendance_check === 1,
     slug: row.slug ?? "",
     venueWanted: row.venue_wanted === 1,
-    chatEnabled: row.chat_enabled === 1,
+    chatEnabled: row.visibility === "public" && row.chat_enabled === 1,
     chatUrlsAllowed: row.chat_urls_allowed === 1,
     qaEnabled: row.qa_enabled === 1,
     // 未知の値（手作業のDB更新など）は既定の 'choice' に寄せる
@@ -174,12 +182,32 @@ export interface EventSearchOpts {
   offset: number;
 }
 
-function buildSearchWhere(o: EventSearchOpts): {
+/** Only community-scoped discovery may include qualified nonpublic events. */
+interface CommunityEventViewer { userId: string | null }
+
+function communityDiscovery(viewer: CommunityEventViewer) {
+  return {
+    where: `event.status = 'published' AND (event.visibility = 'public'
+      OR (event.visibility = 'private' AND ${eventViewSql("event", "?", "?")})
+      OR (event.visibility = 'unlisted' AND EXISTS (
+        SELECT 1 FROM user discovery_user
+        WHERE discovery_user.id = ? AND discovery_user.deleted_at IS NULL AND (
+          ${eventManagerSql("event", "discovery_user", "?")}
+          OR EXISTS (SELECT 1 FROM event_member discovery_member
+            WHERE discovery_member.event_id = event.id
+              AND discovery_member.user_id = discovery_user.id
+              AND discovery_member.status <> 'canceled')))))`,
+    args: [viewer.userId, adminIds(), viewer.userId, adminIds()],
+  };
+}
+
+function buildSearchWhere(o: EventSearchOpts, viewer?: CommunityEventViewer): {
   where: string;
-  args: (string | number)[];
+  args: (string | number | null)[];
 } {
-  const conds = ["status = 'published'"];
-  const args: (string | number)[] = [];
+  const discovery = viewer && o.communityId ? communityDiscovery(viewer) : undefined;
+  const conds = [discovery?.where ?? "status = 'published' AND visibility = 'public'"];
+  const args: (string | number | null)[] = discovery?.args ?? [];
   if (o.q) {
     conds.push("(title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')");
     // LIKE のワイルドカード（% _）をリテラル扱いに
@@ -239,16 +267,17 @@ export const eventsRepo = {
 
   async listPublished(): Promise<Event[]> {
     const rows = await many<EventRow>(
-      `${SELECT_EVENT} WHERE status = 'published' ORDER BY starts_at DESC`,
+      `${SELECT_EVENT} WHERE status = 'published' AND visibility = 'public' ORDER BY starts_at DESC`,
     );
     return rows.map(toEvent);
   },
 
-  /** コミュニティに所属する公開イベント（開始の降順） */
-  async listByCommunity(communityId: string): Promise<Event[]> {
+  /** Published community events, optionally including qualified nonpublic events. */
+  async listByCommunity(communityId: string, viewer?: CommunityEventViewer): Promise<Event[]> {
+    const { where, args } = buildSearchWhere({ communityId, limit: 0, offset: 0 }, viewer);
     const rows = await many<EventRow>(
-      `${SELECT_EVENT} WHERE community_id = ? AND status = 'published' ORDER BY starts_at DESC`,
-      communityId,
+      `${SELECT_EVENT} WHERE ${where} ORDER BY starts_at DESC`,
+      ...args,
     );
     return rows.map(toEvent);
   },
@@ -261,7 +290,7 @@ export const eventsRepo = {
   ): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT}
-         WHERE status = 'published' AND scheduling = 0 AND ends_at > ?
+         WHERE status = 'published' AND visibility = 'public' AND scheduling = 0 AND ends_at > ?
          ORDER BY starts_at ASC
          LIMIT ? OFFSET ?`,
       now,
@@ -273,7 +302,7 @@ export const eventsRepo = {
 
   async countUpcomingPublished(now: number): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND scheduling = 0 AND ends_at > ?",
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND visibility = 'public' AND scheduling = 0 AND ends_at > ?",
       now,
     );
     return row?.n ?? 0;
@@ -283,7 +312,7 @@ export const eventsRepo = {
   async listSchedulingPublished(limit: number, offset: number): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT}
-         WHERE status = 'published' AND scheduling = 1
+         WHERE status = 'published' AND visibility = 'public' AND scheduling = 1
          ORDER BY created_at DESC
          LIMIT ? OFFSET ?`,
       limit,
@@ -294,7 +323,7 @@ export const eventsRepo = {
 
   async countSchedulingPublished(): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND scheduling = 1",
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND visibility = 'public' AND scheduling = 1",
     );
     return row?.n ?? 0;
   },
@@ -307,7 +336,7 @@ export const eventsRepo = {
   ): Promise<Event[]> {
     const rows = await many<EventRow>(
       `${SELECT_EVENT}
-         WHERE status = 'published' AND scheduling = 0 AND ends_at <= ?
+         WHERE status = 'published' AND visibility = 'public' AND scheduling = 0 AND ends_at <= ?
          ORDER BY ends_at DESC
          LIMIT ? OFFSET ?`,
       now,
@@ -319,15 +348,15 @@ export const eventsRepo = {
 
   async countPastPublished(now: number): Promise<number> {
     const row = await one<{ n: number }>(
-      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND scheduling = 0 AND ends_at <= ?",
+      "SELECT COUNT(1) AS n FROM event WHERE status = 'published' AND visibility = 'public' AND scheduling = 0 AND ends_at <= ?",
       now,
     );
     return row?.n ?? 0;
   },
 
   /** 公開イベントの検索（キーワード・期間・コミュニティ・並び替え） */
-  async searchPublished(o: EventSearchOpts): Promise<Event[]> {
-    const { where, args } = buildSearchWhere(o);
+  async searchPublished(o: EventSearchOpts, viewer?: CommunityEventViewer): Promise<Event[]> {
+    const { where, args } = buildSearchWhere(o, viewer);
     const order =
       o.sort === "recent"
         ? "starts_at DESC"
@@ -343,8 +372,8 @@ export const eventsRepo = {
     return rows.map(toEvent);
   },
 
-  async countSearchPublished(o: EventSearchOpts): Promise<number> {
-    const { where, args } = buildSearchWhere(o);
+  async countSearchPublished(o: EventSearchOpts, viewer?: CommunityEventViewer): Promise<number> {
+    const { where, args } = buildSearchWhere(o, viewer);
     const row = await one<{ n: number }>(
       `SELECT COUNT(1) AS n FROM event WHERE ${where}`,
       ...args,
@@ -358,18 +387,20 @@ export const eventsRepo = {
     return rows.map(toEvent);
   },
 
-  async create(input: CreateEventInput, createdBy: string): Promise<Event> {
+  async create(input: CreateEventInput, createdBy: string, sourceEventId?: string): Promise<Event | null> {
     const id = crypto.randomUUID();
     let slug = genEventSlug();
     while (await this.findBySlug(slug)) slug = genEventSlug();
-    await run(
-      `INSERT INTO event
+    const [created] = await batch([{ sql: `INSERT INTO event
         (id, title, subtitle, description, starts_at, ends_at, venue_type,
          venue_offline, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
          community_id, scheduling, schedule_anonymous, slug, venue_wanted,
-         chat_enabled)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0)`,
+         chat_enabled, visibility, nonpublic_eligible, access_revision)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 1 WHERE EXISTS(SELECT 1 FROM user u WHERE u.id=? AND u.deleted_at IS NULL
+         AND (? IS NULL OR EXISTS(SELECT 1 FROM event source WHERE source.id=? AND ${activeManagerSql("source","?")}))
+         AND (? IS NULL OR u.discord_id IN(SELECT value FROM json_each(?)) OR EXISTS(SELECT 1 FROM community_member cm WHERE cm.community_id=? AND cm.user_id=u.id AND cm.role IN('owner','admin'))
+           OR EXISTS(SELECT 1 FROM event source WHERE source.id=? AND source.community_id=? AND ${activeManagerSql("source","?")})))`, args: [
       id,
       input.title,
       input.subtitle ?? "",
@@ -388,8 +419,10 @@ export const eventsRepo = {
       input.scheduleAnonymous ? 1 : 0,
       slug,
       input.venueWanted ? 1 : 0,
-    );
-    return (await this.findById(id))!;
+      input.visibility ?? "public",
+      createdBy, sourceEventId??null,sourceEventId??null,createdBy,adminIds(), input.communityId??null,adminIds(),input.communityId??null,sourceEventId??null,input.communityId??null,createdBy,adminIds(),
+    ]}, {sql:`INSERT INTO event_member(id,event_id,user_id,role,status,created_at) SELECT ?,id,created_by,'staff','confirmed',? FROM event WHERE id=?`,args:[crypto.randomUUID(),Date.now(),id]}]);
+    return created ? this.findById(id) : null;
   },
 
   /** 参加者限定の文章のみ取得（eventSchema には含めないため単独メソッド） */
@@ -401,14 +434,29 @@ export const eventsRepo = {
     return row?.members_note ?? "";
   },
 
-  async update(id: string, input: UpdateEventInput): Promise<Event | null> {
+  async nonpublicEligible(id: string): Promise<boolean> {
+    return (await one<{allowed:number}>("SELECT nonpublic_eligible allowed FROM event WHERE id=?",id))?.allowed === 1;
+  },
+
+  async update(id: string, input: UpdateEventInput, actorId: string): Promise<Event | null> {
     const current = await this.findById(id);
     if (!current) return null;
     const next = { ...current, ...input };
+    const scheduleInput = [input.startsAt, input.endsAt, input.scheduling, input.registrationDeadline].some(v => v !== undefined);
+    if (scheduleInput && input.expectedAccessRevision !== current.accessRevision) return null;
+    if (scheduleInput && (isDatetimeOrderInvalid(next.startsAt, next.endsAt)
+      || (input.scheduling === false && !(next.startsAt > 0 && next.endsAt > next.startsAt))
+      || checkRegistrationDeadline({ deadline: next.registrationDeadline, scheduling: next.scheduling, startsAt: next.startsAt }))) return null;
+    const dateChanged = next.startsAt !== current.startsAt || next.endsAt !== current.endsAt || next.scheduling !== current.scheduling;
+    const visibilityChanged = next.visibility !== current.visibility;
+    if (visibilityChanged && (input.expectedAccessRevision !== current.accessRevision || !input.confirmVisibilityChange)) return null;
+    const token = visibilityChanged ? crypto.randomUUID() : null;
     // membersNote は Event(eventSchema) に含まれないため個別にマージ
     const membersNote = input.membersNote ?? (await this.membersNoteFor(id));
-    await run(
-      `UPDATE event SET
+    const [changed] = await batch([{sql:
+      `UPDATE event AS e SET
+         access_revision = access_revision + CASE WHEN status <> ? OR community_id IS NOT ? OR visibility <> ? OR starts_at <> ? OR ends_at <> ? OR scheduling <> ? OR registration_deadline IS NOT ? THEN 1 ELSE 0 END,
+         visibility = ?, access_operation_token = ?,
          title = ?, subtitle = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
@@ -418,7 +466,12 @@ export const eventsRepo = {
          meet_ranking = ?, meet_prizes = ?,
          members_note = ?, scheduling = ?,
          registration_deadline = ?
-       WHERE id = ?`,
+       WHERE e.id = ? AND e.access_revision = ? AND (e.visibility=? OR e.nonpublic_eligible=1) AND ${activeManagerSql("e", "?")}
+         AND (e.community_id IS ? OR ? IS NULL OR EXISTS (SELECT 1 FROM user u WHERE u.id=? AND (
+           u.discord_id IN (SELECT value FROM json_each(?)) OR EXISTS (SELECT 1 FROM community_member cm
+             WHERE cm.user_id=u.id AND cm.community_id=? AND cm.role IN ('owner','admin')))))`,args:[
+      next.status,
+      next.communityId ?? null, next.visibility, next.startsAt, next.endsAt, next.scheduling ? 1 : 0, next.registrationDeadline, next.visibility,token,
       next.title,
       next.subtitle,
       next.description,
@@ -436,7 +489,7 @@ export const eventsRepo = {
       next.photosPublic ? 1 : 0,
       next.attendanceCheck ? 1 : 0,
       next.venueWanted ? 1 : 0,
-      next.chatEnabled ? 1 : 0,
+      next.visibility === "public" && next.chatEnabled ? 1 : 0,
       next.chatUrlsAllowed ? 1 : 0,
       next.qaEnabled ? 1 : 0,
       next.qaAnonymity,
@@ -446,14 +499,15 @@ export const eventsRepo = {
       next.scheduling ? 1 : 0,
       // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る
       next.registrationDeadline ?? null,
-      id,
-    );
-    return this.findById(id);
+      id, input.expectedAccessRevision ?? current.accessRevision, next.visibility,actorId, adminIds(), next.communityId ?? null, next.communityId ?? null, actorId, adminIds(), next.communityId ?? null,
+    ]}, ...(dateChanged ? [{sql: "DELETE FROM event_schedule_finalization WHERE event_id=? AND changes()>0", args: [id]}] : []),...(token ? visibilityChangeStatements(id,token,actorId,current.visibility,next.visibility):[])]);
+    return changed ? this.findById(id) : null;
   },
 
-  async setStatus(id: string, status: Event["status"]): Promise<Event | null> {
-    await run("UPDATE event SET status = ? WHERE id = ?", status, id);
-    return this.findById(id);
+  async setStatus(id: string, status: Event["status"], actorId: string): Promise<Event | null> {
+    const changed = await runCount(`UPDATE event AS e SET status=?,access_revision=access_revision + CASE WHEN status<>? THEN 1 ELSE 0 END
+      WHERE e.id=? AND ${activeManagerSql("e", "?")}`, status, status, id, actorId, adminIds());
+    return changed ? this.findById(id) : null;
   },
 
   /** フォロワーへの公開通知を未送信なら送信済みに切り替える（原子的・1回だけ true） */
@@ -466,23 +520,8 @@ export const eventsRepo = {
     return changes > 0;
   },
 
-  /** 日程調整を確定：開始/終了日時を設定し scheduling を解除 */
-  async finalizeDate(
-    id: string,
-    startsAt: number,
-    endsAt: number,
-  ): Promise<Event | null> {
-    await run(
-      "UPDATE event SET starts_at = ?, ends_at = ?, scheduling = 0 WHERE id = ?",
-      startsAt,
-      endsAt,
-      id,
-    );
-    return this.findById(id);
-  },
-
-  async delete(id: string): Promise<void> {
-    // 関連（メンバー/エントリー/採点/画像/状態）は FK の ON DELETE CASCADE で削除
-    await run("DELETE FROM event WHERE id = ?", id);
+  async delete(id: string, actorId: string): Promise<boolean> {
+    // Related database rows still cascade; the route removes R2 only on success.
+    return (await runCount(`DELETE FROM event AS e WHERE e.id=? AND ${activeManagerSql("e", "?")}`, id, actorId, adminIds())) > 0;
   },
 };

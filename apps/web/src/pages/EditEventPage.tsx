@@ -1,3 +1,6 @@
+import {EventVisibilityField} from "../components/EventVisibilityField.js";
+import {api, ApiError} from "../api/client.js";
+import type {Event} from "@eventer/shared";
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -18,7 +21,7 @@ import {
 import StadiumIcon from "@mui/icons-material/Stadium";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import {
   QA_ANONYMITY_MODES,
   VENUE_TYPES,
@@ -42,7 +45,6 @@ import { MeetPrizeEditor } from "../components/MeetPrizeEditor.js";
 import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
 import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
-import { AwardsEditor } from "../components/AwardsEditor.js";
 import { fromDateTimeLocal, venueLabel } from "../lib/format.js";
 import { errorMessage } from "../lib/errorMessage.js";
 
@@ -65,13 +67,15 @@ export function EditEventPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { data, isLoading } = useEvent(id);
+  const { data, isLoading, refetch } = useEvent(id);
   const isAdmin = useIsAdmin();
   const update = useUpdateEvent(id);
   const del = useDeleteEvent(id);
   const duplicate = useDuplicateEvent(id);
 
   const [status, setStatus] = useState<"draft" | "published">("draft");
+  const [visibility,setVisibility]=useState<Event["visibility"]>("public");
+  const [visibilityError,setVisibilityError]=useState(false);
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [description, setDescription] = useState("");
@@ -104,6 +108,7 @@ export function EditEventPage() {
   const myCommunitiesQuery = useMyCommunities();
   const myCommunities = myCommunitiesQuery.data;
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [formRevision, setFormRevision] = useState(0);
   const [initialized, setInitialized] = useState(false);
 
   // 複製後に /events/:newId/edit へ遷移してもコンポーネントは再マウントされないため、
@@ -116,12 +121,15 @@ export function EditEventPage() {
     if (data?.event && !initialized) {
       const e = data.event;
       setStatus(e.status === "published" ? "published" : "draft");
+      setVisibility(e.visibility);
       setTitle(e.title);
       setSubtitle(e.subtitle);
       setDescription(e.description);
       setMembersNote(data.membersNote ?? "");
-      setStartsAt(toLocalInput(e.startsAt));
-      setEndsAt(toLocalInput(e.endsAt));
+      setFormRevision(e.accessRevision);
+      setDirectDate(false);
+      setStartsAt(e.scheduling ? "" : toLocalInput(e.startsAt));
+      setEndsAt(e.scheduling ? "" : toLocalInput(e.endsAt));
       setRegistrationDeadline(toLocalInput(e.registrationDeadline ?? 0));
       setVenueType(e.venueType);
       setVenueOffline(e.venueOffline ?? "");
@@ -178,13 +186,27 @@ export function EditEventPage() {
   // この画面だけの言い方を overrides で渡す (#269)
   const saveErrorMessage = errorMessage(update.error, {
     default: t("eventForm.saveError"),
+    schedule_changed: t("schedule.changed"),
     deadline_requires_fixed_date: t("eventForm.deadlineNeedsDate"),
     deadline_after_start: t("eventForm.deadlineAfterStart"),
   });
 
-  const save = () => {
+  const save = async () => {
+    let expectedAccessRevision:number|undefined;
+    setVisibilityError(false);
+    if (visibility !== event.visibility) {
+      if (!window.confirm(t("eventAccess.visibilityWarning"))) return;
+      try {
+        const preview=await api.get<{accessRevision:number;members:number;voters:number}>(`/events/${id}/visibility-preview`);
+        if (!window.confirm(t("eventAccess.visibilityMembers",preview))) return;
+        if (preview.accessRevision !== formRevision) { setVisibilityError(true); await refetch(); setInitialized(false); return; }
+        expectedAccessRevision=preview.accessRevision;
+      } catch { setVisibilityError(true); return; }
+    }
     update.mutate(
       {
+        ...((startsAtMs !== null && endsAtMs !== null) || deadlineEditable ? { expectedAccessRevision: formRevision } : {}),
+        ...(expectedAccessRevision === undefined ? {} : {visibility,expectedAccessRevision,confirmVisibilityChange:true}),
         status,
         title,
         subtitle,
@@ -207,7 +229,7 @@ export function EditEventPage() {
         venueOnline: venueOnline || null,
         contestMode,
         attendanceCheck,
-        chatEnabled,
+        chatEnabled:visibility === "public" && chatEnabled,
         chatUrlsAllowed,
         qaEnabled,
         qaAnonymity,
@@ -216,7 +238,10 @@ export function EditEventPage() {
         venueWanted,
         communityId: communityId || null,
       },
-      { onSuccess: () => navigate(`/events/${id}`) },
+      { onSuccess: () => navigate(`/events/${id}`), onError: async error => {
+        if (expectedAccessRevision !== undefined) setVisibilityError(true);
+        if (error instanceof ApiError && error.status === 409) { await refetch(); setInitialized(false); }
+      } },
     );
   };
 
@@ -227,6 +252,8 @@ export function EditEventPage() {
           {t("eventForm.editTitle")}
         </Typography>
         <Stack spacing={2.5} sx={{ mt: 2 }}>
+          <EventVisibilityField value={visibility} onChange={setVisibility} locked={data.nonpublicEligible===false}/>
+          {visibilityError && <Alert severity="warning">{t("eventAccess.visibilityConflict")}</Alert>}
           <Box>
             <Typography variant="subtitle2" gutterBottom>
               {t("eventForm.statusHeading")}
@@ -242,7 +269,7 @@ export function EditEventPage() {
                 {t("eventForm.statusDraft")}
               </ToggleButton>
               <ToggleButton value="published">
-                {t("eventForm.statusPublished")}
+                {visibility === "public" ? t("eventForm.statusPublished") : t("eventAccess.published")}
               </ToggleButton>
             </ToggleButtonGroup>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
@@ -585,7 +612,12 @@ export function EditEventPage() {
           {contestMode && (
             <>
               <Divider />
-              <AwardsEditor eventId={id} />
+              <Typography>{t("eventRun.awardsMoved")}</Typography>
+              {event.contestMode ? (
+                <Button component={RouterLink} to={`/events/${id}/control#awards`}>
+                  {t("eventRun.setupAwards")}
+                </Button>
+              ) : <Typography>{t("eventRun.saveEventForAwards")}</Typography>}
             </>
           )}
 

@@ -54,6 +54,8 @@ export function useMe(refresh?: { refetchOnMount?: "always"; refetchOnWindowFocu
   return useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 15_000,
     retry: false,
     select: (d) => d?.user ?? null,
     ...refresh,
@@ -65,6 +67,8 @@ export function useDeletionGraceMs(): number {
   const { data } = useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 15_000,
     retry: false,
   });
   return data?.deletionGraceMs ?? ACCOUNT_DELETION_GRACE_MS;
@@ -75,6 +79,8 @@ export function usePendingDeletion(): PendingDeletion | null {
   const { data } = useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 15_000,
     retry: false,
     select: (d) => d?.pendingDeletion ?? null,
   });
@@ -95,6 +101,8 @@ export function useIsAdmin(): boolean {
   const { data } = useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 15_000,
     retry: false,
     select: (d) => d?.isAdmin ?? false,
   });
@@ -105,7 +113,7 @@ export function useLogout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post("/auth/logout"),
-    onSuccess: () => qc.invalidateQueries(),
+    onSuccess: async () => { await qc.cancelQueries(); qc.clear(); qc.setQueryData(["me"], { user: null, isAdmin: false }); },
   });
 }
 
@@ -193,16 +201,21 @@ function searchQs(params: EventSearchParams): URLSearchParams {
   return qs;
 }
 
-export function useEventSearch(params: EventSearchParams, enabled: boolean) {
+export function useEventSearch(params: EventSearchParams, enabled: boolean, communitySlug?: string) {
+  const { data: user } = useMe();
   const qs = searchQs(params);
   qs.set("page", String(params.page ?? 1));
   const key = qs.toString();
   return useQuery({
-    queryKey: ["eventSearch", key],
+    queryKey: communitySlug ? ["communityEventSearch", communitySlug, user?.id, key] : ["eventSearch", key],
     enabled,
-    // ページ送りや絞り込み変更時に前の結果を表示したまま更新（ちらつき防止）
-    placeholderData: keepPreviousData,
-    queryFn: () => api.get<PublicEventsPage>(`/public/events/search?${key}`),
+    // Only public discovery may retain the previous page while fetching.
+    placeholderData: communitySlug ? undefined : keepPreviousData,
+    refetchOnWindowFocus: communitySlug ? "always" : undefined,
+    refetchInterval: communitySlug ? 15_000 : false,
+    queryFn: () => api.get<PublicEventsPage>(communitySlug
+      ? `/public/communities/${encodeURIComponent(communitySlug)}/events?${key}`
+      : `/public/events/search?${key}`),
   });
 }
 
@@ -224,14 +237,21 @@ export interface EventCommunityRef {
 }
 
 export function useEvent(id: string) {
+  const { data: viewer } = useMe();
   return useQuery({
-    queryKey: ["event", id],
+    queryKey: ["event", id, "viewer", viewer?.id],
+    refetchOnWindowFocus: "always",
+    retry: false,
+    refetchInterval: 15_000,
     queryFn: () =>
       api.get<{
         event: Event;
         /** 参加者限定の文章。確定メンバー・staff・作成者・管理者にのみ返る */
         membersNote?: string;
         myRole: EventRole | null;
+        canManageAccess?: boolean;
+        canManageSchedule?: boolean;
+        nonpublicEligible?: boolean;
         community: EventCommunityRef | null;
         /** 生まれ元のたまご（あったらいいな）。通常は0〜1件（旧レスポンスでは欠落しうる） */
         fromRequests?: EventRequest[];
@@ -491,6 +511,17 @@ export function useDeleteEventImage(eventId: string) {
       qc.invalidateQueries({ queryKey: ["events"] });
       qc.invalidateQueries({ queryKey: ["myPage"] });
     },
+  });
+}
+
+export function useSelfEntryParticipation(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (participating: boolean) =>
+      api.put<{ entry: Entry | null }>(
+        `/events/${eventId}/entries/self/participation`, { participating },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["event", eventId, "entries"] }),
   });
 }
 
