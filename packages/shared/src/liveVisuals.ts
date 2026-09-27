@@ -167,7 +167,10 @@ function hakujiLiveSetContent(): LiveSetContent {
       ...panel("keynote", 52, 109, 558, 307),
       shape("keynote-camera-mat", 629, 101, 287, 254, p.sage),
       el("keynote-camera", "camera", 633, 105, 279, 246, { fit: "cover" }),
-      // No invented speaker or empty name band: staff may insert the separate editable name card.
+      shape("keynote-name-back", 633, 356, 279, 89, p.ink),
+      shape("keynote-name-accent", 633, 356, 5, 89, p.vermilion),
+      text("keynote-name", "", 640, 359, 269, 59, p.white, 22, { bold: true, maxLines: 2 }),
+      text("keynote-role", "", 643, 419, 262, 22, p.white, 16),
       shape("keynote-info-rule", 633, 451, 279, 2, p.vermilion),
       info("keynote-event", "title", 633, 456, 279, 25, p.ink, 16),
       footer("keynote"),
@@ -179,8 +182,11 @@ function hakujiLiveSetContent(): LiveSetContent {
     scene("camera", "全画面カメラ", [
       ...header("camera"), shape("camera-mat", 52, 101, 856, 329, p.sage),
       el("camera-main", "camera", 56, 105, 848, 321, { fit: "cover" }),
-      // An empty speaker band would imply missing metadata. Add the name card when available.
-      info("camera-event", "title", 58, 440, 834, 38, p.ink, 19), footer("camera"),
+      shape("camera-name-back", 56, 431, 410, 49, p.ink),
+      shape("camera-name-accent", 56, 431, 5, 49, p.vermilion),
+      text("camera-name", "", 66, 433, 390, 26, p.white, 20, { bold: true, maxLines: 1 }),
+      text("camera-role", "", 66, 459, 390, 20, p.white, 15),
+      info("camera-event", "title", 480, 440, 410, 38, p.ink, 19), footer("camera"),
     ]),
     scene("break", "休憩中", [
       ...header("break"), shape("break-line", 130, 156, 68, 4, p.vermilion),

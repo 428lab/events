@@ -50,6 +50,23 @@ describe("visual live sets", () => {
     expect(keynote.filter(element => element.type === "deck" || element.type === "camera").map(element => [element.x, element.y, element.w, element.h])).toEqual([[52, 109, 558, 307], [633, 105, 279, 246]]);
     expect(content.scenes[0].elements.find(element => element.field === "datetime")?.requiresEventDatetime).toBe(true);
     expect(content.scenes.every(scene => scene.elements.every(element => !element.text?.includes("役割を入力") && !element.text?.includes("氏名を入力")))).toBe(true);
+    for (const [index, cameraId, nameY, nameH] of [[2, "keynote-camera", 356, 89], [4, "camera-main", 431, 49]] as const) {
+      const elements = content.scenes[index].elements;
+      const camera = elements.find(element => element.id === `v1-hakuji-${index === 2 ? "keynote" : "camera"}-${cameraId}`)!;
+      const prefix = `v1-hakuji-${index === 2 ? "keynote" : "camera"}-`;
+      const back = elements.find(element => element.id === `${prefix}${index === 2 ? "keynote" : "camera"}-name-back`)!;
+      const name = elements.find(element => element.id === `${prefix}${index === 2 ? "keynote" : "camera"}-name`)!;
+      const role = elements.find(element => element.id === `${prefix}${index === 2 ? "keynote" : "camera"}-role`)!;
+      expect(back).toMatchObject({ type: "shape", y: nameY, h: nameH, fill: "#203146" });
+      expect(name).toMatchObject({ type: "text", text: "", color: "#FFFFFF" });
+      expect(role).toMatchObject({ type: "text", text: "", color: "#FFFFFF" });
+      expect(elements.indexOf(back)).toBeLessThan(elements.indexOf(name));
+      expect(elements.indexOf(name)).toBeLessThan(elements.indexOf(role));
+      expect(camera.y + camera.h).toBeLessThan(back.y);
+      expect(name.x).toBeGreaterThanOrEqual(back.x);
+      expect(name.x + name.w).toBeLessThanOrEqual(back.x + back.w);
+      expect(role.y + role.h).toBeLessThanOrEqual(back.y + back.h);
+    }
     expect(JSON.stringify({ default: defaultLiveSetContent(), glow: visualLiveSetContent("glow"), signal: visualLiveSetContent("signal") })).toBe(legacy);
   });
   it("expands four independent 白磁 cards into schema-valid layers", () => {

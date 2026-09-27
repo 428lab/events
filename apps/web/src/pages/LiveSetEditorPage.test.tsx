@@ -166,6 +166,22 @@ describe("完成部品の一操作", () => {
     expect(canvas().getByText("山田 花子")).toBeInTheDocument();
     expect(canvas().getByText("休憩中")).toBeInTheDocument();
   });
+  it.each([["講演", 2, "keynote"], ["全画面カメラ", 4, "camera"]] as const)("初期の白磁%s氏名札を選んで編集し保存・再読込できる", async (label, index, kind) => {
+    const view = draw(visualLiveSetContent("hakuji").scenes);
+    fireEvent.click(screen.getAllByText(label).find(element => element.tagName === "SPAN")!);
+    const nameId = `v1-hakuji-${kind}-${kind}-name`;
+    const blankName = screen.getByTestId("live-canvas").querySelector('span[title=""]');
+    expect(blankName).toBeTruthy();
+    fireEvent.mouseDown(blankName!);
+    fireEvent.change(screen.getByLabelText("内容"), { target: { value: "山田 花子" } });
+    await settle();
+    expect(savedScenes()[index].elements.find(element => element.id === nameId)).toMatchObject({ text: "山田 花子" });
+    const saved = structuredClone(savedScenes());
+    view.unmount();
+    draw(saved);
+    fireEvent.click(screen.getAllByText(label).find(element => element.tagName === "SPAN")!);
+    expect(canvas().getByText("山田 花子")).toBeInTheDocument();
+  });
   it("白磁講演の氏名札をカメラ下の独立帯に置く", async () => {
     draw(visualLiveSetContent("hakuji").scenes);
     fireEvent.click(screen.getAllByText("講演").find(element => element.tagName === "SPAN")!);

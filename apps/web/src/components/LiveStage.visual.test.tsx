@@ -44,6 +44,21 @@ describe("LiveSceneStage runtime", () => {
       }
     }
   });
+  it.each(["keynote", "camera"] as const)("renders a blank 白磁 %s speaker plate below camera, then shows entered name and role", kind => {
+    const original = visualLiveSetContent("hakuji").scenes.find(scene => scene.id === `v1-hakuji-${kind}`)!;
+    const nameId = `v1-hakuji-${kind}-${kind}-name`;
+    const roleId = `v1-hakuji-${kind}-${kind}-role`;
+    const { container, rerender } = render(<LiveSceneStage scene={original} width={960} runtime={{ eventInfo: () => "実際のイベント名" }} />);
+    const [backX, backY] = kind === "keynote" ? [633, 356] : [56, 431];
+    expect(container.querySelector(`[style*="left: ${backX}px"][style*="top: ${backY}px"] .live-decoration`)).toHaveStyle({ background: "#203146" });
+    expect(screen.queryByText("氏名を入力")).not.toBeInTheDocument();
+    expect(screen.queryByText("山田 花子")).not.toBeInTheDocument();
+    const entered = { ...original, elements: original.elements.map(element => element.id === nameId ? { ...element, text: "山田 花子" } : element.id === roleId ? { ...element, text: "講師" } : element) };
+    rerender(<LiveSceneStage scene={entered} width={960} runtime={{ eventInfo: () => "実際のイベント名" }} />);
+    expect(screen.getByText("山田 花子")).toBeInTheDocument();
+    expect(screen.getByText("講師")).toBeInTheDocument();
+    expect(screen.getByText("実際のイベント名")).toBeInTheDocument();
+  });
   it("shows real datetime prominently in Signal standby and hides the entire card if schedule is unknown", () => {
     const scene = visualLiveSetContent("signal").scenes[0];
     const runtime = { eventDatetimeAvailable: true, eventInfo: (field: string) => field === "datetime" ? "2026/09/27 19:00–21:00" : "実際のイベント名" };
