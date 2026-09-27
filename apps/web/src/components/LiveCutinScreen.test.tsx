@@ -8,10 +8,10 @@ let snapshot: { data?: CutinStatus; dataUpdatedAt: number; isError: boolean; isF
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("../api/liveControlHooks.js", () => ({ useLiveCutin: () => snapshot }));
 const action = (id: string, issuedAt = Date.now()) => ({ actionId: id, message: `${id} 参戦！！`, issuedAt, expiresAt: issuedAt + 8000 });
-const status = (id: string | null, serverNow = Date.now()): CutinStatus => ({ action: id ? action(id, serverNow) : null, serverNow });
+const status = (id: string | null, serverNow = Date.now(), issuedAt = serverNow): CutinStatus => ({ action: id ? action(id, issuedAt) : null, serverNow });
 let update = 1;
-function poll(view: ReturnType<typeof render>, id: string | null, serverNow = Date.now()) {
-  snapshot = { data: status(id, serverNow), dataUpdatedAt: Date.now() + update++, isError: false, isFetchedAfterMount: true };
+function poll(view: ReturnType<typeof render>, id: string | null, serverNow = Date.now(), issuedAt = serverNow) {
+  snapshot = { data: status(id, serverNow, issuedAt), dataUpdatedAt: Date.now() + update++, isError: false, isFetchedAfterMount: true };
   view.rerender(<LiveCutinScreen eventId="one" />);
 }
 beforeEach(() => { sessionStorage.clear(); update = 1; snapshot = { data: undefined, dataUpdatedAt: 0, isError: false, isFetchedAfterMount: false }; Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn().mockReturnValue({ matches: false }) }); });
@@ -32,6 +32,19 @@ describe("live screen cut-in polling", () => {
     sessionStorage.clear(); // independent new tab
     render(<LiveCutinScreen eventId="one" />);
     await waitFor(() => expect(screen.getByTestId("live-cutin")).toBeTruthy());
+  });
+  it("shows the last DB action despite an older issue time, but rejects older GETs and expired actions", () => {
+    const now = Date.now();
+    const view = render(<LiveCutinScreen eventId="one" />);
+    poll(view, "first", now);
+    expect(screen.getByTestId("live-cutin").textContent).toContain("first");
+    poll(view, "last-write", now + 2, now - 1000);
+    expect(screen.getByTestId("live-cutin").textContent).toContain("last-write");
+    expect(sessionStorage.getItem("live-cutin:one")).toBe("last-write");
+    poll(view, "delayed-get", now + 1, now + 1000);
+    expect(screen.getByTestId("live-cutin").textContent).toContain("last-write");
+    poll(view, "expired", now + 3, now - 9000);
+    expect(screen.queryByTestId("live-cutin")).toBeNull();
   });
   it("hides on error, stale, expiry, event change and delayed older response", async () => {
     const view = render(<LiveCutinScreen eventId="one" />);

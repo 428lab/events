@@ -15,7 +15,6 @@ function EventCutinScreen({ eventId }: { eventId: string }) {
   const [active, setActive] = useState<CutinAction | null>(null);
   const [storageError, setStorageError] = useState(false);
   const newestResponse = useRef(0);
-  const latestIssued = useRef(0);
   const lastUpdate = useRef(0);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 200);
@@ -30,8 +29,6 @@ function EventCutinScreen({ eventId }: { eventId: string }) {
     newestResponse.current = status.serverNow;
     const incoming = status.action;
     if (!incoming || incoming.expiresAt <= Date.now()) { setActive(null); return; }
-    if (incoming.issuedAt < latestIssued.current) return;
-    latestIssued.current = incoming.issuedAt;
     try {
       const storageKey = `live-cutin:${eventId}`;
       const seen = sessionStorage.getItem(storageKey);
