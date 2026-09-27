@@ -42,8 +42,8 @@ export function DeckImportPage() {
     try { await navigator.clipboard.writeText(text); setNotice(t("common.copied")); }
     catch { setNotice(t("deckImport.failure")); }
   }
-  async function asset(version: 1 | 2, name: string) {
-    const response = await fetch(`/deck-import/v${version}/${name}`);
+  async function asset(name: string) {
+    const response = await fetch(`/deck-import/v2/${name}`);
     if (!response.ok) throw new Error("unavailable");
     return response.text();
   }
@@ -79,18 +79,10 @@ export function DeckImportPage() {
     <Typography>{t("deckImport.intro")}</Typography>
     {me && <Typography variant="body2">{t("deckImport.currentAccount", { name: me.globalName || me.username })}</Typography>}
     <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
-      <Typography>{t("deckImport.version1")}</Typography>
-      <Link href="/deck-import/v1/spec.md" target="_blank" rel="noreferrer">{t("deckImport.spec")}</Link>
-      <Link href="/deck-import/v1/spec.md" download>{t("deckImport.downloadSpec")}</Link>
-      <Button onClick={() => void asset(1, "prompt.txt").then(copy).catch(() => setNotice(t("deckImport.failure")))}>{t("deckImport.prompt")}</Button>
-      {(["title", "bullets", "comparison"] as const).map((name) => <Button key={name} disabled={locked || loadingInput || saving} onClick={() => void replace(() => asset(1, `sample-${name}.json`))}>{t(name === "title" ? "deckImport.sampleTitle" : name === "bullets" ? "deckImport.sampleBullets" : "deckImport.sampleComparison")}</Button>)}
-    </Stack>
-    <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
-      <Typography>{t("deckImport.version2")}</Typography>
       <Link href="/deck-import/v2/spec.md" target="_blank" rel="noreferrer">{t("deckImport.spec")}</Link>
       <Link href="/deck-import/v2/spec.md" download>{t("deckImport.downloadSpec")}</Link>
-      <Button onClick={() => void asset(2, "prompt.txt").then(copy).catch(() => setNotice(t("deckImport.failure")))}>{t("deckImport.prompt")}</Button>
-      <Button disabled={locked || loadingInput || saving} onClick={() => void replace(() => asset(2, "sample-events-lab-intro.json"))}>{t("deckImport.sampleIntro")}</Button>
+      <Button onClick={() => void asset("prompt.txt").then(copy).catch(() => setNotice(t("deckImport.failure")))}>{t("deckImport.prompt")}</Button>
+      <Button disabled={locked || loadingInput || saving} onClick={() => void replace(() => asset("sample-events-lab-intro.json"))}>{t("deckImport.sampleIntro")}</Button>
     </Stack>
     <Alert severity="info">{t("deckImport.recovery")}</Alert>
     {model.storageError && <Alert severity="error">{t("deckImport.storage")}</Alert>}

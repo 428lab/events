@@ -126,18 +126,29 @@ describe("DeckImportPage real user entry", () => {
     expect(sessionStorage.getItem("deck-import-v1")).toBeNull();
     expect(mocks.save).not.toHaveBeenCalled();
   });
-  it("offers a distinct v2 image sample and prompt while retaining all three v1 samples", async () => {
-    const fetchAsset = vi.fn(async (path: string) => ({ ok: true, text: async () => path.includes("sample-") ? '{"format":"events-lab-deck","version":2}' : "version 2 prompt" }));
+  it.each([
+    { language: "ja", spec: "仕様を読む", download: "仕様をダウンロード", prompt: "生成プロンプトをコピー", sample: "events lab の紹介（画像付き・10ページ）", raw: "スライドJSON" },
+    { language: "en", spec: "Read specification", download: "Download specification", prompt: "Copy generation prompt", sample: "Introducing events lab (10 pages with images)", raw: "Slide JSON" },
+  ])("offers only the new spec, prompt and ten-page sample in $language", async ({ language, spec, download, prompt, sample, raw }) => {
+    await i18next.changeLanguage(language);
+    const copy = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
+    const fetchAsset = vi.fn(async (path: string) => ({ ok: true, text: async () => path.includes("sample-") ? '{"format":"events-lab-deck","version":2}' : "generation prompt" }));
     vi.stubGlobal("fetch", fetchAsset);
-    mount();
-    expect(screen.getByRole("button", { name: "表紙サンプル" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "箇条書きサンプル" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "比較サンプル" })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "仕様を読む" }).map((link) => link.getAttribute("href"))).toEqual(["/deck-import/v1/spec.md", "/deck-import/v2/spec.md"]);
-    fireEvent.click(screen.getByRole("button", { name: "events lab の紹介（画像付き・10ページ）" }));
-    await waitFor(() => expect(screen.getByLabelText("スライドJSON")).toHaveValue('{"format":"events-lab-deck","version":2}'));
+    const view = mount();
+    expect(screen.queryByText(/version [12]/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /表紙サンプル|箇条書きサンプル|比較サンプル|Title sample|Bullet sample|Comparison sample/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: spec }).map((link) => link.getAttribute("href"))).toEqual(["/deck-import/v2/spec.md"]);
+    expect(screen.getByRole("link", { name: download })).toHaveAttribute("href", "/deck-import/v2/spec.md");
+    expect(screen.getByRole("link", { name: download })).toHaveAttribute("download");
+    fireEvent.click(screen.getByRole("button", { name: prompt }));
+    await waitFor(() => expect(copy).toHaveBeenCalledWith("generation prompt"));
+    expect(fetchAsset).toHaveBeenCalledWith("/deck-import/v2/prompt.txt");
+    fireEvent.click(screen.getByRole("button", { name: sample }));
+    await waitFor(() => expect(screen.getByLabelText(raw)).toHaveValue('{"format":"events-lab-deck","version":2}'));
     expect(fetchAsset).toHaveBeenCalledWith("/deck-import/v2/sample-events-lab-intro.json");
-    expect(screen.getByText(/画像URLは公開デッキに残り/)).toBeInTheDocument();
+    view.unmount();
+    await i18next.changeLanguage("ja");
   });
   it("ordinary English screen uses translated controls", async () => {
     await i18next.changeLanguage("en"); mount();
