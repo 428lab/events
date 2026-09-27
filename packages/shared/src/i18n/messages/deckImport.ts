@@ -45,14 +45,14 @@ const en: Record<keyof typeof ja, string> = {
 };
 const jaIssue = {
   required: "このキーは必須です。", unknown: "この未知のキーを削除してください。", type: "値の型を確認してください。数値・真偽値を引用符で囲まず、nullを使わないでください。",
-  literal: "formatはevents-lab-deck、versionは数値1にしてください。", enum: "書体はdefault/serif/monospace、配置はleft/center/rightです。要素型はtext/image-placeholderです。",
+  literal: "formatはevents-lab-deck、versionは数値1にしてください。", literalV2: "formatはevents-lab-deck、versionは数値2にしてください。", enum: "書体はdefault/serif/monospace、配置はleft/center/rightです。要素型はtext/image-placeholderです。", enumV2: "書体はdefault/serif/monospace、配置はleft/center/rightです。要素型はtext/image-placeholder/image-urlです。",
   count: "ページは1〜60、各ページの要素は0〜50個にしてください。", elements: "全ページ合計1,000要素以下にしてください。", bounds: "右端x+wは960以下、下端y+hは540以下。例: x=800ならwは160以下にしてください。",
   range: "整数を使ってください。x:0〜940、y:0〜520、w:20〜960、h:20〜540、fontSize:12〜160。", unicode: "孤立サロゲートを含まない正しいUnicodeを使ってください。",
   length: "タイトルは1〜120、本文は1〜10,000 UTF-16単位です。絵文字の多くは2単位です。", color: "色は#172B24のような6桁RGBだけを使ってください。", titleRule: "タイトルの前後の空白・制御文字を取り除いてください。",
   imageUrl: "画像URLは500 UTF-16単位以内のHTTPS絶対URLにしてください。制御文字・認証情報は使えません。", textRule: "本文の制御文字は改行LFだけ許可します。タブ・CR・DEL等を取り除いてください。", totalText: "全text合計を100,000 UTF-16単位以下にしてください。", converted: "変換後の本文が1MiBを超えます。要素や文章を減らしてください。",
 };
 const enIssue: Record<keyof typeof jaIssue, string> = {
-  required: "This key is required.", unknown: "Remove this unknown key.", type: "Check the value type. Do not quote numbers or booleans or use null.", literal: "Use format events-lab-deck and numeric version 1.", enum: "Fonts: default/serif/monospace; alignment: left/center/right; element types: text/image-placeholder.",
+  required: "This key is required.", unknown: "Remove this unknown key.", type: "Check the value type. Do not quote numbers or booleans or use null.", literal: "Use format events-lab-deck and numeric version 1.", literalV2: "Use format events-lab-deck and numeric version 2.", enum: "Fonts: default/serif/monospace; alignment: left/center/right; element types: text/image-placeholder.", enumV2: "Fonts: default/serif/monospace; alignment: left/center/right; element types: text/image-placeholder/image-url.",
   count: "Use 1–60 slides and 0–50 elements per slide.", elements: "Use at most 1,000 elements in total.", bounds: "x+w must be ≤960 and y+h ≤540. Example: if x=800, w must be ≤160.", range: "Use integers: x 0–940; y 0–520; w 20–960; h 20–540; fontSize 12–160.", unicode: "Use valid Unicode without lone surrogates.", length: "Title: 1–120 UTF-16 units; text: 1–10,000. Most emoji count as two units.", color: "Use six-digit RGB colors such as #172B24.", titleRule: "Remove surrounding whitespace and control characters from the title.", imageUrl: "Use an absolute HTTPS image URL of at most 500 UTF-16 units without controls or credentials.", textRule: "Only LF is allowed among control characters. Remove tabs, CR and DEL.", totalText: "Reduce all text to at most 100,000 UTF-16 units.", converted: "Converted content exceeds 1MiB. Reduce elements or text.",
 };
 const jaField = { x: "横位置", y: "縦位置", w: "幅", h: "高さ", text: "本文", fontSize: "文字サイズ", font: "書体", color: "文字色", background: "背景色", title: "タイトル", align: "配置", bold: "太字", italic: "斜体", src: "画像URL", type: "要素型", version: "版", format: "形式", slides: "ページ", elements: "要素" };

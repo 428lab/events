@@ -16,7 +16,9 @@ class WorkerMock {
   constructor() { WorkerMock.current = this; }
   terminate() {}
   postMessage(input: { revision: number; raw: string }) {
-    this.onmessage?.({ data: input.raw === "bad" ? { revision: input.revision, ok: false, error: "invalid_deck_import", issues: [{ path: "slides[0].elements[0].w", code: "out_of_bounds", message: "x+w must be at most 960" }], truncated: false } : { revision: input.revision, ok: true, version: input.raw.includes('"version":2') ? 2 : 1, title: "Preview", content: { slides: [{ id: "preview-slide-1", background: "#FFFFFF", elements: [{ id: "preview-element-1-1", type: "image", x: 0, y: 0, w: 100, h: 100, rotation: 0 }] }] } } });
+    const broken = input.raw.startsWith('{"format":') ? JSON.parse(input.raw) as { format: string; slides: { elements: { type: string }[] }[] } : null;
+    const badType = broken?.slides?.[0]?.elements?.[0]?.type === "typo";
+    this.onmessage?.({ data: input.raw === "bad" || broken ? { revision: input.revision, ok: false, error: "invalid_deck_import", issues: [{ path: broken ? badType ? "slides[0].elements[0].type" : "format" : "slides[0].elements[0].w", code: broken ? badType ? "invalid_enum" : "invalid_literal" : "out_of_bounds", message: "x+w must be at most 960" }], truncated: false } : { revision: input.revision, ok: true, version: input.raw.includes('"version":2') ? 2 : 1, title: "Preview", content: { slides: [{ id: "preview-slide-1", background: "#FFFFFF", elements: [{ id: "preview-element-1-1", type: "image", x: 0, y: 0, w: 100, h: 100, rotation: 0 }] }] } } });
   }
 }
 function mount() { return render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><DeckImportPage /></MemoryRouter></QueryClientProvider>); }
@@ -48,6 +50,37 @@ describe("DeckImportPage real user entry", () => {
     expect(copy.mock.calls[0][0]).not.toContain("bad");
     expect(screen.getByLabelText("全ページを確認しました")).toBeDisabled();
     expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it.each(["ja", "en"])("keeps version-aware format and element-type repair advice in %s", async (language) => {
+    await i18next.changeLanguage(language);
+    const copy = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } });
+    const cases = [
+      { version: 2, path: "format", code: "invalid_literal", expected: "version 2" },
+      { version: 2, path: "slides[0].elements[0].type", code: "invalid_enum", expected: "image-url" },
+      { version: 1, path: "format", code: "invalid_literal", expected: "version 1" },
+      { version: 1, path: "slides[0].elements[0].type", code: "invalid_enum", expected: "image-placeholder" },
+    ];
+    const view = mount();
+    for (const [index, { version, path, code, expected }] of cases.entries()) {
+      const raw = JSON.stringify({ format: path === "format" ? "typo" : "events-lab-deck", version, title: "Example", slides: [{ background: "#FFFFFF", elements: [{ type: path === "format" ? "image-placeholder" : "typo", x: 0, y: 0, w: 100, h: 100 }] }] });
+      fireEvent.change(screen.getByLabelText(language === "ja" ? "スライドJSON" : "Slide JSON"), { target: { value: raw } });
+      fireEvent.click(screen.getByRole("button", { name: language === "ja" ? "検証してプレビュー" : "Validate and preview" }));
+      await screen.findByText(new RegExp(code));
+      fireEvent.click(screen.getByRole("button", { name: language === "ja" ? "LLMへの修正依頼をコピー" : "Copy repair request for LLM" }));
+      await waitFor(() => expect(copy).toHaveBeenCalledTimes(index + 1));
+      const advice = copy.mock.lastCall![0] as string;
+      const constraint = code === "invalid_literal"
+        ? language === "ja" ? `versionは数値${version}にしてください。` : `numeric version ${version}.`
+        : language === "ja" ? `要素型はtext/image-placeholder${version === 2 ? "/image-url" : ""}です。` : `element types: text/image-placeholder${version === 2 ? "/image-url" : ""}.`;
+      expect(advice).toContain(expected);
+      expect(advice).toContain(constraint);
+      expect(screen.getByText(new RegExp(code)).textContent).toContain(constraint);
+      if (version === 2) expect(advice).not.toMatch(/version 1|数値1|image-placeholderです。|element types: text\/image-placeholder\./);
+      else expect(advice).not.toContain("image-url");
+    }
+    view.unmount();
+    await i18next.changeLanguage("ja");
   });
   it("save requires binding and both confirmations; later edits reset all confirmations", async () => {
     mocks.user = { id: "owner" }; mount();

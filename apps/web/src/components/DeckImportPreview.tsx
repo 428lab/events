@@ -6,7 +6,7 @@ import { SlideStage } from "./SlideStage.js";
 import { useCanvasScale } from "../lib/editor/useCanvasScale.js";
 
 type Warning = { page: number; element?: number; kind: "overflow" | "empty" | "whitespace" | "placeholder" | "measureFailed" };
-function Thumbnail({ slide }: { slide: DeckSlide }) {
+function Thumbnail({ slide, onImageStatus }: { slide: DeckSlide; onImageStatus: (elementId: string, src: string, status: "loaded" | "error") => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -15,7 +15,7 @@ function Thumbnail({ slide }: { slide: DeckSlide }) {
     if (ref.current) observer.observe(ref.current);
     return () => observer.disconnect();
   }, []);
-  return <div ref={ref} style={{ width: 144, height: 81 }}>{visible && <SlideStage slide={slide} width={144} />}</div>;
+  return <div ref={ref} style={{ width: 144, height: 81 }}>{visible && <SlideStage slide={slide} width={144} onImageStatus={onImageStatus} />}</div>;
 }
 export function DeckImportPreview({ content }: { content: DeckContent }) {
   const { t } = useTranslation();
@@ -55,9 +55,10 @@ export function DeckImportPreview({ content }: { content: DeckContent }) {
     return () => { clearTimeout(timer); measure.remove(); };
   }, [content, ref]);
   const page = Math.min(selected, content.slides.length - 1);
-  const onImageStatus = (elementId: string, src: string, status: "loaded" | "error") => {
-    if (!content.slides[page].elements.some((el) => el.id === elementId && el.src === src)) return;
-    const key = `${content.slides[page].id}:${elementId}`;
+  const onImageStatus = (slideIndex: number, elementId: string, src: string, status: "loaded" | "error") => {
+    const slide = content.slides[slideIndex];
+    if (!slide?.elements.some((el) => el.id === elementId && el.src === src)) return;
+    const key = `${slide.id}:${elementId}`;
     setFailedImages((old) => {
       if (Boolean(old[key]) === (status === "error")) return old;
       const next = { ...old };
@@ -70,12 +71,12 @@ export function DeckImportPreview({ content }: { content: DeckContent }) {
     <Alert severity="info">{t("deckImport.manual")}</Alert>
     <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
       {content.slides.map((slide, i) => <Button key={slide.id} aria-label={t("deckImport.page", { n: i + 1 })} variant={page === i ? "contained" : "outlined"} onClick={() => setSelected(i)} aria-pressed={page === i} sx={{ display: "block", p: 0.5 }}>
-        <Thumbnail slide={slide} /><Typography variant="caption">{t("deckImport.page", { n: i + 1 })}</Typography>
+        <Thumbnail slide={slide} onImageStatus={(elementId, src, status) => onImageStatus(i, elementId, src, status)} /><Typography variant="caption">{t("deckImport.page", { n: i + 1 })}</Typography>
       </Button>)}
     </Box>
     <Box ref={ref} tabIndex={0} role="region" aria-label={t("deckImport.page", { n: page + 1 })}
       onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); setSelected(Math.max(0, Math.min(content.slides.length - 1, page + (e.key === "ArrowRight" ? 1 : -1)))); } }} sx={{ width: "100%", minWidth: 0 }}>
-      {width > 0 && <SlideStage slide={content.slides[page]} width={Math.min(width, 960)} onImageStatus={onImageStatus} />}
+      {width > 0 && <SlideStage slide={content.slides[page]} width={Math.min(width, 960)} onImageStatus={(elementId, src, status) => onImageStatus(page, elementId, src, status)} />}
     </Box>
     <Stack direction="row" spacing={1}><Button disabled={page === 0} onClick={() => setSelected(page - 1)}>{t("deckImport.previous")}</Button><Button disabled={page === content.slides.length - 1} onClick={() => setSelected(page + 1)}>{t("deckImport.next")}</Button></Stack>
     {warnings.map((warning, i) => <Alert key={i} severity="warning">{t("deckImport.page", { n: warning.page + 1 })}{warning.element !== undefined && ` / ${t("deckImport.element", { n: warning.element + 1 })}`}: {t(`deckImport.${warning.kind}`)}</Alert>)}

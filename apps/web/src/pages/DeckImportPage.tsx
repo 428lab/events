@@ -106,10 +106,10 @@ export function DeckImportPage() {
     </>}
     {result && !result.ok && <Box ref={errorRef} tabIndex={-1} role="alert">
       <Typography>{errorText} {result.line && t("deckImport.position", { line: result.line, column: result.column })}</Typography>
-      {result.issues.map((issue, i) => <Typography key={i} sx={{ overflowWrap: "anywhere" }}>{importIssueLocation(issue.path, t)} — {issue.path} / {issue.code}: {describeImportIssue(issue, t)}</Typography>)}
+      {result.issues.map((issue, i) => <Typography key={i} sx={{ overflowWrap: "anywhere" }}>{importIssueLocation(issue.path, t)} — {issue.path} / {issue.code}: {describeImportIssue(issue, t, isV2)}</Typography>)}
       {result.truncated && <Typography>{t("deckImport.truncated")}</Typography>}
       <Button onClick={() => inputRef.current?.focus()}>{t("deckImport.edit")}</Button>
-      <Button onClick={() => void copy(`${t(isV2 ? "deckImport.repairIntroV2" : "deckImport.repairIntro")}\n${errorText}\n${result.issues.map((issue) => `${importIssueLocation(issue.path, t)} / ${issue.path}: ${describeImportIssue(issue, t)}`).join("\n")}`)}>{t("deckImport.repair")}</Button>
+      <Button onClick={() => void copy(`${t(isV2 ? "deckImport.repairIntroV2" : "deckImport.repairIntro")}\n${errorText}\n${result.issues.map((issue) => `${importIssueLocation(issue.path, t)} / ${issue.path}: ${describeImportIssue(issue, t, isV2)}`).join("\n")}`)}>{t("deckImport.repair")}</Button>
     </Box>}
     {result?.ok && <DeckImportPreview content={result.content} />}
     {draft.status && <Alert severity="warning">{draft.status >= 500 ? t("deckImport.pending") : draft.status === 429 ? t("deckImport.quota", { n: retrySeconds }) : draft.status === 401 ? t("deckImport.unauthorized") : draft.status === 409 ? t("deckImport.conflict") : draft.status === 410 ? t("deckImport.deleted") : draft.status === 403 ? t("deckImport.forbidden") : [404, 405].includes(draft.status) ? t("deckImport.unavailable") : draft.state === "pending" ? t("deckImport.pending") : t("deckImport.rejected", { status: draft.status })}</Alert>}

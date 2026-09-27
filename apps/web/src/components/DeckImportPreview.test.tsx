@@ -29,6 +29,21 @@ describe("URL image render and preview", () => {
     expect(screen.getByText("画像URL未設定")).toBeInTheDocument();
     expect(screen.queryByText("画像を読み込み中")).not.toBeInTheDocument();
   });
+  it("warns for a nonselected visible thumbnail without removing its URL or preventing review", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(960);
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    const deck: DeckContent = { slides: [content.slides[0], { id: "slide-2", background: "#FFFFFF", elements: [{ ...image, id: "img-2", src: "https://example.com/photo.png" }] }] };
+    render(<DeckImportPreview content={deck} />);
+    const thumbnail = screen.getByRole("button", { name: "2ページ目" });
+    const img = thumbnail.querySelector("img")!;
+    expect(img).toHaveAttribute("src", "https://example.com/photo.png");
+    fireEvent.error(img);
+    expect(await screen.findByText(/2ページ目 \/ 1番目の要素: 画像を表示できません/)).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "1ページ目" })).toBeInTheDocument();
+    expect(img).toHaveAttribute("src", "https://example.com/photo.png");
+    fireEvent.click(thumbnail);
+    expect(screen.getByRole("region", { name: "2ページ目" })).toBeInTheDocument();
+  });
   it("warns for the exact failed page and element and permits review", async () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(960);
     vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });

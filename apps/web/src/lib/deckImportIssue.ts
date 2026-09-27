@@ -2,14 +2,14 @@ import type { DeckImportIssue } from "@eventer/shared";
 import type { TFunction } from "i18next";
 
 /** Fixed constraints only: never interpolate input values into repair instructions. */
-export function describeImportIssue(issue: DeckImportIssue, t: TFunction): string {
+export function describeImportIssue(issue: DeckImportIssue, t: TFunction, isV2 = false): string {
   const names: Record<string, string> = {
     required: "required", unknown_key: "unknown", invalid_type: "type", invalid_literal: "literal", invalid_enum: "enum",
     invalid_count: "count", too_many_elements: "elements", out_of_bounds: "bounds", out_of_range: "range",
     invalid_unicode: "unicode", invalid_length: "length", invalid_color: "color", invalid_title: "titleRule",
     invalid_text: "textRule", invalid_image_url: "imageUrl", too_much_text: "totalText", converted_too_large: "converted",
   };
-  const key = names[issue.code];
+  const key = isV2 && issue.code === "invalid_literal" ? "literalV2" : isV2 && issue.code === "invalid_enum" ? "enumV2" : names[issue.code];
   return key ? t(`deckImportIssue.${key}`, { defaultValue: issue.message }) : t("deckImport.constraint");
 }
 export function importIssueLocation(path: string, t: TFunction): string {
