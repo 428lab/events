@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>炎のフレーム 試作（#566 デザイン見本）</title>
+<!--
+  #566 「炎のフレーム」デザイン専用の試作。プロダクトのコードではない。
+  外部の画像・フォント・通信を使わず、DOM + CSS + インライン SVG だけで描く。
+  画面内のスライド・カメラ・氏名はすべてダミー（見本）。
+  URL パラメータ（OBS ブラウザソースや撮影用）:
+    view=output            操作パネルを隠し、ステージだけを全画面表示
+    theme=ember|azure|violet|hakuji
+    place=screen|camera|deck
+    flicker=0..100  height=16..72  thickness=2..12  radius=0..48
+    motion=reduce          動きを減らした静止表示を強制
+    guide=1                安全領域の枠を表示
+-->
+<style>
+  :root {
+    --ui-bg: #0B1220; --ui-panel: #141E30; --ui-line: #2A3A52; --ui-ink: #E8EEF6; --ui-sub: #9DB0C8; --ui-accent: #2DD4BF;
+    /* flame palette (set per theme on <html>) */
+    --f-deep: #8E0F06; --f-outer: #F0401A; --f-mid: #FF9A2E; --f-core: #FFF3C4; --f-glow: rgba(255, 110, 30, .55);
+    --stage-bg: #0E1426;
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+  }
+  html[data-theme="azure"]  { --f-deep: #0C1F8C; --f-outer: #2E6BFF; --f-mid: #58C8FF; --f-core: #EFFBFF; --f-glow: rgba(60, 150, 255, .55); }
+  html[data-theme="violet"] { --f-deep: #3B0A78; --f-outer: #8E3BFF; --f-mid: #DA7CFF; --f-core: #FDEEFF; --f-glow: rgba(170, 80, 255, .55); }
+  html[data-theme="hakuji"] { --f-deep: #8A4F0C; --f-outer: #C0801A; --f-mid: #E2AE47; --f-core: #FFF6DC; --f-glow: rgba(205, 150, 50, .38); --stage-bg: #F6F2EA; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ui-bg); color: var(--ui-ink); }
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; padding: 20px; min-height: 100vh; }
+  header.top { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header.top h1 { margin: 0; font-size: 22px; letter-spacing: .04em; }
+  header.top p { margin: 0; color: var(--ui-sub); font-size: 13px; }
+  .stage-wrap { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; outline: 1px solid var(--ui-line); }
+  .panel { background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 14px; align-self: start; }
+  .panel h2 { margin: 0; font-size: 15px; }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .field .row { display: flex; justify-content: space-between; color: var(--ui-sub); }
+  .field .row b { color: var(--ui-ink); font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; accent-color: var(--ui-accent); }
+  .seg { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .seg.three { grid-template-columns: repeat(3, 1fr); }
+  .seg button { font: inherit; font-size: 12px; padding: 7px 4px; color: var(--ui-ink); background: #1B2840; border: 1px solid var(--ui-line); border-radius: 8px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { border-color: var(--ui-accent); background: #123A40; }
+  .seg button .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ui-sub); }
+  .meta { font-size: 11px; color: var(--ui-sub); line-height: 1.6; border-top: 1px solid var(--ui-line); padding-top: 10px; }
+  .meta b { color: var(--ui-ink); font-variant-numeric: tabular-nums; }
+
+  /* ---- output mode (OBS browser source / capture) ---- */
+  body.output { background: transparent; overflow: hidden; }
+  body.output .app { display: block; padding: 0; }
+  body.output header.top, body.output .panel { display: none; }
+  body.output .stage-wrap { width: 100vw; height: 100vh; aspect-ratio: auto; border-radius: 0; outline: none; }
+
+  /* ---- 960x540 logical stage, scaled like LiveSceneStage ---- */
+  .stage { position: absolute; left: 0; top: 0; width: 960px; height: 540px; transform-origin: top left; background: var(--stage-bg); overflow: hidden; }
+  html:not([data-theme="hakuji"]) .stage { background: radial-gradient(120% 90% at 50% 45%, #16213A 0%, #0E1426 55%, #080C18 100%); }
+
+  /* mock content — clearly dummy */
+  .mock { position: absolute; overflow: hidden; }
+  .mock-slide { background: #F4F1EA; color: #1E2A3C; padding: 26px 30px; display: flex; flex-direction: column; gap: 12px; }
+  .mock-slide .kicker { font-size: 13px; font-weight: 700; color: #B0452F; letter-spacing: .08em; }
+  .mock-slide h3 { margin: 0; font-size: 30px; line-height: 1.25; }
+  .mock-slide ul { margin: 4px 0 0; padding-left: 1.2em; font-size: 17px; line-height: 1.7; }
+  .mock-slide .foot { margin-top: auto; font-size: 12px; color: #6A7686; }
+  .mock-camera { background: linear-gradient(160deg, #2B3A52 0%, #1A2436 70%); }
+  .mock-camera svg { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); height: 86%; }
+  .mock-tag { position: absolute; left: 10px; top: 10px; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: rgba(0,0,0,.55); color: #fff; letter-spacing: .04em; }
+  .mock-slide .mock-tag { left: auto; right: 10px; background: rgba(30,42,60,.85); }
+  .name-plate { position: absolute; background: #1A2737; color: #EAF0F7; padding: 8px 14px; border-left: 4px solid var(--f-mid); }
+  .name-plate b { display: block; font-size: 19px; }
+  .name-plate span { font-size: 13px; color: #B9C6D6; }
+  html[data-theme="hakuji"] .name-plate { background: #203146; }
+  html[data-theme="hakuji"] .mock-slide { background: #FFFFFF; outline: 1px solid #DCE9DF; }
+  .proto-tag { position: absolute; font-size: 12px; font-weight: 700; letter-spacing: .06em; color: rgba(234,240,247,.85); background: rgba(8,12,24,.55); padding: 4px 10px; border-radius: 4px; }
+  html[data-theme="hakuji"] .proto-tag { color: #203146; background: rgba(255,255,255,.8); }
+  .guide { position: absolute; border: 1.5px dashed #2DD4BF; pointer-events: none; display: none; }
+  .guide::after { content: "安全領域（炎を入れない）"; position: absolute; left: 6px; bottom: 4px; font-size: 11px; color: #2DD4BF; }
+  .stage.show-guide .guide { display: block; }
+
+  /* ---- flame frame ---- */
+  .frame { position: absolute; inset: 0; pointer-events: none; }
+  html:not([data-theme="hakuji"]) .frame { mix-blend-mode: screen; }
+  .band, .band-glow { position: absolute; border-radius: var(--r); }
+  .band.out { box-shadow: 0 0 0 var(--t) var(--f-outer), 0 0 0 calc(var(--t) + 1.5px) var(--f-deep); }
+  .band.out::after { content: ""; position: absolute; inset: calc(var(--t) * -0.62); border-radius: calc(var(--r) + var(--t) * .62); border: max(1px, calc(var(--t) * .34)) solid var(--f-core); opacity: .75; }
+  .band-glow.out { box-shadow: 0 0 calc(10px + var(--t) * 2) calc(var(--t) + 2px) var(--f-glow), inset 0 0 14px 0 var(--f-glow); }
+  .band.in { box-shadow: inset 0 0 0 var(--t) var(--f-outer), inset 0 0 0 calc(var(--t) + 1.5px) var(--f-deep); }
+  .band.in::after { content: ""; position: absolute; inset: calc(var(--t) * .3); border-radius: var(--r); border: max(1px, calc(var(--t) * .34)) solid var(--f-core); opacity: .6; }
+  .band-glow.in { box-shadow: inset 0 0 calc(18px + var(--t) * 3) calc(var(--t) + 4px) var(--f-glow); }
+  .band-glow { animation: breathe calc(2.9s * var(--spd)) ease-in-out infinite; }
+  @keyframes breathe {
+    0%, 100% { opacity: calc(1 - .25 * var(--k)); }
+    21% { opacity: 1; }
+    34% { opacity: calc(1 - .38 * var(--k)); }
+    52% { opacity: calc(1 - .08 * var(--k)); }
+    71% { opacity: calc(1 - .3 * var(--k)); }
+  }
+
+  .tongue { position: absolute; left: 0; top: 0; overflow: visible; transform-origin: 50% 100%;
+    animation: var(--anim) calc(var(--d) * var(--spd)) ease-in-out var(--dl) infinite; will-change: transform, opacity; }
+  .tongue.back { opacity: .75; }
+  html[data-theme="hakuji"] .tongue { opacity: .78; }
+  html[data-theme="hakuji"] .tongue.back { opacity: .2; }
+  @keyframes fl-a {
+    0%, 100% { transform: scale(1, 1) skewX(0deg); opacity: .92; }
+    17% { transform: scale(calc(1 - .09 * var(--k)), calc(1 + .2 * var(--k))) skewX(calc(-6deg * var(--k))); opacity: 1; }
+    36% { transform: scale(calc(1 + .07 * var(--k)), calc(1 - .24 * var(--k))) skewX(calc(4deg * var(--k))); opacity: calc(1 - .25 * var(--k)); }
+    58% { transform: scale(calc(1 - .05 * var(--k)), calc(1 + .12 * var(--k))) skewX(calc(7deg * var(--k))); opacity: 1; }
+    79% { transform: scale(calc(1 + .05 * var(--k)), calc(1 - .15 * var(--k))) skewX(calc(-3deg * var(--k))); opacity: calc(1 - .12 * var(--k)); }
+  }
+  @keyframes fl-b {
+    0%, 100% { transform: scale(1, calc(1 - .1 * var(--k))) skewX(calc(3deg * var(--k))); opacity: .9; }
+    24% { transform: scale(calc(1 + .06 * var(--k)), calc(1 + .22 * var(--k))) skewX(calc(-4deg * var(--k))); opacity: 1; }
+    46% { transform: scale(calc(1 - .08 * var(--k)), calc(1 - .06 * var(--k))) skewX(calc(-8deg * var(--k))); opacity: calc(1 - .3 * var(--k)); }
+    70% { transform: scale(calc(1 + .04 * var(--k)), calc(1 + .15 * var(--k))) skewX(calc(5deg * var(--k))); opacity: 1; }
+  }
+  @keyframes fl-c {
+    0%, 100% { transform: scale(calc(1 - .04 * var(--k)), 1) skewX(calc(-2deg * var(--k))); opacity: 1; }
+    13% { transform: scale(calc(1 + .08 * var(--k)), calc(1 - .2 * var(--k))) skewX(calc(5deg * var(--k))); opacity: calc(1 - .2 * var(--k)); }
+    31% { transform: scale(calc(1 - .1 * var(--k)), calc(1 + .28 * var(--k))) skewX(calc(-5deg * var(--k))); opacity: 1; }
+    49% { transform: scale(1, calc(1 - .08 * var(--k))) skewX(calc(9deg * var(--k))); opacity: calc(1 - .1 * var(--k)); }
+    67% { transform: scale(calc(1 + .03 * var(--k)), calc(1 + .1 * var(--k))) skewX(calc(-7deg * var(--k))); opacity: calc(1 - .35 * var(--k)); }
+    86% { transform: scale(calc(1 - .06 * var(--k)), calc(1 + .18 * var(--k))) skewX(calc(2deg * var(--k))); opacity: 1; }
+  }
+
+  .ember { position: absolute; left: 0; top: 0; width: var(--s); height: var(--s); border-radius: 50%;
+    background: radial-gradient(circle, var(--f-core) 0%, var(--f-mid) 40%, transparent 72%);
+    animation: rise calc(var(--d) * var(--spd)) linear var(--dl) infinite; opacity: 0; will-change: transform, opacity; }
+  @keyframes rise {
+    0% { transform: translate(0, 0) scale(1); opacity: 0; }
+    12% { opacity: calc(.4 + .6 * var(--k)); }
+    60% { transform: translate(calc(var(--dx) * .6), calc(var(--dy) * .6)) scale(.8); opacity: calc(.3 + .5 * var(--k)); }
+    100% { transform: translate(var(--dx), var(--dy)) scale(.3); opacity: 0; }
+  }
+
+  /* paused (editor) and reduced motion: static flames, no embers travelling */
+  .stage.paused .tongue, .stage.paused .ember, .stage.paused .band-glow { animation-play-state: paused; }
+  .stage.reduce .tongue, .stage.reduce .band-glow { animation: none; }
+  .stage.reduce .ember { animation: none; opacity: .55; }
+  @media (prefers-reduced-motion: reduce) {
+    .tongue, .band-glow { animation: none !important; }
+    .ember { animation: none !important; opacity: .55; }
+  }
+</style>
+</head>
+<body>
+<!-- flame shapes and gradients: defined once, colors come from CSS variables on <html> -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-outer" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" style="stop-color:var(--f-mid)" />
+      <stop offset=".3" style="stop-color:var(--f-outer)" />
+      <stop offset=".72" style="stop-color:var(--f-outer);stop-opacity:.9" />
+      <stop offset=".9" style="stop-color:var(--f-deep);stop-opacity:.6" />
+      <stop offset="1" style="stop-color:var(--f-deep);stop-opacity:0" />
+    </linearGradient>
+    <linearGradient id="g-inner" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" style="stop-color:var(--f-core)" />
+      <stop offset=".45" style="stop-color:var(--f-mid)" />
+      <stop offset="1" style="stop-color:var(--f-mid);stop-opacity:0" />
+    </linearGradient>
+    <linearGradient id="g-back" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" style="stop-color:var(--f-outer);stop-opacity:.9" />
+      <stop offset=".6" style="stop-color:var(--f-deep);stop-opacity:.55" />
+      <stop offset="1" style="stop-color:var(--f-deep);stop-opacity:0" />
+    </linearGradient>
+    <radialGradient id="g-core" cx=".5" cy=".92" r=".6" fx=".5" fy="1">
+      <stop offset="0" style="stop-color:var(--f-core)" />
+      <stop offset=".55" style="stop-color:var(--f-core);stop-opacity:.85" />
+      <stop offset="1" style="stop-color:var(--f-mid);stop-opacity:0" />
+    </radialGradient>
+    <!-- viewBox 0 0 100 200, base centered at (50,200), tip near y=0. 3 layers: outer / body / hot core -->
+    <symbol id="flame-a" viewBox="0 0 100 200" preserveAspectRatio="none">
+      <path fill="url(#g-outer)" d="M56 0C50 22 70 40 82 70C96 104 100 150 84 180C74 196 62 200 50 200C34 200 18 194 10 176C-2 148 6 112 24 88C38 68 40 50 34 30C44 40 50 50 52 60C58 40 60 20 56 0Z" />
+      <path fill="url(#g-inner)" d="M52 58C56 86 76 110 76 146C76 176 66 196 50 200C34 196 24 178 26 150C28 124 44 104 46 82C48 96 52 104 52 58Z" />
+      <path fill="url(#g-core)" d="M50 120C58 140 66 158 64 178C62 192 56 199 50 200C43 199 36 192 36 178C36 160 44 142 50 120Z" />
+    </symbol>
+    <symbol id="flame-b" viewBox="0 0 100 200" preserveAspectRatio="none">
+      <path fill="url(#g-outer)" d="M36 0C48 20 42 42 58 62C74 82 98 110 94 150C90 184 70 200 50 200C28 200 8 186 6 154C4 124 20 104 30 84C38 66 44 52 40 36C36 22 32 12 36 0Z" />
+      <path fill="url(#g-inner)" d="M44 70C52 96 72 118 72 150C72 180 62 197 50 200C36 197 26 180 28 154C30 130 42 110 44 70Z" />
+      <path fill="url(#g-core)" d="M48 118C56 138 64 156 63 176C62 192 56 199 50 200C43 199 37 191 37 176C37 158 44 140 48 118Z" />
+    </symbol>
+    <symbol id="flame-c" viewBox="0 0 100 200" preserveAspectRatio="none">
+      <path fill="url(#g-outer)" d="M68 0C60 20 56 36 62 54C68 72 94 100 94 146C94 182 72 200 50 200C28 200 6 184 6 150C6 118 24 98 38 78C44 70 48 62 48 52C54 58 56 64 56 72C62 48 60 22 68 0Z" />
+      <path fill="url(#g-inner)" d="M56 74C62 100 74 124 72 156C70 182 62 197 50 200C38 197 28 182 29 158C30 132 48 110 56 74Z" />
+      <path fill="url(#g-core)" d="M52 116C60 138 66 158 64 178C62 192 56 199 50 200C43 199 36 191 37 176C38 156 46 138 52 116Z" />
+    </symbol>
+    <symbol id="flame-back" viewBox="0 0 100 200" preserveAspectRatio="none">
+      <path fill="url(#g-back)" d="M46 0C54 34 92 64 96 120C100 170 78 198 50 200C22 198 0 170 4 120C8 70 44 50 46 0Z" />
+    </symbol>
+  </defs>
+</svg>
+
+<div class="app">
+  <header class="top">
+    <h1>炎のフレーム 試作 <small style="font-size:13px;color:var(--ui-sub)">#566 デザイン見本</small></h1>
+    <p>DOM・CSS・SVG のみで描いた試作です。スライド・カメラ・氏名はすべてダミーで、実イベント画面ではありません。</p>
+  </header>
+  <div class="stage-wrap" id="stageWrap">
+    <div class="stage" id="stage">
+      <div id="content"></div>
+      <div class="frame" id="frame"></div>
+      <div class="guide" id="guide"></div>
+    </div>
+  </div>
+  <aside class="panel" aria-label="炎のフレームの設定">
+    <h2>炎のフレーム</h2>
+    <div class="field"><div class="row">色</div>
+      <div class="seg" id="themeSeg">
+        <button data-v="ember"><span class="sw" style="background:#FF6A1F"></span>赤橙</button>
+        <button data-v="azure"><span class="sw" style="background:#3A8DFF"></span>青</button>
+        <button data-v="violet"><span class="sw" style="background:#A04BFF"></span>紫</button>
+        <button data-v="hakuji"><span class="sw" style="background:#D9A441"></span>白磁の金</button>
+      </div>
+    </div>
+    <div class="field"><div class="row">囲む場所</div>
+      <div class="seg three" id="placeSeg">
+        <button data-v="screen">画面の縁</button>
+        <button data-v="camera">カメラ</button>
+        <button data-v="deck">資料</button>
+      </div>
+    </div>
+    <div class="field"><div class="row">ゆらぎの強さ <b id="flickerV"></b></div><input type="range" id="flicker" min="0" max="100" step="5"></div>
+    <div class="field"><div class="row">炎の高さ <b id="heightV"></b></div><input type="range" id="height" min="16" max="72" step="2"></div>
+    <div class="field"><div class="row">フレームの太さ <b id="thicknessV"></b></div><input type="range" id="thickness" min="2" max="12" step="1"></div>
+    <div class="field"><div class="row">角丸 <b id="radiusV"></b></div><input type="range" id="radius" min="0" max="48" step="2"></div>
+    <label class="check"><input type="checkbox" id="pause"> 一時停止（編集中のプレビュー）</label>
+    <label class="check"><input type="checkbox" id="reduce"> 動きを減らす（静止した炎）</label>
+    <label class="check"><input type="checkbox" id="guideChk"> 安全領域を表示</label>
+    <div class="meta" id="meta"></div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  const W = 960, H = 540;
+  const q = new URLSearchParams(location.search);
+  const clamp = (v, lo, hi, d) => { if (v === null || v === "") return d; const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+  const THEMES = ["ember", "azure", "violet", "hakuji"], PLACES = ["screen", "camera", "deck"];
+  const state = {
+    theme: THEMES.includes(q.get("theme")) ? q.get("theme") : "ember",
+    place: PLACES.includes(q.get("place")) ? q.get("place") : "screen",
+    flicker: clamp(q.get("flicker"), 0, 100, 60),
+    height: clamp(q.get("height"), 16, 72, 44),
+    thickness: clamp(q.get("thickness"), 2, 12, 4),
+    radius: clamp(q.get("radius"), 0, 48, 16),
+    pause: q.get("pause") === "1",
+    reduce: q.get("motion") === "reduce",
+    guide: q.get("guide") === "1",
+  };
+  if (q.get("view") === "output") document.body.classList.add("output");
+
+  const stage = document.getElementById("stage"), wrap = document.getElementById("stageWrap");
+  const frame = document.getElementById("frame"), content = document.getElementById("content"), guide = document.getElementById("guide");
+
+  // Fixed seed: same layout on every load (stable captures and OBS reloads).
+  function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+  const personSvg = `<svg viewBox="0 0 200 220" aria-hidden="true"><circle cx="100" cy="70" r="42" fill="#5B6E8C"/><path d="M18 220C22 150 58 124 100 124C142 124 178 150 182 220Z" fill="#5B6E8C"/></svg>`;
+  const slide = (big) => `<div class="kicker">見本スライド</div><h3>${big ? "地域とつくる<br>オープンな勉強会" : "地域とつくる<br>オープンな勉強会"}</h3><ul><li>ダミーの箇条書き 1：読みやすさの確認用</li><li>ダミーの箇条書き 2：本文は炎で隠さない</li>${big ? "<li>ダミーの箇条書き 3：中央は常に空ける</li>" : ""}</ul><div class="foot">これはデザイン確認用の見本資料です</div><span class="mock-tag">ダミー資料</span>`;
+
+  // Layout per placement: content rectangles and the rectangle the flames surround.
+  function layout(place) {
+    if (place === "screen") {
+      const deck = { x: 84, y: 66, w: 792, h: 408 };
+      return { mode: "in", target: { x: 8, y: 8, w: W - 16, h: H - 16 }, safe: deck, margin: 58,
+        html: `<div class="mock mock-slide" style="left:${deck.x}px;top:${deck.y}px;width:${deck.w}px;height:${deck.h}px">${slide(true)}</div>
+               <div class="proto-tag" style="right:96px;top:78px;display:none"></div>` };
+    }
+    const deck = { x: 56, y: 92, w: 524, h: 332 }, cam = { x: 632, y: 110, w: 276, h: 206 };
+    const target = place === "camera" ? cam : deck;
+    return { mode: "out", target, safe: target,
+      html: `<div class="mock mock-slide" style="left:${deck.x}px;top:${deck.y}px;width:${deck.w}px;height:${deck.h}px">${slide(false)}</div>
+             <div class="mock mock-camera" style="left:${cam.x}px;top:${cam.y}px;width:${cam.w}px;height:${cam.h}px">${personSvg}<span class="mock-tag">ダミーカメラ映像</span></div>
+             <div class="name-plate" style="left:${cam.x}px;top:${cam.y + cam.h + 22}px;width:${cam.w}px"><b>登壇者名（見本）</b><span>所属・役割（見本）</span></div>` };
+  }
+
+  // Walk a rounded rectangle clockwise; returns point + outward normal for arc length s.
+  function roundedRectSampler(rect, r) {
+    r = Math.max(0, Math.min(r, rect.w / 2, rect.h / 2));
+    const sx = rect.w - 2 * r, sy = rect.h - 2 * r, arc = Math.PI * r / 2;
+    const segs = [
+      { len: sx, f: t => [rect.x + r + t * sx, rect.y, 0, -1] },
+      { len: arc, f: t => { const a = -Math.PI / 2 + t * Math.PI / 2; return [rect.x + rect.w - r + r * Math.cos(a), rect.y + r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; } },
+      { len: sy, f: t => [rect.x + rect.w, rect.y + r + t * sy, 1, 0] },
+      { len: arc, f: t => { const a = t * Math.PI / 2; return [rect.x + rect.w - r + r * Math.cos(a), rect.y + rect.h - r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; } },
+      { len: sx, f: t => [rect.x + rect.w - r - t * sx, rect.y + rect.h, 0, 1] },
+      { len: arc, f: t => { const a = Math.PI / 2 + t * Math.PI / 2; return [rect.x + r + r * Math.cos(a), rect.y + rect.h - r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; } },
+      { len: sy, f: t => [rect.x, rect.y + rect.h - r - t * sy, -1, 0] },
+      { len: arc, f: t => { const a = Math.PI + t * Math.PI / 2; return [rect.x + r + r * Math.cos(a), rect.y + r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; } },
+    ].filter(s => s.len > 0);
+    const total = segs.reduce((a, s) => a + s.len, 0);
+    return { total, at(s) { s = ((s % total) + total) % total; for (const seg of segs) { if (s <= seg.len) return seg.f(seg.len ? s / seg.len : 0); s -= seg.len; } return segs[0].f(0); } };
+  }
+
+  let counts = { tongues: 0, embers: 0 };
+  function buildFrame() {
+    const L = layout(state.place);
+    content.innerHTML = L.html;
+    document.documentElement.dataset.theme = state.theme;
+    const g = L.safe; Object.assign(guide.style, { left: g.x + "px", top: g.y + "px", width: g.w + "px", height: g.h + "px" });
+    const rand = rng(566), T = state.thickness, R = state.radius, inward = L.mode === "in";
+    // Screen-edge flames never reach the safe area: effective height is limited by the margin.
+    const Hmax = inward ? Math.min(state.height, L.margin / (1.3 * 0.9)) : state.height;
+    const rect = L.target;
+    const s = roundedRectSampler(rect, R);
+    const spacing = Math.max(11, s.total / (inward ? 150 : 84));
+    const n = Math.round(s.total / spacing);
+    let html = "";
+    const bandStyle = `left:${rect.x}px;top:${rect.y}px;width:${rect.w}px;height:${rect.h}px;--r:${R}px;--t:${T}px`;
+    html += `<div class="band-glow ${L.mode}" style="${bandStyle}"></div>`;
+    const tongue = (layer, i, x, y, nx, ny) => {
+      // Fire rises: on side edges flames climb almost vertically along the frame (slight outward tilt),
+      // so they read as tall licks instead of stacked scales; bottom-facing flames stay as short licks.
+      let dx = nx, dy = ny, side = false;
+      if (Math.abs(ny) < 0.92) { side = true; dx = nx * (0.12 + rand() * 0.16); dy = -1; const m = Math.hypot(dx, dy); dx /= m; dy /= m; }
+      const r0 = rand();
+      const lick = r0 < 0.16 ? 1.25 + rand() * 0.35 : r0 < 0.45 ? 0.45 + rand() * 0.25 : 0.7 + rand() * 0.35;
+      const sideFactor = side ? 1.25 : ny < -0.5 ? 1 : 0.3;
+      let h = Hmax * sideFactor * lick * (layer === "back" ? 1.1 : 1);
+      // 白磁 (light) keeps the gold restrained: shorter tongues on the bright paper.
+      if (state.theme === "hakuji") h *= 0.68;
+      // Screen edge: hard cap so no tongue (including tall licks) reaches the safe area.
+      if (inward) h = Math.min(h * 0.9, L.margin * (layer === "back" ? 0.8 : 0.9));
+      const w = Math.max(side ? spacing * 1.1 : spacing * (layer === "back" ? 2.2 : 1.6 + rand() * 0.8), h * (layer === "back" ? 0.42 : side ? 0.2 + rand() * 0.08 : 0.3 + rand() * 0.14));
+      // base sits in the middle of the band
+      const off = side ? (inward ? -T * 0.2 : T * 0.2) - nx * 0 : inward ? T * 0.5 : -T * 0.5;
+      const bx = x - nx * off, by = y - ny * off;
+      const rot = Math.atan2(dx, -dy) * 180 / Math.PI + (rand() - 0.5) * 8;
+      const sym = layer === "back" ? "flame-back" : ["flame-a", "flame-b", "flame-c"][Math.floor(rand() * 3)];
+      const anim = ["fl-a", "fl-b", "fl-c"][Math.floor(rand() * 3)];
+      const d = (layer === "back" ? 1.5 : 0.75) + rand() * 0.6;
+      return `<svg class="tongue ${layer}" style="width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;translate:${(bx - w / 2).toFixed(1)}px ${(by - h).toFixed(1)}px;rotate:${rot.toFixed(1)}deg;--anim:${anim};--d:${d.toFixed(2)}s;--dl:${(-rand() * 3).toFixed(2)}s"><use href="#${sym}"/></svg>`;
+    };
+    for (let i = 0; i < Math.round(n / 2); i++) { const [x, y, nx, ny] = s.at((i + 0.5) * spacing * 2); html += tongue("back", i, x, y, inward ? -nx : nx, inward ? -ny : ny); }
+    html += `<div class="band ${L.mode}" style="${bandStyle}"></div>`;
+    for (let i = 0; i < n; i++) { const [x, y, nx, ny] = s.at(i * spacing + (rand() - 0.5) * spacing * 0.4); if (Math.abs(ny) < 0.92 && i % 3 === 1) continue; html += tongue("main", i, x, y, inward ? -nx : nx, inward ? -ny : ny); }
+    // embers: rise straight up from the upper-facing parts of the frame, fade quickly
+    const embers = inward ? 26 : 16;
+    for (let i = 0; i < embers; i++) {
+      let x, y, nx, ny, tries = 0;
+      do { [x, y, nx, ny] = s.at(rand() * s.total); tries++; } while (tries < 8 && (inward ? ny > -0.5 && Math.abs(nx) < 0.5 : ny > 0.5));
+      const size = 2 + rand() * 3.2;
+      const travel = inward ? Math.min(L.margin * 0.8, 40 + rand() * 30) : 50 + rand() * Hmax * 1.6;
+      const ex = x - (inward ? nx : -nx) * T, ey = y - (inward ? ny : -ny) * T;
+      html += `<i class="ember" style="--s:${size.toFixed(1)}px;translate:${(ex - size / 2).toFixed(1)}px ${(ey - size / 2).toFixed(1)}px;--dx:${((rand() - 0.5) * 36).toFixed(1)}px;--dy:${(-travel).toFixed(1)}px;--d:${(1.6 + rand() * 1.8).toFixed(2)}s;--dl:${(-rand() * 4).toFixed(2)}s"></i>`;
+    }
+    frame.innerHTML = html;
+    counts = { tongues: n + Math.round(n / 2), embers };
+    applyVars();
+  }
+
+  function applyVars() {
+    const k = state.flicker / 100 * 1.4;
+    stage.style.setProperty("--k", k.toFixed(3));
+    stage.style.setProperty("--spd", (1.35 - state.flicker / 100 * 0.55).toFixed(3));
+    stage.classList.toggle("paused", state.pause);
+    stage.classList.toggle("reduce", state.reduce);
+    stage.classList.toggle("show-guide", state.guide);
+    document.documentElement.dataset.theme = state.theme;
+  }
+
+  function fit() { const s = wrap.clientWidth / W; stage.style.transform = `scale(${s})`; if (document.body.classList.contains("output")) { const sy = wrap.clientHeight / H; stage.style.transform = `scale(${s}, ${sy})`; } }
+
+  // controls
+  const bindSeg = (id, key, rebuild) => {
+    const el = document.getElementById(id);
+    const sync = () => el.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === state[key])));
+    el.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; state[key] = b.dataset.v; sync(); rebuild ? buildFrame() : applyVars(); updateMeta(); });
+    sync();
+  };
+  const units = { flicker: "", height: "px", thickness: "px", radius: "px" };
+  const bindRange = (key, rebuild) => {
+    const el = document.getElementById(key), out = document.getElementById(key + "V");
+    el.value = state[key]; out.textContent = state[key] + units[key];
+    el.addEventListener("input", () => { state[key] = Number(el.value); out.textContent = state[key] + units[key]; rebuild ? buildFrame() : applyVars(); updateMeta(); });
+  };
+  const bindCheck = (id, key) => { const el = document.getElementById(id); el.checked = state[key]; el.addEventListener("change", () => { state[key] = el.checked; applyVars(); updateMeta(); }); };
+  bindSeg("themeSeg", "theme", true); bindSeg("placeSeg", "place", true);
+  bindRange("flicker", false); bindRange("height", true); bindRange("thickness", true); bindRange("radius", true);
+  bindCheck("pause", "pause"); bindCheck("reduce", "reduce"); bindCheck("guideChk", "guide");
+
+  // lightweight frame-rate meter for the design note (indicative only)
+  let fps = 0, frames = 0, last = performance.now();
+  const tick = now => { frames++; if (now - last >= 1000) { fps = Math.round(frames * 1000 / (now - last)); frames = 0; last = now; updateMeta(); } requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  const osReduce = matchMedia("(prefers-reduced-motion: reduce)");
+  function updateMeta() {
+    document.getElementById("meta").innerHTML =
+      `炎の要素 <b>${counts.tongues}</b>・火の粉 <b>${counts.embers}</b>（transform / opacity のみ動かす）<br>` +
+      `描画 <b>${fps}</b> fps（このブラウザでの目安）<br>` +
+      `端末の「視差効果を減らす」: <b>${osReduce.matches ? "オン → 静止" : "オフ"}</b><br>` +
+      `見本: スライド・カメラ・氏名はダミーです。`;
+  }
+  window.__flame = { state, counts: () => counts, safe: () => layout(state.place).safe };
+  addEventListener("resize", fit);
+  buildFrame(); fit(); updateMeta();
+})();
+</script>
+</body>
+</html>
