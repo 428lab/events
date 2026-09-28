@@ -8,6 +8,8 @@
   #566 「炎のフレーム」デザイン専用の試作。プロダクトのコードではない。
   外部の画像・フォント・通信を使わず、DOM + CSS + インライン SVG だけで描く。
   画面内のスライド・カメラ・氏名はすべてダミー（見本）。
+  炎は重力を無視して「枠そのものが燃えている」ように、枠から外側へ放射状に広がる
+  （上辺は上、下辺は下、左辺は左、右辺は右、角は斜め外）。枠の内側には炎を入れない。
   URL パラメータ（OBS ブラウザソースや撮影用）:
     view=output            操作パネルを隠し、ステージだけを全画面表示
     theme=ember|azure|violet|hakuji
@@ -86,12 +88,13 @@
   .frame { position: absolute; inset: 0; pointer-events: none; }
   html:not([data-theme="hakuji"]) .frame { mix-blend-mode: screen; }
   .band, .band-glow { position: absolute; border-radius: var(--r); }
+  /* flames only live outside the frame line: the frame layer is clipped to the outside of the target rect */
+  .flames { position: absolute; inset: 0; }
   .band.out { box-shadow: 0 0 0 var(--t) var(--f-outer), 0 0 0 calc(var(--t) + 1.5px) var(--f-deep); }
   .band.out::after { content: ""; position: absolute; inset: calc(var(--t) * -0.62); border-radius: calc(var(--r) + var(--t) * .62); border: max(1px, calc(var(--t) * .34)) solid var(--f-core); opacity: .75; }
-  .band-glow.out { box-shadow: 0 0 calc(10px + var(--t) * 2) calc(var(--t) + 2px) var(--f-glow), inset 0 0 14px 0 var(--f-glow); }
-  .band.in { box-shadow: inset 0 0 0 var(--t) var(--f-outer), inset 0 0 0 calc(var(--t) + 1.5px) var(--f-deep); }
-  .band.in::after { content: ""; position: absolute; inset: calc(var(--t) * .3); border-radius: var(--r); border: max(1px, calc(var(--t) * .34)) solid var(--f-core); opacity: .6; }
-  .band-glow.in { box-shadow: inset 0 0 calc(18px + var(--t) * 3) calc(var(--t) + 4px) var(--f-glow); }
+  .band-glow.out { box-shadow: 0 0 calc(10px + var(--t) * 2) calc(var(--t) + 2px) var(--f-glow); }
+  /* soft, static glow line just inside the frame (does not flicker over the face / slide) */
+  .band-inner { position: absolute; border-radius: var(--r); box-shadow: inset 0 0 10px 0 var(--f-glow); opacity: .7; }
   .band-glow { animation: breathe calc(2.9s * var(--spd)) ease-in-out infinite; }
   @keyframes breathe {
     0%, 100% { opacity: calc(1 - .25 * var(--k)); }
@@ -130,8 +133,9 @@
 
   .ember { position: absolute; left: 0; top: 0; width: var(--s); height: var(--s); border-radius: 50%;
     background: radial-gradient(circle, var(--f-core) 0%, var(--f-mid) 40%, transparent 72%);
-    animation: rise calc(var(--d) * var(--spd)) linear var(--dl) infinite; opacity: 0; will-change: transform, opacity; }
-  @keyframes rise {
+    animation: drift calc(var(--d) * var(--spd)) linear var(--dl) infinite; opacity: 0; will-change: transform, opacity; }
+  /* embers drift outward along the frame normal (--dx/--dy), not upward */
+  @keyframes drift {
     0% { transform: translate(0, 0) scale(1); opacity: 0; }
     12% { opacity: calc(.4 + .6 * var(--k)); }
     60% { transform: translate(calc(var(--dx) * .6), calc(var(--dy) * .6)) scale(.8); opacity: calc(.3 + .5 * var(--k)); }
@@ -267,23 +271,25 @@
   // Layout per placement: content rectangles and the rectangle the flames surround.
   function layout(place) {
     if (place === "screen") {
-      const deck = { x: 84, y: 66, w: 792, h: 408 };
-      return { mode: "in", target: { x: 8, y: 8, w: W - 16, h: H - 16 }, safe: deck, margin: 58,
+      // The frame line is inset from the screen edge; flames radiate outward toward (and off) the screen edge.
+      const deck = { x: 84, y: 66, w: 792, h: 408 }, inset = 44;
+      return { target: { x: inset, y: inset, w: W - inset * 2, h: H - inset * 2 }, safe: deck, edge: inset,
         html: `<div class="mock mock-slide" style="left:${deck.x}px;top:${deck.y}px;width:${deck.w}px;height:${deck.h}px">${slide(true)}</div>
                <div class="proto-tag" style="right:96px;top:78px;display:none"></div>` };
     }
     const deck = { x: 56, y: 92, w: 524, h: 332 }, cam = { x: 632, y: 110, w: 276, h: 206 };
     const target = place === "camera" ? cam : deck;
-    return { mode: "out", target, safe: target,
+    return { target, safe: target, edge: 0,
       html: `<div class="mock mock-slide" style="left:${deck.x}px;top:${deck.y}px;width:${deck.w}px;height:${deck.h}px">${slide(false)}</div>
              <div class="mock mock-camera" style="left:${cam.x}px;top:${cam.y}px;width:${cam.w}px;height:${cam.h}px">${personSvg}<span class="mock-tag">ダミーカメラ映像</span></div>
-             <div class="name-plate" style="left:${cam.x}px;top:${cam.y + cam.h + 22}px;width:${cam.w}px"><b>登壇者名（見本）</b><span>所属・役割（見本）</span></div>` };
+             <div class="name-plate" style="left:${cam.x}px;top:${cam.y + cam.h + 64}px;width:${cam.w}px"><b>登壇者名（見本）</b><span>所属・役割（見本）</span></div>` };
   }
 
   // Walk a rounded rectangle clockwise; returns point + outward normal for arc length s.
   function roundedRectSampler(rect, r) {
     r = Math.max(0, Math.min(r, rect.w / 2, rect.h / 2));
-    const sx = rect.w - 2 * r, sy = rect.h - 2 * r, arc = Math.PI * r / 2;
+    // corners always get a short sampling length so normals fan smoothly (also when 角丸 = 0)
+    const sx = rect.w - 2 * r, sy = rect.h - 2 * r, arc = Math.max(Math.PI * r / 2, 14);
     const segs = [
       { len: sx, f: t => [rect.x + r + t * sx, rect.y, 0, -1] },
       { len: arc, f: t => { const a = -Math.PI / 2 + t * Math.PI / 2; return [rect.x + rect.w - r + r * Math.cos(a), rect.y + r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; } },
@@ -298,60 +304,59 @@
     return { total, at(s) { s = ((s % total) + total) % total; for (const seg of segs) { if (s <= seg.len) return seg.f(seg.len ? s / seg.len : 0); s -= seg.len; } return segs[0].f(0); } };
   }
 
+  // Outside-of-frame clip: flames and embers can never paint over the camera face or slide text.
+  function outsideClip(rect, r) {
+    r = Math.max(0, Math.min(r, rect.w / 2, rect.h / 2));
+    const { x, y, w, h } = rect;
+    return `path(evenodd, "M-200 -200H${W + 200}V${H + 200}H-200Z M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z")`;
+  }
+
   let counts = { tongues: 0, embers: 0 };
   function buildFrame() {
     const L = layout(state.place);
     content.innerHTML = L.html;
     document.documentElement.dataset.theme = state.theme;
     const g = L.safe; Object.assign(guide.style, { left: g.x + "px", top: g.y + "px", width: g.w + "px", height: g.h + "px" });
-    const rand = rng(566), T = state.thickness, R = state.radius, inward = L.mode === "in";
-    // Screen-edge flames never reach the safe area: effective height is limited by the margin.
-    const Hmax = inward ? Math.min(state.height, L.margin / (1.3 * 0.9)) : state.height;
+    const rand = rng(566), T = state.thickness, R = state.radius, screenEdge = L.edge > 0;
     const rect = L.target;
     const s = roundedRectSampler(rect, R);
-    const spacing = Math.max(11, s.total / (inward ? 150 : 84));
+    const spacing = Math.max(11, s.total / (screenEdge ? 150 : 84));
     const n = Math.round(s.total / spacing);
-    let html = "";
     const bandStyle = `left:${rect.x}px;top:${rect.y}px;width:${rect.w}px;height:${rect.h}px;--r:${R}px;--t:${T}px`;
-    html += `<div class="band-glow ${L.mode}" style="${bandStyle}"></div>`;
-    const tongue = (layer, i, x, y, nx, ny) => {
-      // Fire rises: on side edges flames climb almost vertically along the frame (slight outward tilt),
-      // so they read as tall licks instead of stacked scales; bottom-facing flames stay as short licks.
-      let dx = nx, dy = ny, side = false;
-      if (Math.abs(ny) < 0.92) { side = true; dx = nx * (0.12 + rand() * 0.16); dy = -1; const m = Math.hypot(dx, dy); dx /= m; dy /= m; }
+    // The frame itself burns: every tongue is rooted on the frame line and points along the outward normal
+    // (top → up, bottom → down, left → left, right → right, corners → diagonal). Gravity is ignored.
+    const tongue = (layer, x, y, nx, ny) => {
       const r0 = rand();
-      const lick = r0 < 0.16 ? 1.25 + rand() * 0.35 : r0 < 0.45 ? 0.45 + rand() * 0.25 : 0.7 + rand() * 0.35;
-      const sideFactor = side ? 1.25 : ny < -0.5 ? 1 : 0.3;
-      let h = Hmax * sideFactor * lick * (layer === "back" ? 1.1 : 1);
+      const lick = r0 < 0.16 ? 1.2 + rand() * 0.3 : r0 < 0.45 ? 0.5 + rand() * 0.2 : 0.72 + rand() * 0.3;
+      let h = state.height * lick * (layer === "back" ? 1.15 : 1);
       // 白磁 (light) keeps the gold restrained: shorter tongues on the bright paper.
       if (state.theme === "hakuji") h *= 0.68;
-      // Screen edge: hard cap so no tongue (including tall licks) reaches the safe area.
-      if (inward) h = Math.min(h * 0.9, L.margin * (layer === "back" ? 0.8 : 0.9));
-      const w = Math.max(side ? spacing * 1.1 : spacing * (layer === "back" ? 2.2 : 1.6 + rand() * 0.8), h * (layer === "back" ? 0.42 : side ? 0.2 + rand() * 0.08 : 0.3 + rand() * 0.14));
-      // base sits in the middle of the band
-      const off = side ? (inward ? -T * 0.2 : T * 0.2) - nx * 0 : inward ? T * 0.5 : -T * 0.5;
-      const bx = x - nx * off, by = y - ny * off;
-      const rot = Math.atan2(dx, -dy) * 180 / Math.PI + (rand() - 0.5) * 8;
+      const w = Math.max(spacing * (layer === "back" ? 2.2 : 1.5 + rand() * 0.7), h * (layer === "back" ? 0.42 : 0.28 + rand() * 0.12));
+      // root in the middle of the band, just outside the frame line
+      const bx = x + nx * T * 0.5, by = y + ny * T * 0.5;
+      const rot = Math.atan2(nx, -ny) * 180 / Math.PI + (rand() - 0.5) * 8;
       const sym = layer === "back" ? "flame-back" : ["flame-a", "flame-b", "flame-c"][Math.floor(rand() * 3)];
       const anim = ["fl-a", "fl-b", "fl-c"][Math.floor(rand() * 3)];
       const d = (layer === "back" ? 1.5 : 0.75) + rand() * 0.6;
       return `<svg class="tongue ${layer}" style="width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;translate:${(bx - w / 2).toFixed(1)}px ${(by - h).toFixed(1)}px;rotate:${rot.toFixed(1)}deg;--anim:${anim};--d:${d.toFixed(2)}s;--dl:${(-rand() * 3).toFixed(2)}s"><use href="#${sym}"/></svg>`;
     };
-    for (let i = 0; i < Math.round(n / 2); i++) { const [x, y, nx, ny] = s.at((i + 0.5) * spacing * 2); html += tongue("back", i, x, y, inward ? -nx : nx, inward ? -ny : ny); }
-    html += `<div class="band ${L.mode}" style="${bandStyle}"></div>`;
-    for (let i = 0; i < n; i++) { const [x, y, nx, ny] = s.at(i * spacing + (rand() - 0.5) * spacing * 0.4); if (Math.abs(ny) < 0.92 && i % 3 === 1) continue; html += tongue("main", i, x, y, inward ? -nx : nx, inward ? -ny : ny); }
-    // embers: rise straight up from the upper-facing parts of the frame, fade quickly
-    const embers = inward ? 26 : 16;
+    let flames = `<div class="band-glow out" style="${bandStyle}"></div>`;
+    const nBack = Math.round(n / 2);
+    for (let i = 0; i < nBack; i++) { const [x, y, nx, ny] = s.at((i + 0.5) * spacing * 2); flames += tongue("back", x, y, nx, ny); }
+    flames += `<div class="band out" style="${bandStyle}"></div>`;
+    for (let i = 0; i < n; i++) { const [x, y, nx, ny] = s.at(i * spacing + (rand() - 0.5) * spacing * 0.4); flames += tongue("main", x, y, nx, ny); }
+    // embers: leave the frame all the way around and drift outward along the normal, with a little sideways wander
+    const embers = screenEdge ? 28 : 18;
     for (let i = 0; i < embers; i++) {
-      let x, y, nx, ny, tries = 0;
-      do { [x, y, nx, ny] = s.at(rand() * s.total); tries++; } while (tries < 8 && (inward ? ny > -0.5 && Math.abs(nx) < 0.5 : ny > 0.5));
+      const [x, y, nx, ny] = s.at((i + rand() * 0.8) * s.total / embers);
       const size = 2 + rand() * 3.2;
-      const travel = inward ? Math.min(L.margin * 0.8, 40 + rand() * 30) : 50 + rand() * Hmax * 1.6;
-      const ex = x - (inward ? nx : -nx) * T, ey = y - (inward ? ny : -ny) * T;
-      html += `<i class="ember" style="--s:${size.toFixed(1)}px;translate:${(ex - size / 2).toFixed(1)}px ${(ey - size / 2).toFixed(1)}px;--dx:${((rand() - 0.5) * 36).toFixed(1)}px;--dy:${(-travel).toFixed(1)}px;--d:${(1.6 + rand() * 1.8).toFixed(2)}s;--dl:${(-rand() * 4).toFixed(2)}s"></i>`;
+      const travel = screenEdge ? L.edge * 0.7 + rand() * 30 : 36 + rand() * state.height * 1.4;
+      const side = (rand() - 0.5) * 28;
+      const ex = x + nx * (T + 2), ey = y + ny * (T + 2);
+      flames += `<i class="ember" style="--s:${size.toFixed(1)}px;translate:${(ex - size / 2).toFixed(1)}px ${(ey - size / 2).toFixed(1)}px;--dx:${(nx * travel - ny * side).toFixed(1)}px;--dy:${(ny * travel + nx * side).toFixed(1)}px;--d:${(1.6 + rand() * 1.8).toFixed(2)}s;--dl:${(-rand() * 4).toFixed(2)}s"></i>`;
     }
-    frame.innerHTML = html;
-    counts = { tongues: n + Math.round(n / 2), embers };
+    frame.innerHTML = `<div class="flames" style="clip-path:${outsideClip(rect, R)}">${flames}</div><div class="band-inner" style="${bandStyle}"></div>`;
+    counts = { tongues: n + nBack, embers };
     applyVars();
   }
 
