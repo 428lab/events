@@ -6,29 +6,33 @@
 <title>炎のフレーム 試作（#566 デザイン見本）</title>
 <!--
   #566 「炎のフレーム」デザイン専用の試作。プロダクトのコードではない。
-  外部の画像・フォント・通信を使わず、DOM + CSS + インライン SVG だけで描く。
+  炎は 1 枚の <canvas> に WebGL のフラグメントシェーダーで手続き的に描く（外部ライブラリ・画像・通信なし）。
+  - 枠（角丸の四角形）までの符号付き距離 d と、外周に沿った長さ s を画素ごとに求め、
+    (s, d - 時間) の座標でドメインワープした fbm ノイズを流すことで、炎の舌が枠から外へ連続的に流れ出る。
+    s は外周 1 周で周期的なノイズを使うので、つなぎ目や繰り返しが見えない。
+  - 温度（heat）から色を引く: 枠ぎわは白〜黄の芯、外へ行くほど橙→深紅→透明。
+  - 縮小バッファで 2 回ぼかした光を足してグロー（ブルーム）にする。火の粉も同じシェーダーで描く。
+  - 枠の内側（d < 0）は必ず透明。カメラの顔や資料の本文には何も重ねない。
   画面内のスライド・カメラ・氏名はすべてダミー（見本）。
-  炎は重力を無視して「枠そのものが燃えている」ように、枠から外側へ放射状に広がる
-  （上辺は上、下辺は下、左辺は左、右辺は右、角は斜め外）。枠の内側には炎を入れない。
   URL パラメータ（OBS ブラウザソースや撮影用）:
     view=output            操作パネルを隠し、ステージだけを全画面表示
     theme=ember|azure|violet|hakuji
     place=screen|camera|deck
-    flicker=0..100  height=16..72  thickness=2..12  radius=0..48
+    flicker=0..100  height=16..72  thickness=2..12  radius=0..48  embers=0..100
+    pause=1                一時停止（編集中のプレビュー）
     motion=reduce          動きを減らした静止表示を強制
+    t=秒                   その時刻の 1 コマだけを描いて止める（撮影用・決定的）
     guide=1                安全領域の枠を表示
 -->
 <style>
   :root {
     --ui-bg: #0B1220; --ui-panel: #141E30; --ui-line: #2A3A52; --ui-ink: #E8EEF6; --ui-sub: #9DB0C8; --ui-accent: #2DD4BF;
-    /* flame palette (set per theme on <html>) */
-    --f-deep: #8E0F06; --f-outer: #F0401A; --f-mid: #FF9A2E; --f-core: #FFF3C4; --f-glow: rgba(255, 110, 30, .55);
-    --stage-bg: #0E1426;
+    --f-mid: #FF9A2E; --stage-bg: #0E1426;
     font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
   }
-  html[data-theme="azure"]  { --f-deep: #0C1F8C; --f-outer: #2E6BFF; --f-mid: #58C8FF; --f-core: #EFFBFF; --f-glow: rgba(60, 150, 255, .55); }
-  html[data-theme="violet"] { --f-deep: #3B0A78; --f-outer: #8E3BFF; --f-mid: #DA7CFF; --f-core: #FDEEFF; --f-glow: rgba(170, 80, 255, .55); }
-  html[data-theme="hakuji"] { --f-deep: #8A4F0C; --f-outer: #C0801A; --f-mid: #E2AE47; --f-core: #FFF6DC; --f-glow: rgba(205, 150, 50, .38); --stage-bg: #F6F2EA; }
+  html[data-theme="azure"]  { --f-mid: #58C8FF; }
+  html[data-theme="violet"] { --f-mid: #DA7CFF; }
+  html[data-theme="hakuji"] { --f-mid: #E2AE47; --stage-bg: #F6F2EA; }
 
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ui-bg); color: var(--ui-ink); }
@@ -84,131 +88,22 @@
   .guide::after { content: "安全領域（炎を入れない）"; position: absolute; left: 6px; bottom: 4px; font-size: 11px; color: #2DD4BF; }
   .stage.show-guide .guide { display: block; }
 
-  /* ---- flame frame ---- */
-  .frame { position: absolute; inset: 0; pointer-events: none; }
-  html:not([data-theme="hakuji"]) .frame { mix-blend-mode: screen; }
-  .band, .band-glow { position: absolute; border-radius: var(--r); }
-  /* flames only live outside the frame line: the frame layer is clipped to the outside of the target rect */
-  .flames { position: absolute; inset: 0; }
-  .band.out { box-shadow: 0 0 0 var(--t) var(--f-outer), 0 0 0 calc(var(--t) + 1.5px) var(--f-deep); }
-  .band.out::after { content: ""; position: absolute; inset: calc(var(--t) * -0.62); border-radius: calc(var(--r) + var(--t) * .62); border: max(1px, calc(var(--t) * .34)) solid var(--f-core); opacity: .75; }
-  .band-glow.out { box-shadow: 0 0 calc(10px + var(--t) * 2) calc(var(--t) + 2px) var(--f-glow); }
-  /* soft, static glow line just inside the frame (does not flicker over the face / slide) */
-  .band-inner { position: absolute; border-radius: var(--r); box-shadow: inset 0 0 10px 0 var(--f-glow); opacity: .7; }
-  .band-glow { animation: breathe calc(2.9s * var(--spd)) ease-in-out infinite; }
-  @keyframes breathe {
-    0%, 100% { opacity: calc(1 - .25 * var(--k)); }
-    21% { opacity: 1; }
-    34% { opacity: calc(1 - .38 * var(--k)); }
-    52% { opacity: calc(1 - .08 * var(--k)); }
-    71% { opacity: calc(1 - .3 * var(--k)); }
-  }
 
-  .tongue { position: absolute; left: 0; top: 0; overflow: visible; transform-origin: 50% 100%;
-    animation: var(--anim) calc(var(--d) * var(--spd)) ease-in-out var(--dl) infinite; will-change: transform, opacity; }
-  .tongue.back { opacity: .75; }
-  html[data-theme="hakuji"] .tongue { opacity: .78; }
-  html[data-theme="hakuji"] .tongue.back { opacity: .2; }
-  @keyframes fl-a {
-    0%, 100% { transform: scale(1, 1) skewX(0deg); opacity: .92; }
-    17% { transform: scale(calc(1 - .09 * var(--k)), calc(1 + .2 * var(--k))) skewX(calc(-6deg * var(--k))); opacity: 1; }
-    36% { transform: scale(calc(1 + .07 * var(--k)), calc(1 - .24 * var(--k))) skewX(calc(4deg * var(--k))); opacity: calc(1 - .25 * var(--k)); }
-    58% { transform: scale(calc(1 - .05 * var(--k)), calc(1 + .12 * var(--k))) skewX(calc(7deg * var(--k))); opacity: 1; }
-    79% { transform: scale(calc(1 + .05 * var(--k)), calc(1 - .15 * var(--k))) skewX(calc(-3deg * var(--k))); opacity: calc(1 - .12 * var(--k)); }
-  }
-  @keyframes fl-b {
-    0%, 100% { transform: scale(1, calc(1 - .1 * var(--k))) skewX(calc(3deg * var(--k))); opacity: .9; }
-    24% { transform: scale(calc(1 + .06 * var(--k)), calc(1 + .22 * var(--k))) skewX(calc(-4deg * var(--k))); opacity: 1; }
-    46% { transform: scale(calc(1 - .08 * var(--k)), calc(1 - .06 * var(--k))) skewX(calc(-8deg * var(--k))); opacity: calc(1 - .3 * var(--k)); }
-    70% { transform: scale(calc(1 + .04 * var(--k)), calc(1 + .15 * var(--k))) skewX(calc(5deg * var(--k))); opacity: 1; }
-  }
-  @keyframes fl-c {
-    0%, 100% { transform: scale(calc(1 - .04 * var(--k)), 1) skewX(calc(-2deg * var(--k))); opacity: 1; }
-    13% { transform: scale(calc(1 + .08 * var(--k)), calc(1 - .2 * var(--k))) skewX(calc(5deg * var(--k))); opacity: calc(1 - .2 * var(--k)); }
-    31% { transform: scale(calc(1 - .1 * var(--k)), calc(1 + .28 * var(--k))) skewX(calc(-5deg * var(--k))); opacity: 1; }
-    49% { transform: scale(1, calc(1 - .08 * var(--k))) skewX(calc(9deg * var(--k))); opacity: calc(1 - .1 * var(--k)); }
-    67% { transform: scale(calc(1 + .03 * var(--k)), calc(1 + .1 * var(--k))) skewX(calc(-7deg * var(--k))); opacity: calc(1 - .35 * var(--k)); }
-    86% { transform: scale(calc(1 - .06 * var(--k)), calc(1 + .18 * var(--k))) skewX(calc(2deg * var(--k))); opacity: 1; }
-  }
-
-  .ember { position: absolute; left: 0; top: 0; width: var(--s); height: var(--s); border-radius: 50%;
-    background: radial-gradient(circle, var(--f-core) 0%, var(--f-mid) 40%, transparent 72%);
-    animation: drift calc(var(--d) * var(--spd)) linear var(--dl) infinite; opacity: 0; will-change: transform, opacity; }
-  /* embers drift outward along the frame normal (--dx/--dy), not upward */
-  @keyframes drift {
-    0% { transform: translate(0, 0) scale(1); opacity: 0; }
-    12% { opacity: calc(.4 + .6 * var(--k)); }
-    60% { transform: translate(calc(var(--dx) * .6), calc(var(--dy) * .6)) scale(.8); opacity: calc(.3 + .5 * var(--k)); }
-    100% { transform: translate(var(--dx), var(--dy)) scale(.3); opacity: 0; }
-  }
-
-  /* paused (editor) and reduced motion: static flames, no embers travelling */
-  .stage.paused .tongue, .stage.paused .ember, .stage.paused .band-glow { animation-play-state: paused; }
-  .stage.reduce .tongue, .stage.reduce .band-glow { animation: none; }
-  .stage.reduce .ember { animation: none; opacity: .55; }
-  @media (prefers-reduced-motion: reduce) {
-    .tongue, .band-glow { animation: none !important; }
-    .ember { animation: none !important; opacity: .55; }
-  }
+  /* ---- flame frame: one canvas, positioned over the frame bbox + flame margin ---- */
+  #flame { position: absolute; pointer-events: none; display: block; }
+  .no-webgl { position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #fff; background: rgba(160, 30, 30, .8); padding: 4px 10px; border-radius: 4px; }
 </style>
 </head>
 <body>
-<!-- flame shapes and gradients: defined once, colors come from CSS variables on <html> -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <linearGradient id="g-outer" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" style="stop-color:var(--f-mid)" />
-      <stop offset=".3" style="stop-color:var(--f-outer)" />
-      <stop offset=".72" style="stop-color:var(--f-outer);stop-opacity:.9" />
-      <stop offset=".9" style="stop-color:var(--f-deep);stop-opacity:.6" />
-      <stop offset="1" style="stop-color:var(--f-deep);stop-opacity:0" />
-    </linearGradient>
-    <linearGradient id="g-inner" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" style="stop-color:var(--f-core)" />
-      <stop offset=".45" style="stop-color:var(--f-mid)" />
-      <stop offset="1" style="stop-color:var(--f-mid);stop-opacity:0" />
-    </linearGradient>
-    <linearGradient id="g-back" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" style="stop-color:var(--f-outer);stop-opacity:.9" />
-      <stop offset=".6" style="stop-color:var(--f-deep);stop-opacity:.55" />
-      <stop offset="1" style="stop-color:var(--f-deep);stop-opacity:0" />
-    </linearGradient>
-    <radialGradient id="g-core" cx=".5" cy=".92" r=".6" fx=".5" fy="1">
-      <stop offset="0" style="stop-color:var(--f-core)" />
-      <stop offset=".55" style="stop-color:var(--f-core);stop-opacity:.85" />
-      <stop offset="1" style="stop-color:var(--f-mid);stop-opacity:0" />
-    </radialGradient>
-    <!-- viewBox 0 0 100 200, base centered at (50,200), tip near y=0. 3 layers: outer / body / hot core -->
-    <symbol id="flame-a" viewBox="0 0 100 200" preserveAspectRatio="none">
-      <path fill="url(#g-outer)" d="M56 0C50 22 70 40 82 70C96 104 100 150 84 180C74 196 62 200 50 200C34 200 18 194 10 176C-2 148 6 112 24 88C38 68 40 50 34 30C44 40 50 50 52 60C58 40 60 20 56 0Z" />
-      <path fill="url(#g-inner)" d="M52 58C56 86 76 110 76 146C76 176 66 196 50 200C34 196 24 178 26 150C28 124 44 104 46 82C48 96 52 104 52 58Z" />
-      <path fill="url(#g-core)" d="M50 120C58 140 66 158 64 178C62 192 56 199 50 200C43 199 36 192 36 178C36 160 44 142 50 120Z" />
-    </symbol>
-    <symbol id="flame-b" viewBox="0 0 100 200" preserveAspectRatio="none">
-      <path fill="url(#g-outer)" d="M36 0C48 20 42 42 58 62C74 82 98 110 94 150C90 184 70 200 50 200C28 200 8 186 6 154C4 124 20 104 30 84C38 66 44 52 40 36C36 22 32 12 36 0Z" />
-      <path fill="url(#g-inner)" d="M44 70C52 96 72 118 72 150C72 180 62 197 50 200C36 197 26 180 28 154C30 130 42 110 44 70Z" />
-      <path fill="url(#g-core)" d="M48 118C56 138 64 156 63 176C62 192 56 199 50 200C43 199 37 191 37 176C37 158 44 140 48 118Z" />
-    </symbol>
-    <symbol id="flame-c" viewBox="0 0 100 200" preserveAspectRatio="none">
-      <path fill="url(#g-outer)" d="M68 0C60 20 56 36 62 54C68 72 94 100 94 146C94 182 72 200 50 200C28 200 6 184 6 150C6 118 24 98 38 78C44 70 48 62 48 52C54 58 56 64 56 72C62 48 60 22 68 0Z" />
-      <path fill="url(#g-inner)" d="M56 74C62 100 74 124 72 156C70 182 62 197 50 200C38 197 28 182 29 158C30 132 48 110 56 74Z" />
-      <path fill="url(#g-core)" d="M52 116C60 138 66 158 64 178C62 192 56 199 50 200C43 199 36 191 37 176C38 156 46 138 52 116Z" />
-    </symbol>
-    <symbol id="flame-back" viewBox="0 0 100 200" preserveAspectRatio="none">
-      <path fill="url(#g-back)" d="M46 0C54 34 92 64 96 120C100 170 78 198 50 200C22 198 0 170 4 120C8 70 44 50 46 0Z" />
-    </symbol>
-  </defs>
-</svg>
-
 <div class="app">
   <header class="top">
     <h1>炎のフレーム 試作 <small style="font-size:13px;color:var(--ui-sub)">#566 デザイン見本</small></h1>
-    <p>DOM・CSS・SVG のみで描いた試作です。スライド・カメラ・氏名はすべてダミーで、実イベント画面ではありません。</p>
+    <p>WebGL のシェーダーで 1 枚の canvas に描いた試作です。スライド・カメラ・氏名はすべてダミーで、実イベント画面ではありません。</p>
   </header>
   <div class="stage-wrap" id="stageWrap">
     <div class="stage" id="stage">
       <div id="content"></div>
-      <div class="frame" id="frame"></div>
+      <canvas id="flame" aria-hidden="true"></canvas>
       <div class="guide" id="guide"></div>
     </div>
   </div>
@@ -233,13 +128,262 @@
     <div class="field"><div class="row">炎の高さ <b id="heightV"></b></div><input type="range" id="height" min="16" max="72" step="2"></div>
     <div class="field"><div class="row">フレームの太さ <b id="thicknessV"></b></div><input type="range" id="thickness" min="2" max="12" step="1"></div>
     <div class="field"><div class="row">角丸 <b id="radiusV"></b></div><input type="range" id="radius" min="0" max="48" step="2"></div>
+    <div class="field"><div class="row">火の粉の量 <b id="embersV"></b></div><input type="range" id="embers" min="0" max="100" step="5"></div>
     <label class="check"><input type="checkbox" id="pause"> 一時停止（編集中のプレビュー）</label>
     <label class="check"><input type="checkbox" id="reduce"> 動きを減らす（静止した炎）</label>
     <label class="check"><input type="checkbox" id="guideChk"> 安全領域を表示</label>
     <div class="meta" id="meta"></div>
   </aside>
 </div>
+<script id="vs" type="x-shader/x-vertex">
+attribute vec2 aPos;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
+</script>
+<script id="fs-common" type="x-shader/x-fragment">
+precision highp float;
+uniform vec2 uRes;      // backing-store size of the current target (device px)
+uniform vec2 uScale;    // backing px per logical stage px (canvas)
+uniform vec2 uOrigin;   // canvas top-left in logical stage px
+uniform vec2 uCenter;   // frame rect center (logical px)
+uniform vec2 uHalf;     // frame rect half size (logical px)
+uniform float uR;       // corner radius
+uniform float uT;       // frame line thickness
+uniform float uH;       // nominal flame height
+uniform float uTime;    // flow time (already scaled by the turbulence speed)
+uniform float uClock;   // wall clock seconds (embers, shimmer, flares)
+uniform float uTurb;    // 0..1 turbulence amount
+uniform float uEmber;   // 0..1 ember amount
+uniform float uCells;   // tangential noise cells around the perimeter (multiple of 8)
+uniform float uRp;      // corner arc reference radius for the perimeter parameter
+uniform float uLight;   // 1 = light background (normal alpha blend), 0 = additive look
 
+// logical stage position of this fragment in the canvas target
+vec2 stagePos(vec2 fc, vec2 res) { return uOrigin + vec2(fc.x, res.y - fc.y) / (uScale * res / uRes); }
+
+// Rounded-rect SDF + perimeter parameter.
+// returns (d = signed outward distance, s = arc length, J = tangent px per s-unit, P = perimeter)
+vec4 frameCoords(vec2 p) {
+  vec2 q = p - uCenter;
+  vec2 c = max(uHalf - uR, 0.0);
+  vec2 k = clamp(q, -c, c);
+  vec2 dv = q - k;
+  vec2 qq = abs(q) - c;
+  float d = length(max(qq, 0.0)) + min(max(qq.x, qq.y), 0.0) - uR;
+  float A = 1.5707963 * uRp;
+  float P = 4.0 * c.x + 4.0 * c.y + 4.0 * A;
+  float e = 1e-4, s = 0.0, J = 1.0, ld = length(dv);
+  bool zx = abs(dv.x) < e, zy = abs(dv.y) < e;
+  if (zx && zy) {           // inside the straight skeleton (interior): any continuous value
+    s = k.x + c.x;
+  } else if (zx) {
+    s = dv.y < 0.0 ? k.x + c.x : 2.0 * c.x + 2.0 * A + 2.0 * c.y + (c.x - k.x);
+  } else if (zy) {
+    s = dv.x > 0.0 ? 2.0 * c.x + A + (k.y + c.y) : 4.0 * c.x + 2.0 * c.y + 3.0 * A + (c.y - k.y);
+  } else {
+    J = ld / uRp;
+    if (dv.x > 0.0 && dv.y < 0.0)      s = 2.0 * c.x + atan(dv.x, -dv.y) * uRp;
+    else if (dv.x > 0.0)               s = 2.0 * c.x + A + 2.0 * c.y + atan(dv.y, dv.x) * uRp;
+    else if (dv.y > 0.0)               s = 4.0 * c.x + 2.0 * c.y + 2.0 * A + atan(-dv.x, dv.y) * uRp;
+    else                               s = 4.0 * c.x + 4.0 * c.y + 3.0 * A + atan(-dv.y, -dv.x) * uRp;
+  }
+  return vec4(d, s, max(J, 0.05), P);
+}
+
+vec3 hash33(vec3 p3) {
+  p3 = fract(p3 * vec3(.1031, .1030, .0973));
+  p3 += dot(p3, p3.yxz + 33.33);
+  return fract((p3.xxy + p3.yxx) * p3.zyx);
+}
+// 3D gradient noise, periodic in x with integer period `per`
+float gnoise(vec3 p, float per) {
+  vec3 i = floor(p), f = p - i;
+  vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  float x0 = mod(i.x, per), x1 = mod(i.x + 1.0, per);
+  #define G(X, Y, Z, O) dot(hash33(vec3(X, i.y + Y, i.z + Z)) * 2.0 - 1.0, f - O)
+  float a = G(x0, 0.0, 0.0, vec3(0.0, 0.0, 0.0)), b = G(x1, 0.0, 0.0, vec3(1.0, 0.0, 0.0));
+  float cc = G(x0, 1.0, 0.0, vec3(0.0, 1.0, 0.0)), dd = G(x1, 1.0, 0.0, vec3(1.0, 1.0, 0.0));
+  float e1 = G(x0, 0.0, 1.0, vec3(0.0, 0.0, 1.0)), f1 = G(x1, 0.0, 1.0, vec3(1.0, 0.0, 1.0));
+  float g1 = G(x0, 1.0, 1.0, vec3(0.0, 1.0, 1.0)), h1 = G(x1, 1.0, 1.0, vec3(1.0, 1.0, 1.0));
+  #undef G
+  return mix(mix(mix(a, b, u.x), mix(cc, dd, u.x), u.y), mix(mix(e1, f1, u.x), mix(g1, h1, u.x), u.y), u.z);
+}
+</script>
+<script id="fs-flame" type="x-shader/x-fragment">
+uniform vec3 uRamp0, uRamp1, uRamp2, uRamp3, uRamp4;
+
+float fbm(vec3 p, float per, int oct) {
+  float sum = 0.0, amp = 0.5;
+  for (int i = 0; i < 5; i++) {
+    if (i >= oct) break;
+    sum += amp * gnoise(p, per);
+    p = p * vec3(2.0, 2.03, 1.9) + vec3(0.0, 11.7, 3.1);
+    per *= 2.0; amp *= 0.5;
+  }
+  return sum;
+}
+
+vec3 ramp(float h) {
+  if (h < 0.25) return mix(uRamp0, uRamp1, h / 0.25);
+  if (h < 0.5) return mix(uRamp1, uRamp2, (h - 0.25) / 0.25);
+  if (h < 0.8) return mix(uRamp2, uRamp3, (h - 0.5) / 0.3);
+  return mix(uRamp3, uRamp4, smoothstep(0.8, 1.0, h));
+}
+
+// periodic distance along the perimeter
+float pdist(float a, float b, float P) { float x = mod(a - b + 0.5 * P, P) - 0.5 * P; return x; }
+
+// Embers: small hot particles born in the flames and shot outward along the normal.
+float embers(float s, float v, float J, float P) {
+  if (uEmber <= 0.0) return 0.0;
+  float nE = floor(P / mix(90.0, 16.0, uEmber));
+  float cell = P / nE;
+  float ci = floor(s / cell);
+  float acc = 0.0;
+  for (int j = -1; j <= 1; j++) {
+    float c = mod(ci + float(j), nE);
+    for (int k = 0; k < 2; k++) {
+      vec3 h0 = hash33(vec3(c, float(k) * 7.0 + 1.0, 3.0));
+      float life = 0.9 + 1.3 * h0.x;
+      float ph = uClock / life + h0.y;
+      float m = floor(ph), a = ph - m;
+      vec3 r = hash33(vec3(c + 0.37, float(k) + 13.0, m));
+      vec3 r2 = hash33(vec3(m, c * 1.7, float(k) + 5.0));
+      float travel = uH * (0.7 + 2.0 * r.y) * a * (1.0 - 0.35 * a);
+      float vp = uT * 0.5 + uH * 0.25 * r.z + travel;
+      float drift = (r2.x - 0.5) * cell * 0.9 * a + sin(uClock * (2.0 + 3.0 * r2.y) + r2.z * 30.0) * 3.0 * a;
+      float sp = (c + r.x) * cell;
+      float ds = pdist(s, sp, P) * J - drift;
+      float dvv = v - vp;
+      float size = 0.55 + 0.9 * r2.y * r2.y;
+      float streak = 1.0 + 1.6 * (1.0 - a);             // stretched along the outward velocity while fast
+      float g = exp(-(ds * ds) / (size * size) - (dvv * dvv) / (size * size * streak * streak));
+      float fade = smoothstep(0.0, 0.08, a) * pow(1.0 - a, 1.4);
+      float flick = 0.55 + 0.45 * sin(uClock * (18.0 + 20.0 * r.z) + r2.x * 40.0);
+      acc += g * fade * flick * step(r2.z, 0.35 + 0.65 * uEmber);
+    }
+  }
+  return acc;
+}
+
+void main() {
+  vec2 p = stagePos(gl_FragCoord.xy, uRes);
+  vec4 fc = frameCoords(p);
+  float d = fc.x, s = fc.y, J = fc.z, P = fc.w;
+  if (d <= 0.0) { gl_FragColor = vec4(0.0); return; }
+  float v = d - uT * 0.5;
+  float y = max(v, 0.0) / uH;
+  if (y > 3.6) { gl_FragColor = vec4(0.0); return; }
+
+  float X = s / P * uCells;                 // perimeter coordinate in noise cells (periodic, seamless)
+  float cellH = 30.0 + uH * 0.35;           // outward noise scale: tongues are longer than wide
+  float V = max(v, 0.0) / cellH;
+  float t = uTime;
+
+  // tongue length varies slowly and organically around the frame
+  float lenN = gnoise(vec3(X * 0.125, 0.5, t * 0.22 + 4.0), uCells * 0.125);
+  float lenN2 = gnoise(vec3(X * 0.5, 2.5, t * 0.45), uCells * 0.5);
+  // flare surges: bright bulges that occasionally travel around the frame
+  float flare = 0.0;
+  for (int i = 0; i < 2; i++) {
+    float fi = float(i);
+    float period = 5.5 + 2.5 * fi;
+    float cyc = uClock / period + fi * 0.43;
+    float m = floor(cyc), a = cyc - m;
+    vec3 r = hash33(vec3(m, fi + 21.0, 9.0));
+    float dir = r.x < 0.5 ? -1.0 : 1.0;
+    float pos = r.y * P + dir * a * P * (0.35 + 0.3 * r.z);
+    float ds = pdist(s, pos, P);
+    float env = smoothstep(0.0, 0.15, a) * smoothstep(1.0, 0.6, a) * step(0.3, r.z + 0.25);
+    flare += env * exp(-ds * ds / (2.0 * 70.0 * 70.0));
+  }
+  float L = 0.95 + 0.55 * lenN + 0.3 * lenN2 + 0.55 * flare;
+
+  // domain warp: licks curl and split as they travel outward
+  vec3 wp = vec3(X * 0.5, V * 0.6 - t * 0.9, t * 0.3);
+  float w1 = fbm(wp, uCells * 0.5, 2);
+  float w2 = fbm(wp + vec3(3.0, 7.1, 1.7), uCells * 0.5, 2);
+  float warpK = (0.35 + 1.1 * y) * (0.4 + uTurb);
+  vec3 np = vec3(X + w1 * warpK * 1.6, V - t * 1.7 + w2 * warpK, t * 0.5);
+  float n = fbm(np, uCells, 5);
+
+  float amp = 0.45 + 0.9 * uTurb;
+  // separate licks: a tangential ridge field that opens dark gaps between tongues as they leave the frame
+  float lick = gnoise(vec3(X * 1.5 + w1 * 0.8, V * 0.35 - t * 0.9, t * 0.25 + 7.0), uCells * 1.5);
+  float heat = 0.84 - 0.95 * y / L;
+  heat += n * (1.1 + 1.5 * y) * amp;
+  heat += lick * smoothstep(0.05, 0.6, y) * (0.55 + 0.4 * uTurb);
+  heat -= 0.15 * y * y;
+  // outer edge of the flame body breaks up into wisps
+  heat *= 1.0 + 0.35 * flare;
+
+  // the frame line itself: a crisp white-hot band
+  float px = 1.0 / uScale.x;
+  float line = 1.0 - smoothstep(uT - 0.5 * px, uT + px, d);
+  heat = max(heat, line * (0.9 + 0.1 * n));
+
+  float h = clamp(heat, 0.0, 1.0);
+  float body = smoothstep(0.02, 0.3, heat);
+  vec3 col = ramp(h);
+  float e = embers(s, v, J, P);
+  vec3 ecol = mix(uRamp3, uRamp4, 0.6);
+
+  vec4 o;
+  if (uLight > 0.5) {
+    // light background: normal alpha, darker amber edges so it does not wash out
+    float a = body * (0.12 + 0.83 * smoothstep(0.0, 0.85, h));
+    o = vec4(col * a, a);
+    float ea = clamp(e, 0.0, 1.0) * 0.9;
+    o = vec4(ecol * ea + o.rgb * (1.0 - ea), ea + o.a * (1.0 - ea));
+  } else {
+    // dark background: emit more light than coverage -> additive look when composited
+    float glow = body * (0.22 + 0.9 * h * h);
+    o = vec4(col * glow, body * (0.12 + 0.55 * h));
+    o.rgb += ecol * e * 1.4;
+    o.a += e * 0.35;
+  }
+  gl_FragColor = clamp(o, 0.0, 1.0);
+}
+</script>
+<script id="fs-blur" type="x-shader/x-fragment">
+uniform sampler2D uTex;
+uniform vec2 uDir;      // texel step in uv
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec4 c = texture2D(uTex, uv) * 0.2270270;
+  c += (texture2D(uTex, uv + uDir * 1.3846154) + texture2D(uTex, uv - uDir * 1.3846154)) * 0.3162162;
+  c += (texture2D(uTex, uv + uDir * 3.2307692) + texture2D(uTex, uv - uDir * 3.2307692)) * 0.0702703;
+  gl_FragColor = c;
+}
+</script>
+<script id="fs-comp" type="x-shader/x-fragment">
+uniform sampler2D uFlame, uBloom;
+uniform float uBloomK;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 p = stagePos(gl_FragCoord.xy, uRes);
+  vec2 q = p - uCenter, c = max(uHalf - uR, 0.0), qq = abs(q) - c;
+  float d = length(max(qq, 0.0)) + min(max(qq.x, qq.y), 0.0) - uR;
+  // inside the frame stays exactly transparent (camera face / slide never covered)
+  float inside = clamp(d * uScale.x, 0.0, 1.0);
+  if (inside <= 0.0) { gl_FragColor = vec4(0.0); return; }
+  // heat shimmer: the flame tips wobble as if seen through hot air; the frame line stays crisp
+  float v = d - uT;
+  float sh = smoothstep(0.15 * uH, 1.3 * uH, v) * (0.6 + 1.6 * uTurb);
+  vec2 wob = vec2(sin(p.y * 0.21 + uClock * 9.0 + sin(p.x * 0.07 + uClock * 2.3) * 2.0),
+                  cos(p.x * 0.19 - uClock * 8.0 + sin(p.y * 0.05 - uClock * 1.7) * 2.0)) * sh;
+  vec2 duv = wob * uScale / uRes * vec2(1.0, -1.0);
+  vec4 f = texture2D(uFlame, uv + duv);
+  vec4 b = texture2D(uBloom, uv + duv * 0.5);
+  vec4 o;
+  if (uLight > 0.5) {
+    b *= uBloomK;
+    o = f + b * (1.0 - f.a);
+  } else {
+    o = f + vec4(b.rgb * uBloomK, b.a * uBloomK * 0.25);
+  }
+  gl_FragColor = clamp(o, 0.0, 1.0) * inside;
+}
+</script>
 <script>
 (() => {
   const W = 960, H = 540;
@@ -253,17 +397,25 @@
     height: clamp(q.get("height"), 16, 72, 44),
     thickness: clamp(q.get("thickness"), 2, 12, 4),
     radius: clamp(q.get("radius"), 0, 48, 16),
+    embers: clamp(q.get("embers"), 0, 100, 50),
     pause: q.get("pause") === "1",
     reduce: q.get("motion") === "reduce",
     guide: q.get("guide") === "1",
   };
+  const fixedTime = q.has("t") ? clamp(q.get("t"), 0, 1e6, 0) : null;
   if (q.get("view") === "output") document.body.classList.add("output");
 
   const stage = document.getElementById("stage"), wrap = document.getElementById("stageWrap");
-  const frame = document.getElementById("frame"), content = document.getElementById("content"), guide = document.getElementById("guide");
+  const content = document.getElementById("content"), guide = document.getElementById("guide"), canvas = document.getElementById("flame");
 
-  // Fixed seed: same layout on every load (stable captures and OBS reloads).
-  function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  // Temperature ramps: smoky edge -> deep -> mid -> hot -> white core.
+  const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+  const RAMPS = {
+    ember:  ["#2A0602", "#A3170A", "#F2560F", "#FFB22E", "#FFF6DA"],
+    azure:  ["#020624", "#0B2AA6", "#1F6BFF", "#62CCFF", "#F0FFFF"],
+    violet: ["#14031F", "#5A0FA8", "#A33CFF", "#EA86FF", "#FFF2FF"],
+    hakuji: ["#6A3A08", "#94580F", "#BC7E1C", "#D69F3C", "#F2CF7E"],
+  };
 
   const personSvg = `<svg viewBox="0 0 200 220" aria-hidden="true"><circle cx="100" cy="70" r="42" fill="#5B6E8C"/><path d="M18 220C22 150 58 124 100 124C142 124 178 150 182 220Z" fill="#5B6E8C"/></svg>`;
   const slide = (big) => `<div class="kicker">見本スライド</div><h3>${big ? "地域とつくる<br>オープンな勉強会" : "地域とつくる<br>オープンな勉強会"}</h3><ul><li>ダミーの箇条書き 1：読みやすさの確認用</li><li>ダミーの箇条書き 2：本文は炎で隠さない</li>${big ? "<li>ダミーの箇条書き 3：中央は常に空ける</li>" : ""}</ul><div class="foot">これはデザイン確認用の見本資料です</div><span class="mock-tag">ダミー資料</span>`;
@@ -282,129 +434,208 @@
     return { target, safe: target, edge: 0,
       html: `<div class="mock mock-slide" style="left:${deck.x}px;top:${deck.y}px;width:${deck.w}px;height:${deck.h}px">${slide(false)}</div>
              <div class="mock mock-camera" style="left:${cam.x}px;top:${cam.y}px;width:${cam.w}px;height:${cam.h}px">${personSvg}<span class="mock-tag">ダミーカメラ映像</span></div>
-             <div class="name-plate" style="left:${cam.x}px;top:${cam.y + cam.h + 64}px;width:${cam.w}px"><b>登壇者名（見本）</b><span>所属・役割（見本）</span></div>` };
+             <div class="name-plate" style="left:${cam.x}px;top:${cam.y + cam.h + 84}px;width:${cam.w}px"><b>登壇者名（見本）</b><span>所属・役割（見本）</span></div>` };
+  }
+  const osReduce = matchMedia("(prefers-reduced-motion: reduce)");
+  const reduced = () => state.reduce || osReduce.matches;
+
+  // ---------- WebGL ----------
+  const glOpts = { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true };
+  const gl = canvas.getContext("webgl2", glOpts) || canvas.getContext("webgl", glOpts);
+  const glVersion = gl ? (typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext ? "WebGL2" : "WebGL1") : "なし";
+  let progs = null, quad = null;
+  const src = id => document.getElementById(id).textContent;
+  function compile(fsId) {
+    const mk = (type, text) => { const sh = gl.createShader(type); gl.shaderSource(sh, text); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh)); return sh; };
+    const p = gl.createProgram();
+    gl.attachShader(p, mk(gl.VERTEX_SHADER, src("vs")));
+    gl.attachShader(p, mk(gl.FRAGMENT_SHADER, src("fs-common") + src(fsId)));
+    gl.bindAttribLocation(p, 0, "aPos"); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+    return { p, u };
+  }
+  function makeTarget(w, h) {
+    const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    return { tex, fb, w, h };
+  }
+  let glError = "";
+  if (gl) {
+    try {
+      progs = { flame: compile("fs-flame"), blur: compile("fs-blur"), comp: compile("fs-comp") };
+      quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    } catch (e) { glError = String(e.message || e); progs = null; console.error(glError); }
   }
 
-  // Walk a rounded rectangle clockwise; returns point + outward normal for arc length s.
-  function roundedRectSampler(rect, r) {
-    r = Math.max(0, Math.min(r, rect.w / 2, rect.h / 2));
-    // corners always get a short sampling length so normals fan smoothly (also when 角丸 = 0)
-    const sx = rect.w - 2 * r, sy = rect.h - 2 * r, arc = Math.max(Math.PI * r / 2, 14);
-    const segs = [
-      { len: sx, f: t => [rect.x + r + t * sx, rect.y, 0, -1] },
-      { len: arc, f: t => { const a = -Math.PI / 2 + t * Math.PI / 2; return [rect.x + rect.w - r + r * Math.cos(a), rect.y + r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; } },
-      { len: sy, f: t => [rect.x + rect.w, rect.y + r + t * sy, 1, 0] },
-      { len: arc, f: t => { const a = t * Math.PI / 2; return [rect.x + rect.w - r + r * Math.cos(a), rect.y + rect.h - r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; } },
-      { len: sx, f: t => [rect.x + rect.w - r - t * sx, rect.y + rect.h, 0, 1] },
-      { len: arc, f: t => { const a = Math.PI / 2 + t * Math.PI / 2; return [rect.x + r + r * Math.cos(a), rect.y + rect.h - r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; } },
-      { len: sy, f: t => [rect.x, rect.y + rect.h - r - t * sy, -1, 0] },
-      { len: arc, f: t => { const a = Math.PI + t * Math.PI / 2; return [rect.x + r + r * Math.cos(a), rect.y + r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; } },
-    ].filter(s => s.len > 0);
-    const total = segs.reduce((a, s) => a + s.len, 0);
-    return { total, at(s) { s = ((s % total) + total) % total; for (const seg of segs) { if (s <= seg.len) return seg.f(seg.len ? s / seg.len : 0); s -= seg.len; } return segs[0].f(0); } };
+  // ---------- geometry of the flame canvas ----------
+  let geo = null, targets = null;
+  const MAX_PIXELS = 1.4e6;       // cap on flame canvas backing pixels (1080p OBS budget)
+  function stageScale() {
+    const sx = wrap.clientWidth / W;
+    const sy = document.body.classList.contains("output") ? wrap.clientHeight / H : sx;
+    return { sx, sy };
+  }
+  function computeGeometry() {
+    const L = layout(state.place);
+    const rect = L.target, T = state.thickness, Hf = state.height;
+    const margin = Math.ceil(T + Hf * 2.9 + 12);
+    const x0 = Math.max(0, rect.x - margin), y0 = Math.max(0, rect.y - margin);
+    const x1 = Math.min(W, rect.x + rect.w + margin), y1 = Math.min(H, rect.y + rect.h + margin);
+    const cw = x1 - x0, ch = y1 - y0;
+    const { sx, sy } = stageScale(), dpr = window.devicePixelRatio || 1;
+    // full-screen mode renders at half resolution and is upscaled; everything is capped by MAX_PIXELS
+    let k = state.place === "screen" ? 0.5 : 1;
+    let bw = cw * sx * dpr * k, bh = ch * sy * dpr * k;
+    if (bw * bh > MAX_PIXELS) { const f = Math.sqrt(MAX_PIXELS / (bw * bh)); bw *= f; bh *= f; }
+    bw = Math.max(2, Math.round(bw)); bh = Math.max(2, Math.round(bh));
+    const R = Math.max(0, Math.min(state.radius, rect.w / 2, rect.h / 2));
+    const Rp = R + Hf * 0.6 + 8;
+    const c = [Math.max(rect.w / 2 - R, 0), Math.max(rect.h / 2 - R, 0)];
+    const P = 4 * c[0] + 4 * c[1] + 2 * Math.PI * Rp;
+    const cells = Math.max(8, Math.round(P / 24 / 8) * 8);
+    Object.assign(canvas.style, { left: x0 + "px", top: y0 + "px", width: cw + "px", height: ch + "px" });
+    canvas.width = bw; canvas.height = bh;
+    geo = { rect, L, x0, y0, cw, ch, bw, bh, R, Rp, P, cells };
+    if (gl && progs) {
+      if (targets) for (const t of Object.values(targets)) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); }
+      const qw = Math.max(1, Math.ceil(bw / 4)), qh = Math.max(1, Math.ceil(bh / 4));
+      targets = { flame: makeTarget(bw, bh), a: makeTarget(qw, qh), b: makeTarget(qw, qh) };
+    }
   }
 
-  // Outside-of-frame clip: flames and embers can never paint over the camera face or slide text.
-  function outsideClip(rect, r) {
-    r = Math.max(0, Math.min(r, rect.w / 2, rect.h / 2));
-    const { x, y, w, h } = rect;
-    return `path(evenodd, "M-200 -200H${W + 200}V${H + 200}H-200Z M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z")`;
+  function setCommon(prog, res) {
+    const u = prog.u, g = geo, r = g.rect;
+    gl.uniform2f(u.uRes, res[0], res[1]);
+    if (u.uScale) gl.uniform2f(u.uScale, g.bw / g.cw, g.bh / g.ch);
+    if (u.uOrigin) gl.uniform2f(u.uOrigin, g.x0, g.y0);
+    if (u.uCenter) gl.uniform2f(u.uCenter, r.x + r.w / 2, r.y + r.h / 2);
+    if (u.uHalf) gl.uniform2f(u.uHalf, r.w / 2, r.h / 2);
+    if (u.uR) gl.uniform1f(u.uR, g.R);
+    if (u.uT) gl.uniform1f(u.uT, state.thickness);
+    // 白磁の金 stays restrained on the light paper: shorter flames
+    if (u.uH) gl.uniform1f(u.uH, state.height * (state.theme === "hakuji" ? 0.8 : 1));
+    if (u.uTurb) gl.uniform1f(u.uTurb, state.flicker / 100);
+    if (u.uEmber) gl.uniform1f(u.uEmber, state.embers / 100);
+    if (u.uCells) gl.uniform1f(u.uCells, g.cells);
+    if (u.uRp) gl.uniform1f(u.uRp, g.Rp);
+    if (u.uLight) gl.uniform1f(u.uLight, state.theme === "hakuji" ? 1 : 0);
+  }
+  // flow speed follows ゆらぎの強さ; integrate it so dragging the slider never makes the flames jump
+  const flowSpeed = () => 0.55 + 0.9 * (state.flicker / 100);
+  let clock = fixedTime ?? 0, flow = clock * flowSpeed();
+
+  function draw() {
+    if (!gl || !progs || !geo) return;
+    const { flame, blur, comp } = progs, g = geo;
+    gl.disable(gl.BLEND);
+    // 1) flames + frame line + embers at canvas resolution
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targets.flame.fb); gl.viewport(0, 0, g.bw, g.bh);
+    gl.useProgram(flame.p); setCommon(flame, [g.bw, g.bh]);
+    gl.uniform1f(flame.u.uTime, flow); gl.uniform1f(flame.u.uClock, clock);
+    RAMPS[state.theme].forEach((c, i) => gl.uniform3fv(flame.u["uRamp" + i], hex(c)));
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    // 2) bloom: quarter-res separable blur
+    const qa = targets.a, qb = targets.b;
+    gl.useProgram(blur.p); gl.activeTexture(gl.TEXTURE0); gl.uniform1i(blur.u.uTex, 0);
+    const pass = (src, dst, dx, dy) => { gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h); gl.uniform2f(blur.u.uRes, dst.w, dst.h); gl.bindTexture(gl.TEXTURE_2D, src.tex); gl.uniform2f(blur.u.uDir, dx, dy); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); };
+    pass(targets.flame, qa, 2 / g.bw, 0);
+    pass(qa, qb, 0, 2 / qa.h);
+    pass(qb, qa, 3 / qa.w, 0);
+    pass(qa, qb, 0, 3 / qa.h);
+    // 3) composite to the canvas (inside of the frame masked to exactly transparent)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, g.bw, g.bh);
+    gl.useProgram(comp.p); setCommon(comp, [g.bw, g.bh]);
+    gl.uniform1f(comp.u.uClock, clock);
+    gl.uniform1f(comp.u.uBloomK, state.theme === "hakuji" ? 0.5 : 0.95);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targets.flame.tex); gl.uniform1i(comp.u.uFlame, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, qb.tex); gl.uniform1i(comp.u.uBloom, 1);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.activeTexture(gl.TEXTURE0);
   }
 
-  let counts = { tongues: 0, embers: 0 };
-  function buildFrame() {
+  // ---------- loop ----------
+  const STATIC_TIME = 2.4;              // reduced motion: one fixed, fully formed frame
+  let raf = 0, lastNow = 0, fps = 0, fpsFrames = 0, fpsStart = 0, frameMs = 0;
+  function loop(now) {
+    raf = 0;
+    const dt = lastNow ? Math.min(0.1, (now - lastNow) / 1000) : 0; lastNow = now;
+    clock += dt; flow += dt * flowSpeed();
+    const t0 = performance.now(); draw(); frameMs = frameMs * 0.9 + (performance.now() - t0) * 0.1;
+    fpsFrames++; if (now - fpsStart >= 1000) { fps = Math.round(fpsFrames * 1000 / (now - fpsStart)); fpsFrames = 0; fpsStart = now; updateMeta(); }
+    if (animating()) raf = requestAnimationFrame(loop);
+  }
+  const animating = () => fixedTime === null && !state.pause && !reduced();
+  function schedule() {
+    const animate = animating();
+    if (animate && !raf) { lastNow = 0; fpsStart = performance.now(); fpsFrames = 0; raf = requestAnimationFrame(loop); }
+    if (!animate && raf) { cancelAnimationFrame(raf); raf = 0; }
+  }
+  function refresh() {
+    if (reduced() && fixedTime === null) { clock = STATIC_TIME; flow = STATIC_TIME * flowSpeed(); }
+    draw(); schedule(); updateMeta();
+  }
+
+  function buildScene() {
     const L = layout(state.place);
     content.innerHTML = L.html;
     document.documentElement.dataset.theme = state.theme;
     const g = L.safe; Object.assign(guide.style, { left: g.x + "px", top: g.y + "px", width: g.w + "px", height: g.h + "px" });
-    const rand = rng(566), T = state.thickness, R = state.radius, screenEdge = L.edge > 0;
-    const rect = L.target;
-    const s = roundedRectSampler(rect, R);
-    const spacing = Math.max(11, s.total / (screenEdge ? 150 : 84));
-    const n = Math.round(s.total / spacing);
-    const bandStyle = `left:${rect.x}px;top:${rect.y}px;width:${rect.w}px;height:${rect.h}px;--r:${R}px;--t:${T}px`;
-    // The frame itself burns: every tongue is rooted on the frame line and points along the outward normal
-    // (top → up, bottom → down, left → left, right → right, corners → diagonal). Gravity is ignored.
-    const tongue = (layer, x, y, nx, ny) => {
-      const r0 = rand();
-      const lick = r0 < 0.16 ? 1.2 + rand() * 0.3 : r0 < 0.45 ? 0.5 + rand() * 0.2 : 0.72 + rand() * 0.3;
-      let h = state.height * lick * (layer === "back" ? 1.15 : 1);
-      // 白磁 (light) keeps the gold restrained: shorter tongues on the bright paper.
-      if (state.theme === "hakuji") h *= 0.68;
-      const w = Math.max(spacing * (layer === "back" ? 2.2 : 1.5 + rand() * 0.7), h * (layer === "back" ? 0.42 : 0.28 + rand() * 0.12));
-      // root in the middle of the band, just outside the frame line
-      const bx = x + nx * T * 0.5, by = y + ny * T * 0.5;
-      const rot = Math.atan2(nx, -ny) * 180 / Math.PI + (rand() - 0.5) * 8;
-      const sym = layer === "back" ? "flame-back" : ["flame-a", "flame-b", "flame-c"][Math.floor(rand() * 3)];
-      const anim = ["fl-a", "fl-b", "fl-c"][Math.floor(rand() * 3)];
-      const d = (layer === "back" ? 1.5 : 0.75) + rand() * 0.6;
-      return `<svg class="tongue ${layer}" style="width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;translate:${(bx - w / 2).toFixed(1)}px ${(by - h).toFixed(1)}px;rotate:${rot.toFixed(1)}deg;--anim:${anim};--d:${d.toFixed(2)}s;--dl:${(-rand() * 3).toFixed(2)}s"><use href="#${sym}"/></svg>`;
-    };
-    let flames = `<div class="band-glow out" style="${bandStyle}"></div>`;
-    const nBack = Math.round(n / 2);
-    for (let i = 0; i < nBack; i++) { const [x, y, nx, ny] = s.at((i + 0.5) * spacing * 2); flames += tongue("back", x, y, nx, ny); }
-    flames += `<div class="band out" style="${bandStyle}"></div>`;
-    for (let i = 0; i < n; i++) { const [x, y, nx, ny] = s.at(i * spacing + (rand() - 0.5) * spacing * 0.4); flames += tongue("main", x, y, nx, ny); }
-    // embers: leave the frame all the way around and drift outward along the normal, with a little sideways wander
-    const embers = screenEdge ? 28 : 18;
-    for (let i = 0; i < embers; i++) {
-      const [x, y, nx, ny] = s.at((i + rand() * 0.8) * s.total / embers);
-      const size = 2 + rand() * 3.2;
-      const travel = screenEdge ? L.edge * 0.7 + rand() * 30 : 36 + rand() * state.height * 1.4;
-      const side = (rand() - 0.5) * 28;
-      const ex = x + nx * (T + 2), ey = y + ny * (T + 2);
-      flames += `<i class="ember" style="--s:${size.toFixed(1)}px;translate:${(ex - size / 2).toFixed(1)}px ${(ey - size / 2).toFixed(1)}px;--dx:${(nx * travel - ny * side).toFixed(1)}px;--dy:${(ny * travel + nx * side).toFixed(1)}px;--d:${(1.6 + rand() * 1.8).toFixed(2)}s;--dl:${(-rand() * 4).toFixed(2)}s"></i>`;
-    }
-    frame.innerHTML = `<div class="flames" style="clip-path:${outsideClip(rect, R)}">${flames}</div><div class="band-inner" style="${bandStyle}"></div>`;
-    counts = { tongues: n + nBack, embers };
-    applyVars();
-  }
-
-  function applyVars() {
-    const k = state.flicker / 100 * 1.4;
-    stage.style.setProperty("--k", k.toFixed(3));
-    stage.style.setProperty("--spd", (1.35 - state.flicker / 100 * 0.55).toFixed(3));
-    stage.classList.toggle("paused", state.pause);
-    stage.classList.toggle("reduce", state.reduce);
     stage.classList.toggle("show-guide", state.guide);
-    document.documentElement.dataset.theme = state.theme;
+    computeGeometry();
+  }
+  function fit() {
+    const { sx, sy } = stageScale();
+    stage.style.transform = `scale(${sx}, ${sy})`;
+    computeGeometry(); refresh();
   }
 
-  function fit() { const s = wrap.clientWidth / W; stage.style.transform = `scale(${s})`; if (document.body.classList.contains("output")) { const sy = wrap.clientHeight / H; stage.style.transform = `scale(${s}, ${sy})`; } }
-
-  // controls
-  const bindSeg = (id, key, rebuild) => {
+  // ---------- controls ----------
+  const bindSeg = (id, key) => {
     const el = document.getElementById(id);
     const sync = () => el.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === state[key])));
-    el.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; state[key] = b.dataset.v; sync(); rebuild ? buildFrame() : applyVars(); updateMeta(); });
+    el.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; state[key] = b.dataset.v; sync(); buildScene(); refresh(); });
     sync();
   };
-  const units = { flicker: "", height: "px", thickness: "px", radius: "px" };
-  const bindRange = (key, rebuild) => {
+  const units = { flicker: "", height: "px", thickness: "px", radius: "px", embers: "" };
+  const bindRange = (key, geometry) => {
     const el = document.getElementById(key), out = document.getElementById(key + "V");
     el.value = state[key]; out.textContent = state[key] + units[key];
-    el.addEventListener("input", () => { state[key] = Number(el.value); out.textContent = state[key] + units[key]; rebuild ? buildFrame() : applyVars(); updateMeta(); });
+    el.addEventListener("input", () => { state[key] = Number(el.value); out.textContent = state[key] + units[key]; if (geometry) computeGeometry(); refresh(); });
   };
-  const bindCheck = (id, key) => { const el = document.getElementById(id); el.checked = state[key]; el.addEventListener("change", () => { state[key] = el.checked; applyVars(); updateMeta(); }); };
-  bindSeg("themeSeg", "theme", true); bindSeg("placeSeg", "place", true);
-  bindRange("flicker", false); bindRange("height", true); bindRange("thickness", true); bindRange("radius", true);
-  bindCheck("pause", "pause"); bindCheck("reduce", "reduce"); bindCheck("guideChk", "guide");
+  const bindCheck = (id, key, after) => { const el = document.getElementById(id); el.checked = state[key]; el.addEventListener("change", () => { state[key] = el.checked; if (after) after(); refresh(); }); };
+  bindSeg("themeSeg", "theme"); bindSeg("placeSeg", "place");
+  bindRange("flicker", false); bindRange("height", true); bindRange("thickness", true); bindRange("radius", true); bindRange("embers", false);
+  bindCheck("pause", "pause"); bindCheck("reduce", "reduce"); bindCheck("guideChk", "guide", () => stage.classList.toggle("show-guide", state.guide));
+  osReduce.addEventListener("change", refresh);
 
-  // lightweight frame-rate meter for the design note (indicative only)
-  let fps = 0, frames = 0, last = performance.now();
-  const tick = now => { frames++; if (now - last >= 1000) { fps = Math.round(frames * 1000 / (now - last)); frames = 0; last = now; updateMeta(); } requestAnimationFrame(tick); };
-  requestAnimationFrame(tick);
-  const osReduce = matchMedia("(prefers-reduced-motion: reduce)");
   function updateMeta() {
+    const g = geo || { bw: 0, bh: 0 };
+    const mode = fixedTime !== null ? `固定時刻 t=${fixedTime}s` : reduced() ? "静止（動きを減らす）" : state.pause ? "一時停止" : `${fps} fps`;
     document.getElementById("meta").innerHTML =
-      `炎の要素 <b>${counts.tongues}</b>・火の粉 <b>${counts.embers}</b>（transform / opacity のみ動かす）<br>` +
-      `描画 <b>${fps}</b> fps（このブラウザでの目安）<br>` +
+      `描画: <b>${glVersion}</b>${glError ? "（シェーダーエラー）" : ""}・canvas <b>${g.bw}×${g.bh}</b> px<br>` +
+      `状態: <b>${mode}</b>・1 コマの CPU 側時間 <b>${frameMs.toFixed(2)}</b> ms（目安）<br>` +
       `端末の「視差効果を減らす」: <b>${osReduce.matches ? "オン → 静止" : "オフ"}</b><br>` +
       `見本: スライド・カメラ・氏名はダミーです。`;
   }
-  window.__flame = { state, counts: () => counts, safe: () => layout(state.place).safe };
+  if (!gl || !progs) { const n = document.createElement("div"); n.className = "no-webgl"; n.textContent = "WebGL を使えないため炎を描けません（試作）"; stage.appendChild(n); }
+
+  // capture / measurement hooks (deterministic: the picture depends only on t)
+  window.__flame = {
+    state, glVersion, glError: () => glError,
+    renderer: () => { if (!gl) return ""; const e = gl.getExtension("WEBGL_debug_renderer_info"); return e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); },
+    safe: () => layout(state.place).safe, geometry: () => geo && { ...geo, L: undefined },
+    renderAt(t) { clock = t; flow = t * flowSpeed(); draw(); if (gl) gl.finish(); return true; },
+    bench(n = 60, t0 = 1) { const a = performance.now(); for (let i = 0; i < n; i++) { clock = t0 + i / 30; flow = clock * flowSpeed(); draw(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); } return (performance.now() - a) / n; },
+  };
   addEventListener("resize", fit);
-  buildFrame(); fit(); updateMeta();
+  buildScene(); fit();
 })();
 </script>
 </body>
