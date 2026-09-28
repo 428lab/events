@@ -7,6 +7,7 @@ import { LIVE_H, LIVE_W } from "@eventer/shared";
 import type { EventInfoField, LiveElement, LiveScene } from "@eventer/shared";
 import { LiveDynamic } from "./LiveDynamic.js";
 import { LiveMotif } from "./LiveMotif.js";
+import { LiveFlameFrame } from "./LiveFlameFrame.js";
 import { livePalette } from "../lib/livePalette.js";
 import { LiveEventChat } from "./LiveEventChat.js";
 import type { LiveChatRow } from "../lib/liveChat.js";
@@ -161,7 +162,10 @@ export function LiveElementContent({
       const cycle = el.motion?.kind === "colorCycle" && el.w <= 180 && el.h <= 180 ? livePalette(el.motion.colors, "background-color") : null;
       return <><div className={cycle ? "live-decoration live-decoration-cycle" : "live-decoration"} style={{ background: cycle ? el.motion?.kind === "colorCycle" ? el.motion.colors[0] : el.fill : el.fill ?? "transparent", border: el.stroke ? `${el.strokeWidth ?? 2}px solid ${el.stroke}` : undefined, borderRadius: el.shape === "ellipse" ? "50%" : el.radius ?? 0, opacity: el.opacity ?? 1, height: el.shape === "line" ? Math.max(1, el.h) : "100%", animationName: cycle?.name, animationDuration: cycle ? `${el.motion?.seconds}s` : undefined, animationIterationCount: cycle ? "infinite" : undefined, animationTimingFunction: "linear", animationPlayState: runtime?.pauseMotion ? "paused" : "running" }} />{cycle && <style>{cycle.css}</style>}</>;
     }
-    case "motif": return <LiveMotif el={el} paused={runtime?.pauseMotion} />;
+    case "motif":
+      // 炎は描画ループを持つので、実体が差し込まれる画面（配信・編集）だけで動かす。サムネイルは止めた 1 コマ
+      if (el.motif === "flameFrame") return <LiveFlameFrame el={el} lightScene={lightScene} animate={Boolean(runtime)} paused={runtime?.pauseMotion} />;
+      return <LiveMotif el={el} paused={runtime?.pauseMotion} />;
     case "marquee": case "clock": case "countdown": case "liveIndicator":
       return <LiveDynamic el={el} runtime={runtime} />;
     case "eventInfo": {

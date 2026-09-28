@@ -17,7 +17,7 @@ import FlipToBackIcon from "@mui/icons-material/FlipToBack";
 import FlipToFrontIcon from "@mui/icons-material/FlipToFront";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import ImageIcon from "@mui/icons-material/Image";
-import { EVENT_INFO_FIELDS } from "@eventer/shared";
+import { EVENT_INFO_FIELDS, FLAME_FRAME_LIMITS, FLAME_PALETTES } from "@eventer/shared";
 import type { EventInfoField, LiveElement } from "@eventer/shared";
 import type { LiveElementCommands } from "../lib/liveScenes.js";
 import { ensureDeckFont, useDeckFontOptions } from "../lib/deckFonts.js";
@@ -84,7 +84,7 @@ export function LiveElementPanel({
   return (
     <>
       <Typography variant="subtitle2">
-        {selected.type in TYPE_LABEL_KEY ? t(TYPE_LABEL_KEY[selected.type as keyof typeof TYPE_LABEL_KEY]) : t(( { shape: "studio.elementShape", motif: "studio.elementMotif", marquee: "studio.elementMarquee", clock: "studio.elementClock", countdown: "studio.elementCountdown", liveIndicator: "studio.elementLiveIndicator" } as const)[selected.type as "shape" | "motif" | "marquee" | "clock" | "countdown" | "liveIndicator"])}
+        {selected.type === "motif" && selected.motif === "flameFrame" ? t("studio.elementFlameFrame") : selected.type in TYPE_LABEL_KEY ? t(TYPE_LABEL_KEY[selected.type as keyof typeof TYPE_LABEL_KEY]) : t(( { shape: "studio.elementShape", motif: "studio.elementMotif", marquee: "studio.elementMarquee", clock: "studio.elementClock", countdown: "studio.elementCountdown", liveIndicator: "studio.elementLiveIndicator" } as const)[selected.type as "shape" | "motif" | "marquee" | "clock" | "countdown" | "liveIndicator"])}
       </Typography>
 
       {selected.type === "chat" && <><Typography variant="caption">{t("studio.chatEditorHint")}</Typography><TextField select size="small" label={t("studio.chatStyleLabel")} value={selected.chatStyle ?? "glow"} onChange={e => patch({ chatStyle: e.target.value as LiveElement["chatStyle"] })}>{(["glow", "signal", "hakuji"] as const).map(style => <MenuItem key={style} value={style}>{t(`studio.chatStyle${style}`)}</MenuItem>)}</TextField><TextField select size="small" label={t("studio.chatRowsLabel")} value={selected.chatRows ?? 3} onChange={e => patch({ chatRows: Number(e.target.value) })}>{[2, 3, 4, 5].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}</TextField><TextField size="small" type="number" label={t("studio.chatSecondsLabel")} inputProps={{ min: 10, max: 45 }} value={selected.chatSeconds ?? 20} onChange={e => { const n = Number(e.target.value); if (n >= 10 && n <= 45) patch({ chatSeconds: n }); }} /></>}
@@ -116,7 +116,8 @@ export function LiveElementPanel({
           <TextField select size="small" label={t("studio.countdownAfterZero")} value={selected.zero ?? "stop"} onChange={e => patch({ zero: e.target.value as "stop" | "hide" })}><MenuItem value="stop">{t("studio.countdownStop")}</MenuItem><MenuItem value="hide">{t("studio.widgetHide")}</MenuItem></TextField>
         </>}
       </>}
-      {(selected.type === "shape" || selected.type === "motif") && <>
+      {selected.type === "motif" && selected.motif === "flameFrame" && <FlameFrameFields selected={selected} patch={patch} />}
+      {(selected.type === "shape" || (selected.type === "motif" && selected.motif !== "flameFrame")) && <>
         {selected.type === "shape" ? <TextField select size="small" label={t("studio.widgetShape")} value={selected.shape ?? "rectangle"} onChange={e => patch({ shape: e.target.value as LiveElement["shape"] })}>{["rectangle", "ellipse", "line"].map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}</TextField> : <TextField select size="small" label={t("studio.widgetMotif")} value={selected.motif ?? "lantern"} onChange={e => patch({ motif: e.target.value as LiveElement["motif"] })}>{["lantern", "halo", "brackets", "grid", "ticks"].map(v => <MenuItem key={v} value={v}>{v}</MenuItem>)}</TextField>}
         <TextField select size="small" label={t("studio.widgetMotion")} value={selected.motion?.kind ?? "none"} onChange={e => patch({ motion: e.target.value === "none" ? undefined : e.target.value === "rotation" ? { kind: "rotation", seconds: 30, direction: "clockwise" } : { kind: "colorCycle", seconds: 18, colors: ["#2DD4BF", "#7DD3FC"] } })}>
           <MenuItem value="none">{t("studio.widgetStop")}</MenuItem>{selected.type === "motif" && <MenuItem value="rotation">{t("studio.widgetRotation")}</MenuItem>}<MenuItem value="colorCycle" disabled={selected.w > 180 || selected.h > 180}>{t("studio.widgetColorCycle")}</MenuItem>
@@ -132,7 +133,7 @@ export function LiveElementPanel({
         <TextField size="small" type="number" label={t("studio.widgetStrokeWidth")} inputProps={{ min: 0, max: 16 }} value={selected.strokeWidth ?? 2} onChange={e => { const n = Number(e.target.value); if (n >= 0 && n <= 16) patch({ strokeWidth: n }); }} />
         <TextField size="small" type="number" label={t("studio.widgetOpacity")} inputProps={{ min: 0, max: 1, step: 0.1 }} value={selected.opacity ?? 1} onChange={e => { const n = Number(e.target.value); if (n >= 0 && n <= 1) patch({ opacity: n }); }} />
       </>}
-      {(["shape", "motif", "marquee", "clock", "countdown", "liveIndicator"] as string[]).includes(selected.type) && <Stack direction="row" spacing={1} alignItems="center"><Typography variant="caption">{t("studio.widgetColor")}</Typography><input aria-label={t("studio.widgetColor")} type="color" value={selected.type === "shape" ? selected.fill ?? "#2DD4BF" : selected.color ?? "#EAF0F7"} onChange={e => patch(selected.type === "shape" ? { fill: e.target.value } : { color: e.target.value })} />{selected.type === "shape" && <input aria-label={t("studio.widgetStrokeColor")} type="color" value={selected.stroke ?? "#2DD4BF"} onChange={e => patch({ stroke: e.target.value })} />}</Stack>}
+      {(["shape", "motif", "marquee", "clock", "countdown", "liveIndicator"] as string[]).includes(selected.type) && selected.motif !== "flameFrame" && <Stack direction="row" spacing={1} alignItems="center"><Typography variant="caption">{t("studio.widgetColor")}</Typography><input aria-label={t("studio.widgetColor")} type="color" value={selected.type === "shape" ? selected.fill ?? "#2DD4BF" : selected.color ?? "#EAF0F7"} onChange={e => patch(selected.type === "shape" ? { fill: e.target.value } : { color: e.target.value })} />{selected.type === "shape" && <input aria-label={t("studio.widgetStrokeColor")} type="color" value={selected.stroke ?? "#2DD4BF"} onChange={e => patch({ stroke: e.target.value })} />}</Stack>}
       {(["marquee", "clock", "countdown", "liveIndicator"] as string[]).includes(selected.type) && <>
         <TextField size="small" type="number" label={t("studio.widgetFontSize")} inputProps={{ min: 16, max: 72 }} value={selected.fontSize ?? 27} onChange={e => { const n = Number(e.target.value); if (n >= 16 && n <= 72) patch({ fontSize: n }); }} />
         <Stack direction="row" spacing={1} alignItems="center"><Typography variant="caption">{t("studio.widgetBackground")}</Typography><input aria-label={t("studio.widgetBackground")} type="color" value={selected.fill ?? "#1A2737"} onChange={e => patch({ fill: e.target.value })} /></Stack>
@@ -336,6 +337,37 @@ export function LiveElementPanel({
       >
         {t("studio.deleteElement")}
       </Button>
+    </>
+  );
+}
+
+/** 炎のフレーム (#566) の設定。範囲と既定値は共有の FLAME_FRAME_LIMITS に揃える */
+const FLAME_SLIDERS = [
+  { key: "flicker", limit: "flicker", label: "studio.flameFlicker" },
+  { key: "flameHeight", limit: "flameHeight", label: "studio.flameHeight" },
+  { key: "frameThickness", limit: "frameThickness", label: "studio.flameFrameThickness" },
+  { key: "radius", limit: "radius", label: "studio.flameRadius" },
+  { key: "embers", limit: "embers", label: "studio.flameEmbers" },
+] as const;
+
+function FlameFrameFields({ selected, patch }: { selected: LiveElement; patch: (p: Partial<LiveElement>) => void }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <Typography variant="caption" color="text.secondary">{t("studio.flameFrameHint")}</Typography>
+      <TextField select size="small" label={t("studio.flamePalette")} value={selected.flamePalette ?? "ember"} onChange={e => patch({ flamePalette: e.target.value as LiveElement["flamePalette"] })}>
+        {FLAME_PALETTES.map(palette => <MenuItem key={palette} value={palette}>{t(`studio.flamePalette${palette}`)}</MenuItem>)}
+      </TextField>
+      {FLAME_SLIDERS.map(({ key, limit, label }) => {
+        const range = FLAME_FRAME_LIMITS[limit];
+        const value = selected[key] ?? range.default;
+        return (
+          <Box key={key}>
+            <Typography variant="caption" color="text.secondary">{t(label, { n: value })}</Typography>
+            <Slider size="small" aria-label={t(label, { n: value })} min={range.min} max={range.max} step={range.step} value={value} onChange={(_e, v) => patch({ [key]: v as number })} />
+          </Box>
+        );
+      })}
     </>
   );
 }
