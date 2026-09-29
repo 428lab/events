@@ -27,6 +27,18 @@ export const EVENT_INFO_FIELDS = [
 export type EventInfoField = (typeof EVENT_INFO_FIELDS)[number];
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
+/** 炎のフレーム (#566) の色。gold は白磁の明るい地でも白飛びしない普通の重ね方で描く */
+export const FLAME_PALETTES = ["ember", "azure", "violet", "gold"] as const;
+export type FlamePalette = (typeof FLAME_PALETTES)[number];
+/** 炎のフレームの設定の範囲と既定値。要素は x/y/w/h が枠そのもので、炎は枠の外へ広がる */
+export const FLAME_FRAME_LIMITS = {
+  flicker: { min: 0, max: 100, step: 5, default: 60 },
+  flameHeight: { min: 16, max: 72, step: 2, default: 44 },
+  frameThickness: { min: 2, max: 12, step: 1, default: 4 },
+  radius: { min: 0, max: 48, step: 2, default: 16 },
+  embers: { min: 0, max: 100, step: 5, default: 50 },
+} as const;
 const rotationMotion = z.object({ kind: z.literal("rotation"), seconds: z.number().min(12).max(60), direction: z.enum(["clockwise", "counterclockwise"]) });
 const colorMotion = z.object({ kind: z.literal("colorCycle"), seconds: z.number().min(8).max(30), colors: z.array(hex).min(2).max(4) });
 
@@ -60,7 +72,13 @@ export const liveElementSchema = z.object({
   requiresEventDatetime: z.boolean().optional(),
   // Only predeclared decorative primitives and bounded effects; never user CSS/HTML.
   shape: z.enum(["rectangle", "ellipse", "line"]).optional(),
-  motif: z.enum(["lantern", "halo", "brackets", "grid", "ticks"]).optional(),
+  motif: z.enum(["lantern", "halo", "brackets", "grid", "ticks", "flameFrame"]).optional(),
+  // motif=flameFrame only (#566); the corner radius reuses `radius`
+  flamePalette: z.enum(FLAME_PALETTES).optional(),
+  flicker: z.number().int().min(FLAME_FRAME_LIMITS.flicker.min).max(FLAME_FRAME_LIMITS.flicker.max).optional(),
+  flameHeight: z.number().int().min(FLAME_FRAME_LIMITS.flameHeight.min).max(FLAME_FRAME_LIMITS.flameHeight.max).optional(),
+  frameThickness: z.number().int().min(FLAME_FRAME_LIMITS.frameThickness.min).max(FLAME_FRAME_LIMITS.frameThickness.max).optional(),
+  embers: z.number().int().min(FLAME_FRAME_LIMITS.embers.min).max(FLAME_FRAME_LIMITS.embers.max).optional(),
   fill: hex.optional(),
   stroke: hex.optional(),
   strokeWidth: z.number().min(0).max(16).optional(),
@@ -85,6 +103,8 @@ export const liveElementSchema = z.object({
   if (el.motion?.kind === "colorCycle" && (el.w > 180 || el.h > 180 || el.motion.colors.some(c => !["#FB923C", "#2DD4BF", "#FBBF24", "#7DD3FC"].includes(c)))) ctx.addIssue({ code: "custom", message: "Only small ornaments and legible palette colors can cycle" });
   if (["shape", "motif", "marquee", "clock", "countdown", "liveIndicator", "chat"].includes(el.type) && (el.x < -960 || el.x > 960 || el.y < -540 || el.y > 540 || el.w < 1 || el.w > 960 || el.h < 1 || el.h > 540)) ctx.addIssue({ code: "custom", message: "Invalid visual bounds" });
   if (el.type === "motif" && !el.motif || el.type === "shape" && !el.shape) ctx.addIssue({ code: "custom", message: "primitive required" });
+  // The flame frame animates itself; CSS motion would rotate or recolor the whole fire.
+  if (el.type === "motif" && el.motif === "flameFrame" && (el.motion || (el.radius !== undefined && (el.radius < FLAME_FRAME_LIMITS.radius.min || el.radius > FLAME_FRAME_LIMITS.radius.max)))) ctx.addIssue({ code: "custom", message: "Invalid flame frame" });
   if (el.type === "marquee" && (el.text?.length ?? 0) > 120) ctx.addIssue({ code: "custom", message: "marquee too long" });
   if (el.type === "liveIndicator" && (el.text?.length ?? 0) > 32) ctx.addIssue({ code: "custom", message: "badge text too long" });
   if (["clock", "countdown", "marquee", "liveIndicator"].includes(el.type) && el.fontSize !== undefined && (el.fontSize < 16 || el.fontSize > 72)) ctx.addIssue({ code: "custom", message: "Invalid widget font size" });
