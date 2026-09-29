@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>#570 シーンごとのカメラ割り当て — オフライン試作</title>
+<!--
+  設計確認用のオフライン試作（#570）。本番コードではない。
+  カメラはすべて色付きの canvas で描いた「ダミー」で、実機のカメラには触れない。
+  表示の切替: #editor / #add / #mapping / #scene-a / #scene-b （上のタブでも切り替えられる）
+-->
+<style>
+  :root {
+    --bg: #0E1426; --surface: #1A2238; --surface2: #222C46; --border: #2A3350;
+    --text: #EAF0F7; --muted: #97A3BC; --primary: #2DD4BF; --on-primary: #06231D;
+    --amber: #FB923C; --warn-bg: #3B2A12; --warn: #FBBF24; --err-bg: #3F1D24; --err: #FB7185;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.6 "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif; }
+  header.proto { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px; background: linear-gradient(90deg, #0B3A34, var(--bg)); border-bottom: 1px solid var(--border); }
+  header.proto b { margin-right: 12px; }
+  .tab { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; cursor: pointer; font: inherit; }
+  .tab.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 700; }
+  .proto-note { font-size: 12px; color: var(--muted); margin-left: auto; }
+  main { padding: 16px; }
+  .view { display: none; }
+  .view.on { display: block; }
+  h2 { font-size: 18px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  button.btn { font: inherit; border-radius: 8px; padding: 6px 12px; cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--text); }
+  button.btn.primary { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 700; }
+  select, input[type=text] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; width: 100%; }
+  label.field { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
+  .slot-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: 6px; font-weight: 700; font-size: 12px; color: #111; padding: 0 5px; }
+  .s1 { background: #FB923C; } .s2 { background: #2DD4BF; } .s3 { background: #A78BFA; } .s4 { background: #FBBF24; }
+  .alert { border-radius: 8px; padding: 8px 10px; font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
+  .alert.warn { background: var(--warn-bg); color: #FDE68A; border: 1px solid #6B4E16; }
+  .alert.info { background: #0F2E3A; color: #BAE6FD; border: 1px solid #1E4E5E; }
+  .alert.err { background: var(--err-bg); color: #FECDD3; border: 1px solid #6B2837; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #34D399; flex: none; }
+
+  /* ── 編集画面 ── */
+  .editor { display: grid; grid-template-columns: 180px minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+  .scene-list .scene { padding: 8px; border-radius: 8px; border: 1px solid transparent; margin-bottom: 6px; cursor: default; display: flex; gap: 6px; align-items: center; }
+  .scene-list .scene.on { border-color: var(--primary); background: var(--surface2); }
+  .scene-list .cams { margin-left: auto; display: flex; gap: 2px; }
+  .scene-list .cams .slot-badge { min-width: 16px; height: 16px; font-size: 10px; border-radius: 4px; }
+  .canvas-wrap { position: relative; aspect-ratio: 16 / 9; background: #0A1120; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .el { position: absolute; }
+  .placeholder { display: grid; place-items: center; text-align: center; font-size: 13px; border-radius: inherit; width: 100%; height: 100%; }
+  .deck-ph { background: #E9F0EC; color: #203146; }
+  .cam-ph { background: repeating-linear-gradient(45deg, #1F2937 0 10px, #243042 10px 20px); color: #E5E7EB; border: 2px solid; }
+  .cam-ph .tag { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.55); border-radius: 6px; padding: 3px 8px; font-weight: 700; }
+  .sel { outline: 2px dashed var(--primary); outline-offset: 3px; }
+  .slot-picker { display: grid; gap: 6px; }
+  .slot-opt { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg); color: var(--text); font: inherit; text-align: left; }
+  .slot-opt.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+  .slot-opt .lbl { flex: 1; }
+  .slot-opt.add { color: var(--primary); border-style: dashed; }
+  .toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .toggle span { padding: 4px 10px; font-size: 12px; color: var(--muted); }
+  .toggle span.on { background: var(--surface2); color: var(--text); }
+
+  /* ── 追加ダイアログ ── */
+  .dialog-back { position: relative; padding: 24px; background: rgba(4,8,20,0.6); border-radius: 12px; }
+  .dialog { max-width: 760px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+  .dialog-body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+  /* ── 割り当てパネル ── */
+  .control { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+  .map-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 128px; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--border); }
+  .map-row:first-of-type { border-top: none; }
+  .map-row canvas, .map-row .noprev { width: 128px; height: 72px; border-radius: 6px; display: block; }
+  .noprev { display: grid !important; place-items: center; background: #111827; color: var(--muted); font-size: 11px; text-align: center; border: 1px dashed var(--border); }
+  .screen-status { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+
+  /* ── シーン切替 ── */
+  .switch { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .scene-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .scene-btn { font: inherit; text-align: left; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px; cursor: pointer; }
+  .scene-btn.on { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber) inset; }
+  .scene-btn .mini { aspect-ratio: 16/9; border-radius: 6px; background: #0A1120; position: relative; overflow: hidden; margin-bottom: 6px; }
+  .scene-btn .mini i { position: absolute; border-radius: 2px; }
+  .screen-frame { background: #000; border-radius: 10px; padding: 10px; max-width: 880px; }
+  .screen-frame .cap { font-size: 11px; color: #64748b; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .stage { position: relative; aspect-ratio: 16/9; overflow: hidden; }
+  .stage canvas { position: absolute; display: block; }
+  .stage .fade { animation: fade 400ms ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .streams { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }
+
+  @media (max-width: 900px) {
+    main { padding: 12px; }
+    .editor { grid-template-columns: 1fr; }
+    .scene-list { display: flex; gap: 6px; overflow-x: auto; }
+    .scene-list h3 { display: none; }
+    .scene-list .scene { flex: none; margin: 0; }
+    .control, .switch, .dialog-body { grid-template-columns: 1fr; }
+    .map-row { grid-template-columns: 1fr 112px; }
+    .map-row .slot-name { grid-column: 1 / -1; }
+    .map-row canvas, .map-row .noprev { width: 112px; height: 63px; }
+    .proto-note { display: none; }
+    .cam-sub { display: none; }
+    .cam-ph .tag { font-size: 11px; padding: 2px 5px; }
+  }
+</style>
+</head>
+<body>
+<header class="proto">
+  <b>#570 カメラ割り当て 試作</b>
+  <button class="tab" data-view="editor">① 編集：カメラパーツ</button>
+  <button class="tab" data-view="add">① 編集：追加ダイアログ</button>
+  <button class="tab" data-view="mapping">② このPCの割り当て</button>
+  <button class="tab" data-view="scene-a">③ 配信中：講演</button>
+  <button class="tab" data-view="scene-b">③ 配信中：対談</button>
+  <span class="proto-note">カメラ映像はすべて「ダミー」（色付きの canvas）です</span>
+</header>
+
+<main>
+  <!-- ① 編集画面：カメラパーツを選んだ状態 -->
+  <section class="view" id="view-editor">
+    <h2>配信セット「夏祭りトーク」を編集</h2>
+    <div class="editor">
+      <div class="card scene-list">
+        <h3 class="small muted" style="margin:0 0 8px">シーン</h3>
+        <div class="scene">待機<span class="cams"></span></div>
+        <div class="scene on">講演<span class="cams"><span class="slot-badge s1">1</span></span></div>
+        <div class="scene">対談<span class="cams"><span class="slot-badge s2">2</span><span class="slot-badge s1">1</span></span></div>
+        <div class="scene">休憩<span class="cams"></span></div>
+      </div>
+      <div>
+        <div class="canvas-wrap" id="editor-canvas">
+          <div class="el" style="left:5%;top:14%;width:58%;height:60%"><div class="placeholder deck-ph">スライド（見本）</div></div>
+          <div class="el sel" id="editor-cam" style="left:66%;top:14%;width:30%;height:44%;border-radius:10px">
+            <div class="placeholder cam-ph" id="editor-cam-ph" style="border-radius:10px"></div>
+          </div>
+          <div class="el" style="left:5%;top:80%;width:40%;height:10%;background:#1A2737;border-left:4px solid var(--amber);border-radius:6px;display:flex;align-items:center;padding-left:10px;font-size:13px">登壇者名</div>
+        </div>
+        <p class="small muted" style="margin:8px 0 0">キャンバスのカメラ枠には「どのカメラか」だけを出します。実際の映像は配信するPCで割り当てたカメラから流れます。</p>
+      </div>
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:6px">カメラ</div>
+        <label class="field">映すカメラ</label>
+        <div class="slot-picker" id="panel-slots"></div>
+        <label class="field" for="slot-label">このカメラの呼び名（セット共通・任意）</label>
+        <input type="text" id="slot-label" maxlength="20">
+        <p class="small muted" style="margin:4px 0 0">同じカメラを使う他のシーンのパーツにも同じ呼び名が出ます。</p>
+        <label class="field">表示</label>
+        <div class="toggle"><span class="on">枠いっぱい</span><span>全体表示</span></div>
+        <label class="field">角丸：10</label>
+        <input type="range" min="0" max="200" value="10" style="width:100%">
+        <div class="alert info" style="margin-top:12px">どのカメラ機器を「カメラ1」「カメラ2」にするかは、配信するPCの「配信コントロール → カメラの割り当て」で一度だけ選びます。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ① 追加ダイアログ：カメラを選ぶと2段目でカメラ番号を選ぶ -->
+  <section class="view" id="view-add">
+    <div class="dialog-back">
+      <div class="dialog">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><button class="btn">← 一覧へ</button><b style="font-size:16px">カメラを追加</b></div>
+        <div class="dialog-body">
+          <div>
+            <div class="canvas-wrap" style="background:#0E1426">
+              <div class="el" style="left:14%;top:12%;width:72%;height:76%;border-radius:10px"><div class="placeholder cam-ph" id="add-cam-ph" style="border-radius:10px"></div></div>
+            </div>
+            <p class="small muted" style="margin:6px 0 0">カメラ映像の小窓（ワイプ）。置いたあと位置と大きさを変えられます。</p>
+          </div>
+          <div>
+            <label class="field" style="margin-top:0">映すカメラ</label>
+            <div class="slot-picker" id="add-slots"></div>
+            <label class="field" for="add-label">呼び名（任意）</label>
+            <input type="text" id="add-label" maxlength="20" placeholder="例：登壇者、会場">
+            <p class="small muted">このセットで初めてのカメラなら「カメラ1」が選ばれています。別の角度を映すときだけ番号を変えてください。</p>
+          </div>
+        </div>
+        <div class="dialog-actions"><button class="btn">キャンセル</button><button class="btn primary">このカメラを置く</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ② 配信コントロール上の「カメラの割り当て」 -->
+  <section class="view" id="view-mapping">
+    <div class="control">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <h2 style="margin:0;flex:1">配信コントロール</h2>
+          <button class="btn primary">配信画面を開く ↗</button>
+        </div>
+        <div class="card" id="mapping-card">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <b style="font-size:16px">カメラの割り当て（このPC）</b>
+            <span class="chip">配信セット：夏祭りトーク</span>
+            <span class="screen-status" style="margin-left:auto"><span class="dot"></span>このPCの配信画面：開いています</span>
+          </div>
+          <p class="small muted" style="margin:6px 0 10px">配信前に一度選べば、このPCのブラウザに保存されます。同じPCで開いた配信画面にすぐ反映され、シーンを切り替えても選び直す必要はありません。</p>
+          <div id="map-rows"></div>
+          <div class="alert warn" id="map-warning" style="margin-top:10px"></div>
+        </div>
+      </div>
+      <div class="card">
+        <b>このセットのカメラの使われ方</b>
+        <table class="small" style="width:100%;margin-top:8px;border-collapse:collapse">
+          <tr><td class="muted" style="padding:4px 0">待機</td><td>—</td></tr>
+          <tr><td class="muted" style="padding:4px 0">講演</td><td><span class="slot-badge s1">1</span> 登壇者</td></tr>
+          <tr><td class="muted" style="padding:4px 0">対談</td><td><span class="slot-badge s2">2</span> 会場 ＋ <span class="slot-badge s1">1</span> 登壇者</td></tr>
+          <tr><td class="muted" style="padding:4px 0">休憩</td><td>—</td></tr>
+        </table>
+        <p class="small muted">このセットで使うカメラは配信画面を開いている間ずっと開いたままにし、シーンを切り替えた瞬間に映せるようにします（最大4台）。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ③ 配信中のシーン切替 -->
+  <section class="view" id="view-switch">
+    <div class="switch">
+      <div class="card">
+        <b>シーン（タップで切替）</b>
+        <div class="scene-grid" style="margin-top:8px">
+          <button class="scene-btn" data-scene="standby"><div class="mini"><i style="left:20%;top:35%;width:60%;height:14%;background:#EAF0F7"></i></div>待機</button>
+          <button class="scene-btn" data-scene="a"><div class="mini"><i style="left:5%;top:14%;width:58%;height:60%;background:#E9F0EC"></i><i style="left:66%;top:14%;width:30%;height:44%;background:#FB923C"></i></div>講演 <span class="slot-badge s1" style="min-width:16px;height:16px;font-size:10px">1</span></button>
+          <button class="scene-btn" data-scene="b"><div class="mini"><i style="left:4%;top:8%;width:92%;height:84%;background:#2DD4BF"></i><i style="left:72%;top:52%;width:20%;height:36%;background:#FB923C;border-radius:50%"></i></div>対談 <span class="slot-badge s2" style="min-width:16px;height:16px;font-size:10px">2</span><span class="slot-badge s1" style="min-width:16px;height:16px;font-size:10px">1</span></button>
+          <button class="scene-btn" data-scene="break"><div class="mini"><i style="left:25%;top:30%;width:50%;height:40%;background:#1A2737"></i></div>休憩</button>
+        </div>
+        <p class="small muted" style="margin:10px 0 0">配信中はシーンを押すだけ。カメラの切り替え操作はありません。</p>
+      </div>
+      <div>
+        <div class="screen-frame">
+          <div class="cap"><span>配信画面（OBS が取り込む画面）</span><span id="scene-name"></span></div>
+          <div class="stage" id="stage"></div>
+        </div>
+        <div class="streams" id="streams"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+/* ダミーのカメラ機器。実機には触れず、色付きの canvas を「映像」として描く */
+const DEVICES = [
+  { id: "dev-a", name: "USBカメラ A（ダミー）", color: ["#7C2D12", "#FB923C"], who: "登壇者" },
+  { id: "dev-b", name: "USBカメラ B（ダミー）", color: ["#134E4A", "#2DD4BF"], who: "会場" },
+  { id: "dev-c", name: "内蔵カメラ（ダミー）", color: ["#312E81", "#A78BFA"], who: "PCの前" },
+];
+const DEFAULT_DEVICE = "dev-c";
+
+/* 配信セット側の情報：カメラ番号と呼び名（セット共通） */
+const state = {
+  slots: [{ slot: 1, label: "登壇者" }, { slot: 2, label: "会場" }],
+  selectedSlot: 1,
+  addSlot: 1,
+  /* このPCの割り当て（localStorage 相当）。カメラ2 は未割り当てから始める */
+  mapping: { 1: "dev-a", 2: "" },
+  scene: "a",
+};
+const SLOT_COLORS = { 1: "#FB923C", 2: "#2DD4BF", 3: "#A78BFA", 4: "#FBBF24" };
+const slotName = s => `カメラ${s}`;
+const slotLabel = s => state.slots.find(x => x.slot === s)?.label ?? "";
+
+function drawDummy(canvas, deviceId, caption) {
+  const dev = DEVICES.find(d => d.id === deviceId);
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, dev.color[0]); g.addColorStop(1, dev.color[1]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  // 人影の見本（写真ではなく図形）
+  ctx.fillStyle = "rgba(0,0,0,0.28)";
+  ctx.beginPath(); ctx.arc(w * 0.5, h * 0.42, h * 0.16, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(w * 0.5, h * 0.98, w * 0.26, h * 0.32, 0, Math.PI, 0); ctx.fill();
+  // 動いていることが分かる走査線
+  const t = (performance.now() / 1600) % 1;
+  ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.fillRect(0, h * t, w, Math.max(2, h * 0.03));
+  const round = canvas.dataset.round === "1";
+  const text = round ? "ダミー" : `ダミー · ${dev.name.replace("（ダミー）", "")}`;
+  let fs = Math.max(10, Math.round(h * 0.09));
+  ctx.font = `700 ${fs}px sans-serif`;
+  while (fs > 10 && ctx.measureText(text).width > w * (round ? 0.5 : 0.7)) { fs -= 1; ctx.font = `700 ${fs}px sans-serif`; }
+  const tw = ctx.measureText(text).width;
+  const tx = round ? (w - tw) / 2 : fs, ty = round ? h * 0.72 : fs * 1.72;
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(tx - fs * 0.5, ty - fs * 1.22, tw + fs, fs * 1.6);
+  ctx.fillStyle = "#fff"; ctx.fillText(text, tx, ty);
+  if (caption) {
+    const cw = ctx.measureText(caption).width;
+    ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(fs * 0.5, h - fs * 2.1, cw + fs, fs * 1.6);
+    ctx.fillStyle = "#fff"; ctx.fillText(caption, fs, h - fs * 0.88);
+  }
+}
+
+/* ── 編集画面 ── */
+function renderSlotPicker(host, current, onPick) {
+  host.innerHTML = "";
+  for (const s of state.slots) {
+    const b = document.createElement("button");
+    b.className = "slot-opt" + (s.slot === current ? " on" : "");
+    b.innerHTML = `<span class="slot-badge s${s.slot}">${s.slot}</span><span class="lbl">${slotName(s.slot)}${s.label ? `<span class="muted"> · ${s.label}</span>` : ""}</span>${s.slot === current ? "✓" : ""}`;
+    b.onclick = () => onPick(s.slot);
+    host.appendChild(b);
+  }
+  if (state.slots.length < 4) {
+    const add = document.createElement("button");
+    add.className = "slot-opt add";
+    const next = state.slots.length + 1;
+    add.innerHTML = `<span class="slot-badge" style="border:1px dashed var(--primary);color:var(--primary)">＋</span><span class="lbl">新しいカメラ（${slotName(next)}）</span>`;
+    add.onclick = () => { state.slots.push({ slot: next, label: "" }); state.mapping[next] = ""; onPick(next); };
+    host.appendChild(add);
+  }
+}
+function camPlaceholder(el, slot) {
+  const label = slotLabel(slot);
+  el.style.borderColor = SLOT_COLORS[slot];
+  el.innerHTML = `<div><div class="tag"><span class="slot-badge s${slot}">${slot}</span>${slotName(slot)}${label ? " · " + label : ""}</div><div class="small cam-sub" style="margin-top:6px;opacity:.8">配信画面でこのカメラの映像になります</div></div>`;
+}
+function renderEditor() {
+  renderSlotPicker(document.getElementById("panel-slots"), state.selectedSlot, s => { state.selectedSlot = s; renderEditor(); });
+  const input = document.getElementById("slot-label");
+  input.value = slotLabel(state.selectedSlot);
+  input.placeholder = "例：登壇者、会場";
+  input.oninput = () => { state.slots.find(x => x.slot === state.selectedSlot).label = input.value; camPlaceholder(document.getElementById("editor-cam-ph"), state.selectedSlot); renderSlotPickerOnly(); };
+  camPlaceholder(document.getElementById("editor-cam-ph"), state.selectedSlot);
+}
+function renderSlotPickerOnly() {
+  renderSlotPicker(document.getElementById("panel-slots"), state.selectedSlot, s => { state.selectedSlot = s; renderEditor(); });
+}
+function renderAdd() {
+  renderSlotPicker(document.getElementById("add-slots"), state.addSlot, s => { state.addSlot = s; renderAdd(); });
+  const input = document.getElementById("add-label");
+  input.value = slotLabel(state.addSlot);
+  input.oninput = () => { state.slots.find(x => x.slot === state.addSlot).label = input.value; camPlaceholder(document.getElementById("add-cam-ph"), state.addSlot); };
+  camPlaceholder(document.getElementById("add-cam-ph"), state.addSlot);
+}
+
+/* ── 割り当てパネル ── */
+const USED_IN = { 1: "講演・対談", 2: "対談", 3: "（まだどのシーンにもありません）", 4: "（まだどのシーンにもありません）" };
+function renderMapping() {
+  const rows = document.getElementById("map-rows");
+  rows.innerHTML = "";
+  for (const s of state.slots) {
+    const row = document.createElement("div");
+    row.className = "map-row";
+    const mapped = state.mapping[s.slot];
+    row.innerHTML = `
+      <div class="slot-name"><div style="display:flex;align-items:center;gap:6px"><span class="slot-badge s${s.slot}">${s.slot}</span><b>${slotName(s.slot)}</b></div>
+        <div class="small muted">${s.label || "呼び名なし"} · ${USED_IN[s.slot]}</div></div>
+      <div>
+        <select aria-label="${slotName(s.slot)}に使うカメラ">
+          <option value="">未割り当て（既定のカメラで映す）</option>
+          ${DEVICES.map(d => `<option value="${d.id}" ${d.id === mapped ? "selected" : ""}>${d.name}</option>`).join("")}
+        </select>
+        ${mapped ? "" : `<div class="small" style="color:var(--warn);margin-top:4px">⚠ 未割り当て：いまは既定のカメラ（内蔵カメラ）が映ります</div>`}
+      </div>
+      <div class="prev"></div>`;
+    const prev = row.querySelector(".prev");
+    const shown = mapped || DEFAULT_DEVICE;
+    const c = document.createElement("canvas"); c.width = 256; c.height = 144; c.dataset.device = shown; c.dataset.caption = mapped ? "" : "既定";
+    prev.appendChild(c);
+    row.querySelector("select").onchange = e => { state.mapping[s.slot] = e.target.value; renderMapping(); };
+    rows.appendChild(row);
+  }
+  const unmapped = state.slots.filter(s => !state.mapping[s.slot]);
+  const warn = document.getElementById("map-warning");
+  warn.style.display = unmapped.length ? "flex" : "none";
+  warn.innerHTML = `⚠ <span>${unmapped.map(s => slotName(s.slot)).join("・")} が未割り当てです。このまま配信すると既定のカメラが映ります。この表示は配信コントロールにだけ出て、配信画面には出ません。</span>`;
+}
+
+/* ── シーン切替 ── */
+const SCENES = {
+  standby: { name: "待機", cams: [] },
+  a: { name: "講演", cams: [{ slot: 1, x: 66, y: 14, w: 30, h: 44, r: 10 }], deck: true },
+  b: { name: "対談", cams: [{ slot: 2, x: 4, y: 8, w: 92, h: 84, r: 8 }, { slot: 1, x: 72, y: 52, w: 20, h: 36, r: 999 }] },
+  break: { name: "休憩", cams: [] },
+};
+function deviceFor(slot) { return state.mapping[slot] || DEFAULT_DEVICE; }
+function renderStage(animate = false) {
+  const sc = SCENES[state.scene];
+  document.querySelectorAll(".scene-btn").forEach(b => b.classList.toggle("on", b.dataset.scene === state.scene));
+  document.getElementById("scene-name").textContent = `表示中：${sc.name}`;
+  const stage = document.getElementById("stage");
+  stage.innerHTML = "";
+  const inner = document.createElement("div"); inner.className = animate ? "fade" : ""; inner.style.cssText = "position:absolute;inset:0;background:#0E1426";
+  stage.appendChild(inner);
+  if (sc.deck) inner.insertAdjacentHTML("beforeend", `<div style="position:absolute;left:5%;top:14%;width:58%;height:60%;background:#E9F0EC;color:#203146;display:grid;place-items:center;font-size:18px;border-radius:4px">スライド（見本）</div>`);
+  if (!sc.cams.length) inner.insertAdjacentHTML("beforeend", `<div style="position:absolute;inset:0;display:grid;place-items:center;font-size:28px;font-weight:700;color:#EAF0F7">${sc.name === "待機" ? "まもなく始まります" : "休憩中"}</div>`);
+  for (const cam of sc.cams) {
+    const c = document.createElement("canvas");
+    c.width = 640; c.height = Math.round(640 * (cam.h * 9) / (cam.w * 16));
+    c.style.cssText = `left:${cam.x}%;top:${cam.y}%;width:${cam.w}%;height:${cam.h}%;border-radius:${cam.r === 999 ? "50%" : cam.r + "px"}`;
+    c.dataset.device = deviceFor(cam.slot);
+    c.dataset.round = cam.r === 999 ? "1" : "";
+    c.dataset.caption = cam.r === 999 ? "" : `${slotName(cam.slot)} · ${slotLabel(cam.slot)}`;
+    inner.appendChild(c);
+  }
+  if (sc.name === "講演") inner.insertAdjacentHTML("beforeend", `<div style="position:absolute;left:5%;top:80%;width:40%;height:10%;background:#1A2737;border-left:4px solid #FB923C;border-radius:6px;display:flex;align-items:center;padding-left:12px;color:#EAF0F7;font-size:16px">登壇者名</div>`);
+  // 開いているカメラ：このセットで使う機器を切替に関係なく開いたまま
+  const used = [...new Set(state.slots.map(s => deviceFor(s.slot)))];
+  const onScene = new Set(sc.cams.map(c => deviceFor(c.slot)));
+  document.getElementById("streams").innerHTML = `<span>開いているカメラ（シーンを切り替えても開き直しません）：</span>` +
+    used.map(id => `<span class="chip"><span class="dot" style="background:${onScene.has(id) ? "#34D399" : "#64748b"}"></span>${DEVICES.find(d => d.id === id).name}${onScene.has(id) ? " · 表示中" : " · 待機"}</span>`).join("");
+}
+document.querySelectorAll(".scene-btn").forEach(b => b.onclick = () => { state.scene = b.dataset.scene; renderStage(true); });
+
+/* ── 表示の切替 ── */
+function show(view) {
+  if (view === "scene-a" || view === "scene-b") { state.scene = view === "scene-a" ? "a" : "b"; state.mapping[2] = state.mapping[2] || "dev-b"; }
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.view === view));
+  const section = view.startsWith("scene") ? "switch" : view;
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === "view-" + section));
+  if (view === "editor") renderEditor();
+  if (view === "add") renderAdd();
+  if (view === "mapping") renderMapping();
+  if (section === "switch") renderStage();
+}
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => { location.hash = t.dataset.view; });
+window.addEventListener("hashchange", () => show(location.hash.slice(1) || "editor"));
+show(location.hash.slice(1) || "editor");
+
+/* ダミー映像を毎フレーム描き直す */
+(function loop() {
+  document.querySelectorAll("canvas[data-device]").forEach(c => { if (c.offsetParent) drawDummy(c, c.dataset.device, c.dataset.caption); });
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
