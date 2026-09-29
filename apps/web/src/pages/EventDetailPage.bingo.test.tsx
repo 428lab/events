@@ -58,6 +58,7 @@ vi.mock("../components/EventJoinPanel.js", () => ({ EventJoinPanel: () => null }
 vi.mock("../components/EventMemberList.js", () => ({ EventMemberList: () => null }));
 vi.mock("../components/EventSubmissions.js", () => ({ EventSubmissions: () => null }));
 vi.mock("../components/WarikanSummaryCard.js", () => ({ WarikanSummaryCard: () => null }));
+vi.mock("../api/warikanHooks.js", () => ({ useWarikan: () => ({ isSuccess: false }) }));
 
 beforeEach(() => {
   state.visibility = "public"; state.access = false;

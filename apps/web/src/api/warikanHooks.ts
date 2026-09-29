@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   ExpenseInput,
   PayoutMethodInput,
+  SettlementDone,
   WarikanExpense,
   WarikanLedger,
   WarikanPayout,
@@ -57,6 +58,30 @@ export function useDeleteExpense(eventId: string) {
   return useMutation({
     mutationFn: (id: string) => api.del(`/events/${eventId}/warikan/expenses/${id}`),
     onSuccess: invalidate,
+  });
+}
+
+/** 精算の行 (from → to) の「済み」を付け外しする（行の当事者だけ）。
+ * 付けるときは画面で見た額を送る。いまの額と違えば 409 amount_changed（呼び出し側が案内して取り直す） */
+export function useToggleSettlementDone(eventId: string) {
+  const invalidate = useInvalidate(eventId);
+  return useMutation({
+    mutationFn: ({
+      fromUserId,
+      toUserId,
+      amount,
+      done,
+    }: {
+      fromUserId: string;
+      toUserId: string;
+      amount: number;
+      done: boolean;
+    }) => {
+      const path = `/events/${eventId}/warikan/settlements/${fromUserId}/${toUserId}/done`;
+      return done ? api.put<{ done: SettlementDone }>(path, { amount }) : api.del(path);
+    },
+    // 409（額が変わった）でも取り直して最新の行を見せる
+    onSettled: invalidate,
   });
 }
 

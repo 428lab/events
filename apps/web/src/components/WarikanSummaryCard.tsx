@@ -3,7 +3,7 @@ import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useWarikan } from "../api/warikanHooks.js";
-import { mySettlements, useMemberName, useYen } from "./WarikanSettlementRow.js";
+import { myPendingSettlements, useMemberName, useYen } from "./WarikanSettlementRow.js";
 
 /** カードに出す行の上限。それより多い分は「ほか n 件」にまとめる */
 const MAX_ROWS = 2;
@@ -11,10 +11,10 @@ const MAX_ROWS = 2;
 /**
  * イベント詳細の割り勘カード (#556 §3.9)。
  *
- * **自分に未精算の行があるときだけ**出す。督促の通知を作らないので、ここが
- * 「まだ払っていない」に気づく唯一の場所になる。差引ではなく相手ごとの行で、
- * やることを語（支払う／受け取る）で出す。呼び出し側は確定メンバー（canChat）の
- * ときだけ描く（そのときだけ帳簿を取りに行く）。
+ * **自分の精算の行のうち「済み」でないものがあるときだけ**出す。督促の通知を作らないので、
+ * ここが自分の貸し借りに気づく唯一の場所になる。全部「済み」なら出さない（済みの行はページで見る）。
+ * 差引ではなく相手ごとの行で、やることを語（支払う／受け取る）で出す。
+ * 呼び出し側はログイン中なら描く。帳簿の GET が 404（帳簿を見られない人）なら黙って何も出さない。
  */
 export function WarikanSummaryCard({ eventId }: { eventId: string }) {
   const { t } = useTranslation();
@@ -22,7 +22,7 @@ export function WarikanSummaryCard({ eventId }: { eventId: string }) {
   const { data: ledger } = useWarikan(eventId, true);
   const nameOf = useMemberName(ledger);
   if (!ledger) return null;
-  const rows = mySettlements(ledger);
+  const rows = myPendingSettlements(ledger);
   if (rows.length === 0) return null;
 
   const me = ledger.me.userId;

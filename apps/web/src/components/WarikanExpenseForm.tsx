@@ -30,6 +30,12 @@ import { useMemberName, useWarikanErrors, useYen } from "./WarikanSettlementRow.
 /** 「内容」のチップ。押すとタイトルに入る（自由入力も可） */
 const TITLE_CHIPS = ["chipVenue", "chipParty", "chipSupplies", "chipTransport"] as const;
 
+/** 入力中の重み（文字列）を保存用の整数へ。空や 0 は 1 に戻す */
+function roundWeight(raw: string): number {
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
 /** イベント開始日の JST の日付（'YYYY-MM-DD'）。日程未定なら null */
 function eventStartDate(event: Event): string | null {
   if (event.scheduling || !event.startsAt) return null;
@@ -82,11 +88,12 @@ export function WarikanExpenseForm({
     payer: expense?.payerUserId ?? me,
     note: expense?.note ?? "",
     spentOn: expense ? (expense.spentOn ?? "") : (eventStartDate(event) ?? ""),
-    // 新規は「全員」にチェックした状態で開く（最頻のケース。後から個別に外せる）
-    weights: new Map<string, number>(
+    // 新規は「全員」にチェックした状態で開く（最頻のケース。後から個別に外せる）。
+    // 重みは入力中は文字列で持つ（空にしてから打ち直せるように）。保存時に整数へ丸める
+    weights: new Map<string, string>(
       expense
-        ? expense.shares.map((s) => [s.userId, s.weight])
-        : presetShareUserIds(ledger.members, "all").map((id) => [id, 1]),
+        ? expense.shares.map((s) => [s.userId, String(s.weight)])
+        : presetShareUserIds(ledger.members, "all").map((id) => [id, "1"]),
     ),
   });
   const [form, setForm] = useState(initial);
@@ -110,22 +117,27 @@ export function WarikanExpenseForm({
 
   const checked = [...form.weights.keys()];
   const amount = Number(form.amount);
-  const perPerson = checked.length > 0 && amount > 0 ? Math.round(amount / checked.length) : 0;
+  const weightOf = (userId: string) => roundWeight(form.weights.get(userId) ?? "");
+  // 表示額は重みを反映する: floor(amount / Σweight)。全員 1 なら「1人あたり」、そうでなければ「重み 1 あたり」
+  const totalWeight = checked.reduce((sum, userId) => sum + weightOf(userId), 0);
+  const unequal = checked.some((userId) => weightOf(userId) !== 1);
+  const perWeight = totalWeight > 0 && amount > 0 ? Math.floor(amount / totalWeight) : 0;
 
-  const setWeights = (weights: Map<string, number>) => setForm((f) => ({ ...f, weights }));
+  const setWeights = (weights: Map<string, string>) => setForm((f) => ({ ...f, weights }));
   const applyPreset = (preset: "all" | "attended") => {
-    setWeights(new Map(presetShareUserIds(ledger.members, preset).map((id) => [id, 1])));
+    setWeights(new Map(presetShareUserIds(ledger.members, preset).map((id) => [id, "1"])));
   };
   const toggle = (userId: string) => {
     const next = new Map(form.weights);
     if (next.has(userId)) next.delete(userId);
-    else next.set(userId, 1);
+    else next.set(userId, "1");
     setWeights(next);
   };
   const setWeight = (userId: string, raw: string) => {
-    const n = Number(raw.replace(/[^0-9]/g, ""));
+    // 入力中は数字だけの文字列のまま持つ（空も可）。上限は打ち間違いの防止（サーバーも見る）
+    const digits = raw.replace(/[^0-9]/g, "");
     const next = new Map(form.weights);
-    next.set(userId, Math.max(1, Math.min(WARIKAN_WEIGHT_MAX, n || 1)));
+    next.set(userId, digits && Number(digits) > WARIKAN_WEIGHT_MAX ? String(WARIKAN_WEIGHT_MAX) : digits);
     setWeights(next);
   };
 
@@ -136,7 +148,7 @@ export function WarikanExpenseForm({
       title: form.title,
       note: form.note,
       spentOn: form.spentOn || null,
-      shares: checked.map((userId) => ({ userId, weight: form.weights.get(userId) ?? 1 })),
+      shares: checked.map((userId) => ({ userId, weight: weightOf(userId) })),
     });
     if (!parsed.success) {
       setError(checked.length === 0 ? t("warikan.noSelectable") : t("warikan.errorInvalidInput"));
@@ -252,10 +264,14 @@ export function WarikanExpenseForm({
               {/* 金額が未入力のうちは「約 0円」を出さない */}
               {amount > 0 && (
                 <Typography variant="body2" color="text.secondary">
-                  {t(checked.length === 1 ? "warikan.perPersonOne" : "warikan.perPerson", {
-                    n: checked.length,
-                    amount: yen(perPerson),
-                  })}
+                  {t(
+                    unequal
+                      ? "warikan.perWeight"
+                      : checked.length === 1
+                        ? "warikan.perPersonOne"
+                        : "warikan.perPerson",
+                    { n: checked.length, amount: yen(perWeight) },
+                  )}
                 </Typography>
               )}
               <Typography variant="caption" color="text.secondary">
@@ -304,7 +320,7 @@ export function WarikanExpenseForm({
                           </Typography>
                           <TextField
                             size="small"
-                            value={String(form.weights.get(userId) ?? 1)}
+                            value={form.weights.get(userId) ?? ""}
                             onChange={(e) => setWeight(userId, e.target.value)}
                             inputProps={{
                               inputMode: "numeric",

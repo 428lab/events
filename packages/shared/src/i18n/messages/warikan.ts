@@ -1,11 +1,12 @@
 /**
  * 割り勘 (#556) の文言。設計は docs/warikan.md §3.9 / §3.10。
  *
- * このアプリは送金も金銭の預託もしない（帳簿と受け取り先の掲示だけ）。
+ * このアプリは送金も金銭の預託もしない（帳簿・当事者が付けた「済み」・受け取り先の掲示だけ）。
  * 文言もそこから外れない。**禁止語の一覧は docs/warikan.md §3.10 の1か所**で、
  * apps/server/test/warikan.test.ts がこのファイルの ja/en 全文を走査して固定する。
  * - 「精算」は見出しには使ってよいが、ボタンに「精算する」は使わない
  * - 例や placeholder に口座を連想させる語を出さない
+ * - 状態を表す語は「済み」の1語だけ。「未精算」「未払い」は使わない（印の無い行にラベルを付けない）
  */
 const ja = {
   /** 見出し・導線 */
@@ -17,7 +18,7 @@ const ja = {
   disclaimer: "お金のやりとりは当事者どうしで行います。このアプリはお金を預かりません。",
   disclaimerMore: "詳しく",
   disclaimerDetail:
-    "このアプリが記録するのは、誰が何にいくら立て替え、誰が誰にいくら返すかという帳簿と、受け取り先の表示だけです。お金を受け取ったり、預かったり、送ったりはしません。受け取り先はリンクを開くだけで、アプリの中で支払いの画面は出しません。",
+    "このアプリが持つのは、誰が何にいくら立て替え、誰が誰にいくら返すかという帳簿と、当事者が付けた「済み」の印、受け取り先の表示だけです。お金を受け取ったり、預かったり、送ったりはしません。支払いの確認もしません。受け取り先はリンクを開くだけで、アプリの中で支払いの画面は出しません。",
 
   /** あなたの精算 */
   mySettlements: "あなたの精算",
@@ -35,10 +36,15 @@ const ja = {
   breakdownTotal: "= {{amount}}",
   noPayoutMethod:
     "受け取り先が登録されていません。振込先は相手から個別に聞いてください。このアプリには書かないでください。",
-  counterpartDeleted: "退会済みのため精算できません",
+  counterpartDeleted: "退会済みのため受け取り先はありません",
   registerPayout: "受け取り先を登録する",
   noSettlements: "あなたの精算はありません",
   allSettled: "精算は完了しています",
+  /** 「済み」（状態を表す唯一の語。チェックのラベルと、済みの行の小見出し） */
+  done: "済み",
+  doneBy: "済み（{{name}} さんが {{date}} に記録）",
+  doneNote: "「済み」は当事者の自己申告です。このアプリは支払いを確認しません。",
+  amountChanged: "金額が変わりました。最新の内容を表示します",
 
   /** 立替の一覧 */
   expenses: "立替の一覧",
@@ -84,7 +90,7 @@ const ja = {
   openWallet: "ウォレットで開く",
   copyAddress: "アドレスをコピー",
   showQr: "QRを表示",
-  satsNote: "金額の記録は円のみです。送る sat の額はご自身で決めてください。",
+  satsNote: "金額の表示は円のみです。送る sat の額はご自身で決めてください。",
 
   /** 立替フォーム */
   formNew: "立替を追加",
@@ -103,6 +109,7 @@ const ja = {
   presetAttended: "出席した人",
   perPerson: "{{n}} 人・1人あたり約 {{amount}}",
   perPersonOne: "{{n}} 人・1人あたり約 {{amount}}",
+  perWeight: "{{n}} 人・重み 1 あたり約 {{amount}}",
   details: "詳細",
   spentOn: "日付",
   note: "メモ",
@@ -119,6 +126,9 @@ const ja = {
   errorTooManyExpenses: "立替の件数が上限に達しています。",
   errorAccessChanged: "参加の状態が変わったため保存できませんでした。画面を読み込み直してください。",
   errorInvalidInput: "入力内容を確かめてください。",
+  errorInvalidWeight: "重みは 1〜100 の整数で入力してください。",
+  /** 帳簿の GET が 404 のとき（門の外）。それ以外の取得エラーは汎用の文言 */
+  audienceOnly: "割り勘は、参加が確定しているメンバーと立替の当事者だけが見られます。",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -129,7 +139,7 @@ const en: Record<keyof typeof ja, string> = {
   disclaimer: "Money is exchanged directly between the people involved. This app never holds money.",
   disclaimerMore: "Details",
   disclaimerDetail:
-    "This app only keeps a ledger of who paid how much for what and who owes whom, and shows where people want to be paid. It never receives, holds or sends money. Payment destinations only open as links, and no payment screen is shown inside the app.",
+    "This app only keeps a ledger of who paid how much for what and who owes whom, the \"done\" marks added by the people involved, and where people want to be paid. It never receives, holds or sends money, and it does not check payments. Payment destinations only open as links, and no payment screen is shown inside the app.",
 
   mySettlements: "Your settlements",
   payTo: "To {{name}}: {{amount}}",
@@ -146,10 +156,14 @@ const en: Record<keyof typeof ja, string> = {
   breakdownTotal: "= {{amount}}",
   noPayoutMethod:
     "No payment destination is registered. Ask them directly where to send it. Please do not write it in this app.",
-  counterpartDeleted: "This account was deleted, so it cannot be settled",
+  counterpartDeleted: "This account was deleted, so there is nowhere to send it",
   registerPayout: "Add where you get paid",
   noSettlements: "Nothing for you to settle",
   allSettled: "You are all settled",
+  done: "Done",
+  doneBy: "Done (marked by {{name}} on {{date}})",
+  doneNote: "\"Done\" is self-reported by the people involved. This app does not check payments.",
+  amountChanged: "The amount has changed. Showing the latest details.",
 
 
   expenses: "Expenses",
@@ -194,7 +208,7 @@ const en: Record<keyof typeof ja, string> = {
   openWallet: "Open in wallet",
   copyAddress: "Copy address",
   showQr: "Show QR",
-  satsNote: "Amounts are recorded in yen only. Decide the amount of sats to send yourself.",
+  satsNote: "Amounts are shown in yen only. Decide the amount of sats to send yourself.",
 
   formNew: "Add expense",
   formEdit: "Edit expense",
@@ -212,6 +226,7 @@ const en: Record<keyof typeof ja, string> = {
   presetAttended: "Attended",
   perPerson: "{{n}} people, about {{amount}} each",
   perPersonOne: "{{n}} person, about {{amount}} each",
+  perWeight: "{{n}} people, about {{amount}} per weight of 1",
   details: "Details",
   spentOn: "Date",
   note: "Note",
@@ -227,6 +242,8 @@ const en: Record<keyof typeof ja, string> = {
   errorTooManyExpenses: "The maximum number of expenses has been reached.",
   errorAccessChanged: "Your participation changed, so this could not be saved. Please reload the page.",
   errorInvalidInput: "Please check what you entered.",
+  errorInvalidWeight: "Enter a whole number from 1 to 100 for the weight.",
+  audienceOnly: "Only confirmed members and people involved in these expenses can see this.",
 };
 
 export const warikan = { ja, en };

@@ -1,19 +1,36 @@
 import { useState } from "react";
-import { Box, Button, Collapse, Snackbar, Stack, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Button,
+  Checkbox,
+  Collapse,
+  FormControlLabel,
+  Snackbar,
+  Stack,
+  Typography,
+} from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { useTranslation } from "react-i18next";
-import type { Settlement, WarikanLedger } from "@eventer/shared";
+import type { WarikanLedger } from "@eventer/shared";
 import { formatYen } from "@eventer/shared";
+import { useToggleSettlementDone } from "../api/warikanHooks.js";
+import { errorMessage } from "../lib/errorMessage.js";
+import { formatMonthDay } from "../lib/format.js";
 import { PayoutMethodView } from "./WarikanPayoutMethods.js";
 
 /**
  * 割り勘の精算の行 (#556 §3.9「あなたの精算」)。
  *
  * 金額の正負は色ではなく語（「支払う」「受け取る」）で表す。
- * 支払い自体は他のアプリで行うので、ここは相手・金額・受け取り先・内訳を出すだけ。
+ * 支払い自体は他のアプリで行うので、ここは相手・金額・受け取り先・内訳と「済み」を出すだけ。
+ * 行の金額は計算結果で、操作できるのは当事者が付け外しする「済み」の印だけ（§3.5.1）。
  */
+
+/** 帳簿の応答の精算の行（内訳・「済み」・付け外しできるかを含む） */
+export type LedgerSettlement = WarikanLedger["settlements"][number];
 
 /** サーバーのエラーコードのうち、割り勘の画面だけで言い方を変えるもの（§3.8.2） */
 export function useWarikanErrors(): Record<string, string> {
@@ -23,6 +40,8 @@ export function useWarikanErrors(): Record<string, string> {
     too_many_expenses: t("warikan.errorTooManyExpenses"),
     access_changed: t("warikan.errorAccessChanged"),
     validation_error: t("warikan.errorInvalidInput"),
+    invalid_weight: t("warikan.errorInvalidWeight"),
+    amount_changed: t("warikan.amountChanged"),
   };
 }
 
@@ -50,13 +69,18 @@ export function useMemberName(
   };
 }
 
-/** 自分が当事者の精算の行。自分が支払う行を先、受け取る行を後に並べる */
-export function mySettlements(ledger: WarikanLedger): Settlement[] {
+/** 自分が当事者の精算の行。自分が支払う行を先、受け取る行を後に並べる（「済み」の行も含む） */
+export function mySettlements(ledger: WarikanLedger): LedgerSettlement[] {
   const me = ledger.me.userId;
   return [
     ...ledger.settlements.filter((s) => s.fromUserId === me),
     ...ledger.settlements.filter((s) => s.toUserId === me),
   ];
+}
+
+/** 自分の行のうち「済み」でないもの（カードに出す・ページで先に並べる行） */
+export function myPendingSettlements(ledger: WarikanLedger): LedgerSettlement[] {
+  return mySettlements(ledger).filter((s) => !s.done);
 }
 
 /** 金額をクリップボードへ（向こうのアプリで金額を打つため） */
@@ -89,13 +113,59 @@ function CopyAmountButton({ amount }: { amount: number }) {
   );
 }
 
+/** 「済み」のチェック。付けるときは行の額を送る（§3.8）。額が変わっていたら案内して取り直す */
+function DoneCheckbox({
+  eventId,
+  settlement,
+}: {
+  eventId: string;
+  settlement: LedgerSettlement;
+}) {
+  const { t } = useTranslation();
+  const overrides = useWarikanErrors();
+  const toggle = useToggleSettlementDone(eventId);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={Boolean(settlement.done)}
+            disabled={toggle.isPending}
+            onChange={(e) => {
+              setError(null);
+              toggle.mutate(
+                {
+                  fromUserId: settlement.fromUserId,
+                  toUserId: settlement.toUserId,
+                  amount: settlement.amount,
+                  done: e.target.checked,
+                },
+                { onError: (err) => setError(errorMessage(err, overrides)) },
+              );
+            }}
+          />
+        }
+        label={t("warikan.done")}
+      />
+      {error && (
+        <Alert severity="warning" sx={{ mt: 1 }}>
+          {error}
+        </Alert>
+      )}
+    </>
+  );
+}
+
 /** 「あなたの精算」の1行 */
 export function WarikanSettlementRow({
+  eventId,
   ledger,
   settlement,
 }: {
+  eventId: string;
   ledger: WarikanLedger;
-  settlement: Settlement;
+  settlement: LedgerSettlement;
 }) {
   const { t } = useTranslation();
   const yen = useYen();
@@ -112,7 +182,7 @@ export function WarikanSettlementRow({
   const theirPayouts = ledger.payoutMethods.filter((m) => m.userId === counterpartId);
   const myPayouts = ledger.payoutMethods.filter((m) => m.userId === me);
 
-  const breakdownLabel = (item: Settlement["breakdown"][number]): string => {
+  const breakdownLabel = (item: LedgerSettlement["breakdown"][number]): string => {
     const expense = ledger.expenses.find((e) => e.id === item.expenseId);
     const title = expense?.title ?? "";
     return expense?.payerUserId === me ? t("warikan.breakdownYourExpense", { title }) : title;
@@ -128,6 +198,30 @@ export function WarikanSettlementRow({
       {t("warikan.breakdown")}
     </Button>
   );
+
+  const doneCheckbox = settlement.canToggle && (
+    <DoneCheckbox eventId={eventId} settlement={settlement} />
+  );
+
+  // 済みの行は薄く残す。操作はチェックを外すだけで、金額コピー・受け取り先は出さない
+  if (settlement.done) {
+    return (
+      <Box sx={{ py: 1.5, borderBottom: 1, borderColor: "divider", opacity: 0.6 }}>
+        <Typography fontWeight={700}>
+          {iPay
+            ? t("warikan.payTo", { name: counterpartName, amount: yen(settlement.amount) })
+            : t("warikan.receiveFrom", { name: counterpartName, amount: yen(settlement.amount) })}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {t("warikan.doneBy", {
+            name: nameOf(settlement.done.markedBy),
+            date: formatMonthDay(settlement.done.markedAt),
+          })}
+        </Typography>
+        {doneCheckbox}
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ py: 1.5, borderBottom: 1, borderColor: "divider" }}>
@@ -158,7 +252,10 @@ export function WarikanSettlementRow({
               )}
             </Stack>
           )}
-          <Box sx={{ mt: 0.5 }}>{breakdownButton}</Box>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ mt: 0.5 }}>
+            {breakdownButton}
+            {doneCheckbox}
+          </Stack>
         </>
       ) : (
         <>
@@ -174,7 +271,10 @@ export function WarikanSettlementRow({
               </Button>
             </Box>
           )}
-          <Box sx={{ mt: 1 }}>{breakdownButton}</Box>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ mt: 1 }}>
+            {breakdownButton}
+            {doneCheckbox}
+          </Stack>
         </>
       )}
 

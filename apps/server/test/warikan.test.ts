@@ -856,6 +856,15 @@ describe("文言の禁止語 (#556 §3.10)", () => {
     }
   });
 
+  it("状態を表す語は「済み」だけ。「未精算」と前改訂の「管理しません」の文言が無い", () => {
+    for (const lang of ["ja"] as const) {
+      const values = Object.values(translations[lang].warikan as Record<string, string>);
+      expect(values.filter((v) => v.includes("未精算"))).toEqual([]);
+      expect(values).not.toContain("支払いが済んだかどうかは、このアプリでは管理しません。");
+      expect(values).toContain("済み");
+    }
+  });
+
   it("ボタンの文言に「精算する」を使わない", () => {
     const hits = Object.entries(translations.ja.warikan as Record<string, string>)
       .filter(([, v]) => v.includes("精算する"))

@@ -21,7 +21,8 @@ import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import AddIcon from "@mui/icons-material/Add";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import type { Event, Settlement, WarikanExpense, WarikanLedger } from "@eventer/shared";
+import type { Event, WarikanExpense, WarikanLedger } from "@eventer/shared";
+import { ApiError } from "../api/client.js";
 import { useEvent } from "../api/hooks.js";
 import { useWarikan } from "../api/warikanHooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
@@ -32,6 +33,7 @@ import {
   mySettlements,
   useMemberName,
   useYen,
+  type LedgerSettlement,
 } from "../components/WarikanSettlementRow.js";
 import { formatMonthDay } from "../lib/format.js";
 
@@ -39,13 +41,16 @@ import { formatMonthDay } from "../lib/format.js";
  * 割り勘のページ (#556 §3.9)。見られるのは確定メンバーと帳簿の当事者（門はサーバー）。
  *
  * 並び: 免責 → あなたの精算 → 立替の一覧 → 全員の収支 → 自分の受け取り先。
- * このアプリはお金を預からない。立替と負担から精算額を出すだけで、支払いは他のアプリで行う。
+ * このアプリはお金を預からない。立替と負担から精算額を出し、当事者が付けた「済み」を見せるだけで、
+ * 支払いは他のアプリで行う。
  */
 export function EventWarikanPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
-  const { data: ledger, isError, isLoading } = useWarikan(id, Boolean(eventData));
+  const { data: ledger, error, isLoading } = useWarikan(id, Boolean(eventData));
+  // 404 は門の外（確定メンバーでも当事者でもない）。それ以外（500・オフライン）は汎用のエラー
+  const notAudience = error instanceof ApiError && error.status === 404;
 
   return (
     <Stack spacing={2}>
@@ -64,7 +69,12 @@ export function EventWarikanPage() {
 
       <Disclaimer />
 
-      {isError && <Alert severity="info">{t("eventSocial.screenMembersOnly")}</Alert>}
+      {error &&
+        (notAudience ? (
+          <Alert severity="info">{t("warikan.audienceOnly")}</Alert>
+        ) : (
+          <Alert severity="error">{t("common.loadErrorReload")}</Alert>
+        ))}
       {isLoading && <Typography>{t("common.loading")}</Typography>}
       {ledger && eventData && (
         <LedgerView eventId={id} ledger={ledger} event={eventData.event} />
@@ -106,15 +116,22 @@ function LedgerView({
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<WarikanExpense | null>(null);
   const rows = mySettlements(ledger);
+  const pending = rows.filter((s) => !s.done);
+  const doneRows = rows.filter((s) => s.done);
   const me = ledger.me.userId;
-  // 自分が支払う行 → 受け取る行の2グループ（自分が動く行を先に）
+  // 「済み」でない行を、自分が支払う行 → 受け取る行の2グループで先に（自分が動く行を先に）。
+  // 済みの行は後ろの「済み」の小見出しの下に薄く残す
   const groups: {
     key: string;
     label: "warikan.groupPay" | "warikan.groupReceive";
-    rows: Settlement[];
+    rows: LedgerSettlement[];
   }[] = [
-    { key: "pay", label: "warikan.groupPay", rows: rows.filter((s) => s.fromUserId === me) },
-    { key: "receive", label: "warikan.groupReceive", rows: rows.filter((s) => s.toUserId === me) },
+    { key: "pay", label: "warikan.groupPay", rows: pending.filter((s) => s.fromUserId === me) },
+    {
+      key: "receive",
+      label: "warikan.groupReceive",
+      rows: pending.filter((s) => s.toUserId === me),
+    },
   ];
   // 帳簿に自分が登場していて、いまの行が無い＝全部済んだ（登場していなければ関係なし）
   const hadDealings = ledger.balances.some((b) => b.userId === me);
@@ -127,30 +144,51 @@ function LedgerView({
           <Typography variant="h6" fontWeight={700}>
             {t("warikan.mySettlements")}
           </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {t("warikan.doneNote")}
+          </Typography>
           {rows.length === 0 ? (
             <Typography color="text.secondary" sx={{ mt: 1 }}>
               {hadDealings ? t("warikan.allSettled") : t("warikan.noSettlements")}
             </Typography>
           ) : (
-            groups
-              .filter((g) => g.rows.length > 0)
-              .map((g) => (
-                <Box key={g.key} sx={{ mt: 2 }}>
+            <>
+              {groups
+                .filter((g) => g.rows.length > 0)
+                .map((g) => (
+                  <Box key={g.key} sx={{ mt: 2 }}>
+                    <Typography variant="subtitle2" fontWeight={700} color="text.secondary">
+                      {t(g.label, {
+                        n: g.rows.length,
+                        amount: yen(g.rows.reduce((sum, s) => sum + s.amount, 0)),
+                      })}
+                    </Typography>
+                    {g.rows.map((s) => (
+                      <WarikanSettlementRow
+                        key={`${s.fromUserId}:${s.toUserId}`}
+                        eventId={eventId}
+                        ledger={ledger}
+                        settlement={s}
+                      />
+                    ))}
+                  </Box>
+                ))}
+              {doneRows.length > 0 && (
+                <Box sx={{ mt: 2 }}>
                   <Typography variant="subtitle2" fontWeight={700} color="text.secondary">
-                    {t(g.label, {
-                      n: g.rows.length,
-                      amount: yen(g.rows.reduce((sum, s) => sum + s.amount, 0)),
-                    })}
+                    {t("warikan.done")}
                   </Typography>
-                  {g.rows.map((s) => (
+                  {doneRows.map((s) => (
                     <WarikanSettlementRow
                       key={`${s.fromUserId}:${s.toUserId}`}
+                      eventId={eventId}
                       ledger={ledger}
                       settlement={s}
                     />
                   ))}
                 </Box>
-              ))
+              )}
+            </>
           )}
         </CardContent>
       </Card>

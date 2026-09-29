@@ -149,6 +149,7 @@ export function WarikanPayoutMethods({
   const [kind, setKind] = useState<PayoutKind>("url");
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const mine = ledger.payoutMethods.filter((m) => m.userId === ledger.me.userId);
   const kindLabel = (k: PayoutKind) =>
@@ -165,7 +166,10 @@ export function WarikanPayoutMethods({
     save.mutate(
       [...mine.map((m) => ({ kind: m.kind, value: m.value }) as typeof parsed.data), parsed.data],
       {
-        onSuccess: () => setValue(""),
+        onSuccess: () => {
+          setValue("");
+          setSaved(true);
+        },
         onError: (e) => setError(errorMessage(e, overrides)),
       },
     );
@@ -258,6 +262,12 @@ export function WarikanPayoutMethods({
         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
           {t("warikan.noBankNote")}
         </Typography>
+        <Snackbar
+          open={saved}
+          autoHideDuration={2000}
+          onClose={() => setSaved(false)}
+          message={t("warikan.payoutSaved")}
+        />
       </CardContent>
     </Card>
   );
