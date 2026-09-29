@@ -1,26 +1,9 @@
 import { useTranslation } from "react-i18next";
 import { Box, Button, MenuItem, Stack, TextField, Typography } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
-import ImageIcon from "@mui/icons-material/Image";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import SlideshowIcon from "@mui/icons-material/Slideshow";
-import TextFieldsIcon from "@mui/icons-material/TextFields";
-import VideocamIcon from "@mui/icons-material/Videocam";
-import { visualParts } from "@eventer/shared";
-import type { BgmTrack, LiveElement, LiveScene, VisualStyle } from "@eventer/shared";
-import { useState } from "react";
-import {
-  isColorBackground,
-  newCameraElement,
-  newDeckElement,
-  newEventInfoElement,
-  newTextElement,
-} from "../lib/liveScenes.js";
-
-const PART_TITLE_KEYS = {
-  "glow-name": "studio.glowNamePart", "glow-camera": "studio.glowCameraPart", "glow-chapter": "studio.glowChapterPart", "glow-break": "studio.glowBreakPart",
-  "signal-name": "studio.signalNamePart", "signal-camera": "studio.signalCameraPart", "signal-chapter": "studio.signalChapterPart", "signal-info": "studio.signalInfoPart",
-} as const;
+import type { BgmTrack, LiveScene } from "@eventer/shared";
+import { isColorBackground } from "../lib/liveScenes.js";
 
 /** 背景プリセット（Natsumatsuri トーン）。色と並び順は文言ではないのでコード側に残す */
 const BG_PRESETS = [
@@ -47,7 +30,8 @@ const DEFAULT_BG_COLOR = "#0E1426";
 /**
  * キャンバスの上に出る操作列。
  *
- * 「何を置くか」と「シーンそのものの設定（名前・背景・BGM）」を並べる。
+ * シーンそのものの設定（名前・背景・BGM）と、「パーツを追加」の入口を並べる。
+ * 何を置くかは入口から開く一覧（LiveAddPartDialog）が持つ (#566)。
  * BGM は配信セットにしか無い。シーンを切り替えた時の曲の扱いは
  * **変更しない / 止める / その曲にする** の3択で、undefined と null を
  * 意味の違うものとして持つ。ここが select の値と往復する唯一の場所。
@@ -56,25 +40,17 @@ export function LiveSceneToolbar({
   scene,
   bgmTracks,
   onPatchScene,
-  onAdd,
-  onAddImage,
-  onAddPart,
+  onOpenAddPart,
 }: {
   /** 編集中のシーン。1つも無い状態では undefined */
   scene: LiveScene | undefined;
   bgmTracks: BgmTrack[] | undefined;
   onPatchScene: (patch: Partial<LiveScene>) => void;
-  /** 置く要素。中身の既定値は liveScenes が持つ */
-  onAdd: (el: LiveElement) => void;
-  /** 画像だけは選ばせて上げてからになるので入口が別 */
-  onAddImage: () => void;
-  onAddPart: (elements: LiveElement[]) => void;
+  /** 「パーツを追加」の一覧を開く */
+  onOpenAddPart: () => void;
 }) {
   const { t } = useTranslation();
   const background = scene?.background;
-  const [partsOpen, setPartsOpen] = useState(false);
-  const style: VisualStyle = scene?.id.startsWith("v1-hakuji-") || scene?.background === "#F6F2EA" ? "hakuji" : scene?.id.startsWith("v1-signal-") ? "signal" : "glow";
-  const make = (type: LiveElement["type"], props: Partial<LiveElement> = {}): LiveElement => ({ id: crypto.randomUUID(), type, x: 100, y: 410, w: 480, h: 48, rotation: 0, ...props });
 
   return (
     <>
@@ -94,42 +70,14 @@ export function LiveSceneToolbar({
           sx={{ width: 160 }}
         />
         <Button
-          size="small"
-          startIcon={<TextFieldsIcon />}
-          onClick={() => onAdd(newTextElement())}
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={onOpenAddPart}
+          disabled={!scene}
         >
-          {t("studio.elementText")}
+          {t("studio.addPart")}
         </Button>
-        <Button size="small" startIcon={<ImageIcon />} onClick={onAddImage}>
-          {t("studio.elementImage")}
-        </Button>
-        <Button
-          size="small"
-          startIcon={<VideocamIcon />}
-          onClick={() => onAdd(newCameraElement())}
-        >
-          {t("studio.elementCamera")}
-        </Button>
-        <Button
-          size="small"
-          startIcon={<SlideshowIcon />}
-          onClick={() => onAdd(newDeckElement())}
-        >
-          {t("studio.elementDeck")}
-        </Button>
-        <Button size="small" startIcon={<InfoOutlinedIcon />} onClick={() => onAdd(newEventInfoElement())}>{t("studio.elementEventInfo")}</Button>
-        <Button size="small" onClick={() => setPartsOpen(v => !v)}>{t("studio.addParts")}</Button>
-        <Button size="small" onClick={() => onAdd(make("chat", { x: 28, y: 310, w: 380, h: 175, chatStyle: style, chatRows: 3, chatSeconds: 20 }))}>{t("studio.elementChat")}</Button>
-        <Button size="small" onClick={() => onAdd(make("marquee", { text: t("studio.marqueeDefaultText"), seconds: 20, gap: 32, direction: "left", fill: style === "hakuji" ? "#FFFFFF" : style === "glow" ? "#1A2737" : "#18303B", color: style === "hakuji" ? "#203146" : "#EAF0F7" }))}>{t("studio.elementMarquee")}</Button>
-        <Button size="small" onClick={() => onAdd(make("clock", { x: 680, y: 435, w: 210, timezone: "Asia/Tokyo", showSeconds: true, color: style === "hakuji" ? "#203146" : "#EAF0F7", fill: style === "hakuji" ? "#FFFFFF" : undefined }))}>{t("studio.elementClock")}</Button>
-        <Button size="small" onClick={() => onAdd(make("countdown", { x: 680, y: 435, w: 210, target: "eventStart", zero: "stop", timezone: "Asia/Tokyo", color: style === "hakuji" ? "#203146" : "#EAF0F7", fill: style === "hakuji" ? "#FFFFFF" : undefined }))}>{t("studio.elementCountdown")}</Button>
-        <Button size="small" onClick={() => onAdd(make("liveIndicator", { x: 760, y: 57, w: 130, h: 36, text: "LIVE", color: style === "hakuji" ? "#FFFFFF" : "#2DD4BF", fill: style === "hakuji" ? "#203146" : undefined }))}>{t("studio.elementLiveIndicator")}</Button>
-        <Button size="small" onClick={() => onAdd(make("motif", { x: 845, y: 80, w: 55, h: 55, motif: style === "glow" ? "lantern" : "ticks", color: style === "hakuji" ? "#285E91" : style === "glow" ? "#FB923C" : "#2DD4BF", motion: { kind: "rotation", seconds: 30, direction: "clockwise" } }))}>{t("studio.elementMotif")}</Button>
-        <Button size="small" onClick={() => onAdd(make("motif", { x: 632, y: 110, w: 276, h: 206, motif: "flameFrame", flamePalette: style === "hakuji" ? "gold" : "ember", flicker: 60, flameHeight: 44, frameThickness: 4, radius: 16, embers: 50 }))}>{t("studio.elementFlameFrame")}</Button>
       </Stack>
-      {partsOpen && <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(130px, 1fr))", md: "repeat(4, minmax(130px, 1fr))" }, gap: 1, mb: 1 }}>
-        {([style, ...(["glow", "signal", "hakuji"] as VisualStyle[]).filter(family => family !== style)]).flatMap(family => visualParts(family).map(part => <Button key={`${family}-${part.id}`} variant="outlined" sx={{ minHeight: 76, background: family === "hakuji" ? "#F6F2EA" : family === "glow" ? "linear-gradient(120deg, #1A2737, #FB923C)" : "linear-gradient(120deg, #0A1120, #607C83)", color: family === "hakuji" ? "#203146" : "#fff", textAlign: "left" }} onClick={() => onAddPart(part.elements)}>{family === "hakuji" ? t("studio.hakujiParts") : family === "glow" ? t("studio.chatStyleglow") : t("studio.chatStylesignal")} · {family === "hakuji" ? t(part.id === "name" ? "studio.hakujiNameCard" : part.id === "camera" ? "studio.hakujiCameraCard" : part.id === "chapter" ? "studio.hakujiChapterCard" : "studio.hakujiBreakCard") : t(PART_TITLE_KEYS[`${family}-${part.id}` as keyof typeof PART_TITLE_KEYS])}{t("studio.partLayers", { count: part.elements.length })}</Button>))}
-      </Box>}
 
       <Stack
         direction="row"

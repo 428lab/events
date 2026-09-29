@@ -2,14 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Button,
-  Fab,
   IconButton,
   Stack,
   TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
+import PauseIcon from "@mui/icons-material/Pause";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import RedoIcon from "@mui/icons-material/Redo";
+import ScheduleIcon from "@mui/icons-material/Schedule";
 import UndoIcon from "@mui/icons-material/Undo";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -20,13 +22,13 @@ import {
   useUploadLiveSetImage,
 } from "../api/liveSetHooks.js";
 import { useBgmTracks } from "../api/bgmHooks.js";
+import { LiveAddPartDialog } from "../components/LiveAddPartDialog.js";
 import { LiveCanvas } from "../components/LiveCanvas.js";
 import { LiveElementPanel } from "../components/LiveElementPanel.js";
 import { LiveSceneList } from "../components/LiveSceneList.js";
 import { LiveSceneToolbar } from "../components/LiveSceneToolbar.js";
 import {
   copyScene,
-  newImageElement,
   newScene,
 } from "../lib/liveScenes.js";
 import type {
@@ -79,6 +81,7 @@ export function LiveSetEditorPage() {
   const [editError, setEditError] = useState("");
   const [pauseMotion, setPauseMotion] = useState(false);
   const [sampleTime, setSampleTime] = useState(false);
+  const [addPartOpen, setAddPartOpen] = useState(false);
   const savedRevision = useRef<number | null>(null);
   const saving = useRef(false);
   const queued = useRef<typeof latest.current | null>(null);
@@ -132,17 +135,19 @@ export function LiveSetEditorPage() {
   const editEls = (fn: (arr: LiveElement[]) => LiveElement[]) =>
     editScenes((s) => mapElementsAt(s, idx, fn));
 
-  const addElements = (elements: LiveElement[]) => {
-    if (els.length + elements.length > 50) { setEditError(t("studio.editorMaxElementsHelp")); return; }
-    if (els.filter(el => el.motion).length + elements.filter(el => el.motion).length > 2) { setEditError(t("studio.editorMaxMotionHelp")); return; }
+  /** 置けたら true。上限を超えるときは理由を出して何も置かない */
+  const addElements = (elements: LiveElement[]): boolean => {
+    if (els.length + elements.length > 50) { setEditError(t("studio.editorMaxElementsHelp")); return false; }
+    if (els.filter(el => el.motion).length + elements.filter(el => el.motion).length > 2) { setEditError(t("studio.editorMaxMotionHelp")); return false; }
     setEditError("");
     editEls(arr => [...arr, ...elements]);
     setSelectedId(elements.find(e => e.type === "text" || e.type === "eventInfo")?.id ?? elements[0]?.id ?? null);
+    return true;
   };
   const addElement = (el: LiveElement) => addElements([el]);
   const addPart = (elements: LiveElement[]) => {
     const keynoteName = scene?.id === "v1-hakuji-keynote" && elements.some(el => el.id === "name");
-    addElements(elements.map(el => ({ ...el, id: crypto.randomUUID(), x: el.x + (keynoteName ? 633 : 85), y: el.y + (keynoteName ? 356 : 230) })));
+    return addElements(elements.map(el => ({ ...el, id: crypto.randomUUID(), x: el.x + (keynoteName ? 633 : 85), y: el.y + (keynoteName ? 356 : 230) })));
   };
 
   const sceneCommands: LiveSceneCommands = {
@@ -205,10 +210,12 @@ export function LiveSetEditorPage() {
       editEls((arr) => applyPositions(arr, [{ id: elId, x, y }])),
   };
 
+  // 「パーツを追加」を開いている間は、矢印や Delete を背後の選択に効かせない
+  const noop = () => {};
   useEditorKeyboard({
-    undo: history.undo,
-    redo: history.redo,
-    hasSelection: selectedId !== null,
+    undo: addPartOpen ? noop : history.undo,
+    redo: addPartOpen ? noop : history.redo,
+    hasSelection: selectedId !== null && !addPartOpen,
     remove: elementCommands.remove,
     duplicate: elementCommands.duplicate,
     nudge: elementCommands.nudge,
@@ -234,28 +241,6 @@ export function LiveSetEditorPage() {
         <Button size="small" component={RouterLink} to="/live-sets">
           {t("studio.backToList")}
         </Button>
-        <Tooltip title={t("studio.undoTip")}>
-          <span>
-            <IconButton
-              size="small"
-              onClick={history.undo}
-              disabled={!history.canUndo}
-            >
-              <UndoIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title={t("studio.redoTip")}>
-          <span>
-            <IconButton
-              size="small"
-              onClick={history.redo}
-              disabled={!history.canRedo}
-            >
-              <RedoIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
         <TextField
           size="small"
           placeholder={t("studio.liveSetNamePlaceholder")}
@@ -289,15 +274,68 @@ export function LiveSetEditorPage() {
             scene={scene}
             bgmTracks={bgmTracks}
             onPatchScene={(patch) => editScenes((s) => patchAt(s, idx, patch))}
-            onAdd={addElement}
-            onAddPart={addPart}
-            onAddImage={() =>
-              picker.pick((url) => addElement(newImageElement(url)))
-            }
+            onOpenAddPart={() => setAddPartOpen(true)}
           />
-          <Button size="small" onClick={() => setPauseMotion(p => !p)}>{t(pauseMotion ? "studio.editorResumeMotion" : "studio.editorPauseMotion")}</Button>
-          <Button size="small" onClick={() => setSampleTime(p => !p)}>{t(sampleTime ? "studio.editorRealTime" : "studio.editorSampleTime")}</Button>
-          <Typography variant="caption">{t(sampleTime ? "studio.editorSampleClock" : "studio.editorRealClock")}</Typography>
+          <LiveAddPartDialog
+            open={addPartOpen}
+            onClose={() => setAddPartOpen(false)}
+            scene={scene}
+            error={editError}
+            onAddElement={addElement}
+            onAddPart={addPart}
+            pickImage={picker.pick}
+            uploading={upload.isPending}
+          />
+          {/* キャンバスの見出し。元に戻す・やり直すは編集面のすぐ上に1か所だけ置き、
+              スマホでは画面の上に貼り付けて、キャンバスを見ながら押せるようにする (#566) */}
+          <Stack
+            role="toolbar"
+            aria-label={t("studio.canvasToolbar")}
+            direction="row"
+            alignItems="center"
+            spacing={0.5}
+            flexWrap="wrap"
+            useFlexGap
+            sx={{
+              position: { xs: "sticky", md: "static" },
+              top: 0,
+              zIndex: (theme) => theme.zIndex.appBar - 1,
+              bgcolor: "background.default",
+              py: 0.5,
+              mb: 0.5,
+              borderBottom: { xs: 1, md: 0 },
+              borderColor: "divider",
+            }}
+          >
+            <Tooltip title={t("studio.undoTip")}>
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label={t("studio.undoTip")}
+                  onClick={history.undo}
+                  disabled={!history.canUndo}
+                >
+                  <UndoIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title={t("studio.redoTip")}>
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label={t("studio.redoTip")}
+                  onClick={history.redo}
+                  disabled={!history.canRedo}
+                >
+                  <RedoIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Box sx={{ width: "1px", alignSelf: "stretch", bgcolor: "divider", mx: 0.5 }} />
+            <Button size="small" startIcon={pauseMotion ? <PlayArrowIcon /> : <PauseIcon />} onClick={() => setPauseMotion(p => !p)}>{t(pauseMotion ? "studio.editorResumeMotion" : "studio.editorPauseMotion")}</Button>
+            <Button size="small" startIcon={<ScheduleIcon />} onClick={() => setSampleTime(p => !p)}>{t(sampleTime ? "studio.editorRealTime" : "studio.editorSampleTime")}</Button>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>{t(sampleTime ? "studio.editorSampleClock" : "studio.editorRealClock")}</Typography>
           <LiveCanvas
             pauseMotion={pauseMotion}
             previewNow={sampleTime ? Date.UTC(2026, 8, 27, 10, 4, 8) : undefined}
@@ -319,24 +357,6 @@ export function LiveSetEditorPage() {
         </Stack>
       </Stack>
 
-      {/* スマホ用：画面下に固定の Undo/Redo（上部バーが隠れるため） */}
-      <Box
-        sx={{
-          display: { xs: "flex", md: "none" },
-          position: "fixed",
-          bottom: 16,
-          right: 16,
-          gap: 1,
-          zIndex: (theme) => theme.zIndex.fab,
-        }}
-      >
-        <Fab size="small" onClick={history.undo} disabled={!history.canUndo}>
-          <UndoIcon />
-        </Fab>
-        <Fab size="small" onClick={history.redo} disabled={!history.canRedo}>
-          <RedoIcon />
-        </Fab>
-      </Box>
     </Stack>
   );
 }

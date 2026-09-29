@@ -97,6 +97,10 @@ const canvas = () =>
 /** キャンバス上の要素を選ぶ。選択は mousedown で確定する */
 const selectOnCanvas = (body: string) =>
   fireEvent.mouseDown(canvas().getByText(body));
+/** 「パーツを追加」の一覧を開く */
+const openPicker = () => fireEvent.click(screen.getByRole("button", { name: "パーツを追加" }));
+/** 一覧のカードを押す（名前はカードの見出し） */
+const pickCard = (name: string | RegExp) => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name }));
 /** 待ち時間を過ぎさせる（履歴の 500ms・保存の 800ms） */
 const settle = async () => act(async () => { vi.advanceTimersByTime(1500); await Promise.resolve(); });
 /** 最後に保存された中身 */
@@ -133,7 +137,10 @@ afterEach(() => {
 describe("live event comment element", () => {
   it.each(["glow", "signal", "hakuji"] as const)("adds %s comment layer, edits duration and persists on reopen", async style => {
     const view = draw(visualLiveSetContent(style).scenes);
-    click("コメント");
+    openPicker();
+    pickCard("コメント");
+    fireEvent.click(screen.getByRole("button", { name: "追加" }));
+    await settle();
     expect(screen.getByLabelText("表示秒数（10–45秒）")).toHaveValue(20);
     fireEvent.change(screen.getByLabelText("表示秒数（10–45秒）"), { target: { value: "25" } });
     await settle();
@@ -149,18 +156,18 @@ describe("live event comment element", () => {
 describe("完成部品の一操作", () => {
   it("50要素を超えるカードは丸ごと拒否し理由を表示する", async () => {
     draw([{ id: "full", name: "満杯", background: "#0E1426", elements: Array.from({ length: 49 }, (_, i) => text(`filled-${i}`, "")) }]);
-    click("部品を追加");
-    click(/琥珀の氏名帯/);
+    openPicker();
+    pickCard(/琥珀の氏名帯/);
     expect(screen.getByRole("alert")).toHaveTextContent("最大50要素");
     await settle();
     expect(mocks.update).not.toHaveBeenCalled();
   });
   it("白磁の4カードは個別レイヤーの編集・Undo/Redo・保存と再読込に乗る", async () => {
     const view = draw(visualLiveSetContent("hakuji").scenes);
-    click("部品を追加");
     const original = visualLiveSetContent("hakuji").scenes[0].elements.length;
     for (const title of ["藍の氏名札", "紙縁カメラ", "章の短冊", "休憩の案内"]) {
-      click(new RegExp(title));
+      openPicker();
+      pickCard(new RegExp(title));
       await settle();
     }
     expect(savedScenes()[0].elements).toHaveLength(original + 17);
@@ -201,8 +208,8 @@ describe("完成部品の一操作", () => {
   it("白磁講演の氏名札をカメラ下の独立帯に置く", async () => {
     draw(visualLiveSetContent("hakuji").scenes);
     fireEvent.click(screen.getAllByText("講演").find(element => element.tagName === "SPAN")!);
-    click("部品を追加");
-    click(/藍の氏名札/);
+    openPicker();
+    pickCard(/藍の氏名札/);
     await settle();
     const name = savedScenes()[2].elements.find(element => element.text === "氏名を入力");
     expect(name).toMatchObject({ x: 640, y: 359, w: 269, fontSize: 22, maxLines: 2 });
@@ -211,17 +218,16 @@ describe("完成部品の一操作", () => {
   });
   it("白磁のカードは50要素を超える前に拒否される", () => {
     draw([{ ...visualLiveSetContent("hakuji").scenes[0], elements: Array.from({ length: 47 }, (_, i) => text(`filled-${i}`, "")) }]);
-    click("部品を追加");
-    click(/藍の氏名札/);
+    openPicker();
+    pickCard(/藍の氏名札/);
     expect(screen.getByRole("alert")).toHaveTextContent("最大50要素");
     expect(canvas().queryByText("氏名を入力")).not.toBeInTheDocument();
   });
   it.each(["glow", "signal"] as const)("%s の4部品が別々のレイヤーとして入り、Undo/Redo と保存に乗る", async family => {
     draw(visualLiveSetContent(family).scenes);
-    click("部品を追加");
     const titles = family === "glow" ? ["琥珀の氏名帯", "提灯カメラ額", "祭り章リボン", "灯籠の休憩札"] : ["氏名レール", "開放カメラ角", "番号付き章カード", "情報レール"];
     const base = visualLiveSetContent(family).scenes[0].elements.length;
-    for (const title of titles) { click(new RegExp(title)); await settle(); }
+    for (const title of titles) { openPicker(); pickCard(new RegExp(title)); await settle(); }
     expect(canvas().getByText("氏名を入力")).toBeInTheDocument();
     await settle();
     expect(savedScenes()[0].elements.length).toBeGreaterThan(base + 14);
@@ -236,11 +242,85 @@ describe("完成部品の一操作", () => {
   });
 });
 
+describe("パーツを追加 (#566)", () => {
+  it("常時のボタン列は無く、入口は「パーツを追加」の1つ", () => {
+    draw(twoScenes());
+    expect(screen.queryByRole("button", { name: "テキスト" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "炎のフレーム" })).not.toBeInTheDocument();
+    openPicker();
+    const dialog = within(screen.getByRole("dialog"));
+    for (const group of ["基本", "配信の演出", "デザイン部品"]) expect(dialog.getByText(group)).toBeInTheDocument();
+    for (const name of ["テキスト", "画像", "カメラ", "スライド", "イベント情報", "コメント", "流れる案内", "現在時刻", "開始カウント", "LIVE表示", "回転装飾", "炎のフレーム", "琥珀の氏名帯", "藍の氏名札"]) expect(dialog.getByRole("button", { name })).toBeInTheDocument();
+    // サムネイルは実際の描画（炎は止めた1コマの canvas）
+    expect(dialog.getByRole("button", { name: "炎のフレーム" }).querySelector("[data-flame-frame]")).toBeTruthy();
+  });
+
+  it("流れる案内は文字・速さ・向きを決めてから置き、1回の元に戻すで消え、やり直すで戻る", async () => {
+    draw(twoScenes());
+    openPicker();
+    pickCard("流れる案内");
+    expect(screen.getByTestId("add-part-preview")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("表示文言"), { target: { value: "まもなく開始します" } });
+    fireEvent.click(screen.getByRole("button", { name: "速い" }));
+    fireEvent.click(screen.getByRole("button", { name: "右へ" }));
+    fireEvent.click(screen.getByRole("button", { name: "追加" }));
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const marquee = savedScenes()[0].elements.at(-1);
+    expect(marquee).toMatchObject({ type: "marquee", text: "まもなく開始します", seconds: 12, direction: "right", gap: 32, fill: "#1A2737", color: "#EAF0F7" });
+    // 置いた要素が選ばれている
+    expect(screen.getByLabelText("表示文言")).toHaveValue("まもなく開始します");
+    fireEvent.click(screen.getByRole("button", { name: "元に戻す (Ctrl/⌘+Z)" }));
+    await settle();
+    expect(savedScenes()[0].elements.map(e => e.id)).toEqual(["e1", "e2"]);
+    fireEvent.click(screen.getByRole("button", { name: "やり直す (Ctrl/⌘+Shift+Z)" }));
+    await settle();
+    expect(savedScenes()[0].elements.at(-1)).toMatchObject({ type: "marquee", text: "まもなく開始します" });
+  });
+
+  it("炎のフレームは色とつまみを変えてから置ける。戻るで一覧へ戻れる", async () => {
+    draw(twoScenes());
+    openPicker();
+    pickCard("炎のフレーム");
+    fireEvent.click(screen.getByRole("button", { name: "戻る" }));
+    expect(within(screen.getByRole("dialog")).getByText("配信の演出")).toBeInTheDocument();
+    pickCard("炎のフレーム");
+    fireEvent.mouseDown(screen.getByLabelText("色"));
+    fireEvent.click(screen.getByRole("option", { name: "青" }));
+    const flicker = screen.getByRole("slider", { name: "ゆらぎの強さ：60" });
+    fireEvent.keyDown(flicker, { key: "ArrowRight" });
+    fireEvent.click(screen.getByRole("button", { name: "追加" }));
+    await settle();
+    expect(savedScenes()[0].elements.at(-1)).toMatchObject({ type: "motif", motif: "flameFrame", flamePalette: "azure", flicker: 65, flameHeight: 44, frameThickness: 4, radius: 16, embers: 50, x: 632, y: 110, w: 276, h: 206 });
+  });
+
+  it("カメラは選んだ時点でそのまま置かれる", async () => {
+    draw(twoScenes());
+    openPicker();
+    pickCard("カメラ");
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(savedScenes()[0].elements.at(-1)).toMatchObject({ type: "camera", x: 640, y: 340, w: 280, h: 180, fit: "cover", radius: 12 });
+  });
+
+  it("白磁のシーンでは色の既定値が白磁になる", async () => {
+    draw(visualLiveSetContent("hakuji").scenes);
+    openPicker();
+    pickCard("LIVE表示");
+    fireEvent.click(screen.getByRole("button", { name: "追加" }));
+    await settle();
+    expect(savedScenes()[0].elements.at(-1)).toMatchObject({ type: "liveIndicator", text: "LIVE", color: "#FFFFFF", fill: "#203146" });
+  });
+});
+
 describe("カウントダウンの保存", () => {
   it("指定日時を未確定のまま選んでも自動保存でき、確定後の時刻も保存できる", async () => {
     mocks.update.mockImplementation(async input => updateLiveSetInput.parse(input));
     draw(twoScenes());
-    click("開始カウント");
+    openPicker();
+    pickCard("開始カウント");
+    fireEvent.click(screen.getByRole("button", { name: "追加" }));
+    await settle();
     fireEvent.mouseDown(screen.getByLabelText("目標"));
     fireEvent.click(screen.getByRole("option", { name: "指定日時" }));
     await settle();
