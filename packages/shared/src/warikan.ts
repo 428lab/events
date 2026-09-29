@@ -5,8 +5,9 @@ import { isDateOnly } from "./dateOnly.js";
 /**
  * イベントの割り勘 (#556)。設計は docs/warikan.md。
  *
- * このアプリは送金も金銭の預託も換算もしない。持つのは帳簿（誰が・いくら・何に立て替え、
- * 誰が誰にいくら返すか）と受け取り先の掲示だけ（設計 §3.1）。金額は整数の円のみ（§3.2）。
+ * このアプリは送金も金銭の預託も換算もしない。支払いの確認もしない。持つのは帳簿（誰が・いくら・
+ * 何に立て替え、誰が誰にいくら返すか）、当事者が精算の行に付けた「済み」、受け取り先の掲示だけ
+ * （設計 §3.1）。金額は整数の円のみ（§3.2）。
  *
  * - 各人の負担額・収支・精算の提案は保存せず、読むたびにこのファイルの純関数で導出する
  * - 按分と精算の計算はここ1か所。サーバーはこれを呼ぶだけで、web は結果を表示するだけ
@@ -24,14 +25,18 @@ export const WARIKAN_SHARES_MAX = 500;
 export const WARIKAN_PAYOUT_MAX = 5;
 /** 金額の上限（円）。打ち間違いを弾くため */
 export const WARIKAN_AMOUNT_MAX = 10_000_000;
-/** 重みの上限（入力時のみ。統合で合算された行は超えうる） */
+/** 重みの上限。route が「新しく加わる／値が変わった share」にだけ掛ける（統合で合算された行は超えうる。§3.3） */
 export const WARIKAN_WEIGHT_MAX = 100;
+/** 重みの絶対上限（zod）。統合の合算でも越えられない。amount × weight が安全な整数に収まることの保証 */
+export const WARIKAN_WEIGHT_STORED_MAX = WARIKAN_WEIGHT_MAX * WARIKAN_SHARES_MAX;
 
 /* ---------- 入力 ---------- */
 
 const shareInput = z.object({
   userId: z.string().min(1),
-  weight: z.number().int().min(1).max(WARIKAN_WEIGHT_MAX),
+  // 100（WARIKAN_WEIGHT_MAX）は route が「新しく加わる／値が変わった share」にだけ掛ける（§3.3）。
+  // ここは統合の合算でも越えられない絶対上限
+  weight: z.number().int().min(1).max(WARIKAN_WEIGHT_STORED_MAX),
 });
 
 /** 立替の追加・編集（PATCH も全項目送り。shares ごと置換） */
@@ -50,6 +55,12 @@ export const expenseInput = z.object({
     }),
 });
 export type ExpenseInput = z.infer<typeof expenseInput>;
+
+/** 「済み」を付ける。画面で見た額を送り、サーバーが現在の額と突き合わせる（§3.5.1） */
+export const settlementDoneInput = z.object({
+  amount: z.number().int().min(1),
+});
+export type SettlementDoneInput = z.infer<typeof settlementDoneInput>;
 
 export const payoutMethodInput = z.discriminatedUnion("kind", [
   // 受け取り用リンク（PayPay / Kyash 等）。https のみ。アプリは開くだけで叩かない（§3.1）
@@ -128,7 +139,7 @@ export const warikanPayoutSchema = z.object({
 export type WarikanPayout = z.infer<typeof warikanPayoutSchema>;
 
 export const warikanLedgerSchema = z.object({
-  /** 確定メンバー全員 ∪ 帳簿のどこかに登場する全員（入力者・受け取り先の持ち主を含む）。
+  /** 確定メンバー全員 ∪ 帳簿のどこかに登場する全員（入力者・受け取り先の持ち主・「済み」を付けた人を含む）。
    * 並びは confirmed → former → deleted、その中は参加登録順（表示のためだけ。計算には使わない） */
   members: z.array(warikanMemberSchema),
   /** 新しい順 */
@@ -150,6 +161,10 @@ export const warikanLedgerSchema = z.object({
       breakdown: z.array(
         z.object({ kind: z.literal("expense"), expenseId: z.string(), amount: z.number().int() }),
       ),
+      /** 効いている「済み」だけ。額が合わない記録は null（§3.5.1） */
+      done: z.object({ markedBy: z.string().nullable(), markedAt: z.number() }).nullable(),
+      /** me が from か to */
+      canToggle: z.boolean(),
     }),
   ),
   me: z.object({ userId: z.string(), canAddExpense: z.boolean(), isStaff: z.boolean() }),
@@ -200,7 +215,8 @@ export function allocateShares(expense: CalcExpense): Allocation {
   };
 }
 
-/** 符号付き。正 = from→to の債務を増やす */
+/** 符号付き。正 = from→to の債務を増やす（to の立替に from が乗った）、負 = 減らす（from の立替に to が乗った）。
+ *  kind は判別子（いまは "expense" だけ。将来ほかの項目を足すときに breakdown の形を変えないため） */
 export type BreakdownItem = { kind: "expense"; expenseId: string; amount: number };
 
 export interface Settlement {
@@ -227,6 +243,7 @@ function cmp(a: string, b: string): number {
 
 /**
  * §3.5 の精算。立替者への直接返済を積み上げ、双方向の債務を差額に相殺する。
+ * 入力は立替だけで、「済み」は見ない（精算の行は常に全額。印は attachDoneMarks() が添える）。
  * 出力の並び: balances は入力に登場した userId の辞書順、settlements は (from, to) の辞書順。
  * 各行の breakdown は立替の id の辞書順（入力の並びに依存しない）
  */
@@ -311,6 +328,37 @@ export function settle(input: { expenses: CalcExpense[] }): {
   for (const b of balanceList) b.net = b.paid - b.owed;
 
   return { allocations, balances: balanceList, settlements };
+}
+
+/** DB の event_settlement_done の1行（読み込み用） */
+export interface SettlementDoneRecord {
+  fromUserId: string;
+  toUserId: string;
+  amount: number;
+  markedBy: string | null;
+  markedAt: number;
+}
+
+export type SettlementDone = { markedBy: string | null; markedAt: number };
+
+/**
+ * §3.5.1。各行に、(from, to) が同じで amount が等しい記録があれば done を付ける。それ以外は null
+ * （額が違う・向きが逆・行が無くなった記録は無いものとして扱う）。
+ * 入力の settlements の順序と金額は変えない（純粋に印を添えるだけ）
+ */
+export function attachDoneMarks(
+  settlements: Settlement[],
+  records: SettlementDoneRecord[],
+): (Settlement & { done: SettlementDone | null })[] {
+  const byPair = new Map<string, SettlementDoneRecord>();
+  for (const r of records) byPair.set(`${r.fromUserId}\u0000${r.toUserId}`, r);
+  return settlements.map((s) => {
+    const r = byPair.get(`${s.fromUserId}\u0000${s.toUserId}`);
+    return {
+      ...s,
+      done: r && r.amount === s.amount ? { markedBy: r.markedBy, markedAt: r.markedAt } : null,
+    };
+  });
 }
 
 /**

@@ -1,10 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
   allocateShares,
+  attachDoneMarks,
+  expenseInput,
   formatYen,
   presetShareUserIds,
   settle,
+  WARIKAN_WEIGHT_STORED_MAX,
   type CalcExpense,
+  type SettlementDoneRecord,
   type WarikanMember,
 } from "@eventer/shared";
 
@@ -255,6 +259,65 @@ describe("settle: 立替者への直接返済とペア相殺 (§3.5)", () => {
       const sortedIds = [...a.balances.map((x) => x.userId)].sort();
       expect(a.balances.map((x) => x.userId)).toEqual(sortedIds);
     }
+  });
+});
+
+describe("attachDoneMarks: 「済み」は記録時の額と導出額が一致するときだけ効く (§3.5.1)", () => {
+  const { settlements } = settle({
+    expenses: [
+      {
+        id: "venue",
+        payerUserId: "A",
+        amount: 3000,
+        shares: ["A", "B", "C"].map((userId) => ({ userId, weight: 1 })),
+      },
+    ],
+  });
+  const rec = (over: Partial<SettlementDoneRecord>): SettlementDoneRecord => ({
+    fromUserId: "B",
+    toUserId: "A",
+    amount: 1000,
+    markedBy: "B",
+    markedAt: 1,
+    ...over,
+  });
+
+  it("額が一致する記録だけ done になる。額が違う・向きが逆・行が無い記録は無視される", () => {
+    const r = attachDoneMarks(settlements, [
+      rec({}),
+      rec({ fromUserId: "C", amount: 999 }),
+      rec({ fromUserId: "A", toUserId: "C", markedBy: "C" }),
+      rec({ fromUserId: "D", toUserId: "A", markedBy: "D" }),
+    ]);
+    expect(r.map((s) => [s.fromUserId, s.toUserId, s.done])).toEqual([
+      ["B", "A", { markedBy: "B", markedAt: 1 }],
+      ["C", "A", null],
+    ]);
+  });
+
+  it("入力の settlements の順序と金額・内訳を変えない。同じ記録を 2 回渡しても同じ", () => {
+    const once = attachDoneMarks(settlements, [rec({ markedBy: null })]);
+    const twice = attachDoneMarks(settlements, [rec({ markedBy: null }), rec({ markedBy: null })]);
+    expect(twice).toEqual(once);
+    expect(once.map(({ done: _done, ...s }) => s)).toEqual(settlements);
+    expect(once[0]!.done).toEqual({ markedBy: null, markedAt: 1 });
+  });
+
+  it("記録が無ければ全行 null", () => {
+    expect(attachDoneMarks(settlements, []).map((s) => s.done)).toEqual([null, null]);
+  });
+});
+
+describe("expenseInput の重み (§3.3)", () => {
+  const base = { payerUserId: "A", amount: 1000, title: "会場費" };
+  it("zod は絶対上限 WARIKAN_WEIGHT_STORED_MAX まで通す（100 は route が掛ける）", () => {
+    expect(WARIKAN_WEIGHT_STORED_MAX).toBe(50_000);
+    const ok = (weight: number) =>
+      expenseInput.safeParse({ ...base, shares: [{ userId: "A", weight }] }).success;
+    expect(ok(101)).toBe(true);
+    expect(ok(WARIKAN_WEIGHT_STORED_MAX)).toBe(true);
+    expect(ok(WARIKAN_WEIGHT_STORED_MAX + 1)).toBe(false);
+    expect(ok(0)).toBe(false);
   });
 });
 
