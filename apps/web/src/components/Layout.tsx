@@ -129,7 +129,9 @@ export function Layout({
   }, [collapsed]);
 
   return (
-    <Box sx={{ minHeight: "100vh", overflowX: "hidden" }}>
+    // 横のはみ出しは切る。clip は hidden と違ってスクロール枠を作らないので、
+    // 中の position: sticky（配信セット編集のキャンバス見出し #566）が画面の上に貼り付ける
+    <Box sx={{ minHeight: "100vh", overflowX: "hidden", "@supports (overflow: clip)": { overflowX: "clip" } }}>
       <AppBar position="static" elevation={0}>
         <Toolbar sx={{ gap: 0.5 }}>
           {/* 幅が足りないときはロゴ文字から先に詰める（右側の操作系を守る） */}

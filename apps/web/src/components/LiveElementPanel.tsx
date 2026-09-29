@@ -26,7 +26,7 @@ import { useState } from "react";
 
 /** イベント情報の項目名。**訳した文字列ではなくキーを持つ**ので、
  * 言語を切り替えたときに前の言語のまま残らない (#367) */
-const INFO_LABEL_KEY = {
+export const INFO_LABEL_KEY = {
   title: "studio.infoFieldTitle",
   datetime: "studio.infoFieldDatetime",
   participants: "studio.infoFieldParticipants",
@@ -68,8 +68,6 @@ export function LiveElementPanel({
 }) {
   const { t } = useTranslation();
   const fontOptions = useDeckFontOptions();
-  const [localTarget, setLocalTarget] = useState("");
-  const candidates = selected?.type === "countdown" ? resolveLocalTarget(localTarget, selected.timezone ?? "Asia/Tokyo") : [];
 
   if (!selected) {
     return (
@@ -87,7 +85,7 @@ export function LiveElementPanel({
         {selected.type === "motif" && selected.motif === "flameFrame" ? t("studio.elementFlameFrame") : selected.type in TYPE_LABEL_KEY ? t(TYPE_LABEL_KEY[selected.type as keyof typeof TYPE_LABEL_KEY]) : t(( { shape: "studio.elementShape", motif: "studio.elementMotif", marquee: "studio.elementMarquee", clock: "studio.elementClock", countdown: "studio.elementCountdown", liveIndicator: "studio.elementLiveIndicator" } as const)[selected.type as "shape" | "motif" | "marquee" | "clock" | "countdown" | "liveIndicator"])}
       </Typography>
 
-      {selected.type === "chat" && <><Typography variant="caption">{t("studio.chatEditorHint")}</Typography><TextField select size="small" label={t("studio.chatStyleLabel")} value={selected.chatStyle ?? "glow"} onChange={e => patch({ chatStyle: e.target.value as LiveElement["chatStyle"] })}>{(["glow", "signal", "hakuji"] as const).map(style => <MenuItem key={style} value={style}>{t(`studio.chatStyle${style}`)}</MenuItem>)}</TextField><TextField select size="small" label={t("studio.chatRowsLabel")} value={selected.chatRows ?? 3} onChange={e => patch({ chatRows: Number(e.target.value) })}>{[2, 3, 4, 5].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}</TextField><TextField size="small" type="number" label={t("studio.chatSecondsLabel")} inputProps={{ min: 10, max: 45 }} value={selected.chatSeconds ?? 20} onChange={e => { const n = Number(e.target.value); if (n >= 10 && n <= 45) patch({ chatSeconds: n }); }} /></>}
+      {selected.type === "chat" && <ChatFields selected={selected} patch={patch} />}
       {selected.type === "liveIndicator" && <Typography variant="caption">{t("studio.manualLiveEditorHint")}</Typography>}
       {(selected.type === "marquee" || selected.type === "liveIndicator") && <TextField size="small" label={t("studio.widgetTextLabel")} value={selected.text ?? ""} inputProps={{ maxLength: selected.type === "marquee" ? 120 : 32 }} onChange={e => patch({ text: e.target.value })} />}
       {selected.type === "marquee" && <>
@@ -104,15 +102,7 @@ export function LiveElementPanel({
           <Button onClick={() => patch({ showSeconds: !(selected.showSeconds ?? true) })}>{t("studio.clockSeconds", { action: t(selected.showSeconds ?? true ? "studio.widgetHide" : "studio.widgetShow") })}</Button>
           <Button onClick={() => patch({ showDate: !selected.showDate })}>{t("studio.clockDate", { action: t(selected.showDate ? "studio.widgetHide" : "studio.widgetShow") })}</Button>
         </> : <>
-          <TextField select size="small" label={t("studio.countdownTarget")} value={selected.target ?? "eventStart"} onChange={e => patch({ target: e.target.value as "eventStart" | "custom" })}><MenuItem value="eventStart">{t("studio.countdownEventStart")}</MenuItem><MenuItem value="custom">{t("studio.countdownCustom")}</MenuItem></TextField>
-          {selected.target !== "custom" && <Typography variant="caption">{t("studio.countdownScheduleHint")}</Typography>}
-          {selected.target === "custom" && <>
-            <TextField size="small" type="datetime-local" label={t("studio.countdownLocalDate")} InputLabelProps={{ shrink: true }} value={localTarget} onChange={e => setLocalTarget(e.target.value)} />
-            {localTarget && candidates.length === 0 && <Typography color="error">{t("studio.countdownInvalidDate")}</Typography>}
-            {localTarget && selected.targetEpochMs && !candidates.includes(selected.targetEpochMs) && <Typography color="warning.main">{t("studio.countdownOldTarget")}</Typography>}
-            {candidates.map((epoch, i) => <Button key={epoch} onClick={() => patch({ targetEpochMs: epoch })} variant={epoch === selected.targetEpochMs ? "contained" : "outlined"}>{t(candidates.length > 1 ? "studio.countdownAmbiguous" : "studio.countdownConfirm", { n: i + 1 })}{new Date(epoch).toISOString()}</Button>)}
-            {!selected.targetEpochMs && <Typography color="warning.main">{t("studio.countdownUnconfirmed")}</Typography>}
-          </>}
+          <CountdownTargetFields selected={selected} patch={patch} />
           <TextField select size="small" label={t("studio.countdownAfterZero")} value={selected.zero ?? "stop"} onChange={e => patch({ zero: e.target.value as "stop" | "hide" })}><MenuItem value="stop">{t("studio.countdownStop")}</MenuItem><MenuItem value="hide">{t("studio.widgetHide")}</MenuItem></TextField>
         </>}
       </>}
@@ -350,7 +340,7 @@ const FLAME_SLIDERS = [
   { key: "embers", limit: "embers", label: "studio.flameEmbers" },
 ] as const;
 
-function FlameFrameFields({ selected, patch }: { selected: LiveElement; patch: (p: Partial<LiveElement>) => void }) {
+export function FlameFrameFields({ selected, patch }: { selected: LiveElement; patch: (p: Partial<LiveElement>) => void }) {
   const { t } = useTranslation();
   return (
     <>
@@ -368,6 +358,39 @@ function FlameFrameFields({ selected, patch }: { selected: LiveElement; patch: (
           </Box>
         );
       })}
+    </>
+  );
+}
+
+/** 開始カウントの目標。指定日時は現地時刻で入れ、夏時間などで候補が複数あるときは選ばせてから確定する */
+export function CountdownTargetFields({ selected, patch }: { selected: LiveElement; patch: (p: Partial<LiveElement>) => void }) {
+  const { t } = useTranslation();
+  const [localTarget, setLocalTarget] = useState("");
+  const candidates = resolveLocalTarget(localTarget, selected.timezone ?? "Asia/Tokyo");
+  return (
+    <>
+      <TextField select size="small" label={t("studio.countdownTarget")} value={selected.target ?? "eventStart"} onChange={e => patch({ target: e.target.value as "eventStart" | "custom" })}><MenuItem value="eventStart">{t("studio.countdownEventStart")}</MenuItem><MenuItem value="custom">{t("studio.countdownCustom")}</MenuItem></TextField>
+      {selected.target !== "custom" && <Typography variant="caption">{t("studio.countdownScheduleHint")}</Typography>}
+      {selected.target === "custom" && <>
+        <TextField size="small" type="datetime-local" label={t("studio.countdownLocalDate")} InputLabelProps={{ shrink: true }} value={localTarget} onChange={e => setLocalTarget(e.target.value)} />
+        {localTarget && candidates.length === 0 && <Typography color="error">{t("studio.countdownInvalidDate")}</Typography>}
+        {localTarget && selected.targetEpochMs && !candidates.includes(selected.targetEpochMs) && <Typography color="warning.main">{t("studio.countdownOldTarget")}</Typography>}
+        {candidates.map((epoch, i) => <Button key={epoch} onClick={() => patch({ targetEpochMs: epoch })} variant={epoch === selected.targetEpochMs ? "contained" : "outlined"}>{t(candidates.length > 1 ? "studio.countdownAmbiguous" : "studio.countdownConfirm", { n: i + 1 })}{new Date(epoch).toISOString()}</Button>)}
+        {!selected.targetEpochMs && <Typography color="warning.main">{t("studio.countdownUnconfirmed")}</Typography>}
+      </>}
+    </>
+  );
+}
+
+/** コメント欄の設定（見た目・表示行数・表示秒数） */
+export function ChatFields({ selected, patch }: { selected: LiveElement; patch: (p: Partial<LiveElement>) => void }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <Typography variant="caption">{t("studio.chatEditorHint")}</Typography>
+      <TextField select size="small" label={t("studio.chatStyleLabel")} value={selected.chatStyle ?? "glow"} onChange={e => patch({ chatStyle: e.target.value as LiveElement["chatStyle"] })}>{(["glow", "signal", "hakuji"] as const).map(style => <MenuItem key={style} value={style}>{t(`studio.chatStyle${style}`)}</MenuItem>)}</TextField>
+      <TextField select size="small" label={t("studio.chatRowsLabel")} value={selected.chatRows ?? 3} onChange={e => patch({ chatRows: Number(e.target.value) })}>{[2, 3, 4, 5].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}</TextField>
+      <TextField size="small" type="number" label={t("studio.chatSecondsLabel")} inputProps={{ min: 10, max: 45 }} value={selected.chatSeconds ?? 20} onChange={e => { const n = Number(e.target.value); if (n >= 10 && n <= 45) patch({ chatSeconds: n }); }} />
     </>
   );
 }
