@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Box } from "@mui/material";
 import { Rnd } from "react-rnd";
 import { LIVE_H, LIVE_W } from "@eventer/shared";
-import type { LiveElement, LiveScene } from "@eventer/shared";
+import type { LiveCameraSlot, LiveElement, LiveScene } from "@eventer/shared";
 import type { LiveElementCommands } from "../lib/liveScenes.js";
 import { useCanvasScale } from "../lib/editor/useCanvasScale.js";
 import { LiveElementContent } from "./LiveStage.js";
@@ -29,6 +29,7 @@ export function LiveCanvas({
   onSelectNone,
   pauseMotion = false,
   previewNow,
+  cameraLabels,
 }: {
   /** 編集中のシーン。1つも無い状態では undefined */
   scene: LiveScene | undefined;
@@ -39,6 +40,8 @@ export function LiveCanvas({
   onSelectNone: () => void;
   pauseMotion?: boolean;
   previewNow?: number;
+  /** カメラ枠に出す番号ごとの呼び名 (#570) */
+  cameraLabels?: Partial<Record<LiveCameraSlot, string>>;
 }) {
   const { ref, width, scale } = useCanvasScale(LIVE_W);
   /** 動かしている間の位置。変形ハンドルを追従させるために持つ */
@@ -113,7 +116,7 @@ export function LiveCanvas({
                   touchAction: "none",
                 }}
               >
-                <div style={{ width: "100%", height: "100%", transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined }}><LiveElementContent el={el} runtime={{ pauseMotion, previewNow }} lightScene={scene.id.startsWith("v1-hakuji-") || scene.background === "#F6F2EA"} /></div>
+                <div style={{ width: "100%", height: "100%", transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined }}><LiveElementContent el={el} runtime={{ pauseMotion, previewNow, cameraLabels }} lightScene={scene.id.startsWith("v1-hakuji-") || scene.background === "#F6F2EA"} /></div>
               </Rnd>
             ))}
 

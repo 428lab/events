@@ -39,6 +39,28 @@ describe("visual style creation", () => {
   });
 });
 
+describe("camera slots (#570)", () => {
+  it("keeps cameraSlot and set-level camera labels through save and reload, and still reads sets without them", async () => {
+    const f = await fixture();
+    const created = await (await SELF.fetch("https://example.com/api/live-sets", { method: "POST", headers: { cookie: f.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ name: "cams" }) })).json() as { id: string; updatedAt: number; content: { scenes: { elements: { type: string; cameraSlot?: number }[] }[]; cameras?: unknown } };
+    expect(created.content.cameras).toBeUndefined();
+    expect(created.content.scenes.flatMap(s => s.elements).filter(e => e.type === "camera").every(e => e.cameraSlot === undefined)).toBe(true);
+    const content = { scenes: [{ id: "talk", name: "対談", background: "#000000", elements: [
+      { id: "wide", type: "camera", x: 0, y: 0, w: 960, h: 540, rotation: 0, cameraSlot: 2 },
+      { id: "pip", type: "camera", x: 700, y: 300, w: 200, h: 200, rotation: 0, radius: 100 },
+    ] }], cameras: [{ slot: 1, label: "登壇者" }, { slot: 2, label: "会場" }] };
+    const url = `https://example.com/api/live-sets/${created.id}`;
+    const saved = await SELF.fetch(url, { method: "PATCH", headers: { cookie: f.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ baseUpdatedAt: created.updatedAt, content }) });
+    expect(saved.status).toBe(200);
+    const reloaded = await (await SELF.fetch(url, { headers: { cookie: f.cookie } })).json() as { content: typeof content };
+    expect(reloaded.content.cameras).toEqual(content.cameras);
+    expect(reloaded.content.scenes[0].elements[0]).toMatchObject({ id: "wide", cameraSlot: 2 });
+    expect(reloaded.content.scenes[0].elements[1]).not.toHaveProperty("cameraSlot");
+    const bad = await SELF.fetch(url, { method: "PATCH", headers: { cookie: f.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ content: { ...content, scenes: [{ ...content.scenes[0], elements: [{ ...content.scenes[0].elements[0], cameraSlot: 5 }] }] } }) });
+    expect(bad.status).toBe(400);
+  });
+});
+
 describe("event live comment source", () => {
   it("defaults OFF, accepts only confirmed event staff and eligible public chat, and preserves scene updates", async () => {
     const f = await fixture();

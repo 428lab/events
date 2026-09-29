@@ -14,6 +14,8 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import type { LiveScene } from "@eventer/shared";
 import type { LiveSceneCommands } from "../lib/liveScenes.js";
 import { LiveSceneStage } from "./LiveStage.js";
+import { CameraSlotBadge } from "./LiveCameraSlotFields.js";
+import { sceneCameraSlots } from "@eventer/shared";
 
 /** 一覧に並べるサムネの幅 */
 const THUMB_W = 150;
@@ -80,6 +82,11 @@ export function LiveSceneList({
           >
             {s.name}
           </Typography>
+          {sceneCameraSlots(s).length > 0 && (
+            <Stack direction="row" spacing={0.25} sx={{ position: "absolute", top: 3, right: 3 }} aria-label={t("studio.cameraSlotsInScene")}>
+              {sceneCameraSlots(s).map((slot) => <CameraSlotBadge key={slot} slot={slot} small />)}
+            </Stack>
+          )}
         </Box>
       ))}
       <Button size="small" onClick={commands.add}>

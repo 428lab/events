@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, IconButton, MenuItem, Paper, TextField, Typography } from "@mui/material";
+import { Box, Button, IconButton, Paper, Typography } from "@mui/material";
 import SettingsIcon from "@mui/icons-material/Settings";
 import VolumeOffIcon from "@mui/icons-material/VolumeOff";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import type { EventInfoField, LiveElement } from "@eventer/shared";
+import { liveCameraSlotOf, usedCameraSlots } from "@eventer/shared";
+import type { EventInfoField, LiveCameraSlot, LiveElement } from "@eventer/shared";
+import { cameraStatusChannelName, resolveCameraSlots } from "../lib/liveCameraMapping.js";
+import type { CameraSlotState, CameraStatusMessage } from "../lib/liveCameraMapping.js";
+import { useCameraMap, useCameraStreams, useVideoDevices } from "../lib/useLiveCameras.js";
+import { LiveCameraMapRows, requestCameraPermission } from "../components/LiveCameraMapPanel.js";
 import { useEvent } from "../api/hooks.js";
 import {
   useEventLiveDeck,
@@ -20,8 +25,6 @@ import { formatDateRange, participantCountLabel } from "../lib/format.js";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
 import { canShowLiveIndicator } from "../lib/liveIndicator.js";
 import { clockText } from "../lib/liveTime.js";
-
-const DEVICE_KEY = "eventer-live-camera-device";
 
 /** 配信画面タブ（OBSがウィンドウキャプチャする完成画面）。
  * AppBarなし・16:9レターボックス・1秒ポーリングでシーン切替 */
@@ -46,47 +49,51 @@ export function LiveScreenPage() {
   }, []);
   const stageW = Math.min(size.w, (size.h * 16) / 9);
 
-  // カメラ（全camera要素で1ストリームを共有）
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [deviceId, setDeviceId] = useState<string>(
-    () => localStorage.getItem(DEVICE_KEY) ?? "",
-  );
-  const needCamera = useMemo(
-    () =>
-      (liveSet?.content.scenes ?? []).some((s) =>
-        s.elements.some((e) => e.type === "camera"),
-      ),
-    [liveSet],
-  );
+  // カメラ (#570)。番号を機器に解決し、異なる機器ごとに1本だけ開いて番号の間で共有する。
+  // セットで使う機器は開いたままにして、シーンの切り替えで黒い枠を出さない
+  const liveSetId = liveSet?.id;
+  const slots = useMemo(() => (liveSet ? usedCameraSlots(liveSet.content) : []), [liveSet]);
+  const needCamera = slots.length > 0;
+  const [cameraMap, assignCamera] = useCameraMap(liveSetId);
+  const streamsRetry = useRef<() => void>(() => {});
+  const { devices, permitted, refresh: refreshDevices } = useVideoDevices(needCamera, () => streamsRetry.current());
+  const resolved = useMemo(() => resolveCameraSlots(slots, cameraMap, devices), [slots, cameraMap, devices]);
+  const streams = useCameraStreams([...resolved.values()].map(r => r.device), needCamera);
+  streamsRetry.current = streams.retryFailed;
+  const slotState = (slot: LiveCameraSlot): CameraSlotState => {
+    const device = resolved.get(slot)?.device;
+    return device === undefined ? "opening" : streams.get(device)?.state ?? "opening";
+  };
+  const streamFor = (slot: LiveCameraSlot) => {
+    const device = resolved.get(slot)?.device;
+    return device === undefined ? null : streams.get(device)?.stream ?? null;
+  };
+  // 開けたら機器名が読めるようになるので、一覧を読み直して名前での探し直しに使う
+  const anyLive = slots.some(slot => slotState(slot) === "live");
+  useEffect(() => { if (anyLive && !permitted) void refreshDevices(); }, [anyLive, permitted]);
+
+  // 同じPCの配信コントロールへ、開いているかと番号ごとの様子を知らせる
+  const statusRef = useRef<CameraStatusMessage | null>(null);
+  statusRef.current = liveSetId && needCamera
+    ? { type: "screen", liveSetId, slots: slots.map(slot => ({ slot, via: resolved.get(slot)?.via ?? "unmapped", state: slotState(slot) })) }
+    : liveSetId ? { type: "screen", liveSetId, slots: [] } : null;
+  const statusKey = JSON.stringify(statusRef.current);
+  const channelRef = useRef<BroadcastChannel | null>(null);
   useEffect(() => {
-    if (!needCamera) return;
-    let cancelled = false;
-    let current: MediaStream | null = null;
-    (async () => {
-      try {
-        current = await navigator.mediaDevices.getUserMedia({
-          video: deviceId ? { deviceId: { exact: deviceId } } : true,
-          audio: false,
-        });
-        if (cancelled) {
-          current.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        setStream(current);
-        const list = await navigator.mediaDevices.enumerateDevices();
-        if (!cancelled) {
-          setDevices(list.filter((d) => d.kind === "videoinput"));
-        }
-      } catch {
-        if (!cancelled) setStream(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      current?.getTracks().forEach((t) => t.stop());
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel(cameraStatusChannelName(id));
+    channelRef.current = ch;
+    const send = () => { if (statusRef.current) ch.postMessage(statusRef.current); };
+    ch.onmessage = (e: MessageEvent<CameraStatusMessage>) => {
+      if (e.data?.type === "ping") send();
+      if (e.data?.type === "retry") streamsRetry.current();
     };
-  }, [needCamera, deviceId]);
+    const timer = setInterval(send, 2000);
+    const onUnload = () => ch.postMessage({ type: "screenClosed" } satisfies CameraStatusMessage);
+    window.addEventListener("pagehide", onUnload);
+    return () => { clearInterval(timer); window.removeEventListener("pagehide", onUnload); onUnload(); ch.close(); channelRef.current = null; };
+  }, [id]);
+  useEffect(() => { if (statusRef.current) channelRef.current?.postMessage(statusRef.current); }, [statusKey]);
 
   // 配信で映すデッキのフォントも読み込む
   useEffect(() => {
@@ -169,7 +176,7 @@ export function LiveScreenPage() {
     eventStartMs: event?.scheduling ? undefined : event?.startsAt,
     eventDatetimeAvailable: Boolean(event && !event.scheduling && Number.isFinite(event.startsAt)),
     camera: (el: LiveElement) => (
-      <CameraVideo stream={stream} fit={el.fit ?? "cover"} light={Boolean(lightScene)} />
+      <CameraVideo stream={streamFor(liveCameraSlotOf(el))} fit={el.fit ?? "cover"} light={Boolean(lightScene)} />
     ),
     deck: (el: LiveElement) =>
       deckSlide ? (
@@ -283,26 +290,22 @@ export function LiveScreenPage() {
       {/* 設定（キャプチャに写りにくいよう右下・カーソル表示中のみ） */}
       {cursorVisible && needCamera && (
         <Box sx={{ position: "fixed", right: 8, bottom: 8 }}>
-          {settingsOpen && (
-            <Paper sx={{ p: 1.5, mb: 1, width: 260 }}>
-              <TextField
-                select
-                fullWidth
-                size="small"
-                label={t("studio.elementCamera")}
-                value={deviceId}
-                onChange={(e) => {
-                  setDeviceId(e.target.value);
-                  localStorage.setItem(DEVICE_KEY, e.target.value);
-                }}
-              >
-                <MenuItem value="">{t("studio.cameraDefault")}</MenuItem>
-                {devices.map((d) => (
-                  <MenuItem key={d.deviceId} value={d.deviceId}>
-                    {d.label || t("studio.elementCamera")}
-                  </MenuItem>
-                ))}
-              </TextField>
+          {settingsOpen && liveSet && (
+            <Paper sx={{ p: 1.5, mb: 1, width: 300, maxHeight: "80vh", overflow: "auto" }}>
+              {/* 歯車を開いたときだけ出す運営者向けの割り当て (#570)。配信の画面そのものには警告を重ねない */}
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>{t("studio.cameraMapTitle")}</Typography>
+              {!permitted && (
+                <Button size="small" sx={{ mb: 1 }} onClick={() => void requestCameraPermission(refreshDevices)}>{t("studio.cameraMapAllow")}</Button>
+              )}
+              <LiveCameraMapRows
+                compact
+                content={liveSet.content}
+                map={cameraMap}
+                assign={assignCamera}
+                devices={devices}
+                slotStates={Object.fromEntries(slots.map(slot => [slot, slotState(slot)]))}
+                onRetry={streams.retryFailed}
+              />
             </Paper>
           )}
           <IconButton
@@ -318,7 +321,8 @@ export function LiveScreenPage() {
   );
 }
 
-/** カメラ映像。共有ストリームを video に流し込む */
+/** カメラ映像。番号に解決した機器のストリーム（同じ機器の枠どうしで共有）を video に流し込む。
+ * 開けない・止まった機器の枠は「カメラ待機中…」にする */
 function CameraVideo({
   stream,
   fit,

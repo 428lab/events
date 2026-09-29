@@ -23,7 +23,11 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { EVENT_INFO_FIELDS } from "@eventer/shared";
-import type { EventInfoField, LiveElement, LiveScene, VisualStyle } from "@eventer/shared";
+import { liveCameraSlotOf } from "@eventer/shared";
+import type { EventInfoField, LiveCameraSlot, LiveElement, LiveScene, VisualStyle } from "@eventer/shared";
+import { defaultCameraSlotForScene } from "../lib/liveCameraMapping.js";
+import { LiveCameraSlotFields } from "./LiveCameraSlotFields.js";
+import type { LiveCameraSlotContext } from "./LiveElementPanel.js";
 import {
   LIVE_BASIC_PARTS,
   LIVE_MOTIF_KINDS,
@@ -81,8 +85,9 @@ const PREVIEW_MAX_H = 300;
  * 「パーツを追加」のダイアログ (#566)。
  *
  * 1 段目はサムネイル付きの一覧（基本・配信の演出・デザイン部品）。
- * 設定の要るものは 2 段目で大きな見本を見ながら値を決めてから置く。カメラ・スライドと
- * デザイン部品は選んだ時点で置き、画像は選ばせて上げ終わった時点で置く。
+ * 設定の要るものは 2 段目で大きな見本を見ながら値を決めてから置く。カメラは 2 段目で
+ * 映す番号と呼び名を選ぶ (#570)。スライドとデザイン部品は選んだ時点で置き（部品の中の
+ * カメラは番号なし = カメラ1）、画像は選ばせて上げ終わった時点で置く。
  *
  * 置く操作は呼ぶ側に任せる（上限の判定・選択・履歴は編集画面が持つ）。置けなかった
  * ときは false が返るので、ダイアログを閉じずに理由を出す。
@@ -96,6 +101,7 @@ export function LiveAddPartDialog({
   onAddPart,
   pickImage,
   uploading,
+  cameras,
 }: {
   open: boolean;
   onClose: () => void;
@@ -107,6 +113,8 @@ export function LiveAddPartDialog({
   onAddPart: (elements: LiveElement[]) => boolean;
   pickImage: (onPicked: (url: string) => void) => void;
   uploading: boolean;
+  /** カメラ番号の候補と呼び名 (#570) */
+  cameras: LiveCameraSlotContext;
 }) {
   const { t, i18n } = useTranslation();
   const theme = useTheme();
@@ -118,12 +126,16 @@ export function LiveAddPartDialog({
   const [draft, setDraft] = useState<LiveElement | null>(null);
   /** このダイアログを開いてから置けなかったか。前に出た理由を持ち越さない */
   const [failed, setFailed] = useState(false);
+  /** カメラの 2 段目で打った呼び名。置けたときだけセットへ書く */
+  const [cameraLabels, setCameraLabels] = useState<Partial<Record<LiveCameraSlot, string>>>({});
 
   useEffect(() => {
     if (!open) return;
     setKind(null);
     setDraft(null);
     setFailed(false);
+    setCameraLabels(cameras.labels);
+    // 開いた時点の呼び名から始める
   }, [open]);
 
   // 一覧の見本は開くたびに作る（id が変わると炎の 1 コマを描き直すので、開いている間は固定）
@@ -146,11 +158,22 @@ export function LiveAddPartDialog({
     }
     const el = newLivePartElement(next, style, t("studio.marqueeDefaultText"));
     if (!livePartNeedsSettings(next)) { finish(onAddElement(el)); return; }
+    if (next === "camera") el.cameraSlot = defaultCameraSlotForScene(scene);
     setKind(next);
     setDraft(el);
   };
   const patch = (p: Partial<LiveElement>) => setDraft(d => (d ? { ...d, ...p } : d));
   const back = () => { setKind(null); setDraft(null); setFailed(false); };
+  const place = () => {
+    if (!draft) return;
+    const added = onAddElement(draft);
+    if (added && draft.type === "camera") {
+      const slot = liveCameraSlotOf(draft);
+      const label = cameraLabels[slot] ?? "";
+      if (label !== (cameras.labels[slot] ?? "")) cameras.setLabel(slot, label);
+    }
+    finish(added);
+  };
 
   const card = (key: string, name: string, description: string, thumb: ReactNode, thumbBackground: string, onClick: () => void, disabled = false) => (
     <ButtonBase
@@ -190,9 +213,21 @@ export function LiveAddPartDialog({
         {errorLine}
         {kind && draft ? (
           <Stack spacing={2}>
-            <PartPreviewLarge draft={draft} background={background} light={light} />
+            <PartPreviewLarge draft={draft} background={background} light={light} cameraLabels={cameraLabels} />
             <Stack spacing={1.5} sx={{ maxWidth: 480 }}>
-              <PartSettings kind={kind} draft={draft} patch={patch} background={background} light={light} />
+              {kind === "camera" ? (
+                <LiveCameraSlotFields
+                  slot={liveCameraSlotOf(draft)}
+                  choices={cameras.choices(liveCameraSlotOf(draft))}
+                  labels={cameraLabels}
+                  onSlot={slot => patch({ cameraSlot: slot })}
+                  onLabel={label => setCameraLabels(l => ({ ...l, [liveCameraSlotOf(draft)]: label }))}
+                  labelField={t("studio.cameraSlotLabelShort")}
+                  help={t("studio.cameraAddSlotHelp")}
+                />
+              ) : (
+                <PartSettings kind={kind} draft={draft} patch={patch} background={background} light={light} />
+              )}
             </Stack>
           </Stack>
         ) : (
@@ -216,7 +251,7 @@ export function LiveAddPartDialog({
       {kind && draft && (
         <DialogActions>
           <Button onClick={back}>{t("common.back")}</Button>
-          <Button variant="contained" onClick={() => finish(onAddElement(draft))}>{t("common.add")}</Button>
+          <Button variant="contained" onClick={place}>{kind === "camera" ? t("studio.cameraAddPlace") : t("common.add")}</Button>
         </DialogActions>
       )}
     </Dialog>
@@ -224,7 +259,7 @@ export function LiveAddPartDialog({
 }
 
 /** 設定欄の大きな見本。幅いっぱい（高さは上限まで）に、実際に動かして描く */
-function PartPreviewLarge({ draft, background, light }: { draft: LiveElement; background: string; light: boolean }) {
+function PartPreviewLarge({ draft, background, light, cameraLabels }: { draft: LiveElement; background: string; light: boolean; cameraLabels: Partial<Record<LiveCameraSlot, string>> }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
@@ -238,7 +273,7 @@ function PartPreviewLarge({ draft, background, light }: { draft: LiveElement; ba
   const height = Math.min(PREVIEW_MAX_H, Math.round((width * 9) / 16));
   return (
     <Box ref={ref} data-testid="add-part-preview" sx={{ width: "100%", borderRadius: 1, overflow: "hidden" }}>
-      {width > 0 && <LivePartPreview elements={[draft]} background={background} lightScene={light} width={width} height={height} animate />}
+      {width > 0 && <LivePartPreview elements={[draft]} background={background} lightScene={light} width={width} height={height} animate cameraLabels={cameraLabels} />}
     </Box>
   );
 }
