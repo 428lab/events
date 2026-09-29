@@ -38,7 +38,8 @@ describe("LiveSceneStage runtime", () => {
         }
         if (scene.id.endsWith("-keynote")) {
           expect(container.querySelectorAll('[style*="color: rgb(32, 49, 70)"]')).not.toHaveLength(0);
-          expect(screen.getByText("カメラ")).toBeInTheDocument();
+          // 番号のないカメラ（#570 以前の要素）はカメラ1 として見せる
+          expect(screen.getByText("カメラ1")).toBeInTheDocument();
         }
         unmount();
       }

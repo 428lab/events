@@ -3,8 +3,9 @@ import { useTranslation } from "react-i18next";
 import ImageIcon from "@mui/icons-material/Image";
 import MonitorIcon from "@mui/icons-material/Monitor";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
-import { LIVE_H, LIVE_W } from "@eventer/shared";
-import type { EventInfoField, LiveElement, LiveScene } from "@eventer/shared";
+import { LIVE_H, LIVE_W, liveCameraSlotOf } from "@eventer/shared";
+import type { EventInfoField, LiveCameraSlot, LiveElement, LiveScene } from "@eventer/shared";
+import { CAMERA_SLOT_COLORS } from "../lib/liveCameraMapping.js";
 import { LiveDynamic } from "./LiveDynamic.js";
 import { LiveMotif } from "./LiveMotif.js";
 import { LiveFlameFrame } from "./LiveFlameFrame.js";
@@ -17,6 +18,8 @@ import type { LiveChatRow } from "../lib/liveChat.js";
 export interface LiveRuntime {
   /** camera 要素の中身（<video> 等） */
   camera?: (el: LiveElement) => ReactNode;
+  /** 実体が無いときのカメラ枠に出す、番号ごとの呼び名 (#570)。セット共通 */
+  cameraLabels?: Partial<Record<LiveCameraSlot, string>>;
   /** deck 要素の中身（現在ページのスライド描画） */
   deck?: (el: LiveElement) => ReactNode;
   /** eventInfo のフィールド値 */
@@ -43,7 +46,7 @@ const PLACEHOLDER_INFO_KEY = {
 /** 見本に出す参加人数 */
 const PLACEHOLDER_PARTICIPANTS = 12;
 
-function Placeholder({ label, icon, light = false }: { label: string; icon: ReactNode; light?: boolean }) {
+function Placeholder({ label, icon, light = false, borderColor }: { label: string; icon: ReactNode; light?: boolean; borderColor?: string }) {
   return (
     <div
       style={{
@@ -52,7 +55,7 @@ function Placeholder({ label, icon, light = false }: { label: string; icon: Reac
         display: "grid",
         placeItems: "center",
         background: light ? "#DCE9DF" : "rgba(148,163,184,0.15)",
-        border: light ? "1px dashed #285E91" : "1px dashed rgba(148,163,184,0.6)",
+        border: `${borderColor ? 2 : 1}px dashed ${borderColor ?? (light ? "#285E91" : "rgba(148,163,184,0.6)")}`,
         color: light ? "#203146" : "#94a3b8",
         fontSize: 20,
         boxSizing: "border-box",
@@ -138,13 +141,19 @@ export function LiveElementContent({
             borderRadius: el.radius ?? 0,
           }}
         >
-          {inner ?? (
-            <Placeholder
-              label={t("studio.elementCamera")}
-              light={lightScene}
-              icon={<PhotoCameraIcon sx={{ fontSize: 36 }} />}
-            />
-          )}
+          {inner ?? (() => {
+            // どのカメラ番号を映す枠かを出す (#570)。実際の機器は配信するPCで割り当てる
+            const slot = liveCameraSlotOf(el);
+            const label = runtime?.cameraLabels?.[slot];
+            return (
+              <Placeholder
+                label={label ? t("studio.cameraSlotWithLabel", { n: slot, label }) : t("studio.cameraSlotName", { n: slot })}
+                light={lightScene}
+                borderColor={CAMERA_SLOT_COLORS[slot]}
+                icon={<PhotoCameraIcon sx={{ fontSize: 36 }} />}
+              />
+            );
+          })()}
         </div>
       );
     }

@@ -5,6 +5,13 @@ import { DECK_H, DECK_W } from "./decks.js";
 export const LIVE_W = DECK_W;
 export const LIVE_H = DECK_H;
 
+/** カメラ番号 (#570)。配信セットは番号と呼び名だけを持ち、実際の機器は配信するPCが番号に結び付ける */
+export const LIVE_CAMERA_SLOTS = [1, 2, 3, 4] as const;
+export type LiveCameraSlot = (typeof LIVE_CAMERA_SLOTS)[number];
+/** カメラ番号の呼び名の長さの上限 */
+export const LIVE_CAMERA_LABEL_MAX = 20;
+const cameraSlotSchema = z.number().int().min(1).max(LIVE_CAMERA_SLOTS.length);
+
 /** 配信画面タブが状態をポーリングする間隔 */
 export const LIVE_POLL_MS = 1000;
 
@@ -66,6 +73,8 @@ export const liveElementSchema = z.object({
   fit: z.enum(["cover", "contain"]).optional(),
   /** camera: 角丸(px)。丸抜きPinP用 */
   radius: z.number().optional(),
+  /** camera: 映すカメラ番号 (#570)。未指定は 1（#570 以前の要素） */
+  cameraSlot: cameraSlotSchema.optional(),
   // eventInfo
   field: z.enum(EVENT_INFO_FIELDS).optional(),
   /** Hide a composed date card when the actual event schedule has not been fixed. */
@@ -122,10 +131,35 @@ export const liveSceneSchema = z.object({
 }).refine(scene => scene.elements.filter(el => el.motion).length <= 2, { message: "Only two decorative effects can run in one scene" });
 export type LiveScene = z.infer<typeof liveSceneSchema>;
 
+export const liveCameraSchema = z.object({
+  slot: cameraSlotSchema,
+  label: z.string().max(LIVE_CAMERA_LABEL_MAX),
+});
+export type LiveCamera = z.infer<typeof liveCameraSchema>;
+
 export const liveSetContentSchema = z.object({
   scenes: z.array(liveSceneSchema).max(50).default([]),
+  /** カメラ番号の呼び名（セット共通・任意, #570）。機器 ID は持たない */
+  cameras: z.array(liveCameraSchema).max(LIVE_CAMERA_SLOTS.length).optional(),
 });
 export type LiveSetContent = z.infer<typeof liveSetContentSchema>;
+
+/** camera 要素が映す番号。番号のない要素（#570 以前）はカメラ1 として読む。データは書き換えない */
+export const liveCameraSlotOf = (el: LiveElement): LiveCameraSlot => (el.cameraSlot ?? 1) as LiveCameraSlot;
+
+/** シーンで使っているカメラ番号（小さい順・重複なし） */
+export function sceneCameraSlots(scene: LiveScene): LiveCameraSlot[] {
+  return [...new Set(scene.elements.filter(el => el.type === "camera").map(liveCameraSlotOf))].sort((a, b) => a - b);
+}
+
+/** 配信セットのどこかのシーンで使っているカメラ番号（小さい順・重複なし） */
+export function usedCameraSlots(content: LiveSetContent): LiveCameraSlot[] {
+  return [...new Set(content.scenes.flatMap(sceneCameraSlots))].sort((a, b) => a - b);
+}
+
+/** カメラ番号の呼び名。付けていなければ空文字 */
+export const liveCameraLabel = (content: LiveSetContent, slot: number): string =>
+  content.cameras?.find(c => c.slot === slot)?.label ?? "";
 
 export const liveSetSchema = z.object({
   id: z.string(),

@@ -16,6 +16,7 @@ import UndoIcon from "@mui/icons-material/Undo";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { LiveElement, LiveScene, LiveSetContent } from "@eventer/shared";
+import { cameraLabels, cameraSlotChoices, withCameraLabel } from "../lib/liveCameraMapping.js";
 import {
   useLiveSet,
   useUpdateLiveSet,
@@ -25,6 +26,7 @@ import { useBgmTracks } from "../api/bgmHooks.js";
 import { LiveAddPartDialog } from "../components/LiveAddPartDialog.js";
 import { LiveCanvas } from "../components/LiveCanvas.js";
 import { LiveElementPanel } from "../components/LiveElementPanel.js";
+import type { LiveCameraSlotContext } from "../components/LiveElementPanel.js";
 import { LiveSceneList } from "../components/LiveSceneList.js";
 import { LiveSceneToolbar } from "../components/LiveSceneToolbar.js";
 import {
@@ -148,6 +150,14 @@ export function LiveSetEditorPage() {
   const addPart = (elements: LiveElement[]) => {
     const keynoteName = scene?.id === "v1-hakuji-keynote" && elements.some(el => el.id === "name");
     return addElements(elements.map(el => ({ ...el, id: crypto.randomUUID(), x: el.x + (keynoteName ? 633 : 85), y: el.y + (keynoteName ? 356 : 230) })));
+  };
+
+  // カメラ番号の候補と呼び名 (#570)。呼び名はセット共通なので中身そのものに書く
+  const labels = cameraLabels(content ?? undefined);
+  const cameras: LiveCameraSlotContext = {
+    choices: (current) => cameraSlotChoices(content ?? { scenes: [] }, current),
+    labels,
+    setLabel: (slot, label) => setContent((c) => (c ? withCameraLabel(c, slot, label) : c)),
   };
 
   const sceneCommands: LiveSceneCommands = {
@@ -285,6 +295,7 @@ export function LiveSetEditorPage() {
             onAddPart={addPart}
             pickImage={picker.pick}
             uploading={upload.isPending}
+            cameras={cameras}
           />
           {/* キャンバスの見出し。元に戻す・やり直すは編集面のすぐ上に1か所だけ置き、
               スマホでは画面の上に貼り付けて、キャンバスを見ながら押せるようにする (#566) */}
@@ -344,6 +355,7 @@ export function LiveSetEditorPage() {
             commands={elementCommands}
             onSelect={setSelectedId}
             onSelectNone={() => setSelectedId(null)}
+            cameraLabels={labels}
           />
         </Box>
 
@@ -353,6 +365,7 @@ export function LiveSetEditorPage() {
             commands={elementCommands}
             pickImage={picker.pick}
             uploading={upload.isPending}
+            cameras={cameras}
           />
         </Stack>
       </Stack>

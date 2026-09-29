@@ -25,8 +25,9 @@ export const LIVE_BASIC_PARTS = ["text", "image", "camera", "deck", "eventInfo"]
 /** 「配信の演出」の並び */
 export const LIVE_STREAM_PARTS = ["chat", "marquee", "clock", "countdown", "liveIndicator", "motif", "flameFrame"] as const satisfies readonly LivePartKind[];
 
-/** 選んだら設定欄を挟まずにそのまま置く種類。置いてから右の設定欄で整える */
-const ADD_WITHOUT_SETTINGS: ReadonlySet<LivePartKind> = new Set(["camera", "deck"]);
+/** 選んだら設定欄を挟まずにそのまま置く種類。置いてから右の設定欄で整える。
+ * カメラは映す番号を選ぶので 2 段目を挟む (#570) */
+const ADD_WITHOUT_SETTINGS: ReadonlySet<LivePartKind> = new Set(["deck"]);
 export const livePartNeedsSettings = (kind: LivePartKind) => !ADD_WITHOUT_SETTINGS.has(kind);
 
 /** 回転装飾の種類。選ぶ画面の並び順 */

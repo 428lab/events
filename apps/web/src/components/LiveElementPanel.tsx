@@ -18,7 +18,10 @@ import FlipToFrontIcon from "@mui/icons-material/FlipToFront";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import ImageIcon from "@mui/icons-material/Image";
 import { EVENT_INFO_FIELDS, FLAME_FRAME_LIMITS, FLAME_PALETTES } from "@eventer/shared";
-import type { EventInfoField, LiveElement } from "@eventer/shared";
+import { liveCameraSlotOf } from "@eventer/shared";
+import type { EventInfoField, LiveCameraSlot, LiveElement } from "@eventer/shared";
+import type { CameraSlotChoices } from "../lib/liveCameraMapping.js";
+import { LiveCameraSlotFields } from "./LiveCameraSlotFields.js";
 import type { LiveElementCommands } from "../lib/liveScenes.js";
 import { ensureDeckFont, useDeckFontOptions } from "../lib/deckFonts.js";
 import { resolveLocalTarget } from "../lib/liveTime.js";
@@ -54,17 +57,26 @@ const DEFAULT_COLOR = "#EAF0F7";
  * 共有する（どちらも文字を出すもの）ので、その塊だけを1つにまとめてある。
  * 何も選んでいない時に案内を出すのもここ。呼ぶ側に出し分けを持たせない。
  */
+/** カメラ番号の候補と、セット共通の呼び名 (#570)。呼び名の書き換えはセットの中身に効く */
+export interface LiveCameraSlotContext {
+  choices: (current: LiveCameraSlot) => CameraSlotChoices;
+  labels: Partial<Record<LiveCameraSlot, string>>;
+  setLabel: (slot: LiveCameraSlot, label: string) => void;
+}
+
 export function LiveElementPanel({
   selected,
   commands,
   pickImage,
   uploading,
+  cameras,
 }: {
   selected: LiveElement | null;
   commands: LiveElementCommands;
   /** 画像の差し替え。選ばせて上げるまでは共通の仕掛けが持つ */
   pickImage: (onPicked: (url: string) => void) => void;
   uploading: boolean;
+  cameras: LiveCameraSlotContext;
 }) {
   const { t } = useTranslation();
   const fontOptions = useDeckFontOptions();
@@ -246,6 +258,15 @@ export function LiveElementPanel({
 
       {selected.type === "camera" && (
         <>
+          <LiveCameraSlotFields
+            slot={liveCameraSlotOf(selected)}
+            choices={cameras.choices(liveCameraSlotOf(selected))}
+            labels={cameras.labels}
+            onSlot={(slot) => patch({ cameraSlot: slot })}
+            onLabel={(label) => cameras.setLabel(liveCameraSlotOf(selected), label)}
+            labelField={t("studio.cameraSlotLabelField")}
+            help={t("studio.cameraSlotLabelHelp")}
+          />
           <ToggleButtonGroup
             size="small"
             exclusive

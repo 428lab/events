@@ -294,13 +294,68 @@ describe("パーツを追加 (#566)", () => {
     expect(savedScenes()[0].elements.at(-1)).toMatchObject({ type: "motif", motif: "flameFrame", flamePalette: "azure", flicker: 65, flameHeight: 44, frameThickness: 4, radius: 16, embers: 50, x: 632, y: 110, w: 276, h: 206 });
   });
 
-  it("カメラは選んだ時点でそのまま置かれる", async () => {
+  it("カメラは2段目で映す番号と呼び名を決めてから置く (#570)", async () => {
     draw(twoScenes());
     openPicker();
     pickCard("カメラ");
+    const dialog = within(screen.getByRole("dialog"));
+    // シーンにまだカメラが無いので、新しいカメラ1が選ばれている
+    expect(dialog.getByRole("radio", { name: "新しいカメラ（カメラ1）" })).toHaveAttribute("aria-checked", "true");
+    fireEvent.change(dialog.getByLabelText("呼び名（任意）"), { target: { value: "登壇者" } });
+    fireEvent.click(dialog.getByRole("button", { name: "このカメラを置く" }));
     await settle();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(savedScenes()[0].elements.at(-1)).toMatchObject({ type: "camera", x: 640, y: 340, w: 280, h: 180, fit: "cover", radius: 12 });
+    expect(savedScenes()[0].elements.at(-1)).toMatchObject({ type: "camera", cameraSlot: 1, x: 640, y: 340, w: 280, h: 180, fit: "cover", radius: 12 });
+    expect(mocks.update.mock.calls.at(-1)![0].content.cameras).toEqual([{ slot: 1, label: "登壇者" }]);
+    expect(canvas().getByText("カメラ1・登壇者")).toBeInTheDocument();
+  });
+
+  it("カメラのあるシーンでは、まだ使っていない一番小さい番号が既定になる (#570)", async () => {
+    draw([{ id: "sc1", name: "対談", background: "#0E1426", elements: [{ id: "c1", type: "camera", x: 0, y: 0, w: 960, h: 540, rotation: 0 }] }]);
+    openPicker();
+    pickCard("カメラ");
+    const dialog = within(screen.getByRole("dialog"));
+    // 番号のない既存のカメラはカメラ1 として並ぶ
+    expect(dialog.getByRole("radio", { name: "カメラ1" })).toHaveAttribute("aria-checked", "false");
+    expect(dialog.getByRole("radio", { name: "新しいカメラ（カメラ2）" })).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(dialog.getByRole("button", { name: "このカメラを置く" }));
+    await settle();
+    expect(savedScenes()[0].elements.at(-1)).toMatchObject({ type: "camera", cameraSlot: 2 });
+    // 既存の要素は書き換えない
+    expect(savedScenes()[0].elements[0]).not.toHaveProperty("cameraSlot");
+  });
+
+  it("置いたカメラは設定欄で番号とセット共通の呼び名を変えられる (#570)", async () => {
+    draw([
+      { id: "sc1", name: "講演", background: "#0E1426", elements: [{ id: "c1", type: "camera", x: 0, y: 0, w: 400, h: 300, rotation: 0 }] },
+      { id: "sc2", name: "対談", background: "#0E1426", elements: [{ id: "c2", type: "camera", x: 0, y: 0, w: 400, h: 300, rotation: 0, cameraSlot: 2 }] },
+    ]);
+    selectOnCanvas("カメラ1");
+    expect(screen.getByRole("radio", { name: "カメラ1" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "カメラ2" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "新しいカメラ（カメラ3）" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "カメラ2" }));
+    fireEvent.change(screen.getByLabelText("このカメラの呼び名（セット共通・任意）"), { target: { value: "会場" } });
+    await settle();
+    const saved = mocks.update.mock.calls.at(-1)![0].content;
+    expect(saved.scenes[0].elements[0]).toMatchObject({ id: "c1", cameraSlot: 2 });
+    expect(saved.cameras).toEqual([{ slot: 2, label: "会場" }]);
+    expect(canvas().getByText("カメラ2・会場")).toBeInTheDocument();
+    // 呼び名を空にするとセットから消える
+    fireEvent.change(screen.getByLabelText("このカメラの呼び名（セット共通・任意）"), { target: { value: "" } });
+    await settle();
+    expect(mocks.update.mock.calls.at(-1)![0].content).not.toHaveProperty("cameras");
+  });
+
+  it("カメラ入りのデザイン部品は選んだ時点で置かれ、中のカメラはカメラ1 になる (#570)", async () => {
+    draw(twoScenes());
+    openPicker();
+    pickCard(/提灯カメラ額/);
+    await settle();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const camera = savedScenes()[0].elements.find(e => e.type === "camera");
+    expect(camera).toBeDefined();
+    expect(camera?.cameraSlot ?? 1).toBe(1);
   });
 
   it("白磁のシーンでは色の既定値が白磁になる", async () => {

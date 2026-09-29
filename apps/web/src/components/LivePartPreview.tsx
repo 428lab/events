@@ -1,5 +1,5 @@
 import { FLAME_FRAME_LIMITS, LIVE_H, LIVE_W } from "@eventer/shared";
-import type { LiveElement } from "@eventer/shared";
+import type { LiveCameraSlot, LiveElement } from "@eventer/shared";
 import { flameMargin } from "../lib/flameFrameRenderer.js";
 import { LiveElementContent } from "./LiveStage.js";
 import type { LiveRuntime } from "./LiveStage.js";
@@ -32,6 +32,7 @@ export function LivePartPreview({
   width,
   height,
   animate = false,
+  cameraLabels,
 }: {
   elements: LiveElement[];
   background: string;
@@ -39,6 +40,8 @@ export function LivePartPreview({
   width: number;
   height: number;
   animate?: boolean;
+  /** カメラ枠に出す番号ごとの呼び名 (#570) */
+  cameraLabels?: Partial<Record<LiveCameraSlot, string>>;
 }) {
   const boxes = elements.map(drawnBox);
   const x0 = Math.min(...boxes.map(b => b.x0)) - PAD, y0 = Math.min(...boxes.map(b => b.y0)) - PAD;
@@ -46,7 +49,7 @@ export function LivePartPreview({
   const bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0);
   // 小さな飾りを拡大しすぎると線が太って別物に見えるので、2 倍までにとどめる
   const scale = Math.min(width / bw, height / bh, 2);
-  const runtime: LiveRuntime = { liveIndicatorOn: true, previewNow: SAMPLE_NOW, eventStartMs: SAMPLE_EVENT_START, pauseMotion: !animate };
+  const runtime: LiveRuntime = { liveIndicatorOn: true, previewNow: SAMPLE_NOW, eventStartMs: SAMPLE_EVENT_START, pauseMotion: !animate, cameraLabels };
   return (
     <div aria-hidden style={{ width, height, position: "relative", overflow: "hidden", background: background || "#0E1426", pointerEvents: "none" }}>
       <div style={{ position: "absolute", left: (width - bw * scale) / 2, top: (height - bh * scale) / 2, width: bw, height: bh, transform: `scale(${scale})`, transformOrigin: "top left" }}>

@@ -38,6 +38,9 @@ import {
 import { useMyLiveSets } from "../api/liveSetHooks.js";
 import { useMyDecks } from "../api/deckHooks.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
+import { LiveCameraMapCard } from "../components/LiveCameraMapPanel.js";
+import { CameraSlotBadge } from "../components/LiveCameraSlotFields.js";
+import { sceneCameraSlots } from "@eventer/shared";
 import { useLiveEventChat } from "../components/LiveEventChat.js";
 import { ManualLiveIndicatorControl } from "../components/ManualLiveIndicatorControl.js";
 import { LiveCutinControl } from "../components/LiveCutinControl.js";
@@ -193,6 +196,17 @@ export function LiveControlPage() {
           </Button>
         </Stack>
 
+        {/* このPCのカメラの割り当て (#570)。セットにカメラが無ければ出さない */}
+        {liveSet && (
+          <LiveCameraMapCard
+            key={liveSet.id}
+            eventId={id}
+            liveSetId={liveSet.id}
+            liveSetName={liveSet.id === DEFAULT_LIVE_SET_ID ? t("studio.liveSetDefault") : liveSet.name || t("studio.untitledLiveSet")}
+            content={liveSet.content}
+          />
+        )}
+
         {/* シーングリッド（タップで切替） */}
         <Box
           sx={{
@@ -252,6 +266,7 @@ export function LiveControlPage() {
                   <Typography variant="caption" sx={{ color: "#fff", flex: 1 }} noWrap>
                     {s.name}
                   </Typography>
+                  {sceneCameraSlots(s).map((slot) => <CameraSlotBadge key={slot} slot={slot} small />)}
                   {active && (
                     <Chip
                       size="small"

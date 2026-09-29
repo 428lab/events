@@ -323,7 +323,8 @@ const ja = {
   cameraFitCover: "枠いっぱい",
   cameraFitContain: "全体表示",
   cameraRadiusValue: "角丸：{{n}}",
-  cameraHint: "カメラ映像は配信画面タブで流し込まれます。",
+  cameraHint:
+    "どのカメラ機器を「カメラ1」「カメラ2」にするかは、配信するPCの「配信コントロール → カメラの割り当て」で一度だけ選びます。",
   deckElementHint:
     "イベントで選択したスライドがここに表示されます。ページ送りはコントロール画面から。",
   liveEditorHint:
@@ -385,6 +386,42 @@ const ja = {
   bgmUnblock: "クリックして BGM を有効化",
   cameraDefault: "既定のカメラ",
   cameraWaiting: "カメラ待機中…",
+  /** カメラ番号 (#570)。配信セットは番号と呼び名だけを持ち、機器は配信するPCで割り当てる */
+  cameraSlotName: "カメラ{{n}}",
+  cameraSlotWithLabel: "カメラ{{n}}・{{label}}",
+  cameraSlotPick: "映すカメラ",
+  cameraSlotNew: "新しいカメラ（カメラ{{n}}）",
+  cameraSlotLabelField: "このカメラの呼び名（セット共通・任意）",
+  cameraSlotLabelShort: "呼び名（任意）",
+  cameraSlotLabelPlaceholder: "例：登壇者、会場",
+  cameraSlotLabelHelp: "同じカメラを使う他のシーンのパーツにも同じ呼び名が出ます。",
+  cameraAddSlotHelp:
+    "このシーンに初めて置くカメラなら「カメラ1」が選ばれています。別の角度を映すときだけ番号を変えてください。",
+  cameraAddPlace: "このカメラを置く",
+  cameraSlotsInScene: "使うカメラ",
+  cameraMapTitle: "カメラの割り当て（このPC）",
+  cameraMapIntro:
+    "配信前に一度選べば、このPCのブラウザに保存されます。同じPCで開いた配信画面にすぐ反映され、シーンを切り替えても選び直す必要はありません。",
+  cameraMapScreenOpen: "このPCの配信画面：開いています",
+  cameraMapScreenMissing: "このPCの配信画面：見つかりません",
+  cameraMapScreenMissingHelp: "「{{action}}」で、このPCに配信画面を開いてください。",
+  cameraMapShow: "開く",
+  cameraMapHide: "畳む",
+  cameraMapUnassigned: "未割り当て（既定のカメラで映す）",
+  cameraMapDeviceFor: "{{name}}に使うカメラ",
+  cameraMapNoLabel: "呼び名なし",
+  cameraMapUsedIn: "使うシーン：{{scenes}}",
+  cameraMapUnnamedDevice: "カメラ {{n}}",
+  cameraMapDefaultBadge: "既定",
+  cameraMapPermission: "カメラの一覧を表示するには使用を許可してください。",
+  cameraMapAllow: "許可する",
+  cameraMapWarnUnmapped:
+    "{{slots}} が未割り当てです。このまま配信すると既定のカメラが映ります。この表示は配信コントロールにだけ出て、配信画面には出ません。",
+  cameraMapWarnUnmappedShort: "未割り当て：既定のカメラが映ります",
+  cameraMapWarnMissing: "{{slot}} に選んだ「{{device}}」が見つかりません。既定のカメラで映しています。",
+  cameraMapFailed: "{{slot}} を開けません（他のアプリが使用中の可能性）。",
+  cameraMapEnded: "{{slot}} の映像が止まりました。",
+  cameraMapRetry: "再試行",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -659,7 +696,8 @@ const en: Record<keyof typeof ja, string> = {
   cameraFitCover: "Fill the frame",
   cameraFitContain: "Show all",
   cameraRadiusValue: "Corner radius: {{n}}",
-  cameraHint: "The camera feed is filled in on the broadcast screen tab.",
+  cameraHint:
+    "Which camera device is \"Camera 1\" or \"Camera 2\" is chosen once, on the streaming PC, in \"Live control → Camera assignment\".",
   deckElementHint:
     "The slide deck picked for the event shows up here. Change pages from the control screen.",
   liveEditorHint:
@@ -714,6 +752,41 @@ const en: Record<keyof typeof ja, string> = {
   bgmUnblock: "Click to enable the music",
   cameraDefault: "Default camera",
   cameraWaiting: "Waiting for the camera…",
+  cameraSlotName: "Camera {{n}}",
+  cameraSlotWithLabel: "Camera {{n}} · {{label}}",
+  cameraSlotPick: "Camera to show",
+  cameraSlotNew: "New camera (Camera {{n}})",
+  cameraSlotLabelField: "Name for this camera (shared across the set, optional)",
+  cameraSlotLabelShort: "Name (optional)",
+  cameraSlotLabelPlaceholder: "e.g. Speaker, Venue",
+  cameraSlotLabelHelp: "Parts using the same camera in other scenes show the same name.",
+  cameraAddSlotHelp:
+    "\"Camera 1\" is selected when this is the first camera in the scene. Change the number only to show another angle.",
+  cameraAddPlace: "Place this camera",
+  cameraSlotsInScene: "Cameras used",
+  cameraMapTitle: "Camera assignment (this PC)",
+  cameraMapIntro:
+    "Choose once before streaming; it is saved in this PC's browser. The broadcast screen on this PC updates right away, and switching scenes needs no re-selection.",
+  cameraMapScreenOpen: "Broadcast screen on this PC: open",
+  cameraMapScreenMissing: "Broadcast screen on this PC: not found",
+  cameraMapScreenMissingHelp: "Use \"{{action}}\" to open the broadcast screen on this PC.",
+  cameraMapShow: "Show",
+  cameraMapHide: "Hide",
+  cameraMapUnassigned: "Unassigned (use the default camera)",
+  cameraMapDeviceFor: "Camera device for {{name}}",
+  cameraMapNoLabel: "No name",
+  cameraMapUsedIn: "Scenes: {{scenes}}",
+  cameraMapUnnamedDevice: "Camera {{n}}",
+  cameraMapDefaultBadge: "Default",
+  cameraMapPermission: "Allow camera access to list the cameras.",
+  cameraMapAllow: "Allow",
+  cameraMapWarnUnmapped:
+    "{{slots}} is not assigned. Streaming now shows the default camera. This notice appears only in live control, never on the broadcast screen.",
+  cameraMapWarnUnmappedShort: "Unassigned: the default camera is shown",
+  cameraMapWarnMissing: "\"{{device}}\" chosen for {{slot}} was not found. Showing the default camera.",
+  cameraMapFailed: "{{slot}} cannot be opened (another app may be using it).",
+  cameraMapEnded: "{{slot}} stopped sending video.",
+  cameraMapRetry: "Retry",
 };
 
 export const studio = { ja, en };
