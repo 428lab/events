@@ -90,11 +90,11 @@ function userColumnActions(): Map<string, string> {
  * **実数で固定する。** 増えたときは、増えた列を deleteAccount と hasActivity で
  * 扱ってからこの数を直すこと。減ったときは走査が壊れている疑いが強い。
  */
-const EXPECTED_BLOCKING_COLUMNS = 7; // #556: 割り勘の帳簿の当事者 2 本
+const EXPECTED_BLOCKING_COLUMNS = 9; // #556: 割り勘の帳簿の当事者 4 本（payer / share / 済みの from・to）
 
 /** user(id) を参照する列の総数（merge-user-columns.test.ts と同じ数）。
  * こちらの走査が空振りしていないことの担保 */
-const EXPECTED_USER_COLUMNS = 59; // #523 までの 55 本 + #556: 割り勘の 3 表で 4 本
+const EXPECTED_USER_COLUMNS = 62; // #523 までの 55 本 + #556: 割り勘の 4 表で 7 本
 
 /* ── 2. 定義の期待値（**定義から導かない**。手で書いて固定する） ───────── */
 
@@ -117,7 +117,11 @@ const EXPECTED_SHARED_CONTENT = [
  * 割り勘の帳簿の当事者列 (#556)。LEDGER_PARTY_REASSIGN_SQL が付け替える列。
  * 同じ理由で手で書いて固定する（SQL の `UPDATE t SET c = ?2 WHERE c = ?1` から読んだ組と比べる）
  */
-const EXPECTED_LEDGER_PARTY = ["event_expense_share.user_id"];
+const EXPECTED_LEDGER_PARTY = [
+  "event_expense_share.user_id",
+  "event_settlement_done.from_user_id",
+  "event_settlement_done.to_user_id",
+];
 
 /** 利用実績 (#238) を見る表。同じ理由で手で書いて固定する */
 const EXPECTED_ACTIVITY = [
@@ -131,6 +135,8 @@ const EXPECTED_ACTIVITY = [
   "event_expense_share.user_id",
   "event_member.user_id",
   "event_request.created_by",
+  "event_settlement_done.from_user_id",
+  "event_settlement_done.to_user_id",
   "inquiry.user_id",
   "live_set.owner_id",
   "venue.owner_id",
@@ -304,7 +310,7 @@ describe("user を参照する表の一覧 (#466)", () => {
         body.includes("of LEDGER_PARTY_REASSIGN_SQL"),
         `${name} が LEDGER_PARTY_REASSIGN_SQL をそのまま回していない`,
       ).toBe(true);
-      for (const table of ["event_expense_share"]) {
+      for (const table of ["event_expense_share", "event_settlement_done"]) {
         expect(
           new RegExp(`(UPDATE|DELETE FROM)\\s+${table}\\b`).test(body),
           `${name} に ${table} の付け替え SQL が直接書かれている。` +

@@ -1,24 +1,29 @@
 import { eventRun, eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import type {
+  CalcExpense,
   EventRole,
   ExpenseInput,
   PayoutKind,
   PayoutMethodInput,
+  Settlement,
+  SettlementDone,
+  SettlementDoneRecord,
   WarikanExpense,
   WarikanLedger,
   WarikanMember,
   WarikanPayout,
 } from "@eventer/shared";
-import { WARIKAN_EXPENSE_MAX, allocateShares, settle } from "@eventer/shared";
+import { WARIKAN_EXPENSE_MAX, allocateShares, attachDoneMarks, settle } from "@eventer/shared";
 import { many, one } from "../client.js";
 import { DELETED_USER_DISCORD_ID } from "./accountDeletion.js";
 
 /**
  * 割り勘 (#556)。設計は docs/warikan.md。
  *
- * 表は3つ（立替・負担・受け取り先）だが、按分と精算という1つの手続きを
- * 共有するので1ファイルに置く。**計算は shared の純関数**（allocateShares / settle）で、
- * ここは行を読んで渡すだけ。各人の負担額・収支・精算の提案は列に持たず、読むたびに導出する。
+ * 表は4つ（立替・負担・「済み」・受け取り先）だが、按分と精算という1つの手続きを
+ * 共有するので1ファイルに置く。**計算は shared の純関数**（allocateShares / settle /
+ * attachDoneMarks）で、ここは行を読んで渡すだけ。各人の負担額・収支・精算の提案・
+ * 「済み」が効いているかは列に持たず、読むたびに導出する。
  *
  * - 帳簿を見られる人の判定は LEDGER_AUDIENCE_SQL の1か所（GET と当事者としての書き込みが共用）
  * - 件数の上限は1文の条件付き INSERT で守る（数えてから入れる2文にしない）
@@ -55,6 +60,14 @@ interface ShareRow {
   expense_id: string;
   user_id: string;
   weight: number;
+}
+
+interface DoneRow {
+  from_user_id: string;
+  to_user_id: string;
+  amount: number;
+  marked_by: string | null;
+  marked_at: number;
 }
 
 interface PayoutRow {
@@ -95,8 +108,16 @@ export interface ExpenseMeta {
   eventId: string;
   payerUserId: string;
   createdBy: string | null;
-  shareUserIds: string[];
+  /** 既存の負担行（PATCH の緩い検証に使う。§3.7.3） */
+  shares: { userId: string; weight: number }[];
 }
+
+/** 立替の編集・削除を誰の資格で行うか（設計 §3.7.2）。null は staff（行の絞り込みなし） */
+export type ExpenseEditScope =
+  /** 入力者本人（確定メンバーである間。eventWrite は member） */
+  | { by: "creator"; userId: string }
+  /** 立替者本人（参加状態を問わない。eventWrite は view ＋ LEDGER_AUDIENCE_SQL） */
+  | { by: "payer"; userId: string };
 
 export interface PayoutMeta {
   id: string;
@@ -120,9 +141,14 @@ function toPayout(r: PayoutRow, viewer: WarikanViewer): WarikanPayout {
   };
 }
 
-/** 立替の編集・削除ができるか（設計 §3.7.2）。入力者本人は確定メンバーである間だけ */
-function canEditExpense(createdBy: string | null, viewer: WarikanViewer): boolean {
-  return viewer.isStaff || (viewer.isConfirmed && createdBy === viewer.userId);
+/** 立替の編集・削除ができるか（設計 §3.7.2）。入力者本人は確定メンバーである間だけ、
+ * 立替者本人は参加状態を問わない */
+function canEditExpense(r: ExpenseRow, viewer: WarikanViewer): boolean {
+  return (
+    viewer.isStaff ||
+    (viewer.isConfirmed && r.created_by === viewer.userId) ||
+    r.payer_user_id === viewer.userId
+  );
 }
 
 function toExpense(r: ExpenseRow, shares: ShareRow[], viewer: WarikanViewer): WarikanExpense {
@@ -145,7 +171,7 @@ function toExpense(r: ExpenseRow, shares: ShareRow[], viewer: WarikanViewer): Wa
     shares: allocation.shares,
     remainder: allocation.remainder,
     absorbedByPayer: allocation.absorbedByPayer,
-    canEdit: canEditExpense(r.created_by, viewer),
+    canEdit: canEditExpense(r, viewer),
   };
 }
 
@@ -159,13 +185,50 @@ function groupShares(rows: ShareRow[]): Map<string, ShareRow[]> {
   return out;
 }
 
-/** 負担行の置換・追加に使う1文。shares は JSON で渡す（D1 のバインド数の上限を避ける） */
-function insertSharesSql(ownerOnly: boolean): string {
+/** 立替の行を編集資格で絞る条件（`event_expense` の列に対する AND 句）。
+ * `idx` は本人の userId を置く引数の番号、`event` はイベント id の SQL の式 */
+function scopeSql(scope: ExpenseEditScope | null, idx: number, event: string): string {
+  if (!scope) return "";
+  if (scope.by === "creator") return ` AND created_by = ?${idx}`;
+  return ` AND payer_user_id = ?${idx} AND ${LEDGER_AUDIENCE_SQL(event, `?${idx}`)}`;
+}
+
+/** 負担行の置換・追加に使う1文。shares は JSON で渡す（D1 のバインド数の上限を避ける）。
+ * scope を渡すときは ?3 に本人の userId を置く */
+function insertSharesSql(scope: ExpenseEditScope | null): string {
   return `INSERT INTO event_expense_share (expense_id, user_id, weight)
           SELECT ?1, json_extract(j.value, '$.userId'), json_extract(j.value, '$.weight')
             FROM json_each(?2) j
            WHERE EXISTS (SELECT 1 FROM event_expense
-                          WHERE id = ?1${ownerOnly ? " AND created_by = ?3" : ""})`;
+                          WHERE id = ?1${scopeSql(scope, 3, "event_expense.event_id")})`;
+}
+
+/** 立替の行と負担行を、shared の純関数の入力形にする */
+function toCalcExpenses(
+  expenseRows: ExpenseRow[],
+  sharesByExpense: Map<string, ShareRow[]>,
+): CalcExpense[] {
+  return expenseRows.map((r) => ({
+    id: r.id,
+    payerUserId: r.payer_user_id,
+    amount: r.amount,
+    shares: (sharesByExpense.get(r.id) ?? []).map((s) => ({ userId: s.user_id, weight: s.weight })),
+  }));
+}
+
+/** イベントの立替を全部読んで、shared の純関数の入力形にする */
+async function calcExpensesOf(eventId: string): Promise<CalcExpense[]> {
+  const expenseRows = await many<ExpenseRow>(
+    "SELECT * FROM event_expense WHERE event_id = ?",
+    eventId,
+  );
+  const shareRows = await many<ShareRow>(
+    `SELECT s.expense_id, s.user_id, s.weight
+       FROM event_expense_share s JOIN event_expense x ON x.id = s.expense_id
+      WHERE x.event_id = ? ORDER BY s.rowid`,
+    eventId,
+  );
+  return toCalcExpenses(expenseRows, groupShares(shareRows));
 }
 
 const sharesJson = (input: ExpenseInput): string =>
@@ -200,8 +263,8 @@ export const eventWarikanRepo = {
   async findExpense(id: string): Promise<ExpenseMeta | null> {
     const row = await one<ExpenseRow>("SELECT * FROM event_expense WHERE id = ?", id);
     if (!row) return null;
-    const shares = await many<{ user_id: string }>(
-      "SELECT user_id FROM event_expense_share WHERE expense_id = ?",
+    const shares = await many<{ user_id: string; weight: number }>(
+      "SELECT user_id, weight FROM event_expense_share WHERE expense_id = ?",
       id,
     );
     return {
@@ -209,7 +272,7 @@ export const eventWarikanRepo = {
       eventId: row.event_id,
       payerUserId: row.payer_user_id,
       createdBy: row.created_by,
-      shareUserIds: shares.map((s) => s.user_id),
+      shares: shares.map((s) => ({ userId: s.user_id, weight: s.weight })),
     };
   },
 
@@ -275,31 +338,40 @@ export const eventWarikanRepo = {
           WARIKAN_EXPENSE_MAX,
         ],
       },
-      { sql: insertSharesSql(false), args: [id, sharesJson(input)] },
+      { sql: insertSharesSql(null), args: [id, sharesJson(input)] },
     ]);
     return inserted ? id : null;
   },
 
-  /** 立替の編集（全項目・負担行ごと置換）。ownerId を渡すと入力者本人の行だけに当たる。
+  /** 立替の編集（全項目・負担行ごと置換）。scope を渡すと、その資格の本人の行だけに当たる
+   * （null は staff）。立替者本人の資格では立替者の列そのものが書き換わりうるので、
+   * 負担行の置換を先に、立替の UPDATE を最後に置く（先に UPDATE すると後の文の絞り込みが外れる）。
    * @returns 更新したか */
   async updateExpense(
     id: string,
     eventId: string,
     input: ExpenseInput,
-    ownerId: string | null,
+    scope: ExpenseEditScope | null,
     writer: EventWriter,
   ): Promise<boolean> {
-    const owner = ownerId ? " AND created_by = ?3" : "";
-    const ownerArgs = ownerId ? [ownerId] : [];
-    const [updated] = await eventWrite(writer, [
+    const scopeArgs = scope ? [scope.userId] : [];
+    const results = await eventWrite(writer, [
+      {
+        sql: `DELETE FROM event_expense_share
+               WHERE expense_id = ?1
+                 AND EXISTS (SELECT 1 FROM event_expense
+                              WHERE id = ?1${scopeSql(scope, 2, "event_expense.event_id")})`,
+        args: [id, ...scopeArgs],
+      },
+      { sql: insertSharesSql(scope), args: [id, sharesJson(input), ...scopeArgs] },
       {
         sql: `UPDATE event_expense
                  SET payer_user_id = ?4, amount = ?5, title = ?6, note = ?7, spent_on = ?8, updated_at = ?9
-               WHERE id = ?1 AND event_id = ?2${owner}`,
+               WHERE id = ?1 AND event_id = ?2${scopeSql(scope, 3, "?2")}`,
         args: [
           id,
           eventId,
-          ownerId,
+          scope?.userId ?? null,
           input.payerUserId,
           input.amount,
           input.title,
@@ -308,34 +380,89 @@ export const eventWarikanRepo = {
           Date.now(),
         ],
       },
-      {
-        sql: `DELETE FROM event_expense_share
-               WHERE expense_id = ?1
-                 AND EXISTS (SELECT 1 FROM event_expense WHERE id = ?1${ownerId ? " AND created_by = ?2" : ""})`,
-        args: [id, ...ownerArgs],
-      },
-      { sql: insertSharesSql(ownerId !== null), args: [id, sharesJson(input), ...ownerArgs] },
     ]);
-    return (updated ?? 0) > 0;
+    return (results[2] ?? 0) > 0;
   },
 
-  /** 立替の削除（負担行は CASCADE）。ownerId を渡すと入力者本人の行だけに当たる */
+  /** 立替の削除（負担行は CASCADE。「済み」は触らない＝額が変われば自動で外れる）。
+   * scope を渡すと、その資格の本人の行だけに当たる（null は staff） */
   async deleteExpense(
     id: string,
     eventId: string,
-    ownerId: string | null,
+    scope: ExpenseEditScope | null,
     writer: EventWriter,
   ): Promise<boolean> {
-    const changed = ownerId
-      ? await eventRun(
-          writer,
-          "DELETE FROM event_expense WHERE id = ? AND event_id = ? AND created_by = ?",
-          id,
-          eventId,
-          ownerId,
-        )
-      : await eventRun(writer, "DELETE FROM event_expense WHERE id = ? AND event_id = ?", id, eventId);
+    const changed = await eventRun(
+      writer,
+      `DELETE FROM event_expense WHERE id = ?1 AND event_id = ?2${scopeSql(scope, 3, "?2")}`,
+      id,
+      eventId,
+      ...(scope ? [scope.userId] : []),
+    );
     return changed > 0;
+  },
+
+  /** いまの精算の行 (from → to)。無ければ null（「済み」を付ける前の突き合わせに使う。§3.8） */
+  async currentSettlement(
+    eventId: string,
+    fromUserId: string,
+    toUserId: string,
+  ): Promise<Settlement | null> {
+    const { settlements } = settle({ expenses: await calcExpensesOf(eventId) });
+    return (
+      settlements.find((s) => s.fromUserId === fromUserId && s.toUserId === toUserId) ?? null
+    );
+  },
+
+  /** 精算の行に「済み」を付ける（upsert。付け直しは上書き）。付けられるのは行の当事者だけで、
+   * 帳簿を見られる人であることを同じ文で確かめる（§3.5.1）。
+   * @returns 付けた印。当事者でない・門の外なら null */
+  async markDone(
+    eventId: string,
+    fromUserId: string,
+    toUserId: string,
+    amount: number,
+    actorId: string,
+    writer: EventWriter,
+  ): Promise<SettlementDone | null> {
+    const now = Date.now();
+    const changed = await eventRun(
+      writer,
+      `INSERT INTO event_settlement_done
+         (event_id, from_user_id, to_user_id, amount, marked_by, marked_at)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6
+        WHERE ?5 IN (?2, ?3) AND ${LEDGER_AUDIENCE_SQL("?1", "?5")}
+       ON CONFLICT (event_id, from_user_id, to_user_id)
+       DO UPDATE SET amount = excluded.amount, marked_by = excluded.marked_by,
+                     marked_at = excluded.marked_at`,
+      eventId,
+      fromUserId,
+      toUserId,
+      amount,
+      actorId,
+      now,
+    );
+    return changed > 0 ? { markedBy: actorId, markedAt: now } : null;
+  },
+
+  /** 精算の行の「済み」を外す（行の当事者だけ。記録が無くても成功扱い） */
+  async unmarkDone(
+    eventId: string,
+    fromUserId: string,
+    toUserId: string,
+    actorId: string,
+    writer: EventWriter,
+  ): Promise<void> {
+    await eventRun(
+      writer,
+      `DELETE FROM event_settlement_done
+        WHERE event_id = ?1 AND from_user_id = ?2 AND to_user_id = ?3
+          AND ?4 IN (?2, ?3) AND ${LEDGER_AUDIENCE_SQL("?1", "?4")}`,
+      eventId,
+      fromUserId,
+      toUserId,
+      actorId,
+    );
   },
 
   /** 自分の受け取り先を置換する（本人だけ。帳簿を見られる人であることを同じ batch で確かめる） */
@@ -402,7 +529,33 @@ export const eventWarikanRepo = {
       "SELECT * FROM event_payout_method WHERE event_id = ? ORDER BY user_id, created_at, rowid",
       eventId,
     );
-    // 確定メンバー全員 ∪ 帳簿のどこかに登場する全員（入力者・受け取り先の持ち主を含む）。
+    const doneRows = await many<DoneRow>(
+      `SELECT from_user_id, to_user_id, amount, marked_by, marked_at
+         FROM event_settlement_done WHERE event_id = ?`,
+      eventId,
+    );
+
+    const sharesByExpense = groupShares(shareRows);
+    const result = settle({ expenses: toCalcExpenses(expenseRows, sharesByExpense) });
+    // 「済み」は記録時の額と導出額が一致する行にだけ効く（§3.5.1）。計算は shared
+    const settlements = attachDoneMarks(
+      result.settlements,
+      doneRows.map(
+        (r): SettlementDoneRecord => ({
+          fromUserId: r.from_user_id,
+          toUserId: r.to_user_id,
+          amount: r.amount,
+          markedBy: r.marked_by,
+          markedAt: r.marked_at,
+        }),
+      ),
+    ).map((s) => ({
+      ...s,
+      canToggle: s.fromUserId === viewer.userId || s.toUserId === viewer.userId,
+    }));
+
+    // 確定メンバー全員 ∪ 帳簿のどこかに登場する全員（入力者・受け取り先の持ち主・
+    // 効いている「済み」を付けた人を含む）。
     // 帳簿側の id は読んだ行から集めて JSON で渡す（D1 は UNION の項数に上限があるため）
     const ledgerIds = new Set<string>();
     for (const r of expenseRows) {
@@ -411,6 +564,7 @@ export const eventWarikanRepo = {
     }
     for (const r of shareRows) ledgerIds.add(r.user_id);
     for (const r of payoutRows) ledgerIds.add(r.user_id);
+    for (const s of settlements) if (s.done?.markedBy) ledgerIds.add(s.done.markedBy);
     const memberRows = await many<MemberRow>(
       `SELECT u.id AS user_id, u.username, u.global_name, u.avatar_url,
               CASE WHEN u.deleted_at IS NOT NULL OR u.discord_id = ?2 THEN 1 ELSE 0 END AS deleted,
@@ -449,25 +603,12 @@ export const eventWarikanRepo = {
       )
       .map(({ joinedAt: _joinedAt, ...m }) => m);
 
-    const sharesByExpense = groupShares(shareRows);
-    const result = settle({
-      expenses: expenseRows.map((r) => ({
-        id: r.id,
-        payerUserId: r.payer_user_id,
-        amount: r.amount,
-        shares: (sharesByExpense.get(r.id) ?? []).map((s) => ({
-          userId: s.user_id,
-          weight: s.weight,
-        })),
-      })),
-    });
-
     return {
       members,
       expenses: expenseRows.map((r) => toExpense(r, sharesByExpense.get(r.id) ?? [], viewer)),
       payoutMethods: payoutRows.map((r) => toPayout(r, viewer)),
       balances: result.balances,
-      settlements: result.settlements,
+      settlements,
       me: { userId: viewer.userId, canAddExpense: viewer.canAddExpense, isStaff: viewer.isStaff },
     };
   },

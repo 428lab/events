@@ -1,7 +1,8 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect, vi } from "vitest";
+import { z } from "zod";
 import type { WarikanLedger } from "@eventer/shared";
-import { WARIKAN_EXPENSE_MAX } from "@eventer/shared";
+import { WARIKAN_EXPENSE_MAX, warikanLedgerSchema } from "@eventer/shared";
 import { bindEnv, type Env } from "../src/runtime.js";
 import { app } from "../src/worker.js";
 import { eventWarikanRepo } from "../src/db/repositories/eventWarikan.js";
@@ -12,8 +13,10 @@ import { accountDeletionRepo } from "../src/db/repositories/accountDeletion.js";
  * 割り勘 (#556)。docs/warikan.md §5.2 の契約を固定する。
  *
  * - 門: 確定メンバー ∪ 帳簿の当事者。それ以外は 404（取消した当事者は見られて払える）
- * - 権限: 立替の編集は入力者本人（確定の間）と confirmed staff だけ。コミュニティ管理者は通らない
- * - PATCH は新しく加わる人だけを検証する
+ * - 権限: 立替の編集は入力者本人（確定の間）・立替者本人（参加状態を問わない）と confirmed staff だけ。
+ *   コミュニティ管理者は通らない
+ * - PATCH は新しく加わる人だけを検証する（重みの 100 上限も、新しい／値が変わった share だけ）
+ * - 「済み」は行の当事者だけが付け外しでき、記録時の額と導出額が一致するときだけ効く
  * - 上限は1文の条件付き INSERT（並行でも超えない・負担行だけが入らない）
  * - 統合・退会で第三者の負担額と収支が1円も動かない
  */
@@ -226,18 +229,62 @@ describe("割り勘の権限 (#556 §3.7.2)", () => {
     expect((await req(`/events/${eventId}/warikan`, owner)).status).toBe(404);
   });
 
-  it("入力者本人が取消した後は、自分の立替を編集できない", async () => {
+  it("入力者本人が取消した後は、自分が入力した（立替者が別人の）立替を編集できない", async () => {
     const { eventId, a, b } = await setup();
-    const id = await addExpense(eventId, a, a.id, 1000, [a.id, b.id]);
+    const id = await addExpense(eventId, a, b.id, 1000, [a.id, b.id]);
     await setStatus(eventId, a.id, "canceled");
     const res = await req(
       `/events/${eventId}/warikan/expenses/${id}`,
       a,
       "PATCH",
-      expenseBody(a.id, 1000, [a.id, b.id], { title: "直したい" }),
+      expenseBody(b.id, 1000, [a.id, b.id], { title: "直したい" }),
     );
     expect(res.status).toBe(403);
     expect((await req(`/events/${eventId}/warikan/expenses/${id}`, a, "DELETE")).status).toBe(403);
+  });
+
+  it("立替者本人は、入力者でなくても・取消した後でも自分名義の立替を編集・削除できる（staff 0 人でも）", async () => {
+    const { eventId, staff, a, b, c } = await setup();
+    // staff も抜けて staff 0 人のイベントにする
+    await setStatus(eventId, staff.id, "canceled");
+    // B が入力し、立替者は A
+    const id = await addExpense(eventId, b, a.id, 900, [a.id, b.id, c.id]);
+    await setStatus(eventId, a.id, "canceled");
+    await setStatus(eventId, b.id, "canceled");
+
+    const ledger = await ledgerOf(eventId, a);
+    expect(ledger.expenses.find((e) => e.id === id)!.canEdit).toBe(true);
+    // 立替者でも入力者でもない C には出ない
+    expect((await ledgerOf(eventId, c)).expenses.find((e) => e.id === id)!.canEdit).toBe(false);
+
+    const { expense } = await json(
+      await req(
+        `/events/${eventId}/warikan/expenses/${id}`,
+        a,
+        "PATCH",
+        expenseBody(a.id, 900, [a.id, b.id, c.id], { title: "立替者が直した" }),
+      ),
+    );
+    expect(expense.title).toBe("立替者が直した");
+    expect((await req(`/events/${eventId}/warikan/expenses/${id}`, c, "DELETE")).status).toBe(403);
+    await json(await req(`/events/${eventId}/warikan/expenses/${id}`, a, "DELETE"));
+    expect(await count("SELECT COUNT(*) AS n FROM event_expense WHERE id = ?", id)).toBe(0);
+  });
+
+  it("立替者本人が立替者を別の人に替えると、負担行ごと保存される（以後は本人の資格が外れる）", async () => {
+    const { eventId, a, b, c } = await setup();
+    const id = await addExpense(eventId, b, a.id, 900, [a.id, b.id, c.id]);
+    await setStatus(eventId, a.id, "canceled");
+    const { expense } = await json(
+      await req(
+        `/events/${eventId}/warikan/expenses/${id}`,
+        a,
+        "PATCH",
+        expenseBody(c.id, 900, [b.id, c.id]),
+      ),
+    );
+    expect(expense.payerUserId).toBe(c.id);
+    expect(expense.shares.map((s: { userId: string }) => s.userId)).toEqual([b.id, c.id]);
   });
 
   it("observer は立替を追加できない。observer・非確定の人を負担者にすると 400 invalid_party", async () => {
@@ -293,6 +340,157 @@ describe("割り勘の権限 (#556 §3.7.2)", () => {
     expect(await json(bad, 400)).toEqual({ error: "invalid_party" });
   });
 
+  it("重み: POST は 100 まで。PATCH は既存の (userId, weight) を免除し、新規・変更だけ 100 まで", async () => {
+    const { eventId, a, b, c } = await setup();
+    const over = await req(
+      `/events/${eventId}/warikan/expenses`,
+      a,
+      "POST",
+      { ...expenseBody(a.id, 1000, []), shares: [{ userId: a.id, weight: 1 }, { userId: b.id, weight: 101 }] },
+    );
+    expect(await json(over, 400)).toEqual({ error: "invalid_weight" });
+
+    const id = await addExpense(eventId, a, a.id, 1000, [a.id, b.id]);
+    // 統合で合算された体で、B の重みを 150 にしておく
+    await env.DB.prepare("UPDATE event_expense_share SET weight = 150 WHERE expense_id = ? AND user_id = ?")
+      .bind(id, b.id)
+      .run();
+    const patch = (shares: { userId: string; weight: number }[], title = "会場費") =>
+      req(`/events/${eventId}/warikan/expenses/${id}`, a, "PATCH", {
+        ...expenseBody(a.id, 1000, []),
+        title,
+        shares,
+      });
+
+    // 150 の既存行をそのまま送り返してタイトルだけ直せる
+    const ok = await json(await patch([{ userId: a.id, weight: 1 }, { userId: b.id, weight: 150 }], "直した"));
+    expect(ok.expense.title).toBe("直した");
+    // 新しい share に 101
+    expect(
+      await json(
+        await patch([
+          { userId: a.id, weight: 1 },
+          { userId: b.id, weight: 150 },
+          { userId: c.id, weight: 101 },
+        ]),
+        400,
+      ),
+    ).toEqual({ error: "invalid_weight" });
+    // 既存行の重みを 100 → 101 に変える
+    await json(await patch([{ userId: a.id, weight: 100 }, { userId: b.id, weight: 150 }]));
+    expect(
+      await json(await patch([{ userId: a.id, weight: 101 }, { userId: b.id, weight: 150 }]), 400),
+    ).toEqual({ error: "invalid_weight" });
+  });
+});
+
+describe("「済み」 (#556 §3.5.1)", () => {
+  const donePath = (eventId: string, from: string, to: string) =>
+    `/events/${eventId}/warikan/settlements/${from}/${to}/done`;
+  const rowOf = (ledger: WarikanLedger, from: string, to: string) =>
+    ledger.settlements.find((s) => s.fromUserId === from && s.toUserId === to);
+
+  it("from も to も付けられる。GET で done と canToggle が返り、balances は前後で同じ", async () => {
+    const { eventId, a, b, c } = await setup();
+    await addExpense(eventId, a, a.id, 3000, [a.id, b.id, c.id]);
+    const before = await ledgerOf(eventId, a);
+
+    const res = await json(await req(donePath(eventId, b.id, a.id), b, "PUT", { amount: 1000 }));
+    expect(res.done.markedBy).toBe(b.id);
+    await json(await req(donePath(eventId, c.id, a.id), a, "PUT", { amount: 1000 }));
+
+    const after = await ledgerOf(eventId, a);
+    expect(rowOf(after, b.id, a.id)).toMatchObject({ amount: 1000, done: { markedBy: b.id }, canToggle: true });
+    expect(rowOf(after, c.id, a.id)).toMatchObject({ amount: 1000, done: { markedBy: a.id }, canToggle: true });
+    expect(after.balances).toEqual(before.balances);
+    // C から見ると B→A は自分の行ではない
+    expect(rowOf(await ledgerOf(eventId, c), b.id, a.id)!.canToggle).toBe(false);
+  });
+
+  it("第三者は confirmed staff でも 403。存在しない行は 404。額が違えば 409 amount_changed", async () => {
+    const { eventId, staff, a, b, c } = await setup();
+    await addExpense(eventId, a, a.id, 3000, [a.id, b.id, c.id]);
+    expect((await req(donePath(eventId, b.id, a.id), staff, "PUT", { amount: 1000 })).status).toBe(403);
+    expect((await req(donePath(eventId, b.id, a.id), c, "PUT", { amount: 1000 })).status).toBe(403);
+    expect((await req(donePath(eventId, b.id, a.id), c, "DELETE")).status).toBe(403);
+    // 向きが逆の行・当事者どうしで行の無い組
+    expect(await json(await req(donePath(eventId, a.id, b.id), a, "PUT", { amount: 1000 }), 404)).toEqual({
+      error: "not_found",
+    });
+    expect((await req(donePath(eventId, b.id, c.id), b, "PUT", { amount: 1000 })).status).toBe(404);
+    expect(await json(await req(donePath(eventId, b.id, a.id), b, "PUT", { amount: 999 }), 409)).toEqual({
+      error: "amount_changed",
+    });
+    expect((await req(donePath(eventId, b.id, a.id), b, "PUT", { amount: 0 })).status).toBe(400);
+    // 帳簿を見られない人は 404
+    const outsider = await makeUser();
+    expect((await req(donePath(eventId, outsider.id, a.id), outsider, "PUT", { amount: 1000 })).status).toBe(404);
+    expect(await count("SELECT COUNT(*) AS n FROM event_settlement_done WHERE event_id = ?", eventId)).toBe(0);
+  });
+
+  it("DELETE で外れる。記録が無い DELETE も 200", async () => {
+    const { eventId, a, b, c } = await setup();
+    await addExpense(eventId, a, a.id, 3000, [a.id, b.id, c.id]);
+    await json(await req(donePath(eventId, b.id, a.id), b, "PUT", { amount: 1000 }));
+    await json(await req(donePath(eventId, b.id, a.id), a, "DELETE"));
+    expect(rowOf(await ledgerOf(eventId, a), b.id, a.id)!.done).toBeNull();
+    expect((await req(donePath(eventId, b.id, a.id), b, "DELETE")).status).toBe(200);
+  });
+
+  it("立替の編集で額が変わると外れ、元の額に戻ると効く。タイトルだけの編集では外れない", async () => {
+    const { eventId, a, b, c } = await setup();
+    const id = await addExpense(eventId, a, a.id, 3000, [a.id, b.id, c.id]);
+    await json(await req(donePath(eventId, b.id, a.id), b, "PUT", { amount: 1000 }));
+    const patch = (amount: number, title = "会場費") =>
+      req(
+        `/events/${eventId}/warikan/expenses/${id}`,
+        a,
+        "PATCH",
+        expenseBody(a.id, amount, [a.id, b.id, c.id], { title }),
+      );
+
+    await json(await patch(3000, "会場費（訂正）"));
+    expect(rowOf(await ledgerOf(eventId, b), b.id, a.id)!.done).not.toBeNull();
+    await json(await patch(3300));
+    const changed = rowOf(await ledgerOf(eventId, b), b.id, a.id)!;
+    expect(changed.amount).toBe(1100);
+    expect(changed.done).toBeNull();
+    await json(await patch(3000));
+    expect(rowOf(await ledgerOf(eventId, b), b.id, a.id)!.done).toMatchObject({ markedBy: b.id });
+  });
+
+  it("取消した当事者も付けられる。ghost 相手の行に生きている側が付けられる", async () => {
+    const { eventId, a, b, c } = await setup();
+    await addExpense(eventId, a, a.id, 3000, [a.id, b.id, c.id]);
+    await setStatus(eventId, b.id, "canceled");
+    await json(await req(donePath(eventId, b.id, a.id), b, "PUT", { amount: 1000 }));
+
+    bindEnv(env as unknown as Env);
+    const ghost = await accountDeletionRepo.ensureDeletedUser();
+    await accountDeletionRepo.deleteAccount(a.id, ghost.id);
+    await json(await req(donePath(eventId, c.id, ghost.id), c, "PUT", { amount: 1000 }));
+    expect(rowOf(await ledgerOf(eventId, c), c.id, ghost.id)!.done).toMatchObject({ markedBy: c.id });
+  });
+
+  it("応答の settlements に「済み」以外の支払いの状態が無い（strict parse）", async () => {
+    const { eventId, a, b } = await setup();
+    await addExpense(eventId, a, a.id, 1000, [a.id, b.id]);
+    await json(await req(donePath(eventId, b.id, a.id), b, "PUT", { amount: 500 }));
+    const ledger = await ledgerOf(eventId, a);
+    const strictRow = z
+      .object({
+        fromUserId: z.string(),
+        toUserId: z.string(),
+        amount: z.number(),
+        breakdown: z.array(z.unknown()),
+        done: z.object({ markedBy: z.string().nullable(), markedAt: z.number() }).strict().nullable(),
+        canToggle: z.boolean(),
+      })
+      .strict();
+    expect(ledger.settlements).toHaveLength(1);
+    for (const s of ledger.settlements) expect(() => strictRow.parse(s)).not.toThrow();
+    expect(() => warikanLedgerSchema.strict().parse(ledger)).not.toThrow();
+  });
 });
 
 describe("受け取り先 (#556 §3.6)", () => {
@@ -521,6 +719,92 @@ describe("統合・退会 (#556 §3.3)", () => {
       standing: "deleted",
       selectable: false,
     });
+  });
+
+  it("統合の「済み」: 負け↔勝ち間は消え、PK が衝突すれば勝ち側が残り、負け側だけなら勝ち側へ移る", async () => {
+    const { eventId, a: x, b: w, c: y } = await setup();
+    const l = await makeUser("L");
+    await addMember(eventId, l.id);
+    const done = (actor: Actor, from: string, to: string, amount: number) =>
+      req(`/events/${eventId}/warikan/settlements/${from}/${to}/done`, actor, "PUT", { amount });
+    // X の立替を X・W・L で → W→X 1,000・L→X 1,000（両方に印）
+    await addExpense(eventId, x, x.id, 3000, [x.id, w.id, l.id]);
+    await json(await done(w, w.id, x.id, 1000));
+    await json(await done(l, l.id, x.id, 1000));
+    // W の立替を W・L で → L→W 300（負け→勝ち。統合後は自分→自分）
+    await addExpense(eventId, w, w.id, 600, [w.id, l.id]);
+    await json(await done(l, l.id, w.id, 300));
+    // Y の立替を Y・L で → L→Y 500（負け側だけに印）
+    await addExpense(eventId, y, y.id, 1000, [y.id, l.id]);
+    await json(await done(l, l.id, y.id, 500));
+
+    bindEnv(env as unknown as Env);
+    await accountMergeRepo.mergeUsers(w.id, l.id);
+
+    const rows = await env.DB.prepare(
+      `SELECT from_user_id AS f, to_user_id AS t, amount, marked_by AS m
+         FROM event_settlement_done WHERE event_id = ? ORDER BY amount`,
+    )
+      .bind(eventId)
+      .all<{ f: string; t: string; amount: number; m: string | null }>();
+    expect(rows.results).toEqual([
+      { f: w.id, t: y.id, amount: 500, m: w.id },
+      { f: w.id, t: x.id, amount: 1000, m: w.id },
+    ]);
+    const ledger = await ledgerOf(eventId, w);
+    const row = (from: string, to: string) =>
+      ledger.settlements.find((s) => s.fromUserId === from && s.toUserId === to)!;
+    // W→X は重みが合算されて 2,000 になり、記録時の 1,000 と合わないので効かない
+    expect(row(w.id, x.id)).toMatchObject({ amount: 2000, done: null });
+    // L→Y は W→Y に移り、額が同じなので効いたまま。marked_by は勝ち側
+    expect(row(w.id, y.id)).toMatchObject({ amount: 500, done: { markedBy: w.id } });
+  });
+
+  it("退会の「済み」: from/to が ghost に移って marked_by は NULL。ghost に合流して額が変わった印は効かない", async () => {
+    const { eventId, a, b, c } = await setup();
+    const d = await makeUser("D");
+    await addMember(eventId, d.id);
+    const done = (actor: Actor, from: string, to: string, amount: number) =>
+      req(`/events/${eventId}/warikan/settlements/${from}/${to}/done`, actor, "PUT", { amount });
+    // A の 1,000円を4人 → B・C・D→A 250。B の 300円を B・C・D → C・D→B 100
+    await addExpense(eventId, a, a.id, 1000, [a.id, b.id, c.id, d.id]);
+    await addExpense(eventId, b, b.id, 300, [b.id, c.id, d.id]);
+    await json(await done(b, b.id, a.id, 250));
+    await json(await done(c, c.id, a.id, 250));
+    await json(await done(c, c.id, b.id, 100));
+    await json(await done(d, d.id, b.id, 100));
+    const before = await ledgerOf(eventId, a);
+
+    bindEnv(env as unknown as Env);
+    const ghost = await accountDeletionRepo.ensureDeletedUser();
+    await accountDeletionRepo.deleteAccount(b.id, ghost.id);
+    const row = (l: WarikanLedger, from: string, to: string) =>
+      l.settlements.find((s) => s.fromUserId === from && s.toUserId === to)!;
+    let ledger = await ledgerOf(eventId, a);
+    expect(row(ledger, ghost.id, a.id)).toMatchObject({ amount: 250, done: { markedBy: null } });
+    expect(row(ledger, c.id, ghost.id)).toMatchObject({ amount: 100, done: { markedBy: c.id } });
+    expect(row(ledger, d.id, ghost.id)).toMatchObject({ amount: 100, done: { markedBy: d.id } });
+
+    // C も退会: C↔ghost の印は消え、C→A は ghost→A と PK が衝突するので C 側を消す
+    await accountDeletionRepo.deleteAccount(c.id, ghost.id);
+    ledger = await ledgerOf(eventId, a);
+    expect(row(ledger, ghost.id, a.id)).toMatchObject({ amount: 500, done: null });
+    expect(row(ledger, d.id, ghost.id)).toMatchObject({ amount: 100, done: { markedBy: d.id } });
+    expect(await count("SELECT COUNT(*) AS n FROM event_settlement_done WHERE event_id = ?", eventId)).toBe(2);
+    // 第三者（A・D）の収支は「済み」を含めて動かない
+    expect(netOf(ledger)[a.id]).toBe(netOf(before)[a.id]);
+    expect(netOf(ledger)[d.id]).toBe(netOf(before)[d.id]);
+  });
+
+  it("hasActivity は「済み」の from / to だけが残った人も実績として数える", async () => {
+    const { eventId, a, b } = await setup();
+    const id = await addExpense(eventId, a, a.id, 1000, [a.id, b.id]);
+    await json(await req(`/events/${eventId}/warikan/settlements/${b.id}/${a.id}/done`, b, "PUT", { amount: 500 }));
+    // 立替を消しても「済み」の行は残る（stale）。メンバー行も消す
+    await json(await req(`/events/${eventId}/warikan/expenses/${id}`, a, "DELETE"));
+    await env.DB.prepare("DELETE FROM event_member WHERE event_id = ?").bind(eventId).run();
+    bindEnv(env as unknown as Env);
+    expect(await accountDeletionRepo.hasActivity(b.id)).toBe(true);
   });
 
   it("退会申請中の人は displayName: null。hasActivity が帳簿の当事者を実績として数える", async () => {

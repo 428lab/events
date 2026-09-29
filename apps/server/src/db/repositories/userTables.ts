@@ -53,6 +53,10 @@ export const SHARED_CONTENT_OWNER_COLUMNS: ReadonlyArray<
  * 負け側の行を捨てる（uniqueKeyed）と重みが落ちて第三者の負担額が動くので、
  * **重みを合算**する。Σweight が変わらないので第三者の負担額は1円も動かない
  * （docs/warikan.md §3.3「退会・統合」）。
+ *
+ * 「済み」(event_settlement_done) は PK (event, from, to) と CHECK (from <> to) を持つので、
+ * user_follow (4) の型で**先に消してから**付け替える。消える・残るのは印だけで金額は動かない
+ * （額が変わった行の印は、記録時額と一致しなくなって自動的に外れる。§3.5.1）。
  */
 export const LEDGER_PARTY_REASSIGN_SQL: ReadonlyArray<string> = [
   // (a) 同じ立替に移す先の負担行があれば、重みを足し込む
@@ -67,6 +71,25 @@ export const LEDGER_PARTY_REASSIGN_SQL: ReadonlyArray<string> = [
       AND expense_id IN (SELECT expense_id FROM event_expense_share WHERE user_id = ?2)`,
   // (c) 残りを付け替える（もう PK は衝突しない）
   `UPDATE event_expense_share SET user_id = ?2 WHERE user_id = ?1`,
+  // (d) 両者間の「済み」を消す（付け替えると from = to になり CHECK に当たる。統合後はその精算の行自体が無い）
+  `DELETE FROM event_settlement_done
+    WHERE (from_user_id = ?1 AND to_user_id = ?2) OR (from_user_id = ?2 AND to_user_id = ?1)`,
+  // (e) from を付け替えたとき PK が衝突する行（移す先が同じ相手に既に「済み」を持つ）は、移す元を消す（移す先優先）
+  `DELETE FROM event_settlement_done
+    WHERE from_user_id = ?1
+      AND EXISTS (SELECT 1 FROM event_settlement_done w
+                   WHERE w.event_id = event_settlement_done.event_id
+                     AND w.from_user_id = ?2 AND w.to_user_id = event_settlement_done.to_user_id)`,
+  // (f) from を付け替える
+  `UPDATE event_settlement_done SET from_user_id = ?2 WHERE from_user_id = ?1`,
+  // (g) to についても同じ
+  `DELETE FROM event_settlement_done
+    WHERE to_user_id = ?1
+      AND EXISTS (SELECT 1 FROM event_settlement_done w
+                   WHERE w.event_id = event_settlement_done.event_id
+                     AND w.from_user_id = event_settlement_done.from_user_id AND w.to_user_id = ?2)`,
+  // (h)
+  `UPDATE event_settlement_done SET to_user_id = ?2 WHERE to_user_id = ?1`,
 ];
 
 /**
@@ -109,6 +132,9 @@ export const ACTIVITY_TABLES: ReadonlyArray<[table: string, col: string]> = [
   // イベントから外された後に帳簿の行だけが残った人を「実績なし」にしない
   ["event_expense", "payer_user_id"],
   ["event_expense_share", "user_id"],
+  // 「済み」の行は立替を消しても残りうる（§3.5.1 の stale 行）ので、from / to も数える
+  ["event_settlement_done", "from_user_id"],
+  ["event_settlement_done", "to_user_id"],
 ];
 
 // event_access_invite: user_id CASCADE / invited_by SET NULL on account deletion.
