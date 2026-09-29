@@ -171,7 +171,12 @@ describe("イベントデザインの印刷 (#506)", () => {
     const cards = Array.from({ length: 21 }, (_, i) => card({ id: `u-${i}`, name: `参加者${i}` }));
     mockApi("staff", cards, createCardTemplate("name"));
     const { container } = renderPage();
-    await waitFor(() => expect(printedNames()).toHaveLength(21));
+    // 名簿の読み込みと、6枚ずつの描き足し (RENDER_STEP) は別々の非同期段階。
+    // 1つの waitFor にまとめると負荷の高い CI で合計が既定の待ち時間を超え、18枚などで止まる (#573)。
+    // 画面に出る目印（名簿のチェックボックス → 作成中表示が消える）で段階ごとに待つ
+    await screen.findByRole("checkbox", { name: "参加者0 を印刷する" });
+    await waitFor(() => expect(screen.queryByText(/カードを作成しています/)).not.toBeInTheDocument());
+    expect(printedNames()).toHaveLength(21);
     expect(container.querySelectorAll('[data-name-card-selection] input')).toHaveLength(20);
     fireEvent.click(screen.getByRole("checkbox", { name: "参加者0 を印刷する" }));
     fireEvent.click(screen.getByRole("button", { name: "次のページ" }));
