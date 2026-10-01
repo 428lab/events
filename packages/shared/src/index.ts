@@ -19,6 +19,7 @@ export * from "./liveSets.js";
 export * from "./liveCutin.js";
 export * from "./liveVisuals.js";
 export * from "./photos.js";
+export * from "./svgAvatar.js";
 export * from "./eventBroadcast.js";
 export * from "./eventChat.js";
 export * from "./staffChat.js";

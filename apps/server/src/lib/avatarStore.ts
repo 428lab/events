@@ -231,8 +231,9 @@ export async function syncAvatarFromSource(
       return skip(userId, "status", ` status=${res.status} host=${hostOf(url)}`);
     }
 
-    // 連携先が返す MIME をそのまま信用せず、アップロードと同じ許可リストに通す
-    // （SVG は script を持てるため配信対象にしない）
+    // 連携先が返す MIME をそのまま信用せず、ラスタ画像の許可リストに通す
+    // （SVG は script を持てるため取り込まない。SVG を受け付けるのは本人の
+    // アップロード (routes/avatarUpload.ts, #576) だけ）
     const ct = res.headers.get("content-type") ?? undefined;
     const mime = normalizeImageMime(ct);
     if (!mime) {
