@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>炎のフレーム 試作（#566 デザイン見本）</title>
+<!--
+  #566 「炎のフレーム」デザイン専用の試作。プロダクトのコードではない。
+  炎は 1 枚の <canvas> に WebGL のフラグメントシェーダーで手続き的に描く（外部ライブラリ・画像・通信なし）。
+  - 枠（角丸の四角形）までの符号付き距離 d と、外周に沿った長さ s を画素ごとに求め、
+    (s, d - 時間) の座標でドメインワープした fbm ノイズを流すことで、炎の舌が枠から外へ連続的に流れ出る。
+    s は外周 1 周で周期的なノイズを使うので、つなぎ目や繰り返しが見えない。
+  - 温度（heat）から色を引く: 枠ぎわは白〜黄の芯、外へ行くほど橙→深紅→透明。
+  - 縮小バッファで 2 回ぼかした光を足してグロー（ブルーム）にする。火の粉も同じシェーダーで描く。
+  - 枠の内側（d < 0）は必ず透明。カメラの顔や資料の本文には何も重ねない。
+  画面内のスライド・カメラ・氏名はすべてダミー（見本）。
+  URL パラメータ（OBS ブラウザソースや撮影用）:
+    view=output            操作パネルを隠し、ステージだけを全画面表示
+    theme=ember|azure|violet|hakuji
+    place=screen|camera|deck
+    flicker=0..100  height=16..72  thickness=2..12  radius=0..48  embers=0..100
+    pause=1                一時停止（編集中のプレビュー）
+    motion=reduce          動きを減らした静止表示を強制
+    t=秒                   その時刻の 1 コマだけを描いて止める（撮影用・決定的）
+    guide=1                安全領域の枠を表示
+-->
+<style>
+  :root {
+    --ui-bg: #0B1220; --ui-panel: #141E30; --ui-line: #2A3A52; --ui-ink: #E8EEF6; --ui-sub: #9DB0C8; --ui-accent: #2DD4BF;
+    --f-mid: #FF9A2E; --stage-bg: #0E1426;
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+  }
+  html[data-theme="azure"]  { --f-mid: #58C8FF; }
+  html[data-theme="violet"] { --f-mid: #DA7CFF; }
+  html[data-theme="hakuji"] { --f-mid: #E2AE47; --stage-bg: #F6F2EA; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ui-bg); color: var(--ui-ink); }
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; padding: 20px; min-height: 100vh; }
+  header.top { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header.top h1 { margin: 0; font-size: 22px; letter-spacing: .04em; }
+  header.top p { margin: 0; color: var(--ui-sub); font-size: 13px; }
+  .stage-wrap { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; outline: 1px solid var(--ui-line); }
+  .panel { background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 14px; align-self: start; }
+  .panel h2 { margin: 0; font-size: 15px; }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .field .row { display: flex; justify-content: space-between; color: var(--ui-sub); }
+  .field .row b { color: var(--ui-ink); font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; accent-color: var(--ui-accent); }
+  .seg { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .seg.three { grid-template-columns: repeat(3, 1fr); }
+  .seg button { font: inherit; font-size: 12px; padding: 7px 4px; color: var(--ui-ink); background: #1B2840; border: 1px solid var(--ui-line); border-radius: 8px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { border-color: var(--ui-accent); background: #123A40; }
+  .seg button .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  label.check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ui-sub); }
+  .meta { font-size: 11px; color: var(--ui-sub); line-height: 1.6; border-top: 1px solid var(--ui-line); padding-top: 10px; }
+  .meta b { color: var(--ui-ink); font-variant-numeric: tabular-nums; }
+
+  /* ---- output mode (OBS browser source / capture) ---- */
+  body.output { background: transparent; overflow: hidden; }
+  body.output .app { display: block; padding: 0; }
+  body.output header.top, body.output .panel { display: none; }
+  body.output .stage-wrap { width: 100vw; height: 100vh; aspect-ratio: auto; border-radius: 0; outline: none; }
+
+  /* ---- 960x540 logical stage, scaled like LiveSceneStage ---- */
+  .stage { position: absolute; left: 0; top: 0; width: 960px; height: 540px; transform-origin: top left; background: var(--stage-bg); overflow: hidden; }
+  html:not([data-theme="hakuji"]) .stage { background: radial-gradient(120% 90% at 50% 45%, #16213A 0%, #0E1426 55%, #080C18 100%); }
+
+  /* mock content — clearly dummy */
+  .mock { position: absolute; overflow: hidden; }
+  .mock-slide { background: #F4F1EA; color: #1E2A3C; padding: 26px 30px; display: flex; flex-direction: column; gap: 12px; }
+  .mock-slide .kicker { font-size: 13px; font-weight: 700; color: #B0452F; letter-spacing: .08em; }
+  .mock-slide h3 { margin: 0; font-size: 30px; line-height: 1.25; }
+  .mock-slide ul { margin: 4px 0 0; padding-left: 1.2em; font-size: 17px; line-height: 1.7; }
+  .mock-slide .foot { margin-top: auto; font-size: 12px; color: #6A7686; }
+  .mock-camera { background: linear-gradient(160deg, #2B3A52 0%, #1A2436 70%); }
+  .mock-camera svg { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); height: 86%; }
+  .mock-tag { position: absolute; left: 10px; top: 10px; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: rgba(0,0,0,.55); color: #fff; letter-spacing: .04em; }
+  .mock-slide .mock-tag { left: auto; right: 10px; background: rgba(30,42,60,.85); }
+  .name-plate { position: absolute; background: #1A2737; color: #EAF0F7; padding: 8px 14px; border-left: 4px solid var(--f-mid); }
+  .name-plate b { display: block; font-size: 19px; }
+  .name-plate span { font-size: 13px; color: #B9C6D6; }
+  html[data-theme="hakuji"] .name-plate { background: #203146; }
+  html[data-theme="hakuji"] .mock-slide { background: #FFFFFF; outline: 1px solid #DCE9DF; }
+  .proto-tag { position: absolute; font-size: 12px; font-weight: 700; letter-spacing: .06em; color: rgba(234,240,247,.85); background: rgba(8,12,24,.55); padding: 4px 10px; border-radius: 4px; }
+  html[data-theme="hakuji"] .proto-tag { color: #203146; background: rgba(255,255,255,.8); }
+  .guide { position: absolute; border: 1.5px dashed #2DD4BF; pointer-events: none; display: none; }
+  .guide::after { content: "安全領域（炎を入れない）"; position: absolute; left: 6px; bottom: 4px; font-size: 11px; color: #2DD4BF; }
+  .stage.show-guide .guide { display: block; }
+
+
+  /* ---- flame frame: one canvas, positioned over the frame bbox + flame margin ---- */
+  #flame { position: absolute; pointer-events: none; display: block; }
+  .no-webgl { position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #fff; background: rgba(160, 30, 30, .8); padding: 4px 10px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>炎のフレーム 試作 <small style="font-size:13px;color:var(--ui-sub)">#566 デザイン見本</small></h1>
+    <p>WebGL のシェーダーで 1 枚の canvas に描いた試作です。スライド・カメラ・氏名はすべてダミーで、実イベント画面ではありません。</p>
+  </header>
+  <div class="stage-wrap" id="stageWrap">
+    <div class="stage" id="stage">
+      <div id="content"></div>
+      <canvas id="flame" aria-hidden="true"></canvas>
+      <div class="guide" id="guide"></div>
+    </div>
+  </div>
+  <aside class="panel" aria-label="炎のフレームの設定">
+    <h2>炎のフレーム</h2>
+    <div class="field"><div class="row">色</div>
+      <div class="seg" id="themeSeg">
+        <button data-v="ember"><span class="sw" style="background:#FF6A1F"></span>赤橙</button>
+        <button data-v="azure"><span class="sw" style="background:#3A8DFF"></span>青</button>
+        <button data-v="violet"><span class="sw" style="background:#A04BFF"></span>紫</button>
+        <button data-v="hakuji"><span class="sw" style="background:#D9A441"></span>白磁の金</button>
+      </div>
+    </div>
+    <div class="field"><div class="row">囲む場所</div>
+      <div class="seg three" id="placeSeg">
+        <button data-v="screen">画面の縁</button>
+        <button data-v="camera">カメラ</button>
+        <button data-v="deck">資料</button>
+      </div>
+    </div>
+    <div class="field"><div class="row">ゆらぎの強さ <b id="flickerV"></b></div><input type="range" id="flicker" min="0" max="100" step="5"></div>
+    <div class="field"><div class="row">炎の高さ <b id="heightV"></b></div><input type="range" id="height" min="16" max="72" step="2"></div>
+    <div class="field"><div class="row">フレームの太さ <b id="thicknessV"></b></div><input type="range" id="thickness" min="2" max="12" step="1"></div>
+    <div class="field"><div class="row">角丸 <b id="radiusV"></b></div><input type="range" id="radius" min="0" max="48" step="2"></div>
+    <div class="field"><div class="row">火の粉の量 <b id="embersV"></b></div><input type="range" id="embers" min="0" max="100" step="5"></div>
+    <label class="check"><input type="checkbox" id="pause"> 一時停止（編集中のプレビュー）</label>
+    <label class="check"><input type="checkbox" id="reduce"> 動きを減らす（静止した炎）</label>
+    <label class="check"><input type="checkbox" id="guideChk"> 安全領域を表示</label>
+    <div class="meta" id="meta"></div>
+  </aside>
+</div>
+<script id="vs" type="x-shader/x-vertex">
+attribute vec2 aPos;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
+</script>
+<script id="fs-common" type="x-shader/x-fragment">
+precision highp float;
+uniform vec2 uRes;      // backing-store size of the current target (device px)
+uniform vec2 uScale;    // backing px per logical stage px (canvas)
+uniform vec2 uOrigin;   // canvas top-left in logical stage px
+uniform vec2 uCenter;   // frame rect center (logical px)
+uniform vec2 uHalf;     // frame rect half size (logical px)
+uniform float uR;       // corner radius
+uniform float uT;       // frame line thickness
+uniform float uH;       // nominal flame height
+uniform float uTime;    // flow time (already scaled by the turbulence speed)
+uniform float uClock;   // wall clock seconds (embers, shimmer, flares)
+uniform float uTurb;    // 0..1 turbulence amount
+uniform float uEmber;   // 0..1 ember amount
+uniform float uCells;   // tangential noise cells around the perimeter (multiple of 8)
+uniform float uRp;      // corner arc reference radius for the perimeter parameter
+uniform float uLight;   // 1 = light background (normal alpha blend), 0 = additive look
+
+// logical stage position of this fragment in the canvas target
+vec2 stagePos(vec2 fc, vec2 res) { return uOrigin + vec2(fc.x, res.y - fc.y) / (uScale * res / uRes); }
+
+// Rounded-rect SDF + perimeter parameter.
+// returns (d = signed outward distance, s = arc length, J = tangent px per s-unit, P = perimeter)
+vec4 frameCoords(vec2 p) {
+  vec2 q = p - uCenter;
+  vec2 c = max(uHalf - uR, 0.0);
+  vec2 k = clamp(q, -c, c);
+  vec2 dv = q - k;
+  vec2 qq = abs(q) - c;
+  float d = length(max(qq, 0.0)) + min(max(qq.x, qq.y), 0.0) - uR;
+  float A = 1.5707963 * uRp;
+  float P = 4.0 * c.x + 4.0 * c.y + 4.0 * A;
+  float e = 1e-4, s = 0.0, J = 1.0, ld = length(dv);
+  bool zx = abs(dv.x) < e, zy = abs(dv.y) < e;
+  if (zx && zy) {           // inside the straight skeleton (interior): any continuous value
+    s = k.x + c.x;
+  } else if (zx) {
+    s = dv.y < 0.0 ? k.x + c.x : 2.0 * c.x + 2.0 * A + 2.0 * c.y + (c.x - k.x);
+  } else if (zy) {
+    s = dv.x > 0.0 ? 2.0 * c.x + A + (k.y + c.y) : 4.0 * c.x + 2.0 * c.y + 3.0 * A + (c.y - k.y);
+  } else {
+    J = ld / uRp;
+    if (dv.x > 0.0 && dv.y < 0.0)      s = 2.0 * c.x + atan(dv.x, -dv.y) * uRp;
+    else if (dv.x > 0.0)               s = 2.0 * c.x + A + 2.0 * c.y + atan(dv.y, dv.x) * uRp;
+    else if (dv.y > 0.0)               s = 4.0 * c.x + 2.0 * c.y + 2.0 * A + atan(-dv.x, dv.y) * uRp;
+    else                               s = 4.0 * c.x + 4.0 * c.y + 3.0 * A + atan(-dv.y, -dv.x) * uRp;
+  }
+  return vec4(d, s, max(J, 0.05), P);
+}
+
+vec3 hash33(vec3 p3) {
+  p3 = fract(p3 * vec3(.1031, .1030, .0973));
+  p3 += dot(p3, p3.yxz + 33.33);
+  return fract((p3.xxy + p3.yxx) * p3.zyx);
+}
+// 3D gradient noise, periodic in x with integer period `per`
+float gnoise(vec3 p, float per) {
+  vec3 i = floor(p), f = p - i;
+  vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  float x0 = mod(i.x, per), x1 = mod(i.x + 1.0, per);
+  #define G(X, Y, Z, O) dot(hash33(vec3(X, i.y + Y, i.z + Z)) * 2.0 - 1.0, f - O)
+  float a = G(x0, 0.0, 0.0, vec3(0.0, 0.0, 0.0)), b = G(x1, 0.0, 0.0, vec3(1.0, 0.0, 0.0));
+  float cc = G(x0, 1.0, 0.0, vec3(0.0, 1.0, 0.0)), dd = G(x1, 1.0, 0.0, vec3(1.0, 1.0, 0.0));
+  float e1 = G(x0, 0.0, 1.0, vec3(0.0, 0.0, 1.0)), f1 = G(x1, 0.0, 1.0, vec3(1.0, 0.0, 1.0));
+  float g1 = G(x0, 1.0, 1.0, vec3(0.0, 1.0, 1.0)), h1 = G(x1, 1.0, 1.0, vec3(1.0, 1.0, 1.0));
+  #undef G
+  return mix(mix(mix(a, b, u.x), mix(cc, dd, u.x), u.y), mix(mix(e1, f1, u.x), mix(g1, h1, u.x), u.y), u.z);
+}
+</script>
+<script id="fs-flame" type="x-shader/x-fragment">
+uniform vec3 uRamp0, uRamp1, uRamp2, uRamp3, uRamp4;
+
+float fbm(vec3 p, float per, int oct) {
+  float sum = 0.0, amp = 0.5;
+  for (int i = 0; i < 5; i++) {
+    if (i >= oct) break;
+    sum += amp * gnoise(p, per);
+    p = p * vec3(2.0, 2.03, 1.9) + vec3(0.0, 11.7, 3.1);
+    per *= 2.0; amp *= 0.5;
+  }
+  return sum;
+}
+
+vec3 ramp(float h) {
+  if (h < 0.25) return mix(uRamp0, uRamp1, h / 0.25);
+  if (h < 0.5) return mix(uRamp1, uRamp2, (h - 0.25) / 0.25);
+  if (h < 0.8) return mix(uRamp2, uRamp3, (h - 0.5) / 0.3);
+  return mix(uRamp3, uRamp4, smoothstep(0.8, 1.0, h));
+}
+
+// periodic distance along the perimeter
+float pdist(float a, float b, float P) { float x = mod(a - b + 0.5 * P, P) - 0.5 * P; return x; }
+
+// Embers: small hot particles born in the flames and shot outward along the normal.
+float embers(float s, float v, float J, float P) {
+  if (uEmber <= 0.0) return 0.0;
+  float nE = floor(P / mix(90.0, 16.0, uEmber));
+  float cell = P / nE;
+  float ci = floor(s / cell);
+  float acc = 0.0;
+  for (int j = -1; j <= 1; j++) {
+    float c = mod(ci + float(j), nE);
+    for (int k = 0; k < 2; k++) {
+      vec3 h0 = hash33(vec3(c, float(k) * 7.0 + 1.0, 3.0));
+      float life = 0.9 + 1.3 * h0.x;
+      float ph = uClock / life + h0.y;
+      float m = floor(ph), a = ph - m;
+      vec3 r = hash33(vec3(c + 0.37, float(k) + 13.0, m));
+      vec3 r2 = hash33(vec3(m, c * 1.7, float(k) + 5.0));
+      float travel = uH * (0.7 + 2.0 * r.y) * a * (1.0 - 0.35 * a);
+      float vp = uT * 0.5 + uH * 0.25 * r.z + travel;
+      float drift = (r2.x - 0.5) * cell * 0.9 * a + sin(uClock * (2.0 + 3.0 * r2.y) + r2.z * 30.0) * 3.0 * a;
+      float sp = (c + r.x) * cell;
+      float ds = pdist(s, sp, P) * J - drift;
+      float dvv = v - vp;
+      float size = 0.55 + 0.9 * r2.y * r2.y;
+      float streak = 1.0 + 1.6 * (1.0 - a);             // stretched along the outward velocity while fast
+      float g = exp(-(ds * ds) / (size * size) - (dvv * dvv) / (size * size * streak * streak));
+      float fade = smoothstep(0.0, 0.08, a) * pow(1.0 - a, 1.4);
+      float flick = 0.55 + 0.45 * sin(uClock * (18.0 + 20.0 * r.z) + r2.x * 40.0);
+      acc += g * fade * flick * step(r2.z, 0.35 + 0.65 * uEmber);
+    }
+  }
+  return acc;
+}
+
+void main() {
+  vec2 p = stagePos(gl_FragCoord.xy, uRes);
+  vec4 fc = frameCoords(p);
+  float d = fc.x, s = fc.y, J = fc.z, P = fc.w;
+  if (d <= 0.0) { gl_FragColor = vec4(0.0); return; }
+  float v = d - uT * 0.5;
+  float y = max(v, 0.0) / uH;
+  if (y > 3.6) { gl_FragColor = vec4(0.0); return; }
+
+  float X = s / P * uCells;                 // perimeter coordinate in noise cells (periodic, seamless)
+  float cellH = 30.0 + uH * 0.35;           // outward noise scale: tongues are longer than wide
+  float V = max(v, 0.0) / cellH;
+  float t = uTime;
+
+  // tongue length varies slowly and organically around the frame
+  float lenN = gnoise(vec3(X * 0.125, 0.5, t * 0.22 + 4.0), uCells * 0.125);
+  float lenN2 = gnoise(vec3(X * 0.5, 2.5, t * 0.45), uCells * 0.5);
+  // flare surges: bright bulges that occasionally travel around the frame
+  float flare = 0.0;
+  for (int i = 0; i < 2; i++) {
+    float fi = float(i);
+    float period = 5.5 + 2.5 * fi;
+    float cyc = uClock / period + fi * 0.43;
+    float m = floor(cyc), a = cyc - m;
+    vec3 r = hash33(vec3(m, fi + 21.0, 9.0));
+    float dir = r.x < 0.5 ? -1.0 : 1.0;
+    float pos = r.y * P + dir * a * P * (0.35 + 0.3 * r.z);
+    float ds = pdist(s, pos, P);
+    float env = smoothstep(0.0, 0.15, a) * smoothstep(1.0, 0.6, a) * step(0.3, r.z + 0.25);
+    flare += env * exp(-ds * ds / (2.0 * 70.0 * 70.0));
+  }
+  float L = 0.95 + 0.55 * lenN + 0.3 * lenN2 + 0.55 * flare;
+
+  // domain warp: licks curl and split as they travel outward
+  vec3 wp = vec3(X * 0.5, V * 0.6 - t * 0.9, t * 0.3);
+  float w1 = fbm(wp, uCells * 0.5, 2);
+  float w2 = fbm(wp + vec3(3.0, 7.1, 1.7), uCells * 0.5, 2);
+  float warpK = (0.35 + 1.1 * y) * (0.4 + uTurb);
+  vec3 np = vec3(X + w1 * warpK * 1.6, V - t * 1.7 + w2 * warpK, t * 0.5);
+  float n = fbm(np, uCells, 5);
+
+  float amp = 0.45 + 0.9 * uTurb;
+  // separate licks: a tangential ridge field that opens dark gaps between tongues as they leave the frame
+  float lick = gnoise(vec3(X * 1.5 + w1 * 0.8, V * 0.35 - t * 0.9, t * 0.25 + 7.0), uCells * 1.5);
+  float heat = 0.84 - 0.95 * y / L;
+  heat += n * (1.1 + 1.5 * y) * amp;
+  heat += lick * smoothstep(0.05, 0.6, y) * (0.55 + 0.4 * uTurb);
+  heat -= 0.15 * y * y;
+  // outer edge of the flame body breaks up into wisps
+  heat *= 1.0 + 0.35 * flare;
+
+  // the frame line itself: a crisp white-hot band
+  float px = 1.0 / uScale.x;
+  float line = 1.0 - smoothstep(uT - 0.5 * px, uT + px, d);
+  heat = max(heat, line * (0.9 + 0.1 * n));
+
+  float h = clamp(heat, 0.0, 1.0);
+  float body = smoothstep(0.02, 0.3, heat);
+  vec3 col = ramp(h);
+  float e = embers(s, v, J, P);
+  vec3 ecol = mix(uRamp3, uRamp4, 0.6);
+
+  vec4 o;
+  if (uLight > 0.5) {
+    // light background: normal alpha, darker amber edges so it does not wash out
+    float a = body * (0.12 + 0.83 * smoothstep(0.0, 0.85, h));
+    o = vec4(col * a, a);
+    float ea = clamp(e, 0.0, 1.0) * 0.9;
+    o = vec4(ecol * ea + o.rgb * (1.0 - ea), ea + o.a * (1.0 - ea));
+  } else {
+    // dark background: emit more light than coverage -> additive look when composited
+    float glow = body * (0.22 + 0.9 * h * h);
+    o = vec4(col * glow, body * (0.12 + 0.55 * h));
+    o.rgb += ecol * e * 1.4;
+    o.a += e * 0.35;
+  }
+  gl_FragColor = clamp(o, 0.0, 1.0);
+}
+</script>
+<script id="fs-blur" type="x-shader/x-fragment">
+uniform sampler2D uTex;
+uniform vec2 uDir;      // texel step in uv
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec4 c = texture2D(uTex, uv) * 0.2270270;
+  c += (texture2D(uTex, uv + uDir * 1.3846154) + texture2D(uTex, uv - uDir * 1.3846154)) * 0.3162162;
+  c += (texture2D(uTex, uv + uDir * 3.2307692) + texture2D(uTex, uv - uDir * 3.2307692)) * 0.0702703;
+  gl_FragColor = c;
+}
+</script>
+<script id="fs-comp" type="x-shader/x-fragment">
+uniform sampler2D uFlame, uBloom;
+uniform float uBloomK;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 p = stagePos(gl_FragCoord.xy, uRes);
+  vec2 q = p - uCenter, c = max(uHalf - uR, 0.0), qq = abs(q) - c;
+  float d = length(max(qq, 0.0)) + min(max(qq.x, qq.y), 0.0) - uR;
+  // inside the frame stays exactly transparent (camera face / slide never covered)
+  float inside = clamp(d * uScale.x, 0.0, 1.0);
+  if (inside <= 0.0) { gl_FragColor = vec4(0.0); return; }
+  // heat shimmer: the flame tips wobble as if seen through hot air; the frame line stays crisp
+  float v = d - uT;
+  float sh = smoothstep(0.15 * uH, 1.3 * uH, v) * (0.6 + 1.6 * uTurb);
+  vec2 wob = vec2(sin(p.y * 0.21 + uClock * 9.0 + sin(p.x * 0.07 + uClock * 2.3) * 2.0),
+                  cos(p.x * 0.19 - uClock * 8.0 + sin(p.y * 0.05 - uClock * 1.7) * 2.0)) * sh;
+  vec2 duv = wob * uScale / uRes * vec2(1.0, -1.0);
+  vec4 f = texture2D(uFlame, uv + duv);
+  vec4 b = texture2D(uBloom, uv + duv * 0.5);
+  vec4 o;
+  if (uLight > 0.5) {
+    b *= uBloomK;
+    o = f + b * (1.0 - f.a);
+  } else {
+    o = f + vec4(b.rgb * uBloomK, b.a * uBloomK * 0.25);
+  }
+  gl_FragColor = clamp(o, 0.0, 1.0) * inside;
+}
+</script>
+<script>
+(() => {
+  const W = 960, H = 540;
+  const q = new URLSearchParams(location.search);
+  const clamp = (v, lo, hi, d) => { if (v === null || v === "") return d; const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+  const THEMES = ["ember", "azure", "violet", "hakuji"], PLACES = ["screen", "camera", "deck"];
+  const state = {
+    theme: THEMES.includes(q.get("theme")) ? q.get("theme") : "ember",
+    place: PLACES.includes(q.get("place")) ? q.get("place") : "screen",
+    flicker: clamp(q.get("flicker"), 0, 100, 60),
+    height: clamp(q.get("height"), 16, 72, 44),
+    thickness: clamp(q.get("thickness"), 2, 12, 4),
+    radius: clamp(q.get("radius"), 0, 48, 16),
+    embers: clamp(q.get("embers"), 0, 100, 50),
+    pause: q.get("pause") === "1",
+    reduce: q.get("motion") === "reduce",
+    guide: q.get("guide") === "1",
+  };
+  const fixedTime = q.has("t") ? clamp(q.get("t"), 0, 1e6, 0) : null;
+  if (q.get("view") === "output") document.body.classList.add("output");
+
+  const stage = document.getElementById("stage"), wrap = document.getElementById("stageWrap");
+  const content = document.getElementById("content"), guide = document.getElementById("guide"), canvas = document.getElementById("flame");
+
+  // Temperature ramps: smoky edge -> deep -> mid -> hot -> white core.
+  const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+  const RAMPS = {
+    ember:  ["#2A0602", "#A3170A", "#F2560F", "#FFB22E", "#FFF6DA"],
+    azure:  ["#020624", "#0B2AA6", "#1F6BFF", "#62CCFF", "#F0FFFF"],
+    violet: ["#14031F", "#5A0FA8", "#A33CFF", "#EA86FF", "#FFF2FF"],
+    hakuji: ["#6A3A08", "#94580F", "#BC7E1C", "#D69F3C", "#F2CF7E"],
+  };
+
+  const personSvg = `<svg viewBox="0 0 200 220" aria-hidden="true"><circle cx="100" cy="70" r="42" fill="#5B6E8C"/><path d="M18 220C22 150 58 124 100 124C142 124 178 150 182 220Z" fill="#5B6E8C"/></svg>`;
+  const slide = (big) => `<div class="kicker">見本スライド</div><h3>${big ? "地域とつくる<br>オープンな勉強会" : "地域とつくる<br>オープンな勉強会"}</h3><ul><li>ダミーの箇条書き 1：読みやすさの確認用</li><li>ダミーの箇条書き 2：本文は炎で隠さない</li>${big ? "<li>ダミーの箇条書き 3：中央は常に空ける</li>" : ""}</ul><div class="foot">これはデザイン確認用の見本資料です</div><span class="mock-tag">ダミー資料</span>`;
+
+  // Layout per placement: content rectangles and the rectangle the flames surround.
+  function layout(place) {
+    if (place === "screen") {
+      // The frame line is inset from the screen edge; flames radiate outward toward (and off) the screen edge.
+      const deck = { x: 84, y: 66, w: 792, h: 408 }, inset = 44;
+      return { target: { x: inset, y: inset, w: W - inset * 2, h: H - inset * 2 }, safe: deck, edge: inset,
+        html: `<div class="mock mock-slide" style="left:${deck.x}px;top:${deck.y}px;width:${deck.w}px;height:${deck.h}px">${slide(true)}</div>
+               <div class="proto-tag" style="right:96px;top:78px;display:none"></div>` };
+    }
+    const deck = { x: 56, y: 92, w: 524, h: 332 }, cam = { x: 632, y: 110, w: 276, h: 206 };
+    const target = place === "camera" ? cam : deck;
+    return { target, safe: target, edge: 0,
+      html: `<div class="mock mock-slide" style="left:${deck.x}px;top:${deck.y}px;width:${deck.w}px;height:${deck.h}px">${slide(false)}</div>
+             <div class="mock mock-camera" style="left:${cam.x}px;top:${cam.y}px;width:${cam.w}px;height:${cam.h}px">${personSvg}<span class="mock-tag">ダミーカメラ映像</span></div>
+             <div class="name-plate" style="left:${cam.x}px;top:${cam.y + cam.h + 84}px;width:${cam.w}px"><b>登壇者名（見本）</b><span>所属・役割（見本）</span></div>` };
+  }
+  const osReduce = matchMedia("(prefers-reduced-motion: reduce)");
+  const reduced = () => state.reduce || osReduce.matches;
+
+  // ---------- WebGL ----------
+  const glOpts = { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true };
+  const gl = canvas.getContext("webgl2", glOpts) || canvas.getContext("webgl", glOpts);
+  const glVersion = gl ? (typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext ? "WebGL2" : "WebGL1") : "なし";
+  let progs = null, quad = null;
+  const src = id => document.getElementById(id).textContent;
+  function compile(fsId) {
+    const mk = (type, text) => { const sh = gl.createShader(type); gl.shaderSource(sh, text); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh)); return sh; };
+    const p = gl.createProgram();
+    gl.attachShader(p, mk(gl.VERTEX_SHADER, src("vs")));
+    gl.attachShader(p, mk(gl.FRAGMENT_SHADER, src("fs-common") + src(fsId)));
+    gl.bindAttribLocation(p, 0, "aPos"); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+    return { p, u };
+  }
+  function makeTarget(w, h) {
+    const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    return { tex, fb, w, h };
+  }
+  let glError = "";
+  if (gl) {
+    try {
+      progs = { flame: compile("fs-flame"), blur: compile("fs-blur"), comp: compile("fs-comp") };
+      quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    } catch (e) { glError = String(e.message || e); progs = null; console.error(glError); }
+  }
+
+  // ---------- geometry of the flame canvas ----------
+  let geo = null, targets = null;
+  const MAX_PIXELS = 1.4e6;       // cap on flame canvas backing pixels (1080p OBS budget)
+  function stageScale() {
+    const sx = wrap.clientWidth / W;
+    const sy = document.body.classList.contains("output") ? wrap.clientHeight / H : sx;
+    return { sx, sy };
+  }
+  function computeGeometry() {
+    const L = layout(state.place);
+    const rect = L.target, T = state.thickness, Hf = state.height;
+    const margin = Math.ceil(T + Hf * 2.9 + 12);
+    const x0 = Math.max(0, rect.x - margin), y0 = Math.max(0, rect.y - margin);
+    const x1 = Math.min(W, rect.x + rect.w + margin), y1 = Math.min(H, rect.y + rect.h + margin);
+    const cw = x1 - x0, ch = y1 - y0;
+    const { sx, sy } = stageScale(), dpr = window.devicePixelRatio || 1;
+    // full-screen mode renders at half resolution and is upscaled; everything is capped by MAX_PIXELS
+    let k = state.place === "screen" ? 0.5 : 1;
+    let bw = cw * sx * dpr * k, bh = ch * sy * dpr * k;
+    if (bw * bh > MAX_PIXELS) { const f = Math.sqrt(MAX_PIXELS / (bw * bh)); bw *= f; bh *= f; }
+    bw = Math.max(2, Math.round(bw)); bh = Math.max(2, Math.round(bh));
+    const R = Math.max(0, Math.min(state.radius, rect.w / 2, rect.h / 2));
+    const Rp = R + Hf * 0.6 + 8;
+    const c = [Math.max(rect.w / 2 - R, 0), Math.max(rect.h / 2 - R, 0)];
+    const P = 4 * c[0] + 4 * c[1] + 2 * Math.PI * Rp;
+    const cells = Math.max(8, Math.round(P / 24 / 8) * 8);
+    Object.assign(canvas.style, { left: x0 + "px", top: y0 + "px", width: cw + "px", height: ch + "px" });
+    canvas.width = bw; canvas.height = bh;
+    geo = { rect, L, x0, y0, cw, ch, bw, bh, R, Rp, P, cells };
+    if (gl && progs) {
+      if (targets) for (const t of Object.values(targets)) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); }
+      const qw = Math.max(1, Math.ceil(bw / 4)), qh = Math.max(1, Math.ceil(bh / 4));
+      targets = { flame: makeTarget(bw, bh), a: makeTarget(qw, qh), b: makeTarget(qw, qh) };
+    }
+  }
+
+  function setCommon(prog, res) {
+    const u = prog.u, g = geo, r = g.rect;
+    gl.uniform2f(u.uRes, res[0], res[1]);
+    if (u.uScale) gl.uniform2f(u.uScale, g.bw / g.cw, g.bh / g.ch);
+    if (u.uOrigin) gl.uniform2f(u.uOrigin, g.x0, g.y0);
+    if (u.uCenter) gl.uniform2f(u.uCenter, r.x + r.w / 2, r.y + r.h / 2);
+    if (u.uHalf) gl.uniform2f(u.uHalf, r.w / 2, r.h / 2);
+    if (u.uR) gl.uniform1f(u.uR, g.R);
+    if (u.uT) gl.uniform1f(u.uT, state.thickness);
+    // 白磁の金 stays restrained on the light paper: shorter flames
+    if (u.uH) gl.uniform1f(u.uH, state.height * (state.theme === "hakuji" ? 0.8 : 1));
+    if (u.uTurb) gl.uniform1f(u.uTurb, state.flicker / 100);
+    if (u.uEmber) gl.uniform1f(u.uEmber, state.embers / 100);
+    if (u.uCells) gl.uniform1f(u.uCells, g.cells);
+    if (u.uRp) gl.uniform1f(u.uRp, g.Rp);
+    if (u.uLight) gl.uniform1f(u.uLight, state.theme === "hakuji" ? 1 : 0);
+  }
+  // flow speed follows ゆらぎの強さ; integrate it so dragging the slider never makes the flames jump
+  const flowSpeed = () => 0.55 + 0.9 * (state.flicker / 100);
+  let clock = fixedTime ?? 0, flow = clock * flowSpeed();
+
+  function draw() {
+    if (!gl || !progs || !geo) return;
+    const { flame, blur, comp } = progs, g = geo;
+    gl.disable(gl.BLEND);
+    // 1) flames + frame line + embers at canvas resolution
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targets.flame.fb); gl.viewport(0, 0, g.bw, g.bh);
+    gl.useProgram(flame.p); setCommon(flame, [g.bw, g.bh]);
+    gl.uniform1f(flame.u.uTime, flow); gl.uniform1f(flame.u.uClock, clock);
+    RAMPS[state.theme].forEach((c, i) => gl.uniform3fv(flame.u["uRamp" + i], hex(c)));
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    // 2) bloom: quarter-res separable blur
+    const qa = targets.a, qb = targets.b;
+    gl.useProgram(blur.p); gl.activeTexture(gl.TEXTURE0); gl.uniform1i(blur.u.uTex, 0);
+    const pass = (src, dst, dx, dy) => { gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb); gl.viewport(0, 0, dst.w, dst.h); gl.uniform2f(blur.u.uRes, dst.w, dst.h); gl.bindTexture(gl.TEXTURE_2D, src.tex); gl.uniform2f(blur.u.uDir, dx, dy); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); };
+    pass(targets.flame, qa, 2 / g.bw, 0);
+    pass(qa, qb, 0, 2 / qa.h);
+    pass(qb, qa, 3 / qa.w, 0);
+    pass(qa, qb, 0, 3 / qa.h);
+    // 3) composite to the canvas (inside of the frame masked to exactly transparent)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, g.bw, g.bh);
+    gl.useProgram(comp.p); setCommon(comp, [g.bw, g.bh]);
+    gl.uniform1f(comp.u.uClock, clock);
+    gl.uniform1f(comp.u.uBloomK, state.theme === "hakuji" ? 0.5 : 0.95);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targets.flame.tex); gl.uniform1i(comp.u.uFlame, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, qb.tex); gl.uniform1i(comp.u.uBloom, 1);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  // ---------- loop ----------
+  const STATIC_TIME = 2.4;              // reduced motion: one fixed, fully formed frame
+  let raf = 0, lastNow = 0, fps = 0, fpsFrames = 0, fpsStart = 0, frameMs = 0;
+  function loop(now) {
+    raf = 0;
+    const dt = lastNow ? Math.min(0.1, (now - lastNow) / 1000) : 0; lastNow = now;
+    clock += dt; flow += dt * flowSpeed();
+    const t0 = performance.now(); draw(); frameMs = frameMs * 0.9 + (performance.now() - t0) * 0.1;
+    fpsFrames++; if (now - fpsStart >= 1000) { fps = Math.round(fpsFrames * 1000 / (now - fpsStart)); fpsFrames = 0; fpsStart = now; updateMeta(); }
+    if (animating()) raf = requestAnimationFrame(loop);
+  }
+  const animating = () => fixedTime === null && !state.pause && !reduced();
+  function schedule() {
+    const animate = animating();
+    if (animate && !raf) { lastNow = 0; fpsStart = performance.now(); fpsFrames = 0; raf = requestAnimationFrame(loop); }
+    if (!animate && raf) { cancelAnimationFrame(raf); raf = 0; }
+  }
+  function refresh() {
+    if (reduced() && fixedTime === null) { clock = STATIC_TIME; flow = STATIC_TIME * flowSpeed(); }
+    draw(); schedule(); updateMeta();
+  }
+
+  function buildScene() {
+    const L = layout(state.place);
+    content.innerHTML = L.html;
+    document.documentElement.dataset.theme = state.theme;
+    const g = L.safe; Object.assign(guide.style, { left: g.x + "px", top: g.y + "px", width: g.w + "px", height: g.h + "px" });
+    stage.classList.toggle("show-guide", state.guide);
+    computeGeometry();
+  }
+  function fit() {
+    const { sx, sy } = stageScale();
+    stage.style.transform = `scale(${sx}, ${sy})`;
+    computeGeometry(); refresh();
+  }
+
+  // ---------- controls ----------
+  const bindSeg = (id, key) => {
+    const el = document.getElementById(id);
+    const sync = () => el.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === state[key])));
+    el.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; state[key] = b.dataset.v; sync(); buildScene(); refresh(); });
+    sync();
+  };
+  const units = { flicker: "", height: "px", thickness: "px", radius: "px", embers: "" };
+  const bindRange = (key, geometry) => {
+    const el = document.getElementById(key), out = document.getElementById(key + "V");
+    el.value = state[key]; out.textContent = state[key] + units[key];
+    el.addEventListener("input", () => { state[key] = Number(el.value); out.textContent = state[key] + units[key]; if (geometry) computeGeometry(); refresh(); });
+  };
+  const bindCheck = (id, key, after) => { const el = document.getElementById(id); el.checked = state[key]; el.addEventListener("change", () => { state[key] = el.checked; if (after) after(); refresh(); }); };
+  bindSeg("themeSeg", "theme"); bindSeg("placeSeg", "place");
+  bindRange("flicker", false); bindRange("height", true); bindRange("thickness", true); bindRange("radius", true); bindRange("embers", false);
+  bindCheck("pause", "pause"); bindCheck("reduce", "reduce"); bindCheck("guideChk", "guide", () => stage.classList.toggle("show-guide", state.guide));
+  osReduce.addEventListener("change", refresh);
+
+  function updateMeta() {
+    const g = geo || { bw: 0, bh: 0 };
+    const mode = fixedTime !== null ? `固定時刻 t=${fixedTime}s` : reduced() ? "静止（動きを減らす）" : state.pause ? "一時停止" : `${fps} fps`;
+    document.getElementById("meta").innerHTML =
+      `描画: <b>${glVersion}</b>${glError ? "（シェーダーエラー）" : ""}・canvas <b>${g.bw}×${g.bh}</b> px<br>` +
+      `状態: <b>${mode}</b>・1 コマの CPU 側時間 <b>${frameMs.toFixed(2)}</b> ms（目安）<br>` +
+      `端末の「視差効果を減らす」: <b>${osReduce.matches ? "オン → 静止" : "オフ"}</b><br>` +
+      `見本: スライド・カメラ・氏名はダミーです。`;
+  }
+  if (!gl || !progs) { const n = document.createElement("div"); n.className = "no-webgl"; n.textContent = "WebGL を使えないため炎を描けません（試作）"; stage.appendChild(n); }
+
+  // capture / measurement hooks (deterministic: the picture depends only on t)
+  window.__flame = {
+    state, glVersion, glError: () => glError,
+    renderer: () => { if (!gl) return ""; const e = gl.getExtension("WEBGL_debug_renderer_info"); return e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); },
+    safe: () => layout(state.place).safe, geometry: () => geo && { ...geo, L: undefined },
+    renderAt(t) { clock = t; flow = t * flowSpeed(); draw(); if (gl) gl.finish(); return true; },
+    bench(n = 60, t0 = 1) { const a = performance.now(); for (let i = 0; i < n; i++) { clock = t0 + i / 30; flow = clock * flowSpeed(); draw(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); } return (performance.now() - a) / n; },
+  };
+  addEventListener("resize", fit);
+  buildScene(); fit();
+})();
+</script>
+</body>
+</html>
