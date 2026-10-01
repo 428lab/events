@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { ParseKeys } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Button, Chip, Stack } from "@mui/material";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import { Link as RouterLink } from "react-router-dom";
 import { useMe } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
@@ -23,10 +24,14 @@ interface ActionLink {
 export function EventActionButtons({
   eventId,
   isMember,
+  showWarikan = false,
   contest,
 }: {
   eventId: string;
   isMember: boolean;
+  /** 割り勘の導線を出すか (#556)。確定メンバー（canChat）か、帳簿の GET が 200 で返った
+   * （取消した当事者を含む）とき。myRole の無い取消した人にも、この導線だけは出す */
+  showWarikan?: boolean;
   isStaff: boolean;
   contest: boolean;
   attendanceCheck: boolean;
@@ -36,7 +41,7 @@ export function EventActionButtons({
   // 未ログインでは進行状態を取りに行かない（ページ本体と同じ条件にそろえる）
   const { data: state } = useEventState(eventId, Boolean(me));
 
-  if (!isMember) return null;
+  if (!isMember && !showWarikan) return null;
 
   const links: ActionLink[] = [
     // 進行中のモードへの飛び込み口。押し間違えないよう色で区別する
@@ -55,12 +60,20 @@ export function EventActionButtons({
       show: contest && state?.mode === "awards",
     },
     { path: "scoring", labelKey: "eventDetail.scoring", show: contest },
+    // 割り勘 (#556)。確定メンバーには常に出す（オン/オフの設定は持たない）。
+    // 取消した当事者にも帳簿の GET の結果で出す
+    {
+      path: "warikan",
+      labelKey: "warikan.title",
+      icon: <ReceiptLongIcon />,
+      show: showWarikan,
+    },
 
   ];
 
   return (
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-      {contest && state && state.mode !== "normal" && (
+      {isMember && contest && state && state.mode !== "normal" && (
         <Chip
           color={state.mode === "presentation" ? "error" : "primary"}
           label={t("eventDetail.modeRunning", {
@@ -75,7 +88,8 @@ export function EventActionButtons({
         />
       )}
       {links
-        .filter((l) => l.show)
+        // メンバーでない（取消した当事者）には割り勘の導線だけを出す
+        .filter((l) => l.show && (isMember || l.path === "warikan"))
         .map((l) => (
           <Button
             key={`${l.path}:${l.labelKey}`}

@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { z } from "zod";
 import type { WarikanLedger } from "@eventer/shared";
 import { WARIKAN_EXPENSE_MAX, warikanLedgerSchema } from "@eventer/shared";
+import { translations } from "@eventer/shared/i18n";
 import { bindEnv, type Env } from "../src/runtime.js";
 import { app } from "../src/worker.js";
 import { eventWarikanRepo } from "../src/db/repositories/eventWarikan.js";
@@ -823,5 +824,51 @@ describe("統合・退会 (#556 §3.3)", () => {
     await env.DB.prepare("DELETE FROM event_member WHERE user_id = ?").bind(b.id).run();
     bindEnv(env as unknown as Env);
     expect(await accountDeletionRepo.hasActivity(b.id)).toBe(true);
+  });
+});
+
+describe("文言の禁止語 (#556 §3.10)", () => {
+  /** docs/warikan.md §3.10 の一覧（ここと設計書の2か所。設計書が正） */
+  const FORBIDDEN = [
+    "決済",
+    "入金",
+    "送金",
+    "請求",
+    "集金",
+    "未払い",
+    "残高",
+    "返金",
+    "預り",
+    "エスクロー",
+    "代行",
+    "レート",
+  ];
+
+  it("warikan の ja/en の全文字列に禁止語が含まれない", () => {
+    for (const lang of ["ja", "en"] as const) {
+      const table = translations[lang].warikan as Record<string, string>;
+      const values = Object.entries(table);
+      expect(values.length, `${lang} の warikan が空（走査が空振りしている）`).toBeGreaterThan(50);
+      const hits = values.flatMap(([key, value]) =>
+        FORBIDDEN.filter((w) => value.includes(w)).map((w) => `${lang}.${key}: 「${w}」`),
+      );
+      expect(hits).toEqual([]);
+    }
+  });
+
+  it("状態を表す語は「済み」だけ。「未精算」と前改訂の「管理しません」の文言が無い", () => {
+    for (const lang of ["ja"] as const) {
+      const values = Object.values(translations[lang].warikan as Record<string, string>);
+      expect(values.filter((v) => v.includes("未精算"))).toEqual([]);
+      expect(values).not.toContain("支払いが済んだかどうかは、このアプリでは管理しません。");
+      expect(values).toContain("済み");
+    }
+  });
+
+  it("ボタンの文言に「精算する」を使わない", () => {
+    const hits = Object.entries(translations.ja.warikan as Record<string, string>)
+      .filter(([, v]) => v.includes("精算する"))
+      .map(([k]) => k);
+    expect(hits).toEqual([]);
   });
 });

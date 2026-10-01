@@ -35,7 +35,7 @@ export function buildMeetQrUrl(token: string, origin: string): string {
 const QUIET = 4;
 
 /** QRコードを白地・黒モジュールのSVGで描く。生成は既存のカードと同じ qrcode を使う */
-function QrCodeSvg({ url, label }: { url: string; label: string }) {
+export function QrCodeSvg({ url, label }: { url: string; label: string }) {
   const qr = useMemo(() => {
     try {
       return QRCode.create(url, { errorCorrectionLevel: "M" });
