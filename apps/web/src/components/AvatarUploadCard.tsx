@@ -4,7 +4,11 @@ import { Alert, Avatar, Box, Button, Card, CardContent, Dialog, DialogActions, D
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useMe } from "../api/hooks.js";
+import { AVATAR_SVG, isSvgAvatarBytes } from "@eventer/shared";
 import { cropToImage, type PixelCrop } from "../lib/cropImage.js";
+import { cropSvgAvatar, prepareSvgCrop, type SvgCropSource } from "../lib/svgAvatarCrop.js";
+
+const RASTER_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 export function AvatarUploadCard() {
   const { t } = useTranslation(), qc = useQueryClient(), { data: me } = useMe();
@@ -12,22 +16,35 @@ export function AvatarUploadCard() {
   const [src, setSrc] = useState<string | null>(null), [busy, setBusy] = useState(false);
   const [crop, setCrop] = useState({ x: 0, y: 0 }), [zoom, setZoom] = useState(1);
   const [area, setArea] = useState<PixelCrop | null>(null);
+  /** SVG のときだけ。切り抜きは割合で受けてルート要素の viewBox に写す (#576) */
+  const [svg, setSvg] = useState<SvgCropSource | null>(null), [percent, setPercent] = useState<PixelCrop | null>(null);
   const [error, setError] = useState(false), [saved, setSaved] = useState(false);
   useEffect(() => () => { generation.current++; }, []);
   useEffect(() => () => { if (src) URL.revokeObjectURL(src); }, [src]);
   const pick = async (file?: File) => {
     if (!file) return;
     setError(false); setSaved(false);
-    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) { setError(true); return; }
+    const isSvg = file.type === AVATAR_SVG.mime;
+    if (isSvg ? file.size > AVATAR_SVG.maxBytes : !RASTER_TYPES.includes(file.type) || file.size > 5 * 1024 * 1024) { setError(true); return; }
     const token = ++generation.current;
     setBusy(true);
     try {
+      if (isSvg) {
+        // 中身はサニタイズしない。サーバーと同じ最小検査（gzip でない・SVG文書である）だけ見る
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const prepared = isSvgAvatarBytes(bytes) ? prepareSvgCrop(new TextDecoder().decode(bytes)) : null;
+        if (token !== generation.current) return;
+        if (!prepared) throw new Error("invalid_svg");
+        setCrop({ x: 0, y: 0 }); setZoom(1); setArea(null); setPercent(null); setSvg(prepared);
+        setSrc(URL.createObjectURL(new Blob([prepared.text], { type: AVATAR_SVG.mime })));
+        return;
+      }
       const image = await createImageBitmap(file);
       const valid = image.width > 0 && image.height > 0 && image.width <= 8192 && image.height <= 8192 && image.width * image.height <= 24_000_000;
       image.close();
       if (token !== generation.current) return;
       if (!valid) throw new Error("invalid_dimensions");
-      setCrop({ x: 0, y: 0 }); setZoom(1); setArea(null);
+      setCrop({ x: 0, y: 0 }); setZoom(1); setArea(null); setSvg(null);
       setSrc(URL.createObjectURL(file));
     } catch { if (token === generation.current) setError(true); }
     finally { if (token === generation.current) setBusy(false); }
@@ -36,8 +53,9 @@ export function AvatarUploadCard() {
     if (!src || !area || busy) return;
     setBusy(true); setError(false);
     try {
-      const blob = await cropToImage(src, area, 512, 512, 1024 * 1024, true);
-      if (!["image/webp", "image/png", "image/jpeg"].includes(blob.type) || blob.size > 1024 * 1024) throw new Error("invalid_encoded_image");
+      const blob = svg ? new Blob([cropSvgAvatar(svg, percent ?? { x: 0, y: 0, width: 100, height: 100 })], { type: AVATAR_SVG.mime })
+        : await cropToImage(src, area, 512, 512, 1024 * 1024, true);
+      if (svg ? blob.size > AVATAR_SVG.maxBytes : !RASTER_TYPES.includes(blob.type) || blob.size > 1024 * 1024) throw new Error("invalid_encoded_image");
       const response = await fetch("/api/me/avatar", { method: "PUT", credentials: "include", headers: { "Content-Type": blob.type }, body: blob });
       if (!response.ok) throw new Error("avatar_upload_failed");
       const result = await response.json() as { avatarUrl: string };
@@ -55,7 +73,7 @@ export function AvatarUploadCard() {
     <Stack direction="row" spacing={2} alignItems="center">
       <Avatar src={me?.avatarUrl ?? undefined} sx={{ width: 72, height: 72 }} />
       <Button variant="outlined" disabled={busy} onClick={() => input.current?.click()}>{t("settings.avatarChoose")}</Button>
-      <input ref={input} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; void pick(file); }} />
+      <input ref={input} type="file" hidden accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; void pick(file); }} />
     </Stack>
     {error && !src && <Alert severity="error" sx={{ mt: 2 }}>{t("settings.avatarError")}</Alert>}
     {saved && <Alert severity="success" sx={{ mt: 2 }}>{t("settings.avatarSaved")}</Alert>}
@@ -64,7 +82,7 @@ export function AvatarUploadCard() {
       <DialogContent>
         <Box sx={{ position: "relative", height: { xs: 260, sm: 340 }, bgcolor: "grey.900" }}>
           {src && <Cropper image={src} crop={crop} zoom={zoom} aspect={1} onCropChange={value => { if (!busy) setCrop(value); }} onZoomChange={value => { if (!busy) setZoom(value); }}
-            onCropComplete={(_, pixels) => setArea(pixels)} />}
+            onCropComplete={(percentages, pixels) => { setArea(pixels); setPercent(percentages); }} />}
         </Box>
         <Typography sx={{ mt: 2 }}>{t("eventForm.cropZoom")}</Typography>
         <Slider aria-label={t("eventForm.cropZoom")} min={1} max={3} step={0.01} value={zoom} disabled={busy} onChange={(_, value) => setZoom(value as number)} />

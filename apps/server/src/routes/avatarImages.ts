@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { deferBackground, getBucket } from "../runtime.js";
-import { safeServeMime } from "../lib/imageMime.js";
+import { safeAvatarServeMime } from "../lib/imageMime.js";
 import { userAvatarsRepo } from "../db/repositories/userAvatars.js";
 import { avatarKey } from "../lib/avatarStore.js";
 
@@ -20,6 +20,14 @@ const IMMUTABLE_CACHE = "public, max-age=31536000, immutable, s-maxage=300";
 /** ?v= 無し（または古い ?v=）で来たとき。更新に追従できるよう短くする */
 const SHORT_CACHE = "public, max-age=3600";
 
+/** アイコンの応答すべてに付ける CSP (#576)。アイコンには中身をサニタイズしない
+ * SVG があり得る。アプリ内は <img>/<image> でしか表示しない（画像としてのSVGは
+ * スクリプトを実行しない）が、URLを直接開かれると文書として描画されるため、
+ * sandbox でスクリプトもフォーム送信も止め、外部読み込みも全て断つ。
+ * ラスタ画像には効果も害も無いので、MIME で分けずに全応答へ付ける
+ * （エッジキャッシュに載る複製と 304 にも同じものを付けるため、分岐を持たない） */
+export const AVATAR_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
 /** 公開: ユーザーアイコンの配信 (#312)。認証不要（イベント画像・カードPNGと同じ）。
  * 参加者一覧など未ログインでも見える画面に出るため、ここで認証を要求すると
  * 表示が崩れる。アイコン自体は連携先で公開されているものと同じ。 */
@@ -34,7 +42,7 @@ export async function getUserAvatarImage(c: Context) {
   if (v && c.req.header("if-none-match") === `"${v}"`) {
     return new Response(null, {
       status: 304,
-      headers: { ETag: `"${v}"`, "Cache-Control": IMMUTABLE_CACHE },
+      headers: { ETag: `"${v}"`, "Cache-Control": IMMUTABLE_CACHE, "Content-Security-Policy": AVATAR_CSP },
     });
   }
 
@@ -62,15 +70,16 @@ export async function getUserAvatarImage(c: Context) {
   if (c.req.header("if-none-match") === etag) {
     return new Response(null, {
       status: 304,
-      headers: { ETag: etag, "Cache-Control": cacheControl },
+      headers: { ETag: etag, "Cache-Control": cacheControl, "Content-Security-Policy": AVATAR_CSP },
     });
   }
   const obj = await getBucket().get(meta.uploadedKey ?? avatarKey(userId));
   if (!obj) return c.json({ error: "not_found" }, 404);
   const res = new Response(obj.body as unknown as ReadableStream, {
     headers: {
-      "Content-Type": safeServeMime(meta.mime),
+      "Content-Type": safeAvatarServeMime(meta.mime),
       "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": AVATAR_CSP,
       "Cache-Control": cacheControl,
       ETag: etag,
     },

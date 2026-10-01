@@ -6,20 +6,28 @@ import { one } from "../db/client.js";
 import { avatarUrlFor } from "../lib/avatarStore.js";
 import { avatarUploadPrefix } from "../lib/avatarUploadStorage.js";
 import { cardImageDimensions } from "../lib/cardImageDimensions.js";
+import { AVATAR_SVG, isSvgAvatarBytes } from "@eventer/shared";
 
-/** Client prefers WebP, otherwise picks the smaller PNG/JPEG encoding. */
+/** Client prefers WebP, otherwise picks the smaller PNG/JPEG encoding.
+ * SVG (#576) is stored as uploaded, without sanitising: only the minimal document
+ * shape is checked here, and routes/avatarImages.ts serves it with CSP sandbox. */
 export async function putMyAvatar(c: Context<AppEnv>) {
   const mime = (c.req.header("content-type") ?? "").split(";")[0].trim().toLowerCase();
-  if (!["image/webp", "image/png", "image/jpeg"].includes(mime))
+  if (![AVATAR_SVG.mime, "image/webp", "image/png", "image/jpeg"].includes(mime))
     return c.json({ error: "invalid_content_type" }, 400);
   const bytes = await c.req.arrayBuffer(); // worker-level streaming limit also applies
-  if (bytes.byteLength > 1024 * 1024) return c.json({ error: "too_large" }, 413);
-  const size = cardImageDimensions(new Uint8Array(bytes), mime);
-  if (!size || size.width !== 512 || size.height !== 512) return c.json({ error: "invalid_image" }, 400);
+  if (mime === AVATAR_SVG.mime) {
+    if (bytes.byteLength > AVATAR_SVG.maxBytes) return c.json({ error: "too_large" }, 413);
+    if (!isSvgAvatarBytes(new Uint8Array(bytes))) return c.json({ error: "invalid_image" }, 400);
+  } else {
+    if (bytes.byteLength > 1024 * 1024) return c.json({ error: "too_large" }, 413);
+    const size = cardImageDimensions(new Uint8Array(bytes), mime);
+    if (!size || size.width !== 512 || size.height !== 512) return c.json({ error: "invalid_image" }, 400);
+  }
   const userId = c.get("user").id;
   const previous = await userAvatarsRepo.findAvatarSyncState(userId);
   if (!previous) return c.json({ error: "unauthorized" }, 401);
-  const key = `${avatarUploadPrefix(userId)}${crypto.randomUUID()}.${mime === "image/jpeg" ? "jpg" : mime.split("/")[1]}`;
+  const key = `${avatarUploadPrefix(userId)}${crypto.randomUUID()}.${mime === "image/jpeg" ? "jpg" : mime === AVATAR_SVG.mime ? "svg" : mime.split("/")[1]}`;
   const at = Math.max(Date.now(), (previous.updatedAt ?? 0) + 1), avatarUrl = avatarUrlFor(userId, at);
   const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(n => n.toString(16).padStart(2, "0")).join("");
   const bucket = getBucket();

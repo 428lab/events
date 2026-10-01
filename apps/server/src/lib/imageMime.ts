@@ -1,6 +1,8 @@
 /**
  * アップロード画像の MIME 制御。
  * SVG は script/onload 等でXSSを起こせるため許可しない（ラスタ画像のみ）。
+ * 例外は本人がアップロードするユーザーアイコンだけ (#576)。そちらは
+ * safeAvatarServeMime と配信側の CSP sandbox で扱い、ここの許可リストは変えない。
  */
 const ALLOWED_IMAGE_MIMES = new Set([
   "image/png",
@@ -22,6 +24,14 @@ export function normalizeImageMime(contentType: string | undefined): string | nu
 export function safeServeMime(mime: string | undefined | null): string {
   const m = (mime ?? "").split(";")[0]!.trim().toLowerCase();
   return ALLOWED_IMAGE_MIMES.has(m) ? m : "application/octet-stream";
+}
+
+/** ユーザーアイコンの配信用 (#576)。ラスタに加えて SVG をそのまま返す。
+ * SVG を返してよいのは routes/avatarImages.ts が CSP sandbox を付けて配信するから。
+ * 他の画像の配信には使わないこと */
+export function safeAvatarServeMime(mime: string | undefined | null): string {
+  const m = (mime ?? "").split(";")[0]!.trim().toLowerCase();
+  return m === "image/svg+xml" ? m : safeServeMime(m);
 }
 
 /** 先頭バイトが宣言 MIME の画像形式に見えるか（videoMime.ts の型に倣う）。

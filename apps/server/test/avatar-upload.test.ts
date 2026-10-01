@@ -115,3 +115,69 @@ describe("personal WebP avatar upload (#511)", () => {
     expect(new Uint8Array(await served.arrayBuffer())).toEqual(avatarWebp);
   });
 });
+
+describe("SVG avatar upload (#576)", () => {
+  const svgBytes = (text: string) => new TextEncoder().encode(text);
+  // Deliberately hostile: stored and served as-is, made inert by the image context and CSP sandbox.
+  const HOSTILE = `<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" onload="alert(1)">` +
+    `<script>alert(1)</script><circle cx="50" cy="50" r="40" fill="#e11d48"/></svg>`;
+  const CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
+  it("stores the SVG byte-for-byte and serves it with CSP sandbox and nosniff, also on the edge-cache copy and 304", async () => {
+    const { id, cookie } = await login();
+    const result = await upload(cookie, svgBytes(HOSTILE), "image/svg+xml");
+    expect(result.status).toBe(200);
+    const { avatarUrl } = await result.json() as { avatarUrl: string };
+    expect((await userAvatarsRepo.findAvatarSyncState(id))?.uploadedKey).toMatch(/\.svg$/);
+    const served = await hit(avatarUrl);
+    expect(served.headers.get("content-type")).toBe("image/svg+xml");
+    expect(served.headers.get("content-security-policy")).toBe(CSP);
+    expect(served.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await served.text()).toBe(HOSTILE);
+    const cached = await caches.default.match(new Request(`https://example.com${avatarUrl}`));
+    expect(cached?.headers.get("content-security-policy")).toBe(CSP);
+    await cached?.arrayBuffer();
+    const v = new URL(avatarUrl, "https://example.com").searchParams.get("v");
+    for (const path of [avatarUrl, `/api/users/${id}/avatar`]) {
+      const notModified = await hit(path, { headers: { "if-none-match": `"${v}"` } });
+      expect(notModified.status).toBe(304);
+      expect(notModified.headers.get("content-security-policy")).toBe(CSP);
+    }
+  });
+
+  it("rejects SVG over 200KB, a non-svg root, broken XML and gzip SVGZ", async () => {
+    const { id, cookie } = await login();
+    const big = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><!--${"x".repeat(200 * 1024)}--></svg>`;
+    expect((await upload(cookie, svgBytes(big), "image/svg+xml")).status).toBe(413);
+    for (const text of [
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body/></html>`,
+      `<svg viewBox="0 0 1 1"></svg>`, // no SVG namespace
+      `<svg xmlns="http://www.w3.org/2000/svg"><g></svg>`,
+      `<svg xmlns="http://www.w3.org/2000/svg"/><svg xmlns="http://www.w3.org/2000/svg"/>`,
+      `not xml`,
+    ]) expect((await upload(cookie, svgBytes(text), "image/svg+xml")).status, text).toBe(400);
+    const gzip = new Uint8Array(await new Response(new Blob([HOSTILE]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer());
+    expect((await upload(cookie, gzip, "image/svg+xml")).status).toBe(400);
+    expect(await uploadedAvatarKeys(id)).toEqual([]);
+  });
+
+  it("keeps the raster path unchanged: an SVG body declared as WebP is still rejected and WebP gets the same CSP", async () => {
+    const { cookie } = await login();
+    expect((await upload(cookie, svgBytes(HOSTILE), "image/webp")).status).toBe(400);
+    const result = await upload(cookie);
+    const { avatarUrl } = await result.json() as { avatarUrl: string };
+    const served = await hit(avatarUrl);
+    expect(served.headers.get("content-type")).toBe("image/webp");
+    expect(served.headers.get("content-security-policy")).toBe(CSP);
+    expect(new Uint8Array(await served.arrayBuffer())).toEqual(avatarWebp);
+  });
+
+  it("still rejects SVG for event images", async () => {
+    const { cookie } = await login();
+    const create = await hit("/api/events", { method: "POST", headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ title: "svg", venueType: "offline", startsAt: 1, endsAt: 99999999999999 }) });
+    const { event } = await create.json() as { event: { id: string } };
+    const res = await hit(`/api/events/${event.id}/image`, { method: "PUT", headers: { cookie, "content-type": "image/svg+xml" }, body: svgBytes(HOSTILE) });
+    expect(res.status).toBe(400);
+  });
+});
