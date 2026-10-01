@@ -145,7 +145,7 @@ UI の言葉は §3.10 の**禁止語の一覧（1か所）**に従う。
 
 ### 3.3 データモデル
 
-マイグレーション `apps/server/migrations/0096_warikan.sql`
+マイグレーション `apps/server/migrations/0099_warikan.sql`
 （本節の SQL のコメントは本書向けの要約。DDL 本文は migration と同一）:
 
 ```sql
@@ -861,7 +861,7 @@ export type WarikanLedger = z.infer<typeof warikanLedgerSchema>;
 |---|---|---|
 | shared | `packages/shared/src/warikan.ts` / `index.ts` | 新規。§3.8.1 の定数・入力（`settlementDoneInput` を含む）・応答スキーマ・純関数（`attachDoneMarks` を含む） |
 | i18n | `packages/shared/src/i18n/messages/warikan.ts` + 登録 | ja/en |
-| DB | `apps/server/migrations/0096_warikan.sql` | 新規。4表（`event` への列追加は無し） |
+| DB | `apps/server/migrations/0099_warikan.sql` | 新規。4表（`event` への列追加は無し） |
 | server | `src/db/repositories/userTables.ts` | `SHARED_CONTENT_OWNER_COLUMNS` +payer、`ACTIVITY_TABLES` +4、**`LEDGER_PARTY_REASSIGN_SQL` 新設**（(a)〜(h)。2表） |
 | server | `src/db/repositories/accountMerge.ts` | `simple` の前に `LEDGER_PARTY_REASSIGN_SQL`、`simple` に `event_expense.created_by` / `event_settlement_done.marked_by` / `event_payout_method.user_id` |
 | server | `src/db/repositories/accountDeletion.ts` | (1) の直後に `LEDGER_PARTY_REASSIGN_SQL`（ghost 宛て） |
