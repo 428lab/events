@@ -1,5 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  AccessTokensPayload,
+  CreateAccessTokenInput,
+  CreatedAccessToken,
   NotificationPrefs,
   UpdateNotificationPrefsInput,
   UserProfile,
@@ -118,5 +121,34 @@ export function useUpdateDisplayName() {
         displayName,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
+}
+
+/** AI 連携のアクセストークン一覧 (#581)。失効済み・期限切れも含む */
+export function useAccessTokens() {
+  return useQuery({
+    queryKey: ["accessTokens"],
+    queryFn: async () =>
+      (await api.get<AccessTokensPayload>("/me/access-tokens")).tokens,
+  });
+}
+
+/** アクセストークンを発行する (#581)。応答の token（平文）はこの1回だけ */
+export function useCreateAccessToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateAccessTokenInput) =>
+      api.post<CreatedAccessToken>("/me/access-tokens", input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["accessTokens"] }),
+  });
+}
+
+/** アクセストークンを失効する (#581)。即時・取り消せない */
+export function useRevokeAccessToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.del<{ ok: boolean }>(`/me/access-tokens/${encodeURIComponent(id)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["accessTokens"] }),
   });
 }
