@@ -106,7 +106,9 @@ function statements(): Statement[] {
  * 壊れる形だった）。増減したらこの数を直すこと。**直す前に、増えた文が
  * 絞り込みを持っているかを必ず読むこと。**
  */
-const EXPECTED_STATEMENTS = 18;
+// 18 → 22 (#571): presenterSlides.ts の有効な紐付けの判定（一覧・配信状態の追従2本・発表者選択）。
+// 4本とも publicItemWhere で参加者に見せるコマだけに絞っている
+const EXPECTED_STATEMENTS = 22;
 
 describe("event_schedule_item を読む SQL の走査 (#383 9.10)", () => {
   it("走査そのものが空振りしていない", () => {

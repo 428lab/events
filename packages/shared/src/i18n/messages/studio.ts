@@ -359,7 +359,25 @@ const ja = {
   scenesEmpty: "配信セットにシーンがありません。「{{action}}」から追加してください。",
   /** 選ばない選択肢。映すスライドと BGM の両方から引く */
   noneOption: "（なし）",
-  deckToShow: "配信で映すスライド",
+
+  /** 発表者とスライド (#571)。発表者一覧はタイムテーブルから作る */
+  presentersHeading: "発表者",
+  presentersOrder: "タイムテーブル順",
+  presentersEmpty: "タイムテーブルに担当者の入ったコマがありません。",
+  presentersHint: "発表者を選ぶと、その発表に紐付いたスライドの1ページ目が配信画面の「スライド」部分に出ます。シーンは切り替えません。",
+  presenterDeckPages: "スライドあり {{n}}p",
+  presenterNoDeck: "スライド未登録",
+  presenterUnlinkable: "紐付け不可",
+  presenterLive: "配信中",
+  presenterNoDeckPreview:
+    "この発表にはスライドが紐付いていません（紐付けを外した・スライドを削除した場合も同じ）。配信画面のスライド部分は「スライド未選択」の表示になります。カメラのシーンで進めるか、下の「その他のスライド」から選べます。",
+  presenterSlidesHeading: "{{name}} — {{title}}",
+  presenterNoSlides: "スライドなし",
+  slidePrev: "前のページ",
+  slideNext: "次のページ",
+  slideKeysHint: "← → でもページ送り",
+  slideJump: "{{n}} ページ目を表示",
+  otherDecks: "その他のスライド（自分のスライド）",
 
   bgmHeading: "BGM",
   bgmTrack: "曲",
@@ -728,7 +746,24 @@ const en: Record<keyof typeof ja, string> = {
   allLiveSets: "All sets",
   scenesEmpty: "This broadcast set has no scenes. Add one from “{{action}}”.",
   noneOption: "(None)",
-  deckToShow: "Slide deck to show",
+
+  presentersHeading: "Presenters",
+  presentersOrder: "Timetable order",
+  presentersEmpty: "No timetable session has a speaker yet.",
+  presentersHint: "Choosing a presenter shows page 1 of the deck linked to that talk in the slides area of the live screen. It does not switch scenes.",
+  presenterDeckPages: "Slides {{n}}p",
+  presenterNoDeck: "No slides",
+  presenterUnlinkable: "Cannot link",
+  presenterLive: "Live",
+  presenterNoDeckPreview:
+    "No deck is linked to this talk (also the case if it was unlinked or deleted). The slides area of the live screen shows \"No slide deck selected\". Continue with a camera scene, or pick one from \"Other slides\" below.",
+  presenterSlidesHeading: "{{name}} - {{title}}",
+  presenterNoSlides: "No slides",
+  slidePrev: "Previous page",
+  slideNext: "Next page",
+  slideKeysHint: "Left / Right arrow keys also turn pages",
+  slideJump: "Show page {{n}}",
+  otherDecks: "Other slides (your own decks)",
 
   bgmHeading: "Background music",
   bgmTrack: "Track",

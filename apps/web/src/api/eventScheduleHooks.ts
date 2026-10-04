@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SCHEDULE_EDIT_POLL_MS } from "@eventer/shared";
 import type {
   EventTrack,
+  LiveDeckSummary,
   SaveScheduleInput,
   ScheduleEditingState,
   ScheduleItem,
@@ -102,5 +103,21 @@ export function useUpdateScheduleMaterial(eventId: string, itemId: string) {
       ),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["event", eventId, "timetable"] }),
+  });
+}
+
+/** 配信用デッキの紐付け (#571)。deckId を渡せば付ける（本人だけ）、null なら外す（本人か staff） */
+export function useSetScheduleLiveDeck(eventId: string, itemId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (deckId: string | null) =>
+      api.put<{ liveDeck: LiveDeckSummary | null }>(
+        `/events/${eventId}/timetable/${itemId}/live-deck`,
+        { deckId },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId, "timetable"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId, "livePresenters"] });
+    },
   });
 }

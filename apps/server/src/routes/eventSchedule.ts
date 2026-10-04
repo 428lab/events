@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { saveScheduleInput, updateScheduleMaterialInput } from "@eventer/shared";
+import { saveScheduleInput, setScheduleLiveDeckInput, updateScheduleMaterialInput } from "@eventer/shared";
 import type {
   SaveScheduleInput,
   ScheduleAudience,
+  SetScheduleLiveDeckInput,
   UpdateScheduleMaterialInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
@@ -17,6 +18,8 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
 import { eventScheduleStateRepo } from "../db/repositories/eventScheduleState.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
+import { decksRepo } from "../db/repositories/decks.js";
+import { presenterSlidesRepo } from "../db/repositories/presenterSlides.js";
 
 /** タイムテーブルを閲覧できるか。公開イベントは誰でも、下書きはメンバー/管理者のみ
  * （イベント詳細 GET と同じ判定） */
@@ -54,8 +57,18 @@ export async function getEventTimetable(c: Context<AppEnv>) {
   const audience: ScheduleAudience = (await canManageEventAs(eventId, c))
     ? "staff"
     : "public";
+  const items = await eventScheduleRepo.listByEvent(eventId, audience);
+  // 配信用デッキの紐付け (#571) は、そのコマの担当者本人と staff にだけ添える。
+  // 参加者には出さない（公開したいものは資料URLに載せる、という分け方）
+  const viewer = await currentUser(c);
+  if (viewer && (audience === "staff" || items.some((it) => it.speakerUserId === viewer.id))) {
+    const decks = await presenterSlidesRepo.effectiveDecks(eventId);
+    for (const it of items) {
+      if (audience === "staff" || it.speakerUserId === viewer.id) it.liveDeck = decks.get(it.id) ?? null;
+    }
+  }
   return c.json({
-    items: await eventScheduleRepo.listByEvent(eventId, audience),
+    items,
     tracks: await eventScheduleRepo.listTracks(eventId, audience),
     // 保存時に送り返してもらう版 (#340)。読み専用の相手にも返してよい
     // （中身は単なる連番で、返さないと編集画面が版を知る経路が無くなる）
@@ -243,5 +256,39 @@ eventScheduleRoutes.patch(
     const updated = await eventScheduleRepo.findItem(eventId, itemId, "public");
     if (!updated) return c.json({ error: "not_found" }, 404);
     return c.json({ item: updated });
+  },
+);
+
+/** 配信用デッキの紐付け (#571)。登壇者本人が、自分が話すコマに自分のデッキを1つ紐付ける。
+ *
+ * - **付ける**のはそのコマの担当者本人（現役メンバー）だけ。staff・管理者でも代わりに付けられない
+ *   （紐付けが「このイベントのこのコマで運営に見せてよい」という本人の同意そのものなので）
+ * - **外す**（`deckId: null`）のは本人か staff。外すのは見せる範囲を狭める向きなので同意を損なわない
+ * - 対象は参加者に見せるコマだけ（#148 の資料URLと同じ。裏方は 404）
+ * - 外したデッキが配信中なら、同じ書き込みで配信状態のデッキも外す */
+eventScheduleRoutes.put(
+  "/:id/timetable/:itemId/live-deck",
+  zValidator("json", setScheduleLiveDeckInput),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const itemId = c.req.param("itemId");
+    const item = await eventScheduleRepo.findItem(eventId, itemId, "public");
+    if (!item) return c.json({ error: "not_found" }, 404);
+    const user = c.get("user");
+    const { deckId } = valid<SetScheduleLiveDeckInput>(c, "json");
+    const member = await eventMembersRepo.find(eventId, user.id);
+    const isSpeakerSelf = item.speakerUserId === user.id && member != null;
+    if (deckId) {
+      if (!isSpeakerSelf) return c.json({ error: "forbidden" }, 403);
+      const deck = await decksRepo.findById(deckId);
+      if (!deck || deck.ownerId !== user.id) return c.json({ error: "deck_not_owned" }, 403);
+    } else if (!isSpeakerSelf && !(await canManageEventAs(eventId, c))) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+    const changed = await presenterSlidesRepo.setLink(eventId, itemId, deckId, {eventId, actorId: user.id, permission: "view"});
+    // 判定と書き込みの間に担当者・持ち主が変わった場合は書かれない
+    if (changed === 0) return c.json({ error: "forbidden" }, 403);
+    const decks = await presenterSlidesRepo.effectiveDecks(eventId);
+    return c.json({ liveDeck: decks.get(itemId) ?? null });
   },
 );

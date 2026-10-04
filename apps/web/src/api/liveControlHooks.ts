@@ -6,7 +6,7 @@ import type {
   LiveSet,
   UpdateEventLiveStateInput,
 } from "@eventer/shared";
-import type { Deck } from "@eventer/shared";
+import type { Deck, LivePresenter } from "@eventer/shared";
 import { api } from "./client.js";
 
 /** 配信状態（画面タブ・コントロールタブが共有。1秒ポーリング） */
@@ -47,6 +47,18 @@ export function useLiveCutin(eventId: string) {
 export const cutinApi = {
   trigger: (eventId: string, body: { message: string }) => api.post<CutinAction & { serverNow: number }>(`/events/${eventId}/live-cutin`, body),
 };
+
+/** 発表者一覧 (#571)。タイムテーブルの担当者付きコマと、本人が紐付けたデッキの要約（slug なし）。
+ * 登壇者が当日に紐付けを直すこともあるので、ゆっくり取り直す */
+export function useLivePresenters(eventId: string) {
+  return useQuery({
+    queryKey: ["event", eventId, "livePresenters"],
+    enabled: Boolean(eventId),
+    refetchInterval: 15000,
+    queryFn: async () =>
+      (await api.get<{ presenters: LivePresenter[] }>(`/events/${eventId}/live-presenters`)).presenters,
+  });
+}
 
 /** 配信で映すスライド（デッキ）の中身 */
 export function useEventLiveDeck(eventId: string, deckId: string | null | undefined) {

@@ -23,15 +23,19 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import ViewWeekOutlinedIcon from "@mui/icons-material/ViewWeekOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import SlideshowOutlinedIcon from "@mui/icons-material/SlideshowOutlined";
+import CancelIcon from "@mui/icons-material/Cancel";
 import { computeScheduleTimes, publicTracks } from "@eventer/shared";
 import type { ScheduleItem } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
 import {
   useEventSchedule,
   useScheduleEditingState,
+  useSetScheduleLiveDeck,
 } from "../api/eventScheduleHooks.js";
 import { formatTime } from "../lib/format.js";
 import { MaterialEditDialog } from "./MaterialEditDialog.js";
+import { LiveDeckDialog } from "./LiveDeckDialog.js";
 import { editorLabel } from "./ScheduleEditNotice.js";
 import { ScheduleEditor } from "./ScheduleEditor.js";
 import { UserLink } from "./UserLink.js";
@@ -66,6 +70,8 @@ export function EventSchedule({
   );
   // 登壇者本人による資料URL編集ダイアログの対象コマ (#148)
   const [materialItem, setMaterialItem] = useState<ScheduleItem | null>(null);
+  // 登壇者本人による配信スライドの紐付けダイアログの対象コマ (#571)
+  const [liveDeckItem, setLiveDeckItem] = useState<ScheduleItem | null>(null);
 
   if (!data) return null;
   // Detail derives a public display subset; the shared query and editor retain all items.
@@ -295,6 +301,13 @@ export function EventSchedule({
                           {it.description}
                         </Typography>
                       )}
+                      <LiveDeckRowControl
+                        eventId={eventId}
+                        item={it}
+                        isSpeakerSelf={Boolean(me && it.speaker?.id === me.id)}
+                        isStaff={isStaff}
+                        onOpen={() => setLiveDeckItem(it)}
+                      />
                     </TableCell>
                     {hasSpeakers && (
                       <TableCell sx={{ verticalAlign: "top", width: "1%" }}>
@@ -319,6 +332,14 @@ export function EventSchedule({
           </TableContainer>
         )}
 
+        {liveDeckItem && (
+          <LiveDeckDialog
+            eventId={eventId}
+            item={liveDeckItem}
+            onClose={() => setLiveDeckItem(null)}
+          />
+        )}
+
         {materialItem && (
           <MaterialEditDialog
             eventId={eventId}
@@ -328,5 +349,68 @@ export function EventSchedule({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** タイムテーブル行の「この発表で使うスライド」(#571)。
+ *
+ * - 担当者本人には、未登録なら選ぶボタン、登録済みならチップ（押すと選び直し・外す）
+ * - staff には紐付け済みのチップだけ。付けることはできず、外すことだけできる
+ *   （紐付けは本人の同意なので、staff が代わりに付けない）
+ * - 参加者には何も出さない（サーバーもこの相手には紐付けを返さない）
+ *
+ * 対象は参加者に見せるコマだけ。資料URLの自己編集 (#148) と同じ範囲 */
+function LiveDeckRowControl({
+  eventId,
+  item,
+  isSpeakerSelf,
+  isStaff,
+  onOpen,
+}: {
+  eventId: string;
+  item: ScheduleItem;
+  isSpeakerSelf: boolean;
+  isStaff: boolean;
+  onOpen: () => void;
+}) {
+  const { t } = useTranslation();
+  const unlink = useSetScheduleLiveDeck(eventId, item.id);
+  if (item.visibility !== "public" || item.placement === "unassigned") return null;
+  if (!isSpeakerSelf && !isStaff) return null;
+  const deck = item.liveDeck;
+  if (!deck) {
+    if (!isSpeakerSelf) return null;
+    return (
+      <Button
+        size="small"
+        variant="outlined"
+        startIcon={<SlideshowOutlinedIcon />}
+        onClick={onOpen}
+        sx={{ mt: 0.5 }}
+      >
+        {t("schedule.liveDeckChoose")}
+      </Button>
+    );
+  }
+  const label = t("schedule.liveDeckChip", { title: deck.title || t("studio.untitledDeck") });
+  return (
+    <Chip
+      size="small"
+      color="primary"
+      variant="outlined"
+      icon={<SlideshowOutlinedIcon />}
+      label={label}
+      title={label}
+      onClick={isSpeakerSelf ? onOpen : undefined}
+      onDelete={
+        unlink.isPending
+          ? undefined
+          : () => {
+              if (window.confirm(t("schedule.liveDeckUnlinkConfirm", { title: item.title }))) unlink.mutate(null);
+            }
+      }
+      deleteIcon={<CancelIcon titleAccess={t("schedule.liveDeckUnlink")} />}
+      sx={{ mt: 0.5, maxWidth: "100%" }}
+    />
   );
 }
