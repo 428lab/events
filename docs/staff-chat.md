@@ -4,6 +4,9 @@
   `packages/shared`（kind・型・入力スキーマ）、`apps/web`（暗号化チャット画面）
 - 前提: #339（スタッフ招待）は**マージ済み**。#205（参加者向け非公開チャット）は**未着手**。
   本設計は #205 の方式をスタッフ範囲で先に実装するもので、#205 が後から同じ土台に乗る
+  （追記: #582 で `audience='members'` として乗った。0101 で3表の CHECK を広げ、
+  リポジトリは `db/repositories/groupChat.ts`、共有型は `packages/shared/src/groupChat.ts`、
+  web の暗号処理は `lib/groupChatCrypto.ts` に改名。docs/participant-encrypted-chat.md 参照）
 - ステータス: **実装済み**（PR #406）。実装で設計から変えた点は 13. にまとめた
 
 ---

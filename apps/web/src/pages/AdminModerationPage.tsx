@@ -14,12 +14,14 @@ import {
 } from "@mui/material";
 import GavelIcon from "@mui/icons-material/Gavel";
 import {
+  GROUP_CHAT_KIND,
   MODERATION_EVENT_LIMIT,
   MODERATION_KINDS,
   MODERATION_KIND_LABELS,
 } from "@eventer/shared";
 import type {
   ModerationChat,
+  ModerationContentPayload,
   ModerationItem,
   ModerationKind,
 } from "@eventer/shared";
@@ -33,6 +35,7 @@ import {
 import { InfoTip } from "../components/InfoTip.js";
 import { ChatRelayPool, randomLocalSigner } from "../lib/nostrChat.js";
 import type { ChatSigner } from "../lib/nostrChat.js";
+import { openGroupChatMessage } from "../lib/groupChatCrypto.js";
 import { formatDateTime } from "../lib/format.js";
 
 /** リレーから届く1件（購読して受け取る形のまま扱う） */
@@ -41,6 +44,8 @@ interface RelayNote {
   pubkey: string;
   content: string;
   created_at: number;
+  /** 暗号化チャット (#582) の鍵世代（v タグ）を読むために持つ */
+  tags: string[][];
 }
 
 /** 対処の状態バッジ。運営の非表示とスタッフの非表示は別系統なので分けて出す。
@@ -237,11 +242,15 @@ function BlockedAuthorList({
  * ここでできるのはこのサービスの表示から消すことだけ。 */
 function ChatSection({
   chat,
+  encryptedChat = null,
   onAct,
   onBlock,
   pending,
 }: {
   chat: ModerationChat;
+  /** 参加者のみ（暗号化）(#582 設計 4.5) の鍵一式。部屋が無ければ null。
+   * 暗号文をここで復号して、平文の発言と同じ一覧で非表示・締め出しを判断する */
+  encryptedChat?: ModerationContentPayload["encryptedChat"];
   onAct: (action: "hide" | "restore", noteId: string) => void;
   /** 発言者単位の締め出し / 解除 (#283) */
   onBlock: (action: "block" | "unblock", pubkey: string) => void;
@@ -256,6 +265,9 @@ function ChatSection({
   }
   const relaysKey = chat.relays.join(" ");
   const channelId = chat.channelId;
+  const roomId = encryptedChat?.roomId ?? null;
+  /** 暗号化の部屋から受け取った暗号文（復号は描画時に今の鍵束で行う） */
+  const [sealedNotes, setSealedNotes] = useState<RelayNote[]>([]);
 
   useEffect(() => {
     const signer = signerRef.current;
@@ -289,13 +301,57 @@ function ChatSection({
     };
   }, [channelId, relaysKey]);
 
+  useEffect(() => {
+    const signer = signerRef.current;
+    if (!roomId || !signer) return;
+    let disposed = false;
+    const pool = new ChatRelayPool(signer, relaysKey.split(" "));
+    pool.onstatus = () => {
+      if (!disposed) setConnected(pool.connected);
+    };
+    let unsubscribe: (() => void) | null = null;
+    void (async () => {
+      await pool.connect();
+      if (disposed) return;
+      unsubscribe = pool.subscribe(
+        roomId,
+        (ev) => {
+          if (disposed) return;
+          setSealedNotes((prev) =>
+            prev.some((n) => n.id === ev.id) ? prev : [...prev, ev as RelayNote],
+          );
+        },
+        GROUP_CHAT_KIND,
+      );
+    })();
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+      pool.close();
+      setSealedNotes([]);
+    };
+  }, [roomId, relaysKey]);
+
+  /** 平文の発言と、復号できた暗号文を新しい順に1つの一覧にする。
+   * 開けないもの（鍵の無い世代・壊れた暗号文）は出さない */
+  const allNotes = useMemo(() => {
+    const keys = encryptedChat?.keys ?? [];
+    const opened = sealedNotes.flatMap((n) => {
+      const text = openGroupChatMessage(keys, n);
+      return text === null ? [] : [{ ...n, content: text }];
+    });
+    return [...notes, ...opened].sort((a, b) => b.created_at - a.created_at);
+  }, [notes, sealedNotes, encryptedChat]);
+
   const nameOf = useMemo(() => {
-    const byPubkey = new Map(chat.members.map((m) => [m.pubkey, m]));
+    const byPubkey = new Map(
+      [...chat.members, ...(encryptedChat?.members ?? [])].map((m) => [m.pubkey, m]),
+    );
     return (pubkey: string) => {
       const m = byPubkey.get(pubkey);
       return m ? `${m.name}（@${m.username}）` : `${pubkey.slice(0, 12)}…`;
     };
-  }, [chat.members]);
+  }, [chat.members, encryptedChat]);
 
   const hiddenById = useMemo(
     () => new Map(chat.hidden.map((h) => [h.noteId, h])),
@@ -307,7 +363,7 @@ function ChatSection({
   );
   // リレーから取れなかった（消えた・まだ届いていない）非表示ぶんも一覧に残す
   const orphanHidden = chat.hidden.filter(
-    (h) => !notes.some((n) => n.id === h.noteId),
+    (h) => !allNotes.some((n) => n.id === h.noteId),
   );
 
   return (
@@ -337,7 +393,7 @@ function ChatSection({
         pending={pending}
         onUnblock={(pubkey) => onBlock("unblock", pubkey)}
       />
-      {!channelId ? (
+      {!channelId && !roomId ? (
         <Typography variant="body2" color="text.secondary">
           このイベントではチャットが使われていません。
         </Typography>
@@ -345,10 +401,10 @@ function ChatSection({
         <>
           <Typography variant="caption" color="text.secondary">
             {connected
-              ? `メッセージを読み込んでいます（${notes.length} 件）`
+              ? `メッセージを読み込んでいます（${allNotes.length} 件）`
               : "接続中…"}
           </Typography>
-          {notes.map((n) => {
+          {allNotes.map((n) => {
             const h = hiddenById.get(n.id);
             return (
               <Stack
@@ -602,6 +658,7 @@ export function AdminModerationPage() {
                     {kind === "chat_message" ? (
                       <ChatSection
                         chat={data.chat}
+                        encryptedChat={data.encryptedChat}
                         pending={act.isPending || blockAuthor.isPending}
                         onAct={(action, noteId) =>
                           act.mutate({ action, kind, id: noteId })

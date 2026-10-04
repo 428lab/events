@@ -93,6 +93,8 @@ export function EditEventPage() {
   const [attendanceCheck, setAttendanceCheck] = useState(false);
   // 部屋を開設するかはスタッフが決める (#221)。新規イベントは既定OFF
   const [chatEnabled, setChatEnabled] = useState(false);
+  // 参加者のみ（暗号化）(#582)。一度オンで保存すると戻せない（サーバーが 409）
+  const [chatEncrypted, setChatEncrypted] = useState(false);
   // 参加者のURL投稿を許可するか (#241)。既定OFF（スタッフは常に可）
   const [chatUrlsAllowed, setChatUrlsAllowed] = useState(false);
   // Q&A (#216)。チャットと同じく使いたいイベントだけONにする。既定OFF
@@ -137,6 +139,7 @@ export function EditEventPage() {
       setContestMode(e.contestMode);
       setAttendanceCheck(e.attendanceCheck);
       setChatEnabled(e.chatEnabled);
+      setChatEncrypted(e.chatEncrypted);
       setChatUrlsAllowed(e.chatUrlsAllowed);
       setQaEnabled(e.qaEnabled);
       setQaAnonymity(e.qaAnonymity);
@@ -155,6 +158,15 @@ export function EditEventPage() {
     return <Alert severity="info">{t("eventForm.noPermission")}</Alert>;
   }
   const { event } = data;
+  // 保存済みでオンなら戻せない（スイッチは無効表示）
+  const chatEncryptedLocked = event.chatEncrypted;
+  // 非公開・限定公開ではチャットをオンにすると暗号化も同時にオン（変更不可。設計 7.1）。
+  // 保存済みの公開範囲も非公開のときに限る: 公開→非公開へ切り替える保存では、暗号化を
+  // 明示的にオンにしない限り従来どおり平文チャットが止まる（設計 1.2。黙って暗号化しない）
+  const nonpublicChat = visibility !== "public" && event.visibility !== "public";
+  const chatEncryptedForced = nonpublicChat && chatEnabled;
+  const effectiveChatEncrypted =
+    chatEncryptedLocked || chatEncryptedForced || chatEncrypted;
 
   const deadlineMs = fromDateTimeLocal(registrationDeadline);
   const startsAtMs = fromDateTimeLocal(startsAt);
@@ -229,7 +241,11 @@ export function EditEventPage() {
         venueOnline: venueOnline || null,
         contestMode,
         attendanceCheck,
-        chatEnabled:visibility === "public" && chatEnabled,
+        // 非公開・限定公開のチャットは参加者のみ（暗号化）だけ (#582 設計 1.2 / 5.2)。
+        // チャットをオンにすると暗号化も同時にオンにして送る（片方だけはサーバーが 400）
+        chatEnabled:(visibility === "public" || effectiveChatEncrypted) && chatEnabled,
+        // オンのときだけ送る。オフは「変更しない」と同じ（オン→オフはサーバーが 409）
+        ...(effectiveChatEncrypted ? { chatEncrypted: true as const } : {}),
         chatUrlsAllowed,
         qaEnabled,
         qaAnonymity,
@@ -442,7 +458,19 @@ export function EditEventPage() {
               control={
                 <Switch
                   checked={chatEnabled}
-                  onChange={(e) => setChatEnabled(e.target.checked)}
+                  onChange={(e) => {
+                    // 非公開・限定公開でオンにすると参加者のみ（暗号化）も同時にオンになり、
+                    // 戻せない。オンにする前に確認する（設計 7.1）
+                    if (
+                      e.target.checked &&
+                      nonpublicChat &&
+                      !chatEncryptedLocked &&
+                      !window.confirm(t("eventForm.chatEncryptedConfirm"))
+                    ) {
+                      return;
+                    }
+                    setChatEnabled(e.target.checked);
+                  }}
                 />
               }
               label={t("eventForm.chat")}
@@ -452,6 +480,37 @@ export function EditEventPage() {
             </Typography>
             {chatEnabled && (
               <Box sx={{ pl: 3, mt: 1 }}>
+                {/* 参加者のみ（暗号化）(#582 設計 7.1)。一方向: オン済みは無効表示 */}
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={effectiveChatEncrypted}
+                      disabled={chatEncryptedLocked || chatEncryptedForced}
+                      onChange={(e) => {
+                        if (!e.target.checked) {
+                          setChatEncrypted(false);
+                          return;
+                        }
+                        if (window.confirm(t("eventForm.chatEncryptedConfirm"))) {
+                          setChatEncrypted(true);
+                        }
+                      }}
+                    />
+                  }
+                  label={t("eventForm.chatEncrypted")}
+                />
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  display="block"
+                  sx={{ mb: 1 }}
+                >
+                  {chatEncryptedLocked
+                    ? t("eventForm.chatEncryptedLocked")
+                    : chatEncryptedForced
+                      ? t("eventForm.chatEncryptedNonpublic")
+                      : t("eventForm.chatEncryptedHelp")}
+                </Typography>
                 <FormControlLabel
                   control={
                     <Switch

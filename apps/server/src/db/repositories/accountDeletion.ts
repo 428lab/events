@@ -2,7 +2,7 @@ import { accountAccessRevision } from "./accessRevisions.js";
 import type { User } from "@eventer/shared";
 import { DELETED_USER_DISPLAY_NAME } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
-import { staffChatRepo } from "./staffChat.js";
+import { groupChatRepo } from "./groupChat.js";
 import { ACTIVE, usersRepo } from "./users.js";
 import {
   ACTIVITY_TABLES,
@@ -78,7 +78,9 @@ export const accountDeletionRepo = {
     // batch より先に回す: 逆順だと「申請は成立したのにローテーションだけ
     // 失敗して穴が残る」が起きうる。この順なら失敗した時点で申請ごと失敗し、
     // 先に回ってしまっても本人はまだ staff なので新しい鍵を受け取れるだけ
-    await staffChatRepo.onStaffLostEverywhere(userId);
+    await groupChatRepo.onStaffLostEverywhere(userId);
+    // 参加者の暗号化チャット (#582) も同じ理由で申請の時点で回す（設計 3.2）
+    await groupChatRepo.onMemberLostEverywhere(userId);
     await batch([
       accountAccessRevision([userId]),
       {
@@ -144,7 +146,7 @@ export const accountDeletionRepo = {
    * user 行削除（FK CASCADE で残りが消える）」を行う。
    * R2 オブジェクトの掃除は呼び出し側（routes/me.ts）が行削除前にキーを控えて行う。
    * @returns 自分の batch **以外**に消費したサブリクエスト数
-   *          （スタッフチャットのローテーション分。purge の実行予算に積む） */
+   *          （スタッフチャット・参加者の暗号化チャットのローテーション分。purge の実行予算に積む） */
   async deleteAccount(userId: string, ghostId: string): Promise<number> {
     // (0) スタッフチャットのローテーション (#382)。本来は退会申請
     //     (requestDeletion) の時点で回っているが、purge はロール変更・参加解除の
@@ -153,7 +155,11 @@ export const accountDeletionRepo = {
     //     で消える）。SQL は staffChat リポジトリの外に書かない
     //     （staff-chat-sql-audit.test.ts）。先に走っても user 行が残って失敗した
     //     場合に害は無い（鍵が1世代進むだけで、翌日の再試行で完結する）
-    const rotationCost = await staffChatRepo.onStaffLostEverywhere(userId);
+    //     参加者の暗号化チャット (#582) も同じ位置で回す。purge では signer 行が
+    //     CASCADE で消えて遅延照合の対象から外れるので、ここで回さないと二度と回らない
+    const rotationCost =
+      (await groupChatRepo.onStaffLostEverywhere(userId)) +
+      (await groupChatRepo.onMemberLostEverywhere(userId));
 
     const stmts: Array<{ sql: string; args?: unknown[] }> = [accountAccessRevision([userId])];
 

@@ -105,6 +105,18 @@ eventCrudRoutes.patch(
     if (input.visibility !== undefined && input.visibility !== prior?.visibility) {
       if (input.expectedAccessRevision === undefined || !input.confirmVisibilityChange) return c.json({error:"visibility_confirmation_required"},409);
     }
+    // 参加者のみ（暗号化 #582 設計 1.2）。オンにしたら戻せない（公開イベントでも）
+    if (input.chatEncrypted === false && prior?.chatEncrypted) {
+      return c.json({ error: "chat_encrypted_locked" }, 409);
+    }
+    // 非公開・限定公開のチャットは暗号化オンが必須（平文の経路は非公開では常に閉じる）
+    if (
+      input.chatEnabled === true &&
+      (input.visibility ?? prior?.visibility) !== "public" &&
+      !(input.chatEncrypted ?? prior?.chatEncrypted)
+    ) {
+      return c.json({ error: "chat_encryption_required" }, 400);
+    }
     // 紐づけ先コミュニティを「変える」ときだけ権限を見る (#264)。
     // 編集フォームは現在値をそのまま送り返すので、変更がなければ通す
     // （コミュニティの owner/admin ではないイベントstaffが編集できなくなるため）。

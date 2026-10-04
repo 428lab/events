@@ -196,7 +196,10 @@ export const eventChatRepo = {
     pubkey: string,
     adminId: string,
     at: number,
+    personPubkeys: string[] = [],
   ): Promise<number> {
+    // personPubkeys: 同じ人の参加者の暗号化チャット (#582) の signer の鍵など、
+    // この表の外で分かる「同じ人の鍵」。どれかで締め出し済みなら2本目を立てない
     return runCount(
       `INSERT OR IGNORE INTO event_chat_blocked
          (event_id, pubkey, created_at, created_by)
@@ -204,7 +207,8 @@ export const eventChatRepo = {
         WHERE NOT EXISTS (
           SELECT 1 FROM event_chat_blocked b
            WHERE b.event_id = ?
-             AND b.pubkey IN (${SIBLING_KEYS}))`,
+             AND (b.pubkey IN (${SIBLING_KEYS})
+               OR b.pubkey IN (SELECT value FROM json_each(?))))`,
       eventId,
       pubkey,
       at,
@@ -212,21 +216,28 @@ export const eventChatRepo = {
       eventId,
       eventId,
       pubkey,
+      JSON.stringify(personPubkeys),
     );
   },
 
   /** 締め出しを解除する (#283)。冪等（締め出していなければ 0 を返す）。
    * **その人の締め出しをまとめて解く**。どの鍵を指して解除しても同じ結果になる
    * （効き方が人単位なので、解除も人単位でないと中途半端な状態が残る） */
-  async unblockAuthor(eventId: string, pubkey: string): Promise<number> {
+  async unblockAuthor(
+    eventId: string,
+    pubkey: string,
+    personPubkeys: string[] = [],
+  ): Promise<number> {
     return runCount(
       `DELETE FROM event_chat_blocked
         WHERE event_id = ?
-          AND (pubkey = ? OR pubkey IN (${SIBLING_KEYS}))`,
+          AND (pubkey = ? OR pubkey IN (${SIBLING_KEYS})
+            OR pubkey IN (SELECT value FROM json_each(?)))`,
       eventId,
       pubkey,
       eventId,
       pubkey,
+      JSON.stringify(personPubkeys),
     );
   },
 

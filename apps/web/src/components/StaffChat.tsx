@@ -17,17 +17,17 @@ import {
   GROUP_CHAT_KIND,
   splitByUrls,
 } from "@eventer/shared";
-import type { StaffChatMember } from "@eventer/shared";
+import type { GroupChatMember } from "@eventer/shared";
 import type { Event as NostrEvent } from "nostr-tools/pure";
 import { ApiError } from "../api/client.js";
 import { useOpenStaffChat, useStaffChat } from "../api/staffChatHooks.js";
 import { ChatRelayPool, localSignerFromHex } from "../lib/nostrChat.js";
 import type { ChatSigner } from "../lib/nostrChat.js";
 import {
-  openStaffChatMessage,
-  sealStaffChatMessage,
+  openGroupChatMessage,
+  sealGroupChatMessage,
   visibleAfterRevocation,
-} from "../lib/staffChatCrypto.js";
+} from "../lib/groupChatCrypto.js";
 import {
   appendChatMessage,
   bufferAllowPredicate,
@@ -165,7 +165,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
 
   const memberByPubkey = useMemo(
     () =>
-      new Map<string, StaffChatMember>(
+      new Map<string, GroupChatMember>(
         (chat?.members ?? []).map((m) => [m.pubkey, m]),
       ),
     [chat],
@@ -180,7 +180,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
   const visibleMessages = useMemo(() => {
     if (!keys) return [];
     const cache = decryptedRef.current;
-    const kept: Array<{ ev: NostrEvent; member: StaffChatMember; text: string }> =
+    const kept: Array<{ ev: NostrEvent; member: GroupChatMember; text: string }> =
       [];
     for (const ev of messages) {
       const member = memberByPubkey.get(ev.pubkey);
@@ -189,7 +189,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
       const cacheKey = `${ev.id}:${keysKey}`;
       let text = cache.get(cacheKey);
       if (text === undefined) {
-        text = openStaffChatMessage(keys, ev);
+        text = openGroupChatMessage(keys, ev);
         cache.set(cacheKey, text);
       }
       if (text === null || text.length > CHAT_MESSAGE_MAX) continue;
@@ -212,7 +212,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
     if (text.length > CHAT_MESSAGE_MAX) return;
     setSendError(null);
     try {
-      const template = sealStaffChatMessage(roomId, keys, text, relays[0]!);
+      const template = sealGroupChatMessage(roomId, keys, text, relays[0]!);
       if (!template) return;
       const ev = await signer.signEvent(template);
       const ok = await poolRef.current?.publish(ev);

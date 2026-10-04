@@ -97,3 +97,14 @@ describe("chatAvailable の各項 (#215 / #335)", () => {
 it.each(["private","unlisted"] as const)("%s never exposes plaintext participant chat",visibility=>{
  event={...EVENT,visibility};expect(access().chatAvailable).toBe(false);
 });
+
+// 参加者のみ（暗号化）(#582 W4): 非公開・限定公開でも暗号化オンなら開ける。オフなら上と同じく閉じる
+it.each(["private","unlisted"] as const)("%s with participants-only (encrypted) chat is available (#582)",visibility=>{
+ event={...EVENT,visibility,chatEncrypted:true};expect(access().chatAvailable).toBe(true);
+ event={...EVENT,visibility,chatEncrypted:false};expect(access().chatAvailable).toBe(false);
+});
+it("encryption does not bypass the other gates (#582)",()=>{
+ event={...EVENT,visibility:"private",chatEncrypted:true,chatEnabled:false};expect(access().chatAvailable).toBe(false);
+ event={...EVENT,visibility:"private",chatEncrypted:true};members=[{userId:"u-1",status:"waitlist"}] as unknown as EventMemberWithUser[];
+ expect(access().chatAvailable).toBe(false);
+});

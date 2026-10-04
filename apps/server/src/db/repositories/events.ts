@@ -42,6 +42,10 @@ interface EventRow {
   venue_wanted: number;
   chat_enabled: number;
   chat_urls_allowed: number;
+  /** 参加者のみ（暗号化 #582）。一度 1 にしたら戻らない */
+  chat_encrypted: number;
+  /** 暗号化をオンにした時刻（ms）。encrypted-chat の payload で返す */
+  chat_encrypted_at: number | null;
   /** Q&A (#216) の有効/無効と匿名の扱い */
   qa_enabled: number;
   qa_anonymity: string;
@@ -133,8 +137,12 @@ function toEvent(row: EventRow): Event {
     attendanceCheck: row.attendance_check === 1,
     slug: row.slug ?? "",
     venueWanted: row.venue_wanted === 1,
-    chatEnabled: row.visibility === "public" && row.chat_enabled === 1,
+    // 平文チャットは公開イベントだけ。暗号化オンなら公開範囲を問わない (#582 設計 1.2)
+    chatEnabled:
+      (row.visibility === "public" || row.chat_encrypted === 1) &&
+      row.chat_enabled === 1,
     chatUrlsAllowed: row.chat_urls_allowed === 1,
+    chatEncrypted: row.chat_encrypted === 1,
     qaEnabled: row.qa_enabled === 1,
     // 未知の値（手作業のDB更新など）は既定の 'choice' に寄せる
     qaAnonymity: QA_ANONYMITY_MODES.includes(
@@ -434,6 +442,16 @@ export const eventsRepo = {
     return row?.members_note ?? "";
   },
 
+  /** 参加者のみ（暗号化 #582）をオンにした時刻（ms）。オフ・未設定なら null。
+   * Event には載せない（encrypted-chat の payload でだけ返す） */
+  async chatEncryptedAtFor(id: string): Promise<number | null> {
+    const row = await one<{ at: number | null }>(
+      "SELECT chat_encrypted_at AS at FROM event WHERE id = ? AND chat_encrypted = 1",
+      id,
+    );
+    return row?.at ?? null;
+  },
+
   async nonpublicEligible(id: string): Promise<boolean> {
     return (await one<{allowed:number}>("SELECT nonpublic_eligible allowed FROM event WHERE id=?",id))?.allowed === 1;
   },
@@ -462,7 +480,10 @@ export const eventsRepo = {
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
          photos_public = ?, attendance_check = ?, venue_wanted = ?,
-         chat_enabled = ?, chat_urls_allowed = ?, qa_enabled = ?, qa_anonymity = ?,
+         chat_enabled = ?, chat_urls_allowed = ?,
+         chat_encrypted_at = CASE WHEN chat_encrypted = 1 THEN chat_encrypted_at WHEN ? = 1 THEN ? ELSE NULL END,
+         chat_encrypted = CASE WHEN chat_encrypted = 1 THEN 1 ELSE ? END,
+         qa_enabled = ?, qa_anonymity = ?,
          meet_ranking = ?, meet_prizes = ?,
          members_note = ?, scheduling = ?,
          registration_deadline = ?
@@ -489,8 +510,11 @@ export const eventsRepo = {
       next.photosPublic ? 1 : 0,
       next.attendanceCheck ? 1 : 0,
       next.venueWanted ? 1 : 0,
-      next.visibility === "public" && next.chatEnabled ? 1 : 0,
+      (next.visibility === "public" || next.chatEncrypted) && next.chatEnabled ? 1 : 0,
       next.chatUrlsAllowed ? 1 : 0,
+      // 暗号化は一方向（オンにしたら戻らない #582）。SQL 側でも下げない。
+      // オンにした時刻はオフ→オンの1回だけ打つ
+      next.chatEncrypted ? 1 : 0, Date.now(), next.chatEncrypted ? 1 : 0,
       next.qaEnabled ? 1 : 0,
       next.qaAnonymity,
       next.meetRanking,

@@ -85,7 +85,8 @@ export const accountMergeRepo = {
       // できない（勝ち負け両方が同じ持ち場に居ると UPDATE が UNIQUE 違反で落ちる）。
       // 両方に同じ持ち場の割り当てがあれば負け側を捨てる
       ["event_duty_assignee", "user_id", ["slot_id"]],
-      // スタッフチャットの発言用一時鍵 (#382)。PK (event_id, audience, user_id)。
+      // スタッフチャット (#382)・参加者の暗号化チャット (#582) の発言用一時鍵。
+      // PK (event_id, audience, user_id)。
       // 両方が同じ部屋に signer を持つときだけ負け側を捨てる（勝ち側の鍵を残す＝
       // 配布済みの鍵を替えずに済む。event_chat_key の統合 (1b) と同じ判断）。
       // 資格は (0) で勝ち側に引き継がれるのでローテーションは不要（設計 7.4）

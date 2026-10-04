@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { Event as NostrEvent } from "nostr-tools/pure";
-import type { StaffChatPayload } from "@eventer/shared";
+import type { GroupChatPayload } from "@eventer/shared";
 import { MESSAGE_BUFFER_MAX } from "../lib/chatMessageBuffer.js";
 import { StaffChat } from "./StaffChat.js";
 
@@ -23,7 +23,7 @@ const THEM = "pk-them";
 const ME = "pk-me";
 
 /** ポーリングで差し替わる payload。最初は自分がまだ許可リストに載っていない */
-let payload: StaffChatPayload;
+let payload: GroupChatPayload;
 
 function member(pubkey: string, name: string) {
   return {
@@ -82,14 +82,14 @@ vi.mock("../lib/nostrChat.js", () => {
 });
 
 // 暗号は素通し（本文＝content）。ここで見たいのはバッファの捨て方だけ
-vi.mock("../lib/staffChatCrypto.js", () => ({
-  sealStaffChatMessage: (_roomId: string, _keys: unknown, text: string) => ({
+vi.mock("../lib/groupChatCrypto.js", () => ({
+  sealGroupChatMessage: (_roomId: string, _keys: unknown, text: string) => ({
     kind: 9807,
     content: text,
     tags: [],
     created_at: 0,
   }),
-  openStaffChatMessage: (_keys: unknown, ev: NostrEvent) => ev.content,
+  openGroupChatMessage: (_keys: unknown, ev: NostrEvent) => ev.content,
   visibleAfterRevocation: () => true,
 }));
 

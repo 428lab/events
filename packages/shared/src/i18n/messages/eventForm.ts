@@ -79,6 +79,15 @@ const ja = {
   chat: "参加者チャット",
   chatHelp:
     "参加確定メンバーがイベントページでチャットできます。チャットの内容は公開されます。",
+  /** 参加者のみ（暗号化） (#582)。一度オンにすると戻せない */
+  chatEncrypted: "参加者のみ（暗号化）",
+  chatEncryptedHelp:
+    "オンにすると、これからの発言は参加確定者とスタッフだけが読めるようになります。これまでの発言は今のまま残ります。一度オンにすると戻せません。",
+  chatEncryptedConfirm:
+    "オンにすると、これからの発言は参加確定者とスタッフだけが読めるようになります。これまでの発言は今のまま残ります。一度オンにすると戻せません。\n\nオンにしますか？",
+  chatEncryptedLocked: "この設定は戻せません。",
+  chatEncryptedNonpublic:
+    "非公開・限定公開イベントのチャットは常に参加者のみ（暗号化）です。",
   chatUrls: "参加者のURL投稿を許可",
   chatUrlsHelp:
     "オンにすると参加者もチャットにURLを投稿できます。スタッフは常に投稿できます。",
@@ -355,6 +364,14 @@ const en: Record<keyof typeof ja, string> = {
   chat: "Participant chat",
   chatHelp:
     "Confirmed participants can chat on the event page. Anything posted there is public.",
+  chatEncrypted: "Participants only (encrypted)",
+  chatEncryptedHelp:
+    "When this is on, new messages can be read only by confirmed participants and organizers. Earlier messages stay as they are. Once turned on, this cannot be turned off.",
+  chatEncryptedConfirm:
+    "When this is on, new messages can be read only by confirmed participants and organizers. Earlier messages stay as they are. Once turned on, this cannot be turned off.\n\nTurn it on?",
+  chatEncryptedLocked: "This setting cannot be turned off.",
+  chatEncryptedNonpublic:
+    "Chat for private and unlisted events is always participants only (encrypted).",
   chatUrls: "Let participants post URLs",
   chatUrlsHelp:
     "When this is on, participants can post URLs in chat too. Organizers always can.",

@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
-import type { StaffChatPayload } from "@eventer/shared";
+import type { GroupChatPayload } from "@eventer/shared";
 import {
   BASE,
   HOUR,
@@ -25,7 +25,7 @@ import {
  * 3表を触る SQL が1か所に閉じていることは `staff-chat-sql-audit.test.ts`、
  * アカウント統合の登録漏れは `merge-user-columns.test.ts` が見張る。
  * 暗号化・復号（NIP-44）はブラウザだけが行うので、web 側の
- * `staffChatCrypto.test.ts` が受け持つ。
+ * `groupChatCrypto.test.ts` が受け持つ。
  */
 
 const DAY = 24 * HOUR;
@@ -62,9 +62,9 @@ function postChat(eventId: string, cookie: string): Promise<Response> {
   });
 }
 
-async function payload(res: Response): Promise<StaffChatPayload> {
+async function payload(res: Response): Promise<GroupChatPayload> {
   expect(res.status, await res.clone().text()).toBe(200);
-  return (await res.json()) as StaffChatPayload;
+  return (await res.json()) as GroupChatPayload;
 }
 
 /** DB の生の鍵世代（世代番号の昇順） */

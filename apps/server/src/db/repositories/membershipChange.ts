@@ -3,7 +3,7 @@ import { batch } from "../client.js";
 import { eventViewSql } from "../../auth/eventAccess.js";
 import { accessOperationGuard, activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import { waitlistPromotionStatements } from "./waitlistPromotion.js";
-import { staffChatRepo } from "./staffChat.js";
+import { groupChatRepo } from "./groupChat.js";
 import { finishWaitlistPromotion } from "../../lib/waitlist.js";
 
 /** The read-side slot is usable only while this exact membership still exists. */
@@ -43,6 +43,6 @@ export async function changeMembership(eventId: string, actorId: string, userId:
     { sql: "UPDATE event SET access_operation_token=NULL WHERE id=? AND access_operation_token=?", args: guard },
   ]);
   if (!changed) return null;
-  if (staffLoss) await staffChatRepo.onStaffLost(eventId, userId);
+  if (staffLoss) await groupChatRepo.onStaffLost(eventId, userId);
   return { promotedUserId: await finishWaitlistPromotion(eventId, noticeId) };
 }
