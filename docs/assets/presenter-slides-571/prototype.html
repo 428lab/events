@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>#571 発表者のスライドを配信に出す — 見本プロトタイプ</title>
+<!--
+  オフラインで開ける見本。外部リソースは読まない。
+  表示切替: #link（登壇者がスライドを紐付ける） / #control（配信コントロール） / #screen（配信画面）
+  人物名・発表タイトル・スライドの中身はすべて架空の「見本」。
+-->
+<style>
+  :root {
+    --primary: #2DD4BF; --on-primary: #06231D; --secondary: #FB923C;
+    --bg: #0E1426; --surface: #1A2238; --surface2: #222C46; --text: #EAF0F7;
+    --muted: #97A3BC; --border: #2A3350; --warn: #FBBF24; --error: #FB7185;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; font-size: 14px; }
+  header.top { display: flex; gap: 8px; align-items: center; padding: 10px 20px;
+    border-bottom: 1px solid var(--border); background: #0B1020; }
+  header.top b { margin-right: 12px; }
+  header.top a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); }
+  header.top a.on { color: var(--on-primary); background: var(--primary); border-color: var(--primary); }
+  .sample-note { margin-left: auto; color: var(--warn); font-size: 12px; }
+  section.view { display: none; padding: 20px; }
+  section.view.on { display: block; }
+  h2 { margin: 0 0 12px; font-size: 20px; }
+  h3 { margin: 0 0 8px; font-size: 15px; display: flex; gap: 6px; align-items: center; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+  .muted { color: var(--muted); }
+  .chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .chip.ok { background: rgba(45,212,191,.15); color: var(--primary); border: 1px solid rgba(45,212,191,.4); }
+  .chip.none { background: rgba(151,163,188,.12); color: var(--muted); border: 1px solid var(--border); }
+  .chip.warn { background: rgba(251,191,36,.12); color: var(--warn); border: 1px solid rgba(251,191,36,.4); }
+  .chip.live { background: var(--secondary); color: #2A1400; }
+  button { font: inherit; cursor: pointer; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); padding: 8px 14px; }
+  button.primary { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 700; }
+  button:disabled { opacity: .4; cursor: default; }
+  .sample-badge { position: absolute; top: 8px; right: 8px; background: #FB7185; color: #fff;
+    font-weight: 800; font-size: 12px; padding: 2px 8px; border-radius: 6px; letter-spacing: .1em; }
+
+  /* ---- スライド（見本） ---- */
+  .slide { position: relative; aspect-ratio: 16/9; width: 100%; border-radius: 6px; overflow: hidden;
+    display: flex; flex-direction: column; justify-content: center; padding: 6% 8%; }
+  .slide .t { font-weight: 800; line-height: 1.25; }
+  .slide .b { margin-top: 4%; line-height: 1.6; opacity: .85; }
+
+  /* ---- 1. 紐付け ---- */
+  .timetable { max-width: 760px; }
+  .row { display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .row .time { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .row .title { font-weight: 700; }
+  .row.mine { background: rgba(45,212,191,.05); }
+  .dialog-wrap { margin-top: 18px; display: grid; grid-template-columns: 1fr; max-width: 760px; }
+  .dialog { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: 0 20px 50px rgba(0,0,0,.4); }
+  .deck-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 12px 0; }
+  .deck-opt { border: 2px solid var(--border); border-radius: 10px; padding: 8px; cursor: pointer; background: var(--surface); }
+  .deck-opt.sel { border-color: var(--primary); }
+  .deck-opt .name { margin-top: 6px; font-weight: 700; font-size: 13px; }
+  .deck-opt .meta { font-size: 11px; color: var(--muted); }
+  .consent { background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.35); border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.6; }
+
+  /* ---- 2. コントロール ---- */
+  .control { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
+  .presenters .p { display: grid; grid-template-columns: 40px 1fr auto; gap: 10px; align-items: center;
+    padding: 10px; border-radius: 10px; border: 2px solid transparent; cursor: pointer; }
+  .presenters .p:hover { border-color: var(--border); }
+  .presenters .p.sel { border-color: var(--secondary); background: rgba(251,146,60,.08); }
+  .presenters .p.disabled { opacity: .55; cursor: default; }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #0E1426; }
+  .p .who { font-weight: 700; }
+  .p .talk { font-size: 12px; color: var(--muted); }
+  .pager { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+  .pager .count { min-width: 72px; text-align: center; font-weight: 800; font-size: 18px; }
+  .pager button { font-size: 20px; padding: 6px 22px; }
+  .kbd { display: inline-block; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; padding: 0 6px; font-size: 12px; }
+  .thumbs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-top: 12px; }
+  .thumbs .slide { padding: 4%; cursor: pointer; border: 2px solid transparent; }
+  .thumbs .slide .t { font-size: 7px; } .thumbs .slide .b { display: none; }
+  .thumbs .slide.cur { border-color: var(--secondary); }
+  .thumbs .sample-badge { font-size: 7px; padding: 0 3px; top: 3px; right: 3px; }
+  .empty { aspect-ratio: 16/9; display: grid; place-items: center; text-align: center; border: 1px dashed var(--border); border-radius: 6px; color: var(--muted); padding: 20px; line-height: 1.7; }
+  .scene-hint { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .other { margin-top: 16px; }
+  select { font: inherit; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
+
+  /* ---- 3. 配信画面 ---- */
+  .screen-wrap { max-width: 1120px; margin: 0 auto; }
+  .stage { position: relative; aspect-ratio: 16/9; background: #0E1426; border-radius: 4px; overflow: hidden; }
+  .stage .deck { position: absolute; left: 0; top: 0; width: 75%; }
+  .stage .cam { position: absolute; right: 1.7%; top: 3%; width: 21.7%; aspect-ratio: 4/3; border-radius: 12px;
+    background: linear-gradient(160deg, #3b4766, #1b2238); display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+  .stage .nameplate { position: absolute; right: 1.7%; top: 36%; width: 21.7%; background: #16264a; border-left: 4px solid #E0533D; padding: 10px 12px; }
+  .stage .nameplate .n { font-weight: 800; font-size: 18px; } .stage .nameplate .r { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .stage .band { position: absolute; left: 0; right: 0; bottom: 0; height: 25%; display: flex; align-items: center; padding: 0 3%; color: var(--muted); font-size: 14px; }
+  .caption { margin-top: 10px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<header class="top">
+  <b>#571 見本</b>
+  <a href="#link" data-v="link">① 登壇者がスライドを紐付ける</a>
+  <a href="#control" data-v="control">② 配信コントロール</a>
+  <a href="#screen" data-v="screen">③ 配信画面</a>
+  <span class="sample-note">人物・発表・スライドはすべて架空の「見本」です</span>
+</header>
+
+<!-- ① 登壇者がスライドを紐付ける -->
+<section class="view" id="v-link">
+  <h2>タイムテーブル（登壇者本人の表示）</h2>
+  <div class="card timetable">
+    <div class="row"><span class="time">19:00</span><div><div class="title">オープニング</div><div class="muted">運営</div></div><span></span></div>
+    <div class="row mine"><span class="time">19:05</span>
+      <div><div class="title">LT 1：配信の裏側を3分で（見本）</div><div class="muted">山田 花子（あなた）</div></div>
+      <span><span class="chip ok" id="link-chip">配信スライド：小さく始める配信（見本）</span></span></div>
+    <div class="row"><span class="time">19:15</span><div><div class="title">LT 2：はじめての自作キーボード（見本）</div><div class="muted">佐藤 一郎</div></div><span></span></div>
+    <div class="row mine"><span class="time">19:45</span>
+      <div><div class="title">LT 4：続・配信の裏側（見本）</div><div class="muted">山田 花子（あなた）</div></div>
+      <span><button id="open-dialog">この発表で使うスライドを選ぶ</button></span></div>
+  </div>
+
+  <div class="dialog-wrap">
+    <div class="dialog">
+      <h3>「LT 4：続・配信の裏側（見本）」で使うスライド</h3>
+      <div class="muted">自分の events lab スライドから選びます。発表ごとに1つ選べます。</div>
+      <div class="deck-options" id="deck-options"></div>
+      <div class="consent">
+        選んだスライドは、<b>このイベントの運営スタッフが配信コントロールで表示・ページ送りできる</b>ようになります。
+        参加者のタイムテーブルには出ません（公開したいときは今までどおり「資料URL」に載せてください）。
+        紐付けを外すと、配信中でもすぐに表示されなくなります。
+      </div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px">
+        <button>紐付けを外す</button>
+        <button class="primary">このスライドを使う</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ② 配信コントロール -->
+<section class="view" id="v-control">
+  <h2>配信コントロール — 発表者とスライド</h2>
+  <div class="control">
+    <div class="card presenters">
+      <h3>発表者 <span class="muted" style="font-weight:400; font-size:12px">タイムテーブル順</span></h3>
+      <div id="presenter-list"></div>
+      <div class="scene-hint">発表者を選ぶと、その発表に紐付いたスライドの1ページ目が配信画面の「スライド」部分に出ます。シーンは切り替えません。</div>
+    </div>
+    <div class="card">
+      <h3 id="sel-heading">スライド</h3>
+      <div id="preview"></div>
+      <div class="pager" id="pager">
+        <button id="prev" aria-label="前のページ">‹</button>
+        <span class="count" id="count">1 / 6</span>
+        <button id="next" aria-label="次のページ">›</button>
+        <span class="muted" style="margin-left:12px"><span class="kbd">←</span> <span class="kbd">→</span> でもページ送り</span>
+      </div>
+      <div class="thumbs" id="thumbs"></div>
+      <div class="other muted">その他のスライド（自分のスライド）：
+        <select><option>なし</option><option>運営からのお知らせ（見本）</option></select>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ③ 配信画面 -->
+<section class="view" id="v-screen">
+  <div class="screen-wrap">
+    <div class="stage">
+      <div class="deck" id="screen-deck"></div>
+      <div class="cam">カメラ（見本）</div>
+      <div class="nameplate"><div class="n" id="screen-name">山田 花子</div><div class="r" id="screen-talk">LT 1</div></div>
+      <div class="band">夏のLT大会（見本） ・ 配信セット「スライド + カメラ」</div>
+    </div>
+    <div class="caption">
+      配信画面（/events/:id/live/screen）。スライド部分だけが発表者の紐付けスライドに替わる。氏名札は今回の範囲外（現行どおり配信セットの手入力テキスト）で、ここでは位置の参考として見本を置いている。
+    </div>
+  </div>
+</section>
+
+<script>
+  // ---- 見本データ ----
+  const palettes = [
+    ["#FFFFFF", "#1F2937", "#0F766E"], ["#0F172A", "#F8FAFC", "#FBBF24"], ["#FDF6EC", "#3B2A1A", "#C2410C"],
+  ];
+  function deck(title, pal, pages) {
+    return { title, pages: pages.map((p, i) => ({ t: p[0], b: p[1], pal: palettes[pal] })) };
+  }
+  const decks = {
+    yamada1: deck("小さく始める配信（見本）", 0, [
+      ["配信の裏側を3分で", "見本 / 山田 花子"], ["必要な機材は3つ", "PC・カメラ・マイク"], ["OBS にブラウザソース", "配信画面のURLを貼るだけ"],
+      ["スライドは運営がめくる", "発表者は話すことに集中"], ["当日の流れ", "選ぶ → 映る → めくる"], ["ありがとうございました", "見本スライドです"]]),
+    yamada2: deck("続・配信の裏側（見本）", 2, [
+      ["続・配信の裏側", "見本 / 山田 花子"], ["前回のふりかえり", "見本"], ["音のトラブル", "見本"], ["まとめ", "見本"]]),
+    sato: deck("はじめての自作キーボード（見本）", 1, [
+      ["はじめての自作キーボード", "見本 / 佐藤 一郎"], ["キースイッチの種類", "見本"], ["はんだ付けのコツ", "見本"],
+      ["失敗談", "見本"], ["完成！", "見本"]]),
+    suzuki: deck("Rust で CLI（見本）", 0, [["Rust で CLI", "見本 / 鈴木 次郎"], ["clap を使う", "見本"], ["配布", "見本"]]),
+  };
+  const presenters = [
+    { id: "p1", name: "山田 花子", talk: "19:05 LT 1：配信の裏側を3分で", short: "LT 1", color: "#2DD4BF", deck: "yamada1" },
+    { id: "p2", name: "佐藤 一郎", talk: "19:15 LT 2：はじめての自作キーボード", short: "LT 2", color: "#FBBF24", deck: "sato" },
+    { id: "p3", name: "田中 三郎", talk: "19:25 LT 3：コミュニティ運営の話", short: "LT 3", color: "#7DD3FC", deck: null, state: "none" },
+    { id: "p4", name: "山田 花子", talk: "19:45 LT 4：続・配信の裏側", short: "LT 4", color: "#2DD4BF", deck: "yamada2" },
+    { id: "p5", name: "鈴木 次郎", talk: "19:55 LT 5：Rust で CLI", short: "LT 5", color: "#FB7185", deck: null, state: "none" },
+    { id: "p6", name: "高橋（アカウント未リンク）", talk: "20:05 LT 6：飛び入り", short: "LT 6", color: "#97A3BC", deck: null, state: "unlinked" },
+  ];
+
+  function slideHtml(page, opts = {}) {
+    const [bg, fg, accent] = page.pal;
+    return `<div class="slide${opts.cur ? " cur" : ""}" ${opts.attr ?? ""} style="background:${bg};color:${fg}">
+      <span class="sample-badge">見本</span>
+      <div class="t" style="font-size:${opts.size ?? 28}px;border-left:6px solid ${accent};padding-left:12px">${page.t}</div>
+      <div class="b" style="font-size:${(opts.size ?? 28) * 0.55}px">${page.b}</div></div>`;
+  }
+
+  // ---- 状態（コントロール→画面の同期を見立てる） ----
+  const params = new URLSearchParams(location.search);
+  let selected = params.get("p") ?? "p1";
+  let page = Number(params.get("page") ?? 2);
+
+  function currentDeck() { const p = presenters.find(x => x.id === selected); return p?.deck ? decks[p.deck] : null; }
+
+  function renderControl() {
+    document.getElementById("presenter-list").innerHTML = presenters.map(p => {
+      const chip = p.deck ? `<span class="chip ok">スライドあり ${decks[p.deck].pages.length}p</span>`
+        : p.state === "unlinked" ? `<span class="chip none">紐付け不可</span>`
+        : `<span class="chip none">スライド未登録</span>`;
+      const live = p.id === selected ? ` <span class="chip live">配信中</span>` : "";
+      return `<div class="p${p.id === selected ? " sel" : ""}${p.state === "unlinked" ? " disabled" : ""}" data-id="${p.id}">
+        <div class="avatar" style="background:${p.color}">${p.name[0]}</div>
+        <div><div class="who">${p.name}${live}</div><div class="talk">${p.talk}</div></div>${chip}</div>`;
+    }).join("");
+    document.querySelectorAll(".presenters .p:not(.disabled)").forEach(el => el.onclick = () => {
+      if (el.dataset.id !== selected) { selected = el.dataset.id; page = 0; }
+      render();
+    });
+    const p = presenters.find(x => x.id === selected);
+    const d = currentDeck();
+    document.getElementById("sel-heading").innerHTML = `${p.name} — ${d ? d.title : "スライドなし"}`;
+    const pager = document.getElementById("pager");
+    if (!d) {
+      const msg = "この発表にはスライドが紐付いていません（紐付けを外した・スライドを削除した場合も同じ）。<br>配信画面のスライド部分は「スライド未選択」の表示になります。<br>カメラのシーンで進めるか、下の「その他のスライド」から選べます。";
+      document.getElementById("preview").innerHTML = `<div class="empty">${msg}</div>`;
+      pager.style.visibility = "hidden";
+      document.getElementById("thumbs").innerHTML = "";
+      return;
+    }
+    pager.style.visibility = "visible";
+    page = Math.min(page, d.pages.length - 1);
+    document.getElementById("preview").innerHTML = slideHtml(d.pages[page], { size: 40 });
+    document.getElementById("count").textContent = `${page + 1} / ${d.pages.length}`;
+    document.getElementById("prev").disabled = page <= 0;
+    document.getElementById("next").disabled = page >= d.pages.length - 1;
+    document.getElementById("thumbs").innerHTML = d.pages.map((pg, i) => slideHtml(pg, { size: 8, cur: i === page, attr: `data-i="${i}"` })).join("");
+    document.querySelectorAll("#thumbs .slide").forEach(el => el.onclick = () => { page = Number(el.dataset.i); render(); });
+  }
+
+  function renderScreen() {
+    const p = presenters.find(x => x.id === selected);
+    const d = currentDeck();
+    document.getElementById("screen-deck").innerHTML = d ? slideHtml(d.pages[Math.min(page, d.pages.length - 1)], { size: 44 })
+      : `<div class="slide" style="background:#111827;color:#64748b;align-items:center">スライド未選択</div>`;
+    document.getElementById("screen-name").textContent = p.name.replace(/（.*）/, "");
+    document.getElementById("screen-talk").textContent = p.short;
+  }
+
+  function renderLink() {
+    const opts = [["yamada2", "4日前に更新"], ["yamada1", "LT 1 で使用中"], [null, "1日前に更新"]];
+    document.getElementById("deck-options").innerHTML = opts.map(([k, meta], i) => {
+      const d = k ? decks[k] : { title: "メモ（見本）", pages: [{ t: "メモ", b: "見本", pal: palettes[1] }] };
+      return `<div class="deck-opt${i === 0 ? " sel" : ""}">${slideHtml(d.pages[0], { size: 12 })}
+        <div class="name">${d.title}</div><div class="meta">${d.pages.length}ページ ・ ${meta}</div></div>`;
+    }).join("");
+  }
+
+  function render() { renderControl(); renderScreen(); }
+  document.getElementById("prev").onclick = () => { page = Math.max(0, page - 1); render(); };
+  document.getElementById("next").onclick = () => { const d = currentDeck(); if (d) page = Math.min(d.pages.length - 1, page + 1); render(); };
+  window.addEventListener("keydown", e => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+    if (e.key === "ArrowRight") document.getElementById("next").click();
+    if (e.key === "ArrowLeft") document.getElementById("prev").click();
+  });
+
+  function showView() {
+    const v = (location.hash || "#control").slice(1);
+    document.querySelectorAll("section.view").forEach(s => s.classList.toggle("on", s.id === `v-${v}`));
+    document.querySelectorAll("header.top a").forEach(a => a.classList.toggle("on", a.dataset.v === v));
+  }
+  window.addEventListener("hashchange", showView);
+  renderLink(); render(); showView();
+</script>
+</body>
+</html>
