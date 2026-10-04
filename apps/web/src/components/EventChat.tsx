@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
   Button,
   Card,
   CardContent,
+  Chip,
   IconButton,
   Stack,
   Tooltip,
   Typography,
 } from "@mui/material";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import OpenInFullOutlinedIcon from "@mui/icons-material/OpenInFullOutlined";
 import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -26,13 +28,23 @@ import {
   useHideChatNote,
   useResetChatChannel,
 } from "../api/eventChatHooks.js";
+import {
+  useEncryptedChat,
+  useOpenEncryptedChat,
+} from "../api/encryptedChatHooks.js";
 import { isChatUnavailable } from "../lib/chatApiErrors.js";
-import { selectVisibleChatMessages } from "../lib/chatMessageBuffer.js";
+import {
+  clampToDisplayMax,
+  selectVisibleChatMessages,
+} from "../lib/chatMessageBuffer.js";
+import { randomLocalSigner } from "../lib/nostrChat.js";
+import type { ChatSigner } from "../lib/nostrChat.js";
 import { ChatComposer } from "./chat/ChatComposer.js";
 import { ChatJoinPanel } from "./chat/ChatJoinPanel.js";
 import { ChatMessageList, chatFontSizes } from "./chat/ChatMessageList.js";
 import { useChatChannel } from "./chat/useChatChannel.js";
 import { useChatSigner } from "./chat/useChatSigner.js";
+import { useEncryptedChatChannel } from "./chat/useEncryptedChatChannel.js";
 
 /**
  * Nostrイベントチャット (#199)。NIP-28 パブリックチャットをブラウザから
@@ -49,6 +61,13 @@ import { useChatSigner } from "./chat/useChatSigner.js";
  *
  * **チャットを出してよいかの判定はここでは持たない**。呼び出し側が
  * `useEventChatAccess` の `chatAvailable` で囲む（同じ式を2か所に置かない）。
+ *
+ * 参加者のみ（暗号化）(#582, docs/participant-encrypted-chat.md 4.2) のイベントでは
+ * 経路を切り替える。暗号処理はここに書かない（chat/useEncryptedChatChannel.ts）:
+ * - 新しい発言: 暗号化チャット（参加 UI は出さず、サーバー管理の一時鍵を自動発行）
+ * - 平文の過去ログ（公開イベントのみ）: 既存の部屋を読み取り専用で開き、
+ *   暗号化をオンにした時刻までの発言だけを同じ一覧に並べる（境目に区切り）
+ * - 非公開・限定公開では平文の経路を一切開かない
  */
 export function EventChat({
   eventId,
@@ -81,7 +100,13 @@ export function EventChat({
    * フラグで囲むこと**（isStaff を直接見ると投影用画面に漏れる） */
   const showStaffActions = isStaff && !display && showManagementActions;
 
-  const { data: chat, error: chatError } = useChatMembers(eventId, true);
+  const encrypted = event.chatEncrypted;
+  const isPublic = event.visibility === "public";
+  // 平文の chat-members は公開イベントでだけ取る（非公開では 403 が返る経路。
+  // 暗号化オンの公開イベントでは過去ログの名前解決に使う）
+  const { data: chat, error: chatError } = useChatMembers(eventId, isPublic);
+  const enc = useEncryptedChat(eventId, encrypted);
+  const openEnc = useOpenEncryptedChat(eventId);
   /** チャットに繋がせない状態か (#283)。
    *
    * **理由は画面に書かない**。「あなたは締め出されました」と伝えると、
@@ -90,27 +115,74 @@ export function EventChat({
    * 回線を疑って時間を無駄にするし、後で分かったときに嘘をついたことになる。
    * 理由を明かさず、事実として正しい文言（`eventSocial.chatUnavailable`）だけを
    * 出す。理由は書かないが、嘘も書かない。 */
-  const chatUnavailable = isChatUnavailable(chatError) || Boolean(chatError) || !me || event.visibility !== "public" || chat?.chatEnabled === false;
+  const chatUnavailable = encrypted
+    ? // 暗号化チャットの可否は鍵配布のゲート（参加確定メンバー・締め出し・設定）が決める。
+      // 平文の chat-members の失敗はここでは見ない（過去ログが出なくなるだけ）
+      Boolean(enc.error) || openEnc.isError || !me
+    : isChatUnavailable(chatError) || Boolean(chatError) || !me || !isPublic || chat?.chatEnabled === false;
   const resetChannel = useResetChatChannel(eventId);
   const hideNote = useHideChatNote(eventId);
 
-  const signerState = useChatSigner({ eventId, display, chat, me });
-  const { signer, activeSigner, joinErrorKey } = signerState;
-  // 部屋の開設はスタッフの操作 (#221)。投影用は見せるだけなので開設もしない
-  const canOpenChannel = isStaff && !display && showManagementActions;
-  const { messages, channelId, relayConnected, channelErrorKey, send } =
-    useChatChannel({
-      eventId,
-      eventTitle: event.title,
-      chat,
-      signer,
-      activeSigner,
-      // 主催者本人が本人の鍵で参加しているときだけ、その鍵で部屋を開く (#199 / #460)
-      isOrganizerNip07: () =>
-        signerState.isNip07Ref.current && me?.id === event.createdBy,
-      canOpenChannel,
-      chatUnavailable,
-    });
+  // 暗号化モードでは平文の鍵の選択・自動再参加をしない（chat を渡さない＝何もしない）
+  const signerState = useChatSigner({
+    eventId,
+    display,
+    chat: encrypted ? undefined : chat,
+    me,
+  });
+  const { joinErrorKey } = signerState;
+  // 平文の過去ログは読むだけ。リレーの AUTH に答えるための使い捨て鍵で繋ぐ
+  const legacyReaderRef = useRef<ChatSigner | null>(null);
+  if (encrypted && !legacyReaderRef.current) {
+    legacyReaderRef.current = randomLocalSigner();
+  }
+  const plaintextChannelId = enc.data?.plaintextChannelId ?? null;
+  const signer = encrypted ? null : signerState.signer;
+  // 部屋の開設はスタッフの操作 (#221)。投影用は見せるだけなので開設もしない。
+  // 暗号化モードでは平文の部屋を開かない（サーバーも 409 で断る）
+  const canOpenChannel = isStaff && !display && showManagementActions && !encrypted;
+  const plain = useChatChannel({
+    eventId,
+    eventTitle: event.title,
+    chat:
+      encrypted && chat ? { ...chat, channelId: plaintextChannelId } : chat,
+    signer,
+    activeSigner: encrypted ? legacyReaderRef.current : signerState.activeSigner,
+    // 主催者本人が本人の鍵で参加しているときだけ、その鍵で部屋を開く (#199 / #460)
+    isOrganizerNip07: () =>
+      signerState.isNip07Ref.current && me?.id === event.createdBy,
+    canOpenChannel,
+    // 非公開・限定公開では平文の経路を一切開かない（plaintextChannelId も null）
+    chatUnavailable:
+      chatUnavailable || (encrypted && (!isPublic || !plaintextChannelId)),
+  });
+  const { channelId, channelErrorKey } = plain;
+
+  // 部屋・自分の鍵が無ければ作る（先勝ち・冪等）。失効から復帰した人も
+  // myKey が null で返るのでここで再有効化される。投影用は発言しないので作らない。
+  // 失敗したらループしない（mutation がエラーのまま止まり、繋がせない表示に倒す）
+  useEffect(() => {
+    if (!encrypted || display || !me || !enc.isSuccess) return;
+    if (openEnc.isPending || openEnc.isError) return;
+    if (enc.data !== null && enc.data.myKey !== null) return;
+    openEnc.mutate();
+    // openEnc（mutation オブジェクト）は毎レンダーで変わるため依存に含めない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [encrypted, display, me, enc.isSuccess, enc.data, openEnc.isPending, openEnc.isError]);
+
+  const encChannel = useEncryptedChatChannel({
+    eventId,
+    chat: encrypted ? enc.data : null,
+    display,
+    chatUnavailable: !encrypted || chatUnavailable,
+    // 送信直前の取り直し（設計 3.2）。資格を失っていれば失敗して送らない
+    refresh: async () => {
+      const result = await enc.refetch();
+      if (result.error) throw result.error;
+      return result.data;
+    },
+  });
+  const relayConnected = encrypted ? encChannel.relayConnected : plain.relayConnected;
 
   // 書き込み可能時間帯（開始30分前〜終了2時間後）。1分ごとに再評価。
   // 日程が確定していること自体は呼び出し側の chatAvailable が保証している
@@ -123,22 +195,59 @@ export function EventChat({
     now >= event.startsAt - CHAT_WINDOW_BEFORE_MS &&
     now <= event.endsAt + CHAT_WINDOW_AFTER_MS;
 
-  const memberByPubkey = useMemo(
+  const memberByPubkey = useMemo(() => {
+    const map = new Map<string, ChatMember>(
+      (chat?.members ?? []).map((m) => [m.pubkey, m]),
+    );
+    if (encrypted) {
+      for (const m of enc.data?.members ?? []) map.set(m.pubkey, m);
+    }
+    return map;
+  }, [chat, encrypted, enc.data]);
+  const encryptedAt = enc.data?.encryptedAt ?? 0;
+  /** 平文の過去ログ（暗号化モードのとき、オンにした時刻まで）。区切りを出すために別に持つ */
+  const legacyMessages = useMemo(
     () =>
-      new Map<string, ChatMember>(
-        (chat?.members ?? []).map((m) => [m.pubkey, m]),
-      ),
-    [chat],
+      encrypted
+        ? selectVisibleChatMessages(
+            plain.messages.filter((m) => m.created_at * 1000 <= encryptedAt),
+            {
+              members: new Set((chat?.members ?? []).map((m) => m.pubkey)),
+              hidden: new Set(chat?.hiddenNoteIds ?? []),
+              maxLength: CHAT_MESSAGE_MAX,
+            },
+          )
+        : [],
+    [encrypted, plain.messages, encryptedAt, chat],
   );
-  const visibleMessages = useMemo(
-    () =>
-      selectVisibleChatMessages(messages, {
+  const visibleMessages = useMemo(() => {
+    if (!encrypted) {
+      return selectVisibleChatMessages(plain.messages, {
         members: new Set(memberByPubkey.keys()),
         hidden: new Set(chat?.hiddenNoteIds ?? []),
         maxLength: CHAT_MESSAGE_MAX,
-      }),
-    [messages, memberByPubkey, chat],
-  );
+      });
+    }
+    const sealed = selectVisibleChatMessages(encChannel.messages, {
+      members: new Set((enc.data?.members ?? []).map((m) => m.pubkey)),
+      hidden: new Set(enc.data?.hiddenNoteIds ?? []),
+      maxLength: CHAT_MESSAGE_MAX,
+    });
+    // 平文の過去ログと暗号文を created_at で1つの一覧にする（設計 4.2）
+    return clampToDisplayMax(
+      [...legacyMessages, ...sealed].sort((a, b) => a.created_at - b.created_at),
+    );
+  }, [encrypted, plain.messages, memberByPubkey, chat, encChannel.messages, enc.data, legacyMessages]);
+  // 区切り「ここから参加者のみ」は平文の過去ログがあるときだけ、その最後の行の後に出す。
+  // 投影用には出さない（見せる画面なので。設計 7.2）
+  const lastLegacyId = legacyMessages.at(-1)?.id;
+  const separatorAfterId =
+    encrypted && !display && lastLegacyId &&
+    visibleMessages.some((m) => m.id === lastLegacyId)
+      ? lastLegacyId
+      : null;
+  const send = encrypted ? encChannel.send : plain.send;
+  const canSend = encrypted ? encChannel.canSend : Boolean(channelId);
 
   // サーバーに登録済みのチャンネルID（未開設は null。ポーリングで反映）
   const serverChannelId = chat?.channelId ?? null;
@@ -187,15 +296,28 @@ export function EventChat({
         justifyContent="space-between"
         sx={{ mb: 0.5, display: display ? "none" : undefined }}
       >
-        <Typography
-          variant="h6"
-          sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
-        >
-          <ForumOutlinedIcon fontSize="small" />
-          {t("eventSocial.chatHeading")}
-        </Typography>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+          <Typography
+            variant="h6"
+            sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
+          >
+            <ForumOutlinedIcon fontSize="small" />
+            {t("eventSocial.chatHeading")}
+          </Typography>
+          {/* 参加者のみ・暗号化 (#582 設計 7.2)。投影用には出さない */}
+          {encrypted && !display && (
+            <Tooltip title={t("eventSocial.chatEncryptedNotice")}>
+              <Chip
+                size="small"
+                variant="outlined"
+                icon={<LockOutlinedIcon />}
+                label={t("eventSocial.chatEncryptedChip")}
+              />
+            </Tooltip>
+          )}
+        </Stack>
         <Stack direction="row" spacing={0.5} alignItems="center">
-          {signer && (
+          {(signer || (encrypted && encChannel.canSend)) && (
             <Typography variant="caption" color="text.secondary">
               {relayConnected
                 ? t("eventSocial.chatConnected")
@@ -245,12 +367,12 @@ export function EventChat({
       )}
       {/* 投影用はどちらの分岐にも入らず、常にメッセージ一覧だけを出す (#215)。
           参加操作は戻り先の通常のチャット画面に任せる */}
-      {!display && chat && !serverChannelId && !canOpenChannel ? (
+      {!encrypted && !display && chat && !serverChannelId && !canOpenChannel ? (
         // 部屋の開設はスタッフの操作のみ (#221)。それまで参加UIは出さない
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
           {t("eventSocial.chatRoomNotOpenYet")}
         </Typography>
-      ) : !display && !signer ? (
+      ) : !encrypted && !display && !signer ? (
         <ChatJoinPanel
           keyMode={signerState.keyMode}
           onKeyModeChange={signerState.setKeyMode}
@@ -260,6 +382,11 @@ export function EventChat({
             showStaffActions && Boolean(chat) && !serverChannelId
           }
         />
+      ) : encrypted && !display && !enc.data?.myKey ? (
+        // 鍵の取得・発行中（初回の POST・失効からの復帰）。参加の操作は要らない
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          {t("common.loading")}
+        </Typography>
       ) : (
         <Stack
           spacing={1.5}
@@ -278,12 +405,14 @@ export function EventChat({
             showStaffActions={showStaffActions}
             hidePending={hideNote.isPending}
             onHide={(noteId) => hideNote.mutate(noteId)}
+            separatorAfterId={separatorAfterId}
           />
           {/* 投影用は入力欄を出さない（読むだけの画面） (#215) */}
           {!display && (
             <ChatComposer
               inWriteWindow={inWriteWindow}
-              canSend={Boolean(channelId)}
+              canSend={canSend}
+              notice={encrypted ? t("eventSocial.chatEncryptedNotice") : undefined}
               // スタッフはURL投稿の制限を受けない (#241)
               allowUrls={isStaff || event.chatUrlsAllowed}
               onSend={send}

@@ -21,6 +21,12 @@ const ja = {
   chatOffline: "オフライン",
   chatOpenInPage: "チャット画面で開く",
 
+  /** 参加者のみ・暗号化 (#582)。チップと説明、平文の過去ログとの区切り */
+  chatEncryptedChip: "参加者のみ・暗号化",
+  chatEncryptedNotice:
+    "このチャットは参加確定者とスタッフだけが読めます。内容は暗号化されて外部サーバーに保存されます（運営サービスには内容が見えます）。",
+  chatEncryptedSeparator: "ここから参加者のみ",
+
   /** 繋がせない状態 (#283)。理由は書かないが嘘も書かない。
    *  表示と参加ボタンの失敗で同じ文言を出すので1キーにまとめてある */
   chatUnavailable: "このイベントのチャットに接続できません。",
@@ -307,6 +313,10 @@ const en: Record<keyof typeof ja, string> = {
   chatOffline: "Offline",
   chatOpenInPage: "Open the chat page",
 
+  chatEncryptedChip: "Participants only · encrypted",
+  chatEncryptedNotice:
+    "Only confirmed participants and organizers can read this chat. Messages are encrypted and stored on external servers (the service operator can see the content).",
+  chatEncryptedSeparator: "Participants only from here",
   chatUnavailable: "You cannot connect to the chat for this event.",
 
   chatRoomNotOpenYet:

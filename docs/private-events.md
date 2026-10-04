@@ -34,7 +34,7 @@
 ### 1.1 編集と公開範囲変更
 
 - 作成/編集フォームと詳細・参加確認に常時バッジと説明。表示のみで保護しない。
-- public→unlisted/privateは二段階確認。「検索/通知/外部サイト/共有URL/ダウンロード済み情報は回収できません」「参加者チャットは停止します」を表示。
+- public→unlisted/privateは二段階確認。「検索/通知/外部サイト/共有URL/ダウンロード済み情報は回収できません」「暗号化していない参加者チャットは停止します」を表示（参加者のみ（暗号化）は続く。#582、docs/participant-encrypted-chat.md）。
 - privateへの変更時は既存の非canceled member（confirmed/waitlist/applied/lost）を閲覧許可対象として保存する。既存の申込状態・枠・回答を変更しない。管理者は別の根拠で閲覧できる。日程投票者・フォロワー・会場提供者は自動招待しない。
 - 確認画面は現在のmember件数/投票のみの人数を表示し、後者に招待が必要と説明。旧参加者を黙って追い出さない。変更APIには確認時のaccessRevisionを必須とし、新規参加等で対象が変われば409で再確認。
 - private→unlisted/publicは「承諾者以外にも見えるようになる」確認。全閲覧招待行を削除し旧inviteIdを失効させる（後のprivate化へ権限を持ち越さない）。staff招待は別物なので維持。
@@ -107,7 +107,7 @@
 | scoring/award/live/like/meet/prize/bingo/qa/survey/todo/duty/schedule/broadcast/pre-survey/name-card-assets/analytics/staff-invites | S worker.tsのevent関連route登録と各routes/*.ts | `/api/events/:id/*` の共通閲覧門を漏れなく継承し、各既存role/status/子所有者条件を維持。copy元にもcanViewEvent＋既存source staff確認 |
 | `/api/events/:id/attendance.csv` とvenue-offersのevent情報 | S routes/attendanceCsv.ts, venueOffers.ts; R venueOffers.ts | privateでは会場提供資格だけで詳細/名簿を渡さない。先に閲覧招待承諾が必要、その上で従来の成立会場運営者条件。会場側オファー一覧は閲覧不可eventのタイトル等を伏せ、業務用offerの状態のみ残す |
 | 開催前アンケート `/api/public/pre-surveys/:token` GET/POSTと`/s/:token` | S worker.ts, routes/eventPreSurvey.ts; R eventPreSurvey.ts; docs/pre-event-survey.md | privateでは既存共有tokenの両APIも404（closedタイトルも返さない）。private化でtokenを回転しstatus=closed、public/unlistedに戻しても再開は手動。管理結果はstaff可。unlistedでは独立共有フォームとして既存仕様維持 |
-| 参加者チャットAPIと外部WS | S routes/eventChat.ts, lib/nostrRelay.ts; W lib/nostrChat.ts, lib/useEventChatAccess.ts | 非publicでは参加者チャットを使用不可。§5。APIの鍵/channel/memberリスト取得・変更も認可後403 `chat_unavailable`（既存chatの停止応答へ統一）。UIだけで無効化しない |
+| 参加者チャットAPIと外部WS | S routes/eventChat.ts, lib/nostrRelay.ts; W lib/nostrChat.ts, lib/useEventChatAccess.ts | 非publicでは平文の参加者チャットを使用不可。§5。APIの鍵/channel/memberリスト取得・変更も認可後403 `chat_unavailable`（既存chatの停止応答へ統一）。UIだけで無効化しない。参加者のみ（暗号化）は #582 で実装（S routes/encryptedChat.ts。docs/participant-encrypted-chat.md 参照） |
 | staffチャット | S routes/staffChat.ts; R staffChat.ts; W lib/staffChatCrypto.ts; docs/staff-chat.md | 既存の暗号化/確定staff限定を維持＋イベント門。一般閲覧招待では鍵を配らない。staff喪失時の世代更新維持。過去鍵/取得済ログの回収は不可 |
 | 通知一覧/未読数/通知メール、リマインダー、一斉メール、フォロワー、日程確定 | S routes/notifications.ts, follows.ts, eventBroadcast.ts; R notifications.ts, scheduleRegistration.ts; S lib/email.ts, reminders.ts, broadcast.ts | §8。非publicを一般フォロワー/たまご賛同者へ流さない。本人・参加者への業務連絡も送信直前に資格確認 |
 | 独立素材: decks、deck-images、live-set-images、BGM、会場写真 | S routes/public.ts, deckImages.ts, liveSetImages.ts, bgm.ts, venues.ts; R decks.ts, liveSets.ts, venuePhotos.ts | event_idを持たない独立素材。private化はこれらの公開URLを保護しない。イベントへの参照取得はイベント門で保護するが素材自体は既存公開契約。非publicの素材選択UIで警告。秘密資料はアップロードしない (§5) |
@@ -129,7 +129,7 @@
 
 現行 `S routes/eventChat.ts` のコメント通り本文はブラウザ⇔リレー直通。`W lib/nostrChat.ts` のkind:42 contentは平文で、NIP-70は暗号化ではない。アプリで鍵配布を止めても既存鍵やchannel IDを使う外部クライアントのWSをサーバーから認可/切断できない。
 
-従って今回の機能設計では **unlisted/privateの参加者チャットは停止**。privateなのに平文へ送る抜け道を残さない。既存clientはaccess再取得を15秒周期、focus/reconnect時と送信直前に行い、非public/失効/認可取得失敗なら購読・再接続を停止して画面データを破棄する。ただし悪意のあるclient/古い配備clientの外部WSは停止保証できない。publicから変更前のチャット本文/channel名やその後の外部投稿も回収不可。#205の暗号化は別承認まで実装しない。
+従って今回の機能設計では **unlisted/privateの参加者チャットは停止**。privateなのに平文へ送る抜け道を残さない。既存clientはaccess再取得を15秒周期、focus/reconnect時と送信直前に行い、非public/失効/認可取得失敗なら購読・再接続を停止して画面データを破棄する。ただし悪意のあるclient/古い配備clientの外部WSは停止保証できない。publicから変更前のチャット本文/channel名やその後の外部投稿も回収不可。#205 の暗号化は #582 で実装した（参加者のみ（暗号化）。docs/participant-encrypted-chat.md 参照）。非publicでは暗号化をオンにした参加者チャットだけを使える。
 
 独立した公開スライド/画像/配信素材/会場写真/自由記述の外部リンクは、本件でprivate資料保管庫にはならない。非publicの詳細/編集/素材アップロード入口に「この素材のURLはイベントの招待制限の対象外」と明示。イベントの固有写真/動画は§4の門で保護する。独立素材への機密データ保存も必要なら本設計の範囲を改めて承認し、それまでは保証対象外。PR #524/#525の素材仕様は変更しない。
 

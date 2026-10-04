@@ -16,6 +16,7 @@ import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { decksRepo } from "../db/repositories/decks.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
+import { groupChatRepo } from "../db/repositories/groupChat.js";
 import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
 import { presenterSlidesRepo } from "../db/repositories/presenterSlides.js";
 
@@ -44,7 +45,9 @@ liveControlRoutes.patch(
     }
     if (input.chatSource === "event") {
       const event = await eventsRepo.findById(c.req.param("id"));
-      if (!event || event.visibility !== "public" || event.status !== "published" || event.scheduling || !event.chatEnabled || await eventChatRepo.isUserBlocked(c.req.param("id"), c.get("user").id)) {
+      // 平文は公開イベントだけ。暗号化オン (#582) なら公開範囲を問わない（画面はスタッフ本人の資格で鍵を取る）。
+      // 締め出しは人単位（平文の鍵・暗号化部屋の signer のどちらでも。設計 3.3）
+      if (!event || !(event.visibility === "public" || event.chatEncrypted) || event.status !== "published" || event.scheduling || !event.chatEnabled || await eventChatRepo.isUserBlocked(c.req.param("id"), c.get("user").id) || await groupChatRepo.isMembersSignerBlocked(c.req.param("id"), c.get("user").id)) {
         return c.json({ error: "chat_unavailable" }, 403);
       }
     }

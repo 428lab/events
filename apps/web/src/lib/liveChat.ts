@@ -1,6 +1,20 @@
 import { CHAT_MESSAGE_MAX } from "@eventer/shared";
-import type { ChatMember, ChatMembersPayload, EventLiveState } from "@eventer/shared";
-import type { Event as NostrEvent } from "nostr-tools/pure";
+import type { ChatMember, EventLiveState } from "@eventer/shared";
+
+/** 行にする入力。content は**平文**（暗号化チャット #582 では呼び出し側が復号済み） */
+export interface LiveChatMessage {
+  id: string;
+  pubkey: string;
+  created_at: number;
+  content: string;
+}
+
+/** 行の名前解決と非表示に使う、サーバーが許可した一覧（平文の chat-members /
+ * 暗号化チャットの payload のどちらでもよい） */
+export interface LiveChatPermissions {
+  members: ChatMember[];
+  hiddenNoteIds: string[];
+}
 
 export interface LiveChatRow {
   source: "event";
@@ -22,7 +36,8 @@ export function liveChatAuthorized(
   updatedAt: number,
   error: boolean,
   now: number,
-  chat: ChatMembersPayload | undefined,
+  /** 購読先が決まっているか（平文: chatEnabled と channelId / 暗号化: roomId） */
+  chat: { chatEnabled: boolean; channelId: string | null } | undefined,
   eligible: boolean,
 ): boolean {
   return state?.chatSource === "event" && !error && updatedAt > 0 && now - updatedAt <= 5000 &&
@@ -30,7 +45,7 @@ export function liveChatAuthorized(
 }
 
 /** Selection uses only the current server-authorized member map. Removed/hidden posts lose their whole row, including image. */
-export function liveChatRows(messages: NostrEvent[], chat: ChatMembersPayload, now: number, rows: number): LiveChatRow[] {
+export function liveChatRows(messages: LiveChatMessage[], chat: LiveChatPermissions, now: number, rows: number): LiveChatRow[] {
   const members = new Map(chat.members.map(member => [member.pubkey, member]));
   const hidden = new Set(chat.hiddenNoteIds);
   return messages.filter(message => members.has(message.pubkey) && !hidden.has(message.id) && message.content.length <= CHAT_MESSAGE_MAX &&

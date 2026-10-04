@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 
 /**
  * イベント編集でも、終了日時が開始より前なら入力の時点で警告する (#399)。
@@ -173,4 +173,63 @@ it("does not present the retained old dates as current when reopened", () => {
   fireEvent.click(screen.getByRole("button", { name: "日時を直接設定する" }));
   expect(screen.getByLabelText("開始日時")).toHaveValue("");
   expect(screen.getByLabelText("終了日時")).toHaveValue("");
+});
+
+describe("参加者のみ（暗号化）(#582 W6)", () => {
+  const encryptSwitch = () =>
+    screen.getByRole("checkbox", { name: "参加者のみ（暗号化）" });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("オンへの切り替えで確認し、承諾したら chatEncrypted: true を送る", () => {
+    eventData = makeEventData({ chatEnabled: true, chatEncrypted: false, visibility: "public" });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    draw();
+    expect(encryptSwitch()).not.toBeChecked();
+    fireEvent.click(encryptSwitch());
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("一度オンにすると戻せません"));
+    expect(encryptSwitch()).toBeChecked();
+    fireEvent.click(saveButton());
+    expect(updateMutate.mock.calls[0][0]).toMatchObject({ chatEnabled: true, chatEncrypted: true });
+  });
+
+  it("確認で取り消したらオンにならず、chatEncrypted は送らない", () => {
+    eventData = makeEventData({ chatEnabled: true, chatEncrypted: false, visibility: "public" });
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    draw();
+    fireEvent.click(encryptSwitch());
+    expect(encryptSwitch()).not.toBeChecked();
+    fireEvent.click(saveButton());
+    expect(updateMutate.mock.calls[0][0]).not.toHaveProperty("chatEncrypted");
+  });
+
+  it("オン済みならスイッチは無効（戻せない）", () => {
+    eventData = makeEventData({ chatEnabled: true, chatEncrypted: true, visibility: "public" });
+    draw();
+    expect(encryptSwitch()).toBeChecked();
+    expect(encryptSwitch()).toBeDisabled();
+    expect(screen.getByText("この設定は戻せません。")).toBeInTheDocument();
+  });
+
+  it("非公開ではチャットのオンと連動する（確認のうえ、暗号化も同時にオン）", () => {
+    eventData = makeEventData({ chatEnabled: false, chatEncrypted: false, visibility: "private" });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    draw();
+    fireEvent.click(screen.getByRole("checkbox", { name: "参加者チャット" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(encryptSwitch()).toBeChecked();
+    expect(encryptSwitch()).toBeDisabled();
+    fireEvent.click(saveButton());
+    expect(updateMutate.mock.calls[0][0]).toMatchObject({ chatEnabled: true, chatEncrypted: true });
+  });
+
+  it("非公開でチャットのオンを取り消したらチャットもオフのまま", () => {
+    eventData = makeEventData({ chatEnabled: false, chatEncrypted: false, visibility: "private" });
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    draw();
+    fireEvent.click(screen.getByRole("checkbox", { name: "参加者チャット" }));
+    expect(screen.queryByRole("checkbox", { name: "参加者のみ（暗号化）" })).not.toBeInTheDocument();
+    fireEvent.click(saveButton());
+    expect(updateMutate.mock.calls[0][0]).toMatchObject({ chatEnabled: false });
+    expect(updateMutate.mock.calls[0][0]).not.toHaveProperty("chatEncrypted");
+  });
 });

@@ -14,7 +14,7 @@ export function eventWriteGuard({eventId,actorId,permission}: EventWriter): Stat
     : `EXISTS(SELECT 1 FROM event_member m WHERE m.event_id=e.id AND m.user_id=u.id AND m.status${permission === "registered" || permission === "scorer" ? "<>'canceled'" : "='confirmed'"} AND m.role IN (${permission === "staff" || permission === "chat-staff" ? "'staff'" : permission === "judge" ? "'judge','staff'" : permission === "scorer" ? "'participant','judge','staff'" : "'staff','participant','observer','judge'"}))`;
   return {sql:`SELECT CASE WHEN EXISTS(SELECT 1 FROM event e JOIN user u ON u.id=?2 AND u.deleted_at IS NULL
     WHERE e.id=?3 AND ${eventViewSql("e","u.id","?1")} AND (${role} ${permission === "member" || permission === "registered" || permission === "judge" || permission === "scorer" || permission === "chat-member" ? `OR ${eventManagerSql("e","u","?1")}` : ""})
-    ${permission.startsWith("chat-") ? "AND e.visibility='public'" : ""}) THEN 1
+    ${permission.startsWith("chat-") ? "AND (e.visibility='public' OR e.chat_encrypted=1)" : ""}) THEN 1
     ELSE json_extract('{}','event_access_changed') END`,args:[adminIds(),actorId,eventId]};
 }
 export async function eventWrite(writer:EventWriter, statements:Statement[]):Promise<number[]> {

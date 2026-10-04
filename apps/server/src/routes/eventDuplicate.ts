@@ -79,6 +79,8 @@ eventDuplicateRoutes.post(
       attendanceCheck: src.attendanceCheck,
       chatEnabled: src.chatEnabled,
       chatUrlsAllowed: src.chatUrlsAllowed,
+      // 参加者のみ（暗号化 #582）も引き継ぐ。オンにした時刻は複製時刻になる
+      chatEncrypted: src.chatEncrypted,
       // Q&A (#216) は設定だけコピーする（質問・票は複製元のもの）
       qaEnabled: src.qaEnabled,
       qaAnonymity: src.qaAnonymity,

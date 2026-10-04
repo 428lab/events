@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   Avatar,
   Box,
+  Divider,
   IconButton,
   Stack,
   Tooltip,
@@ -46,6 +47,7 @@ export function ChatMessageList({
   showStaffActions,
   hidePending,
   onHide,
+  separatorAfterId = null,
 }: {
   messages: NostrEvent[];
   memberByPubkey: Map<string, ChatMember>;
@@ -59,6 +61,9 @@ export function ChatMessageList({
   showStaffActions: boolean;
   hidePending: boolean;
   onHide: (noteId: string) => void;
+  /** この id の行の後に区切り「ここから参加者のみ」を出す (#582 設計 7.2)。
+   * 平文の過去ログと暗号化後の発言の境目。出さないときは null */
+  separatorAfterId?: string | null;
 }) {
   const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -97,8 +102,8 @@ export function ChatMessageList({
             const member = memberByPubkey.get(m.pubkey);
             if (!member) return null;
             return (
+              <Fragment key={m.id}>
               <Stack
-                key={m.id}
                 direction="row"
                 spacing={display ? 1.5 : 1}
                 alignItems="flex-start"
@@ -186,6 +191,12 @@ export function ChatMessageList({
                   </Tooltip>
                 )}
               </Stack>
+              {m.id === separatorAfterId && (
+                <Divider sx={{ typography: "caption", color: "text.secondary" }}>
+                  {t("eventSocial.chatEncryptedSeparator")}
+                </Divider>
+              )}
+              </Fragment>
             );
           })}
         </Stack>

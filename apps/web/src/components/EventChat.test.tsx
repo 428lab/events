@@ -113,6 +113,12 @@ vi.mock("../api/eventChatHooks.js", () => ({
   useCreateChatChannel: () => ({ mutateAsync: createChannel }),
 }));
 
+// 参加者のみ（暗号化）(#582) の鍵配布。この画面の既存テストは平文の経路だけを見るので使われない
+vi.mock("../api/encryptedChatHooks.js", () => ({
+  useEncryptedChat: () => ({ data: undefined, error: null, isSuccess: false, refetch: vi.fn() }),
+  useOpenEncryptedChat: () => ({ isPending: false, isError: false, mutate: vi.fn() }),
+}));
+
 vi.mock("../lib/nostrChat.js", () => {
   // 署名は「テンプレートに id と pubkey が付いた Nostr イベント」を返す。
   // 送信は折返しを待たず即時表示するので、undefined を返す偽物だと

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { StaffChatPayload } from "@eventer/shared";
+import type { GroupChatPayload } from "@eventer/shared";
 import { api, ApiError } from "./client.js";
 
 /** スタッフチャット (#382) の鍵配布 API。本文はリレー直通でここを通らない。
@@ -19,9 +19,9 @@ export function useStaffChat(eventId: string, enabled: boolean) {
     // 自動的に元に戻る（eventChatHooks の useChatMembers と同じ判断）
     retry: (count, err) =>
       !(err instanceof ApiError && err.status === 403) && count < 3,
-    queryFn: async (): Promise<StaffChatPayload | null> => {
+    queryFn: async (): Promise<GroupChatPayload | null> => {
       try {
-        return await api.get<StaffChatPayload>(`/events/${eventId}/staff-chat`);
+        return await api.get<GroupChatPayload>(`/events/${eventId}/staff-chat`);
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) return null;
         throw err;
@@ -36,7 +36,7 @@ export function useOpenStaffChat(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api.post<StaffChatPayload>(`/events/${eventId}/staff-chat`),
+      api.post<GroupChatPayload>(`/events/${eventId}/staff-chat`),
     onSuccess: (payload) =>
       qc.setQueryData(["event", eventId, "staffChat"], payload),
   });

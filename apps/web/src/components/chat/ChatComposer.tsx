@@ -15,6 +15,7 @@ export function ChatComposer({
   canSend,
   allowUrls,
   onSend,
+  notice,
 }: {
   /** 書き込み可能時間帯か（開始30分前〜終了2時間後） */
   inWriteWindow: boolean;
@@ -23,6 +24,9 @@ export function ChatComposer({
   /** URL を投稿してよいか（スタッフ、またはURL投稿が許可されたイベント #241） */
   allowUrls: boolean;
   onSend: (text: string) => Promise<ChatSendResult>;
+  /** 入力欄の下の注意書き。既定は「公開されます」。参加者のみ（暗号化）(#582) では
+   * 公開されないので、呼び出し側が暗号化の説明に差し替える */
+  notice?: string;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState("");
@@ -89,7 +93,7 @@ export function ChatComposer({
         </IconButton>
       </Stack>
       <Typography variant="caption" color="text.secondary">
-        {t("eventSocial.chatPublicNotice")}
+        {notice ?? t("eventSocial.chatPublicNotice")}
       </Typography>
     </>
   );

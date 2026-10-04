@@ -139,6 +139,25 @@ export const moderationChatSchema = z.object({
 });
 export type ModerationChat = z.infer<typeof moderationChatSchema>;
 
+/** 参加者の暗号化チャット (#582) を運営が読むための鍵一式（設計 4.5）。
+ * サーバーは鍵を持っている（対サーバー E2E ではない）ので、新しい露出ではない */
+export const moderationEncryptedChatSchema = z.object({
+  roomId: z.string(),
+  keys: z.array(z.object({ version: z.number(), secret: z.string() })),
+  /** 失効した人（revokedAt 付き）も含む。締め出し中の人も含む */
+  members: z.array(
+    z.object({
+      pubkey: z.string(),
+      userId: z.string(),
+      username: z.string(),
+      name: z.string(),
+      avatarUrl: z.string().nullable(),
+      revokedAt: z.number().nullable(),
+      role: z.string().nullable(),
+    }),
+  ),
+});
+
 /** GET /api/admin/moderation/events/:eventId のレスポンス */
 export const moderationContentPayloadSchema = z.object({
   event: moderationEventSchema,
@@ -146,6 +165,9 @@ export const moderationContentPayloadSchema = z.object({
    * （1イベントぶんなので件数はたかが知れている） */
   items: z.array(moderationItemSchema),
   chat: moderationChatSchema,
+  /** 参加者の暗号化チャット (#582) の鍵一式。部屋が無ければ null。
+   * 運営は暗号文を復号して非表示・締め出しを判断する（設計 4.5） */
+  encryptedChat: moderationEncryptedChatSchema.nullable(),
 });
 export type ModerationContentPayload = z.infer<
   typeof moderationContentPayloadSchema

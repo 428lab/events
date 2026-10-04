@@ -16,6 +16,7 @@ import { safeServeMime } from "../lib/imageMime.js";
 import { adminModerationRepo } from "../db/repositories/adminModeration.js";
 import type { RowKind } from "../db/repositories/adminModeration.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
+import { groupChatRepo } from "../db/repositories/groupChat.js";
 import { eventQaRepo } from "../db/repositories/eventQa.js";
 import { getChatRelays } from "../db/repositories/appSettings.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
@@ -57,7 +58,7 @@ adminModerationRoutes.get("/events/:eventId", async (c) => {
   const eventId = c.req.param("eventId");
   const event = await adminModerationRepo.findEvent(eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
-  const [items, channelId, hidden, relays, members, blocked] =
+  const [items, channelId, hidden, relays, members, plainBlocked, membersBlocked, encryptedChat] =
     await Promise.all([
       adminModerationRepo.listContent(eventId),
       eventChatRepo.channelIdFor(eventId),
@@ -67,13 +68,24 @@ adminModerationRoutes.get("/events/:eventId", async (c) => {
       // 見たうえでないと解除の判断ができない
       eventChatRepo.listMembersWithBlocked(eventId),
       eventChatRepo.listBlocked(eventId),
+      groupChatRepo.listBlockedMembersKeys(eventId),
+      // 参加者の暗号化チャット (#582) の鍵一式。運営は暗号文を復号して判断する（設計 4.5）
+      groupChatRepo.moderationKeys(eventId),
     ]);
+  // 締め出しは人単位 (#283)。暗号化チャットの signer の鍵も同じ人の鍵として一覧に広げる
+  const blockedByKey = new Map(plainBlocked.map((b) => [b.pubkey, b]));
+  for (const b of membersBlocked) {
+    const known = blockedByKey.get(b.pubkey);
+    if (!known || known.userId === null) blockedByKey.set(b.pubkey, b);
+  }
+  const blocked = [...blockedByKey.values()].sort((a, b) => a.blockedAt - b.blockedAt);
   const payload: ModerationContentPayload = {
     event,
     items,
     // チャット本文はサーバーに無い。ブラウザが channelId と relays を使って
     // 直接取りに行き、hidden に載っているものを非表示として表示する
     chat: { channelId, relays, members, hidden, blocked },
+    encryptedChat,
   };
   return c.json(payload);
 });
@@ -259,11 +271,15 @@ async function actOnChatAuthor(
   const me = c.get("user");
   // 当事者は締め出す **前** に引く（許可リストの行は残るので後でも引けるが、
   // hide 側と手順を揃えておく）
-  const target = await eventChatRepo.blockedAuthorOf(eventId, pubkey);
+  const target =
+    (await eventChatRepo.blockedAuthorOf(eventId, pubkey)) ??
+    (await groupChatRepo.membersSignerAuthor(eventId, pubkey));
+  // 平文の鍵と参加者の暗号化チャット (#582) の signer の鍵を、同じ人の鍵として扱う（設計 3.3）
+  const person = await groupChatRepo.personPubkeys(eventId, pubkey);
   const changed =
     action === "block"
-      ? await eventChatRepo.blockAuthor(eventId, pubkey, me.id, Date.now())
-      : await eventChatRepo.unblockAuthor(eventId, pubkey);
+      ? await eventChatRepo.blockAuthor(eventId, pubkey, me.id, Date.now(), person.pubkeys)
+      : await eventChatRepo.unblockAuthor(eventId, pubkey, person.pubkeys);
   // 実際に状態を変えたときだけ記録する（冪等な再送で2件目を残さない）
   if (changed > 0) {
     await recordAudit({

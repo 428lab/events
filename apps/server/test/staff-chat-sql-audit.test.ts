@@ -7,7 +7,7 @@ import { literalsOf, scanStatements, type Statement } from "./lib/sqlScan.js";
  * 守る不変条件はこれ1つ。
  *
  * > **`event_group_chat_room` / `event_group_chat_key` / `event_group_chat_signer`
- * > を読み書きする SQL は `db/repositories/staffChat.ts` の中にしか無い。**
+ * > を読み書きする SQL は `db/repositories/groupChat.ts` の中にしか無い。**
  *
  * スタッフチャットは「参加者に部屋の存在ごと見えない」が要件 (#382) で、
  * roomId・グループ共通鍵・発言用一時鍵のどれも参加者向けの読み手は**ゼロ**。
@@ -34,7 +34,7 @@ const sources = import.meta.glob("../src/**/*.ts", {
 }) as Record<string, string>;
 
 /** この3表を触ってよい唯一のファイル */
-const OWNER = "../src/db/repositories/staffChat.ts";
+const OWNER = "../src/db/repositories/groupChat.ts";
 
 /**
  * 読み書きの両方を拾う。**読みだけにしない**（書き込みが外に出ると、
@@ -43,7 +43,7 @@ const OWNER = "../src/db/repositories/staffChat.ts";
 const TOUCHES_STAFF_CHAT =
   /\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+event_group_chat_(?:room|key|signer)\b/i;
 
-/** `staffChat.ts` の外に書いてよい SQL と、その理由。
+/** `groupChat.ts` の外に書いてよい SQL と、その理由。
  * **理由を書かずに足さないこと**。キーは対象の SQL に必ず含まれる文字列 */
 const ALLOWED: Array<{ contains: string; why: string }> = [];
 
@@ -56,9 +56,9 @@ function statements(): Statement[] {
  *
  * **下限ではなく実数で固定する。** 「N 件以上」にすると、走査が壊れて
  * 半分しか見えなくなっても静かに通る。増減したらこの数を直すこと。
- * **直す前に、増えた文が staffChat.ts の中にあるかを必ず読むこと。**
+ * **直す前に、増えた文が groupChat.ts の中にあるかを必ず読むこと。**
  */
-const EXPECTED_STATEMENTS = 12;
+const EXPECTED_STATEMENTS = 23;
 
 describe("event_group_chat_room / _key / _signer を触る SQL の走査 (#382 11)", () => {
   it("走査そのものが空振りしていない", () => {
@@ -66,7 +66,7 @@ describe("event_group_chat_room / _key / _signer を触る SQL の走査 (#382 1
     expect(
       found.length,
       `走査できた SQL 文が ${found.length} 件。想定は ${EXPECTED_STATEMENTS} 件。\n` +
-        `増減したなら、増えた文が staffChat.ts の中にあるかを読んでから ` +
+        `増減したなら、増えた文が groupChat.ts の中にあるかを読んでから ` +
         `EXPECTED_STATEMENTS を直すこと。**減ったときは走査が壊れている疑いが強い**。\n` +
         found
           .map((f) => `  - ${f.file}: ${f.sql.slice(0, 70).replace(/\s+/g, " ")}`)
@@ -74,7 +74,7 @@ describe("event_group_chat_room / _key / _signer を触る SQL の走査 (#382 1
     ).toBe(EXPECTED_STATEMENTS);
   });
 
-  it("staffChat.ts の外に、この表を触る SQL が無い", () => {
+  it("groupChat.ts の外に、この表を触る SQL が無い", () => {
     const outside = statements().filter(
       (s) => s.file !== OWNER && !ALLOWED.some((a) => s.sql.includes(a.contains)),
     );
@@ -115,7 +115,7 @@ describe("event_group_chat_room / _key / _signer を触る SQL の走査 (#382 1
     ).filter((s) => s.file !== OWNER);
     expect(
       outside.map((f) => f.file),
-      "staffChat.ts の外に SQL を1本置いたのに、走査が見つけられなかった",
+      "groupChat.ts の外に SQL を1本置いたのに、走査が見つけられなかった",
     ).toEqual(["../src/db/repositories/events.ts"]);
   });
 

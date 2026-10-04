@@ -33,7 +33,8 @@ export function useEventChatAccess(eventId: string): EventChatAccess {
     event !== null &&
     canChat &&
     event.chatEnabled &&
-    event.visibility === "public" &&
+    // 非公開・限定公開でも参加者のみ（暗号化）なら使える (#582 設計 5.2)
+    (event.visibility === "public" || event.chatEncrypted === true) &&
     !event.scheduling &&
     event.startsAt > 0 &&
     event.status === "published";

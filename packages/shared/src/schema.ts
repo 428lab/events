@@ -81,6 +81,9 @@ export const eventSchema = z.object({
   chatEnabled: z.boolean(),
   /** チャットで参加者のURL投稿を許可（スタッフは常に可）。既定はオフ (#241) */
   chatUrlsAllowed: z.boolean(),
+  /** 参加者チャットを参加確定メンバーだけに限定する（暗号化 #582）。
+   * 一度オンにしたら戻せない。非公開・限定公開のチャットは常にオン */
+  chatEncrypted: z.boolean(),
   /** Q&A (#216)。既定はオフ（使いたいイベントだけスタッフがONにする） */
   qaEnabled: z.boolean(),
   /** Q&A の匿名の扱い。既定は 'choice'（投稿ごとに参加者が選ぶ） (#216) */
@@ -152,6 +155,8 @@ export const updateEventInput = z.object({
   chatEnabled: z.boolean().optional(),
   /** チャットで参加者のURL投稿を許可するか (#241) */
   chatUrlsAllowed: z.boolean().optional(),
+  /** 参加者のみ（暗号化 #582）。true にだけ変えられる（false はサーバーが 409） */
+  chatEncrypted: z.boolean().optional(),
   /** Q&A (#216) のオンオフ */
   qaEnabled: z.boolean().optional(),
   /** Q&A の匿名の扱い (#216) */

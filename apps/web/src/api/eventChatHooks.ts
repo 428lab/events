@@ -97,8 +97,12 @@ export function useHideChatNote(eventId: string) {
   return useMutation({
     mutationFn: (noteId: string) =>
       api.post(`/events/${eventId}/chat-hidden`, { noteId }),
+    // 非表示リストは平文・暗号化 (#582) で共通の表。どちらの画面にもすぐ反映する
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["event", eventId, "chatMembers"] }),
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ["event", eventId, "chatMembers"] }),
+        qc.invalidateQueries({ queryKey: ["event", eventId, "encryptedChat"] }),
+      ]),
   });
 }
 

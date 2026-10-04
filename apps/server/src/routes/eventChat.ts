@@ -29,6 +29,7 @@ import { nostrRelay } from "../lib/nostrRelay.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
+import { groupChatRepo } from "../db/repositories/groupChat.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { identitiesRepo } from "../db/repositories/identities.js";
 import { getChatRelays } from "../db/repositories/appSettings.js";
@@ -59,10 +60,29 @@ const MAX_CHAT_KEYS_PER_USER = 10;
  * 人なので、読む・書く・運営するのいずれもできない */
 export const eventChatRoutes = new Hono<AppEnv>();
 // Plaintext participant relays cannot protect nonpublic events. This router
-// contains participant chat only; encrypted staffChat is deliberately separate.
+// contains participant chat only; encrypted chats (staffChat / encryptedChat) are deliberately separate.
+// 例外は非表示 (/chat-hidden) だけ: 暗号化オンなら非公開でも通す（暗号化メッセージの
+// 非表示に要る。note id は平文・暗号文で共通の表 #582 設計 5.1）
 for (const path of ["/:id/chat-members", "/:id/chat-key", "/:id/chat-key/ephemeral", "/:id/chat-channel", "/:id/chat-channel/create", "/:id/chat-hidden", "/:id/chat-hidden/:noteId"]) eventChatRoutes.use(path, async (c,next) => {
   const event = await eventsRepo.findById(c.req.param("id") ?? "");
-  if (!event || event.visibility !== "public") return c.json({error:"chat_unavailable"},403);
+  const hiddenRoute = path.startsWith("/:id/chat-hidden");
+  if (!event || (event.visibility !== "public" && !(hiddenRoute && event.chatEncrypted))) return c.json({error:"chat_unavailable"},403);
+  await next();
+});
+// 暗号化オンの公開イベントでは平文チャットの書き込み系を閉じる (#582 設計 5.1)。
+// 過去ログの読み取り（GET /chat-members・GET /chat-key/ephemeral）と非表示操作は残す
+const PLAINTEXT_WRITES: Array<["POST" | "DELETE", string]> = [
+  ["POST", "/:id/chat-key"],
+  ["POST", "/:id/chat-key/ephemeral"],
+  ["POST", "/:id/chat-channel"],
+  ["POST", "/:id/chat-channel/create"],
+  ["DELETE", "/:id/chat-channel"],
+];
+for (const [method, path] of PLAINTEXT_WRITES) eventChatRoutes.use(path, async (c, next) => {
+  if (c.req.method === method) {
+    const event = await eventsRepo.findById(c.req.param("id") ?? "");
+    if (event?.chatEncrypted) return c.json({ error: "chat_encrypted" }, 409);
+  }
   await next();
 });
 
@@ -104,11 +124,19 @@ async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
  * 登録し直しても、判定はこれまでに使った鍵で行うので外れない #332）。
  * **その場の荒らしを止めるための道具**であって、恒久的な追放ではない。 */
 async function notBlocked(c: Context<AppEnv>): Promise<Response | null> {
-  const blocked = await eventChatRepo.isUserBlocked(
-    c.req.param("id")!,
-    c.get("user").id,
+  return (await isChatUserBlocked(c.req.param("id")!, c.get("user").id))
+    ? c.json({ error: "chat_unavailable" }, 403)
+    : null;
+}
+
+/** その人が締め出し (#283) 中か。**人単位**で、平文の発言鍵と参加者の暗号化チャット
+ * (#582) の signer の**どちらの pubkey**で締め出されていても該当（設計 3.3）。
+ * 暗号化部屋の signer で締め出された人が平文の過去ログの経路にだけ残らないようにする */
+async function isChatUserBlocked(eventId: string, userId: string): Promise<boolean> {
+  return (
+    (await eventChatRepo.isUserBlocked(eventId, userId)) ||
+    (await groupChatRepo.isMembersSignerBlocked(eventId, userId))
   );
-  return blocked ? c.json({ error: "chat_unavailable" }, 403) : null;
 }
 
 /** スタッフ操作（部屋の開設・作り直し・メッセージの非表示）の入口。

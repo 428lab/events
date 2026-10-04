@@ -7,6 +7,7 @@ import { useLiveEventChat } from "./LiveEventChat.js";
 const { subscriptions } = vi.hoisted(() => ({ subscriptions: [] as Array<{ channel: string; deliver: (event: import("nostr-tools/pure").Event) => void }> }));
 vi.mock("../lib/useEventChatAccess.js", () => ({ useEventChatAccess: () => ({ chatAvailable: true, isError: false }) }));
 vi.mock("../api/eventChatHooks.js", () => ({ useChatMembers: (id: string) => ({ data: chats[id], dataUpdatedAt: memberUpdatedAt, isError: false }) }));
+vi.mock("../api/encryptedChatHooks.js", () => ({ useEncryptedChat: () => ({ data: undefined, dataUpdatedAt: 0, isError: false }) }));
 vi.mock("../lib/nostrChat.js", () => ({
   randomLocalSigner: () => ({}),
   ChatRelayPool: class {

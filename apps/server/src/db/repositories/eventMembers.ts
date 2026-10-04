@@ -502,8 +502,13 @@ function mapMyEventSummary(
     photosPublic: (row.photos_public as number) === 1,
     attendanceCheck: (row.attendance_check as number) === 1,
     venueWanted: (row.venue_wanted as number) === 1,
-    chatEnabled: (row.chat_enabled as number) === 1,
+    // events.ts の toEvent と同じ正規化 (#582 設計 1.2)
+    chatEnabled:
+      ((row.visibility ?? "public") === "public" ||
+        (row.chat_encrypted as number) === 1) &&
+      (row.chat_enabled as number) === 1,
     chatUrlsAllowed: (row.chat_urls_allowed as number) === 1,
+    chatEncrypted: (row.chat_encrypted as number) === 1,
     qaEnabled: (row.qa_enabled as number) === 1,
     qaAnonymity: QA_ANONYMITY_MODES.includes(
       row.qa_anonymity as MyEventSummary["qaAnonymity"],

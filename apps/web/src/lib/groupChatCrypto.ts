@@ -3,7 +3,7 @@ import type { EventTemplate } from "nostr-tools/pure";
 import {
   GROUP_CHAT_KIND,
   GROUP_CHAT_VERSION_TAG,
-  type StaffChatKey,
+  type GroupChatKey,
 } from "@eventer/shared";
 import { buildChannelMessageTemplate } from "./nostrChat.js";
 
@@ -30,8 +30,8 @@ function keyBytes(hex: string): Uint8Array {
 }
 
 /** 新規発言は常に**最新 version** で暗号化する（設計 7.2。配列の並び順に頼らない） */
-export function latestKey(keys: StaffChatKey[]): StaffChatKey | null {
-  let latest: StaffChatKey | null = null;
+export function latestKey(keys: GroupChatKey[]): GroupChatKey | null {
+  let latest: GroupChatKey | null = null;
   for (const k of keys) {
     if (!latest || k.version > latest.version) latest = k;
   }
@@ -40,9 +40,9 @@ export function latestKey(keys: StaffChatKey[]): StaffChatKey | null {
 
 /** 本文を最新の鍵で暗号化し、部屋（e タグ）と鍵世代（v タグ）を付けた
  * 署名前テンプレートを返す。鍵が1つも無ければ null（送信できない） */
-export function sealStaffChatMessage(
+export function sealGroupChatMessage(
   roomId: string,
-  keys: StaffChatKey[],
+  keys: GroupChatKey[],
   text: string,
   relayHint: string,
 ): EventTemplate | null {
@@ -61,8 +61,8 @@ export function sealStaffChatMessage(
 /** 受信イベントを復号する。開けないもの（v タグ無し・手元に無い version・
  * 壊れた/別の鍵の暗号文）は null ＝ そのメッセージだけ描画しない（設計 9.2）。
  * 復号失敗は攻撃とは限らない（ローテーション直後の取り残し等）ので throw しない */
-export function openStaffChatMessage(
-  keys: StaffChatKey[],
+export function openGroupChatMessage(
+  keys: GroupChatKey[],
   message: { content: string; tags: string[][] },
 ): string | null {
   if (message.content.length > CIPHERTEXT_MAX) return null;

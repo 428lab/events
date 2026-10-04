@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { StaffChatPayload } from "@eventer/shared";
+import type { GroupChatPayload } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { isConfirmedEventStaff } from "../auth/roles.js";
 import { generateChatKey } from "../lib/nostrSign.js";
-import { staffChatRepo } from "../db/repositories/staffChat.js";
+import { groupChatRepo } from "../db/repositories/groupChat.js";
 import { getChatRelays } from "../db/repositories/appSettings.js";
 
 /** イベントスタッフ用のチャットルーム (#382)。設計は docs/staff-chat.md。
@@ -34,18 +34,18 @@ async function staffOnly(c: Context<AppEnv>): Promise<Response | null> {
 async function payloadFor(
   eventId: string,
   userId: string,
-): Promise<StaffChatPayload | null> {
-  const roomId = await staffChatRepo.roomIdFor(eventId);
+): Promise<GroupChatPayload | null> {
+  const roomId = await groupChatRepo.roomIdFor(eventId, "staff");
   if (!roomId) return null;
-  const signer = await staffChatRepo.signerFor(eventId, userId);
+  const signer = await groupChatRepo.signerFor(eventId, "staff", userId);
   return {
     roomId,
-    keys: await staffChatRepo.listKeys(eventId),
+    keys: await groupChatRepo.listKeys(eventId, "staff"),
     myKey:
       signer && signer.revokedAt === null
         ? { pubkey: signer.pubkey, secret: signer.secret }
         : null,
-    members: await staffChatRepo.listMembers(eventId),
+    members: await groupChatRepo.listMembers(eventId, "staff"),
     relays: await getChatRelays(),
   };
 }
@@ -70,21 +70,21 @@ staffChatRoutes.post("/:id/staff-chat", async (c) => {
   const eventId = c.req.param("id");
   const userId = c.get("user").id;
   c.header("Cache-Control", "no-store");
-  await staffChatRepo.ensureRoom(eventId);
-  const existing = await staffChatRepo.signerFor(eventId, userId);
+  await groupChatRepo.ensureRoom(eventId, "staff");
+  const existing = await groupChatRepo.signerFor(eventId, "staff", userId);
   if (existing) {
     // 失効中なら再有効化（設計 7.3。現役ならそのまま＝何度呼んでも同じ鍵）
     if (existing.revokedAt !== null) {
-      await staffChatRepo.reactivateSigner(eventId, userId);
+      await groupChatRepo.reactivateSigner(eventId, "staff", userId);
     }
   } else {
     const { secret, pubkey } = generateChatKey();
     // 生成した鍵がこの部屋で使用済みなら登録しない（乱数256bitなので現実には
     // 起きないが、衝突したまま載ると過去の発言が別人のものとして表示される #332）
-    const taken = await staffChatRepo.pubkeyOwner(eventId, pubkey);
+    const taken = await groupChatRepo.pubkeyOwner(eventId, "staff", pubkey);
     if (taken && taken !== userId) return c.json({ error: "conflict" }, 409);
     // 先勝ち: 同時発行のレースでは先着の鍵が残る（下の payloadFor が読み直す）
-    await staffChatRepo.addSigner(eventId, userId, pubkey, secret);
+    await groupChatRepo.addSigner(eventId, "staff", userId, pubkey, secret);
   }
   const payload = await payloadFor(eventId, userId);
   if (!payload || !payload.myKey) return c.json({ error: "conflict" }, 409);

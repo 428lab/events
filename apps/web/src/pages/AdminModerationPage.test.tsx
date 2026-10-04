@@ -54,6 +54,7 @@ const PAYLOAD: ModerationContentPayload = {
       { pubkey: "pk-2", userId: "u-noisy", blockedAt: BLOCKED_AT, blockedBy: "u-admin" },
     ],
   },
+  encryptedChat: null,
 };
 
 vi.mock("../api/hooks.js", () => ({
