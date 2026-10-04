@@ -40,29 +40,29 @@ function renderCard(event: Event, variant: "list" | "compact" | "grid" = "grid")
   );
 }
 
-describe.each([true, false])("card visibility indicator (compact=%s)", (compact) => {
+describe.each(["list", "compact", "grid"] as const)("card visibility indicator (variant=%s)", (variant) => {
   it("shows a real lock with the localized private name", () => {
-    renderCard(ev({ visibility: "private" }), compact);
+    renderCard(ev({ visibility: "private" }), variant);
     const icon = screen.getByRole("img", { name: "招待限定" });
     expect(icon.tagName.toLowerCase()).toBe("svg");
     expect(icon.getAttribute("data-testid")).toBe("LockIcon");
   });
 
   it("shows a real link with the localized unlisted name", () => {
-    renderCard(ev({ visibility: "unlisted" }), compact);
+    renderCard(ev({ visibility: "unlisted" }), variant);
     const icon = screen.getByRole("img", { name: "限定公開（URLを知る人）" });
     expect(icon.tagName.toLowerCase()).toBe("svg");
     expect(icon.getAttribute("data-testid")).toBe("LinkIcon");
   });
 
   it("shows no visibility icon for public events", () => {
-    renderCard(ev({ visibility: "public" }), compact);
+    renderCard(ev({ visibility: "public" }), variant);
     expect(screen.queryByTestId("LinkIcon")).toBeNull();
     expect(screen.queryByTestId("LockIcon")).toBeNull();
   });
 
   it.each(["public", "unlisted"] as const)("does not mislabel %s as private", (visibility) => {
-    renderCard(ev({ visibility }), compact);
+    renderCard(ev({ visibility }), variant);
     expect(screen.queryByRole("img", { name: "招待限定" })).toBeNull();
     expect(screen.queryByTestId("LockIcon")).toBeNull();
   });
