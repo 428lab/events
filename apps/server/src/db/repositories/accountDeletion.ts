@@ -2,6 +2,7 @@ import { accountAccessRevision } from "./accessRevisions.js";
 import type { User } from "@eventer/shared";
 import { DELETED_USER_DISPLAY_NAME } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
+import { revokeAllForUserStmt } from "./accessTokens.js";
 import { groupChatRepo } from "./groupChat.js";
 import { ACTIVE, usersRepo } from "./users.js";
 import {
@@ -67,7 +68,7 @@ export const accountDeletionRepo = {
   },
 
   /** 退会リクエスト (#250)。データは消さず deleted_at を立て、セッションを
-   * 全削除して即座に利用不可・非表示にする（30日後に日次バッチが完全削除）。
+   * 全削除（アクセストークン #581 は全失効）して即座に利用不可・非表示にする（30日後に日次バッチが完全削除）。
    * 単一 batch なので「セッションだけ消えて退会状態にならない」中途半端な
    * 状態にはならない。既に申請済みなら時刻は上書きしない（猶予の延長防止） */
   async requestDeletion(userId: string, now: number): Promise<void> {
@@ -88,6 +89,8 @@ export const accountDeletionRepo = {
         args: [now, userId],
       },
       { sql: "DELETE FROM session WHERE user_id = ?", args: [userId] },
+      // AI 連携のアクセストークン (#581) も全て失効する（行は残す。復帰しても戻らない）
+      revokeAllForUserStmt(userId, now),
     ]);
   },
 
@@ -242,7 +245,7 @@ export const accountDeletionRepo = {
     //      venue_admin / event_survey_answer / event_chat_key / event_like /
     //      user_follow / event_meet / event_photo / event_photo_comment /
     //      event_comment / notification / notification_pref / inquiry /
-    //      deck / bgm_track / event_payout_method）。venue_photo.user_id と
+    //      deck / bgm_track / event_payout_method / access_token）。venue_photo.user_id と
     //      event_schedule_item.speaker_user_id は SET NULL で匿名化される
     //      （主催者として問い合わせに返信した inquiry_message.author_id も SET NULL。D-EVENT-CONTACT）
     //      （割り勘の event_expense.created_by / event_settlement_done.marked_by も SET NULL）

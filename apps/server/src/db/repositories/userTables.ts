@@ -139,3 +139,7 @@ export const ACTIVITY_TABLES: ReadonlyArray<[table: string, col: string]> = [
 
 // event_access_invite: user_id CASCADE / invited_by SET NULL on account deletion.
 // Neither is shared content; mergeUsers resolves grant conflicts before transfer.
+
+// access_token (#581): user_id CASCADE. 共有コンテンツでも利用実績でもないので
+// どちらの一覧にも入れない（発行しただけでは「利用実績あり」にしない）。
+// 統合は mergeUsers (7-b) で負け側を破棄（移さない）、退会申請は requestDeletion で全失効。
