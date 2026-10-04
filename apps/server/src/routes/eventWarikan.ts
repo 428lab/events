@@ -42,8 +42,15 @@ const invalidWeight = (c: Context<AppEnv>) => c.json({ error: "invalid_weight" }
 
 /** 帳簿を読む人の立場。帳簿を見られない相手は null（呼び出し側が 404 にする） */
 async function loadViewer(c: Context<AppEnv>): Promise<WarikanViewer | null> {
-  const eventId = c.req.param("id")!;
-  const userId = c.get("user").id;
+  return warikanViewerFor(c.req.param("id")!, c.get("user").id);
+}
+
+/** loadViewer の本体。AI の get_warikan (#581) も同じ判定を通る。
+ * イベントの閲覧権（canViewEvent）は呼び出し側が先に見ること */
+export async function warikanViewerFor(
+  eventId: string,
+  userId: string,
+): Promise<WarikanViewer | null> {
   if (!(await eventWarikanRepo.isAudience(eventId, userId))) return null;
   const member = await eventMembersRepo.find(eventId, userId);
   const isConfirmed = member?.status === "confirmed";

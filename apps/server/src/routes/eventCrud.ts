@@ -5,6 +5,7 @@ import { createEventInput, isDatetimeOrderInvalid, updateEventInput } from "@eve
 import type {
   CreateEventInput,
   Event,
+  EventCreatedVia,
   UpdateEventInput,
   User,
 } from "@eventer/shared";
@@ -83,20 +84,32 @@ eventCrudRoutes.get("/", async (c) => {
   return c.json({ events: await eventsRepo.listPublished() });
 });
 
-/** イベント作成（作成者は staff として自動参加） */
-eventCrudRoutes.post("/", zValidator("json", createEventInput), async (c) => {
-  const user = c.get("user");
-  const input = valid<CreateEventInput>(c, "json");
+/** イベント作成の本体（作成者は staff として自動参加。常に下書き）。
+ * 画面の POST / と AI の create_event (#581) が同じここを通る */
+export async function createEventFor(
+  user: User,
+  input: CreateEventInput,
+  createdVia: EventCreatedVia = "web",
+): Promise<
+  { ok: true; event: Event } | { ok: false; status: 403 | 409; error: string }
+> {
   if (
     input.communityId &&
     !(await canAttachCommunity(input.communityId, user))
   ) {
-    return c.json({ error: "forbidden" }, 403);
+    return { ok: false, status: 403, error: "forbidden" };
   }
-  const event = await eventsRepo.create(input, user.id);
-  if (!event) return c.json({error:"access_changed"},409);
-  await scoringCriteriaRepo.seedDefaults(event.id, {eventId:event.id,actorId:c.get("user").id,permission:"manager"});
-  return c.json({ event: (await eventsRepo.findById(event.id))! }, 201);
+  const event = await eventsRepo.create(input, user.id, undefined, createdVia);
+  if (!event) return { ok: false, status: 409, error: "access_changed" };
+  await scoringCriteriaRepo.seedDefaults(event.id, {eventId:event.id,actorId:user.id,permission:"manager"});
+  return { ok: true, event: (await eventsRepo.findById(event.id))! };
+}
+
+/** イベント作成（作成者は staff として自動参加） */
+eventCrudRoutes.post("/", zValidator("json", createEventInput), async (c) => {
+  const result = await createEventFor(c.get("user"), valid<CreateEventInput>(c, "json"));
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  return c.json({ event: result.event }, 201);
 });
 
 /** The confirmation snapshot is a count only; the PATCH CAS checks its revision. */

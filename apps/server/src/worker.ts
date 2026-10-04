@@ -28,6 +28,7 @@ import {
 import { scoringRoutes, getEventScoreResults } from "./routes/scoring.js";
 import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes, postRestoreAccount } from "./routes/me.js";
+import { aiRoutes } from "./routes/ai/index.js";
 import { getEventImage } from "./routes/images.js";
 import { getEventDescriptionImage } from "./routes/eventDescriptionImages.js";
 import { getUserCardImage } from "./routes/profileCardImages.js";
@@ -294,6 +295,9 @@ api.route("/me/staff-invites", myStaffInviteRoutes);
 // requireAuth 付きの meRoutes より先に登録する
 api.post("/me/restore", postRestoreAccount);
 api.route("/me", meRoutes);
+// AI 連携 (#581)。アクセストークン（Bearer）でも Cookie でも叩ける。要認証。
+// 読み取り6本 + create_event（下書きのみ）。設計は docs/ai-integration.md §5
+api.route("/ai/v1", aiRoutes);
 // 公開: プロフィールカードPNG（認証不要。OGクローラ用。要認証の /users ルートより先に登録） (#193)
 api.get("/users/:id/card-image", getUserCardImage);
 // 公開: ユーザーアイコン（認証不要。未ログインでも見える一覧に出る。要認証の /users ルートより先に登録） (#312)

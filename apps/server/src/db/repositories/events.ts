@@ -4,6 +4,7 @@ import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import type {
   CreateEventInput,
   Event,
+  EventCreatedVia,
   UpdateEventInput,
 } from "@eventer/shared";
 import { checkRegistrationDeadline } from "../../lib/registrationDeadline.js";
@@ -424,7 +425,8 @@ export const eventsRepo = {
     return rows.map(toEvent);
   },
 
-  async create(input: CreateEventInput, createdBy: string, sourceEventId?: string): Promise<Event | null> {
+  /** createdVia (#581) は作成経路。画面は 'web'（既定）、AI の create_event は 'ai' */
+  async create(input: CreateEventInput, createdBy: string, sourceEventId?: string, createdVia: EventCreatedVia = "web"): Promise<Event | null> {
     const id = crypto.randomUUID();
     let slug = genEventSlug();
     while (await this.findBySlug(slug)) slug = genEventSlug();
@@ -433,8 +435,8 @@ export const eventsRepo = {
          venue_offline, venue_address, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
          community_id, scheduling, schedule_anonymous, slug, venue_wanted,
-         chat_enabled, visibility, nonpublic_eligible, access_revision)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 1 WHERE EXISTS(SELECT 1 FROM user u WHERE u.id=? AND u.deleted_at IS NULL
+         chat_enabled, visibility, nonpublic_eligible, access_revision, created_via)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 1, ? WHERE EXISTS(SELECT 1 FROM user u WHERE u.id=? AND u.deleted_at IS NULL
          AND (? IS NULL OR EXISTS(SELECT 1 FROM event source WHERE source.id=? AND ${activeManagerSql("source","?")}))
          AND (? IS NULL OR u.discord_id IN(SELECT value FROM json_each(?)) OR EXISTS(SELECT 1 FROM community_member cm WHERE cm.community_id=? AND cm.user_id=u.id AND cm.role IN('owner','admin'))
            OR EXISTS(SELECT 1 FROM event source WHERE source.id=? AND source.community_id=? AND ${activeManagerSql("source","?")})))`, args: [
@@ -458,9 +460,21 @@ export const eventsRepo = {
       slug,
       input.venueWanted ? 1 : 0,
       input.visibility ?? "public",
+      createdVia,
       createdBy, sourceEventId??null,sourceEventId??null,createdBy,adminIds(), input.communityId??null,adminIds(),input.communityId??null,sourceEventId??null,input.communityId??null,createdBy,adminIds(),
     ]}, {sql:`INSERT INTO event_member(id,event_id,user_id,role,status,created_at) SELECT ?,id,created_by,'staff','confirmed',? FROM event WHERE id=?`,args:[crypto.randomUUID(),Date.now(),id]}]);
     return created ? this.findById(id) : null;
+  },
+
+  /** その人が since 以降にその経路で作ったイベントの数 (#581)。create_event の頻度制限（§4.6） */
+  async countCreatedVia(createdBy: string, createdVia: EventCreatedVia, since: number): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM event WHERE created_by = ? AND created_via = ? AND created_at > ?",
+      createdBy,
+      createdVia,
+      since,
+    );
+    return row?.n ?? 0;
   },
 
   /** 参加者限定の文章のみ取得（eventSchema には含めないため単独メソッド） */
