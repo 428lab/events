@@ -9,3 +9,4 @@ PR の説明に貼るスクリーンショット置き場。**main にはマー�
   `profile-w320-<言語>-<モード>.png`（プロフィールの下書きタブ。役割・下書きチップあり）。
 - `2026-09-25-556/` — #556 割り勘（PR3 `feat/warikan-web-556` @ 8d81c18）。`<mobile|pc>-<staff|mai|sota>-<画面>.png`。
   staff=開発ユーザー、mai=一般参加者、sota=申込中（確定前）。375×812@2x / 1280×900。ローカルのデモデータ。
+- `2026-10-04-581-settings/` — #585 アカウント設定の AI 連携カード（`<mobile|pc>-<card-empty|dialog-form|dialog-token|card-list|revoke-dialog>.png`）。
