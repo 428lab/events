@@ -48,6 +48,7 @@ export const isoDateTime = z
 /** list_my_events（GET /api/ai/v1/me/events） */
 export const aiListMyEventsInput = z.object({
   phase: z.enum(["upcoming", "past"]).default("upcoming"),
+  limit: z.coerce.number().int().min(1).max(AI_LIST_LIMIT_MAX).default(AI_LIST_LIMIT_MAX),
 });
 export type AiListMyEventsInput = z.infer<typeof aiListMyEventsInput>;
 

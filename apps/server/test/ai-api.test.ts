@@ -362,6 +362,47 @@ describe("読み取りの公開範囲 (#581 §6.1)", () => {
     expect((await ai("/me/events?phase=all", { token })).status).toBe(400);
   });
 
+  it("list_my_events: upcoming は開催日が近い順で日程調整中は末尾、limit で絞り total / truncated を返す", async () => {
+    const u = await makeUser();
+    const token = await issueToken(u);
+    const now = Date.now();
+    const later = await insertEvent(u.id, { startsAt: now + 3 * DAY, endsAt: now + 3 * DAY + 3600_000 });
+    const sched = await insertEvent(u.id, { status: "draft" });
+    await env.DB.prepare("UPDATE event SET scheduling = 1, starts_at = 0, ends_at = 0 WHERE id = ?")
+      .bind(sched.id)
+      .run();
+    const soon = await insertEvent(u.id, { startsAt: now + DAY, endsAt: now + DAY + 3600_000 });
+    const mid = await insertEvent(u.id, { status: "draft", startsAt: now + 2 * DAY, endsAt: now + 2 * DAY + 3600_000 });
+    type Body = { events: { id: string; status: string }[]; total: number; truncated: boolean };
+    const all = (await (await ai("/me/events", { token })).json()) as Body;
+    expect(all.events.map((e) => e.id)).toEqual([soon.id, mid.id, later.id, sched.id]);
+    expect(all.events.map((e) => e.status)).toEqual(["published", "draft", "published", "draft"]);
+    expect(all).toMatchObject({ total: 4, truncated: false });
+    const two = (await (await ai("/me/events?limit=2", { token })).json()) as Body;
+    expect(two.events.map((e) => e.id)).toEqual([soon.id, mid.id]);
+    expect(two).toMatchObject({ total: 4, truncated: true });
+    expect((await ai("/me/events?limit=21", { token })).status).toBe(400);
+    expect((await ai("/me/events?limit=0", { token })).status).toBe(400);
+  });
+
+  it("list_my_events: past は新しい順、既定の上限は 20", async () => {
+    const u = await makeUser();
+    const token = await issueToken(u);
+    const now = Date.now();
+    const ids: string[] = [];
+    for (let i = 1; i <= 21; i++) {
+      const start = now - i * DAY;
+      ids.push((await insertEvent(u.id, { startsAt: start, endsAt: start + 3600_000 })).id);
+    }
+    const body = (await (await ai("/me/events?phase=past", { token })).json()) as {
+      events: { id: string }[];
+      total: number;
+      truncated: boolean;
+    };
+    expect(body.events.map((e) => e.id)).toEqual(ids.slice(0, 20));
+    expect(body).toMatchObject({ total: 21, truncated: true });
+  });
+
   it("get_warikan: 帳簿の audience 外は 404、当事者には自分の精算行に mine: true", async () => {
     const owner = await makeUser();
     const payer = await makeUser();

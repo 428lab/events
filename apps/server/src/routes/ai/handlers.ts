@@ -99,12 +99,23 @@ export async function whoami(user: User) {
   });
 }
 
-/** list_my_events: GET /api/me/events と同じ分岐（下書きも含む・本人が見られるものだけ） */
+/** list_my_events: GET /api/me/events と同じ分岐（下書きも含む・本人が見られるものだけ）。
+ * limit 件まで（§4.6）。upcoming は開催日が近い順で日程調整中（日付なし）は末尾、past は新しい順 */
 export async function listMyEvents(user: User, input: AiListMyEventsInput) {
   const all = await eventMembersRepo.listEventsForUser(user.id);
   const { ongoing, past } = splitMyEvents(all, Date.now());
-  const events = input.phase === "past" ? past : ongoing;
-  return ok({ phase: input.phase, events: events.map(myEventSummary) });
+  const events =
+    input.phase === "past"
+      ? [...past].sort((a, b) => b.startsAt - a.startsAt)
+      : [...ongoing].sort(
+          (a, b) => Number(a.scheduling) - Number(b.scheduling) || a.startsAt - b.startsAt,
+        );
+  return ok({
+    phase: input.phase,
+    events: events.slice(0, input.limit).map(myEventSummary),
+    total: events.length,
+    truncated: events.length > input.limit,
+  });
 }
 
 /** search_events: 公開検索（public.ts の searchEvents）と同じ条件。公開・公開中のものだけ */
