@@ -392,8 +392,12 @@ export const eventScheduleRepo = {
             SET title = ?, description = ?, duration_min = ?, starts_at = ?,
                 speaker_user_id = ?, speaker_name = ?, material_url = ?,
                 material_og_image = ?, material_og_url = ?, sort_order = ?,
-                placement = ?, visibility = ?
+                placement = ?, visibility = ?,
+                live_deck_id = CASE WHEN speaker_user_id IS ? THEN live_deck_id ELSE NULL END
             WHERE id = ? AND event_id = ?`,
+          // live_deck_id (#571) は登壇者本人の紐付けなので staff の全体保存では書かない。
+          // ただし担当者が替わったら外す（前の担当者の同意は新しい担当者のコマに及ばない）。
+          // 右辺の speaker_user_id は更新前の値を読む
           args: [
             it.title,
             it.description,
@@ -407,6 +411,7 @@ export const eventScheduleRepo = {
             i,
             place.placement,
             place.visibility,
+            it.speakerUserId,
             current.id,
             eventId,
           ],

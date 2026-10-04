@@ -4,7 +4,8 @@ import {
   defaultLiveSetContent,
   updateEventLiveStateInput,
 } from "@eventer/shared";
-import type { LiveSet, UpdateEventLiveStateInput } from "@eventer/shared";
+import { computeScheduleTimes, publicTracks } from "@eventer/shared";
+import type { LivePresenter, LiveSet, UpdateEventLiveStateInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -15,6 +16,8 @@ import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { decksRepo } from "../db/repositories/decks.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
+import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
+import { presenterSlidesRepo } from "../db/repositories/presenterSlides.js";
 
 /** イベントの配信ランタイム状態（コントロールタブ→配信画面タブの同期点）。staff専用 */
 export const liveControlRoutes = new Hono<AppEnv>();
@@ -45,6 +48,21 @@ liveControlRoutes.patch(
         return c.json({ error: "chat_unavailable" }, 403);
       }
     }
+    // 発表者の選択 (#571) ではデッキとページをサーバーが決める。クライアントのデッキ指定と混ぜない
+    if (input.presenterItemId !== undefined && (input.deckId !== undefined || input.deckPage !== undefined)) {
+      return c.json({ error: "presenter_with_deck" }, 400);
+    }
+    if (input.presenterItemId && !(await eventScheduleRepo.findItem(c.req.param("id"), input.presenterItemId, "public"))) {
+      return c.json({ error: "presenter_not_found" }, 404);
+    }
+    // デッキの直接指定は操作者自身のデッキだけ (#571)。発表者のデッキは presenterItemId で選ぶ
+    // （任意の ID を書けると live-deck-content から他人のデッキの中身が読めてしまう）
+    if (input.deckId) {
+      const deck = await decksRepo.findById(input.deckId);
+      if (!deck || deck.ownerId !== c.get("user").id) {
+        return c.json({ error: "deck_not_owned" }, 403);
+      }
+    }
     // 存在しない配信セットIDは弾く（DEFAULT は仮想セットなので許可）
     if (input.liveSetId && input.liveSetId !== DEFAULT_LIVE_SET_ID) {
       if (!(await liveSetsRepo.findById(input.liveSetId))) {
@@ -69,6 +87,43 @@ liveControlRoutes.post("/:id/live-cutin", requireEventRole(["staff"]), zValidato
   const result = await eventLiveCutinRepo.trigger(c.req.param("id"), c.get("user").id, valid<{ message: string }>(c, "json").message);
   return result ? c.json({ ...result, serverNow: Date.now() }, 201) : c.json({ error: "event_ended" }, 409);
 });
+
+/** 発表者一覧 (#571)。タイムテーブルの担当者付きコマを、タイムテーブルの並び
+ * （開始時刻が分かる項目は時刻順）で1コマ1行。デッキは有効な紐付けだけを要約で返し、
+ * **slug は返さない**（slug を知れば公開ページから中身が読めるため） */
+liveControlRoutes.get(
+  "/:id/live-presenters",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const event = await eventsRepo.findById(eventId);
+    if (!event) return c.json({ error: "not_found" }, 404);
+    const [items, tracks, decks] = await Promise.all([
+      eventScheduleRepo.listByEvent(eventId, "public"),
+      eventScheduleRepo.listTracks(eventId, "public"),
+      presenterSlidesRepo.effectiveDecks(eventId),
+    ]);
+    const trackIds = publicTracks(tracks).map((t) => t.id);
+    const times = computeScheduleTimes(items, event.scheduling ? null : event.startsAt, trackIds);
+    // トラックが無ければタイムテーブルの並びそのもの。トラックを使うイベントは並行するコマを
+    // 開始時刻順に混ぜる（時刻が分からないコマは後ろ、同時刻は並び順）
+    const byTime = (a: number | null, b: number | null) => a === b ? 0 : a === null ? 1 : b === null ? -1 : a - b;
+    const presenters: LivePresenter[] = items
+      .map((item, index) => ({ item, index, startsAt: times[index] ?? null }))
+      .filter(({ item }) => item.speakerUserId !== null || item.speakerName.trim() !== "")
+      .sort((a, b) => (trackIds.length > 0 ? byTime(a.startsAt, b.startsAt) : 0) || a.index - b.index)
+      .map(({ item, startsAt }) => ({
+        itemId: item.id,
+        title: item.title,
+        startsAt,
+        speaker: item.speaker,
+        speakerName: item.speakerName,
+        linkable: item.speakerUserId !== null,
+        deck: decks.get(item.id) ?? null,
+      }));
+    return c.json({ presenters });
+  },
+);
 
 /** 配信で映すスライド（デッキ）の中身。staff なら読める（deck要素のレンダリング用） */
 liveControlRoutes.get(

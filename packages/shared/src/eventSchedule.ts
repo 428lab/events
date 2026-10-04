@@ -48,6 +48,15 @@ export const eventTrackSchema = z.object({
 });
 export type EventTrack = z.infer<typeof eventTrackSchema>;
 
+/** 配信で使うデッキの要約 (#571)。**slug は持たせない**
+ * （slug を知っていれば公開ページから中身が読めるため） */
+export const liveDeckSummarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  slideCount: z.number(),
+});
+export type LiveDeckSummary = z.infer<typeof liveDeckSummarySchema>;
+
 /** タイムテーブルの1項目（サーバーが返す形。担当者はユーザー情報に解決済み） */
 export const scheduleItemSchema = z.object({
   id: z.string(),
@@ -81,8 +90,33 @@ export const scheduleItemSchema = z.object({
   /** 割り当てられたトラックの ID。`placement` が `tracks` のときだけ非空。
    * `audience: "public"` で取った結果にスタッフ用トラックの ID は入らない (#383) */
   trackIds: z.array(z.string()),
+  /** 登壇者本人がこのコマに紐付けた配信用デッキ (#571)。**そのコマの担当者本人と staff にだけ**
+   * 有効な紐付けを入れる。それ以外の相手・紐付けが無いときは null か省略 */
+  liveDeck: liveDeckSummarySchema.nullable().optional(),
 });
 export type ScheduleItem = z.infer<typeof scheduleItemSchema>;
+
+/** 登壇者本人がコマに配信用デッキを紐付ける／外す (#571)。null で外す */
+export const setScheduleLiveDeckInput = z.object({
+  deckId: z.string().max(64).nullable(),
+});
+export type SetScheduleLiveDeckInput = z.infer<typeof setScheduleLiveDeckInput>;
+
+/** 配信コントロールの発表者一覧の1行 (#571)。タイムテーブルの担当者付きコマ1つ */
+export const livePresenterSchema = z.object({
+  itemId: z.string(),
+  title: z.string(),
+  /** 計算済みの開始時刻（epoch ms）。分からなければ null */
+  startsAt: z.number().nullable(),
+  speaker: scheduleSpeakerSchema.nullable(),
+  /** フリーテキストの担当者名。アカウントにリンクされたコマは空 */
+  speakerName: z.string(),
+  /** 担当者がアカウントにリンクされているか。false は「紐付け不可」 */
+  linkable: z.boolean(),
+  /** 有効な紐付けがあるときだけ入る */
+  deck: liveDeckSummarySchema.nullable(),
+});
+export type LivePresenter = z.infer<typeof livePresenterSchema>;
 
 /** 登壇資料URLの入力（http/https のみ許可。空文字=なし/クリア） */
 const materialUrlInput = z

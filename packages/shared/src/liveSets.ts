@@ -210,6 +210,9 @@ export const eventLiveStateSchema = z.object({
   bgmVolume: z.number(),
   liveIndicatorOn: z.boolean(),
   chatSource: z.enum(["off", "event"]),
+  /** 配信コントロールで選ばれている発表（タイムテーブルのコマ ID）(#571)。
+   * `deckId` はこのコマに紐付いたデッキをサーバーが解決して書く */
+  presenterItemId: z.string().nullable(),
   updatedAt: z.number(),
 });
 export type EventLiveState = z.infer<typeof eventLiveStateSchema>;
@@ -224,6 +227,9 @@ export const updateEventLiveStateInput = z.object({
   bgmVolume: z.number().min(0).max(1).optional(),
   liveIndicatorOn: z.boolean().optional(),
   chatSource: z.enum(["off", "event"]).optional(),
+  /** 発表者（コマ）を選ぶ (#571)。デッキはサーバーが解決し、ページは 1 ページ目に戻す
+   * （同じコマの選び直しはページを保つ）。`deckId` / `deckPage` と同時には送らない */
+  presenterItemId: z.string().max(64).nullable().optional(),
 });
 export type UpdateEventLiveStateInput = z.infer<typeof updateEventLiveStateInput>;
 

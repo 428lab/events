@@ -109,6 +109,21 @@ const ja = {
   material: "登壇資料",
   materialEdit: "資料URLを編集",
 
+  /** 配信で使うスライドの紐付け (#571)。登壇者本人が自分のコマに付ける */
+  liveDeckChoose: "この発表で使うスライドを選ぶ",
+  liveDeckChip: "配信スライド：{{title}}",
+  liveDeckDialogTitle: "「{{title}}」で使うスライド",
+  liveDeckDialogLead: "自分の events lab スライドから選びます。発表ごとに1つ選べます。",
+  liveDeckConsent:
+    "選んだスライドは、このイベントの運営スタッフが配信コントロールで表示・ページ送りできるようになります。参加者のタイムテーブルには出ません（公開したいときは今までどおり「資料URL」に載せてください）。紐付けを外すと、配信中でもすぐに表示されなくなります。",
+  liveDeckNoDecks: "まだスライドがありません。",
+  liveDeckCreate: "スライドを作る",
+  liveDeckUse: "このスライドを使う",
+  liveDeckUnlink: "紐付けを外す",
+  liveDeckUnlinkConfirm: "「{{title}}」の配信スライドの紐付けを外しますか？",
+  liveDeckSaveError: "保存できませんでした。時間をおいてもう一度お試しください。",
+  liveDeckSelected: "選択中",
+
   /** トラック（並行して走る枠）。トラック名そのものは利用者が入れた値 */
   tracks: "トラック",
   allTracks: "全トラック共通",
@@ -315,6 +330,20 @@ const en: Record<keyof typeof ja, string> = {
   materialOpen: "Open the slides",
   material: "Slides",
   materialEdit: "Edit the slides link",
+
+  liveDeckChoose: "Choose the slides for this talk",
+  liveDeckChip: "Stream slides: {{title}}",
+  liveDeckDialogTitle: "Slides for \"{{title}}\"",
+  liveDeckDialogLead: "Pick one of your events lab slide decks. You can choose one per talk.",
+  liveDeckConsent:
+    "The staff of this event will be able to show and page through the deck you choose in the live control. It is not shown on the attendee timetable (to publish it, add it as the slides link as before). If you unlink it, it stops showing immediately, even during the stream.",
+  liveDeckNoDecks: "You have no slide decks yet.",
+  liveDeckCreate: "Create a deck",
+  liveDeckUse: "Use this deck",
+  liveDeckUnlink: "Unlink",
+  liveDeckUnlinkConfirm: "Unlink the stream slides from \"{{title}}\"?",
+  liveDeckSaveError: "Could not save. Please try again later.",
+  liveDeckSelected: "Selected",
 
   tracks: "Tracks",
   allTracks: "All tracks",

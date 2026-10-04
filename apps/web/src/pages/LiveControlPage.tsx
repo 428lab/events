@@ -13,14 +13,11 @@ import type { LiveScene, UpdateEventLiveStateInput } from "@eventer/shared";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
 import LiveTvIcon from "@mui/icons-material/LiveTv";
-import MonitorIcon from "@mui/icons-material/Monitor";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import EditIcon from "@mui/icons-material/Edit";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { DEFAULT_LIVE_SET_ID } from "@eventer/shared";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
@@ -33,6 +30,7 @@ import {
   useEventLiveDeck,
   useEventLiveSetContent,
   useEventLiveState,
+  useLivePresenters,
   useUpdateEventLiveState,
 } from "../api/liveControlHooks.js";
 import { useMyLiveSets } from "../api/liveSetHooks.js";
@@ -48,7 +46,7 @@ import {
   PresenterPanelToggle,
   PresenterSidePanel,
 } from "../components/PresenterSidePanel.js";
-import { SlideStage } from "../components/SlideStage.js";
+import { LivePresenterSlides } from "../components/LivePresenterSlides.js";
 import { usePresenterPanel } from "../lib/usePresenterPanel.js";
 
 /** 配信コントロールタブ（シーン切替・配信セット選択）。スマホでも操作できる */
@@ -63,6 +61,7 @@ export function LiveControlPage() {
   const { data: mySets } = useMyLiveSets();
   const { data: myDecks } = useMyDecks();
   const { data: deck } = useEventLiveDeck(id, state?.deckId);
+  const { data: presenters } = useLivePresenters(id);
   const { data: bgmTracks } = useBgmTracks();
   const uploadBgm = useUploadBgm();
   const deleteBgm = useDeleteBgm();
@@ -287,86 +286,14 @@ export function LiveControlPage() {
           </Typography>
         )}
 
-        {/* スライド（デッキ）選択とページ送り */}
-        <Stack spacing={1}>
-          <Typography
-            variant="h6"
-            sx={{ display: "flex", alignItems: "center", gap: 0.75 }}
-          >
-            <MonitorIcon fontSize="small" />
-            {t("nav.decks")}
-          </Typography>
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-            <TextField
-              select
-              size="small"
-              label={t("studio.deckToShow")}
-              value={state?.deckId ?? ""}
-              onChange={(e) =>
-                update.mutate({
-                  deckId: e.target.value || null,
-                  deckPage: 0,
-                })
-              }
-              sx={{ minWidth: 220 }}
-              SelectProps={{ displayEmpty: true }}
-            >
-              <MenuItem value="">{t("studio.noneOption")}</MenuItem>
-              {(myDecks ?? []).map((d) => (
-                <MenuItem key={d.id} value={d.id}>
-                  {d.title || t("studio.untitledDeck")}
-                </MenuItem>
-              ))}
-            </TextField>
-            {deck && (
-              <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1} alignItems="center">
-                <Button
-                  variant="outlined"
-                  size="large"
-                  disabled={(state?.deckPage ?? 0) <= 0}
-                  onClick={() =>
-                    update.mutate({ deckPage: Math.max(0, (state?.deckPage ?? 0) - 1) })
-                  }
-                >
-                  <ChevronLeftIcon />
-                </Button>
-                <Typography sx={{ minWidth: 64, textAlign: "center" }} fontWeight={700}>
-                  {Math.min((state?.deckPage ?? 0) + 1, deck.content.slides.length)} /{" "}
-                  {deck.content.slides.length}
-                </Typography>
-                <Button
-                  variant="outlined"
-                  size="large"
-                  disabled={(state?.deckPage ?? 0) >= deck.content.slides.length - 1}
-                  onClick={() =>
-                    update.mutate({
-                      deckPage: Math.min(
-                        deck.content.slides.length - 1,
-                        (state?.deckPage ?? 0) + 1,
-                      ),
-                    })
-                  }
-                >
-                  <ChevronRightIcon />
-                </Button>
-              </Stack>
-            )}
-          </Stack>
-          {deck && deck.content.slides[state?.deckPage ?? 0] && (
-            <Box
-              sx={{
-                width: 240,
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: 1,
-                overflow: "hidden",
-                lineHeight: 0,
-              }}
-            >
-              <SlideStage slide={deck.content.slides[state?.deckPage ?? 0]} width={238} />
-            </Box>
-          )}
-        </Stack>
+        {/* 発表者とスライド (#571)。従来の自分のデッキ選択は「その他のスライド」として中にある */}
+        <LivePresenterSlides
+          state={state}
+          presenters={presenters}
+          deck={deck}
+          myDecks={myDecks}
+          onUpdate={(patch) => update.mutate(patch)}
+        />
 
         {/* BGM */}
         <Stack spacing={1}>
