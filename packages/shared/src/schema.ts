@@ -40,7 +40,10 @@ export const eventSchema = z.object({
   startsAt: z.number(),
   endsAt: z.number(),
   venueType: z.enum(VENUE_TYPES),
+  /** 会場名（オフライン・ハイブリッド） */
   venueOffline: z.string().nullable(),
+  /** 会場の住所。あるときだけイベントページに地図を出す */
+  venueAddress: z.string().nullable(),
   venueOnline: z.string().nullable(),
   participationType: z.enum(PARTICIPATION_TYPES),
   aggregateSelfEntry: z.boolean(),
@@ -111,6 +114,7 @@ export const createEventInput = z
     endsAt: z.number().int().default(0),
     venueType: z.enum(VENUE_TYPES),
     venueOffline: z.string().max(500).optional().nullable(),
+    venueAddress: z.string().max(500).optional().nullable(),
     venueOnline: z.string().max(500).optional().nullable(),
     aggregateSelfEntry: z.boolean().default(false),
     contestMode: z.boolean().default(false),
@@ -142,6 +146,7 @@ export const updateEventInput = z.object({
   venueWanted: z.boolean().optional(),
   venueType: z.enum(VENUE_TYPES).optional(),
   venueOffline: z.string().max(500).optional().nullable(),
+  venueAddress: z.string().max(500).optional().nullable(),
   venueOnline: z.string().max(500).optional().nullable(),
   aggregateSelfEntry: z.boolean().optional(),
   contestMode: z.boolean().optional(),

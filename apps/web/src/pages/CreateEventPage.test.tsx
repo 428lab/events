@@ -99,3 +99,34 @@ describe("イベント作成の日時順序の警告 (#399)", () => {
     expect(submitButton()).toBeEnabled();
   });
 });
+
+describe("イベント作成の会場の住所", () => {
+  /** 会場種別のセレクトで選び直す */
+  function pickVenueType(label: string) {
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "会場種別" }));
+    fireEvent.click(screen.getByRole("option", { name: label }));
+  }
+  const addressField = () => screen.queryByLabelText(/^住所/);
+
+  it("オフラインとハイブリッドでは会場名のすぐ下に住所欄を出し、オンラインでは出さない", () => {
+    draw();
+    expect(screen.getByLabelText(/^会場名/)).toBeInTheDocument();
+    expect(addressField()).toBeInTheDocument();
+    pickVenueType("オンライン");
+    expect(addressField()).not.toBeInTheDocument();
+    pickVenueType("ハイブリッド");
+    expect(addressField()).toBeInTheDocument();
+  });
+
+  it("入れた住所を venueAddress として送る（空なら null）", () => {
+    draw();
+    fill("2026-09-01T10:00", "2026-09-01T12:00");
+    fireEvent.change(screen.getByLabelText(/^会場名/), { target: { value: "丸の内ホール" } });
+    fireEvent.change(addressField()!, { target: { value: "東京都千代田区丸の内1-9-1" } });
+    fireEvent.click(submitButton());
+    expect(createMutate.mock.calls[0][0]).toMatchObject({
+      venueOffline: "丸の内ホール",
+      venueAddress: "東京都千代田区丸の内1-9-1",
+    });
+  });
+});

@@ -19,6 +19,7 @@ interface EventRow {
   ends_at: number;
   venue_type: string;
   venue_offline: string | null;
+  venue_address: string | null;
   venue_online: string | null;
   participation_type: string;
   aggregate_self_entry: number;
@@ -116,6 +117,7 @@ function toEvent(row: EventRow): Event {
     endsAt: row.ends_at,
     venueType: row.venue_type as Event["venueType"],
     venueOffline: row.venue_offline,
+    venueAddress: row.venue_address ?? null,
     venueOnline: row.venue_online,
     participationType: row.participation_type as Event["participationType"],
     aggregateSelfEntry: row.aggregate_self_entry === 1,
@@ -401,11 +403,11 @@ export const eventsRepo = {
     while (await this.findBySlug(slug)) slug = genEventSlug();
     const [created] = await batch([{ sql: `INSERT INTO event
         (id, title, subtitle, description, starts_at, ends_at, venue_type,
-         venue_offline, venue_online, participation_type,
+         venue_offline, venue_address, venue_online, participation_type,
          aggregate_self_entry, contest_mode, status, created_by, created_at,
          community_id, scheduling, schedule_anonymous, slug, venue_wanted,
          chat_enabled, visibility, nonpublic_eligible, access_revision)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 1 WHERE EXISTS(SELECT 1 FROM user u WHERE u.id=? AND u.deleted_at IS NULL
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'individual', ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 1 WHERE EXISTS(SELECT 1 FROM user u WHERE u.id=? AND u.deleted_at IS NULL
          AND (? IS NULL OR EXISTS(SELECT 1 FROM event source WHERE source.id=? AND ${activeManagerSql("source","?")}))
          AND (? IS NULL OR u.discord_id IN(SELECT value FROM json_each(?)) OR EXISTS(SELECT 1 FROM community_member cm WHERE cm.community_id=? AND cm.user_id=u.id AND cm.role IN('owner','admin'))
            OR EXISTS(SELECT 1 FROM event source WHERE source.id=? AND source.community_id=? AND ${activeManagerSql("source","?")})))`, args: [
@@ -417,6 +419,7 @@ export const eventsRepo = {
       input.endsAt ?? 0,
       input.venueType,
       input.venueOffline ?? null,
+      input.venueAddress ?? null,
       input.venueOnline ?? null,
       input.aggregateSelfEntry ? 1 : 0,
       input.contestMode ? 1 : 0,
@@ -476,7 +479,7 @@ export const eventsRepo = {
          access_revision = access_revision + CASE WHEN status <> ? OR community_id IS NOT ? OR visibility <> ? OR starts_at <> ? OR ends_at <> ? OR scheduling <> ? OR registration_deadline IS NOT ? THEN 1 ELSE 0 END,
          visibility = ?, access_operation_token = ?,
          title = ?, subtitle = ?, description = ?, starts_at = ?, ends_at = ?,
-         venue_type = ?, venue_offline = ?, venue_online = ?,
+         venue_type = ?, venue_offline = ?, venue_address = ?, venue_online = ?,
          aggregate_self_entry = ?, contest_mode = ?, status = ?,
          community_id = ?, schedule_anonymous = ?, schedule_visible = ?,
          photos_public = ?, attendance_check = ?, venue_wanted = ?,
@@ -500,6 +503,7 @@ export const eventsRepo = {
       next.endsAt,
       next.venueType,
       next.venueOffline ?? null,
+      next.venueAddress ?? null,
       next.venueOnline ?? null,
       next.aggregateSelfEntry ? 1 : 0,
       next.contestMode ? 1 : 0,

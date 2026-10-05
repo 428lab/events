@@ -67,6 +67,7 @@ async function setupSourceEvent(cookie: string): Promise<string> {
       description: "説明文です",
       venueType: "hybrid",
       venueOffline: "会場A",
+      venueAddress: "東京都千代田区丸の内1-9-1",
       venueOnline: "https://example.com/meet",
       startsAt: 1700000000000,
       endsAt: 1700003600000,
@@ -162,6 +163,7 @@ describe("イベントの複製 (#7)", () => {
     expect(event.description).toBe("説明文です");
     expect(event.venueType).toBe("hybrid");
     expect(event.venueOffline).toBe("会場A");
+    expect(event.venueAddress).toBe("東京都千代田区丸の内1-9-1");
     expect(event.venueOnline).toBe("https://example.com/meet");
     expect(event.contestMode).toBe(true);
     expect(event.venueWanted).toBe(true);

@@ -233,3 +233,26 @@ describe("参加者のみ（暗号化）(#582 W6)", () => {
     expect(updateMutate.mock.calls[0][0]).not.toHaveProperty("chatEncrypted");
   });
 });
+
+describe("イベント編集の会場の住所", () => {
+  const addressField = () => screen.queryByLabelText(/^住所/);
+
+  it("保存済みの住所を出し、消して保存すると venueAddress: null を送る", () => {
+    eventData = makeEventData({ venueOffline: "丸の内ホール", venueAddress: "東京都千代田区丸の内1-9-1" });
+    draw();
+    expect(addressField()).toHaveValue("東京都千代田区丸の内1-9-1");
+    fireEvent.change(addressField()!, { target: { value: "" } });
+    fireEvent.click(saveButton());
+    expect(updateMutate.mock.calls[0][0]).toMatchObject({ venueOffline: "丸の内ホール", venueAddress: null });
+  });
+
+  it("ハイブリッドでは住所欄を出し、オンラインでは出さない", () => {
+    eventData = makeEventData({ venueType: "hybrid" });
+    const { unmount } = draw();
+    expect(addressField()).toBeInTheDocument();
+    unmount();
+    eventData = makeEventData({ venueType: "online" });
+    draw();
+    expect(addressField()).not.toBeInTheDocument();
+  });
+});

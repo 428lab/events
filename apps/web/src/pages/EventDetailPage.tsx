@@ -96,6 +96,9 @@ export function EventDetailPage() {
   const isStaff = myRole === "staff";
   const contest = event.contestMode;
   const deadline = event.registrationDeadline;
+  // 住所はオフライン・ハイブリッドのときだけ出す（オンラインに変えても列は残るため）
+  const venueAddress =
+    event.venueType !== "online" ? event.venueAddress?.trim() || null : null;
   const bingoPanel = canChat
     ? <BingoPanel showManagementActions={false} eventId={id} myRole={myRole} data={bingo} />
     : null;
@@ -283,14 +286,45 @@ export function EventDetailPage() {
       {/* 表彰の結果と、詳細な結果ページへの導線（出し分けはパネル側） */}
       <EventAwards eventId={id} contest={contest} ended={timing.ended} />
 
-      {event.description && (
+      {(event.description || venueAddress) && (
         <Card variant="outlined">
           <CardContent>
-            <Markdown>{event.description}</Markdown>
+            {event.description && <Markdown>{event.description}</Markdown>}
             {event.venueOffline && (
               <Typography variant="body2" sx={{ mt: 2 }}>
                 {t("eventDetail.venueOffline", { venue: event.venueOffline })}
               </Typography>
+            )}
+            {/* 住所と地図。会場ページ (VenueDetailPage) と同じキー不要の埋め込み＋公式リンク */}
+            {venueAddress && (
+              <Box sx={{ mt: event.venueOffline ? 0.5 : 2 }}>
+                <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
+                  {t("eventDetail.venueAddress", { address: venueAddress })}
+                </Typography>
+                <Box
+                  component="iframe"
+                  title={t("eventDetail.venueMapTitle")}
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(venueAddress)}&z=16&output=embed`}
+                  referrerPolicy="no-referrer"
+                  sx={{
+                    width: "100%",
+                    height: 300,
+                    border: 0,
+                    borderRadius: 2,
+                    display: "block",
+                    mt: 1,
+                  }}
+                />
+                <Link
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venueAddress)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  variant="body2"
+                  sx={{ display: "inline-block", mt: 0.5 }}
+                >
+                  {t("eventDetail.venueMapOpen")}
+                </Link>
+              </Box>
             )}
             {event.venueOnline && (
               <Typography variant="body2" sx={{ mt: 1 }}>

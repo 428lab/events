@@ -57,6 +57,7 @@ eventDuplicateRoutes.post(
         endsAt: 0,
         venueType: src.venueType,
         venueOffline: src.venueOffline,
+        venueAddress: src.venueAddress,
         venueOnline: src.venueOnline,
         aggregateSelfEntry: src.aggregateSelfEntry,
         contestMode: src.contestMode,
