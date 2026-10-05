@@ -12,6 +12,23 @@ describe("event card design contract (#506)", () => {
     expect(cardDesignSchema.safeParse(b).success).toBe(true);
   });
 
+  it.each(cardTemplateIds)("%s carries a No photo mark in a top corner clear of the name (D-NOPHOTO)", (id) => {
+    const parts = createCardTemplate(id).common.parts;
+    const mark = parts.find(p => p.id === "no-photo")!, name = parts.find(p => p.id === "name")!;
+    expect(mark).toMatchObject({ kind: "image", source: "noPhoto" });
+    expect(mark.y + mark.height).toBeLessThan(name.y);
+    expect(mark.x).toBeGreaterThan(name.x + name.width);
+  });
+
+  it("tracks a replaced No photo image as an owned asset", () => {
+    const d = createCardTemplate("name");
+    const mark = d.common.parts.find(p => p.id === "no-photo")!;
+    if (mark.kind !== "image") throw new Error("missing no-photo part");
+    expect(cardDesignAssetIds(d)).toEqual([]);
+    mark.assetId = "mark-asset";
+    expect(cardDesignAssetIds(d)).toEqual(["mark-asset"]);
+  });
+
   it("inherits common parts, applies slot changes, then gives staff changes priority", () => {
     const d = createCardTemplate("name");
     const band = d.common.parts.find(p => p.id === "role-band")!;

@@ -1,6 +1,8 @@
+import { SURVEY_PRESET_QUESTIONS, SURVEY_PRESETS } from "@eventer/shared";
 import type {
   SaveSurveyQuestionItem,
   SurveyPhase,
+  SurveyPreset,
   SurveyQuestion,
 } from "@eventer/shared";
 import { eventViewSql } from "../../auth/eventAccess.js";
@@ -16,6 +18,13 @@ interface QuestionRow {
   options: string;
   required: number;
   sort_order: number;
+  preset: string | null;
+}
+
+/** 保存1問ぶんを列の値にそろえる。プリセットは文言・形式・必須を固定値で上書きする */
+function normalizeItem(item: SaveSurveyQuestionItem) {
+  if ("preset" in item) return { id: item.id, preset: item.preset, ...SURVEY_PRESET_QUESTIONS[item.preset] };
+  return { ...item, preset: null as SurveyPreset | null };
 }
 
 function toQuestion(row: QuestionRow): SurveyQuestion {
@@ -37,6 +46,9 @@ function toQuestion(row: QuestionRow): SurveyQuestion {
     options,
     required: Boolean(row.required),
     sortOrder: row.sort_order,
+    preset: (SURVEY_PRESETS as readonly string[]).includes(row.preset ?? "")
+      ? (row.preset as SurveyPreset)
+      : null,
   };
 }
 
@@ -60,7 +72,7 @@ export const eventSurveyRepo = {
     phase: SurveyPhase,
   ): Promise<SurveyQuestion[]> {
     const rows = await many<QuestionRow>(
-      `SELECT id, event_id, phase, question, qtype, options, required, sort_order
+      `SELECT id, event_id, phase, question, qtype, options, required, sort_order, preset
         FROM event_survey_question
         WHERE event_id = ? AND phase = ? ORDER BY sort_order ASC`,
       eventId,
@@ -70,17 +82,20 @@ export const eventSurveyRepo = {
   },
 
   /** 質問の一括保存。id 一致の既存行は UPDATE（回答を保持）、
-   * 入力に無い既存行は DELETE（回答は FK CASCADE で削除）、id 無しは INSERT。 */
+   * 入力に無い既存行は DELETE（回答は FK CASCADE で削除）、id 無しは INSERT。
+   * 通常の質問とプリセットは id が一致しても入れ替えない（別の質問として作り直す）。 */
   async replaceQuestions(
     eventId: string,
     phase: SurveyPhase,
-    items: SaveSurveyQuestionItem[],
+    input: SaveSurveyQuestionItem[],
     actorId: string,
   ): Promise<SurveyQuestion[] | null> {
     const now = Date.now();
     const existing = await this.listQuestions(eventId, phase);
-    const existingIds = new Set(existing.map((q) => q.id));
     const existingById = new Map(existing.map((q) => [q.id, q]));
+    const items = input.map(normalizeItem).map((it) =>
+      it.id && existingById.get(it.id)?.preset !== it.preset ? { ...it, id: undefined } : it);
+    const existingIds = new Set(existing.map((q) => q.id));
     // 他イベントの id を差し込まれても既存一致しない限り新規 INSERT になる
     const keptIds = items
       .map((it) => it.id)
@@ -122,8 +137,8 @@ export const eventSurveyRepo = {
         }
         return {
           sql: `INSERT INTO event_survey_question
-            (id, event_id, phase, question, qtype, options, required, sort_order, created_at)
-            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${accessOperationGuard}`,
+            (id, event_id, phase, question, qtype, options, required, sort_order, created_at, preset)
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${accessOperationGuard}`,
           args: [
             crypto.randomUUID(),
             eventId,
@@ -134,6 +149,7 @@ export const eventSurveyRepo = {
             required,
             i,
             now,
+            it.preset,
             ...guard,
           ],
         };
@@ -202,6 +218,17 @@ export const eventSurveyRepo = {
       phase,
     );
     return (row?.c ?? 0) === 0;
+  },
+
+  /** 名札の No photo マーク用: プリセットに no_photo と答えた参加確定メンバーの id */
+  async noPhotoMemberIds(eventId: string): Promise<Set<string>> {
+    const rows = await many<{ user_id: string }>(
+      `SELECT a.user_id FROM event_survey_answer a
+        JOIN event_survey_question q ON q.id = a.question_id
+        WHERE q.event_id = ? AND q.preset = 'no_photo' AND a.value = 'no_photo'`,
+      eventId,
+    );
+    return new Set(rows.map((r) => r.user_id));
   },
 
   /** 本人の回答を削除（参加解除時のPII最小化） */

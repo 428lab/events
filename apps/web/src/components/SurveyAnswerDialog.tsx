@@ -19,7 +19,7 @@ import {
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import type { SurveyQuestion } from "@eventer/shared";
-import { parseCheckboxValue } from "@eventer/shared";
+import { parseCheckboxValue, surveyAnswerText, surveyQuestionText } from "@eventer/shared";
 import {
   useMySurveyAnswers,
   useSubmitSurveyAnswers,
@@ -42,7 +42,7 @@ export function SurveyAnswerDialog({
   onSubmitted?: () => void;
   submitLabel?: string;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data: myAnswers } = useMySurveyAnswers(eventId, open);
   const submit = useSubmitSurveyAnswers(eventId);
   // questionId → 値（checkbox は string[]、それ以外は string）
@@ -107,7 +107,9 @@ export function SurveyAnswerDialog({
         <Stack spacing={2.5}>
           {questions.map((q) => {
             const error = showErrors && q.required && isEmpty(q);
-            const label = q.required ? `${q.question} *` : q.question;
+            // 写真NGのプリセットは閲覧者の言語で。保存値は言語によらず ok / no_photo
+            const question = surveyQuestionText(q, i18n.language);
+            const label = q.required ? `${question} *` : question;
             if (q.qtype === "select") {
               return (
                 <FormControl key={q.id} error={error}>
@@ -123,7 +125,7 @@ export function SurveyAnswerDialog({
                         key={o}
                         value={o}
                         control={<Radio size="small" />}
-                        label={o}
+                        label={surveyAnswerText(q, o, i18n.language)}
                       />
                     ))}
                   </RadioGroup>

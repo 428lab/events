@@ -1,4 +1,4 @@
-import { cardDesignAssetIds, cardDesignSchema, type CardDesign, type SavedCardDesign } from "@eventer/shared";
+import { cardDesignAssetIds, cardDesignSchema, cardPartAssetId, type CardDesign, type SavedCardDesign } from "@eventer/shared";
 import { api } from "../../api/client.js";
 import type { CardAsset } from "../../api/cardDesignHooks.js";
 
@@ -35,8 +35,8 @@ export async function copyEventDesign(targetId: string, sourceInput: string, tar
     }
     for (const layout of [design.common, design.staff, ...design.slots.map(s => s.rule)]) {
       if (layout?.background?.assetId) layout.background.assetId = mapping.get(layout.background.assetId);
-      for (const part of layout?.parts ?? []) if (part.kind === "image" && part.source === "asset" && part.assetId)
-        part.assetId = mapping.get(part.assetId);
+      for (const part of layout?.parts ?? []) if (part.kind === "image" && cardPartAssetId(part))
+        part.assetId = mapping.get(part.assetId!);
     }
     return { design: cardDesignSchema.parse(design), assets: copied, skippedSlots: originalSlotCount - design.slots.length };
   } catch (error) {

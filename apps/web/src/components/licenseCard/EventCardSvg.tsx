@@ -19,7 +19,11 @@ export interface EventCardContext {
 export function cardAssetUrl(eventId: string, assetId: string): string {
   return `/api/events/${encodeURIComponent(eventId)}/name-card-assets/${encodeURIComponent(assetId)}`;
 }
+/** Bundled default for the No photo mark (apps/web/public). Same origin, so print and export load it like assets. */
+export const NO_PHOTO_MARK_URL = "/card-no-photo.svg";
 export function partImageUrl(part: Extract<CardPart, { kind: "image" }>, card: EventNameCard, context: EventCardContext): string | null {
+  if (part.source === "noPhoto")
+    return card.noPhoto ? part.assetId ? cardAssetUrl(context.eventId, part.assetId) : NO_PHOTO_MARK_URL : null;
   return part.source === "avatar" ? card.avatarUrl : part.source === "community" ? context.communityLogo
     : part.assetId ? cardAssetUrl(context.eventId, part.assetId) : null;
 }
@@ -99,7 +103,7 @@ export function EventCardSvg({ layout, card, context, svgRef, children, imageDat
       const url = partImageUrl(p, card, context);
       return url ? picture(url, { x: p.x, y: p.y, width: p.width, height: p.height,
         preserveAspectRatio: `xMidYMid ${p.fit === "cover" ? "slice" : "meet"}` })
-        : p.source === "community" ? null : <g>
+        : p.source === "community" || p.source === "noPhoto" ? null : <g>
           <rect x={p.x} y={p.y} width={p.width} height={p.height} fill="#E2E8F0" />
           {p.source === "avatar" && <FitText text={[...card.name][0] ?? "?"} part={{ ...p,
             kind: "text", source: "literal", text: "", color: "#475569", bold: true, align: "middle",

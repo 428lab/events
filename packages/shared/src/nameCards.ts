@@ -51,6 +51,9 @@ export const eventNameCardSchema = z.object({
   participation: nameCardParticipationSchema,
   gamification: gamificationSchema,
   communities: z.array(nameCardCommunitySchema),
+  /** 参加アンケートの写真NGプリセットに「写真NG」と答えたか。名札の No photo マークを出す。
+   * 古いキャッシュや他の画面の見本カードには無いので省略可（無ければ出さない） */
+  noPhoto: z.boolean().optional(),
 });
 export type EventNameCard = z.infer<typeof eventNameCardSchema>;
 

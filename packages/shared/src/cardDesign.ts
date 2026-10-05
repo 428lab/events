@@ -26,7 +26,8 @@ export const cardPartSchema = z.discriminatedUnion("kind", [
     font: cardFontSchema.optional(),
     bold: z.boolean().default(false), align: z.enum(["start", "middle", "end"]).default("start"),
   }).strict(),
-  z.object({ ...box, kind: z.literal("image"), source: z.enum(["avatar", "community", "asset"]),
+  /** noPhoto: 写真NGと答えた参加者の名札にだけ出る印。assetId があればその画像、無ければ同梱の既定画像 */
+  z.object({ ...box, kind: z.literal("image"), source: z.enum(["avatar", "community", "asset", "noPhoto"]),
     assetId: id.optional(), fit: z.enum(["contain", "cover"]).default("contain"),
   }).strict(),
   z.object({ ...box, kind: z.literal("rect"), color, radius: number(0, 100).default(0) }).strict(),
@@ -119,13 +120,18 @@ export function resolveCardLayout(design: CardDesign, role: string, slotId: stri
   return applyCardRule(layout, role === "staff" ? design.staff : undefined);
 }
 
+/** The uploaded image a part draws, if any. noPhoto parts may replace the bundled mark with one. */
+export function cardPartAssetId(p: CardPart): string | undefined {
+  return p.kind === "image" && (p.source === "asset" || p.source === "noPhoto") ? p.assetId : undefined;
+}
+
 /** Include hidden/overridden assets too: saved edits must remain usable when restored. */
 export function cardDesignAssetIds(design: CardDesign): string[] {
   const refs = new Set<string>();
   for (const layout of [design.common, design.staff, ...design.slots.map(s => s.rule)]) {
     if (layout?.background?.assetId) refs.add(layout.background.assetId);
     for (const p of layout?.parts ?? [])
-      if (p.kind === "image" && p.source === "asset" && p.assetId) refs.add(p.assetId);
+      if (cardPartAssetId(p)) refs.add(cardPartAssetId(p)!);
   }
   return [...refs].sort();
 }

@@ -26,6 +26,9 @@ export function createCardTemplate(template: CardTemplateId): CardDesign {
     { id: "role-band", kind: "rect", x: 56, y: 486, width: 700, height: 108,
       color: "#0F766E", radius: 12, opacity: 1 },
     text("role", "role", 80, 509, 652, 64, 44, "#FFFFFF", true),
+    // Printed only for members who answered "No photo" in the registration survey.
+    { id: "no-photo", kind: "image", source: "noPhoto", x: 930, y: 24,
+      width: 120, height: 120, fit: "contain", opacity: 1 },
   ];
   if (template === "profile") {
     parts.splice(2, 4,

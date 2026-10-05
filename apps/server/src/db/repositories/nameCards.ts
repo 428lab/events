@@ -9,6 +9,7 @@ import type {
 import { many } from "../client.js";
 import { communityImageUrl } from "./communities.js";
 import { publicItemWhere } from "./eventSchedule.js";
+import { eventSurveyRepo } from "./eventSurvey.js";
 
 /** 名札の一括印刷 (#304) 用の読み取り。
  *
@@ -269,7 +270,7 @@ export const nameCardsRepo = {
   /** イベントの参加確定メンバー全員分の名札データ。参加登録順。
    * ロールは絞らない（スタッフ・審査員・観覧者にも名札は要る） */
   async listForEvent(eventId: string, now: number): Promise<EventNameCard[]> {
-    const [members, gm, pm, communities] = await Promise.all([
+    const [members, gm, pm, communities, noPhoto] = await Promise.all([
       many<MemberRow>(
         `SELECT m.user_id AS user_id, m.role AS role, ps.id AS slot_id, ps.name AS slot_name, u.username AS username,
                 u.global_name AS global_name, u.avatar_url AS avatar_url,
@@ -286,6 +287,7 @@ export const nameCardsRepo = {
       gamificationMetrics(eventId, now),
       participationMetrics(eventId, now),
       communitiesFor(eventId),
+      eventSurveyRepo.noPhotoMemberIds(eventId),
     ]);
 
     const stats = tally(gm);
@@ -325,6 +327,7 @@ export const nameCardsRepo = {
             : ZERO_STATS,
         ),
         communities: communities.get(m.user_id) ?? [],
+        noPhoto: noPhoto.has(m.user_id),
       };
     });
   },

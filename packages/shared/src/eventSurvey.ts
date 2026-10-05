@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeLanguage, DEFAULT_LANGUAGE, type AppLanguage } from "./i18n/languages.js";
 
 /** 参加アンケート (#152) のフェーズ。'pre'=参加登録時、'post'=事後アンケート (#153 予約) */
 export const SURVEY_PHASES = ["pre", "post"] as const;
@@ -7,6 +8,54 @@ export type SurveyPhase = (typeof SURVEY_PHASES)[number];
 /** 質問の回答形式 */
 export const SURVEY_QTYPES = ["text", "select", "checkbox"] as const;
 export type SurveyQtype = (typeof SURVEY_QTYPES)[number];
+
+/** 主催者が1スイッチで足せる定型の質問。文言は表示側が閲覧者の言語の辞書で出す */
+export const SURVEY_PRESETS = ["no_photo"] as const;
+export type SurveyPreset = (typeof SURVEY_PRESETS)[number];
+
+/** 写真NG（No photo）の保存値。言語に依存しない固定値で、表示は辞書が訳す */
+export const NO_PHOTO_VALUES = ["ok", "no_photo"] as const;
+export type NoPhotoValue = (typeof NO_PHOTO_VALUES)[number];
+
+/** プリセット質問の保存形（質問文はDB上の目印。画面とCSVは辞書の文言を出す） */
+export const SURVEY_PRESET_QUESTIONS: Record<SurveyPreset, {
+  question: string; qtype: SurveyQtype; options: string[]; required: boolean;
+}> = {
+  no_photo: {
+    question: "写真への写り込みを避けたいですか？",
+    qtype: "select",
+    options: [...NO_PHOTO_VALUES],
+    required: true,
+  },
+};
+
+/** 写真NGの文言。画面の辞書 (`eventForm.noPhoto*`) もここを引くので、
+ * 辞書を丸ごと読み込まないサーバー（CSV）と同じ綴りになる */
+export const NO_PHOTO_TEXT: Record<AppLanguage, { question: string; ok: string; no_photo: string }> = {
+  ja: { question: "写真への写り込みを避けたいですか？", ok: "撮影OK", no_photo: "写真NG（No photo）" },
+  en: { question: "Do you prefer not to be photographed?", ok: "Photos OK", no_photo: "No photo" },
+};
+
+/** 質問文を閲覧者の言語で。プリセット以外は主催者が書いた文言のまま */
+export function surveyQuestionText(
+  q: Pick<SurveyQuestion, "question" | "preset">,
+  language: string | null | undefined,
+): string {
+  if (q.preset !== "no_photo") return q.question;
+  return NO_PHOTO_TEXT[normalizeLanguage(language) ?? DEFAULT_LANGUAGE].question;
+}
+
+/** 保存値を閲覧者の言語の1行に（プリセットは固定値を訳す。それ以外は surveyValueLabel） */
+export function surveyAnswerText(
+  q: Pick<SurveyQuestion, "qtype" | "preset">,
+  value: string,
+  language: string | null | undefined,
+): string {
+  if (q.preset === "no_photo" && (NO_PHOTO_VALUES as readonly string[]).includes(value)) {
+    return NO_PHOTO_TEXT[normalizeLanguage(language) ?? DEFAULT_LANGUAGE][value as NoPhotoValue];
+  }
+  return surveyValueLabel(q.qtype, value);
+}
 
 /** アンケートの質問（サーバーが返す形） */
 export const surveyQuestionSchema = z.object({
@@ -19,6 +68,8 @@ export const surveyQuestionSchema = z.object({
   options: z.array(z.string()),
   required: z.boolean(),
   sortOrder: z.number(),
+  /** 定型の質問なら種類。通常の質問は null */
+  preset: z.enum(SURVEY_PRESETS).nullable(),
 });
 export type SurveyQuestion = z.infer<typeof surveyQuestionSchema>;
 
@@ -30,16 +81,36 @@ export const saveSurveyQuestionItem = z.object({
   options: z.array(z.string().trim().min(1).max(100)).max(20).default([]),
   required: z.boolean().default(false),
 });
-export type SaveSurveyQuestionItem = z.infer<typeof saveSurveyQuestionItem>;
+/** 定型の質問の保存入力。文言・形式・必須はサーバーが固定値で決める
+ * （送られてきた question / required などは捨てる。union の先頭に置くので preset 付きは必ずこちら） */
+export const saveSurveyPresetItem = z.object({
+  id: z.string().optional(),
+  preset: z.enum(SURVEY_PRESETS),
+});
+export type SaveSurveyPresetItem = z.infer<typeof saveSurveyPresetItem>;
+export type SaveSurveyQuestionItem =
+  | z.infer<typeof saveSurveyQuestionItem>
+  | SaveSurveyPresetItem;
 
-/** 質問の一括保存入力（並び順は配列順）。select/checkbox は選択肢必須 */
+/** 質問の一括保存入力（並び順は配列順）。select/checkbox は選択肢必須、プリセットは各1問まで */
 export const saveSurveyQuestionsInput = z
   .object({
-    questions: z.array(saveSurveyQuestionItem).max(20),
+    questions: z
+      .array(z.union([saveSurveyPresetItem, saveSurveyQuestionItem]))
+      .max(20),
   })
   .superRefine((v, ctx) => {
+    const presets = v.questions.flatMap((q) => ("preset" in q ? [q.preset] : []));
+    if (new Set(presets).size !== presets.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "duplicate_preset",
+        path: ["questions"],
+      });
+    }
     v.questions.forEach((q, i) => {
       if (
+        !("preset" in q) &&
         (q.qtype === "select" || q.qtype === "checkbox") &&
         q.options.length === 0
       ) {

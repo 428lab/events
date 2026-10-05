@@ -49,7 +49,8 @@ export function CardEditor({ initial, context, members, assets, slots }: {
     gamification: { level: 4, xp: 870, currentLevelXp: 700, nextLevelXp: 1100, badges: [] }, participation: { hosted: 9, spoken: 2, attended: 12, noShow: 0 },
   };
   const chosen = members.find(m => m.id === memberId) ?? sample;
-  const card = { ...chosen,
+  // The No photo mark prints only for members who asked for it; the editor always shows it so staff can place it.
+  const card = { ...chosen, noPhoto: true,
     role: target === "staff" ? "staff" as const : target.startsWith("slot:") ? "participant" as const : chosen.role,
     slotName: target.startsWith("slot:") ? slots.find(s => s.id === target.slice(5))?.name ?? null : chosen.slotName,
   };
@@ -186,7 +187,7 @@ export function CardEditor({ initial, context, members, assets, slots }: {
       <Box sx={{ minWidth: 0, gridArea: "canvas" }}><CardCanvas key={target} layout={layout} card={card} context={context} selected={selected} onSelect={setSelected} onChange={changePart} gridSize={snapToGrid ? gridSize : 0} /></Box>
       <Paper variant="outlined" sx={{ p: 2, minWidth: 0, gridArea: "parts" }}>
         <Typography variant="h6">{t("staffOps.cardEditorParts")}</Typography>
-        <List dense>{layout.parts.map((p, i) => <ListItemButton key={p.id} selected={selected === p.id} onClick={() => setSelected(p.id)}>{i + 1}. {p.kind === "text" ? sourceLabels[p.source] : kindLabels[p.kind]}{p.kind === "text" && p.source === "literal" ? `: ${p.text.slice(0, 12)}` : ""}</ListItemButton>)}</List>
+        <List dense>{layout.parts.map((p, i) => <ListItemButton key={p.id} selected={selected === p.id} onClick={() => setSelected(p.id)}>{i + 1}. {p.kind === "text" ? sourceLabels[p.source] : p.kind === "image" && p.source === "noPhoto" ? t("staffOps.cardEditorNoPhoto") : kindLabels[p.kind]}{p.kind === "text" && p.source === "literal" ? `: ${p.text.slice(0, 12)}` : ""}</ListItemButton>)}</List>
         <TextField select size="small" fullWidth value={kind} label={t("staffOps.cardEditorParts")} onChange={e => setKind(e.target.value as CardPart["kind"])}>
           {(Object.keys(kindLabels) as CardPart["kind"][]).map(k => <MenuItem key={k} value={k}>{kindLabels[k]}</MenuItem>)}
         </TextField>
