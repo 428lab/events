@@ -16,8 +16,8 @@ import { isDraftEvent } from "../DraftChip.js";
 import { ParticipationTimeline } from "../ParticipationTimeline.js";
 import { ProfileMediaTab } from "./ProfileMediaTab.js";
 
-/** タブの値。URL の `?tab=` にそのまま載る（既定の upcoming は載せない）。
- * all は並びの先頭だが既定ではない（既定は「参加予定」のまま） */
+/** タブの値。URL の `?tab=` にそのまま載る（既定の all は載せない）。
+ * 既定は並びの先頭の「すべて」。本人のページも他人のページも同じ */
 const TAB_KEYS = ["all", "upcoming", "past", "hosted", "drafts", "media"] as const;
 export type ProfileTabKey = (typeof TAB_KEYS)[number];
 
@@ -25,7 +25,7 @@ export type ProfileTabKey = (typeof TAB_KEYS)[number];
  * （リダイレクトはしない。URL はそのままで表示だけ既定になる） */
 function resolveTab(raw: string | null, draftsVisible: boolean): ProfileTabKey {
   const found = TAB_KEYS.find((k) => k === raw);
-  if (!found || (found === "drafts" && !draftsVisible)) return "upcoming";
+  if (!found || (found === "drafts" && !draftsVisible)) return "all";
   return found;
 }
 
@@ -139,7 +139,7 @@ function EventTabBody({
 }
 
 /**
- * プロフィールのタブ (#407)。参加予定（既定）／過去／主催／下書き（本人のみ）／
+ * プロフィールのタブ (#407)。すべて（既定）／参加予定／過去／主催／下書き（本人のみ）／
  * メディアに分ける。時間の軸（予定/過去）と役割の軸（主催）は独立 (#416):
  * 主催イベントは「主催」タブに出たまま、開催時期に応じて「参加予定」または
  * 「過去」にも重ねて出る。下書きだけは時間のタブに混ぜない（公開前のものが
@@ -206,7 +206,7 @@ export function ProfileTabs({
     // 既定タブは素の URL（既定を URL に書かない）。共有・リロードには残したいが
     // 戻るボタンでタブ履歴を1つずつ遡らせたくないので置き換える
     const params = new URLSearchParams(searchParams);
-    if (next === "upcoming") params.delete("tab");
+    if (next === "all") params.delete("tab");
     else params.set("tab", next);
     setSearchParams(params, { replace: true });
   };
@@ -236,7 +236,7 @@ export function ProfileTabs({
         allowScrollButtonsMobile
         sx={{ mb: 2, borderBottom: 1, borderColor: "divider" }}
       >
-        {/* 並びの先頭は合算の「すべて」。ただし既定タブは「参加予定」のまま */}
+        {/* 並びの先頭は合算の「すべて」で、これが既定タブ */}
         <Tab
           value="all"
           label={countLabel(t("profile.tabAll"), allEvents.length)}

@@ -9,7 +9,7 @@ import type { MyEventSummary } from "@eventer/shared";
  *
  * 旧4分類 (#315, ParticipationHistory) をタブに再配置した。時間の軸（予定/過去）と
  * 役割の軸（主催）は独立で、主催イベントは時期に応じて時間のタブにも重ねて出る
- * (#416)。既定は参加予定で、選択中のタブは `?tab=` で URL に載る。
+ * (#416)。既定は「すべて」で、選択中のタブは `?tab=` で URL に載る。
  * 下書きタブは本人だけ (#319, #348)。
  * ここでは既定タブ・出し分け・URL との同期・年表切替の共有を確かめる。
  */
@@ -125,14 +125,16 @@ beforeEach(() => {
 });
 
 describe("プロフィールのタブ (#407)", () => {
-  it("既定は参加予定タブで、タブ見出しに件数が付く", () => {
+  it("既定は「すべて」タブで、タブ見出しに件数が付く", () => {
     renderTabs();
-    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("すべて（4）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("false");
     expect(tab("参加した過去イベント（2）")).toBeTruthy();
     expect(tab("主催したイベント（2）")).toBeTruthy();
     // メディアは開くまで取得しないので件数を添えない
     expect(tab("投稿したメディア")).toBeTruthy();
-    // 中身はこれからの回だけ（主催の予定も含む #416）。過去の回は出ない
+    // 参加予定タブの中身はこれからの回だけ（主催の予定も含む #416）。過去の回は出ない
+    fireEvent.click(tab("参加予定（2）"));
     expect(screen.getAllByText("参加予定の回").length).toBeGreaterThan(0);
     expect(screen.getAllByText("主催する回").length).toBeGreaterThan(0);
     expect(screen.queryByText("参加した回")).toBeNull();
@@ -146,6 +148,9 @@ describe("プロフィールのタブ (#407)", () => {
     expect(screen.getByTestId("loc").textContent).toBe("?tab=past");
 
     fireEvent.click(tab("参加予定（2）"));
+    expect(screen.getByTestId("loc").textContent).toBe("?tab=upcoming");
+
+    fireEvent.click(tab("すべて（4）"));
     expect(screen.getByTestId("loc").textContent).toBe("");
   });
 
@@ -168,7 +173,7 @@ describe("プロフィールのタブ (#407)", () => {
 
   it("不正な ?tab= は既定タブに落とす", () => {
     renderTabs(EVENTS, { url: "/users/tester?tab=nonsense" });
-    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("すべて（4）").getAttribute("aria-selected")).toBe("true");
   });
 
   it("一覧⇄年表の切替はタブをまたいで共有される", () => {
@@ -210,7 +215,8 @@ describe("時間タブに主催イベントも出す (#416)", () => {
 
   it("未来の主催イベントが「参加予定」と「主催」の両方に出る", () => {
     renderTabs();
-    // 既定タブ（参加予定）に主催予定のセクションが加わる
+    // 参加予定タブに主催予定のセクションが加わる
+    fireEvent.click(tab("参加予定（2）"));
     expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("主催・運営するイベント（1）")).toBeTruthy();
     expect(screen.getAllByText("主催する回").length).toBeGreaterThan(0);
@@ -222,6 +228,7 @@ describe("時間タブに主催イベントも出す (#416)", () => {
   it("下書きは時期のタブに混ざらない（従来どおり下書きタブのみ）", () => {
     // DRAFT は未来の主催イベントだが、参加予定タブには出ない
     renderTabs([...EVENTS, DRAFT]);
+    fireEvent.click(tab("参加予定（2）"));
     expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByText("下書きの回")).toBeNull();
   });
@@ -242,12 +249,12 @@ describe("時間タブに主催イベントも出す (#416)", () => {
 });
 
 describe("「すべて」タブ (#407)", () => {
-  it("先頭に出るが、既定タブは「参加予定」のまま", () => {
+  it("先頭に出て、既定タブも「すべて」", () => {
     renderTabs();
     const tabs = screen.getAllByRole("tab");
     expect(tabs[0].textContent).toBe("すべて（4）");
-    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
-    expect(tab("すべて（4）").getAttribute("aria-selected")).toBe("false");
+    expect(tab("すべて（4）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("false");
   });
 
   it("中身はイベント系タブの合算で、旧4分類＋下書きのまとまりで出る", () => {
@@ -274,10 +281,10 @@ describe("「すべて」タブ (#407)", () => {
     expect(screen.getByText("参加したイベント（1）")).toBeTruthy();
   });
 
-  it("?tab=all で URL に載り、開き直しでも選ばれる", () => {
-    renderTabs();
+  it("既定なので選ぶと ?tab= が消え、?tab=all で開いても選ばれる", () => {
+    renderTabs(EVENTS, { url: "/users/tester?tab=past" });
     fireEvent.click(tab("すべて（4）"));
-    expect(screen.getByTestId("loc").textContent).toBe("?tab=all");
+    expect(screen.getByTestId("loc").textContent).toBe("");
 
     renderTabs(EVENTS, { url: "/users/tester2?tab=all" });
     expect(
@@ -327,7 +334,7 @@ describe("下書きタブ (#319, #348)", () => {
 
   it("他人のページで ?tab=drafts を開いても既定タブに落とす", () => {
     renderTabs(EVENTS, { isMe: false, url: "/users/tester?tab=drafts" });
-    expect(tab("参加予定（2）").getAttribute("aria-selected")).toBe("true");
+    expect(tab("すべて（4）").getAttribute("aria-selected")).toBe("true");
     expect(screen.getAllByText("参加予定の回").length).toBeGreaterThan(0);
   });
 });
@@ -449,6 +456,7 @@ describe("空のタブ", () => {
 
   it("そのタブだけ空のときはタブ別の文言を出す", () => {
     renderTabs([ev({ id: "j-past", title: "参加した回" })]);
+    fireEvent.click(tab("参加予定（0）"));
     expect(
       screen.getByText("参加予定のイベントはまだありません。"),
     ).toBeTruthy();

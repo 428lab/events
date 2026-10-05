@@ -499,7 +499,7 @@ export function UserProfilePage() {
       {/* ビンゴ成績 (#441)。本人にだけ出す（サーバーも /me 配下で本人の行のみ） */}
       <MyBingoCard isMe={data.isMe === true} />
 
-      {/* その人が関わった物の一覧はすべてタブの中 (#407)。既定は参加予定で、
+      {/* その人が関わった物の一覧はすべてタブの中 (#407)。既定は「すべて」で、
           本人のページではマイページ相当の一覧（下書き等も含む）が母集団 (#319) */}
       <ProfileTabs
         events={historyEvents}
