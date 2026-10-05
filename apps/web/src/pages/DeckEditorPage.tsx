@@ -3,10 +3,8 @@ import {
   Box,
   Button,
   Fab,
-  IconButton,
   Stack,
   TextField,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import RedoIcon from "@mui/icons-material/Redo";
@@ -218,28 +216,6 @@ export function DeckEditorPage() {
         <Button size="small" component={RouterLink} to="/decks">
           {t("studio.backToList")}
         </Button>
-        <Tooltip title={t("studio.undoTip")}>
-          <span>
-            <IconButton
-              size="small"
-              onClick={history.undo}
-              disabled={!history.canUndo}
-            >
-              <UndoIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title={t("studio.redoTip")}>
-          <span>
-            <IconButton
-              size="small"
-              onClick={history.redo}
-              disabled={!history.canRedo}
-            >
-              <RedoIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
         <TextField
           size="small"
           placeholder={t("studio.deckTitlePlaceholder")}
@@ -297,6 +273,10 @@ export function DeckEditorPage() {
             }
             multiSelect={multiSelect}
             onToggleMultiSelect={() => setMultiSelect((m) => !m)}
+            onUndo={history.undo}
+            onRedo={history.redo}
+            canUndo={history.canUndo}
+            canRedo={history.canRedo}
           />
           <DeckCanvas
             slide={slide}

@@ -340,3 +340,38 @@ describe("編集した結果", () => {
     expect(layers().getByText("ようこそ")).toBeInTheDocument();
   });
 });
+
+/**
+ * 戻す/やり直すは編集する場所の近く（キャンバス直上のツールバー）に置く。
+ * スマホでは画面下の FAB が同じ役をするので、ツールバー側は md 以上だけ出す。
+ */
+describe("キャンバス上のツールバーの戻す/やり直す", () => {
+  const toolbarButton = (label: string) => {
+    const holder = screen.getByLabelText(label);
+    // ツールバー（「複数選択」と同じ並び）の中にあること
+    const toolbar = screen.getByText("複数選択").closest(".MuiStack-root") as HTMLElement;
+    expect(toolbar).toContainElement(holder);
+    return within(holder).getByRole("button");
+  };
+
+  it("上部バーには無く、ツールバーで履歴を戻し・やり直せる", async () => {
+    draw(twoPages());
+    const undo = toolbarButton("元に戻す (Ctrl/⌘+Z)");
+    const redo = toolbarButton("やり直す (Ctrl/⌘+Shift+Z)");
+    expect(screen.getByText("← 一覧").parentElement).not.toContainElement(undo);
+    expect(undo).toBeDisabled();
+    expect(redo).toBeDisabled();
+
+    clickLayer("ようこそ");
+    click("この要素を削除");
+    await settle();
+    expect(layers().queryByText("ようこそ")).not.toBeInTheDocument();
+
+    fireEvent.click(undo);
+    expect(layers().getByText("ようこそ")).toBeInTheDocument();
+    expect(redo).not.toBeDisabled();
+
+    fireEvent.click(redo);
+    expect(layers().queryByText("ようこそ")).not.toBeInTheDocument();
+  });
+});
