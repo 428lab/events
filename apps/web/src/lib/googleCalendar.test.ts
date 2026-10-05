@@ -24,6 +24,7 @@ function ev(over: Partial<Event> = {}): Event {
     scheduling: false,
     venueType: "offline",
     venueOffline: "コワーキング kojira 秋葉原",
+    venueAddress: null,
     venueOnline: null,
     ...over,
   } as Event;
@@ -67,6 +68,34 @@ describe("calendarLocation", () => {
     expect(
       calendarLocation(ev({ venueType: "offline", venueOffline: "", venueOnline: "https://stale.example.com" })),
     ).toBe("");
+  });
+});
+
+describe("calendarLocation の住所", () => {
+  const ADDRESS = "東京都千代田区丸の内1-9-1";
+  it("オフラインは会場名と住所を空白でつなぐ", () => {
+    expect(calendarLocation(ev({ venueAddress: ADDRESS }))).toBe(`コワーキング kojira 秋葉原 ${ADDRESS}`);
+  });
+  it("オフラインで会場名が空なら住所だけ", () => {
+    expect(calendarLocation(ev({ venueOffline: "", venueAddress: ADDRESS }))).toBe(ADDRESS);
+  });
+  it("ハイブリッドも会場名と住所を優先する", () => {
+    expect(
+      calendarLocation(ev({ venueType: "hybrid", venueAddress: ADDRESS, venueOnline: "https://meet.example.com/x" })),
+    ).toBe(`コワーキング kojira 秋葉原 ${ADDRESS}`);
+  });
+  it("ハイブリッドで住所だけでも URL に落ちず、URL は本文に載せる", () => {
+    const e = ev({ venueType: "hybrid", venueOffline: null, venueAddress: ADDRESS, venueOnline: "https://meet.example.com/x" });
+    expect(calendarLocation(e)).toBe(ADDRESS);
+    expect(calendarDetails(e, URL_)).toContain("https://meet.example.com/x");
+  });
+  it("オンラインは住所が残っていても場所に出さない", () => {
+    expect(
+      calendarLocation(ev({ venueType: "online", venueAddress: ADDRESS, venueOnline: "https://meet.example.com/x" })),
+    ).toBe("https://meet.example.com/x");
+  });
+  it("location= に会場名と住所が入る", () => {
+    expect(params(url(ev({ venueAddress: ADDRESS }))!).get("location")).toBe(`コワーキング kojira 秋葉原 ${ADDRESS}`);
   });
 });
 

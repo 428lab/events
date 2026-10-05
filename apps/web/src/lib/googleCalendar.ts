@@ -29,21 +29,29 @@ export function toGoogleUtc(ms: number): string {
   return new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
 
+/** 現地の場所。会場名と住所を、あるほうだけ空白でつなぐ */
+function offlinePlace(event: Event): string {
+  return [event.venueOffline, event.venueAddress]
+    .map((v) => v?.trim() ?? "")
+    .filter(Boolean)
+    .join(" ");
+}
+
 /**
  * 予定の場所。
  * - online: 参加 URL
- * - offline: 会場名だけ。`venueOnline` には触らない（ハイブリッド→オフラインに
+ * - offline: 会場名と住所。`venueOnline` には触らない（ハイブリッド→オフラインに
  *   変えたとき古い URL が残ることがあり、それを場所に出すと誤誘導になる）
- * - hybrid: 会場名を優先。現地に行く人のほうが道に迷う。無ければ URL
+ * - hybrid: 会場名と住所を優先。現地に行く人のほうが道に迷う。無ければ URL
  */
 export function calendarLocation(event: Event): string {
   switch (event.venueType) {
     case "online":
       return event.venueOnline ?? "";
     case "offline":
-      return event.venueOffline ?? "";
+      return offlinePlace(event);
     default:
-      return event.venueOffline || (event.venueOnline ?? "");
+      return offlinePlace(event) || (event.venueOnline ?? "");
   }
 }
 
@@ -52,14 +60,14 @@ export function calendarLocation(event: Event): string {
  *
  * URL を必ず入れるのは、カレンダーから events lab に戻る道を残すため
  * （当日「これ何だっけ」で開き直せる）。
- * ハイブリッドは場所欄が会場名になるので、オンラインの参加 URL はここに載せる。
+ * ハイブリッドは場所欄が会場名・住所になるので、オンラインの参加 URL はここに載せる。
  * 載せないと、リモートで参加する人のカレンダーに入口が無くなる。
  */
 export function calendarDetails(event: Event, eventUrl: string): string {
   const parts: string[] = [];
   const head = truncateCodePoints(stripMarkdown(event.description || ""), DETAILS_MAX);
   if (head) parts.push(head);
-  if (event.venueType === "hybrid" && event.venueOnline && event.venueOffline) {
+  if (event.venueType === "hybrid" && event.venueOnline && offlinePlace(event)) {
     parts.push(event.venueOnline);
   }
   parts.push(eventUrl);

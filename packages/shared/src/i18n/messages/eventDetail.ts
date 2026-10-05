@@ -32,6 +32,9 @@ const ja = {
 
   /** 説明カードの会場欄 */
   venueOffline: "会場: {{venue}}",
+  venueAddress: "住所: {{address}}",
+  venueMapTitle: "会場の地図",
+  venueMapOpen: "Googleマップで開く",
   venueOnline: "オンライン:",
 
   /** 参加者限定のお知らせ */
@@ -155,6 +158,9 @@ const en: Record<keyof typeof ja, string> = {
   viewResults: "See the scores",
 
   venueOffline: "Venue: {{venue}}",
+  venueAddress: "Address: {{address}}",
+  venueMapTitle: "Map of the venue",
+  venueMapOpen: "Open in Google Maps",
   venueOnline: "Online:",
 
   membersNoteHeading: "Note for participants",

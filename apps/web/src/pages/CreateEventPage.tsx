@@ -58,6 +58,7 @@ export function CreateEventPage() {
   const [endsAt, setEndsAt] = useState("");
   const [venueType, setVenueType] = useState<VenueType>("offline");
   const [venueOffline, setVenueOffline] = useState("");
+  const [venueAddress, setVenueAddress] = useState("");
   const [venueOnline, setVenueOnline] = useState("");
   const [contestMode, setContestMode] = useState(false);
   const [scheduling, setScheduling] = useState(false);
@@ -120,6 +121,7 @@ export function CreateEventPage() {
         endsAt: scheduling ? 0 : toEpoch(endsAt),
         venueType,
         venueOffline: venueOffline || null,
+        venueAddress: venueAddress || null,
         venueOnline: venueOnline || null,
         aggregateSelfEntry: false,
         contestMode,
@@ -277,6 +279,15 @@ export function CreateEventPage() {
               value={venueOffline}
               max={500}
               onChange={(e) => setVenueOffline(e.target.value)}
+              fullWidth
+            />
+          )}
+          {venueType !== "online" && (
+            <CounterTextField
+              label={t("eventForm.venueAddress")}
+              value={venueAddress}
+              max={500}
+              onChange={(e) => setVenueAddress(e.target.value)}
               fullWidth
             />
           )}

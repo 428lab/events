@@ -88,6 +88,7 @@ export function EditEventPage() {
   const [directDate, setDirectDate] = useState(false);
   const [venueType, setVenueType] = useState<VenueType>("offline");
   const [venueOffline, setVenueOffline] = useState("");
+  const [venueAddress, setVenueAddress] = useState("");
   const [venueOnline, setVenueOnline] = useState("");
   const [contestMode, setContestMode] = useState(false);
   const [attendanceCheck, setAttendanceCheck] = useState(false);
@@ -135,6 +136,7 @@ export function EditEventPage() {
       setRegistrationDeadline(toLocalInput(e.registrationDeadline ?? 0));
       setVenueType(e.venueType);
       setVenueOffline(e.venueOffline ?? "");
+      setVenueAddress(e.venueAddress ?? "");
       setVenueOnline(e.venueOnline ?? "");
       setContestMode(e.contestMode);
       setAttendanceCheck(e.attendanceCheck);
@@ -238,6 +240,7 @@ export function EditEventPage() {
         ...(deadlineEditable ? { registrationDeadline: deadlineMs } : {}),
         venueType,
         venueOffline: venueOffline || null,
+        venueAddress: venueAddress || null,
         venueOnline: venueOnline || null,
         contestMode,
         attendanceCheck,
@@ -410,6 +413,15 @@ export function EditEventPage() {
               value={venueOffline}
               max={500}
               onChange={(e) => setVenueOffline(e.target.value)}
+              fullWidth
+            />
+          )}
+          {venueType !== "online" && (
+            <CounterTextField
+              label={t("eventForm.venueAddress")}
+              value={venueAddress}
+              max={500}
+              onChange={(e) => setVenueAddress(e.target.value)}
               fullWidth
             />
           )}

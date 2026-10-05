@@ -481,6 +481,7 @@ function mapMyEventSummary(
     endsAt: row.ends_at as number,
     venueType: row.venue_type as MyEventSummary["venueType"],
     venueOffline: (row.venue_offline as string | null) ?? null,
+    venueAddress: (row.venue_address as string | null) ?? null,
     venueOnline: (row.venue_online as string | null) ?? null,
     participationType:
       row.participation_type as MyEventSummary["participationType"],

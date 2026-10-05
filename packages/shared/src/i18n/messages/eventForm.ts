@@ -61,7 +61,8 @@ const ja = {
 
   /** 会場 */
   venueType: "会場種別",
-  venueOffline: "オフライン会場",
+  venueOffline: "会場名",
+  venueAddress: "住所",
   venueOnline: "オンライン会場（Discord 招待 URL など）",
   venueWanted: "会場を探しています",
   venueWantedHelp:
@@ -347,7 +348,8 @@ const en: Record<keyof typeof ja, string> = {
     "Fill in the start and end times before setting a registration deadline.",
 
   venueType: "Format",
-  venueOffline: "Venue",
+  venueOffline: "Venue name",
+  venueAddress: "Address",
   venueOnline: "Online venue (a Discord invite URL, for example)",
   venueWanted: "Looking for a venue",
   venueWantedHelp:
