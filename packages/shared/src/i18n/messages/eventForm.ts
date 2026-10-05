@@ -7,6 +7,8 @@
  */
 // 数の入れ替えは {{n}} を使う。i18next の `count` は複数形の仕組みを
 // 起動してしまい、`_other` を用意していないキーで挙動が読みにくくなるため。
+import { NO_PHOTO_TEXT } from "../../eventSurvey.js";
+
 const ja = {
   /** ページの見出しと、開けなかったとき */
   createTitle: "イベント作成",
@@ -224,6 +226,14 @@ const ja = {
   surveyTemplateName_party: "懇親会",
   surveyTemplateName_attributes: "参加者属性",
   surveySave: "アンケートを保存",
+  /** 写真NG（No photo）のプリセット質問。文言は NO_PHOTO_TEXT（CSVと共用） */
+  surveyNoPhotoSwitch: "写真NG（No photo）の希望を聞く",
+  surveyNoPhotoHelp: "必須の選択式の質問を1つ追加します。文言は参加者の表示言語で出ます。回答は名札の No photo マークに使います。",
+  surveyNoPhotoRemoveConfirm: "写真NGの質問を外しますか？（保存すると集まった回答も削除されます）",
+  surveyNoPhotoPreset: "写真NG（定型の質問）",
+  noPhotoQuestion: NO_PHOTO_TEXT.ja.question,
+  noPhotoOk: NO_PHOTO_TEXT.ja.ok,
+  noPhotoNo: NO_PHOTO_TEXT.ja.no_photo,
 
   /** 事前アンケートの回答フォーム。参加前の回答と参加後の編集に共用 */
   surveyAnswerNotice: "回答はこのイベントのスタッフだけが閲覧できます。",
@@ -494,6 +504,13 @@ const en: Record<keyof typeof ja, string> = {
   surveyTemplateName_party: "Social",
   surveyTemplateName_attributes: "Attendee details",
   surveySave: "Save the survey",
+  surveyNoPhotoSwitch: "Ask about No photo",
+  surveyNoPhotoHelp: "Adds one required choice question, shown in each participant's language. Answers drive the No photo mark on name cards.",
+  surveyNoPhotoRemoveConfirm: "Remove the No photo question? Once you save, its answers are deleted too.",
+  surveyNoPhotoPreset: "No photo (preset question)",
+  noPhotoQuestion: NO_PHOTO_TEXT.en.question,
+  noPhotoOk: NO_PHOTO_TEXT.en.ok,
+  noPhotoNo: NO_PHOTO_TEXT.en.no_photo,
 
   surveyAnswerNotice: "Only the organizers of this event can read your answers.",
   surveySelectRequired: "Please choose one",

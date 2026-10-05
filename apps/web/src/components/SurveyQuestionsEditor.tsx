@@ -74,13 +74,17 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
   const { data: answersData } = useSurveyAnswers(eventId, true);
   const save = useSaveSurveyQuestions(eventId);
   const [rows, setRows] = useState<Row[] | null>(null);
+  /** 写真NGのプリセット質問。null はスイッチOFF。保存済みなら id を持つ（回答を保持するため） */
+  const [noPhoto, setNoPhoto] = useState<{ id?: string } | null>(null);
   const [templateAnchor, setTemplateAnchor] = useState<null | HTMLElement>(null);
 
   // サーバーの質問が読めたらフォームを初期化（保存後の再取得では上書きしない）
   useEffect(() => {
     if (questions && rows === null) {
+      const preset = questions.find((q) => q.preset === "no_photo");
+      setNoPhoto(preset ? { id: preset.id } : null);
       setRows(
-        questions.map((q) =>
+        questions.filter((q) => q.preset === null).map((q) =>
           newRow({
             id: q.id,
             question: q.question,
@@ -148,7 +152,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
   const submit = () => {
     // 破壊的変更（回答済み質問の削除・タイプ変更）の影響件数を集計して確認
     if (questions) {
-      const keptIds = new Set(rows.map((r) => r.id).filter(Boolean));
+      const keptIds = new Set([...rows.map((r) => r.id), noPhoto?.id].filter(Boolean));
       let lost = 0;
       for (const q of questions) {
         if (!keptIds.has(q.id)) lost += answerCountOf(q.id);
@@ -170,17 +174,23 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
       }
     }
     save.mutate(
-      rows.map((r) => ({
-        ...(r.id ? { id: r.id } : {}),
-        question: r.question.trim(),
-        qtype: r.qtype,
-        options: r.qtype === "text" ? [] : parseOptions(r.optionsText),
-        required: r.required,
-      })),
+      [
+        ...rows.map((r) => ({
+          ...(r.id ? { id: r.id } : {}),
+          question: r.question.trim(),
+          qtype: r.qtype,
+          options: r.qtype === "text" ? [] : parseOptions(r.optionsText),
+          required: r.required,
+        })),
+        // 写真NGは文言・選択肢・必須をサーバーが固定値で決めるので、種類だけ送る
+        ...(noPhoto ? [{ ...(noPhoto.id ? { id: noPhoto.id } : {}), preset: "no_photo" as const }] : []),
+      ],
       { onSuccess: (res) => {
           // 新規質問に付与された id を取り込む（次の保存で回答を保持できるように）
+          const preset = res.questions.find((q) => q.preset === "no_photo");
+          setNoPhoto(preset ? { id: preset.id } : null);
           setRows(
-            res.questions.map((q) =>
+            res.questions.filter((q) => q.preset === null).map((q) =>
               newRow({
                 id: q.id,
                 question: q.question,
@@ -208,6 +218,40 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
           </>
         )}
       </Typography>
+
+      <Card variant="outlined" sx={{ p: 1.5, mb: 1.5 }}>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={noPhoto !== null}
+              disabled={noPhoto === null && rows.length >= 20}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setNoPhoto({});
+                  return;
+                }
+                if (
+                  noPhoto?.id &&
+                  answerCountOf(noPhoto.id) > 0 &&
+                  !window.confirm(t("eventForm.surveyNoPhotoRemoveConfirm"))
+                ) {
+                  return;
+                }
+                setNoPhoto(null);
+              }}
+            />
+          }
+          label={t("eventForm.surveyNoPhotoSwitch")}
+        />
+        <Typography variant="caption" color="text.secondary" display="block">
+          {t("eventForm.surveyNoPhotoHelp")}
+        </Typography>
+        {noPhoto && (
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            {t("eventForm.noPhotoQuestion")} *（{t("eventForm.noPhotoOk")} / {t("eventForm.noPhotoNo")}）
+          </Typography>
+        )}
+      </Card>
 
       <Stack spacing={1.5}>
         {rows.map((row, i) => (
@@ -315,7 +359,7 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
             size="small"
             variant="outlined"
             startIcon={<AddIcon />}
-            disabled={rows.length >= 20}
+            disabled={rows.length + (noPhoto ? 1 : 0) >= 20}
             onClick={() => setRows((rs) => (rs ? [...rs, newRow()] : rs))}
           >
             {t("eventForm.surveyAddQuestion")}

@@ -26,7 +26,7 @@ import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { EventStats } from "@eventer/shared";
-import { surveyValueLabel } from "@eventer/shared";
+import { surveyAnswerText, surveyQuestionText } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { api } from "../api/client.js";
 import { useEventStats } from "../api/analyticsHooks.js";
@@ -245,12 +245,18 @@ function SurveyAnswersCard({
   eventId: string;
   enabled: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data } = useSurveyAnswers(eventId, enabled);
   const [reminding, setReminding] = useState(false);
   const [remindResult, setRemindResult] = useState<string | null>(null);
   if (!data || data.questions.length === 0) return null;
   const { questions, rows } = data;
+  // 写真NGは撮影の段取りに使うので、人数をまとめて先に見せる（名簿には出さない）
+  const noPhotoQuestion = questions.find((q) => q.preset === "no_photo");
+  const noPhotoCount = (value: "ok" | "no_photo") =>
+    noPhotoQuestion
+      ? rows.filter((r) => r.answers[noPhotoQuestion.id] === value).length
+      : 0;
 
   return (
     <Card variant="outlined">
@@ -307,7 +313,7 @@ function SurveyAnswersCard({
             variant="outlined"
             startIcon={<DownloadIcon />}
             component="a"
-            href={`/api/events/${eventId}/survey/answers.csv`}
+            href={`/api/events/${eventId}/survey/answers.csv?lang=${encodeURIComponent(i18n.language)}`}
             download
           >
             {t("staffOps.surveyCsv")}
@@ -318,12 +324,21 @@ function SurveyAnswersCard({
             variant="outlined"
             startIcon={<DownloadIcon />}
             component="a"
-            href={`/api/events/${eventId}/attendance.csv`}
+            href={`/api/events/${eventId}/attendance.csv?lang=${encodeURIComponent(i18n.language)}`}
             download
           >
             {t("staffOps.attendanceCsv")}
           </Button>
         </Stack>
+        {noPhotoQuestion && (
+          <Typography variant="body2" sx={{ mb: 1 }} data-testid="no-photo-summary">
+            {surveyQuestionText(noPhotoQuestion, i18n.language)}
+            {t("common.dotSeparator")}
+            {surveyAnswerText(noPhotoQuestion, "no_photo", i18n.language)}: {noPhotoCount("no_photo")}
+            {t("common.dotSeparator")}
+            {surveyAnswerText(noPhotoQuestion, "ok", i18n.language)}: {noPhotoCount("ok")}
+          </Typography>
+        )}
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
           {t("staffOps.surveyNote")}
           {remindResult && `${t("common.dotSeparator")}${remindResult}`}
@@ -345,7 +360,7 @@ function SurveyAnswersCard({
                   </TableCell>
                   {questions.map((q) => (
                     <TableCell key={q.id} sx={{ minWidth: 120 }}>
-                      {q.question}
+                      {surveyQuestionText(q, i18n.language)}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -363,7 +378,7 @@ function SurveyAnswersCard({
                     </TableCell>
                     {questions.map((q) => (
                       <TableCell key={q.id}>
-                        {surveyValueLabel(q.qtype, r.answers[q.id] ?? "")}
+                        {surveyAnswerText(q, r.answers[q.id] ?? "", i18n.language)}
                       </TableCell>
                     ))}
                   </TableRow>

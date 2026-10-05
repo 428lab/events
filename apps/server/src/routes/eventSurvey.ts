@@ -3,8 +3,10 @@ import type { Context } from "hono";
 import {
   saveSurveyQuestionsInput,
   submitSurveyAnswersInput,
-  surveyValueLabel,
+  surveyAnswerText,
+  surveyQuestionText,
 } from "@eventer/shared";
+import { resolveLanguage } from "@eventer/shared/i18n";
 import type {
   SaveSurveyQuestionsInput,
   SubmitSurveyAnswersInput,
@@ -281,6 +283,16 @@ export const MEMBER_STATUS_LABEL: Record<string, string> = {
   canceled: "キャンセル",
 };
 
+/** CSV に出すプリセット質問の言語。画面が `?lang=` で今の表示言語を渡す。
+ * 無ければブラウザの Accept-Language、どれも対応外なら日本語。
+ * 入館名簿CSV (#154) からも再利用する */
+export function csvLanguage(c: Context): string {
+  const accepted = (c.req.header("accept-language") ?? "")
+    .split(",")
+    .map((part) => part.split(";")[0]?.trim());
+  return resolveLanguage([c.req.query("lang"), ...accepted]);
+}
+
 /** 回答の CSV エクスポート（staff のみ。Excel 用に UTF-8 BOM 付き） */
 eventSurveyRoutes.get(
   "/:id/survey/answers.csv",
@@ -291,7 +303,13 @@ eventSurveyRoutes.get(
       return c.json({ error: "not_found" }, 404);
     }
     const { questions, rows } = await collectAnswerRows(eventId);
-    const header = ["ユーザー名", "表示名", "参加状態", ...questions.map((q) => q.question)];
+    const language = csvLanguage(c);
+    const header = [
+      "ユーザー名",
+      "表示名",
+      "参加状態",
+      ...questions.map((q) => surveyQuestionText(q, language)),
+    ];
     const lines = [header.map(csvCell).join(",")];
     for (const row of rows) {
       lines.push(
@@ -302,7 +320,7 @@ eventSurveyRoutes.get(
             ? (MEMBER_STATUS_LABEL[row.memberStatus] ?? row.memberStatus)
             : "未参加",
           ...questions.map((q) =>
-            surveyValueLabel(q.qtype, row.answers[q.id] ?? ""),
+            surveyAnswerText(q, row.answers[q.id] ?? "", language),
           ),
         ]
           .map(csvCell)

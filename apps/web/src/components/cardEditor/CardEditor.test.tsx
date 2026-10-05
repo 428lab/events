@@ -54,6 +54,20 @@ describe("card editor operations (#506)", () => {
     expect(wide.size).toBeLessThan(fitted.size);
   });
 
+  it("shows the No photo mark in the preview so it can be placed, and lets staff replace its image", async () => {
+    const design = createCardTemplate("name");
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={qc}><MemoryRouter><CardEditor initial={{ revision: 1, design }}
+      context={{ eventId: "event", title: "Event", eventUrl: "https://example.com/events/event", origin: "https://example.com", communityName: "", communityLogo: null }}
+      members={[]} assets={[{ id: "mark", url: "/mark.png", width: 100, height: 100 } as never]} slots={[]} /></MemoryRouter></QueryClientProvider>);
+    expect(container.querySelector('[data-card-part="no-photo"] image')).toHaveAttribute("href", "/card-no-photo.svg");
+    fireEvent.click(screen.getByRole("button", { name: /写真NG（No photo）マーク/ }));
+    expect(screen.getByText(/「写真NG」と答えた人の名札にだけ印刷されます/)).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "アップロード画像" }));
+    fireEvent.click(await screen.findByRole("option", { name: /1 · 100×100/ }));
+    expect(container.querySelector('[data-card-part="no-photo"] image')).toHaveAttribute("href", "/api/events/event/name-card-assets/mark");
+  });
+
   it("keeps grid preferences out of saved cards and persists a rectangle's radius", async () => {
     const design = createCardTemplate("name"), expected = structuredClone(design);
     const band = expected.common.parts.find(p => p.id === "role-band");

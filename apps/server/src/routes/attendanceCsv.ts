@@ -1,6 +1,6 @@
 import { canViewEvent } from "../auth/eventAccess.js";
 import { Hono } from "hono";
-import { surveyValueLabel } from "@eventer/shared";
+import { surveyAnswerText, surveyQuestionText } from "@eventer/shared";
 import type { EventMemberWithUser, User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { isAppAdmin } from "../auth/admin.js";
@@ -13,6 +13,7 @@ import {
   MEMBER_STATUS_LABEL,
   collectAnswerRows,
   csvCell,
+  csvLanguage,
 } from "./eventSurvey.js";
 
 /** 入館名簿CSV (#154)。受付（出席チェック）の結果を会場提供者に渡すためのエクスポート。
@@ -77,6 +78,7 @@ attendanceCsvRoutes.get("/:id/attendance.csv", async (c) => {
   }
 
   const { questions, rows } = await collectAnswerRows(eventId);
+  const language = csvLanguage(c);
   const answersByUser = new Map(rows.map((r) => [r.user.id, r]));
 
   // メンバー（キャンセル以外）を確定 → その他の順で（同状態内は参加登録順を保持）
@@ -96,7 +98,7 @@ attendanceCsvRoutes.get("/:id/attendance.csv", async (c) => {
     "参加状態",
     "出席",
     "出席時刻",
-    ...questions.map((q) => q.question),
+    ...questions.map((q) => surveyQuestionText(q, language)),
   ];
   const lines = [header.map(csvCell).join(",")];
   const pushRow = (cells: string[]) =>
@@ -113,7 +115,7 @@ attendanceCsvRoutes.get("/:id/attendance.csv", async (c) => {
       statusLabel(m.status),
       m.attended ? "出席" : "未",
       m.attendedAt != null ? formatJstMinute(m.attendedAt) : "",
-      ...questions.map((q) => surveyValueLabel(q.qtype, answers[q.id] ?? "")),
+      ...questions.map((q) => surveyAnswerText(q, answers[q.id] ?? "", language)),
     ]);
   }
   // メンバーでないアンケート回答者（未参加・キャンセル済み等）も名簿の末尾に含める
@@ -127,7 +129,7 @@ attendanceCsvRoutes.get("/:id/attendance.csv", async (c) => {
       "未",
       "",
       ...questions.map((q) =>
-        surveyValueLabel(q.qtype, row.answers[q.id] ?? ""),
+        surveyAnswerText(q, row.answers[q.id] ?? "", language),
       ),
     ]);
   }

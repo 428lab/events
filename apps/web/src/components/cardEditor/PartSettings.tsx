@@ -1,4 +1,4 @@
-import { Button, Checkbox, FormControlLabel, ListSubheader, MenuItem, Stack, TextField } from "@mui/material";
+import { Button, Checkbox, FormControlLabel, ListSubheader, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { DISPLAY_FONTS, type CardPart, type CardFont } from "@eventer/shared";
 import type { CardAsset } from "../../api/cardDesignHooks.js";
@@ -71,10 +71,12 @@ export function PartSettings({ part, assets, onChange }: { part: CardPart; asset
         <MenuItem value="avatar">{t("staffOps.cardEditorAvatar")}</MenuItem>
         <MenuItem value="community">{t("staffOps.cardEditorCommunity")}</MenuItem>
         <MenuItem value="asset">{t("staffOps.cardEditorAsset")}</MenuItem>
+        <MenuItem value="noPhoto">{t("staffOps.cardEditorNoPhoto")}</MenuItem>
       </TextField>
-      {part.source === "asset" && <TextField select size="small" label={t("staffOps.cardEditorAsset")} value={part.assetId ?? ""}
+      {part.source === "noPhoto" && <Typography variant="caption" color="text.secondary">{t("staffOps.cardEditorNoPhotoHelp")}</Typography>}
+      {(part.source === "asset" || part.source === "noPhoto") && <TextField select size="small" label={t("staffOps.cardEditorAsset")} value={part.assetId ?? ""}
         onChange={e => onChange({ ...part, assetId: e.target.value || undefined })}>
-        <MenuItem value="">{t("staffOps.cardEditorNoImage")}</MenuItem>
+        <MenuItem value="">{t(part.source === "noPhoto" ? "staffOps.cardEditorNoPhotoDefault" : "staffOps.cardEditorNoImage")}</MenuItem>
         {assets.map((a, i) => <MenuItem key={a.id} value={a.id}><img src={a.url} alt="" width={32} height={32} style={{ objectFit: "contain", marginRight: 8 }} />{i + 1} · {a.width}×{a.height}</MenuItem>)}
       </TextField>}
       <TextField select size="small" label={t("staffOps.cardEditorFit")} value={part.fit} onChange={e => onChange({ ...part, fit: e.target.value as typeof part.fit })}>

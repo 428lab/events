@@ -245,6 +245,34 @@ describe("イベントデザインの印刷 (#506)", () => {
   });
 });
 
+describe("写真NG（No photo）マーク (D-NOPHOTO)", () => {
+  it("既定テンプレートのまま、no_photo と答えた人のカードにだけ既定の No photo 画像を刷る", async () => {
+    mockApi("staff", [card({ id: "no", name: "NG さん", noPhoto: true }), card({ id: "ok", name: "OK さん", noPhoto: false }), card({ id: "old", name: "旧データ" })],
+      createCardTemplate("name"));
+    const { container } = renderPage();
+    await waitFor(() => expect(printedNames()).toHaveLength(3));
+    const marks = [...container.querySelectorAll('[data-card-part="no-photo"] image')];
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveAttribute("href", "/card-no-photo.svg");
+    expect(marks[0]!.closest('[aria-label]')).toHaveAttribute("aria-label", "NG さん のプロフィールカード");
+    // 画像の読み込みを待って印刷できる（既定画像も他の画像と同じく待つ）
+    expect(screen.getByRole("button", { name: "印刷する" })).toBeDisabled();
+    fireEvent.load(marks[0]!);
+    await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeEnabled());
+  });
+
+  it("差し替えた画像はイベントのアップロード画像として刷る", async () => {
+    const design = createCardTemplate("name");
+    const mark = design.common.parts.find(p => p.id === "no-photo")!;
+    if (mark.kind !== "image") throw new Error("missing no-photo part");
+    mark.assetId = "custom-mark";
+    mockApi("staff", [card({ id: "no", noPhoto: true })], design);
+    const { container } = renderPage();
+    await waitFor(() => expect(container.querySelector('[data-card-part="no-photo"] image')).not.toBeNull());
+    expect(container.querySelector('[data-card-part="no-photo"] image')).toHaveAttribute("href", `/api/events/${EVENT_ID}/name-card-assets/custom-mark`);
+  });
+});
+
 describe("名札の印刷: 誰を刷るか (#304)", () => {
   it("参加確定メンバー全員が最初から選ばれている", async () => {
     const cards = [
