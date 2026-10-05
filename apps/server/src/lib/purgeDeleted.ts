@@ -98,8 +98,9 @@ async function collectUserObjects(
     ghostId,
   );
   for (const eventId of draftEventIds) {
-    // collectEventObjects は D1 を2回引く（イベント写真＋景品画像）
-    budget.spent += 2;
+    // collectEventObjects は D1 を2回引く（イベント写真＋景品画像）。
+    // 説明文画像 (D-DESC-IMAGE) の一覧で1回増える
+    budget.spent += 3;
     keys.push(...(await collectEventObjects(eventId)));
   }
   const prefixes = [
