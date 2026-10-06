@@ -58,6 +58,10 @@ const ja = {
   byline: "{{name}} さんの「あったらいいな」",
   willHost: "開催します",
   signInRequired: "賛同や開催宣言にはログインが必要です。",
+  /** コミュニティのたまごで、非メンバーの賛同ボタン付近に出す注記 */
+  reactJoinsCommunity: "押すと{{community}}にも参加します",
+  /** 賛同と同時にコミュニティへ参加したときのスナックバー */
+  joinedCommunity: "{{community}}にも参加しました",
   reactError:
     "賛同できませんでした。コミュニティのたまごへの賛同はメンバーのみです。",
   closeAction: "クローズする",
@@ -116,6 +120,8 @@ const en: Record<keyof typeof ja, string> = {
   byline: "{{name}}'s wish",
   willHost: "I will host it",
   signInRequired: "Sign in to support an egg or offer to host it.",
+  reactJoinsCommunity: "Reacting also joins {{community}}",
+  joinedCommunity: "You also joined {{community}}",
   reactError:
     "Your support could not be added. Only members can support a community's eggs.",
   closeAction: "Close this egg",

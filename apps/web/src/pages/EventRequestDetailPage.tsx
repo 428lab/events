@@ -7,6 +7,7 @@ import {
   CardContent,
   Chip,
   Divider,
+  Snackbar,
   Stack,
   Typography,
 } from "@mui/material";
@@ -18,6 +19,7 @@ import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 import CampaignIcon from "@mui/icons-material/Campaign";
 import CampaignOutlinedIcon from "@mui/icons-material/CampaignOutlined";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
+import { useState } from "react";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useMe } from "../api/hooks.js";
@@ -49,13 +51,25 @@ export function EventRequestDetailPage() {
   const setVenueWanted = useSetRequestVenueWanted(id);
   const setReactorsAnonymous = useSetReactorsAnonymous(id);
   const del = useDeleteEventRequest();
+  // 賛同と同時に参加したコミュニティ名（スナックバー表示用）
+  const [joinedCommunityName, setJoinedCommunityName] = useState<string | null>(
+    null,
+  );
 
   if (q.isLoading) return <Typography>{t("common.loading")}</Typography>;
   if (q.isError || !q.data) {
     return <Alert severity="error">{t("egg.notFound")}</Alert>;
   }
-  const { request, creator, community, events, myReactions, isMine, reactors } =
-    q.data;
+  const {
+    request,
+    creator,
+    community,
+    events,
+    myReactions,
+    isMine,
+    viewerIsCommunityMember,
+    reactors,
+  } = q.data;
   const attending = myReactions.includes("attend");
   const hosting = myReactions.includes("host");
   const open = request.status === "open";
@@ -66,7 +80,16 @@ export function EventRequestDetailPage() {
       navigate("/login");
       return;
     }
-    react.mutate({ kind, on });
+    react.mutate(
+      { kind, on },
+      {
+        onSuccess: (res) => {
+          if (res.joinedCommunity && community) {
+            setJoinedCommunityName(community.name);
+          }
+        },
+      },
+    );
   };
 
   return (
@@ -175,6 +198,11 @@ export function EventRequestDetailPage() {
               </Button>
             )}
           </Stack>
+          {me && community && !viewerIsCommunityMember && open && !request.membersOnly && (
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
+              {t("egg.reactJoinsCommunity", { community: community.name })}
+            </Typography>
+          )}
           {reactors && (reactors.attend.length > 0 || reactors.host.length > 0) && (
             <Box sx={{ mt: 2 }}>
               {reactors.attend.length > 0 && (
@@ -248,6 +276,12 @@ export function EventRequestDetailPage() {
           )}
         </CardContent>
       </Card>
+      <Snackbar
+        open={joinedCommunityName != null}
+        autoHideDuration={4000}
+        onClose={() => setJoinedCommunityName(null)}
+        message={t("egg.joinedCommunity", { community: joinedCommunityName ?? "" })}
+      />
 
       {/* 会場マッチング */}
       <VenueOfferPanel kind="for-request" id={id} enabled={isMine} />
