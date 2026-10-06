@@ -44,7 +44,10 @@ export function CardCanvas({ layout, card, context, selected, onSelect, onChange
   const cancel = () => { drag.current = null; setPreview(null); };
   const shown = preview ? { ...layout, parts: layout.parts.map(p => p.id === preview.id ? preview : p) } : layout;
   const active = shown.parts.find(p => p.id === selected);
-  useLayoutEffect(() => { setSmallText(Boolean(svg.current?.querySelector('[data-small-text="true"]'))); }, [shown, card, fontStates]);
+  // Depend on the statuses, not the object: while a lower-priority font update is pending, React rebuilds fontStates
+  // as a new object on every sync re-render, and setSmallText here would then re-render forever (#594).
+  const fontStatusKey = JSON.stringify(fontStates);
+  useLayoutEffect(() => { setSmallText(Boolean(svg.current?.querySelector('[data-small-text="true"]'))); }, [shown, card, fontStatusKey]);
   const imageError = cardImageUrls(shown, card, context).some(url => images[url] === false);
   const texts = shown.parts.filter(p => p.kind === "text");
   const fontError = texts.some(p => fontStates[p.id] === "error");

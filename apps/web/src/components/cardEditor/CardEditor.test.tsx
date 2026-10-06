@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -210,5 +211,30 @@ describe("card editor operations (#506)", () => {
     expect(rect()).toHaveAttribute("stroke", "#9d174d");
     // Inset by half the stroke so the clip box keeps the whole outline.
     expect(rect()).toHaveAttribute("x", String(56 + 3));
+  });
+
+  it("switches the target to staff without an endless re-render once fonts are loading (#594)", async () => {
+    // Real browsers have document.fonts; jsdom does not, and without it no font status is ever loading.
+    Object.defineProperty(document, "fonts", { configurable: true, value: { load: () => Promise.resolve([]) } });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const actEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    try {
+      // StrictMode, and a real click outside act(), as in the dev server where the editor crashed.
+      render(<StrictMode><QueryClientProvider client={new QueryClient()}><MemoryRouter><CardEditor initial={{ revision: 0, design: null }}
+        context={{ eventId: "event", title: "Event", eventUrl: "https://example.com/events/event", origin: "https://example.com", communityName: "", communityLogo: null }}
+        members={[]} assets={[]} slots={[]} /></MemoryRouter></QueryClientProvider></StrictMode>);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      actEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+      screen.getByRole("combobox", { name: "編集する対象" }).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      await new Promise(resolve => setTimeout(resolve, 100));
+      screen.getByRole("option", { name: "スタッフ用" }).dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+      await new Promise(resolve => setTimeout(resolve, 300));
+      expect(errors.mock.calls.map(call => String(call[0])).filter(text => text.includes("Maximum update depth"))).toEqual([]);
+      expect(screen.getByRole("combobox", { name: "編集する対象" })).toHaveTextContent("スタッフ用");
+    } finally {
+      actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+      errors.mockRestore();
+      delete (document as { fonts?: unknown }).fonts;
+    }
   });
 });
