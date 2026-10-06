@@ -27,6 +27,8 @@ export interface EventRequestDetail {
   events: Event[];
   myReactions: EventRequestReaction[];
   isMine: boolean;
+  /** 閲覧者がたまごのコミュニティのメンバーか（未ログイン・コミュニティなしは false） */
+  viewerIsCommunityMember: boolean;
   /** 匿名設定オンなら null（人数のみ） */
   reactors: {
     attend: ReactorUser[];
@@ -94,13 +96,20 @@ export function useReactEventRequest(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { kind: EventRequestReaction; on: boolean }) =>
-      api.post<{ request: EventRequest; myReactions: EventRequestReaction[] }>(
-        `/event-requests/${id}/react`,
-        input,
-      ),
-    onSuccess: () => {
+      api.post<{
+        request: EventRequest;
+        myReactions: EventRequestReaction[];
+        /** 賛同と同時にたまごのコミュニティへ参加したか */
+        joinedCommunity: boolean;
+      }>(`/event-requests/${id}/react`, input),
+    onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: ["eventRequest", id] });
       void qc.invalidateQueries({ queryKey: ["eventRequests"] });
+      if (res.joinedCommunity) {
+        // コミュニティ詳細（メンバー一覧含む）と所属コミュニティ一覧に反映
+        void qc.invalidateQueries({ queryKey: ["community"] });
+        void qc.invalidateQueries({ queryKey: ["communities"] });
+      }
     },
   });
 }

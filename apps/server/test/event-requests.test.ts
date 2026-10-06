@@ -157,7 +157,7 @@ describe("イベントのたまご (#29)", () => {
     expect(memberView.status).toBe(200);
   });
 
-  it("非メンバーはコミュニティたまごを投稿できない(403)・賛同もできない(403)", async () => {
+  it("非メンバーはコミュニティたまごを投稿できない(403)", async () => {
     const owner = await makeUser();
     const outsider = await makeUser();
     const cid = await makeCommunity(owner.userId, []);
@@ -167,17 +167,6 @@ describe("イベントのたまご (#29)", () => {
       body: JSON.stringify({ title: "勝手に投稿", communityId: cid }),
     });
     expect(res.status).toBe(403);
-
-    // コミュニティ公開たまご（閲覧は誰でも可）でも賛同はメンバーのみ
-    const id = await postRequest(owner.cookie, "コミュ公開たまご", {
-      communityId: cid,
-    });
-    const react = await SELF.fetch(`${BASE}/api/event-requests/${id}/react`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: outsider.cookie },
-      body: JSON.stringify({ kind: "attend", on: true }),
-    });
-    expect(react.status).toBe(403);
   });
 
   it("コミュニティ詳細のたまご欄: メンバー限定は非メンバーに出ない", async () => {
@@ -655,5 +644,177 @@ describe("たまごの賛同者表示切替 (#87)", () => {
     expect(b2.reactors).toBeNull();
     expect(b2.request.attendCount).toBe(1);
     expect(JSON.stringify(b2)).not.toContain(fan.userId);
+  });
+});
+
+/** 賛同でコミュニティにも参加する (D-EGG-JOIN) */
+describe("たまごの賛同でコミュニティに参加する", () => {
+  async function react(
+    cookie: string,
+    id: string,
+    kind: "attend" | "host",
+    on: boolean,
+  ): Promise<Response> {
+    return SELF.fetch(`${BASE}/api/event-requests/${id}/react`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ kind, on }),
+    });
+  }
+
+  async function memberRole(
+    cid: string,
+    userId: string,
+  ): Promise<string | null> {
+    const row = await env.DB.prepare(
+      "SELECT role FROM community_member WHERE community_id = ? AND user_id = ?",
+    )
+      .bind(cid, userId)
+      .first<{ role: string }>();
+    return row?.role ?? null;
+  }
+
+  it("非メンバーが「参加したい」をオンにするとコミュニティに参加し、賛同も記録される", async () => {
+    const owner = await makeUser();
+    const outsider = await makeUser();
+    const cid = await makeCommunity(owner.userId, []);
+    const id = await postRequest(owner.cookie, "コミュ公開たまご", {
+      communityId: cid,
+    });
+
+    // 詳細: 参加前は非メンバー
+    const before = await SELF.fetch(`${BASE}/api/public/event-requests/${id}`, {
+      headers: { cookie: outsider.cookie },
+    });
+    expect(
+      ((await before.json()) as { viewerIsCommunityMember: boolean })
+        .viewerIsCommunityMember,
+    ).toBe(false);
+
+    const res = await react(outsider.cookie, id, "attend", true);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      request: { attendCount: number };
+      myReactions: string[];
+      joinedCommunity: boolean;
+    };
+    expect(body.joinedCommunity).toBe(true);
+    expect(body.request.attendCount).toBe(1);
+    expect(body.myReactions).toEqual(["attend"]);
+    expect(await memberRole(cid, outsider.userId)).toBe("member");
+
+    // 参加ボタンと同じ経路なので /me/communities にも出る
+    const mine = await SELF.fetch(`${BASE}/api/me/communities`, {
+      headers: { cookie: outsider.cookie },
+    });
+    const mineBody = (await mine.json()) as { communities: { id: string }[] };
+    expect(mineBody.communities.some((c) => c.id === cid)).toBe(true);
+
+    const after = await SELF.fetch(`${BASE}/api/public/event-requests/${id}`, {
+      headers: { cookie: outsider.cookie },
+    });
+    expect(
+      ((await after.json()) as { viewerIsCommunityMember: boolean })
+        .viewerIsCommunityMember,
+    ).toBe(true);
+
+    // 既にメンバーなので次の賛同では joinedCommunity は false
+    const host = await react(outsider.cookie, id, "host", true);
+    expect(host.status).toBe(200);
+    expect(
+      ((await host.json()) as { joinedCommunity: boolean }).joinedCommunity,
+    ).toBe(false);
+  });
+
+  it("非メンバーが「開催してもいい」をオンにしても参加する", async () => {
+    const owner = await makeUser();
+    const outsider = await makeUser();
+    const cid = await makeCommunity(owner.userId, []);
+    const id = await postRequest(owner.cookie, "開催したいたまご", {
+      communityId: cid,
+    });
+    const res = await react(outsider.cookie, id, "host", true);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      request: { hostCount: number };
+      joinedCommunity: boolean;
+    };
+    expect(body.joinedCommunity).toBe(true);
+    expect(body.request.hostCount).toBe(1);
+    expect(await memberRole(cid, outsider.userId)).toBe("member");
+  });
+
+  it("オフは参加も退会もしない（非メンバーのオフは 403 のまま）", async () => {
+    const owner = await makeUser();
+    const outsider = await makeUser();
+    const cid = await makeCommunity(owner.userId, []);
+    const id = await postRequest(owner.cookie, "オフたまご", {
+      communityId: cid,
+    });
+
+    // 非メンバーのオフ → 参加しない
+    const offAsOutsider = await react(outsider.cookie, id, "attend", false);
+    expect(offAsOutsider.status).toBe(403);
+    expect(await memberRole(cid, outsider.userId)).toBeNull();
+
+    // 参加済みメンバーのオフ → 退会しない
+    await react(outsider.cookie, id, "attend", true);
+    const off = await react(outsider.cookie, id, "attend", false);
+    expect(off.status).toBe(200);
+    const offBody = (await off.json()) as {
+      request: { attendCount: number };
+      joinedCommunity: boolean;
+    };
+    expect(offBody.joinedCommunity).toBe(false);
+    expect(offBody.request.attendCount).toBe(0);
+    expect(await memberRole(cid, outsider.userId)).toBe("member");
+  });
+
+  it("メンバー限定たまごは非メンバーには 404 のまま（参加もしない）", async () => {
+    const owner = await makeUser();
+    const outsider = await makeUser();
+    const cid = await makeCommunity(owner.userId, []);
+    const id = await postRequest(owner.cookie, "限定たまご", {
+      communityId: cid,
+      membersOnly: true,
+    });
+    const res = await react(outsider.cookie, id, "attend", true);
+    expect(res.status).toBe(404);
+    expect(await memberRole(cid, outsider.userId)).toBeNull();
+  });
+
+  it("コミュニティなしのたまごは従来どおり（参加フラグは false）", async () => {
+    const owner = await makeUser();
+    const fan = await makeUser();
+    const id = await postRequest(owner.cookie, "全体たまご");
+    const res = await react(fan.cookie, id, "attend", true);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { joinedCommunity: boolean };
+    expect(body.joinedCommunity).toBe(false);
+    const detail = await SELF.fetch(`${BASE}/api/public/event-requests/${id}`, {
+      headers: { cookie: fan.cookie },
+    });
+    expect(
+      ((await detail.json()) as { viewerIsCommunityMember: boolean })
+        .viewerIsCommunityMember,
+    ).toBe(false);
+  });
+
+  it("クローズしたコミュニティたまごは 409 のまま（参加もしない）", async () => {
+    const owner = await makeUser();
+    const outsider = await makeUser();
+    const cid = await makeCommunity(owner.userId, []);
+    const id = await postRequest(owner.cookie, "閉じたたまご", {
+      communityId: cid,
+    });
+    const close = await SELF.fetch(`${BASE}/api/event-requests/${id}/status`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: owner.cookie },
+      body: JSON.stringify({ status: "closed" }),
+    });
+    expect(close.status).toBe(200);
+    const res = await react(outsider.cookie, id, "attend", true);
+    expect(res.status).toBe(409);
+    expect(await memberRole(cid, outsider.userId)).toBeNull();
   });
 });

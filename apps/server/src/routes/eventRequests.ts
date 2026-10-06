@@ -95,6 +95,11 @@ publicEventRequestRoutes.get("/:id", async (c) => {
       ? await eventRequestsRepo.myReactions(req.id, user.id)
       : [],
     isMine: user ? req.createdBy === user.id : false,
+    // 閲覧者がたまごのコミュニティのメンバーか（未ログイン・コミュニティなしは false）
+    viewerIsCommunityMember:
+      user && community
+        ? (await communitiesRepo.memberRole(community.id, user.id)) != null
+        : false,
     // 賛同者（匿名設定オフのときのみ。オンなら人数だけ）
     reactors: req.reactorsAnonymous
       ? null
@@ -162,17 +167,28 @@ eventRequestRoutes.post(
     const user = c.get("user");
     if (!(await canView(req, user))) return c.json({ error: "not_found" }, 404);
     if (req.status !== "open") return c.json({ error: "closed" }, 409);
-    // コミュニティ内リクエストへの賛同はメンバーのみ（公開閲覧でも投票は不可）
-    if (req.communityId && !isAppAdmin(user)) {
-      const role = await communitiesRepo.memberRole(req.communityId, user.id);
-      if (!role) return c.json({ error: "not_member" }, 403);
-    }
     const input = valid<ReactEventRequestInput>(c, "json");
+    // コミュニティ内リクエストへの賛同はメンバーのみ。非メンバーが公開たまごに
+    // 賛同をオンにしたら、参加ボタン（POST /communities/:id/membership）と同じ
+    // communitiesRepo.join でコミュニティにも参加させる。オフでは参加も退会もしない。
+    let joinedCommunity = false;
+    if (req.communityId) {
+      const role = await communitiesRepo.memberRole(req.communityId, user.id);
+      if (!role) {
+        if (input.on && !req.membersOnly) {
+          await communitiesRepo.join(req.communityId, user.id);
+          joinedCommunity = true;
+        } else if (!isAppAdmin(user)) {
+          return c.json({ error: "not_member" }, 403);
+        }
+      }
+    }
     await eventRequestsRepo.setReaction(req.id, user.id, input.kind, input.on);
     const updated = await eventRequestsRepo.findById(req.id);
     return c.json({
       request: updated,
       myReactions: await eventRequestsRepo.myReactions(req.id, user.id),
+      joinedCommunity,
     });
   },
 );
