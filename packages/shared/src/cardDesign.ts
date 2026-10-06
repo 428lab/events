@@ -39,7 +39,7 @@ export const cardPartSchema = z.discriminatedUnion("kind", [
 ]);
 export type CardPart = z.infer<typeof cardPartSchema>;
 /** Built-in background patterns and the palettes each one ships with. The web app draws them; keys are checked here so the server rejects unknown ones too.
- * Guilloché backgrounds are generated line work; `license-*` are the license-card patterns (CardDecor) drawn on white. */
+ * Guilloché backgrounds are generated line work; `license-*` are the license-card patterns (CardDecor). */
 export const CARD_PATTERN_THEMES = ["indigo", "teal", "rose", "amber", "mono"] as const;
 export type CardPatternTheme = typeof CARD_PATTERN_THEMES[number];
 export const CARD_PATTERN_CATALOGUE = {
@@ -61,12 +61,17 @@ const patternChoice = { key: z.enum(cardPatternKeys as [CardPatternKey, ...CardP
 const knownChoice = (c: { key: string; palette: string }) => isCardPatternChoice(c.key, c.palette);
 /** strength scales the line tints: lower is lighter and uses less ink. */
 const strength = number(0.4, 1).default(1);
+/** "card" lays the license card's paper tint (theme gradient + sheen) under the lines; "none" prints on white.
+ * Pattern documents saved before this field existed read as "card" (pattern mode was never released without it). */
+export const CARD_PATTERN_PAPERS = ["card", "none"] as const;
+export type CardPatternPaper = typeof CARD_PATTERN_PAPERS[number];
+const paper = z.enum(CARD_PATTERN_PAPERS).default("card");
 export const cardPatternSchema = z.discriminatedUnion("type", [
   /** Each member's card uses the license-card look they chose; members without one use fallback. */
-  z.object({ type: z.literal("participant"), strength,
+  z.object({ type: z.literal("participant"), strength, paper,
     fallback: z.object(patternChoice).strict().refine(knownChoice, "unknown_pattern_palette") }).strict(),
   /** Every card uses the same built-in background. */
-  z.object({ type: z.literal("builtin"), strength, ...patternChoice }).strict(),
+  z.object({ type: z.literal("builtin"), strength, paper, ...patternChoice }).strict(),
 ]).superRefine((p, ctx) => {
   if (p.type === "builtin" && !knownChoice(p)) ctx.addIssue({ code: "custom", message: "unknown_pattern_palette" });
 });

@@ -147,9 +147,9 @@ describe("card editor operations (#506)", () => {
   it("switches background modes and keeps the colour, image and pattern choice for switching back (D-CARD-BG)", () => {
     const base = { color: "#FFEEDD", assetId: "photo", opacity: 0.25, fit: "cover" as const, positionX: 0.5, positionY: 0.5 };
     const builtin = withBackgroundMode(base, "builtin");
-    expect(builtin.pattern).toEqual({ type: "builtin", key: "rosette", palette: "indigo", strength: 1 });
-    const chosen = { ...builtin, pattern: { type: "builtin" as const, key: "mesh" as const, palette: "rose" as const, strength: 0.6 } };
-    expect(withBackgroundMode(chosen, "participant").pattern).toEqual({ type: "participant", fallback: { key: "mesh", palette: "rose" }, strength: 0.6 });
+    expect(builtin.pattern).toEqual({ type: "builtin", key: "rosette", palette: "indigo", strength: 1, paper: "card" });
+    const chosen = { ...builtin, pattern: { type: "builtin" as const, key: "mesh" as const, palette: "rose" as const, strength: 0.6, paper: "none" as const } };
+    expect(withBackgroundMode(chosen, "participant").pattern).toEqual({ type: "participant", fallback: { key: "mesh", palette: "rose" }, strength: 0.6, paper: "none" });
     const plain = withBackgroundMode(chosen, "plain");
     expect(plain).toEqual(base);
     expect(plain).not.toHaveProperty("pattern");
@@ -157,7 +157,7 @@ describe("card editor operations (#506)", () => {
 
   it("gives staff their own background in the editor, rendered in the staff preview only", async () => {
     const design = createCardTemplate("name");
-    const staffBackground = { ...design.common.background, pattern: { type: "builtin" as const, key: "engine" as const, palette: "amber" as const, strength: 1 } };
+    const staffBackground = { ...design.common.background, pattern: { type: "builtin" as const, key: "engine" as const, palette: "amber" as const, strength: 1, paper: "card" as const } };
     const edited = editBackground(design, "staff", staffBackground);
     expect(targetLayout(edited, "staff").background.pattern).toMatchObject({ key: "engine" });
     expect(targetLayout(edited, "common").background.pattern).toMatchObject({ type: "participant" });
@@ -173,6 +173,14 @@ describe("card editor operations (#506)", () => {
     expect(screen.getByRole("button", { name: "ビルトイン" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "セキュリティメッシュ · ローズ" }));
     expect(container.querySelector("[data-card-pattern]")).toHaveAttribute("data-card-pattern", "mesh-rose");
+    // 地の色: the license-card paper by default, white when turned off.
+    const layer = () => container.querySelector("[data-card-pattern]")!;
+    expect(layer()).toHaveAttribute("data-card-pattern-paper", "card");
+    expect(layer().querySelector('rect[fill^="url(#"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "ライセンスカードと同じ" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "なし（白）" }));
+    expect(layer()).toHaveAttribute("data-card-pattern-paper", "none");
+    expect(layer().querySelector('rect[fill^="url(#"]')).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "単色・画像" }));
     expect(container.querySelector("[data-card-pattern]")).toBeNull();
     expect(screen.getByLabelText("色")).toBeInTheDocument();
@@ -188,13 +196,13 @@ describe("card editor operations (#506)", () => {
       context={{ eventId: "event", title: "Event", eventUrl: "https://example.com/events/event", origin: "https://example.com", communityName: "", communityLogo: null }}
       members={[]} assets={[]} slots={[]} /></MemoryRouter></QueryClientProvider>);
     const rect = () => container.querySelector('[data-card-part="role-band"] rect')!;
-    expect(rect()).toHaveAttribute("fill", "#0F766E");
+    expect(rect()).toHaveAttribute("fill", "#11443F");
     expect(rect()).not.toHaveAttribute("stroke");
     fireEvent.click(screen.getByRole("button", { name: "8. 帯・四角形" }));
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "塗り" }));
     fireEvent.click(screen.getByRole("option", { name: "なし（枠線だけ）" }));
     expect(rect()).toHaveAttribute("fill", "none");
-    expect(rect()).toHaveAttribute("stroke", "#0F766E");
+    expect(rect()).toHaveAttribute("stroke", "#11443F");
     expect(rect()).toHaveAttribute("stroke-width", "3");
     fireEvent.change(screen.getByRole("spinbutton", { name: "枠線の太さ" }), { target: { value: "6" } });
     fireEvent.change(screen.getByLabelText("枠線の色"), { target: { value: "#9d174d" } });

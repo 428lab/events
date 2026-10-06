@@ -18,7 +18,7 @@ const W = 1074;
 const H = 650;
 const TAU = Math.PI * 2;
 
-export type BgTag = "g" | "rect" | "path" | "circle";
+export type BgTag = "g" | "rect" | "path" | "circle" | "defs" | "linearGradient" | "stop";
 export interface BgNode { tag: BgTag; attrs: Record<string, string | number>; children?: BgNode[] }
 
 export interface BuiltinBackgroundPalette {
@@ -64,11 +64,19 @@ const luminance = (hex: string) => {
 };
 /** 模様の線と文字の色の差の下限（WCAG）。線は不透明なので重なっても暗くならない */
 export const TEXT_ON_PATTERN_CONTRAST = 4.6;
-/** 線の色を、配色のどの文字色（ink / inkSub / accent）とも、名札の既定の文字色（NAME_CARD_TEXT_COLORS）とも TEXT_ON_PATTERN_CONTRAST 以上の差が出るまで地へ寄せる */
-/** Text colours of the default name-card template (heading/role teal, staff rose) that sit on the pattern whatever its palette. */
-export const NAME_CARD_TEXT_COLORS = ["#101827", "#334155", "#0F766E", "#9D174D"] as const;
+/** Text colours of the default name-card template (heading/role teal, staff rose) that sit on the pattern whatever its palette.
+ * Dark enough to read on the license-card paper tint as well as on white. */
+export const NAME_CARD_TEXT_COLORS = ["#101827", "#334155", "#11443F", "#701A3E"] as const;
+/** On white the lines also stay readable against the earlier, lighter template teal and rose, which saved designs may still use. */
+const ON_WHITE_TEXT_COLORS = [...NAME_CARD_TEXT_COLORS, "#0F766E", "#9D174D"] as const;
+/** The darkest a line may get so every text colour in the list keeps TEXT_ON_PATTERN_CONTRAST against it. */
+const legibleFloor = (textColors: readonly string[], target = TEXT_ON_PATTERN_CONTRAST) =>
+  target * (Math.max(...textColors.map(luminance)) + 0.05) - 0.05;
+/** On the tinted paper anti-aliasing blends line and paper unevenly, so the lines aim higher to keep >= 4.5:1 in rendered pixels. */
+const TEXT_ON_PAPER_CONTRAST = 4.9;
+/** 線の色を、配色のどの文字色（ink / inkSub / accent）とも、名札の文字色（ON_WHITE_TEXT_COLORS）とも TEXT_ON_PATTERN_CONTRAST 以上の差が出るまで地へ寄せる */
 export function legibleStroke(p: BuiltinBackgroundPalette, color: string): string {
-  const floor = TEXT_ON_PATTERN_CONTRAST * (Math.max(...[p.ink, p.inkSub, p.accent, ...NAME_CARD_TEXT_COLORS].map(luminance)) + 0.05) - 0.05;
+  const floor = legibleFloor([p.ink, p.inkSub, p.accent, ...ON_WHITE_TEXT_COLORS]);
   if (luminance(color) >= floor) return color;
   let lo = 0, hi = 1; // 地へ寄せる割合を二分探索
   for (let k = 0; k < 16; k++) { const m = (lo + hi) / 2; if (luminance(mixColor(color, p.base, m)) >= floor) hi = m; else lo = m; }
@@ -82,6 +90,35 @@ function withLegibleStrokes(p: BuiltinBackgroundPalette, nodes: BgNode[], streng
     const attrs = typeof stroke === "string" && stroke.startsWith("#")
       ? { ...n.attrs, stroke: strength < 1 ? mixColor(p.base, legibleStroke(p, stroke), strength) : legibleStroke(p, stroke) } : n.attrs;
     return n.children ? { tag: n.tag, attrs, children: withLegibleStrokes(p, n.children, strength) } : { tag: n.tag, attrs };
+  });
+}
+
+/** An opaque line colour on white, re-expressed as the darkest colour on the same ray from white plus an alpha (identical on white). */
+export function inkOnWhite(color: string): { color: string; alpha: number } {
+  const c = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16));
+  const alpha = Math.max(...c.map(v => 1 - v / 255));
+  if (alpha <= 0) return { color: "#FFFFFF", alpha: 0 };
+  return { color: "#" + c.map(v => Math.round(255 - (255 - v) / alpha).toString(16).padStart(2, "0")).join(""), alpha };
+}
+/** Guilloché lines for the paper tint. Each line keeps its ink (inkOnWhite) and amount, laid onto the darkest paper colour as an
+ * opaque colour, so crossings never darken; lightened until every text colour reads on it, then pulled towards the paper by
+ * strength (paperDark is already lightened by strength). The white base rect is dropped; the paper goes underneath. */
+function strokesOnPaper(p: BuiltinBackgroundPalette, nodes: BgNode[], paperDark: string, strength: number): BgNode[] {
+  const floor = legibleFloor([p.ink, p.inkSub, p.accent, ...NAME_CARD_TEXT_COLORS], TEXT_ON_PAPER_CONTRAST);
+  return nodes.filter(n => n.tag !== "rect").map(n => {
+    const stroke = n.attrs.stroke;
+    let attrs = n.attrs;
+    if (typeof stroke === "string" && stroke.startsWith("#")) {
+      const ink = inkOnWhite(stroke);
+      let alpha = ink.alpha;
+      if (luminance(mixColor(paperDark, ink.color, alpha)) < floor) {
+        let lo = 0, hi = alpha; // 濃さを二分探索で下げる
+        for (let k = 0; k < 16; k++) { const m = (lo + hi) / 2; if (luminance(mixColor(paperDark, ink.color, m)) >= floor) lo = m; else hi = m; }
+        alpha = lo;
+      }
+      attrs = { ...n.attrs, stroke: mixColor(paperDark, ink.color, alpha * strength) };
+    }
+    return n.children ? { tag: n.tag, attrs, children: strokesOnPaper(p, n.children, paperDark, strength) } : { tag: n.tag, attrs };
   });
 }
 
@@ -269,8 +306,8 @@ const INK = "#101827", INK_SUB = "#334155";
  * テーマの accentDeep と同じ色相のさらに濃い色にしてある */
 const THEME_NAMES: Record<CardThemeKey, { ja: string; en: string; accent: string }> = {
   indigo: { ja: "インディゴ", en: "Indigo", accent: "#3730A3" },
-  teal: { ja: "ティール", en: "Teal", accent: "#115E59" },
-  rose: { ja: "ローズ", en: "Rose", accent: "#9D174D" },
+  teal: { ja: "ティール", en: "Teal", accent: "#11443F" },
+  rose: { ja: "ローズ", en: "Rose", accent: "#701A3E" },
   amber: { ja: "アンバー", en: "Amber", accent: "#7C2D12" },
   mono: { ja: "モノ", en: "Mono", accent: "#1E293B" },
 };
@@ -301,13 +338,17 @@ export function findBuiltinBackground(key: string): BuiltinBackground | undefine
  * 模様は id を使わないので、同じページに何枚並べても参照が衝突しない（idPrefix は描画関数への受け渡し用） */
 const NODE_CACHE_SIZE = 12;
 const nodeCache = new Map<string, BgNode[]>();
-export function builtinBackgroundNodes(backgroundKey: string, paletteKey: string, idPrefix: string, strength = 1): BgNode[] {
-  const cacheKey = `${backgroundKey}|${paletteKey}|${strength}`;
+/** paperDark: the darkest colour of the license-card paper the lines sit on, at this strength. Without it the lines are drawn on white. */
+export function builtinBackgroundNodes(backgroundKey: string, paletteKey: string, idPrefix: string, strength = 1, paperDark?: string): BgNode[] {
+  const cacheKey = `${backgroundKey}|${paletteKey}|${strength}|${paperDark ?? "white"}`;
   const cached = nodeCache.get(cacheKey);
   if (cached) { nodeCache.delete(cacheKey); nodeCache.set(cacheKey, cached); return cached; }
   const bg = findBuiltinBackground(backgroundKey);
   const palette = bg?.palettes.find(p => p.key === paletteKey) ?? bg?.palettes[0];
-  const nodes = bg && palette ? withLegibleStrokes(palette, bg.draw(palette, idPrefix), Math.min(1, Math.max(0, strength))) : [];
+  const s = Math.min(1, Math.max(0, strength));
+  const nodes = !bg || !palette ? []
+    : paperDark ? strokesOnPaper(palette, bg.draw(palette, idPrefix), paperDark, s)
+    : withLegibleStrokes(palette, bg.draw(palette, idPrefix), s);
   nodeCache.set(cacheKey, nodes);
   if (nodeCache.size > NODE_CACHE_SIZE) nodeCache.delete(nodeCache.keys().next().value!);
   return nodes;

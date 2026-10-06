@@ -222,8 +222,8 @@ describe("イベントデザインの印刷 (#506)", () => {
     mockApi("staff", [card({ id: "staff", role: "staff", cardImageKey: "rosette-rose" }), card()], createCardTemplate("name"));
     const { container } = renderPage();
     await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeEnabled());
-    expect(container.querySelectorAll('[data-card-part="role-band"] rect[stroke="#9D174D"]')).toHaveLength(1);
-    expect(container.querySelectorAll('[data-card-part="role-band"] rect[stroke="#0F766E"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-card-part="role-band"] rect[stroke="#701A3E"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-card-part="role-band"] rect[stroke="#11443F"]')).toHaveLength(1);
     const ids = [...container.querySelectorAll("clipPath")].map(el => el.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(cardRenders).not.toHaveBeenCalled();
@@ -234,7 +234,7 @@ describe("イベントデザインの印刷 (#506)", () => {
   it("draws each member's own license-card pattern, the fallback for members without one, and a staff builtin override (D-CARD-BG)", async () => {
     const design = createCardTemplate("name");
     design.staff = { ...design.staff!, background: { color: "#FFFFFF", opacity: 0.25, fit: "cover", positionX: 0.5, positionY: 0.5,
-      pattern: { type: "builtin", key: "mesh", palette: "rose", strength: 1 } } };
+      pattern: { type: "builtin", key: "mesh", palette: "rose", strength: 1, paper: "card" } } };
     // The printing device's local default must not leak into members without a look.
     localStorage.setItem("eventer:cardBg", "flow");
     mockApi("staff", [card({ id: "a", cardImageKey: "topo-teal" }), card({ id: "b", cardImageKey: "arcs-rose" }),
@@ -248,7 +248,7 @@ describe("イベントデザインの印刷 (#506)", () => {
 
   it("prints a uniform builtin background at the chosen strength", async () => {
     const design = createCardTemplate("name");
-    design.common.background.pattern = { type: "builtin", key: "rosette", palette: "indigo", strength: 0.5 };
+    design.common.background.pattern = { type: "builtin", key: "rosette", palette: "indigo", strength: 0.5, paper: "card" };
     mockApi("staff", [card({ id: "a", cardImageKey: "topo-teal" }), card({ id: "b" })], design);
     const { container } = renderPage();
     await waitFor(() => expect(printedNames()).toHaveLength(2));

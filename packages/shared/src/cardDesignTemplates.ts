@@ -12,7 +12,7 @@ export function createCardTemplate(template: CardTemplateId): CardDesign {
     align: "start", opacity: 1,
   });
   const parts: CardPart[] = [
-    text("event-title", "event", 56, 42, 860, 60, 40, "#0F766E", true),
+    text("event-title", "event", 56, 42, 860, 60, 40, "#11443F", true),
     text("community", "community", 56, 110, 800, 40, 25),
     text("name", "name", 56, 200, 730, 132, 104, "#101827", true),
     text("handle", "handle", 56, 340, 700, 48, 28),
@@ -23,8 +23,8 @@ export function createCardTemplate(template: CardTemplateId): CardDesign {
       width: 180, height: 180, opacity: 1 },
     // Outline only: a solid band would print a large block of ink.
     { id: "role-band", kind: "rect", x: 56, y: 486, width: 700, height: 108,
-      color: "#0F766E", radius: 12, opacity: 1, fill: "none", strokeWidth: 3 },
-    text("role", "role", 80, 509, 652, 64, 44, "#0F766E", true),
+      color: "#11443F", radius: 12, opacity: 1, fill: "none", strokeWidth: 3 },
+    text("role", "role", 80, 509, 652, 64, 44, "#11443F", true),
     // Printed only for members who answered "No photo" in the registration survey.
     { id: "no-photo", kind: "image", source: "noPhoto", x: 930, y: 24,
       width: 120, height: 120, fit: "contain", opacity: 1 },
@@ -56,10 +56,11 @@ export function createCardTemplate(template: CardTemplateId): CardDesign {
   const role = parts.find(p => p.id === "role")!;
   return cardDesignSchema.parse({
     version: 1, enabled: true,
-    // Each member's own license-card pattern on white; members who never chose one get rosette/indigo.
+    // Each member's own license-card pattern on the license-card paper; members who never chose one get rosette/indigo.
+    // The teal and rose text are dark enough (>= 4.5:1) on every paper tint plus its lines.
     common: { background: { color: "#FFFFFF",
-      pattern: { type: "participant", fallback: { key: "rosette", palette: "indigo" }, strength: 1 } }, parts },
-    staff: { parts: [{ ...band, color: "#9D174D" }, { ...role, color: "#9D174D" }] },
+      pattern: { type: "participant", fallback: { key: "rosette", palette: "indigo" }, strength: 1, paper: "card" } }, parts },
+    staff: { parts: [{ ...band, color: "#701A3E" }, { ...role, color: "#701A3E" }] },
     slots: [],
   });
 }

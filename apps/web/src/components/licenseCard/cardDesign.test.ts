@@ -41,7 +41,7 @@ describe("event card design contract (#506)", () => {
     const participant = resolveCardLayout(d, "participant", "general");
     const staff = resolveCardLayout(d, "staff", "general");
     expect(participant.parts.find(p => p.id === "role-band")).toHaveProperty("color", "#0000FF");
-    expect(staff.parts.find(p => p.id === "role-band")).toHaveProperty("color", "#9D174D");
+    expect(staff.parts.find(p => p.id === "role-band")).toHaveProperty("color", "#701A3E");
     expect(staff.parts.some(p => p.id === "handle")).toBe(false);
     expect(staff.parts.find(p => p.id === "name")).toEqual(d.common.parts.find(p => p.id === "name"));
     expect(resolveCardLayout(d, "participant", null)).toEqual(d.common);
@@ -104,13 +104,13 @@ describe("event card design contract (#506)", () => {
     const d = createCardTemplate(id);
     expect(d.common.parts.some(p => p.id === "top-band")).toBe(false);
     const band = d.common.parts.find(p => p.id === "role-band")!, role = d.common.parts.find(p => p.id === "role")!;
-    expect(band).toMatchObject({ kind: "rect", fill: "none", color: "#0F766E" });
+    expect(band).toMatchObject({ kind: "rect", fill: "none", color: "#11443F" });
     expect(band.kind === "rect" && band.strokeWidth).toBeGreaterThanOrEqual(3);
-    expect(role).toMatchObject({ color: "#0F766E" });
-    expect(d.common.background.pattern).toEqual({ type: "participant", fallback: { key: "rosette", palette: "indigo" }, strength: 1 });
+    expect(role).toMatchObject({ color: "#11443F" });
+    expect(d.common.background.pattern).toEqual({ type: "participant", fallback: { key: "rosette", palette: "indigo" }, strength: 1, paper: "card" });
     const staff = resolveCardLayout(d, "staff", null);
-    expect(staff.parts.find(p => p.id === "role-band")).toMatchObject({ color: "#9D174D", fill: "none" });
-    expect(staff.parts.find(p => p.id === "role")).toMatchObject({ color: "#9D174D" });
+    expect(staff.parts.find(p => p.id === "role-band")).toMatchObject({ color: "#701A3E", fill: "none" });
+    expect(staff.parts.find(p => p.id === "role")).toMatchObject({ color: "#701A3E" });
   });
 });
 
@@ -131,12 +131,17 @@ describe("card background patterns (D-CARD-BG)", () => {
     delete band.fill; delete band.strokeWidth;
     expect(cardDesignSchema.parse(old).common.parts.find(p => p.id === "role-band")).toEqual(band);
   });
-  it("accepts every catalogue choice in both modes and defaults strength to 1", () => {
+  it("accepts every catalogue choice in both modes and defaults strength to 1 and paper to the license-card tint", () => {
     for (const [key, palettes] of Object.entries(CARD_PATTERN_CATALOGUE)) for (const palette of palettes) {
       const builtin = cardDesignSchema.parse(withBackground({ pattern: { type: "builtin", key, palette } }));
-      expect(builtin.common.background.pattern).toEqual({ type: "builtin", key, palette, strength: 1 });
-      expect(cardDesignSchema.safeParse(withBackground({ pattern: { type: "participant", fallback: { key, palette }, strength: 0.4 } })).success).toBe(true);
+      expect(builtin.common.background.pattern).toEqual({ type: "builtin", key, palette, strength: 1, paper: "card" });
+      expect(cardDesignSchema.safeParse(withBackground({ pattern: { type: "participant", fallback: { key, palette }, strength: 0.4, paper: "none" } })).success).toBe(true);
     }
+  });
+  it("reads a pattern saved without paper as the license-card tint, and leaves designs without a pattern alone", () => {
+    const old = cardDesignSchema.parse(withBackground({ pattern: { type: "participant", fallback: { key: "rosette", palette: "indigo" }, strength: 0.7 } }));
+    expect(old.common.background.pattern).toMatchObject({ type: "participant", strength: 0.7, paper: "card" });
+    expect(cardDesignSchema.parse(withBackground({})).common.background).not.toHaveProperty("pattern");
   });
   it.each([
     ["an unknown key", { type: "builtin", key: "moire", palette: "indigo" }],
@@ -146,6 +151,8 @@ describe("card background patterns (D-CARD-BG)", () => {
     ["an unknown fallback", { type: "participant", fallback: { key: "engine", palette: "rose" } }],
     ["too light", { type: "builtin", key: "rosette", palette: "indigo", strength: 0.3 }],
     ["too strong", { type: "builtin", key: "rosette", palette: "indigo", strength: 1.2 }],
+    ["an unknown paper", { type: "builtin", key: "rosette", palette: "indigo", paper: "gloss" }],
+    ["a paper colour instead of a choice", { type: "participant", fallback: { key: "rosette", palette: "indigo" }, paper: "#000000" }],
     ["an unknown mode", { type: "photo", key: "rosette", palette: "indigo" }],
     ["extra fields", { type: "builtin", key: "rosette", palette: "indigo", svg: "<path/>" }],
   ])("rejects %s", (_, pattern) => {
@@ -153,7 +160,7 @@ describe("card background patterns (D-CARD-BG)", () => {
   });
   it("lets the staff rule override the background while participants keep theirs", () => {
     const d: CardDesign = createCardTemplate("name");
-    d.staff = { ...d.staff!, background: { ...d.common.background, pattern: { type: "builtin", key: "mesh", palette: "rose", strength: 1 } } };
+    d.staff = { ...d.staff!, background: { ...d.common.background, pattern: { type: "builtin", key: "mesh", palette: "rose", strength: 1, paper: "card" } } };
     const parsed = cardDesignSchema.parse(d);
     expect(resolveCardLayout(parsed, "staff", null).background.pattern).toMatchObject({ type: "builtin", key: "mesh" });
     expect(resolveCardLayout(parsed, "participant", null).background.pattern).toMatchObject({ type: "participant" });

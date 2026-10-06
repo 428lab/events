@@ -138,7 +138,7 @@ export function EventCardSvg({ layout, card, context, svgRef, children, imageDat
     </defs>
     <g clipPath={`url(#${uid}-card)`}>
       <rect width={CARD_DESIGN_WIDTH} height={CARD_DESIGN_HEIGHT} fill={background.color} />
-      {pattern && <CardPatternLayer pattern={pattern} />}
+      {pattern && <CardPatternLayer pattern={pattern} idPrefix={uid} />}
       {/* A pattern replaces the uploaded image; the image id stays in the document so switching back restores it. */}
       {background.assetId && !pattern && picture(cardAssetUrl(context.eventId, background.assetId), {
         x: 0, y: 0, width: CARD_DESIGN_WIDTH, height: CARD_DESIGN_HEIGHT, opacity: background.opacity,
