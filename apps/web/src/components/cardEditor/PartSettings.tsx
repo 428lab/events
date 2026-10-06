@@ -35,8 +35,21 @@ export function PartSettings({ part, assets, onChange }: { part: CardPart; asset
     {part.kind !== "qr" && number(t("staffOps.cardEditorOpacity"), part.opacity,
       opacity => onChange({ ...part, opacity }), 0, 1)}
     {color}{font}
-    {part.kind === "rect" && number(t("staffOps.cardEditorRadius"), part.radius,
-      radius => onChange({ ...part, radius }), 0, 100)}
+    {part.kind === "rect" && <>
+      {number(t("staffOps.cardEditorRadius"), part.radius, radius => onChange({ ...part, radius }), 0, 100)}
+      <TextField select size="small" label={t("staffOps.cardEditorRectFill")} value={part.fill ?? "solid"}
+        onChange={e => {
+          const fill = e.target.value as "solid" | "none";
+          // An outline needs a visible stroke, so give one when the fill is removed.
+          onChange({ ...part, fill, ...(fill === "none" && !part.strokeWidth ? { strokeWidth: 3 } : {}) });
+        }}>
+        <MenuItem value="solid">{t("staffOps.cardEditorRectFillSolid")}</MenuItem>
+        <MenuItem value="none">{t("staffOps.cardEditorRectFillNone")}</MenuItem>
+      </TextField>
+      {number(t("staffOps.cardEditorStrokeWidth"), part.strokeWidth ?? 0, strokeWidth => onChange({ ...part, strokeWidth }), 0, 24)}
+      {(part.strokeWidth ?? 0) > 0 && <TextField label={t("staffOps.cardEditorStrokeColor")} type="color" size="small" value={part.strokeColor ?? part.color}
+        onChange={e => onChange({ ...part, strokeColor: e.target.value })} />}
+    </>}
     {part.kind === "text" && <>
       <TextField select size="small" label={t("staffOps.cardEditorFont")} value={part.font ?? "default"}
         onChange={e => onChange({ ...part, font: e.target.value as CardFont })}>

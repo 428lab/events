@@ -7,6 +7,8 @@ import { useCardFont } from "./useCardFont.js";
 import { textUnits } from "./cardText.js";
 import { fitCardText } from "./eventCardText.js";
 import { roleLabel } from "../../lib/format.js";
+import { resolveCardPattern } from "./cardPattern.js";
+import { CardPatternLayer } from "./CardPatternLayer.js";
 
 export interface EventCardContext {
   eventId: string;
@@ -29,7 +31,7 @@ export function partImageUrl(part: Extract<CardPart, { kind: "image" }>, card: E
 }
 export function cardImageUrls(layout: CardLayout, card: EventNameCard, context: EventCardContext): string[] {
   const result = new Set<string>();
-  if (layout.background.assetId) result.add(cardAssetUrl(context.eventId, layout.background.assetId));
+  if (layout.background.assetId && !layout.background.pattern) result.add(cardAssetUrl(context.eventId, layout.background.assetId));
   for (const part of layout.parts) if (part.kind === "image") {
     const url = partImageUrl(part, card, context); if (url) result.add(url);
   }
@@ -90,6 +92,7 @@ export function EventCardSvg({ layout, card, context, svgRef, children, imageDat
   const uid = useId().replace(/:/g, "");
   const { t, i18n } = useTranslation();
   const background = layout.background;
+  const pattern = resolveCardPattern(background.pattern, card.cardImageKey);
   const picture = (url: string, props: { x: number; y: number; width: number; height: number; preserveAspectRatio: string; opacity?: number }) =>
     <image {...props} href={imageData?.[url] ?? url} onLoad={() => onImageStatus?.(url, true)} onError={() => onImageStatus?.(url, false)} />;
   const sourceText = (p: Extract<CardPart, { kind: "text" }>) => ({
@@ -97,7 +100,13 @@ export function EventCardSvg({ layout, card, context, svgRef, children, imageDat
     community: context.communityName, role: roleLabel(card.role), slot: card.slotName ?? "",
   })[p.source];
   const render = (p: CardPart): ReactNode => {
-    if (p.kind === "rect") return <rect x={p.x} y={p.y} width={p.width} height={p.height} rx={p.radius} fill={p.color} />;
+    if (p.kind === "rect") {
+      const sw = p.strokeWidth ?? 0, outline = p.fill === "none";
+      if (!sw) return outline ? null : <rect x={p.x} y={p.y} width={p.width} height={p.height} rx={p.radius} fill={p.color} />;
+      // Inset by half the stroke so the part's clip box does not cut the outline in half.
+      return <rect x={p.x + sw / 2} y={p.y + sw / 2} width={Math.max(0, p.width - sw)} height={Math.max(0, p.height - sw)}
+        rx={p.radius} fill={outline ? "none" : p.color} stroke={p.strokeColor ?? p.color} strokeWidth={sw} />;
+    }
     if (p.kind === "text") return <FitText text={sourceText(p)} part={p} onFontStatus={onFontStatus} />;
     if (p.kind === "image") {
       const url = partImageUrl(p, card, context);
@@ -129,7 +138,9 @@ export function EventCardSvg({ layout, card, context, svgRef, children, imageDat
     </defs>
     <g clipPath={`url(#${uid}-card)`}>
       <rect width={CARD_DESIGN_WIDTH} height={CARD_DESIGN_HEIGHT} fill={background.color} />
-      {background.assetId && picture(cardAssetUrl(context.eventId, background.assetId), {
+      {pattern && <CardPatternLayer pattern={pattern} idPrefix={uid} />}
+      {/* A pattern replaces the uploaded image; the image id stays in the document so switching back restores it. */}
+      {background.assetId && !pattern && picture(cardAssetUrl(context.eventId, background.assetId), {
         x: 0, y: 0, width: CARD_DESIGN_WIDTH, height: CARD_DESIGN_HEIGHT, opacity: background.opacity,
         preserveAspectRatio: `${background.positionX < 0.33 ? "xMin" : background.positionX > 0.67 ? "xMax" : "xMid"}${background.positionY < 0.33 ? "YMin" : background.positionY > 0.67 ? "YMax" : "YMid"} ${background.fit === "cover" ? "slice" : "meet"}`,
       })}
