@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createCardTemplate, resolveCardLayout } from "@eventer/shared";
 import { CardEditor } from "./CardEditor.js";
 import { api, ApiError } from "../../api/client.js";
-import { editPart, movePart, newPart, removePart, reorderPart, targetLayout } from "./model.js";
+import { editBackground, editPart, movePart, newPart, removePart, reorderPart, targetLayout } from "./model.js";
+import { withBackgroundMode } from "./BackgroundSettings.js";
 import { designHistory } from "./useDesignHistory.js";
 import { fitCardText } from "../licenseCard/eventCardText.js";
 
@@ -36,8 +37,8 @@ describe("card editor operations (#506)", () => {
   it("changes layer order for staff only", () => {
     const original = createCardTemplate("name");
     const changed = reorderPart(original, "staff", "name", 1);
-    expect(targetLayout(changed, "staff").parts[4].id).toBe("name");
-    expect(original.common.parts[3].id).toBe("name");
+    expect(targetLayout(changed, "staff").parts[3].id).toBe("name");
+    expect(original.common.parts[2].id).toBe("name");
   });
 
   it("wraps a long name without losing characters or squeezing glyphs", () => {
@@ -83,7 +84,7 @@ describe("card editor operations (#506)", () => {
       fireEvent.change(screen.getByRole("spinbutton", { name: "グリッド間隔" }), { target: { value: "32" } });
       expect(container.querySelector("pattern")).toHaveAttribute("width", "32");
       expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
-      fireEvent.click(screen.getByRole("button", { name: "9. 帯・四角形" }));
+      fireEvent.click(screen.getByRole("button", { name: "8. 帯・四角形" }));
       fireEvent.change(screen.getByRole("spinbutton", { name: "角丸半径（R）" }), { target: { value: "32" } });
       expect(container.querySelector('[data-card-part="role-band"] rect')).toHaveAttribute("rx", "32");
       fireEvent.click(screen.getByRole("button", { name: "保存" }));
@@ -104,7 +105,7 @@ describe("card editor operations (#506)", () => {
       </Routes></MemoryRouter></QueryClientProvider>);
       const back = screen.getByRole("button", { name: "名札印刷へ戻る" });
       if (dirty) {
-        fireEvent.click(screen.getByRole("button", { name: "4. 表示名" }));
+        fireEvent.click(screen.getByRole("button", { name: "3. 表示名" }));
         fireEvent.change(screen.getByRole("spinbutton", { name: "X" }), { target: { value: "88" } });
         expect(back).toBeEnabled();
         fireEvent.click(back);
@@ -124,7 +125,7 @@ describe("card editor operations (#506)", () => {
     render(<QueryClientProvider client={qc}><MemoryRouter><CardEditor initial={{ revision: 1, design }}
       context={{ eventId: "event", title: "Event", eventUrl: "https://example.com/events/event", origin: "https://example.com", communityName: "", communityLogo: null }}
       members={[]} assets={[]} slots={[]} /></MemoryRouter></QueryClientProvider>);
-    fireEvent.click(screen.getByRole("button", { name: "4. 表示名" }));
+    fireEvent.click(screen.getByRole("button", { name: "3. 表示名" }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "X" }), { target: { value: "88" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await screen.findByText(/別のスタッフが更新しました/);
@@ -141,5 +142,65 @@ describe("card editor operations (#506)", () => {
     await waitFor(() => expect(qc.getQueryData(["eventCardDesign", "event"])).toEqual({ revision: 2, design: latest }));
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
     put.mockRestore(); get.mockRestore(); confirm.mockRestore();
+  });
+
+  it("switches background modes and keeps the colour, image and pattern choice for switching back (D-CARD-BG)", () => {
+    const base = { color: "#FFEEDD", assetId: "photo", opacity: 0.25, fit: "cover" as const, positionX: 0.5, positionY: 0.5 };
+    const builtin = withBackgroundMode(base, "builtin");
+    expect(builtin.pattern).toEqual({ type: "builtin", key: "rosette", palette: "indigo", strength: 1 });
+    const chosen = { ...builtin, pattern: { type: "builtin" as const, key: "mesh" as const, palette: "rose" as const, strength: 0.6 } };
+    expect(withBackgroundMode(chosen, "participant").pattern).toEqual({ type: "participant", fallback: { key: "mesh", palette: "rose" }, strength: 0.6 });
+    const plain = withBackgroundMode(chosen, "plain");
+    expect(plain).toEqual(base);
+    expect(plain).not.toHaveProperty("pattern");
+  });
+
+  it("gives staff their own background in the editor, rendered in the staff preview only", async () => {
+    const design = createCardTemplate("name");
+    const staffBackground = { ...design.common.background, pattern: { type: "builtin" as const, key: "engine" as const, palette: "amber" as const, strength: 1 } };
+    const edited = editBackground(design, "staff", staffBackground);
+    expect(targetLayout(edited, "staff").background.pattern).toMatchObject({ key: "engine" });
+    expect(targetLayout(edited, "common").background.pattern).toMatchObject({ type: "participant" });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={qc}><MemoryRouter><CardEditor initial={{ revision: 1, design: edited }}
+      context={{ eventId: "event", title: "Event", eventUrl: "https://example.com/events/event", origin: "https://example.com", communityName: "", communityLogo: null }}
+      members={[]} assets={[]} slots={[]} /></MemoryRouter></QueryClientProvider>);
+    expect(container.querySelector("[data-card-pattern]")).toHaveAttribute("data-card-pattern", "rosette-indigo");
+    expect(screen.getByRole("button", { name: "参加者のカード背景" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "編集する対象" }));
+    fireEvent.click(await screen.findByRole("option", { name: "スタッフ用" }));
+    expect(container.querySelector("[data-card-pattern]")).toHaveAttribute("data-card-pattern", "engine-amber");
+    expect(screen.getByRole("button", { name: "ビルトイン" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "セキュリティメッシュ · ローズ" }));
+    expect(container.querySelector("[data-card-pattern]")).toHaveAttribute("data-card-pattern", "mesh-rose");
+    fireEvent.click(screen.getByRole("button", { name: "単色・画像" }));
+    expect(container.querySelector("[data-card-pattern]")).toBeNull();
+    expect(screen.getByLabelText("色")).toBeInTheDocument();
+  });
+
+  it("turns a rectangle into an outline and renders it with a stroke and no fill", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const design = createCardTemplate("name");
+    const band = design.common.parts.find(p => p.id === "role-band")!;
+    if (band.kind !== "rect") throw new Error("fixture");
+    Object.assign(band, { fill: "solid", strokeWidth: undefined });
+    const { container } = render(<QueryClientProvider client={qc}><MemoryRouter><CardEditor initial={{ revision: 1, design }}
+      context={{ eventId: "event", title: "Event", eventUrl: "https://example.com/events/event", origin: "https://example.com", communityName: "", communityLogo: null }}
+      members={[]} assets={[]} slots={[]} /></MemoryRouter></QueryClientProvider>);
+    const rect = () => container.querySelector('[data-card-part="role-band"] rect')!;
+    expect(rect()).toHaveAttribute("fill", "#0F766E");
+    expect(rect()).not.toHaveAttribute("stroke");
+    fireEvent.click(screen.getByRole("button", { name: "8. 帯・四角形" }));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "塗り" }));
+    fireEvent.click(screen.getByRole("option", { name: "なし（枠線だけ）" }));
+    expect(rect()).toHaveAttribute("fill", "none");
+    expect(rect()).toHaveAttribute("stroke", "#0F766E");
+    expect(rect()).toHaveAttribute("stroke-width", "3");
+    fireEvent.change(screen.getByRole("spinbutton", { name: "枠線の太さ" }), { target: { value: "6" } });
+    fireEvent.change(screen.getByLabelText("枠線の色"), { target: { value: "#9d174d" } });
+    expect(rect()).toHaveAttribute("stroke-width", "6");
+    expect(rect()).toHaveAttribute("stroke", "#9d174d");
+    // Inset by half the stroke so the clip box keeps the whole outline.
+    expect(rect()).toHaveAttribute("x", String(56 + 3));
   });
 });

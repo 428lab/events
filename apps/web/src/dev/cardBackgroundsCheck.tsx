@@ -36,8 +36,8 @@ const template = createCardTemplate("name").common;
 /** 既定テンプレートの部品を配色の文字色へ塗り替える（位置・大きさはそのまま） */
 function layoutFor(p: BuiltinBackgroundPalette): CardLayout {
   const color: Record<string, string> = {
-    "top-band": p.accent, "role-band": p.accent, "event-title": p.accent,
-    community: p.inkSub, handle: p.inkSub, slot: p.inkSub, name: p.ink, role: p.onAccent,
+    "role-band": p.accent, "event-title": p.accent,
+    community: p.inkSub, handle: p.inkSub, slot: p.inkSub, name: p.ink, role: p.accent,
   };
   const parts = template.parts.map(part => "color" in part && color[part.id]
     ? { ...part, color: color[part.id]! } as CardPart : part);
