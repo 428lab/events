@@ -161,6 +161,28 @@ describe("event-only card documents (#506)", () => {
     expect(await list.json()).toEqual({ assets: [] });
   });
 
+  it("stores pattern backgrounds and outline rects, keeps old documents as saved, and rejects unknown patterns (D-CARD-BG)", async () => {
+    const { eventId, cookie } = await setup();
+    const design = createCardTemplate("name");
+    design.staff = { ...design.staff!, background: { ...design.common.background,
+      pattern: { type: "builtin", key: "mesh", palette: "rose", strength: 0.6 } } };
+    expect((await request(eventId, cookie, design)).status).toBe(200);
+    expect(await (await request(eventId, cookie)).json()).toEqual({ revision: 1, design });
+    const legacy = createCardTemplate("name");
+    delete legacy.common.background.pattern;
+    legacy.common.background.color = "#ABCDEF";
+    expect((await request(eventId, cookie, legacy, 1)).status).toBe(200);
+    expect((await (await request(eventId, cookie)).json() as SavedCardDesign).design!.common.background).toEqual({
+      color: "#ABCDEF", opacity: 0.25, fit: "cover", positionX: 0.5, positionY: 0.5 });
+    for (const pattern of [{ type: "builtin", key: "moire", palette: "indigo" }, { type: "builtin", key: "ribbons", palette: "mono" },
+      { type: "participant", fallback: { key: "nope", palette: "indigo" } }, { type: "builtin", key: "rosette", palette: "indigo", strength: 0.1 }]) {
+      const bad = createCardTemplate("name");
+      (bad.common.background as Record<string, unknown>).pattern = pattern;
+      expect((await request(eventId, cookie, bad, 2)).status).toBe(400);
+    }
+    expect((await (await request(eventId, cookie)).json() as SavedCardDesign).revision).toBe(2);
+  });
+
   it("rejects malformed JSON instead of turning a client mistake into a server error", async () => {
     const { eventId, cookie } = await setup();
     const r = await SELF.fetch(`${base}/api/events/${eventId}/name-card-design`, {
