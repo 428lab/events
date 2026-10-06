@@ -15,6 +15,11 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { deleteEventImage, putEventImage } from "./images.js";
+import {
+  deleteEventDescriptionImage,
+  listEventDescriptionImages,
+  postEventDescriptionImage,
+} from "./eventDescriptionImages.js";
 import { collectEventObjects, deleteObjects } from "../lib/mediaCleanup.js";
 import { notifyRequestsOnPublish } from "./eventRequests.js";
 import { notifyFollowersOnPublish } from "./follows.js";
@@ -173,6 +178,15 @@ eventCrudRoutes.delete(
   "/:id/image",
   requireEventRole(["staff"]),
   deleteEventImage,
+);
+
+/** 説明文・参加者限定文章に差し込む画像 (D-DESC-IMAGE)。編集できる人だけ（PATCH と同じ） */
+eventCrudRoutes.get("/:id/description-images", requireEventRole(["staff"]), listEventDescriptionImages);
+eventCrudRoutes.post("/:id/description-images", requireEventRole(["staff"]), postEventDescriptionImage);
+eventCrudRoutes.delete(
+  "/:id/description-images/:imageId",
+  requireEventRole(["staff"]),
+  deleteEventDescriptionImage,
 );
 
 /** 公開（staff のみ） */

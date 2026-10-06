@@ -43,6 +43,8 @@ import { CounterTextField } from "../components/CounterTextField.js";
 import { EventImageEditor } from "../components/EventImageEditor.js";
 import { MeetPrizeEditor } from "../components/MeetPrizeEditor.js";
 import { MarkdownEditor } from "../components/MarkdownEditor.js";
+import { DescriptionImageTray } from "../components/DescriptionImageTray.js";
+import { removeImageReferences } from "../lib/descriptionImages.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
 import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
 import { fromDateTimeLocal, venueLabel } from "../lib/format.js";
@@ -80,6 +82,11 @@ export function EditEventPage() {
   const [subtitle, setSubtitle] = useState("");
   const [description, setDescription] = useState("");
   const [membersNote, setMembersNote] = useState("");
+  /** 説明文画像を消したら、どちらの入力欄からも参照を外す（壊れた画像を残さない） */
+  const removeDescriptionImage = (image: { url: string }) => {
+    setDescription((v) => removeImageReferences(v, image.url));
+    setMembersNote((v) => removeImageReferences(v, image.url));
+  };
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   // 募集締切 (#269)。空文字＝締切なし（従来どおりイベント終了まで受け付ける）
@@ -317,6 +324,13 @@ export function EditEventPage() {
             minRows={3}
             max={20000}
             helperText={t("eventForm.markdownHelp")}
+            footer={(insert) => (
+              <DescriptionImageTray
+                eventId={id}
+                onInsert={insert}
+                onRemoved={removeDescriptionImage}
+              />
+            )}
           />
           <MarkdownEditor
             label={t("eventForm.membersNote")}
@@ -325,6 +339,13 @@ export function EditEventPage() {
             minRows={3}
             max={20000}
             helperText={t("eventForm.membersNoteHelp")}
+            footer={(insert) => (
+              <DescriptionImageTray
+                eventId={id}
+                onInsert={insert}
+                onRemoved={removeDescriptionImage}
+              />
+            )}
           />
           {myCommunities && myCommunities.length > 0 && (
             <TextField

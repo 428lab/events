@@ -300,6 +300,18 @@ const ja = {
   markdownPreview: "プレビュー",
   markdownEmptyPreview: "プレビューする内容がありません。",
 
+  /** 説明文・参加者限定文章に差し込む画像 (D-DESC-IMAGE)。置き場はイベントに1つ */
+  descriptionImageAdd: "画像を追加",
+  descriptionImageUploading: "アップロード中…",
+  descriptionImageInsert: "この画像を本文に差し込む",
+  descriptionImageTapHint: "画像をタップすると、カーソルの位置に差し込みます",
+  descriptionImageDelete: "この画像を削除",
+  descriptionImageDeleteConfirm:
+    "この画像を削除しますか？ 説明文と参加者限定の文章からも外します（保存すると反映されます）。",
+  descriptionImageLimit: "画像は1イベント{{max}}枚までです",
+  descriptionImageUploadFailed: "画像をアップロードできませんでした",
+  descriptionImageCreateHint: "保存後に画像を追加できます",
+
   /** 登壇資料のギャラリーと、登壇者本人による資料URLの編集。
    *  見出し・編集ボタン・未割り当ての印はタイムテーブルと同じ言い方なので
    *  `schedule.material` / `schedule.materialEdit` / `schedule.unassignedChip` を使う */
@@ -563,6 +575,17 @@ const en: Record<keyof typeof ja, string> = {
   markdownEdit: "Write",
   markdownPreview: "Preview",
   markdownEmptyPreview: "Nothing to preview yet.",
+
+  descriptionImageAdd: "Add image",
+  descriptionImageUploading: "Uploading…",
+  descriptionImageInsert: "Insert this image into the text",
+  descriptionImageTapHint: "Tap an image to insert it at the cursor",
+  descriptionImageDelete: "Delete this image",
+  descriptionImageDeleteConfirm:
+    "Delete this image? It will also be removed from the description and the members-only text (takes effect when you save).",
+  descriptionImageLimit: "Up to {{max}} images per event",
+  descriptionImageUploadFailed: "Could not upload the image",
+  descriptionImageCreateHint: "You can add images after saving",
 
   materialOpen: "Open the slides for {{title}}",
   materialUrlTitle: "Slides URL",

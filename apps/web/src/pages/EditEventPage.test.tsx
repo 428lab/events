@@ -50,6 +50,9 @@ vi.mock("../components/EventImageEditor.js", () => ({
 vi.mock("../components/MeetPrizeEditor.js", () => ({
   MeetPrizeEditor: () => null,
 }));
+vi.mock("../components/DescriptionImageTray.js", () => ({
+  DescriptionImageTray: () => null,
+}));
 
 const { EditEventPage } = await import("./EditEventPage.js");
 

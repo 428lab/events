@@ -3,6 +3,7 @@ import { getBucket } from "../runtime.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import { eventMeetPrizesRepo } from "../db/repositories/eventMeetPrizes.js";
 import { cardDesignsRepo } from "../db/repositories/cardDesigns.js";
+import { eventDescriptionImagesRepo } from "../db/repositories/eventDescriptionImages.js";
 
 /**
  * D1 の行と R2 の実体の後始末を1本の契約にまとめる (#424)。
@@ -37,6 +38,9 @@ import { cardDesignsRepo } from "../db/repositories/cardDesigns.js";
 export const eventImageR2Key = (eventId: string) => `event-images/${eventId}`;
 export const eventCardAssetR2Key = (eventId: string, assetId: string) =>
   `event-card-assets/${eventId}/${assetId}`;
+/** 説明文・参加者限定文章に差し込む画像 (D-DESC-IMAGE) */
+export const eventDescriptionImageR2Key = (eventId: string, imageId: string) =>
+  `event-description-images/${eventId}/${imageId}`;
 export const photoR2Key = (eventId: string, photoId: string) =>
   `event-photos/${eventId}/${photoId}`;
 export const videoR2Key = (eventId: string, videoId: string) =>
@@ -83,6 +87,9 @@ export async function collectEventObjects(eventId: string): Promise<string[]> {
   }
   keys.push(...(await eventMeetPrizesRepo.listImageKeysByEvent(eventId)));
   keys.push(...(await cardDesignsRepo.objectKeys(eventId)));
+  for (const img of await eventDescriptionImagesRepo.listByEvent(eventId)) {
+    keys.push(eventDescriptionImageR2Key(eventId, img.id));
+  }
   return keys;
 }
 

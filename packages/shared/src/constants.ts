@@ -36,6 +36,29 @@ export const EVENT_IMAGE = {
   maxBytes: 1024 * 1024, // 1MB
 } as const;
 
+/** イベント説明文・参加者限定文章に差し込む画像 (D-DESC-IMAGE)。
+ * ブラウザで1MB以内の WebP（非対応なら JPEG）に縮めてから送る。
+ * サーバーも同じ上限・同じ2形式だけを受け付ける */
+export const EVENT_DESCRIPTION_IMAGE = {
+  maxBytes: 1024 * 1024, // 1MB
+  maxPerEvent: 10,
+  mimes: ["image/webp", "image/jpeg"],
+} as const;
+
+/** 説明文画像の一覧の1件（編集者向け）。url はそのまま `![](url)` に入れる */
+export interface EventDescriptionImage {
+  id: string;
+  url: string;
+  size: number;
+  createdAt: number;
+}
+
+/** 説明文画像の配信パス。本文には同一オリジンの相対パスのまま入れる
+ * （環境ごとに origin が違っても同じ本文で表示でき、Markdown のサニタイズは
+ * プロトコルの無い相対URLを通す） */
+export const eventDescriptionImagePath = (eventId: string, imageId: string) =>
+  `/api/events/${eventId}/description-images/${imageId}`;
+
 /** プロフィールカードPNG（プロフィールOG画像のR2キャッシュ）。2148x1300 で概ね数百KB (#193) */
 export const PROFILE_CARD_IMAGE = {
   maxBytes: 2 * 1024 * 1024, // 2MB

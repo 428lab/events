@@ -29,6 +29,7 @@ import { scoringRoutes, getEventScoreResults } from "./routes/scoring.js";
 import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes, postRestoreAccount } from "./routes/me.js";
 import { getEventImage } from "./routes/images.js";
+import { getEventDescriptionImage } from "./routes/eventDescriptionImages.js";
 import { getUserCardImage } from "./routes/profileCardImages.js";
 import { getUserAvatarImage } from "./routes/avatarImages.js";
 import { publicRoutes } from "./routes/public.js";
@@ -206,6 +207,9 @@ api.route("/venues", venueRoutes);
 api.route("/venue-offers", venueOfferRoutes);
 // 公開: イベント画像（認証不要。eventRoutes(要認証)より先に登録）
 api.get("/events/:id/image", getEventImage);
+// 説明文・参加者限定文章の差し込み画像 (D-DESC-IMAGE)。門は手前の requireEventAccess
+// （イベントを見られる人）と推測不能な id。eventRoutes(要認証)より先に登録
+api.get("/events/:id/description-images/:imageId", getEventDescriptionImage);
 // 公開: 表彰内容（認証不要。eventRoutes より先に登録）
 api.get("/events/:id/awards", getEventAwards);
 // 公開: 出会いの景品一覧 (#431)（認証不要。オフのイベントは404で存在ごと隠す。

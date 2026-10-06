@@ -197,6 +197,11 @@ export function CreateEventPage() {
             minRows={3}
             max={20000}
             helperText={t("eventForm.markdownHelp")}
+            footer={() => (
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                {t("eventForm.descriptionImageCreateHint")}
+              </Typography>
+            )}
           />
           {myCommunities && myCommunities.length > 0 && (
             <TextField
