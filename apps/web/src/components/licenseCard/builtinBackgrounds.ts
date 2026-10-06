@@ -1,32 +1,33 @@
 /** 名札（イベントカード）のビルトイン背景。
  *
- * 名札は会場や家庭のプリンタで刷るので、どの背景もインクを食わない線画にしてある。
- * 地は白（ごく淡い色まで）で、塗りつぶしの面・グラデーション・太い帯は使わない。
- * 模様は名前の下も含めてカード全面に敷く（文字のために穴を空けない）。
- * 文字は空白ではなく色で読ませる。線は地に寄せた淡い色にし、左上（既定テンプレートの文字の側）ほど
- * なだらかに淡くする（strengthAt）。名前の濃い文字と線の色の差は WCAG 4.5:1 以上を保つ。
+ * ライセンスカードの地紋（CardDecor の rosette / topo / arcs / flow）と同じ作り方をする:
+ * 紙幣・旅券の地紋のように、数式で生成した細い連続線を何百本も重ねて模様を織る。
+ * 塗りつぶしの面は使わず、地は白。線は地へ寄せた淡い不透明色（半透明は重ねると濁るので使わない）。
+ * 模様は名前の下も含めてカード全面に敷き、文字は線の淡さで読ませる
+ * （legibleStroke が、どの文字色とも WCAG 4.5:1 以上になるまで線の色を地へ寄せる）。
  *
- * どれも外部画像を使わず、コードで組み立てる SVG（パラメトリック）なので、
- * どの倍率でもにじまず、印刷でも線がつぶれない。長いパスデータを持たず、
- * ループで要素を並べるだけにしてファイルを小さく保つ。
- * 各配色は文字色（ink / inkSub / accent / onAccent）も持ち、白い地の上で濃いインクの文字にする。
+ * 配色はライセンスカードの CARD_THEMES（accentA / accentB / accentBLight）をそのまま使うので、
+ * 名札とライセンスカードが同じ製品の色に揃う。
  *
+ * 長いパスデータは持たず、描くたびにコードで生成する（同じ背景は毎回同じ絵）。
  * 描画結果は React に依存しない要素木（BgNode）。React では BuiltinBackgroundLayer で
  * 要素に起こし、書き出しや検査では builtinBackgroundMarkup で文字列にする。 */
+import { CARD_THEMES, type CardThemeKey } from "./cardTheme.js";
+
 const W = 1074;
 const H = 650;
+const TAU = Math.PI * 2;
 
-export type BgTag = "g" | "rect" | "circle" | "ellipse" | "path" | "polygon" | "defs"
-  | "clipPath" | "pattern";
+export type BgTag = "g" | "rect" | "path";
 export interface BgNode { tag: BgTag; attrs: Record<string, string | number>; children?: BgNode[] }
 
 export interface BuiltinBackgroundPalette {
   key: string;
   nameJa: string;
   nameEn: string;
-  /** 地の色。名札データの background.color にもこの値を入れる。インク節約のため白かごく淡い色だけ */
+  /** 地の色。名札データの background.color にもこの値を入れる。インク節約のため白だけ */
   base: string;
-  /** 模様の線の色（先頭ほど主役）。実際の線はこれを地の色へ寄せた淡い色で引く */
+  /** 模様の線の色（CARD_THEMES の accentA / accentB / accentBLight）。実際の線はこれを地へ寄せた淡い色で引く */
   colors: readonly string[];
   /** 名前など主役の文字色 */
   ink: string;
@@ -45,17 +46,11 @@ export interface BuiltinBackground {
   draw: (palette: BuiltinBackgroundPalette, idPrefix: string) => BgNode[];
 }
 
+type Pt = readonly [number, number];
 const el = (tag: BgTag, attrs: BgNode["attrs"], children?: BgNode[]): BgNode =>
   children ? { tag, attrs, children } : { tag, attrs };
-const r1 = (v: number) => Math.round(v * 10) / 10;
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-const smooth = (t: number) => { const c = clamp01(t); return c * c * (3 - 2 * c); };
-/** 模様の濃さの倍率。左上（文字の側）で STRENGTH_MIN、右下で 1 へ、カード全体でなだらかに変わる。
- * 穴にはせず、名前の下でも模様は同じ形のまま淡く続く */
-export const STRENGTH_MIN = 0.6;
-export function strengthAt(x: number, y: number): number {
-  return STRENGTH_MIN + (1 - STRENGTH_MIN) * smooth((x / W) * 0.75 + (y / H) * 0.45 - 0.2);
-}
+
 /** 再現性のある乱数（同じ背景は毎回同じ絵になる） */
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -78,7 +73,7 @@ const luminance = (hex: string) => {
     .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
   return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
 };
-/** 模様の線と文字の色の差の下限（WCAG）。線は不透明なので重なっても暗くならず、にじみは地へ寄るだけ */
+/** 模様の線と文字の色の差の下限（WCAG）。線は不透明なので重なっても暗くならない */
 export const TEXT_ON_PATTERN_CONTRAST = 4.6;
 /** 線の色を、配色のどの文字色（ink / inkSub / accent）とも TEXT_ON_PATTERN_CONTRAST 以上の差が出るまで地へ寄せる */
 export function legibleStroke(p: BuiltinBackgroundPalette, color: string): string {
@@ -95,356 +90,331 @@ function withLegibleStrokes(p: BuiltinBackgroundPalette, nodes: BgNode[]): BgNod
     return n.children ? { tag: n.tag, attrs, children: withLegibleStrokes(p, n.children) } : { tag: n.tag, attrs };
   });
 }
-const full = (fill: string) => el("rect", { x: 0, y: 0, width: W, height: H, fill });
-const c = (p: BuiltinBackgroundPalette, i: number) => p.colors[i % p.colors.length]!;
-/** 配色の i 番目の色を、地へ寄せた淡い線の色にする（t は 0..1 の濃さ、x/y はその線のある位置） */
-const tint = (p: BuiltinBackgroundPalette, i: number, t: number, x = W, y = H) =>
-  mixColor(p.base, c(p, i), t * strengthAt(x, y));
-/** 色の数を抑えるため、濃さを段に丸めてからまとめる（段ごとに1本のパスにする） */
-const STEPS = 8;
-const step = (x: number, y: number) => Math.round(((strengthAt(x, y) - STRENGTH_MIN) / (1 - STRENGTH_MIN)) * STEPS);
-const stepStrength = (s: number) => STRENGTH_MIN + (1 - STRENGTH_MIN) * (s / STEPS);
-function bucketPaths(add: (put: (x: number, y: number, d: string) => void) => void,
-  stroke: (strength: number) => string, attrs: BgNode["attrs"] = {}): BgNode[] {
-  const buckets = new Map<number, string>();
-  add((x, y, d) => { const s = step(x, y); buckets.set(s, (buckets.get(s) ?? "") + d); });
-  return [...buckets].sort(([a], [b]) => a - b).map(([s, d]) => el("path", { d, stroke: stroke(stepStrength(s)), ...attrs }));
-}
-const pts = (list: number[][]) => list.map(([a, b]) => `${r1(a!)},${r1(b!)}`).join(" ");
 
-/** 1. ジオメトリック: 全面に淡い三角格子を張り、ところどころの三角形を内側にもう一回り、配色の色で縁取る */
-function drawGeometric(p: BuiltinBackgroundPalette): BgNode[] {
-  const rand = rng(11);
-  const s = 64, h = s * Math.sqrt(3) / 2;
-  const tris: number[][][] = [];
-  for (let j = -1; j * h < H + h; j++) for (let i = -1; i * s < W + s; i++) {
-    const x = i * s + (j % 2 ? s / 2 : 0), y = j * h;
-    tris.push([[x, y + h], [x + s, y + h], [x + s / 2, y]], [[x + s / 2, y], [x + s * 1.5, y], [x + s, y + h]]);
-  }
-  const center = (t: number[][]) => [(t[0]![0]! + t[1]![0]! + t[2]![0]!) / 3, (t[0]![1]! + t[1]![1]! + t[2]![1]!) / 3] as const;
-  const lattice = bucketPaths(put => {
-    for (const [k, t] of tris.entries()) if (k % 2 === 0) {
-      const [cx, cy] = center(t);
-      put(cx, cy, `M${pts(t).replace(/ /g, "L")}Z`);
+/** 線の束。同じ色・同じ太さの線は1本の <path>（複数の M）にまとめ、要素の数を抑える。
+ * カードの外（余白 PAD より外）に出た部分は捨て、そこで線を切る */
+const PAD = 6;
+const inside = (x: number, y: number) => x >= -PAD && x <= W + PAD && y >= -PAD && y <= H + PAD;
+const fmt = (v: number) => String(Math.round(v * 10) / 10);
+class Strokes {
+  private groups = new Map<string, string[]>();
+  add(color: string, width: number, points: readonly Pt[]) {
+    const key = `${color}|${width}`;
+    let parts = this.groups.get(key);
+    if (!parts) this.groups.set(key, parts = []);
+    let run: string[] = [];
+    let prev: Pt | undefined, prevIn = false;
+    const flush = () => { if (run.length > 1) parts.push("M" + run.join(" ")); run = []; };
+    for (const pt of points) {
+      const isIn = inside(pt[0], pt[1]);
+      if (isIn || prevIn) {
+        if (!run.length && prev && !prevIn) run.push(`${fmt(prev[0])},${fmt(prev[1])}`);
+        run.push(`${fmt(pt[0])},${fmt(pt[1])}`);
+      }
+      if (!isIn && prevIn) flush();
+      prev = pt; prevIn = isIn;
     }
-  }, st => mixColor(p.base, c(p, 0), 0.2 * st), { "stroke-width": 0.6 });
-  const accents: BgNode[] = [];
-  for (const t of tris) {
-    const roll = rand(), pick = rand(), size = rand();
-    if (roll > 0.2) continue;
-    const [cx, cy] = center(t), k = 0.42 + 0.36 * size;
-    const i = pick < 0.5 ? 0 : pick < 0.8 ? 1 : 2;
-    accents.push(el("polygon", {
-      points: pts(t.map(([a, b]) => [cx + (a! - cx) * k, cy + (b! - cy) * k])),
-      stroke: tint(p, i, i === 2 ? 0.75 : 0.6, cx, cy), "stroke-width": size > 0.7 ? 1.4 : 1,
+    flush();
+  }
+  nodes(): BgNode[] {
+    return [...this.groups].map(([key, parts]) => {
+      const [stroke, width] = key.split("|");
+      return el("path", { d: parts.join(""), stroke: stroke!, "stroke-width": Number(width) });
+    });
+  }
+}
+/** t を [t0, t1] で n 等分して曲線を点列にする */
+function sample(n: number, t0: number, t1: number, f: (t: number) => Pt): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i <= n; i++) out.push(f(t0 + (t1 - t0) * (i / n)));
+  return out;
+}
+const polar = (cx: number, cy: number, r: number, a: number): Pt => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+/** 地の白と、線の束をまとめる <g> */
+const frame = (p: BuiltinBackgroundPalette, s: Strokes): BgNode[] => [
+  el("rect", { x: 0, y: 0, width: W, height: H, fill: p.base }),
+  el("g", { fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" }, s.nodes()),
+];
+/** 配色の i 番目の色を地へ t だけ寄せた線の色 */
+const tint = (p: BuiltinBackgroundPalette, i: number, t: number) => mixColor(p.base, p.colors[i % p.colors.length]!, t);
+
+/** 1. ロゼット: 何十周も巻く閉じた回転曲線（r = R + Σ A sin(kθ)）を同心の帯に重ねた、紙幣の地紋の花形。
+ * 右寄りの中心に大きな花、左下にもう一つ小さな花。花のない所は、ゆるく波打つ横の細線が全面を流れて地をつくる */
+function drawRosette(p: BuiltinBackgroundPalette): BgNode[] {
+  const s = new Strokes();
+  // 地の流線: 全面に横へ流れる細い波線。振幅が横へゆっくり変わり、光の筋のように疎密ができる
+  for (let i = 0; i < 46; i++) {
+    const y0 = -20 + i * 15.2;
+    s.add(tint(p, 0, 0.22), 0.5, sample(180, -10, W + 10, x =>
+      [x, y0 + 7 * Math.sin(x / 61 + i * 0.36) * (0.55 + 0.45 * Math.sin(x / 230 - i * 0.11))]));
+  }
+  // 花: 中心 (cx, cy) のまわりに、内から外へ帯を重ねる。各帯は閉じた1本の長い曲線を少しずつ回した複製
+  const rosette = (cx: number, cy: number, scale: number, colorShift: number) => {
+    const bands: { r: number; a: number; k: number; b: number; m: number; turns: number; copies: number; c: number; t: number; w: number }[] = [
+      { r: 64, a: 22, k: 7.5, b: 8, m: 30.5, turns: 2, copies: 4, c: 1, t: 0.42, w: 0.5 },
+      { r: 128, a: 34, k: 12.25, b: 9, m: 48.25, turns: 4, copies: 3, c: 0, t: 0.36, w: 0.5 },
+      { r: 210, a: 38, k: 18.5, b: 10, m: 74.5, turns: 2, copies: 5, c: 1, t: 0.36, w: 0.5 },
+      { r: 292, a: 30, k: 24.25, b: 14, m: 6.25, turns: 4, copies: 3, c: 0, t: 0.32, w: 0.5 },
+      { r: 360, a: 20, k: 36, b: 8, m: 96, turns: 1, copies: 7, c: 2, t: 0.45, w: 0.45 },
+    ];
+    for (const [bi, band] of bands.entries()) {
+      for (let j = 0; j < band.copies; j++) {
+        const rot = (j / band.copies) * (TAU / band.k);
+        const n = Math.ceil(band.r * scale * band.turns * TAU / 3 + band.m * band.turns * 6);
+        s.add(tint(p, band.c + colorShift, band.t), band.w, sample(n, 0, TAU * band.turns, th => {
+          const r = scale * (band.r + band.a * Math.sin(band.k * th + rot * band.k) + band.b * Math.sin(band.m * th + rot * 3));
+          return polar(cx, cy, r, th + rot * 0.15 + bi * 0.07);
+        }));
+      }
+    }
+    // 花の芯の細かい同心円の輪
+    for (let k = 0; k < 7; k++) s.add(tint(p, colorShift, 0.38), 0.45, sample(160, 0, TAU, th =>
+      polar(cx, cy, scale * (18 + k * 5.5 + 2.4 * Math.sin(16 * th + k)), th)));
+  };
+  rosette(828, 318, 1, 0);
+  rosette(118, 610, 0.62, 1);
+  return frame(p, s);
+}
+
+/** 2. 干渉線（モアレ）: 横に流れるほぼ平行な波線の組と、カードの外（右上）に中心を持つ同心円の組を、
+ * ほぼ同じ間隔で重ねる。2組の位相のずれが、線そのものにはない大きな双曲線の縞（モアレ）を全面に浮かばせる */
+function drawMoire(p: BuiltinBackgroundPalette): BgNode[] {
+  const s = new Strokes();
+  for (let i = 0; i < 112; i++) {
+    const y0 = -24 + i * 6.2;
+    s.add(tint(p, 0, 0.38), 0.5, sample(120, -10, W + 10, x => [x, y0 + 9 * Math.sin(x / 210 + i * 0.012)]));
+  }
+  const cx = 1380, cy = -260;
+  const near = Math.hypot(cx - W, cy) - 20, far = Math.hypot(cx, cy - H) + 20;
+  for (let r = Math.floor(near / 6.8) * 6.8; r < far; r += 6.8) {
+    s.add(tint(p, 1, 0.38), 0.5, sample(Math.ceil(r * 1.1 / 3), Math.PI * 0.5, Math.PI * 1.1, th => polar(cx, cy, r, th)));
+  }
+  return frame(p, s);
+}
+
+/** なめらかな乱数場（勾配ノイズの fBm）。等高線の地形に使う */
+function fbm(seed: number) {
+  const rand = rng(seed);
+  const perm = Array.from({ length: 256 }, (_, i) => i);
+  for (let i = 255; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [perm[i], perm[j]] = [perm[j]!, perm[i]!]; }
+  const grads = perm.map(() => { const a = rand() * TAU; return [Math.cos(a), Math.sin(a)] as const; });
+  const hash = (i: number, j: number) => perm[(perm[i & 255]! + j) & 255]!;
+  const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+  const noise = (x: number, y: number) => {
+    const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+    const dot = (di: number, dj: number) => { const g = grads[hash(i + di, j + dj)]!; return g[0] * (fx - di) + g[1] * (fy - dj); };
+    const u = fade(fx), v = fade(fy);
+    const a = dot(0, 0) + (dot(1, 0) - dot(0, 0)) * u, b = dot(0, 1) + (dot(1, 1) - dot(0, 1)) * u;
+    return a + (b - a) * v;
+  };
+  return (x: number, y: number) => {
+    let sum = 0, amp = 1, freq = 1;
+    for (let o = 0; o < 3; o++) { sum += amp * noise(x * freq + o * 17.3, y * freq - o * 9.1); amp *= 0.42; freq *= 2.03; }
+    return sum;
+  };
+}
+/** 格子上の値の等値線（マーチングスクエア）。線分を端点でつないで連続した折れ線にして返す */
+function contours(field: (x: number, y: number) => number, cell: number, level: number, values: Float64Array, nx: number, ny: number): Pt[][] {
+  const v = (i: number, j: number) => values[j * (nx + 1) + i]!;
+  // 辺の id: 横の辺 (i,j)-(i+1,j) は 2*(j*(nx+1)+i)、縦の辺 (i,j)-(i,j+1) は 2*(j*(nx+1)+i)+1
+  const edgePoint = new Map<number, Pt>();
+  const point = (id: number): Pt => {
+    let pt = edgePoint.get(id);
+    if (pt) return pt;
+    const k = id >> 1, i = k % (nx + 1), j = Math.floor(k / (nx + 1));
+    const [i2, j2] = id & 1 ? [i, j + 1] : [i + 1, j];
+    const a = v(i, j), b = v(i2, j2), t = (level - a) / (b - a);
+    pt = [(i + (i2 - i) * t) * cell - PAD, (j + (j2 - j) * t) * cell - PAD];
+    edgePoint.set(id, pt);
+    return pt;
+  };
+  const links = new Map<number, number[]>();
+  const link = (a: number, b: number) => {
+    (links.get(a) ?? links.set(a, []).get(a)!).push(b);
+    (links.get(b) ?? links.set(b, []).get(b)!).push(a);
+  };
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const a = v(i, j), b = v(i + 1, j), c = v(i + 1, j + 1), d = v(i, j + 1);
+    const code = (a > level ? 1 : 0) | (b > level ? 2 : 0) | (c > level ? 4 : 0) | (d > level ? 8 : 0);
+    if (code === 0 || code === 15) continue;
+    const top = 2 * (j * (nx + 1) + i), bottom = 2 * ((j + 1) * (nx + 1) + i);
+    const left = 2 * (j * (nx + 1) + i) + 1, right = 2 * (j * (nx + 1) + i + 1) + 1;
+    const center = field(((i + 0.5) * cell) - PAD, ((j + 0.5) * cell) - PAD) > level;
+    switch (code) {
+      case 1: case 14: link(top, left); break;
+      case 2: case 13: link(top, right); break;
+      case 3: case 12: link(left, right); break;
+      case 4: case 11: link(right, bottom); break;
+      case 6: case 9: link(top, bottom); break;
+      case 7: case 8: link(left, bottom); break;
+      case 5: if (center) { link(top, right); link(left, bottom); } else { link(top, left); link(right, bottom); } break;
+      case 10: if (center) { link(top, left); link(right, bottom); } else { link(top, right); link(left, bottom); } break;
+    }
+  }
+  const lines: Pt[][] = [];
+  const take = (a: number) => { const n = links.get(a); const b = n?.pop(); if (b !== undefined) { const m = links.get(b)!; m.splice(m.indexOf(a), 1); } return b; };
+  // 端（つながりが1つ）から先に辿り、残った輪を最後に辿る
+  const starts = [...links.keys()].sort((a, b) => (links.get(a)!.length === 1 ? 0 : 1) - (links.get(b)!.length === 1 ? 0 : 1));
+  for (const start of starts) {
+    while (links.get(start)!.length) {
+      const ids = [start];
+      for (let cur: number | undefined = take(start); cur !== undefined; cur = take(cur)) ids.push(cur);
+      lines.push(ids.map(point));
+    }
+  }
+  return lines;
+}
+/** 3. 等高線: なめらかな乱数場の地形を細い等高線で刻み、5本ごとに太い計曲線を入れる。
+ * 斜面の急な所ほど線が詰まり、地図のような奥行きが出る */
+function drawContours(p: BuiltinBackgroundPalette): BgNode[] {
+  const s = new Strokes();
+  const noise = fbm(7);
+  const field = (x: number, y: number) => noise(x / 640, y / 640) + 0.5 * (x / W) - 0.3 * (y / H);
+  const cell = 6, nx = Math.ceil((W + 2 * PAD) / cell), ny = Math.ceil((H + 2 * PAD) / cell);
+  const values = new Float64Array((nx + 1) * (ny + 1));
+  let lo = Infinity, hi = -Infinity;
+  for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
+    const val = field(i * cell - PAD, j * cell - PAD);
+    values[j * (nx + 1) + i] = val; lo = Math.min(lo, val); hi = Math.max(hi, val);
+  }
+  const stepSize = 0.0135;
+  for (let k = Math.ceil(lo / stepSize); k * stepSize < hi; k++) {
+    const index = k % 5 === 0;
+    for (const line of contours(field, cell, k * stepSize + 1e-6, values, nx, ny))
+      s.add(index ? tint(p, 0, 0.5) : tint(p, 1, 0.34), index ? 0.95 : 0.5, line);
+  }
+  return frame(p, s);
+}
+
+/** 4. リボン: 平行な正弦の細線を数十本ずつ束ね、位相をずらしてねじれた帯にする。
+ * 帯の中心・幅・ねじれがゆっくり変わるので、光沢のあるリボンが全面を横切って見える */
+function drawRibbons(p: BuiltinBackgroundPalette): BgNode[] {
+  const s = new Strokes();
+  const ribbons = [
+    { y: 150, amp: 70, fy: 1 / 260, py: 0.4, width: 78, fw: 1 / 190, twist: 1 / 150, n: 34, c: 0, t: 0.4 },
+    { y: 360, amp: 95, fy: 1 / 310, py: 2.2, width: 96, fw: 1 / 230, twist: -1 / 175, n: 40, c: 1, t: 0.38 },
+    { y: 560, amp: 60, fy: 1 / 240, py: 4.1, width: 70, fw: 1 / 170, twist: 1 / 135, n: 30, c: 0, t: 0.36 },
+  ];
+  // 地: 全面にごく淡い細い横線を引き、帯の外もうっすら刷る
+  for (let i = 0; i < 66; i++) s.add(tint(p, 2, 0.2), 0.45, sample(60, -10, W + 10, x => [x, i * 10 + 3 * Math.sin(x / 90 + i * 0.5)]));
+  for (const r of ribbons) {
+    for (let i = 0; i < r.n; i++) {
+      const phase = (i / r.n) * Math.PI;
+      s.add(tint(p, r.c, r.t * (0.7 + 0.3 * Math.sin(phase))), 0.55, sample(220, -10, W + 10, x => {
+        const center = r.y + r.amp * Math.sin(x * r.fy + r.py);
+        const half = r.width * (0.6 + 0.4 * Math.sin(x * r.fw + r.py * 1.7));
+        return [x, center + half * Math.cos(phase + x * r.twist)];
+      }));
+    }
+  }
+  return frame(p, s);
+}
+
+/** 5. 旋盤彫り: カードの外（左下）の中心から、波打つ同心の輪を何百本も広げる。
+ * 輪ごとに波の位相を少しずつ進め、8本ごとに進む向きを反転させるので、
+ * 懐中時計の文字盤のような麦粒（バーレーコーン）の山形の目が全面に立つ */
+function drawEngineTurned(p: BuiltinBackgroundPalette): BgNode[] {
+  const s = new Strokes();
+  const cx = -150, cy = 820;
+  const far = Math.hypot(W - cx, cy) + 10;
+  const a0 = -Math.PI / 2 - 0.1, a1 = 0.06; // カードに掛かる角度の範囲
+  const gap = 7.5, wave = 22, group = 8;
+  for (let k = 0, r0 = 180; r0 < far; k++, r0 += gap) {
+    const lobes = Math.round(r0 / (wave / TAU) / 2) * 2; // 輪のどこでも波長がほぼ同じ
+    const g = Math.floor(k / group), inG = k % group;
+    const phase = (g % 2 ? group - inG : inG) * (Math.PI / group);
+    const c = g % 3 === 2 ? 1 : 0;
+    s.add(tint(p, c, c ? 0.4 : 0.34), 0.5, sample(Math.ceil(r0 * (a1 - a0) / 2.5), a0, a1, th =>
+      polar(cx, cy, r0 + 3.4 * Math.sin(lobes * th + phase), th)));
+  }
+  return frame(p, s);
+}
+
+/** 6. セキュリティメッシュ: 斜めに走る2組の波線を交差させた網目（旅券の地紋）を全面に張り、
+ * 縁には位相をずらした正弦の細線を束ねたギョーシェの枠を巡らせる */
+function drawMesh(p: BuiltinBackgroundPalette): BgNode[] {
+  const s = new Strokes();
+  const ang = 0.5, gap = 13, amp = 5.5, wl = 46;
+  for (const sign of [1, -1]) {
+    const ux = Math.cos(ang), uy = sign * Math.sin(ang); // 線の向き
+    const vx = -uy, vy = ux; // 線の並ぶ向き
+    const span = Math.hypot(W, H) / 2 + 20;
+    for (let i = -Math.ceil(span / gap); i <= Math.ceil(span / gap); i++) {
+      const off = i * gap;
+      s.add(tint(p, sign === 1 ? 0 : 1, 0.4), 0.5, sample(Math.ceil(2 * span / 4), -span, span, t => {
+        const d = off + amp * Math.sin(t / wl * TAU + i * 0.9);
+        return [W / 2 + ux * t + vx * d, H / 2 + uy * t + vy * d];
+      }));
+    }
+  }
+  // 縁のギョーシェ枠: 角の丸い矩形の周に沿って、法線方向へ揺らした細線を位相をずらして重ねる
+  const inset = 20, rad = 26;
+  const x0 = inset, y0 = inset, x1 = W - inset, y1 = H - inset;
+  const straight = [x1 - x0 - 2 * rad, y1 - y0 - 2 * rad];
+  const arc = Math.PI * rad / 2;
+  const per = 2 * (straight[0]! + straight[1]!) + 4 * arc;
+  const along = (u: number): [Pt, Pt] => { // 周上の点と外向きの法線
+    const segs: [number, (t: number) => [Pt, Pt]][] = [
+      [straight[0]!, t => [[x0 + rad + t, y0], [0, -1]]],
+      [arc, t => { const a = -Math.PI / 2 + t / rad; return [[x1 - rad + rad * Math.cos(a), y0 + rad + rad * Math.sin(a)], [Math.cos(a), Math.sin(a)]]; }],
+      [straight[1]!, t => [[x1, y0 + rad + t], [1, 0]]],
+      [arc, t => { const a = t / rad; return [[x1 - rad + rad * Math.cos(a), y1 - rad + rad * Math.sin(a)], [Math.cos(a), Math.sin(a)]]; }],
+      [straight[0]!, t => [[x1 - rad - t, y1], [0, 1]]],
+      [arc, t => { const a = Math.PI / 2 + t / rad; return [[x0 + rad + rad * Math.cos(a), y1 - rad + rad * Math.sin(a)], [Math.cos(a), Math.sin(a)]]; }],
+      [straight[1]!, t => [[x0, y1 - rad - t], [-1, 0]]],
+      [arc, t => { const a = Math.PI + t / rad; return [[x0 + rad + rad * Math.cos(a), y0 + rad + rad * Math.sin(a)], [Math.cos(a), Math.sin(a)]]; }],
+    ];
+    let t = ((u % per) + per) % per;
+    for (const [len, f] of segs) { if (t <= len) return f(t); t -= len; }
+    return segs[0]![1](0);
+  };
+  const waves = Math.round(per / 30);
+  for (let j = 0; j < 12; j++) {
+    const ph = (j / 12) * Math.PI;
+    s.add(tint(p, j % 2 ? 2 : 0, 0.5), 0.5, sample(Math.ceil(per / 2.5), 0, per, u => {
+      const [[px, py], [nx, ny]] = along(u);
+      const d = 5 * Math.sin(u / per * waves * TAU + ph) + 2.5 * Math.sin(u / per * waves * 3 * TAU - ph * 2);
+      return [px + nx * d, py + ny * d];
     }));
   }
-  return [
-    full(p.base),
-    el("g", { fill: "none", "stroke-linejoin": "round" }, [...lattice, ...accents]),
-  ];
+  return frame(p, s);
 }
 
-/** 2. 回路ライン: 細い配線が左右にカード全体を横切り、45度で折れて、白抜きの丸い端子で終わる */
-function drawCircuit(p: BuiltinBackgroundPalette): BgNode[] {
-  const rand = rng(5), g = 26, rows = Math.floor(H / g);
-  const traces: BgNode[] = [], pads: BgNode[] = [];
-  for (let row = 1; row < rows; row++) for (let seg = 0; seg < 2; seg++) {
-    if (rand() < 0.25) continue;
-    let x = seg === 0 ? -g : Math.round((W * 0.35 + rand() * W * 0.4) / g) * g, y = row * g + 0.5;
-    const end = seg === 0 ? Math.round((W * (0.3 + rand() * 0.45)) / g) * g : W + g;
-    const i = rand() < 0.65 ? 0 : 1, wide = rand() < 0.25;
-    let d = `M${x} ${y}`;
-    while (x < end) {
-      const run = g * (2 + Math.floor(rand() * 6));
-      x = Math.min(end, x + run); d += `H${x}`;
-      if (x < end && rand() < 0.5) {
-        const dir = rand() < 0.5 ? -1 : 1, ny = y + dir * g;
-        if (ny > g / 2 && ny < H - g / 2) { x += g; y = ny; d += `L${x} ${y}`; }
-      }
-    }
-    const stroke = tint(p, i, wide ? 0.62 : 0.5, x, y);
-    traces.push(el("path", { d, stroke, "stroke-width": wide ? 1.6 : 0.9 }));
-    if (seg === 0 && x < W) pads.push(el("circle", { cx: x, cy: y, r: wide ? 5 : 3.6, fill: p.base, stroke, "stroke-width": 1.2 }));
-    if (seg === 1) {
-      const sx = Number(d.slice(1, d.indexOf(" ")));
-      pads.push(el("circle", { cx: sx, cy: row * g + 0.5, r: 3.6, fill: p.base, stroke, "stroke-width": 1.2 }));
-    }
-  }
-  return [
-    full(p.base),
-    el("g", { fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" }, traces),
-    ...pads,
-  ];
-}
-
-/** 3. 青海波: 重なる同心円の波を細い線で、カード全面に敷き詰める。1枚のタイル（2R×R）を繰り返す。
- * タイルに掛かる円を上の段から順に描くので、外の円の白い塗りが上の段のうしろを隠し、
- * 無限に並べたときと同じ重なりになる（白はインクを使わない） */
-function drawSeigaiha(p: BuiltinBackgroundPalette, id: string): BgNode[] {
-  const R = 30, scale: BgNode[] = [];
-  const outer = mixColor(p.base, c(p, 0), 0.42), inner = mixColor(p.base, c(p, 1), 0.42);
-  for (const cy of [-R / 2, 0, R / 2, R, R * 1.5]) for (const cx of (cy / (R / 2)) % 2 ? [-R, R, 3 * R] : [0, 2 * R]) {
-    scale.push(
-      el("circle", { cx, cy, r: R, fill: p.base }),
-      el("circle", { cx, cy, r: R, stroke: outer, "stroke-width": 1 }),
-      el("circle", { cx, cy, r: R * 0.76, stroke: inner }),
-      el("circle", { cx, cy, r: R * 0.52, stroke: inner }),
-      el("circle", { cx, cy, r: R * 0.28, stroke: inner }),
-    );
-  }
-  return [
-    el("defs", {}, [
-      el("pattern", { id: `${id}-wave`, width: 2 * R, height: R, patternUnits: "userSpaceOnUse", x: 0, y: 0 },
-        [el("g", { fill: "none", "stroke-width": 0.7 }, scale)]),
-    ]),
-    full(p.base),
-    full(`url(#${id}-wave)`),
-  ];
-}
-
-/** 4. 麻の葉: 三角格子の各三角形に重心への細い線を引き、カード全面に敷く */
-function drawAsanoha(p: BuiltinBackgroundPalette): BgNode[] {
-  const s = 62, h = s * Math.sqrt(3) / 2;
-  const lines = bucketPaths(put => {
-    for (let j = -1; j * h < H + h; j++) for (let i = -1; i * s < W + s; i++) {
-      const x = i * s + (j % 2 ? s / 2 : 0), y = j * h;
-      const tri = (corners: number[][], edges: boolean) => {
-        const cx = (corners[0]![0]! + corners[1]![0]! + corners[2]![0]!) / 3, cy = (corners[0]![1]! + corners[1]![1]! + corners[2]![1]!) / 3;
-        const P = corners.map(([a1, b1]) => `${Math.round(a1!)} ${Math.round(b1!)}`);
-        const C = `${Math.round(cx)} ${Math.round(cy)}`;
-        // 上向きの三角形だけ辺を描けば、格子の辺はちょうど一度ずつ引かれる
-        put(cx, cy, `${edges ? `M${P[0]}L${P[1]}L${P[2]}Z` : ""}M${P[0]}L${C}M${P[1]}L${C}M${P[2]}L${C}`);
-      };
-      tri([[x, y + h], [x + s, y + h], [x + s / 2, y]], true);
-      tri([[x + s / 2, y], [x + s * 1.5, y], [x + s, y + h]], false);
-    }
-  }, st => mixColor(p.base, c(p, 0), 0.4 * st), { "stroke-width": 0.7 });
-  return [full(p.base), el("g", { fill: "none", "stroke-linejoin": "round" }, lines)];
-}
-
-/** 5. サイバーグリッド: 上の方の地平線へ向かう遠近の方眼がカード全面に広がり、右上に輪郭だけの太陽が昇る */
-function drawCyberGrid(p: BuiltinBackgroundPalette, id: string): BgNode[] {
-  const horizon = 150, vx = 700, sun = { cx: 930, cy: horizon, r: 96 };
-  const floor = bucketPaths(put => {
-    // 消失点から放射する縦の線。線を短い区間に分けて、場所ごとの濃さで引く
-    for (let k = -30; k <= 30; k++) {
-      const bx = vx + k * 70;
-      for (let s = 0; s < 6; s++) {
-        const t0 = s / 6, t1 = (s + 1) / 6;
-        const y0 = horizon + (H - horizon) * t0, y1 = horizon + (H - horizon) * t1;
-        const x0 = vx + (bx - vx) * t0, x1 = vx + (bx - vx) * t1;
-        if (Math.max(x0, x1) < 0 || Math.min(x0, x1) > W) continue;
-        put((x0 + x1) / 2, (y0 + y1) / 2, `M${r1(x0)} ${r1(y0)}L${r1(x1)} ${r1(y1)}`);
-      }
-    }
-    // 奥ほど詰まる横の線
-    for (let k = 1; k <= 14; k++) {
-      const y = r1(horizon + (H - horizon) * (k / 14) ** 1.7);
-      for (let x = 0; x < W; x += W / 4) put(x + W / 8, y, `M${r1(x)} ${y}h${r1(W / 4)}`);
-    }
-  }, st => mixColor(p.base, c(p, 0), 0.42 * st), { "stroke-width": 0.8 });
-  // 地平線より上は、細い点線の星座のような目盛り
-  let sky = "";
-  for (let y = 30; y < horizon; y += 30) sky += `M0 ${y}H${W}`;
-  let cuts = "";
-  for (let k = 0; k < 7; k++) cuts += `M${sun.cx - sun.r} ${r1(sun.cy - 10 - k * 12 + k * k * 0.6)}h${sun.r * 2}`;
-  return [
-    el("defs", {}, [
-      el("clipPath", { id: `${id}-sky` }, [el("rect", { x: 0, y: 0, width: W, height: horizon })]),
-    ]),
-    full(p.base),
-    el("path", { d: sky, stroke: mixColor(p.base, c(p, 0), 0.12), "stroke-width": 0.6, "stroke-dasharray": "2 10", fill: "none" }),
-    el("g", { fill: "none", "clip-path": `url(#${id}-sky)` }, [
-      el("circle", { ...sun, stroke: tint(p, 1, 0.8, sun.cx, sun.cy), "stroke-width": 1.6 }),
-      el("circle", { ...sun, r: sun.r + 10, stroke: tint(p, 1, 0.55, sun.cx, sun.cy), "stroke-width": 0.8 }),
-      el("path", { d: cuts, stroke: tint(p, 1, 0.6, sun.cx, sun.cy), "stroke-width": 1 }),
-    ]),
-    el("g", { fill: "none" }, floor),
-    el("path", { d: `M0 ${horizon}H${W}`, stroke: tint(p, 1, 0.7, W * 0.7, horizon), "stroke-width": 1.2, fill: "none" }),
-  ];
-}
-
-/** 6. 和紙: 全面に漉き込んだ細い繊維と、横に流れる霞（すやり霞）の細い二重線、細い二重の枠 */
-function drawWashi(p: BuiltinBackgroundPalette): BgNode[] {
-  const rand = rng(29), fibers: BgNode[] = [];
-  for (let k = 0; k < 340; k++) {
-    const long = k < 50;
-    const x = rand() * W, y = rand() * H, len = long ? 60 + rand() * 80 : 8 + rand() * 34, ang = rand() * Math.PI;
-    const bend = (rand() - 0.5) * len * 0.6;
-    const dx = Math.cos(ang) * len, dy = Math.sin(ang) * len;
-    fibers.push(el("path", {
-      d: `M${r1(x)} ${r1(y)}q${r1(dx / 2 - dy * bend / len)} ${r1(dy / 2 + dx * bend / len)} ${r1(dx)} ${r1(dy)}`,
-      stroke: tint(p, 0, (long ? 0.18 : 0.24) + rand() * 0.2, x, y),
-      "stroke-width": r1(0.4 + rand() * (long ? 0.5 : 0.7)),
-    }));
-  }
-  // 霞: 角の丸い細長い帯の輪郭を、ずらして重ねる
-  const mist: BgNode[] = [];
-  for (const [x, y, w] of [[-60, 70, 620], [520, 190, 640], [-80, 330, 560], [430, 470, 720], [90, 575, 520]] as const) {
-    for (const [dy, t, sw] of [[0, 0.5, 1], [7, 0.32, 0.6]] as const)
-      mist.push(el("rect", { x, y: y + dy, width: w, height: 44 - dy * 2, rx: 22 - dy, stroke: tint(p, 1, t, x + w / 2, y), "stroke-width": sw }));
-  }
-  return [
-    full(p.base),
-    el("g", { fill: "none", "stroke-linecap": "round" }, [...fibers, ...mist]),
-    el("rect", { x: 20, y: 24, width: W - 40, height: H - 44, fill: "none", stroke: tint(p, 1, 0.85), "stroke-width": 1.4 }),
-    el("rect", { x: 27, y: 31, width: W - 54, height: H - 58, fill: "none", stroke: tint(p, 1, 0.7), "stroke-width": 0.6 }),
-  ];
-}
-
-/** 7. ピンストライプ: 全面に細い斜線を等間隔に引き、数本おきに配色の色の線を二本ずつ通す */
-function drawPinstripe(p: BuiltinBackgroundPalette): BgNode[] {
-  const k = 0.42, drop = k * H, gap = 12;
-  const plain = bucketPaths(put => {
-    for (let x = -drop; x < W + gap; x += gap) if (Math.round((x + drop) / gap) % 6) {
-      for (let s = 0; s < 4; s++) {
-        const y0 = (H / 4) * s, y1 = y0 + H / 4;
-        put(x + drop / 2 - k * (y0 + y1) / 2 + drop / 2, (y0 + y1) / 2, `M${r1(x + drop - k * y0)} ${r1(y0)}L${r1(x + drop - k * y1)} ${r1(y1)}`);
-      }
-    }
-  }, st => mixColor(p.base, c(p, 0), 0.18 * st), { "stroke-width": 0.6 });
-  const accent: BgNode[] = [];
-  let n = 0;
-  for (let x = -drop; x < W + gap; x += gap) if (Math.round((x + drop) / gap) % 6 === 0) {
-    const i = n++ % 3 === 2 ? 2 : n % 2;
-    const d = bucketPaths(put => {
-      for (let s = 0; s < 4; s++) {
-        const y0 = (H / 4) * s, y1 = y0 + H / 4, mx = x + drop - k * (y0 + y1) / 2;
-        put(mx, (y0 + y1) / 2, `M${r1(x + drop - k * y0)} ${r1(y0)}L${r1(x + drop - k * y1)} ${r1(y1)}`
-          + `M${r1(x + drop - k * y0 + 3.5)} ${r1(y0)}L${r1(x + drop - k * y1 + 3.5)} ${r1(y1)}`);
-      }
-    }, st => mixColor(p.base, c(p, i), (i === 2 ? 0.7 : 0.55) * st), { "stroke-width": 0.9 });
-    accent.push(...d);
-  }
-  return [full(p.base), el("g", { fill: "none" }, [...plain, ...accent])];
-}
-
-/** 8. ハーフトーン: 全面に輪郭だけの網点を並べ、輪の大きさが斜めの大きな波のように満ち引きする */
-function drawHalftone(p: BuiltinBackgroundPalette): BgNode[] {
-  const pitch = 32, rings: [number, number, number][] = [];
-  for (let j = 0, y = 0; y <= H + pitch; j++, y += pitch * 0.866) for (let x = j % 2 ? pitch / 2 : 0; x <= W + pitch; x += pitch) {
-    const wave = 0.5 + 0.5 * Math.sin((x * 0.8 + y) / 150 - 1.2);
-    const r = 2.2 + 7.6 * smooth(wave * 0.75 + (x / W + y / H) * 0.2);
-    rings.push([x, y, r]);
-  }
-  // 輪は整数の位置と 0.5 刻みの半径に丸めて、パスを短く保つ
-  const circle = (x: number, y: number, r: number) => {
-    const q = Math.round(r * 2) / 2;
-    return `M${Math.round(x - q)} ${Math.round(y)}a${q} ${q} 0 1 0 ${2 * q} 0a${q} ${q} 0 1 0-${2 * q} 0`;
+const INK = "#101827", INK_SUB = "#334155";
+/** CARD_THEMES の配色をそのまま線の色に使う。見出し・帯（accent）は模様の上でも読めるよう、
+ * テーマの accentDeep と同じ色相のさらに濃い色にしてある */
+const THEME_NAMES: Record<CardThemeKey, { ja: string; en: string; accent: string }> = {
+  indigo: { ja: "インディゴ", en: "Indigo", accent: "#3730A3" },
+  teal: { ja: "ティール", en: "Teal", accent: "#115E59" },
+  rose: { ja: "ローズ", en: "Rose", accent: "#9D174D" },
+  amber: { ja: "アンバー", en: "Amber", accent: "#7C2D12" },
+  mono: { ja: "モノ", en: "Mono", accent: "#1E293B" },
+};
+const themePalette = (key: CardThemeKey): BuiltinBackgroundPalette => {
+  const theme = CARD_THEMES.find(t => t.key === key)!;
+  const names = THEME_NAMES[key];
+  return {
+    key, nameJa: names.ja, nameEn: names.en, base: "#FFFFFF",
+    colors: [theme.accentA, theme.accentB, theme.accentBLight],
+    ink: INK, inkSub: INK_SUB, accent: names.accent, onAccent: "#FFFFFF",
   };
-  // 輪の大きさで色を分け、大きい輪を主役の色にする
-  const paths = (big: boolean, i: number, t: number) => bucketPaths(put => {
-    for (const [x, y, r] of rings) if ((r >= 6) === big) put(x, y, circle(x, y, r));
-  }, st => mixColor(p.base, c(p, i), t * st), { "stroke-width": 0.8 });
-  return [full(p.base), el("g", { fill: "none" }, [...paths(false, 1, 0.45), ...paths(true, 0, 0.5)])];
-}
+};
+const palettes = (...keys: CardThemeKey[]) => keys.map(themePalette);
 
-/** 9. オーロラ: 左から右へカード全面を横切る細い等高線が、ゆるやかにうねる。色は上から下へ配色の順に移り変わる */
-function drawAurora(p: BuiltinBackgroundPalette): BgNode[] {
-  const lines: BgNode[] = [];
-  const shade = (t: number) => {
-    const scaled = t * (p.colors.length - 1), i = Math.min(p.colors.length - 2, Math.floor(scaled));
-    return mixColor(c(p, i), c(p, i + 1), scaled - i);
-  };
-  const n = 30;
-  for (let k = 0; k < n; k++) {
-    const t = k / (n - 1), base = -60 + t * (H + 120);
-    let d = "";
-    for (let x = 0; x <= W + 0.01; x += 18) {
-      const y = base + 70 * Math.sin(x / 260 + t * 2.4) + 34 * Math.sin(x / 113 - t * 5.1) - 40 * Math.cos(t * 3.1 + x / 520);
-      d += `${x ? "L" : "M"}${r1(x)} ${r1(y)}`;
-    }
-    // 1本の線は1色で通す（区間で色を変えると継ぎ目が縦に並んで見える）
-    lines.push(el("path", { d, stroke: mixColor(p.base, shade(t), k % 5 === 0 ? 0.62 : 0.42), "stroke-width": k % 5 === 0 ? 1.3 : 0.8 }));
-  }
-  return [full(p.base), el("g", { fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" }, lines)];
-}
-
-/** 10. 紙吹雪: カード全面に、輪郭だけの紙片（細長い短冊・丸・三角・波線）が舞う */
-function drawConfetti(p: BuiltinBackgroundPalette): BgNode[] {
-  const rand = rng(7), bits: BgNode[] = [];
-  // 格子に1つずつ揺らして置き、全面にむらなく散らす
-  const gx = 62, gy = 54;
-  for (let y = gy / 2; y < H + gy / 2; y += gy) for (let x = gx / 2; x < W + gx / 2; x += gx) {
-    const px = x + (rand() - 0.5) * gx * 0.9, py = y + (rand() - 0.5) * gy * 0.9;
-    const kind = rand(), rot = Math.round(rand() * 180), pick = rand(), size = 0.75 + rand() * 0.6;
-    const stroke = tint(p, Math.floor(pick * p.colors.length), 0.7, px, py);
-    const at = `translate(${r1(px)} ${r1(py)}) rotate(${rot}) scale(${r1(size)})`;
-    bits.push(kind < 0.4 ? el("rect", { x: -9, y: -3.5, width: 18, height: 7, rx: 1.5, stroke, transform: at })
-      : kind < 0.6 ? el("circle", { r: 4.5, stroke, transform: at })
-      : kind < 0.8 ? el("polygon", { points: "0,-7 6.5,5 -6.5,5", stroke, transform: at })
-      : el("path", { d: "M-12 0q3-6 6 0t6 0t6 0t6 0", stroke, "stroke-linecap": "round", transform: at }));
-  }
-  return [full(p.base), el("g", { fill: "none", "stroke-width": 1.2, "stroke-linejoin": "round" }, bits)];
-}
-
-const pal = (key: string, nameJa: string, nameEn: string, base: string,
-  colors: string[], accent: string, ink = INK, inkSub = INK_SUB): BuiltinBackgroundPalette =>
-  ({ key, nameJa, nameEn, base, colors, ink, inkSub, accent, onAccent: "#FFFFFF" });
-const INK = "#101827", INK_SUB = "#334155", WHITE = "#FFFFFF";
-
-/** accent は模様の上に載る見出しでも 4.5:1 を割らないよう、白に対して約 7:1 以上の濃い色にしてある */
 export const BUILTIN_BACKGROUNDS: readonly BuiltinBackground[] = [
-  { key: "geometric", nameJa: "ジオメトリック", nameEn: "Geometric", draw: drawGeometric, palettes: [
-    pal("teal", "ティール", "Teal", WHITE, ["#0F766E", "#2DD4BF", "#F59E0B"], "#115E59"),
-    pal("sunset", "サンセット", "Sunset", WHITE, ["#EA580C", "#FB7185", "#FBBF24"], "#9A3412"),
-    pal("indigo", "インディゴ", "Indigo", WHITE, ["#4338CA", "#818CF8", "#38BDF8"], "#4338CA"),
-  ] },
-  { key: "circuit", nameJa: "回路ライン", nameEn: "Circuit Lines", draw: drawCircuit, palettes: [
-    pal("daylight", "デイライト", "Daylight", WHITE, ["#0891B2", "#DB2777"], "#155E75"),
-    pal("mint", "ミント", "Mint", WHITE, ["#059669", "#84CC16"], "#065F46"),
-    pal("violet", "バイオレット", "Violet", WHITE, ["#7C3AED", "#F97316"], "#6D28D9"),
-  ] },
-  { key: "seigaiha", nameJa: "青海波", nameEn: "Seigaiha Waves", draw: drawSeigaiha, palettes: [
-    pal("ai", "藍", "Indigo", WHITE, ["#1E3A8A", "#6B8CEB"], "#1E3A8A"),
-    pal("shu", "朱", "Vermilion", WHITE, ["#C2410C", "#F08A7A"], "#991B1B"),
-    pal("matcha", "抹茶", "Matcha", WHITE, ["#4D7C0F", "#9CC25A"], "#3F6212"),
-    pal("kin", "金", "Gold", WHITE, ["#A07A2C", "#D9B36A"], "#6B4E0F"),
-  ] },
-  { key: "asanoha", nameJa: "麻の葉", nameEn: "Asanoha", draw: drawAsanoha, palettes: [
-    pal("sakura", "桜", "Sakura", WHITE, ["#BE185D"], "#9D174D"),
-    pal("ai", "藍", "Indigo", WHITE, ["#1D4ED8"], "#1E40AF"),
-    pal("kincha", "金茶", "Gold Tea", WHITE, ["#A16207"], "#92400E"),
-    pal("sumi", "墨", "Sumi", WHITE, ["#374151"], "#374151"),
-  ] },
-  { key: "cybergrid", nameJa: "サイバーグリッド", nameEn: "Cyber Grid", draw: drawCyberGrid, palettes: [
-    pal("blueprint", "ブループリント", "Blueprint", WHITE, ["#2563EB", "#F97316"], "#1E40AF"),
-    pal("synth", "シンセ", "Synthwave", WHITE, ["#C026D3", "#F59E0B"], "#86198F"),
-    pal("matrix", "マトリクス", "Matrix", WHITE, ["#16A34A", "#0891B2"], "#166534"),
-  ] },
-  { key: "washi", nameJa: "和紙", nameEn: "Washi Paper", draw: drawWashi, palettes: [
-    pal("kinari", "生成り", "Natural", "#FFFDF8", ["#A8977A", "#B9A57E"], "#115E59", INK, "#44403C"),
-    pal("sakura", "桜", "Sakura", "#FFFBFB", ["#C9A0A6", "#D98A98"], "#9F1239", INK, "#4C3A3D"),
-    pal("sora", "空", "Sky", "#FBFDFF", ["#94A8C0", "#8FA9D0"], "#1E40AF"),
-  ] },
-  { key: "pinstripe", nameJa: "ピンストライプ", nameEn: "Pinstripes", draw: drawPinstripe, palettes: [
-    pal("teal", "ティール×オレンジ", "Teal & Orange", WHITE, ["#0F766E", "#2DD4BF", "#FB923C"], "#115E59"),
-    pal("royal", "ロイヤル", "Royal", WHITE, ["#1E3A8A", "#3B82F6", "#FBBF24"], "#1E3A8A"),
-    pal("berry", "ベリー", "Berry", WHITE, ["#9D174D", "#F472B6", "#F59E0B"], "#9D174D"),
-  ] },
-  { key: "halftone", nameJa: "ハーフトーン", nameEn: "Halftone Rings", draw: drawHalftone, palettes: [
-    pal("pop", "ポップ", "Pop", WHITE, ["#F43F5E", "#F59E0B"], "#9F1239"),
-    pal("cyan", "シアン", "Cyan", WHITE, ["#0891B2", "#6366F1"], "#155E75"),
-    pal("ink", "インク", "Ink", WHITE, ["#334155", "#94A3B8"], "#111827"),
-  ] },
-  { key: "aurora", nameJa: "オーロラライン", nameEn: "Aurora Lines", draw: drawAurora, palettes: [
-    pal("northern", "ノーザン", "Northern", WHITE, ["#14B8A6", "#6366F1", "#A855F7"], "#115E59"),
-    pal("dawn", "夜明け", "Dawn", WHITE, ["#F97316", "#EC4899", "#8B5CF6"], "#9A3412"),
-    pal("lagoon", "ラグーン", "Lagoon", WHITE, ["#06B6D4", "#10B981", "#3B82F6"], "#155E75"),
-  ] },
-  { key: "confetti", nameJa: "紙吹雪", nameEn: "Festival Confetti", draw: drawConfetti, palettes: [
-    pal("festival", "フェス", "Festival", WHITE, ["#F43F5E", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6"], "#9F1239"),
-    pal("pastel", "パステル", "Pastel", WHITE, ["#EC8FC0", "#8E9CF5", "#4FD1A5", "#E8C547"], "#5B21B6"),
-    pal("gold", "ゴールド", "Gold", WHITE, ["#C99A2E", "#E5C76B", "#9A7420", "#475569"], "#111827"),
-  ] },
+  { key: "rosette", nameJa: "ロゼット", nameEn: "Guilloché Rosette", draw: drawRosette, palettes: palettes("indigo", "teal", "rose", "amber", "mono") },
+  { key: "moire", nameJa: "モアレ", nameEn: "Interference", draw: drawMoire, palettes: palettes("indigo", "teal", "rose", "mono") },
+  { key: "contours", nameJa: "等高線", nameEn: "Contours", draw: drawContours, palettes: palettes("teal", "indigo", "amber", "mono") },
+  { key: "ribbons", nameJa: "リボン", nameEn: "Ribbons", draw: drawRibbons, palettes: palettes("rose", "indigo", "teal", "amber") },
+  { key: "engine", nameJa: "旋盤彫り", nameEn: "Engine Turned", draw: drawEngineTurned, palettes: palettes("amber", "indigo", "teal", "mono") },
+  { key: "mesh", nameJa: "セキュリティメッシュ", nameEn: "Security Mesh", draw: drawMesh, palettes: palettes("indigo", "teal", "rose", "amber", "mono") },
 ];
 
 export function findBuiltinBackground(key: string): BuiltinBackground | undefined {
   return BUILTIN_BACKGROUNDS.find(b => b.key === key);
 }
 
-/** 背景の要素木。idPrefix は同じページに複数枚並べたときの pattern や clipPath の id 衝突を防ぐ */
+/** 背景の要素木。idPrefix は同じページに複数枚並べたときの id 衝突よけ（今の模様は id を使わない） */
 export function builtinBackgroundNodes(backgroundKey: string, paletteKey: string, idPrefix: string): BgNode[] {
   const bg = findBuiltinBackground(backgroundKey);
   const palette = bg?.palettes.find(p => p.key === paletteKey) ?? bg?.palettes[0];

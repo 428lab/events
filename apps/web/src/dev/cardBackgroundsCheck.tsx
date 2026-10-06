@@ -4,6 +4,7 @@
  * ?view=sheet&bg=KEY      1つの背景の全配色
  * ?view=print&bg=KEY&palette=KEY  実寸（1074x650）1枚
  * ?view=bg&bg=KEY&palette=KEY     背景だけを実寸で（文字の下のコントラストとインク量の計測用）
+ * ?view=existing&variant=KEY&theme=KEY  ライセンスカードの既存の地紋を白地に（比べる基準）
  *
  * 既定テンプレート（createCardTemplate("name")）の部品を、配色の文字色に塗り替えて上に重ねる。 */
 import "@fontsource/plus-jakarta-sans/400.css";
@@ -13,6 +14,8 @@ import { createCardTemplate, CARD_DESIGN_HEIGHT, CARD_DESIGN_WIDTH, type CardLay
 import "../i18n/index.js";
 import { EventCardSvg, type EventCardContext } from "../components/licenseCard/EventCardSvg.js";
 import { BuiltinBackgroundLayer } from "../components/licenseCard/BuiltinBackgroundLayer.js";
+import { BackgroundPattern } from "../components/licenseCard/CardDecor.js";
+import { BG_VARIANTS, CARD_THEMES } from "../components/licenseCard/cardTheme.js";
 import {
   BUILTIN_BACKGROUNDS, builtinBackgroundMarkup, builtinBackgroundNodes,
   type BuiltinBackground, type BuiltinBackgroundPalette,
@@ -77,11 +80,19 @@ function Page() {
       <BuiltinBackgroundLayer nodes={builtinBackgroundNodes(bg.key, palette.key, "bg")} />
     </svg>;
   }
+  if (view === "existing") {
+    // ライセンスカードの既存の地紋を白地に描く（新しい背景と並べて比べる基準）
+    const theme = CARD_THEMES.find(t => t.key === q.get("theme")) ?? CARD_THEMES[0];
+    const variant = BG_VARIANTS.find(v => v.key === q.get("variant"))?.key ?? "rosette";
+    return <svg data-sheet="" viewBox="0 0 1074 650" width={1074} height={650} style={{ display: "block", background: "#fff" }}>
+      <BackgroundPattern variant={variant} theme={theme} />
+    </svg>;
+  }
   if (view === "sheet")
     return grid(2, bg.palettes.map(p => <SampleCard key={p.key} bg={bg} palette={p} width={520} />), `${bg.nameJa} / ${bg.nameEn}`);
   return grid(3, BUILTIN_BACKGROUNDS.map(b => <SampleCard key={b.key} bg={b} palette={b.palettes[0]!} width={420} />),
     "名札のビルトイン背景 / Built-in name-card backgrounds");
 }
-/** 計測スクリプトが配色の文字色を引けるように公開する */
-Object.assign(window, { BUILTIN_BACKGROUNDS });
+/** 計測スクリプトが配色の文字色を引き、生成時間を測れるように公開する */
+Object.assign(window, { BUILTIN_BACKGROUNDS, builtinBackgroundNodes, builtinBackgroundMarkup });
 ReactDOM.createRoot(document.getElementById("root")!).render(<Page />);
