@@ -32,6 +32,7 @@ import {
 } from "../api/requestHooks.js";
 import { UserLink } from "../components/UserLink.js";
 import { EventList, ListColumnsToggle } from "../components/EventList.js";
+import { LinkifiedText } from "../components/LinkifiedText.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { OfferVenueButton, VenueOfferPanel } from "../components/VenueOffers.js";
 import { venueLabel, formatDateTime } from "../lib/format.js";
@@ -137,7 +138,7 @@ export function EventRequestDetailPage() {
 
           {request.description && (
             <Typography sx={{ mt: 2, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-              {request.description}
+              <LinkifiedText text={request.description} />
             </Typography>
           )}
 
