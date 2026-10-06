@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BUILTIN_BACKGROUNDS, builtinBackgroundMarkup, builtinBackgroundNodes, calmFactor, CALM_ZONES, mixColor, type BgNode,
+  BUILTIN_BACKGROUNDS, builtinBackgroundMarkup, builtinBackgroundNodes, mixColor, strengthAt, STRENGTH_MIN, type BgNode,
 } from "./builtinBackgrounds.js";
 
 /** 名札のビルトイン背景のカタログの見張り。絵の良し悪しは card-backgrounds-check.html で目で見る */
@@ -44,10 +44,10 @@ describe("BUILTIN_BACKGROUNDS", () => {
   });
   it("saves ink: only the base colour is filled, the pattern is hairlines (pixel coverage is measured by the capture script)", () => {
     const SHAPES = new Set(["rect", "circle", "ellipse", "polygon", "path"]);
-    // 図形ごとの実際の塗り（親の fill を引き継ぎ、無指定は SVG の既定の黒）。マスクとクリップの中はインクにならない
+    // 図形ごとの実際の塗り（親の fill を引き継ぎ、無指定は SVG の既定の黒）。クリップの中はインクにならない
     const fills = (nodes: BgNode[], inherited: string | undefined, out: string[]) => {
       for (const n of nodes) {
-        if (n.tag === "mask" || n.tag === "clipPath" || n.tag === "filter") continue;
+        if (n.tag === "clipPath") continue;
         const fill = typeof n.attrs.fill === "string" ? n.attrs.fill : inherited;
         if (SHAPES.has(n.tag)) out.push(fill ?? "#000000");
         if (n.children) fills(n.children, fill, out);
@@ -59,8 +59,36 @@ describe("BUILTIN_BACKGROUNDS", () => {
       for (const fill of fills(builtinBackgroundNodes(bg.key, p.key, "t"), undefined, []))
         expect(fill === "none" || fill === p.base || fill.startsWith("url(#t-"), `${where} fill ${fill}`).toBe(true);
       const svg = builtinBackgroundMarkup(bg.key, p.key);
-      expect(svg, where).not.toMatch(/Gradient/);
+      expect(svg, where).not.toMatch(/Gradient|<mask|<filter|opacity/);
       for (const m of svg.matchAll(/stroke-width="([\d.]+)"/g)) expect(Number(m[1]), where).toBeLessThanOrEqual(2.5);
+    }
+  });
+  it("keeps every text colour readable on every line of the pattern (WCAG 4.5:1 against each stroke colour)", () => {
+    for (const bg of BUILTIN_BACKGROUNDS) for (const p of bg.palettes) {
+      const svg = builtinBackgroundMarkup(bg.key, p.key);
+      for (const m of new Set([...svg.matchAll(/stroke="(#[0-9a-fA-F]{6})"/g)].map(x => x[1]!)))
+        for (const text of [p.ink, p.inkSub, p.accent])
+          expect(contrast(text, m), `${bg.key}/${p.key} ${text} on stroke ${m}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+  it("covers the whole card: the pattern reaches every quarter, including the name area", () => {
+    // 描いた座標（M/L/H の点・circle の中心・transform の位置）を四分割で数える。pattern 敷きは全面扱い
+    for (const bg of BUILTIN_BACKGROUNDS) {
+      const svg = builtinBackgroundMarkup(bg.key, bg.palettes[0]!.key);
+      if (/<rect[^>]*fill="url\(#/.test(svg)) continue;
+      const hit = new Set<string>();
+      const mark = (x: number, y: number) => { if (x >= 0 && x <= 1074 && y >= 0 && y <= 650) hit.add(`${x < 537 ? 0 : 1}${y < 325 ? 0 : 1}`); };
+      for (const m of svg.matchAll(/[ML](-?[\d.]+)[ ,](-?[\d.]+)/g)) mark(Number(m[1]), Number(m[2]));
+      for (const m of svg.matchAll(/translate\((-?[\d.]+) (-?[\d.]+)\)/g)) mark(Number(m[1]), Number(m[2]));
+      for (const m of svg.matchAll(/cx="(-?[\d.]+)" cy="(-?[\d.]+)"/g)) mark(Number(m[1]), Number(m[2]));
+      // 名前の箱（56,200〜786,332）の中にも線が通る
+      let inName = false;
+      for (const m of svg.matchAll(/[ML](-?[\d.]+)[ ,](-?[\d.]+)|translate\((-?[\d.]+) (-?[\d.]+)\)/g)) {
+        const x = Number(m[1] ?? m[3]), y = Number(m[2] ?? m[4]);
+        if (x > 56 && x < 786 && y > 200 && y < 332) inName = true;
+      }
+      expect(hit.size, bg.key).toBe(4);
+      expect(inName, bg.key).toBe(true);
     }
   });
   it("stays small and self-contained (no external references)", () => {
@@ -76,10 +104,12 @@ describe("BUILTIN_BACKGROUNDS", () => {
   });
 });
 
-describe("calmFactor / mixColor", () => {
-  it("is 0 inside the text zones and 1 far away from them", () => {
-    for (const z of CALM_ZONES) expect(calmFactor((z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2, 100)).toBe(0);
-    expect(calmFactor(1074, 650, 100)).toBe(1);
+describe("strengthAt / mixColor", () => {
+  it("lightens the pattern gently toward the text side without cutting a hole", () => {
+    expect(strengthAt(0, 0)).toBeCloseTo(STRENGTH_MIN);
+    expect(strengthAt(1074, 650)).toBe(1);
+    // 名前の箱の中でも模様は消えない（0 にならない）
+    for (const [x, y] of [[56, 200], [420, 266], [786, 332]]) expect(strengthAt(x!, y!)).toBeGreaterThanOrEqual(STRENGTH_MIN);
   });
   it("mixes two colours linearly", () => {
     expect(mixColor("#000000", "#FFFFFF", 0.5)).toBe("#808080");
