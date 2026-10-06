@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_BACKGROUNDS, builtinBackgroundMarkup, calmFactor, CALM_ZONES, mixColor } from "./builtinBackgrounds.js";
+import {
+  BUILTIN_BACKGROUNDS, builtinBackgroundMarkup, builtinBackgroundNodes, calmFactor, CALM_ZONES, mixColor, type BgNode,
+} from "./builtinBackgrounds.js";
 
 /** 名札のビルトイン背景のカタログの見張り。絵の良し悪しは card-backgrounds-check.html で目で見る */
 const luminance = (hex: string) => {
@@ -13,13 +15,13 @@ const contrast = (a: string, b: string) => {
 };
 
 describe("BUILTIN_BACKGROUNDS", () => {
-  it("has 8-10 backgrounds with unique keys, each with 3-5 palettes", () => {
+  it("has 8-10 backgrounds with unique keys, each with 3-4 palettes", () => {
     expect(BUILTIN_BACKGROUNDS.length).toBeGreaterThanOrEqual(8);
     expect(BUILTIN_BACKGROUNDS.length).toBeLessThanOrEqual(10);
     expect(new Set(BUILTIN_BACKGROUNDS.map(b => b.key)).size).toBe(BUILTIN_BACKGROUNDS.length);
     for (const bg of BUILTIN_BACKGROUNDS) {
       expect(bg.palettes.length).toBeGreaterThanOrEqual(3);
-      expect(bg.palettes.length).toBeLessThanOrEqual(5);
+      expect(bg.palettes.length).toBeLessThanOrEqual(4);
       expect(new Set(bg.palettes.map(p => p.key)).size).toBe(bg.palettes.length);
     }
   });
@@ -30,6 +32,35 @@ describe("BUILTIN_BACKGROUNDS", () => {
       expect(contrast(p.inkSub, p.base), where).toBeGreaterThanOrEqual(4.5);
       expect(contrast(p.accent, p.base), where).toBeGreaterThanOrEqual(4.5);
       expect(contrast(p.onAccent, p.accent), where).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+  it("prints on white: every base is white or a faint tint (lightness >= 97%)", () => {
+    for (const bg of BUILTIN_BACKGROUNDS) for (const p of bg.palettes) {
+      const [r, g, b] = [1, 3, 5].map(i => parseInt(p.base.slice(i, i + 2), 16) / 255);
+      const lightness = (Math.max(r!, g!, b!) + Math.min(r!, g!, b!)) / 2;
+      expect(lightness, `${bg.key}/${p.key}`).toBeGreaterThanOrEqual(0.97);
+      expect(luminance(p.base), `${bg.key}/${p.key}`).toBeGreaterThanOrEqual(0.93);
+    }
+  });
+  it("saves ink: only the base colour is filled, the pattern is hairlines (pixel coverage is measured by the capture script)", () => {
+    const SHAPES = new Set(["rect", "circle", "ellipse", "polygon", "path"]);
+    // 図形ごとの実際の塗り（親の fill を引き継ぎ、無指定は SVG の既定の黒）。マスクとクリップの中はインクにならない
+    const fills = (nodes: BgNode[], inherited: string | undefined, out: string[]) => {
+      for (const n of nodes) {
+        if (n.tag === "mask" || n.tag === "clipPath" || n.tag === "filter") continue;
+        const fill = typeof n.attrs.fill === "string" ? n.attrs.fill : inherited;
+        if (SHAPES.has(n.tag)) out.push(fill ?? "#000000");
+        if (n.children) fills(n.children, fill, out);
+      }
+      return out;
+    };
+    for (const bg of BUILTIN_BACKGROUNDS) for (const p of bg.palettes) {
+      const where = `${bg.key}/${p.key}`;
+      for (const fill of fills(builtinBackgroundNodes(bg.key, p.key, "t"), undefined, []))
+        expect(fill === "none" || fill === p.base || fill.startsWith("url(#t-"), `${where} fill ${fill}`).toBe(true);
+      const svg = builtinBackgroundMarkup(bg.key, p.key);
+      expect(svg, where).not.toMatch(/Gradient/);
+      for (const m of svg.matchAll(/stroke-width="([\d.]+)"/g)) expect(Number(m[1]), where).toBeLessThanOrEqual(2.5);
     }
   });
   it("stays small and self-contained (no external references)", () => {

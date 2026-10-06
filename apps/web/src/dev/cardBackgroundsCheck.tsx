@@ -3,7 +3,7 @@
  * ?view=overview          全背景の既定配色
  * ?view=sheet&bg=KEY      1つの背景の全配色
  * ?view=print&bg=KEY&palette=KEY  実寸（1074x650）1枚
- * ?view=bg&bg=KEY&palette=KEY     背景だけを実寸で（文字の下のコントラスト計測用）
+ * ?view=bg&bg=KEY&palette=KEY     背景だけを実寸で（文字の下のコントラストとインク量の計測用）
  *
  * 既定テンプレート（createCardTemplate("name")）の部品を、配色の文字色に塗り替えて上に重ねる。 */
 import "@fontsource/plus-jakarta-sans/400.css";
@@ -53,7 +53,7 @@ function SampleCard({ bg, palette, width }: { bg: BuiltinBackground; palette: Bu
       </div>
     </div>
     {width < CARD_DESIGN_WIDTH && <figcaption style={{ font: "600 15px 'Plus Jakarta Sans', sans-serif", padding: "6px 2px", color: "#111827" }}>
-      {bg.nameJa} / {bg.nameEn} — {palette.nameJa} / {palette.nameEn}（{palette.tone}, {(builtinBackgroundMarkup(bg.key, palette.key).length / 1024).toFixed(1)} KB）
+      {bg.nameJa} / {bg.nameEn} — {palette.nameJa} / {palette.nameEn}（{(builtinBackgroundMarkup(bg.key, palette.key).length / 1024).toFixed(1)} KB）
     </figcaption>}
   </figure>;
 }
