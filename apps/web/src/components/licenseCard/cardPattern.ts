@@ -2,7 +2,7 @@ import { CARD_DESIGN_HEIGHT, CARD_DESIGN_WIDTH, type CardPattern, type CardPatte
 import { ARC_CIRCLES, FLOW_BAND, FLOW_LINES, ROSETTE_CURVES, ROSETTE_WAVES, TOPO_CONTOURS } from "./patternData.js";
 import { BG_VARIANTS, CARD_THEMES, themedPatternColor, type CardBgVariant } from "./cardTheme.js";
 import { cardLook, DEFAULT_CARD_LOOK } from "./cardLook.js";
-import { builtinBackgroundNodes, nodeMarkup, type BgNode } from "./builtinBackgrounds.js";
+import { builtinBackgroundNodes, legibleStroke, mixColor, NAME_CARD_TEXT_COLORS, nodeMarkup, type BgNode, type BuiltinBackgroundPalette } from "./builtinBackgrounds.js";
 
 /** The background one name card actually draws once the design's pattern mode is applied to its owner. */
 export interface ResolvedCardPattern {
@@ -28,18 +28,41 @@ export function resolveCardPattern(pattern: CardPattern | undefined, cardImageKe
   return { key: `license-${look.variant}`, palette: look.theme, strength: pattern.strength };
 }
 
-/** The license-card pattern lines on white: the same data and colours as BackgroundPattern, without the paper gradient or sheen,
- * with strength scaling every line's opacity. */
+const LEGIBLE_ON_WHITE: BuiltinBackgroundPalette = {
+  key: "name-card", nameJa: "", nameEn: "", base: "#FFFFFF", colors: [],
+  ink: NAME_CARD_TEXT_COLORS[0], inkSub: NAME_CARD_TEXT_COLORS[1], accent: NAME_CARD_TEXT_COLORS[2], onAccent: "#FFFFFF", // legibleStroke adds the rest
+};
+/** topo / arcs / flow lines are tuned for the license card's grey paper and nearly vanish on white; on name cards they are
+ * drawn this much stronger (capped) so every license pattern carries about as much ink as the guilloché backgrounds. */
+const ON_WHITE_BOOST = 2.5;
+const ON_WHITE_MAX = 0.4;
+/** The rosette curves in patternData repeat the same closed loop dozens of times; drawn once per loop they look the same
+ * on the license card but do not stack into solid lines. Returns the path cut after its first full loop. */
+export function firstLoop(d: string): string {
+  const parts = d.trim().split(" ");
+  const start = parts[0]!.slice(1);
+  const end = parts.findIndex((t, i) => i > 0 && t.slice(1) === start);
+  return end < 0 ? d : parts.slice(0, end + 1).join(" ");
+}
+/** A translucent line flattened onto white (opaque, so crossings never darken), lightened if it would crowd the text,
+ * then lightened by strength. */
+const onWhite = (color: string, opacity: number, strength: number) =>
+  mixColor("#FFFFFF", legibleStroke(LEGIBLE_ON_WHITE, mixColor("#FFFFFF", color, opacity)), strength);
+
+/** The license-card pattern on white for a name card: the same data and colours as BackgroundPattern (the license card itself
+ * is untouched), without the paper gradient or sheen. */
 function licenseNodes(variant: CardBgVariant, palette: CardPatternTheme, strength: number): BgNode[] {
   const theme = CARD_THEMES.find(t => t.key === palette) ?? CARD_THEMES[0];
+  const boost = (opacity: number) => variant === "rosette" ? opacity : Math.min(ON_WHITE_MAX, opacity * ON_WHITE_BOOST);
   const groups = { rosette: [ROSETTE_WAVES, ROSETTE_CURVES], topo: [TOPO_CONTOURS], arcs: [], flow: [FLOW_LINES] }[variant];
   const nodes: BgNode[] = [{ tag: "rect", attrs: { x: 0, y: 0, width: CARD_DESIGN_WIDTH, height: CARD_DESIGN_HEIGHT, fill: "#FFFFFF" } }];
-  for (const group of groups) for (const p of group) nodes.push({ tag: "path", attrs: {
-    d: p.d, fill: "none", stroke: themedPatternColor(p.stroke, theme), "stroke-width": p.strokeWidth, opacity: p.opacity * strength } });
-  if (variant === "arcs") for (const c of ARC_CIRCLES) nodes.push({ tag: "circle", attrs: {
-    cx: c.cx, cy: c.cy, r: c.r, fill: "none", stroke: theme.accentA, "stroke-width": c.strokeWidth, opacity: c.opacity * strength } });
   if (variant === "flow") nodes.push({ tag: "path", attrs: {
-    d: FLOW_BAND.d, fill: themedPatternColor(FLOW_BAND.fill, theme), opacity: FLOW_BAND.opacity * strength } });
+    d: FLOW_BAND.d, fill: mixColor("#FFFFFF", themedPatternColor(FLOW_BAND.fill, theme), FLOW_BAND.opacity * strength) } });
+  for (const group of groups) for (const p of group) nodes.push({ tag: "path", attrs: {
+    d: group === ROSETTE_CURVES ? firstLoop(p.d) : p.d, fill: "none",
+    stroke: onWhite(themedPatternColor(p.stroke, theme), boost(p.opacity), strength), "stroke-width": p.strokeWidth } });
+  if (variant === "arcs") for (const c of ARC_CIRCLES) nodes.push({ tag: "circle", attrs: {
+    cx: c.cx, cy: c.cy, r: c.r, fill: "none", stroke: onWhite(theme.accentA, boost(c.opacity), strength), "stroke-width": c.strokeWidth } });
   return nodes;
 }
 

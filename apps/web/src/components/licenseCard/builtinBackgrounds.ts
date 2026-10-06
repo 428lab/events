@@ -64,21 +64,23 @@ const luminance = (hex: string) => {
 };
 /** 模様の線と文字の色の差の下限（WCAG）。線は不透明なので重なっても暗くならない */
 export const TEXT_ON_PATTERN_CONTRAST = 4.6;
-/** 線の色を、配色のどの文字色（ink / inkSub / accent）とも TEXT_ON_PATTERN_CONTRAST 以上の差が出るまで地へ寄せる */
+/** 線の色を、配色のどの文字色（ink / inkSub / accent）とも、名札の既定の文字色（NAME_CARD_TEXT_COLORS）とも TEXT_ON_PATTERN_CONTRAST 以上の差が出るまで地へ寄せる */
+/** Text colours of the default name-card template (heading/role teal, staff rose) that sit on the pattern whatever its palette. */
+export const NAME_CARD_TEXT_COLORS = ["#101827", "#334155", "#0F766E", "#9D174D"] as const;
 export function legibleStroke(p: BuiltinBackgroundPalette, color: string): string {
-  const floor = TEXT_ON_PATTERN_CONTRAST * (Math.max(...[p.ink, p.inkSub, p.accent].map(luminance)) + 0.05) - 0.05;
+  const floor = TEXT_ON_PATTERN_CONTRAST * (Math.max(...[p.ink, p.inkSub, p.accent, ...NAME_CARD_TEXT_COLORS].map(luminance)) + 0.05) - 0.05;
   if (luminance(color) >= floor) return color;
   let lo = 0, hi = 1; // 地へ寄せる割合を二分探索
   for (let k = 0; k < 16; k++) { const m = (lo + hi) / 2; if (luminance(mixColor(color, p.base, m)) >= floor) hi = m; else lo = m; }
   return mixColor(color, p.base, hi);
 }
-/** strength (0.4–1) は線の色を地へ寄せる割合。線の色 = mix(地, 配色, t) なので、mix(地, 線, strength) は t × strength と同じ。
- * そのあと legibleStroke で文字との差を確保する */
+/** 線の色を文字と読める濃さまで地へ寄せ（legibleStroke）、そのうえで strength (0.4–1) の割合で地へ寄せる。
+ * 読みやすさの下限に張り付いた線も濃さのスライダーでちゃんと薄くなる */
 function withLegibleStrokes(p: BuiltinBackgroundPalette, nodes: BgNode[], strength: number): BgNode[] {
   return nodes.map(n => {
     const stroke = n.attrs.stroke;
     const attrs = typeof stroke === "string" && stroke.startsWith("#")
-      ? { ...n.attrs, stroke: legibleStroke(p, strength < 1 ? mixColor(p.base, stroke, strength) : stroke) } : n.attrs;
+      ? { ...n.attrs, stroke: strength < 1 ? mixColor(p.base, legibleStroke(p, stroke), strength) : legibleStroke(p, stroke) } : n.attrs;
     return n.children ? { tag: n.tag, attrs, children: withLegibleStrokes(p, n.children, strength) } : { tag: n.tag, attrs };
   });
 }
