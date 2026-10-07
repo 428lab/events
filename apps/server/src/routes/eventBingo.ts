@@ -1,9 +1,10 @@
 import { Hono } from "hono";
-import type { Event, User, BingoState, BingoStatus } from "@eventer/shared";
+import type { User, BingoState, BingoStatus } from "@eventer/shared";
 import { deriveBingoCard } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { canManageEvent, requireEventRole } from "../auth/roles.js";
-import { eventsRepo } from "../db/repositories/events.js";
+import type { EventAccessRow } from "../db/repositories/events.js";
+import { gateEvent } from "../auth/eventAccess.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import {
   drawnNumbers,
@@ -28,7 +29,7 @@ import {
  * - null: 404（イベント不存在と同一応答。ゲームの存在ごと隠す）
  */
 async function bingoAudience(
-  event: Event,
+  event: EventAccessRow,
   game: BingoGame | null,
   user: User,
 ): Promise<"participant" | "staff" | null> {
@@ -43,10 +44,10 @@ async function bingoAudience(
 export const eventBingoRoutes = new Hono<AppEnv>();
 // 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
-/** ゲーム・イベント・観客種別をまとめて引く（全ルートの入口） */
-async function load(eventId: string, user: User) {
-  const event = await eventsRepo.findById(eventId);
-  if (!event) return null;
+/** ゲーム・イベント・観客種別をまとめて引く（全ルートの入口）。
+ * イベント行は共通門 (requireEventAccess) が読んだもの (D-POLL-MIN S2) */
+async function load(event: EventAccessRow, user: User) {
+  const eventId = event.id;
   const game = await eventBingoRepo.findGame(eventId);
   const audience = await bingoAudience(event, game, user);
   if (!audience) return null;
@@ -73,7 +74,7 @@ function countsOf(derived: { bingo: boolean; reach: boolean }[]) {
 /** 参加者向けの状態（カード画面・投影画面が5秒ポーリング）。
  * 自分のカードと判定・人数だけを返す（他人のカード・名前は返さない） */
 eventBingoRoutes.get("/:id/bingo", async (c) => {
-  const loaded = await load(c.req.param("id"), c.get("user"));
+  const loaded = await load(gateEvent(c), c.get("user"));
   if (!loaded) return c.json({ error: "not_found" }, 404);
   const { game } = loaded;
   if (!game) {
@@ -114,7 +115,7 @@ eventBingoRoutes.get("/:id/bingo", async (c) => {
 
 /** カードを受け取る（確定メンバー・冪等）。内容はサーバー乱数が決める */
 eventBingoRoutes.post("/:id/bingo/card", async (c) => {
-  const loaded = await load(c.req.param("id"), c.get("user"));
+  const loaded = await load(gateEvent(c), c.get("user"));
   if (!loaded || !loaded.game) return c.json({ error: "not_found" }, 404);
   // 発行できるのは確定メンバーだけ（staff 例外で覗けるだけの人には発行しない）
   if (loaded.audience !== "participant") {
@@ -134,9 +135,6 @@ eventBingoRoutes.post("/:id/bingo/card", async (c) => {
 /** ゲーム作成（setup で開始待ち。既にあれば 409） */
 eventBingoRoutes.post("/:id/bingo", requireEventRole(["staff"]), async (c) => {
   const eventId = c.req.param("id");
-  if (!(await eventsRepo.findById(eventId))) {
-    return c.json({ error: "not_found" }, 404);
-  }
   if (!(await eventBingoRepo.createGame(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
     return c.json({ error: "already_exists" }, 409);
   }
@@ -274,9 +272,6 @@ eventBingoRoutes.get(
   requireEventRole(["staff"]),
   async (c) => {
     const eventId = c.req.param("id");
-    if (!(await eventsRepo.findById(eventId))) {
-      return c.json({ error: "not_found" }, 404);
-    }
     const game = await eventBingoRepo.findGame(eventId);
     if (!game) {
       return c.json({

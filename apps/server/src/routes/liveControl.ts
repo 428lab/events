@@ -5,9 +5,9 @@ import {
   updateEventLiveStateInput,
 } from "@eventer/shared";
 import { computeScheduleTimes, publicTracks } from "@eventer/shared";
-import type { LivePresenter, LiveSet, UpdateEventLiveStateInput } from "@eventer/shared";
+import type { EventLiveStateWithCutin, LivePresenter, LiveSet, UpdateEventLiveStateInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
+import { gateMember, isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
 import { eventLiveCutinRepo } from "../db/repositories/eventLiveCutin.js";
@@ -24,12 +24,17 @@ import { presenterSlidesRepo } from "../db/repositories/presenterSlides.js";
 export const liveControlRoutes = new Hono<AppEnv>();
 // 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
-/** 現在の配信状態（配信画面タブが1秒ポーリング） */
+/** 現在の配信状態（配信画面タブが1秒ポーリング）。
+ * 参戦演出の状態 (`cutin`) も同じ応答で返し、配信画面の取得を毎秒1本にする (D-POLL-MIN S7)。
+ * 演出を読めるのは GET /live-cutin と同じ参加確定 staff だけで、それ以外は null */
 liveControlRoutes.get(
   "/:id/live-state",
   requireEventRole(["staff"]),
   async (c) => {
-    return c.json(await eventLiveStateRepo.getOrInit(c.req.param("id")));
+    const eventId = c.req.param("id");
+    const state = await eventLiveStateRepo.getOrInit(eventId);
+    const cutin = (await confirmed(c)) ? await eventLiveCutinRepo.get(eventId, c.get("user").id) : null;
+    return c.json({ ...state, cutin } satisfies EventLiveStateWithCutin);
   },
 );
 
@@ -77,9 +82,12 @@ liveControlRoutes.patch(
 );
 
 // requireEventRole includes administrators; cut-in operations never do.
+// isConfirmedEventStaff's rule, on the member row requireEventRole already read (D-POLL-MIN S8).
 async function confirmed(c: Context<AppEnv>) {
-  return isConfirmedEventStaff(c.req.param("id")!, c.get("user").id);
+  const member = await gateMember(c);
+  return member?.role === "staff" && member.status === "confirmed";
 }
+// Kept for bundles cached before the cut-in moved into GET /live-state (D-POLL-MIN S7).
 liveControlRoutes.get("/:id/live-cutin", requireEventRole(["staff"]), async c => {
   if (!(await confirmed(c))) return c.json({ error: "confirmed_staff_required" }, 403);
   return c.json(await eventLiveCutinRepo.get(c.req.param("id"), c.get("user").id));

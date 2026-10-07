@@ -245,7 +245,7 @@ export function LiveScreenPage() {
           <Box key={scene.id} sx={{ animation: "liveFadeIn 400ms ease", "@keyframes liveFadeIn": { from: { opacity: 0 }, to: { opacity: 1 } } }}>
             <LiveSceneStage scene={scene} width={stageW} runtime={runtime} />
           </Box>
-          <LiveCutinScreen key={id} eventId={id} />
+          <LiveCutinScreen key={id} eventId={id} query={{ data: state?.cutin, dataUpdatedAt: liveState.dataUpdatedAt, isError: liveState.isError, isFetchedAfterMount: liveState.isFetchedAfterMount }} />
         </Box>
       ) : (
         <Typography color="#334155">{t("studio.liveSetLoading")}</Typography>

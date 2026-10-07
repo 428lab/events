@@ -1,7 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import type { Event, User } from "@eventer/shared";
 import { one } from "../db/client.js";
-import { eventsRepo } from "../db/repositories/events.js";
+import { eventsRepo, type EventAccessRow } from "../db/repositories/events.js";
 import { env } from "../env.js";
 import { currentUser } from "./session.js";
 
@@ -47,7 +47,7 @@ export function eventPairViewSql(event: string, scanner: string, target: string,
     AND ${eventViewSql(event, scanner, admins)} AND ${eventViewSql(event, target, admins)})`;
 }
 
-export async function canViewEvent(event: Event, user: User | null): Promise<boolean> {
+export async function canViewEvent(event: Pick<Event, "id">, user: User | null): Promise<boolean> {
   const row = await one<{ allowed: number }>(
     `SELECT ${eventViewSql("e", "?", "?")} AS allowed FROM event e WHERE e.id = ?`,
     user?.id ?? null, JSON.stringify(env.adminDiscordIds), event.id,
@@ -79,18 +79,24 @@ export function eventResponseHeaders(c: Context, nonpublic = false): void {
 
 /** Registered before every event child handler, including anonymous media,
  * body-size validation and beacons. The self-exit exception must be an explicit
- * DELETE handler with its own ownership/transaction checks, never a path bypass. */
+ * DELETE handler with its own ownership/transaction checks, never a path bypass.
+ *
+ * D-POLL-MIN S1: the gate reads the light event row (no COUNT subqueries) and puts it
+ * on the context for handlers (`gateEvent`). A GET/HEAD cannot change access, so only
+ * mutations re-check access after the handler (#526), with the access query alone:
+ * it reads the current row by id and is false once the event is gone. */
 export const requireEventAccess: MiddlewareHandler = async (c, next) => {
-  const event = await eventsRepo.findById(c.req.param("id") ?? "");
+  const event = await eventsRepo.findAccessRow(c.req.param("id") ?? "");
   try {
     if (!event || !(await canViewEvent(event, await currentUser(c)))) {
       return c.json({ error: "not_found" }, 404);
     }
+    c.set(GATE_EVENT, event);
     await next();
+    if (c.req.method === "GET" || c.req.method === "HEAD") return;
     // Successful event deletion returns only {ok:true}; its qualified writer removed the event.
     if (c.req.method === "DELETE" && c.req.path === `/api/events/${event.id}` && c.res.ok) return;
-    const latest = await eventsRepo.findById(event.id);
-    if (!latest || !(await canViewEvent(latest, await currentUser(c)))) {
+    if (!(await canViewEvent(event, await currentUser(c)))) {
       const body = c.res.body;
       // A committed self-leave may remove draft/private viewing. Acknowledge only the leave, not promotion details.
       const left = c.req.method === "DELETE" && c.req.path === `/api/events/${event.id}/join` && c.res.ok;
@@ -102,3 +108,15 @@ export const requireEventAccess: MiddlewareHandler = async (c, next) => {
     eventResponseHeaders(c, !event || event.visibility !== "public");
   }
 };
+
+const GATE_EVENT = "gateEvent";
+
+/** The event row `requireEventAccess` loaded and authorized for this request.
+ * Every `/api/events/:id/*` handler runs behind that gate (event-access.test.ts), so a
+ * missing value is a routing bug, not a user error. The row has no participant counts;
+ * a response that returns them must call `eventsRepo.findById`. */
+export function gateEvent(c: Context): EventAccessRow {
+  const event = c.get(GATE_EVENT) as EventAccessRow | undefined;
+  if (!event) throw new Error("gateEvent: requireEventAccess did not run for this route");
+  return event;
+}

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import type { CutinAction } from "@eventer/shared";
-import { useLiveCutin } from "../api/liveControlHooks.js";
+import type { CutinAction, CutinStatus } from "@eventer/shared";
 import { useTranslation } from "react-i18next";
 import { LiveCutin } from "./LiveCutin.js";
 
+/** The cut-in part of the screen's 1 s live-state poll (D-POLL-MIN S7).
+ * `data` is null when the server withholds cut-ins (caller is not confirmed staff). */
+export type LiveCutinQuery = { data: CutinStatus | null | undefined; dataUpdatedAt: number; isError: boolean; isFetchedAfterMount: boolean };
+
 /** The tab remembers only its last displayed action ID, never the caption. */
-export function LiveCutinScreen({ eventId }: { eventId: string }) {
-  return <EventCutinScreen key={eventId} eventId={eventId} />;
+export function LiveCutinScreen({ eventId, query }: { eventId: string; query: LiveCutinQuery }) {
+  return <EventCutinScreen key={eventId} eventId={eventId} query={query} />;
 }
-function EventCutinScreen({ eventId }: { eventId: string }) {
-  const query = useLiveCutin(eventId);
+function EventCutinScreen({ eventId, query }: { eventId: string; query: LiveCutinQuery }) {
   const { t } = useTranslation();
   const [now, setNow] = useState(Date.now());
   const [active, setActive] = useState<CutinAction | null>(null);
@@ -20,7 +22,7 @@ function EventCutinScreen({ eventId }: { eventId: string }) {
     const timer = window.setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(timer);
   }, []);
-  const unavailable = query.isError || !query.isFetchedAfterMount || now - query.dataUpdatedAt > 5000;
+  const unavailable = query.isError || !query.isFetchedAfterMount || !query.data || now - query.dataUpdatedAt > 5000;
   useEffect(() => {
     if (unavailable) { setActive(null); return; }
     const status = query.data;
