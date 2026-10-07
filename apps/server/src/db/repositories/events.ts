@@ -103,12 +103,18 @@ export const CAPACITY_TOTAL_SQL = (eventIdExpr: string) =>
                     AND em.slot_id IS NULL AND ${COUNTED_MEMBER_IS_ACTIVE})
            END)`;
 
+/** participant_count / attended_count / capacity_total を、0108 のトリガーが保つ
+ * cnt_* 列から読む式（D-POLL-MIN 第4段階）。上の3つの COUNT SQL と常に同じ値になる。
+ * COUNT SQL のほうは一貫性テストと scripts/check-member-counters.sql の基準として残し、
+ * リクエストの経路では使わない。`table` は event 表の別名（"event" や "e"） */
+export const EVENT_COUNTER_COLUMNS = (table: string) =>
+  `${table}.cnt_participants AS participant_count,
+  ${table}.cnt_attended AS attended_count,
+  CASE WHEN ${table}.cnt_slots = 0 THEN NULL
+       ELSE ${table}.cnt_slot_capacity + ${table}.cnt_unslotted_confirmed END AS capacity_total`;
+
 /** participant_count（参加者数）/ attended_count（出席者数）を含む event の SELECT */
-const SELECT_EVENT = `SELECT *,
-  ${PARTICIPANT_COUNT_SQL("event.id")} AS participant_count,
-  ${ATTENDED_COUNT_SQL("event.id")} AS attended_count,
-  ${CAPACITY_TOTAL_SQL("event.id")} AS capacity_total
-  FROM event`;
+const SELECT_EVENT = `SELECT *, ${EVENT_COUNTER_COLUMNS("event")} FROM event`;
 
 function toEvent(row: EventRow): Event {
   return {

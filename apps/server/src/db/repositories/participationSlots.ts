@@ -39,11 +39,19 @@ function toSlot(row: SlotRow): ParticipationSlot {
  * 猶予期間中に席を明け渡すと、復帰したときに枠が埋まっていて戻れなくなるため
  * （復帰の余地を優先。抽選・繰り上げの「当選対象」からは除外している）。
  * 完全削除されれば event_member ごと消えて数も戻る */
+/** 在籍数は 0108 のトリガーが保つ cnt_* 列から読む（D-POLL-MIN 第4段階）。
+ * SLOT_MEMBER_COUNT_SQL と常に同じ値になる。定員の判定はこの列を使わず、
+ * 書き込みの文の中で正確に COUNT する */
 const SELECT_SLOT = `SELECT s.*,
-  (SELECT COUNT(1) FROM event_member m WHERE m.slot_id = s.id AND m.status = 'confirmed') AS confirmed_count,
-  (SELECT COUNT(1) FROM event_member m WHERE m.slot_id = s.id AND m.status = 'waitlist') AS waitlist_count,
-  (SELECT COUNT(1) FROM event_member m WHERE m.slot_id = s.id AND m.status = 'applied') AS applied_count
+  s.cnt_confirmed AS confirmed_count,
+  s.cnt_waitlist AS waitlist_count,
+  s.cnt_applied AS applied_count
   FROM participation_slot s`;
+
+/** 枠の在籍数を数え直す SQL。cnt_* 列の一貫性テストと
+ * scripts/check-member-counters.sql の基準。リクエストの経路では使わない */
+export const SLOT_MEMBER_COUNT_SQL = (slotIdExpr: string, status: "confirmed" | "waitlist" | "applied") =>
+  `(SELECT COUNT(1) FROM event_member m WHERE m.slot_id = ${slotIdExpr} AND m.status = '${status}')`;
 
 export const participationSlotsRepo = {
   async listByEvent(eventId: string): Promise<ParticipationSlot[]> {
