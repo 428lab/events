@@ -6,7 +6,8 @@ import type { AppEnv } from "../types.js";
 import { generateChatKey } from "../lib/nostrSign.js";
 import { groupChatRepo } from "../db/repositories/groupChat.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
-import { eventsRepo } from "../db/repositories/events.js";
+import { eventsRepo, type EventAccessRow } from "../db/repositories/events.js";
+import { gateEvent } from "../auth/eventAccess.js";
 import { getChatRelays } from "../db/repositories/appSettings.js";
 
 /** 参加者のみ（暗号化）の参加者チャット (#582)。設計は docs/participant-encrypted-chat.md。
@@ -37,13 +38,12 @@ async function eligibleOnly(c: Context<AppEnv>): Promise<Response | null> {
 
 /** GET/POST 共通のペイロード。部屋が無ければ null */
 async function payloadFor(
-  eventId: string,
+  event: EventAccessRow,
   userId: string,
 ): Promise<EncryptedChatPayload | null> {
+  const eventId = event.id;
   const roomId = await groupChatRepo.roomIdFor(eventId, "members");
   if (!roomId) return null;
-  const event = await eventsRepo.findById(eventId);
-  if (!event) return null;
   const signer = await groupChatRepo.signerFor(eventId, "members", userId);
   return {
     roomId,
@@ -73,7 +73,8 @@ encryptedChatRoutes.get("/:id/encrypted-chat", async (c) => {
   const eventId = c.req.param("id");
   c.header("Cache-Control", "no-store");
   await groupChatRepo.reconcileMembers(eventId);
-  const payload = await payloadFor(eventId, c.get("user").id);
+  // イベント行は共通門 (requireEventAccess) が読んだもの (D-POLL-MIN S2)
+  const payload = await payloadFor(gateEvent(c), c.get("user").id);
   if (!payload) return c.json({ error: "not_found" }, 404);
   return c.json(payload);
 });
@@ -101,7 +102,7 @@ encryptedChatRoutes.post("/:id/encrypted-chat", async (c) => {
     if (taken && taken !== userId) return c.json({ error: "conflict" }, 409);
     await groupChatRepo.addSigner(eventId, "members", userId, pubkey, secret, writer);
   }
-  const payload = await payloadFor(eventId, userId);
+  const payload = await payloadFor(gateEvent(c), userId);
   if (!payload || !payload.myKey) return c.json({ error: "conflict" }, 409);
   return c.json(payload);
 });

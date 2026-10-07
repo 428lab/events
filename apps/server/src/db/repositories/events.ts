@@ -169,6 +169,16 @@ function toEvent(row: EventRow): Event {
   };
 }
 
+/** Every event field except the member/slot counts of SELECT_EVENT (D-POLL-MIN S2).
+ * The access gate and handlers use it; only responses that return the counts
+ * (the detail GET and the lists) pay for the COUNT subqueries. */
+export type EventAccessRow = Omit<Event, "participantCount" | "attendedCount" | "capacityTotal">;
+
+function toEventAccessRow(row: EventRow): EventAccessRow {
+  const { participantCount, attendedCount, capacityTotal, ...rest } = toEvent(row);
+  return rest;
+}
+
 /** 短いシェア用スラッグ（8文字hex） */
 function genEventSlug(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 8);
@@ -273,6 +283,12 @@ export const eventsRepo = {
   async findById(id: string): Promise<Event | null> {
     const row = await one<EventRow>(`${SELECT_EVENT} WHERE id = ?`, id);
     return row ? toEvent(row) : null;
+  },
+
+  /** A single `event` row read, without the COUNT subqueries. */
+  async findAccessRow(id: string): Promise<EventAccessRow | null> {
+    const row = await one<EventRow>("SELECT * FROM event WHERE id = ?", id);
+    return row ? toEventAccessRow(row) : null;
   },
 
   async findBySlug(slug: string): Promise<Event | null> {

@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LIVE_POLL_MS } from "@eventer/shared";
-import type { CutinAction, CutinStatus } from "@eventer/shared";
+import type { CutinAction } from "@eventer/shared";
 import type {
   EventLiveState,
+  EventLiveStateWithCutin,
   LiveSet,
   UpdateEventLiveStateInput,
 } from "@eventer/shared";
@@ -17,7 +18,10 @@ export const LIVE_CONTROL_POLL_MS = 5000;
  * - screen（OBS の配信画面）: 1秒・非表示でも継続。配信出力は操作者のシーン切替を
  *   約1秒で反映しなければならず、OBS のブラウザソースは常に hidden 扱いで、誰も触れないため
  * - control（コントロールタブ）: 5秒・表示中だけ。自分の操作は即時に映るので、
- *   もう1人の操作者の変更を拾えれば足りるため */
+ *   もう1人の操作者の変更を拾えれば足りるため
+ *
+ * 応答には参戦演出の状態 (`cutin`) も入る (D-POLL-MIN S7)。配信画面は演出をこの
+ * 1本から読むので、毎秒の取得は1本で済む（LiveCutinScreen に渡す） */
 export function useEventLiveState(eventId: string, page: "screen" | "control") {
   const screen = page === "screen";
   return useQuery({
@@ -26,7 +30,7 @@ export function useEventLiveState(eventId: string, page: "screen" | "control") {
     refetchInterval: screen ? LIVE_POLL_MS : LIVE_CONTROL_POLL_MS,
     retry: false,
     refetchIntervalInBackground: screen,
-    queryFn: () => api.get<EventLiveState>(`/events/${eventId}/live-state`),
+    queryFn: () => api.get<EventLiveStateWithCutin>(`/events/${eventId}/live-state`),
   });
 }
 
@@ -36,25 +40,13 @@ export function useUpdateEventLiveState(eventId: string) {
     mutationFn: (input: UpdateEventLiveStateInput) =>
       api.patch<EventLiveState>(`/events/${eventId}/live-state`, input),
     onSuccess: (state) => {
-      qc.setQueryData(["event", eventId, "liveState"], state);
+      // PATCH の応答は演出を含まない。直前に取得した演出の状態はそのまま残す
+      qc.setQueryData<EventLiveStateWithCutin>(["event", eventId, "liveState"], (prev) => ({ ...state, cutin: prev?.cutin ?? null }));
       qc.invalidateQueries({ queryKey: ["event", eventId, "liveSetContent"] });
     },
   });
 }
 
-/** 参戦演出（OBS の配信画面だけが使う）。1秒・非表示でも継続:
- * 演出は時刻合わせで出すので、配信出力が約1秒で拾わないと間に合わず、
- * OBS のブラウザソースは常に hidden 扱いで誰も触れないため */
-export function useLiveCutin(eventId: string) {
-  return useQuery({
-    queryKey: ["event", eventId, "cutin"],
-    enabled: Boolean(eventId),
-    refetchInterval: LIVE_POLL_MS,
-    refetchIntervalInBackground: true,
-    retry: false,
-    queryFn: () => api.get<CutinStatus>(`/events/${eventId}/live-cutin`, { timeoutMs: 4000 }),
-  });
-}
 export const cutinApi = {
   trigger: (eventId: string, body: { message: string }) => api.post<CutinAction & { serverNow: number }>(`/events/${eventId}/live-cutin`, body),
 };

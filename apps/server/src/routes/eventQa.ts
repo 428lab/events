@@ -16,9 +16,9 @@ import type {
   UpdateQuestionInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { requireEventRole } from "../auth/roles.js";
+import { gateMember, requireEventRole } from "../auth/roles.js";
+import { gateEvent } from "../auth/eventAccess.js";
 import { valid, zValidator } from "../lib/validator.js";
-import { eventsRepo } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { eventQaRepo, toQuestion } from "../db/repositories/eventQa.js";
 
@@ -40,10 +40,8 @@ export const eventQaRoutes = new Hono<AppEnv>();
  * eventChat.ts の同名ヘルパーと同じ判定）。
  * 一覧の閲覧だけで使う（モデレーションは eventStaffOnly でさらに絞る） */
 async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
-  const member = await eventMembersRepo.find(
-    c.req.param("id")!,
-    c.get("user").id,
-  );
+  // requireEventRole が同じリクエストで読んだ行を使う (D-POLL-MIN S8)
+  const member = await gateMember(c);
   if (member && member.status !== "confirmed") {
     return c.json({ error: "forbidden" }, 403);
   }
@@ -57,10 +55,7 @@ async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
 async function confirmedMemberOnly(
   c: Context<AppEnv>,
 ): Promise<Response | null> {
-  const member = await eventMembersRepo.find(
-    c.req.param("id")!,
-    c.get("user").id,
-  );
+  const member = await gateMember(c);
   if (member?.status !== "confirmed") {
     return c.json({ error: "forbidden" }, 403);
   }
@@ -84,10 +79,7 @@ function isEventStaff(member: EventMember | null): member is EventMember {
  * バイパスをここで閉じる。一覧GETと同じく参加確定も要求する
  * （未確定の staff がGETは403なのに更新は通る、という非対称をなくす）。 */
 async function eventStaffOnly(c: Context<AppEnv>): Promise<Response | null> {
-  const member = await eventMembersRepo.find(
-    c.req.param("id")!,
-    c.get("user").id,
-  );
+  const member = await gateMember(c);
   if (!isEventStaff(member) || member.status !== "confirmed") {
     return c.json({ error: "forbidden" }, 403);
   }
@@ -104,10 +96,10 @@ eventQaRoutes.get(
     const denied = await confirmedOnly(c);
     if (denied) return denied;
     const eventId = c.req.param("id");
-    const event = await eventsRepo.findById(eventId);
-    if (!event) return c.json({ error: "not_found" }, 404);
+    // イベント行は共通門 (requireEventAccess) が読んだもの (D-POLL-MIN S2)
+    const event = gateEvent(c);
     const me = c.get("user");
-    const member = await eventMembersRepo.find(eventId, me.id);
+    const member = await gateMember(c);
     // 操作できるか（canModerate）と実名が見えるか（revealsAuthor）は
     // ペイロードでは別項目のまま残してある（web はそれぞれ別の用途で使い、
     // 今後どちらかだけを動かすことがありうる）が、条件はいまは同じ
@@ -145,8 +137,7 @@ eventQaRoutes.post(
     const denied = await confirmedMemberOnly(c);
     if (denied) return denied;
     const eventId = c.req.param("id");
-    const event = await eventsRepo.findById(eventId);
-    if (!event) return c.json({ error: "not_found" }, 404);
+    const event = gateEvent(c);
     if (!event.qaEnabled) return c.json({ error: "qa_disabled" }, 409);
     const me = c.get("user");
     // 全件をポーリングで配る作りなので、荒らし1人で全員のレスポンスが
@@ -193,8 +184,7 @@ eventQaRoutes.post(
     if (denied) return denied;
     const eventId = c.req.param("id");
     const qid = c.req.param("qid");
-    const event = await eventsRepo.findById(eventId);
-    if (!event) return c.json({ error: "not_found" }, 404);
+    const event = gateEvent(c);
     if (!event.qaEnabled) return c.json({ error: "qa_disabled" }, 409);
     // 他イベントの質問IDを差し込まれても投票できないようにする
     const meta = await eventQaRepo.meta(qid);
@@ -219,8 +209,7 @@ eventQaRoutes.delete(
     if (denied) return denied;
     const eventId = c.req.param("id");
     const qid = c.req.param("qid");
-    const event = await eventsRepo.findById(eventId);
-    if (!event) return c.json({ error: "not_found" }, 404);
+    const event = gateEvent(c);
     if (!event.qaEnabled) return c.json({ error: "qa_disabled" }, 409);
     const meta = await eventQaRepo.meta(qid);
     if (!meta || meta.eventId !== eventId) {
@@ -310,8 +299,7 @@ eventQaRoutes.put(
     const denied = await eventStaffOnly(c);
     if (denied) return denied;
     const eventId = c.req.param("id");
-    const event = await eventsRepo.findById(eventId);
-    if (!event) return c.json({ error: "not_found" }, 404);
+    const event = gateEvent(c);
     const { questionId } = valid<PickQuestionInput>(c, "json");
     if (questionId !== null) {
       // 投影に出すための操作なので、Q&A を切っているイベントでは

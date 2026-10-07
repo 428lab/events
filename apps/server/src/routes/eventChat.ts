@@ -14,7 +14,8 @@ import type {
   RegisterChatPubkeyInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
+import { gateMember, requireEventRole } from "../auth/roles.js";
+import { gateEvent } from "../auth/eventAccess.js";
 import {
   verifyChatKeyProof,
   verifyEventSignature,
@@ -28,10 +29,8 @@ import {
 } from "../lib/nostrSign.js";
 import { nostrRelay } from "../lib/nostrRelay.js";
 import { valid, zValidator } from "../lib/validator.js";
-import { eventsRepo } from "../db/repositories/events.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
 import { groupChatRepo } from "../db/repositories/groupChat.js";
-import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { identitiesRepo } from "../db/repositories/identities.js";
 import { getChatRelays } from "../db/repositories/appSettings.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
@@ -64,10 +63,11 @@ export const eventChatRoutes = new Hono<AppEnv>();
 // contains participant chat only; encrypted chats (staffChat / encryptedChat) are deliberately separate.
 // 例外は非表示 (/chat-hidden) だけ: 暗号化オンなら非公開でも通す（暗号化メッセージの
 // 非表示に要る。note id は平文・暗号文で共通の表 #582 設計 5.1）
+// The event row is the one the common gate (requireEventAccess) loaded for this request (D-POLL-MIN S2).
 for (const path of ["/:id/chat-members", "/:id/chat-key", "/:id/chat-key/ephemeral", "/:id/chat-channel", "/:id/chat-channel/create", "/:id/chat-hidden", "/:id/chat-hidden/:noteId"]) eventChatRoutes.use(path, async (c,next) => {
-  const event = await eventsRepo.findById(c.req.param("id") ?? "");
+  const event = gateEvent(c);
   const hiddenRoute = path.startsWith("/:id/chat-hidden");
-  if (!event || (event.visibility !== "public" && !(hiddenRoute && event.chatEncrypted))) return c.json({error:"chat_unavailable"},403);
+  if (event.visibility !== "public" && !(hiddenRoute && event.chatEncrypted)) return c.json({error:"chat_unavailable"},403);
   await next();
 });
 // 暗号化オンの公開イベントでは平文チャットの書き込み系を閉じる (#582 設計 5.1)。
@@ -80,9 +80,8 @@ const PLAINTEXT_WRITES: Array<["POST" | "DELETE", string]> = [
   ["DELETE", "/:id/chat-channel"],
 ];
 for (const [method, path] of PLAINTEXT_WRITES) eventChatRoutes.use(path, async (c, next) => {
-  if (c.req.method === method) {
-    const event = await eventsRepo.findById(c.req.param("id") ?? "");
-    if (event?.chatEncrypted) return c.json({ error: "chat_encrypted" }, 409);
+  if (c.req.method === method && gateEvent(c).chatEncrypted) {
+    return c.json({ error: "chat_encrypted" }, 409);
   }
   await next();
 });
@@ -94,10 +93,8 @@ for (const [method, path] of PLAINTEXT_WRITES) eventChatRoutes.use(path, async (
  * eventQa.ts の同名ヘルパーと同じ判定）。
  * 読み出し・参加で使う（スタッフ操作は staffAndNotBlocked でさらに絞る） */
 async function confirmedOnly(c: Context<AppEnv>): Promise<Response | null> {
-  const member = await eventMembersRepo.find(
-    c.req.param("id")!,
-    c.get("user").id,
-  );
+  // requireEventRole が同じリクエストで読んだ行を使う (D-POLL-MIN S8)
+  const member = await gateMember(c);
   if (member && member.status !== "confirmed") {
     return c.json({ error: "forbidden" }, 403);
   }
@@ -152,7 +149,9 @@ async function isChatUserBlocked(eventId: string, userId: string): Promise<boole
 async function staffAndNotBlocked(
   c: Context<AppEnv>,
 ): Promise<Response | null> {
-  if (!(await isConfirmedEventStaff(c.req.param("id")!, c.get("user").id))) {
+  // isConfirmedEventStaff と同じ判定。requireEventRole が読んだ行を使う (D-POLL-MIN S8)
+  const member = await gateMember(c);
+  if (member?.role !== "staff" || member.status !== "confirmed") {
     return c.json({ error: "forbidden" }, 403);
   }
   return notBlocked(c);
@@ -278,8 +277,7 @@ eventChatRoutes.get(
     const denied = (await confirmedOnly(c)) ?? (await notBlocked(c));
     if (denied) return denied;
     const eventId = c.req.param("id");
-    const event = await eventsRepo.findById(eventId);
-    if (!event) return c.json({ error: "not_found" }, 404);
+    const event = gateEvent(c);
     // Live projection polls this metadata as its authorization boundary. Unpublished
     // or unscheduled events cannot retain a previously allowed relay view. Disabled
     // chat remains in the response for existing clients, which honor chatEnabled=false.
@@ -343,8 +341,7 @@ eventChatRoutes.post(
       return c.json({ error: "service_key_unset" }, 503);
     }
     const eventId = c.req.param("id");
-    const event = await eventsRepo.findById(eventId);
-    if (!event) return c.json({ error: "not_found" }, 404);
+    const event = gateEvent(c);
     // 公式鍵の署名オラクル化防止: チャット有効な公開イベントに限定 (#221)
     if (!event.chatEnabled || event.status !== "published") {
       return c.json({ error: "chat_disabled" }, 409);
@@ -411,8 +408,7 @@ eventChatRoutes.post(
     // 先勝ち: 既に設定済みなら検証せず既存IDを返す（後着は無視）
     const existing = await eventChatRepo.channelIdFor(eventId);
     if (existing) return c.json({ channelId: existing });
-    const event = await eventsRepo.findById(eventId);
-    if (!event) return c.json({ error: "not_found" }, 404);
+    const event = gateEvent(c);
     // HTTP 登録で受け付ける著者は「主催者(createdBy)の登録済み鍵」のみ (#199)。
     // 参加者個人の鍵で作ったチャンネルは受け付けない（鍵の持ち主が消えると
     // チャンネルの管理者が不在になるため）。

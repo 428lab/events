@@ -1,12 +1,11 @@
-import { isEventManager } from "../auth/eventAccess.js";
+import { gateEvent, isEventManager } from "../auth/eventAccess.js";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { Event, EventMember, User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { currentUser } from "../auth/session.js";
-import { canViewEvent } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
-import { eventsRepo } from "../db/repositories/events.js";
+import { eventsRepo, type EventAccessRow } from "../db/repositories/events.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { entriesRepo } from "../db/repositories/entries.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
@@ -21,32 +20,26 @@ import { listViewableRequestsForEvent } from "./eventRequests.js";
  * （後ろに置くと公開イベントの詳細が 401 になる）。
  */
 
-/** 読み込んだイベントと閲覧者をハンドラへ渡す。閲覧者は未ログインなら null */
+/** 読み込んだイベントと閲覧者をハンドラへ渡す。閲覧者は未ログインなら null。
+ * `event` は共通門 (requireEventAccess) が読んだ軽い行で、参加者数を持たない */
 type PublicEventEnv = {
-  Variables: AppEnv["Variables"] & { event: Event; viewer: User | null };
+  Variables: AppEnv["Variables"] & { event: EventAccessRow; viewer: User | null };
 };
 
 export const eventPublicRoutes = new Hono<PublicEventEnv>();
 
 /**
- * イベントを読み、閲覧してよい相手かを確かめる。通れば `event` / `viewer` を置く。
+ * 共通門 (requireEventAccess) が読んで閲覧を確かめたイベントと、閲覧者を置く。
  *
- * 6本の GET が同じ前口上（読む → 無ければ 404 → 見えないなら断る）を持っていたので
- * ここに1本化した。`canViewEvent` を通し忘れると **下書きイベントの中身が
- * 未ログインで読める**ので、増やすときも必ずこれを通すこと。
- *
- * #526: 共通門の後で資格が変わった場合も、本文/子一覧を同じ404で隠す。
+ * 6本の GET が同じ前口上を持っていたのでここに1本化した。閲覧の判定（下書き・
+ * 非公開を 404 で隠す #526）は worker.ts の共通門が済ませている。ここで
+ * イベントを読み直したり canViewEvent を重ねたりしない (D-POLL-MIN S2)。
+ * 参加者数を返す詳細 GET だけが、件数付きの findById を読む。
  */
 function viewableEvent(): MiddlewareHandler<PublicEventEnv, "/:id"> {
   return async (c, next) => {
-    const event = await eventsRepo.findById(c.req.param("id"));
-    if (!event) return c.json({ error: "not_found" }, 404);
-    const viewer = await currentUser(c);
-    if (!(await canViewEvent(event, viewer))) {
-      return c.json({ error: "not_found" }, 404);
-    }
-    c.set("event", event);
-    c.set("viewer", viewer);
+    c.set("event", gateEvent(c));
+    c.set("viewer", await currentUser(c));
     await next();
   };
 }
@@ -76,7 +69,9 @@ async function canSeeMembersNote(
 
 /** イベント詳細（公開イベントは未ログインでも閲覧可） */
 eventPublicRoutes.get("/:id", viewableEvent(), async (c) => {
-  const event = c.get("event");
+  // 応答に参加者数・出席者数・定員を含むので、ここだけ件数付きで読む
+  const event = await eventsRepo.findById(c.get("event").id);
+  if (!event) return c.json({ error: "not_found" }, 404);
   const user = c.get("viewer");
   const member = user ? await eventMembersRepo.find(event.id, user.id) : null;
   const canManageSchedule = user ? await isEventManager(event.id, user) : false;

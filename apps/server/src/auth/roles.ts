@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler } from "hono";
-import type { EventRole, User } from "@eventer/shared";
+import type { EventMember, EventRole, User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { isEventManager } from "./eventAccess.js";
@@ -25,7 +25,7 @@ export function requireEventRole(
       await next();
       return;
     }
-    const member = await eventMembersRepo.find(eventId, user.id);
+    const member = await gateMember(c);
     if (member && member.status !== "canceled" && roles.includes(member.role)) {
       await next();
       return;
@@ -37,6 +37,23 @@ export function requireEventRole(
     }
     return c.json({ error: "forbidden" }, 403);
   };
+}
+
+const gateMembers = new WeakMap<Context, Promise<EventMember | null>>();
+
+/** The caller's active (non-canceled) member row for the `:id` event, read once per request.
+ *
+ * `requireEventRole` and the confirmed/staff checks that follow it in the chat, Q&A and
+ * live routes ask the same question; D-POLL-MIN S8 lets them share one read. Use it
+ * only for the checks in front of a handler: a handler that changes membership and then
+ * reads it again must call `eventMembersRepo.find` directly. */
+export function gateMember(c: Context<AppEnv>): Promise<EventMember | null> {
+  let pending = gateMembers.get(c);
+  if (!pending) {
+    pending = eventMembersRepo.find(c.req.param("id") ?? "", c.get("user").id);
+    gateMembers.set(c, pending);
+  }
+  return pending;
 }
 
 /**
