@@ -14,11 +14,89 @@ export const CHAT_RELAY_MAX = 5;
 /** リレーURLの形式（wss:// のみ許可） */
 export const CHAT_RELAY_URL_PATTERN = /^wss:\/\/[a-zA-Z0-9.-]+(:\d+)?(\/\S*)?$/;
 
-/** 書き込み可能な時間帯: 開始30分前〜終了2時間後。
- * 値は出会った記録 (#189) の MEET_WINDOW_BEFORE_MS / MEET_WINDOW_AFTER_MS
- * （apps/server/src/db/repositories/eventMeets.ts）と同じ窓 */
-export const CHAT_WINDOW_BEFORE_MS = 30 * 60_000;
-export const CHAT_WINDOW_AFTER_MS = 2 * 60 * 60_000;
+/** 書き込める期間 (#578)。主催者がイベントごとに選ぶ。
+ * - 始まり: 開始の何分前から（`chatOpenBeforeMinutes`）。null は下限なし
+ *   ＝参加が確定したらすぐ（参加確定はチャットを開ける条件として別に見ている）
+ * - 終わり: 終了の何分後まで（`chatCloseAfterMinutes`）
+ *
+ * 既定は従来の「開始30分前〜終了2時間後」。値は出会った記録 (#189) の
+ * MEET_WINDOW_BEFORE_MS / MEET_WINDOW_AFTER_MS（apps/server/src/db/repositories/eventMeets.ts）
+ * と同じ窓で、マイグレーション 0106 の列の既定値とも一致させてある */
+export const CHAT_OPEN_BEFORE_DEFAULT_MINUTES = 30;
+export const CHAT_CLOSE_AFTER_DEFAULT_MINUTES = 120;
+
+/** 「開始の N 日前から」で選べる N の範囲 */
+export const CHAT_OPEN_BEFORE_DAYS_MIN = 1;
+export const CHAT_OPEN_BEFORE_DAYS_MAX = 30;
+
+const MINUTES_PER_DAY = 24 * 60;
+
+/** 終わりの選択肢: 終了2時間後 / 1日後 / 7日後（分）。先頭が既定値 */
+export const CHAT_CLOSE_AFTER_OPTIONS = [120, 1440, 10080] as const;
+
+/** 始まりの値: 30（開始30分前・既定） / N日前（1440 の倍数・1〜30日） / null（参加確定したらすぐ） */
+export const chatOpenBeforeMinutesSchema = z
+  .number()
+  .int()
+  .refine(
+    (m) =>
+      m === CHAT_OPEN_BEFORE_DEFAULT_MINUTES ||
+      (m % MINUTES_PER_DAY === 0 &&
+        m >= CHAT_OPEN_BEFORE_DAYS_MIN * MINUTES_PER_DAY &&
+        m <= CHAT_OPEN_BEFORE_DAYS_MAX * MINUTES_PER_DAY),
+    { message: "chatOpenBeforeMinutes must be 30 or 1-30 days" },
+  )
+  .nullable();
+
+/** 終わりの値: CHAT_CLOSE_AFTER_OPTIONS のどれか */
+export const chatCloseAfterMinutesSchema = z
+  .number()
+  .int()
+  .refine(
+    (m) => (CHAT_CLOSE_AFTER_OPTIONS as readonly number[]).includes(m),
+    { message: "chatCloseAfterMinutes must be one of the options" },
+  );
+
+/** 書き込める期間（epoch ms）。opensAt が null なら下限なし */
+export interface ChatWriteWindow {
+  opensAt: number | null;
+  closesAt: number;
+}
+
+/** 期間の計算に要るイベントの項目 */
+export interface ChatWriteWindowSettings {
+  startsAt: number;
+  endsAt: number;
+  chatOpenBeforeMinutes: number | null;
+  chatCloseAfterMinutes: number;
+}
+
+/** イベントの書き込める期間。web の入力欄とサーバーの chat 系ペイロードが同じ関数を使う */
+export function chatWriteWindow(event: ChatWriteWindowSettings): ChatWriteWindow {
+  return {
+    opensAt:
+      event.chatOpenBeforeMinutes === null
+        ? null
+        : event.startsAt - event.chatOpenBeforeMinutes * 60_000,
+    closesAt: event.endsAt + event.chatCloseAfterMinutes * 60_000,
+  };
+}
+
+/** いま書き込めるか（境界はどちらも含む） */
+export function isChatWritable(
+  event: ChatWriteWindowSettings,
+  now: number,
+): boolean {
+  return isWithinChatWriteWindow(chatWriteWindow(event), now);
+}
+
+/** 計算済みの期間に now が入っているか（境界はどちらも含む） */
+export function isWithinChatWriteWindow(
+  window: ChatWriteWindow,
+  now: number,
+): boolean {
+  return (window.opensAt === null || now >= window.opensAt) && now <= window.closesAt;
+}
 
 /** 1メッセージの最大文字数 */
 export const CHAT_MESSAGE_MAX = 500;
@@ -81,6 +159,9 @@ export interface ChatMembersPayload {
   hiddenNoteIds: string[];
   /** 読み書きに使うリレー（運用設定。未設定なら CHAT_RELAYS） */
   relays: string[];
+  /** 書き込める期間 (#578)。サーバーが chatWriteWindow で計算する。
+   * 入力欄の判定用で、表示の絞り込みには使わない */
+  writeWindow: ChatWriteWindow;
 }
 
 /** PUT /admin/settings/chat-relays の入力。relays=[] で既定に戻す */

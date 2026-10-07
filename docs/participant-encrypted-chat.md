@@ -266,7 +266,7 @@ export interface EncryptedChatPayload {
     名前解決は既存の `chat-members`（公開イベントなので従来どおり取れる）
   - 2つのバッファは `created_at` で合わせて1つの一覧にする
   - 非公開・限定公開イベントでは平文の経路を**一切開かない**（`plaintextChannelId` は常に null。5.）
-- 「書き込み可能時間帯（開始30分前〜終了2時間後）」の判定は従来どおり（#578 は別件）
+- 書き込める期間の判定は平文と同じ共有関数 `chatWriteWindow`（#578。既定は開始30分前〜終了2時間後、主催者が選べる）。`encrypted-chat` のペイロードも `writeWindow` を返す
 - 非表示 (#278) ボタン: 既存の `POST /chat-hidden`。note id は平文・暗号文で共通
 
 ### 4.3 ビンゴ併設 (#499)

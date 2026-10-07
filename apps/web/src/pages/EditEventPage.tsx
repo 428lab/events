@@ -23,6 +23,8 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useTranslation } from "react-i18next";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import {
+  CHAT_CLOSE_AFTER_DEFAULT_MINUTES,
+  CHAT_OPEN_BEFORE_DEFAULT_MINUTES,
   QA_ANONYMITY_MODES,
   VENUE_TYPES,
   isDatetimeOrderInvalid,
@@ -47,6 +49,7 @@ import { DescriptionImageTray } from "../components/DescriptionImageTray.js";
 import { removeImageReferences } from "../lib/descriptionImages.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
 import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
+import { ChatWriteWindowField } from "../components/ChatWriteWindowField.js";
 import { fromDateTimeLocal, venueLabel } from "../lib/format.js";
 import { errorMessage } from "../lib/errorMessage.js";
 
@@ -105,6 +108,14 @@ export function EditEventPage() {
   const [chatEncrypted, setChatEncrypted] = useState(false);
   // 参加者のURL投稿を許可するか (#241)。既定OFF（スタッフは常に可）
   const [chatUrlsAllowed, setChatUrlsAllowed] = useState(false);
+  // 書き込める期間 (#578)。既定は従来の「開始30分前〜終了2時間後」
+  const [chatWindow, setChatWindow] = useState<{
+    openBeforeMinutes: number | null;
+    closeAfterMinutes: number;
+  }>({
+    openBeforeMinutes: CHAT_OPEN_BEFORE_DEFAULT_MINUTES,
+    closeAfterMinutes: CHAT_CLOSE_AFTER_DEFAULT_MINUTES,
+  });
   // Q&A (#216)。チャットと同じく使いたいイベントだけONにする。既定OFF
   const [qaEnabled, setQaEnabled] = useState(false);
   const [qaAnonymity, setQaAnonymity] = useState<QaAnonymity>("choice");
@@ -150,6 +161,10 @@ export function EditEventPage() {
       setChatEnabled(e.chatEnabled);
       setChatEncrypted(e.chatEncrypted);
       setChatUrlsAllowed(e.chatUrlsAllowed);
+      setChatWindow({
+        openBeforeMinutes: e.chatOpenBeforeMinutes,
+        closeAfterMinutes: e.chatCloseAfterMinutes,
+      });
       setQaEnabled(e.qaEnabled);
       setQaAnonymity(e.qaAnonymity);
       setMeetRanking(e.meetRanking);
@@ -257,6 +272,8 @@ export function EditEventPage() {
         // オンのときだけ送る。オフは「変更しない」と同じ（オン→オフはサーバーが 409）
         ...(effectiveChatEncrypted ? { chatEncrypted: true as const } : {}),
         chatUrlsAllowed,
+        chatOpenBeforeMinutes: chatWindow.openBeforeMinutes,
+        chatCloseAfterMinutes: chatWindow.closeAfterMinutes,
         qaEnabled,
         qaAnonymity,
         meetRanking,
@@ -560,6 +577,11 @@ export function EditEventPage() {
                 >
                   {t("eventForm.chatUrlsHelp")}
                 </Typography>
+                <ChatWriteWindowField
+                  openBeforeMinutes={chatWindow.openBeforeMinutes}
+                  closeAfterMinutes={chatWindow.closeAfterMinutes}
+                  onChange={setChatWindow}
+                />
               </Box>
             )}
           </Box>

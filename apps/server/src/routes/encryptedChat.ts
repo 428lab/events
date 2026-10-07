@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { chatWriteWindow } from "@eventer/shared";
 import type { EncryptedChatPayload } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { generateChatKey } from "../lib/nostrSign.js";
@@ -60,6 +61,8 @@ async function payloadFor(
         : null,
     encryptedAt: (await eventsRepo.chatEncryptedAtFor(eventId)) ?? 0,
     relays: await getChatRelays(),
+    // 入力欄の判定に使う期間 (#578)。表示の絞り込み・鍵の配布には使わない
+    writeWindow: chatWriteWindow(event),
   };
 }
 

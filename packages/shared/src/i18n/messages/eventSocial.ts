@@ -69,7 +69,10 @@ const ja = {
   /** 投影用 (#215)。読むだけの画面なので言い方を変えている */
   chatEmptyDisplay: "まだ表示できるメッセージがありません。",
   chatInputPlaceholder: "メッセージを入力…",
-  chatInputClosedPlaceholder: "書き込みはイベント開催時間の前後のみ",
+  chatInputClosedPlaceholder: "いまは書き込めない期間です",
+  /** 書き込める期間の案内 (#578)。期間外のときだけ入力欄の下に出す */
+  chatWriteWindowRange: "書き込めるのは {{opensAt}} 〜 {{closesAt}} です。",
+  chatWriteWindowEnded: "書き込める期間は {{closesAt}} に終わりました。",
   chatSendUrlNotAllowed: "URLの投稿はこのイベントでは許可されていません。",
   chatSendFailedOffline: "送信に失敗しました（リレーに接続できません）。",
   chatSendFailed: "送信に失敗しました。",
@@ -352,7 +355,9 @@ const en: Record<keyof typeof ja, string> = {
   chatEmpty: "No messages yet.",
   chatEmptyDisplay: "There are no messages to show yet.",
   chatInputPlaceholder: "Write a message…",
-  chatInputClosedPlaceholder: "You can only post around the time of the event",
+  chatInputClosedPlaceholder: "Posting is closed right now",
+  chatWriteWindowRange: "You can post from {{opensAt}} to {{closesAt}}.",
+  chatWriteWindowEnded: "Posting closed at {{closesAt}}.",
   chatSendUrlNotAllowed: "This event does not allow posting URLs.",
   chatSendFailedOffline: "Could not send your message (not connected).",
   chatSendFailed: "Could not send your message.",

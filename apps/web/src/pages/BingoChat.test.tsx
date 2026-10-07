@@ -73,7 +73,7 @@ beforeEach(() => {
   state.event = {
     id: "event", title: "ビンゴ検証", status: "published", visibility: "public", chatEnabled: true,
     scheduling: false, startsAt: Date.now() - 60_000, endsAt: Date.now() + 3_600_000,
-    chatUrlsAllowed: false, createdBy: "me",
+    chatUrlsAllowed: false, chatOpenBeforeMinutes: 30, chatCloseAfterMinutes: 120, createdBy: "me",
   } as Event;
   state.role = "staff";
   state.memberStatus = "confirmed";

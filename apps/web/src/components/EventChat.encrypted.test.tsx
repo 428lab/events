@@ -68,6 +68,7 @@ const PLAIN: ChatMembersPayload = {
   chatEnabled: true,
   hiddenNoteIds: [],
   relays: [RELAY],
+  writeWindow: { opensAt: 1_700_000_000_000 - 30 * 60_000, closesAt: 1_700_003_600_000 + 120 * 60_000 },
 };
 
 let encPayload: EncryptedChatPayload;
@@ -111,6 +112,7 @@ function makePayload(plaintextChannelId: string | null): EncryptedChatPayload {
     plaintextChannelId,
     encryptedAt: ENCRYPTED_AT,
     relays: [RELAY],
+    writeWindow: { opensAt: 1_700_000_000_000 - 30 * 60_000, closesAt: 1_700_003_600_000 + 120 * 60_000 },
   };
 }
 
@@ -126,6 +128,8 @@ function eventOf(visibility: "public" | "private"): Event {
     scheduling: false,
     startsAt: 1_700_000_000_000,
     endsAt: 1_700_003_600_000,
+    chatOpenBeforeMinutes: 30,
+    chatCloseAfterMinutes: 120,
     createdBy: "u-9",
   } as unknown as Event;
 }

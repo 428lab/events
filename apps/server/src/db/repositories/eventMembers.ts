@@ -510,6 +510,8 @@ function mapMyEventSummary(
       (row.chat_enabled as number) === 1,
     chatUrlsAllowed: (row.chat_urls_allowed as number) === 1,
     chatEncrypted: (row.chat_encrypted as number) === 1,
+    chatOpenBeforeMinutes: row.chat_open_before_minutes as number | null,
+    chatCloseAfterMinutes: row.chat_close_after_minutes as number,
     qaEnabled: (row.qa_enabled as number) === 1,
     qaAnonymity: QA_ANONYMITY_MODES.includes(
       row.qa_anonymity as MyEventSummary["qaAnonymity"],

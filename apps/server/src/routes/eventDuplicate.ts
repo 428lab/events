@@ -82,6 +82,9 @@ eventDuplicateRoutes.post(
       chatUrlsAllowed: src.chatUrlsAllowed,
       // 参加者のみ（暗号化 #582）も引き継ぐ。オンにした時刻は複製時刻になる
       chatEncrypted: src.chatEncrypted,
+      // 書き込める期間 (#578) も設定として引き継ぐ
+      chatOpenBeforeMinutes: src.chatOpenBeforeMinutes,
+      chatCloseAfterMinutes: src.chatCloseAfterMinutes,
       // Q&A (#216) は設定だけコピーする（質問・票は複製元のもの）
       qaEnabled: src.qaEnabled,
       qaAnonymity: src.qaAnonymity,

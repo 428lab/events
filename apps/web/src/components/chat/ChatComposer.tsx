@@ -3,6 +3,8 @@ import { Alert, IconButton, Stack, TextField, Typography } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import { useTranslation } from "react-i18next";
 import { CHAT_MESSAGE_MAX, containsUrl } from "@eventer/shared";
+import type { ChatWriteWindow } from "@eventer/shared";
+import { formatDateTime } from "../../lib/format.js";
 import type { ChatSendResult } from "./useChatChannel.js";
 
 /**
@@ -12,13 +14,19 @@ import type { ChatSendResult } from "./useChatChannel.js";
  */
 export function ChatComposer({
   inWriteWindow,
+  writeWindow,
+  now,
   canSend,
   allowUrls,
   onSend,
   notice,
 }: {
-  /** 書き込み可能時間帯か（開始30分前〜終了2時間後） */
+  /** 書き込める期間の中か（期間は主催者が選ぶ #578） */
   inWriteWindow: boolean;
+  /** 書き込める期間。期間外のときに実際の期間を案内するのに使う */
+  writeWindow: ChatWriteWindow;
+  /** inWriteWindow を判定した時刻（期間前か期間後かの出し分け） */
+  now: number;
   /** 送信先（チャンネル）が確定しているか */
   canSend: boolean;
   /** URL を投稿してよいか（スタッフ、またはURL投稿が許可されたイベント #241） */
@@ -56,6 +64,20 @@ export function ChatComposer({
     );
   };
 
+  // 期間外の案内 (#578)。実際の期間を書く（「開催時間の前後のみ」では
+  // 主催者が期間を広げたイベントで何時から書けるのか分からない）
+  // 期間外は「始まる前」か「終わった後」のどちらか（opensAt が null なら終わった後だけ）
+  const closedMessage = inWriteWindow
+    ? null
+    : writeWindow.opensAt !== null && now < writeWindow.opensAt
+      ? t("eventSocial.chatWriteWindowRange", {
+          opensAt: formatDateTime(writeWindow.opensAt),
+          closesAt: formatDateTime(writeWindow.closesAt),
+        })
+      : t("eventSocial.chatWriteWindowEnded", {
+          closesAt: formatDateTime(writeWindow.closesAt),
+        });
+
   return (
     <>
       {sendError && (
@@ -92,6 +114,11 @@ export function ChatComposer({
           <SendIcon fontSize="small" />
         </IconButton>
       </Stack>
+      {closedMessage && (
+        <Typography variant="caption" color="text.secondary">
+          {closedMessage}
+        </Typography>
+      )}
       <Typography variant="caption" color="text.secondary">
         {notice ?? t("eventSocial.chatPublicNotice")}
       </Typography>
