@@ -20,7 +20,7 @@ vi.mock("../lib/nostrChat.js", () => ({
 }));
 
 const chats: Record<string, ChatMembersPayload> = Object.fromEntries(["one", "two"].map(id => [id, {
-  channelId: `channel-${id}`, chatEnabled: true, relays: ["wss://relay.example"], hiddenNoteIds: [],
+  channelId: `channel-${id}`, chatEnabled: true, relays: ["wss://relay.example"], hiddenNoteIds: [], writeWindow: { opensAt: null, closesAt: 1_700_003_600_000 },
   members: [{ pubkey: "shared-author", userId: `user-${id}`, username: id, name: `Name ${id}`, avatarUrl: `/api/users/user-${id}/avatar?v=1`, role: "staff" }],
 }]));
 const state = { chatSource: "event" } as EventLiveState;

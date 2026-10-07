@@ -19,8 +19,8 @@ import { useTranslation } from "react-i18next";
 import type { ChatMember, Event, EventRole } from "@eventer/shared";
 import {
   CHAT_MESSAGE_MAX,
-  CHAT_WINDOW_AFTER_MS,
-  CHAT_WINDOW_BEFORE_MS,
+  chatWriteWindow,
+  isWithinChatWriteWindow,
 } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
 import {
@@ -184,16 +184,19 @@ export function EventChat({
   });
   const relayConnected = encrypted ? encChannel.relayConnected : plain.relayConnected;
 
-  // 書き込み可能時間帯（開始30分前〜終了2時間後）。1分ごとに再評価。
+  // 書き込める期間 (#578)。主催者が選んだ期間をサーバーが共有の chatWriteWindow で
+  // 計算してチャットのペイロードに載せている（ポーリングで設定変更も届く）。
+  // ペイロードが届く前は同じ関数でイベントから計算する。1分ごとに再評価。
   // 日程が確定していること自体は呼び出し側の chatAvailable が保証している
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
   }, []);
-  const inWriteWindow =
-    now >= event.startsAt - CHAT_WINDOW_BEFORE_MS &&
-    now <= event.endsAt + CHAT_WINDOW_AFTER_MS;
+  const writeWindow =
+    (encrypted ? enc.data?.writeWindow : chat?.writeWindow) ??
+    chatWriteWindow(event);
+  const inWriteWindow = isWithinChatWriteWindow(writeWindow, now);
 
   const memberByPubkey = useMemo(() => {
     const map = new Map<string, ChatMember>(
@@ -411,6 +414,8 @@ export function EventChat({
           {!display && (
             <ChatComposer
               inWriteWindow={inWriteWindow}
+              writeWindow={writeWindow}
+              now={now}
               canSend={canSend}
               notice={encrypted ? t("eventSocial.chatEncryptedNotice") : undefined}
               // スタッフはURL投稿の制限を受けない (#241)

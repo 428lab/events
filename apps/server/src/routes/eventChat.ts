@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import {
   CHAT_CHANNEL_ABOUT,
+  chatWriteWindow,
   hideChatNoteInput,
   registerChatChannelInput,
   registerChatPubkeyInput,
@@ -289,6 +290,9 @@ eventChatRoutes.get(
       chatEnabled: event.chatEnabled,
       hiddenNoteIds: await eventChatRepo.listHidden(eventId),
       relays: await getChatRelays(),
+      // 入力欄の判定に使う期間 (#578)。web と同じ関数で計算して渡す（定義を1つにする）。
+      // サーバーは本文を経由しないので、ここで書き込みを止めることはしない
+      writeWindow: chatWriteWindow(event),
     };
     return c.json(payload);
   },

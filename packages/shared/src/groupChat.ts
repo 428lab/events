@@ -8,6 +8,8 @@
  * 部屋は audience で分かれる: 'staff'（スタッフだけ）/ 'members'（参加確定メンバー）。
  */
 
+import type { ChatWriteWindow } from "./eventChat.js";
+
 /** 部屋の対象範囲。表の audience 列と同じ値 */
 export type GroupChatAudience = "staff" | "members";
 
@@ -78,4 +80,6 @@ export interface EncryptedChatPayload {
   /** この時刻（ms）より後の平文の発言は表示しない（暗号化をオンにした時刻） */
   encryptedAt: number;
   relays: string[];
+  /** 書き込める期間 (#578)。入力欄の判定用で、表示の絞り込みには使わない */
+  writeWindow: ChatWriteWindow;
 }

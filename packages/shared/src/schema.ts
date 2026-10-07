@@ -10,6 +10,10 @@ import {
 import { QA_ANONYMITY_MODES } from "./eventQa.js";
 import { MEET_RANKING_MODES } from "./eventMeets.js";
 import { isDatetimeOrderInvalid } from "./datetimeOrder.js";
+import {
+  chatCloseAfterMinutesSchema,
+  chatOpenBeforeMinutesSchema,
+} from "./eventChat.js";
 
 const url = z.string().url();
 const optionalUrl = z.union([url, z.literal("")]).optional().nullable();
@@ -87,6 +91,11 @@ export const eventSchema = z.object({
   /** 参加者チャットを参加確定メンバーだけに限定する（暗号化 #582）。
    * 一度オンにしたら戻せない。非公開・限定公開のチャットは常にオン */
   chatEncrypted: z.boolean(),
+  /** 参加者チャットに書き込める期間の始まり (#578)。開始の何分前から（既定 30）。
+   * null は下限なし＝参加が確定したらすぐ。期間は chatWriteWindow で計算する */
+  chatOpenBeforeMinutes: chatOpenBeforeMinutesSchema,
+  /** 書き込める期間の終わり (#578)。終了の何分後まで（既定 120） */
+  chatCloseAfterMinutes: chatCloseAfterMinutesSchema,
   /** Q&A (#216)。既定はオフ（使いたいイベントだけスタッフがONにする） */
   qaEnabled: z.boolean(),
   /** Q&A の匿名の扱い。既定は 'choice'（投稿ごとに参加者が選ぶ） (#216) */
@@ -162,6 +171,11 @@ export const updateEventInput = z.object({
   chatUrlsAllowed: z.boolean().optional(),
   /** 参加者のみ（暗号化 #582）。true にだけ変えられる（false はサーバーが 409） */
   chatEncrypted: z.boolean().optional(),
+  /** 書き込める期間の始まり (#578)。30 / 1〜30日（分） / null（参加確定したらすぐ）。
+   * chatEnabled と同じくイベント編集でのみ設定する（作成直後は既定値） */
+  chatOpenBeforeMinutes: chatOpenBeforeMinutesSchema.optional(),
+  /** 書き込める期間の終わり (#578)。終了2時間後 / 1日後 / 7日後（分） */
+  chatCloseAfterMinutes: chatCloseAfterMinutesSchema.optional(),
   /** Q&A (#216) のオンオフ */
   qaEnabled: z.boolean().optional(),
   /** Q&A の匿名の扱い (#216) */

@@ -76,6 +76,8 @@ function makeEventData(over: Record<string, unknown> = {}) {
       attendanceCheck: false,
       chatEnabled: false,
       chatUrlsAllowed: false,
+      chatOpenBeforeMinutes: 30,
+      chatCloseAfterMinutes: 120,
       qaEnabled: false,
       qaAnonymity: "choice",
       venueWanted: false,
@@ -234,6 +236,63 @@ describe("参加者のみ（暗号化）(#582 W6)", () => {
     fireEvent.click(saveButton());
     expect(updateMutate.mock.calls[0][0]).toMatchObject({ chatEnabled: false });
     expect(updateMutate.mock.calls[0][0]).not.toHaveProperty("chatEncrypted");
+  });
+});
+
+describe("参加者チャットの書き込める期間 (#578)", () => {
+  const combo = (name: string) => screen.getByRole("combobox", { name });
+  const choose = (field: string, option: string) => {
+    fireEvent.mouseDown(combo(field));
+    fireEvent.click(screen.getByRole("option", { name: option }));
+  };
+  const sent = () => updateMutate.mock.calls[0][0] as Record<string, unknown>;
+
+  it("チャットがオフのときは出さない", () => {
+    draw();
+    expect(screen.queryByText("書き込める期間")).not.toBeInTheDocument();
+  });
+
+  it("既定（開始30分前から・終了2時間後まで）を出し、そのまま保存すると既定値を送る", () => {
+    eventData = makeEventData({ chatEnabled: true, visibility: "public" });
+    draw();
+    expect(screen.getByText("書き込める期間")).toBeInTheDocument();
+    expect(combo("いつから")).toHaveTextContent("開始30分前から");
+    expect(combo("いつまで")).toHaveTextContent("終了2時間後まで");
+    expect(screen.queryByRole("combobox", { name: "何日前" })).not.toBeInTheDocument();
+    fireEvent.click(saveButton());
+    expect(sent()).toMatchObject({ chatOpenBeforeMinutes: 30, chatCloseAfterMinutes: 120 });
+  });
+
+  it("参加が確定したらすぐ・終了7日後までを選ぶと null と 10080 を送る", () => {
+    eventData = makeEventData({ chatEnabled: true, visibility: "public" });
+    draw();
+    choose("いつから", "参加が確定したらすぐ");
+    choose("いつまで", "終了7日後まで");
+    fireEvent.click(saveButton());
+    expect(sent()).toMatchObject({ chatOpenBeforeMinutes: null, chatCloseAfterMinutes: 10080 });
+  });
+
+  it("開始の N 日前からを選ぶと日数を選べ、分にして送る", () => {
+    eventData = makeEventData({ chatEnabled: true, visibility: "public" });
+    draw();
+    choose("いつから", "開始の N 日前から");
+    expect(combo("何日前")).toHaveTextContent("1日前");
+    choose("何日前", "3日前");
+    choose("いつまで", "終了1日後まで");
+    fireEvent.click(saveButton());
+    expect(sent()).toMatchObject({ chatOpenBeforeMinutes: 3 * 1440, chatCloseAfterMinutes: 1440 });
+  });
+
+  it("保存済みの N 日前・参加確定したらすぐを読み込んで表示する", () => {
+    eventData = makeEventData({ chatEnabled: true, visibility: "public", chatOpenBeforeMinutes: 14 * 1440, chatCloseAfterMinutes: 1440 });
+    const view = draw();
+    expect(combo("いつから")).toHaveTextContent("開始の N 日前から");
+    expect(combo("何日前")).toHaveTextContent("14日前");
+    expect(combo("いつまで")).toHaveTextContent("終了1日後まで");
+    view.unmount();
+    eventData = makeEventData({ chatEnabled: true, visibility: "public", chatOpenBeforeMinutes: null });
+    draw();
+    expect(combo("いつから")).toHaveTextContent("参加が確定したらすぐ");
   });
 });
 

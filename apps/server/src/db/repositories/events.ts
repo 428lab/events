@@ -47,6 +47,9 @@ interface EventRow {
   chat_encrypted: number;
   /** 暗号化をオンにした時刻（ms）。encrypted-chat の payload で返す */
   chat_encrypted_at: number | null;
+  /** 書き込める期間 (#578)。開始の何分前から（NULL＝参加確定したらすぐ）／終了の何分後まで */
+  chat_open_before_minutes: number | null;
+  chat_close_after_minutes: number;
   /** Q&A (#216) の有効/無効と匿名の扱い */
   qa_enabled: number;
   qa_anonymity: string;
@@ -145,6 +148,8 @@ function toEvent(row: EventRow): Event {
       row.chat_enabled === 1,
     chatUrlsAllowed: row.chat_urls_allowed === 1,
     chatEncrypted: row.chat_encrypted === 1,
+    chatOpenBeforeMinutes: row.chat_open_before_minutes,
+    chatCloseAfterMinutes: row.chat_close_after_minutes,
     qaEnabled: row.qa_enabled === 1,
     // 未知の値（手作業のDB更新など）は既定の 'choice' に寄せる
     qaAnonymity: QA_ANONYMITY_MODES.includes(
@@ -486,6 +491,7 @@ export const eventsRepo = {
          chat_enabled = ?, chat_urls_allowed = ?,
          chat_encrypted_at = CASE WHEN chat_encrypted = 1 THEN chat_encrypted_at WHEN ? = 1 THEN ? ELSE NULL END,
          chat_encrypted = CASE WHEN chat_encrypted = 1 THEN 1 ELSE ? END,
+         chat_open_before_minutes = ?, chat_close_after_minutes = ?,
          qa_enabled = ?, qa_anonymity = ?,
          meet_ranking = ?, meet_prizes = ?,
          members_note = ?, scheduling = ?,
@@ -519,6 +525,7 @@ export const eventsRepo = {
       // 暗号化は一方向（オンにしたら戻らない #582）。SQL 側でも下げない。
       // オンにした時刻はオフ→オンの1回だけ打つ
       next.chatEncrypted ? 1 : 0, Date.now(), next.chatEncrypted ? 1 : 0,
+      next.chatOpenBeforeMinutes, next.chatCloseAfterMinutes,
       next.qaEnabled ? 1 : 0,
       next.qaAnonymity,
       next.meetRanking,

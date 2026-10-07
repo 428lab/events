@@ -53,6 +53,7 @@ const PAYLOAD: EncryptedChatPayload = {
   plaintextChannelId: null,
   encryptedAt: 0,
   relays: [RELAY],
+  writeWindow: { opensAt: null, closesAt: 1_700_003_600_000 },
 };
 const state = { chatSource: "event" } as EventLiveState;
 

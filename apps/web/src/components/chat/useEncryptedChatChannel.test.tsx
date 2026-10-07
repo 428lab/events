@@ -74,6 +74,7 @@ function payload(keys: Array<{ version: number; secret: string }>): EncryptedCha
     plaintextChannelId: null,
     encryptedAt: 0,
     relays: [RELAY],
+    writeWindow: { opensAt: null, closesAt: 1_700_003_600_000 },
   };
 }
 

@@ -3,10 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { Event as NostrEvent } from "nostr-tools/pure";
 import type { ChatMembersPayload, Event } from "@eventer/shared";
-import {
-  CHAT_WINDOW_AFTER_MS,
-  CHAT_WINDOW_BEFORE_MS,
-} from "@eventer/shared";
+import { chatWriteWindow } from "@eventer/shared";
+import { formatDateTime } from "../lib/format.js";
 import { ApiError } from "../api/client.js";
 import { EventChat } from "./EventChat.js";
 
@@ -53,6 +51,11 @@ const CHAT: ChatMembersPayload = {
   chatEnabled: true,
   hiddenNoteIds: [],
   relays: ["wss://relay.example"],
+  // 既定の期間（開始30分前〜終了2時間後）。EVENT と同じ値をサーバーが計算した想定
+  writeWindow: {
+    opensAt: 1_700_000_000_000 - 30 * 60_000,
+    closesAt: 1_700_003_600_000 + 120 * 60_000,
+  },
 };
 
 const MESSAGE = {
@@ -74,6 +77,8 @@ const EVENT = {
   scheduling: false,
   startsAt: 1_700_000_000_000,
   endsAt: 1_700_003_600_000,
+  chatOpenBeforeMinutes: 30,
+  chatCloseAfterMinutes: 120,
   createdBy: "u-9",
 } as unknown as Event;
 
@@ -672,21 +677,35 @@ describe("URL投稿の送信ガード (#241)", () => {
 });
 
 /**
- * 書き込み可能時間帯 (#199)。開始30分前〜終了2時間後だけ書ける。
+ * 書き込める期間 (#199 / #578)。主催者が選んだ期間だけ書ける（既定は開始30分前〜終了2時間後）。
  *
  * 会場を出たあとの深夜に書き込みが続いたり、準備期間に本番用の部屋が
  * 使われ始めたりしないための門。**上下どちらの端も**確かめる
- * （片方を落としても気づけない状態にしない）。
+ * （片方を落としても気づけない状態にしない）。期間外は実際の期間を案内する。
  */
-describe("書き込み可能時間帯 (#199)", () => {
-  async function renderAt(at: number) {
+describe("書き込める期間 (#199 / #578)", () => {
+  const STARTS = 1_700_000_000_000;
+  const ENDS = 1_700_003_600_000;
+  const MIN = 60_000;
+  const DAY = 24 * 60 * MIN;
+
+  /** 期間の設定を入れたイベントと、サーバーが同じ関数で計算した期間を載せたペイロードで描く */
+  async function renderAt(
+    at: number,
+    setting: { chatOpenBeforeMinutes: number | null; chatCloseAfterMinutes: number } = {
+      chatOpenBeforeMinutes: 30,
+      chatCloseAfterMinutes: 120,
+    },
+  ) {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(at);
     // 一時鍵で参加している人＝入力欄まで出る状態
     ephemeralKey = { secret: "00" };
+    const event = { ...EVENT, ...setting } as Event;
+    chatQuery = { data: { ...CHAT, writeWindow: chatWriteWindow(event) } };
     const view = render(
       <MemoryRouter>
-        <EventChat eventId="e-1" event={EVENT} myRole="staff" variant="page" />
+        <EventChat eventId="e-1" event={event} myRole="staff" variant="page" />
       </MemoryRouter>,
     );
     await act(async () => {
@@ -695,33 +714,111 @@ describe("書き込み可能時間帯 (#199)", () => {
     return view;
   }
 
+  async function expectClosed() {
+    expect(await screen.findByRole("textbox")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
+  }
+
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  const STARTS = 1_700_000_000_000;
-  const ENDS = 1_700_003_600_000;
-
-  it("開始30分前より前は書けない", async () => {
-    await renderAt(STARTS - CHAT_WINDOW_BEFORE_MS - 60_000);
-    expect(await screen.findByRole("textbox")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
+  it("既定: 開始30分前より前は書けず、期間を案内する", async () => {
+    await renderAt(STARTS - 30 * MIN - MIN);
+    await expectClosed();
+    expect(
+      screen.getByText(
+        `書き込めるのは ${formatDateTime(STARTS - 30 * MIN)} 〜 ${formatDateTime(ENDS + 120 * MIN)} です。`,
+      ),
+    ).toBeInTheDocument();
   });
 
-  it("開始30分前を過ぎたら書ける", async () => {
-    await renderAt(STARTS - CHAT_WINDOW_BEFORE_MS + 60_000);
+  it("既定: 開始30分前を過ぎたら書け、案内は出ない", async () => {
+    await renderAt(STARTS - 30 * MIN + MIN);
+    expect(await screen.findByRole("textbox")).toBeEnabled();
+    expect(screen.queryByText(/書き込めるのは/)).not.toBeInTheDocument();
+  });
+
+  it("既定: 終了2時間後までは書ける", async () => {
+    await renderAt(ENDS + 120 * MIN - MIN);
     expect(await screen.findByRole("textbox")).toBeEnabled();
   });
 
-  it("終了2時間後までは書ける", async () => {
-    await renderAt(ENDS + CHAT_WINDOW_AFTER_MS - 60_000);
+  it("既定: 終了2時間後を過ぎたら書けず、終わったことを案内する", async () => {
+    await renderAt(ENDS + 120 * MIN + MIN);
+    await expectClosed();
+    expect(
+      screen.getByText(`書き込める期間は ${formatDateTime(ENDS + 120 * MIN)} に終わりました。`),
+    ).toBeInTheDocument();
+  });
+
+  it("参加が確定したらすぐ: 開始のずっと前でも書ける", async () => {
+    await renderAt(STARTS - 300 * DAY, {
+      chatOpenBeforeMinutes: null,
+      chatCloseAfterMinutes: 120,
+    });
     expect(await screen.findByRole("textbox")).toBeEnabled();
   });
 
-  it("終了2時間後を過ぎたら書けない", async () => {
-    await renderAt(ENDS + CHAT_WINDOW_AFTER_MS + 60_000);
-    expect(await screen.findByRole("textbox")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
+  it("参加が確定したらすぐ: 終わりは選んだ期間で閉じる", async () => {
+    await renderAt(ENDS + 120 * MIN + MIN, {
+      chatOpenBeforeMinutes: null,
+      chatCloseAfterMinutes: 120,
+    });
+    await expectClosed();
+    expect(screen.getByText(/に終わりました。/)).toBeInTheDocument();
+  });
+
+  it("開始の3日前から: 3日前を過ぎたら書け、その前は書けない", async () => {
+    const setting = { chatOpenBeforeMinutes: 3 * 24 * 60, chatCloseAfterMinutes: 120 };
+    await renderAt(STARTS - 3 * DAY + MIN, setting);
+    expect(await screen.findByRole("textbox")).toBeEnabled();
+  });
+
+  it("開始の3日前から: 3日前より前は書けず、3日前からと案内する", async () => {
+    const setting = { chatOpenBeforeMinutes: 3 * 24 * 60, chatCloseAfterMinutes: 120 };
+    await renderAt(STARTS - 3 * DAY - MIN, setting);
+    await expectClosed();
+    expect(
+      screen.getByText(new RegExp(`書き込めるのは ${formatDateTime(STARTS - 3 * DAY)} 〜`)),
+    ).toBeInTheDocument();
+  });
+
+  it("終了1日後まで: 1日後までは書け、過ぎたら書けない", async () => {
+    const setting = { chatOpenBeforeMinutes: 30, chatCloseAfterMinutes: 24 * 60 };
+    const view = await renderAt(ENDS + DAY - MIN, setting);
+    expect(await screen.findByRole("textbox")).toBeEnabled();
+    view.unmount();
+    await renderAt(ENDS + DAY + MIN, setting);
+    await expectClosed();
+  });
+
+  it("終了7日後まで: 7日後までは書け、過ぎたら書けない", async () => {
+    const setting = { chatOpenBeforeMinutes: 30, chatCloseAfterMinutes: 7 * 24 * 60 };
+    const view = await renderAt(ENDS + 7 * DAY - MIN, setting);
+    expect(await screen.findByRole("textbox")).toBeEnabled();
+    view.unmount();
+    await renderAt(ENDS + 7 * DAY + MIN, setting);
+    await expectClosed();
+  });
+
+  it("サーバーが返した期間を使う（イベントの値が古くても設定変更が届く）", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(STARTS - 3 * DAY);
+    ephemeralKey = { secret: "00" };
+    // 手元のイベントは既定のまま、サーバーは「参加が確定したらすぐ」に変わった期間を返す
+    chatQuery = {
+      data: { ...CHAT, writeWindow: { opensAt: null, closesAt: ENDS + 120 * MIN } },
+    };
+    render(
+      <MemoryRouter>
+        <EventChat eventId="e-1" event={EVENT} myRole="staff" variant="page" />
+      </MemoryRouter>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole("textbox")).toBeEnabled();
   });
 });
 

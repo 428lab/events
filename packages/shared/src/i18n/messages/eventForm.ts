@@ -94,6 +94,20 @@ const ja = {
   chatUrls: "参加者のURL投稿を許可",
   chatUrlsHelp:
     "オンにすると参加者もチャットにURLを投稿できます。スタッフは常に投稿できます。",
+  /** 書き込める期間 (#578) */
+  chatWindow: "書き込める期間",
+  chatWindowOpen: "いつから",
+  chatWindowOpen30m: "開始30分前から",
+  chatWindowOpenConfirmed: "参加が確定したらすぐ",
+  chatWindowOpenDays: "開始の N 日前から",
+  chatWindowDays: "何日前",
+  chatWindowDaysValue: "{{n}}日前",
+  chatWindowClose: "いつまで",
+  chatWindowClose2h: "終了2時間後まで",
+  chatWindowClose1d: "終了1日後まで",
+  chatWindowClose7d: "終了7日後まで",
+  chatWindowHelp:
+    "この期間の外では入力欄が閉じます。読むことは期間に関係なくできます。",
   qa: "Q&A（質問と投票）",
   qaHelp:
     "参加確定メンバーが質問を投稿し、聞きたい質問に投票できます。票の多い順に並ぶので、登壇者は人気の質問から答えられます。",
@@ -399,6 +413,19 @@ const en: Record<keyof typeof ja, string> = {
   chatUrls: "Let participants post URLs",
   chatUrlsHelp:
     "When this is on, participants can post URLs in chat too. Organizers always can.",
+  chatWindow: "When people can post",
+  chatWindowOpen: "From",
+  chatWindowOpen30m: "30 minutes before the start",
+  chatWindowOpenConfirmed: "As soon as participation is confirmed",
+  chatWindowOpenDays: "N days before the start",
+  chatWindowDays: "Days before",
+  chatWindowDaysValue: "{{n}} days before",
+  chatWindowClose: "Until",
+  chatWindowClose2h: "2 hours after the end",
+  chatWindowClose1d: "1 day after the end",
+  chatWindowClose7d: "7 days after the end",
+  chatWindowHelp:
+    "Outside this period the message box is closed. Messages can be read at any time.",
   qa: "Q&A (questions and votes)",
   qaHelp:
     "Confirmed participants can post questions and vote for the ones they want answered. Questions are sorted by votes, so speakers can start with the popular ones.",

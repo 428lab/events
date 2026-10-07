@@ -72,6 +72,7 @@ const CHAT: ChatMembersPayload = {
   chatEnabled: true,
   hiddenNoteIds: [],
   relays: ["wss://relay.example"],
+  writeWindow: { opensAt: null, closesAt: 1_700_003_600_000 },
 };
 
 /** 署名器。signEvent を呼ばれたかどうかを見るために別々の spy を持つ */
