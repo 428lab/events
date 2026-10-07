@@ -12,11 +12,7 @@ import type {
 import { MEET_RANKING_MODES,
   QA_ANONYMITY_MODES } from "@eventer/shared";
 import { runCount, batch, many, one } from "../client.js";
-import {
-  ATTENDED_COUNT_SQL,
-  CAPACITY_TOTAL_SQL,
-  PARTICIPANT_COUNT_SQL,
-} from "./events.js";
+import { EVENT_COUNTER_COLUMNS } from "./events.js";
 import { publicItemWhere } from "./eventSchedule.js";
 
 interface MemberRow {
@@ -431,9 +427,7 @@ export const eventMembersRepo = {
   async listEventsForUser(userId: string): Promise<MyEventSummary[]> {
     const rows = await many<Record<string, unknown> & { my_role: string }>(
       `SELECT e.*, m.role AS my_role, m.attended AS my_attended, m.status AS my_status,
-                ${PARTICIPANT_COUNT_SQL("e.id")} AS participant_count,
-                ${ATTENDED_COUNT_SQL("e.id")} AS attended_count,
-                ${CAPACITY_TOTAL_SQL("e.id")} AS capacity_total
+                ${EVENT_COUNTER_COLUMNS("e")}
          FROM event_member m
          JOIN event e ON e.id = m.event_id
          WHERE m.user_id = ? AND m.status <> 'canceled' AND ${eventViewSql("e", "m.user_id", "?")}
@@ -453,9 +447,7 @@ export const eventMembersRepo = {
   ): Promise<MyEventSummary[]> {
     const rows = await many<Record<string, unknown> & { my_role: string }>(
       `SELECT e.*, m.role AS my_role, m.attended AS my_attended, m.status AS my_status,
-                ${PARTICIPANT_COUNT_SQL("e.id")} AS participant_count,
-                ${ATTENDED_COUNT_SQL("e.id")} AS attended_count,
-                ${CAPACITY_TOTAL_SQL("e.id")} AS capacity_total
+                ${EVENT_COUNTER_COLUMNS("e")}
          FROM event_member m
          JOIN event e ON e.id = m.event_id
          WHERE m.user_id = ? AND m.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public'
