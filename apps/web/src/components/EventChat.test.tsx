@@ -95,6 +95,7 @@ vi.mock("../lib/nostr.js", () => ({
  * react-query は失敗しても直前の data を保持するので、**data と error が
  * 同時にある**（発言中に締め出された）状態が実際に起きる形 */
 let chatQuery: { data?: ChatMembersPayload; error?: unknown } = { data: CHAT };
+const chatRefetch = vi.fn(async () => ({}));
 
 /** 「チャットに参加する」を押したときの一時鍵の発行 (#223) の結果。
  * 参加時に締め出しが分かる経路 (#283) を確かめるため差し替えられるようにしてある */
@@ -104,7 +105,7 @@ let joinResult: () => Promise<{ secret: string; pubkey: string }> = async () => 
 });
 
 vi.mock("../api/eventChatHooks.js", () => ({
-  useChatMembers: () => chatQuery,
+  useChatMembers: () => ({ ...chatQuery, refetch: chatRefetch }),
   useRegisterChatKey: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useCreateEphemeralChatKey: () => ({
     isPending: false,
@@ -334,6 +335,28 @@ describe("署名の手段が変わっても過去の自分の発言が見える 
     expect(screen.queryByText("許可リスト外の発言")).not.toBeInTheDocument();
     // どちらも自分の発言として同じ表示名が付く
     expect(screen.getAllByText("わたし")).toHaveLength(2);
+  });
+
+  it("許可リストに無い鍵の発言は、許可リストを1回だけ取り直すきっかけになる (D-POLL-MIN)", async () => {
+    ephemeralKey = { secret: "00" };
+    chatQuery = { data: CHAT_WITH_OLD_KEY };
+    chatRefetch.mockClear();
+    await renderChat("page");
+    await waitFor(() => expect(deliver).not.toBeNull());
+    // 許可リストに居る人・自分の発言では取り直さない
+    await act(async () => {
+      deliver!(message("note-other", "pk-other", "他人からの発言"));
+      deliver!(message("note-me", "pk-me", "自分の発言"));
+    });
+    expect(chatRefetch).not.toHaveBeenCalled();
+    // 新しく参加した人（まだ許可リストに無い）の発言で1回取り直す。同じ人の続く発言では取り直さない
+    await act(async () => {
+      deliver!(message("note-new-1", "pk-newcomer", "はじめまして"));
+      deliver!(message("note-new-2", "pk-newcomer", "よろしく"));
+    });
+    expect(chatRefetch).toHaveBeenCalledTimes(1);
+    // 許可されるまでは出ない
+    expect(screen.queryByText("はじめまして")).not.toBeInTheDocument();
   });
 
   it("他人の鍵の発言は他人の名前で出る（自分のものとして扱わない）", async () => {

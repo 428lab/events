@@ -147,21 +147,37 @@ export function useToggleScoringLock(eventId: string) {
 /**
  * 進行状態のリアルタイム連動（ポーリング方式）。
  * Cloudflare Workers はステートレス（複数アイソレート）で in-memory SSE 配信が
- * できないため、一定間隔で状態・採点進捗を再取得する。invalidateQueries は
- * アクティブに購読されているクエリのみ再フェッチするので、無駄な通信は出ない。
+ * できないため、一定間隔で状態（/control では採点進捗も）を再取得する。
+ *
+ * 回すのはコンテスト形式のイベントだけ・タブが表示中のときだけ（D-POLL-MIN）。
+ * コンテスト中、staff が発表・表彰モードに切り替えたのに参加者の画面が付いてこないと、
+ * 採点するはずの発表を見逃し、しかも本人は再読み込みが要ることに気づけないため。
+ * 非表示の間は止め、表示に戻った瞬間に1回取り直す。
  */
-const POLL_INTERVAL_MS = 2000;
+export const EVENT_STREAM_POLL_MS = 10_000;
 
-export function useEventStream(eventId: string) {
+export function useEventStream(
+  eventId: string,
+  { contestMode, scoring }: { contestMode: boolean; scoring: boolean },
+) {
   const qc = useQueryClient();
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId || !contestMode) return;
     const tick = () => {
+      if (document.visibilityState !== "visible") return;
       qc.invalidateQueries({ queryKey: ["event", eventId, "state"] });
-      qc.invalidateQueries({ queryKey: ["event", eventId, "progress"] });
-      qc.invalidateQueries({ queryKey: ["event", eventId, "summary"] });
+      // 採点の進捗・集計は /control（進行コントロール）だけが見る。操作者が
+      // 審査員の提出を手を動かさずに追えないと、締めるタイミングが分からないため
+      if (scoring) {
+        qc.invalidateQueries({ queryKey: ["event", eventId, "progress"] });
+        qc.invalidateQueries({ queryKey: ["event", eventId, "summary"] });
+      }
     };
-    const id = window.setInterval(tick, POLL_INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, [eventId, qc]);
+    const id = window.setInterval(tick, EVENT_STREAM_POLL_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [eventId, contestMode, scoring, qc]);
 }

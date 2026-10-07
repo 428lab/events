@@ -7,13 +7,12 @@ import {
 import type { NotificationsPayload } from "@eventer/shared";
 import { api } from "./client.js";
 
-const POLL = 30000;
-
 export function useNotificationUnreadCount(enabled = true) {
   return useQuery({
     queryKey: ["notifications", "unread"],
     enabled,
-    refetchInterval: POLL,
+    // 定期の取り直しはしない（D-POLL-MIN）。バッジは数分遅れても困らず、タブ復帰で取り直す
+    refetchOnWindowFocus: true,
     queryFn: async () =>
       (await api.get<{ count: number }>("/notifications/unread-count")).count,
   });

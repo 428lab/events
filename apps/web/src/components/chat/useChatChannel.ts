@@ -7,6 +7,7 @@ import {
   useRegisterChatChannel,
 } from "../../api/eventChatHooks.js";
 import { chatChannelErrorKey } from "../../lib/chatApiErrors.js";
+import { useChatRefetchTrigger } from "../../lib/chatRefetchTrigger.js";
 import type { ChatChannelErrorKey } from "../../lib/chatApiErrors.js";
 import {
   appendChatMessage,
@@ -52,6 +53,7 @@ export function useChatChannel({
   isOrganizerNip07,
   canOpenChannel,
   chatUnavailable,
+  refetchChat,
 }: {
   eventId: string;
   eventTitle: string;
@@ -67,6 +69,10 @@ export function useChatChannel({
   canOpenChannel: boolean;
   /** 繋がせない状態 (#283)。リレーにも接続しない */
   chatUnavailable: boolean;
+  /** 許可リストの取り直し。許可リストに無い pubkey の発言が届いたときに呼ぶ
+   * （新しく参加した人。D-POLL-MIN で定期の取り直しをやめた代わり）。
+   * 渡さなければ取り直さない（暗号化モードの平文の過去ログ読み） */
+  refetchChat?: () => unknown;
 }): ChatChannelState {
   const registerChannel = useRegisterChatChannel(eventId);
   const createChannel = useCreateChatChannel(eventId);
@@ -89,10 +95,13 @@ export function useChatChannel({
   // チャンネル確定処理から最新の chat-members を参照するための ref
   const chatRef = useRef(chat);
   chatRef.current = chat;
+  const signerRef = useRef(signer);
+  signerRef.current = signer;
+  const requestRefetch = useChatRefetchTrigger(refetchChat, `${eventId}:${chat?.channelId ?? ""}`);
   // 受信バッファの捨てる順序に使う許可リスト（chatMessageBuffer.ts）。
   // チャンネルIDは公開値なので部外者がゴミ投稿を流し込める。購読コールバックは
-  // effect 内で閉じるので、ポーリングで更新される最新の集合を ref 経由で見せる
-  // 自分の鍵も「捨ててよくない」側に入れる: 許可リストは〜5秒遅れて届くので、
+  // effect 内で閉じるので、取り直しで更新される最新の集合を ref 経由で見せる
+  // 自分の鍵も「捨ててよくない」側に入れる: 許可リストは取り直すまで遅れて届くので、
   // 入った直後に発言した本人はリスト上まだ部外者に見え、満杯のバッファでは
   // いま送った自分の発言が真っ先に捨てられてしまう (#335 レビュー指摘)
   const keepRef = useRef<(pubkey: string) => boolean>(() => true);
@@ -103,7 +112,7 @@ export function useChatChannel({
   const append = (prev: NostrEvent[], ev: NostrEvent) =>
     appendChatMessage(prev, ev, (pk) => keepRef.current(pk));
 
-  // サーバーに登録済みのチャンネルID（未開設は null。ポーリングで反映）
+  // サーバーに登録済みのチャンネルID（未開設は null。取り直しで反映）
   const serverChannelId = chat?.channelId ?? null;
 
   // 接続・チャンネル確定・購読。署名器が決まったら開始し、unmount で切断
@@ -169,6 +178,16 @@ export function useChatChannel({
       unsubscribe = pool.subscribe(cid, (ev) => {
         if (disposed) return;
         setMessages((prev) => append(prev, ev));
+        // 許可リストに無い人の発言 → 新しく参加した人かもしれないので取り直す。
+        // 表示は許可リストが決めるので、取り直して許可されるまでは出ない
+        const members = chatRef.current?.members;
+        if (
+          members &&
+          ev.pubkey !== signerRef.current?.pubkey &&
+          !members.some((m) => m.pubkey === ev.pubkey)
+        ) {
+          requestRefetch(`pubkey:${ev.pubkey}`);
+        }
       });
     })();
 

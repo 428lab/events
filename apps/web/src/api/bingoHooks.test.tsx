@@ -12,8 +12,9 @@ import { BINGO_POLL_MS } from "@eventer/shared";
  * 以後ゲームを作って抽選しても、その画面は再読み込みするまで一切更新されない
  * ＝「最初の1回だけ番号が出ない」の正体。
  *
- * 専用ページ（pollWhileMissing=true）は 404 の間もポーリングを続け、
+ * 専用ページ（pollWhileMissing=true・poll=true）は 404 の間もポーリングを続け、
  * ゲームが作られたら自動で拾うことを固定する。
+ * イベント詳細の小カード（poll なし）はポーリングしない（D-POLL-MIN）。
  */
 
 const { apiGet } = vi.hoisted(() => ({ apiGet: vi.fn() }));
@@ -49,7 +50,7 @@ describe("useBingoState のポーリング復帰 (#436)", () => {
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
-    const { result } = renderHook(() => useBingoState("e-1", true, true), {
+    const { result } = renderHook(() => useBingoState("e-1", true, true, true), {
       wrapper,
     });
 
@@ -65,5 +66,27 @@ describe("useBingoState のポーリング復帰 (#436)", () => {
     });
     expect(apiGet).toHaveBeenCalledTimes(2);
     expect(result.current.data?.status).toBe("setup");
+  });
+
+  it("poll なし（イベント詳細の小カード）は定期の取り直しをしない (D-POLL-MIN)", async () => {
+    vi.useFakeTimers();
+    apiGet.mockResolvedValue({
+      status: "running",
+      drawnNumbers: [],
+      counts: { cards: 0, bingo: 0, reach: 0 },
+      card: null,
+      me: null,
+    });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    renderHook(() => useBingoState("e-1", true), { wrapper });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(BINGO_POLL_MS * 3);
+    });
+    expect(apiGet).toHaveBeenCalledTimes(1);
   });
 });

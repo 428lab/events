@@ -13,8 +13,11 @@ import { setupWebAnalytics } from "./lib/webAnalytics.js";
 import { App } from "./App.js";
 import { installEventAccessLifecycle } from "./api/eventAccessLifecycle.js";
 
+// 自動の読み直しは必要最低限 (D-POLL-MIN)。取得から1分は新鮮とみなし、
+// 画面の付け替えやタブ復帰のたびに同じものを取り直さない。
+// タブ復帰で取り直すのは、各フックが refetchOnWindowFocus: true を明示したものだけ
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { refetchOnWindowFocus: false } },
+  defaultOptions: { queries: { refetchOnWindowFocus: false, staleTime: 60_000 } },
 });
 
 installEventAccessLifecycle(queryClient);

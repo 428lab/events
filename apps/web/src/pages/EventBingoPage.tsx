@@ -18,7 +18,7 @@ export function EventBingoPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
-  const state = useBingoState(id, Boolean(eventData), true);
+  const state = useBingoState(id, Boolean(eventData), true, true);
   const issue = useIssueBingoCard(id);
 
   const data = state.data;

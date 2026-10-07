@@ -18,6 +18,10 @@ import {
 } from "../../lib/nostrChat.js";
 import type { ChatSigner } from "../../lib/nostrChat.js";
 import type { ChatSendResult } from "./useChatChannel.js";
+import {
+  newerKeyVersion,
+  useChatRefetchTrigger,
+} from "../../lib/chatRefetchTrigger.js";
 
 export interface EncryptedChatChannelState {
   /** 復号済み（content を平文に置き換えた）メッセージ。失効後の発言と
@@ -39,8 +43,10 @@ export interface EncryptedChatChannelState {
  * - 発言鍵は**サーバー管理の一時鍵だけ**（payload の myKey）。NIP-07 の本鍵は使わない
  * - 投影用（display）は読むだけ: リレーの AUTH に答えるための使い捨て鍵で購読し、送信しない
  * - 受信バッファは暗号文のまま持ち、描画時に**その時点の鍵束**で開ける。
- *   ローテーション直後に新しい世代の発言が先に届いても、次のポーリングで鍵が
- *   増えた時点で表示される（設計 7.3。開けないあいだはエラーにしない）
+ *   ローテーション直後に新しい世代の発言が先に届いたら、それをきっかけに鍵一式を
+ *   取り直し、鍵が増えた時点で表示される（設計 7.3。開けないあいだはエラーにしない）
+ * - 定期の取り直しはしない（D-POLL-MIN）。許可リストに無い pubkey の発言・
+ *   手元に無い新しい鍵世代の発言が届いたら refresh を呼ぶ（部屋ごとに間引く）
  * - 送信の直前に payload を取り直し、その最新 version で封をする（設計 3.2）。
  *   資格を失った人の取り直しは失敗するので、古い鍵のまま送ることはない
  */
@@ -84,8 +90,18 @@ export function useEncryptedChatChannel({
   const relaysKey = relays.join(" ");
   const roomId = chat?.roomId ?? null;
 
+  // 取り直しのきっかけ（知らない pubkey・新しい鍵世代）の判定に使う最新の payload
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const requestRefetch = useChatRefetchTrigger(
+    () => refreshRef.current().catch(() => {}),
+    `${eventId}:${roomId ?? ""}`,
+  );
+
   // 満杯時に捨てる順序の許可リスト（chatMessageBuffer.ts）。購読コールバックは
-  // effect 内で閉じるので、ポーリングで更新される最新の集合を ref で見せる
+  // effect 内で閉じるので、取り直しで更新される最新の集合を ref で見せる
   const keepRef = useRef<(pubkey: string) => boolean>(() => true);
   keepRef.current = bufferAllowPredicate(
     new Set((chat?.members ?? []).map((m) => m.pubkey)),
@@ -111,6 +127,16 @@ export function useEncryptedChatChannel({
         (ev) => {
           if (disposed) return;
           setMessages((prev) => append(prev, ev));
+          const current = chatRef.current;
+          if (!current) return;
+          if (!current.members.some((m) => m.pubkey === ev.pubkey)) {
+            requestRefetch(`pubkey:${ev.pubkey}`);
+          }
+          const version = newerKeyVersion(
+            ev.tags,
+            current.keys.map((k) => k.version),
+          );
+          if (version !== null) requestRefetch(`version:${version}`);
         },
         GROUP_CHAT_KIND,
       );

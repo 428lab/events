@@ -23,6 +23,8 @@ export function useEventBroadcasts(eventId: string, enabled: boolean) {
     enabled: enabled && Boolean(eventId),
     queryFn: () =>
       api.get<EventBroadcastsPayload>(`/events/${eventId}/broadcasts`),
+    // 送信待ちがある間だけ15秒・表示中だけ（staff 専用・送り終われば自然に止まる）:
+    // 一斉連絡を送った staff が、メールが送られていくのを手を動かさずに確かめるため
     refetchInterval: (query) =>
       query.state.data?.broadcasts.some((b) => b.email.pending > 0)
         ? BROADCAST_POLL_MS

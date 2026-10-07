@@ -8,25 +8,36 @@ import { useEncryptedChat } from "../api/encryptedChatHooks.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 import { ChatRelayPool, randomLocalSigner } from "../lib/nostrChat.js";
 import { openGroupChatMessage, visibleAfterRevocation } from "../lib/groupChatCrypto.js";
-import { liveChatAuthorized, liveChatRows } from "../lib/liveChat.js";
+import { LIVE_CONTROL_STATE_FRESH_MS, LIVE_SCREEN_STATE_FRESH_MS, liveChatAuthorized, liveChatRows } from "../lib/liveChat.js";
 import type { LiveChatMessage, LiveChatPermissions, LiveChatRow } from "../lib/liveChat.js";
 
-/** Mounted only by the live screen; editor shows an empty frame, never simulated posts.
+/** Chat metadata older than this never authorizes rows on the OBS screen (it polls every 5 s). */
+export const LIVE_SCREEN_CHAT_FRESH_MS = 6000;
+
+/** Rendered rows come only from the OBS live screen; the editor shows an empty frame, never simulated posts.
  * Participants-only (encrypted) chat (#582 design 4.4): the staff member's own session
- * receives the room keys and the screen decrypts; freshness and authorization are the same. */
-export function useLiveEventChat(eventId: string, state: EventLiveState | undefined, stateUpdatedAt: number, stateError: boolean, now: number, enabled: boolean) {
+ * receives the room keys and the screen decrypts; freshness and authorization are the same.
+ *
+ * page "screen" (OBS /live/screen): chat metadata polls every 5 s even when hidden and must be
+ * fresher than 6 s, because the broadcast output must drop hidden/blocked posts within seconds and
+ * nobody can interact with an OBS browser source.
+ * page "control" (/live/control): only the operator's status text. Metadata does not poll
+ * (D-POLL-MIN: load, focus, unknown pubkey); it must still be loaded without error, and the
+ * 5 s visible live-state poll gets a 10 s window. */
+export function useLiveEventChat(eventId: string, state: EventLiveState | undefined, stateUpdatedAt: number, stateError: boolean, now: number, enabled: boolean, page: "screen" | "control") {
+  const screen = page === "screen";
   const access = useEventChatAccess(eventId);
   const encrypted = Boolean(access.event?.chatEncrypted);
   const base = enabled && access.chatAvailable && !access.isError;
-  const members = useChatMembers(eventId, base && !encrypted, true);
-  const sealed = useEncryptedChat(eventId, base && encrypted, true);
+  const members = useChatMembers(eventId, base && !encrypted, true, screen);
+  const sealed = useEncryptedChat(eventId, base && encrypted, true, screen);
   const source = encrypted ? sealed : members;
   // A failed metadata fetch is not authorization, even if React Query retains its last payload.
-  const eligible = base && !source.isError && source.dataUpdatedAt > 0 && now - source.dataUpdatedAt <= 6000;
+  const eligible = base && !source.isError && source.dataUpdatedAt > 0 && (!screen || now - source.dataUpdatedAt <= LIVE_SCREEN_CHAT_FRESH_MS);
   const target = encrypted
     ? (sealed.data ? { chatEnabled: true, channelId: sealed.data.roomId } : undefined)
     : members.data;
-  const authorized = liveChatAuthorized(state, stateUpdatedAt, stateError, now, target, eligible);
+  const authorized = liveChatAuthorized(state, stateUpdatedAt, stateError, now, target, eligible, screen ? LIVE_SCREEN_STATE_FRESH_MS : LIVE_CONTROL_STATE_FRESH_MS);
   const chat: (LiveChatPermissions & { relays: string[] }) | undefined = authorized
     ? (encrypted ? sealed.data ?? undefined : members.data)
     : undefined;

@@ -36,7 +36,7 @@ export function EventBingoScreenPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData, isLoading, isError } = useEvent(id);
-  const state = useBingoState(id, Boolean(eventData), true);
+  const state = useBingoState(id, Boolean(eventData), true, true);
 
   const [scale, setScale] = useState(readScale);
   const changeScale = (dir: 1 | -1) => {

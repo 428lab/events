@@ -6,9 +6,6 @@ import type {
 } from "@eventer/shared";
 import { api } from "./client.js";
 
-/** 未確認件数のポーリング間隔（問い合わせバッジと同じ） */
-const POLL = 30000;
-
 /** 異常行動の「要確認」リスト（app admin のみ） (#259)。
  * reviewed は undefined ですべて、false で未確認のみ、true で確認済みのみ */
 export function useAbuseFlags(
@@ -31,7 +28,8 @@ export function useAbuseUnreviewedCount(enabled = true) {
   return useQuery({
     queryKey: ["abuseFlags", "unread"],
     enabled,
-    refetchInterval: POLL,
+    // 定期の取り直しはしない（D-POLL-MIN）。バッジは数分遅れても困らず、タブ復帰で取り直す
+    refetchOnWindowFocus: true,
     queryFn: async () =>
       (await api.get<{ count: number }>("/admin/abuse-flags/unread-count"))
         .count,

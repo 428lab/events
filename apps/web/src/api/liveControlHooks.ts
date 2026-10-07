@@ -9,15 +9,23 @@ import type {
 import type { Deck, LivePresenter } from "@eventer/shared";
 import { api } from "./client.js";
 
-/** 配信状態（画面タブ・コントロールタブが共有。1秒ポーリング） */
-export function useEventLiveState(eventId: string, poll = true) {
+/** コントロールタブが配信状態を取り直す間隔。自分の操作は応答で即時に映るので、
+ * 拾うのはもう1人の操作者の変更だけ */
+export const LIVE_CONTROL_POLL_MS = 5000;
+
+/** 配信状態（画面タブ・コントロールタブが共有）。
+ * - screen（OBS の配信画面）: 1秒・非表示でも継続。配信出力は操作者のシーン切替を
+ *   約1秒で反映しなければならず、OBS のブラウザソースは常に hidden 扱いで、誰も触れないため
+ * - control（コントロールタブ）: 5秒・表示中だけ。自分の操作は即時に映るので、
+ *   もう1人の操作者の変更を拾えれば足りるため */
+export function useEventLiveState(eventId: string, page: "screen" | "control") {
+  const screen = page === "screen";
   return useQuery({
     queryKey: ["event", eventId, "liveState"],
     enabled: Boolean(eventId),
-    refetchInterval: poll ? LIVE_POLL_MS : false,
+    refetchInterval: screen ? LIVE_POLL_MS : LIVE_CONTROL_POLL_MS,
     retry: false,
-    // OBS取り込み中はタブが背面にあることが多いので、非表示でもポーリング継続
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: screen,
     queryFn: () => api.get<EventLiveState>(`/events/${eventId}/live-state`),
   });
 }
@@ -34,6 +42,9 @@ export function useUpdateEventLiveState(eventId: string) {
   });
 }
 
+/** 参戦演出（OBS の配信画面だけが使う）。1秒・非表示でも継続:
+ * 演出は時刻合わせで出すので、配信出力が約1秒で拾わないと間に合わず、
+ * OBS のブラウザソースは常に hidden 扱いで誰も触れないため */
 export function useLiveCutin(eventId: string) {
   return useQuery({
     queryKey: ["event", eventId, "cutin"],
@@ -49,12 +60,12 @@ export const cutinApi = {
 };
 
 /** 発表者一覧 (#571)。タイムテーブルの担当者付きコマと、本人が紐付けたデッキの要約（slug なし）。
- * 登壇者が当日に紐付けを直すこともあるので、ゆっくり取り直す */
+ * 定期の取り直しはしない（D-POLL-MIN）。登壇者が当日に紐付けを直したら、操作者のタブ復帰で拾う */
 export function useLivePresenters(eventId: string) {
   return useQuery({
     queryKey: ["event", eventId, "livePresenters"],
     enabled: Boolean(eventId),
-    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
     queryFn: async () =>
       (await api.get<{ presenters: LivePresenter[] }>(`/events/${eventId}/live-presenters`)).presenters,
   });

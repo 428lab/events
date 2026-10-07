@@ -23,8 +23,9 @@ export function useCommunity(slug: string) {
   const { data: user } = useMe();
   return useQuery({
     queryKey: ["community", slug, "viewer", user?.id],
+    // 定期の取り直しはしない（D-POLL-MIN）。変化は本人の操作が無効化し、他人の変化はタブ復帰で拾う。
+    // 閲覧者ごとの内容（非公開イベントの件数）なので、復帰ではキャッシュが新しくても必ず取り直す
     refetchOnWindowFocus: "always",
-    refetchInterval: 15_000,
     enabled: Boolean(slug),
     queryFn: () => api.get<CommunityDetail>(`/public/communities/${slug}`),
   });

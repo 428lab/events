@@ -55,7 +55,7 @@ export function LiveControlPage() {
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const isAdmin = useIsAdmin();
-  const liveState = useEventLiveState(id);
+  const liveState = useEventLiveState(id, "control");
   const { data: state } = liveState;
   const { data: liveSet } = useEventLiveSetContent(id, state?.liveSetId);
   const { data: mySets } = useMyLiveSets();
@@ -70,7 +70,7 @@ export function LiveControlPage() {
   const [copied, setCopied] = useState(false);
   const [chatNow, setChatNow] = useState(() => Date.now());
   useLayoutEffect(() => { const timer = setInterval(() => setChatNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
-  const liveChat = useLiveEventChat(id, state, liveState.dataUpdatedAt, liveState.isError, chatNow, state?.chatSource === "event");
+  const liveChat = useLiveEventChat(id, state, liveState.dataUpdatedAt, liveState.isError, chatNow, state?.chatSource === "event", "control");
   // 登壇者向けサイドパネル (#215)。開閉は発表ビューと共有する
   const [panelOpen] = usePresenterPanel();
 

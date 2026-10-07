@@ -2,21 +2,25 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EventQaPayload, EventQuestion } from "@eventer/shared";
 import { api } from "./client.js";
 
-/** Q&A の反映間隔。チャット (#199) はリレー直結で即時だが、Q&A はサーバー保存なので
- * ポーリングで追う。票数の増減や「いまこの質問」の切り替えが体感できて、
- * かつ 2 秒より軽い 5 秒にしている */
-export const QA_POLL_MS = 5000;
+/** Q&A の投影・登壇者パネルの反映間隔。チャット (#199) はリレー直結で即時だが、
+ * Q&A はサーバー保存なのでポーリングで追う */
+export const QA_POLL_MS = 10_000;
 
 export function qaQueryKey(eventId: string) {
   return ["event", eventId, "questions"] as const;
 }
 
-/** 質問一覧（参加確定メンバーのみ。5秒ごとに再取得） */
-export function useEventQa(eventId: string, enabled: boolean) {
+/** 質問一覧（参加確定メンバーのみ）。
+ * 既定は定期の取り直しをしない（D-POLL-MIN）: 開いたとき・タブ復帰・自分の投稿や投票で取り直す。
+ * poll は投影（/chat/screen）と登壇者パネルだけが立てる（10秒・表示中だけ）:
+ * ライブ中に映している Q&A が新しい質問や票を出さないと、会場が待っている情報が欠け、
+ * しかもその画面の前には誰もいないため */
+export function useEventQa(eventId: string, enabled: boolean, poll = false) {
   return useQuery({
     queryKey: qaQueryKey(eventId),
     enabled: enabled && Boolean(eventId),
-    refetchInterval: QA_POLL_MS,
+    refetchInterval: poll ? QA_POLL_MS : false,
+    refetchOnWindowFocus: true,
     queryFn: () => api.get<EventQaPayload>(`/events/${eventId}/questions`),
   });
 }

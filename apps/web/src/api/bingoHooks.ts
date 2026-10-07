@@ -8,8 +8,10 @@ import { api } from "./client.js";
  *
  * - 参加者の状態はゲームが無いイベントに 404 が返る（存在ごと隠す門はサーバー側）。
  *   その間は refetch を止める（useMeetRankingLive と同じ理由）
- * - 抽選コントロール・カード・投影は5秒ポーリング。抽選は staff の mutation 応答で
- *   即時に映り、他の画面は最大5秒遅れで追いつく（読み上げは人間がやるので足りる）
+ * - 抽選コントロール・カード・投影は10秒ポーリング（表示中だけ）。抽選は staff の
+ *   mutation 応答で即時に映り、他の画面は最大10秒遅れで追いつく（読み上げは人間がやる）
+ * - イベント詳細の小カードはポーリングしない（D-POLL-MIN）。カードは「ビンゴ開催中・開く」
+ *   を出すだけで、開いた /bingo ページが追う
  */
 
 const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
@@ -23,24 +25,31 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
  * 投影・カードの**専用ページは true**にする：プロジェクターはゲームを作る前に
  * 開かれるのが普通で、エラーで止めると作成後も再読み込みまで一切更新されない
  * （「最初の1回だけ番号が出ない」実機報告の正体）。イベント詳細の小カードは
- * false のまま（ビンゴをやらないイベントの詳細ページから5秒おきの無駄打ちを
- * しない。詳細ページは開き直しが頻繁で、復帰はそれで足りる） */
+ * false のまま。
+ *
+ * poll: 定期的に取り直すか。カード（/bingo）と投影（/bingo/screen）だけが立てる
+ * （表示中だけ）: 抽選中に番号が付かないカードではゲームが成り立たず、投影も同じため。
+ * イベント詳細の小カードは立てない（開いたとき・タブ復帰で取り直す。D-POLL-MIN） */
 export function useBingoState(
   eventId: string,
   enabled: boolean,
   pollWhileMissing = false,
+  poll = false,
 ) {
   return useQuery({
     queryKey: ["event", eventId, "bingo"],
     enabled: Boolean(eventId) && enabled,
     queryFn: () => api.get<BingoState>(`/events/${eventId}/bingo`),
     retry: false,
+    refetchOnWindowFocus: true,
     refetchInterval: (query) =>
-      query.state.error && !pollWhileMissing ? false : BINGO_POLL_MS,
+      !poll || (query.state.error && !pollWhileMissing) ? false : BINGO_POLL_MS,
   });
 }
 
-/** 名前入りの導出一覧（staff のみ。抽選コントロール・デスクが使う） */
+/** 名前入りの導出一覧（staff のみ。抽選コントロール・デスクが使う）。
+ * 10秒・表示中だけ: 抽選係は抽選しながら「ビンゴ」の申告が出てくるのを見る必要があるため
+ * （抽選の応答は件数を即時に書く） */
 export function useBingoStatus(eventId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["event", eventId, "bingo-status"],

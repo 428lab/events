@@ -7,8 +7,6 @@ import type {
 } from "@eventer/shared";
 import { api } from "./client.js";
 
-const POLL = 30000;
-
 // ===== ユーザー =====
 export function useInquiries() {
   return useQuery({
@@ -22,7 +20,8 @@ export function useInquiryUnreadCount(enabled = true) {
   return useQuery({
     queryKey: ["inquiries", "unread"],
     enabled,
-    refetchInterval: POLL,
+    // 定期の取り直しはしない（D-POLL-MIN）。バッジは数分遅れても困らず、タブ復帰で取り直す
+    refetchOnWindowFocus: true,
     queryFn: async () =>
       (await api.get<{ count: number }>("/inquiries/unread-count")).count,
   });
@@ -73,7 +72,8 @@ export function useAdminInquiryUnreadCount(enabled = true) {
   return useQuery({
     queryKey: ["adminInquiries", "unread"],
     enabled,
-    refetchInterval: POLL,
+    // 定期の取り直しはしない（D-POLL-MIN）。バッジは数分遅れても困らず、タブ復帰で取り直す
+    refetchOnWindowFocus: true,
     queryFn: async () =>
       (await api.get<{ count: number }>("/admin/inquiries/unread-count")).count,
   });

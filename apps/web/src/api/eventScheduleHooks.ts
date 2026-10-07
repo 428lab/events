@@ -49,12 +49,14 @@ const EDITING_KEY = (eventId: string) => ["event", eventId, "scheduleEditing"];
 
 /** 誰かがタイムテーブルを編集中か（見るだけ）。編集できる人にしか返らないので、
  * staff の画面でだけ有効にする。編集画面を開いている間は下の
- * useHoldScheduleEditing に任せて、こちらは止める（同じ間隔で二重に取りに行かない） */
+ * useHoldScheduleEditing に任せて、こちらは止める。
+ * 定期の取り直しはしない（D-POLL-MIN）: 警告が要るのは編集を始めるときで、
+ * そのときは心拍の応答が持ち主を返す。開いたとき・タブ復帰で取り直す */
 export function useScheduleEditingState(eventId: string, enabled: boolean) {
   return useQuery({
     queryKey: EDITING_KEY(eventId),
     enabled: enabled && Boolean(eventId),
-    refetchInterval: SCHEDULE_EDIT_POLL_MS,
+    refetchOnWindowFocus: true,
     queryFn: () =>
       api.get<ScheduleEditingState>(`/events/${eventId}/timetable/editing`),
   });
@@ -72,9 +74,10 @@ export function useHoldScheduleEditing(eventId: string) {
   const q = useQuery({
     queryKey: [...EDITING_KEY(eventId), "hold"],
     enabled: Boolean(eventId),
+    // 30秒の心拍・非表示でも継続: 心拍が止まると他の staff に「空き」と見えて
+    // タイムテーブルを上書きされるため。30秒は期限（2分）の内側に、背面タブの
+    // 間引き（1分に1回）を受けても十分収まる
     refetchInterval: SCHEDULE_EDIT_POLL_MS,
-    // 背面のタブでも心拍を続ける（前面に戻すまで他の人に「空き」と見せないため）。
-    // ブラウザ側の間引きがあるので、期限は心拍間隔よりずっと長く取ってある
     refetchIntervalInBackground: true,
     queryFn: () =>
       api.post<ScheduleEditingState>(`/events/${eventId}/timetable/editing`),

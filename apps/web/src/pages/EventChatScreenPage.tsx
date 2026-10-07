@@ -48,7 +48,7 @@ export function EventChatScreenPage() {
   // ピックアップされた質問だけを出す（一覧や操作UIは投影しない）。
   // Q&A を OFF にしたら投影からも消える（詳細画面から Q&A セクションが
   // 消えるので、残っていると外す手段が分かりにくい）
-  const { data: qa } = useEventQa(id, canChat);
+  const { data: qa } = useEventQa(id, canChat, true);
   const picked =
     (qa?.qaEnabled
       ? qa.questions.find((q) => q.id === qa.pickedQuestionId)

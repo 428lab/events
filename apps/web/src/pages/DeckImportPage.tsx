@@ -11,7 +11,7 @@ import { DeckImportPreview } from "../components/DeckImportPreview.js";
 
 export function DeckImportPage() {
   const { t } = useTranslation();
-  const { data: me, isLoading, dataUpdatedAt } = useMe({ refetchOnMount: "always", refetchOnWindowFocus: "always", refetchInterval: 30000 });
+  const { data: me, isLoading, dataUpdatedAt } = useMe({ refetchOnMount: "always", refetchOnWindowFocus: true });
   const navigate = useNavigate();
   const logout = useLogout();
   const model = useDeckImport(me?.id ?? null, dataUpdatedAt);

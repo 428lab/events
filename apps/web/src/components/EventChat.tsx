@@ -104,7 +104,8 @@ export function EventChat({
   const isPublic = event.visibility === "public";
   // 平文の chat-members は公開イベントでだけ取る（非公開では 403 が返る経路。
   // 暗号化オンの公開イベントでは過去ログの名前解決に使う）
-  const { data: chat, error: chatError } = useChatMembers(eventId, isPublic);
+  const chatQuery = useChatMembers(eventId, isPublic);
+  const { data: chat, error: chatError } = chatQuery;
   const enc = useEncryptedChat(eventId, encrypted);
   const openEnc = useOpenEncryptedChat(eventId);
   /** チャットに繋がせない状態か (#283)。
@@ -152,6 +153,9 @@ export function EventChat({
     isOrganizerNip07: () =>
       signerState.isNip07Ref.current && me?.id === event.createdBy,
     canOpenChannel,
+    // 許可リストに無い人の発言で取り直す（新しく参加した人）。暗号化モードの
+    // 平文の過去ログは読むだけで新しい人は増えないので取り直さない
+    refetchChat: encrypted ? undefined : () => chatQuery.refetch(),
     // 非公開・限定公開では平文の経路を一切開かない（plaintextChannelId も null）
     chatUnavailable:
       chatUnavailable || (encrypted && (!isPublic || !plaintextChannelId)),
@@ -185,7 +189,7 @@ export function EventChat({
   const relayConnected = encrypted ? encChannel.relayConnected : plain.relayConnected;
 
   // 書き込める期間 (#578)。主催者が選んだ期間をサーバーが共有の chatWriteWindow で
-  // 計算してチャットのペイロードに載せている（ポーリングで設定変更も届く）。
+  // 計算してチャットのペイロードに載せている（取り直したときに設定変更も届く）。
   // ペイロードが届く前は同じ関数でイベントから計算する。1分ごとに再評価。
   // 日程が確定していること自体は呼び出し側の chatAvailable が保証している
   const [now, setNow] = useState(() => Date.now());
@@ -252,7 +256,7 @@ export function EventChat({
   const send = encrypted ? encChannel.send : plain.send;
   const canSend = encrypted ? encChannel.canSend : Boolean(channelId);
 
-  // サーバーに登録済みのチャンネルID（未開設は null。ポーリングで反映）
+  // サーバーに登録済みのチャンネルID（未開設は null。取り直しで反映）
   const serverChannelId = chat?.channelId ?? null;
   const bodyFontSize = chatFontSizes(display, fontScale).body;
   // 参加の失敗と部屋の開設の失敗は同時には立たない（参加できていない人は
@@ -285,6 +289,20 @@ export function EventChat({
       >
         {t("eventSocial.chatUnavailable")}
       </Typography>
+      {/* 定期の取り直しはしない（D-POLL-MIN）ので、締め出しの解除などはここから
+          取り直す。投影用には出さない（見せるだけの画面） */}
+      {!display && me && (
+        <Button
+          size="small"
+          sx={{ alignSelf: "flex-start" }}
+          onClick={() => {
+            openEnc.reset();
+            void (encrypted ? enc.refetch() : chatQuery.refetch());
+          }}
+        >
+          {t("common.retry")}
+        </Button>
+      )}
     </Stack>
   );
 

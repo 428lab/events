@@ -14,6 +14,8 @@ export function useMyTicket(eventId: string, enabled: boolean) {
     queryKey: ["event", eventId, "my-ticket"],
     enabled,
     queryFn: () => api.get<CheckinTicket>(`/events/${eventId}/my-ticket`),
+    // ダイアログを開いている間だけ60秒: 入口で見せているQR（有効期限3分）が
+    // 見せている途中で切れないようにするため
     refetchInterval: 60_000,
     // 閉じて開き直したときに古いチケットを見せない
     gcTime: 0,

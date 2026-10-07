@@ -35,6 +35,8 @@ export function useMyMeetToken(enabled: boolean, current: string | null) {
           : "/meet/token",
         { timeoutMs: MEET_REQUEST_TIMEOUT_MS },
       ),
+    // ダイアログを開いている間だけ3秒・非表示でも継続: QRを掲げている人の画面は
+    // 読まれた直後に切り替わらないと次の読み取りが失敗するため（閉じれば止まる）
     refetchInterval: enabled ? MEET_TOKEN_POLL_MS : false,
     // ブラウザが報告する可視状態には依存させない (#420)。
     //
@@ -102,13 +104,17 @@ export function useMeetRanking(eventId: string, enabled: boolean) {
  * その間は refetch を止める：ポーリングを続けても 404 のままで、開きっぱなしの
  * タブから5秒おきの無駄打ちになるだけのため。設定が後からオンになったケースは
  * イベント情報の再取得で enabled が立ち直ってから拾う */
-export function useMeetRankingLive(eventId: string, enabled: boolean) {
+export function useMeetRankingLive(eventId: string, enabled: boolean, poll = false) {
   return useQuery({
     queryKey: ["event", eventId, "meet-ranking-live"],
     enabled: Boolean(eventId) && enabled,
     queryFn: () =>
       api.get<MeetRankingLive>(`/events/${eventId}/meets/ranking/live`),
+    refetchOnWindowFocus: true,
+    // poll は投影ページ（/meet-ranking/screen）だけが立てる（15秒・表示中だけ）:
+    // 映しているライブのランキングが止まっていては意味がなく、プロジェクターの前には
+    // 誰もいないため。詳細ページの小カードは開いたとき・タブ復帰で取り直す（D-POLL-MIN）
     refetchInterval: (query) =>
-      query.state.error ? false : MEET_RANKING_POLL_MS,
+      !poll || query.state.error ? false : MEET_RANKING_POLL_MS,
   });
 }

@@ -41,7 +41,7 @@ export function MeetRankingScreenPage() {
   const event = eventData?.event;
   // オフのイベントでは最初から取りにいかない（サーバーの 404 が防御。これは無駄打ちの節約）
   const enabled = Boolean(event && event.meetRanking !== "off");
-  const ranking = useMeetRankingLive(id, enabled);
+  const ranking = useMeetRankingLive(id, enabled, true);
 
   const [scale, setScale] = useState(readScale);
   const changeScale = (dir: 1 | -1) => {
