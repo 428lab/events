@@ -50,12 +50,13 @@ async function fetchMe(): Promise<MeResponse | null> {
 }
 
 /** ログインユーザー（未ログインなら null）。data は User を返す（従来互換） */
-export function useMe(refresh?: { refetchOnMount?: "always"; refetchOnWindowFocus?: "always"; refetchInterval?: number }) {
+export function useMe(refresh?: { refetchOnMount?: "always"; refetchOnWindowFocus?: boolean }) {
   return useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
-    refetchOnWindowFocus: "always",
-    refetchInterval: 15_000,
+    // 定期の取り直しはしない（D-POLL-MIN）。ログアウト・退会は自分の操作で
+    // キャッシュを書き換え、失効は他の API の 401 で分かる。タブ復帰で確かめ直す
+    refetchOnWindowFocus: true,
     retry: false,
     select: (d) => d?.user ?? null,
     ...refresh,
@@ -67,8 +68,7 @@ export function useDeletionGraceMs(): number {
   const { data } = useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
-    refetchOnWindowFocus: "always",
-    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
     retry: false,
   });
   return data?.deletionGraceMs ?? ACCOUNT_DELETION_GRACE_MS;
@@ -79,8 +79,7 @@ export function usePendingDeletion(): PendingDeletion | null {
   const { data } = useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
-    refetchOnWindowFocus: "always",
-    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
     retry: false,
     select: (d) => d?.pendingDeletion ?? null,
   });
@@ -101,8 +100,7 @@ export function useIsAdmin(): boolean {
   const { data } = useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
-    refetchOnWindowFocus: "always",
-    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
     retry: false,
     select: (d) => d?.isAdmin ?? false,
   });
@@ -211,8 +209,10 @@ export function useEventSearch(params: EventSearchParams, enabled: boolean, comm
     enabled,
     // Only public discovery may retain the previous page while fetching.
     placeholderData: communitySlug ? undefined : keepPreviousData,
+    // コミュニティの一覧も定期の取り直しはしない（D-POLL-MIN）。閲覧者ごとの一覧
+    // （権限で見える非公開イベント）なので、タブ復帰ではキャッシュが新しくても必ず
+    // 取り直す（"always"）: 取り消された閲覧権のイベントを画面に残さないため
     refetchOnWindowFocus: communitySlug ? "always" : undefined,
-    refetchInterval: communitySlug ? 15_000 : false,
     queryFn: () => api.get<PublicEventsPage>(communitySlug
       ? `/public/communities/${encodeURIComponent(communitySlug)}/events?${key}`
       : `/public/events/search?${key}`),
@@ -240,9 +240,13 @@ export function useEvent(id: string) {
   const { data: viewer } = useMe();
   return useQuery({
     queryKey: ["event", id, "viewer", viewer?.id],
+    // 定期の取り直しはしない（D-POLL-MIN）。イベントの内容は staff の編集でしか
+    // 変わらず、参加・取消・権限の変化は本人の操作が無効化する。定員は参加時に
+    // サーバーが判定するので、古い人数で超過することはない。
+    // タブ復帰ではキャッシュが新しくても必ず取り直す（"always"）: 閲覧権を取り消された
+    // 非公開イベントの中身を、復帰した画面に残さないため
     refetchOnWindowFocus: "always",
     retry: false,
-    refetchInterval: 15_000,
     queryFn: () =>
       api.get<{
         event: Event;

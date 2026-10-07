@@ -33,7 +33,7 @@ export function LiveScreenPage() {
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const event = eventData?.event;
-  const liveState = useEventLiveState(id);
+  const liveState = useEventLiveState(id, "screen");
   const { data: state } = liveState;
   const [wallNow, setWallNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setWallNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
@@ -162,7 +162,7 @@ export function LiveScreenPage() {
 
   const lightScene = scene?.id.startsWith("v1-hakuji-") || scene?.background === "#F6F2EA";
   const hasChat = Boolean(scene?.elements.some(el => el.type === "chat"));
-  const liveChat = useLiveEventChat(id, state, liveState.dataUpdatedAt, liveState.isError, wallNow, hasChat);
+  const liveChat = useLiveEventChat(id, state, liveState.dataUpdatedAt, liveState.isError, wallNow, hasChat, "screen");
 
   const deckSlide =
     deck?.content.slides[

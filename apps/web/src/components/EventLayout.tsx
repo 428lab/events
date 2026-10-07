@@ -7,7 +7,7 @@ import { useEventState, useEventStream } from "../api/scoringHooks.js";
 
 /**
  * イベント配下の共通レイアウト。
- * - SSE を購読し、進行状態をリアルタイム反映
+ * - コンテスト形式のイベントでは進行状態を定期的に取り直して反映（useEventStream）
  * - プレゼンモードになったら参加者を強制的にプレゼン画面へ遷移
  */
 export function EventLayout() {
@@ -17,7 +17,10 @@ export function EventLayout() {
   const location = useLocation();
   const { data: eventData } = useEvent(id);
   const { data: state } = useEventState(id);
-  useEventStream(id);
+  useEventStream(id, {
+    contestMode: Boolean(eventData?.event.contestMode),
+    scoring: location.pathname.endsWith("/control"),
+  });
 
   const role = eventData?.myRole ?? null;
   const isStaff = role === "staff";

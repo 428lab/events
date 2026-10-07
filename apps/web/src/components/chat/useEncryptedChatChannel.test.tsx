@@ -131,6 +131,38 @@ describe("useEncryptedChatChannel (#582 W2)", () => {
     expect(result.current.messages.map((m) => m.content)).toEqual(["新しい世代"]);
   });
 
+  it("手元に無い新しい鍵世代・許可リストに無い pubkey の発言で1回だけ取り直す (D-POLL-MIN)", async () => {
+    const v1 = [{ version: 1, secret: hexKey(1) }];
+    const v2 = [...v1, { version: 2, secret: hexKey(2) }];
+    const refresh = vi.fn(async () => payload(v1));
+    renderHook(() =>
+      useEncryptedChatChannel({ eventId: "e-1", chat: payload(v1), display: false, chatUnavailable: false, refresh }),
+    );
+    await waitFor(() => expect(pools[0]?.deliver).toBeDefined());
+    // 知っている世代・知っている人では取り直さない
+    act(() => pools[0].deliver!(sealedFromOther(v1, "いつもの", 1_700_000_000)));
+    expect(refresh).not.toHaveBeenCalled();
+    // 新しい世代（ローテーション）→ 取り直す。同じ世代の続く発言では取り直さない
+    act(() => {
+      pools[0].deliver!(sealedFromOther(v2, "新しい世代1", 1_700_000_001));
+      pools[0].deliver!(sealedFromOther(v2, "新しい世代2", 1_700_000_002));
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("許可リストに無い pubkey の発言は取り直しのきっかけになる (D-POLL-MIN)", async () => {
+    const v1 = [{ version: 1, secret: hexKey(1) }];
+    const refresh = vi.fn(async () => payload(v1));
+    renderHook(() =>
+      useEncryptedChatChannel({ eventId: "e-1", chat: payload(v1), display: false, chatUnavailable: false, refresh }),
+    );
+    await waitFor(() => expect(pools[0]?.deliver).toBeDefined());
+    const strangerSk = generateSecretKey();
+    const tmpl = sealGroupChatMessage(ROOM, v1, "はじめまして", RELAY)!;
+    act(() => pools[0].deliver!(finalizeEvent({ ...tmpl, created_at: 1_700_000_000 }, strangerSk)));
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it("送信の直前に payload を取り直し、取り直した最新 version で封をする", async () => {
     const v1 = [{ version: 1, secret: hexKey(1) }];
     const v2 = [...v1, { version: 2, secret: hexKey(2) }];

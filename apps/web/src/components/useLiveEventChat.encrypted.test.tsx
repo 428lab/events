@@ -58,7 +58,7 @@ const PAYLOAD: EncryptedChatPayload = {
 const state = { chatSource: "event" } as EventLiveState;
 
 function Stage() {
-  const chat = useLiveEventChat("e-1", state, Date.now(), false, Date.now(), true);
+  const chat = useLiveEventChat("e-1", state, Date.now(), false, Date.now(), true, "screen");
   return <div>{chat.rows.map(row => <div key={row.id}>{row.name}: {row.plainText}</div>)}<span>status:{chat.status}</span></div>;
 }
 

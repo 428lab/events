@@ -22,6 +22,10 @@ import type { Event as NostrEvent } from "nostr-tools/pure";
 import { ApiError } from "../api/client.js";
 import { useOpenStaffChat, useStaffChat } from "../api/staffChatHooks.js";
 import { ChatRelayPool, localSignerFromHex } from "../lib/nostrChat.js";
+import {
+  newerKeyVersion,
+  useChatRefetchTrigger,
+} from "../lib/chatRefetchTrigger.js";
 import type { ChatSigner } from "../lib/nostrChat.js";
 import {
   openGroupChatMessage,
@@ -69,7 +73,7 @@ function MessageBody({ text }: { text: string }) {
  */
 export function StaffChat({ eventId }: { eventId: string }) {
   const { t } = useTranslation();
-  const { data: chat, error, isSuccess } = useStaffChat(eventId, true);
+  const { data: chat, error, isSuccess, refetch } = useStaffChat(eventId, true);
   const open = useOpenStaffChat(eventId);
 
   const [messages, setMessages] = useState<NostrEvent[]>([]);
@@ -112,7 +116,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
   const roomId = chat?.roomId ?? null;
 
   // 受信バッファの捨てる順序に使う許可リスト（chatMessageBuffer.ts）。
-  // 購読コールバックは effect 内で閉じるので、ポーリングで更新される
+  // 購読コールバックは effect 内で閉じるので、取り直しで更新される
   // 最新の集合を ref 経由で見せる
   // 自分の鍵も「捨ててよくない」側に入れる（理由は chatMessageBuffer.ts）
   const keepRef = useRef<(pubkey: string) => boolean>(() => true);
@@ -124,6 +128,12 @@ export function StaffChat({ eventId }: { eventId: string }) {
   }, [chat, signer]);
   const appendToBuffer = (prev: NostrEvent[], ev: NostrEvent) =>
     appendChatMessage(prev, ev, (pk) => keepRef.current(pk));
+
+  // 知らない pubkey（新しい staff）・手元に無い新しい鍵世代（ローテーション）の
+  // 発言が届いたら鍵一式を取り直す（D-POLL-MIN。部屋ごとに間引く）
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  const requestRefetch = useChatRefetchTrigger(refetch, `${eventId}:${chat?.roomId ?? ""}`);
 
   // 接続・購読。署名器と部屋が決まったら開始し、unmount で切断
   useEffect(() => {
@@ -143,6 +153,16 @@ export function StaffChat({ eventId }: { eventId: string }) {
         (ev) => {
           if (disposed) return;
           setMessages((prev) => appendToBuffer(prev, ev));
+          const current = chatRef.current;
+          if (!current) return;
+          if (!current.members.some((m) => m.pubkey === ev.pubkey)) {
+            requestRefetch(`pubkey:${ev.pubkey}`);
+          }
+          const version = newerKeyVersion(
+            ev.tags,
+            current.keys.map((k) => k.version),
+          );
+          if (version !== null) requestRefetch(`version:${version}`);
         },
         GROUP_CHAT_KIND,
       );

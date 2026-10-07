@@ -7,7 +7,7 @@ import type {
   MeetPrizeStatus,
   UpdateMeetPrizeInput,
 } from "@eventer/shared";
-import { MEET_RANKING_POLL_MS } from "@eventer/shared";
+import { MEET_PRIZE_DESK_POLL_MS } from "@eventer/shared";
 import { ApiError, api } from "./client.js";
 
 /**
@@ -29,18 +29,15 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
 };
 
 /** 公開の景品一覧（確定メンバーには me 付き）。
- * 5秒で取り直すのは応答に me が付く人（確定メンバー）だけ：窓口の目の前で
- * QRを読み合った直後に達成バッジ（＝引換券）が出ないと、この画面を見せる
- * 流れが止まるため。未ログインや非メンバーの閲覧者は残数が多少古くても
- * 困らないので、公開ハンドラを5秒おきに踏ませない */
+ * 定期の取り直しはしない（D-POLL-MIN）。窓口で引き換えた結果は窓口側の応答で分かり、
+ * 参加者の画面は開き直し・タブ復帰で取り直す */
 export function useMeetPrizes(eventId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["event", eventId, "meet-prizes"],
     enabled: Boolean(eventId) && enabled,
     queryFn: () => api.get<MeetPrizeList>(`/events/${eventId}/meet-prizes`),
     retry: false,
-    refetchInterval: (query) =>
-      query.state.error || !query.state.data?.me ? false : MEET_RANKING_POLL_MS,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -54,7 +51,9 @@ export function useMeetPrizeDefinitions(eventId: string, enabled: boolean) {
   });
 }
 
-/** デスク画面（staff のみ）: 景品ごとの達成者と交換状況・確定済みの1位 */
+/** デスク画面（staff のみ）: 景品ごとの達成者と交換状況・確定済みの1位。
+ * poll は10秒・表示中だけ: デスクを2台並べると、片方がもう片方の引き換え済みの景品を
+ * 渡してしまうため（二重の引き換えはサーバーが 409 で断るので、操作者を迷わせないためのもの） */
 export function useMeetPrizeStatus(
   eventId: string,
   enabled: boolean,
@@ -66,12 +65,12 @@ export function useMeetPrizeStatus(
     queryFn: () =>
       api.get<MeetPrizeStatus>(`/events/${eventId}/meet-prizes/status`),
     refetchInterval: (query) =>
-      poll && !query.state.error ? MEET_RANKING_POLL_MS : false,
+      poll && !query.state.error ? MEET_PRIZE_DESK_POLL_MS : false,
   });
 }
 
 /** 引き換え履歴 (#441)（staff のみ・全景品種別・新しい順）。
- * 自分の操作は invalidate で即時、**他の窓口**の引き換えは5秒ポーリングで
+ * 自分の操作は invalidate で即時、**他の窓口**の引き換えは10秒（表示中だけ）のポーリングで
  * 追いつかせる（デスクを2台以上並べる運用がある。status と同じ形） */
 export function useMeetPrizeLog(eventId: string, enabled: boolean, poll = false) {
   return useQuery({
@@ -80,7 +79,7 @@ export function useMeetPrizeLog(eventId: string, enabled: boolean, poll = false)
     queryFn: () =>
       api.get<{ log: MeetPrizeLogRow[] }>(`/events/${eventId}/meet-prizes/log`),
     refetchInterval: (query) =>
-      poll && !query.state.error ? MEET_RANKING_POLL_MS : false,
+      poll && !query.state.error ? MEET_PRIZE_DESK_POLL_MS : false,
   });
 }
 

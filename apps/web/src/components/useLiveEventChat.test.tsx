@@ -6,7 +6,8 @@ import { useLiveEventChat } from "./LiveEventChat.js";
 
 const { subscriptions } = vi.hoisted(() => ({ subscriptions: [] as Array<{ channel: string; deliver: (event: import("nostr-tools/pure").Event) => void }> }));
 vi.mock("../lib/useEventChatAccess.js", () => ({ useEventChatAccess: () => ({ chatAvailable: true, isError: false }) }));
-vi.mock("../api/eventChatHooks.js", () => ({ useChatMembers: (id: string) => ({ data: chats[id], dataUpdatedAt: memberUpdatedAt, isError: false }) }));
+const { memberPolls } = vi.hoisted(() => ({ memberPolls: [] as boolean[] }));
+vi.mock("../api/eventChatHooks.js", () => ({ useChatMembers: (id: string, _enabled: boolean, _failClosed: boolean, poll: boolean) => { memberPolls.push(poll); return { data: chats[id], dataUpdatedAt: memberUpdatedAt, isError: memberError }; } }));
 vi.mock("../api/encryptedChatHooks.js", () => ({ useEncryptedChat: () => ({ data: undefined, dataUpdatedAt: 0, isError: false }) }));
 vi.mock("../lib/nostrChat.js", () => ({
   randomLocalSigner: () => ({}),
@@ -25,16 +26,17 @@ const chats: Record<string, ChatMembersPayload> = Object.fromEntries(["one", "tw
 }]));
 const state = { chatSource: "event" } as EventLiveState;
 let memberUpdatedAt = Date.now();
+let memberError = false;
 
-function Stage({ eventId, liveState = state }: { eventId: string; liveState?: EventLiveState }) {
-  const chat = useLiveEventChat(eventId, liveState, Date.now(), false, Date.now(), true);
+function Stage({ eventId, liveState = state, page = "screen", stateUpdatedAt = Date.now() }: { eventId: string; liveState?: EventLiveState; page?: "screen" | "control"; stateUpdatedAt?: number }) {
+  const chat = useLiveEventChat(eventId, liveState, stateUpdatedAt, false, Date.now(), true, page);
   // This is the render-phase stage output, before the switch cleanup effect can run.
   rendered.push({ eventId, messages: chat.rows.map(row => row.plainText), status: chat.status });
   return <div>{chat.rows.map(row => <div key={row.id}>{row.name}: {row.plainText}<img src={row.avatar ?? undefined} alt="" /></div>)}</div>;
 }
 const rendered: Array<{ eventId: string; messages: string[]; status: string }> = [];
 
-beforeEach(() => { subscriptions.length = 0; rendered.length = 0; memberUpdatedAt = Date.now(); chats.one.hiddenNoteIds = []; });
+beforeEach(() => { subscriptions.length = 0; rendered.length = 0; memberPolls.length = 0; memberUpdatedAt = Date.now(); memberError = false; chats.one.hiddenNoteIds = []; });
 describe("useLiveEventChat event switch", () => {
   it("never paints the old post or image under the new event's cached authorized member, then delivers a new post", async () => {
     const view = render(<Stage eventId="one" />);
@@ -79,5 +81,43 @@ describe("useLiveEventChat event switch", () => {
     await act(async () => {});
     act(() => subscriptions.at(-1)!.deliver(post));
     expect(screen.queryByText(/private post/)).toBeNull();
+  });
+});
+
+describe("useLiveEventChat page modes (D-POLL-MIN)", () => {
+  it("screen (OBS) polls chat metadata and fails closed after 6 s of metadata or 5 s of live state", async () => {
+    const view = render(<Stage eventId="one" page="screen" />);
+    await act(async () => {});
+    expect(memberPolls.every(Boolean)).toBe(true);
+    expect(rendered.at(-1)!.status).toBe("on");
+
+    memberUpdatedAt = Date.now() - 7000;
+    view.rerender(<Stage eventId="one" page="screen" />);
+    expect(rendered.at(-1)!.status).toBe("unavailable");
+
+    memberUpdatedAt = Date.now();
+    view.rerender(<Stage eventId="one" page="screen" stateUpdatedAt={Date.now() - 6000} />);
+    expect(rendered.at(-1)!.status).toBe("unavailable");
+  });
+
+  it("control does not poll chat metadata, ignores its age, still requires a successful fetch, and allows 10 s live state", async () => {
+    memberUpdatedAt = Date.now() - 10 * 60_000;
+    const view = render(<Stage eventId="one" page="control" stateUpdatedAt={Date.now() - 8000} />);
+    await act(async () => {});
+    expect(memberPolls.length).toBeGreaterThan(0);
+    expect(memberPolls.some(Boolean)).toBe(false);
+    expect(rendered.at(-1)!.status).toBe("on");
+
+    view.rerender(<Stage eventId="one" page="control" stateUpdatedAt={Date.now() - 11_000} />);
+    expect(rendered.at(-1)!.status).toBe("unavailable");
+
+    memberError = true;
+    view.rerender(<Stage eventId="one" page="control" />);
+    expect(rendered.at(-1)!.status).toBe("unavailable");
+
+    memberError = false;
+    memberUpdatedAt = 0;
+    view.rerender(<Stage eventId="one" page="control" />);
+    expect(rendered.at(-1)!.status).toBe("unavailable");
   });
 });

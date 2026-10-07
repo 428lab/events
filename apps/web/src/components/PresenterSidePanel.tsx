@@ -56,7 +56,7 @@ export function PresenterSidePanel({ eventId }: { eventId: string }) {
   const { t } = useTranslation();
   const [, setOpen] = usePresenterPanel();
   const { event, myRole, canChat, chatAvailable } = useEventChatAccess(eventId);
-  const { data: qa } = useEventQa(eventId, canChat);
+  const { data: qa } = useEventQa(eventId, canChat, true);
   // Q&A の操作UIはサーバーの canModerate をそのまま使う（EventQa と同じ基準）。
   // canModerate は「そのイベントの参加確定 staff メンバー」＝ myRole === "staff" と
   // 同じ条件で、サイト管理者やコミュニティ管理者というだけでは true にならない

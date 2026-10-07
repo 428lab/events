@@ -3,7 +3,8 @@ import { useLocation } from "react-router-dom";
 
 /** デプロイ後の古いバンドルを検知して自動リロードする (#143)。
  * 入力中のフォームを失わないよう、リロードはページ遷移のタイミングでのみ行う。
- * - 5分間隔＋タブ復帰時にチェック（検知したら次の遷移でリロード）
+ * - タブ復帰時にチェック（検知したら次の遷移でリロード）。定期のチェックはしない
+ *   （D-POLL-MIN。リロードするのはどのみち遷移のときだけなので、遷移と復帰で足りる）
  * - さらに毎回の遷移時にもチェックし、古ければその場でリロード
  *   （遷移直後は入力が無い安全なタイミングなので即リロードしてよい）
  * オフライン等の失敗は無視。 */
@@ -31,13 +32,11 @@ export function useBundleReload() {
 
   useEffect(() => {
     if (import.meta.env.DEV) return;
-    const iv = setInterval(() => void check(), 5 * 60_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void check();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      clearInterval(iv);
       document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -49,8 +49,8 @@ export function useRevokeStaffInvite(eventId: string) {
 export function useMyStaffInvites(enabled = true) {
   return useQuery({
     queryKey: myKey,
-    refetchOnWindowFocus: "always",
-    refetchInterval: 15_000,
+    // 定期の取り直しはしない（D-POLL-MIN）。招待はお知らせでも届き、タブ復帰で拾う
+    refetchOnWindowFocus: true,
     enabled,
     retry: false,
     queryFn: async () =>

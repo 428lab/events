@@ -25,8 +25,8 @@ export const BINGO_MAX_NUMBER = 75;
 export const BINGO_STATUSES = ["setup", "running", "ended"] as const;
 export type BingoGameStatus = (typeof BINGO_STATUSES)[number];
 
-/** 参加者・投影がポーリングする間隔（出会いランキング #418 と同じ5秒） */
-export { MEET_RANKING_POLL_MS as BINGO_POLL_MS } from "./eventMeets.js";
+/** カード画面・投影・抽選コントロールがポーリングする間隔（表示中だけ。D-POLL-MIN） */
+export const BINGO_POLL_MS = 10_000;
 
 /**
  * カードは24個の数字の配列で持つ（5x5・中央FREEを除く・**列優先**）。
