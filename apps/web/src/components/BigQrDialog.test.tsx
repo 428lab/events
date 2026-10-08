@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { EVENT_SIGNAL_KIND, type EventSignalSource } from "@eventer/shared";
 
 /**
  * 大きなQR表示 (#324 → #330)。
@@ -9,9 +10,22 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
  * 固定しておくのは、古い・空のQRを読ませないこと（トークンが取れるまで描かない、
  * 期限切れは描かない）と、**読まれるまでは同じQRを出し続ける**こと。
  * 読み取っている最中に切り替わると失敗し続けるため。
+ *
+ * 定期の見張りはしない（D-POLL-MIN 第5段階 5b-4）。取り直すのは「読まれた」の合図
+ * （topic `meet-token`）と、表示の上限（displayUntil）の1回だけ。合図の受け口は偽物にして、
+ * どの source を jitter なしで聞くかと、合図で取り直すことを確かめる。
  */
 
-const { getMock } = vi.hoisted(() => ({ getMock: vi.fn() }));
+const { getMock, listeners } = vi.hoisted(() => ({
+  getMock: vi.fn(),
+  listeners: [] as Array<{ source: EventSignalSource | null | undefined; onSignal: () => unknown; jitterMs?: number }>,
+}));
+vi.mock("../lib/signalHub.js", () => ({
+  useEventSignal: (source: EventSignalSource | null | undefined, onSignal: () => unknown, options: { jitterMs?: number } = {}) => {
+    listeners.push({ source, onSignal, jitterMs: options.jitterMs });
+    return { synced: Boolean(source) };
+  },
+}));
 
 vi.mock("../api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client.js")>();
@@ -22,7 +36,23 @@ vi.mock("../api/client.js", async (importOriginal) => {
 });
 
 const { BigQrDialog, buildMeetQrUrl } = await import("./BigQrDialog.js");
-const { MEET_TOKEN_POLL_MS } = await import("../api/eventMeetHooks.js");
+
+const signal: EventSignalSource = { kind: EVENT_SIGNAL_KIND, pubkey: "5e".repeat(32), topic: "meet-token-topic", rev: 1, relays: ["wss://relay.example"] };
+const token = (nonce: string, consumed = false, displayUntil = Date.now() + 90_000) => ({
+  token: `mt1.u-1.1700000000.${nonce}`,
+  expiresAt: Date.now() + 600_000,
+  consumed,
+  displayUntil,
+  signal,
+});
+/** いま聞いている「読まれた」の合図を1回届ける */
+async function fireSignal() {
+  const live = listeners.filter((l) => l.source).at(-1);
+  expect(live).toBeTruthy();
+  await act(async () => {
+    await live!.onSignal();
+  });
+}
 
 function renderDialog(open = true) {
   const qc = new QueryClient({
@@ -37,6 +67,7 @@ function renderDialog(open = true) {
 
 beforeEach(() => {
   getMock.mockReset();
+  listeners.length = 0;
 });
 
 describe("大きなQR表示 (#330)", () => {
@@ -97,132 +128,114 @@ describe("大きなQR表示 (#330)", () => {
     expect(screen.getByText(/QRを準備しています/)).toBeTruthy();
   });
 
-  it("表示中のトークンを添えて見張り、読まれたら描き替える", async () => {
+  it("定期には取りに行かず、「読まれた」の合図で表示中のトークンを添えて取り直し、描き替える", async () => {
     // 定期的に切り替えると、読み取っている最中に変わって失敗し続けるうえ、
-    // 行列の2人目以降が「使用済み」で弾かれる (#330)。
-    // 見張りの間隔は実時間で待たず、タイマーを進めて確かめる
+    // 行列の2人目以降が「使用済み」で弾かれる (#330)。見張りの周期も持たない
     vi.useFakeTimers();
     try {
-      const first = {
-        token: "mt1.u-1.1700000000.aaaa",
-        expiresAt: Date.now() + 600_000,
-        consumed: false,
-      };
+      const first = token("aaaa");
       getMock.mockResolvedValue(first);
       renderDialog();
-      // 最初の取得を流す（fake timer 中は waitFor が進まないので自分で進める）
-      await vi.advanceTimersByTimeAsync(50);
-      expect(
-        screen.getByTestId("big-qr").getAttribute("data-qr-url"),
-      ).toContain("aaaa");
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toContain("aaaa");
+      // 応答の source を待たせずに（jitter なし）聞く
+      expect(listeners.filter((l) => l.source).at(-1)).toMatchObject({ source: signal, jitterMs: undefined });
 
-      // 2回目以降は表示中のトークンを添えて問い合わせる
-      await vi.advanceTimersByTimeAsync(MEET_TOKEN_POLL_MS + 100);
+      // 上限より手前では、どれだけ経っても取りに行かない
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(getMock).toHaveBeenCalledTimes(1);
+
+      // 読まれたら合図が来る。表示中のトークンを添えて問い合わせ、次のぶんに描き替える
+      getMock.mockResolvedValue(token("bbbb", true));
+      await fireSignal();
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
       expect(getMock).toHaveBeenLastCalledWith(
         `/meet/token?current=${encodeURIComponent(first.token)}`,
         expect.objectContaining({ timeoutMs: expect.any(Number) }),
       );
-
-      // 読まれたら次のぶんに描き替え、次の人に向け直す合図を出す
-      getMock.mockResolvedValue({
-        token: "mt1.u-1.1700000000.bbbb",
-        expiresAt: Date.now() + 600_000,
-        consumed: true,
-      });
-      await vi.advanceTimersByTimeAsync(MEET_TOKEN_POLL_MS + 100);
-      expect(
-        screen.getByTestId("big-qr").getAttribute("data-qr-url"),
-      ).toContain("bbbb");
+      expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toContain("bbbb");
       expect(screen.getByText(/読み取られました/)).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("ブラウザが「裏」扱いを報告していても見張りを止めない", async () => {
+  it("表示の上限（displayUntil）で1回だけ取り直す", async () => {
+    // 出しっぱなしのQRを撮った写真が効く窓を頭打ちにする上限。周期ではなく、その時刻に1回
+    vi.useFakeTimers();
+    try {
+      const first = token("aaaa", false, Date.now() + 90_000);
+      getMock.mockResolvedValue(first);
+      renderDialog();
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(getMock).toHaveBeenCalledTimes(1);
+
+      getMock.mockResolvedValue(token("bbbb", false, Date.now() + 180_000));
+      await act(async () => { await vi.advanceTimersByTimeAsync(90_000 + 1_000); });
+      expect(getMock).toHaveBeenCalledTimes(2);
+      expect(getMock).toHaveBeenLastCalledWith(
+        `/meet/token?current=${encodeURIComponent(first.token)}`,
+        expect.objectContaining({ timeoutMs: expect.any(Number) }),
+      );
+      expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toContain("bbbb");
+      // 読まれて替わったのではないので「読み取られました」は出さない
+      expect(screen.queryByText(/読み取られました/)).toBeNull();
+
+      // 次の上限までは、もう取りに行かない
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(getMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ブラウザが「裏」扱いを報告していても合図を聞き続ける", async () => {
     // 本番のスマホで「読まれても画面が変わらず、QRも切り替わらない」の原因 (#420)。
     // 画面ロック・アプリ切替・ホーム画面追加・アプリ内ブラウザでは、表示中でも
     // visibilityState が hidden のまま残る／visibilitychange が飛ばないことがある。
-    // ポーリングの実行を可視状態に依存させると、その間は3秒タイマーが空振りし続け、
-    // 復帰の refetchOnWindowFocus も同じ visibilitychange 頼みなので一緒に死ぬ。
-    // ダイアログを出している間は、可視状態の報告と無関係に見張り続けること
-    vi.useFakeTimers();
+    // 合図はリレーの WebSocket で届くので、可視状態の報告と無関係に聞き続けること
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => "hidden",
     });
     try {
-      const first = {
-        token: "mt1.u-1.1700000000.aaaa",
-        expiresAt: Date.now() + 600_000,
-        consumed: false,
-      };
+      const first = token("aaaa");
       getMock.mockResolvedValue(first);
       renderDialog();
-      await vi.advanceTimersByTimeAsync(50);
-      expect(
-        screen.getByTestId("big-qr").getAttribute("data-qr-url"),
-      ).toContain("aaaa");
+      await waitFor(() => expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toContain("aaaa"));
 
-      // hidden のままでも3秒ごとの見張りが動くこと
-      await vi.advanceTimersByTimeAsync(MEET_TOKEN_POLL_MS + 100);
-      expect(getMock).toHaveBeenLastCalledWith(
-        `/meet/token?current=${encodeURIComponent(first.token)}`,
-        expect.objectContaining({ timeoutMs: expect.any(Number) }),
-      );
-
-      // 読まれたら hidden のままでも描き替わること
-      getMock.mockResolvedValue({
-        token: "mt1.u-1.1700000000.bbbb",
-        expiresAt: Date.now() + 600_000,
-        consumed: true,
-      });
-      await vi.advanceTimersByTimeAsync(MEET_TOKEN_POLL_MS + 100);
-      expect(
-        screen.getByTestId("big-qr").getAttribute("data-qr-url"),
-      ).toContain("bbbb");
+      getMock.mockResolvedValue(token("bbbb", true));
+      await fireSignal();
+      await waitFor(() => expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toContain("bbbb"));
     } finally {
       delete (document as { visibilityState?: unknown }).visibilityState;
-      vi.useRealTimers();
     }
   });
 
-  it("「読み取られました」は次のpoll応答が早く来ても出っぱなしにならない", async () => {
+  it("「読み取られました」は次の応答が早く来ても出っぱなしにならない", async () => {
     // 表示を消すタイマーがトークン監視の effect に同居していると、次の応答
     // （新しいデータオブジェクト）が2.5秒以内に届いたとき cleanup がタイマーを
     // 消してしまい、合図が出っぱなしになりうる (#420)。タイマーは合図の状態に
     // 結びつけ、応答の到着とは独立に必ず消えることを保証する
     vi.useFakeTimers();
     try {
-      const first = {
-        token: "mt1.u-1.1700000000.aaaa",
-        expiresAt: Date.now() + 600_000,
-        consumed: false,
-      };
-      getMock.mockResolvedValue(first);
+      getMock.mockResolvedValue(token("aaaa"));
       renderDialog();
-      await vi.advanceTimersByTimeAsync(50);
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
 
-      // 読まれた合図が「遅れて」届く（会場の回線で応答に2.9秒かかった想定）。
-      // 次の tick の応答が合図の 2.5 秒以内に重なる
-      const second = {
-        token: "mt1.u-1.1700000000.bbbb",
-        expiresAt: Date.now() + 600_000,
-        consumed: true,
-      };
-      getMock.mockImplementationOnce(
-        () => new Promise((r) => setTimeout(() => r(second), 2_900)),
-      );
-      // 以降の poll はすぐ返る（bbbb のまま・未読）
+      // 読まれた → 次のぶん（consumed）。続けてすぐ次の応答（同じ bbbb・未読）が届く
+      const second = token("bbbb", true);
+      getMock.mockResolvedValue(second);
+      await fireSignal();
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(screen.getByText(/読み取られました/)).toBeTruthy();
       getMock.mockResolvedValue({ ...second, consumed: false });
-
-      // tick(3s) → 応答は 5.9s に到着、合図は 8.4s まで。次の tick(6s) の
-      // 応答は 6s すぎに届く
-      await vi.advanceTimersByTimeAsync(6_200);
+      await fireSignal();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
       expect(screen.getByText(/読み取られました/)).toBeTruthy();
 
       // 合図の 2.5 秒が過ぎたら消えること（出っぱなしにならない）
-      await vi.advanceTimersByTimeAsync(3_000);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
       expect(screen.queryByText(/読み取られました/)).toBeNull();
     } finally {
       vi.useRealTimers();

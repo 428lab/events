@@ -132,7 +132,7 @@ async function editingState(
   return (await res.json()) as ScheduleEditingState;
 }
 
-/** 最後の心拍を巻き戻して、放置されたまま期限が切れた状態を作る */
+/** 最後の宣言を巻き戻して、放置されたまま期限が切れた状態を作る */
 async function expireEditing(eventId: string): Promise<void> {
   await env.DB.prepare(
     "UPDATE event_schedule_state SET editor_seen_at = ? WHERE event_id = ?",

@@ -56,7 +56,7 @@ const ja = {
   checkinResultNotConfirmed: "このイベントの確定参加者ではありません",
   checkinResultUnknownUser: "登録されていないユーザーです",
   checkinResultExpired:
-    "QRの有効期限が切れています。参加者に画面を更新してもらってください",
+    "QRの有効期限が切れています。参加者にQRを更新してもらってください",
   checkinManualWarning:
     "本人確認チケットではありません。本人確認のうえ手動で記録してください",
   checkinBackToScan: "スキャンに戻る",
@@ -67,7 +67,8 @@ const ja = {
     "入場QRを取得できませんでした。参加が確定しているか確認してください。",
   entranceQrAlt: "入場QRコード",
   entranceQrHint: "受付でスタッフに読み取ってもらってください",
-  entranceQrRemaining: "QRコードは自動的に更新されます（有効期限 残り {{time}}）",
+  entranceQrRemaining: "有効期限 残り {{time}}",
+  entranceQrExpired: "QRの期限が切れました・タップで更新",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -105,7 +106,7 @@ const en: Record<keyof typeof ja, string> = {
   checkinResultNotConfirmed: "Not a confirmed participant of this event",
   checkinResultUnknownUser: "This user is not registered",
   checkinResultExpired:
-    "This QR code has expired. Ask them to refresh their screen.",
+    "This QR code has expired. Ask them to refresh their QR code.",
   checkinManualWarning:
     "This is not a verified entry ticket. Check who they are, then record it by hand.",
   checkinBackToScan: "Back to scanning",
@@ -115,8 +116,8 @@ const en: Record<keyof typeof ja, string> = {
     "Could not get your entry QR code. Check that your registration is confirmed.",
   entranceQrAlt: "Entry QR code",
   entranceQrHint: "Show this to an organizer at the check-in desk.",
-  entranceQrRemaining:
-    "This QR code refreshes itself (expires in {{time}})",
+  entranceQrRemaining: "Expires in {{time}}",
+  entranceQrExpired: "This QR code has expired. Tap to refresh.",
 };
 
 export const checkin = { ja, en };

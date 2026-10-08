@@ -86,9 +86,9 @@ export function ScheduleEditor({
   const { data: members } = useEventMembers(eventId, true);
   const { data: me } = useMe();
   const save = useSaveEventSchedule(eventId);
-  // 開いている間だけ「自分が編集中」と宣言し続ける。返るのは反映後の状態なので、
+  // 開いたとき・編集したときに「自分が編集中」と宣言する。返るのは反映後の状態なので、
   // 先に他の人が編集していればその人が入っている（奪わない #340）
-  const { data: editing } = useHoldScheduleEditing(eventId);
+  const { data: editing, touch: touchEditing } = useHoldScheduleEditing(eventId);
   const otherEditor =
     editing?.editor && editing.editor.userId !== me?.id
       ? editing.editor
@@ -111,6 +111,16 @@ export function ScheduleEditor({
   // 登壇者が資料URLを更新する・回線が復帰する、など）。
   // 最新に追いつく手段は読み込み直し＝作り直しの1つだけにする
   const [baseVersion] = useState(version);
+  // 編集したら「編集中」の宣言を延ばす（定期の心拍の代わり。延ばすかどうかは
+  // useHoldScheduleEditing が前の宣言からの経過で決める）。開いた直後の初期値では呼ばない
+  const myId = me?.id;
+  const [openedWith] = useState(() => ({ rows, tracks }));
+  useEffect(() => {
+    if (rows === openedWith.rows && tracks === openedWith.tracks) return;
+    touchEditing(myId);
+    // myId・touchEditing の変化では呼ばない（編集したときだけ）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, tracks]);
   const [templateAnchor, setTemplateAnchor] = useState<null | HTMLElement>(null);
   // ドラッグ並び替え：ハンドルを押した行だけ draggable にする（入力操作と干渉させない）
   const [dragKey, setDragKey] = useState<string | null>(null);

@@ -10,6 +10,7 @@ import {
   PartialNotificationError,
 } from "../db/repositories/notifications.js";
 import { sendNotificationEmailToWithOutcome } from "./email.js";
+import { eventSignal } from "./eventSignal.js";
 
 /**
  * 参加者への一斉連絡の配信 (#172)。
@@ -280,6 +281,12 @@ export async function drainBroadcastEmails(): Promise<DrainResult> {
       console.warn(`broadcast: メール送信に失敗 queue=${row.id}`, e);
       await failIfExhausted(row, out);
     }
+  }
+  // 送信状況（送信待ち → 送信済み・失敗）が動いたイベントの送信画面に、取り直しの合図を
+  // 1回ずつ送る（topic `broadcasts`、D-POLL-MIN 第5段階 5b-4）。画面は定期に見張らない
+  const touched = [...new Set(claimed.map(({ head }) => head.eventId))];
+  if (touched.length > 0) {
+    await eventSignal.publishRefetch(touched.map((eventId) => ["broadcasts", eventId] as const));
   }
   if (claimed.length > 0) {
     console.log(

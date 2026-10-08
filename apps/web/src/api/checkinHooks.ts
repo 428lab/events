@@ -8,15 +8,17 @@ import type {
 
 /** QR受付（入場チェックイン） (#154) */
 
-/** 自分の入場チケット。60秒ごとに再取得して QR を常に新鮮に保つ（有効期限は3分） */
+/** 自分の入場チケット（有効期限3分）。開いたときに1回取る。
+ * 自動では更新しない（D-POLL-MIN 第5段階 5b-4）。入口に並ぶ全員の画面が定期に
+ * 取り直すと、それだけで大量の読み取りになるため。期限が切れたら画面に
+ * 「タップで更新」を出し、本人が押したときだけ取り直す（EntranceQrDialog） */
 export function useMyTicket(eventId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["event", eventId, "my-ticket"],
     enabled,
     queryFn: () => api.get<CheckinTicket>(`/events/${eventId}/my-ticket`),
-    // ダイアログを開いている間だけ60秒: 入口で見せているQR（有効期限3分）が
-    // 見せている途中で切れないようにするため
-    refetchInterval: 60_000,
+    // 期限切れの判定は画面の時計で行う。タブ復帰で勝手に取り直さない
+    refetchOnWindowFocus: false,
     // 閉じて開き直したときに古いチケットを見せない
     gcTime: 0,
     staleTime: 0,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { EventSignalSource } from "./eventSignal.js";
 
 /**
  * 参加者への一斉連絡 (#172)。
@@ -211,4 +212,7 @@ export interface EventBroadcastsPayload {
   remainingToday: number;
   /** 通算であと何回送れるか */
   remainingTotal: number;
+  /** メールの送信が進んだ合図の受け先（topic `broadcasts`、staff のみに返る）。
+   * サービス鍵が無い環境では null */
+  signal?: EventSignalSource | null;
 }

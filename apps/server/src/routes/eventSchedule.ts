@@ -4,6 +4,7 @@ import { saveScheduleInput, setScheduleLiveDeckInput, updateScheduleMaterialInpu
 import type {
   SaveScheduleInput,
   ScheduleAudience,
+  ScheduleEditingState,
   SetScheduleLiveDeckInput,
   UpdateScheduleMaterialInput,
 } from "@eventer/shared";
@@ -14,6 +15,7 @@ import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { publishLive } from "./liveControl.js";
 import { deferBackground } from "../runtime.js";
+import { eventSignal } from "../lib/eventSignal.js";
 import { refreshMaterialMeta } from "../lib/materialMeta.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
@@ -21,6 +23,17 @@ import { eventScheduleStateRepo } from "../db/repositories/eventScheduleState.js
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { decksRepo } from "../db/repositories/decks.js";
 import { presenterSlidesRepo } from "../db/repositories/presenterSlides.js";
+
+/** タイムテーブルの編集中・版が変わったことを、開いている運営の画面へ知らせる
+ * （topic `schedule-editing`、D-POLL-MIN 第5段階 5b-4）。定期の見張りの代わり */
+function publishScheduleEditingChanged(eventId: string): Promise<void> {
+  return deferBackground(eventSignal.publishRefetch([["schedule-editing", eventId]]));
+}
+
+/** 編集中ステータスに合図の受け先を添える（staff のゲートの内側でだけ呼ぶ） */
+async function withEditingSignal(eventId: string, readAt: number, state: ScheduleEditingState) {
+  return { ...state, signal: await eventSignal.source(eventId, "schedule-editing", readAt) };
+}
 
 /** タイムテーブルを閲覧できるか。公開イベントは誰でも、下書きはメンバー/管理者のみ
  * （イベント詳細 GET と同じ判定） */
@@ -152,6 +165,9 @@ eventScheduleRoutes.put(
     const saved = await eventScheduleRepo.saveAll(eventId, items, input.tracks, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     // OG サムネイルはレスポンスを待たせずバックグラウンドで取得 (#149)
     await deferBackground(refreshMaterialMeta(eventId));
+    // 版が進んだ。開いている他の運営の編集画面に「保存されたので、このままだと衝突する」と
+    // 先に知らせる（衝突を実際に止めるのは版の突き合わせのまま）
+    await publishScheduleEditingChanged(eventId);
     // 保存できるのは staff だけなので、返すのも staff 向けの全量
     return c.json({
       items: saved,
@@ -175,43 +191,58 @@ eventScheduleRoutes.use("/:id/timetable/editing", async (c, next) => {
 });
 
 /** いま誰がタイムテーブルを編集しているか。編集できる人だけが見られる。
- * このアプリは常時接続を使わないので、画面は SCHEDULE_EDIT_POLL_MS ごとに取りに来る */
+ * 画面は定期に取りに来ない。開いたとき・タブ復帰と、応答の `signal`
+ * （topic `schedule-editing`）の合図で取り直す（D-POLL-MIN 第5段階 5b-4） */
 eventScheduleRoutes.get(
   "/:id/timetable/editing",
   requireEventRole(["staff"]),
   async (c) => {
-    return c.json(await eventScheduleStateRepo.getOrInit(c.req.param("id")));
+    const eventId = c.req.param("id");
+    const readAt = Date.now();
+    return c.json(await withEditingSignal(eventId, readAt, await eventScheduleStateRepo.getOrInit(eventId)));
   },
 );
 
-/** 「自分が編集中」と宣言する／宣言を延長する（心拍を兼ねる）。
+/** 「自分が編集中」と宣言する／宣言を延長する。
  *
+ * 呼ぶのは編集画面を開いたときと、編集したとき（前の宣言から
+ * SCHEDULE_EDIT_RENEW_MS 以上経っていれば）だけ。定期の心拍はしない。
  * **他人の編集中は奪わない**が、**奪えなくても編集と保存は止めない**（助言）。
  * 引き継ぎのボタンを別に用意しないのはそのため。放置された編集中は
  * SCHEDULE_EDIT_EXPIRE_MS で自動的に空くので、待てば必ず自分のものになる。
- * 返すのは反映後の状態なので、奪えなかった側には相手の名前が返る */
+ * 返すのは反映後の状態なので、奪えなかった側には相手の名前が返る。
+ * 編集している人が替わったときだけ合図を送る（同じ人の延長は他の画面に関係ない） */
 eventScheduleRoutes.post(
   "/:id/timetable/editing",
   requireEventRole(["staff"]),
   async (c) => {
-    return c.json(
-      await eventScheduleStateRepo.claimEditor(
-        c.req.param("id"),
-        c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}),
-    );
+    const eventId = c.req.param("id");
+    const userId = c.get("user").id;
+    const readAt = Date.now();
+    const before = await eventScheduleStateRepo.getOrInit(eventId);
+    const after = await eventScheduleStateRepo.claimEditor(
+      eventId,
+      userId, {eventId:c.req.param("id")!,actorId:userId,permission:"manager"});
+    if (before.editor?.userId !== after.editor?.userId) await publishScheduleEditingChanged(eventId);
+    return c.json(await withEditingSignal(eventId, readAt, after));
   },
 );
 
-/** 編集をやめた（画面を閉じた・保存し終えた）。自分の宣言だけ外せる */
+/** 編集をやめた（画面を閉じた・保存し終えた・ページを離れた）。自分の宣言だけ外せる。
+ * ページを離れるときは keepalive の fetch で届く（応答は読まれない） */
 eventScheduleRoutes.delete(
   "/:id/timetable/editing",
   requireEventRole(["staff"]),
   async (c) => {
-    return c.json(
-      await eventScheduleStateRepo.releaseEditor(
-        c.req.param("id"),
-        c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}),
-    );
+    const eventId = c.req.param("id");
+    const userId = c.get("user").id;
+    const readAt = Date.now();
+    const before = await eventScheduleStateRepo.getOrInit(eventId);
+    const after = await eventScheduleStateRepo.releaseEditor(
+      eventId,
+      userId, {eventId:c.req.param("id")!,actorId:userId,permission:"manager"});
+    if (before.editor?.userId !== after.editor?.userId) await publishScheduleEditingChanged(eventId);
+    return c.json(await withEditingSignal(eventId, readAt, after));
   },
 );
 
@@ -252,6 +283,7 @@ eventScheduleRoutes.patch(
     // 編集開始時点の古い URL でここの更新を巻き戻してしまう。
     // 版が進んでいれば、その保存は 409 で止まり、読み直しを促せる
     await eventScheduleStateRepo.touch(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"view"});
+    await publishScheduleEditingChanged(eventId);
     // OG サムネイルはバックグラウンドで再取得 (#149)
     await deferBackground(refreshMaterialMeta(eventId));
     const updated = await eventScheduleRepo.findItem(eventId, itemId, "public");

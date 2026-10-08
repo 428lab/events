@@ -1,29 +1,31 @@
+import { useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { MeetRankingLive, MeetScanResult, MeetToken } from "@eventer/shared";
 import { api } from "./client.js";
 import { useEventSignal } from "../lib/signalHub.js";
 
-/**
- * 自分のQRのトークンを見張る間隔（ミリ秒） (#330)。
- *
- * トークンは使い切りなので、定期的に切り替える必要はない（読み取っている
- * 最中に変わると失敗し続けるし、行列の2人目以降が使用済みで弾かれる）。
- * 代わりに「読まれたか」を短い間隔で確かめ、読まれた直後だけ描き替える。
- * 3秒にしたのは、次の人にQRを向け直すまでの間に新しいものが出ていてほしい
- * ため。表示している間だけ動かす（enabled ＝ ダイアログの開閉に連動）。
- */
-export const MEET_TOKEN_POLL_MS = 3_000;
-
 /** 会場の電波が悪いときに待ち続けないための上限（ミリ秒）。
  * これを過ぎたら打ち切って、画面から再試行できるようにする */
 const MEET_REQUEST_TIMEOUT_MS = 15_000;
 
+/** 表示の上限（displayUntil）を過ぎてから取り直すまでの余裕（ミリ秒）。
+ * サーバーの「出しすぎ」判定が確実に立ってから聞く */
+const MEET_TOKEN_CAP_GRACE_MS = 500;
+
 /** 自分のQRに載せる使い切りトークン (#330)。
  *
  * 表示中のトークンを `current` に添えて問い合わせ、まだ読まれていなければ
- * 同じものが返る（QRは変わらない）。読まれた・切れたときだけ次のぶんが返る。 */
+ * 同じものが返る（QRは変わらない）。読まれた・切れたときだけ次のぶんが返る。
+ *
+ * 定期の見張りはしない（D-POLL-MIN 第5段階 5b-4）。取り直すのは次の2つだけ:
+ * - 読まれたとき: /scan が本人宛てに出す合図（topic `meet-token`）。待たせない（jitter 0）
+ * - 表示の上限（displayUntil）: その時刻に1回だけ。サーバーが次のぶんに切り替える
+ *
+ * 合図はリレーの WebSocket で届くので、ブラウザが報告する可視状態に左右されない
+ * (#420: スマホでは表示中でも visibilityState が hidden のまま残ることがある)。
+ * 合図を取りこぼすと、QRは上限まで使用済みのまま残る（読んだ側には「使用済み」が出る）。 */
 export function useMyMeetToken(enabled: boolean, current: string | null) {
-  return useQuery({
+  const query = useQuery({
     // current はキーに入れない。入れるとトークンが変わるたびに
     // 別クエリになり、前のデータが残ったまま画面がちらつく
     queryKey: ["meet-token"],
@@ -35,26 +37,21 @@ export function useMyMeetToken(enabled: boolean, current: string | null) {
           : "/meet/token",
         { timeoutMs: MEET_REQUEST_TIMEOUT_MS },
       ),
-    // ダイアログを開いている間だけ3秒・非表示でも継続: QRを掲げている人の画面は
-    // 読まれた直後に切り替わらないと次の読み取りが失敗するため（閉じれば止まる）
-    refetchInterval: enabled ? MEET_TOKEN_POLL_MS : false,
-    // ブラウザが報告する可視状態には依存させない (#420)。
-    //
-    // false（既定）だと、実行が focusManager.isFocused()（= visibilityState）
-    // 頼みになる。スマホでは画面ロック・アプリ切替・ホーム画面追加・アプリ内
-    // ブラウザで visibilityState が hidden のまま残る／visibilitychange が
-    // 飛ばないことがあり、そうなると表示中なのに見張りが完全に止まる。
-    // しかも復帰経路の refetchOnWindowFocus も同じ visibilitychange 頼みなので、
-    // 一緒に死ぬ＝「読まれても合図が出ず、QRも切り替わらない」になる。
-    // 見張りの期間は enabled（ダイアログの開閉）で既に閉じているので、
-    // ここで可視状態の門を重ねる必要はない。本当に裏へ回った間はブラウザ側が
-    // タイマーを止める・間引くため、叩きすぎにもならない
-    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
     gcTime: 0,
     staleTime: 0,
     retry: false,
   });
+  const { refetch } = query;
+  useEventSignal(enabled ? query.data?.signal : null, () => refetch());
+  // 表示の上限で1回だけ取り直す（時刻はデータが決める。周期のタイマーではない）
+  const displayUntil = enabled ? query.data?.displayUntil : undefined;
+  useEffect(() => {
+    if (displayUntil === undefined) return;
+    const timer = setTimeout(() => void refetch(), Math.max(0, displayUntil - Date.now()) + MEET_TOKEN_CAP_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [displayUntil, refetch]);
+  return query;
 }
 
 /** QRを読み取ったその場での出会い記録 (#330) */

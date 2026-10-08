@@ -48,6 +48,12 @@ export function meetTokenTooOld(exp: number, now = Date.now()): boolean {
   return now / 1000 - issuedAtSec > MEET_TOKEN_MAX_DISPLAY_SEC;
 }
 
+/** そのトークンを出し続けてよい上限（epoch ミリ秒）。meetTokenTooOld が true に
+ * 変わる時刻に揃える。表示側はこの時刻に1回だけ取り直す（D-POLL-MIN 第5段階 5b-4） */
+export function meetTokenDisplayUntil(exp: number): number {
+  return (exp - MEET_TOKEN_TTL_SEC + MEET_TOKEN_MAX_DISPLAY_SEC) * 1000;
+}
+
 /** 読み取り済みの記録につける接頭辞。共有テーブルで他用途の nonce と
  * ぶつからないようにする（衝突すると片方が「使用済み」に見えてしまう） */
 const USED_NONCE_PREFIX = "meet:";

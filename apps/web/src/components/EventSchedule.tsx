@@ -63,7 +63,7 @@ export function EventSchedule({
   // 最新を取り直して編集画面を作り直す（手元の編集は失われると案内済み）
   const [editorSeed, setEditorSeed] = useState(0);
   // 誰かが編集中か (#340)。編集できる人にしか返らないので staff のときだけ。
-  // 編集画面を開いている間は、そちら（心拍つき）が同じ状態を取りに行くので止める
+  // 編集画面を開いている間は、そちら（宣言つき）が同じ状態を持つので止める
   const { data: editState } = useScheduleEditingState(
     eventId,
     canManage && !editing,

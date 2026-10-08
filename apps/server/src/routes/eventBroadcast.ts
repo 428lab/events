@@ -14,6 +14,7 @@ import { valid, zValidator } from "../lib/validator.js";
 import { drainBroadcastEmails, sendBroadcast } from "../lib/broadcast.js";
 import { eventBroadcastsRepo } from "../db/repositories/eventBroadcasts.js";
 import { deferBackground } from "../runtime.js";
+import { eventSignal } from "../lib/eventSignal.js";
 
 /**
  * 参加者への一斉連絡 (#172)。送信も履歴閲覧も**そのイベントのスタッフだけ**。
@@ -59,12 +60,17 @@ async function remaining(
 /** 送信履歴と、区分ごとの現在の人数・残り送信回数 */
 eventBroadcastRoutes.get("/:id/broadcasts", async (c) => {
   const eventId = c.req.param("id");
+  // 合図の rev は状態を読む前の時刻
+  const readAt = Date.now();
   const left = await remaining(eventId);
   const payload: EventBroadcastsPayload = {
     broadcasts: await eventBroadcastsRepo.listByEvent(eventId),
     counts: await eventBroadcastsRepo.countsBySegment(eventId, c.get("user").id),
     remainingToday: left.today,
     remainingTotal: left.total,
+    // メールの送信が進んだら合図が来る（topic `broadcasts`）。画面は定期に取りに来ない
+    // （D-POLL-MIN 第5段階 5b-4）。このルーターは全体が staff のゲートの内側
+    signal: await eventSignal.source(eventId, "broadcasts", readAt),
   };
   return c.json(payload);
 });
@@ -104,6 +110,8 @@ eventBroadcastRoutes.post(
       incomplete: result.incomplete,
       truncatedFrom: result.truncatedFrom,
     };
+    // 同じイベントの送信画面を開いている他の staff に、履歴が増えたことを知らせる
+    await deferBackground(eventSignal.publishRefetch([["broadcasts", eventId]]));
     return c.json(payload);
   },
 );
@@ -121,7 +129,10 @@ eventBroadcastRoutes.post(
     }
     const requeued = await eventBroadcastsRepo.requeueFailedEmails(broadcastId);
     // 戻したぶんはその場で送れるだけ送る（残りは定期実行が拾う）
-    if (requeued > 0) await deferBackground(drainBroadcastEmails());
+    if (requeued > 0) {
+      await deferBackground(drainBroadcastEmails());
+      await deferBackground(eventSignal.publishRefetch([["broadcasts", eventId]]));
+    }
     return c.json({ requeued });
   },
 );
