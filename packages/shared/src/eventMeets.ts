@@ -28,6 +28,12 @@ export interface MeetToken {
   expiresAt: number;
   /** 渡した current が読み取り済みだったか。true ならQRを描き替える合図 */
   consumed: boolean;
+  /** このQRを出し続けてよい上限（epoch ミリ秒）。過ぎたら表示側が1回だけ取り直し、
+   * サーバーが次のぶんに切り替える（定期の見張りはしない。D-POLL-MIN 第5段階 5b-4） */
+  displayUntil: number;
+  /** 「読まれた」の合図の受け先（topic `meet-token`・本人のユーザー単位）。
+   * サービス鍵が無い環境では null */
+  signal?: EventSignalSource | null;
 }
 
 /** POST /api/meet/scan の入力 */

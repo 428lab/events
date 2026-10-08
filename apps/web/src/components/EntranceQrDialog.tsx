@@ -21,7 +21,8 @@ import { useMyTicket } from "../api/checkinHooks.js";
  * 署名付き・短寿命（3分）のチケットを QR にして受付スタッフに見せる。
  * プロフィールURLのQRと違い、アカウントを開いている本人しか出せないので
  * スクリーンショットの使い回しでのなりすましができない。
- * チケットは60秒ごとに自動更新され、QR も追従する。
+ * チケットは自動では更新しない。期限が切れたら QR を伏せて「タップで更新」を出し、
+ * 本人が押したときだけ取り直す（D-POLL-MIN 第5段階 5b-4）。
  */
 export function EntranceQrDialog({
   eventId,
@@ -35,7 +36,7 @@ export function EntranceQrDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const { data: ticket, isError } = useMyTicket(eventId, open);
+  const { data: ticket, isError, refetch, isFetching } = useMyTicket(eventId, open);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -66,6 +67,8 @@ export function EntranceQrDialog({
   const remainSec = ticket
     ? Math.max(0, Math.floor((ticket.expiresAt - now) / 1000))
     : null;
+  // 期限切れのQRは見せない（受付で「期限切れ」と弾かれるだけなので）
+  const expired = remainSec === 0;
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
@@ -99,7 +102,16 @@ export function EntranceQrDialog({
                 aspectRatio: "1 / 1",
               }}
             >
-              {qrUrl ? (
+              {expired ? (
+                <Button
+                  variant="outlined"
+                  onClick={() => void refetch()}
+                  disabled={isFetching}
+                  sx={{ width: "100%", height: "100%", whiteSpace: "normal" }}
+                >
+                  {isFetching ? <CircularProgress size={24} /> : t("staffOps.entranceQrExpired")}
+                </Button>
+              ) : qrUrl ? (
                 <Box
                   component="img"
                   src={qrUrl}
@@ -114,7 +126,7 @@ export function EntranceQrDialog({
           <Typography variant="body2" align="center">
             {t("staffOps.entranceQrHint")}
           </Typography>
-          {remainSec !== null && (
+          {remainSec !== null && !expired && (
             <Typography variant="caption" color="text.secondary" align="center">
               {t("staffOps.entranceQrRemaining", {
                 time: `${Math.floor(remainSec / 60)}:${String(remainSec % 60).padStart(2, "0")}`,

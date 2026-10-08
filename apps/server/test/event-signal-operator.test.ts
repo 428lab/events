@@ -198,12 +198,16 @@ describe("meet-ranking", () => {
     const { token } = await read<{ token: string }>("/meet/token", member.cookie);
     const { sent } = spyPublish(async () => (await sql("SELECT COUNT(*) AS n FROM event_meet WHERE event_id=?", eventId).first<{ n: number }>())!.n);
     expect((await json("POST", "/meet/scan", staff.cookie, { token })).status).toBe(200);
-    await settled(sent, 1);
-    expect(sent[0]).toMatchObject({ topics: [topicOf(eventId, "meet-ranking"), topicOf(eventId, "prize-desk")], seen: 1 });
+    // 5b-4 also tells the token owner's QR screen (`meet-token`, user scope) in its own signal
+    // (event-signal-staff.test.ts covers it)
+    await settled(sent, 2);
+    const eventSignals = sent.filter((s) => !s.topics.includes(topicOf(member.id, "meet-token")));
+    expect(eventSignals).toHaveLength(1);
+    expect(eventSignals[0]).toMatchObject({ topics: [topicOf(eventId, "meet-ranking"), topicOf(eventId, "prize-desk")], seen: 1 });
     expect(JSON.stringify(sent)).not.toContain(eventId);
     const { token: again } = await read<{ token: string }>("/meet/token", member.cookie);
     expect((await json("POST", "/meet/scan", staff.cookie, { token: again })).status).toBe(200);
-    await settled(sent, 1); // already met: no new meet row, no signal
+    await settled(sent, 2); // already met: no new meet row, the token is released, no signal
   });
 });
 

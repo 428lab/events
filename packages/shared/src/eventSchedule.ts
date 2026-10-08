@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { EventSignalSource } from "./eventSignal.js";
 
 /** タイムテーブルの担当者（イベントメンバーから解決したユーザー情報） */
 export const scheduleSpeakerSchema = z.object({
@@ -181,18 +182,15 @@ export type SaveScheduleTrackInput = z.infer<typeof saveScheduleTrackInput>;
 
 /* ===== 同時編集の対策 (#340) ===== */
 
-/** 編集画面を開いている人が「まだ編集中」と言い続ける心拍の間隔（ミリ秒）。
- * 非表示のタブでも続ける。心拍が止まると他の staff に「空き」と見えて
- * タイムテーブルを上書きされるため。期限（下の2分）の内側に十分収まる30秒に置く。
- * 編集画面の外（詳細ページ等）の「誰かが編集中」の表示はポーリングしない（D-POLL-MIN）。
- * 開いたとき・タブ復帰で取り直し、編集を始めると心拍の応答が持ち主を返す */
-export const SCHEDULE_EDIT_POLL_MS = 30_000;
+/** 編集中の宣言を延ばす最短の間隔（ミリ秒）。定期の心拍はしない（D-POLL-MIN 第5段階 5b-4）。
+ * 宣言するのは編集画面を開いたときと、**実際に編集したとき**だけで、それも前の宣言から
+ * この間隔が過ぎたときに限る。手を止めた人の宣言は下の期限で自然に空く */
+export const SCHEDULE_EDIT_RENEW_MS = 5 * 60_000;
 
-/** 最後の反応からこれだけ経つと編集中が自動的に解除される（ミリ秒）。
- * 心拍 (30秒) の4回ぶん。ブラウザは背面のタブのタイマーを1分に1回まで
- * 間引くことがあるため、**1分より十分に長く**取る必要がある。
- * 一方で長すぎると「閉じ忘れて帰った人」を待たされるので2分に置く。 */
-export const SCHEDULE_EDIT_EXPIRE_MS = 120_000;
+/** 最後の宣言からこれだけ経つと編集中が自動的に解除される（ミリ秒）。
+ * 宣言は編集した時にしか延びないので、手を止めて考えている間に切れない長さに置く。
+ * 閉じた・保存した・ページを離れたときは、その場で外す */
+export const SCHEDULE_EDIT_EXPIRE_MS = 30 * 60_000;
 
 /** いまタイムテーブルを編集している人 (#340)。
  * 厳密な排他ではなく、**声かけのための表示**。保存できるかどうかは版で決まる */
@@ -217,7 +215,11 @@ export const scheduleEditingStateSchema = z.object({
   /** タイムテーブルの現在の版 */
   version: z.number(),
 });
-export type ScheduleEditingState = z.infer<typeof scheduleEditingStateSchema>;
+export type ScheduleEditingState = z.infer<typeof scheduleEditingStateSchema> & {
+  /** 編集中・版が変わった合図の受け先（topic `schedule-editing`、staff のみに返る）。
+   * サービス鍵が無い環境では null */
+  signal?: EventSignalSource | null;
+};
 
 /** 登壇者本人による資料URLの更新入力 (#148) */
 export const updateScheduleMaterialInput = z.object({

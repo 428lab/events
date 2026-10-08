@@ -5,6 +5,7 @@ import type {
   SendBroadcastResult,
 } from "@eventer/shared";
 import { api } from "./client.js";
+import { useEventSignal } from "../lib/signalHub.js";
 
 /** 参加者への一斉連絡 (#172)。送信も履歴もそのイベントのスタッフだけが叩ける */
 
@@ -12,24 +13,19 @@ export function broadcastsQueryKey(eventId: string) {
   return ["event", eventId, "broadcasts"] as const;
 }
 
-/** 送信待ちが残っている間の再取得間隔。メールは定期実行で順次送られるので、
- * 開いたまま眺めていれば「送信待ち → 送信済み」が動いていくのが分かる。
- * 送信状況はカウンタ列から読むので、1回の再取得で読む行は履歴の件数ぶんだけ */
-const BROADCAST_POLL_MS = 15000;
-
+/** 送信履歴。送信待ちのメールは定期実行が順次送り、そのたびにサーバーから
+ * 取り直しの合図（topic `broadcasts`）が届くので、開いたまま眺めていれば
+ * 「送信待ち → 送信済み」が動いていく。定期の取り直しはしない（D-POLL-MIN 第5段階 5b-4） */
 export function useEventBroadcasts(eventId: string, enabled: boolean) {
-  return useQuery({
+  const query = useQuery({
     queryKey: broadcastsQueryKey(eventId),
     enabled: enabled && Boolean(eventId),
     queryFn: () =>
       api.get<EventBroadcastsPayload>(`/events/${eventId}/broadcasts`),
-    // 送信待ちがある間だけ15秒・表示中だけ（staff 専用・送り終われば自然に止まる）:
-    // 一斉連絡を送った staff が、メールが送られていくのを手を動かさずに確かめるため
-    refetchInterval: (query) =>
-      query.state.data?.broadcasts.some((b) => b.email.pending > 0)
-        ? BROADCAST_POLL_MS
-        : false,
   });
+  const { refetch } = query;
+  useEventSignal(enabled ? query.data?.signal : null, () => refetch(), { eventId });
+  return query;
 }
 
 export type { SendBroadcastResult };

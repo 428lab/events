@@ -15,6 +15,7 @@ import { valid, zValidator } from "../lib/validator.js";
 import {
   consumeMeetToken,
   createMeetToken,
+  meetTokenDisplayUntil,
   createUndoToken,
   isMeetTokenRead,
   isMeetTokenUsed,
@@ -140,9 +141,21 @@ meetScanRoutes.use("*", requireAuth);
  */
 meetScanRoutes.get("/token", async (c) => {
   const me = c.get("user");
+  // 合図の rev は状態を読む前の時刻（これ以前の「読まれた」はこの応答に反映済み）
+  const readAt = Date.now();
   const current = c.req.query("current");
   const verified = current ? await verifyMeetToken(current) : null;
   const mine = verified?.ok && verified.userId === me.id ? verified : null;
+  // 表示側は定期に見張らない（D-POLL-MIN 第5段階 5b-4）。読まれたら /scan が
+  // 本人宛ての合図（topic `meet-token`）を出し、表示の上限（displayUntil）では
+  // 表示側が1回だけ取り直す
+  const respond = async (token: { token: string; expiresAt: number }, consumed: boolean) =>
+    c.json({
+      ...token,
+      consumed,
+      displayUntil: meetTokenDisplayUntil(Math.floor(token.expiresAt / 1000)),
+      signal: await eventSignal.source(me.id, "meet-token", readAt),
+    });
   if (mine) {
     // 「読まれた」と「画面から降ろした」を分けて見る。表示の文言に使うのは前者
     const consumed = await isMeetTokenRead(mine.nonce);
@@ -151,11 +164,7 @@ meetScanRoutes.get("/token", async (c) => {
     // 読み取りが終わらないうちに切り替わらない長さは残しつつ、頭打ちにする
     if (!unusable && !meetTokenTooOld(mine.exp)) {
       // まだ誰にも読まれていない。出しっぱなしのQRをそのまま使い続ける
-      return c.json({
-        token: current!,
-        expiresAt: mine.exp * 1000,
-        consumed: false,
-      });
+      return respond({ token: current!, expiresAt: mine.exp * 1000 }, false);
     }
     // 切り替えるときは、画面から降ろす旧トークンを必ず焼く。
     //
@@ -167,10 +176,10 @@ meetScanRoutes.get("/token", async (c) => {
     // 降ろしたはずのトークンが生き返る。
     await retireMeetToken(mine.nonce);
     // consumed は「読まれたから替わった」ときだけ立てる（表示の文言が変わる）
-    return c.json({ ...(await createMeetToken(me.id)), consumed });
+    return respond(await createMeetToken(me.id), consumed);
   }
   // 手持ちが無い・切れた・自分のものでない
-  return c.json({ ...(await createMeetToken(me.id)), consumed: false });
+  return respond(await createMeetToken(me.id), false);
 });
 
 /**
@@ -237,7 +246,13 @@ meetScanRoutes.post("/scan", zValidator("json", meetScanInput), async (c) => {
     await releaseMeetToken(verified.nonce);
     throw error;
   }
-  if (!result.wrote) await releaseMeetToken(verified.nonce);
+  if (!result.wrote) {
+    await releaseMeetToken(verified.nonce);
+  } else {
+    // 書けた＝トークンを使い切った。見せている本人の画面へ「読まれた」を送り、
+    // 次の人に向けるQRへ切り替えさせる（本人1人宛てなので throttle しない）
+    await deferBackground(eventSignal.publishRefetch([["meet-token", verified.userId]]));
+  }
   await publishMeetsChanged(result.events.filter((e) => e.meetCreated).map((e) => e.eventId));
   const events = await visibleMeetResults(me.id,target.id,result.events);
   if (!events.length) return c.json({error:"no_shared_event"},409);
