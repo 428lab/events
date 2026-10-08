@@ -12,9 +12,6 @@ export type LiveCameraSlot = (typeof LIVE_CAMERA_SLOTS)[number];
 export const LIVE_CAMERA_LABEL_MAX = 20;
 const cameraSlotSchema = z.number().int().min(1).max(LIVE_CAMERA_SLOTS.length);
 
-/** 配信画面タブが状態をポーリングする間隔 */
-export const LIVE_POLL_MS = 1000;
-
 export const LIVE_ELEMENT_TYPES = [
   "text",
   "image",
