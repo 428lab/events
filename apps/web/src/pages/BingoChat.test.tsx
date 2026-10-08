@@ -48,6 +48,7 @@ vi.mock("../api/eventChatHooks.js", () => ({
   useChatMembers: () => ({ data: {
     channelId: "room", members: [{ pubkey: "key", username: "me", name: "参加者" }],
     hiddenNoteIds: [],
+    hiddenSignal: null,
   } }),
   useResetChatChannel: () => ({ isPending: false, mutate: vi.fn() }),
   useHideChatNote: () => ({ isPending: false, mutate: vi.fn() }),

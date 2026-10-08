@@ -28,6 +28,8 @@ import {
   signWithServiceKey,
 } from "../lib/nostrSign.js";
 import { nostrRelay } from "../lib/nostrRelay.js";
+import { eventSignal } from "../lib/eventSignal.js";
+import { deferBackground } from "../runtime.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
 import { groupChatRepo } from "../db/repositories/groupChat.js";
@@ -282,11 +284,14 @@ eventChatRoutes.get(
     // or unscheduled events cannot retain a previously allowed relay view. Disabled
     // chat remains in the response for existing clients, which honor chatEnabled=false.
     if (event.status !== "published" || event.scheduling) return c.json({ error: "chat_unavailable" }, 403);
+    // 非表示リストを読む前の時刻。これより新しい合図だけが画面に足される
+    const readAt = Date.now();
     const payload: ChatMembersPayload = {
       members: await eventChatRepo.listMembers(eventId),
       channelId: await eventChatRepo.channelIdFor(eventId),
       chatEnabled: event.chatEnabled,
       hiddenNoteIds: await eventChatRepo.listHidden(eventId),
+      hiddenSignal: eventSignal.config(eventId, "chat-hidden", readAt),
       relays: await getChatRelays(),
       // 入力欄の判定に使う期間 (#578)。web と同じ関数で計算して渡す（定義を1つにする）。
       // サーバーは本文を経由しないので、ここで書き込みを止めることはしない
@@ -458,7 +463,10 @@ eventChatRoutes.post(
     const denied = await staffAndNotBlocked(c);
     if (denied) return denied;
     const { noteId } = valid<HideChatNoteInput>(c, "json");
-    await eventChatRepo.hideNote(c.req.param("id"), noteId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-staff"});
+    const eventId = c.req.param("id")!;
+    const changed = await eventChatRepo.hideNote(eventId, noteId, {eventId,actorId:c.get("user").id,permission:"chat-staff"});
+    // 開いている画面へ即時に知らせる（D-POLL-MIN 第5段階）。応答はリレーを待たない
+    if (changed > 0) await deferBackground(eventSignal.publishChatHidden(eventId, noteId));
     return c.json({ ok: true });
   },
 );
@@ -474,7 +482,9 @@ eventChatRoutes.delete(
     if (!/^[0-9a-f]{64}$/.test(noteId)) {
       return c.json({ error: "invalid_note_id" }, 400);
     }
-    await eventChatRepo.unhideNote(c.req.param("id"), noteId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"chat-staff"});
+    const eventId = c.req.param("id")!;
+    const changed = await eventChatRepo.unhideNote(eventId, noteId, {eventId,actorId:c.get("user").id,permission:"chat-staff"});
+    if (changed > 0) await deferBackground(eventSignal.publishChatHidden(eventId, noteId));
     return c.json({ ok: true });
   },
 );

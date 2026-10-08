@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EncryptedChatPayload, EventLiveState } from "@eventer/shared";
-import { GROUP_CHAT_KIND } from "@eventer/shared";
+import { EVENT_SIGNAL_KIND, GROUP_CHAT_KIND } from "@eventer/shared";
 import type { Event as NostrEvent } from "nostr-tools/pure";
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { sealGroupChatMessage } from "../lib/groupChatCrypto.js";
@@ -25,7 +25,9 @@ vi.mock("../api/eventChatHooks.js", () => ({
     return { data: undefined, dataUpdatedAt: 0, isError: false };
   },
 }));
-let encrypted: { data?: EncryptedChatPayload; dataUpdatedAt: number; isError: boolean };
+let encrypted: { data?: EncryptedChatPayload; dataUpdatedAt: number; isError: boolean; refetch?: () => Promise<void> };
+/** The metadata read after the signal EOSE lands a moment later (dataUpdatedAt moves forward). */
+const refetch = () => { encrypted = { ...encrypted, dataUpdatedAt: Date.now() + 1 }; return Promise.resolve(); };
 vi.mock("../api/encryptedChatHooks.js", () => ({ useEncryptedChat: () => encrypted }));
 vi.mock("../lib/nostrChat.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/nostrChat.js")>()),
@@ -35,6 +37,7 @@ vi.mock("../lib/nostrChat.js", async (importOriginal) => ({
     onstatus?: () => void;
     connect() { this.onstatus?.(); return Promise.resolve(); }
     subscribe(channel: string, deliver: (event: NostrEvent) => void, kind?: number) { subscriptions.push({ channel, kind, deliver }); return () => {}; }
+    subscribeSignal() { return { close: () => {}, synced: () => this.connected }; }
     close() {}
   },
 }));
@@ -50,6 +53,7 @@ const PAYLOAD: EncryptedChatPayload = {
   myKey: null,
   members: [{ pubkey: AUTHOR, userId: "u-2", username: "two", name: "ふたり", avatarUrl: null, revokedAt: null, role: "participant" }],
   hiddenNoteIds: [],
+  hiddenSignal: { kind: EVENT_SIGNAL_KIND, pubkey: "5e".repeat(32), topic: "topic", rev: 1 },
   plaintextChannelId: null,
   encryptedAt: 0,
   relays: [RELAY],
@@ -70,13 +74,14 @@ function sealed(text: string, keys = KEYS): NostrEvent {
 beforeEach(() => {
   subscriptions.length = 0;
   chatMembersEnabled.length = 0;
-  encrypted = { data: PAYLOAD, dataUpdatedAt: Date.now(), isError: false };
+  encrypted = { data: PAYLOAD, dataUpdatedAt: Date.now(), isError: false, refetch };
 });
 
 describe("useLiveEventChat 参加者のみ（暗号化）(#582 W5)", () => {
   it("暗号化の部屋を購読し、配られた鍵で復号した本文が行になる（開けないものは出ない）", async () => {
-    render(<Stage />);
+    const view = render(<Stage />);
     await act(async () => {});
+    view.rerender(<Stage />);
     expect(subscriptions).toHaveLength(1);
     expect(subscriptions[0]).toMatchObject({ channel: ROOM, kind: GROUP_CHAT_KIND });
     // 平文の chat-members は取らない
@@ -90,19 +95,15 @@ describe("useLiveEventChat 参加者のみ（暗号化）(#582 W5)", () => {
     expect(screen.getByText("status:on")).toBeTruthy();
   });
 
-  it("鍵配布の鮮度切れ・403 で行が消える", async () => {
+  it("鍵配布の 403 で行が消える（定期の取り直しも鮮度の窓も無い。D-POLL-MIN 第5段階）", async () => {
     const view = render(<Stage />);
     await act(async () => {});
+    view.rerender(<Stage />);
     act(() => subscriptions[0].deliver(sealed("消えるべき発言")));
     expect(screen.getByText(/消えるべき発言/)).toBeTruthy();
 
-    encrypted = { ...encrypted, dataUpdatedAt: Date.now() - 7000 };
-    view.rerender(<Stage />);
-    expect(screen.queryByText(/消えるべき発言/)).toBeNull();
-    expect(screen.getByText("status:unavailable")).toBeTruthy();
-
     // react-query は失敗しても直前の data を保持する。それでも出さない
-    encrypted = { data: PAYLOAD, dataUpdatedAt: Date.now(), isError: true };
+    encrypted = { ...encrypted, isError: true };
     view.rerender(<Stage />);
     expect(screen.queryByText(/消えるべき発言/)).toBeNull();
     expect(screen.getByText("status:unavailable")).toBeTruthy();

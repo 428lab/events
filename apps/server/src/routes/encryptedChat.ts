@@ -9,6 +9,7 @@ import { eventChatRepo } from "../db/repositories/eventChat.js";
 import { eventsRepo, type EventAccessRow } from "../db/repositories/events.js";
 import { gateEvent } from "../auth/eventAccess.js";
 import { getChatRelays } from "../db/repositories/appSettings.js";
+import { eventSignal } from "../lib/eventSignal.js";
 
 /** 参加者のみ（暗号化）の参加者チャット (#582)。設計は docs/participant-encrypted-chat.md。
  *
@@ -45,6 +46,8 @@ async function payloadFor(
   const roomId = await groupChatRepo.roomIdFor(eventId, "members");
   if (!roomId) return null;
   const signer = await groupChatRepo.signerFor(eventId, "members", userId);
+  // 非表示リストを読む前の時刻。これより新しい合図だけが画面に足される
+  const readAt = Date.now();
   return {
     roomId,
     keys: await groupChatRepo.listKeys(eventId, "members"),
@@ -54,6 +57,7 @@ async function payloadFor(
         : null,
     members: await groupChatRepo.listMembersWithRole(eventId),
     hiddenNoteIds: await eventChatRepo.listHidden(eventId),
+    hiddenSignal: eventSignal.config(eventId, "chat-hidden", readAt),
     // 平文の過去ログは公開イベントだけ。非公開・限定公開では平文の経路を一切開かない
     plaintextChannelId:
       event.visibility === "public"

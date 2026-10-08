@@ -149,11 +149,15 @@ export interface ChatRelayStatus {
 
 /** 購読の状態（再接続時の張り直しに使う） */
 interface SubState {
-  channelId: string;
-  /** 購読する kind（既定 42。スタッフチャット #382 は独自 kind） */
-  kind: number;
+  /** since を除いたフィルタ（メッセージは #e、合図は #t） */
+  filter: { kinds: number[]; limit: number; authors?: string[]; "#e"?: string[]; "#t"?: string[] };
   author?: string;
   onEvent: (ev: NostrEvent) => void;
+  /** EOSE を受けたリレーURL（張り直すたびに消す）。合図の購読が今の接続で
+   * 有効になったかの判定に使う（subscribeSignal） */
+  synced: Set<string>;
+  /** EOSE を受けたときに呼ぶ */
+  onSynced?: () => void;
   /** リレー間・再購読間の重複排除（イベントID） */
   seen: Set<string>;
   /** 受信済みの最新 created_at。再購読時は since に使う */
@@ -233,7 +237,10 @@ export class ChatRelayPool {
   /** リレーごとの AUTH の状態 (#464)。接続を張り直せば新しい Relay になり、
    * nostr-tools の authPromise ごと state も作り直される */
   private authStates = new WeakMap<Relay, AuthState>();
-  private sub: SubState | null = null;
+  /** 張っている購読すべて（再接続時に全部張り直す） */
+  private subs = new Set<SubState>();
+  /** subscribe() の購読（再呼び出しで置き換える） */
+  private messageSub: SubState | null = null;
   /** 接続状態が変わったら呼ばれる（UI のステータス表示用） */
   onstatus: (() => void) | null = null;
 
@@ -292,9 +299,10 @@ export class ChatRelayPool {
       }
       this.relays.set(url, relay);
       this.backoffMs.set(url, 0);
+      // 購読中なら新しい接続に購読を張り直す。onstatus より先に張り直すのは、
+      // 合図の購読の synced()（前の接続の EOSE）を先に消しておくため
+      for (const sub of this.subs) this.subscribeOne(url, relay, sub);
       this.onstatus?.();
-      // 購読中なら新しい接続に購読を張り直す
-      if (this.sub) this.subscribeOne(url, relay);
     } catch {
       // 接続失敗はバックオフ付きで再試行（もう一方のリレーで継続）
       this.onstatus?.();
@@ -415,7 +423,8 @@ export class ChatRelayPool {
    * チャンネルのメッセージを購読する（履歴 limit 200＋新着。既定は kind:42）。
    * リレー間・再購読間の重複はイベントIDで除去。再接続時は自動で
    * since（最終受信時刻−マージン）付きで張り直す。戻り値は購読停止関数。
-   * 契約: 同時に持てる購読は1つ（再呼び出しは前の購読を置き換える）。
+   * 契約: メッセージの購読は1つ（再呼び出しは前の購読を置き換える）。
+   * subscribeSignal の購読とは別に数える。
    */
   subscribe(
     channelId: string,
@@ -423,34 +432,85 @@ export class ChatRelayPool {
     kind = 42,
     author?: string,
   ): () => void {
+    const filter: SubState["filter"] = { kinds: [kind], "#e": [channelId], limit: 200 };
+    if (author) filter.authors = [author];
+    if (this.messageSub) this.removeSub(this.messageSub);
+    const sub = this.addSub(filter, onEvent, author);
+    this.messageSub = sub;
+    return () => {
+      if (this.messageSub === sub) this.messageSub = null;
+      this.removeSub(sub);
+    };
+  }
+
+  /**
+   * サーバーが公式サービス鍵で署名した ephemeral の合図（EVENT_SIGNAL_KIND）を
+   * 購読する（D-POLL-MIN 第5段階）。同じ接続の上に、メッセージの購読と並べて張る。
+   * 複数の合図（topic）を渡すとリレーごとに1本の REQ（#t に全部）にまとめる。
+   * 作者は configs の pubkey（認証済みの HTTP 応答から来た値）だけを通す。
+   * 中身の検証（topic・rev を含む）は呼び出し側（lib/eventSignal.ts）。
+   * strfry は ephemeral を数分保持して新しい REQ に EOSE 前に返すが、
+   * それらは rev が HTTP の応答以下なら呼び出し側で捨てられる。
+   * synced() は「今つながっているリレーのどれかで EOSE を受けたか」。
+   * EOSE を受けるたびに onstatus を呼ぶ。
+   */
+  subscribeSignal(
+    configs: ReadonlyArray<{ kind: number; pubkey: string; topic: string }>,
+    onEvent: (ev: NostrEvent) => void,
+  ): { close: () => void; synced: () => boolean } {
+    const kinds = [...new Set(configs.map((c) => c.kind))];
+    const authors = [...new Set(configs.map((c) => c.pubkey))];
+    const topics = [...new Set(configs.map((c) => c.topic))];
+    const sub = this.addSub(
+      { kinds, authors, "#t": topics, limit: 50 },
+      onEvent,
+      authors.length === 1 ? authors[0] : undefined,
+      () => this.onstatus?.(),
+    );
+    return {
+      close: () => this.removeSub(sub),
+      synced: () =>
+        [...sub.synced].some((url) => this.relays.get(url)?.connected === true),
+    };
+  }
+
+  private addSub(
+    filter: SubState["filter"],
+    onEvent: (ev: NostrEvent) => void,
+    author?: string,
+    onSynced?: () => void,
+  ): SubState {
     const sub: SubState = {
-      channelId,
-      kind,
+      filter,
       author,
       onEvent,
+      synced: new Set(),
+      onSynced,
       seen: new Set(),
       lastSeen: 0,
       closers: new Map(),
     };
-    this.sub = sub;
+    this.subs.add(sub);
     for (const [url, relay] of this.relays) {
-      if (relay.connected) this.subscribeOne(url, relay);
+      if (relay.connected) this.subscribeOne(url, relay, sub);
     }
-    return () => {
-      if (this.sub === sub) this.sub = null;
-      for (const close of sub.closers.values()) {
-        try {
-          close();
-        } catch {
-          /* noop */
-        }
-      }
-    };
+    return sub;
   }
 
-  private subscribeOne(url: string, relay: Relay): void {
-    const sub = this.sub;
-    if (!sub) return;
+  private removeSub(sub: SubState): void {
+    this.subs.delete(sub);
+    for (const close of sub.closers.values()) {
+      try {
+        close();
+      } catch {
+        /* noop */
+      }
+    }
+    sub.closers.clear();
+    sub.synced.clear();
+  }
+
+  private subscribeOne(url: string, relay: Relay, sub: SubState): void {
     // 同一URLの旧購読（切断前の接続のもの）は閉じる
     try {
       sub.closers.get(url)?.();
@@ -458,14 +518,8 @@ export class ChatRelayPool {
       /* noop */
     }
     sub.closers.delete(url);
-    const filter: {
-      kinds: number[];
-      "#e": string[];
-      limit: number;
-      since?: number;
-      authors?: string[];
-    } = { kinds: [sub.kind], "#e": [sub.channelId], limit: 200 };
-    if (sub.author) filter.authors = [sub.author];
+    sub.synced.delete(url);
+    const filter: SubState["filter"] & { since?: number } = { ...sub.filter };
     // 再購読は受信済み時刻−マージンから再開（投稿者の時計ずれで created_at が
     // 過去のイベントも取りこぼさない。重なった分はIDで重複排除される）
     if (sub.lastSeen > 0) {
@@ -489,12 +543,17 @@ export class ChatRelayPool {
           if (ev.created_at > sub.lastSeen) sub.lastSeen = ev.created_at;
           sub.onEvent(ev);
         },
+        oneose: () => {
+          if (!this.subs.has(sub)) return;
+          sub.synced.add(url);
+          sub.onSynced?.();
+        },
         onclose: (reason) => {
           // 読み取りにも AUTH を要求するリレー: 認証してから再購読
           if (
             reason.startsWith("auth-required:") &&
             !this.closed &&
-            this.sub === sub &&
+            this.subs.has(sub) &&
             relay.connected &&
             authRetries < 3
           ) {
@@ -506,7 +565,7 @@ export class ChatRelayPool {
             // そのとき connectOne が購読も張り直す
             this.authenticate(relay)
               .then(() => {
-                if (!this.closed && this.sub === sub) start();
+                if (!this.closed && this.subs.has(sub)) start();
               })
               .catch(() => undefined);
           }
@@ -615,6 +674,7 @@ export class ChatRelayPool {
       }
     }
     this.relays.clear();
-    this.sub = null;
+    this.subs.clear();
+    this.messageSub = null;
   }
 }

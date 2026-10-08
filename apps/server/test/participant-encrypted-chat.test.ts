@@ -207,7 +207,11 @@ describe("鍵を受け取れる人 (#582 S3)", () => {
       expect(created.encryptedAt).toBeGreaterThan(0);
       const got = await getEnc(eventId, u.cookie);
       expect(got.headers.get("cache-control")).toContain("no-store");
-      expect(await payload(got)).toEqual(created);
+      // hiddenSignal.rev は読んだ時刻（D-POLL-MIN 第5段階）なので、それ以外が同じ
+      const read = await payload(got);
+      expect(read.hiddenSignal!.rev).toBeGreaterThanOrEqual(created.hiddenSignal!.rev);
+      expect({ ...read, hiddenSignal: { ...read.hiddenSignal, rev: 0 } })
+        .toEqual({ ...created, hiddenSignal: { ...created.hiddenSignal, rev: 0 } });
     });
   }
 

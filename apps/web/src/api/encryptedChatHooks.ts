@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EncryptedChatPayload } from "@eventer/shared";
 import { api, ApiError } from "./client.js";
-import { LIVE_SCREEN_CHAT_POLL_MS } from "./eventChatHooks.js";
 
 /** 参加者の暗号化チャット (#582) の鍵配布 API。本文はリレー直通でここを通らない。
  * ゲートは参加確定メンバーだけ（管理者のバイパスも無い）。資格が無ければ一律 403。
@@ -27,24 +26,18 @@ export function fetchEncryptedChat(
 /** 部屋の鍵一式（ローテーション＝keys の増加・メンバー変化・自分の資格喪失＝403。設計 3.2 / 4.1）。
  * 取得するたびにサーバー側で資格の照合（遅延ローテーション）が走る。
  *
- * 定期の取り直しはしない（D-POLL-MIN。チャット本文は Nostr で届く）。取り直すのは:
- * 開いたとき・タブ復帰・送信の直前・知らない pubkey や知らない鍵世代の発言
+ * 定期の取り直しはしない（D-POLL-MIN。チャット本文は Nostr で届く。配信画面も同じ）。
+ * 取り直すのは: 開いたとき・タブ復帰・送信の直前・知らない pubkey や知らない鍵世代の発言
  * （useEncryptedChatChannel）・手動の「もう一度」。
- *
- * poll は配信画面（OBS の /live/screen）だけが立てる（5秒・非表示でも継続）:
- * 配信に載せるコメントの許可（非表示・締め出し・オフ）を数秒で反映しなければならず、
- * OBS のブラウザソースは常に hidden 扱いで誰も触れないため */
+ * 非表示・解除は hiddenSignal の合図（lib/eventSignal.ts）で開いている画面に即時に届く */
 export function useEncryptedChat(
   eventId: string,
   enabled: boolean,
   failClosed = false,
-  poll = false,
 ) {
   return useQuery({
     queryKey: encryptedChatQueryKey(eventId),
     enabled: enabled && Boolean(eventId),
-    refetchInterval: poll ? LIVE_SCREEN_CHAT_POLL_MS : false,
-    refetchIntervalInBackground: poll,
     refetchOnWindowFocus: true,
     // 403（資格喪失）は再試行しても結果が変わらない。資格が戻れば
     // タブ復帰・「もう一度」で取り直したときに元に戻る（useChatMembers と同じ判断）

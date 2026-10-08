@@ -28,6 +28,8 @@ const ME = { id: "u-1", username: "me", name: "わたし" };
 
 /** チャンネルの購読で受け取ったコールバック（テストから配信するため保持する） */
 let deliver: ((ev: NostrEvent) => void) | null = null;
+/** 非表示・解除の合図の購読（D-POLL-MIN 第5段階） */
+let deliverSignal: ((ev: NostrEvent) => void) | null = null;
 
 /**
  * GET /chat-key/ephemeral の結果。既定は null＝**NIP-07 で参加している人**の状態
@@ -50,6 +52,7 @@ const CHAT: ChatMembersPayload = {
   channelId: "chan-1",
   chatEnabled: true,
   hiddenNoteIds: [],
+  hiddenSignal: null,
   relays: ["wss://relay.example"],
   // 既定の期間（開始30分前〜終了2時間後）。EVENT と同じ値をサーバーが計算した想定
   writeWindow: {
@@ -125,6 +128,12 @@ vi.mock("../api/encryptedChatHooks.js", () => ({
   useOpenEncryptedChat: () => ({ isPending: false, isError: false, mutate: vi.fn() }),
 }));
 
+// 署名の検証は lib/eventSignal.test.ts で見る。ここは画面への反映だけ
+vi.mock("nostr-tools/pure", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("nostr-tools/pure")>()),
+  verifyEvent: () => true,
+}));
+
 vi.mock("../lib/nostrChat.js", () => {
   // 署名は「テンプレートに id と pubkey が付いた Nostr イベント」を返す。
   // 送信は折返しを待たず即時表示するので、undefined を返す偽物だと
@@ -154,6 +163,10 @@ vi.mock("../lib/nostrChat.js", () => {
   deliver = null;
         };
       }
+      subscribeSignal(_configs: unknown, onEvent: (ev: NostrEvent) => void) {
+        deliverSignal = onEvent;
+        return { close: () => { deliverSignal = null; }, synced: () => true };
+      }
       async publish() {
         return true;
       }
@@ -175,6 +188,7 @@ vi.mock("../lib/nostrChat.js", () => {
 
 beforeEach(() => {
   deliver = null;
+  deliverSignal = null;
   ephemeralKey = null;
   chatQuery = { data: CHAT };
   joinResult = async () => ({ secret: "00", pubkey: "pk-me" });
@@ -869,4 +883,33 @@ it("information staff retain their normal composer and messages without moderati
   expect(screen.getByRole("textbox")).toBeInTheDocument();
   expect(screen.queryAllByTestId("VisibilityOffOutlinedIcon")).toHaveLength(0);
   expect(screen.queryByRole("button", { name: "チャンネルを作り直す" })).toBeNull();
+});
+
+describe("非表示・解除の合図 (D-POLL-MIN 第5段階)", () => {
+  const SERVICE = "5e".repeat(32);
+  const NOTE = "ab".repeat(32);
+  const signal = (topic: string, rev: number, hidden: string[], shown: string[]) => ({
+    id: `sig-${rev}`, pubkey: SERVICE, kind: 20078, created_at: Math.floor(rev / 1000),
+    tags: [["t", topic], ["-"]], content: JSON.stringify({ rev, hidden, shown }), sig: "",
+  }) as unknown as NostrEvent;
+
+  it("合図で発言がすぐ消え、解除で戻る。チャットの情報は取り直さない", async () => {
+    chatQuery = { data: { ...CHAT, hiddenSignal: { kind: 20078, pubkey: SERVICE, topic: "topic-1", rev: 1_000 } } };
+    await renderChat("display");
+    await waitFor(() => expect(deliver).not.toBeNull());
+    expect(deliverSignal).not.toBeNull();
+    await act(async () => { deliver!({ ...MESSAGE, id: NOTE }); });
+    expect(await screen.findByText("会場からの発言")).toBeInTheDocument();
+    chatRefetch.mockClear();
+
+    await act(async () => { deliverSignal!(signal("topic-1", 2_000, [NOTE], [])); });
+    expect(screen.queryByText("会場からの発言")).not.toBeInTheDocument();
+    // 別の topic の合図は効かない
+    await act(async () => { deliverSignal!(signal("topic-2", 3_000, [], [NOTE])); });
+    expect(screen.queryByText("会場からの発言")).not.toBeInTheDocument();
+
+    await act(async () => { deliverSignal!(signal("topic-1", 4_000, [], [NOTE])); });
+    expect(screen.getByText("会場からの発言")).toBeInTheDocument();
+    expect(chatRefetch).not.toHaveBeenCalled();
+  });
 });

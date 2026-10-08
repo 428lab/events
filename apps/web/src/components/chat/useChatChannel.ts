@@ -19,6 +19,8 @@ import {
   buildChannelMessageTemplate,
 } from "../../lib/nostrChat.js";
 import type { ChatSigner } from "../../lib/nostrChat.js";
+import { eventSignalKey } from "../../lib/eventSignal.js";
+import type { EventSignalConfig } from "@eventer/shared";
 
 /** 送信の結果。文言は表示側が決める（このフックは i18n を知らない） */
 export type ChatSendResult = "ok" | "offline" | "failed";
@@ -54,6 +56,7 @@ export function useChatChannel({
   canOpenChannel,
   chatUnavailable,
   refetchChat,
+  hiddenSignal,
 }: {
   eventId: string;
   eventTitle: string;
@@ -73,6 +76,12 @@ export function useChatChannel({
    * （新しく参加した人。D-POLL-MIN で定期の取り直しをやめた代わり）。
    * 渡さなければ取り直さない（暗号化モードの平文の過去ログ読み） */
   refetchChat?: () => unknown;
+  /** 非表示・解除の合図（D-POLL-MIN 第5段階）。同じ接続の上で購読し、届いたら onSignal。
+   * 渡さなければ購読しない（暗号化モードの平文の過去ログ読み） */
+  hiddenSignal?: {
+    config: EventSignalConfig | null | undefined;
+    onSignal: (ev: NostrEvent) => void;
+  };
 }): ChatChannelState {
   const registerChannel = useRegisterChatChannel(eventId);
   const createChannel = useCreateChatChannel(eventId);
@@ -97,6 +106,9 @@ export function useChatChannel({
   chatRef.current = chat;
   const signerRef = useRef(signer);
   signerRef.current = signer;
+  const hiddenSignalRef = useRef(hiddenSignal);
+  hiddenSignalRef.current = hiddenSignal;
+  const signalKey = eventSignalKey(hiddenSignal?.config);
   const requestRefetch = useChatRefetchTrigger(refetchChat, `${eventId}:${chat?.channelId ?? ""}`);
   // 受信バッファの捨てる順序に使う許可リスト（chatMessageBuffer.ts）。
   // チャンネルIDは公開値なので部外者がゴミ投稿を流し込める。購読コールバックは
@@ -131,6 +143,13 @@ export function useChatChannel({
     pool.onstatus = () => {
       if (!disposed) setRelayConnected(pool.connected);
     };
+    // 非表示・解除の合図は同じ接続に並べて張る（部屋の確定を待たない）
+    const signalConfig = hiddenSignalRef.current?.config;
+    const signal = signalConfig
+      ? pool.subscribeSignal([signalConfig], (ev) => {
+          if (!disposed) hiddenSignalRef.current?.onSignal(ev);
+        })
+      : null;
 
     void (async () => {
       await pool.connect();
@@ -194,6 +213,7 @@ export function useChatChannel({
     const stop = () => {
       disposed = true;
       unsubscribe?.();
+      signal?.close();
       pool.close();
       poolRef.current = null;
       setRelayConnected(false);
@@ -216,6 +236,7 @@ export function useChatChannel({
     serverChannelId,
     canOpenChannel,
     chatUnavailable,
+    signalKey,
   ]);
 
   /** 発言する。**署名は signer（参加した鍵）だけ**で行う

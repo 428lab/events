@@ -71,6 +71,7 @@ function payload(keys: Array<{ version: number; secret: string }>): EncryptedCha
       { pubkey: OTHER_PK, userId: "u-2", username: "two", name: "ふたり", avatarUrl: null, revokedAt: null, role: "participant" },
     ],
     hiddenNoteIds: [],
+    hiddenSignal: null,
     plaintextChannelId: null,
     encryptedAt: 0,
     relays: [RELAY],

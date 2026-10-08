@@ -9,6 +9,7 @@
  */
 
 import type { ChatWriteWindow } from "./eventChat.js";
+import type { EventSignalConfig } from "./eventSignal.js";
 
 /** 部屋の対象範囲。表の audience 列と同じ値 */
 export type GroupChatAudience = "staff" | "members";
@@ -75,6 +76,8 @@ export interface EncryptedChatPayload {
   members: EncryptedChatMember[];
   /** スタッフ・運営の非表示 (#278)。note id は平文・暗号文で共通の表 */
   hiddenNoteIds: string[];
+  /** 非表示・解除の即時の合図（ChatMembersPayload.hiddenSignal と同じ。未設定なら null） */
+  hiddenSignal: EventSignalConfig | null;
   /** 平文の過去ログのチャンネル（公開イベントのみ。非公開では常に null） */
   plaintextChannelId: string | null;
   /** この時刻（ms）より後の平文の発言は表示しない（暗号化をオンにした時刻） */
