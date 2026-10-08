@@ -10,13 +10,13 @@ const action = (id: string, issuedAt = Date.now()) => ({ actionId: id, message: 
 const status = (id: string | null, serverNow = Date.now(), issuedAt = serverNow): CutinStatus => ({ action: id ? action(id, issuedAt) : null, serverNow });
 let update = 1;
 function poll(view: ReturnType<typeof render>, id: string | null, serverNow = Date.now(), issuedAt = serverNow) {
-  snapshot = { data: status(id, serverNow, issuedAt), dataUpdatedAt: Date.now() + update++, isError: false, isFetchedAfterMount: true };
+  snapshot = { data: status(id, serverNow, issuedAt), dataUpdatedAt: Date.now() + update++, current: true, isFetchedAfterMount: true };
   view.rerender(<LiveCutinScreen eventId="one" query={snapshot} />);
 }
-beforeEach(() => { sessionStorage.clear(); update = 1; snapshot = { data: undefined, dataUpdatedAt: 0, isError: false, isFetchedAfterMount: false }; Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn().mockReturnValue({ matches: false }) }); });
+beforeEach(() => { sessionStorage.clear(); update = 1; snapshot = { data: undefined, dataUpdatedAt: 0, current: false, isFetchedAfterMount: false }; Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn().mockReturnValue({ matches: false }) }); });
 afterEach(() => vi.useRealTimers());
 
-describe("live screen cut-in polling", () => {
+describe("live screen cut-in", () => {
   it("shows action on first valid GET, replaces on second, prevents reload replay but allows a new tab", async () => {
     const view = render(<LiveCutinScreen eventId="one" query={snapshot} />);
     poll(view, "first", Date.now());
@@ -45,7 +45,7 @@ describe("live screen cut-in polling", () => {
     poll(view, "expired", now + 3, now - 9000);
     expect(screen.queryByTestId("live-cutin")).toBeNull();
   });
-  it("hides on error, stale, expiry, event change and delayed older response", async () => {
+  it("hides when the live state is not current (failed GET or dead signal), on expiry, event change and delayed older response", async () => {
     const view = render(<LiveCutinScreen eventId="one" query={snapshot} />);
     poll(view, "first", Date.now());
     expect(screen.getByTestId("live-cutin")).toBeTruthy();
@@ -57,30 +57,35 @@ describe("live screen cut-in polling", () => {
     expect(screen.getByTestId("live-cutin").textContent).toContain("second");
     poll(view, "first", secondServer);
     expect(screen.getByTestId("live-cutin").textContent).toContain("second");
-    snapshot = { ...snapshot, isError: true }; view.rerender(<LiveCutinScreen eventId="one" query={snapshot} />);
+    snapshot = { ...snapshot, current: false }; view.rerender(<LiveCutinScreen eventId="one" query={snapshot} />);
     expect(screen.queryByTestId("live-cutin")).toBeNull();
     poll(view, "second", Date.now() + 3);
     expect(screen.queryByTestId("live-cutin")).toBeNull();
     poll(view, "third", Date.now() + 4);
     expect(screen.getByTestId("live-cutin")).toBeTruthy();
-    snapshot = { ...snapshot, dataUpdatedAt: Date.now() - 6000 }; view.rerender(<LiveCutinScreen eventId="one" query={snapshot} />);
+    // No age window (D-POLL-MIN 5b-2): a state read long ago but still current keeps showing
+    vi.spyOn(Date, "now").mockReturnValue(snapshot.dataUpdatedAt + 6000);
+    view.rerender(<LiveCutinScreen eventId="one" query={snapshot} />);
+    expect(screen.getByTestId("live-cutin")).toBeTruthy();
+    vi.mocked(Date.now).mockRestore();
+    snapshot = { ...snapshot, current: false }; view.rerender(<LiveCutinScreen eventId="one" query={snapshot} />);
     expect(screen.queryByTestId("live-cutin")).toBeNull();
     view.rerender(<LiveCutinScreen eventId="two" query={snapshot} />);
     expect(screen.queryByTestId("live-cutin")).toBeNull();
     view.unmount();
-    snapshot = { data: { action: action("expired", Date.now() - 9000), serverNow: Date.now() }, dataUpdatedAt: Date.now(), isError: false, isFetchedAfterMount: true };
+    snapshot = { data: { action: action("expired", Date.now() - 9000), serverNow: Date.now() }, dataUpdatedAt: Date.now(), current: true, isFetchedAfterMount: true };
     render(<LiveCutinScreen eventId="three" query={snapshot} />);
     expect(screen.queryByTestId("live-cutin")).toBeNull();
   });
   it("shows nothing when live-state withholds the cut-in (cutin: null)", () => {
-    snapshot = { data: null, dataUpdatedAt: Date.now(), isError: false, isFetchedAfterMount: true };
+    snapshot = { data: null, dataUpdatedAt: Date.now(), current: true, isFetchedAfterMount: true };
     render(<LiveCutinScreen eventId="one" query={snapshot} />);
     expect(screen.queryByTestId("live-cutin")).toBeNull();
     expect(sessionStorage.getItem("live-cutin:one")).toBeNull();
   });
   it("fails closed when session storage cannot be used", () => {
     const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw Error("blocked"); });
-    snapshot = { data: status("first"), dataUpdatedAt: Date.now(), isError: false, isFetchedAfterMount: true };
+    snapshot = { data: status("first"), dataUpdatedAt: Date.now(), current: true, isFetchedAfterMount: true };
     const view = render(<LiveCutinScreen eventId="one" query={snapshot} />);
     expect(screen.queryByTestId("live-cutin")).toBeNull();
     expect(screen.getByRole("alert").textContent).toBe("studio.cutinStorageError");

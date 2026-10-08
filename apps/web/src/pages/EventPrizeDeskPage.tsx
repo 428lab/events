@@ -350,7 +350,7 @@ function BingoPoolCard({
  * なので、取り消した引き換えは一覧から消える（「いま有効な引き換え」のログ） */
 function RedemptionLogCard({ eventId, enabled }: { eventId: string; enabled: boolean }) {
   const { t } = useTranslation();
-  const { data } = useMeetPrizeLog(eventId, enabled, true);
+  const { data } = useMeetPrizeLog(eventId, enabled);
   if (!data) return null;
   return (
     <Card variant="outlined">

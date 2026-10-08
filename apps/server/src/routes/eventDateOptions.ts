@@ -21,6 +21,7 @@ import { reopenSchedulingRepo } from "../db/repositories/reopenScheduling.js";
 import { activeManagerSql, adminIds } from "../db/repositories/eventAccessInvites.js";
 import { one, many } from "../db/client.js";
 import { deferBackground } from "../runtime.js";
+import { eventSignal } from "../lib/eventSignal.js";
 import { sendNotificationEmailIfOptedIn } from "../lib/email.js";
 import { formatDateRangeJa } from "../lib/dateFormat.js";
 import { checkRegistrationDeadline } from "../lib/registrationDeadline.js";
@@ -112,6 +113,8 @@ eventDateOptionRoutes.post("/:id/reopen-scheduling", requireEventRole(["staff"])
     const eventId = c.req.param("id");
     const result = await reopenSchedulingRepo.reopen(eventId, c.get("user").id, valid<ReopenSchedulingInput>(c, "json"));
     if (result.error) return c.json({ error: result.error }, 409);
+    // 日程調整に戻すと配信画面のチャットが止まる（GET /live-state の chatSource）。開いている画面へ知らせる
+    await deferBackground(eventSignal.publishRefetch([["live", eventId]]));
     if (result.token) await deferBackground((async () => {
       const notices = await many<{ user_id: string; title: string; body: string; link: string }>(
         "SELECT user_id,title,body,link FROM notification WHERE event_id=? AND substr(id,1,36)=? ORDER BY id LIMIT 50", eventId, result.token);

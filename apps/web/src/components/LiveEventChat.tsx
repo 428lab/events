@@ -9,7 +9,7 @@ import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 import { ChatRelayPool, randomLocalSigner } from "../lib/nostrChat.js";
 import { eventSignalKey, useChatHiddenSignal } from "../lib/eventSignal.js";
 import { openGroupChatMessage, visibleAfterRevocation } from "../lib/groupChatCrypto.js";
-import { LIVE_CONTROL_STATE_FRESH_MS, LIVE_SCREEN_STATE_FRESH_MS, liveChatAuthorized, liveChatRows } from "../lib/liveChat.js";
+import { liveChatAuthorized, liveChatRows } from "../lib/liveChat.js";
 import type { LiveChatMessage, LiveChatPermissions, LiveChatRow } from "../lib/liveChat.js";
 
 /** Rendered rows come only from the OBS live screen; the editor shows an empty frame, never simulated posts.
@@ -19,17 +19,18 @@ import type { LiveChatMessage, LiveChatPermissions, LiveChatRow } from "../lib/l
  * Chat metadata is never polled (D-POLL-MIN Phase 5a). It loads on open and focus; the screen reads
  * it once more each time the hide/unhide signal subscription becomes active on a relay connection.
  *
- * page "screen" (OBS /live/screen): rows need, besides the 1 s live-state kill switch
+ * page "screen" (OBS /live/screen): rows need, besides the live-state kill switch
  * (`chatSource`, which the server also turns "off" when the event's chat settings no longer
- * allow chat):
+ * allow chat; it reaches the screen through the `live` refetch signal, and rows stay off while
+ * that state is not current):
  * - the server-signed hide/unhide signal subscription (lib/eventSignal.ts) has reached EOSE on a
  *   connected relay, so hides reach the broadcast at once, and
  * - the metadata was fetched after that, because ephemeral signals sent while the screen was
  *   disconnected are not replayed by the relay.
  * Without a service key (no signal) the screen shows no rows.
  * page "control" (/live/control): only the operator's status text. Metadata must be loaded
- * without error, and the 5 s visible live-state poll gets a 10 s window. */
-export function useLiveEventChat(eventId: string, state: EventLiveState | undefined, stateUpdatedAt: number, stateError: boolean, now: number, enabled: boolean, page: "screen" | "control") {
+ * without error. */
+export function useLiveEventChat(eventId: string, state: EventLiveState | undefined, stateCurrent: boolean, now: number, enabled: boolean, page: "screen" | "control") {
   const screen = page === "screen";
   const access = useEventChatAccess(eventId);
   const encrypted = Boolean(access.event?.chatEncrypted);
@@ -44,7 +45,7 @@ export function useLiveEventChat(eventId: string, state: EventLiveState | undefi
   const target = encrypted
     ? (sealed.data ? { chatEnabled: true, channelId: sealed.data.roomId } : undefined)
     : members.data;
-  const authorized = liveChatAuthorized(state, stateUpdatedAt, stateError, now, target, eligible, screen ? LIVE_SCREEN_STATE_FRESH_MS : LIVE_CONTROL_STATE_FRESH_MS);
+  const authorized = liveChatAuthorized(state, stateCurrent, target, eligible);
   const payload: (LiveChatPermissions & { relays: string[] }) | undefined = authorized
     ? (encrypted ? sealed.data ?? undefined : members.data)
     : undefined;

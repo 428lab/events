@@ -49,8 +49,8 @@ const state = { chatSource: "event" } as EventLiveState;
 let memberUpdatedAt = Date.now();
 let memberError = false;
 
-function Stage({ eventId, liveState = state, page = "screen", stateUpdatedAt = Date.now() }: { eventId: string; liveState?: EventLiveState; page?: "screen" | "control"; stateUpdatedAt?: number }) {
-  const chat = useLiveEventChat(eventId, liveState, stateUpdatedAt, false, Date.now(), true, page);
+function Stage({ eventId, liveState = state, page = "screen", stateCurrent = true }: { eventId: string; liveState?: EventLiveState; page?: "screen" | "control"; stateCurrent?: boolean }) {
+  const chat = useLiveEventChat(eventId, liveState, stateCurrent, Date.now(), true, page);
   // This is the render-phase stage output, before the switch cleanup effect can run.
   rendered.push({ eventId, messages: chat.rows.map(row => row.plainText), status: chat.status });
   return <div>{chat.rows.map(row => <div key={row.id}>{row.name}: {row.plainText}<img src={row.avatar ?? undefined} alt="" /></div>)}</div>;
@@ -130,7 +130,8 @@ describe("useLiveEventChat page modes (D-POLL-MIN)", () => {
     view.rerender(<Stage eventId="one" page="screen" />);
     expect(rendered.at(-1)!.status).toBe("on");
 
-    view.rerender(<Stage eventId="one" page="screen" stateUpdatedAt={Date.now() - 6000} />);
+    // Live state that is no longer current (failed GET or the `live` signal subscription down) blanks rows
+    view.rerender(<Stage eventId="one" page="screen" stateCurrent={false} />);
     expect(rendered.at(-1)!.status).toBe("unavailable");
   });
 
@@ -196,7 +197,7 @@ describe("useLiveEventChat page modes (D-POLL-MIN)", () => {
     expect(subscriptions).toHaveLength(0);
   });
 
-  it("the 1 s live-state kill switch still blanks rows", async () => {
+  it("the live-state kill switch still blanks rows", async () => {
     const post = { id: "cc".repeat(32), pubkey: "shared-author", created_at: Math.floor(Date.now() / 1000), content: "live post" } as NostrEvent;
     const view = render(<Stage eventId="one" page="screen" />);
     await mountLive(view, <Stage eventId="one" page="screen" />);
@@ -207,15 +208,15 @@ describe("useLiveEventChat page modes (D-POLL-MIN)", () => {
     expect(rendered.at(-1)!.status).toBe("off");
   });
 
-  it("control does not poll chat metadata, ignores its age, still requires a successful fetch, and allows 10 s live state", async () => {
+  it("control does not poll chat metadata, ignores its age, still requires a successful fetch and current live state", async () => {
     memberUpdatedAt = Date.now() - 10 * 60_000;
-    const view = render(<Stage eventId="one" page="control" stateUpdatedAt={Date.now() - 8000} />);
+    const view = render(<Stage eventId="one" page="control" />);
     await act(async () => {});
     expect(memberArgs.length).toBeGreaterThan(0);
     expect(refetches.count).toBe(0);
     expect(rendered.at(-1)!.status).toBe("on");
 
-    view.rerender(<Stage eventId="one" page="control" stateUpdatedAt={Date.now() - 11_000} />);
+    view.rerender(<Stage eventId="one" page="control" stateCurrent={false} />);
     expect(rendered.at(-1)!.status).toBe("unavailable");
 
     memberError = true;

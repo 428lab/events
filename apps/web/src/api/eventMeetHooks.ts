@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { MeetRankingLive, MeetScanResult, MeetToken } from "@eventer/shared";
-import { MEET_RANKING_POLL_MS } from "@eventer/shared";
 import { api } from "./client.js";
+import { useEventSignal } from "../lib/signalHub.js";
 
 /**
  * 自分のQRのトークンを見張る間隔（ミリ秒） (#330)。
@@ -101,20 +101,19 @@ export function useMeetRanking(eventId: string, enabled: boolean) {
 /** 参加者向けの出会いランキング (#418)。投影ページ・詳細パネルが使う。
  *
  * 設定がオフのイベント・非メンバーには 404 が返る（存在ごと隠す門はサーバー側）。
- * その間は refetch を止める：ポーリングを続けても 404 のままで、開きっぱなしの
- * タブから5秒おきの無駄打ちになるだけのため。設定が後からオンになったケースは
+ * 404 の間は合図の購読先も無いので取り直さない。設定が後からオンになったケースは
  * イベント情報の再取得で enabled が立ち直ってから拾う */
-export function useMeetRankingLive(eventId: string, enabled: boolean, poll = false) {
-  return useQuery({
+export function useMeetRankingLive(eventId: string, enabled: boolean, watch = false) {
+  const query = useQuery({
     queryKey: ["event", eventId, "meet-ranking-live"],
     enabled: Boolean(eventId) && enabled,
     queryFn: () =>
       api.get<MeetRankingLive>(`/events/${eventId}/meets/ranking/live`),
     refetchOnWindowFocus: true,
-    // poll は投影ページ（/meet-ranking/screen）だけが立てる（15秒・表示中だけ）:
-    // 映しているライブのランキングが止まっていては意味がなく、プロジェクターの前には
-    // 誰もいないため。詳細ページの小カードは開いたとき・タブ復帰で取り直す（D-POLL-MIN）
-    refetchInterval: (query) =>
-      !poll || query.state.error ? false : MEET_RANKING_POLL_MS,
   });
+  // watch は投影ページ（/meet-ranking/screen）だけが立てる: 応答の `signal`（topic `meet-ranking`）の
+  // 合図で取り直す（D-POLL-MIN 第5段階 5b-2）。映しているライブのランキングが止まっていては意味がなく、
+  // プロジェクターの前には誰もいないため。詳細ページの小カードは開いたとき・タブ復帰で取り直す
+  useEventSignal(watch ? query.data?.signal : null, () => query.refetch(), { eventId });
+  return query;
 }

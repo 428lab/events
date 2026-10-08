@@ -1,5 +1,6 @@
 import type { EventLiveState } from "@eventer/shared";
-/** Fails closed on query errors and cached ON values older than five seconds. */
-export function canShowLiveIndicator(state: EventLiveState | undefined, updatedAt: number, isError: boolean, endsAt: number | undefined, now: number): boolean {
-  return !isError && Boolean(state?.liveIndicatorOn) && updatedAt > 0 && now - updatedAt >= 0 && now - updatedAt < 5000 && (endsAt === undefined || now < endsAt);
+/** Fails closed unless the live state is current (last GET succeeded and the `live` signal
+ * subscription is live, useEventLiveState's `current`), and after the event ends. */
+export function canShowLiveIndicator(state: EventLiveState | undefined, stateCurrent: boolean, endsAt: number | undefined, now: number): boolean {
+  return stateCurrent && Boolean(state?.liveIndicatorOn) && (endsAt === undefined || now < endsAt);
 }

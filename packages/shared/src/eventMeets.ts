@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { EventSignalSource } from "./eventSignal.js";
 
 /**
  * 出会った記録 (#189)。イベント中に参加者どうしがQRを読み合うとお互いにXPが入る。
@@ -144,7 +145,7 @@ export interface MeetRankingMe {
 
 /** GET /api/events/:id/meets/ranking/live のレスポンス。
  * mode により行の形が変わる（匿名で名前入りの行を返さないのはサーバー側の保証） */
-export type MeetRankingLive =
+export type MeetRankingLive = (
   | {
       mode: "named";
       ranking: MeetRankingNamedRow[];
@@ -156,4 +157,9 @@ export type MeetRankingLive =
       ranking: MeetRankingAnonymousRow[];
       totalRanked: number;
       me: MeetRankingMe | null;
-    };
+    }
+) & {
+  /** Where the ranking screen hears "meets changed, refetch" (topic `meet-ranking`,
+   * D-POLL-MIN Phase 5b). Null without a service key */
+  signal?: EventSignalSource | null;
+};

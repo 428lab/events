@@ -204,10 +204,11 @@ adminModerationRoutes.post(
         await eventQaRepo.clearPickedIf(eventId, id, {eventId,actorId:c.get("user").id,permission:"view"});
       }
     }
-    // 開いているチャット画面へ即時に知らせる（D-POLL-MIN 第5段階）
+    // 開いているチャット画面・Q&A の投影へ即時に知らせる（D-POLL-MIN 第5段階）
     if (kind === "chat_message" && changed > 0) {
       await deferBackground(eventSignal.publishChatHidden(eventId, id));
     }
+    if (kind === "question" && changed > 0) await deferBackground(eventSignal.publishRefetch([["qa", eventId]]));
     // 既に非表示だった場合も 200（画面の再読込で揃う）。記録は実際に変えたときだけ
     if (changed > 0) {
       await recordAudit({
@@ -243,6 +244,7 @@ adminModerationRoutes.post(
     if (kind === "chat_message" && changed > 0) {
       await deferBackground(eventSignal.publishChatHidden(eventId, id));
     }
+    if (kind === "question" && changed > 0) await deferBackground(eventSignal.publishRefetch([["qa", eventId]]));
     if (changed > 0) {
       await recordAudit({
         action: "content_restore",

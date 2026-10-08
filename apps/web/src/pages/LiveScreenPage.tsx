@@ -27,13 +27,13 @@ import { canShowLiveIndicator } from "../lib/liveIndicator.js";
 import { clockText } from "../lib/liveTime.js";
 
 /** 配信画面タブ（OBSがウィンドウキャプチャする完成画面）。
- * AppBarなし・16:9レターボックス・1秒ポーリングでシーン切替 */
+ * AppBarなし・16:9レターボックス・シーン切替は `live` の合図で取り直して反映する（D-POLL-MIN 第5段階） */
 export function LiveScreenPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const event = eventData?.event;
-  const liveState = useEventLiveState(id, "screen");
+  const liveState = useEventLiveState(id);
   const { data: state } = liveState;
   const [wallNow, setWallNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setWallNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
@@ -162,7 +162,7 @@ export function LiveScreenPage() {
 
   const lightScene = scene?.id.startsWith("v1-hakuji-") || scene?.background === "#F6F2EA";
   const hasChat = Boolean(scene?.elements.some(el => el.type === "chat"));
-  const liveChat = useLiveEventChat(id, state, liveState.dataUpdatedAt, liveState.isError, wallNow, hasChat, "screen");
+  const liveChat = useLiveEventChat(id, state, liveState.current, wallNow, hasChat, "screen");
 
   const deckSlide =
     deck?.content.slides[
@@ -171,8 +171,8 @@ export function LiveScreenPage() {
 
   const runtime: LiveRuntime = {
     chatRows: liveChat.rows,
-    // A failed or stale GET never authorizes an ON badge, even when React Query retains old data.
-    liveIndicatorOn: canShowLiveIndicator(state, liveState.dataUpdatedAt, liveState.isError, event?.endsAt, wallNow),
+    // A failed GET or a dead signal subscription never authorizes an ON badge, even when React Query retains old data.
+    liveIndicatorOn: canShowLiveIndicator(state, liveState.current, event?.endsAt, wallNow),
     eventStartMs: event?.scheduling ? undefined : event?.startsAt,
     eventDatetimeAvailable: Boolean(event && !event.scheduling && Number.isFinite(event.startsAt)),
     camera: (el: LiveElement) => (
@@ -245,7 +245,7 @@ export function LiveScreenPage() {
           <Box key={scene.id} sx={{ animation: "liveFadeIn 400ms ease", "@keyframes liveFadeIn": { from: { opacity: 0 }, to: { opacity: 1 } } }}>
             <LiveSceneStage scene={scene} width={stageW} runtime={runtime} />
           </Box>
-          <LiveCutinScreen key={id} eventId={id} query={{ data: state?.cutin, dataUpdatedAt: liveState.dataUpdatedAt, isError: liveState.isError, isFetchedAfterMount: liveState.isFetchedAfterMount }} />
+          <LiveCutinScreen key={id} eventId={id} query={{ data: state?.cutin, dataUpdatedAt: liveState.dataUpdatedAt, current: liveState.current, isFetchedAfterMount: liveState.isFetchedAfterMount }} />
         </Box>
       ) : (
         <Typography color="#334155">{t("studio.liveSetLoading")}</Typography>

@@ -3,12 +3,11 @@ import { canShowLiveIndicator } from "./liveIndicator.js";
 import type { EventLiveState } from "@eventer/shared";
 const state = { liveIndicatorOn: true } as EventLiveState;
 describe("screen manual LIVE visibility", () => {
-  it("requires a fresh successful per-event GET and stops after event end", () => {
-    expect(canShowLiveIndicator(state, 1000, false, 20_000, 2000)).toBe(true);
-    expect(canShowLiveIndicator(state, 1000, true, 20_000, 2000)).toBe(false);
-    expect(canShowLiveIndicator(state, 1000, false, 20_000, 6000)).toBe(false);
-    expect(canShowLiveIndicator(state, 1000, false, 1500, 2000)).toBe(false);
-    expect(canShowLiveIndicator({ ...state, liveIndicatorOn: false }, 1000, false, undefined, 2000)).toBe(false);
-    expect(canShowLiveIndicator(undefined, 1000, false, undefined, 2000)).toBe(false);
+  it("requires current live state (successful GET and live signal) and stops after event end", () => {
+    expect(canShowLiveIndicator(state, true, 20_000, 2000)).toBe(true);
+    expect(canShowLiveIndicator(state, false, 20_000, 2000)).toBe(false);
+    expect(canShowLiveIndicator(state, true, 1500, 2000)).toBe(false);
+    expect(canShowLiveIndicator({ ...state, liveIndicatorOn: false }, true, undefined, 2000)).toBe(false);
+    expect(canShowLiveIndicator(undefined, true, undefined, 2000)).toBe(false);
   });
 });

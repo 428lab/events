@@ -5,6 +5,8 @@ import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { decksRepo } from "../db/repositories/decks.js";
+import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
+import { publishLive } from "./liveControl.js";
 import { putDeckImage } from "./deckImages.js";
 import { postDeckImport } from "./deckImport.js";
 
@@ -51,6 +53,9 @@ deckRoutes.delete("/:id", async (c) => {
   const deck = await decksRepo.findById(c.req.param("id"));
   if (!deck) return c.json({ error: "not_found" }, 404);
   if (deck.ownerId !== c.get("user").id) return c.json({ error: "forbidden" }, 403);
+  // 配信中のデッキなら、消すと配信状態から外れる（FK）。開いている配信画面へ知らせる
+  const liveEvents = await eventLiveStateRepo.eventIdsUsing("deck_id", deck.id);
   await decksRepo.delete(deck.id);
+  if (liveEvents.length > 0) await publishLive(liveEvents);
   return c.json({ ok: true });
 });

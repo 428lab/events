@@ -11,6 +11,8 @@ import {
   eventBingoRepo,
   type BingoGame,
 } from "../db/repositories/eventBingo.js";
+import { eventSignal, type RefetchSignalTarget } from "../lib/eventSignal.js";
+import { deferBackground } from "../runtime.js";
 
 /**
  * 数字ビンゴ (#436)。設計は docs/bingo.md。
@@ -39,6 +41,14 @@ async function bingoAudience(
   }
   if (await canManageEvent(event.id, user)) return "staff";
   return null;
+}
+
+/** 開いている抽選コントロールへ「取り直して」を送る（topic `bingo-staff`、D-POLL-MIN 第5段階 5b-2）。
+ * 抽選・取り消し・終了・リセットはビンゴ景品の達成者も動かすので景品デスク（`prize-desk`）にも送る */
+function publishBingoStaff(eventId: string, prizeDesk = false): Promise<void> {
+  const targets: RefetchSignalTarget[] = [["bingo-staff", eventId]];
+  if (prizeDesk) targets.push(["prize-desk", eventId]);
+  return deferBackground(eventSignal.publishRefetch(targets));
 }
 
 export const eventBingoRoutes = new Hono<AppEnv>();
@@ -127,6 +137,8 @@ eventBingoRoutes.post("/:id/bingo/card", async (c) => {
   const numbers = await eventBingoRepo.issueCard(
     loaded.game.eventId,
     c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
+  // 開始前に参加者が一斉に受け取るので throttle を通す。参加者向けの topic には送らない
+  await deferBackground(eventSignal.publishRefetchThrottled([["bingo-staff", loaded.game.eventId]]));
   return c.json({ card: numbers });
 });
 
@@ -138,6 +150,7 @@ eventBingoRoutes.post("/:id/bingo", requireEventRole(["staff"]), async (c) => {
   if (!(await eventBingoRepo.createGame(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
     return c.json({ error: "already_exists" }, 409);
   }
+  await publishBingoStaff(eventId);
   return c.json({ ok: true }, 201);
 });
 
@@ -153,6 +166,7 @@ eventBingoRoutes.post(
     if (!(await eventBingoRepo.startGame(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
       return c.json({ error: "not_setup" }, 409);
     }
+    await publishBingoStaff(eventId);
     return c.json({ ok: true });
   },
 );
@@ -180,6 +194,7 @@ eventBingoRoutes.post(
     }
     const order = game.drawOrder ?? [];
     const drawn = order.slice(0, myCount);
+    await publishBingoStaff(eventId, true);
     return c.json({
       number: order[myCount - 1],
       drawnNumbers: drawn,
@@ -204,6 +219,7 @@ eventBingoRoutes.post(
     }
     const after = (await eventBingoRepo.findGame(eventId))!;
     const drawn = drawnNumbers(after);
+    await publishBingoStaff(eventId, true);
     return c.json({
       drawnNumbers: drawn,
       counts: countsOf(await deriveAllCards(eventId, drawn)),
@@ -236,6 +252,7 @@ eventBingoRoutes.post(
         completedAtSeq: r.completedAtSeq,
       })), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (!ended) return c.json({ error: "not_running" }, 409);
+    await publishBingoStaff(eventId, true);
     return c.json({ ok: true });
   },
 );
@@ -252,6 +269,7 @@ eventBingoRoutes.post(
     if (!(await eventBingoRepo.resetGame(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
       return c.json({ error: "not_ended" }, 409);
     }
+    await publishBingoStaff(eventId, true);
     return c.json({ ok: true });
   },
 );
@@ -262,16 +280,20 @@ eventBingoRoutes.delete(
   requireEventRole(["staff"]),
   async (c) => {
     await eventBingoRepo.deleteGame(c.req.param("id"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+    await publishBingoStaff(c.req.param("id"), true);
     return c.json({ ok: true });
   },
 );
 
-/** 名前入りの導出一覧（staff のみ。抽選コントロールの読み上げ・デスクが使う） */
+/** 名前入りの導出一覧（staff のみ。抽選コントロールの読み上げ・デスクが使う）。
+ * 定期には取り直さず、`signal`（topic `bingo-staff`）の合図で取り直す（D-POLL-MIN 第5段階 5b-2） */
 eventBingoRoutes.get(
   "/:id/bingo/status",
   requireEventRole(["staff"]),
   async (c) => {
     const eventId = c.req.param("id");
+    const readAt = Date.now();
+    const signal = await eventSignal.source(eventId, "bingo-staff", readAt);
     const game = await eventBingoRepo.findGame(eventId);
     if (!game) {
       return c.json({
@@ -279,6 +301,7 @@ eventBingoRoutes.get(
         drawnNumbers: [],
         counts: { cards: 0, bingo: 0, reach: 0 },
         rows: [],
+        signal,
       } satisfies BingoStatus);
     }
     const drawn = drawnNumbers(game);
@@ -292,6 +315,7 @@ eventBingoRoutes.get(
         reach: rows.filter((r) => r.reach).length,
       },
       rows,
+      signal,
     } satisfies BingoStatus);
   },
 );

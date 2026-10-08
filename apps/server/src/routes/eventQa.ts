@@ -21,6 +21,16 @@ import { gateEvent } from "../auth/eventAccess.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { eventQaRepo, toQuestion } from "../db/repositories/eventQa.js";
+import { eventSignal } from "../lib/eventSignal.js";
+import { deferBackground } from "../runtime.js";
+
+/** 開いている投影・登壇者パネルへ「Q&A が変わった・取り直して」を送る（topic `qa`、
+ * D-POLL-MIN 第5段階 5b-2）。参加者の投稿・投票・削除は全員から連打されうるので throttle を通す。
+ * staff の操作（対応済み・非表示・ピック）は連打されないので即時に送る */
+function publishQa(eventId: string, by: "participant" | "staff"): Promise<void> {
+  const targets = [["qa", eventId]] as const;
+  return deferBackground(by === "staff" ? eventSignal.publishRefetch(targets) : eventSignal.publishRefetchThrottled(targets));
+}
 
 const MEMBER_ROLES = ["participant", "staff", "judge", "observer"] as const;
 
@@ -104,6 +114,7 @@ eventQaRoutes.get(
     // ペイロードでは別項目のまま残してある（web はそれぞれ別の用途で使い、
     // 今後どちらかだけを動かすことがありうる）が、条件はいまは同じ
     const staff = isEventStaff(member);
+    const readAt = Date.now();
     const rows = await eventQaRepo.listByEvent(eventId, me.id, staff);
     const questions: EventQuestion[] = rows.map((r) =>
       toQuestion(r, me.id, staff),
@@ -120,6 +131,7 @@ eventQaRoutes.get(
       canModerate: staff,
       revealsAuthor: staff,
       questions,
+      signal: await eventSignal.source(eventId, "qa", readAt),
     };
     return c.json(payload);
   },
@@ -165,6 +177,7 @@ eventQaRoutes.post(
           ? false
           : input.anonymous;
     const id = await eventQaRepo.create(eventId, me.id, input.body, anonymous, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
+    await publishQa(eventId, "participant");
     const row = await eventQaRepo.findById(id, me.id);
     if (!row) return c.json({ error: "not_found" }, 404);
     const member = await eventMembersRepo.find(eventId, me.id);
@@ -195,6 +208,7 @@ eventQaRoutes.post(
     // 票が溜まると解除したときにいきなり上位に並ぶので、ここで弾く
     if (meta.hidden) return c.json({ error: "question_hidden" }, 409);
     await eventQaRepo.vote(qid, c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
+    await publishQa(eventId, "participant");
     return c.json({ ok: true });
   },
 );
@@ -216,6 +230,7 @@ eventQaRoutes.delete(
       return c.json({ error: "not_found" }, 404);
     }
     await eventQaRepo.unvote(qid, c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
+    await publishQa(eventId, "participant");
     return c.json({ ok: true });
   },
 );
@@ -248,6 +263,7 @@ eventQaRoutes.delete(
     // 消した質問がピックアップ中なら解除する
     // （event.qa_picked_question_id には FK がないので自分で片付ける）
     await eventQaRepo.clearPickedIf(eventId, qid, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"view"});
+    await publishQa(eventId, "participant");
     return c.json({ ok: true });
   },
 );
@@ -277,6 +293,7 @@ eventQaRoutes.patch(
     if (input.hidden === true) {
       await eventQaRepo.clearPickedIf(eventId, qid, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"view"});
     }
+    await publishQa(eventId, "staff");
     const me = c.get("user");
     const row = await eventQaRepo.findById(qid, me.id);
     if (!row) return c.json({ error: "not_found" }, 404);
@@ -317,6 +334,7 @@ eventQaRoutes.put(
       }
     }
     await eventQaRepo.setPicked(eventId, questionId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"staff"});
+    await publishQa(eventId, "staff");
     return c.json({ pickedQuestionId: questionId });
   },
 );
