@@ -340,7 +340,7 @@ staff 系はオン/オフに**従わない**（準備・後片付けで使う。
 | 画面 | 場所 | 内容 |
 |------|------|------|
 | 景品カード（参加者・公開） | `EventDetailPage` に追加（`components/MeetPrizes.tsx` の `MeetPrizePanel`） | 景品一覧（条件・残数・在庫切れ表示・画像）。確定メンバーには自分の件数の文・達成バッジ・「交換済み」表示（進捗バーは無し）。達成があると「スタッフに見せて受け取ってください」の案内 |
-| 引き換えデスク（staff） | `/events/:id/prize-desk`（新規 `EventPrizeDeskPage.tsx`。`EventTodoPage` と同じ `EventLayout` 子ルート + 詳細ページに導線ボタン） | 景品ごとの達成者一覧（検索つき）・「交換済みにする/戻す」・残数・**「1位を確定する」ボタン**（確定済みなら勝者と締め直し）。`MEET_RANKING_POLL_MS`（5秒）で再取得し、窓口で読み合った直後の達成が出る |
+| 引き換えデスク（staff） | `/events/:id/prize-desk`（新規 `EventPrizeDeskPage.tsx`。`EventTodoPage` と同じ `EventLayout` 子ルート + 詳細ページに導線ボタン） | 景品ごとの達成者一覧（検索つき）・「交換済みにする/戻す」・残数・**「1位を確定する」ボタン**（確定済みなら勝者と締め直し）。合図 `prize-desk` で取り直し、窓口で読み合った直後の達成が出る（定期取得なし。[event-signal.md](event-signal.md)） |
 | 景品の設定（staff） | `EditEventPage` にセクション追加（`components/MeetPrizeEditor.tsx`） | オン/オフのスイッチ + 景品の CRUD（条件セレクト: 「N人と出会う」（プリセット 5/10/20 + 自由入力）/「ランキング1位」/ビンゴ、在庫数、画像）。並び順の入力は無し（作成順で並ぶ）。表彰・参加枠の編集UIの型 |
 | `EventStatsPage` | `MeetRankingCard` | 引き換えデスクへのリンクを1つ足す（「景品配布などの運営用」の注記が既にあり、行き先ができる） |
 
@@ -374,7 +374,7 @@ staff 系はオン/オフに**従わない**（準備・後片付けで使う。
 | web | `pages/EventDetailPage.tsx` / `components/EventActionButtons.tsx` | 景品カード + staff 導線 |
 | web | `pages/EditEventPage.tsx` | オン/オフ + 景品 CRUD セクション |
 | web | `pages/EventStatsPage.tsx` | デスクへのリンク |
-| web | `api/meetPrizeHooks.ts` | 新規。景品の query/mutation 一式（`MEET_RANKING_POLL_MS` の5秒ポーリング） |
+| web | `api/meetPrizeHooks.ts` | 新規。景品の query/mutation 一式（定期取得なし。デスクは合図 `prize-desk` で取り直す） |
 | i18n | `eventSocial.ts`・`eventForm.ts`・`staffOps/prizes.ts` | ja/en 追加 |
 | test | `merge-user-columns.test.ts` | 実数の更新（理由をコミットに書く） |
 | test | `meet-prizes.test.ts`・`meet-prize-images.test.ts` | 新規。§5 の観点 |

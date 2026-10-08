@@ -113,14 +113,6 @@ export type MeetUndoInput = z.infer<typeof meetUndoInput>;
 export const MEET_RANKING_MODES = ["off", "anonymous", "named"] as const;
 export type MeetRankingMode = (typeof MEET_RANKING_MODES)[number];
 
-/** 投影ページがランキングをポーリングする間隔（表示中だけ）。詳細ページの小カードは
- * ポーリングしない (D-POLL-MIN)。live-state の1秒（配信のシーン切替）に乗せないのは、
- * ランキングはQRを読み合う人間の速度でしか変わらないため */
-export const MEET_RANKING_POLL_MS = 15_000;
-
-/** 景品デスク（/prize-desk）が達成者・引き換え履歴をポーリングする間隔（表示中だけ） */
-export const MEET_PRIZE_DESK_POLL_MS = 10_000;
-
 /** ランキングに出す行数。プロジェクターで読める限界に合わせて固定 */
 export const MEET_RANKING_TOP_N = 10;
 

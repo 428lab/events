@@ -85,7 +85,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
   // 復号結果のキャッシュ。鍵束が増えたら（ローテーション）開け直す
   const decryptedRef = useRef(new Map<string, string | null>());
 
-  /** ポーリング中に staff でなくなった（資格喪失 #382 7.3）。以後は何も出さない */
+  /** 開いている間に staff でなくなった（資格喪失 #382 7.3）。以後は何も出さない */
   const forbidden = error instanceof ApiError && error.status === 403;
 
   // 部屋・自分の鍵が無ければ作る（先勝ち・冪等。設計 7.1）。

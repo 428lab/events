@@ -49,7 +49,7 @@
 
 | 先例 | 作法 |
 |------|------|
-| `LiveScreenPage.tsx`（配信画面） | `position:fixed; inset:0`・16:9・カーソル3秒自動非表示・staff 専用 API を1秒ポーリング（`LIVE_POLL_MS=1000`） |
+| `LiveScreenPage.tsx`（配信画面） | `position:fixed; inset:0`・16:9・カーソル3秒自動非表示・staff 専用 API を合図 `live` で取り直す（定期取得なし。[event-signal.md](event-signal.md)） |
 | `EventChatScreenPage.tsx`（チャット投影 #215） | 全画面・**文字サイズ倍率**（`SCALES=[0.8,1,1.25,1.5,2]` を localStorage に保存）・カーソル自動非表示・`onMouseMove/onTouchStart/onKeyDown` で復帰・権限は「参加確定メンバー」 |
 | `EventTimetablePage.tsx` | イベント配下のネスト Route |
 
@@ -185,6 +185,8 @@ anonymous: { mode: "anonymous",
 
 ### 3.4 更新間隔: 5秒ポーリング
 
+> **現在はこの節の方式ではない（D-POLL-MIN 第5段階）。** 定期取得はやめ、景品・ランキングに効く書き込みのたびにサーバーが合図 `meet-ranking` を出し、投影ページはそれを受けて取り直す。`MEET_RANKING_POLL_MS` は削除した。仕組みは [event-signal.md](event-signal.md)。以下は当初の設計の記録。
+
 **専用の 5 秒間隔**（`MEET_RANKING_POLL_MS = 5000` を shared の定数に）で、
 react-query の `refetchInterval` により投影ページがポーリングする。
 
@@ -280,7 +282,7 @@ messages に追加し、**振る舞いで書く**（「名前とアイコンが�
 |----|---------|------|
 | DB | `apps/server/migrations/0078_meet_ranking.sql` | 新規。`meet_ranking` 列 |
 | shared | `packages/shared/src/schema.ts` | `eventSchema`/`updateEventInput` に `meetRanking` |
-| shared | `packages/shared/src/eventMeets.ts` | `MEET_RANKING_MODES`・`MEET_RANKING_POLL_MS = 5000`・`MEET_RANKING_TOP_N = 10`・live 応答の型 |
+| shared | `packages/shared/src/eventMeets.ts` | `MEET_RANKING_MODES`・`MEET_RANKING_TOP_N = 10`・live 応答の型 |
 | server | `db/repositories/events.ts` | 行マッピング・UPDATE 文に `meet_ranking` |
 | server | `db/repositories/eventMeets.ts` | `rankingForEvent` に rank 追加、`anonymousRankingForEvent`・`rankForUser` 新設 |
 | server | `routes/eventMeets.ts` | `GET /:id/meets/ranking/live` 新設（off→404 / 確定メンバー判定 / mode 別応答） |
@@ -288,7 +290,7 @@ messages に追加し、**振る舞いで書く**（「名前とアイコンが�
 | web | `pages/MeetRankingScreenPage.tsx` | 新規。投影ページ（全画面枠。描画は `MeetRankingBoard`） |
 | web | `components/MeetRanking.tsx` | 新規。`MeetRankingBoard`（投影の描画）+ `MeetRankingPanel`（詳細ページの小カード） |
 | web | `App.tsx` | `/events/:id/meet-ranking/screen` の Route |
-| web | `api/eventMeetHooks.ts` | `useMeetRankingLive(eventId, enabled)`（refetchInterval 5s） |
+| web | `api/eventMeetHooks.ts` | `useMeetRankingLive(eventId, enabled)`（定期取得なし。投影ページは合図 `meet-ranking` で取り直す） |
 | web | `pages/EditEventPage.tsx` | スイッチ + named/anonymous の選択（Q&A の匿名設定と同じセレクト） |
 | web | `pages/EventDetailPage.tsx` | 従属パネル（上位3 + 自分の順位 + 投影ページへのリンク） |
 | web | `pages/EventStatsPage.tsx` | staff カードに投影ページへのリンク・注記の文言修正 |
@@ -315,11 +317,10 @@ messages に追加し、**振る舞いで書く**（「名前とアイコンが�
 - 上位10件は定数 **`MEET_RANKING_TOP_N`** として shared に置いた（ルートとUIで数字を
   2か所に書かない）
 - 定数・enum の置き場は `schema.ts` ではなく **`packages/shared/src/eventMeets.ts`**
-  （`MEET_RANKING_MODES`・`MEET_RANKING_POLL_MS`・応答型を同居させ、`schema.ts` は import）
+  （`MEET_RANKING_MODES`・応答型を同居させ、`schema.ts` は import）
 - 投影の描画（`MeetRankingBoard`）と詳細ページの小カード（`MeetRankingPanel`）は
-  **`components/MeetRanking.tsx` に同居**（データ取得は同じ live API の5秒ポーリング）
-- ポーリングは**エラー時に停止**する（`api/eventMeetHooks.ts` の `refetchInterval`。
-  オフ・非メンバーの 404 に5秒おきに当たり続けない）
+  **`components/MeetRanking.tsx` に同居**（データ取得は同じ live API。定期取得はしない）
+- 定期取得をしないので、オフ・非メンバーの 404 に当たり続けることもない（D-POLL-MIN 第5段階）
 
 ---
 
