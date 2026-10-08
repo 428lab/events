@@ -38,6 +38,7 @@ import {
   selectVisibleChatMessages,
 } from "../lib/chatMessageBuffer.js";
 import { randomLocalSigner } from "../lib/nostrChat.js";
+import { useChatHiddenSignal } from "../lib/eventSignal.js";
 import type { ChatSigner } from "../lib/nostrChat.js";
 import { ChatComposer } from "./chat/ChatComposer.js";
 import { ChatJoinPanel } from "./chat/ChatJoinPanel.js";
@@ -108,6 +109,10 @@ export function EventChat({
   const { data: chat, error: chatError } = chatQuery;
   const enc = useEncryptedChat(eventId, encrypted);
   const openEnc = useOpenEncryptedChat(eventId);
+  // 非表示・解除の合図を payload の非表示リストに重ねる（D-POLL-MIN 第5段階）。
+  // 非表示の表は平文・暗号化で共通なので、暗号化モードでは平文の過去ログにも encHidden を使う
+  const plainHidden = useChatHiddenSignal(chat?.hiddenSignal, chat?.hiddenNoteIds);
+  const encHidden = useChatHiddenSignal(enc.data?.hiddenSignal, enc.data?.hiddenNoteIds);
   /** チャットに繋がせない状態か (#283)。
    *
    * **理由は画面に書かない**。「あなたは締め出されました」と伝えると、
@@ -156,6 +161,9 @@ export function EventChat({
     // 許可リストに無い人の発言で取り直す（新しく参加した人）。暗号化モードの
     // 平文の過去ログは読むだけで新しい人は増えないので取り直さない
     refetchChat: encrypted ? undefined : () => chatQuery.refetch(),
+    hiddenSignal: encrypted
+      ? undefined
+      : { config: chat?.hiddenSignal, onSignal: plainHidden.onSignal },
     // 非公開・限定公開では平文の経路を一切開かない（plaintextChannelId も null）
     chatUnavailable:
       chatUnavailable || (encrypted && (!isPublic || !plaintextChannelId)),
@@ -185,6 +193,7 @@ export function EventChat({
       if (result.error) throw result.error;
       return result.data;
     },
+    onHiddenSignal: encHidden.onSignal,
   });
   const relayConnected = encrypted ? encChannel.relayConnected : plain.relayConnected;
 
@@ -220,31 +229,31 @@ export function EventChat({
             plain.messages.filter((m) => m.created_at * 1000 <= encryptedAt),
             {
               members: new Set((chat?.members ?? []).map((m) => m.pubkey)),
-              hidden: new Set(chat?.hiddenNoteIds ?? []),
+              hidden: new Set(encHidden.hiddenNoteIds),
               maxLength: CHAT_MESSAGE_MAX,
             },
           )
         : [],
-    [encrypted, plain.messages, encryptedAt, chat],
+    [encrypted, plain.messages, encryptedAt, chat, encHidden.hiddenNoteIds],
   );
   const visibleMessages = useMemo(() => {
     if (!encrypted) {
       return selectVisibleChatMessages(plain.messages, {
         members: new Set(memberByPubkey.keys()),
-        hidden: new Set(chat?.hiddenNoteIds ?? []),
+        hidden: new Set(plainHidden.hiddenNoteIds),
         maxLength: CHAT_MESSAGE_MAX,
       });
     }
     const sealed = selectVisibleChatMessages(encChannel.messages, {
       members: new Set((enc.data?.members ?? []).map((m) => m.pubkey)),
-      hidden: new Set(enc.data?.hiddenNoteIds ?? []),
+      hidden: new Set(encHidden.hiddenNoteIds),
       maxLength: CHAT_MESSAGE_MAX,
     });
     // 平文の過去ログと暗号文を created_at で1つの一覧にする（設計 4.2）
     return clampToDisplayMax(
       [...legacyMessages, ...sealed].sort((a, b) => a.created_at - b.created_at),
     );
-  }, [encrypted, plain.messages, memberByPubkey, chat, encChannel.messages, enc.data, legacyMessages]);
+  }, [encrypted, plain.messages, memberByPubkey, encChannel.messages, enc.data, legacyMessages, plainHidden.hiddenNoteIds, encHidden.hiddenNoteIds]);
   // 区切り「ここから参加者のみ」は平文の過去ログがあるときだけ、その最後の行の後に出す。
   // 投影用には出さない（見せる画面なので。設計 7.2）
   const lastLegacyId = legacyMessages.at(-1)?.id;

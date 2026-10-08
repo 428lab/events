@@ -23,6 +23,7 @@ export * from "./svgAvatar.js";
 export * from "./eventBroadcast.js";
 export * from "./eventChat.js";
 export * from "./groupChat.js";
+export * from "./eventSignal.js";
 export * from "./eventComments.js";
 export * from "./eventLikes.js";
 export * from "./eventMeets.js";

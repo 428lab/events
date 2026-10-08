@@ -18,6 +18,7 @@ import {
 } from "../../lib/nostrChat.js";
 import type { ChatSigner } from "../../lib/nostrChat.js";
 import type { ChatSendResult } from "./useChatChannel.js";
+import { eventSignalKey } from "../../lib/eventSignal.js";
 import {
   newerKeyVersion,
   useChatRefetchTrigger,
@@ -56,6 +57,7 @@ export function useEncryptedChatChannel({
   display,
   chatUnavailable,
   refresh,
+  onHiddenSignal,
 }: {
   eventId: string;
   chat: EncryptedChatPayload | null | undefined;
@@ -65,6 +67,9 @@ export function useEncryptedChatChannel({
   chatUnavailable: boolean;
   /** 送信直前の取り直し。失敗（403 等）は throw する */
   refresh: () => Promise<EncryptedChatPayload | null | undefined>;
+  /** 非表示・解除の合図（payload の hiddenSignal）が届いたとき（D-POLL-MIN 第5段階）。
+   * 同じ接続の上で購読する */
+  onHiddenSignal?: (ev: NostrEvent) => void;
 }): EncryptedChatChannelState {
   const [messages, setMessages] = useState<NostrEvent[]>([]);
   const [relayConnected, setRelayConnected] = useState(false);
@@ -95,6 +100,9 @@ export function useEncryptedChatChannel({
   chatRef.current = chat;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const onHiddenSignalRef = useRef(onHiddenSignal);
+  onHiddenSignalRef.current = onHiddenSignal;
+  const signalKey = eventSignalKey(chat?.hiddenSignal);
   const requestRefetch = useChatRefetchTrigger(
     () => refreshRef.current().catch(() => {}),
     `${eventId}:${roomId ?? ""}`,
@@ -119,6 +127,12 @@ export function useEncryptedChatChannel({
     pool.onstatus = () => {
       if (!disposed) setRelayConnected(pool.connected);
     };
+    const signalConfig = chatRef.current?.hiddenSignal;
+    const signal = signalConfig
+      ? pool.subscribeSignal([signalConfig], (ev) => {
+          if (!disposed) onHiddenSignalRef.current?.(ev);
+        })
+      : null;
     void (async () => {
       await pool.connect();
       if (disposed) return;
@@ -144,6 +158,7 @@ export function useEncryptedChatChannel({
     const stop = () => {
       disposed = true;
       unsubscribe?.();
+      signal?.close();
       pool.close();
       poolRef.current = null;
       setRelayConnected(false);
@@ -161,7 +176,7 @@ export function useEncryptedChatChannel({
     };
     // append は ref 経由で最新を見るので依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSigner, roomId, relaysKey, chatUnavailable, eventId]);
+  }, [activeSigner, roomId, relaysKey, chatUnavailable, eventId, signalKey]);
 
   // 復号結果のキャッシュ。鍵束が増えたら（ローテーション）開け直す
   const decryptedRef = useRef(new Map<string, string | null>());

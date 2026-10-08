@@ -71,6 +71,7 @@ const CHAT: ChatMembersPayload = {
   channelId: "chan-1",
   chatEnabled: true,
   hiddenNoteIds: [],
+  hiddenSignal: null,
   relays: ["wss://relay.example"],
   writeWindow: { opensAt: null, closesAt: 1_700_003_600_000 },
 };

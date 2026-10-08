@@ -353,9 +353,9 @@ export const eventChatRepo = {
     return row?.chat_channel_id ?? null;
   },
 
-  /** メッセージをアプリ側で非表示にする（冪等） */
-  async hideNote(eventId: string, noteId: string, writer: EventWriter): Promise<void> {
-    await eventRun(writer,
+  /** メッセージをアプリ側で非表示にする（冪等）。変更した行数を返す */
+  async hideNote(eventId: string, noteId: string, writer: EventWriter): Promise<number> {
+    return eventRun(writer,
       "INSERT OR IGNORE INTO event_chat_hidden (event_id, note_id, created_at) VALUES (?, ?, ?)",
       eventId,
       noteId,
@@ -364,14 +364,22 @@ export const eventChatRepo = {
   },
 
   /** 非表示を解除する（スタッフ）。
-   * 運営が対処したもの (#278) は残す。戻せてしまうと対処した意味が無くなる */
-  async unhideNote(eventId: string, noteId: string, writer: EventWriter): Promise<void> {
-    await eventRun(writer,
+   * 運営が対処したもの (#278) は残す。戻せてしまうと対処した意味が無くなる。変更した行数を返す */
+  async unhideNote(eventId: string, noteId: string, writer: EventWriter): Promise<number> {
+    return eventRun(writer,
       `DELETE FROM event_chat_hidden
         WHERE event_id = ? AND note_id = ? AND admin_hidden_at IS NULL`,
       eventId,
       noteId,
     );
+  },
+
+  async isHidden(eventId: string, noteId: string): Promise<boolean> {
+    return (await one<{ x: number }>(
+      "SELECT 1 AS x FROM event_chat_hidden WHERE event_id = ? AND note_id = ?",
+      eventId,
+      noteId,
+    )) !== null;
   },
 
   async listHidden(eventId: string): Promise<string[]> {

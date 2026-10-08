@@ -69,7 +69,7 @@ const { fakeRelays, relayConfig, FakeRelay } = vi.hoisted(() => {
     content: string;
   };
   type SignFn = (t: Template) => Promise<unknown>;
-  type SubParams = { onevent: (ev: unknown) => void; onclose: (r: string) => void };
+  type SubParams = { onevent: (ev: unknown) => void; oneose?: () => void; onclose: (r: string) => void };
   /** 実物のリレー（strfry）は接続直後にチャレンジを送ることがある */
   const relayConfig = { challengeOnConnect: true };
   const fakeRelays: FakeRelay[] = [];
@@ -80,6 +80,8 @@ const { fakeRelays, relayConfig, FakeRelay } = vi.hoisted(() => {
     authed = false;
     subParams: SubParams | null = null;
     filters: unknown;
+    /** every subscription opened on this connection, with whether it was closed */
+    subs: Array<{ filters: unknown; params: SubParams; closed: boolean }> = [];
     subscribeCalls = 0;
     private challenge: string | null = null;
     private authPromise: Promise<string> | null = null;
@@ -127,7 +129,9 @@ const { fakeRelays, relayConfig, FakeRelay } = vi.hoisted(() => {
       this.filters = filters;
       this.subscribeCalls++;
       this.subParams = params;
-      return { close: () => undefined };
+      const entry = { filters, params, closed: false };
+      this.subs.push(entry);
+      return { close: () => { entry.closed = true; } };
     }
     close(): void {
       this.connected = false;
@@ -301,6 +305,95 @@ describe("NIP-07 の署名待ちで送信が固まらない (#464)", () => {
       await expect(publishing).resolves.toBe(true);
       expect(fakeRelays.length).toBe(2);
       expect(fakeRelays[1].subscribeCalls).toBe(1);
+    } finally {
+      pool.close();
+    }
+  });
+});
+
+describe("合図の購読をメッセージの購読と同じ接続に並べる (D-POLL-MIN 第5段階)", () => {
+  beforeEach(() => {
+    fakeRelays.length = 0;
+    relayConfig.challengeOnConnect = false;
+  });
+  const CONFIG = { kind: 20078, pubkey: "5e".repeat(32), topic: "70".repeat(32) };
+
+  it("両方の購読が1本の接続に張られ、合図は author と #t で絞られ since を持たない", async () => {
+    const pool = new ChatRelayPool(makeSigner(SIGNED), [RELAY_URL]);
+    try {
+      await pool.connect();
+      const messages = vi.fn();
+      const signals = vi.fn();
+      pool.subscribe(CHANNEL, messages);
+      const signal = pool.subscribeSignal([CONFIG], signals);
+      const relay = fakeRelays[0];
+      expect(relay.subs.map((s) => s.filters)).toEqual([
+        [{ kinds: [42], "#e": [CHANNEL], limit: 200 }],
+        [{ kinds: [20078], authors: [CONFIG.pubkey], "#t": [CONFIG.topic], limit: 50 }],
+      ]);
+      relay.subs[1].params.onevent({ ...SIGNED_EVENT, id: "11".repeat(32), pubkey: CONFIG.pubkey, kind: 20078 });
+      relay.subs[1].params.onevent({ ...SIGNED_EVENT, id: "12".repeat(32), pubkey: "ee".repeat(32), kind: 20078 });
+      expect(signals).toHaveBeenCalledOnce();
+      expect(messages).not.toHaveBeenCalled();
+      // メッセージの購読を張り替えても合図の購読は残る
+      pool.subscribe(CHANNEL, messages);
+      expect(relay.subs[0].closed).toBe(true);
+      expect(relay.subs[1].closed).toBe(false);
+      signal.close();
+      expect(relay.subs[1].closed).toBe(true);
+    } finally {
+      pool.close();
+    }
+  });
+
+  it("synced() は今の接続で EOSE を受けてから true。張り直すと EOSE まで false に戻る", async () => {
+    const pool = new ChatRelayPool(makeSigner(SIGNED), [RELAY_URL]);
+    const status = vi.fn();
+    pool.onstatus = status;
+    try {
+      await pool.connect();
+      pool.subscribe(CHANNEL, () => undefined);
+      const signal = pool.subscribeSignal([CONFIG], () => undefined);
+      expect(signal.synced()).toBe(false);
+      fakeRelays[0].subs[1].params.oneose!();
+      expect(signal.synced()).toBe(true);
+      expect(status).toHaveBeenCalled();
+
+      // 切断 → 再接続。新しい接続で両方の購読が張り直され、合図の since は付かない
+      fakeRelays[0].close();
+      expect(signal.synced()).toBe(false);
+      await vi.waitFor(() => expect(fakeRelays.length).toBe(2), { timeout: 5_000 });
+      await vi.waitFor(() => expect(fakeRelays[1].subs.length).toBe(2));
+      expect(fakeRelays[1].subs[1].filters).toEqual([
+        { kinds: [20078], authors: [CONFIG.pubkey], "#t": [CONFIG.topic], limit: 50 },
+      ]);
+      expect(signal.synced()).toBe(false);
+      fakeRelays[1].subs[1].params.oneose!();
+      expect(signal.synced()).toBe(true);
+    } finally {
+      pool.close();
+    }
+  });
+});
+
+describe("複数の合図は1本の REQ にまとめる (D-POLL-MIN 第5段階)", () => {
+  beforeEach(() => {
+    fakeRelays.length = 0;
+    relayConfig.challengeOnConnect = false;
+  });
+
+  it("topic を #t に並べ、リレーごとに購読は1本", async () => {
+    const pool = new ChatRelayPool(makeSigner(SIGNED), [RELAY_URL]);
+    try {
+      await pool.connect();
+      const pubkey = "5e".repeat(32);
+      pool.subscribeSignal([
+        { kind: 20078, pubkey, topic: "70".repeat(32) },
+        { kind: 20078, pubkey, topic: "71".repeat(32) },
+      ], () => undefined);
+      expect(fakeRelays[0].subs.map((s) => s.filters)).toEqual([
+        [{ kinds: [20078], authors: [pubkey], "#t": ["70".repeat(32), "71".repeat(32)], limit: 50 }],
+      ]);
     } finally {
       pool.close();
     }

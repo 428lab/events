@@ -10,7 +10,8 @@ import type {
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { isAppAdmin } from "../auth/admin.js";
-import { getBucket } from "../runtime.js";
+import { deferBackground, getBucket } from "../runtime.js";
+import { eventSignal } from "../lib/eventSignal.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { safeServeMime } from "../lib/imageMime.js";
 import { adminModerationRepo } from "../db/repositories/adminModeration.js";
@@ -203,6 +204,10 @@ adminModerationRoutes.post(
         await eventQaRepo.clearPickedIf(eventId, id, {eventId,actorId:c.get("user").id,permission:"view"});
       }
     }
+    // 開いているチャット画面へ即時に知らせる（D-POLL-MIN 第5段階）
+    if (kind === "chat_message" && changed > 0) {
+      await deferBackground(eventSignal.publishChatHidden(eventId, id));
+    }
     // 既に非表示だった場合も 200（画面の再読込で揃う）。記録は実際に変えたときだけ
     if (changed > 0) {
       await recordAudit({
@@ -233,6 +238,10 @@ adminModerationRoutes.post(
       changed = await eventChatRepo.adminUnhideNote(eventId, id);
     } else {
       changed = await adminModerationRepo.restore(kind as RowKind, id, eventId);
+    }
+    // スタッフの非表示が残っていれば「非表示のまま」を送る（publishChatHidden が今の状態を読む）
+    if (kind === "chat_message" && changed > 0) {
+      await deferBackground(eventSignal.publishChatHidden(eventId, id));
     }
     if (changed > 0) {
       await recordAudit({

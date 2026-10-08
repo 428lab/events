@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { EventLiveState, LiveElement } from "@eventer/shared";
 import { GROUP_CHAT_KIND } from "@eventer/shared";
@@ -7,58 +7,85 @@ import { useChatMembers } from "../api/eventChatHooks.js";
 import { useEncryptedChat } from "../api/encryptedChatHooks.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 import { ChatRelayPool, randomLocalSigner } from "../lib/nostrChat.js";
+import { eventSignalKey, useChatHiddenSignal } from "../lib/eventSignal.js";
 import { openGroupChatMessage, visibleAfterRevocation } from "../lib/groupChatCrypto.js";
 import { LIVE_CONTROL_STATE_FRESH_MS, LIVE_SCREEN_STATE_FRESH_MS, liveChatAuthorized, liveChatRows } from "../lib/liveChat.js";
 import type { LiveChatMessage, LiveChatPermissions, LiveChatRow } from "../lib/liveChat.js";
 
-/** Chat metadata older than this never authorizes rows on the OBS screen (it polls every 5 s). */
-export const LIVE_SCREEN_CHAT_FRESH_MS = 6000;
-
 /** Rendered rows come only from the OBS live screen; the editor shows an empty frame, never simulated posts.
  * Participants-only (encrypted) chat (#582 design 4.4): the staff member's own session
- * receives the room keys and the screen decrypts; freshness and authorization are the same.
+ * receives the room keys and the screen decrypts; authorization is the same.
  *
- * page "screen" (OBS /live/screen): chat metadata polls every 5 s even when hidden and must be
- * fresher than 6 s, because the broadcast output must drop hidden/blocked posts within seconds and
- * nobody can interact with an OBS browser source.
- * page "control" (/live/control): only the operator's status text. Metadata does not poll
- * (D-POLL-MIN: load, focus, unknown pubkey); it must still be loaded without error, and the
- * 5 s visible live-state poll gets a 10 s window. */
+ * Chat metadata is never polled (D-POLL-MIN Phase 5a). It loads on open and focus; the screen reads
+ * it once more each time the hide/unhide signal subscription becomes active on a relay connection.
+ *
+ * page "screen" (OBS /live/screen): rows need, besides the 1 s live-state kill switch
+ * (`chatSource`, which the server also turns "off" when the event's chat settings no longer
+ * allow chat):
+ * - the server-signed hide/unhide signal subscription (lib/eventSignal.ts) has reached EOSE on a
+ *   connected relay, so hides reach the broadcast at once, and
+ * - the metadata was fetched after that, because ephemeral signals sent while the screen was
+ *   disconnected are not replayed by the relay.
+ * Without a service key (no signal) the screen shows no rows.
+ * page "control" (/live/control): only the operator's status text. Metadata must be loaded
+ * without error, and the 5 s visible live-state poll gets a 10 s window. */
 export function useLiveEventChat(eventId: string, state: EventLiveState | undefined, stateUpdatedAt: number, stateError: boolean, now: number, enabled: boolean, page: "screen" | "control") {
   const screen = page === "screen";
   const access = useEventChatAccess(eventId);
   const encrypted = Boolean(access.event?.chatEncrypted);
   const base = enabled && access.chatAvailable && !access.isError;
-  const members = useChatMembers(eventId, base && !encrypted, true, screen);
-  const sealed = useEncryptedChat(eventId, base && encrypted, true, screen);
+  const members = useChatMembers(eventId, base && !encrypted, true);
+  const sealed = useEncryptedChat(eventId, base && encrypted, true);
   const source = encrypted ? sealed : members;
+  const signalConfig = encrypted ? sealed.data?.hiddenSignal : members.data?.hiddenSignal;
+  const hidden = useChatHiddenSignal(signalConfig, encrypted ? sealed.data?.hiddenNoteIds : members.data?.hiddenNoteIds);
   // A failed metadata fetch is not authorization, even if React Query retains its last payload.
-  const eligible = base && !source.isError && source.dataUpdatedAt > 0 && (!screen || now - source.dataUpdatedAt <= LIVE_SCREEN_CHAT_FRESH_MS);
+  const eligible = base && !source.isError && source.dataUpdatedAt > 0 && (!screen || Boolean(signalConfig));
   const target = encrypted
     ? (sealed.data ? { chatEnabled: true, channelId: sealed.data.roomId } : undefined)
     : members.data;
   const authorized = liveChatAuthorized(state, stateUpdatedAt, stateError, now, target, eligible, screen ? LIVE_SCREEN_STATE_FRESH_MS : LIVE_CONTROL_STATE_FRESH_MS);
-  const chat: (LiveChatPermissions & { relays: string[] }) | undefined = authorized
+  const payload: (LiveChatPermissions & { relays: string[] }) | undefined = authorized
     ? (encrypted ? sealed.data ?? undefined : members.data)
     : undefined;
+  // Hidden note ids: the payload's list plus the signals received since it was read.
+  const chat = useMemo(() => payload && { ...payload, hiddenNoteIds: hidden.hiddenNoteIds }, [payload, hidden.hiddenNoteIds]);
   const keys = encrypted && authorized ? sealed.data?.keys : undefined;
-  const [buffer, setBuffer] = useState<{ identity: string; messages: NostrEvent[]; connected: boolean }>({ identity: "", messages: [], connected: false });
+  const [buffer, setBuffer] = useState<{ identity: string; messages: NostrEvent[]; connected: boolean; syncedAt: number }>({ identity: "", messages: [], connected: false, syncedAt: 0 });
+  // Hidden ids are applied when rows are built, so a hide does not reconnect.
   const permissionKey = chat
-    ? `${chat.members.map(m => `${m.pubkey}/${"revokedAt" in m ? m.revokedAt : ""}`).join(",")}:${chat.hiddenNoteIds.join(",")}:${(keys ?? []).map(k => k.version).join(",")}`
+    ? `${chat.members.map(m => `${m.pubkey}/${"revokedAt" in m ? m.revokedAt : ""}`).join(",")}:${(keys ?? []).map(k => k.version).join(",")}`
     : "";
   const relays = chat?.relays.join(" ") ?? "";
   const channel = target?.channelId;
   const kind = encrypted ? GROUP_CHAT_KIND : undefined;
+  const signalKey = eventSignalKey(signalConfig);
+  const signalRef = useRef({ config: signalConfig, onSignal: hidden.onSignal, refetch: source.refetch });
+  signalRef.current = { config: signalConfig, onSignal: hidden.onSignal, refetch: source.refetch };
   // Effect cleanup runs after render: never interpret a previous event's buffer using new cached member metadata.
-  const identity = chat && channel ? JSON.stringify([eventId, channel, relays, permissionKey, kind ?? 42]) : "";
+  const identity = chat && channel ? JSON.stringify([eventId, channel, relays, permissionKey, kind ?? 42, signalKey]) : "";
   useEffect(() => {
-    // Changing event, source, permission, channel, keys or freshness disposes the relay and its buffer.
-    setBuffer({ identity, messages: [], connected: false });
+    // Changing event, source, permission, channel, keys or signal target disposes the relay and its buffer.
+    setBuffer({ identity, messages: [], connected: false, syncedAt: 0 });
     if (!chat || !channel) return;
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
     const pool = new ChatRelayPool(randomLocalSigner(), relays.split(" "));
-    pool.onstatus = () => { if (!disposed) setBuffer(prev => prev.identity === identity ? { ...prev, connected: pool.connected } : prev); };
+    const config = signalRef.current.config;
+    const signal = config ? pool.subscribeSignal([config], ev => { if (!disposed) signalRef.current.onSignal(ev); }) : null;
+    let synced = false;
+    pool.onstatus = () => {
+      if (disposed) return;
+      const nowSynced = signal?.synced() ?? false;
+      // Signals sent while no relay delivered them are lost: read the hidden list again once the
+      // subscription is live, and hold rows until that read has landed (syncedAt).
+      const syncedAt = nowSynced && !synced ? Date.now() : undefined;
+      if (syncedAt && screen) void signalRef.current.refetch?.();
+      synced = nowSynced;
+      setBuffer(prev => prev.identity === identity
+        ? { ...prev, connected: pool.connected, syncedAt: !nowSynced ? 0 : syncedAt ?? prev.syncedAt }
+        : prev);
+    };
     void pool.connect().then(() => {
       if (disposed) return;
       unsubscribe = pool.subscribe(channel, ev => {
@@ -66,7 +93,7 @@ export function useLiveEventChat(eventId: string, state: EventLiveState | undefi
         setBuffer(prev => prev.identity !== identity || prev.messages.some(m => m.id === ev.id) ? prev : { ...prev, messages: [...prev.messages.slice(-99), ev] });
       }, kind);
     }).catch(() => { if (!disposed) setBuffer(prev => prev.identity === identity ? { ...prev, messages: [] } : prev); });
-    return () => { disposed = true; unsubscribe?.(); pool.close(); };
+    return () => { disposed = true; unsubscribe?.(); signal?.close(); pool.close(); };
   }, [identity]);
   const current = buffer.identity === identity && Boolean(identity);
   const rows = useMemo(() => {
@@ -84,7 +111,8 @@ export function useLiveEventChat(eventId: string, state: EventLiveState | undefi
     }
     return liveChatRows(messages, chat, now, 5);
   }, [buffer.messages, chat, now, current, encrypted, keys]);
-  const connected = current && buffer.connected;
+  const signalLive = !screen || (buffer.syncedAt > 0 && source.dataUpdatedAt >= buffer.syncedAt);
+  const connected = current && buffer.connected && signalLive;
   return { rows: authorized && connected ? rows : [], status: !enabled || state?.chatSource !== "event" ? "off" : !authorized ? "unavailable" : connected ? "on" : "connecting" } as const;
 }
 

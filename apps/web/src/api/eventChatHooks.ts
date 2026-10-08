@@ -4,24 +4,16 @@ import { api, ApiError } from "./client.js";
 
 /** Nostrイベントチャット (#199) の紐付けAPI。チャット本文はリレー直通でここを通らない */
 
-/** 配信画面（OBS の /live/screen）だけがチャットの許可リストを取り直す間隔 */
-export const LIVE_SCREEN_CHAT_POLL_MS = 5000;
-
 /** 表示許可リスト＋チャンネルID＋非表示リスト。
  *
- * 定期の取り直しはしない（D-POLL-MIN。チャット本文は Nostr で届く）。取り直すのは:
- * 開いたとき・タブ復帰・知らない pubkey の発言（useChatChannel）・手動の「もう一度」・
- * 自分の参加や非表示の操作（invalidate）。
- *
- * poll は配信画面（OBS の /live/screen）だけが立てる（5秒・非表示でも継続）:
- * 配信に載せるコメントの許可（非表示・締め出し・オフ）を数秒で反映しなければならず、
- * OBS のブラウザソースは常に hidden 扱いで誰も触れないため */
-export function useChatMembers(eventId: string, enabled: boolean, failClosed = false, poll = false) {
+ * 定期の取り直しはしない（D-POLL-MIN。チャット本文は Nostr で届く。配信画面も同じ）。
+ * 取り直すのは: 開いたとき・タブ復帰・知らない pubkey の発言（useChatChannel）・
+ * 手動の「もう一度」・自分の参加や非表示の操作（invalidate）。
+ * 非表示・解除は hiddenSignal の合図（lib/eventSignal.ts）で開いている画面に即時に届く */
+export function useChatMembers(eventId: string, enabled: boolean, failClosed = false) {
   return useQuery({
     queryKey: ["event", eventId, "chatMembers"],
     enabled: enabled && Boolean(eventId),
-    refetchInterval: poll ? LIVE_SCREEN_CHAT_POLL_MS : false,
-    refetchIntervalInBackground: poll,
     refetchOnWindowFocus: true,
     // 403（繋がせない状態 #283 / 参加確定前）は再試行しても結果が変わらないので
     // 既定の3回リトライを待たずに画面へ返す。締め出しが解除されたら、

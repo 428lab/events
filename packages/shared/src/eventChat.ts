@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { EventSignalConfig } from "./eventSignal.js";
 
 /** Nostr イベントチャット (#199)。
  * NIP-28 パブリックチャットをブラウザから直接ユーザー所有リレーに読み書きする。
@@ -157,6 +158,9 @@ export interface ChatMembersPayload {
   channelId: string | null;
   chatEnabled: boolean;
   hiddenNoteIds: string[];
+  /** 非表示・解除を開いている画面へ即時に届ける合図の購読先（D-POLL-MIN 第5段階）。
+   * 公式サービス鍵が未設定なら null */
+  hiddenSignal: EventSignalConfig | null;
   /** 読み書きに使うリレー（運用設定。未設定なら CHAT_RELAYS） */
   relays: string[];
   /** 書き込める期間 (#578)。サーバーが chatWriteWindow で計算する。

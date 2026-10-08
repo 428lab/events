@@ -14,7 +14,8 @@ import { eventLiveCutinRepo } from "../db/repositories/eventLiveCutin.js";
 import { triggerCutinInput } from "@eventer/shared";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { decksRepo } from "../db/repositories/decks.js";
-import { eventsRepo } from "../db/repositories/events.js";
+import { eventsRepo, type EventAccessRow } from "../db/repositories/events.js";
+import { gateEvent } from "../auth/eventAccess.js";
 import { eventChatRepo } from "../db/repositories/eventChat.js";
 import { groupChatRepo } from "../db/repositories/groupChat.js";
 import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
@@ -24,9 +25,19 @@ import { presenterSlidesRepo } from "../db/repositories/presenterSlides.js";
 export const liveControlRoutes = new Hono<AppEnv>();
 // 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
+/** イベント側の設定でチャットを配信に出せるか（PATCH の chatSource="event" の判定と同じ条件のうち、
+ * イベントの行だけで決まるもの） */
+function eventChatUsable(event: Pick<EventAccessRow, "visibility" | "chatEncrypted" | "status" | "scheduling" | "chatEnabled">): boolean {
+  return (event.visibility === "public" || event.chatEncrypted) && event.status === "published" && !event.scheduling && event.chatEnabled;
+}
+
 /** 現在の配信状態（配信画面タブが1秒ポーリング）。
  * 参戦演出の状態 (`cutin`) も同じ応答で返し、配信画面の取得を毎秒1本にする (D-POLL-MIN S7)。
- * 演出を読めるのは GET /live-cutin と同じ参加確定 staff だけで、それ以外は null */
+ * 演出を読めるのは GET /live-cutin と同じ参加確定 staff だけで、それ以外は null。
+ *
+ * `chatSource` はイベント側でチャットが使えなくなっていたら（チャットをオフにした・非公開にした・
+ * 日程調整に戻した等）"off" を返す。配信画面はチャットの許可リストを定期に取り直さない
+ * （D-POLL-MIN 第5段階）ので、この毎秒の応答で止める。イベント行は共通門が読んだもの（追加の読み取りなし） */
 liveControlRoutes.get(
   "/:id/live-state",
   requireEventRole(["staff"]),
@@ -34,7 +45,8 @@ liveControlRoutes.get(
     const eventId = c.req.param("id");
     const state = await eventLiveStateRepo.getOrInit(eventId);
     const cutin = (await confirmed(c)) ? await eventLiveCutinRepo.get(eventId, c.get("user").id) : null;
-    return c.json({ ...state, cutin } satisfies EventLiveStateWithCutin);
+    const chatSource = state.chatSource === "event" && eventChatUsable(gateEvent(c)) ? "event" : "off";
+    return c.json({ ...state, chatSource, cutin } satisfies EventLiveStateWithCutin);
   },
 );
 
@@ -52,7 +64,7 @@ liveControlRoutes.patch(
       const event = await eventsRepo.findById(c.req.param("id"));
       // 平文は公開イベントだけ。暗号化オン (#582) なら公開範囲を問わない（画面はスタッフ本人の資格で鍵を取る）。
       // 締め出しは人単位（平文の鍵・暗号化部屋の signer のどちらでも。設計 3.3）
-      if (!event || !(event.visibility === "public" || event.chatEncrypted) || event.status !== "published" || event.scheduling || !event.chatEnabled || await eventChatRepo.isUserBlocked(c.req.param("id"), c.get("user").id) || await groupChatRepo.isMembersSignerBlocked(c.req.param("id"), c.get("user").id)) {
+      if (!event || !eventChatUsable(event) || await eventChatRepo.isUserBlocked(c.req.param("id"), c.get("user").id) || await groupChatRepo.isMembersSignerBlocked(c.req.param("id"), c.get("user").id)) {
         return c.json({ error: "chat_unavailable" }, 403);
       }
     }

@@ -67,6 +67,7 @@ const PLAIN: ChatMembersPayload = {
   channelId: "plain-chan",
   chatEnabled: true,
   hiddenNoteIds: [],
+  hiddenSignal: null,
   relays: [RELAY],
   writeWindow: { opensAt: 1_700_000_000_000 - 30 * 60_000, closesAt: 1_700_003_600_000 + 120 * 60_000 },
 };
@@ -109,6 +110,7 @@ function makePayload(plaintextChannelId: string | null): EncryptedChatPayload {
       { pubkey: OTHER_PK, userId: "u-2", username: "two", name: "ふたり", avatarUrl: null, revokedAt: null, role: "participant" },
     ],
     hiddenNoteIds: [],
+    hiddenSignal: null,
     plaintextChannelId,
     encryptedAt: ENCRYPTED_AT,
     relays: [RELAY],
