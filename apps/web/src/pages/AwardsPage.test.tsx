@@ -2,12 +2,19 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
-import { finalizeEvent, generateSecretKey, getPublicKey, type Event as NostrEvent } from "nostr-tools/pure";
-import { AWARDS_SYNC_KIND, type AwardsView, type EventState } from "@eventer/shared";
+import { EVENT_SIGNAL_KIND, type AwardsView, type EventSignalSource, type EventState } from "@eventer/shared";
+
+/**
+ * The awards page follows announcements through the `event-state` signal (D-POLL-MIN Phase 5b
+ * D10 folded the separate awards-sync into it). EventLayout owns the subscription
+ * (useEventStateSignal); here the hub is faked and the page is wrapped in that hook, so a
+ * signal invalidates the state like the real layout does. Signature, author and topic
+ * checks live in the hub (signalHub.test.ts).
+ */
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(), post: vi.fn(), play: vi.fn(), fanfare: vi.fn(), confetti: vi.fn(), close: vi.fn(),
-  callbacks: [] as Array<(event: NostrEvent) => void>,
+  get: vi.fn(), post: vi.fn(), play: vi.fn(), fanfare: vi.fn(), confetti: vi.fn(),
+  listeners: [] as Array<{ source: EventSignalSource | null | undefined; onSignal: () => unknown; eventId?: string; jitterMs?: number }>,
 }));
 vi.mock("../api/client.js", () => ({ api: { get: mocks.get, post: mocks.post } }));
 vi.mock("../api/hooks.js", () => ({
@@ -16,48 +23,51 @@ vi.mock("../api/hooks.js", () => ({
 }));
 vi.mock("../lib/entryUser.js", () => ({ useEntryUserResolver: () => () => null }));
 vi.mock("../lib/effects.js", () => ({ playDrumroll: mocks.play, playFanfare: mocks.fanfare, fireConfetti: mocks.confetti }));
-vi.mock("../lib/nostrChat.js", () => ({
-  randomLocalSigner: () => ({ pubkey: "read-only" }),
-  ChatRelayPool: class {
-    subscribe(_topic: string, callback: (event: NostrEvent) => void) { mocks.callbacks.push(callback); return () => {}; }
-    connect() { return Promise.resolve(); }
-    close() { mocks.close(); }
+vi.mock("../lib/signalHub.js", () => ({
+  PARTICIPANT_SIGNAL_JITTER_MS: 5_000,
+  useEventSignal: (source: EventSignalSource | null | undefined, onSignal: () => unknown, options: { eventId?: string; jitterMs?: number } = {}) => {
+    mocks.listeners.push({ source, onSignal, ...options });
+    return { synced: Boolean(source) };
   },
 }));
 const { AwardsPage } = await import("./AwardsPage.js");
-const key = generateSecretKey(), topic = "ab".repeat(32);
+const { useEventState, useEventStateSignal } = await import("../api/scoringHooks.js");
+const source: EventSignalSource = { kind: EVENT_SIGNAL_KIND, pubkey: "5e".repeat(32), topic: "ab".repeat(32), rev: 1, relays: ["wss://test.invalid"] };
+/** The part of EventLayout that listens on /awards */
+function AwardsWithLayoutSignal() {
+  const { data } = useEventState("e1");
+  useEventStateSignal("e1", data, { watch: true, awards: true });
+  return <AwardsPage />;
+}
 let state: EventState;
 let awards: AwardsView;
 let finishDrumroll: () => void;
 const result = (name: string, rank: string) => ({ id: name, entryId: name, entryName: name, awardRankId: rank, specialAwardId: null, total: 7, perCriterion: {} });
-const signal = (tags = [["e", topic]], signingKey = key, kind = AWARDS_SYNC_KIND) => finalizeEvent({
-  kind, created_at: Math.floor(Date.now() / 1000), tags, content: "",
-}, signingKey);
+const listening = () => mocks.listeners.filter((l) => l.source).at(-1);
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
   const view = render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/events/e1/awards"]}>
-    <Routes><Route path="/events/:id/awards" element={<AwardsPage />} /></Routes>
+    <Routes><Route path="/events/:id/awards" element={<AwardsWithLayoutSignal />} /></Routes>
   </MemoryRouter></QueryClientProvider>);
   return { qc, ...view };
 }
 async function ready() {
   await screen.findByText("まもなく発表します…");
   await waitFor(() => expect(screen.getByRole("button", { name: "次を発表" })).toBeEnabled());
-  await waitFor(() => expect(mocks.callbacks).toHaveLength(1));
+  await waitFor(() => expect(listening()).toBeDefined());
 }
-async function emit(event = signal()) {
-  await act(async () => { mocks.callbacks[0](event); });
+async function emit() {
+  await act(async () => { await listening()!.onSignal(); });
 }
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.callbacks.length = 0;
+  vi.clearAllMocks(); mocks.listeners.length = 0;
   state = { eventId: "e1", mode: "awards", awardsRevealCursor: 0, presentingEntryId: null, scoringLocked: true, updatedAt: Date.now() };
   awards = { ranks: [
     { id: "r2", eventId: "e1", name: "準優勝", rankOrder: 2, content: null },
     { id: "r1", eventId: "e1", name: "優勝", rankOrder: 1, content: null },
   ], specials: [], criteria: [], results: [] };
   mocks.get.mockImplementation(async (path: string) => {
-    if (path.endsWith("/awards-sync")) return { sync: { topic, pubkey: getPublicKey(key), kind: AWARDS_SYNC_KIND, relays: ["wss://test.invalid"] } };
-    if (path.endsWith("/state")) return structuredClone(state);
+    if (path.endsWith("/state")) return { ...structuredClone(state), signal: source };
     if (path.endsWith("/awards")) return structuredClone(awards);
     throw new Error(path);
   });
@@ -93,24 +103,15 @@ it("an open waiting screen refreshes winners on the trusted signal and follows t
   await screen.findByText("まもなく発表します…");
 });
 
-it("ignores wrong author/topic/kind/signature and stops immediately on access reset", async () => {
+it("listens on the event-state topic with the 1 s awards jitter, scoped to this event's access reset", async () => {
   const { unmount } = renderPage(); await ready();
-  const calls = mocks.get.mock.calls.length;
-  await emit(signal([["e", topic]], generateSecretKey()));
-  await emit(signal([["e", "other"]]));
-  await emit(signal([["e", topic]], key, 42));
-  const valid = signal();
-  // JSON removes nostr-tools' in-memory verification cache, as a relay event would.
-  await emit({ ...JSON.parse(JSON.stringify(valid)), sig: "00".repeat(64) });
-  expect(mocks.get.mock.calls).toHaveLength(calls);
-  await act(async () => window.dispatchEvent(new CustomEvent("event-access-reset", { detail: "e1" })));
-  expect(mocks.close).toHaveBeenCalled();
-  await emit();
-  expect(mocks.get.mock.calls).toHaveLength(calls);
+  // Forged/foreign signals and the access-reset stop are enforced in the hub (signalHub.test.tsx).
+  expect(listening()).toMatchObject({ source, eventId: "e1", jitterMs: 1_000 });
+  expect(mocks.get.mock.calls.some(([path]) => String(path).includes("awards-sync"))).toBe(false);
   unmount();
 });
 
-it("poll or host mutation cursor changes also refresh results; slow results stay loading after the drumroll", async () => {
+it("host mutation cursor changes also refresh results; slow results stay loading after the drumroll", async () => {
   const { qc } = renderPage(); await ready();
   let release: (value: AwardsView) => void;
   const pending = new Promise<AwardsView>(resolve => { release = resolve; });

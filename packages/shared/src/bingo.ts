@@ -27,9 +27,6 @@ export const BINGO_MAX_NUMBER = 75;
 export const BINGO_STATUSES = ["setup", "running", "ended"] as const;
 export type BingoGameStatus = (typeof BINGO_STATUSES)[number];
 
-/** カード画面・投影・抽選コントロールがポーリングする間隔（表示中だけ。D-POLL-MIN） */
-export const BINGO_POLL_MS = 10_000;
-
 /**
  * カードは24個の数字の配列で持つ（5x5・中央FREEを除く・**列優先**）。
  * 添字: 列 c(0..4) × 行 r(0..4) を c*5+r で数え、中央 (c=2,r=2)=12 を飛ばして詰める。
@@ -121,6 +118,9 @@ export interface BingoState {
   card: number[] | null;
   /** 自分の判定（カードが無ければ null）。rank は競技順位（ビンゴ時のみ） */
   me: { bingo: boolean; reach: boolean; rank: number | null } | null;
+  /** Where the card page and the projector hear "bingo changed, refetch" (topic `bingo`,
+   * D-POLL-MIN Phase 5b). Null without a service key */
+  signal?: EventSignalSource | null;
 }
 
 /** staff 用: カード保有者1人ぶんの導出行（読み上げ・デスク用） */

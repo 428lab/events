@@ -1,3 +1,9 @@
+> **廃止（D-POLL-MIN 第5段階 5b-3、決定 D10）**: 表彰の専用合図（kind 27889・`GET /awards-sync`・
+> `accessRevision` 入りの topic）は、進行状態の合図 `event-state` に畳んだ。表彰画面は
+> `EventLayout` の `useEventStateSignal` で合図を受け、state を取り直し、cursor が進んだら結果も
+> 取り直す（jitter は1秒以内。3秒のドラムロールを2秒以上残す）。現行の契約は
+> [docs/event-signal.md](event-signal.md) の「参加者の画面（5b-3）」。以下は #538 当時の記録。
+
 # 表彰の更新合図と結果再取得 (#538)
 
 - Issue: https://github.com/428lab/events/issues/538

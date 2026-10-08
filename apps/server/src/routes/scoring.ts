@@ -25,8 +25,24 @@ import { entriesRepo } from "../db/repositories/entries.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { scoresRepo } from "../db/repositories/scores.js";
 import { eventStateRepo } from "../db/repositories/eventState.js";
+import { eventSignal } from "../lib/eventSignal.js";
+import { deferBackground } from "../runtime.js";
 
 export const scoringRoutes = new Hono<AppEnv>();
+
+/** 進行状態（モード・発表中・締切・表彰の段階）が変わったことを、開いているイベント画面へ送る
+ * （topic `event-state`、D-POLL-MIN 第5段階 5b-3）。表彰の advance/reset も使う */
+export function publishEventState(eventId: string): Promise<void> {
+  return deferBackground(eventSignal.publishRefetch([["event-state", eventId]]));
+}
+
+/** 採点の進捗・集計が変わったことを /control へ送る（topic `scores`、staff の画面だけが知る）。
+ * 採点の提出は審査員がまとめて押すので throttle を通す */
+function publishScores(eventId: string, throttled = false): Promise<void> {
+  return deferBackground(throttled
+    ? eventSignal.publishRefetchThrottled([["scores", eventId]])
+    : eventSignal.publishRefetch([["scores", eventId]]));
+}
 
 /**
  * 公開: 採点結果一覧（集計）。採点締切後またはイベント終了後のみ閲覧可。
@@ -78,6 +94,7 @@ scoringRoutes.post(
     const criterion = await scoringCriteriaRepo.create(
       c.req.param("id"),
       valid<CreateCriterionInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+    await publishScores(c.req.param("id"));
     return c.json({ criterion }, 201);
   },
 );
@@ -95,6 +112,7 @@ scoringRoutes.patch(
       c.req.param("cid"),
       valid<UpdateCriterionInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (!criterion) return c.json({ error: "not_found" }, 404);
+    await publishScores(c.req.param("id"));
     return c.json({ criterion });
   },
 );
@@ -105,6 +123,7 @@ scoringRoutes.delete("/:id/criteria/:cid", requireEventRole(["staff"]), async (c
     return c.json({ error: "not_found" }, 404);
   }
   await scoringCriteriaRepo.delete(c.req.param("cid"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+  await publishScores(c.req.param("id"));
   return c.json({ ok: true });
 });
 
@@ -146,17 +165,22 @@ scoringRoutes.put(
       input.criterionId,
       user.id,
       input.value, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"scorer"});
+    await publishScores(eventId, true);
     return c.json({ ok: true });
   },
 );
 
+/** 集計。定期には取り直さず、`signal`（topic `scores`）の合図で /control が取り直す
+ * （D-POLL-MIN 第5段階 5b-3）。進捗（/scores/progress）も同じ合図で取り直す */
 scoringRoutes.get(
   "/:id/scores/summary",
   requireEventRole(["staff", "judge"]),
   async (c) => {
     const eventId = c.req.param("id");
+    const readAt = Date.now();
     const event = (await eventsRepo.findById(eventId))!;
-    return c.json(await scoresRepo.summary(eventId, event.aggregateSelfEntry));
+    const summary = await scoresRepo.summary(eventId, event.aggregateSelfEntry);
+    return c.json({ ...summary, signal: await eventSignal.source(eventId, "scores", readAt) });
   },
 );
 
@@ -176,9 +200,14 @@ scoringRoutes.get(
   },
 );
 
-/** ===== 進行（モード/プレゼン/締切） ===== */
+/** ===== 進行（モード/プレゼン/締切） =====
+ * 定期には取り直さず、`signal`（topic `event-state`）の合図で取り直す（D-POLL-MIN 第5段階 5b-3）。
+ * 閲覧できる人なら誰でも受け取る（応答と同じ範囲） */
 scoringRoutes.get("/:id/state", async (c) => {
-  return c.json(await eventStateRepo.getOrInit(c.req.param("id")));
+  const eventId = c.req.param("id");
+  const readAt = Date.now();
+  const state = await eventStateRepo.getOrInit(eventId);
+  return c.json({ ...state, signal: await eventSignal.source(eventId, "event-state", readAt) });
 });
 
 scoringRoutes.patch(
@@ -190,6 +219,7 @@ scoringRoutes.patch(
     const state = await eventStateRepo.setMode(
       eventId,
       valid<SetModeInput>(c, "json").mode, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+    await publishEventState(eventId);
     return c.json(state);
   },
 );
@@ -203,6 +233,7 @@ scoringRoutes.patch(
     const state = await eventStateRepo.setPresenting(
       eventId,
       valid<SetPresentingInput>(c, "json").presentingEntryId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+    await publishEventState(eventId);
     return c.json(state);
   },
 );
@@ -214,6 +245,7 @@ scoringRoutes.post(
     const eventId = c.req.param("id");
     const current = await eventStateRepo.getOrInit(eventId);
     const state = await eventStateRepo.setScoringLocked(eventId, !current.scoringLocked, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+    await publishEventState(eventId);
     return c.json(state);
   },
 );

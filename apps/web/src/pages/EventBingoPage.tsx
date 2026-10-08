@@ -10,15 +10,15 @@ import { BingoWithChat } from "../components/BingoWithChat.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
 /**
- * 参加者のビンゴカード画面 (#436)。5秒ポーリングで自動マーク。
- * ゲームが無い・非メンバーはサーバーが 404 を返すので案内だけ出す
- * （出し分けは利便で、防御はサーバーの門）。
+ * 参加者のビンゴカード画面 (#436)。抽選の合図（topic `bingo`）で取り直して自動マーク。
+ * 非メンバーはサーバーが 404 を返すので案内だけ出す。ゲーム作成前（"none"）は何も出さず、
+ * 作成の合図で切り替わる（出し分けは利便で、防御はサーバーの門）。
  */
 export function EventBingoPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
-  const state = useBingoState(id, Boolean(eventData), true, true);
+  const state = useBingoState(id, Boolean(eventData), true);
   const issue = useIssueBingoCard(id);
 
   const data = state.data;

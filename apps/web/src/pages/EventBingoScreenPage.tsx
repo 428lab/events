@@ -29,14 +29,15 @@ function readScale(): number {
 
 /**
  * ビンゴの投影ページ (#436)。直近の番号を特大で、履歴をB〜O列のグリッドで出す。
- * 権限は参加確定メンバー（スタッフが映す想定）。ゲームが無い・非メンバーには
- * サーバーが 404 を返すので案内だけ出す。名前は出さない（人数のみ。docs/bingo.md §3.8）。
+ * 権限は参加確定メンバー（スタッフが映す想定）。非メンバーにはサーバーが 404 を返すので
+ * 案内だけ出す。ゲーム作成前（"none"）に映しておいても、作成・抽選の合図（topic `bingo`）で
+ * 追いつく。名前は出さない（人数のみ。docs/bingo.md §3.8）。
  */
 export function EventBingoScreenPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData, isLoading, isError } = useEvent(id);
-  const state = useBingoState(id, Boolean(eventData), true, true);
+  const state = useBingoState(id, Boolean(eventData), true);
 
   const [scale, setScale] = useState(readScale);
   const changeScale = (dir: 1 | -1) => {
