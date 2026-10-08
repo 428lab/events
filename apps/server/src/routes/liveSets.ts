@@ -5,6 +5,8 @@ import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
+import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
+import { publishLive } from "./liveControl.js";
 import { putLiveSetImage } from "./liveSetImages.js";
 
 /** /api/live-sets（配信セットの作成・編集・削除・自分の一覧）。decks と同じオーナーシップ */
@@ -66,6 +68,9 @@ liveSetRoutes.delete("/:id", async (c) => {
   if (liveSet.ownerId !== c.get("user").id) {
     return c.json({ error: "forbidden" }, 403);
   }
+  // 配信中の配信セットなら、消すと配信状態から外れる（FK）。開いている配信画面へ知らせる
+  const liveEvents = await eventLiveStateRepo.eventIdsUsing("live_set_id", liveSet.id);
   await liveSetsRepo.delete(liveSet.id);
+  if (liveEvents.length > 0) await publishLive(liveEvents);
   return c.json({ ok: true });
 });

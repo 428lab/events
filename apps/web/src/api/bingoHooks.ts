@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { BingoState, BingoStatus, MyBingoResults } from "@eventer/shared";
 import { BINGO_POLL_MS } from "@eventer/shared";
 import { api } from "./client.js";
+import { useEventSignal } from "../lib/signalHub.js";
 
 /**
  * 数字ビンゴ (#436)。
@@ -48,15 +49,17 @@ export function useBingoState(
 }
 
 /** 名前入りの導出一覧（staff のみ。抽選コントロール・デスクが使う）。
- * 10秒・表示中だけ: 抽選係は抽選しながら「ビンゴ」の申告が出てくるのを見る必要があるため
+ * 応答の `signal`（topic `bingo-staff`）の合図で取り直す（D-POLL-MIN 第5段階 5b-2）:
+ * 抽選係は抽選しながら「ビンゴ」の申告やカードの受け取りが出てくるのを見る必要があるため
  * （抽選の応答は件数を即時に書く） */
 export function useBingoStatus(eventId: string, enabled: boolean) {
-  return useQuery({
+  const query = useQuery({
     queryKey: ["event", eventId, "bingo-status"],
     enabled: Boolean(eventId) && enabled,
     queryFn: () => api.get<BingoStatus>(`/events/${eventId}/bingo/status`),
-    refetchInterval: (query) => (query.state.error ? false : BINGO_POLL_MS),
   });
+  useEventSignal(query.data?.signal, () => query.refetch(), { eventId });
+  return query;
 }
 
 /** 本人のビンゴ成績 (#441)。本人プロフィール（マイページ）だけが使う */

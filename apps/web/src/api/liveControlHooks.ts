@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LIVE_POLL_MS } from "@eventer/shared";
 import type { CutinAction } from "@eventer/shared";
 import type {
   EventLiveState,
@@ -9,29 +8,24 @@ import type {
 } from "@eventer/shared";
 import type { Deck, LivePresenter } from "@eventer/shared";
 import { api } from "./client.js";
+import { useEventSignal } from "../lib/signalHub.js";
 
-/** コントロールタブが配信状態を取り直す間隔。自分の操作は応答で即時に映るので、
- * 拾うのはもう1人の操作者の変更だけ */
-export const LIVE_CONTROL_POLL_MS = 5000;
-
-/** 配信状態（画面タブ・コントロールタブが共有）。
- * - screen（OBS の配信画面）: 1秒・非表示でも継続。配信出力は操作者のシーン切替を
- *   約1秒で反映しなければならず、OBS のブラウザソースは常に hidden 扱いで、誰も触れないため
- * - control（コントロールタブ）: 5秒・表示中だけ。自分の操作は即時に映るので、
- *   もう1人の操作者の変更を拾えれば足りるため
+/** 配信状態（画面タブ・コントロールタブが共有）。定期には取り直さない（D-POLL-MIN 第5段階 5b-2）。
+ * 応答の `signal`（topic `live`）の合図で1回取り直す。合図はリレーから届くメッセージで動くので、
+ * OBS のブラウザソース（常に hidden 扱い）でもタイマーの間引きを受けない。
  *
- * 応答には参戦演出の状態 (`cutin`) も入る (D-POLL-MIN S7)。配信画面は演出をこの
- * 1本から読むので、毎秒の取得は1本で済む（LiveCutinScreen に渡す） */
-export function useEventLiveState(eventId: string, page: "screen" | "control") {
-  const screen = page === "screen";
-  return useQuery({
+ * `current` は「最後の取得が成功し、合図の購読がつながっているリレーで EOSE まで来ている」。
+ * 配信画面はこれが立っている間だけチャット・参戦演出・LIVE 表示を出す（届かない経路のまま
+ * 古い状態を出し続けない）。応答には参戦演出の状態 (`cutin`) も入る (D-POLL-MIN S7) */
+export function useEventLiveState(eventId: string) {
+  const query = useQuery({
     queryKey: ["event", eventId, "liveState"],
     enabled: Boolean(eventId),
-    refetchInterval: screen ? LIVE_POLL_MS : LIVE_CONTROL_POLL_MS,
     retry: false,
-    refetchIntervalInBackground: screen,
     queryFn: () => api.get<EventLiveStateWithCutin>(`/events/${eventId}/live-state`),
   });
+  const { synced } = useEventSignal(query.data?.signal, () => query.refetch(), { eventId });
+  return { ...query, current: synced && !query.isError && query.dataUpdatedAt > 0 };
 }
 
 export function useUpdateEventLiveState(eventId: string) {
@@ -40,8 +34,8 @@ export function useUpdateEventLiveState(eventId: string) {
     mutationFn: (input: UpdateEventLiveStateInput) =>
       api.patch<EventLiveState>(`/events/${eventId}/live-state`, input),
     onSuccess: (state) => {
-      // PATCH の応答は演出を含まない。直前に取得した演出の状態はそのまま残す
-      qc.setQueryData<EventLiveStateWithCutin>(["event", eventId, "liveState"], (prev) => ({ ...state, cutin: prev?.cutin ?? null }));
+      // PATCH の応答は演出と合図の購読先を含まない。直前に取得したものはそのまま残す
+      qc.setQueryData<EventLiveStateWithCutin>(["event", eventId, "liveState"], (prev) => ({ ...state, cutin: prev?.cutin ?? null, signal: prev?.signal }));
       qc.invalidateQueries({ queryKey: ["event", eventId, "liveSetContent"] });
     },
   });

@@ -6,6 +6,8 @@
  * 「公開済みの番号列 × カード配置」からすべて導出する。
  */
 
+import type { EventSignalSource } from "./eventSignal.js";
+
 /** 列ごとの数字範囲（標準ルール）。B:1-15 / I:16-30 / N:31-45 / G:46-60 / O:61-75 */
 export const BINGO_COLUMN_RANGES: ReadonlyArray<readonly [number, number]> = [
   [1, 15],
@@ -141,6 +143,9 @@ export interface BingoStatus {
   counts: { cards: number; bingo: number; reach: number };
   /** 全カード保有者。ビンゴ（rank順）→ リーチ → その他の順 */
   rows: BingoStatusRow[];
+  /** Where the draw control hears "bingo changed, refetch" (topic `bingo-staff`,
+   * D-POLL-MIN Phase 5b). Null without a service key */
+  signal?: EventSignalSource | null;
 }
 
 /** ---- ビンゴ成績のスナップショット (#441) ---- */

@@ -3,9 +3,11 @@ import type { CutinAction, CutinStatus } from "@eventer/shared";
 import { useTranslation } from "react-i18next";
 import { LiveCutin } from "./LiveCutin.js";
 
-/** The cut-in part of the screen's 1 s live-state poll (D-POLL-MIN S7).
- * `data` is null when the server withholds cut-ins (caller is not confirmed staff). */
-export type LiveCutinQuery = { data: CutinStatus | null | undefined; dataUpdatedAt: number; isError: boolean; isFetchedAfterMount: boolean };
+/** The cut-in part of the screen's live-state query (D-POLL-MIN S7).
+ * `data` is null when the server withholds cut-ins (caller is not confirmed staff).
+ * `current`: the last GET succeeded and the `live` refetch signal subscription is live
+ * (useEventLiveState, D-POLL-MIN Phase 5b-2). */
+export type LiveCutinQuery = { data: CutinStatus | null | undefined; dataUpdatedAt: number; current: boolean; isFetchedAfterMount: boolean };
 
 /** The tab remembers only its last displayed action ID, never the caption. */
 export function LiveCutinScreen({ eventId, query }: { eventId: string; query: LiveCutinQuery }) {
@@ -22,7 +24,7 @@ function EventCutinScreen({ eventId, query }: { eventId: string; query: LiveCuti
     const timer = window.setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(timer);
   }, []);
-  const unavailable = query.isError || !query.isFetchedAfterMount || !query.data || now - query.dataUpdatedAt > 5000;
+  const unavailable = !query.current || !query.isFetchedAfterMount || !query.data;
   useEffect(() => {
     if (unavailable) { setActive(null); return; }
     const status = query.data;

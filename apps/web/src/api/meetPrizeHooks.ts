@@ -7,8 +7,8 @@ import type {
   MeetPrizeStatus,
   UpdateMeetPrizeInput,
 } from "@eventer/shared";
-import { MEET_PRIZE_DESK_POLL_MS } from "@eventer/shared";
 import { ApiError, api } from "./client.js";
+import { useEventSignal } from "../lib/signalHub.js";
 
 /**
  * 出会いの景品引き換え (#431)。
@@ -52,34 +52,38 @@ export function useMeetPrizeDefinitions(eventId: string, enabled: boolean) {
 }
 
 /** デスク画面（staff のみ）: 景品ごとの達成者と交換状況・確定済みの1位。
- * poll は10秒・表示中だけ: デスクを2台並べると、片方がもう片方の引き換え済みの景品を
- * 渡してしまうため（二重の引き換えはサーバーが 409 で断るので、操作者を迷わせないためのもの） */
+ * watch はデスク画面が立てる: 応答の `signal`（topic `prize-desk`）の合図で、この一覧と
+ * 引き換え履歴（useMeetPrizeLog）を取り直す（D-POLL-MIN 第5段階 5b-2）。デスクを2台並べると、
+ * 片方がもう片方の引き換え済みの景品を渡してしまうため（二重の引き換えはサーバーが 409 で
+ * 断るので、操作者を迷わせないためのもの） */
 export function useMeetPrizeStatus(
   eventId: string,
   enabled: boolean,
-  poll = false,
+  watch = false,
 ) {
-  return useQuery({
+  const qc = useQueryClient();
+  const query = useQuery({
     queryKey: ["event", eventId, "meet-prize-status"],
     enabled: Boolean(eventId) && enabled,
     queryFn: () =>
       api.get<MeetPrizeStatus>(`/events/${eventId}/meet-prizes/status`),
-    refetchInterval: (query) =>
-      poll && !query.state.error ? MEET_PRIZE_DESK_POLL_MS : false,
   });
+  useEventSignal(watch ? query.data?.signal : null, () => Promise.all([
+    query.refetch(),
+    qc.invalidateQueries({ queryKey: ["event", eventId, "meet-prize-log"] }),
+  ]), { eventId });
+  return query;
 }
 
 /** 引き換え履歴 (#441)（staff のみ・全景品種別・新しい順）。
- * 自分の操作は invalidate で即時、**他の窓口**の引き換えは10秒（表示中だけ）のポーリングで
- * 追いつかせる（デスクを2台以上並べる運用がある。status と同じ形） */
-export function useMeetPrizeLog(eventId: string, enabled: boolean, poll = false) {
+ * 自分の操作は invalidate で即時、**他の窓口**の引き換えは useMeetPrizeStatus の合図
+ * （topic `prize-desk`）で取り直す（デスクを2台以上並べる運用がある） */
+export function useMeetPrizeLog(eventId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["event", eventId, "meet-prize-log"],
     enabled: Boolean(eventId) && enabled,
     queryFn: () =>
       api.get<{ log: MeetPrizeLogRow[] }>(`/events/${eventId}/meet-prizes/log`),
-    refetchInterval: (query) =>
-      poll && !query.state.error ? MEET_PRIZE_DESK_POLL_MS : false,
   });
 }
 

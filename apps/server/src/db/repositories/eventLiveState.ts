@@ -1,6 +1,6 @@
 import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type { EventLiveState, UpdateEventLiveStateInput } from "@eventer/shared";
-import { one, run } from "../client.js";
+import { many, one, run } from "../client.js";
 import { selectPresenterAssignments } from "./presenterSlides.js";
 
 interface Row {
@@ -36,6 +36,13 @@ function toState(row: Row): EventLiveState {
 }
 
 export const eventLiveStateRepo = {
+  /** Events whose live state shows this deck or live set. Read before deleting one, because
+   * ON DELETE SET NULL changes those rows without the event id in hand (refetch signal `live`). */
+  async eventIdsUsing(column: "deck_id" | "live_set_id", id: string): Promise<string[]> {
+    const rows = await many<{ event_id: string }>(`SELECT event_id FROM event_live_state WHERE ${column} = ?`, id);
+    return rows.map((row) => row.event_id);
+  },
+
   async getOrInit(eventId: string): Promise<EventLiveState> {
     const row = await one<Row>(
       "SELECT * FROM event_live_state WHERE event_id = ?",

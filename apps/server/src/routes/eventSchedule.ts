@@ -12,6 +12,7 @@ import { currentUser } from "../auth/session.js";
 import { canManageEventAs, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { valid, zValidator } from "../lib/validator.js";
+import { publishLive } from "./liveControl.js";
 import { deferBackground } from "../runtime.js";
 import { refreshMaterialMeta } from "../lib/materialMeta.js";
 import { eventsRepo } from "../db/repositories/events.js";
@@ -288,6 +289,8 @@ eventScheduleRoutes.put(
     const changed = await presenterSlidesRepo.setLink(eventId, itemId, deckId, {eventId, actorId: user.id, permission: "view"});
     // 判定と書き込みの間に担当者・持ち主が変わった場合は書かれない
     if (changed === 0) return c.json({ error: "forbidden" }, 403);
+    // 配信中のコマなら映すデッキが変わる（presenterSlides.setLink が event_live_state も書く）
+    await publishLive([eventId]);
     const decks = await presenterSlidesRepo.effectiveDecks(eventId);
     return c.json({ liveDeck: decks.get(itemId) ?? null });
   },

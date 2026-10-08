@@ -22,7 +22,8 @@ import {
 import type { AppEnv } from "../types.js";
 import { currentUser } from "../auth/session.js";
 import { canManageEvent, canViewEvent, requireEventRole } from "../auth/roles.js";
-import { getBucket } from "../runtime.js";
+import { deferBackground, getBucket } from "../runtime.js";
+import { eventSignal } from "../lib/eventSignal.js";
 import { deleteObjects } from "../lib/mediaCleanup.js";
 import { hasImageMagicBytes, normalizeImageMime, safeServeMime } from "../lib/imageMime.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -205,6 +206,12 @@ export async function getEventMeetPrizes(c: Context) {
 export const meetPrizeRoutes = new Hono<AppEnv>();
 // 認証は /api/events/* の境界（routes/events.ts）で通っている。ここで重ねない (#472)
 
+/** 開いている景品デスクへ「取り直して」を送る（topic `prize-desk`、D-POLL-MIN 第5段階 5b-2）。
+ * 景品の定義・引き換え・1位の確定が変わったとき。確定後に呼ぶ */
+function publishPrizeDesk(eventId: string): Promise<void> {
+  return deferBackground(eventSignal.publishRefetch([["prize-desk", eventId]]));
+}
+
 /** 子リソースの所有チェック（別イベントの prizeId の差し込みは 404） */
 async function prizeOf(
   c: Context,
@@ -226,6 +233,7 @@ meetPrizeRoutes.post(
     const prize = await eventMeetPrizesRepo.create(
       eventId,
       valid<CreateMeetPrizeInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+    await publishPrizeDesk(eventId);
     return c.json({ prize }, 201);
   },
 );
@@ -239,6 +247,7 @@ meetPrizeRoutes.patch(
     const prize = await eventMeetPrizesRepo.update(
       c.req.param("prizeId"),
       valid<UpdateMeetPrizeInput>(c, "json"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+    await publishPrizeDesk(c.req.param("id"));
     return c.json({ prize });
   },
 );
@@ -250,6 +259,7 @@ meetPrizeRoutes.delete(
     const prize = await prizeOf(c);
     if (!prize) return c.json({ error: "not_found" }, 404);
     await eventMeetPrizesRepo.delete(prize.id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+    await publishPrizeDesk(c.req.param("id"));
     // 行が消えた画像は誰にも辿れない孤児になるので、ここで R2 も消す (#434)。
     // best-effort（失敗してもログで追える。参照は既に無いので配信はされない）
     await deleteObjects(
@@ -307,6 +317,7 @@ meetPrizeRoutes.put(
       prize.imageKey ? [prize.imageKey] : [],
       `[meet-prize] old prize=${prize.id}`,
     );
+    await publishPrizeDesk(c.req.param("id"));
     return c.json({ prize: await eventMeetPrizesRepo.findById(prize.id) });
   },
 );
@@ -320,6 +331,7 @@ meetPrizeRoutes.delete(
     if (!prize || !prize.imageKey) return c.json({ error: "not_found" }, 404);
     await eventMeetPrizesRepo.setImageKey(prize.id, null, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     await deleteObjects([prize.imageKey], `[meet-prize] prize=${prize.id}`);
+    await publishPrizeDesk(c.req.param("id"));
     return c.json({ ok: true });
   },
 );
@@ -338,7 +350,8 @@ meetPrizeRoutes.get(
   },
 );
 
-/** 引き換え履歴 (#441)（staff のみ）。全景品種別を時刻順（新しい順）で返す */
+/** 引き換え履歴 (#441)（staff のみ）。全景品種別を時刻順（新しい順）で返す。
+ * 取り直しの合図は同じデスク画面の /status の `signal` で受ける（同じ topic `prize-desk`） */
 meetPrizeRoutes.get(
   "/:id/meet-prizes/log",
   requireEventRole(["staff"]),
@@ -351,7 +364,9 @@ meetPrizeRoutes.get(
   },
 );
 
-/** デスク画面: 景品ごとの達成者と交換状況（staff のみ。名前入りは運営にだけ返す） */
+/** デスク画面: 景品ごとの達成者と交換状況（staff のみ。名前入りは運営にだけ返す）。
+ * 定期には取り直さず、`signal`（topic `prize-desk`）の合図で取り直す（D-POLL-MIN 第5段階 5b-2）。
+ * 合図は景品・引き換え・1位の確定・出会いの増減・ビンゴの抽選が変わったときに送る */
 meetPrizeRoutes.get(
   "/:id/meet-prizes/status",
   requireEventRole(["staff"]),
@@ -360,6 +375,7 @@ meetPrizeRoutes.get(
     if (!(await eventsRepo.findById(eventId))) {
       return c.json({ error: "not_found" }, 404);
     }
+    const readAt = Date.now();
     const prizes = await eventMeetPrizesRepo.listByEvent(eventId);
     const winners = await eventMeetPrizesRepo.listWinners(eventId);
     // 引き換え記録はイベント単位で1回だけ引く。達成者×景品の入れ子で
@@ -427,6 +443,7 @@ meetPrizeRoutes.get(
       prizes: rows,
       winners,
       bingoAchievers,
+      signal: await eventSignal.source(eventId, "prize-desk", readAt),
     } satisfies MeetPrizeStatus);
   },
 );
@@ -485,6 +502,7 @@ meetPrizeRoutes.post(
         409,
       );
     }
+    await publishPrizeDesk(eventId);
     return c.json({ ok: true }, 201);
   },
 );
@@ -499,6 +517,7 @@ meetPrizeRoutes.delete(
       c.req.param("prizeId"),
       c.req.param("userId"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (!undone) return c.json({ error: "not_found" }, 404);
+    await publishPrizeDesk(c.req.param("id"));
     return c.json({ ok: true });
   },
 );
@@ -518,6 +537,7 @@ meetPrizeRoutes.post(
     }
     const n = await eventMeetPrizesRepo.closeWinners(eventId, Date.now(), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (n === 0) return c.json({ error: "no_meets" }, 409);
+    await publishPrizeDesk(eventId);
     return c.json({ winners: await eventMeetPrizesRepo.listWinners(eventId) });
   },
 );
@@ -528,6 +548,7 @@ meetPrizeRoutes.delete(
   requireEventRole(["staff"]),
   async (c) => {
     await eventMeetPrizesRepo.clearWinners(c.req.param("id"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+    await publishPrizeDesk(c.req.param("id"));
     return c.json({ ok: true });
   },
 );

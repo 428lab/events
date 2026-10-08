@@ -30,6 +30,18 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { eventMeetsRepo } from "../db/repositories/eventMeets.js";
 import { scanMeetBatch, undoMeetBatch, visibleMeetResults } from "../db/repositories/meetOperations.js";
 import { usersRepo } from "../db/repositories/users.js";
+import { eventSignal } from "../lib/eventSignal.js";
+import { deferBackground } from "../runtime.js";
+
+/** 出会いが増減したイベントのランキング投影と景品デスクへ「取り直して」を送る
+ * （topic `meet-ranking`・`prize-desk`、D-POLL-MIN 第5段階 5b-2）。読み取りは交流会で
+ * 連打されるので throttle を通す */
+function publishMeetsChanged(eventIds: readonly string[]): Promise<void> {
+  if (eventIds.length === 0) return Promise.resolve();
+  return deferBackground(eventSignal.publishRefetchThrottled(
+    eventIds.flatMap((id) => [["meet-ranking", id], ["prize-desk", id]] as const),
+  ));
+}
 
 /**
  * 出会った記録 (#189)。イベント中に参加者どうしがQRを読み合うと両者にXPが入る。
@@ -60,7 +72,8 @@ meetEventRoutes.get(
 );
 
 /**
- * 参加者向けの出会いランキング (#418)。投影ページと詳細パネルが5秒ポーリングする。
+ * 参加者向けの出会いランキング (#418)。投影ページは `signal`（topic `meet-ranking`）の合図で
+ * 取り直す（D-POLL-MIN 第5段階 5b-2）。詳細パネルは開いたとき・タブ復帰で取り直す。
  *
  * **オフ（meet_ranking = 'off'）の隠蔽の門はここ1か所**（docs/meet-ranking.md §3.8）。
  * イベント不存在と同一の応答（404 not_found）にし、外から設定の有無を判別できなくする。
@@ -78,6 +91,8 @@ meetEventRoutes.get("/:id/meets/ranking/live", async (c) => {
     return c.json({ error: "not_found" }, 404);
   }
 
+  const readAt = Date.now();
+  const signal = await eventSignal.source(eventId, "meet-ranking", readAt);
   const totalRanked = await eventMeetsRepo.countRankedForEvent(eventId);
   // 本人自身の順位・件数。公開プロフィールが既に本人の件数を出しているので、
   // 匿名モードでも返してよい（他人のものは返さない）
@@ -89,6 +104,7 @@ meetEventRoutes.get("/:id/meets/ranking/live", async (c) => {
       ranking: await eventMeetsRepo.rankingForEvent(eventId, MEET_RANKING_TOP_N),
       totalRanked,
       me: meRank,
+      signal,
     });
   }
   // anonymous: 件数ごとの集約行だけ。個人を指す値（userId 等）は載せない
@@ -100,6 +116,7 @@ meetEventRoutes.get("/:id/meets/ranking/live", async (c) => {
     ),
     totalRanked,
     me: meRank,
+    signal,
   });
 });
 
@@ -221,6 +238,7 @@ meetScanRoutes.post("/scan", zValidator("json", meetScanInput), async (c) => {
     throw error;
   }
   if (!result.wrote) await releaseMeetToken(verified.nonce);
+  await publishMeetsChanged(result.events.filter((e) => e.meetCreated).map((e) => e.eventId));
   const events = await visibleMeetResults(me.id,target.id,result.events);
   if (!events.length) return c.json({error:"no_shared_event"},409);
 
@@ -280,5 +298,7 @@ meetScanRoutes.post("/undo", zValidator("json", meetUndoInput), async (c) => {
   if (scannerId !== me.id) return c.json({ error: "invalid" }, 403);
   if (targetId === me.id) return c.json({ error: "invalid" }, 400);
 
-  return c.json(await undoMeetBatch(me.id,targetId,grants,(exp-MEET_UNDO_TTL_SEC)*1000));
+  const { meetEventIds, ...undone } = await undoMeetBatch(me.id,targetId,grants,(exp-MEET_UNDO_TTL_SEC)*1000);
+  await publishMeetsChanged(meetEventIds);
+  return c.json(undone);
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { EventSignalSource } from "./eventSignal.js";
 
 /**
  * 出会いの景品引き換え (#431)。
@@ -212,4 +213,7 @@ export interface MeetPrizeStatus {
   winners: MeetWinner[];
   /** ビンゴ景品プールの達成者（達成順）。ゲームやプール景品が無ければ空 (#436) */
   bingoAchievers: MeetPrizeBingoAchiever[];
+  /** Where the desk hears "redemptions or achievers changed, refetch" (topic
+   * `prize-desk`, D-POLL-MIN Phase 5b). Null without a service key */
+  signal?: EventSignalSource | null;
 }

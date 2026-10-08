@@ -31,23 +31,15 @@ export function safeChatAvatar(member: ChatMember): string | null {
   return url && /^\/api\/users\/[^/?#]+\/avatar\?v=\d+$/.test(url) && url.split("/")[3] === encodeURIComponent(member.userId) ? url : null;
 }
 
-/** 配信状態がこれより古ければコメントを出さない（OBS の配信画面。1秒ポーリング） */
-export const LIVE_SCREEN_STATE_FRESH_MS = 5000;
-/** コントロールタブの表示用（5秒ポーリングの2周ぶん） */
-export const LIVE_CONTROL_STATE_FRESH_MS = 10_000;
-
 export function liveChatAuthorized(
   state: Pick<EventLiveState, "chatSource"> | undefined,
-  updatedAt: number,
-  error: boolean,
-  now: number,
+  /** 配信状態が今のものか（最後の取得が成功し、`live` の合図の購読が生きている。useEventLiveState の current） */
+  stateCurrent: boolean,
   /** 購読先が決まっているか（平文: chatEnabled と channelId / 暗号化: roomId） */
   chat: { chatEnabled: boolean; channelId: string | null } | undefined,
   eligible: boolean,
-  stateFreshMs: number = LIVE_SCREEN_STATE_FRESH_MS,
 ): boolean {
-  return state?.chatSource === "event" && !error && updatedAt > 0 && now - updatedAt <= stateFreshMs &&
-    eligible && Boolean(chat?.chatEnabled && chat.channelId);
+  return state?.chatSource === "event" && stateCurrent && eligible && Boolean(chat?.chatEnabled && chat.channelId);
 }
 
 /** Selection uses only the current server-authorized member map. Removed/hidden posts lose their whole row, including image. */

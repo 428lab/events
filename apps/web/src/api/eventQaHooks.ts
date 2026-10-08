@@ -1,28 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EventQaPayload, EventQuestion } from "@eventer/shared";
 import { api } from "./client.js";
-
-/** Q&A の投影・登壇者パネルの反映間隔。チャット (#199) はリレー直結で即時だが、
- * Q&A はサーバー保存なのでポーリングで追う */
-export const QA_POLL_MS = 10_000;
+import { useEventSignal } from "../lib/signalHub.js";
 
 export function qaQueryKey(eventId: string) {
   return ["event", eventId, "questions"] as const;
 }
 
 /** 質問一覧（参加確定メンバーのみ）。
- * 既定は定期の取り直しをしない（D-POLL-MIN）: 開いたとき・タブ復帰・自分の投稿や投票で取り直す。
- * poll は投影（/chat/screen）と登壇者パネルだけが立てる（10秒・表示中だけ）:
- * ライブ中に映している Q&A が新しい質問や票を出さないと、会場が待っている情報が欠け、
- * しかもその画面の前には誰もいないため */
-export function useEventQa(eventId: string, enabled: boolean, poll = false) {
-  return useQuery({
+ * 定期の取り直しはしない（D-POLL-MIN）: 開いたとき・タブ復帰・自分の投稿や投票で取り直す。
+ * watch は投影（/chat/screen）と登壇者パネルだけが立てる: 応答の `signal`（topic `qa`）の合図で
+ * 取り直す（D-POLL-MIN 第5段階 5b-2）。映している Q&A が新しい質問や票を出さないと、会場が
+ * 待っている情報が欠け、しかもその画面の前には誰もいないため */
+export function useEventQa(eventId: string, enabled: boolean, watch = false) {
+  const query = useQuery({
     queryKey: qaQueryKey(eventId),
     enabled: enabled && Boolean(eventId),
-    refetchInterval: poll ? QA_POLL_MS : false,
     refetchOnWindowFocus: true,
     queryFn: () => api.get<EventQaPayload>(`/events/${eventId}/questions`),
   });
+  useEventSignal(watch ? query.data?.signal : null, () => query.refetch(), { eventId });
+  return query;
 }
 
 export function usePostQuestion(eventId: string) {

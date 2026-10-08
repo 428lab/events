@@ -88,5 +88,6 @@ export async function undoMeetBatch(scanner: string,target: string,grants: MeetU
   const theirs=new Set((result[3]!.results as {event_id:string}[]).map(r=>r.event_id));
   const changes=(result[1]!.results as {event_id:string}[]).map(r=>({eventId:r.event_id,title:'',meetCreated:true,attendedMe:mine.has(r.event_id),attendedTarget:theirs.has(r.event_id)}));
   const visible=await visibleMeetResults(scanner,target,changes);
-  return {undone:visible.length,attendanceRevoked:visible.some(e=>e.attendedMe||e.attendedTarget)};
+  // meetEventIds is for the caller's refetch signal only; it is not part of the response
+  return {undone:visible.length,attendanceRevoked:visible.some(e=>e.attendedMe||e.attendedTarget),meetEventIds:changes.map(e=>e.eventId)};
 }

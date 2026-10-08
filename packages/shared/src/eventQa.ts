@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { EventSignalSource } from "./eventSignal.js";
 
 /** イベントQ&A (#216)。参加確定メンバーが質問を投稿し、投票の多い順に並ぶ。
  * 票の集計・重複投票の防止・モデレーションが要るのでサーバー（D1）で持つ
@@ -77,6 +78,9 @@ export interface EventQaPayload {
    * web はこの値をそのまま QaQuestionList の revealAuthor に渡す */
   revealsAuthor: boolean;
   questions: EventQuestion[];
+  /** Where the projector and presenter panel hear "Q&A changed, refetch" (topic `qa`,
+   * D-POLL-MIN Phase 5b). Null without a service key */
+  signal?: EventSignalSource | null;
 }
 
 /** 質問の投稿。anonymity='choice' のときだけ anonymous を尊重する

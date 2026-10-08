@@ -24,6 +24,21 @@ import { collectEventObjects, deleteObjects } from "../lib/mediaCleanup.js";
 import { notifyRequestsOnPublish } from "./eventRequests.js";
 import { notifyFollowersOnPublish } from "./follows.js";
 import { checkRegistrationDeadline } from "../lib/registrationDeadline.js";
+import { eventSignal, type RefetchSignalTarget } from "../lib/eventSignal.js";
+import { deferBackground } from "../runtime.js";
+
+/** 設定の変更で中身が変わる、開いている運営画面へ「取り直して」を送る（D-POLL-MIN 第5段階 5b-2）。
+ * `live`: 配信画面のチャットの可否（GET /live-state の chatSource）が読む列 /
+ * `qa`: Q&A の有効・匿名設定 / `meet-ranking`: ランキングの表示設定 */
+function settingsSignalTargets(prior: Event | null | undefined, next: Event): RefetchSignalTarget[] {
+  if (!prior) return [];
+  const changed = (keys: readonly (keyof Event)[]) => keys.some((key) => prior[key] !== next[key]);
+  const targets: RefetchSignalTarget[] = [];
+  if (changed(["chatEnabled", "chatEncrypted", "visibility", "status", "scheduling"])) targets.push(["live", next.id]);
+  if (changed(["qaEnabled", "qaAnonymity"])) targets.push(["qa", next.id]);
+  if (changed(["meetRanking"])) targets.push(["meet-ranking", next.id]);
+  return targets;
+}
 
 /** イベントそのものの一覧・作成・更新・公開・画像・削除 */
 export const eventCrudRoutes = new Hono<AppEnv>();
@@ -168,6 +183,8 @@ eventCrudRoutes.patch(
     const event = await eventsRepo.update(c.req.param("id"), input, c.get("user").id);
     if (!event) return c.json({ error: scheduleInput ? "schedule_changed" : "access_changed" }, 409);
     await notifyOnPublish(prior, event);
+    const targets = settingsSignalTargets(prior, event);
+    if (targets.length > 0) await deferBackground(eventSignal.publishRefetch(targets));
     return c.json({ event });
   },
 );

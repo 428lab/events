@@ -20,6 +20,8 @@ import { eventChatRepo } from "../db/repositories/eventChat.js";
 import { groupChatRepo } from "../db/repositories/groupChat.js";
 import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
 import { presenterSlidesRepo } from "../db/repositories/presenterSlides.js";
+import { eventSignal } from "../lib/eventSignal.js";
+import { deferBackground } from "../runtime.js";
 
 /** イベントの配信ランタイム状態（コントロールタブ→配信画面タブの同期点）。staff専用 */
 export const liveControlRoutes = new Hono<AppEnv>();
@@ -31,24 +33,34 @@ function eventChatUsable(event: Pick<EventAccessRow, "visibility" | "chatEncrypt
   return (event.visibility === "public" || event.chatEncrypted) && event.status === "published" && !event.scheduling && event.chatEnabled;
 }
 
-/** 現在の配信状態（配信画面タブが1秒ポーリング）。
- * 参戦演出の状態 (`cutin`) も同じ応答で返し、配信画面の取得を毎秒1本にする (D-POLL-MIN S7)。
+/** 現在の配信状態（配信画面タブ・コントロールタブ）。定期には取り直さず、`signal`（topic `live`）の
+ * 合図で取り直す（D-POLL-MIN 第5段階 5b-2）。合図は配信状態・演出・発表者のデッキ・
+ * チャットの可否に関わるイベント設定が変わったときに送る（publishLive）。
+ * 参戦演出の状態 (`cutin`) も同じ応答で返す (D-POLL-MIN S7)。
  * 演出を読めるのは GET /live-cutin と同じ参加確定 staff だけで、それ以外は null。
  *
  * `chatSource` はイベント側でチャットが使えなくなっていたら（チャットをオフにした・非公開にした・
- * 日程調整に戻した等）"off" を返す。配信画面はチャットの許可リストを定期に取り直さない
- * （D-POLL-MIN 第5段階）ので、この毎秒の応答で止める。イベント行は共通門が読んだもの（追加の読み取りなし） */
+ * 日程調整に戻した等）"off" を返す。配信画面はチャットの許可リストを定期に取り直さないので、
+ * この応答で止める。イベント行は共通門が読んだもの（追加の読み取りなし） */
 liveControlRoutes.get(
   "/:id/live-state",
   requireEventRole(["staff"]),
   async (c) => {
     const eventId = c.req.param("id");
+    const readAt = Date.now();
     const state = await eventLiveStateRepo.getOrInit(eventId);
     const cutin = (await confirmed(c)) ? await eventLiveCutinRepo.get(eventId, c.get("user").id) : null;
     const chatSource = state.chatSource === "event" && eventChatUsable(gateEvent(c)) ? "event" : "off";
-    return c.json({ ...state, chatSource, cutin } satisfies EventLiveStateWithCutin);
+    const signal = await eventSignal.source(eventId, "live", readAt);
+    return c.json({ ...state, chatSource, cutin, signal } satisfies EventLiveStateWithCutin);
   },
 );
+
+/** 開いている配信画面・コントロールへ「配信状態が変わった・取り直して」を送る（topic `live`）。
+ * 確定後に呼ぶ。待たない・失敗の通知もしない（D-POLL-MIN 第5段階 D1） */
+export function publishLive(eventIds: readonly string[]): Promise<void> {
+  return deferBackground(eventSignal.publishRefetch(eventIds.map((id) => ["live", id] as const)));
+}
 
 /** シーン切替・デッキページ・BGM等の更新（コントロールタブ） */
 liveControlRoutes.patch(
@@ -89,7 +101,9 @@ liveControlRoutes.patch(
         return c.json({ error: "live_set_not_found" }, 404);
       }
     }
-    return c.json(await eventLiveStateRepo.update(c.req.param("id"), input, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}));
+    const state = await eventLiveStateRepo.update(c.req.param("id"), input, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+    await publishLive([c.req.param("id")]);
+    return c.json(state);
   },
 );
 
@@ -108,7 +122,9 @@ liveControlRoutes.post("/:id/live-cutin", requireEventRole(["staff"]), zValidato
   if (c.req.header("Origin") !== new URL(c.req.url).origin) return c.json({ error: "forbidden_origin" }, 403);
   if (!(await confirmed(c))) return c.json({ error: "confirmed_staff_required" }, 403);
   const result = await eventLiveCutinRepo.trigger(c.req.param("id"), c.get("user").id, valid<{ message: string }>(c, "json").message);
-  return result ? c.json({ ...result, serverNow: Date.now() }, 201) : c.json({ error: "event_ended" }, 409);
+  if (!result) return c.json({ error: "event_ended" }, 409);
+  await publishLive([c.req.param("id")]);
+  return c.json({ ...result, serverNow: Date.now() }, 201);
 });
 
 /** 発表者一覧 (#571)。タイムテーブルの担当者付きコマを、タイムテーブルの並び
