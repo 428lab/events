@@ -79,3 +79,51 @@ ephemeral イベントで「開いている画面」に知らせる。最初の 
 - 配信画面のチャットのオフ: 配信設定のオフは従来の1秒ごとの `GET /live-state`。イベント側で
   チャットが使えなくなった（チャットをオフ・非公開化・日程調整に戻した等）場合も、同じ応答の
   `chatSource` が `"off"` になる（共通門が読んだイベント行で判定。追加の読み取りなし）。
+
+## 取り直しの合図（第5段階 b）
+
+残りの定期確認を置き換えるための、中身を持たない合図。`content` は `{"rev": <ms>}` だけで、
+受け取った画面は対応するデータを**1回だけ**取り直す。データそのものは載せないので、
+非公開・限定公開のイベントでもリレーに出るのは不透明な topic・公式鍵・時刻・`rev` だけ。
+
+### topic
+
+`EventSignalRefetchTopic`（`packages/shared/src/eventSignal.ts`）。topic の値は上と同じ
+`HMAC(NOSTR_SERVICE_KEY, "eventer/signal/v1:<名前>:<スコープ>")`。スコープはイベント ID
+（`meet-token` だけ利用者 ID）。スタッフ向けの topic（`live`・`scores`・`bingo-staff`・
+`prize-desk`・`schedule-editing`・`broadcasts`）は、スタッフ用のエンドポイントの応答でだけ渡す。
+topic は購読の絞り込みであり権限ではない（取り直しは通常どおり HTTP の権限で判定される）。
+
+### 送る側（`apps/server/src/lib/eventSignal.ts`）
+
+- `eventSignal.source(scope, topic, rev)`: 応答に入れる購読先。`config` にリレー一覧
+  （運用設定 `chat_relays`）を足したもの。サービス鍵が無ければ `null`。
+- `eventSignal.publishRefetch([[topic, scope], …])`: 変更の確定後に `deferBackground` で呼ぶ。
+  1回の書き込みで複数の topic が変わるときは、`t` タグを並べた**1つの** Nostr イベントにまとめる。
+  失敗はログだけ（保存・再送なし）。
+- `eventSignal.publishRefetchThrottled(...)`: 投票・読み取り・カード発行など連打されうる書き込み用。
+  isolate ごとに topic×スコープで、最初の変更はすぐ、2秒の窓の中の残りは窓の終わりに1回だけ送る
+  （同じバックグラウンド処理の中で待つ）。isolate をまたぐと多めに送られることはあっても
+  少なくはならない。isolate が先に消えたら次の書き込みが知らせる。
+
+### 受ける側（`apps/web/src/lib/signalHub.ts`）
+
+- `useEventSignal(source, onSignal, { jitterMs, eventId })`。`source` は認証済みの HTTP 応答から。
+- タブ全体で**1つの接続**（`ChatRelayPool`、使い捨て鍵。購読に AUTH は要らない）を共有し、
+  登録された topic を `#t` に並べた**リレーごとに1本の REQ** にする。topic の増減は 250ms まとめて
+  REQ を張り替え、新しい REQ が EOSE を受けるまで古い REQ を残す。最後の topic が外れて
+  30 秒たったら接続を閉じる（画面遷移で張り直さない）。
+- 受け入れる条件: kind・作者（`source.pubkey`）・`t`・`["-"]`・署名・`rev` が整数、かつ
+  `rev` が応答の `rev` とその topic で最後に扱った `rev` より新しい。strfry が EOSE 前に返す
+  直近の合図は、応答に反映済み（`rev` が古い）なので捨てられる。切断中に出た新しい合図は拾う。
+- 取り直しは topic ごとに同時に1つ。待っている間に来た合図は吸収し、取り直し中に来たら終わってから
+  もう1回だけ。`jitterMs` は運営の画面は 0、参加者全員が見る topic は
+  `PARTICIPANT_SIGNAL_JITTER_MS`（5秒）まで散らす。
+- `event-access-reset` でそのイベントの購読をやめる。
+- `synced` は「その topic の REQ が今つながっているリレーで EOSE を受けた」。
+
+チャットの `chat-hidden` は第5段階 a のまま、チャット自身の接続（`subscribeSignal`）で受ける。
+
+### 届かなかったとき
+
+念のための定期確認・再送・保存はしない。次の合図、タブに戻ったとき、再読み込みで追いつく。
