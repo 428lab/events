@@ -1,6 +1,9 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
 import type { BingoState, BingoStatus, MeetPrizeStatus } from "@eventer/shared";
+import { deriveBingoCard } from "@eventer/shared";
+import { bindEnv, type Env } from "../src/runtime.js";
+import { bingoTotals, drawnNumbers, eventBingoRepo } from "../src/db/repositories/eventBingo.js";
 
 const BASE = "https://example.com";
 
@@ -107,6 +110,16 @@ async function setDraws(
     .run();
 }
 
+/** setDraws / setCard は行を直接書くので、保存人数（0109）は抽選の後のように全件から書き直す。
+ * GET /bingo の人数・順位は保存値を読む（D-POLL-MIN 第5段階 D3） */
+async function recount(eventId: string): Promise<void> {
+  bindEnv(env as unknown as Env);
+  const game = (await eventBingoRepo.findGame(eventId))!;
+  const drawn = drawnNumbers(game);
+  const cards = await eventBingoRepo.cardNumbersForEvent(eventId);
+  await eventBingoRepo.writeTotals(eventId, game.drawnCount, bingoTotals(cards.map((n) => deriveBingoCard(n, drawn))));
+}
+
 /** 判定テスト用: カードを直接差し込む（B列 first5 + 残りは固定の妥当な数字） */
 async function setCard(
   eventId: string,
@@ -142,26 +155,25 @@ describe("門と見える範囲 (#436)", () => {
     expect(src).toContain('member?.status === "confirmed"');
   });
 
-  it("ゲーム行が無ければ参加者に 404（存在しないイベントと同一ボディ）。staff は 'none' を見る", async () => {
+  it("ゲーム行が無ければ確定メンバーと staff は 'none'（作成の合図で拾うため）。非メンバーは存在しないイベントと同一の 404", async () => {
     const staff = await makeUser();
     const eventId = await insertEvent(staff.userId);
     await addMember(eventId, staff.userId, "staff");
     const alice = await makeUser();
     await addMember(eventId, alice.userId);
+    const outsider = await makeUser();
 
-    const res = await SELF.fetch(bingoUrl(eventId), {
-      headers: { cookie: alice.cookie },
-    });
-    const missing = await SELF.fetch(bingoUrl(crypto.randomUUID()), {
-      headers: { cookie: alice.cookie },
-    });
+    // D-POLL-MIN 第5段階: 作成前に開いた投影・カード画面は購読先を受け取り、作成の合図で拾う (#436)
+    const forMember = await getState(eventId, alice.cookie);
+    expect(forMember).toMatchObject({ status: "none", card: null, me: null, counts: { cards: 0, bingo: 0, reach: 0 } });
+    // staff は作成前でも "none" が見える（作成ボタンを出すため）
+    expect((await getState(eventId, staff.cookie)).status).toBe("none");
+
+    const res = await SELF.fetch(bingoUrl(eventId), { headers: { cookie: outsider.cookie } });
+    const missing = await SELF.fetch(bingoUrl(crypto.randomUUID()), { headers: { cookie: outsider.cookie } });
     expect(res.status).toBe(404);
     expect(missing.status).toBe(404);
     expect(await res.json()).toEqual(await missing.json());
-
-    // staff は作成前でも "none" が見える（作成ボタンを出すため）
-    const forStaff = await getState(eventId, staff.cookie);
-    expect(forStaff.status).toBe("none");
   });
 
   it("非メンバー・未確定メンバーは 404。参加者向け応答に他人の名前・カードが無い", async () => {
@@ -334,10 +346,12 @@ describe("判定と達成順（すべて導出・同着は同順位）", () => {
     await setCard(eventId, alice.userId, [1, 2, 3, 4, 5]);
     // B列の4個まで（リーチ）
     await setDraws(eventId, [1, 2, 3, 4], 4);
+    await recount(eventId);
     let state = await getState(eventId, alice.cookie);
     expect(state.me).toEqual({ bingo: false, reach: true, rank: null });
     // 5個目でビンゴ
     await setDraws(eventId, [1, 2, 3, 4, 5], 5);
+    await recount(eventId);
     state = await getState(eventId, alice.cookie);
     expect(state.me).toEqual({ bingo: true, reach: false, rank: 1 });
     expect(state.counts).toEqual({ cards: 1, bingo: 1, reach: 0 });
@@ -352,6 +366,7 @@ describe("判定と達成順（すべて導出・同着は同順位）", () => {
     await setCard(eventId, bob.userId, [5, 1, 2, 3, 4]);
     await setCard(eventId, carol.userId, [1, 2, 3, 4, 6]);
     await setDraws(eventId, [1, 2, 3, 4, 5, 6], 6);
+    await recount(eventId);
 
     expect((await getState(eventId, alice.cookie)).me?.rank).toBe(1);
     expect((await getState(eventId, bob.cookie)).me?.rank).toBe(1);
@@ -431,16 +446,14 @@ describe("ライフサイクルとリセット", () => {
     expect(await again.json()).toEqual({ error: "not_achieved" });
   });
 
-  it("ゲーム削除で参加者は 404 に戻る", async () => {
+  it("ゲーム削除で参加者は作成前（'none'）に戻る", async () => {
     const { eventId, staff, alice } = await setup();
+    await post(`${bingoUrl(eventId)}/card`, alice.cookie);
     await SELF.fetch(bingoUrl(eventId), {
       method: "DELETE",
       headers: { cookie: staff.cookie },
     });
-    expect(
-      (await SELF.fetch(bingoUrl(eventId), { headers: { cookie: alice.cookie } }))
-        .status,
-    ).toBe(404);
+    expect(await getState(eventId, alice.cookie)).toMatchObject({ status: "none", card: null, me: null });
   });
 });
 

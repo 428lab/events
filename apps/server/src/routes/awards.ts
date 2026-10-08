@@ -27,8 +27,7 @@ import { entriesRepo } from "../db/repositories/entries.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
 import { scoresRepo } from "../db/repositories/scores.js";
 import { eventStateRepo } from "../db/repositories/eventState.js";
-import { awardsSync } from "../lib/awardsSync.js";
-import { deferBackground } from "../runtime.js";
+import { publishEventState } from "./scoring.js";
 
 export const awardRoutes = new Hono<AppEnv>();
 
@@ -230,25 +229,17 @@ awardRoutes.post(
   },
 );
 
-/** Authenticated event viewers only; no chat membership or secret key is required. */
-awardRoutes.get("/:id/awards-sync", async (c) => {
-  const event = await eventsRepo.findById(c.req.param("id"));
-  if (!event) return c.json({ error: "not_found" }, 404);
-  return c.json({ sync: await awardsSync.config(event) });
-});
-
-/* 表彰の段階発表 */
+/* 表彰の段階発表。発表の合図は進行状態と同じ topic `event-state`（D-POLL-MIN 第5段階 D10。
+ * 旧 awards-sync を畳んだ）。表彰画面は合図で state を取り直し、cursor が進んだら結果を取り直す */
 awardRoutes.post("/:id/state/awards-advance", requireEventRole(["staff"]), async (c) => {
   const eventId = c.req.param("id");
   const cur = (await eventStateRepo.getOrInit(eventId)).awardsRevealCursor ?? 0;
   const state = await eventStateRepo.setAwardsCursor(eventId, cur + 1, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
-  const event = await eventsRepo.findById(eventId);
-  if (event) await deferBackground(awardsSync.publish(event));
+  await publishEventState(eventId);
   return c.json(state);
 });
 awardRoutes.post("/:id/state/awards-reset", requireEventRole(["staff"]), async (c) => {
   const state = await eventStateRepo.setAwardsCursor(c.req.param("id"), 0, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
-  const event = await eventsRepo.findById(c.req.param("id"));
-  if (event) await deferBackground(awardsSync.publish(event));
+  await publishEventState(c.req.param("id"));
   return c.json(state);
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { EVENT_MODES } from "./constants.js";
+import type { EventSignalSource } from "./eventSignal.js";
 
 /** ---- 採点項目 ---- */
 export const scoringCriterionSchema = z.object({
@@ -56,7 +57,11 @@ export const scoreSummarySchema = z.object({
   criteria: z.array(scoringCriterionSchema),
   entries: z.array(entryScoreSummary),
 });
-export type ScoreSummary = z.infer<typeof scoreSummarySchema>;
+export type ScoreSummary = z.infer<typeof scoreSummarySchema> & {
+  /** Where /control hears "a score or criterion changed, refetch" (topic `scores`,
+   * D-POLL-MIN Phase 5b). Only on the staff summary; null without a service key */
+  signal?: EventSignalSource | null;
+};
 
 /** 進捗: 採点者ごとの入力状況 */
 export const judgeProgress = z.object({
@@ -83,7 +88,11 @@ export const eventStateSchema = z.object({
   awardsRevealCursor: z.number().nullable(),
   updatedAt: z.number(),
 });
-export type EventState = z.infer<typeof eventStateSchema>;
+export type EventState = z.infer<typeof eventStateSchema> & {
+  /** Where open event pages hear "progress changed, refetch" (topic `event-state`,
+   * D-POLL-MIN Phase 5b). Only on `GET /:id/state`; null without a service key */
+  signal?: EventSignalSource | null;
+};
 
 export const setModeInput = z.object({
   mode: z.enum(EVENT_MODES),

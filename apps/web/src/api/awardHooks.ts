@@ -9,6 +9,7 @@ import type {
   UpdateSpecialAwardInput,
 } from "@eventer/shared";
 import { api } from "./client.js";
+import { setEventState } from "./scoringHooks.js";
 
 export function useAwards(eventId: string) {
   return useQuery({
@@ -102,13 +103,13 @@ export function useAwardsAdvance(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post<EventState>(`/events/${eventId}/state/awards-advance`),
-    onSuccess: (state) => qc.setQueryData(["event", eventId, "state"], state),
+    onSuccess: (state) => setEventState(qc, eventId, state),
   });
 }
 export function useAwardsReset(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post<EventState>(`/events/${eventId}/state/awards-reset`),
-    onSuccess: (state) => qc.setQueryData(["event", eventId, "state"], state),
+    onSuccess: (state) => setEventState(qc, eventId, state),
   });
 }

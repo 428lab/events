@@ -17,7 +17,7 @@ ephemeral イベントで「開いている画面」に知らせる。最初の 
 
 | 項目 | 値 |
 | --- | --- |
-| kind | `EVENT_SIGNAL_KIND = 20078`（ephemeral 範囲 20000–29999。27888 鍵証明・27889 表彰・22242 AUTH とは別） |
+| kind | `EVENT_SIGNAL_KIND = 20078`（ephemeral 範囲 20000–29999。27888 鍵証明・22242 AUTH とは別。旧・表彰合図 27889 は 5b-3 で `event-state` に畳んで廃止） |
 | 作者 | その環境の公式サービス鍵（`NOSTR_SERVICE_KEY`）。他の作者は無視する |
 | tags | `["t", <topic>]`, `["-"]`（NIP-70。送信側がサービス鍵で AUTH する。購読側は AUTH 不要） |
 | content | JSON。`rev`（サーバーの epoch ミリ秒・整数）＋ topic ごとの項目 |
@@ -144,3 +144,23 @@ jitter 0。合図には何も載せない（`{rev}` だけ）。
 配信画面は `useEventLiveState` の `current`（最後の取得が成功し、`live` の購読が EOSE まで来ている）
 が立っている間だけ、チャットの行・参戦演出・LIVE 表示を出す。以前の「5秒より古ければ消す」窓は無い。
 サービス鍵が無い環境では `current` が立たないので出さない（`chat-hidden` と同じ）。
+
+### 参加者の画面（5b-3）
+
+| topic | 応答（`signal`） | 受ける画面 | jitter | 送る書き込み |
+| --- | --- | --- | --- | --- |
+| `event-state` | `GET /events/:id/state`（閲覧できる人全員） | コンテスト形式のイベントの全ページと表彰画面（`EventLayout` の `useEventStateSignal`）。それ以外のイベントは購読しない | 5秒。**表彰画面だけ1秒** | モード・発表中・採点の締切・表彰の次を発表／最初に戻す |
+| `scores` | `GET /events/:id/scores/summary`（staff・審査員） | `/control`（集計と進捗を両方取り直す） | 0 | 採点の提出（throttle）・採点項目の作成・変更・削除 |
+| `bingo` | `GET /events/:id/bingo`（確定メンバー。ゲーム作成前も `status: "none"` で返す） | カード（`/bingo`）・投影（`/bingo/screen`）。詳細の小カードは購読しない | 5秒 | ゲームの作成・開始・抽選・取り消し・終了・リセット・削除（カード発行は送らない） |
+
+- 表彰の合図は `event-state` に畳んだ（旧 `GET /awards-sync`・kind 27889・`accessRevision` 入りの
+  topic は廃止。参加のたびに topic がずれた #538 の問題も消える）。表彰画面は合図で state を取り直し、
+  cursor が進んだら結果も取り直す。3秒のドラムロールは `state.updatedAt` から数えるので、表彰画面の
+  jitter は1秒以内にして全員に2秒以上残す。
+- 進行状態はタブ復帰でも取り直す（`refetchOnWindowFocus`、決定 D2）。操作者自身の操作の応答は
+  `signal` を含まないので、直前に取得した購読先を残して書く（`setEventState`）。
+- ビンゴの人数と順位はゲーム行に保存した値（migration 0109）を読む。抽選のたびに参加者全員が
+  `GET /bingo` を取り直すので、全カードの読み出しにしない（docs/bingo.md）。
+- ビンゴのゲームが無いとき、確定メンバー（参加者・staff）には `200 { status: "none", signal }` を返す
+  （以前は参加者に 404）。ゲーム作成前に開いた投影が作成の合図で追いつくため。非メンバー・未確定は
+  これまでどおり存在しないイベントと同じ 404。

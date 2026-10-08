@@ -7,9 +7,10 @@ import type { EventAccessRow } from "../db/repositories/events.js";
 import { gateEvent } from "../auth/eventAccess.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import {
+  bingoRank,
+  bingoTotals,
   drawnNumbers,
   eventBingoRepo,
-  type BingoGame,
 } from "../db/repositories/eventBingo.js";
 import { eventSignal, type RefetchSignalTarget } from "../lib/eventSignal.js";
 import { deferBackground } from "../runtime.js";
@@ -26,27 +27,28 @@ import { deferBackground } from "../runtime.js";
 
 /**
  * ビンゴが誰に見えるか。
- * - "participant": ゲーム行があり、確定メンバー（staff メンバー含む）
- * - "staff": ゲーム行が無くても運営できる人（作成前のコントロール画面用）
- * - null: 404（イベント不存在と同一応答。ゲームの存在ごと隠す）
+ * - "participant": 確定メンバー（staff メンバー含む）。ゲーム行が無ければ GET /bingo は
+ *   status "none"（作成前に開いた投影・カード画面が、作成の合図で拾えるように。D-POLL-MIN 第5段階）
+ * - "staff": 確定メンバーでなくても運営できる人（作成前のコントロール画面用）
+ * - null: 404（イベント不存在と同一応答）
  */
 async function bingoAudience(
   event: EventAccessRow,
-  game: BingoGame | null,
   user: User,
 ): Promise<"participant" | "staff" | null> {
-  if (game) {
-    const member = await eventMembersRepo.find(event.id, user.id);
-    if (member?.status === "confirmed") return "participant";
-  }
+  const member = await eventMembersRepo.find(event.id, user.id);
+  if (member?.status === "confirmed") return "participant";
   if (await canManageEvent(event.id, user)) return "staff";
   return null;
 }
 
-/** 開いている抽選コントロールへ「取り直して」を送る（topic `bingo-staff`、D-POLL-MIN 第5段階 5b-2）。
- * 抽選・取り消し・終了・リセットはビンゴ景品の達成者も動かすので景品デスク（`prize-desk`）にも送る */
-function publishBingoStaff(eventId: string, prizeDesk = false): Promise<void> {
-  const targets: RefetchSignalTarget[] = [["bingo-staff", eventId]];
+/** ビンゴが変わったことを開いている画面へ送る（D-POLL-MIN 第5段階）。
+ * - `bingo-staff`: 抽選コントロール（5b-2）
+ * - `bingo`: カード画面・投影（5b-3）。参加者全員が見るので、カード発行では送らない
+ *   （人数は次の抽選で追いつく）
+ * - `prize-desk`: 抽選・取り消し・終了・リセット・削除はビンゴ景品の達成者も動かす */
+function publishBingo(eventId: string, prizeDesk = false): Promise<void> {
+  const targets: RefetchSignalTarget[] = [["bingo-staff", eventId], ["bingo", eventId]];
   if (prizeDesk) targets.push(["prize-desk", eventId]);
   return deferBackground(eventSignal.publishRefetch(targets));
 }
@@ -59,7 +61,7 @@ export const eventBingoRoutes = new Hono<AppEnv>();
 async function load(event: EventAccessRow, user: User) {
   const eventId = event.id;
   const game = await eventBingoRepo.findGame(eventId);
-  const audience = await bingoAudience(event, game, user);
+  const audience = await bingoAudience(event, user);
   if (!audience) return null;
   return { event, game, audience };
 }
@@ -70,56 +72,51 @@ async function deriveAllCards(eventId: string, drawn: number[]) {
   return all.map((n) => deriveBingoCard(n, drawn));
 }
 
-/** 導出配列 → 人数（カード枚数・ビンゴ・リーチ）。
- * draw/undo の応答にも同じ値を入れる：画面は応答を正として直書きするので、
- * 番号列だけ返すと人数が次のポーリングまで古いまま残る（#436 実機報告） */
-function countsOf(derived: { bingo: boolean; reach: boolean }[]) {
-  return {
-    cards: derived.length,
-    bingo: derived.filter((d) => d.bingo).length,
-    reach: derived.filter((d) => d.reach).length,
-  };
+/** 抽選・取り消しの直後: 全カードを導出して保存人数を書き直し（絶対値）、応答用の人数を返す。
+ * 画面は draw/undo の応答を正として直書きするので、応答にも同じ人数を入れる（#436 実機報告） */
+async function recount(eventId: string, drawnCount: number, drawn: number[]) {
+  const totals = bingoTotals(await deriveAllCards(eventId, drawn));
+  await eventBingoRepo.writeTotals(eventId, drawnCount, totals);
+  return totals.counts;
 }
 
-/** 参加者向けの状態（カード画面・投影画面が5秒ポーリング）。
+/** 参加者向けの状態（カード画面・投影）。定期には取り直さず、`signal`（topic `bingo`）の合図で
+ * 取り直す（D-POLL-MIN 第5段階 5b-3）。抽選のたびに参加者全員が取り直すので、読むのはゲーム行と
+ * 自分のカードだけ: 人数と順位はゲーム行に保存した値（0109）。
  * 自分のカードと判定・人数だけを返す（他人のカード・名前は返さない） */
 eventBingoRoutes.get("/:id/bingo", async (c) => {
+  const readAt = Date.now();
   const loaded = await load(gateEvent(c), c.get("user"));
   if (!loaded) return c.json({ error: "not_found" }, 404);
   const { game } = loaded;
+  const signal = await eventSignal.source(loaded.event.id, "bingo", readAt);
   if (!game) {
-    // ゲーム作成前。ここに来られるのは staff だけ（作成ボタンを出すための応答）
+    // ゲーム作成前: staff は作成ボタンを出すため、確定メンバーは作成の合図を待つため
     return c.json({
       status: "none",
       drawnNumbers: [],
       counts: { cards: 0, bingo: 0, reach: 0 },
       card: null,
       me: null,
+      signal,
     } satisfies BingoState);
   }
   const drawn = drawnNumbers(game);
-  // counts は数字だけの数え上げ専用クエリから導出する。名前・アバターを
-  // そもそも取得しないことで、参加者応答への漏れ事故の芽を摘む
-  const derivedAll = await deriveAllCards(game.eventId, drawn);
   const card = await eventBingoRepo.findCard(game.eventId, c.get("user").id);
   const mine = card ? deriveBingoCard(card, drawn) : null;
-  // 自分の順位＝自分より早い手番で完成した人数 + 1（statusRows の競技順位と同じ規則）
-  const myRank =
-    mine?.completedAtSeq != null
-      ? derivedAll.filter(
-          (d) =>
-            d.completedAtSeq !== null &&
-            d.completedAtSeq < mine.completedAtSeq!,
-        ).length + 1
-      : null;
   return c.json({
     status: game.status,
     drawnNumbers: drawn,
-    counts: countsOf(derivedAll),
+    counts: game.counts,
     card,
     me: mine
-      ? { bingo: mine.bingo, reach: mine.reach, rank: myRank }
+      ? {
+          bingo: mine.bingo,
+          reach: mine.reach,
+          rank: mine.completedAtSeq !== null ? bingoRank(game.bingoBySeq, mine.completedAtSeq) : null,
+        }
       : null,
+    signal,
   } satisfies BingoState);
 });
 
@@ -135,7 +132,7 @@ eventBingoRoutes.post("/:id/bingo/card", async (c) => {
     return c.json({ error: "game_ended" }, 409);
   }
   const numbers = await eventBingoRepo.issueCard(
-    loaded.game.eventId,
+    loaded.game,
     c.get("user").id, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"member"});
   // 開始前に参加者が一斉に受け取るので throttle を通す。参加者向けの topic には送らない
   await deferBackground(eventSignal.publishRefetchThrottled([["bingo-staff", loaded.game.eventId]]));
@@ -150,7 +147,7 @@ eventBingoRoutes.post("/:id/bingo", requireEventRole(["staff"]), async (c) => {
   if (!(await eventBingoRepo.createGame(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
     return c.json({ error: "already_exists" }, 409);
   }
-  await publishBingoStaff(eventId);
+  await publishBingo(eventId);
   return c.json({ ok: true }, 201);
 });
 
@@ -166,7 +163,7 @@ eventBingoRoutes.post(
     if (!(await eventBingoRepo.startGame(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
       return c.json({ error: "not_setup" }, 409);
     }
-    await publishBingoStaff(eventId);
+    await publishBingo(eventId);
     return c.json({ ok: true });
   },
 );
@@ -194,13 +191,13 @@ eventBingoRoutes.post(
     }
     const order = game.drawOrder ?? [];
     const drawn = order.slice(0, myCount);
-    await publishBingoStaff(eventId, true);
+    // 人数を書いてから合図を送る: 合図で取り直す参加者がこの抽選の人数を読むように
+    const counts = await recount(eventId, myCount, drawn);
+    await publishBingo(eventId, true);
     return c.json({
       number: order[myCount - 1],
       drawnNumbers: drawn,
-      // 引いた直後の人数。画面は応答を正として直書きするので、これが無いと
-      // 「ビンゴ n人」が次のポーリングまで増えない（#436 実機報告）
-      counts: countsOf(await deriveAllCards(eventId, drawn)),
+      counts,
     });
   },
 );
@@ -219,11 +216,9 @@ eventBingoRoutes.post(
     }
     const after = (await eventBingoRepo.findGame(eventId))!;
     const drawn = drawnNumbers(after);
-    await publishBingoStaff(eventId, true);
-    return c.json({
-      drawnNumbers: drawn,
-      counts: countsOf(await deriveAllCards(eventId, drawn)),
-    });
+    const counts = await recount(eventId, after.drawnCount, drawn);
+    await publishBingo(eventId, true);
+    return c.json({ drawnNumbers: drawn, counts });
   },
 );
 
@@ -252,7 +247,7 @@ eventBingoRoutes.post(
         completedAtSeq: r.completedAtSeq,
       })), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     if (!ended) return c.json({ error: "not_running" }, 409);
-    await publishBingoStaff(eventId, true);
+    await publishBingo(eventId, true);
     return c.json({ ok: true });
   },
 );
@@ -269,7 +264,7 @@ eventBingoRoutes.post(
     if (!(await eventBingoRepo.resetGame(eventId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"}))) {
       return c.json({ error: "not_ended" }, 409);
     }
-    await publishBingoStaff(eventId, true);
+    await publishBingo(eventId, true);
     return c.json({ ok: true });
   },
 );
@@ -280,7 +275,7 @@ eventBingoRoutes.delete(
   requireEventRole(["staff"]),
   async (c) => {
     await eventBingoRepo.deleteGame(c.req.param("id"), {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
-    await publishBingoStaff(c.req.param("id"), true);
+    await publishBingo(c.req.param("id"), true);
     return c.json({ ok: true });
   },
 );

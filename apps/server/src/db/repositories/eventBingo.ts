@@ -11,7 +11,7 @@ import {
   BINGO_MAX_NUMBER,
   deriveBingoCard,
 } from "@eventer/shared";
-import { many, one, } from "../client.js";
+import { many, one, run } from "../client.js";
 
 /**
  * 数字ビンゴ (#436)。設計は docs/bingo.md。
@@ -19,8 +19,17 @@ import { many, one, } from "../client.js";
  * - カードの内容・抽選順はすべて**サーバー乱数**（クライアント申告を信じる場所を作らない）
  * - 抽選は「事前順列 + drawn_count の条件付き UPDATE 1文」（§3.4。二重に押しても
  *   2回進むだけで、番号が飛んだり重複したりしない）
- * - 達成（リーチ/ビンゴ/順位）は保存せず、読むたびに deriveBingoCard で導出する
+ * - 達成（リーチ/ビンゴ/順位）の正は導出（deriveBingoCard）。参加者向けの人数と順位の材料だけは
+ *   ゲーム行に持つ（migration 0109、D-POLL-MIN 第5段階 D3）: 抽選のたびに全参加者が取り直すので、
+ *   GET /bingo を全カードの読み出しにしない
  */
+
+/** 参加者向けの人数（カード枚数・ビンゴ・リーチ）。GET /bingo と抽選の応答が返す形 */
+export interface BingoCounts {
+  cards: number;
+  bingo: number;
+  reach: number;
+}
 
 export interface BingoGame {
   eventId: string;
@@ -31,6 +40,10 @@ export interface BingoGame {
   createdAt: number;
   startedAt: number | null;
   endedAt: number | null;
+  /** 保存した人数（0109）。抽選・取り消し・リセットで書き直し、カード発行で自分の分を足す */
+  counts: BingoCounts;
+  /** 要素 i = 抽選 i+1 回目で初めてラインが揃ったカードの枚数（競技順位の材料） */
+  bingoBySeq: number[];
 }
 
 interface GameRow {
@@ -41,6 +54,10 @@ interface GameRow {
   created_at: number;
   started_at: number | null;
   ended_at: number | null;
+  card_count: number;
+  bingo_count: number;
+  reach_count: number;
+  bingo_by_seq: string;
 }
 
 const toGame = (r: GameRow): BingoGame => ({
@@ -51,7 +68,34 @@ const toGame = (r: GameRow): BingoGame => ({
   createdAt: r.created_at,
   startedAt: r.started_at,
   endedAt: r.ended_at,
+  counts: { cards: r.card_count, bingo: r.bingo_count, reach: r.reach_count },
+  bingoBySeq: JSON.parse(r.bingo_by_seq) as number[],
 });
+
+/** 全カードの導出 → 保存する人数と「手番ごとの新規ビンゴ枚数」 */
+export function bingoTotals(
+  derived: { bingo: boolean; reach: boolean; completedAtSeq: number | null }[],
+): { counts: BingoCounts; bingoBySeq: number[] } {
+  const bingoBySeq: number[] = [];
+  for (const d of derived) {
+    if (d.completedAtSeq === null) continue;
+    while (bingoBySeq.length < d.completedAtSeq) bingoBySeq.push(0);
+    bingoBySeq[d.completedAtSeq - 1]! += 1;
+  }
+  return {
+    counts: {
+      cards: derived.length,
+      bingo: derived.filter((d) => d.bingo).length,
+      reach: derived.filter((d) => d.reach).length,
+    },
+    bingoBySeq,
+  };
+}
+
+/** 競技順位（statusRows と同じ規則）: 自分より早い手番で揃えた枚数 + 1 */
+export function bingoRank(bingoBySeq: number[], completedAtSeq: number): number {
+  return bingoBySeq.slice(0, completedAtSeq - 1).reduce((sum, n) => sum + n, 0) + 1;
+}
 
 /** 公開済みの番号列（引いた順）。ゲームの正はこの2値（順列×件数）から一意に決まる */
 export function drawnNumbers(game: BingoGame): number[] {
@@ -141,6 +185,27 @@ export const eventBingoRepo = {
       eventId, actorId, adminIds(),
     );
     return r?.drawn_count ?? null;
+  },
+
+  /** 抽選・取り消しの後に、全カードから導出した人数で上書きする（絶対値）。
+   * `drawnCount` の時点の導出なので、その間に次の抽選が進んでいたら書かない（後の抽選が書く）。
+   * 同時のカード発行が数え漏れても表示だけで、次の抽選が直す */
+  async writeTotals(
+    eventId: string,
+    drawnCount: number,
+    totals: { counts: BingoCounts; bingoBySeq: number[] },
+  ): Promise<void> {
+    await run(
+      `UPDATE event_bingo_game
+          SET card_count = ?, bingo_count = ?, reach_count = ?, bingo_by_seq = ?
+        WHERE event_id = ? AND drawn_count = ?`,
+      totals.counts.cards,
+      totals.counts.bingo,
+      totals.counts.reach,
+      JSON.stringify(totals.bingoBySeq),
+      eventId,
+      drawnCount,
+    );
   },
 
   /** 直前の1個を取り消す（staff の誤操作訂正）。0 のときは変更行数 0 */
@@ -262,7 +327,8 @@ export const eventBingoRepo = {
       {
         sql: `UPDATE event_bingo_game
                  SET status = 'setup', draw_order = NULL, drawn_count = 0,
-                     started_at = NULL, ended_at = NULL
+                     started_at = NULL, ended_at = NULL,
+                     card_count = 0, bingo_count = 0, reach_count = 0, bingo_by_seq = '[]'
                WHERE event_id = ? AND status = 'ended'`,
         args: [eventId],
       },
@@ -277,17 +343,48 @@ export const eventBingoRepo = {
 
   /* ---- カード ---- */
 
-  /** カード発行（冪等）。内容はサーバー乱数で、2回目以降は同じカードを返す */
-  async issueCard(eventId: string, userId: string, writer: EventWriter): Promise<number[]> {
-    await eventRun(writer,
-      `INSERT OR IGNORE INTO event_bingo_card (event_id, user_id, numbers, created_at)
-       VALUES (?, ?, ?, ?)`,
-      eventId,
-      userId,
-      JSON.stringify(generateCardNumbers()),
-      Date.now(),
-    );
-    return (await this.findCard(eventId, userId))!;
+  /** カード発行（冪等）。内容はサーバー乱数で、2回目以降は同じカードを返す。
+   *
+   * 新しいカードなら、同じ batch で保存人数に自分の1枚を足す（増分。全カードは読まない）。
+   * 足すのは「このカードが今入った」（保存された数字が今作った数字と同じ）かつ
+   * 「`game` を読んだ時点から抽選が進んでいない」ときだけ。抽選と同時なら足さず、
+   * その抽選（以降）の全件導出が数える */
+  async issueCard(game: BingoGame, userId: string, writer: EventWriter): Promise<number[]> {
+    const numbers = generateCardNumbers();
+    const json = JSON.stringify(numbers);
+    const mine = deriveBingoCard(numbers, drawnNumbers(game));
+    const bingoBySeq = [...game.bingoBySeq];
+    if (mine.completedAtSeq !== null) {
+      while (bingoBySeq.length < mine.completedAtSeq) bingoBySeq.push(0);
+      bingoBySeq[mine.completedAtSeq - 1]! += 1;
+    }
+    await eventWrite(writer, [
+      {
+        sql: `INSERT OR IGNORE INTO event_bingo_card (event_id, user_id, numbers, created_at)
+              VALUES (?, ?, ?, ?)`,
+        args: [game.eventId, userId, json, Date.now()],
+      },
+      {
+        sql: `UPDATE event_bingo_game
+                 SET card_count = card_count + 1, bingo_count = bingo_count + ?,
+                     reach_count = reach_count + ?,
+                     bingo_by_seq = CASE WHEN ? THEN ? ELSE bingo_by_seq END
+               WHERE event_id = ? AND drawn_count = ?
+                 AND (SELECT numbers FROM event_bingo_card WHERE event_id = ? AND user_id = ?) = ?`,
+        args: [
+          mine.bingo ? 1 : 0,
+          mine.reach ? 1 : 0,
+          mine.completedAtSeq !== null ? 1 : 0,
+          JSON.stringify(bingoBySeq),
+          game.eventId,
+          game.drawnCount,
+          game.eventId,
+          userId,
+          json,
+        ],
+      },
+    ]);
+    return (await this.findCard(game.eventId, userId))!;
   },
 
   async findCard(eventId: string, userId: string): Promise<number[] | null> {

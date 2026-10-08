@@ -1,18 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { BingoState, BingoStatus, MyBingoResults } from "@eventer/shared";
-import { BINGO_POLL_MS } from "@eventer/shared";
 import { api } from "./client.js";
-import { useEventSignal } from "../lib/signalHub.js";
+import { PARTICIPANT_SIGNAL_JITTER_MS, useEventSignal } from "../lib/signalHub.js";
 
 /**
  * 数字ビンゴ (#436)。
  *
- * - 参加者の状態はゲームが無いイベントに 404 が返る（存在ごと隠す門はサーバー側）。
- *   その間は refetch を止める（useMeetRankingLive と同じ理由）
- * - 抽選コントロール・カード・投影は10秒ポーリング（表示中だけ）。抽選は staff の
- *   mutation 応答で即時に映り、他の画面は最大10秒遅れで追いつく（読み上げは人間がやる）
- * - イベント詳細の小カードはポーリングしない（D-POLL-MIN）。カードは「ビンゴ開催中・開く」
- *   を出すだけで、開いた /bingo ページが追う
+ * - 定期には取り直さない（D-POLL-MIN 第5段階）。抽選コントロールは `bingo-staff`、
+ *   カード・投影は `bingo` の合図で取り直す。抽選は staff の mutation 応答で即時に映る
+ * - イベント詳細の小カードは購読しない。カードは「ビンゴ開催中・開く」を出すだけで、
+ *   開いた /bingo ページが追う
  */
 
 const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
@@ -20,32 +17,27 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
   void qc.invalidateQueries({ queryKey: ["event", eventId, "bingo-status"] });
 };
 
-/** 参加者向けの状態（自分のカード・判定・人数）。カード画面・投影が使う。
+/** 参加者向けの状態（自分のカード・判定・人数）。カード画面・投影・詳細の小カードが使う。
  *
- * pollWhileMissing: 404（ゲーム未作成・権限なし）の間もポーリングを続けるか。
- * 投影・カードの**専用ページは true**にする：プロジェクターはゲームを作る前に
- * 開かれるのが普通で、エラーで止めると作成後も再読み込みまで一切更新されない
- * （「最初の1回だけ番号が出ない」実機報告の正体）。イベント詳細の小カードは
- * false のまま。
- *
- * poll: 定期的に取り直すか。カード（/bingo）と投影（/bingo/screen）だけが立てる
- * （表示中だけ）: 抽選中に番号が付かないカードではゲームが成り立たず、投影も同じため。
- * イベント詳細の小カードは立てない（開いたとき・タブ復帰で取り直す。D-POLL-MIN） */
-export function useBingoState(
-  eventId: string,
-  enabled: boolean,
-  pollWhileMissing = false,
-  poll = false,
-) {
-  return useQuery({
+ * watch: 応答の `signal`（topic `bingo`）の合図で取り直すか。カード（/bingo）と投影
+ * （/bingo/screen）だけが立てる: 抽選中に番号が付かないカードではゲームが成り立たず、投影も
+ * 同じため。参加者全員が同じ合図で取り直すので、ばらす（`PARTICIPANT_SIGNAL_JITTER_MS`）。
+ * ゲーム作成前も確定メンバーには status "none" と合図の購読先が返るので、プロジェクターを
+ * 先に映しておいても作成の合図で拾う（#436「最初の1回だけ番号が出ない」）。
+ * イベント詳細の小カードは立てない（開いたとき・タブ復帰で取り直す） */
+export function useBingoState(eventId: string, enabled: boolean, watch = false) {
+  const query = useQuery({
     queryKey: ["event", eventId, "bingo"],
     enabled: Boolean(eventId) && enabled,
     queryFn: () => api.get<BingoState>(`/events/${eventId}/bingo`),
     retry: false,
     refetchOnWindowFocus: true,
-    refetchInterval: (query) =>
-      !poll || (query.state.error && !pollWhileMissing) ? false : BINGO_POLL_MS,
   });
+  useEventSignal(watch ? query.data?.signal : null, () => query.refetch(), {
+    eventId,
+    jitterMs: PARTICIPANT_SIGNAL_JITTER_MS,
+  });
+  return query;
 }
 
 /** 名前入りの導出一覧（staff のみ。抽選コントロール・デスクが使う）。
@@ -107,7 +99,7 @@ interface DrawResult {
  * 司会の画面が「—」のまま残る（初回の draw で番号が出ない実機報告 #436）。
  * 番号列だけ直書きすると今度は「ビンゴ n人」が次のポーリングまで増えない
  * （同・実機報告2）ので、応答には counts も入れて一緒に書く。
- * 名前入りの一覧（rows）だけは5秒ポーリングが追いつかせる */
+ * 名前入りの一覧（rows）だけは `bingo-staff` の合図が追いつかせる */
 function applyDrawResult(
   qc: ReturnType<typeof useQueryClient>,
   eventId: string,

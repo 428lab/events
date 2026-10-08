@@ -1,92 +1,79 @@
 import { act, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BINGO_POLL_MS } from "@eventer/shared";
+import { EVENT_SIGNAL_KIND, type BingoState, type EventSignalSource } from "@eventer/shared";
 
 /**
- * ビンゴのポーリング復帰 (#436 実機フィードバック)。
+ * 参加者のビンゴ（カード・投影）は定期に取り直さず、topic `bingo` の合図で取り直す
+ * （D-POLL-MIN 第5段階 5b-3）。
  *
- * 投影画面・カード画面は、ゲームが作られる**前**に開かれることが普通にある
- * （プロジェクターを先に映してから、司会が手元で「ビンゴを準備する」）。
- * その時点の応答は 404 で、旧実装はエラーでポーリングを恒久停止していた。
- * 以後ゲームを作って抽選しても、その画面は再読み込みするまで一切更新されない
- * ＝「最初の1回だけ番号が出ない」の正体。
- *
- * 専用ページ（pollWhileMissing=true・poll=true）は 404 の間もポーリングを続け、
- * ゲームが作られたら自動で拾うことを固定する。
- * イベント詳細の小カード（poll なし）はポーリングしない（D-POLL-MIN）。
+ * #436 の実機フィードバック（ゲーム作成前に開いた投影が、作成後も更新されない）は、
+ * 作成前でも確定メンバーに status "none" と購読先が返ることで守る: 作成の合図で拾う。
+ * イベント詳細の小カード（watch なし）は購読しない。
  */
 
-const { apiGet } = vi.hoisted(() => ({ apiGet: vi.fn() }));
+const { apiGet, listeners } = vi.hoisted(() => ({
+  apiGet: vi.fn(),
+  listeners: [] as Array<{ source: EventSignalSource | null | undefined; onSignal: () => unknown; jitterMs?: number }>,
+}));
 vi.mock("./client.js", () => ({
   api: { get: apiGet, post: vi.fn(), del: vi.fn(), patch: vi.fn(), put: vi.fn() },
   ApiError: class ApiError extends Error {},
   NetworkError: class NetworkError extends Error {},
 }));
+vi.mock("../lib/signalHub.js", () => ({
+  PARTICIPANT_SIGNAL_JITTER_MS: 5_000,
+  useEventSignal: (source: EventSignalSource | null | undefined, onSignal: () => unknown, options: { jitterMs?: number } = {}) => {
+    listeners.push({ source, onSignal, jitterMs: options.jitterMs });
+    return { synced: Boolean(source) };
+  },
+}));
 
 const { useBingoState } = await import("./bingoHooks.js");
+
+const source: EventSignalSource = { kind: EVENT_SIGNAL_KIND, pubkey: "5e".repeat(32), topic: "b1".repeat(32), rev: 1, relays: ["wss://relay.example"] };
+const state = (status: BingoState["status"]): BingoState => ({
+  status, drawnNumbers: [], counts: { cards: 0, bingo: 0, reach: 0 }, card: null, me: null, signal: source,
+});
+
+function wrapper() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+}
+async function flush(ms = 50) {
+  await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+}
 
 afterEach(() => {
   vi.useRealTimers();
   apiGet.mockReset();
+  listeners.length = 0;
 });
 
-describe("useBingoState のポーリング復帰 (#436)", () => {
-  it("ゲーム作成前の 404 の後もポーリングを続け、作られたら自動で拾う", async () => {
+describe("useBingoState (topic bingo)", () => {
+  it("does not poll; a page opened before the game exists picks it up on the create signal (#436)", async () => {
     vi.useFakeTimers();
-    apiGet
-      .mockRejectedValueOnce(new Error("not_found(404)"))
-      .mockResolvedValue({
-        status: "setup",
-        drawnNumbers: [],
-        counts: { cards: 0, bingo: 0, reach: 0 },
-        card: null,
-        me: null,
-      });
+    apiGet.mockResolvedValueOnce(state("none")).mockResolvedValue(state("setup"));
+    const { result } = renderHook(() => useBingoState("e-1", true, true), { wrapper: wrapper() });
+    await flush();
+    expect(result.current.data?.status).toBe("none");
+    expect(listeners.at(-1)).toMatchObject({ source, jitterMs: 5_000 }); // participants: spread out
 
-    const qc = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-    );
-    const { result } = renderHook(() => useBingoState("e-1", true, true, true), {
-      wrapper,
-    });
+    await flush(60_000);
+    expect(apiGet).toHaveBeenCalledTimes(1); // no 10 s poll any more
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(50);
-    });
-    expect(result.current.isError).toBe(true);
-    expect(apiGet).toHaveBeenCalledTimes(1);
-
-    // ポーリング1周期後: 旧実装はここで2回目が飛ばない（恒久停止）
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(BINGO_POLL_MS + 100);
-    });
+    await act(async () => { await listeners.at(-1)!.onSignal(); });
+    await flush();
     expect(apiGet).toHaveBeenCalledTimes(2);
     expect(result.current.data?.status).toBe("setup");
   });
 
-  it("poll なし（イベント詳細の小カード）は定期の取り直しをしない (D-POLL-MIN)", async () => {
+  it("the event detail card (no watch) does not subscribe", async () => {
     vi.useFakeTimers();
-    apiGet.mockResolvedValue({
-      status: "running",
-      drawnNumbers: [],
-      counts: { cards: 0, bingo: 0, reach: 0 },
-      card: null,
-      me: null,
-    });
-    const qc = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-    );
-    renderHook(() => useBingoState("e-1", true), { wrapper });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(BINGO_POLL_MS * 3);
-    });
+    apiGet.mockResolvedValue(state("running"));
+    renderHook(() => useBingoState("e-1", true), { wrapper: wrapper() });
+    await flush(60_000);
     expect(apiGet).toHaveBeenCalledTimes(1);
+    expect(listeners.every((l) => l.source == null)).toBe(true);
   });
 });

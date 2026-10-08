@@ -18,7 +18,6 @@ import { AWARDS_DRUMROLL_MS, type AwardResultView } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
 import { useAwards, useAwardsAdvance, useAwardsReset } from "../api/awardHooks.js";
-import { useAwardsSync } from "../api/useAwardsSync.js";
 import { useNotifyAwardWinners } from "../api/notificationHooks.js";
 import { UserLink } from "../components/UserLink.js";
 import { useEntryUserResolver } from "../lib/entryUser.js";
@@ -39,7 +38,6 @@ export function AwardsPage() {
   const { data: eventData } = useEvent(id);
   const isAdmin = useIsAdmin();
   const { data: awards, refetch: refetchAwards } = useAwards(id);
-  useAwardsSync(id, Boolean(eventData));
   const { data: state } = useEventState(id, true);
   const advance = useAwardsAdvance(id);
   const reset = useAwardsReset(id);
@@ -115,7 +113,7 @@ export function AwardsPage() {
         setDrumrolling(false);
       }, elapsed);
     }
-    // pollで進んだ場合にも必須。signalによるinvalidateだけには依存しない。
+    // 合図（event-state）でも操作の応答でも、cursor が変わったら結果を取り直す。
     void refetchAwards({ throwOnError: true }).then(() => {
       if (!stopped) setReadyCursor(cursor);
     }).catch(() => {

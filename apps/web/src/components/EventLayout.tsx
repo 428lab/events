@@ -3,11 +3,11 @@ import { Outlet, useNavigate, useParams, useLocation } from "react-router-dom";
 import { Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { useEvent } from "../api/hooks.js";
-import { useEventState, useEventStream } from "../api/scoringHooks.js";
+import { useEventState, useEventStateSignal } from "../api/scoringHooks.js";
 
 /**
  * イベント配下の共通レイアウト。
- * - コンテスト形式のイベントでは進行状態を定期的に取り直して反映（useEventStream）
+ * - コンテスト形式のイベント（と表彰画面）では進行状態の合図で取り直して反映（useEventStateSignal）
  * - プレゼンモードになったら参加者を強制的にプレゼン画面へ遷移
  */
 export function EventLayout() {
@@ -17,9 +17,10 @@ export function EventLayout() {
   const location = useLocation();
   const { data: eventData } = useEvent(id);
   const { data: state } = useEventState(id);
-  useEventStream(id, {
-    contestMode: Boolean(eventData?.event.contestMode),
-    scoring: location.pathname.endsWith("/control"),
+  const onAwardsPage = location.pathname.endsWith("/awards");
+  useEventStateSignal(id, state, {
+    watch: Boolean(eventData?.event.contestMode) || onAwardsPage,
+    awards: onAwardsPage,
   });
 
   const role = eventData?.myRole ?? null;
