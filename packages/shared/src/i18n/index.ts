@@ -23,6 +23,7 @@ import { eventSocial } from "./messages/eventSocial.js";
 import { home } from "./messages/home.js";
 import { events } from "./messages/events.js";
 import { inquiries, inquiryStatus } from "./messages/inquiries.js";
+import { eventInquiry } from "./messages/eventInquiry.js";
 import { kpi } from "./messages/kpi.js";
 import { labels } from "./messages/labels.js";
 import { blueskyError, login } from "./messages/login.js";
@@ -94,6 +95,7 @@ export const translations = {
     notifications: notifications.ja,
     inquiries: inquiries.ja,
     inquiryStatus: inquiryStatus.ja,
+    eventInquiry: eventInquiry.ja,
     community: community.ja,
     venue: venue.ja,
     venueOfferStatus: venueOfferStatus.ja,
@@ -139,6 +141,7 @@ export const translations = {
     notifications: notifications.en,
     inquiries: inquiries.en,
     inquiryStatus: inquiryStatus.en,
+    eventInquiry: eventInquiry.en,
     community: community.en,
     venue: venue.en,
     venueOfferStatus: venueOfferStatus.en,

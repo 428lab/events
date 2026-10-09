@@ -48,6 +48,7 @@ import { EventJoinPanel } from "../components/EventJoinPanel.js";
 import { EventMemberList } from "../components/EventMemberList.js";
 import { EventDetailSidebar } from "../components/EventDetailSidebar.js";
 import { EventSubmissions } from "../components/EventSubmissions.js";
+import { EventInquiryButton } from "../components/EventInquiryButton.js";
 import {
   formatDateRange,
   formatDateTime,
@@ -439,6 +440,9 @@ export function EventDetailPage() {
         contest={contest}
         attendanceCheck={event.attendanceCheck}
       />
+
+      {/* 主催者への問い合わせ (D-EVENT-CONTACT)。見られる人なら参加前でも送れる */}
+      {event.status === "published" && <EventInquiryButton eventId={id} isStaff={isStaff} />}
 
       {/* 会場オーナー本人の提供オファー。運営の確認操作は管理ページへ。 */}
       {me && !isStaff && event.venueWanted && event.status === "published" && (
