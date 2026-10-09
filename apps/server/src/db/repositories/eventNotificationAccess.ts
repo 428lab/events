@@ -3,7 +3,9 @@ import { one } from "../client.js";
 import { adminIds } from "./eventAccessInvites.js";
 
 export const publicNoticeTypes = "'followee_created_event','followee_joined_event','request_event_created'";
-/** The same qualification is used for pages, counts and delivery. Invitation
+/** The same qualification is used for pages, counts and delivery.
+ * An organizer's reply (`event_inquiry_reply`, D-EVENT-CONTACT) also reaches a non-member who
+ * asked about an unlisted event: they could view it when asking, and still must be able to view it now. Invitation
  * receipts are not viewing grants. Unresolved legacy rows are not guessed. */
 export function notificationVisibleSql(n = "notification"): string {
   return `(${n}.event_id IS NULL OR EXISTS (SELECT 1 FROM event e JOIN user recipient
@@ -15,7 +17,8 @@ export function notificationVisibleSql(n = "notification"): string {
     OR (${n}.type NOT IN ('event_access_invite','staff_invite') AND ${eventViewSql("e", "recipient.id", "?1")}
       AND (e.visibility='public' OR ${eventManagerSql("e", "recipient", "?1")}
         OR EXISTS(SELECT 1 FROM event_member m WHERE m.event_id=e.id AND m.user_id=recipient.id AND m.status<>'canceled')
-        OR EXISTS(SELECT 1 FROM event_access_invite i WHERE i.event_id=e.id AND i.user_id=recipient.id AND i.status='accepted'))
+        OR EXISTS(SELECT 1 FROM event_access_invite i WHERE i.event_id=e.id AND i.user_id=recipient.id AND i.status='accepted')
+        OR (${n}.type='event_inquiry_reply' AND EXISTS(SELECT 1 FROM inquiry q WHERE q.event_id=e.id AND q.user_id=recipient.id)))
       AND (${n}.type<>'staff_invite_result' OR ${eventManagerSql("e", "recipient", "?1")})
       AND (${n}.actor_id IS NULL OR EXISTS(SELECT 1 FROM user actor WHERE actor.id=${n}.actor_id AND actor.deleted_at IS NULL))
       AND (${n}.type NOT IN (${publicNoticeTypes}) OR (e.visibility='public' AND e.status='published'))

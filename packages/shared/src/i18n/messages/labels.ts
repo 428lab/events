@@ -51,6 +51,8 @@ const notificationTypeEn: Record<NotificationType, string> = {
   award: "Awards",
   inquiry_reply: "Support",
   inquiry_new: "Support",
+  event_inquiry_new: "Inquiry",
+  event_inquiry_reply: "Inquiry",
   schedule_finalized: "Schedule",
   // 日本語の source が「リクエスト」なので、綴りを合わせて "Request" のまま。
   // たまごの呼び名（#378 の "egg"）に寄せるなら日本語側から直す話になる

@@ -251,6 +251,9 @@ export const accountMergeRepo = {
       // 発火し、統合後に勝ち側が退会しても通知が消えなくなる
       ["notification", "actor_id"],
       ["inquiry", "user_id"],
+      // 問い合わせの各メッセージを書いた人 (D-EVENT-CONTACT)。付け替えないと (9) の user 削除で
+      // ON DELETE SET NULL が発火し、どのスタッフが返信したかが黙って消える
+      ["inquiry_message", "author_id"],
       ["venue_photo", "user_id"],
       ["event_schedule_item", "speaker_user_id"],
       // 招待した人 (#339)。付け替えないと (9) の user 削除で招待ごと消える

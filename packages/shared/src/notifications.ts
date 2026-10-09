@@ -8,6 +8,10 @@ export const NOTIFICATION_TYPES = [
   "award",
   "inquiry_reply",
   "inquiry_new",
+  /** イベントの主催者あての問い合わせ・その返事が届いた（そのイベントの確定スタッフへ。D-EVENT-CONTACT） */
+  "event_inquiry_new",
+  /** 主催者から問い合わせへの返信があった（問い合わせた人へ。D-EVENT-CONTACT） */
+  "event_inquiry_reply",
   "schedule_finalized",
   "request_event_created",
   "followee_created_event",
@@ -56,6 +60,8 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   award: "表彰",
   inquiry_reply: "問い合わせ",
   inquiry_new: "問い合わせ",
+  event_inquiry_new: "問い合わせ",
+  event_inquiry_reply: "問い合わせ",
   schedule_finalized: "日程",
   request_event_created: "リクエスト",
   followee_created_event: "フォロー",
