@@ -2,6 +2,7 @@ import { Box } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 
@@ -88,6 +89,7 @@ function isImageUrl(href?: string): boolean {
 }
 
 /** イベント本文などを安全に Markdown 描画。GFM対応。
+ * 1回の改行もそのまま改行として表示する（remark-breaks。#611）。
  * 生HTMLは rehype-raw で解釈しつつ rehype-sanitize で a / img 以外を除去（XSS対策）。 */
 export function Markdown({ children }: { children: string }) {
   return (
@@ -143,7 +145,7 @@ export function Markdown({ children }: { children: string }) {
       }}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkBreaks]}
         rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
         components={{
           a({ node: _node, href, children, ...props }) {
