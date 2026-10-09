@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Box,
   Button,
@@ -19,11 +19,15 @@ export function InquiryThread({
   selfSender,
   onSend,
   sending,
+  actions,
 }: {
   detail: InquiryDetail;
-  selfSender: "user" | "admin";
+  /** 見ている側。staff はイベントの主催者側（確定スタッフ。D-EVENT-CONTACT） */
+  selfSender: "user" | "admin" | "staff";
   onSend: (body: string) => void;
   sending: boolean;
+  /** 見出しの右に並べる操作（主催者側の「完了にする」など） */
+  actions?: ReactNode;
 }) {
   const { t } = useTranslation();
   const [body, setBody] = useState("");
@@ -35,27 +39,39 @@ export function InquiryThread({
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Typography variant="h6" sx={{ flex: 1 }}>
-          {detail.subject}
+      {detail.event && (
+        <Typography variant="body2" color="text.secondary">
+          <Link component={RouterLink} to={`/events/${detail.event.id}`} color="inherit" underline="hover">
+            {t("eventInquiry.threadHeader", { title: detail.event.title })}
+          </Link>
+        </Typography>
+      )}
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        <Typography variant="h6" sx={{ flex: 1, minWidth: 0, wordBreak: "break-word" }}>
+          {inquirySubject(detail)}
         </Typography>
         <Chip
           size="small"
           // サーバーが状態を増やしても画面にキー名が出ないよう、辞書に無ければ
           // 生のコードを出す（API 応答は実行時に検証していない）
           label={tDynamic(`inquiryStatus.${detail.status}`, detail.status)}
-          color={detail.status === "answered" ? "success" : "default"}
+          color={inquiryStatusColor(detail.status)}
         />
+        {actions}
       </Stack>
 
       <Stack spacing={1.5}>
         {detail.messages.map((m) => {
           const mine = m.sender === selfSender;
-          const senderLabel = mine
-            ? t("inquiries.senderYou")
-            : m.sender === "admin"
-              ? t("inquiries.senderAdmin")
-              : (detail.userName ?? t("inquiries.senderUser"));
+          // 主催者側の発言は、どのスタッフが書いても「主催者」と出す（スタッフ全員で受け持つため）
+          const senderLabel =
+            m.sender === "staff"
+              ? t("eventInquiry.organizer")
+              : mine
+                ? t("inquiries.senderYou")
+                : m.sender === "admin"
+                  ? t("inquiries.senderAdmin")
+                  : (detail.userName ?? t("inquiries.senderUser"));
           // 運営視点でユーザー発言の名前はプロフィールへリンク
           const linkToUser =
             !mine && m.sender === "user" && detail.userHandle
@@ -124,4 +140,14 @@ export function InquiryThread({
       </Stack>
     </Stack>
   );
+}
+
+/** 件名。イベントの主催者あてで件名を空にしたときはイベント名を出す (D-EVENT-CONTACT) */
+export function inquirySubject(q: { subject: string; event: { title: string } | null }): string {
+  return q.subject || q.event?.title || "";
+}
+
+/** 状態チップの色。一覧とスレッドで同じものを使う (#359) */
+export function inquiryStatusColor(status: string): "success" | "default" {
+  return status === "answered" ? "success" : "default";
 }

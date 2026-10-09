@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AdminInquiry,
+  CreateEventInquiryInput,
   CreateInquiryInput,
   Inquiry,
   InquiryDetail,
@@ -97,5 +98,77 @@ export function usePostAdminMessage(id: string) {
     mutationFn: (body: string) =>
       api.post(`/admin/inquiries/${id}/messages`, { body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["adminInquiry", id] }),
+  });
+}
+
+// ===== イベントの主催者あて (D-EVENT-CONTACT) =====
+// 定期の取り直しはしない（D-POLL-MIN）。送ったとき・通知を開いたとき・タブに戻ったときに読む
+
+/** 送る側。イベントを見られるログイン中の人なら誰でも送れる（門はサーバー） */
+export function useCreateEventInquiry(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateEventInquiryInput) =>
+      api.post<{ id: string }>(`/events/${eventId}/inquiries`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inquiries"] }),
+  });
+}
+
+/** 主催者側（確定スタッフだけ）。enabled はスタッフのときだけ true にする */
+export function useEventInquiries(eventId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["eventInquiries", eventId],
+    enabled,
+    queryFn: async () =>
+      (await api.get<{ inquiries: AdminInquiry[] }>(`/events/${eventId}/inquiries`))
+        .inquiries,
+  });
+}
+
+export function useEventInquiryUnreadCount(eventId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["eventInquiries", eventId, "unread"],
+    enabled,
+    // バッジは数分遅れても困らない。タブ復帰で取り直す
+    refetchOnWindowFocus: true,
+    queryFn: async () =>
+      (await api.get<{ count: number }>(`/events/${eventId}/inquiries/unread-count`)).count,
+  });
+}
+
+export function useEventInquiry(eventId: string, id: string, enabled: boolean) {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: ["eventInquiry", eventId, id],
+    enabled,
+    queryFn: async () => {
+      const d = await api.get<InquiryDetail>(`/events/${eventId}/inquiries/${id}`);
+      // 開くと主催者側の既読が進むので、一覧とバッジを取り直す
+      qc.invalidateQueries({ queryKey: ["eventInquiries", eventId] });
+      return d;
+    },
+  });
+}
+
+export function usePostEventInquiryMessage(eventId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) =>
+      api.post(`/events/${eventId}/inquiries/${id}/messages`, { body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["eventInquiry", eventId, id] });
+      qc.invalidateQueries({ queryKey: ["eventInquiries", eventId] });
+    },
+  });
+}
+
+export function useCloseEventInquiry(eventId: string, id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post(`/events/${eventId}/inquiries/${id}/close`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["eventInquiry", eventId, id] });
+      qc.invalidateQueries({ queryKey: ["eventInquiries", eventId] });
+    },
   });
 }

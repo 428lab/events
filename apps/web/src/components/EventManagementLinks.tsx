@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import type { ParseKeys } from "i18next";
-import { Button, Stack } from "@mui/material";
+import { Badge, Button, Stack } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useEventInquiryUnreadCount } from "../api/inquiryHooks.js";
 import AssignmentIndOutlinedIcon from "@mui/icons-material/AssignmentIndOutlined";
 import BadgeIcon from "@mui/icons-material/Badge";
 import BarChartIcon from "@mui/icons-material/BarChart";
@@ -11,6 +12,7 @@ import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
 import CasinoOutlinedIcon from "@mui/icons-material/CasinoOutlined";
 import ChecklistIcon from "@mui/icons-material/Checklist";
 import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
+import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import LiveTvIcon from "@mui/icons-material/LiveTv";
 import PollOutlinedIcon from "@mui/icons-material/PollOutlined";
 import QrCodeScannerIcon from "@mui/icons-material/QrCodeScanner";
@@ -20,12 +22,15 @@ export function EventManagementLinks({ eventId, isStaff, attendanceCheck, chatAv
   eventId: string; isStaff: boolean; attendanceCheck: boolean; chatAvailable: boolean;
 }) {
   const { t } = useTranslation();
+  // 主催者あての問い合わせの未読数 (D-EVENT-CONTACT)。スタッフのときだけ取りに行く
+  const { data: inquiryUnread = 0 } = useEventInquiryUnreadCount(eventId, isStaff);
   if (!isStaff) return null;
-  const links: { path: string; labelKey: ParseKeys; icon?: ReactNode; variant?: "contained"; show: boolean }[] = [
+  const links: { path: string; labelKey: ParseKeys; icon?: ReactNode; variant?: "contained"; show: boolean; badge?: number }[] = [
     { path: "edit", labelKey: "common.edit", variant: "contained", show: isStaff },
     // ここから運営用（myRole === "staff" のときだけ。isAdmin は混ぜない #275）
     { path: "live/control", labelKey: "eventDetail.live", icon: <LiveTvIcon />, show: isStaff },
     { path: "broadcast", labelKey: "eventDetail.broadcast", icon: <CampaignIcon />, show: isStaff },
+    { path: "inquiries", labelKey: "eventInquiry.manageTitle", icon: <MailOutlineIcon />, show: isStaff, badge: inquiryUnread },
     { path: "todos", labelKey: "staffOps.todoTitle", icon: <ChecklistIcon />, show: isStaff },
     { path: "staff-chat", labelKey: "staffOps.staffChatTitle", icon: <ForumOutlinedIcon />, show: isStaff },
     { path: "staffing", labelKey: "staffOps.dutyTitle", icon: <AssignmentIndOutlinedIcon />, show: isStaff },
@@ -43,9 +48,10 @@ export function EventManagementLinks({ eventId, isStaff, attendanceCheck, chatAv
     { path: "chat", labelKey: "eventManagement.chat", icon: <ForumOutlinedIcon />, show: chatAvailable },
   ];
   return <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-    {links.filter((link) => link.show).map((link) => <Button key={link.path}
-      component={RouterLink} to={`/events/${eventId}/${link.path}`} variant={link.variant ?? "outlined"} startIcon={link.icon}>
-      {t(link.labelKey)}
-    </Button>)}
+    {links.filter((link) => link.show).map((link) => <Badge key={link.path} color="error" badgeContent={link.badge ?? 0} max={99}>
+      <Button component={RouterLink} to={`/events/${eventId}/${link.path}`} variant={link.variant ?? "outlined"} startIcon={link.icon}>
+        {t(link.labelKey)}
+      </Button>
+    </Badge>)}
   </Stack>;
 }

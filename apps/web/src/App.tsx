@@ -41,6 +41,7 @@ import { StaffInvitesPage } from "./pages/StaffInvitesPage.js";
 import { InquiryThreadPage } from "./pages/InquiryThreadPage.js";
 import { AdminInquiriesPage } from "./pages/AdminInquiriesPage.js";
 import { AdminInquiryThreadPage } from "./pages/AdminInquiryThreadPage.js";
+import { EventInquiriesPage, EventInquiryThreadPage } from "./pages/EventInquiriesPage.js";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage.js";
 import { TermsPage } from "./pages/TermsPage.js";
 import { UserProfilePage } from "./pages/UserProfilePage.js";
@@ -470,6 +471,9 @@ export function App() {
           <Route path="lottery" element={<LotteryAdminPage />} />
           {/* 参加者への一斉連絡 (#172)。スタッフ専用 */}
           <Route path="broadcast" element={<EventBroadcastPage />} />
+          {/* 主催者あての問い合わせ (D-EVENT-CONTACT)。スタッフ専用 */}
+          <Route path="inquiries" element={<EventInquiriesPage />} />
+          <Route path="inquiries/:inquiryId" element={<EventInquiryThreadPage />} />
           {/* 準備の段取り (#393)。スタッフ専用 */}
           <Route path="todos" element={<EventTodoPage />} />
           {/* 役割と持ち場 (#384)。スタッフ専用 */}

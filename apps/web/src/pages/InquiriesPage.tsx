@@ -14,7 +14,9 @@ import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useCreateInquiry, useInquiries } from "../api/inquiryHooks.js";
 import { CounterTextField } from "../components/CounterTextField.js";
+import { inquirySubject, inquiryStatusColor } from "../components/InquiryThread.js";
 import { formatDateTime } from "../lib/format.js";
+import { tDynamic } from "../i18n/index.js";
 
 export function InquiriesPage() {
   const navigate = useNavigate();
@@ -108,19 +110,21 @@ export function InquiriesPage() {
                         }}
                       />
                     )}
-                    <Typography sx={{ flex: 1, fontWeight: q.unread ? 700 : 400 }}>
-                      {q.subject}
+                    <Typography sx={{ flex: 1, minWidth: 0, fontWeight: q.unread ? 700 : 400 }}>
+                      {inquirySubject(q)}
                     </Typography>
+                    {/* 3つの状態をスレッド画面と同じ辞書で出す（closed が「対応中」に見えていた #359） */}
                     <Chip
                       size="small"
-                      label={t(
-                        q.status === "answered"
-                          ? "inquiryStatus.answered"
-                          : "inquiryStatus.open",
-                      )}
-                      color={q.status === "answered" ? "success" : "default"}
+                      label={tDynamic(`inquiryStatus.${q.status}`, q.status)}
+                      color={inquiryStatusColor(q.status)}
                     />
                   </Stack>
+                  {q.event && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                      {t("eventInquiry.eventLabel", { title: q.event.title })}
+                    </Typography>
+                  )}
                   <Typography variant="caption" color="text.secondary">
                     {t("inquiries.lastUpdated", {
                       time: formatDateTime(q.lastMessageAt),
