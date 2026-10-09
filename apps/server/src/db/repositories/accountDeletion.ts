@@ -244,6 +244,7 @@ export const accountDeletionRepo = {
     //      event_comment / notification / notification_pref / inquiry /
     //      deck / bgm_track / event_payout_method）。venue_photo.user_id と
     //      event_schedule_item.speaker_user_id は SET NULL で匿名化される
+    //      （主催者として問い合わせに返信した inquiry_message.author_id も SET NULL。D-EVENT-CONTACT）
     //      （割り勘の event_expense.created_by / event_settlement_done.marked_by も SET NULL）
     stmts.push({ sql: "DELETE FROM user WHERE id = ?", args: [userId] });
 

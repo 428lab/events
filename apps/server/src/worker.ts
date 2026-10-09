@@ -33,7 +33,7 @@ import { getEventDescriptionImage } from "./routes/eventDescriptionImages.js";
 import { getUserCardImage } from "./routes/profileCardImages.js";
 import { getUserAvatarImage } from "./routes/avatarImages.js";
 import { publicRoutes } from "./routes/public.js";
-import { inquiryRoutes, adminInquiryRoutes } from "./routes/inquiries.js";
+import { inquiryRoutes, adminInquiryRoutes, eventInquiryRoutes } from "./routes/inquiries.js";
 import { notificationRoutes } from "./routes/notifications.js";
 import { communityRoutes } from "./routes/communities.js";
 import { getCommunityImage } from "./routes/communityImages.js";
@@ -254,6 +254,9 @@ api.route("/events", encryptedChatRoutes);
 api.route("/events", eventQaRoutes);
 // 参加者への一斉連絡 (#172)（送信・履歴閲覧ともそのイベントのスタッフのみ。要認証）
 api.route("/events", eventBroadcastRoutes);
+// イベントの主催者への問い合わせ (D-EVENT-CONTACT)（送るのはイベントを見られる人、
+// 一覧・返信・完了はそのイベントの確定スタッフのみ。要認証）
+api.route("/events", eventInquiryRoutes);
 // 出会った記録 (#189)（参加確定メンバー同士。要認証）
 api.route("/events", meetEventRoutes);
 // 出会いの景品引き換え (#431)（設定・デスク・締めはそのイベントのスタッフのみ。要認証）

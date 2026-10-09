@@ -225,7 +225,7 @@ const UNRESOLVED: Array<{ column: Column; breaks: string }> = [];
  * 増減したらこの数を直すこと。**直す前に、増えた列が mergeUsers で
  * 扱われているかを必ず読むこと。**
  */
-const EXPECTED_USER_COLUMNS = 62; // #523 までの 55 本 + #556: 割り勘の 4 表で 7 本
+const EXPECTED_USER_COLUMNS = 63; // #523 までの 55 本 + #556: 割り勘の 4 表で 7 本 + D-EVENT-CONTACT: inquiry_message.author_id
 
 /**
  * `mergeUsers` が扱う `table.column` の数（user 参照でない列も含む生の抽出数）。
@@ -235,7 +235,7 @@ const EXPECTED_USER_COLUMNS = 62; // #523 までの 55 本 + #556: 割り勘の 
 // event_payout_method.user_id）、共有コンテンツ +1（event_expense.payer_user_id）、
 // LEDGER_PARTY_REASSIGN_SQL +4（event_expense_share.user_id / .weight（重みの足し込み）/
 // event_settlement_done.from_user_id / .to_user_id）
-const EXPECTED_HANDLED_PAIRS = 68; // #523 までの 60 組 + #556 の 8 組
+const EXPECTED_HANDLED_PAIRS = 69; // #523 までの 60 組 + #556 の 8 組 + D-EVENT-CONTACT の 1 組
 
 describe("アカウント統合の対象列の走査 (#396)", () => {
   const body = mergeUsersBody(Object.values(mergeSources)[0]!);
