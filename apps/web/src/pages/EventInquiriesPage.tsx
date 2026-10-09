@@ -20,11 +20,7 @@ import {
   usePostEventInquiryMessage,
 } from "../api/inquiryHooks.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
-import {
-  InquiryThread,
-  inquiryStatusColor,
-  inquirySubject,
-} from "../components/InquiryThread.js";
+import { InquiryThread, inquiryStatusColor } from "../components/InquiryThread.js";
 import { tDynamic } from "../i18n/index.js";
 import { formatDateTime } from "../lib/format.js";
 
@@ -77,7 +73,7 @@ export function EventInquiriesPage() {
                     </Avatar>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography sx={{ fontWeight: q.unread ? 700 : 400 }} noWrap>
-                        {inquirySubject(q)}
+                        {q.subject || eventData.event.title}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {q.userName}

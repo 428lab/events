@@ -23,9 +23,10 @@ beforeEach(() => {
     }
     if (path === "/events/e") return { event: { id: "e", title: "夏の発表会", status: "published" }, myRole: role } as never;
     if (path === "/events/e/inquiries/unread-count") return { count: 2 } as never;
+    // サーバーはイベント配下の一覧に event を付けない（ページ自体がそのイベント）
     if (path === "/events/e/inquiries") return { inquiries: [
       { id: "q1", subject: "", status: "open", createdAt: 1, lastMessageAt: 1, lastSender: "user", unread: true,
-        event: { id: "e", title: "夏の発表会" }, userId: "u", userHandle: "taro", userName: "太郎", userAvatarUrl: null },
+        event: null, userId: "u", userHandle: "taro", userName: "太郎", userAvatarUrl: null },
     ] } as never;
     if (path === "/events/e/inquiries/q1") return {
       id: "q1", subject: "", status: "answered", event: { id: "e", title: "夏の発表会" },
