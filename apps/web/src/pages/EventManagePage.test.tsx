@@ -41,9 +41,10 @@ function draw(hash = "") {
 }
 it("noncontest staff land on links, not a mounted public-content dashboard; hash opens real member controls", async () => {
   draw();
-  await screen.findByRole("heading", { name: "夏の発表会 / 管理" });
+  await screen.findByRole("heading", { name: "夏の発表会 / 運営" });
   expect(screen.getByRole("link", { name: "イベント情報へ戻る" })).toHaveAttribute("href", "/events/e");
-  expect(screen.getByRole("button", { name: "公開する" })).toBeEnabled();
+  // 下書きの注意と公開ボタンは詳細ページに移した (#613)
+  expect(screen.queryByRole("button", { name: "公開する" })).toBeNull();
   expect(screen.getByRole("link", { name: "編集" })).toHaveAttribute("href", "/events/e/edit");
   expect(screen.getByRole("link", { name: "QR受付" })).toHaveAttribute("href", "/events/e/checkin");
   expect(screen.queryByRole("heading", { name: "コンテスト運営" })).toBeNull();
@@ -66,7 +67,7 @@ it("contest staff get exactly one existing participation control and award desti
 it("private nonstaff access manager gets only the existing private invite controls, even at a direct hash", async () => {
   role = null; access = true; visibility = "private"; contest = true; draw("#invites");
   await screen.findByLabelText("登録済みのユーザー名（@handle）");
-  expect(screen.queryByText("一般運営")).toBeNull();
+  expect(screen.queryByText("すべての運営機能")).toBeNull();
   expect(screen.queryByRole("button", { name: "公開する" })).toBeNull();
   expect(screen.queryByRole("heading", { name: "コンテスト運営" })).toBeNull();
   expect(vi.mocked(api.get).mock.calls.every(([p]) => ["/auth/me", "/events/e", "/events/e/access-invites"].includes(p))).toBe(true);
