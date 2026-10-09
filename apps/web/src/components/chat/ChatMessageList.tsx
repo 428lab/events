@@ -122,7 +122,14 @@ export function ChatMessageList({
                   {member.name.charAt(0)}
                 </Avatar>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Stack direction="row" spacing={0.75} alignItems="baseline">
+                  {/* 年月日付きの時刻は長いので、狭い幅では名前の下へ折り返す */}
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    alignItems="baseline"
+                    flexWrap="wrap"
+                    useFlexGap
+                  >
                     <Typography
                       variant="body2"
                       fontWeight={600}
