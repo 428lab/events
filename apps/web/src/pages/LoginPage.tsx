@@ -1,11 +1,15 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { Alert, Box, Button, Card, CardContent, Stack, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthProviders, useDevLogin } from "../api/hooks.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
-import { hasNip07, nostrNip07Login } from "../lib/nostr.js";
+import {
+  hasNip07,
+  nostrNip07Login,
+  signLoginChallenge,
+} from "../lib/nostr.js";
 import { safeRedirectPath } from "../lib/safeRedirect.js";
 import {
   BLUESKY_ERROR_PARAM,
@@ -13,6 +17,13 @@ import {
   clearQueryParam,
 } from "../lib/blueskyError.js";
 import { BlueskyHandleForm } from "../components/BlueskyHandleForm.js";
+
+// 署名アプリでつなぐシートは開いたときだけ読む（リレーとのやりとりの部品を、ふだんのページに載せない）
+const NostrConnectSheet = lazy(() =>
+  import("../components/NostrConnectSheet.js").then((m) => ({
+    default: m.NostrConnectSheet,
+  })),
+);
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -22,6 +33,8 @@ export function LoginPage() {
   const [params] = useSearchParams();
   const [nostrBusy, setNostrBusy] = useState(false);
   const [nostrError, setNostrError] = useState<string | null>(null);
+  // 拡張が無い人は、署名アプリ（Amber など）でつなぐシートを開く (D-NOSTR-SIGNER)
+  const [signerOpen, setSignerOpen] = useState(false);
   // Bluesky のログインが途中で失敗すると ?bluesky_error= を付けてここへ戻る (#381)。
   // 読んだらクエリを消すので、リロードや「戻る」で蒸し返さない
   const [blueskyError] = useState<string | null>(() => {
@@ -44,19 +57,23 @@ export function LoginPage() {
     if (next) localStorage.setItem("postLoginRedirect", next);
   }, [next]);
 
+  const afterNostrLogin = async () => {
+    await qc.invalidateQueries({ queryKey: ["me"] });
+    navigate(next ?? "/me");
+  };
+
   const nostrLogin = async () => {
     setNostrError(null);
+    if (!hasNip07()) {
+      setSignerOpen(true);
+      return;
+    }
     setNostrBusy(true);
     try {
       await nostrNip07Login();
-      await qc.invalidateQueries({ queryKey: ["me"] });
-      navigate(next ?? "/me");
-    } catch (e) {
-      setNostrError(
-        e instanceof Error && e.message === "no_extension"
-          ? t("login.extensionMissing")
-          : t("login.signInFailed"),
-      );
+      await afterNostrLogin();
+    } catch {
+      setNostrError(t("login.signInFailed"));
     } finally {
       setNostrBusy(false);
     }
@@ -121,6 +138,23 @@ export function LoginPage() {
                   ? t("login.checking")
                   : t("login.signInWith", { provider: providerLabel("nostr") })}
               </Button>
+              {signerOpen && (
+                <Suspense fallback={null}>
+                  <NostrConnectSheet
+                    title={t("login.signerTitle")}
+                    submit={signLoginChallenge}
+                    onDone={() => {
+                      setSignerOpen(false);
+                      void afterNostrLogin();
+                    }}
+                    onFailed={() => {
+                      setSignerOpen(false);
+                      setNostrError(t("login.signInFailed"));
+                    }}
+                    onClose={() => setSignerOpen(false)}
+                  />
+                </Suspense>
+              )}
               {nostrError && <Alert severity="warning">{nostrError}</Alert>}
               {!hasNip07() && !nostrError && (
                 <Typography variant="caption" color="text.secondary">

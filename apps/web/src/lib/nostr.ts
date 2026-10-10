@@ -109,19 +109,26 @@ async function syncNostrProfile(pubkey: string): Promise<void> {
   }
 }
 
+/** ログインのお題に署名するもの。NIP-07 の拡張でも、署名アプリ（NIP-46）でもよい */
+export type LoginEventSigner = (template: {
+  kind: number;
+  created_at: number;
+  tags: string[][];
+  content: string;
+}) => Promise<unknown>;
+
 /**
- * NIP-07 拡張（Alby / nos2x 等）でログイン or 連携。
+ * Nostr でログイン or 連携する（どの署名器でも同じ）。
  * チャレンジ取得 → kind:22242 に署名 → サーバー検証。
  * ログイン後、リレーから kind:0 を取得して表示名/アイコンを補完する。
- * 拡張が無い場合は "no_extension" を投げる。
  */
-export async function nostrNip07Login(): Promise<void> {
-  const nostr = (window as { nostr?: Nip07 }).nostr;
-  if (!nostr) throw new Error("no_extension");
+export async function signLoginChallenge(
+  sign: LoginEventSigner,
+): Promise<void> {
   const { challenge } = await api.get<{ challenge: string }>(
     "/auth/nostr/challenge",
   );
-  const event = (await nostr.signEvent({
+  const event = (await sign({
     kind: 22242,
     created_at: Math.floor(Date.now() / 1000),
     tags: [
@@ -132,4 +139,14 @@ export async function nostrNip07Login(): Promise<void> {
   })) as { pubkey?: string };
   await api.post("/auth/nostr/login", { event });
   if (event.pubkey) await syncNostrProfile(event.pubkey);
+}
+
+/**
+ * NIP-07 拡張（Alby / nos2x 等）でログイン or 連携。
+ * 拡張が無い場合は "no_extension" を投げる。
+ */
+export async function nostrNip07Login(): Promise<void> {
+  const nostr = (window as { nostr?: Nip07 }).nostr;
+  if (!nostr) throw new Error("no_extension");
+  await signLoginChallenge((template) => nostr.signEvent(template));
 }

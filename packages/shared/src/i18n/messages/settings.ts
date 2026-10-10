@@ -68,7 +68,6 @@ const ja = {
   unlink: "解除",
   linkChecking: "確認中…",
   link: "連携する",
-  nostrExtensionMissing: "NIP-07 対応拡張（Alby、nos2x など）が見つかりません。",
   nostrLinkFailed: "Nostr 連携に失敗しました。",
   lastLoginMethodNotice:
     "ログイン方法は最低1つ必要です（最後の1つは解除できません）。",
@@ -202,8 +201,6 @@ const en: Record<keyof typeof ja, string> = {
   unlink: "Unlink",
   linkChecking: "Checking…",
   link: "Link",
-  nostrExtensionMissing:
-    "No NIP-07 compatible extension (Alby, nos2x, and the like) was found.",
   nostrLinkFailed: "Could not link your Nostr key.",
   lastLoginMethodNotice:
     "You need at least one login method (the last one cannot be unlinked).",
