@@ -19,6 +19,15 @@ vi.mock("../lib/nostrConnect.js", async (importOriginal) => {
   };
 });
 
+const startNostrSignerLogin = vi.fn();
+vi.mock("../lib/nostrSignerLogin.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../lib/nostrSignerLogin.js")>();
+  return {
+    ...real,
+    startNostrSignerLogin: (...a: unknown[]) => startNostrSignerLogin(...a),
+  };
+});
+
 const { NostrConnectSheet } = await import("./NostrConnectSheet.js");
 const { NostrConnectError, loadSavedSession, saveSession } = await import(
   "../lib/nostrConnect.js"
@@ -43,6 +52,7 @@ function pendingUntilAbort(opts: { signal?: AbortSignal }) {
 function renderSheet() {
   const props = {
     title: "署名アプリでログイン",
+    intent: "login" as const,
     submit: vi.fn(async (sign: LoginEventSigner) => {
       await sign({ kind: 22242, created_at: 0, tags: [], content: "" });
     }),
@@ -65,8 +75,20 @@ beforeEach(() => {
   localStorage.clear();
   waitForConnect.mockReset();
   requestSignEvent.mockReset();
+  startNostrSignerLogin.mockReset();
   setCoarse(true);
+  setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)");
 });
+
+function setUserAgent(ua: string) {
+  Object.defineProperty(window.navigator, "userAgent", {
+    configurable: true,
+    value: ua,
+  });
+}
+
+const ANDROID_UA =
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36";
 
 describe("NostrConnectSheet", () => {
   it("スマホでは「Amber で開く」が nostrconnect:// のリンクになり、承認後に署名して終わる", async () => {
@@ -120,6 +142,7 @@ describe("NostrConnectSheet", () => {
     const { unmount } = render(
       <NostrConnectSheet
         title="t"
+        intent="login"
         submit={vi.fn()}
         onDone={vi.fn()}
         onFailed={vi.fn()}
@@ -160,6 +183,7 @@ describe("NostrConnectSheet", () => {
     requestSignEvent.mockResolvedValue(SIGNED);
     const props = {
       title: "t",
+      intent: "login" as const,
       submit: vi.fn(async (sign: LoginEventSigner) => {
         await sign({ kind: 22242, created_at: 0, tags: [], content: "" });
         throw new Error("server");
@@ -221,6 +245,64 @@ describe("NostrConnectSheet", () => {
       expect(await screen.findByRole("link", { name: "Amber で開く" })).toBeInTheDocument();
       expect(signal?.aborted).toBe(true);
       expect(loadSavedSession()).toBeNull();
+    });
+  });
+
+  describe("Android の Amber を直接呼ぶ（NIP-55）", () => {
+    it("Android では「Amber でログイン」をいちばん上に出し、nostrconnect は「ほかの署名アプリ」になる", async () => {
+      setUserAgent(ANDROID_UA);
+      waitForConnect.mockImplementation((_req, opts) => pendingUntilAbort(opts));
+      renderSheet();
+
+      const amber = await screen.findByRole("button", { name: "Amber でログイン" });
+      const other = screen.getByRole("link", { name: "ほかの署名アプリ（Nostr Connect）" });
+      expect(other.getAttribute("href")).toMatch(/^nostrconnect:\/\//);
+      expect(
+        amber.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(screen.queryByRole("link", { name: "Amber で開く" })).toBeNull();
+
+      startNostrSignerLogin.mockReturnValue(new Promise(() => {}));
+      fireEvent.click(amber);
+      expect(startNostrSignerLogin).toHaveBeenCalledWith("login");
+    });
+
+    it("連携のシートでは「Amber で連携」になり、連携として呼ぶ", async () => {
+      setUserAgent(ANDROID_UA);
+      waitForConnect.mockImplementation((_req, opts) => pendingUntilAbort(opts));
+      render(
+        <NostrConnectSheet
+          title="t"
+          intent="link"
+          submit={vi.fn()}
+          onDone={vi.fn()}
+          onFailed={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+      startNostrSignerLogin.mockReturnValue(new Promise(() => {}));
+      fireEvent.click(await screen.findByRole("button", { name: "Amber で連携" }));
+      expect(startNostrSignerLogin).toHaveBeenCalledWith("link");
+    });
+
+    it("お題が取れないなど Amber に移れなかったら、その旨を出して押し直せる", async () => {
+      setUserAgent(ANDROID_UA);
+      waitForConnect.mockImplementation((_req, opts) => pendingUntilAbort(opts));
+      startNostrSignerLogin.mockRejectedValue(new Error("network"));
+      renderSheet();
+
+      fireEvent.click(await screen.findByRole("button", { name: "Amber でログイン" }));
+      expect(
+        await screen.findByText("Amber を開けませんでした。もう一度お試しください。"),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Amber でログイン" })).not.toBeDisabled();
+    });
+
+    it("Android 以外では出さない", async () => {
+      waitForConnect.mockImplementation((_req, opts) => pendingUntilAbort(opts));
+      renderSheet();
+      await screen.findByRole("link", { name: "Amber で開く" });
+      expect(screen.queryByRole("button", { name: "Amber でログイン" })).toBeNull();
     });
   });
 });

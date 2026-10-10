@@ -6,6 +6,7 @@ import { Layout } from "./components/Layout.js";
 import { PublicLayout } from "./components/PublicLayout.js";
 import { EventLayout } from "./components/EventLayout.js";
 import { LoginPage } from "./pages/LoginPage.js";
+import { NostrSignerCallbackPage } from "./pages/NostrSignerCallbackPage.js";
 
 import { EventManagePage } from "./pages/EventManagePage.js";
 import { EventDetailPage } from "./pages/EventDetailPage.js";
@@ -190,6 +191,8 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        {/* Amber（NIP-55）で署名して戻ってくるページ (D-NOSTR-SIGNER) */}
+        <Route path="/login/nostr-signer" element={<NostrSignerCallbackPage />} />
         <Route path="/decks/import" element={<PublicLayout><DeckImportPage /></PublicLayout>} />
         <Route path="/event-invites" element={<Navigate to="/login?next=%2Fevent-invites" replace />} />
         {/* 未ログインの公開ページ */}
@@ -376,6 +379,8 @@ export function App() {
         <Route path="/me" element={<Navigate to={myPath} replace />} />
         <Route path="/following" element={<FollowingPage />} />
         <Route path="/account" element={<AccountPage />} />
+        {/* アカウント設定の連携で Amber（NIP-55）から戻ってくるページ (D-NOSTR-SIGNER) */}
+        <Route path="/login/nostr-signer" element={<NostrSignerCallbackPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         {/* 運営への招待 (#339)。承諾するまでイベントページは開けないのでここで返事する */}
         <Route path="/staff-invites" element={<StaffInvitesPage />} />

@@ -142,7 +142,8 @@ export function LoginPage() {
                 <Suspense fallback={null}>
                   <NostrConnectSheet
                     title={t("login.signerTitle")}
-                    submit={signLoginChallenge}
+                    intent="login"
+                submit={signLoginChallenge}
                     onDone={() => {
                       setSignerOpen(false);
                       void afterNostrLogin();

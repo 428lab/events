@@ -117,18 +117,9 @@ export type LoginEventSigner = (template: {
   content: string;
 }) => Promise<unknown>;
 
-/**
- * Nostr でログイン or 連携する（どの署名器でも同じ）。
- * チャレンジ取得 → kind:22242 に署名 → サーバー検証。
- * ログイン後、リレーから kind:0 を取得して表示名/アイコンを補完する。
- */
-export async function signLoginChallenge(
-  sign: LoginEventSigner,
-): Promise<void> {
-  const { challenge } = await api.get<{ challenge: string }>(
-    "/auth/nostr/challenge",
-  );
-  const event = (await sign({
+/** ログインのお題（kind:22242）の雛形。pubkey は署名器が埋める */
+export function loginEventTemplate(challenge: string) {
+  return {
     kind: 22242,
     created_at: Math.floor(Date.now() / 1000),
     tags: [
@@ -136,9 +127,40 @@ export async function signLoginChallenge(
       ["challenge", challenge],
     ],
     content: "events lab にログイン",
-  })) as { pubkey?: string };
+  };
+}
+
+/** お題を取る（使うと消える nonce。10分で切れる） */
+export async function fetchLoginChallenge(): Promise<string> {
+  const { challenge } = await api.get<{ challenge: string }>(
+    "/auth/nostr/challenge",
+  );
+  return challenge;
+}
+
+/**
+ * 署名済みのお題をサーバーに送る（ログイン中なら連携になる）。
+ * 通ったら、リレーから kind:0 を取得して表示名/アイコンを補完する。
+ */
+export async function submitSignedLoginEvent(event: {
+  pubkey?: string;
+}): Promise<void> {
   await api.post("/auth/nostr/login", { event });
   if (event.pubkey) await syncNostrProfile(event.pubkey);
+}
+
+/**
+ * Nostr でログイン or 連携する（どの署名器でも同じ）。
+ * チャレンジ取得 → kind:22242 に署名 → サーバー検証。
+ */
+export async function signLoginChallenge(
+  sign: LoginEventSigner,
+): Promise<void> {
+  const challenge = await fetchLoginChallenge();
+  const event = (await sign(loginEventTemplate(challenge))) as {
+    pubkey?: string;
+  };
+  await submitSignedLoginEvent(event);
 }
 
 /**

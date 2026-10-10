@@ -258,6 +258,7 @@ export function AccountPage() {
             <Suspense fallback={null}>
               <NostrConnectSheet
                 title={t("login.signerLinkTitle")}
+                intent="link"
                 submit={signLoginChallenge}
                 onDone={() => {
                   setSignerOpen(false);
