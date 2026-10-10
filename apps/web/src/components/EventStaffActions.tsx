@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Box, Button, Divider, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Stack, type SxProps, type Theme } from "@mui/material";
+import { Badge, Box, Button, Divider, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Stack, type SxProps, type Theme } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { Event, EventRole } from "@eventer/shared";
@@ -13,6 +13,7 @@ import LiveTvIcon from "@mui/icons-material/LiveTv";
 import PublishIcon from "@mui/icons-material/Publish";
 import QrCodeScannerIcon from "@mui/icons-material/QrCodeScanner";
 import { usePublishEvent } from "../api/hooks.js";
+import { useEventInquiryUnreadCount } from "../api/inquiryHooks.js";
 import { getEventPhase } from "../lib/eventPhase.js";
 import type { EventTiming } from "../lib/useEventTiming.js";
 import { MANAGEMENT_LINK_GROUPS, managementLinks } from "./EventManagementLinks.js";
@@ -39,10 +40,12 @@ export function EventStaffActions({ eventId, event, myRole, canManageSchedule, c
   sx?: SxProps<Theme>;
 }) {
   const isStaff = myRole === "staff";
+  // 主催者あての問い合わせの未読数 (D-EVENT-CONTACT)。スタッフのときだけ取りに行く
+  const { data: inquiryUnread = 0 } = useEventInquiryUnreadCount(eventId, isStaff);
   const canInvite = event.visibility === "private" && canManageAccess;
   // 時計は useEventTiming が 1 分ごとに再描画させるので、ここでは描画時の時刻を読むだけ
   const phase = getEventPhase(event, timing, Date.now());
-  if (isStaff) return <StaffActions eventId={eventId} event={event} chatAvailable={chatAvailable} phase={phase} sx={sx} />;
+  if (isStaff) return <StaffActions eventId={eventId} event={event} chatAvailable={chatAvailable} inquiryUnread={inquiryUnread} phase={phase} sx={sx} />;
   if (!canManageSchedule && !canInvite) return null;
   return <LimitedActions eventId={eventId} canManageSchedule={canManageSchedule} canInvite={canInvite} scheduling={phase === "scheduling"} sx={sx} />;
 }
@@ -67,8 +70,8 @@ function LimitedActions({ eventId, canManageSchedule, canInvite, scheduling, sx 
   </Stack>;
 }
 
-function StaffActions({ eventId, event, chatAvailable, phase, sx }: {
-  eventId: string; event: Event; chatAvailable: boolean; phase: ReturnType<typeof getEventPhase>; sx?: SxProps<Theme>;
+function StaffActions({ eventId, event, chatAvailable, inquiryUnread, phase, sx }: {
+  eventId: string; event: Event; chatAvailable: boolean; inquiryUnread: number; phase: ReturnType<typeof getEventPhase>; sx?: SxProps<Theme>;
 }) {
   const { t } = useTranslation();
   const publish = usePublishEvent();
@@ -91,7 +94,7 @@ function StaffActions({ eventId, event, chatAvailable, phase, sx }: {
   }
 
   // Menu の子に Fragment を置けないので、区切りごとに平らな配列へ積む
-  const links = managementLinks({ isStaff: true, attendanceCheck: event.attendanceCheck, chatAvailable });
+  const links = managementLinks({ isStaff: true, attendanceCheck: event.attendanceCheck, chatAvailable, inquiryUnread });
   const items: ReactNode[] = [];
   for (const group of MANAGEMENT_LINK_GROUPS) {
     const inGroup = links.filter((link) => link.group === group.key);
@@ -101,6 +104,8 @@ function StaffActions({ eventId, event, chatAvailable, phase, sx }: {
       items.push(<MenuItem key={link.path} component={RouterLink} to={`${base}/${link.path}`} onClick={close}>
         <ListItemIcon>{link.icon}</ListItemIcon>
         <ListItemText>{t(link.labelKey)}</ListItemText>
+        {(link.badge ?? 0) >= 1 && <Badge color="error" badgeContent={link.badge} max={99}
+          sx={{ ml: 2, "& .MuiBadge-badge": { position: "static", transform: "none" } }} />}
       </MenuItem>);
       // 公開は内容の区切りの「編集」の直後に置く（下書きのときだけ）
       if (link.path === "edit" && event.status === "draft") {
@@ -115,7 +120,7 @@ function StaffActions({ eventId, event, chatAvailable, phase, sx }: {
     items.push(<Divider key="contest-divider" />);
     items.push(<MenuItem key="contest" component={RouterLink} to={`${base}/manage#contest-operations`} onClick={close}>
       <ListItemIcon><EmojiEventsOutlinedIcon /></ListItemIcon>
-      <ListItemText>{t("eventManagement.contestOps")}</ListItemText>
+      <ListItemText>{t("eventRun.operationsTitle")}</ListItemText>
     </MenuItem>);
   }
   items.push(<Divider key="page-divider" />);

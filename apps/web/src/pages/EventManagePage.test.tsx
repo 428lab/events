@@ -43,8 +43,7 @@ it("noncontest staff land on links, not a mounted public-content dashboard; hash
   draw();
   await screen.findByRole("heading", { name: "夏の発表会 / 運営" });
   expect(screen.getByRole("link", { name: "イベント情報へ戻る" })).toHaveAttribute("href", "/events/e");
-  // 下書きの注意と公開ボタンは詳細ページに移した (#613)
-  expect(screen.queryByRole("button", { name: "公開する" })).toBeNull();
+  expect(screen.getByRole("button", { name: "公開する" })).toBeEnabled();
   expect(screen.getByRole("link", { name: "編集" })).toHaveAttribute("href", "/events/e/edit");
   expect(screen.getByRole("link", { name: "QR受付" })).toHaveAttribute("href", "/events/e/checkin");
   expect(screen.queryByRole("heading", { name: "コンテスト運営" })).toBeNull();

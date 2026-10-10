@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Button, Stack, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { Link as RouterLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Event, EventRole } from "@eventer/shared";
-import { useEvent } from "../api/hooks.js";
+import { useEvent, usePublishEvent } from "../api/hooks.js";
 import { useContestAnchor } from "../lib/useContestAnchor.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 import { ContestOperationsSection } from "../components/ContestOperationsSection.js";
@@ -65,9 +65,13 @@ function StaffManagement({ eventId, event, myRole, canInvite }: {
   eventId: string; event: Event; myRole: EventRole | null; canInvite: boolean;
 }) {
   const { t } = useTranslation();
+  const publish = usePublishEvent();
   const { canChat, chatAvailable } = useEventChatAccess(eventId);
   const isStaff = myRole === "staff";
   return <>
+    {event.status === "draft" && <Alert severity="warning" action={
+      <Button color="inherit" size="small" disabled={publish.isPending} onClick={() => publish.mutate(event.id)}>{t("eventDetail.publish")}</Button>
+    }><Trans i18nKey="eventDetail.draftNotice" components={{ b: <strong /> }} /></Alert>}
     {event.contestMode && <ContestOperationsSection eventId={eventId} event={event} myRole={myRole} />}
     <Typography variant="h6" component="h2">{t("eventManagement.general")}</Typography>
     <EventManagementLinks eventId={eventId} isStaff={isStaff} attendanceCheck={event.attendanceCheck} chatAvailable={chatAvailable} />

@@ -23,6 +23,10 @@ vi.mock("../lib/useEventChatAccess.js", () => ({
   useEventChatAccess: () => ({ canChat: false, chatAvailable: false }),
 }));
 vi.mock("../api/analyticsHooks.js", () => ({ useRecordView: () => {} }));
+vi.mock("../api/inquiryHooks.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/inquiryHooks.js")>()),
+  useEventInquiryUnreadCount: () => ({ data: 0 }),
+}));
 // 検証対象は実ページと実ShareButton。周辺セクションの取得・副作用は置き換える。
 vi.mock("../components/SchedulePanel.js", () => ({ SchedulePanel: () => null }));
 vi.mock("../components/AddToCalendarButton.js", () => ({ AddToCalendarButton: () => null }));

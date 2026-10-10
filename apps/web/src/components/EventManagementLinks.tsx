@@ -31,7 +31,6 @@ export interface ManagementLink {
   labelKey: ParseKeys;
   icon: ReactNode;
   group: (typeof MANAGEMENT_LINK_GROUPS)[number]["key"];
-  variant?: "contained";
   show: boolean;
   badge?: number;
 }
@@ -45,7 +44,7 @@ export function managementLinks({ isStaff, attendanceCheck, chatAvailable, inqui
 }): ManagementLink[] {
   if (!isStaff) return [];
   const links: ManagementLink[] = [
-    { path: "edit", labelKey: "common.edit", icon: <EditIcon />, group: "content", variant: "contained", show: isStaff },
+    { path: "edit", labelKey: "common.edit", icon: <EditIcon />, group: "content", show: isStaff },
     // ここから運営用（myRole === "staff" のときだけ。isAdmin は混ぜない #275）
     { path: "live/control", labelKey: "eventDetail.live", icon: <LiveTvIcon />, group: "day", show: isStaff },
     { path: "broadcast", labelKey: "eventDetail.broadcast", icon: <CampaignIcon />, group: "comms", show: isStaff },
@@ -81,7 +80,7 @@ export function EventManagementLinks({ eventId, isStaff, attendanceCheck, chatAv
   const links = managementLinks({ isStaff, attendanceCheck, chatAvailable, inquiryUnread });
   return <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
     {links.map((link) => <Badge key={link.path} color="error" badgeContent={link.badge ?? 0} max={99}>
-      <Button component={RouterLink} to={`/events/${eventId}/${link.path}`} variant={link.variant ?? "outlined"} startIcon={link.icon}>
+      <Button component={RouterLink} to={`/events/${eventId}/${link.path}`} variant="outlined" startIcon={link.icon}>
         {t(link.labelKey)}
       </Button>
     </Badge>)}

@@ -40,6 +40,10 @@ vi.mock("../lib/useEventChatAccess.js", () => ({
   useEventChatAccess: () => ({ canChat: state.canChat, chatAvailable: false }),
 }));
 vi.mock("../api/analyticsHooks.js", () => ({ useRecordView: () => {} }));
+vi.mock("../api/inquiryHooks.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/inquiryHooks.js")>()),
+  useEventInquiryUnreadCount: () => ({ data: 0 }),
+}));
 // 配置の検証対象は実ページと実BingoPanel。周辺セクションの取得・副作用は置き換える。
 vi.mock("../components/SchedulePanel.js", () => ({ SchedulePanel: () => null }));
 vi.mock("../components/ShareButton.js", () => ({ ShareButton: () => null }));
@@ -170,7 +174,7 @@ describe("ビンゴ会場への目立つ入口 (#500)", () => {
     expect(screen.getByRole("region", { name: "Bingo" })).toBeInTheDocument();
     expect(screen.getByText("Drawing numbers")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Run the draw" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Operations" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Event operations" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open bingo" })).toHaveAttribute("href", "/events/event/bingo");
   });
 });
