@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, Suspense, lazy, useState } from "react";
 import {
   Alert,
   Box,
@@ -29,7 +29,11 @@ import { LanguageCard } from "../components/LanguageCard.js";
 import { AccountMergeCard } from "../components/AccountMergeCard.js";
 import { AccountDeleteCard } from "../components/AccountDeleteCard.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
-import { nostrNip07Login } from "../lib/nostr.js";
+import {
+  hasNip07,
+  nostrNip07Login,
+  signLoginChallenge,
+} from "../lib/nostr.js";
 import { ApiError } from "../api/client.js";
 import { errorCode } from "../lib/errorMessage.js";
 import { i18next, tDynamic } from "../i18n/index.js";
@@ -39,6 +43,13 @@ import {
   clearQueryParam,
 } from "../lib/blueskyError.js";
 import { BlueskyHandleForm } from "../components/BlueskyHandleForm.js";
+
+// 署名アプリでつなぐシートは開いたときだけ読む（リレーとのやりとりの部品を、ふだんのページに載せない）
+const NostrConnectSheet = lazy(() =>
+  import("../components/NostrConnectSheet.js").then((m) => ({
+    default: m.NostrConnectSheet,
+  })),
+);
 
 /** OAuth コールバックの ?link_error / API の 409 で返るコードを文言にする。
  *  表は辞書（linkError 名前空間）にあり、知らないコードは default に落ちる */
@@ -56,6 +67,8 @@ export function AccountPage() {
   const qc = useQueryClient();
   const [nostrBusy, setNostrBusy] = useState(false);
   const [nostrError, setNostrError] = useState<string | null>(null);
+  // 拡張が無い人は、署名アプリ（Amber など）でつなぐシートを開く (D-NOSTR-SIGNER)
+  const [signerOpen, setSignerOpen] = useState(false);
   // 連携エラーはページ内アラートだと気づきにくいためモーダルで表示 (#245)。
   // OAuth コールバックの ?link_error=already_linked / account_in_use と、
   // Bluesky のフローが途中で失敗した ?bluesky_error= (#381) を初期値に取り込む。
@@ -91,24 +104,32 @@ export function AccountPage() {
   ];
   const canUnlink = identities.length > 1;
 
+  const afterNostrLink = async () => {
+    await qc.invalidateQueries({ queryKey: ["identities"] });
+    await qc.invalidateQueries({ queryKey: ["me"] });
+  };
+
+  const showNostrLinkError = (e: unknown) => {
+    // 引き取り拒否系は見落とし防止のためモーダルで表示 (#245)
+    if (e instanceof ApiError && e.status === 409) {
+      setLinkErrorDialog(linkErrorMessage(errorCode(e)));
+    } else {
+      setNostrError(t("settings.nostrLinkFailed"));
+    }
+  };
+
   const linkNostr = async () => {
     setNostrError(null);
+    if (!hasNip07()) {
+      setSignerOpen(true);
+      return;
+    }
     setNostrBusy(true);
     try {
       await nostrNip07Login();
-      await qc.invalidateQueries({ queryKey: ["identities"] });
-      await qc.invalidateQueries({ queryKey: ["me"] });
+      await afterNostrLink();
     } catch (e) {
-      // 引き取り拒否系は見落とし防止のためモーダルで表示 (#245)
-      if (e instanceof ApiError && e.status === 409) {
-        setLinkErrorDialog(linkErrorMessage(errorCode(e)));
-      } else {
-        setNostrError(
-          e instanceof Error && e.message === "no_extension"
-            ? t("settings.nostrExtensionMissing")
-            : t("settings.nostrLinkFailed"),
-        );
-      }
+      showNostrLinkError(e);
     } finally {
       setNostrBusy(false);
     }
@@ -233,6 +254,23 @@ export function AccountPage() {
             })}
           </Stack>
 
+          {signerOpen && (
+            <Suspense fallback={null}>
+              <NostrConnectSheet
+                title={t("login.signerLinkTitle")}
+                submit={signLoginChallenge}
+                onDone={() => {
+                  setSignerOpen(false);
+                  void afterNostrLink();
+                }}
+                onFailed={(e) => {
+                  setSignerOpen(false);
+                  showNostrLinkError(e);
+                }}
+                onClose={() => setSignerOpen(false)}
+              />
+            </Suspense>
+          )}
           {nostrError && (
             <Alert severity="warning" sx={{ mt: 2 }}>
               {nostrError}

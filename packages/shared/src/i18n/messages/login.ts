@@ -6,12 +6,28 @@ const ja = {
   tagline: "募集から配信まで全部やる、イベント運営ツール",
   signInWith: "{{provider}} でログイン",
   checking: "確認中…",
-  // 拡張機能の名前は利用者が探すときの手がかりなので、そのまま残す
-  extensionMissing:
-    "対応する拡張機能（Alby、nos2x など）が見つかりません。インストールしてから再度お試しください。",
   signInFailed: "ログインに失敗しました。",
+  // 拡張機能・アプリの名前は利用者が探すときの手がかりなので、そのまま残す
   extensionHint:
-    "このログイン方法には、対応するブラウザ拡張機能（Alby、nos2x など）が必要です。",
+    "ブラウザ拡張機能（Alby、nos2x など）か、Amber などの署名アプリでログインできます。秘密鍵を入力する必要はありません。",
+
+  /** 署名アプリ（NIP-46 の nostrconnect://）でつなぐシート (D-NOSTR-SIGNER) */
+  signerTitle: "署名アプリでログイン",
+  signerLinkTitle: "署名アプリで連携",
+  signerOpenApp: "Amber で開く",
+  signerReturnHint: "署名アプリで承認したら、このページに戻ってください。",
+  signerQrHint: "スマホの署名アプリ（Amber など）でこの QR を読み取ってください。",
+  signerQrLabel: "署名アプリでつなぐための QR コード",
+  signerAppRequired: "Amber（Android）などの、Nostr Connect に対応した署名アプリが必要です。",
+  signerWaiting: "署名アプリからの応答を待っています…",
+  signerApproveSign: "署名アプリで、ログインの署名を承認してください。",
+  signerSavedWaiting: "前回つないだ署名アプリで署名を待っています…",
+  signerSavedHint: "Amber などの署名アプリで承認してください（通知から開けます）。",
+  signerUseAnother: "別の署名アプリでつなぐ",
+  signerTimeout: "署名アプリからの応答がありませんでした。もう一度お試しください。",
+  signerSignTimeout: "署名が承認されませんでした。もう一度お試しください。",
+  signerRejected: "署名アプリで署名が断られました。",
+  signerRelayFailed: "リレーにつながりませんでした。時間をおいて試してください。",
   devLogin: "開発用ログイン",
   devLoginNote: "※ 開発用ログインは開発環境でのみ動作します",
 
@@ -28,11 +44,26 @@ const en: Record<keyof typeof ja, string> = {
   tagline: "Run your event end to end, from sign-ups to the live stream.",
   signInWith: "Sign in with {{provider}}",
   checking: "Checking…",
-  extensionMissing:
-    "No supported browser extension (Alby, nos2x, and so on) was found. Please install one and try again.",
   signInFailed: "Sign-in failed.",
   extensionHint:
-    "This sign-in method needs a supported browser extension (Alby, nos2x, and so on).",
+    "Sign in with a browser extension (Alby, nos2x, and so on) or a signer app such as Amber. You never need to enter your secret key.",
+
+  signerTitle: "Sign in with a signer app",
+  signerLinkTitle: "Link with a signer app",
+  signerOpenApp: "Open Amber",
+  signerReturnHint: "After you approve in the signer app, come back to this page.",
+  signerQrHint: "Scan this QR code with a signer app on your phone (such as Amber).",
+  signerQrLabel: "QR code for connecting a signer app",
+  signerAppRequired: "You need a signer app that supports Nostr Connect, such as Amber (Android).",
+  signerWaiting: "Waiting for the signer app to respond…",
+  signerApproveSign: "Approve the sign-in signature in your signer app.",
+  signerSavedWaiting: "Waiting for a signature from the signer app you connected last time…",
+  signerSavedHint: "Approve it in your signer app, such as Amber (you can open it from the notification).",
+  signerUseAnother: "Connect a different signer app",
+  signerTimeout: "The signer app did not respond. Please try again.",
+  signerSignTimeout: "The signature was not approved. Please try again.",
+  signerRejected: "The signer app declined to sign.",
+  signerRelayFailed: "Could not reach the relays. Please wait a moment and try again.",
   devLogin: "Development sign-in",
   devLoginNote: "Development sign-in only works in a development environment.",
 
