@@ -1,5 +1,5 @@
 import { Suspense, lazy } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import {
   Alert,
   Avatar,
@@ -8,17 +8,14 @@ import {
   CardContent,
   Chip,
   Grid,
-  IconButton,
   Link,
   Stack,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import EggIcon from "@mui/icons-material/Egg";
 import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import LockIcon from "@mui/icons-material/Lock";
-import SettingsIcon from "@mui/icons-material/Settings";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
@@ -49,6 +46,7 @@ import { EventMemberList } from "../components/EventMemberList.js";
 import { EventDetailSidebar } from "../components/EventDetailSidebar.js";
 import { EventSubmissions } from "../components/EventSubmissions.js";
 import { EventInquiryButton } from "../components/EventInquiryButton.js";
+import { EventStaffActions } from "../components/EventStaffActions.js";
 import {
   formatDateRange,
   formatDateTime,
@@ -108,6 +106,10 @@ export function EventDetailPage() {
     <Grid container spacing={3}>
       <Grid item xs={12} md={8}>
         <Stack spacing={3}>
+      {/* 下書きの注意 (#613)。公開ボタンは見出し直下の主ボタンが持つ */}
+      {isStaff && event.status === "draft" && (
+        <Alert severity="warning"><Trans i18nKey="eventDetail.draftNotice" components={{ b: <strong /> }} /></Alert>
+      )}
       {eventImageUrl(event) && (
         <Box
           component="img"
@@ -196,13 +198,10 @@ export function EventDetailPage() {
           )}
           {myRole && <Chip size="small" label={roleLabel(myRole)} />}
           <ShareButton slug={event.slug} title={event.title} />
-          {(isStaff || data.canManageSchedule || (event.visibility === "private" && data.canManageAccess)) && (
-            <Tooltip title={t("eventManagement.title")}>
-              <IconButton id="contest-operations" size="large" color="primary" component={RouterLink} to={`/events/${id}/manage`} aria-label={t("eventManagement.title")}>
-                <SettingsIcon />
-              </IconButton>
-            </Tooltip>
-          )}
+          {/* 運営の入口 (#613)。出す条件と中身は EventStaffActions が全部持つ */}
+          <EventStaffActions eventId={id} event={event} myRole={myRole} canManageSchedule={Boolean(data.canManageSchedule)}
+            canManageAccess={Boolean(data.canManageAccess)} chatAvailable={chatAvailable} timing={timing}
+            sx={{ ml: { md: "auto" }, width: { xs: "100%", md: "auto" } }} />
         </Stack>
         <Typography
           variant="h6"
