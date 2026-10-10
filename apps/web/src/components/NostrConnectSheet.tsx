@@ -24,6 +24,11 @@ import {
   waitForConnect,
   type NostrConnectSession,
 } from "../lib/nostrConnect.js";
+import {
+  isAndroid,
+  startNostrSignerLogin,
+  type NostrSignerIntent,
+} from "../lib/nostrSignerLogin.js";
 
 type Phase =
   | { kind: "starting" }
@@ -49,15 +54,21 @@ function isCoarsePointer(): boolean {
  *
  * `submit` はお題への署名とサーバーへの送信（`signLoginChallenge`）。
  * 署名アプリ以外の失敗（サーバーで弾かれた等）は `onFailed` で呼び出し元に返す。
+ *
+ * Android では、いちばん上に Amber を直接呼ぶ（NIP-55）ボタンを出す（PR-B）。
+ * リレーを使わず、署名して戻ってくる先は `/login/nostr-signer`。`intent` は、
+ * 戻ってきたあとにログインか連携かを分けるためのもの。
  */
 export function NostrConnectSheet({
   title,
+  intent,
   submit,
   onDone,
   onFailed,
   onClose,
 }: {
   title: string;
+  intent: NostrSignerIntent;
   submit: (sign: LoginEventSigner) => Promise<void>;
   onDone: () => void;
   onFailed: (error: unknown) => void;
@@ -70,6 +81,21 @@ export function NostrConnectSheet({
     loadSavedSession() ? { kind: "saved" } : { kind: "starting" },
   );
   const [coarse] = useState(isCoarsePointer);
+  const [android] = useState(isAndroid);
+  const [amberBusy, setAmberBusy] = useState(false);
+  const [amberError, setAmberError] = useState(false);
+
+  // お題を取って Amber に移る。移ったらこのページは離れるので、戻すのは失敗のときだけ
+  const openAmber = async () => {
+    setAmberError(false);
+    setAmberBusy(true);
+    try {
+      await startNostrSignerLogin(intent);
+    } catch {
+      setAmberError(true);
+      setAmberBusy(false);
+    }
+  };
 
   useEffect(() => {
     const ac = new AbortController();
@@ -148,9 +174,35 @@ export function NostrConnectSheet({
 
         {phase.kind === "connect" && (
           <Stack spacing={2} alignItems="center" sx={{ py: 1 }}>
+            {android && (
+              <>
+                <Button
+                  variant="contained"
+                  size="large"
+                  fullWidth
+                  disabled={amberBusy}
+                  onClick={openAmber}
+                >
+                  {t(intent === "link" ? "login.signerAmberLink" : "login.signerAmberLogin")}
+                </Button>
+                <Typography variant="body2" color="text.secondary" textAlign="center">
+                  {t("login.signerAmberHint")}
+                </Typography>
+                {amberError && (
+                  <Alert severity="warning" sx={{ width: "100%" }}>
+                    {t("login.signerAmberFailed")}
+                  </Alert>
+                )}
+              </>
+            )}
             {coarse && (
-              <Button variant="contained" size="large" fullWidth href={phase.uri}>
-                {t("login.signerOpenApp")}
+              <Button
+                variant={android ? "outlined" : "contained"}
+                size={android ? "medium" : "large"}
+                fullWidth
+                href={phase.uri}
+              >
+                {t(android ? "login.signerOtherApp" : "login.signerOpenApp")}
               </Button>
             )}
             <Box sx={{ width: coarse ? 160 : 240, maxWidth: "100%" }}>
