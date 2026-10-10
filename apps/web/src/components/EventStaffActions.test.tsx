@@ -18,6 +18,12 @@ vi.mock("../api/hooks.js", async (importOriginal) => ({
   usePublishEvent: () => publish,
 }));
 
+const inquiry = vi.hoisted(() => ({ unread: 0 }));
+vi.mock("../api/inquiryHooks.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/inquiryHooks.js")>()),
+  useEventInquiryUnreadCount: () => ({ data: inquiry.unread }),
+}));
+
 const HOUR = 3600000;
 const NOW = new Date("2026-10-09T12:00:00+09:00").getTime();
 const NEXT_WEEK = NOW + 7 * 24 * HOUR;
@@ -53,6 +59,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   publish.mutate.mockClear();
   publish.isPending = false;
+  inquiry.unread = 0;
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -164,13 +171,20 @@ describe("「運営」メニュー (#613)", () => {
     expect(within(openMenu()).queryByRole("menuitem", { name: "公開する" })).toBeNull();
   });
 
-  it("コンテストのときだけ「コンテスト進行」を出す", () => {
+  it("コンテストのときだけ「コンテスト運営」を出す", () => {
     const view = draw();
-    expect(within(openMenu()).queryByRole("menuitem", { name: "コンテスト進行" })).toBeNull();
+    expect(within(openMenu()).queryByRole("menuitem", { name: "コンテスト運営" })).toBeNull();
     view.unmount();
     draw({ event: ev({ contestMode: true }) });
-    expect(within(openMenu()).getByRole("menuitem", { name: "コンテスト進行" }))
+    expect(within(openMenu()).getByRole("menuitem", { name: "コンテスト運営" }))
       .toHaveAttribute("href", "/events/e/manage#contest-operations");
+  });
+
+  it("問い合わせの未読があればメニューの問い合わせ項目に件数を出す", () => {
+    inquiry.unread = 3;
+    draw();
+    const item = within(openMenu()).getAllByRole("menuitem").find((el) => el.getAttribute("href") === "/events/e/inquiries")!;
+    expect(item).toHaveTextContent("3");
   });
 });
 
