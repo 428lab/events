@@ -140,6 +140,9 @@ describe("buildConnectRequest (nostrconnect:// の URI)", () => {
     ]);
     expect(u.searchParams.get("perms")).toBe("sign_event:22242");
     expect(u.searchParams.get("name")).toBe("events lab");
+    // 空白は `+` ではなく `%20`（Amethyst は `+` をそのまま表示する）
+    expect(req.uri).toContain("name=events%20lab");
+    expect(req.uri).not.toContain("+");
     expect(u.searchParams.get("url")).toBe("https://events.kojira.io");
     expect(u.searchParams.get("secret")).toBe(req.secret);
     expect(req.secret).toMatch(/^[0-9a-f]{32}$/);
