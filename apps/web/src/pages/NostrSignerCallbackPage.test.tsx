@@ -32,8 +32,8 @@ const replaceMock = vi.fn();
 const originalLocation = window.location;
 
 /** 戻り先の URL を開いた状態にする（replace だけ見張る） */
-function openCallback(search: string) {
-  window.history.replaceState(null, "", `/login/nostr-signer${search}`);
+function openCallback(hash: string) {
+  window.history.replaceState(null, "", `/login/nostr-signer${hash}`);
   Object.defineProperty(window, "location", {
     configurable: true,
     value: {
@@ -43,6 +43,9 @@ function openCallback(search: string) {
       },
       get search() {
         return originalLocation.search;
+      },
+      get hash() {
+        return originalLocation.hash;
       },
       replace: replaceMock,
     },
@@ -68,11 +71,11 @@ describe("NostrSignerCallbackPage", () => {
     submitMock.mockResolvedValue(undefined);
     localStorage.setItem("postLoginRedirect", "/events/abc");
     localStorage.setItem(NOSTR_SIGNER_INTENT_KEY, "login");
-    openCallback(`?event=${encodeURIComponent(JSON.stringify(SIGNED))}`);
+    openCallback(`#${encodeURIComponent(JSON.stringify(SIGNED))}`);
 
     render(<NostrSignerCallbackPage />);
     expect(screen.getByText("ログインしています…")).toBeInTheDocument();
-    expect(originalLocation.search).toBe("");
+    expect(originalLocation.hash).toBe("");
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/events/abc"));
     expect(submitMock).toHaveBeenCalledTimes(1);
     expect(submitMock).toHaveBeenCalledWith(SIGNED);
@@ -83,7 +86,7 @@ describe("NostrSignerCallbackPage", () => {
   it("戻り先が無ければ /me へ。外部の URL は使わない", async () => {
     submitMock.mockResolvedValue(undefined);
     localStorage.setItem("postLoginRedirect", "https://evil.example/");
-    openCallback(`?event=${encodeURIComponent(JSON.stringify(SIGNED))}`);
+    openCallback(`#${encodeURIComponent(JSON.stringify(SIGNED))}`);
 
     render(<NostrSignerCallbackPage />);
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/me"));
@@ -93,7 +96,7 @@ describe("NostrSignerCallbackPage", () => {
     submitMock.mockResolvedValue(undefined);
     localStorage.setItem(NOSTR_SIGNER_INTENT_KEY, "link");
     localStorage.setItem("postLoginRedirect", "/events/abc");
-    openCallback(`?event=${encodeURIComponent(JSON.stringify(SIGNED))}`);
+    openCallback(`#${encodeURIComponent(JSON.stringify(SIGNED))}`);
 
     render(<NostrSignerCallbackPage />);
     expect(screen.getByText("連携しています…")).toBeInTheDocument();
@@ -105,7 +108,7 @@ describe("NostrSignerCallbackPage", () => {
   it("連携で引き取りを断られた (409) ら、アカウント設定のいつものモーダルで説明する", async () => {
     submitMock.mockRejectedValue(new ApiError(409, { error: "account_in_use" }));
     localStorage.setItem(NOSTR_SIGNER_INTENT_KEY, "link");
-    openCallback(`?event=${encodeURIComponent(JSON.stringify(SIGNED))}`);
+    openCallback(`#${encodeURIComponent(JSON.stringify(SIGNED))}`);
 
     render(<NostrSignerCallbackPage />);
     await waitFor(() =>
@@ -115,7 +118,7 @@ describe("NostrSignerCallbackPage", () => {
 
   it("サーバーで弾かれたら、エラーとログイン画面に戻るリンクを出す", async () => {
     submitMock.mockRejectedValue(new ApiError(401, { error: "invalid_event" }));
-    openCallback(`?event=${encodeURIComponent(JSON.stringify(SIGNED))}`);
+    openCallback(`#${encodeURIComponent(JSON.stringify(SIGNED))}`);
 
     render(<NostrSignerCallbackPage />);
     expect(await screen.findByText("ログインに失敗しました。")).toBeInTheDocument();
@@ -127,12 +130,12 @@ describe("NostrSignerCallbackPage", () => {
   });
 
   it("event が無い・壊れた JSON なら、何も送らずにエラーを出す", async () => {
-    openCallback("?event=%7Bbroken");
+    openCallback("#%7Bbroken");
     render(<NostrSignerCallbackPage />);
     expect(
       screen.getByText("署名アプリから署名を受け取れませんでした。もう一度お試しください。"),
     ).toBeInTheDocument();
-    expect(originalLocation.search).toBe("");
+    expect(originalLocation.hash).toBe("");
     await new Promise((r) => setTimeout(r, 0));
     expect(submitMock).not.toHaveBeenCalled();
   });

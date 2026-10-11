@@ -15,7 +15,7 @@ import { safeRedirectPath } from "../lib/safeRedirect.js";
 /**
  * Amber（NIP-55）で署名して戻ってくるページ `/login/nostr-signer` (D-NOSTR-SIGNER PR-B)。
  *
- * 署名済みのお題を URL から読んだら、すぐ URL から消す（お題の nonce は使うと消えるが、
+ * 署名済みのお題を URL のフラグメントから読んだら、すぐ URL から消す（お題の nonce は使うと消えるが、
  * 履歴に残さない）。サーバーに送り、通ったら移る。ページを読み直すので、
  * ログイン状態はふつうの起動と同じ流れで反映される。
  * - ログイン：控えた戻り先（postLoginRedirect）か /me
@@ -27,7 +27,7 @@ export function NostrSignerCallbackPage() {
   // StrictMode で effect が2回走っても、送るのは1回だけ
   const started = useRef(false);
   const [state] = useState(() => ({
-    event: parseSignedEventFromUrl(window.location.search),
+    event: parseSignedEventFromUrl(window.location.hash),
     intent: readNostrSignerIntent(),
   }));
   const [error, setError] = useState<string | null>(() =>

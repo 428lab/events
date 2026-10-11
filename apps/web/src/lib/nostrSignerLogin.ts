@@ -7,6 +7,12 @@ import { fetchLoginChallenge, loginEventTemplate } from "./nostr.js";
  * リレーは使わない。Amber が署名済みのお題を `callbackUrl` の末尾に付けて、
  * ブラウザで開き直す。受け取るのは `/login/nostr-signer`（NostrSignerCallbackPage）。
  * `returnType=event` にして、pubkey を含む署名済みイベント全体を1往復で受け取る。
+ * pubkey は渡さなくてよい（Amber が自分の鍵で埋める。Amber IntentUtils.getUnsignedEvent）。
+ *
+ * Amber は `nostrsigner:` の URL 全体をデコードしてから `?` で区切って読む
+ * （Amber IntentUtils.getIntentDataWithoutExtras）。なので `callbackUrl` に `?` を入れると
+ * そこで切れる。戻り先は `#` で終わらせ、結果はフラグメントで受け取る。
+ * 同じ理由で `+` は空白にならない（`%2b` に置き換えてからデコードする）ので、空白は `%20` にする。
  */
 
 /** 戻り先のページ。同じオリジンの固定のパスだけにする（外部への踏み台にしない） */
@@ -26,13 +32,15 @@ export function buildSignEventUrl(
   template: Record<string, unknown>,
   origin: string,
 ): string {
-  const params = new URLSearchParams({
-    type: "sign_event",
-    returnType: "event",
-    compressionType: "none",
-    appName: "events lab",
-    callbackUrl: `${origin}${NOSTR_SIGNER_CALLBACK_PATH}?event=`,
-  });
+  const params = [
+    ["type", "sign_event"],
+    ["returnType", "event"],
+    ["compressionType", "none"],
+    ["appName", "events lab"],
+    ["callbackUrl", `${origin}${NOSTR_SIGNER_CALLBACK_PATH}#`],
+  ]
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join("&");
   return `nostrsigner:${encodeURIComponent(JSON.stringify(template))}?${params}`;
 }
 
@@ -60,17 +68,15 @@ export function clearNostrSignerIntent(): void {
 }
 
 /**
- * 戻り先の URL から、署名済みのイベントを取り出す。
- * Amber は結果を `?event=` の後ろに付けるが、エンコードしてあるとは限らないので、
- * `event=` から後ろをそのまま読み、デコードできればデコードする。
+ * 戻り先の URL のフラグメント（`#` の後ろ）から、署名済みのイベントを取り出す。
+ * Amber はエンコードして付ける（Uri.encode）が、ブラウザが一部を戻すこともあるので、
+ * デコードできればデコードし、だめならそのまま読む。
  * 署名済みのイベント（pubkey・sig つき）でなければ null。
  */
 export function parseSignedEventFromUrl(
-  search: string,
+  hash: string,
 ): { pubkey: string; [k: string]: unknown } | null {
-  const at = search.indexOf("event=");
-  if (at < 0) return null;
-  const raw = search.slice(at + "event=".length);
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
   if (!raw) return null;
   for (const text of [safeDecode(raw), raw]) {
     if (text === null) continue;

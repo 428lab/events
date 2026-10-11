@@ -63,8 +63,31 @@ describe("buildSignEventUrl", () => {
     expect(params.get("compressionType")).toBe("none");
     expect(params.get("appName")).toBe("events lab");
     expect(params.get("callbackUrl")).toBe(
-      "https://events.kojira.io/login/nostr-signer?event=",
+      "https://events.kojira.io/login/nostr-signer#",
     );
+  });
+
+  it("Amber の読み方（全体をデコードして `?` と `&` で区切る）でも、戻り先と名前が崩れない", () => {
+    const url = buildSignEventUrl(
+      { kind: 22242, created_at: 1, tags: [["challenge", "abc"]], content: "events lab にログイン" },
+      "https://events.kojira.io",
+    );
+    // Amber IntentUtils.decodeData / getIntentDataWithoutExtras と同じ手順
+    const decoded = decodeURIComponent(url.replace("nostrsigner:", "").replace(/\+/g, "%2b"));
+    const [data, ...rest] = decoded.split("?");
+    const read: Record<string, string> = {};
+    for (const pair of rest.filter((p) => p.trim() !== "").flatMap((p) => p.split("&"))) {
+      const [k, ...v] = pair.split("=");
+      read[k] = v.join("=");
+    }
+    expect(read.callbackUrl).toBe("https://events.kojira.io/login/nostr-signer#");
+    expect(read.appName).toBe("events lab");
+    expect(read.type).toBe("sign_event");
+    expect(read.returnType).toBe("event");
+    expect(Object.keys(read).sort()).toEqual(
+      ["appName", "callbackUrl", "compressionType", "returnType", "type"],
+    );
+    expect(JSON.parse(data).tags).toEqual([["challenge", "abc"]]);
   });
 });
 
@@ -113,26 +136,26 @@ describe("readNostrSignerIntent", () => {
 });
 
 describe("parseSignedEventFromUrl", () => {
-  it("エンコードされた署名済みイベントを読む", () => {
+  it("フラグメントにエンコードして付いた署名済みイベントを読む（Amber は Uri.encode で付ける）", () => {
     expect(
-      parseSignedEventFromUrl(`?event=${encodeURIComponent(JSON.stringify(SIGNED))}`),
+      parseSignedEventFromUrl(`#${encodeURIComponent(JSON.stringify(SIGNED))}`),
     ).toEqual(SIGNED);
   });
 
   it("エンコードされずにそのまま付いていても読む", () => {
-    expect(parseSignedEventFromUrl(`?event=${JSON.stringify(SIGNED)}`)).toEqual(SIGNED);
+    expect(parseSignedEventFromUrl(`#${JSON.stringify(SIGNED)}`)).toEqual(SIGNED);
   });
 
-  it("event が無い・空・壊れた JSON・署名が無いものは null", () => {
+  it("空・壊れた JSON・署名が無いものは null", () => {
     expect(parseSignedEventFromUrl("")).toBeNull();
-    expect(parseSignedEventFromUrl("?event=")).toBeNull();
-    expect(parseSignedEventFromUrl("?event=%7Bbroken")).toBeNull();
+    expect(parseSignedEventFromUrl("#")).toBeNull();
+    expect(parseSignedEventFromUrl("#%7Bbroken")).toBeNull();
     expect(
       parseSignedEventFromUrl(
-        `?event=${encodeURIComponent(JSON.stringify({ ...SIGNED, sig: undefined }))}`,
+        `#${encodeURIComponent(JSON.stringify({ ...SIGNED, sig: undefined }))}`,
       ),
     ).toBeNull();
     // returnType=signature のように署名だけ返ってきた場合
-    expect(parseSignedEventFromUrl(`?event=${"cd".repeat(64)}`)).toBeNull();
+    expect(parseSignedEventFromUrl(`#${"cd".repeat(64)}`)).toBeNull();
   });
 });

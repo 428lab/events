@@ -97,6 +97,8 @@ export function buildConnectRequest(origin: string): ConnectRequest {
   crypto.getRandomValues(secretBytes);
   const secret = bytesToHex(secretBytes);
   const relays = [...CHAT_RELAYS];
+  // URLSearchParams は空白を `+` にするが、Amethyst はそれを `+` のまま表示する
+  // （"events+lab"）。値の中の `+` は `%2B` になるので、残る `+` は空白だけ。`%20` に直す
   const uri = createNostrConnectURI({
     clientPubkey: getPublicKey(clientSecretKey),
     relays,
@@ -105,7 +107,7 @@ export function buildConnectRequest(origin: string): ConnectRequest {
     name: "events lab",
     url: origin,
     image: `${origin}/icon-512.png`,
-  });
+  }).replace(/\+/g, "%20");
   return { uri, clientSecretKey, secret, relays };
 }
 
