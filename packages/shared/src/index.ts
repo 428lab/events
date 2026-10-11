@@ -53,6 +53,7 @@ export * from "./abuse.js";
 export * from "./moderation.js";
 export * from "./redirect.js";
 export * from "./warikan.js";
+export * from "./accessTokens.js";
 
 export * from "./deckImport.js";
 export * from "./eventAccessInvites.js";
