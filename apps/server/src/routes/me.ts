@@ -22,7 +22,7 @@ import type {
   UpdateUsernameInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import type { MyBingoResults } from "@eventer/shared";
+import type { MyBingoResults, MyEventSummary } from "@eventer/shared";
 import { eventBingoRepo } from "../db/repositories/eventBingo.js";
 import {
   clearSession,
@@ -125,6 +125,14 @@ meRoutes.get("/events", async (c) => {
   const user = c.get("user");
   const now = Date.now();
   const all = await eventMembersRepo.listEventsForUser(user.id);
+  return c.json(splitMyEvents(all, now));
+});
+
+/** マイページの開催予定 / 過去参加の分け方。AI の list_my_events (#581) も同じ分岐を使う */
+export function splitMyEvents(
+  all: MyEventSummary[],
+  now: number,
+): { ongoing: MyEventSummary[]; past: MyEventSummary[] } {
   // 日程調整中（endsAt未確定=0）は常に「開催予定」側
   const ongoing = all.filter((e) => e.scheduling || e.endsAt >= now);
   // 過去参加。出席チェックモードで未出席の参加者は「参加した」に含めない
@@ -134,8 +142,8 @@ meRoutes.get("/events", async (c) => {
       e.endsAt < now &&
       !(e.attendanceCheck && e.myRole === "participant" && !e.attended),
   );
-  return c.json({ ongoing, past });
-});
+  return { ongoing, past };
+}
 
 /** プロフィールカードPNGのアップロード（OG画像用キャッシュ） (#193) */
 meRoutes.put("/card-image", putMyCardImage);

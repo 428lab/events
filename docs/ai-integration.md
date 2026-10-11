@@ -230,7 +230,7 @@ Bearer が有効なパスは **`/api/mcp` と `/api/ai/*` だけ**。それ以�
 | # | MCP ツール | REST (`/api/ai/v1`) | 引数 | スコープ | 中身（既存の土台） |
 |---|---|---|---|---|---|
 | 1 | `whoami` | `GET /me` | — | read | id / username / displayName / profile URL。接続確認と「誰として動いているか」 |
-| 2 | `list_my_events` | `GET /me/events?phase=` | `phase: upcoming\|past`（既定 upcoming） | read | `meRoutes /events` と同じ分岐。`myRole`（staff=主催側）付き。下書きも含む（本人の） |
+| 2 | `list_my_events` | `GET /me/events?phase=&limit=` | `phase: upcoming\|past`（既定 upcoming）, `limit: 1..20`（既定 20） | read | `meRoutes /events` と同じ分岐。`myRole`（staff=主催側）・`status` 付き。下書きも含む（本人の）。upcoming は開催日が近い順（日程調整中は末尾）、past は新しい順で limit 件まで。`total`（絞る前の件数）と `truncated` を返す |
 | 3 | `search_events` | `GET /events/search` | `q?, phase?, from?, to?, limit≤20` | read | `public.ts searchEvents` の引数をそのまま |
 | 4 | `get_event` | `GET /events/:idOrSlug` | `idOrSlug` | read | 詳細 + `slots` + 自分の参加状態 + `status`。`canViewEvent(event, user)` を通す。description は 4,000 字で切る（参考に引く用途なので §6.4 より長め） |
 | 5 | `get_warikan` | `GET /events/:id/warikan` | `eventId` | read | 帳簿と精算行。自分が from/to の行に `mine: true`。audience 外は 404 |
