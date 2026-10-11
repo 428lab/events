@@ -198,12 +198,28 @@ describe("NostrConnectSheet", () => {
   });
 
   describe("前回の接続を覚えているとき", () => {
-    it("つなぎ直さずに、覚えた署名アプリへ直接署名を頼む", async () => {
+    it("開いただけでは何も頼まず、選ばせる", async () => {
+      saveSession(SESSION);
+      renderSheet();
+
+      expect(
+        await screen.findByRole("button", { name: "前回の署名アプリでログイン" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "別の署名アプリでつなぐ" })).toBeInTheDocument();
+      expect(requestSignEvent).not.toHaveBeenCalled();
+      expect(waitForConnect).not.toHaveBeenCalled();
+      // Android 以外では Amber（NIP-55）は出さない
+      expect(screen.queryByRole("button", { name: "Amber でログイン" })).toBeNull();
+      expect(loadSavedSession()).toEqual(SESSION);
+    });
+
+    it("「前回の署名アプリでログイン」を押すと、つなぎ直さずに覚えた署名アプリへ署名を頼む", async () => {
       saveSession(SESSION);
       let approve: (v: unknown) => void = () => {};
       requestSignEvent.mockImplementation(() => new Promise((r) => (approve = r)));
       const props = renderSheet();
 
+      fireEvent.click(await screen.findByRole("button", { name: "前回の署名アプリでログイン" }));
       expect(
         await screen.findByText("前回つないだ署名アプリで署名を待っています…"),
       ).toBeInTheDocument();
@@ -219,19 +235,50 @@ describe("NostrConnectSheet", () => {
       expect(loadSavedSession()).toEqual(SESSION);
     });
 
+    it("連携のシートでは「前回の署名アプリで連携」になる", async () => {
+      saveSession(SESSION);
+      render(
+        <NostrConnectSheet
+          title="t"
+          intent="link"
+          submit={vi.fn()}
+          onDone={vi.fn()}
+          onFailed={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+      expect(
+        await screen.findByRole("button", { name: "前回の署名アプリで連携" }),
+      ).toBeInTheDocument();
+      expect(requestSignEvent).not.toHaveBeenCalled();
+    });
+
     it("応答が無ければ、覚えた接続を消して nostrconnect:// でつなぎ直す画面にする", async () => {
       saveSession(SESSION);
       requestSignEvent.mockRejectedValueOnce(new NostrConnectError("timeout"));
       waitForConnect.mockImplementation((_req, opts) => pendingUntilAbort(opts));
       renderSheet();
 
+      fireEvent.click(await screen.findByRole("button", { name: "前回の署名アプリでログイン" }));
       const open = await screen.findByRole("link", { name: "Amber で開く" });
       expect(open.getAttribute("href")).toMatch(/^nostrconnect:\/\//);
       expect(loadSavedSession()).toBeNull();
       expect(waitForConnect).toHaveBeenCalledTimes(1);
     });
 
-    it("「別の署名アプリでつなぐ」で覚えた接続を消して、つなぎ直す", async () => {
+    it("選ぶ画面の「別の署名アプリでつなぐ」で覚えた接続を消して、つなぎ直す", async () => {
+      saveSession(SESSION);
+      waitForConnect.mockImplementation((_req, opts) => pendingUntilAbort(opts));
+      renderSheet();
+
+      fireEvent.click(await screen.findByRole("button", { name: "別の署名アプリでつなぐ" }));
+      expect(await screen.findByRole("link", { name: "Amber で開く" })).toBeInTheDocument();
+      expect(loadSavedSession()).toBeNull();
+      expect(requestSignEvent).not.toHaveBeenCalled();
+      expect(waitForConnect).toHaveBeenCalledTimes(1);
+    });
+
+    it("署名を待っている間の「別の署名アプリでつなぐ」は、待ちを止めて覚えた接続を消す", async () => {
       saveSession(SESSION);
       let signal: AbortSignal | undefined;
       requestSignEvent.mockImplementation((_s, _t, opts) => {
@@ -241,10 +288,38 @@ describe("NostrConnectSheet", () => {
       waitForConnect.mockImplementation((_req, opts) => pendingUntilAbort(opts));
       renderSheet();
 
-      fireEvent.click(await screen.findByRole("button", { name: "別の署名アプリでつなぐ" }));
+      fireEvent.click(await screen.findByRole("button", { name: "前回の署名アプリでログイン" }));
+      await screen.findByText("前回つないだ署名アプリで署名を待っています…");
+      fireEvent.click(screen.getByRole("button", { name: "別の署名アプリでつなぐ" }));
       expect(await screen.findByRole("link", { name: "Amber で開く" })).toBeInTheDocument();
       expect(signal?.aborted).toBe(true);
       expect(loadSavedSession()).toBeNull();
+    });
+
+    it("Android では選ぶ画面に「Amber でログイン」も出し、押すと NIP-55 で呼ぶ（覚えた接続には頼まない）", async () => {
+      setUserAgent(ANDROID_UA);
+      saveSession(SESSION);
+      renderSheet();
+
+      const saved = await screen.findByRole("button", { name: "前回の署名アプリでログイン" });
+      const amber = screen.getByRole("button", { name: "Amber でログイン" });
+      const another = screen.getByRole("button", { name: "別の署名アプリでつなぐ" });
+      expect(saved.compareDocumentPosition(amber) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(amber.compareDocumentPosition(another) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      startNostrSignerLogin.mockReturnValue(new Promise(() => {}));
+      fireEvent.click(amber);
+      expect(startNostrSignerLogin).toHaveBeenCalledWith("login");
+      expect(requestSignEvent).not.toHaveBeenCalled();
+      expect(waitForConnect).not.toHaveBeenCalled();
+    });
+
+    it("選ぶ画面のキャンセルで閉じる", async () => {
+      saveSession(SESSION);
+      const props = renderSheet();
+      await screen.findByRole("button", { name: "前回の署名アプリでログイン" });
+      fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
+      expect(props.onClose).toHaveBeenCalled();
     });
   });
 

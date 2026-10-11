@@ -30,8 +30,12 @@ import {
   type NostrSignerIntent,
 } from "../lib/nostrSignerLogin.js";
 
+/** 覚えた接続があるときの選択 (choose)、覚えた接続で署名 (saved)、新しくつなぐ (fresh) */
+type Mode = "choose" | "saved" | "fresh";
+
 type Phase =
   | { kind: "starting" }
+  | { kind: "choose" }
   | { kind: "saved" }
   | { kind: "connect"; uri: string }
   | { kind: "sign" }
@@ -48,9 +52,13 @@ function isCoarsePointer(): boolean {
 /**
  * 署名アプリ（Amber など）で Nostr ログイン・連携するシート (D-NOSTR-SIGNER)。
  *
- * 開いた（マウントした）時点で始める。前回つないだ署名アプリを覚えていれば、
- * まずそれに署名を頼む。応答が無い・断られたら覚えた接続を消し、
+ * 前回つないだ署名アプリを覚えていれば、開いた時点では何も頼まず、
+ * 「前回の署名アプリで」「Amber で（Android）」「別の署名アプリでつなぐ」を選ばせる。
+ * 自動で頼むと、裏で署名する署名アプリ（Amethyst など）が先に済ませてしまい、
+ * どの方法で入ったのか分からず、ほかの方法も選べなかったため。
+ * 「前回の署名アプリで」の応答が無い・断られたら覚えた接続を消し、
  * `nostrconnect://`（ボタンと QR）でつなぎ直す画面に切り替える。
+ * 覚えていなければ、開いた時点で `nostrconnect://` の待ちを始める。
  *
  * `submit` はお題への署名とサーバーへの送信（`signLoginChallenge`）。
  * 署名アプリ以外の失敗（サーバーで弾かれた等）は `onFailed` で呼び出し元に返す。
@@ -75,10 +83,12 @@ export function NostrConnectSheet({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const [useSaved, setUseSaved] = useState(true);
+  const [mode, setMode] = useState<Mode>(() =>
+    loadSavedSession() ? "choose" : "fresh",
+  );
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<Phase>(() =>
-    loadSavedSession() ? { kind: "saved" } : { kind: "starting" },
+    mode === "choose" ? { kind: "choose" } : { kind: "starting" },
   );
   const [coarse] = useState(isCoarsePointer);
   const [android] = useState(isAndroid);
@@ -98,8 +108,12 @@ export function NostrConnectSheet({
   };
 
   useEffect(() => {
+    if (mode === "choose") {
+      setPhase({ kind: "choose" });
+      return;
+    }
     const ac = new AbortController();
-    const saved = useSaved ? loadSavedSession() : null;
+    const saved = mode === "saved" ? loadSavedSession() : null;
     let connecting = false;
     const run = async () => {
       try {
@@ -126,7 +140,7 @@ export function NostrConnectSheet({
           if (saved) {
             // 前回の接続が使えなかった。忘れて、つなぎ直す画面にする
             clearSavedSession();
-            setUseSaved(false);
+            setMode("fresh");
             return;
           }
           setPhase({
@@ -149,17 +163,56 @@ export function NostrConnectSheet({
     return () => ac.abort();
     // submit / onDone / onFailed は呼び出し元で毎回作り直されるが、やり直しの
     // きっかけにはしない（始め直すのは開いたとき・もう一度・別の署名アプリ）
-  }, [useSaved, attempt]);
+  }, [mode, attempt]);
 
   const useAnother = () => {
     clearSavedSession();
-    setUseSaved(false);
+    setMode("fresh");
   };
+
+  const amberButton = android && (
+    <>
+      <Button
+        variant="contained"
+        size="large"
+        fullWidth
+        disabled={amberBusy}
+        onClick={openAmber}
+      >
+        {t(intent === "link" ? "login.signerAmberLink" : "login.signerAmberLogin")}
+      </Button>
+      <Typography variant="body2" color="text.secondary" textAlign="center">
+        {t("login.signerAmberHint")}
+      </Typography>
+      {amberError && (
+        <Alert severity="warning" sx={{ width: "100%" }}>
+          {t("login.signerAmberFailed")}
+        </Alert>
+      )}
+    </>
+  );
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
+        {phase.kind === "choose" && (
+          <Stack spacing={2} alignItems="center" sx={{ py: 1 }}>
+            <Button
+              variant="contained"
+              size="large"
+              fullWidth
+              onClick={() => setMode("saved")}
+            >
+              {t(intent === "link" ? "login.signerUseSavedLink" : "login.signerUseSaved")}
+            </Button>
+            {amberButton}
+            <Button variant="outlined" fullWidth onClick={useAnother}>
+              {t("login.signerUseAnother")}
+            </Button>
+          </Stack>
+        )}
+
         {phase.kind === "saved" && (
           <Stack spacing={2} alignItems="center" sx={{ py: 1 }}>
             <CircularProgress size={32} />
@@ -174,27 +227,7 @@ export function NostrConnectSheet({
 
         {phase.kind === "connect" && (
           <Stack spacing={2} alignItems="center" sx={{ py: 1 }}>
-            {android && (
-              <>
-                <Button
-                  variant="contained"
-                  size="large"
-                  fullWidth
-                  disabled={amberBusy}
-                  onClick={openAmber}
-                >
-                  {t(intent === "link" ? "login.signerAmberLink" : "login.signerAmberLogin")}
-                </Button>
-                <Typography variant="body2" color="text.secondary" textAlign="center">
-                  {t("login.signerAmberHint")}
-                </Typography>
-                {amberError && (
-                  <Alert severity="warning" sx={{ width: "100%" }}>
-                    {t("login.signerAmberFailed")}
-                  </Alert>
-                )}
-              </>
-            )}
+            {amberButton}
             {coarse && (
               <Button
                 variant={android ? "outlined" : "contained"}
