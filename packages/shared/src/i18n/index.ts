@@ -8,6 +8,7 @@
  * 追加するときは `messages/` に**領域ごとのファイル**を作り、その中に
  * 日本語と英語を並べて書く。片方だけ足すと型で落ちる。
  */
+import { accessTokens } from "./messages/accessTokens.js";
 import { adminSettings } from "./messages/adminSettings.js";
 import { deckImport, deckImportIssue, deckImportField } from "./messages/deckImport.js";
 import { eventAccess } from "./messages/eventAccess.js";
@@ -92,6 +93,7 @@ export const translations = {
     errors: errors.ja,
     settings: settings.ja,
     linkError: linkError.ja,
+    accessTokens: accessTokens.ja,
     notifications: notifications.ja,
     inquiries: inquiries.ja,
     inquiryStatus: inquiryStatus.ja,
@@ -138,6 +140,7 @@ export const translations = {
     errors: errors.en,
     settings: settings.en,
     linkError: linkError.en,
+    accessTokens: accessTokens.en,
     notifications: notifications.en,
     inquiries: inquiries.en,
     inquiryStatus: inquiryStatus.en,
