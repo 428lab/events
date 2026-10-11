@@ -3,7 +3,7 @@
 - 対象: `apps/server`（D1 スキーマ・認証の入口・`/api/ai/v1`・MCP エンドポイント）、`packages/shared`（型・入力・文言・監査アクション）、
   `apps/web`（アカウント設定のトークン管理カード）
 - ステータス: **実装中。issue #581**（設計確定: ユーザー判断 2026-10-04 反映）
-- 前提: 割り勘 (#556) は main にマージ済み（migration `0099_warikan.sql`）。本件の migration は `0102_access_token.sql`（0100 は #571、0101 は #582 が使用済み）
+- 前提: 割り勘 (#556) は main にマージ済み（migration `0099_warikan.sql`）。本件の migration は `0111_access_token.sql`（main は 0110 まで使用済み）
 - ユーザーの要望（原文に近い形）:
   - 「ChatGPT の連携か、Claude などの MCP 連携を考えている」→ **今回は Claude（MCP）だけ。ChatGPT は見送り**（§8.1）
   - 「**個人アカウントには、生成したアクセストークンで行いたい**」＝ 利用者がアカウント設定でトークンを発行し、それで AI から自分として操作する。**OAuth のフローを AI 側に組ませない**
@@ -125,7 +125,7 @@ AI 向けの出口は同時に **第三者のソフトウェアが本人とし�
 
 ## 4. アクセストークンの設計
 
-### 4.1 スキーマ（`0102_access_token.sql`）
+### 4.1 スキーマ（`0111_access_token.sql`）
 
 ```sql
 -- AI アシスタント等が本人として API を叩くための長命トークン。
@@ -329,7 +329,7 @@ MCP `annotations`: 読み取りは `readOnlyHint: true`。`create_event` は `re
 ## 7. 実装の分割（implementer に渡す粒度。番号順に依存）
 
 **PR1: トークン発行と Bearer 認証（server）** — 依存なし
-- migration `0102_access_token.sql`（§4.1）+ `ALTER TABLE event ADD COLUMN created_via TEXT NOT NULL DEFAULT 'web'`
+- migration `0111_access_token.sql`（§4.1）+ `ALTER TABLE event ADD COLUMN created_via TEXT NOT NULL DEFAULT 'web'`
 - `db/repositories/accessTokens.ts`（create / listForUser / findByHash / revoke / touchLastUsed / revokeAllForUser）
 - `auth/session.ts`: `resolveCurrentUser` に Bearer 経路（§4.4）、`principal` の Context 変数、`requireScope`、`TOKEN_ALLOWED_PATHS`（§4.5）
 - `accountMerge.ts` に負け側トークンの DELETE、`accountDeletion.ts` の申請時に revokeAll
