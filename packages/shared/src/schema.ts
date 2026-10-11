@@ -59,7 +59,8 @@ export const eventSchema = z.object({
   createdBy: z.string(),
   createdAt: z.number(),
   imageUpdatedAt: z.number().nullable(),
-  /** 参加者数（確定メンバー数）。参加者一覧の件数と一致する (#297) */
+  /** 参加者数。確定メンバー数に、抽選枠で抽選を待っている申込中の人数を足したもの (#297)。
+   * キャンセル待ち・落選は含めない。表示用で、定員の判定には使わない */
   participantCount: z.number(),
   /** 出席者数。役割を問わず実際に出席が記録された人数。
    * 出席チェックモードでないイベントは常に 0 (#297) */

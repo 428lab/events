@@ -340,9 +340,9 @@ describe("一般参加者に戻すのは参加の取消 (#281)", () => {
     const slot = await createSlot(eventId, admin, 1, "lottery");
     const base = await participantCount(eventId);
     const b = await makeUser();
-    // 一度も当選していない応募中の人
+    // 一度も当選していない応募中の人。抽選の申込中は参加者数に入る
     expect(await joinEvent(eventId, b.cookie, slot.id)).toBe("applied");
-    expect(await participantCount(eventId)).toBe(base);
+    expect(await participantCount(eventId)).toBe(base + 1);
 
     expect((await setRole(eventId, b.userId, "staff", admin)).status).toBe(200);
     expect(await participantCount(eventId)).toBe(base + 1);

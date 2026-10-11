@@ -103,12 +103,23 @@ export const CAPACITY_TOTAL_SQL = (eventIdExpr: string) =>
                     AND em.slot_id IS NULL AND ${COUNTED_MEMBER_IS_ACTIVE})
            END)`;
 
+/** 抽選枠に申し込んで抽選を待っている人数（status='applied'）。表示する参加者数に足す。
+ * 抽選前でも「何人来そうか」が分かるよう、申込中の人も参加者として数える。
+ * participation_slot.cnt_applied（0108 のトリガーが保つ）の合計なので、event_member は読まない。
+ * 表示だけの数で、定員の判定には使わない（参加・抽選は書き込みの文の中で正確に COUNT する） */
+const LOTTERY_APPLIED_SUM_SQL = (eventIdExpr: string) =>
+  `(SELECT COALESCE(SUM(s.cnt_applied), 0) FROM participation_slot s
+     WHERE s.event_id = ${eventIdExpr} AND s.selection_type = 'lottery')`;
+
 /** participant_count / attended_count / capacity_total を、0108 のトリガーが保つ
- * cnt_* 列から読む式（D-POLL-MIN 第4段階）。上の3つの COUNT SQL と常に同じ値になる。
- * COUNT SQL のほうは一貫性テストと scripts/check-member-counters.sql の基準として残し、
- * リクエストの経路では使わない。`table` は event 表の別名（"event" や "e"） */
+ * cnt_* 列から読む式（D-POLL-MIN 第4段階）。
+ * participant_count は確定メンバー数（PARTICIPANT_COUNT_SQL と同じ値）に、抽選の申込中の
+ * 人数（LOTTERY_APPLIED_SUM_SQL）を足したもの。attended_count / capacity_total は
+ * 上の COUNT SQL と常に同じ値になる。COUNT SQL のほうは一貫性テストと
+ * scripts/check-member-counters.sql の基準として残し、リクエストの経路では使わない。
+ * `table` は event 表の別名（"event" や "e"） */
 export const EVENT_COUNTER_COLUMNS = (table: string) =>
-  `${table}.cnt_participants AS participant_count,
+  `${table}.cnt_participants + ${LOTTERY_APPLIED_SUM_SQL(`${table}.id`)} AS participant_count,
   ${table}.cnt_attended AS attended_count,
   CASE WHEN ${table}.cnt_slots = 0 THEN NULL
        ELSE ${table}.cnt_slot_capacity + ${table}.cnt_unslotted_confirmed END AS capacity_total`;
