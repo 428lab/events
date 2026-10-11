@@ -82,10 +82,14 @@ async function drift(): Promise<unknown[]> {
   return (await env.DB.prepare(body).all()).results;
 }
 
-/** The COUNT oracle for one event, read independently of the stored columns. */
+/** The COUNT oracle for one event, read independently of the stored columns.
+ * participantCount = confirmed members + lottery applicants still waiting for the draw. */
 async function oracle(eventId: string) {
   return (await env.DB.prepare(`SELECT
-      ${PARTICIPANT_COUNT_SQL("event.id")} AS participantCount,
+      ${PARTICIPANT_COUNT_SQL("event.id")}
+        + (SELECT COALESCE(SUM(${SLOT_MEMBER_COUNT_SQL("s.id", "applied")}), 0)
+             FROM participation_slot s WHERE s.event_id = event.id AND s.selection_type = 'lottery')
+        AS participantCount,
       ${ATTENDED_COUNT_SQL("event.id")} AS attendedCount,
       ${CAPACITY_TOTAL_SQL("event.id")} AS capacityTotal
     FROM event WHERE id = ?`).bind(eventId).first<{ participantCount: number; attendedCount: number; capacityTotal: number | null }>())!;
@@ -130,18 +134,19 @@ describe("0108 member counters stay equal to the COUNT queries", () => {
     expect((await join(eventId, a, seat)).status).toBe("confirmed");
     expect((await join(eventId, b, seat)).status).toBe("waitlist");
     expect((await join(eventId, c, lottery)).status).toBe("applied");
-    expect(await expectConsistent(eventId)).toMatchObject({ participantCount: 2, capacityTotal: 4 });
+    // host + a (confirmed) + c (lottery applicant); b on the waitlist is not counted
+    expect(await expectConsistent(eventId)).toMatchObject({ participantCount: 3, capacityTotal: 4 });
 
     // a leaves → b is promoted from the waitlist inside the same batch
     await json(await request(`/events/${eventId}/join`, a, "DELETE"));
     expect((await eventMembersRepo.find(eventId, b.id))!.status).toBe("confirmed");
-    expect((await expectConsistent(eventId)).participantCount).toBe(2);
+    expect((await expectConsistent(eventId)).participantCount).toBe(3); // host + b + c (applied)
 
     // b leaves (canceled row stays), then rejoins through the canceled-row upsert
     await json(await request(`/events/${eventId}/join`, b, "DELETE"));
     await expectConsistent(eventId);
     expect((await join(eventId, b, seat)).status).toBe("confirmed");
-    expect((await expectConsistent(eventId)).participantCount).toBe(2);
+    expect((await expectConsistent(eventId)).participantCount).toBe(3);
   });
 
   it("lottery draw, manual slot status, attendance on/off, role change to staff and back", async () => {
@@ -150,7 +155,7 @@ describe("0108 member counters stay equal to the COUNT queries", () => {
     const lottery = await addSlot(eventId, host, 1, "lottery");
     const [a, b, c] = [await user(), await user(), await user()];
     for (const u of [a, b, c]) await join(eventId, u, lottery);
-    await expectConsistent(eventId);
+    expect((await expectConsistent(eventId)).participantCount).toBe(4); // host + 3 applicants
 
     await json(await request(`/events/${eventId}/slots/${lottery}/draw`, host, "POST"));
     expect((await expectConsistent(eventId)).participantCount).toBe(2);

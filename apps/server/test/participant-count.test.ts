@@ -213,7 +213,7 @@ describe("参加者数・出席者数の表示 (#297)", () => {
     expect(event.attendedCount).toBe(1);
   });
 
-  it("未確定（抽選待ち・キャンセル）のメンバーは数えない", async () => {
+  it("未確定（枠に入っていない保留・キャンセル）のメンバーは数えない", async () => {
     const cookie = await loginDev();
     const eventId = await setupEvent(cookie, { attendanceCheck: true });
     const pending = await makeUser();
@@ -226,6 +226,35 @@ describe("参加者数・出席者数の表示 (#297)", () => {
     const event = await fetchEvent(eventId);
     expect(event.participantCount).toBe(1); // 主催のみ
     expect(event.attendedCount).toBe(0);
+  });
+
+  it("抽選枠の申込中は参加者数に入れる。キャンセル待ちと落選は入れない", async () => {
+    const cookie = await loginDev();
+    const eventId = await setupEvent(cookie, { attendanceCheck: false });
+    const firstCome = await makeSlot(eventId, 1);
+    const lottery = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO participation_slot (id, event_id, name, capacity, selection_type, sort_order, draw_at, created_at) VALUES (?, ?, ?, ?, 'lottery', 1, NULL, ?)",
+    )
+      .bind(lottery, eventId, "抽選", 8, Date.now())
+      .run();
+    // 先着枠の確定1人。主催(staff)の確定1人と合わせて確定は2人
+    await makeMember(eventId, "participant", { slotId: firstCome });
+    const addWithStatus = async (slotId: string, status: string) => {
+      const u = await makeUser();
+      await env.DB.prepare(
+        "INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, attended, created_at) VALUES (?, ?, ?, 'participant', ?, ?, 0, ?)",
+      )
+        .bind(crypto.randomUUID(), eventId, u.userId, slotId, status, Date.now())
+        .run();
+    };
+    await addWithStatus(lottery, "applied");
+    await addWithStatus(lottery, "applied");
+    await addWithStatus(firstCome, "waitlist");
+    await addWithStatus(lottery, "lost");
+
+    const event = await fetchEvent(eventId);
+    expect(event.participantCount).toBe(4); // 確定2 + 抽選の申込中2
   });
 
   it("マイページ・公開プロフィールの一覧でも同じ人数を返す", async () => {
