@@ -32,6 +32,15 @@ export default defineWorkersConfig(async () => {
       // hookTimeout は beforeAll のマイグレーション適用（60本超）が次に危ないので併せて上げる。
       testTimeout: 30_000,
       hookTimeout: 30_000,
+      // MCP の SDK (#581) が使う ajv は CJS で JSON を require する。テストの
+      // workerd のモジュール読み込みはこれを解けないので、SDK と @hono/mcp を
+      // 事前バンドルに通す（ajv はその中に入る。pnpm では ajv を直接指定できない）。
+      // 本番は wrangler の esbuild がバンドルするので不要
+      deps: {
+        optimizer: {
+          ssr: { enabled: true, include: ["@modelcontextprotocol/sdk/server/mcp.js", "@hono/mcp"] },
+        },
+      },
       poolOptions: {
         workers: {
           // wrangler.toml は読まない（assets.directory=apps/web/dist の存在チェックで

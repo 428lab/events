@@ -28,6 +28,7 @@ import {
 import { scoringRoutes, getEventScoreResults } from "./routes/scoring.js";
 import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes, postRestoreAccount } from "./routes/me.js";
+import { mcpGate, postMcp } from "./routes/mcp.js";
 import { aiRoutes } from "./routes/ai/index.js";
 import { getEventImage } from "./routes/images.js";
 import { getEventDescriptionImage } from "./routes/eventDescriptionImages.js";
@@ -298,6 +299,10 @@ api.route("/me", meRoutes);
 // AI 連携 (#581)。アクセストークン（Bearer）でも Cookie でも叩ける。要認証。
 // 読み取り6本 + create_event（下書きのみ）。設計は docs/ai-integration.md §5
 api.route("/ai/v1", aiRoutes);
+// MCP サーバー (#581)。POST だけ（GET/DELETE は 405）。認証は requireAuth の1か所で、
+// 未認証の 401 には mcpGate が WWW-Authenticate を付ける。設計は docs/ai-integration.md §5.5
+api.use("/mcp", mcpGate);
+api.post("/mcp", requireAuth, postMcp);
 // 公開: プロフィールカードPNG（認証不要。OGクローラ用。要認証の /users ルートより先に登録） (#193)
 api.get("/users/:id/card-image", getUserCardImage);
 // 公開: ユーザーアイコン（認証不要。未ログインでも見える一覧に出る。要認証の /users ルートより先に登録） (#312)
