@@ -234,10 +234,14 @@ export interface EventSearchOpts {
 interface CommunityEventViewer { userId: string | null }
 
 function communityDiscovery(viewer: CommunityEventViewer) {
+  // status / visibility の先頭の `+` は索引を使わせないための印 (#625)。
+  // 共催込みの communityId 条件（主催 OR 共催）と並ぶと、索引の統計が無い D1 では
+  // 絞り込みの弱い idx_event_status を選んで公開イベント全件を読むため。
+  // `+` があると主催は idx_event_community、共催は主キーで引く（MULTI-INDEX OR）
   return {
-    where: `event.status = 'published' AND (event.visibility = 'public'
-      OR (event.visibility = 'private' AND ${eventViewSql("event", "?", "?")})
-      OR (event.visibility = 'unlisted' AND EXISTS (
+    where: `+event.status = 'published' AND (+event.visibility = 'public'
+      OR (+event.visibility = 'private' AND ${eventViewSql("event", "?", "?")})
+      OR (+event.visibility = 'unlisted' AND EXISTS (
         SELECT 1 FROM user discovery_user
         WHERE discovery_user.id = ? AND discovery_user.deleted_at IS NULL AND (
           ${eventManagerSql("event", "discovery_user", "?")}
