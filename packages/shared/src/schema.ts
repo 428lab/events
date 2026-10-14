@@ -194,8 +194,8 @@ export const updateEventInput = z.object({
    * positive なのは 0 や負値を弾くため：締切なしは必ず null で表す約束なので、
    * 0 を通すと「未設定のつもりが 1970年＝永久に締切済み」の行を作れてしまう */
   registrationDeadline: z.number().int().positive().nullable().optional(),
-  /** 予約公開の日時（epoch ms）。null で予約を取り消す。未来の時刻だけで、
-   * status: "published" と一緒には送れない（サーバーが 400）。
+  /** 予約公開の日時（epoch ms）。null で予約を取り消す。未来で、30分区切り
+   * （PUBLISH_AT_STEP_MS）の時刻だけ。status: "published" と一緒には送れない（サーバーが 400）。
    * 公開状態か予約を今の値から変えるときは expectedAccessRevision が要る（違えば 409）
    * (D-EVENT-SCHEDULED-PUBLISH) */
   publishAt: z.number().int().positive().nullable().optional(),

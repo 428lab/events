@@ -24,8 +24,11 @@ const ja = {
   /** 予約公開 (D-EVENT-SCHEDULED-PUBLISH) */
   statusScheduled: "予約公開",
   publishAtLabel: "公開する日時",
-  publishAtHelp: "この日時になると自動で公開され、フォロワーに通知されます。",
+  publishAtHelp: "この日時になると自動で公開され、フォロワーに通知されます。30分単位（毎時0分・30分）で選べます。",
+  publishAtDate: "公開する日",
+  publishAtTime: "公開する時刻",
   publishAtPast: "未来の日時を入れてください。",
+  publishAtUnaligned: "公開する時刻は毎時0分か30分にしてください。",
   publishAtRequired: "公開する日時を入れてください。",
   publishStateChanged: "ほかの操作で公開状態が変わりました。最新の内容を確認してください。",
 
@@ -356,8 +359,11 @@ const en: Record<keyof typeof ja, string> = {
     "Public events can be read without signing in, and upcoming ones are listed on the front page.",
   statusScheduled: "Scheduled",
   publishAtLabel: "Publish at",
-  publishAtHelp: "The event is published automatically at this time, and your followers are notified.",
+  publishAtHelp: "The event is published automatically at this time, and your followers are notified. Times are in 30-minute steps (:00 or :30).",
+  publishAtDate: "Publish date",
+  publishAtTime: "Publish time",
   publishAtPast: "Choose a time in the future.",
+  publishAtUnaligned: "Choose a publish time on the hour or half hour.",
   publishAtRequired: "Choose when to publish.",
   publishStateChanged: "The publish state was changed elsewhere. Please review the latest information.",
 
