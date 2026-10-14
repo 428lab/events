@@ -21,6 +21,13 @@ const ja = {
   statusPublished: "公開",
   statusHelp:
     "公開にすると未ログインでも閲覧でき、開催前なら公開トップの一覧に表示されます。",
+  /** 予約公開 (D-EVENT-SCHEDULED-PUBLISH) */
+  statusScheduled: "予約公開",
+  publishAtLabel: "公開する日時",
+  publishAtHelp: "この日時になると自動で公開され、フォロワーに通知されます。",
+  publishAtPast: "未来の日時を入れてください。",
+  publishAtRequired: "公開する日時を入れてください。",
+  publishStateChanged: "ほかの操作で公開状態が変わりました。最新の内容を確認してください。",
 
   /** 本文まわりの入力欄 */
   title: "タイトル",
@@ -347,6 +354,12 @@ const en: Record<keyof typeof ja, string> = {
   statusPublished: "Public",
   statusHelp:
     "Public events can be read without signing in, and upcoming ones are listed on the front page.",
+  statusScheduled: "Scheduled",
+  publishAtLabel: "Publish at",
+  publishAtHelp: "The event is published automatically at this time, and your followers are notified.",
+  publishAtPast: "Choose a time in the future.",
+  publishAtRequired: "Choose when to publish.",
+  publishStateChanged: "The publish state was changed elsewhere. Please review the latest information.",
 
   title: "Title",
   subtitle: "Subtitle (optional)",

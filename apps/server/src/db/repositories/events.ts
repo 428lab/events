@@ -60,6 +60,8 @@ interface EventRow {
   qa_picked_question_id: string | null;
   /** 募集の締切日時（epoch ms）。NULL = 締切なし (#269) */
   registration_deadline: number | null;
+  /** 予約公開の日時（epoch ms）。NULL = 予約なし (D-EVENT-SCHEDULED-PUBLISH) */
+  publish_at: number | null;
   /** NIP-28 チャンネルID。toEvent には含めない（chat-members API で返す） */
   chat_channel_id: string | null;
   /** 参加者限定の文章。toEvent には含めない（公開APIに漏らさない） */
@@ -183,6 +185,7 @@ function toEvent(row: EventRow): Event {
     meetPrizes: row.meet_prizes === 1,
     // 未設定は NULL。?? null で undefined（列追加前の行）も NULL に寄せる
     registrationDeadline: row.registration_deadline ?? null,
+    publishAt: row.publish_at ?? null,
   };
 }
 
@@ -512,9 +515,12 @@ export const eventsRepo = {
     const token = visibilityChanged ? crypto.randomUUID() : null;
     // membersNote は Event(eventSchema) に含まれないため個別にマージ
     const membersNote = input.membersNote ?? (await this.membersNoteFor(id));
+    // 公開になれば予約は必ず消える（I1）。下書きのままなら、送られた値か今の値
+    const publishAt = next.status === "published" ? null : (next.publishAt ?? null);
     const [changed] = await batch([{sql:
       `UPDATE event AS e SET
-         access_revision = access_revision + CASE WHEN status <> ? OR community_id IS NOT ? OR visibility <> ? OR starts_at <> ? OR ends_at <> ? OR scheduling <> ? OR registration_deadline IS NOT ? THEN 1 ELSE 0 END,
+         access_revision = access_revision + CASE WHEN status <> ? OR community_id IS NOT ? OR visibility <> ? OR starts_at <> ? OR ends_at <> ? OR scheduling <> ? OR registration_deadline IS NOT ? OR publish_at IS NOT ? THEN 1 ELSE 0 END,
+         publish_at = ?,
          visibility = ?, access_operation_token = ?,
          title = ?, subtitle = ?, description = ?, starts_at = ?, ends_at = ?,
          venue_type = ?, venue_offline = ?, venue_address = ?, venue_online = ?,
@@ -534,7 +540,7 @@ export const eventsRepo = {
            u.discord_id IN (SELECT value FROM json_each(?)) OR EXISTS (SELECT 1 FROM community_member cm
              WHERE cm.user_id=u.id AND cm.community_id=? AND cm.role IN ('owner','admin')))))`,args:[
       next.status,
-      next.communityId ?? null, next.visibility, next.startsAt, next.endsAt, next.scheduling ? 1 : 0, next.registrationDeadline, next.visibility,token,
+      next.communityId ?? null, next.visibility, next.startsAt, next.endsAt, next.scheduling ? 1 : 0, next.registrationDeadline, publishAt, publishAt, next.visibility,token,
       next.title,
       next.subtitle,
       next.description,
@@ -573,7 +579,8 @@ export const eventsRepo = {
   },
 
   async setStatus(id: string, status: Event["status"], actorId: string): Promise<Event | null> {
-    const changed = await runCount(`UPDATE event AS e SET status=?,access_revision=access_revision + CASE WHEN status<>? THEN 1 ELSE 0 END
+    // 予約公開は、手動で公開・下書きにしたときにも消す（I1。予約中の「今すぐ公開」で二重に動かさない）
+    const changed = await runCount(`UPDATE event AS e SET status=?,publish_at=NULL,access_revision=access_revision + CASE WHEN status<>? OR publish_at IS NOT NULL THEN 1 ELSE 0 END
       WHERE e.id=? AND ${activeManagerSql("e", "?")}`, status, status, id, actorId, adminIds());
     return changed ? this.findById(id) : null;
   },

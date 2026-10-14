@@ -21,8 +21,7 @@ import {
   postEventDescriptionImage,
 } from "./eventDescriptionImages.js";
 import { collectEventObjects, deleteObjects } from "../lib/mediaCleanup.js";
-import { notifyRequestsOnPublish } from "./eventRequests.js";
-import { notifyFollowersOnPublish } from "./follows.js";
+import { notifyOnPublish } from "../lib/publishNotify.js";
 import { checkRegistrationDeadline } from "../lib/registrationDeadline.js";
 import { eventSignal, type RefetchSignalTarget } from "../lib/eventSignal.js";
 import { deferBackground } from "../runtime.js";
@@ -57,25 +56,6 @@ async function canAttachCommunity(
 ): Promise<boolean> {
   if (isAppAdmin(user)) return true;
   return communitiesRepo.isManager(communityId, user.id);
-}
-
-/**
- * 公開になったときの通知。**PATCH と POST /publish の両方がここを通る**。
- *
- * 2か所に書くと必ずずれる（たまごの賛同者には届くのにフォロワーには届かない、
- * 片方だけ何度も通知する、など）。フォロワーへの公開通知は draft→published の
- * 実遷移のときだけ・初回だけに絞りたいので、`prior` の状態もここで見る。
- */
-async function notifyOnPublish(
-  prior: Event | null,
-  event: Event,
-): Promise<void> {
-  // たまご（あったらいいな）にリンク済みなら公開時に賛同者へ通知
-  await notifyRequestsOnPublish(event);
-  // 作成者のフォロワーへ公開通知（draft→published の実遷移時のみ・初回のみ）
-  if (prior?.status !== "published" || prior?.visibility !== "public") {
-    await notifyFollowersOnPublish(event);
-  }
 }
 
 /** 公開イベント一覧 */
@@ -119,6 +99,23 @@ eventCrudRoutes.patch(
     const input = valid<UpdateEventInput>(c, "json");
     const scheduleInput = [input.startsAt, input.endsAt, input.scheduling, input.registrationDeadline].some(v => v !== undefined);
     if (scheduleInput && input.expectedAccessRevision !== prior?.accessRevision) return c.json({ error: "schedule_changed" }, 409);
+    // 予約公開 (D-EVENT-SCHEDULED-PUBLISH 設計 §5.4 / §5.5)
+    if (input.publishAt != null && (input.status === "published" || (input.status ?? prior?.status) !== "draft")) {
+      return c.json({ error: "publish_at_invalid" }, 400);
+    }
+    if (input.publishAt != null && input.publishAt !== prior?.publishAt && input.publishAt <= Date.now()) {
+      return c.json({ error: "publish_at_past" }, 400);
+    }
+    // 下書きに戻す保存と予約を変える保存は、読み込んだ時点の revision が要る。
+    // 自動公開は revision を上げるので、古い編集フォームの status: "draft" で
+    // 公開したばかりのイベントを黙って下書きに戻せない。
+    // 公開する（draft→published）だけなら今まで通り revision なしで通す（POST /publish と同じ）
+    const publishStateChanged =
+      (input.status === "draft" && prior?.status !== "draft") ||
+      (input.publishAt !== undefined && input.publishAt !== (prior?.publishAt ?? null));
+    if (publishStateChanged && input.expectedAccessRevision !== prior?.accessRevision) {
+      return c.json({ error: "publish_state_changed" }, 409);
+    }
     if (prior?.visibility === "public" && input.visibility && input.visibility !== "public" && !(await eventsRepo.nonpublicEligible(prior.id))) {
       return c.json({error:"legacy_visibility_locked"},409);
     }
@@ -181,7 +178,7 @@ eventCrudRoutes.patch(
     });
     if (violation) return c.json({ error: violation }, 400);
     const event = await eventsRepo.update(c.req.param("id"), input, c.get("user").id);
-    if (!event) return c.json({ error: scheduleInput ? "schedule_changed" : "access_changed" }, 409);
+    if (!event) return c.json({ error: scheduleInput ? "schedule_changed" : publishStateChanged ? "publish_state_changed" : "access_changed" }, 409);
     await notifyOnPublish(prior, event);
     const targets = settingsSignalTargets(prior, event);
     if (targets.length > 0) await deferBackground(eventSignal.publishRefetch(targets));

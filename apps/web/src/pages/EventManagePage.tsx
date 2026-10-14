@@ -4,7 +4,9 @@ import { Accordion, AccordionDetails, AccordionSummary, Alert, Button, Stack, Ty
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { Link as RouterLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Event, EventRole } from "@eventer/shared";
-import { useEvent, usePublishEvent } from "../api/hooks.js";
+import { useCancelScheduledPublish, useEvent, usePublishEvent } from "../api/hooks.js";
+import { formatDateTime } from "../lib/format.js";
+import { errorMessage } from "../lib/errorMessage.js";
 import { useContestAnchor } from "../lib/useContestAnchor.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 import { ContestOperationsSection } from "../components/ContestOperationsSection.js";
@@ -66,12 +68,25 @@ function StaffManagement({ eventId, event, myRole, canInvite }: {
 }) {
   const { t } = useTranslation();
   const publish = usePublishEvent();
+  const cancelSchedule = useCancelScheduledPublish();
   const { canChat, chatAvailable } = useEventChatAccess(eventId);
   const isStaff = myRole === "staff";
   return <>
-    {event.status === "draft" && <Alert severity="warning" action={
+    {event.status === "draft" && !event.publishAt && <Alert severity="warning" action={
       <Button color="inherit" size="small" disabled={publish.isPending} onClick={() => publish.mutate(event.id)}>{t("eventDetail.publish")}</Button>
     }><Trans i18nKey="eventDetail.draftNotice" components={{ b: <strong /> }} /></Alert>}
+    {/* 予約公開 (D-EVENT-SCHEDULED-PUBLISH)。時刻を過ぎても問い合わせはしない（再読み込みで公開に変わる） */}
+    {event.status === "draft" && event.publishAt && <Alert severity="info">
+      <Trans i18nKey="eventDetail.scheduledNotice" values={{ date: formatDateTime(event.publishAt) }} components={{ b: <strong /> }} />
+      <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
+        <Button variant="contained" size="small" disabled={publish.isPending || cancelSchedule.isPending} onClick={() => publish.mutate(event.id)}>{t("eventDetail.publishNow")}</Button>
+        <Button variant="outlined" size="small" disabled={publish.isPending || cancelSchedule.isPending}
+          onClick={() => cancelSchedule.mutate({ id: event.id, expectedAccessRevision: event.accessRevision })}>{t("eventDetail.cancelSchedule")}</Button>
+      </Stack>
+      {cancelSchedule.isError && <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+        {errorMessage(cancelSchedule.error, { default: t("eventForm.saveError"), publish_state_changed: t("eventForm.publishStateChanged") })}
+      </Typography>}
+    </Alert>}
     {event.contestMode && <ContestOperationsSection eventId={eventId} event={event} myRole={myRole} />}
     <Typography variant="h6" component="h2">{t("eventManagement.general")}</Typography>
     <EventManagementLinks eventId={eventId} isStaff={isStaff} attendanceCheck={event.attendanceCheck} chatAvailable={chatAvailable} />

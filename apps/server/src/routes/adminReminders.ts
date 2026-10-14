@@ -6,6 +6,7 @@ import { isAppAdmin } from "../auth/admin.js";
 import { sendEventReminders } from "../lib/reminders.js";
 import { purgeDeletedAccounts } from "../lib/purgeDeleted.js";
 import { drainBroadcastEmails } from "../lib/broadcast.js";
+import { publishDueEvents } from "../lib/scheduledPublish.js";
 
 /** 前日リマインダーの手動実行 (#126)。staging 検証・本番の補完用（app admin のみ）。
  * staging は cron を張らないため、動作確認はこのエンドポイントで行う */
@@ -35,4 +36,13 @@ export const adminBroadcastEmailRoutes = new Hono<AppEnv>();
 adminBroadcastEmailRoutes.use("*", requireAuth, requireAdmin);
 adminBroadcastEmailRoutes.post("/", async (c) => {
   return c.json(await drainBroadcastEmails());
+});
+
+/** 予約公開の時刻を過ぎた下書きを公開する処理の手動実行（app admin のみ）。
+ * 本番は cron-hub が1分ごとに CronEntrypoint を呼ぶ。staging は cron-hub が呼ばないので、
+ * 動作確認はこのエンドポイントで行う (D-EVENT-SCHEDULED-PUBLISH) */
+export const adminScheduledPublishRoutes = new Hono<AppEnv>();
+adminScheduledPublishRoutes.use("*", requireAuth, requireAdmin);
+adminScheduledPublishRoutes.post("/", async (c) => {
+  return c.json(await publishDueEvents());
 });

@@ -189,7 +189,16 @@ export function EventDetailPage() {
           sx={{ mt: 1 }}
         >
           {event.status !== "published" && (
-            <Chip size="small" color="warning" label={event.status} />
+            <Chip
+              size="small"
+              color="warning"
+              label={
+                // 予約公開 (D-EVENT-SCHEDULED-PUBLISH)：下書きでも公開の予定があれば日時を出す
+                event.status === "draft" && event.publishAt
+                  ? t("eventDetail.scheduledChip", { date: formatDateTime(event.publishAt) })
+                  : event.status
+              }
+            />
           )}
           {event.visibility !== "public" && (
             <Chip size="small" label={t(`eventAccess.${event.visibility}`)} />
