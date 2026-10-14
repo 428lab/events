@@ -30,6 +30,10 @@ export const NOTIFICATION_TYPES = [
   "event_access_invite",
   /** 送った招待が承諾/辞退された（招待した本人へ） (#339) */
   "staff_invite_result",
+  /** 共催の依頼が届いた（共催先コミュニティの owner/admin へ） (#625) */
+  "cohost_request",
+  /** 共催の依頼が承諾/辞退された（イベントの作成者へ） (#625) */
+  "cohost_result",
   "info",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -76,6 +80,8 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   staff_invite: "運営への招待",
   event_access_invite: "閲覧への招待",
   staff_invite_result: "運営への招待",
+  cohost_request: "共催",
+  cohost_result: "共催",
   info: "お知らせ",
 };
 

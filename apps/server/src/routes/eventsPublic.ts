@@ -10,6 +10,7 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { entriesRepo } from "../db/repositories/entries.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
+import { eventCohostsRepo } from "../db/repositories/eventCohosts.js";
 import { schedulingRepo } from "../db/repositories/scheduling.js";
 import { listViewableRequestsForEvent } from "./eventRequests.js";
 
@@ -96,6 +97,15 @@ eventPublicRoutes.get("/:id", viewableEvent(), async (c) => {
           iconUrl: community.iconUrl,
         }
       : null,
+    // 共催コミュニティ (#625)。成立（承認）したものだけ、主催と同じ形で承認順に
+    cohosts: (await eventCohostsRepo.listByEvent(event.id, { acceptedOnly: true })).map(
+      (cohost) => ({
+        id: cohost.communityId,
+        slug: cohost.slug,
+        name: cohost.name,
+        iconUrl: cohost.iconUrl,
+      }),
+    ),
     // 生まれ元のたまご（メンバー限定たまごは閲覧権限のある人にだけ返す）
     fromRequests: await listViewableRequestsForEvent(event.id, user),
   });

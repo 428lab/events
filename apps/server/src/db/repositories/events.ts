@@ -213,6 +213,9 @@ export interface EventSearchOpts {
   /** この時刻以降に始まるイベント（「続きを見る」での継続表示用） */
   after?: number;
   communityId?: string;
+  /** communityId を主催のイベントだけに絞る（共催 #625 を含めない）。
+   * コミュニティの開催数（eventCount）は共催を数えない（二重計上を避ける） */
+  hostedOnly?: boolean;
   venueType?: "offline" | "online" | "hybrid";
   /** 日程調整中（開催日未定）を除外する */
   excludeScheduling?: boolean;
@@ -271,9 +274,15 @@ function buildSearchWhere(o: EventSearchOpts, viewer?: CommunityEventViewer): {
     conds.push("starts_at >= ?");
     args.push(o.after);
   }
-  if (o.communityId) {
+  if (o.communityId && o.hostedOnly) {
     conds.push("community_id = ?");
     args.push(o.communityId);
+  } else if (o.communityId) {
+    // 主催に加えて、成立した共催 (#625) のイベントも含める。承認待ちは載せない。
+    // 公開範囲の条件（communityDiscovery）は主催のときと同じものがそのまま掛かる
+    conds.push(`(community_id = ? OR EXISTS (SELECT 1 FROM event_cohost ec
+      WHERE ec.event_id = event.id AND ec.community_id = ? AND ec.status = 'accepted'))`);
+    args.push(o.communityId, o.communityId);
   }
   if (o.venueType) {
     conds.push("venue_type = ?");
@@ -574,7 +583,12 @@ export const eventsRepo = {
       // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る
       next.registrationDeadline ?? null,
       id, input.expectedAccessRevision ?? current.accessRevision, next.visibility,actorId, adminIds(), next.communityId ?? null, next.communityId ?? null, actorId, adminIds(), next.communityId ?? null,
-    ]}, ...(dateChanged ? [{sql: "DELETE FROM event_schedule_finalization WHERE event_id=? AND changes()>0", args: [id]}] : []),...(token ? visibilityChangeStatements(id,token,actorId,current.visibility,next.visibility):[])]);
+    ]}, ...(dateChanged ? [{sql: "DELETE FROM event_schedule_finalization WHERE event_id=? AND changes()>0", args: [id]}] : []),...(token ? visibilityChangeStatements(id,token,actorId,current.visibility,next.visibility):[]),
+      // 共催 (#625) にいたコミュニティを主催に付け替えたら、その共催は外す（主催と共催の二重にしない）。
+      // 末尾に置き、changes() ではなく「主催が実際に変わったか」で判定する（前の文の changes() を奪わないため）
+      ...(next.communityId && next.communityId !== current.communityId ? [{sql:
+        "DELETE FROM event_cohost WHERE event_id = ? AND community_id = ? AND EXISTS (SELECT 1 FROM event WHERE id = ? AND community_id = ?)",
+        args: [id, next.communityId, id, next.communityId]}] : [])]);
     return changed ? this.findById(id) : null;
   },
 

@@ -69,6 +69,8 @@ const notificationTypeEn: Record<NotificationType, string> = {
   staff_invite: "Organizer invite",
   event_access_invite: "Viewing invitation",
   staff_invite_result: "Organizer invite",
+  cohost_request: "Co-host",
+  cohost_result: "Co-host",
   info: "Notice",
 };
 

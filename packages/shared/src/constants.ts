@@ -90,3 +90,6 @@ export const CARD_COMBO_RE =
 /** 統計・KPI の ?days= の上限（約10年）。
  * 上限が無いと ?days=1e9 で Date が範囲外になり toISOString() が投げて 500 になる */
 export const STATS_MAX_DAYS = 3650;
+
+/** 1イベントに付けられる共催コミュニティの上限（承認待ちを含む） (#625) */
+export const MAX_EVENT_COHOSTS = 5;

@@ -25,6 +25,7 @@ import {
   eventStaffInviteRoutes,
   myStaffInviteRoutes,
 } from "./routes/eventStaffInvites.js";
+import { eventCohostRoutes } from "./routes/eventCohosts.js";
 import { scoringRoutes, getEventScoreResults } from "./routes/scoring.js";
 import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes, postRestoreAccount } from "./routes/me.js";
@@ -288,6 +289,8 @@ api.route("/events", cardDesignAssetRoutes);
 api.route("/events", analyticsRoutes);
 // 運営スタッフへの招待 (#339)（招待・取り消しはそのイベントのスタッフのみ。要認証）
 api.route("/events", eventStaffInviteRoutes);
+// 共催コミュニティ (#625)（申請・取り下げはそのイベントの管理者のみ。要認証。承諾は /communities 側）
+api.route("/events", eventCohostRoutes);
 api.route("/events", eventAccessInviteRoutes);
 api.route("/me/event-invites", myEventInviteRoutes);
 api.route("/me/event-access", myEventAccessRoutes);
