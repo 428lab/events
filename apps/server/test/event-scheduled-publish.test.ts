@@ -59,6 +59,11 @@ async function getEvent(cookie: string, id: string): Promise<EventBody["event"]>
   return ((await res.json()) as EventBody).event;
 }
 
+/** 1時間以上先の、30分区切りの時刻（予約は毎時0分・30分だけ） */
+function nextSlot(): number {
+  return Math.ceil((Date.now() + 3600_000) / 1800_000) * 1800_000;
+}
+
 async function schedule(cookie: string, id: string, publishAt: number): Promise<EventBody["event"]> {
   const current = await getEvent(cookie, id);
   const res = await patch(cookie, id, { publishAt, expectedAccessRevision: current.accessRevision });
@@ -95,7 +100,7 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
     const host = await loginDev();
     const draft = await createDraft(host);
     expect(draft.publishAt).toBeNull();
-    const at = Date.now() + 3600_000;
+    const at = nextSlot();
     const scheduled = await schedule(host, draft.id, at);
     expect(scheduled).toMatchObject({ status: "draft", publishAt: at });
     expect(scheduled.accessRevision).toBe(draft.accessRevision + 1);
@@ -105,7 +110,7 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
     expect(((await cancel.json()) as EventBody).event).toMatchObject({ status: "draft", publishAt: null });
   });
 
-  it("過去の日時・公開と同時の予約は 400、revision なしの予約変更は 409", async () => {
+  it("過去の日時・30分区切りでない時刻・公開と同時の予約は 400、revision なしの予約変更は 409", async () => {
     const host = await loginDev();
     const draft = await createDraft(host);
     const past = await patch(host, draft.id, { publishAt: Date.now() - 60_000, expectedAccessRevision: draft.accessRevision });
@@ -114,13 +119,17 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
 
     const withPublish = await patch(host, draft.id, {
       status: "published",
-      publishAt: Date.now() + 3600_000,
+      publishAt: nextSlot(),
       expectedAccessRevision: draft.accessRevision,
     });
     expect(withPublish.status).toBe(400);
     expect(await withPublish.json()).toEqual({ error: "publish_at_invalid" });
 
-    const noRevision = await patch(host, draft.id, { publishAt: Date.now() + 3600_000 });
+    const unaligned = await patch(host, draft.id, { publishAt: nextSlot() + 60_000, expectedAccessRevision: draft.accessRevision });
+    expect(unaligned.status).toBe(400);
+    expect(await unaligned.json()).toEqual({ error: "publish_at_unaligned" });
+
+    const noRevision = await patch(host, draft.id, { publishAt: nextSlot() });
     expect(noRevision.status).toBe(409);
     expect(await noRevision.json()).toEqual({ error: "publish_state_changed" });
     expect((await getEvent(host, draft.id)).publishAt).toBeNull();
@@ -131,8 +140,8 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
     const follower = await followHost(host);
     const due = await createDraft(host);
     const later = await createDraft(host);
-    await schedule(host, due.id, Date.now() + 3600_000);
-    const laterScheduled = await schedule(host, later.id, Date.now() + 3600_000);
+    await schedule(host, due.id, nextSlot());
+    const laterScheduled = await schedule(host, later.id, nextSlot());
     await makeDue(due.id);
 
     // 未ログインでは公開前は見えない
@@ -160,7 +169,7 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
     const host = await loginDev();
     const follower = await followHost(host);
     const draft = await createDraft(host);
-    await schedule(host, draft.id, Date.now() + 3600_000);
+    await schedule(host, draft.id, nextSlot());
     const res = await SELF.fetch(`${BASE}/api/events/${draft.id}/publish`, { method: "POST", headers: { cookie: host } });
     expect(res.status).toBe(200);
     expect(((await res.json()) as EventBody).event).toMatchObject({ status: "published", publishAt: null });
@@ -172,7 +181,7 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
   it("取り消した予約は時刻が来ても公開しない", async () => {
     const host = await loginDev();
     const draft = await createDraft(host);
-    const scheduled = await schedule(host, draft.id, Date.now() + 3600_000);
+    const scheduled = await schedule(host, draft.id, nextSlot());
     await patch(host, draft.id, { publishAt: null, expectedAccessRevision: scheduled.accessRevision });
     expect((await publishDueEvents(Date.now() + 2 * 3600_000)).published).not.toContain(draft.id);
     expect((await getEvent(host, draft.id)).status).toBe("draft");
@@ -181,7 +190,7 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
   it("自動公開のあと、古い編集フォームの status: draft は 409 で、公開のまま", async () => {
     const host = await loginDev();
     const draft = await createDraft(host);
-    const scheduled = await schedule(host, draft.id, Date.now() + 3600_000);
+    const scheduled = await schedule(host, draft.id, nextSlot());
     await makeDue(draft.id);
     expect((await publishDueEvents()).published).toContain(draft.id);
 
@@ -201,7 +210,7 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
 
     const host = await loginDev();
     const draft = await createDraft(host);
-    await schedule(host, draft.id, Date.now() + 3600_000);
+    await schedule(host, draft.id, nextSlot());
     await makeDue(draft.id);
     const res = await SELF.fetch(`${BASE}/api/admin/run-scheduled-publish`, { method: "POST", headers: { cookie: host } });
     expect(res.status).toBe(200);

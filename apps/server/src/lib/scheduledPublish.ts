@@ -7,7 +7,7 @@ import { notifyOnPublish } from "./publishNotify.js";
  * 予約公開の時刻を過ぎた下書きを公開する (D-EVENT-SCHEDULED-PUBLISH)。
  *
  * 呼ぶのは2か所だけ：本番の cron-hub から Service Binding 経由の
- * `CronEntrypoint.publishDueEvents()`（1分ごと）と、app admin の手動実行
+ * `CronEntrypoint.publishDueEvents()`（30分ごと、毎時0分・30分）と、app admin の手動実行
  * `POST /api/admin/run-scheduled-publish`（staging の確かめ用）。
  *
  * 1回だけを守るのは UPDATE … RETURNING の1文（設計 §3.4）。実行が重なっても、

@@ -770,7 +770,7 @@ export default {
  * （staging は POST /api/admin/run-scheduled-publish で確かめる）
  */
 export class CronEntrypoint extends WorkerEntrypoint<Env> {
-  /** 1分ごと。予約公開の時刻を過ぎた下書きを公開し、手動公開と同じ通知を1回だけ送る */
+  /** 30分ごと（毎時0分・30分）。予約公開の時刻を過ぎた下書きを公開し、手動公開と同じ通知を1回だけ送る */
   async publishDueEvents(): Promise<{ published: string[] }> {
     bindEnv(this.env);
     return runWithExecutionContext(this.ctx, () => publishDueEvents());

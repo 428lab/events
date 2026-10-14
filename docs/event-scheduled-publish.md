@@ -8,7 +8,8 @@
 **オーナー決定（2026-10）**
 
 - Q1：時刻ちょうどに動かすため、Cloudflare の cron 枠を1つ空けて（noscha-io-staging の cron を外した）、**共用の定期実行 Worker `cron-hub`** を置く。
-  - cron-hub が1分ごとに eventer 本番を呼ぶ。
+  - cron-hub が30分ごと（毎時0分・30分）に eventer を呼ぶ。
+  - 予約できる時刻も毎時0分・30分だけにする（オーナー決定、2026-10-14）。毎分の確認は無駄が多いため。
   - 今後ほかの定期処理が要っても、同じ枠を使い回す。
 - Q2：予約は編集画面だけで入れる。作成は今まで通り下書き。
 - 自動で公開されたときも、公開のメールは手動で公開したときと同じ条件で、1回だけ送る。
@@ -29,7 +30,7 @@
 - **作成画面で予約を入れること**：作成は今まで通り必ず下書きで始まり、予約は編集画面で入れる（オーナー決定 Q2）。
 - **予約の非公開化**（公開中のイベントを、決めた時刻に下書きに戻すこと）。
 - **複数の予約や履歴**：予約は1件で、上書きするだけ。
-- **秒単位の正確さ**：cron-hub は1分ごとに動くので、最大で約1分遅れる（§3.3）。
+- **分単位の予約**：予約できるのは毎時0分・30分だけ。cron-hub もその時刻にだけ動く（§3.3）。
 - **公開時の新しい通知種別、メール、Nostr への投稿**：今の「公開時の通知」と同じものだけを送る。
 - **予約したアカウントがあとで消えた場合などの特別扱い**：§5.6 を参照。
 
@@ -98,7 +99,7 @@
 | 案 | 中身 | 判断 |
 |---|---|---|
 | (a) 読み取り時に判定 | `status='published' OR (status='draft' AND publish_at<=now)` を、2.3 の全部の読み取りに入れる。通知は別に起こす必要がある | **採らない**。約60か所の SQL と `eventViewSql` を書き換えることになり、漏れたところで「見えるのに一覧に出ない」「通知が来ない」が起きる。それに、通知を起こすきっかけは結局どこかに要る |
-| (b) **定期実行で状態を切り替える（採用）** | 共用の cron-hub が1分ごとに eventer 本番の `publishDueEvents()` を呼び、`draft` を `published` に変えて通知を送る | **採用**。状態は今の `status` のままなので、2.3 の読み取りは1行も変えなくてよい。通知も、既存の1回だけにする仕組みで済む。アクセスが無い時間帯でも遅れない |
+| (b) **定期実行で状態を切り替える（採用）** | 共用の cron-hub が30分ごと（毎時0分・30分）に eventer 本番の `publishDueEvents()` を呼び、`draft` を `published` に変えて通知を送る | **採用**。状態は今の `status` のままなので、2.3 の読み取りは1行も変えなくてよい。通知も、既存の1回だけにする仕組みで済む。アクセスが無い時間帯でも遅れない |
 | (c) リクエストをきっかけに切り替える | Worker が受けたリクエストの最初に確かめる | **採らない**。アクセスが無い時間帯は最大30分ほど遅れる（本番の実測）。オーナーが (b) を選んだ |
 
 - Durable Object の alarm や Queues の遅延配信は、「KV / DO を入れない」方針と仕組みの最小化に反するので採らない。
@@ -147,9 +148,9 @@ export async function publishDueEvents(now = Date.now()): Promise<{ published: s
 - **呼ばれ方は2つだけ**：
   1. **cron-hub からの RPC**（本番）。eventer の `CronEntrypoint`（`WorkerEntrypoint` を継ぐ名前付きエントリポイント）の `publishDueEvents()`。Service Binding でしか呼べず、公開の HTTP には出さない。
   2. **手動の実行用 API** `POST /api/admin/run-scheduled-publish`（app admin だけ）。`/api/admin/run-reminders` と同じ形で、staging の確かめ用。
-- **staging**：cron-hub は本番の eventer だけを呼ぶ。staging では自動では動かず、確かめるときは手動の実行用 API を使う（今のリマインダーなどと同じ）。
-- **遅れ**：最大で約1分（cron-hub の間隔）。
-- **D1 のコスト**：部分索引を引くだけ。予約が0件なら、読み取りはほぼ0行。1分に1回で、1日1,440回の小さな書き込みクエリが増える。D-POLL-MIN で減らした量（数百行/時）に対して、誤差の範囲。ブラウザからの問い合わせは増えない。
+- **staging**：cron-hub は本番と staging の両方の eventer を呼ぶ（オーナー決定、2026-10-14）。待たずに確かめたいときは手動の実行用 API を使う。
+- **遅れ**：予約は毎時0分・30分だけで、cron-hub も同じ時刻に動くので、遅れは cron の起動のずれ（数秒〜数十秒）だけ。
+- **D1 のコスト**：部分索引を引くだけ。予約が0件なら、読み取りはほぼ0行。30分に1回で、1日48回の小さな書き込みクエリが増える。D-POLL-MIN で減らした量（数百行/時）に対して、誤差の範囲。ブラウザからの問い合わせは増えない。
 
 ### 3.4 1回だけを守る仕組み
 
@@ -163,7 +164,7 @@ export async function publishDueEvents(now = Date.now()): Promise<{ published: s
   - 1つのアカウントの複数のプロジェクトが使い回すものなので、eventer の中に置くと、ほかのプロジェクトを足すたびに eventer の変更になってしまう。
   - ワークスペースに、こうした共用 Worker の置き場所の決まりは無い。
 - **中身**：
-  - `wrangler.toml`：`crons = ["* * * * *"]`。行き先ごとに `[[services]]` を書く（最初は `binding = "EVENTER", service = "eventer", entrypoint = "CronEntrypoint"` の1つだけ）。
+  - `wrangler.toml`：`crons = ["0,30 * * * *"]`（毎時0分・30分）。行き先ごとに `[[services]]` を書く（最初は `binding = "EVENTER", service = "eventer", entrypoint = "CronEntrypoint"` の1つだけ）。
   - `scheduled()` は、行き先の一覧（コードの配列。今は1件）を `Promise.allSettled` で呼ぶ。
     - 1つの行き先の失敗が、ほかを止めない。
     - 失敗は `console.error` で、行き先名とエラーを残す。Workers Logs で見る。
@@ -187,11 +188,13 @@ export async function publishDueEvents(now = Date.now()): Promise<{ published: s
 ```
 公開状態
 [ 非公開（下書き） ][ 予約公開 ][ 公開 ]
- 公開する日時 [ 2026-10-20 12:00 ]   ← 「予約公開」を選んだときだけ出す
- この日時になると自動で公開され、フォロワーに通知されます。
+ 公開する日時                         ← 「予約公開」を選んだときだけ出す
+ [ 公開する日 2026-10-20 ][ 公開する時刻 12:00 ▾ ]
+ この日時になると自動で公開され、フォロワーに通知されます。30分単位（毎時0分・30分）で選べます。
 ```
 
-- 日時は `type="datetime-local"` で入れる。締切日時と同じ部品と変換（`toLocalInput` / `fromDateTimeLocal`）を使う。
+- 日付は `type="date"`、時刻は 00:00〜23:30 の30分刻みの select で入れる。`datetime-local` の `step` はスマホのブラウザで効かないため、分けて選ばせる。値は締切日時と同じ変換（`toLocalInput` / `fromDateTimeLocal`）を使う。
+  - 初めて「予約公開」を選んだときは、次の0分か30分を入れておく。
   - 時刻はブラウザの地域時間で、日本なら JST。今の開催日時・締切と同じ扱い。
 - 送る内容：
   - 予約公開：`status: "draft", publishAt: ms`
@@ -242,6 +245,7 @@ export async function publishDueEvents(now = Date.now()): Promise<{ published: s
 ### 5.4 過去の時刻を入れた場合
 
 - 400 `publish_at_past` を返し、保存しない（I2）。
+- 30分区切りでない時刻（`publishAt % 1800000 !== 0`）も 400 `publish_at_unaligned`。JST は UTC+9 なので、epoch ms の30分区切りが JST の毎時0分・30分になる。読み込んだときから変えていない予約は弾かない。
 - `archived` のイベントや、`status: "published"` と一緒に `publishAt` を送った場合も 400 `publish_at_invalid`。
 
 ### 5.5 編集フォームが古いまま保存された場合（重要）
@@ -317,8 +321,8 @@ export async function publishDueEvents(now = Date.now()): Promise<{ published: s
 
 本番で確かめること（cron-hub の配備後）：
 
-- Cloudflare の cron-hub の実行記録が1分ごとに成功している。
-- 予約を入れたテスト用の下書きが、1分ほどで公開になる。
+- Cloudflare の cron-hub の実行記録が毎時0分・30分に成功している。
+- 予約を入れたテスト用の下書きが、予約した0分・30分の実行で公開になる。
 
 ---
 
@@ -329,7 +333,7 @@ export async function publishDueEvents(now = Date.now()): Promise<{ published: s
 サーバー（vitest-pool-workers）：
 
 - 予約の設定と取り消し：`publishAt` が保存・NULL 化され、`findById` に出る。
-- 過去の時刻 → 400 `publish_at_past`。`status: "published"` と一緒に送る → 400。
+- 過去の時刻 → 400 `publish_at_past`。30分区切りでない時刻 → 400 `publish_at_unaligned`。`status: "published"` と一緒に送る → 400。
 - `publishDueEvents`：
   - 時刻前の予約は変えない。
   - 過ぎたものだけ `published` にし、`publish_at` を NULL にし、`access_revision` を1増やす。
@@ -350,7 +354,7 @@ web（vitest）：
 
 ### 8.2 受け入れ条件
 
-- 本番では、予約した時刻から1分程度で公開になる（アクセスの有無に関係なく）。一覧・検索・OGP・フィードにも出る。
+- 本番では、予約した時刻（毎時0分・30分）の cron 実行で公開になる（アクセスの有無に関係なく）。一覧・検索・OGP・フィードにも出る。
 - フォロワーやたまごの賛同者への通知は、手動で公開したときと同じ内容で、1回だけ届く。
 - 取り消した予約は公開されない。予約中の手動公開で、通知が2回届くことはない。
 - 古い編集フォームから保存しても、公開済みのイベントが黙って下書きに戻ることはない。
@@ -360,6 +364,6 @@ web（vitest）：
 
 ## 9. 決まったこと
 
-- **Q1**：(b) 共用の cron-hub で1分ごとに動かす（§3.5）。noscha-io-staging の cron 枠を譲った。
+- **Q1**：(b) 共用の cron-hub で動かす（§3.5）。最初は1分ごとだったが、2026-10-14 のオーナー決定で30分ごと（毎時0分・30分）にし、予約できる時刻も同じにした。noscha-io-staging の cron 枠を譲った。
 - **Q2**：予約は編集画面だけ。
 - 公開のメールは、自動で公開されたときにも、手動のときと同じ条件で1回だけ送る。

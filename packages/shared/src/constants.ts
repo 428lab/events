@@ -90,3 +90,7 @@ export const CARD_COMBO_RE =
 /** 統計・KPI の ?days= の上限（約10年）。
  * 上限が無いと ?days=1e9 で Date が範囲外になり toISOString() が投げて 500 になる */
 export const STATS_MAX_DAYS = 3650;
+
+/** 予約公開の時刻の刻み（30分）。cron-hub は毎時0分・30分にだけ動くので、
+ * 予約もその時刻だけにする。JST は UTC+9 なので、epoch ms の30分区切りと同じ (D-EVENT-SCHEDULED-PUBLISH) */
+export const PUBLISH_AT_STEP_MS = 30 * 60 * 1000;

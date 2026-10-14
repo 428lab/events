@@ -39,8 +39,8 @@ adminBroadcastEmailRoutes.post("/", async (c) => {
 });
 
 /** 予約公開の時刻を過ぎた下書きを公開する処理の手動実行（app admin のみ）。
- * 本番は cron-hub が1分ごとに CronEntrypoint を呼ぶ。staging は cron-hub が呼ばないので、
- * 動作確認はこのエンドポイントで行う (D-EVENT-SCHEDULED-PUBLISH) */
+ * cron-hub が30分ごと（毎時0分・30分）に CronEntrypoint を呼ぶ。待たずに確かめたいときに
+ * このエンドポイントを使う (D-EVENT-SCHEDULED-PUBLISH) */
 export const adminScheduledPublishRoutes = new Hono<AppEnv>();
 adminScheduledPublishRoutes.use("*", requireAuth, requireAdmin);
 adminScheduledPublishRoutes.post("/", async (c) => {
