@@ -7,6 +7,8 @@ import type {
   Event,
 } from "@eventer/shared";
 import { many, one, runCount } from "../client.js";
+import { eventViewSql } from "../../auth/eventAccess.js";
+import { adminIds } from "./eventAccessInvites.js";
 
 /** イベントの共催コミュニティ (#625)。docs/event-cohost.md
  *
@@ -34,6 +36,7 @@ interface CommunityCohostRow extends CohostRow {
   e_status: string;
   e_visibility: string | null;
   host_name: string | null;
+  can_view: number;
 }
 
 /** 表示順: 共催中（承認順）→ 承認待ち（申請順）。主催はこの前に来る */
@@ -82,29 +85,38 @@ export const eventCohostsRepo = {
     }));
   },
 
-  /** 共催先コミュニティから見た依頼中・共催中の一覧（owner/admin 向け） */
-  async listByCommunity(communityId: string): Promise<CommunityCohost[]> {
+  /** 共催先コミュニティから見た依頼中・共催中の一覧（owner/admin 向け）。
+   * 閲覧者（viewerId）がそのイベントを閲覧できない行は、題名・開始日時・主催名を伏せて
+   * null で返す（下書き・非公開のまま依頼が来た／承認後に非公開にされた行）。
+   * 承諾・辞退・解除に要る eventId と状態は残す。判定は既存の eventViewSql */
+  async listByCommunity(communityId: string, viewerId: string): Promise<CommunityCohost[]> {
     const rows = await many<CommunityCohostRow>(
       `SELECT ec.*, e.title AS e_title, e.starts_at AS e_starts_at, e.status AS e_status,
-         e.visibility AS e_visibility, hc.name AS host_name
+         e.visibility AS e_visibility, hc.name AS host_name,
+         ${eventViewSql("e", "?2", "?1")} AS can_view
        FROM event_cohost ec
          JOIN event e ON e.id = ec.event_id
          LEFT JOIN community hc ON hc.id = e.community_id
-       WHERE ec.community_id = ?
+       WHERE ec.community_id = ?3
        ${ORDER}`,
+      adminIds(),
+      viewerId,
       communityId,
     );
-    return rows.map((r) => ({
-      eventId: r.event_id,
-      eventTitle: r.e_title,
-      eventStartsAt: r.e_starts_at,
-      eventStatus: r.e_status as Event["status"],
-      eventVisibility: (r.e_visibility ?? "public") as Event["visibility"],
-      hostCommunityName: r.host_name,
-      status: r.status as EventCohostStatus,
-      createdAt: r.created_at,
-      respondedAt: r.responded_at,
-    }));
+    return rows.map((r) => {
+      const visible = r.can_view === 1;
+      return {
+        eventId: r.event_id,
+        eventTitle: visible ? r.e_title : null,
+        eventStartsAt: visible ? r.e_starts_at : null,
+        eventStatus: r.e_status as Event["status"],
+        eventVisibility: (r.e_visibility ?? "public") as Event["visibility"],
+        hostCommunityName: visible ? r.host_name : null,
+        status: r.status as EventCohostStatus,
+        createdAt: r.created_at,
+        respondedAt: r.responded_at,
+      };
+    });
   },
 
   async find(eventId: string, communityId: string): Promise<CohostRecord | null> {

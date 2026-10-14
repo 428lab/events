@@ -146,7 +146,7 @@ communityRoutes.get("/:id/cohosts", async (c) => {
   if (!(await communitiesRepo.isManager(id, c.get("user").id))) {
     return c.json({ error: "forbidden" }, 403);
   }
-  return c.json({ cohosts: await eventCohostsRepo.listByCommunity(id) });
+  return c.json({ cohosts: await eventCohostsRepo.listByCommunity(id, c.get("user").id) });
 });
 
 /** 承諾する。承認待ちのときだけ進む */
@@ -162,7 +162,7 @@ communityRoutes.post("/:id/cohosts/:eventId/accept", async (c) => {
     return c.json({ error: "not_found" }, 404);
   }
   await notifyCohostResult(event, community, true);
-  return c.json({ cohosts: await eventCohostsRepo.listByCommunity(id) });
+  return c.json({ cohosts: await eventCohostsRepo.listByCommunity(id, c.get("user").id) });
 });
 
 /** 辞退する（承認待ち）または共催をやめる（共催中）。
@@ -183,7 +183,7 @@ communityRoutes.delete("/:id/cohosts/:eventId", async (c) => {
     const event = await eventsRepo.findById(eventId);
     if (community && event) await notifyCohostResult(event, community, false);
   }
-  return c.json({ cohosts: await eventCohostsRepo.listByCommunity(id) });
+  return c.json({ cohosts: await eventCohostsRepo.listByCommunity(id, c.get("user").id) });
 });
 
 /** アイコン/バナー画像のアップロード（owner/admin。生バイナリ） */

@@ -279,9 +279,11 @@ function buildSearchWhere(o: EventSearchOpts, viewer?: CommunityEventViewer): {
     args.push(o.communityId);
   } else if (o.communityId) {
     // 主催に加えて、成立した共催 (#625) のイベントも含める。承認待ちは載せない。
-    // 公開範囲の条件（communityDiscovery）は主催のときと同じものがそのまま掛かる
-    conds.push(`(community_id = ? OR EXISTS (SELECT 1 FROM event_cohost ec
-      WHERE ec.event_id = event.id AND ec.community_id = ? AND ec.status = 'accepted'))`);
+    // 公開範囲の条件（communityDiscovery）は主催のときと同じものがそのまま掛かる。
+    // 相関サブクエリ（EXISTS）にすると OR の片側で idx_event_community が使えず event を
+    // 全件走査するので、IN の非相関サブクエリにして主キーで引かせる
+    conds.push(`(community_id = ? OR id IN (SELECT event_id FROM event_cohost
+      WHERE community_id = ? AND status = 'accepted'))`);
     args.push(o.communityId, o.communityId);
   }
   if (o.venueType) {

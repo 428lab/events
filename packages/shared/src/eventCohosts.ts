@@ -29,15 +29,18 @@ export const eventCohostSchema = z.object({
 export type EventCohost = z.infer<typeof eventCohostSchema>;
 
 /** 共催先コミュニティの owner/admin から見た1件（依頼中・共催中）。
- * 承諾するかを決めるのに要る範囲（題名・主催・日時・公開範囲）だけを返す */
+ * 承諾するかを決めるのに要る範囲（題名・主催・日時・公開範囲）だけを返す。
+ * 閲覧者がそのイベントを閲覧できないとき（下書き・非公開）は、題名・日時・主催名を
+ * null で返す。eventId と状態は承諾・辞退・解除のために残す */
 export const communityCohostSchema = z.object({
   eventId: z.string(),
-  eventTitle: z.string(),
-  /** 日程調整中なら 0 */
-  eventStartsAt: z.number(),
+  /** 閲覧できないイベントは null */
+  eventTitle: z.string().nullable(),
+  /** 日程調整中なら 0。閲覧できないイベントは null */
+  eventStartsAt: z.number().nullable(),
   eventStatus: z.enum(EVENT_STATUSES),
   eventVisibility: z.enum(EVENT_VISIBILITIES),
-  /** 主催コミュニティ名（主催が無いイベントは null） */
+  /** 主催コミュニティ名（主催が無いイベント・閲覧できないイベントは null） */
   hostCommunityName: z.string().nullable(),
   status: z.enum(EVENT_COHOST_STATUSES),
   createdAt: z.number(),

@@ -74,7 +74,7 @@
 
 | メソッド・パス | 内容 |
 | --- | --- |
-| `GET /api/communities/:id/cohosts` | 依頼中・共催中の一覧（イベント名・日時・公開範囲・主催コミュニティ名） |
+| `GET /api/communities/:id/cohosts` | 依頼中・共催中の一覧（イベント名・日時・公開範囲・主催コミュニティ名）。閲覧者がそのイベントを閲覧できない（`eventViewSql`）行は、イベント名・日時・主催コミュニティ名を null で返す |
 | `POST /api/communities/:id/cohosts/:eventId/accept` | 承諾 |
 | `DELETE /api/communities/:id/cohosts/:eventId` | 辞退（承認待ち）/ 共催をやめる（共催中） |
 
@@ -99,6 +99,9 @@
   閲覧できないことが多く（下書き・限定公開・非公開）、eventId を付けると `notificationVisibleSql` の
   閲覧資格の判定で通知ごと消えるため。本文にはイベント名と主催コミュニティ名（主催が無ければ依頼者の
   表示名）が出る。actor は付けない。
+  - ただし非公開・下書きのイベントは、eventId が無く汎用化（`genericEventNotice`）が効かないので、
+    題名を含まない汎用の文面（`genericEventNotice` と同じ文言）で送る（`docs/private-events.md` §8）。
+  - メールは送らない（`skipEmail`）。取り下げ→再依頼のたびに owner/admin 全員へ再送されるため。
 - `cohost_result` は通常のイベント通知と同じ扱い（特別扱いを足していない）。作成者がイベントを
   見られなくなっていれば届かない。承諾と辞退で文言が分かれる。共催をやめた・取り下げたときは送らない。
 

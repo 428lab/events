@@ -8,6 +8,7 @@ import { communitiesRepo } from "../db/repositories/communities.js";
 import { eventCohostsRepo } from "../db/repositories/eventCohosts.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
+import { genericEventNotice } from "../db/repositories/eventNotificationAccess.js";
 
 /**
  * イベントの共催コミュニティ (#625)。docs/event-cohost.md
@@ -36,22 +37,38 @@ function toSlug(input: string): string {
  * できないことが多く（下書き・限定公開・非公開）、eventId を付けると
  * notificationVisibleSql の閲覧資格の判定で通知ごと消えてしまう。遷移先も
  * イベントページではなく、承諾・辞退ができるコミュニティ編集ページにする。
- * 主語は人ではなくコミュニティ（主催が無いときだけ依頼者名）なので actor は残さない */
+ * 主語は人ではなくコミュニティ（主催が無いときだけ依頼者名）なので actor は残さない。
+ *
+ * eventId が無いと通知・メールの汎用化（genericEventNotice）が効かないので、
+ * 非公開・下書きのイベントはここで題名を含まない汎用の文面にする
+ * （docs/private-events.md §8）。 */
 async function notifyRequested(
   event: Event,
   target: Community,
   requester: User,
 ): Promise<void> {
-  const host = event.communityId
-    ? await communitiesRepo.findById(event.communityId)
-    : null;
-  const from = host?.name ?? requester.globalName ?? requester.username;
+  const link = `/c/${target.slug}/edit#cohosts`;
+  let title: string;
+  let body: string;
+  if (event.visibility === "private" || event.status === "draft") {
+    ({ title, body } = genericEventNotice(event.id, "cohost_request"));
+  } else {
+    const host = event.communityId
+      ? await communitiesRepo.findById(event.communityId)
+      : null;
+    const from = host?.name ?? requester.globalName ?? requester.username;
+    title = `「${event.title}」の共催の依頼が届きました`;
+    body = `${from} から ${target.name} への共催の依頼です。`;
+  }
   await notificationsRepo.createForMany(
     await eventCohostsRepo.managerIds(target.id),
     "cohost_request",
-    `「${event.title}」の共催の依頼が届きました`,
-    `${from} から ${target.name} への共催の依頼です。`,
-    `/c/${target.slug}/edit#cohosts`,
+    title,
+    body,
+    link,
+    undefined,
+    // メールは送らない。取り下げ→再依頼のたびに owner/admin 全員へメールが再送されるため
+    { skipEmail: true },
   );
 }
 

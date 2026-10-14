@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import type { CommunityCohost, Event, EventCohost } from "@eventer/shared";
+import { emailRepo } from "../src/db/repositories/email.js";
 
 /**
  * イベントの共催コミュニティ (#625)。docs/event-cohost.md
@@ -200,14 +201,18 @@ describe("共催の申請と承認 (#625)", () => {
 
 describe("共催側コミュニティページの一覧 (#625)", () => {
   it("承認後だけ共催側の一覧・検索に出る。開催数（eventCount）には数えない", async () => {
-    const { host, cohostOwner, b, eventId } = await fixture();
+    const { host, cohostOwner, a, b, eventId } = await fixture();
     await request(eventId, host, b.slug);
     expect(await communityPageEventIds(b.slug, null)).not.toContain(eventId);
     expect(await searchEventIds(b.slug, null)).not.toContain(eventId);
+    // 主催側の一覧・検索には従来どおり出る
+    expect(await communityPageEventIds(a.slug, null)).toContain(eventId);
+    expect(await searchEventIds(a.slug, null)).toContain(eventId);
 
     await accept(b.id, eventId, cohostOwner);
     expect(await communityPageEventIds(b.slug, null)).toContain(eventId);
     expect(await searchEventIds(b.slug, null)).toContain(eventId);
+    expect(await searchEventIds(a.slug, null)).toContain(eventId);
     const page = await json<{ eventCount: number }>(await call(`/api/public/communities/${b.slug}`, null));
     expect(page.eventCount).toBe(0);
   });
@@ -372,8 +377,19 @@ describe("共催の通知 (#625)", () => {
     return results;
   }
 
+  /** 依頼の通知（宛先と種別で引く） */
+  async function requestNotices(userIds: string[]) {
+    const { results } = await env.DB.prepare(
+      `SELECT user_id, title, body, link FROM notification
+       WHERE type = 'cohost_request' AND user_id IN (SELECT value FROM json_each(?)) ORDER BY user_id`,
+    )
+      .bind(JSON.stringify(userIds))
+      .all<{ user_id: string; title: string; body: string; link: string }>();
+    return results;
+  }
+
   it("依頼は共催先の owner/admin 全員に eventId なしで、結果は作成者に eventId 付きで届く", async () => {
-    const { host, cohostOwner, cohostAdmin, b, eventId } = await fixture({ publish: false });
+    const { host, cohostOwner, cohostAdmin, a, b, eventId } = await fixture();
     const member = await makeUser();
     await addMember(b.id, member.userId, "member");
     const title = `共催通知_${eventId.slice(0, 8)}`;
@@ -386,12 +402,12 @@ describe("共催の通知 (#625)", () => {
       expect(n.event_id).toBeNull();
       expect(n.actor_id).toBeNull();
       expect(n.link).toBe(`/c/${b.slug}/edit#cohosts`);
+      // 公開済みの公開イベントは題名を出す
+      expect(n.title).toBe(`「${title}」の共催の依頼が届きました`);
     }
-    // 下書きのイベントでも、受け手の通知一覧に出る（閲覧資格で消えない）
-    const inbox = await json<{ notifications: { type: string; link: string }[] }>(
-      await call("/api/notifications", cohostAdmin),
+    expect((await requestNotices([cohostOwner.userId]))[0]?.body).toBe(
+      `${a.name} から ${b.name} への共催の依頼です。`,
     );
-    expect(inbox.notifications.some((n) => n.type === "cohost_request")).toBe(true);
 
     await accept(b.id, eventId, cohostAdmin);
     const accepted = await notices("cohost_result", title);
@@ -420,6 +436,121 @@ describe("共催の通知 (#625)", () => {
     await call(`/api/events/${eventId}/cohosts/${b.id}`, host, "DELETE");
     expect((await notices("cohost_result", title)).length).toBe(2);
     expect((await notices("cohost_request", title)).length).toBe(before);
+  });
+});
+
+describe("共催の依頼の通知で題名を伏せる (#625)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function requestNotices(userIds: string[]) {
+    const { results } = await env.DB.prepare(
+      `SELECT user_id, event_id, title, body, link FROM notification
+       WHERE type = 'cohost_request' AND user_id IN (SELECT value FROM json_each(?)) ORDER BY user_id`,
+    )
+      .bind(JSON.stringify(userIds))
+      .all<{ user_id: string; event_id: string | null; title: string; body: string; link: string }>();
+    return results;
+  }
+
+  it("下書きのイベントへの依頼は題名を含まない汎用の文面で届き、通知一覧にも出る", async () => {
+    const { host, cohostOwner, cohostAdmin, a, b, eventId } = await fixture({ publish: false });
+    const title = `下書き共催_${eventId.slice(0, 8)}`;
+    expect((await call(`/api/events/${eventId}`, host, "PATCH", { title })).status).toBe(200);
+    await request(eventId, host, b.slug);
+
+    const rows = await requestNotices([cohostOwner.userId, cohostAdmin.userId]);
+    expect(rows).toHaveLength(2);
+    for (const n of rows) {
+      expect(n).toMatchObject({ event_id: null, title: "イベントの更新があります", body: "", link: `/c/${b.slug}/edit#cohosts` });
+      expect(n.title + n.body).not.toContain(title);
+      expect(n.body).not.toContain(a.name);
+    }
+    const inbox = await json<{ notifications: { type: string; title: string; body: string }[] }>(
+      await call("/api/notifications", cohostAdmin),
+    );
+    const got = inbox.notifications.filter((n) => n.type === "cohost_request");
+    expect(got).toHaveLength(1);
+    expect(got[0]!.title + got[0]!.body).not.toContain(title);
+  });
+
+  it("非公開（公開済み）のイベントへの依頼も題名を含まない汎用の文面で届く", async () => {
+    const { host, cohostOwner, b, eventId } = await fixture();
+    const title = `非公開共催_${eventId.slice(0, 8)}`;
+    await env.DB.prepare("UPDATE event SET title = ?, visibility = 'private' WHERE id = ?").bind(title, eventId).run();
+    await request(eventId, host, b.slug);
+
+    const rows = await requestNotices([cohostOwner.userId]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ title: "イベントの更新があります", body: "", link: `/c/${b.slug}/edit#cohosts` });
+  });
+
+  it("限定公開（公開済み）のイベントへの依頼は題名を出す", async () => {
+    const { host, cohostOwner, b, eventId } = await fixture();
+    const title = `限定公開共催_${eventId.slice(0, 8)}`;
+    await env.DB.prepare("UPDATE event SET title = ?, visibility = 'unlisted' WHERE id = ?").bind(title, eventId).run();
+    await request(eventId, host, b.slug);
+    expect((await requestNotices([cohostOwner.userId]))[0]?.title).toBe(`「${title}」の共催の依頼が届きました`);
+  });
+
+  it("依頼はメールを送らない（取り下げ→再依頼で再送されないように）。アプリ内通知は届く", async () => {
+    const { host, cohostOwner, cohostAdmin, b, eventId } = await fixture();
+    const spy = vi.spyOn(emailRepo, "findRecipientsAmong");
+    await request(eventId, host, b.slug);
+    await call(`/api/events/${eventId}/cohosts/${b.id}`, host, "DELETE");
+    await request(eventId, host, b.slug);
+    expect(spy).not.toHaveBeenCalled();
+    expect(await requestNotices([cohostOwner.userId, cohostAdmin.userId])).toHaveLength(4);
+  });
+});
+
+describe("共催先の一覧で閲覧できないイベントを伏せる (#625)", () => {
+  const listFor = async (communityId: string, user: TestUser) =>
+    (await json<{ cohosts: CommunityCohost[] }>(await call(`/api/communities/${communityId}/cohosts`, user))).cohosts;
+
+  it("承認後に非公開にしたイベントは、題名・日時・主催名を null にし、eventId と状態は残す", async () => {
+    const { host, cohostOwner, b, eventId } = await fixture();
+    await request(eventId, host, b.slug);
+    await accept(b.id, eventId, cohostOwner);
+    await env.DB.prepare("UPDATE event SET visibility = 'private' WHERE id = ?").bind(eventId).run();
+
+    const [row] = await listFor(b.id, cohostOwner);
+    expect(row).toMatchObject({
+      eventId,
+      eventTitle: null,
+      eventStartsAt: null,
+      hostCommunityName: null,
+      eventStatus: "published",
+      eventVisibility: "private",
+      status: "accepted",
+    });
+    expect(row!.createdAt).toEqual(expect.any(Number));
+    expect(row!.respondedAt).toEqual(expect.any(Number));
+    // 伏せた行でも共催をやめられる
+    expect((await call(`/api/communities/${b.id}/cohosts/${eventId}`, cohostOwner, "DELETE")).status).toBe(200);
+  });
+
+  it("依頼中の下書きも伏せ、承諾できる", async () => {
+    const { host, cohostOwner, b, eventId } = await fixture({ publish: false });
+    await request(eventId, host, b.slug);
+    const [row] = await listFor(b.id, cohostOwner);
+    expect(row).toMatchObject({ eventId, eventTitle: null, eventStartsAt: null, eventStatus: "draft", status: "pending" });
+    expect((await accept(b.id, eventId, cohostOwner)).status).toBe(200);
+  });
+
+  it("閲覧できる人（非公開イベントに招待済み）には題名・日時が出る", async () => {
+    const { host, cohostOwner, a, b, eventId } = await fixture();
+    await request(eventId, host, b.slug);
+    await env.DB.prepare("UPDATE event SET visibility = 'private' WHERE id = ?").bind(eventId).run();
+    await env.DB.prepare(
+      "INSERT INTO event_access_invite(id,event_id,user_id,status,source,created_at) VALUES(?,?,?,'accepted','invite',1)",
+    )
+      .bind(crypto.randomUUID(), eventId, cohostOwner.userId)
+      .run();
+    const [row] = await listFor(b.id, cohostOwner);
+    expect(row).toMatchObject({ eventId, eventTitle: "共催の検証", hostCommunityName: a.name });
+    expect(row!.eventStartsAt).toEqual(expect.any(Number));
   });
 });
 
