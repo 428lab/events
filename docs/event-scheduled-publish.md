@@ -3,7 +3,15 @@
 オーナー依頼：「イベントの予約公開機能が欲しいです」
 
 下書きのイベントに「公開する日時」を入れておくと、その時刻になったら自動で公開されるようにする。
-この文書は設計の正本で、実装の前にオーナーの承認を取る。基準にしたのは main `292bfae`。
+この文書は設計の正本。基準にしたのは main `292bfae`。
+
+**オーナー決定（2026-10）**
+
+- Q1：時刻ちょうどに動かすため、Cloudflare の cron 枠を1つ空けて（noscha-io-staging の cron を外した）、**共用の定期実行 Worker `cron-hub`** を置く。
+  - cron-hub が1分ごとに eventer 本番を呼ぶ。
+  - 今後ほかの定期処理が要っても、同じ枠を使い回す。
+- Q2：予約は編集画面だけで入れる。作成は今まで通り下書き。
+- 自動で公開されたときも、公開のメールは手動で公開したときと同じ条件で、1回だけ送る。
 
 ---
 
@@ -18,10 +26,10 @@
 
 ### 1.2 やらないこと
 
-- **作成画面で予約を入れること**：作成は今まで通り必ず下書きで始まり、予約は編集画面で入れる。→ 未決事項 Q2
+- **作成画面で予約を入れること**：作成は今まで通り必ず下書きで始まり、予約は編集画面で入れる（オーナー決定 Q2）。
 - **予約の非公開化**（公開中のイベントを、決めた時刻に下書きに戻すこと）。
 - **複数の予約や履歴**：予約は1件で、上書きするだけ。
-- **秒単位の正確さ**：最大で約1分、遅れることがある（§3.3）。
+- **秒単位の正確さ**：cron-hub は1分ごとに動くので、最大で約1分遅れる（§3.3）。
 - **公開時の新しい通知種別、メール、Nostr への投稿**：今の「公開時の通知」と同じものだけを送る。
 - **予約したアカウントがあとで消えた場合などの特別扱い**：§5.6 を参照。
 
@@ -74,6 +82,7 @@
 - 定期実行は GitHub Actions から `POST /api/cron/*` を `x-cron-key` 付きで呼んでいる（`reminders.yml`、`broadcast-emails.yml`、ほか）。
 - **ただし `broadcast-emails.yml` の `*/5 * * * *` は、実際には 2.7〜9.8 時間おき（中央値 5.7 時間）にしか動いていない**。2026-10-04〜13 の直近40回の実測で、公開リポジトリの schedule が間引かれているため。
   - したがって GitHub Actions は、「予定した時刻に公開する」用途には使えない。
+- オーナーの承認を受けて、noscha-io-staging の cron を外し（kojira/noscha-io#2。Cloudflare 上の schedule も空にした）、枠を1つ空けた。この枠は共用の cron-hub が使う（§3.5）。
 
 ### 2.5 D-POLL-MIN の制約
 
@@ -89,13 +98,10 @@
 | 案 | 中身 | 判断 |
 |---|---|---|
 | (a) 読み取り時に判定 | `status='published' OR (status='draft' AND publish_at<=now)` を、2.3 の全部の読み取りに入れる。通知は別に起こす必要がある | **採らない**。約60か所の SQL と `eventViewSql` を書き換えることになり、漏れたところで「見えるのに一覧に出ない」「通知が来ない」が起きる。それに、通知を起こすきっかけは結局どこかに要る |
-| (b) 数分おきの cron で状態を切り替える | 定期実行で `draft` を `published` に変え、通知も送る | **今の環境では成り立たない**。Workers の cron 枠はアカウントで埋まっていて、GitHub Actions は数時間遅れる（2.4） |
-| (c) **リクエストをきっかけに切り替える（推奨）** | Worker が受けたリクエストの最初に「公開時刻を過ぎた下書き」を `published` に切り替え、通知を送る。1つの isolate では最大1分に1回だけ確かめる | **推奨**。状態は今の `status` のままなので、2.3 の読み取りは1行も変えなくてよい。通知も、既存の1回だけにする仕組みで済む |
+| (b) **定期実行で状態を切り替える（採用）** | 共用の cron-hub が1分ごとに eventer 本番の `publishDueEvents()` を呼び、`draft` を `published` に変えて通知を送る | **採用**。状態は今の `status` のままなので、2.3 の読み取りは1行も変えなくてよい。通知も、既存の1回だけにする仕組みで済む。アクセスが無い時間帯でも遅れない |
+| (c) リクエストをきっかけに切り替える | Worker が受けたリクエストの最初に確かめる | **採らない**。アクセスが無い時間帯は最大30分ほど遅れる（本番の実測）。オーナーが (b) を選んだ |
 
-(c) は、(b) の「状態を切り替えて通知する」を、タイマーではなく**届いたリクエスト**で動かすものと言える。
-
-- Durable Object の alarm や Queues の遅延配信も時刻ちょうどに動かせるが、これまでの方針「KV / DO を入れない」と、仕組みの最小化に反するので採らない。
-- オーナーが cron 枠を1つ空けられる場合は (b) も選べる。→ 未決事項 Q1
+- Durable Object の alarm や Queues の遅延配信は、「KV / DO を入れない」方針と仕組みの最小化に反するので採らない。
 
 ### 3.2 データ
 
@@ -120,50 +126,53 @@ CREATE INDEX idx_event_publish_at ON event(publish_at) WHERE publish_at IS NOT N
 - `updateEventInput` に `publishAt: z.number().int().positive().nullable().optional()` を足す。
 - 作成と複製では `publish_at` を入れない（NULL のまま）。
 
-### 3.3 切り替えの処理
+### 3.3 切り替えの処理（eventer）
 
 `apps/server/src/lib/scheduledPublish.ts` を新しく作る。
 
 ```ts
-let lastDueCheckAt = 0;                    // isolate ごと。タイマーではない
-const DUE_CHECK_INTERVAL_MS = 60_000;
-
-export async function publishDueEvents(now = Date.now()): Promise<void> {
-  if (now - lastDueCheckAt < DUE_CHECK_INTERVAL_MS) return;
-  lastDueCheckAt = now;
+export async function publishDueEvents(now = Date.now()): Promise<{ published: string[] }> {
   const rows = await many<{ id: string }>(
     `UPDATE event SET status='published', publish_at=NULL, access_revision=access_revision+1
-      WHERE status='draft' AND publish_at IS NOT NULL AND publish_at<=?
+      WHERE publish_at IS NOT NULL AND publish_at<=? AND status='draft'
       RETURNING id`, now);
-  if (rows.length === 0) return;
-  await deferBackground(runPublishSideEffects(rows.map(r => r.id)));
+  for (const { id } of rows) await runPublishSideEffects(id);
+  return { published: rows.map(r => r.id) };
 }
 ```
 
-- **呼ぶ場所**：`worker.ts` の `app.use("*")` の先頭近くで呼ぶ。`/api/*` と、イベントの HTML の経路（`/events/:id`、`/e/:slug`）だけを対象にする。
-  - 対象のリクエストでは、間引きの判定のあとに `UPDATE` を**待ってから**、そのリクエストを処理する。だから、時刻を過ぎて最初に確かめたリクエストは、もう公開済みの状態を見る。
-  - 通知は `deferBackground`（waitUntil）に回し、レスポンスを待たせない。
-- **`runPublishSideEffects(ids)`**：イベントごとに `findById` で読み直して、`notifyOnPublish(prior, event)` を呼ぶ。
-  - `prior` には `{ ...event, status: "draft" }` を渡す。
-  - そのうえで `eventSignal.publishRefetch([["live", id]])` を出す。PATCH で公開したときと同じシグナル。
-  - `notifyOnPublish` は eventCrud.ts から lib に移し、手動・自動の両方が同じ関数を使う。中身は変えない。
-- **遅れ**：最大で「公開時刻から、次にどこかの isolate がリクエストを受けて確かめるまで」。
-  - 通常は1分以内。
-  - サイトに誰もアクセスしない時間帯は、最初のアクセスまで公開（とフォロワーへの通知）が遅れる。ただ、その間はそもそも誰も見ていない。
-- **D1 のコスト**：部分索引を引くだけなので、該当が0件なら読み取りはほぼ0行。
-  - 1つの isolate で1分に1回なので、全体で「isolate の数 ÷ 1分」の小さな書き込みクエリが増えるだけ。
-  - D-POLL-MIN で減らした量（数百行/時）に対して、誤差の範囲。
-  - ブラウザからの問い合わせは増えない。
+- **`runPublishSideEffects(id)`**：`findById` で読み直して `notifyOnPublish({ ...event, status: "draft" }, event)` を呼ぶ。そのうえで `eventSignal.publishRefetch([["live", id]])` を出す（PATCH で公開したときと同じシグナル）。
+  - `notifyOnPublish` は eventCrud.ts から `lib/publishNotify.ts` に移し、手動・自動の両方が同じ関数を使う。中身は変えない。
+  - 1件の通知が失敗しても、ほかのイベントの通知は続ける（try/catch でログを残す）。公開そのものは UPDATE で終わっているので、通知の失敗で状態は戻さない（今の手動公開と同じ扱い）。
+- **呼ばれ方は2つだけ**：
+  1. **cron-hub からの RPC**（本番）。eventer の `CronEntrypoint`（`WorkerEntrypoint` を継ぐ名前付きエントリポイント）の `publishDueEvents()`。Service Binding でしか呼べず、公開の HTTP には出さない。
+  2. **手動の実行用 API** `POST /api/admin/run-scheduled-publish`（app admin だけ）。`/api/admin/run-reminders` と同じ形で、staging の確かめ用。
+- **staging**：cron-hub は本番の eventer だけを呼ぶ。staging では自動では動かず、確かめるときは手動の実行用 API を使う（今のリマインダーなどと同じ）。
+- **遅れ**：最大で約1分（cron-hub の間隔）。
+- **D1 のコスト**：部分索引を引くだけ。予約が0件なら、読み取りはほぼ0行。1分に1回で、1日1,440回の小さな書き込みクエリが増える。D-POLL-MIN で減らした量（数百行/時）に対して、誤差の範囲。ブラウザからの問い合わせは増えない。
 
 ### 3.4 1回だけを守る仕組み
 
-- `UPDATE … WHERE status='draft' AND publish_at<=? RETURNING id` は1つの文で原子的に動く。
-  - 2つの isolate が同時に動いても、行を変えた側だけが id を受け取る。
-  - だから `runPublishSideEffects` が同じイベントで2回動くことはない。
-- 手動の公開（PATCH・POST /publish）は、同じ UPDATE の中で `publish_at = NULL` に戻す。
-  - 手動で公開した後は、自動の切り替えの条件（`status='draft'`）に当たらない。
-- フォロワーへの通知は、これまで通り `claimFollowersNotify` で1回だけになる。
-  - 公開 → 下書き → 再び予約 → 自動公開、と進んでも、2回目は送らない（今の手動公開と同じ）。
+- `UPDATE … WHERE status='draft' AND publish_at<=? RETURNING id` は1つの文で原子的に動く。cron の実行が重なっても、手動の実行と重なっても、行を変えた側だけが id を受け取る。だから同じイベントの通知が2回走ることはない。
+- 手動の公開（PATCH・POST /publish）は、同じ UPDATE の中で `publish_at = NULL` に戻す。手動で公開した後は、自動の切り替えの条件（`status='draft'`）に当たらない。
+- フォロワーへの通知は、これまで通り `claimFollowersNotify` で1回だけになる。公開 → 下書き → 再び予約 → 自動公開、と進んでも、2回目は送らない（今の手動公開と同じ）。
+
+### 3.5 共用の定期実行 Worker（cron-hub）
+
+- **置き場所**：新しい private リポジトリ `kojira/cron-hub`。
+  - 1つのアカウントの複数のプロジェクトが使い回すものなので、eventer の中に置くと、ほかのプロジェクトを足すたびに eventer の変更になってしまう。
+  - ワークスペースに、こうした共用 Worker の置き場所の決まりは無い。
+- **中身**：
+  - `wrangler.toml`：`crons = ["* * * * *"]`。行き先ごとに `[[services]]` を書く（最初は `binding = "EVENTER", service = "eventer", entrypoint = "CronEntrypoint"` の1つだけ）。
+  - `scheduled()` は、行き先の一覧（コードの配列。今は1件）を `Promise.allSettled` で呼ぶ。
+    - 1つの行き先の失敗が、ほかを止めない。
+    - 失敗は `console.error` で、行き先名とエラーを残す。Workers Logs で見る。
+  - `fetch()` は 404 だけ返す（HTTP では何もしない）。
+- **安全性**：Service Binding は同じアカウントの Worker からしか呼べない。eventer は RPC のメソッドだけを出し、`x-cron-key` の秘密は使わない。
+- **配備の順番**：
+  1. eventer に `CronEntrypoint` が入った版を本番に出す。
+  2. そのあとで cron-hub を配備する。
+  - cron-hub の配備は、eventer の本番リリースの承認と一緒に行う。
 
 ---
 
@@ -276,7 +285,10 @@ export async function publishDueEvents(now = Date.now()): Promise<void> {
 | サーバー | `db/repositories/events.ts` | `toEvent` に `publishAt` を足す。`update` で `publish_at` を書き、`status='published'` なら NULL に戻す。`setStatus("published")` でも NULL に戻す |
 | サーバー | `routes/eventCrud.ts` | §5.4 と §5.5 の確認を足す。`notifyOnPublish` を lib に移す |
 | サーバー | `lib/scheduledPublish.ts`（新規） | `publishDueEvents`, `runPublishSideEffects` |
-| サーバー | `worker.ts` | 対象の経路の先頭で `publishDueEvents()` を呼ぶ |
+| サーバー | `lib/publishNotify.ts`（新規） | eventCrud.ts から `notifyOnPublish` を移す |
+| サーバー | `worker.ts` | `export class CronEntrypoint extends WorkerEntrypoint`（`publishDueEvents()`） |
+| サーバー | `routes/adminReminders.ts` | `POST /api/admin/run-scheduled-publish`（app admin だけ） |
+| cron-hub | `kojira/cron-hub`（新規） | `wrangler.toml`（cron・service binding）と `src/index.ts` |
 | web | `pages/EditEventPage.tsx` | 3択のトグル、日時の入力、`expectedAccessRevision` の付け方 |
 | web | `pages/EventManagePage.tsx` | 予約中の警告と、2つのボタン |
 | web | `pages/EventDetailPage.tsx` | 「公開予定」のチップ |
@@ -288,23 +300,21 @@ export async function publishDueEvents(now = Date.now()): Promise<void> {
 ## 7. ステージングでの確かめ方
 
 - ステージングにも同じ migration 0111 を当てる（本番の前に、手で）。
-- ステージングには入口のゲートがあるが、管理者として入れば編集画面・運営ページは本番と同じように使える。
-- 自動の切り替えはリクエストで動くので、ステージングで cron が止まっていても関係なく確かめられる。
+- ステージングでは cron-hub は動かないので、時刻を過ぎたら app admin が `POST /api/admin/run-scheduled-publish` を呼ぶ。
 
 確かめる手順：
 
 1. テスト用の下書きイベントで、**今から2〜3分後**に予約公開を入れて保存する。運営ページに「HH:mm に自動で公開されます」と出ることを確かめる。
-2. そのイベントに関わっていない別の管理者以外のアカウントでは、時刻前に開くと 404 になることを確かめる。ステージングは入口のゲートで未ログインでは開けないため、ゲートを通るアカウントで見る。未ログインで見えるかどうかは自動テストで確かめる。
-3. 時刻を過ぎてから、何かのページを開いて1分ほど待ち、再読み込みする。状態が「公開」になり、一覧にも出ることを確かめる。
+2. 時刻前に実行用 API を呼んでも、`published: []` で何も変わらないことを確かめる。
+3. 時刻を過ぎてから実行用 API を呼ぶ。`published` にそのイベントが入り、再読み込みすると状態が「公開」になり、一覧にも出ることを確かめる。もう1回呼ぶと `published: []` になる。
 4. テスト用のアカウントで作成者をフォローしておき、「イベントを公開しました」の通知が**1件だけ**届くことを確かめる。
-5. もう1件予約を入れて取り消し、時刻を過ぎても公開されないことを確かめる。
-6. もう1件予約を入れて「今すぐ公開」を押し、すぐ公開され、時刻が来ても通知が増えないことを確かめる。
-7. D1 の insights で、切り替えの UPDATE の読み取り行数がほぼ0であることを確かめる。
+5. もう1件予約を入れて取り消し、時刻を過ぎて実行しても公開されないことを確かめる。
+6. もう1件予約を入れて「今すぐ公開」を押し、すぐ公開されることを確かめる。時刻を過ぎて実行しても、通知が増えないことも確かめる。
 
-注意：
+本番で確かめること（cron-hub の配備後）：
 
-- ステージングの D1 にあるフォロワーへの通知とメールは、手動で公開したときと同じように送られる（メールの送り先は、ステージングの設定に従う）。
-- 自動公開だけが、ステージングで余分に送るということはない。
+- Cloudflare の cron-hub の実行記録が1分ごとに成功している。
+- 予約を入れたテスト用の下書きが、1分ほどで公開になる。
 
 ---
 
@@ -320,7 +330,7 @@ export async function publishDueEvents(now = Date.now()): Promise<void> {
   - 時刻前の予約は変えない。
   - 過ぎたものだけ `published` にし、`publish_at` を NULL にし、`access_revision` を1増やす。
   - 同時に2回呼んでも、id を返すのは1回だけ。
-  - 1分以内の2回目は D1 を読まない。
+- `POST /api/admin/run-scheduled-publish` は app admin 以外には 403 を返す。
 - 自動公開のあと、
   - 公開範囲が public のイベントでは、フォロワーへの通知が1件だけ。
   - たまごの賛同者への通知も1件だけ。
@@ -336,7 +346,7 @@ web（vitest）：
 
 ### 8.2 受け入れ条件
 
-- 予約した時刻を過ぎてからサイトにアクセスがあれば、1分程度で公開になる。一覧・検索・OGP・フィードにも出る。
+- 本番では、予約した時刻から1分程度で公開になる（アクセスの有無に関係なく）。一覧・検索・OGP・フィードにも出る。
 - フォロワーやたまごの賛同者への通知は、手動で公開したときと同じ内容で、1回だけ届く。
 - 取り消した予約は公開されない。予約中の手動公開で、通知が2回届くことはない。
 - 古い編集フォームから保存しても、公開済みのイベントが黙って下書きに戻ることはない。
@@ -344,11 +354,8 @@ web（vitest）：
 
 ---
 
-## 9. 未決事項（オーナーに確かめること）
+## 9. 決まったこと
 
-- **Q1 公開の遅れ**：予約時刻を過ぎて、サイトに誰かがアクセスした時点（通常は1分以内）で公開する方式でよいか。
-  - アクセスが無い時間帯は、フォロワーへの通知もその分遅れる。
-  - 必ず時刻どおりに動かすには、アカウントの Workers の cron 枠（5個とも使用中）を1つ空けて、5分おきの cron にする必要がある。
-  - **推奨**：アクセスをきっかけにする方式。
-- **Q2 予約を入れる場所**：予約公開を入れるのを編集画面だけにしてよいか（作成画面は今まで通り、下書きで作るだけ）。
-  - **推奨**：編集画面だけ。作成後にすぐ編集画面で予約を入れられる。
+- **Q1**：(b) 共用の cron-hub で1分ごとに動かす（§3.5）。noscha-io-staging の cron 枠を譲った。
+- **Q2**：予約は編集画面だけ。
+- 公開のメールは、自動で公開されたときにも、手動のときと同じ条件で1回だけ送る。
