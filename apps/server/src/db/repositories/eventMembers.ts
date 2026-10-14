@@ -517,6 +517,7 @@ function mapMyEventSummary(
       : "off",
     meetPrizes: (row.meet_prizes as number) === 1,
     registrationDeadline: (row.registration_deadline as number | null) ?? null,
+    publishAt: (row.publish_at as number | null) ?? null,
     slug: (row.slug as string | null) ?? "",
     myRole: row.my_role as EventRole,
     // 本人の参加状態 (#489)。イベントの公開状態（status）とは別物で、

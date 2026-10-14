@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "../api/client.js";
 import { EventManagePage } from "./EventManagePage.js";
+import { formatDateTime } from "../lib/format.js";
 
 // Real management children and query hooks: only the HTTP boundary is replaced.
 let role: string | null;
@@ -155,4 +156,20 @@ it("a nonstaff schedule manager gets only the date section, including direct-dat
   expect(await screen.findByRole("button", { name: "日程調整に戻す" })).toBeVisible();
   expect(screen.queryByRole("button", { name: "参加者" })).toBeNull();
   expect(screen.queryByRole("link", { name: "編集" })).toBeNull();
+});
+it("scheduled draft shows the publish time with publish-now and cancel (D-EVENT-SCHEDULED-PUBLISH)", async () => {
+  const at = new Date("2026-12-01T10:00").getTime();
+  eventResult = async () => ({
+    event: { id: "e", title: "夏の発表会", status: "draft", visibility, publishAt: at, accessRevision: 3, contestMode: false,
+      attendanceCheck: true, scheduling: false, chatEnabled: false, qaEnabled: true, participationType: "individual" },
+    myRole: role, canManageAccess: access,
+  });
+  const patch = vi.spyOn(api, "patch").mockResolvedValue({} as never);
+  draw();
+  expect(await screen.findByText(formatDateTime(at))).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "公開する" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "予約を取り消す" }));
+  await waitFor(() => expect(patch).toHaveBeenCalledWith("/events/e", { publishAt: null, expectedAccessRevision: 3 }));
+  fireEvent.click(screen.getByRole("button", { name: "今すぐ公開" }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith("/events/e/publish"));
 });

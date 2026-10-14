@@ -24,6 +24,12 @@ const ja = {
   draftNotice:
     "このイベントは<b>下書き</b>です。公開するまで他の人には表示されず、シェアリンクも開けません。",
   publish: "公開する",
+  /** 予約公開 (D-EVENT-SCHEDULED-PUBLISH)。<b> は太字 */
+  scheduledNotice:
+    "このイベントは <b>{{date}}</b> に自動で公開されます。それまでは他の人には表示されません。",
+  publishNow: "今すぐ公開",
+  cancelSchedule: "予約を取り消す",
+  scheduledChip: "公開予定 {{date}}",
 
   /** 表彰 */
   awardsHeading: "表彰結果",
@@ -152,6 +158,11 @@ const en: Record<keyof typeof ja, string> = {
   draftNotice:
     "This event is a <b>draft</b>. Until you publish it, nobody else can see it and share links will not open.",
   publish: "Publish",
+  scheduledNotice:
+    "This event will be published automatically at <b>{{date}}</b>. Until then, nobody else can see it.",
+  publishNow: "Publish now",
+  cancelSchedule: "Cancel schedule",
+  scheduledChip: "Publishes {{date}}",
 
   awardsHeading: "Awards",
   noRecipient: "Not awarded",

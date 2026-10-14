@@ -318,3 +318,53 @@ describe("イベント編集の会場の住所", () => {
     expect(addressField()).not.toBeInTheDocument();
   });
 });
+
+describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
+  const sent = () => updateMutate.mock.calls[0][0] as Record<string, unknown>;
+  const future = () => {
+    const d = new Date(Date.now() + 2 * 86400_000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T10:00`;
+  };
+
+  it("「予約公開」を選ぶと日時の欄が出て、下書きのまま publishAt と revision を送る", () => {
+    eventData = makeEventData({ accessRevision: 4, publishAt: null });
+    draw();
+    expect(screen.queryByLabelText("公開する日時")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "予約公開" }));
+    expect(saveButton()).toBeDisabled();
+    const value = future();
+    fireEvent.change(screen.getByLabelText("公開する日時"), { target: { value } });
+    expect(saveButton()).toBeEnabled();
+    fireEvent.click(saveButton());
+    expect(sent()).toMatchObject({ status: "draft", publishAt: new Date(value).getTime(), expectedAccessRevision: 4 });
+  });
+
+  it("過去の日時では保存できない", () => {
+    draw();
+    fireEvent.click(screen.getByRole("button", { name: "予約公開" }));
+    fireEvent.change(screen.getByLabelText("公開する日時"), { target: { value: "2020-01-01T10:00" } });
+    expect(screen.getByText("未来の日時を入れてください。")).toBeInTheDocument();
+    expect(saveButton()).toBeDisabled();
+  });
+
+  it("予約済みを読み込んで表示し、下書きに戻すと publishAt: null を送る", () => {
+    const at = new Date(future()).getTime();
+    eventData = makeEventData({ accessRevision: 5, publishAt: at });
+    draw();
+    expect(screen.getByRole("button", { name: "予約公開" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("公開する日時")).toHaveValue(future());
+    fireEvent.click(screen.getByRole("button", { name: "非公開（下書き）" }));
+    fireEvent.click(saveButton());
+    expect(sent()).toMatchObject({ status: "draft", publishAt: null, expectedAccessRevision: 5 });
+  });
+
+  it("公開を選ぶと publishAt は送らない（サーバーが予約を消す）", () => {
+    eventData = makeEventData({ visibility: "public", publishAt: new Date(future()).getTime() });
+    draw();
+    fireEvent.click(screen.getByRole("button", { name: "公開" }));
+    fireEvent.click(saveButton());
+    expect(sent()).toMatchObject({ status: "published" });
+    expect(sent()).not.toHaveProperty("publishAt");
+  });
+});

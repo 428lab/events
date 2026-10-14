@@ -111,6 +111,9 @@ export const eventSchema = z.object({
   /** 募集の締切日時（epoch ms）。null = 締切なしで、従来どおりイベント終了まで
    * 受け付ける。締切後に止まるのは新規の参加登録だけ (#269) */
   registrationDeadline: z.number().nullable(),
+  /** 予約公開の日時（epoch ms）。null = 予約なし。設定されている間は必ず下書きで、
+   * 公開になると null に戻る (D-EVENT-SCHEDULED-PUBLISH) */
+  publishAt: z.number().nullable(),
 });
 export type Event = z.infer<typeof eventSchema>;
 
@@ -191,6 +194,11 @@ export const updateEventInput = z.object({
    * positive なのは 0 や負値を弾くため：締切なしは必ず null で表す約束なので、
    * 0 を通すと「未設定のつもりが 1970年＝永久に締切済み」の行を作れてしまう */
   registrationDeadline: z.number().int().positive().nullable().optional(),
+  /** 予約公開の日時（epoch ms）。null で予約を取り消す。未来の時刻だけで、
+   * status: "published" と一緒には送れない（サーバーが 400）。
+   * 公開状態か予約を今の値から変えるときは expectedAccessRevision が要る（違えば 409）
+   * (D-EVENT-SCHEDULED-PUBLISH) */
+  publishAt: z.number().int().positive().nullable().optional(),
   /** 参加者限定の文章（確定メンバー＋staffにのみ表示。eventSchema には含めない） */
   membersNote: z.string().max(20000).optional(),
 }).refine(input =>

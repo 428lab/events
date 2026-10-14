@@ -122,6 +122,8 @@ import {
 import { venueOfferRoutes } from "./routes/venueOffers.js";
 import { emailRoutes } from "./routes/email.js";
 import { sendEventReminders } from "./lib/reminders.js";
+import { publishDueEvents } from "./lib/scheduledPublish.js";
+import { WorkerEntrypoint } from "cloudflare:workers";
 import { purgeDeletedAccounts } from "./lib/purgeDeleted.js";
 import { drainBroadcastEmails } from "./lib/broadcast.js";
 import { eventBroadcastRoutes } from "./routes/eventBroadcast.js";
@@ -131,6 +133,7 @@ import {
   adminBroadcastEmailRoutes,
   adminPurgeDeletedRoutes,
   adminReminderRoutes,
+  adminScheduledPublishRoutes,
 } from "./routes/adminReminders.js";
 import { adminSettingsRoutes } from "./routes/adminSettings.js";
 import { adminAuditRoutes } from "./routes/adminAudit.js";
@@ -309,6 +312,8 @@ api.route("/admin/run-reminders", adminReminderRoutes);
 api.route("/admin/run-purge-deleted", adminPurgeDeletedRoutes);
 // 一斉連絡 (#172) のメール送信待ちの消化の手動実行（staging 検証用。app admin のみ）
 api.route("/admin/run-broadcast-emails", adminBroadcastEmailRoutes);
+// 予約公開の手動実行（staging 検証用。app admin のみ） (D-EVENT-SCHEDULED-PUBLISH)
+api.route("/admin/run-scheduled-publish", adminScheduledPublishRoutes);
 // 異常行動の検知バッチの手動実行（staging 検証用。app admin のみ） (#259)
 api.route("/admin/run-detect-abuse", adminRunDetectAbuseRoutes);
 // GitHub Actions のスケジュール実行から叩く（Workers Free は cron 上限のため #129）。
@@ -757,3 +762,17 @@ export default {
     ctx.waitUntil(runWithExecutionContext(ctx, () => sendEventReminders()));
   },
 } satisfies ExportedHandler<Env>;
+
+/**
+ * 共用の定期実行 Worker（cron-hub。別リポジトリ kojira/cron-hub）から Service Binding で
+ * 呼ばれる口 (D-EVENT-SCHEDULED-PUBLISH 設計 §3.5)。公開の HTTP には出ないので、
+ * x-cron-key のような秘密は要らない。cron-hub が呼ぶのは本番の eventer だけ
+ * （staging は POST /api/admin/run-scheduled-publish で確かめる）
+ */
+export class CronEntrypoint extends WorkerEntrypoint<Env> {
+  /** 1分ごと。予約公開の時刻を過ぎた下書きを公開し、手動公開と同じ通知を1回だけ送る */
+  async publishDueEvents(): Promise<{ published: string[] }> {
+    bindEnv(this.env);
+    return runWithExecutionContext(this.ctx, () => publishDueEvents());
+  }
+}

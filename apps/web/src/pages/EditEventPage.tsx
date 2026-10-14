@@ -78,7 +78,9 @@ export function EditEventPage() {
   const del = useDeleteEvent(id);
   const duplicate = useDuplicateEvent(id);
 
-  const [status, setStatus] = useState<"draft" | "published">("draft");
+  // 予約公開 (D-EVENT-SCHEDULED-PUBLISH)。"scheduled" は下書き＋公開日時
+  const [status, setStatus] = useState<"draft" | "scheduled" | "published">("draft");
+  const [publishAt, setPublishAt] = useState("");
   const [visibility,setVisibility]=useState<Event["visibility"]>("public");
   const [visibilityError,setVisibilityError]=useState(false);
   const [title, setTitle] = useState("");
@@ -141,7 +143,8 @@ export function EditEventPage() {
   useEffect(() => {
     if (data?.event && !initialized) {
       const e = data.event;
-      setStatus(e.status === "published" ? "published" : "draft");
+      setStatus(e.status === "published" ? "published" : e.publishAt ? "scheduled" : "draft");
+      setPublishAt(toLocalInput(e.publishAt ?? 0));
       setVisibility(e.visibility);
       setTitle(e.title);
       setSubtitle(e.subtitle);
@@ -218,11 +221,29 @@ export function EditEventPage() {
     deadlineMs !== null && startsAtMs !== null && deadlineMs > startsAtMs
       ? t("eventForm.deadlineAfterStart")
       : "";
+  // 予約公開の日時。未来の時刻だけ（過去はサーバーも 400 publish_at_past）。
+  // 読み込んだときから変えていない予約は、時刻を過ぎていても弾かない（保存の時点で自動公開済みなら 409）
+  const publishAtMs = status === "scheduled" ? fromDateTimeLocal(publishAt) : null;
+  const publishAtUnchanged = publishAtMs !== null && publishAtMs === event.publishAt;
+  const publishAtError =
+    status !== "scheduled"
+      ? ""
+      : publishAtMs === null
+        ? t("eventForm.publishAtRequired")
+        : !publishAtUnchanged && publishAtMs <= Date.now()
+          ? t("eventForm.publishAtPast")
+          : "";
+  // 公開状態か予約を読み込み時から変える保存は、読み込んだ revision を付ける（設計 §5.5）
+  const nextPublishAt = status === "scheduled" ? publishAtMs : null;
+  const nextStatus = status === "published" ? "published" : "draft";
+  const publishStateEdited = nextStatus !== event.status || nextPublishAt !== (event.publishAt ?? null);
   // 保存失敗の理由。締切まわりは汎用文言だと何を直せばいいか分からないので、
   // この画面だけの言い方を overrides で渡す (#269)
   const saveErrorMessage = errorMessage(update.error, {
     default: t("eventForm.saveError"),
     schedule_changed: t("schedule.changed"),
+    publish_state_changed: t("eventForm.publishStateChanged"),
+    publish_at_past: t("eventForm.publishAtPast"),
     deadline_requires_fixed_date: t("eventForm.deadlineNeedsDate"),
     deadline_after_start: t("eventForm.deadlineAfterStart"),
   });
@@ -241,9 +262,11 @@ export function EditEventPage() {
     }
     update.mutate(
       {
-        ...((startsAtMs !== null && endsAtMs !== null) || deadlineEditable ? { expectedAccessRevision: formRevision } : {}),
+        ...((startsAtMs !== null && endsAtMs !== null) || deadlineEditable || publishStateEdited ? { expectedAccessRevision: formRevision } : {}),
         ...(expectedAccessRevision === undefined ? {} : {visibility,expectedAccessRevision,confirmVisibilityChange:true}),
-        status,
+        status: nextStatus,
+        // 公開にするときは送らない（サーバーが予約を消す）。下書きなら null で予約なし
+        ...(nextStatus === "draft" ? { publishAt: nextPublishAt } : {}),
         title,
         subtitle,
         description,
@@ -311,6 +334,9 @@ export function EditEventPage() {
               <ToggleButton value="draft">
                 {t("eventForm.statusDraft")}
               </ToggleButton>
+              <ToggleButton value="scheduled">
+                {t("eventForm.statusScheduled")}
+              </ToggleButton>
               <ToggleButton value="published">
                 {visibility === "public" ? t("eventForm.statusPublished") : t("eventAccess.published")}
               </ToggleButton>
@@ -318,6 +344,19 @@ export function EditEventPage() {
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
               {t("eventForm.statusHelp")}
             </Typography>
+            {status === "scheduled" && (
+              <TextField
+                label={t("eventForm.publishAtLabel")}
+                type="datetime-local"
+                value={publishAt}
+                onChange={(e) => setPublishAt(e.target.value)}
+                error={Boolean(publishAtError) && publishAt !== ""}
+                helperText={(publishAt !== "" && publishAtError) || t("eventForm.publishAtHelp")}
+                InputLabelProps={{ shrink: true }}
+                sx={{ mt: 2 }}
+                fullWidth
+              />
+            )}
           </Box>
           <CounterTextField
             label={t("eventForm.title")}
@@ -751,6 +790,7 @@ export function EditEventPage() {
                 !title ||
                 Boolean(dateOrderError) ||
                 Boolean(deadlineError) ||
+                Boolean(publishAtError) ||
                 update.isPending
               }
               onClick={save}

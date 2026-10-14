@@ -340,6 +340,20 @@ export function usePublishEvent() {
   });
 }
 
+/** 予約公開を取り消す (D-EVENT-SCHEDULED-PUBLISH)。読み込んだ revision を付けるので、
+ * その間に自動で公開されていれば 409 publish_state_changed になる */
+export function useCancelScheduledPublish() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, expectedAccessRevision }: { id: string; expectedAccessRevision: number }) =>
+      api.patch<{ event: Event }>(`/events/${id}`, { publishAt: null, expectedAccessRevision }),
+    onSettled: (_d, _e, { id }) => {
+      qc.invalidateQueries({ queryKey: ["event", id] });
+      qc.invalidateQueries({ queryKey: ["events"] });
+    },
+  });
+}
+
 export function useJoinEvent() {
   const qc = useQueryClient();
   return useMutation({
