@@ -150,7 +150,7 @@ export async function publishDueEvents(now = Date.now()): Promise<{ published: s
   2. **手動の実行用 API** `POST /api/admin/run-scheduled-publish`（app admin だけ）。`/api/admin/run-reminders` と同じ形で、staging の確かめ用。
 - **staging**：cron-hub は本番と staging の両方の eventer を呼ぶ（オーナー決定、2026-10-14）。待たずに確かめたいときは手動の実行用 API を使う。
 - **遅れ**：予約は毎時0分・30分だけで、cron-hub も同じ時刻に動くので、遅れは cron の起動のずれ（数秒〜数十秒）だけ。
-- **D1 のコスト**：部分索引を引くだけ。予約が0件なら、読み取りはほぼ0行。30分に1回で、1日48回の小さな書き込みクエリが増える。D-POLL-MIN で減らした量（数百行/時）に対して、誤差の範囲。ブラウザからの問い合わせは増えない。
+- **D1 のコスト**：部分索引 `idx_event_publish_at` を引くだけ（条件は `+status = 'draft'` と書き、`idx_event_status` で下書きを全部読まないようにする。本番の実測で rows_read 4 → 1。EXPLAIN QUERY PLAN をテストで固定）。予約が0件なら、読み取りはほぼ0行。30分に1回で、1日48回の小さな書き込みクエリが増える。D-POLL-MIN で減らした量（数百行/時）に対して、誤差の範囲。ブラウザからの問い合わせは増えない。
 
 ### 3.4 1回だけを守る仕組み
 

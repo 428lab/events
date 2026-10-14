@@ -1,7 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { bindEnv, type Env } from "../src/runtime.js";
-import { publishDueEvents } from "../src/lib/scheduledPublish.js";
+import { PUBLISH_DUE_EVENTS_SQL, publishDueEvents } from "../src/lib/scheduledPublish.js";
 
 // 予約公開 (D-EVENT-SCHEDULED-PUBLISH)。設計 docs/event-scheduled-publish.md §8.1
 const BASE = "https://example.com";
@@ -215,5 +215,12 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
     const res = await SELF.fetch(`${BASE}/api/admin/run-scheduled-publish`, { method: "POST", headers: { cookie: host } });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { published: string[] }).published).toContain(draft.id);
+  });
+
+  it("時刻を過ぎた予約を探す UPDATE は部分索引 idx_event_publish_at を使う（下書きを全部読まない）", async () => {
+    const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN ${PUBLISH_DUE_EVENTS_SQL}`).bind(Date.now()).all<{ detail: string }>();
+    const details = plan.results.map((row) => row.detail);
+    expect(details.some((d) => d.includes("idx_event_publish_at"))).toBe(true);
+    expect(details.some((d) => d.includes("idx_event_status"))).toBe(false);
   });
 });
