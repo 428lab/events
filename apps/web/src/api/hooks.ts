@@ -257,6 +257,8 @@ export function useEvent(id: string) {
         canManageSchedule?: boolean;
         nonpublicEligible?: boolean;
         community: EventCommunityRef | null;
+        /** 共催コミュニティ（承認済みのみ・承認順 #625。旧レスポンスでは欠落しうる） */
+        cohosts?: EventCommunityRef[];
         /** 生まれ元のたまご（あったらいいな）。通常は0〜1件（旧レスポンスでは欠落しうる） */
         fromRequests?: EventRequest[];
       }>(`/events/${id}`),

@@ -85,9 +85,12 @@ export function EventsBrowser({
   communitySlug,
   title,
   actions,
+  markCohosts = false,
 }: {
   /** 指定時はそのコミュニティのイベントに固定 */
   communityId?: string;
+  /** コミュニティページ専用: communityId が主催でないイベント（共催 #625）に「共催」を添える */
+  markCohosts?: boolean;
   /** Community page only: use viewer-authorized discovery, not the public filter. */
   communitySlug?: string;
   /** 見出し（既定: イベント） */
@@ -314,7 +317,10 @@ export function EventsBrowser({
               {t("events.matchCount", { n: total })}
             </Typography>
           )}
-          <EventList events={search.data.events} />
+          <EventList
+            events={search.data.events}
+            cohostOf={markCohosts ? communityId : undefined}
+          />
           {pageCount > 1 && (
             <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
               <Pagination

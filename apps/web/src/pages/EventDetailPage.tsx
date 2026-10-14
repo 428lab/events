@@ -24,7 +24,7 @@ import { Markdown } from "../components/Markdown.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
 import { ShareButton } from "../components/ShareButton.js";
 import { AddToCalendarButton } from "../components/AddToCalendarButton.js";
-import { eventImageUrl, useEvent, useMe } from "../api/hooks.js";
+import { eventImageUrl, useEvent, useMe, type EventCommunityRef } from "../api/hooks.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 import { useContestAnchor } from "../lib/useContestAnchor.js";
 import { useEventTiming } from "../lib/useEventTiming.js";
@@ -90,6 +90,7 @@ export function EventDetailPage() {
   const { event, myRole, membersNote } = data;
   const community = data.community;
   const fromRequests = data.fromRequests ?? [];
+  const cohosts = data.cohosts ?? [];
 
   const isMember = Boolean(myRole);
   // アプリ管理者でも、このページでは自分のロールどおりに表示する
@@ -123,30 +124,16 @@ export function EventDetailPage() {
       )}
 
       <Box>
-        {community && (
-          <Box
-            component={RouterLink}
-            to={`/c/${community.slug}`}
-            sx={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 0.75,
-              mb: 0.5,
-              color: "text.secondary",
-              textDecoration: "none",
-              "&:hover": { textDecoration: "underline" },
-            }}
-          >
-            <Avatar
-              src={community.iconUrl ?? undefined}
-              variant="rounded"
-              sx={{ width: 20, height: 20, fontSize: 12, borderRadius: "5px" }}
-            >
-              {community.name.charAt(0)}
-            </Avatar>
-            <Typography variant="body2">{community.name}</Typography>
-          </Box>
-        )}
+        {community && <CommunityRefLink community={community} />}
+        {/* 共催コミュニティ (#625)。主催の後ろに承認順で、同じ見た目に「共催」を添えて並べる */}
+        {cohosts.map((cohost, i) => (
+          <CommunityRefLink
+            key={cohost.id}
+            community={cohost}
+            cohost
+            spaced={Boolean(community) || i > 0}
+          />
+        ))}
         {/* 生まれ元のたまご（あったらいいな）への逆リンク */}
         {fromRequests.map((r) => (
           <Box
@@ -488,5 +475,49 @@ export function EventDetailPage() {
         </EventDetailSidebar>
       </Grid>
     </Grid>
+  );
+}
+
+/** 見出しの上に出す主催・共催コミュニティへのリンク（アイコン＋名前）。
+ * 共催 (#625) は同じ見た目に「共催」を小さく添える。spaced は前に並ぶものとの間隔 */
+function CommunityRefLink({
+  community,
+  cohost = false,
+  spaced = false,
+}: {
+  community: EventCommunityRef;
+  cohost?: boolean;
+  spaced?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Box
+      component={RouterLink}
+      to={`/c/${community.slug}`}
+      sx={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 0.75,
+        mb: 0.5,
+        ...(spaced ? { ml: 1.5 } : {}),
+        color: "text.secondary",
+        textDecoration: "none",
+        "&:hover": { textDecoration: "underline" },
+      }}
+    >
+      <Avatar
+        src={community.iconUrl ?? undefined}
+        variant="rounded"
+        sx={{ width: 20, height: 20, fontSize: 12, borderRadius: "5px" }}
+      >
+        {community.name.charAt(0)}
+      </Avatar>
+      <Typography variant="body2">{community.name}</Typography>
+      {cohost && (
+        <Typography variant="caption" color="text.secondary">
+          {t("cohost.label")}
+        </Typography>
+      )}
+    </Box>
   );
 }

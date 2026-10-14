@@ -17,6 +17,7 @@ import { EventMaterials } from "../components/EventMaterials.js";
 import { EventMemberList } from "../components/EventMemberList.js";
 import { EventStaffInvitesCard } from "../components/EventStaffInvitesCard.js";
 import { EventAccessInvitesCard } from "../components/EventAccessInvitesCard.js";
+import { EventCohostsCard } from "../components/EventCohostsCard.js";
 import { VenueOfferPanel } from "../components/VenueOffers.js";
 import { EventPhotos } from "../components/EventPhotos.js";
 import { EventComments } from "../components/EventComments.js";
@@ -105,6 +106,9 @@ function StaffManagement({ eventId, event, myRole, canInvite }: {
       </ManagementSection>
       <ManagementSection id="invites" title={t("eventManagement.invites")}>
         <Stack spacing={2}>{canInvite && <EventAccessInvitesCard eventId={eventId} />}<EventStaffInvitesCard eventId={eventId} /></Stack>
+      </ManagementSection>
+      <ManagementSection id="cohosts" title={t("cohost.manageTitle")}>
+        <EventCohostsCard eventId={eventId} />
       </ManagementSection>
       <ManagementSection id="venue-offers" title={t("eventManagement.venueOffers")}>
         <VenueOfferPanel showEmptyState kind="for-event" id={eventId} enabled={isStaff} />

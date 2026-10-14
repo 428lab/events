@@ -12,6 +12,7 @@ import { adminSettings } from "./messages/adminSettings.js";
 import { deckImport, deckImportIssue, deckImportField } from "./messages/deckImport.js";
 import { eventAccess } from "./messages/eventAccess.js";
 import { common } from "./messages/common.js";
+import { cohost } from "./messages/cohost.js";
 import { community } from "./messages/community.js";
 import { egg } from "./messages/egg.js";
 import { errors } from "./messages/errors.js";
@@ -97,6 +98,7 @@ export const translations = {
     inquiryStatus: inquiryStatus.ja,
     eventInquiry: eventInquiry.ja,
     community: community.ja,
+    cohost: cohost.ja,
     venue: venue.ja,
     venueOfferStatus: venueOfferStatus.ja,
     venueOfferError: venueOfferError.ja,
@@ -143,6 +145,7 @@ export const translations = {
     inquiryStatus: inquiryStatus.en,
     eventInquiry: eventInquiry.en,
     community: community.en,
+    cohost: cohost.en,
     venue: venue.en,
     venueOfferStatus: venueOfferStatus.en,
     venueOfferError: venueOfferError.en,

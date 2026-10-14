@@ -49,10 +49,13 @@ export function EventCard({
   event,
   role,
   compact = false,
+  cohost = false,
 }: {
   event: Event;
   role?: EventRole;
   compact?: boolean;
+  /** 共催 (#625) として一覧に載っている（コミュニティページで主催でないイベント） */
+  cohost?: boolean;
 }) {
   const { t } = useTranslation();
   const img = eventImageUrl(event);
@@ -193,7 +196,7 @@ export function EventCard({
               >
                 {event.title}
               </Typography>
-              {(draft || role || visibilityIndicator) && (
+              {(draft || role || cohost || visibilityIndicator) && (
                 <Stack
                   direction="row"
                   spacing={0.5}
@@ -204,6 +207,14 @@ export function EventCard({
                 >
                   {visibilityIndicator}
                   {draft && <DraftChip compact />}
+                  {cohost && (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={t("cohost.label")}
+                      sx={{ flexShrink: 0, height: 18, fontSize: "0.6rem" }}
+                    />
+                  )}
                   {role && (
                     <Chip
                       size="small"
@@ -354,7 +365,7 @@ export function EventCard({
             >
               {event.title}
             </Typography>
-            {(draft || role || visibilityIndicator) && (
+            {(draft || role || cohost || visibilityIndicator) && (
               <Stack
                 direction="row"
                 spacing={0.5}
@@ -365,6 +376,7 @@ export function EventCard({
               >
                 {visibilityIndicator}
                 {draft && <DraftChip />}
+                {cohost && <Chip size="small" variant="outlined" label={t("cohost.label")} />}
                 {role && <Chip size="small" label={roleLabel(role)} />}
               </Stack>
             )}

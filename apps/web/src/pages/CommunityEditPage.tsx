@@ -20,6 +20,7 @@ import {
   useUploadCommunityImage,
 } from "../api/communityHooks.js";
 import { CounterTextField } from "../components/CounterTextField.js";
+import { CommunityCohostsSection } from "../components/CommunityCohostsSection.js";
 import { ImageCropField } from "../components/ImageCropField.js";
 
 export function CommunityEditPage() {
@@ -214,6 +215,10 @@ export function CommunityEditPage() {
           {t("common.cancel")}
         </Button>
       </Stack>
+
+      <Divider />
+      {/* 共催 (#625)。通知のリンク /c/<slug>/edit#cohosts の着地点 */}
+      <CommunityCohostsSection communityId={c.id} />
     </Stack>
   );
 }
