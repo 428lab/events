@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -90,17 +91,34 @@ function CohostItem({
   const pending = cohost.status === "pending";
   const busy = accept.isPending || remove.isPending;
   const onError = (e: unknown) => setError(errorMessage(e, { default: t("cohost.actionError") }));
+  // 閲覧できないイベントはサーバーが題名・日時・主催名を伏せて（null で）返す。汎用の表示にする
+  const title = cohost.eventTitle ?? t("cohost.hiddenEvent");
+  // 承諾するか決める材料に、下書き・公開範囲を添える（公開・公開済みは何も出さない）
+  const chips = [
+    cohost.eventStatus === "draft" && t("events.draftBadge"),
+    cohost.eventVisibility === "private" && t("eventAccess.private"),
+    cohost.eventVisibility === "unlisted" && t("eventAccess.unlisted"),
+  ].filter((label): label is string => Boolean(label));
 
   return (
     <Box>
-      <Typography variant="body2" fontWeight={700}>
-        {cohost.eventTitle}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" display="block">
-        {cohost.hostCommunityName && t("cohost.hostedBy", { name: cohost.hostCommunityName })}
-        {cohost.hostCommunityName && " / "}
-        {cohost.eventStartsAt > 0 ? formatDateTime(cohost.eventStartsAt) : t("cohost.dateTbd")}
-      </Typography>
+      <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap flexWrap="wrap">
+        <Typography variant="body2" fontWeight={700}>
+          {title}
+        </Typography>
+        {chips.map((label) => (
+          <Chip key={label} label={label} size="small" variant="outlined" />
+        ))}
+      </Stack>
+      {cohost.eventTitle !== null && (
+        <Typography variant="caption" color="text.secondary" display="block">
+          {cohost.hostCommunityName && t("cohost.hostedBy", { name: cohost.hostCommunityName })}
+          {cohost.hostCommunityName && " / "}
+          {cohost.eventStartsAt
+            ? formatDateTime(cohost.eventStartsAt)
+            : t("cohost.dateTbd")}
+        </Typography>
+      )}
       <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
         {pending ? (
           <>
@@ -142,7 +160,7 @@ function CohostItem({
         <DialogTitle>{t("cohost.stopConfirmTitle")}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {t("cohost.stopConfirmBody", { title: cohost.eventTitle })}
+            {t("cohost.stopConfirmBody", { title })}
           </DialogContentText>
         </DialogContent>
         <DialogActions>

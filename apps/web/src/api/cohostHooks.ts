@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { CommunityCohost, EventCohost } from "@eventer/shared";
 import { api } from "./client.js";
 
@@ -8,6 +8,16 @@ import { api } from "./client.js";
 
 const eventKey = (eventId: string) => ["event", eventId, "cohosts"];
 const communityKey = (communityId: string) => ["community", communityId, "cohosts"];
+
+/** 共催が成立・解消すると中身が変わる、コミュニティページのイベント一覧のクエリを取り直させる。
+ * ページ本体（["community", slug, "viewer", …]。開催予定・過去の一覧と開催数を含む）と
+ * 一覧検索（["communityEventSearch", …]）。どのコミュニティかは slug で引いているので全件 */
+function invalidateCommunityEventLists(qc: QueryClient) {
+  void qc.invalidateQueries({
+    predicate: (q) => q.queryKey[0] === "community" && q.queryKey[2] === "viewer",
+  });
+  void qc.invalidateQueries({ queryKey: ["communityEventSearch"] });
+}
 
 /** そのイベントの共催一覧（イベントの管理者のみ。それ以外は403なので再試行しない） */
 export function useEventCohosts(eventId: string, enabled: boolean) {
@@ -29,7 +39,8 @@ export function useRequestCohost(eventId: string) {
   });
 }
 
-/** 取り下げ。共催中だったものは詳細ページの表示からも消えるので、詳細も取り直させる */
+/** 取り下げ。共催中だったものは詳細ページの表示と共催先のコミュニティページの一覧からも
+ * 消えるので、どちらも取り直させる */
 export function useRemoveCohost(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -38,6 +49,7 @@ export function useRemoveCohost(eventId: string) {
     onSuccess: (data) => {
       qc.setQueryData(eventKey(eventId), data.cohosts);
       qc.invalidateQueries({ queryKey: ["event", eventId, "viewer"] });
+      invalidateCommunityEventLists(qc);
     },
   });
 }
@@ -70,7 +82,7 @@ export function useRespondCohost(communityId: string, action: "accept" | "remove
           ),
     onSuccess: (data) => {
       qc.setQueryData(communityKey(communityId), data.cohosts);
-      qc.invalidateQueries({ queryKey: ["communityEventSearch"] });
+      invalidateCommunityEventLists(qc);
     },
   });
 }

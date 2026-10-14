@@ -50,10 +50,9 @@ function serve(cohosts: EventCohost[]) {
   getMock.mockResolvedValue({ cohosts });
 }
 
-function draw() {
-  const qc = new QueryClient({
-    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
-  });
+function draw(qc = new QueryClient({
+  defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+})) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
@@ -150,5 +149,26 @@ describe("共催コミュニティ（運営ページ） (#625)", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "外す" }));
     await waitFor(() => expect(delMock).toHaveBeenCalledWith("/events/e-1/cohosts/c-1"));
     expect(await screen.findByText("共催コミュニティはありません。")).toBeTruthy();
+  });
+
+  it("外したあと、詳細と共催先のコミュニティページの一覧・一覧検索を取り直させる", async () => {
+    serve([cohost({ status: "accepted", respondedAt: 2 })]);
+    delMock.mockResolvedValue({ cohosts: [] });
+    const qc = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    draw(qc);
+    fireEvent.click(await screen.findByText("外す"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "外す" }));
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+    const filters = spy.mock.calls.map((c) => c[0]!);
+    expect(filters).toContainEqual({ queryKey: ["event", "e-1", "viewer"] });
+    expect(filters).toContainEqual({ queryKey: ["communityEventSearch"] });
+    const predicate = filters.find((f) => f.predicate)!.predicate!;
+    const q = (queryKey: unknown[]) => ({ queryKey }) as unknown as Parameters<typeof predicate>[0];
+    expect(predicate(q(["community", "alpha", "viewer", "u-1"]))).toBe(true);
+    expect(predicate(q(["community", "alpha", "members"]))).toBe(false);
   });
 });

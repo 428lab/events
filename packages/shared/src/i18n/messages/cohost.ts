@@ -39,6 +39,8 @@ const ja = {
   activeHeading: "共催中",
   hostedBy: "主催: {{name}}",
   dateTbd: "日程未定",
+  /** 閲覧できないイベント（題名・日時が伏せて返る）の代わりの表示 */
+  hiddenEvent: "非公開のイベント",
   accept: "承諾",
   decline: "辞退",
   stop: "共催をやめる",
@@ -82,6 +84,7 @@ const en: Record<keyof typeof ja, string> = {
   activeHeading: "Co-hosting",
   hostedBy: "Host: {{name}}",
   dateTbd: "Date not set",
+  hiddenEvent: "Private event",
   accept: "Accept",
   decline: "Decline",
   stop: "Stop co-hosting",
