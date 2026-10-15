@@ -27,42 +27,42 @@ function ev(over: Partial<Event> = {}): Event {
   } as Event;
 }
 
-function renderCard(event: Event, compact = true) {
+function renderCard(event: Event, variant: "list" | "compact" | "grid" = "grid") {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <EventCard event={event} compact={compact} />
+        <EventCard event={event} variant={variant} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
-describe.each([true, false])("card visibility indicator (compact=%s)", (compact) => {
+describe.each(["list", "compact", "grid"] as const)("card visibility indicator (variant=%s)", (variant) => {
   it("shows a real lock with the localized private name", () => {
-    renderCard(ev({ visibility: "private" }), compact);
+    renderCard(ev({ visibility: "private" }), variant);
     const icon = screen.getByRole("img", { name: "招待限定" });
     expect(icon.tagName.toLowerCase()).toBe("svg");
     expect(icon.getAttribute("data-testid")).toBe("LockIcon");
   });
 
   it("shows a real link with the localized unlisted name", () => {
-    renderCard(ev({ visibility: "unlisted" }), compact);
+    renderCard(ev({ visibility: "unlisted" }), variant);
     const icon = screen.getByRole("img", { name: "限定公開（URLを知る人）" });
     expect(icon.tagName.toLowerCase()).toBe("svg");
     expect(icon.getAttribute("data-testid")).toBe("LinkIcon");
   });
 
   it("shows no visibility icon for public events", () => {
-    renderCard(ev({ visibility: "public" }), compact);
+    renderCard(ev({ visibility: "public" }), variant);
     expect(screen.queryByTestId("LinkIcon")).toBeNull();
     expect(screen.queryByTestId("LockIcon")).toBeNull();
   });
 
   it.each(["public", "unlisted"] as const)("does not mislabel %s as private", (visibility) => {
-    renderCard(ev({ visibility }), compact);
+    renderCard(ev({ visibility }), variant);
     expect(screen.queryByRole("img", { name: "招待限定" })).toBeNull();
     expect(screen.queryByTestId("LockIcon")).toBeNull();
   });
@@ -85,5 +85,46 @@ describe("グリッド表示のカード", () => {
     renderCard(ev({ scheduling: true, startsAt: 0, endsAt: 0 }));
     expect(screen.getByText("日程調整中")).toBeTruthy();
     expect(screen.getByText(/参加 5 人/)).toBeTruthy();
+  });
+});
+
+/** リスト（従来）とコンパクトの違い (#488)。
+ * 横並びの固定は、指定そのものを見て確かめる。jsdom は @media を解決しないので
+ * 幅で検証できず、`{ xs: "column", sm: "row" }` のような指定は base の値が空になる。
+ * その性質を使って「compact は素の row」「list は breakpoint 付き（＝狭い画面で
+ * 縦積みに戻る）」を区別している。書き方だけ変えるときはこのテストも直すこと。 */
+const flexDirectionOf = (container: HTMLElement) =>
+  getComputedStyle(container.querySelector("a.MuiCardActionArea-root")!).flexDirection;
+
+describe("リスト表示（従来・既定）のカード (#488)", () => {
+  it("既定は list（variant 省略）で、狭い画面では縦積み＝素の row ではない", () => {
+    const { container } = renderCard(ev(), "list");
+    expect(flexDirectionOf(container)).not.toBe("row");
+  });
+
+  it("タイトルと日時が出る", () => {
+    renderCard(ev(), "list");
+    // 画像なしイベントはサムネ面にもタイトルを敷くので、ちょうど 2 か所
+    expect(screen.getAllByText("テストイベント")).toHaveLength(2);
+    expect(screen.getByText(/13:00/)).toBeTruthy();
+  });
+});
+
+describe("コンパクト表示のカード (#488)", () => {
+  it("幅を問わず横並び", () => {
+    const { container } = renderCard(ev(), "compact");
+    expect(flexDirectionOf(container)).toBe("row");
+  });
+
+  it("タイトル・日時・人数が出る", () => {
+    renderCard(ev(), "compact");
+    expect(screen.getAllByText("テストイベント")).toHaveLength(2);
+    expect(screen.getByText(/13:00/)).toBeTruthy();
+    expect(screen.getByText(/参加 5 人/)).toBeTruthy();
+  });
+
+  it("日程調整中はその旨が出る", () => {
+    renderCard(ev({ scheduling: true, startsAt: 0, endsAt: 0 }), "compact");
+    expect(screen.getByText(/日程調整中/)).toBeTruthy();
   });
 });
