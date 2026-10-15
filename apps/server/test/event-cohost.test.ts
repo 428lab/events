@@ -601,3 +601,83 @@ describe("主催の付け替え・複製・削除 (#625)", () => {
     expect(await cohostRows(eventId)).toEqual([]);
   });
 });
+
+describe("自分が管理するコミュニティへの共催はすぐ成立する", () => {
+  /** そのイベントに関わる共催の通知（依頼・結果）を、宛先を問わず全部引く */
+  async function cohostNotices(eventId: string, communitySlug: string) {
+    const { results } = await env.DB.prepare(
+      `SELECT user_id, type FROM notification
+       WHERE (type = 'cohost_result' AND event_id = ?)
+          OR (type = 'cohost_request' AND link = ?)`,
+    )
+      .bind(eventId, `/c/${communitySlug}/edit#cohosts`)
+      .all<{ user_id: string; type: string }>();
+    return results;
+  }
+
+  it("依頼者が共催先の owner なら承認なしで共催中になり、依頼・結果の通知を出さない", async () => {
+    const { host, cohostAdmin, eventId } = await fixture();
+    const own = await makeCommunity(host.userId);
+    await addMember(own.id, cohostAdmin.userId, "admin");
+
+    const res = await request(eventId, host, own.slug);
+    expect(res.status).toBe(201);
+    const body = await json<{ status: string; cohosts: EventCohost[] }>(res);
+    expect(body.status).toBe("accepted");
+    expect(body.cohosts).toEqual([
+      expect.objectContaining({ communityId: own.id, status: "accepted", respondedAt: expect.any(Number) }),
+    ]);
+    expect(await detailCohosts(eventId, null)).toEqual([
+      { id: own.id, slug: own.slug, name: own.name, iconUrl: null },
+    ]);
+    expect(await communityPageEventIds(own.slug, null)).toContain(eventId);
+    // 共催先のほかの admin にも、作成者にも何も届かない
+    expect(await cohostNotices(eventId, own.slug)).toEqual([]);
+  });
+
+  it("共催先の admin（owner でない）でも同じくすぐ共催中になる", async () => {
+    const { host, b, eventId } = await fixture();
+    await addMember(b.id, host.userId, "admin");
+    const res = await request(eventId, host, b.slug);
+    expect(res.status).toBe(201);
+    expect((await json<{ status: string }>(res)).status).toBe("accepted");
+    expect(await cohostRows(eventId)).toEqual([{ community_id: b.id, status: "accepted" }]);
+    expect(await cohostNotices(eventId, b.slug)).toEqual([]);
+  });
+
+  it("共催先の一般メンバーや部外者の依頼は従来どおり承認待ちで、依頼の通知が届く", async () => {
+    const { host, cohostOwner, cohostAdmin, b, eventId } = await fixture();
+    await addMember(b.id, host.userId, "member");
+    const res = await request(eventId, host, b.slug);
+    expect(res.status).toBe(201);
+    expect((await json<{ status: string }>(res)).status).toBe("pending");
+    expect(await cohostRows(eventId)).toEqual([{ community_id: b.id, status: "pending" }]);
+    expect((await cohostNotices(eventId, b.slug)).map((n) => n.user_id).sort()).toEqual(
+      [cohostOwner.userId, cohostAdmin.userId].sort(),
+    );
+  });
+
+  it("自分のコミュニティでも主催と同じなら 400、既にあれば 409、上限（承認待ちを含めて 5）は効く", async () => {
+    const { host, a, eventId } = await fixture();
+    const self = await request(eventId, host, a.slug);
+    expect(self.status).toBe(400);
+    expect(await json<{ error: string }>(self)).toEqual({ error: "host_community" });
+
+    const own = await makeCommunity(host.userId);
+    expect((await request(eventId, host, own.slug)).status).toBe(201);
+    const dup = await request(eventId, host, own.slug);
+    expect(dup.status).toBe(409);
+    expect(await json<{ error: string }>(dup)).toEqual({ error: "already_cohost" });
+
+    // 他人のコミュニティ 4 件（承認待ち）で 5 件に達したら、自分のコミュニティでも追加できない
+    for (let i = 0; i < 4; i++) {
+      const c = await makeCommunity((await makeUser()).userId);
+      expect((await request(eventId, host, c.slug)).status).toBe(201);
+    }
+    const another = await makeCommunity(host.userId);
+    const res = await request(eventId, host, another.slug);
+    expect(res.status).toBe(400);
+    expect(await json<{ error: string }>(res)).toEqual({ error: "cohost_limit" });
+    expect(await cohostRows(eventId)).toHaveLength(5);
+  });
+});

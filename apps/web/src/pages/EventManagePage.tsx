@@ -108,7 +108,7 @@ function StaffManagement({ eventId, event, myRole, canInvite }: {
         <Stack spacing={2}>{canInvite && <EventAccessInvitesCard eventId={eventId} />}<EventStaffInvitesCard eventId={eventId} /></Stack>
       </ManagementSection>
       <ManagementSection id="cohosts" title={t("cohost.manageTitle")}>
-        <EventCohostsCard eventId={eventId} />
+        <EventCohostsCard eventId={eventId} hostCommunityId={event.communityId} />
       </ManagementSection>
       <ManagementSection id="venue-offers" title={t("eventManagement.venueOffers")}>
         <VenueOfferPanel showEmptyState kind="for-event" id={eventId} enabled={isStaff} />

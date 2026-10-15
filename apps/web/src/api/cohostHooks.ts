@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import type { CommunityCohost, EventCohost } from "@eventer/shared";
+import type { CommunityCohost, EventCohost, EventCohostStatus } from "@eventer/shared";
 import { api } from "./client.js";
 
 /** 共催コミュニティ (#625)。
@@ -34,8 +34,18 @@ export function useRequestCohost(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (slug: string) =>
-      api.post<{ cohosts: EventCohost[] }>(`/events/${eventId}/cohosts`, { slug }),
-    onSuccess: (data) => qc.setQueryData(eventKey(eventId), data.cohosts),
+      api.post<{ status: EventCohostStatus; cohosts: EventCohost[] }>(
+        `/events/${eventId}/cohosts`,
+        { slug },
+      ),
+    onSuccess: (data) => {
+      qc.setQueryData(eventKey(eventId), data.cohosts);
+      // 自分が管理するコミュニティはすぐ共催中になり、詳細と共催先の一覧が変わる
+      if (data.status === "accepted") {
+        qc.invalidateQueries({ queryKey: ["event", eventId, "viewer"] });
+        invalidateCommunityEventLists(qc);
+      }
+    },
   });
 }
 
