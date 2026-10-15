@@ -7,22 +7,25 @@ import { notifyOnPublish } from "./publishNotify.js";
  * 予約公開の時刻を過ぎた下書きを公開する (D-EVENT-SCHEDULED-PUBLISH)。
  *
  * 呼ぶのは2か所だけ：本番の cron-hub から Service Binding 経由の
- * `CronEntrypoint.publishDueEvents()`（1分ごと）と、app admin の手動実行
+ * `CronEntrypoint.publishDueEvents()`（30分ごと、毎時0分・30分）と、app admin の手動実行
  * `POST /api/admin/run-scheduled-publish`（staging の確かめ用）。
  *
  * 1回だけを守るのは UPDATE … RETURNING の1文（設計 §3.4）。実行が重なっても、
  * 行を変えた側だけが id を受け取るので、通知が2回走ることはない。
  * 手動の公開は同じ UPDATE の中で publish_at を NULL に戻すので、ここの条件に当たらない。
  */
+/** 時刻を過ぎた予約を公開する1文。`+status` の単項 + は status を索引に使わせないため。
+ * 無いと SQLite は idx_event_status を選び、下書きを全部読む。+ があれば部分索引
+ * idx_event_publish_at で予約のある行だけを読む（本番の実測で rows_read 4 → 1）。
+ * 索引の選び方はテストで固定している */
+export const PUBLISH_DUE_EVENTS_SQL = `UPDATE event SET status = 'published', publish_at = NULL, access_revision = access_revision + 1
+      WHERE publish_at IS NOT NULL AND publish_at <= ? AND +status = 'draft'
+      RETURNING id`;
+
 export async function publishDueEvents(
   now = Date.now(),
 ): Promise<{ published: string[] }> {
-  const rows = await many<{ id: string }>(
-    `UPDATE event SET status = 'published', publish_at = NULL, access_revision = access_revision + 1
-      WHERE publish_at IS NOT NULL AND publish_at <= ? AND status = 'draft'
-      RETURNING id`,
-    now,
-  );
+  const rows = await many<{ id: string }>(PUBLISH_DUE_EVENTS_SQL, now);
   const published = rows.map((row) => row.id);
   for (const id of published) {
     // 公開はもう終わっている。通知の失敗で状態は戻さず、ほかのイベントは続ける

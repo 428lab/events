@@ -93,3 +93,7 @@ export const STATS_MAX_DAYS = 3650;
 
 /** 1イベントに付けられる共催コミュニティの上限（承認待ちを含む） (#625) */
 export const MAX_EVENT_COHOSTS = 5;
+
+/** 予約公開の時刻の刻み（30分）。cron-hub は毎時0分・30分にだけ動くので、
+ * 予約もその時刻だけにする。JST は UTC+9 なので、epoch ms の30分区切りと同じ (D-EVENT-SCHEDULED-PUBLISH) */
+export const PUBLISH_AT_STEP_MS = 30 * 60 * 1000;
