@@ -66,3 +66,32 @@ describe("PATCHイベントの更新後の日時順 (#495)", () => {
     expect(await response.json()).toEqual({ error: "invalid_date" });
   });
 });
+
+describe("日時を送らない更新は revision を照合しない（編集画面の誤った schedule_changed）", () => {
+  // 参加登録・キャンセル・参加者の入れ替えなどでも access_revision は上がる
+  async function bumpRevision() {
+    await env.DB.prepare("UPDATE event SET access_revision = access_revision + 1 WHERE id = ?").bind(event.id).run();
+  }
+  async function stored() {
+    return env.DB.prepare("SELECT starts_at, ends_at, title FROM event WHERE id = ?").bind(event.id).first();
+  }
+
+  it("revision が上がったあとでも、題名だけの更新は保存でき、日時は変わらない", async () => {
+    await bumpRevision();
+    const response = await SELF.fetch(`${BASE}/${event.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ title: "題名だけ直す" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await stored()).toEqual({ starts_at: START, ends_at: END, title: "題名だけ直す" });
+  });
+
+  it("revision が古いまま日時を送る更新は、今まで通り 409 schedule_changed で何も変えない", async () => {
+    await bumpRevision();
+    const response = await patch({ title: "保存されてはいけない", startsAt: START + 60_000, endsAt: END });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "schedule_changed" });
+    expect(await stored()).toEqual({ starts_at: START, ends_at: END, title: event.title });
+  });
+});
