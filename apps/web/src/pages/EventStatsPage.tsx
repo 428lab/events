@@ -4,7 +4,6 @@ import {
   Alert,
   Box,
   Button,
-  ButtonBase,
   Card,
   CardContent,
   Stack,
@@ -34,6 +33,7 @@ import { useEventStats } from "../api/analyticsHooks.js";
 import { useSurveyAnswers } from "../api/eventSurveyHooks.js";
 import { useMeetRanking } from "../api/eventMeetHooks.js";
 import { i18next } from "../i18n/index.js";
+import { DailyBarChart } from "../components/DailyBarChart.js";
 
 /** サイトが自分で付ける流入元の印。文言は辞書にある */
 const INTERNAL_SOURCE_KEY: Partial<
@@ -413,16 +413,6 @@ export function DailyChart({ daily }: { daily: EventStats["daily"] }) {
   // PVと参加数でスケールが大きく違うため、棒の高さは各系列の最大値で正規化
   const maxViews = Math.max(1, ...daily.map((d) => d.views));
   const maxJoins = Math.max(1, ...daily.map((d) => d.joins));
-  // 縦軸の目盛りは無いので、棒をタップ（またはフォーカスして Enter）した日の実数を上に出す
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  const selected = daily.find((d) => d.day === selectedDay) ?? null;
-  const dayText = (d: EventStats["daily"][number]) =>
-    t("staffOps.statsDayTooltip", {
-      day: d.day,
-      views: d.views,
-      uniques: d.uniques,
-      joins: d.joins,
-    });
   return (
     <Card variant="outlined">
       <CardContent>
@@ -441,84 +431,21 @@ export function DailyChart({ daily }: { daily: EventStats["daily"] }) {
             label={t("staffOps.statsLegendJoins")}
           />
         </Stack>
-        <Typography
-          variant="body2"
-          color={selected ? "text.primary" : "text.secondary"}
-          aria-live="polite"
-          data-testid="daily-chart-selected"
-          sx={{ mb: 1, minHeight: "1.5em", fontWeight: selected ? 600 : 400 }}
-        >
-          {selected ? dayText(selected) : t("staffOps.statsDayTapHint")}
-        </Typography>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "flex-end",
-            gap: 0.75,
-            height: 150,
-            overflowX: "auto",
-          }}
-        >
-          {daily.map((d) => (
-            <ButtonBase
-              key={d.day}
-              aria-label={dayText(d)}
-              aria-pressed={d.day === selectedDay}
-              onClick={() =>
-                setSelectedDay((current) => (current === d.day ? null : d.day))
-              }
-              sx={{
-                flex: "1 0 20px",
-                minWidth: 20,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "flex-end",
-                gap: 0.5,
-                height: "100%",
-                borderRadius: 1,
-                bgcolor: d.day === selectedDay ? "action.selected" : "transparent",
-                "&.Mui-focusVisible": { outline: "2px solid", outlineColor: "primary.main" },
-              }}
-            >
-              {/* PVバー＋参加バーを横並び */}
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "flex-end",
-                  justifyContent: "center",
-                  gap: "2px",
-                  height: 110,
-                  width: "100%",
-                }}
-              >
-                <Box
-                  sx={{
-                    width: 8,
-                    height: `${(d.views / maxViews) * 110}px`,
-                    bgcolor: "primary.main",
-                    borderRadius: "2px 2px 0 0",
-                    minHeight: d.views > 0 ? 2 : 0,
-                  }}
-                />
-                <Box
-                  sx={{
-                    width: 8,
-                    height: `${(d.joins / maxJoins) * 110}px`,
-                    bgcolor: "secondary.main",
-                    borderRadius: "2px 2px 0 0",
-                    minHeight: d.joins > 0 ? 2 : 0,
-                  }}
-                />
-              </Box>
-              <Typography
-                sx={{ fontSize: 9, color: "text.secondary", whiteSpace: "nowrap" }}
-              >
-                {d.day.slice(5)}
-              </Typography>
-            </ButtonBase>
-          ))}
-        </Box>
+        <DailyBarChart
+          days={daily.map((d) => ({
+            day: d.day,
+            bars: [
+              { value: d.views, max: maxViews, color: "primary.main" },
+              { value: d.joins, max: maxJoins, color: "secondary.main" },
+            ],
+            valuesText: t("staffOps.statsDayTooltip", {
+              day: d.day,
+              views: d.views,
+              uniques: d.uniques,
+              joins: d.joins,
+            }),
+          }))}
+        />
       </CardContent>
     </Card>
   );
