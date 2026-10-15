@@ -37,6 +37,8 @@ const lineTop = (fraction: number) => TOP_PAD + (1 - fraction) * BAR_AREA_HEIGHT
  * 両方の軸は同じ数に等分するので、補助線は共通にできる。
  * 日をタップ（またはフォーカスして Enter）するとその日の実数をグラフの上に出し、
  * 同じ日をもう一度タップすると閉じる。
+ * マウスでは棒に乗せただけで同じ1行を出し、グラフから外れるとタップで選んだ日（なければ案内）に戻す。
+ * タッチは mouseenter も模擬するので、pointerType が mouse のときだけ乗せた日として扱う。
  */
 export function DailyBarChart({
   series,
@@ -47,7 +49,9 @@ export function DailyBarChart({
 }) {
   const { t } = useTranslation();
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  const selected = days.find((d) => d.day === selectedDay) ?? null;
+  const [hoveredDay, setHoveredDay] = useState<string | null>(null);
+  const shownDay = hoveredDay ?? selectedDay;
+  const selected = days.find((d) => d.day === shownDay) ?? null;
   const axes = series.map((_, i) =>
     niceAxis(Math.max(0, ...days.map((d) => d.values[i] ?? 0))),
   );
@@ -91,6 +95,10 @@ export function DailyBarChart({
             />
           ))}
           <Box
+            data-testid="daily-chart-days"
+            onPointerLeave={(e) => {
+              if (e.pointerType === "mouse") setHoveredDay(null);
+            }}
             sx={{
               position: "relative",
               display: "flex",
@@ -105,6 +113,9 @@ export function DailyBarChart({
                 key={d.day}
                 aria-label={d.valuesText}
                 aria-pressed={d.day === selectedDay}
+                onPointerEnter={(e) => {
+                  if (e.pointerType === "mouse") setHoveredDay(d.day);
+                }}
                 onClick={() =>
                   setSelectedDay((current) => (current === d.day ? null : d.day))
                 }
@@ -117,7 +128,12 @@ export function DailyBarChart({
                   gap: 0.5,
                   pt: `${TOP_PAD}px`,
                   borderRadius: 1,
-                  bgcolor: d.day === selectedDay ? "action.selected" : "transparent",
+                  bgcolor:
+                    d.day === selectedDay
+                      ? "action.selected"
+                      : d.day === hoveredDay
+                        ? "action.hover"
+                        : "transparent",
                   "&.Mui-focusVisible": { outline: "2px solid", outlineColor: "primary.main" },
                 }}
               >

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import type { EventStats } from "@eventer/shared";
 import { DailyChart } from "./EventStatsPage.js";
@@ -84,4 +84,59 @@ it("shows only a 0 tick for an all-zero series and draws no bars without NaN", (
   expect(axisTicks("left")).toEqual(["0"]);
   expect(axisTicks("right")).toEqual(["0"]);
   expect(barHeights().every((h) => h === "0px")).toBe(true);
+});
+
+/** PC：マウスを棒に乗せるとすぐ同じ1行を出し、グラフから外れると選んだ日（なければ案内）に戻す */
+const daysArea = () => screen.getByTestId("daily-chart-days");
+// jsdom には PointerEvent が無く pointerType が落ちるので、イベントに直接持たせる。
+// React の onPointerEnter / onPointerLeave は pointerover / pointerout から作られる
+const pointer = (
+  kind: "pointerEnter" | "pointerLeave",
+  el: Element,
+  pointerType: "mouse" | "touch",
+) => {
+  const event = createEvent[kind === "pointerEnter" ? "pointerOver" : "pointerOut"](el);
+  Object.defineProperty(event, "pointerType", { value: pointerType });
+  fireEvent(el, event);
+};
+
+it("shows the hovered day's counts right away and returns to the hint when the mouse leaves", () => {
+  render(<DailyChart daily={daily} />);
+  const days = screen.getAllByRole("button");
+  pointer("pointerEnter", days[1], "mouse");
+  expect(selectedLine().textContent).toBe("2026-10-08  PV:97 / ユニーク:31 / 参加:9");
+  expect(days[1].getAttribute("aria-pressed")).toBe("false");
+
+  pointer("pointerEnter", days[2], "mouse");
+  expect(selectedLine().textContent).toContain("PV:25");
+
+  pointer("pointerLeave", daysArea(), "mouse");
+  expect(selectedLine().textContent).toBe("棒をタップすると、その日の数が出ます");
+});
+
+it("returns to the clicked day when the mouse leaves after hovering another day", () => {
+  render(<DailyChart daily={daily} />);
+  const days = screen.getAllByRole("button");
+  fireEvent.click(days[0]);
+  pointer("pointerEnter", days[2], "mouse");
+  expect(selectedLine().textContent).toContain("PV:25");
+  expect(days[0].getAttribute("aria-pressed")).toBe("true");
+
+  pointer("pointerLeave", daysArea(), "mouse");
+  expect(selectedLine().textContent).toBe("2026-10-07  PV:52 / ユニーク:20 / 参加:6");
+});
+
+it("does not treat a touch pointer as hover, so a tap toggles exactly once", () => {
+  render(<DailyChart daily={daily} />);
+  const day = screen.getAllByRole("button")[1];
+  pointer("pointerEnter", day, "touch");
+  fireEvent.mouseEnter(day);
+  expect(selectedLine().textContent).toBe("棒をタップすると、その日の数が出ます");
+
+  fireEvent.click(day);
+  expect(selectedLine().textContent).toContain("PV:97");
+  pointer("pointerLeave", daysArea(), "touch");
+  pointer("pointerEnter", day, "touch");
+  fireEvent.click(day);
+  expect(selectedLine().textContent).toBe("棒をタップすると、その日の数が出ます");
 });
