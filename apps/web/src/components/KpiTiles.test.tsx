@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { addDays } from "@eventer/shared";
 import { i18next } from "../i18n/index.js";
 import { TrendChart } from "./KpiTiles.js";
@@ -169,7 +169,7 @@ describe("TrendChart の粒度", () => {
     // 1月: 登録は31日ぶんの合計、DAU は平均（合計 310 ではない）、
     // MAU は月末 01-31 の値（i:30 → 130。月初 100 でも合計でもない）
     expect(
-      screen.getByTitle("2026年1月 登録:31 / DAU:10 / MAU:130"),
+      screen.getByRole("button", { name: "2026年1月 登録:31 / DAU:10 / MAU:130" }),
     ).toBeInTheDocument();
   });
 });
@@ -197,7 +197,7 @@ describe("TrendChart の計測開始の見せ方", () => {
       ),
     ).toBeInTheDocument();
     // 計測済みのぶんはグラフを出す
-    expect(screen.getByTitle("2026-08-20 DAU:3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "2026-08-20 DAU:3" })).toBeInTheDocument();
   });
 
   it("計測開始が期間より前ならその注記は出さない", () => {
@@ -296,7 +296,7 @@ describe("TrendChart の計測開始の見せ方", () => {
       />,
     );
     expect(screen.queryByText(/計測したデータ/)).not.toBeInTheDocument();
-    expect(screen.getByTitle("2026-08-15 DAU:0")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "2026-08-15 DAU:0" })).toBeInTheDocument();
   });
 });
 
@@ -374,6 +374,86 @@ describe("TrendChart の英語表示 (#376)", () => {
     );
     expect(screen.getByText("DAU (Monthly)")).toBeInTheDocument();
     // 畳み方の既定は合計なので 1月は 31日 × 3
-    expect(screen.getByTitle("January 2026 DAU:93")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "January 2026 DAU:93" })).toBeInTheDocument();
+  });
+});
+
+/** 値の読み方。ネイティブの title は出るまで待たされ、タッチ端末では開けない。
+ * PCはマウスを乗せた瞬間、タッチはタップで、グラフの上の1行に出す */
+describe("TrendChart の値の1行", () => {
+  const series = [
+    { key: "joins", label: "登録", color: "#1976d2" },
+    { key: "dau", label: "DAU", color: "#9c27b0" },
+  ];
+  const points = [
+    { day: "2026-08-01", values: { joins: 2, dau: 5 } },
+    { day: "2026-08-02", values: { joins: 7, dau: 11 } },
+    { day: "2026-08-03", values: { joins: 1, dau: 4 } },
+  ];
+  const line = () => screen.getByTestId("kpi-chart-selected");
+  const hint = "棒をタップ（PCはマウスを乗せる）と、その期間の数が出ます";
+  // jsdom には PointerEvent が無く pointerType が落ちるので、イベントに直接持たせる。
+  // React の onPointerEnter / onPointerLeave は pointerover / pointerout から作られる
+  const pointer = (
+    kind: "pointerEnter" | "pointerLeave",
+    el: Element,
+    pointerType: "mouse" | "touch",
+  ) => {
+    const event = createEvent[kind === "pointerEnter" ? "pointerOver" : "pointerOut"](el);
+    Object.defineProperty(event, "pointerType", { value: pointerType });
+    fireEvent(el, event);
+  };
+  const renderChart = () =>
+    render(<TrendChart title="登録数" points={points} series={series} />);
+
+  it("選ぶ前は案内を出し、棒にネイティブの title を付けない", () => {
+    const { container } = renderChart();
+    expect(line().textContent).toBe(hint);
+    expect(container.querySelector("[title]")).toBeNull();
+    expect(screen.getAllByRole("button")).toHaveLength(3);
+  });
+
+  it("マウスを乗せるとすぐその期間の数を出し、外すと案内に戻る", () => {
+    renderChart();
+    const bars = screen.getAllByRole("button");
+    pointer("pointerEnter", bars[1], "mouse");
+    expect(line().textContent).toBe("2026-08-02  登録:7 / DAU:11");
+    // 乗せただけでは選択にしない
+    expect(bars[1].getAttribute("aria-pressed")).toBe("false");
+    pointer("pointerEnter", bars[2], "mouse");
+    expect(line().textContent).toBe("2026-08-03  登録:1 / DAU:4");
+    pointer("pointerLeave", screen.getByTestId("kpi-chart-bars"), "mouse");
+    expect(line().textContent).toBe(hint);
+  });
+
+  it("マウスが外れたら、タップで選んだ期間に戻る", () => {
+    renderChart();
+    const bars = screen.getAllByRole("button");
+    fireEvent.click(bars[0]);
+    pointer("pointerEnter", bars[2], "mouse");
+    expect(line().textContent).toBe("2026-08-03  登録:1 / DAU:4");
+    pointer("pointerLeave", screen.getByTestId("kpi-chart-bars"), "mouse");
+    expect(line().textContent).toBe("2026-08-01  登録:2 / DAU:5");
+  });
+
+  it("タッチの pointerenter は乗せた扱いにしない", () => {
+    renderChart();
+    const bars = screen.getAllByRole("button");
+    pointer("pointerEnter", bars[1], "touch");
+    expect(line().textContent).toBe(hint);
+  });
+
+  it("タップで選び、同じ棒をもう一度タップすると消える", () => {
+    renderChart();
+    const bars = screen.getAllByRole("button");
+    fireEvent.click(bars[1]);
+    expect(line().textContent).toBe("2026-08-02  登録:7 / DAU:11");
+    expect(bars[1].getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(bars[0]);
+    expect(line().textContent).toBe("2026-08-01  登録:2 / DAU:5");
+    expect(bars[1].getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(bars[0]);
+    expect(line().textContent).toBe(hint);
+    expect(bars[0].getAttribute("aria-pressed")).toBe("false");
   });
 });

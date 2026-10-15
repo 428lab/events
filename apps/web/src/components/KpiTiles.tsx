@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Box,
+  ButtonBase,
   Card,
   CardContent,
   Divider,
@@ -434,6 +435,9 @@ export function TrendChart({
   measuredFrom?: string | null;
 }) {
   const { t } = useTranslation();
+  // タップ（クリック）で選んだ期間と、マウスを乗せている期間。上の1行は乗せている方を優先する
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [hoveredDay, setHoveredDay] = useState<string | null>(null);
   const granularity: KpiGranularity = kpiGranularity(points.length);
   const shown = toGranularity(points, granularity, {
     averageKeys: series.filter((s) => s.rollup === "average").map((s) => s.key),
@@ -458,6 +462,11 @@ export function TrendChart({
   // 極端に本数が多いときだけ間引く (#290)。月別のラベル（'2026-08'）は
   // 少し長いが、月別で本数が多くなるのは全期間だけで、そのときは間引きが効く
   const labelStep = shown.length > 40 ? Math.ceil(shown.length / 40) : 1;
+  const valuesText = (p: (typeof shown)[number]) =>
+    `${barPeriod(p.day, granularity)}  ${series
+      .map((s) => `${s.label}:${fmtValue(p.values[s.key] ?? null)}`)
+      .join(" / ")}`;
+  const shownPoint = shown.find((p) => p.day === (hoveredDay ?? selectedDay)) ?? null;
   return (
     <Card variant="outlined" sx={{ width: "100%" }}>
       <CardContent sx={{ p: 1.5, "&:last-child": { pb: 1.5 } }}>
@@ -517,8 +526,20 @@ export function TrendChart({
             <Caution text={emptyText(empty)} />
           )
         ) : (
-          // 高さを固定しない。棒の並びを下揃えにすると日付ラベルのぶんだけ
-          // 棒の足元が下がり、目盛りの 0 の線より下に飛び出してマイナスに見える
+          <>
+          {/* 選んだ期間の数。ネイティブの title は出るまで待たされ、タッチ端末では開けないので、
+              マウスは乗せた瞬間、タッチはタップでここに出す */}
+          <Typography
+            variant="body2"
+            color={shownPoint ? "text.primary" : "text.secondary"}
+            aria-live="polite"
+            data-testid="kpi-chart-selected"
+            sx={{ mb: 1, minHeight: "1.5em", fontWeight: shownPoint ? 600 : 400 }}
+          >
+            {shownPoint ? valuesText(shownPoint) : t("kpi.chartTapHint")}
+          </Typography>
+          {/* 高さを固定しない。棒の並びを下揃えにすると日付ラベルのぶんだけ
+              棒の足元が下がり、目盛りの 0 の線より下に飛び出してマイナスに見える */}
           <Box sx={{ display: "flex", alignItems: "flex-start" }}>
             {/* 縦軸。棒の高さだけでは値が読めず、ツールチップはタッチ端末で開けない (#290) */}
             <Box
@@ -573,6 +594,11 @@ export function TrendChart({
                 />
               ))}
               <Box
+                data-testid="kpi-chart-bars"
+                // タッチも mouseenter を模擬するので、マウスのときだけ乗せた期間として扱う
+                onPointerLeave={(e) => {
+                  if (e.pointerType === "mouse") setHoveredDay(null);
+                }}
                 sx={{
                   display: "flex",
                   alignItems: "flex-start",
@@ -581,11 +607,16 @@ export function TrendChart({
                 }}
               >
                 {shown.map((p, i) => (
-              <Box
+              <ButtonBase
                 key={p.day}
-                title={`${barPeriod(p.day, granularity)}  ${series
-                  .map((s) => `${s.label}:${fmtValue(p.values[s.key] ?? null)}`)
-                  .join(" / ")}`}
+                aria-label={valuesText(p)}
+                aria-pressed={p.day === selectedDay}
+                onPointerEnter={(e) => {
+                  if (e.pointerType === "mouse") setHoveredDay(p.day);
+                }}
+                onClick={() =>
+                  setSelectedDay((current) => (current === p.day ? null : p.day))
+                }
                 sx={{
                   flex: "1 0 20px",
                   minWidth: 20,
@@ -593,6 +624,14 @@ export function TrendChart({
                   flexDirection: "column",
                   alignItems: "center",
                   gap: 0.5,
+                  borderRadius: 1,
+                  bgcolor:
+                    p.day === selectedDay
+                      ? "action.selected"
+                      : p.day === hoveredDay
+                        ? "action.hover"
+                        : "transparent",
+                  "&.Mui-focusVisible": { outline: "2px solid", outlineColor: "primary.main" },
                 }}
               >
                 <Box
@@ -640,11 +679,12 @@ export function TrendChart({
                     {barLabel(p.day, granularity)}
                   </Typography>
                 </Box>
-                  </Box>
+                  </ButtonBase>
                 ))}
               </Box>
             </Box>
           </Box>
+          </>
         )}
         {unit ? (
           <Typography
