@@ -148,19 +148,29 @@ export const eventCohostsRepo = {
     return row?.n ?? 0;
   },
 
-  /** 承認待ちで申請する（イベントの管理者として）。
+  /** 共催の行を作る（イベントの管理者として）。通常は承認待ち。
+   * 依頼者が共催先の owner/admin でもあるときは、ルートが status に accepted を渡し、
+   * 承認を挟まずに共催中で作る（responded_at も同時に入れる）。
    * 上限は同じ文の中でも数える。画面の二重送信で上限を超えないようにするため。
    * 作れなかった（上限・既にある）ときは false */
-  async create(eventId: string, communityId: string, actorId: string): Promise<boolean> {
+  async create(
+    eventId: string,
+    communityId: string,
+    actorId: string,
+    status: EventCohostStatus = "pending",
+  ): Promise<boolean> {
+    const now = Date.now();
     const changed = await eventRun(
       { eventId, actorId, permission: "manager" },
       `INSERT INTO event_cohost (event_id, community_id, status, created_at, responded_at)
-       SELECT ?, ?, 'pending', ?, NULL
+       SELECT ?, ?, ?, ?, ?
        WHERE (SELECT COUNT(1) FROM event_cohost WHERE event_id = ?) < ?
        ON CONFLICT(event_id, community_id) DO NOTHING`,
       eventId,
       communityId,
-      Date.now(),
+      status,
+      now,
+      status === "accepted" ? now : null,
       eventId,
       MAX_EVENT_COHOSTS,
     );

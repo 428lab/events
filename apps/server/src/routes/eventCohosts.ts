@@ -19,6 +19,8 @@ import { genericEventNotice } from "../db/repositories/eventNotificationAccess.j
  *
  * 他のコミュニティに無断でぶら下げられないよう (#264)、ここで作るのは承認待ちの
  * 依頼だけ。成立させるのは共催先の owner/admin（routes/communities.ts）。
+ * ただし依頼者自身が共催先の owner/admin なら、承諾できる本人が頼んでいるので
+ * 承認を挟まず共催中で作り、依頼・結果の通知も送らない。
  */
 
 /** 画面からは「https://…/c/foo/」や「/c/foo」の形で貼られることを見越して slug に直す */
@@ -132,14 +134,16 @@ eventCohostRoutes.post(
     if ((await eventCohostsRepo.countByEvent(eventId)) >= MAX_EVENT_COHOSTS) {
       return c.json({ error: "cohost_limit" }, 400);
     }
+    // 共催先の承諾と同じ判定（routes/communities.ts の accept）。通れば承認済みで作る
+    const status = (await communitiesRepo.isManager(target.id, user.id)) ? "accepted" : "pending";
     // 上の検査と同時押しで競ったときは、作る文の中の上限・一意制約で止まる
-    if (!(await eventCohostsRepo.create(eventId, target.id, user.id))) {
+    if (!(await eventCohostsRepo.create(eventId, target.id, user.id, status))) {
       return (await eventCohostsRepo.find(eventId, target.id))
         ? c.json({ error: "already_cohost" }, 409)
         : c.json({ error: "cohost_limit" }, 400);
     }
-    await notifyRequested(event, target, user);
-    return c.json({ cohosts: await eventCohostsRepo.listByEvent(eventId) }, 201);
+    if (status === "pending") await notifyRequested(event, target, user);
+    return c.json({ status, cohosts: await eventCohostsRepo.listByEvent(eventId) }, 201);
   },
 );
 
