@@ -58,6 +58,8 @@ const ja = {
     "{{day}}から計測しています。選んだ期間には計測したデータがまだありません。",
   /** 一度も計測していない */
   chartNeverMeasured: "この期間に計測したデータはありません。",
+  /** 推移グラフの上の1行。棒を選ぶ前の案内（PCはマウスを乗せるだけで出る） */
+  chartTapHint: "棒をタップ（PCはマウスを乗せる）と、その期間の数が出ます",
   /** 日次には値があるのに、畳んだら端の欠けたバケツしか残らなかった */
   chartPartialWeek:
     "計測できているのは期間の一部だけで、まるまる1週間そろった週がまだありません。短い期間を選ぶと日別で見られます。",
@@ -244,6 +246,7 @@ const en: Record<keyof typeof ja, string> = {
   chartMeasuredFromEmpty:
     "Measurement started on {{day}}. There is no measured data yet in the period you chose.",
   chartNeverMeasured: "Nothing was measured during this period.",
+  chartTapHint: "Tap a bar (or hover over it on a computer) to see the numbers for that period",
   chartPartialWeek:
     "Only part of this period has been measured, and no full week has completed yet. Choose a shorter period to see it day by day.",
   chartPartialMonth:
