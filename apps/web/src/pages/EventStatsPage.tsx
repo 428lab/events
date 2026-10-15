@@ -410,9 +410,6 @@ function StatTile({ label, value }: { label: string; value: number }) {
 
 export function DailyChart({ daily }: { daily: EventStats["daily"] }) {
   const { t } = useTranslation();
-  // PVと参加数でスケールが大きく違うため、棒の高さは各系列の最大値で正規化
-  const maxViews = Math.max(1, ...daily.map((d) => d.views));
-  const maxJoins = Math.max(1, ...daily.map((d) => d.joins));
   return (
     <Card variant="outlined">
       <CardContent>
@@ -431,13 +428,15 @@ export function DailyChart({ daily }: { daily: EventStats["daily"] }) {
             label={t("staffOps.statsLegendJoins")}
           />
         </Stack>
+        {/* PVと参加数でスケールが大きく違うため、PVは左、参加は右の縦軸で描く */}
         <DailyBarChart
+          series={[
+            { color: "primary.main", side: "left" },
+            { color: "secondary.main", side: "right" },
+          ]}
           days={daily.map((d) => ({
             day: d.day,
-            bars: [
-              { value: d.views, max: maxViews, color: "primary.main" },
-              { value: d.joins, max: maxJoins, color: "secondary.main" },
-            ],
+            values: [d.views, d.joins],
             valuesText: t("staffOps.statsDayTooltip", {
               day: d.day,
               views: d.views,

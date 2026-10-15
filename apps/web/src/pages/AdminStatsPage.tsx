@@ -154,8 +154,6 @@ export function TrendChart({
   onToggleViews: () => void;
   onToggleJoins: () => void;
 }) {
-  const maxViews = Math.max(1, ...daily.map((d) => d.views));
-  const maxJoins = Math.max(1, ...daily.map((d) => d.joins));
   return (
     <Card variant="outlined">
       <CardContent>
@@ -188,17 +186,15 @@ export function TrendChart({
             データなし
           </Typography>
         ) : (
+          // PVは左、参加は右の縦軸。スイッチで隠した系列は棒も軸も出さない
           <DailyBarChart
+            series={[
+              ...(showViews ? [{ color: "primary.main", side: "left" as const }] : []),
+              ...(showJoins ? [{ color: "secondary.main", side: "right" as const }] : []),
+            ]}
             days={daily.map((d) => ({
               day: d.day,
-              bars: [
-                ...(showViews
-                  ? [{ value: d.views, max: maxViews, color: "primary.main" }]
-                  : []),
-                ...(showJoins
-                  ? [{ value: d.joins, max: maxJoins, color: "secondary.main" }]
-                  : []),
-              ],
+              values: [...(showViews ? [d.views] : []), ...(showJoins ? [d.joins] : [])],
               valuesText: `${d.day}  PV:${d.views} / 参加:${d.joins}`,
             }))}
           />
