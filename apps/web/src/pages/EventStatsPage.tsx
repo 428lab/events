@@ -4,6 +4,7 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Card,
   CardContent,
   Stack,
@@ -407,11 +408,21 @@ function StatTile({ label, value }: { label: string; value: number }) {
   );
 }
 
-function DailyChart({ daily }: { daily: EventStats["daily"] }) {
+export function DailyChart({ daily }: { daily: EventStats["daily"] }) {
   const { t } = useTranslation();
   // PVと参加数でスケールが大きく違うため、棒の高さは各系列の最大値で正規化
   const maxViews = Math.max(1, ...daily.map((d) => d.views));
   const maxJoins = Math.max(1, ...daily.map((d) => d.joins));
+  // 縦軸の目盛りは無いので、棒をタップ（またはフォーカスして Enter）した日の実数を上に出す
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const selected = daily.find((d) => d.day === selectedDay) ?? null;
+  const dayText = (d: EventStats["daily"][number]) =>
+    t("staffOps.statsDayTooltip", {
+      day: d.day,
+      views: d.views,
+      uniques: d.uniques,
+      joins: d.joins,
+    });
   return (
     <Card variant="outlined">
       <CardContent>
@@ -430,6 +441,15 @@ function DailyChart({ daily }: { daily: EventStats["daily"] }) {
             label={t("staffOps.statsLegendJoins")}
           />
         </Stack>
+        <Typography
+          variant="body2"
+          color={selected ? "text.primary" : "text.secondary"}
+          aria-live="polite"
+          data-testid="daily-chart-selected"
+          sx={{ mb: 1, minHeight: "1.5em", fontWeight: selected ? 600 : 400 }}
+        >
+          {selected ? dayText(selected) : t("staffOps.statsDayTapHint")}
+        </Typography>
         <Box
           sx={{
             display: "flex",
@@ -440,21 +460,25 @@ function DailyChart({ daily }: { daily: EventStats["daily"] }) {
           }}
         >
           {daily.map((d) => (
-            <Box
+            <ButtonBase
               key={d.day}
-              title={t("staffOps.statsDayTooltip", {
-                day: d.day,
-                views: d.views,
-                uniques: d.uniques,
-                joins: d.joins,
-              })}
+              aria-label={dayText(d)}
+              aria-pressed={d.day === selectedDay}
+              onClick={() =>
+                setSelectedDay((current) => (current === d.day ? null : d.day))
+              }
               sx={{
                 flex: "1 0 20px",
                 minWidth: 20,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
+                justifyContent: "flex-end",
                 gap: 0.5,
+                height: "100%",
+                borderRadius: 1,
+                bgcolor: d.day === selectedDay ? "action.selected" : "transparent",
+                "&.Mui-focusVisible": { outline: "2px solid", outlineColor: "primary.main" },
               }}
             >
               {/* PVバー＋参加バーを横並び */}
@@ -492,7 +516,7 @@ function DailyChart({ daily }: { daily: EventStats["daily"] }) {
               >
                 {d.day.slice(5)}
               </Typography>
-            </Box>
+            </ButtonBase>
           ))}
         </Box>
       </CardContent>

@@ -48,6 +48,7 @@ const ja = {
   statsLegendJoins: "参加登録",
   statsDayTooltip:
     "{{day}}  PV:{{views}} / ユニーク:{{uniques}} / 参加:{{joins}}",
+  statsDayTapHint: "棒をタップすると、その日の数が出ます",
   statsNoData: "データなし",
   /** 流入元のうち、サイトが自分で付ける印。外部サイトの名前（X・Facebook 等）は
    *  どの言語でも同じ綴りなので画面側の表に残してある */
@@ -126,6 +127,7 @@ const en: Record<keyof typeof ja, string> = {
   statsLegendJoins: "Sign-ups",
   statsDayTooltip:
     "{{day}}  views: {{views}} / unique: {{uniques}} / sign-ups: {{joins}}",
+  statsDayTapHint: "Tap a bar to see that day's numbers",
   statsNoData: "No data",
   sourceDirect: "Direct",
   sourceInternal: "Within the site",
