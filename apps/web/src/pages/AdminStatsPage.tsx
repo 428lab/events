@@ -21,6 +21,7 @@ import { Link as RouterLink } from "react-router-dom";
 import type { AdminStats } from "@eventer/shared";
 import { useIsAdmin } from "../api/hooks.js";
 import { useAdminStats } from "../api/analyticsHooks.js";
+import { DailyBarChart } from "../components/DailyBarChart.js";
 
 const RANGES: { label: string; days: number | null }[] = [
   { label: "7日", days: 7 },
@@ -140,7 +141,7 @@ function SummaryTile({ label, value }: { label: string; value: number }) {
   );
 }
 
-function TrendChart({
+export function TrendChart({
   daily,
   showViews,
   showJoins,
@@ -187,69 +188,20 @@ function TrendChart({
             データなし
           </Typography>
         ) : (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "flex-end",
-              gap: 0.75,
-              height: 150,
-              overflowX: "auto",
-            }}
-          >
-            {daily.map((d) => (
-              <Box
-                key={d.day}
-                title={`${d.day}  PV:${d.views} / 参加:${d.joins}`}
-                sx={{
-                  flex: "1 0 20px",
-                  minWidth: 20,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 0.5,
-                }}
-              >
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "flex-end",
-                    justifyContent: "center",
-                    gap: "2px",
-                    height: 110,
-                    width: "100%",
-                  }}
-                >
-                  {showViews && (
-                    <Box
-                      sx={{
-                        width: 8,
-                        height: `${(d.views / maxViews) * 110}px`,
-                        bgcolor: "primary.main",
-                        borderRadius: "2px 2px 0 0",
-                        minHeight: d.views > 0 ? 2 : 0,
-                      }}
-                    />
-                  )}
-                  {showJoins && (
-                    <Box
-                      sx={{
-                        width: 8,
-                        height: `${(d.joins / maxJoins) * 110}px`,
-                        bgcolor: "secondary.main",
-                        borderRadius: "2px 2px 0 0",
-                        minHeight: d.joins > 0 ? 2 : 0,
-                      }}
-                    />
-                  )}
-                </Box>
-                <Typography
-                  sx={{ fontSize: 9, color: "text.secondary", whiteSpace: "nowrap" }}
-                >
-                  {d.day.slice(5)}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
+          <DailyBarChart
+            days={daily.map((d) => ({
+              day: d.day,
+              bars: [
+                ...(showViews
+                  ? [{ value: d.views, max: maxViews, color: "primary.main" }]
+                  : []),
+                ...(showJoins
+                  ? [{ value: d.joins, max: maxJoins, color: "secondary.main" }]
+                  : []),
+              ],
+              valuesText: `${d.day}  PV:${d.views} / 参加:${d.joins}`,
+            }))}
+          />
         )}
       </CardContent>
     </Card>

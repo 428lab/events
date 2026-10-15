@@ -33,6 +33,7 @@ import { useEventStats } from "../api/analyticsHooks.js";
 import { useSurveyAnswers } from "../api/eventSurveyHooks.js";
 import { useMeetRanking } from "../api/eventMeetHooks.js";
 import { i18next } from "../i18n/index.js";
+import { DailyBarChart } from "../components/DailyBarChart.js";
 
 /** サイトが自分で付ける流入元の印。文言は辞書にある */
 const INTERNAL_SOURCE_KEY: Partial<
@@ -407,7 +408,7 @@ function StatTile({ label, value }: { label: string; value: number }) {
   );
 }
 
-function DailyChart({ daily }: { daily: EventStats["daily"] }) {
+export function DailyChart({ daily }: { daily: EventStats["daily"] }) {
   const { t } = useTranslation();
   // PVと参加数でスケールが大きく違うため、棒の高さは各系列の最大値で正規化
   const maxViews = Math.max(1, ...daily.map((d) => d.views));
@@ -430,71 +431,21 @@ function DailyChart({ daily }: { daily: EventStats["daily"] }) {
             label={t("staffOps.statsLegendJoins")}
           />
         </Stack>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "flex-end",
-            gap: 0.75,
-            height: 150,
-            overflowX: "auto",
-          }}
-        >
-          {daily.map((d) => (
-            <Box
-              key={d.day}
-              title={t("staffOps.statsDayTooltip", {
-                day: d.day,
-                views: d.views,
-                uniques: d.uniques,
-                joins: d.joins,
-              })}
-              sx={{
-                flex: "1 0 20px",
-                minWidth: 20,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 0.5,
-              }}
-            >
-              {/* PVバー＋参加バーを横並び */}
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "flex-end",
-                  justifyContent: "center",
-                  gap: "2px",
-                  height: 110,
-                  width: "100%",
-                }}
-              >
-                <Box
-                  sx={{
-                    width: 8,
-                    height: `${(d.views / maxViews) * 110}px`,
-                    bgcolor: "primary.main",
-                    borderRadius: "2px 2px 0 0",
-                    minHeight: d.views > 0 ? 2 : 0,
-                  }}
-                />
-                <Box
-                  sx={{
-                    width: 8,
-                    height: `${(d.joins / maxJoins) * 110}px`,
-                    bgcolor: "secondary.main",
-                    borderRadius: "2px 2px 0 0",
-                    minHeight: d.joins > 0 ? 2 : 0,
-                  }}
-                />
-              </Box>
-              <Typography
-                sx={{ fontSize: 9, color: "text.secondary", whiteSpace: "nowrap" }}
-              >
-                {d.day.slice(5)}
-              </Typography>
-            </Box>
-          ))}
-        </Box>
+        <DailyBarChart
+          days={daily.map((d) => ({
+            day: d.day,
+            bars: [
+              { value: d.views, max: maxViews, color: "primary.main" },
+              { value: d.joins, max: maxJoins, color: "secondary.main" },
+            ],
+            valuesText: t("staffOps.statsDayTooltip", {
+              day: d.day,
+              views: d.views,
+              uniques: d.uniques,
+              joins: d.joins,
+            }),
+          }))}
+        />
       </CardContent>
     </Card>
   );
