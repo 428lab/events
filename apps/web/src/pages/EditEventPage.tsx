@@ -144,7 +144,37 @@ export function EditEventPage() {
   const myCommunities = myCommunitiesQuery.data;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [formRevision, setFormRevision] = useState(0);
+  // 読み込んだときの日時と締切（入力欄の文字列）。変えたときだけ送るための比較元。
+  // 日時を送ると revision の照合が掛かり、参加登録などで revision が上がっただけでも
+  // 409 schedule_changed になるので、触っていない日時は送らない
+  const [loadedSchedule, setLoadedSchedule] = useState({ startsAt: "", endsAt: "", registrationDeadline: "" });
   const [initialized, setInitialized] = useState(false);
+
+  /** revision で守られている項目（公開状態・予約・公開範囲・日時・締切）を、サーバーの値に揃える。
+   * revision もここで揃えるので、ほかの人の変更を古い値で上書きしないよう、この組は必ず一緒に入れ直す */
+  const applyRevisionedFields = (e: Event) => {
+    setStatus(e.status === "published" ? "published" : e.publishAt ? "scheduled" : "draft");
+    setPublishAt(toLocalInput(e.publishAt ?? 0));
+    setVisibility(e.visibility);
+    setFormRevision(e.accessRevision);
+    setDirectDate(false);
+    const loaded = {
+      startsAt: e.scheduling ? "" : toLocalInput(e.startsAt),
+      endsAt: e.scheduling ? "" : toLocalInput(e.endsAt),
+      registrationDeadline: toLocalInput(e.registrationDeadline ?? 0),
+    };
+    setStartsAt(loaded.startsAt);
+    setEndsAt(loaded.endsAt);
+    setRegistrationDeadline(loaded.registrationDeadline);
+    setLoadedSchedule(loaded);
+  };
+
+  /** 409 のあと。題名・説明などの入力は消さず、revision で守られている項目だけ最新に入れ直す。
+   * 自動で再送はしない（日程の取り合いを防ぐ照合なので、最新を見てから保存し直してもらう） */
+  const resyncAfterConflict = async () => {
+    const { data: latest } = await refetch();
+    if (latest?.event) applyRevisionedFields(latest.event);
+  };
 
   // 複製後に /events/:newId/edit へ遷移してもコンポーネントは再マウントされないため、
   // id が変わったらフォームを新イベントの内容で初期化し直す
@@ -155,18 +185,11 @@ export function EditEventPage() {
   useEffect(() => {
     if (data?.event && !initialized) {
       const e = data.event;
-      setStatus(e.status === "published" ? "published" : e.publishAt ? "scheduled" : "draft");
-      setPublishAt(toLocalInput(e.publishAt ?? 0));
-      setVisibility(e.visibility);
+      applyRevisionedFields(e);
       setTitle(e.title);
       setSubtitle(e.subtitle);
       setDescription(e.description);
       setMembersNote(data.membersNote ?? "");
-      setFormRevision(e.accessRevision);
-      setDirectDate(false);
-      setStartsAt(e.scheduling ? "" : toLocalInput(e.startsAt));
-      setEndsAt(e.scheduling ? "" : toLocalInput(e.endsAt));
-      setRegistrationDeadline(toLocalInput(e.registrationDeadline ?? 0));
       setVenueType(e.venueType);
       setVenueOffline(e.venueOffline ?? "");
       setVenueAddress(e.venueAddress ?? "");
@@ -251,6 +274,12 @@ export function EditEventPage() {
   const nextPublishAt = status === "scheduled" ? publishAtMs : null;
   const nextStatus = status === "published" ? "published" : "draft";
   const publishStateEdited = nextStatus !== event.status || nextPublishAt !== (event.publishAt ?? null);
+  // 日時・締切は読み込んだときから変えたときだけ送る（日程調整をやめて直接確定するときは必ず送る）
+  const sendDates =
+    startsAtMs !== null &&
+    endsAtMs !== null &&
+    (directDate || startsAt !== loadedSchedule.startsAt || endsAt !== loadedSchedule.endsAt);
+  const sendDeadline = deadlineEditable && registrationDeadline !== loadedSchedule.registrationDeadline;
   // 保存失敗の理由。締切まわりは汎用文言だと何を直せばいいか分からないので、
   // この画面だけの言い方を overrides で渡す (#269)
   const saveErrorMessage = errorMessage(update.error, {
@@ -271,13 +300,13 @@ export function EditEventPage() {
       try {
         const preview=await api.get<{accessRevision:number;members:number;voters:number}>(`/events/${id}/visibility-preview`);
         if (!window.confirm(t("eventAccess.visibilityMembers",preview))) return;
-        if (preview.accessRevision !== formRevision) { setVisibilityError(true); await refetch(); setInitialized(false); return; }
+        if (preview.accessRevision !== formRevision) { setVisibilityError(true); await resyncAfterConflict(); return; }
         expectedAccessRevision=preview.accessRevision;
       } catch { setVisibilityError(true); return; }
     }
     update.mutate(
       {
-        ...((startsAtMs !== null && endsAtMs !== null) || deadlineEditable || publishStateEdited ? { expectedAccessRevision: formRevision } : {}),
+        ...(sendDates || sendDeadline || publishStateEdited ? { expectedAccessRevision: formRevision } : {}),
         ...(expectedAccessRevision === undefined ? {} : {visibility,expectedAccessRevision,confirmVisibilityChange:true}),
         status: nextStatus,
         // 公開にするときは送らない（サーバーが予約を消す）。下書きなら null で予約なし
@@ -286,18 +315,16 @@ export function EditEventPage() {
         subtitle,
         description,
         membersNote,
-        // 日程調整中は日時未確定（0のまま）。入力があるときだけ送る
-        ...(startsAtMs !== null && endsAtMs !== null
+        // 日程調整中は日時未確定（0のまま）。入力があり、読み込んだときから変えたときだけ送る
+        ...(sendDates && startsAtMs !== null && endsAtMs !== null
           ? { startsAt: startsAtMs, endsAt: endsAtMs }
           : {}),
         // 日程調整をやめて直接確定 (#138)
-        ...(directDate && startsAtMs !== null && endsAtMs !== null
-          ? { scheduling: false as const }
-          : {}),
+        ...(directDate && sendDates ? { scheduling: false as const } : {}),
         // 募集締切 (#269)。空欄なら null を送って締切を解除する。
-        // 入力できない状態のときはキー自体を送らない：null を送ってしまうと
-        // 「開始日時を消しただけ」で既存の締切まで解除されてしまう
-        ...(deadlineEditable ? { registrationDeadline: deadlineMs } : {}),
+        // 入力できない状態のときと、読み込んだときから変えていないときはキー自体を送らない：
+        // null を送ってしまうと「開始日時を消しただけ」で既存の締切まで解除されてしまう
+        ...(sendDeadline ? { registrationDeadline: deadlineMs } : {}),
         venueType,
         venueOffline: venueOffline || null,
         venueAddress: venueAddress || null,
@@ -321,7 +348,7 @@ export function EditEventPage() {
       },
       { onSuccess: () => navigate(`/events/${id}`), onError: async error => {
         if (expectedAccessRevision !== undefined) setVisibilityError(true);
-        if (error instanceof ApiError && error.status === 409) { await refetch(); setInitialized(false); }
+        if (error instanceof ApiError && error.status === 409) await resyncAfterConflict();
       } },
     );
   };

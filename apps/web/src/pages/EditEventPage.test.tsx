@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 
@@ -11,12 +11,12 @@ import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
  * 「前」だけを警告する。
  */
 
-const { updateMutate } = vi.hoisted(() => ({ updateMutate: vi.fn() }));
+const { updateMutate, refetchEvent } = vi.hoisted(() => ({ updateMutate: vi.fn(), refetchEvent: vi.fn() }));
 
 let eventData: Record<string, unknown>;
 
 vi.mock("../api/hooks.js", () => ({
-  useEvent: () => ({ data: eventData, isLoading: false }),
+  useEvent: () => ({ data: eventData, isLoading: false, refetch: refetchEvent }),
   useIsAdmin: () => false,
   useUpdateEvent: () => ({
     mutate: updateMutate,
@@ -106,6 +106,7 @@ const orderWarning = () =>
 
 beforeEach(() => {
   updateMutate.mockReset();
+  refetchEvent.mockReset();
   eventData = makeEventData();
 });
 
@@ -168,6 +169,7 @@ it("submits the revision that initialized the form, not a newer background respo
   const view = draw();
   eventData = makeEventData({ accessRevision: 8 });
   view.rerender(<MemoryRouter initialEntries={["/events/e-1/edit"]}><Routes><Route path="/events/:id/edit" element={<EditEventPage />} /></Routes></MemoryRouter>);
+  fireEvent.change(screen.getByLabelText("終了日時"), { target: { value: "2026-09-01T13:00" } });
   fireEvent.click(saveButton());
   expect(updateMutate.mock.calls[0][0].expectedAccessRevision).toBe(7);
 });
@@ -380,5 +382,82 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
     fireEvent.click(saveButton());
     expect(sent()).toMatchObject({ status: "published" });
     expect(sent()).not.toHaveProperty("publishAt");
+  });
+});
+
+describe("日時を変えない保存は revision を照合しない（参加登録で 409 にしない）", () => {
+  const sent = () => updateMutate.mock.calls[0][0] as Record<string, unknown>;
+  const titleField = () => screen.getByLabelText(/^タイトル/);
+
+  it("題名だけ直した保存は、日時・締切・revision を送らない", () => {
+    eventData = makeEventData({ accessRevision: 3, registrationDeadline: new Date("2026-08-31T10:00").getTime() });
+    draw();
+    fireEvent.change(titleField(), { target: { value: "新しい題名" } });
+    fireEvent.click(saveButton());
+    expect(sent()).toMatchObject({ title: "新しい題名" });
+    for (const key of ["startsAt", "endsAt", "registrationDeadline", "scheduling", "expectedAccessRevision"]) {
+      expect(sent()).not.toHaveProperty(key);
+    }
+  });
+
+  it("日時を変えた保存は、日時と読み込んだ revision を送る", () => {
+    eventData = makeEventData({ accessRevision: 3 });
+    draw();
+    fireEvent.change(screen.getByLabelText("終了日時"), { target: { value: "2026-09-01T13:00" } });
+    fireEvent.click(saveButton());
+    expect(sent()).toMatchObject({
+      startsAt: new Date("2026-09-01T10:00").getTime(),
+      endsAt: new Date("2026-09-01T13:00").getTime(),
+      expectedAccessRevision: 3,
+    });
+    expect(sent()).not.toHaveProperty("registrationDeadline");
+  });
+
+  it("締切だけ変えた保存は、締切と revision を送り、日時は送らない", () => {
+    eventData = makeEventData({ accessRevision: 3 });
+    draw();
+    fireEvent.change(screen.getByLabelText(/^募集締切/), { target: { value: "2026-08-31T18:00" } });
+    fireEvent.click(saveButton());
+    expect(sent()).toMatchObject({ registrationDeadline: new Date("2026-08-31T18:00").getTime(), expectedAccessRevision: 3 });
+    expect(sent()).not.toHaveProperty("startsAt");
+  });
+
+  it("409 schedule_changed では題名の入力を残し、日時と revision だけ最新に入れ直す（自動で再送しない）", async () => {
+    eventData = makeEventData({ accessRevision: 3 });
+    draw();
+    fireEvent.change(titleField(), { target: { value: "直した題名" } });
+    fireEvent.change(screen.getByLabelText("終了日時"), { target: { value: "2026-09-01T13:00" } });
+    const latest = makeEventData({
+      accessRevision: 6,
+      startsAt: new Date("2026-09-02T10:00").getTime(),
+      endsAt: new Date("2026-09-02T12:00").getTime(),
+    });
+    refetchEvent.mockImplementation(async () => {
+      eventData = latest;
+      return { data: latest };
+    });
+    const { ApiError } = await import("../api/client.js");
+    updateMutate.mockImplementationOnce((_input, options) => {
+      options.onError(new ApiError(409, { error: "schedule_changed" }));
+    });
+    await act(async () => {
+      fireEvent.click(saveButton());
+    });
+    await waitFor(() => expect(screen.getByLabelText("開始日時")).toHaveValue("2026-09-02T10:00"));
+    expect(screen.getByLabelText("終了日時")).toHaveValue("2026-09-02T12:00");
+    expect(titleField()).toHaveValue("直した題名");
+    expect(updateMutate).toHaveBeenCalledTimes(1);
+
+    // 最新の日時を見たうえで題名だけ保存し直すと、日時も revision も送らない
+    fireEvent.click(saveButton());
+    const retry = updateMutate.mock.calls[1][0] as Record<string, unknown>;
+    expect(retry).toMatchObject({ title: "直した題名" });
+    expect(retry).not.toHaveProperty("startsAt");
+    expect(retry).not.toHaveProperty("expectedAccessRevision");
+
+    // 日時を変えて保存し直すと、新しい revision で照合する
+    fireEvent.change(screen.getByLabelText("終了日時"), { target: { value: "2026-09-02T13:00" } });
+    fireEvent.click(saveButton());
+    expect(updateMutate.mock.calls[2][0]).toMatchObject({ expectedAccessRevision: 6, title: "直した題名" });
   });
 });
