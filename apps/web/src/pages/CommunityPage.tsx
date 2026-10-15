@@ -205,8 +205,8 @@ export function CommunityPage() {
 
       <Divider />
 
-      {/* イベント（検索APIベース: タブ・絞り込み・10件ページング） */}
-      <EventsBrowser communityId={c.id} communitySlug={c.slug} />
+      {/* イベント（検索APIベース: タブ・絞り込み・10件ページング）。共催 (#625) のイベントには「共催」を添える */}
+      <EventsBrowser communityId={c.id} communitySlug={c.slug} markCohosts />
 
       {/* イベントのたまご（あったらいいな） */}
       {(c.requests.length > 0 || c.isMember) && (

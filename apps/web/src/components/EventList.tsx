@@ -39,10 +39,14 @@ export function ListColumnsToggle() {
 export function EventList({
   events,
   role,
+  cohostOf,
 }: {
   events: (Event & { myRole?: EventRole })[];
   role?: EventRole;
+  /** このコミュニティが主催でないイベントを共催 (#625) として示す（コミュニティページ専用） */
+  cohostOf?: string;
 }) {
+  const isCohost = (e: Event) => cohostOf !== undefined && e.communityId !== cohostOf;
   const [columns] = useListColumns();
   if (columns === 2) {
     return (
@@ -55,7 +59,7 @@ export function EventList({
         }}
       >
         {events.map((e) => (
-          <EventCard key={e.id} event={e} role={e.myRole ?? role} compact />
+          <EventCard key={e.id} event={e} role={e.myRole ?? role} cohost={isCohost(e)} compact />
         ))}
       </Box>
     );
@@ -63,7 +67,7 @@ export function EventList({
   return (
     <Stack spacing={2}>
       {events.map((e) => (
-        <EventCard key={e.id} event={e} role={e.myRole ?? role} />
+        <EventCard key={e.id} event={e} role={e.myRole ?? role} cohost={isCohost(e)} />
       ))}
     </Stack>
   );
