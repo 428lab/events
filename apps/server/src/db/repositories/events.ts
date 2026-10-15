@@ -213,6 +213,9 @@ export interface EventSearchOpts {
   /** この時刻以降に始まるイベント（「続きを見る」での継続表示用） */
   after?: number;
   communityId?: string;
+  /** communityId を主催のイベントだけに絞る（共催 #625 を含めない）。
+   * コミュニティの開催数（eventCount）は共催を数えない（二重計上を避ける） */
+  hostedOnly?: boolean;
   venueType?: "offline" | "online" | "hybrid";
   /** 日程調整中（開催日未定）を除外する */
   excludeScheduling?: boolean;
@@ -231,10 +234,14 @@ export interface EventSearchOpts {
 interface CommunityEventViewer { userId: string | null }
 
 function communityDiscovery(viewer: CommunityEventViewer) {
+  // status / visibility の先頭の `+` は索引を使わせないための印 (#625)。
+  // 共催込みの communityId 条件（主催 OR 共催）と並ぶと、索引の統計が無い D1 では
+  // 絞り込みの弱い idx_event_status を選んで公開イベント全件を読むため。
+  // `+` があると主催は idx_event_community、共催は主キーで引く（MULTI-INDEX OR）
   return {
-    where: `event.status = 'published' AND (event.visibility = 'public'
-      OR (event.visibility = 'private' AND ${eventViewSql("event", "?", "?")})
-      OR (event.visibility = 'unlisted' AND EXISTS (
+    where: `+event.status = 'published' AND (+event.visibility = 'public'
+      OR (+event.visibility = 'private' AND ${eventViewSql("event", "?", "?")})
+      OR (+event.visibility = 'unlisted' AND EXISTS (
         SELECT 1 FROM user discovery_user
         WHERE discovery_user.id = ? AND discovery_user.deleted_at IS NULL AND (
           ${eventManagerSql("event", "discovery_user", "?")}
@@ -271,9 +278,17 @@ function buildSearchWhere(o: EventSearchOpts, viewer?: CommunityEventViewer): {
     conds.push("starts_at >= ?");
     args.push(o.after);
   }
-  if (o.communityId) {
+  if (o.communityId && o.hostedOnly) {
     conds.push("community_id = ?");
     args.push(o.communityId);
+  } else if (o.communityId) {
+    // 主催に加えて、成立した共催 (#625) のイベントも含める。承認待ちは載せない。
+    // 公開範囲の条件（communityDiscovery）は主催のときと同じものがそのまま掛かる。
+    // 相関サブクエリ（EXISTS）にすると OR の片側で idx_event_community が使えず event を
+    // 全件走査するので、IN の非相関サブクエリにして主キーで引かせる
+    conds.push(`(community_id = ? OR id IN (SELECT event_id FROM event_cohost
+      WHERE community_id = ? AND status = 'accepted'))`);
+    args.push(o.communityId, o.communityId);
   }
   if (o.venueType) {
     conds.push("venue_type = ?");
@@ -574,7 +589,12 @@ export const eventsRepo = {
       // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る
       next.registrationDeadline ?? null,
       id, input.expectedAccessRevision ?? current.accessRevision, next.visibility,actorId, adminIds(), next.communityId ?? null, next.communityId ?? null, actorId, adminIds(), next.communityId ?? null,
-    ]}, ...(dateChanged ? [{sql: "DELETE FROM event_schedule_finalization WHERE event_id=? AND changes()>0", args: [id]}] : []),...(token ? visibilityChangeStatements(id,token,actorId,current.visibility,next.visibility):[])]);
+    ]}, ...(dateChanged ? [{sql: "DELETE FROM event_schedule_finalization WHERE event_id=? AND changes()>0", args: [id]}] : []),...(token ? visibilityChangeStatements(id,token,actorId,current.visibility,next.visibility):[]),
+      // 共催 (#625) にいたコミュニティを主催に付け替えたら、その共催は外す（主催と共催の二重にしない）。
+      // 末尾に置き、changes() ではなく「主催が実際に変わったか」で判定する（前の文の changes() を奪わないため）
+      ...(next.communityId && next.communityId !== current.communityId ? [{sql:
+        "DELETE FROM event_cohost WHERE event_id = ? AND community_id = ? AND EXISTS (SELECT 1 FROM event WHERE id = ? AND community_id = ?)",
+        args: [id, next.communityId, id, next.communityId]}] : [])]);
     return changed ? this.findById(id) : null;
   },
 

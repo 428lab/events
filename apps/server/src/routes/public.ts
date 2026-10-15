@@ -47,7 +47,7 @@ publicRoutes.get("/communities/:slug", async (c) => {
     : null;
   const viewer = { userId: user?.id ?? null };
   const events = await eventsRepo.listByCommunity(community.id, viewer);
-  const eventCount = await eventsRepo.countSearchPublished({ communityId: community.id, limit: 0, offset: 0 }, viewer);
+  const eventCount = await eventsRepo.countSearchPublished({ communityId: community.id, hostedOnly: true, limit: 0, offset: 0 }, viewer);
   const now = Date.now();
   return c.json({
     ...community,

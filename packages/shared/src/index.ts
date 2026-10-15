@@ -45,6 +45,7 @@ export * from "./checkin.js";
 export * from "./eventRequests.js";
 export * from "./notificationPrefs.js";
 export * from "./staffInvites.js";
+export * from "./eventCohosts.js";
 export * from "./venues.js";
 export * from "./chatText.js";
 export * from "./markdownText.js";

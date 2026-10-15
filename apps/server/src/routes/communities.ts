@@ -19,6 +19,9 @@ import { valid, zValidator } from "../lib/validator.js";
 import { kpiPeriodFromQuery } from "../lib/kpiPeriod.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { communityKpiRepo } from "../db/repositories/communityKpi.js";
+import { eventCohostsRepo } from "../db/repositories/eventCohosts.js";
+import { eventsRepo } from "../db/repositories/events.js";
+import { notifyCohostResult } from "./eventCohosts.js";
 import { putCommunityImage } from "./communityImages.js";
 
 /** /api/communities（作成・参加・自分の主催コミュニティ）。閲覧系は /api/public/communities */
@@ -131,6 +134,56 @@ communityRoutes.get("/:id/kpi", async (c) => {
       days,
     ),
   );
+});
+
+/* ── 共催 (#625)。共催先としての依頼の承諾・辞退（owner/admin のみ）────────
+ * 申請は主催側（routes/eventCohosts.ts）。共催は権限を渡さないので、承諾しても
+ * このコミュニティの owner/admin がそのイベントを管理できるようにはならない */
+
+/** 依頼中・共催中の一覧 */
+communityRoutes.get("/:id/cohosts", async (c) => {
+  const id = c.req.param("id");
+  if (!(await communitiesRepo.isManager(id, c.get("user").id))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  return c.json({ cohosts: await eventCohostsRepo.listByCommunity(id, c.get("user").id) });
+});
+
+/** 承諾する。承認待ちのときだけ進む */
+communityRoutes.post("/:id/cohosts/:eventId/accept", async (c) => {
+  const id = c.req.param("id");
+  if (!(await communitiesRepo.isManager(id, c.get("user").id))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  const eventId = c.req.param("eventId");
+  const community = await communitiesRepo.findById(id);
+  const event = await eventsRepo.findById(eventId);
+  if (!community || !event || !(await eventCohostsRepo.accept(eventId, id))) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  await notifyCohostResult(event, community, true);
+  return c.json({ cohosts: await eventCohostsRepo.listByCommunity(id, c.get("user").id) });
+});
+
+/** 辞退する（承認待ち）または共催をやめる（共催中）。
+ * 結果を主催側へ返すのは辞退のときだけ。共催をやめたことは主催側の一覧で分かる */
+communityRoutes.delete("/:id/cohosts/:eventId", async (c) => {
+  const id = c.req.param("id");
+  if (!(await communitiesRepo.isManager(id, c.get("user").id))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  const eventId = c.req.param("eventId");
+  const current = await eventCohostsRepo.find(eventId, id);
+  // 承諾と同時押しで状態が変わっていたら消さない（辞退のつもりで共催中を消さないため）
+  if (!current || !(await eventCohostsRepo.remove(eventId, id, { status: current.status }))) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  if (current.status === "pending") {
+    const community = await communitiesRepo.findById(id);
+    const event = await eventsRepo.findById(eventId);
+    if (community && event) await notifyCohostResult(event, community, false);
+  }
+  return c.json({ cohosts: await eventCohostsRepo.listByCommunity(id, c.get("user").id) });
 });
 
 /** アイコン/バナー画像のアップロード（owner/admin。生バイナリ） */
