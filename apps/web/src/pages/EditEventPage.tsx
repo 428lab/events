@@ -25,6 +25,7 @@ import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import {
   CHAT_CLOSE_AFTER_DEFAULT_MINUTES,
   CHAT_OPEN_BEFORE_DEFAULT_MINUTES,
+  PUBLISH_AT_STEP_MS,
   QA_ANONYMITY_MODES,
   VENUE_TYPES,
   isDatetimeOrderInvalid,
@@ -66,6 +67,17 @@ function toLocalInput(epoch: number): string {
   const d = new Date(epoch);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 予約公開の時刻の選択肢（00:00〜23:30 の30分刻み）。cron-hub が毎時0分・30分にだけ動くため。
+ * datetime-local の step はスマホで効かないので、日付と時刻の select に分ける */
+const PUBLISH_TIME_OPTIONS = Array.from({ length: 48 }, (_, i) =>
+  `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`,
+);
+
+/** 今より後の、いちばん近い0分か30分 */
+function nextPublishSlot(now = Date.now()): number {
+  return Math.floor(now / PUBLISH_AT_STEP_MS) * PUBLISH_AT_STEP_MS + PUBLISH_AT_STEP_MS;
 }
 
 export function EditEventPage() {
@@ -232,7 +244,9 @@ export function EditEventPage() {
         ? t("eventForm.publishAtRequired")
         : !publishAtUnchanged && publishAtMs <= Date.now()
           ? t("eventForm.publishAtPast")
-          : "";
+          : !publishAtUnchanged && publishAtMs % PUBLISH_AT_STEP_MS !== 0
+            ? t("eventForm.publishAtUnaligned")
+            : "";
   // 公開状態か予約を読み込み時から変える保存は、読み込んだ revision を付ける（設計 §5.5）
   const nextPublishAt = status === "scheduled" ? publishAtMs : null;
   const nextStatus = status === "published" ? "published" : "draft";
@@ -244,6 +258,7 @@ export function EditEventPage() {
     schedule_changed: t("schedule.changed"),
     publish_state_changed: t("eventForm.publishStateChanged"),
     publish_at_past: t("eventForm.publishAtPast"),
+    publish_at_unaligned: t("eventForm.publishAtUnaligned"),
     deadline_requires_fixed_date: t("eventForm.deadlineNeedsDate"),
     deadline_after_start: t("eventForm.deadlineAfterStart"),
   });
@@ -329,7 +344,12 @@ export function EditEventPage() {
               size="small"
               color="primary"
               value={status}
-              onChange={(_e, v) => v && setStatus(v)}
+              onChange={(_e, v) => {
+                if (!v) return;
+                setStatus(v);
+                // 初めて予約にするときは、次の0分か30分を入れておく
+                if (v === "scheduled" && !publishAt) setPublishAt(toLocalInput(nextPublishSlot()));
+              }}
             >
               <ToggleButton value="draft">
                 {t("eventForm.statusDraft")}
@@ -345,17 +365,49 @@ export function EditEventPage() {
               {t("eventForm.statusHelp")}
             </Typography>
             {status === "scheduled" && (
-              <TextField
-                label={t("eventForm.publishAtLabel")}
-                type="datetime-local"
-                value={publishAt}
-                onChange={(e) => setPublishAt(e.target.value)}
-                error={Boolean(publishAtError) && publishAt !== ""}
-                helperText={(publishAt !== "" && publishAtError) || t("eventForm.publishAtHelp")}
-                InputLabelProps={{ shrink: true }}
-                sx={{ mt: 2 }}
-                fullWidth
-              />
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  {t("eventForm.publishAtLabel")}
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <TextField
+                    label={t("eventForm.publishAtDate")}
+                    type="date"
+                    value={publishAt.slice(0, 10)}
+                    onChange={(e) => setPublishAt(e.target.value ? `${e.target.value}T${publishAt.slice(11) || "00:00"}` : "")}
+                    error={Boolean(publishAtError) && publishAt !== ""}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ flex: 3 }}
+                  />
+                  <TextField
+                    select
+                    label={t("eventForm.publishAtTime")}
+                    value={publishAt.slice(11)}
+                    onChange={(e) => setPublishAt(`${publishAt.slice(0, 10)}T${e.target.value}`)}
+                    disabled={publishAt === ""}
+                    error={Boolean(publishAtError) && publishAt !== ""}
+                    SelectProps={{ native: true }}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ flex: 2 }}
+                  >
+                    {/* 30分区切りより前に入れた予約は、そのまま表示できるよう選択肢に足す */}
+                    {publishAt !== "" && !PUBLISH_TIME_OPTIONS.includes(publishAt.slice(11)) && (
+                      <option value={publishAt.slice(11)}>{publishAt.slice(11)}</option>
+                    )}
+                    {PUBLISH_TIME_OPTIONS.map((time) => (
+                      <option key={time} value={time}>{time}</option>
+                    ))}
+                  </TextField>
+                </Stack>
+                <Typography
+                  variant="caption"
+                  color={publishAt !== "" && publishAtError ? "error" : "text.secondary"}
+                  display="block"
+                  sx={{ mt: 0.5 }}
+                >
+                  {(publishAt !== "" && publishAtError) || t("eventForm.publishAtHelp")}
+                </Typography>
+              </Box>
             )}
           </Box>
           <CounterTextField

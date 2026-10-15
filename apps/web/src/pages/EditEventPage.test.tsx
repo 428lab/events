@@ -327,23 +327,36 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T10:00`;
   };
 
-  it("「予約公開」を選ぶと日時の欄が出て、下書きのまま publishAt と revision を送る", () => {
+  const dateField = () => screen.getByLabelText("公開する日");
+  const timeField = () => screen.getByLabelText("公開する時刻");
+
+  it("「予約公開」を選ぶと日付と30分刻みの時刻の欄が出て、下書きのまま publishAt と revision を送る", () => {
     eventData = makeEventData({ accessRevision: 4, publishAt: null });
     draw();
-    expect(screen.queryByLabelText("公開する日時")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("公開する日")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "予約公開" }));
-    expect(saveButton()).toBeDisabled();
+    // 最初は次の0分か30分が入っている
+    expect(timeField()).toHaveValue(new Date(Math.floor(Date.now() / 1800_000) * 1800_000 + 1800_000).toTimeString().slice(0, 5));
+    const options = Array.from(timeField().querySelectorAll("option")).map((o) => o.value);
+    expect(options).toHaveLength(48);
+    expect(options.every((v) => /:(00|30)$/.test(v))).toBe(true);
     const value = future();
-    fireEvent.change(screen.getByLabelText("公開する日時"), { target: { value } });
+    fireEvent.change(dateField(), { target: { value: value.slice(0, 10) } });
+    fireEvent.change(timeField(), { target: { value: "10:30" } });
+    expect(screen.getByText(/30分単位（毎時0分・30分）/)).toBeInTheDocument();
     expect(saveButton()).toBeEnabled();
     fireEvent.click(saveButton());
-    expect(sent()).toMatchObject({ status: "draft", publishAt: new Date(value).getTime(), expectedAccessRevision: 4 });
+    expect(sent()).toMatchObject({
+      status: "draft",
+      publishAt: new Date(`${value.slice(0, 10)}T10:30`).getTime(),
+      expectedAccessRevision: 4,
+    });
   });
 
   it("過去の日時では保存できない", () => {
     draw();
     fireEvent.click(screen.getByRole("button", { name: "予約公開" }));
-    fireEvent.change(screen.getByLabelText("公開する日時"), { target: { value: "2020-01-01T10:00" } });
+    fireEvent.change(dateField(), { target: { value: "2020-01-01" } });
     expect(screen.getByText("未来の日時を入れてください。")).toBeInTheDocument();
     expect(saveButton()).toBeDisabled();
   });
@@ -353,7 +366,8 @@ describe("予約公開 (D-EVENT-SCHEDULED-PUBLISH)", () => {
     eventData = makeEventData({ accessRevision: 5, publishAt: at });
     draw();
     expect(screen.getByRole("button", { name: "予約公開" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByLabelText("公開する日時")).toHaveValue(future());
+    expect(dateField()).toHaveValue(future().slice(0, 10));
+    expect(timeField()).toHaveValue("10:00");
     fireEvent.click(screen.getByRole("button", { name: "非公開（下書き）" }));
     fireEvent.click(saveButton());
     expect(sent()).toMatchObject({ status: "draft", publishAt: null, expectedAccessRevision: 5 });

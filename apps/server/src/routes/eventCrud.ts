@@ -1,7 +1,7 @@
 import {one} from "../db/client.js";
 import { Hono } from "hono";
 import { valid, zValidator } from "../lib/validator.js";
-import { createEventInput, isDatetimeOrderInvalid, updateEventInput } from "@eventer/shared";
+import { createEventInput, isDatetimeOrderInvalid, PUBLISH_AT_STEP_MS, updateEventInput } from "@eventer/shared";
 import type {
   CreateEventInput,
   Event,
@@ -103,8 +103,10 @@ eventCrudRoutes.patch(
     if (input.publishAt != null && (input.status === "published" || (input.status ?? prior?.status) !== "draft")) {
       return c.json({ error: "publish_at_invalid" }, 400);
     }
-    if (input.publishAt != null && input.publishAt !== prior?.publishAt && input.publishAt <= Date.now()) {
-      return c.json({ error: "publish_at_past" }, 400);
+    if (input.publishAt != null && input.publishAt !== prior?.publishAt) {
+      if (input.publishAt <= Date.now()) return c.json({ error: "publish_at_past" }, 400);
+      // cron-hub は毎時0分・30分にだけ動くので、予約もその時刻だけ
+      if (input.publishAt % PUBLISH_AT_STEP_MS !== 0) return c.json({ error: "publish_at_unaligned" }, 400);
     }
     // 下書きに戻す保存と予約を変える保存は、読み込んだ時点の revision が要る。
     // 自動公開は revision を上げるので、古い編集フォームの status: "draft" で
