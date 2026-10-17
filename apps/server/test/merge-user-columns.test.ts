@@ -195,6 +195,13 @@ const INTENTIONAL: Array<{ column: Column; why: string }> = [
       "そのまま勝ち側として動き続ける",
   },
   {
+    column: "access_token.user_id",
+    why:
+      "負け側のアクセストークン (#581) は統合せず破棄する（mergeUsers (7-b) の " +
+      "DELETE FROM access_token）。付け替えると、負け側で発行したトークンが " +
+      "勝ち側として動き続け、利用者の予想を超える",
+  },
+  {
     column: "event_schedule_state.editor_user_id",
     why:
       "タイムテーブルの編集ロックの保持者 (#340)。厳密な排他ではない助言で、" +
@@ -225,7 +232,7 @@ const UNRESOLVED: Array<{ column: Column; breaks: string }> = [];
  * 増減したらこの数を直すこと。**直す前に、増えた列が mergeUsers で
  * 扱われているかを必ず読むこと。**
  */
-const EXPECTED_USER_COLUMNS = 63; // #523 までの 55 本 + #556: 割り勘の 4 表で 7 本 + D-EVENT-CONTACT: inquiry_message.author_id
+const EXPECTED_USER_COLUMNS = 64; // #523 までの 55 本 + #556: 割り勘の 4 表で 7 本 + D-EVENT-CONTACT: inquiry_message.author_id + #581: access_token 1 本
 
 /**
  * `mergeUsers` が扱う `table.column` の数（user 参照でない列も含む生の抽出数）。

@@ -22,6 +22,10 @@ export const AUDIT_ACTIONS = [
   "chat_author_block",
   /** 上記の解除 (#283) */
   "chat_author_unblock",
+  /** AI 連携のアクセストークンの発行 (#581) */
+  "access_token_create",
+  /** 上記の失効 (#581) */
+  "access_token_revoke",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -39,6 +43,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   content_restore: "コンテンツの復元",
   chat_author_block: "チャットの発言者の締め出し",
   chat_author_unblock: "チャットの発言者の締め出しの解除",
+  access_token_create: "アクセストークンの発行",
+  access_token_revoke: "アクセストークンの失効",
 };
 
 /** 監査ログ1件。ユーザー行が消えても辿れるよう、実行時点のハンドルを持つ */

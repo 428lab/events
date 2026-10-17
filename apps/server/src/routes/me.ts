@@ -5,6 +5,7 @@ import { deleteUserAvatarObjects } from "../lib/avatarUploadStorage.js";
 import { putMyAvatar } from "./avatarUpload.js";
 import type { Context } from "hono";
 import {
+  createAccessTokenInput,
   deleteAccountInput,
   mergeAccountInput,
   updateDisplayNameInput,
@@ -12,6 +13,9 @@ import {
   updateUsernameInput,
 } from "@eventer/shared";
 import type {
+  AccessTokensPayload,
+  CreateAccessTokenInput,
+  CreatedAccessToken,
   MergeAccountInput,
   UpdateDisplayNameInput,
   UpdateNotificationPrefsInput,
@@ -22,9 +26,15 @@ import type { MyBingoResults } from "@eventer/shared";
 import { eventBingoRepo } from "../db/repositories/eventBingo.js";
 import {
   clearSession,
+  generateAccessToken,
   pendingDeletionUser,
   requireAuth,
 } from "../auth/session.js";
+import {
+  accessTokensRepo,
+  hashAccessToken,
+  publicToken,
+} from "../db/repositories/accessTokens.js";
 import {
   consumeMergeCode,
   issueMergeCode,
@@ -146,6 +156,70 @@ meRoutes.put(
     return c.json({ ok: true, username });
   },
 );
+
+/** AI 連携のアクセストークン (#581)。設計は docs/ai-integration.md §4.7。
+ * Bearer は /api/mcp と /api/ai/* でしか有効にならない（currentUser が 401 で打ち切る）ので、
+ * ここは Cookie セッションでしか叩けない。漏えいしたトークンで発行・失効はできない */
+meRoutes.get("/access-tokens", async (c) => {
+  const tokens = await accessTokensRepo.listForUser(c.get("user").id);
+  return c.json({ tokens: tokens.map(publicToken) } satisfies AccessTokensPayload);
+});
+
+/** 発行。平文 (token) はこの応答に1回だけ含める。DB にはハッシュだけを持つ */
+meRoutes.post(
+  "/access-tokens",
+  zValidator("json", createAccessTokenInput),
+  async (c) => {
+    const me = c.get("user");
+    const input = valid<CreateAccessTokenInput>(c, "json");
+    const plain = generateAccessToken();
+    const now = Date.now();
+    const created = await accessTokensRepo.create({
+      userId: me.id,
+      name: input.name,
+      tokenHash: await hashAccessToken(plain),
+      prefix: plain.slice(0, 12),
+      scopes: input.write ? ["read", "write"] : ["read"],
+      now,
+      expiresAt: now + input.expiresInDays * 24 * 60 * 60 * 1000,
+    });
+    if (!created) return c.json({ error: "too_many_tokens" }, 409);
+    await recordAudit({
+      action: "access_token_create",
+      actor: { id: me.id, handle: me.username },
+      target: { id: me.id, handle: me.username },
+      detail: {
+        tokenId: created.id,
+        prefix: created.prefix,
+        scopes: created.scopes,
+        expiresAt: created.expiresAt,
+      },
+    });
+    return c.json({
+      token: plain,
+      ...publicToken(created),
+    } satisfies CreatedAccessToken);
+  },
+);
+
+/** 失効。即時。行は残す（一覧の「失効済み」表示用）。他人の id は 404 */
+meRoutes.delete("/access-tokens/:id", async (c) => {
+  const me = c.get("user");
+  const revoked = await accessTokensRepo.revoke(me.id, c.req.param("id"), Date.now());
+  if (!revoked) return c.json({ error: "not_found" }, 404);
+  await recordAudit({
+    action: "access_token_revoke",
+    actor: { id: me.id, handle: me.username },
+    target: { id: me.id, handle: me.username },
+    detail: {
+      tokenId: revoked.id,
+      prefix: revoked.prefix,
+      scopes: revoked.scopes,
+      expiresAt: revoked.expiresAt,
+    },
+  });
+  return c.json({ ok: true });
+});
 
 /** アカウント統合コードを発行する (#240)。もう一方のアカウント側で入力して使う */
 meRoutes.post("/merge-code", async (c) => {
