@@ -12,18 +12,19 @@ const state = vi.hoisted(() => ({
   reach: false,
   query: vi.fn(),
   visibility: "public", access: false,
+  status: "published", publish: vi.fn(),
 }));
 vi.mock("../api/hooks.js", () => ({
   useMe: () => ({ data: { id: "me", isAdmin: true } }),
   useEvent: () => ({ data: {
     event: {
-      id: "event", title: "イベント", description: "説明の本文", status: "published",
+      id: "event", title: "イベント", description: "説明の本文", status: state.status,
       startsAt: 1_800_000_000_000, endsAt: 1_800_003_600_000,
       venueType: "offline", venueOffline: "確認用会場", registrationDeadline: null,
       visibility: state.visibility, scheduling: false, contestMode: false, meetRanking: "off", meetPrizes: false,
     }, myRole: state.role, canManageAccess: state.access,
   } }),
-  usePublishEvent: () => ({ isPending: false, mutate: vi.fn() }),
+  usePublishEvent: () => ({ isPending: false, mutate: state.publish }),
   eventImageUrl: () => null,
 }));
 vi.mock("../api/bingoHooks.js", () => ({
@@ -39,6 +40,10 @@ vi.mock("../lib/useEventChatAccess.js", () => ({
   useEventChatAccess: () => ({ canChat: state.canChat, chatAvailable: false }),
 }));
 vi.mock("../api/analyticsHooks.js", () => ({ useRecordView: () => {} }));
+vi.mock("../api/inquiryHooks.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/inquiryHooks.js")>()),
+  useEventInquiryUnreadCount: () => ({ data: 0 }),
+}));
 // 配置の検証対象は実ページと実BingoPanel。周辺セクションの取得・副作用は置き換える。
 vi.mock("../components/SchedulePanel.js", () => ({ SchedulePanel: () => null }));
 vi.mock("../components/ShareButton.js", () => ({ ShareButton: () => null }));
@@ -62,6 +67,7 @@ vi.mock("../api/warikanHooks.js", () => ({ useWarikan: () => ({ isSuccess: false
 
 beforeEach(() => {
   state.visibility = "public"; state.access = false;
+  state.status = "published"; state.publish.mockClear();
   state.role = "participant";
   state.canChat = true;
   state.game = "running";
@@ -121,20 +127,16 @@ describe("ビンゴ会場への目立つ入口 (#500)", () => {
     state.role = role;
     mount();
     expect(screen.queryByRole("link", { name: "抽選を操作する" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "管理" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "運営" })).toBeNull();
   });
 
-  it("staffにも会場だけを出し、管理はタイトル付近の設定アイコンに分離する", async () => {
+  it("staffにも会場だけを出し、運営はタイトル付近の文字ボタンに分離する (#613)", () => {
     state.role = "staff";
     mount();
     expect(screen.queryByRole("link", { name: "抽選を操作する" })).toBeNull();
-    const management = screen.getByRole("link", { name: "管理" });
-    expect(management).toHaveAttribute("href", "/events/event/manage");
-    expect(management).toHaveAttribute("aria-label", "管理");
-    expect(management.textContent).toBe("");
-    expect(within(management).getByTestId("SettingsIcon")).toHaveAttribute("aria-hidden", "true");
-    fireEvent.mouseOver(management);
-    expect(await screen.findByRole("tooltip", { name: "管理" })).toBeInTheDocument();
+    const management = screen.getByRole("button", { name: "運営" });
+    expect(management).toHaveTextContent("運営");
+    expect(within(management).queryByTestId("SettingsIcon")).toBeNull();
     expect(screen.getAllByRole("link", { name: "ビンゴ会場へ" })).toHaveLength(1);
   });
 
@@ -172,7 +174,7 @@ describe("ビンゴ会場への目立つ入口 (#500)", () => {
     expect(screen.getByRole("region", { name: "Bingo" })).toBeInTheDocument();
     expect(screen.getByText("Drawing numbers")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Run the draw" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Management" })).toHaveAttribute("href", "/events/event/manage");
+    expect(screen.getByRole("button", { name: "Event operations" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open bingo" })).toHaveAttribute("href", "/events/event/bingo");
   });
 });
@@ -182,10 +184,25 @@ it("preserves the private nonstaff access-manager entrance without granting publ
   state.role = null; state.access = true; state.visibility = "private";
   const view = mount("#contest-operations");
   expect(document.activeElement).toHaveAttribute("id", "contest-operations");
-  expect(screen.getAllByRole("link", { name: "管理" })).toHaveLength(1);
-  expect(screen.getByRole("link", { name: "管理" })).toHaveAttribute("id", "contest-operations");
+  // 招待の権限だけの人には「招待」だけ。運営メニューは出さない (#613)
+  expect(screen.getAllByRole("link", { name: "招待" })).toHaveLength(1);
+  expect(screen.getByRole("link", { name: "招待" })).toHaveAttribute("id", "contest-operations");
+  expect(screen.getByRole("link", { name: "招待" })).toHaveAttribute("href", "/events/event/manage#invites");
+  expect(screen.queryByRole("button", { name: "運営" })).toBeNull();
   state.visibility = "public"; view.refresh();
-  expect(screen.queryByRole("link", { name: "管理" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "招待" })).toBeNull();
   state.visibility = "private"; state.access = false; view.refresh();
-  expect(screen.queryByRole("link", { name: "管理" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "招待" })).toBeNull();
+});
+
+it("staff が下書きを開くと上部に注意文と「公開する」が出て、押すと公開する (#613)", () => {
+  state.role = "staff"; state.status = "draft";
+  const view = mount();
+  expect(screen.getByRole("alert")).toHaveTextContent("このイベントは下書きです。");
+  fireEvent.click(screen.getByRole("button", { name: "公開する" }));
+  expect(state.publish).toHaveBeenCalledWith("event");
+  // 参加者には注意文も公開ボタンも出さない
+  state.role = "participant"; view.refresh();
+  expect(screen.queryByText(/このイベントは/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "公開する" })).toBeNull();
 });

@@ -234,9 +234,9 @@ it("special awards allow no recipient while scoring remains open", async () => {
 
 it("staff return to management; admin-only exceptions retain a reachable information backlink", async () => {
   const view = draw(); await ready();
-  expect(screen.getByRole("link", { name: "管理へ戻る" })).toHaveAttribute("href", "/events/e/manage");
+  expect(screen.getByRole("link", { name: "運営へ戻る" })).toHaveAttribute("href", "/events/e/manage");
   view.unmount(); fixture.role = "participant"; fixture.admin = true;
   draw(); await ready();
-  expect(screen.queryByRole("link", { name: "管理へ戻る" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "運営へ戻る" })).toBeNull();
   expect(screen.getByRole("link", { name: "イベント情報へ戻る" })).toHaveAttribute("href", "/events/e");
 });

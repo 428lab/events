@@ -19,6 +19,10 @@ vi.mock("../lib/useEventChatAccess.js", () => ({
   useEventChatAccess: () => ({ canChat: false, chatAvailable: false }),
 }));
 vi.mock("../api/analyticsHooks.js", () => ({ useRecordView: () => {} }));
+vi.mock("../api/inquiryHooks.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/inquiryHooks.js")>()),
+  useEventInquiryUnreadCount: () => ({ data: 0 }),
+}));
 vi.mock("../components/SchedulePanel.js", () => ({ SchedulePanel: () => null }));
 vi.mock("../components/AddToCalendarButton.js", () => ({ AddToCalendarButton: () => null }));
 vi.mock("../components/EventPhotos.js", () => ({ EventPhotos: () => null }));
