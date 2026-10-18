@@ -45,7 +45,7 @@ const event = {
   startsAt: 1_800_000_000_000, endsAt: 1_800_003_600_000,
   venueType: "online", venueOffline: null, venueAddress: null, venueOnline: null,
   registrationDeadline: null, visibility: "public", scheduling: false, contestMode: false,
-  meetRanking: "off", meetPrizes: false,
+  meetRanking: "off", meetPrizes: false, warikanEnabled: false,
 };
 const host = { id: "c-host", slug: "host", name: "主催コミュ", iconUrl: null };
 const cohostA = { id: "c-a", slug: "alpha", name: "共催A", iconUrl: null };

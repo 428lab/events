@@ -166,6 +166,11 @@ const ja = {
   meetPrizeImageTooLarge: "画像が大きすぎます（{{mb}}MBまで）。",
   meetPrizeImageInvalid: "画像として読み取れませんでした。",
 
+  /* 割り勘 (#556) のオン/オフ (#635) */
+  warikanEnabled: "割り勘",
+  warikanEnabledHelp:
+    "参加者が立替を登録し、精算を計算できるようにします。確定メンバーに「割り勘」の入口が表示されます。",
+
   /** 作成ページの結び。たまご（あったらいいな）から作った場合の紐付け失敗も含む */
   createSubmit: "作成",
   createError: "作成に失敗しました。入力内容を確認してください。",
@@ -488,6 +493,10 @@ const en: Record<keyof typeof ja, string> = {
   meetPrizeImageFailed: "Failed to upload the image.",
   meetPrizeImageTooLarge: "The image is too large (up to {{mb}}MB).",
   meetPrizeImageInvalid: "Could not read the file as an image.",
+
+  warikanEnabled: "Split costs",
+  warikanEnabledHelp:
+    "Let participants record shared expenses and work out who owes whom. Confirmed members see a Split costs link.",
 
   createSubmit: "Create",
   createError: "Could not create the event. Please check what you entered.",

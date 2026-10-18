@@ -20,7 +20,7 @@ vi.mock("../api/hooks.js", () => ({
       id: "event", title: "イベント", description: "説明の本文", status: "published",
       startsAt: 1_800_000_000_000, endsAt: 1_800_003_600_000,
       venueType: "offline", venueOffline: "確認用会場", registrationDeadline: null,
-      visibility: state.visibility, scheduling: false, contestMode: false, meetRanking: "off", meetPrizes: false,
+      visibility: state.visibility, scheduling: false, contestMode: false, meetRanking: "off", meetPrizes: false, warikanEnabled: false,
     }, myRole: state.role, canManageAccess: state.access,
   } }),
   usePublishEvent: () => ({ isPending: false, mutate: vi.fn() }),

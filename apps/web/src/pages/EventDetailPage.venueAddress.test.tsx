@@ -46,7 +46,7 @@ function makeEvent(over: Record<string, unknown> = {}) {
     startsAt: 1_800_000_000_000, endsAt: 1_800_003_600_000,
     venueType: "offline", venueOffline: "丸の内ホール", venueAddress: ADDRESS, venueOnline: null,
     registrationDeadline: null, visibility: "public", scheduling: false, contestMode: false,
-    meetRanking: "off", meetPrizes: false,
+    meetRanking: "off", meetPrizes: false, warikanEnabled: false,
     ...over,
   };
 }

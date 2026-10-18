@@ -56,6 +56,8 @@ interface EventRow {
   /** 出会いランキングの表示設定 (#418)。off / anonymous / named */
   meet_ranking: string;
   meet_prizes: number;
+  /** 割り勘 (#556) の有効/無効 (#635) */
+  warikan_enabled: number;
   /** Q&A の「いまこの質問」。toEvent には含めない（questions API で返す） */
   qa_picked_question_id: string | null;
   /** 募集の締切日時（epoch ms）。NULL = 締切なし (#269) */
@@ -183,6 +185,7 @@ function toEvent(row: EventRow): Event {
       ? (row.meet_ranking as Event["meetRanking"])
       : "off",
     meetPrizes: row.meet_prizes === 1,
+    warikanEnabled: row.warikan_enabled === 1,
     // 未設定は NULL。?? null で undefined（列追加前の行）も NULL に寄せる
     registrationDeadline: row.registration_deadline ?? null,
     publishAt: row.publish_at ?? null,
@@ -547,7 +550,7 @@ export const eventsRepo = {
          chat_encrypted = CASE WHEN chat_encrypted = 1 THEN 1 ELSE ? END,
          chat_open_before_minutes = ?, chat_close_after_minutes = ?,
          qa_enabled = ?, qa_anonymity = ?,
-         meet_ranking = ?, meet_prizes = ?,
+         meet_ranking = ?, meet_prizes = ?, warikan_enabled = ?,
          members_note = ?, scheduling = ?,
          registration_deadline = ?
        WHERE e.id = ? AND e.access_revision = ? AND (e.visibility=? OR e.nonpublic_eligible=1) AND ${activeManagerSql("e", "?")}
@@ -584,6 +587,7 @@ export const eventsRepo = {
       next.qaAnonymity,
       next.meetRanking,
       next.meetPrizes ? 1 : 0,
+      next.warikanEnabled ? 1 : 0,
       membersNote,
       next.scheduling ? 1 : 0,
       // null を送れば締切解除。キー自体が無ければ current の値がそのまま残る

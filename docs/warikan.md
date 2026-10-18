@@ -8,7 +8,8 @@
   - **払った金額と、誰が立て替えたか**を登録できる
   - Walica（イベント単位の割り勘 Web サービス）を**強化する**位置づけ
   - **帳簿の金額は円だけ**（§3.2）
-  - **機能のオン/オフ設定を持たない**。確定メンバーなら誰でも最初の1件を登録できる（§3.3 / §3.9）
+  - **イベント設定でオン/オフする。既定はオフ**（#635 で改訂。使うイベントだけスタッフが編集画面でオンにする）。
+    オンのイベントでは確定メンバーなら誰でも最初の 1 件を登録できる（§3.3 / §3.9）
   - **受け取り先として保存するのは URL と Lightning だけ。銀行口座は保存しない**（§3.6）
   - **端数は全部、立て替えた人が持つ**（§3.4）
   - **退会した人の行は「退会済みユーザー」名義で残し、他人の金額を動かさない**（§3.3）
@@ -153,6 +154,7 @@ UI の言葉は §3.10 の**禁止語の一覧（1か所）**に従う。
 -- このアプリは送金も金銭の預託も換算もしない。支払いの確認もしない。
 -- 持つのは立替の帳簿・当事者が付けた「済み」・受け取り先の掲示だけ（設計 §3.1）
 -- event 側にオン/オフの列は持たない（設計 §3.3）
+--   ※ #635 で改訂: 0113_event_warikan_enabled.sql で event.warikan_enabled を足した（本文の注記を参照）
 --
 -- 帳簿の当事者（payer / share / 済みの from・to）の user FK には ON DELETE を付けない
 -- （= user 行の削除をブロックする）。退会では ghost へ、統合では勝ち側へ
@@ -224,8 +226,14 @@ CREATE INDEX idx_event_payout_method_owner ON event_payout_method(event_id, user
 
 表は **4つ**。金額を持つのは立替と「済み」の記録時額だけで、どちらも円の整数。支払いそのものの表は無い（§3.1-7）。
 
-**`event` テーブルに列を足さない（オン/オフの設定を持たない）。**
-機能の有無は行の有無で決まる。`updateEventInput` / `eventSchema` / イベント編集画面は変えない。
+**`event.warikan_enabled` でオン/オフする。既定はオフ（#635 で改訂）。**
+初回（#556）は「`event` テーブルに列を足さない（機能の有無は行の有無で決まる）」としていたが、#635 で改めた。
+`apps/server/migrations/0113_event_warikan_enabled.sql` で `warikan_enabled INTEGER NOT NULL DEFAULT 0` を足した
+（0099 の DDL は変えていない）。移行時、**既に立替のあるイベントはオンにした**（`event_expense` に行がある event を
+`warikan_enabled = 1` に更新。帳簿が急に見えなくならないように）。`eventSchema.warikanEnabled` /
+`updateEventInput.warikanEnabled`（作成入力には入れない。Q&A `qaEnabled` / 景品 `meetPrizes` と同じ形）で、
+設定はイベント編集画面だけで行う。複製では設定だけを引き継ぐ（立替・「済み」・受け取り先はコピーしない）。
+オフに戻しても帳簿の行は消さない（オンに戻せば元どおり見える）。
 
 **列に持たないもの（すべて読むたびに導出する。#431 §3.3 と同じ姿勢）:**
 各人の負担額（§3.4）、収支（§3.5）、精算の提案とその内訳（§3.5）、**「済み」が効いているか**
@@ -531,6 +539,9 @@ DB は `kind` + `value` の**2列**。入力は判別共用体で検証する（
 - 「済み」の from / to は立替の当事者から導かれるので、2 の中に必ず入る。門を広げる必要は無い
 - 非公開イベントで閲覧資格そのものを失った人（#526）は `requireEventAccess` で 404。
   **イベントが見えない人に帳簿だけ見せる経路は作らない**
+- **割り勘がオフのイベント（#635）では誰も通さない。** `eventWarikanRepo.isAudience` の SQL に
+  `event.warikan_enabled = 1` の条件が入り、全ルートがこの判定（`loadViewer`）を通るので、オフなら GET も書き込みも
+  既存の `not_found`（404）になる。新しいエラーコードは作らない。route 側に if は増やさない
 
 #### 3.7.2 誰が何をできるか
 
@@ -758,16 +769,16 @@ export type WarikanLedger = z.infer<typeof warikanLedgerSchema>;
 
 | 画面 | 場所 | 内容 |
 |---|---|---|
-| 導線 | `components/EventActionButtons.tsx`（参加者向け） | 「割り勘」ボタン（`ReceiptLongIcon`）。表示条件は **`canChat`（確定メンバー）または帳簿の GET が 200 で返ったこと**（下記「当事者だが非確定の人」）。イベント詳細の応答に `myStatus` は**足さない**。`EventActionButtons` の props に `showWarikan` を足して渡す |
+| 導線 | `components/EventActionButtons.tsx`（参加者向け） | 「割り勘」ボタン（`ReceiptLongIcon`）。表示条件は **`event.warikanEnabled`（#635）かつ、`canChat`（確定メンバー）または帳簿の GET が 200 で返ったこと**（下記「当事者だが非確定の人」）。イベント詳細の応答に `myStatus` は**足さない**。`EventActionButtons` の props に `showWarikan` を足して渡す |
 | 割り勘カード | `EventDetailPage` の**見出しブロックの直後（`SchedulePanel` の前）**。`components/WarikanSummaryCard.tsx` | **自分の精算の行のうち「済み」でないものがあるときだけ**出す。督促通知を作らない以上、ここが自分の貸し借りに気づく唯一の場所なので上に置く。全部「済み」なら出さない（済みの行はページで見る） |
 | 割り勘ページ | `/events/:id/warikan`（`EventWarikanPage`。`EventLayout` の子ルート） | 下の並び |
 
-- **カードの GET はログイン中なら叩く**（`canChat` に限らない）。404 は「帳簿を見られない人」として黙って何も出さない
+- **カードの GET は `event.warikanEnabled`（#635）でログイン中なら叩く**（`canChat` に限らない）。404 は「帳簿を見られない人」として黙って何も出さない
   （エラー表示にしない）。理由（レビュー指摘）: サーバーは参加を取り消した当事者にも帳簿を見せるが、`canChat` だけで
   出し分けるとその人は自分の払う分に気づけない。`myRole` は canceled の人に入らない（§2.3）ので、GET の結果で判定するしかない。
   コスト: ログイン中の非メンバーの詳細表示ごとに 1 リクエスト増える（門の判定は SQL 1 本。404 で終わる）。
   未ログインでは叩かない
-- 「割り勘」ボタンも同じ結果で出す: `canChat || warikanQuery.isSuccess`。当事者だが非確定の人には、確定メンバーと同じ入口が出る
+- 「割り勘」ボタンも同じ結果で出す: `event.warikanEnabled && (canChat || warikanQuery.isSuccess)`。当事者だが非確定の人には、確定メンバーと同じ入口が出る
   （§6 の「当事者だが今は非確定の人への導線」はこれで解消。マイページからの入口は引き続き持たない）
 - **「済み」を付けるとカードから行が消える。** 立替が編集・削除されて額が変われば印は外れ、行は戻る（§3.5.1）。
   カードを手元で閉じる操作は持たない（「済み」がその役目）
@@ -779,9 +790,13 @@ export type WarikanLedger = z.infer<typeof warikanLedgerSchema>;
 | 「済み」でない自分の行がある | 「A さんに 800円 支払う」「C さんから 200円 受け取る」を**最大2行**。3行目以降は「ほか n 件」（済みでない行だけを数える）。下に「割り勘を開く」 |
 | 「済み」でない自分の行が無い（帳簿が空／自分は関係ない／全部済み） | カードを出さない（ボタンから入れる） |
 
-**オン/オフが無いことの意味:** 確定メンバーには常に「割り勘」ボタンが出て、**誰かが最初の1件を登録した時点で割り勘が始まる**。
-0件のときに目立つカードは出さない（割り勘をしないイベントの画面を金銭の話で埋めない）。
-誤って始まった帳簿は、立替を staff が全部消せば行の無い状態に戻る。
+**オン/オフの意味（#635 で改訂）:**
+
+- **オフ（既定）**: 「割り勘」ボタンもカードも出さず、帳簿の GET も叩かない。`/events/:id/warikan` を直接開いた人には
+  「このイベントでは割り勘を使っていません。スタッフはイベントの編集でオンにできます。」の案内を出す（帳簿は取りに行かない）
+- **オン**: 従来どおり。確定メンバーには「割り勘」ボタンが出て、**誰かが最初の1件を登録した時点で割り勘が始まる**。
+  0件のときに目立つカードは出さない（割り勘をしないイベントの画面を金銭の話で埋めない）。
+  誤って始まった帳簿は、立替を staff が全部消せば行の無い状態に戻る
 
 **割り勘ページの並び（上から）:**
 
@@ -873,9 +888,14 @@ export type WarikanLedger = z.infer<typeof warikanLedgerSchema>;
 | test | `apps/server/test/warikan-split.test.ts` | 新規。純関数（§5.1） |
 | test | `apps/server/test/warikan.test.ts` | 新規。API・権限・退会/統合（§5.2） |
 | test | `apps/server/test/user-tables.test.ts` / `merge-user-columns.test.ts` | 実数更新＋第3の解消手段の見張り（§3.3） |
+| DB | `apps/server/migrations/0113_event_warikan_enabled.sql` | #635。`event.warikan_enabled`（既定 0）。既存の帳簿があるイベントは 1 に |
+| shared | `packages/shared/src/schema.ts` / `i18n/messages/eventForm.ts` / `i18n/messages/warikan.ts` | #635。`eventSchema` / `updateEventInput` に `warikanEnabled`、スイッチとオフの案内の文言 |
+| server | `src/db/repositories/events.ts` / `eventMembers.ts` / `eventWarikan.ts` / `src/routes/eventDuplicate.ts` | #635。列の読み書き、`isAudience` に `warikan_enabled = 1`、複製で設定を引き継ぐ |
+| web | `pages/EditEventPage.tsx` / `pages/EventDetailPage.tsx` / `pages/EventWarikanPage.tsx` / `components/EventActionButtons.tsx` | #635。スイッチ、オフなら導線・カード・GET を出さない、ページ直打ちの案内 |
 
-**触らないもの**: `schema.ts`（`eventSchema` / `updateEventInput`）、`notifications.ts`（「済み」でも通知しない）、`events.ts`、
-`eventsPublic.ts`（`myStatus` は足さない）、`EditEventPage.tsx`、`eventDuplicate.ts`（複製は §6）。
+**触らないもの**: `notifications.ts`（「済み」でも通知しない）、`eventsPublic.ts`（`myStatus` は足さない）。
+初回（#556）は `schema.ts` / `events.ts` / `EditEventPage.tsx` / `eventDuplicate.ts` にも触らなかったが、
+#635 のオン/オフで設定の分だけ触った（上の表の #635 の行。立替の複製は引き続き §6）。
 
 **純関数のテストの置き場所**: `apps/server/test/warikan-split.test.ts`。
 shared には test スクリプトも vitest も無く（`packages/shared/package.json`）、ルートの `pnpm test` は server と web だけを回す。
@@ -1022,10 +1042,13 @@ Walica 側の記述は**確認していないもの**を含む（SPA で、`curl
 
 ## 8. 決定と、残っている判断
 
+- 決定 2（オン/オフ）は **#635 でオーナー決定により改訂**した（イベント設定でオン/オフ。既定はオフ）。
+
 ### 8.1 決定（すべてユーザー判断済み。本文に反映済み）
 
 1. **通貨は円のみ。** `currency` 列も換算も持たない。Lightning は受け取り先の種別としてだけ残す（§3.2）
-2. **オン/オフの設定を持たない。** 確定メンバーなら誰でも最初の1件を登録できる（§3.3 / §3.9）
+2. **イベント設定でオン/オフする。既定はオフ**（#635 で改訂。初回は「オン/オフの設定を持たない」だった）。
+   使うイベントだけスタッフが編集画面でオンにし、オンのイベントでは確定メンバーなら誰でも最初の1件を登録できる（§3.3 / §3.7.1 / §3.9）
 3. **立替の登録は確定メンバー全員**（observer 除く）。**編集・削除は入力者本人・立替者本人と staff**（§3.7）
 4. **精算が残っている人への通知は入れない**（§3.1-9 / §6）
 5. **端数は全部、立て替えた人が持つ。** 立替者が負担者外でも、受け取る額を減らしてかぶる（§3.4）。

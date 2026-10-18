@@ -72,9 +72,10 @@ export function EventDetailPage() {
   const { canChat, chatAvailable } = useEventChatAccess(id);
   // 表示位置と内容は同じ状態を見る。位置変更でポーリングを作り直さない (#500)。
   const { data: bingo } = useBingoState(id, canChat);
-  // 割り勘 (#556)。ログイン中なら帳簿を取りに行き、200 なら導線を出す（取消した当事者も含む。
-  // myRole は canceled の人に入らないので GET の結果で判定する）。404 は帳簿を見られない人で、何も出さない
-  const warikan = useWarikan(id, Boolean(me));
+  // 割り勘 (#556)。イベント設定でオン (#635) かつログイン中なら帳簿を取りに行き、200 なら導線を出す
+  // （取消した当事者も含む。myRole は canceled の人に入らないので GET の結果で判定する）。
+  // 404 は帳簿を見られない人で、何も出さない。オフのイベントでは GET 自体を叩かない
+  const warikan = useWarikan(id, Boolean(me) && Boolean(data?.event.warikanEnabled));
   // 終了・締切の判定と1分ごとの時計。ページで1回だけ呼んで子に配る
   const timing = useEventTiming(data?.event);
   // 公開イベントの表示を記録（サーバー側で下書き・主催者/管理者は除外）
@@ -265,8 +266,9 @@ export function EventDetailPage() {
 
       {/* 割り勘 (#556)。自分の行のうち「済み」でないものがあるときだけ出る（出し分けはカード側）。
           督促の通知を作らないので、気づける場所として見出しの直後に置く。
-          取消した当事者にも出すため、canChat に限らずログイン中なら帳簿を取りに行く（404 は無表示） */}
-      {me && <WarikanSummaryCard eventId={id} />}
+          取消した当事者にも出すため、canChat に限らずログイン中なら帳簿を取りに行く（404 は無表示）。
+          イベント設定でオフ (#635) なら出さず、帳簿も取りに行かない */}
+      {event.warikanEnabled && me && <WarikanSummaryCard eventId={id} />}
 
       {/* 調整中は常に表示。確定後は候補があり表示オンなら結果を表示（パネル側で判定） */}
       <SchedulePanel
@@ -431,7 +433,7 @@ export function EventDetailPage() {
       <EventActionButtons
         eventId={id}
         isMember={isMember}
-        showWarikan={canChat || warikan.isSuccess}
+        showWarikan={event.warikanEnabled && (canChat || warikan.isSuccess)}
         isStaff={isStaff}
         contest={contest}
         attendanceCheck={event.attendanceCheck}

@@ -12,7 +12,7 @@ vi.mock("../api/hooks.js", () => ({
       id: "event", slug: "abc12345", title: "イベント", description: "", status: state.status,
       startsAt: 1_800_000_000_000, endsAt: 1_800_003_600_000,
       venueType: "online", venueOffline: null, registrationDeadline: null,
-      visibility: "public", scheduling: false, contestMode: false, meetRanking: "off", meetPrizes: false,
+      visibility: "public", scheduling: false, contestMode: false, meetRanking: "off", meetPrizes: false, warikanEnabled: false,
     }, myRole: "owner", canManageAccess: false,
   } }),
   usePublishEvent: () => ({ isPending: false, mutate: vi.fn() }),

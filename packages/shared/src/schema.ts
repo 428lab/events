@@ -108,6 +108,8 @@ export const eventSchema = z.object({
    * ランキングの表示設定 (meetRanking) とは独立（1位の判定は同じ集計を使うだけ）。
    * オフのイベントでは参加者向け景品APIごと存在を隠す */
   meetPrizes: z.boolean(),
+  /** 割り勘 (#556) を使う (#635)。既定はオフ（使いたいイベントだけスタッフが ON にする） */
+  warikanEnabled: z.boolean(),
   /** 募集の締切日時（epoch ms）。null = 締切なしで、従来どおりイベント終了まで
    * 受け付ける。締切後に止まるのは新規の参加登録だけ (#269) */
   registrationDeadline: z.number().nullable(),
@@ -188,6 +190,8 @@ export const updateEventInput = z.object({
   meetRanking: z.enum(MEET_RANKING_MODES).optional(),
   /** 出会いの景品引き換え (#431)。編集でのみ設定（作成直後はオフ） */
   meetPrizes: z.boolean().optional(),
+  /** 割り勘 (#556) のオンオフ (#635)。編集でのみ設定（作成直後はオフ） */
+  warikanEnabled: z.boolean().optional(),
   /** 募集の締切日時（epoch ms）。null を送ると締切を解除する (#269)。
    * chatEnabled 等と同じくイベント編集でのみ設定する項目なので createEventInput
    * には入れない（作成直後は締切なし＝従来の振る舞い）。

@@ -235,10 +235,14 @@ const sharesJson = (input: ExpenseInput): string =>
   JSON.stringify(input.shares.map((s) => ({ userId: s.userId, weight: s.weight })));
 
 export const eventWarikanRepo = {
-  /** 帳簿を見られる人か（設計 §3.7.1。門は LEDGER_AUDIENCE_SQL の1か所） */
+  /** 帳簿を見られる人か（設計 §3.7.1。門は LEDGER_AUDIENCE_SQL の1か所）。
+   * 割り勘がオフのイベント（event.warikan_enabled = 0 #635）では誰も通さない。
+   * すべてのルートがここを通るので、オフなら GET も書き込みも not_found（404）になる。
+   * 帳簿の行は消さないので、オンに戻せば元どおり見える */
   async isAudience(eventId: string, userId: string): Promise<boolean> {
     const row = await one<{ ok: number }>(
-      `SELECT ${LEDGER_AUDIENCE_SQL("?1", "?2")} AS ok`,
+      `SELECT (EXISTS (SELECT 1 FROM event WHERE event.id = ?1 AND event.warikan_enabled = 1)
+               AND ${LEDGER_AUDIENCE_SQL("?1", "?2")}) AS ok`,
       eventId,
       userId,
     );
