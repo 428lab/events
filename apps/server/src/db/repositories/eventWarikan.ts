@@ -280,6 +280,18 @@ export const eventWarikanRepo = {
     };
   },
 
+  /** 立替の件数（#636）。オフに切り替える前の確認に使う。
+   * 帳簿を見られない運営（コミュニティ管理者など、確定メンバーでない staff）でも
+   * 数を出せるよう、isAudience とは別に数えるだけの入口を置いている。
+   * 返すのは件数だけなので、金額や誰が立替したかは渡さない */
+  async expenseCount(eventId: string): Promise<number> {
+    const row = await one<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM event_expense WHERE event_id = ?",
+      eventId,
+    );
+    return row?.n ?? 0;
+  },
+
   async findPayoutMethod(id: string): Promise<PayoutMeta | null> {
     const row = await one<PayoutRow>("SELECT * FROM event_payout_method WHERE id = ?", id);
     return row ? { id: row.id, eventId: row.event_id, userId: row.user_id } : null;
