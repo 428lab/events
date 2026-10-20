@@ -244,6 +244,50 @@ describe("割り勘のオン/オフ (#635)", () => {
   });
 });
 
+/** オフに切り替える前の確認に使う件数だけの入口 (#636) */
+describe("立替の件数 (#636)", () => {
+  const countOf = async (eventId: string, actor: Actor) =>
+    json<{ expenses: number }>(await req(`/events/${eventId}/warikan/expense-count`, actor));
+
+  it("運営には立替の件数を返し、オフのイベントでも数える", async () => {
+    const { eventId, staff, a, b } = await setup();
+    expect((await countOf(eventId, staff)).expenses).toBe(0);
+    await addExpense(eventId, a, a.id, 500, [a.id, b.id]);
+    expect((await countOf(eventId, staff)).expenses).toBe(1);
+
+    expect((await req(`/events/${eventId}`, staff, "PATCH", { warikanEnabled: false })).status).toBe(200);
+    expect((await countOf(eventId, staff)).expenses).toBe(1);
+  });
+
+  it("帳簿を見られない運営（コミュニティ管理者）も件数だけは読める", async () => {
+    const { eventId, a, b } = await setup();
+    await addExpense(eventId, a, a.id, 500, [a.id, b.id]);
+    const owner = await makeUser();
+    const communityId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO community (id, slug, name, description, owner_id, created_at) VALUES (?, ?, ?, '', ?, ?)",
+    )
+      .bind(communityId, `c-${communityId.slice(0, 8)}`, "コミュ", owner.id, Date.now())
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO community_member (id, community_id, user_id, role, created_at) VALUES (?, ?, ?, 'owner', ?)",
+    )
+      .bind(crypto.randomUUID(), communityId, owner.id, Date.now())
+      .run();
+    await env.DB.prepare("UPDATE event SET community_id = ? WHERE id = ?").bind(communityId, eventId).run();
+    // 帳簿そのものは 404 のまま（門は広げない）
+    expect((await req(`/events/${eventId}/warikan`, owner)).status).toBe(404);
+    expect((await countOf(eventId, owner)).expenses).toBe(1);
+  });
+
+  it("参加者と部外者は 403", async () => {
+    const { eventId, a } = await setup();
+    const outsider = await makeUser();
+    expect((await req(`/events/${eventId}/warikan/expense-count`, a)).status).toBe(403);
+    expect((await req(`/events/${eventId}/warikan/expense-count`, outsider)).status).toBe(403);
+  });
+});
+
 describe("割り勘の権限 (#556 §3.7.2)", () => {
   it("他人の立替の PATCH は 403、confirmed staff は 200、コミュニティ管理者（非メンバー）は 404", async () => {
     const { eventId, staff, a, b, c } = await setup();

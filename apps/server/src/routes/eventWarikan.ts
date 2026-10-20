@@ -8,7 +8,7 @@ import {
   upsertPayoutMethodsInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
-import { isConfirmedEventStaff } from "../auth/roles.js";
+import { isConfirmedEventStaff, requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import {
@@ -84,6 +84,14 @@ eventWarikanRoutes.get("/:id/warikan", async (c) => {
   const viewer = await loadViewer(c);
   if (!viewer) return notFound(c);
   return c.json(await eventWarikanRepo.ledger(c.req.param("id"), viewer));
+});
+
+/** 立替の件数だけ（運営のみ。#636）。
+ * 割り勘をオフに切り替える前の確認に使う。オフのイベントでも数える
+ * （オフからオンに戻したときに何件残っているかを知るため）。
+ * 帳簿そのものは見せず、件数だけを返す */
+eventWarikanRoutes.get("/:id/warikan/expense-count", requireEventRole(["staff"]), async (c) => {
+  return c.json({ expenses: await eventWarikanRepo.expenseCount(c.req.param("id")) });
 });
 
 /** 立替の追加（確定メンバーのうち observer 以外） */

@@ -170,6 +170,9 @@ const ja = {
   warikanEnabled: "割り勘",
   warikanEnabledHelp:
     "参加者が立替を登録し、精算を計算できるようにします。確定メンバーに「割り勘」の入口が表示されます。",
+  // オフにすると参加者から帳簿が見えなくなるので、立替が残っているときだけ確かめる (#636)
+  warikanOffConfirm:
+    "立替が{{n}}件あります。オフにすると、参加者から割り勘の帳簿が見えなくなります（データは残り、オンに戻すと元どおり見えます）。オフにしますか？",
 
   /** 作成ページの結び。たまご（あったらいいな）から作った場合の紐付け失敗も含む */
   createSubmit: "作成",
@@ -497,6 +500,8 @@ const en: Record<keyof typeof ja, string> = {
   warikanEnabled: "Split costs",
   warikanEnabledHelp:
     "Let participants record shared expenses and work out who owes whom. Confirmed members see a Split costs link.",
+  warikanOffConfirm:
+    "There are {{n}} recorded expenses. Turning this off hides the Split costs ledger from participants (the data is kept and comes back when you turn it on again). Turn it off?",
 
   createSubmit: "Create",
   createError: "Could not create the event. Please check what you entered.",

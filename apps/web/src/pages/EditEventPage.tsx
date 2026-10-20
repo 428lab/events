@@ -298,6 +298,17 @@ export function EditEventPage() {
   const save = async () => {
     let expectedAccessRevision:number|undefined;
     setVisibilityError(false);
+    // 立替が残ったまま割り勘をオフにすると、参加者から帳簿が見えなくなる (#636)。
+    // 打ち消しの結果が残るだけなので消さないが、気づかずに隠さないよう先に確かめる。
+    // 数えるのは「読み込んだときオン → 今オフ」のときだけ（オフのままの保存では聞かない）。
+    // 数えられないとき（回線など）は、空の帳簿と同じく何も聞かずに保存する
+    if (!warikanEnabled && event.warikanEnabled) {
+      let expenses = 0;
+      try {
+        expenses = (await api.get<{ expenses: number }>(`/events/${id}/warikan/expense-count`)).expenses;
+      } catch { expenses = 0; }
+      if (expenses > 0 && !window.confirm(t("eventForm.warikanOffConfirm", { n: expenses }))) return;
+    }
     if (visibility !== event.visibility) {
       if (!window.confirm(t("eventAccess.visibilityWarning"))) return;
       try {

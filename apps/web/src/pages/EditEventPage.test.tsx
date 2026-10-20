@@ -310,13 +310,106 @@ describe("割り勘のオン/オフ (#635)", () => {
     expect(updateMutate.mock.calls[0][0]).toMatchObject({ warikanEnabled: true });
   });
 
-  it("保存済みのオンを読み込み、オフにして保存すると warikanEnabled: false を送る", () => {
+  // オフへの切り替えは、立替の件数を問い合わせてから保存する (#636) ので待って確かめる
+  it("保存済みのオンを読み込み、オフにして保存すると warikanEnabled: false を送る", async () => {
     eventData = makeEventData({ warikanEnabled: true });
     draw();
     expect(warikanSwitch()).toBeChecked();
     fireEvent.click(warikanSwitch());
     fireEvent.click(saveButton());
-    expect(updateMutate.mock.calls[0][0]).toMatchObject({ warikanEnabled: false });
+    await waitFor(() =>
+      expect(updateMutate.mock.calls[0][0]).toMatchObject({ warikanEnabled: false }),
+    );
+  });
+});
+
+/**
+ * 立替が残ったままオフにすると参加者から帳簿が見えなくなる (#636)。
+ * 件数の問い合わせ（GET /events/:id/warikan/expense-count）だけを差し替える。
+ */
+describe("割り勘をオフにする前の確認 (#636)", () => {
+  const warikanSwitch = () => screen.getByLabelText("割り勘");
+  const stubExpenseCount = (count: number, ok = true) => {
+    const fetchMock = vi.fn(async () => ({
+      ok,
+      status: ok ? 200 : 500,
+      text: async () => JSON.stringify(ok ? { expenses: count } : { error: "boom" }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const offEvent = () => {
+    eventData = makeEventData({ warikanEnabled: true });
+    draw();
+    fireEvent.click(warikanSwitch());
+    fireEvent.click(saveButton());
+  };
+
+  it("立替があるときにオフへ変えると、件数を出して確認する", async () => {
+    stubExpenseCount(3);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    offEvent();
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(confirm.mock.calls[0][0]).toContain("立替が3件あります");
+    // 問い合わせは保存の直前にだけ走る（開いた時点では呼ばない）
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe("/api/events/e-1/warikan/expense-count");
+  });
+
+  it("確認でキャンセルすると保存しない", async () => {
+    stubExpenseCount(3);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    offEvent();
+    // 確認まで進んだことを待ってから、保存されていないことを見る
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(updateMutate).not.toHaveBeenCalled();
+  });
+
+  it("確認で OK すると warikanEnabled: false を送る", async () => {
+    stubExpenseCount(2);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    offEvent();
+    await waitFor(() =>
+      expect(updateMutate.mock.calls[0][0]).toMatchObject({ warikanEnabled: false }),
+    );
+  });
+
+  it("立替が0件なら確認せずに保存する", async () => {
+    stubExpenseCount(0);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    offEvent();
+    await waitFor(() =>
+      expect(updateMutate.mock.calls[0][0]).toMatchObject({ warikanEnabled: false }),
+    );
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("件数を取れないときは確認せずに保存する", async () => {
+    stubExpenseCount(0, false);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    offEvent();
+    await waitFor(() =>
+      expect(updateMutate.mock.calls[0][0]).toMatchObject({ warikanEnabled: false }),
+    );
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("読み込んだときオフなら、オンにして保存しても確認しない", async () => {
+    const fetchMock = stubExpenseCount(4);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    draw();
+    fireEvent.click(warikanSwitch());
+    fireEvent.click(saveButton());
+    await waitFor(() =>
+      expect(updateMutate.mock.calls[0][0]).toMatchObject({ warikanEnabled: true }),
+    );
+    expect(confirm).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
