@@ -80,6 +80,7 @@ function makeEventData(over: Record<string, unknown> = {}) {
       chatCloseAfterMinutes: 120,
       qaEnabled: false,
       qaAnonymity: "choice",
+      warikanEnabled: false,
       venueWanted: false,
       communityId: null,
       imageUpdatedAt: null,
@@ -295,6 +296,27 @@ describe("参加者チャットの書き込める期間 (#578)", () => {
     eventData = makeEventData({ chatEnabled: true, visibility: "public", chatOpenBeforeMinutes: null });
     draw();
     expect(combo("いつから")).toHaveTextContent("参加が確定したらすぐ");
+  });
+});
+
+describe("割り勘のオン/オフ (#635)", () => {
+  const warikanSwitch = () => screen.getByLabelText("割り勘");
+
+  it("既定はオフで、オンにして保存すると warikanEnabled: true を送る", () => {
+    draw();
+    expect(warikanSwitch()).not.toBeChecked();
+    fireEvent.click(warikanSwitch());
+    fireEvent.click(saveButton());
+    expect(updateMutate.mock.calls[0][0]).toMatchObject({ warikanEnabled: true });
+  });
+
+  it("保存済みのオンを読み込み、オフにして保存すると warikanEnabled: false を送る", () => {
+    eventData = makeEventData({ warikanEnabled: true });
+    draw();
+    expect(warikanSwitch()).toBeChecked();
+    fireEvent.click(warikanSwitch());
+    fireEvent.click(saveButton());
+    expect(updateMutate.mock.calls[0][0]).toMatchObject({ warikanEnabled: false });
   });
 });
 

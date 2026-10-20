@@ -91,6 +91,8 @@ async function setupSourceEvent(cookie: string): Promise<string> {
       meetRanking: "anonymous",
       // 出会いの景品 (#431) の設定もコピーされること
       meetPrizes: true,
+      // 割り勘 (#635) の設定もコピーされること
+      warikanEnabled: true,
       // 参加者チャットの書き込める期間 (#578) もコピーされること
       chatOpenBeforeMinutes: null,
       chatCloseAfterMinutes: 1440,
@@ -175,6 +177,7 @@ describe("イベントの複製 (#7)", () => {
     expect(event.attendanceCheck).toBe(true);
     expect(event.meetRanking).toBe("anonymous");
     expect(event.meetPrizes).toBe(true);
+    expect(event.warikanEnabled).toBe(true);
     expect(event.chatOpenBeforeMinutes).toBeNull();
     expect(event.chatCloseAfterMinutes).toBe(1440);
     expect(event.startsAt).toBe(0);

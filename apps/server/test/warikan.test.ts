@@ -42,14 +42,15 @@ async function makeUser(name?: string): Promise<Actor> {
   return { id, cookie: `eventer_session=${sid}` };
 }
 
-async function insertEvent(ownerId: string): Promise<string> {
+/** 割り勘 (#635) は既定オフなので、ここで作るイベントは既定でオンにしておく */
+async function insertEvent(ownerId: string, warikanEnabled = true): Promise<string> {
   const id = crypto.randomUUID();
   const now = Date.now();
   await env.DB.prepare(
-    `INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, scheduling, created_by, created_at)
-     VALUES (?, ?, ?, ?, 'offline', 'published', 0, ?, ?)`,
+    `INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, scheduling, created_by, created_at, warikan_enabled)
+     VALUES (?, ?, ?, ?, 'offline', 'published', 0, ?, ?, ?)`,
   )
-    .bind(id, `割り勘E2E_${id.slice(0, 6)}`, now - 3600_000, now + 3600_000, ownerId, now)
+    .bind(id, `割り勘E2E_${id.slice(0, 6)}`, now - 3600_000, now + 3600_000, ownerId, now, warikanEnabled ? 1 : 0)
     .run();
   return id;
 }
@@ -124,9 +125,9 @@ async function count(sql: string, ...args: unknown[]): Promise<number> {
 }
 
 /** staff 1人 + 参加者3人（A・B・C） */
-async function setup() {
+async function setup(warikanEnabled = true) {
   const staff = await makeUser();
-  const eventId = await insertEvent(staff.id);
+  const eventId = await insertEvent(staff.id, warikanEnabled);
   await addMember(eventId, staff.id, "staff");
   const a = await makeUser("A");
   const b = await makeUser("B");
@@ -194,6 +195,52 @@ describe("割り勘の門 (#556 §3.7.1)", () => {
     );
     // 立替は新しい順
     expect(ledger.expenses.map((e) => e.id)).toEqual([party, venue]);
+  });
+});
+
+describe("割り勘のオン/オフ (#635)", () => {
+  const eventOf = async (eventId: string, actor: Actor) =>
+    (await json<{ event: { warikanEnabled: boolean } }>(await req(`/events/${eventId}`, actor))).event;
+
+  it("オフのイベントは確定メンバーでも GET /warikan と POST /warikan/expenses が 404", async () => {
+    const { eventId, staff, a, b } = await setup(false);
+    for (const u of [staff, a]) {
+      expect((await req(`/events/${eventId}/warikan`, u)).status).toBe(404);
+    }
+    const res = await req(`/events/${eventId}/warikan/expenses`, a, "POST", expenseBody(a.id, 1000, [a.id, b.id]));
+    expect(res.status).toBe(404);
+    expect(await count("SELECT COUNT(*) AS n FROM event_expense WHERE event_id = ?", eventId)).toBe(0);
+  });
+
+  it("既定はオフ（列の既定値で作られたイベントは warikanEnabled: false）", async () => {
+    const staff = await makeUser();
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    await env.DB.prepare(
+      `INSERT INTO event (id, title, starts_at, ends_at, venue_type, status, scheduling, created_by, created_at)
+       VALUES (?, ?, ?, ?, 'offline', 'published', 0, ?, ?)`,
+    )
+      .bind(id, `割り勘既定_${id.slice(0, 6)}`, now - 3600_000, now + 3600_000, staff.id, now)
+      .run();
+    await addMember(id, staff.id, "staff");
+    expect((await eventOf(id, staff)).warikanEnabled).toBe(false);
+    expect((await req(`/events/${id}/warikan`, staff)).status).toBe(404);
+  });
+
+  it("PATCH で warikanEnabled を切り替えられ、GET /api/events/:id に返る。オフに戻しても帳簿は残る", async () => {
+    const { eventId, staff, a, b } = await setup(false);
+    const patch = (warikanEnabled: boolean) => req(`/events/${eventId}`, staff, "PATCH", { warikanEnabled });
+
+    expect((await patch(true)).status).toBe(200);
+    expect((await eventOf(eventId, a)).warikanEnabled).toBe(true);
+    await addExpense(eventId, a, a.id, 1000, [a.id, b.id]);
+
+    expect((await patch(false)).status).toBe(200);
+    expect((await eventOf(eventId, a)).warikanEnabled).toBe(false);
+    expect((await req(`/events/${eventId}/warikan`, a)).status).toBe(404);
+
+    expect((await patch(true)).status).toBe(200);
+    expect((await ledgerOf(eventId, a)).expenses).toHaveLength(1);
   });
 });
 

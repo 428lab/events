@@ -48,7 +48,9 @@ export function EventWarikanPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
-  const { data: ledger, error, isLoading } = useWarikan(id, Boolean(eventData));
+  // イベント設定でオフ (#635) なら帳簿を取りに行かず、案内だけ出す（サーバーも 404 を返す）
+  const disabled = Boolean(eventData) && !eventData?.event.warikanEnabled;
+  const { data: ledger, error, isLoading } = useWarikan(id, Boolean(eventData) && !disabled);
   // 404 は門の外（確定メンバーでも当事者でもない）。それ以外（500・オフライン）は汎用のエラー
   const notAudience = error instanceof ApiError && error.status === 404;
 
@@ -69,6 +71,7 @@ export function EventWarikanPage() {
 
       <Disclaimer />
 
+      {disabled && <Alert severity="info">{t("warikan.disabled")}</Alert>}
       {error &&
         (notAudience ? (
           <Alert severity="info">{t("warikan.audienceOnly")}</Alert>

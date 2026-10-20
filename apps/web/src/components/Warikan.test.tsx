@@ -21,8 +21,12 @@ import { EventWarikanPage } from "../pages/EventWarikanPage.js";
  * - 受け取り先に表示名の入力が無く、「銀行口座はこのアプリに保存できません。」が出る
  */
 
+// 割り勘の設定 (#635) はテストごとに差し替える（既定はオン）
+const eventState = vi.hoisted(() => ({ warikanEnabled: true }));
 vi.mock("../api/hooks.js", () => ({
-  useEvent: () => ({ data: { event: { id: "e", title: "テストイベント" } } }),
+  useEvent: () => ({
+    data: { event: { id: "e", title: "テストイベント", warikanEnabled: eventState.warikanEnabled } },
+  }),
 }));
 vi.mock("../lib/useEventChatAccess.js", () => ({
   useEventChatAccess: () => ({ chatAvailable: false, canChat: true }),
@@ -81,6 +85,7 @@ function withProviders(ui: React.ReactNode, path = "/") {
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.spyOn(window, "confirm").mockReturnValue(true);
+  eventState.warikanEnabled = true;
 });
 
 describe("割り勘カード", () => {
@@ -208,6 +213,20 @@ describe("割り勘ページ", () => {
     );
     expect(await screen.findByText("読み込めませんでした。再読み込みしてください。")).toBeInTheDocument();
     expect(screen.queryByText(/立替の当事者だけが見られます/)).toBeNull();
+  });
+
+  it("割り勘がオフのイベント (#635) では帳簿を取りに行かず、オフの案内を出す", async () => {
+    eventState.warikanEnabled = false;
+    const get = vi.spyOn(api, "get").mockResolvedValue(ledger() as never);
+    withProviders(
+      <Routes>
+        <Route path="/events/:id/warikan" element={<EventWarikanPage />} />
+      </Routes>,
+      "/events/e/warikan",
+    );
+    expect(await screen.findByText(/このイベントでは割り勘を使っていません。/)).toBeInTheDocument();
+    expect(get).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "立替を追加" })).toBeNull();
   });
 
   it("見出しの下に自己申告の1行を出す（「管理しません」の旧文言は出さない）", async () => {

@@ -29,8 +29,8 @@ export function EventActionButtons({
 }: {
   eventId: string;
   isMember: boolean;
-  /** 割り勘の導線を出すか (#556)。確定メンバー（canChat）か、帳簿の GET が 200 で返った
-   * （取消した当事者を含む）とき。myRole の無い取消した人にも、この導線だけは出す */
+  /** 割り勘の導線を出すか (#556)。イベント設定でオン (#635) で、確定メンバー（canChat）か、
+   * 帳簿の GET が 200 で返った（取消した当事者を含む）とき。myRole の無い取消した人にも、この導線だけは出す */
   showWarikan?: boolean;
   isStaff: boolean;
   contest: boolean;
@@ -60,8 +60,8 @@ export function EventActionButtons({
       show: contest && state?.mode === "awards",
     },
     { path: "scoring", labelKey: "eventDetail.scoring", show: contest },
-    // 割り勘 (#556)。確定メンバーには常に出す（オン/オフの設定は持たない）。
-    // 取消した当事者にも帳簿の GET の結果で出す
+    // 割り勘 (#556)。イベント設定でオンのとき (#635)、確定メンバーに出す。
+    // 取消した当事者にも帳簿の GET の結果で出す（オフなら呼び出し側が false を渡す）
     {
       path: "warikan",
       labelKey: "warikan.title",

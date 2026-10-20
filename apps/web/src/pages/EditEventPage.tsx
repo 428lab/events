@@ -138,6 +138,8 @@ export function EditEventPage() {
   const [meetRanking, setMeetRanking] = useState<MeetRankingMode>("off");
   // 出会いの景品引き換え (#431)。既定OFF。景品の定義はオフでも仕込める
   const [meetPrizes, setMeetPrizes] = useState(false);
+  // 割り勘 (#556 / #635)。既定OFF。使いたいイベントだけONにする
+  const [warikanEnabled, setWarikanEnabled] = useState(false);
   const [venueWanted, setVenueWanted] = useState(false);
   const [communityId, setCommunityId] = useState("");
   const myCommunitiesQuery = useMyCommunities();
@@ -207,6 +209,7 @@ export function EditEventPage() {
       setQaAnonymity(e.qaAnonymity);
       setMeetRanking(e.meetRanking);
       setMeetPrizes(e.meetPrizes);
+      setWarikanEnabled(e.warikanEnabled);
       setVenueWanted(e.venueWanted);
       setCommunityId(e.communityId ?? "");
       setInitialized(true);
@@ -343,6 +346,7 @@ export function EditEventPage() {
         qaAnonymity,
         meetRanking,
         meetPrizes,
+        warikanEnabled,
         venueWanted,
         communityId: communityId || null,
       },
@@ -810,6 +814,22 @@ export function EditEventPage() {
               {t("eventForm.meetPrizesHelp")}
             </Typography>
             <MeetPrizeEditor eventId={id} />
+          </Box>
+
+          {/* 割り勘 (#556)。オフの間は導線を出さず帳簿も閉じる (#635)。帳簿の行は消さない */}
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={warikanEnabled}
+                  onChange={(e) => setWarikanEnabled(e.target.checked)}
+                />
+              }
+              label={t("eventForm.warikanEnabled")}
+            />
+            <Typography variant="caption" color="text.secondary" display="block">
+              {t("eventForm.warikanEnabledHelp")}
+            </Typography>
           </Box>
 
           <Box>

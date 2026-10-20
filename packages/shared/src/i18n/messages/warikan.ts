@@ -129,6 +129,8 @@ const ja = {
   errorInvalidWeight: "重みは 1〜100 の整数で入力してください。",
   /** 帳簿の GET が 404 のとき（門の外）。それ以外の取得エラーは汎用の文言 */
   audienceOnly: "割り勘は、参加が確定しているメンバーと立替の当事者だけが見られます。",
+  /** イベント設定で割り勘がオフ (#635) のとき。帳簿は取りに行かない */
+  disabled: "このイベントでは割り勘を使っていません。スタッフはイベントの編集でオンにできます。",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -244,6 +246,7 @@ const en: Record<keyof typeof ja, string> = {
   errorInvalidInput: "Please check what you entered.",
   errorInvalidWeight: "Enter a whole number from 1 to 100 for the weight.",
   audienceOnly: "Only confirmed members and people involved in these expenses can see this.",
+  disabled: "Split costs is not enabled for this event. Staff can turn it on in the event settings.",
 };
 
 export const warikan = { ja, en };
