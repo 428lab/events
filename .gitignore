@@ -28,3 +28,5 @@ pnpm-debug.log*
 # Cloudflare local dev
 .dev.vars
 .wrangler/
+# cf のビルド出力と生成した型（CI のデプロイで毎回作り直す）
+.cloudflare/

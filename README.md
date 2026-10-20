@@ -20,7 +20,7 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - DB: **Cloudflare D1**（SQLite）+ 自前の薄いリポジトリ層 ／ 画像・動画: **R2**
 - 認証: Discord / Google / GitHub / X OAuth2 + **Bluesky (OAuth)** + **Nostr NIP-07**（複数連携可）、セッション Cookie
 - リアルタイム: 短周期ポーリング（採点 2秒・配信 1秒・投影 5秒・タイムテーブル編集状態 5秒 など）
-- デプロイ: GitHub Actions（`staging` / `production` ブランチへの push で wrangler deploy）
+- デプロイ: GitHub Actions（`staging` / `production` ブランチへの push で cf deploy）
 - モノレポ: pnpm workspace（`apps/web` / `apps/server` / `packages/shared`）、TypeScript 7
 
 デザインルールは `DESIGN.md`。全体設計と機能ごとの設計は[設計ドキュメント](#設計ドキュメント)を参照。
@@ -121,6 +121,19 @@ GitHub Actions（`.github/workflows/ci.yml`）がブランチ連動でデプロ�
 git push origin main:staging      # → staging (https://eventer-staging.kojiran.workers.dev、ログイン必須)
 git push origin main:production   # → 本番 (https://events.kojira.io)。staging 確認後に実行
 ```
+
+デプロイは [cf](https://github.com/cloudflare/cf)（Cloudflare のベータ CLI）で、設定はリポジトリ直下の `cloudflare.config.ts`。
+環境は `--mode` で選びます（モード無しと `production` は同じ本番設定）。
+
+```bash
+pnpm run deploy:cf:staging      # cf deploy --mode staging
+pnpm run deploy:cf:production   # cf deploy --mode production
+```
+
+`cloudflare.config.ts` はビルドを wrangler に任せるので、（assets のディレクトリだけを持つ）`wrangler.config.ts` と、
+プロジェクトの `cf` 依存が要ります。`apps/web/dist` を先に作ってから実行してください（CI は web の build の後）。
+`cf` は pnpm workspace のルートを弾くため、`pnpm-workspace.yaml` の `packages` に `"."` を入れています。
+`wrangler.toml` はそのまま残していて、ローカル開発・テスト・D1 のマイグレーションは今までどおり wrangler です。
 
 マイグレーションはデプロイ前に手動で適用します（`wrangler.toml` はリポジトリ直下のみ。**リポジトリ直下で実行**）。
 

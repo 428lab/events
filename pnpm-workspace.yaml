@@ -1,4 +1,9 @@
 packages:
+  # "." は cf（CI のデプロイ）のため。cf は pnpm workspace のルートで
+  # cloudflare.config.ts を読めない（root of a workspace として弾く）ので、
+  # ルート自身もワークスペースの1プロジェクトとして登録する。
+  # pnpm -r はルートを含まないので、-r の対象は今までどおり apps/* と packages/*。
+  - "."
   - "apps/*"
   - "packages/*"
 

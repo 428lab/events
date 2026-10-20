@@ -4,6 +4,8 @@ name: CI
 # デプロイはブランチ連動で、push のときだけ:
 #   production ブランチ → 本番（eventer / events.kojira.io）
 #   staging ブランチ    → staging（eventer-staging / *.workers.dev・管理者限定）
+# デプロイの実体は cf（cloudflare.config.ts の --mode）。wrangler はローカル開発・
+# テスト・D1 のマイグレーションで引き続き使う。
 #
 # 検証とデプロイを1つのワークフロー・1つのジョブに置いているのは、
 # 分けると checkout / pnpm / node / 依存の導入 と web のビルドが2か所に
@@ -57,14 +59,24 @@ jobs:
           VITE_WEB_ANALYTICS_TOKEN: ${{ secrets.WEB_ANALYTICS_TOKEN }}
 
       # ここから下だけがデプロイ。PR では github.event_name が pull_request なので走らない
+      #
+      # デプロイは cf（cloudflare/cf のベータ CLI）。設定はリポジトリ直下の
+      # cloudflare.config.ts にあり、`--mode` で環境を選ぶ（staging / production）。
+      # モード無しと production は同じ本番設定（[env.production] は無い）。
+      # 型チェック・テスト・web のビルドは上のステップのまま（cf は自分でビルドするが、
+      # 配信する apps/web/dist は先に作っておく必要がある）。
+      #
+      # 戻すときは、この2ステップの run を wrangler に戻すだけでよい:
+      #   production: pnpm --filter @eventer/server run deploy
+      #   staging:    pnpm --filter @eventer/server run deploy:staging
       - name: Deploy to production
         if: github.event_name == 'push' && github.ref == 'refs/heads/production'
-        run: pnpm --filter @eventer/server run deploy
+        run: pnpm run deploy:cf:production
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Deploy to staging
         if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
-        run: pnpm --filter @eventer/server run deploy:staging
+        run: pnpm run deploy:cf:staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
