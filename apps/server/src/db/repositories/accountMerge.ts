@@ -16,7 +16,7 @@ export const accountMergeRepo = {
    *   捨ててから付け替える（勝ち側優先）
    * - user_follow は統合で生じる自己フォロー・重複を削除
    * - event_meet は (小,大) の正規化を保ちながら付け替え、自己ペア・重複を削除
-   * - 負け側の session は全削除（統合ではなく破棄）
+   * - 負け側の session とアクセストークン (#581) は全削除（統合ではなく破棄）
    *
    * D1 の batch は単一トランザクションとして実行されるが、万一逐次実行に
    * フォールバックしても途中失敗でログイン手段が失われないよう、
@@ -308,6 +308,12 @@ export const accountMergeRepo = {
     // (7) 負け側の session は破棄（統合しない）
     stmts.push({
       sql: "DELETE FROM session WHERE user_id = ?",
+      args: [loserId],
+    });
+    // (7-b) 負け側のアクセストークン (#581) も破棄（移さない）。負け側で発行した
+    //       トークンが勝ち側として動くのは利用者の予想を超える
+    stmts.push({
+      sql: "DELETE FROM access_token WHERE user_id = ?",
       args: [loserId],
     });
 

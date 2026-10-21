@@ -157,6 +157,8 @@ const ja = {
   broadcast_limit_day: "1日に送れる連絡の上限に達しています",
   broadcast_limit_total: "送れる連絡の上限に達しています",
   declined_recently: "最近断られています。しばらく待ってからにしてください",
+  /** AI 連携のアクセストークン (#581)。有効なものは1人10本まで */
+  too_many_tokens: "発行できるアクセストークンの上限（10本）に達しています。使っていないものを失効してください",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -299,6 +301,7 @@ const en: Record<keyof typeof ja, string> = {
   broadcast_limit_day: "You have reached the daily limit for announcements.",
   broadcast_limit_total: "You have reached the limit for announcements.",
   declined_recently: "This was declined recently. Please wait before trying again.",
+  too_many_tokens: "You have reached the limit of 10 access tokens. Revoke ones you no longer use.",
 };
 
 export const errors = { ja, en };
