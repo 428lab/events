@@ -78,6 +78,12 @@ const OPEN_ROUTES = new Set<string>([
   "GET /api/public/pre-surveys/:token",
   "POST /api/public/pre-surveys/:token/responses",
 
+  /* ── AI エージェントのデッキ書き込み (docs/agent-deck-token.md)。門は Bearer evd_
+   *    （deckAgent.ts の入口ミドルウェアが deck_agent_token のハッシュで照合。Cookie は見ない）── */
+  "GET /api/agent/deck",
+  "PUT /api/agent/deck",
+  "POST /api/agent/deck/images",
+
   /* ── 退会猶予期間の復帰 (#250)。requireAuth が通らない人が使う ── */
   "POST /api/me/restore",
 
@@ -155,6 +161,7 @@ const OPEN_ROUTES = new Set<string>([
   "GET /feed/requests.rss",
   "GET /llms.txt",
   "GET /deck-import/v1/spec.md",
+  "GET /deck-import/agent.md",
   // Bundled sample is public in production; staging's outer login gate still applies.
   "GET /deck-import/v2/sample-events-lab-intro.json",
   "GET /r/:slug",
@@ -164,7 +171,7 @@ const OPEN_ROUTES = new Set<string>([
 
 /** `OPEN_ROUTES` の件数。表を1行足すとここも動かすことになるので、
  * 「テストを通すためにこっそり1本開ける」が差分に必ず現れる */
-const EXPECTED_OPEN_COUNT = 87;
+const EXPECTED_OPEN_COUNT = 91; // +4: AI エージェントの入口3本と agent.md (docs/agent-deck-token.md)
 
 const UUID = "00000000-0000-4000-8000-000000000000";
 const probe = (p: string) =>

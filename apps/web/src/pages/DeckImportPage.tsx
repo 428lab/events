@@ -8,6 +8,7 @@ import { downloadImport, readImportFile } from "../lib/deckImportSession.js";
 import { useDeckLeaveWarning } from "../lib/useDeckLeaveWarning.js";
 import { describeImportIssue, importIssueLocation } from "../lib/deckImportIssue.js";
 import { DeckImportPreview } from "../components/DeckImportPreview.js";
+import { DeckAgentPanel } from "../components/DeckAgentPanel.js";
 
 export function DeckImportPage() {
   const { t } = useTranslation();
@@ -78,6 +79,7 @@ export function DeckImportPage() {
     <Typography variant="h5" fontWeight={700}>{t("deckImport.title")}</Typography>
     <Typography>{t("deckImport.intro")}</Typography>
     {me && <Typography variant="body2">{t("deckImport.currentAccount", { name: me.globalName || me.username })}</Typography>}
+    {me && <DeckAgentPanel />}
     <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
       <Link href="/deck-import/v2/spec.md" target="_blank" rel="noreferrer">{t("deckImport.spec")}</Link>
       <Link href="/deck-import/v2/spec.md" download>{t("deckImport.downloadSpec")}</Link>

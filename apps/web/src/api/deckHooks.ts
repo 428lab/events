@@ -75,3 +75,46 @@ export function useDeleteDeck() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["decks", "mine"] }),
   });
 }
+
+/** AI エージェント用の一時トークン（docs/agent-deck-token.md） */
+export interface DeckAgentToken {
+  id: string;
+  createdAt: number;
+  expiresAt: number;
+  writeCount: number;
+  imageCount: number;
+  deck: { id: string; slug: string; title: string; editUrl: string; viewUrl: string } | null;
+}
+/** 発行の応答。平文のトークンはこの1回だけ返る */
+export interface IssuedDeckAgentToken extends DeckAgentToken {
+  token: string;
+  specUrl: string;
+}
+
+/** 有効なトークンの一覧。定期取得はしない (D-POLL-MIN)。AI の作業から画面へ戻ったとき
+ * （フォーカス）と「最新にする」で取り直す */
+export function useDeckAgentTokens(enabled: boolean) {
+  return useQuery({
+    queryKey: ["deckAgentTokens"],
+    enabled,
+    refetchOnWindowFocus: true,
+    queryFn: async () =>
+      (await api.get<{ tokens: DeckAgentToken[] }>("/decks/agent-tokens")).tokens,
+  });
+}
+
+export function useIssueDeckAgentToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<IssuedDeckAgentToken>("/decks/agent-tokens"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["deckAgentTokens"] }),
+  });
+}
+
+export function useRevokeDeckAgentToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.del(`/decks/agent-tokens/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["deckAgentTokens"] }),
+  });
+}

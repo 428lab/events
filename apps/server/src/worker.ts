@@ -40,6 +40,7 @@ import { communityRoutes } from "./routes/communities.js";
 import { getCommunityImage } from "./routes/communityImages.js";
 import { deckRoutes } from "./routes/decks.js";
 import { getDeckImage } from "./routes/deckImages.js";
+import { deckAgentRoutes } from "./routes/deckAgent.js";
 import { liveSetRoutes } from "./routes/liveSets.js";
 import { getLiveSetImage } from "./routes/liveSetImages.js";
 import { liveControlRoutes } from "./routes/liveControl.js";
@@ -170,7 +171,9 @@ const VIDEO_UPLOAD_PATH = /^\/api\/events\/[^/]+\/videos$/;
 api.use("*", (c, next) => {
   const isVideoUpload =
     c.req.method === "POST" && VIDEO_UPLOAD_PATH.test(c.req.path);
-  const isDeckImport = c.req.method === "POST" && c.req.path === "/api/decks/import";
+  // AI エージェントのデッキ書き込み (docs/agent-deck-token.md) も同じ JSON 原稿なので同じ上限
+  const isDeckImport = (c.req.method === "POST" && c.req.path === "/api/decks/import") ||
+    (c.req.method === "PUT" && c.req.path === "/api/agent/deck");
   if (isDeckImport) {
     c.header("Cache-Control", "no-store");
     // Hono skips cumulative reading when Content-Length is present. Force this
@@ -387,6 +390,8 @@ api.route("/communities", communityRoutes);
 // 公開: スライド画像（認証不要。deckRoutes より先に登録）
 api.get("/decks/:id/images/:imageId", getDeckImage);
 api.route("/decks", deckRoutes);
+// AI エージェントの入口 (docs/agent-deck-token.md)。Bearer evd_ だけを読み、Cookie は見ない
+api.route("/agent", deckAgentRoutes);
 // 公開: 配信シーン画像（認証不要。liveSetRoutes より先に登録）
 api.get("/live-sets/:id/images/:imageId", getLiveSetImage);
 // 配信セット（配信画面ツール。要認証）
@@ -483,6 +488,12 @@ app.use("*", async (c, next) => {
     path === "/api/health" ||
     path === "/api/email/unsubscribe" ||
     path === "/logo-email.png" ||
+    // AI エージェント (docs/agent-deck-token.md) は Cookie を持たない。入口はトークンで
+    // 認証され、仕様書は静的な説明だけなので通す
+    path.startsWith("/api/agent/") ||
+    path === "/deck-import/agent.md" ||
+    path === "/deck-import/v2/spec.md" ||
+    path === "/deck-import/v2/schema.json" ||
     /^\/api\/events\/[0-9a-f-]{36}\/image$/.test(path) ||
     /^\/api\/users\/[0-9a-f-]{36}\/card-image$/.test(path) ||
     /^\/api\/users\/[0-9a-f-]{36}\/avatar$/.test(path)
@@ -691,7 +702,7 @@ app.get("/llms.txt", async (c) => {
 });
 
 // Safari が .md の UTF-8 を誤判定しないよう、実際の仕様アセットの MIME に charset を付ける。
-app.get("/deck-import/v1/spec.md", async (c) => {
+for (const specPath of ["/deck-import/v1/spec.md", "/deck-import/agent.md"]) app.get(specPath, async (c) => {
   const res = await getAssets().fetch(c.req.raw);
   const contentType = res.headers.get("Content-Type");
   if (!res.ok || !contentType || !/^text\/(?:markdown|plain)(?:\s*;|\s*$)/i.test(contentType)) {
