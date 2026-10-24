@@ -1,6 +1,8 @@
-import { Alert, Box, Button, Card, CardContent, Chip, Stack, Typography } from "@mui/material";
+import { useState } from "react";
+import { Alert, Box, Button, Card, CardContent, Chip, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import type { Event, EventRole } from "@eventer/shared";
+import type { Entry, Event, EventRole, UpdateMyTeamInput } from "@eventer/shared";
+import { TEAM_DESCRIPTION_MAX, TEAM_NAME_MAX } from "@eventer/shared";
 import { useEventEntries, useEventMembers, useMe } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
 import { teamApi, useTeamAction } from "../api/teamHooks.js";
@@ -13,6 +15,9 @@ import { tDynamic } from "../i18n/index.js";
  * 採点が始まる（締切または点が入る）までは、入る・移る・抜けるができる。
  * 締切はサーバーが判定する（ここは表示のため）。点が入ったかは画面からは分からないので、
  * そのときはサーバーの team_locked を案内する。
+ *
+ * 自分のチームでは、リーダーが名前・ひとことを変えたり、メンバーにリーダーを任せたりできる。
+ * リーダーのいないチームでは、メンバーが「リーダーになる」を押せる（運営が決めたリーダーは仮のもの）。
  */
 export function TeamPicker({ eventId, event, myRole }: { eventId: string; event: Event; myRole: EventRole | null }) {
   const { t } = useTranslation();
@@ -23,6 +28,9 @@ export function TeamPicker({ eventId, event, myRole }: { eventId: string; event:
   const api = teamApi(eventId);
   const join = useTeamAction(eventId, api.join);
   const leave = useTeamAction(eventId, api.leave);
+  const updateMine = useTeamAction(eventId, api.updateMine);
+  const handOver = useTeamAction(eventId, api.handOver);
+  const becomeLeader = useTeamAction(eventId, api.becomeLeader);
   if (!event.contestMode || event.participationType !== "team") return null;
   const teams = (entries ?? []).filter((e) => e.kind === "team");
   if (teams.length === 0) return null;
@@ -31,8 +39,9 @@ export function TeamPicker({ eventId, event, myRole }: { eventId: string; event:
   const locked = Boolean(state?.scoringLocked);
   const myTeam = me ? teams.find((team) => team.memberUserIds.includes(me.id)) : undefined;
   const nameOf = new Map((members ?? []).map((m) => [m.userId, m.user.globalName ?? m.user.username]));
-  const failed = join.isError ? join : leave.isError ? leave : null;
-  const pending = join.isPending || leave.isPending;
+  const actions = [join, leave, updateMine, handOver, becomeLeader];
+  const failed = actions.find((a) => a.isError) ?? null;
+  const pending = actions.some((a) => a.isPending);
 
   return (
     <Card variant="outlined" id="teams" tabIndex={-1} sx={{ scrollMarginTop: 88 }}>
@@ -60,6 +69,12 @@ export function TeamPicker({ eventId, event, myRole }: { eventId: string; event:
                   <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
                     {team.memberUserIds.map((userId) => `${nameOf.get(userId) ?? ""}${userId === team.leaderUserId ? `（${t("teams.leaderBadge")}）` : ""}`).join("、")}
                   </Typography>
+                  {mine && canChoose && !locked && me && (
+                    <MyTeamControls team={team} meId={me.id} nameOf={nameOf} disabled={pending}
+                      onUpdate={(input) => updateMine.mutate(input)}
+                      onHandOver={(userId) => handOver.mutate(userId)}
+                      onBecomeLeader={() => becomeLeader.mutate(undefined)} />
+                  )}
                   {canChoose && !locked && (
                     <Box>
                       {mine
@@ -74,5 +89,72 @@ export function TeamPicker({ eventId, event, myRole }: { eventId: string; event:
         </Stack>
       </CardContent>
     </Card>
+  );
+}
+
+/** 自分のチームの中の操作。リーダー: 名前を変える・リーダーを任せる。リーダー不在: リーダーになる */
+function MyTeamControls({ team, meId, nameOf, disabled, onUpdate, onHandOver, onBecomeLeader }: {
+  team: Entry; meId: string; nameOf: Map<string, string>; disabled: boolean;
+  onUpdate: (input: UpdateMyTeamInput) => void; onHandOver: (userId: string) => void; onBecomeLeader: () => void;
+}) {
+  const { t } = useTranslation();
+  const [mode, setMode] = useState<"none" | "rename" | "handOver">("none");
+  const [name, setName] = useState(team.name);
+  const [description, setDescription] = useState(team.description);
+  const [target, setTarget] = useState("");
+  const others = team.memberUserIds.filter((userId) => userId !== meId);
+
+  if (team.leaderUserId == null) {
+    return (
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        <Typography variant="body2" color="text.secondary">{t("teams.becomeLeaderHelp")}</Typography>
+        <Button size="small" variant="outlined" disabled={disabled} onClick={onBecomeLeader}>{t("teams.becomeLeader")}</Button>
+      </Stack>
+    );
+  }
+  if (team.leaderUserId !== meId) return null;
+
+  if (mode === "rename") {
+    return (
+      <Stack spacing={1}>
+        <TextField size="small" label={t("teams.name")} value={name} onChange={(e) => setName(e.target.value)} inputProps={{ maxLength: TEAM_NAME_MAX }} />
+        <TextField size="small" label={t("teams.description")} value={description} onChange={(e) => setDescription(e.target.value)} inputProps={{ maxLength: TEAM_DESCRIPTION_MAX }} />
+        <Stack direction="row" spacing={1}>
+          <Button size="small" variant="contained" disabled={disabled || !name.trim()} onClick={() => {
+            onUpdate({ name: name.trim(), description: description.trim() });
+            setMode("none");
+          }}>{t("teams.save")}</Button>
+          <Button size="small" color="inherit" onClick={() => setMode("none")}>{t("teams.cancel")}</Button>
+        </Stack>
+      </Stack>
+    );
+  }
+  if (mode === "handOver") {
+    return (
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
+        <TextField select size="small" label={t("teams.handOverTo")} value={target} onChange={(e) => setTarget(e.target.value)} sx={{ minWidth: 200 }}>
+          {others.map((userId) => <MenuItem key={userId} value={userId}>{nameOf.get(userId) ?? ""}</MenuItem>)}
+        </TextField>
+        <Stack direction="row" spacing={1}>
+          <Button size="small" variant="contained" disabled={disabled || !target} onClick={() => {
+            if (!window.confirm(t("teams.handOverConfirm", { name: nameOf.get(target) ?? "" }))) return;
+            onHandOver(target);
+            setMode("none");
+            setTarget("");
+          }}>{t("teams.handOver")}</Button>
+          <Button size="small" color="inherit" onClick={() => setMode("none")}>{t("teams.cancel")}</Button>
+        </Stack>
+      </Stack>
+    );
+  }
+  return (
+    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+      <Button size="small" variant="outlined" disabled={disabled} onClick={() => {
+        setName(team.name); setDescription(team.description); setMode("rename");
+      }}>{t("teams.rename")}</Button>
+      {others.length > 0 && (
+        <Button size="small" variant="outlined" disabled={disabled} onClick={() => setMode("handOver")}>{t("teams.handOver")}</Button>
+      )}
+    </Stack>
   );
 }

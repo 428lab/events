@@ -84,12 +84,13 @@ function CreateTeamForm({ disabled, onCreate }: {
   const [description, setDescription] = useState("");
   const [capacity, setCapacity] = useState("");
   const cap = capacity.trim() === "" ? null : Number(capacity);
-  const valid = name.trim().length > 0 && (cap === null || (Number.isInteger(cap) && cap >= 1 && cap <= TEAM_CAPACITY_MAX));
+  // 名前は空欄でよい（サーバーが「チーム1」…を付ける。名前はあとでリーダーが変えられる）
+  const valid = cap === null || (Number.isInteger(cap) && cap >= 1 && cap <= TEAM_CAPACITY_MAX);
   return (
     <Stack spacing={1}>
       <Typography fontWeight={700}>{t("teams.createHeading")}</Typography>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-        <TextField size="small" label={t("teams.name")} value={name} onChange={(e) => setName(e.target.value)} inputProps={{ maxLength: TEAM_NAME_MAX }} sx={{ flex: 2 }} />
+        <TextField size="small" label={t("teams.nameOptional")} value={name} onChange={(e) => setName(e.target.value)} inputProps={{ maxLength: TEAM_NAME_MAX }} sx={{ flex: 2 }} />
         <TextField size="small" label={t("teams.capacity")} value={capacity} onChange={(e) => setCapacity(e.target.value)} inputProps={{ inputMode: "numeric" }} sx={{ flex: 1 }} />
       </Stack>
       <TextField size="small" label={t("teams.description")} value={description} onChange={(e) => setDescription(e.target.value)} inputProps={{ maxLength: TEAM_DESCRIPTION_MAX }} />
@@ -137,6 +138,7 @@ function TeamCard({ team, teams, participants, nameOf, disabled, onUpdate, onRem
         )}
         {team.description && <Typography variant="body2" color="text.secondary">{team.description}</Typography>}
         <TextField select size="small" label={t("teams.leader")} value={team.leaderUserId ?? ""} disabled={disabled}
+          helperText={t("teams.leaderHelp")}
           onChange={(e) => onLeader(e.target.value || null)} sx={{ maxWidth: 360 }}>
           <MenuItem value="">{t("teams.noLeader")}</MenuItem>
           {participants.map((m) => <MenuItem key={m.userId} value={m.userId}>{nameOf.get(m.userId)}</MenuItem>)}

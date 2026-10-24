@@ -1,6 +1,7 @@
 import { HTTPException } from "hono/http-exception";
-import type { CreateTeamInput, UpdateTeamInput } from "@eventer/shared";
+import type { CreateTeamInput, UpdateMyTeamInput, UpdateTeamInput } from "@eventer/shared";
 import { eventWrite } from "./eventWriteGuard.js";
+import { many } from "../client.js";
 
 /**
  * コンテストのチーム参加 (#9, docs/team-participation.md)。
@@ -34,14 +35,28 @@ const HAS_ROOM = `(SELECT capacity FROM entry WHERE id = ?) IS NULL
   OR (SELECT COUNT(*) FROM entry_member em JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
       WHERE em.entry_id = ? AND em.user_id <> ?) < (SELECT capacity FROM entry WHERE id = ?)`;
 
+/** 本人がいるそのイベントのチーム（いなければ空）。チーム内の操作はこのチームだけを触る */
+const MY_TEAM = `SELECT em.entry_id FROM entry_member em JOIN entry en ON en.id = em.entry_id
+  WHERE em.user_id = ? AND en.event_id = ? AND en.kind = 'team'`;
+/** 本人が自分のチームのリーダー（退会申請中のリーダーは数えない。一覧の leaderUserId と同じ） */
+const IS_MY_TEAM_LEADER = `EXISTS (SELECT 1 FROM entry_member em JOIN entry en ON en.id = em.entry_id
+  WHERE em.user_id = ? AND em.is_leader = 1 AND en.event_id = ? AND en.kind = 'team')`;
+const IN_MY_TEAM = (who: string) => `EXISTS (SELECT 1 FROM entry_member em JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
+  WHERE em.user_id = ${who} AND em.entry_id IN (${MY_TEAM}))`;
+/** 自分のチームにリーダーがいない（退会申請中のリーダーはいないものとして扱う） */
+const MY_TEAM_HAS_NO_LEADER = `NOT EXISTS (SELECT 1 FROM entry_member em JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
+  WHERE em.is_leader = 1 AND em.entry_id IN (${MY_TEAM}))`;
+
 const CODES = [
   "team_mode_off", "team_locked", "team_not_found", "not_participant", "team_full",
   "team_not_empty", "team_mode_locked", "capacity_below_members",
+  "not_team_leader", "not_team_member", "team_has_leader",
 ] as const;
 type TeamErrorCode = (typeof CODES)[number];
-const STATUS: Record<TeamErrorCode, 404 | 409> = {
+const STATUS: Record<TeamErrorCode, 403 | 404 | 409> = {
   team_mode_off: 409, team_locked: 409, team_not_found: 404, not_participant: 409, team_full: 409,
   team_not_empty: 409, team_mode_locked: 409, capacity_below_members: 409,
+  not_team_leader: 403, not_team_member: 409, team_has_leader: 409,
 };
 
 async function teamWrite(eventId: string, actorId: string, permission: "staff" | "registered", statements: Statement[]) {
@@ -76,13 +91,16 @@ export const teamsRepo = {
     ]);
   },
 
-  async create(eventId: string, actorId: string, input: CreateTeamInput): Promise<string> {
+  /** 名前が空欄なら「チーム1」「チーム2」…（使われていない最小の番号）を付ける。
+   * 同時に作られて同じ名前になっても壊れない（チーム名は重複してよい。あとで変えられる） */
+  async create(eventId: string, actorId: string, input: CreateTeamInput, defaultNamePrefix: string): Promise<string> {
     const id = crypto.randomUUID();
+    const name = input.name || await nextDefaultName(eventId, defaultNamePrefix);
     await teamWrite(eventId, actorId, "staff", [
       assert(TEAM_MODE, "team_mode_off", [eventId]),
       { sql: `INSERT INTO entry (id, event_id, kind, name, description, capacity, created_at)
           VALUES (?, ?, 'team', ?, ?, ?, ?)`,
-        args: [id, eventId, input.name, input.description, input.capacity, Date.now()] },
+        args: [id, eventId, name, input.description, input.capacity, Date.now()] },
     ]);
     return id;
   },
@@ -162,6 +180,45 @@ export const teamsRepo = {
     ]);
   },
 
+  /** リーダーが自分のチームの名前・ひとことを変える（採点が始まるまで。運営はいつでも update で変えられる） */
+  async updateMyTeam(eventId: string, userId: string, input: UpdateMyTeamInput) {
+    await teamWrite(eventId, userId, "registered", [
+      assert(TEAM_MODE, "team_mode_off", [eventId]),
+      assert(IS_MY_TEAM_LEADER, "not_team_leader", [userId, eventId]),
+      assert(BEFORE_SCORING, "team_locked", [eventId, eventId]),
+      { sql: `UPDATE entry SET name = COALESCE(?, name), description = COALESCE(?, description)
+          WHERE id IN (${MY_TEAM})`,
+        args: [input.name ?? null, input.description ?? null, userId, eventId] },
+    ]);
+  },
+
+  /** リーダーが同じチームのメンバーにリーダーを任せる（採点が始まるまで） */
+  async handOverLeader(eventId: string, userId: string, toUserId: string) {
+    await teamWrite(eventId, userId, "registered", [
+      assert(TEAM_MODE, "team_mode_off", [eventId]),
+      assert(IS_MY_TEAM_LEADER, "not_team_leader", [userId, eventId]),
+      assert(IN_MY_TEAM("?"), "not_team_member", [toUserId, userId, eventId]),
+      assert(BEFORE_SCORING, "team_locked", [eventId, eventId]),
+      { sql: `UPDATE entry_member SET is_leader = CASE WHEN user_id = ? THEN 1 ELSE 0 END
+          WHERE entry_id IN (${MY_TEAM})`,
+        args: [toUserId, userId, eventId] },
+    ]);
+  },
+
+  /** リーダーのいないチームで、メンバーが自分でリーダーになる（採点が始まるまで）。
+   * リーダーがいるチームでは取れない（任せてもらうか、運営が決める） */
+  async becomeLeader(eventId: string, userId: string) {
+    await teamWrite(eventId, userId, "registered", [
+      assert(TEAM_MODE, "team_mode_off", [eventId]),
+      assert(IN_MY_TEAM("?"), "not_team_member", [userId, userId, eventId]),
+      assert(MY_TEAM_HAS_NO_LEADER, "team_has_leader", [userId, eventId]),
+      assert(BEFORE_SCORING, "team_locked", [eventId, eventId]),
+      { sql: `UPDATE entry_member SET is_leader = CASE WHEN user_id = ? THEN 1 ELSE 0 END
+          WHERE entry_id IN (${MY_TEAM})`,
+        args: [userId, userId, eventId] },
+    ]);
+  },
+
   /** 本人をそのチームに置く（すでにいれば何もしない。別のチームにいれば移す） */
   placeStatements(eventId: string, teamId: string, userId: string): Statement[] {
     return [
@@ -174,3 +231,14 @@ export const teamsRepo = {
     ];
   },
 };
+
+/** 「チーム1」「チーム2」…のうち、そのイベントで使われていない最小の番号の名前 */
+async function nextDefaultName(eventId: string, prefix: string): Promise<string> {
+  const rows = await many<{ name: string }>(
+    "SELECT name FROM entry WHERE event_id = ? AND kind = 'team'", eventId,
+  );
+  const used = new Set(rows.map((r) => r.name));
+  let n = 1;
+  while (used.has(`${prefix}${n}`)) n++;
+  return `${prefix}${n}`;
+}

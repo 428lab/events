@@ -276,8 +276,11 @@ export const TEAM_NAME_MAX = 60;
 export const TEAM_DESCRIPTION_MAX = 200;
 export const TEAM_CAPACITY_MAX = 100;
 const teamCapacity = z.number().int().min(1).max(TEAM_CAPACITY_MAX).nullable();
+/** 名前を空欄で作ったチームの名前（「チーム1」「チーム2」…）。番号は空いている最小のもの */
+export const TEAM_DEFAULT_NAME_PREFIX: Record<"ja" | "en", string> = { ja: "チーム", en: "Team " };
 export const createTeamInput = z.object({
-  name: z.string().trim().min(1).max(TEAM_NAME_MAX),
+  /** 空欄ならサーバーが「チーム1」…を付ける（枠だけ作れる） */
+  name: z.string().trim().max(TEAM_NAME_MAX).default(""),
   description: z.string().trim().max(TEAM_DESCRIPTION_MAX).default(""),
   capacity: teamCapacity.default(null),
 }).strict();
@@ -288,6 +291,15 @@ export const updateTeamInput = z.object({
   capacity: teamCapacity.optional(),
 }).strict();
 export type UpdateTeamInput = z.infer<typeof updateTeamInput>;
+/** リーダーが自分のチームの名前・ひとことを変える（運営は updateTeamInput） */
+export const updateMyTeamInput = z.object({
+  name: z.string().trim().min(1).max(TEAM_NAME_MAX).optional(),
+  description: z.string().trim().max(TEAM_DESCRIPTION_MAX).optional(),
+}).strict();
+export type UpdateMyTeamInput = z.infer<typeof updateMyTeamInput>;
+/** リーダーが同じチームのメンバーにリーダーを任せる */
+export const handOverTeamLeaderInput = z.object({ userId: z.string().min(1) }).strict();
+export type HandOverTeamLeaderInput = z.infer<typeof handOverTeamLeaderInput>;
 export const setTeamModeInput = z.object({ enabled: z.boolean() }).strict();
 export type SetTeamModeInput = z.infer<typeof setTeamModeInput>;
 export const setTeamLeaderInput = z.object({ userId: z.string().min(1).nullable() }).strict();

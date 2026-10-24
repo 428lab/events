@@ -11,6 +11,9 @@ const mock = vi.hoisted(() => ({
   state: { scoringLocked: false },
   join: { mutate: vi.fn(), isPending: false, isError: false, error: null as unknown },
   leave: { mutate: vi.fn(), isPending: false, isError: false, error: null as unknown },
+  updateMine: { mutate: vi.fn(), isPending: false, isError: false, error: null as unknown },
+  handOver: { mutate: vi.fn(), isPending: false, isError: false, error: null as unknown },
+  becomeLeader: { mutate: vi.fn(), isPending: false, isError: false, error: null as unknown },
 }));
 vi.mock("../api/hooks.js", () => ({
   useMe: () => ({ data: { id: "me" } }),
@@ -19,8 +22,8 @@ vi.mock("../api/hooks.js", () => ({
 }));
 vi.mock("../api/scoringHooks.js", () => ({ useEventState: () => ({ data: mock.state }) }));
 vi.mock("../api/teamHooks.js", () => ({
-  teamApi: () => ({ join: "join", leave: "leave" }),
-  useTeamAction: (_: string, call: string) => (call === "join" ? mock.join : mock.leave),
+  teamApi: () => ({ join: "join", leave: "leave", updateMine: "updateMine", handOver: "handOver", becomeLeader: "becomeLeader" }),
+  useTeamAction: (_: string, call: "join" | "leave" | "updateMine" | "handOver" | "becomeLeader") => mock[call],
 }));
 
 const member = (userId: string, name: string, status = "confirmed") => ({
@@ -41,7 +44,7 @@ beforeEach(() => {
     team("red", "赤チーム", ["lead"], { leaderUserId: "lead", description: "フロント担当" }),
     team("blue", "青チーム", ["x"], { capacity: 1 }),
   ];
-  for (const action of [mock.join, mock.leave]) {
+  for (const action of [mock.join, mock.leave, mock.updateMine, mock.handOver, mock.becomeLeader]) {
     action.mutate.mockReset(); action.isPending = false; action.isError = false; action.error = null;
   }
 });
@@ -98,4 +101,60 @@ it("参加確定でない人・運営には選ぶボタンを出さない。個�
   mock.entries = [];
   draw();
   expect(screen.queryByText("チームを選ぶ")).not.toBeInTheDocument();
+});
+
+it("リーダーは自分のチームの名前・ひとことを変えられ、メンバーにリーダーを任せられる", () => {
+  mock.entries = [team("red", "赤チーム", ["me", "lead"], { leaderUserId: "me", description: "前" }), team("blue", "青チーム", ["x"])];
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  draw();
+  // 自分のチームにだけ出る
+  expect(within(card("青チーム")).queryByRole("button", { name: "チーム名を変える" })).not.toBeInTheDocument();
+  fireEvent.click(within(card("赤チーム")).getByRole("button", { name: "チーム名を変える" }));
+  fireEvent.change(screen.getByLabelText("チーム名"), { target: { value: " ねこ " } });
+  fireEvent.change(screen.getByLabelText("ひとこと（任意）"), { target: { value: "UI担当" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  expect(mock.updateMine.mutate).toHaveBeenCalledExactlyOnceWith({ name: "ねこ", description: "UI担当" });
+
+  fireEvent.click(within(card("赤チーム")).getByRole("button", { name: "リーダーを任せる" }));
+  fireEvent.mouseDown(screen.getByLabelText("任せる相手"));
+  fireEvent.click(screen.getByRole("option", { name: "リーダーさん" }));
+  fireEvent.click(screen.getByRole("button", { name: "リーダーを任せる" }));
+  expect(confirm).toHaveBeenCalledOnce();
+  expect(mock.handOver.mutate).toHaveBeenCalledExactlyOnceWith("lead");
+  confirm.mockRestore();
+});
+
+it("リーダーでないメンバーには名前の変更・任せるを出さない。リーダーのいないチームでは「リーダーになる」", () => {
+  mock.entries = [team("red", "赤チーム", ["lead", "me"], { leaderUserId: "lead" })];
+  const withLeader = draw();
+  expect(screen.queryByRole("button", { name: "チーム名を変える" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "リーダーを任せる" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "リーダーになる" })).not.toBeInTheDocument();
+  withLeader.unmount();
+
+  mock.entries = [team("red", "赤チーム", ["me", "x"]), team("blue", "青チーム", ["lead"])];
+  draw();
+  expect(within(card("赤チーム")).getByText("このチームにはリーダーがいません。")).toBeInTheDocument();
+  // ほかのチームのリーダー不在には出さない
+  expect(within(card("青チーム")).queryByRole("button", { name: "リーダーになる" })).not.toBeInTheDocument();
+  fireEvent.click(within(card("赤チーム")).getByRole("button", { name: "リーダーになる" }));
+  expect(mock.becomeLeader.mutate).toHaveBeenCalledOnce();
+});
+
+it("ひとりだけのチームのリーダーには「任せる」を出さない。締切後はチームの中の操作も出さない", () => {
+  mock.entries = [team("red", "赤チーム", ["me"], { leaderUserId: "me" })];
+  const alone = draw();
+  expect(screen.getByRole("button", { name: "チーム名を変える" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "リーダーを任せる" })).not.toBeInTheDocument();
+  alone.unmount();
+  mock.state = { scoringLocked: true };
+  draw();
+  expect(screen.queryByRole("button", { name: "チーム名を変える" })).not.toBeInTheDocument();
+});
+
+it("サーバーの not_team_leader / team_has_leader を案内する", () => {
+  mock.becomeLeader.isError = true;
+  mock.becomeLeader.error = new ApiError(409, { error: "team_has_leader" });
+  draw();
+  expect(screen.getByText("このチームにはもうリーダーがいます。")).toBeInTheDocument();
 });
