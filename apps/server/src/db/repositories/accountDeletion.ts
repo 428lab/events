@@ -88,6 +88,12 @@ export const accountDeletionRepo = {
         args: [now, userId],
       },
       { sql: "DELETE FROM session WHERE user_id = ?", args: [userId] },
+      // AI エージェント用の一時トークン (docs/agent-deck-token.md) もセッションと同じく
+      // 申請の時点で失効させる（復帰しても生き返らない）
+      {
+        sql: "UPDATE deck_agent_token SET revoked_at = ? WHERE owner_id = ? AND revoked_at IS NULL",
+        args: [now, userId],
+      },
     ]);
   },
 

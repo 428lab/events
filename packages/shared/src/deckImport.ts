@@ -88,7 +88,13 @@ interface Rule {
   items?: Rule; properties?: Record<string, Rule>; required?: string[]; oneOf?: Rule[];
 }
 
-export function validateDeckImport(value: unknown): DeckImportValidation {
+export interface DeckImportOptions {
+  /** Agent writes (docs/agent-deck-token.md) may reference images already uploaded to
+   * their bound deck by the relative path the upload returned. Everything else stays HTTPS-only. */
+  uploadedImageSrc?: (src: string) => boolean;
+}
+
+export function validateDeckImport(value: unknown, options: DeckImportOptions = {}): DeckImportValidation {
   const schema = value && typeof value === "object" && !Array.isArray(value) && (value as Record<string, unknown>).version === 2
     ? deckImportV2JsonSchema : deckImportJsonSchema;
   const issues: DeckImportIssue[] = [];
@@ -148,6 +154,7 @@ export function validateDeckImport(value: unknown): DeckImportValidation {
     } else if (rule.type === "boolean" && typeof v !== "boolean") issue(path, "invalid_type", "Must be true or false, not a string.");
     else if (rule.type === "string") {
       if (path.endsWith(".src")) {
+        if (typeof v === "string" && options.uploadedImageSrc?.(v)) return;
         let valid = typeof v === "string" && v.length > 0 && v.length <= 500 && !hasLoneSurrogate(v) && !/[\u0000-\u001f\u007f-\u009f]/.test(v);
         if (valid) {
           try {
@@ -175,8 +182,8 @@ export function validateDeckImport(value: unknown): DeckImportValidation {
   return issues.length ? { ok: false, issues, truncated } : { ok: true, value: value as DeckImport };
 }
 
-export function parseDeckImport(input: string | Uint8Array): DeckImportValidation {
-  return validateDeckImport(parseDeckImportJson(input));
+export function parseDeckImport(input: string | Uint8Array, options: DeckImportOptions = {}): DeckImportValidation {
+  return validateDeckImport(parseDeckImportJson(input), options);
 }
 
 export type DeckImportIdFactory = (kind: "slide" | "element", slideIndex: number, elementIndex?: number) => string;

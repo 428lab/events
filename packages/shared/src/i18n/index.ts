@@ -9,6 +9,7 @@
  * 日本語と英語を並べて書く。片方だけ足すと型で落ちる。
  */
 import { adminSettings } from "./messages/adminSettings.js";
+import { deckAgent } from "./messages/deckAgent.js";
 import { deckImport, deckImportIssue, deckImportField } from "./messages/deckImport.js";
 import { eventAccess } from "./messages/eventAccess.js";
 import { common } from "./messages/common.js";
@@ -107,6 +108,7 @@ export const translations = {
     meet: meet.ja,
     meetFailure: meetFailure.ja,
     studio: studio.ja,
+    deckAgent: deckAgent.ja,
     deckImport: deckImport.ja,
     deckImportIssue: deckImportIssue.ja,
     deckImportField: deckImportField.ja,
@@ -154,6 +156,7 @@ export const translations = {
     meet: meet.en,
     meetFailure: meetFailure.en,
     studio: studio.en,
+    deckAgent: deckAgent.en,
     deckImport: deckImport.en,
     deckImportIssue: deckImportIssue.en,
     deckImportField: deckImportField.en,

@@ -296,6 +296,9 @@ export const accountMergeRepo = {
       // ここへ差し込む。並びは userTables.ts の順＝この batch の文順
       ...SHARED_CONTENT_OWNER_COLUMNS,
       ["deck", "owner_id"],
+      // AI エージェント用の一時トークン (docs/agent-deck-token.md)。結び付いたデッキが
+      // 上の行で勝ち側へ移るので、トークンも同じ持ち主へ移す（期限は最長60分）
+      ["deck_agent_token", "owner_id"],
       ["live_set", "owner_id"],
     ];
     for (const [table, col] of simple) {

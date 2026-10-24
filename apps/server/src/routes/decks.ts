@@ -9,11 +9,14 @@ import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
 import { publishLive } from "./liveControl.js";
 import { putDeckImage } from "./deckImages.js";
 import { postDeckImport } from "./deckImport.js";
+import { deckAgentTokenRoutes } from "./deckAgent.js";
 
 /** /api/decks（作成・編集・削除・自分の一覧）。閲覧は /api/public/decks/:slug */
 export const deckRoutes = new Hono<AppEnv>();
 deckRoutes.use("*", requireAuth);
 deckRoutes.post("/import", postDeckImport);
+/** AI エージェント用の一時トークン（docs/agent-deck-token.md）。/:id より先に登録する */
+deckRoutes.route("/agent-tokens", deckAgentTokenRoutes);
 
 /** スライド画像アップロード（owner） */
 deckRoutes.put("/:id/images", putDeckImage);
