@@ -1,6 +1,6 @@
-/** AI エージェントにスライドを書かせる（docs/agent-deck-token.md） */
+/** AI エージェントにスライドを書いてもらう（docs/agent-deck-token.md） */
 const ja = {
-  title: "AIに書かせる",
+  title: "AIに書いてもらう",
   intro: "一時トークンを発行し、指示文をAIエージェント（Claude Code など、HTTPを送れるもの）に渡すと、AIがあなたの名前でスライドを1つ作ります。画像もアップロードできます。",
   publicNotice: "AIが保存した時点で、URLを知る人はログインせず閲覧できます。機密情報・個人情報をAIやスライドに入れないでください。",
   issue: "トークンを発行して指示文を作る",
