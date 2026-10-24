@@ -45,10 +45,19 @@ it("チーム参加がオフならスイッチだけ。オンにできる", () =
 
 it("チームを作れる（定員は空欄で上限なし、数字なら定員）", () => {
   draw();
-  fireEvent.change(screen.getByLabelText("チーム名"), { target: { value: "  青チーム " } });
+  fireEvent.change(screen.getByLabelText("チーム名（空欄なら「チーム1」…）"), { target: { value: "  青チーム " } });
   fireEvent.change(screen.getByLabelText("定員（空欄は上限なし）"), { target: { value: "4" } });
   fireEvent.click(screen.getByRole("button", { name: "チームを作る" }));
   expect(mock.actions.create.mutate).toHaveBeenCalledExactlyOnceWith({ name: "青チーム", description: "", capacity: 4 });
+});
+
+it("名前を空欄のまま枠だけ作れる（名前はサーバーが付ける）。リーダーは仮と案内する", () => {
+  draw();
+  const create = screen.getByRole("button", { name: "チームを作る" });
+  expect(create).toBeEnabled();
+  fireEvent.click(create);
+  expect(mock.actions.create.mutate).toHaveBeenCalledExactlyOnceWith({ name: "", description: "", capacity: null });
+  expect(screen.getByText("仮のリーダーです。チームの中でほかのメンバーに任せられます。")).toBeInTheDocument();
 });
 
 it("チームの人数・リーダーを出し、未所属の参加者（運営は除く）を一覧にする", () => {

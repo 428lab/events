@@ -240,3 +240,129 @@ it("個人参加のコンテストは今までどおり（チームの操作は 
   expect(await error(await request(`/${id}/scores`, b, "PUT", { entryId: bEntry.id, criterionId, value: 4 }))).toBe("self_scoring_forbidden");
   expect(await error(await join(id, a, bEntry.id))).toBe("team_mode_off");
 });
+
+const renameMine = (id: string, user: Actor, body: unknown) => request(`/${id}/my-team`, user, "PATCH", body);
+const handOver = (id: string, user: Actor, userId: string) => request(`/${id}/my-team/leader`, user, "PUT", { userId });
+const becomeLeader = (id: string, user: Actor) => request(`/${id}/my-team/leader`, user, "POST");
+
+it("名前を空欄で作ると「チーム1」「チーム2」…。使われている番号は飛ばす。英語の画面なら Team 1", async () => {
+  const { host, id } = await setup();
+  expect((await teamMode(id, host, true)).status).toBe(200);
+  const first = await createTeam(id, host, "");
+  expect((await team(id, host, first)).name).toBe("チーム1");
+  // 名前を変えたチームの番号は空く。手で付けた「チーム3」は使われているので飛ばす
+  await createTeam(id, host, "チーム3");
+  const second = (await (await request(`/${id}/teams`, host, "POST", {})).json() as { id: string }).id;
+  expect((await team(id, host, second)).name).toBe("チーム2");
+  const third = await createTeam(id, host, "  ");
+  expect((await team(id, host, third)).name).toBe("チーム4");
+  const english = await request(`/${id}/teams?lang=en`, host, "POST", {});
+  expect(english.status).toBe(201);
+  expect((await team(id, host, (await english.json() as { id: string }).id)).name).toBe("Team 1");
+});
+
+it("リーダーは自分のチームの名前・ひとことを変えられる。メンバー・ほかのチームの人・参加者以外は変えられない", async () => {
+  const { host, id } = await setup();
+  const lead = await participant(id), member = await participant(id), other = await participant(id), outsider = await actor();
+  expect((await teamMode(id, host, true)).status).toBe(200);
+  const red = await createTeam(id, host, ""), blue = await createTeam(id, host, "");
+  expect((await setLeader(id, host, red, lead.id)).status).toBe(200);
+  expect((await join(id, member, red)).status).toBe(200);
+  expect((await setLeader(id, host, blue, other.id)).status).toBe(200);
+
+  expect((await renameMine(id, lead, { name: "ねこチーム", description: "UI担当" })).status).toBe(200);
+  expect(await team(id, host, red)).toMatchObject({ name: "ねこチーム", description: "UI担当" });
+  // ほかのチームは変わらない
+  expect((await team(id, host, blue)).name).toBe("チーム2");
+  const byMember = await renameMine(id, member, { name: "乗っ取り" });
+  expect(byMember.status).toBe(403);
+  expect(await error(byMember)).toBe("not_team_leader");
+  expect((await renameMine(id, outsider, { name: "外" })).status).toBe(403);
+  // 空の名前にはできない
+  expect((await renameMine(id, lead, { name: " " })).status).toBe(400);
+  expect((await team(id, host, red)).name).toBe("ねこチーム");
+});
+
+it("リーダーは同じチームのメンバーにだけリーダーを任せられる。メンバーは任せられない", async () => {
+  const { host, id } = await setup();
+  const lead = await participant(id), member = await participant(id), other = await participant(id);
+  expect((await teamMode(id, host, true)).status).toBe(200);
+  const red = await createTeam(id, host, "赤"), blue = await createTeam(id, host, "青");
+  expect((await setLeader(id, host, red, lead.id)).status).toBe(200);
+  expect((await join(id, member, red)).status).toBe(200);
+  expect((await join(id, other, blue)).status).toBe(200);
+
+  expect(await error(await handOver(id, lead, other.id))).toBe("not_team_member");
+  expect((await team(id, host, red)).leaderUserId).toBe(lead.id);
+  expect(await error(await handOver(id, member, member.id))).toBe("not_team_leader");
+
+  expect((await setLeader(id, host, blue, other.id)).status).toBe(200);
+  expect((await handOver(id, lead, member.id)).status).toBe(200);
+  expect(await team(id, host, red)).toMatchObject({ leaderUserId: member.id });
+  // ほかのチームのリーダーには影響しない
+  expect((await team(id, host, blue)).leaderUserId).toBe(other.id);
+  expect((await team(id, host, red)).memberUserIds.sort()).toEqual([lead.id, member.id].sort());
+  // 元のリーダーはもう名前を変えられず、新しいリーダーは変えられる
+  expect(await error(await renameMine(id, lead, { name: "元" }))).toBe("not_team_leader");
+  expect((await renameMine(id, member, { name: "新" })).status).toBe(200);
+  // 1チームにリーダーは1人
+  expect((await sql("SELECT COUNT(*) n FROM entry_member WHERE entry_id=? AND is_leader=1", red).first())!.n).toBe(1);
+});
+
+it("リーダーのいないチームでは、メンバーがリーダーになれる。リーダーがいれば取れない。ほかのチームの人はなれない", async () => {
+  const { host, id } = await setup();
+  const a = await participant(id), b = await participant(id), c = await participant(id), loner = await participant(id);
+  expect((await teamMode(id, host, true)).status).toBe(200);
+  const red = await createTeam(id, host, "赤"), blue = await createTeam(id, host, "青");
+  expect((await join(id, a, red)).status).toBe(200);
+  expect((await join(id, b, red)).status).toBe(200);
+  expect((await join(id, c, blue)).status).toBe(200);
+  // チームに入っていない人はなれない
+  expect(await error(await becomeLeader(id, loner))).toBe("not_team_member");
+
+  expect((await setLeader(id, host, blue, c.id)).status).toBe(200);
+  expect((await becomeLeader(id, a)).status).toBe(200);
+  expect((await team(id, host, red)).leaderUserId).toBe(a.id);
+  // ほかのチームのリーダーには影響しない
+  expect((await team(id, host, blue)).leaderUserId).toBe(c.id);
+  expect(await error(await becomeLeader(id, b))).toBe("team_has_leader");
+  expect((await team(id, host, red)).leaderUserId).toBe(a.id);
+  // リーダーが抜けると空き、残ったメンバーがなれる
+  expect((await leave(id, a)).status).toBe(200);
+  expect((await becomeLeader(id, b)).status).toBe(200);
+  expect((await team(id, host, red)).leaderUserId).toBe(b.id);
+  // 運営はいつでもリーダーを変えられる
+  expect((await setLeader(id, host, red, c.id)).status).toBe(200);
+  expect((await team(id, host, red)).leaderUserId).toBe(c.id);
+});
+
+it("採点が始まったら、チームの中の操作（名前・任せる・なる）はできない。運営はいつでも変えられる", async () => {
+  const { host, id } = await setup();
+  const lead = await participant(id), member = await participant(id), judge = await participant(id);
+  expect((await teamMode(id, host, true)).status).toBe(200);
+  const red = await createTeam(id, host, "赤"), blue = await createTeam(id, host, "青");
+  expect((await setLeader(id, host, red, lead.id)).status).toBe(200);
+  expect((await join(id, member, red)).status).toBe(200);
+  expect((await join(id, judge, blue)).status).toBe(200);
+  const criterionId = await criterion(id, host);
+  expect((await request(`/${id}/scores`, judge, "PUT", { entryId: red, criterionId, value: 4 })).status).toBe(200);
+
+  expect(await error(await renameMine(id, lead, { name: "後から" }))).toBe("team_locked");
+  expect(await error(await handOver(id, lead, member.id))).toBe("team_locked");
+  expect(await error(await becomeLeader(id, judge))).toBe("team_locked");
+  expect(await team(id, host, red)).toMatchObject({ name: "赤", leaderUserId: lead.id });
+  // 運営は変えられる
+  expect((await request(`/${id}/teams/${red}`, host, "PATCH", { name: "運営が直した" })).status).toBe(200);
+  expect((await team(id, host, red)).name).toBe("運営が直した");
+});
+
+it("チーム参加がオフのイベントでは、チームの中の操作は team_mode_off", async () => {
+  const { host, id } = await setup();
+  const lead = await participant(id);
+  expect((await teamMode(id, host, true)).status).toBe(200);
+  const red = await createTeam(id, host, "赤");
+  expect((await setLeader(id, host, red, lead.id)).status).toBe(200);
+  expect((await teamMode(id, host, false)).status).toBe(200);
+  expect(await error(await renameMine(id, lead, { name: "x" }))).toBe("team_mode_off");
+  expect(await error(await becomeLeader(id, lead))).toBe("team_mode_off");
+});
