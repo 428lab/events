@@ -12,7 +12,7 @@ import { ApiError } from "../api/client.js";
 import { formatDateTime } from "../lib/format.js";
 
 /**
- * /decks/import の「AIに書かせる」（docs/agent-deck-token.md）。
+ * /decks/import の「AIに書いてもらう」（docs/agent-deck-token.md）。
  * 平文のトークンは発行直後の応答にしか無いので、この画面の state にだけ置く。
  */
 export function DeckAgentPanel() {
