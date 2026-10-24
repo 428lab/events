@@ -10,6 +10,7 @@ import { errorMessage } from "../lib/errorMessage.js";
 import { useContestAnchor } from "../lib/useContestAnchor.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
 import { ContestOperationsSection } from "../components/ContestOperationsSection.js";
+import { TeamManager } from "../components/TeamManager.js";
 import { EventManagementLinks } from "../components/EventManagementLinks.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
 import { EventSchedule } from "../components/EventSchedule.js";
@@ -89,6 +90,8 @@ function StaffManagement({ eventId, event, myRole, canInvite }: {
       </Typography>}
     </Alert>}
     {event.contestMode && <ContestOperationsSection eventId={eventId} event={event} myRole={myRole} />}
+    {/* チーム参加 (#9)。コンテストのときだけ */}
+    {event.contestMode && isStaff && <TeamManager eventId={eventId} event={event} />}
     <Typography variant="h6" component="h2">{t("eventManagement.general")}</Typography>
     <EventManagementLinks eventId={eventId} isStaff={isStaff} attendanceCheck={event.attendanceCheck} chatAvailable={chatAvailable} />
     <Typography variant="h6" component="h2">{t("eventManagement.inline")}</Typography>

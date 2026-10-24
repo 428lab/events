@@ -162,10 +162,10 @@ awardRoutes.put(
   async (c) => {
     const eventId = c.req.param("id");
     const input = valid<SetAwardResultInput>(c, "json");
-    // entryId は当該イベントのものに限定（null は解除なのでチェック不要）
+    // entryId は当該イベントの、いま使う種類のものに限定（null は解除なのでチェック不要。#9）
     if (input.entryId != null) {
-      const entry = await entriesRepo.findById(input.entryId);
-      if (!entry || entry.eventId !== eventId) {
+      const entry = await entriesRepo.findActive(eventId, input.entryId);
+      if (!entry) {
         return c.json({ error: "entry_not_found" }, 404);
       }
     }

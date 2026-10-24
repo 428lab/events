@@ -48,6 +48,7 @@ import { EventJoinPanel } from "../components/EventJoinPanel.js";
 import { EventMemberList } from "../components/EventMemberList.js";
 import { EventDetailSidebar } from "../components/EventDetailSidebar.js";
 import { EventSubmissions } from "../components/EventSubmissions.js";
+import { TeamPicker } from "../components/TeamPicker.js";
 import { EventInquiryButton } from "../components/EventInquiryButton.js";
 import {
   formatDateRange,
@@ -460,6 +461,9 @@ export function EventDetailPage() {
 
       {/* コメント（閲覧はイベントが見える人全員、投稿は参加確定者のみ） */}
       <EventComments showManagementActions={false} eventId={id} myRole={myRole} canComment={canChat} />
+
+      {/* チーム参加のコンテスト (#9)。参加者が好きなチームを選ぶ */}
+      <TeamPicker eventId={id} event={event} myRole={myRole} />
 
       {/* コンテストの提出物（自分のぶんの編集と、みんなの一覧） */}
       <EventSubmissions eventId={id} event={event} contest={contest} myRole={myRole} />

@@ -35,16 +35,16 @@ eventEntryRoutes.put(
   },
 );
 
-/** 自分の Entry の成果物を保存（その Entry の member のみ） */
+/** 自分の Entry の成果物を保存（その Entry の member のみ。チームならメンバーの誰でも） */
 eventEntryRoutes.put(
   "/:id/entries/:entryId/submission",
   zValidator("json", updateSubmissionInput),
   async (c) => {
     const user = c.get("user");
     const entryId = c.req.param("entryId");
-    const entry = await entriesRepo.findById(entryId);
-    // その Entry がこのイベントのものであることを確かめる（親の所有の確認）
-    if (!entry || entry.eventId !== c.req.param("id")) {
+    // その Entry がこのイベントの、いま使う種類のものであることを確かめる（親の所有の確認。#9）
+    const entry = await entriesRepo.findActive(c.req.param("id"), entryId);
+    if (!entry) {
       return c.json({ error: "not_found" }, 404);
     }
     if (!(await entriesRepo.isMember(entryId, user.id))) {

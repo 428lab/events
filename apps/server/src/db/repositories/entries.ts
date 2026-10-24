@@ -11,6 +11,8 @@ interface EntryRow {
   event_id: string;
   kind: string;
   name: string;
+  description: string;
+  capacity: number | null;
   team_id: string | null;
   presentation_order: number | null;
   created_at: number;
@@ -52,6 +54,15 @@ export function entryDisplayName(name: string, anonymized: number): string {
 const SELECT_ENTRY = `SELECT e.*, ${entryAnonymizedSql("e")} AS anonymized
   FROM entry e`;
 
+/** そのイベントで「いま使う」エントリーか (#9)。チーム参加ならチームだけ、それ以外は個人だけ。
+ *
+ * 個人エントリーはチーム参加中も作られて残り、チームもオフにしても残る（切り替えでデータを
+ * 消さないため）。一覧・採点・集計・表彰・成果物はどれもこの条件で絞る。alias は entry の別名 */
+export function activeEntrySql(alias: string): string {
+  return `${alias}.kind = CASE (SELECT participation_type FROM event WHERE id = ${alias}.event_id)
+    WHEN 'team' THEN 'team' ELSE 'individual' END`;
+}
+
 interface SubmissionRow {
   presentation_url: string | null;
   source_code_url: string | null;
@@ -68,12 +79,13 @@ function toSubmission(row: SubmissionRow | null): Submission | null {
 }
 
 /** エントリーのメンバー。退会申請中 (#250) は除外する
- * （memberUserIds はそのままユーザーIDとして公開APIに出るため） */
+ * （memberUserIds はそのままユーザーIDとして公開APIに出るため）。
+ * チーム (#9) はリーダーを先頭に、あとは入った順 */
 async function memberUserIds(entryId: string): Promise<string[]> {
   const rows = await many<{ user_id: string }>(
     `SELECT em.user_id FROM entry_member em
        JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
-      WHERE em.entry_id = ?`,
+      WHERE em.entry_id = ? ORDER BY em.is_leader DESC, em.rowid ASC`,
     entryId,
   );
   return rows.map((r) => r.user_id);
@@ -87,6 +99,17 @@ async function submissionFor(entryId: string): Promise<Submission | null> {
   return toSubmission(row);
 }
 
+/** チームのリーダー（退会申請中は出さない）。個人エントリーは null */
+async function leaderUserId(row: EntryRow): Promise<string | null> {
+  if (row.kind !== "team") return null;
+  const leader = await one<{ user_id: string }>(
+    `SELECT em.user_id FROM entry_member em JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
+      WHERE em.entry_id = ? AND em.is_leader = 1 LIMIT 1`,
+    row.id,
+  );
+  return leader?.user_id ?? null;
+}
+
 async function toEntry(row: EntryRow): Promise<Entry> {
   return {
     id: row.id,
@@ -98,6 +121,9 @@ async function toEntry(row: EntryRow): Promise<Entry> {
     createdAt: row.created_at,
     memberUserIds: await memberUserIds(row.id),
     submission: await submissionFor(row.id),
+    description: row.description,
+    capacity: row.capacity,
+    leaderUserId: await leaderUserId(row),
   };
 }
 
@@ -107,9 +133,18 @@ export const entriesRepo = {
     return row ? await toEntry(row) : null;
   },
 
+  /** いま使うエントリー（activeEntrySql）がこのイベントのものなら返す。
+   * 採点・成果物・表彰・発表中の指定はこれで引く（使っていない種類のエントリーを対象にしない） */
+  async findActive(eventId: string, id: string): Promise<Entry | null> {
+    const row = await one<EntryRow>(
+      `${SELECT_ENTRY} WHERE e.id = ? AND e.event_id = ? AND ${activeEntrySql("e")}`, id, eventId,
+    );
+    return row ? await toEntry(row) : null;
+  },
+
   async listByEvent(eventId: string): Promise<Entry[]> {
     const rows = await many<EntryRow>(
-      `${SELECT_ENTRY} WHERE e.event_id = ?
+      `${SELECT_ENTRY} WHERE e.event_id = ? AND ${activeEntrySql("e")}
          ORDER BY COALESCE(e.presentation_order, 1e9), e.created_at ASC`,
       eventId,
     );
@@ -186,7 +221,7 @@ export const entriesRepo = {
       `INSERT INTO submission(id,entry_id,presentation_url,source_code_url,updated_at)
         SELECT ?,en.id,?,?,? FROM entry en JOIN event e ON e.id=en.event_id
         JOIN entry_member em ON em.entry_id=en.id JOIN user u ON u.id=em.user_id AND u.deleted_at IS NULL
-        WHERE en.id=? AND e.id=? AND u.id=? AND ${eventViewSql("e", "u.id", "?")}
+        WHERE en.id=? AND e.id=? AND u.id=? AND ${activeEntrySql("en")} AND ${eventViewSql("e", "u.id", "?")}
         ON CONFLICT(entry_id) DO UPDATE SET presentation_url=excluded.presentation_url,
           source_code_url=excluded.source_code_url,updated_at=excluded.updated_at`,
       crypto.randomUUID(), presentationUrl, sourceCodeUrl, Date.now(), entryId, eventId, userId, adminIds(),
