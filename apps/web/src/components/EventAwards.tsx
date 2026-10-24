@@ -68,13 +68,14 @@ export function EventAwards({
   );
   const resultAvatarUrl = (result?: { entryId: string }) => {
     const entry = result ? entryById.get(result.entryId) : undefined;
-    const uid = entry?.memberUserIds[0];
+    // チーム (#9) は特定の1人のアバターを出さない（頭文字にする）
+    const uid = entry?.kind === "individual" ? entry.memberUserIds[0] : undefined;
     return uid ? (userById.get(uid)?.avatarUrl ?? undefined) : undefined;
   };
   const resultUsername = (result?: { entryId: string }) => {
     const entry = result ? entryById.get(result.entryId) : undefined;
     const uid =
-      entry && entry.memberUserIds.length === 1
+      entry && entry.kind === "individual" && entry.memberUserIds.length === 1
         ? entry.memberUserIds[0]
         : undefined;
     return uid ? userById.get(uid)?.username : undefined;

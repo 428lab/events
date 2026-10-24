@@ -17,7 +17,7 @@ export function useEntryUserResolver(eventId: string) {
   const entryById = new Map((entries ?? []).map((e) => [e.id, e] as const));
   return (entryId: string): ResolvedUser | null => {
     const entry = entryById.get(entryId);
-    if (!entry || entry.memberUserIds.length !== 1) return null;
+    if (!entry || entry.kind !== "individual" || entry.memberUserIds.length !== 1) return null;
     const u = userById.get(entry.memberUserIds[0]);
     if (!u) return null;
     return {

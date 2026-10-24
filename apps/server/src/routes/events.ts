@@ -9,6 +9,7 @@ import { eventMemberRoutes } from "./eventMembers.js";
 import { eventCheckinRoutes } from "./eventCheckin.js";
 import { eventSlotRoutes } from "./eventSlots.js";
 import { eventEntryRoutes } from "./eventEntries.js";
+import { eventTeamRoutes } from "./eventTeams.js";
 
 /**
  * `/api/events` の合成。**この並び順が振る舞いそのもの**。
@@ -52,3 +53,4 @@ eventRoutes.route("/", eventMemberRoutes); // 参加・解除・ロール・出�
 eventRoutes.route("/", eventCheckinRoutes); // QR受付
 eventRoutes.route("/", eventSlotRoutes); // 参加枠・抽選・当落
 eventRoutes.route("/", eventEntryRoutes); // 成果物の保存
+eventRoutes.route("/", eventTeamRoutes); // チーム参加 (#9)

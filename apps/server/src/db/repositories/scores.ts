@@ -7,7 +7,7 @@ import type {
 } from "@eventer/shared";
 import { many, one, } from "../client.js";
 import { scoringCriteriaRepo } from "./scoringCriteria.js";
-import { entryAnonymizedSql, entryDisplayName } from "./entries.js";
+import { activeEntrySql, entryAnonymizedSql, entryDisplayName } from "./entries.js";
 
 interface ScoreRow {
   entry_id: string;
@@ -80,7 +80,7 @@ export const scoresRepo = {
     // 退会申請中 (#250) の個人エントリーは表示名を伏せる
     const entryRows = await many<{ id: string; name: string; anonymized: number }>(
       `SELECT e.id, e.name, ${entryAnonymizedSql("e")} AS anonymized
-         FROM entry e WHERE e.event_id = ? ORDER BY e.created_at ASC`,
+         FROM entry e WHERE e.event_id = ? AND ${activeEntrySql("e")} ORDER BY e.created_at ASC`,
       eventId,
     );
     const entries = entryRows.map((e) => ({
@@ -142,7 +142,7 @@ export const scoresRepo = {
   ): Promise<JudgeProgress[]> {
     const criteriaCount = (await scoringCriteriaRepo.listByEvent(eventId)).length;
     const entryCountRow = await one<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM entry WHERE event_id = ?",
+      `SELECT COUNT(*) AS n FROM entry e WHERE e.event_id = ? AND ${activeEntrySql("e")}`,
       eventId,
     );
     const entryCount = entryCountRow?.n ?? 0;
@@ -172,7 +172,7 @@ export const scoresRepo = {
         const ownRow = await one<{ n: number }>(
           `SELECT COUNT(DISTINCT em.entry_id) AS n
                FROM entry_member em JOIN entry e ON e.id = em.entry_id
-               WHERE e.event_id = ? AND em.user_id = ?`,
+               WHERE e.event_id = ? AND em.user_id = ? AND ${activeEntrySql("e")}`,
           eventId,
           j.user_id,
         );
@@ -180,7 +180,8 @@ export const scoresRepo = {
       }
       const total = (entryCount - ownEntries) * criteriaCount;
       const filledRow = await one<{ n: number }>(
-        "SELECT COUNT(*) AS n FROM score WHERE event_id = ? AND judge_user_id = ?",
+        `SELECT COUNT(*) AS n FROM score s JOIN entry e ON e.id = s.entry_id
+          WHERE s.event_id = ? AND s.judge_user_id = ? AND ${activeEntrySql("e")}`,
         eventId,
         j.user_id,
       );

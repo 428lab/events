@@ -6,7 +6,7 @@ import type { AwardsView, EventState } from "@eventer/shared";
 import { api } from "../api/client.js";
 import { ControlPage } from "./ControlPage.js";
 
-const fixture = vi.hoisted(() => ({ role: "staff", admin: false, visibility: "public", access: false, contest: true, entries: [{ id: "entry", name: "作品A", memberUserIds: ["u"] }] }));
+const fixture = vi.hoisted(() => ({ role: "staff", admin: false, visibility: "public", access: false, contest: true, entries: [{ id: "entry", kind: "individual", name: "作品A", memberUserIds: ["u"] }] }));
 vi.mock("../api/hooks.js", () => ({
   useEvent: () => ({ data: { event: { title: "Contest", contestMode: fixture.contest, visibility: fixture.visibility }, myRole: fixture.role, canManageAccess: fixture.access } }),
   useEventEntries: () => ({ data: fixture.entries }),
@@ -41,7 +41,7 @@ function savedWinner() {
 beforeEach(() => {
   vi.restoreAllMocks();
   fixture.role = "staff"; fixture.admin = false; fixture.visibility = "public"; fixture.access = false; fixture.contest = true;
-  fixture.entries = [{ id: "entry", name: "作品A", memberUserIds: ["u"] }];
+  fixture.entries = [{ id: "entry", kind: "individual", name: "作品A", memberUserIds: ["u"] }];
   state = { mode: "normal", scoringLocked: false, presentingEntryId: null, awardsRevealCursor: 0, eventId: "e", updatedAt: 0 };
   awards = { ranks: [{ id: "rank", eventId: "e", name: "最優秀賞", content: "賞品", rankOrder: 1 }], specials: [], results: [], criteria: [] };
   vi.spyOn(api, "get").mockImplementation(async (path) => {

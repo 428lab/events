@@ -38,6 +38,7 @@ import { schedule } from "./messages/schedule.js";
 import { linkError, settings } from "./messages/settings.js";
 import { studio } from "./messages/studio.js";
 import { warikan } from "./messages/warikan.js";
+import { teams } from "./messages/teams.js";
 import { themeName } from "./messages/theme.js";
 import {
   venue,
@@ -115,6 +116,7 @@ export const translations = {
     kpi: kpi.ja,
     adminSettings: adminSettings.ja,
     warikan: warikan.ja,
+    teams: teams.ja,
     ...labels.ja,
   },
   en: {
@@ -163,6 +165,7 @@ export const translations = {
     kpi: kpi.en,
     adminSettings: adminSettings.en,
     warikan: warikan.en,
+    teams: teams.en,
     ...labels.en,
   },
 } satisfies Record<AppLanguage, Record<string, Record<string, string>>>;

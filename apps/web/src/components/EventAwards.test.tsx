@@ -69,7 +69,7 @@ beforeEach(() => {
   awardsMock.mockReturnValue(awards());
   stateMock.mockReturnValue({ awardsRevealCursor: 0, scoringLocked: false });
   entriesMock.mockReturnValue([
-    { id: "en-1", name: "チームあ", memberUserIds: ["u-9"] },
+    { id: "en-1", kind: "individual", name: "チームあ", memberUserIds: ["u-9"] },
   ]);
   membersMock.mockReturnValue([
     { id: "m-1", userId: "u-9", user: { id: "u-9", username: "erai", avatarUrl: null } },
@@ -170,6 +170,17 @@ describe("出すとき", () => {
       "href",
       "/users/erai",
     );
+  });
+
+  it("チーム (#9) の受賞はメンバーが1人でも、その人のプロフィールへはつながない", () => {
+    entriesMock.mockReturnValue([
+      { id: "en-1", kind: "team", name: "チームあ", memberUserIds: ["u-9"] },
+    ]);
+    stateMock.mockReturnValue({ awardsRevealCursor: 1, scoringLocked: false });
+    draw();
+
+    expect(screen.getByText("チームあ")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /チームあ/ })).not.toBeInTheDocument();
   });
 });
 

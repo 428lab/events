@@ -262,8 +262,36 @@ export const entrySchema = z.object({
   createdAt: z.number(),
   memberUserIds: z.array(z.string()),
   submission: submissionSchema.nullable(),
+  /** チーム (#9) の説明。個人エントリーは空 */
+  description: z.string(),
+  /** チームの定員。null は上限なし（個人エントリーは常に null） */
+  capacity: z.number().nullable(),
+  /** チームのリーダー。個人エントリーと、リーダー未設定のチームは null */
+  leaderUserId: z.string().nullable(),
 });
 export type Entry = z.infer<typeof entrySchema>;
+
+/** ---- チーム参加 (#9, docs/team-participation.md) ---- */
+export const TEAM_NAME_MAX = 60;
+export const TEAM_DESCRIPTION_MAX = 200;
+export const TEAM_CAPACITY_MAX = 100;
+const teamCapacity = z.number().int().min(1).max(TEAM_CAPACITY_MAX).nullable();
+export const createTeamInput = z.object({
+  name: z.string().trim().min(1).max(TEAM_NAME_MAX),
+  description: z.string().trim().max(TEAM_DESCRIPTION_MAX).default(""),
+  capacity: teamCapacity.default(null),
+}).strict();
+export type CreateTeamInput = z.infer<typeof createTeamInput>;
+export const updateTeamInput = z.object({
+  name: z.string().trim().min(1).max(TEAM_NAME_MAX).optional(),
+  description: z.string().trim().max(TEAM_DESCRIPTION_MAX).optional(),
+  capacity: teamCapacity.optional(),
+}).strict();
+export type UpdateTeamInput = z.infer<typeof updateTeamInput>;
+export const setTeamModeInput = z.object({ enabled: z.boolean() }).strict();
+export type SetTeamModeInput = z.infer<typeof setTeamModeInput>;
+export const setTeamLeaderInput = z.object({ userId: z.string().min(1).nullable() }).strict();
+export type SetTeamLeaderInput = z.infer<typeof setTeamLeaderInput>;
 
 export const selfEntryParticipationInput = z.object({
   participating: z.boolean(),

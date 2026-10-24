@@ -147,8 +147,9 @@ scoringRoutes.put(
     if (state.scoringLocked) return c.json({ error: "scoring_locked" }, 409);
 
     const input = valid<PutScoreInput>(c, "json");
-    const entry = await entriesRepo.findById(input.entryId);
-    if (!entry || entry.eventId !== eventId) {
+    // いま使う種類のエントリーだけ採点できる（チーム参加ならチーム、それ以外は個人。#9）
+    const entry = await entriesRepo.findActive(eventId, input.entryId);
+    if (!entry) {
       return c.json({ error: "entry_not_found" }, 404);
     }
     const criterion = await scoringCriteriaRepo.findById(input.criterionId);
@@ -230,9 +231,14 @@ scoringRoutes.patch(
   zValidator("json", setPresentingInput),
   async (c) => {
     const eventId = c.req.param("id");
+    const { presentingEntryId } = valid<SetPresentingInput>(c, "json");
+    // 発表中に指定できるのは、このイベントでいま使う種類のエントリーだけ (#9)
+    if (presentingEntryId && !(await entriesRepo.findActive(eventId, presentingEntryId))) {
+      return c.json({ error: "entry_not_found" }, 404);
+    }
     const state = await eventStateRepo.setPresenting(
       eventId,
-      valid<SetPresentingInput>(c, "json").presentingEntryId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
+      presentingEntryId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     await publishEventState(eventId);
     return c.json(state);
   },
