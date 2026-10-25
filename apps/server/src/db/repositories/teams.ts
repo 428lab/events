@@ -78,6 +78,17 @@ const leaveTeamsSql = (eventId: string, userId: string): Statement => ({
 });
 
 export const teamsRepo = {
+  /** そのイベントで各参加者が入っているチーム（名簿CSV用）。user_id → チーム名・リーダーか */
+  async membershipByUser(eventId: string): Promise<Map<string, { teamName: string; isLeader: boolean }>> {
+    const rows = await many<{ user_id: string; name: string; is_leader: number }>(
+      `SELECT em.user_id, en.name, em.is_leader FROM entry_member em
+        JOIN entry en ON en.id = em.entry_id
+        WHERE en.event_id = ? AND en.kind = 'team'`,
+      eventId,
+    );
+    return new Map(rows.map((r) => [r.user_id, { teamName: r.name, isLeader: r.is_leader === 1 }]));
+  },
+
   /** チーム参加のオン・オフ（運営）。点数・成果物・受賞がひとつでもあれば切り替えない。
    * 個人エントリーもチームも消さない（見せる種類が変わるだけ） */
   async setTeamMode(eventId: string, actorId: string, enabled: boolean) {
