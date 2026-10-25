@@ -73,6 +73,32 @@ describe("イベント詳細の共催コミュニティ (#625)", () => {
     expect(links[2]).toHaveTextContent("共催B共催");
   });
 
+  it("主催・共催は同じ flex 行に入り、縦の中心でそろう。共催のアイコン画像も出る (#640)", () => {
+    state.data = {
+      ...state.data,
+      community: { ...host, iconUrl: "/api/communities/c-host/icon?v=1" },
+      cohosts: [{ ...cohostA, iconUrl: "/api/communities/c-a/icon?v=2" }],
+    };
+    const { container } = draw();
+    const row = screen.getByTestId("event-community-refs");
+    const style = getComputedStyle(row);
+    expect(style.display).toBe("flex");
+    expect(style.alignItems).toBe("center");
+    expect(style.flexWrap).toBe("wrap");
+    const links = Array.from(row.querySelectorAll("a"));
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["/c/host", "/c/alpha"]);
+    // 個々のリンクに左右の余白（旧 spaced の ml）を持たせず、間隔は行の gap が持つ
+    for (const a of links) expect(getComputedStyle(a).marginLeft).toMatch(/^(0px|)$/);
+    const imgs = Array.from(container.querySelectorAll("img")).map((i) => i.getAttribute("src"));
+    expect(imgs).toEqual(["/api/communities/c-host/icon?v=1", "/api/communities/c-a/icon?v=2"]);
+  });
+
+  it("主催も共催も無ければ行ごと出さない", () => {
+    state.data = { ...state.data, community: null, cohosts: [] };
+    draw();
+    expect(screen.queryByTestId("event-community-refs")).toBeNull();
+  });
+
   it("共催が無ければ主催だけ（従来どおり）", () => {
     state.data = { ...state.data, cohosts: [] };
     draw();

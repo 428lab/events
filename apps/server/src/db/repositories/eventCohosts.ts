@@ -9,6 +9,7 @@ import type {
 import { many, one, runCount } from "../client.js";
 import { eventViewSql } from "../../auth/eventAccess.js";
 import { adminIds } from "./eventAccessInvites.js";
+import { communityImageUrl } from "./communities.js";
 
 /** イベントの共催コミュニティ (#625)。docs/event-cohost.md
  *
@@ -27,7 +28,7 @@ interface CohostRow {
 interface EventCohostRow extends CohostRow {
   slug: string;
   name: string;
-  icon_url: string | null;
+  icon_updated_at: number | null;
 }
 
 interface CommunityCohostRow extends CohostRow {
@@ -68,7 +69,7 @@ export const eventCohostsRepo = {
     opts: { acceptedOnly?: boolean } = {},
   ): Promise<EventCohost[]> {
     const rows = await many<EventCohostRow>(
-      `SELECT ec.*, c.slug, c.name, c.icon_url FROM event_cohost ec
+      `SELECT ec.*, c.slug, c.name, c.icon_updated_at FROM event_cohost ec
          JOIN community c ON c.id = ec.community_id
        WHERE ec.event_id = ? ${opts.acceptedOnly ? "AND ec.status = 'accepted'" : ""}
        ${ORDER}`,
@@ -78,7 +79,8 @@ export const eventCohostsRepo = {
       communityId: r.community_id,
       slug: r.slug,
       name: r.name,
-      iconUrl: r.icon_url,
+      // 主催側（communitiesRepo）と同じく R2 のアイコンから導出する。旧列 icon_url は使わない (#640)
+      iconUrl: communityImageUrl(r.community_id, "icon", r.icon_updated_at),
       status: r.status as EventCohostStatus,
       createdAt: r.created_at,
       respondedAt: r.responded_at,
