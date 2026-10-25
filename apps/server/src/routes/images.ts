@@ -23,7 +23,8 @@ export async function getEventImage(c: Context) {
     headers: {
       "Content-Type": safeServeMime(meta.mime),
       "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "public, max-age=60",
+      // Cache-Control は付けない。閲覧の門 requireEventAccess が最後に private, no-store で
+      // 上書きする（公開→非公開をすぐ効かせるため。docs/private-events.md, #496）
       ETag: etag,
     },
   });
