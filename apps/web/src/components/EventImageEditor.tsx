@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -16,22 +16,36 @@ import {
   useUploadEventImage,
 } from "../api/hooks.js";
 import { ImageCropField } from "./ImageCropField.js";
-import { EventImageStudio } from "./EventImageStudio.js";
+import { EventImageStudio, type EventImageStudioHandle } from "./EventImageStudio.js";
 import { formatDateRange } from "../lib/format.js";
 
-export function EventImageEditor({
-  event,
-}: {
-  event: {
-    id: string;
-    imageUpdatedAt: number | null;
-    title: string;
-    startsAt: number;
-    endsAt: number;
-  };
-}) {
+/** イベント編集の保存ボタンが、テンプレートで作りかけの画像をまとめて反映するための口 */
+export type EventImageEditorHandle = {
+  /** 作りかけの画像をイベント画像としてアップロードする。成功で true */
+  applyPendingImage: () => Promise<boolean>;
+};
+
+/** 画像はこの部品の中で即アップロードする（イベントの「保存」とは別）。
+ * テンプレートで作りかけ（まだ反映していない）かどうかは onPendingChange で親に知らせる */
+export const EventImageEditor = forwardRef<
+  EventImageEditorHandle,
+  {
+    event: {
+      id: string;
+      imageUpdatedAt: number | null;
+      title: string;
+      startsAt: number;
+      endsAt: number;
+    };
+    onPendingChange?: (pending: boolean) => void;
+  }
+>(function EventImageEditor({ event, onPendingChange }, ref) {
   const { t } = useTranslation();
   const upload = useUploadEventImage(event.id);
+  const studioRef = useRef<EventImageStudioHandle>(null);
+  useImperativeHandle(ref, () => ({
+    applyPendingImage: async () => (studioRef.current ? studioRef.current.apply() : false),
+  }));
   const remove = useDeleteEventImage(event.id);
   const currentUrl = eventImageUrl(event);
   const [mode, setMode] = useState<"upload" | "template">("upload");
@@ -60,6 +74,9 @@ export function EventImageEditor({
         </ToggleButton>
       </ToggleButtonGroup>
 
+      <Typography variant="caption" color="text.secondary" display="block">
+        {t("eventForm.imageCurrentLabel")}
+      </Typography>
       {currentUrl ? (
         <Box
           component="img"
@@ -102,9 +119,11 @@ export function EventImageEditor({
         </Stack>
       ) : (
         <EventImageStudio
+          ref={studioRef}
           title={event.title}
           subtitle={formatDateRange(event.startsAt, event.endsAt)}
-          onGenerated={(blob) => upload.mutate(blob)}
+          onGenerated={(blob) => upload.mutateAsync(blob)}
+          onDirtyChange={onPendingChange}
         />
       )}
 
@@ -115,4 +134,4 @@ export function EventImageEditor({
       )}
     </Box>
   );
-}
+});

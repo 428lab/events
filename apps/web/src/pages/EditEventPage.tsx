@@ -1,14 +1,20 @@
 import {EventVisibilityField} from "../components/EventVisibilityField.js";
 import {api, ApiError} from "../api/client.js";
 import type {Event} from "@eventer/shared";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Box,
   Button,
   Card,
   CardContent,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Divider,
+  Portal,
   FormControlLabel,
   MenuItem,
   Stack,
@@ -17,6 +23,8 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import StadiumIcon from "@mui/icons-material/Stadium";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
@@ -43,7 +51,7 @@ import {
 import { useMyCommunities } from "../api/communityHooks.js";
 import { generateEventImageBlob } from "../lib/imageTemplates.js";
 import { CounterTextField } from "../components/CounterTextField.js";
-import { EventImageEditor } from "../components/EventImageEditor.js";
+import { EventImageEditor, type EventImageEditorHandle } from "../components/EventImageEditor.js";
 import { MeetPrizeEditor } from "../components/MeetPrizeEditor.js";
 import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { DescriptionImageTray } from "../components/DescriptionImageTray.js";
@@ -89,6 +97,9 @@ export function EditEventPage() {
   const update = useUpdateEvent(id);
   const del = useDeleteEvent(id);
   const duplicate = useDuplicateEvent(id);
+  const theme = useTheme();
+  // 保存バーをスマホで画面下に固定するか（md 未満）
+  const mobile = useMediaQuery(theme.breakpoints.down("md"));
 
   // 予約公開 (D-EVENT-SCHEDULED-PUBLISH)。"scheduled" は下書き＋公開日時
   const [status, setStatus] = useState<"draft" | "scheduled" | "published">("draft");
@@ -145,6 +156,12 @@ export function EditEventPage() {
   const myCommunitiesQuery = useMyCommunities();
   const myCommunities = myCommunitiesQuery.data;
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // テンプレートで作りかけ（まだイベント画像にしていない）画像。保存時に聞く
+  const imageEditorRef = useRef<EventImageEditorHandle>(null);
+  const [imagePending, setImagePending] = useState(false);
+  const [pendingImageDialog, setPendingImageDialog] = useState(false);
+  const [pendingImageError, setPendingImageError] = useState(false);
+  const [applyingImage, setApplyingImage] = useState(false);
   const [formRevision, setFormRevision] = useState(0);
   // 読み込んだときの日時と締切（入力欄の文字列）。変えたときだけ送るための比較元。
   // 日時を送ると revision の照合が掛かり、参加登録などで revision が上がっただけでも
@@ -183,6 +200,17 @@ export function EditEventPage() {
   useEffect(() => {
     setInitialized(false);
   }, [id]);
+
+  // 作りかけの画像があるまま閉じる・再読み込みするときは、ブラウザの確認を出す
+  useEffect(() => {
+    if (!imagePending) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [imagePending]);
 
   useEffect(() => {
     if (data?.event && !initialized) {
@@ -295,6 +323,41 @@ export function EditEventPage() {
     deadline_after_start: t("eventForm.deadlineAfterStart"),
   });
 
+  /** 保存ボタン。作りかけの画像があれば、反映するかを先に聞く */
+  const requestSave = () => {
+    setPendingImageError(false);
+    if (imagePending) {
+      setPendingImageDialog(true);
+      return;
+    }
+    void save();
+  };
+
+  const applyImageThenSave = async () => {
+    setApplyingImage(true);
+    const ok = await (imageEditorRef.current?.applyPendingImage() ?? Promise.resolve(false));
+    setApplyingImage(false);
+    setPendingImageDialog(false);
+    if (!ok) {
+      setPendingImageError(true);
+      return;
+    }
+    void save();
+  };
+
+  const cancelEdit = () => {
+    if (imagePending && !window.confirm(t("eventForm.pendingImageLeave"))) return;
+    navigate(`/events/${id}`);
+  };
+
+  const saveDisabled =
+    !title ||
+    Boolean(dateOrderError) ||
+    Boolean(deadlineError) ||
+    Boolean(publishAtError) ||
+    update.isPending ||
+    applyingImage;
+
   const save = async () => {
     let expectedAccessRevision:number|undefined;
     setVisibilityError(false);
@@ -369,7 +432,8 @@ export function EditEventPage() {
   };
 
   return (
-    <Card variant="outlined">
+    // 保存バーを PC で画面下に貼り付ける（sticky）ため、Card 既定の overflow: hidden を外す
+    <Card variant="outlined" sx={{ overflow: "visible" }}>
       <CardContent>
         <Typography variant="h5" fontWeight={700} gutterBottom>
           {t("eventForm.editTitle")}
@@ -885,29 +949,7 @@ export function EditEventPage() {
           )}
 
           <Divider />
-          <EventImageEditor event={event} />
-
-          {update.isError && (
-            <Alert severity="error">{saveErrorMessage}</Alert>
-          )}
-          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={2} justifyContent="flex-end">
-            <Button onClick={() => navigate(`/events/${id}`)}>
-              {t("common.cancel")}
-            </Button>
-            <Button
-              variant="contained"
-              disabled={
-                !title ||
-                Boolean(dateOrderError) ||
-                Boolean(deadlineError) ||
-                Boolean(publishAtError) ||
-                update.isPending
-              }
-              onClick={save}
-            >
-              {t("common.save")}
-            </Button>
-          </Stack>
+          <EventImageEditor ref={imageEditorRef} event={event} onPendingChange={setImagePending} />
 
           <Divider />
           <Box>
@@ -993,6 +1035,79 @@ export function EditEventPage() {
             )}
           </Box>
         </Stack>
+
+        {/* イベントの編集内容を保存する。画像の下ではなくフォームのいちばん下に置き、
+         * 画像の保存と見分けやすくする。スマホは画面下に固定、PC はカードの下端に貼り付く。
+         * Card には backdrop-filter が掛かっていて position: fixed の基準がカードになって
+         * しまうので、スマホでは Portal で body 直下へ出す（PC は sticky なのでカード内のまま） */}
+        <Portal disablePortal={!mobile}>
+        <Box
+          data-testid="event-save-bar"
+          sx={{
+            position: mobile ? "fixed" : "sticky",
+            left: mobile ? 0 : "auto",
+            right: mobile ? 0 : "auto",
+            bottom: 0,
+            zIndex: theme.zIndex.appBar,
+            mt: mobile ? 0 : 3,
+            mx: mobile ? 0 : -2,
+            px: 2,
+            pt: 1.5,
+            pb: mobile ? "calc(12px + env(safe-area-inset-bottom))" : 1.5,
+            bgcolor: "background.paper",
+            borderTop: 1,
+            borderColor: "divider",
+            boxShadow: mobile ? 8 : "none",
+          }}
+        >
+          {update.isError && (
+            <Alert severity="error" sx={{ mb: 1 }}>{saveErrorMessage}</Alert>
+          )}
+          {pendingImageError && (
+            <Alert severity="error" sx={{ mb: 1 }}>{t("eventForm.pendingImageApplyError")}</Alert>
+          )}
+          <Stack direction="row" spacing={1.5} justifyContent="flex-end" alignItems="center">
+            <Button onClick={cancelEdit}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="contained"
+              size="large"
+              disabled={saveDisabled}
+              onClick={requestSave}
+              sx={{ flex: mobile ? 1 : "none" }}
+            >
+              {t("eventForm.saveEvent")}
+            </Button>
+          </Stack>
+        </Box>
+        </Portal>
+        {/* スマホの固定バーが最後の内容を隠さないための余白 */}
+        {mobile && <Box sx={{ height: 96 }} />}
+
+        <Dialog open={pendingImageDialog} onClose={() => !applyingImage && setPendingImageDialog(false)}>
+          <DialogTitle>{t("eventForm.pendingImageTitle")}</DialogTitle>
+          <DialogContent>
+            <DialogContentText>{t("eventForm.pendingImageBody")}</DialogContentText>
+          </DialogContent>
+          <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
+            <Button onClick={() => setPendingImageDialog(false)} disabled={applyingImage}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                setPendingImageDialog(false);
+                void save();
+              }}
+              disabled={applyingImage}
+            >
+              {t("eventForm.pendingImageSaveOnly")}
+            </Button>
+            <Button variant="contained" onClick={() => void applyImageThenSave()} disabled={applyingImage}>
+              {t("eventForm.pendingImageApplyAndSave")}
+            </Button>
+          </DialogActions>
+        </Dialog>
       </CardContent>
     </Card>
   );

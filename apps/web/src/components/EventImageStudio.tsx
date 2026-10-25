@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
+  Alert,
   Box,
   Button,
   ListSubheader,
@@ -56,19 +57,30 @@ const BACKGROUND_KEY = {
   dots: "eventForm.imageBgDots",
 } as const satisfies Record<BackgroundKey, string>;
 
+/** 親（イベント編集）が「作成中の画像」を保存のときにまとめて反映するための口 */
+export type EventImageStudioHandle = {
+  /** いまの画像を onGenerated に渡す。渡し終えたら true、失敗なら false */
+  apply: () => Promise<boolean>;
+};
+
 /**
  * テンプレート（背景・フォント・レイアウト）からイベント画像(1200×630)を生成する。
- * 「この画像を使う」で PNG Blob を onGenerated に渡す。
+ * 「この画像をイベント画像にする」で WebP Blob を onGenerated に渡す。
+ *
+ * 押し忘れを防ぐため、触ってからまだ渡していない状態を dirty として持ち、
+ * onDirtyChange で親に知らせる（消えるときは false を知らせる）。表示を変えるのは
+ * 利用者が操作したときだけで、開いただけ（乱数の初期値）では dirty にしない。
  */
-export function EventImageStudio({
-  title,
-  subtitle,
-  onGenerated,
-}: {
-  title: string;
-  subtitle?: string;
-  onGenerated: (blob: Blob) => void;
-}) {
+export const EventImageStudio = forwardRef<
+  EventImageStudioHandle,
+  {
+    title: string;
+    subtitle?: string;
+    /** Promise を返すと、解決まで「反映中」、失敗なら dirty のまま */
+    onGenerated: (blob: Blob) => void | Promise<unknown>;
+    onDirtyChange?: (dirty: boolean) => void;
+  }
+>(function EventImageStudio({ title, subtitle, onGenerated, onDirtyChange }, ref) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rand = (n: number) => Math.floor(Math.random() * n);
@@ -79,8 +91,25 @@ export function EventImageStudio({
   );
   const [titleSize, setTitleSize] = useState(() => 72 + rand(7) * 8);
   const [showSubtitle, setShowSubtitle] = useState(Boolean(subtitle));
+  const [dirty, setDirty] = useState(false);
+  const [applied, setApplied] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  useEffect(() => {
+    onDirtyChangeRef.current?.(dirty);
+  }, [dirty]);
+  useEffect(() => () => onDirtyChangeRef.current?.(false), []);
+
+  /** 利用者の操作ごとに呼ぶ。渡した後に触ったら、また「まだ反映していない」に戻す */
+  const touched = () => {
+    setDirty(true);
+    setApplied(false);
+  };
 
   const shuffle = () => {
+    touched();
     setFontIdx(rand(FONTS.length));
     setBgIdx(rand(BACKGROUNDS.length));
     setLayout(LAYOUTS[rand(LAYOUTS.length)]!);
@@ -109,16 +138,36 @@ export function EventImageStudio({
     };
   }, [font, background, layout, titleSize, title, subtitle, showSubtitle]);
 
-  const use = () => {
-    canvasRef.current?.toBlob(
-      (blob) => blob && onGenerated(blob),
-      "image/webp",
-      0.92,
-    );
+  const apply = async (): Promise<boolean> => {
+    const canvas = canvasRef.current;
+    if (!canvas) return false;
+    setApplying(true);
+    try {
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/webp", 0.92),
+      );
+      if (!blob) return false;
+      await onGenerated(blob);
+      setDirty(false);
+      setApplied(true);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setApplying(false);
+    }
   };
+
+  useImperativeHandle(ref, () => ({ apply }));
 
   return (
     <Stack spacing={2}>
+      <Typography
+        variant="subtitle2"
+        color={applied && !dirty ? "success.main" : "warning.main"}
+      >
+        {t(applied && !dirty ? "eventForm.imageStudioApplied" : "eventForm.imageStudioPending")}
+      </Typography>
       <Box
         component="canvas"
         ref={canvasRef}
@@ -134,6 +183,21 @@ export function EventImageStudio({
       />
 
       <Button
+        variant="contained"
+        size="large"
+        onClick={() => void apply()}
+        disabled={applying}
+        sx={{ width: { xs: "100%", sm: "auto" }, maxWidth: { sm: 480 }, alignSelf: { sm: "flex-start" } }}
+      >
+        {t(applying ? "eventForm.imageUseApplying" : "eventForm.imageUse")}
+      </Button>
+      {applied && !dirty && (
+        <Alert severity="success" sx={{ maxWidth: 480 }}>
+          {t("eventForm.imageUseDone")}
+        </Alert>
+      )}
+
+      <Button
         variant="outlined"
         startIcon={<CasinoIcon />}
         onClick={shuffle}
@@ -147,7 +211,10 @@ export function EventImageStudio({
         size="small"
         label={t("common.font")}
         value={fontIdx}
-        onChange={(e) => setFontIdx(Number(e.target.value))}
+        onChange={(e) => {
+          touched();
+          setFontIdx(Number(e.target.value));
+        }}
         sx={{ maxWidth: 280 }}
       >
         {FONT_CATEGORY_KEY.flatMap(([cat, key]) => [
@@ -172,7 +239,10 @@ export function EventImageStudio({
               key={b.key}
               size="small"
               variant={bgIdx === i ? "contained" : "outlined"}
-              onClick={() => setBgIdx(i)}
+              onClick={() => {
+                touched();
+                setBgIdx(i);
+              }}
             >
               {t(BACKGROUND_KEY[b.key])}
             </Button>
@@ -189,7 +259,11 @@ export function EventImageStudio({
             size="small"
             exclusive
             value={layout}
-            onChange={(_e, v) => v && setLayout(v)}
+            onChange={(_e, v) => {
+              if (!v) return;
+              touched();
+              setLayout(v);
+            }}
             sx={{ mt: 0.5 }}
           >
             {LAYOUTS.map((l) => (
@@ -211,7 +285,10 @@ export function EventImageStudio({
           max={140}
           step={4}
           value={titleSize}
-          onChange={(_e, v) => setTitleSize(v as number)}
+          onChange={(_e, v) => {
+            touched();
+            setTitleSize(v as number);
+          }}
         />
       </Box>
 
@@ -219,18 +296,15 @@ export function EventImageStudio({
         <Button
           size="small"
           variant={showSubtitle ? "contained" : "outlined"}
-          onClick={() => setShowSubtitle((v) => !v)}
+          onClick={() => {
+            touched();
+            setShowSubtitle((v) => !v);
+          }}
           sx={{ alignSelf: "flex-start" }}
         >
           {t(showSubtitle ? "eventForm.imageHideDate" : "eventForm.imageShowDate")}
         </Button>
       )}
-
-      <Box>
-        <Button variant="contained" onClick={use}>
-          {t("eventForm.imageUse")}
-        </Button>
-      </Box>
     </Stack>
   );
-}
+});

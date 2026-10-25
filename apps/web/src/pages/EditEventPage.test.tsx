@@ -101,7 +101,7 @@ function draw() {
   );
 }
 
-const saveButton = () => screen.getByRole("button", { name: "保存" });
+const saveButton = () => screen.getByRole("button", { name: "イベントを保存" });
 const orderWarning = () =>
   screen.queryByText("終了日時は開始日時より後にしてください。");
 
