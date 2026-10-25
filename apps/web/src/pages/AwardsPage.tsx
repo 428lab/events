@@ -22,6 +22,7 @@ import { useNotifyAwardWinners } from "../api/notificationHooks.js";
 import { UserLink } from "../components/UserLink.js";
 import { useEntryUserResolver } from "../lib/entryUser.js";
 import { RadarChart } from "../components/RadarChart.js";
+import { ENTRY_NAME_WRAP_SX, entryNameFontSize } from "../lib/entryNameFit.js";
 import { fireConfetti, playDrumroll, playFanfare } from "../lib/effects.js";
 
 interface RevealItem {
@@ -182,7 +183,7 @@ export function AwardsPage() {
             color: "#fff",
           }}
         >
-          <CardContent sx={{ py: 4 }}>
+          <CardContent sx={{ py: 4, containerType: "inline-size" }}>
             <Typography variant="overline" sx={{ opacity: 0.9 }}>
               {t(
                 latest.kind === "special"
@@ -218,8 +219,10 @@ export function AwardsPage() {
                   sx={{
                     my: 1,
                     justifyContent: "center",
-                    fontSize: "3rem",
+                    // アイコン 56px と間隔 6px を除いた幅に名前を収める
+                    fontSize: entryNameFontSize(latest.result.entryName, { minPx: 24, maxPx: 48, reservePx: 62 }),
                     fontWeight: 900,
+                    ...ENTRY_NAME_WRAP_SX,
                   }}
                 />
                 <Typography variant="h6">

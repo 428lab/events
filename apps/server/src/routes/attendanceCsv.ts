@@ -9,6 +9,7 @@ import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { venueOffersRepo } from "../db/repositories/venueOffers.js";
 import { isVenueManager } from "../db/repositories/venues.js";
+import { teamsRepo } from "../db/repositories/teams.js";
 import {
   MEMBER_STATUS_LABEL,
   collectAnswerRows,
@@ -70,7 +71,8 @@ attendanceCsvRoutes.get("/:id/attendance.csv", async (c) => {
   if (!/^[0-9a-f-]{36}$/.test(eventId)) {
     return c.json({ error: "not_found" }, 404);
   }
-  if (!(await eventsRepo.findById(eventId))) {
+  const event = await eventsRepo.findById(eventId);
+  if (!event) {
     return c.json({ error: "not_found" }, 404);
   }
   if (!(await canDownloadAttendance(eventId, c.get("user")))) {
@@ -91,10 +93,23 @@ attendanceCsvRoutes.get("/:id/attendance.csv", async (c) => {
   const statusLabel = (status: string | null): string =>
     status ? (MEMBER_STATUS_LABEL[status] ?? status) : "未参加";
 
+  // チーム参加のコンテストだけ「チーム」「リーダー」列を足す (#9)。ロールの直後に置き、
+  // 人を表す列（ユーザー名・表示名・ロール）を先頭のまま保つ。チームなしのイベントは今までと同じ列
+  const teamByUser =
+    event.contestMode && event.participationType === "team"
+      ? await teamsRepo.membershipByUser(eventId)
+      : null;
+  const teamCells = (userId: string | null): string[] => {
+    if (!teamByUser) return [];
+    const team = userId ? teamByUser.get(userId) : undefined;
+    return [team?.teamName ?? "", team?.isLeader ? "○" : ""];
+  };
+
   const header = [
     "ユーザー名",
     "表示名",
     "ロール",
+    ...(teamByUser ? ["チーム", "リーダー"] : []),
     "参加状態",
     "出席",
     "出席時刻",
@@ -112,6 +127,7 @@ attendanceCsvRoutes.get("/:id/attendance.csv", async (c) => {
       m.user.username,
       m.user.globalName ?? "",
       ROLE_LABEL[m.role] ?? m.role,
+      ...teamCells(m.userId),
       statusLabel(m.status),
       m.attended ? "出席" : "未",
       m.attendedAt != null ? formatJstMinute(m.attendedAt) : "",
@@ -125,6 +141,7 @@ attendanceCsvRoutes.get("/:id/attendance.csv", async (c) => {
       row.user.username,
       row.user.globalName ?? "",
       "",
+      ...teamCells(null),
       statusLabel(row.memberStatus),
       "未",
       "",

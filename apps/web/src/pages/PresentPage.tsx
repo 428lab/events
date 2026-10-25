@@ -12,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { Link as RouterLink, useParams } from "react-router-dom";
+import { ENTRY_NAME_WRAP_SX, entryNameFontSize } from "../lib/entryNameFit.js";
 import { useTranslation } from "react-i18next";
 import {
   useEvent,
@@ -123,9 +124,18 @@ export function PresentPage() {
                           ),
                         )}
                       </AvatarGroup>
-                      <Typography variant="h3" fontWeight={700}>
-                        {presenting.name}
-                      </Typography>
+                      <Box sx={{ flex: "1 1 0", minWidth: 0, containerType: "inline-size" }}>
+                        <Typography
+                          variant="h3"
+                          fontWeight={700}
+                          sx={{
+                            fontSize: entryNameFontSize(presenting.name, { minPx: 24, maxPx: 48 }),
+                            ...ENTRY_NAME_WRAP_SX,
+                          }}
+                        >
+                          {presenting.name}
+                        </Typography>
+                      </Box>
                     </Stack>
                     {presentingMembers.length > 0 && (
                       <Box
