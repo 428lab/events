@@ -158,6 +158,31 @@ describe("共催の申請と承認 (#625)", () => {
     expect(list.cohosts[0]?.respondedAt).toEqual(expect.any(Number));
   });
 
+  it("共催のアイコンは主催と同じく R2 のアイコンから導出した URL で返る (#640)", async () => {
+    const { host, cohostAdmin, a, b, eventId } = await fixture();
+    const hostIconAt = Date.now() - 1000;
+    const cohostIconAt = Date.now();
+    // 旧列 icon_url は使わない。値が入っていても返さないことも見る
+    await env.DB.prepare("UPDATE community SET icon_updated_at = ?, icon_url = 'https://old.example/x.png' WHERE id = ?")
+      .bind(cohostIconAt, b.id)
+      .run();
+    await env.DB.prepare("UPDATE community SET icon_updated_at = ? WHERE id = ?").bind(hostIconAt, a.id).run();
+    await request(eventId, host, b.slug);
+    expect((await accept(b.id, eventId, cohostAdmin)).status).toBe(200);
+
+    const res = await call(`/api/events/${eventId}`, null);
+    const detail = await json<{
+      community: { iconUrl: string | null } | null;
+      cohosts: { id: string; iconUrl: string | null }[];
+    }>(res);
+    expect(detail.community?.iconUrl).toBe(`/api/communities/${a.id}/icon?v=${hostIconAt}`);
+    expect(detail.cohosts).toEqual([
+      expect.objectContaining({ id: b.id, iconUrl: `/api/communities/${b.id}/icon?v=${cohostIconAt}` }),
+    ]);
+    const list = await json<{ cohosts: EventCohost[] }>(await call(`/api/events/${eventId}/cohosts`, host));
+    expect(list.cohosts[0]?.iconUrl).toBe(`/api/communities/${b.id}/icon?v=${cohostIconAt}`);
+  });
+
   it("URL の形（https://…/c/<slug>/）でも申請できる", async () => {
     const { host, b, eventId } = await fixture();
     expect((await request(eventId, host, `https://example.com/c/${b.slug}/`)).status).toBe(201);

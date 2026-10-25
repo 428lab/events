@@ -126,16 +126,20 @@ export function EventDetailPage() {
       )}
 
       <Box>
-        {community && <CommunityRefLink community={community} />}
-        {/* 共催コミュニティ (#625)。主催の後ろに承認順で、同じ見た目に「共催」を添えて並べる */}
-        {cohosts.map((cohost, i) => (
-          <CommunityRefLink
-            key={cohost.id}
-            community={cohost}
-            cohost
-            spaced={Boolean(community) || i > 0}
-          />
-        ))}
+        {(community || cohosts.length > 0) && (
+          // 主催・共催は1つの flex 行に並べ、縦の中心をそろえる（inline 同士のベースライン揃えだと
+          // 「共催」の小さい文字を含む共催側だけ下にずれる #640）。狭い幅では折り返す
+          <Box
+            data-testid="event-community-refs"
+            sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 1.5, mb: 0.5 }}
+          >
+            {community && <CommunityRefLink community={community} />}
+            {/* 共催コミュニティ (#625)。主催の後ろに承認順で、同じ見た目に「共催」を添えて並べる */}
+            {cohosts.map((cohost) => (
+              <CommunityRefLink key={cohost.id} community={cohost} cohost />
+            ))}
+          </Box>
+        )}
         {/* 生まれ元のたまご（あったらいいな）への逆リンク */}
         {fromRequests.map((r) => (
           <Box
@@ -485,15 +489,13 @@ export function EventDetailPage() {
 }
 
 /** 見出しの上に出す主催・共催コミュニティへのリンク（アイコン＋名前）。
- * 共催 (#625) は同じ見た目に「共催」を小さく添える。spaced は前に並ぶものとの間隔 */
+ * 共催 (#625) は同じ見た目に「共催」を小さく添える。並べる行と間隔は呼び出し側の flex 行が持つ */
 function CommunityRefLink({
   community,
   cohost = false,
-  spaced = false,
 }: {
   community: EventCommunityRef;
   cohost?: boolean;
-  spaced?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -504,8 +506,6 @@ function CommunityRefLink({
         display: "inline-flex",
         alignItems: "center",
         gap: 0.75,
-        mb: 0.5,
-        ...(spaced ? { ml: 1.5 } : {}),
         color: "text.secondary",
         textDecoration: "none",
         "&:hover": { textDecoration: "underline" },
