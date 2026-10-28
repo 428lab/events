@@ -1,18 +1,20 @@
 import { useState, type ReactNode } from "react";
-import { Badge, Box, Button, Divider, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Stack, type SxProps, type Theme } from "@mui/material";
+import { Alert, Badge, Box, Button, Divider, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Stack, Typography, type SxProps, type Theme } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import type { Event, EventRole } from "@eventer/shared";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import EditIcon from "@mui/icons-material/Edit";
 import EmojiEventsOutlinedIcon from "@mui/icons-material/EmojiEventsOutlined";
 import EventAvailableIcon from "@mui/icons-material/EventAvailable";
+import EventBusyIcon from "@mui/icons-material/EventBusy";
 import GroupAddIcon from "@mui/icons-material/GroupAdd";
 import LiveTvIcon from "@mui/icons-material/LiveTv";
 import PublishIcon from "@mui/icons-material/Publish";
 import QrCodeScannerIcon from "@mui/icons-material/QrCodeScanner";
-import { usePublishEvent } from "../api/hooks.js";
+import { useCancelScheduledPublish, usePublishEvent } from "../api/hooks.js";
+import { errorMessage } from "../lib/errorMessage.js";
 import { useEventInquiryUnreadCount } from "../api/inquiryHooks.js";
 import { getEventPhase } from "../lib/eventPhase.js";
 import type { EventTiming } from "../lib/useEventTiming.js";
@@ -24,7 +26,11 @@ const ANCHOR_ID = "contest-operations";
 /**
  * 詳細ページ見出し直下の運営の入口 (#613)。
  *
- * スタッフには「時期で変わる主ボタン 1 つ」+「編集」+「運営 ▾」メニューを出す。
+ * スタッフには「時期で変わる主ボタン」+「編集」+「運営 ▾」メニューを出す。
+ * 並びはオーナー決定（PR #620 2026-10-14）: 時期で変わるボタンは役割チップ・シェアと同じ行の
+ * シェアのすぐ右、「編集」「運営 ▾」はどの時期でも同じ位置（PC は行の右端、スマホは次の行）。
+ * そのため2つのかたまりを Fragment で返し、外側のチップ行（flex-wrap）にそのまま並べてもらう。
+ * 予約公開 (#624) がある下書きは「公開する」の代わりに「今すぐ公開」を出し、メニューには「今すぐ公開」「予約を取り消す」を出す。
  * メニューの項目と表示条件は運営ページのボタン列 (EventManagementLinks) と共有する。
  * 日程調整・招待の権限だけを持つ人には、持っている権限ぶんのボタンだけを出す。
  */
@@ -75,18 +81,25 @@ function StaffActions({ eventId, event, chatAvailable, inquiryUnread, phase, sx 
 }) {
   const { t } = useTranslation();
   const publish = usePublishEvent();
+  const cancelSchedule = useCancelScheduledPublish();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const base = `/events/${eventId}`;
   const close = () => setAnchor(null);
+  const busy = publish.isPending || cancelSchedule.isPending;
   const onPublish = () => publish.mutate(event.id);
+  const onCancelSchedule = () => cancelSchedule.mutate({ id: event.id, expectedAccessRevision: event.accessRevision });
+  // 予約公開 (D-EVENT-SCHEDULED-PUBLISH)。予約があるときは「公開する」を出さず、運営ページと同じ2択にする
+  const scheduled = phase === "draft" && Boolean(event.publishAt);
 
   let primary: ReactNode = null;
   if (phase === "draft") {
-    primary = <Button variant="contained" startIcon={<PublishIcon />} disabled={publish.isPending} onClick={onPublish}>{t("eventDetail.publish")}</Button>;
+    // 予約があるときは「今すぐ公開」だけをシェアの右に置く。「予約を取り消す」は運営ページと同じく
+    // 詳細ページ上部の公開予定の案内（ScheduledPublishNotice）とメニューに置く（行に収めるため）
+    primary = scheduled
+      ? <Button variant="contained" startIcon={<PublishIcon />} disabled={busy} onClick={onPublish}>{t("eventDetail.publishNow")}</Button>
+      : <Button variant="contained" startIcon={<PublishIcon />} disabled={busy} onClick={onPublish}>{t("eventDetail.publish")}</Button>;
   } else if (phase === "scheduling") {
     primary = <Button variant="contained" startIcon={<EventAvailableIcon />} component={RouterLink} to={`${base}/manage#date-poll`}>{t("eventManagement.datePoll")}</Button>;
-  } else if (phase === "upcoming") {
-    primary = <Button variant="contained" startIcon={<EditIcon />} component={RouterLink} to={`${base}/edit`}>{t("common.edit")}</Button>;
   } else if (phase === "onDay") {
     primary = event.attendanceCheck
       ? <Button variant="contained" startIcon={<QrCodeScannerIcon />} component={RouterLink} to={`${base}/checkin`}>{t("eventDetail.checkin")}</Button>
@@ -107,12 +120,23 @@ function StaffActions({ eventId, event, chatAvailable, inquiryUnread, phase, sx 
         {(link.badge ?? 0) >= 1 && <Badge color="error" badgeContent={link.badge} max={99}
           sx={{ ml: 2, "& .MuiBadge-badge": { position: "static", transform: "none" } }} />}
       </MenuItem>);
-      // 公開は内容の区切りの「編集」の直後に置く（下書きのときだけ）
+      // 公開は内容の区切りの「編集」の直後に置く（下書きのときだけ。予約があれば主ボタンと同じ2択）
       if (link.path === "edit" && event.status === "draft") {
-        items.push(<MenuItem key="publish" disabled={publish.isPending} onClick={() => { close(); onPublish(); }}>
-          <ListItemIcon><PublishIcon /></ListItemIcon>
-          <ListItemText>{t("eventDetail.publish")}</ListItemText>
-        </MenuItem>);
+        if (event.publishAt) {
+          items.push(<MenuItem key="publish-now" disabled={busy} onClick={() => { close(); onPublish(); }}>
+            <ListItemIcon><PublishIcon /></ListItemIcon>
+            <ListItemText>{t("eventDetail.publishNow")}</ListItemText>
+          </MenuItem>);
+          items.push(<MenuItem key="cancel-schedule" disabled={busy} onClick={() => { close(); onCancelSchedule(); }}>
+            <ListItemIcon><EventBusyIcon /></ListItemIcon>
+            <ListItemText>{t("eventDetail.cancelSchedule")}</ListItemText>
+          </MenuItem>);
+        } else {
+          items.push(<MenuItem key="publish" disabled={busy} onClick={() => { close(); onPublish(); }}>
+            <ListItemIcon><PublishIcon /></ListItemIcon>
+            <ListItemText>{t("eventDetail.publish")}</ListItemText>
+          </MenuItem>);
+        }
       }
     }
   }
@@ -130,16 +154,42 @@ function StaffActions({ eventId, event, chatAvailable, inquiryUnread, phase, sx 
   </MenuItem>);
 
   const menuId = "event-staff-actions-menu";
-  return <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={sx}>
-    {primary}
-    {phase !== "upcoming" && <Button variant="outlined" startIcon={<EditIcon />} component={RouterLink} to={`${base}/edit`}>{t("common.edit")}</Button>}
-    <Box>
-      <Button id={ANCHOR_ID} variant="outlined" startIcon={<DashboardIcon />} endIcon={<ArrowDropDownIcon />} aria-haspopup="true"
-        aria-controls={anchor ? menuId : undefined} aria-expanded={anchor ? "true" : undefined}
-        onClick={(e) => setAnchor(e.currentTarget)}>
-        {t("eventManagement.title")}
-      </Button>
-      <Menu id={menuId} anchorEl={anchor} open={Boolean(anchor)} onClose={close}>{items}</Menu>
+  return <>
+    {primary && <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap data-testid="event-phase-actions">{primary}</Stack>}
+    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={sx} data-testid="event-fixed-actions">
+      <Button variant="outlined" startIcon={<EditIcon />} component={RouterLink} to={`${base}/edit`}>{t("common.edit")}</Button>
+      <Box>
+        <Button id={ANCHOR_ID} variant="outlined" startIcon={<DashboardIcon />} endIcon={<ArrowDropDownIcon />} aria-haspopup="true"
+          aria-controls={anchor ? menuId : undefined} aria-expanded={anchor ? "true" : undefined}
+          onClick={(e) => setAnchor(e.currentTarget)}>
+          {t("eventManagement.title")}
+        </Button>
+        <Menu id={menuId} anchorEl={anchor} open={Boolean(anchor)} onClose={close}>{items}</Menu>
+      </Box>
+    </Stack>
+    {cancelSchedule.isError && <Typography variant="body2" color="error" sx={{ width: "100%" }}>
+      {errorMessage(cancelSchedule.error, { default: t("eventForm.saveError"), publish_state_changed: t("eventForm.publishStateChanged") })}
+    </Typography>}
+  </>;
+}
+
+/**
+ * 詳細ページ上部の公開予定の案内 (#613/#624)。運営ページの案内と同じ文言・同じ処理で、
+ * 「予約を取り消す」を持つ（「今すぐ公開」は見出し下の時期のボタン）。staff の予約中の下書きだけ
+ */
+export function ScheduledPublishNotice({ event, date }: { event: Event; date: string }) {
+  const { t } = useTranslation();
+  const publish = usePublishEvent();
+  const cancelSchedule = useCancelScheduledPublish();
+  // ボタンは運営ページと同じく本文の下に置く（action に置くとスマホ幅で本文が細く折れるため）
+  return <Alert severity="info">
+    <Trans i18nKey="eventDetail.scheduledNotice" values={{ date }} components={{ b: <strong /> }} />
+    <Box sx={{ mt: 1 }}>
+      <Button variant="outlined" size="small" startIcon={<EventBusyIcon />} disabled={publish.isPending || cancelSchedule.isPending}
+        onClick={() => cancelSchedule.mutate({ id: event.id, expectedAccessRevision: event.accessRevision })}>{t("eventDetail.cancelSchedule")}</Button>
     </Box>
-  </Stack>;
+    {cancelSchedule.isError && <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+      {errorMessage(cancelSchedule.error, { default: t("eventForm.saveError"), publish_state_changed: t("eventForm.publishStateChanged") })}
+    </Typography>}
+  </Alert>;
 }
