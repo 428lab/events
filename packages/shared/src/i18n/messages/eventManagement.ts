@@ -3,7 +3,7 @@ const ja = {
   title: "運営",
   backToInfo: "イベント情報へ戻る",
   backToManagement: "運営へ戻る",
-  denied: "このイベントを管理する権限がありません。",
+  denied: "このイベントを運営する権限がありません。",
   general: "すべての運営機能",
   openPage: "運営ページを開く",
   groupContent: "内容",

@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   reach: false,
   query: vi.fn(),
   visibility: "public", access: false,
-  status: "published", publish: vi.fn(),
+  status: "published", publish: vi.fn(), publishAt: null as number | null, cancel: vi.fn(),
 }));
 vi.mock("../api/hooks.js", () => ({
   useMe: () => ({ data: { id: "me", isAdmin: true } }),
@@ -22,9 +22,11 @@ vi.mock("../api/hooks.js", () => ({
       startsAt: 1_800_000_000_000, endsAt: 1_800_003_600_000,
       venueType: "offline", venueOffline: "確認用会場", registrationDeadline: null,
       visibility: state.visibility, scheduling: false, contestMode: false, meetRanking: "off", meetPrizes: false, warikanEnabled: false,
+      publishAt: state.publishAt, accessRevision: 4,
     }, myRole: state.role, canManageAccess: state.access,
   } }),
   usePublishEvent: () => ({ isPending: false, mutate: state.publish }),
+  useCancelScheduledPublish: () => ({ isPending: false, isError: false, error: null, mutate: state.cancel }),
   eventImageUrl: () => null,
 }));
 vi.mock("../api/bingoHooks.js", () => ({
@@ -68,7 +70,7 @@ vi.mock("../api/warikanHooks.js", () => ({ useWarikan: () => ({ isSuccess: false
 
 beforeEach(() => {
   state.visibility = "public"; state.access = false;
-  state.status = "published"; state.publish.mockClear();
+  state.status = "published"; state.publish.mockClear(); state.publishAt = null; state.cancel.mockClear();
   state.role = "participant";
   state.canChat = true;
   state.game = "running";
@@ -206,4 +208,23 @@ it("staff が下書きを開くと上部に注意文と「公開する」が出�
   state.role = "participant"; view.refresh();
   expect(screen.queryByText(/このイベントは/)).toBeNull();
   expect(screen.queryByRole("button", { name: "公開する" })).toBeNull();
+});
+
+it("予約公開がある下書きは、公開予定の案内と「今すぐ公開」「予約を取り消す」になり、「公開する」は出さない (#613/#624)", () => {
+  state.role = "staff"; state.status = "draft"; state.publishAt = 1_799_000_000_000;
+  const view = mount();
+  expect(screen.queryByText(/このイベントは下書きです/)).toBeNull();
+  expect(screen.getByText(/に自動で公開されます/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "公開する" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "今すぐ公開" }));
+  expect(state.publish).toHaveBeenCalledWith("event");
+  fireEvent.click(screen.getByRole("button", { name: "予約を取り消す" }));
+  expect(state.cancel).toHaveBeenCalledWith({ id: "event", expectedAccessRevision: 4 });
+  // 参加者には案内もボタンも出さない
+  state.role = "participant"; view.refresh();
+  expect(screen.queryByText(/に自動で公開されます/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "今すぐ公開" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "運営" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "編集" })).toBeNull();
+  state.publishAt = null;
 });

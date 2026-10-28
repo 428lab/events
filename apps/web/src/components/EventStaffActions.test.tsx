@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Event, EventRole } from "@eventer/shared";
 import { api } from "../api/client.js";
 import { EventManagementLinks } from "./EventManagementLinks.js";
-import { EventStaffActions } from "./EventStaffActions.js";
+import { EventStaffActions, ScheduledPublishNotice } from "./EventStaffActions.js";
 
 /**
  * 詳細ページ見出し直下の運営の入口 (#613)。
@@ -13,9 +13,11 @@ import { EventStaffActions } from "./EventStaffActions.js";
  */
 
 const publish = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
+const cancelSchedule = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false, isError: false, error: null }));
 vi.mock("../api/hooks.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/hooks.js")>()),
   usePublishEvent: () => publish,
+  useCancelScheduledPublish: () => cancelSchedule,
 }));
 
 const inquiry = vi.hoisted(() => ({ unread: 0 }));
@@ -59,6 +61,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   publish.mutate.mockClear();
   publish.isPending = false;
+  cancelSchedule.mutate.mockClear();
   inquiry.unread = 0;
 });
 afterEach(() => {
@@ -84,12 +87,11 @@ describe("スタッフの主ボタン (#613)", () => {
     expect(screen.getByRole("link", { name: "編集" })).toHaveAttribute("href", "/events/e/edit");
   });
 
-  it("開催前は「編集」が主ボタンになり、outlined の編集は重ねて出さない", () => {
+  it("開催前は時期のボタンを出さず、編集と運営だけ（編集は主ボタンにしない）", () => {
     draw();
-    expect(primaries()).toHaveLength(1);
+    expect(primaries()).toHaveLength(0);
     const edit = screen.getAllByRole("link", { name: "編集" });
     expect(edit).toHaveLength(1);
-    expect(primaries()[0]).toBe(edit[0]);
     expect(edit[0]).toHaveAttribute("href", "/events/e/edit");
   });
 
@@ -113,6 +115,75 @@ describe("スタッフの主ボタン (#613)", () => {
     expect(primaries()).toHaveLength(0);
     expect(screen.getByRole("link", { name: "編集" })).toHaveAttribute("href", "/events/e/edit");
     expect(screen.getByRole("button", { name: "運営" })).toBeInTheDocument();
+  });
+});
+
+/** 時期で変わるボタンの塊と、どの時期でも同じ「編集」「運営」の塊 */
+function groups() {
+  return {
+    phase: document.querySelector('[data-testid="event-phase-actions"]'),
+    fixed: document.querySelector('[data-testid="event-fixed-actions"]') as HTMLElement,
+  };
+}
+
+describe("並び（オーナー決定 2026-10-14）", () => {
+  const phases: [string, Parameters<typeof draw>[0]][] = [
+    ["下書き", { event: ev({ status: "draft" }) }],
+    ["予約中の下書き", { event: ev({ status: "draft", publishAt: NOW + 24 * HOUR, accessRevision: 2 }) }],
+    ["日程調整中", { event: ev({ scheduling: true, startsAt: 0, endsAt: 0 }) }],
+    ["開催前", {}],
+    ["当日", { event: ev({ startsAt: NOW + HOUR, endsAt: NOW + 3 * HOUR }) }],
+    ["終了後", { event: ev({ startsAt: NOW - 3 * HOUR, endsAt: NOW - HOUR }), ended: true }],
+  ];
+
+  it.each(phases)("%s でも「編集」「運営」は同じ塊に同じ順で、時期のボタンはその塊に入らない", (_name, opts) => {
+    draw(opts);
+    const { phase, fixed } = groups();
+    const labels = [...fixed.querySelectorAll("a, button")].map((el) => el.textContent);
+    expect(labels).toEqual(["編集", "運営"]);
+    expect(within(fixed).queryAllByRole("button").filter((b) => b.classList.contains("MuiButton-contained"))).toHaveLength(0);
+    // 時期のボタンは「編集」より前（DOM 順でシェアの直後に来る）
+    if (phase) expect(phase.compareDocumentPosition(fixed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("時期のボタンと「編集」「運営」は外側の行にそのまま並ぶ（1つの箱に包まない）", () => {
+    const view = draw({ event: ev({ status: "draft" }) });
+    const { phase, fixed } = groups();
+    expect(phase!.parentElement).toBe(view.container);
+    expect(fixed.parentElement).toBe(view.container);
+  });
+});
+
+describe("予約公開との整合 (#624)", () => {
+  const at = NOW + 24 * HOUR;
+  it("予約中の下書きは時期のボタンが「今すぐ公開」になり、「公開する」は出さない", () => {
+    draw({ event: ev({ status: "draft", publishAt: at, accessRevision: 7 }) });
+    expect(screen.queryByRole("button", { name: "公開する" })).toBeNull();
+    expect(groups().phase).toHaveTextContent("今すぐ公開");
+    fireEvent.click(screen.getByRole("button", { name: "今すぐ公開" }));
+    expect(publish.mutate).toHaveBeenCalledWith("e");
+  });
+
+  it("公開予定の案内は運営ページと同じ文言で、「予約を取り消す」が revision 付きで取り消す", () => {
+    render(<ScheduledPublishNotice event={ev({ status: "draft", publishAt: at, accessRevision: 7 })} date="2026/10/10 12:00" />);
+    expect(screen.getByRole("alert")).toHaveTextContent("このイベントは 2026/10/10 12:00 に自動で公開されます。");
+    fireEvent.click(screen.getByRole("button", { name: "予約を取り消す" }));
+    expect(cancelSchedule.mutate).toHaveBeenCalledWith({ id: "e", expectedAccessRevision: 7 });
+    expect(publish.mutate).not.toHaveBeenCalled();
+  });
+
+  it("予約中の下書きのメニューも同じ2択で、「公開する」は無い", () => {
+    draw({ event: ev({ status: "draft", publishAt: at, accessRevision: 7 }) });
+    const menu = openMenu();
+    expect(within(menu).queryByRole("menuitem", { name: "公開する" })).toBeNull();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "予約を取り消す" }));
+    expect(cancelSchedule.mutate).toHaveBeenCalledWith({ id: "e", expectedAccessRevision: 7 });
+  });
+
+  it("予約が無い下書きには「今すぐ公開」「予約を取り消す」を出さない", () => {
+    draw({ event: ev({ status: "draft", publishAt: null }) });
+    expect(screen.queryByRole("button", { name: "今すぐ公開" })).toBeNull();
+    expect(within(openMenu()).queryByRole("menuitem", { name: "予約を取り消す" })).toBeNull();
   });
 });
 

@@ -74,13 +74,13 @@ it("private nonstaff access manager gets only the existing private invite contro
 });
 it.each([null, "participant"])("denies %s (including site admin) before mounting any management children", async (value) => {
   role = value; draw("#members");
-  await screen.findByText("このイベントを管理する権限がありません。");
+  await screen.findByText("このイベントを運営する権限がありません。");
   expect(screen.getByRole("link", { name: "イベント情報へ戻る" })).toBeInTheDocument();
   expect(vi.mocked(api.get).mock.calls.every(([p]) => ["/auth/me", "/events/e"].includes(p))).toBe(true);
 });
 it("canManageAccess is not a grant for a public event", async () => {
   role = null; access = true; draw("#invites");
-  await screen.findByText("このイベントを管理する権限がありません。");
+  await screen.findByText("このイベントを運営する権限がありません。");
   expect(api.get).not.toHaveBeenCalledWith("/events/e/access-invites");
 });
 it("loading and failed event lookup never mount operation children", async () => {

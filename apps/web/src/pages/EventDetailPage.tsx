@@ -47,7 +47,7 @@ import { EventDetailSidebar } from "../components/EventDetailSidebar.js";
 import { EventSubmissions } from "../components/EventSubmissions.js";
 import { TeamPicker } from "../components/TeamPicker.js";
 import { EventInquiryButton } from "../components/EventInquiryButton.js";
-import { EventStaffActions } from "../components/EventStaffActions.js";
+import { EventStaffActions, ScheduledPublishNotice } from "../components/EventStaffActions.js";
 import {
   formatDateRange,
   formatDateTime,
@@ -109,9 +109,13 @@ export function EventDetailPage() {
     <Grid container spacing={3}>
       <Grid item xs={12} md={8}>
         <Stack spacing={3}>
-      {/* 下書きの注意 (#613)。公開ボタンは見出し直下の主ボタンが持つ */}
-      {isStaff && event.status === "draft" && (
+      {/* 下書きの注意 (#613)。公開・予約取り消しのボタンは見出し直下の主ボタンが持つ。
+          予約公開 (#624) があるときは運営ページと同じく公開予定の案内（「予約を取り消す」付き）に替える */}
+      {isStaff && event.status === "draft" && !event.publishAt && (
         <Alert severity="warning"><Trans i18nKey="eventDetail.draftNotice" components={{ b: <strong /> }} /></Alert>
+      )}
+      {isStaff && event.status === "draft" && event.publishAt && (
+        <ScheduledPublishNotice event={event} date={formatDateTime(event.publishAt)} />
       )}
       {eventImageUrl(event) && (
         <Box
