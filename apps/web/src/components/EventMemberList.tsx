@@ -262,18 +262,18 @@ export function MemberRow({
             onClose={() => setAttendError("")}
             message={attendError}
           />
-          {/* 自分自身のロールは誤操作防止のため変更不可 */}
-          {isStaff && showManagementActions && !isMe && (
+          {/* 自分自身のロールは誤操作防止のため変更不可。並べる枠だけは自分の行でも選べる */}
+          {isStaff && showManagementActions && (!isMe || canAssignSlot) && (
             <>
               <IconButton
                 size="small"
                 onClick={(e) => setAnchor(e.currentTarget)}
-                title={t("eventDetail.changeRole")}
+                title={t(isMe ? "eventDetail.assignSlotHeading" : "eventDetail.changeRole")}
               >
                 <MoreVertIcon fontSize="small" />
               </IconButton>
               <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
-                {EVENT_ROLES.map((r) => (
+                {!isMe && EVENT_ROLES.map((r) => (
                   <MenuItem
                     key={r}
                     selected={m.role === r}
@@ -294,7 +294,7 @@ export function MemberRow({
                   </MenuItem>
                 ))}
                 {canAssignSlot && [
-                  <Divider key="assign-divider" />,
+                  ...(isMe ? [] : [<Divider key="assign-divider" />]),
                   <ListSubheader key="assign-heading" sx={{ lineHeight: "32px", bgcolor: "transparent" }}>
                     {t("eventDetail.assignSlotHeading")}
                   </ListSubheader>,

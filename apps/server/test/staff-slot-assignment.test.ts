@@ -142,6 +142,23 @@ describe("スタッフを参加枠に並べる (assigned_slot_id)", () => {
     expect((await memberRow(eventId, staff.id))?.assigned_slot_id).toBeNull();
   });
 
+  it("運営は自分自身の行も並べ替えられる（主催・スタッフとも）。参加者は自分の行でも 403", async () => {
+    const host = await user();
+    const eventId = await setupEvent(host);
+    const staff = await addStaffBeforeSlots(eventId, host);
+    const crew = await addSlot(eventId, host, 1, { staffOnly: true });
+
+    expect((await json(await assign(eventId, staff, staff.id, crew))).member)
+      .toMatchObject({ role: "staff", slotId: null, assignedSlotId: crew });
+    // 作成者は作成時にスタッフとして登録される
+    expect((await json(await assign(eventId, host, host.id, crew))).member)
+      .toMatchObject({ role: "staff", assignedSlotId: crew });
+
+    const p = await user();
+    await json(await request(`/events/${eventId}/join`, p, "POST", {}), 201);
+    expect((await assign(eventId, p, p.id, crew)).status).toBe(403);
+  });
+
   it("参加者に戻すと割り当ては消え、枠を消すと割り当ても外れる", async () => {
     const host = await user();
     const eventId = await setupEvent(host);

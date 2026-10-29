@@ -330,12 +330,12 @@ describe("スタッフを並べる枠", () => {
       capacity: 1, confirmedCount: 0, appliedCount: 0, waitlistCount: 0, drawAt: null, staffOnly: true },
   ];
 
-  function drawRow(member: EventMemberWithUser) {
+  function drawRow(member: EventMemberWithUser, isMe = false) {
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
     return render(
       <QueryClientProvider client={qc}>
         <MemoryRouter>
-          <MemberRow eventId="e-1" member={member} isStaff attendanceCheck={false} isMe={false} slots={slots} />
+          <MemberRow eventId="e-1" member={member} isStaff attendanceCheck={false} isMe={isMe} slots={slots} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -367,6 +367,22 @@ describe("スタッフを並べる枠", () => {
     drawRow({ ...MEMBER, role: "participant" });
     fireEvent.click(screen.getByTitle("ロールを変更"));
     expect(screen.queryByText("並べる枠")).toBeNull();
+  });
+
+  it("自分の行でも並べる枠は選べる。ロールの選択肢は出さない（自分のロールは変えられないまま）", async () => {
+    drawRow(MEMBER, true);
+    expect(screen.queryByTitle("ロールを変更")).toBeNull();
+    fireEvent.click(screen.getByTitle("並べる枠"));
+    expect(screen.queryByRole("menuitem", { name: /スタッフ|審査員|観覧者|参加者/ })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: /運営枠/ }));
+    await waitFor(() => expect(patchMock).toHaveBeenCalledWith(
+      "/events/e-1/members/u-1/assigned-slot", { slotId: "s-crew" }));
+  });
+
+  it("自分が参加者の行には「…」を出さない", () => {
+    drawRow({ ...MEMBER, role: "participant" }, true);
+    expect(screen.queryByTitle("並べる枠")).toBeNull();
+    expect(screen.queryByTitle("ロールを変更")).toBeNull();
   });
 
   it("一覧では、並べた枠の見出しの下に出る", () => {
