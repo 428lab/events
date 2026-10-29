@@ -235,7 +235,8 @@ const EXPECTED_USER_COLUMNS = 64; // #523 までの 55 本 + #556: 割り勘の 
 // event_payout_method.user_id）、共有コンテンツ +1（event_expense.payer_user_id）、
 // LEDGER_PARTY_REASSIGN_SQL +4（event_expense_share.user_id / .weight（重みの足し込み）/
 // event_settlement_done.from_user_id / .to_user_id）
-const EXPECTED_HANDLED_PAIRS = 70; // #523 までの 60 組 + #556 の 8 組 + D-EVENT-CONTACT の 1 組 + deck_agent_token.owner_id
+// + event_member.assigned_slot_id（スタッフ引き継ぎで申し込んでいた枠を並びとして残す代入。枠の参照で user 列ではない）
+const EXPECTED_HANDLED_PAIRS = 71; // #523 までの 60 組 + #556 の 8 組 + D-EVENT-CONTACT の 1 組 + deck_agent_token.owner_id + event_member.assigned_slot_id
 
 describe("アカウント統合の対象列の走査 (#396)", () => {
   const body = mergeUsersBody(Object.values(mergeSources)[0]!);

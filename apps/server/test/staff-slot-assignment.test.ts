@@ -187,6 +187,62 @@ describe("スタッフを参加枠に並べる (assigned_slot_id)", () => {
   });
 });
 
+describe("参加者をスタッフ等にしたとき、申し込んでいた枠の下に並んだままにする", () => {
+  it("枠Aの確定参加者をスタッフにすると、席は空き、一覧では枠Aの下に残る。キャンセル待ちは繰り上がる", async () => {
+    const host = await user();
+    const eventId = await setupEvent(host);
+    const slotA = await addSlot(eventId, host, 1);
+    const p = await user();
+    await json(await request(`/events/${eventId}/join`, p, "POST", { slotId: slotA }), 201);
+    const waiting = await user();
+    expect((await json(await request(`/events/${eventId}/join`, waiting, "POST", { slotId: slotA }), 201)).status).toBe("waitlist");
+
+    const { member } = await json(await request(`/events/${eventId}/members/${p.id}/role`, host, "PATCH", { role: "staff" }));
+    expect(member).toMatchObject({ role: "staff", slotId: null, assignedSlotId: slotA, status: "confirmed" });
+    expect(await memberRow(eventId, p.id)).toMatchObject({ role: "staff", slot_id: null, assigned_slot_id: slotA, status: "confirmed" });
+
+    // 席は空いて、キャンセル待ちが繰り上がる（#277 / #281 のまま）
+    expect((await memberRow(eventId, waiting.id))?.status).toBe("confirmed");
+    const a = (await slots(eventId, host)).find((s) => s.id === slotA)!;
+    expect(a.confirmedCount).toBe(1);
+    expect(a.waitlistCount).toBe(0);
+    expect(await drift()).toEqual([]);
+  });
+
+  it("枠なしの参加者をスタッフにすると、割り当ても無し（その他）", async () => {
+    const host = await user();
+    const eventId = await setupEvent(host);
+    const staff = await addStaffBeforeSlots(eventId, host);
+    expect(await memberRow(eventId, staff.id)).toMatchObject({ role: "staff", slot_id: null, assigned_slot_id: null });
+  });
+
+  it("スタッフから審査員にしても、並べた枠はそのまま。参加者に戻すと消える", async () => {
+    const host = await user();
+    const eventId = await setupEvent(host);
+    const keep = await addStaffBeforeSlots(eventId, host);
+    const slotB = await addSlot(eventId, host, 5);
+    await json(await assign(eventId, host, keep.id, slotB));
+    await json(await request(`/events/${eventId}/members/${keep.id}/role`, host, "PATCH", { role: "judge" }));
+    expect(await memberRow(eventId, keep.id)).toMatchObject({ role: "judge", slot_id: null, assigned_slot_id: slotB });
+    await sql("UPDATE event_member SET role='participant' WHERE event_id=? AND user_id=?", eventId, keep.id);
+    expect((await memberRow(eventId, keep.id))?.assigned_slot_id).toBeNull();
+  });
+
+  it("枠Aの参加者がスタッフ招待を受けても、枠Aの下に残る", async () => {
+    const host = await user();
+    const eventId = await setupEvent(host);
+    const slotA = await addSlot(eventId, host, 3);
+    const p = await user();
+    await json(await request(`/events/${eventId}/join`, p, "POST", { slotId: slotA }), 201);
+    const handle = (await env.DB.prepare("SELECT username FROM user WHERE id=?").bind(p.id).first<{ username: string }>())!.username;
+    await json(await request(`/events/${eventId}/staff-invites`, host, "POST", { handle }), 201);
+    const { invites } = await json(await request("/me/staff-invites", p));
+    await json(await request(`/me/staff-invites/${invites[0].id}/accept`, p, "POST"));
+    expect(await memberRow(eventId, p.id)).toMatchObject({ role: "staff", slot_id: null, assigned_slot_id: slotA, status: "confirmed" });
+    expect(await drift()).toEqual([]);
+  });
+});
+
 describe("運営が割り当てる枠 (staff_only)", () => {
   it("参加者は選べず（409 slot_staff_only）、スタッフは並べられる", async () => {
     const host = await user();

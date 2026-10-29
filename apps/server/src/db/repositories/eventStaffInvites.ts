@@ -202,7 +202,9 @@ export const eventStaffInvitesRepo = {
       { sql: `UPDATE event_staff_invite SET status='accepted',responded_at=? WHERE id=? AND ${accessOperationGuard}`, args: [now, inviteId, ...guard] },
       { sql: `INSERT INTO event_member(id,event_id,user_id,role,slot_id,status,created_at)
           SELECT ?,?,?,'staff',NULL,'confirmed',? WHERE ${accessOperationGuard}
-          ON CONFLICT(event_id,user_id) DO UPDATE SET role='staff',slot_id=NULL,status='confirmed',
+          ON CONFLICT(event_id,user_id) DO UPDATE SET role='staff',
+            assigned_slot_id=CASE WHEN event_member.status='canceled' THEN event_member.assigned_slot_id ELSE COALESCE(event_member.slot_id,event_member.assigned_slot_id) END,
+            slot_id=NULL,status='confirmed',
             attended=CASE WHEN event_member.status='canceled' THEN 0 ELSE event_member.attended END,
             attended_at=CASE WHEN event_member.status='canceled' THEN NULL ELSE event_member.attended_at END,
             canceled_at=NULL,canceled_scheduling=0,created_at=CASE WHEN event_member.status='canceled' THEN excluded.created_at ELSE event_member.created_at END`,

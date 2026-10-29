@@ -33,7 +33,9 @@ export const accountMergeRepo = {
     //     勝ち側が取消済みの行を持っていた場合も確定に戻す。role だけ staff に
     //     しても取消済みのままではメンバーとして扱われず、staff 権限が消える
     stmts.push({
-      sql: `UPDATE event_member SET role = 'staff', slot_id = NULL, status = 'confirmed'
+      sql: `UPDATE event_member SET role = 'staff',
+                 assigned_slot_id = CASE WHEN status = 'canceled' THEN assigned_slot_id ELSE COALESCE(slot_id, assigned_slot_id) END,
+                 slot_id = NULL, status = 'confirmed'
              WHERE user_id = ? AND role != 'staff'
                AND event_id IN (SELECT event_id FROM event_member
                                  WHERE user_id = ? AND role = 'staff')`,
