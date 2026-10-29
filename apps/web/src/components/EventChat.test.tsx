@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, getDefaultNormalizer, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { Event as NostrEvent } from "nostr-tools/pure";
@@ -760,12 +760,16 @@ describe("書き込める期間 (#199 / #578)", () => {
     vi.useRealTimers();
   });
 
+  /** 日時の全角スペース（日付と時刻の区切り）を空白の正規化でつぶさずに比べる */
+  const exact = { normalizer: getDefaultNormalizer({ collapseWhitespace: false }) };
+
   it("既定: 開始30分前より前は書けず、期間を案内する", async () => {
     await renderAt(STARTS - 30 * MIN - MIN);
     await expectClosed();
     expect(
       screen.getByText(
         `書き込めるのは ${formatDateTime(STARTS - 30 * MIN)} 〜 ${formatDateTime(ENDS + 120 * MIN)} です。`,
+        exact,
       ),
     ).toBeInTheDocument();
   });
@@ -785,7 +789,7 @@ describe("書き込める期間 (#199 / #578)", () => {
     await renderAt(ENDS + 120 * MIN + MIN);
     await expectClosed();
     expect(
-      screen.getByText(`書き込める期間は ${formatDateTime(ENDS + 120 * MIN)} に終わりました。`),
+      screen.getByText(`書き込める期間は ${formatDateTime(ENDS + 120 * MIN)} に終わりました。`, exact),
     ).toBeInTheDocument();
   });
 
@@ -817,7 +821,7 @@ describe("書き込める期間 (#199 / #578)", () => {
     await renderAt(STARTS - 3 * DAY - MIN, setting);
     await expectClosed();
     expect(
-      screen.getByText(new RegExp(`書き込めるのは ${formatDateTime(STARTS - 3 * DAY)} 〜`)),
+      screen.getByText(new RegExp(`書き込めるのは ${formatDateTime(STARTS - 3 * DAY)} 〜`), exact),
     ).toBeInTheDocument();
   });
 

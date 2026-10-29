@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, getDefaultNormalizer, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -166,7 +166,10 @@ it("scheduled draft shows the publish time with publish-now and cancel (D-EVENT-
   });
   const patch = vi.spyOn(api, "patch").mockResolvedValue({} as never);
   draw();
-  expect(await screen.findByText(formatDateTime(at))).toBeInTheDocument();
+  // 日付と時刻の間の全角スペースを空白の正規化でつぶさずに比べる
+  expect(
+    await screen.findByText(formatDateTime(at), { normalizer: getDefaultNormalizer({ collapseWhitespace: false }) }),
+  ).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "公開する" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "予約を取り消す" }));
   await waitFor(() => expect(patch).toHaveBeenCalledWith("/events/e", { publishAt: null, expectedAccessRevision: 3 }));

@@ -7,6 +7,27 @@ import { dateLocale, i18next, tDynamic } from "../i18n/index.js";
  * 作らない）。テストのタイムゾーン固定 (#322) もそのまま効く。
  */
 
+/** 日本語の日付と時刻の間の区切り。半角スペースだと詰まって読みにくいという声で全角にした */
+export const JA_DATE_TIME_GAP = "\u3000";
+
+/**
+ * Intl の書式で日時を文字にする。日本語だけ、日付（日）と時刻（時）の間の区切りを
+ * 全角スペースにする。ほかの言語は Intl の出力のまま
+ */
+function formatWithDateTimeGap(options: Intl.DateTimeFormatOptions, date: Date | number): string {
+  const locale = dateLocale();
+  const fmt = new Intl.DateTimeFormat(locale, options);
+  if (!locale.startsWith("ja")) return fmt.format(date);
+  const parts = fmt.formatToParts(date);
+  return parts
+    .map((p, i) =>
+      p.type === "literal" && parts[i - 1]?.type === "day" && parts[i + 1]?.type === "hour"
+        ? JA_DATE_TIME_GAP
+        : p.value,
+    )
+    .join("");
+}
+
 export function formatDateRange(startsAt: number, endsAt: number): string {
   const s = new Date(startsAt);
   const e = new Date(endsAt);
@@ -17,17 +38,13 @@ export function formatDateRange(startsAt: number, endsAt: number): string {
   const sameYear = s.getFullYear() === e.getFullYear();
 
   // 開始は常に年つき
-  const start = new Intl.DateTimeFormat(dateLocale(), {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(s);
+  const start = formatWithDateTimeGap(
+    { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" },
+    s,
+  );
 
   // 終了は重複を避けて簡潔に（同日→時刻のみ / 同年→月日＋時刻 / 別年→年つき）
-  const end = new Intl.DateTimeFormat(
-    dateLocale(),
+  const end = formatWithDateTimeGap(
     sameDay
       ? { hour: "2-digit", minute: "2-digit" }
       : sameYear
@@ -39,20 +56,18 @@ export function formatDateRange(startsAt: number, endsAt: number): string {
             hour: "2-digit",
             minute: "2-digit",
           },
-  ).format(e);
+    e,
+  );
 
   return i18next.t("common.dateRange", { start, end });
 }
 
 /** 単一日時を日本語表記（年つき） */
 export function formatDateTime(ms: number): string {
-  return new Intl.DateTimeFormat(dateLocale(), {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(ms);
+  return formatWithDateTimeGap(
+    { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" },
+    ms,
+  );
 }
 
 /** 月日のみ（例: "3/15"）。年は見出しで区切る年表の日付欄で使う (#308) */
