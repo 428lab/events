@@ -21,6 +21,7 @@ interface MemberRow {
   user_id: string;
   role: string;
   slot_id: string | null;
+  assigned_slot_id?: string | null;
   status: string;
   attended: number;
   attended_at: number | null;
@@ -43,6 +44,7 @@ function toMember(row: MemberRow): EventMember {
     userId: row.user_id,
     role: row.role as EventRole,
     slotId: row.slot_id,
+    assignedSlotId: row.assigned_slot_id ?? null,
     status: row.status,
     attended: row.attended === 1,
     attendedAt: row.attended_at,
@@ -288,6 +290,32 @@ export const eventMembersRepo = {
       userId,
     );
     return this.find(eventId, userId);
+  },
+
+  /** スタッフ・審査員・観覧者を参加者一覧のどの枠の下に並べるか（運営のみ）。
+   *
+   * assigned_slot_id は表示のためだけの列で、slot_id（参加者が申し込んだ枠）とは別。
+   * 定員・抽選・キャンセル待ち・繰り上げ・在籍数はすべて slot_id だけを見るので、
+   * 満員の枠や運営が割り当てる枠に並べても席は減らない (docs/staff-slot-assignment.md)。
+   * 参加者の行は対象外（参加者の枠は本人の申込で決まる）。枠は同じイベントのものだけ。
+   * 書けたら true。対象外・別イベントの枠・権限なしは false */
+  async setAssignedSlot(
+    eventId: string,
+    userId: string,
+    slotId: string | null,
+    actorId: string,
+  ): Promise<boolean> {
+    const [changed] = await batch([
+      {
+        sql: `UPDATE event_member SET assigned_slot_id = ?
+           WHERE event_id = ? AND user_id = ? AND role <> 'participant' AND status <> 'canceled'
+             AND (? IS NULL OR EXISTS (SELECT 1 FROM participation_slot s WHERE s.id = ? AND s.event_id = event_member.event_id))
+             AND EXISTS (SELECT 1 FROM event e WHERE e.id = event_member.event_id AND ${activeManagerSql("e", "?")})`,
+        args: [slotId, eventId, userId, slotId, slotId, actorId, adminIds()],
+      },
+      { sql: "UPDATE event SET access_revision = access_revision + 1 WHERE id = ? AND changes() > 0", args: [eventId] },
+    ]);
+    return Boolean(changed);
   },
 
   async remove(eventId: string, userId: string): Promise<void> {

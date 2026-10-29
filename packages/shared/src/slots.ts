@@ -10,6 +10,9 @@ export const participationSlotSchema = z.object({
   selectionType: z.enum(SELECTION_TYPES),
   sortOrder: z.number(),
   drawAt: z.number().nullable(),
+  /** 運営が割り当てる枠（参加者は選べない）。参加者の申込・自動登録では選べず、
+   * イベントの席数にも入れない。スタッフ等を並べる見出しとして使う */
+  staffOnly: z.boolean(),
   confirmedCount: z.number(),
   waitlistCount: z.number(),
   appliedCount: z.number(),
@@ -21,6 +24,7 @@ export const createSlotInput = z.object({
   capacity: z.number().int().min(1).max(100000),
   selectionType: z.enum(SELECTION_TYPES).default("first_come"),
   drawAt: z.number().int().optional().nullable(),
+  staffOnly: z.boolean().optional(),
 });
 export type CreateSlotInput = z.infer<typeof createSlotInput>;
 
@@ -30,6 +34,7 @@ export const updateSlotInput = z.object({
   selectionType: z.enum(SELECTION_TYPES).optional(),
   sortOrder: z.number().int().optional(),
   drawAt: z.number().int().optional().nullable(),
+  staffOnly: z.boolean().optional(),
 });
 export type UpdateSlotInput = z.infer<typeof updateSlotInput>;
 
@@ -38,6 +43,12 @@ export const joinEventInput = z.object({
   slotId: z.string().optional().nullable(),
 });
 export type JoinEventInput = z.infer<typeof joinEventInput>;
+
+/** スタッフ・審査員・観覧者を参加者一覧のどの枠の下に並べるか（運営のみ）。null で枠なし */
+export const setAssignedSlotInput = z.object({
+  slotId: z.string().nullable(),
+});
+export type SetAssignedSlotInput = z.infer<typeof setAssignedSlotInput>;
 
 export const memberStatusEnum = z.enum(MEMBER_STATUSES);
 

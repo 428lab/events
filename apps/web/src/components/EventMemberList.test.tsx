@@ -240,10 +240,10 @@ describe("参加者一覧の申込枠", () => {
   const slots: ParticipationSlot[] = [
     { id: "b", eventId: "e-1", name: "午後の枠 / Afternoon", sortOrder: 0,
       selectionType: "lottery", capacity: 10, confirmedCount: 1, appliedCount: 1,
-      waitlistCount: 0, drawAt: null },
+      waitlistCount: 0, drawAt: null, staffOnly: false },
     { id: "a", eventId: "e-1", name: "午前の枠 / Morning", sortOrder: 1,
       selectionType: "lottery", capacity: 10, confirmedCount: 1, appliedCount: 1,
-      waitlistCount: 1, drawAt: null },
+      waitlistCount: 1, drawAt: null, staffOnly: false },
   ];
   const members = [
     ["a-confirmed", "a", "confirmed"],
@@ -318,4 +318,74 @@ it("information preserves role/status/attendance display but not member manageme
   expect(screen.queryByTitle("ロールを変更")).toBeNull();
   expect(screen.queryByRole("checkbox")).toBeNull();
   expect(screen.getByText("出席")).toBeInTheDocument();
+});
+
+/** スタッフ等を並べる枠 (docs/staff-slot-assignment.md)。
+ * 枠を作る前から参加していたスタッフを、「…」メニューからあとで作った枠の下へ移せる */
+describe("スタッフを並べる枠", () => {
+  const slots: ParticipationSlot[] = [
+    { id: "s-open", eventId: "e-1", name: "一般枠", sortOrder: 0, selectionType: "first_come",
+      capacity: 1, confirmedCount: 1, appliedCount: 0, waitlistCount: 0, drawAt: null, staffOnly: false },
+    { id: "s-crew", eventId: "e-1", name: "運営枠", sortOrder: 1, selectionType: "first_come",
+      capacity: 1, confirmedCount: 0, appliedCount: 0, waitlistCount: 0, drawAt: null, staffOnly: true },
+  ];
+
+  function drawRow(member: EventMemberWithUser) {
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <MemberRow eventId="e-1" member={member} isStaff attendanceCheck={false} isMe={false} slots={slots} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  beforeEach(() => { patchMock.mockReset(); patchMock.mockResolvedValue({}); });
+
+  it("スタッフの行は「…」から枠を選ぶと、その枠へ移す（満員・運営の枠も選べる）", async () => {
+    drawRow(MEMBER);
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    expect(screen.getByText("並べる枠")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: /運営枠/ }));
+    await waitFor(() => expect(patchMock).toHaveBeenCalledWith(
+      "/events/e-1/members/u-1/assigned-slot", { slotId: "s-crew" }));
+  });
+
+  it("枠なしに戻せる。今の枠を選び直しても何も送らない", async () => {
+    drawRow({ ...MEMBER, assignedSlotId: "s-open" });
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /一般枠/ }));
+    expect(patchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /枠なし/ }));
+    await waitFor(() => expect(patchMock).toHaveBeenCalledWith(
+      "/events/e-1/members/u-1/assigned-slot", { slotId: null }));
+  });
+
+  it("参加者の行には出さない（参加者の枠は本人の申込で決まる）", () => {
+    drawRow({ ...MEMBER, role: "participant" });
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    expect(screen.queryByText("並べる枠")).toBeNull();
+  });
+
+  it("一覧では、並べた枠の見出しの下に出る", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, enabled: false } } });
+    client.setQueryData(["me"], { user: null, isAdmin: false });
+    client.setQueryData(["event", "e-1", "members"], [
+      { ...MEMBER, id: "p", userId: "p", role: "participant", slotId: "s-open",
+        user: { ...MEMBER.user, id: "p", username: "p", globalName: "参加者" } },
+      { ...MEMBER, assignedSlotId: "s-crew" },
+    ]);
+    client.setQueryData(["event", "e-1", "slots"], slots);
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <EventMemberList eventId="e-1" isStaff={false} attendanceCheck={false} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["一般枠", "運営枠"]);
+    expect(within(screen.getByRole("list", { name: "運営枠" })).getByText("運営の人")).toBeInTheDocument();
+  });
 });

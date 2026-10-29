@@ -115,6 +115,10 @@ const ja = {
   attendNotConfirmed:
     "参加が確定していないため出席にできません（現在: {{status}}）。参加枠の「申込者の管理」で先に参加を確定にしてください。",
   changeRole: "ロールを変更",
+  /** スタッフ・審査員・観覧者を並べる枠（運営のみ。表示だけで席は使わない） */
+  assignSlotHeading: "並べる枠",
+  assignSlotNone: "枠なし（その他）",
+  assignSlotError: "枠を変えられませんでした。画面を読み直してからもう一度お試しください。",
   demoteConfirm:
     "{{name}} さんを一般参加者に戻すと、参加枠と申込を取り消します。参加者一覧から外れ、事前アンケートの回答も削除されます（元に戻せません）。参加するには本人が改めて申し込む必要があります。よろしいですか？",
 
@@ -241,6 +245,9 @@ const en: Record<keyof typeof ja, string> = {
   attendNotConfirmed:
     "This person is not confirmed ({{status}}), so they cannot be marked as attended. Confirm them first from the applicant list of the slot.",
   changeRole: "Change role",
+  assignSlotHeading: "Show under slot",
+  assignSlotNone: "No slot (Other)",
+  assignSlotError: "Couldn't change the slot. Reload the page and try again.",
   demoteConfirm:
     "Moving {{name}} back to participant cancels their slot and their registration. They will drop off the participant list and their survey answers will be deleted, and none of that can be undone — they would have to sign up again. Continue?",
 

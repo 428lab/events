@@ -218,6 +218,11 @@ const ja = {
   slotDrawOne: "自動抽選（申込 {{n}} → 定員 {{total}}）",
   slotDraw: "自動抽選（申込 {{n}} → 定員 {{total}}）",
   slotAddHeading: "枠を追加",
+  /** 運営が割り当てる枠 (staff_only, docs/staff-slot-assignment.md) */
+  slotStaffOnly: "運営が割り当てる枠（参加者は選べない）",
+  slotStaffOnlyHelp:
+    "オンにすると参加者の申込画面に出ず、定員・抽選・キャンセル待ちも使いません。スタッフなどを参加者一覧の「…」から並べられます。すでにこの枠を選んでいた参加者はそのまま残ります。",
+  slotStaffOnlyChip: "運営が割り当て",
   /** 枠ごとの申込ボタン。満席の先着枠はキャンセル待ちになる */
   slotJoin: "参加する",
   slotJoinLottery: "抽選に申し込む",
@@ -555,6 +560,10 @@ const en: Record<keyof typeof ja, string> = {
   slotDrawOne: "Draw now ({{n}} entry → capacity {{total}})",
   slotDraw: "Draw now ({{n}} entries → capacity {{total}})",
   slotAddHeading: "Add a slot",
+  slotStaffOnly: "Assigned by organizers only",
+  slotStaffOnlyHelp:
+    "When on, participants can't pick this slot, and capacity, lottery and waitlist are not used. Organizers can place staff here from the “…” menu in the participant list. Participants who already picked this slot stay in it.",
+  slotStaffOnlyChip: "Assigned by organizers",
   slotJoin: "Join",
   slotJoinLottery: "Enter the lottery",
   slotJoinWaitlist: "Join the waitlist",

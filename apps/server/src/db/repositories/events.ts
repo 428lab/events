@@ -98,14 +98,29 @@ export const ATTENDED_COUNT_SQL = (eventIdExpr: string) =>
  * 枠に紐づかない参加者）を上限側にも足して、分子と分母の母集団を揃える */
 export const CAPACITY_TOTAL_SQL = (eventIdExpr: string) =>
   `(SELECT CASE WHEN NOT EXISTS (
-             SELECT 1 FROM participation_slot s WHERE s.event_id = ${eventIdExpr})
+             SELECT 1 FROM participation_slot s WHERE s.event_id = ${eventIdExpr} AND s.staff_only = 0)
            THEN NULL
-           ELSE (SELECT COALESCE(SUM(s.capacity), 0) FROM participation_slot s
+           ELSE (SELECT COALESCE(SUM(CASE WHEN s.staff_only = 0 THEN s.capacity
+                    ELSE ${SLOT_CONFIRMED_SQL("s.id")} END), 0) FROM participation_slot s
                   WHERE s.event_id = ${eventIdExpr})
               + (SELECT COUNT(1) FROM event_member em
                   WHERE em.event_id = ${eventIdExpr} AND em.status = 'confirmed'
                     AND em.slot_id IS NULL AND ${COUNTED_MEMBER_IS_ACTIVE})
            END)`;
+
+/** 運営が割り当てる枠（staff_only）の確定数。席の上限を持たない枠なので、上限側には
+ * capacity ではなく、この枠にいる確定メンバー数を足す（分子と分母の母集団を揃える） */
+const SLOT_CONFIRMED_SQL = (slotIdExpr: string) =>
+  `(SELECT COUNT(1) FROM event_member m WHERE m.slot_id = ${slotIdExpr} AND m.status = 'confirmed')`;
+
+/** EVENT_COUNTER_COLUMNS 用の補正。0108 のカウンター（cnt_slots / cnt_slot_capacity）は
+ * 運営が割り当てる枠も数えるので、読むときにその分を差し替える。枠の行だけを読み、
+ * event_member は読まない */
+const STAFF_ONLY_SLOT_COUNT_SQL = (eventIdExpr: string) =>
+  `(SELECT COUNT(1) FROM participation_slot s WHERE s.event_id = ${eventIdExpr} AND s.staff_only = 1)`;
+const STAFF_ONLY_CAPACITY_ADJUST_SQL = (eventIdExpr: string) =>
+  `(SELECT COALESCE(SUM(s.cnt_confirmed - s.capacity), 0) FROM participation_slot s
+     WHERE s.event_id = ${eventIdExpr} AND s.staff_only = 1)`;
 
 /** 抽選枠に申し込んで抽選を待っている人数（status='applied'）。表示する参加者数に足す。
  * 抽選前でも「何人来そうか」が分かるよう、申込中の人も参加者として数える。
@@ -125,8 +140,9 @@ const LOTTERY_APPLIED_SUM_SQL = (eventIdExpr: string) =>
 export const EVENT_COUNTER_COLUMNS = (table: string) =>
   `${table}.cnt_participants + ${LOTTERY_APPLIED_SUM_SQL(`${table}.id`)} AS participant_count,
   ${table}.cnt_attended AS attended_count,
-  CASE WHEN ${table}.cnt_slots = 0 THEN NULL
-       ELSE ${table}.cnt_slot_capacity + ${table}.cnt_unslotted_confirmed END AS capacity_total`;
+  CASE WHEN ${table}.cnt_slots - ${STAFF_ONLY_SLOT_COUNT_SQL(`${table}.id`)} = 0 THEN NULL
+       ELSE ${table}.cnt_slot_capacity + ${table}.cnt_unslotted_confirmed
+         + ${STAFF_ONLY_CAPACITY_ADJUST_SQL(`${table}.id`)} END AS capacity_total`;
 
 /** participant_count（参加者数）/ attended_count（出席者数）を含む event の SELECT */
 const SELECT_EVENT = `SELECT *, ${EVENT_COUNTER_COLUMNS("event")} FROM event`;

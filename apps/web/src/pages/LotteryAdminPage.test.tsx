@@ -41,6 +41,7 @@ const slot = (over: Partial<ParticipationSlot> = {}): ParticipationSlot => ({
   selectionType: "first_come",
   sortOrder: 0,
   drawAt: null,
+  staffOnly: false,
   confirmedCount: 1,
   waitlistCount: 1,
   appliedCount: 0,

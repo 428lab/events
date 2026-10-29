@@ -103,6 +103,7 @@ eventDuplicateRoutes.post(
         name: slot.name,
         capacity: slot.capacity,
         selectionType: slot.selectionType,
+        staffOnly: slot.staffOnly,
         // 抽選日時は旧イベントの絶対時刻なのでコピーしない（日程リセットと整合）
         drawAt: null,
       }, user.id);
