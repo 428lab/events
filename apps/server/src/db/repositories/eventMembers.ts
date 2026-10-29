@@ -283,7 +283,7 @@ export const eventMembersRepo = {
     role: NonParticipantRole,
   ): Promise<EventMember | null> {
     await memberWrite(eventId,
-      `UPDATE event_member SET role = ?, slot_id = NULL, status = 'confirmed'
+      `UPDATE event_member SET role = ?, assigned_slot_id = COALESCE(slot_id, assigned_slot_id), slot_id = NULL, status = 'confirmed'
          WHERE event_id = ? AND user_id = ? AND status <> 'canceled'`,
       role,
       eventId,

@@ -37,7 +37,8 @@ export async function changeMembership(eventId: string, actorId: string, userId:
       { sql: `UPDATE event_member SET status='canceled',canceled_at=?,canceled_scheduling=(SELECT scheduling FROM event WHERE id=?)
           WHERE event_id=? AND user_id=? AND role='participant' AND status='confirmed' AND ${accessOperationGuard}`, args: [now, eventId, eventId, userId, ...guard] },
     ] : [
-      { sql: `UPDATE event_member SET role=?,slot_id=NULL,status='confirmed' WHERE event_id=? AND user_id=? AND ${accessOperationGuard}`, args: [role, eventId, userId, ...guard] },
+      // 申し込んでいた枠は、席を空けたうえで表示の並び (assigned_slot_id) として残す（SET の式は更新前の行で評価される）
+      { sql: `UPDATE event_member SET role=?,assigned_slot_id=COALESCE(slot_id,assigned_slot_id),slot_id=NULL,status='confirmed' WHERE event_id=? AND user_id=? AND ${accessOperationGuard}`, args: [role, eventId, userId, ...guard] },
     ]),
     ...(before?.slotId && before.status === "confirmed" ? waitlistPromotionStatements(eventId, before.slotId, token, noticeId, now) : []),
     { sql: "UPDATE event SET access_operation_token=NULL WHERE id=? AND access_operation_token=?", args: guard },

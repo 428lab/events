@@ -515,14 +515,16 @@ describe("アカウント統合 (#240)", () => {
     expect((await postMerge(b.cookie, { code, keep: "me" })).status).toBe(200);
 
     const row = await env.DB.prepare(
-      "SELECT role, status, slot_id FROM event_member WHERE event_id = ? AND user_id = ?",
+      "SELECT role, status, slot_id, assigned_slot_id FROM event_member WHERE event_id = ? AND user_id = ?",
     )
       .bind(eventId, b.userId)
-      .first<{ role: string; status: string; slot_id: string | null }>();
+      .first<{ role: string; status: string; slot_id: string | null; assigned_slot_id: string | null }>();
+    // 申し込んでいた枠は、席を空けたうえで一覧の並び (assigned_slot_id) として残す
     expect(row).toEqual({
       role: "staff",
       status: "confirmed",
       slot_id: null,
+      assigned_slot_id: slotId,
     });
     // 枠が空いたので、抽選枠は他の応募者のために残っている
     expect(
