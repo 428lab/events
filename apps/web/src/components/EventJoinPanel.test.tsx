@@ -87,6 +87,7 @@ const SLOT: ParticipationSlot = {
   selectionType: "first_come",
   sortOrder: 1,
   drawAt: null,
+  staffOnly: false,
   confirmedCount: 0,
   waitlistCount: 0,
   appliedCount: 0,
@@ -327,4 +328,23 @@ it("staff keep their ordinary scoring notice on information", () => {
   stateMock.mockReturnValue({ scoringLocked: false });
   draw({ myRole: "staff", contest: true });
   expect(screen.getByRole("link", { name: "採点する" })).toHaveAttribute("href", "/events/e-1/scoring");
+});
+
+/** 運営が割り当てる枠 (staffOnly) は参加者が選べない (docs/staff-slot-assignment.md) */
+describe("運営が割り当てる枠", () => {
+  it("申込の選択肢に出さず、参加者が選べる枠だけを並べる", () => {
+    slotsMock.mockReturnValue([SLOT, { ...SLOT, id: "s-crew", name: "運営の枠", staffOnly: true }]);
+    draw();
+    expect(screen.getByText("午前の部")).toBeInTheDocument();
+    expect(screen.queryByText("運営の枠")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "参加する" })).toHaveLength(1);
+  });
+
+  it("運営の枠しかなければ、枠なしのイベントと同じく「参加登録する」で参加する", () => {
+    slotsMock.mockReturnValue([{ ...SLOT, id: "s-crew", name: "運営の枠", staffOnly: true }]);
+    draw();
+    expect(screen.queryByText("運営の枠")).not.toBeInTheDocument();
+    clickJoin();
+    expect(joinMutate.mock.calls[0][0]).toEqual({ id: "e-1" });
+  });
 });

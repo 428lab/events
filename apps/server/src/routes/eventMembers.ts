@@ -2,12 +2,14 @@ import { Hono } from "hono";
 import { valid, zValidator } from "../lib/validator.js";
 import {
   joinEventInput,
+  setAssignedSlotInput,
   setAttendanceInput,
   updateMemberRoleInput,
 } from "@eventer/shared";
 import type {
   Event,
   JoinEventInput,
+  SetAssignedSlotInput,
   SetAttendanceInput,
   UpdateMemberRoleInput,
 } from "@eventer/shared";
@@ -70,14 +72,19 @@ eventMemberRoutes.post(
     }
 
     const input = valid<JoinEventInput>(c, "json");
-    const slots = await participationSlotsRepo.listByEvent(eventId);
+    // 運営が割り当てる枠 (staff_only) は参加者が選べない。参加者が選べる枠が無いなら
+    // 枠なしで参加する（運営の枠しかないイベント）
+    const slots = (await participationSlotsRepo.listByEvent(eventId));
+    const joinable = slots.filter((s) => !s.staffOnly);
     let slotId: string | null = null;
 
-    if (slots.length > 0) {
-      const slot = slots.find((s) => s.id === input.slotId);
+    if (slots.some((s) => s.id === input.slotId && s.staffOnly)) {
+      return c.json({ error: "slot_staff_only" }, 409);
+    }
+    if (joinable.length > 0) {
+      const slot = joinable.find((s) => s.id === input.slotId);
       if (!slot) return c.json({ error: "slot_required" }, 400);
       slotId = slot.id;
-
     }
 
     const changed = await joinEventAtomically(eventId, user.id, slotId);
@@ -149,6 +156,34 @@ eventMemberRoutes.patch(
     const result = await changeMembership(eventId, c.get("user").id, userId, before, role);
     if (!result) return c.json({ error: "access_changed" }, 409);
     return c.json({ member: await eventMembersRepo.find(eventId, userId), ...result });
+  },
+);
+
+/** スタッフ・審査員・観覧者を並べる枠の変更（staff のみ）。
+ *
+ * 枠を作る前から参加していたスタッフを、あとから作った枠の下へ移せるようにする。
+ * 表示のためだけで席は使わない（定員・抽選・キャンセル待ちは動かない）。
+ * 参加者は対象外（参加者の枠は本人の申込で決まる）。slotId: null で枠なしに戻す */
+eventMemberRoutes.patch(
+  "/:id/members/:userId/assigned-slot",
+  requireEventRole(["staff"]),
+  zValidator("json", setAssignedSlotInput),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const userId = c.req.param("userId");
+    const { slotId } = valid<SetAssignedSlotInput>(c, "json");
+    const before = await eventMembersRepo.find(eventId, userId);
+    if (!before) return c.json({ error: "not_found" }, 404);
+    if (before.role === "participant") return c.json({ error: "participant_slot" }, 409);
+    if (slotId) {
+      const slot = await participationSlotsRepo.findById(slotId);
+      // 他のイベントの枠は存在を漏らさず 404
+      if (!slot || slot.eventId !== eventId) return c.json({ error: "slot_not_found" }, 404);
+    }
+    if (!(await eventMembersRepo.setAssignedSlot(eventId, userId, slotId, c.get("user").id))) {
+      return c.json({ error: "access_changed" }, 409);
+    }
+    return c.json({ member: await eventMembersRepo.find(eventId, userId) });
   },
 );
 

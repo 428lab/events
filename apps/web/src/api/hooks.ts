@@ -383,8 +383,11 @@ export function useCreateSlot(eventId: string) {
   return useMutation({
     mutationFn: (input: CreateSlotInput) =>
       api.post(`/events/${eventId}/slots`, input),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["event", eventId, "slots"] }),
+    // 運営が割り当てる枠の切り替えでイベントの上限 (capacityTotal) も変わる
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId, "slots"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId] });
+    },
   });
 }
 
@@ -393,8 +396,11 @@ export function useUpdateSlot(eventId: string) {
   return useMutation({
     mutationFn: ({ slotId, input }: { slotId: string; input: UpdateSlotInput }) =>
       api.patch(`/events/${eventId}/slots/${slotId}`, input),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["event", eventId, "slots"] }),
+    // 運営が割り当てる枠の切り替えでイベントの上限 (capacityTotal) も変わる
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId, "slots"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId] });
+    },
   });
 }
 
@@ -468,6 +474,18 @@ export function useSetEventMemberRole(eventId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["event", eventId, "members"] });
       qc.invalidateQueries({ queryKey: ["event", eventId] });
+    },
+  });
+}
+
+/** スタッフ・審査員・観覧者を並べる枠を変える（staff）。表示だけで席は使わない */
+export function useSetAssignedSlot(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { userId: string; slotId: string | null }) =>
+      api.patch(`/events/${eventId}/members/${v.userId}/assigned-slot`, { slotId: v.slotId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId, "members"] });
     },
   });
 }

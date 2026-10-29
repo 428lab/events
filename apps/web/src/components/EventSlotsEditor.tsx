@@ -4,9 +4,11 @@ import {
   Button,
   Card,
   CardContent,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -42,16 +44,18 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
   const [name, setName] = useState("");
   const [capacity, setCapacity] = useState(10);
   const [selectionType, setSelectionType] = useState<SelectionType>("first_come");
+  const [staffOnly, setStaffOnly] = useState(false);
 
   const add = () => {
     if (!name) return;
     create.mutate(
-      { name, capacity, selectionType },
+      { name, capacity, selectionType, staffOnly },
       {
         onSuccess: () => {
           setName("");
           setCapacity(10);
           setSelectionType("first_come");
+          setStaffOnly(false);
         },
       },
     );
@@ -135,6 +139,25 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
                   <DeleteIcon />
                 </IconButton>
               </Stack>
+              <FormControlLabel
+                sx={{ mt: 0.5 }}
+                control={
+                  <Switch
+                    size="small"
+                    checked={s.staffOnly}
+                    disabled={update.isPending}
+                    onChange={(e) =>
+                      update.mutate({ slotId: s.id, input: { staffOnly: e.target.checked } })
+                    }
+                  />
+                }
+                label={t("eventForm.slotStaffOnly")}
+              />
+              {s.staffOnly && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  {t("eventForm.slotStaffOnlyHelp")}
+                </Typography>
+              )}
               <Typography variant="caption" color="text.secondary">
                 {t("eventForm.slotConfirmedOfCapacity", {
                   n: s.confirmedCount,
@@ -240,6 +263,13 @@ export function EventSlotsEditor({ eventId }: { eventId: string }) {
               {t("common.add")}
             </Button>
           </Stack>
+          <FormControlLabel
+            sx={{ mt: 0.5 }}
+            control={
+              <Switch size="small" checked={staffOnly} onChange={(e) => setStaffOnly(e.target.checked)} />
+            }
+            label={t("eventForm.slotStaffOnly")}
+          />
         </CardContent>
       </Card>
     </Box>

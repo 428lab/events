@@ -7,12 +7,14 @@ import {
   CardContent,
   Checkbox,
   Chip,
+  Divider,
   IconButton,
   List,
   ListItem,
   ListItemAvatar,
   ListItemButton,
   ListItemText,
+  ListSubheader,
   Menu,
   MenuItem,
   Snackbar,
@@ -25,12 +27,13 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { Link as RouterLink } from "react-router-dom";
-import type { EventMemberWithUser, EventRole } from "@eventer/shared";
+import type { EventMemberWithUser, EventRole, ParticipationSlot } from "@eventer/shared";
 import { EVENT_ROLES } from "@eventer/shared";
 import {
   useEventMembers,
   useEventSlots,
   useMe,
+  useSetAssignedSlot,
   useSetAttendance,
   useSetEventMemberRole,
 } from "../api/hooks.js";
@@ -82,12 +85,14 @@ export function EventMemberList({
   if (!members) return null;
 
   // 申込枠と参加状態は別物。抽選前も保存済みの枠でまとめる (#530)。
+  // スタッフ等は運営が並べた枠 (assignedSlotId) の下に出す。席は使わない
+  const shownSlotId = (m: EventMemberWithUser) => m.slotId ?? m.assignedSlotId ?? null;
   const groups = (slots ?? []).map((slot) => ({
     id: slot.id,
     name: slot.name,
-    members: members.filter((m) => m.slotId === slot.id),
+    members: members.filter((m) => shownSlotId(m) === slot.id),
   }));
-  const remaining = members.filter((m) => !slots?.some((slot) => slot.id === m.slotId));
+  const remaining = members.filter((m) => !slots?.some((slot) => slot.id === shownSlotId(m)));
   const memberList = (items: EventMemberWithUser[], label?: string) => (
     <List dense aria-label={label}>
       {items.map((m) => (
@@ -99,6 +104,7 @@ export function EventMemberList({
           showManagementActions={showManagementActions}
           attendanceCheck={attendanceCheck}
           isMe={isMyMembership(m, me)}
+          slots={slots ?? []}
         />
       ))}
     </List>
@@ -152,6 +158,7 @@ export function MemberRow({
   showManagementActions = true,
   attendanceCheck,
   isMe,
+  slots = [],
 }: {
   eventId: string;
   member: EventMemberWithUser;
@@ -159,14 +166,28 @@ export function MemberRow({
   showManagementActions?: boolean;
   attendanceCheck: boolean;
   isMe: boolean;
+  /** スタッフ等を並べる枠の候補。参加者の行では使わない */
+  slots?: ParticipationSlot[];
 }) {
   const { t } = useTranslation();
   const setRole = useSetEventMemberRole(eventId);
+  const setAssignedSlot = useSetAssignedSlot(eventId);
   // 行ごとに持つ（ロール変更と同じ）。1つを全行で共有すると、続けて操作したとき
   // 後の行の結果が前の行のエラー表示を消してしまう (#286)
   const setAttendance = useSetAttendance(eventId);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const [roleError, setRoleError] = useState("");
+  const [slotError, setSlotError] = useState("");
+  // 枠を作る前から参加していたスタッフも、あとから枠の下へ移せる。参加者の枠は本人の申込で決まる
+  const canAssignSlot = m.role !== "participant" && slots.length > 0;
+  const assignTo = (slotId: string | null) => {
+    setAnchor(null);
+    if ((m.assignedSlotId ?? null) === slotId) return;
+    setAssignedSlot.mutate(
+      { userId: m.user.id, slotId },
+      { onError: () => setSlotError(t("eventDetail.assignSlotError")) },
+    );
+  };
   const [attendError, setAttendError] = useState("");
   const showCheck = attendanceCheck && isStaff && showManagementActions;
   const memberName = m.user.globalName ?? m.user.username;
@@ -272,7 +293,39 @@ export function MemberRow({
                     )}
                   </MenuItem>
                 ))}
+                {canAssignSlot && [
+                  <Divider key="assign-divider" />,
+                  <ListSubheader key="assign-heading" sx={{ lineHeight: "32px", bgcolor: "transparent" }}>
+                    {t("eventDetail.assignSlotHeading")}
+                  </ListSubheader>,
+                  ...slots.map((slot) => (
+                    <MenuItem
+                      key={`assign-${slot.id}`}
+                      selected={m.assignedSlotId === slot.id}
+                      disabled={setAssignedSlot.isPending}
+                      onClick={() => assignTo(slot.id)}
+                    >
+                      {slot.name}
+                      {m.assignedSlotId === slot.id && <CheckIcon fontSize="small" sx={{ ml: 0.5 }} />}
+                    </MenuItem>
+                  )),
+                  <MenuItem
+                    key="assign-none"
+                    selected={!m.assignedSlotId}
+                    disabled={setAssignedSlot.isPending}
+                    onClick={() => assignTo(null)}
+                  >
+                    {t("eventDetail.assignSlotNone")}
+                    {!m.assignedSlotId && <CheckIcon fontSize="small" sx={{ ml: 0.5 }} />}
+                  </MenuItem>,
+                ]}
               </Menu>
+              <Snackbar
+                open={Boolean(slotError)}
+                autoHideDuration={8000}
+                onClose={() => setSlotError("")}
+                message={slotError}
+              />
               {/* 断られた理由は画面に出す。出さないと「押しても何も起きない」に見える */}
               <Snackbar
                 open={Boolean(roleError)}

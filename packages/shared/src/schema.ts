@@ -219,6 +219,8 @@ export const eventMemberSchema = z.object({
   userId: z.string(),
   role: z.enum(EVENT_ROLES),
   slotId: z.string().nullable(),
+  /** 参加者以外のロールを並べる枠（運営が割り当てる。表示だけで席は使わない） */
+  assignedSlotId: z.string().nullable().optional(),
   status: z.string(),
   /** 出席チェック済みか（出席チェックモード時に有効） */
   attended: z.boolean(),

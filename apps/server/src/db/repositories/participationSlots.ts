@@ -15,6 +15,7 @@ interface SlotRow {
   selection_type: string;
   sort_order: number;
   draw_at: number | null;
+  staff_only: number;
   confirmed_count: number;
   waitlist_count: number;
   applied_count: number;
@@ -29,6 +30,7 @@ function toSlot(row: SlotRow): ParticipationSlot {
     selectionType: row.selection_type as SelectionType,
     sortOrder: row.sort_order,
     drawAt: row.draw_at,
+    staffOnly: row.staff_only === 1,
     confirmedCount: row.confirmed_count,
     waitlistCount: row.waitlist_count,
     appliedCount: row.applied_count,
@@ -79,8 +81,8 @@ export const participationSlotsRepo = {
     );
     const next = r?.n ?? 0;
     const changed = await runCount(
-      `INSERT INTO participation_slot (id, event_id, name, capacity, selection_type, sort_order, draw_at, created_at)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ? FROM event e WHERE e.id=? AND ${activeManagerSql("e", "?")}`,
+      `INSERT INTO participation_slot (id, event_id, name, capacity, selection_type, sort_order, draw_at, staff_only, created_at)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? FROM event e WHERE e.id=? AND ${activeManagerSql("e", "?")}`,
       id,
       eventId,
       input.name,
@@ -88,6 +90,7 @@ export const participationSlotsRepo = {
       input.selectionType,
       next,
       input.drawAt ?? null,
+      input.staffOnly ? 1 : 0,
       Date.now(), eventId, actorId, adminIds(),
     );
     return changed ? this.findById(id) : null;
@@ -102,13 +105,14 @@ export const participationSlotsRepo = {
     if (!current) return null;
     const next = { ...current, ...input };
     const changed = await runCount(
-      `UPDATE participation_slot SET name = ?, capacity = ?, selection_type = ?, sort_order = ?, draw_at = ?
+      `UPDATE participation_slot SET name = ?, capacity = ?, selection_type = ?, sort_order = ?, draw_at = ?, staff_only = ?
        WHERE id = ? AND event_id=? AND EXISTS(SELECT 1 FROM event e WHERE e.id=event_id AND ${activeManagerSql("e", "?")})`,
       next.name,
       next.capacity,
       next.selectionType,
       next.sortOrder,
       next.drawAt ?? null,
+      next.staffOnly ? 1 : 0,
       id, eventId, actorId, adminIds(),
     );
     return changed ? this.findById(id) : null;

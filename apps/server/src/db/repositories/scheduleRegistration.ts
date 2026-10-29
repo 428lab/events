@@ -55,8 +55,8 @@ export const scheduleRegistrationRepo = {
         sql: `INSERT INTO event_schedule_registration(event_id,user_id,outcome,status,reason,slot_id,member_id,entry_id)
         WITH base AS (
           SELECT v.user_id,v.created_at,m.status AS existing_status,
-            (SELECT COUNT(*) FROM participation_slot WHERE event_id=e.id) AS slots,
-            (SELECT id FROM participation_slot WHERE event_id=e.id ORDER BY id LIMIT 1) AS slot_id,
+            (SELECT COUNT(*) FROM participation_slot WHERE event_id=e.id AND staff_only=0) AS slots,
+            (SELECT id FROM participation_slot WHERE event_id=e.id AND staff_only=0 ORDER BY id LIMIT 1) AS slot_id,
             CASE
               WHEN NOT ${eventViewSql("e", "v.user_id", "?")} THEN 'access_revoked'
               WHEN m.status IS NOT NULL AND m.status<>'canceled' THEN NULL
@@ -67,7 +67,7 @@ export const scheduleRegistrationRepo = {
                 ON a.question_id=q.id AND a.user_id=v.user_id
                 WHERE q.event_id=e.id AND q.phase='pre' AND q.required=1
                 AND (a.value IS NULL OR a.value='' OR a.value='[]')) THEN 'survey_required'
-              WHEN (SELECT COUNT(*) FROM participation_slot WHERE event_id=e.id)>1 THEN 'slot_required'
+              WHEN (SELECT COUNT(*) FROM participation_slot WHERE event_id=e.id AND staff_only=0)>1 THEN 'slot_required'
               ELSE NULL END AS reason
           FROM event_date_vote v JOIN event_date_option o ON o.id=v.option_id
           JOIN event e ON e.id=o.event_id

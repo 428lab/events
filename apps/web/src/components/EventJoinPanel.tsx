@@ -47,7 +47,9 @@ export function EventJoinPanel({
   const qc = useQueryClient();
   const { data: me } = useMe();
   const { data: members } = useEventMembers(eventId, true);
-  const { data: slots } = useEventSlots(eventId);
+  const { data: allSlots } = useEventSlots(eventId);
+  // 運営が割り当てる枠 (staffOnly) は参加者が選べないので、申込の選択肢に出さない
+  const slots = allSlots?.filter((s) => !s.staffOnly);
   const { data: state } = useEventState(eventId, Boolean(me));
   // 事前アンケート (#152)。質問があれば参加前に回答ダイアログを挟む
   const { data: surveyQuestions } = useEventSurvey(eventId);

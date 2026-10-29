@@ -4,7 +4,8 @@ import { accessOperationGuard, adminIds } from "./eventAccessInvites.js";
 
 /** Joining must not create an Entry after another request revokes access.
  * Route-level questionnaire/slot validation is retained; current access, event
- * state and capacity are decided again inside this membership+Entry batch. */
+ * state and capacity are decided again inside this membership+Entry batch.
+ * Organizer-assigned slots (staff_only) are never joinable by participants. */
 export async function joinEventAtomically(eventId: string, userId: string, slotId: string | null) {
   const token = crypto.randomUUID(), now = Date.now(), entryId = crypto.randomUUID();
   const guard = [eventId, token];
@@ -17,8 +18,8 @@ export async function joinEventAtomically(eventId: string, userId: string, slotI
           AND NOT EXISTS (SELECT 1 FROM event_member m WHERE m.event_id = e.id AND m.user_id = ? AND m.status <> 'canceled')
           AND NOT EXISTS (SELECT 1 FROM event_survey_question q LEFT JOIN event_survey_answer a ON a.question_id=q.id AND a.user_id=?
             WHERE q.event_id=e.id AND q.phase='pre' AND q.required=1 AND (a.value IS NULL OR a.value='' OR a.value='[]'))
-          AND ((? IS NULL AND NOT EXISTS (SELECT 1 FROM participation_slot s WHERE s.event_id=e.id))
-            OR EXISTS (SELECT 1 FROM participation_slot s WHERE s.id = ? AND s.event_id = e.id))`,
+          AND ((? IS NULL AND NOT EXISTS (SELECT 1 FROM participation_slot s WHERE s.event_id=e.id AND s.staff_only = 0))
+            OR EXISTS (SELECT 1 FROM participation_slot s WHERE s.id = ? AND s.event_id = e.id AND s.staff_only = 0))`,
       args: [token, eventId, userId, now, now, userId, adminIds(), userId, userId, slotId, slotId] },
     { sql: `INSERT INTO event_member (id, event_id, user_id, role, slot_id, status, created_at)
         SELECT ?, ?, ?, 'participant', ?, COALESCE((SELECT CASE WHEN s.selection_type = 'lottery' THEN 'applied'
