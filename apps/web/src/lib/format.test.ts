@@ -2,6 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import type { Event } from "@eventer/shared";
 import { i18next } from "../i18n/index.js";
 import {
+  formatDateRange,
+  formatDateTime,
   formatRemaining,
   formatTime,
   participantCountLabel,
@@ -150,5 +152,45 @@ describe("表示言語による書式の切り替え (#352)", () => {
   it("知らない値はそのまま返す（サーバーが増やしても壊れない）", () => {
     expect(roleLabel("mentor")).toBe("mentor");
     expect(venueLabel("metaverse")).toBe("metaverse");
+  });
+});
+
+describe("日付と時刻の間を全角スペースにする（詰まって読みにくいという声）", () => {
+  // テストのタイムゾーンは Asia/Tokyo に固定 (#322)
+  const at = (iso: string) => new Date(iso).getTime();
+
+  afterEach(async () => {
+    await i18next.changeLanguage("ja");
+  });
+
+  it("日本語の同日の範囲は、日付と時刻の間だけ全角スペース", () => {
+    expect(formatDateRange(at("2026-11-05T01:23:00+09:00"), at("2026-11-05T03:23:00+09:00"))).toBe(
+      "2026/11/5\u300001:23 〜 03:23",
+    );
+  });
+
+  it("日本語の日をまたぐ範囲は、開始と終了の両方で全角スペース", () => {
+    expect(formatDateRange(at("2026-11-05T22:00:00+09:00"), at("2026-11-06T03:00:00+09:00"))).toBe(
+      "2026/11/5\u300022:00 〜 11/6\u300003:00",
+    );
+  });
+
+  it("日本語の年をまたぐ範囲も同じ", () => {
+    expect(formatDateRange(at("2026-12-31T22:00:00+09:00"), at("2027-01-01T02:00:00+09:00"))).toBe(
+      "2026/12/31\u300022:00 〜 2027/1/1\u300002:00",
+    );
+  });
+
+  it("日本語の単一日時も全角スペース", () => {
+    expect(formatDateTime(at("2026-11-05T01:23:00+09:00"))).toBe("2026/11/5\u300001:23");
+  });
+
+  it("英語は今までどおり Intl の出力のまま", async () => {
+    await i18next.changeLanguage("en");
+    const s = at("2026-11-05T01:23:00+09:00");
+    const e = at("2026-11-06T03:00:00+09:00");
+    const opts = { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" } as const;
+    expect(formatDateTime(s)).toBe(new Intl.DateTimeFormat("en-US", opts).format(s));
+    expect(formatDateRange(s, e)).not.toContain("\u3000");
   });
 });
