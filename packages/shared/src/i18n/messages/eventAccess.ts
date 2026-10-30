@@ -8,8 +8,9 @@ const ja = {
   visibilityConflict:"参加者や閲覧権が変更されました。最新の内容を再取得し、もう一度確認してください。",
 
   chatPrivacy: "非公開・限定公開イベントでは、『参加者のみ（暗号化）』をオンにした参加者チャットだけを使えます。暗号化した発言は参加者とスタッフだけが読めます（運営サービスには内容が見えます）。参加を取り消した人も、それまでに読めた発言は手元に残ります。以前に公開で送った発言やそのコピーは回収できません。",
-  title: "閲覧への招待", intro: "承諾すると閲覧できます。参加申込・席の確保や運営への参加は別の操作です。",
-  accepted: "承諾済みの閲覧権", empty: "返事待ちの招待はありません。", noAccess: "承諾済みの閲覧権はありません。",
+  title: "招待されたイベント", intro: "招待限定のイベントに招待されると、ここに届きます。承諾するとそのイベントを見られるようになります（参加の申し込みは、イベントのページで別に行います）。",
+  managerTitle: "閲覧への招待", managerIntro: "承諾すると閲覧できます。参加申込・席の確保や運営への参加は別の操作です。",
+  accepted: "承諾済みのイベント", empty: "返事待ちの招待はありません。", noAccess: "承諾済みのイベントはありません。",
   accept: "閲覧を承諾", decline: "辞退", leave: "閲覧をやめる", open: "イベントを開く", more: "もっと見る",
   unavailable: "承諾済み・本体閲覧不可（募集開始待ち等）", identity: "招待 {{id}} · 承諾 {{date}}",
   from: "{{name}} さんから · 期限 {{date}}", unknown: "退会済みの招待者",
@@ -32,8 +33,9 @@ const en: Record<keyof typeof ja, string> = {
   visibilityConflict:"Membership or access has changed. Reload the latest information and confirm again.",
 
   chatPrivacy: "Private and unlisted events can only use participant chat with \"Participants only (encrypted)\" turned on. Encrypted messages can be read only by participants and organizers (the service operator can see the content). People who cancel keep whatever they could already read. Messages previously sent in public, and copies of them, cannot be recalled.",
-  title: "Viewing invitations", intro: "Accept to view. Registration, a reserved seat and organizer access are separate.",
-  accepted: "Accepted viewing access", empty: "No invitations awaiting a reply.", noAccess: "No accepted viewing access.",
+  title: "Event invitations", intro: "When someone invites you to an invitation-only event, it shows up here. Accept to be able to view the event (registering to attend is a separate step on the event page).",
+  managerTitle: "Viewing invitations", managerIntro: "Accept to view. Registration, a reserved seat and organizer access are separate.",
+  accepted: "Accepted events", empty: "No invitations awaiting a reply.", noAccess: "No accepted events.",
   accept: "Accept viewing access", decline: "Decline", leave: "Leave viewing access", open: "Open event", more: "Load more",
   unavailable: "Accepted · event unavailable (it may not be open yet)", identity: "Invite {{id}} · accepted {{date}}",
   from: "From {{name}} · expires {{date}}", unknown: "Former account",

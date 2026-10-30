@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { Link as RouterLink } from "react-router-dom";
 import {
   useAuthProviders,
   useIdentities,
@@ -148,6 +149,20 @@ export function AccountPage() {
       <LanguageCard />
 
       <NotificationPrefsCard />
+
+      <Card variant="outlined">
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            {t("settings.eventInvitesTitle")}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {t("settings.eventInvitesDescription")}
+          </Typography>
+          <Button variant="outlined" component={RouterLink} to="/event-invites">
+            {t("settings.eventInvitesOpen")}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card variant="outlined">
         <CardContent>

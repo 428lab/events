@@ -14,6 +14,12 @@ const ja = {
   /** 要対応。0件のときは見出しごと出さない */
   staffInvites: "運営への招待が {{n}} 件あります",
   staffInvitesAction: "返事をする",
+  /** 招待限定イベントへの返事待ち (#526)。0件のときは出さない */
+  accessInvites: "招待限定のイベントに招待されています（{{n}}件）",
+  accessInvitesMore: "招待限定のイベントに招待されています（{{n}}件以上）",
+  accessInvitesAction: "確認する",
+  /** ファーストビューの作成導線 */
+  create: "イベントを作る",
 
   /** まだ何も参加していない人向け */
   emptyTitle: "参加予定のイベントはまだありません",
@@ -39,6 +45,10 @@ const en: Record<keyof typeof ja, string> = {
 
   staffInvites: "You have {{n}} organizer invitation(s)",
   staffInvitesAction: "Reply",
+  accessInvites: "You've been invited to {{n}} invitation-only event(s)",
+  accessInvitesMore: "You've been invited to {{n}}+ invitation-only events",
+  accessInvitesAction: "View",
+  create: "Create an event",
 
   emptyTitle: "You have no upcoming events yet",
   emptyBody: "Find an event to join, or host one of your own.",

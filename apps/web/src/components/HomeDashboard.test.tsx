@@ -12,6 +12,7 @@ const DAY = 24 * HOUR;
 
 const myPage = vi.hoisted(() => ({ value: undefined as unknown }));
 const invites = vi.hoisted(() => ({ value: [] as unknown[] }));
+const accessInvites = vi.hoisted(() => ({ value: [] as unknown[], nextCursor: null as string | null }));
 const loading = vi.hoisted(() => ({ value: false }));
 const failed = vi.hoisted(() => ({ value: false }));
 const refetch = vi.hoisted(() => ({ fn: vi.fn() }));
@@ -26,6 +27,11 @@ vi.mock("../api/hooks.js", () => ({
 }));
 vi.mock("../api/staffInviteHooks.js", () => ({
   useMyStaffInvites: () => ({ data: invites.value }),
+}));
+vi.mock("../api/eventAccessHooks.js", () => ({
+  useMyEventInvites: () => ({
+    data: { pages: [{ invites: accessInvites.value, nextCursor: accessInvites.nextCursor }] },
+  }),
 }));
 // 一覧カードはコミュニティ名の解決でクエリを引くので、描画だけ差し替える
 vi.mock("./EventList.js", () => ({
@@ -70,6 +76,8 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   myPage.value = { ongoing: [], past: [] };
   invites.value = [];
+  accessInvites.value = [];
+  accessInvites.nextCursor = null;
   loading.value = false;
   failed.value = false;
   refetch.fn.mockReset();
@@ -175,5 +183,63 @@ describe("HomeDashboard (#489)", () => {
     renderDashboard();
     expect(screen.getByText("日程調整中")).toBeTruthy();
     expect(screen.getByText("新年会")).toBeTruthy();
+  });
+
+  it("イベントを作る入口を、予定があるときもファーストビューに出す", () => {
+    myPage.value = { ongoing: [ev({ title: "ナイトハッカソン" })], past: [] };
+    renderDashboard();
+    const create = screen.getByRole("link", { name: "イベントを作る" });
+    expect(create.getAttribute("href")).toBe("/events/new");
+    // 「次のイベント」の見出しと同じ行にあり、イベントのカードより前（上）にある
+    const heading = screen.getByText("次のイベント");
+    expect(heading.parentElement?.contains(create)).toBe(true);
+    const card = screen.getByText("ナイトハッカソン");
+    expect(create.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("開催中しか無くても、イベントを作る入口を一番上に出す", () => {
+    myPage.value = {
+      ongoing: [ev({ title: "いま開催中", startsAt: NOW - HOUR, endsAt: NOW + HOUR })],
+      past: [],
+    };
+    renderDashboard();
+    const create = screen.getByRole("link", { name: "イベントを作る" });
+    const live = screen.getByText("いま開催中");
+    expect(create.compareDocumentPosition(live) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "イベントを作る" }).length).toBe(1);
+  });
+
+  it("招待限定イベントへの返事待ちが無ければ、招待の入口を出さない", () => {
+    myPage.value = { ongoing: [ev()], past: [] };
+    renderDashboard();
+    expect(screen.queryByText(/閲覧への招待|招待限定のイベントに招待/)).toBeNull();
+    expect(document.querySelector("a[href='/event-invites']")).toBeNull();
+  });
+
+  it("参加予定が無いときも、招待の入口は出さない", () => {
+    renderDashboard();
+    expect(document.querySelector("a[href='/event-invites']")).toBeNull();
+  });
+
+  it("招待限定イベントへの返事待ちがあれば、件数と確認先を出す", () => {
+    myPage.value = { ongoing: [ev()], past: [] };
+    accessInvites.value = [{ id: "a-1" }, { id: "a-2" }];
+    renderDashboard();
+    expect(screen.getByText("招待限定のイベントに招待されています（2件）")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "確認する" }).getAttribute("href")).toBe("/event-invites");
+  });
+
+  it("参加予定が無くても、招待限定イベントへの返事待ちは出す", () => {
+    accessInvites.value = [{ id: "a-1" }];
+    renderDashboard();
+    expect(screen.getByText("招待限定のイベントに招待されています（1件）")).toBeTruthy();
+    expect(screen.getByText("参加予定のイベントはまだありません")).toBeTruthy();
+  });
+
+  it("次のページがあるときは「n件以上」と出す", () => {
+    accessInvites.value = [{ id: "a-1" }];
+    accessInvites.nextCursor = "c";
+    renderDashboard();
+    expect(screen.getByText("招待限定のイベントに招待されています（1件以上）")).toBeTruthy();
   });
 });
