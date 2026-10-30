@@ -6,6 +6,15 @@ import type { User } from "@eventer/shared";
 import { AppThemeProvider } from "../theme/ThemeContext.js";
 import { Layout } from "./Layout.js";
 
+const staffInvites = vi.hoisted(() => ({ value: [] as unknown[] }));
+const accessInvites = vi.hoisted(() => ({ value: [] as unknown[] }));
+vi.mock("../api/staffInviteHooks.js", () => ({
+  useMyStaffInvites: () => ({ data: staffInvites.value }),
+}));
+vi.mock("../api/eventAccessHooks.js", () => ({
+  useMyEventInvites: () => ({ data: { pages: [{ invites: accessInvites.value, nextCursor: null }] } }),
+}));
+
 /**
  * ヘッダーのメニューが、幅によって到達不能にならないこと (#316)。
  * 幅が足りないときはハンバーガーへ畳むので、畳んだ側に横並びの項目が
@@ -74,6 +83,8 @@ function menuTargets(menu: HTMLElement): string[] {
 }
 
 beforeEach(() => {
+  staffInvites.value = [];
+  accessInvites.value = [];
   // 背景の花火は canvas を使い jsdom で動かない。ヘッダーの検証には不要なので切る
   localStorage.setItem("eventer.fireworks", "off");
   vi.stubGlobal(
@@ -145,5 +156,41 @@ describe("ヘッダーのメニュー (#316)", () => {
       t.startsWith("/admin/"),
     );
     expect(collapsedTargets).toEqual(adminTargets);
+  });
+});
+
+describe("ヘッダーの招待アイコンと作成の入口", () => {
+  it("返事待ちの招待が無ければ、招待のアイコンを出さない", () => {
+    renderLayout(false);
+    expect(document.querySelector("a[href='/event-invites']")).toBeNull();
+    expect(document.querySelector("a[href='/staff-invites']")).toBeNull();
+    expect(screen.queryByLabelText(/閲覧への招待|返事待ちの招待/)).toBeNull();
+  });
+
+  it("招待限定イベントの返事待ちだけなら、アイコン1つで招待されたイベントを開く", () => {
+    accessInvites.value = [{ id: "a-1" }, { id: "a-2" }];
+    renderLayout(false);
+    const icon = screen.getByLabelText("返事待ちの招待 2 件");
+    expect(icon.getAttribute("href")).toBe("/event-invites");
+    expect(screen.getAllByLabelText(/返事待ちの招待/).length).toBe(1);
+  });
+
+  it("運営への招待もあれば、合計をアイコン1つに出して運営への招待を先に開く", () => {
+    staffInvites.value = [{ id: "s-1" }];
+    accessInvites.value = [{ id: "a-1" }];
+    renderLayout(false);
+    const icon = screen.getByLabelText("返事待ちの招待 2 件");
+    expect(icon.getAttribute("href")).toBe("/staff-invites");
+    expect(within(icon).getByText("2")).toBeTruthy();
+  });
+
+  it("畳んだメニューに、イベントを作ると招待されたイベントがある", () => {
+    renderLayout(false);
+    collapseHeader();
+    const menu = openMenu("メニュー");
+    expect(menuTargets(menu)).toContain("/events/new");
+    expect(within(menu).getByText("イベントを作る")).toBeTruthy();
+    expect(menuTargets(menu)).toContain("/event-invites");
+    expect(within(menu).getByText("招待されたイベント")).toBeTruthy();
   });
 });

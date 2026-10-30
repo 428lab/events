@@ -30,6 +30,11 @@ const ja = {
   /** アカウント設定ページの見出し */
   accountTitle: "アカウント設定",
 
+  /** 招待限定イベントへの招待と、承諾済みの閲覧の管理 (#526) */
+  eventInvitesTitle: "招待されたイベント",
+  eventInvitesDescription: "招待限定のイベントへの招待の返事や、承諾済みのイベントの確認・取りやめができます。",
+  eventInvitesOpen: "招待されたイベントを開く",
+
   /** プロフィール（表示名・ユーザー名）カード */
   profileTitle: "プロフィール",
   profileUrl: "プロフィールURL: {{path}}",
@@ -165,6 +170,10 @@ const en: Record<keyof typeof ja, string> = {
   languageAutoDescription: "“Automatic” follows your browser’s language.",
 
   accountTitle: "Account settings",
+
+  eventInvitesTitle: "Event invitations",
+  eventInvitesDescription: "Reply to invitations to invitation-only events, and review or leave events you have accepted.",
+  eventInvitesOpen: "Open event invitations",
 
   profileTitle: "Profile",
   profileUrl: "Profile URL: {{path}}",

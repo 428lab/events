@@ -25,8 +25,8 @@ export function EventAccessInvitesCard({ eventId }: { eventId: string }) {
     void list.refetch();
   };
   return <Card variant="outlined"><CardContent>
-    <Typography variant="h6">{t("eventAccess.title")}</Typography>
-    <Typography variant="body2" sx={{ mb: 1 }}>{t("eventAccess.intro")}</Typography>
+    <Typography variant="h6">{t("eventAccess.managerTitle")}</Typography>
+    <Typography variant="body2" sx={{ mb: 1 }}>{t("eventAccess.managerIntro")}</Typography>
     <Typography variant="body2" sx={{ mb: 2 }}>{t("eventAccess.registerFirst")}</Typography>
     {(error || list.isError) && <Alert severity="error">{error || t("eventAccess.error")}</Alert>}
     <Stack spacing={1}>

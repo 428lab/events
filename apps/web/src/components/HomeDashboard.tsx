@@ -12,11 +12,13 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import GroupAddIcon from "@mui/icons-material/GroupAdd";
+import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import SearchIcon from "@mui/icons-material/Search";
 import { Link as RouterLink } from "react-router-dom";
 import type { MyEventSummary } from "@eventer/shared";
 import { useMyPage } from "../api/hooks.js";
 import { useMyStaffInvites } from "../api/staffInviteHooks.js";
+import { useMyEventInvites } from "../api/eventAccessHooks.js";
 import { dashboardBuckets, isDashboardEmpty } from "../lib/dashboard.js";
 import { formatDateRange, formatRemaining, venueLabel } from "../lib/format.js";
 import { EventList } from "./EventList.js";
@@ -24,12 +26,32 @@ import { EventList } from "./EventList.js";
 /** 「このあとの予定」に出す件数。全部出すと下の一覧と役割が重なる */
 const UPCOMING_LIMIT = 4;
 
-/** 見出し。件数を添えるものだけ n を渡す */
-function SectionHeading({ children }: { children: React.ReactNode }) {
+/** 見出し。action を渡すと同じ行の右端に置く（作成の入口に行を1つ使わせない） */
+function SectionHeading({
+  children,
+  action,
+}: {
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  if (!action) {
+    return (
+      <Typography variant="h6" sx={{ mb: 1 }}>
+        {children}
+      </Typography>
+    );
+  }
   return (
-    <Typography variant="h6" sx={{ mb: 1 }}>
-      {children}
-    </Typography>
+    <Stack
+      direction="row"
+      alignItems="center"
+      justifyContent="space-between"
+      spacing={1}
+      sx={{ mb: 1 }}
+    >
+      <Typography variant="h6">{children}</Typography>
+      {action}
+    </Stack>
   );
 }
 
@@ -99,6 +121,12 @@ export function HomeDashboard() {
   const { t } = useTranslation();
   const { data: myPage, isLoading, isError, refetch } = useMyPage();
   const { data: invites } = useMyStaffInvites();
+  // 招待限定イベントへの返事待ち (#526)。0件なら何も出さない（初見の人に意味の
+  // 分からない入口でファーストビューを取らない）。承諾済みの管理は設定から行ける
+  const accessInvites = useMyEventInvites();
+  const accessFirstPage = accessInvites.data?.pages[0];
+  const pendingAccess = accessFirstPage?.invites.length ?? 0;
+  const pendingAccessMore = Boolean(accessFirstPage?.nextCursor);
 
   // 開催中・締切の境目をまたいでも表示が切り替わるように時計を持つ。
   // 粒度は分でよい（useEventTiming と同じ方針）
@@ -133,9 +161,39 @@ export function HomeDashboard() {
   }
 
   const empty = isDashboardEmpty(buckets);
+
+  // 作成の入口はファーストビューに置く。下の一覧の操作行はスクロールしないと
+  // 見えず、どこから作るのか見失う
+  const createButton = (
+    <Button
+      variant="contained"
+      startIcon={<AddIcon />}
+      component={RouterLink}
+      to="/events/new"
+    >
+      {t("home.create")}
+    </Button>
+  );
+
+  const accessInvitesAlert = pendingAccess > 0 && (
+    <Alert
+      severity="info"
+      icon={<MailOutlineIcon />}
+      action={
+        <Button color="inherit" size="small" component={RouterLink} to="/event-invites">
+          {t("home.accessInvitesAction")}
+        </Button>
+      }
+    >
+      {t(pendingAccessMore ? "home.accessInvitesMore" : "home.accessInvites", { n: pendingAccess })}
+    </Alert>
+  );
+
   if (empty && pendingInvites === 0) {
     return (
-      <Card variant="outlined" sx={{ mb: 4 }}>
+      <Stack spacing={3} sx={{ mb: 4 }}>
+      {accessInvitesAlert}
+      <Card variant="outlined">
         <CardContent>
           <Typography variant="h6">{t("home.emptyTitle")}</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -150,21 +208,36 @@ export function HomeDashboard() {
             >
               {t("home.emptyCreate")}
             </Button>
-            <Button component={RouterLink} to="/event-invites">{t("eventAccess.title")}</Button>
             <Button startIcon={<SearchIcon />} component={RouterLink} to="/events/upcoming">
               {t("home.emptyBrowse")}
             </Button>
           </Stack>
         </CardContent>
       </Card>
+      </Stack>
     );
   }
 
   const upcoming = buckets.upcoming.slice(0, UPCOMING_LIMIT);
+  // 作成ボタンは最初の見出しの右に置く
+  const headingAction =
+    buckets.live.length > 0
+      ? null
+      : buckets.next
+        ? "next"
+        : upcoming.length > 0
+          ? "upcoming"
+          : buckets.scheduling.length > 0
+            ? "scheduling"
+            : null;
 
   return (
     <Stack spacing={3} sx={{ mb: 4 }}>
-      <Button component={RouterLink} to="/event-invites">{t("eventAccess.title")}</Button>
+      {/* 見出しが無いとき（開催中・運営への招待だけ）は、作成ボタンに1行使う */}
+      {headingAction === null && (
+        <Box sx={{ display: "flex", justifyContent: "flex-end" }}>{createButton}</Box>
+      )}
+      {accessInvitesAlert}
       {/* 返事待ち。承諾するまでイベントページを開けないので見落とすと詰む (#339) */}
       {pendingInvites > 0 && (
         <Alert
@@ -188,21 +261,27 @@ export function HomeDashboard() {
 
       {buckets.next && (
         <Box>
-          <SectionHeading>{t("home.next")}</SectionHeading>
+          <SectionHeading action={headingAction === "next" && createButton}>
+            {t("home.next")}
+          </SectionHeading>
           <FeatureCard event={buckets.next} live={false} now={now} />
         </Box>
       )}
 
       {upcoming.length > 0 && (
         <Box>
-          <SectionHeading>{t("home.upcoming")}</SectionHeading>
+          <SectionHeading action={headingAction === "upcoming" && createButton}>
+            {t("home.upcoming")}
+          </SectionHeading>
           <EventList events={upcoming} />
         </Box>
       )}
 
       {buckets.scheduling.length > 0 && (
         <Box>
-          <SectionHeading>{t("home.scheduling")}</SectionHeading>
+          <SectionHeading action={headingAction === "scheduling" && createButton}>
+            {t("home.scheduling")}
+          </SectionHeading>
           <EventList events={buckets.scheduling} />
         </Box>
       )}

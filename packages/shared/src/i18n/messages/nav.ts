@@ -8,6 +8,7 @@
  * テーマそのものの呼び名 (theme/themes.ts の `label`) はここでは持たない。
  */
 const ja = {
+  createEvent: "イベントを作る",
   communities: "コミュニティ",
   venues: "会場",
   decks: "スライド",
@@ -24,6 +25,9 @@ const ja = {
   fireworksUnavailable: "このテーマは花火なし",
   myProfile: "自分のプロフィール",
   staffInvites: "運営への招待 {{n}} 件",
+  /** ヘッダーの招待アイコン。運営への招待と招待限定イベントへの招待の合計 */
+  invites: "返事待ちの招待 {{n}} 件",
+  eventInvites: "招待されたイベント",
   adminBadge: "運営管理者",
   operations: "運用",
   operationsBreakdown: "問い合わせ未読 {{inquiries}} 件 / 要確認 {{abuse}} 件",
@@ -38,6 +42,7 @@ const ja = {
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
+  createEvent: "Create event",
   communities: "Communities",
   venues: "Venues",
   decks: "Slides",
@@ -52,6 +57,8 @@ const en: Record<keyof typeof ja, string> = {
   fireworksUnavailable: "Not available in this theme",
   myProfile: "My profile",
   staffInvites: "{{n}} organizer invites",
+  invites: "{{n}} invitations awaiting your reply",
+  eventInvites: "Event invitations",
   adminBadge: "Service admin",
   operations: "Operations",
   operationsBreakdown: "{{inquiries}} unread inquiries / {{abuse}} to review",

@@ -28,6 +28,7 @@ import { useIsAdmin, useLogout } from "../api/hooks.js";
 import { useAdminInquiryUnreadCount } from "../api/inquiryHooks.js";
 import { useAbuseUnreviewedCount } from "../api/abuseHooks.js";
 import { useMyStaffInvites } from "../api/staffInviteHooks.js";
+import { useMyEventInvites } from "../api/eventAccessHooks.js";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
 import { NotificationBell } from "./NotificationBell.js";
 import { LogoGlyph } from "./LogoGlyph.js";
@@ -107,7 +108,15 @@ export function Layout({
   // 置き場所はお知らせベルの隣（常に手前に残る側）。横並びナビや
   // ハンバーガーに置くと、幅によってどちらか片方でしか出ない
   const { data: staffInvites } = useMyStaffInvites();
-  const pendingInvites = staffInvites?.length ?? 0;
+  const pendingStaffInvites = staffInvites?.length ?? 0;
+  // 招待限定イベントへの招待 (#526) も同じアイコンにまとめる。返事待ちが無いときは
+  // アイコンごと出さない（初見の人に意味の分からない入口を常に見せない）。
+  // 承諾済みの閲覧の管理は設定とメニューの「招待されたイベント」から行ける
+  const { data: accessInvites } = useMyEventInvites();
+  const pendingAccessInvites = accessInvites?.pages[0]?.invites.length ?? 0;
+  const pendingInvites = pendingStaffInvites + pendingAccessInvites;
+  // 両方あるときは運営への招待を先に開く（承諾しないと運営画面に入れない）
+  const invitesTo = pendingStaffInvites > 0 ? "/staff-invites" : "/event-invites";
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
   const closeMenu = () => setAnchor(null);
   const doLogout = () =>
@@ -241,12 +250,12 @@ export function Layout({
             sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}
           >
             {pendingInvites > 0 && (
-              <Tooltip title={t("nav.staffInvites", { n: pendingInvites })}>
+              <Tooltip title={t("nav.invites", { n: pendingInvites })}>
                 <IconButton
                   color="inherit"
                   component={RouterLink}
-                  to="/staff-invites"
-                  aria-label={t("nav.staffInvites", { n: pendingInvites })}
+                  to={invitesTo}
+                  aria-label={t("nav.invites", { n: pendingInvites })}
                 >
                   <Badge badgeContent={pendingInvites} color="error">
                     <GroupAddIcon />
@@ -254,7 +263,6 @@ export function Layout({
                 </IconButton>
               </Tooltip>
             )}
-            <Tooltip title={t("eventAccess.title")}><IconButton color="inherit" component={RouterLink} to="/event-invites" aria-label={t("eventAccess.title")}><GroupAddIcon /></IconButton></Tooltip>
             <NotificationBell />
             <ThemeSwitcher />
             {/* 自分のページを開く。設定は横並びナビ／メニューの「設定」から (#319) */}
@@ -312,6 +320,9 @@ export function Layout({
 
           {/* 折りたたみ時のメニュー。横並びナビの項目をすべて含む */}
           <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={closeMenu}>
+            <MenuItem component={RouterLink} to="/events/new" onClick={closeMenu}>
+              {t("nav.createEvent")}
+            </MenuItem>
             {NAV_ITEMS.map((item) => (
               <MenuItem
                 key={item.to}
@@ -328,6 +339,9 @@ export function Layout({
               onClick={closeMenu}
             >
               {t("nav.notifications")}
+            </MenuItem>
+            <MenuItem component={RouterLink} to="/event-invites" onClick={closeMenu}>
+              {t("nav.eventInvites")}
             </MenuItem>
             <MenuItem component={RouterLink} to="/inquiries" onClick={closeMenu}>
               {t("nav.inquiries")}
