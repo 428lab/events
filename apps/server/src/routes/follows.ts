@@ -5,6 +5,14 @@ import { usersRepo } from "../db/repositories/users.js";
 import { followsRepo } from "../db/repositories/follows.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
+import { FOLLOWING_TITLE_PREFIX } from "../lib/emailTemplates.js";
+
+/** フォロー起点通知のタイトル。自分のイベントの話と取り違えないよう「フォロー中の」を付ける。
+ * 本人が見つからないときは「フォロー中のユーザー」で始める（「フォロー中の フォロー中のユーザー」を避ける） */
+export function followActivityTitle(name: string | null, action: "joined" | "published"): string {
+  const tail = action === "joined" ? "イベントに参加しました" : "イベントを公開しました";
+  return name ? `${FOLLOWING_TITLE_PREFIX}${name} さんが${tail}` : `フォロー中のユーザーが${tail}`;
+}
 
 /** イベント公開時: 作成者のフォロワーへ通知（1イベント1回。再公開では再通知しない） */
 export async function notifyFollowersOnPublish(event: {
@@ -23,17 +31,15 @@ export async function notifyFollowersOnPublish(event: {
     );
     if (followers.length === 0) return;
     const creator = await usersRepo.findById(event.createdBy);
-    const name = creator
-      ? (creator.globalName ?? creator.username)
-      : "フォロー中のユーザー";
+    const name = creator ? (creator.globalName ?? creator.username) : null;
     await notificationsRepo.createForMany(
       followers.filter((id) => id !== event.createdBy),
       "followee_created_event",
-      `${name} さんがイベントを公開しました`,
+      followActivityTitle(name, "published"),
       `「${event.title}」`,
       `/events/${event.id}`,
       // メールでは actor 名をプロフィールへリンクする (#134)
-      creator
+      creator && name
         ? { actorName: name, actorPath: `/users/${encodeURIComponent(creator.username)}` }
         : undefined,
       // 表示名がフォールバックに落ちても actor_id は必ず入れる (#380)。
@@ -59,17 +65,15 @@ export async function notifyFollowersOnJoin(
     );
     if (followers.length === 0) return;
     const joiner = await usersRepo.findById(userId);
-    const name = joiner
-      ? (joiner.globalName ?? joiner.username)
-      : "フォロー中のユーザー";
+    const name = joiner ? (joiner.globalName ?? joiner.username) : null;
     await notificationsRepo.createForMany(
       followers.filter((id) => id !== userId),
       "followee_joined_event",
-      `${name} さんがイベントに参加しました`,
+      followActivityTitle(name, "joined"),
       `「${event.title}」`,
       `/events/${event.id}`,
       // メールでは actor 名をプロフィールへリンクする (#134)
-      joiner
+      joiner && name
         ? { actorName: name, actorPath: `/users/${encodeURIComponent(joiner.username)}` }
         : undefined,
       // 表示名がフォールバックに落ちても actor_id は必ず入れる (#380)
