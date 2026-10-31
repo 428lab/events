@@ -172,8 +172,12 @@ export function timetableHtml(opts: {
     </div>`;
 }
 
-/** フォロー起点通知のタイトルHTML。「◯◯ さんが…」の ◯◯ をプロフィールへリンクする。
- * タイトルが actorName で始まらない場合は null（プレーン表示にフォールバック） */
+/** フォロー起点通知のタイトルの頭。自分のイベントの話と取り違えないよう付ける */
+export const FOLLOWING_TITLE_PREFIX = "フォロー中の ";
+
+/** フォロー起点通知のタイトルHTML。「（フォロー中の ）◯◯ さんが…」の ◯◯ をプロフィールへリンクする。
+ * タイトルが actorName（または FOLLOWING_TITLE_PREFIX + actorName）で始まらない場合は null
+ * （プレーン表示にフォールバック） */
 export function actorTitleHtml(opts: {
   baseUrl: string;
   title: string;
@@ -181,9 +185,15 @@ export function actorTitleHtml(opts: {
   actorPath: string;
 }): string | null {
   const { baseUrl, title, actorName, actorPath } = opts;
-  if (!actorName || !title.startsWith(actorName)) return null;
+  if (!actorName) return null;
+  const lead = title.startsWith(actorName)
+    ? ""
+    : title.startsWith(FOLLOWING_TITLE_PREFIX + actorName)
+      ? FOLLOWING_TITLE_PREFIX
+      : null;
+  if (lead === null) return null;
   const url = refEmailUrl(baseUrl, actorPath);
-  return `<a href="${escapeHtml(url)}" style="color:#0F172A;">${escapeHtml(actorName)}</a>${escapeHtml(title.slice(actorName.length))}`;
+  return `${escapeHtml(lead)}<a href="${escapeHtml(url)}" style="color:#0F172A;">${escapeHtml(actorName)}</a>${escapeHtml(title.slice(lead.length + actorName.length))}`;
 }
 
 /** 通知メールの最小HTML（インラインスタイル・ライト配色）。

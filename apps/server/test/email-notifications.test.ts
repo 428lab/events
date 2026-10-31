@@ -768,6 +768,18 @@ describe("リッチ通知メールのテンプレート (#134)", () => {
       expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
     });
 
+    it("「フォロー中の 」で始まるタイトルでも actor 名だけをリンクする", () => {
+      const html = actorTitleHtml({
+        baseUrl: BASE_URL,
+        title: "フォロー中の アリス さんがイベントに参加しました",
+        actorName: "アリス",
+        actorPath: "/users/alice",
+      });
+      expect(html).toBe(
+        `フォロー中の <a href="${BASE_URL}/users/alice?ref=email" style="color:#0F172A;">アリス</a> さんがイベントに参加しました`,
+      );
+    });
+
     it("タイトルが actor 名で始まらなければ null（プレーン表示へフォールバック）", () => {
       expect(
         actorTitleHtml({
