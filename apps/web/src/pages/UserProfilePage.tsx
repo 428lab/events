@@ -37,6 +37,7 @@ import type {
   UserProfile,
 } from "@eventer/shared";
 import { useSetFollow, useUserProfile } from "../api/userHooks.js";
+import { ProfileLinks } from "../components/ProfileLinks.js";
 import { useMe, useMyPage } from "../api/hooks.js";
 import { ProfileTabs } from "../components/profile/ProfileTabs.js";
 import { MyBingoCard } from "../components/profile/MyBingoCard.js";
@@ -417,6 +418,9 @@ export function UserProfilePage() {
           </Tooltip>
         )}
       </Stack>
+
+      {/* 本人がオンにした連携アカウントへのリンク (docs/profile-social-links.md) */}
+      <ProfileLinks links={data.links ?? []} />
 
       {/* カードに無い素性。登録日とフォローの数 */}
       <Typography variant="caption" color="text.secondary">

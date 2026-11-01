@@ -3,6 +3,7 @@ import { myEventSummary } from "./schema.js";
 import { communitySummarySchema } from "./communities.js";
 import { gamificationSchema } from "./gamification.js";
 import { eventTimelinePhotosSchema } from "./photos.js";
+import { profileLinkSchema } from "./profileLinks.js";
 
 /** 受賞歴の1件（公開プロフィール用。終了済み公開イベントのみ） */
 export const userAwardSchema = z.object({
@@ -84,6 +85,9 @@ export const userProfileSchema = z.object({
    * カードは誰が見ても持ち主の意匠で描くので、公開プロフィールに含める */
   cardImageKey: z.string().nullable(),
   cardImageGeneration: z.string(),
+  /** 本人が「プロフィールに表示する」をオンにした連携アカウントへのリンク
+   * (docs/profile-social-links.md)。オプトインなので既定は空 */
+  links: z.array(profileLinkSchema),
 });
 export type UserProfile = z.infer<typeof userProfileSchema>;
 

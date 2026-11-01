@@ -131,6 +131,8 @@ blueskyAuthRoutes.get("/callback", async (c) => {
       // この scope ではメールアドレスは取れない
       email: null,
     },
+    // 公開プロフィールのリンクの表示用 (docs/profile-social-links.md)。URL は DID で作る
+    publicHandle: login.profile.handle ?? null,
   });
 
   if (result.kind === "link_error") {

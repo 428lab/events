@@ -76,6 +76,13 @@ const ja = {
   nostrLinkFailed: "Nostr 連携に失敗しました。",
   lastLoginMethodNotice:
     "ログイン方法は最低1つ必要です（最後の1つは解除できません）。",
+  /** 連携アカウントを公開プロフィールに出す (docs/profile-social-links.md) */
+  profileLinkShow: "プロフィールに表示する",
+  profileLinkHelp:
+    "オンにした連携だけ、公開プロフィールにリンクが出ます（最初はすべてオフです）。",
+  profileLinkPending:
+    "アカウント名がまだ分からないため、表示できません。一度このログイン方法でログインし直すと表示できるようになります。",
+  profileLinkFailed: "切り替えられませんでした。もう一度お試しください。",
   linkFailedTitle: "連携できませんでした",
 
   /** アカウント統合カード */
@@ -213,6 +220,12 @@ const en: Record<keyof typeof ja, string> = {
   nostrLinkFailed: "Could not link your Nostr key.",
   lastLoginMethodNotice:
     "You need at least one login method (the last one cannot be unlinked).",
+  profileLinkShow: "Show on my profile",
+  profileLinkHelp:
+    "Only the accounts you turn on are linked from your public profile (all are off at first).",
+  profileLinkPending:
+    "Your account name isn't known yet, so it can't be shown. Sign in once with this login method and it will become available.",
+  profileLinkFailed: "Could not change this. Please try again.",
   linkFailedTitle: "Could not link",
 
   mergeTitle: "Merge accounts",

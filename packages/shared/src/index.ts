@@ -57,3 +57,4 @@ export * from "./warikan.js";
 
 export * from "./deckImport.js";
 export * from "./eventAccessInvites.js";
+export * from "./profileLinks.js";

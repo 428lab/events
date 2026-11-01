@@ -89,6 +89,7 @@ function profile(over: Partial<UserProfile> = {}): UserProfile {
     cardImageUpdatedAt: null,
     cardImageKey: null,
     cardImageGeneration: "1234567890abcdef1234567890abcdef",
+    links: [],
     ...over,
   } as UserProfile;
 }
@@ -156,6 +157,34 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     expect(screen.queryByRole("link", { name: "設定" })).toBeNull();
     expect(screen.queryByRole("link", { name: /フォロー中/ })).toBeNull();
     expect(screen.getByText(/フォロー中 5/)).toBeTruthy();
+  });
+
+  it("本人が公開した連携アカウントへのリンクを出し、無ければ何も出さない", async () => {
+    renderProfile(
+      profile({
+        isMe: false,
+        id: "u-other",
+        handle: "other",
+        links: [
+          { provider: "github", url: "https://github.com/octo-cat", label: "@octo-cat" },
+          { provider: "bluesky", url: "https://bsky.app/profile/did:plc:abc", label: "@alice.bsky.social" },
+        ],
+      }),
+    );
+    await screen.findAllByText("テスター");
+    const nav = screen.getByRole("navigation", { name: "連携しているアカウント" });
+    const gh = screen.getByRole("link", { name: "GitHub のアカウント @octo-cat" });
+    expect(nav.contains(gh)).toBe(true);
+    expect(gh.getAttribute("href")).toBe("https://github.com/octo-cat");
+    expect(gh.getAttribute("target")).toBe("_blank");
+    expect(gh.getAttribute("rel")).toBe("me noopener noreferrer");
+    expect(href("Bluesky のアカウント @alice.bsky.social")).toBe("https://bsky.app/profile/did:plc:abc");
+  });
+
+  it("公開した連携が無いときはリンクの行を出さない", async () => {
+    renderProfile(profile({ isMe: false, id: "u-other", handle: "other", links: [] }));
+    await screen.findAllByText("テスター");
+    expect(screen.queryByRole("navigation", { name: "連携しているアカウント" })).toBeNull();
   });
 
   it("本人のページにだけQRを見せる導線を出す (#324)", async () => {
