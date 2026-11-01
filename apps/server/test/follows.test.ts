@@ -1,5 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, it, expect } from "vitest";
+import { followActivityTitle } from "../src/routes/follows.js";
 
 const BASE = "https://example.com";
 
@@ -38,6 +39,16 @@ async function notifTypes(cookie: string): Promise<string[]> {
     notifications: { type: string }[];
   };
   return notifications.map((n) => n.type);
+}
+
+async function notifTitles(cookie: string, type: string): Promise<string[]> {
+  const res = await SELF.fetch(`${BASE}/api/notifications`, {
+    headers: { cookie },
+  });
+  const { notifications } = (await res.json()) as {
+    notifications: { type: string; title: string }[];
+  };
+  return notifications.filter((n) => n.type === type).map((n) => n.title);
 }
 
 describe("フォローと通知 (#21)", () => {
@@ -159,6 +170,9 @@ describe("フォローと通知 (#21)", () => {
     expect(
       after.filter((t) => t === "followee_created_event").length,
     ).toBe(1);
+    // 自分のイベントの話と取り違えないよう「フォロー中の」で始める
+    const [publishedTitle] = await notifTitles(follower.cookie, "followee_created_event");
+    expect(publishedTitle).toMatch(/^フォロー中の .+ さんがイベントを公開しました$/);
 
     // 再公開（PATCH）しても増えない
     await SELF.fetch(`${BASE}/api/events/${event.id}`, {
@@ -331,9 +345,29 @@ describe("フォローと通知 (#21)", () => {
 
     const types = await notifTypes(follower.cookie);
     expect(types).toContain("followee_joined_event");
+    // 自分が管理するイベントへの参加と取り違えないよう「フォロー中の」を付ける
+    expect(await notifTitles(follower.cookie, "followee_joined_event")).toEqual([
+      "フォロー中の テスト さんがイベントに参加しました",
+    ]);
     // 本人（joiner）には来ない
     expect(await notifTypes(joiner.cookie)).not.toContain(
       "followee_joined_event",
     );
+  });
+});
+
+describe("フォロー起点通知のタイトル", () => {
+  it("名前があれば「フォロー中の ◯◯ さんが…」", () => {
+    expect(followActivityTitle("あいもの", "joined")).toBe(
+      "フォロー中の あいもの さんがイベントに参加しました",
+    );
+    expect(followActivityTitle("あいもの", "published")).toBe(
+      "フォロー中の あいもの さんがイベントを公開しました",
+    );
+  });
+
+  it("本人が見つからなければ「フォロー中のユーザーが…」（二重にしない）", () => {
+    expect(followActivityTitle(null, "joined")).toBe("フォロー中のユーザーがイベントに参加しました");
+    expect(followActivityTitle(null, "published")).toBe("フォロー中のユーザーがイベントを公開しました");
   });
 });
