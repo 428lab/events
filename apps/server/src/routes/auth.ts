@@ -5,6 +5,13 @@ import { env } from "../env.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { identitiesRepo } from "../db/repositories/identities.js";
 import { deriveHandle } from "../lib/handle.js";
+import { zValidator, valid } from "../lib/validator.js";
+import {
+  isProfileLinkProvider,
+  profileLinkFor,
+  setIdentityProfilePublicInput,
+  type SetIdentityProfilePublicInput,
+} from "@eventer/shared";
 import {
   AVATAR_SYNC_MIN_INTERVAL_MS,
   syncAvatarInBackground,
@@ -102,9 +109,34 @@ authRoutes.get("/identities", requireAuth, async (c) => {
   const user = c.get("user");
   const identities = await identitiesRepo.listByUser(user.id);
   return c.json({
-    identities: identities.map((i) => ({ provider: i.provider, email: i.email })),
+    identities: identities.map((i) => ({
+      provider: i.provider,
+      email: i.email,
+      // 公開プロフィールに出すか（本人のオプトイン）と、出したときのリンク
+      // (docs/profile-social-links.md)。リンクを出せない連携先は profileLink が null
+      profilePublic: i.profilePublic,
+      profileLink: profileLinkFor(i.provider, i.providerUserId, i.publicHandle),
+    })),
   });
 });
+
+/** 連携アカウントを公開プロフィールに出すか（本人のみ。オプトイン）。
+ * リンクを出せない連携先（Google・Discord）はオンにできない */
+authRoutes.put(
+  "/identities/:provider/profile-public",
+  requireAuth,
+  zValidator("json", setIdentityProfilePublicInput),
+  async (c) => {
+    const provider = c.req.param("provider");
+    const user = c.get("user");
+    if (!isProfileLinkProvider(provider)) return c.json({ error: "not_linkable" }, 400);
+    const { profilePublic } = valid<SetIdentityProfilePublicInput>(c, "json");
+    if (!(await identitiesRepo.setProfilePublic(user.id, provider, profilePublic))) {
+      return c.json({ error: "not_linked" }, 404);
+    }
+    return c.json({ ok: true, profilePublic });
+  },
+);
 
 /** 連携解除（最後の1つは外せない） */
 authRoutes.delete("/identities/:provider", requireAuth, async (c) => {
@@ -281,6 +313,9 @@ authRoutes.get("/:provider/callback", async (c) => {
       provider === "discord"
         ? (userId) => usersRepo.setDiscordId(userId, profile.providerUserId)
         : undefined,
+    // 公開プロフィールのリンク用 (docs/profile-social-links.md)。リンクを出せる
+    // GitHub（login）と X（username）だけ保存する。Google・Discord はリンクを出さない
+    publicHandle: provider === "github" || provider === "x" ? profile.username : null,
   });
   // OAuth はブラウザの遷移なので、失敗もリダイレクトで返す（Nostr は 409 JSON）
   if (result.kind === "link_error") {

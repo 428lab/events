@@ -90,9 +90,20 @@ export async function finishIdentityLogin(
     providerUserId: string;
     profile: IdentityProfile;
     onLinked?: (userId: string) => Promise<void>;
+    /** 連携先のユーザー名（GitHub の login、X の username、Bluesky のハンドル）。
+     * 公開プロフィールのリンク用に保存し、ログインのたびに取り直す
+     * (docs/profile-social-links.md)。名前の無い方式（Nostr）は渡さない */
+    publicHandle?: string | null;
   },
 ): Promise<FinishIdentityLoginResult> {
-  const { provider, providerUserId, profile, onLinked } = opts;
+  const { provider, providerUserId, profile, onLinked, publicHandle } = opts;
+  // 連携先で名前を変えても次のログインで追いつくよう、成功した経路では毎回書き直す。
+  // 失敗（link_error）では書かない: 他人のアカウントに付いた連携の値を動かさないため
+  const refreshHandle = async () => {
+    if (publicHandle) {
+      await identitiesRepo.refreshPublicHandle(provider, providerUserId, publicHandle);
+    }
+  };
   const current = await currentUser(c);
   const existingUserId = await identitiesRepo.findUserId(
     provider,
@@ -127,6 +138,7 @@ export async function finishIdentityLogin(
       );
       await onLinked?.(current.id);
     }
+    await refreshHandle();
     return { kind: "linked" };
   }
 
@@ -142,6 +154,7 @@ export async function finishIdentityLogin(
     await identitiesRepo.link(u.id, provider, providerUserId, profile.email);
     userId = u.id;
   }
+  await refreshHandle();
   // 猶予期間中 (#250) はセッションだけ発行して復帰画面へ誘導する。
   // このセッションで使えるのは復帰API だけ（currentUser が null を返すため）
   const pendingDeletion = await isPendingDeletion(userId);

@@ -15,6 +15,7 @@ import type {
   MyPage,
   ParticipationSlot,
   PendingDeletion,
+  ProfileLink,
   Submission,
   UpdateEventInput,
   UpdateSlotInput,
@@ -135,6 +136,11 @@ export function useAuthProviders() {
 export interface LinkedIdentity {
   provider: string;
   email: string | null;
+  /** 公開プロフィールに出すか（本人のオプトイン）(docs/profile-social-links.md) */
+  profilePublic: boolean;
+  /** 出したときのリンク。リンクを出せない連携先（Google・Discord）や、名前が
+   * まだ分からない連携は null */
+  profileLink: ProfileLink | null;
 }
 
 /** ログイン中ユーザーの連携プロバイダ */
@@ -144,6 +150,20 @@ export function useIdentities() {
     queryFn: async () =>
       (await api.get<{ identities: LinkedIdentity[] }>("/auth/identities"))
         .identities,
+  });
+}
+
+/** 連携アカウントを公開プロフィールに出す/出さない（本人のみ） */
+export function useSetIdentityProfilePublic() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ provider, profilePublic }: { provider: string; profilePublic: boolean }) =>
+      api.put(`/auth/identities/${provider}/profile-public`, { profilePublic }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["identities"] });
+      // 自分のプロフィールに出ているリンクも取り直す
+      void qc.invalidateQueries({ queryKey: ["userProfile"] });
+    },
   });
 }
 

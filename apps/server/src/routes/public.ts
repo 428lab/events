@@ -3,6 +3,7 @@ import { Hono, type Context } from "hono";
 import type { AppEnv } from "../types.js";
 import { currentUser } from "../auth/session.js";
 import { eventsRepo } from "../db/repositories/events.js";
+import { identitiesRepo } from "../db/repositories/identities.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
@@ -138,6 +139,9 @@ publicRoutes.get("/users/:handle", async (c) => {
     // 見る人の設定ではなく、これで描く。未設定（一度も保存していない）は null
     cardImageKey: user.cardImageKey,
     cardImageGeneration: user.cardImageGeneration,
+    // 本人が「プロフィールに表示する」をオンにした連携だけ（オプトイン）
+    // (docs/profile-social-links.md)。オフの連携の ID は返さない
+    links: await identitiesRepo.publicLinksForUser(user.id),
   };
   const current = await usersRepo.findById(user.id);
   if (!current) return c.json({ error: "not_found" }, 404);

@@ -11,7 +11,10 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  FormControlLabel,
+  Link,
   Stack,
+  Switch,
   Typography,
 } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,7 +24,9 @@ import {
   useAuthProviders,
   useIdentities,
   useMe,
+  useSetIdentityProfilePublic,
   useUnlinkIdentity,
+  type LinkedIdentity,
 } from "../api/hooks.js";
 import { AvatarUploadCard } from "../components/AvatarUploadCard.js";
 import { UsernameCard } from "../components/UsernameCard.js";
@@ -30,6 +35,7 @@ import { LanguageCard } from "../components/LanguageCard.js";
 import { AccountMergeCard } from "../components/AccountMergeCard.js";
 import { AccountDeleteCard } from "../components/AccountDeleteCard.js";
 import { PROVIDER_META, providerLabel } from "../lib/providers.js";
+import { isProfileLinkProvider } from "@eventer/shared";
 import {
   hasNip07,
   nostrNip07Login,
@@ -65,6 +71,8 @@ export function AccountPage() {
   const { data: providers } = useAuthProviders();
   const { data: identities } = useIdentities();
   const unlink = useUnlinkIdentity();
+  const setProfilePublic = useSetIdentityProfilePublic();
+  const [profileLinkError, setProfileLinkError] = useState<string | null>(null);
   const qc = useQueryClient();
   const [nostrBusy, setNostrBusy] = useState(false);
   const [nostrError, setNostrError] = useState<string | null>(null);
@@ -255,6 +263,19 @@ export function AccountPage() {
                       </>
                     )}
                   </Box>
+                  {id && isProfileLinkProvider(p) && (
+                    <ProfileLinkToggle
+                      identity={id}
+                      busy={setProfilePublic.isPending}
+                      onChange={(profilePublic) => {
+                        setProfileLinkError(null);
+                        setProfilePublic.mutate(
+                          { provider: p, profilePublic },
+                          { onError: () => setProfileLinkError(t("settings.profileLinkFailed")) },
+                        );
+                      }}
+                    />
+                  )}
                   {/* ハンドルを聞いてから同じ URL へ遷移する（ログイン画面と同じ部品）。
                       分岐は「セッションがあるか」だけなので専用のルートは無い (#381) */}
                   {p === "bluesky" && !id && blueskyOpen && (
@@ -297,6 +318,14 @@ export function AccountPage() {
               {t("settings.lastLoginMethodNotice")}
             </Alert>
           )}
+          {profileLinkError && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              {profileLinkError}
+            </Alert>
+          )}
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            {t("settings.profileLinkHelp")}
+          </Typography>
         </CardContent>
       </Card>
 
@@ -317,5 +346,53 @@ export function AccountPage() {
         </DialogActions>
       </Dialog>
     </Stack>
+  );
+}
+
+/** 連携1件を公開プロフィールに出すかのスイッチ (docs/profile-social-links.md)。
+ * オプトインなので既定はオフ。リンクがまだ作れない（アカウント名が分からない）連携は
+ * オンにできず、理由を添える。オンのときは実際に出るリンクを見せて、何が公開されるかを
+ * 押す前に確かめられるようにする */
+function ProfileLinkToggle({
+  identity,
+  busy,
+  onChange,
+}: {
+  identity: LinkedIdentity;
+  busy: boolean;
+  onChange: (profilePublic: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const link = identity.profileLink;
+  return (
+    <Box sx={{ pl: 3.5, display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            checked={identity.profilePublic}
+            disabled={busy || (!link && !identity.profilePublic)}
+            onChange={(e) => onChange(e.target.checked)}
+            inputProps={{ "aria-label": `${providerLabel(identity.provider)}: ${t("settings.profileLinkShow")}` }}
+          />
+        }
+        label={<Typography variant="body2">{t("settings.profileLinkShow")}</Typography>}
+      />
+      {link ? (
+        <Link
+          variant="body2"
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          sx={{ overflowWrap: "anywhere" }}
+        >
+          {link.label}
+        </Link>
+      ) : (
+        <Typography variant="caption" color="text.secondary">
+          {t("settings.profileLinkPending")}
+        </Typography>
+      )}
+    </Box>
   );
 }

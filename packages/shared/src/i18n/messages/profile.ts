@@ -45,6 +45,9 @@ const ja = {
 
   /** 上部のボタン */
   follow: "フォローする",
+  /** 連携アカウントへのリンク (docs/profile-social-links.md)。{{provider}} は GitHub など */
+  linksLabel: "連携しているアカウント",
+  linkTo: "{{provider}} のアカウント {{label}}",
   /** フォロー済みのボタン。フォロー中の一覧の行ボタンと見出しも同じ言い方をする */
   following: "フォロー中",
   editCard: "デザインを変える",
@@ -195,6 +198,8 @@ const en: Record<keyof typeof ja, string> = {
   totalMet: "People met",
 
   follow: "Follow",
+  linksLabel: "Linked accounts",
+  linkTo: "{{provider}} account {{label}}",
   following: "Following",
   editCard: "Change the design",
   showQr: "Show my QR",

@@ -71,6 +71,7 @@ function profile(over: Partial<UserProfile> = {}): UserProfile {
     cardImageUpdatedAt: null,
     cardImageKey: null,
     cardImageGeneration: "1234567890abcdef1234567890abcdef",
+    links: [],
     ...over,
   } as UserProfile;
 }
