@@ -1,4 +1,4 @@
-import { Box, Chip, SvgIcon, type SvgIconProps } from "@mui/material";
+import { Box, IconButton, SvgIcon, Tooltip, type SvgIconProps } from "@mui/material";
 import GitHubIcon from "@mui/icons-material/GitHub";
 import XIcon from "@mui/icons-material/X";
 import { useTranslation } from "react-i18next";
@@ -35,7 +35,10 @@ const ICONS: Record<ProfileLink["provider"], typeof GitHubIcon | typeof BlueskyI
 
 /** 公開プロフィールの「連携しているアカウント」(docs/profile-social-links.md)。
  * 本人がオンにした連携だけがサーバーから届く。外部サイトなので新しいタブで開き、
- * rel="me" で「この人のアカウント」であることを示す（相手側の相互リンク確認に使える） */
+ * rel="me" で「この人のアカウント」であることを示す（相手側の相互リンク確認に使える）。
+ *
+ * 見た目はアイコンだけ（npub のような長い識別子を並べない）。どのサービスの誰かは
+ * aria-label とツールチップで伝える。label はサーバー側で短縮済み（npub は先頭12字…末尾4字） */
 export function ProfileLinks({ links }: { links: ProfileLink[] }) {
   const { t } = useTranslation();
   if (links.length === 0) return null;
@@ -43,24 +46,25 @@ export function ProfileLinks({ links }: { links: ProfileLink[] }) {
     <Box
       component="nav"
       aria-label={t("profile.linksLabel")}
-      sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}
+      sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}
     >
       {links.map((l) => {
         const Icon = ICONS[l.provider];
+        const name = t("profile.linkTo", { provider: providerLabel(l.provider), label: l.label });
         return (
-          <Chip
-            key={l.provider}
-            component="a"
-            href={l.url}
-            target="_blank"
-            rel="me noopener noreferrer"
-            clickable
-            variant="outlined"
-            icon={<Icon fontSize="small" />}
-            label={l.label}
-            aria-label={t("profile.linkTo", { provider: providerLabel(l.provider), label: l.label })}
-            sx={{ maxWidth: "100%" }}
-          />
+          <Tooltip key={l.provider} title={name}>
+            <IconButton
+              component="a"
+              href={l.url}
+              target="_blank"
+              rel="me noopener noreferrer"
+              aria-label={name}
+              size="small"
+              sx={{ border: 1, borderColor: "divider", color: "text.secondary" }}
+            >
+              <Icon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         );
       })}
     </Box>

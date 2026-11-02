@@ -179,6 +179,28 @@ describe("公開プロフィール（マイページ統合 #319）", () => {
     expect(gh.getAttribute("target")).toBe("_blank");
     expect(gh.getAttribute("rel")).toBe("me noopener noreferrer");
     expect(href("Bluesky のアカウント @alice.bsky.social")).toBe("https://bsky.app/profile/did:plc:abc");
+    // 見た目はアイコンだけ。ハンドルは名前（aria-label/ツールチップ）にだけ載る
+    expect(nav.textContent).toBe("");
+    expect(screen.queryByText("@octo-cat")).toBeNull();
+  });
+
+  it("Nostr はアイコンだけで、生の npub を画面の文字に出さない", async () => {
+    const npub = "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6";
+    renderProfile(
+      profile({
+        isMe: false,
+        id: "u-other",
+        handle: "other",
+        links: [{ provider: "nostr", url: `https://njump.me/${npub}`, label: "npub180cvv07…h6w6" }],
+      }),
+    );
+    await screen.findAllByText("テスター");
+    const nav = screen.getByRole("navigation", { name: "連携しているアカウント" });
+    const link = screen.getByRole("link", { name: "Nostr のアカウント npub180cvv07…h6w6" });
+    expect(nav.contains(link)).toBe(true);
+    expect(link.getAttribute("href")).toBe(`https://njump.me/${npub}`);
+    expect(nav.textContent).toBe("");
+    expect(document.body.textContent).not.toContain(npub);
   });
 
   it("公開した連携が無いときはリンクの行を出さない", async () => {
