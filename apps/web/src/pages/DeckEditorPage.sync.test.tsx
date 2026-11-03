@@ -4,8 +4,8 @@ import { MemoryRouter } from "react-router-dom";
 import type { Event as NostrEvent, EventTemplate } from "nostr-tools/pure";
 import { finalizeEvent, generateSecretKey } from "nostr-tools/pure";
 import type { Deck, DeckForEdit, DeckSlide, DeckSyncConfig } from "@eventer/shared";
-import { ApiError } from "../api/client.js";
-import type { DeckSyncTransport } from "../lib/deckSyncChannel.js";
+import { ApiError, api } from "../api/client.js";
+import { sealDeckSyncBatch, type DeckSyncTransport } from "../lib/deckSyncChannel.js";
 
 /**
  * チームのスライドの同時編集を、編集画面2つ（同じリレーにつながった別のタブ）で確かめる
@@ -259,6 +259,33 @@ describe("チームのスライドの同時編集（画面）", () => {
     await settle(3000);
     expect(a.update).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/ほかのメンバーが保存しました（はるとさん/)).toBeInTheDocument();
+  });
+
+  it("取り直しの依頼を送り続けられても、GET は最短間隔ごとに1回まで", async () => {
+    mocks.decks.set("A", deckFor("u-a", "あおい"));
+    tab("A");
+    await settle();
+    mocks.latest = deckFor("u-a", "あおい");
+    const get = vi.mocked(api.get);
+    get.mockClear();
+    // 同じチームの鍵を持つ相手が、refetch の依頼を1秒に50件送る（受け取りの上限も超える）
+    const evil = (relay.transport as () => DeckSyncTransport)();
+    const cfg = sync("u-x", "だれか");
+    await act(async () => {
+      for (let i = 0; i < 50; i++) await evil.publish(sealDeckSyncBatch({ v: 1, clientId: "evil", userId: "u-x", name: "だれか", ops: [], refetch: true }, cfg));
+    });
+    await settle(4000);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it("保存より前に始めた GET が古い版で届いても、その中身に戻さない", async () => {
+    mocks.decks.set("A", deckFor("u-a", "あおい", { revision: 3 }));
+    const a = tab("A");
+    await settle();
+    mocks.latest = deckFor("u-a", "あおい", { title: "古い題", revision: 2 });
+    await act(async () => { statusCbs.get("A")!(); });
+    await settle();
+    expect(a.title().value).toBe("チームの発表");
   });
 });
 

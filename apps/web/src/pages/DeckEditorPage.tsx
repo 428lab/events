@@ -145,6 +145,7 @@ export function DeckEditorPage() {
     onRevision: (revision) => {
       baseRevision.current = revision;
     },
+    revision: () => baseRevision.current,
     onLost: () => setSyncLost(true),
   });
   const saveDeck = async (value: { title: string; content: DeckContent }) => {

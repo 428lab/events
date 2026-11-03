@@ -48,6 +48,8 @@ const SUBSCRIBE_BACK_SEC = 120;
 const REFETCH_REQUEST_DELAY_MS = 2_000;
 /** 重複を覚えておく件数（§7.2） */
 const SEEN_MAX = 2_000;
+/** 受け取った側から頼まれる取り直し（上限超え・refetch の依頼）の最短間隔。ひとりが送り続けても GET を続けさせない */
+const REFETCH_MIN_GAP_MS = 5_000;
 
 export interface DeckSyncOptions {
   deckId: string;
@@ -63,6 +65,8 @@ export interface DeckSyncOptions {
   onRemote: (doc: DeckDoc, apply: (content: DeckContent) => DeckContent) => void;
   /** 取り直した版（次の保存の baseRevision）。このタブ自身の GET の応答だけ */
   onRevision: (revision: number) => void;
+  /** いまの baseRevision。これより古い版の GET の応答は当てない（保存のあとに古い応答が届いたとき） */
+  revision?: () => number | undefined;
   /** 取り直しで編集できなくなった（チームを抜けた・イベントが終わった） */
   onLost: () => void;
   /** テスト用の差し替え */
@@ -118,6 +122,9 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
   const limiter = useRef(createReceiveLimiter());
   const transport = useRef<DeckSyncTransport | null>(null);
   const refetching = useRef<Promise<void> | null>(null);
+  /** 受け取った側からの取り直しの予約（1つだけ）と、最後に取り直しを始めた時刻 */
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRefetchAt = useRef(Number.NEGATIVE_INFINITY);
   const [connected, setConnected] = useState(false);
   const [offlineTooLong, setOfflineTooLong] = useState(false);
   const stopped = useRef(false);
@@ -221,10 +228,10 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
     const batch = openDeckSyncEvent(ev, cfg, at);
     if (!batch || batch.clientId === clock.current.clientId) return;
     if (!limiter.current(batch.clientId, at)) {
-      void refetch();
+      requestRefetch(0);
       return;
     }
-    if (batch.refetch) setTimeout(() => void refetch(), REFETCH_REQUEST_DELAY_MS);
+    if (batch.refetch) requestRefetch(REFETCH_REQUEST_DELAY_MS);
     const fresh: DeckOp[] = [];
     for (const op of batch.ops) {
       const key = `${op.hlc.clientId}:${op.hlc.t}:${op.hlc.c}`;
@@ -276,6 +283,9 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
       return null;
     }
     if (!state.current) return null;
+    // 保存の応答より先に始めた GET が、あとから届いた。古い中身で戻さない（版も戻さない）
+    const known = optsRef.current.revision?.();
+    if (typeof fetched.revision === "number" && typeof known === "number" && fetched.revision < known) return null;
     const current = docNow() ?? stateDoc(state.current);
     // 取り直すあいだに打ったぶんも pending log に入れてから合わせる
     if (base.current && current !== base.current) {
@@ -310,12 +320,29 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
     if (stopped.current) return Promise.resolve();
     gap.current = true;
     if (!refetching.current) {
+      lastRefetchAt.current = now();
       refetching.current = load("gap").then(() => undefined).finally(() => {
         refetching.current = null;
       });
     }
     return refetching.current;
   };
+
+  /**
+   * 受け取った側から頼まれた取り直し（§6.4）。予約は1つだけで、予約中・取り直し中・最短間隔のあいだの
+   * 依頼は捨てる（予約した1回で足りる）。上限超えと refetch の依頼の両方がここを通る
+   */
+  const requestRefetch = (delay: number) => {
+    if (stopped.current || refetchTimer.current) return;
+    const wait = Math.max(delay, lastRefetchAt.current + REFETCH_MIN_GAP_MS - now(), 0);
+    refetchTimer.current = setTimeout(() => {
+      refetchTimer.current = null;
+      void refetch();
+    }, wait);
+  };
+  useEffect(() => () => {
+    if (refetchTimer.current) clearTimeout(refetchTimer.current);
+  }, []);
 
   // ===== 接続と購読 =====
   const relaysKey = config ? config.relays.join(" ") : "";
