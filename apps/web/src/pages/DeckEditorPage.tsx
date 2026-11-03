@@ -13,7 +13,7 @@ import RedoIcon from "@mui/icons-material/Redo";
 import UndoIcon from "@mui/icons-material/Undo";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import type { Deck, DeckContent, DeckElement, DeckSlide } from "@eventer/shared";
+import type { Deck, DeckContent, DeckElement, DeckForEdit, DeckSlide } from "@eventer/shared";
 import { ApiError, api } from "../api/client.js";
 import { relativeTime } from "../lib/format.js";
 import {
@@ -60,6 +60,7 @@ import type {
 import { ensureDeckFonts } from "../lib/deckFonts.js";
 import { prepareLoadedContent, withDeckPositions } from "../lib/deckPositions.js";
 import { useDeckSave } from "../lib/useDeckSave.js";
+import { useDeckSync } from "../lib/useDeckSync.js";
 import { useDeckLeaveWarning } from "../lib/useDeckLeaveWarning.js";
 import { useEditorHistory } from "../lib/editor/useEditorHistory.js";
 import { useEditorKeyboard } from "../lib/editor/useEditorKeyboard.js";
@@ -76,17 +77,22 @@ import { useImagePicker } from "../lib/editor/useImagePicker.js";
 export function DeckEditorPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
-  const { data: deck, isLoading, isError } = useDeck(id);
+  const { data: deckData, isLoading, isError } = useDeck(id);
+  const deck = deckData as DeckForEdit | undefined;
   const update = useUpdateDeck(id);
   const upload = useUploadDeckImage(id);
 
   const [title, setTitle] = useState("");
+  const titleRef = useRef(title);
+  titleRef.current = title;
   const [content, setContent] = useState<DeckContent | null>(null);
   const [slideIdx, setSlideIdx] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   /** 指で操作する端末向けの複数選択モード。ON の間はタップが追加選択になる */
   const [multiSelect, setMultiSelect] = useState(false);
   const loaded = useRef(false);
+  /** 打っている文字欄のページ（同時編集の保留に使う） */
+  const slideFocus = useRef<string | null>(null);
 
   const history = useEditorHistory<DeckContent>({
     content,
@@ -117,17 +123,46 @@ export function DeckEditorPage() {
     if (baseRevision.current === undefined) baseRevision.current = deck.revision;
     if (lastSaved === null && deck.lastSavedBy) setLastSaved({ name: deck.lastSavedBy.name, at: deck.updatedAt });
   }, [deck]);
+  // チームのスライドの同時編集（docs/team-deck-live-sync.md）。設定が無ければ（機能オフ・個人のデッキ）何もしない
+  const [focusedText, setFocusedText] = useState<string | null>(null);
+  const [syncLost, setSyncLost] = useState(false);
+  const doc = content ? { title, content } : null;
+  const docRef = useRef<{ title: string; content: DeckContent } | null>(null);
+  if (!docRef.current || docRef.current.title !== title || docRef.current.content !== content) docRef.current = doc;
+  const sync = useDeckSync({
+    deckId: id,
+    config: deck?.sync,
+    doc: docRef.current,
+    focused: focusedText && slideFocus.current ? { slideId: slideFocus.current, elementId: focusedText } : null,
+    onRemote: (next, apply) => {
+      // 受け取った変更・合わせた結果は、それだけでは保存しない（§7.6）。state へ入れるのと同じ値を先に渡す。
+      // タイトルは前後の空白を除いて同じなら、打っている途中の手元の文字を残す
+      const nextTitle = titleRef.current.trim() === next.title.trim() ? titleRef.current : next.title;
+      savingRef.current?.acceptRemote(nextTitle, next.content);
+      history.setContentFromRemote(next.content, apply);
+      setTitle(nextTitle);
+    },
+    onRevision: (revision) => {
+      baseRevision.current = revision;
+    },
+    onLost: () => setSyncLost(true),
+  });
   const saveDeck = async (value: { title: string; content: DeckContent }) => {
     // 最後の守り: 配列の順と pos の順が食い違っていたら、配列の順から pos を振り直して送る
     const slidesToSave = withDeckPositions(value.content.slides);
     const contentToSave = slidesToSave === value.content.slides ? value.content : { ...value.content, slides: slidesToSave };
+    const mark = sync.markSaveStart();
     const saved = await update.mutateAsync({ ...value, content: contentToSave, baseRevision: baseRevision.current });
     baseRevision.current = saved.revision;
     if (saved.lastSavedBy) setLastSaved({ name: saved.lastSavedBy.name, at: saved.updatedAt });
+    sync.saved(mark, (saved as Deck & { syncVersion?: number | null }).syncVersion);
     return saved;
   };
-  const saving = useDeckSave(title, content, saveDeck);
+  const saving = useDeckSave(title, content, saveDeck, { rebase: sync.rebase });
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
   const conflict = conflictOf(saving.error);
+  const saveRejected = saving.error instanceof ApiError && saving.error.status === 400;
   const [copied, setCopied] = useState(false);
   const reloadLatest = async () => {
     const latest = await api.get<Deck>(`/decks/${id}`);
@@ -137,6 +172,7 @@ export function DeckEditorPage() {
     setTitle(latest.title);
     setContent(latestContent);
     history.reset(latestContent);
+    sync.reset({ title: latest.title, content: latestContent });
     setSelectedIds([]);
     setSlideIdx(0);
     setLastSaved(latest.lastSavedBy ? { name: latest.lastSavedBy.name, at: latest.updatedAt } : null);
@@ -151,6 +187,7 @@ export function DeckEditorPage() {
   const slides = content?.slides ?? [];
   const idx = Math.min(slideIdx, slides.length - 1);
   const slide: DeckSlide | undefined = slides[idx];
+  slideFocus.current = slide?.id ?? null;
   const els = slide?.elements ?? [];
   const selection = readSelection(els, selectedIds);
 
@@ -296,6 +333,13 @@ export function DeckEditorPage() {
         {deck && <DeckExportMenu slug={deck.slug} disabled={!saving.saved || upload.isPending} />}
       </Stack>
 
+      {syncLost && <Alert severity="info">{t("studio.deckSyncLost")}</Alert>}
+      {saveRejected && <Alert severity="error">{t("studio.deckSaveRejected")}</Alert>}
+      {slides.length === 0 && (
+        <Alert severity="info" action={<Button color="inherit" size="small" onClick={() => editSlides(() => [newSlide()])}>{t("studio.addPage")}</Button>}>
+          {t("studio.deckNoPages")}
+        </Alert>
+      )}
       {conflict && (
         <Alert severity="warning">
           <Stack spacing={1}>
@@ -372,6 +416,7 @@ export function DeckEditorPage() {
             commands={elementCommands}
             pickImage={picker.pick}
             uploading={upload.isPending}
+            onTextFocus={setFocusedText}
           />
         </Stack>
       </Stack>

@@ -24,6 +24,13 @@ export interface EditorHistory<T> {
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  /**
+   * ほかの人の変更を受け取って画面へ入れる（チームのスライドの同時編集。
+   * docs/team-deck-live-sync.md §5.5）。履歴には積まない。
+   * 戻す・やり直すのスナップショットすべてに `apply` を当てるので、Undo で戻るのは自分の操作だけになる。
+   * まとめ待ちの自分の手順は先に確定させる。使わない画面（配信セット）は今までどおり
+   */
+  setContentFromRemote: (next: T, apply: (snapshot: T) => T) => void;
 }
 
 export function useEditorHistory<T>({
@@ -45,6 +52,9 @@ export function useEditorHistory<T>({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 積んだ本数は ref なので、ボタンの活性を描き直すために版数を持つ
   const [, bumpVersion] = useState(0);
+  // 受け取った変更は非同期に届くので、そのときの中身を ref で見る
+  const contentRef = useRef(content);
+  contentRef.current = content;
 
   useEffect(() => {
     if (content === null || lastCommitted.current === null) return;
@@ -65,11 +75,22 @@ export function useEditorHistory<T>({
       clearTimeout(timer.current);
       timer.current = null;
     }
-    if (lastCommitted.current !== null && content !== lastCommitted.current) {
+    const current = contentRef.current;
+    if (lastCommitted.current !== null && current !== null && current !== lastCommitted.current) {
       undoStack.current.push(lastCommitted.current);
-      lastCommitted.current = content;
+      lastCommitted.current = current;
       redoStack.current = [];
     }
+  };
+
+  const setContentFromRemote = (next: T, apply: (snapshot: T) => T) => {
+    flush();
+    undoStack.current = undoStack.current.map(apply);
+    redoStack.current = redoStack.current.map(apply);
+    lastCommitted.current = next;
+    contentRef.current = next;
+    setContent(next);
+    bumpVersion((v) => v + 1);
   };
 
   const undo = () => {
@@ -104,6 +125,7 @@ export function useEditorHistory<T>({
     reset,
     undo,
     redo,
+    setContentFromRemote,
     // 猶予待ちの変更もまだ積んでいないだけで「戻せる」ので数に入れる
     canUndo:
       undoStack.current.length > 0 ||

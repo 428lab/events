@@ -150,7 +150,7 @@ export interface ChatRelayStatus {
 /** 購読の状態（再接続時の張り直しに使う） */
 interface SubState {
   /** since を除いたフィルタ（メッセージは #e、合図は #t） */
-  filter: { kinds: number[]; limit: number; authors?: string[]; "#e"?: string[]; "#t"?: string[] };
+  filter: { kinds: number[]; limit: number; authors?: string[]; "#e"?: string[]; "#t"?: string[]; since?: number };
   author?: string;
   onEvent: (ev: NostrEvent) => void;
   /** EOSE を受けたリレーURL（張り直すたびに消す）。合図の購読が今の接続で
@@ -472,6 +472,22 @@ export class ChatRelayPool {
       synced: () =>
         [...sub.synced].some((url) => this.relays.get(url)?.connected === true),
     };
+  }
+
+  /**
+   * 作者を絞らずに、`#t` の目印と `since` で購読する（チームのスライドの同時編集。
+   * docs/team-deck-live-sync.md §6.1）。送り手はメンバーごとの使い捨て鍵で前もって分からないので
+   * `authors` は付けない。誰が読めるかは中身の暗号で決まる（呼び出し側で復号する）。
+   * 再接続のときは、ほかの購読と同じく受信済みの時刻から張り直す。
+   */
+  subscribeTopic(
+    kind: number,
+    topic: string,
+    since: number,
+    onEvent: (ev: NostrEvent) => void,
+  ): () => void {
+    const sub = this.addSub({ kinds: [kind], "#t": [topic], limit: 500, since }, onEvent);
+    return () => this.removeSub(sub);
   }
 
   private addSub(
