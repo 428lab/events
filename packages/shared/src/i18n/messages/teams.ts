@@ -56,6 +56,16 @@ const ja = {
   error_not_team_leader: "チームのリーダーだけができます。",
   error_not_team_member: "同じチームのメンバーにだけ任せられます。",
   error_team_has_leader: "このチームにはもうリーダーがいます。",
+  // チームのスライド
+  deckTitle: "チームのスライド",
+  deckHelp: "チームのメンバーみんなで編集できる発表用のスライドです。作ると、成果物のプレゼン資料にこのスライドのURLが入ります（入っていれば変えません）。",
+  deckCreate: "チームのスライドを作る",
+  deckCreateConfirm: "チームのスライドを作りますか？保存すると、URLを知る人はログインせず閲覧できます（招待限定のイベントでも同じです）。機密情報・個人情報を入れないでください。",
+  deckEdit: "編集する",
+  deckView: "見る",
+  deckNone: "まだありません",
+  deckStaffHelp: "運営は見るだけです。編集はそのチームのメンバーができます。",
+  error_not_this_team_member: "このチームのメンバーだけがスライドを作れます。",
   error_default: "うまくいきませんでした。もう一度試してください。",
 };
 const en: Record<keyof typeof ja, string> = {
@@ -112,6 +122,15 @@ const en: Record<keyof typeof ja, string> = {
   error_not_team_leader: "Only the team leader can do this.",
   error_not_team_member: "You can only hand over to a member of your team.",
   error_team_has_leader: "This team already has a leader.",
+  deckTitle: "Team slide deck",
+  deckHelp: "A presentation deck everyone on the team can edit. Creating it puts its URL into the team's submission as the slides URL (an existing URL is kept).",
+  deckCreate: "Create team slide deck",
+  deckCreateConfirm: "Create the team slide deck? Once saved, anyone with the URL can view it without signing in (even for invitation-only events). Don't put confidential or personal information in it.",
+  deckEdit: "Edit",
+  deckView: "View",
+  deckNone: "Not created yet",
+  deckStaffHelp: "Organizers can only view. Members of the team can edit.",
+  error_not_this_team_member: "Only members of this team can create its slide deck.",
   error_default: "Something went wrong. Please try again.",
 };
 export const teams = { ja, en };

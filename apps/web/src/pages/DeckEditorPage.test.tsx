@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
 import type { Deck, DeckSlide } from "@eventer/shared";
 import { DeckEditorPage } from "./DeckEditorPage.js";
+import { ApiError } from "../api/client.js";
 
 /**
  * スライド編集画面の結線 (#466 で責務ごとに分けた)。
@@ -19,7 +20,13 @@ const mocks = vi.hoisted(() => ({
   deck: null as Deck | null,
   update: vi.fn(),
   upload: vi.fn(),
+  latest: null as Deck | null,
 }));
+
+vi.mock("../api/client.js", async (orig) => {
+  const real = await orig<typeof import("../api/client.js")>();
+  return { ...real, api: { ...real.api, get: vi.fn(async () => mocks.latest) } };
+});
 
 vi.mock("../api/deckHooks.js", () => ({
   useDeck: () => ({
@@ -45,7 +52,7 @@ function text(id: string, body: string, groupId?: string) {
   };
 }
 
-function draw(slides: DeckSlide[]) {
+function draw(slides: DeckSlide[], extra: Partial<Deck> = {}) {
   mocks.deck = {
     id: "d-1",
     slug: "abc",
@@ -54,6 +61,7 @@ function draw(slides: DeckSlide[]) {
     content: { slides },
     createdAt: 0,
     updatedAt: 0,
+    ...extra,
   };
   return render(
     <MemoryRouter>
@@ -373,5 +381,55 @@ describe("キャンバス上のツールバーの戻す/やり直す", () => {
 
     fireEvent.click(redo);
     expect(layers().queryByText("ようこそ")).not.toBeInTheDocument();
+  });
+});
+
+describe("チームのスライドと同時の保存 (docs/team-participation.md)", () => {
+  const conflict = () => new ApiError(409, {
+    error: "deck_conflict", revision: 4, updatedAt: Date.now() - 120000, lastSavedBy: { id: "u-2", name: "ゆい" },
+  });
+
+  it("読み込んだ版を添えて保存し、保存できた版を次の保存に使う", async () => {
+    mocks.update.mockResolvedValueOnce({ revision: 3, updatedAt: Date.now(), lastSavedBy: null }).mockResolvedValue({ revision: 4, updatedAt: Date.now() });
+    draw(twoPages(), { revision: 2 });
+    fireEvent.change(screen.getByPlaceholderText("スライドのタイトル"), { target: { value: "1回目" } });
+    await settle();
+    fireEvent.change(screen.getByPlaceholderText("スライドのタイトル"), { target: { value: "2回目" } });
+    await settle();
+    expect(mocks.update.mock.calls.map((c) => c[0].baseRevision)).toEqual([2, 3]);
+  });
+
+  it("ほかの人が保存していたら（409）自動保存を止め、誰がいつ保存したかを出す。最新を読み込める", async () => {
+    mocks.update.mockRejectedValue(conflict());
+    draw(twoPages(), { revision: 2, team: { entryId: "t", eventId: "e", name: "赤チーム" } });
+    expect(screen.getByText("チーム: 赤チーム")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("スライドのタイトル"), { target: { value: "わたしの変更" } });
+    await settle();
+    expect(screen.getByText(/ほかのメンバーが保存しました（ゆいさん・2分前）/)).toBeInTheDocument();
+    // 再試行のボタンは出さない（押すと同じ 409 になるだけ）。打ち続けても保存を投げない
+    expect(screen.queryByRole("button", { name: "保存を再試行" })).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("スライドのタイトル"), { target: { value: "さらに変更" } });
+    await settle();
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    // 最新を読み込むと、その中身と版に置き換わり、警告が消える
+    mocks.latest = { id: "d-1", slug: "abc", ownerId: "u-1", title: "ゆいの版", content: { slides: threeStacked() }, createdAt: 0, updatedAt: Date.now(), revision: 4 };
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "最新を読み込む" })));
+    expect(screen.getByPlaceholderText("スライドのタイトル")).toHaveValue("ゆいの版");
+    expect(screen.queryByText(/ほかのメンバーが保存しました/)).toBeNull();
+    mocks.update.mockReset().mockResolvedValue({ revision: 5, updatedAt: Date.now() });
+    fireEvent.change(screen.getByPlaceholderText("スライドのタイトル"), { target: { value: "続き" } });
+    await settle();
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ title: "続き", baseRevision: 4 }));
+  });
+
+  it("チームのスライドでは「最後に保存: ○○さん」を出す。個人のデッキでは出さない", () => {
+    draw(twoPages(), { team: { entryId: "t", eventId: "e", name: "赤チーム" }, lastSavedBy: { id: "u-2", name: "ゆい" }, updatedAt: Date.now() });
+    expect(screen.getByText(/最後に保存: ゆいさん/)).toBeInTheDocument();
+  });
+
+  it("個人のデッキでは「最後に保存」もチームの札も出さない", () => {
+    draw(twoPages(), { lastSavedBy: { id: "u-1", name: "わたし" }, updatedAt: Date.now() });
+    expect(screen.queryByText(/最後に保存/)).toBeNull();
+    expect(screen.queryByText(/チーム:/)).toBeNull();
   });
 });

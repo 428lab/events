@@ -6,6 +6,7 @@ import { TEAM_DESCRIPTION_MAX, TEAM_NAME_MAX } from "@eventer/shared";
 import { useEventEntries, useEventMembers, useMe } from "../api/hooks.js";
 import { useEventState } from "../api/scoringHooks.js";
 import { teamApi, useTeamAction } from "../api/teamHooks.js";
+import { TeamDeckSection } from "./TeamDeckSection.js";
 import { findMyMembership } from "../lib/eventMembership.js";
 import { errorCode } from "../lib/errorMessage.js";
 import { tDynamic } from "../i18n/index.js";
@@ -69,6 +70,7 @@ export function TeamPicker({ eventId, event, myRole }: { eventId: string; event:
                   <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
                     {team.memberUserIds.map((userId) => `${nameOf.get(userId) ?? ""}${userId === team.leaderUserId ? `（${t("teams.leaderBadge")}）` : ""}`).join("、")}
                   </Typography>
+                  {mine && canChoose && <TeamDeckSection eventId={eventId} teamId={team.id} />}
                   {mine && canChoose && !locked && me && (
                     <MyTeamControls team={team} meId={me.id} nameOf={nameOf} disabled={pending}
                       onUpdate={(input) => updateMine.mutate(input)}

@@ -62,6 +62,19 @@ export function formatDateRange(startsAt: number, endsAt: number): string {
   return i18next.t("common.dateRange", { start, end });
 }
 
+/** 「たった今」「5分前」「3時間前」「2日前」、1週間より前は日付だけ（お知らせ・スライドの最後の保存） */
+export function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return i18next.t("common.justNow");
+  if (min < 60) return i18next.t("common.minutesAgo", { n: min });
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return i18next.t("common.hoursAgo", { n: hour });
+  const day = Math.floor(hour / 24);
+  if (day < 7) return i18next.t("common.daysAgo", { n: day });
+  return new Date(ts).toLocaleDateString(dateLocale());
+}
+
 /** 単一日時を日本語表記（年つき） */
 export function formatDateTime(ms: number): string {
   return formatWithDateTimeGap(

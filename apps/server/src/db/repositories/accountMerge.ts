@@ -298,6 +298,9 @@ export const accountMergeRepo = {
       // ここへ差し込む。並びは userTables.ts の順＝この batch の文順
       ...SHARED_CONTENT_OWNER_COLUMNS,
       ["deck", "owner_id"],
+      // チームのスライドを最後に保存した人 (0118)。付け替えないと (9) の user 削除で
+      // SET NULL が発火し、「最後に保存: ○○さん」が黙って消える
+      ["deck", "last_saved_by"],
       // AI エージェント用の一時トークン (docs/agent-deck-token.md)。結び付いたデッキが
       // 上の行で勝ち側へ移るので、トークンも同じ持ち主へ移す（期限は最長60分）
       ["deck_agent_token", "owner_id"],

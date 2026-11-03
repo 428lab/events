@@ -107,7 +107,9 @@ export const deckAgentTokensRepo = {
         args: [writeId, tokenId, deckId, DECK_AGENT_TOKEN_MAX_WRITES, deckId, ownerId],
       },
       {
-        sql: `UPDATE deck SET title = ?, content = ?, updated_at = ?
+        // 版を進める: 持ち主が編集画面を開いたまま AI が書き直しても、画面の古い中身で
+        // 黙って上書きしない（編集画面の保存が 409 deck_conflict になる）
+        sql: `UPDATE deck SET title = ?, content = ?, updated_at = ?, revision = revision + 1, last_saved_by = owner_id
               WHERE id = ? AND owner_id = ? AND EXISTS
               (SELECT 1 FROM deck_agent_token WHERE id = ? AND last_write_id = ?)`,
         args: [title, content, now, deckId, ownerId, tokenId, writeId],

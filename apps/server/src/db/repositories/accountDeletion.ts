@@ -227,6 +227,16 @@ export const accountDeletionRepo = {
       args: [userId, ghostId, userId],
     });
 
+    // (1-e) チームのスライド（deck.team_entry_id あり）は作った人だけのものではなく、
+    //     チームの作業。owner_id の CASCADE で消すとほかのメンバーの作業ごと消えるので、
+    //     ghost 名義へ付け替えて残す（編集できるのはチームのいまのメンバーで、owner_id は見ない）。
+    //     個人のデッキは今までどおり CASCADE で消え、R2 の画像も purge が消す
+    //     （purgeDeleted は listByOwner＝個人のデッキだけを集めるので、チームのスライドの画像は残る）
+    stmts.push({
+      sql: "UPDATE deck SET owner_id = ? WHERE owner_id = ? AND team_entry_id IS NOT NULL",
+      args: [ghostId, userId],
+    });
+
     // (2) FK RESTRICT の個人資産 live_set は user 削除前に明示削除。
     //     event_live_state.live_set_id は ON DELETE SET NULL なのでブロックしない
     stmts.push({

@@ -23,6 +23,8 @@ import type { AppEnv } from "../types.js";
 import { requireEventRole } from "../auth/roles.js";
 import { entriesRepo } from "../db/repositories/entries.js";
 import { teamsRepo } from "../db/repositories/teams.js";
+import { canManageEventAs } from "../auth/roles.js";
+import { env } from "../runtime.js";
 import { eventSignal } from "../lib/eventSignal.js";
 import { deferBackground } from "../runtime.js";
 
@@ -128,4 +130,28 @@ eventTeamRoutes.post("/:id/my-team/leader", requireEventRole(["participant"]), a
   await teamsRepo.becomeLeader(eventId, c.get("user").id);
   await changed(eventId);
   return c.json(await entries(eventId)());
+});
+
+/** チームのスライド（docs/team-participation.md「チームのスライド」）。
+ * 1チーム1つ。そのチームのメンバーなら誰でも作れて、作った人も含め**いまの**メンバーが編集できる。
+ * 作ったとき、チームの成果物のプレゼン資料 URL が空なら、このスライドの公開 URL を入れる */
+eventTeamRoutes.post("/:id/teams/:teamId/deck", requireEventRole(["participant"]), async (c) => {
+  const eventId = c.req.param("id"), teamId = c.req.param("teamId");
+  const team = (await entriesRepo.listByEvent(eventId)).find((e) => e.id === teamId && e.kind === "team");
+  const id = crypto.randomUUID();
+  const slug = crypto.randomUUID().replace(/-/g, "").slice(0, 10);
+  const content = JSON.stringify({ slides: [{ id: crypto.randomUUID(), background: "#ffffff", elements: [] }] });
+  const result = await teamsRepo.createTeamDeck(eventId, teamId, c.get("user").id, {
+    id, slug, title: (team?.name ?? "").slice(0, 120), content,
+    viewUrl: `${env.appBaseUrl.replace(/\/+$/, "")}/d/${slug}`,
+  });
+  await changed(eventId);
+  return c.json({ deckId: result.id, created: result.created, ...(await entries(eventId)()) }, result.created ? 201 : 200);
+});
+
+/** チームのスライドの一覧。運営は全チームのもの（見るだけ）、参加者は自分のチームのもの */
+eventTeamRoutes.get("/:id/team-decks", requireEventRole(["participant", "staff"]), async (c) => {
+  const eventId = c.req.param("id");
+  const isStaff = await canManageEventAs(eventId, c);
+  return c.json({ decks: await teamsRepo.listTeamDecks(eventId, c.get("user").id, isStaff) });
 });

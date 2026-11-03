@@ -8,6 +8,7 @@ import type { Entry, Event, EventMemberWithUser } from "@eventer/shared";
 import { TEAM_CAPACITY_MAX, TEAM_DESCRIPTION_MAX, TEAM_NAME_MAX } from "@eventer/shared";
 import { useEventEntries, useEventMembers } from "../api/hooks.js";
 import { teamApi, useTeamAction } from "../api/teamHooks.js";
+import { useEventTeamDecks, type TeamDeckRow } from "../api/deckHooks.js";
 import { errorCode } from "../lib/errorMessage.js";
 import { tDynamic } from "../i18n/index.js";
 
@@ -28,6 +29,8 @@ export function TeamManager({ eventId, event }: { eventId: string; event: Event 
   const pending = actions.some((a) => a.isPending);
   const failed = actions.find((a) => a.isError);
   const teamMode = event.participationType === "team";
+  const { data: teamDecks } = useEventTeamDecks(eventId, teamMode);
+  const deckOf = new Map((teamDecks ?? []).map((d) => [d.entryId, d]));
 
   const teams = teamMode ? (entries ?? []).filter((e) => e.kind === "team") : [];
   const participants = (members ?? []).filter((m) => m.role === "participant" && m.status === "confirmed");
@@ -54,6 +57,7 @@ export function TeamManager({ eventId, event }: { eventId: string; event: Event 
             {teams.length === 0 && <Typography color="text.secondary">{t("teams.noTeams")}</Typography>}
             {teams.map((team) => (
               <TeamCard key={team.id} team={team} teams={teams} participants={participants} nameOf={nameOf} disabled={pending}
+                deck={deckOf.get(team.id) ?? null}
                 onUpdate={(input) => update.mutate({ teamId: team.id, input })}
                 onRemove={() => window.confirm(t("teams.deleteConfirm", { name: team.name })) && remove.mutate(team.id)}
                 onLeader={(userId) => leader.mutate({ teamId: team.id, userId })}
@@ -104,8 +108,10 @@ function CreateTeamForm({ disabled, onCreate }: {
   );
 }
 
-function TeamCard({ team, teams, participants, nameOf, disabled, onUpdate, onRemove, onLeader, onMove }: {
+function TeamCard({ team, teams, participants, nameOf, disabled, deck, onUpdate, onRemove, onLeader, onMove }: {
   team: Entry; teams: Entry[]; participants: EventMemberWithUser[]; nameOf: Map<string, string>; disabled: boolean;
+  /** チームのスライド。運営は見るだけ（編集はそのチームのメンバー） */
+  deck: TeamDeckRow | null;
   onUpdate: (input: { name?: string; description?: string; capacity?: number | null }) => void;
   onRemove: () => void; onLeader: (userId: string | null) => void; onMove: (userId: string, teamId: string | null) => void;
 }) {
@@ -137,6 +143,15 @@ function TeamCard({ team, teams, participants, nameOf, disabled, onUpdate, onRem
           </Stack>
         )}
         {team.description && <Typography variant="body2" color="text.secondary">{team.description}</Typography>}
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Typography variant="body2" color="text.secondary">{t("teams.deckTitle")}:</Typography>
+          {deck ? (
+            <Button size="small" component="a" href={`/d/${deck.deck.slug}`} target="_blank" rel="noopener noreferrer"
+              title={t("teams.deckStaffHelp")}>{t("teams.deckView")}</Button>
+          ) : (
+            <Typography variant="body2" color="text.secondary">{t("teams.deckNone")}</Typography>
+          )}
+        </Stack>
         <TextField select size="small" label={t("teams.leader")} value={team.leaderUserId ?? ""} disabled={disabled}
           helperText={t("teams.leaderHelp")}
           onChange={(e) => onLeader(e.target.value || null)} sx={{ maxWidth: 360 }}>

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Box,
   Button,
+  Chip,
   Fab,
   Stack,
   TextField,
@@ -11,7 +13,9 @@ import RedoIcon from "@mui/icons-material/Redo";
 import UndoIcon from "@mui/icons-material/Undo";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import type { DeckContent, DeckElement, DeckSlide } from "@eventer/shared";
+import type { Deck, DeckContent, DeckElement, DeckSlide } from "@eventer/shared";
+import { ApiError, api } from "../api/client.js";
+import { relativeTime } from "../lib/format.js";
 import {
   useDeck,
   useUpdateDeck,
@@ -100,7 +104,36 @@ export function DeckEditorPage() {
     // history は ref だけを触るので、毎レンダの作り直しでは追わない
   }, [deck]);
 
-  const saving = useDeckSave(title, content, update.mutateAsync);
+  // 保存は読み込んだ（最後に保存できた）版を添える。その間にほかのメンバー・別のタブ・AI が
+  // 保存していたら 409 deck_conflict になり、自動保存はそこで止まる（黙って上書きしない）
+  const baseRevision = useRef<number | undefined>(undefined);
+  const [lastSaved, setLastSaved] = useState<{ name: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!deck) return;
+    if (baseRevision.current === undefined) baseRevision.current = deck.revision;
+    if (lastSaved === null && deck.lastSavedBy) setLastSaved({ name: deck.lastSavedBy.name, at: deck.updatedAt });
+  }, [deck]);
+  const saveDeck = async (value: { title: string; content: DeckContent }) => {
+    const saved = await update.mutateAsync({ ...value, baseRevision: baseRevision.current });
+    baseRevision.current = saved.revision;
+    if (saved.lastSavedBy) setLastSaved({ name: saved.lastSavedBy.name, at: saved.updatedAt });
+    return saved;
+  };
+  const saving = useDeckSave(title, content, saveDeck);
+  const conflict = conflictOf(saving.error);
+  const [copied, setCopied] = useState(false);
+  const reloadLatest = async () => {
+    const latest = await api.get<Deck>(`/decks/${id}`);
+    baseRevision.current = latest.revision;
+    saving.reset(latest.title, latest.content);
+    setTitle(latest.title);
+    setContent(latest.content);
+    history.reset(latest.content);
+    setSelectedIds([]);
+    setSlideIdx(0);
+    setLastSaved(latest.lastSavedBy ? { name: latest.lastSavedBy.name, at: latest.updatedAt } : null);
+    setCopied(false);
+  };
   useDeckLeaveWarning(saving.revision > 0 && !saving.saved, t("deckImport.leave"));
 
   const picker = useImagePicker(upload.mutateAsync);
@@ -223,10 +256,14 @@ export function DeckEditorPage() {
           onChange={(e) => setTitle(e.target.value)}
           sx={{ flex: 1, minWidth: 180 }}
         />
+        {deck?.team && <Chip size="small" color="primary" variant="outlined" label={t("studio.deckTeamLabel", { name: deck.team.name })} />}
         <Typography variant="caption" color="text.secondary">
           {t(`deckImport.${saving.status}`)}
+          {deck?.team && lastSaved && (
+            <>{t("common.dotSeparator")}{t("studio.deckLastSaved", { name: lastSaved.name, time: relativeTime(lastSaved.at) })}</>
+          )}
         </Typography>
-        {saving.status === "editorFailed" && <Button onClick={saving.retry}>{t("deckImport.editorRetry")}</Button>}
+        {saving.status === "editorFailed" && !conflict && <Button onClick={saving.retry}>{t("deckImport.editorRetry")}</Button>}
         {deck && (
           <Button
             size="small"
@@ -240,6 +277,28 @@ export function DeckEditorPage() {
           </Button>
         )}
       </Stack>
+
+      {conflict && (
+        <Alert
+          severity="warning"
+          action={
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <Button color="inherit" size="small" onClick={() => {
+                void navigator.clipboard?.writeText(JSON.stringify({ title, content }, null, 2)).then(() => setCopied(true));
+              }}>
+                {copied ? t("studio.deckConflictCopied") : t("studio.deckConflictCopy")}
+              </Button>
+              <Button color="inherit" size="small" variant="outlined" onClick={() => void reloadLatest()}>
+                {t("studio.deckConflictReload")}
+              </Button>
+            </Stack>
+          }
+        >
+          {conflict.name
+            ? t("studio.deckConflict", { name: conflict.name, time: relativeTime(conflict.at) })
+            : t("studio.deckConflictUnknown", { time: relativeTime(conflict.at) })}
+        </Alert>
+      )}
 
       <Typography variant="caption">{t("deckImport.tabs")}</Typography>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
@@ -319,4 +378,12 @@ export function DeckEditorPage() {
       </Box>
     </Stack>
   );
+}
+
+/** 保存の失敗が「ほかの人が保存していた」(409 deck_conflict) なら、誰がいつ保存したか */
+function conflictOf(error: unknown): { name: string | null; at: number } | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const body = error.body as { error?: string; updatedAt?: number; lastSavedBy?: { name: string } | null } | null;
+  if (body?.error !== "deck_conflict") return null;
+  return { name: body.lastSavedBy?.name ?? null, at: body.updatedAt ?? Date.now() };
 }

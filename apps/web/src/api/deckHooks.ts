@@ -3,6 +3,7 @@ import type {
   CreateDeckInput,
   Deck,
   DeckSummary,
+  Entry,
   UpdateDeckInput,
 } from "@eventer/shared";
 import { api } from "./client.js";
@@ -15,7 +16,47 @@ export function useMyDecks() {
   });
 }
 
-/** 編集用（owner本人） */
+/** 自分が編集できるチームのスライド（docs/team-participation.md「チームのスライド」） */
+export function useMyTeamDecks() {
+  return useQuery({
+    queryKey: ["decks", "team"],
+    queryFn: async () =>
+      (await api.get<{ decks: DeckSummary[] }>("/decks/team")).decks,
+  });
+}
+
+/** そのイベントのチームのスライド。運営は全チームのもの（見るだけ）、参加者は自分のチームのもの */
+export interface TeamDeckRow {
+  entryId: string;
+  deck: { id: string; slug: string; title: string; updatedAt: number };
+  canEdit: boolean;
+}
+export function useEventTeamDecks(eventId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["event", eventId, "teamDecks"],
+    enabled,
+    queryFn: async () =>
+      (await api.get<{ decks: TeamDeckRow[] }>(`/events/${eventId}/team-decks`)).decks,
+  });
+}
+
+/** チームのスライドを作る（すでにあれば既存のものを返す）。応答の最新のエントリー一覧
+ * （成果物のプレゼン資料 URL が入る）もキャッシュへ入れる */
+export function useCreateTeamDeck(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (teamId: string) =>
+      api.post<{ deckId: string; created: boolean; entries: Entry[] }>(`/events/${eventId}/teams/${teamId}/deck`),
+    onSuccess: (res) => {
+      qc.setQueryData(["event", eventId, "entries"], res.entries);
+      qc.invalidateQueries({ queryKey: ["event", eventId, "teamDecks"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId, "submissions"] });
+      qc.invalidateQueries({ queryKey: ["decks", "team"] });
+    },
+  });
+}
+
+/** 編集用（個人のデッキは持ち主、チームのスライドはそのチームのいまのメンバー） */
 export function useDeck(id: string) {
   return useQuery({
     queryKey: ["deck", id],
@@ -46,9 +87,11 @@ export function useUpdateDeck(id: string) {
   return useMutation({
     mutationFn: (input: UpdateDeckInput) =>
       api.patch<Deck>(`/decks/${id}`, input),
+    // 保存できた版を編集画面へ返す（次の保存の baseRevision）。["deck", id] は取り直さない:
+    // 取り直すと、保存中に打った文字を古い応答で上書きしかねない（編集画面は読み込み時だけ使う）
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["deck", id] });
       qc.invalidateQueries({ queryKey: ["decks", "mine"] });
+      qc.invalidateQueries({ queryKey: ["decks", "team"] });
     },
   });
 }

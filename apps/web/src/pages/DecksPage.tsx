@@ -4,19 +4,23 @@ import {
   Card,
   CardActionArea,
   CardContent,
+  Chip,
   Stack,
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useCreateDeck, useMyDecks } from "../api/deckHooks.js";
+import { useCreateDeck, useMyDecks, useMyTeamDecks } from "../api/deckHooks.js";
+import type { DeckSummary } from "@eventer/shared";
 import { formatDateTime } from "../lib/format.js";
 
 export function DecksPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: decks, isLoading } = useMyDecks();
+  // チームのスライド（いまメンバーのチームのもの）。自分の一覧とは分けて「チーム: ○○」で出す
+  const { data: teamDecks } = useMyTeamDecks();
   const create = useCreateDeck();
 
   const newDeck = () =>
@@ -42,6 +46,13 @@ export function DecksPage() {
         </Button>
       </Stack>
 
+      {teamDecks && teamDecks.length > 0 && (
+        <Stack spacing={1.5}>
+          <Typography variant="subtitle1" fontWeight={700}>{t("studio.deckTeamDecksHeading")}</Typography>
+          {teamDecks.map((d) => <DeckCard key={d.id} deck={d} onOpen={() => navigate(`/decks/${d.id}/edit`)} />)}
+        </Stack>
+      )}
+
       {isLoading || !decks ? (
         <Typography>{t("common.loading")}</Typography>
       ) : decks.length === 0 ? (
@@ -50,40 +61,49 @@ export function DecksPage() {
         </Typography>
       ) : (
         <Stack spacing={1.5}>
-          {decks.map((d) => (
-            <Card key={d.id} variant="outlined">
-              <CardActionArea onClick={() => navigate(`/decks/${d.id}/edit`)}>
-                <CardContent>
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 1,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <Typography sx={{ fontWeight: 700, flex: 1, minWidth: 0 }} noWrap>
-                      {d.title || t("studio.untitledDeck")}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {t(
-                        d.slideCount === 1
-                          ? "studio.pageCountOne"
-                          : "studio.pageCount",
-                        { n: d.slideCount },
-                      )}
-                      {t("common.dotSeparator")}
-                      {t("studio.updatedAt", {
-                        time: formatDateTime(d.updatedAt),
-                      })}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </CardActionArea>
-            </Card>
-          ))}
+          {decks.map((d) => <DeckCard key={d.id} deck={d} onOpen={() => navigate(`/decks/${d.id}/edit`)} />)}
         </Stack>
       )}
     </Stack>
+  );
+}
+
+function DeckCard({ deck: d, onOpen }: { deck: DeckSummary; onOpen: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <Card variant="outlined">
+      <CardActionArea onClick={onOpen}>
+        <CardContent>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              flexWrap: "wrap",
+            }}
+          >
+            <Typography sx={{ fontWeight: 700, flex: 1, minWidth: 0 }} noWrap>
+              {d.title || t("studio.untitledDeck")}
+            </Typography>
+            {d.team && (
+              <Chip size="small" color="primary" variant="outlined" sx={{ maxWidth: "100%" }}
+                label={t("studio.deckTeamEvent", { name: d.team.name, event: d.team.eventTitle })} />
+            )}
+            <Typography variant="caption" color="text.secondary">
+              {t(
+                d.slideCount === 1
+                  ? "studio.pageCountOne"
+                  : "studio.pageCount",
+                { n: d.slideCount },
+              )}
+              {t("common.dotSeparator")}
+              {t("studio.updatedAt", {
+                time: formatDateTime(d.updatedAt),
+              })}
+            </Typography>
+          </Box>
+        </CardContent>
+      </CardActionArea>
+    </Card>
   );
 }

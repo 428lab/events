@@ -20,6 +20,7 @@ vi.mock("../api/hooks.js", () => ({
   useEventEntries: () => ({ data: mock.entries }),
   useEventMembers: () => ({ data: mock.members }),
 }));
+vi.mock("./TeamDeckSection.js", () => ({ TeamDeckSection: ({ teamId }: { teamId: string }) => <div data-testid="team-deck">{teamId}</div> }));
 vi.mock("../api/scoringHooks.js", () => ({ useEventState: () => ({ data: mock.state }) }));
 vi.mock("../api/teamHooks.js", () => ({
   teamApi: () => ({ join: "join", leave: "leave", updateMine: "updateMine", handOver: "handOver", becomeLeader: "becomeLeader" }),
@@ -157,4 +158,15 @@ it("サーバーの not_team_leader / team_has_leader を案内する", () => {
   mock.becomeLeader.error = new ApiError(409, { error: "team_has_leader" });
   draw();
   expect(screen.getByText("このチームにはもうリーダーがいます。")).toBeInTheDocument();
+});
+
+it("チームのスライドの欄は、自分のチームにだけ出す（参加確定のとき）", () => {
+  mock.entries = [team("red", "赤チーム", ["me", "lead"], { leaderUserId: "lead" }), team("blue", "青チーム", ["x"])];
+  draw();
+  expect(screen.getAllByTestId("team-deck").map((el) => el.textContent)).toEqual(["red"]);
+});
+
+it("チームに入っていなければ、チームのスライドの欄は出ない", () => {
+  draw();
+  expect(screen.queryByTestId("team-deck")).toBeNull();
 });
