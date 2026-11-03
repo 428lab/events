@@ -10,6 +10,7 @@ import { publishLive } from "./liveControl.js";
 import { putDeckImage } from "./deckImages.js";
 import { postDeckImport } from "./deckImport.js";
 import { deckAgentTokenRoutes } from "./deckAgent.js";
+import { deckLiveSyncEnabled, deckSyncConfig } from "../lib/deckSync.js";
 
 /** /api/decks（作成・編集・削除・自分の一覧）。閲覧は /api/public/decks/:slug */
 export const deckRoutes = new Hono<AppEnv>();
@@ -38,12 +39,21 @@ deckRoutes.post("/", zValidator("json", createDeckInput), async (c) => {
   return c.json(deck, 201);
 });
 
-/** 編集用の取得。個人のデッキは持ち主、チームのスライドはそのチームのいまのメンバーだけ */
+/** 編集用の取得。個人のデッキは持ち主、チームのスライドはそのチームのいまのメンバーだけ。
+ * チームのスライドのメンバーには同時編集の設定 `sync` を付ける（docs/team-deck-live-sync.md §4.1。
+ * 機能オフ・サービス鍵なし・個人のデッキでは null） */
 deckRoutes.get("/:id", async (c) => {
-  const found = await decksRepo.findForEdit(c.req.param("id"), c.get("user").id);
+  const rev = Date.now();
+  const user = c.get("user");
+  const found = await decksRepo.findForEdit(c.req.param("id"), user.id);
   if (found.status === "not_found") return c.json({ error: "not_found" }, 404);
   if (found.status === "forbidden") return c.json({ error: "forbidden" }, 403);
-  return c.json(found.deck);
+  const deck = found.deck;
+  const key = deck.team && (await deckLiveSyncEnabled()) ? await decksRepo.syncKeyForEdit(deck.id, user.id) : null;
+  const sync = key
+    ? await deckSyncConfig(deck.id, key, { userId: user.id, name: user.globalName ?? user.username }, rev)
+    : null;
+  return c.json({ ...deck, sync });
 });
 
 /** 保存。baseRevision を添えると、その間にほかの人が保存していたら 409 deck_conflict
@@ -56,15 +66,18 @@ deckRoutes.patch("/:id", zValidator("json", updateDeckInput), async (c) => {
   );
   if (result.status === "not_found") return c.json({ error: "not_found" }, 404);
   if (result.status === "forbidden") return c.json({ error: "forbidden" }, 403);
+  // 今の同期の世代（§4.4）。自分の世代より新しければ、編集画面は GET を1回取り直す
+  const syncVersion = result.deck.team ? await decksRepo.syncVersion(result.deck.id) : null;
   if (result.status === "conflict") {
     return c.json({
       error: "deck_conflict",
       revision: result.deck.revision,
       updatedAt: result.deck.updatedAt,
       lastSavedBy: result.deck.lastSavedBy ?? null,
+      syncVersion,
     }, 409);
   }
-  return c.json(result.deck);
+  return c.json({ ...result.deck, syncVersion });
 });
 
 /** 個人のデッキを持ち主が消す。チームのスライドはメンバーからは消せない

@@ -1,4 +1,5 @@
 import { accountAccessRevision } from "./accessRevisions.js";
+import { ROTATE_DECK_SYNC_KEY_SQL } from "./decks.js";
 import type { User } from "@eventer/shared";
 import { DELETED_USER_DISPLAY_NAME } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
@@ -93,6 +94,13 @@ export const accountDeletionRepo = {
       {
         sql: "UPDATE deck_agent_token SET revoked_at = ? WHERE owner_id = ? AND revoked_at IS NULL",
         args: [now, userId],
+      },
+      // チームのスライドの同時編集の鍵 (docs/team-deck-live-sync.md §4.2)。申請では entry_member の
+      // 行は残る（トリガーでは拾えない）が、もう編集できないので、その人がいるチームの鍵を作り直す
+      {
+        sql: `${ROTATE_DECK_SYNC_KEY_SQL}(SELECT d.id FROM deck d JOIN entry_member em ON em.entry_id = d.team_entry_id
+          WHERE em.user_id = ?)`,
+        args: [userId],
       },
     ]);
   },

@@ -70,7 +70,7 @@ export function TeamPicker({ eventId, event, myRole }: { eventId: string; event:
                   <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
                     {team.memberUserIds.map((userId) => `${nameOf.get(userId) ?? ""}${userId === team.leaderUserId ? `（${t("teams.leaderBadge")}）` : ""}`).join("、")}
                   </Typography>
-                  {mine && canChoose && <TeamDeckSection eventId={eventId} teamId={team.id} />}
+                  {mine && canChoose && <TeamDeckSection eventId={eventId} teamId={team.id} ended={!event.scheduling && event.endsAt < Date.now()} />}
                   {mine && canChoose && !locked && me && (
                     <MyTeamControls team={team} meId={me.id} nameOf={nameOf} disabled={pending}
                       onUpdate={(input) => updateMine.mutate(input)}

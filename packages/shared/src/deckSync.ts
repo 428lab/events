@@ -1,5 +1,30 @@
 import { z } from "zod";
 import { deckElementSchema, deckPosSchema } from "./decks.js";
+import type { Deck } from "./decks.js";
+import type { EventSignalSource } from "./eventSignal.js";
+
+/** タブどうしが差分を送り合う Nostr のエフェメラルイベントの kind（docs/team-deck-live-sync.md §6.2）。
+ * サーバーの合図（20078）とは別 */
+export const DECK_SYNC_KIND = 21078;
+
+/** 編集用の `GET /api/decks/:id` が、チームのスライドの**いまのメンバー**にだけ返す同期の設定
+ * （§4.1）。機能オフ・サービス鍵なし・チームのスライドでないときは `null`。
+ * 公開の閲覧・運営の一覧には載せない */
+export interface DeckSyncConfig {
+  kind: typeof DECK_SYNC_KIND;
+  relays: string[];
+  /** 不透明な hex。世代ごとに変わる（§4.3）。絞り込みの目印で、権限ではない */
+  topic: string;
+  /** 今の世代の鍵。`secret` は 32 バイト乱数の hex（NIP-44 v2 の conversation key） */
+  key: { version: number; secret: string };
+  /** 差分に載せる「誰が」（表示用。権限には使わない §8） */
+  me: { userId: string; name: string };
+  /** 世代の切り替えを知らせる `deck-sync` の合図（§4.4）。サービス鍵が無ければ null */
+  signal: EventSignalSource | null;
+}
+
+/** 編集用の `GET /api/decks/:id` の応答。チームのスライドのいまのメンバーには `sync` が付く */
+export type DeckForEdit = Deck & { sync?: DeckSyncConfig | null };
 
 /**
  * チームのスライドの同時編集で、タブどうしが送り合う差分（op）の形

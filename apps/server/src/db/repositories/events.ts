@@ -9,6 +9,7 @@ import type {
 import { checkRegistrationDeadline } from "../../lib/registrationDeadline.js";
 import { MEET_RANKING_MODES, QA_ANONYMITY_MODES, isDatetimeOrderInvalid } from "@eventer/shared";
 import { batch, many, one, runCount } from "../client.js";
+import { ROTATE_DECK_SYNC_KEY_SQL } from "./decks.js";
 
 interface EventRow {
   id: string;
@@ -610,6 +611,12 @@ export const eventsRepo = {
       next.registrationDeadline ?? null,
       id, input.expectedAccessRevision ?? current.accessRevision, next.visibility,actorId, adminIds(), next.communityId ?? null, next.communityId ?? null, actorId, adminIds(), next.communityId ?? null,
     ]}, ...(dateChanged ? [{sql: "DELETE FROM event_schedule_finalization WHERE event_id=? AND changes()>0", args: [id]}] : []),...(token ? visibilityChangeStatements(id,token,actorId,current.visibility,next.visibility):[]),
+      // コンテスト形式を変えたら、チームのスライドの同時編集の鍵を作り直す (docs/team-deck-live-sync.md §4.2)。
+      // オフでは誰も編集できなくなる。前の文の changes() を奪わないよう、条件は「実際に変わったか」で見る
+      ...(next.contestMode !== current.contestMode ? [{sql:
+        `${ROTATE_DECK_SYNC_KEY_SQL}(SELECT d.id FROM deck d JOIN entry en ON en.id = d.team_entry_id
+          WHERE en.event_id = ? AND en.kind = 'team') AND EXISTS (SELECT 1 FROM event WHERE id = ? AND contest_mode = ?)`,
+        args: [id, id, next.contestMode ? 1 : 0]}] : []),
       // 共催 (#625) にいたコミュニティを主催に付け替えたら、その共催は外す（主催と共催の二重にしない）。
       // 末尾に置き、changes() ではなく「主催が実際に変わったか」で判定する（前の文の changes() を奪わないため）
       ...(next.communityId && next.communityId !== current.communityId ? [{sql:

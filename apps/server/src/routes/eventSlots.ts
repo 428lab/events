@@ -18,6 +18,8 @@ import { drawMemberSlots, setMemberSlotStatus } from "../db/repositories/memberS
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
 import { usersRepo } from "../db/repositories/users.js";
+import { publishDeckSync } from "../lib/deckSync.js";
+import { deferBackground } from "../runtime.js";
 
 /** 参加枠の定義・抽選・当落（すべて staff のみ）。一覧の GET は `eventsPublic.ts` */
 export const eventSlotRoutes = new Hono<AppEnv>();
@@ -103,6 +105,7 @@ eventSlotRoutes.post(
     const shuffled = [...applied].sort(() => Math.random() - 0.5);
     const result = await drawMemberSlots(eventId, c.get("user").id, slot.id, shuffled.map(m => m.id));
     if (!result) return c.json({ error: "access_changed" }, 409);
+    await deferBackground(publishDeckSync(eventId));
     return c.json(result);
   },
 );
@@ -141,6 +144,7 @@ eventSlotRoutes.patch(
     if (!(await setMemberSlotStatus(eventId, c.get("user").id, c.req.param("slotId"), userId, status))) {
       return c.json({ error: "access_changed" }, 409);
     }
+    await deferBackground(publishDeckSync(eventId));
     return c.json({ ok: true });
   },
 );
