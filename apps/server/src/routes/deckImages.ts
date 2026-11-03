@@ -26,12 +26,13 @@ export async function getDeckImage(c: Context<AppEnv>) {
   });
 }
 
-/** owner: スライド画像のアップロード（生バイナリ）。URL を返す */
+/** 編集できる人（個人のデッキは持ち主、チームのスライドはそのチームのいまのメンバー）:
+ * スライド画像のアップロード（生バイナリ）。URL を返す */
 export async function putDeckImage(c: Context<AppEnv>) {
   const id = c.req.param("id")!;
-  const deck = await decksRepo.findById(id);
-  if (!deck) return c.json({ error: "not_found" }, 404);
-  if (deck.ownerId !== c.get("user").id) {
+  const found = await decksRepo.findForEdit(id, c.get("user").id);
+  if (found.status === "not_found") return c.json({ error: "not_found" }, 404);
+  if (found.status === "forbidden") {
     return c.json({ error: "forbidden" }, 403);
   }
   const mime = normalizeImageMime(c.req.header("content-type"));

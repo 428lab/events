@@ -10,6 +10,10 @@ const mock = vi.hoisted(() => ({
   entries: [] as unknown[],
   members: [] as unknown[],
   actions: {} as Record<string, ReturnType<typeof action>>,
+  teamDecks: [] as unknown[],
+}));
+vi.mock("../api/deckHooks.js", () => ({
+  useEventTeamDecks: () => ({ data: mock.teamDecks }),
 }));
 vi.mock("../api/hooks.js", () => ({
   useEventEntries: () => ({ data: mock.entries }),
@@ -33,6 +37,7 @@ beforeEach(() => {
   mock.actions = Object.fromEntries(["setMode", "create", "update", "remove", "setLeader", "assign"].map((k) => [k, action()]));
   mock.members = [member("a", "あさひ"), member("b", "ぼたん"), member("c", "ちえ"), member("s", "うんえい", "staff")];
   mock.entries = [team("red", "赤チーム", ["a"], { leaderUserId: "a", capacity: 3 })];
+  mock.teamDecks = [];
 });
 
 it("チーム参加がオフならスイッチだけ。オンにできる", () => {
@@ -87,4 +92,20 @@ it("サーバーのエラーを案内する", () => {
   draw();
   expect(screen.getByText("採点・成果物・受賞が入ったあとは、チーム参加を切り替えられません。")).toBeInTheDocument();
   expect(within(screen.getByRole("alert")).getByText(/切り替えられません/)).toBeInTheDocument();
+});
+
+it("チームのスライドは、運営には「見る」だけ出す（編集はそのチームのメンバー）。無ければ「まだありません」", () => {
+  mock.entries = [
+    team("red", "赤チーム", ["a"], { leaderUserId: "a" }),
+    team("blue", "青チーム", ["b"]),
+  ];
+  mock.teamDecks = [{ entryId: "red", deck: { id: "d1", slug: "abc123", title: "赤チーム", updatedAt: 0 }, canEdit: false }];
+  draw();
+  const cardOf = (name: string) => screen.getAllByText(name).find((el) => el.tagName === "P" && el.className.includes("MuiTypography"))!.closest("div[class*=MuiBox]") as HTMLElement;
+  const red = cardOf("赤チーム");
+  const view = within(red).getByRole("link", { name: "見る" });
+  expect(view).toHaveAttribute("href", "/d/abc123");
+  expect(within(red).queryByRole("link", { name: "編集する" })).toBeNull();
+  const blue = cardOf("青チーム");
+  expect(within(blue).getByText("まだありません")).toBeInTheDocument();
 });

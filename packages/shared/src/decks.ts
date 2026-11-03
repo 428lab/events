@@ -49,8 +49,23 @@ export const deckSchema = z.object({
   content: deckContentSchema,
   createdAt: z.number(),
   updatedAt: z.number(),
+  /** 保存のたびに 1 進む版。編集画面は読み込んだ版を添えて保存し、その間にほかの人が
+   * 保存していたら 409（deck_conflict）で止まる (docs/team-participation.md「チームのスライド」) */
+  revision: z.number().optional(),
+  /** チームのスライドなら結び付いたチーム。編集用の取得でだけ返す（公開の閲覧では返さない） */
+  team: z.object({ entryId: z.string(), eventId: z.string(), name: z.string() }).nullable().optional(),
+  /** 最後に保存した人。編集用の取得でだけ返す */
+  lastSavedBy: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 });
 export type Deck = z.infer<typeof deckSchema>;
+
+/** チームのスライドの状態（そのチームのメンバーと運営だけが取れる） */
+export const teamDeckInfoSchema = z.object({
+  deck: z.object({ id: z.string(), slug: z.string(), title: z.string(), updatedAt: z.number() }).nullable(),
+  /** このチームのいまのメンバー（＝編集できる人）か。運営は見るだけ */
+  canEdit: z.boolean(),
+});
+export type TeamDeckInfo = z.infer<typeof teamDeckInfoSchema>;
 
 /** 一覧用の軽量サマリ */
 export const deckSummarySchema = z.object({
@@ -59,6 +74,8 @@ export const deckSummarySchema = z.object({
   title: z.string(),
   slideCount: z.number(),
   updatedAt: z.number(),
+  /** チームのスライドなら、そのチームとイベント（一覧の「チーム: ○○」表示） */
+  team: z.object({ entryId: z.string(), eventId: z.string(), name: z.string(), eventTitle: z.string() }).nullable().optional(),
 });
 export type DeckSummary = z.infer<typeof deckSummarySchema>;
 
@@ -70,5 +87,7 @@ export type CreateDeckInput = z.infer<typeof createDeckInput>;
 export const updateDeckInput = z.object({
   title: z.string().trim().max(120).optional(),
   content: deckContentSchema.optional(),
+  /** 読み込んだ（最後に保存できた）版。添えると、その間にほかの人が保存していたら 409 */
+  baseRevision: z.number().int().min(0).optional(),
 });
 export type UpdateDeckInput = z.infer<typeof updateDeckInput>;

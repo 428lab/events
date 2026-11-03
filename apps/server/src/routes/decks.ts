@@ -25,6 +25,11 @@ deckRoutes.get("/mine", async (c) => {
   return c.json({ decks: await decksRepo.listByOwner(c.get("user").id) });
 });
 
+/** 自分が編集できるチームのスライド（いまメンバーのチームのもの。docs/team-participation.md） */
+deckRoutes.get("/team", async (c) => {
+  return c.json({ decks: await decksRepo.listTeamDecks(c.get("user").id) });
+});
+
 deckRoutes.post("/", zValidator("json", createDeckInput), async (c) => {
   const deck = await decksRepo.create(
     valid<CreateDeckInput>(c, "json"),
@@ -33,32 +38,44 @@ deckRoutes.post("/", zValidator("json", createDeckInput), async (c) => {
   return c.json(deck, 201);
 });
 
-/** 編集用に owner 本人のデッキを取得 */
+/** 編集用の取得。個人のデッキは持ち主、チームのスライドはそのチームのいまのメンバーだけ */
 deckRoutes.get("/:id", async (c) => {
-  const deck = await decksRepo.findById(c.req.param("id"));
-  if (!deck) return c.json({ error: "not_found" }, 404);
-  if (deck.ownerId !== c.get("user").id) return c.json({ error: "forbidden" }, 403);
-  return c.json(deck);
+  const found = await decksRepo.findForEdit(c.req.param("id"), c.get("user").id);
+  if (found.status === "not_found") return c.json({ error: "not_found" }, 404);
+  if (found.status === "forbidden") return c.json({ error: "forbidden" }, 403);
+  return c.json(found.deck);
 });
 
+/** 保存。baseRevision を添えると、その間にほかの人が保存していたら 409 deck_conflict
+ * （誰がいつ保存したかを返す。編集画面はそこで自動保存を止めて、読み込み直すかを聞く） */
 deckRoutes.patch("/:id", zValidator("json", updateDeckInput), async (c) => {
-  const deck = await decksRepo.findById(c.req.param("id"));
-  if (!deck) return c.json({ error: "not_found" }, 404);
-  if (deck.ownerId !== c.get("user").id) return c.json({ error: "forbidden" }, 403);
-  const updated = await decksRepo.update(
-    deck.id,
+  const result = await decksRepo.updateAsEditor(
+    c.req.param("id"),
+    c.get("user").id,
     valid<UpdateDeckInput>(c, "json"),
   );
-  return c.json(updated);
+  if (result.status === "not_found") return c.json({ error: "not_found" }, 404);
+  if (result.status === "forbidden") return c.json({ error: "forbidden" }, 403);
+  if (result.status === "conflict") {
+    return c.json({
+      error: "deck_conflict",
+      revision: result.deck.revision,
+      updatedAt: result.deck.updatedAt,
+      lastSavedBy: result.deck.lastSavedBy ?? null,
+    }, 409);
+  }
+  return c.json(result.deck);
 });
 
+/** 個人のデッキを持ち主が消す。チームのスライドはメンバーからは消せない
+ * （1人がチームの作業を消してしまわないように） */
 deckRoutes.delete("/:id", async (c) => {
   const deck = await decksRepo.findById(c.req.param("id"));
   if (!deck) return c.json({ error: "not_found" }, 404);
   if (deck.ownerId !== c.get("user").id) return c.json({ error: "forbidden" }, 403);
   // 配信中のデッキなら、消すと配信状態から外れる（FK）。開いている配信画面へ知らせる
   const liveEvents = await eventLiveStateRepo.eventIdsUsing("deck_id", deck.id);
-  await decksRepo.delete(deck.id);
+  if (!(await decksRepo.deletePersonal(deck.id, deck.ownerId))) return c.json({ error: "team_deck_delete" }, 409);
   if (liveEvents.length > 0) await publishLive(liveEvents);
   return c.json({ ok: true });
 });

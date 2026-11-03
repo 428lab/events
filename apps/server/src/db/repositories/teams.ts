@@ -1,7 +1,7 @@
 import { HTTPException } from "hono/http-exception";
 import type { CreateTeamInput, UpdateMyTeamInput, UpdateTeamInput } from "@eventer/shared";
 import { eventWrite } from "./eventWriteGuard.js";
-import { many } from "../client.js";
+import { many, one } from "../client.js";
 
 /**
  * コンテストのチーム参加 (#9, docs/team-participation.md)。
@@ -50,13 +50,13 @@ const MY_TEAM_HAS_NO_LEADER = `NOT EXISTS (SELECT 1 FROM entry_member em JOIN us
 const CODES = [
   "team_mode_off", "team_locked", "team_not_found", "not_participant", "team_full",
   "team_not_empty", "team_mode_locked", "capacity_below_members",
-  "not_team_leader", "not_team_member", "team_has_leader",
+  "not_team_leader", "not_team_member", "team_has_leader", "not_this_team_member",
 ] as const;
 type TeamErrorCode = (typeof CODES)[number];
 const STATUS: Record<TeamErrorCode, 403 | 404 | 409> = {
   team_mode_off: 409, team_locked: 409, team_not_found: 404, not_participant: 409, team_full: 409,
   team_not_empty: 409, team_mode_locked: 409, capacity_below_members: 409,
-  not_team_leader: 403, not_team_member: 409, team_has_leader: 409,
+  not_team_leader: 403, not_team_member: 409, team_has_leader: 409, not_this_team_member: 403,
 };
 
 async function teamWrite(eventId: string, actorId: string, permission: "staff" | "registered", statements: Statement[]) {
@@ -230,6 +230,57 @@ export const teamsRepo = {
     ]);
   },
 
+  /** チームのスライドを作る（そのチームのメンバーなら誰でも。1チーム1つ）。
+   * 同じ batch で、チームの成果物のプレゼン資料 URL が空ならこのスライドの公開 URL を入れる
+   * （入っていれば上書きしない）。すでにあれば作らずに既存のものを返す（created=false） */
+  async createTeamDeck(
+    eventId: string, teamId: string, userId: string,
+    deck: { id: string; slug: string; title: string; content: string; viewUrl: string },
+  ): Promise<{ id: string; created: boolean }> {
+    const now = Date.now();
+    try {
+      await teamWrite(eventId, userId, "registered", [
+        assert(TEAM_MODE, "team_mode_off", [eventId]),
+        assert(TEAM_OF_EVENT, "team_not_found", [teamId, eventId]),
+        assert("EXISTS (SELECT 1 FROM entry_member WHERE entry_id = ? AND user_id = ?)", "not_this_team_member", [teamId, userId]),
+        { sql: `INSERT INTO deck (id, slug, owner_id, title, content, created_at, updated_at, team_entry_id, revision, last_saved_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+          args: [deck.id, deck.slug, userId, deck.title, deck.content, now, now, teamId, userId] },
+        { sql: `INSERT INTO submission (id, entry_id, presentation_url, source_code_url, updated_at)
+            VALUES (?, ?, ?, NULL, ?)
+            ON CONFLICT(entry_id) DO UPDATE SET presentation_url = excluded.presentation_url, updated_at = excluded.updated_at
+            WHERE submission.presentation_url IS NULL OR submission.presentation_url = ''`,
+          args: [crypto.randomUUID(), teamId, deck.viewUrl, now] },
+      ]);
+      return { id: deck.id, created: true };
+    } catch (error) {
+      if (!teamDeckExists(error)) throw error;
+      const existing = await one<{ id: string }>("SELECT id FROM deck WHERE team_entry_id = ?", teamId);
+      if (!existing) throw error;
+      return { id: existing.id, created: false };
+    }
+  },
+
+  /** チームのスライドの一覧。運営は全チーム、参加者は自分のチームだけ。
+   * canEdit はそのチームのいまのメンバーか（運営は見るだけ） */
+  async listTeamDecks(eventId: string, userId: string, isStaff: boolean) {
+    const rows = await many<{ entry_id: string; id: string; slug: string; title: string; updated_at: number; is_member: number }>(
+      `SELECT d.team_entry_id AS entry_id, d.id, d.slug, d.title, d.updated_at,
+              EXISTS (SELECT 1 FROM entry_member em WHERE em.entry_id = en.id AND em.user_id = ?) AS is_member
+         FROM deck d JOIN entry en ON en.id = d.team_entry_id AND en.kind = 'team' AND en.event_id = ?
+         JOIN event e ON e.id = en.event_id AND e.contest_mode = 1 AND e.participation_type = 'team'
+        ORDER BY en.created_at`,
+      userId, eventId,
+    );
+    return rows
+      .filter((r) => isStaff || r.is_member === 1)
+      .map((r) => ({
+        entryId: r.entry_id,
+        deck: { id: r.id, slug: r.slug, title: r.title, updatedAt: r.updated_at },
+        canEdit: r.is_member === 1,
+      }));
+  },
+
   /** 本人をそのチームに置く（すでにいれば何もしない。別のチームにいれば移す） */
   placeStatements(eventId: string, teamId: string, userId: string): Statement[] {
     return [
@@ -242,6 +293,16 @@ export const teamsRepo = {
     ];
   },
 };
+
+/** チームのスライドが同時に作られて、1チーム1つの UNIQUE に当たった */
+function teamDeckExists(error: unknown): boolean {
+  let current = error;
+  for (let i = 0; current instanceof Error && i < 4; i++) {
+    if (/UNIQUE constraint failed: deck\.team_entry_id/.test(current.message)) return true;
+    current = current.cause;
+  }
+  return /UNIQUE constraint failed: deck\.team_entry_id/.test(String(error));
+}
 
 /** 「チーム1」「チーム2」…のうち、そのイベントで使われていない最小の番号の名前 */
 async function nextDefaultName(eventId: string, prefix: string): Promise<string> {
