@@ -57,6 +57,7 @@ import type {
   DeckSlideCommands,
 } from "../lib/deckSlides.js";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
+import { prepareLoadedContent, withDeckPositions } from "../lib/deckPositions.js";
 import { useDeckSave } from "../lib/useDeckSave.js";
 import { useDeckLeaveWarning } from "../lib/useDeckLeaveWarning.js";
 import { useEditorHistory } from "../lib/editor/useEditorHistory.js";
@@ -95,9 +96,11 @@ export function DeckEditorPage() {
 
   useEffect(() => {
     if (!deck || loaded.current) return;
+    // 並びは位置キー pos が正。持たないもの（導入前・取り込み・AI が書いたもの）にだけ振る
+    const initial = prepareLoadedContent(deck.content);
     setTitle(deck.title);
-    setContent(deck.content);
-    history.reset(deck.content);
+    setContent(initial);
+    history.reset(initial);
     // 使われている書体を先に読み込む。描いてから差し替わると位置がずれて見える
     ensureDeckFonts(deck.content);
     loaded.current = true;
@@ -114,7 +117,10 @@ export function DeckEditorPage() {
     if (lastSaved === null && deck.lastSavedBy) setLastSaved({ name: deck.lastSavedBy.name, at: deck.updatedAt });
   }, [deck]);
   const saveDeck = async (value: { title: string; content: DeckContent }) => {
-    const saved = await update.mutateAsync({ ...value, baseRevision: baseRevision.current });
+    // 最後の守り: 配列の順と pos の順が食い違っていたら、配列の順から pos を振り直して送る
+    const slidesToSave = withDeckPositions(value.content.slides);
+    const contentToSave = slidesToSave === value.content.slides ? value.content : { ...value.content, slides: slidesToSave };
+    const saved = await update.mutateAsync({ ...value, content: contentToSave, baseRevision: baseRevision.current });
     baseRevision.current = saved.revision;
     if (saved.lastSavedBy) setLastSaved({ name: saved.lastSavedBy.name, at: saved.updatedAt });
     return saved;
@@ -124,11 +130,12 @@ export function DeckEditorPage() {
   const [copied, setCopied] = useState(false);
   const reloadLatest = async () => {
     const latest = await api.get<Deck>(`/decks/${id}`);
+    const latestContent = prepareLoadedContent(latest.content);
     baseRevision.current = latest.revision;
-    saving.reset(latest.title, latest.content);
+    saving.reset(latest.title, latestContent);
     setTitle(latest.title);
-    setContent(latest.content);
-    history.reset(latest.content);
+    setContent(latestContent);
+    history.reset(latestContent);
     setSelectedIds([]);
     setSlideIdx(0);
     setLastSaved(latest.lastSavedBy ? { name: latest.lastSavedBy.name, at: latest.updatedAt } : null);
@@ -146,8 +153,15 @@ export function DeckEditorPage() {
   const els = slide?.elements ?? [];
   const selection = readSelection(els, selectedIds);
 
+  // どの操作のあとも、配列の順に pos を合わせる（足した・写した・動かしたものだけ pos が変わる）。
+  // 並べ替えは「動かしたものの pos を書き換える」になる（docs/team-deck-live-sync.md §5.2）
   const editSlides = (fn: (s: DeckSlide[]) => DeckSlide[]) =>
-    setContent((c) => (c ? { ...c, slides: fn(c.slides) } : c));
+    setContent((c) => {
+      if (!c) return c;
+      const next = fn(c.slides);
+      if (next === c.slides) return c;
+      return { ...c, slides: withDeckPositions(next) };
+    });
   const editEls = (fn: (arr: DeckElement[]) => DeckElement[]) =>
     editSlides((s) => mapElementsAt(s, idx, fn));
 

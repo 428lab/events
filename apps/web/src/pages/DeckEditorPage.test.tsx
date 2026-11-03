@@ -433,3 +433,72 @@ describe("チームのスライドと同時の保存 (docs/team-participation.md
     expect(screen.queryByText(/チーム:/)).toBeNull();
   });
 });
+
+/**
+ * 並びの位置キー pos (docs/team-deck-live-sync.md §5.2)。
+ * 同期の有無に関係なく、どの編集の経路でも pos を最新に保ち、保存する配列は pos の順に並ぶ。
+ */
+describe("並びの位置キー（pos）", () => {
+  type Saved = { content: { slides: { id: string; pos?: string; elements: { id: string; pos?: string }[] }[] } };
+  const lastSaved = (): Saved => mocks.update.mock.calls[mocks.update.mock.calls.length - 1][0];
+  const ascending = (keys: (string | undefined)[]) =>
+    keys.every((k, i) => typeof k === "string" && /^[0-9A-Za-z]{1,32}$/.test(k) && (i === 0 || keys[i - 1]! < k));
+  // 保存できた応答（続けて保存させるため）
+  beforeEach(() => mocks.update.mockResolvedValue({ revision: 1 }));
+
+  it("pos の無い既存のデッキでも、最初の保存でページと要素に pos が付き、配列の順に増える", async () => {
+    draw(threeStacked());
+    clickLayer("中");
+    click("最前面");
+    await settle();
+    const saved = lastSaved();
+    expect(saved.content.slides[0].elements.map((e) => e.id)).toEqual(["e1", "e3", "e2"]);
+    expect(ascending(saved.content.slides.map((s) => s.pos))).toBe(true);
+    expect(ascending(saved.content.slides[0].elements.map((e) => e.pos))).toBe(true);
+  });
+
+  it("続けて並べ替えても、前に動かした要素の pos は保存のたびに変わらない（編集のたびに pos を合わせる）", async () => {
+    const stacked = threeStacked();
+    stacked[0].elements = stacked[0].elements.map((e, i) => ({ ...e, pos: ["c", "m", "t"][i] }));
+    draw(stacked);
+    clickLayer("中");
+    click("最前面");
+    await settle();
+    const first = new Map(lastSaved().content.slides[0].elements.map((e) => [e.id, e.pos]));
+    clickLayer("奥");
+    click("最前面");
+    await settle();
+    const els = lastSaved().content.slides[0].elements;
+    expect(els.map((e) => e.id)).toEqual(["e3", "e2", "e1"]);
+    expect(els.find((e) => e.id === "e2")!.pos).toBe(first.get("e2"));
+    expect(els.find((e) => e.id === "e3")!.pos).toBe("t");
+    expect(ascending(els.map((e) => e.pos))).toBe(true);
+  });
+
+  it("pos を知らない古い画面が並べ替えた中身（pos が配列の順で増えていない）は、配列の順で開き、その順で保存する", async () => {
+    // 古い画面で「下」を最背面へ動かした: 配列は [下, 上] だが pos は動かす前のまま（下が後ろ）
+    draw([{ id: "s1", background: "#ffffff", pos: "m", elements: [text("e1", "下", undefined), text("e2", "上", undefined)].map((e, i) => ({ ...e, pos: ["t", "c"][i] })) }]);
+    // 一覧は手前が上: 配列の末尾の「上」が上に出る
+    expect(layers().getAllByText(/上|下/).map((n) => n.textContent)).toEqual(["上", "下"]);
+    clickLayer("上");
+    click("背面へ");
+    await settle();
+    const els = lastSaved().content.slides[0].elements;
+    expect(els.map((e) => e.id)).toEqual(["e2", "e1"]);
+    expect(ascending(els.map((e) => e.pos))).toBe(true);
+  });
+
+  it("ページの追加・複製・並べ替えでも、ページの pos が配列の順に増え、写しは新しい pos を持つ", async () => {
+    draw(twoPages());
+    fireEvent.click(screen.getByRole("button", { name: "＋ ページ追加" }));
+    fireEvent.click(screen.getByRole("button", { name: "複製" }));
+    fireEvent.click(screen.getByRole("button", { name: "上へ" }));
+    await settle();
+    const slides = lastSaved().content.slides;
+    expect(slides).toHaveLength(4);
+    expect(ascending(slides.map((s) => s.pos))).toBe(true);
+    expect(new Set(slides.map((s) => s.pos)).size).toBe(4);
+    const elementKeys = slides.flatMap((s) => s.elements.map((e) => e.pos));
+    expect(elementKeys.every((k) => typeof k === "string")).toBe(true);
+  });
+});
