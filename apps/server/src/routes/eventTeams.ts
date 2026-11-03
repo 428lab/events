@@ -27,6 +27,7 @@ import { canManageEventAs } from "../auth/roles.js";
 import { env } from "../runtime.js";
 import { eventSignal } from "../lib/eventSignal.js";
 import { deferBackground } from "../runtime.js";
+import { publishDeckSync } from "../lib/deckSync.js";
 
 /**
  * コンテストのチーム参加 (#9, docs/team-participation.md)。
@@ -43,11 +44,17 @@ export const eventTeamRoutes = new Hono<AppEnv>();
 const entries = (eventId: string) => async () => ({ entries: await entriesRepo.listByEvent(eventId) });
 /** 一覧が変わったことを、開いている採点・管理画面へ知らせる（集計の合図と同じ topic） */
 const changed = (eventId: string) => deferBackground(eventSignal.publishRefetch([["scores", eventId]]));
+/** メンバーが変わりうる操作のあと: 上に加えて、チームのスライドの同時編集へ世代の切り替えを知らせる
+ * (docs/team-deck-live-sync.md §4.4。機能オフなら何もしない) */
+const membersChanged = async (eventId: string) => {
+  await changed(eventId);
+  await deferBackground(publishDeckSync(eventId));
+};
 
 eventTeamRoutes.put("/:id/team-mode", requireEventRole(["staff"]), zValidator("json", setTeamModeInput), async (c) => {
   const eventId = c.req.param("id");
   await teamsRepo.setTeamMode(eventId, c.get("user").id, valid<SetTeamModeInput>(c, "json").enabled);
-  await changed(eventId);
+  await membersChanged(eventId);
   return c.json(await entries(eventId)());
 });
 
@@ -78,7 +85,7 @@ eventTeamRoutes.delete("/:id/teams/:teamId", requireEventRole(["staff"]), async 
 eventTeamRoutes.put("/:id/teams/:teamId/leader", requireEventRole(["staff"]), zValidator("json", setTeamLeaderInput), async (c) => {
   const eventId = c.req.param("id");
   await teamsRepo.setLeader(eventId, c.req.param("teamId"), valid<SetTeamLeaderInput>(c, "json").userId, c.get("user").id);
-  await changed(eventId);
+  await membersChanged(eventId);
   return c.json(await entries(eventId)());
 });
 
@@ -88,7 +95,7 @@ eventTeamRoutes.put("/:id/team-members/:userId", requireEventRole(["staff"]), zV
   const eventId = c.req.param("id");
   const { teamId } = valid<z.infer<typeof assignInput>>(c, "json");
   await teamsRepo.assign(eventId, teamId, c.req.param("userId"), c.get("user").id);
-  await changed(eventId);
+  await membersChanged(eventId);
   return c.json(await entries(eventId)());
 });
 
@@ -96,7 +103,7 @@ eventTeamRoutes.put("/:id/team-members/:userId", requireEventRole(["staff"]), zV
 eventTeamRoutes.post("/:id/teams/:teamId/join", requireEventRole(["participant"]), async (c) => {
   const eventId = c.req.param("id");
   await teamsRepo.join(eventId, c.req.param("teamId"), c.get("user").id);
-  await changed(eventId);
+  await membersChanged(eventId);
   return c.json(await entries(eventId)());
 });
 
@@ -104,7 +111,7 @@ eventTeamRoutes.post("/:id/teams/:teamId/join", requireEventRole(["participant"]
 eventTeamRoutes.delete("/:id/my-team", requireEventRole(["participant"]), async (c) => {
   const eventId = c.req.param("id");
   await teamsRepo.leave(eventId, c.get("user").id);
-  await changed(eventId);
+  await membersChanged(eventId);
   return c.json(await entries(eventId)());
 });
 

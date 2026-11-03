@@ -27,7 +27,9 @@ export type EventSignalRefetchTopic =
   | "prize-desk"
   | "schedule-editing"
   | "broadcasts"
-  | "meet-token";
+  | "meet-token"
+  /** Team deck sync key generation changed (docs/team-deck-live-sync.md §4.4). Scope: deck id */
+  | "deck-sync";
 
 /** Topics that use the signal. */
 export type EventSignalTopic = EventSignalDataTopic | EventSignalRefetchTopic;

@@ -135,9 +135,11 @@ sync: {
      - `teams.setTeamMode(false)`: そのイベントの全チームのデッキ
      - `events.update` で `contest_mode` が変わったとき: そのイベントの全チームのデッキ。
        `visibility` の変更では作り直さない（招待限定へ変えると、取消していない参加者の招待は自動で承諾になり、メンバーは見え続けるため。`eventVisibility.ts`）
-     - **`revokeEventAccess`（`eventAccessExit.ts`）**: その batch に、対象の人がそのイベントで入っているチームのデッキを作り直す
-       UPDATE を、`accessOperationGuard` 付きで明示的に足す。終わった招待限定イベントでは参加・エントリーの片付けが
-       `(scheduling = 1 OR ends_at >= now)` で飛ばされ、`entry_member` が残ったまま招待だけ取り消される（`deckEditableSql` は通らなくなる）ため、トリガーでは拾えない
+     - **イベントが終わったら**（`scheduling = 0 AND ends_at < now`）、チームのスライドは誰も編集できない（`deckEditableSql` に入れてある。
+       オーナー決定 2026-11-03「終わったら編集できなくして、書き出しだけできればいい」）。編集の GET が通らないので鍵も渡らない。
+       そのため、終わった招待限定イベントでの `revokeEventAccess`（片付けが飛ばされ `entry_member` が残る経路）に作り直しは要らない。
+       終わる前の取消は片付けで `event_member` が消え、0115 のトリガー経由で拾う。終わったあとの作り直しは行わない
+       （時刻で変わる条件なので、終わる瞬間に開いていたタブには、閉じるまで差分が届きうる。保存は 403 で止まる）
 - 以前の版の「退会は作り直し不要」は誤り。soft delete では行が残るので、上の 2 で作り直す
 
 PR2 のテストで、上の経路を1つずつ（FK CASCADE を D1 で動かす場合を含めて）`version` が進むことを固定する。
@@ -415,7 +417,7 @@ NIP の登録表で 21059（Ephemeral Gift Wrap）・22242・23194/5・24133・2
   - 文字欄のフォーカス保留
 - サーバー: `GET` の `sync` はメンバーにだけ出る（運営・外の人・公開の閲覧には出ない）。§4.2 の全経路で `version` が進む
   （トリガー: 抜ける・外す・移動・参加取消・状態変更・ロール変更・ユーザー削除の CASCADE。明示: 退会の soft delete・`setTeamMode(false)`・
-  `contest_mode` の変更・**終わった招待限定イベントでの `revokeEventAccess`（参加者の行が残る場合）**）。`visibility` の変更では進まない。
+  `contest_mode` の変更）。`visibility` の変更では進まない。イベントが終わったら、メンバーでも編集・鍵の取得ができない（日程調整中は終わっていない）。
   鍵は編集できるときだけ作られ・読まれる（判定と同じ SQL）。PATCH の 200・409 に `syncVersion` が出る。`deck-sync` の合図が出る
 - 画面: 2〜3 のタブを模した結合テスト（同期の層を差し替え可能な送受信でつなぐ）:
   - 片方の操作がもう片方に出る。受け取った変更は送り返されない
@@ -439,7 +441,7 @@ NIP の登録表で 21059（Ephemeral Gift Wrap）・22242・23194/5・24133・2
 | PR | 中身 | 出し方 |
 | --- | --- | --- |
 | 1 | `lib/deckSync.ts`（HLC・`pos` の生成・`diffDeck`・`applyOps`・形の検証・§7.4 の合わせ方）と性質テスト。`deckSlideSchema`・`deckElementSchema` に任意の `pos`。**`lib/deckSlides.ts` の作る・複製・並べ替えのコマンドが `pos` を書き、編集画面は `pos` 順で描き、保存する側は配列の順と食い違えば `pos` を振り直す**（§5.2）。同期にはまだつながない | そのまま main（同期の有無に関係なく `pos` が最新に保たれる） |
-| 2 | サーバー: `deck_sync_key` と作り直しのトリガー（migration は次の空き番号）、明示の作り直し（退会・`setTeamMode`・`events.update` の `contest_mode`・`revokeEventAccess`）、鍵の作成・読み取りを編集判定と同じ SQL で行う、`GET` の `sync`、PATCH の `syncVersion`、`deck-sync` の合図と `publishDeckSync`、機能フラグ（`app_settings.deck_live_sync`、既定オフ） | フラグはオフのまま本番まで |
+| 2 | サーバー: `deck_sync_key` と作り直しのトリガー（migration は次の空き番号）、明示の作り直し（退会・`setTeamMode`・`events.update` の `contest_mode`）、終わったイベントのチームのスライドは編集不可、鍵の作成・読み取りを編集判定と同じ SQL で行う、`GET` の `sync`、PATCH の `syncVersion`、`deck-sync` の合図と `publishDeckSync`、機能フラグ（`app_settings.deck_live_sync`、既定オフ） | フラグはオフのまま本番まで |
 | 3 | 画面: 同期専用の接続（`authors` 無し・`since` ありの購読）、`useDeckSync`（暗号化・まとめて送る・受け取って当てる・取り直し）、`useEditorHistory.setContentFromRemote`、`useDeckSave` の `acceptRemote`・当て直し・400 の案内、文字欄の保留、0 枚の画面 | ステージングでフラグをオンにして、オーナーと2台で試す |
 | 4 | 「編集中」の表示（名前と選択中の枠）、心拍（`setTimeout` の連鎖）、docs 更新（docs/team-participation.md の「入れていない」を外す） | 本番でフラグをオン |
 

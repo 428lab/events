@@ -23,6 +23,8 @@ import { participationSlotsRepo } from "../db/repositories/participationSlots.js
 import { eventSurveyRepo } from "../db/repositories/eventSurvey.js";
 import { changeMembership } from "../db/repositories/membershipChange.js";
 import { notifyFollowersOnJoin } from "./follows.js";
+import { publishDeckSync } from "../lib/deckSync.js";
+import { deferBackground } from "../runtime.js";
 
 /** 参加登録・参加解除・ロール変更・出席チェック */
 export const eventMemberRoutes = new Hono<AppEnv>();
@@ -109,6 +111,7 @@ eventMemberRoutes.delete("/:id/join", async (c) => {
   const leaving = await eventMembersRepo.find(eventId, user.id);
   const result = await changeMembership(eventId, user.id, user.id, leaving);
   if (!result) return c.json({ error: "access_changed" }, 409);
+  await deferBackground(publishDeckSync(eventId));
   return c.json({ ok: true, ...result });
 });
 
@@ -150,11 +153,13 @@ eventMemberRoutes.patch(
       if (isEventEnded(event)) return c.json({ error: "event_ended" }, 409);
       const result = await changeMembership(eventId, c.get("user").id, userId, before, role);
       if (!result) return c.json({ error: "access_changed" }, 409);
+      await deferBackground(publishDeckSync(eventId));
       return c.json({ member: null, ...result });
     }
 
     const result = await changeMembership(eventId, c.get("user").id, userId, before, role);
     if (!result) return c.json({ error: "access_changed" }, 409);
+    await deferBackground(publishDeckSync(eventId));
     return c.json({ member: await eventMembersRepo.find(eventId, userId), ...result });
   },
 );

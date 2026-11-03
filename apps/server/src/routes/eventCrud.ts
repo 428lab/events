@@ -25,6 +25,7 @@ import { notifyOnPublish } from "../lib/publishNotify.js";
 import { checkRegistrationDeadline } from "../lib/registrationDeadline.js";
 import { eventSignal, type RefetchSignalTarget } from "../lib/eventSignal.js";
 import { deferBackground } from "../runtime.js";
+import { publishDeckSync } from "../lib/deckSync.js";
 
 /** 設定の変更で中身が変わる、開いている運営画面へ「取り直して」を送る（D-POLL-MIN 第5段階 5b-2）。
  * `live`: 配信画面のチャットの可否（GET /live-state の chatSource）が読む列 /
@@ -184,6 +185,7 @@ eventCrudRoutes.patch(
     await notifyOnPublish(prior, event);
     const targets = settingsSignalTargets(prior, event);
     if (targets.length > 0) await deferBackground(eventSignal.publishRefetch(targets));
+    if (prior && prior.contestMode !== event.contestMode) await deferBackground(publishDeckSync(event.id));
     return c.json({ event });
   },
 );

@@ -1,6 +1,7 @@
 import { eventResponseHeaders } from "../auth/eventAccess.js";
 import { Hono } from "hono";
-import { env } from "../runtime.js";
+import { deferBackground, env } from "../runtime.js";
+import { publishDeckSyncForUser } from "../lib/deckSync.js";
 import { deleteUserAvatarObjects } from "../lib/avatarUploadStorage.js";
 import { putMyAvatar } from "./avatarUpload.js";
 import type { Context } from "hono";
@@ -209,6 +210,8 @@ meRoutes.delete("/", zValidator("json", deleteAccountInput), async (c) => {
   const now = Date.now();
   console.log(`[account-delete-requested] user=${me.id} handle=${me.username}`);
   await accountDeletionRepo.requestDeletion(me.id, now);
+  // チームのスライドの同時編集へ、世代の切り替えを知らせる (docs/team-deck-live-sync.md §4.4)
+  await deferBackground(publishDeckSyncForUser(me.id));
   // 他の人の通知一覧に残る「◯◯ さんが…」を消す (#250)。タイトルに表示名を
   // 焼き込んでいるため、user 行を隠すだけでは名前とプロフィールリンクが残る。
   // 通知を消すこと自体は退会の成否に影響させない（ベストエフォート）

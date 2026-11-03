@@ -2,6 +2,7 @@ import { HTTPException } from "hono/http-exception";
 import type { CreateTeamInput, UpdateMyTeamInput, UpdateTeamInput } from "@eventer/shared";
 import { eventWrite } from "./eventWriteGuard.js";
 import { many, one } from "../client.js";
+import { ROTATE_DECK_SYNC_KEY_SQL } from "./decks.js";
 
 /**
  * コンテストのチーム参加 (#9, docs/team-participation.md)。
@@ -99,6 +100,10 @@ export const teamsRepo = {
         AND NOT EXISTS (SELECT 1 FROM award_result WHERE event_id = ?)`,
       "team_mode_locked", [eventId, eventId, eventId]),
       { sql: "UPDATE event SET participation_type = ? WHERE id = ?", args: [enabled ? "team" : "individual", eventId] },
+      // オフにするとチームのスライドを誰も編集できなくなる。同時編集の鍵を作り直す
+      // (docs/team-deck-live-sync.md §4.2)。オンでは編集できる人が増えるだけなので作り直さない
+      ...(enabled ? [] : [{ sql: `${ROTATE_DECK_SYNC_KEY_SQL}(SELECT d.id FROM deck d JOIN entry en ON en.id = d.team_entry_id
+          WHERE en.event_id = ? AND en.kind = 'team')`, args: [eventId] }]),
     ]);
   },
 

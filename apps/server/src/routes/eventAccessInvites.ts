@@ -9,6 +9,8 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { eventAccessInvitesRepo as invites, accessInviteStatus, nextCursor, type AccessInviteRow } from "../db/repositories/eventAccessInvites.js";
 import { revokeEventAccess } from "../db/repositories/eventAccessExit.js";
+import { publishDeckSync } from "../lib/deckSync.js";
+import { deferBackground } from "../runtime.js";
 import { zValidator, valid } from "../lib/validator.js";
 
 export const eventAccessInviteRoutes = new Hono<AppEnv>();
@@ -62,6 +64,7 @@ eventAccessInviteRoutes.delete("/:id/access-invites/:inviteId", requireEventRole
     if (invite.status !== "revoked" && !(await revokeEventAccess(invite, c.get("user").id, input.expectedAccessRevision))) {
       return c.json({ error: "access_changed" }, 409);
     }
+    await deferBackground(publishDeckSync(invite.event_id));
     return c.json({ ok: true, accessRevision: (await eventsRepo.findById(invite.event_id))!.accessRevision });
   });
 
@@ -83,6 +86,7 @@ export async function deleteMyEventAccess(c: Context<AppEnv>) {
         return c.json({ error: "access_changed" }, 409);
       }
     }
+    await deferBackground(publishDeckSync(eventId));
     return c.json({ ok: true });
   } finally { eventResponseHeaders(c, true); }
 }
