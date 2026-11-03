@@ -66,6 +66,7 @@ const ja = {
   deckNone: "まだありません",
   deckStaffHelp: "運営は見るだけです。編集はそのチームのメンバーができます。",
   error_not_this_team_member: "このチームのメンバーだけがスライドを作れます。",
+  error_event_ended: "イベントが終わったので、チームのスライドは作れません（書き出しだけできます）。",
   error_default: "うまくいきませんでした。もう一度試してください。",
 };
 const en: Record<keyof typeof ja, string> = {
@@ -131,6 +132,7 @@ const en: Record<keyof typeof ja, string> = {
   deckNone: "Not created yet",
   deckStaffHelp: "Organizers can only view. Members of the team can edit.",
   error_not_this_team_member: "Only members of this team can create its slide deck.",
+  error_event_ended: "The event has ended, so a team slide deck can no longer be created (export is still available).",
   error_default: "Something went wrong. Please try again.",
 };
 export const teams = { ja, en };

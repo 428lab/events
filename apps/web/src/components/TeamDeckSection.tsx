@@ -9,9 +9,10 @@ import { tDynamic } from "../i18n/index.js";
 /**
  * 自分のチームの「チームのスライド」(docs/team-participation.md「チームのスライド」)。
  * まだ無ければ「チームのスライドを作る」（メンバーなら誰でも）、あれば「編集する」「見る」。
- * 編集できるのはそのチームのいまのメンバー（サーバーが判定する）。
+ * 編集できるのはそのチームのいまのメンバー（サーバーが判定する）。イベントが終わったら
+ * 見るだけ（ended）: 作るボタンも出さない（サーバーも event_ended で止める）。
  */
-export function TeamDeckSection({ eventId, teamId }: { eventId: string; teamId: string }) {
+export function TeamDeckSection({ eventId, teamId, ended = false }: { eventId: string; teamId: string; ended?: boolean }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: decks } = useEventTeamDecks(eventId, true);
@@ -24,7 +25,7 @@ export function TeamDeckSection({ eventId, teamId }: { eventId: string; teamId: 
           <SlideshowIcon fontSize="small" color="action" />
           <Typography variant="subtitle2">{t("teams.deckTitle")}</Typography>
         </Stack>
-        {!row && <Typography variant="body2" color="text.secondary">{t("teams.deckHelp")}</Typography>}
+        {!row && !ended && <Typography variant="body2" color="text.secondary">{t("teams.deckHelp")}</Typography>}
         {create.isError && (
           <Alert severity="error">{tDynamic(`teams.error_${errorCode(create.error) ?? "default"}`, t("teams.error_default"))}</Alert>
         )}
@@ -36,6 +37,8 @@ export function TeamDeckSection({ eventId, teamId }: { eventId: string; teamId: 
             )}
             <Button size="small" variant="outlined" component={RouterLink} to={`/d/${row.deck.slug}`} target="_blank">{t("teams.deckView")}</Button>
           </Stack>
+        ) : ended ? (
+          <Typography variant="body2" color="text.secondary">{t("teams.deckNone")}</Typography>
         ) : (
           <Box>
             <Button size="small" variant="outlined" disabled={create.isPending} onClick={() => {

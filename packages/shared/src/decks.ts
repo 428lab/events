@@ -84,8 +84,9 @@ export const deckSummarySchema = z.object({
   title: z.string(),
   slideCount: z.number(),
   updatedAt: z.number(),
-  /** チームのスライドなら、そのチームとイベント（一覧の「チーム: ○○」表示） */
-  team: z.object({ entryId: z.string(), eventId: z.string(), name: z.string(), eventTitle: z.string() }).nullable().optional(),
+  /** チームのスライドなら、そのチームとイベント（一覧の「チーム: ○○」表示）。
+   * ended はイベントが終わって見るだけになったか（終わったら編集画面ではなく閲覧へ） */
+  team: z.object({ entryId: z.string(), eventId: z.string(), name: z.string(), eventTitle: z.string(), ended: z.boolean().optional() }).nullable().optional(),
 });
 export type DeckSummary = z.infer<typeof deckSummarySchema>;
 

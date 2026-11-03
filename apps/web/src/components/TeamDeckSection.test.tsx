@@ -35,6 +35,12 @@ it("まだ無ければ「チームのスライドを作る」。URLが公開に�
   expect(mock.navigate).toHaveBeenCalledWith("/decks/d1/edit");
 });
 
+it("イベントが終わったら作るボタンは出さない（書き出しだけ。サーバーも event_ended で止める）", () => {
+  render(<MemoryRouter><TeamDeckSection eventId="e" teamId="red" ended /></MemoryRouter>);
+  expect(screen.queryByRole("button", { name: "チームのスライドを作る" })).toBeNull();
+  expect(screen.getByText("まだありません")).toBeTruthy();
+});
+
 it("確認でやめれば作らない", () => {
   vi.mocked(window.confirm).mockReturnValue(false);
   draw();

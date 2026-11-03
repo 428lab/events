@@ -195,10 +195,11 @@ export const decksRepo = {
     return (await this.findById(id))!;
   },
 
-  /** 自分が編集できるチームのスライド（いまメンバーのチームのもの）。一覧の「チーム: ○○」 */
+  /** 自分がメンバーのチームのスライド。一覧の「チーム: ○○」。イベントが終わったものは ended（見るだけ） */
   async listTeamDecks(userId: string): Promise<DeckSummary[]> {
-    const rows = await many<DeckRow & { entry_id: string; team_name: string; event_id: string; event_title: string }>(
-      `SELECT d.*, en.id AS entry_id, en.name AS team_name, e.id AS event_id, e.title AS event_title
+    const rows = await many<DeckRow & { entry_id: string; team_name: string; event_id: string; event_title: string; open: number }>(
+      `SELECT d.*, en.id AS entry_id, en.name AS team_name, e.id AS event_id, e.title AS event_title,
+              (e.scheduling = 1 OR e.ends_at >= ?) AS open
          FROM deck d
          JOIN entry en ON en.id = d.team_entry_id AND en.kind = 'team'
          JOIN event e ON e.id = en.event_id AND e.contest_mode = 1 AND e.participation_type = 'team'
@@ -206,6 +207,7 @@ export const decksRepo = {
          JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
         WHERE ${eventViewSql("e", "u.id", "?")}
         ORDER BY d.updated_at DESC`,
+      Date.now(),
       userId,
       adminIds(),
     );
@@ -215,7 +217,7 @@ export const decksRepo = {
       title: r.title,
       slideCount: parseContent(r.content).slides.length,
       updatedAt: r.updated_at,
-      team: { entryId: r.entry_id, name: r.team_name, eventId: r.event_id, eventTitle: r.event_title },
+      team: { entryId: r.entry_id, name: r.team_name, eventId: r.event_id, eventTitle: r.event_title, ended: r.open !== 1 },
     }));
   },
 

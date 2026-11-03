@@ -48,16 +48,20 @@ const IN_MY_TEAM = (who: string) => `EXISTS (SELECT 1 FROM entry_member em JOIN 
 const MY_TEAM_HAS_NO_LEADER = `NOT EXISTS (SELECT 1 FROM entry_member em JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
   WHERE em.is_leader = 1 AND em.entry_id IN (${MY_TEAM}))`;
 
+/** イベントがまだ終わっていない（日程調整中は終わっていない扱い）。deckEditableSql のチームの条件と同じ */
+const EVENT_NOT_ENDED = "EXISTS (SELECT 1 FROM event WHERE id = ? AND (scheduling = 1 OR ends_at >= ?))";
+
 const CODES = [
   "team_mode_off", "team_locked", "team_not_found", "not_participant", "team_full",
   "team_not_empty", "team_mode_locked", "capacity_below_members",
-  "not_team_leader", "not_team_member", "team_has_leader", "not_this_team_member",
+  "not_team_leader", "not_team_member", "team_has_leader", "not_this_team_member", "event_ended",
 ] as const;
 type TeamErrorCode = (typeof CODES)[number];
 const STATUS: Record<TeamErrorCode, 403 | 404 | 409> = {
   team_mode_off: 409, team_locked: 409, team_not_found: 404, not_participant: 409, team_full: 409,
   team_not_empty: 409, team_mode_locked: 409, capacity_below_members: 409,
   not_team_leader: 403, not_team_member: 409, team_has_leader: 409, not_this_team_member: 403,
+  event_ended: 409,
 };
 
 async function teamWrite(eventId: string, actorId: string, permission: "staff" | "registered", statements: Statement[]) {
@@ -248,6 +252,8 @@ export const teamsRepo = {
         assert(TEAM_MODE, "team_mode_off", [eventId]),
         assert(TEAM_OF_EVENT, "team_not_found", [teamId, eventId]),
         assert("EXISTS (SELECT 1 FROM entry_member WHERE entry_id = ? AND user_id = ?)", "not_this_team_member", [teamId, userId]),
+        // 終わったイベントのチームのスライドは見るだけ（書き出しだけ）。作るのも同じ条件で止める
+        assert(EVENT_NOT_ENDED, "event_ended", [eventId, now]),
         { sql: `INSERT INTO deck (id, slug, owner_id, title, content, created_at, updated_at, team_entry_id, revision, last_saved_by)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
           args: [deck.id, deck.slug, userId, deck.title, deck.content, now, now, teamId, userId] },
@@ -267,22 +273,23 @@ export const teamsRepo = {
   },
 
   /** チームのスライドの一覧。運営は全チーム、参加者は自分のチームだけ。
-   * canEdit はそのチームのいまのメンバーか（運営は見るだけ） */
+   * canEdit はそのチームのいまのメンバーで、イベントがまだ終わっていないか（運営は見るだけ） */
   async listTeamDecks(eventId: string, userId: string, isStaff: boolean) {
-    const rows = await many<{ entry_id: string; id: string; slug: string; title: string; updated_at: number; is_member: number }>(
+    const rows = await many<{ entry_id: string; id: string; slug: string; title: string; updated_at: number; is_member: number; open: number }>(
       `SELECT d.team_entry_id AS entry_id, d.id, d.slug, d.title, d.updated_at,
+              (e.scheduling = 1 OR e.ends_at >= ?) AS open,
               EXISTS (SELECT 1 FROM entry_member em WHERE em.entry_id = en.id AND em.user_id = ?) AS is_member
          FROM deck d JOIN entry en ON en.id = d.team_entry_id AND en.kind = 'team' AND en.event_id = ?
          JOIN event e ON e.id = en.event_id AND e.contest_mode = 1 AND e.participation_type = 'team'
         ORDER BY en.created_at`,
-      userId, eventId,
+      Date.now(), userId, eventId,
     );
     return rows
       .filter((r) => isStaff || r.is_member === 1)
       .map((r) => ({
         entryId: r.entry_id,
         deck: { id: r.id, slug: r.slug, title: r.title, updatedAt: r.updated_at },
-        canEdit: r.is_member === 1,
+        canEdit: r.is_member === 1 && r.open === 1,
       }));
   },
 

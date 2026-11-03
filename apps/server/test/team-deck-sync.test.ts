@@ -101,7 +101,8 @@ it("入っただけでは作り直さない。保存の応答に今の世代が�
 
 /** 編集できる人が減る経路それぞれで、残ったメンバーの次の GET は新しい世代・新しい鍵・新しい宛先になり、
  * 外れた人には鍵が渡らない。`deck-sync` の合図も出る */
-const removals: Array<[string, (s: Awaited<ReturnType<typeof setup>>) => Promise<void>]> = [
+// 3つ目は経路が合図を出すか（完全削除は cron で消すので画面への合図は無い）
+const removals: Array<[string, (s: Awaited<ReturnType<typeof setup>>) => Promise<void>, boolean?]> = [
   ["チームを抜ける", async ({ eventId, a }) => {
     expect((await api(`/events/${eventId}/my-team`, a, "DELETE")).status).toBe(200);
   }],
@@ -120,8 +121,13 @@ const removals: Array<[string, (s: Awaited<ReturnType<typeof setup>>) => Promise
   ["退会を申請する（行は残る）", async ({ a }) => {
     expect((await api("/me", a, "DELETE", { confirm: true })).status).toBe(200);
   }],
+  ["ユーザーの行を消す（entry_member の CASCADE でトリガー）", async ({ host, a }) => {
+    // 完全削除は先にチームのスライドの owner_id を付け替えてから行を消す（accountDeletion の 1-e）
+    await sql("UPDATE deck SET owner_id = ? WHERE owner_id = ? AND team_entry_id IS NOT NULL", host.id, a.id).run();
+    await sql("DELETE FROM user WHERE id = ?", a.id).run();
+  }, false],
 ];
-it.each(removals)("%s → 鍵が作り直され、外れた人には渡らない", async (_name, remove) => {
+it.each(removals)("%s → 鍵が作り直され、外れた人には渡らない", async (_name, remove, signals = true) => {
   const s = await setup();
   const before = await syncOf(s.deckId, s.a);
   published = [];
@@ -132,7 +138,7 @@ it.each(removals)("%s → 鍵が作り直され、外れた人には渡らない
   expect(after.key.secret).not.toBe(before.key.secret);
   expect(after.topic).not.toBe(before.topic);
   expect((await get(s.deckId, s.a)).status).not.toBe(200);
-  expect(published.flat()).toContain(eventSignal.config(s.deckId, "deck-sync", 1)!.topic);
+  if (signals) expect(published.flat()).toContain(eventSignal.config(s.deckId, "deck-sync", 1)!.topic);
 });
 
 it("チーム参加をオフ・コンテスト形式をオフにすると、誰も編集できなくなるので作り直す", async () => {
@@ -155,6 +161,7 @@ it("チーム参加をオフ・コンテスト形式をオフにすると、誰�
 
 it("イベントが終わったらチームのスライドは編集できず、鍵も渡らない。日程調整中は終わっていない", async () => {
   const s = await setup();
+  const blueMember = await s.member("はると", s.blue);
   const now = Date.now();
   await sql("UPDATE event SET starts_at = ?, ends_at = ? WHERE id = ?", now - 7200000, now - 3600000, s.eventId).run();
   expect((await api(`/decks/${s.deckId}`, s.a, "PATCH", { title: "終わったあと" })).status).toBe(403);
@@ -163,6 +170,12 @@ it("イベントが終わったらチームのスライドは編集できず、�
   const { decksRepo } = await import("../src/db/repositories/decks.js");
   expect(await decksRepo.syncKeyForEdit(s.deckId, s.a.id)).toBeNull();
   expect(await keyRow(s.deckId)).toBeNull();
+  // 終わったあとはスライドの無いチームでも作れない。デッキも成果物の URL も書かれない
+  const late = await api(`/events/${s.eventId}/teams/${s.blue}/deck`, blueMember, "POST");
+  expect(late.status).toBe(409);
+  expect(((await late.json()) as { error: string }).error).toBe("event_ended");
+  expect(await sql("SELECT 1 FROM deck WHERE team_entry_id = ?", s.blue).first()).toBeNull();
+  expect(await sql("SELECT 1 FROM submission WHERE entry_id = ?", s.blue).first()).toBeNull();
   // 日程調整中（過去の仮の日時が入っていても）は終わっていない
   await sql("UPDATE event SET scheduling = 1 WHERE id = ?", s.eventId).run();
   expect((await api(`/decks/${s.deckId}`, s.a, "PATCH", { title: "調整中" })).status).toBe(200);

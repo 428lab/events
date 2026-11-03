@@ -49,7 +49,8 @@ export function DecksPage() {
       {teamDecks && teamDecks.length > 0 && (
         <Stack spacing={1.5}>
           <Typography variant="subtitle1" fontWeight={700}>{t("studio.deckTeamDecksHeading")}</Typography>
-          {teamDecks.map((d) => <DeckCard key={d.id} deck={d} onOpen={() => navigate(`/decks/${d.id}/edit`)} />)}
+          {/* 終わったイベントのチームのスライドは見るだけ（編集画面は 403 になる）ので閲覧を開く */}
+          {teamDecks.map((d) => <DeckCard key={d.id} deck={d} onOpen={() => navigate(d.team?.ended ? `/d/${d.slug}` : `/decks/${d.id}/edit`)} />)}
         </Stack>
       )}
 
