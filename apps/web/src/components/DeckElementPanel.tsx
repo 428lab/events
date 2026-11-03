@@ -38,12 +38,15 @@ export function DeckElementPanel({
   commands,
   pickImage,
   uploading,
+  onTextFocus,
 }: {
   selection: DeckSelection;
   commands: DeckElementCommands;
   /** 画像を選ばせて、上げ終わった URL を受け取る */
   pickImage: (onPicked: (url: string) => void) => void;
   uploading: boolean;
+  /** 文字欄に入った（id）・出た（null）。チームのスライドの同時編集で、打っている欄へ他人の文字を当てないため */
+  onTextFocus?: (elementId: string | null) => void;
 }) {
   const { t } = useTranslation();
   const fontOptions = useDeckFontOptions();
@@ -81,6 +84,8 @@ export function DeckElementPanel({
             minRows={2}
             value={one.text ?? ""}
             onChange={(e) => commands.patch(one.id, { text: e.target.value })}
+            onFocus={() => onTextFocus?.(one.id)}
+            onBlur={() => onTextFocus?.(null)}
           />
           <TextField
             select

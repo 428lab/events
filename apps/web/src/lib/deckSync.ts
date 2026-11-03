@@ -43,6 +43,10 @@ export interface DeckClock {
   observe: (mark: DeckHlc) => void;
 }
 
+/** これ以上の c は時計に写さない（届いた op は当てる）。壊れた・悪意の op で時計を押し上げ、
+ * 上限（1e9）を超えた op をみんなが出してはじき合うのを防ぐ */
+const OBSERVE_C_MAX = 1_000_000;
+
 export function createDeckClock(clientId: string, now: () => number = Date.now): DeckClock {
   let t = 0;
   let c = 0;
@@ -59,6 +63,7 @@ export function createDeckClock(clientId: string, now: () => number = Date.now):
       return { t, c, clientId };
     },
     observe(mark) {
+      if (mark.c >= OBSERVE_C_MAX) return;
       if (mark.t > t || (mark.t === t && mark.c > c)) {
         t = mark.t;
         c = mark.c;
