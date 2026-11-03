@@ -6,6 +6,12 @@ export const DECK_H = 540;
 
 export const DECK_ELEMENT_TYPES = ["text", "image"] as const;
 
+/** 並びの位置キー（分数の位置。docs/team-deck-live-sync.md §5.2）。ページの並びと、ページの中の
+ * 要素の並び（重なり順）を表す。保存する配列はこの順（同じなら id 順）に並んでいる。
+ * 持たないもの（導入前のデッキ・取り込み・AI が書いたもの）は、編集画面が読み込んだときに振る */
+export const DECK_POS_MAX_LENGTH = 32;
+export const deckPosSchema = z.string().max(DECK_POS_MAX_LENGTH).regex(/^[0-9A-Za-z]+$/);
+
 export const deckElementSchema = z.object({
   id: z.string().max(64),
   type: z.enum(DECK_ELEMENT_TYPES),
@@ -26,6 +32,8 @@ export const deckElementSchema = z.object({
   align: z.enum(["left", "center", "right"]).optional(),
   // image
   src: z.string().max(500).optional(),
+  /** 重なり順の位置キー（後ろほど手前） */
+  pos: deckPosSchema.optional(),
 });
 export type DeckElement = z.infer<typeof deckElementSchema>;
 
@@ -33,6 +41,8 @@ export const deckSlideSchema = z.object({
   id: z.string().max(64),
   background: z.string().max(50).default("#ffffff"),
   elements: z.array(deckElementSchema).max(200).default([]),
+  /** ページの並びの位置キー */
+  pos: deckPosSchema.optional(),
 });
 export type DeckSlide = z.infer<typeof deckSlideSchema>;
 

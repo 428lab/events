@@ -14,6 +14,7 @@ export * from "./displayFonts.js";
 export * from "./cardDesignTemplates.js";
 export * from "./communities.js";
 export * from "./decks.js";
+export * from "./deckSync.js";
 export * from "./scheduling.js";
 export * from "./liveSets.js";
 export * from "./liveCutin.js";
