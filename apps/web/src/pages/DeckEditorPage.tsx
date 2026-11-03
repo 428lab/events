@@ -258,8 +258,9 @@ export function DeckEditorPage() {
         />
         {deck?.team && <Chip size="small" color="primary" variant="outlined" label={t("studio.deckTeamLabel", { name: deck.team.name })} />}
         <Typography variant="caption" color="text.secondary">
-          {t(`deckImport.${saving.status}`)}
-          {deck?.team && lastSaved && (
+          {/* ぶつかったときは「保存失敗。再ログイン…」ではなく「未保存」（理由は下の案内に出す） */}
+          {t(`deckImport.${conflict ? "unsaved" : saving.status}`)}
+          {deck?.team && lastSaved && !conflict && (
             <>{t("common.dotSeparator")}{t("studio.deckLastSaved", { name: lastSaved.name, time: relativeTime(lastSaved.at) })}</>
           )}
         </Typography>
@@ -279,24 +280,24 @@ export function DeckEditorPage() {
       </Stack>
 
       {conflict && (
-        <Alert
-          severity="warning"
-          action={
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+        <Alert severity="warning">
+          <Stack spacing={1}>
+            <Typography variant="body2">
+              {conflict.name
+                ? t("studio.deckConflict", { name: conflict.name, time: relativeTime(conflict.at) })
+                : t("studio.deckConflictUnknown", { time: relativeTime(conflict.at) })}
+            </Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Button color="inherit" size="small" variant="outlined" onClick={() => void reloadLatest()}>
+                {t("studio.deckConflictReload")}
+              </Button>
               <Button color="inherit" size="small" onClick={() => {
                 void navigator.clipboard?.writeText(JSON.stringify({ title, content }, null, 2)).then(() => setCopied(true));
               }}>
                 {copied ? t("studio.deckConflictCopied") : t("studio.deckConflictCopy")}
               </Button>
-              <Button color="inherit" size="small" variant="outlined" onClick={() => void reloadLatest()}>
-                {t("studio.deckConflictReload")}
-              </Button>
             </Stack>
-          }
-        >
-          {conflict.name
-            ? t("studio.deckConflict", { name: conflict.name, time: relativeTime(conflict.at) })
-            : t("studio.deckConflictUnknown", { time: relativeTime(conflict.at) })}
+          </Stack>
         </Alert>
       )}
 
