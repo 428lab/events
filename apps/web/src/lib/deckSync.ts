@@ -90,6 +90,8 @@ interface ElementRec {
   fields: Partial<Record<DeckElementField, Reg<FieldValue>>>;
   /** 保留を最初に受け取った時刻（期限切れの判定だけに使う） */
   seen: number;
+  /** 保留のあいだに当てた op の数（保留の上限は op の数で数える。§5.6） */
+  held: number;
 }
 
 interface SlideRec {
@@ -98,6 +100,7 @@ interface SlideRec {
   pos: Reg<string> | null;
   elements: Map<string, ElementRec>;
   seen: number;
+  held: number;
 }
 
 export interface DeckSyncState {
@@ -112,7 +115,7 @@ const reg = <T>(v: T, m: DeckHlc): Reg<T> => ({ v, m });
 function elementRecOf(el: DeckElement): ElementRec {
   const fields: ElementRec["fields"] = {};
   for (const f of DECK_ELEMENT_FIELDS) fields[f] = reg((el[f] ?? null) as FieldValue, FLOOR);
-  return { alive: reg(true, FLOOR), type: reg(el.type, FLOOR), fields, seen: 0 };
+  return { alive: reg(true, FLOOR), type: reg(el.type, FLOOR), fields, seen: 0, held: 0 };
 }
 
 function slideRecOf(slide: DeckSlide): SlideRec {
@@ -122,6 +125,7 @@ function slideRecOf(slide: DeckSlide): SlideRec {
     pos: reg(slide.pos ?? "", FLOOR),
     elements: new Map(slide.elements.map((e) => [e.id, elementRecOf(e)])),
     seen: 0,
+    held: 0,
   };
 }
 
@@ -230,9 +234,9 @@ function setReg<T>(current: Reg<T> | null | undefined, v: T, m: DeckHlc, write: 
 /**
  * op を当てる。純関数（渡した状態は書き換えない）。時計の observe は呼ぶ側が行う。
  * 同じ op を何度当てても、どの順で当てても同じ結果になる。
- * `now` は保留（先に欄だけ届いたもの）を受け取った時刻として記録するだけ。
+ * `now` は保留（先に欄だけ届いたもの）を受け取った時刻として記録するだけ（期限切れの判定に使うので必ず渡す）。
  */
-export function applyDeckOps(state: DeckSyncState, ops: readonly DeckOp[], now = 0): ApplyResult {
+export function applyDeckOps(state: DeckSyncState, ops: readonly DeckOp[], now: number): ApplyResult {
   let title = state.title;
   const slides = new Map(state.slides);
   const touched = new Set<string>();
@@ -244,7 +248,7 @@ export function applyDeckOps(state: DeckSyncState, ops: readonly DeckOp[], now =
   const slideFor = (slideId: string): SlideRec => {
     let rec = slides.get(slideId);
     if (!rec) {
-      rec = { alive: null, background: null, pos: null, elements: new Map(), seen: now };
+      rec = { alive: null, background: null, pos: null, elements: new Map(), seen: now, held: 0 };
       ownSlides.add(slideId);
     } else if (!ownSlides.has(slideId)) {
       rec = { ...rec, elements: new Map(rec.elements) };
@@ -258,7 +262,7 @@ export function applyDeckOps(state: DeckSyncState, ops: readonly DeckOp[], now =
     const key = `${slideId}\u0000${elementId}`;
     let rec = slide.elements.get(elementId);
     if (!rec) {
-      rec = { alive: null, type: null, fields: {}, seen: now };
+      rec = { alive: null, type: null, fields: {}, seen: now, held: 0 };
       ownElements.add(key);
     } else if (!ownElements.has(key)) {
       rec = { ...rec, fields: { ...rec.fields } };
@@ -294,9 +298,16 @@ export function applyDeckOps(state: DeckSyncState, ops: readonly DeckOp[], now =
               op: "slide.add", hlc: op.hlc, slideId: op.slideId,
               pos: rec.pos!.v, background: rec.background!.v,
             });
+            // 生き返ったページには、先に届いていた要素がそのまま出る。Undo の履歴にも同じ要素を写す
+            // （写さないと、空のページが写り、Undo のときに他人の要素を消す op が出る。§5.5）
+            for (const [elementId, er] of rec.elements) {
+              const live = buildElement(elementId, er);
+              if (live) effective.push({ op: "el.add", hlc: op.hlc, slideId: op.slideId, element: live as DeckElement & { pos: string } });
+            }
           }
           break;
         }
+        if (rec.alive === null) rec.held += 1;
         const won: { background?: string; pos?: string } = {};
         if (op.fields.background !== undefined && setReg(rec.background, op.fields.background, op.hlc, (r) => (rec.background = r))) {
           won.background = op.fields.background;
@@ -329,6 +340,7 @@ export function applyDeckOps(state: DeckSyncState, ops: readonly DeckOp[], now =
           }
           break;
         }
+        if (rec.alive === null) rec.held += 1;
         const won: Record<string, unknown> = {};
         for (const [f, v] of Object.entries(op.fields) as [DeckElementField, FieldValue | undefined][]) {
           if (v === undefined) continue;
@@ -346,7 +358,7 @@ export function applyDeckOps(state: DeckSyncState, ops: readonly DeckOp[], now =
 
 // ===== 保留の期限（§5.6） =====
 
-/** 保留の上限（先に欄だけ届いて、まだ足されていない要素・ページの数） */
+/** 保留の上限（先に欄だけ届いて、まだ足されていない要素・ページに当てた op の数） */
 export const DECK_SYNC_PENDING_MAX = 500;
 /** 保留の期限 */
 export const DECK_SYNC_PENDING_TTL_MS = 30_000;
@@ -356,14 +368,19 @@ export const DECK_SYNC_PENDING_TTL_MS = 30_000;
  * 保留は画面に出ていないので、捨てても中身は変わらない。
  */
 export function expirePendingRecords(state: DeckSyncState, now: number): { state: DeckSyncState; refetch: boolean } {
-  type Item = { slideId: string; elementId: string | null; seen: number };
+  type Item = { slideId: string; elementId: string | null; seen: number; held: number };
   const pending: Item[] = [];
   for (const [slideId, s] of state.slides) {
-    if (s.alive === null) pending.push({ slideId, elementId: null, seen: s.seen });
-    for (const [elementId, e] of s.elements) if (e.alive === null) pending.push({ slideId, elementId, seen: e.seen });
+    if (s.alive === null) pending.push({ slideId, elementId: null, seen: s.seen, held: s.held });
+    for (const [elementId, e] of s.elements) if (e.alive === null) pending.push({ slideId, elementId, seen: e.seen, held: e.held });
   }
+  // 新しく受け取ったものから数え、op の数が上限を超えたぶん（古いほう）を捨てる
   pending.sort((a, b) => b.seen - a.seen);
-  const drop = pending.filter((p, i) => i >= DECK_SYNC_PENDING_MAX || now - p.seen > DECK_SYNC_PENDING_TTL_MS);
+  let count = 0;
+  const drop = pending.filter((p) => {
+    count += p.held;
+    return count > DECK_SYNC_PENDING_MAX || now - p.seen > DECK_SYNC_PENDING_TTL_MS;
+  });
   if (drop.length === 0) return { state, refetch: false };
   const slides = new Map(state.slides);
   for (const d of drop) {
@@ -589,9 +606,9 @@ export function splitFocusedText(ops: readonly DeckOp[], focus: FocusedText | nu
  * A. 途切れのあと: 取り直した中身が勝つ。自分の未保存の op（pending log）だけを当て直す。
  * `fetched` は `prepareLoadedContent` を通したもの。
  */
-export function rebaseAfterGap(state: DeckSyncState, fetched: DeckDoc, pending: readonly DeckOp[]): DeckSyncState {
+export function rebaseAfterGap(state: DeckSyncState, fetched: DeckDoc, pending: readonly DeckOp[], now: number): DeckSyncState {
   const fresh = loadDeckState({ title: fetched.title, content: fetched.content });
-  const merged = applyDeckOps(fresh, pending).state;
+  const merged = applyDeckOps(fresh, pending, now).state;
   return { ...merged, content: rebuild(merged.slides, state.content, null) };
 }
 
@@ -604,7 +621,7 @@ function keepOrFetched<T>(local: Reg<T> | null, fetched: Reg<T> | null | undefin
  * B. 途切れの無い 409: メモリ上の印と墓標は残す。床の印のままの欄だけ取り直した中身にし、
  * 自分の未保存の op を当て直す。取り直した中身に無いものは、床の印で「消えた」にする。
  */
-export function rebaseOnConflict(state: DeckSyncState, fetched: DeckDoc, pending: readonly DeckOp[]): DeckSyncState {
+export function rebaseOnConflict(state: DeckSyncState, fetched: DeckDoc, pending: readonly DeckOp[], now: number): DeckSyncState {
   const remote = loadDeckState({ title: fetched.title, content: fetched.content });
   const dead = reg(false, FLOOR);
   const slides = new Map<string, SlideRec>();
@@ -635,6 +652,7 @@ export function rebaseOnConflict(state: DeckSyncState, fetched: DeckDoc, pending
         type: keepOrFetched(le.type, fe?.type, null),
         fields,
         seen: le.seen,
+        held: le.held,
       });
     }
     slides.set(id, {
@@ -643,11 +661,12 @@ export function rebaseOnConflict(state: DeckSyncState, fetched: DeckDoc, pending
       pos: keepOrFetched(local.pos, far?.pos, null),
       elements,
       seen: local.seen,
+      held: local.held,
     });
   }
   const title = isFloor(state.title.m) ? remote.title : state.title;
   const base: DeckSyncState = { title, slides, content: state.content };
-  const merged = applyDeckOps({ ...base, content: rebuild(slides, state.content, null) }, pending).state;
+  const merged = applyDeckOps({ ...base, content: rebuild(slides, state.content, null) }, pending, now).state;
   return merged;
 }
 

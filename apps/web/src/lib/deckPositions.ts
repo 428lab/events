@@ -15,8 +15,11 @@ import { DECK_POS_MAX_LENGTH, type DeckContent, type DeckSlide } from "@eventer/
  * - **保存する中身は、配列の順と `pos` の順が一致している。** 編集画面はどの操作のあとも
  *   `withDeckPositions` を通す（配列の順が操作の意図なので、食い違ったら動いたほうの `pos` を振る）。
  *   保存の直前にも同じ関数を通す（最後の守り）。なので公開ビューアは配列の順を見るだけでよい
- * - **読み込んだときは `pos` が正。** `prepareLoadedContent` は `pos` の無いものにだけ振り、`pos` 順に並べる。
- *   取り直しのたびに全部を振り直すと、読み込んだ版が違うタブで同じ id のキーがずれる
+ * - **読み込んだときは、`pos` が配列の順で増えていれば `pos` が正。** `prepareLoadedContent` は `pos` の無いものにだけ振る。
+ *   取り直しのたびに全部を振り直すと、読み込んだ版が違うタブで同じ id のキーがずれる。
+ *   `pos` が配列の順で増えていない中身は、`pos` を知らない書き手（配備前に開いていた古い画面）が
+ *   並べ替えたもの（`pos` を知る書き手は必ず `pos` の順に保存する）。そのときは配列の順を正にして
+ *   `placeInArrayOrder` で合わせる（決定的で、食い違っていない中身には触らない）
  * - React にも MUI にも依存しない純関数（配信セット編集とは共有しない。配信セットには `pos` が無い）
  */
 
@@ -200,27 +203,36 @@ function assignMissing<T extends { id: string; pos?: string }>(items: readonly T
   return out;
 }
 
-function sortedByPos<T extends { id: string; pos?: string }>(items: readonly T[]): T[] {
-  for (let i = 1; i < items.length; i++) {
-    if (comparePositioned(items[i - 1], items[i]) > 0) return [...items].sort(comparePositioned);
-  }
-  return items as T[];
+/** 配列の順で `pos` が厳密に増えているか（`pos` を知る書き手の保存なら必ずそうなる） */
+function strictlyAscending(items: readonly { pos?: string }[]): boolean {
+  return items.every((item, i) => isDeckPos(item.pos) && (i === 0 || items[i - 1].pos! < item.pos!));
 }
 
 /**
- * 読み込んだ中身を編集できる形にする: `pos` の無いページ・要素にだけ配列の順から振り、
- * `pos`（同じなら id）の順に並べる。何も変えなければ同じオブジェクトを返す。
+ * 1つの並び（ページの並び・ページの中の要素の並び）を読み込む。
+ * - 全部が `pos` を持ち、配列の順で増えている: そのまま（`pos` が正）
+ * - 一部だけ持たない: 持たないものにだけ振る（既存のデッキ・取り込み・AI が書いたもの）
+ * - 持っている `pos` が配列の順で増えていない: `pos` を知らない書き手が並べ替えた。配列の順を正にする
+ */
+function loadOrder<T extends { id: string; pos?: string }>(items: readonly T[]): T[] {
+  const withPos = items.filter((item) => isDeckPos(item.pos));
+  if (!strictlyAscending(withPos)) return placeInArrayOrder(items);
+  return assignMissing(items);
+}
+
+/**
+ * 読み込んだ中身を編集できる形にする（`loadOrder`）。何も変えなければ同じオブジェクトを返す。
  * 既存のデッキ（`pos` 導入前・取り込み・AI が書いたもの）は、ここで初めて `pos` を持つ。
  */
 export function prepareLoadedContent(content: DeckContent): DeckContent {
   let changed = false;
   const inner = content.slides.map((slide) => {
-    const elements = sortedByPos(assignMissing(slide.elements));
+    const elements = loadOrder(slide.elements);
     if (elements === slide.elements) return slide;
     changed = true;
     return { ...slide, elements };
   });
-  const slides = sortedByPos(assignMissing(inner));
+  const slides = loadOrder(inner);
   if (slides !== inner) changed = true;
   return changed ? { ...content, slides } : content;
 }

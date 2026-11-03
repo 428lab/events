@@ -50,7 +50,7 @@ export const DECK_ELEMENT_FIELDS = ["x", "y", "w", "h", "rotation", "pos", ...DE
 export type DeckElementField = (typeof DECK_ELEMENT_FIELDS)[number];
 
 /** 送り合う要素は、並びの位置キーを必ず持つ */
-const syncedElementSchema = deckElementSchema.extend({ pos: deckPosSchema }).strict();
+const syncedElementSchema = deckElementSchema.extend({ id: idSchema, pos: deckPosSchema }).strict();
 
 export const deckOpSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("slide.add"), hlc: deckHlcSchema, slideId: idSchema, pos: deckPosSchema, background: backgroundSchema }).strict(),

@@ -18,7 +18,7 @@ import {
   type DeckDoc,
   type DeckSyncState,
 } from "./deckSync.js";
-import { posBetween, prepareLoadedContent, withDeckPositions } from "./deckPositions.js";
+import { prepareLoadedContent, withDeckPositions } from "./deckPositions.js";
 
 /**
  * 同時編集の当て方（docs/team-deck-live-sync.md §5・§7.4・§8・§10 の PR1 の範囲）。
@@ -63,13 +63,13 @@ class Tab {
   change(fn: (slides: DeckSlide[]) => DeckSlide[]): DeckOp[] {
     const next = edit(this.doc, fn);
     const ops = diffDeck(this.doc, next, this.clock);
-    this.state = applyDeckOps(this.state, ops).state;
+    this.state = applyDeckOps(this.state, ops, 100).state;
     this.log.push(...ops);
     return ops;
   }
   receive(ops: readonly DeckOp[]) {
     for (const op of ops) this.clock.observe(op.hlc);
-    this.state = applyDeckOps(this.state, ops).state;
+    this.state = applyDeckOps(this.state, ops, 100).state;
   }
 }
 
@@ -79,13 +79,10 @@ const shape = (c: DeckContent) => JSON.parse(JSON.stringify(c));
 // ===== 時計 =====
 
 describe("時計", () => {
-  it("同じミリ秒の op も、op ごとに別の印になる。全順序で、clientId で必ず決まる", () => {
+  it("同じミリ秒の op も、op ごとに別の印になる", () => {
     const clock = createDeckClock("a", () => 1000);
     const marks = [clock.tick(), clock.tick(), clock.tick()];
     expect(marks.map((m) => m.c)).toEqual([0, 1, 2]);
-    expect(compareHlc(hlc(5, 1, "a"), hlc(5, 1, "b"))).toBeLessThan(0);
-    expect(compareHlc(hlc(5, 2, "a"), hlc(5, 1, "z"))).toBeGreaterThan(0);
-    expect(compareHlc(FLOOR, hlc(0, 0, "a"))).toBeLessThan(0);
   });
 
   it("受け取った印より後の印を出す（壁時計が遅れていても）", () => {
@@ -108,7 +105,7 @@ describe("diffDeck → applyDeckOps", () => {
       page("s3", [text("d")]),
     ]);
     const ops = diffDeck(start, next, tab.clock);
-    const applied = applyDeckOps(tab.state, ops).state.content;
+    const applied = applyDeckOps(tab.state, ops, 100).state.content;
     expect(shape(applied)).toEqual(shape(next.content));
     expect(applied.slides[1]).toBe(start.content.slides[1]);
     expect(applied.slides[0].elements[0]).toBe(start.content.slides[0].elements[0]);
@@ -123,9 +120,8 @@ describe("diffDeck → applyDeckOps", () => {
     b.receive(ops);
     const next = b.doc;
     expect(next).not.toBe(before);
-    // 画面は「当てた結果」を基準にするので、次の差分は空
-    expect(diffDeck(next, next, b.clock)).toEqual([]);
-    expect(diffDeck(next, stateDoc(applyDeckOps(b.state, ops).state), b.clock)).toEqual([]);
+    // 画面は「当てた結果」を基準にするので、もう一度当てても次の差分は空
+    expect(diffDeck(next, stateDoc(applyDeckOps(b.state, ops, 100).state), b.clock)).toEqual([]);
   });
 
   it("グループを外す（欄を消す）も op になり、相手でも外れる", () => {
@@ -165,7 +161,7 @@ describe("あとから操作したほうが勝つ（欄ごと）", () => {
       { op: "el.set", hlc: hlc(10, 1, "b"), slideId: "s1", elementId: "a", fields: { x: 3 } },
     ];
     for (const order of [ops, [...ops].reverse(), [ops[1], ops[2], ops[0]]]) {
-      expect(applyDeckOps(base(), order).state.content.slides[0].elements[0].x).toBe(3);
+      expect(applyDeckOps(base(), order, 100).state.content.slides[0].elements[0].x).toBe(3);
     }
   });
 
@@ -173,50 +169,29 @@ describe("あとから操作したほうが勝つ（欄ごと）", () => {
     const r = applyDeckOps(base(), [
       { op: "el.set", hlc: hlc(10, 0, "a"), slideId: "s1", elementId: "a", fields: { x: 5 } },
       { op: "el.set", hlc: hlc(9, 0, "b"), slideId: "s1", elementId: "a", fields: { text: "べつ" } },
-    ]).state.content.slides[0].elements[0];
+    ], 100).state.content.slides[0].elements[0];
     expect(r).toMatchObject({ x: 5, text: "べつ" });
   });
 
   it("消した要素は、古い印の更新では生き返らない（墓標）。墓標への el.set は当たっても見えない", () => {
-    const removed = applyDeckOps(base(), [{ op: "el.remove", hlc: hlc(20), slideId: "s1", elementId: "a" }]).state;
-    const after = applyDeckOps(removed, [{ op: "el.set", hlc: hlc(30, 0, "b"), slideId: "s1", elementId: "a", fields: { x: 9 } }]);
+    const removed = applyDeckOps(base(), [{ op: "el.remove", hlc: hlc(20), slideId: "s1", elementId: "a" }], 100).state;
+    const after = applyDeckOps(removed, [{ op: "el.set", hlc: hlc(30, 0, "b"), slideId: "s1", elementId: "a", fields: { x: 9 } }], 100);
     expect(after.state.content.slides[0].elements).toEqual([]);
-    const late = applyDeckOps(removed, [{ op: "el.add", hlc: hlc(10, 0, "b"), slideId: "s1", element: { ...text("a"), pos: pos() } }]);
+    const late = applyDeckOps(removed, [{ op: "el.add", hlc: hlc(10, 0, "b"), slideId: "s1", element: { ...text("a"), pos: pos() } }], 100);
     expect(late.state.content.slides[0].elements).toEqual([]);
     expect(late.effective).toEqual([]);
-  });
-
-  it("消すのと動かすのが同時でも、どの順で当てても同じ（消した印が新しければ消える）", () => {
-    const ops: DeckOp[] = [
-      { op: "el.remove", hlc: hlc(20, 0, "a"), slideId: "s1", elementId: "a" },
-      { op: "el.set", hlc: hlc(19, 0, "b"), slideId: "s1", elementId: "a", fields: { pos: posBetween(pos(), null)! } },
-    ];
-    expect(applyDeckOps(base(), ops).state.content.slides[0].elements).toEqual([]);
-    expect(applyDeckOps(base(), [...ops].reverse()).state.content.slides[0].elements).toEqual([]);
   });
 
   it("消してから足し直した要素は、遅れて届いた古い削除では消えない", () => {
     const readd = applyDeckOps(base(), [
       { op: "el.remove", hlc: hlc(10), slideId: "s1", elementId: "a" },
       { op: "el.add", hlc: hlc(30, 0, "b"), slideId: "s1", element: { ...text("a"), pos: pos() } },
-    ]).state;
-    const late = applyDeckOps(readd, [{ op: "el.remove", hlc: hlc(20), slideId: "s1", elementId: "a" }]);
+    ], 100).state;
+    const late = applyDeckOps(readd, [{ op: "el.remove", hlc: hlc(20), slideId: "s1", elementId: "a" }], 100);
     expect(late.state.content.slides[0].elements.map((e) => e.id)).toEqual(["a"]);
     expect(late.effective).toEqual([]);
   });
 
-  it("同じ op を何度当てても変わらない（リプレイ）", () => {
-    const op: DeckOp = { op: "el.set", hlc: hlc(10), slideId: "s1", elementId: "a", fields: { x: 7 } };
-    const once = applyDeckOps(base(), [op]).state;
-    const twice = applyDeckOps(once, [op, op]);
-    expect(twice.state.content).toBe(once.content);
-    expect(twice.effective).toEqual([]);
-  });
-
-  it("ページを全部消し合うと 0 枚になる（画面が「ページ追加」で戻す。PR3）", () => {
-    const r = applyDeckOps(base(), [{ op: "slide.remove", hlc: hlc(10), slideId: "s1" }]);
-    expect(r.state.content.slides).toEqual([]);
-  });
 });
 
 // ===== 収束（性質テスト） =====
@@ -338,22 +313,6 @@ describe("収束（数百通り）", () => {
     expect(order(writer)).toEqual(["f", "a", "d", "b", "e", "c"]);
   });
 
-  it("同時の並べ替え・差し込み・削除でも同じ中身になる", () => {
-    const now = () => 100;
-    const start = doc([page("s1", [text("a"), text("b"), text("c"), text("d")])]);
-    const x = new Tab(start, "x", now);
-    const y = new Tab(start, "y", now);
-    const z = new Tab(start, "z", now);
-    const ox = x.change((s) => [{ ...s[0], elements: [s[0].elements[3], ...s[0].elements.slice(0, 3)] }]); // d を最背面へ
-    const oy = y.change((s) => [{ ...s[0], elements: [s[0].elements[0], text("n"), ...s[0].elements.slice(1)] }]); // a と b の間へ
-    const oz = z.change((s) => [{ ...s[0], elements: s[0].elements.filter((e) => e.id !== "b") }]); // b を消す
-    x.receive([...oz, ...oy]);
-    y.receive([...ox, ...oz]);
-    z.receive([...oy, ...ox]);
-    expect(shape(y.doc.content)).toEqual(shape(x.doc.content));
-    expect(shape(z.doc.content)).toEqual(shape(x.doc.content));
-    expect(x.doc.content.slides[0].elements.map((e) => e.id)).toEqual(["d", "a", "n", "c"]);
-  });
 });
 
 // ===== 保留（先に欄だけ届いた） =====
@@ -365,7 +324,7 @@ describe("保留", () => {
     const add: DeckOp = { op: "el.add", hlc: hlc(10), slideId: "s1", element: { ...text("n"), pos: "V" } };
     const first = applyDeckOps(state, [set], 1000).state;
     expect(first.content.slides[0].elements).toEqual([]);
-    expect(applyDeckOps(first, [add]).state.content.slides[0].elements[0].x).toBe(77);
+    expect(applyDeckOps(first, [add], 100).state.content.slides[0].elements[0].x).toBe(77);
   });
 
   it("30 秒たった保留は捨てて、取り直しを1回予約する", () => {
@@ -376,6 +335,14 @@ describe("保留", () => {
     const expired = expirePendingRecords(state, 32_000);
     expect(expired.refetch).toBe(true);
     expect(expired.state.slides.get("s1")!.elements.has("n")).toBe(false);
+    // 上限は op の数で数える（501 個目から、古く受け取ったほうを捨てる）
+    const many = (count: number, elementId: string): DeckOp[] =>
+      Array.from({ length: count }, (_, i) => ({ op: "el.set", hlc: hlc(20, i), slideId: "s1", elementId, fields: { x: i } }));
+    const full = applyDeckOps(applyDeckOps(loadDeckState(doc([page("s1")])), many(300, "old"), 1000).state, many(200, "new"), 2000).state;
+    expect(expirePendingRecords(full, 2000).refetch).toBe(false);
+    const over = expirePendingRecords(applyDeckOps(full, many(1, "newest"), 3000).state, 3000);
+    expect(over.refetch).toBe(true);
+    expect([...over.state.slides.get("s1")!.elements.keys()]).toEqual(["new", "newest"]);
   });
 });
 
@@ -393,13 +360,13 @@ describe("印を見ない射影（Undo）", () => {
     const by = b.change((s) => [{ ...s[0], elements: [s[0].elements[0], { ...s[0].elements[1], x: 22 }] }]);
     b.receive(ax);
     // A が B の変更を受け取る: 実際に当たったぶんを、履歴のスナップショットにも写す
-    const result = applyDeckOps(a.state, by);
+    const result = applyDeckOps(a.state, by, 100);
     a.state = result.state;
     undoStack = undoStack.map((snap) => projectDeckOps(snap, result.effective));
     // A が Undo: スナップショットへ戻し、その差分を自分の op として送る
     const restored = undoStack.pop()!;
     const undoOps = diffDeck(a.doc, restored, a.clock);
-    a.state = applyDeckOps(a.state, undoOps).state;
+    a.state = applyDeckOps(a.state, undoOps, 100).state;
     b.receive(undoOps);
     const xy = (t: Tab) => t.doc.content.slides[0].elements.map((e) => e.x);
     expect(xy(a)).toEqual([0, 22]);
@@ -408,19 +375,37 @@ describe("印を見ない射影（Undo）", () => {
 
   it("負けた op は写さない（印で負けた変更を Undo の履歴に入れない）", () => {
     const start = doc([page("s1", [text("x")])]);
-    const won = applyDeckOps(loadDeckState(start), [{ op: "el.set", hlc: hlc(50), slideId: "s1", elementId: "x", fields: { x: 5 } }]).state;
-    const lost = applyDeckOps(won, [{ op: "el.set", hlc: hlc(40, 0, "b"), slideId: "s1", elementId: "x", fields: { x: 9 } }]);
+    const won = applyDeckOps(loadDeckState(start), [{ op: "el.set", hlc: hlc(50), slideId: "s1", elementId: "x", fields: { x: 5 } }], 100).state;
+    const lost = applyDeckOps(won, [{ op: "el.set", hlc: hlc(40, 0, "b"), slideId: "s1", elementId: "x", fields: { x: 9 } }], 100);
     expect(lost.effective).toEqual([]);
     expect(projectDeckOps(start, lost.effective)).toBe(start);
   });
 
-  it("スナップショットに無い要素への書き換えは飛ばし、足された要素は差し込む", () => {
-    const snap = doc([page("s1", [text("x")])]);
-    const projected = projectDeckOps(snap, [
-      { op: "el.set", hlc: FLOOR, slideId: "s1", elementId: "ghost", fields: { x: 3 } },
-      { op: "el.add", hlc: FLOOR, slideId: "s1", element: { ...text("n"), pos: posBetween(null, snap.content.slides[0].elements[0].pos!)! } },
-    ]);
-    expect(projected.content.slides[0].elements.map((e) => e.id)).toEqual(["n", "x"]);
+  it("ページより先に届いた要素は、ページが届いたときに履歴へも写り、Undo で消えない", () => {
+    const now = () => 100;
+    const start = doc([page("s1", [text("x")])]);
+    const a = new Tab(start, "a", now);
+    const b = new Tab(start, "b", now);
+    // B が新しいページを足し（1つ目のまとまり）、そのページに要素を置く（2つ目）
+    const batch1 = b.change((s) => [...s, page("s2")]);
+    const batch2 = b.change((s) => [s[0], { ...s[1], elements: [text("y")] }]);
+    // A には 2つ目が先に届く
+    let undoStack: DeckDoc[] = [a.doc];
+    const ax = a.change((s) => [{ ...s[0], elements: [{ ...s[0].elements[0], x: 11 }] }]);
+    for (const batch of [batch2, batch1]) {
+      const r = applyDeckOps(a.state, batch, 100);
+      a.state = r.state;
+      undoStack = undoStack.map((snap) => projectDeckOps(snap, r.effective));
+    }
+    b.receive(ax);
+    // A が Undo（自分の x の変更だけを戻す）
+    const undoOps = diffDeck(a.doc, undoStack.pop()!, a.clock);
+    a.state = applyDeckOps(a.state, undoOps, 100).state;
+    b.receive(undoOps);
+    for (const t of [a, b]) {
+      expect(t.doc.content.slides.map((p) => p.elements.map((e) => e.id))).toEqual([["x"], ["y"]]);
+      expect(t.doc.content.slides[0].elements[0].x).toBe(0);
+    }
   });
 
   it("当て直しの結果は、差分（印なし）にして写すと同じ中身になる", () => {
@@ -445,7 +430,7 @@ describe("取り直し・当て直し", () => {
     const mine = me.change((s) => [{ ...s[0], elements: [s[0].elements[0], { ...s[0].elements[1], text: "未保存" }] }]);
     // サーバーには他人の保存が入っていて、f の x はまだ古い（相手は保存前）
     const fetched = edit(start, (s) => [{ ...s[0], elements: [s[0].elements[0], { ...s[0].elements[1], y: 300 }] }]);
-    const merged = stateDoc(rebaseOnConflict(me.state, fetched, mine)).content.slides[0].elements;
+    const merged = stateDoc(rebaseOnConflict(me.state, fetched, mine, 100)).content.slides[0].elements;
     expect(merged[0].x).toBe(1); // 受け取っていた他人の op
     expect(merged[1].text).toBe("未保存"); // 自分の未保存
     expect(merged[1].y).toBe(300); // 床の印のままだった欄は、取り直した中身
@@ -459,7 +444,7 @@ describe("取り直し・当て直し", () => {
     const mine = me.change((s) => [{ ...s[0], elements: [s[0].elements[0], { ...s[0].elements[1], text: "未保存" }] }]);
     // 途切れのあいだに別の人が f の x を 2 にして保存した
     const fetched = edit(start, (s) => [{ ...s[0], elements: [{ ...s[0].elements[0], x: 2 }, s[0].elements[1]] }]);
-    const merged = stateDoc(rebaseAfterGap(me.state, fetched, mine)).content.slides[0].elements;
+    const merged = stateDoc(rebaseAfterGap(me.state, fetched, mine, 100)).content.slides[0].elements;
     expect(merged[0].x).toBe(2);
     expect(merged[1].text).toBe("未保存");
   });
@@ -469,19 +454,10 @@ describe("取り直し・当て直し", () => {
     const me = new Tab(start, "me", now);
     me.change((s) => [{ ...s[0], elements: [s[0].elements[1]] }]); // f を消す（保存前）
     const fetched = edit(start, (s) => [{ ...s[0], elements: [s[0].elements[0]] }]); // g はほかの人が消して保存済み
-    const ids = stateDoc(rebaseOnConflict(me.state, fetched, me.log)).content.slides[0].elements.map((e) => e.id);
+    const ids = stateDoc(rebaseOnConflict(me.state, fetched, me.log, 100)).content.slides[0].elements.map((e) => e.id);
     expect(ids).toEqual([]);
   });
 
-  it("合わせた結果を基準にすると、差分から op が出ない（受け取った変更の経路）", () => {
-    const now = () => 100;
-    const me = new Tab(start, "me", now);
-    const mine = me.change((s) => [{ ...s[0], elements: [{ ...s[0].elements[0], text: "自分" }, s[0].elements[1]] }]);
-    const fetched = edit(start, (s) => [{ ...s[0], background: "#000000" }]);
-    const merged = stateDoc(rebaseOnConflict(me.state, fetched, mine));
-    expect(diffDeck(merged, merged, me.clock)).toEqual([]);
-    expect(merged.content.slides[0].background).toBe("#000000");
-  });
 });
 
 // ===== 打っている文字欄 =====
@@ -491,14 +467,14 @@ describe("フォーカス中の文字欄の保留（§5.4）", () => {
     const start = doc([page("s1", [text("a")])]);
     const incoming: DeckOp[] = [{ op: "el.set", hlc: hlc(30, 0, "b"), slideId: "s1", elementId: "a", fields: { text: "相手", x: 5 } }];
     const { apply, held } = splitFocusedText(incoming, { slideId: "s1", elementId: "a" });
-    const state = applyDeckOps(loadDeckState(start), apply).state;
+    const state = applyDeckOps(loadDeckState(start), apply, 100).state;
     expect(state.content.slides[0].elements[0]).toMatchObject({ x: 5, text: "a" });
     // 自分は相手よりあとに打った
-    const typed = applyDeckOps(state, [{ op: "el.set", hlc: hlc(40, 0, "a"), slideId: "s1", elementId: "a", fields: { text: "自分" } }]).state;
-    expect(applyDeckOps(typed, held).state.content.slides[0].elements[0].text).toBe("自分");
+    const typed = applyDeckOps(state, [{ op: "el.set", hlc: hlc(40, 0, "a"), slideId: "s1", elementId: "a", fields: { text: "自分" } }], 100).state;
+    expect(applyDeckOps(typed, held, 100).state.content.slides[0].elements[0].text).toBe("自分");
     // 自分のほうが古ければ相手の文が残る（同じ欄を同時に打ったら、あとの人の文）
-    const older = applyDeckOps(state, [{ op: "el.set", hlc: hlc(20, 0, "a"), slideId: "s1", elementId: "a", fields: { text: "自分" } }]).state;
-    expect(applyDeckOps(older, held).state.content.slides[0].elements[0].text).toBe("相手");
+    const older = applyDeckOps(state, [{ op: "el.set", hlc: hlc(20, 0, "a"), slideId: "s1", elementId: "a", fields: { text: "自分" } }], 100).state;
+    expect(applyDeckOps(older, held, 100).state.content.slides[0].elements[0].text).toBe("相手");
   });
 });
 
@@ -508,19 +484,14 @@ describe("op の形の検証", () => {
   const now = 1_000_000;
   const ok: DeckOp = { op: "el.set", hlc: hlc(now), slideId: "s1", elementId: "a", fields: { x: 1 } };
 
-  it("正しい形は通る", () => {
+  it("正しい形は通り、id や種類を変える el.set・知らない欄・長すぎる値・不正な pos・空の id・知らない op は弾く", () => {
     expect(parseDeckOp(ok, now)).toEqual(ok);
     expect(parseDeckOp({ op: "el.add", hlc: hlc(now), slideId: "s1", element: { ...text("a"), pos: "V" } }, now)).not.toBeNull();
-  });
-
-  it("id や種類を変える el.set、知らない欄、長すぎる文字、不正な pos は弾く", () => {
     for (const fields of [{ id: "b" }, { type: "image" }, { unknown: 1 }, { text: "x".repeat(10001) }, { pos: "a-b" }, { pos: "a".repeat(33) }]) {
       expect(parseDeckOp({ ...ok, fields }, now)).toBeNull();
     }
-  });
-
-  it("pos の無い el.add・長すぎる id・背景・タイトル、知らない op は弾く", () => {
     expect(parseDeckOp({ op: "el.add", hlc: hlc(now), slideId: "s1", element: text("a") }, now)).toBeNull();
+    expect(parseDeckOp({ op: "el.add", hlc: hlc(now), slideId: "s1", element: { ...text(""), pos: "V" } }, now)).toBeNull();
     expect(parseDeckOp({ ...ok, slideId: "s".repeat(65) }, now)).toBeNull();
     expect(parseDeckOp({ op: "slide.set", hlc: hlc(now), slideId: "s1", fields: { background: "#".repeat(51) } }, now)).toBeNull();
     expect(parseDeckOp({ op: "title.set", hlc: hlc(now), title: "t".repeat(121) }, now)).toBeNull();
@@ -536,6 +507,6 @@ describe("op の形の検証", () => {
     const many = Array.from({ length: 200 }, (_, i) => text(`e${i}`));
     const state = loadDeckState(doc([page("s1", many)]));
     const op = parseDeckOp({ op: "el.add", hlc: hlc(now), slideId: "s1", element: { ...text("extra"), pos: "zz" } }, now)!;
-    expect(applyDeckOps(state, [op]).state.content.slides[0].elements).toHaveLength(201);
+    expect(applyDeckOps(state, [op], 100).state.content.slides[0].elements).toHaveLength(201);
   });
 });

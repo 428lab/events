@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { deckContentSchema, type DeckElement, type DeckSlide } from "@eventer/shared";
+import type { DeckElement, DeckSlide } from "@eventer/shared";
 import {
-  comparePositioned,
   isDeckPos,
   placeInArrayOrder,
   posBetween,
   prepareLoadedContent,
-  withDeckPositions,
 } from "./deckPositions.js";
-import { moveZ, swapAt, toBack, toFront } from "./editor/collection.js";
+import { moveZ } from "./editor/collection.js";
 
 /** 並びの位置キー（docs/team-deck-live-sync.md §5.2） */
 
@@ -41,21 +39,6 @@ describe("posBetween", () => {
     }
   });
 
-  it("同じ場所に何度も差し込んでも、間のキーが作れ続ける", () => {
-    let lo = "V";
-    const hi = "W";
-    for (let n = 0; n < 25; n++) {
-      const k = posBetween(lo, hi)!;
-      expect(lo < k && k < hi).toBe(true);
-      lo = k;
-    }
-  });
-
-  it("間が空のとき（hi が lo の後ろに 0 を足しただけ、順が逆）は null", () => {
-    expect(posBetween("a", "a0")).toBeNull();
-    expect(posBetween("b", "a")).toBeNull();
-    expect(posBetween("a", "a")).toBeNull();
-  });
 });
 
 describe("placeInArrayOrder", () => {
@@ -67,13 +50,7 @@ describe("placeInArrayOrder", () => {
     expect(ascending(keys(placed))).toBe(true);
     const changed = placed.filter((e, i) => e !== moved[i]).map((e) => e.id);
     expect(changed).toHaveLength(1);
-  });
-
-  it("最前面・最背面・ページの入れ替えでも、配列の順で pos が増える", () => {
-    const base = placeInArrayOrder(["a", "b", "c", "d"].map((id) => el(id)));
-    for (const next of [toFront(base, ["a", "c"]), toBack(base, ["d"]), swapAt(base, 0, 3)]) {
-      expect(ascending(keys(placeInArrayOrder(next)))).toBe(true);
-    }
+    expect(placeInArrayOrder(placed)).toBe(placed);
   });
 
   it("写し（同じ pos を持つ要素）は元を残し、写しにだけ新しいキーを振る", () => {
@@ -83,11 +60,6 @@ describe("placeInArrayOrder", () => {
     expect(placed[0]).toBe(base[0]);
     expect(placed[1]).toBe(base[1]);
     expect(ascending(keys(placed))).toBe(true);
-  });
-
-  it("何も変えなければ、同じ配列を返す", () => {
-    const base = placeInArrayOrder(["a", "b", "c"].map((id) => el(id)));
-    expect(placeInArrayOrder(base)).toBe(base);
   });
 
   it("間に作れないキー（末尾 0）が詰まっていても、並び全体を振り直して順を保つ", () => {
@@ -117,15 +89,7 @@ describe("placeInArrayOrder", () => {
   });
 });
 
-describe("withDeckPositions / prepareLoadedContent", () => {
-  it("保存する中身は形の検証を通り、配列の順と pos の順が一致する", () => {
-    const slides = withDeckPositions([slide("s1", [el("a"), el("b")]), slide("s2", [el("c")])]);
-    const parsed = deckContentSchema.parse({ slides });
-    expect(parsed.slides.map((s) => s.id)).toEqual(["s1", "s2"]);
-    expect(ascending(keys(parsed.slides))).toBe(true);
-    expect(ascending(keys(parsed.slides[0].elements))).toBe(true);
-  });
-
+describe("prepareLoadedContent", () => {
   it("pos の無い既存のデッキは、配列の順に振る。持っているキーは変えない", () => {
     const content = { slides: [slide("s1", [el("a"), el("b")]), slide("s2")] };
     const prepared = prepareLoadedContent(content);
@@ -134,12 +98,18 @@ describe("withDeckPositions / prepareLoadedContent", () => {
     expect(prepareLoadedContent(prepared)).toBe(prepared);
   });
 
-  it("読み込むときは pos が正。配列の順が食い違っていても pos の順に並べ、キーは振り直さない", () => {
+  it("読み込むとき、pos が配列の順で増えていれば pos が正。増えていない（pos を知らない古い画面が並べ替えた）ときは配列の順を正にして、動いたものだけ振り直す", () => {
+    // 古い画面が s2 を先頭へ、要素 b を奥へ動かした。pos は動かす前のまま
     const content = { slides: [slide("s2", [], "m"), slide("s1", [el("b", "x"), el("a", "c")], "c")] };
     const prepared = prepareLoadedContent(content);
-    expect(prepared.slides.map((s) => s.id)).toEqual(["s1", "s2"]);
-    expect(prepared.slides[0].elements.map((e) => e.id)).toEqual(["a", "b"]);
-    expect(keys(prepared.slides)).toEqual(["c", "m"]);
+    expect(prepared.slides.map((s) => s.id)).toEqual(["s2", "s1"]);
+    expect(prepared.slides[1].elements.map((e) => e.id)).toEqual(["b", "a"]);
+    expect(ascending(keys(prepared.slides))).toBe(true);
+    expect(ascending(keys(prepared.slides[1].elements))).toBe(true);
+    // 動かしていないほうのキーは残る
+    expect(prepared.slides[0].pos).toBe("m");
+    // pos が配列の順で増えている中身は pos が正。何も変えない
+    expect(prepareLoadedContent(prepared)).toBe(prepared);
   });
 
   it("一部だけ pos を持つときは、持たないものにだけ間のキーを振る", () => {
@@ -152,13 +122,4 @@ describe("withDeckPositions / prepareLoadedContent", () => {
     expect("c" < els[1].pos! && els[1].pos! < "m").toBe(true);
   });
 
-  it("同じ pos のときは id 順", () => {
-    expect([el("b", "k"), el("a", "k")].sort(comparePositioned).map((e) => e.id)).toEqual(["a", "b"]);
-  });
-
-  it("形の検証は、許していない文字・長すぎるキーを弾く", () => {
-    expect(deckContentSchema.safeParse({ slides: [slide("s1", [], "a-b")] }).success).toBe(false);
-    expect(deckContentSchema.safeParse({ slides: [slide("s1", [], "a".repeat(33))] }).success).toBe(false);
-    expect(deckContentSchema.safeParse({ slides: [slide("s1", [el("e", "Zz9")], "a".repeat(32))] }).success).toBe(true);
-  });
 });

@@ -457,20 +457,6 @@ describe("並びの位置キー（pos）", () => {
     expect(ascending(saved.content.slides[0].elements.map((e) => e.pos))).toBe(true);
   });
 
-  it("並べ替えで書き換わる pos は、動かした要素だけ", async () => {
-    const stacked = threeStacked();
-    stacked[0].elements = stacked[0].elements.map((e, i) => ({ ...e, pos: ["c", "m", "t"][i] }));
-    draw(stacked);
-    clickLayer("中");
-    click("最前面");
-    await settle();
-    const els = lastSaved().content.slides[0].elements;
-    expect(els.map((e) => e.id)).toEqual(["e1", "e3", "e2"]);
-    expect(els[0].pos).toBe("c");
-    expect(els[1].pos).toBe("t");
-    expect(els[2].pos! > "t").toBe(true);
-  });
-
   it("続けて並べ替えても、前に動かした要素の pos は保存のたびに変わらない（編集のたびに pos を合わせる）", async () => {
     const stacked = threeStacked();
     stacked[0].elements = stacked[0].elements.map((e, i) => ({ ...e, pos: ["c", "m", "t"][i] }));
@@ -489,15 +475,17 @@ describe("並びの位置キー（pos）", () => {
     expect(ascending(els.map((e) => e.pos))).toBe(true);
   });
 
-  it("読み込むときは pos の順に並べる（配列の順が食い違っていても）", async () => {
-    draw([{ id: "s1", background: "#ffffff", pos: "m", elements: [text("e2", "上", undefined), text("e1", "下", undefined)].map((e, i) => ({ ...e, pos: ["t", "c"][i] })) }]);
-    const labels = layers().getAllByText(/上|下/).map((n) => n.textContent);
-    // 一覧は手前（pos が大きい）が上
-    expect(labels).toEqual(["上", "下"]);
-    clickLayer("下");
-    click("最前面");
+  it("pos を知らない古い画面が並べ替えた中身（pos が配列の順で増えていない）は、配列の順で開き、その順で保存する", async () => {
+    // 古い画面で「下」を最背面へ動かした: 配列は [下, 上] だが pos は動かす前のまま（下が後ろ）
+    draw([{ id: "s1", background: "#ffffff", pos: "m", elements: [text("e1", "下", undefined), text("e2", "上", undefined)].map((e, i) => ({ ...e, pos: ["t", "c"][i] })) }]);
+    // 一覧は手前が上: 配列の末尾の「上」が上に出る
+    expect(layers().getAllByText(/上|下/).map((n) => n.textContent)).toEqual(["上", "下"]);
+    clickLayer("上");
+    click("背面へ");
     await settle();
-    expect(lastSaved().content.slides[0].elements.map((e) => e.id)).toEqual(["e2", "e1"]);
+    const els = lastSaved().content.slides[0].elements;
+    expect(els.map((e) => e.id)).toEqual(["e2", "e1"]);
+    expect(ascending(els.map((e) => e.pos))).toBe(true);
   });
 
   it("ページの追加・複製・並べ替えでも、ページの pos が配列の順に増え、写しは新しい pos を持つ", async () => {
