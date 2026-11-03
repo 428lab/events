@@ -26,6 +26,7 @@ import { DeckElementPanel } from "../components/DeckElementPanel.js";
 import { DeckLayerList } from "../components/DeckLayerList.js";
 import { DeckSlideList } from "../components/DeckSlideList.js";
 import { DeckToolbar } from "../components/DeckToolbar.js";
+import { DeckExportMenu } from "../components/DeckExportMenu.js";
 import {
   copyElements,
   expandGroup,
@@ -291,6 +292,8 @@ export function DeckEditorPage() {
             {t("studio.deckPublicViewer")}
           </Button>
         )}
+        {/* 書き出すのは保存済みの中身（公開の取得と同じもの）。未保存のあいだは押せない */}
+        {deck && <DeckExportMenu slug={deck.slug} disabled={!saving.saved || upload.isPending} />}
       </Stack>
 
       {conflict && (
