@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useCreateTeamDeck, useEventTeamDecks } from "../api/deckHooks.js";
 import { errorCode } from "../lib/errorMessage.js";
 import { tDynamic } from "../i18n/index.js";
+import { DeckExportMenu } from "./DeckExportMenu.js";
 
 /**
  * 自分のチームの「チームのスライド」(docs/team-participation.md「チームのスライド」)。
@@ -36,6 +37,8 @@ export function TeamDeckSection({ eventId, teamId, ended = false }: { eventId: s
               <Button size="small" variant="contained" component={RouterLink} to={`/decks/${row.deck.id}/edit`}>{t("teams.deckEdit")}</Button>
             )}
             <Button size="small" variant="outlined" component={RouterLink} to={`/d/${row.deck.slug}`} target="_blank">{t("teams.deckView")}</Button>
+            {/* イベントが終わって編集できなくなっても、ここから書き出せる */}
+            <DeckExportMenu slug={row.deck.slug} />
           </Stack>
         ) : ended ? (
           <Typography variant="body2" color="text.secondary">{t("teams.deckNone")}</Typography>

@@ -81,6 +81,7 @@ import { AdminAbusePage } from "./pages/AdminAbusePage.js";
 import { AdminModerationPage } from "./pages/AdminModerationPage.js";
 import { DeckEditorPage } from "./pages/DeckEditorPage.js";
 import { DeckViewerPage } from "./pages/DeckViewerPage.js";
+import { DeckPrintPage } from "./pages/DeckPrintPage.js";
 import { ShortEventPage } from "./pages/ShortEventPage.js";
 
 /** ライセンスカード (#178)。背景パターンのパスデータが大きいため遅延読み込みで分離する。
@@ -324,6 +325,15 @@ export function App() {
             </PublicLayout>
           }
         />
+        {/* スライドの PDF 書き出し（印刷画面）。docs/slide-editor.md 4.1 */}
+        <Route
+          path="/d/:slug/print"
+          element={
+            <PublicLayout>
+              <DeckPrintPage />
+            </PublicLayout>
+          }
+        />
         <Route
           path="/e/:slug"
           element={
@@ -424,6 +434,7 @@ export function App() {
         <Route path="/live-sets" element={<LiveSetsPage />} />
         <Route path="/live-sets/:id/edit" element={<LiveSetEditorPage />} />
         <Route path="/d/:slug" element={<DeckViewerPage />} />
+        <Route path="/d/:slug/print" element={<DeckPrintPage />} />
         <Route path="/e/:slug" element={<ShortEventPage />} />
         {/* 開催前アンケートの回答ページ (#444)。未ログイン可・トークンが門 */}
         <Route path="/s/:token" element={<PreSurveyPage />} />

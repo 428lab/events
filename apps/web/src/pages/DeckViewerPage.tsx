@@ -9,6 +9,7 @@ import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { usePublicDeck } from "../api/deckHooks.js";
 import { SlideStage } from "../components/SlideStage.js";
+import { DeckExportMenu } from "../components/DeckExportMenu.js";
 import { DECK_H, DECK_W } from "@eventer/shared";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
 
@@ -170,6 +171,9 @@ export function DeckViewerPage() {
           <FullscreenIcon />
         </IconButton>
       </Stack>
+      <Box sx={{ display: "flex", justifyContent: "center" }}>
+        <DeckExportMenu slug={slug} deck={deck} />
+      </Box>
     </Stack>
       {presenting &&
         createPortal(
