@@ -33,6 +33,30 @@ export interface DeckSyncBatch {
   refetch?: boolean;
 }
 
+/** 編集中の画面が選んでいるもの（§6.3 の心拍）。null は「離れた」 */
+export interface DeckPresence {
+  /** 選んでいる要素の id */
+  selected: string[];
+  /** 開いているページの id */
+  slideId: string | null;
+  /** 打っている文字欄の要素 id */
+  editingText?: string;
+}
+
+/** 心拍（§6.3・§6.4）。`savedRevision` はそのタブが最後に保存できた版で、「最後に保存」の表示にだけ使う（§7.6） */
+export interface DeckSyncHeartbeat {
+  v: number;
+  clientId: string;
+  userId: string;
+  name: string;
+  presence: DeckPresence | null;
+  savedRevision?: number;
+}
+
+export type DeckSyncMessage =
+  | { kind: "ops"; batch: DeckSyncBatch }
+  | { kind: "heartbeat"; heartbeat: DeckSyncHeartbeat; createdAt: number };
+
 function keyBytes(hex: string): Uint8Array {
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
@@ -71,12 +95,27 @@ export function chunkDeckOps(head: Omit<DeckSyncBatch, "ops" | "refetch">, ops: 
   return out;
 }
 
-/** 受け取ったイベントを確かめて開く。開けないものは null（取り残し・別の鍵・壊れたもの） */
-export function openDeckSyncEvent(
+const idString = (v: unknown): v is string => typeof v === "string" && v.length >= 1 && v.length <= 64;
+
+function parsePresence(p: unknown): DeckPresence | null | undefined {
+  if (p === null) return null;
+  if (!p || typeof p !== "object") return undefined;
+  const r = p as Record<string, unknown>;
+  if (!Array.isArray(r.selected) || r.selected.length > 200 || !r.selected.every(idString)) return undefined;
+  if (r.slideId !== null && !idString(r.slideId)) return undefined;
+  if (r.editingText !== undefined && !idString(r.editingText)) return undefined;
+  return { selected: r.selected, slideId: r.slideId, ...(r.editingText ? { editingText: r.editingText } : {}) };
+}
+
+/**
+ * 受け取ったイベントを確かめて開く。差分のバッチか心拍。開けないものは null
+ * （取り残し・別の鍵・壊れたもの）
+ */
+export function openDeckSyncMessage(
   ev: NostrEvent,
   config: Pick<DeckSyncConfig, "topic" | "key">,
   now: number,
-): DeckSyncBatch | null {
+): DeckSyncMessage | null {
   if (ev.kind !== DECK_SYNC_KIND) return null;
   if (!ev.tags.some((t) => t[0] === "t" && t[1] === config.topic)) return null;
   if (ev.content.length > DECK_SYNC_CIPHERTEXT_MAX) return null;
@@ -91,7 +130,16 @@ export function openDeckSyncEvent(
   const b = raw as Record<string, unknown>;
   if (b.v !== config.key.version) return null;
   if (typeof b.clientId !== "string" || b.clientId.length < 1 || b.clientId.length > 32) return null;
-  if (typeof b.userId !== "string" || typeof b.name !== "string" || !Array.isArray(b.ops)) return null;
+  if (typeof b.userId !== "string" || typeof b.name !== "string") return null;
+  const head = { v: b.v as number, clientId: b.clientId, userId: b.userId.slice(0, 64), name: b.name.slice(0, 64) };
+  if (!Array.isArray(b.ops)) {
+    if (!("presence" in b)) return null;
+    const presence = parsePresence(b.presence);
+    if (presence === undefined) return null;
+    const saved = b.savedRevision;
+    const savedRevision = typeof saved === "number" && Number.isSafeInteger(saved) && saved >= 0 ? saved : undefined;
+    return { kind: "heartbeat", heartbeat: { ...head, presence, ...(savedRevision !== undefined ? { savedRevision } : {}) }, createdAt: ev.created_at };
+  }
   const ops: DeckOp[] = [];
   for (const o of b.ops) {
     const op = parseDeckOp(o, now);
@@ -99,17 +147,10 @@ export function openDeckSyncEvent(
     if (!op) return null;
     ops.push(op);
   }
-  return {
-    v: b.v as number,
-    clientId: b.clientId,
-    userId: b.userId.slice(0, 64),
-    name: b.name.slice(0, 64),
-    ops,
-    refetch: b.refetch === true,
-  };
+  return { kind: "ops", batch: { ...head, ops, refetch: b.refetch === true } };
 }
 
-export function sealDeckSyncBatch(batch: DeckSyncBatch, config: Pick<DeckSyncConfig, "topic" | "key">): EventTemplate {
+export function sealDeckSyncBatch(batch: DeckSyncBatch | DeckSyncHeartbeat, config: Pick<DeckSyncConfig, "topic" | "key">): EventTemplate {
   return {
     kind: DECK_SYNC_KIND,
     created_at: Math.floor(Date.now() / 1000),

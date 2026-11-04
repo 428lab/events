@@ -25,6 +25,7 @@ export function DeckCanvas({
   onSelect,
   onSelectOnly,
   onSelectNone,
+  peerOutlines,
 }: {
   /** 編集中のページ。ページが1枚も無い状態では undefined */
   slide: DeckSlide | undefined;
@@ -36,6 +37,8 @@ export function DeckCanvas({
   /** その要素だけを選ぶ。変形はグループ単位ではなく1つずつなので広げない */
   onSelectOnly: (elId: string) => void;
   onSelectNone: () => void;
+  /** ほかのメンバーが選んでいる要素と、その人の色（同時編集 §6.4）。自分の選択の枠が優先 */
+  peerOutlines?: ReadonlyMap<string, string>;
 }) {
   const { ref, width, scale } = useCanvasScale(DECK_W);
   /** 1つだけ動かしている間の位置。変形ハンドルを追従させるために持つ */
@@ -181,9 +184,12 @@ export function DeckCanvas({
                     style={{
                       outline: selectedSet.has(el.id)
                         ? "2px solid #2563eb"
-                        : "1px dashed rgba(0,0,0,0.25)",
+                        : peerOutlines?.has(el.id)
+                          ? `2px solid ${peerOutlines.get(el.id)}`
+                          : "1px dashed rgba(0,0,0,0.25)",
                       touchAction: "none",
                     }}
+                    data-peer-selected={peerOutlines?.has(el.id) ? "true" : undefined}
                   >
                     <ElementContent el={el} />
                   </Rnd>

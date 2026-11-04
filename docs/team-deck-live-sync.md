@@ -305,6 +305,10 @@ NIP の登録表で 21059（Ephemeral Gift Wrap）・22242・23194/5・24133・2
 - 心拍は 2 秒ごと、ただし選択や編集中の欄が変わったらすぐ送る。**`setInterval` は使わず `setTimeout` の連鎖**にする（`noPolling.test.ts` の対象外にするため。
   心拍はサーバーへの問い合わせではない）。タブが隠れているあいだは送らない。`pagehide` で「離れた」（`presence: null`）を1回送る
 - 受け取った心拍は、6 秒届かなければ「編集中」から外す
+  - 実装（PR4）: 心拍は差分と同じ kind・宛先・鍵で、中身が `ops` の代わりに `presence` を持つ。自分の `userId`（別のタブを含む）は出さず、同じ人の複数のタブは1人にまとめる。
+    購読を張ったときにリレーが返す古い心拍（`created_at` が 6 秒より前）は当てない。
+    心拍の `savedRevision` は、ほかの人の保存を「最後に保存: ○○さん」に出すためだけに使い、`baseRevision` には使わない（§7.6）。
+    受け取りの上限（§6.4）を超えた心拍は捨てるだけで、取り直しは頼まない
 - 送信は1タブあたり 1 秒に 10 件まで。超えたら、まとめる間隔を延ばす
 - 受信側も `clientId` ごとに 1 秒 20 件までしか当てない。超えた分は捨てて、取り直しを1回予約する（悪意のあるメンバーによる描画の嵐を止める）
 
@@ -443,7 +447,7 @@ NIP の登録表で 21059（Ephemeral Gift Wrap）・22242・23194/5・24133・2
 | 1 | `lib/deckSync.ts`（HLC・`pos` の生成・`diffDeck`・`applyOps`・形の検証・§7.4 の合わせ方）と性質テスト。`deckSlideSchema`・`deckElementSchema` に任意の `pos`。**`lib/deckSlides.ts` の作る・複製・並べ替えのコマンドが `pos` を書き、編集画面は `pos` 順で描き、保存する側は配列の順と食い違えば `pos` を振り直す**（§5.2）。同期にはまだつながない | そのまま main（同期の有無に関係なく `pos` が最新に保たれる） |
 | 2 | サーバー: `deck_sync_key` と作り直しのトリガー（migration は次の空き番号）、明示の作り直し（退会・`setTeamMode`・`events.update` の `contest_mode`）、終わったイベントのチームのスライドは編集不可、鍵の作成・読み取りを編集判定と同じ SQL で行う、`GET` の `sync`、PATCH の `syncVersion`、`deck-sync` の合図と `publishDeckSync`、機能フラグ（`app_settings.deck_live_sync`、既定オフ） | フラグはオフのまま本番まで |
 | 3 | 画面: 同期専用の接続（`authors` 無し・`since` ありの購読）、`useDeckSync`（暗号化・まとめて送る・受け取って当てる・取り直し）、`useEditorHistory.setContentFromRemote`、`useDeckSave` の `acceptRemote`・当て直し・400 の案内、文字欄の保留、0 枚の画面 | ステージングでフラグをオンにして、オーナーと2台で試す |
-| 4 | 「編集中」の表示（名前と選択中の枠）、心拍（`setTimeout` の連鎖）、docs 更新（docs/team-participation.md の「入れていない」を外す） | 本番でフラグをオン |
+| 4 | 「編集中」の表示（名前と選択中の枠）、心拍（`setTimeout` の連鎖）、docs 更新（docs/team-participation.md の「入れていない」を外す） | **済み**。本番のフラグはオーナーの承認までオフのまま |
 
 各 PR に実地の確認を付ける。PR3 からはローカルの strfry で2〜3ブラウザ。
 

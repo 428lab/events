@@ -21,9 +21,11 @@ import {
 import {
   chunkDeckOps,
   createReceiveLimiter,
-  openDeckSyncEvent,
+  openDeckSyncMessage,
   relayTransport,
   sealDeckSyncBatch,
+  type DeckPresence,
+  type DeckSyncHeartbeat,
   type DeckSyncTransport,
 } from "./deckSyncChannel.js";
 import { useEventSignal } from "./signalHub.js";
@@ -35,6 +37,8 @@ import { useEventSignal } from "./signalHub.js";
  * - 受け取った op: 形を確かめて当て、`onRemote` で画面へ入れる（保存はしない・送り返さない）
  * - 途切れ（再接続・合図・取り直しの依頼・保留の期限切れ）: 取り直して §7.4 A で合わせる
  * - 409: `rebase` を useDeckSave に渡す。途切れの後なら A、無ければ B で合わせる
+ * - 心拍（§6.4）: 2 秒ごと（選択が変わったらすぐ）に「いま開いている・選んでいる」を送る。
+ *   受け取った心拍は 6 秒届かなければ「編集中」から外す。タブが隠れているあいだは送らない
  * - `config` が null（機能オフ・個人のデッキ）のときは何もしない（今の動作）
  */
 
@@ -50,6 +54,20 @@ const REFETCH_REQUEST_DELAY_MS = 2_000;
 const SEEN_MAX = 2_000;
 /** 受け取った側から頼まれる取り直し（上限超え・refetch の依頼）の最短間隔。ひとりが送り続けても GET を続けさせない */
 const REFETCH_MIN_GAP_MS = 5_000;
+/** 心拍を送る間隔（§6.4）。setInterval ではなく setTimeout の連鎖 */
+const HEARTBEAT_MS = 2_000;
+/** これだけ心拍が届かなければ「編集中」から外す（§6.4） */
+export const PRESENCE_TIMEOUT_MS = 6_000;
+/** 選択が変わったときの心拍をまとめる間隔（1 秒 10 件の送信上限に収める） */
+const PRESENCE_COALESCE_MS = 100;
+
+/** いま同じスライドを開いているほかのメンバー（同じ人の複数のタブは1人にまとめる） */
+export interface DeckPeer {
+  userId: string;
+  name: string;
+  /** その人のタブが選んでいる要素（ページごと。複数のタブはまとめる） */
+  selections: { slideId: string; elementIds: string[] }[];
+}
 
 export interface DeckSyncOptions {
   deckId: string;
@@ -69,6 +87,12 @@ export interface DeckSyncOptions {
   revision?: () => number | undefined;
   /** 取り直しで編集できなくなった（チームを抜けた・イベントが終わった。agent_writing は AI が書き始めた） */
   onLost: (reason?: "agent_writing") => void;
+  /** 自分の選択（心拍で送る）。null なら選択なしとして送る */
+  presence?: DeckPresence | null;
+  /** このタブが最後に保存できた版（心拍に載せる。表示用 §7.6） */
+  savedRevision?: number;
+  /** ほかのメンバーの心拍に、これまでより新しい保存の版が載っていた（「最後に保存」の表示用） */
+  onPeerSaved?: (name: string, revision: number) => void;
   /** テスト用の差し替え */
   transport?: (relays: readonly string[]) => DeckSyncTransport;
   fetchDeck?: () => Promise<DeckForEdit>;
@@ -86,6 +110,8 @@ export interface DeckSyncHandle {
   saved: (mark: number, syncVersion: number | null | undefined) => void;
   /** 読み込み直した（今の案内の「最新を読み込む」）とき */
   reset: (doc: DeckDoc) => void;
+  /** いま編集中のほかのメンバー。同期が動いていなければ空 */
+  peers: DeckPeer[];
 }
 
 const randomClientId = () => {
@@ -128,6 +154,11 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
   const [connected, setConnected] = useState(false);
   const [offlineTooLong, setOfflineTooLong] = useState(false);
   const stopped = useRef(false);
+  /** 届いた心拍（clientId ごと）。受け取った時刻で期限を見る */
+  const peerMap = useRef(new Map<string, { heartbeat: DeckSyncHeartbeat; at: number }>());
+  const [peers, setPeers] = useState<DeckPeer[]>([]);
+  const pruneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const peersKey = useRef("[]");
 
   const docNow = (): DeckDoc | null => optsRef.current.doc;
 
@@ -221,12 +252,82 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
     return op;
   };
 
-  const receive = (ev: Parameters<typeof openDeckSyncEvent>[0]) => {
+  // ===== 心拍（§6.4） =====
+  /** 期限の切れた心拍を外して、表示する一覧を作り直す。次に切れる時刻に合わせて1回だけ予約する */
+  const refreshPeers = () => {
+    if (pruneTimer.current) clearTimeout(pruneTimer.current);
+    pruneTimer.current = null;
+    const at = now();
+    const me = configRef.current?.me.userId;
+    let next = Number.POSITIVE_INFINITY;
+    const byUser = new Map<string, DeckPeer>();
+    for (const [clientId, p] of peerMap.current) {
+      if (at - p.at >= PRESENCE_TIMEOUT_MS || p.heartbeat.presence === null) {
+        peerMap.current.delete(clientId);
+        continue;
+      }
+      next = Math.min(next, p.at + PRESENCE_TIMEOUT_MS);
+      // 自分（別のタブを含む）は出さない
+      if (p.heartbeat.userId === me) continue;
+      const peer = byUser.get(p.heartbeat.userId) ?? { userId: p.heartbeat.userId, name: p.heartbeat.name, selections: [] };
+      const presence = p.heartbeat.presence;
+      const ids = [...presence.selected, ...(presence.editingText ? [presence.editingText] : [])];
+      if (presence.slideId && ids.length > 0) peer.selections.push({ slideId: presence.slideId, elementIds: [...new Set(ids)] });
+      byUser.set(p.heartbeat.userId, peer);
+    }
+    const list = [...byUser.values()].sort((a, b) => a.name.localeCompare(b.name));
+    // 心拍のたびに編集画面を描き直さない（中身が変わったときだけ）
+    const key = JSON.stringify(list);
+    if (key !== peersKey.current) {
+      peersKey.current = key;
+      setPeers(list);
+    }
+    if (Number.isFinite(next)) pruneTimer.current = setTimeout(refreshPeers, Math.max(0, next - at));
+  };
+
+  const savedSeen = useRef(0);
+  const receiveHeartbeat = (hb: DeckSyncHeartbeat, at: number) => {
+    if (hb.presence === null) peerMap.current.delete(hb.clientId);
+    else peerMap.current.set(hb.clientId, { heartbeat: hb, at });
+    if (typeof hb.savedRevision === "number" && hb.savedRevision > savedSeen.current) {
+      savedSeen.current = hb.savedRevision;
+      if (hb.userId !== configRef.current?.me.userId) optsRef.current.onPeerSaved?.(hb.name, hb.savedRevision);
+    }
+    refreshPeers();
+  };
+
+  const sendHeartbeat = (presence: DeckPresence | null) => {
+    const cfg = configRef.current;
+    const t = transport.current;
+    if (!cfg || !t || stopped.current) return;
+    const hb: DeckSyncHeartbeat = {
+      v: cfg.key.version,
+      clientId: clock.current.clientId,
+      userId: cfg.me.userId,
+      name: cfg.me.name,
+      presence,
+      ...(typeof optsRef.current.savedRevision === "number" ? { savedRevision: optsRef.current.savedRevision } : {}),
+    };
+    void t.publish(sealDeckSyncBatch(hb, cfg)).catch(() => false);
+  };
+
+  const receive = (ev: Parameters<typeof openDeckSyncMessage>[0]) => {
     const cfg = configRef.current;
     if (!cfg || stopped.current) return;
     const at = now();
-    const batch = openDeckSyncEvent(ev, cfg, at);
-    if (!batch || batch.clientId === clock.current.clientId) return;
+    const message = openDeckSyncMessage(ev, cfg, at);
+    if (!message) return;
+    if (message.kind === "heartbeat") {
+      const hb = message.heartbeat;
+      // 心拍は描画だけ。上限を超えた分は捨てる（取り直しは頼まない）
+      if (hb.clientId === clock.current.clientId || !limiter.current(hb.clientId, at)) return;
+      // リレーが保持していた古い心拍（購読を張ったときに届く）は「いま」ではない
+      if (message.createdAt * 1000 < at - PRESENCE_TIMEOUT_MS) return;
+      receiveHeartbeat(hb, at);
+      return;
+    }
+    const batch = message.batch;
+    if (batch.clientId === clock.current.clientId) return;
     if (!limiter.current(batch.clientId, at)) {
       requestRefetch(0);
       return;
@@ -373,6 +474,8 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
         clearTimeout(flushTimer.current);
         flush();
       }
+      // 画面を離れた（「離れた」を1回送る。届かなくても 6 秒で外れる）
+      sendHeartbeat(null);
       t.close();
       transport.current = null;
     };
@@ -385,12 +488,51 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
     return t.subscribe(topic, Math.floor(now() / 1000) - SUBSCRIBE_BACK_SEC, (ev) => receive(ev));
   }, [topic, relaysKey]);
 
+  // 心拍の送信。2 秒ごとの setTimeout の連鎖。隠れているあいだは送らず、見えたらすぐ送る
+  const presenceKey = JSON.stringify(opts.presence ?? null);
+  const heartbeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const beat = () => {
+    if (heartbeatTimer.current) clearTimeout(heartbeatTimer.current);
+    heartbeatTimer.current = null;
+    if (!configRef.current || stopped.current) return;
+    if (typeof document === "undefined" || !document.hidden) {
+      sendHeartbeat(optsRef.current.presence ?? { selected: [], slideId: null });
+    }
+    heartbeatTimer.current = setTimeout(beat, HEARTBEAT_MS);
+  };
+  useEffect(() => {
+    if (!topic || !transport.current) return;
+    beat();
+    const onVisible = () => {
+      if (!document.hidden) beat();
+    };
+    const onLeave = () => sendHeartbeat(null);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pagehide", onLeave);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pagehide", onLeave);
+      if (heartbeatTimer.current) clearTimeout(heartbeatTimer.current);
+      heartbeatTimer.current = null;
+    };
+  }, [topic, relaysKey]);
+  // 選択や打っている欄が変わったら、次の 2 秒を待たずに送る（短くまとめる）
+  useEffect(() => {
+    if (!topic || !transport.current || !heartbeatTimer.current) return;
+    clearTimeout(heartbeatTimer.current);
+    heartbeatTimer.current = setTimeout(beat, PRESENCE_COALESCE_MS);
+  }, [presenceKey]);
+  useEffect(() => () => {
+    if (pruneTimer.current) clearTimeout(pruneTimer.current);
+  }, []);
+
   // 世代の切り替え・メンバーの変化の合図（§4.4）
   useEventSignal(config?.signal ?? null, () => void refetch());
 
   const active = Boolean(config) && !stopped.current && (connected || !offlineTooLong);
   return {
     active,
+    peers: active ? peers : [],
     rebase: active ? () => load("conflict") : undefined,
     markSaveStart: () => pending.current.dropped + pending.current.ops.length,
     saved: (mark, syncVersion) => {
