@@ -201,6 +201,46 @@ describe("監査ログの記録 (#248)", () => {
     expect(rows[0].target_user_id).toBe(orphan.userId);
     expect(rows[0].target_handle).toBe(orphan.handle);
     expect(JSON.parse(rows[0].detail)).toEqual({ provider: "nostr" });
+    // 引き取った連携は、本人への連携としても残る
+    expect(await auditRows("identity_link")).toHaveLength(1);
+  });
+
+  it("ログイン中の連携で identity_link が記録される", async () => {
+    const me = await makeUser();
+    const sk = schnorr.utils.randomSecretKey();
+    const pubkey = bytesToHex(schnorr.getPublicKey(sk));
+    const res = await SELF.fetch(`${BASE}/api/auth/nostr/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: me.cookie },
+      body: JSON.stringify({ event: await nostrLoginEvent(sk) }),
+    });
+    expect(res.status).toBe(200);
+
+    const rows = await auditRows("identity_link");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].actor_user_id).toBe(me.userId);
+    expect(rows[0].target_user_id).toBe(me.userId);
+    expect(JSON.parse(rows[0].detail)).toEqual({ provider: "nostr", providerUserIdPrefix: pubkey.slice(0, 8) });
+  });
+
+  it("連携解除で identity_unlink が記録される", async () => {
+    const me = await makeUser();
+    const pubkey = bytesToHex(schnorr.getPublicKey(schnorr.utils.randomSecretKey()));
+    for (const [provider, pid] of [["discord", `t:${me.userId}`], ["nostr", pubkey]]) {
+      await env.DB.prepare(
+        "INSERT INTO identity (id, user_id, provider, provider_user_id, email, created_at) VALUES (?, ?, ?, ?, NULL, ?)",
+      ).bind(crypto.randomUUID(), me.userId, provider, pid, Date.now()).run();
+    }
+    const res = await SELF.fetch(`${BASE}/api/auth/identities/nostr`, {
+      method: "DELETE",
+      headers: { cookie: me.cookie },
+    });
+    expect(res.status).toBe(200);
+
+    const rows = await auditRows("identity_unlink");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].actor_user_id).toBe(me.userId);
+    expect(JSON.parse(rows[0].detail)).toEqual({ provider: "nostr", providerUserIdPrefix: pubkey.slice(0, 8) });
   });
 
   it("運用設定の変更で admin_setting_change が記録される", async () => {

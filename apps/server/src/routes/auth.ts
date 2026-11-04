@@ -23,7 +23,7 @@ import {
   pendingDeletionUser,
   requireAuth,
 } from "../auth/session.js";
-import { finishIdentityLogin } from "../auth/accountLink.js";
+import { finishIdentityLogin, recordIdentityChange } from "../auth/accountLink.js";
 import { isAppAdmin } from "../auth/admin.js";
 import {
   PROVIDERS,
@@ -148,7 +148,10 @@ authRoutes.delete("/identities/:provider", requireAuth, async (c) => {
   if ((await identitiesRepo.countByUser(user.id)) <= 1) {
     return c.json({ error: "last_identity" }, 409);
   }
+  // 監査ログ用に外す前の連携先IDを読む（外したあとは辿れない）
+  const removed = (await identitiesRepo.listByUser(user.id)).find((i) => i.provider === provider);
   await identitiesRepo.unlink(user.id, provider);
+  if (removed) await recordIdentityChange("identity_unlink", user, provider, removed.providerUserId);
   if (provider === "discord") {
     // 実Discord IDを手放す（合成値に置換＝管理者判定も解除）
     await usersRepo.setDiscordId(user.id, `removed:${crypto.randomUUID()}`);

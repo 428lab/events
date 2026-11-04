@@ -44,6 +44,23 @@ export async function takeoverEmptyAccount(
   return "ok";
 }
 
+/** 連携・連携解除を監査ログに残す。付け外しの経緯を後から追えるようにする
+ * （kojira 2026-11-04）。detail は provider と連携先IDの先頭8文字だけ:
+ * 連携先IDそのもの（Google の sub など）は残さず、どの連携かを突き合わせられる長さにとどめる */
+export async function recordIdentityChange(
+  action: "identity_link" | "identity_unlink",
+  user: { id: string; username: string },
+  provider: string,
+  providerUserId: string,
+): Promise<void> {
+  await recordAudit({
+    action,
+    actor: { id: user.id, handle: user.username },
+    target: { id: user.id, handle: user.username },
+    detail: { provider, providerUserIdPrefix: providerUserId.slice(0, 8) },
+  });
+}
+
 /** 退会申請中（猶予期間 #250）のアカウントか。
  * ログイン自体は通し（本人確認はプロバイダ側で済んでいる）、復帰画面へ誘導する。
  * ログイン自体を弾くと「同じログイン方法でログインすれば復帰できる」導線が
@@ -120,6 +137,7 @@ export async function finishIdentityLogin(
         profile.email,
       );
       await onLinked?.(current.id);
+      await recordIdentityChange("identity_link", current, provider, providerUserId);
     } else if (existingUserId !== current.id) {
       // 別アカウントに連携済み。アカウントの所有は認証で証明済み
       // → 空アカウントのみ引き取り (#238)
@@ -137,6 +155,7 @@ export async function finishIdentityLogin(
         profile.email,
       );
       await onLinked?.(current.id);
+      await recordIdentityChange("identity_link", current, provider, providerUserId);
     }
     await refreshHandle();
     return { kind: "linked" };

@@ -12,6 +12,10 @@ export const AUDIT_ACTIONS = [
   /** 猶予期間中のログインによる復帰 (#250) */
   "account_restore",
   "identity_takeover",
+  /** ログイン中の本人がログイン方法を連携した（新規作成時の最初の連携は除く） */
+  "identity_link",
+  /** 本人がログイン方法の連携を外した */
+  "identity_unlink",
   "chat_channel_reset",
   "admin_setting_change",
   /** 運営によるイベント内コンテンツの非表示 (#278) */
@@ -33,6 +37,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   account_delete_completed: "退会の完全削除",
   account_restore: "退会の取り消し（復帰）",
   identity_takeover: "連携の引き取り",
+  identity_link: "ログイン方法の連携",
+  identity_unlink: "ログイン方法の連携解除",
   chat_channel_reset: "チャンネルのリセット",
   admin_setting_change: "運用設定の変更",
   content_hide: "コンテンツの非表示",
