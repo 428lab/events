@@ -107,9 +107,10 @@ it("参加者はチームの作成・変更・削除・リーダー指定・割�
   expect((await setLeader(id, a, red, a.id)).status).toBe(403);
   expect((await request(`/${id}/team-members/${a.id}`, a, "PUT", { teamId: red })).status).toBe(403);
   expect((await join(id, outsider, red)).status).toBe(403);
-  // 運営本人は参加者ではないのでチームに入らない
-  expect((await join(id, host, red)).status).toBe(403);
-  expect(await error(await setLeader(id, host, red, host.id))).toBe("not_participant");
+  // 観覧者（参加者でも運営でもない）はチームに入れない。運営は入れる（下の「運営も自分でチームに入って…」）
+  const viewer = await participant(id);
+  expect((await request(`/${id}/members/${viewer.id}/role`, host, "PATCH", { role: "observer" })).status).toBe(200);
+  expect(await error(await setLeader(id, host, red, viewer.id))).toBe("not_participant");
 });
 
 it("採点が始まったら参加者は動けない。運営はいつでも動かせる。自分のチームは採点できない", async () => {
@@ -194,7 +195,7 @@ it("空のチームだけ削除できる", async () => {
   expect((await request(`/${other.id}/teams/${red}`, other.host, "DELETE")).status).toBe(404);
 });
 
-it("参加取消・運営への変更でチームから外れ、リーダーも外れる。参加し直しても勝手には戻らない", async () => {
+it("参加取消・観覧者への変更でチームから外れ、リーダーも外れる。運営への変更では残る。参加し直しても勝手には戻らない", async () => {
   const { host, id } = await setup();
   const a = await participant(id), b = await participant(id);
   expect((await teamMode(id, host, true)).status).toBe(200);
@@ -203,10 +204,41 @@ it("参加取消・運営への変更でチームから外れ、リーダーも�
   expect((await join(id, b, red)).status).toBe(200);
   expect((await request(`/${id}/join`, a, "DELETE")).status).toBe(200);
   expect(await team(id, host, red)).toMatchObject({ memberUserIds: [b.id], leaderUserId: null });
+  // 参加者から運営にしてもチームの所属は残る（席ではない。#536 のチーム版）
   expect((await request(`/${id}/members/${b.id}/role`, host, "PATCH", { role: "staff" })).status).toBe(200);
+  expect((await team(id, host, red)).memberUserIds).toEqual([b.id]);
+  expect((await request(`/${id}/members/${b.id}/role`, host, "PATCH", { role: "observer" })).status).toBe(200);
   expect((await team(id, host, red)).memberUserIds).toEqual([]);
   expect((await request(`/${id}/join`, a, "POST", {})).status).toBe(201);
   expect((await team(id, host, red)).memberUserIds).toEqual([]);
+});
+
+it("運営も自分でチームに入って参加できる。自分のチームは採点できず、チームのスライドを編集でき、採点が始まったら自分では動けない", async () => {
+  const { host, id } = await setup();
+  const a = await participant(id), b = await participant(id);
+  expect((await teamMode(id, host, true)).status).toBe(200);
+  const red = await createTeam(id, host, "赤"), blue = await createTeam(id, host, "青");
+  expect((await join(id, host, red)).status).toBe(200);
+  expect((await join(id, a, red)).status).toBe(200);
+  expect((await join(id, b, blue)).status).toBe(200);
+  expect((await team(id, host, red)).memberUserIds.sort()).toEqual([host.id, a.id].sort());
+  // 運営の行の role・status が書き直されても（確定の運営のまま）外れない（0115 のトリガーの回帰）
+  await sql("UPDATE event_member SET role = 'staff', status = 'confirmed' WHERE event_id = ? AND user_id = ?", id, host.id).run();
+  expect((await team(id, host, red)).memberUserIds).toContain(host.id);
+  // チームのスライドを作れて編集できる
+  const deck = await request(`/${id}/teams/${red}/deck`, host, "POST");
+  expect(deck.status).toBe(201);
+  const { deckId } = await deck.json() as { deckId: string };
+  expect((await SELF.fetch(`https://example.com/api/decks/${deckId}`, { method: "PATCH",
+    headers: { cookie: host.cookie, "content-type": "application/json" }, body: JSON.stringify({ title: "運営も編集", baseRevision: 0 }) })).status).toBe(200);
+  // 自分のチームは採点できない。ほかのチームは採点できる
+  const criterionId = await criterion(id, host);
+  expect(await error(await request(`/${id}/scores`, host, "PUT", { entryId: red, criterionId, value: 3 }))).toBe("self_scoring_forbidden");
+  expect((await request(`/${id}/scores`, host, "PUT", { entryId: blue, criterionId, value: 3 })).status).toBe(200);
+  // 採点が始まったら、運営も自分のチームは選び直せない（ほかの人は今までどおり運営が動かせる）
+  expect(await error(await join(id, host, blue))).toBe("team_locked");
+  expect(await error(await request(`/${id}/team-members/${host.id}`, host, "PUT", { teamId: blue }))).toBe("team_locked");
+  expect((await request(`/${id}/team-members/${a.id}`, host, "PUT", { teamId: blue })).status).toBe(200);
 });
 
 // 統合では負け側の event_member が重複として消え、トリガー（event_member_leave_team_on_delete）で
