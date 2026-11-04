@@ -29,7 +29,7 @@ export function useMyTeamDecks() {
 /** AI に書いてもらっている間のチームのスライド（docs/agent-deck-token.md「チームのスライド」） */
 export interface TeamDeckAgent {
   expiresAt: number;
-  issuedBy: { id: string; name: string } | null;
+  issuedBy: { name: string } | null;
 }
 export interface TeamDeckRow {
   entryId: string;

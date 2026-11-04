@@ -183,6 +183,8 @@ deckAgentRoutes.put("/deck", async (c) => {
       const result = row.team_deck_id
         ? await deckAgentTokensRepo.replaceTeamDeck(write)
         : await deckAgentTokensRepo.replaceBoundDeck(write);
+      // 認証のあと、書き込みまでの間に取り消された・期限が切れた（書き込みの文の中で止めている）
+      if (result === "revoked") return unauthorized(c);
       if (result === "gone") return c.json({ error: "deck_deleted", message: deckGoneMessage(row) }, 410);
       if (result === "limit") return c.json({ error: "write_limit", message: `This token allows ${DECK_AGENT_TOKEN_MAX_WRITES} writes.` }, 429);
       return c.json({ created: false, id: existing.id, slug: existing.slug, ...deckUrls(existing) }, 200);
@@ -241,7 +243,9 @@ deckAgentRoutes.post("/deck/images", async (c) => {
   if (body.byteLength === 0) return c.json({ error: "empty_body" }, 400);
   if (body.byteLength > IMAGE_MAX_BYTES) return c.json({ error: "too_large", maxBytes: IMAGE_MAX_BYTES }, 413);
   if (!hasImageMagicBytes(body.subarray(0, 12), mime)) return c.json({ error: "invalid_image", message: "The bytes do not look like the declared image type." }, 415);
-  if (!(await deckAgentTokensRepo.countImage(row.id))) return c.json({ error: "image_limit", message: `This token allows ${DECK_AGENT_TOKEN_MAX_IMAGES} images.` }, 429);
+  const slot = await deckAgentTokensRepo.countImage(row.id, Date.now());
+  if (slot === "revoked") return unauthorized(c);
+  if (slot === "limit") return c.json({ error: "image_limit", message: `This token allows ${DECK_AGENT_TOKEN_MAX_IMAGES} images.` }, 429);
   const imageId = crypto.randomUUID();
   await getBucket().put(deckImageR2Key(deck.id, imageId), body, { httpMetadata: { contentType: mime } });
   const src = `/api/decks/${deck.id}/images/${imageId}`;

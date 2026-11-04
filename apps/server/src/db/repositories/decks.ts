@@ -87,7 +87,8 @@ function toEditDeck(row: EditRow): Deck {
 /** AI に書いてもらっている間のチームのスライド（docs/agent-deck-token.md「チームのスライド」） */
 export interface DeckAgentLock {
   expiresAt: number;
-  issuedBy: { id: string; name: string } | null;
+  /** 発行した人の表示名だけ（id は返さない） */
+  issuedBy: { name: string } | null;
 }
 
 export type DeckEditLookup =
@@ -99,7 +100,7 @@ export type DeckEditLookup =
 function agentLockOf(row: EditRow): DeckAgentLock {
   return {
     expiresAt: row.agent_expires_at!,
-    issuedBy: row.agent_issuer_id ? { id: row.agent_issuer_id, name: row.agent_issuer_name ?? "" } : null,
+    issuedBy: row.agent_issuer_id ? { name: row.agent_issuer_name ?? "" } : null,
   };
 }
 

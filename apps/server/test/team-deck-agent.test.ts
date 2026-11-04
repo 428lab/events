@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { expect, it } from "vitest";
 import type { Deck, Event } from "@eventer/shared";
+import { deckAgentTokensRepo } from "../src/db/repositories/deckAgentTokens.js";
 
 /** チームのスライドを AI に書いてもらう (docs/agent-deck-token.md「チームのスライド」)。
  * AI が書いている間はメンバーも編集できず、取り消すとまた編集できる */
@@ -65,13 +66,13 @@ it("メンバーが発行するとスライドが無くても作られ、AI が�
   for (const user of [a, b]) {
     const got = await api(`/decks/${deckId}`, user);
     expect(got.status).toBe(423);
-    expect(await got.json()).toMatchObject({ error: "agent_writing", agent: { issuedBy: { id: a.id, name: "あおい" } } });
+    expect(await got.json()).toMatchObject({ error: "agent_writing", agent: { issuedBy: { name: "あおい" } } });
     expect((await api(`/decks/${deckId}`, user, "PATCH", { title: "横から" })).status).toBe(423);
     expect((await api(`/decks/${deckId}/images`, user, "PUT")).status).toBe(423);
   }
   expect((await sql("SELECT COUNT(*) n FROM deck_sync_key WHERE deck_id = ?", deckId).first())!.n).toBe(0);
   const listed = await (await api(`/events/${id}/team-decks`, b)).json() as { decks: { canEdit: boolean; agent: unknown }[] };
-  expect(listed.decks).toEqual([expect.objectContaining({ canEdit: false, agent: expect.objectContaining({ issuedBy: { id: a.id, name: "あおい" } }) })]);
+  expect(listed.decks).toEqual([expect.objectContaining({ canEdit: false, agent: expect.objectContaining({ issuedBy: { name: "あおい" } }) })]);
 
   // 発行していないメンバーでも取り消せる。取り消すと AI は書けず、メンバーは AI の中身を編集できる
   expect((await revoke(id, red, b)).status).toBe(200);
@@ -89,7 +90,7 @@ it("有効なトークンがあれば2本目は 409 agent_busy。期限が切れ
   const { deckId } = await first.json() as { deckId: string };
   const second = await issue(id, red, b);
   expect(second.status).toBe(409);
-  expect(await second.json()).toMatchObject({ error: "agent_busy", agent: { issuedBy: { id: a.id } } });
+  expect(await second.json()).toMatchObject({ error: "agent_busy", agent: { issuedBy: { name: "あおい" } } });
 
   // 期限切れ（取り消しの操作が無くても、次の取得で編集できる）
   await sql("UPDATE deck_agent_token SET expires_at = ? WHERE team_deck_id = ?", Date.now() - 1, deckId).run();
@@ -114,4 +115,17 @@ it("終わったイベントでは発行できない（event_ended）", async ()
   const res = await issue(id, red, a);
   expect(res.status).toBe(409);
   expect(await error(res)).toBe("event_ended");
+});
+
+it("認証のあと書き込みまでの間に取り消されたら、AI の書き込みは入らない", async () => {
+  const { id, red, member } = await setup();
+  const a = await member("あおい");
+  const { deckId } = await (await issue(id, red, a)).json() as { deckId: string };
+  const tokenId = (await sql("SELECT id FROM deck_agent_token WHERE team_deck_id = ?", deckId).first())!.id as string;
+  // ミドルウェアの確認は通ったあと（行はもう読んである）に、メンバーが取り消した
+  await sql("UPDATE deck_agent_token SET revoked_at = ? WHERE id = ?", Date.now(), tokenId).run();
+  const before = await sql("SELECT title, content, revision FROM deck WHERE id = ?", deckId).first();
+  const result = await deckAgentTokensRepo.replaceTeamDeck({ tokenId, ownerId: a.id, deckId, title: "遅れて届いた", content: '{"slides":[]}', now: Date.now() });
+  expect(result).toBe("revoked");
+  expect(await sql("SELECT title, content, revision FROM deck WHERE id = ?", deckId).first()).toEqual(before);
 });

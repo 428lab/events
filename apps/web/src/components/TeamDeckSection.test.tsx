@@ -80,7 +80,7 @@ it("AIに書いてもらうと指示文が出る。書いている間は「編�
   const { onSuccess } = mock.issue.mutate.mock.calls[0]![1] as { onSuccess: (res: unknown) => void };
   // サーバーが AI を受け付けたあとの一覧
   mock.decks = [{ entryId: "red", deck: { id: "d1", slug: "abc", title: "赤チーム", updatedAt: 0 }, canEdit: false,
-    agent: { expiresAt: Date.now() + 30 * 60_000, issuedBy: { id: "u1", name: "あおい" } } }];
+    agent: { expiresAt: Date.now() + 30 * 60_000, issuedBy: { name: "あおい" } } }];
   onSuccess({ token: "evd_x", specUrl: "https://x/deck-import/agent.md", deckId: "d1", expiresAt: Date.now() + 3600_000 });
   view.rerender(<MemoryRouter><TeamDeckSection eventId="e" teamId="red" /></MemoryRouter>);
   expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toContain("evd_x");

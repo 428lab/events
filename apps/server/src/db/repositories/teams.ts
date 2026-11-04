@@ -310,7 +310,7 @@ export const teamsRepo = {
         canEdit: r.is_member === 1 && r.open === 1 && r.agent_expires_at === null,
         agent: r.agent_expires_at === null ? null : {
           expiresAt: r.agent_expires_at,
-          issuedBy: r.agent_issuer_id ? { id: r.agent_issuer_id, name: r.agent_issuer_name ?? "" } : null,
+          issuedBy: r.agent_issuer_id ? { name: r.agent_issuer_name ?? "" } : null,
         },
       }));
   },

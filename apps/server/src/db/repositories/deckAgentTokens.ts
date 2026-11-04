@@ -1,6 +1,6 @@
 import { batch, many, one, runCount } from "../client.js";
 import { ACTIVE } from "./users.js";
-import { deckEditableSql, editableArgs } from "./decks.js";
+import { ROTATE_DECK_SYNC_KEY_SQL, deckEditableSql, editableArgs } from "./decks.js";
 
 /** docs/agent-deck-token.md. Only the SHA-256 of a token is stored. */
 export const DECK_AGENT_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -99,15 +99,15 @@ export const deckAgentTokensRepo = {
   /** Later writes replace only the bound deck, and only while it is still the owner's. */
   async replaceBoundDeck(input: {
     tokenId: string; ownerId: string; deckId: string; title: string; content: string; now: number;
-  }): Promise<"replaced" | "limit" | "gone"> {
+  }): Promise<"replaced" | "limit" | "gone" | "revoked"> {
     const { tokenId, ownerId, deckId, title, content, now } = input;
     const writeId = crypto.randomUUID();
     const [counted, updated] = await batch([
       {
         sql: `UPDATE deck_agent_token SET write_count = write_count + 1, last_write_id = ?
-              WHERE id = ? AND deck_id = ? AND write_count < ?
+              WHERE id = ? AND deck_id = ? AND write_count < ? AND revoked_at IS NULL AND expires_at > ?
                 AND EXISTS (SELECT 1 FROM deck WHERE id = ? AND owner_id = ?)`,
-        args: [writeId, tokenId, deckId, DECK_AGENT_TOKEN_MAX_WRITES, deckId, ownerId],
+        args: [writeId, tokenId, deckId, DECK_AGENT_TOKEN_MAX_WRITES, now, deckId, ownerId],
       },
       {
         // 版を進める: 持ち主が編集画面を開いたまま AI が書き直しても、画面の古い中身で
@@ -119,6 +119,7 @@ export const deckAgentTokensRepo = {
       },
     ]);
     if (counted === 1 && updated === 1) return "replaced";
+    if (!(await this.isLive(tokenId, now))) return "revoked";
     const deck = await one<{ id: string }>("SELECT id FROM deck WHERE id = ? AND owner_id = ?", deckId, ownerId);
     return deck ? "limit" : "gone";
   },
@@ -130,18 +131,25 @@ export const deckAgentTokensRepo = {
   async issueForTeamDeck(input: { id: string; ownerId: string; tokenHash: string; deckId: string; now: number }):
     Promise<"ok" | "busy" | "forbidden" | "limit"> {
     const { id, ownerId, tokenHash, deckId, now } = input;
-    const changes = await runCount(
-      `INSERT INTO deck_agent_token (id, owner_id, token_hash, team_deck_id, created_at, expires_at)
+    const [changes] = await batch([
+      {
+        sql: `INSERT INTO deck_agent_token (id, owner_id, token_hash, team_deck_id, created_at, expires_at)
        SELECT ?, ?, ?, d.id, ?, ? FROM deck d
         WHERE d.id = ? AND d.team_entry_id IS NOT NULL AND ${deckEditableSql("d", false)}
           AND NOT EXISTS (SELECT 1 FROM deck_agent_token busy
             WHERE busy.team_deck_id = d.id AND busy.revoked_at IS NULL AND busy.expires_at > ?)
           AND (SELECT COUNT(*) FROM deck_agent_token WHERE owner_id = ? AND created_at > ?) < ?`,
-      id, ownerId, tokenHash, now, now + DECK_AGENT_TOKEN_TTL_MS,
-      deckId, ...editableArgs(ownerId, false),
-      now,
-      ownerId, now - 86_400_000, DECK_AGENT_TOKEN_DAILY_ISSUES,
-    );
+        args: [
+          id, ownerId, tokenHash, now, now + DECK_AGENT_TOKEN_TTL_MS,
+          deckId, ...editableArgs(ownerId, false),
+          now,
+          ownerId, now - 86_400_000, DECK_AGENT_TOKEN_DAILY_ISSUES,
+        ],
+      },
+      // AI が書き始めたら、開いている編集画面の同時編集の鍵を古くする（合図を取り逃した画面が
+      // 古い鍵で編集を流し続けないように）。発行が入ったときだけ（入った行から deck を引く）
+      { sql: `${ROTATE_DECK_SYNC_KEY_SQL}(SELECT team_deck_id FROM deck_agent_token WHERE id = ?)`, args: [id] },
+    ]);
     if (changes === 1) return "ok";
     if (await this.activeForTeamDeck(deckId, now)) return "busy";
     const editable = await one<{ id: string }>(
@@ -177,15 +185,15 @@ export const deckAgentTokensRepo = {
    * （抜けた・イベントが終わった・チーム参加をやめたら書けない）。版を進め、最後に保存した人は発行した人 */
   async replaceTeamDeck(input: {
     tokenId: string; ownerId: string; deckId: string; title: string; content: string; now: number;
-  }): Promise<"replaced" | "limit" | "gone"> {
+  }): Promise<"replaced" | "limit" | "gone" | "revoked"> {
     const { tokenId, ownerId, deckId, title, content, now } = input;
     const writeId = crypto.randomUUID();
     const [counted, updated] = await batch([
       {
         sql: `UPDATE deck_agent_token SET write_count = write_count + 1, last_write_id = ?
-              WHERE id = ? AND team_deck_id = ? AND write_count < ?
+              WHERE id = ? AND team_deck_id = ? AND write_count < ? AND revoked_at IS NULL AND expires_at > ?
                 AND EXISTS (SELECT 1 FROM deck d WHERE d.id = ? AND d.team_entry_id IS NOT NULL AND ${deckEditableSql("d", false)})`,
-        args: [writeId, tokenId, deckId, DECK_AGENT_TOKEN_MAX_WRITES, deckId, ...editableArgs(ownerId, false)],
+        args: [writeId, tokenId, deckId, DECK_AGENT_TOKEN_MAX_WRITES, now, deckId, ...editableArgs(ownerId, false)],
       },
       {
         sql: `UPDATE deck SET title = ?, content = ?, updated_at = ?, revision = revision + 1, last_saved_by = ?
@@ -194,6 +202,7 @@ export const deckAgentTokensRepo = {
       },
     ]);
     if (counted === 1 && updated === 1) return "replaced";
+    if (!(await this.isLive(tokenId, now))) return "revoked";
     return (await this.findTeamDeck(deckId, ownerId)) ? "limit" : "gone";
   },
 
@@ -206,13 +215,22 @@ export const deckAgentTokensRepo = {
     );
   },
 
-  /** Reserves one image slot. False once the per-token image budget is spent. */
-  async countImage(tokenId: string): Promise<boolean> {
+  /** Reserves one image slot. A token revoked or expired after the auth check cannot take one
+   * (checked in the same UPDATE), and reads as "revoked"; "limit" once the image budget is spent. */
+  async countImage(tokenId: string, now: number): Promise<"ok" | "limit" | "revoked"> {
     const changes = await runCount(
-      "UPDATE deck_agent_token SET image_count = image_count + 1 WHERE id = ? AND image_count < ?",
-      tokenId, DECK_AGENT_TOKEN_MAX_IMAGES,
+      "UPDATE deck_agent_token SET image_count = image_count + 1 WHERE id = ? AND image_count < ? AND revoked_at IS NULL AND expires_at > ?",
+      tokenId, DECK_AGENT_TOKEN_MAX_IMAGES, now,
     );
-    return changes === 1;
+    if (changes === 1) return "ok";
+    return (await this.isLive(tokenId, now)) ? "limit" : "revoked";
+  },
+
+  /** 取り消されておらず期限内か。書き込みが入らなかった理由を分けるためだけに読む */
+  async isLive(tokenId: string, now: number): Promise<boolean> {
+    return Boolean(await one<{ id: string }>(
+      "SELECT id FROM deck_agent_token WHERE id = ? AND revoked_at IS NULL AND expires_at > ?", tokenId, now,
+    ));
   },
 
   findDeck(deckId: string, ownerId: string): Promise<{ id: string; slug: string; title: string } | null> {

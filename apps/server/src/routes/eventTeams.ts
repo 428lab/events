@@ -204,7 +204,7 @@ eventTeamRoutes.delete("/:id/teams/:teamId/deck/agent-token", requireEventRole([
 
 async function agentOf(deckId: string, now: number) {
   const row = await deckAgentTokensRepo.activeForTeamDeck(deckId, now);
-  return row ? { expiresAt: row.expires_at, issuedBy: row.owner_name !== null ? { id: row.owner_id, name: row.owner_name } : null } : null;
+  return row ? { expiresAt: row.expires_at, issuedBy: row.owner_name !== null ? { name: row.owner_name } : null } : null;
 }
 
 /** チームのスライドの一覧。運営は全チームのもの（見るだけ）、参加者は自分のチームのもの */
