@@ -289,4 +289,63 @@ describe("チームのスライドの同時編集（画面）", () => {
   });
 });
 
+describe("いま編集中（心拍 §6.4）", () => {
+  const presenceOf = (q: ReturnType<typeof within>) => q.queryByRole("status")?.getAttribute("aria-label") ?? null;
+
+  it("届いた心拍の人を出し、6 秒届かなければ外す", async () => {
+    mocks.decks.set("A", deckFor("u-a", "あおい"));
+    const a = tab("A");
+    await settle();
+    const other = (relay.transport as () => DeckSyncTransport)();
+    const cfg = sync("u-x", "だれか");
+    await act(async () => {
+      await other.publish(sealDeckSyncBatch({ v: 1, clientId: "other", userId: "u-x", name: "だれか", presence: { selected: ["x"], slideId: "s1" } }, cfg));
+    });
+    expect(presenceOf(a.q)).toBe("いま編集中: だれかさん");
+    await settle(5_000);
+    expect(presenceOf(a.q)).toBe("いま編集中: だれかさん");
+    await settle(1_500);
+    expect(presenceOf(a.q)).toBeNull();
+  });
+
+  it("自分は出さず、同じ人の2つのタブは1人にまとめる。隠れているタブは送らない", async () => {
+    let hidden = true;
+    vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+    mocks.decks.set("A", deckFor("u-a", "あおい"));
+    mocks.decks.set("B", deckFor("u-b", "ゆい"));
+    mocks.decks.set("C", deckFor("u-b", "ゆい"));
+    const a = tab("A");
+    const b = tab("B");
+    tab("C");
+    await settle(5_000);
+    // 隠れているあいだは誰も送らない
+    expect(presenceOf(a.q)).toBeNull();
+    hidden = false;
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await settle(500);
+    expect(presenceOf(a.q)).toBe("いま編集中: ゆいさん");
+    // ゆいの画面には、自分（もう1つのタブを含む）は出ない
+    expect(presenceOf(b.q)).toBe("いま編集中: あおいさん");
+  });
+
+  it("同期が止まったあと「最新を読み込む」で戻ったら、心拍もまた届く", async () => {
+    const { a, b } = twoTabs();
+    await settle();
+    expect(presenceOf(a.q)).toBe("いま編集中: ゆいさん");
+    // B の取り直しが 423（AI が書いている）→ B の同期が止まり、心拍も届かなくなる
+    vi.mocked(api.get).mockRejectedValueOnce(new ApiError(423, { error: "agent_writing" }));
+    await act(async () => { statusCbs.get("B")!(); });
+    await settle(8_000);
+    expect(presenceOf(a.q)).toBeNull();
+    // 止まったまま保存して 409 → 案内の「最新を読み込む」で reset() する
+    b.update.mockRejectedValueOnce(new ApiError(409, { error: "deck_conflict", revision: 2, updatedAt: Date.now(), lastSavedBy: null }));
+    fireEvent.change(b.title(), { target: { value: "ゆいの題" } });
+    await settle(3_000);
+    mocks.latest = deckFor("u-b", "ゆい", { revision: 2 });
+    await act(async () => { fireEvent.click(b.q.getByRole("button", { name: "最新を読み込む" })); });
+    await settle(3_000);
+    expect(presenceOf(a.q)).toBe("いま編集中: ゆいさん");
+  });
+});
+
 export type { Deck };

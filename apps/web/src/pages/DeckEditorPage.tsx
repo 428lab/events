@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -61,6 +61,7 @@ import { ensureDeckFonts } from "../lib/deckFonts.js";
 import { prepareLoadedContent, withDeckPositions } from "../lib/deckPositions.js";
 import { useDeckSave } from "../lib/useDeckSave.js";
 import { useDeckSync } from "../lib/useDeckSync.js";
+import { DeckPresenceList, peerOutlinesOn } from "../components/DeckPresence.js";
 import { useDeckLeaveWarning } from "../lib/useDeckLeaveWarning.js";
 import { useEditorHistory } from "../lib/editor/useEditorHistory.js";
 import { useEditorKeyboard } from "../lib/editor/useEditorKeyboard.js";
@@ -129,9 +130,22 @@ export function DeckEditorPage() {
   const doc = content ? { title, content } : null;
   const docRef = useRef<{ title: string; content: DeckContent } | null>(null);
   if (!docRef.current || docRef.current.title !== title || docRef.current.content !== content) docRef.current = doc;
+  const [savedRevision, setSavedRevision] = useState<number | undefined>(undefined);
+  // 心拍で送る「いま選んでいるもの」（§6.4）。ページの id は描いているページから取る
+  const presenceSlideId = content ? content.slides[Math.min(slideIdx, content.slides.length - 1)]?.id ?? null : null;
+  const presence = useMemo(
+    () => (content ? { selected: selectedIds, slideId: presenceSlideId, ...(focusedText ? { editingText: focusedText } : {}) } : null),
+    [Boolean(content), selectedIds, presenceSlideId, focusedText],
+  );
   const sync = useDeckSync({
     deckId: id,
     config: deck?.sync,
+    presence,
+    savedRevision,
+    // ほかのメンバーの保存を心拍で知った（「最後に保存」の表示だけ。baseRevision には使わない §7.6）
+    onPeerSaved: (name, revision) => {
+      if (revision > (baseRevision.current ?? 0)) setLastSaved({ name, at: Date.now() });
+    },
     doc: docRef.current,
     focused: focusedText && slideFocus.current ? { slideId: slideFocus.current, elementId: focusedText } : null,
     onRemote: (next, apply) => {
@@ -155,6 +169,7 @@ export function DeckEditorPage() {
     const mark = sync.markSaveStart();
     const saved = await update.mutateAsync({ ...value, content: contentToSave, baseRevision: baseRevision.current });
     baseRevision.current = saved.revision;
+    setSavedRevision(saved.revision);
     if (saved.lastSavedBy) setLastSaved({ name: saved.lastSavedBy.name, at: saved.updatedAt });
     sync.saved(mark, (saved as Deck & { syncVersion?: number | null }).syncVersion);
     return saved;
@@ -311,6 +326,7 @@ export function DeckEditorPage() {
           sx={{ flex: 1, minWidth: 180 }}
         />
         {deck?.team && <Chip size="small" color="primary" variant="outlined" label={t("studio.deckTeamLabel", { name: deck.team.name })} />}
+        {sync.peers.length > 0 && <DeckPresenceList peers={sync.peers} />}
         <Typography variant="caption" color="text.secondary">
           {/* ぶつかったときは「保存失敗。再ログイン…」ではなく「未保存」（理由は下の案内に出す） */}
           {t(`deckImport.${conflict ? "unsaved" : saving.status}`)}
@@ -410,6 +426,7 @@ export function DeckEditorPage() {
             onSelect={selectElement}
             onSelectOnly={(elId) => setSelectedIds([elId])}
             onSelectNone={() => setSelectedIds([])}
+            peerOutlines={slide ? peerOutlinesOn(sync.peers, slide.id) : undefined}
           />
         </Box>
 
