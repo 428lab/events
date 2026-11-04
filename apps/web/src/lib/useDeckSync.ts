@@ -285,12 +285,13 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
     if (Number.isFinite(next)) pruneTimer.current = setTimeout(refreshPeers, Math.max(0, next - at));
   };
 
-  const savedSeen = useRef(0);
+  // タブ（clientId）ごとに見た保存の版。全体で一つにすると、大きすぎる値を一度送られただけで「最後に保存」が止まる
+  const savedSeen = useRef(new Map<string, number>());
   const receiveHeartbeat = (hb: DeckSyncHeartbeat, at: number) => {
     if (hb.presence === null) peerMap.current.delete(hb.clientId);
     else peerMap.current.set(hb.clientId, { heartbeat: hb, at });
-    if (typeof hb.savedRevision === "number" && hb.savedRevision > savedSeen.current) {
-      savedSeen.current = hb.savedRevision;
+    if (typeof hb.savedRevision === "number" && hb.savedRevision > (savedSeen.current.get(hb.clientId) ?? 0)) {
+      savedSeen.current.set(hb.clientId, hb.savedRevision);
       if (hb.userId !== configRef.current?.me.userId) optsRef.current.onPeerSaved?.(hb.name, hb.savedRevision);
     }
     refreshPeers();
@@ -305,7 +306,8 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
       clientId: clock.current.clientId,
       userId: cfg.me.userId,
       name: cfg.me.name,
-      presence,
+      // 受け手は 201 個以上の選択を心拍ごと捨てる（deckSyncChannel）。切って送れば「編集中」から消えない
+      presence: presence && presence.selected.length > 200 ? { ...presence, selected: presence.selected.slice(0, 200) } : presence,
       ...(typeof optsRef.current.savedRevision === "number" ? { savedRevision: optsRef.current.savedRevision } : {}),
     };
     void t.publish(sealDeckSyncBatch(hb, cfg)).catch(() => false);
@@ -494,7 +496,9 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
   const beat = () => {
     if (heartbeatTimer.current) clearTimeout(heartbeatTimer.current);
     heartbeatTimer.current = null;
-    if (!configRef.current || stopped.current) return;
+    if (!configRef.current) return;
+    // 止まっているあいだも連鎖は続け、送るだけやめる（sendHeartbeat が stopped を見る）。
+    // ここで抜けると、reset() で同期が戻っても心拍だけ止まったままになる
     if (typeof document === "undefined" || !document.hidden) {
       sendHeartbeat(optsRef.current.presence ?? { selected: [], slideId: null });
     }

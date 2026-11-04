@@ -327,6 +327,25 @@ describe("いま編集中（心拍 §6.4）", () => {
     // ゆいの画面には、自分（もう1つのタブを含む）は出ない
     expect(presenceOf(b.q)).toBe("いま編集中: あおいさん");
   });
+
+  it("同期が止まったあと「最新を読み込む」で戻ったら、心拍もまた届く", async () => {
+    const { a, b } = twoTabs();
+    await settle();
+    expect(presenceOf(a.q)).toBe("いま編集中: ゆいさん");
+    // B の取り直しが 423（AI が書いている）→ B の同期が止まり、心拍も届かなくなる
+    vi.mocked(api.get).mockRejectedValueOnce(new ApiError(423, { error: "agent_writing" }));
+    await act(async () => { statusCbs.get("B")!(); });
+    await settle(8_000);
+    expect(presenceOf(a.q)).toBeNull();
+    // 止まったまま保存して 409 → 案内の「最新を読み込む」で reset() する
+    b.update.mockRejectedValueOnce(new ApiError(409, { error: "deck_conflict", revision: 2, updatedAt: Date.now(), lastSavedBy: null }));
+    fireEvent.change(b.title(), { target: { value: "ゆいの題" } });
+    await settle(3_000);
+    mocks.latest = deckFor("u-b", "ゆい", { revision: 2 });
+    await act(async () => { fireEvent.click(b.q.getByRole("button", { name: "最新を読み込む" })); });
+    await settle(3_000);
+    expect(presenceOf(a.q)).toBe("いま編集中: ゆいさん");
+  });
 });
 
 export type { Deck };
