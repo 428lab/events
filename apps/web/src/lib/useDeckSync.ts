@@ -67,8 +67,8 @@ export interface DeckSyncOptions {
   onRevision: (revision: number) => void;
   /** いまの baseRevision。これより古い版の GET の応答は当てない（保存のあとに古い応答が届いたとき） */
   revision?: () => number | undefined;
-  /** 取り直しで編集できなくなった（チームを抜けた・イベントが終わった） */
-  onLost: () => void;
+  /** 取り直しで編集できなくなった（チームを抜けた・イベントが終わった。agent_writing は AI が書き始めた） */
+  onLost: (reason?: "agent_writing") => void;
   /** テスト用の差し替え */
   transport?: (relays: readonly string[]) => DeckSyncTransport;
   fetchDeck?: () => Promise<DeckForEdit>;
@@ -276,9 +276,9 @@ export function useDeckSync(opts: DeckSyncOptions): DeckSyncHandle {
     try {
       fetched = await fetchDeck();
     } catch (error) {
-      if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+      if (error instanceof ApiError && (error.status === 403 || error.status === 404 || error.status === 423)) {
         stopped.current = true;
-        optsRef.current.onLost();
+        optsRef.current.onLost(error.status === 423 ? "agent_writing" : undefined);
       }
       return null;
     }

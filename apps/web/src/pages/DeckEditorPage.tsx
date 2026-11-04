@@ -77,7 +77,7 @@ import { useImagePicker } from "../lib/editor/useImagePicker.js";
 export function DeckEditorPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
-  const { data: deckData, isLoading, isError } = useDeck(id);
+  const { data: deckData, isLoading, isError, error: loadError } = useDeck(id);
   const deck = deckData as DeckForEdit | undefined;
   const update = useUpdateDeck(id);
   const upload = useUploadDeckImage(id);
@@ -125,7 +125,7 @@ export function DeckEditorPage() {
   }, [deck]);
   // チームのスライドの同時編集（docs/team-deck-live-sync.md）。設定が無ければ（機能オフ・個人のデッキ）何もしない
   const [focusedText, setFocusedText] = useState<string | null>(null);
-  const [syncLost, setSyncLost] = useState(false);
+  const [syncLost, setSyncLost] = useState<false | "lost" | "agent_writing">(false);
   const doc = content ? { title, content } : null;
   const docRef = useRef<{ title: string; content: DeckContent } | null>(null);
   if (!docRef.current || docRef.current.title !== title || docRef.current.content !== content) docRef.current = doc;
@@ -146,7 +146,7 @@ export function DeckEditorPage() {
       baseRevision.current = revision;
     },
     revision: () => baseRevision.current,
-    onLost: () => setSyncLost(true),
+    onLost: (reason) => setSyncLost(reason ?? "lost"),
   });
   const saveDeck = async (value: { title: string; content: DeckContent }) => {
     // 最後の守り: 配列の順と pos の順が食い違っていたら、配列の順から pos を振り直して送る
@@ -283,7 +283,8 @@ export function DeckEditorPage() {
     canGroup: selectedIds.length >= 2,
   });
 
-  if (isError) return <Typography>{t("studio.deckNotFound")}</Typography>;
+  // AI がチームのスライドを書いている間（423）は、見つからないではなく、その旨を出す
+  if (isError) return <Typography>{t(isAgentWriting(loadError) ? "studio.deckAgentWriting" : "studio.deckNotFound")}</Typography>;
   if (isLoading || !content)
     return <Typography>{t("common.loading")}</Typography>;
 
@@ -334,7 +335,8 @@ export function DeckEditorPage() {
         {deck && <DeckExportMenu slug={deck.slug} disabled={!saving.saved || upload.isPending} />}
       </Stack>
 
-      {syncLost && <Alert severity="info">{t("studio.deckSyncLost")}</Alert>}
+      {(syncLost === "agent_writing" || isAgentWriting(saving.error)) && <Alert severity="info">{t("studio.deckAgentWriting")}</Alert>}
+      {syncLost === "lost" && <Alert severity="info">{t("studio.deckSyncLost")}</Alert>}
       {saveRejected && <Alert severity="error">{t("studio.deckSaveRejected")}</Alert>}
       {slides.length === 0 && (
         <Alert severity="info" action={<Button color="inherit" size="small" onClick={() => editSlides(() => [newSlide()])}>{t("studio.addPage")}</Button>}>
@@ -445,6 +447,11 @@ export function DeckEditorPage() {
 }
 
 /** 保存の失敗が「ほかの人が保存していた」(409 deck_conflict) なら、誰がいつ保存したか */
+/** AI がチームのスライドを書いている（docs/agent-deck-token.md「チームのスライド」）。サーバーは 423 agent_writing */
+function isAgentWriting(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 423;
+}
+
 function conflictOf(error: unknown): { name: string | null; at: number } | null {
   if (!(error instanceof ApiError) || error.status !== 409) return null;
   const body = error.body as { error?: string; updatedAt?: number; lastSavedBy?: { name: string } | null } | null;

@@ -29,10 +29,18 @@ interface DeckRow {
  *   作った人（owner_id）に特別な権限は無い。抜けたら編集できなくなり、入ったら編集できる
  * - イベントが終わったら（日程調整中でなく ends_at を過ぎたら）チームのスライドは誰も編集できない。
  *   見る・書き出すだけになる（オーナー決定 2026-11-03。「終わった」は eventAccessExit.ts と同じ判定）
- * 引数は [userId, Date.now(), userId, adminIds()] の順。`d` はデッキ表の別名 */
-function deckEditableSql(d: string): string {
+ * - AI に書いてもらっている間（そのチームのスライドに有効な AI 用トークンがある間）は、メンバーも
+ *   編集できない（オーナー決定 2026-11-04、docs/agent-deck-token.md「チームのスライド」）。
+ *   取り消すか期限が切れたら、また編集できる。この判定を通る編集用の GET・保存・画像・同期の鍵が
+ *   まとめて止まる
+ * 引数は editableArgs(userId) の順。`d` はデッキ表の別名 */
+export function deckEditableSql(d: string, agentLock = true): string {
+  const lock = agentLock
+    ? `NOT EXISTS (SELECT 1 FROM deck_agent_token agent_lock
+      WHERE agent_lock.team_deck_id = ${d}.id AND agent_lock.revoked_at IS NULL AND agent_lock.expires_at > ?) AND`
+    : "";
   return `((${d}.team_entry_id IS NULL AND ${d}.owner_id = ?)
-    OR (${d}.team_entry_id IS NOT NULL AND EXISTS (SELECT 1 FROM entry edit_entry
+    OR (${d}.team_entry_id IS NOT NULL AND ${lock} EXISTS (SELECT 1 FROM entry edit_entry
       JOIN event edit_event ON edit_event.id = edit_entry.event_id
         AND edit_event.contest_mode = 1 AND edit_event.participation_type = 'team'
         AND (edit_event.scheduling = 1 OR edit_event.ends_at >= ?)
@@ -42,7 +50,10 @@ function deckEditableSql(d: string): string {
         AND edit_member.user_id = ?
         AND ${eventViewSql("edit_event", "edit_user.id", "?")})))`;
 }
-const editableArgs = (userId: string) => [userId, Date.now(), userId, adminIds()];
+export const editableArgs = (userId: string, agentLock = true) => {
+  const now = Date.now();
+  return agentLock ? [userId, now, now, userId, adminIds()] : [userId, now, userId, adminIds()];
+};
 
 /** 同時編集の鍵を作り直す文の頭（docs/team-deck-live-sync.md §4.2）。後ろに `(SELECT deck の id …)` を続ける。
  * 編集できる人が減りうる経路（行は残るが deckEditableSql を通らなくなるもの）が、その batch に足す。
@@ -52,6 +63,11 @@ export const ROTATE_DECK_SYNC_KEY_SQL =
 
 interface EditRow extends DeckRow {
   editable: number;
+  /** AI のロックを見なければ編集できる（＝いまは AI が書いているだけ） */
+  member_editable: number;
+  agent_expires_at: number | null;
+  agent_issuer_id: string | null;
+  agent_issuer_name: string | null;
   team_name: string | null;
   team_event_id: string | null;
   saver_name: string | null;
@@ -68,10 +84,24 @@ function toEditDeck(row: EditRow): Deck {
   };
 }
 
+/** AI に書いてもらっている間のチームのスライド（docs/agent-deck-token.md「チームのスライド」） */
+export interface DeckAgentLock {
+  expiresAt: number;
+  issuedBy: { id: string; name: string } | null;
+}
+
 export type DeckEditLookup =
   | { status: "ok"; deck: Deck }
   | { status: "not_found" }
-  | { status: "forbidden" };
+  | { status: "forbidden" }
+  | { status: "agent_writing"; lock: DeckAgentLock };
+
+function agentLockOf(row: EditRow): DeckAgentLock {
+  return {
+    expiresAt: row.agent_expires_at!,
+    issuedBy: row.agent_issuer_id ? { id: row.agent_issuer_id, name: row.agent_issuer_name ?? "" } : null,
+  };
+}
 
 function parseContent(json: string): DeckContent {
   try {
@@ -114,16 +144,27 @@ export const decksRepo = {
   async findForEdit(id: string, userId: string): Promise<DeckEditLookup> {
     const row = await one<EditRow>(
       `SELECT d.*, CASE WHEN ${deckEditableSql("d")} THEN 1 ELSE 0 END AS editable,
+              CASE WHEN ${deckEditableSql("d", false)} THEN 1 ELSE 0 END AS member_editable,
               en.name AS team_name, en.event_id AS team_event_id,
-              COALESCE(saver.global_name, saver.username) AS saver_name
+              COALESCE(saver.global_name, saver.username) AS saver_name,
+              agent_tok.expires_at AS agent_expires_at, issuer.id AS agent_issuer_id,
+              COALESCE(issuer.global_name, issuer.username) AS agent_issuer_name
          FROM deck d
          LEFT JOIN entry en ON en.id = d.team_entry_id
          LEFT JOIN user saver ON saver.id = d.last_saved_by AND saver.deleted_at IS NULL
+         LEFT JOIN deck_agent_token agent_tok ON agent_tok.team_deck_id = d.id AND agent_tok.revoked_at IS NULL AND agent_tok.expires_at > ?
+         LEFT JOIN user issuer ON issuer.id = agent_tok.owner_id AND issuer.deleted_at IS NULL
         WHERE d.id = ?`,
       ...editableArgs(userId),
+      ...editableArgs(userId, false),
+      Date.now(),
       id,
     );
     if (!row) return { status: "not_found" };
+    // メンバーでも、AI に書いてもらっている間は中身を返さない（取り消すか期限が切れるまで）
+    if (!row.editable && row.member_editable && row.agent_expires_at !== null) {
+      return { status: "agent_writing", lock: agentLockOf(row) };
+    }
     if (!row.editable) return { status: "forbidden" };
     return { status: "ok", deck: toEditDeck(row) };
   },
@@ -227,7 +268,7 @@ export const decksRepo = {
     id: string,
     userId: string,
     input: UpdateDeckInput,
-  ): Promise<{ status: "ok"; deck: Deck } | { status: "not_found" } | { status: "forbidden" } | { status: "conflict"; deck: Deck }> {
+  ): Promise<Exclude<DeckEditLookup, { status: "ok" }> | { status: "ok"; deck: Deck } | { status: "conflict"; deck: Deck }> {
     const base = input.baseRevision ?? null;
     const changed = await runCount(
       `UPDATE deck SET title = COALESCE(?, title), content = COALESCE(?, content), updated_at = ?,

@@ -35,6 +35,7 @@ export async function putDeckImage(c: Context<AppEnv>) {
   if (found.status === "forbidden") {
     return c.json({ error: "forbidden" }, 403);
   }
+  if (found.status === "agent_writing") return c.json({ error: "agent_writing", agent: found.lock }, 423);
   const mime = normalizeImageMime(c.req.header("content-type"));
   if (!mime) {
     return c.json({ error: "invalid_content_type" }, 400);

@@ -69,6 +69,17 @@ const ja = {
   deckStaffHelp: "運営は見るだけです。編集はそのチームのメンバーができます。",
   error_not_this_team_member: "このチームのメンバーだけがスライドを作れます。",
   error_event_ended: "イベントが終わったので、チームのスライドは作れません（書き出しだけできます）。",
+  // チームのスライドを AI に書いてもらう（docs/agent-deck-token.md「チームのスライド」）
+  deckAgentIssue: "AIに書いてもらう",
+  deckAgentConfirm: "AIにチームのスライドを書いてもらいますか？60分有効のトークンを発行します。AIが書いている間は、メンバーみんな編集できません（取り消せばすぐ編集できます）。AIが保存した時点で、URLを知る人はログインせず閲覧できます。",
+  deckAgentInstructionLabel: "AIに渡す指示文（この画面を離れると、トークンは二度と表示されません）",
+  deckAgentCopy: "指示文をコピー",
+  deckAgentWriting: "AIが書いています（{{name}}さんが発行・あと{{minutes}}分）。その間はメンバーも編集できません。",
+  deckAgentWritingNoName: "AIが書いています（あと{{minutes}}分）。その間はメンバーも編集できません。",
+  deckAgentRevoke: "AIのアクセスを取り消して編集する",
+  deckAgentRevokeConfirm: "AIのアクセスを取り消しますか？AIはこれ以上書けなくなり、メンバーが編集できるようになります。AIが書いた内容は残ります。",
+  error_agent_busy: "ほかのメンバーがすでにAIに頼んでいます。取り消すか、期限が切れるまで待ってください。",
+  error_agent_token_daily_limit: "AI用トークンは24時間に20本までです。",
   error_default: "うまくいきませんでした。もう一度試してください。",
 };
 const en: Record<keyof typeof ja, string> = {
@@ -137,6 +148,16 @@ const en: Record<keyof typeof ja, string> = {
   deckStaffHelp: "Organizers can only view. Members of the team can edit.",
   error_not_this_team_member: "Only members of this team can create its slide deck.",
   error_event_ended: "The event has ended, so a team slide deck can no longer be created (export is still available).",
+  deckAgentIssue: "Have AI write it",
+  deckAgentConfirm: "Have an AI write the team slide deck? This issues a token valid for 60 minutes. While the AI is writing, no team member can edit (revoke it to edit right away). Once the AI saves, anyone with the URL can view the deck without signing in.",
+  deckAgentInstructionLabel: "Instructions for the AI (the token is never shown again after you leave this screen)",
+  deckAgentCopy: "Copy instructions",
+  deckAgentWriting: "An AI is writing this deck (issued by {{name}}, {{minutes}} min left). Members can't edit until then.",
+  deckAgentWritingNoName: "An AI is writing this deck ({{minutes}} min left). Members can't edit until then.",
+  deckAgentRevoke: "Revoke the AI's access and edit",
+  deckAgentRevokeConfirm: "Revoke the AI's access? The AI can no longer write, and members can edit again. What the AI wrote stays.",
+  error_agent_busy: "Another member has already asked an AI. Revoke it or wait until it expires.",
+  error_agent_token_daily_limit: "You can issue up to 20 AI tokens per 24 hours.",
   error_default: "Something went wrong. Please try again.",
 };
 export const teams = { ja, en };

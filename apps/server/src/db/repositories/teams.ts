@@ -283,21 +283,35 @@ export const teamsRepo = {
   /** チームのスライドの一覧。運営は全チーム、参加者は自分のチームだけ。
    * canEdit はそのチームのいまのメンバーで、イベントがまだ終わっていないか（運営は見るだけ） */
   async listTeamDecks(eventId: string, userId: string, isStaff: boolean) {
-    const rows = await many<{ entry_id: string; id: string; slug: string; title: string; updated_at: number; is_member: number; open: number }>(
+    const now = Date.now();
+    const rows = await many<{
+      entry_id: string; id: string; slug: string; title: string; updated_at: number; is_member: number; open: number;
+      agent_expires_at: number | null; agent_issuer_id: string | null; agent_issuer_name: string | null;
+    }>(
       `SELECT d.team_entry_id AS entry_id, d.id, d.slug, d.title, d.updated_at,
               (e.scheduling = 1 OR e.ends_at >= ?) AS open,
-              EXISTS (SELECT 1 FROM entry_member em WHERE em.entry_id = en.id AND em.user_id = ?) AS is_member
+              EXISTS (SELECT 1 FROM entry_member em WHERE em.entry_id = en.id AND em.user_id = ?) AS is_member,
+              agent_tok.expires_at AS agent_expires_at, issuer.id AS agent_issuer_id,
+              COALESCE(issuer.global_name, issuer.username) AS agent_issuer_name
          FROM deck d JOIN entry en ON en.id = d.team_entry_id AND en.kind = 'team' AND en.event_id = ?
          JOIN event e ON e.id = en.event_id AND e.contest_mode = 1 AND e.participation_type = 'team'
+         LEFT JOIN deck_agent_token agent_tok ON agent_tok.team_deck_id = d.id
+           AND agent_tok.revoked_at IS NULL AND agent_tok.expires_at > ?
+         LEFT JOIN user issuer ON issuer.id = agent_tok.owner_id AND issuer.deleted_at IS NULL
         ORDER BY en.created_at`,
-      Date.now(), userId, eventId,
+      now, userId, eventId, now,
     );
     return rows
       .filter((r) => isStaff || r.is_member === 1)
       .map((r) => ({
         entryId: r.entry_id,
         deck: { id: r.id, slug: r.slug, title: r.title, updatedAt: r.updated_at },
-        canEdit: r.is_member === 1 && r.open === 1,
+        // AI に書いてもらっている間（agent）はメンバーも編集できない（docs/agent-deck-token.md「チームのスライド」）
+        canEdit: r.is_member === 1 && r.open === 1 && r.agent_expires_at === null,
+        agent: r.agent_expires_at === null ? null : {
+          expiresAt: r.agent_expires_at,
+          issuedBy: r.agent_issuer_id ? { id: r.agent_issuer_id, name: r.agent_issuer_name ?? "" } : null,
+        },
       }));
   },
 
