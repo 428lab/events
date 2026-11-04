@@ -48,6 +48,7 @@ deckRoutes.get("/:id", async (c) => {
   const found = await decksRepo.findForEdit(c.req.param("id"), user.id);
   if (found.status === "not_found") return c.json({ error: "not_found" }, 404);
   if (found.status === "forbidden") return c.json({ error: "forbidden" }, 403);
+  if (found.status === "agent_writing") return c.json({ error: "agent_writing", agent: found.lock }, 423);
   const deck = found.deck;
   const key = deck.team && (await deckLiveSyncEnabled()) ? await decksRepo.syncKeyForEdit(deck.id, user.id) : null;
   const sync = key
@@ -66,6 +67,7 @@ deckRoutes.patch("/:id", zValidator("json", updateDeckInput), async (c) => {
   );
   if (result.status === "not_found") return c.json({ error: "not_found" }, 404);
   if (result.status === "forbidden") return c.json({ error: "forbidden" }, 403);
+  if (result.status === "agent_writing") return c.json({ error: "agent_writing", agent: result.lock }, 423);
   // 今の同期の世代（§4.4）。自分の世代より新しければ、編集画面は GET を1回取り直す
   const syncVersion = result.deck.team ? await decksRepo.syncVersion(result.deck.id) : null;
   if (result.status === "conflict") {

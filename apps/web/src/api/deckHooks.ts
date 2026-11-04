@@ -6,7 +6,7 @@ import type {
   Entry,
   UpdateDeckInput,
 } from "@eventer/shared";
-import { api } from "./client.js";
+import { ApiError, api } from "./client.js";
 
 export function useMyDecks() {
   return useQuery({
@@ -26,10 +26,18 @@ export function useMyTeamDecks() {
 }
 
 /** そのイベントのチームのスライド。運営は全チームのもの（見るだけ）、参加者は自分のチームのもの */
+/** AI に書いてもらっている間のチームのスライド（docs/agent-deck-token.md「チームのスライド」） */
+export interface TeamDeckAgent {
+  expiresAt: number;
+  issuedBy: { name: string } | null;
+}
 export interface TeamDeckRow {
   entryId: string;
   deck: { id: string; slug: string; title: string; updatedAt: number };
+  /** そのチームのいまのメンバーで、イベントが終わっておらず、AI が書いていない */
   canEdit: boolean;
+  /** AI に書いてもらっている間（取り消すか期限が切れるまで、メンバーも編集できない） */
+  agent?: TeamDeckAgent | null;
 }
 export function useEventTeamDecks(eventId: string, enabled: boolean) {
   return useQuery({
@@ -56,12 +64,43 @@ export function useCreateTeamDeck(eventId: string) {
   });
 }
 
+/** チームのスライドの AI 用トークンを発行する（まだスライドが無ければ作る）。平文は応答の1回だけ */
+export interface IssuedTeamDeckAgentToken {
+  token: string;
+  specUrl: string;
+  deckId: string;
+  expiresAt: number;
+}
+export function useIssueTeamDeckAgentToken(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (teamId: string) =>
+      api.post<IssuedTeamDeckAgentToken>(`/events/${eventId}/teams/${teamId}/deck/agent-token`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId, "teamDecks"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId, "entries"] });
+      qc.invalidateQueries({ queryKey: ["event", eventId, "submissions"] });
+    },
+  });
+}
+
+/** チームのスライドの AI を止める（メンバーなら誰でも）。止めたらまた編集できる */
+export function useRevokeTeamDeckAgentToken(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (teamId: string) => api.del(`/events/${eventId}/teams/${teamId}/deck/agent-token`),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["event", eventId, "teamDecks"] }),
+  });
+}
+
 /** 編集用（個人のデッキは持ち主、チームのスライドはそのチームのいまのメンバー） */
 export function useDeck(id: string) {
   return useQuery({
     queryKey: ["deck", id],
     enabled: Boolean(id),
     queryFn: () => api.get<Deck>(`/decks/${id}`),
+    // AI がチームのスライドを書いている間（423）は、取り直しても同じなのですぐ案内を出す
+    retry: (count, error) => !(error instanceof ApiError && error.status === 423) && count < 3,
   });
 }
 

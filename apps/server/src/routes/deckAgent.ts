@@ -33,11 +33,12 @@ const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), (b) => b.t
 export async function hashDeckAgentToken(token: string): Promise<string> {
   return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
 }
-function newToken(): string {
+export function newDeckAgentToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   const b64 = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   return TOKEN_PREFIX + b64;
 }
+export const deckAgentSpecUrl = () => `${base()}/deck-import/agent.md`;
 const base = () => env.appBaseUrl.replace(/\/+$/, "");
 const deckUrls = (deck: { id: string; slug: string }) => ({
   editUrl: `${base()}/decks/${deck.id}/edit`,
@@ -71,7 +72,7 @@ deckAgentTokenRoutes.post("/", async (c) => {
   c.header("Cache-Control", "no-store");
   // Cookie-authenticated write: same-origin only, like the JSON import.
   if (c.req.header("Origin") !== new URL(c.req.url).origin) return c.json({ error: "forbidden_origin" }, 403);
-  const token = newToken();
+  const token = newDeckAgentToken();
   const id = crypto.randomUUID();
   const now = Date.now();
   const ok = await deckAgentTokensRepo.issue({ id, ownerId: c.get("user").id, tokenHash: await hashDeckAgentToken(token), now });
@@ -109,14 +110,25 @@ deckAgentRoutes.use("*", async (c, next) => {
   await next();
 });
 
+/** トークンが書くデッキの id。チームのスライドのトークンは発行の時点で決まっている（team_deck_id）。
+ * 個人のトークンは最初の書き込みで決まる（deck_id） */
+const boundDeckId = (row: DeckAgentTokenRow) => row.team_deck_id ?? row.deck_id;
+
+/** トークンが書けるデッキ。チームのスライドは、発行した人がいまもそのチームで編集できるときだけ
+ * （抜けた・イベントが終わったら null ＝ 410） */
+function findBoundDeck(row: DeckAgentTokenRow) {
+  if (row.team_deck_id) return deckAgentTokensRepo.findTeamDeck(row.team_deck_id, row.owner_id);
+  return row.deck_id ? deckAgentTokensRepo.findDeck(row.deck_id, row.owner_id) : Promise.resolve(null);
+}
+
 async function deckState(row: DeckAgentTokenRow) {
-  const deck = row.deck_id ? await deckAgentTokensRepo.findDeck(row.deck_id, row.owner_id) : null;
+  const deck = await findBoundDeck(row);
   return {
     expiresAt: row.expires_at,
     writesLeft: Math.max(0, DECK_AGENT_TOKEN_MAX_WRITES - row.write_count),
     imagesLeft: Math.max(0, DECK_AGENT_TOKEN_MAX_IMAGES - row.image_count),
     deck: deck ? { id: deck.id, slug: deck.slug, title: deck.title, ...deckUrls(deck) } : null,
-    deckDeleted: row.deck_id !== null && deck === null,
+    deckDeleted: boundDeckId(row) !== null && deck === null,
   };
 }
 
@@ -132,10 +144,11 @@ deckAgentRoutes.put("/deck", async (c) => {
     return c.json({ error: "unsupported_media_type", message: "Send Content-Type: application/json with the raw UTF-8 JSON body." }, 415);
   }
   if (row.write_count >= DECK_AGENT_TOKEN_MAX_WRITES) return c.json({ error: "write_limit", message: `This token allows ${DECK_AGENT_TOKEN_MAX_WRITES} writes.` }, 429);
+  const targetId = boundDeckId(row);
   let existing: { id: string; slug: string; title: string } | null = null;
-  if (row.deck_id) {
-    existing = await deckAgentTokensRepo.findDeck(row.deck_id, row.owner_id);
-    if (!existing) return c.json({ error: "deck_deleted", message: "The user deleted this deck. Ask for a new token." }, 410);
+  if (targetId) {
+    existing = await findBoundDeck(row);
+    if (!existing) return c.json({ error: "deck_deleted", message: deckGoneMessage(row) }, 410);
   }
   try {
     const bytes = new Uint8Array(await c.req.arrayBuffer());
@@ -144,7 +157,7 @@ deckAgentRoutes.put("/deck", async (c) => {
     const parsed = parseDeckImport(bytes, {
       uploadedImageSrc: (src) => {
         const m = UPLOADED_SRC_RE.exec(src);
-        if (!m || !row.deck_id || m[1] !== row.deck_id) return false;
+        if (!m || !targetId || m[1] !== targetId) return false;
         referenced.push(m[2]!);
         return true;
       },
@@ -156,7 +169,7 @@ deckAgentRoutes.put("/deck", async (c) => {
     // Uploaded images must exist; a typo would otherwise publish a broken frame.
     const missing: string[] = [];
     for (const imageId of new Set(referenced)) {
-      if (!(await getBucket().head(deckImageR2Key(row.deck_id!, imageId)))) missing.push(`/api/decks/${row.deck_id}/images/${imageId}`);
+      if (!(await getBucket().head(deckImageR2Key(targetId!, imageId)))) missing.push(`/api/decks/${targetId}/images/${imageId}`);
     }
     if (missing.length) {
       return c.json({ error: "invalid_deck_import", issues: missing.slice(0, 50).map((src) => ({ path: "src", code: "image_not_uploaded", message: `No uploaded image at ${src}. Use the src returned by POST /api/agent/deck/images.` })), truncated: missing.length > 50 }, 422);
@@ -166,8 +179,13 @@ deckAgentRoutes.put("/deck", async (c) => {
       const converted = convertDeckImport(parsed.value, () => crypto.randomUUID());
       const content = JSON.stringify(converted.content);
       if (new TextEncoder().encode(content).byteLength > DECK_IMPORT_MAX_BYTES) return convertedTooLarge(c);
-      const result = await deckAgentTokensRepo.replaceBoundDeck({ tokenId: row.id, ownerId: row.owner_id, deckId: existing.id, title: converted.title, content, now });
-      if (result === "gone") return c.json({ error: "deck_deleted", message: "The user deleted this deck. Ask for a new token." }, 410);
+      const write = { tokenId: row.id, ownerId: row.owner_id, deckId: existing.id, title: converted.title, content, now };
+      const result = row.team_deck_id
+        ? await deckAgentTokensRepo.replaceTeamDeck(write)
+        : await deckAgentTokensRepo.replaceBoundDeck(write);
+      // 認証のあと、書き込みまでの間に取り消された・期限が切れた（書き込みの文の中で止めている）
+      if (result === "revoked") return unauthorized(c);
+      if (result === "gone") return c.json({ error: "deck_deleted", message: deckGoneMessage(row) }, 410);
       if (result === "limit") return c.json({ error: "write_limit", message: `This token allows ${DECK_AGENT_TOKEN_MAX_WRITES} writes.` }, 429);
       return c.json({ created: false, id: existing.id, slug: existing.slug, ...deckUrls(existing) }, 200);
     }
@@ -202,6 +220,12 @@ deckAgentRoutes.put("/deck", async (c) => {
   }
 });
 
+function deckGoneMessage(row: DeckAgentTokenRow): string {
+  return row.team_deck_id
+    ? "This team deck can no longer be written with this token (the issuer left the team or the event ended). Ask for a new token."
+    : "The user deleted this deck. Ask for a new token.";
+}
+
 function convertedTooLarge(c: Context) {
   return c.json({ error: "invalid_deck_import", issues: [{ path: "slides", code: "converted_too_large", message: "Reduce elements or text; converted content must fit in 1048576 bytes." }], truncated: false }, 422);
 }
@@ -209,9 +233,9 @@ function convertedTooLarge(c: Context) {
 /** Upload one raster image (raw body) into the token's deck. Returns the src to use in image-url. */
 deckAgentRoutes.post("/deck/images", async (c) => {
   const row = c.get("agentToken");
-  const deck = row.deck_id ? await deckAgentTokensRepo.findDeck(row.deck_id, row.owner_id) : null;
-  if (!row.deck_id) return c.json({ error: "deck_not_created", message: "PUT /api/agent/deck first (image-placeholder frames are fine), then upload images." }, 409);
-  if (!deck) return c.json({ error: "deck_deleted", message: "The user deleted this deck. Ask for a new token." }, 410);
+  const deck = await findBoundDeck(row);
+  if (!boundDeckId(row)) return c.json({ error: "deck_not_created", message: "PUT /api/agent/deck first (image-placeholder frames are fine), then upload images." }, 409);
+  if (!deck) return c.json({ error: "deck_deleted", message: deckGoneMessage(row) }, 410);
   const mime = normalizeImageMime(c.req.header("Content-Type"));
   if (!mime) return c.json({ error: "invalid_content_type", message: "Use image/png, image/jpeg, image/webp, image/gif or image/avif. SVG is not accepted." }, 415);
   if (Number(c.req.header("Content-Length") ?? "0") > IMAGE_MAX_BYTES) return c.json({ error: "too_large", maxBytes: IMAGE_MAX_BYTES }, 413);
@@ -219,7 +243,9 @@ deckAgentRoutes.post("/deck/images", async (c) => {
   if (body.byteLength === 0) return c.json({ error: "empty_body" }, 400);
   if (body.byteLength > IMAGE_MAX_BYTES) return c.json({ error: "too_large", maxBytes: IMAGE_MAX_BYTES }, 413);
   if (!hasImageMagicBytes(body.subarray(0, 12), mime)) return c.json({ error: "invalid_image", message: "The bytes do not look like the declared image type." }, 415);
-  if (!(await deckAgentTokensRepo.countImage(row.id))) return c.json({ error: "image_limit", message: `This token allows ${DECK_AGENT_TOKEN_MAX_IMAGES} images.` }, 429);
+  const slot = await deckAgentTokensRepo.countImage(row.id, Date.now());
+  if (slot === "revoked") return unauthorized(c);
+  if (slot === "limit") return c.json({ error: "image_limit", message: `This token allows ${DECK_AGENT_TOKEN_MAX_IMAGES} images.` }, 429);
   const imageId = crypto.randomUUID();
   await getBucket().put(deckImageR2Key(deck.id, imageId), body, { httpMetadata: { contentType: mime } });
   const src = `/api/decks/${deck.id}/images/${imageId}`;
