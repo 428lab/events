@@ -85,14 +85,17 @@ it("サーバーの team_locked / team_full をそのまま案内する", () => 
   expect(screen.getByText("満員のため入れませんでした。")).toBeInTheDocument();
 });
 
-it("参加確定でない人・運営には選ぶボタンを出さない。個人参加・非コンテスト・チームなしでは何も出さない", () => {
+it("参加確定でない人には選ぶボタンを出さない。確定の運営は選べる。個人参加・非コンテスト・チームなしでは何も出さない", () => {
   mock.members = [member("me", "わたし", "waitlist")];
   const waiting = draw();
   expect(screen.getByText("参加が確定するとチームを選べます。")).toBeInTheDocument();
   expect(screen.queryByRole("button")).not.toBeInTheDocument();
   waiting.unmount();
+  // 運営もチームに入って参加できる（#536 のチーム版）
+  mock.members = [member("me", "わたし")];
   const staff = draw("staff");
-  expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  fireEvent.click(within(card("赤チーム")).getByRole("button", { name: "このチームに入る" }));
+  expect(mock.join.mutate).toHaveBeenCalledWith("red");
   staff.unmount();
   for (const override of [{ participationType: "individual" }, { contestMode: false }] as Partial<Event>[]) {
     const view = draw("participant", override);

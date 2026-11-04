@@ -33,9 +33,12 @@ export function TeamManager({ eventId, event }: { eventId: string; event: Event 
   const deckOf = new Map((teamDecks ?? []).map((d) => [d.entryId, d]));
 
   const teams = teamMode ? (entries ?? []).filter((e) => e.kind === "team") : [];
-  const participants = (members ?? []).filter((m) => m.role === "participant" && m.status === "confirmed");
+  // チームに入れる人: 参加確定の参加者と、確定の運営（運営もチームで参加できる。#536 のチーム版）
+  const participants = (members ?? []).filter((m) => (m.role === "participant" || m.role === "staff") && m.status === "confirmed");
   const assigned = new Set(teams.flatMap((team) => team.memberUserIds));
-  const unassigned = participants.filter((m) => !assigned.has(m.userId));
+  // 未所属として数えるのは参加者だけ。運営はチームに入れたい人だけを下の別の欄から入れる
+  const unassigned = participants.filter((m) => m.role === "participant" && !assigned.has(m.userId));
+  const unassignedStaff = participants.filter((m) => m.role === "staff" && !assigned.has(m.userId));
   const nameOf = new Map(participants.map((m) => [m.userId, m.user.globalName ?? m.user.username]));
 
   return (
@@ -73,6 +76,18 @@ export function TeamManager({ eventId, event }: { eventId: string; event: Event 
                 ))}
               </Stack>
             </Box>
+            {unassignedStaff.length > 0 && (
+              <Box>
+                <Typography fontWeight={700}>{t("teams.staffNotInTeam")}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{t("teams.staffNotInTeamHelp")}</Typography>
+                <Stack spacing={1}>
+                  {unassignedStaff.map((m) => (
+                    <MoveRow key={m.userId} name={nameOf.get(m.userId) ?? ""} teams={teams} currentTeamId={null} disabled={pending}
+                      onMove={(teamId) => assign.mutate({ userId: m.userId, teamId })} />
+                  ))}
+                </Stack>
+              </Box>
+            )}
           </>}
         </Stack>
       </CardContent>

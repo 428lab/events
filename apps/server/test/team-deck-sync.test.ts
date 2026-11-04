@@ -115,8 +115,8 @@ const removals: Array<[string, (s: Awaited<ReturnType<typeof setup>>) => Promise
   ["参加を取り消す（0115 のトリガー経由）", async ({ eventId, a }) => {
     expect((await api(`/events/${eventId}/join`, a, "DELETE")).status).toBe(200);
   }],
-  ["参加者からスタッフにする（0115 のトリガー経由）", async ({ host, eventId, a }) => {
-    expect((await api(`/events/${eventId}/members/${a.id}/role`, host, "PATCH", { role: "staff" })).status).toBe(200);
+  ["参加者から観覧者にする（0120 のトリガー経由。運営への変更ではチームに残る）", async ({ host, eventId, a }) => {
+    expect((await api(`/events/${eventId}/members/${a.id}/role`, host, "PATCH", { role: "observer" })).status).toBe(200);
   }],
   ["退会を申請する（行は残る）", async ({ a }) => {
     expect((await api("/me", a, "DELETE", { confirm: true })).status).toBe(200);

@@ -33,7 +33,7 @@ import { publishDeckSync } from "../lib/deckSync.js";
  * コンテストのチーム参加 (#9, docs/team-participation.md)。
  *
  * - 運営: チーム参加のオン・オフ、チームの作成・変更・削除、リーダーを立てる、メンバーの割り当て
- * - 参加確定の参加者: 自分でチームを選ぶ・移る・抜ける（採点が始まるまで）
+ * - 参加確定の参加者と運営: 自分でチームを選ぶ・移る・抜ける（採点が始まるまで。運営もチームで参加できる）
  * - チームの中: リーダーが名前を変える・リーダーを任せる。リーダーのいないチームではメンバーがリーダーになる（採点が始まるまで）
  *
  * チームの一覧は既存の `GET /:id/entries`（eventsPublic.ts）がそのまま返す。
@@ -100,7 +100,7 @@ eventTeamRoutes.put("/:id/team-members/:userId", requireEventRole(["staff"]), zV
 });
 
 /** 参加者が自分でチームに入る・移る */
-eventTeamRoutes.post("/:id/teams/:teamId/join", requireEventRole(["participant"]), async (c) => {
+eventTeamRoutes.post("/:id/teams/:teamId/join", requireEventRole(["participant", "staff"]), async (c) => {
   const eventId = c.req.param("id");
   await teamsRepo.join(eventId, c.req.param("teamId"), c.get("user").id);
   await membersChanged(eventId);
@@ -108,7 +108,7 @@ eventTeamRoutes.post("/:id/teams/:teamId/join", requireEventRole(["participant"]
 });
 
 /** 参加者が自分のチームを抜ける */
-eventTeamRoutes.delete("/:id/my-team", requireEventRole(["participant"]), async (c) => {
+eventTeamRoutes.delete("/:id/my-team", requireEventRole(["participant", "staff"]), async (c) => {
   const eventId = c.req.param("id");
   await teamsRepo.leave(eventId, c.get("user").id);
   await membersChanged(eventId);
@@ -116,7 +116,7 @@ eventTeamRoutes.delete("/:id/my-team", requireEventRole(["participant"]), async 
 });
 
 /** リーダーが自分のチームの名前・ひとことを変える */
-eventTeamRoutes.patch("/:id/my-team", requireEventRole(["participant"]), zValidator("json", updateMyTeamInput), async (c) => {
+eventTeamRoutes.patch("/:id/my-team", requireEventRole(["participant", "staff"]), zValidator("json", updateMyTeamInput), async (c) => {
   const eventId = c.req.param("id");
   await teamsRepo.updateMyTeam(eventId, c.get("user").id, valid<UpdateMyTeamInput>(c, "json"));
   await changed(eventId);
@@ -124,7 +124,7 @@ eventTeamRoutes.patch("/:id/my-team", requireEventRole(["participant"]), zValida
 });
 
 /** リーダーが同じチームのメンバーにリーダーを任せる */
-eventTeamRoutes.put("/:id/my-team/leader", requireEventRole(["participant"]), zValidator("json", handOverTeamLeaderInput), async (c) => {
+eventTeamRoutes.put("/:id/my-team/leader", requireEventRole(["participant", "staff"]), zValidator("json", handOverTeamLeaderInput), async (c) => {
   const eventId = c.req.param("id");
   await teamsRepo.handOverLeader(eventId, c.get("user").id, valid<HandOverTeamLeaderInput>(c, "json").userId);
   await changed(eventId);
@@ -132,7 +132,7 @@ eventTeamRoutes.put("/:id/my-team/leader", requireEventRole(["participant"]), zV
 });
 
 /** リーダーのいないチームで、メンバーが自分でリーダーになる */
-eventTeamRoutes.post("/:id/my-team/leader", requireEventRole(["participant"]), async (c) => {
+eventTeamRoutes.post("/:id/my-team/leader", requireEventRole(["participant", "staff"]), async (c) => {
   const eventId = c.req.param("id");
   await teamsRepo.becomeLeader(eventId, c.get("user").id);
   await changed(eventId);
@@ -142,7 +142,7 @@ eventTeamRoutes.post("/:id/my-team/leader", requireEventRole(["participant"]), a
 /** チームのスライド（docs/team-participation.md「チームのスライド」）。
  * 1チーム1つ。そのチームのメンバーなら誰でも作れて、作った人も含め**いまの**メンバーが編集できる。
  * 作ったとき、チームの成果物のプレゼン資料 URL が空なら、このスライドの公開 URL を入れる */
-eventTeamRoutes.post("/:id/teams/:teamId/deck", requireEventRole(["participant"]), async (c) => {
+eventTeamRoutes.post("/:id/teams/:teamId/deck", requireEventRole(["participant", "staff"]), async (c) => {
   const eventId = c.req.param("id"), teamId = c.req.param("teamId");
   const team = (await entriesRepo.listByEvent(eventId)).find((e) => e.id === teamId && e.kind === "team");
   const id = crypto.randomUUID();

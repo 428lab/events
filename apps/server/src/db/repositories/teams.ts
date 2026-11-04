@@ -29,8 +29,9 @@ const TEAM_MODE = "EXISTS (SELECT 1 FROM event WHERE id = ? AND contest_mode = 1
 const BEFORE_SCORING = `NOT EXISTS (SELECT 1 FROM event_state WHERE event_id = ? AND scoring_locked = 1)
   AND NOT EXISTS (SELECT 1 FROM score WHERE event_id = ?)`;
 const TEAM_OF_EVENT = "EXISTS (SELECT 1 FROM entry WHERE id = ? AND event_id = ? AND kind = 'team')";
-const CONFIRMED_PARTICIPANT = `EXISTS (SELECT 1 FROM event_member m JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
-  WHERE m.event_id = ? AND m.user_id = ? AND m.role = 'participant' AND m.status = 'confirmed')`;
+/** チームに入れる人: 参加確定の参加者か、確定の運営（運営もチームで参加できる。#536 のチーム版） */
+const CONFIRMED_TEAM_CANDIDATE = `EXISTS (SELECT 1 FROM event_member m JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
+  WHERE m.event_id = ? AND m.user_id = ? AND m.role IN ('participant', 'staff') AND m.status = 'confirmed')`;
 /** 定員に空きがある（本人がすでにそのチームにいる場合は数えない） */
 const HAS_ROOM = `(SELECT capacity FROM entry WHERE id = ?) IS NULL
   OR (SELECT COUNT(*) FROM entry_member em JOIN user u ON u.id = em.user_id AND u.deleted_at IS NULL
@@ -74,6 +75,10 @@ async function teamWrite(eventId: string, actorId: string, permission: "staff" |
     throw error;
   }
 }
+
+/** 運営が自分自身のチームの所属を変えるときだけ、採点前であることを確かめる */
+const selfLock = (eventId: string, userId: string | null, actorId: string): Statement[] =>
+  userId === actorId ? [assert(BEFORE_SCORING, "team_locked", [eventId, eventId])] : [];
 
 /** 本人をそのイベントのチームから外す文（チームを移る・抜けるの共通部分） */
 const leaveTeamsSql = (eventId: string, userId: string): Statement => ({
@@ -155,7 +160,7 @@ export const teamsRepo = {
     await teamWrite(eventId, userId, "registered", [
       assert(TEAM_MODE, "team_mode_off", [eventId]),
       assert(TEAM_OF_EVENT, "team_not_found", [teamId, eventId]),
-      assert(CONFIRMED_PARTICIPANT, "not_participant", [eventId, userId]),
+      assert(CONFIRMED_TEAM_CANDIDATE, "not_participant", [eventId, userId]),
       assert(BEFORE_SCORING, "team_locked", [eventId, eventId]),
       assert(HAS_ROOM, "team_full", [teamId, teamId, userId, teamId]),
       ...this.placeStatements(eventId, teamId, userId),
@@ -171,13 +176,15 @@ export const teamsRepo = {
     ]);
   },
 
-  /** 運営がメンバーを入れる・移す（いつでも。定員は守る）。teamId=null で未所属に戻す */
+  /** 運営がメンバーを入れる・移す（いつでも。定員は守る）。teamId=null で未所属に戻す。
+   * 運営が自分自身を動かすときは、参加者と同じく採点が始まるまで（始まってから自分のチームを選び直せない） */
   async assign(eventId: string, teamId: string | null, userId: string, actorId: string) {
     await teamWrite(eventId, actorId, "staff", [
       assert(TEAM_MODE, "team_mode_off", [eventId]),
+      ...selfLock(eventId, userId, actorId),
       ...(teamId ? [
         assert(TEAM_OF_EVENT, "team_not_found", [teamId, eventId]),
-        assert(CONFIRMED_PARTICIPANT, "not_participant", [eventId, userId]),
+        assert(CONFIRMED_TEAM_CANDIDATE, "not_participant", [eventId, userId]),
         assert(HAS_ROOM, "team_full", [teamId, teamId, userId, teamId]),
         ...this.placeStatements(eventId, teamId, userId),
       ] : [leaveTeamsSql(eventId, userId)]),
@@ -189,9 +196,10 @@ export const teamsRepo = {
   async setLeader(eventId: string, teamId: string, userId: string | null, actorId: string) {
     await teamWrite(eventId, actorId, "staff", [
       assert(TEAM_MODE, "team_mode_off", [eventId]),
+      ...selfLock(eventId, userId, actorId),
       assert(TEAM_OF_EVENT, "team_not_found", [teamId, eventId]),
       ...(userId ? [
-        assert(CONFIRMED_PARTICIPANT, "not_participant", [eventId, userId]),
+        assert(CONFIRMED_TEAM_CANDIDATE, "not_participant", [eventId, userId]),
         assert(HAS_ROOM, "team_full", [teamId, teamId, userId, teamId]),
         ...this.placeStatements(eventId, teamId, userId),
       ] : []),

@@ -65,7 +65,7 @@ it("名前を空欄のまま枠だけ作れる（名前はサーバーが付け�
   expect(screen.getByText("仮のリーダーです。チームの中でほかのメンバーに任せられます。")).toBeInTheDocument();
 });
 
-it("チームの人数・リーダーを出し、未所属の参加者（運営は除く）を一覧にする", () => {
+it("チームの人数・リーダーを出し、未所属の参加者を一覧にする。チームに入っていない運営は別の欄から入れられる", () => {
   draw();
   expect(screen.getByText("メンバー 1 / 3人")).toBeInTheDocument();
   // リーダーのメンバー行にバッジ（選択欄のラベルとは別）
@@ -73,7 +73,9 @@ it("チームの人数・リーダーを出し、未所属の参加者（運営�
   expect(screen.getByText("チーム未所属 2人")).toBeInTheDocument();
   expect(screen.getByText("ぼたん", { selector: "p" })).toBeInTheDocument();
   expect(screen.getByText("ちえ", { selector: "p" })).toBeInTheDocument();
-  expect(screen.queryByText("うんえい")).not.toBeInTheDocument();
+  // 運営は「未所属」には数えず、別の欄に出る
+  expect(screen.getByText("チームに入っていない運営")).toBeInTheDocument();
+  expect(screen.getByText("うんえい", { selector: "p" })).toBeInTheDocument();
 });
 
 it("メンバーがいるチームは削除できない。空のチームは確認のうえ削除する", () => {

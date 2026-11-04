@@ -12,7 +12,7 @@ import { errorCode } from "../lib/errorMessage.js";
 import { tDynamic } from "../i18n/index.js";
 
 /**
- * 参加者がチームを選ぶ (#9, docs/team-participation.md)。チーム参加のコンテストだけに出る。
+ * 参加者（と、チームで参加したい運営）がチームを選ぶ (#9, docs/team-participation.md)。チーム参加のコンテストだけに出る。
  * 採点が始まる（締切または点が入る）までは、入る・移る・抜けるができる。
  * 締切はサーバーが判定する（ここは表示のため）。点が入ったかは画面からは分からないので、
  * そのときはサーバーの team_locked を案内する。
@@ -36,7 +36,8 @@ export function TeamPicker({ eventId, event, myRole }: { eventId: string; event:
   const teams = (entries ?? []).filter((e) => e.kind === "team");
   if (teams.length === 0) return null;
   const membership = findMyMembership(members, me);
-  const canChoose = myRole === "participant" && membership?.status === "confirmed";
+  // 運営もチームに入って参加できる（#536 のチーム版）。参加確定の参加者か、確定の運営
+  const canChoose = (myRole === "participant" || myRole === "staff") && membership?.status === "confirmed";
   const locked = Boolean(state?.scoringLocked);
   const myTeam = me ? teams.find((team) => team.memberUserIds.includes(me.id)) : undefined;
   const nameOf = new Map((members ?? []).map((m) => [m.userId, m.user.globalName ?? m.user.username]));
