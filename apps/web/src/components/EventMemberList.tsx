@@ -130,7 +130,7 @@ export function EventMemberList({
             {groups.filter((group) => group.members.length > 0).map((group) => (
               <section key={group.id}>
                 <Typography component="h3" variant="subtitle2" sx={{ mt: 1, overflowWrap: "anywhere" }}>
-                  {group.name}
+                  {t("eventDetail.slotHeadingWithCount", { name: group.name, n: group.members.length })}
                 </Typography>
                 {memberList(group.members, group.name)}
               </section>
@@ -138,7 +138,7 @@ export function EventMemberList({
             {remaining.length > 0 && (
               <section>
                 <Typography component="h3" variant="subtitle2" sx={{ mt: 1 }}>
-                  {t("eventDetail.participantsOther")}
+                  {t("eventDetail.slotHeadingWithCount", { name: t("eventDetail.participantsOther"), n: remaining.length })}
                 </Typography>
                 {memberList(remaining, t("eventDetail.participantsOther"))}
               </section>

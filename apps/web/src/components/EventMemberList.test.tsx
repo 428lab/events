@@ -283,8 +283,10 @@ describe("参加者一覧の申込枠", () => {
     await i18next.changeLanguage(lang);
     drawList(slots);
     const other = lang === "ja" ? "その他" : "Other";
+    const count = (name: string, n: number) => (lang === "ja" ? `${name}（${n}）` : `${name} (${n})`);
+    // 枠ごとの見出しに、その枠に並ぶ人数を出す
     expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent))
-      .toEqual([slots[0].name, slots[1].name, other]);
+      .toEqual([count(slots[0].name, 3), count(slots[1].name, 3), count(other, 3)]);
     const names = (label: string) => within(screen.getByRole("list", { name: label }))
       .getAllByRole("link").map((link) => link.getAttribute("href"));
     expect(names(slots[0].name)).toEqual(["/users/b-applied", "/users/b-confirmed", "/users/b-lost"]);
@@ -401,7 +403,7 @@ describe("スタッフを並べる枠", () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["一般枠", "運営枠"]);
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["一般枠（1）", "運営枠（1）"]);
     expect(within(screen.getByRole("list", { name: "運営枠" })).getByText("運営の人")).toBeInTheDocument();
   });
 });
