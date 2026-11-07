@@ -100,6 +100,8 @@ const ja = {
   /** 参加者一覧 */
   participantsWithCount: "参加者一覧（{{n}}）",
   participantsOther: "その他",
+  /** 参加者一覧の枠ごとの見出し。全体の人数（participantsWithCount）と同じ数え方 */
+  slotHeadingWithCount: "{{name}}（{{n}}）",
   attendanceModeNotice:
     "出席チェックモード：チェックされた人だけが参加者として記録されます。",
   attendanceModeNoticeStaff:
@@ -230,6 +232,7 @@ const en: Record<keyof typeof ja, string> = {
 
   participantsWithCount: "Participants ({{n}})",
   participantsOther: "Other",
+  slotHeadingWithCount: "{{name}} ({{n}})",
   attendanceModeNotice:
     "Attendance check is on: only people who are checked in count as participants.",
   attendanceModeNoticeStaff:
