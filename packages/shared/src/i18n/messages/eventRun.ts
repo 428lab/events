@@ -71,6 +71,8 @@ const ja = {
   presentNowLabel: "発表中",
   presentSlidesLabel: "資料:",
   presentCodeLabel: "コード:",
+  /** 発表画面の左に出したスライドを、スライドの閲覧画面（全画面表示あり）で別タブに開く */
+  presentDeckOpen: "別タブで開く",
   presentWaiting: "発表チームの選択を待っています…",
   presentScoreWaiting: "発表チームが選択されると採点できます",
   presentScoreOthers: "他の発表も採点する（採点一覧）",
@@ -236,6 +238,7 @@ const en: Record<keyof typeof ja, string> = {
   presentNowLabel: "Presenting now",
   presentSlidesLabel: "Slides:",
   presentCodeLabel: "Code:",
+  presentDeckOpen: "Open in a new tab",
   presentWaiting: "Waiting for a team to be selected…",
   presentScoreWaiting: "You can score once a team is selected",
   presentScoreOthers: "Score the other teams (all entries)",
