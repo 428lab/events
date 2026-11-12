@@ -8,7 +8,8 @@ import { useEventState, useEventStateSignal } from "../api/scoringHooks.js";
 /**
  * イベント配下の共通レイアウト。
  * - コンテスト形式のイベント（と表彰画面）では進行状態の合図で取り直して反映（useEventStateSignal）
- * - プレゼンモードになったら参加者を強制的にプレゼン画面へ遷移
+ * - プレゼンモードになったら参加者を強制的にプレゼン画面へ遷移（運営は詳細・採点を見ているときだけ。
+ *   進行画面などの作業ページからは動かさない）
  */
 export function EventLayout() {
   const { t } = useTranslation();
@@ -28,16 +29,28 @@ export function EventLayout() {
   const prevMode = useRef<string | null>(null);
 
   useEffect(() => {
-    // スタッフは強制遷移しない（進行コントロールのため）
-    if (!state || !role || isStaff) {
+    if (!state || !role) {
       if (state) prevMode.current = state.mode;
       return;
     }
     const onPresent = location.pathname.endsWith("/present");
     const onAwards = location.pathname.endsWith("/awards");
     const mode = state.mode;
+    const firstLoad = prevMode.current === null;
     const modeChanged = prevMode.current !== mode;
     prevMode.current = mode;
+
+    // 運営も、プレゼンが始まった瞬間に詳細・採点を見ていればプレゼン画面へ移す（オーナー決定 2026-11-13「全員」）。
+    // 進行画面や編集などの運営の作業ページからは動かさない。開いた瞬間（初回）も動かさない
+    // （プレゼン中に詳細へ戻れなくなるため）。表彰や退避の自動遷移も運営にはしない（今までどおり）
+    if (isStaff) {
+      const viewing = location.pathname === `/events/${id}` || location.pathname === `/events/${id}/`
+        || location.pathname.endsWith("/scoring");
+      if (!firstLoad && modeChanged && mode === "presentation" && viewing) {
+        navigate(`/events/${id}/present`, { replace: true });
+      }
+      return;
+    }
 
     // モードが切り替わった瞬間（または初回ロード）だけ該当画面へ誘導。
     // 以後は参加者が自分で採点一覧などへ移動でき、引き戻されない。

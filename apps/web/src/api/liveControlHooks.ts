@@ -57,10 +57,16 @@ export function useLivePresenters(eventId: string) {
   });
 }
 
-/** 配信で映すスライド（デッキ）の中身 */
-export function useEventLiveDeck(eventId: string, deckId: string | null | undefined) {
+/** 配信で映すデッキの見分け。コンテストに連動中は発表中のエントリーのデッキ（docs/contest-organizer-ux.md「配信との連動」） */
+export function liveDeckKey(state: EventLiveStateWithCutin | undefined): string | null {
+  if (!state) return null;
+  return state.followContest ? (state.contest?.deckId ? `contest:${state.contest.deckId}` : null) : state.deckId;
+}
+
+/** 配信で映すスライド（デッキ）の中身。`deckKey` は liveDeckKey の値（変わったら取り直す） */
+export function useEventLiveDeck(eventId: string, deckKey: string | null | undefined) {
   return useQuery({
-    queryKey: ["event", eventId, "liveDeck", deckId ?? "none"],
+    queryKey: ["event", eventId, "liveDeck", deckKey ?? "none"],
     enabled: Boolean(eventId),
     queryFn: async () =>
       (await api.get<{ deck: Deck | null }>(`/events/${eventId}/live-deck-content`))

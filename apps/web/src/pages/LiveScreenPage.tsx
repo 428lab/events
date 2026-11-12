@@ -12,10 +12,12 @@ import { useCameraMap, useCameraStreams, useVideoDevices } from "../lib/useLiveC
 import { LiveCameraMapRows, requestCameraPermission } from "../components/LiveCameraMapPanel.js";
 import { useEvent } from "../api/hooks.js";
 import {
+  liveDeckKey,
   useEventLiveDeck,
   useEventLiveSetContent,
   useEventLiveState,
 } from "../api/liveControlHooks.js";
+import { useLiveDeckPage } from "../lib/presentPageSync.js";
 import { LiveSceneStage } from "../components/LiveStage.js";
 import { LiveCutinScreen } from "../components/LiveCutinScreen.js";
 import { useLiveEventChat } from "../components/LiveEventChat.js";
@@ -38,7 +40,9 @@ export function LiveScreenPage() {
   const [wallNow, setWallNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setWallNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const { data: liveSet } = useEventLiveSetContent(id, state?.liveSetId);
-  const { data: deck } = useEventLiveDeck(id, state?.deckId);
+  const { data: deck } = useEventLiveDeck(id, liveDeckKey(state));
+  // コンテストの発表と連動中は、発表者のめくったページ（Nostr）に合わせる
+  const deckPage = useLiveDeckPage(state, deck?.content.slides.length ?? 0);
 
   // ウィンドウサイズに合わせて 16:9 を最大化
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
@@ -164,10 +168,7 @@ export function LiveScreenPage() {
   const hasChat = Boolean(scene?.elements.some(el => el.type === "chat"));
   const liveChat = useLiveEventChat(id, state, liveState.current, wallNow, hasChat, "screen");
 
-  const deckSlide =
-    deck?.content.slides[
-      Math.min(state?.deckPage ?? 0, Math.max(0, (deck?.content.slides.length ?? 1) - 1))
-    ] ?? null;
+  const deckSlide = deck?.content.slides[deckPage] ?? null;
 
   const runtime: LiveRuntime = {
     chatRows: liveChat.rows,

@@ -2,10 +2,11 @@ import { schnorr } from "@noble/curves/secp256k1.js";
 import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
-import { PRESENT_PAGE_KIND, type PresentControlConfig } from "@eventer/shared";
+import { PRESENT_PAGE_KIND, deckSlugFromUrl, type LiveContestDeck, type PresentControlConfig } from "@eventer/shared";
 import { getChatRelays } from "../db/repositories/appSettings.js";
 import { eventStateRepo } from "../db/repositories/eventState.js";
 import { entriesRepo } from "../db/repositories/entries.js";
+import { decksRepo } from "../db/repositories/decks.js";
 import { env } from "../runtime.js";
 import { servicePubkey } from "./nostrSign.js";
 
@@ -50,5 +51,30 @@ export async function presentControlConfig(
     control: row.control,
     deckSlug: row.deckSlug,
     ...(holds ? { secret: row.secret } : {}),
+  };
+}
+
+/**
+ * 配信をコンテストの発表に連動させる（docs/contest-organizer-ux.md「配信との連動」）。
+ * 発表中のエントリーのスライド: 運営が選んだもの（present_deck_slug）、なければ資料URLの /d/:slug。
+ * events lab のスライドだけ（外部URLは扱わない）。`present` は秘密鍵を付けない（配信画面は見るだけ）
+ */
+export async function liveContestDeck(eventId: string, origin: string): Promise<LiveContestDeck> {
+  const state = await eventStateRepo.getOrInit(eventId);
+  const entry = state.presentingEntryId ? await entriesRepo.findActive(eventId, state.presentingEntryId) : null;
+  // 見るだけの視点で読む（viewer=null なので secret は付かない）。サービス鍵が無ければ null
+  const config = await presentControlConfig(eventId, entry?.id ?? null, null);
+  const chosen = (await eventStateRepo.presentControl(eventId)).deckSlug;
+  // 資料URLは、このサーバーの公開URL（APP_BASE_URL。チームのスライドを作ると入る形）か、
+  // リクエストの origin の /d/:slug
+  const url = entry?.submission?.presentationUrl;
+  const slug = chosen ?? deckSlugFromUrl(url, env.appBaseUrl) ?? deckSlugFromUrl(url, origin);
+  const deck = entry && slug ? await decksRepo.findBySlug(slug) : null;
+  return {
+    entryId: entry?.id ?? null,
+    entryName: entry?.name ?? null,
+    deckId: deck?.id ?? null,
+    slug: deck ? slug : null,
+    present: config,
   };
 }

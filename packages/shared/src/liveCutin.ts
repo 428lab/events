@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { EventLiveState } from "./liveSets.js";
 import type { EventSignalSource } from "./eventSignal.js";
+import type { LiveContestDeck } from "./presentControl.js";
 
 export const cutinMessageSchema = z.string().transform(value => value.normalize("NFC").replace(/\p{Zs}+/gu, " ").trim()).pipe(
   z.string().min(1).max(40).refine(value => !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}<>]/u.test(value) && !/(?:https?:\/\/|www\.)/i.test(value), "invalid_cut_in_text"),
@@ -13,4 +14,9 @@ export type CutinStatus = { action: CutinAction | null; serverNow: number };
  * (GET /live-cutin would answer 403: not a confirmed staff member).
  * `signal` is where the screens hear "live state changed, refetch" (topic `live`,
  * D-POLL-MIN Phase 5b); null without a service key. */
-export type EventLiveStateWithCutin = EventLiveState & { cutin: CutinStatus | null; signal?: EventSignalSource | null };
+export type EventLiveStateWithCutin = EventLiveState & {
+  cutin: CutinStatus | null;
+  signal?: EventSignalSource | null;
+  /** `followContest` のときだけ付く、発表中のスライドとページめくりの宛先（秘密鍵なし） */
+  contest?: LiveContestDeck | null;
+};

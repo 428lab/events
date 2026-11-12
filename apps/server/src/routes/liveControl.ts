@@ -22,6 +22,7 @@ import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
 import { presenterSlidesRepo } from "../db/repositories/presenterSlides.js";
 import { eventSignal } from "../lib/eventSignal.js";
 import { deferBackground } from "../runtime.js";
+import { liveContestDeck } from "../lib/presentControl.js";
 
 /** イベントの配信ランタイム状態（コントロールタブ→配信画面タブの同期点）。staff専用 */
 export const liveControlRoutes = new Hono<AppEnv>();
@@ -52,7 +53,9 @@ liveControlRoutes.get(
     const cutin = (await confirmed(c)) ? await eventLiveCutinRepo.get(eventId, c.get("user").id) : null;
     const chatSource = state.chatSource === "event" && eventChatUsable(gateEvent(c)) ? "event" : "off";
     const signal = await eventSignal.source(eventId, "live", readAt);
-    return c.json({ ...state, chatSource, cutin, signal } satisfies EventLiveStateWithCutin);
+    // コンテストの発表と連動中なら、発表中のスライドとページめくりの宛先（秘密鍵なし）を付ける
+    const contest = state.followContest ? await liveContestDeck(eventId, new URL(c.req.url).origin) : null;
+    return c.json({ ...state, chatSource, cutin, signal, contest } satisfies EventLiveStateWithCutin);
   },
 );
 
@@ -79,6 +82,9 @@ liveControlRoutes.patch(
       if (!event || !eventChatUsable(event) || await eventChatRepo.isUserBlocked(c.req.param("id"), c.get("user").id) || await groupChatRepo.isMembersSignerBlocked(c.req.param("id"), c.get("user").id)) {
         return c.json({ error: "chat_unavailable" }, 403);
       }
+    }
+    if (input.followContest !== undefined && !gateEvent(c).contestMode) {
+      return c.json({ error: "not_contest" }, 409);
     }
     // 発表者の選択 (#571) ではデッキとページをサーバーが決める。クライアントのデッキ指定と混ぜない
     if (input.presenterItemId !== undefined && (input.deckId !== undefined || input.deckPage !== undefined)) {
@@ -169,7 +175,13 @@ liveControlRoutes.get(
   "/:id/live-deck-content",
   requireEventRole(["staff"]),
   async (c) => {
-    const state = await eventLiveStateRepo.getOrInit(c.req.param("id"));
+    const eventId = c.req.param("id");
+    const state = await eventLiveStateRepo.getOrInit(eventId);
+    // 連動中は発表中のエントリーのスライド（events lab の公開スライドだけ。運営が選んだもの／成果物）
+    if (state.followContest) {
+      const contest = await liveContestDeck(eventId, new URL(c.req.url).origin);
+      return c.json({ deck: contest.deckId ? await decksRepo.findById(contest.deckId) : null });
+    }
     if (!state.deckId) return c.json({ deck: null });
     return c.json({ deck: await decksRepo.findById(state.deckId) });
   },
