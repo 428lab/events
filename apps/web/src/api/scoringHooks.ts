@@ -7,7 +7,7 @@ import type {
   CreateCriterionInput,
   EventMode,
   EventState,
-  PutScoreInput,
+  PutScoresBatchInput,
   Score,
   ScoreProgress,
   ScoreSummary,
@@ -67,11 +67,12 @@ export function useMyScores(eventId: string) {
   });
 }
 
-export function usePutScore(eventId: string) {
+/** 1つのエントリーの点数をまとめて保存する（「採点を保存」）。点数を押すたびには通信しない */
+export function useSaveScores(eventId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: PutScoreInput) =>
-      api.put(`/events/${eventId}/scores`, input),
+    mutationFn: (input: PutScoresBatchInput) =>
+      api.put(`/events/${eventId}/scores/batch`, input),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["event", eventId, "myScores"] }),
   });
@@ -152,6 +153,31 @@ export function useSetPresenting(eventId: string) {
         presentingEntryId,
       }),
     onSuccess: (state) => setEventState(qc, eventId, state),
+  });
+}
+
+/** 採点を開始する（運営）。押すまで採点は受け付けない */
+export function useStartScoring(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<EventState>(`/events/${eventId}/state/scoring-start`),
+    onSuccess: (state) => setEventState(qc, eventId, state),
+  });
+}
+
+/** 採点結果をすべて消して未開始に戻す（運営）。集計・進捗・自分の採点も取り直す */
+export function useResetScores(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.del<{ deleted: number; state: EventState }>(`/events/${eventId}/scores`),
+    onSuccess: ({ state }) => {
+      setEventState(qc, eventId, state);
+      for (const key of ["summary", "progress", "myScores"]) {
+        void qc.invalidateQueries({ queryKey: ["event", eventId, key] });
+      }
+    },
   });
 }
 

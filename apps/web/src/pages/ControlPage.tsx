@@ -29,6 +29,8 @@ import {
   useSetMode,
   useSetPresenting,
   useToggleScoringLock,
+  useStartScoring,
+  useResetScores,
 } from "../api/scoringHooks.js";
 import { useAwards } from "../api/awardHooks.js";
 import { AwardsEditor } from "../components/AwardsEditor.js";
@@ -62,6 +64,8 @@ function ContestControl({ id }: { id: string }) {
   const setMode = useSetMode(id);
   const setPresenting = useSetPresenting(id);
   const toggleLock = useToggleScoringLock(id);
+  const startScoring = useStartScoring(id);
+  const resetScores = useResetScores(id);
 
   const isAdmin = useIsAdmin();
   const isStaff = eventData?.myRole === "staff" || isAdmin;
@@ -182,33 +186,52 @@ function ContestControl({ id }: { id: string }) {
 
       <Card variant="outlined">
         <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" useFlexGap spacing={1}>
             <Box>
               <Typography variant="h6">
                 {t("eventRun.scoringLockHeading")}
               </Typography>
+              {/* 未開始 → 受付中 → 締切 の3つ。運営が開始するまで採点は受け付けない */}
               <Chip
                 size="small"
-                color={state.scoringLocked ? "error" : "success"}
+                color={!state.scoringStarted ? "default" : state.scoringLocked ? "error" : "success"}
                 label={t(
-                  state.scoringLocked
-                    ? "eventRun.scoringLockedChip"
-                    : "eventRun.scoringOpenChip",
+                  !state.scoringStarted
+                    ? "eventRun.scoringNotStartedChip"
+                    : state.scoringLocked
+                      ? "eventRun.scoringLockedChip"
+                      : "eventRun.scoringOpenChip",
                 )}
               />
             </Box>
-            <Button
-              variant="outlined"
-              color={state.scoringLocked ? "success" : "error"}
-              onClick={() => toggleLock.mutate()}
-            >
-              {t(
-                state.scoringLocked
-                  ? "eventRun.reopenScoring"
-                  : "eventRun.closeScoring",
-              )}
-            </Button>
+            {!state.scoringStarted ? (
+              <Button
+                variant="contained"
+                disabled={startScoring.isPending}
+                onClick={() => startScoring.mutate()}
+              >
+                {t("eventRun.startScoring")}
+              </Button>
+            ) : (
+              <Button
+                variant="outlined"
+                color={state.scoringLocked ? "success" : "error"}
+                disabled={toggleLock.isPending}
+                onClick={() => toggleLock.mutate()}
+              >
+                {t(
+                  state.scoringLocked
+                    ? "eventRun.reopenScoring"
+                    : "eventRun.closeScoring",
+                )}
+              </Button>
+            )}
           </Stack>
+          {!state.scoringStarted && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {t("eventRun.scoringNotStartedHelp")}
+            </Typography>
+          )}
           {state.scoringLocked && (
             <Box sx={{ mt: 2 }}>
               <Alert
@@ -227,6 +250,28 @@ function ContestControl({ id }: { id: string }) {
                 {t("eventRun.scoringClosedNotice")}
               </Alert>
             </Box>
+          )}
+          {state.scoringStarted && (
+            <Box sx={{ mt: 2 }}>
+              <Button
+                size="small"
+                color="error"
+                disabled={resetScores.isPending}
+                onClick={() => {
+                  // 件数は進捗（いま使う種類のエントリーへの採点）から数える
+                  if (!window.confirm(t("eventRun.resetScoresConfirm", { n: (progress?.judges ?? []).reduce((n, j) => n + j.filled, 0) }))) return;
+                  resetScores.mutate();
+                }}
+              >
+                {t("eventRun.resetScores")}
+              </Button>
+            </Box>
+          )}
+          {/* 消すと未開始に戻るので、結果は開始前の表示にも出す */}
+          {resetScores.isSuccess && !state.scoringStarted && (
+            <Alert severity="success" sx={{ mt: 2 }}>
+              {t("eventRun.resetScoresDone", { n: resetScores.data.deleted })}
+            </Alert>
           )}
         </CardContent>
       </Card>

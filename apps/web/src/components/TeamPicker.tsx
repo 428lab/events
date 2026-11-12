@@ -13,9 +13,9 @@ import { tDynamic } from "../i18n/index.js";
 
 /**
  * 参加者（と、チームで参加したい運営）がチームを選ぶ (#9, docs/team-participation.md)。チーム参加のコンテストだけに出る。
- * 採点が始まる（締切または点が入る）までは、入る・移る・抜けるができる。
- * 締切はサーバーが判定する（ここは表示のため）。点が入ったかは画面からは分からないので、
- * そのときはサーバーの team_locked を案内する。
+ * 運営が採点を開始するまで（締切でもない間）は、入る・移る・抜けるができる。
+ * 運営が採点結果をすべて消すと未開始に戻るので、また選べる。判定はサーバーが書き込みと同じ
+ * バッチで行う（ここは表示のため。間に合わなければサーバーの team_locked を案内する）。
  *
  * 自分のチームでは、リーダーが名前・ひとことを変えたり、メンバーにリーダーを任せたりできる。
  * リーダーのいないチームでは、メンバーが「リーダーになる」を押せる（運営が決めたリーダーは仮のもの）。
@@ -38,7 +38,7 @@ export function TeamPicker({ eventId, event, myRole }: { eventId: string; event:
   const membership = findMyMembership(members, me);
   // 運営もチームに入って参加できる（#536 のチーム版）。参加確定の参加者か、確定の運営
   const canChoose = (myRole === "participant" || myRole === "staff") && membership?.status === "confirmed";
-  const locked = Boolean(state?.scoringLocked);
+  const locked = Boolean(state?.scoringStarted || state?.scoringLocked);
   const myTeam = me ? teams.find((team) => team.memberUserIds.includes(me.id)) : undefined;
   const nameOf = new Map((members ?? []).map((m) => [m.userId, m.user.globalName ?? m.user.username]));
   const actions = [join, leave, updateMine, handOver, becomeLeader];

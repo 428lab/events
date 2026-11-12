@@ -1,4 +1,4 @@
-import { eventRun, type EventWriter } from "./eventWriteGuard.js";
+import { eventWrite, type EventWriter } from "./eventWriteGuard.js";
 import type {
   EntryScoreSummary,
   JudgeProgress,
@@ -30,38 +30,43 @@ export const scoresRepo = {
     }));
   },
 
-  async upsert(
+  /** 1つのエントリーの点数をまとめて保存する（「採点を保存」）。1つの D1 バッチで書くので、
+   * 途中で締め切られたり開始前に戻されたりしても、半分だけ保存されることはない。
+   * 開始済み・締切前であることもこのバッチの中で確かめる（`scoring_not_open`） */
+  async upsertMany(
     eventId: string,
     entryId: string,
-    criterionId: string,
     judgeUserId: string,
-    value: number, writer: EventWriter): Promise<void> {
-    const existing = await one<{ id: string }>(
-      "SELECT id FROM score WHERE entry_id = ? AND criterion_id = ? AND judge_user_id = ?",
-      entryId,
-      criterionId,
-      judgeUserId,
-    );
-    if (existing) {
-      await eventRun(writer,
-        "UPDATE score SET value = ?, updated_at = ? WHERE id = ?",
-        value,
-        Date.now(),
-        existing.id,
-      );
-    } else {
-      await eventRun(writer,
-        `INSERT INTO score (id, event_id, entry_id, criterion_id, judge_user_id, value, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        crypto.randomUUID(),
-        eventId,
-        entryId,
-        criterionId,
-        judgeUserId,
-        value,
-        Date.now(),
-      );
-    }
+    scores: Array<{ criterionId: string; value: number }>,
+    writer: EventWriter,
+  ): Promise<void> {
+    const now = Date.now();
+    await eventWrite(writer, [
+      {
+        sql: `SELECT CASE WHEN EXISTS (SELECT 1 FROM event_state WHERE event_id = ? AND scoring_started = 1 AND scoring_locked = 0)
+          THEN 1 ELSE json_extract('{}','scoring_not_open') END`,
+        args: [eventId],
+      },
+      ...scores.map((s) => ({
+        sql: `INSERT INTO score (id, event_id, entry_id, criterion_id, judge_user_id, value, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(entry_id, criterion_id, judge_user_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        args: [crypto.randomUUID(), eventId, entryId, s.criterionId, judgeUserId, s.value, now],
+      })),
+    ]);
+  },
+
+  /** 運営がイベントの採点結果をすべて消し、採点を未開始・締切なしに戻す（同じバッチ）。
+   * 消した件数を返す。チームの入れ替えもまたできるようになる（teams.ts の BEFORE_SCORING） */
+  async resetAll(eventId: string, writer: EventWriter): Promise<number> {
+    const [deleted] = await eventWrite(writer, [
+      { sql: "DELETE FROM score WHERE event_id = ?", args: [eventId] },
+      {
+        sql: `UPDATE event_state SET scoring_started = 0, scoring_locked = 0, updated_at = ? WHERE event_id = ?`,
+        args: [Date.now(), eventId],
+      },
+    ]);
+    return deleted ?? 0;
   },
 
   /**

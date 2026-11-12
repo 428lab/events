@@ -7,6 +7,7 @@ interface StateRow {
   mode: string;
   presenting_entry_id: string | null;
   scoring_locked: number;
+  scoring_started: number;
   awards_reveal_cursor: number | null;
   updated_at: number;
 }
@@ -16,6 +17,7 @@ function toState(row: StateRow): EventState {
     eventId: row.event_id,
     mode: row.mode as EventMode,
     presentingEntryId: row.presenting_entry_id,
+    scoringStarted: row.scoring_started === 1,
     scoringLocked: row.scoring_locked === 1,
     awardsRevealCursor: row.awards_reveal_cursor,
     updatedAt: row.updated_at,
@@ -69,6 +71,17 @@ export const eventStateRepo = {
     await eventRun(writer,
       "UPDATE event_state SET scoring_locked = ?, updated_at = ? WHERE event_id = ?",
       locked ? 1 : 0,
+      Date.now(),
+      eventId,
+    );
+    return this.getOrInit(eventId);
+  },
+
+  /** 採点を開始する（受付中にする）。締切は触らない */
+  async startScoring(eventId: string, writer: EventWriter): Promise<EventState> {
+    await this.getOrInit(eventId);
+    await eventRun(writer,
+      "UPDATE event_state SET scoring_started = 1, updated_at = ? WHERE event_id = ?",
       Date.now(),
       eventId,
     );

@@ -42,7 +42,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   fixture.role = "staff"; fixture.admin = false; fixture.visibility = "public"; fixture.access = false; fixture.contest = true;
   fixture.entries = [{ id: "entry", kind: "individual", name: "作品A", memberUserIds: ["u"] }];
-  state = { mode: "normal", scoringLocked: false, presentingEntryId: null, awardsRevealCursor: 0, eventId: "e", updatedAt: 0 };
+  state = { mode: "normal", scoringStarted: false, scoringLocked: false, presentingEntryId: null, awardsRevealCursor: 0, eventId: "e", updatedAt: 0 };
   awards = { ranks: [{ id: "rank", eventId: "e", name: "最優秀賞", content: "賞品", rankOrder: 1 }], specials: [], results: [], criteria: [] };
   vi.spyOn(api, "get").mockImplementation(async (path) => {
     if (path.endsWith("/awards")) return structuredClone(awards) as never;
@@ -239,4 +239,35 @@ it("staff return to management; admin-only exceptions retain a reachable informa
   draw(); await ready();
   expect(screen.queryByRole("link", { name: "運営へ戻る" })).toBeNull();
   expect(screen.getByRole("link", { name: "イベント情報へ戻る" })).toHaveAttribute("href", "/events/e");
+});
+
+it("採点は「未開始→採点を開始する」で受付中になり、「採点結果をすべて消す」で件数を確かめてから未開始に戻る", async () => {
+  const get = vi.mocked(api.get).getMockImplementation()!;
+  vi.mocked(api.get).mockImplementation(async (path) =>
+    path.endsWith("/progress") ? { judges: [{ userId: "j", name: "審査員", role: "judge", filled: 3, total: 4, complete: false }] } as never : get(path));
+  vi.mocked(api.post).mockImplementation(async (path) => {
+    if (path.endsWith("/scoring-start")) state = { ...state, scoringStarted: true };
+    return { ...state } as never;
+  });
+  vi.spyOn(api, "del").mockImplementation(async () => {
+    state = { ...state, scoringStarted: false, scoringLocked: false };
+    return { deleted: 3, state: { ...state } } as never;
+  });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+  draw(); await ready();
+  expect(screen.getByText("未開始")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "採点結果をすべて消す" })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "採点を開始する" }));
+  await screen.findByText("受付中");
+  expect(api.post).toHaveBeenCalledExactlyOnceWith("/events/e/state/scoring-start");
+
+  // 取り消したら何もしない。件数を見せて確かめる
+  fireEvent.click(screen.getByRole("button", { name: "採点結果をすべて消す" }));
+  expect(api.del).not.toHaveBeenCalled();
+  expect(confirm.mock.calls[0][0]).toContain("3件");
+  fireEvent.click(screen.getByRole("button", { name: "採点結果をすべて消す" }));
+  await screen.findByText("採点結果を3件消しました。");
+  expect(api.del).toHaveBeenCalledExactlyOnceWith("/events/e/scores");
+  expect(screen.getByRole("button", { name: "採点を開始する" })).toBeInTheDocument();
 });

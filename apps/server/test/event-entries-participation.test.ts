@@ -73,9 +73,10 @@ it("通常参加者は従来通り登録・提出・採点・取消でき、採�
   const hostEntry = (await list(id, voter)).find(e => e.memberUserIds.includes(host.id))!;
   await submit(id, host, hostEntry);
   const criterionId = await criterion(id, host);
-  expect((await request(`/${id}/scores`, host, "PUT", { entryId: normalEntry.id, criterionId, value: 4 })).status).toBe(200);
-  expect((await request(`/${id}/scores`, voter, "PUT", { entryId: hostEntry.id, criterionId, value: 3 })).status).toBe(200);
-  expect((await request(`/${id}/scores`, host, "PUT", { entryId: hostEntry.id, criterionId, value: 5 })).status).toBe(403);
+  expect((await request(`/${id}/state/scoring-start`, host, "POST")).status).toBe(200);
+  expect((await request(`/${id}/scores/batch`, host, "PUT", { entryId: normalEntry.id, scores: [{ criterionId, value: 4 }] })).status).toBe(200);
+  expect((await request(`/${id}/scores/batch`, voter, "PUT", { entryId: hostEntry.id, scores: [{ criterionId, value: 3 }] })).status).toBe(200);
+  expect((await request(`/${id}/scores/batch`, host, "PUT", { entryId: hostEntry.id, scores: [{ criterionId, value: 5 }] })).status).toBe(403);
   const beforeEntries = await list(id, host), beforeMember = await member(id, host);
   const scores = await sql("SELECT * FROM score WHERE event_id=?", id).all();
   const denied = await participate(id, host, false);
@@ -98,7 +99,8 @@ it("通常参加から昇格した運営の既存Entry・提出・点数・発�
   await submit(id, staff, entry);
   await sql("UPDATE entry SET presentation_order=7 WHERE id=?", entry.id).run();
   const criterionId = await criterion(id, host);
-  expect((await request(`/${id}/scores`, host, "PUT", { entryId: entry.id, criterionId, value: 4 })).status).toBe(200);
+  expect((await request(`/${id}/state/scoring-start`, host, "POST")).status).toBe(200);
+  expect((await request(`/${id}/scores/batch`, host, "PUT", { entryId: entry.id, scores: [{ criterionId, value: 4 }] })).status).toBe(200);
   expect((await request(`/${id}/members/${staff.id}/role`, host, "PATCH", { role: "staff" })).status).toBe(200);
   const before = await list(id, staff), membership = await member(id, staff);
   expect((await participate(id, staff, true)).status).toBe(200);

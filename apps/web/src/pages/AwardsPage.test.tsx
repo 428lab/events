@@ -61,7 +61,7 @@ async function emit() {
 }
 beforeEach(() => {
   vi.clearAllMocks(); mocks.listeners.length = 0;
-  state = { eventId: "e1", mode: "awards", awardsRevealCursor: 0, presentingEntryId: null, scoringLocked: true, updatedAt: Date.now() };
+  state = { eventId: "e1", mode: "awards", awardsRevealCursor: 0, presentingEntryId: null, scoringStarted: true, scoringLocked: true, updatedAt: Date.now() };
   awards = { ranks: [
     { id: "r2", eventId: "e1", name: "準優勝", rankOrder: 2, content: null },
     { id: "r1", eventId: "e1", name: "優勝", rankOrder: 1, content: null },

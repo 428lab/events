@@ -30,7 +30,7 @@ import {
   PresenterPanelToggle,
   PresenterSidePanel,
 } from "../components/PresenterSidePanel.js";
-import { ScoringPanel } from "../components/ScoringPanel.js";
+import { ScoringPanel, useUnsavedScores } from "../components/ScoringPanel.js";
 import { UserLink } from "../components/UserLink.js";
 import { usePresenterPanel } from "../lib/usePresenterPanel.js";
 
@@ -45,6 +45,7 @@ export function PresentPage() {
   const { data: members } = useEventMembers(id, true);
   const { data: criteria } = useCriteria(id);
   const { data: myScores } = useMyScores(id);
+  const onDirtyChange = useUnsavedScores();
   // 登壇者向けサイドパネル (#215)。開閉は配信コントロールと共有する
   const [panelOpen] = usePresenterPanel();
 
@@ -71,6 +72,7 @@ export function PresentPage() {
     ? Boolean(me && presenting.memberUserIds.includes(me.id))
     : false;
   const scoringDisabled =
+    !state.scoringStarted ||
     state.scoringLocked ||
     (!eventData.event.aggregateSelfEntry && isSelf);
 
@@ -206,6 +208,8 @@ export function PresentPage() {
                       criteria={criteria}
                       myScores={myScores ?? []}
                       disabled={scoringDisabled}
+                      disabledNote={!state.scoringStarted ? t("eventRun.scoringNotStartedNotice") : undefined}
+                      onDirtyChange={onDirtyChange}
                     />
                   ) : (
                     <Typography color="text.secondary">

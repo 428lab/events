@@ -2,14 +2,14 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import {
   createCriterionInput,
-  putScoreInput,
+  putScoresBatchInput,
   setModeInput,
   setPresentingInput,
   updateCriterionInput,
 } from "@eventer/shared";
 import type {
   CreateCriterionInput,
-  PutScoreInput,
+  PutScoresBatchInput,
   SetModeInput,
   SetPresentingInput,
   UpdateCriterionInput,
@@ -27,6 +27,8 @@ import { scoresRepo } from "../db/repositories/scores.js";
 import { eventStateRepo } from "../db/repositories/eventState.js";
 import { eventSignal } from "../lib/eventSignal.js";
 import { deferBackground } from "../runtime.js";
+import { recordAudit } from "../db/repositories/auditLogs.js";
+import { HTTPException } from "hono/http-exception";
 
 export const scoringRoutes = new Hono<AppEnv>();
 
@@ -133,10 +135,13 @@ scoringRoutes.get("/:id/scores/mine", async (c) => {
   return c.json({ scores: await scoresRepo.listForJudge(c.req.param("id"), user.id) });
 });
 
+/** 採点の保存（「採点を保存」）。1つのエントリーの点数をまとめて1リクエスト・1バッチで書く。
+ * 点数を押すたびには通信しない（書き込み回数を使わない）。運営が「採点を開始する」まで、
+ * また締切後は受け付けない（オーナー決定 2026-11-08） */
 scoringRoutes.put(
-  "/:id/scores",
+  "/:id/scores/batch",
   requireEventRole(["participant", "judge", "staff"]),
-  zValidator("json", putScoreInput),
+  zValidator("json", putScoresBatchInput),
   async (c) => {
     const user = c.get("user");
     const eventId = c.req.param("id");
@@ -144,28 +149,31 @@ scoringRoutes.put(
     if (!event) return c.json({ error: "not_found" }, 404);
 
     const state = await eventStateRepo.getOrInit(eventId);
+    if (!state.scoringStarted) return c.json({ error: "scoring_not_started" }, 409);
     if (state.scoringLocked) return c.json({ error: "scoring_locked" }, 409);
 
-    const input = valid<PutScoreInput>(c, "json");
+    const input = valid<PutScoresBatchInput>(c, "json");
     // いま使う種類のエントリーだけ採点できる（チーム参加ならチーム、それ以外は個人。#9）
     const entry = await entriesRepo.findActive(eventId, input.entryId);
-    if (!entry) {
-      return c.json({ error: "entry_not_found" }, 404);
-    }
-    const criterion = await scoringCriteriaRepo.findById(input.criterionId);
-    if (!criterion || criterion.eventId !== eventId) {
+    if (!entry) return c.json({ error: "entry_not_found" }, 404);
+    const criteria = new Set((await scoringCriteriaRepo.listByEvent(eventId)).map((cr) => cr.id));
+    if (input.scores.some((s) => !criteria.has(s.criterionId))) {
       return c.json({ error: "criterion_not_found" }, 404);
     }
     // 自己採点制限
     if (!event.aggregateSelfEntry && (await entriesRepo.isMember(input.entryId, user.id))) {
       return c.json({ error: "self_scoring_forbidden" }, 403);
     }
-    await scoresRepo.upsert(
-      eventId,
-      input.entryId,
-      input.criterionId,
-      user.id,
-      input.value, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"scorer"});
+    try {
+      await scoresRepo.upsertMany(eventId, input.entryId, user.id, input.scores,
+        { eventId, actorId: user.id, permission: "scorer" });
+    } catch (error) {
+      // 読んでから書くまでの間に締め切られた・未開始に戻された
+      if (`${String(error)} ${String((error as Error)?.cause)}`.includes("scoring_not_open")) {
+        throw new HTTPException(409, { res: Response.json({ error: "scoring_not_open" }, { status: 409 }) });
+      }
+      throw error;
+    }
     await publishScores(eventId, true);
     return c.json({ ok: true });
   },
@@ -241,6 +249,40 @@ scoringRoutes.patch(
       presentingEntryId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     await publishEventState(eventId);
     return c.json(state);
+  },
+);
+
+/** 採点を開始する（受付中にする）。押すまで採点は受け付けない */
+scoringRoutes.post(
+  "/:id/state/scoring-start",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const state = await eventStateRepo.startScoring(eventId, {eventId,actorId:c.get("user").id,permission:"manager"});
+    await publishEventState(eventId);
+    return c.json(state);
+  },
+);
+
+/** 採点結果をすべて消し、採点を未開始・締切なしに戻す（運営）。試しに入れた点を消したいとき・
+ * チームを組み直したいときに使う。受賞の割り当て（award_result）は消さない（集計だけが変わる）。
+ * 監査ログに件数を残す */
+scoringRoutes.delete(
+  "/:id/scores",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const user = c.get("user");
+    await eventStateRepo.getOrInit(eventId);
+    const deleted = await scoresRepo.resetAll(eventId, {eventId,actorId:user.id,permission:"manager"});
+    await recordAudit({
+      action: "scores_reset",
+      actor: { id: user.id, handle: user.username },
+      detail: { eventId, deleted },
+    });
+    await publishScores(eventId);
+    await publishEventState(eventId);
+    return c.json({ deleted, state: await eventStateRepo.getOrInit(eventId) });
   },
 );
 
