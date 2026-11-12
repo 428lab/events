@@ -39,6 +39,7 @@ import { roleLabel } from "../lib/format.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { UserLink } from "../components/UserLink.js";
 import { useEntryUserResolver } from "../lib/entryUser.js";
+import { PresentControlCard } from "../components/PresentControlCard.js";
 
 /** モード名の翻訳キー。**訳した文字列ではなくキーを持つ**ので、
  * 言語を切り替えたときに前の言語のまま残らない。
@@ -181,6 +182,11 @@ function ContestControl({ id }: { id: string }) {
               </MenuItem>
             ))}
           </TextField>
+          <PresentControlCard
+            eventId={id}
+            state={state}
+            submissionUrl={entries.find((en) => en.id === state.presentingEntryId)?.submission?.presentationUrl}
+          />
         </CardContent>
       </Card>
 

@@ -53,7 +53,9 @@ export function PresentPage() {
   const [panelOpen] = usePresenterPanel();
   // 発表中のエントリー（個人・チーム共通）の資料URLが events lab のスライドなら、左側にそのスライドを出す
   const presentingEntry = entries?.find((e) => e.id === state?.presentingEntryId);
-  const deckSlug = deckSlugFromUrl(presentingEntry?.submission?.presentationUrl, window.location.origin);
+  // 運営が選んだスライドがあればそれ、無ければ成果物の資料URLから
+  const deckSlug = state?.presentControl?.deckSlug
+    ?? deckSlugFromUrl(presentingEntry?.submission?.presentationUrl, window.location.origin);
   const { data: deck, isError: deckError } = usePublicDeck(deckSlug ?? "");
 
   if (!eventData || !state || !entries || !criteria) {
@@ -200,7 +202,7 @@ export function PresentPage() {
                 </Box>
               )}
               {showDeck && presenting && deck && deckSlug && (
-                <PresentationDeckPane key={presenting.id} deck={deck} slug={deckSlug} />
+                <PresentationDeckPane key={`${presenting.id}:${deckSlug}`} deck={deck} slug={deckSlug} control={state.presentControl} />
               )}
             </Stack>
           </Grid>

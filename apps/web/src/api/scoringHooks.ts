@@ -7,6 +7,7 @@ import type {
   CreateCriterionInput,
   EventMode,
   EventState,
+  SetPresentControlInput,
   PutScoresBatchInput,
   Score,
   ScoreProgress,
@@ -120,7 +121,12 @@ export function setEventState(
   eventId: string,
   state: EventState,
 ) {
-  qc.setQueryData<EventState>(["event", eventId, "state"], (prev) => ({ ...state, signal: prev?.signal }));
+  // 操作の応答には合図とページめくりの設定が無いことがある。無ければ前の値を残す
+  qc.setQueryData<EventState>(["event", eventId, "state"], (prev) => ({
+    ...state,
+    signal: prev?.signal,
+    presentControl: state.presentControl !== undefined ? state.presentControl : prev?.presentControl,
+  }));
 }
 
 /** ===== 進行状態 =====
@@ -141,6 +147,16 @@ export function useSetMode(eventId: string) {
   return useMutation({
     mutationFn: (mode: EventMode) =>
       api.patch<EventState>(`/events/${eventId}/state/mode`, { mode }),
+    onSuccess: (state) => setEventState(qc, eventId, state),
+  });
+}
+
+/** 運営: 発表スライドを選ぶ・ページめくりを発表者に渡す／運営に戻す */
+export function useSetPresentControl(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SetPresentControlInput) =>
+      api.patch<EventState>(`/events/${eventId}/state/present-control`, input),
     onSuccess: (state) => setEventState(qc, eventId, state),
   });
 }
