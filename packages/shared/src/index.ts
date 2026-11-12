@@ -60,3 +60,4 @@ export * from "./deckImport.js";
 export * from "./deckExport.js";
 export * from "./eventAccessInvites.js";
 export * from "./profileLinks.js";
+export * from "./presentControl.js";

@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import {
   createCriterionInput,
+  deckSlugFromUrl,
   putScoresBatchInput,
+  setPresentControlInput,
   setModeInput,
   setPresentingInput,
   updateCriterionInput,
@@ -11,12 +13,13 @@ import type {
   CreateCriterionInput,
   PutScoresBatchInput,
   SetModeInput,
+  SetPresentControlInput,
   SetPresentingInput,
   UpdateCriterionInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { currentUser } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
+import { canManageEvent, requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { valid, zValidator } from "../lib/validator.js";
@@ -27,6 +30,7 @@ import { scoresRepo } from "../db/repositories/scores.js";
 import { eventStateRepo } from "../db/repositories/eventState.js";
 import { eventSignal } from "../lib/eventSignal.js";
 import { deferBackground } from "../runtime.js";
+import { presentControlConfig } from "../lib/presentControl.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
 import { HTTPException } from "hono/http-exception";
 
@@ -216,8 +220,39 @@ scoringRoutes.get("/:id/state", async (c) => {
   const eventId = c.req.param("id");
   const readAt = Date.now();
   const state = await eventStateRepo.getOrInit(eventId);
-  return c.json({ ...state, signal: await eventSignal.source(eventId, "event-state", readAt) });
+  // ページめくりの設定。秘密鍵はその世代でめくれる人にだけ付く（presentControl.ts）
+  const user = await currentUser(c);
+  const viewer = user ? { userId: user.id, isManager: await canManageEvent(eventId, user) } : null;
+  const presentControl = await presentControlConfig(eventId, state.presentingEntryId, viewer);
+  return c.json({ ...state, presentControl, signal: await eventSignal.source(eventId, "event-state", readAt) });
 });
+
+/** 運営: 発表スライドを選ぶ・ページめくりを発表者に渡す／運営に戻す。
+ * どれでも世代が進んで鍵が変わり、前の鍵を持つ画面からはもうめくれない */
+scoringRoutes.patch(
+  "/:id/state/present-control",
+  requireEventRole(["staff"]),
+  zValidator("json", setPresentControlInput),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const input = valid<SetPresentControlInput>(c, "json");
+    let deckSlug: string | null | undefined;
+    if (input.deckUrl !== undefined) {
+      if (input.deckUrl === null || input.deckUrl.trim() === "") deckSlug = null;
+      else {
+        deckSlug = deckSlugFromUrl(input.deckUrl, new URL(c.req.url).origin);
+        if (!deckSlug) return c.json({ error: "invalid_deck_url" }, 400);
+      }
+    }
+    await eventStateRepo.setPresentControl(eventId, { control: input.control, deckSlug },
+      { eventId, actorId: c.get("user").id, permission: "manager" });
+    await publishEventState(eventId);
+    const state = await eventStateRepo.getOrInit(eventId);
+    const presentControl = await presentControlConfig(eventId, state.presentingEntryId,
+      { userId: c.get("user").id, isManager: true });
+    return c.json({ ...state, presentControl });
+  },
+);
 
 scoringRoutes.patch(
   "/:id/state/mode",

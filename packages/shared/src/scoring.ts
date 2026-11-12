@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { EVENT_MODES } from "./constants.js";
+import type { PresentControlConfig } from "./presentControl.js";
 import type { EventSignalSource } from "./eventSignal.js";
 
 /** ---- 採点項目 ---- */
@@ -104,6 +105,8 @@ export type EventState = z.infer<typeof eventStateSchema> & {
   /** Where open event pages hear "progress changed, refetch" (topic `event-state`,
    * D-POLL-MIN Phase 5b). Only on `GET /:id/state`; null without a service key */
   signal?: EventSignalSource | null;
+  /** 発表のページめくり（presentControl.ts）。`GET /:id/state` と運営の操作の応答にだけ付く */
+  presentControl?: PresentControlConfig | null;
 };
 
 export const setModeInput = z.object({

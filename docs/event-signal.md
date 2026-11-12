@@ -17,7 +17,7 @@ ephemeral イベントで「開いている画面」に知らせる。最初の 
 
 | 項目 | 値 |
 | --- | --- |
-| kind | `EVENT_SIGNAL_KIND = 20078`（ephemeral 範囲 20000–29999。27888 鍵証明・22242 AUTH とは別。旧・表彰合図 27889 は 5b-3 で `event-state` に畳んで廃止） |
+| kind | `EVENT_SIGNAL_KIND = 20078`（ephemeral 範囲 20000–29999。27888 鍵証明・22242 AUTH とは別。旧・表彰合図 27889 は 5b-3 で `event-state` に畳んで廃止）。同時編集の差分 21078（docs/team-deck-live-sync.md）・発表のページめくり 21080（docs/contest-organizer-ux.md）はブラウザ同士が送るもので、この合図とは別） |
 | 作者 | その環境の公式サービス鍵（`NOSTR_SERVICE_KEY`）。他の作者は無視する |
 | tags | `["t", <topic>]`, `["-"]`（NIP-70。送信側がサービス鍵で AUTH する。購読側は AUTH 不要） |
 | content | JSON。`rev`（サーバーの epoch ミリ秒・整数）＋ topic ごとの項目 |
