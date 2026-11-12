@@ -45,6 +45,7 @@ import { EventJoinPanel } from "../components/EventJoinPanel.js";
 import { EventMemberList } from "../components/EventMemberList.js";
 import { EventDetailSidebar } from "../components/EventDetailSidebar.js";
 import { EventSubmissions } from "../components/EventSubmissions.js";
+import { PresentedDecks } from "../components/PresentedDecks.js";
 import { TeamPicker } from "../components/TeamPicker.js";
 import { EventInquiryButton } from "../components/EventInquiryButton.js";
 import { EventStaffActions, ScheduledPublishNotice } from "../components/EventStaffActions.js";
@@ -474,6 +475,9 @@ export function EventDetailPage() {
 
       {/* コンテストの提出物（自分のぶんの編集と、みんなの一覧） */}
       <EventSubmissions eventId={id} event={event} contest={contest} myRole={myRole} />
+
+      {/* 発表が終わったら、発表スライドを並べる（運営には先に「運営だけ」で出る） */}
+      <PresentedDecks eventId={id} contest={contest} />
         </Stack>
       </Grid>
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { DeckSlide } from "./decks.js";
 
 /**
  * 発表のページめくり（docs/contest-organizer-ux.md「発表のページめくり」）。
@@ -81,4 +82,26 @@ export interface LiveContestDeck {
   deckId: string | null;
   slug: string | null;
   present: PresentPageViewConfig | null;
+}
+
+/** イベントページの「発表スライド」1件（docs/contest-organizer-ux.md「発表スライドをイベントページに出す」）。
+ * 成果物の資料URLが events lab のスライドを指すエントリーだけ。サムネ用に1枚目だけを持つ */
+export interface PresentedDeck {
+  entryId: string;
+  entryName: string;
+  /** "individual" | "team" */
+  kind: string;
+  deck: {
+    slug: string;
+    title: string;
+    firstSlide: DeckSlide | null;
+    slideCount: number;
+  };
+}
+
+/** `GET /api/events/:id/presented-decks`。`staffPreview` は、まだ参加者には見せていない
+ * （発表が終わる前）のを運営だけが見ているとき true */
+export interface PresentedDecksResponse {
+  decks: PresentedDeck[];
+  staffPreview: boolean;
 }

@@ -141,6 +141,16 @@ export const decksRepo = {
     return row ? toDeck(row) : null;
   },
 
+  /** 複数の slug をまとめて読む（イベントページの「発表スライド」。エントリーごとに読まない） */
+  async findBySlugs(slugs: readonly string[]): Promise<Deck[]> {
+    if (slugs.length === 0) return [];
+    const rows = await many<DeckRow>(
+      `SELECT * FROM deck WHERE slug IN (${slugs.map(() => "?").join(",")})`,
+      ...slugs,
+    );
+    return rows.map(toDeck);
+  },
+
   /** 編集用の取得。編集できない人には中身を返さない */
   async findForEdit(id: string, userId: string): Promise<DeckEditLookup> {
     const row = await one<EditRow>(

@@ -8,6 +8,7 @@ import type {
   EventMode,
   EventState,
   SetPresentControlInput,
+  PresentedDecksResponse,
   PutScoresBatchInput,
   Score,
   ScoreProgress,
@@ -229,4 +230,16 @@ export function useEventStateSignal(
     () => qc.invalidateQueries({ queryKey: ["event", eventId, "state"] }),
     { eventId, jitterMs: awards ? AWARDS_SIGNAL_JITTER_MS : PARTICIPANT_SIGNAL_JITTER_MS },
   );
+}
+
+/** イベントページの「発表スライド」(docs/contest-organizer-ux.md「発表スライドをイベントページに出す」)。
+ * 見せてよいか（発表が終わったか）はサーバーが決める。進行のモードを鍵に入れて、集計・表彰に
+ * 進んだら（event-state の合図で state を取り直したら）取り直す */
+export function usePresentedDecks(eventId: string, enabled: boolean) {
+  const { data: state } = useEventState(eventId, enabled);
+  return useQuery({
+    queryKey: ["event", eventId, "presentedDecks", state?.mode ?? null],
+    enabled,
+    queryFn: () => api.get<PresentedDecksResponse>(`/events/${eventId}/presented-decks`),
+  });
 }

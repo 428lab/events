@@ -13,6 +13,10 @@ import { communitiesRepo } from "../db/repositories/communities.js";
 import { eventCohostsRepo } from "../db/repositories/eventCohosts.js";
 import { schedulingRepo } from "../db/repositories/scheduling.js";
 import { listViewableRequestsForEvent } from "./eventRequests.js";
+import { eventStateRepo } from "../db/repositories/eventState.js";
+import { decksRepo } from "../db/repositories/decks.js";
+import { env } from "../runtime.js";
+import { deckSlugFromUrl, type PresentedDeck, type PresentedDecksResponse } from "@eventer/shared";
 
 /**
  * イベント配下の **未ログインでも読める GET**。
@@ -122,6 +126,42 @@ eventPublicRoutes.get("/:id/submissions", viewableEvent(), async (c) => {
     (e) => e.submission,
   );
   return c.json({ entries });
+});
+
+/** 発表スライド（docs/contest-organizer-ux.md「発表スライドをイベントページに出す」）。
+ * 成果物の資料URLが events lab のスライド（/d/:slug）を指すエントリーだけ。1枚目だけを返す。
+ * 出すのは発表が終わってから（イベントが終わったか、進行が集計・表彰に進んだ）。それまでは運営だけに
+ * 見せ、`staffPreview` で知らせる（発表中にほかのチームの資料が先に見えないように） */
+eventPublicRoutes.get("/:id/presented-decks", viewableEvent(), async (c) => {
+  const event = c.get("event");
+  const viewer = c.get("viewer");
+  if (!event.contestMode) return c.json({ decks: [], staffPreview: false } satisfies PresentedDecksResponse);
+  const ended = !event.scheduling && event.endsAt < Date.now();
+  const { mode } = await eventStateRepo.getOrInit(event.id);
+  const open = ended || mode === "aggregation" || mode === "awards";
+  const staff = viewer ? await isEventManager(event.id, viewer) : false;
+  if (!open && !staff) return c.json({ decks: [], staffPreview: false } satisfies PresentedDecksResponse);
+
+  // 資料URLは、このサーバーの公開URL（チームのスライドを作ると入る形）か、リクエストの origin の /d/:slug
+  const origin = new URL(c.req.url).origin;
+  const linked = (await entriesRepo.listByEvent(event.id)).flatMap((entry) => {
+    const url = entry.submission?.presentationUrl;
+    const slug = deckSlugFromUrl(url, env.appBaseUrl) ?? deckSlugFromUrl(url, origin);
+    return slug ? [{ entry, slug }] : [];
+  });
+  const decks = new Map((await decksRepo.findBySlugs([...new Set(linked.map((l) => l.slug))])).map((d) => [d.slug, d]));
+  const result: PresentedDeck[] = linked.flatMap(({ entry, slug }) => {
+    const deck = decks.get(slug);
+    if (!deck) return [];
+    const slides = deck.content.slides;
+    return [{
+      entryId: entry.id,
+      entryName: entry.name,
+      kind: entry.kind,
+      deck: { slug, title: deck.title, firstSlide: slides[0] ?? null, slideCount: slides.length },
+    }];
+  });
+  return c.json({ decks: result, staffPreview: !open } satisfies PresentedDecksResponse);
 });
 
 /** 参加者一覧（公開イベントは未ログインでも閲覧可） */

@@ -128,6 +128,7 @@ const OPEN_ROUTES = new Set<string>([
   "GET /api/events/:id/photos/:photoId/poster",
   "GET /api/events/:id/photos/:photoId/thumbnail",
   "GET /api/events/:id/photos/:photoId/video",
+  "GET /api/events/:id/presented-decks",
   "GET /api/events/:id/schedule",
   "GET /api/events/:id/scores/results",
   "GET /api/events/:id/slots",
@@ -171,7 +172,7 @@ const OPEN_ROUTES = new Set<string>([
 
 /** `OPEN_ROUTES` の件数。表を1行足すとここも動かすことになるので、
  * 「テストを通すためにこっそり1本開ける」が差分に必ず現れる */
-const EXPECTED_OPEN_COUNT = 91; // +4: AI エージェントの入口3本と agent.md (docs/agent-deck-token.md)
+const EXPECTED_OPEN_COUNT = 92; // +1: イベントページの発表スライド (presented-decks)。+4: AI エージェントの入口3本と agent.md (docs/agent-deck-token.md)
 
 const UUID = "00000000-0000-4000-8000-000000000000";
 const probe = (p: string) =>
