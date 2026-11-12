@@ -210,6 +210,9 @@ export const eventLiveStateSchema = z.object({
   /** 配信コントロールで選ばれている発表（タイムテーブルのコマ ID）(#571)。
    * `deckId` はこのコマに紐付いたデッキをサーバーが解決して書く */
   presenterItemId: z.string().nullable(),
+  /** コンテストの発表と連動する（docs/contest-organizer-ux.md「配信との連動」）。オンのあいだ
+   * スライドは発表中のエントリーのもの、ページは発表のページめくりに合わせる */
+  followContest: z.boolean(),
   updatedAt: z.number(),
 });
 export type EventLiveState = z.infer<typeof eventLiveStateSchema>;
@@ -227,6 +230,8 @@ export const updateEventLiveStateInput = z.object({
   /** 発表者（コマ）を選ぶ (#571)。デッキはサーバーが解決し、ページは 1 ページ目に戻す
    * （同じコマの選び直しはページを保つ）。`deckId` / `deckPage` と同時には送らない */
   presenterItemId: z.string().max(64).nullable().optional(),
+  /** コンテストの発表と連動する／やめる。切り替えるとページは 1 ページ目に戻す */
+  followContest: z.boolean().optional(),
 });
 export type UpdateEventLiveStateInput = z.infer<typeof updateEventLiveStateInput>;
 

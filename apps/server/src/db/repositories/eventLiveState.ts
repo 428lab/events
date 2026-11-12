@@ -1,6 +1,6 @@
 import { eventRun, type EventWriter } from "./eventWriteGuard.js";
 import type { EventLiveState, UpdateEventLiveStateInput } from "@eventer/shared";
-import { many, one, run } from "../client.js";
+import { many, one, run, runCount } from "../client.js";
 import { selectPresenterAssignments } from "./presenterSlides.js";
 
 interface Row {
@@ -15,6 +15,7 @@ interface Row {
   live_indicator_on: number;
   chat_source: "off" | "event";
   presenter_item_id: string | null;
+  follow_contest: number;
   updated_at: number;
 }
 
@@ -31,11 +32,22 @@ function toState(row: Row): EventLiveState {
     liveIndicatorOn: row.live_indicator_on === 1,
     chatSource: row.chat_source,
     presenterItemId: row.presenter_item_id,
+    followContest: row.follow_contest === 1,
     updatedAt: row.updated_at,
   };
 }
 
 export const eventLiveStateRepo = {
+  /** 発表中のエントリーが変わったとき、連動中の配信のページを 1 ページ目に戻す（リレーに届かない画面の拠り所）。
+   * 連動していなければ何もしない。変わった行があれば true（`live` の合図を送るため） */
+  async resetContestPage(eventId: string): Promise<boolean> {
+    const changed = await runCount(
+      "UPDATE event_live_state SET deck_page = 0, updated_at = ? WHERE event_id = ? AND follow_contest = 1",
+      Date.now(), eventId,
+    );
+    return changed > 0;
+  },
+
   /** Events whose live state shows this deck or live set. Read before deleting one, because
    * ON DELETE SET NULL changes those rows without the event id in hand (refetch signal `live`). */
   async eventIdsUsing(column: "deck_id" | "live_set_id", id: string): Promise<string[]> {
@@ -66,6 +78,7 @@ export const eventLiveStateRepo = {
       liveSetId: "live_set_id", activeSceneId: "active_scene_id", deckId: "deck_id",
       deckPage: "deck_page", bgmTrackId: "bgm_track_id", bgmPlaying: "bgm_playing",
       bgmVolume: "bgm_volume", liveIndicatorOn: "live_indicator_on", chatSource: "chat_source",
+      followContest: "follow_contest",
     };
     const fields = Object.entries(plain).filter(([, value]) => value !== undefined);
     const assignments = fields.map(([key]) => `${columns[key as keyof typeof plain]} = ?`);
@@ -79,6 +92,8 @@ export const eventLiveStateRepo = {
       // デッキを直接選んだ（「その他のスライド」）ら発表者の選択は外れる
       assignments.push("presenter_item_id = NULL");
     }
+    // コンテストの発表との連動を切り替えたら、ページは 1 ページ目から（別のスライドになるため）
+    if (plain.followContest !== undefined && plain.deckPage === undefined) assignments.push("deck_page = 0");
     if (assignments.length) {
       await eventRun(input.liveIndicatorOn !== undefined || input.chatSource !== undefined ? { ...writer, permission: "staff" } : writer,
         `UPDATE event_live_state SET ${assignments.join(", ")}, updated_at = ? WHERE event_id = ?`,

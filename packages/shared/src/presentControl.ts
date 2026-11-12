@@ -68,3 +68,17 @@ export const setPresentControlInput = z.object({
 });
 export type SetPresentControlInput = z.infer<typeof setPresentControlInput>;
 
+
+/** 秘密鍵を除いたページめくりの設定。見るだけの画面（配信画面など）に渡す */
+export type PresentPageViewConfig = Omit<PresentControlConfig, "secret">;
+
+/** 配信がコンテストの発表に連動しているときに配信状態へ付く情報（docs/contest-organizer-ux.md「配信との連動」）。
+ * スライドは運営が選んだもの、なければ発表中のエントリーの資料URLの /d/:slug。
+ * `present` は秘密鍵を含まない（配信画面は見るだけ） */
+export interface LiveContestDeck {
+  entryId: string | null;
+  entryName: string | null;
+  deckId: string | null;
+  slug: string | null;
+  present: PresentPageViewConfig | null;
+}

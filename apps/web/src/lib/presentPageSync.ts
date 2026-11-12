@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { finalizeEvent, getPublicKey, verifyEvent, type Event as NostrEvent, type EventTemplate } from "nostr-tools/pure";
-import { PRESENT_PAGE_KIND, type PresentControlConfig, type PresentPagePayload } from "@eventer/shared";
+import { PRESENT_PAGE_KIND, type LiveContestDeck, type PresentControlConfig, type PresentPagePayload } from "@eventer/shared";
 import { ChatRelayPool, randomLocalSigner, type ChatSigner } from "./nostrChat.js";
 
 /**
@@ -126,6 +126,8 @@ export function usePresentPageSync(
     transport.current = t;
     last.current = 0;
     known.current = false;
+    // 世代やスライドが変わったら、前の宛先で受け取ったページは使わない
+    setRemotePage(null);
     const unsub = t.subscribe(topic, Math.floor(Date.now() / 1000) - 60, (ev) => {
       const p = openPresentPageEvent(ev, cfg, slug);
       if (!p || p.at <= last.current) return;
@@ -177,5 +179,25 @@ export function usePresentPageSync(
     if (remotePage !== null) setPage(remotePage);
   }, [remotePage]);
 
-  return { page: clamp(page), go, holder, active, following: !holder && active ? following : true, follow };
+  return { page: clamp(page), go, holder, active, following: !holder && active ? following : true, follow, remotePage };
+}
+
+/**
+ * 配信画面・配信コントロールのプレビューで出すデッキのページ（docs/contest-organizer-ux.md「配信との連動」）。
+ * コンテストの発表と連動中は、発表のページめくり（kind 21080）を見るだけの側として受け取ったページ。
+ * まだ何も受け取っていない（リレーに届かない・発表者がまだめくっていない）ときは、運営が最後に保存したページ。
+ * 連動していなければ今までどおり保存したページ
+ */
+export function useLiveDeckPage(
+  state: { deckPage: number; followContest: boolean; contest?: LiveContestDeck | null } | undefined,
+  total: number,
+  makeTransport?: MakePresentTransport,
+): number {
+  // コンテスト形式でないイベントではサーバーが contest を返さない（連動しない）
+  const contest = state?.followContest ? state.contest ?? null : null;
+  const slug = contest?.slug ?? "";
+  const sync = usePresentPageSync(slug ? contest?.present : null, slug, total, makeTransport);
+  const last = Math.max(0, total - 1);
+  if (contest && sync.remotePage !== null) return Math.min(sync.remotePage, last);
+  return Math.min(state?.deckPage ?? 0, last);
 }

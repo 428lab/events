@@ -27,6 +27,8 @@ import { Slider, IconButton, Tooltip } from "@mui/material";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { useBgmTracks, useDeleteBgm, useUploadBgm } from "../api/bgmHooks.js";
 import {
+  liveDeckKey,
+  liveFollowingContest,
   useEventLiveDeck,
   useEventLiveSetContent,
   useEventLiveState,
@@ -47,6 +49,7 @@ import {
   PresenterSidePanel,
 } from "../components/PresenterSidePanel.js";
 import { LivePresenterSlides } from "../components/LivePresenterSlides.js";
+import { LiveContestFollow } from "../components/LiveContestFollow.js";
 import { usePresenterPanel } from "../lib/usePresenterPanel.js";
 
 /** 配信コントロールタブ（シーン切替・配信セット選択）。スマホでも操作できる */
@@ -60,7 +63,7 @@ export function LiveControlPage() {
   const { data: liveSet } = useEventLiveSetContent(id, state?.liveSetId);
   const { data: mySets } = useMyLiveSets();
   const { data: myDecks } = useMyDecks();
-  const { data: deck } = useEventLiveDeck(id, state?.deckId);
+  const { data: deck } = useEventLiveDeck(id, liveDeckKey(state));
   const { data: presenters } = useLivePresenters(id);
   const { data: bgmTracks } = useBgmTracks();
   const uploadBgm = useUploadBgm();
@@ -101,6 +104,8 @@ export function LiveControlPage() {
   };
 
   const isStaff = eventData?.myRole === "staff" || isAdmin;
+  // 連動が実際に効いているとき（スイッチがオン かつ コンテスト形式）だけ手動のスライド選択を隠す
+  const followingContest = Boolean(eventData?.event.contestMode) && liveFollowingContest(state);
   if (eventData && !isStaff) {
     return <Alert severity="warning">{t("studio.controlStaffOnly")}</Alert>;
   }
@@ -286,14 +291,23 @@ export function LiveControlPage() {
           </Typography>
         )}
 
+        {/* コンテストの発表と連動（docs/contest-organizer-ux.md「配信との連動」）。オンのあいだは
+            発表者とスライドの手動選択を出さない（スライドとページは進行画面と発表者が決める） */}
+        {/* コンテスト形式をやめても連動が残っていれば、オフに戻せるようにカードを出す */}
+        {(eventData?.event.contestMode || state?.followContest) && state && (
+          <LiveContestFollow eventId={id} state={state} deck={followingContest ? deck : null} onUpdate={(patch) => update.mutate(patch)} />
+        )}
+
         {/* 発表者とスライド (#571)。従来の自分のデッキ選択は「その他のスライド」として中にある */}
-        <LivePresenterSlides
-          state={state}
-          presenters={presenters}
-          deck={deck}
-          myDecks={myDecks}
-          onUpdate={(patch) => update.mutate(patch)}
-        />
+        {!followingContest && (
+          <LivePresenterSlides
+            state={state}
+            presenters={presenters}
+            deck={deck}
+            myDecks={myDecks}
+            onUpdate={(patch) => update.mutate(patch)}
+          />
+        )}
 
         {/* BGM */}
         <Stack spacing={1}>

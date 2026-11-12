@@ -31,6 +31,8 @@ import { eventStateRepo } from "../db/repositories/eventState.js";
 import { eventSignal } from "../lib/eventSignal.js";
 import { deferBackground } from "../runtime.js";
 import { presentControlConfig } from "../lib/presentControl.js";
+import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
+import { publishLive } from "./liveControl.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
 import { HTTPException } from "hono/http-exception";
 
@@ -247,6 +249,12 @@ scoringRoutes.patch(
     await eventStateRepo.setPresentControl(eventId, { control: input.control, deckSlug },
       { eventId, actorId: c.get("user").id, permission: "manager" });
     await publishEventState(eventId);
+    // 配信がコンテストに連動していれば、宛先（世代）やスライドが変わったので配信画面も取り直す。
+    // スライドを選び直したときはページを 1 ページ目に戻す
+    if ((await eventLiveStateRepo.getOrInit(eventId)).followContest) {
+      if (deckSlug !== undefined) await eventLiveStateRepo.resetContestPage(eventId);
+      await publishLive([eventId]);
+    }
     const state = await eventStateRepo.getOrInit(eventId);
     const presentControl = await presentControlConfig(eventId, state.presentingEntryId,
       { userId: c.get("user").id, isManager: true });
@@ -279,10 +287,15 @@ scoringRoutes.patch(
     if (presentingEntryId && !(await entriesRepo.findActive(eventId, presentingEntryId))) {
       return c.json({ error: "entry_not_found" }, 404);
     }
+    const before = await eventStateRepo.getOrInit(eventId);
     const state = await eventStateRepo.setPresenting(
       eventId,
       presentingEntryId, {eventId:c.req.param("id")!,actorId:c.get("user").id,permission:"manager"});
     await publishEventState(eventId);
+    // 配信がコンテストに連動していれば、発表が変わったら配信のスライドも変わる（ページは 1 ページ目から）
+    if (before.presentingEntryId !== state.presentingEntryId && (await eventLiveStateRepo.resetContestPage(eventId))) {
+      await publishLive([eventId]);
+    }
     return c.json(state);
   },
 );
