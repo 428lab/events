@@ -96,6 +96,12 @@ const ja = {
   submissionsHeading: "成果物一覧",
   submissionSlides: "資料",
   submissionCode: "コード",
+  /** イベントページの発表スライド（発表が終わってから参加者にも出る） */
+  presentedDecksHeading: "発表スライド",
+  presentedDecksStaffOnly: "運営だけに表示中（発表が終わると公開）",
+  presentedDeckOpen: "{{name}} のスライドを見る",
+  presentedDeckMeta: "{{title}}・{{n}}枚",
+  presentedDeckView: "見る",
 
   /** 参加者一覧 */
   participantsWithCount: "参加者一覧（{{n}}）",
@@ -229,6 +235,11 @@ const en: Record<keyof typeof ja, string> = {
   submissionsHeading: "Submissions",
   submissionSlides: "Slides",
   submissionCode: "Code",
+  presentedDecksHeading: "Presentation slides",
+  presentedDecksStaffOnly: "Organizers only (public after the presentations)",
+  presentedDeckOpen: "View {{name}}'s slides",
+  presentedDeckMeta: "{{title}} · {{n}} slides",
+  presentedDeckView: "View",
 
   participantsWithCount: "Participants ({{n}})",
   participantsOther: "Other",
