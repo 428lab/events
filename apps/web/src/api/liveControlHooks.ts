@@ -60,7 +60,13 @@ export function useLivePresenters(eventId: string) {
 /** 配信で映すデッキの見分け。コンテストに連動中は発表中のエントリーのデッキ（docs/contest-organizer-ux.md「配信との連動」） */
 export function liveDeckKey(state: EventLiveStateWithCutin | undefined): string | null {
   if (!state) return null;
-  return state.followContest ? (state.contest?.deckId ? `contest:${state.contest.deckId}` : null) : state.deckId;
+  return liveFollowingContest(state) ? (state.contest?.deckId ? `contest:${state.contest.deckId}` : null) : state.deckId;
+}
+
+/** 連動が実際に効いているか。サーバーはコンテスト形式でないイベントでは `contest` を返さない
+ * （スイッチが残っていても連動しない。オフに戻すまで手動のスライドを映す） */
+export function liveFollowingContest(state: { followContest: boolean; contest?: unknown } | undefined): boolean {
+  return Boolean(state?.followContest && state.contest);
 }
 
 /** 配信で映すスライド（デッキ）の中身。`deckKey` は liveDeckKey の値（変わったら取り直す） */

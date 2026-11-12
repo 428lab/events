@@ -100,3 +100,18 @@ it("連動はコンテスト形式のイベントだけ。運営以外は切り�
   const { event } = await (await api("/events", host, "POST", { title: "勉強会", venueType: "online", startsAt: Date.now() + 3600000, endsAt: Date.now() + 7200000 })).json() as { event: Event };
   expect((await api(`/events/${event.id}/live-state`, host, "PATCH", { followContest: true })).status).toBe(409);
 });
+
+it("連動中にコンテスト形式をやめても、連動はオフに戻せ、配信はコンテストのスライドを出さない", async () => {
+  const { host, eventId, red } = await setup();
+  expect((await presenting(eventId, host, red)).status).toBe(200);
+  expect((await api(`/events/${eventId}/live-state`, host, "PATCH", { followContest: true })).status).toBe(200);
+  expect(await liveDeck(eventId, host)).not.toBeNull();
+  expect((await api(`/events/${eventId}`, host, "PATCH", { contestMode: false })).status).toBe(200);
+  // スイッチが残っていても連動しない
+  expect(await liveDeck(eventId, host)).toBeNull();
+  expect((await liveState(eventId, host)).contest).toBeNull();
+  // オフに戻せる（オンにはできない）
+  expect((await api(`/events/${eventId}/live-state`, host, "PATCH", { followContest: false })).status).toBe(200);
+  expect((await liveState(eventId, host)).followContest).toBe(false);
+  expect((await api(`/events/${eventId}/live-state`, host, "PATCH", { followContest: true })).status).toBe(409);
+});

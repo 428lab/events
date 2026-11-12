@@ -28,6 +28,7 @@ import { useEvent, useIsAdmin } from "../api/hooks.js";
 import { useBgmTracks, useDeleteBgm, useUploadBgm } from "../api/bgmHooks.js";
 import {
   liveDeckKey,
+  liveFollowingContest,
   useEventLiveDeck,
   useEventLiveSetContent,
   useEventLiveState,
@@ -103,6 +104,8 @@ export function LiveControlPage() {
   };
 
   const isStaff = eventData?.myRole === "staff" || isAdmin;
+  // 連動が実際に効いているとき（スイッチがオン かつ コンテスト形式）だけ手動のスライド選択を隠す
+  const followingContest = Boolean(eventData?.event.contestMode) && liveFollowingContest(state);
   if (eventData && !isStaff) {
     return <Alert severity="warning">{t("studio.controlStaffOnly")}</Alert>;
   }
@@ -290,12 +293,13 @@ export function LiveControlPage() {
 
         {/* コンテストの発表と連動（docs/contest-organizer-ux.md「配信との連動」）。オンのあいだは
             発表者とスライドの手動選択を出さない（スライドとページは進行画面と発表者が決める） */}
-        {eventData?.event.contestMode && state && (
-          <LiveContestFollow eventId={id} state={state} deck={state.followContest ? deck : null} onUpdate={(patch) => update.mutate(patch)} />
+        {/* コンテスト形式をやめても連動が残っていれば、オフに戻せるようにカードを出す */}
+        {(eventData?.event.contestMode || state?.followContest) && state && (
+          <LiveContestFollow eventId={id} state={state} deck={followingContest ? deck : null} onUpdate={(patch) => update.mutate(patch)} />
         )}
 
         {/* 発表者とスライド (#571)。従来の自分のデッキ選択は「その他のスライド」として中にある */}
-        {!state?.followContest && (
+        {!followingContest && (
           <LivePresenterSlides
             state={state}
             presenters={presenters}

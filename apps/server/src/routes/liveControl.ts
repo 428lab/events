@@ -54,10 +54,16 @@ liveControlRoutes.get(
     const chatSource = state.chatSource === "event" && eventChatUsable(gateEvent(c)) ? "event" : "off";
     const signal = await eventSignal.source(eventId, "live", readAt);
     // コンテストの発表と連動中なら、発表中のスライドとページめくりの宛先（秘密鍵なし）を付ける
-    const contest = state.followContest ? await liveContestDeck(eventId, new URL(c.req.url).origin) : null;
+    const contest = followingContest(c, state) ? await liveContestDeck(eventId, new URL(c.req.url).origin) : null;
     return c.json({ ...state, chatSource, cutin, signal, contest } satisfies EventLiveStateWithCutin);
   },
 );
+
+/** 連動が実際に効いているか。コンテスト形式をやめたイベントでは、スイッチが残っていても連動しない
+ * （オフに戻せるように、PATCH は followContest:false をいつでも受ける） */
+function followingContest(c: Context<AppEnv>, state: { followContest: boolean }): boolean {
+  return state.followContest && gateEvent(c).contestMode;
+}
 
 /** 開いている配信画面・コントロールへ「配信状態が変わった・取り直して」を送る（topic `live`）。
  * 確定後に呼ぶ。待たない・失敗の通知もしない（D-POLL-MIN 第5段階 D1） */
@@ -83,7 +89,7 @@ liveControlRoutes.patch(
         return c.json({ error: "chat_unavailable" }, 403);
       }
     }
-    if (input.followContest !== undefined && !gateEvent(c).contestMode) {
+    if (input.followContest === true && !gateEvent(c).contestMode) {
       return c.json({ error: "not_contest" }, 409);
     }
     // 発表者の選択 (#571) ではデッキとページをサーバーが決める。クライアントのデッキ指定と混ぜない
@@ -178,7 +184,7 @@ liveControlRoutes.get(
     const eventId = c.req.param("id");
     const state = await eventLiveStateRepo.getOrInit(eventId);
     // 連動中は発表中のエントリーのスライド（events lab の公開スライドだけ。運営が選んだもの／成果物）
-    if (state.followContest) {
+    if (followingContest(c, state)) {
       const contest = await liveContestDeck(eventId, new URL(c.req.url).origin);
       return c.json({ deck: contest.deckId ? await decksRepo.findById(contest.deckId) : null });
     }

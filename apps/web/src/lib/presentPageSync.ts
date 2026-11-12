@@ -193,6 +193,7 @@ export function useLiveDeckPage(
   total: number,
   makeTransport?: MakePresentTransport,
 ): number {
+  // コンテスト形式でないイベントではサーバーが contest を返さない（連動しない）
   const contest = state?.followContest ? state.contest ?? null : null;
   const slug = contest?.slug ?? "";
   const sync = usePresentPageSync(slug ? contest?.present : null, slug, total, makeTransport);

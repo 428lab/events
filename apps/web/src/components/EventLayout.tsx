@@ -40,12 +40,12 @@ export function EventLayout() {
     const modeChanged = prevMode.current !== mode;
     prevMode.current = mode;
 
-    // 運営も、プレゼンが始まった瞬間に詳細・採点を見ていればプレゼン画面へ移す（オーナー決定 2026-11-13「全員」）。
-    // 進行画面や編集などの運営の作業ページからは動かさない。開いた瞬間（初回）も動かさない
-    // （プレゼン中に詳細へ戻れなくなるため）。表彰や退避の自動遷移も運営にはしない（今までどおり）
+    // 運営も、プレゼンが始まった瞬間に詳細を見ていればプレゼン画面へ移す（オーナー決定 2026-11-13「全員」）。
+    // 採点・進行・編集などの運営の作業ページからは動かさない（採点の未保存の下書き #669 を
+    // 黙って捨てないため）。開いた瞬間（初回）も動かさない（プレゼン中に詳細へ戻れなくなるため）。
+    // 表彰や退避の自動遷移も運営にはしない（今までどおり）
     if (isStaff) {
-      const viewing = location.pathname === `/events/${id}` || location.pathname === `/events/${id}/`
-        || location.pathname.endsWith("/scoring");
+      const viewing = location.pathname === `/events/${id}` || location.pathname === `/events/${id}/`;
       if (!firstLoad && modeChanged && mode === "presentation" && viewing) {
         navigate(`/events/${id}/present`, { replace: true });
       }
