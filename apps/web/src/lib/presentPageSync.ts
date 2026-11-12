@@ -41,6 +41,8 @@ export function openPresentPageEvent(
   if (!p || p.slug !== slug) return null;
   if (typeof p.page !== "number" || !Number.isInteger(p.page) || p.page < 0 || p.page > MAX_PAGE) return null;
   const at = typeof p.at === "number" && Number.isSafeInteger(p.at) ? p.at : ev.created_at * 1000;
+  // 先の時刻を付けた送信で、その世代を固めさせない（受け取った側の last がそれ以上進めなくなる）
+  if (at > Date.now() + 60_000) return null;
   return { slug, page: p.page, at };
 }
 
@@ -104,6 +106,9 @@ export function usePresentPageSync(
   const transport = useRef<PresentPageTransport | null>(null);
   const pageRef = useRef(0);
   pageRef.current = page;
+  // 今のページを知っているか（自分でめくった・受け取った）。開いたばかりのめくる側が
+  // 何も知らないまま 1 ページ目を送り直し、全員を最初に戻すのを防ぐ
+  const known = useRef(false);
   const followingRef = useRef(true);
   followingRef.current = following;
   const clamp = useCallback((p: number) => Math.min(Math.max(p, 0), Math.max(total - 1, 0)), [total]);
@@ -120,10 +125,12 @@ export function usePresentPageSync(
     const t = makeTransport(relayKey!.split(" "), secret);
     transport.current = t;
     last.current = 0;
+    known.current = false;
     const unsub = t.subscribe(topic, Math.floor(Date.now() / 1000) - 60, (ev) => {
       const p = openPresentPageEvent(ev, cfg, slug);
       if (!p || p.at <= last.current) return;
       last.current = p.at;
+      known.current = true;
       setRemotePage(p.page);
       // 自分がめくる側なら、ほかのメンバーがめくったページにも合わせる（チームの誰がめくってもよい）
       if (secret || followingRef.current) setPage(p.page);
@@ -140,6 +147,7 @@ export function usePresentPageSync(
     if (!holder || !t || !topic || version === undefined) return;
     const at = Math.max(Date.now(), last.current + 1);
     last.current = at;
+    known.current = true;
     void t.publish(sealPresentPage({ slug, page: p, at }, { topic, version }));
   }, [holder, topic, version, slug]);
 
@@ -148,7 +156,7 @@ export function usePresentPageSync(
     if (!holder) return;
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
-      if (typeof document === "undefined" || !document.hidden) send(pageRef.current);
+      if (known.current && (typeof document === "undefined" || !document.hidden)) send(pageRef.current);
       timer = setTimeout(tick, RESEND_MS);
     };
     timer = setTimeout(tick, RESEND_MS);

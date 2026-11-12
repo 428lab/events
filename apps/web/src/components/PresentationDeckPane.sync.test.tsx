@@ -63,3 +63,19 @@ it("めくる人の画面は、めくるたびにページを1回送る。鍵を
   expect(published[0]).toMatchObject({ kind: 21080, tags: [["t", "t1"], ["v", "3"], ["-"]] });
   expect(JSON.parse(published[0]!.content)).toMatchObject({ slug: "abc", page: 1 });
 });
+
+it("開いたばかりのめくる人の画面は、今のページを知るまで送り直さない（途中で開いても全員を1ページ目に戻さない）", () => {
+  vi.useFakeTimers();
+  try {
+    draw({ ...base, secret: toHex(sk) });
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(published).toHaveLength(0);
+    act(() => deliver(signed(2)));
+    expect(pageText()).toBe("3 / 3");
+    act(() => { vi.advanceTimersByTime(3_500); });
+    expect(published.length).toBeGreaterThan(0);
+    expect(JSON.parse(published.at(-1)!.content)).toMatchObject({ page: 2 });
+  } finally {
+    vi.useRealTimers();
+  }
+});
