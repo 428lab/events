@@ -14,7 +14,7 @@ import { eventViewsRepo } from "../db/repositories/eventViews.js";
 const VISITOR_COOKIE = "ev_vid";
 
 /** JST の YYYY-MM-DD */
-function jstDay(): string {
+export function jstDay(): string {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
@@ -36,6 +36,23 @@ function parseSource(ref: unknown): string {
   } catch {
     return "direct";
   }
+}
+
+/** 閲覧の重複を日ごとに除くための visitor cookie（無ければ発行）。生IPは使わない。
+ * イベントの閲覧とスライドの表示回数 (deck_view_unique) で共有する */
+export function visitorId(c: Context<AppEnv>): string {
+  let vid = getCookie(c, VISITOR_COOKIE);
+  if (!vid) {
+    vid = crypto.randomUUID();
+    setCookie(c, VISITOR_COOKIE, vid, {
+      httpOnly: true,
+      sameSite: "Lax",
+      secure: env.isProd,
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+  }
+  return vid;
 }
 
 /** 計測ビーコン（公開・未認証可）。eventRoutes のブランケット requireAuth より前に登録 */
@@ -68,19 +85,7 @@ export async function recordEventView(c: Context<AppEnv>) {
   const country =
     (c.req.raw as { cf?: { country?: string } }).cf?.country ?? "XX";
 
-  // visitor cookie（無ければ発行）
-  let vid = getCookie(c, VISITOR_COOKIE);
-  if (!vid) {
-    vid = crypto.randomUUID();
-    setCookie(c, VISITOR_COOKIE, vid, {
-      httpOnly: true,
-      sameSite: "Lax",
-      secure: env.isProd,
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365,
-    });
-  }
-
+  const vid = visitorId(c);
   await eventViewsRepo.record(eventId, jstDay(), source, country, vid,user?.id??null);
   return c.body(null, 204);
 }

@@ -97,6 +97,8 @@ const OPEN_ROUTES = new Set<string>([
   "GET /api/public/communities/:slug/events",
   "GET /api/public/communities/:slug/members",
   "GET /api/public/decks/:slug",
+  // スライドの表示回数のビーコン（docs/slide-editor.md「表示回数」）。数えるだけで中身は返さない
+  "POST /api/public/decks/:slug/view",
   "GET /api/public/event-requests",
   "GET /api/public/event-requests/:id",
   "GET /api/public/event-requests/by-slug/:slug",
@@ -107,6 +109,8 @@ const OPEN_ROUTES = new Set<string>([
   "GET /api/public/events/search",
   "GET /api/public/users/:handle",
   "GET /api/public/users/:handle/photos",
+  // プロフィールの「スライド」タブ。本人が載せたデッキだけ（docs/profile-tabs.md「スライド」）
+  "GET /api/public/users/:handle/decks",
   "GET /api/public/venues",
   "GET /api/public/venues/:id",
   "GET /api/public/venues/wanted",
@@ -172,7 +176,7 @@ const OPEN_ROUTES = new Set<string>([
 
 /** `OPEN_ROUTES` の件数。表を1行足すとここも動かすことになるので、
  * 「テストを通すためにこっそり1本開ける」が差分に必ず現れる */
-const EXPECTED_OPEN_COUNT = 92; // +1: イベントページの発表スライド (presented-decks)。+4: AI エージェントの入口3本と agent.md (docs/agent-deck-token.md)
+const EXPECTED_OPEN_COUNT = 94; // +2: プロフィールのスライド一覧とスライドの表示回数ビーコン。 +1: イベントページの発表スライド (presented-decks)。+4: AI エージェントの入口3本と agent.md (docs/agent-deck-token.md)
 
 const UUID = "00000000-0000-4000-8000-000000000000";
 const probe = (p: string) =>

@@ -8,6 +8,8 @@ import { usersRepo } from "../db/repositories/users.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { decksRepo } from "../db/repositories/decks.js";
+import { profileDecksRepo } from "../db/repositories/profileDecks.js";
+import { jstDay, visitorId } from "./analytics.js";
 import { awardsRepo } from "../db/repositories/awards.js";
 import { eventPhotosRepo } from "../db/repositories/eventPhotos.js";
 import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
@@ -30,6 +32,15 @@ publicRoutes.get("/decks/:slug", async (c) => {
   const deck = await decksRepo.findBySlug(c.req.param("slug"));
   if (!deck) return c.json({ error: "not_found" }, 404);
   return c.json(deck);
+});
+
+/** 公開: スライドの表示回数を数えるビーコン（ビューア /d/:slug を開いたとき1回。未ログイン可）。
+ * 同じ訪問者は1日1回。持ち主・チームのメンバーの閲覧は数えない。応答は今の表示回数 */
+publicRoutes.post("/decks/:slug/view", async (c) => {
+  const slug = c.req.param("slug");
+  const viewer = await currentUser(c);
+  await profileDecksRepo.recordView(slug, jstDay(), visitorId(c), viewer?.id ?? null);
+  return c.json({ views: await profileDecksRepo.viewsBySlug(slug) });
 });
 
 /** 公開コミュニティ一覧（未ログイン可） */
@@ -147,6 +158,24 @@ publicRoutes.get("/users/:handle", async (c) => {
   if (!current) return c.json({ error: "not_found" }, 404);
   if (current.cardImageGeneration !== user.cardImageGeneration) return c.json({ error: "card_generation_changed" }, 409);
   return c.json(payload);
+});
+
+/** 公開: プロフィールの「スライド」タブ（docs/profile-tabs.md「スライド」。未ログイン可）。
+ * 本人が載せたデッキだけ（オプトイン。「自動で載せる」をオンにしていれば、載せないにしたもの以外）。
+ * 本人が見ているときは「自動で載せる」の状態も返す */
+publicRoutes.get("/users/:handle/decks", async (c) => {
+  const handle = c.req.param("handle");
+  const user =
+    (await usersRepo.findByUsername(handle)) ??
+    (await usersRepo.findById(handle));
+  if (!user) return c.json({ error: "not_found" }, 404);
+  const viewer = await currentUser(c);
+  const decks = await profileDecksRepo.listShown(user.id);
+  return c.json(
+    viewer?.id === user.id
+      ? { decks, autoShow: await profileDecksRepo.autoShow(user.id) }
+      : { decks },
+  );
 });
 
 /** 公開: ユーザーが公開設定イベントに投稿した写真ギャラリー（未ログイン可）。

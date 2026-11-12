@@ -1,10 +1,11 @@
 import { Hono } from "hono";
-import { createDeckInput, updateDeckInput } from "@eventer/shared";
-import type { CreateDeckInput, UpdateDeckInput } from "@eventer/shared";
+import { createDeckInput, setDeckProfileInput, setProfileDeckAutoInput, updateDeckInput } from "@eventer/shared";
+import type { CreateDeckInput, SetDeckProfileInput, SetProfileDeckAutoInput, UpdateDeckInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
 import { valid, zValidator } from "../lib/validator.js";
 import { decksRepo } from "../db/repositories/decks.js";
+import { profileDecksRepo } from "../db/repositories/profileDecks.js";
 import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
 import { publishLive } from "./liveControl.js";
 import { putDeckImage } from "./deckImages.js";
@@ -21,6 +22,21 @@ deckRoutes.route("/agent-tokens", deckAgentTokenRoutes);
 
 /** スライド画像アップロード（owner） */
 deckRoutes.put("/:id/images", putDeckImage);
+
+/** 「スライドをプロフィールに自動で載せる」（docs/slide-editor.md「プロフィールに載せる」）。
+ * オンなら、載せないにしたもの以外の、載せられるデッキすべて（これから作るものも）が載る */
+deckRoutes.put("/profile-auto", zValidator("json", setProfileDeckAutoInput), async (c) => {
+  await profileDecksRepo.setAutoShow(c.get("user").id, valid<SetProfileDeckAutoInput>(c, "json").autoShow);
+  return c.json({ ok: true });
+});
+
+/** このデッキを自分のプロフィールに載せる／載せない。載せられるのは自分の個人のデッキと、
+ * 自分がメンバーのチームのスライド（公開イベントのもの）。それ以外は 403 */
+deckRoutes.put("/:id/profile", zValidator("json", setDeckProfileInput), async (c) => {
+  const ok = await profileDecksRepo.setShown(c.get("user").id, c.req.param("id"), valid<SetDeckProfileInput>(c, "json").show);
+  if (!ok) return c.json({ error: "forbidden" }, 403);
+  return c.json({ ok: true });
+});
 
 deckRoutes.get("/mine", async (c) => {
   return c.json({ decks: await decksRepo.listByOwner(c.get("user").id) });

@@ -4,6 +4,7 @@ import type {
   Deck,
   DeckSummary,
   Entry,
+  ProfileDecksResponse,
   UpdateDeckInput,
 } from "@eventer/shared";
 import { ApiError, api } from "./client.js";
@@ -198,5 +199,50 @@ export function useRevokeDeckAgentToken() {
   return useMutation({
     mutationFn: (id: string) => api.del(`/decks/agent-tokens/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["deckAgentTokens"] }),
+  });
+}
+
+/** プロフィールの「スライド」タブ（docs/profile-tabs.md「スライド」）。本人が載せたデッキだけ */
+export function useProfileDecks(handle: string, enabled = true) {
+  return useQuery({
+    queryKey: ["profileDecks", handle],
+    enabled: Boolean(handle) && enabled,
+    queryFn: () => api.get<ProfileDecksResponse>(`/public/users/${encodeURIComponent(handle)}/decks`),
+  });
+}
+
+/** このデッキを自分のプロフィールに載せる／載せない。一覧とプロフィールを取り直す */
+export function useSetDeckProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ deckId, show }: { deckId: string; show: boolean }) =>
+      api.put(`/decks/${deckId}/profile`, { show }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["decks"] });
+      void qc.invalidateQueries({ queryKey: ["profileDecks"] });
+    },
+  });
+}
+
+/** 「スライドをすべて自動で載せる」 */
+export function useSetProfileDeckAuto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (autoShow: boolean) => api.put("/decks/profile-auto", { autoShow }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["decks"] });
+      void qc.invalidateQueries({ queryKey: ["profileDecks"] });
+    },
+  });
+}
+
+/** 公開ビューアを開いたら表示回数を1回数え、今の回数を返す（同じ訪問者は1日1回。持ち主・メンバーは数えない） */
+export function useDeckViewCount(slug: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["deckViews", slug],
+    enabled: Boolean(slug) && enabled,
+    staleTime: Infinity,
+    retry: false,
+    queryFn: async () => (await api.post<{ views: number }>(`/public/decks/${slug}/view`, {})).views,
   });
 }

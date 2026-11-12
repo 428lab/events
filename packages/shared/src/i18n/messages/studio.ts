@@ -113,6 +113,9 @@ const ja = {
    *  「{{time}} 更新」**と元から並びが違う。日本語の綴りを変えないので
    *  キーを分けてある（英語はどちらも "Updated …"） */
   updatedAt: "更新 {{time}}",
+  /** スライドの一覧・編集画面（docs/slide-editor.md「プロフィールに載せる」「表示回数」） */
+  deckProfileShow: "プロフィールに載せる",
+  deckViews: "{{n}}回表示",
   updatedAtSuffix: "{{time}} 更新",
 
   addPage: "＋ ページ追加",
@@ -546,6 +549,8 @@ const en: Record<keyof typeof ja, string> = {
   pageCountOne: "{{n}} page",
   pageCount: "{{n}} pages",
   updatedAt: "Updated {{time}}",
+  deckProfileShow: "Show on my profile",
+  deckViews: "{{n}} views",
   updatedAtSuffix: "Updated {{time}}",
 
   addPage: "+ Add page",

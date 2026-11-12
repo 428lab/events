@@ -225,7 +225,7 @@ const UNRESOLVED: Array<{ column: Column; breaks: string }> = [];
  * 増減したらこの数を直すこと。**直す前に、増えた列が mergeUsers で
  * 扱われているかを必ず読むこと。**
  */
-const EXPECTED_USER_COLUMNS = 65; // #523 までの 55 本 + #556: 割り勘の 4 表で 7 本 + D-EVENT-CONTACT: inquiry_message.author_id + deck_agent_token.owner_id + deck.last_saved_by（チームのスライド）
+const EXPECTED_USER_COLUMNS = 67; // #523 までの 55 本 + #556: 割り勘の 4 表で 7 本 + D-EVENT-CONTACT: inquiry_message.author_id + deck_agent_token.owner_id + deck.last_saved_by（チームのスライド） + profile_deck.user_id / profile_setting.user_id（プロフィールのスライド）
 
 /**
  * `mergeUsers` が扱う `table.column` の数（user 参照でない列も含む生の抽出数）。
@@ -236,7 +236,7 @@ const EXPECTED_USER_COLUMNS = 65; // #523 までの 55 本 + #556: 割り勘の 
 // LEDGER_PARTY_REASSIGN_SQL +4（event_expense_share.user_id / .weight（重みの足し込み）/
 // event_settlement_done.from_user_id / .to_user_id）
 // + event_member.assigned_slot_id（スタッフ引き継ぎで申し込んでいた枠を並びとして残す代入。枠の参照で user 列ではない）
-const EXPECTED_HANDLED_PAIRS = 72; // #523 までの 60 組 + #556 の 8 組 + D-EVENT-CONTACT の 1 組 + deck_agent_token.owner_id + event_member.assigned_slot_id + deck.last_saved_by
+const EXPECTED_HANDLED_PAIRS = 74; // #523 までの 60 組 + #556 の 8 組 + D-EVENT-CONTACT の 1 組 + deck_agent_token.owner_id + event_member.assigned_slot_id + deck.last_saved_by + profile_deck.user_id + profile_setting.user_id
 
 describe("アカウント統合の対象列の走査 (#396)", () => {
   const body = mergeUsersBody(Object.values(mergeSources)[0]!);
