@@ -32,7 +32,7 @@ const { useEventState, useEventStateSignal, useScoreProgress, useScoreSummary, u
 
 const source = (topic: string): EventSignalSource => ({ kind: EVENT_SIGNAL_KIND, pubkey: "5e".repeat(32), topic, rev: 1, relays: ["wss://relay.example"] });
 const eventState = (mode: EventState["mode"]): EventState => ({
-  eventId: "e-1", mode, presentingEntryId: null, scoringLocked: false, awardsRevealCursor: null, updatedAt: 1, signal: source("state"),
+  eventId: "e-1", mode, presentingEntryId: null, scoringStarted: false, scoringLocked: false, awardsRevealCursor: null, updatedAt: 1, signal: source("state"),
 });
 
 function setup() {

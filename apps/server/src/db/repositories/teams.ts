@@ -24,10 +24,10 @@ const assert = (condition: string, code: string, args: unknown[]): Statement => 
 });
 
 const TEAM_MODE = "EXISTS (SELECT 1 FROM event WHERE id = ? AND contest_mode = 1 AND participation_type = 'team')";
-/** 採点の締切（event_state.scoring_locked）前で、まだ誰の点も入っていない。
- * 参加者がチームを選べるのはこの間だけ（運営はいつでも） */
-const BEFORE_SCORING = `NOT EXISTS (SELECT 1 FROM event_state WHERE event_id = ? AND scoring_locked = 1)
-  AND NOT EXISTS (SELECT 1 FROM score WHERE event_id = ?)`;
+/** 運営が採点を開始する前（event_state.scoring_started = 0）で、締め切ってもいない。
+ * 参加者がチームを選べるのはこの間だけ（運営はいつでも）。運営が「採点結果をすべて消す」と
+ * 未開始に戻るので、また選べる。引数は eventId だけ */
+const BEFORE_SCORING = "NOT EXISTS (SELECT 1 FROM event_state WHERE event_id = ? AND (scoring_started = 1 OR scoring_locked = 1))";
 const TEAM_OF_EVENT = "EXISTS (SELECT 1 FROM entry WHERE id = ? AND event_id = ? AND kind = 'team')";
 /** チームに入れる人: 参加確定の参加者か、確定の運営（運営もチームで参加できる。#536 のチーム版） */
 const CONFIRMED_TEAM_CANDIDATE = `EXISTS (SELECT 1 FROM event_member m JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
@@ -78,7 +78,7 @@ async function teamWrite(eventId: string, actorId: string, permission: "staff" |
 
 /** 運営が自分自身のチームの所属を変えるときだけ、採点前であることを確かめる */
 const selfLock = (eventId: string, userId: string | null, actorId: string): Statement[] =>
-  userId === actorId ? [assert(BEFORE_SCORING, "team_locked", [eventId, eventId])] : [];
+  userId === actorId ? [assert(BEFORE_SCORING, "team_locked", [eventId])] : [];
 
 /** 本人をそのイベントのチームから外す文（チームを移る・抜けるの共通部分） */
 const leaveTeamsSql = (eventId: string, userId: string): Statement => ({
@@ -161,7 +161,7 @@ export const teamsRepo = {
       assert(TEAM_MODE, "team_mode_off", [eventId]),
       assert(TEAM_OF_EVENT, "team_not_found", [teamId, eventId]),
       assert(CONFIRMED_TEAM_CANDIDATE, "not_participant", [eventId, userId]),
-      assert(BEFORE_SCORING, "team_locked", [eventId, eventId]),
+      assert(BEFORE_SCORING, "team_locked", [eventId]),
       assert(HAS_ROOM, "team_full", [teamId, teamId, userId, teamId]),
       ...this.placeStatements(eventId, teamId, userId),
     ]);
@@ -171,7 +171,7 @@ export const teamsRepo = {
   async leave(eventId: string, userId: string) {
     await teamWrite(eventId, userId, "registered", [
       assert(TEAM_MODE, "team_mode_off", [eventId]),
-      assert(BEFORE_SCORING, "team_locked", [eventId, eventId]),
+      assert(BEFORE_SCORING, "team_locked", [eventId]),
       leaveTeamsSql(eventId, userId),
     ]);
   },
@@ -213,7 +213,7 @@ export const teamsRepo = {
     await teamWrite(eventId, userId, "registered", [
       assert(TEAM_MODE, "team_mode_off", [eventId]),
       assert(IS_MY_TEAM_LEADER, "not_team_leader", [userId, eventId]),
-      assert(BEFORE_SCORING, "team_locked", [eventId, eventId]),
+      assert(BEFORE_SCORING, "team_locked", [eventId]),
       { sql: `UPDATE entry SET name = COALESCE(?, name), description = COALESCE(?, description)
           WHERE id IN (${MY_TEAM})`,
         args: [input.name ?? null, input.description ?? null, userId, eventId] },
@@ -226,7 +226,7 @@ export const teamsRepo = {
       assert(TEAM_MODE, "team_mode_off", [eventId]),
       assert(IS_MY_TEAM_LEADER, "not_team_leader", [userId, eventId]),
       assert(IN_MY_TEAM("?"), "not_team_member", [toUserId, userId, eventId]),
-      assert(BEFORE_SCORING, "team_locked", [eventId, eventId]),
+      assert(BEFORE_SCORING, "team_locked", [eventId]),
       { sql: `UPDATE entry_member SET is_leader = CASE WHEN user_id = ? THEN 1 ELSE 0 END
           WHERE entry_id IN (${MY_TEAM})`,
         args: [toUserId, userId, eventId] },
@@ -240,7 +240,7 @@ export const teamsRepo = {
       assert(TEAM_MODE, "team_mode_off", [eventId]),
       assert(IN_MY_TEAM("?"), "not_team_member", [userId, userId, eventId]),
       assert(MY_TEAM_HAS_NO_LEADER, "team_has_leader", [userId, eventId]),
-      assert(BEFORE_SCORING, "team_locked", [eventId, eventId]),
+      assert(BEFORE_SCORING, "team_locked", [eventId]),
       { sql: `UPDATE entry_member SET is_leader = CASE WHEN user_id = ? THEN 1 ELSE 0 END
           WHERE entry_id IN (${MY_TEAM})`,
         args: [userId, userId, eventId] },

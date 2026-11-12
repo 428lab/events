@@ -58,32 +58,34 @@ it.each(['public','private'])('scoring keeps participant/judge/staff non-cancele
  const entry=crypto.randomUUID(),criterion=crypto.randomUUID();
  await sql("INSERT INTO entry(id,event_id,name,created_at) VALUES(?,?,'Other entry',1)",entry,e.id);
  await sql("INSERT INTO scoring_criterion(id,event_id,name) VALUES(?,?,'Quality')",criterion,e.id);
- const score={entryId:entry,criterionId:criterion,value:3},path=`/api/events/${e.id}/scores`;
+ await sql("INSERT INTO event_state(event_id,mode,scoring_locked,scoring_started,updated_at) VALUES(?,'normal',0,1,1) ON CONFLICT(event_id) DO UPDATE SET scoring_started=1",e.id);
+ const batch=({entryId,criterionId,value}:{entryId:string;criterionId:string;value:number})=>({entryId,scores:[{criterionId,value}]});
+ const score={entryId:entry,criterionId:criterion,value:3},path=`/api/events/${e.id}/scores/batch`;
  for(const role of ['participant','judge','staff'])for(const status of ['confirmed','pending','waitlist']){
   await sql('UPDATE event_member SET role=?,status=? WHERE event_id=? AND user_id=?',role,status,e.id,participant.id);
-  expect((await req(path,participant,'PUT',score)).status).toBe(200);
+  expect((await req(path,participant,'PUT',batch(score))).status).toBe(200);
  }
  expect((await env.DB.prepare('SELECT value FROM score WHERE event_id=? AND judge_user_id=?').bind(e.id,participant.id).first())!.value).toBe(3);
  for(const [role,status] of [['observer','confirmed'],['participant','canceled']]){
   await sql('UPDATE event_member SET role=?,status=? WHERE event_id=? AND user_id=?',role,status,e.id,participant.id);
-  expect((await req(path,participant,'PUT',{...score,value:1})).status).toBe(403);
+  expect((await req(path,participant,'PUT',batch({...score,value:1}))).status).toBe(403);
  }
  await sql("UPDATE event_member SET role='participant',status='confirmed' WHERE event_id=? AND user_id=?",e.id,participant.id);
- expect((await req(path,outsider,'PUT',score)).status).toBe(visibility==='private'?404:403);
+ expect((await req(path,outsider,'PUT',batch(score))).status).toBe(visibility==='private'?404:403);
  const other=await event(host,visibility),otherEntry=crypto.randomUUID(),otherCriterion=crypto.randomUUID();
  await sql("INSERT INTO entry(id,event_id,name,created_at) VALUES(?,?,'Foreign entry',1)",otherEntry,other.id);
  await sql("INSERT INTO scoring_criterion(id,event_id,name) VALUES(?,?,'Foreign criterion')",otherCriterion,other.id);
- expect((await req(path,participant,'PUT',{...score,entryId:otherEntry})).status).toBe(404);
- expect((await req(path,participant,'PUT',{...score,criterionId:otherCriterion})).status).toBe(404);
+ expect((await req(path,participant,'PUT',batch({...score,entryId:otherEntry}))).status).toBe(404);
+ expect((await req(path,participant,'PUT',batch({...score,criterionId:otherCriterion}))).status).toBe(404);
  await sql('INSERT INTO entry_member(id,entry_id,user_id) VALUES(?,?,?)',crypto.randomUUID(),entry,participant.id);
- expect((await req(path,participant,'PUT',score)).status).toBe(403);
+ expect((await req(path,participant,'PUT',batch(score))).status).toBe(403);
  await sql('DELETE FROM entry_member WHERE entry_id=?',entry);
  await sql('UPDATE event_state SET scoring_locked=1 WHERE event_id=?',e.id);
- expect((await req(path,participant,'PUT',score)).status).toBe(409);
+ expect((await req(path,participant,'PUT',batch(score))).status).toBe(409);
  await sql('UPDATE event_state SET scoring_locked=0 WHERE event_id=?',e.id);
  if(visibility==='private'){
   await sql("UPDATE event_access_invite SET status='revoked' WHERE event_id=? AND user_id=?",e.id,participant.id);
-  expect((await req(path,participant,'PUT',{...score,value:1})).status).toBe(404);
+  expect((await req(path,participant,'PUT',batch({...score,value:1}))).status).toBe(404);
  }
  expect((await env.DB.prepare('SELECT value FROM score WHERE event_id=? AND judge_user_id=?').bind(e.id,participant.id).first())!.value).toBe(3);
 });

@@ -14,7 +14,7 @@ import {
   useEventState,
   useMyScores,
 } from "../api/scoringHooks.js";
-import { ScoringPanel } from "../components/ScoringPanel.js";
+import { ScoringPanel, useUnsavedScores } from "../components/ScoringPanel.js";
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 
 export function ScoringPage() {
@@ -27,6 +27,7 @@ export function ScoringPage() {
   const { data: entries } = useEventEntries(id);
   const { data: criteria } = useCriteria(id);
   const { data: myScores } = useMyScores(id);
+  const onDirtyChange = useUnsavedScores();
 
   if (!eventData || !state || !entries || !criteria) {
     return <Typography>{t("common.loading")}</Typography>;
@@ -50,12 +51,16 @@ export function ScoringPage() {
       <Typography variant="h5" fontWeight={700}>
         {t("eventDetail.scoring")}
       </Typography>
+      {!state.scoringStarted && (
+        <Alert severity="info">{t("eventRun.scoringNotStartedNotice")}</Alert>
+      )}
       {state.scoringLocked && (
         <Alert severity="warning">{t("eventRun.scoringLockedNotice")}</Alert>
       )}
       {entries.map((entry) => {
         const isSelf = Boolean(me && entry.memberUserIds.includes(me.id));
         const disabled =
+          !state.scoringStarted ||
           state.scoringLocked ||
           (!eventData.event.aggregateSelfEntry && isSelf);
         return (
@@ -80,6 +85,8 @@ export function ScoringPage() {
                 criteria={criteria}
                 myScores={myScores ?? []}
                 disabled={disabled}
+                disabledNote={!state.scoringStarted ? t("eventRun.scoringNotStartedNotice") : undefined}
+                onDirtyChange={onDirtyChange}
               />
             </CardContent>
           </Card>

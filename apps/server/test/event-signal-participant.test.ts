@@ -138,7 +138,8 @@ describe("scores", () => {
 
     const entryId = crypto.randomUUID();
     await sql("INSERT INTO entry (id, event_id, kind, name, created_at) VALUES (?, ?, 'individual', 'Entry', 1)", entryId, eventId).run();
-    expect((await json("PUT", `/events/${eventId}/scores`, member.cookie, { entryId, criterionId: criterion.id, value: 3 })).status).toBe(200);
+    await sql("INSERT INTO event_state (event_id, mode, scoring_locked, scoring_started, updated_at) VALUES (?, 'normal', 0, 1, 1) ON CONFLICT(event_id) DO UPDATE SET scoring_started = 1", eventId).run();
+    expect((await json("PUT", `/events/${eventId}/scores/batch`, member.cookie, { entryId, scores: [{ criterionId: criterion.id, value: 3 }] })).status).toBe(200);
     await settled(sent, 2);
     expect(sent[1].topics).toEqual(only);
 

@@ -113,6 +113,30 @@ it("参加者はチームの作成・変更・削除・リーダー指定・割�
   expect(await error(await setLeader(id, host, red, viewer.id))).toBe("not_participant");
 });
 
+it("採点は運営が開始するまで受け付けない。開始後は1つのエントリーの点数を1回でまとめて保存し、締切で止まる", async () => {
+  const { host, id } = await setup();
+  const a = await participant(id), judge = await participant(id);
+  expect((await teamMode(id, host, true)).status).toBe(200);
+  const red = await createTeam(id, host, "赤");
+  expect((await join(id, a, red)).status).toBe(200);
+  const quality = await criterion(id, host), idea = await criterion(id, host);
+  const save = () => request(`/${id}/scores/batch`, judge, "PUT", { entryId: red, scores: [{ criterionId: quality, value: 4 }, { criterionId: idea, value: 2 }] });
+  // 開始前: プレゼンの前に採点できない。開始前は参加者もチームを移れる
+  expect(await error(await save())).toBe("scoring_not_started");
+  expect(await sql("SELECT 1 FROM score WHERE event_id=?", id).first()).toBeNull();
+  expect((await leave(id, a)).status).toBe(200);
+  expect((await request(`/${id}/state/scoring-start`, a, "POST")).status).toBe(403);
+  const started = await request(`/${id}/state/scoring-start`, host, "POST");
+  expect(await started.json()).toMatchObject({ scoringStarted: true, scoringLocked: false });
+  // 開始後: 2項目を1回で保存する
+  expect((await save()).status).toBe(200);
+  expect((await sql("SELECT criterion_id, value FROM score WHERE event_id=? ORDER BY value", id).all()).results)
+    .toEqual([{ criterion_id: idea, value: 2 }, { criterion_id: quality, value: 4 }]);
+  // 締切後は保存できない
+  expect((await request(`/${id}/state/scoring-lock`, host, "POST")).status).toBe(200);
+  expect(await error(await save())).toBe("scoring_locked");
+});
+
 it("採点が始まったら参加者は動けない。運営はいつでも動かせる。自分のチームは採点できない", async () => {
   const { host, id } = await setup();
   const a = await participant(id), b = await participant(id), judge = await participant(id);
@@ -122,13 +146,14 @@ it("採点が始まったら参加者は動けない。運営はいつでも動�
   expect((await join(id, b, blue)).status).toBe(200);
   expect((await join(id, judge, blue)).status).toBe(200);
   const criterionId = await criterion(id, host);
+  expect((await request(`/${id}/state/scoring-start`, host, "POST")).status).toBe(200);
   // 自分のチームは採点できない（採点者がメンバーに含まれる）
-  expect(await error(await request(`/${id}/scores`, b, "PUT", { entryId: blue, criterionId, value: 5 }))).toBe("self_scoring_forbidden");
-  expect((await request(`/${id}/scores`, judge, "PUT", { entryId: red, criterionId, value: 4 })).status).toBe(200);
+  expect(await error(await request(`/${id}/scores/batch`, b, "PUT", { entryId: blue, scores: [{ criterionId, value: 5 }] }))).toBe("self_scoring_forbidden");
+  expect((await request(`/${id}/scores/batch`, judge, "PUT", { entryId: red, scores: [{ criterionId, value: 4 }] })).status).toBe(200);
   // 使っていない種類（個人エントリー）は採点対象にならない
   const individual = (await sql("SELECT id FROM entry WHERE event_id=? AND kind='individual' LIMIT 1", id).first())!.id as string;
-  expect(await error(await request(`/${id}/scores`, judge, "PUT", { entryId: individual, criterionId, value: 3 }))).toBe("entry_not_found");
-  // 点が入ったら参加者は移れない・抜けられない
+  expect(await error(await request(`/${id}/scores/batch`, judge, "PUT", { entryId: individual, scores: [{ criterionId, value: 3 }] }))).toBe("entry_not_found");
+  // 運営が採点を開始したら参加者は移れない・抜けられない
   expect(await error(await join(id, a, blue))).toBe("team_locked");
   expect(await error(await leave(id, a))).toBe("team_locked");
   // 運営は動かせる
@@ -139,10 +164,19 @@ it("採点が始まったら参加者は動けない。運営はいつでも動�
   // 集計はチーム単位
   const summary = await request(`/${id}/scores/summary`, host);
   expect(((await summary.json()) as { entries: Array<{ entryId: string; total: number }> }).entries.map((e) => e.entryId).sort()).toEqual([red, blue].sort());
+  // 運営が採点結果をすべて消すと未開始に戻り、参加者はまたチームを移れる（試しの点で詰まない）
+  const reset = await request(`/${id}/scores`, host, "DELETE");
+  expect(reset.status).toBe(200);
+  expect(await reset.json()).toMatchObject({ deleted: 1, state: { scoringStarted: false, scoringLocked: false } });
+  expect((await join(id, a, red)).status).toBe(200);
+  const audit = await sql("SELECT actor_user_id, detail FROM audit_log WHERE action='scores_reset' AND detail LIKE ?", `%${id}%`).first<{ actor_user_id: string; detail: string }>();
+  expect(audit!.actor_user_id).toBe(host.id);
+  expect(JSON.parse(audit!.detail)).toEqual({ eventId: id, deleted: 1 });
+  // 参加者・審査員は消せない
+  expect((await request(`/${id}/scores`, judge, "DELETE")).status).toBe(403);
   // 締切後も参加者は動けない
-  await sql("DELETE FROM score WHERE event_id=?", id).run();
   expect((await request(`/${id}/state/scoring-lock`, host, "POST")).status).toBe(200);
-  expect(await error(await join(id, a, red))).toBe("team_locked");
+  expect(await error(await join(id, a, blue))).toBe("team_locked");
 });
 
 it("成果物はチームのメンバーなら誰でも提出・編集でき、メンバー以外はできない", async () => {
@@ -233,8 +267,9 @@ it("運営も自分でチームに入って参加できる。自分のチーム�
     headers: { cookie: host.cookie, "content-type": "application/json" }, body: JSON.stringify({ title: "運営も編集", baseRevision: 0 }) })).status).toBe(200);
   // 自分のチームは採点できない。ほかのチームは採点できる
   const criterionId = await criterion(id, host);
-  expect(await error(await request(`/${id}/scores`, host, "PUT", { entryId: red, criterionId, value: 3 }))).toBe("self_scoring_forbidden");
-  expect((await request(`/${id}/scores`, host, "PUT", { entryId: blue, criterionId, value: 3 })).status).toBe(200);
+  expect((await request(`/${id}/state/scoring-start`, host, "POST")).status).toBe(200);
+  expect(await error(await request(`/${id}/scores/batch`, host, "PUT", { entryId: red, scores: [{ criterionId, value: 3 }] }))).toBe("self_scoring_forbidden");
+  expect((await request(`/${id}/scores/batch`, host, "PUT", { entryId: blue, scores: [{ criterionId, value: 3 }] })).status).toBe(200);
   // 採点が始まったら、運営も自分のチームは選び直せない（ほかの人は今までどおり運営が動かせる）
   expect(await error(await join(id, host, blue))).toBe("team_locked");
   expect(await error(await request(`/${id}/team-members/${host.id}`, host, "PUT", { teamId: blue }))).toBe("team_locked");
@@ -267,9 +302,10 @@ it("個人参加のコンテストは今までどおり（チームの操作は 
     ["individual", null, null, ""], ["individual", null, null, ""],
   ]);
   const criterionId = await criterion(id, host);
+  expect((await request(`/${id}/state/scoring-start`, host, "POST")).status).toBe(200);
   const bEntry = entries.find((e) => e.memberUserIds.includes(b.id))!;
-  expect((await request(`/${id}/scores`, a, "PUT", { entryId: bEntry.id, criterionId, value: 4 })).status).toBe(200);
-  expect(await error(await request(`/${id}/scores`, b, "PUT", { entryId: bEntry.id, criterionId, value: 4 }))).toBe("self_scoring_forbidden");
+  expect((await request(`/${id}/scores/batch`, a, "PUT", { entryId: bEntry.id, scores: [{ criterionId, value: 4 }] })).status).toBe(200);
+  expect(await error(await request(`/${id}/scores/batch`, b, "PUT", { entryId: bEntry.id, scores: [{ criterionId, value: 4 }] }))).toBe("self_scoring_forbidden");
   expect(await error(await join(id, a, bEntry.id))).toBe("team_mode_off");
 });
 
@@ -377,7 +413,8 @@ it("採点が始まったら、チームの中の操作（名前・任せる・�
   expect((await join(id, member, red)).status).toBe(200);
   expect((await join(id, judge, blue)).status).toBe(200);
   const criterionId = await criterion(id, host);
-  expect((await request(`/${id}/scores`, judge, "PUT", { entryId: red, criterionId, value: 4 })).status).toBe(200);
+  expect((await request(`/${id}/state/scoring-start`, host, "POST")).status).toBe(200);
+  expect((await request(`/${id}/scores/batch`, judge, "PUT", { entryId: red, scores: [{ criterionId, value: 4 }] })).status).toBe(200);
 
   expect(await error(await renameMine(id, lead, { name: "後から" }))).toBe("team_locked");
   expect(await error(await handOver(id, lead, member.id))).toBe("team_locked");
@@ -397,4 +434,20 @@ it("チーム参加がオフのイベントでは、チームの中の操作は 
   expect((await teamMode(id, host, false)).status).toBe(200);
   expect(await error(await renameMine(id, lead, { name: "x" }))).toBe("team_mode_off");
   expect(await error(await becomeLeader(id, lead))).toBe("team_mode_off");
+});
+
+it("0122: 点が入っている・締め切ったイベントは開始済みにする（進行中の採点は止まらない）。それ以外は未開始", async () => {
+  type Migration = { name: string; queries: string[] };
+  const migration = (env as unknown as { TEST_MIGRATIONS: Migration[] }).TEST_MIGRATIONS.find((m) => m.name.startsWith("0122_"))!;
+  const scored = await setup(), locked = await setup(), untouched = await setup();
+  const judge = await participant(scored.id);
+  const criterionId = await criterion(scored.id, scored.host);
+  const entryId = (await list(scored.id, scored.host))[0].id;
+  await sql("ALTER TABLE event_state DROP COLUMN scoring_started").run();
+  // 点だけあって event_state の行がまだ無いイベント・締め切ったイベント・何もないイベント
+  await sql("INSERT INTO score(id,event_id,entry_id,criterion_id,judge_user_id,value,updated_at) VALUES(?,?,?,?,?,3,1)", crypto.randomUUID(), scored.id, entryId, criterionId, judge.id).run();
+  await sql("INSERT INTO event_state(event_id,mode,scoring_locked,updated_at) VALUES(?,'normal',1,1),(?,'normal',0,1)", locked.id, untouched.id).run();
+  for (const query of migration.queries) await sql(query).run();
+  const started = async (id: string) => (await sql("SELECT scoring_started s FROM event_state WHERE event_id=?", id).first<{ s: number }>())?.s;
+  expect([await started(scored.id), await started(locked.id), await started(untouched.id)]).toEqual([1, 1, 0]);
 });

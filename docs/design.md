@@ -503,6 +503,7 @@ Team（将来）──1 Entry                 （チーム参加時、Entry の�
 | event_id | text PK FK→event | |
 | mode | text | `normal` / `presentation` / `aggregation` / `awards` |
 | presenting_entry_id | text FK→entry null | プレゼン中の Entry |
+| scoring_started | integer(bool) | 運営が「採点を開始する」を押したか。0 のあいだは採点を受け付けない（0122、2026-11-08） |
 | scoring_locked | integer(bool) | 集計締切フラグ |
 | awards_reveal_cursor | integer null | 表彰の発表進行位置 |
 | updated_at | integer | |
@@ -613,7 +614,8 @@ APP_BASE_URL=https://<tunnel-domain>
 
 ### 採点
 - `GET  /api/events/:id/scores/mine` … 自分の採点状況
-- `PUT  /api/events/:id/scores` … upsert（entry_id, criterion_id, value）
+- `PUT  /api/events/:id/scores/batch` … 1つのエントリーの点数をまとめて upsert（`{ entryId, scores: [{criterionId, value}] }`、1つの D1 バッチ）。画面は点数を押すたびには通信せず「採点を保存」で送る。採点の開始前・締切後は 409（`scoring_not_started` / `scoring_locked`、書き込みと同じバッチで確かめる分は `scoring_not_open`）
+- `DELETE /api/events/:id/scores` … 採点結果をすべて消し、採点を未開始・締切なしに戻す（staff）。受賞の割り当ては消さない。監査ログ `scores_reset` に件数を残す
 - `GET  /api/events/:id/scores/summary` … 集計（権限: staff/judge、締切前はプレビュー）
 - `GET  /api/events/:id/scores/progress` … 誰が未入力か（staff）
 
@@ -627,6 +629,7 @@ APP_BASE_URL=https://<tunnel-domain>
 - `GET   /api/events/:id/state`
 - `PATCH /api/events/:id/state/mode` … モード切替（staff）
 - `PATCH /api/events/:id/state/presenting` … プレゼン対象変更（staff）
+- `POST  /api/events/:id/state/scoring-start` … 採点を開始する（staff）。押すまで採点は受け付けない
 - `POST  /api/events/:id/state/scoring-lock` … 集計締切（staff）
 - `POST  /api/events/:id/state/awards-advance` … 表彰を 1 段階進める（staff）
 
@@ -707,7 +710,7 @@ APP_BASE_URL=https://<tunnel-domain>
 | モード | 振る舞い |
 |--------|----------|
 | `normal` | 通常表示。準備・閲覧。 |
-| `presentation` | プレゼン中。`presenting_entry_id` を SSE 配信。参加者は強制的にプレゼン中画面へ。右ペインで採点・修正可。スタッフも任意で採点可。`aggregate_self_entry=false` なら自己 Entry の採点不可。 |
+| `presentation` | プレゼン中。`presenting_entry_id` を SSE 配信。参加者は強制的にプレゼン中画面へ。右ペインで採点・修正可（運営が「採点を開始する」を押したあと）。スタッフも任意で採点可。`aggregate_self_entry=false` なら自己 Entry の採点不可。 |
 | `aggregation` | スタッフが `scoring_locked` にするまで採点継続可。スタッフは集計プレビューと**未入力者一覧**を確認。特別枠があればスタッフ／審査員が受賞 Entry を選定。 |
 | `awards` | 下位の賞から段階発表（`awards_reveal_cursor` を進める）。特別枠はランキング発表後。各段階で `awards-reveal` を SSE 配信し、演出（ドラムロール音・エフェクト）を再生。 |
 

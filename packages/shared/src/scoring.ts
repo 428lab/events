@@ -43,6 +43,16 @@ export const putScoreInput = z.object({
 });
 export type PutScoreInput = z.infer<typeof putScoreInput>;
 
+/** 1つのエントリーの点数をまとめて保存する（「採点を保存」ボタン）。1リクエスト・1バッチ */
+export const putScoresBatchInput = z.object({
+  entryId: z.string(),
+  scores: z
+    .array(z.object({ criterionId: z.string(), value: z.number().int().min(1).max(10) }))
+    .min(1)
+    .max(50),
+});
+export type PutScoresBatchInput = z.infer<typeof putScoresBatchInput>;
+
 /** 集計: Entry ごとの合計と項目別合計（レーダーチャート用） */
 export const entryScoreSummary = z.object({
   entryId: z.string(),
@@ -84,6 +94,8 @@ export const eventStateSchema = z.object({
   eventId: z.string(),
   mode: z.enum(EVENT_MODES),
   presentingEntryId: z.string().nullable(),
+  /** 運営が「採点を開始する」を押したか。押すまで採点は受け付けない */
+  scoringStarted: z.boolean(),
   scoringLocked: z.boolean(),
   awardsRevealCursor: z.number().nullable(),
   updatedAt: z.number(),
