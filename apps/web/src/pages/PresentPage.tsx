@@ -33,6 +33,9 @@ import {
 import { ScoringPanel, useUnsavedScores } from "../components/ScoringPanel.js";
 import { UserLink } from "../components/UserLink.js";
 import { usePresenterPanel } from "../lib/usePresenterPanel.js";
+import { usePublicDeck } from "../api/deckHooks.js";
+import { deckSlugFromUrl } from "../lib/presentationDeck.js";
+import { PresentationDeckPane } from "../components/PresentationDeckPane.js";
 
 export function PresentPage() {
   const { t } = useTranslation();
@@ -48,6 +51,10 @@ export function PresentPage() {
   const onDirtyChange = useUnsavedScores();
   // 登壇者向けサイドパネル (#215)。開閉は配信コントロールと共有する
   const [panelOpen] = usePresenterPanel();
+  // 発表中のエントリー（個人・チーム共通）の資料URLが events lab のスライドなら、左側にそのスライドを出す
+  const presentingEntry = entries?.find((e) => e.id === state?.presentingEntryId);
+  const deckSlug = deckSlugFromUrl(presentingEntry?.submission?.presentationUrl, window.location.origin);
+  const { data: deck, isError: deckError } = usePublicDeck(deckSlug ?? "");
 
   if (!eventData || !state || !entries || !criteria) {
     return <Typography>{t("common.loading")}</Typography>;
@@ -71,6 +78,7 @@ export function PresentPage() {
   const isSelf = presenting
     ? Boolean(me && presenting.memberUserIds.includes(me.id))
     : false;
+  const showDeck = Boolean(presenting && deckSlug && deck && !deckError && deck.content.slides.length > 0);
   const scoringDisabled =
     !state.scoringStarted ||
     state.scoringLocked ||
@@ -87,7 +95,7 @@ export function PresentPage() {
     >
       <Box sx={{ flex: "1 1 320px", minWidth: 0 }}>
         <Grid container spacing={3}>
-          <Grid item xs={12} md={canScore ? 6 : 12}>
+          <Grid item xs={12} md={canScore ? (showDeck ? 8 : 6) : 12}>
             <Stack spacing={2}>
               <Stack
                 direction="row"
@@ -107,7 +115,7 @@ export function PresentPage() {
                       {t("eventRun.presentNowLabel")}
                     </Typography>
                     <Stack direction="row" spacing={2} alignItems="center">
-                      <AvatarGroup max={6} sx={{ "& .MuiAvatar-root": { width: 64, height: 64, fontSize: 28 } }}>
+                      <AvatarGroup max={6} sx={{ "& .MuiAvatar-root": showDeck ? { width: 40, height: 40, fontSize: 18 } : { width: 64, height: 64, fontSize: 28 } }}>
                         {presentingMembers.map((m) =>
                           m.username ? (
                             <Avatar
@@ -131,7 +139,7 @@ export function PresentPage() {
                           variant="h3"
                           fontWeight={700}
                           sx={{
-                            fontSize: entryNameFontSize(presenting.name, { minPx: 24, maxPx: 48 }),
+                            fontSize: entryNameFontSize(presenting.name, showDeck ? { minPx: 20, maxPx: 32 } : { minPx: 24, maxPx: 48 }),
                             ...ENTRY_NAME_WRAP_SX,
                           }}
                         >
@@ -158,7 +166,7 @@ export function PresentPage() {
                         ))}
                       </Box>
                     )}
-                    {presenting.submission?.presentationUrl && (
+                    {presenting.submission?.presentationUrl && !showDeck && (
                       <Typography sx={{ mt: 2 }}>
                         {t("eventRun.presentSlidesLabel")}{" "}
                         <Link
@@ -191,12 +199,15 @@ export function PresentPage() {
                   </Typography>
                 </Box>
               )}
+              {showDeck && presenting && deck && deckSlug && (
+                <PresentationDeckPane key={presenting.id} deck={deck} slug={deckSlug} />
+              )}
             </Stack>
           </Grid>
 
           {canScore && (
-            <Grid item xs={12} md={6}>
-              <Card variant="outlined">
+            <Grid item xs={12} md={showDeck ? 4 : 6}>
+              <Card variant="outlined" data-scoring-panel="">
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
                     {t("eventDetail.scoring")}
