@@ -55,3 +55,19 @@ it("運営が採点を開始する前は押せず、その理由が出る。保�
   expect(screen.getByText("運営が採点を開始するまで採点できません。")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "採点を保存" })).not.toBeInTheDocument();
 });
+
+it("表示するエントリーが変わったら（発表の切り替え）、前のエントリーの下書きを次に持ち越さない", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const panel = (entryId: string) => (
+    <QueryClientProvider client={client}>
+      <ScoringPanel eventId="e" entryId={entryId} criteria={criteria} myScores={[]} />
+    </QueryClientProvider>
+  );
+  const { rerender } = render(panel("red"));
+  fireEvent.click(point("完成度", 4));
+  expect(screen.getByText("未保存の変更があります")).toBeInTheDocument();
+  rerender(panel("blue"));
+  expect(screen.queryByText("未保存の変更があります")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "採点を保存" })).toBeDisabled();
+  expect(api.put).not.toHaveBeenCalled();
+});

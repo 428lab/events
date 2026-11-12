@@ -47,7 +47,12 @@ export function ScoringPanel({
   const { t } = useTranslation();
   const save = useSaveScores(eventId);
   // 保存前に選んだ点数（criterionId → value）。保存済みの値と同じなら持たない
-  const [draft, setDraft] = useState<Record<string, number>>({});
+  // 下書きは表示中のエントリーのもの。entryId が変わったら（発表の切り替えなど）持ち越さない。
+  // 持ち越すと前のチームの点が次のチームの下書きに見え、保存で別のチームに入ってしまう
+  const [draftOf, setDraftOf] = useState<{ entryId: string; values: Record<string, number> }>({ entryId, values: {} });
+  const draft = draftOf.entryId === entryId ? draftOf.values : {};
+  const setDraft = (f: (d: Record<string, number>) => Record<string, number>) =>
+    setDraftOf((cur) => ({ entryId, values: f(cur.entryId === entryId ? cur.values : {}) }));
   const [saved, setSaved] = useState(false);
 
   const savedValue = (criterionId: string) =>
@@ -72,7 +77,7 @@ export function ScoringPanel({
       { entryId, scores: changed.map(([criterionId, value]) => ({ criterionId, value })) },
       {
         onSuccess: () => {
-          setDraft({});
+          setDraft(() => ({}));
           setSaved(true);
         },
       },

@@ -203,6 +203,7 @@ export function PresentPage() {
                   </Typography>
                   {presenting ? (
                     <ScoringPanel
+                      key={presenting.id}
                       eventId={id}
                       entryId={presenting.id}
                       criteria={criteria}
