@@ -115,6 +115,7 @@ const ja = {
   updatedAt: "更新 {{time}}",
   /** スライドの一覧・編集画面（docs/slide-editor.md「プロフィールに載せる」「表示回数」） */
   deckProfileShow: "プロフィールに載せる",
+  deckProfileNotAllowed: "このスライドはプロフィールに載せられません（公開されていないイベントのチームのスライドなど）",
   deckViews: "{{n}}回表示",
   updatedAtSuffix: "{{time}} 更新",
 
@@ -550,6 +551,7 @@ const en: Record<keyof typeof ja, string> = {
   pageCount: "{{n}} pages",
   updatedAt: "Updated {{time}}",
   deckProfileShow: "Show on my profile",
+  deckProfileNotAllowed: "This deck can't be shown on your profile (for example, a team deck from an event that isn't public).",
   deckViews: "{{n}} views",
   updatedAtSuffix: "Updated {{time}}",
 

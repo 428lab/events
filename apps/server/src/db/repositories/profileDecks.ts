@@ -45,7 +45,9 @@ interface ProfileDeckRow {
 }
 
 export const profileDecksRepo = {
-  /** 公開プロフィールに載っているデッキ。新しい順。サムネ用に1枚目だけ返す */
+  /** 公開プロフィールに載っているデッキ。新しい順。サムネ用に1枚目だけ返す。
+   * 先に本人のデッキ・本人がメンバーのチームのデッキへ絞る（索引が効く）。
+   * 絞らないと公開の一覧を見るたびにデッキ表を全件読む */
   async listShown(userId: string): Promise<ProfileDeck[]> {
     const rows = await many<ProfileDeckRow>(
       `SELECT d.slug, d.title, d.content, d.updated_at, ${deckViewsSql("d")} AS views,
@@ -53,7 +55,9 @@ export const profileDecksRepo = {
          FROM deck d, (SELECT ? AS id) pu
          LEFT JOIN entry en ON en.id = d.team_entry_id
          LEFT JOIN event ev ON ev.id = en.event_id
-        WHERE ${deckShownOnProfileSql("d", "pu.id")}
+        WHERE (d.owner_id = pu.id
+               OR d.team_entry_id IN (SELECT cand.entry_id FROM entry_member cand WHERE cand.user_id = pu.id))
+          AND ${deckShownOnProfileSql("d", "pu.id")}
         ORDER BY d.updated_at DESC
         LIMIT 200`,
       userId,
