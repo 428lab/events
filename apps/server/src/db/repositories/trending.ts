@@ -14,6 +14,7 @@ import {
 } from "@eventer/shared";
 import { many } from "../client.js";
 import { communityImageUrl } from "./communities.js";
+import { EVENT_COMMUNITY_LINKS } from "./eventCommunities.js";
 
 /** 退会申請中 (#250) を除く条件（任意のユーザーID列に対して）。kpi.ts と同じ */
 const USER_ACTIVE = (col: string) =>
@@ -285,19 +286,20 @@ export const trendingRepo = {
 
     // ---------- (2) コミュニティ ----------
     const communityBranches: Branch[] = [
-      // 開催完了したイベント数
+      // 開催完了したイベント数。主催と承認済みの共催の両方に数える（eventCommunities.ts）
       heldBranch({
-        key: "e.community_id",
+        key: "ecl.community_id",
         kind: "heldEvent",
-        from: "event e",
-        where: "e.community_id IS NOT NULL",
+        from: `event e JOIN (${EVENT_COMMUNITY_LINKS}) ecl ON ecl.event_id = e.id`,
+        where: "1 = 1",
       }),
-      // 延べ参加者数（KPI の heldParticipants と同じ数え方）
+      // 延べ参加者数（KPI の heldParticipants と同じ数え方）。共催にも同じく数える
       heldBranch({
-        key: "e.community_id",
+        key: "ecl.community_id",
         kind: "participation",
-        from: "event_member m JOIN event e ON e.id = m.event_id",
-        where: `e.community_id IS NOT NULL AND m.status = 'confirmed' AND ${JOINED("m")}
+        from: `event_member m JOIN event e ON e.id = m.event_id
+               JOIN (${EVENT_COMMUNITY_LINKS}) ecl ON ecl.event_id = e.id`,
+        where: `m.status = 'confirmed' AND ${JOINED("m")}
                 AND (e.attendance_check = 0 OR m.attended = 1)
                 AND ${USER_ACTIVE("m.user_id")}`,
       }),

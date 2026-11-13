@@ -721,6 +721,29 @@ describe("注目: コミュニティ", () => {
     expect(c?.isNew).toBe(true);
   });
 
+  it("承認済みの共催コミュニティにも主催と同じく開催数・延べ参加者が入る。承認待ちは入らない（docs/event-cohost.md §6）", async () => {
+    const admin = await makeUser({ admin: true });
+    const owner = await makeUser();
+    const p1 = await makeUser();
+    const host = await makeCommunity(owner.userId);
+    const cohost = await makeCommunity(owner.userId);
+    const pending = await makeCommunity(owner.userId);
+    const ev = await makeEvent({ createdBy: owner.userId, communityId: host });
+    await join({ eventId: ev, userId: p1.userId });
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO event_cohost (event_id, community_id, status, created_at, responded_at) VALUES (?, ?, 'accepted', ?, ?)")
+        .bind(ev, cohost, Date.now(), Date.now()),
+      env.DB.prepare("INSERT INTO event_cohost (event_id, community_id, status, created_at, responded_at) VALUES (?, ?, 'pending', ?, NULL)")
+        .bind(ev, pending, Date.now()),
+    ]);
+
+    const t = await getTrending(admin.cookie, 30);
+    const of = (id: string) => t.communities.active.find((x) => x.id === id)?.breakdown;
+    expect(of(cohost)).toEqual(of(host));
+    expect(of(cohost)).toMatchObject({ heldEvents: 1, participations: 1 });
+    expect(of(pending)).toBeUndefined();
+  });
+
   it("コミュニティの急上昇も前期間比で並ぶ", async () => {
     const admin = await makeUser({ admin: true });
     const owner = await makeUser();

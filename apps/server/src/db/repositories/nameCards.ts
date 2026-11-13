@@ -10,6 +10,7 @@ import { many } from "../client.js";
 import { communityImageUrl } from "./communities.js";
 import { publicItemWhere } from "./eventSchedule.js";
 import { eventSurveyRepo } from "./eventSurvey.js";
+import { EVENT_COMMUNITY_LINKS } from "./eventCommunities.js";
 
 /** 名札の一括印刷 (#304) 用の読み取り。
  *
@@ -184,7 +185,8 @@ interface CommunityRow {
 }
 
 /** 所属コミュニティの上位（communitiesRepo.listForUser ＋ カード側の
- * 「参加イベント数の多い順に5件」を1本にまとめたもの）。
+ * 「参加イベント数の多い順に5件」を1本にまとめたもの）。イベントのコミュニティは
+ * 主催と承認済みの共催（eventCommunities.ts）。
  * 同数の並びは listForUser と同じく owner → admin → 新しい順にそろえる */
 async function communitiesFor(
   eventId: string,
@@ -195,10 +197,11 @@ async function communitiesFor(
        SELECT cm.user_id AS uid, cm.community_id AS cid
          FROM community_member cm JOIN ids ON ids.id = cm.user_id
        UNION
-       SELECT em.user_id, e.community_id
+       SELECT em.user_id, ecl.community_id
          FROM event_member em JOIN event e ON e.id = em.event_id
+         JOIN (${EVENT_COMMUNITY_LINKS}) ecl ON ecl.event_id = e.id
          JOIN ids ON ids.id = em.user_id
-        WHERE em.status = 'confirmed' AND e.community_id IS NOT NULL AND e.status = 'published' AND e.visibility = 'public'
+        WHERE em.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public'
      ),
      counted AS (
        SELECT mine.uid AS uid, c.id AS cid, c.name AS name,
@@ -206,7 +209,8 @@ async function communitiesFor(
               COALESCE(cm.role, '') AS role,
               (SELECT COUNT(*) FROM event_member em2
                  JOIN event e2 ON e2.id = em2.event_id
-                WHERE e2.community_id = c.id AND em2.user_id = mine.uid
+                 JOIN (${EVENT_COMMUNITY_LINKS}) ecl2 ON ecl2.event_id = e2.id
+                WHERE ecl2.community_id = c.id AND em2.user_id = mine.uid
                   AND em2.status = 'confirmed' AND e2.status = 'published' AND e2.visibility = 'public') AS cnt
          FROM mine JOIN community c ON c.id = mine.cid
          LEFT JOIN community_member cm

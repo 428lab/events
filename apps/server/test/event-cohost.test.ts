@@ -225,7 +225,7 @@ describe("共催の申請と承認 (#625)", () => {
 });
 
 describe("共催側コミュニティページの一覧 (#625)", () => {
-  it("承認後だけ共催側の一覧・検索に出る。開催数（eventCount）には数えない", async () => {
+  it("承認後だけ共催側の一覧・検索に出て、開催数（eventCount）にも数える", async () => {
     const { host, cohostOwner, a, b, eventId } = await fixture();
     await request(eventId, host, b.slug);
     expect(await communityPageEventIds(b.slug, null)).not.toContain(eventId);
@@ -238,8 +238,9 @@ describe("共催側コミュニティページの一覧 (#625)", () => {
     expect(await communityPageEventIds(b.slug, null)).toContain(eventId);
     expect(await searchEventIds(b.slug, null)).toContain(eventId);
     expect(await searchEventIds(a.slug, null)).toContain(eventId);
+    // 開催数も主催と同じく数える（docs/event-cohost.md §6、オーナー決定 2026-11-13）
     const page = await json<{ eventCount: number }>(await call(`/api/public/communities/${b.slug}`, null));
-    expect(page.eventCount).toBe(0);
+    expect(page.eventCount).toBe(1);
   });
 
   it("非公開イベントは共催側の一覧でも閲覧資格のある人にだけ出る（共催先の owner には出ない）", async () => {
@@ -321,6 +322,93 @@ describe("共催の権限 (#625)", () => {
       expect((await call(`/api/events/${eventId}`, user)).status).toBe(404);
       expect((await call(`/api/events/${eventId}`, user, "PATCH", { title: "乗っ取り" })).status).toBe(404);
     }
+  });
+});
+
+/** 共催も主催と同じ立場で数える（docs/event-cohost.md §6、オーナー決定 2026-11-13）。
+ * 所属は保存した写しを持たず、その場で主催＋承認済みの共催から出すので、
+ * 参加した時期（共催の前か後か）に関係なく、共催の承認・取り下げがすぐ効く */
+describe("共催コミュニティも所属・コミュニティの数字に数える", () => {
+  async function joinConfirmed(eventId: string, userId: string): Promise<void> {
+    await env.DB.prepare(
+      "INSERT INTO event_member (id, event_id, user_id, role, status, created_at) VALUES (?, ?, ?, 'participant', 'confirmed', ?)",
+    )
+      .bind(crypto.randomUUID(), eventId, userId, Date.now())
+      .run();
+  }
+  const profileCommunityIds = async (userId: string) => {
+    const handle = (await env.DB.prepare("SELECT username FROM user WHERE id = ?").bind(userId).first<{ username: string }>())!.username;
+    const res = await call(`/api/public/users/${encodeURIComponent(handle)}`, null);
+    expect(res.status).toBe(200);
+    return (await json<{ communities: { id: string }[] }>(res)).communities.map((c) => c.id).sort();
+  };
+  const cardCommunityIds = async (eventId: string, staff: TestUser, userId: string) => {
+    const res = await call(`/api/events/${eventId}/name-cards`, staff);
+    expect(res.status).toBe(200);
+    const cards = (await json<{ cards: { id: string; communities: { id: string }[] }[] }>(res)).cards;
+    return cards.find((c) => c.id === userId)!.communities.map((c) => c.id).sort();
+  };
+  const memberIds = async (slug: string) =>
+    (await json<{ members: { userId: string }[] }>(await call(`/api/public/communities/${slug}/members`, null)))
+      .members.map((m) => m.userId);
+  const generation = async (userId: string) =>
+    (await env.DB.prepare("SELECT card_image_generation AS g FROM user WHERE id = ?").bind(userId).first<{ g: string }>())!.g;
+
+  it("共催の前に参加した人も後の人も、プロフィール・名札・共催先のメンバーに主催と共催の両方が出る。承認待ちは出ず、外すと消える", async () => {
+    const { host, cohostOwner, a, b, eventId } = await fixture();
+    const before = await makeUser();
+    await joinConfirmed(eventId, before.userId);
+
+    await request(eventId, host, b.slug);
+    // 承認待ちは数えない
+    expect(await profileCommunityIds(before.userId)).toEqual([a.id]);
+    expect(await memberIds(b.slug)).not.toContain(before.userId);
+
+    const genBefore = await generation(before.userId);
+    await accept(b.id, eventId, cohostOwner);
+    // 共催の成立でプロフィールカードの画像を古くする（所属が変わるため）
+    expect(await generation(before.userId)).not.toBe(genBefore);
+
+    const after = await makeUser();
+    await joinConfirmed(eventId, after.userId);
+    const both = [a.id, b.id].sort();
+    for (const u of [before, after]) {
+      expect(await profileCommunityIds(u.userId)).toEqual(both);
+      expect(await cardCommunityIds(eventId, host, u.userId)).toEqual(both);
+    }
+    expect(await memberIds(b.slug)).toEqual(expect.arrayContaining([before.userId, after.userId]));
+    const page = await json<{ memberCount: number; eventCount: number }>(await call(`/api/public/communities/${b.slug}`, null));
+    expect(page.eventCount).toBe(1);
+
+    // 共催をやめると、どの人からも共催先が消える
+    const genAccepted = await generation(after.userId);
+    expect((await call(`/api/events/${eventId}/cohosts/${b.id}`, host, "DELETE")).status).toBe(200);
+    expect(await generation(after.userId)).not.toBe(genAccepted);
+    for (const u of [before, after]) expect(await profileCommunityIds(u.userId)).toEqual([a.id]);
+    expect(await memberIds(b.slug)).not.toContain(after.userId);
+  });
+
+  it("共催先の KPI にも主催と同じく開催・参加が入る", async () => {
+    const { host, cohostOwner, a, b, eventId } = await fixture();
+    await request(eventId, host, b.slug);
+    await accept(b.id, eventId, cohostOwner);
+    const p = await makeUser();
+    await joinConfirmed(eventId, p.userId);
+    // 開催済みにする（KPI は開催完了したイベントを数える）
+    await env.DB.prepare("UPDATE event SET starts_at = ?, ends_at = ? WHERE id = ?")
+      .bind(Date.now() - 3 * DAY, Date.now() - 2 * DAY, eventId)
+      .run();
+    const kpi = async (communityId: string, owner: TestUser) => {
+      const res = await call(`/api/communities/${communityId}/kpi?days=30`, owner);
+      expect(res.status).toBe(200);
+      return await json<{ northStar: { participations: number }; organizers: { heldEvents: number }; participants: { confirmedRegistrations: number } }>(res);
+    };
+    const hostKpi = await kpi(a.id, host);
+    const coKpi = await kpi(b.id, cohostOwner);
+    expect(coKpi.organizers.heldEvents).toBe(1);
+    expect(coKpi.organizers.heldEvents).toBe(hostKpi.organizers.heldEvents);
+    expect(coKpi.northStar.participations).toBe(hostKpi.northStar.participations);
+    expect(coKpi.participants.confirmedRegistrations).toBe(hostKpi.participants.confirmedRegistrations);
   });
 });
 

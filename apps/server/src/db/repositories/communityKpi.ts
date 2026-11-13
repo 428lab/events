@@ -38,6 +38,7 @@ import {
   sharedMetrics,
 } from "./kpiMetrics.js";
 import { clampSeriesStart, jstDay } from "./kpiSeries.js";
+import { EVENT_COMMUNITY_LINKS, eventOfCommunitySql } from "./eventCommunities.js";
 
 /** 母数が小さいときは率を出さない。3人中1人が新規で 33% のように極端に振れて、
  * 主催者の評価のように誤読されるのを防ぐ（画面は「母数が少ないため非表示」）。
@@ -61,14 +62,14 @@ function rateMin(numerator: number, denominator: number): number | null {
 const JOINED_HELD_IN_COMMUNITY = (m: string, e: string) =>
   `${m}.status = 'confirmed' AND ${JOINED(m)}
      AND (${e}.attendance_check = 0 OR ${m}.attended = 1)
-     AND ${HELD(e)} AND ${e}.community_id = ?`;
+     AND ${HELD(e)} AND ${eventOfCommunitySql(e, "?")}`;
 
 /** 上の期間フラグ版（今期間=1 / 前期間=2）。
  * バインド順: (HELD_PERIOD の) now, sinceDay, prevSinceDay, sinceDay → communityId */
 const JOINED_HELD_IN_COMMUNITY_PERIOD = (m: string, e: string) =>
   `${m}.status = 'confirmed' AND ${JOINED(m)}
      AND (${e}.attendance_check = 0 OR ${m}.attended = 1)
-     AND ${e}.community_id = ?`;
+     AND ${eventOfCommunitySql(e, "?")}`;
 
 /** コミュニティKPIの開催指標は全体KPIの5指標そのまま（追加の列は無い） */
 type EventAgg = HeldEventAgg;
@@ -133,7 +134,7 @@ export const communityKpiRepo = {
       `WITH base AS (
          SELECT e.id AS id, e.attendance_check AS attendance_check,
                 ${HELD_PERIOD("e")} AS held_p
-         FROM event e WHERE e.community_id = ?
+         FROM event e WHERE ${eventOfCommunitySql("e", "?")}
        ),
        ev AS (
          SELECT b.*,
@@ -153,7 +154,7 @@ export const communityKpiRepo = {
     // --- (2) 参加登録: 登録数・キャンセル・出席 ---
     const memberAgg = await one<Dual<RegistrationAgg>>(
       `WITH reg AS (
-         ${REGISTRATION_SOURCE("e.community_id = ?")}
+         ${REGISTRATION_SOURCE(eventOfCommunitySql("e", "?"))}
        )
        SELECT
          ${REGISTRATION_COLUMNS}
@@ -179,13 +180,13 @@ export const communityKpiRepo = {
                     COUNT(DISTINCT CASE WHEN v.day >= ? AND v.day < ? THEN v.visitor_id END)
                       AS prev_unique_viewers
                FROM event_view_unique v JOIN event e ON e.id = v.event_id
-              WHERE v.day >= ? AND e.community_id = ?) vu,
+              WHERE v.day >= ? AND ${eventOfCommunitySql("e", "?")}) vu,
             (SELECT COALESCE(SUM(CASE WHEN s.day >= ? THEN s.views ELSE 0 END), 0)
                       AS total_views,
                     COALESCE(SUM(CASE WHEN s.day >= ? AND s.day < ? THEN s.views ELSE 0 END), 0)
                       AS prev_total_views
                FROM event_view_stat s JOIN event e ON e.id = s.event_id
-              WHERE s.day >= ? AND e.community_id = ?) vs`,
+              WHERE s.day >= ? AND ${eventOfCommunitySql("e", "?")}) vs`,
       sinceDay,
       prevSinceDay,
       sinceDay,
@@ -217,7 +218,7 @@ export const communityKpiRepo = {
                     SELECT 1 FROM event_member pm JOIN event pe ON pe.id = pm.event_id
                      WHERE pm.user_id = m.user_id AND pm.status = 'confirmed'
                        AND ${JOINED("pm")}
-                       AND pe.community_id = ? AND pe.status = 'published'
+                       AND ${eventOfCommunitySql("pe", "?")} AND pe.status = 'published'
                        AND pe.scheduling = 0 AND pe.ends_at > 0
                        AND ${jd("pe.ends_at")} < ?
                   ) THEN 0 ELSE 1 END AS is_new,
@@ -225,7 +226,7 @@ export const communityKpiRepo = {
                     SELECT 1 FROM event_member pm JOIN event pe ON pe.id = pm.event_id
                      WHERE pm.user_id = m.user_id AND pm.status = 'confirmed'
                        AND ${JOINED("pm")}
-                       AND pe.community_id = ? AND pe.status = 'published'
+                       AND ${eventOfCommunitySql("pe", "?")} AND pe.status = 'published'
                        AND pe.scheduling = 0 AND pe.ends_at > 0
                        AND ${jd("pe.ends_at")} < ?
                   ) THEN 0 ELSE 1 END AS prev_is_new
@@ -261,7 +262,7 @@ export const communityKpiRepo = {
          FROM (
            SELECT e.created_by AS uid, ${HELD_PERIOD("e")} AS held_p
            FROM event e
-           WHERE e.community_id = ? AND ${USER_ACTIVE("e.created_by")}
+           WHERE ${eventOfCommunitySql("e", "?")} AND ${USER_ACTIVE("e.created_by")}
          )
          WHERE held_p > 0
          GROUP BY uid
@@ -332,8 +333,8 @@ export const communityKpiRepo = {
        JOIN event_member m2 ON m2.user_id = p.uid
             AND m2.status = 'confirmed' AND ${JOINED("m2")}
        JOIN event e2 ON e2.id = m2.event_id AND e2.status = 'published'
-            AND e2.community_id IS NOT NULL AND e2.community_id <> ?
-       JOIN community c ON c.id = e2.community_id
+       JOIN (${EVENT_COMMUNITY_LINKS}) ecl2 ON ecl2.event_id = e2.id AND ecl2.community_id <> ?
+       JOIN community c ON c.id = ecl2.community_id
        GROUP BY c.id, c.slug, c.name
        ORDER BY users DESC, c.name ASC
        LIMIT 5`,
@@ -349,10 +350,10 @@ export const communityKpiRepo = {
       `SELECT day, SUM(held_events) AS held_events, SUM(participations) AS participations
        FROM (
          SELECT ${jd("e.ends_at")} AS day, 1 AS held_events, 0 AS participations
-         ${DAILY_HELD_EVENTS(" AND e.community_id = ?")}
+         ${DAILY_HELD_EVENTS(` AND ${eventOfCommunitySql("e", "?")}`)}
          UNION ALL
          SELECT ${jd("e.ends_at")}, 0, 1
-         ${DAILY_PARTICIPATIONS(" AND e.community_id = ?")}
+         ${DAILY_PARTICIPATIONS(` AND ${eventOfCommunitySql("e", "?")}`)}
        )
        GROUP BY day ORDER BY day`,
       now,
