@@ -8,6 +8,7 @@ import type {
   UpdateCommunityInput,
 } from "@eventer/shared";
 import { batch, many, one, run } from "../client.js";
+import { EVENT_COMMUNITY_LINKS, eventOfCommunitySql } from "./eventCommunities.js";
 
 interface CommunityRow {
   id: string;
@@ -43,15 +44,16 @@ export function communityImageUrl(
 }
 
 // メンバー数＝明示メンバー ∪ 所属イベントの確定参加者（重複排除）。
+// 所属イベントは主催と承認済みの共催（eventCommunities.ts。docs/event-cohost.md §6）。
 // 非public参加者も公開集約値に含める。名簿の公開範囲とは別。退会申請中 (#250) は除外。
 const SELECT_COMMUNITY = `SELECT c.*,
   (SELECT COUNT(*) FROM (
      SELECT user_id FROM community_member WHERE community_id = c.id
      UNION
      SELECT em.user_id FROM event_member em JOIN event e ON e.id = em.event_id
-       WHERE e.community_id = c.id AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility IN ('public', 'private', 'unlisted')
+       WHERE ${eventOfCommunitySql("e", "c.id")} AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility IN ('public', 'private', 'unlisted')
    ) ids JOIN user u ON u.id = ids.user_id AND u.deleted_at IS NULL) AS member_count,
-  (SELECT COUNT(1) FROM event e WHERE e.community_id = c.id AND e.status = 'published' AND e.visibility = 'public') AS event_count
+  (SELECT COUNT(1) FROM event e WHERE ${eventOfCommunitySql("e", "c.id")} AND e.status = 'published' AND e.visibility = 'public') AS event_count
   FROM community c`;
 
 function toCommunity(row: CommunityRow): Community {
@@ -226,7 +228,8 @@ export const communitiesRepo = {
     ]);
   },
 
-  /** ユーザーが所属する全コミュニティ（明示メンバー ∪ イベント確定参加）。プロフィール表示用 */
+  /** ユーザーが所属する全コミュニティ（明示メンバー ∪ イベント確定参加）。プロフィール表示用。
+   * イベントのコミュニティは主催と承認済みの共催（eventCommunities.ts） */
   async listForUser(userId: string): Promise<CommunitySummary[]> {
     const rows = await many<{
       id: string;
@@ -238,15 +241,17 @@ export const communitiesRepo = {
     }>(
       `SELECT c.id, c.slug, c.name, c.icon_updated_at, COALESCE(cm.role, 'member') AS role,
               (SELECT COUNT(*) FROM event_member em JOIN event e ON e.id = em.event_id
-                WHERE e.community_id = c.id AND em.user_id = ?
+                 JOIN (${EVENT_COMMUNITY_LINKS}) ecl ON ecl.event_id = e.id
+                WHERE ecl.community_id = c.id AND em.user_id = ?
                   AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public') AS my_event_count
        FROM community c
        LEFT JOIN community_member cm ON cm.community_id = c.id AND cm.user_id = ?
        WHERE c.id IN (
          SELECT community_id FROM community_member WHERE user_id = ?
          UNION
-         SELECT e.community_id FROM event_member em JOIN event e ON e.id = em.event_id
-           WHERE em.user_id = ? AND em.status = 'confirmed' AND e.community_id IS NOT NULL AND e.status = 'published' AND e.visibility = 'public'
+         SELECT ecl.community_id FROM event_member em JOIN event e ON e.id = em.event_id
+           JOIN (${EVENT_COMMUNITY_LINKS}) ecl ON ecl.event_id = e.id
+           WHERE em.user_id = ? AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public'
        )
        ORDER BY (COALESCE(cm.role,'') = 'owner') DESC,
                 (COALESCE(cm.role,'') = 'admin') DESC, c.created_at DESC`,
@@ -299,7 +304,7 @@ export const communitiesRepo = {
          SELECT user_id FROM community_member WHERE community_id = ?
          UNION
          SELECT em.user_id FROM event_member em JOIN event e ON e.id = em.event_id
-           WHERE e.community_id = ? AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public'
+           WHERE ${eventOfCommunitySql("e", "?")} AND em.status = 'confirmed' AND e.status = 'published' AND e.visibility = 'public'
        ) ids
        JOIN user u ON u.id = ids.user_id AND u.deleted_at IS NULL
        LEFT JOIN community_member cm

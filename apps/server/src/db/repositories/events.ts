@@ -233,9 +233,6 @@ export interface EventSearchOpts {
   /** この時刻以降に始まるイベント（「続きを見る」での継続表示用） */
   after?: number;
   communityId?: string;
-  /** communityId を主催のイベントだけに絞る（共催 #625 を含めない）。
-   * コミュニティの開催数（eventCount）は共催を数えない（二重計上を避ける） */
-  hostedOnly?: boolean;
   venueType?: "offline" | "online" | "hybrid";
   /** 日程調整中（開催日未定）を除外する */
   excludeScheduling?: boolean;
@@ -298,10 +295,7 @@ function buildSearchWhere(o: EventSearchOpts, viewer?: CommunityEventViewer): {
     conds.push("starts_at >= ?");
     args.push(o.after);
   }
-  if (o.communityId && o.hostedOnly) {
-    conds.push("community_id = ?");
-    args.push(o.communityId);
-  } else if (o.communityId) {
+  if (o.communityId) {
     // 主催に加えて、成立した共催 (#625) のイベントも含める。承認待ちは載せない。
     // 公開範囲の条件（communityDiscovery）は主催のときと同じものがそのまま掛かる。
     // 相関サブクエリ（EXISTS）にすると OR の片側で idx_event_community が使えず event を

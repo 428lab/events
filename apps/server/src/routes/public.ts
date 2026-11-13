@@ -59,7 +59,8 @@ publicRoutes.get("/communities/:slug", async (c) => {
     : null;
   const viewer = { userId: user?.id ?? null };
   const events = await eventsRepo.listByCommunity(community.id, viewer);
-  const eventCount = await eventsRepo.countSearchPublished({ communityId: community.id, hostedOnly: true, limit: 0, offset: 0 }, viewer);
+  // 開催数は主催と承認済みの共催を同じく数える（docs/event-cohost.md §6、オーナー決定 2026-11-13）
+  const eventCount = await eventsRepo.countSearchPublished({ communityId: community.id, limit: 0, offset: 0 }, viewer);
   const now = Date.now();
   return c.json({
     ...community,
