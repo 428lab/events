@@ -8,6 +8,7 @@ import type {
 import { many, one, run, runCount } from "../client.js";
 import { eventViewSql } from "../../auth/eventAccess.js";
 import { adminIds } from "./eventAccessInvites.js";
+import { deckShownOnProfileSql, deckViewsSql } from "./profileDecks.js";
 
 interface DeckRow {
   id: string;
@@ -209,8 +210,9 @@ export const decksRepo = {
   /** 個人のデッキの一覧（チームのスライドは listTeamDecks）。
    * 退会の完全削除で消える＝R2 の画像も消してよいデッキと同じ集合 (purgeDeleted.ts) */
   async listByOwner(ownerId: string): Promise<DeckSummary[]> {
-    const rows = await many<DeckRow>(
-      "SELECT * FROM deck WHERE owner_id = ? AND team_entry_id IS NULL ORDER BY updated_at DESC",
+    const rows = await many<DeckRow & { shown: number; views: number }>(
+      `SELECT d.*, ${deckShownOnProfileSql("d", "d.owner_id")} AS shown, ${deckViewsSql("d")} AS views
+         FROM deck d WHERE d.owner_id = ? AND d.team_entry_id IS NULL ORDER BY d.updated_at DESC`,
       ownerId,
     );
     return rows.map((r) => {
@@ -221,6 +223,8 @@ export const decksRepo = {
         title: r.title,
         slideCount: c.slides.length,
         updatedAt: r.updated_at,
+        profileShown: r.shown === 1,
+        views: r.views,
       };
     });
   },
@@ -249,9 +253,10 @@ export const decksRepo = {
 
   /** 自分がメンバーのチームのスライド。一覧の「チーム: ○○」。イベントが終わったものは ended（見るだけ） */
   async listTeamDecks(userId: string): Promise<DeckSummary[]> {
-    const rows = await many<DeckRow & { entry_id: string; team_name: string; event_id: string; event_title: string; open: number }>(
+    const rows = await many<DeckRow & { entry_id: string; team_name: string; event_id: string; event_title: string; open: number; shown: number; views: number }>(
       `SELECT d.*, en.id AS entry_id, en.name AS team_name, e.id AS event_id, e.title AS event_title,
-              (e.scheduling = 1 OR e.ends_at >= ?) AS open
+              (e.scheduling = 1 OR e.ends_at >= ?) AS open,
+              ${deckShownOnProfileSql("d", "u.id")} AS shown, ${deckViewsSql("d")} AS views
          FROM deck d
          JOIN entry en ON en.id = d.team_entry_id AND en.kind = 'team'
          JOIN event e ON e.id = en.event_id AND e.contest_mode = 1 AND e.participation_type = 'team'
@@ -270,6 +275,8 @@ export const decksRepo = {
       slideCount: parseContent(r.content).slides.length,
       updatedAt: r.updated_at,
       team: { entryId: r.entry_id, name: r.team_name, eventId: r.event_id, eventTitle: r.event_title, ended: r.open !== 1 },
+      profileShown: r.shown === 1,
+      views: r.views,
     }));
   },
 

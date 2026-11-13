@@ -3,11 +3,12 @@ import { Alert, Box, Button, IconButton, Stack, Typography } from "@mui/material
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
 import CloseIcon from "@mui/icons-material/Close";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import { createPortal, flushSync } from "react-dom";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { usePublicDeck } from "../api/deckHooks.js";
+import { useDeckViewCount, usePublicDeck } from "../api/deckHooks.js";
 import { SlideStage } from "../components/SlideStage.js";
 import { DeckExportMenu } from "../components/DeckExportMenu.js";
 import { DECK_H, DECK_W } from "@eventer/shared";
@@ -17,6 +18,8 @@ export function DeckViewerPage() {
   const { t } = useTranslation();
   const { slug = "" } = useParams();
   const { data: deck, isLoading, isError } = usePublicDeck(slug);
+  // 開いたら表示回数を1回数え、今の回数を出す（同じ人は1日1回。持ち主・メンバーは数えない）
+  const { data: views } = useDeckViewCount(slug, Boolean(deck));
   const [index, setIndex] = useState(0);
   const [width, setWidth] = useState(0);
   const [reading, setReading] = useState(false);
@@ -134,6 +137,12 @@ export function DeckViewerPage() {
         <Typography variant="h6" fontWeight={700}>
           {deck.title}
         </Typography>
+      )}
+      {views !== undefined && (
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: "text.secondary" }}>
+          <VisibilityOutlinedIcon sx={{ fontSize: 16 }} aria-hidden />
+          <Typography variant="caption">{t("studio.deckViews", { n: views })}</Typography>
+        </Stack>
       )}
       <Button sx={{ alignSelf: "flex-start" }} variant={reading ? "outlined" : "contained"} onClick={() => setReading(!reading)}>{t(reading ? "deckImport.closeReading" : "deckImport.readFullSize")}</Button>
       {reading && <Typography variant="body2">{t("deckImport.readingHint", { n: Math.min(index + 1, total), total })}</Typography>}

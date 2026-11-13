@@ -15,17 +15,19 @@ import { EventList, ListColumnsToggle } from "../EventList.js";
 import { isDraftEvent } from "../DraftChip.js";
 import { ParticipationTimeline } from "../ParticipationTimeline.js";
 import { ProfileMediaTab } from "./ProfileMediaTab.js";
+import { ProfileDecksTab } from "./ProfileDecksTab.js";
+import { useProfileDecks } from "../../api/deckHooks.js";
 
 /** タブの値。URL の `?tab=` にそのまま載る（既定の all は載せない）。
  * 既定は並びの先頭の「すべて」。本人のページも他人のページも同じ */
-const TAB_KEYS = ["all", "upcoming", "past", "hosted", "drafts", "media"] as const;
+const TAB_KEYS = ["all", "upcoming", "past", "hosted", "drafts", "media", "decks"] as const;
 export type ProfileTabKey = (typeof TAB_KEYS)[number];
 
-/** `?tab=` の解釈。不正な値と、出せない drafts は既定タブに落とす
+/** `?tab=` の解釈。不正な値と、出せない drafts・decks は既定タブに落とす
  * （リダイレクトはしない。URL はそのままで表示だけ既定になる） */
-function resolveTab(raw: string | null, draftsVisible: boolean): ProfileTabKey {
+function resolveTab(raw: string | null, draftsVisible: boolean, decksVisible: boolean): ProfileTabKey {
   const found = TAB_KEYS.find((k) => k === raw);
-  if (!found || (found === "drafts" && !draftsVisible)) return "all";
+  if (!found || (found === "drafts" && !draftsVisible) || (found === "decks" && !decksVisible)) return "all";
   return found;
 }
 
@@ -196,11 +198,16 @@ export function ProfileTabs({
   const pastEvents = [...hostedPast, ...joinedPast];
 
   const draftsVisible = isMe && drafts.length > 0;
+  // スライドのタブ（docs/profile-tabs.md「スライド」）。本人には常に出し（載せ方の案内とスイッチがある）、
+  // 他人には載っているスライドがあるときだけ出す
+  const { data: profileDecks } = useProfileDecks(handle);
+  const deckCount = profileDecks?.decks?.length ?? 0;
+  const decksVisible = isMe || deckCount > 0;
   // 「すべて」タブの母集団: イベント系タブの合算（メディアは含めない）。
   // 下書きは drafts タブと同じ出し分け（本人のみ）。他人のデータ源は
   // もともと公開分だけだが、表示側でも同じ線を守る
   const allEvents = isMe ? unique : live;
-  const tab = resolveTab(searchParams.get("tab"), draftsVisible);
+  const tab = resolveTab(searchParams.get("tab"), draftsVisible, decksVisible);
 
   const selectTab = (next: ProfileTabKey) => {
     // 既定タブは素の URL（既定を URL に書かない）。共有・リロードには残したいが
@@ -261,6 +268,10 @@ export function ProfileTabs({
         )}
         {/* メディアは開くまで取得しないので件数を添えない */}
         <Tab value="media" label={t("profile.tabMedia")} />
+        {/* スライドはポートフォリオとしてメディアの後ろに置く（イベントの一覧の並びを崩さない） */}
+        {decksVisible && (
+          <Tab value="decks" label={countLabel(t("profile.tabDecks"), deckCount)} />
+        )}
       </Tabs>
 
       {/* 合算の「すべて」。まとまりの切り方は旧4分類＋下書き (#315, #348) をそのまま
@@ -353,6 +364,7 @@ export function ProfileTabs({
         />
       )}
       {tab === "media" && <ProfileMediaTab handle={handle} />}
+      {tab === "decks" && <ProfileDecksTab handle={handle} isMe={isMe} />}
     </Box>
   );
 }

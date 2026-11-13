@@ -124,6 +124,13 @@ beforeEach(() => {
   localStorage.clear();
 });
 
+/** プロフィールのスライド一覧（/public/users/:handle/decks）だけ別の応答にする */
+function withDecks(decks: unknown) {
+  const photos = getMock.getMockImplementation();
+  getMock.mockImplementation((path: string, ...rest: unknown[]) =>
+    String(path).endsWith("/decks") ? Promise.resolve(decks) : photos ? photos(path, ...rest) : Promise.resolve(emptyPhotosPage));
+}
+
 describe("プロフィールのタブ (#407)", () => {
   it("既定は「すべて」タブで、タブ見出しに件数が付く", () => {
     renderTabs();
@@ -466,3 +473,36 @@ describe("空のタブ", () => {
     ).toBeTruthy();
   });
 });
+
+describe("スライドのタブ（docs/profile-tabs.md「スライド」）", () => {
+  const deck = {
+    slug: "abc", title: "発表資料", firstSlide: null, slideCount: 3, views: 12,
+    updatedAt: new Date("2026-11-01T10:00:00+09:00").getTime(), team: { name: "ねこ", eventTitle: "ハッカソン" },
+  };
+
+  it("載せたスライドを、枚数・表示回数・チームの名前つきで並べる", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    withDecks({ decks: [deck] });
+    renderTabs(EVENTS, { isMe: false });
+    fireEvent.click(await screen.findByRole("tab", { name: "スライド（1）" }));
+    expect(await screen.findByText("発表資料")).toBeTruthy();
+    expect(screen.getByText("3 ページ")).toBeTruthy();
+    expect(screen.getByText("12回表示")).toBeTruthy();
+    expect(screen.getByText("チーム: ねこ（ハッカソン）")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "発表資料 を開く" }).getAttribute("href")).toBe("/d/abc");
+    vi.unstubAllGlobals();
+  });
+
+  it("他人のページでは載っているスライドが無ければタブを出さない。本人には案内と自動で載せるスイッチを出す", async () => {
+    withDecks({ decks: [] });
+    renderTabs(EVENTS, { isMe: false });
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith("/public/users/tester/decks"));
+    expect(screen.queryByRole("tab", { name: /スライド/ })).toBeNull();
+
+    withDecks({ decks: [], autoShow: false });
+    renderTabs(EVENTS, { isMe: true, url: "/users/tester?tab=decks" });
+    expect(await screen.findByText("スライドの一覧で「プロフィールに載せる」をオンにすると、ここに並びます。")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "スライドをすべて自動で載せる" })).toBeTruthy();
+  });
+});
+

@@ -5,13 +5,16 @@ import {
   CardActionArea,
   CardContent,
   Chip,
+  FormControlLabel,
   Stack,
+  Switch,
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useCreateDeck, useMyDecks, useMyTeamDecks } from "../api/deckHooks.js";
+import { useCreateDeck, useMyDecks, useMyTeamDecks, useSetDeckProfile } from "../api/deckHooks.js";
 import type { DeckSummary } from "@eventer/shared";
 import { formatDateTime } from "../lib/format.js";
 
@@ -71,6 +74,7 @@ export function DecksPage() {
 
 function DeckCard({ deck: d, onOpen }: { deck: DeckSummary; onOpen: () => void }) {
   const { t } = useTranslation();
+  const setProfile = useSetDeckProfile();
   return (
     <Card variant="outlined">
       <CardActionArea onClick={onOpen}>
@@ -105,6 +109,29 @@ function DeckCard({ deck: d, onOpen }: { deck: DeckSummary; onOpen: () => void }
           </Box>
         </CardContent>
       </CardActionArea>
+      {/* プロフィールに載せる（docs/slide-editor.md「プロフィールに載せる」）と表示回数 */}
+      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ px: 2, pb: 1 }} flexWrap="wrap" useFlexGap>
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              checked={d.profileShown === true}
+              disabled={setProfile.isPending}
+              onChange={(e) => setProfile.mutate({ deckId: d.id, show: e.target.checked })}
+            />
+          }
+          label={<Typography variant="body2">{t("studio.deckProfileShow")}</Typography>}
+        />
+        {/* 限定公開・招待限定のイベントのチームのスライドなどは載せられない（サーバーが 403）。
+            黙って戻るとわからないので理由を出す */}
+        {setProfile.isError && (
+          <Typography variant="caption" color="error" role="alert">{t("studio.deckProfileNotAllowed")}</Typography>
+        )}
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ color: "text.secondary" }}>
+          <VisibilityOutlinedIcon sx={{ fontSize: 16 }} aria-hidden />
+          <Typography variant="caption">{t("studio.deckViews", { n: d.views ?? 0 })}</Typography>
+        </Stack>
+      </Stack>
     </Card>
   );
 }

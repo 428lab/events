@@ -108,6 +108,9 @@ export const accountMergeRepo = {
       // ビンゴ成績 (#441)。UNIQUE (event_id, started_at, user_id)。
       // 同じ回に両アカウントで参加していたら負け側を捨てる
       ["event_bingo_result", "user_id", ["event_id", "started_at"]],
+      // プロフィールに載せる／載せないの選択（docs/slide-editor.md「プロフィールに載せる」）。
+      // PK (user_id, deck_id)。両方が同じデッキを選んでいたら負け側を捨てる（勝ち側の選択を残す）
+      ["profile_deck", "user_id", ["deck_id"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols
@@ -176,6 +179,17 @@ export const accountMergeRepo = {
     });
     stmts.push({
       sql: "UPDATE notification_pref SET user_id = ? WHERE user_id = ?",
+      args: [winnerId, loserId],
+    });
+
+    // (3-b) profile_setting（スライドを自動で載せる）は PK user_id。notification_pref と同じく勝ち側優先
+    stmts.push({
+      sql: `DELETE FROM profile_setting WHERE user_id = ?
+            AND EXISTS (SELECT 1 FROM profile_setting WHERE user_id = ?)`,
+      args: [loserId, winnerId],
+    });
+    stmts.push({
+      sql: "UPDATE profile_setting SET user_id = ? WHERE user_id = ?",
       args: [winnerId, loserId],
     });
 

@@ -4,7 +4,7 @@ import { DeckViewerPage } from "./DeckViewerPage.js";
 
 vi.mock("../api/deckHooks.js", () => ({ usePublicDeck: () => ({ data: { title: "Introduction", content: { slides: [
   { id: "one", background: "#0E1426", elements: [] }, { id: "two", background: "#0E1426", elements: [] },
-] } }, isLoading: false, isError: false }) }));
+] } }, isLoading: false, isError: false }), useDeckViewCount: () => ({ data: 3 }) }));
 vi.mock("react-router-dom", () => ({ useParams: () => ({ slug: "sample" }) }));
 afterEach(() => { vi.unstubAllGlobals(); });
 it("lets mobile viewers read at original size without slide-tap advancement", () => {

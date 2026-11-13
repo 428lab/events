@@ -87,8 +87,34 @@ export const deckSummarySchema = z.object({
   /** チームのスライドなら、そのチームとイベント（一覧の「チーム: ○○」表示）。
    * ended はイベントが終わって見るだけになったか（終わったら編集画面ではなく閲覧へ） */
   team: z.object({ entryId: z.string(), eventId: z.string(), name: z.string(), eventTitle: z.string(), ended: z.boolean().optional() }).nullable().optional(),
+  /** 自分のプロフィールに載っているか（一覧のスイッチの状態。自動で載せる設定も反映済み） */
+  profileShown: z.boolean().optional(),
+  /** 公開ビューアの表示回数（日ごとのユニーク訪問者の合計。持ち主・メンバーの閲覧は数えない） */
+  views: z.number().optional(),
 });
 export type DeckSummary = z.infer<typeof deckSummarySchema>;
+
+/** プロフィールの「スライド」タブの1枚（docs/profile-tabs.md「スライド」）。サムネ用に1枚目だけ */
+export interface ProfileDeck {
+  slug: string;
+  title: string;
+  firstSlide: DeckSlide | null;
+  slideCount: number;
+  views: number;
+  updatedAt: number;
+  /** チームのスライドならチームとイベントの名前 */
+  team: { name: string; eventTitle: string } | null;
+}
+export interface ProfileDecksResponse {
+  decks: ProfileDeck[];
+  /** 本人が見ているときだけ: 「スライドをプロフィールに自動で載せる」の状態 */
+  autoShow?: boolean;
+}
+
+export const setDeckProfileInput = z.object({ show: z.boolean() });
+export type SetDeckProfileInput = z.infer<typeof setDeckProfileInput>;
+export const setProfileDeckAutoInput = z.object({ autoShow: z.boolean() });
+export type SetProfileDeckAutoInput = z.infer<typeof setProfileDeckAutoInput>;
 
 export const createDeckInput = z.object({
   title: z.string().trim().max(120).default(""),
