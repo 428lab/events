@@ -10,8 +10,10 @@
  * The content is JSON with an integer `rev` (server epoch ms) plus topic fields. */
 export const EVENT_SIGNAL_KIND = 20078;
 
-/** Topics that carry their own content fields (the screen applies them directly). */
-export type EventSignalDataTopic = "chat-hidden";
+/** Topics that carry their own content fields (the screen applies them directly).
+ * `bingo` carries the public game state in plain text (numbers and counts, no names;
+ * owner decision 2026-11-14, docs/event-signal.md): `BingoSignal` in bingo.ts. */
+export type EventSignalDataTopic = "chat-hidden" | "bingo";
 
 /** Topics whose signal is only `{rev}`: "this data changed, refetch it once"
  * (D-POLL-MIN Phase 5b). The scope is an event id, except `meet-token`, whose scope is
@@ -21,7 +23,6 @@ export type EventSignalRefetchTopic =
   | "scores"
   | "live"
   | "qa"
-  | "bingo"
   | "bingo-staff"
   | "meet-ranking"
   | "prize-desk"

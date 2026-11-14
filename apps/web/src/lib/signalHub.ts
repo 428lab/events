@@ -28,9 +28,14 @@ export const RESUBSCRIBE_DEBOUNCE_MS = 250;
 /** Jitter for topics that up to every participant watches (thousands of tabs) */
 export const PARTICIPANT_SIGNAL_JITTER_MS = 5_000;
 
+/** Parsed JSON content of a signal (integer `rev` plus topic fields) */
+export type EventSignalContent = Record<string, unknown> & { rev: number };
+
 interface Listener {
   source: () => EventSignalSource;
-  onSignal: () => unknown;
+  onSignal: (content: EventSignalContent) => unknown;
+  /** Newest content accepted; the coalesced call below receives this one */
+  latest: EventSignalContent | null;
   jitterMs: number;
   lastRev: number;
   timer: ReturnType<typeof setTimeout> | null;
@@ -143,6 +148,7 @@ class SignalHub {
         const content = parseEventSignal(ev, source);
         if (!content || content.rev <= Math.max(source.rev, listener.lastRev)) continue;
         listener.lastRev = content.rev;
+        listener.latest = content;
         this.dispatch(listener);
       }
     }
@@ -160,7 +166,7 @@ class SignalHub {
       listener.timer = null;
       listener.running = true;
       void Promise.resolve()
-        .then(() => listener.onSignal())
+        .then(() => listener.onSignal(listener.latest!))
         .catch(() => undefined)
         .finally(() => {
           listener.running = false;
@@ -231,13 +237,15 @@ export interface EventSignalOptions {
 
 /**
  * Calls `onSignal` (usually a react-query invalidate) once per "refetch" signal on the
- * source's topic. `source` comes from an authenticated HTTP payload; without it (no
- * service key, or not loaded yet) nothing is subscribed. Returns whether the topic's
+ * source's topic. `onSignal` receives the newest accepted content (data topics such as
+ * `bingo` apply it directly; coalesced calls get the newest one). `source` comes from an
+ * authenticated HTTP payload; without it (no service key, or not loaded yet) nothing is
+ * subscribed. Returns whether the topic's
  * subscription is live on the current connection.
  */
 export function useEventSignal(
   source: EventSignalSource | null | undefined,
-  onSignal: () => unknown,
+  onSignal: (content: EventSignalContent) => unknown,
   options: EventSignalOptions = {},
 ): { synced: boolean } {
   const sourceRef = useRef(source);
@@ -256,7 +264,8 @@ export function useEventSignal(
     const hub = hubFor(initial.relays);
     let remove: (() => void) | null = hub.add(initial.topic, {
       source: () => sourceRef.current ?? initial,
-      onSignal: () => onSignalRef.current(),
+      onSignal: (content) => onSignalRef.current(content),
+      latest: null,
       jitterMs,
       lastRev: 0,
       timer: null,
