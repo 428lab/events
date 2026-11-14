@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { User, BingoState, BingoStatus } from "@eventer/shared";
+import type { User, BingoPublic, BingoState, BingoStatus } from "@eventer/shared";
 import { deriveBingoCard } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { canManageEvent, requireEventRole } from "../auth/roles.js";
@@ -11,6 +11,7 @@ import {
   bingoTotals,
   drawnNumbers,
   eventBingoRepo,
+  type BingoGame,
 } from "../db/repositories/eventBingo.js";
 import { eventSignal, type RefetchSignalTarget } from "../lib/eventSignal.js";
 import { deferBackground } from "../runtime.js";
@@ -42,15 +43,33 @@ async function bingoAudience(
   return null;
 }
 
+/** 参加者に見えるゲームの公開部分。GET /bingo と合図（topic `bingo`）の両方がこれを使う。
+ * gameId は開始時刻（リセットして始め直すと変わる。開始前・ゲームなしは null） */
+function bingoPublic(game: BingoGame | null): BingoPublic {
+  if (!game) return { gameId: null, status: "none", drawnNumbers: [], counts: { cards: 0, bingo: 0, reach: 0 } };
+  return { gameId: game.startedAt, status: game.status, drawnNumbers: drawnNumbers(game), counts: game.counts };
+}
+
 /** ビンゴが変わったことを開いている画面へ送る（D-POLL-MIN 第5段階）。
- * - `bingo-staff`: 抽選コントロール（5b-2）
- * - `bingo`: カード画面・投影（5b-3）。参加者全員が見るので、カード発行では送らない
- *   （人数は次の抽選で追いつく）
+ * - `bingo`: カード画面・投影。**中身つき**（番号・人数・状態。平文で名前は載せない。
+ *   オーナー決定 2026-11-14・docs/event-signal.md）。受けた画面は取り直さずに反映する。
+ *   書き込みの確定後に読んだゲーム行から作る（rev は読む前に取る）。
+ *   参加者全員が見るので、カード発行では送らない（人数は次の抽選で追いつく）
+ * - `bingo-staff`: 抽選コントロール（5b-2）。取り直しの合図のまま
  * - `prize-desk`: 抽選・取り消し・終了・リセット・削除はビンゴ景品の達成者も動かす */
 function publishBingo(eventId: string, prizeDesk = false): Promise<void> {
-  const targets: RefetchSignalTarget[] = [["bingo-staff", eventId], ["bingo", eventId]];
+  const targets: RefetchSignalTarget[] = [["bingo-staff", eventId]];
   if (prizeDesk) targets.push(["prize-desk", eventId]);
-  return deferBackground(eventSignal.publishRefetch(targets));
+  const publishData = async () => {
+    try {
+      const rev = Date.now();
+      const game = await eventBingoRepo.findGame(eventId);
+      await eventSignal.publish(eventId, "bingo", rev, { ...bingoPublic(game) });
+    } catch {
+      console.warn("Event signal (bingo) failed");
+    }
+  };
+  return deferBackground(Promise.all([eventSignal.publishRefetch(targets), publishData()]));
 }
 
 export const eventBingoRoutes = new Hono<AppEnv>();
@@ -80,9 +99,10 @@ async function recount(eventId: string, drawnCount: number, drawn: number[]) {
   return totals.counts;
 }
 
-/** 参加者向けの状態（カード画面・投影）。定期には取り直さず、`signal`（topic `bingo`）の合図で
- * 取り直す（D-POLL-MIN 第5段階 5b-3）。抽選のたびに参加者全員が取り直すので、読むのはゲーム行と
- * 自分のカードだけ: 人数と順位はゲーム行に保存した値（0109）。
+/** 参加者向けの状態（カード画面・投影）。定期には取り直さず、`signal`（topic `bingo`）の
+ * 合図の中身を画面が反映する（D-POLL-MIN 第5段階 5b-3）。取り直すのはゲームが替わったとき・
+ * 自分がビンゴして順位が要るとき・タブ復帰や合図の取りこぼし。それでも多くの人が読むので、
+ * 読むのはゲーム行と自分のカードだけ: 人数と順位はゲーム行に保存した値（0109）。
  * 自分のカードと判定・人数だけを返す（他人のカード・名前は返さない） */
 eventBingoRoutes.get("/:id/bingo", async (c) => {
   const readAt = Date.now();
@@ -93,9 +113,7 @@ eventBingoRoutes.get("/:id/bingo", async (c) => {
   if (!game) {
     // ゲーム作成前: staff は作成ボタンを出すため、確定メンバーは作成の合図を待つため
     return c.json({
-      status: "none",
-      drawnNumbers: [],
-      counts: { cards: 0, bingo: 0, reach: 0 },
+      ...bingoPublic(null),
       card: null,
       me: null,
       signal,
@@ -105,9 +123,7 @@ eventBingoRoutes.get("/:id/bingo", async (c) => {
   const card = await eventBingoRepo.findCard(game.eventId, c.get("user").id);
   const mine = card ? deriveBingoCard(card, drawn) : null;
   return c.json({
-    status: game.status,
-    drawnNumbers: drawn,
-    counts: game.counts,
+    ...bingoPublic(game),
     card,
     me: mine
       ? {

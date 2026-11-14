@@ -112,7 +112,7 @@ export const eventSignal = {
 
   /** `config` plus the relays the signal is published to, for screens that have no chat
    * connection of their own (D-POLL-MIN Phase 5b). Null without a service key. */
-  async source(scopeId: string, topic: EventSignalRefetchTopic, rev: number): Promise<EventSignalSource | null> {
+  async source(scopeId: string, topic: EventSignalTopic, rev: number): Promise<EventSignalSource | null> {
     const config = this.config(scopeId, topic, rev);
     return config ? { ...config, relays: await getChatRelays() } : null;
   },

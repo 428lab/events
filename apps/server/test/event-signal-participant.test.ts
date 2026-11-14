@@ -162,36 +162,54 @@ describe("bingo", () => {
     expectSource((await read<BingoState>(`/events/${eventId}/bingo`, member.cookie)).signal, eventId, "bingo", before);
   });
 
-  it("create/start/draw/undo/end/reset/delete signal the cards; card issue signals only the draw control", async () => {
+  it("create/start/draw/undo/end/reset/delete send the cards the game data; card issue signals only the draw control", async () => {
     const { staff, member, eventId } = await setup();
     const { sent } = spyPublish(async () => await sql("SELECT drawn_count, card_count FROM event_bingo_game WHERE event_id=?", eventId).first());
     const cards = topicOf(eventId, "bingo"), control = topicOf(eventId, "bingo-staff"), desk = topicOf(eventId, "prize-desk");
+    /** The data-carrying `bingo` events, in order; each is its own Nostr event */
+    const data = () => sent.filter((s) => s.topics.includes(cards));
+    const refetch = () => sent.filter((s) => !s.topics.includes(cards));
     expect((await json("POST", `/events/${eventId}/bingo`, staff.cookie, {})).status).toBe(201);
-    await settled(sent, 1);
-    expect(sent.at(-1)!.topics).toEqual([control, cards]);
-    expect((await json("POST", `/events/${eventId}/bingo/card`, member.cookie, {})).status).toBe(200);
     await settled(sent, 2);
+    expect(data().at(-1)).toMatchObject({ topics: [cards], protected: true, content: { gameId: null, status: "setup", drawnNumbers: [] } });
+    expect(refetch().at(-1)!.topics).toEqual([control]);
+    expect((await json("POST", `/events/${eventId}/bingo/card`, member.cookie, {})).status).toBe(200);
+    await settled(sent, 3);
     expect(sent.at(-1)!.topics).toEqual([control]); // 10,000 card issues must not wake 10,000 cards
     expect((await json("POST", `/events/${eventId}/bingo/start`, staff.cookie, {})).status).toBe(200);
-    await settled(sent, 3);
-    expect(sent.at(-1)!.topics).toEqual([control, cards]);
-    expect((await json("POST", `/events/${eventId}/bingo/draw`, staff.cookie, {})).status).toBe(200);
-    await settled(sent, 4);
-    // the stored counts are written before the signal, so a woken card reads this draw's numbers
-    expect(sent.at(-1)).toMatchObject({ topics: [control, cards, desk], seen: { drawn_count: 1, card_count: 1 } });
-    expect((await json("POST", `/events/${eventId}/bingo/draw/undo`, staff.cookie, {})).status).toBe(200);
     await settled(sent, 5);
-    expect(sent.at(-1)!.topics).toEqual([control, cards, desk]);
-    expect((await json("POST", `/events/${eventId}/bingo/end`, staff.cookie, {})).status).toBe(200);
-    await settled(sent, 6);
-    expect((await json("POST", `/events/${eventId}/bingo/reset`, staff.cookie, {})).status).toBe(200);
+    expect(data().at(-1)!.content).toMatchObject({ status: "running", gameId: expect.any(Number), drawnNumbers: [] });
+    expect((await json("POST", `/events/${eventId}/bingo/draw`, staff.cookie, {})).status).toBe(200);
     await settled(sent, 7);
-    expect(sent.at(-1)!.topics).toEqual([control, cards, desk]);
+    // the signal carries exactly what GET /bingo shows, read after the commit; no names or user ids
+    const after = await read<BingoState>(`/events/${eventId}/bingo`, member.cookie);
+    const drawn = data().at(-1)!;
+    expect(drawn.content).toEqual({
+      gameId: after.gameId, status: "running", drawnNumbers: after.drawnNumbers, counts: after.counts, rev: expect.any(Number),
+    });
+    expect(after.drawnNumbers).toHaveLength(1);
+    expect(after.counts.cards).toBe(1);
+    expect(drawn.content.rev).toBeLessThan(after.signal!.rev + 1);
+    expect(JSON.stringify(drawn.content)).not.toContain(member.id);
+    expect(JSON.stringify(drawn.content)).not.toContain("n_");
+    expect(refetch().at(-1)).toMatchObject({ topics: [control, desk], seen: { drawn_count: 1, card_count: 1 } });
+    expect((await json("POST", `/events/${eventId}/bingo/draw/undo`, staff.cookie, {})).status).toBe(200);
+    await settled(sent, 9);
+    expect(data().at(-1)!.content).toMatchObject({ drawnNumbers: [] });
+    expect(refetch().at(-1)!.topics).toEqual([control, desk]);
+    expect((await json("POST", `/events/${eventId}/bingo/end`, staff.cookie, {})).status).toBe(200);
+    await settled(sent, 11);
+    expect(data().at(-1)!.content).toMatchObject({ status: "ended" });
+    expect((await json("POST", `/events/${eventId}/bingo/reset`, staff.cookie, {})).status).toBe(200);
+    await settled(sent, 13);
+    expect(data().at(-1)!.content).toMatchObject({ status: "setup", gameId: null });
     expect((await json("DELETE", `/events/${eventId}/bingo`, staff.cookie)).status).toBe(200);
-    await settled(sent, 8);
-    expect(sent.at(-1)!.topics).toEqual([control, cards, desk]);
-    for (const s of sent) expect(Object.keys(s.content)).toEqual(["rev"]);
+    await settled(sent, 15);
+    expect(data().at(-1)!.content).toMatchObject({ status: "none", gameId: null });
+    expect(data()).toHaveLength(7);
+    for (const s of refetch()) expect(Object.keys(s.content)).toEqual(["rev"]);
   });
+
 });
 
 describe("bingo stored counts (D3, migration 0109)", () => {
