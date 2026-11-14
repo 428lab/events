@@ -426,6 +426,7 @@ describe("イベントのたまご (#29)", () => {
     const html = await og.text();
     expect(html).toContain("og:title");
     expect(html).toContain("共有たまご");
+    expect(html).toContain("<title>🥚 共有たまご ・ events lab</title>");
     const secretOg = await SELF.fetch(`${BASE}/r/${secret.request.slug}`);
     const secretHtml = await secretOg.text();
     expect(secretHtml).not.toContain("限定共有たまご");

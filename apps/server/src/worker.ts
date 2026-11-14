@@ -521,6 +521,14 @@ const escapeHtml = (s: string) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+/** ページタイトルと og:site_name に使うサイト名 (#676) */
+const SITE_NAME = "events lab";
+/** 個別ページの <title>。区切りはプロフィールの og:title と同じ「 ・ 」 */
+const pageTitle = (name: string) => `${name} ・ ${SITE_NAME}`;
+/** index.html の既定 <title> を差し替える（題名の `$` を置換パターンとして解釈させないよう関数で渡す） */
+const replaceTitle = (html: string, title: string) =>
+  html.replace(/<title>[^<]*<\/title>/, () => `<title>${escapeHtml(title)}</title>`);
+
 /** ASSETS バインディングから index.html を取得 */
 async function loadIndexHtml(reqUrl: string): Promise<string> {
   const res = await getAssets().fetch(
@@ -543,13 +551,14 @@ function injectEventOg(html: string, event: Event): string {
   const tags = [
     `<meta property="og:type" content="website" />`,
     `<meta property="og:title" content="${title}" />`,
+    `<meta property="og:site_name" content="${SITE_NAME}" />`,
     `<meta property="og:description" content="${desc}" />`,
     `<meta property="og:url" content="${url}" />`,
     `<meta property="og:image" content="${image}" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
   ];
   // index.html の既定OGを取り除いてからイベント固有を入れる（重複回避）
-  const cleaned = html
+  const cleaned = replaceTitle(html, pageTitle(event.title))
     .replace(/\s*<meta property="og:[^>]*>/g, "")
     .replace(/\s*<meta name="twitter:[^>]*>/g, "");
   return cleaned.replace("</head>", `${tags.join("\n")}\n</head>`);
@@ -589,12 +598,13 @@ function injectRequestOg(html: string, req: EventRequestOg): string {
   const tags = [
     `<meta property="og:type" content="website" />`,
     `<meta property="og:title" content="${title}" />`,
+    `<meta property="og:site_name" content="${SITE_NAME}" />`,
     `<meta property="og:description" content="${desc}" />`,
     `<meta property="og:url" content="${url}" />`,
     `<meta property="og:image" content="${image}" />`,
     `<meta name="twitter:card" content="summary" />`,
   ];
-  const cleaned = html
+  const cleaned = replaceTitle(html, pageTitle(`🥚 ${req.title}`))
     .replace(/\s*<meta property="og:[^>]*>/g, "")
     .replace(/\s*<meta name="twitter:[^>]*>/g, "");
   return cleaned.replace("</head>", `${tags.join("\n")}\n</head>`);
@@ -637,7 +647,8 @@ function injectProfileOg(
   const url = escapeHtml(
     `${env.appBaseUrl}/users/${encodeURIComponent(user.username)}`,
   );
-  const title = escapeHtml(`${user.globalName ?? user.username} ・ events lab`);
+  const name = pageTitle(user.globalName ?? user.username);
+  const title = escapeHtml(name);
   const desc = escapeHtml(summary);
   const image = escapeHtml(
     /^[0-9a-f]{32}$/.test(user.cardImageGeneration ?? "") && user.cardImageUpdatedAt
@@ -649,13 +660,14 @@ function injectProfileOg(
   const tags = [
     `<meta property="og:type" content="website" />`,
     `<meta property="og:title" content="${title}" />`,
+    `<meta property="og:site_name" content="${SITE_NAME}" />`,
     `<meta property="og:description" content="${desc}" />`,
     `<meta property="og:url" content="${url}" />`,
     `<meta property="og:image" content="${image}" />`,
     // カードPNGは 2148x1300 の横長なので large card。既定画像は通常カード
     `<meta name="twitter:card" content="${user.cardImageUpdatedAt ? "summary_large_image" : "summary"}" />`,
   ];
-  const cleaned = html
+  const cleaned = replaceTitle(html, name)
     .replace(/\s*<meta property="og:[^>]*>/g, "")
     .replace(/\s*<meta name="twitter:[^>]*>/g, "");
   return cleaned.replace("</head>", `${tags.join("\n")}\n</head>`);
