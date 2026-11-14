@@ -106,6 +106,9 @@ const ja = {
   /** 参加者一覧 */
   participantsWithCount: "参加者一覧（{{n}}）",
   participantsOther: "その他",
+  staffCancel: "キャンセル扱いにする",
+  staffCancelConfirm: "{{name}}さんの参加をキャンセル扱いにします。無断欠席にはならず、直前キャンセルとして記録されます。元に戻せません。",
+  staffCancelError: "キャンセル扱いにできませんでした。受付済みの人や、参加が確定していない人はキャンセル扱いにできません。",
   /** 参加者一覧の枠ごとの見出し。全体の人数（participantsWithCount）と同じ数え方 */
   slotHeadingWithCount: "{{name}}（{{n}}）",
   attendanceModeNotice:
@@ -243,6 +246,9 @@ const en: Record<keyof typeof ja, string> = {
 
   participantsWithCount: "Participants ({{n}})",
   participantsOther: "Other",
+  staffCancel: "Mark as cancelled",
+  staffCancelConfirm: "Mark {{name}}'s participation as cancelled? It will be recorded as a short-notice cancellation, not a no-show. This can't be undone.",
+  staffCancelError: "Couldn't mark as cancelled. Checked-in members and members who aren't confirmed can't be marked as cancelled.",
   slotHeadingWithCount: "{{name}} ({{n}})",
   attendanceModeNotice:
     "Attendance check is on: only people who are checked in count as participants.",

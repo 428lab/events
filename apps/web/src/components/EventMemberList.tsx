@@ -34,6 +34,7 @@ import {
   useEventSlots,
   useMe,
   useSetAssignedSlot,
+  useStaffCancelMember,
   useSetAttendance,
   useSetEventMemberRole,
 } from "../api/hooks.js";
@@ -172,6 +173,8 @@ export function MemberRow({
   const { t } = useTranslation();
   const setRole = useSetEventMemberRole(eventId);
   const setAssignedSlot = useSetAssignedSlot(eventId);
+  const staffCancel = useStaffCancelMember(eventId);
+  const [cancelError, setCancelError] = useState("");
   // 行ごとに持つ（ロール変更と同じ）。1つを全行で共有すると、続けて操作したとき
   // 後の行の結果が前の行のエラー表示を消してしまう (#286)
   const setAttendance = useSetAttendance(eventId);
@@ -293,6 +296,22 @@ export function MemberRow({
                     )}
                   </MenuItem>
                 ))}
+                {/* 当日・開始後に「行けない」と連絡があった人を、無断欠席ではなく直前キャンセルとして残す。
+                    受付済み（出席）の人は来ていたので出さない */}
+                {!isMe && m.role === "participant" && m.status === "confirmed" && !m.attended && [
+                  <Divider key="cancel-divider" />,
+                  <MenuItem
+                    key="staff-cancel"
+                    disabled={staffCancel.isPending}
+                    onClick={() => {
+                      setAnchor(null);
+                      if (!window.confirm(t("eventDetail.staffCancelConfirm", { name: memberName }))) return;
+                      staffCancel.mutate(m.user.id, { onError: () => setCancelError(t("eventDetail.staffCancelError")) });
+                    }}
+                  >
+                    {t("eventDetail.staffCancel")}
+                  </MenuItem>,
+                ]}
                 {canAssignSlot && [
                   ...(isMe ? [] : [<Divider key="assign-divider" />]),
                   <ListSubheader key="assign-heading" sx={{ lineHeight: "32px", bgcolor: "transparent" }}>
@@ -325,6 +344,12 @@ export function MemberRow({
                 autoHideDuration={8000}
                 onClose={() => setSlotError("")}
                 message={slotError}
+              />
+              <Snackbar
+                open={Boolean(cancelError)}
+                autoHideDuration={8000}
+                onClose={() => setCancelError("")}
+                message={cancelError}
               />
               {/* 断られた理由は画面に出す。出さないと「押しても何も起きない」に見える */}
               <Snackbar
