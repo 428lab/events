@@ -151,7 +151,7 @@ jitter 0。合図には何も載せない（`{rev}` だけ）。
 | --- | --- | --- | --- | --- |
 | `event-state` | `GET /events/:id/state`（閲覧できる人全員） | コンテスト形式のイベントの全ページと表彰画面（`EventLayout` の `useEventStateSignal`）。それ以外のイベントは購読しない | 5秒。**表彰画面だけ1秒** | モード・発表中・採点の締切・表彰の次を発表／最初に戻す |
 | `scores` | `GET /events/:id/scores/summary`（staff・審査員） | `/control`（集計と進捗を両方取り直す） | 0 | 採点の提出（throttle）・採点項目の作成・変更・削除 |
-| `bingo` | `GET /events/:id/bingo`（確定メンバー。ゲーム作成前も `status: "none"` で返す） | カード（`/bingo`）・投影（`/bingo/screen`）。詳細の小カードは購読しない | 5秒。**投影だけ1秒**（#681。番号のロールを司会の読み上げに合わせる） | ゲームの作成・開始・抽選・取り消し・終了・リセット・削除（カード発行は送らない） |
+| `bingo` | `GET /events/:id/bingo`（確定メンバー。ゲーム作成前も `status: "none"` で返す） | カード（`/bingo`）・投影（`/bingo/screen`）。詳細の小カードは購読しない | 5秒 | ゲームの作成・開始・抽選・取り消し・終了・リセット・削除（カード発行は送らない） |
 
 - 表彰の合図は `event-state` に畳んだ（旧 `GET /awards-sync`・kind 27889・`accessRevision` 入りの
   topic は廃止。参加のたびに topic がずれた #538 の問題も消える）。表彰画面は合図で state を取り直し、

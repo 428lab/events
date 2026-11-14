@@ -6,7 +6,7 @@ import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BINGO_COLUMNS, BINGO_COLUMN_RANGES } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
-import { BINGO_SCREEN_SIGNAL_JITTER_MS, useBingoState } from "../api/bingoHooks.js";
+import { useBingoState } from "../api/bingoHooks.js";
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion.js";
 import { useBingoScreenEffects, type BingoCountBadge } from "../lib/useBingoScreenEffects.js";
 import {
@@ -38,13 +38,13 @@ function readScale(): number {
  * 追いつく。名前は出さない（人数のみ。docs/bingo.md §3.8）。
  *
  * 演出 (#681 PR1): 新しい番号はロールしてから止まり、リーチ・ビンゴの人数は大きなパネルで増分を
- * 見せる。差分の判定と時間は `useBingoScreenEffects`。合図は1秒以内に取り直す（司会の読み上げに合わせる）。
+ * 見せる。差分の判定と時間は `useBingoScreenEffects`（連続する BingoState の差分だけで動く。取り直しの経路には依存しない）。
  */
 export function EventBingoScreenPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData, isLoading, isError } = useEvent(id);
-  const state = useBingoState(id, Boolean(eventData), true, { jitterMs: BINGO_SCREEN_SIGNAL_JITTER_MS });
+  const state = useBingoState(id, Boolean(eventData), true);
   const reduced = usePrefersReducedMotion();
   const fx = useBingoScreenEffects(state.data, reduced);
 

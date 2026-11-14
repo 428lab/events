@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { BINGO_MAX_NUMBER, type BingoState } from "@eventer/shared";
 
 /**
- * ビンゴ投影の演出 (#681 PR1)。どれも**前回の応答との差分**で起こす。初回の表示・取り直しで
+ * ビンゴ投影の演出 (#681 PR1)。どれも**連続する BingoState の差分**だけで起こす（値がどの経路で
+ * 届いたかには依存しない）。初回の表示・取り直しで
  * 値が変わらないとき・取り消し（番号が減る）では何も起こさない。
  *
  * - 番号のロール: 番号が増えたら、大きな数字を `BINGO_ROLL_MS` のあいだ乱数で回してから本当の番号で
