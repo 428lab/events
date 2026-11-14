@@ -91,6 +91,21 @@ describe("useBingoState (topic bingo)", () => {
     expect(result.current.data?.drawnNumbers).toEqual([1, 2, 3, 4]);
   });
 
+  it("a GET that was in flight when the signal arrived does not overwrite the applied numbers", async () => {
+    vi.useFakeTimers();
+    let resolveSlow: (v: BingoState) => void = () => undefined;
+    apiGet.mockResolvedValueOnce({ ...state("running", 100), card: CARD, me: { bingo: false, reach: false, rank: null } })
+      .mockImplementationOnce(() => new Promise<BingoState>((r) => { resolveSlow = r; }));
+    const { result } = renderHook(() => useBingoState("e-1", true, true), { wrapper: wrapper() });
+    await flush();
+    // e.g. a tab-focus refetch that read the game before draw 4 was committed
+    act(() => { void result.current.refetch(); });
+    await act(async () => { await listeners.at(-1)!.onSignal(signal(5, 100, [1, 2, 3, 4])); });
+    await act(async () => { resolveSlow({ ...state("running", 100), drawnNumbers: [1, 2, 3], card: CARD, me: { bingo: false, reach: false, rank: null } }); });
+    await flush(0);
+    expect(result.current.data?.drawnNumbers).toEqual([1, 2, 3, 4]);
+  });
+
   it("a signal for another game (reset and restart) refetches instead of applying", async () => {
     vi.useFakeTimers();
     apiGet.mockResolvedValueOnce({ ...state("running", 100), card: CARD, me: { bingo: false, reach: false, rank: null } })

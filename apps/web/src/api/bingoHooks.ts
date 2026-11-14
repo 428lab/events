@@ -82,8 +82,11 @@ export function useBingoState(eventId: string, enabled: boolean, watch = false) 
     if (refetchTimer.current) clearTimeout(refetchTimer.current);
     refetchTimer.current = null;
   }, []);
-  useEventSignal(watch ? query.data?.signal : null, (content) => {
+  useEventSignal(watch ? query.data?.signal : null, async (content) => {
     const signal = parseBingoSignal(content);
+    // 取り直しの途中（タブ復帰・ばらした取り直し）なら先に止める。合図より前に読んだ応答が
+    // 後から着いて、重ねた番号を古い状態で上書きしないように（止めると取得前の状態に戻る）
+    await qc.cancelQueries({ queryKey, exact: true });
     const old = qc.getQueryData<BingoState>(queryKey);
     const applied = signal && old ? applyBingoSignal(old, signal) : "refetch";
     if (applied === "stale") return;
