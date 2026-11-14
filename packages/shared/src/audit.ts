@@ -18,6 +18,8 @@ export const AUDIT_ACTIONS = [
   "identity_unlink",
   /** 運営がイベントの採点結果をすべて消した（未開始に戻す） */
   "scores_reset",
+  /** 運営が参加者を「キャンセル扱い」にした（無断欠席にしない。当日・開始後の連絡など） */
+  "participation_cancel_by_staff",
   "chat_channel_reset",
   "admin_setting_change",
   /** 運営によるイベント内コンテンツの非表示 (#278) */
@@ -42,6 +44,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   identity_link: "ログイン方法の連携",
   identity_unlink: "ログイン方法の連携解除",
   scores_reset: "採点結果の消去",
+  participation_cancel_by_staff: "参加のキャンセル扱い（運営）",
   chat_channel_reset: "チャンネルのリセット",
   admin_setting_change: "運用設定の変更",
   content_hide: "コンテンツの非表示",

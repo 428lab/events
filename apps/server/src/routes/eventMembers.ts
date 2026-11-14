@@ -26,6 +26,9 @@ import { notifyFollowersOnJoin } from "./follows.js";
 import { publishDeckSync } from "../lib/deckSync.js";
 import { deferBackground } from "../runtime.js";
 import { notifyWebhooks } from "../lib/webhooks.js";
+import { usersRepo } from "../db/repositories/users.js";
+import { notificationsRepo } from "../db/repositories/notifications.js";
+import { recordAudit } from "../db/repositories/auditLogs.js";
 
 /** 参加登録・参加解除・ロール変更・出席チェック */
 export const eventMemberRoutes = new Hono<AppEnv>();
@@ -185,6 +188,63 @@ eventMemberRoutes.patch(
     if (!result) return c.json({ error: "access_changed" }, 409);
     await deferBackground(publishDeckSync(eventId));
     return c.json({ member: await eventMembersRepo.find(eventId, userId), ...result });
+  },
+);
+
+/** 運営が参加者を「キャンセル扱い」にする（staff のみ。docs/attendance-staff-cancel.md）。
+ *
+ * 当日になって「行けない」と連絡があった人を、無断欠席ではなく直前キャンセルとして残すため。
+ * 本人の参加解除と同じ後始末（行は canceled で残す・個人 Entry とアンケート回答を消す・繰り上げ）。
+ * 連絡が開始後に来ることがあるので、本人の解除と違って開始後・終了後も通す（終了後は繰り上げない）。
+ * 受付でチェックイン済み（attended）の人は来ていたので書き換えない（409 already_attended）。 */
+eventMemberRoutes.post(
+  "/:id/members/:userId/cancel",
+  requireEventRole(["staff"]),
+  async (c) => {
+    const actor = c.get("user");
+    const eventId = c.req.param("id");
+    const userId = c.req.param("userId");
+    const event = await eventsRepo.findById(eventId);
+    if (!event) return c.json({ error: "not_found" }, 404);
+    const before = await eventMembersRepo.find(eventId, userId);
+    if (!before || before.role !== "participant" || before.status !== "confirmed") {
+      return c.json({ error: "not_confirmed_participant" }, 409);
+    }
+    if (before.attended) return c.json({ error: "already_attended" }, 409);
+    const result = await changeMembership(eventId, actor.id, userId, before, undefined, {
+      staffCancel: true,
+      eventEnded: isEventEnded(event),
+    });
+    if (!result) return c.json({ error: "access_changed" }, 409);
+    await deferBackground(publishDeckSync(eventId));
+    const target = await usersRepo.findById(userId);
+    await recordAudit({
+      action: "participation_cancel_by_staff",
+      actor: { id: actor.id, handle: actor.username },
+      target: target ? { id: target.id, handle: target.username } : { id: userId, handle: "" },
+      detail: { eventId },
+    });
+    await notificationsRepo.create(
+      userId,
+      "info",
+      "運営があなたの参加をキャンセル扱いにしました",
+      `「${event.title}」`,
+      `/events/${eventId}`,
+      undefined,
+      { eventId },
+    );
+    if (target) {
+      const after = await eventsRepo.findById(eventId);
+      await notifyWebhooks({
+        topic: "cancel",
+        eventId,
+        eventTitle: event.title,
+        user: { name: target.globalName ?? target.username, handle: target.username },
+        confirmedCount: after?.participantCount ?? event.participantCount,
+        byStaff: true,
+      });
+    }
+    return c.json({ ok: true, member: await eventMembersRepo.find(eventId, userId), ...result });
   },
 );
 

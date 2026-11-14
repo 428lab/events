@@ -23,6 +23,8 @@ export type WebhookMessage =
       eventTitle: string;
       user: { name: string; handle: string };
       confirmedCount: number;
+      /** 運営が「キャンセル扱い」にした（本人の取り消しではない） */
+      byStaff?: boolean;
     }
   | {
       topic: "inquiry";
@@ -55,7 +57,7 @@ const inquiryUrl = (eventId: string, inquiryId: string) => `${base()}/events/${e
 
 function title(m: WebhookMessage): string {
   if (m.topic === "join") return `参加: ${m.eventTitle}`;
-  if (m.topic === "cancel") return `キャンセル: ${m.eventTitle}`;
+  if (m.topic === "cancel") return `${m.byStaff ? "キャンセル（運営が記録）" : "キャンセル"}: ${m.eventTitle}`;
   return `${m.followUp ? "問い合わせ（追記）" : "問い合わせ"}: ${m.eventTitle}`;
 }
 

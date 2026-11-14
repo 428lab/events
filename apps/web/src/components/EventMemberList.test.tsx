@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, act, cleanup } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
@@ -15,13 +15,17 @@ import { i18next } from "../i18n/index.js";
  */
 
 // vi.mock はファイル先頭へ巻き上げられるので、参照する変数も一緒に巻き上げる
-const { patchMock } = vi.hoisted(() => ({ patchMock: vi.fn() }));
+const { patchMock, postMock } = vi.hoisted(() => ({ patchMock: vi.fn(), postMock: vi.fn() }));
 
 vi.mock("../api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client.js")>();
   return {
     ...actual,
-    api: { ...actual.api, patch: (...args: unknown[]) => patchMock(...args) },
+    api: {
+      ...actual.api,
+      patch: (...args: unknown[]) => patchMock(...args),
+      post: (...args: unknown[]) => postMock(...args),
+    },
   };
 });
 
@@ -405,5 +409,36 @@ describe("スタッフを並べる枠", () => {
     );
     expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["一般枠（1）", "運営枠（1）"]);
     expect(within(screen.getByRole("list", { name: "運営枠" })).getByText("運営の人")).toBeInTheDocument();
+  });
+});
+
+/** 運営が参加者を「キャンセル扱い」にする（docs/attendance-staff-cancel.md） */
+describe("キャンセル扱い", () => {
+  function drawRow(member: EventMemberWithUser) {
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <MemberRow eventId="e-1" member={member} isStaff attendanceCheck isMe={false} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+  afterEach(() => vi.restoreAllMocks());
+
+  it("確定参加者の「…」に出し、確認のあと送る。受付済みの人には出さない", async () => {
+    postMock.mockReset();
+    postMock.mockResolvedValue({ ok: true });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    drawRow({ ...MEMBER, role: "participant" });
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "キャンセル扱いにする" }));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("無断欠席にはならず"));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith("/events/e-1/members/u-1/cancel"));
+
+    cleanup();
+    drawRow({ ...MEMBER, role: "participant", attended: true });
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    expect(screen.queryByRole("menuitem", { name: "キャンセル扱いにする" })).not.toBeInTheDocument();
   });
 });

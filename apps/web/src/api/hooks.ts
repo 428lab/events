@@ -510,6 +510,17 @@ export function useSetAssignedSlot(eventId: string) {
   });
 }
 
+/** 運営が参加者を「キャンセル扱い」にする（無断欠席にしない。docs/attendance-staff-cancel.md） */
+export function useStaffCancelMember(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => api.post(`/events/${eventId}/members/${userId}/cancel`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event", eventId] });
+    },
+  });
+}
+
 /** 出席チェック（staff）。楽観更新はせずメンバー一覧を再取得 */
 export function useSetAttendance(eventId: string) {
   const qc = useQueryClient();
