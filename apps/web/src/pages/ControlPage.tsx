@@ -400,6 +400,12 @@ function ContestControl({ id }: { id: string }) {
               onClick={(e) => {
                 if (saveBlockedRef.current || ceremonyBlocked || state.mode !== "awards") e.preventDefault();
               }}>{t("eventRun.openCeremony")}</Button>
+            {state.mode === "awards" && (
+              <Button variant="outlined" color="error" disabled={setMode.isPending}
+                onClick={() => { if (window.confirm(t("eventRun.endCeremonyConfirm"))) setMode.mutate("normal"); }}>
+                {t("eventRun.endCeremony")}
+              </Button>
+            )}
           </Stack>
         </CardContent>
       </Card>

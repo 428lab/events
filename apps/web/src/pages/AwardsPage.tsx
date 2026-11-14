@@ -12,11 +12,11 @@ import {
 } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
-import { Link as RouterLink, useParams } from "react-router-dom";
+import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AWARDS_DRUMROLL_MS, type AwardResultView } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
-import { useEventState } from "../api/scoringHooks.js";
+import { useEventState, useSetMode } from "../api/scoringHooks.js";
 import { useAwards, useAwardsAdvance, useAwardsReset } from "../api/awardHooks.js";
 import { useNotifyAwardWinners } from "../api/notificationHooks.js";
 import { UserLink } from "../components/UserLink.js";
@@ -43,6 +43,9 @@ export function AwardsPage() {
   const advance = useAwardsAdvance(id);
   const reset = useAwardsReset(id);
   const notifyWinners = useNotifyAwardWinners(id);
+  /** 表彰式を終える: モードを通常へ戻すと、参加者の画面も表彰式から外れる（EventLayout が退避させる） */
+  const setMode = useSetMode(id);
+  const navigate = useNavigate();
   const resolveUser = useEntryUserResolver(id);
   /** 通知した人数。**訳した文字列ではなく数を持つ**ので、
    *  言語を切り替えても前の言語のまま残らない。
@@ -316,6 +319,18 @@ export function AwardsPage() {
               )}
             </Typography>
           )}
+          <Button
+            variant={cursor >= sequence.length ? "contained" : "outlined"}
+            color="error"
+            disabled={setMode.isPending}
+            onClick={() => {
+              if (!window.confirm(t("eventRun.endCeremonyConfirm"))) return;
+              setMode.mutate("normal", { onSuccess: () => navigate(`/events/${id}/control`) });
+            }}
+          >
+            {t("eventRun.endCeremony")}
+          </Button>
+          {setMode.isError && <Typography variant="caption" color="error">{t("eventRun.endCeremonyFailed")}</Typography>}
           {(eventData?.myRole === "staff" || (eventData?.event.visibility === "private" && eventData.canManageAccess)) && (
             <Button color="inherit" size="small" component={RouterLink} to={`/events/${id}/manage`}>{t("eventManagement.backToManagement")}</Button>
           )}

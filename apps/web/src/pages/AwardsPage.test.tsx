@@ -13,10 +13,10 @@ import { EVENT_SIGNAL_KIND, type AwardsView, type EventSignalSource, type EventS
  */
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(), post: vi.fn(), play: vi.fn(), fanfare: vi.fn(), confetti: vi.fn(),
+  get: vi.fn(), post: vi.fn(), patch: vi.fn(), play: vi.fn(), fanfare: vi.fn(), confetti: vi.fn(),
   listeners: [] as Array<{ source: EventSignalSource | null | undefined; onSignal: () => unknown; eventId?: string; jitterMs?: number }>,
 }));
-vi.mock("../api/client.js", () => ({ api: { get: mocks.get, post: mocks.post } }));
+vi.mock("../api/client.js", () => ({ api: { get: mocks.get, post: mocks.post, patch: mocks.patch } }));
 vi.mock("../api/hooks.js", () => ({
   useEvent: () => ({ data: { event: { id: "e1", accessRevision: 1 }, myRole: "staff" } }),
   useIsAdmin: () => false,
@@ -47,7 +47,7 @@ const listening = () => mocks.listeners.filter((l) => l.source).at(-1);
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
   const view = render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/events/e1/awards"]}>
-    <Routes><Route path="/events/:id/awards" element={<AwardsWithLayoutSignal />} /></Routes>
+    <Routes><Route path="/events/:id/awards" element={<AwardsWithLayoutSignal />} /><Route path="/events/:id/control" element={<p>control page</p>} /></Routes>
   </MemoryRouter></QueryClientProvider>);
   return { qc, ...view };
 }
@@ -150,4 +150,13 @@ it("failed result refresh offers a retry rather than presenting a stale recipien
   awards.results = [result("Recovered", "r2")];
   fireEvent.click(screen.getByRole("button", { name: "もう一度" }));
   await screen.findByText("Recovered");
+});
+
+it("staff can end the ceremony: mode goes back to normal and the host returns to the control page", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  mocks.patch.mockImplementation(async () => ({ ...state, mode: "normal" }));
+  renderPage(); await ready();
+  fireEvent.click(screen.getByRole("button", { name: "表彰式を終える" }));
+  await screen.findByText("control page");
+  expect(mocks.patch).toHaveBeenCalledExactlyOnceWith("/events/e1/state/mode", { mode: "normal" });
 });
