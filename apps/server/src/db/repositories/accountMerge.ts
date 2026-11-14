@@ -318,6 +318,9 @@ export const accountMergeRepo = {
       // AI エージェント用の一時トークン (docs/agent-deck-token.md)。結び付いたデッキが
       // 上の行で勝ち側へ移るので、トークンも同じ持ち主へ移す（期限は最長60分）
       ["deck_agent_token", "owner_id"],
+      // Discord / Slack 通知を登録した人 (docs/webhooks.md)。付け替えないと (9) の user 削除で
+      // SET NULL が発火し、登録者が黙って消える（Webhook 自体はコミュニティ・イベントの持ち物で残る）
+      ["webhook", "created_by"],
       ["live_set", "owner_id"],
     ];
     for (const [table, col] of simple) {

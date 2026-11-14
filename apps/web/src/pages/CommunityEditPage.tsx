@@ -21,6 +21,7 @@ import {
 } from "../api/communityHooks.js";
 import { CounterTextField } from "../components/CounterTextField.js";
 import { CommunityCohostsSection } from "../components/CommunityCohostsSection.js";
+import { WebhooksCard } from "../components/WebhooksCard.js";
 import { ImageCropField } from "../components/ImageCropField.js";
 
 export function CommunityEditPage() {
@@ -219,6 +220,9 @@ export function CommunityEditPage() {
       <Divider />
       {/* 共催 (#625)。通知のリンク /c/<slug>/edit#cohosts の着地点 */}
       <CommunityCohostsSection communityId={c.id} />
+      <Divider />
+      {/* Discord / Slack 通知（docs/webhooks.md）。/c/<slug>/edit#webhooks */}
+      <WebhooksCard owner={{ community: c.id }} />
     </Stack>
   );
 }

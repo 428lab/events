@@ -270,6 +270,7 @@ export const accountDeletionRepo = {
     //      event_schedule_item.speaker_user_id は SET NULL で匿名化される
     //      （主催者として問い合わせに返信した inquiry_message.author_id も SET NULL。D-EVENT-CONTACT）
     //      （割り勘の event_expense.created_by / event_settlement_done.marked_by も SET NULL）
+    //      （Discord / Slack 通知の登録者 webhook.created_by も SET NULL。Webhook は残る）
     stmts.push({ sql: "DELETE FROM user WHERE id = ?", args: [userId] });
 
     await batch(stmts);
