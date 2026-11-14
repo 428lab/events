@@ -6,7 +6,9 @@ import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BINGO_COLUMNS, BINGO_COLUMN_RANGES } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
-import { useBingoState } from "../api/bingoHooks.js";
+import { BINGO_SCREEN_SIGNAL_JITTER_MS, useBingoState } from "../api/bingoHooks.js";
+import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion.js";
+import { useBingoScreenEffects, type BingoCountBadge } from "../lib/useBingoScreenEffects.js";
 import {
   BOARD_ACCENT,
   BOARD_BG,
@@ -17,6 +19,8 @@ import {
 /** 文字サイズ倍率（MeetRankingScreenPage と同じ作り。キーは別名） */
 const SCALE_KEY = "eventer:bingoScreenScale";
 const SCALES = [0.8, 1, 1.25, 1.5, 2];
+/** リーチの色（ビンゴは BOARD_ACCENT）。参加者カードのリーチ表示と同じ warning 系 */
+const REACH_COLOR = "#FBBF24";
 
 function readScale(): number {
   try {
@@ -32,12 +36,17 @@ function readScale(): number {
  * 権限は参加確定メンバー（スタッフが映す想定）。非メンバーにはサーバーが 404 を返すので
  * 案内だけ出す。ゲーム作成前（"none"）に映しておいても、作成・抽選の合図（topic `bingo`）で
  * 追いつく。名前は出さない（人数のみ。docs/bingo.md §3.8）。
+ *
+ * 演出 (#681 PR1): 新しい番号はロールしてから止まり、リーチ・ビンゴの人数は大きなパネルで増分を
+ * 見せる。差分の判定と時間は `useBingoScreenEffects`。合図は1秒以内に取り直す（司会の読み上げに合わせる）。
  */
 export function EventBingoScreenPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { data: eventData, isLoading, isError } = useEvent(id);
-  const state = useBingoState(id, Boolean(eventData), true);
+  const state = useBingoState(id, Boolean(eventData), true, { jitterMs: BINGO_SCREEN_SIGNAL_JITTER_MS });
+  const reduced = usePrefersReducedMotion();
+  const fx = useBingoScreenEffects(state.data, reduced);
 
   const [scale, setScale] = useState(readScale);
   const changeScale = (dir: 1 | -1) => {
@@ -68,11 +77,12 @@ export function EventBingoScreenPage() {
 
   const data = state.data;
   const drawnSet = new Set(data?.drawnNumbers ?? []);
-  const latest =
-    data && data.drawnNumbers.length > 0
-      ? data.drawnNumbers[data.drawnNumbers.length - 1]
-      : null;
   const unavailable = isError || state.isError;
+  /** いま引かれた番号の履歴セルを一度だけ光らせる（reduced では出さない） */
+  const cellPulse = (n: number) =>
+    !reduced && n === fx.pulseNumber && fx.landKey > 0
+      ? { animation: "bingoCellPulse 900ms ease-out", position: "relative" as const, zIndex: 1 }
+      : {};
 
   return (
     <Box
@@ -89,6 +99,23 @@ export function EventBingoScreenPage() {
         zIndex: 2000,
         p: 3,
         overflow: "hidden",
+        // 止まった番号の拡大（reduced では明るさだけ）・履歴セルと人数のパルス
+        "@keyframes bingoLand": {
+          "0%": { transform: "scale(1.25)" },
+          "100%": { transform: "scale(1)" },
+        },
+        "@keyframes bingoFlash": {
+          "0%": { filter: "brightness(1.8)" },
+          "100%": { filter: "brightness(1)" },
+        },
+        "@keyframes bingoCellPulse": {
+          "0%": { transform: "scale(1.5)", boxShadow: `0 0 0 6px ${BOARD_ACCENT}88` },
+          "100%": { transform: "scale(1)", boxShadow: "0 0 0 0 transparent" },
+        },
+        "@keyframes bingoCountPulse": {
+          "0%": { transform: "scale(1.35)", opacity: 0.4 },
+          "100%": { transform: "scale(1)", opacity: 1 },
+        },
       }}
     >
       {isLoading || (!data && !unavailable) ? (
@@ -130,17 +157,37 @@ export function EventBingoScreenPage() {
                 >
                   {t("eventSocial.bingoWaiting")}
                 </Typography>
+              ) : data.status === "ended" ? (
+                <Typography
+                  data-testid="bingo-ended-summary"
+                  sx={{
+                    fontSize: `clamp(24px, 7vw, ${56 * scale}px)`,
+                    fontWeight: 800,
+                    color: BOARD_TEXT,
+                  }}
+                >
+                  {t("eventSocial.bingoEndedSummary", { bingo: data.counts.bingo, cards: data.counts.cards })}
+                </Typography>
               ) : (
                 <>
                   <Typography
+                    key={fx.rolling ? "rolling" : `n-${fx.landKey}`}
+                    data-testid={fx.rolling ? "bingo-rolling" : "bingo-latest"}
                     sx={{
                       fontSize: `clamp(96px, 28vw, ${160 * scale}px)`,
                       fontWeight: 800,
-                      color: BOARD_ACCENT,
+                      color: fx.rolling ? BOARD_SUB : BOARD_ACCENT,
                       lineHeight: 1,
+                      fontVariantNumeric: "tabular-nums",
+                      animation:
+                        fx.landKey > 0 && !fx.rolling
+                          ? reduced
+                            ? "bingoFlash 600ms ease"
+                            : "bingoLand 450ms cubic-bezier(.2,1.6,.4,1)"
+                          : undefined,
                     }}
                   >
-                    {latest ?? "—"}
+                    {fx.shownNumber ?? "—"}
                   </Typography>
                   {/* 開始直後（まだ0個）は、待ち状態であることを観客にも伝える */}
                   {data.status === "running" && data.drawnNumbers.length === 0 && (
@@ -212,6 +259,7 @@ export function EventBingoScreenPage() {
                           color: drawnSet.has(n) ? BOARD_BG : BOARD_SUB,
                           bgcolor: drawnSet.has(n) ? BOARD_ACCENT : "transparent",
                           border: `1px solid ${drawnSet.has(n) ? BOARD_ACCENT : BOARD_SUB}44`,
+                          ...cellPulse(n),
                         }}
                       >
                         {n}
@@ -260,6 +308,7 @@ export function EventBingoScreenPage() {
                           color: drawnSet.has(n) ? BOARD_BG : BOARD_SUB,
                           bgcolor: drawnSet.has(n) ? BOARD_ACCENT : "transparent",
                           border: `1px solid ${drawnSet.has(n) ? BOARD_ACCENT : BOARD_SUB}44`,
+                          ...cellPulse(n),
                         }}
                       >
                         {n}
@@ -270,18 +319,41 @@ export function EventBingoScreenPage() {
               </Box>
             </Box>
 
-            <Box sx={{ flexShrink: 0, textAlign: "center" }}>
+            {/* リーチ・ビンゴの人数（主役）。増えたら数字だけパルスして「+n」を出す */}
+            <Box sx={{ flexShrink: 0, textAlign: "center", mt: 1 }}>
               <Typography
+                data-testid="bingo-surge"
                 sx={{
-                  fontSize: `clamp(12px, 3.5vw, ${18 * scale}px)`,
-                  color: BOARD_SUB,
+                  minHeight: `clamp(18px, 4vw, ${28 * scale}px)`,
+                  fontSize: `clamp(14px, 3.5vw, ${24 * scale}px)`,
+                  fontWeight: 700,
+                  color: REACH_COLOR,
                 }}
               >
-                {t("eventSocial.bingoCounts", {
-                  cards: data.counts.cards,
-                  bingo: data.counts.bingo,
-                  reach: data.counts.reach,
-                })}
+                {fx.surge
+                  ? t(fx.surge.big ? "eventSocial.bingoReachSurgeBig" : "eventSocial.bingoReachSurge", { n: fx.surge.n })
+                  : ""}
+              </Typography>
+              <Stack direction="row" justifyContent="center" alignItems="flex-end" spacing={`clamp(16px, 5vw, ${48 * scale}px)`}>
+                <CountPanel
+                  label={t("eventSocial.bingoReachCount")}
+                  value={data.counts.reach}
+                  badge={fx.reachBadge}
+                  color={REACH_COLOR}
+                  scale={scale}
+                  reduced={reduced}
+                />
+                <CountPanel
+                  label={t("eventSocial.bingoBingoCount")}
+                  value={data.counts.bingo}
+                  badge={fx.bingoBadge}
+                  color={BOARD_ACCENT}
+                  scale={scale}
+                  reduced={reduced}
+                />
+              </Stack>
+              <Typography sx={{ fontSize: `clamp(11px, 3vw, ${15 * scale}px)`, color: BOARD_SUB, mt: 0.5 }}>
+                {t("eventSocial.bingoCardCount", { n: data.counts.cards })}
               </Typography>
             </Box>
           </>
@@ -311,6 +383,64 @@ export function EventBingoScreenPage() {
           </IconButton>
         </Tooltip>
       </Stack>
+    </Box>
+  );
+}
+
+/** リーチ・ビンゴの人数パネル。増えた瞬間は数字だけパルスし、「+n」を少しのあいだ添える */
+function CountPanel({
+  label,
+  value,
+  badge,
+  color,
+  scale,
+  reduced,
+}: {
+  label: string;
+  value: number;
+  badge: BingoCountBadge | null;
+  color: string;
+  scale: number;
+  reduced: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Box sx={{ textAlign: "center", position: "relative", minWidth: `clamp(80px, 22vw, ${180 * scale}px)` }}>
+      <Typography sx={{ fontSize: `clamp(14px, 3.5vw, ${24 * scale}px)`, fontWeight: 700, color: BOARD_SUB }}>
+        {label}
+      </Typography>
+      <Typography
+        key={badge?.key ?? "still"}
+        sx={{
+          fontSize: `clamp(40px, 11vw, ${88 * scale}px)`,
+          fontWeight: 800,
+          color,
+          lineHeight: 1,
+          fontVariantNumeric: "tabular-nums",
+          animation: badge ? (reduced ? "bingoFlash 600ms ease" : "bingoCountPulse 700ms ease") : undefined,
+        }}
+      >
+        {value}
+      </Typography>
+      {badge && (
+        <Typography
+          data-testid="bingo-count-badge"
+          sx={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            transform: "translate(40%, -10%)",
+            px: 1,
+            borderRadius: 999,
+            bgcolor: color,
+            color: BOARD_BG,
+            fontWeight: 800,
+            fontSize: `clamp(12px, 3vw, ${22 * scale}px)`,
+          }}
+        >
+          {t("eventSocial.bingoCountIncrease", { n: badge.n })}
+        </Typography>
+      )}
     </Box>
   );
 }

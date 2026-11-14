@@ -17,6 +17,9 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
   void qc.invalidateQueries({ queryKey: ["event", eventId, "bingo-status"] });
 };
 
+/** 投影（/bingo/screen）が合図から取り直すまでのばらし（表彰画面と同じ1秒） */
+export const BINGO_SCREEN_SIGNAL_JITTER_MS = 1_000;
+
 /** 参加者向けの状態（自分のカード・判定・人数）。カード画面・投影・詳細の小カードが使う。
  *
  * watch: 応答の `signal`（topic `bingo`）の合図で取り直すか。カード（/bingo）と投影
@@ -24,8 +27,16 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
  * 同じため。参加者全員が同じ合図で取り直すので、ばらす（`PARTICIPANT_SIGNAL_JITTER_MS`）。
  * ゲーム作成前も確定メンバーには status "none" と合図の購読先が返るので、プロジェクターを
  * 先に映しておいても作成の合図で拾う（#436「最初の1回だけ番号が出ない」）。
- * イベント詳細の小カードは立てない（開いたとき・タブ復帰で取り直す） */
-export function useBingoState(eventId: string, enabled: boolean, watch = false) {
+ * イベント詳細の小カードは立てない（開いたとき・タブ復帰で取り直す）。
+ *
+ * jitterMs: 合図から取り直すまでのばらし。投影だけ `BINGO_SCREEN_SIGNAL_JITTER_MS`（1秒）にする
+ * （#681。会場に数台しか無いのでサーバー負荷に効かず、5秒だと司会の読み上げと番号のロールがずれる） */
+export function useBingoState(
+  eventId: string,
+  enabled: boolean,
+  watch = false,
+  { jitterMs = PARTICIPANT_SIGNAL_JITTER_MS }: { jitterMs?: number } = {},
+) {
   const query = useQuery({
     queryKey: ["event", eventId, "bingo"],
     enabled: Boolean(eventId) && enabled,
@@ -35,7 +46,7 @@ export function useBingoState(eventId: string, enabled: boolean, watch = false) 
   });
   useEventSignal(watch ? query.data?.signal : null, () => query.refetch(), {
     eventId,
-    jitterMs: PARTICIPANT_SIGNAL_JITTER_MS,
+    jitterMs,
   });
   return query;
 }

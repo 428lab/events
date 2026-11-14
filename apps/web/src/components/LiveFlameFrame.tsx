@@ -3,23 +3,10 @@ import { FLAME_FRAME_LIMITS, LIVE_H, LIVE_W } from "@eventer/shared";
 import type { FlamePalette, LiveElement } from "@eventer/shared";
 import { FLAME_RAMPS, FLAME_STATIC_TIME, FlameFrameRenderer, drawFlameFrameStill, flameFlowSpeed, flameMargin } from "../lib/flameFrameRenderer.js";
 import type { FlameFrameParams } from "../lib/flameFrameRenderer.js";
+import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion.js";
 
 /** canvas の実画素の上限（1080p の配信ソフトで 1 枚あたりの目安。試作と同じ） */
 const MAX_PIXELS = 1.4e6;
-
-const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && Boolean(window.matchMedia(reducedMotionQuery)?.matches));
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const query = window.matchMedia(reducedMotionQuery);
-    if (!query?.addEventListener) return;
-    const onChange = () => setReduced(query.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
 
 /** 要素の値を範囲に収めて、既定値を埋める */
 export function flameFrameSettings(el: LiveElement, lightScene: boolean) {
