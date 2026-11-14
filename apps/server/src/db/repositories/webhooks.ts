@@ -20,6 +20,7 @@ interface WebhookRow {
   active: number;
   fail_count: number;
   last_error: string | null;
+  last_failed_at: number | null;
   last_sent_at: number | null;
   created_at: number;
 }
@@ -172,16 +173,23 @@ export const webhooksRepo = {
 
   /** 送れたら失敗の数を 0 に戻す */
   async recordSuccess(id: string): Promise<void> {
-    await run("UPDATE webhook SET fail_count = 0, last_error = NULL, last_sent_at = ? WHERE id = ?", Date.now(), id);
+    await run("UPDATE webhook SET fail_count = 0, last_error = NULL, last_failed_at = NULL, last_sent_at = ? WHERE id = ?", Date.now(), id);
   },
 
-  /** 失敗を数える。続けて WEBHOOK_MAX_CONSECUTIVE_FAILURES 回失敗したら自動で止める */
-  async recordFailure(id: string, error: string): Promise<void> {
+  /** 失敗を記録する。止めるかどうかを数えるのは、送り直しても直らない失敗（permanent）だけ。
+   * 続けて WEBHOOK_MAX_CONSECUTIVE_FAILURES 回そうなったら自動で止める。
+   * 一時的な失敗（429・5xx・通信エラー）は last_error / last_failed_at に残すだけで数えない:
+   * 参加と取消を繰り返して 429 を起こさせる・相手側の短い障害だけで、通知を止められないようにする */
+  async recordFailure(id: string, error: string, permanent: boolean): Promise<void> {
     await run(
-      `UPDATE webhook SET fail_count = fail_count + 1, last_error = ?,
-          active = CASE WHEN fail_count + 1 >= ? THEN 0 ELSE active END
+      `UPDATE webhook SET last_error = ?, last_failed_at = ?,
+          fail_count = fail_count + ?,
+          active = CASE WHEN ? = 1 AND fail_count + 1 >= ? THEN 0 ELSE active END
         WHERE id = ?`,
       error.slice(0, 200),
+      Date.now(),
+      permanent ? 1 : 0,
+      permanent ? 1 : 0,
       WEBHOOK_MAX_CONSECUTIVE_FAILURES,
       id,
     );

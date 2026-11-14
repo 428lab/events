@@ -139,9 +139,17 @@ const MAX_ATTEMPTS = 3;
 const MAX_RETRY_AFTER_MS = 5000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** 1件送る。429 は Retry-After（最大5秒）を守り、それ以外の失敗は 0.5 秒・1 秒あけて再送 */
-export async function postWebhook(target: WebhookTarget, payload: Record<string, unknown>): Promise<{ ok: boolean; status: number | null; error?: string }> {
-  let last: { ok: boolean; status: number | null; error?: string } = { ok: false, status: null, error: "not_sent" };
+/** 送り直しても直らない失敗: 宛先が無い・消された・権限が無い・転送された（転送は追わない）。
+ * これだけを自動停止の回数に数える（429・5xx・通信エラーは一時的なものとして数えない） */
+export function isPermanentWebhookFailure(status: number | null): boolean {
+  return status === 400 || status === 401 || status === 403 || status === 404 || (status !== null && status >= 300 && status < 400);
+}
+
+type PostResult = { ok: boolean; status: number | null; error?: string };
+
+/** 1件送る。429 は Retry-After（最大5秒）を守り、それ以外の一時的な失敗は 0.5 秒・1 秒あけて再送 */
+export async function postWebhook(target: WebhookTarget, payload: Record<string, unknown>): Promise<PostResult> {
+  let last: PostResult = { ok: false, status: null, error: "not_sent" };
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
       const res = await fetch(target.url, {
@@ -152,8 +160,8 @@ export async function postWebhook(target: WebhookTarget, payload: Record<string,
       });
       if (res.ok) return { ok: true, status: res.status };
       last = { ok: false, status: res.status, error: `HTTP ${res.status}` };
-      // 宛先が無い・権限が無いのは再送しても直らない
-      if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 404) break;
+      // 宛先が無い・権限が無い・転送されたのは再送しても直らない
+      if (isPermanentWebhookFailure(res.status)) break;
       if (attempt < MAX_ATTEMPTS - 1) {
         const ra = Number(res.headers.get("retry-after"));
         await sleep(res.status === 429 && Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, MAX_RETRY_AFTER_MS) : 500 * 2 ** attempt);
@@ -176,7 +184,7 @@ export async function dispatchWebhooks(m: WebhookMessage): Promise<void> {
       targets.map(async (t) => {
         const r = await postWebhook(t, formatWebhook(t.kind, m));
         if (r.ok) await webhooksRepo.recordSuccess(t.id);
-        else await webhooksRepo.recordFailure(t.id, r.error ?? "failed");
+        else await webhooksRepo.recordFailure(t.id, r.error ?? "failed", isPermanentWebhookFailure(r.status));
       }),
     );
   } catch (e) {

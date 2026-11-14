@@ -50,9 +50,15 @@ URL の形で Discord か Slack かを決め、それ以外は受け付けない
 - 宛先: コミュニティ（主催＋承諾済みの共催）とイベントの Webhook のうち、その種類がオンで有効なもの。
   **同じ URL が複数登録されていても1回だけ送る**（URL で重複を除く）。
 - 1件あたり最大3回。`429` は `Retry-After`（最大5秒）を守り、それ以外の失敗は 0.5 秒・1 秒あけて再送。
-  送れた／失敗の結果を行に残す（`last_sent_at`、`fail_count`、`last_error`）。
-- **5回続けて失敗**した Webhook は自動で止める（`active = 0`）。画面に「停止中」と最後のエラーを出し、
-  「再開する」で戻せる（`fail_count` を 0 に戻す）。成功すると `fail_count` は 0 に戻る。
+  送れた／失敗の結果を行に残す（`last_sent_at`、`fail_count`、`last_error`、`last_failed_at`）。
+- 失敗は2種類に分ける。
+  - **送り直しても直らない失敗**: `400` `401` `403` `404` と転送（`3xx`。転送は追わない）。Webhook が
+    消された・URL が違うときに出る。これだけを `fail_count` に数え、**5回続いたら**自動で止める
+    （`active = 0`）。画面に「停止中」と最後のエラーを出し、「再開する」で戻せる（`fail_count` を 0 に戻す）。
+  - **一時的な失敗**: `429`・`5xx`・通信エラー。`last_error` と `last_failed_at` に残すだけで、
+    `fail_count` には数えない（止めない）。参加と取消を繰り返して相手に `429` を返させる、Discord / Slack の
+    短い障害、のどちらでも通知が止まらないようにするため（レビュー F2）。
+- 成功すると `fail_count`・`last_error`・`last_failed_at` を消す。
 - 永続のキューは使わない（既存のキュー・cron に乗せない。取りこぼしても運営の通知・ベルは別にある）。
 
 ## 6. 中身（日本語）
@@ -76,7 +82,7 @@ URL の形で Discord か Slack かを決め、それ以外は受け付けない
 ## 8. データ
 
 `webhook(id, scope, community_id, event_id, kind, url, label, notify_inquiry, notify_join, notify_cancel, active,
-fail_count, last_error, last_sent_at, created_by, created_at)`。`created_by` は user を参照する（統合で勝ち側へ付け替え、
+fail_count, last_error, last_failed_at, last_sent_at, created_by, created_at)`。`created_by` は user を参照する（統合で勝ち側へ付け替え、
 退会の完全削除では SET NULL）。コミュニティ・イベントが消えたら CASCADE で消える。
 
 ## 9. 入れていないもの

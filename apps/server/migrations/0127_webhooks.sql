@@ -18,6 +18,7 @@ CREATE TABLE webhook (
   active INTEGER NOT NULL DEFAULT 1,
   fail_count INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
+  last_failed_at INTEGER,
   last_sent_at INTEGER,
   created_by TEXT REFERENCES user(id) ON DELETE SET NULL,
   created_at INTEGER NOT NULL,

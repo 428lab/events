@@ -62,6 +62,8 @@ async function createEvent(owner: TestUser, communityId: string): Promise<string
 // 届いた本文を宛先のパスごとに集める
 const received: { path: string; body: Record<string, unknown> }[] = [];
 let failPaths = new Set<string>();
+// 一時的な失敗（429 を Retry-After なしで返す）を返すパス
+let busyPaths = new Set<string>();
 const discordUrl = (n: string) => `https://discord.com/api/webhooks/${n}/${"t".repeat(30)}${n}`;
 const slackUrl = (n: string) => `https://hooks.slack.com/services/T0000${n}/B0000${n}/secret${n}abcdefgh`;
 
@@ -74,7 +76,7 @@ beforeAll(() => {
       .reply((opts) => {
         const path = String(opts.path);
         received.push({ path, body: JSON.parse(String(opts.body)) as Record<string, unknown> });
-        return { statusCode: failPaths.has(path) ? 404 : 204, data: "" };
+        return { statusCode: failPaths.has(path) ? 404 : busyPaths.has(path) ? 429 : 204, data: "" };
       })
       .persist();
   }
@@ -82,6 +84,7 @@ beforeAll(() => {
 afterEach(() => {
   received.length = 0;
   failPaths = new Set();
+  busyPaths = new Set();
 });
 
 const pathOf = (url: string) => new URL(url).pathname;
@@ -234,4 +237,21 @@ describe("権限・自動停止・テスト送信", () => {
     expect((await call(`/api/events/${f.eventId}/webhooks/${w.id}`, f.host, "PATCH", { active: true })).status).toBe(200);
     expect(await list()).toMatchObject({ active: true, failCount: 0 });
   });
+
+  it("一時的な失敗（429）が5回続いても止めない。最後のエラーは残す（参加と取消の繰り返しや相手の障害で通知を止めさせない）", async () => {
+    const f = await fixture();
+    const url = discordUrl("777777");
+    await addWebhook(`/api/events/${f.eventId}/webhooks`, f.host, url);
+    busyPaths.add(pathOf(url));
+    const row = () => env.DB.prepare("SELECT active, fail_count, last_error, last_failed_at FROM webhook WHERE event_id = ?")
+      .bind(f.eventId).first<{ active: number; fail_count: number; last_error: string | null; last_failed_at: number | null }>();
+    for (let i = 0; i < 5; i++) {
+      await call(`/api/events/${f.eventId}/join`, await makeUser(), "POST", {});
+      // 1件につき3回試す。3回目が届いて記録されるまで待つ
+      for (let k = 0; k < 150 && hits(url).length < 3 * (i + 1); k++) await new Promise((r) => setTimeout(r, 20));
+    }
+    for (let k = 0; k < 50 && (await row())?.last_error === null; k++) await new Promise((r) => setTimeout(r, 20));
+    expect(await row()).toMatchObject({ active: 1, fail_count: 0, last_error: "HTTP 429" });
+    expect((await row())?.last_failed_at).toBeGreaterThan(0);
+  }, 30_000);
 });
