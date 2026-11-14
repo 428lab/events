@@ -1,7 +1,6 @@
 import type { WebhookKind, WebhookTopic, WebhookView } from "@eventer/shared";
 import { WEBHOOK_MAX_CONSECUTIVE_FAILURES } from "@eventer/shared";
 import { many, one, run, runCount } from "../client.js";
-import { EVENT_COMMUNITY_LINKS } from "./eventCommunities.js";
 
 /** コミュニティ・イベントごとの Discord / Slack 通知の保存と宛先の解決 (docs/webhooks.md)。
  * URL（トークン）は画面へ返さない。`toView` は種類・ホスト・末尾4文字だけを出す */
@@ -143,8 +142,9 @@ export const webhooksRepo = {
     return (await runCount(`DELETE FROM webhook WHERE id = ? AND ${w.sql}`, id, w.arg)) > 0;
   },
 
-  /** イベントで起きたことを送る先。イベントの Webhook と、そのイベントのコミュニティ
-   * （主催＋承諾済みの共催。EVENT_COMMUNITY_LINKS）の Webhook のうち、その種類がオンで有効なもの。
+  /** イベントで起きたことを送る先。イベントの Webhook と、**主催**コミュニティの Webhook のうち、
+   * その種類がオンで有効なもの。共催先コミュニティの Webhook には送らない（オーナー決定 2026-11-14:
+   * 共催の運営と同じチャンネルで見るときは、そのイベントに Webhook を登録する）。
    * 同じ URL は1回だけ（登録が重なっていても二重に送らない） */
   async targetsForEvent(eventId: string, topic: WebhookTopic): Promise<WebhookTarget[]> {
     const col = TOPIC_COLUMN[topic];
@@ -152,8 +152,7 @@ export const webhooksRepo = {
       `SELECT w.id, w.kind, w.url FROM webhook w
         WHERE w.active = 1 AND w.${col} = 1
           AND ((w.scope = 'event' AND w.event_id = ?)
-            OR (w.scope = 'community' AND w.community_id IN
-                 (SELECT ecl.community_id FROM (${EVENT_COMMUNITY_LINKS}) ecl WHERE ecl.event_id = ?)))
+            OR (w.scope = 'community' AND w.community_id = (SELECT e.community_id FROM event e WHERE e.id = ?)))
         ORDER BY w.created_at ASC`,
       eventId,
       eventId,

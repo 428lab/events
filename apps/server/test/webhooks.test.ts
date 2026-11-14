@@ -134,7 +134,7 @@ describe("Webhook の URL", () => {
 });
 
 describe("送る先と中身", () => {
-  it("参加すると主催・承諾済みの共催・イベントの Webhook に送り、承認待ちの共催には送らない。同じ URL は1回", async () => {
+  it("参加すると主催コミュニティとイベントの Webhook に送り、共催先コミュニティの Webhook には送らない。同じ URL は1回", async () => {
     const f = await fixture();
     const shared = discordUrl("111111");
     await addWebhook(`/api/communities/${f.a.id}/webhooks`, f.host, shared);
@@ -149,9 +149,9 @@ describe("送る先と中身", () => {
     const p = await makeUser();
     expect((await call(`/api/events/${f.eventId}/join`, p, "POST", {})).status).toBe(201);
     await waitHits(shared, 1);
-    await waitHits(slackUrl("2"), 1);
     expect(hits(shared)).toHaveLength(1);
-    expect(hits(slackUrl("2"))).toHaveLength(1);
+    // 共催先（承諾済み B・承認待ち C）のコミュニティの Webhook には送らない（オーナー決定 2026-11-14）
+    expect(hits(slackUrl("2"))).toHaveLength(0);
     expect(hits(discordUrl("333333"))).toHaveLength(0);
     const embed = (hits(shared)[0]!.body.embeds as { title: string; fields: { value: string }[] }[])[0]!;
     expect(embed.title).toBe("参加: 通知の検証");
@@ -159,13 +159,16 @@ describe("送る先と中身", () => {
     expect(embed.fields.map((x) => x.value).join(" ")).toContain("確定");
 
     // キャンセルも送る（種類をオフにした Webhook には送らない）
-    await call(`/api/communities/${f.b.id}/webhooks/${(await (await call(`/api/communities/${f.b.id}/webhooks`, f.bOwner)).json() as { webhooks: WebhookView[] }).webhooks[0]!.id}`, f.bOwner, "PATCH", { notifyCancel: false });
+    const evHook = (await (await call(`/api/events/${f.eventId}/webhooks`, f.host)).json() as { webhooks: WebhookView[] }).webhooks[0]!;
+    const aHook = (await (await call(`/api/communities/${f.a.id}/webhooks`, f.host)).json() as { webhooks: WebhookView[] }).webhooks[0]!;
+    await call(`/api/events/${f.eventId}/webhooks/${evHook.id}`, f.host, "PATCH", { notifyCancel: false });
     received.length = 0;
     expect((await call(`/api/events/${f.eventId}/join`, p, "DELETE")).status).toBe(200);
     await waitHits(shared, 1);
     expect(hits(shared)).toHaveLength(1);
     expect((hits(shared)[0]!.body.embeds as { title: string }[])[0]!.title).toBe("キャンセル: 通知の検証");
-    expect(hits(slackUrl("2"))).toHaveLength(0);
+    // 種類をオフにした方（イベント）では送らず、オンの主催コミュニティから1回だけ届く
+    expect(aHook.notifyCancel).toBe(true);
   });
 
   it("問い合わせは本文を全文で送り、本人の追記も送る。運営の返信は送らない", async () => {
