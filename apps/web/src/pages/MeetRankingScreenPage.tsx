@@ -89,7 +89,8 @@ export function MeetRankingScreenPage() {
         flexDirection: "column",
         cursor: cursorVisible ? "default" : "none",
         zIndex: 2000,
-        p: 3,
+        // スマホでは余白を詰めて、名前に幅を回す
+        p: { xs: 1.5, sm: 3 },
         overflow: "hidden",
       }}
     >
@@ -108,7 +109,8 @@ export function MeetRankingScreenPage() {
             </Typography>
             <Typography
               sx={{
-                fontSize: 44 * scale,
+                // スマホ幅で見出しが2行に折れないよう、画面幅でも頭打ちにする
+                fontSize: `min(${44 * scale}px, ${9 * scale}vw)`,
                 fontWeight: 800,
                 color: BOARD_TEXT,
                 lineHeight: 1.3,

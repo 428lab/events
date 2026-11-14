@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   Avatar,
   Box,
@@ -37,6 +38,10 @@ const MEDAL = ["#FFD54F", "#CFD8DC", "#D8A47F"] as const;
 /** 行の基準の高さ（scale 1）。1〜3位は大きく出す */
 const ROW_H_TOP = 96;
 const ROW_H = 64;
+/** この幅（scale 1 の設計幅）より狭い画面では、行全体を幅に合わせて縮める。
+ *  スマホ（約 340px）で名前が「紗…」まで見切れ、順位の列が左に余白を作っていたため */
+const BOARD_DESIGN_WIDTH = 480;
+const MIN_FIT = 0.6;
 
 function rankColor(rank: number): string {
   return rank <= 3 ? MEDAL[rank - 1] : BOARD_SUB;
@@ -82,13 +87,28 @@ function toBoardRows(data: MeetRankingLive, t: TFunction): BoardRow[] {
  */
 export function MeetRankingBoard({
   data,
-  scale,
+  scale: userScale,
 }: {
   data: MeetRankingLive;
   scale: number;
 }) {
   const { t } = useTranslation();
   const rows = toBoardRows(data, t);
+  const empty = rows.length === 0;
+  // 幅に合わせた縮小率（文字サイズ A-/A+ の scale に掛ける）。測る前は 1
+  const frame = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = frame.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    setWidth(el.clientWidth);
+    return () => ro.disconnect();
+    // 空表示と一覧で測る要素が入れ替わるので、そのときに付け直す
+  }, [empty]);
+  const fit = width > 0 ? Math.max(MIN_FIT, Math.min(1, width / BOARD_DESIGN_WIDTH)) : 1;
+  const scale = userScale * fit;
 
   let offset = 0;
   const positioned = rows.map((r) => {
@@ -101,16 +121,17 @@ export function MeetRankingBoard({
 
   if (positioned.length === 0) {
     return (
-      <Typography
-        sx={{ fontSize: 28 * scale, color: BOARD_SUB, textAlign: "center", py: 4 }}
-      >
-        {t("eventSocial.meetRankingEmpty")}
-      </Typography>
+      <Box ref={frame}>
+        <Typography sx={{ fontSize: 28 * scale, color: BOARD_SUB, textAlign: "center", py: 4 }}>
+          {t("eventSocial.meetRankingEmpty")}
+        </Typography>
+      </Box>
     );
   }
 
   return (
     <Box
+      ref={frame}
       sx={{
         position: "relative",
         height: offset,
@@ -146,7 +167,7 @@ export function MeetRankingBoard({
           <Typography
             component="span"
             sx={{
-              width: 72 * scale,
+              width: 64 * scale,
               textAlign: "right",
               fontSize: (r.top3 ? 44 : 28) * scale,
               fontWeight: 800,
