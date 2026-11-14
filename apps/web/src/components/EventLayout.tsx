@@ -4,6 +4,7 @@ import { Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { useEvent } from "../api/hooks.js";
 import { useEventState, useEventStateSignal } from "../api/scoringHooks.js";
+import { useDocumentTitle } from "../lib/useDocumentTitle.js";
 
 /**
  * イベント配下の共通レイアウト。
@@ -17,6 +18,7 @@ export function EventLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: eventData } = useEvent(id);
+  useDocumentTitle(eventData?.event.title);
   const { data: state } = useEventState(id);
   const onAwardsPage = location.pathname.endsWith("/awards");
   useEventStateSignal(id, state, {

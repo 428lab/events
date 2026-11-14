@@ -140,6 +140,7 @@ describe("/users/:handle の OG メタ注入 (#193)", () => {
     expect(html).toContain(
       `<meta property="og:title" content="表示 名前 ・ events lab" />`,
     );
+    expect(html).toContain("<title>表示 名前 ・ events lab</title>");
     expect(html).toContain("og-default.png");
     expect(html).toContain(`<meta name="twitter:card" content="summary" />`);
     // 実績サマリー（Lv・主催・登壇・参加）が description に入る
