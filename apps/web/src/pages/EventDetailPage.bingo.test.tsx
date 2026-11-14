@@ -49,6 +49,7 @@ vi.mock("../api/inquiryHooks.js", async (importOriginal) => ({
 // 配置の検証対象は実ページと実BingoPanel。周辺セクションの取得・副作用は置き換える。
 vi.mock("../components/SchedulePanel.js", () => ({ SchedulePanel: () => null }));
 vi.mock("../components/ShareButton.js", () => ({ ShareButton: () => null }));
+vi.mock("../components/EntranceQrButton.js", () => ({ EntranceQrButton: () => null, useCanShowEntranceQr: () => false }));
 vi.mock("../components/EventPhotos.js", () => ({ EventPhotos: () => null }));
 vi.mock("../components/EventComments.js", () => ({ EventComments: () => null }));
 vi.mock("../components/EventSchedule.js", () => ({ EventSchedule: () => <section aria-label="タイムテーブル" /> }));

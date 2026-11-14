@@ -2,9 +2,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Chip, Stack } from "@mui/material";
-import QrCode2Icon from "@mui/icons-material/QrCode2";
 import { Link as RouterLink } from "react-router-dom";
-import type { Event, EventRole } from "@eventer/shared";
+import type { EventRole } from "@eventer/shared";
 import {
   useEventMembers,
   useEventSlots,
@@ -19,7 +18,6 @@ import { participationStatusLabel } from "../lib/format.js";
 import { findMyMembership } from "../lib/eventMembership.js";
 import type { EventTiming } from "../lib/useEventTiming.js";
 import { EventSlots } from "./EventSlots.js";
-import { EntranceQrDialog } from "./EntranceQrDialog.js";
 import { SurveyAnswerDialog } from "./SurveyAnswerDialog.js";
 
 /**
@@ -32,13 +30,11 @@ import { SurveyAnswerDialog } from "./SurveyAnswerDialog.js";
  */
 export function EventJoinPanel({
   eventId,
-  event,
   myRole,
   contest,
   timing,
 }: {
   eventId: string;
-  event: Event;
   myRole: EventRole | null;
   contest: boolean;
   timing: EventTiming;
@@ -61,8 +57,6 @@ export function EventJoinPanel({
   const [pendingJoin, setPendingJoin] = useState<{ slotId?: string } | null>(
     null,
   );
-  // 入場QR（受付チェックイン用チケット） (#154)
-  const [entranceQrOpen, setEntranceQrOpen] = useState(false);
   // 参加できなかった理由の表示（締切/終了）。押しても何も起きない状態を作らない (#269)
   const [joinError, setJoinError] = useState("");
 
@@ -136,21 +130,7 @@ export function EventJoinPanel({
             })}
           />
         )}
-        {/* 入場QR (#154)。出席チェックモード＋日程確定済みの確定参加者に表示 */}
-        {me &&
-          myMembership?.status === "confirmed" &&
-          event.attendanceCheck &&
-          !event.scheduling &&
-          !ended && (
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<QrCode2Icon />}
-              onClick={() => setEntranceQrOpen(true)}
-            >
-              {t("eventDetail.entranceQr")}
-            </Button>
-          )}
+        {/* 入場QR (#154) はファーストビュー（イベント詳細の見出しの行）に移した。EntranceQrButton */}
         {/* 参加後もアンケート回答を見直せる (#152) */}
         {isMember && hasSurvey && (
           <Button
@@ -231,16 +211,6 @@ export function EventJoinPanel({
           closed={registrationClosed}
           joinPending={join.isPending}
           onJoin={(slotId) => requestJoin(slotId)}
-        />
-      )}
-
-      {/* 入場QRダイアログ (#154)。開いている間だけチケットを取得・自動更新 */}
-      {me && entranceQrOpen && (
-        <EntranceQrDialog
-          eventId={eventId}
-          user={me}
-          open={entranceQrOpen}
-          onClose={() => setEntranceQrOpen(false)}
         />
       )}
 

@@ -20,6 +20,7 @@ import { Link as RouterLink, useParams } from "react-router-dom";
 import { Markdown } from "../components/Markdown.js";
 import { SchedulePanel } from "../components/SchedulePanel.js";
 import { ShareButton } from "../components/ShareButton.js";
+import { EntranceQrButton } from "../components/EntranceQrButton.js";
 import { AddToCalendarButton } from "../components/AddToCalendarButton.js";
 import { eventImageUrl, useEvent, useMe, type EventCommunityRef } from "../api/hooks.js";
 import { useEventChatAccess } from "../lib/useEventChatAccess.js";
@@ -205,6 +206,8 @@ export function EventDetailPage() {
           )}
           {myRole && <Chip size="small" label={roleLabel(myRole)} />}
           <ShareButton slug={event.slug} title={event.title} />
+          {/* 入場QRはファーストビューに出す（受付でスクロールして探させない）。条件は EntranceQrButton */}
+          <EntranceQrButton eventId={id} event={event} ended={timing.ended} variant="contained" />
           {/* 運営の入口 (#613)。出す条件と中身は EventStaffActions が全部持つ */}
           <EventStaffActions eventId={id} event={event} myRole={myRole} canManageSchedule={Boolean(data.canManageSchedule)}
             canManageAccess={Boolean(data.canManageAccess)} chatAvailable={chatAvailable} timing={timing}
@@ -432,7 +435,6 @@ export function EventDetailPage() {
       {/* 参加・取消と、そのまわり（入場QR・事前アンケート・参加枠） */}
       <EventJoinPanel
         eventId={id}
-        event={event}
         myRole={myRole}
         contest={contest}
         timing={timing}
