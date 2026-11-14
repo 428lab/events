@@ -24,6 +24,7 @@ vi.mock("../lib/useEventChatAccess.js", () => ({
 vi.mock("../api/analyticsHooks.js", () => ({ useRecordView: () => {} }));
 vi.mock("../components/SchedulePanel.js", () => ({ SchedulePanel: () => null }));
 vi.mock("../components/AddToCalendarButton.js", () => ({ AddToCalendarButton: () => null }));
+vi.mock("../components/EntranceQrButton.js", () => ({ EntranceQrButton: () => null, useCanShowEntranceQr: () => false }));
 vi.mock("../components/EventPhotos.js", () => ({ EventPhotos: () => null }));
 vi.mock("../components/EventComments.js", () => ({ EventComments: () => null }));
 vi.mock("../components/EventSchedule.js", () => ({ EventSchedule: () => null }));

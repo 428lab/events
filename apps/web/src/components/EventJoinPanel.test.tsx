@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import type { Event, EventRole, ParticipationSlot } from "@eventer/shared";
+import type { EventRole, ParticipationSlot } from "@eventer/shared";
 import { ApiError } from "../api/client.js";
 import { EventJoinPanel } from "./EventJoinPanel.js";
 import type { EventTiming } from "../lib/useEventTiming.js";
@@ -68,16 +68,6 @@ vi.mock("./SurveyAnswerDialog.js", () => ({
     ) : null,
 }));
 
-const EVENT = {
-  id: "e-1",
-  title: "テストイベント",
-  scheduling: false,
-  startsAt: 1_700_000_000_000,
-  endsAt: 1_700_003_600_000,
-  status: "published",
-  attendanceCheck: false,
-  registrationDeadline: null,
-} as Event;
 
 const SLOT: ParticipationSlot = {
   id: "s-1",
@@ -116,7 +106,6 @@ function draw(opts: { myRole?: EventRole | null; contest?: boolean; timing?: Eve
       <MemoryRouter>
         <EventJoinPanel
           eventId="e-1"
-          event={EVENT}
           myRole={opts.myRole ?? null}
           contest={opts.contest ?? false}
           timing={t}
@@ -213,7 +202,6 @@ describe("事前アンケートの挟み込み (#152)", () => {
         <MemoryRouter>
           <EventJoinPanel
             eventId="e-1"
-            event={EVENT}
             myRole="participant"
             contest={false}
             timing={timing()}
