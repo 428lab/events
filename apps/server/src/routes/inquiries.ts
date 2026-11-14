@@ -24,6 +24,7 @@ import { inquiriesRepo } from "../db/repositories/inquiries.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { eventMembersRepo } from "../db/repositories/eventMembers.js";
+import { notifyWebhooks } from "../lib/webhooks.js";
 
 /** 新規問い合わせ/返信を運営管理者のベルへ通知（投稿者本人は除く） */
 async function notifyAdminsOfInquiry(
@@ -116,8 +117,21 @@ inquiryRoutes.post(
     );
     if (!result) return c.json({ error: "not_found" }, 404);
     // イベントの主催者あては、そのイベントの確定スタッフへ。運営（管理者）には知らせない
-    if (result.event) await notifyEventStaffOfInquiry(result.event, id, result.subject, c.get("user").id);
-    else await notifyAdminsOfInquiry(id, result.subject, c.get("user").id);
+    if (result.event) {
+      await notifyEventStaffOfInquiry(result.event, id, result.subject, c.get("user").id);
+      // Discord / Slack 通知（docs/webhooks.md）。問い合わせた本人の追記も全文で送る
+      const me = c.get("user");
+      await notifyWebhooks({
+        topic: "inquiry",
+        eventId: result.event.id,
+        eventTitle: result.event.title,
+        inquiryId: id,
+        user: { name: me.globalName ?? me.username, handle: me.username },
+        subject: result.subject,
+        body: valid<PostInquiryMessageInput>(c, "json").body,
+        followUp: true,
+      });
+    } else await notifyAdminsOfInquiry(id, result.subject, c.get("user").id);
     return c.json({ ok: true });
   },
 );
@@ -197,6 +211,17 @@ eventInquiryRoutes.post(
     const subject = input.subject.trim();
     const id = await inquiriesRepo.createForEvent(event.id, me.id, subject, input.body);
     await notifyEventStaffOfInquiry({ id: event.id, title: event.title }, id, subject, me.id);
+    // Discord / Slack 通知（docs/webhooks.md）。本文は全文
+    await notifyWebhooks({
+      topic: "inquiry",
+      eventId: event.id,
+      eventTitle: event.title,
+      inquiryId: id,
+      user: { name: me.globalName ?? me.username, handle: me.username },
+      subject,
+      body: input.body,
+      followUp: false,
+    });
     return c.json({ id }, 201);
   },
 );

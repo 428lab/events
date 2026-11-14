@@ -26,6 +26,7 @@ import {
   myStaffInviteRoutes,
 } from "./routes/eventStaffInvites.js";
 import { eventCohostRoutes } from "./routes/eventCohosts.js";
+import { eventWebhookRoutes } from "./routes/webhooks.js";
 import { scoringRoutes, getEventScoreResults } from "./routes/scoring.js";
 import { awardRoutes, getEventAwards } from "./routes/awards.js";
 import { meRoutes, postRestoreAccount } from "./routes/me.js";
@@ -294,6 +295,8 @@ api.route("/events", analyticsRoutes);
 api.route("/events", eventStaffInviteRoutes);
 // 共催コミュニティ (#625)（申請・取り下げはそのイベントの管理者のみ。要認証。承諾は /communities 側）
 api.route("/events", eventCohostRoutes);
+// Discord / Slack 通知（そのイベントの運営のみ。docs/webhooks.md）
+api.route("/events", eventWebhookRoutes);
 api.route("/events", eventAccessInviteRoutes);
 api.route("/me/event-invites", myEventInviteRoutes);
 api.route("/me/event-access", myEventAccessRoutes);

@@ -13,6 +13,7 @@ export * from "./cardDesign.js";
 export * from "./displayFonts.js";
 export * from "./cardDesignTemplates.js";
 export * from "./communities.js";
+export * from "./webhooks.js";
 export * from "./decks.js";
 export * from "./deckSync.js";
 export * from "./scheduling.js";

@@ -39,6 +39,7 @@ import { linkError, settings } from "./messages/settings.js";
 import { studio } from "./messages/studio.js";
 import { warikan } from "./messages/warikan.js";
 import { teams } from "./messages/teams.js";
+import { webhooks } from "./messages/webhooks.js";
 import { themeName } from "./messages/theme.js";
 import {
   venue,
@@ -117,6 +118,7 @@ export const translations = {
     adminSettings: adminSettings.ja,
     warikan: warikan.ja,
     teams: teams.ja,
+    webhooks: webhooks.ja,
     ...labels.ja,
   },
   en: {
@@ -166,6 +168,7 @@ export const translations = {
     adminSettings: adminSettings.en,
     warikan: warikan.en,
     teams: teams.en,
+    webhooks: webhooks.en,
     ...labels.en,
   },
 } satisfies Record<AppLanguage, Record<string, Record<string, string>>>;

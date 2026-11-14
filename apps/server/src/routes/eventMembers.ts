@@ -25,6 +25,7 @@ import { changeMembership } from "../db/repositories/membershipChange.js";
 import { notifyFollowersOnJoin } from "./follows.js";
 import { publishDeckSync } from "../lib/deckSync.js";
 import { deferBackground } from "../runtime.js";
+import { notifyWebhooks } from "../lib/webhooks.js";
 
 /** 参加登録・参加解除・ロール変更・出席チェック */
 export const eventMemberRoutes = new Hono<AppEnv>();
@@ -96,6 +97,18 @@ eventMemberRoutes.post(
     if (changed && member.status === "confirmed" && event.visibility === "public") {
       await notifyFollowersOnJoin(event, user.id);
     }
+    // Discord / Slack 通知（docs/webhooks.md）。本人の参加だけ。応答は待たせない
+    if (changed && (member.status === "confirmed" || member.status === "applied" || member.status === "waitlist")) {
+      const after = await eventsRepo.findById(eventId);
+      await notifyWebhooks({
+        topic: "join",
+        eventId,
+        eventTitle: event.title,
+        user: { name: user.globalName ?? user.username, handle: user.username },
+        status: member.status,
+        confirmedCount: after?.participantCount ?? event.participantCount,
+      });
+    }
     return c.json({ member, status: member.status }, 201);
   },
 );
@@ -112,6 +125,17 @@ eventMemberRoutes.delete("/:id/join", async (c) => {
   const result = await changeMembership(eventId, user.id, user.id, leaving);
   if (!result) return c.json({ error: "access_changed" }, 409);
   await deferBackground(publishDeckSync(eventId));
+  // Discord / Slack 通知（docs/webhooks.md）。本人の取り消しだけ（参加していなかった人の空振りは送らない）
+  if (leaving && leaving.status !== "canceled") {
+    const after = await eventsRepo.findById(eventId);
+    await notifyWebhooks({
+      topic: "cancel",
+      eventId,
+      eventTitle: event.title,
+      user: { name: user.globalName ?? user.username, handle: user.username },
+      confirmedCount: after?.participantCount ?? event.participantCount,
+    });
+  }
   return c.json({ ok: true, ...result });
 });
 

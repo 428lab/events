@@ -23,10 +23,13 @@ import { eventCohostsRepo } from "../db/repositories/eventCohosts.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { notifyCohostResult } from "./eventCohosts.js";
 import { putCommunityImage } from "./communityImages.js";
+import { communityWebhookRoutes } from "./webhooks.js";
 
 /** /api/communities（作成・参加・自分の主催コミュニティ）。閲覧系は /api/public/communities */
 export const communityRoutes = new Hono<AppEnv>();
 communityRoutes.use("*", requireAuth);
+// Discord / Slack 通知の設定（owner/admin。docs/webhooks.md）
+communityRoutes.route("/", communityWebhookRoutes);
 
 /** イベント紐付け候補：自分がオーナー/運営のコミュニティ */
 communityRoutes.get("/mine", async (c) => {
