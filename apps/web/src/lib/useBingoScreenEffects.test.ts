@@ -8,6 +8,7 @@ import { BINGO_BADGE_MS, BINGO_ROLL_MS, BINGO_SURGE_BIG, useBingoScreenEffects }
  * 初回・取り消し（減少）では出さない、ロール中に次が来たら最新で止まる、reduced はロールしない。
  */
 const state = (drawn: number[], reach = 0, bingo = 0): BingoState => ({
+  gameId: 1,
   status: "running", drawnNumbers: drawn, counts: { cards: 10, bingo, reach }, card: null, me: null,
 });
 

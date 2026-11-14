@@ -106,20 +106,54 @@ export function deriveBingoCard(
   };
 }
 
-/** GET /api/events/:id/bingo のレスポンス（参加者向け）。
- * 他人由来の値は人数（counts）だけ。"none" は staff にだけ返る（ゲーム作成前） */
-export interface BingoState {
+/** 参加者に見えるゲームの公開部分。`GET /bingo` と合図（topic `bingo`）が同じ値を持つ。
+ * 他人由来の値は人数だけ（名前・利用者 ID・順位は入らない） */
+export interface BingoPublic {
+  /** その回の識別子（開始時刻 ms）。開始前・ゲームなしは null。リセットして始め直すと変わる */
+  gameId: number | null;
   status: "none" | BingoGameStatus;
   /** 公開済みの番号（引いた順）。setup では空 */
   drawnNumbers: number[];
   /** 発行済みカード数・ビンゴ人数・リーチ人数 */
   counts: { cards: number; bingo: number; reach: number };
+}
+
+/** topic `bingo` の合図の中身（平文。オーナー決定 2026-11-14・docs/event-signal.md）。
+ * 受けた画面は取り直さずにそのまま反映する */
+export interface BingoSignal extends BingoPublic {
+  rev: number;
+}
+
+const isCount = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+
+/** 合図の JSON を確かめて BingoSignal にする。形が違えば null（受け手は取り直しに回す） */
+export function parseBingoSignal(content: Record<string, unknown> & { rev: number }): BingoSignal | null {
+  const { gameId, status, drawnNumbers, counts } = content;
+  if (gameId !== null && !(isCount(gameId) && gameId > 0)) return null;
+  if (status !== "none" && !(BINGO_STATUSES as readonly unknown[]).includes(status)) return null;
+  if (!Array.isArray(drawnNumbers) || drawnNumbers.length > BINGO_MAX_NUMBER) return null;
+  if (!drawnNumbers.every((n) => isCount(n) && n >= 1 && n <= BINGO_MAX_NUMBER)) return null;
+  if (!counts || typeof counts !== "object") return null;
+  const { cards, bingo, reach } = counts as Record<string, unknown>;
+  if (!isCount(cards) || !isCount(bingo) || !isCount(reach)) return null;
+  return {
+    rev: content.rev,
+    gameId,
+    status: status as BingoSignal["status"],
+    drawnNumbers: drawnNumbers as number[],
+    counts: { cards, bingo, reach },
+  };
+}
+
+/** GET /api/events/:id/bingo のレスポンス（参加者向け）。
+ * 他人由来の値は人数（counts）だけ。"none" は staff にだけ返る（ゲーム作成前） */
+export interface BingoState extends BingoPublic {
   /** 自分のカード（未発行は null） */
   card: number[] | null;
   /** 自分の判定（カードが無ければ null）。rank は競技順位（ビンゴ時のみ） */
   me: { bingo: boolean; reach: boolean; rank: number | null } | null;
-  /** Where the card page and the projector hear "bingo changed, refetch" (topic `bingo`,
-   * D-POLL-MIN Phase 5b). Null without a service key */
+  /** Where the card page and the projector hear bingo changes (topic `bingo`). The signal
+   * carries `BingoSignal`, applied without a refetch. Null without a service key */
   signal?: EventSignalSource | null;
 }
 

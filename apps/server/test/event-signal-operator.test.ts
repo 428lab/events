@@ -215,28 +215,30 @@ describe("bingo-staff", () => {
   it("create, card issue, start, draw and end signal the draw control; draws also signal the desk", async () => {
     const { staff, member, eventId } = await setup();
     const { sent } = spyPublish(async () => (await sql("SELECT drawn_count FROM event_bingo_game WHERE event_id=?", eventId).first<{ drawn_count: number }>())?.drawn_count ?? null);
-    // 5b-3 adds the participant `bingo` topic to every game change except card issue
-    // (event-signal-participant.test.ts covers it)
-    const staffOnly = [topicOf(eventId, "bingo-staff")];
-    const withCards = [topicOf(eventId, "bingo-staff"), topicOf(eventId, "bingo")];
-    const withDesk = [...withCards, topicOf(eventId, "prize-desk")];
+    // Every game change except card issue also sends the participant `bingo` topic as its own
+    // data-carrying event (event-signal-participant.test.ts covers it). Here: the {rev} ones.
+    const control = topicOf(eventId, "bingo-staff");
+    const refetch = () => sent.filter((s) => s.topics.includes(control));
+    const staffOnly = [control];
+    const withDesk = [control, topicOf(eventId, "prize-desk")];
     expect((await json("POST", `/events/${eventId}/bingo`, staff.cookie, {})).status).toBe(201);
-    await settled(sent, 1);
-    expect(sent.at(-1)!.topics).toEqual(withCards);
-    expect((await json("POST", `/events/${eventId}/bingo/card`, member.cookie, {})).status).toBe(200);
     await settled(sent, 2);
+    expect(refetch().at(-1)!.topics).toEqual(staffOnly);
+    expect((await json("POST", `/events/${eventId}/bingo/card`, member.cookie, {})).status).toBe(200);
+    await settled(sent, 3);
     expect(sent.at(-1)!.topics).toEqual(staffOnly);
     expect((await json("POST", `/events/${eventId}/bingo/start`, staff.cookie, {})).status).toBe(200);
-    await settled(sent, 3);
-    expect(sent.at(-1)!.topics).toEqual(withCards);
-    expect((await json("POST", `/events/${eventId}/bingo/draw`, staff.cookie, {})).status).toBe(200);
-    await settled(sent, 4);
-    expect(sent.at(-1)).toMatchObject({ topics: withDesk, seen: 1 });
-    expect((await json("POST", `/events/${eventId}/bingo/draw`, member.cookie, {})).status).toBe(403);
-    await settled(sent, 4);
-    expect((await json("POST", `/events/${eventId}/bingo/end`, staff.cookie, {})).status).toBe(200);
     await settled(sent, 5);
-    expect(sent.at(-1)!.topics).toEqual(withDesk);
-    for (const s of sent) expect(Object.keys(s.content)).toEqual(["rev"]);
+    expect(refetch().at(-1)!.topics).toEqual(staffOnly);
+    expect((await json("POST", `/events/${eventId}/bingo/draw`, staff.cookie, {})).status).toBe(200);
+    await settled(sent, 7);
+    expect(refetch().at(-1)).toMatchObject({ topics: withDesk, seen: 1 });
+    expect((await json("POST", `/events/${eventId}/bingo/draw`, member.cookie, {})).status).toBe(403);
+    await settled(sent, 7);
+    expect((await json("POST", `/events/${eventId}/bingo/end`, staff.cookie, {})).status).toBe(200);
+    await settled(sent, 9);
+    expect(refetch().at(-1)!.topics).toEqual(withDesk);
+    expect(refetch()).toHaveLength(5);
+    for (const s of refetch()) expect(Object.keys(s.content)).toEqual(["rev"]);
   });
 });

@@ -1,5 +1,7 @@
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { BingoState, BingoStatus, MyBingoResults } from "@eventer/shared";
+import { deriveBingoCard, parseBingoSignal } from "@eventer/shared";
+import type { BingoSignal, BingoState, BingoStatus, MyBingoResults } from "@eventer/shared";
 import { api } from "./client.js";
 import { PARTICIPANT_SIGNAL_JITTER_MS, useEventSignal } from "../lib/signalHub.js";
 
@@ -17,26 +19,78 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>, eventId: string) => {
   void qc.invalidateQueries({ queryKey: ["event", eventId, "bingo-status"] });
 };
 
+/** 合図（topic `bingo` の中身）を手元の状態に重ねた結果。
+ * - `state`: そのまま書く。`needsRank` なら自分の順位を取りに1回だけ取り直す
+ * - "stale": 手元より古い合図。何もしない
+ * - "refetch": 重ねられない（ゲームが替わった・作成／削除・形が違う）。取り直す */
+export type BingoSignalApply = { state: BingoState; needsRank: boolean } | "stale" | "refetch";
+
+/** 合図の番号・人数・状態を重ね、自分のリーチ／ビンゴは手元のカードで判定し直す
+ * （判定は shared の deriveBingoCard。サーバーと同じ関数）。順位は合図に載らないので、
+ * ビンゴなのに順位を知らないときだけ取り直す（ビンゴした人だけが取りに行く） */
+export function applyBingoSignal(old: BingoState, signal: BingoSignal): BingoSignalApply {
+  if (old.signal && signal.rev <= old.signal.rev) return "stale";
+  const sameGame = old.gameId !== null && signal.gameId === old.gameId;
+  const started = (s: BingoState["status"]) => s === "running" || s === "ended";
+  if (!sameGame || !started(old.status) || !started(signal.status)) return "refetch";
+  const mine = old.card ? deriveBingoCard(old.card, signal.drawnNumbers) : null;
+  const rank = mine?.bingo ? (old.me?.rank ?? null) : null;
+  return {
+    state: {
+      ...old,
+      status: signal.status,
+      drawnNumbers: signal.drawnNumbers,
+      counts: signal.counts,
+      me: mine ? { bingo: mine.bingo, reach: mine.reach, rank } : old.me,
+      // 反映済みの rev。これより古い合図（順不同で届いたもの）を捨てる
+      signal: old.signal ? { ...old.signal, rev: signal.rev } : old.signal,
+    },
+    needsRank: Boolean(mine?.bingo) && rank === null,
+  };
+}
+
 /** 参加者向けの状態（自分のカード・判定・人数）。カード画面・投影・詳細の小カードが使う。
  *
- * watch: 応答の `signal`（topic `bingo`）の合図で取り直すか。カード（/bingo）と投影
+ * watch: 応答の `signal`（topic `bingo`）を購読するか。カード（/bingo）と投影
  * （/bingo/screen）だけが立てる: 抽選中に番号が付かないカードではゲームが成り立たず、投影も
- * 同じため。参加者全員が同じ合図で取り直すので、ばらす（`PARTICIPANT_SIGNAL_JITTER_MS`）。
+ * 同じため。合図は番号・人数・状態を運ぶので、受けた全員が**同時に**その場で反映する
+ * （取り直さない。オーナー決定 2026-11-14）。重ねられないとき（ゲームの作成・開始・リセット・
+ * 削除）と、ビンゴして順位が要るときだけ、ばらして（`PARTICIPANT_SIGNAL_JITTER_MS`）取り直す。
  * ゲーム作成前も確定メンバーには status "none" と合図の購読先が返るので、プロジェクターを
  * 先に映しておいても作成の合図で拾う（#436「最初の1回だけ番号が出ない」）。
  * イベント詳細の小カードは立てない（開いたとき・タブ復帰で取り直す） */
 export function useBingoState(eventId: string, enabled: boolean, watch = false) {
+  const qc = useQueryClient();
+  const queryKey = ["event", eventId, "bingo"];
   const query = useQuery({
-    queryKey: ["event", eventId, "bingo"],
+    queryKey,
     enabled: Boolean(eventId) && enabled,
     queryFn: () => api.get<BingoState>(`/events/${eventId}/bingo`),
     retry: false,
     refetchOnWindowFocus: true,
   });
-  useEventSignal(watch ? query.data?.signal : null, () => query.refetch(), {
-    eventId,
-    jitterMs: PARTICIPANT_SIGNAL_JITTER_MS,
-  });
+  // ばらした取り直しは1本だけ待つ（待っている間の合図はこの1回に吸収する）
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refetchSpread = () => {
+    if (refetchTimer.current) return;
+    refetchTimer.current = setTimeout(() => {
+      refetchTimer.current = null;
+      void query.refetch();
+    }, Math.random() * PARTICIPANT_SIGNAL_JITTER_MS);
+  };
+  useEffect(() => () => {
+    if (refetchTimer.current) clearTimeout(refetchTimer.current);
+    refetchTimer.current = null;
+  }, []);
+  useEventSignal(watch ? query.data?.signal : null, (content) => {
+    const signal = parseBingoSignal(content);
+    const old = qc.getQueryData<BingoState>(queryKey);
+    const applied = signal && old ? applyBingoSignal(old, signal) : "refetch";
+    if (applied === "stale") return;
+    if (applied === "refetch") return refetchSpread();
+    qc.setQueryData<BingoState>(queryKey, applied.state);
+    if (applied.needsRank) refetchSpread();
+  }, { eventId });
   return query;
 }
 
