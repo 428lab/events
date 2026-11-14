@@ -49,6 +49,10 @@ const ja = {
   switchParticipantsToAwards: "参加者の画面を表彰式に切り替える",
   switchBeforeOpening: "先に参加者の画面を表彰式に切り替えてください",
   openCeremony: "表彰式を開く",
+  /** 表彰式を終える: モードを通常へ戻し、参加者の画面を表彰式から外す */
+  endCeremony: "表彰式を終える",
+  endCeremonyConfirm: "表彰式を終えます。参加者の画面は表彰式からイベントのページに戻ります。",
+  endCeremonyFailed: "表彰式を終えられませんでした。もう一度お試しください。",
 
   /* ── この範囲の画面をまたいで使うもの ─────────────────────── */
   /** 選択肢の先頭に置く「まだ選んでいない」項目（発表中のチーム・受賞チーム） */
@@ -238,6 +242,9 @@ const en: Record<keyof typeof ja, string> = {
   switchParticipantsToAwards: "Switch participants to the ceremony",
   switchBeforeOpening: "Switch participants to the ceremony before opening it.",
   openCeremony: "Open the ceremony",
+  endCeremony: "End the ceremony",
+  endCeremonyConfirm: "End the ceremony? Participants will go back from the ceremony to the event page.",
+  endCeremonyFailed: "Couldn't end the ceremony. Please try again.",
 
   notSelected: "(none selected)",
   teamColumn: "Team",
