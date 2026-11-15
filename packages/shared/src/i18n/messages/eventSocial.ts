@@ -316,6 +316,10 @@ const ja = {
   /** 投影のビンゴのカットイン (#681 PR3)。1人なら通算の何人目か、同時なら人数 */
   bingoCutinNth: "{{n}}人目",
   bingoCutinTie: "{{n}}人同時",
+  /** 投影の音 (#681 PR4)。ボタンの説明は「押すとどうなるか」 */
+  bingoSoundOn: "音を出す",
+  bingoSoundOff: "音を消す",
+  bingoSoundBlocked: "音が出せません。画面をクリックしてください",
   /** 参加者のビンゴの全画面 (#681)。景品の案内へ／カードに戻る */
   bingoGoToPrizes: "景品を選びに行く",
   bingoBackToCard: "カードに戻る",
@@ -566,6 +570,9 @@ const en: Record<keyof typeof ja, string> = {
   bingoEndedSummary: "Finished. {{bingo}} bingo, {{cards}} cards",
   bingoCutinNth: "Winner #{{n}}",
   bingoCutinTie: "{{n}} at once",
+  bingoSoundOn: "Turn sound on",
+  bingoSoundOff: "Turn sound off",
+  bingoSoundBlocked: "Sound is blocked. Click the screen",
   bingoGoToPrizes: "Go pick a prize",
   bingoBackToCard: "Back to my card",
   meetPrizeCondBingo: "Bingo (one per person)",
