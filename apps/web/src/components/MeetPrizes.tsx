@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import type { MeetPrizeMe, MeetPrizeView } from "@eventer/shared";
 import { useMeetPrizes } from "../api/meetPrizeHooks.js";
 import { formatDateTime } from "../lib/format.js";
+import { useContestAnchor } from "../lib/useContestAnchor.js";
 
 /**
  * 出会いの景品 (#431) のイベントページ用カード。
@@ -139,6 +140,8 @@ function PrizeRow({
 export function MeetPrizePanel({ eventId }: { eventId: string }) {
   const { t } = useTranslation();
   const { data } = useMeetPrizes(eventId, Boolean(eventId));
+  // ビンゴの全画面「景品を選びに行く」(#681) は /events/:id#prizes で来る
+  useContestAnchor("prizes", Boolean(data && data.prizes.length > 0));
   if (!data || data.prizes.length === 0) return null;
 
   const me = data.me;
@@ -157,7 +160,7 @@ export function MeetPrizePanel({ eventId }: { eventId: string }) {
     );
 
   return (
-    <Card variant="outlined">
+    <Card variant="outlined" id="prizes" tabIndex={-1} sx={{ scrollMarginTop: 88 }}>
       <CardContent>
         <Typography
           variant="h6"

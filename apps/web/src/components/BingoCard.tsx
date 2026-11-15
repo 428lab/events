@@ -28,16 +28,32 @@ export function BingoCard({
   numbers,
   drawn,
   cellSize = 56,
+  highlightCells,
+  pulseNumbers,
 }: {
   numbers: number[];
   drawn: number[];
   cellSize?: number;
+  /** 強調するセル添字（列優先 0..24）。完成ラインを見せる (#681) */
+  highlightCells?: number[];
+  /** いまマークされた番号。一度だけ弾ませる (#681) */
+  pulseNumbers?: number[];
 }) {
   const { t } = useTranslation();
   const drawnSet = new Set(drawn);
+  const highlight = new Set(highlightCells ?? []);
+  const pulse = new Set(pulseNumbers ?? []);
   const size = `var(--bingo-card-cell-size, ${cellSize}px)`;
   return (
-    <Box sx={{ display: "inline-block" }}>
+    <Box
+      sx={{
+        display: "inline-block",
+        "@keyframes bingoMarkPulse": {
+          "0%": { transform: "scale(1.25)" },
+          "100%": { transform: "scale(1)" },
+        },
+      }}
+    >
       <Box
         sx={{
           display: "grid",
@@ -73,10 +89,14 @@ export function BingoCard({
           const free = cell === BINGO_FREE_CELL;
           const n = idx === null ? null : numbers[idx]!;
           const marked = free || (n !== null && drawnSet.has(n));
+          const lit = highlight.has(cell);
           return (
             <Box
               key={cell}
+              data-highlight={lit || undefined}
               sx={{
+                ...(lit ? { boxShadow: (theme) => `0 0 0 3px ${theme.palette.warning.main}` } : {}),
+                ...(n !== null && pulse.has(n) ? { animation: "bingoMarkPulse 500ms ease-out" } : {}),
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

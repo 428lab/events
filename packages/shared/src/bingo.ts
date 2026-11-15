@@ -106,6 +106,20 @@ export function deriveBingoCard(
   };
 }
 
+/** 完成したラインに含まれるセル添字（0..24・列優先、重複なし）。カード上で完成ラインを
+ * 強調する表示用（#681）。ラインの定義は BINGO_LINES・マークは deriveBingoCard と同じ */
+export function completedBingoCells(
+  numbers: ReadonlyArray<number>,
+  drawn: ReadonlyArray<number>,
+): number[] {
+  const { marked } = deriveBingoCard(numbers, drawn);
+  const cells = new Set<number>();
+  for (const line of BINGO_LINES) {
+    if (line.every((cell) => marked[cell])) line.forEach((cell) => cells.add(cell));
+  }
+  return [...cells].sort((a, b) => a - b);
+}
+
 /** 参加者に見えるゲームの公開部分。`GET /bingo` と合図（topic `bingo`）が同じ値を持つ。
  * 他人由来の値は人数だけ（名前・利用者 ID・順位は入らない） */
 export interface BingoPublic {
