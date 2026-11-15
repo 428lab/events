@@ -105,6 +105,8 @@ describe("ビンゴ抽選コントロール (#436)", () => {
         screen.getByText("カード3枚 ・ ビンゴ1人 ・ リーチ0人"),
       ).toBeInTheDocument();
     });
+    // 増えた人数を司会に知らせる (#681 PR3)
+    expect(await screen.findByText("新しいビンゴ 1人")).toBeInTheDocument();
   });
 
   it("取り消しも応答の列で巻き戻す（表示が取り直し待ちにならない）", async () => {

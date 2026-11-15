@@ -5,10 +5,12 @@ import TextIncreaseIcon from "@mui/icons-material/TextIncrease";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BINGO_COLUMNS, BINGO_COLUMN_RANGES } from "@eventer/shared";
-import { useEvent } from "../api/hooks.js";
-import { useBingoState } from "../api/bingoHooks.js";
+import { useEvent, useIsAdmin } from "../api/hooks.js";
+import { useBingoState, useBingoStatus } from "../api/bingoHooks.js";
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion.js";
 import { useBingoScreenEffects, type BingoCountBadge } from "../lib/useBingoScreenEffects.js";
+import { useBingoCutinNames } from "../lib/useBingoCutinNames.js";
+import { BingoCutin } from "../components/BingoCutin.js";
 import {
   BOARD_ACCENT,
   BOARD_BG,
@@ -35,7 +37,8 @@ function readScale(): number {
  * ビンゴの投影ページ (#436)。直近の番号を特大で、履歴をB〜O列のグリッドで出す。
  * 権限は参加確定メンバー（スタッフが映す想定）。非メンバーにはサーバーが 404 を返すので
  * 案内だけ出す。ゲーム作成前（"none"）に映しておいても、作成・抽選の合図（topic `bingo`）で
- * 追いつく。名前は出さない（人数のみ。docs/bingo.md §3.8）。
+ * 追いつく。名前は staff で開いたときだけ、ビンゴのカットインに出す（#681 PR3・案N1。
+ * staff 専用の一覧 `GET /bingo/status` を併せて読む。それ以外は人数のみ。docs/bingo.md §3.8）。
  *
  * 演出 (#681 PR1): 新しい番号はロールしてから止まり、リーチ・ビンゴの人数は大きなパネルで増分を
  * 見せる。差分の判定と時間は `useBingoScreenEffects`（連続する BingoState の差分だけで動く。取り直しの経路には依存しない）。
@@ -47,6 +50,11 @@ export function EventBingoScreenPage() {
   const state = useBingoState(id, Boolean(eventData), true);
   const reduced = usePrefersReducedMotion();
   const fx = useBingoScreenEffects(state.data, reduced);
+  // 名前は staff（と運営者）の投影だけ。そうでなければ一覧を取りに行かない
+  const isAdmin = useIsAdmin();
+  const showNames = eventData?.myRole === "staff" || isAdmin;
+  const staffStatus = useBingoStatus(id, showNames);
+  const cutinNames = useBingoCutinNames(showNames ? staffStatus.data : undefined, fx.cutin);
 
   const [scale, setScale] = useState(readScale);
   const changeScale = (dir: 1 | -1) => {
@@ -359,6 +367,8 @@ export function EventBingoScreenPage() {
           </>
         )
       )}
+
+      {fx.cutin && <BingoCutin cutin={fx.cutin} names={cutinNames} reduced={reduced} />}
 
       {/* 右下の倍率操作（カーソルと一緒に隠れる） */}
       <Stack

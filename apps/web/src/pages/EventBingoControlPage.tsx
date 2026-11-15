@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Alert,
   Avatar,
+  Snackbar,
   Box,
   Button,
   Card,
@@ -43,6 +44,8 @@ export function EventBingoControlPage() {
   const isStaff = eventData?.myRole === "staff";
   const status = useBingoStatus(id, isStaff);
   const [failure, setFailure] = useState<string | null>(null);
+  /** 抽選でビンゴが増えた人数（#681 PR3）。司会が読み上げに気づくための短い知らせ */
+  const [newBingo, setNewBingo] = useState<{ n: number; key: number } | null>(null);
 
   const create = useCreateBingo(id);
   const start = useStartBingo(id);
@@ -75,6 +78,18 @@ export function EventBingoControlPage() {
     if (confirmKey && !window.confirm(t(confirmKey as never))) return;
     setFailure(null);
     mutation.mutate(undefined, { onError });
+  };
+
+  /** 次を引く。応答の人数が引く前より増えていたら知らせる（名前は下の一覧にある） */
+  const drawNext = () => {
+    const before = status.data?.counts.bingo ?? 0;
+    setFailure(null);
+    draw.mutate(undefined, {
+      onError,
+      onSuccess: (res) => {
+        if (res.counts.bingo > before) setNewBingo({ n: res.counts.bingo - before, key: Date.now() });
+      },
+    });
   };
 
   if (eventData && !isStaff) {
@@ -117,6 +132,20 @@ export function EventBingoControlPage() {
           {t("eventSocial.meetRankingOpenScreen")}
         </Button>
       </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+        {t("staffOps.bingoScreenNamesHint")}
+      </Typography>
+      <Snackbar
+        key={newBingo?.key}
+        open={newBingo !== null}
+        autoHideDuration={3000}
+        onClose={() => setNewBingo(null)}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setNewBingo(null)}>
+          {t("staffOps.bingoNewBingoToast", { n: newBingo?.n ?? 0 })}
+        </Alert>
+      </Snackbar>
       {failure && (
         <Alert severity="error" onClose={() => setFailure(null)}>
           {failure}
@@ -185,7 +214,7 @@ export function EventBingoControlPage() {
                           variant="contained"
                           size="large"
                           disabled={busy}
-                          onClick={() => run(draw, null)}
+                          onClick={drawNext}
                         >
                           {t("staffOps.bingoDraw")}
                         </Button>
