@@ -313,6 +313,9 @@ const ja = {
   bingoReachSurge: "リーチが{{n}}人増えた。あと1つ",
   bingoReachSurgeBig: "リーチが一気に{{n}}人増えた",
   bingoEndedSummary: "終了。ビンゴ{{bingo}}人・カード{{cards}}枚",
+  /** 投影のビンゴのカットイン (#681 PR3)。1人なら通算の何人目か、同時なら人数 */
+  bingoCutinNth: "{{n}}人目",
+  bingoCutinTie: "{{n}}人同時",
   /** 参加者のビンゴの全画面 (#681)。景品の案内へ／カードに戻る */
   bingoGoToPrizes: "景品を選びに行く",
   bingoBackToCard: "カードに戻る",
@@ -561,6 +564,8 @@ const en: Record<keyof typeof ja, string> = {
   bingoReachSurge: "{{n}} more on reach. One to go",
   bingoReachSurgeBig: "{{n}} more on reach at once",
   bingoEndedSummary: "Finished. {{bingo}} bingo, {{cards}} cards",
+  bingoCutinNth: "Winner #{{n}}",
+  bingoCutinTie: "{{n}} at once",
   bingoGoToPrizes: "Go pick a prize",
   bingoBackToCard: "Back to my card",
   meetPrizeCondBingo: "Bingo (one per person)",

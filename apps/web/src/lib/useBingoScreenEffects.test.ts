@@ -1,14 +1,14 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BingoState } from "@eventer/shared";
-import { BINGO_BADGE_MS, BINGO_ROLL_MS, BINGO_SURGE_BIG, useBingoScreenEffects } from "./useBingoScreenEffects.js";
+import { BINGO_BADGE_MS, BINGO_CUTIN_MS, BINGO_CUTIN_REDUCED_MS, BINGO_ROLL_MS, BINGO_SURGE_BIG, useBingoScreenEffects } from "./useBingoScreenEffects.js";
 
 /**
  * ビンゴ投影の演出 (#681 PR1)。どれも前回の応答との差分で起こす:
  * 初回・取り消し（減少）では出さない、ロール中に次が来たら最新で止まる、reduced はロールしない。
  */
-const state = (drawn: number[], reach = 0, bingo = 0): BingoState => ({
-  gameId: 1,
+const state = (drawn: number[], reach = 0, bingo = 0, gameId = 1): BingoState => ({
+  gameId,
   status: "running", drawnNumbers: drawn, counts: { cards: 10, bingo, reach }, card: null, me: null,
 });
 
@@ -66,5 +66,31 @@ describe("useBingoScreenEffects", () => {
     advance(BINGO_BADGE_MS + 10);
     expect(view.result.current.reachBadge).toBeNull();
     expect(view.result.current.bingoBadge).toBeNull();
+  });
+
+  it("a bingo increase shows the cut-in (nth / tie) for its time; a game change or first load does not", () => {
+    const view = render(state([5], 0, 1));
+    expect(view.result.current.cutin).toBeNull();
+    view.rerender({ data: state([5, 42], 0, 2), r: false });
+    expect(view.result.current.cutin).toMatchObject({ n: 1, total: 2 });
+    advance(BINGO_CUTIN_MS - 100);
+    expect(view.result.current.cutin).not.toBeNull();
+    advance(200);
+    expect(view.result.current.cutin).toBeNull();
+    view.rerender({ data: state([5, 42, 61], 0, 4), r: false });
+    expect(view.result.current.cutin).toMatchObject({ n: 2, total: 4 });
+    // reset and a new game that already has winners: no cut-in
+    advance(BINGO_CUTIN_MS + 10);
+    view.rerender({ data: state([7], 0, 6, 2), r: false });
+    expect(view.result.current).toMatchObject({ cutin: null, bingoBadge: null, rolling: false });
+  });
+
+  it("reduced motion keeps the cut-in for the shorter static time", () => {
+    const view = render(state([5], 0, 0), true);
+    view.rerender({ data: state([5, 42], 0, 1), r: true });
+    advance(BINGO_CUTIN_REDUCED_MS - 100);
+    expect(view.result.current.cutin).not.toBeNull();
+    advance(200);
+    expect(view.result.current.cutin).toBeNull();
   });
 });

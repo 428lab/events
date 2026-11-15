@@ -35,6 +35,9 @@ const ja = {
 
   /* ── 数字ビンゴの抽選コントロール (#436) ────────────────── */
   bingoControlTitle: "ビンゴ抽選",
+  /** 抽選でビンゴが増えたときの知らせ (#681 PR3) と、投影に名前が出る条件 */
+  bingoNewBingoToast: "新しいビンゴ {{n}}人",
+  bingoScreenNamesHint: "運営のアカウントで開いた投影には、ビンゴした人の名前が出ます。",
   bingoControlStaffOnly: "ビンゴの操作はスタッフ専用です。",
   bingoCreate: "ビンゴを準備する",
   bingoCreateNote: "準備すると参加者がカードを受け取れるようになります。",
@@ -101,6 +104,8 @@ const en: Record<keyof typeof ja, string> = {
   prizeRedeemFailed: "Failed to redeem.",
 
   bingoControlTitle: "Bingo draw",
+  bingoNewBingoToast: "{{n}} new bingo",
+  bingoScreenNamesHint: "A projector opened with an organizer account shows the names of new winners.",
   bingoControlStaffOnly: "Bingo controls are for organizers only.",
   bingoCreate: "Set up bingo",
   bingoCreateNote: "Once set up, participants can get their cards.",

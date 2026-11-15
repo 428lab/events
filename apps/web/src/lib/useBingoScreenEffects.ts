@@ -11,6 +11,9 @@ import { BINGO_MAX_NUMBER, type BingoState } from "@eventer/shared";
  * - リーチ・ビンゴ人数: 増えたら「+n」を `BINGO_BADGE_MS` 出す。リーチが増えたら煽りの一言を
  *   `BINGO_SURGE_MS` 出す（`BINGO_SURGE_BIG` 人以上で文言を変える）
  * - reduced: ロールしない。番号はすぐ差し替え、明るさを1回だけ変える（`flash`）
+ * - ビンゴのカットイン (#681 PR3): ビンゴの人数が増えたら全画面のカットインを `BINGO_CUTIN_MS`
+ *   （reduced は `BINGO_CUTIN_REDUCED_MS`、静止）出す。表示中にまた増えたら、新しい増分で出し直す
+ * - ゲームが替わったとき（作成・リセット後）は、その時点の値を基準に取り直すだけで何も起こさない
  *
  * 時間差は setTimeout の連鎖で作る（setInterval は使わない。noPolling.test.ts）。
  */
@@ -21,6 +24,18 @@ export const BINGO_BADGE_MS = 2_000;
 export const BINGO_SURGE_MS = 3_000;
 /** リーチの増分がこれ以上なら「一気に増えた」の文言にする */
 export const BINGO_SURGE_BIG = 5;
+/** ビンゴのカットインを出す長さ。reduced は静止で少し短く（LiveCutin と同じ考え方） */
+export const BINGO_CUTIN_MS = 4_000;
+export const BINGO_CUTIN_REDUCED_MS = 3_000;
+
+/** ビンゴのカットイン。`n` は今回増えた人数（2以上なら同時）、`total` は増えたあとの人数 */
+export interface BingoCutin {
+  n: number;
+  total: number;
+  key: number;
+  /** 出した時刻（名前の突き合わせ用。`useBingoCutinNames`） */
+  at: number;
+}
 
 export interface BingoCountBadge {
   n: number;
@@ -39,9 +54,11 @@ export interface BingoScreenEffects {
   reachBadge: BingoCountBadge | null;
   bingoBadge: BingoCountBadge | null;
   surge: { n: number; big: boolean; key: number } | null;
+  cutin: BingoCutin | null;
 }
 
 interface Seen {
+  gameId: number | null;
   drawn: number;
   reach: number;
   bingo: number;
@@ -59,6 +76,7 @@ export function useBingoScreenEffects(data: BingoState | undefined, reduced: boo
   const [reachBadge, setReachBadge] = useState<BingoCountBadge | null>(null);
   const [bingoBadge, setBingoBadge] = useState<BingoCountBadge | null>(null);
   const [surge, setSurge] = useState<BingoScreenEffects["surge"]>(null);
+  const [cutin, setCutin] = useState<BingoCutin | null>(null);
 
   const seen = useRef<Seen | null>(null);
   const seq = useRef(0);
@@ -88,13 +106,14 @@ export function useBingoScreenEffects(data: BingoState | undefined, reduced: boo
   const bingo = data?.counts.bingo ?? 0;
   const ready = data !== undefined;
   const drawnCount = drawn.length;
+  const gameId = data?.gameId ?? null;
 
   useEffect(() => {
     if (!ready) return;
     const before = seen.current;
-    seen.current = { drawn: drawnCount, reach, bingo };
-    // 初回の表示では何も起こさない（開き直し・再読み込みで鳴らさない）
-    if (!before) return;
+    seen.current = { gameId, drawn: drawnCount, reach, bingo };
+    // 初回の表示・ゲームが替わったときは何も起こさない（開き直し・再読み込み・リセットで鳴らさない）
+    if (!before || before.gameId !== gameId) return;
 
     if (drawnCount > before.drawn && latest !== null) {
       if (reduced || rollTimer.current) {
@@ -132,10 +151,12 @@ export function useBingoScreenEffects(data: BingoState | undefined, reduced: boo
       const key = seq.current;
       setBingoBadge({ n: bingo - before.bingo, key });
       later(() => setBingoBadge((b) => (b?.key === key ? null : b)), BINGO_BADGE_MS);
+      setCutin({ n: bingo - before.bingo, total: bingo, key, at: Date.now() });
+      later(() => setCutin((c) => (c?.key === key ? null : c)), reduced ? BINGO_CUTIN_REDUCED_MS : BINGO_CUTIN_MS);
     }
     // 差分だけを見る。land / later は毎回作り直されるが、中身は ref と setState だけ
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, drawnCount, latest, reach, bingo, reduced]);
+  }, [ready, gameId, drawnCount, latest, reach, bingo, reduced]);
 
   useEffect(() => {
     const pending = timers.current;
@@ -154,5 +175,6 @@ export function useBingoScreenEffects(data: BingoState | undefined, reduced: boo
     reachBadge,
     bingoBadge,
     surge,
+    cutin,
   };
 }
