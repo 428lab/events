@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Box, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import TextDecreaseIcon from "@mui/icons-material/TextDecrease";
 import TextIncreaseIcon from "@mui/icons-material/TextIncrease";
+import VolumeOffIcon from "@mui/icons-material/VolumeOff";
+import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BINGO_COLUMNS, BINGO_COLUMN_RANGES } from "@eventer/shared";
@@ -10,6 +12,8 @@ import { useBingoState, useBingoStatus } from "../api/bingoHooks.js";
 import { usePrefersReducedMotion } from "../lib/usePrefersReducedMotion.js";
 import { useBingoScreenEffects, type BingoCountBadge } from "../lib/useBingoScreenEffects.js";
 import { useBingoCutinNames } from "../lib/useBingoCutinNames.js";
+import { useBingoScreenSound } from "../lib/useBingoScreenSound.js";
+import { stopBingoRoll, unlockBingoSound } from "../lib/effects.js";
 import { BingoCutin } from "../components/BingoCutin.js";
 import {
   BOARD_ACCENT,
@@ -23,6 +27,17 @@ const SCALE_KEY = "eventer:bingoScreenScale";
 const SCALES = [0.8, 1, 1.25, 1.5, 2];
 /** リーチの色（ビンゴは BOARD_ACCENT）。参加者カードのリーチ表示と同じ warning 系 */
 const REACH_COLOR = "#FBBF24";
+
+/** 音のオン・オフ (#681 PR4)。既定はオフ。投影端末ごとに覚える */
+const SOUND_KEY = "eventer:bingoScreenSound";
+
+function readSound(): boolean {
+  try {
+    return localStorage.getItem(SOUND_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 function readScale(): number {
   try {
@@ -55,6 +70,21 @@ export function EventBingoScreenPage() {
   const showNames = eventData?.myRole === "staff" || isAdmin;
   const staffStatus = useBingoStatus(id, showNames);
   const cutinNames = useBingoCutinNames(showNames ? staffStatus.data : undefined, fx.cutin);
+
+  const [sound, setSound] = useState(readSound);
+  const soundState = useBingoScreenSound(fx, sound);
+  const toggleSound = () => {
+    const next = !sound;
+    setSound(next);
+    // オンにするクリックで自動再生の許可を取る
+    if (next) void unlockBingoSound();
+    else stopBingoRoll();
+    try {
+      localStorage.setItem(SOUND_KEY, next ? "1" : "0");
+    } catch {
+      // localStorage 不可の環境ではセッション内のみ反映
+    }
+  };
 
   const [scale, setScale] = useState(readScale);
   const changeScale = (dir: 1 | -1) => {
@@ -370,6 +400,33 @@ export function EventBingoScreenPage() {
 
       {fx.cutin && <BingoCutin cutin={fx.cutin} names={cutinNames} reduced={reduced} />}
 
+      {/* 自動再生がブロックされたとき。画面のどこかをクリックすると許可を取り直して消える */}
+      {soundState.blocked && (
+        <Box
+          data-testid="bingo-sound-blocked"
+          sx={{
+            position: "absolute",
+            top: 12,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 6,
+            bgcolor: "rgba(0,0,0,0.75)",
+            color: "#fff",
+            px: 2,
+            py: 1,
+            borderRadius: 2,
+            cursor: "pointer",
+            fontSize: 14,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 0.5,
+          }}
+        >
+          <VolumeOffIcon fontSize="small" />
+          {t("eventSocial.bingoSoundBlocked")}
+        </Box>
+      )}
+
       {/* 右下の倍率操作（カーソルと一緒に隠れる） */}
       <Stack
         direction="row"
@@ -382,6 +439,16 @@ export function EventBingoScreenPage() {
           transition: "opacity 0.3s",
         }}
       >
+        <Tooltip title={t(sound ? "eventSocial.bingoSoundOff" : "eventSocial.bingoSoundOn")}>
+          <IconButton
+            onClick={toggleSound}
+            aria-label={t(sound ? "eventSocial.bingoSoundOff" : "eventSocial.bingoSoundOn")}
+            aria-pressed={sound}
+            sx={{ color: sound ? BOARD_ACCENT : BOARD_SUB }}
+          >
+            {sound ? <VolumeUpIcon /> : <VolumeOffIcon />}
+          </IconButton>
+        </Tooltip>
         <Tooltip title={t("eventSocial.screenTextSmaller")}>
           <IconButton onClick={() => changeScale(-1)} sx={{ color: BOARD_SUB }}>
             <TextDecreaseIcon />

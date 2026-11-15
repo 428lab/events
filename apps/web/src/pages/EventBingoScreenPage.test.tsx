@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -22,6 +22,14 @@ vi.mock("../api/hooks.js", () => ({
 vi.mock("../lib/signalHub.js", () => ({
   PARTICIPANT_SIGNAL_JITTER_MS: 5_000,
   useEventSignal: () => ({ synced: true }),
+}));
+const sound = vi.hoisted(() => ({ unlock: vi.fn(async () => undefined) }));
+vi.mock("../lib/effects.js", () => ({
+  playBingoRoll: vi.fn(async () => true),
+  playBingoLand: vi.fn(async () => true),
+  playFanfare: vi.fn(async () => true),
+  stopBingoRoll: vi.fn(),
+  unlockBingoSound: sound.unlock,
 }));
 const { EventBingoScreenPage } = await import("./EventBingoScreenPage.js");
 
@@ -73,4 +81,19 @@ it("participant projector: count only, and the staff list is never requested", a
   expect(screen.queryByTestId("bingo-cutin-names")).toBeNull();
   expect(screen.queryByText("あおい")).toBeNull();
   expect(mocks.get).not.toHaveBeenCalledWith("/events/e1/bingo/status");
+});
+
+it("sound is off by default; the toggle unlocks audio and is remembered. The participant card page has no sound", async () => {
+  localStorage.removeItem("eventer:bingoScreenSound");
+  renderPage();
+  await screen.findByText("ビンゴ大会");
+  const toggle = screen.getByRole("button", { name: "音を出す" });
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(toggle);
+  expect(sound.unlock).toHaveBeenCalledOnce();
+  expect(screen.getByRole("button", { name: "音を消す" })).toHaveAttribute("aria-pressed", "true");
+  expect(localStorage.getItem("eventer:bingoScreenSound")).toBe("1");
+  // 参加者のスマホでは鳴らさない（会場で一斉に鳴るのを防ぐ）
+  const participantPage = (await import("./EventBingoPage.tsx?raw")).default;
+  expect(participantPage).not.toMatch(/effects\.js|useBingoScreenSound|new Audio|AudioContext/);
 });
