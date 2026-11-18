@@ -3,19 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveCutinControl } from "./LiveCutinControl.js";
 
 const trigger = vi.fn();
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string, o?: { name?: string }) => (o?.name !== undefined ? `${key}:${o.name}` : key) }) }));
 vi.mock("../api/liveControlHooks.js", () => ({ cutinApi: { trigger: (...args: unknown[]) => trigger(...args) } }));
 beforeEach(() => { trigger.mockReset().mockResolvedValue({}); Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn().mockReturnValue({ matches: false }) }); });
 describe("staff cut-in button", () => {
   it("local preview never sends; manual rapid second click sends a new caption without a busy guard", async () => {
     render(<LiveCutinControl eventId="event-a" />);
-    fireEvent.change(screen.getByLabelText("studio.cutinName"), { target: { value: "山田" } });
+    fireEvent.change(screen.getByLabelText("studio.cutinName"), { target: { value: "山田さん" } });
     fireEvent.click(screen.getByRole("button", { name: "studio.cutinPreview" }));
     expect(screen.getByText("studio.cutinLocalOnly")).toBeTruthy();
     expect(trigger).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "studio.cutinSend" }));
     await waitFor(() => expect(screen.getByText("studio.cutinSent")).toBeTruthy());
-    expect(trigger).toHaveBeenCalledWith("event-a", { message: "山田さん 参戦！！" });
+    // the honorific is stripped before it goes into the dictionary's default caption
+    expect(trigger).toHaveBeenCalledWith("event-a", { message: "studio.cutinDefault:山田" });
     fireEvent.change(screen.getByLabelText("studio.cutinMessage"), { target: { value: "二番目 参戦！！" } });
     fireEvent.click(screen.getByRole("button", { name: "studio.cutinSend" }));
     await waitFor(() => expect(trigger).toHaveBeenCalledTimes(2));

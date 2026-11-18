@@ -129,19 +129,15 @@ export function LicenseCardPage() {
           }
           if (canceled) return;
           if (!res.ok) {
-            // 理由が分からないと直しようがないので、状態から言葉にする
-            throw new Error(
-              res.status === 413
-                ? "画像が大きすぎて保存できませんでした"
-                : `保存に失敗しました（${res.status}）`,
-            );
+            // 画面には ogStatus の文言だけを出す。理由はログで追えるよう状態で残す
+            throw new Error(`card image upload failed: ${res.status}`);
           }
           completed = true;
           setOgStatus("done");
         } catch (e) {
           if (canceled) return;
           uploadedVariantsRef.current.delete(uploadKey);
-          console.warn("プロフィールカードのOG画像更新に失敗しました", e);
+          console.warn("profile card OG image update failed", e);
           setOgStatus("error");
         }
       })();
@@ -149,8 +145,8 @@ export function LicenseCardPage() {
     return () => { canceled = true; clearTimeout(timer); if (!completed) uploadedVariantsRef.current.delete(uploadKey); };
   }, [isMe, variant, theme, data, profileId, refetch]);
 
-  if (isError) return <Alert severity="info">ユーザーが見つかりません。</Alert>;
-  if (isLoading || !data) return <Typography>読み込み中…</Typography>;
+  if (isError) return <Alert severity="info">{t("profile.notFound")}</Alert>;
+  if (isLoading || !data) return <Typography>{t("common.loading")}</Typography>;
 
   // ここは自分のカードを仕立てる画面 (#334)。他人のカードは編集も印刷もしないので、
   // 直接URLを開かれたらその人のプロフィールへ戻す（カードはそこに載っている）
@@ -169,9 +165,9 @@ export function LicenseCardPage() {
     saveLocalCardLook({ variant: v, theme });
   };
 
-  const selectTheme = (t: CardThemeKey) => {
-    setTheme(t);
-    saveLocalCardLook({ variant, theme: t });
+  const selectTheme = (next: CardThemeKey) => {
+    setTheme(next);
+    saveLocalCardLook({ variant, theme: next });
   };
 
   const handleDownload = async () => {
@@ -182,9 +178,9 @@ export function LicenseCardPage() {
       const png = await generateCardPng(svgRef.current);
       downloadBlob(png, `events-lab-card-${card.handle}.png`);
     } catch (e) {
-      setExportError(
-        e instanceof Error ? e.message : "PNGの書き出しに失敗しました",
-      );
+      // 生成の内部のメッセージ（profileCardPng）は開発者向けなので画面には出さない
+      console.warn("card PNG export failed", e);
+      setExportError(t("profile.cardExportFailed"));
     } finally {
       setBusy(false);
     }
@@ -225,13 +221,13 @@ export function LicenseCardPage() {
       <Stack spacing={2}>
         <Box>
           <Typography variant="h5" fontWeight={700}>
-            プロフィールカード
+            {t("profile.cardPageTitle")}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            印刷して名札ホルダーに入れられます（91×55mm）
+            {t("profile.cardPageSubtitle")}
             {" ・ "}
             <Link component={RouterLink} to={`/users/${card.handle}`}>
-              プロフィールへ戻る
+              {t("profile.cardBackToProfile")}
             </Link>
           </Typography>
         </Box>
@@ -239,7 +235,7 @@ export function LicenseCardPage() {
         {/* 背景パターンの選択（選択は端末に保存） */}
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
           <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32 }}>
-            背景
+            {t("profile.cardBgLabel")}
           </Typography>
           {BG_VARIANTS.map((v) => (
             <Chip
@@ -255,7 +251,7 @@ export function LicenseCardPage() {
         {/* 配色テーマの選択（選択は端末に保存） */}
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
           <Typography variant="caption" color="text.secondary" sx={{ minWidth: 32 }}>
-            色
+            {t("profile.cardThemeLabel")}
           </Typography>
           {CARD_THEMES.map((th) => (
             <Chip
@@ -294,7 +290,7 @@ export function LicenseCardPage() {
             startIcon={<PrintIcon />}
             onClick={() => window.print()}
           >
-            印刷する
+            {t("profile.cardPrint")}
           </Button>
           <Button
             variant="outlined"
@@ -302,7 +298,7 @@ export function LicenseCardPage() {
             onClick={handleDownload}
             disabled={busy}
           >
-            {busy ? "書き出し中…" : "PNGをダウンロード"}
+            {busy ? t("profile.cardExporting") : t("profile.cardDownloadPng")}
           </Button>
           {/* 交流の場で相手に読み取ってもらう用の大きなQR (#324) */}
           <Button
@@ -310,7 +306,7 @@ export function LicenseCardPage() {
             startIcon={<QrCode2Icon />}
             onClick={() => setQrOpen(true)}
           >
-            QRを大きく表示
+            {t("profile.cardShowQr")}
           </Button>
         </Stack>
 
@@ -326,22 +322,22 @@ export function LicenseCardPage() {
             <Stack direction="row" spacing={1} alignItems="center">
               <CircularProgress size={14} />
               <Typography variant="caption" color="text.secondary">
-                プロフィールカードを作成しています…
+                {t("profile.cardOgGenerating")}
               </Typography>
             </Stack>
           )}
           {ogStatus === "done" && (
             <Typography variant="caption" color="success.main">
-              シェア用のカード画像を保存しました
+              {t("profile.cardOgSaved")}
             </Typography>
           )}
           {ogStatus === "error" && (
             <Typography variant="caption" color="warning.main">
-              カード画像の保存に失敗しました（リロードで再試行できます）
+              {t("profile.cardOgFailed")}
             </Typography>
           )}
           <Typography variant="caption" color="text.secondary">
-            このカードはプロフィールURLをシェアしたときのOG画像として使われます
+            {t("profile.cardOgHint")}
           </Typography>
         </Stack>
       </Stack>

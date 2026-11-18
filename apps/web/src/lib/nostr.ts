@@ -1,4 +1,5 @@
 import { api } from "../api/client.js";
+import { i18next } from "../i18n/index.js";
 
 interface Nip07 {
   getPublicKey(): Promise<string>;
@@ -126,7 +127,8 @@ export function loginEventTemplate(challenge: string) {
       ["relay", window.location.origin],
       ["challenge", challenge],
     ],
-    content: "events lab にログイン",
+    // 署名アプリの確認画面に出る説明。サーバーは content を検証しない（challenge タグで検証）
+    content: i18next.t("login.signEventContent"),
   };
 }
 

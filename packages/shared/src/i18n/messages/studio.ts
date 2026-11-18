@@ -369,6 +369,8 @@ const ja = {
   cutinName: "名前（任意）",
   cutinMessage: "表示文（40文字以内）",
   cutinInvalid: "改行・制御文字・URL・HTMLを含まず、40文字以内で入力してください。",
+  /** 名前から作る既定の表示文。名前の末尾の「さん」は画面側で外してから入れる */
+  cutinDefault: "{{name}}さん 参戦！！",
   cutinPreview: "見本を確認",
   cutinLocalOnly: "見本 · 配信には出ません",
   cutinClose: "閉じる",
@@ -791,6 +793,7 @@ const en: Record<keyof typeof ja, string> = {
   cutinName: "Name (optional)",
   cutinMessage: "Caption (up to 40 characters)",
   cutinInvalid: "Within 40 characters; no line breaks, controls, URLs or HTML.",
+  cutinDefault: "Here comes {{name}}!",
   cutinPreview: "Local preview",
   cutinLocalOnly: "Preview · Not on broadcast",
   cutinClose: "Close",

@@ -7,6 +7,9 @@ const ja = {
   signInWith: "{{provider}} でログイン",
   checking: "確認中…",
   signInFailed: "ログインに失敗しました。",
+  /** 署名するログインイベント（kind 22242）の content。署名アプリの確認画面に出る。
+   *  サーバーは content を見ない（challenge タグで検証する） */
+  signEventContent: "events lab にログイン",
   // 拡張機能・アプリの名前は利用者が探すときの手がかりなので、そのまま残す
   extensionHint:
     "ブラウザ拡張機能（Alby、nos2x など）か、Amber などの署名アプリでログインできます。秘密鍵を入力する必要はありません。",
@@ -58,6 +61,7 @@ const en: Record<keyof typeof ja, string> = {
   signInWith: "Sign in with {{provider}}",
   checking: "Checking…",
   signInFailed: "Sign-in failed.",
+  signEventContent: "Sign in to events lab",
   extensionHint:
     "Sign in with a browser extension (Alby, nos2x, and so on) or a signer app such as Amber. You never need to enter your secret key.",
 
