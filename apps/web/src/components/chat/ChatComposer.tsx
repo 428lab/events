@@ -6,6 +6,7 @@ import { CHAT_MESSAGE_MAX, containsUrl } from "@eventer/shared";
 import type { ChatWriteWindow } from "@eventer/shared";
 import { formatDateTime } from "../../lib/format.js";
 import type { ChatSendResult } from "./useChatChannel.js";
+import { messageKey, type MessageKey } from "../../lib/messageKey.js";
 
 /**
  * 入力欄と送信 (#199 / #241)。投影用画面 (#215) では呼び出し側が描かない。
@@ -38,7 +39,7 @@ export function ChatComposer({
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState("");
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<MessageKey | null>(null);
 
   const submit = async () => {
     const text = draft.trim();
@@ -46,7 +47,7 @@ export function ChatComposer({
     if (text.length > CHAT_MESSAGE_MAX) return;
     // URL投稿の送信ガード (#241)。判定は表示側のリンク化と同じ関数を共用
     if (!allowUrls && containsUrl(text)) {
-      setSendError(t("eventSocial.chatSendUrlNotAllowed"));
+      setSendError(messageKey("eventSocial.chatSendUrlNotAllowed"));
       return;
     }
     setSendError(null);
@@ -56,7 +57,7 @@ export function ChatComposer({
       return;
     }
     setSendError(
-      t(
+      messageKey(
         result === "offline"
           ? "eventSocial.chatSendFailedOffline"
           : "eventSocial.chatSendFailed",
@@ -82,7 +83,7 @@ export function ChatComposer({
     <>
       {sendError && (
         <Alert severity="warning" onClose={() => setSendError(null)}>
-          {sendError}
+          {t(sendError.key, sendError.params)}
         </Alert>
       )}
       <Stack direction="row" spacing={1} alignItems="center">

@@ -26,6 +26,7 @@ import { WARIKAN_WEIGHT_MAX, expenseInput, presetShareUserIds } from "@eventer/s
 import { useCreateExpense, useDeleteExpense, useUpdateExpense } from "../api/warikanHooks.js";
 import { errorMessage } from "../lib/errorMessage.js";
 import { useMemberName, useWarikanErrors, useYen } from "./WarikanSettlementRow.js";
+import { isMessageKey, messageKey, type KeyOrError } from "../lib/messageKey.js";
 
 /** 「内容」のチップ。押すとタイトルに入る（自由入力も可） */
 const TITLE_CHIPS = ["chipVenue", "chipParty", "chipSupplies", "chipTransport"] as const;
@@ -98,7 +99,8 @@ export function WarikanExpenseForm({
   });
   const [form, setForm] = useState(initial);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // 訳す前の形で持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<KeyOrError | null>(null);
   const [saved, setSaved] = useState(false);
 
   // 選べる人: 新しく指定できる人（selectable）＋ 編集中の立替に既にいる人
@@ -151,11 +153,11 @@ export function WarikanExpenseForm({
       shares: checked.map((userId) => ({ userId, weight: weightOf(userId) })),
     });
     if (!parsed.success) {
-      setError(checked.length === 0 ? t("warikan.noSelectable") : t("warikan.errorInvalidInput"));
+      setError(messageKey(checked.length === 0 ? "warikan.noSelectable" : "warikan.errorInvalidInput"));
       return;
     }
     setError(null);
-    const onError = (e: unknown) => setError(errorMessage(e, overrides));
+    const onError = (e: unknown) => setError({ error: e });
     if (expense) {
       update.mutate({ id: expense.id, input: parsed.data }, { onSuccess: onClose, onError });
     } else {
@@ -340,7 +342,7 @@ export function WarikanExpenseForm({
         )}
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
-            {error}
+            {isMessageKey(error) ? t(error.key, error.params) : errorMessage(error.error, overrides)}
           </Alert>
         )}
       </DialogContent>
@@ -362,7 +364,7 @@ export function WarikanExpenseForm({
                   if (!window.confirm(t("warikan.deleteExpenseConfirm"))) return;
                   remove.mutate(expense.id, {
                     onSuccess: onClose,
-                    onError: (e) => setError(errorMessage(e, overrides)),
+                    onError: (e) => setError({ error: e }),
                   });
                 }}
                 sx={{ mr: "auto" }}

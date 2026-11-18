@@ -9,6 +9,7 @@ import { useDeckLeaveWarning } from "../lib/useDeckLeaveWarning.js";
 import { describeImportIssue, importIssueLocation } from "../lib/deckImportIssue.js";
 import { DeckImportPreview } from "../components/DeckImportPreview.js";
 import { DeckAgentPanel } from "../components/DeckAgentPanel.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 export function DeckImportPage() {
   const { t } = useTranslation();
@@ -18,7 +19,7 @@ export function DeckImportPage() {
   const model = useDeckImport(me?.id ?? null, dataUpdatedAt);
   const { draft, result, owned, locked, validating, saving } = model;
   const [reviewed, setReviewed] = useState(false), [publicAccepted, setPublicAccepted] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<MessageKey | null>(null);
   const [loadingInput, setLoadingInput] = useState(false);
   const [now, setNow] = useState(Date.now());
   const errorRef = useRef<HTMLDivElement>(null);
@@ -40,8 +41,8 @@ export function DeckImportPage() {
   useDeckLeaveWarning(owned && (draft.state === "pending" || (draft.state === "input" && !!draft.raw)), t("deckImport.leave"), draft.state !== "success");
 
   async function copy(text: string) {
-    try { await navigator.clipboard.writeText(text); setNotice(t("common.copied")); }
-    catch { setNotice(t("deckImport.failure")); }
+    try { await navigator.clipboard.writeText(text); setNotice(messageKey("common.copied")); }
+    catch { setNotice(messageKey("deckImport.failure")); }
   }
   async function asset(name: string) {
     const response = await fetch(`/deck-import/v2/${name}`);
@@ -51,13 +52,13 @@ export function DeckImportPage() {
   async function replace(load: () => Promise<string>) {
     if (locked || saving || loadingInput || (draft.raw && !window.confirm(t("deckImport.replace")))) return;
     const start = draft.revision, startOwner = me?.id;
-    setLoadingInput(true); setNotice("");
+    setLoadingInput(true); setNotice(null);
     try {
       const raw = await load();
       if (alive.current && revision.current === start && owner.current === startOwner) model.replace(raw);
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
-      setNotice(t(code === "file_type" ? "deckImport.fileType" : code === "too_large" ? "deckImport.tooLarge" : code === "invalid_encoding" ? "deckImport.encoding" : "deckImport.failure"));
+      setNotice(messageKey(code === "file_type" ? "deckImport.fileType" : code === "too_large" ? "deckImport.tooLarge" : code === "invalid_encoding" ? "deckImport.encoding" : "deckImport.failure"));
     } finally { if (alive.current) setLoadingInput(false); }
   }
   const login = async () => {
@@ -66,7 +67,7 @@ export function DeckImportPage() {
     try {
       if (me) await logout.mutateAsync();
       navigate("/login?next=%2Fdecks%2Fimport");
-    } catch { setNotice(t("deckImport.failure")); }
+    } catch { setNotice(messageKey("deckImport.failure")); }
   };
   const discard = () => { if (window.confirm(t("deckImport.discardConfirm"))) { if (model.reset()) navigate("/decks"); } };
   if (isLoading) return <Typography>{t("common.loading")}</Typography>;
@@ -83,12 +84,12 @@ export function DeckImportPage() {
     <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
       <Link href="/deck-import/v2/spec.md" target="_blank" rel="noreferrer">{t("deckImport.spec")}</Link>
       <Link href="/deck-import/v2/spec.md" download>{t("deckImport.downloadSpec")}</Link>
-      <Button onClick={() => void asset("prompt.txt").then(copy).catch(() => setNotice(t("deckImport.failure")))}>{t("deckImport.prompt")}</Button>
+      <Button onClick={() => void asset("prompt.txt").then(copy).catch(() => setNotice(messageKey("deckImport.failure")))}>{t("deckImport.prompt")}</Button>
       <Button disabled={locked || loadingInput || saving} onClick={() => void replace(() => asset("sample-events-lab-intro.json"))}>{t("deckImport.sampleIntro")}</Button>
     </Stack>
     <Alert severity="info">{t("deckImport.recovery")}</Alert>
     {model.storageError && <Alert severity="error">{t("deckImport.storage")}</Alert>}
-    {notice && <Alert severity="info">{notice}</Alert>}
+    {notice && <Alert severity="info">{t(notice.key, notice.params)}</Alert>}
     {draft.state !== "success" && <>
       <TextField inputRef={inputRef} label={t("deckImport.raw")} multiline minRows={10} maxRows={22} value={draft.raw} disabled={locked || saving || loadingInput} onChange={(event) => model.edit(event.target.value)} slotProps={{ input: { sx: { fontFamily: "monospace" } } }} />
       <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>

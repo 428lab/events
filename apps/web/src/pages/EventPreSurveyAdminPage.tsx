@@ -41,6 +41,7 @@ import {
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { PreSurveyResponsesTable } from "../components/PreSurveyResponsesTable.js";
 import { PreSurveyAccessCard } from "../components/PreSurveyAccessCard.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** 回答形式 → 翻訳キー（#152 の編集UIと同じ表を使う） */
 const QTYPE_KEY = {
@@ -107,10 +108,10 @@ export function EventPreSurveyAdminPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [rows, setRows] = useState<Row[]>([newRow()]);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<MessageKey | null>(null);
   // 結果の見せ方 (#447): 集計（既定）か、回答ごとの表か
   const [resultsView, setResultsView] = useState<"summary" | "table">("summary");
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<MessageKey | null>(null);
   const [loaded, setLoaded] = useState(false);
   const busy =
     save.isPending || rotate.isPending || close.isPending || reopen.isPending || remove.isPending;
@@ -170,7 +171,7 @@ export function EventPreSurveyAdminPage() {
       { title: title.trim(), description, questions },
       {
         onSuccess: (res) => {
-          setNotice(t("staffOps.preSurveySaved"));
+          setNotice(messageKey("staffOps.preSurveySaved"));
           // 応答の id を編集中の行へ反映する。反映しないと（特に新規作成の直後）
           // 次の保存が「id なし＝全部新規」になり、既存質問の全 DELETE →
           // 回答の CASCADE 消滅を引き起こす（レビュー指摘）
@@ -182,7 +183,7 @@ export function EventPreSurveyAdminPage() {
             );
           }
         },
-        onError: () => setFailure(t("staffOps.preSurveySaveFailed")),
+        onError: () => setFailure(messageKey("staffOps.preSurveySaveFailed")),
       },
     );
   };
@@ -245,12 +246,12 @@ export function EventPreSurveyAdminPage() {
       )}
       {notice && (
         <Alert severity="success" onClose={() => setNotice(null)}>
-          {notice}
+          {t(notice.key, notice.params)}
         </Alert>
       )}
       {failure && (
         <Alert severity="error" onClose={() => setFailure(null)}>
-          {failure}
+          {t(failure.key, failure.params)}
         </Alert>
       )}
 
@@ -271,7 +272,7 @@ export function EventPreSurveyAdminPage() {
                 onClick={() => {
                   void navigator.clipboard
                     .writeText(shareUrl)
-                    .then(() => setNotice(t("staffOps.preSurveyCopied")));
+                    .then(() => setNotice(messageKey("staffOps.preSurveyCopied")));
                 }}
               >
                 <ContentCopyIcon fontSize="small" />

@@ -87,10 +87,11 @@ function CohostItem({
   const accept = useRespondCohost(communityId, "accept");
   const remove = useRespondCohost(communityId, "remove");
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState("");
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<unknown>(null);
   const pending = cohost.status === "pending";
   const busy = accept.isPending || remove.isPending;
-  const onError = (e: unknown) => setError(errorMessage(e, { default: t("cohost.actionError") }));
+  const onError = (e: unknown) => setError(e);
   // 閲覧できないイベントはサーバーが題名・日時・主催名を伏せて（null で）返す。汎用の表示にする
   const title = cohost.eventTitle ?? t("cohost.hiddenEvent");
   // 承諾するか決める材料に、下書き・公開範囲を添える（公開・公開済みは何も出さない）
@@ -127,7 +128,7 @@ function CohostItem({
               variant="contained"
               disabled={busy}
               onClick={() => {
-                setError("");
+                setError(null);
                 accept.mutate(cohost.eventId, { onError });
               }}
             >
@@ -138,7 +139,7 @@ function CohostItem({
               variant="outlined"
               disabled={busy}
               onClick={() => {
-                setError("");
+                setError(null);
                 remove.mutate(cohost.eventId, { onError });
               }}
             >
@@ -151,9 +152,9 @@ function CohostItem({
           </Button>
         )}
       </Stack>
-      {error && (
-        <Alert severity="error" sx={{ mt: 0.5 }} onClose={() => setError("")}>
-          {error}
+      {error !== null && (
+        <Alert severity="error" sx={{ mt: 0.5 }} onClose={() => setError(null)}>
+          {errorMessage(error, { default: t("cohost.actionError") })}
         </Alert>
       )}
       <Dialog open={confirming} onClose={() => setConfirming(false)}>
@@ -169,7 +170,7 @@ function CohostItem({
             color="error"
             disabled={busy}
             onClick={() => {
-              setError("");
+              setError(null);
               remove.mutate(cohost.eventId, {
                 onSuccess: () => setConfirming(false),
                 onError: (e) => {

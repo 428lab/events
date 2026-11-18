@@ -29,6 +29,7 @@ import {
   startNostrSignerLogin,
   type NostrSignerIntent,
 } from "../lib/nostrSignerLogin.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** 覚えた接続があるときの選択 (choose)、覚えた接続で署名 (saved)、新しくつなぐ (fresh) */
 type Mode = "choose" | "saved" | "fresh";
@@ -39,7 +40,8 @@ type Phase =
   | { kind: "saved" }
   | { kind: "connect"; uri: string }
   | { kind: "sign" }
-  | { kind: "error"; message: string };
+  // 訳す前の形で持ち、表示するときに訳す (#369)
+  | { kind: "error"; message: MessageKey };
 
 /** タッチ操作の端末（スマホ）ならボタンを主に、それ以外（PC）なら QR を主に出す */
 function isCoarsePointer(): boolean {
@@ -145,14 +147,15 @@ export function NostrConnectSheet({
           }
           setPhase({
             kind: "error",
-            message:
+            message: messageKey(
               e.code === "timeout"
                 ? connecting
-                  ? t("login.signerTimeout")
-                  : t("login.signerSignTimeout")
+                  ? "login.signerTimeout"
+                  : "login.signerSignTimeout"
                 : e.code === "rejected"
-                  ? t("login.signerRejected")
-                  : t("login.signerRelayFailed"),
+                  ? "login.signerRejected"
+                  : "login.signerRelayFailed",
+            ),
           });
           return;
         }
@@ -269,7 +272,7 @@ export function NostrConnectSheet({
         )}
 
         {phase.kind === "error" && (
-          <Alert severity="warning">{phase.message}</Alert>
+          <Alert severity="warning">{t(phase.message.key, phase.message.params)}</Alert>
         )}
       </DialogContent>
       <DialogActions>

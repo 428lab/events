@@ -1,7 +1,7 @@
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import type { StaffInvite } from "@eventer/shared";
 
 /**
@@ -33,6 +33,7 @@ vi.mock("../api/client.js", async (importOriginal) => {
 
 const { EventStaffInvitesCard } = await import("./EventStaffInvitesCard.js");
 const { ApiError } = await import("../api/client.js");
+const { i18next } = await import("../i18n/index.js");
 
 function user(id: string, username: string, globalName: string) {
   return {
@@ -87,6 +88,10 @@ function draw() {
     </QueryClientProvider>,
   );
 }
+
+afterEach(async () => {
+  await i18next.changeLanguage("ja");
+});
 
 beforeEach(() => {
   getMock.mockReset();
@@ -183,7 +188,7 @@ describe("運営を招く (#339)", () => {
     expect(within(list2).queryByText("こじら")).toBeNull();
   });
 
-  it("送れなかった理由がその場で読める", async () => {
+  it("送れなかった理由がその場で読め、表示中に言語を切り替えると訳し直される (#369)", async () => {
     serve({});
     postMock.mockRejectedValue(new ApiError(404, { error: "user_not_found" }));
     draw();
@@ -194,6 +199,10 @@ describe("運営を招く (#339)", () => {
     expect(
       await screen.findByText(/そのユーザー名の人が見つかりませんでした/),
     ).toBeTruthy();
+    // 例外のまま持ち、表示するときに訳すので、前の言語の文が残らない
+    await act(async () => { await i18next.changeLanguage("en"); });
+    expect(await screen.findByText(/No one with that username/i)).toBeTruthy();
+    expect(screen.queryByText(/そのユーザー名の人が見つかりませんでした/)).toBeNull();
   });
 
   it("1件を取り消している間も、他の行の操作は無効にならない", async () => {

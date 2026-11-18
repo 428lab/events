@@ -27,6 +27,7 @@ import { useDeletePayoutMethod, useSavePayoutMethods } from "../api/warikanHooks
 import { errorMessage } from "../lib/errorMessage.js";
 import { QrCodeSvg } from "./BigQrDialog.js";
 import { useWarikanErrors } from "./WarikanSettlementRow.js";
+import { isMessageKey, messageKey, type KeyOrError } from "../lib/messageKey.js";
 
 /**
  * 割り勘の受け取り先 (#556 §3.6)。
@@ -148,7 +149,8 @@ export function WarikanPayoutMethods({
   const remove = useDeletePayoutMethod(eventId);
   const [kind, setKind] = useState<PayoutKind>("url");
   const [value, setValue] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // 訳す前の形で持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<KeyOrError | null>(null);
   const [saved, setSaved] = useState(false);
 
   const mine = ledger.payoutMethods.filter((m) => m.userId === ledger.me.userId);
@@ -158,7 +160,7 @@ export function WarikanPayoutMethods({
   const add = () => {
     const parsed = payoutMethodInput.safeParse({ kind, value: value.trim() });
     if (!parsed.success) {
-      setError(t("warikan.errorInvalidInput"));
+      setError(messageKey("warikan.errorInvalidInput"));
       return;
     }
     setError(null);
@@ -170,7 +172,7 @@ export function WarikanPayoutMethods({
           setValue("");
           setSaved(true);
         },
-        onError: (e) => setError(errorMessage(e, overrides)),
+        onError: (e) => setError({ error: e }),
       },
     );
   };
@@ -212,7 +214,7 @@ export function WarikanPayoutMethods({
                   disabled={remove.isPending}
                   onClick={() => {
                     if (!window.confirm(t("warikan.deletePayoutConfirm"))) return;
-                    remove.mutate(m.id, { onError: (e) => setError(errorMessage(e, overrides)) });
+                    remove.mutate(m.id, { onError: (e) => setError({ error: e }) });
                   }}
                 >
                   <DeleteOutlineIcon />
@@ -256,7 +258,7 @@ export function WarikanPayoutMethods({
         )}
         {error && (
           <Alert severity="error" sx={{ mt: 1 }}>
-            {error}
+            {isMessageKey(error) ? t(error.key, error.params) : errorMessage(error.error, overrides)}
           </Alert>
         )}
         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>

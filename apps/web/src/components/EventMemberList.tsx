@@ -42,6 +42,7 @@ import { errorMessage } from "../lib/errorMessage.js";
 import { i18next } from "../i18n/index.js";
 import { participationStatusLabel, roleLabel } from "../lib/format.js";
 import { isMyMembership } from "../lib/eventMembership.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** ロール変更が断られた理由を、その場で直せる形の文言にする (#281)。
  * 何が起きたか（なぜ変えられないか）と、次に何をすればよいかまで書く。
@@ -174,13 +175,14 @@ export function MemberRow({
   const setRole = useSetEventMemberRole(eventId);
   const setAssignedSlot = useSetAssignedSlot(eventId);
   const staffCancel = useStaffCancelMember(eventId);
-  const [cancelError, setCancelError] = useState("");
+  const [cancelError, setCancelError] = useState<MessageKey | null>(null);
   // 行ごとに持つ（ロール変更と同じ）。1つを全行で共有すると、続けて操作したとき
   // 後の行の結果が前の行のエラー表示を消してしまう (#286)
   const setAttendance = useSetAttendance(eventId);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
-  const [roleError, setRoleError] = useState("");
-  const [slotError, setSlotError] = useState("");
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [roleError, setRoleError] = useState<unknown>(null);
+  const [slotError, setSlotError] = useState<MessageKey | null>(null);
   // 枠を作る前から参加していたスタッフも、あとから枠の下へ移せる。参加者の枠は本人の申込で決まる
   const canAssignSlot = m.role !== "participant" && slots.length > 0;
   const assignTo = (slotId: string | null) => {
@@ -188,10 +190,11 @@ export function MemberRow({
     if ((m.assignedSlotId ?? null) === slotId) return;
     setAssignedSlot.mutate(
       { userId: m.user.id, slotId },
-      { onError: () => setSlotError(t("eventDetail.assignSlotError")) },
+      { onError: () => setSlotError(messageKey("eventDetail.assignSlotError")) },
     );
   };
-  const [attendError, setAttendError] = useState("");
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [attendError, setAttendError] = useState<unknown>(null);
   const showCheck = attendanceCheck && isStaff && showManagementActions;
   const memberName = m.user.globalName ?? m.user.username;
   /** 出席にできるのは参加確定の人だけ (#286)。staff/judge/observer は
@@ -248,7 +251,7 @@ export function MemberRow({
                   onChange={(e) =>
                     setAttendance.mutate(
                       { userId: m.user.id, attended: e.target.checked },
-                      { onError: (err) => setAttendError(attendanceErrorMessage(err)) },
+                      { onError: (err) => setAttendError(err) },
                     )
                   }
                   inputProps={{ "aria-label": attendTitle }}
@@ -260,10 +263,10 @@ export function MemberRow({
           )}
           {/* 断られた理由は画面に出す（一覧を開いたまま状態が変わった場合） */}
           <Snackbar
-            open={Boolean(attendError)}
+            open={attendError !== null}
             autoHideDuration={8000}
-            onClose={() => setAttendError("")}
-            message={attendError}
+            onClose={() => setAttendError(null)}
+            message={attendError !== null ? attendanceErrorMessage(attendError) : ""}
           />
           {/* 自分自身のロールは誤操作防止のため変更不可。並べる枠だけは自分の行でも選べる */}
           {isStaff && showManagementActions && (!isMe || canAssignSlot) && (
@@ -286,7 +289,7 @@ export function MemberRow({
                       if (r === m.role || !confirmRoleChange(r)) return;
                       setRole.mutate(
                         { userId: m.user.id, role: r },
-                        { onError: (e) => setRoleError(roleChangeErrorMessage(e)) },
+                        { onError: (e) => setRoleError(e) },
                       );
                     }}
                   >
@@ -306,7 +309,7 @@ export function MemberRow({
                     onClick={() => {
                       setAnchor(null);
                       if (!window.confirm(t("eventDetail.staffCancelConfirm", { name: memberName }))) return;
-                      staffCancel.mutate(m.user.id, { onError: () => setCancelError(t("eventDetail.staffCancelError")) });
+                      staffCancel.mutate(m.user.id, { onError: () => setCancelError(messageKey("eventDetail.staffCancelError")) });
                     }}
                   >
                     {t("eventDetail.staffCancel")}
@@ -342,21 +345,21 @@ export function MemberRow({
               <Snackbar
                 open={Boolean(slotError)}
                 autoHideDuration={8000}
-                onClose={() => setSlotError("")}
-                message={slotError}
+                onClose={() => setSlotError(null)}
+                message={slotError ? t(slotError.key, slotError.params) : ""}
               />
               <Snackbar
                 open={Boolean(cancelError)}
                 autoHideDuration={8000}
-                onClose={() => setCancelError("")}
-                message={cancelError}
+                onClose={() => setCancelError(null)}
+                message={cancelError ? t(cancelError.key, cancelError.params) : ""}
               />
               {/* 断られた理由は画面に出す。出さないと「押しても何も起きない」に見える */}
               <Snackbar
-                open={Boolean(roleError)}
+                open={roleError !== null}
                 autoHideDuration={8000}
-                onClose={() => setRoleError("")}
-                message={roleError}
+                onClose={() => setRoleError(null)}
+                message={roleError !== null ? roleChangeErrorMessage(roleError) : ""}
               />
             </>
           )}

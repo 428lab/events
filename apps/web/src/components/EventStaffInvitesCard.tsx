@@ -62,7 +62,8 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
   const { data: following } = useMyFollowing();
   const invite = useInviteStaff(eventId);
   const [handle, setHandle] = useState("");
-  const [error, setError] = useState("");
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<unknown>(null);
 
   /** すでに運営の人・招待済みの人は候補から外す（選んでもエラーになるだけ） */
   const candidates = useMemo<Candidate[]>(() => {
@@ -97,10 +98,10 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
   }, [members, following, invites]);
 
   const send = () => {
-    setError("");
+    setError(null);
     invite.mutate(handle.trim(), {
       onSuccess: () => setHandle(""),
-      onError: (e) => setError(inviteErrorMessage(e)),
+      onError: (e) => setError(e),
     });
   };
 
@@ -165,9 +166,9 @@ export function EventStaffInvitesCard({ eventId }: { eventId: string }) {
             {t("staffOps.inviteStaffSend")}
           </Button>
         </Stack>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError("")}>
-            {error}
+        {error !== null && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+            {inviteErrorMessage(error)}
           </Alert>
         )}
         {!invites || invites.length === 0 ? (
@@ -204,7 +205,8 @@ function InviteRow({
   // 行ごとに持つ。1つを全行で共有すると、1件を取り消している間じゅう
   // 他の行のボタンまで無効になり、続けて操作できない
   const revoke = useRevokeStaffInvite(eventId);
-  const [error, setError] = useState("");
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<unknown>(null);
   const name = invite.user.globalName ?? invite.user.username;
   const by = invite.invitedBy.globalName ?? invite.invitedBy.username;
   // 断られた行も片付けられるようにする（残り続けると一覧が読めなくなる）。
@@ -251,17 +253,17 @@ function InviteRow({
             clickable
             disabled={revoke.isPending}
             onClick={() => {
-              setError("");
+              setError(null);
               revoke.mutate(invite.id, {
-                onError: (e) => setError(inviteErrorMessage(e)),
+                onError: (e) => setError(e),
               });
             }}
           />
         )}
       </Stack>
-      {error && (
-        <Alert severity="error" sx={{ mt: 0.5 }} onClose={() => setError("")}>
-          {error}
+      {error !== null && (
+        <Alert severity="error" sx={{ mt: 0.5 }} onClose={() => setError(null)}>
+          {inviteErrorMessage(error)}
         </Alert>
       )}
     </Box>

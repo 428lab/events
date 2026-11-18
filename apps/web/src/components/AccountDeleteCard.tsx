@@ -20,6 +20,7 @@ import { useDeletionGraceMs } from "../api/hooks.js";
 
 import { useDeleteAccount } from "../api/userHooks.js";
 import { i18next } from "../i18n/index.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** 退会カード (#244, #250)。アカウント設定の最下部に置く。
  * 何が残り何が消えるか・猶予期間 (#250) を説明し、
@@ -49,7 +50,7 @@ export function AccountDeleteCard() {
   const qc = useQueryClient();
   const [agreed, setAgreed] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MessageKey | null>(null);
 
   const run = () => {
     setConfirmOpen(false);
@@ -61,7 +62,7 @@ export function AccountDeleteCard() {
         qc.clear();
         window.location.assign("/login");
       },
-      onError: () => setError(t("settings.deleteFailed")),
+      onError: () => setError(messageKey("settings.deleteFailed")),
     });
   };
 
@@ -113,7 +114,7 @@ export function AccountDeleteCard() {
         </Box>
         {error && (
           <Alert severity="error" sx={{ mt: 2 }}>
-            {error}
+            {t(error.key, error.params)}
           </Alert>
         )}
       </CardContent>

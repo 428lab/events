@@ -19,6 +19,7 @@ import { findMyMembership } from "../lib/eventMembership.js";
 import type { EventTiming } from "../lib/useEventTiming.js";
 import { EventSlots } from "./EventSlots.js";
 import { SurveyAnswerDialog } from "./SurveyAnswerDialog.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /**
  * 参加者としての自分の行動をまとめたブロック。
@@ -58,7 +59,7 @@ export function EventJoinPanel({
     null,
   );
   // 参加できなかった理由の表示（締切/終了）。押しても何も起きない状態を作らない (#269)
-  const [joinError, setJoinError] = useState("");
+  const [joinError, setJoinError] = useState<MessageKey | null>(null);
 
   const isMember = Boolean(myRole);
   const myMembership = findMyMembership(members, me);
@@ -70,7 +71,7 @@ export function EventJoinPanel({
     join.mutate(
       { id: eventId, ...(slotId ? { slotId } : {}) },
       {
-        onSuccess: () => setJoinError(""),
+        onSuccess: () => setJoinError(null),
         onError: (err) => {
           const code =
             err instanceof ApiError
@@ -92,7 +93,7 @@ export function EventJoinPanel({
           // event_ended も同じ経路（開いたまま終了時刻をまたいだ）なので一緒に扱う
           if (code === "registration_closed" || code === "event_ended") {
             setJoinError(
-              t(
+              messageKey(
                 code === "registration_closed"
                   ? "eventDetail.joinClosedError"
                   : "eventDetail.joinEndedError",
@@ -109,7 +110,7 @@ export function EventJoinPanel({
 
   /** 参加操作の入口。アンケートがあれば先に回答ダイアログを開く */
   const requestJoin = (slotId?: string) => {
-    setJoinError("");
+    setJoinError(null);
     if (hasSurvey) {
       setPendingJoin({ slotId });
       setSurveyOpen(true);
@@ -178,8 +179,8 @@ export function EventJoinPanel({
           無反応にせずここで理由を出す。表示自体は invalidate 後の再描画で
           締切後のものに切り替わる */}
       {joinError && (
-        <Alert severity="warning" onClose={() => setJoinError("")}>
-          {joinError}
+        <Alert severity="warning" onClose={() => setJoinError(null)}>
+          {t(joinError.key, joinError.params)}
         </Alert>
       )}
 

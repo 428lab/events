@@ -28,6 +28,7 @@ import {
   broadcastEmailMinutes,
   type BroadcastSegment,
   type EventBroadcast,
+  type SendBroadcastResult,
 } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
 import {
@@ -57,6 +58,25 @@ function segmentNote(segment: BroadcastSegment): string {
 
 /** メールを送りきるまでのおおよその時間。所要時間の計算だけを shared から借り、
  * 表記は辞書から組み立てる（`formatBroadcastEmailEta` は日本語しか返せない） */
+/** 送れたときの文（何人に通知・メールは何通をどのくらいで・打ち切ったか） */
+function sentMessage(r: SendBroadcastResult): string {
+  const t = i18next.t;
+  return (
+    t(r.recipientCount === 1 ? "staffOps.broadcastSentOne" : "staffOps.broadcastSent", {
+      n: r.recipientCount,
+    }) +
+    (r.emailQueued > 0
+      ? t(r.emailQueued === 1 ? "staffOps.broadcastSentEmailOne" : "staffOps.broadcastSentEmail", {
+          n: r.emailQueued,
+          eta: emailEta(r.emailQueued),
+        })
+      : t("staffOps.broadcastSentNoEmail")) +
+    (r.truncatedFrom !== null
+      ? t("staffOps.broadcastTruncated", { total: r.truncatedFrom, n: r.recipientCount })
+      : "")
+  );
+}
+
 function emailEta(count: number): string {
   const minutes = broadcastEmailMinutes(count);
   if (minutes <= 0) return "";
@@ -139,8 +159,8 @@ export function EventBroadcastPage() {
   // （開いてから送るまでの間に増減しても、確認した数字と送信ボタンの数字がずれない）
   const [confirmCount, setConfirmCount] = useState<number | null>(null);
   const [checking, setChecking] = useState(false);
-  const [sentInfo, setSentInfo] = useState<string | null>(null);
-  const [partialInfo, setPartialInfo] = useState<string | null>(null);
+  // 送った結果。訳した文ではなく応答のまま持つ (#369)
+  const [sent, setSent] = useState<SendBroadcastResult | null>(null);
 
   if (!eventData) return <Typography>{t("common.loading")}</Typography>;
   if (!isStaff) {
@@ -176,8 +196,7 @@ export function EventBroadcastPage() {
   };
 
   const doSend = () => {
-    setSentInfo(null);
-    setPartialInfo(null);
+    setSent(null);
     send.mutate(
       { segment, title, body },
       {
@@ -185,37 +204,9 @@ export function EventBroadcastPage() {
           setConfirmCount(null);
           setTitle("");
           setBody("");
-          const base =
-            t(
-              r.recipientCount === 1
-                ? "staffOps.broadcastSentOne"
-                : "staffOps.broadcastSent",
-              { n: r.recipientCount },
-            ) +
-            (r.emailQueued > 0
-              ? t(
-                  r.emailQueued === 1
-                    ? "staffOps.broadcastSentEmailOne"
-                    : "staffOps.broadcastSentEmail",
-                  { n: r.emailQueued, eta: emailEta(r.emailQueued) },
-                )
-              : t("staffOps.broadcastSentNoEmail"));
-          if (r.incomplete) {
-            // 途中で失敗している。同じ内容をもう一度送ると、届いた人には2通になる
-            setPartialInfo(
-              t("staffOps.broadcastPartial", { n: r.recipientCount }),
-            );
-          } else {
-            setSentInfo(
-              base +
-                (r.truncatedFrom !== null
-                  ? t("staffOps.broadcastTruncated", {
-                      total: r.truncatedFrom,
-                      n: r.recipientCount,
-                    })
-                  : ""),
-            );
-          }
+          // 応答のまま持ち、文は表示するときに組み立てる (#369)。
+          // 途中で失敗している（incomplete）なら、同じ内容をもう一度送ると届いた人には2通になる
+          setSent(r);
         },
       },
     );
@@ -241,14 +232,14 @@ export function EventBroadcastPage() {
         </Typography>
       </Box>
 
-      {sentInfo && (
-        <Alert severity="success" onClose={() => setSentInfo(null)}>
-          {sentInfo}
+      {sent && !sent.incomplete && (
+        <Alert severity="success" onClose={() => setSent(null)}>
+          {sentMessage(sent)}
         </Alert>
       )}
-      {partialInfo && (
-        <Alert severity="warning" onClose={() => setPartialInfo(null)}>
-          {partialInfo}
+      {sent?.incomplete && (
+        <Alert severity="warning" onClose={() => setSent(null)}>
+          {t("staffOps.broadcastPartial", { n: sent.recipientCount })}
         </Alert>
       )}
       {send.isError && (

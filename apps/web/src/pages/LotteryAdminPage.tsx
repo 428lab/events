@@ -26,6 +26,7 @@ import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { UserLink } from "../components/UserLink.js";
 import { i18next } from "../i18n/index.js";
 import { formatDateTime } from "../lib/format.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** 参加状態の見せ方。同じ confirmed でも、抽選枠なら「当選」、先着枠なら
  * 「参加確定」と読むほうが自然なので枠の方式で言い分ける (#286)。
@@ -82,7 +83,7 @@ export function LotteryAdminPage() {
   const setStatus = useSetMemberSlotStatus(id);
   const draw = useDrawSlot(id);
   // 断られたときに黙って何も起きないように見せない（他のstaffが先に操作した等）
-  const [error, setError] = useState("");
+  const [error, setError] = useState<MessageKey | null>(null);
 
   if (!eventData || !slots || !members) {
     return <Typography>{t("common.loading")}</Typography>;
@@ -117,7 +118,7 @@ export function LotteryAdminPage() {
       {
         onError: () =>
           setError(
-            t("staffOps.slotStatusChangeFailed", { name: memberName(m) }),
+            messageKey("staffOps.slotStatusChangeFailed", { name: memberName(m) }),
           ),
       },
     );
@@ -303,8 +304,8 @@ export function LotteryAdminPage() {
       <Snackbar
         open={Boolean(error)}
         autoHideDuration={8000}
-        onClose={() => setError("")}
-        message={error}
+        onClose={() => setError(null)}
+        message={error ? t(error.key, error.params) : ""}
       />
     </Stack>
   );

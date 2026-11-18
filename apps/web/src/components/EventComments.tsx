@@ -27,6 +27,7 @@ import {
 import { Markdown } from "./Markdown.js";
 import { MarkdownEditor } from "./MarkdownEditor.js";
 import { formatDateTime } from "../lib/format.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** イベントのコメント欄。閲覧はイベントが見える人全員、投稿は参加確定者のみ */
 export function EventComments({
@@ -48,7 +49,7 @@ export function EventComments({
   const addComment = useAddEventComment(eventId);
   const delComment = useDeleteEventComment(eventId);
   const [body, setBody] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MessageKey | null>(null);
 
   const submit = () => {
     const text = body.trim();
@@ -59,8 +60,8 @@ export function EventComments({
       onError: (err) =>
         setError(
           err instanceof ApiError && err.status === 409
-            ? t("eventSocial.commentLimit", { n: EVENT_COMMENT_LIMIT })
-            : t("eventSocial.commentPostFailed"),
+            ? messageKey("eventSocial.commentLimit", { n: EVENT_COMMENT_LIMIT })
+            : messageKey("eventSocial.commentPostFailed"),
         ),
     });
   };
@@ -136,7 +137,7 @@ export function EventComments({
             <Box>
               {error && (
                 <Alert severity="warning" sx={{ mb: 1 }} onClose={() => setError(null)}>
-                  {error}
+                  {t(error.key, error.params)}
                 </Alert>
               )}
               <MarkdownEditor

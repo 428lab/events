@@ -5,13 +5,14 @@ import type { EventAccessInvite } from "@eventer/shared";
 import { api } from "../api/client.js";
 import { useAccessMutation, useEventAccessInvites, previewAccessRecipient, type AccessRecipient } from "../api/eventAccessHooks.js";
 import { errorCode } from "../lib/errorMessage.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 export function EventAccessInvitesCard({ eventId }: { eventId: string }) {
   const { t } = useTranslation();
   const list = useEventAccessInvites(eventId);
   const [handle, setHandle] = useState("");
   const [recipient, setRecipient] = useState<AccessRecipient | null>(null);
-  const [checking, setChecking] = useState(false), [error, setError] = useState("");
+  const [checking, setChecking] = useState(false), [error, setError] = useState<MessageKey | null>(null);
   const mutation = useAccessMutation((input: { action: "send" | "reissue" | "revoke"; invite?: EventAccessInvite }) => {
     const expectedAccessRevision = list.data!.accessRevision;
     const path = `/events/${eventId}/access-invites`;
@@ -20,7 +21,7 @@ export function EventAccessInvitesCard({ eventId }: { eventId: string }) {
     return api.del(`${path}/${input.invite!.id}`, { expectedAccessRevision, confirmCancelParticipation: true });
   });
   const onError = (e: unknown) => {
-    setError(errorCode(e) === "handle_changed" ? t("eventAccess.handleChanged") : t("eventAccess.error"));
+    setError(messageKey(errorCode(e) === "handle_changed" ? "eventAccess.handleChanged" : "eventAccess.error"));
     if (errorCode(e) === "handle_changed") setRecipient(null);
     void list.refetch();
   };
@@ -28,19 +29,19 @@ export function EventAccessInvitesCard({ eventId }: { eventId: string }) {
     <Typography variant="h6">{t("eventAccess.managerTitle")}</Typography>
     <Typography variant="body2" sx={{ mb: 1 }}>{t("eventAccess.managerIntro")}</Typography>
     <Typography variant="body2" sx={{ mb: 2 }}>{t("eventAccess.registerFirst")}</Typography>
-    {(error || list.isError) && <Alert severity="error">{error || t("eventAccess.error")}</Alert>}
+    {(error || list.isError) && <Alert severity="error">{error ? t(error.key, error.params) : t("eventAccess.error")}</Alert>}
     <Stack spacing={1}>
       <TextField label={t("eventAccess.handle")} value={handle} disabled={mutation.isPending || checking}
-        onChange={(e) => { setHandle(e.target.value); setRecipient(null); setError(""); }} />
+        onChange={(e) => { setHandle(e.target.value); setRecipient(null); setError(null); }} />
       <Button disabled={!handle.trim() || checking || mutation.isPending} onClick={async () => {
-        setChecking(true); setRecipient(null); setError("");
-        try { setRecipient(await previewAccessRecipient(handle.trim())); } catch { setError(t("eventAccess.error")); }
+        setChecking(true); setRecipient(null); setError(null);
+        try { setRecipient(await previewAccessRecipient(handle.trim())); } catch { setError(messageKey("eventAccess.error")); }
         finally { setChecking(false); }
       }}>{t("eventAccess.preview")}</Button>
       {recipient && <>
         <Typography>{t("eventAccess.recipient", { name: recipient.name, handle: recipient.handle })}</Typography>
         <Button variant="contained" disabled={mutation.isPending || !list.data || list.isError} onClick={() => {
-          setError(""); mutation.mutate({ action: "send" }, { onError, onSuccess: () => { setHandle(""); setRecipient(null); } });
+          setError(null); mutation.mutate({ action: "send" }, { onError, onSuccess: () => { setHandle(""); setRecipient(null); } });
         }}>{t("eventAccess.send")}</Button>
       </>}
       {!list.isError && list.data?.invites.map((invite) => <Stack key={invite.id} direction="row" spacing={1} alignItems="center" flexWrap="wrap">

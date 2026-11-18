@@ -39,6 +39,7 @@ import {
 } from "../lib/chatMessageBuffer.js";
 import { formatChatTime } from "../lib/chatTime.js";
 import { ChatUrlLink } from "./chat/ChatMessageBody.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** 復号済みの本文。URLはリンク化のみ（スタッフ同士なので常にリンクにする。
  * インライン画像・投影用の装飾は持たない＝必要最小 #382 設計 9.2） */
@@ -78,7 +79,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
 
   const [messages, setMessages] = useState<NostrEvent[]>([]);
   const [relayConnected, setRelayConnected] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<MessageKey | null>(null);
   const [draft, setDraft] = useState("");
   const poolRef = useRef<ChatRelayPool | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -237,14 +238,14 @@ export function StaffChat({ eventId }: { eventId: string }) {
       const ev = await signer.signEvent(template);
       const ok = await poolRef.current?.publish(ev);
       if (!ok) {
-        setSendError(t("eventSocial.chatSendFailedOffline"));
+        setSendError(messageKey("eventSocial.chatSendFailedOffline"));
         return;
       }
       setDraft("");
       // リレーからの折返しを待たず即時表示（購読側とはIDで重複排除）
       setMessages((prev) => appendToBuffer(prev, ev));
     } catch {
-      setSendError(t("eventSocial.chatSendFailed"));
+      setSendError(messageKey("eventSocial.chatSendFailed"));
     }
   };
 
@@ -339,7 +340,7 @@ export function StaffChat({ eventId }: { eventId: string }) {
 
       {sendError && (
         <Alert severity="warning" onClose={() => setSendError(null)}>
-          {sendError}
+          {t(sendError.key, sendError.params)}
         </Alert>
       )}
       <Stack direction="row" spacing={1} alignItems="center">

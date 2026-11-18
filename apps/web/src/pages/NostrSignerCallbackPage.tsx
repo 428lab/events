@@ -11,6 +11,7 @@ import {
   type NostrSignerIntent,
 } from "../lib/nostrSignerLogin.js";
 import { safeRedirectPath } from "../lib/safeRedirect.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /**
  * Amber（NIP-55）で署名して戻ってくるページ `/login/nostr-signer` (D-NOSTR-SIGNER PR-B)。
@@ -30,8 +31,9 @@ export function NostrSignerCallbackPage() {
     event: parseSignedEventFromUrl(window.location.hash),
     intent: readNostrSignerIntent(),
   }));
-  const [error, setError] = useState<string | null>(() =>
-    state.event ? null : t("login.signerCallbackInvalid"),
+  // 訳す前の形で持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<MessageKey | null>(() =>
+    state.event ? null : messageKey("login.signerCallbackInvalid"),
   );
 
   useEffect(() => {
@@ -46,7 +48,7 @@ export function NostrSignerCallbackPage() {
         );
         return;
       }
-      setError(t(state.intent === "link" ? "settings.nostrLinkFailed" : "login.signInFailed"));
+      setError(messageKey(state.intent === "link" ? "settings.nostrLinkFailed" : "login.signInFailed"));
     });
   }, [state, t]);
 
@@ -60,7 +62,7 @@ export function NostrSignerCallbackPage() {
             {error ? (
               <>
                 <Alert severity="warning" sx={{ width: "100%" }}>
-                  {error}
+                  {t(error.key, error.params)}
                 </Alert>
                 <Button variant="contained" href={backHref}>
                   {t(state.intent === "link" ? "login.signerBackToAccount" : "login.signerBackToLogin")}

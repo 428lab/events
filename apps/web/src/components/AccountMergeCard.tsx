@@ -21,6 +21,7 @@ import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useTranslation } from "react-i18next";
 import { useIssueMergeCode, useMergeAccount } from "../api/userHooks.js";
 import { errorCode } from "../lib/errorMessage.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** アカウント統合カード (#240)。
  * 誤ログイン等で複数できてしまったアカウントを、ユーザー自身で1つにまとめる。
@@ -34,13 +35,13 @@ export function AccountMergeCard() {
   const [inputCode, setInputCode] = useState("");
   const [keep, setKeep] = useState<"me" | "other">("me");
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MessageKey | null>(null);
 
   const issueCode = () => {
     setCopied(false);
     issue.mutate(undefined, {
       onSuccess: (data) => setIssuedCode(data.code),
-      onError: () => setError(t("settings.mergeIssueFailed")),
+      onError: () => setError(messageKey("settings.mergeIssueFailed")),
     });
   };
 
@@ -67,8 +68,8 @@ export function AccountMergeCard() {
         onError: (e) => {
           setError(
             errorCode(e) === "same_account"
-              ? t("settings.mergeSameAccountError")
-              : t("settings.mergeCodeInvalidError"),
+              ? messageKey("settings.mergeSameAccountError")
+              : messageKey("settings.mergeCodeInvalidError"),
           );
         },
       },
@@ -170,7 +171,7 @@ export function AccountMergeCard() {
               {t("settings.mergeRun")}
             </Button>
           </Box>
-          {error && <Alert severity="warning">{error}</Alert>}
+          {error && <Alert severity="warning">{t(error.key, error.params)}</Alert>}
         </Stack>
       </CardContent>
 

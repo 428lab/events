@@ -26,7 +26,7 @@ import {
 import { LinkifiedText } from "../components/LinkifiedText.js";
 import { useMe } from "../api/hooks.js";
 import { errorMessage } from "../lib/errorMessage.js";
-import { i18next } from "../i18n/index.js";
+import { isMessageKey, messageKey, type KeyOrError } from "../lib/messageKey.js";
 
 /**
  * 開催前アンケートの回答ページ (#444)。`/s/:token`（未ログイン可）。
@@ -46,7 +46,8 @@ export function PreSurveyPage() {
   // 記名の同意 (#448)。既定オフ。チェックしない限りアカウントは保存されない
   const [named, setNamed] = useState(false);
   const [done, setDone] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  // 訳す前の形で持ち、表示するときに訳す (#369)
+  const [failure, setFailure] = useState<KeyOrError | null>(null);
 
   if (isLoading) return <Typography>{t("common.loading")}</Typography>;
   if (isError || !data) {
@@ -85,7 +86,7 @@ export function PreSurveyPage() {
       const empty =
         v === undefined || (typeof v === "string" ? v.trim() === "" : v.length === 0);
       if (q.required && empty) {
-        setFailure(t("preSurvey.submitFailedRequired"));
+        setFailure(messageKey("preSurvey.submitFailedRequired"));
         return;
       }
     }
@@ -99,14 +100,7 @@ export function PreSurveyPage() {
       {
         onSuccess: () => setDone(true),
         onError: (e) =>
-          setFailure(
-            errorMessage(e, {
-              required_missing: i18next.t("preSurvey.submitFailedRequired"),
-              closed: i18next.t("preSurvey.submitFailedClosed"),
-              survey_full: i18next.t("preSurvey.submitFailedFull"),
-              default: i18next.t("preSurvey.submitFailed"),
-            }),
-          ),
+          setFailure({ error: e }),
       },
     );
   };
@@ -144,7 +138,14 @@ export function PreSurveyPage() {
       )}
       {failure && (
         <Alert severity="error" onClose={() => setFailure(null)}>
-          {failure}
+          {isMessageKey(failure)
+            ? t(failure.key, failure.params)
+            : errorMessage(failure.error, {
+                required_missing: t("preSurvey.submitFailedRequired"),
+                closed: t("preSurvey.submitFailedClosed"),
+                survey_full: t("preSurvey.submitFailedFull"),
+                default: t("preSurvey.submitFailed"),
+              })}
         </Alert>
       )}
       <Box>

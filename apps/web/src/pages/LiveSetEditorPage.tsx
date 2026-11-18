@@ -56,6 +56,7 @@ import { useAutoSave } from "../lib/editor/useAutoSave.js";
 import { useEditorHistory } from "../lib/editor/useEditorHistory.js";
 import { useEditorKeyboard } from "../lib/editor/useEditorKeyboard.js";
 import { useImagePicker } from "../lib/editor/useImagePicker.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /**
  * 配信セットの編集画面。
@@ -80,7 +81,7 @@ export function LiveSetEditorPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const loaded = useRef(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "dirty" | "saving" | "error">("saved");
-  const [editError, setEditError] = useState("");
+  const [editError, setEditError] = useState<MessageKey | null>(null);
   const [pauseMotion, setPauseMotion] = useState(false);
   const [sampleTime, setSampleTime] = useState(false);
   const [addPartOpen, setAddPartOpen] = useState(false);
@@ -139,9 +140,9 @@ export function LiveSetEditorPage() {
 
   /** 置けたら true。上限を超えるときは理由を出して何も置かない */
   const addElements = (elements: LiveElement[]): boolean => {
-    if (els.length + elements.length > 50) { setEditError(t("studio.editorMaxElementsHelp")); return false; }
-    if (els.filter(el => el.motion).length + elements.filter(el => el.motion).length > 2) { setEditError(t("studio.editorMaxMotionHelp")); return false; }
-    setEditError("");
+    if (els.length + elements.length > 50) { setEditError(messageKey("studio.editorMaxElementsHelp")); return false; }
+    if (els.filter(el => el.motion).length + elements.filter(el => el.motion).length > 2) { setEditError(messageKey("studio.editorMaxMotionHelp")); return false; }
+    setEditError(null);
     editEls(arr => [...arr, ...elements]);
     setSelectedId(elements.find(e => e.type === "text" || e.type === "eventInfo")?.id ?? elements[0]?.id ?? null);
     return true;
@@ -192,7 +193,7 @@ export function LiveSetEditorPage() {
 
   const elementCommands: LiveElementCommands = {
     patch: (elId, patch) => {
-      if (patch.motion && !els.find(el => el.id === elId)?.motion && els.filter(el => el.motion).length >= 2) { setEditError(t("studio.editorMaxMotion")); return; }
+      if (patch.motion && !els.find(el => el.id === elId)?.motion && els.filter(el => el.motion).length >= 2) { setEditError(messageKey("studio.editorMaxMotion")); return; }
       editEls((arr) => patchById(arr, elId, patch));
     },
     remove: forSelected((elId) => {
@@ -204,8 +205,8 @@ export function LiveSetEditorPage() {
     duplicate: forSelected((elId) => {
       const copies = copyByIds(els, [elId]);
       if (copies.length === 0) return;
-      if (els.length + copies.length > 50) { setEditError(t("studio.editorMaxElements")); return; }
-      if (els.filter(el => el.motion).length + copies.filter(el => el.motion).length > 2) { setEditError(t("studio.editorMaxMotion")); return; }
+      if (els.length + copies.length > 50) { setEditError(messageKey("studio.editorMaxElements")); return; }
+      if (els.filter(el => el.motion).length + copies.filter(el => el.motion).length > 2) { setEditError(messageKey("studio.editorMaxMotion")); return; }
       editEls((arr) => [...arr, ...copies]);
       // 続けて動かせるよう、写した側に選択を移す
       setSelectedId(copies[0].id);
@@ -264,7 +265,7 @@ export function LiveSetEditorPage() {
       </Stack>
 
       {saveStatus === "error" && <Button color="error" onClick={save}>{t("studio.editorRetrySave")}</Button>}
-      {editError && <Typography role="alert" color="error">{editError}</Typography>}
+      {editError && <Typography role="alert" color="error">{t(editError.key, editError.params)}</Typography>}
       <Typography variant="caption">{t("studio.editorPreviewHint")}</Typography>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
         <Stack spacing={1} sx={{ width: { md: 168 }, flexShrink: 0 }}>
@@ -290,7 +291,7 @@ export function LiveSetEditorPage() {
             open={addPartOpen}
             onClose={() => setAddPartOpen(false)}
             scene={scene}
-            error={editError}
+            error={editError ? t(editError.key, editError.params) : ""}
             onAddElement={addElement}
             onAddPart={addPart}
             pickImage={picker.pick}

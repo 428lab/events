@@ -50,6 +50,7 @@ import {
   clearQueryParam,
 } from "../lib/blueskyError.js";
 import { BlueskyHandleForm } from "../components/BlueskyHandleForm.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 // 署名アプリでつなぐシートは開いたときだけ読む（リレーとのやりとりの部品を、ふだんのページに載せない）
 const NostrConnectSheet = lazy(() =>
@@ -72,10 +73,10 @@ export function AccountPage() {
   const { data: identities } = useIdentities();
   const unlink = useUnlinkIdentity();
   const setProfilePublic = useSetIdentityProfilePublic();
-  const [profileLinkError, setProfileLinkError] = useState<string | null>(null);
+  const [profileLinkError, setProfileLinkError] = useState<MessageKey | null>(null);
   const qc = useQueryClient();
   const [nostrBusy, setNostrBusy] = useState(false);
-  const [nostrError, setNostrError] = useState<string | null>(null);
+  const [nostrError, setNostrError] = useState<MessageKey | null>(null);
   // 拡張が無い人は、署名アプリ（Amber など）でつなぐシートを開く (D-NOSTR-SIGNER)
   const [signerOpen, setSignerOpen] = useState(false);
   // 連携エラーはページ内アラートだと気づきにくいためモーダルで表示 (#245)。
@@ -83,12 +84,15 @@ export function AccountPage() {
   // Bluesky のフローが途中で失敗した ?bluesky_error= (#381) を初期値に取り込む。
   // **表が別なのは意図的**——linkError は知らないコードを「別ユーザーに連携済み」に
   // 落とすので、混ぜると誤った説明が出る（設計 12）
-  const [linkErrorDialog, setLinkErrorDialog] = useState<string | null>(() => {
+  // 訳す前のコードのまま持ち、表示するときに訳す (#369)
+  const [linkErrorDialog, setLinkErrorDialog] = useState<
+    { kind: "link" | "bluesky"; code: string | null } | null
+  >(() => {
     const q = new URLSearchParams(window.location.search);
     const linkError = q.get("link_error");
-    if (linkError) return linkErrorMessage(linkError);
+    if (linkError) return { kind: "link", code: linkError };
     const blueskyError = q.get(BLUESKY_ERROR_PARAM);
-    return blueskyError ? blueskyErrorMessage(blueskyError) : null;
+    return blueskyError ? { kind: "bluesky", code: blueskyError } : null;
   });
   // Bluesky はハンドルが要るので、押してから入力欄を出す。失敗して戻ってきた
   // ときは開いた状態にしておく（やり直しに1手戻らせない）
@@ -121,9 +125,9 @@ export function AccountPage() {
   const showNostrLinkError = (e: unknown) => {
     // 引き取り拒否系は見落とし防止のためモーダルで表示 (#245)
     if (e instanceof ApiError && e.status === 409) {
-      setLinkErrorDialog(linkErrorMessage(errorCode(e)));
+      setLinkErrorDialog({ kind: "link", code: errorCode(e) });
     } else {
-      setNostrError(t("settings.nostrLinkFailed"));
+      setNostrError(messageKey("settings.nostrLinkFailed"));
     }
   };
 
@@ -271,7 +275,7 @@ export function AccountPage() {
                         setProfileLinkError(null);
                         setProfilePublic.mutate(
                           { provider: p, profilePublic },
-                          { onError: () => setProfileLinkError(t("settings.profileLinkFailed")) },
+                          { onError: () => setProfileLinkError(messageKey("settings.profileLinkFailed")) },
                         );
                       }}
                     />
@@ -310,7 +314,7 @@ export function AccountPage() {
           )}
           {nostrError && (
             <Alert severity="warning" sx={{ mt: 2 }}>
-              {nostrError}
+              {t(nostrError.key, nostrError.params)}
             </Alert>
           )}
           {!canUnlink && (
@@ -320,7 +324,7 @@ export function AccountPage() {
           )}
           {profileLinkError && (
             <Alert severity="warning" sx={{ mt: 2 }}>
-              {profileLinkError}
+              {t(profileLinkError.key, profileLinkError.params)}
             </Alert>
           )}
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
@@ -337,7 +341,12 @@ export function AccountPage() {
       <Dialog open={Boolean(linkErrorDialog)} onClose={closeLinkErrorDialog}>
         <DialogTitle>{t("settings.linkFailedTitle")}</DialogTitle>
         <DialogContent>
-          <DialogContentText>{linkErrorDialog}</DialogContentText>
+          <DialogContentText>
+            {linkErrorDialog &&
+              (linkErrorDialog.kind === "link"
+                ? linkErrorMessage(linkErrorDialog.code)
+                : blueskyErrorMessage(linkErrorDialog.code))}
+          </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button variant="contained" onClick={closeLinkErrorDialog}>
