@@ -39,6 +39,9 @@ const ja = {
   adminAbuse: "要確認",
   adminModeration: "コンテンツの対処",
   adminAudit: "監査ログ",
+  /** フッターの法務リンク。リンク先の本文は日本語だけ（翻訳の対象外） */
+  privacyPolicy: "プライバシーポリシー",
+  terms: "利用規約",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -70,6 +73,8 @@ const en: Record<keyof typeof ja, string> = {
   adminAbuse: "To review",
   adminModeration: "Content actions",
   adminAudit: "Audit log",
+  privacyPolicy: "Privacy policy",
+  terms: "Terms of use",
 };
 
 export const nav = { ja, en };

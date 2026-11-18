@@ -181,6 +181,22 @@ const ja = {
   bingoRowDone: "{{total}}回中{{seq}}回目でビンゴ・{{rank}}位",
   bingoRowMissed: "未達成（{{total}}回抽選）",
   bingoMore: "ほか {{n}}件",
+
+  /* ===== プロフィールカードを仕立てる画面（/users/:id/card、#478） ===== */
+  cardPageTitle: "プロフィールカード",
+  cardPageSubtitle: "印刷して名札ホルダーに入れられます（91×55mm）",
+  cardBackToProfile: "プロフィールへ戻る",
+  cardBgLabel: "背景",
+  cardThemeLabel: "色",
+  cardPrint: "印刷する",
+  cardDownloadPng: "PNGをダウンロード",
+  cardExporting: "書き出し中…",
+  cardExportFailed: "PNGの書き出しに失敗しました",
+  cardShowQr: "QRを大きく表示",
+  cardOgGenerating: "プロフィールカードを作成しています…",
+  cardOgSaved: "シェア用のカード画像を保存しました",
+  cardOgFailed: "カード画像の保存に失敗しました（リロードで再試行できます）",
+  cardOgHint: "このカードはプロフィールURLをシェアしたときのOG画像として使われます",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -312,6 +328,21 @@ const en: Record<keyof typeof ja, string> = {
   bingoRowDone: "Bingo on draw {{seq}} of {{total}}, rank #{{rank}}",
   bingoRowMissed: "No bingo ({{total}} draws)",
   bingoMore: "and {{n}} more",
+
+  cardPageTitle: "Profile card",
+  cardPageSubtitle: "Print it and put it in a name badge holder (91×55mm)",
+  cardBackToProfile: "Back to profile",
+  cardBgLabel: "Pattern",
+  cardThemeLabel: "Color",
+  cardPrint: "Print",
+  cardDownloadPng: "Download PNG",
+  cardExporting: "Exporting…",
+  cardExportFailed: "Couldn't export the PNG",
+  cardShowQr: "Show a large QR code",
+  cardOgGenerating: "Creating your profile card…",
+  cardOgSaved: "Saved the card image for sharing",
+  cardOgFailed: "Couldn't save the card image (reload to try again)",
+  cardOgHint: "This card is used as the preview image when your profile URL is shared",
 };
 
 export const profile = { ja, en };

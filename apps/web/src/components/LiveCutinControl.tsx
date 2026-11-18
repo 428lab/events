@@ -14,7 +14,9 @@ export function LiveCutinControl({ eventId }: { eventId: string }) {
   const [pendingCount, setPendingCount] = useState(0);
   const lastRequest = useRef(0);
   const [result, setResult] = useState<"sent" | "unknown" | null>(null);
-  const candidate = edited ? message : name.trim() ? `${name.trim()}${name.trim().endsWith("さん") ? "" : "さん"} 参戦！！` : "";
+  // 「山田さん」と入れても「山田さんさん」にならないよう、敬称は外してから文言に入れる
+  const baseName = name.trim().replace(/さん$/, "");
+  const candidate = edited ? message : baseName ? t("studio.cutinDefault", { name: baseName }) : "";
   const parsed = cutinMessageSchema.safeParse(candidate);
   async function send() {
     if (!parsed.success) return;

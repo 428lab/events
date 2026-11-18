@@ -138,10 +138,15 @@ describe("カードのデザイン画面 (#334)", () => {
    * ころは、英語で見ている人にも「ロゼット」「インディゴ」が出ていた。
    * カタログ側の見張りは components/licenseCard/cardTheme.test.ts にある。
    */
-  it("英語で見ると背景・配色の名前も英語になる", async () => {
+  it("英語で見ると背景・配色の名前も、画面の見出しや操作も英語になる (#478)", async () => {
     await i18next.changeLanguage("en");
     renderCardPage(profile());
-    expect(await screen.findByText("Rosette")).toBeTruthy();
+    expect(await screen.findByText("Profile card")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Print" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Download PNG" })).toBeTruthy();
+    expect(screen.getByText("Back to profile")).toBeTruthy();
+    expect(screen.queryByText("プロフィールカード")).toBeNull();
+    expect(screen.getByText("Rosette")).toBeTruthy();
     expect(screen.getByText("Contours")).toBeTruthy();
     expect(screen.getByText("Indigo")).toBeTruthy();
     expect(screen.getByText("Monochrome")).toBeTruthy();
