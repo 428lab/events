@@ -97,7 +97,18 @@ export const recipientLanguageSql = (userExpr: string) =>
 
 /** ブラウザの言語（Accept-Language）から決める。ログインしていない人に見せるページ用 */
 export function requestLanguage(acceptLanguage: string | null | undefined): AppLanguage {
-  const accepted = (acceptLanguage ?? "").split(",").map((part) => part.split(";")[0]?.trim());
+  // q の大きい順（同じ q は書かれた順）。q=0 は「受け付けない」なので外す
+  const accepted = (acceptLanguage ?? "")
+    .split(",")
+    .map((part, i) => {
+      const [tag, ...params] = part.split(";");
+      const q = params.map((p) => p.trim()).find((p) => p.startsWith("q="));
+      const weight = q ? Number(q.slice(2)) : 1;
+      return { tag: tag?.trim(), weight: Number.isFinite(weight) ? weight : 0, i };
+    })
+    .filter((a) => a.weight > 0)
+    .sort((a, b) => b.weight - a.weight || a.i - b.i)
+    .map((a) => a.tag);
   for (const tag of accepted) {
     const lang = normalizeLanguage(tag);
     if (lang) return lang;

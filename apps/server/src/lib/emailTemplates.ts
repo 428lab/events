@@ -72,11 +72,13 @@ export function formatEventDateTime(
   if (scheduling) return noticeText(lang, "dateScheduling");
   if (!startsAt) return noticeText(lang, "dateUndecided");
   const start = `${jstDate(startsAt, lang)} ${jstTime(startsAt, lang)}`;
-  if (!endsAt || endsAt <= startsAt) return `${start}〜`;
+  // 範囲の記号は言語ごと（日本語は「〜」、英語は en dash）
+  const to = lang === "ja" ? "〜" : " – ";
+  if (!endsAt || endsAt <= startsAt) return lang === "ja" ? `${start}〜` : `From ${start}`;
   const sameDay = jstDate(startsAt, lang) === jstDate(endsAt, lang);
   return sameDay
-    ? `${start}〜${jstTime(endsAt, lang)}`
-    : `${start}〜${jstDate(endsAt, lang)} ${jstTime(endsAt, lang)}`;
+    ? `${start}${to}${jstTime(endsAt, lang)}`
+    : `${start}${to}${jstDate(endsAt, lang)} ${jstTime(endsAt, lang)}`;
 }
 
 /** 会場表記（オフライン/ハイブリッドは場所名も併記。URLは載せずリンク先で確認）。

@@ -56,5 +56,6 @@ export function formatDateRange(startsAt: number, endsAt: number, lang: AppLangu
           ...clock,
         },
   ).format(e);
-  return `${start} 〜 ${end}`;
+  // 英語の範囲は en dash（「〜」は日本語の記号）
+  return lang === "ja" ? `${start} 〜 ${end}` : `${start} – ${end}`;
 }

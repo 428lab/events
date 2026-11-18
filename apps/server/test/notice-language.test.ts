@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { bindEnv } from "../src/runtime.js";
 import { notificationsRepo } from "../src/db/repositories/notifications.js";
 import { drawMemberSlots } from "../src/db/repositories/memberSlotResults.js";
-import { localized } from "../src/lib/noticeText.js";
+import { localized, requestLanguage } from "../src/lib/noticeText.js";
+import { formatDateRange } from "../src/lib/dateFormat.js";
 
 /**
  * お知らせとメールを受け取る人の言語で送る (#352)。オーナー決定 2026-11-19（案 A）:
@@ -137,5 +138,17 @@ describe("言語を覚える PUT /api/me/language (#352)", () => {
     expect(me.noticeLanguage).toEqual({ language: "en", explicit: false });
 
     expect((await put("zh", "report")).status).toBe(400);
+  });
+});
+
+describe("ブラウザの言語と日時の並び (#352)", () => {
+  it("Accept-Language は q の大きい順に選び、q=0 は使わない。英語の日時の範囲は en dash", () => {
+    expect(requestLanguage("ja;q=0.1, en;q=0.9")).toBe("en");
+    expect(requestLanguage("en;q=0, ja")).toBe("ja");
+    expect(requestLanguage("fr, en-US;q=0.8, ja;q=0.5")).toBe("en");
+    const s = Date.UTC(2026, 10, 20, 1, 0), e = Date.UTC(2026, 10, 20, 3, 0);
+    expect(formatDateRange(s, e, "ja")).toContain(" 〜 ");
+    expect(formatDateRange(s, e, "en")).toContain(" – ");
+    expect(formatDateRange(s, e, "en")).not.toContain("〜");
   });
 });
