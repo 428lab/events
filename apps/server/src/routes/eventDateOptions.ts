@@ -23,7 +23,8 @@ import { one, many } from "../db/client.js";
 import { deferBackground } from "../runtime.js";
 import { eventSignal } from "../lib/eventSignal.js";
 import { sendNotificationEmailIfOptedIn } from "../lib/email.js";
-import { formatDateRangeJa } from "../lib/dateFormat.js";
+import { formatDateRange } from "../lib/dateFormat.js";
+import { noticeText } from "../lib/noticeText.js";
 import { checkRegistrationDeadline } from "../lib/registrationDeadline.js";
 
 /**
@@ -148,7 +149,8 @@ eventDateOptionRoutes.post(
     });
     if (violation) return c.json({ error: violation }, 400);
     const changed = await scheduleRegistrationRepo.finalize(eventId, optionId, c.get("user").id,
-      `「${current.title}」の開催日時が ${formatDateRangeJa(opt.startsAt, opt.endsAt)} に決定しました`, expectedAccessRevision);
+      (lang) => noticeText(lang, "scheduleFinalizedBody", { event: current.title, date: formatDateRange(opt.startsAt, opt.endsAt, lang) }),
+      expectedAccessRevision);
     const event = await eventsRepo.findById(eventId);
     if (!changed && (event?.scheduling || event?.accessRevision !== expectedAccessRevision + 1
       || (await scheduleRegistrationRepo.receipt(eventId))?.option_id !== optionId

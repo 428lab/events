@@ -1,5 +1,8 @@
 /** 通知メールのHTMLテンプレート (#126, #134)。
- * env に依存しない純粋関数のみ（baseUrl は引数で受け取る）。テストから直接呼べる */
+ * env に依存しない純粋関数のみ（baseUrl は引数で受け取る）。テストから直接呼べる。
+ * 枠の文言（見出しのラベル・ボタン・フッター）は受け取る人の言語 (#352)。`lang` を省くと日本語 */
+import { DATE_LOCALES, DEFAULT_LANGUAGE, translations, type AppLanguage } from "@eventer/shared/i18n";
+import { noticeText } from "./noticeText.js";
 
 export const escapeHtml = (s: string) =>
   s
@@ -36,9 +39,9 @@ export function descriptionExcerpt(description: string, max = 200): string {
 
 const JST = "Asia/Tokyo";
 
-/** JST の日付表記（例: 2026/8/22(土)） */
-function jstDate(ms: number): string {
-  return new Intl.DateTimeFormat("ja-JP", {
+/** JST の日付表記（例: 2026/8/22(土)）。英語は en-US の並び */
+function jstDate(ms: number, lang: AppLanguage = DEFAULT_LANGUAGE): string {
+  return new Intl.DateTimeFormat(DATE_LOCALES[lang], {
     timeZone: JST,
     year: "numeric",
     month: "numeric",
@@ -47,12 +50,14 @@ function jstDate(ms: number): string {
   }).format(ms);
 }
 
-/** JST の時刻表記（例: 13:00） */
-function jstTime(ms: number): string {
-  return new Intl.DateTimeFormat("ja-JP", {
+/** JST の時刻表記（例: 13:00）。英語でも24時間表記にそろえる */
+function jstTime(ms: number, lang: AppLanguage = DEFAULT_LANGUAGE): string {
+  return new Intl.DateTimeFormat(DATE_LOCALES[lang], {
     timeZone: JST,
     hour: "2-digit",
     minute: "2-digit",
+    // 英語も24時間表記（日本時間の表記なので、会場の掲示と同じ並びにする）。日本語は既定のまま
+    ...(lang === "ja" ? {} : { hourCycle: "h23" as const }),
   }).format(ms);
 }
 
@@ -62,32 +67,29 @@ export function formatEventDateTime(
   startsAt: number,
   endsAt: number,
   scheduling: boolean,
+  lang: AppLanguage = DEFAULT_LANGUAGE,
 ): string {
-  if (scheduling) return "日程調整中";
-  if (!startsAt) return "日時未定";
-  const start = `${jstDate(startsAt)} ${jstTime(startsAt)}`;
+  if (scheduling) return noticeText(lang, "dateScheduling");
+  if (!startsAt) return noticeText(lang, "dateUndecided");
+  const start = `${jstDate(startsAt, lang)} ${jstTime(startsAt, lang)}`;
   if (!endsAt || endsAt <= startsAt) return `${start}〜`;
-  const sameDay = jstDate(startsAt) === jstDate(endsAt);
+  const sameDay = jstDate(startsAt, lang) === jstDate(endsAt, lang);
   return sameDay
-    ? `${start}〜${jstTime(endsAt)}`
-    : `${start}〜${jstDate(endsAt)} ${jstTime(endsAt)}`;
+    ? `${start}〜${jstTime(endsAt, lang)}`
+    : `${start}〜${jstDate(endsAt, lang)} ${jstTime(endsAt, lang)}`;
 }
 
-/** 会場種別ラベル（web の venueLabel と同じ対応） */
-export const VENUE_LABEL: Record<string, string> = {
-  offline: "オフライン",
-  online: "オンライン",
-  hybrid: "ハイブリッド",
-};
-
-/** 会場表記（オフライン/ハイブリッドは場所名も併記。URLは載せずリンク先で確認） */
+/** 会場表記（オフライン/ハイブリッドは場所名も併記。URLは載せずリンク先で確認）。
+ * 開催形態の呼び名は画面と同じ辞書（`venueType`） */
 export function venueText(
   venueType: string,
   venueOffline: string | null,
+  lang: AppLanguage = DEFAULT_LANGUAGE,
 ): string {
-  const label = VENUE_LABEL[venueType] ?? venueType;
+  const labels: Record<string, string> = translations[lang].venueType;
+  const label = labels[venueType] ?? venueType;
   if (venueType !== "online" && venueOffline) {
-    return `${label}（${venueOffline}）`;
+    return noticeText(lang, "venueWithPlace", { label, place: venueOffline });
   }
   return label;
 }
@@ -117,8 +119,10 @@ export function eventCardHtml(opts: {
   baseUrl: string;
   event: EventCardEvent;
   communityName: string | null;
+  lang?: AppLanguage;
 }): string {
   const { baseUrl, event, communityName } = opts;
+  const lang = opts.lang ?? DEFAULT_LANGUAGE;
   const image = event.imageUpdatedAt
     ? `<img src="${escapeHtml(`${baseUrl}/api/events/${event.id}/image?v=${event.imageUpdatedAt}`)}" alt="${escapeHtml(event.title)}"
            style="width:100%;max-width:560px;height:auto;border-radius:8px 8px 0 0;display:block;">`
@@ -130,9 +134,9 @@ export function eventCardHtml(opts: {
   return `<div style="margin:16px 0;border:1px solid #E2E8F0;border-radius:8px;overflow:hidden;">
       ${image}
       <div style="padding:16px;">
-        ${cardRow("開催日時", formatEventDateTime(event.startsAt, event.endsAt, event.scheduling))}
-        ${cardRow("会場", venueText(event.venueType, event.venueOffline))}
-        ${communityName ? cardRow("コミュニティ", communityName) : ""}
+        ${cardRow(noticeText(lang, "emailCardDate"), formatEventDateTime(event.startsAt, event.endsAt, event.scheduling, lang))}
+        ${cardRow(noticeText(lang, "emailCardVenue"), venueText(event.venueType, event.venueOffline, lang))}
+        ${communityName ? cardRow(noticeText(lang, "emailCardCommunity"), communityName) : ""}
         ${excerptHtml}
       </div>
     </div>`;
@@ -149,8 +153,10 @@ export interface TimetableItem {
 export function timetableHtml(opts: {
   items: TimetableItem[];
   times: Array<number | null>;
+  lang?: AppLanguage;
 }): string {
   if (opts.items.length === 0) return "";
+  const lang = opts.lang ?? DEFAULT_LANGUAGE;
   const rows = opts.items
     .map((it, i) => {
       const time = opts.times[i];
@@ -158,16 +164,16 @@ export function timetableHtml(opts: {
         ? (it.speaker.globalName ?? it.speaker.username)
         : it.speakerName;
       const speaker = speakerName
-        ? ` <span style="color:#94A3B8;">（${escapeHtml(speakerName)}）</span>`
+        ? ` <span style="color:#94A3B8;">${escapeHtml(noticeText(lang, "emailSpeaker", { name: speakerName }))}</span>`
         : "";
       return `<tr>
-          <td style="padding:6px 12px 6px 0;color:#64748B;font-size:13px;white-space:nowrap;vertical-align:top;">${time === null ? "--:--" : jstTime(time)}</td>
+          <td style="padding:6px 12px 6px 0;color:#64748B;font-size:13px;white-space:nowrap;vertical-align:top;">${time === null ? "--:--" : jstTime(time, lang)}</td>
           <td style="padding:6px 0;color:#334155;font-size:14px;line-height:1.6;">${escapeHtml(it.title)}${speaker}</td>
         </tr>`;
     })
     .join("\n");
   return `<div style="margin:16px 0;">
-      <p style="margin:0 0 4px;color:#64748B;font-size:12px;font-weight:600;">タイムテーブル</p>
+      <p style="margin:0 0 4px;color:#64748B;font-size:12px;font-weight:600;">${escapeHtml(noticeText(lang, "emailTimetable"))}</p>
       <table style="border-collapse:collapse;width:100%;" role="presentation">${rows}</table>
     </div>`;
 }
@@ -208,12 +214,14 @@ export function notificationEmailHtml(opts: {
   extraHtml?: string;
   linkUrl: string | null;
   unsubscribeUrl: string;
+  lang?: AppLanguage;
 }): string {
+  const lang = opts.lang ?? DEFAULT_LANGUAGE;
   const button = opts.linkUrl
     ? `<p style="margin:24px 0;">
         <a href="${escapeHtml(opts.linkUrl)}"
            style="display:inline-block;background:#1E293B;color:#FFFFFF;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:600;">
-          詳細を見る
+          ${escapeHtml(noticeText(lang, "emailViewDetails"))}
         </a>
       </p>`
     : "";
@@ -222,7 +230,7 @@ export function notificationEmailHtml(opts: {
   const body = opts.body
     ? `<p style="margin:0 0 8px;color:#334155;font-size:15px;line-height:1.7;white-space:pre-wrap;">${escapeHtml(opts.body)}</p>`
     : "";
-  return `<div style="background:#F8FAFC;padding:32px 16px;font-family:'Hiragino Sans','Noto Sans JP',system-ui,sans-serif;">
+  return `<div lang="${lang}" style="background:#F8FAFC;padding:32px 16px;font-family:'Hiragino Sans','Noto Sans JP',system-ui,sans-serif;">
   <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:12px;padding:32px;">
     ${emailHeaderHtml(opts.baseUrl)}
     <h1 style="margin:0 0 12px;color:#0F172A;font-size:18px;line-height:1.5;">${opts.titleHtml ?? escapeHtml(opts.title)}</h1>
@@ -231,8 +239,8 @@ export function notificationEmailHtml(opts: {
     ${button}
   </div>
   <p style="max-width:560px;margin:16px auto 0;color:#94A3B8;font-size:12px;line-height:1.6;">
-    このメールは events lab のメール通知設定が ON のため送信されています。<br>
-    <a href="${escapeHtml(opts.unsubscribeUrl)}" style="color:#64748B;">メール通知を停止する</a>
+    ${escapeHtml(noticeText(lang, "emailFooterReason"))}<br>
+    <a href="${escapeHtml(opts.unsubscribeUrl)}" style="color:#64748B;">${escapeHtml(noticeText(lang, "emailUnsubscribe"))}</a>
   </p>
 </div>`;
 }

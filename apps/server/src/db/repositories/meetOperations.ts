@@ -1,4 +1,5 @@
 import type { MeetScanEventResult } from "@eventer/shared";
+import { recipientLanguageSql, sqlNotice } from "../../lib/noticeText.js";
 import type { MeetUndoPayload } from "../../lib/meetToken.js";
 import { getDb, many } from "../client.js";
 import { eventPairViewSql } from "../../auth/eventAccess.js";
@@ -34,6 +35,9 @@ export async function visibleMeetResults(scanner: string, target: string, events
   const ids=new Set(rows.map(r=>r.id));return events.filter(e=>ids.has(e.eventId));
 }
 
+/** 出会いのお知らせは読み取られた側（i.target）の言語 (#352) */
+const meetLang = recipientLanguageSql("i.target");
+
 export async function scanMeetBatch(scanner: string,target: string,eventIds: string[],now: number,actorPath: string) {
   const candidates=eventIds.map(eventId=>({eventId,meetId:crypto.randomUUID(),noticeId:crypto.randomUUID()}));
   const args=[scanner,target,adminIds(),JSON.stringify(candidates),now], cte=eligible(true), db=getDb();
@@ -47,11 +51,12 @@ export async function scanMeetBatch(scanner: string,target: string,eventIds: str
           AND id=(${attendanceChoice})) RETURNING event_id`),
     `${cte} INSERT INTO notification(id,user_id,type,title,body,link,read_at,created_at,event_id,actor_id)
       SELECT e.notice_id,i.target,'meet',CASE WHEN e.visibility='public' THEN
-        (SELECT COALESCE(global_name,username) FROM user WHERE id=i.scanner)||' さんと出会いました' ELSE '出会いを記録しました' END,
-        CASE WHEN e.visibility<>'public' THEN 'イベントページで最新の情報をご確認ください'
+        ${sqlNotice(meetLang, "meetTitleNamed", { name: "(SELECT COALESCE(global_name,username) FROM user WHERE id=i.scanner)" })}
+        ELSE ${sqlNotice(meetLang, "meetTitle")} END,
+        CASE WHEN e.visibility<>'public' THEN ${sqlNotice(meetLang, "meetBodyPrivate")}
           WHEN e.attendance_check=1 AND e.scanner_role='staff' AND e.id=(${attendanceChoice})
             AND EXISTS(SELECT 1 FROM event_member m WHERE m.event_id=e.id AND m.user_id=i.target AND m.attended_at=i.now)
-          THEN '「'||e.title||'」の受付もこれで完了しています' ELSE '「'||e.title||'」' END,
+          THEN ${sqlNotice(meetLang, "meetBodyCheckedIn", { event: "e.title" })} ELSE ${sqlNotice(meetLang, "quoted", { text: "e.title" })} END,
         CASE WHEN e.visibility='public' THEN ? ELSE '/events/'||e.id END,0,i.now,e.id,i.scanner
       FROM eligible e,input i WHERE EXISTS(SELECT 1 FROM event_meet m WHERE m.id=e.meet_id)`,
     `${cte} SELECT id,title FROM eligible ORDER BY starts_at,id`,

@@ -73,6 +73,8 @@ authRoutes.get("/me", async (c) => {
       user,
       isAdmin: isAppAdmin(user),
       deletionGraceMs: env.deletionGraceMs,
+      // お知らせとメールの言語 (#352)。画面は今の言語と違うときだけ PUT /api/me/language で知らせる
+      noticeLanguage: await usersRepo.getLanguage(user.id),
     });
   }
   // 退会申請中（猶予期間 #250）は 403 + 復帰の案内を返し、SPA が /restore へ誘導する。

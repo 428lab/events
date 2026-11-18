@@ -14,6 +14,7 @@ import type {
   CreateSlotInput,
   MyPage,
   ParticipationSlot,
+  NoticeLanguage,
   PendingDeletion,
   ProfileLink,
   Submission,
@@ -32,6 +33,8 @@ interface MeResponse {
   pendingDeletion?: PendingDeletion | null;
   /** 退会の猶予期間（ms）。環境で変わるため UI 文言はこの値を使う (#250) */
   deletionGraceMs?: number;
+  /** サーバーが覚えているお知らせとメールの言語 (#352) */
+  noticeLanguage?: NoticeLanguage;
 }
 
 async function fetchMe(): Promise<MeResponse | null> {
@@ -73,6 +76,18 @@ export function useDeletionGraceMs(): number {
     retry: false,
   });
   return data?.deletionGraceMs ?? ACCOUNT_DELETION_GRACE_MS;
+}
+
+/** サーバーが覚えているお知らせとメールの言語 (#352)。未ログイン・取得前は undefined */
+export function useNoticeLanguage(): NoticeLanguage | undefined {
+  const { data } = useQuery({
+    queryKey: ["me"],
+    queryFn: fetchMe,
+    refetchOnWindowFocus: true,
+    retry: false,
+    select: (d) => (d?.user ? d.noticeLanguage : undefined),
+  });
+  return data;
 }
 
 /** 退会申請中（猶予期間 #250）なら復帰の案内、そうでなければ null */

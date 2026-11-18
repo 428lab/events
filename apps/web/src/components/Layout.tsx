@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useReportNoticeLanguage } from "../i18n/noticeLanguage.js";
 import { useTranslation } from "react-i18next";
 import {
   AppBar,
@@ -85,6 +86,8 @@ export function Layout({
   const { pathname } = useLocation();
   // デプロイ後の古いバンドルは次の遷移で自動リロード (#143)
   useBundleReload();
+  // お知らせとメールを今の画面の言語で受け取れるよう、違うときだけサーバーに知らせる (#352)
+  useReportNoticeLanguage();
   // スライド/配信セット編集は作業領域を最大化するため全幅
   const wide =
     (pathname.startsWith("/decks/") || pathname.startsWith("/live-sets/")) &&

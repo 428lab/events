@@ -5,6 +5,9 @@ import { eventsRepo } from "../db/repositories/events.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { eventScheduleRepo } from "../db/repositories/eventSchedule.js";
 import { computeScheduleTimes } from "@eventer/shared";
+import { DEFAULT_LANGUAGE, type AppLanguage } from "@eventer/shared/i18n";
+import { usersRepo } from "../db/repositories/users.js";
+import { noticeLanguage } from "./noticeText.js";
 import {
   actorTitleHtml,
   eventCardHtml,
@@ -148,11 +151,13 @@ const CARD_CACHE_TTL = 60_000;
 export async function buildEventExtraHtml(
   link: string,
   withTimetable: boolean,
+  lang: AppLanguage = DEFAULT_LANGUAGE,
 ): Promise<string> {
   try {
     const m = EVENT_LINK_RE.exec(link);
     if (!m) return "";
-    const cacheKey = `${m[1]}:${withTimetable ? 1 : 0}`;
+    // 枠の文言（開催日時・会場などのラベル）が宛先の言語で変わるので、言語もキーに入れる (#352)
+    const cacheKey = `${m[1]}:${withTimetable ? 1 : 0}:${lang}`;
     const hit = cardCache.get(cacheKey);
     if (hit && Date.now() - hit.at < CARD_CACHE_TTL) return hit.html;
     const event = await eventsRepo.findById(m[1]!);
@@ -164,6 +169,7 @@ export async function buildEventExtraHtml(
       baseUrl: env.appBaseUrl,
       event,
       communityName: community?.name ?? null,
+      lang,
     });
     if (withTimetable) {
       // **常に参加者向け** (#383)。未割り当て（ネタ出し中 #338）も裏方も送らない。
@@ -182,7 +188,7 @@ export async function buildEventExtraHtml(
           event.scheduling ? null : event.startsAt,
           tracks.map((t) => t.id),
         );
-        html += timetableHtml({ items, times });
+        html += timetableHtml({ items, times, lang });
       }
     }
     // 使い捨てに近い用途なので肥大化だけ防ぐ
@@ -226,8 +232,10 @@ export async function sendNotificationEmailToWithOutcome(
     return { ok: false, retryable: true };
   }
   const unsub = await unsubscribeUrl(userId);
+  // 枠の文言・中立の文言は受け取る人の言語 (#352)。題名と本文は呼ぶ側が同じ言語で組み立て済み
+  const lang = noticeLanguage((await usersRepo.getLanguage(userId)).language);
   // リッチ化 (#134): イベントカード＋（リマインダーなら）タイムテーブル
-  let extraHtml = await buildEventExtraHtml(link, extras?.timetable === true);
+  let extraHtml = await buildEventExtraHtml(link, extras?.timetable === true, lang);
   // 「◯◯ さんが…」の ◯◯ をプロフィールへリンク（該当しなければプレーン表示）
   let titleHtml =
     extras?.actorName && extras.actorPath
@@ -245,7 +253,7 @@ export async function sendNotificationEmailToWithOutcome(
     const event = await notificationDeliveryEvent(userId, eventId, type, extras?.authorizationActorId);
     if (!event) return { ok: false, retryable: false, skipped: true };
     if (event.visibility === "private") {
-      ({title, body, link} = genericEventNotice(eventId,type));
+      ({title, body, link} = genericEventNotice(eventId,type,lang));
       extraHtml = ""; titleHtml = null;
     }
   }
@@ -258,6 +266,7 @@ export async function sendNotificationEmailToWithOutcome(
     extraHtml,
     linkUrl: link ? emailLinkUrl(link) : null,
     unsubscribeUrl: unsub,
+    lang,
   });
   return sendEmailWithOutcome({
     to,

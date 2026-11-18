@@ -6,10 +6,11 @@
  * **URLの指定 > 利用者の設定 > ブラウザの言語 > 日本語** はどちらでも同じ。
  *
  * 切り替えは再読み込みなしでその場で効く（`<html lang>` は
- * `syncDocumentLanguage` の購読が追従させる）。
+ * `syncDocumentLanguage` の購読が追従させる）。お知らせとメールの言語もサーバーに知らせる (#352)。
  */
 import { useCallback, useState } from "react";
 import { detectFromEnvironment, i18next } from "./index.js";
+import { sendNoticeLanguage } from "./noticeLanguage.js";
 import {
   asPreference,
   readLanguageChoice,
@@ -30,9 +31,11 @@ export function useLanguageChoice(): [
     // 辞書は起動時に読み込み済みなので、ここが失敗する経路は事実上無い。
     // それでも受け取るのは、握らないと unhandled rejection になるため。
     // 失敗しても保存とボタンの状態は進める（表示だけが前の言語のまま残る）
-    i18next
-      .changeLanguage(detectFromEnvironment(asPreference(next)))
-      .catch(() => {});
+    const lang = detectFromEnvironment(asPreference(next));
+    i18next.changeLanguage(lang).catch(() => {});
+    // お知らせとメールもこの言語で届くよう、サーバーに覚えさせる (#352)。
+    // 選んだ言語は、画面を開いたときの自動の報告では上書きされない。「自動」は選んだ印を外す
+    void sendNoticeLanguage(lang, next === "auto" ? "auto" : "choose");
   }, []);
 
   return [choice, change];

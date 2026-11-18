@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { localized } from "../lib/noticeText.js";
 import type { Context } from "hono";
 import {
   saveSurveyQuestionsInput,
@@ -242,8 +243,8 @@ eventSurveyRoutes.post(
       await notificationsRepo.createForMany(
         targets,
         "survey_reminder",
-        "アンケート回答のお願い",
-        `「${event.title}」の参加アンケートにご回答ください`,
+        localized("surveyReminderTitle"),
+        localized("surveyReminderBody", { event: event.title }),
         `/events/${eventId}`,
       );
     }

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { localized } from "../lib/noticeText.js";
 import { valid, zValidator } from "../lib/validator.js";
 import {
   joinEventInput,
@@ -227,8 +228,8 @@ eventMemberRoutes.post(
     await notificationsRepo.create(
       userId,
       "info",
-      "運営があなたの参加をキャンセル扱いにしました",
-      `「${event.title}」`,
+      localized("staffCancelTitle"),
+      localized("quoted", { text: event.title }),
       `/events/${eventId}`,
       undefined,
       { eventId },

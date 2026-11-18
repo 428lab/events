@@ -1,4 +1,5 @@
 import { batch } from "../client.js";
+import { recipientLanguageSql, sqlNotice } from "../../lib/noticeText.js";
 import { eventMembersRepo } from "./eventMembers.js";
 import { accessOperationGuard, activeManagerSql, adminIds, type AccessInviteRow } from "./eventAccessInvites.js";
 import { eventViewSql } from "../../auth/eventAccess.js";
@@ -48,7 +49,7 @@ export async function revokeEventAccess(invite: AccessInviteRow, actorId: string
     // No mail side effect; retry after revoke is a no-op, so it cannot notify twice.
     ...(promote ? [
       { sql: `INSERT INTO notification (id, user_id, type, title, body, link, created_at, event_id)
-          SELECT ?, m.user_id, 'waitlist_promoted', 'イベントの更新があります', '', ?, ?, e.id
+          SELECT ?, m.user_id, 'waitlist_promoted', ${sqlNotice(recipientLanguageSql("m.user_id"), "genericTitle")}, '', ?, ?, e.id
           FROM event_member m JOIN event e ON e.id = m.event_id
           JOIN participation_slot s ON s.id = m.slot_id AND s.event_id = e.id
           WHERE m.slot_id = ? AND m.role = 'participant' AND m.status = 'waitlist'

@@ -1,4 +1,5 @@
 import type { EventAccessInvite, EventAccessInviteStatus, MyEventInvite } from "@eventer/shared";
+import { recipientLanguageSql, sqlNotice } from "../../lib/noticeText.js";
 import { EVENT_ACCESS_INVITE_TTL_MS } from "@eventer/shared";
 import { batch, many, one } from "../client.js";
 import { eventManagerSql } from "../../auth/eventAccess.js";
@@ -76,8 +77,8 @@ export const eventAccessInvitesRepo = {
             expires_at = excluded.expires_at, responded_at = NULL`,
         args: [id, eventId, targetId, actorId, now, now + EVENT_ACCESS_INVITE_TTL_MS, ...guard] },
       { sql: `INSERT INTO notification (id, user_id, type, title, body, link, created_at, actor_id, event_id)
-          SELECT ?, ?, 'event_access_invite', '閲覧への招待が届きました', '', '/event-invites', ?, ?, ?
-          WHERE ${accessOperationGuard}`, args: [crypto.randomUUID(), targetId, now, actorId, eventId, ...guard] },
+          SELECT ?, ?, 'event_access_invite', ${sqlNotice(recipientLanguageSql("?"), "accessInviteTitle")}, '', '/event-invites', ?, ?, ?
+          WHERE ${accessOperationGuard}`, args: [crypto.randomUUID(), targetId, targetId, now, actorId, eventId, ...guard] },
       { sql: "UPDATE event SET access_operation_token = NULL WHERE id = ? AND access_operation_token = ?", args: guard },
     ]);
     return changed ? id : null;

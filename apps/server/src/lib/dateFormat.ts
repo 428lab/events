@@ -1,4 +1,5 @@
 /** 通知文などサーバー生成テキスト用の日時表記（日本時間固定） */
+import { DATE_LOCALES, type AppLanguage } from "@eventer/shared/i18n";
 
 const JST = "Asia/Tokyo";
 
@@ -17,11 +18,15 @@ export function jstDayStart(now: number, deltaDays = 0): number {
   return (dayIndex + deltaDays) * DAY_MS - JST_OFFSET_MS;
 }
 
-export function formatDateRangeJa(startsAt: number, endsAt: number): string {
+/** 開催日時の範囲（日本時間）。並びは受け取る人の言語 (#352)。省くと日本語 */
+export function formatDateRange(startsAt: number, endsAt: number, lang: AppLanguage = "ja"): string {
+  const locale = DATE_LOCALES[lang];
+  // 英語も24時間表記（日本時間の表記なので、会場の掲示と同じ並びにする）。日本語は既定のまま
+  const clock = lang === "ja" ? {} : { hourCycle: "h23" as const };
   const s = new Date(startsAt);
   const e = new Date(endsAt);
   const dayKey = (d: Date) =>
-    new Intl.DateTimeFormat("ja-JP", {
+    new Intl.DateTimeFormat(locale, {
       timeZone: JST,
       year: "numeric",
       month: "numeric",
@@ -29,24 +34,26 @@ export function formatDateRangeJa(startsAt: number, endsAt: number): string {
     }).format(d);
   const sameDay = dayKey(s) === dayKey(e);
 
-  const start = new Intl.DateTimeFormat("ja-JP", {
+  const start = new Intl.DateTimeFormat(locale, {
     timeZone: JST,
     year: "numeric",
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    ...clock,
   }).format(s);
   const end = new Intl.DateTimeFormat(
-    "ja-JP",
+    locale,
     sameDay
-      ? { timeZone: JST, hour: "2-digit", minute: "2-digit" }
+      ? { timeZone: JST, hour: "2-digit", minute: "2-digit", ...clock }
       : {
           timeZone: JST,
           month: "numeric",
           day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
+          ...clock,
         },
   ).format(e);
   return `${start} 〜 ${end}`;

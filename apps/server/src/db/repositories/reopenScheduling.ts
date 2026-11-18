@@ -1,4 +1,5 @@
 import { eventViewSql } from "../../auth/eventAccess.js";
+import { sqlNotice } from "../../lib/noticeText.js";
 import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import { batch, one } from "../client.js";
 import type { ReopenSchedulingInput } from "@eventer/shared";
@@ -13,9 +14,9 @@ export const reopenSchedulingRepo = {
     // exactly this batch for best-effort email, even across rapid schedule cycles.
     const [, changed] = await batch([
       { sql: `INSERT INTO notification(id,user_id,type,title,body,link,read_at,created_at,event_id)
-        SELECT ? || u.id,u.id,'info','日程調整を再開しました',
-          CASE WHEN e.visibility<>'public' THEN 'イベントの更新があります'
-          ELSE '「' || e.title || '」の日程が未定になりました。候補日への回答をご確認ください。参加登録は維持されています。' END,
+        SELECT ? || u.id,u.id,'info',${sqlNotice("u.language", "schedulingReopenedTitle")},
+          CASE WHEN e.visibility<>'public' THEN ${sqlNotice("u.language", "genericTitle")}
+          ELSE ${sqlNotice("u.language", "schedulingReopenedBody", { event: "e.title" })} END,
           ?,0,?,e.id
         FROM event e JOIN user u ON u.deleted_at IS NULL AND u.id<>?
         WHERE ${ready} AND u.id IN (

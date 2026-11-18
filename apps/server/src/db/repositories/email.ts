@@ -12,6 +12,8 @@ export interface ReminderTarget {
   venueType: string;
   venueOffline: string | null;
   venueOnline: string | null;
+  /** 受け取る人の言語 (#352)。null は日本語 */
+  language: string | null;
 }
 
 interface ReminderRow {
@@ -24,6 +26,7 @@ interface ReminderRow {
   venue_type: string;
   venue_offline: string | null;
   venue_online: string | null;
+  language: string | null;
 }
 
 /** メール通知 (#126)。宛先の解決と前日リマインダーの対象抽出。
@@ -99,7 +102,7 @@ export const emailRepo = {
                WHERE i.user_id = em.user_id AND i.email IS NOT NULL
                ORDER BY i.created_at DESC LIMIT 1) AS email,
               e.id AS event_id, e.title, e.starts_at,
-              e.venue_type, e.venue_offline, e.venue_online
+              e.venue_type, e.venue_offline, e.venue_online, u.language
        FROM event e
        JOIN event_member em ON em.event_id = e.id
        -- 設定行なしは既定オン (#414)。明示オフだけ除外する
@@ -129,6 +132,7 @@ export const emailRepo = {
       venueType: r.venue_type,
       venueOffline: r.venue_offline,
       venueOnline: r.venue_online,
+      language: r.language,
     }));
   },
 
