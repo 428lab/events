@@ -1,5 +1,7 @@
 import { eventManagerSql, eventViewSql } from "../../auth/eventAccess.js";
 import { one } from "../client.js";
+import { DEFAULT_LANGUAGE, type AppLanguage } from "@eventer/shared/i18n";
+import { noticeText } from "../../lib/noticeText.js";
 import { adminIds } from "./eventAccessInvites.js";
 
 export const publicNoticeTypes = "'followee_created_event','followee_joined_event','request_event_created'";
@@ -36,6 +38,7 @@ export async function notificationDeliveryEvent(userId: string, eventId: string,
     SELECT e.visibility FROM notice JOIN event e ON e.id=notice.event_id WHERE ${notificationVisibleSql("notice")}`,
     adminIds(), userId,eventId,type,actorId??null);
 }
-export function genericEventNotice(eventId: string, type: string) {
-  return { title: "イベントの更新があります", body: "", link: type === "staff_invite" ? "/staff-invites" : type === "event_access_invite" ? "/event-invites" : `/events/${eventId}` };
+/** 中身を出せないイベント（非公開など）の中立の文言。題名は宛先の言語 (#352)。分からなければ日本語 */
+export function genericEventNotice(eventId: string, type: string, lang: AppLanguage = DEFAULT_LANGUAGE) {
+  return { title: noticeText(lang, "genericTitle"), body: "", link: type === "staff_invite" ? "/staff-invites" : type === "event_access_invite" ? "/event-invites" : `/events/${eventId}` };
 }

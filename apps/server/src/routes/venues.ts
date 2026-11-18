@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { localized } from "../lib/noticeText.js";
 import type { Context } from "hono";
 import {
   createVenueInput,
@@ -212,8 +213,8 @@ venueRoutes.post("/:id/admins", async (c) => {
   await notificationsRepo.create(
     target.id,
     "info",
-    "会場の管理者になりました🏟️",
-    venue ? `「${venue.name}」の管理者に追加されました` : "",
+    localized("venueAdminTitle"),
+    venue ? localized("venueAdminBody", { venue: venue.name }) : "",
     `/venues/${venueId}`,
   );
   return c.json({ admins: await venueAdminsRepo.list(venueId) }, 201);
@@ -252,8 +253,8 @@ venueRoutes.post("/:id/transfer", async (c) => {
   await notificationsRepo.create(
     userId,
     "info",
-    "会場のオーナーになりました🏟️",
-    venue ? `「${venue.name}」のオーナー権限が移譲されました` : "",
+    localized("venueOwnerTitle"),
+    venue ? localized("venueOwnerBody", { venue: venue.name }) : "",
     `/venues/${venueId}`,
   );
   return c.json({ ok: true });
@@ -387,8 +388,8 @@ venueRoutes.post("/:id/photos", async (c) => {
     await notificationsRepo.createForMany(
       managers.filter((id) => id !== user.id),
       "venue_photo_result",
-      "会場写真の投稿が届きました📷",
-      `「${venue.name}」に参加者から写真が投稿されました（承認待ち）`,
+      localized("venuePhotoSubmittedTitle"),
+      localized("venuePhotoSubmittedBody", { venue: venue.name }),
       `/venues/${venueId}`,
     );
   }
@@ -423,8 +424,8 @@ venueRoutes.post("/:id/photos/:photoId/moderate", async (c) => {
       await notificationsRepo.create(
         photo.userId,
         "venue_photo_result",
-        "会場写真が採用されました🎉",
-        venue ? `「${venue.name}」であなたの写真が公開されました` : "",
+        localized("venuePhotoApprovedTitle"),
+        venue ? localized("venuePhotoApprovedBody", { venue: venue.name }) : "",
         `/venues/${venueId}`,
       );
     }
@@ -439,8 +440,8 @@ venueRoutes.post("/:id/photos/:photoId/moderate", async (c) => {
     await notificationsRepo.create(
       photo.userId,
       "venue_photo_result",
-      "会場写真は見送られました",
-      venue ? `「${venue.name}」への投稿写真は公開されませんでした` : "",
+      localized("venuePhotoRejectedTitle"),
+      venue ? localized("venuePhotoRejectedBody", { venue: venue.name }) : "",
       "",
     );
   }

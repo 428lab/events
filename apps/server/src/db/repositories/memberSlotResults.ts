@@ -1,4 +1,5 @@
 import { batch, many } from "../client.js";
+import { recipientLanguageSql, sqlNotice } from "../../lib/noticeText.js";
 import { eventViewSql } from "../../auth/eventAccess.js";
 import { accessOperationGuard, activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import { deferBackground } from "../../runtime.js";
@@ -10,6 +11,10 @@ async function deliver(eventId: string, ids: string[]) {
   await Promise.all(notices.map(n => deferBackground(sendNotificationEmailIfOptedIn(n.user_id, n.title, n.body, n.link, { authorizationEventId: eventId }))));
   return notices;
 }
+
+/** お知らせは宛先の言語 (#352)。抽選は eligible の user_id、個別の確定・落選は target.user_id */
+const drawLang = recipientLanguageSql("eligible.user_id");
+const setLang = recipientLanguageSql("target.user_id");
 
 /** Ordered member IDs are the existing JS shuffle, not authorization. Rank only
  * still-qualified applicants inside the batch and subtract already-held seats. */
@@ -33,10 +38,10 @@ export async function drawMemberSlots(eventId: string, actorId: string, slotId: 
           WHERE e.id = ? AND s.id = ? AND m.role = 'participant' AND m.status = 'applied'
             AND ${eventViewSql("e", "m.user_id", "?")} AND ${accessOperationGuard})
         SELECT notice_id,user_id,CASE WHEN position <= remaining THEN 'lottery_won' ELSE 'lottery_lost' END,
-          CASE WHEN position <= remaining THEN '抽選に当選しました' ELSE '抽選結果のお知らせ' END,
-          CASE WHEN visibility <> 'public' THEN 'イベントの更新があります'
-            WHEN position <= remaining THEN '「' || event_title || '」の抽選に当選しました。参加が確定です'
-            ELSE '「' || event_title || '」は今回は落選となりました' END, ?, ?, ? FROM eligible`,
+          CASE WHEN position <= remaining THEN ${sqlNotice(drawLang, "lotteryWonTitle")} ELSE ${sqlNotice(drawLang, "lotteryResultTitle")} END,
+          CASE WHEN visibility <> 'public' THEN ${sqlNotice(drawLang, "genericTitle")}
+            WHEN position <= remaining THEN ${sqlNotice(drawLang, "lotteryWonBody", { event: "event_title" })}
+            ELSE ${sqlNotice(drawLang, "lotteryLostBody", { event: "event_title" })} END, ?, ?, ? FROM eligible`,
       args: [source, eventId, slotId, adminIds(), ...guard, `/events/${eventId}`, now, eventId] },
     { sql: `WITH results AS (SELECT user_id,type FROM notification WHERE id IN (SELECT value FROM json_each(?)))
         UPDATE event_member SET status=CASE WHEN user_id IN (SELECT user_id FROM results WHERE type='lottery_won') THEN 'confirmed' ELSE 'lost' END,
@@ -86,10 +91,10 @@ export async function setMemberSlotStatus(eventId: string, actorId: string, slot
       args: [crypto.randomUUID(), entryId, userId, entryId, ...guard] },
     { sql: `INSERT INTO notification(id,user_id,type,title,body,link,created_at,event_id)
         SELECT ?,?,CASE WHEN ?='confirmed' THEN 'lottery_won' ELSE 'lottery_lost' END,
-          CASE WHEN ?='confirmed' THEN '参加が確定しました' ELSE '抽選結果のお知らせ' END,
-          CASE WHEN e.visibility <> 'public' THEN 'イベントの更新があります' WHEN ?='confirmed' THEN '「'||e.title||'」への参加が確定しました' ELSE '「'||e.title||'」は今回は落選となりました' END,
-          ?,?,e.id FROM event e WHERE e.id=? AND ? IN ('confirmed','lost') AND ${accessOperationGuard}`,
-      args: [noticeId, userId, status, status, status, `/events/${eventId}`, now, eventId, status, ...guard] },
+          CASE WHEN ?='confirmed' THEN ${sqlNotice(setLang, "registrationConfirmedTitle")} ELSE ${sqlNotice(setLang, "lotteryResultTitle")} END,
+          CASE WHEN e.visibility <> 'public' THEN ${sqlNotice(setLang, "genericTitle")} WHEN ?='confirmed' THEN ${sqlNotice(setLang, "registrationConfirmedBody", { event: "e.title" })} ELSE ${sqlNotice(setLang, "lotteryLostBody", { event: "e.title" })} END,
+          ?,?,e.id FROM event e, (SELECT ? AS user_id) target WHERE e.id=? AND ? IN ('confirmed','lost') AND ${accessOperationGuard}`,
+      args: [noticeId, userId, status, status, status, `/events/${eventId}`, now, userId, eventId, status, ...guard] },
     { sql: "UPDATE event SET access_operation_token=NULL WHERE id=? AND access_operation_token=?", args: guard },
   ]);
   if (changed) await deliver(eventId, [noticeId]);

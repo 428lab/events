@@ -5,13 +5,24 @@ import { usersRepo } from "../db/repositories/users.js";
 import { followsRepo } from "../db/repositories/follows.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { notificationsRepo } from "../db/repositories/notifications.js";
-import { FOLLOWING_TITLE_PREFIX } from "../lib/emailTemplates.js";
+import { localized, type LocalizedText } from "../lib/noticeText.js";
+import { DEFAULT_LANGUAGE, type AppLanguage } from "@eventer/shared/i18n";
 
 /** フォロー起点通知のタイトル。自分のイベントの話と取り違えないよう「フォロー中の」を付ける。
- * 本人が見つからないときは「フォロー中のユーザー」で始める（「フォロー中の フォロー中のユーザー」を避ける） */
-export function followActivityTitle(name: string | null, action: "joined" | "published"): string {
-  const tail = action === "joined" ? "イベントに参加しました" : "イベントを公開しました";
-  return name ? `${FOLLOWING_TITLE_PREFIX}${name} さんが${tail}` : `フォロー中のユーザーが${tail}`;
+ * 本人が見つからないときは「フォロー中のユーザー」で始める（「フォロー中の フォロー中のユーザー」を避ける）。
+ * 文言は受け取る人の言語 (#352)。メールで名前をリンクにする目印（actorTitleHtml）は、日本語は
+ * 先頭の「フォロー中の 」の後ろ、英語は先頭の名前 */
+export function followActivityTitle(
+  name: string | null,
+  action: "joined" | "published",
+  lang: AppLanguage = DEFAULT_LANGUAGE,
+): string {
+  return followActivityText(name, action)(lang);
+}
+
+function followActivityText(name: string | null, action: "joined" | "published"): LocalizedText {
+  if (!name) return localized(action === "joined" ? "followeeJoined" : "followeePublished");
+  return localized(action === "joined" ? "followeeJoinedNamed" : "followeePublishedNamed", { name });
 }
 
 /** イベント公開時: 作成者のフォロワーへ通知（1イベント1回。再公開では再通知しない） */
@@ -35,8 +46,8 @@ export async function notifyFollowersOnPublish(event: {
     await notificationsRepo.createForMany(
       followers.filter((id) => id !== event.createdBy),
       "followee_created_event",
-      followActivityTitle(name, "published"),
-      `「${event.title}」`,
+      followActivityText(name, "published"),
+      localized("quoted", { text: event.title }),
       `/events/${event.id}`,
       // メールでは actor 名をプロフィールへリンクする (#134)
       creator && name
@@ -69,8 +80,8 @@ export async function notifyFollowersOnJoin(
     await notificationsRepo.createForMany(
       followers.filter((id) => id !== userId),
       "followee_joined_event",
-      followActivityTitle(name, "joined"),
-      `「${event.title}」`,
+      followActivityText(name, "joined"),
+      localized("quoted", { text: event.title }),
       `/events/${event.id}`,
       // メールでは actor 名をプロフィールへリンクする (#134)
       joiner && name

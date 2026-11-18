@@ -1,4 +1,5 @@
 import { canViewEvent, eventResponseHeaders } from "../auth/eventAccess.js";
+import { localized } from "../lib/noticeText.js";
 import { Hono } from "hono";
 import {
   createVenueOfferInput,
@@ -190,8 +191,8 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
     await notificationsRepo.createForMany(
       organizerTargets.filter((id) => id !== user.id),
       "venue_offer",
-      "会場の提供オファーが届きました🏟️",
-      `「${targetTitle}」に会場「${venue.name}」の提供オファー`,
+      localized("venueOfferTitle"),
+      localized("venueOfferBody", { target: targetTitle, venue: venue.name }),
       link, undefined, { eventId: input.eventId },
     );
   } else {
@@ -203,8 +204,8 @@ venueOfferRoutes.post("/", zValidator("json", createVenueOfferInput), async (c) 
     await notificationsRepo.createForMany(
       managers.filter((id) => id !== user.id),
       "venue_offer",
-      "会場の利用オファーが届きました🏟️",
-      `「${targetTitle}」の主催者が会場「${venue.name}」を使いたいそうです`,
+      localized("venueRequestTitle"),
+      localized("venueRequestBody", { target: targetTitle, venue: venue.name }),
       `/venues/${venue.id}`, undefined, { eventId: input.eventId },
     );
   }
@@ -263,10 +264,8 @@ venueOfferRoutes.post(
       await notificationsRepo.create(
         offer.createdBy,
         "venue_offer_result",
-        accepted
-          ? "会場オファーが承諾されました🎉"
-          : "会場オファーは見送られました",
-        venue ? `会場「${venue.name}」のオファー` : "",
+        localized(accepted ? "venueOfferAcceptedTitle" : "venueOfferDeclinedTitle"),
+        venue ? localized("venueOfferResultBody", { venue: venue.name }) : "",
         accepted
           ? offer.eventId
             ? `/events/${offer.eventId}`

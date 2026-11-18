@@ -2,6 +2,8 @@ import { eventPreSurveyRepo } from "./db/repositories/eventPreSurvey.js";
 import { deleteMyEventAccess, eventAccessInviteRoutes, myEventInviteRoutes, myEventAccessRoutes } from "./routes/eventAccessInvites.js";
 import { canViewEvent, eventResponseHeaders, requireEventAccess } from "./auth/eventAccess.js";
 import { Hono } from "hono";
+import { translations, type AppLanguage } from "@eventer/shared/i18n";
+import { noticeText, requestLanguage, type NoticeKey } from "./lib/noticeText.js";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import {
@@ -410,14 +412,18 @@ api.route("/bgm", bgmRoutes);
  * Bluesky (#381) はハンドルが要るので入力欄を1つ添える。**素の form の GET** で
  * 済むため、ここに JavaScript は増やさない。
  */
-function stagingGateHtml(): string {
+function stagingGateHtml(lang: AppLanguage): string {
+  // 文言はブラウザの言語 (#352)。ログイン前なので宛先の設定は無い
+  const signIn = (provider: string) => escapeHtml(noticeText(lang, "gateSignInWith", { provider }));
+  // script の中は JSON の文字列として埋める（引用符・山括弧で壊れないように）
+  const js = (key: NoticeKey) => JSON.stringify(noticeText(lang, key)).replace(/</g, "\\u003c");
   const buttons = PROVIDERS.filter(providerConfigured)
     .map(
       (p) =>
-        `<a class="btn" href="/api/auth/${p}/login">${p} でサインイン</a>`,
+        `<a class="btn" href="/api/auth/${p}/login">${signIn(p)}</a>`,
     )
     .join("");
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8">
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in</title>
 <meta name="robots" content="noindex, nofollow">
@@ -428,29 +434,29 @@ p{color:#94A3B8}
 .btn{display:inline-block;background:#334155;color:#E2E8F0;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:600;text-transform:capitalize;border:0;font-size:1rem;font-family:inherit;cursor:pointer}
 .handle{background:#1E293B;color:#E2E8F0;border:1px solid #334155;border-radius:10px;padding:12px;font-size:1rem;font-family:inherit;width:100%;box-sizing:border-box}
 #nostr-err{color:#FCA5A5;font-size:.85rem;margin-top:12px}</style>
-</head><body><div class="card"><div class="btns">${buttons}<button class="btn" id="nostr">nostr でサインイン</button>
-<form class="btns" method="get" action="/api/auth/bluesky/login"><input class="handle" type="text" name="handle" placeholder="yourname.bsky.social" autocapitalize="none" autocorrect="off" spellcheck="false" required><button class="btn" type="submit">bluesky でサインイン</button></form></div><div id="nostr-err"></div></div>
+</head><body><div class="card"><div class="btns">${buttons}<button class="btn" id="nostr">${signIn("nostr")}</button>
+<form class="btns" method="get" action="/api/auth/bluesky/login"><input class="handle" type="text" name="handle" placeholder="yourname.bsky.social" autocapitalize="none" autocorrect="off" spellcheck="false" required><button class="btn" type="submit">${signIn("bluesky")}</button></form></div><div id="nostr-err"></div></div>
 <script>
 document.getElementById("nostr").onclick = async () => {
   const err = document.getElementById("nostr-err");
   err.textContent = "";
   try {
-    if (!window.nostr) { err.textContent = "NIP-07 拡張が見つかりません"; return; }
+    if (!window.nostr) { err.textContent = ${js("gateNostrMissing")}; return; }
     const { challenge } = await (await fetch("/api/auth/nostr/challenge")).json();
     const event = await window.nostr.signEvent({
       kind: 22242,
       created_at: Math.floor(Date.now() / 1000),
       tags: [["relay", location.origin], ["challenge", challenge]],
-      content: "events lab にログイン",
+      content: ${JSON.stringify(translations[lang].login.signEventContent).replace(/</g, "\\u003c")},
     });
     const r = await fetch("/api/auth/nostr/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ event }),
     });
-    if (!r.ok) { err.textContent = "サインインに失敗しました"; return; }
+    if (!r.ok) { err.textContent = ${js("gateSignInFailed")}; return; }
     location.reload();
-  } catch { err.textContent = "サインインに失敗しました"; }
+  } catch { err.textContent = ${js("gateSignInFailed")}; }
 };
 </script></body></html>`;
 }
@@ -511,7 +517,7 @@ app.use("*", async (c, next) => {
   if (path.startsWith("/api/")) {
     return c.json({ error: "staging_login_required" }, 403);
   }
-  return c.html(stagingGateHtml(), 403);
+  return c.html(stagingGateHtml(requestLanguage(c.req.header("accept-language"))), 403);
 });
 
 app.route("/api", api);

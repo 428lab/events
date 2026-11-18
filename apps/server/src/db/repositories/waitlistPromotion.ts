@@ -1,18 +1,22 @@
 import { eventViewSql } from "../../auth/eventAccess.js";
+import { recipientLanguageSql, sqlNotice } from "../../lib/noticeText.js";
 import { accessOperationGuard, adminIds } from "./eventAccessInvites.js";
 
 export const eligibleWaiterSql = `m.role = 'participant' AND m.status = 'waitlist'
     AND EXISTS (SELECT 1 FROM user u WHERE u.id = m.user_id AND u.deleted_at IS NULL)
     AND ${eventViewSql("e", "m.user_id", "?")}`;
 
+/** お知らせは繰り上がる人の言語 (#352) */
+const lang = recipientLanguageSql("m.user_id");
+
 /** Append to a token-owned membership batch AFTER releasing its previous seat. */
 export function waitlistPromotionStatements(eventId: string, slotId: string, token: string, noticeId: string, now: number) {
   const guard = [eventId, token], entryId = crypto.randomUUID();
   return [
     { sql: `INSERT INTO notification(id,user_id,type,title,body,link,created_at,event_id)
-        SELECT ?, m.user_id, 'waitlist_promoted', 'キャンセル待ちから繰り上がりました',
-          CASE WHEN e.visibility = 'public' THEN '「' || e.title || '」への参加が確定しました'
-          ELSE 'イベントの更新があります' END, ?, ?, e.id
+        SELECT ?, m.user_id, 'waitlist_promoted', ${sqlNotice(lang, "waitlistPromotedTitle")},
+          CASE WHEN e.visibility = 'public' THEN ${sqlNotice(lang, "registrationConfirmedBody", { event: "e.title" })}
+          ELSE ${sqlNotice(lang, "genericTitle")} END, ?, ?, e.id
         FROM event_member m JOIN event e ON e.id = m.event_id
         WHERE m.slot_id = ? AND e.id = ? AND ${eligibleWaiterSql} AND ${accessOperationGuard}
           AND EXISTS (SELECT 1 FROM participation_slot s WHERE s.id=m.slot_id AND s.event_id=e.id AND s.selection_type='first_come'

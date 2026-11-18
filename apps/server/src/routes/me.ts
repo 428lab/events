@@ -9,12 +9,14 @@ import {
   deleteAccountInput,
   mergeAccountInput,
   updateDisplayNameInput,
+  updateLanguageInput,
   updateNotificationPrefsInput,
   updateUsernameInput,
 } from "@eventer/shared";
 import type {
   MergeAccountInput,
   UpdateDisplayNameInput,
+  UpdateLanguageInput,
   UpdateNotificationPrefsInput,
   UpdateUsernameInput,
 } from "@eventer/shared";
@@ -109,6 +111,15 @@ meRoutes.put(
     return c.json({ prefs, email: await emailRepo.latestIdentityEmail(userId) });
   },
 );
+
+/** お知らせとメールの言語を覚える (#352)。オーナー決定 2026-11-19（案 A）。
+ * 画面は「開いたときにサーバーの値と違えば report」「設定で選んだら choose / 自動に戻したら auto」を送る */
+meRoutes.put("/language", zValidator("json", updateLanguageInput), async (c) => {
+  const { language, mode } = valid<UpdateLanguageInput>(c, "json");
+  const userId = c.get("user").id;
+  await usersRepo.setLanguage(userId, language, mode);
+  return c.json({ noticeLanguage: await usersRepo.getLanguage(userId) });
+});
 
 /** マイページ: 開催中 / 過去参加イベント */
 meRoutes.get("/events", async (c) => {

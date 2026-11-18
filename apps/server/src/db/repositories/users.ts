@@ -1,6 +1,6 @@
 import { accountAccessRevision } from "./accessRevisions.js";
-import type { User } from "@eventer/shared";
-import { batch, many, one, run } from "../client.js";
+import type { LanguageUpdateMode, User } from "@eventer/shared";
+import { batch, many, one, run, runCount } from "../client.js";
 
 interface UserRow {
   id: string;
@@ -253,5 +253,37 @@ export const usersRepo = {
       avatarUrl,
       userId,
     );
+  },
+
+  /** お知らせとメールの言語 (#352, migration 0128)。設定で選んだ言語か、最後に使った画面の言語。
+   * 分からなければ null（サーバーは日本語で送る） */
+  async getLanguage(userId: string): Promise<{ language: string | null; explicit: boolean }> {
+    const row = await one<{ language: string | null; language_explicit: number }>(
+      `SELECT language, language_explicit FROM user WHERE id = ?`,
+      userId,
+    );
+    return { language: row?.language ?? null, explicit: row?.language_explicit === 1 };
+  },
+
+  /** 画面の言語を覚える (#352)。mode は `UpdateLanguageInput` と同じ:
+   * - "choose": 設定で選んだ。その言語にして、以後の "report" では上書きしない
+   * - "auto": 設定で「自動」に戻した。選んだ印を外し、今の画面の言語にする
+   * - "report": 画面を開いたときの報告。設定で選んでいない人だけ上書きする
+   * 変わったら true */
+  async setLanguage(userId: string, language: string, mode: LanguageUpdateMode): Promise<boolean> {
+    const changed = await runCount(
+      mode === "choose"
+        ? `UPDATE user SET language = ?, language_explicit = 1
+             WHERE id = ? AND (language IS NOT ? OR language_explicit <> 1)`
+        : mode === "auto"
+          ? `UPDATE user SET language = ?, language_explicit = 0
+               WHERE id = ? AND (language IS NOT ? OR language_explicit <> 0)`
+          : `UPDATE user SET language = ?
+               WHERE id = ? AND language_explicit = 0 AND language IS NOT ?`,
+      language,
+      userId,
+      language,
+    );
+    return changed > 0;
   },
 };

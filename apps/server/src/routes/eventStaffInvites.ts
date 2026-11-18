@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { localized } from "../lib/noticeText.js";
 import { createStaffInviteInput } from "@eventer/shared";
 import type { CreateStaffInviteInput, Event, User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
@@ -41,8 +42,8 @@ async function notifyInvited(
   await notificationsRepo.create(
     invitedUserId,
     "staff_invite",
-    `「${event.title}」の運営に招待されました`,
-    `${displayName(inviter)} さんからの招待です。承諾すると運営として準備に参加できます。`,
+    localized("staffInviteTitle", { event: event.title }),
+    localized("staffInviteBody", { name: displayName(inviter) }),
     "/staff-invites",
     undefined,
     // 本文に招待者名が出るので actor を残す (#380)
@@ -61,12 +62,8 @@ async function notifyInviteResult(
   await notificationsRepo.create(
     inviterId,
     "staff_invite_result",
-    accepted
-      ? `「${event.title}」の運営への招待が承諾されました`
-      : `「${event.title}」の運営への招待が辞退されました`,
-    accepted
-      ? `${displayName(respondent)} さんが運営に加わりました`
-      : `${displayName(respondent)} さんは運営に加わりませんでした`,
+    localized(accepted ? "staffInviteAcceptedTitle" : "staffInviteDeclinedTitle", { event: event.title }),
+    localized(accepted ? "staffInviteAcceptedBody" : "staffInviteDeclinedBody", { name: displayName(respondent) }),
     `/events/${event.id}`,
     undefined,
     // 本文に応答者名が出るので actor を残す (#380)

@@ -1,4 +1,5 @@
 import { eventViewSql } from "../../auth/eventAccess.js";
+import { recipientLanguageSql, sqlLocalizedValue, sqlNotice, type NoticeText } from "../../lib/noticeText.js";
 import { activeManagerSql, adminIds } from "./eventAccessInvites.js";
 import { batch, many, one } from "../client.js";
 import type { ScheduleRegistrationResult } from "@eventer/shared";
@@ -28,11 +29,14 @@ export const scheduleRegistrationRepo = {
     eventId: string,
     optionId: string,
     actorId: string,
-    dateMessage: string,
+    dateMessage: NoticeText,
     expectedAccessRevision: number,
   ): Promise<boolean> {
     const token = crypto.randomUUID();
     const now = Date.now();
+    // お知らせは宛先の言語 (#352)。日付の一文は JS で言語ごとに作って bind する
+    const lang = recipientLanguageSql("v.user_id");
+    const dateSql = sqlLocalizedValue(lang, dateMessage);
     // All guards are evaluated inside the same D1 transaction, including a
     // competing finalize, changed votes, cancellation, survey and slot capacity.
     const ready = `EXISTS (SELECT 1 FROM event e JOIN event_date_option o ON o.event_id=e.id
@@ -116,19 +120,20 @@ export const scheduleRegistrationRepo = {
       },
       {
         sql: `INSERT INTO notification(id,user_id,type,title,body,link,read_at,created_at,event_id)
-          SELECT ${uuid},v.user_id,'schedule_finalized','日程が確定しました',CASE WHEN e.visibility <> 'public' THEN 'イベントの更新があります' ELSE ? ||
+          SELECT ${uuid},v.user_id,'schedule_finalized',${sqlNotice(lang, "scheduleFinalizedTitle")},
+          CASE WHEN e.visibility <> 'public' THEN ${sqlNotice(lang, "genericTitle")} ELSE ${dateSql.sql} ||
           CASE WHEN r.outcome='registered' THEN CASE r.status
-            WHEN 'confirmed' THEN '。○・△の回答に基づいて参加登録しました。変更する場合はイベントページから参加を取り消せます。'
-            WHEN 'waitlist' THEN '。満員のためキャンセル待ちとして登録しました。'
-            ELSE '。抽選申込として登録しました。参加確定ではありません。' END
+            WHEN 'confirmed' THEN ${sqlNotice(lang, "scheduleRegisteredConfirmed")}
+            WHEN 'waitlist' THEN ${sqlNotice(lang, "scheduleRegisteredWaitlist")}
+            ELSE ${sqlNotice(lang, "scheduleRegisteredLottery")} END
           WHEN r.outcome='action_required' THEN CASE r.reason
-            WHEN 'canceled' THEN '。以前の参加取消を維持しました。参加する場合は再登録してください。'
-            WHEN 'survey_required' THEN '。参加登録には必須アンケートへの回答が必要です。'
-            WHEN 'slot_required' THEN '。参加登録には参加枠の選択が必要です。'
-            WHEN 'event_ended' THEN '。終了済みのため参加登録していません。必要な場合は主催者に確認してください。'
-            ELSE '。募集締切後のため参加登録していません。必要な場合は主催者に確認してください。' END
+            WHEN 'canceled' THEN ${sqlNotice(lang, "scheduleKeptCanceled")}
+            WHEN 'survey_required' THEN ${sqlNotice(lang, "scheduleNeedsSurvey")}
+            WHEN 'slot_required' THEN ${sqlNotice(lang, "scheduleNeedsSlot")}
+            WHEN 'event_ended' THEN ${sqlNotice(lang, "scheduleEventEnded")}
+            ELSE ${sqlNotice(lang, "scheduleRegistrationClosed")} END
           WHEN EXISTS(SELECT 1 FROM event_member m WHERE m.event_id=e.id AND m.user_id=v.user_id AND m.status<>'canceled')
-            THEN '。参加登録は維持されています。参加できない場合はイベントページから参加を取り消してください。'
+            THEN ${sqlNotice(lang, "scheduleKeptRegistration")}
           ELSE '' END END,?,0,?,e.id
           FROM (SELECT DISTINCT v.user_id FROM event_date_vote v JOIN event_date_option o ON o.id=v.option_id
             JOIN user u ON u.id=v.user_id AND u.deleted_at IS NULL WHERE o.event_id=?
@@ -139,7 +144,7 @@ export const scheduleRegistrationRepo = {
           WHERE (v.user_id<>? OR r.outcome IN ('registered','action_required')) AND ${owned}
             AND ${eventViewSql("e", "v.user_id", "?")}`,
         args: [
-          dateMessage,
+          ...dateSql.args,
           `/events/${eventId}`,
           now,
           eventId,

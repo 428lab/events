@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { localized } from "../lib/noticeText.js";
 import type { MiddlewareHandler } from "hono";
 import type { Context } from "hono";
 import {
@@ -59,8 +60,8 @@ async function notifyEventStaffOfInquiry(
   await notificationsRepo.createForMany(
     staffIds,
     "event_inquiry_new",
-    `「${event.title}」に問い合わせが届きました`,
-    subject ? `「${subject}」` : "",
+    localized("eventInquiryNewTitle", { event: event.title }),
+    subject ? localized("quoted", { text: subject }) : "",
     `/events/${event.id}/inquiries/${inquiryId}`,
     undefined,
     // ベル通知だけ（決定3）。メールは送らない
@@ -167,8 +168,8 @@ adminInquiryRoutes.post(
     await notificationsRepo.create(
       owner.userId,
       "inquiry_reply",
-      "お問い合わせに返信がありました",
-      owner.subject ? `「${owner.subject}」` : "",
+      localized("inquiryReplyTitle"),
+      owner.subject ? localized("quoted", { text: owner.subject }) : "",
       `/inquiries/${id}`,
     );
     return c.json({ ok: true });
@@ -265,8 +266,8 @@ eventInquiryRoutes.post(
     await notificationsRepo.createForMany(
       [owner.userId],
       "event_inquiry_reply",
-      "主催者から返信がありました",
-      `「${owner.subject || event.title}」`,
+      localized("eventInquiryReplyTitle"),
+      localized("quoted", { text: owner.subject || event.title }),
       `/inquiries/${id}`,
       undefined,
       { eventId: event.id, skipEmail: true },

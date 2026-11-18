@@ -9,6 +9,8 @@ import {
   type EmailExtras,
 } from "../../lib/email.js";
 import { emailRepo } from "./email.js";
+import { noticeLanguage, renderNotice as render, type NoticeText } from "../../lib/noticeText.js";
+import type { AppLanguage } from "@eventer/shared/i18n";
 
 /** createForMany 1回あたりのメール送信上限（サブリクエスト数の安全上限） */
 const MAX_BULK_EMAILS = 50;
@@ -41,11 +43,13 @@ interface NotificationRow {
   created_at: number;
   event_id: string | null;
   visibility: string | null;
+  /** 宛先の言語 (#352)。中立の文言をその言語で出す */
+  recipient_language: string | null;
 }
 
 function toNotification(r: NotificationRow): Notification {
   // Broadcast originals belong only to their qualified notification recipient.
-  if (r.event_id && r.visibility === "private" && r.type !== "event_broadcast") Object.assign(r, genericEventNotice(r.event_id, r.type));
+  if (r.event_id && r.visibility === "private" && r.type !== "event_broadcast") Object.assign(r, genericEventNotice(r.event_id, r.type, noticeLanguage(r.recipient_language)));
   return {
     id: r.id,
     type: r.type,
@@ -71,10 +75,25 @@ const ACTOR_ERASED_TYPES = [
 
 const visibleSql = notificationVisibleSql();
 
+/** 宛先の言語 (#352)。分からない人は日本語。読み取りは90人ごとに1回 */
+async function languagesOf(userIds: string[]): Promise<Map<string, AppLanguage>> {
+  const out = new Map<string, AppLanguage>();
+  for (let i = 0; i < userIds.length; i += 90) {
+    const chunk = userIds.slice(i, i + 90);
+    const rows = await many<{ id: string; language: string | null }>(
+      `SELECT id, language FROM user WHERE id IN (${chunk.map(() => "?").join(",")})`,
+      ...chunk,
+    );
+    for (const r of rows) out.set(r.id, noticeLanguage(r.language));
+  }
+  return out;
+}
+
+/** ?11 は宛先の言語。非公開イベントの中立の文言も宛先の言語にする */
 const insertNoticeSql = `WITH notification AS (SELECT ?2 id,?3 user_id,?4 type,?5 title,?6 body,?7 link,?8 created_at,?9 actor_id,?10 event_id)
   INSERT INTO notification(id,user_id,type,title,body,link,created_at,actor_id,event_id)
   SELECT id,user_id,type,
-    CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private' AND type<>'event_broadcast' THEN 'イベントの更新があります' ELSE title END,
+    CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private' AND type<>'event_broadcast' THEN ?11 ELSE title END,
     CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private' AND type<>'event_broadcast' THEN '' ELSE body END,
     CASE WHEN (SELECT visibility FROM event WHERE id=notification.event_id)='private'
       THEN CASE WHEN type='staff_invite' THEN '/staff-invites' ELSE '/events/'||event_id END ELSE link END,
@@ -91,8 +110,8 @@ export const notificationsRepo = {
   async create(
     userId: string,
     type: NotificationType,
-    title: string,
-    body = "",
+    title: NoticeText,
+    body: NoticeText = "",
     link = "",
     // メール表示のみに使う付加情報 (#134)。DB スキーマは変えない
     extras?: EmailExtras,
@@ -101,12 +120,14 @@ export const notificationsRepo = {
   ): Promise<void> {
     const eventId = opts?.eventId ?? extras?.authorizationEventId ?? eventIdFromNotificationLink(link);
     extras = { ...extras, authorizationEventId: eventId, authorizationActorId: opts?.actorId, notificationType: type };
-    await run(insertNoticeSql, adminIds(), crypto.randomUUID(), userId, type, title, body, link,
-      Date.now(), opts?.actorId ?? null, eventId ?? null);
+    const lang = (await languagesOf([userId])).get(userId) ?? noticeLanguage(null);
+    const t = render(title, lang), b = render(body, lang);
+    await run(insertNoticeSql, adminIds(), crypto.randomUUID(), userId, type, t, b, link,
+      Date.now(), opts?.actorId ?? null, eventId ?? null, genericEventNotice(eventId ?? "", type, lang).title);
     // メール通知ONのユーザーには同内容をメールでも送る (#126)。
     // レスポンスをブロックしないよう waitUntil に逃がす（失敗しても通知作成は成功扱い）
     await deferBackground(
-      sendNotificationEmailIfOptedIn(userId, title, body, link, extras),
+      sendNotificationEmailIfOptedIn(userId, t, b, link, extras),
     );
   },
 
@@ -115,8 +136,8 @@ export const notificationsRepo = {
   async createForMany(
     userIds: string[],
     type: NotificationType,
-    title: string,
-    body = "",
+    title: NoticeText,
+    body: NoticeText = "",
     link = "",
     // メール表示のみに使う付加情報 (#134)。DB スキーマは変えない
     extras?: EmailExtras,
@@ -131,14 +152,29 @@ export const notificationsRepo = {
     extras = { ...extras, authorizationEventId: eventId, authorizationActorId: opts?.actorId, notificationType: type };
     const now = Date.now();
     const CHUNK = 50;
+    // 宛先ごとの言語で組み立てる (#352)。言語は2つなので、組み立ては言語ごとに1回
+    const langs = await languagesOf(userIds);
+    const texts = new Map<string, { title: string; body: string; generic: string }>();
+    const textFor = (userId: string) => {
+      const lang = langs.get(userId) ?? noticeLanguage(null);
+      let text = texts.get(lang);
+      if (!text) {
+        text = { title: render(title, lang), body: render(body, lang), generic: genericEventNotice(eventId ?? "", type, lang).title };
+        texts.set(lang, text);
+      }
+      return text;
+    };
     for (let i = 0; i < userIds.length; i += CHUNK) {
       const chunk = userIds.slice(i, i + CHUNK);
       try {
         await batch(
-          chunk.map((userId) => ({
-            sql: insertNoticeSql,
-            args: [adminIds(), crypto.randomUUID(),userId,type,title,body,link,now,opts?.actorId??null,eventId??null],
-          })),
+          chunk.map((userId) => {
+            const text = textFor(userId);
+            return {
+              sql: insertNoticeSql,
+              args: [adminIds(), crypto.randomUUID(),userId,type,text.title,text.body,link,now,opts?.actorId??null,eventId??null,text.generic],
+            };
+          }),
         );
       } catch (e) {
         // どこまで作れたかを添えて投げ直す（呼び出し元が「一部にだけ届いた」と扱えるように）
@@ -157,11 +193,12 @@ export const notificationsRepo = {
             );
           }
           for (const r of recipients.slice(0, MAX_BULK_EMAILS)) {
+            const text = textFor(r.userId);
             await sendNotificationEmailTo(
               r.userId,
               r.email,
-              title,
-              body,
+              text.title,
+              text.body,
               link,
               extras,
             );
@@ -202,7 +239,8 @@ export const notificationsRepo = {
     offset = 0,
   ): Promise<Notification[]> {
     const rows = await many<NotificationRow>(
-      `SELECT notification.*, (SELECT visibility FROM event WHERE id=notification.event_id) visibility FROM notification WHERE user_id = ?2 AND ${visibleSql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+      `SELECT notification.*, (SELECT visibility FROM event WHERE id=notification.event_id) visibility,
+         (SELECT language FROM user WHERE id=notification.user_id) recipient_language FROM notification WHERE user_id = ?2 AND ${visibleSql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
       adminIds(), userId,
       limit,
       offset,

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { localized } from "../lib/noticeText.js";
 import {
   createEventRequestInput,
   reactEventRequestInput,
@@ -301,8 +302,8 @@ async function notifyRequestLinked(
   await notificationsRepo.createForMany(
     [...targets],
     "request_event_created",
-    "たまごからイベントが生まれました🐣",
-    `「${req.title}」に応えるイベント「${event.title}」が作られました`,
+    localized("eggHatchedTitle"),
+    localized("eggHatchedBody", { egg: req.title, event: event.title }),
     `/events/${event.id}`,
   );
   await eventRequestsRepo.markNotified(req.id, event.id);

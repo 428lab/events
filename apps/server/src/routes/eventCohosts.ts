@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { localized, type LocalizedText, type NoticeText } from "../lib/noticeText.js";
 import { createCohostInput, MAX_EVENT_COHOSTS } from "@eventer/shared";
 import type { Community, CreateCohostInput, Event, User } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
@@ -50,17 +51,18 @@ async function notifyRequested(
   requester: User,
 ): Promise<void> {
   const link = `/c/${target.slug}/edit#cohosts`;
-  let title: string;
-  let body: string;
+  let title: LocalizedText;
+  let body: NoticeText;
   if (event.visibility === "private" || event.status === "draft") {
-    ({ title, body } = genericEventNotice(event.id, "cohost_request"));
+    title = (lang) => genericEventNotice(event.id, "cohost_request", lang).title;
+    body = "";
   } else {
     const host = event.communityId
       ? await communitiesRepo.findById(event.communityId)
       : null;
     const from = host?.name ?? requester.globalName ?? requester.username;
-    title = `「${event.title}」の共催の依頼が届きました`;
-    body = `${from} から ${target.name} への共催の依頼です。`;
+    title = localized("cohostRequestTitle", { event: event.title });
+    body = localized("cohostRequestBody", { from, community: target.name });
   }
   await notificationsRepo.createForMany(
     await eventCohostsRepo.managerIds(target.id),
@@ -86,12 +88,8 @@ export async function notifyCohostResult(
   await notificationsRepo.create(
     event.createdBy,
     "cohost_result",
-    accepted
-      ? `「${event.title}」の共催が承諾されました`
-      : `「${event.title}」の共催が辞退されました`,
-    accepted
-      ? `${community.name} が共催に加わりました。`
-      : `${community.name} は共催に加わりませんでした。`,
+    localized(accepted ? "cohostAcceptedTitle" : "cohostDeclinedTitle", { event: event.title }),
+    localized(accepted ? "cohostAcceptedBody" : "cohostDeclinedBody", { community: community.name }),
     `/events/${event.id}/manage#cohosts`,
     undefined,
     { eventId: event.id },

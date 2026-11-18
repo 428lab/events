@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { localized } from "../lib/noticeText.js";
 import type { Context } from "hono";
 import {
   createAwardRankInput,
@@ -218,8 +219,8 @@ awardRoutes.post(
         await notificationsRepo.create(
           uid,
           "award",
-          "受賞おめでとうございます🎉",
-          `「${event.title}」で${awardName}を受賞しました`,
+          localized("awardTitle"),
+          localized("awardBody", { event: event.title, award: awardName }),
           link,
         );
         notified.add(uid);
