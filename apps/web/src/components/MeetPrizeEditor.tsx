@@ -84,7 +84,8 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
   const removeImage = useDeleteMeetPrizeImage(eventId);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [failed, setFailed] = useState(false);
-  const [imageError, setImageError] = useState<string | null>(null);
+  // 例外と、どの操作の失敗かを持ち、表示するときに訳す (#369)
+  const [imageError, setImageError] = useState<{ err: unknown; upload: boolean } | null>(null);
   const busy =
     create.isPending ||
     update.isPending ||
@@ -100,14 +101,7 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
       { prizeId, blob },
       {
         onError: (e) =>
-          setImageError(
-            errorMessage(e, {
-              too_large: t("eventForm.meetPrizeImageTooLarge", { mb: MEET_PRIZE_IMAGE.maxBytes / (1024 * 1024) }),
-              invalid_image: t("eventForm.meetPrizeImageInvalid"),
-              invalid_content_type: t("eventForm.meetPrizeImageInvalid"),
-              default: t("eventForm.meetPrizeImageFailed"),
-            }),
-          ),
+          setImageError({ err: e, upload: true }),
       },
     );
   };
@@ -218,11 +212,7 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
                 onClick={() =>
                   removeImage.mutate(prize.id, {
                     onError: (e) =>
-                      setImageError(
-                        errorMessage(e, {
-                          default: t("eventForm.meetPrizeImageFailed"),
-                        }),
-                      ),
+                      setImageError({ err: e, upload: false }),
                   })
                 }
               >
@@ -251,7 +241,14 @@ export function MeetPrizeEditor({ eventId }: { eventId: string }) {
       )}
       {imageError && (
         <Alert severity="error" sx={{ mt: 1 }} onClose={() => setImageError(null)}>
-          {imageError}
+          {imageError.upload
+            ? errorMessage(imageError.err, {
+                too_large: t("eventForm.meetPrizeImageTooLarge", { mb: MEET_PRIZE_IMAGE.maxBytes / (1024 * 1024) }),
+                invalid_image: t("eventForm.meetPrizeImageInvalid"),
+                invalid_content_type: t("eventForm.meetPrizeImageInvalid"),
+                default: t("eventForm.meetPrizeImageFailed"),
+              })
+            : errorMessage(imageError.err, { default: t("eventForm.meetPrizeImageFailed") })}
         </Alert>
       )}
       {prizes.length >= MEET_PRIZE_MAX ? (

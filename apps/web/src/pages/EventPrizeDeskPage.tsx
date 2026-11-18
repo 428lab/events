@@ -46,6 +46,16 @@ import { i18next } from "../i18n/index.js";
  */
 
 /** 引き換えが断られた理由を窓口の案内文言に（対応表は staffOps の1か所） */
+/** 断られた理由。訳した文ではなく、例外と訳し方を持ち、表示するときに訳す (#369) */
+interface DeskFailure {
+  error: unknown;
+  describe: (err: unknown) => string;
+}
+
+function closeErrorMessage(err: unknown): string {
+  return errorMessage(err, { no_meets: i18next.t("staffOps.prizeDeskNoMeets") });
+}
+
 function redeemErrorMessage(err: unknown): string {
   return errorMessage(err, {
     already_redeemed: i18next.t("staffOps.prizeRedeemAlready"),
@@ -65,7 +75,7 @@ function PrizeCard({
   eventId: string;
   row: MeetPrizeStatusRow;
   filter: string;
-  onError: (message: string) => void;
+  onError: (failure: DeskFailure) => void;
 }) {
   const { t } = useTranslation();
   const redeem = useRedeemMeetPrize(eventId);
@@ -158,7 +168,7 @@ function PrizeCard({
                         if (window.confirm(t("staffOps.prizeDeskUnredeemConfirm"))) {
                           unredeem.mutate(
                             { prizeId: row.prize.id, userId: a.userId },
-                            { onError: (e) => onError(redeemErrorMessage(e)) },
+                            { onError: (e) => onError({ error: e, describe: redeemErrorMessage }) },
                           );
                         }
                       }}
@@ -174,7 +184,7 @@ function PrizeCard({
                     onClick={() =>
                       redeem.mutate(
                         { prizeId: row.prize.id, userId: a.userId },
-                        { onError: (e) => onError(redeemErrorMessage(e)) },
+                        { onError: (e) => onError({ error: e, describe: redeemErrorMessage }) },
                       )
                     }
                   >
@@ -202,7 +212,7 @@ function BingoPoolCard({
 }: {
   eventId: string;
   status: MeetPrizeStatus;
-  onError: (message: string) => void;
+  onError: (failure: DeskFailure) => void;
 }) {
   const { t } = useTranslation();
   const redeem = useRedeemMeetPrize(eventId);
@@ -296,7 +306,7 @@ function BingoPoolCard({
                           if (window.confirm(t("staffOps.prizeDeskUnredeemConfirm"))) {
                             unredeem.mutate(
                               { prizeId: a.redeemedPrizeId!, userId: a.userId },
-                              { onError: (e) => onError(redeemErrorMessage(e)) },
+                              { onError: (e) => onError({ error: e, describe: redeemErrorMessage }) },
                             );
                           }
                         }}
@@ -328,7 +338,7 @@ function BingoPoolCard({
                         onClick={() =>
                           redeem.mutate(
                             { prizeId: selected, userId: a.userId },
-                            { onError: (e) => onError(redeemErrorMessage(e)) },
+                            { onError: (e) => onError({ error: e, describe: redeemErrorMessage }) },
                           )
                         }
                       >
@@ -408,7 +418,7 @@ function WinnersCard({
 }: {
   eventId: string;
   status: { winners: { userId: string; name: string; username: string; avatarUrl: string | null; count: number }[] };
-  onError: (message: string) => void;
+  onError: (failure: DeskFailure) => void;
 }) {
   const { t } = useTranslation();
   const close = useCloseMeetWinners(eventId);
@@ -420,11 +430,7 @@ function WinnersCard({
     if (!window.confirm(t("staffOps.prizeDeskCloseConfirm"))) return;
     close.mutate(undefined, {
       onError: (e) =>
-        onError(
-          errorMessage(e, {
-            no_meets: i18next.t("staffOps.prizeDeskNoMeets"),
-          }),
-        ),
+        onError({ error: e, describe: closeErrorMessage }),
     });
   };
 
@@ -474,7 +480,7 @@ function WinnersCard({
               onClick={() => {
                 if (window.confirm(t("staffOps.prizeDeskClearConfirm"))) {
                   clear.mutate(undefined, {
-                    onError: (e) => onError(errorMessage(e)),
+                    onError: (e) => onError({ error: e, describe: (err) => errorMessage(err) }),
                   });
                 }
               }}
@@ -496,7 +502,7 @@ export function EventPrizeDeskPage() {
   const isStaff = eventData?.myRole === "staff";
   const { data } = useMeetPrizeStatus(id, isStaff, true);
   const [filter, setFilter] = useState("");
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<DeskFailure | null>(null);
 
   if (eventData && !isStaff) {
     return <Alert severity="warning">{t("staffOps.prizeDeskStaffOnly")}</Alert>;
@@ -534,7 +540,7 @@ export function EventPrizeDeskPage() {
       </Typography>
       {failure && (
         <Alert severity="error" onClose={() => setFailure(null)}>
-          {failure}
+          {failure.describe(failure.error)}
         </Alert>
       )}
       {data && (

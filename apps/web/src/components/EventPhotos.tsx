@@ -42,6 +42,7 @@ import {
   eventMediaThumbUrl,
   eventMediaVideoUrl,
 } from "./videoThumb.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 const photoUrl = (eventId: string, photoId: string) =>
   `/api/events/${eventId}/photos/${photoId}/image`;
@@ -102,7 +103,7 @@ function EventPhotosGallery({
   const del = useDeleteEventPhoto(eventId);
   const updateEvent = useUpdateEvent(eventId);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MessageKey | null>(null);
   const [lightbox, setLightbox] = useState<EventPhoto | null>(null);
   const [uploading, setUploading] = useState(0);
   const [dragOver, setDragOver] = useState(false);
@@ -140,14 +141,14 @@ function EventPhotosGallery({
       } catch (err) {
         setError(
           err instanceof Error && err.message === "photo_limit"
-            ? t("eventSocial.photoLimit", { n: EVENT_PHOTO_LIMIT })
-            : t("eventSocial.photoUploadFailed"),
+            ? messageKey("eventSocial.photoLimit", { n: EVENT_PHOTO_LIMIT })
+            : messageKey("eventSocial.photoUploadFailed"),
         );
       } finally {
         setUploading(0);
       }
     },
-    [upload, t],
+    [upload],
   );
 
   // クリップボードから貼り付けてアップロード（メンバーのみ・ライトボックスを開いていない時）
@@ -290,7 +291,7 @@ function EventPhotosGallery({
 
         {error && (
           <Alert severity="warning" sx={{ mb: 1.5 }} onClose={() => setError(null)}>
-            {error}
+            {t(error.key, error.params)}
           </Alert>
         )}
 
@@ -521,7 +522,7 @@ function PhotoLightbox({
   const addComment = useAddPhotoComment(eventId, photoId);
   const delComment = useDeletePhotoComment(eventId, photoId);
   const [body, setBody] = useState("");
-  const [commentError, setCommentError] = useState<string | null>(null);
+  const [commentError, setCommentError] = useState<MessageKey | null>(null);
 
   const submit = () => {
     const text = body.trim();
@@ -532,8 +533,8 @@ function PhotoLightbox({
       onError: (err) =>
         setCommentError(
           err instanceof ApiError && err.status === 409
-            ? t("eventSocial.photoCommentLimit", { n: PHOTO_COMMENT_LIMIT })
-            : t("eventSocial.commentPostFailed"),
+            ? messageKey("eventSocial.photoCommentLimit", { n: PHOTO_COMMENT_LIMIT })
+            : messageKey("eventSocial.commentPostFailed"),
         ),
     });
   };
@@ -690,7 +691,7 @@ function PhotoLightbox({
               <Box sx={{ borderTop: 1, borderColor: "divider" }}>
               {commentError && (
                 <Alert severity="warning" sx={{ mx: 1.5, mt: 1.5 }} onClose={() => setCommentError(null)}>
-                  {commentError}
+                  {t(commentError.key, commentError.params)}
                 </Alert>
               )}
               <Stack

@@ -94,7 +94,8 @@ export function EventCohostsCard({
   const { data: all } = useCommunities();
   const request = useRequestCohost(eventId);
   const [query, setQuery] = useState("");
-  const [error, setError] = useState("");
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<unknown>(null);
   const [done, setDone] = useState<{ name: string; accepted: boolean } | null>(null);
   const full = (cohosts?.length ?? 0) >= MAX_EVENT_COHOSTS;
 
@@ -105,7 +106,7 @@ export function EventCohostsCard({
   }, [cohosts, mine, all, hostCommunityId]);
 
   const send = (slug: string, name: string) => {
-    setError("");
+    setError(null);
     setDone(null);
     request.mutate(slug, {
       onSuccess: (data) => {
@@ -113,15 +114,7 @@ export function EventCohostsCard({
         setDone({ name, accepted: data.status === "accepted" });
       },
       onError: (e) =>
-        setError(
-          errorMessage(e, {
-            default: t("cohost.errorDefault"),
-            community_not_found: t("cohost.errorCommunityNotFound"),
-            host_community: t("cohost.errorHostCommunity"),
-            already_cohost: t("cohost.errorAlreadyCohost"),
-            cohost_limit: t("cohost.errorLimit", { n: MAX_EVENT_COHOSTS }),
-          }),
-        ),
+        setError(e),
     });
   };
 
@@ -215,9 +208,15 @@ export function EventCohostsCard({
           {t(done.accepted ? "cohost.addedInstant" : "cohost.addedRequest", { name: done.name })}
         </Alert>
       )}
-      {error && (
-        <Alert severity="error" onClose={() => setError("")}>
-          {error}
+      {error !== null && (
+        <Alert severity="error" onClose={() => setError(null)}>
+          {errorMessage(error, {
+            default: t("cohost.errorDefault"),
+            community_not_found: t("cohost.errorCommunityNotFound"),
+            host_community: t("cohost.errorHostCommunity"),
+            already_cohost: t("cohost.errorAlreadyCohost"),
+            cohost_limit: t("cohost.errorLimit", { n: MAX_EVENT_COHOSTS }),
+          })}
         </Alert>
       )}
       {!cohosts || cohosts.length === 0 ? (
@@ -240,7 +239,8 @@ function CohostRow({ eventId, cohost }: { eventId: string; cohost: EventCohost }
   // 行ごとに持つ（1件を外している間に他の行のボタンまで止めないため）
   const remove = useRemoveCohost(eventId);
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState("");
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<unknown>(null);
   const pending = cohost.status === "pending";
 
   return (
@@ -275,9 +275,9 @@ function CohostRow({ eventId, cohost }: { eventId: string; cohost: EventCohost }
           onClick={() => setConfirming(true)}
         />
       </Stack>
-      {error && (
-        <Alert severity="error" sx={{ mt: 0.5 }} onClose={() => setError("")}>
-          {error}
+      {error !== null && (
+        <Alert severity="error" sx={{ mt: 0.5 }} onClose={() => setError(null)}>
+          {errorMessage(error, { default: t("cohost.actionError") })}
         </Alert>
       )}
       <Dialog open={confirming} onClose={() => setConfirming(false)}>
@@ -293,12 +293,12 @@ function CohostRow({ eventId, cohost }: { eventId: string; cohost: EventCohost }
             color="error"
             disabled={remove.isPending}
             onClick={() => {
-              setError("");
+              setError(null);
               remove.mutate(cohost.communityId, {
                 onSuccess: () => setConfirming(false),
                 onError: (e) => {
                   setConfirming(false);
-                  setError(errorMessage(e, { default: t("cohost.actionError") }));
+                  setError(e);
                 },
               });
             }}

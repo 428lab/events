@@ -13,6 +13,7 @@ import type { PendingDeletion } from "@eventer/shared";
 import { useLogout, useRestoreAccount } from "../api/hooks.js";
 import { ApiError } from "../api/client.js";
 import { dateLocale } from "../i18n/index.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** 復元できる期限。**タイムゾーンは日本時間に固定**（サーバーの締めがJSTのため）。
  * 端末の時刻と読み違えられないよう、タイムゾーン名も一緒に出す (#352) */
@@ -35,7 +36,7 @@ export function AccountRestorePage({ pending }: { pending: PendingDeletion }) {
   const { t } = useTranslation();
   const restore = useRestoreAccount();
   const logout = useLogout();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MessageKey | null>(null);
   // 猶予期間を過ぎていれば復帰できない。サーバーの判定と揃えて先に画面へ出す
   // （「時間をおいて再度お試しください」だと何度も試させてしまうため #250）
   const [expired, setExpired] = useState(() => Date.now() >= pending.purgeAt);
@@ -50,7 +51,7 @@ export function AccountRestorePage({ pending }: { pending: PendingDeletion }) {
           setExpired(true);
           return;
         }
-        setError(t("settings.restoreFailed"));
+        setError(messageKey("settings.restoreFailed"));
       },
     });
   };
@@ -87,7 +88,7 @@ export function AccountRestorePage({ pending }: { pending: PendingDeletion }) {
                 {t("settings.restorePrompt")}
               </Typography>
             )}
-            {error && <Alert severity="error">{error}</Alert>}
+            {error && <Alert severity="error">{t(error.key, error.params)}</Alert>}
             <Stack direction="row" spacing={1}>
               {!expired && (
                 <Button

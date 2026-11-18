@@ -27,6 +27,7 @@ import {
 } from "../lib/video/probe.js";
 import { VideoTrimBar } from "./VideoTrimBar.js";
 import { formatVideoDuration } from "./videoThumb.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /**
  * 動画投稿の第1段階: 範囲選択 (#427)。1本ぶんの
@@ -49,7 +50,7 @@ export type VideoSelectResult =
   /** この1本をやめて次へ */
   | { kind: "skip" }
   /** この1本は受けられない（理由つき）。次へ進む */
-  | { kind: "failed"; reason: string }
+  | { kind: "failed"; reason: MessageKey }
   /** キューごとやめる */
   | { kind: "cancelAll" };
 
@@ -67,7 +68,8 @@ export function VideoSelectStep({
 }) {
   const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>("probing");
-  const [error, setError] = useState<string | null>(null);
+  // 訳す前の形で持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<MessageKey | null>(null);
   const [trim, setTrim] = useState<VideoTrim | null>(null);
   const [trimTotalMs, setTrimTotalMs] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -94,7 +96,7 @@ export function VideoSelectStep({
     [onResult],
   );
 
-  const failWith = useCallback((msg: string) => {
+  const failWith = useCallback((msg: MessageKey) => {
     setError(msg);
     setPhase("error");
   }, []);
@@ -115,7 +117,7 @@ export function VideoSelectStep({
           // 長さが取れない入力はトリム UI が成立しない（枠の幅を算出できず、
           // 幅0の枠と空のプレビューという壊れた画面になる。iOS の複数選択で
           // 2本目のメタデータが読めないケースを実機で確認）。エラーに倒す
-          return failWith(t("eventSocial.videoCannotProcess", { s: maxSec }));
+          return failWith(messageKey("eventSocial.videoCannotProcess", { s: maxSec }));
         }
         const mustTrim = needsVideoTrim(totalMs);
         // 60秒超はトリム前提（既定: 先頭から60秒）で経路を判定する。
@@ -129,14 +131,14 @@ export function VideoSelectStep({
         if (plan.kind === "reject") {
           switch (plan.reason) {
             case "too-long":
-              return failWith(t("eventSocial.videoTooLong", { s: maxSec }));
+              return failWith(messageKey("eventSocial.videoTooLong", { s: maxSec }));
             case "too-large":
-              return failWith(t("eventSocial.videoTooLarge", { mb: maxMb }));
+              return failWith(messageKey("eventSocial.videoTooLarge", { mb: maxMb }));
             case "no-video-track":
-              return failWith(t("eventSocial.videoNotVideo"));
+              return failWith(messageKey("eventSocial.videoNotVideo"));
             default:
               return failWith(
-                t("eventSocial.videoCannotProcess", { s: maxSec }),
+                messageKey("eventSocial.videoCannotProcess", { s: maxSec }),
               );
           }
         }
@@ -166,7 +168,7 @@ export function VideoSelectStep({
       } catch {
         // demux 不能（壊れたファイル等）
         if (!doneRef.current) {
-          failWith(t("eventSocial.videoCannotProcess", { s: maxSec }));
+          failWith(messageKey("eventSocial.videoCannotProcess", { s: maxSec }));
         }
       }
     })();
@@ -196,7 +198,7 @@ export function VideoSelectStep({
     const plan = decideVideoPlan(ctx.support, ctx.probed.probe, effective);
     if (plan.kind !== "encode") {
       // トリム段に入れたのは変換経路だけなので、ここには来ないはずの防御
-      failWith(t("eventSocial.videoCannotProcess", { s: maxSec }));
+      failWith(messageKey("eventSocial.videoCannotProcess", { s: maxSec }));
       return;
     }
     const ready = {
@@ -295,7 +297,7 @@ export function VideoSelectStep({
         {phase === "confirmAudio" && (
           <Typography>{t("eventSocial.videoDropAudioConfirm")}</Typography>
         )}
-        {phase === "error" && error && <Alert severity="warning">{error}</Alert>}
+        {phase === "error" && error && <Alert severity="warning">{t(error.key, error.params)}</Alert>}
       </DialogContent>
       {/* スマホ幅ではボタン3つが1行に収まらないため折り返す (#427 実機崩れ)。
           MUI 既定の隣接マージンは折り返し行に効かないので gap で間隔を取る */}
@@ -325,7 +327,7 @@ export function VideoSelectStep({
         {phase === "error" ? (
           <Button
             onClick={() =>
-              finish({ kind: "failed", reason: error ?? "unknown" })
+              finish({ kind: "failed", reason: error ?? messageKey("eventSocial.videoCannotProcess", { s: maxSec }) })
             }
           >
             {t("common.close")}

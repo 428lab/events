@@ -15,6 +15,7 @@ import { useMe } from "../api/hooks.js";
 import { useUpdateDisplayName, useUpdateUsername } from "../api/userHooks.js";
 import { ApiError } from "../api/client.js";
 import { USERNAME_PATTERN } from "@eventer/shared";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 const DISPLAY_NAME_MAX = 50;
 
@@ -24,7 +25,8 @@ export function UsernameCard() {
   const { data: me } = useMe();
   const current = me?.username ?? "";
   const [name, setName] = useState(current);
-  const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(
+  // 訳す前の形で持ち、表示するときに訳す (#369)
+  const [msg, setMsg] = useState<{ type: "success" | "error"; text: MessageKey } | null>(
     null,
   );
   const update = useUpdateUsername();
@@ -33,7 +35,7 @@ export function UsernameCard() {
   const currentDisplay = me?.globalName ?? "";
   const [display, setDisplay] = useState(currentDisplay);
   const [displayMsg, setDisplayMsg] = useState<
-    { type: "success" | "error"; text: string } | null
+    { type: "success" | "error"; text: MessageKey } | null
   >(null);
   const updateDisplay = useUpdateDisplayName();
 
@@ -60,27 +62,27 @@ export function UsernameCard() {
       onSuccess: () =>
         setDisplayMsg({
           type: "success",
-          text: t("settings.displayNameSaved"),
+          text: messageKey("settings.displayNameSaved"),
         }),
       onError: () =>
-        setDisplayMsg({ type: "error", text: t("settings.saveFailed") }),
+        setDisplayMsg({ type: "error", text: messageKey("settings.saveFailed") }),
     });
   };
 
   const save = () => {
     setMsg(null);
     update.mutate(trimmed, {
-      onSuccess: () => setMsg({ type: "success", text: t("settings.usernameSaved") }),
+      onSuccess: () => setMsg({ type: "success", text: messageKey("settings.usernameSaved") }),
       onError: (e) => {
         const status = e instanceof ApiError ? e.status : 0;
         setMsg({
           type: "error",
           text:
             status === 409
-              ? t("settings.usernameTaken")
+              ? messageKey("settings.usernameTaken")
               : status === 400
-                ? t("settings.usernameInvalidChars")
-                : t("settings.saveFailed"),
+                ? messageKey("settings.usernameInvalidChars")
+                : messageKey("settings.saveFailed"),
         });
       },
     });
@@ -125,7 +127,7 @@ export function UsernameCard() {
         </Stack>
         {displayMsg && (
           <Alert severity={displayMsg.type} sx={{ mt: -1, mb: 2 }}>
-            {displayMsg.text}
+            {t(displayMsg.text.key, displayMsg.text.params)}
           </Alert>
         )}
         <Stack direction="row" spacing={1} alignItems="flex-start">
@@ -159,7 +161,7 @@ export function UsernameCard() {
         </Stack>
         {msg && (
           <Alert severity={msg.type} sx={{ mt: 2 }}>
-            {msg.text}
+            {t(msg.text.key, msg.text.params)}
           </Alert>
         )}
       </CardContent>

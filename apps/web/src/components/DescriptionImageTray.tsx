@@ -35,7 +35,8 @@ export function DescriptionImageTray({
   const upload = useUploadEventDescriptionImage(eventId);
   const remove = useDeleteEventDescriptionImage(eventId);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // 例外と、どの操作の失敗かを持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<{ err: unknown; upload: boolean } | null>(null);
   const max = EVENT_DESCRIPTION_IMAGE.maxPerEvent;
   const full = images.length >= max;
 
@@ -47,12 +48,7 @@ export function DescriptionImageTray({
       const blob = await resizeForDescription(file);
       await upload.mutateAsync(blob);
     } catch (err) {
-      setError(
-        errorMessage(err, {
-          limit_reached: t("eventForm.descriptionImageLimit", { max }),
-          default: t("eventForm.descriptionImageUploadFailed"),
-        }),
-      );
+      setError({ err, upload: true });
     } finally {
       setBusy(false);
     }
@@ -63,7 +59,7 @@ export function DescriptionImageTray({
     setError(null);
     remove.mutate(image.id, {
       onSuccess: () => onRemoved(image),
-      onError: (err) => setError(errorMessage(err)),
+      onError: (err) => setError({ err, upload: false }),
     });
   };
 
@@ -170,7 +166,12 @@ export function DescriptionImageTray({
       )}
       {error && (
         <Alert severity="error" sx={{ mt: 1 }}>
-          {error}
+          {error.upload
+            ? errorMessage(error.err, {
+                limit_reached: t("eventForm.descriptionImageLimit", { max }),
+                default: t("eventForm.descriptionImageUploadFailed"),
+              })
+            : errorMessage(error.err)}
         </Alert>
       )}
     </Box>

@@ -23,6 +23,7 @@ import { api, ApiError } from "../api/client.js";
 import { lookupMember, postCheckin } from "../api/checkinHooks.js";
 import { dateLocale, i18next } from "../i18n/index.js";
 import { errorCode, errorMessage } from "../lib/errorMessage.js";
+import { isMessageKey, messageKey, type KeyOrError, type MessageKey } from "../lib/messageKey.js";
 
 /**
  * QR受付（スタッフ用リーダー） (#154)。スマホでの利用が前提。
@@ -101,9 +102,11 @@ export function CheckinPage() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [cameraError, setCameraError] = useState<string | null>(null);
+  // 訳す前の形で持ち、表示するときに訳す (#369)
+  const [cameraError, setCameraError] = useState<MessageKey | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // 訳す前の形で持ち、表示するときに訳す (#369)
+  const [notice, setNotice] = useState<KeyOrError | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
 
   // デコードループから参照する可変状態は ref に置く（ループ再構築を避ける）
@@ -126,7 +129,7 @@ export function CheckinPage() {
   }, []);
 
   /** スキャンを止めない軽い通知（不明なQRなど） */
-  const flashNotice = useCallback((message: string) => {
+  const flashNotice = useCallback((message: KeyOrError) => {
     setNotice(message);
     window.clearTimeout(noticeTimerRef.current);
     noticeTimerRef.current = window.setTimeout(() => setNotice(null), 2500);
@@ -162,15 +165,15 @@ export function CheckinPage() {
           scheduleResume(2500);
         } else if (errorCode(err) === "wrong_event") {
           // 複数イベント会場での取り違えが分かるように区別して表示
-          flashNotice(t("staffOps.checkinWrongEvent"));
+          flashNotice(messageKey("staffOps.checkinWrongEvent"));
           pausedRef.current = false;
         } else {
-          flashNotice(t("staffOps.checkinInvalidQr"));
+          flashNotice(messageKey("staffOps.checkinInvalidQr"));
           pausedRef.current = false;
         }
       }
     },
-    [id, addLog, scheduleResume, flashNotice, t],
+    [id, addLog, scheduleResume, flashNotice],
   );
 
   /** プロフィールQR → 照会のみ（出席記録は手動ボタン） */
@@ -195,11 +198,11 @@ export function CheckinPage() {
           setPanel({ kind: "manual", user: res.user });
         }
       } catch {
-        flashNotice(t("staffOps.checkinLookupFailed"));
+        flashNotice(messageKey("staffOps.checkinLookupFailed"));
         pausedRef.current = false;
       }
     },
-    [id, addLog, scheduleResume, flashNotice, t],
+    [id, addLog, scheduleResume, flashNotice],
   );
 
   /** プロフィールQR経由の手動出席記録 */
@@ -218,7 +221,7 @@ export function CheckinPage() {
         });
         scheduleResume(1500);
       } catch (err) {
-        flashNotice(manualAttendErrorMessage(err));
+        flashNotice({ error: err });
       }
     },
     [id, addLog, scheduleResume, flashNotice],
@@ -236,10 +239,10 @@ export function CheckinPage() {
           prev.map((e) => (e === entry ? { ...e, undone: true } : e)),
         );
       } catch {
-        flashNotice(t("staffOps.checkinUndoFailed"));
+        flashNotice(messageKey("staffOps.checkinUndoFailed"));
       }
     },
-    [id, flashNotice, t],
+    [id, flashNotice],
   );
 
   /** デコード結果の振り分け。3秒以内の同一QRは無視（連続発火防止） */
@@ -269,12 +272,12 @@ export function CheckinPage() {
         }
       }
       if (!handle || !HANDLE_RE.test(handle)) {
-        flashNotice(t("staffOps.checkinNotOurQr"));
+        flashNotice(messageKey("staffOps.checkinNotOurQr"));
         return;
       }
       void doLookup(handle);
     },
-    [doTokenCheckin, doLookup, flashNotice, t],
+    [doTokenCheckin, doLookup, flashNotice],
   );
   const handleDecodeRef = useRef(handleDecode);
   handleDecodeRef.current = handleDecode;
@@ -293,9 +296,9 @@ export function CheckinPage() {
           audio: false,
         });
       } catch {
-        // ここは i18next を直に引く。t を使うと言語を切り替えるたびに
-        // この効果が組み直され、カメラが止まって開き直しになる
-        setCameraError(i18next.t("staffOps.checkinCameraError"));
+        // ここで t は使わない（効果の依存に入れると、言語を切り替えるたびに
+        // カメラが止まって開き直しになる）。キーだけ持ち、表示するときに訳す
+        setCameraError(messageKey("staffOps.checkinCameraError"));
         return;
       }
       if (cancelled || !videoRef.current) {
@@ -384,7 +387,7 @@ export function CheckinPage() {
       </Stack>
 
       {cameraError ? (
-        <Alert severity="warning">{cameraError}</Alert>
+        <Alert severity="warning">{t(cameraError.key, cameraError.params)}</Alert>
       ) : (
         <Box
           sx={{
@@ -425,7 +428,7 @@ export function CheckinPage() {
           {notice && (
             <Box sx={{ position: "absolute", left: 8, right: 8, bottom: 8 }}>
               <Alert severity="info" sx={{ py: 0 }}>
-                {notice}
+                {isMessageKey(notice) ? t(notice.key, notice.params) : manualAttendErrorMessage(notice.error)}
               </Alert>
             </Box>
           )}

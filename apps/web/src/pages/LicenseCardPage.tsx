@@ -33,6 +33,7 @@ import {
   loadLocalCardLook,
   saveLocalCardLook,
 } from "../components/licenseCard/cardLook.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 // PNG書き出し時にSVGへ埋め込むフォント（SVG-as-image はページのフォントを参照できない）
 /** プロフィールカードのデザイン画面 (#178)。
  * カード本体の描画は components/licenseCard/LicenseCardSvg.tsx にあり、
@@ -71,7 +72,7 @@ export function LicenseCardPage() {
     () => loadLocalCardLook().theme,
   );
   const [busy, setBusy] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<MessageKey | null>(null);
   // 交流の場で相手に読み取ってもらう用の大きなQR (#324)。自分のカードのときだけ
   const [qrOpen, setQrOpen] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -180,7 +181,7 @@ export function LicenseCardPage() {
     } catch (e) {
       // 生成の内部のメッセージ（profileCardPng）は開発者向けなので画面には出さない
       console.warn("card PNG export failed", e);
-      setExportError(t("profile.cardExportFailed"));
+      setExportError(messageKey("profile.cardExportFailed"));
     } finally {
       setBusy(false);
     }
@@ -282,7 +283,7 @@ export function LicenseCardPage() {
           />
         </Box>
 
-        {exportError && <Alert severity="error">{exportError}</Alert>}
+        {exportError && <Alert severity="error">{t(exportError.key, exportError.params)}</Alert>}
 
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           <Button

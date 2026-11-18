@@ -14,6 +14,7 @@ import { BackgroundSettings } from "./BackgroundSettings.js";
 import { editBackground, editPart, newPart, removePart, reorderPart, resetRule, targetLayout, type EditTarget } from "./model.js";
 import { useDesignHistory } from "./useDesignHistory.js";
 import { copyEventDesign } from "./copyDesign.js";
+import { messageKey, type MessageKey } from "../../lib/messageKey.js";
 
 export function CardEditor({ initial, context, members, assets, slots }: {
   initial: SavedCardDesign; context: EventCardContext; members: EventNameCard[];
@@ -36,7 +37,8 @@ export function CardEditor({ initial, context, members, assets, slots }: {
   const [copying, setCopying] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [saving, setSaving] = useState(false), [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState<{ text: string; severity: "error" | "success" } | null>(null);
+  // 訳す前の形で持ち、表示するときに訳す (#369)
+  const [message, setMessage] = useState<{ text: MessageKey; severity: "error" | "success" } | null>(null);
   const design = history.design;
   const latestDesign = useRef(design); latestDesign.current = design;
   const dirty = JSON.stringify(design) !== baseline;
@@ -75,16 +77,16 @@ export function CardEditor({ initial, context, members, assets, slots }: {
   const changePart = (p: CardPart) => change(editPart(design, target, p));
   const save = async () => {
     const parsed = cardDesignSchema.safeParse(design);
-    if (!parsed.success) { setMessage({ text: t("staffOps.cardEditorInvalid"), severity: "error" }); return; }
+    if (!parsed.success) { setMessage({ text: messageKey("staffOps.cardEditorInvalid"), severity: "error" }); return; }
     setSaving(true); setMessage(null); setConflict(false);
     try {
       const result = await api.put<SavedCardDesign>(`/events/${context.eventId}/name-card-design`, { revision, design: parsed.data });
       setRevision(result.revision); setBaseline(JSON.stringify(design));
       queryClient.setQueryData(cardDesignKey(context.eventId), result);
-      setMessage({ text: t("staffOps.cardEditorSaved"), severity: "success" });
+      setMessage({ text: messageKey("staffOps.cardEditorSaved"), severity: "success" });
     } catch (error) {
       setConflict(error instanceof ApiError && error.status === 409);
-      setMessage({ text: t(error instanceof ApiError && error.status === 409 ? "staffOps.cardEditorConflict" : "staffOps.cardEditorSaveFailed"), severity: "error" });
+      setMessage({ text: messageKey(error instanceof ApiError && error.status === 409 ? "staffOps.cardEditorConflict" : "staffOps.cardEditorSaveFailed"), severity: "error" });
     } finally { setSaving(false); }
   };
   const reload = async () => {
@@ -101,13 +103,13 @@ export function CardEditor({ initial, context, members, assets, slots }: {
       queryClient.setQueryData(cardDesignKey(context.eventId), latest);
       queryClient.setQueryData(cardAssetsKey(context.eventId), files);
       setConflict(false); setMessage(null);
-    } catch { setMessage({ text: t("staffOps.cardEditorLoadFailed"), severity: "error" }); }
+    } catch { setMessage({ text: messageKey("staffOps.cardEditorLoadFailed"), severity: "error" }); }
     finally { setSaving(false); }
   };
   const upload = async (file: File) => {
     setUploading(true); setMessage(null);
     try { const asset = await uploadCardAsset(context.eventId, file); setAddedAssets(list => [...list, asset]); }
-    catch { setMessage({ text: t("staffOps.cardEditorUploadFailed"), severity: "error" }); }
+    catch { setMessage({ text: messageKey("staffOps.cardEditorUploadFailed"), severity: "error" }); }
     finally { setUploading(false); }
   };
   const copy = async () => {
@@ -119,17 +121,17 @@ export function CardEditor({ initial, context, members, assets, slots }: {
       setAddedAssets(list => [...list, ...result.assets]);
       if (latestDesign.current !== start && !window.confirm(t("staffOps.cardEditorReplaceConfirm"))) return;
       change(result.design); setTarget("common"); setSelected(null);
-      if (result.skippedSlots) setMessage({ text: t("staffOps.cardEditorCopySlots", { n: result.skippedSlots }), severity: "success" });
-    } catch { setMessage({ text: t("staffOps.cardEditorCopyFailed"), severity: "error" }); }
+      if (result.skippedSlots) setMessage({ text: messageKey("staffOps.cardEditorCopySlots", { n: result.skippedSlots }), severity: "success" });
+    } catch { setMessage({ text: messageKey("staffOps.cardEditorCopyFailed"), severity: "error" }); }
     finally { setCopying(false); }
   };
   const deleteAsset = async (id: string) => {
-    if (cardDesignAssetIds(design).includes(id)) { setMessage({ text: t("staffOps.cardEditorImageInUse"), severity: "error" }); return; }
+    if (cardDesignAssetIds(design).includes(id)) { setMessage({ text: messageKey("staffOps.cardEditorImageInUse"), severity: "error" }); return; }
     if (!window.confirm(t("staffOps.cardEditorDeleteImageConfirm"))) return;
     try {
       await api.del(`/events/${context.eventId}/name-card-assets/${id}`);
       setRemovedAssets(ids => [...ids, id]);
-    } catch (error) { setMessage({ text: t(error instanceof ApiError && error.status === 409 ? "staffOps.cardEditorImageInUse" : "staffOps.cardEditorSaveFailed"), severity: "error" }); }
+    } catch (error) { setMessage({ text: messageKey(error instanceof ApiError && error.status === 409 ? "staffOps.cardEditorImageInUse" : "staffOps.cardEditorSaveFailed"), severity: "error" }); }
   };
   const kindLabels = {
     text: t("staffOps.cardEditorText"), image: t("staffOps.cardEditorImage"), rect: t("staffOps.cardEditorRect"),
@@ -164,7 +166,7 @@ export function CardEditor({ initial, context, members, assets, slots }: {
       </Stack>
     </AccordionDetails></Accordion>
     {dirty && <Alert severity="info">{t("staffOps.cardEditorUnsaved")}</Alert>}
-    {message && <Alert severity={message.severity}>{message.text}</Alert>}
+    {message && <Alert severity={message.severity}>{t(message.text.key, message.text.params)}</Alert>}
     {conflict && <Button disabled={saving} onClick={() => void reload()}>{t("staffOps.cardEditorRetry")}</Button>}
     <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
       <TextField select size="small" fullWidth label={t("staffOps.cardEditorTarget")} value={target} onChange={e => { setTarget(e.target.value as EditTarget); setSelected(null); }}>

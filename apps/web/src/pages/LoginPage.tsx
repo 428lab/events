@@ -17,6 +17,7 @@ import {
   clearQueryParam,
 } from "../lib/blueskyError.js";
 import { BlueskyHandleForm } from "../components/BlueskyHandleForm.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 // 署名アプリでつなぐシートは開いたときだけ読む（リレーとのやりとりの部品を、ふだんのページに載せない）
 const NostrConnectSheet = lazy(() =>
@@ -32,17 +33,15 @@ export function LoginPage() {
   const qc = useQueryClient();
   const [params] = useSearchParams();
   const [nostrBusy, setNostrBusy] = useState(false);
-  const [nostrError, setNostrError] = useState<string | null>(null);
+  const [nostrError, setNostrError] = useState<MessageKey | null>(null);
   // 拡張が無い人は、署名アプリ（Amber など）でつなぐシートを開く (D-NOSTR-SIGNER)
   const [signerOpen, setSignerOpen] = useState(false);
   // Bluesky のログインが途中で失敗すると ?bluesky_error= を付けてここへ戻る (#381)。
   // 読んだらクエリを消すので、リロードや「戻る」で蒸し返さない
-  const [blueskyError] = useState<string | null>(() => {
-    const q = new URLSearchParams(window.location.search).get(
-      BLUESKY_ERROR_PARAM,
-    );
-    return q ? blueskyErrorMessage(q) : null;
-  });
+  // コードのまま持ち、表示するときに訳す (#369)
+  const [blueskyError] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get(BLUESKY_ERROR_PARAM),
+  );
   useEffect(() => {
     if (blueskyError) clearQueryParam(BLUESKY_ERROR_PARAM);
   }, [blueskyError]);
@@ -73,7 +72,7 @@ export function LoginPage() {
       await nostrNip07Login();
       await afterNostrLogin();
     } catch {
-      setNostrError(t("login.signInFailed"));
+      setNostrError(messageKey("login.signInFailed"));
     } finally {
       setNostrBusy(false);
     }
@@ -150,13 +149,13 @@ export function LoginPage() {
                     }}
                     onFailed={() => {
                       setSignerOpen(false);
-                      setNostrError(t("login.signInFailed"));
+                      setNostrError(messageKey("login.signInFailed"));
                     }}
                     onClose={() => setSignerOpen(false)}
                   />
                 </Suspense>
               )}
-              {nostrError && <Alert severity="warning">{nostrError}</Alert>}
+              {nostrError && <Alert severity="warning">{t(nostrError.key, nostrError.params)}</Alert>}
               {!hasNip07() && !nostrError && (
                 <Typography variant="caption" color="text.secondary">
                   {t("login.extensionHint")}
@@ -165,7 +164,7 @@ export function LoginPage() {
 
               {/* Bluesky はハンドルが要るので入力欄つき (#381)。
                   素のフォーム GET でないと外部の許可画面へ飛べない */}
-              {blueskyError && <Alert severity="warning">{blueskyError}</Alert>}
+              {blueskyError && <Alert severity="warning">{blueskyErrorMessage(blueskyError)}</Alert>}
               <BlueskyHandleForm
                 next={next}
                 submitLabel={t("login.signInWith", {

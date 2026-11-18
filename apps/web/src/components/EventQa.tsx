@@ -55,7 +55,8 @@ export function EventQa({
   const del = useDeleteQuestion(eventId);
   const [body, setBody] = useState("");
   const [anonymous, setAnonymous] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<unknown>(null);
 
   if (!data) return null;
 
@@ -98,7 +99,7 @@ export function EventQa({
       { body: text, anonymous: canChooseAnonymity ? anonymous : false },
       {
         onSuccess: () => setBody(""),
-        onError: (err) => setError(postErrorMessage(err)),
+        onError: (err) => setError(err),
       },
     );
   };
@@ -144,9 +145,9 @@ export function EventQa({
 
           {data.canPost ? (
             <Box>
-              {error && (
+              {error !== null && (
                 <Alert severity="warning" sx={{ mb: 1 }} onClose={() => setError(null)}>
-                  {error}
+                  {postErrorMessage(error)}
                 </Alert>
               )}
               <CounterTextField

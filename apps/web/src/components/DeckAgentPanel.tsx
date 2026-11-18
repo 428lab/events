@@ -10,6 +10,7 @@ import {
 } from "../api/deckHooks.js";
 import { ApiError } from "../api/client.js";
 import { formatDateTime } from "../lib/format.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /**
  * /decks/import の「AIに書いてもらう」（docs/agent-deck-token.md）。
@@ -21,7 +22,7 @@ export function DeckAgentPanel() {
   const issue = useIssueDeckAgentToken();
   const revoke = useRevokeDeckAgentToken();
   const [issued, setIssued] = useState<IssuedDeckAgentToken | null>(null);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<MessageKey | null>(null);
   const [now, setNow] = useState(Date.now());
   // 残り時間の表示だけの時計（通信しない）
   useEffect(() => {
@@ -41,16 +42,16 @@ export function DeckAgentPanel() {
   }, [issued, tokens.data]);
 
   async function onIssue() {
-    setNotice("");
+    setNotice(null);
     try {
       setIssued(await issue.mutateAsync());
     } catch (error) {
-      setNotice(t(error instanceof ApiError && error.status === 429 ? "deckAgent.limit" : "deckAgent.failure"));
+      setNotice(messageKey(error instanceof ApiError && error.status === 429 ? "deckAgent.limit" : "deckAgent.failure"));
     }
   }
   async function copy() {
-    try { await navigator.clipboard.writeText(instruction); setNotice(t("common.copied")); }
-    catch { setNotice(t("deckAgent.failure")); }
+    try { await navigator.clipboard.writeText(instruction); setNotice(messageKey("common.copied")); }
+    catch { setNotice(messageKey("deckAgent.failure")); }
   }
   function onRevoke(token: DeckAgentToken) {
     if (!window.confirm(t("deckAgent.revokeConfirm"))) return;
@@ -63,7 +64,7 @@ export function DeckAgentPanel() {
       <Typography>{t("deckAgent.intro")}</Typography>
       <Alert severity="warning">{t("deckAgent.publicNotice")}</Alert>
       <Box><Button variant="contained" disabled={issue.isPending} onClick={() => void onIssue()}>{t(issue.isPending ? "deckAgent.issuing" : "deckAgent.issue")}</Button></Box>
-      {notice && <Alert severity="info">{notice}</Alert>}
+      {notice && <Alert severity="info">{t(notice.key, notice.params)}</Alert>}
       {issued && <Stack spacing={1}>
         <TextField label={t("deckAgent.instructionLabel")} value={instruction} multiline minRows={4} slotProps={{ input: { readOnly: true, sx: { fontFamily: "monospace" } } }} />
         <Box><Button onClick={() => void copy()}>{t("deckAgent.copy")}</Button></Box>

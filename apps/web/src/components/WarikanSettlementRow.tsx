@@ -124,7 +124,8 @@ function DoneCheckbox({
   const { t } = useTranslation();
   const overrides = useWarikanErrors();
   const toggle = useToggleSettlementDone(eventId);
-  const [error, setError] = useState<string | null>(null);
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<unknown>(null);
   return (
     <>
       <FormControlLabel
@@ -141,16 +142,16 @@ function DoneCheckbox({
                   amount: settlement.amount,
                   done: e.target.checked,
                 },
-                { onError: (err) => setError(errorMessage(err, overrides)) },
+                { onError: (err) => setError(err) },
               );
             }}
           />
         }
         label={t("warikan.done")}
       />
-      {error && (
+      {error !== null && (
         <Alert severity="warning" sx={{ mt: 1 }}>
-          {error}
+          {errorMessage(error, overrides)}
         </Alert>
       )}
     </>

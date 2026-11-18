@@ -60,7 +60,8 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
   const navigate = useNavigate();
   const accept = useRespondStaffInvite("accept");
   const decline = useRespondStaffInvite("decline");
-  const [error, setError] = useState("");
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [error, setError] = useState<unknown>(null);
   const by = invite.invitedBy.globalName ?? invite.invitedBy.username;
   const pending = accept.isPending || decline.isPending;
 
@@ -112,9 +113,9 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
             {t("staffOps.inviteSlotWarning")}
           </Alert>
         )}
-        {error && (
-          <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError("")}>
-            {error}
+        {error !== null && (
+          <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError(null)}>
+            {inviteErrorMessage(error)}
           </Alert>
         )}
         <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: "block" }}>
@@ -125,10 +126,10 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
             variant="contained"
             disabled={pending}
             onClick={() => {
-              setError("");
+              setError(null);
               accept.mutate(invite.id, {
                 onSuccess: () => navigate(`/events/${invite.eventId}`),
-                onError: (e) => setError(inviteErrorMessage(e)),
+                onError: (e) => setError(e),
               });
             }}
           >
@@ -139,7 +140,7 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
             color="inherit"
             disabled={pending}
             onClick={() => {
-              setError("");
+              setError(null);
               if (
                 !window.confirm(
                   t("staffOps.inviteDeclineConfirm", {
@@ -150,7 +151,7 @@ function InviteCard({ invite }: { invite: MyStaffInvite }) {
                 return;
               }
               decline.mutate(invite.id, {
-                onError: (e) => setError(inviteErrorMessage(e)),
+                onError: (e) => setError(e),
               });
             }}
           >

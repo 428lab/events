@@ -34,6 +34,7 @@ import { useSurveyAnswers } from "../api/eventSurveyHooks.js";
 import { useMeetRanking } from "../api/eventMeetHooks.js";
 import { i18next } from "../i18n/index.js";
 import { DailyBarChart } from "../components/DailyBarChart.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** サイトが自分で付ける流入元の印。文言は辞書にある */
 const INTERNAL_SOURCE_KEY: Partial<
@@ -249,7 +250,7 @@ function SurveyAnswersCard({
   const { t, i18n } = useTranslation();
   const { data } = useSurveyAnswers(eventId, enabled);
   const [reminding, setReminding] = useState(false);
-  const [remindResult, setRemindResult] = useState<string | null>(null);
+  const [remindResult, setRemindResult] = useState<MessageKey | null>(null);
   if (!data || data.questions.length === 0) return null;
   const { questions, rows } = data;
   // 写真NGは撮影の段取りに使うので、人数をまとめて先に見せる（名簿には出さない）
@@ -292,7 +293,7 @@ function SurveyAnswersCard({
                   `/events/${eventId}/survey/remind`,
                 );
                 setRemindResult(
-                  t(
+                  messageKey(
                     res.notified === 1
                       ? "staffOps.surveyRemindedOne"
                       : "staffOps.surveyReminded",
@@ -300,7 +301,7 @@ function SurveyAnswersCard({
                   ),
                 );
               } catch {
-                setRemindResult(t("staffOps.surveyRemindFailed"));
+                setRemindResult(messageKey("staffOps.surveyRemindFailed"));
               } finally {
                 setReminding(false);
               }
@@ -342,7 +343,7 @@ function SurveyAnswersCard({
         )}
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
           {t("staffOps.surveyNote")}
-          {remindResult && `${t("common.dotSeparator")}${remindResult}`}
+          {remindResult && `${t("common.dotSeparator")}${t(remindResult.key, remindResult.params)}`}
         </Typography>
         {rows.length === 0 ? (
           <Typography color="text.secondary" variant="body2">

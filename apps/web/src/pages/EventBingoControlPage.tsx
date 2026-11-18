@@ -29,7 +29,6 @@ import {
 import { EventBreadcrumbs } from "../components/EventBreadcrumbs.js";
 import { BingoWithChat } from "../components/BingoWithChat.js";
 import { errorMessage } from "../lib/errorMessage.js";
-import { i18next } from "../i18n/index.js";
 
 /**
  * ビンゴの抽選コントロール (#436)。スタッフ専用（司会の手元）。
@@ -43,7 +42,8 @@ export function EventBingoControlPage() {
   const { data: eventData } = useEvent(id);
   const isStaff = eventData?.myRole === "staff";
   const status = useBingoStatus(id, isStaff);
-  const [failure, setFailure] = useState<string | null>(null);
+  // 例外のまま持ち、表示するときに訳す (#369)
+  const [failure, setFailure] = useState<unknown>(null);
   /** 抽選でビンゴが増えた人数（#681 PR3）。司会が読み上げに気づくための短い知らせ */
   const [newBingo, setNewBingo] = useState<{ n: number; key: number } | null>(null);
 
@@ -63,13 +63,7 @@ export function EventBingoControlPage() {
     reset.isPending ||
     removeGame.isPending;
 
-  const onError = (e: unknown) =>
-    setFailure(
-      errorMessage(e, {
-        exhausted: i18next.t("staffOps.bingoExhausted"),
-        default: i18next.t("staffOps.bingoOpFailed"),
-      }),
-    );
+  const onError = (e: unknown) => setFailure(e);
   /** 確認つきの操作。confirmKey が null なら確認なしで実行 */
   const run = (
     mutation: { mutate: (v: undefined, o: { onError: (e: unknown) => void }) => void },
@@ -146,9 +140,12 @@ export function EventBingoControlPage() {
           {t("staffOps.bingoNewBingoToast", { n: newBingo?.n ?? 0 })}
         </Alert>
       </Snackbar>
-      {failure && (
+      {failure !== null && (
         <Alert severity="error" onClose={() => setFailure(null)}>
-          {failure}
+          {errorMessage(failure, {
+            exhausted: t("staffOps.bingoExhausted"),
+            default: t("staffOps.bingoOpFailed"),
+          })}
         </Alert>
       )}
 

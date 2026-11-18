@@ -23,6 +23,7 @@ import {
 import { encodeGalleryThumbnail } from "../lib/galleryThumbnail.js";
 import { extractVideoPoster } from "../lib/video/poster.js";
 import { VideoSelectStep, type VideoSelectResult } from "./VideoSelectStep.js";
+import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /**
  * 動画投稿のフロー全体 (#408, #427)。2段階で進める:
@@ -50,7 +51,8 @@ interface ReadyItem {
 interface FileResult {
   name: string;
   status: "uploaded" | "failed" | "canceled";
-  reason?: string;
+  /** 訳す前の形。まとめを表示するときに訳す (#369) */
+  reason?: MessageKey;
   /** 範囲選択の段で失敗したか（その場でエラー表示済み。単発ではまとめを出さない） */
   atSelect?: boolean;
 }
@@ -163,12 +165,12 @@ export function VideoUploadFlow({
         const message = e instanceof Error ? e.message : String(e);
         const reason =
           message === "photo_limit"
-            ? t("eventSocial.photoLimit", { n: EVENT_PHOTO_LIMIT })
+            ? messageKey("eventSocial.photoLimit", { n: EVENT_PHOTO_LIMIT })
             : message === "video_output_too_large"
-              ? t("eventSocial.videoTooLarge", { mb: maxMb })
+              ? messageKey("eventSocial.videoTooLarge", { mb: maxMb })
               : message === "network_error"
-                ? t("eventSocial.videoUploadFailed")
-                : t("eventSocial.videoCannotProcess", { s: maxSec });
+                ? messageKey("eventSocial.videoUploadFailed")
+                : messageKey("eventSocial.videoCannotProcess", { s: maxSec });
         resultsRef.current.push({
           name: item.file.name,
           status: "failed",
@@ -187,7 +189,7 @@ export function VideoUploadFlow({
       }
     }
     finalize();
-  }, [upload, t, maxSec, maxMb, finalize]);
+  }, [upload, maxSec, maxMb, finalize]);
 
   /** 第1段階の1本ぶんの結果を受けて次へ */
   const handleSelectResult = (r: VideoSelectResult) => {
@@ -313,7 +315,7 @@ export function VideoUploadFlow({
               .map((r, i) => (
                 <Typography key={i} variant="body2" color="text.secondary">
                   ・{r.name}:{" "}
-                  {r.status === "canceled" ? t("common.cancel") : r.reason}
+                  {r.status === "canceled" ? t("common.cancel") : r.reason && t(r.reason.key, r.reason.params)}
                 </Typography>
               ))}
           </DialogContent>
