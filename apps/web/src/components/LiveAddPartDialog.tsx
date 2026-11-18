@@ -42,6 +42,7 @@ import type { LivePartKind } from "../lib/liveParts.js";
 import { newImageElement } from "../lib/liveScenes.js";
 import { ChatFields, CountdownTargetFields, FlameFrameFields, INFO_LABEL_KEY } from "./LiveElementPanel.js";
 import { LivePartPreview } from "./LivePartPreview.js";
+import { creatorLanguage } from "../i18n/creatorLanguage.js";
 
 /** 種類ごとの呼び名と一行説明。訳した文字列ではなくキーを持つ (#367) */
 const PART_TEXT_KEYS = {
@@ -140,10 +141,11 @@ export function LiveAddPartDialog({
 
   // 一覧の見本は開くたびに作る（id が変わると炎の 1 コマを描き直すので、開いている間は固定）
   const samples = useMemo(
-    () => Object.fromEntries([...LIVE_BASIC_PARTS, ...LIVE_STREAM_PARTS].map(k => [k, newLivePartElement(k, style, t("studio.marqueeDefaultText"))])) as Record<LivePartKind, LiveElement>,
+    () => Object.fromEntries([...LIVE_BASIC_PARTS, ...LIVE_STREAM_PARTS].map(k => [k, newLivePartElement(k, style, t("studio.marqueeDefaultText"), creatorLanguage())])) as Record<LivePartKind, LiveElement>,
     [open, style, i18n.language],
   );
-  const designParts = useMemo(() => orderedVisualParts(style), [style]);
+  // 置いたときの仮の文字は作る人の言語 (#364)
+  const designParts = useMemo(() => orderedVisualParts(style, creatorLanguage()), [style, i18n.language]);
 
   const finish = (added: boolean) => {
     if (added) onClose();
@@ -156,7 +158,7 @@ export function LiveAddPartDialog({
       pickImage(url => finish(onAddElement(newImageElement(url))));
       return;
     }
-    const el = newLivePartElement(next, style, t("studio.marqueeDefaultText"));
+    const el = newLivePartElement(next, style, t("studio.marqueeDefaultText"), creatorLanguage());
     if (!livePartNeedsSettings(next)) { finish(onAddElement(el)); return; }
     if (next === "camera") el.cameraSlot = defaultCameraSlotForScene(scene);
     setKind(next);

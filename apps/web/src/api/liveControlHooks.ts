@@ -9,6 +9,7 @@ import type {
 import type { Deck, LivePresenter } from "@eventer/shared";
 import { api } from "./client.js";
 import { useEventSignal } from "../lib/signalHub.js";
+import { creatorLanguage } from "../i18n/creatorLanguage.js";
 
 /** 配信状態（画面タブ・コントロールタブが共有）。定期には取り直さない（D-POLL-MIN 第5段階 5b-2）。
  * 応答の `signal`（topic `live`）の合図で1回取り直す。合図はリレーから届くメッセージで動くので、
@@ -86,6 +87,7 @@ export function useEventLiveSetContent(eventId: string, liveSetId: string | null
     // liveSetId をキーに含めて切替時に取り直す
     queryKey: ["event", eventId, "liveSetContent", liveSetId ?? "default"],
     enabled: Boolean(eventId),
-    queryFn: () => api.get<LiveSet>(`/events/${eventId}/live-set-content`),
+    // 未選択時のビルトインの既定セットは見ている人の言語で返る (#364)
+    queryFn: () => api.get<LiveSet>(`/events/${eventId}/live-set-content?lang=${creatorLanguage()}`),
   });
 }

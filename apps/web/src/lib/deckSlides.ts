@@ -1,4 +1,5 @@
-import type { DeckElement, DeckSlide } from "@eventer/shared";
+import { savedText, type DeckElement, type DeckSlide } from "@eventer/shared";
+import type { AppLanguage } from "@eventer/shared/i18n";
 import { copyByIds } from "./editor/collection.js";
 import { uid } from "./editor/uid.js";
 
@@ -24,9 +25,9 @@ export function newSlide(): DeckSlide {
 
 /**
  * 新しいテキスト。中央寄りに置いて、すぐ掴める大きさにする。
- * 文言は保存されるデータなので訳さない（方針は #364 / #367）。
+ * 文言は保存されるデータなので、作る人の言語で書く (#364)。省くと日本語。
  */
-export function newTextElement(): DeckElement {
+export function newTextElement(lang?: AppLanguage): DeckElement {
   return {
     id: uid(),
     type: "text",
@@ -35,7 +36,7 @@ export function newTextElement(): DeckElement {
     w: 480,
     h: 100,
     rotation: 0,
-    text: "テキスト",
+    text: savedText(lang, "text"),
     fontSize: 40,
     color: "#0f172a",
     align: "left",

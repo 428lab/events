@@ -10,6 +10,8 @@ import { eventDutiesRepo } from "../db/repositories/eventDuties.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
 import { participationSlotsRepo } from "../db/repositories/participationSlots.js";
 import { copyEventImage } from "./images.js";
+import { savedText } from "@eventer/shared";
+import { creatorLanguage } from "../lib/creatorLanguage.js";
 
 /**
  * イベントの複製 (#340)。
@@ -37,19 +39,21 @@ eventDuplicateRoutes.post(
     if (!src) return c.json({ error: "not_found" }, 404);
     const user = c.get("user");
 
-    // タイトル末尾に「のコピー」（200字上限を超えるなら切り詰めてから付与）
-    const suffix = "のコピー";
+    // 題名は「◯◯のコピー」。作る人の言語で書く（#364。英語は "Copy of ◯◯"）。
+    // 200字上限を超えるなら元の題名を切り詰めてから組み立てる
+    const language = await creatorLanguage(c);
+    const extra = savedText(language, "eventCopyTitle", { title: "" }).length;
     // コードポイント境界で切り詰め（サロゲートペアを分断しない）
     const base =
-      src.title.length + suffix.length > 200
-        ? [...src.title].slice(0, 200 - suffix.length).join("")
+      src.title.length + extra > 200
+        ? [...src.title].slice(0, 200 - extra).join("")
         : src.title;
 
     // 基本情報をコピーして下書きで作成。開催日時は未定（0）に戻し、
     // 日程調整をやり直せるよう scheduling=true で作る（編集で直接設定も可能）
     const created = await eventsRepo.create(
       {
-        title: base + suffix,
+        title: savedText(language, "eventCopyTitle", { title: base }),
         visibility: src.visibility,
         subtitle: src.subtitle,
         description: src.description,

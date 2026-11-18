@@ -257,8 +257,8 @@ const ja = {
   surveySaveError: "アンケートの保存に失敗しました。",
   surveySaved: "アンケートを保存しました。",
   surveyAddQuestion: "質問を追加",
-  /** テンプレの**名前**だけ辞書が持つ。中身は保存されるデータなので訳さない
-   *  (#363。データそのものの言語の扱いは #364 で決める) */
+  /** テンプレの**名前**だけここが持つ。中身は保存されるので、選ぶ人の言語で
+   *  `savedDefaults` から書く (#364) */
   "surveyTemplateName_entry-info": "入館情報",
   surveyTemplateName_party: "懇親会",
   surveyTemplateName_attributes: "参加者属性",

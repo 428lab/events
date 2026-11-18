@@ -33,6 +33,7 @@ import { meet, meetFailure } from "./messages/meet.js";
 import { nav } from "./messages/nav.js";
 import { notifications } from "./messages/notifications.js";
 import { notices } from "./messages/notices.js";
+import { savedDefaults } from "./messages/savedDefaults.js";
 import { communityRole, profile } from "./messages/profile.js";
 import { preSurvey } from "./messages/preSurvey.js";
 import { schedule } from "./messages/schedule.js";
@@ -99,6 +100,7 @@ export const translations = {
     linkError: linkError.ja,
     notifications: notifications.ja,
     notices: notices.ja,
+    savedDefaults: savedDefaults.ja,
     inquiries: inquiries.ja,
     inquiryStatus: inquiryStatus.ja,
     eventInquiry: eventInquiry.ja,
@@ -150,6 +152,7 @@ export const translations = {
     linkError: linkError.en,
     notifications: notifications.en,
     notices: notices.en,
+    savedDefaults: savedDefaults.en,
     inquiries: inquiries.en,
     inquiryStatus: inquiryStatus.en,
     eventInquiry: eventInquiry.en,

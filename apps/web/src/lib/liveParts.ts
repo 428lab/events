@@ -1,5 +1,6 @@
 import { visualParts } from "@eventer/shared";
 import type { LiveElement, LiveScene, VisualStyle } from "@eventer/shared";
+import type { AppLanguage } from "@eventer/shared/i18n";
 import { uid } from "./editor/uid.js";
 import {
   newCameraElement,
@@ -46,13 +47,13 @@ export const isLightLiveScene = (scene: LiveScene | undefined) =>
 
 /**
  * 置く要素の既定値。画像は選ばせてから src を入れるので、ここでは空のまま返す。
- * 流れる案内の最初の文言だけは画面の言語で入れるので、呼ぶ側から受け取る。
+ * 流れる案内の最初の文言とテキストの仮の文字は、作る人の言語で入れる (#364)。
  */
-export function newLivePartElement(kind: LivePartKind, style: VisualStyle, marqueeText: string): LiveElement {
+export function newLivePartElement(kind: LivePartKind, style: VisualStyle, marqueeText: string, lang?: AppLanguage): LiveElement {
   const ink = style === "hakuji" ? "#203146" : "#EAF0F7";
   const make = (type: LiveElement["type"], props: Partial<LiveElement>): LiveElement => ({ id: uid(), type, x: 100, y: 410, w: 480, h: 48, rotation: 0, ...props });
   switch (kind) {
-    case "text": return newTextElement();
+    case "text": return newTextElement(lang);
     case "image": return newImageElement("");
     case "camera": return newCameraElement();
     case "deck": return newDeckElement();
@@ -68,7 +69,7 @@ export function newLivePartElement(kind: LivePartKind, style: VisualStyle, marqu
 }
 
 /** デザイン部品の並び。開いているシーンのスタイルを先に、残りをその後ろに */
-export function orderedVisualParts(style: VisualStyle) {
+export function orderedVisualParts(style: VisualStyle, lang?: AppLanguage) {
   const families: VisualStyle[] = [style, ...(["glow", "signal", "hakuji"] as VisualStyle[]).filter(family => family !== style)];
-  return families.flatMap(family => visualParts(family).map(part => ({ family, part })));
+  return families.flatMap(family => visualParts(family, lang).map(part => ({ family, part })));
 }

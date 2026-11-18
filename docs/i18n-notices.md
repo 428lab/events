@@ -45,3 +45,29 @@
 - 一斉連絡の題名と本文（運営が書いたもの）。
 - Discord / Slack の Webhook（docs/webhooks.md）。チャンネル宛てで、受け取る人が1人に決まらない。
 - すでに作られたお知らせ（書いた時点の言語のまま残る）。
+
+## 保存される既定の文言 (#364)
+
+オーナー決定（2026-08-13「画像は作った人の言語で焼く」を、ほかの保存データにも当てはめた。2026-11-19）:
+**既定・テンプレートが利用者のデータとして保存されるときは、作る人の言語で書く。**
+保存したあとは普通のデータなので、見る人の言語に訳し直さない。すでに保存されたデータは書き換えない。
+
+文言は `packages/shared/src/i18n/messages/savedDefaults.ts`（`savedDefaults` 名前空間）、組み立ては
+`packages/shared/src/savedDefaults.ts` の `savedText(lang, key, params)` の1か所。言語を省くと日本語で、
+**日本語は以前コードに直書きしていた文言そのまま**。
+
+| 何を | どこで書くか | 言語の決め方 |
+| --- | --- | --- |
+| 配信セットの既定のシーン（シーン名・投影の本文）と、名前を付けなかったときの名前 | `POST /api/live-sets`（`defaultLiveSetContent` / `visualLiveSetContent`） | 画面が `?lang=` で今の表示言語を渡す |
+| 配信セットを選んでいないときのビルトインの既定セット（保存しない） | `GET /api/events/:id/live-set-content` | 見ている人の `?lang=` |
+| デザイン部品の仮の文字（氏名を入力・タイトルを入力 など） | 画面（`visualParts`） | 今の表示言語 |
+| 新しいシーンの名前・シーンと配信セットの複製の名前・置いたばかりのテキスト（配信とスライド） | 画面（`liveScenes.ts` / `deckSlides.ts` / `LiveSetsPage`） | 今の表示言語 |
+| 既定の採点項目 | `POST /api/events`（`scoringCriteriaRepo.seedDefaults`） | `?lang=` |
+| イベントの複製の題名（「◯◯のコピー」 / "Copy of ◯◯"） | `POST /api/events/:id/duplicate` | `?lang=` |
+| タイムテーブル・アンケートのテンプレートの中身 | 画面（`scheduleTemplates(lang)` / `surveyTemplates(lang)`） | 今の表示言語 |
+
+サーバーで `?lang=` が無いときは、本人の `user.language`（#352）、それも無ければ日本語
+（`apps/server/src/lib/creatorLanguage.ts`）。
+
+訳さないもの: テンプレート名（`SCHEDULE_TEMPLATES` / `SURVEY_TEMPLATES` の `name`）は選ぶときに辞書が訳す。
+デザインテンプレートのスタイル名（「灯り / GLOW」「輪郭 / SIGNAL」「白磁 / HAKUJI」）は両方の言語を含む固有の名前なのでそのまま。

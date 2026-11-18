@@ -45,7 +45,7 @@ export const dutyCandidateSchema = todoAssigneeSchema;
 export type DutyCandidate = TodoAssignee;
 
 /** 役割の定義。イベントごとに主催者が作る（既定のテンプレートは持たない。
- * #364 が未決のため。イベント複製が名前と並び順をコピーする） */
+ * イベント複製が名前と並び順をコピーする。足すなら #364 の決まりで、作る人の言語で保存する） */
 export interface StaffDuty {
   id: string;
   name: string;

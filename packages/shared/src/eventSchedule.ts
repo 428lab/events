@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { EventSignalSource } from "./eventSignal.js";
+import { savedText, type SavedDefaultKey } from "./savedDefaults.js";
+import type { AppLanguage } from "./i18n/languages.js";
 
 /** タイムテーブルの担当者（イベントメンバーから解決したユーザー情報） */
 export const scheduleSpeakerSchema = z.object({
@@ -433,67 +435,65 @@ export interface ScheduleTemplate {
 /**
  * タイムテーブルのテンプレート（編集画面のたたき台）。
  *
- * **`name` は辞書 (`schedule.templateName_<key>`) が訳す**が、`items` の中身
- * （コマの題名・説明）は日本語のまま。訳し忘れではない (#363):
- * テンプレを選ぶと**その文言がそのまま主催者のタイムテーブルとして保存される**ので、
- * ここを見ている人の言語で訳すと、保存されたあとに「作った人と参加者で
- * 見える文言が違う」ことになる。保存されるデータの言語をどう扱うかは **#364**
- * で別途決める。決まるまでは中身に手を入れないこと。
+ * **`name` は辞書 (`schedule.templateName_<key>`) が訳す**。`items` の中身（コマの題名・説明）は
+ * テンプレを選んだ瞬間に**主催者のタイムテーブルとして保存される**ので、**選ぶ人の言語**で書く
+ * (#364。オーナー決定「作った人の言語で作る」)。保存したあとは訳し直さない。
+ * 文言は `i18n/messages/savedDefaults.ts`。日本語は以前の直書きと同じ綴り。
  */
-export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
+type ScheduleStep = [title: SavedDefaultKey, durationMin: number, description?: SavedDefaultKey, n?: number];
+const SCHEDULE_TEMPLATE_STEPS: Array<{ key: string; name: string; steps: ScheduleStep[] }> = [
   {
     key: "lt",
     name: "LT会",
-    items: [
-      { title: "開場・受付", durationMin: 15, description: "" },
-      { title: "オープニング", durationMin: 5, description: "趣旨説明・諸注意" },
-      { title: "LT 1", durationMin: 10, description: "発表5分＋入れ替え" },
-      { title: "LT 2", durationMin: 10, description: "発表5分＋入れ替え" },
-      { title: "LT 3", durationMin: 10, description: "発表5分＋入れ替え" },
-      { title: "休憩", durationMin: 10, description: "" },
-      { title: "LT 4", durationMin: 10, description: "発表5分＋入れ替え" },
-      { title: "LT 5", durationMin: 10, description: "発表5分＋入れ替え" },
-      { title: "クロージング", durationMin: 5, description: "" },
+    steps: [
+      ["scheduleDoors", 15], ["scheduleOpening", 5, "scheduleOpeningDesc"],
+      ["scheduleLt", 10, "scheduleLtDesc", 1], ["scheduleLt", 10, "scheduleLtDesc", 2], ["scheduleLt", 10, "scheduleLtDesc", 3],
+      ["scheduleBreak", 10],
+      ["scheduleLt", 10, "scheduleLtDesc", 4], ["scheduleLt", 10, "scheduleLtDesc", 5],
+      ["scheduleClosing", 5],
     ],
   },
   {
     key: "study",
     name: "勉強会",
-    items: [
-      { title: "開場・受付", durationMin: 15, description: "" },
-      { title: "オープニング", durationMin: 5, description: "趣旨説明・諸注意" },
-      { title: "セッション 1", durationMin: 40, description: "" },
-      { title: "休憩", durationMin: 10, description: "" },
-      { title: "セッション 2", durationMin: 40, description: "" },
-      { title: "質疑応答・ディスカッション", durationMin: 15, description: "" },
-      { title: "クロージング", durationMin: 5, description: "" },
+    steps: [
+      ["scheduleDoors", 15], ["scheduleOpening", 5, "scheduleOpeningDesc"],
+      ["scheduleSession", 40, undefined, 1], ["scheduleBreak", 10], ["scheduleSession", 40, undefined, 2],
+      ["scheduleQa", 15], ["scheduleClosing", 5],
     ],
   },
   {
     key: "hackathon",
     name: "ハッカソン",
-    items: [
-      { title: "開場・受付", durationMin: 15, description: "" },
-      { title: "オープニング", durationMin: 15, description: "趣旨説明・ルール説明" },
-      { title: "アイデア出し・チームビルディング", durationMin: 30, description: "" },
-      { title: "開発タイム", durationMin: 240, description: "" },
-      { title: "成果発表", durationMin: 30, description: "" },
-      { title: "審査・表彰", durationMin: 20, description: "" },
-      { title: "クロージング", durationMin: 10, description: "" },
+    steps: [
+      ["scheduleDoors", 15], ["scheduleOpening", 15, "scheduleOpeningRulesDesc"],
+      ["scheduleIdeation", 30], ["scheduleHacking", 240], ["scheduleDemos", 30], ["scheduleJudging", 20],
+      ["scheduleClosing", 10],
     ],
   },
   {
     key: "study-party",
     name: "懇親会つき勉強会",
-    items: [
-      { title: "開場・受付", durationMin: 15, description: "" },
-      { title: "オープニング", durationMin: 5, description: "趣旨説明・諸注意" },
-      { title: "セッション 1", durationMin: 40, description: "" },
-      { title: "休憩", durationMin: 10, description: "" },
-      { title: "セッション 2", durationMin: 40, description: "" },
-      { title: "クロージング", durationMin: 5, description: "" },
-      { title: "懇親会", durationMin: 60, description: "" },
-      { title: "撤収", durationMin: 15, description: "" },
+    steps: [
+      ["scheduleDoors", 15], ["scheduleOpening", 5, "scheduleOpeningDesc"],
+      ["scheduleSession", 40, undefined, 1], ["scheduleBreak", 10], ["scheduleSession", 40, undefined, 2],
+      ["scheduleClosing", 5], ["scheduleParty", 60], ["scheduleTeardown", 15],
     ],
   },
 ];
+
+/** テンプレートを選ぶ人の言語で組み立てる (#364)。省くと日本語 */
+export function scheduleTemplates(lang?: AppLanguage | string | null): ScheduleTemplate[] {
+  return SCHEDULE_TEMPLATE_STEPS.map(({ key, name, steps }) => ({
+    key,
+    name,
+    items: steps.map(([title, durationMin, description, n]) => ({
+      title: savedText(lang, title, n === undefined ? {} : { n }),
+      durationMin,
+      description: description ? savedText(lang, description) : "",
+    })),
+  }));
+}
+
+/** 日本語のテンプレート（名前の一覧・以前からの呼び出し用） */
+export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = scheduleTemplates("ja");

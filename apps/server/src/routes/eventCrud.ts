@@ -13,6 +13,7 @@ import { requireEventRole } from "../auth/roles.js";
 import { isAppAdmin } from "../auth/admin.js";
 import { eventsRepo } from "../db/repositories/events.js";
 import { scoringCriteriaRepo } from "../db/repositories/scoringCriteria.js";
+import { creatorLanguage } from "../lib/creatorLanguage.js";
 import { communitiesRepo } from "../db/repositories/communities.js";
 import { deleteEventImage, putEventImage } from "./images.js";
 import {
@@ -76,7 +77,8 @@ eventCrudRoutes.post("/", zValidator("json", createEventInput), async (c) => {
   }
   const event = await eventsRepo.create(input, user.id);
   if (!event) return c.json({error:"access_changed"},409);
-  await scoringCriteriaRepo.seedDefaults(event.id, {eventId:event.id,actorId:c.get("user").id,permission:"manager"});
+  // 既定の採点項目は作る人の言語で書く (#364)
+  await scoringCriteriaRepo.seedDefaults(event.id, {eventId:event.id,actorId:c.get("user").id,permission:"manager"}, await creatorLanguage(c));
   return c.json({ event: (await eventsRepo.findById(event.id))! }, 201);
 });
 

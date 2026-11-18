@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { DECK_H, DECK_W } from "./decks.js";
+import { savedText } from "./savedDefaults.js";
+import type { AppLanguage } from "./i18n/languages.js";
 
 /** 配信画面の基準サイズ。デッキと同じ座標系（16:9）を使い、表示時に拡縮する */
 export const LIVE_W = DECK_W;
@@ -281,20 +283,22 @@ function centerText(
   };
 }
 
-export function defaultLiveSetContent(): LiveSetContent {
+/** ビルトインの既定セット。文言は作る人の言語（省くと日本語。#364） */
+export function defaultLiveSetContent(lang?: AppLanguage | string | null): LiveSetContent {
+  const s = (key: Parameters<typeof savedText>[1]) => savedText(lang, key);
   const scenes: LiveScene[] = [
     {
       id: "tpl-wait",
-      name: "開始前待機",
+      name: s("sceneWait"),
       background: "#0E1426",
       elements: [
         { id: "tpl-wait-title", type: "eventInfo", field: "title", x: 80, y: 160, w: 800, h: 90, rotation: 0, fontSize: 44, color: "#EAF0F7", bold: true, align: "center" },
-        centerText("tpl-wait-msg", "まもなく開始します", { y: 280, fontSize: 30, color: "#2DD4BF", bold: false }),
+        centerText("tpl-wait-msg", s("waitMessage"), { y: 280, fontSize: 30, color: "#2DD4BF", bold: false }),
       ],
     },
     {
       id: "tpl-op",
-      name: "OP",
+      name: s("sceneOp"),
       background: "linear-gradient(135deg, #0B3A34 0%, #0E1426 60%)",
       elements: [
         { id: "tpl-op-title", type: "eventInfo", field: "title", x: 80, y: 180, w: 800, h: 100, rotation: 0, fontSize: 52, color: "#EAF0F7", bold: true, align: "center" },
@@ -303,7 +307,7 @@ export function defaultLiveSetContent(): LiveSetContent {
     },
     {
       id: "tpl-deck",
-      name: "スライド全画面",
+      name: s("sceneDeck"),
       background: "#000000",
       elements: [
         { id: "tpl-deck-main", type: "deck", x: 0, y: 0, w: 960, h: 540, rotation: 0 },
@@ -311,7 +315,7 @@ export function defaultLiveSetContent(): LiveSetContent {
     },
     {
       id: "tpl-deck-cam",
-      name: "スライド + カメラ",
+      name: s("sceneDeckCamera"),
       background: "#0E1426",
       elements: [
         { id: "tpl-deck-cam-deck", type: "deck", x: 0, y: 0, w: 720, h: 405, rotation: 0 },
@@ -320,7 +324,7 @@ export function defaultLiveSetContent(): LiveSetContent {
     },
     {
       id: "tpl-cam",
-      name: "カメラ全画面",
+      name: s("sceneCamera"),
       background: "#000000",
       elements: [
         { id: "tpl-cam-main", type: "camera", x: 0, y: 0, w: 960, h: 540, rotation: 0, fit: "cover" },
@@ -328,19 +332,19 @@ export function defaultLiveSetContent(): LiveSetContent {
     },
     {
       id: "tpl-break",
-      name: "休憩中",
+      name: s("sceneBreak"),
       background: "#0E1426",
       elements: [
-        centerText("tpl-break-msg", "しばらくお待ちください", { fontSize: 40 }),
+        centerText("tpl-break-msg", s("breakMessage"), { fontSize: 40 }),
         centerText("tpl-break-icon", "☕", { y: 130, fontSize: 64, bold: false }),
       ],
     },
     {
       id: "tpl-ed",
-      name: "ED",
+      name: s("sceneEd"),
       background: "linear-gradient(135deg, #0E1426 40%, #0B3A34 100%)",
       elements: [
-        centerText("tpl-ed-msg", "ご視聴ありがとうございました！", { y: 200, fontSize: 44 }),
+        centerText("tpl-ed-msg", s("edMessage"), { y: 200, fontSize: 44 }),
         { id: "tpl-ed-title", type: "eventInfo", field: "title", x: 80, y: 320, w: 800, h: 50, rotation: 0, fontSize: 24, color: "#97A3BC", align: "center" },
       ],
     },

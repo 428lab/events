@@ -6,6 +6,7 @@ import type {
   UpdateLiveSetInput,
 } from "@eventer/shared";
 import { api } from "./client.js";
+import { creatorLanguage } from "../i18n/creatorLanguage.js";
 
 export function useMyLiveSets() {
   return useQuery({
@@ -29,7 +30,8 @@ export function useCreateLiveSet() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateLiveSetInput) =>
-      api.post<LiveSet>("/live-sets", input),
+      // 名前・既定のシーンは作る人の言語で書く (#364)
+      api.post<LiveSet>(`/live-sets?lang=${creatorLanguage()}`, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["liveSets", "mine"] }),
   });
 }
