@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import {
   DEFAULT_LIVE_SET_ID,
   defaultLiveSetContent,
+  savedText,
   updateEventLiveStateInput,
 } from "@eventer/shared";
 import { computeScheduleTimes, publicTracks } from "@eventer/shared";
@@ -13,6 +14,7 @@ import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
 import { eventLiveCutinRepo } from "../db/repositories/eventLiveCutin.js";
 import { triggerCutinInput } from "@eventer/shared";
 import { liveSetsRepo } from "../db/repositories/liveSets.js";
+import { creatorLanguage } from "../lib/creatorLanguage.js";
 import { decksRepo } from "../db/repositories/decks.js";
 import { eventsRepo, type EventAccessRow } from "../db/repositories/events.js";
 import { gateEvent } from "../auth/eventAccess.js";
@@ -204,12 +206,14 @@ liveControlRoutes.get(
       const set = await liveSetsRepo.findById(state.liveSetId);
       if (set) return c.json(set);
     }
+    // 保存されないビルトインのセット。見ている人の言語で返す（#364。?lang= → user.language → 日本語）
+    const language = await creatorLanguage(c);
     const fallback: LiveSet = {
       id: DEFAULT_LIVE_SET_ID,
       ownerId: "",
       communityId: null,
-      name: "デフォルト",
-      content: defaultLiveSetContent(),
+      name: savedText(language, "liveSetDefaultName"),
+      content: defaultLiveSetContent(language),
       createdAt: 0,
       updatedAt: 0,
     };

@@ -8,6 +8,7 @@ import { liveSetsRepo } from "../db/repositories/liveSets.js";
 import { eventLiveStateRepo } from "../db/repositories/eventLiveState.js";
 import { publishLive } from "./liveControl.js";
 import { putLiveSetImage } from "./liveSetImages.js";
+import { creatorLanguage } from "../lib/creatorLanguage.js";
 
 /** /api/live-sets（配信セットの作成・編集・削除・自分の一覧）。decks と同じオーナーシップ */
 export const liveSetRoutes = new Hono<AppEnv>();
@@ -22,6 +23,7 @@ liveSetRoutes.get("/mine", async (c) => {
 
 liveSetRoutes.post("/", zValidator("json", createLiveSetInput), async (c) => {
   const input = valid<CreateLiveSetInput>(c, "json");
+  const language = await creatorLanguage(c);
   // ベース指定時は自分のセットの中身を複製（未指定はビルトインテンプレ）
   let baseContent;
   if (input.baseLiveSetId) {
@@ -31,9 +33,9 @@ liveSetRoutes.post("/", zValidator("json", createLiveSetInput), async (c) => {
     }
     baseContent = base.content;
   } else if (input.templateId) {
-    baseContent = visualLiveSetContent(input.templateId);
+    baseContent = visualLiveSetContent(input.templateId, language);
   }
-  const liveSet = await liveSetsRepo.create(input, c.get("user").id, baseContent);
+  const liveSet = await liveSetsRepo.create(input, c.get("user").id, baseContent, language);
   return c.json(liveSet, 201);
 });
 

@@ -33,6 +33,7 @@ import {
   copyScene,
   newScene,
 } from "../lib/liveScenes.js";
+import { creatorLanguage } from "../i18n/creatorLanguage.js";
 import type {
   LiveElementCommands,
   LiveSceneCommands,
@@ -163,13 +164,13 @@ export function LiveSetEditorPage() {
 
   const sceneCommands: LiveSceneCommands = {
     add: () => {
-      editScenes((s) => insertAfter(s, idx, newScene(scenes.length)));
+      editScenes((s) => insertAfter(s, idx, newScene(scenes.length, creatorLanguage())));
       setSceneIdx(idx + 1);
       setSelectedId(null);
     },
     duplicate: () => {
       if (!scene) return;
-      editScenes((s) => insertAfter(s, idx, copyScene(scene)));
+      editScenes((s) => insertAfter(s, idx, copyScene(scene, creatorLanguage())));
       setSceneIdx(idx + 1);
     },
     remove: () => {

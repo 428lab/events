@@ -1,4 +1,5 @@
-import type { LiveElement, LiveScene } from "@eventer/shared";
+import { savedText, type LiveElement, type LiveScene } from "@eventer/shared";
+import type { AppLanguage } from "@eventer/shared/i18n";
 import { copyPage } from "./editor/collection.js";
 import { uid } from "./editor/uid.js";
 
@@ -15,11 +16,11 @@ import { uid } from "./editor/uid.js";
 
 // ===== シーン =====
 
-/** 新しいシーン。名前は保存されるデータなので訳さない（方針は #364 / #367） */
-export function newScene(count: number): LiveScene {
+/** 新しいシーン。名前は保存されるデータなので、作る人の言語で書く (#364)。省くと日本語 */
+export function newScene(count: number, lang?: AppLanguage): LiveScene {
   return {
     id: uid(),
-    name: `シーン ${count + 1}`,
+    name: savedText(lang, "sceneName", { n: count + 1 }),
     background: "#0E1426",
     elements: [],
   };
@@ -27,11 +28,11 @@ export function newScene(count: number): LiveScene {
 
 /**
  * シーンの写し。id の振り直しは共通の `copyPage` に任せ、
- * ここは名前に「のコピー」を足すぶんだけ。
+ * ここは名前に「のコピー」（英語は "Copy of"）を付けるぶんだけ。
  * 一覧では名前しか見えないので、写しと元が同名だと見分けが付かない。
  */
-export function copyScene(scene: LiveScene): LiveScene {
-  return { ...copyPage(scene), name: `${scene.name}のコピー` };
+export function copyScene(scene: LiveScene, lang?: AppLanguage): LiveScene {
+  return { ...copyPage(scene), name: savedText(lang, "copyName", { name: scene.name }) };
 }
 
 /**
@@ -43,9 +44,9 @@ export function isColorBackground(background: string | undefined): boolean {
 }
 
 // ===== 置いたばかりの要素 =====
-// 文言は保存されるデータなので訳さない（方針は #364 / #367）
+// 文言は保存されるデータなので、作る人の言語で書く (#364)。省くと日本語
 
-export function newTextElement(): LiveElement {
+export function newTextElement(lang?: AppLanguage): LiveElement {
   return {
     id: uid(),
     type: "text",
@@ -54,7 +55,7 @@ export function newTextElement(): LiveElement {
     w: 480,
     h: 100,
     rotation: 0,
-    text: "テキスト",
+    text: savedText(lang, "text"),
     fontSize: 40,
     color: "#EAF0F7",
     align: "left",

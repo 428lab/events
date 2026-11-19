@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { normalizeLanguage, DEFAULT_LANGUAGE, type AppLanguage } from "./i18n/languages.js";
+import { savedText, type SavedDefaultKey } from "./savedDefaults.js";
 
 /** 参加アンケート (#152) のフェーズ。'pre'=参加登録時、'post'=事後アンケート (#153 予約) */
 export const SURVEY_PHASES = ["pre", "post"] as const;
@@ -175,76 +176,59 @@ export interface SurveyTemplate {
 /**
  * 事前アンケートのテンプレート（編集画面のたたき台）。
  *
- * **`name` は辞書 (`eventForm.surveyTemplateName_<key>`) が訳す**が、`questions` の
- * 中身（質問文・選択肢）は日本語のまま。訳し忘れではない (#363):
- * テンプレを選ぶと**その文言がそのまま主催者のアンケートとして保存される**ので、
- * ここを見ている人の言語で訳すと、保存されたあとに「作った人と参加者で
- * 見える文言が違う」ことになる。保存されるデータの言語をどう扱うかは **#364**
- * で別途決める。決まるまでは中身に手を入れないこと。
+ * **`name` は辞書 (`eventForm.surveyTemplateName_<key>`) が訳す**。`questions` の中身（質問文・
+ * 選択肢）はテンプレを選んだ瞬間に**主催者のアンケートとして保存される**ので、**選ぶ人の言語**で
+ * 書く (#364。オーナー決定「作った人の言語で作る」)。保存したあとは訳し直さない。
+ * 文言は `i18n/messages/savedDefaults.ts`。日本語は以前の直書きと同じ綴り。
  */
-export const SURVEY_TEMPLATES: SurveyTemplate[] = [
+type SurveyStep = [question: SavedDefaultKey, qtype: SurveyQtype, options: SavedDefaultKey[], required: boolean];
+const SURVEY_TEMPLATE_STEPS: Array<{ key: string; name: string; steps: SurveyStep[] }> = [
   {
     key: "entry-info",
     name: "入館情報",
-    questions: [
-      { question: "氏名", qtype: "text", options: [], required: true },
-      { question: "所属・会社名", qtype: "text", options: [], required: false },
+    steps: [
+      ["surveyName", "text", [], true],
+      ["surveyAffiliation", "text", [], false],
     ],
   },
   {
     key: "party",
     name: "懇親会",
-    questions: [
-      {
-        question: "懇親会に参加しますか",
-        qtype: "select",
-        options: ["参加", "不参加"],
-        required: true,
-      },
-      {
-        question: "食物アレルギー・食事制限",
-        qtype: "text",
-        options: [],
-        required: false,
-      },
+    steps: [
+      ["surveyPartyJoin", "select", ["surveyPartyYes", "surveyPartyNo"], true],
+      ["surveyDiet", "text", [], false],
     ],
   },
   {
     key: "attributes",
     name: "参加者属性",
-    questions: [
-      {
-        question: "属性・職種",
-        qtype: "select",
-        options: [
-          "エンジニア",
-          "デザイナー",
-          "プロダクトマネージャー",
-          "経営・アントレプレナー",
-          "学生",
-          "その他",
-        ],
-        required: true,
-      },
-      {
-        question: "このテーマの知識レベル",
-        qtype: "select",
-        options: ["初めて", "入門レベル", "実務経験あり", "専門・エキスパート"],
-        required: false,
-      },
-      {
-        question: "興味のある分野（複数選択可）",
-        qtype: "checkbox",
-        options: [
-          "AI・機械学習",
-          "Web開発",
-          "モバイル",
-          "インフラ・クラウド",
-          "デザイン・UX",
-          "ビジネス・起業",
-        ],
-        required: false,
-      },
+    steps: [
+      ["surveyOccupation", "select", [
+        "surveyOccupationEngineer", "surveyOccupationDesigner", "surveyOccupationPm",
+        "surveyOccupationFounder", "surveyOccupationStudent", "surveyOccupationOther",
+      ], true],
+      ["surveyLevel", "select", ["surveyLevelNew", "surveyLevelBeginner", "surveyLevelPractitioner", "surveyLevelExpert"], false],
+      ["surveyInterests", "checkbox", [
+        "surveyInterestAi", "surveyInterestWeb", "surveyInterestMobile",
+        "surveyInterestInfra", "surveyInterestDesign", "surveyInterestBusiness",
+      ], false],
     ],
   },
 ];
+
+/** テンプレートを選ぶ人の言語で組み立てる (#364)。省くと日本語 */
+export function surveyTemplates(lang?: AppLanguage | string | null): SurveyTemplate[] {
+  return SURVEY_TEMPLATE_STEPS.map(({ key, name, steps }) => ({
+    key,
+    name,
+    questions: steps.map(([question, qtype, options, required]) => ({
+      question: savedText(lang, question),
+      qtype,
+      options: options.map((o) => savedText(lang, o)),
+      required,
+    })),
+  }));
+}
+
+/** 日本語のテンプレート（名前の一覧・以前からの呼び出し用） */
+export const SURVEY_TEMPLATES: SurveyTemplate[] = surveyTemplates("ja");

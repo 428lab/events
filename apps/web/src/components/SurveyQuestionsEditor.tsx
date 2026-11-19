@@ -20,13 +20,14 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
 import { useTranslation } from "react-i18next";
 import type { SurveyQtype } from "@eventer/shared";
-import { SURVEY_TEMPLATES } from "@eventer/shared";
+import { SURVEY_TEMPLATES, surveyTemplates } from "@eventer/shared";
 import {
   useEventSurvey,
   useSaveSurveyQuestions,
   useSurveyAnswers,
 } from "../api/eventSurveyHooks.js";
 import { tDynamic } from "../i18n/index.js";
+import { creatorLanguage } from "../i18n/creatorLanguage.js";
 
 /** 回答形式 (`SurveyQtype`) → 翻訳キー。**選ばせる順番はこの並びが持つ** */
 const QTYPE_KEY = {
@@ -113,7 +114,8 @@ export function SurveyQuestionsEditor({ eventId }: { eventId: string }) {
 
   const applyTemplate = (templateKey: string) => {
     setTemplateAnchor(null);
-    const template = SURVEY_TEMPLATES.find((tpl) => tpl.key === templateKey);
+    // 中身（質問文・選択肢）は保存されるので、選ぶ人の言語で書く (#364)
+    const template = surveyTemplates(creatorLanguage()).find((tpl) => tpl.key === templateKey);
     if (!template) return;
     if (
       rows.length > 0 &&

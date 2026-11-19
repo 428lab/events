@@ -5,6 +5,8 @@ import type {
   UpdateCriterionInput,
 } from "@eventer/shared";
 import { many, one, } from "../client.js";
+import { savedText, type SavedDefaultKey } from "@eventer/shared";
+import type { AppLanguage } from "@eventer/shared/i18n";
 
 interface CriterionRow {
   id: string;
@@ -26,11 +28,12 @@ function toCriterion(row: CriterionRow): ScoringCriterion {
   };
 }
 
-const DEFAULT_CRITERIA: Array<{ name: string; description: string }> = [
-  { name: "技術力", description: "実装の難易度・完成度" },
-  { name: "独自性", description: "アイデアの新規性" },
-  { name: "完成度", description: "動作・仕上がり" },
-  { name: "プレゼン", description: "発表のわかりやすさ" },
+/** 既定の採点項目。作る人の言語で書いて保存する (#364) */
+const DEFAULT_CRITERIA: Array<{ name: SavedDefaultKey; description: SavedDefaultKey }> = [
+  { name: "criterionTechnical", description: "criterionTechnicalDesc" },
+  { name: "criterionOriginality", description: "criterionOriginalityDesc" },
+  { name: "criterionCompleteness", description: "criterionCompletenessDesc" },
+  { name: "criterionPresentation", description: "criterionPresentationDesc" },
 ];
 
 export const scoringCriteriaRepo = {
@@ -94,13 +97,13 @@ export const scoringCriteriaRepo = {
   },
 
   /** デフォルト採点項目をシード（既に項目があれば何もしない） */
-  async seedDefaults(eventId: string, writer: EventWriter): Promise<ScoringCriterion[]> {
+  async seedDefaults(eventId: string, writer: EventWriter, language?: AppLanguage): Promise<ScoringCriterion[]> {
     const existing = await this.listByEvent(eventId);
     if (existing.length > 0) return existing;
     const stmts = DEFAULT_CRITERIA.map((c, i) => ({
       sql: `INSERT INTO scoring_criterion (id, event_id, name, description, sort_order, max_level)
            VALUES (?, ?, ?, ?, ?, 4)`,
-      args: [crypto.randomUUID(), eventId, c.name, c.description, i],
+      args: [crypto.randomUUID(), eventId, savedText(language, c.name), savedText(language, c.description), i],
     }));
     await eventWrite(writer,stmts);
     return this.listByEvent(eventId);

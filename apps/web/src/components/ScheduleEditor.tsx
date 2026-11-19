@@ -16,6 +16,7 @@ import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 import {
   SCHEDULE_TEMPLATES,
+  scheduleTemplates,
   computeScheduleTimes,
   findTrackOverlaps,
   publicTracks,
@@ -48,6 +49,7 @@ import {
   toTimeItems,
   trackRowFromTrack,
 } from "./scheduleEditorModel.js";
+import { creatorLanguage } from "../i18n/creatorLanguage.js";
 
 /** タイムテーブルの編集（staff 用）。行の追加/削除・ドラッグ/ボタンでの並び替え・
  * テンプレートからの作成に対応。時刻プレビューは表示と同じロジックで自動計算する。
@@ -211,7 +213,8 @@ export function ScheduleEditor({
 
   const applyTemplate = (templateKey: string) => {
     setTemplateAnchor(null);
-    const template = SCHEDULE_TEMPLATES.find((x) => x.key === templateKey);
+    // 中身（コマの題名・説明）は保存されるので、選ぶ人の言語で書く (#364)
+    const template = scheduleTemplates(creatorLanguage()).find((x) => x.key === templateKey);
     if (!template) return;
     if (
       rows.length > 0 &&
@@ -459,8 +462,7 @@ export function ScheduleEditor({
           open={Boolean(templateAnchor)}
           onClose={() => setTemplateAnchor(null)}
         >
-          {/* テンプレートの中身（コマの題名）は保存されるデータなので
-              @eventer/shared が持つ日本語のまま。ここで訳すのは選ぶときの名前だけ */}
+          {/* 選ぶときの名前は辞書が訳す。中身は選んだときに選ぶ人の言語で書く (#364) */}
           {SCHEDULE_TEMPLATES.map((template) => (
             <MenuItem
               key={template.key}

@@ -5,7 +5,8 @@ import type {
   LiveSetSummary,
   UpdateLiveSetInput,
 } from "@eventer/shared";
-import { defaultLiveSetContent } from "@eventer/shared";
+import { defaultLiveSetContent, savedText } from "@eventer/shared";
+import type { AppLanguage } from "@eventer/shared/i18n";
 import { many, one, run, runCount } from "../client.js";
 
 interface LiveSetRow {
@@ -63,6 +64,8 @@ export const liveSetsRepo = {
     input: CreateLiveSetInput,
     ownerId: string,
     baseContent?: LiveSetContent,
+    /** 作る人の言語 (#364)。名前を付けなかったときの名前と既定のシーンに使う */
+    language?: AppLanguage,
   ): Promise<LiveSet> {
     const id = crypto.randomUUID();
     const now = Date.now();
@@ -71,8 +74,9 @@ export const liveSetsRepo = {
        VALUES (?, ?, NULL, ?, ?, ?, ?)`,
       id,
       ownerId,
-      input.name || "配信セット",
-      JSON.stringify(baseContent ?? defaultLiveSetContent()),
+      // 名前と既定のシーンは作る人の言語 (#364)
+      input.name || savedText(language, "liveSetName"),
+      JSON.stringify(baseContent ?? defaultLiveSetContent(language)),
       now,
       now,
     );

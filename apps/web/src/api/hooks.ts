@@ -25,6 +25,7 @@ import type {
 } from "@eventer/shared";
 import { ACCOUNT_DELETION_GRACE_MS } from "@eventer/shared";
 import { api, ApiError } from "./client.js";
+import { creatorLanguage } from "../i18n/creatorLanguage.js";
 
 interface MeResponse {
   user: User | null;
@@ -322,7 +323,8 @@ export function useCreateEvent() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateEventInput) =>
-      api.post<{ event: Event }>("/events", input),
+      // 既定の採点項目は作る人の言語で書く (#364)
+      api.post<{ event: Event }>(`/events?lang=${creatorLanguage()}`, input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["events"] });
       qc.invalidateQueries({ queryKey: ["myPage"] });
@@ -358,7 +360,8 @@ export function useDeleteEvent(id: string) {
 export function useDuplicateEvent(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<{ event: Event }>(`/events/${id}/duplicate`),
+    // 題名の「◯◯のコピー」は作る人の言語で書く (#364)
+    mutationFn: () => api.post<{ event: Event }>(`/events/${id}/duplicate?lang=${creatorLanguage()}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["events"] });
       qc.invalidateQueries({ queryKey: ["myPage"] });

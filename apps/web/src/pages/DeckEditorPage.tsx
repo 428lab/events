@@ -58,6 +58,7 @@ import type {
   DeckSlideCommands,
 } from "../lib/deckSlides.js";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
+import { creatorLanguage } from "../i18n/creatorLanguage.js";
 import { prepareLoadedContent, withDeckPositions } from "../lib/deckPositions.js";
 import { useDeckSave } from "../lib/useDeckSave.js";
 import { useDeckSync } from "../lib/useDeckSync.js";
@@ -403,7 +404,7 @@ export function DeckEditorPage() {
 
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <DeckToolbar
-            onAddText={() => addElement(newTextElement())}
+            onAddText={() => addElement(newTextElement(creatorLanguage()))}
             onAddImage={() =>
               picker.pick((url) => addElement(newImageElement(url)))
             }
