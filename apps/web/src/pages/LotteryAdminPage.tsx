@@ -342,8 +342,11 @@ export function LotteryAdminPage() {
                             avatarUrl={m.user.avatarUrl}
                             withAvatar
                             avatarSize={32}
-                            sx={{ flex: 1 }}
+                            // 名前に最低限の幅を残し、狭い画面では当落のボタンを次の行へ回す（名前を1文字ずつ折らない）
+                            sx={{ flex: 1, minWidth: 140 }}
                           />
+                          {/* 状態と当落のボタンはひとかたまりで折り返す（狭い画面でボタンだけ次の行に分かれない） */}
+                          <Stack direction="row" alignItems="center" spacing={1} sx={{ ml: "auto" }}>
                           <Chip
                             size="small"
                             label={statusLabel(m.status, slot)}
@@ -382,6 +385,7 @@ export function LotteryAdminPage() {
                                 : "eventDetail.statusLost",
                             )}
                           </Button>
+                          </Stack>
                         </Stack>
                       );
                     })}
