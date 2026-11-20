@@ -261,8 +261,15 @@ export function EventSchedule({
                           )}
                         </Stack>
                       )}
-                      <Typography variant="body2">
-                        {it.title}
+                      {/* 説明（登壇のタイトル）があるときは、それを主に大きく出し、枠名は小さく添える
+                          （オーナー指摘 2026-11-19「枠名は目立たなくていい」）。説明が無い枠は枠名が主 */}
+                      {it.description && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          {it.title}
+                        </Typography>
+                      )}
+                      <Typography variant="body2" sx={it.description ? { whiteSpace: "pre-wrap" } : undefined}>
+                        {it.description || it.title}
                         {it.materialUrl && (
                           <MuiLink
                             href={it.materialUrl}
@@ -292,15 +299,6 @@ export function EventSchedule({
                           </IconButton>
                         )}
                       </Typography>
-                      {it.description && (
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ display: "block", whiteSpace: "pre-wrap" }}
-                        >
-                          {it.description}
-                        </Typography>
-                      )}
                       <LiveDeckRowControl
                         eventId={eventId}
                         item={it}

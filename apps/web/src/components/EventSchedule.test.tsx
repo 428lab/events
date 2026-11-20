@@ -252,6 +252,19 @@ describe("裏方の行 (#383)", () => {
   });
 });
 
+/** 登壇のタイトル（説明）が主、枠名は添えるだけ（オーナー指摘 2026-11-19） */
+describe("枠名と登壇のタイトル", () => {
+  it("説明がある枠は説明を本文の大きさで、枠名を小さく出す。説明が無い枠は枠名が本文", async () => {
+    items = [ITEM, { ...ITEM, id: "it-2", title: "登壇枠1", description: "Nostrの可能性" }];
+    draw(false);
+
+    const talk = await screen.findByText("Nostrの可能性");
+    expect(talk.className).toContain("MuiTypography-body2");
+    expect(screen.getByText("登壇枠1").className).toContain("MuiTypography-caption");
+    expect(screen.getByText("オープニング").className).toContain("MuiTypography-body2");
+  });
+});
+
 /**
  * 保存したあとに手元が持っている版 (#340)。
  *
