@@ -4,6 +4,7 @@ import { Badge, Button, Stack } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useEventInquiryUnreadCount } from "../api/inquiryHooks.js";
+import HowToRegOutlinedIcon from "@mui/icons-material/HowToRegOutlined";
 import AssignmentIndOutlinedIcon from "@mui/icons-material/AssignmentIndOutlined";
 import BadgeIcon from "@mui/icons-material/Badge";
 import BarChartIcon from "@mui/icons-material/BarChart";
@@ -39,8 +40,11 @@ export interface ManagementLink {
  * 運営ページのボタン列と、詳細ページの「運営」メニュー (#613) が共有する項目の定義。
  * 項目と表示条件はここ1か所に置き、2か所で食い違わないようにする。
  */
-export function managementLinks({ isStaff, attendanceCheck, chatAvailable, inquiryUnread }: {
+export function managementLinks({ isStaff, attendanceCheck, chatAvailable, inquiryUnread, hasSlots = false }: {
   isStaff: boolean; attendanceCheck: boolean; chatAvailable: boolean; inquiryUnread?: number;
+  /** 参加者が申し込む参加枠があるイベントだけ「申込者の管理」を出す（抽選の当落・先着の繰り上げ）。
+   * event.capacityTotal が null でない＝運営専用でない枠がある（枠の一覧を取りに行かずに分かる） */
+  hasSlots?: boolean;
 }): ManagementLink[] {
   if (!isStaff) return [];
   const links: ManagementLink[] = [
@@ -55,6 +59,8 @@ export function managementLinks({ isStaff, attendanceCheck, chatAvailable, inqui
     { path: "prize-desk", labelKey: "staffOps.prizeDeskTitle", icon: <CardGiftcardIcon />, group: "day", show: isStaff },
     { path: "bingo/control", labelKey: "staffOps.bingoControlTitle", icon: <CasinoOutlinedIcon />, group: "day", show: isStaff },
     { path: "pre-survey", labelKey: "staffOps.preSurveyTitle", icon: <PollOutlinedIcon />, group: "content", show: isStaff },
+    // 抽選の当落・先着のキャンセル待ちの確定。以前は編集ページの参加枠の奥にしか入口が無かった
+    { path: "lottery", labelKey: "staffOps.slotAdminOpen", icon: <HowToRegOutlinedIcon />, group: "content", show: isStaff && hasSlots },
     { path: "stats", labelKey: "eventDetail.stats", icon: <BarChartIcon />, group: "review", show: isStaff },
     {
       path: "checkin",
@@ -70,14 +76,14 @@ export function managementLinks({ isStaff, attendanceCheck, chatAvailable, inqui
 }
 
 /** Existing dedicated operations; access is still governed by the real event role. */
-export function EventManagementLinks({ eventId, isStaff, attendanceCheck, chatAvailable }: {
-  eventId: string; isStaff: boolean; attendanceCheck: boolean; chatAvailable: boolean;
+export function EventManagementLinks({ eventId, isStaff, attendanceCheck, chatAvailable, hasSlots = false }: {
+  eventId: string; isStaff: boolean; attendanceCheck: boolean; chatAvailable: boolean; hasSlots?: boolean;
 }) {
   const { t } = useTranslation();
   // 主催者あての問い合わせの未読数 (D-EVENT-CONTACT)。スタッフのときだけ取りに行く
   const { data: inquiryUnread = 0 } = useEventInquiryUnreadCount(eventId, isStaff);
   if (!isStaff) return null;
-  const links = managementLinks({ isStaff, attendanceCheck, chatAvailable, inquiryUnread });
+  const links = managementLinks({ isStaff, attendanceCheck, chatAvailable, inquiryUnread, hasSlots });
   return <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
     {links.map((link) => <Badge key={link.path} color="error" badgeContent={link.badge ?? 0} max={99}>
       <Button component={RouterLink} to={`/events/${eventId}/${link.path}`} variant="outlined" startIcon={link.icon}>

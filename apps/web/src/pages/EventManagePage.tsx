@@ -94,7 +94,8 @@ function StaffManagement({ eventId, event, myRole, canInvite }: {
     {/* チーム参加 (#9)。コンテストのときだけ */}
     {event.contestMode && isStaff && <TeamManager eventId={eventId} event={event} />}
     <Typography variant="h6" component="h2">{t("eventManagement.general")}</Typography>
-    <EventManagementLinks eventId={eventId} isStaff={isStaff} attendanceCheck={event.attendanceCheck} chatAvailable={chatAvailable} />
+    <EventManagementLinks eventId={eventId} isStaff={isStaff} attendanceCheck={event.attendanceCheck} chatAvailable={chatAvailable}
+      hasSlots={event.capacityTotal != null} />
     <Typography variant="h6" component="h2">{t("eventManagement.inline")}</Typography>
     <Stack>
       <ManagementSection id="date-poll" title={t("eventManagement.datePoll")}>

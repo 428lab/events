@@ -236,3 +236,41 @@ describe("申込者の管理: 先着枠も扱える (#286)", () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * 抽選枠の申込者を選んで、まとめて当選にする（オーナー依頼 2026-11-19
+ * 「参加抽選の人を選んで個別に確定させたい」）。1人ずつ今の API を順に呼ぶ。
+ */
+describe("申込者の管理: 選んでまとめて当選にする", () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    patchMock.mockReset();
+    patchMock.mockResolvedValue({ ok: true });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const lottery = () =>
+    slot({ selectionType: "lottery", capacity: 1, confirmedCount: 0, waitlistCount: 0, appliedCount: 3 });
+
+  it("2人を選んで当選にすると、2人分を送り、定員超過の確認は1回だけ。終わったら選択を外す", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    draw([lottery()], [member("alice", "applied"), member("bob", "applied"), member("carol", "applied")]);
+
+    expect(await screen.findByText("ボブ")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "アリス さんを選ぶ" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "ボブ さんを選ぶ" }));
+    expect(screen.getByText("2 人を選択中")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "選んだ 2 人を当選にする" }));
+
+    await waitFor(() => expect(patchMock).toHaveBeenCalledTimes(2));
+    expect(patchMock).toHaveBeenCalledWith("/events/e-1/slots/s-1/members/alice/status", { status: "confirmed" });
+    expect(patchMock).toHaveBeenCalledWith("/events/e-1/slots/s-1/members/bob/status", { status: "confirmed" });
+    // 定員1に2人 → 超えることを1回だけ聞く
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmSpy.mock.calls[0][0]).toMatch(/アリス、ボブ さんを確定にすると定員を超えます/);
+    await waitFor(() => expect(screen.queryByText("2 人を選択中")).toBeNull());
+    expect(screen.getByRole("checkbox", { name: "アリス さんを選ぶ" })).not.toBeChecked();
+  });
+});

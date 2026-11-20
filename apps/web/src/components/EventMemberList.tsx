@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   Alert,
   Avatar,
+  Button,
   Card,
   CardContent,
   Checkbox,
@@ -34,6 +35,7 @@ import {
   useEventSlots,
   useMe,
   useSetAssignedSlot,
+  useSetMemberSlotStatus,
   useStaffCancelMember,
   useSetAttendance,
   useSetEventMemberRole,
@@ -43,6 +45,7 @@ import { i18next } from "../i18n/index.js";
 import { participationStatusLabel, roleLabel } from "../lib/format.js";
 import { isMyMembership } from "../lib/eventMembership.js";
 import { messageKey, type MessageKey } from "../lib/messageKey.js";
+import { canDecideLottery, confirmOverCapacity } from "../lib/slotStatus.js";
 
 /** ロール変更が断られた理由を、その場で直せる形の文言にする (#281)。
  * 何が起きたか（なぜ変えられないか）と、次に何をすればよいかまで書く。
@@ -115,9 +118,17 @@ export function EventMemberList({
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="h6" gutterBottom>
-          {t("eventDetail.participantsWithCount", { n: members.length })}
-        </Typography>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" useFlexGap spacing={1} sx={{ mb: 0.5 }}>
+          <Typography variant="h6">
+            {t("eventDetail.participantsWithCount", { n: members.length })}
+          </Typography>
+          {/* 抽選の当落・まとめての当選は「申込者の管理」で。運営ページの一覧から直接行けるようにする */}
+          {isStaff && showManagementActions && (slots?.length ?? 0) > 0 && (
+            <Button size="small" variant="outlined" component={RouterLink} to={`/events/${eventId}/lottery`}>
+              {t("staffOps.slotAdminOpen")}
+            </Button>
+          )}
+        </Stack>
         {attendanceCheck && (
           <Alert severity="info" sx={{ mb: 1, py: 0 }}>
             {t(
@@ -176,6 +187,10 @@ export function MemberRow({
   const setAssignedSlot = useSetAssignedSlot(eventId);
   const staffCancel = useStaffCancelMember(eventId);
   const [cancelError, setCancelError] = useState<MessageKey | null>(null);
+  // 抽選枠の参加者は、ここからも当落を付けられる（「申込者の管理」と同じ API）
+  const setSlotStatus = useSetMemberSlotStatus(eventId);
+  const lotterySlot = slots.find((slot) => slot.id === m.slotId);
+  const canDecide = canDecideLottery(m, lotterySlot);
   // 行ごとに持つ（ロール変更と同じ）。1つを全行で共有すると、続けて操作したとき
   // 後の行の結果が前の行のエラー表示を消してしまう (#286)
   const setAttendance = useSetAttendance(eventId);
@@ -314,6 +329,49 @@ export function MemberRow({
                   >
                     {t("eventDetail.staffCancel")}
                   </MenuItem>,
+                ]}
+                {/* 抽選の当落。今と違う側だけ出す（申込中なら両方、当選なら落選だけ、落選なら当選だけ） */}
+                {canDecide && lotterySlot && [
+                  <Divider key="lottery-divider" />,
+                  <ListSubheader key="lottery-heading" sx={{ lineHeight: "32px", bgcolor: "transparent" }}>
+                    {t("staffOps.slotMenuHeading")}
+                  </ListSubheader>,
+                  ...(m.status !== "confirmed"
+                    ? [
+                        <MenuItem
+                          key="lottery-win"
+                          disabled={setSlotStatus.isPending}
+                          onClick={() => {
+                            setAnchor(null);
+                            if (!confirmOverCapacity(lotterySlot, [memberName])) return;
+                            setSlotStatus.mutate(
+                              { slotId: lotterySlot.id, userId: m.user.id, status: "confirmed" },
+                              { onError: () => setSlotError(messageKey("staffOps.slotStatusChangeFailed", { name: memberName })) },
+                            );
+                          }}
+                        >
+                          {t("staffOps.slotMenuWin")}
+                        </MenuItem>,
+                      ]
+                    : []),
+                  ...(m.status !== "lost"
+                    ? [
+                        <MenuItem
+                          key="lottery-lose"
+                          disabled={setSlotStatus.isPending}
+                          onClick={() => {
+                            setAnchor(null);
+                            if (!window.confirm(t("staffOps.slotMenuLoseConfirm", { name: memberName }))) return;
+                            setSlotStatus.mutate(
+                              { slotId: lotterySlot.id, userId: m.user.id, status: "lost" },
+                              { onError: () => setSlotError(messageKey("staffOps.slotStatusChangeFailed", { name: memberName })) },
+                            );
+                          }}
+                        >
+                          {t("staffOps.slotMenuLose")}
+                        </MenuItem>,
+                      ]
+                    : []),
                 ]}
                 {canAssignSlot && [
                   ...(isMe ? [] : [<Divider key="assign-divider" />]),

@@ -107,7 +107,8 @@ function StaffActions({ eventId, event, chatAvailable, inquiryUnread, phase, sx 
   }
 
   // Menu の子に Fragment を置けないので、区切りごとに平らな配列へ積む
-  const links = managementLinks({ isStaff: true, attendanceCheck: event.attendanceCheck, chatAvailable, inquiryUnread });
+  const links = managementLinks({ isStaff: true, attendanceCheck: event.attendanceCheck, chatAvailable, inquiryUnread,
+    hasSlots: event.capacityTotal != null });
   const items: ReactNode[] = [];
   for (const group of MANAGEMENT_LINK_GROUPS) {
     const inGroup = links.filter((link) => link.group === group.key);
