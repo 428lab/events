@@ -442,3 +442,59 @@ describe("キャンセル扱い", () => {
     expect(screen.queryByRole("menuitem", { name: "キャンセル扱いにする" })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * 抽選の当落を参加者一覧の「…」から付ける（オーナー依頼 2026-11-19
+ * 「参加抽選の人を選んで個別に確定させたい」）。「申込者の管理」と同じ API を呼ぶ。
+ */
+describe("抽選の当落（参加者一覧の「…」）", () => {
+  const lottery: ParticipationSlot = {
+    id: "s-lot", eventId: "e-1", name: "抽選枠", sortOrder: 0, selectionType: "lottery",
+    capacity: 5, confirmedCount: 1, appliedCount: 2, waitlistCount: 0, drawAt: null, staffOnly: false,
+  };
+  const firstCome: ParticipationSlot = { ...lottery, id: "s-fc", name: "先着枠", selectionType: "first_come" };
+  const applicant = (over: Partial<EventMemberWithUser> = {}): EventMemberWithUser => ({
+    ...MEMBER, role: "participant", slotId: "s-lot", status: "applied",
+    user: { ...MEMBER.user, globalName: "申込の人" }, ...over,
+  });
+
+  function drawRow(member: EventMemberWithUser) {
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <MemberRow eventId="e-1" member={member} isStaff attendanceCheck={false} isMe={false} slots={[lottery, firstCome]} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  beforeEach(() => { patchMock.mockReset(); patchMock.mockResolvedValue({ ok: true }); });
+
+  it("抽選に申し込んだ参加者は「当選にする」で、その枠の当選にする", async () => {
+    drawRow(applicant());
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    expect(screen.getByText("抽選の当落")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "当選にする" }));
+    await waitFor(() => expect(patchMock).toHaveBeenCalledWith(
+      "/events/e-1/slots/s-lot/members/u-1/status", { status: "confirmed" }));
+  });
+
+  it("先着枠の人・運営には出さない。当選済みの人には落選だけ出す", () => {
+    const { unmount } = drawRow(applicant({ slotId: "s-fc", status: "confirmed" }));
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    expect(screen.queryByRole("menuitem", { name: "当選にする" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "落選にする" })).toBeNull();
+    unmount();
+
+    const staff = drawRow(applicant({ role: "staff", status: "confirmed" }));
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    expect(screen.queryByText("抽選の当落")).toBeNull();
+    staff.unmount();
+
+    drawRow(applicant({ status: "confirmed" }));
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    expect(screen.queryByRole("menuitem", { name: "当選にする" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "落選にする" })).toBeInTheDocument();
+  });
+});

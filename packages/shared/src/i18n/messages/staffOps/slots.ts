@@ -26,6 +26,24 @@ const ja = {
     "{{slot}}は定員 {{capacity}} 人に対して既に {{confirmed}} 人が確定しています。{{name}} さんを確定にすると定員を超えます。よろしいですか？",
   slotStatusChangeFailed:
     "{{name}} さんの参加状態を変更できませんでした。画面を開いたまま状態が変わった可能性があります",
+  /** 定員超過の確認で、まとめて確定にする人の名前をつなぐ */
+  slotNameJoiner: "、",
+  /** 選んでまとめて当落を付ける（抽選枠） */
+  slotSelectApplicant: "{{name}} さんを選ぶ",
+  slotSelectAllApplied: "申込中の人を全部選ぶ",
+  slotSelectedCount: "{{n}} 人を選択中",
+  slotBulkWin: "選んだ {{n}} 人を当選にする",
+  slotBulkLose: "選んだ {{n}} 人を落選にする",
+  slotBulkClear: "選択を外す",
+  slotBulkLoseConfirm: "選んだ {{n}} 人を落選にします。落選のお知らせが届きます。よろしいですか？",
+  slotBulkFailed: "{{n}} 人の参加状態を変更できませんでした（{{names}}）。画面を開いたまま状態が変わった可能性があります",
+  /** 運営ページ・詳細ページからの入口 */
+  slotAdminOpen: "申込者の管理（抽選・当選）",
+  /** 参加者一覧の「…」メニュー（抽選枠の参加者） */
+  slotMenuHeading: "抽選の当落",
+  slotMenuWin: "当選にする",
+  slotMenuLose: "落選にする",
+  slotMenuLoseConfirm: "{{name}} さんを落選にします。落選のお知らせが届きます。よろしいですか？",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -50,6 +68,20 @@ const en: Record<keyof typeof ja, string> = {
     "{{slot}} has {{capacity}} seats and {{confirmed}} people are already confirmed. Confirming {{name}} will go over capacity. Continue?",
   slotStatusChangeFailed:
     "Could not change the status for {{name}}. It may have changed while this page was open.",
+  slotNameJoiner: ", ",
+  slotSelectApplicant: "Choose {{name}}",
+  slotSelectAllApplied: "Choose everyone who applied",
+  slotSelectedCount: "{{n}} chosen",
+  slotBulkWin: "Mark {{n}} chosen as selected",
+  slotBulkLose: "Mark {{n}} chosen as not selected",
+  slotBulkClear: "Clear selection",
+  slotBulkLoseConfirm: "Mark the {{n}} chosen people as not selected? They will be notified. Continue?",
+  slotBulkFailed: "Could not change the status for {{n}} people ({{names}}). It may have changed while this page was open.",
+  slotAdminOpen: "Manage applicants (lottery)",
+  slotMenuHeading: "Lottery result",
+  slotMenuWin: "Mark as selected",
+  slotMenuLose: "Mark as not selected",
+  slotMenuLoseConfirm: "Mark {{name}} as not selected? They will be notified. Continue?",
 };
 
 export const slots = { ja, en };

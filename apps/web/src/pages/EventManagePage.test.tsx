@@ -12,19 +12,22 @@ let access: boolean;
 let visibility: string;
 let contest: boolean;
 let eventResult: (() => Promise<unknown>) | undefined;
+let capacityTotal: number | null;
+let slotsList: unknown[];
 beforeEach(() => {
   vi.restoreAllMocks();
   role = "staff"; access = false; visibility = "public"; contest = false; eventResult = undefined;
+  capacityTotal = null; slotsList = [];
   vi.spyOn(api, "get").mockImplementation(async (path) => {
     if (path === "/auth/me") return { user: { id: "me", username: "me" }, isAdmin: true } as never;
     if (path === "/events/e") return (eventResult ? await eventResult() : {
       event: { id: "e", title: "夏の発表会", status: "draft", visibility, contestMode: contest,
-        attendanceCheck: true, scheduling: false, chatEnabled: false, qaEnabled: true, participationType: "individual" },
+        attendanceCheck: true, scheduling: false, chatEnabled: false, qaEnabled: true, participationType: "individual", capacityTotal },
       myRole: role, canManageAccess: access,
     }) as never;
     if (path.endsWith("/members")) return { members: [{ id: "m", userId: "other", role: "participant", status: "confirmed", attended: true,
       user: { id: "other", username: "other", globalName: "参加者A" } }] } as never;
-    if (path.endsWith("/slots")) return { slots: [] } as never;
+    if (path.endsWith("/slots")) return { slots: slotsList } as never;
     if (path.endsWith("/entries")) return { entries: [] } as never;
     if (path.endsWith("/state")) return { mode: "normal" } as never;
     if (path.endsWith("/staff-invites")) return { invites: [] } as never;
@@ -175,4 +178,23 @@ it("scheduled draft shows the publish time with publish-now and cancel (D-EVENT-
   await waitFor(() => expect(patch).toHaveBeenCalledWith("/events/e", { publishAt: null, expectedAccessRevision: 3 }));
   fireEvent.click(screen.getByRole("button", { name: "今すぐ公開" }));
   await waitFor(() => expect(api.post).toHaveBeenCalledWith("/events/e/publish"));
+});
+
+// 申込者の管理（抽選の当落）への入口。以前は編集ページの参加枠の奥にしか無かった（オーナー指摘 2026-11-19）
+it("an event without participation slots has no applicant-manager link", async () => {
+  draw();
+  await screen.findByRole("heading", { name: "夏の発表会 / 運営" });
+  expect(screen.queryByRole("link", { name: "申込者の管理（抽選・当選）" })).toBeNull();
+});
+
+it("an event with participation slots links to the applicant manager from the buttons and from the member list", async () => {
+  capacityTotal = 10;
+  slotsList = [{ id: "s", eventId: "e", name: "抽選枠", capacity: 10, selectionType: "lottery", sortOrder: 0, drawAt: null,
+    staffOnly: false, confirmedCount: 0, waitlistCount: 0, appliedCount: 1 }];
+  draw("#members");
+  await screen.findByRole("heading", { name: "夏の発表会 / 運営" });
+  await screen.findByTitle("ロールを変更");
+  const links = screen.getAllByRole("link", { name: "申込者の管理（抽選・当選）" });
+  expect(links).toHaveLength(2);
+  for (const link of links) expect(link).toHaveAttribute("href", "/events/e/lottery");
 });

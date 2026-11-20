@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   Divider,
   Snackbar,
@@ -27,6 +28,7 @@ import { UserLink } from "../components/UserLink.js";
 import { i18next } from "../i18n/index.js";
 import { formatDateTime } from "../lib/format.js";
 import { messageKey, type MessageKey } from "../lib/messageKey.js";
+import { canDecideLottery, confirmOverCapacity } from "../lib/slotStatus.js";
 
 /** 参加状態の見せ方。同じ confirmed でも、抽選枠なら「当選」、先着枠なら
  * 「参加確定」と読むほうが自然なので枠の方式で言い分ける (#286)。
@@ -84,6 +86,9 @@ export function LotteryAdminPage() {
   const draw = useDrawSlot(id);
   // 断られたときに黙って何も起きないように見せない（他のstaffが先に操作した等）
   const [error, setError] = useState<MessageKey | null>(null);
+  // 抽選枠で選んだ申込者（userId）。まとめて当選・落選にする
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   if (!eventData || !slots || !members) {
     return <Typography>{t("common.loading")}</Typography>;
@@ -93,26 +98,12 @@ export function LotteryAdminPage() {
     return <Alert severity="info">{t("staffOps.slotAdminStaffOnly")}</Alert>;
   }
 
-  /** 先着枠で定員を超える確定は拒否せず、超えることを伝えてから通す (#286)。
-   * 当日キャンセルの繰り上げや、その場で1人増やす判断を画面側で塞がない */
-  const confirmOverCapacity = (slot: ParticipationSlot, m: EventMemberWithUser): boolean =>
-    m.status === "confirmed" ||
-    slot.confirmedCount < slot.capacity ||
-    window.confirm(
-      t("staffOps.slotOverCapacityConfirm", {
-        slot: slot.name,
-        capacity: slot.capacity,
-        confirmed: slot.confirmedCount,
-        name: memberName(m),
-      }),
-    );
-
   const changeStatus = (
     slot: ParticipationSlot,
     m: EventMemberWithUser,
     status: "confirmed" | "waitlist" | "lost",
   ) => {
-    if (status === "confirmed" && !confirmOverCapacity(slot, m)) return;
+    if (status === "confirmed" && m.status !== "confirmed" && !confirmOverCapacity(slot, [memberName(m)])) return;
     setStatus.mutate(
       { slotId: slot.id, userId: m.userId, status },
       {
@@ -122,6 +113,42 @@ export function LotteryAdminPage() {
           ),
       },
     );
+  };
+
+  const togglePick = (userId: string, on: boolean) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(userId);
+      else next.delete(userId);
+      return next;
+    });
+
+  /** 選んだ人をまとめて当選・落選にする。1人ずつ今の API を順に呼ぶ（サーバーは1人分の操作のまま）。
+   * 定員超過・落選の確認は1回だけ。断られた人は名前をまとめて知らせる */
+  const bulkChange = async (slot: ParticipationSlot, chosen: EventMemberWithUser[], status: "confirmed" | "lost") => {
+    const targets = chosen.filter((m) => m.status !== status);
+    if (targets.length === 0) return setPicked(new Set());
+    if (status === "confirmed" && !confirmOverCapacity(slot, targets.map(memberName))) return;
+    if (status === "lost" && !window.confirm(t("staffOps.slotBulkLoseConfirm", { n: targets.length }))) return;
+    setBulkBusy(true);
+    const failed: string[] = [];
+    for (const m of targets) {
+      try {
+        await setStatus.mutateAsync({ slotId: slot.id, userId: m.userId, status });
+      } catch {
+        failed.push(memberName(m));
+      }
+    }
+    setBulkBusy(false);
+    setPicked(new Set());
+    if (failed.length > 0) {
+      setError(
+        messageKey("staffOps.slotBulkFailed", {
+          n: failed.length,
+          names: failed.join(t("staffOps.slotNameJoiner")),
+        }),
+      );
+    }
   };
 
   return (
@@ -150,6 +177,10 @@ export function LotteryAdminPage() {
               return order.indexOf(a.status) - order.indexOf(b.status);
             });
           const overCapacity = slot.confirmedCount > slot.capacity;
+          // 抽選枠だけ、選んでまとめて当落を付けられる（先着枠は1人ずつの操作のまま）
+          const pickable = applicants.filter((m) => canDecideLottery(m, slot));
+          const chosen = pickable.filter((m) => picked.has(m.userId));
+          const appliedOnes = pickable.filter((m) => m.status === "applied");
           // 枠の要約。並べる項目は言語で増減しないので、区切りだけ辞書から取る
           const summaryParts: string[] = [
             t(
@@ -227,6 +258,56 @@ export function LotteryAdminPage() {
                 </Stack>
                 <Divider sx={{ mb: 1 }} />
 
+                {!firstCome && pickable.length > 0 && (
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    flexWrap="wrap"
+                    useFlexGap
+                    spacing={1}
+                    sx={{ mb: 1 }}
+                  >
+                    {chosen.length === 0 ? (
+                      <Button
+                        size="small"
+                        disabled={appliedOnes.length === 0}
+                        onClick={() =>
+                          setPicked((prev) => new Set([...prev, ...appliedOnes.map((m) => m.userId)]))
+                        }
+                      >
+                        {t("staffOps.slotSelectAllApplied")}
+                      </Button>
+                    ) : (
+                      <>
+                        <Typography variant="body2" fontWeight={600}>
+                          {t("staffOps.slotSelectedCount", { n: chosen.length })}
+                        </Typography>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          color="success"
+                          disabled={bulkBusy || setStatus.isPending}
+                          onClick={() => void bulkChange(slot, chosen, "confirmed")}
+                        >
+                          {t("staffOps.slotBulkWin", { n: chosen.length })}
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          disabled={bulkBusy || setStatus.isPending}
+                          onClick={() => void bulkChange(slot, chosen, "lost")}
+                        >
+                          {t("staffOps.slotBulkLose", { n: chosen.length })}
+                        </Button>
+                        <Button size="small" disabled={bulkBusy} onClick={() => setPicked(new Set())}>
+                          {t("staffOps.slotBulkClear")}
+                        </Button>
+                      </>
+                    )}
+                  </Stack>
+                )}
+
                 {applicants.length === 0 ? (
                   <Typography variant="body2" color="text.secondary">
                     {t("staffOps.slotNoApplicants")}
@@ -245,14 +326,27 @@ export function LotteryAdminPage() {
                           spacing={1.5}
                           sx={{ py: 0.5 }}
                         >
+                          {!firstCome && (
+                            <Checkbox
+                              size="small"
+                              sx={{ p: 0.5 }}
+                              disabled={!canDecideLottery(m, slot) || bulkBusy}
+                              checked={picked.has(m.userId)}
+                              onChange={(e) => togglePick(m.userId, e.target.checked)}
+                              inputProps={{ "aria-label": t("staffOps.slotSelectApplicant", { name: memberName(m) }) }}
+                            />
+                          )}
                           <UserLink
                             username={m.user.username}
                             name={memberName(m)}
                             avatarUrl={m.user.avatarUrl}
                             withAvatar
                             avatarSize={32}
-                            sx={{ flex: 1 }}
+                            // 名前に最低限の幅を残し、狭い画面では当落のボタンを次の行へ回す（名前を1文字ずつ折らない）
+                            sx={{ flex: 1, minWidth: 140 }}
                           />
+                          {/* 状態と当落のボタンはひとかたまりで折り返す（狭い画面でボタンだけ次の行に分かれない） */}
+                          <Stack direction="row" alignItems="center" spacing={1} sx={{ ml: "auto" }}>
                           <Chip
                             size="small"
                             label={statusLabel(m.status, slot)}
@@ -262,7 +356,7 @@ export function LotteryAdminPage() {
                             size="small"
                             variant={m.status === "confirmed" ? "contained" : "outlined"}
                             color="success"
-                            disabled={setStatus.isPending}
+                            disabled={setStatus.isPending || bulkBusy}
                             onClick={() => changeStatus(slot, m, "confirmed")}
                           >
                             {t(
@@ -280,7 +374,7 @@ export function LotteryAdminPage() {
                                 : "outlined"
                             }
                             color={firstCome ? "warning" : "error"}
-                            disabled={setStatus.isPending}
+                            disabled={setStatus.isPending || bulkBusy}
                             onClick={() =>
                               changeStatus(slot, m, firstCome ? "waitlist" : "lost")
                             }
@@ -291,6 +385,7 @@ export function LotteryAdminPage() {
                                 : "eventDetail.statusLost",
                             )}
                           </Button>
+                          </Stack>
                         </Stack>
                       );
                     })}
