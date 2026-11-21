@@ -1,6 +1,8 @@
 # 確定した日程を日程調整に戻す
 
-状態: **実装承認済み。** オーナーから「うん」と返答をいただいたため、以下の内容で実装する。独立レビュー後にstagingで確認し、本番は別途GOをいただいてから。
+状態: **実装済み**（#553、コミット `2d8352d3`。2026-09-20）。オーナーから「うん」と返答をいただき、以下の内容で実装した。
+画面は `ReopenSchedulingButton.tsx`、API は `routes/eventDateOptions.ts`、書き込みは `db/repositories/reopenScheduling.ts`。
+お知らせの文言は、のちに受け取る人の言語で組み立てるようになった（#690、docs/i18n-notices.md）。
 調査基準: `1f13ae3cb5008686516a8420546b167a770cad49`（調査時の remote main / staging / production）。
 既存の自動参加登録の正本は [schedule-auto-registration.md](schedule-auto-registration.md)。本書は「調整へ戻す」と再確定に伴う差分のみを扱う。
 

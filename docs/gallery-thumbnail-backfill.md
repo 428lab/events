@@ -1,5 +1,10 @@
 # Gallery thumbnail backfill (#521)
 
+> **Status (2026-11-20):** the production backfill is complete for release `734d78f`, and #521 is closed.
+> All 181 items (177 photos and 4 video posters) were verified, and the final reconciliation is clean.
+> This runbook is kept for recovery and reference. Any new write still needs explicit owner approval,
+> as described below.
+
 Stacked on thumbnail PR #520 (`4b0e181`), itself dependent on pagination #518.
 This document supersedes the earlier **no backfill** scope for separately authorized
 backfill. The owner accepted staging and approved production pagination, centered

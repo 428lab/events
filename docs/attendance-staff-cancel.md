@@ -22,6 +22,7 @@
 - 受付でチェックイン済み（出席）の人はできない（`409 already_attended`）。来ていた記録を書き換えない。
   確定していない人（申込中・キャンセル待ち・落選・スタッフ等）もできない（`409 not_confirmed_participant`）。
 - 本人にアプリ内通知「運営があなたの参加をキャンセル扱いにしました」（種別 `info`。メール設定に従う）。
+  文言は受け取る人の言語（`notices.staffCancelTitle`。#690、docs/i18n-notices.md）。Webhook の題名は日本語のまま。
 - 監査ログ `participation_cancel_by_staff`（実行した運営・対象・イベントID）。
 - Webhook のキャンセル通知を送る。題名は「キャンセル（運営が記録）: イベント名」。
 

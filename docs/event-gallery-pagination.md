@@ -1,5 +1,8 @@
 # Event gallery pagination (#517)
 
+> **Status (2026-11-20):** shipped (#518). Page size is `EVENT_PHOTO_PAGE_SIZE = 24` in
+> `packages/shared/src/photos.ts`. Thumbnails followed in #520; see [gallery-thumbnails.md](gallery-thumbnails.md).
+
 ## Approved scope and current constraints
 
 The approved first step is newest-first event user-posted photos/videos, 24 per
