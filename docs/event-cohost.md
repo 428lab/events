@@ -121,6 +121,8 @@
 - 権限・閲覧資格: `eventManagerSql` / `eventViewSql`（`apps/server/src/auth/eventAccess.ts`）、
   `access_revision`
 - コミュニティへの「いいね」（`eventLikes`）、AI API の読み取り出力（後日）
+- Discord / Slack の Webhook（オーナー決定 2026-11-14）: 共催のイベントの通知は、そのイベントに登録された Webhook だけに
+  届き、共催先コミュニティの Webhook には届かない（docs/webhooks.md §2）
 
 ### 6.1 数え方は主催と同じ（オーナー決定 2026-11-13）
 

@@ -6,6 +6,8 @@
 - 前提: 書き込みリレー（既定の `wss://r.kojira.io` / `wss://x.kojira.io`、strfry）が
   **NIP-42 と NIP-70 に対応済み**（#460 の前提。#199 撤回時とはリレー側の状況が変わった）
 - ステータス: **実装済み**（PR #461。設計からの差分は 9.、実装時に確認した点は 10.）
+- 追記: 本書の `staffChatCrypto.ts` / `sealStaffChatMessage` は #582 で `apps/web/src/lib/groupChatCrypto.ts` /
+  `sealGroupChatMessage` に改名した（中身は同じ。docs/participant-encrypted-chat.md）
 
 ---
 

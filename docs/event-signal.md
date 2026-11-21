@@ -49,6 +49,8 @@ ephemeral イベントで「開いている画面」に知らせる。最初の 
   `deriveBingoCard`）。順位は載らないので、ビンゴになって順位を知らないときだけ1回取り直す。
   回が替わった（作成・リセット後の開始）・作成前／削除・形が違うときは、従来どおり
   `PARTICIPANT_SIGNAL_JITTER_MS` でばらして取り直す。反映済みより古い `rev` は捨てる。
+  重ねる前に途中の取り直し（タブ復帰など）を止める。合図より前に読んだ応答が後から着いて、
+  重ねた番号を古い状態で上書きしないように（#685）。
 - 届かなかったとき: 他の合図と同じ（次の合図・タブ復帰・再読み込みで追いつく）。
 
 ### `chat-hidden`
@@ -116,7 +118,7 @@ ephemeral イベントで「開いている画面」に知らせる。最初の 
 
 `EventSignalRefetchTopic`（`packages/shared/src/eventSignal.ts`）。topic の値は上と同じ
 `HMAC(NOSTR_SERVICE_KEY, "eventer/signal/v1:<名前>:<スコープ>")`。スコープはイベント ID
-（`meet-token` だけ利用者 ID）。スタッフ向けの topic（`live`・`scores`・`bingo-staff`・
+（`meet-token` だけ利用者 ID、`deck-sync` はデッキ ID。チームのスライドの同時編集で合言葉の世代が変わったときに送る。docs/team-deck-live-sync.md §4.4）。スタッフ向けの topic（`live`・`scores`・`bingo-staff`・
 `prize-desk`・`schedule-editing`・`broadcasts`）は、スタッフ用のエンドポイントの応答でだけ渡す。
 topic は購読の絞り込みであり権限ではない（取り直しは通常どおり HTTP の権限で判定される）。
 
