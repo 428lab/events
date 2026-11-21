@@ -726,6 +726,8 @@ Request に触れない。`signal` は健全で、`AbortSignal.timeout` も
   コールバックの `verifyIssuer()` が `noCache: true` をハードコードしており、既定の
   workerd は `new Request()` の構築時点で拒否する。`wrangler.toml` の
   `compatibility_flags` に `cache_no_cache_enabled` を足した
+  （デプロイが `cf deploy` になってからは `cloudflare.config.ts` の `compatibilityFlags` にも同じフラグがある。
+  片方だけ外すと、本番かローカルのどちらかで Bluesky のコールバックが落ちる）
 - **cookie の照合はトークン交換より先**（7.3・10. の 5〜6）。当初は `callback()` の後に
   置いていたが、CSRF や期限切れのために外部と1往復してしまう。覗くだけの `peekState` を
   state ストアに置き、TTL の知識をルートへ漏らさない

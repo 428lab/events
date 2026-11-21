@@ -2,12 +2,12 @@
 
 イベント運営支援ツール（当初はアイディアソン・ハッカソン向けとして設計）
 
-- 初版: 2026-05-30 ／ 差分追記: 2026-07-13 ／ 差分の更新: 2026-09-02（#456）
+- 初版: 2026-05-30 ／ 差分追記: 2026-07-13 ／ 差分の更新: 2026-09-02（#456）・2026-11-20（リアルタイム・デプロイ・チーム参加）
 - ステータス: **初期設計の記録**。データモデル（Entry 抽象・ロール・モード設計）は現行実装と一致するが、インフラ・認証・リアルタイムは下記のとおり実装が置き換わっている。
 
 ---
 
-## 0. 現在の実装との差分（2026-07-13 時点）
+## 0. 現在の実装との差分（2026-07-13 時点。表は 2026-11-20 に更新）
 
 初版設計から実装が変わった点。以降の章は歴史的記録として残す（★印の章は置き換え済み）。
 
@@ -18,13 +18,13 @@
 | 画像 | — | **R2**（イベント画像・コミュニティ画像・スライド画像。D1 にはメタのみ） |
 | マイグレーション（★2章） | 自前ランナー + `schema_migrations` | **`wrangler d1 migrations`**（`apps/server/migrations/*.sql`） |
 | 認証（★5章） | Discord OAuth のみ | **Discord / Google / GitHub / X OAuth + Nostr NIP-07 + Bluesky（AT Protocol OAuth。`docs/bluesky-login.md`）**。`identity` テーブルで複数連携・引き取り対応 |
-| リアルタイム（★8章） | SSE | **2秒ポーリング**（Workers はアイソレートを跨げず in-memory SSE ハブが機能しないため。無料枠維持のため Durable Objects 不使用） |
+| リアルタイム（★8章） | SSE | **Nostr の ephemeral イベントによる合図**（`docs/event-signal.md`。D-POLL-MIN）。状態が変わったときにサーバーが合図を送り、開いている画面が取り直す。定期の取り直しはしない。当初は2秒ポーリングだった（Workers はアイソレートを跨げず in-memory SSE ハブが機能しないため。無料枠維持のため Durable Objects 不使用） |
 | 環境変数（★5章） | `.env` | `wrangler.toml [vars]` + `wrangler secret` + ローカルは `.dev.vars` |
 | ルーティング（★9章） | `/admin/events/...` 系 | 管理画面はイベント配下（`/events/:id/edit`・`/scoring`・`/present`・`/awards`・`/control`）。他に `/e/:slug`（短縮）・`/c/:slug`（コミュニティ）・`/d/:slug`（スライド）・`/users/:id` など |
-| デプロイ | 手動 build + Tunnel | GitHub Actions（`staging`/`production` ブランチ → wrangler deploy）＋ staging はログイン必須ゲート |
+| デプロイ | 手動 build + Tunnel | GitHub Actions（`staging`/`production` ブランチ → `cf deploy`。`README.md` の「デプロイ」）＋ staging はログイン必須ゲート |
 
 初版設計後に追加された主な機能（本書には未記載）:
-日程調整（候補日投票・確定通知・祝日表示）、参加枠（先着／抽選・手動当落・キャンセル待ち繰り上げ）、コミュニティ、スライド（デッキ）、アプリ内通知、問い合わせ、公開ユーザープロフィール、短縮シェア URL、イベント検索・ページング、セキュリティ強化一式、イベントチャット、タイムテーブル（トラック・裏方 `docs/staff-timeline.md`）、スタッフ運用（招待・持ち場 `docs/staff-roles.md`・準備 TODO `docs/staff-todo.md`・スタッフチャット `docs/staff-chat.md`）、写真・動画、出会い（QR 名刺交換）、ビンゴ、アンケート、メール通知ほか。機能の現状一覧は `README.md` を、個別機能の設計は `docs/` の各ドキュメントを参照。
+日程調整（候補日投票・確定通知・祝日表示）、参加枠（先着／抽選・手動当落・キャンセル待ち繰り上げ）、コミュニティ、スライド（デッキ）、アプリ内通知、問い合わせ、公開ユーザープロフィール、短縮シェア URL、イベント検索・ページング、セキュリティ強化一式、イベントチャット、タイムテーブル（トラック・裏方 `docs/staff-timeline.md`）、スタッフ運用（招待・持ち場 `docs/staff-roles.md`・準備 TODO `docs/staff-todo.md`・スタッフチャット `docs/staff-chat.md`）、写真・動画、出会い（QR 名刺交換）、ビンゴ、アンケート、メール通知、チーム参加（`docs/team-participation.md`。本書の「将来」は実装済み）、発表画面とスライドの連動（`docs/contest-organizer-ux.md`）、共催（`docs/event-cohost.md`）、Discord / Slack 通知（`docs/webhooks.md`）、多言語（`docs/i18n-notices.md`）ほか。機能の現状一覧は `README.md` を、個別機能の設計は `docs/` の各ドキュメントを参照。
 
 ---
 
@@ -165,6 +165,8 @@ R2 を先に消している**。同じ契約へ寄せるのは別件 (#483)。
 
 ## 3. 全体アーキテクチャ
 
+> 初版の記録。図とディレクトリ構成は当時のもの（Tunnel・Node.js・better-sqlite3・SSE）。現在は Cloudflare Workers + D1 + R2 で、サーバーは `apps/server/src/{worker.ts,routes,db/repositories,lib,auth}`、マイグレーションは `apps/server/migrations/`、画面は `apps/web/src/{pages,components,api,lib,i18n,theme}`、0章の表を参照。
+
 ```
 ┌──────────────────────────────────────────────┐
 │                Cloudflare Tunnel               │
@@ -256,7 +258,12 @@ eventer/
 型では拾えないので、結合後のキー数が各部の合計と一致することをテストで見張る。
 
 サーバーが作る文言（お知らせ・メール）は `notices` 名前空間にまとめ、**受け取る人の言語**で
-組み立てる（docs/i18n-notices.md、#352）。
+組み立てる（docs/i18n-notices.md、#352）。保存される既定の文言は `savedDefaults` 名前空間で、
+**作る人の言語**で書く（同じ文書、#364）。
+
+画面の state には**訳した文字列を持たない**。エラーやお知らせはキーと引数
+（`apps/web/src/lib/messageKey.ts` の `MessageKey`）か例外のまま持ち、表示するときに訳す。
+訳した文字列で持つと、表示中に言語を切り替えてもその文だけ前の言語のまま残る（#369）。
 
 ### 3.1 `/api/events` の認証境界（登録順が契約）
 
@@ -523,6 +530,7 @@ Team（将来）──1 Entry                 （チーム参加時、Entry の�
 | created_at | integer | |
 
 - チーム機能実装時に有効化。`entry.team_id` で Entry と接続。
+- 2026-11-20 追記: この表は作らなかった。チームは `entry(kind='team')`、メンバーは `entry_member`（リーダーは `is_leader`）で表す（migration 0115、`docs/team-participation.md`）。
 
 #### session
 | カラム | 型 | 説明 |
@@ -642,6 +650,8 @@ APP_BASE_URL=https://<tunnel-domain>
 ---
 
 ## 8. リアルタイム（SSE 設計）
+
+> 初版の記録。SSE は実装していない。現在は Nostr の合図（`docs/event-signal.md`）で、参加者をプレゼン画面へ移すのは `EventLayout` が `event-state` の合図で取り直したモードを見て行う。
 
 ### SSE ハブ
 - サーバーは `event_id` ごとに購読者（接続）の集合を管理する `SseHub` を持つ。

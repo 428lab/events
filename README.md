@@ -19,7 +19,7 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - バックエンド: Hono on **Cloudflare Workers**（単一 Worker が SPA 配信・OG 注入・API を担当）
 - DB: **Cloudflare D1**（SQLite）+ 自前の薄いリポジトリ層 ／ 画像・動画: **R2**
 - 認証: Discord / Google / GitHub / X OAuth2 + **Bluesky (OAuth)** + **Nostr NIP-07**（複数連携可）、セッション Cookie
-- リアルタイム: 短周期ポーリング（採点 2秒・配信 1秒・投影 5秒・タイムテーブル編集状態 5秒 など）
+- リアルタイム: 定期の取り直し（ポーリング）はしない。状態が変わったときにサーバーが Nostr の ephemeral イベントで合図を送り、開いている画面が取り直す（ビンゴは合図に番号と人数を載せる）。[docs/event-signal.md](docs/event-signal.md)
 - デプロイ: GitHub Actions（`staging` / `production` ブランチへの push で cf deploy）
 - モノレポ: pnpm workspace（`apps/web` / `apps/server` / `packages/shared`）、TypeScript 7
 
@@ -34,15 +34,16 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - [x] ログイン（Discord / Google / GitHub / X / Bluesky / Nostr NIP-07。複数連携・連携解除・引き取り）
 - [x] マイページ・アカウント設定（ログイン方法の連携管理・ハンドル変更）
 - [x] 公開ユーザープロフィール（`/users/:id`。タブ分け・メディア一覧・プロフィールカード `/users/:id/card`）
-- [x] 多言語対応（日本語・英語）
+- [x] 多言語対応（日本語・英語。お知らせとメールは受け取る人の言語で送る。[docs/i18n-notices.md](docs/i18n-notices.md)）
 
 #### イベント運営
 
-- [x] イベントの作成・編集・削除、公開／非公開、Markdown 説明文
+- [x] イベントの作成・編集・削除・複製、下書き／公開、Markdown 説明文
+- [x] 公開範囲（公開・限定公開・招待限定。[docs/private-events.md](docs/private-events.md)）と予約公開（[docs/event-scheduled-publish.md](docs/event-scheduled-publish.md)）
 - [x] イベント画像のアップロード（OG サイズにクロップ・WebP 保存）と OG メタ注入、短いシェア URL（`/e/:slug`）
 - [x] 公開トップ：開催中・開催予定・日程調整中・過去イベントの一覧（未ログイン閲覧可）、RSS / JSON Feed / iCalendar 配信
 - [x] **日程調整**（候補日に○△×で回答、参加最多ハイライト、曜日・日本の祝日表示、確定で開催日時に反映＋回答者へ通知、確定後の結果表示は主催者がオンオフ可）
-- [x] 参加登録・解除、参加者一覧、参加枠（複数枠・定員・先着順／抽選・抽選日時・手動当落）、キャンセル待ちの自動繰り上げ（先着枠）
+- [x] 参加登録・解除、参加者一覧、参加枠（複数枠・定員・先着順／抽選・抽選日時・手動当落。申込者を選んでまとめて当選にできる）、キャンセル待ちの自動繰り上げ（先着枠）、運営による「キャンセル扱い」（[docs/attendance-staff-cancel.md](docs/attendance-staff-cancel.md)）
 - [x] **開催前アンケート**（トークン URL `/s/:token` で回答、表ビュー・CSV・日毎アクセス数、[docs/pre-event-survey.md](docs/pre-event-survey.md)）
 - [x] 参加アンケート（参加申込時に回答・後から編集可。回答は参加者名簿の CSV に含まれる）
 - [x] タイムテーブル（当日の進行表。参加者向け表示と編集）
@@ -51,6 +52,10 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - [x] 集計プレビュー・採点進捗・締切、進行モード（通常／プレゼン／集計／表彰）
 - [x] 表彰設定（ランキング賞・特別枠の CRUD・並べ替え・受賞者割当）と表彰式演出
 - [x] 成果物の登録（プレゼン資料 URL・ソースコード URL）
+- [x] チーム参加（運営がチームとリーダーを決め、参加者が選ぶ。チーム単位の採点・成果物・スライドの同時編集。[docs/team-participation.md](docs/team-participation.md)）
+- [x] 発表画面とスライドの連動（発表者のページめくりを全員に同期。[docs/contest-organizer-ux.md](docs/contest-organizer-ux.md)）
+- [x] 共催（他のコミュニティを共催に招く。[docs/event-cohost.md](docs/event-cohost.md)）
+- [x] Discord / Slack への通知（コミュニティ・イベントごとの Webhook。[docs/webhooks.md](docs/webhooks.md)）
 - [x] 「イベントのたまご」（あったらいいな投稿→賛同→イベントに孵化。短い URL `/r/:slug`）
 
 #### 参加者体験
@@ -81,6 +86,7 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - [x] TODO リストとガントチャート（準備の段取り。[docs/staff-todo.md](docs/staff-todo.md)）
 - [x] **一斉連絡**（スタッフが区分を選んで参加者へお知らせ。アプリ内通知は即時、メールは順次送信。送信状況と履歴はスタッフのみ閲覧）
 - [x] 名札印刷、参加者名簿の CSV 出力
+- [x] 割り勘（費用精算。[docs/warikan.md](docs/warikan.md)）
 
 #### ソーシャル・コミュニティ
 
@@ -95,8 +101,6 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 
 ### 🚧 これから
 
-- [ ] チーム参加（チーム作成・リーダー・チーム単位の採点／成果物）
-- [ ] スライドとイベント進行の同期（プレゼンモード連動）
 - [ ] ブラウザから直接ライブ配信（WebRTC）。リモート視聴・観覧モードまで events lab 内で完結
 - [ ] ネイティブアプリ（iOS / Android）
 
@@ -236,3 +240,35 @@ npx wrangler secret put NOSTR_SERVICE_KEY --env staging   # staging
 | [docs/staff-timeline.md](docs/staff-timeline.md) | スタッフ用タイムライン（準備・片付け・裏方トラック） |
 | [docs/staff-todo.md](docs/staff-todo.md) | スタッフ向け TODO リストとガントチャート |
 | [docs/video-upload.md](docs/video-upload.md) | 動画投稿（ブラウザ内エンコード・Range 配信） |
+| [docs/event-signal.md](docs/event-signal.md) | 開いている画面への合図（ポーリングの代わり。Nostr ephemeral） |
+| [docs/i18n-notices.md](docs/i18n-notices.md) | お知らせとメールの言語・保存される既定の文言の言語 |
+| [docs/webhooks.md](docs/webhooks.md) | コミュニティとイベントごとの Discord / Slack 通知 |
+| [docs/private-events.md](docs/private-events.md) | 限定公開・招待限定イベント |
+| [docs/event-cohost.md](docs/event-cohost.md) | イベントの共催コミュニティ |
+| [docs/event-scheduled-publish.md](docs/event-scheduled-publish.md) | イベントの予約公開 |
+| [docs/reopen-event-scheduling.md](docs/reopen-event-scheduling.md) | 確定した日程を日程調整に戻す |
+| [docs/schedule-auto-registration.md](docs/schedule-auto-registration.md) | 日程確定時の自動参加登録 |
+| [docs/schedule-results-collapse.md](docs/schedule-results-collapse.md) | 日程調整結果の初期折り畳み |
+| [docs/event-update-datetime.md](docs/event-update-datetime.md) | イベントの部分更新と日時順 |
+| [docs/event-detail-sidebar.md](docs/event-detail-sidebar.md) | イベント詳細の右列のスクロール境界 |
+| [docs/contest-organizer-ux.md](docs/contest-organizer-ux.md) | イベント情報と運営管理の分離・コンテストの進行（発表・採点・表彰） |
+| [docs/team-participation.md](docs/team-participation.md) | コンテストのチーム参加 |
+| [docs/team-deck-live-sync.md](docs/team-deck-live-sync.md) | チームのスライドの同時編集（Nostr エフェメラル） |
+| [docs/host-scoring-participation.md](docs/host-scoring-participation.md) | 主催・運営の採点対象参加 |
+| [docs/awards-sync.md](docs/awards-sync.md) | 表彰の同期（廃止。event-signal に畳んだ記録） |
+| [docs/attendance-staff-cancel.md](docs/attendance-staff-cancel.md) | 運営による「キャンセル扱い」（無断欠席にしない） |
+| [docs/staff-slot-assignment.md](docs/staff-slot-assignment.md) | スタッフを参加枠に並べる・運営が割り当てる枠 |
+| [docs/warikan.md](docs/warikan.md) | イベントの割り勘（費用精算） |
+| [docs/survey-no-photo.md](docs/survey-no-photo.md) | 写真NGのアンケートプリセットと名札マーク |
+| [docs/bingo-chat.md](docs/bingo-chat.md) | ビンゴとイベントチャットの併設 |
+| [docs/bingo-entry.md](docs/bingo-entry.md) | ビンゴ会場の入口 |
+| [docs/participant-encrypted-chat.md](docs/participant-encrypted-chat.md) | 参加者チャットを参加者だけに限定する（暗号化） |
+| [docs/slide-editor.md](docs/slide-editor.md) | 編集画面（スライド / 配信セット）の責務分割 |
+| [docs/agent-deck-token.md](docs/agent-deck-token.md) | AI エージェントにスライドを書いてもらう一時トークン |
+| [docs/lab-llm-slides-import.md](docs/lab-llm-slides-import.md) | LLM 生成スライドの JSON 取り込み |
+| [docs/live-set-visual-design.md](docs/live-set-visual-design.md) | 配信セットのビジュアル設計 |
+| [docs/event-card-editor.md](docs/event-card-editor.md) | イベント用カードエディター |
+| [docs/card-brand-alignment.md](docs/card-brand-alignment.md) | プロフィールカードのブランド表示位置 |
+| [docs/profile-social-links.md](docs/profile-social-links.md) | 公開プロフィールの連携アカウントリンク |
+| [docs/avatar-upload.md](docs/avatar-upload.md) | 本人アイコンのアップロード |
+| [docs/event-gallery-pagination.md](docs/event-gallery-pagination.md) | イベントギャラリーのページ送り |
