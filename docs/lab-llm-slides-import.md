@@ -1,9 +1,13 @@
 # LLM生成スライドのJSON取り込み設計（#523）
 
-- 状態: **設計レビュー待ち。実装・配備・mainマージの承認ではない。**
+- 状態: **実装済み**（設計 PR #524 / #561、実装 PR #525。2026-09-27。`/decks/import`、`POST /api/decks/import`、migration `0090_deck_import_receipt.sql`、
+  v1 / v2 の公開仕様 `apps/web/public/deck-import/`）。その後: AI が直接書く一時トークン（PR #641、「AIに書いてもらう」。
+  docs/agent-deck-token.md）、JSON / PDF の書き出し（PR #662、docs/slide-editor.md §3.3）。本文の「設計レビュー待ち」「将来の実装」
+  「今回コードは変更しない」などの言い回しは設計時点のもの。§11 の対象外にある「MCP/直接LLM書込」「配信同期#10」は、
+  その後それぞれ上の一時トークンと発表画面への表示（#670）・ページめくり（#671）で一部入った
 - Issue: https://github.com/428lab/events/issues/523
-- 正本: `design/lab-llm-slides-523` ブランチの本Markdown。Issue・PRにはリンクだけを置き、本文を複製しない。
-- 今回の成果は設計のみ。以下の「採用」「追加」は将来の実装契約であり、現行機能との区別を各節で示す。
+- 正本: このファイル（main に取り込み済み。当初は `design/lab-llm-slides-523` ブランチだった）。
+- 以下の「採用」「追加」は設計時の実装契約の記録。
 
 ## 1. 最短の利用者体験（採用）
 

@@ -2,7 +2,7 @@
 
 - オーナー決定（kojira 2026-10-23）: 「スライドを作って」と頼むときに、仕様のURLとトークンをAIに渡す。AIがそれを読んで、利用者のスライドを書く。画像もアップロードできる。
 - 既存の「LLMで作る／取り込む」（[lab-llm-slides-import.md](lab-llm-slides-import.md)、#523）では、利用者がJSONを貼り付けていた。そのJSON仕様 v2 と検証器をそのまま使い、AIが直接書き込める入口を足す。
-- #581 の AI 連携トークン（未マージの #583〜#586）とは別物で、依存もしない。
+- #581 の AI 連携トークン（未マージの #583〜#586。2026-11-20 時点も開いたまま）とは別物で、依存もしない。
 
 ## 1. 利用者の流れ
 
@@ -52,7 +52,7 @@ deck_agent_token(id PK, owner_id → user ON DELETE CASCADE, token_hash UNIQUE,
 - 2回目以降は、カウンタの UPDATE が `last_write_id` に要求ごとのノンスを書く。デッキの UPDATE はそのノンスがあるときだけ当たる。こうして「回数上限を超えたのに書き込みだけ通る」をなくしている。
 - 退会: 申請の batch で `revoked_at` を立てる。完全削除は `ON DELETE CASCADE` で行う。
 - 統合: `mergeUsers` の simple に `["deck_agent_token","owner_id"]` を足す。結び付いたデッキと同じ勝ち側へ移す。
-- user 参照列の総数を数えるテスト（`user-tables` / `merge-user-columns`）は 63 → 64 にした。
+- user 参照列の総数を数えるテスト（`user-tables` / `merge-user-columns`）は、この変更で 63 → 64 にした（その後の変更で増えており、現在の値は `user-tables.test.ts` の `EXPECTED_USER_COLUMNS`）。
 
 ## 4. API
 

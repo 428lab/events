@@ -134,7 +134,7 @@ CREATE INDEX idx_event_bingo_result_user ON event_bingo_result(user_id);
 
 | 画面 | 場所 | 内容 |
 |------|------|------|
-| 引き換え履歴（staff） | `EventPrizeDeskPage` に「引き換え履歴」カードを追加 | 時刻順（新しい順）: 時刻・景品名・受け取った人（アバター＋名前）・付けた staff。5秒ポーリング（複数窓口で他方の引き換えが見えるように。レビューで invalidate 方式から変更） |
+| 引き換え履歴（staff） | `EventPrizeDeskPage` に「引き換え履歴」カードを追加 | 時刻順（新しい順）: 時刻・景品名・受け取った人（アバター＋名前）・付けた staff。複数窓口で他方の引き換えが見えるように、`prize-desk` の合図で取り直す（当初は5秒ポーリング。D-POLL-MIN 第5段階で置き換え。docs/event-signal.md） |
 | 受け取り済み（参加者） | `MeetPrizePanel`（イベントページ） | 自分の交換済み景品に受け取り時刻を添える（`me.redemptions`）。一覧の形は現状のチップ表示を維持し、時刻はツールチップ/キャプションで |
 | ビンゴ成績（本人） | 本人プロフィール（マイページ）に「ビンゴ」セクション（profile-tabs の本人のみタブの型。`drafts` タブと同じ「本人だけに出す」分岐） | 集計4指標 + ラウンド一覧（イベント名リンク・日付・「12回中7回目でビンゴ・2位」/「未達成」） |
 
@@ -153,7 +153,8 @@ CREATE INDEX idx_event_bingo_result_user ON event_bingo_result(user_id);
   UPDATE を後に並べ、UPDATE にも drawn_count 条件を足す。導出直後の draw 割り込みで
   古いスナップショットが保存されるのを塞ぐ（競合時は何も保存せず 409）
 - **引き換え履歴は5秒ポーリング**（PR #442 レビュー）: invalidate 方式では複数窓口で
-  他方の引き換えが見えなかった
+  他方の引き換えが見えなかった。→ のちに D-POLL-MIN 第5段階（5b-2）でポーリングをやめ、
+  `prize-desk` の合図で status と履歴を取り直す形になった（docs/event-signal.md）
 - **履歴の受け取り手は LEFT JOIN・上限100件**（PR #442 レビュー）: 退会（soft delete）
   でも配布の記録は残し、名前は「退会したユーザー」と表示。100件超は古い順に切る
 - **デスクのビンゴ達成者行をスマホ幅で折り返す**（PR #442 実機）: 右端の交換ボタンが
