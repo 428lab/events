@@ -1,5 +1,10 @@
 # Event gallery thumbnails (#519)
 
+> **Status (2026-11-20):** shipped. Pagination (#518) and thumbnails (#520, closes #519) are in production,
+> and the production backfill for #521 is complete: 181/181 existing items were verified (177 photos and 4 video posters).
+> As of 2026-11-20, every production `event_photo` row has `has_thumbnail = 1`.
+> The rollout notes below are kept as the historical record of how it was gated.
+
 Separate follow-up #521 covers backfill and pinned production preparation; see
 [the scoped operator runbook](gallery-thumbnail-backfill.md). The no-backfill
 statements below describe this original feature/crop PR, not the eventual rollout:

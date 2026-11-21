@@ -2,8 +2,10 @@
 
 - 対象: `apps/server`（D1 スキーマ・新リポジトリ・新ルート・退会/統合の登録）、
   `packages/shared`（型・入力・按分の純関数・文言）、`apps/web`（イベント詳細のカード・専用ページ）
-- ステータス: **設計案**（issue #556）。本改訂 = PR #557/#558/#559 のレビュー（kojira・Request changes）を受け、
-  **当事者の「済み」を戻した**（§8.1-9）。実装側はこれに追随する。設計レビュー（必須 9）と UX レビュー（必須 6）は反映済み
+- ステータス: **実装済み**（issue #556。PR #557/#558/#559 を 2026-10-01 にマージ。オン/オフは #635 → PR #636、
+  オフにする前の件数確認は PR #638）。UI レビューで後続にした分は #579（未対応）。
+  設計時の経緯: PR #557/#558/#559 のレビュー（kojira・Request changes）を受けて、**当事者の「済み」を戻した**（§8.1-9）。
+  設計レビュー（必須 9）と UX レビュー（必須 6）は反映済み
 - 前提となる決定（ユーザー要望 + §8.1 の確定事項 9 件）:
   - **払った金額と、誰が立て替えたか**を登録できる
   - Walica（イベント単位の割り勘 Web サービス）を**強化する**位置づけ
@@ -611,6 +613,7 @@ DB は `kind` + `value` の**2列**。入力は判別共用体で検証する（
 | `DELETE /api/events/:id/warikan/settlements/:fromUserId/:toUserId/done` | その行の当事者 | 印を消す。記録が無くても 200（冪等） |
 | `PUT /api/events/:id/warikan/payout-methods` | 本人 | `upsertPayoutMethodsInput`。**自分の**受け取り先を置換（他人の userId はパスにも body にも無い） |
 | `DELETE /api/events/:id/warikan/payout-methods/:methodId` | 本人 / staff | 削除 |
+| `GET /api/events/:id/warikan/expense-count` | staff | 立替の件数だけ `{ expenses }`（#638。帳簿そのものは返さない）。編集画面で割り勘をオフにする前の確認に使う。オフのイベントでも数える |
 
 - 公開（未ログイン）の口・イベント設定を変える口は無い
 - 精算の行の**金額**を変える口は無い（行は立替から導出するだけ。§3.5）。行に付くのは「済み」の印だけ
@@ -792,6 +795,8 @@ export type WarikanLedger = z.infer<typeof warikanLedgerSchema>;
 
 **オン/オフの意味（#635 で改訂）:**
 
+- **オンからオフに切り替えるとき**（#638）: 編集画面で `GET .../warikan/expense-count` を読み、立替が1件以上あれば
+  件数を出して確認する（オフにしても帳簿の行は消えない）
 - **オフ（既定）**: 「割り勘」ボタンもカードも出さず、帳簿の GET も叩かない。`/events/:id/warikan` を直接開いた人には
   「このイベントでは割り勘を使っていません。スタッフはイベントの編集でオンにできます。」の案内を出す（帳簿は取りに行かない）
 - **オン**: 従来どおり。確定メンバーには「割り勘」ボタンが出て、**誰かが最初の1件を登録した時点で割り勘が始まる**。
@@ -881,7 +886,7 @@ export type WarikanLedger = z.infer<typeof warikanLedgerSchema>;
 | server | `src/db/repositories/accountMerge.ts` | `simple` の前に `LEDGER_PARTY_REASSIGN_SQL`、`simple` に `event_expense.created_by` / `event_settlement_done.marked_by` / `event_payout_method.user_id` |
 | server | `src/db/repositories/accountDeletion.ts` | (1) の直後に `LEDGER_PARTY_REASSIGN_SQL`（ghost 宛て） |
 | server | `src/db/repositories/eventWarikan.ts` | 新規。4表の CRUD、`LEDGER_AUDIENCE_SQL`、帳簿の組み立て（計算は shared）、「済み」の upsert/delete |
-| server | `src/routes/eventWarikan.ts` / `src/worker.ts` | 新規ルート（§3.8。8本）と登録 |
+| server | `src/routes/eventWarikan.ts` / `src/worker.ts` | 新規ルート（§3.8。初回 8本。#638 で件数の GET を足して今は 9本）と登録 |
 | web | `pages/EventWarikanPage.tsx` / `components/WarikanSummaryCard.tsx` / `WarikanExpenseForm.tsx` / `WarikanPayoutMethods.tsx` / `WarikanSettlementRow.tsx` | 新規（精算行に「済み」のチェック） |
 | web | `api/warikanHooks.ts` | 新規（GET・立替の POST/PATCH/DELETE・「済み」の PUT/DELETE・受け取り先の PUT/DELETE） |
 | web | `pages/EventDetailPage.tsx` / `components/EventActionButtons.tsx` / `App.tsx` | カード・導線（`showWarikan`）・ルート |
@@ -912,7 +917,7 @@ PR2 は PR1 のブランチ、PR3 は PR2 のブランチを base にする。�
 | # | 範囲 | base | 完了条件 |
 |---|---|---|---|
 | PR1 (#557) | **shared の型と純関数**: `warikan.ts`（§3.8.1 全部。`settle()` の入力は立替だけ。**`settlementDoneInput` / `SettlementDoneRecord` / `attachDoneMarks()` / `settlements[].done` を含む**。`BreakdownItem` は `kind` つき）＋ `index.ts` ＋ `apps/server/test/warikan-split.test.ts`。本書を `docs/warikan.md` として同梱（i18n はここに入れない。PR 本文もそう直す） | `staging` | §5.1 が通る。DB・ルートには触れない |
-| PR2 (#558) | **server 一式**: migration 0096（**4表**）、`userTables.ts` / `accountMerge.ts` / `accountDeletion.ts` の登録（「済み」の 3 列を含む）、`eventWarikan.ts`（repo・route。§3.8 の **8本**。重みの route 検証・立替者本人の編集権）、`worker.ts`、`warikan.test.ts`、`user-tables` / `merge-user-columns` の更新 | PR1 のブランチ | §5.2 と既存の全 server テストが通る |
+| PR2 (#558) | **server 一式**: migration 0099（**4表**。設計時は 0096 だったが、マージ前に 0099 へ振り直した）、`userTables.ts` / `accountMerge.ts` / `accountDeletion.ts` の登録（「済み」の 3 列を含む）、`eventWarikan.ts`（repo・route。§3.8 の **8本**。重みの route 検証・立替者本人の編集権）、`worker.ts`、`warikan.test.ts`、`user-tables` / `merge-user-columns` の更新 | PR1 のブランチ | §5.2 と既存の全 server テストが通る |
 | PR3 (#559) | **web と文言**: `i18n/messages/warikan.ts`、ページ・カード・フォーム・受け取り先・精算行（**「済み」のチェックと済み行の表示**）・hooks、導線（GET の結果で出し分け）、404 のみの案内、重みの文字列入力、重み反映の「1人あたり」、`payoutSaved` の使用 | PR2 のブランチ | 画面の受け入れ条件（§5.3）。web テスト |
 
 **migration を PR1 に入れない理由**: 帳簿の当事者列は user の削除をブロックする FK なので、migration を入れた瞬間に
