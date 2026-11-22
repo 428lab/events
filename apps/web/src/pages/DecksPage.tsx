@@ -39,6 +39,7 @@ export function DecksPage() {
           {t("nav.decks")}
         </Typography>
         <Button onClick={() => navigate("/decks/import")}>{t("deckImport.title")}</Button>
+        <Button onClick={() => navigate("/decks/import#pdf-import")}>{t("deckImportPdf.fromList")}</Button>
         <Button
           variant="contained"
           startIcon={<AddIcon />}

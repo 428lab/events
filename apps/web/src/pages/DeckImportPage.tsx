@@ -9,6 +9,7 @@ import { useDeckLeaveWarning } from "../lib/useDeckLeaveWarning.js";
 import { describeImportIssue, importIssueLocation } from "../lib/deckImportIssue.js";
 import { DeckImportPreview } from "../components/DeckImportPreview.js";
 import { DeckAgentPanel } from "../components/DeckAgentPanel.js";
+import { PdfImportPanel } from "../components/PdfImportPanel.js";
 import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 export function DeckImportPage() {
@@ -80,6 +81,8 @@ export function DeckImportPage() {
     <Typography variant="h5" fontWeight={700}>{t("deckImport.title")}</Typography>
     <Typography>{t("deckImport.intro")}</Typography>
     {me && <Typography variant="body2">{t("deckImport.currentAccount", { name: me.globalName || me.username })}</Typography>}
+    {/* PDF から取り込む（オーナー決定 2026-11-20）。デッキを直接作るのでログインしている人だけ */}
+    {me && <PdfImportPanel />}
     {me && <DeckAgentPanel />}
     <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
       <Link href="/deck-import/v2/spec.md" target="_blank" rel="noreferrer">{t("deckImport.spec")}</Link>
