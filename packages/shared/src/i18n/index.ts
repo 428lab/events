@@ -10,7 +10,7 @@
  */
 import { adminSettings } from "./messages/adminSettings.js";
 import { deckAgent } from "./messages/deckAgent.js";
-import { deckImport, deckImportIssue, deckImportField } from "./messages/deckImport.js";
+import { deckImport, deckImportIssue, deckImportField, deckImportPdf } from "./messages/deckImport.js";
 import { eventAccess } from "./messages/eventAccess.js";
 import { common } from "./messages/common.js";
 import { cohost } from "./messages/cohost.js";
@@ -118,6 +118,7 @@ export const translations = {
     deckImport: deckImport.ja,
     deckImportIssue: deckImportIssue.ja,
     deckImportField: deckImportField.ja,
+    deckImportPdf: deckImportPdf.ja,
     kpi: kpi.ja,
     adminSettings: adminSettings.ja,
     warikan: warikan.ja,
@@ -170,6 +171,7 @@ export const translations = {
     deckImport: deckImport.en,
     deckImportIssue: deckImportIssue.en,
     deckImportField: deckImportField.en,
+    deckImportPdf: deckImportPdf.en,
     kpi: kpi.en,
     adminSettings: adminSettings.en,
     warikan: warikan.en,

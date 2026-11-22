@@ -136,18 +136,21 @@ export function useUpdateDeck(id: string) {
   });
 }
 
+/** スライドの画像を上げる（生バイナリ）。編集画面と PDF の取り込みが同じ口を通る */
+export async function uploadDeckImage(deckId: string, file: Blob): Promise<{ url: string }> {
+  const res = await fetch(`/api/decks/${deckId}/images`, {
+    method: "PUT",
+    headers: { "Content-Type": file.type || "image/png" },
+    credentials: "include",
+    body: file,
+  });
+  if (!res.ok) throw new Error("upload_failed");
+  return res.json();
+}
+
 export function useUploadDeckImage(deckId: string) {
   return useMutation({
-    mutationFn: async (file: Blob): Promise<{ url: string }> => {
-      const res = await fetch(`/api/decks/${deckId}/images`, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "image/png" },
-        credentials: "include",
-        body: file,
-      });
-      if (!res.ok) throw new Error("upload_failed");
-      return res.json();
-    },
+    mutationFn: (file: Blob) => uploadDeckImage(deckId, file),
   });
 }
 
