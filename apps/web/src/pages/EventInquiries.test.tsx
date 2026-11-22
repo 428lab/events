@@ -26,7 +26,9 @@ beforeEach(() => {
     // サーバーはイベント配下の一覧に event を付けない（ページ自体がそのイベント）
     if (path === "/events/e/inquiries") return { inquiries: [
       { id: "q1", subject: "", status: "open", createdAt: 1, lastMessageAt: 1, lastSender: "user", unread: true,
-        event: null, userId: "u", userHandle: "taro", userName: "太郎", userAvatarUrl: null },
+        event: null, userId: "u", userHandle: "taro", userName: "太郎", userAvatarUrl: null, startedByStaff: false },
+      { id: "q3", subject: "資料のお願い", status: "answered", createdAt: 1, lastMessageAt: 1, lastSender: "staff", unread: false,
+        event: null, userId: "s", userHandle: "speaker", userName: "登壇者", userAvatarUrl: null, startedByStaff: true },
     ] } as never;
     if (path === "/events/e/inquiries/q1") return {
       id: "q1", subject: "", status: "answered", event: { id: "e", title: "夏の発表会" },
@@ -129,6 +131,10 @@ describe("organizer side", () => {
     expect(row).toHaveAttribute("href", "/events/e/inquiries/q1");
     expect(within(row).getByText("夏の発表会")).toBeInTheDocument();
     expect(within(row).getByText("対応中")).toBeInTheDocument();
+    expect(within(row).queryByText("運営から")).toBeNull();
+    // 運営から始めた連絡（個別の連絡）には「運営から」の印が付く
+    const contact = (await screen.findByText("登壇者", { exact: false })).closest("a")!;
+    expect(within(contact).getByText("運営から")).toBeInTheDocument();
   });
 
   it.each([null, "participant"])("denies %s (including site admin) without fetching inquiries", async (value) => {

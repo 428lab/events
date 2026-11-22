@@ -6,11 +6,13 @@ import {
   EVENT_INQUIRY_OPEN_LIMIT,
   createEventInquiryInput,
   createInquiryInput,
+  createStaffContactInput,
   postInquiryMessageInput,
 } from "@eventer/shared";
 import type {
   CreateEventInquiryInput,
   CreateInquiryInput,
+  CreateStaffContactInput,
   InquiryEvent,
   PostInquiryMessageInput,
 } from "@eventer/shared";
@@ -47,26 +49,38 @@ async function notifyAdminsOfInquiry(
 
 /** イベントの主催者あての問い合わせ・返事を、そのイベントの確定スタッフ全員のベルへ
  * (D-EVENT-CONTACT)。書いた本人（スタッフが自分のイベントに問い合わせた場合）は除く。
- * 非公開イベントでは notificationsRepo の挿入が中立の文言とイベントのページへのリンクに置き換える */
+ * 非公開イベントでは notificationsRepo の挿入が中立の文言とイベントのページへのリンクに置き換える。
+ *
+ * メール（オーナー決定 2026-11-22。それまでの「ベル通知だけ」（決定3）を変更）:
+ * - 本人が始めた問い合わせ: 確定スタッフ全員（メール通知をオンにしている人）に送る
+ * - 運営から始めた連絡への返信: **連絡を始めたスタッフだけ**に送る。ほかのスタッフはベルと Webhook で気づける。
+ *   始めたスタッフがもう確定スタッフでない（外れた・退会した）ときは、返事を取りこぼさないよう全員に送る */
 async function notifyEventStaffOfInquiry(
   event: InquiryEvent,
   inquiryId: string,
   subject: string,
   authorUserId: string,
+  /** 運営から始めた連絡への返信なら、その連絡を始めたスタッフ（退会などで分からなければ null） */
+  staffContact: { starterId: string | null } | null = null,
 ) {
   const staffIds = (await eventMembersRepo.assignableStaff(event.id))
     .map((s) => s.id)
     .filter((id) => id !== authorUserId);
-  await notificationsRepo.createForMany(
-    staffIds,
-    "event_inquiry_new",
-    localized("eventInquiryNewTitle", { event: event.title }),
-    subject ? localized("quoted", { text: subject }) : "",
-    `/events/${event.id}/inquiries/${inquiryId}`,
-    undefined,
-    // ベル通知だけ（決定3）。メールは送らない
-    { eventId: event.id, skipEmail: true },
-  );
+  const starterId = staffContact?.starterId ?? null;
+  const title = staffContact
+    ? localized("staffContactReplyTitle", { event: event.title })
+    : localized("eventInquiryNewTitle", { event: event.title });
+  const body = subject ? localized("quoted", { text: subject }) : "";
+  const link = `/events/${event.id}/inquiries/${inquiryId}`;
+  const emailTo = starterId && staffIds.includes(starterId) ? [starterId] : staffIds;
+  const bellOnly = staffIds.filter((id) => !emailTo.includes(id));
+  await notificationsRepo.createForMany(emailTo, "event_inquiry_new", title, body, link, undefined, { eventId: event.id });
+  if (bellOnly.length > 0) {
+    await notificationsRepo.createForMany(bellOnly, "event_inquiry_new", title, body, link, undefined, {
+      eventId: event.id,
+      skipEmail: true,
+    });
+  }
 }
 
 const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -119,8 +133,16 @@ inquiryRoutes.post(
     if (!result) return c.json({ error: "not_found" }, 404);
     // イベントの主催者あては、そのイベントの確定スタッフへ。運営（管理者）には知らせない
     if (result.event) {
-      await notifyEventStaffOfInquiry(result.event, id, result.subject, c.get("user").id);
-      // Discord / Slack 通知（docs/webhooks.md）。問い合わせた本人の追記も全文で送る
+      // 運営から始めた連絡への返信なら、メールは始めたスタッフへ（notifyEventStaffOfInquiry）
+      const starter = await inquiriesRepo.starterOf(id);
+      await notifyEventStaffOfInquiry(
+        result.event,
+        id,
+        result.subject,
+        c.get("user").id,
+        starter.startedByStaff ? { starterId: starter.starterId } : null,
+      );
+      // Discord / Slack 通知（docs/webhooks.md）。問い合わせた本人の追記・運営からの連絡への返信も全文で送る
       const me = c.get("user");
       await notifyWebhooks({
         topic: "inquiry",
@@ -131,6 +153,7 @@ inquiryRoutes.post(
         subject: result.subject,
         body: valid<PostInquiryMessageInput>(c, "json").body,
         followUp: true,
+        replyToStaffContact: starter.startedByStaff,
       });
     } else await notifyAdminsOfInquiry(id, result.subject, c.get("user").id);
     return c.json({ ok: true });
@@ -227,6 +250,40 @@ eventInquiryRoutes.post(
   },
 );
 
+/** 運営からメンバー1人へ個別に連絡する（オーナー決定 2026-11-22）。確定スタッフだけ。
+ * 相手はそのイベントのメンバー（キャンセル以外の全ロール・全状態）で、自分以外。件数の上限は無い。
+ * 相手にはベル通知と、メール通知をオンにしていればメール（相手の言語）。Webhook には流さない
+ * （運営が書いた中身で、個人あてのため）。相手の返信は上の /api/inquiries/:id/messages が受ける */
+eventInquiryRoutes.post(
+  "/:id/inquiries/staff-contact",
+  zValidator("json", createStaffContactInput),
+  async (c) => {
+    const denied = await eventStaffOnly(c);
+    if (denied) return denied;
+    const event = gateEvent(c);
+    const input = valid<CreateStaffContactInput>(c, "json");
+    const subject = input.subject.trim();
+    const id = await inquiriesRepo.createStaffContact(
+      { eventId: event.id, actorId: c.get("user").id },
+      input.userId,
+      subject,
+      input.body,
+    );
+    // 自分あて・メンバーでない・退会した・いまイベントを見られない人には送らない
+    if (!id) return c.json({ error: "not_member" }, 404);
+    await notificationsRepo.create(
+      input.userId,
+      "event_inquiry_reply",
+      localized("staffContactTitle", { event: event.title }),
+      subject ? localized("quoted", { text: subject }) : "",
+      `/inquiries/${id}`,
+      undefined,
+      { eventId: event.id },
+    );
+    return c.json({ id }, 201);
+  },
+);
+
 eventInquiryRoutes.get("/:id/inquiries/unread-count", async (c) => {
   const denied = await eventStaffOnly(c);
   if (denied) return denied;
@@ -261,16 +318,16 @@ eventInquiryRoutes.post(
       valid<PostInquiryMessageInput>(c, "json").body,
     );
     if (!owner) return c.json({ error: "not_found" }, 404);
-    // 非公開イベントでは、問い合わせた人がいまも見られるときだけ届き、文言は中立になる
-    // ベル通知だけ（決定3）。create はメール通知ONの人へメールも送るので、送らない形で作る
-    await notificationsRepo.createForMany(
-      [owner.userId],
+    // 非公開イベントでは、問い合わせた人がいまも見られるときだけ届き、文言は中立になる。
+    // メール通知をオンにしている人にはメールも送る（オーナー決定 2026-11-22。それまではベルだけ）
+    await notificationsRepo.create(
+      owner.userId,
       "event_inquiry_reply",
       localized("eventInquiryReplyTitle"),
       localized("quoted", { text: owner.subject || event.title }),
       `/inquiries/${id}`,
       undefined,
-      { eventId: event.id, skipEmail: true },
+      { eventId: event.id },
     );
     return c.json({ ok: true });
   },

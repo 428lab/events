@@ -25,6 +25,7 @@ import ViewWeekOutlinedIcon from "@mui/icons-material/ViewWeekOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import SlideshowOutlinedIcon from "@mui/icons-material/SlideshowOutlined";
 import CancelIcon from "@mui/icons-material/Cancel";
+import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import { computeScheduleTimes, publicTracks } from "@eventer/shared";
 import type { ScheduleItem } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
@@ -39,6 +40,7 @@ import { LiveDeckDialog } from "./LiveDeckDialog.js";
 import { editorLabel } from "./ScheduleEditNotice.js";
 import { ScheduleEditor } from "./ScheduleEditor.js";
 import { UserLink } from "./UserLink.js";
+import { StaffContactDialog } from "./StaffContactDialog.js";
 
 /** イベントのタイムテーブル (#116)。閲覧はイベントが見える人全員、編集は staff。
  * 各行の時刻はイベント開始時刻から所要時間を積み上げて自動計算する。 */
@@ -72,6 +74,8 @@ export function EventSchedule({
   const [materialItem, setMaterialItem] = useState<ScheduleItem | null>(null);
   // 登壇者本人による配信スライドの紐付けダイアログの対象コマ (#571)
   const [liveDeckItem, setLiveDeckItem] = useState<ScheduleItem | null>(null);
+  /** 運営から個別に連絡する登壇者（ダイアログを開いている間だけ） */
+  const [contactSpeaker, setContactSpeaker] = useState<ScheduleItem["speaker"]>(null);
 
   if (!data) return null;
   // Detail derives a public display subset; the shared query and editor retain all items.
@@ -309,17 +313,33 @@ export function EventSchedule({
                     </TableCell>
                     {hasSpeakers && (
                       <TableCell sx={{ verticalAlign: "top", width: "1%" }}>
+                        {/* width 1% は列をいちばん細くするので、名前が1文字ずつ折れないよう中身に下限の幅を持たせる
+                            （表のセルの min-width は効かない。スマホ幅で1文字ずつ縦に並んでいた。2026-11-22） */}
                         {it.speaker ? (
-                          <UserLink
-                            username={it.speaker.username}
-                            name={it.speaker.globalName ?? it.speaker.username}
-                            avatarUrl={it.speaker.avatarUrl}
-                            withAvatar
-                            avatarSize={22}
-                            sx={{ fontSize: "0.875rem" }}
-                          />
+                          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minWidth: { xs: 96, sm: 120 } }}>
+                            <UserLink
+                              username={it.speaker.username}
+                              name={it.speaker.globalName ?? it.speaker.username}
+                              avatarUrl={it.speaker.avatarUrl}
+                              withAvatar
+                              avatarSize={22}
+                              sx={{ fontSize: "0.875rem" }}
+                            />
+                            {/* 運営から登壇者に個別に連絡する（オーナー決定 2026-11-22）。運営だけ・自分以外 */}
+                            {canManage && it.speaker.id !== me?.id && (
+                              <IconButton
+                                size="small"
+                                onClick={() => setContactSpeaker(it.speaker)}
+                                title={t("eventInquiry.contactMember")}
+                                aria-label={t("eventInquiry.contactMember")}
+                                sx={{ p: 0.25, flexShrink: 0 }}
+                              >
+                                <MailOutlineIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            )}
+                          </Stack>
                         ) : it.speakerName ? (
-                          <Typography variant="body2">{it.speakerName}</Typography>
+                          <Typography variant="body2" sx={{ minWidth: { xs: 96, sm: 120 } }}>{it.speakerName}</Typography>
                         ) : null}
                       </TableCell>
                     )}
@@ -335,6 +355,15 @@ export function EventSchedule({
             eventId={eventId}
             item={liveDeckItem}
             onClose={() => setLiveDeckItem(null)}
+          />
+        )}
+
+        {contactSpeaker && (
+          <StaffContactDialog
+            eventId={eventId}
+            userId={contactSpeaker.id}
+            name={contactSpeaker.globalName ?? contactSpeaker.username}
+            onClose={() => setContactSpeaker(null)}
           />
         )}
 

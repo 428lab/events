@@ -73,6 +73,10 @@ const ja = {
   eventInquiryNewTitle: "「{{event}}」に問い合わせが届きました",
   eventInquiryReplyTitle: "主催者から返信がありました",
   inquiryReplyTitle: "お問い合わせに返信がありました",
+  /** 運営からメンバーへの個別の連絡（運営から始める問い合わせ） */
+  staffContactTitle: "「{{event}}」の運営から連絡が届きました",
+  /** 運営からの連絡に、相手が返信した（送ったスタッフ・運営へ） */
+  staffContactReplyTitle: "「{{event}}」の運営からの連絡に返信がありました",
 
   /* ── フォロー・たまご ──────────────────────────────── */
   /** 先頭の「フォロー中の 」はメールで名前をリンクにするとき目印に使う（emailTemplates の FOLLOWING_TITLE_PREFIX） */
@@ -189,6 +193,8 @@ const en: Record<keyof typeof ja, string> = {
   eventInquiryNewTitle: "New inquiry about \"{{event}}\"",
   eventInquiryReplyTitle: "The organizer replied",
   inquiryReplyTitle: "You have a reply to your inquiry",
+  staffContactTitle: "A message from the organizers of \"{{event}}\"",
+  staffContactReplyTitle: "Reply to the organizers' message about \"{{event}}\"",
 
   // 名前で始める。メールで名前をリンクにする処理（actorTitleHtml）が先頭の名前を目印にする
   followeePublishedNamed: "{{name}}, whom you follow, published an event",

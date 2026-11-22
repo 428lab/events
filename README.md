@@ -68,7 +68,7 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - [x] 写真・動画の投稿（イベントギャラリー。動画はブラウザ内エンコード）
 - [x] 新規写真・動画ポスターのサムネイル: ブラウザで中央320×320pxの別画像を作り、イベント一覧で配信。拡大時は本体（[設計](docs/gallery-thumbnails.md)）。既存メディアの再生成は[staging準備・検証手順](docs/gallery-thumbnail-backfill.md)を参照（書き込みは独立レビュー後）。
 - [x] アプリ内通知（抽選結果・繰り上げ・受賞・問い合わせ・日程確定）。受け取ったお知らせは一覧ページで読み直せる（本文全文・既読／未読・ページ送り）
-- [x] 問い合わせ（ユーザー⇔運営のスレッド）
+- [x] 問い合わせ（ユーザー⇔運営のスレッド）。イベントの運営から参加者・登壇者に個別に連絡もできる（返信はスレッドに届き、メールと Discord / Slack でも知らせる。[docs/staff-contact.md](docs/staff-contact.md)）
 
 #### 会場・配信
 
@@ -258,6 +258,7 @@ npx wrangler secret put NOSTR_SERVICE_KEY --env staging   # staging
 | [docs/host-scoring-participation.md](docs/host-scoring-participation.md) | 主催・運営の採点対象参加 |
 | [docs/awards-sync.md](docs/awards-sync.md) | 表彰の同期（廃止。event-signal に畳んだ記録） |
 | [docs/attendance-staff-cancel.md](docs/attendance-staff-cancel.md) | 運営による「キャンセル扱い」（無断欠席にしない） |
+| [docs/staff-contact.md](docs/staff-contact.md) | 運営から参加者・登壇者へ個別に連絡する（運営から始める問い合わせ） |
 | [docs/staff-slot-assignment.md](docs/staff-slot-assignment.md) | スタッフを参加枠に並べる・運営が割り当てる枠 |
 | [docs/warikan.md](docs/warikan.md) | イベントの割り勘（費用精算） |
 | [docs/survey-no-photo.md](docs/survey-no-photo.md) | 写真NGのアンケートプリセットと名札マーク |

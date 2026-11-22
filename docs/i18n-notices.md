@@ -42,7 +42,8 @@
 ## 日本語のままにしているもの
 
 - 管理者だけに届くお知らせ（要確認の検知 `abuse_flag`、新しいお問い合わせ `inquiry_new`）。管理画面と同じく対象外。
-- 一斉連絡の題名と本文（運営が書いたもの）。
+- 一斉連絡の題名と本文（運営が書いたもの）。運営からの個別の連絡（docs/staff-contact.md）の件名と本文も同じで、
+  お知らせの題名（`staffContactTitle` / `staffContactReplyTitle`）だけが宛先の言語になる。
 - Discord / Slack の Webhook（docs/webhooks.md）。チャンネル宛てで、受け取る人が1人に決まらない。
 - すでに作られたお知らせ（書いた時点の言語のまま残る）。
 

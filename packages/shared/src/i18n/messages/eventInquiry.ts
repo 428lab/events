@@ -28,6 +28,19 @@ const ja = {
   backToList: "← 問い合わせ一覧へ",
   markDone: "完了にする",
   markDoneFailed: "完了にできませんでした。",
+  /** 運営からメンバーへの個別の連絡（運営から始める問い合わせ。オーナー決定 2026-11-22） */
+  contactMember: "個別に連絡する",
+  contactDialogTitle: "{{name}} さんに連絡する",
+  contactDialogNote:
+    "{{name}} さんにお知らせとメール（本人がメール通知をオンにしていれば）で届きます。返信はこのイベントの問い合わせに届き、あなたにはメールでも届きます。",
+  contactBodyPlaceholder: "連絡する内容",
+  contactSendFailed: "送れませんでした。相手がまだこのイベントのメンバーか確かめてください。",
+  /** 一覧・スレッドで、運営から始めた連絡に付ける印 */
+  fromStaffChip: "運営から",
+  /** 主催者側のスレッドで、誰が送った連絡か */
+  startedBy: "{{name}} さんが送った連絡",
+  /** 受け取った人のスレッドの見出し */
+  contactThreadHeader: "{{title}} の運営からの連絡",
 } as const;
 
 const en: Record<keyof typeof ja, string> = {
@@ -48,6 +61,15 @@ const en: Record<keyof typeof ja, string> = {
   backToList: "← Back to inquiries",
   markDone: "Mark as done",
   markDoneFailed: "Couldn't mark this inquiry as done.",
+  contactMember: "Send a message",
+  contactDialogTitle: "Message {{name}}",
+  contactDialogNote:
+    "{{name}} gets a notification, and an email if they have email notifications on. Replies come to this event's inquiries, and you also get them by email.",
+  contactBodyPlaceholder: "Your message",
+  contactSendFailed: "Couldn't send. Check that they are still a member of this event.",
+  fromStaffChip: "From organizers",
+  startedBy: "Message sent by {{name}}",
+  contactThreadHeader: "Message from the organizers of {{title}}",
 };
 
 export const eventInquiry = { ja, en };

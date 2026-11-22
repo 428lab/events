@@ -23,6 +23,10 @@ interface InquiryRow {
   last_sender: string;
   user_read_at: number;
   admin_read_at: number;
+  /** 最初の発言が運営（運営から始めた連絡）なら 1。読むクエリが STARTER_SQL で付ける */
+  started_by_staff?: number;
+  /** 運営から始めた連絡を送ったスタッフ（最初の発言の author_id） */
+  starter_id?: string | null;
 }
 
 /** イベントの主催者あての問い合わせ (D-EVENT-CONTACT) を読むときに、イベント名を添えた行 */
@@ -49,6 +53,13 @@ function toEvent(r: InquiryWithEventRow | InquiryRow): InquiryEvent | null {
   return r.event_id && title != null ? { id: r.event_id, title } : null;
 }
 
+/** 運営から始めた連絡か、と、送ったスタッフ。**最初の発言**で決める（列は足さない）。
+ * 運営から始めた連絡の最初の発言は sender='staff' で、author_id がそのスタッフ */
+const FIRST_MESSAGE_SQL = `(SELECT fm.%s FROM inquiry_message fm WHERE fm.inquiry_id = i.id
+  ORDER BY fm.created_at ASC, fm.rowid ASC LIMIT 1)`;
+const STARTER_SQL = `(${FIRST_MESSAGE_SQL.replace("%s", "sender")} = 'staff') AS started_by_staff,
+  CASE WHEN ${FIRST_MESSAGE_SQL.replace("%s", "sender")} = 'staff' THEN ${FIRST_MESSAGE_SQL.replace("%s", "author_id")} END AS starter_id`;
+
 /** viewer="user": 運営・主催者からの新着が未読 / viewer="admin": ユーザーからの新着が未読。
  * イベントの主催者側（確定スタッフ）も "admin" 視点で読む（admin_read_at を主催者側の既読に使う） */
 function toInquiry(r: InquiryRow, viewer: "user" | "admin"): Inquiry {
@@ -65,6 +76,7 @@ function toInquiry(r: InquiryRow, viewer: "user" | "admin"): Inquiry {
     lastSender: r.last_sender as InquirySender,
     unread,
     event: toEvent(r),
+    startedByStaff: r.started_by_staff === 1,
   };
 }
 
@@ -134,11 +146,59 @@ export const inquiriesRepo = {
     return id;
   },
 
-  /** その人がそのイベントに出している、未完了（closed 以外）の問い合わせの数 */
+  /** 運営からメンバー1人へ個別に連絡する（運営から始める問い合わせ）。スレッドの持ち主
+   * （inquiry.user_id）は**受け取るメンバー**なので、本人の問い合わせ一覧・スレッドがそのまま使える。
+   * 最初の発言は sender='staff'・author_id=送ったスタッフで、これが「運営から始めた」の印になる。
+   *
+   * 送れる相手は、そのイベントのメンバー（キャンセル以外の全ロール・全状態）で、在籍中・
+   * いまそのイベントを見られる人。自分には送れない。書き込み時に確定スタッフであることと
+   * 相手の条件を同じ batch で確かめる。相手が条件に合わなければ null */
+  async createStaffContact(
+    writer: Writer,
+    recipientId: string,
+    subject: string,
+    body: string,
+  ): Promise<string | null> {
+    if (recipientId === writer.actorId) return null;
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    const [created] = await eventWrite({ ...writer, permission: "staff" }, [
+      {
+        sql: `INSERT INTO inquiry
+                (id, user_id, event_id, subject, status, created_at, last_message_at,
+                 last_sender, user_read_at, admin_read_at)
+              SELECT ?3, ?2, ?4, ?5, 'answered', ?6, ?6, 'staff', 0, ?6
+              FROM event e JOIN user u ON u.id = ?2 AND u.deleted_at IS NULL
+              WHERE e.id = ?4 AND ${eventViewSql("e", "u.id", "?1")}
+                AND EXISTS (SELECT 1 FROM event_member m
+                  WHERE m.event_id = e.id AND m.user_id = u.id AND m.status <> 'canceled')`,
+        args: [adminIds(), recipientId, id, writer.eventId, subject, now],
+      },
+      {
+        sql: `INSERT INTO inquiry_message (id, inquiry_id, sender, author_id, body, created_at)
+              SELECT ?, ?, 'staff', ?, ?, ? WHERE EXISTS (SELECT 1 FROM inquiry WHERE id = ?)`,
+        args: [crypto.randomUUID(), id, writer.actorId, body, now, id],
+      },
+    ]);
+    return created ? id : null;
+  },
+
+  /** 運営から始めた連絡か、と、送ったスタッフ（最初の発言の書き手） */
+  async starterOf(id: string): Promise<{ startedByStaff: boolean; starterId: string | null }> {
+    const row = await one<{ started_by_staff: number; starter_id: string | null }>(
+      `SELECT ${STARTER_SQL} FROM inquiry i WHERE i.id = ?`,
+      id,
+    );
+    return { startedByStaff: row?.started_by_staff === 1, starterId: row?.starter_id ?? null };
+  },
+
+  /** その人がそのイベントに出している、未完了（closed 以外）の問い合わせの数。
+   * 運営から始めた連絡は数えない（上限は本人が送る問い合わせのためのもの） */
   async countOpenForEvent(eventId: string, userId: string): Promise<number> {
     const row = await one<{ n: number }>(
-      `SELECT COUNT(1) AS n FROM inquiry
-       WHERE user_id = ? AND event_id = ? AND status <> 'closed'`,
+      `SELECT COUNT(1) AS n FROM inquiry i
+       WHERE i.user_id = ? AND i.event_id = ? AND i.status <> 'closed'
+         AND COALESCE(${FIRST_MESSAGE_SQL.replace("%s", "sender")}, 'user') <> 'staff'`,
       userId,
       eventId,
     );
@@ -147,7 +207,7 @@ export const inquiriesRepo = {
 
   async listByUser(userId: string): Promise<Inquiry[]> {
     const rows = await many<InquiryWithEventRow>(
-      `SELECT i.*, e.title AS e_title FROM inquiry i LEFT JOIN event e ON e.id = i.event_id
+      `SELECT i.*, e.title AS e_title, ${STARTER_SQL} FROM inquiry i LEFT JOIN event e ON e.id = i.event_id
        WHERE i.user_id = ?2 AND ${USER_VISIBLE_SQL}
        ORDER BY i.last_message_at DESC`,
       adminIds(),
@@ -181,7 +241,7 @@ export const inquiriesRepo = {
 
   async findForUser(id: string, userId: string): Promise<InquiryWithEventRow | null> {
     return one<InquiryWithEventRow>(
-      `SELECT i.*, e.title AS e_title FROM inquiry i LEFT JOIN event e ON e.id = i.event_id
+      `SELECT i.*, e.title AS e_title, ${STARTER_SQL} FROM inquiry i LEFT JOIN event e ON e.id = i.event_id
        WHERE i.id = ?3 AND i.user_id = ?2 AND ${USER_VISIBLE_SQL}`,
       adminIds(),
       userId,
@@ -311,7 +371,7 @@ export const inquiriesRepo = {
       InquiryRow & { u_name: string | null; u_username: string; u_avatar: string | null }
     >(
       `SELECT i.*, u.global_name AS u_name, u.username AS u_username,
-              u.avatar_url AS u_avatar
+              u.avatar_url AS u_avatar, ${STARTER_SQL}
        FROM inquiry i JOIN user u ON u.id = i.user_id AND u.deleted_at IS NULL
        WHERE i.event_id = ?
        ORDER BY i.last_message_at DESC`,
@@ -341,7 +401,7 @@ export const inquiriesRepo = {
       InquiryWithEventRow & { u_name: string | null; u_username: string; u_avatar: string | null }
     >(
       `SELECT i.*, e.title AS e_title, u.global_name AS u_name, u.username AS u_username,
-              u.avatar_url AS u_avatar
+              u.avatar_url AS u_avatar, ${STARTER_SQL}
        FROM inquiry i JOIN user u ON u.id = i.user_id AND u.deleted_at IS NULL
        JOIN event e ON e.id = i.event_id
        WHERE i.id = ? AND i.event_id = ?`,
@@ -351,8 +411,16 @@ export const inquiriesRepo = {
     if (!inq) return null;
     await run("UPDATE inquiry SET admin_read_at = ? WHERE id = ?", Date.now(), id);
     const detail = await this.detail(inq);
+    // 運営から始めた連絡は、誰が送ったかを主催者側に出す（運営どうしで引き継げるように）
+    const starter = inq.starter_id
+      ? await one<{ name: string }>(
+          "SELECT COALESCE(global_name, username) AS name FROM user WHERE id = ? AND deleted_at IS NULL",
+          inq.starter_id,
+        )
+      : null;
     return {
       ...detail,
+      ...(starter ? { starterName: starter.name } : {}),
       userId: inq.user_id,
       userHandle: inq.u_username,
       userName: inq.u_name ?? inq.u_username,
@@ -404,7 +472,7 @@ export const inquiriesRepo = {
 
   async detail(inq: InquiryRow): Promise<InquiryDetail> {
     const msgs = await many<MessageRow>(
-      "SELECT id, sender, body, created_at FROM inquiry_message WHERE inquiry_id = ? ORDER BY created_at ASC",
+      "SELECT id, sender, body, created_at FROM inquiry_message WHERE inquiry_id = ? ORDER BY created_at ASC, rowid ASC",
       inq.id,
     );
     return {
@@ -413,6 +481,7 @@ export const inquiriesRepo = {
       status: inq.status as InquiryStatus,
       messages: msgs.map(toMessage),
       event: toEvent(inq),
+      startedByStaff: msgs[0]?.sender === "staff",
     };
   },
 };

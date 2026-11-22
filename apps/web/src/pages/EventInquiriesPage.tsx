@@ -81,6 +81,9 @@ export function EventInquiriesPage() {
                         {formatDateTime(q.lastMessageAt)}
                       </Typography>
                     </Box>
+                    {q.startedByStaff && (
+                      <Chip size="small" variant="outlined" label={t("eventInquiry.fromStaffChip")} />
+                    )}
                     <Chip
                       size="small"
                       label={tDynamic(`inquiryStatus.${q.status}`, q.status)}
@@ -142,6 +145,12 @@ export function EventInquiryThreadPage() {
             {data.userName}
           </Typography>
         </Box>
+      )}
+      {/* 運営から始めた連絡は、誰が送ったかを出す（運営どうしで引き継げるように） */}
+      {data.startedByStaff && (
+        <Typography variant="body2" color="text.secondary">
+          {data.starterName ? t("eventInquiry.startedBy", { name: data.starterName }) : t("eventInquiry.fromStaffChip")}
+        </Typography>
       )}
       {close.isError && <Alert severity="error">{t("eventInquiry.markDoneFailed")}</Alert>}
       <InquiryThread

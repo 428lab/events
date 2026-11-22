@@ -42,7 +42,7 @@ export function InquiryThread({
       {detail.event && (
         <Typography variant="body2" color="text.secondary">
           <Link component={RouterLink} to={`/events/${detail.event.id}`} color="inherit" underline="hover">
-            {t("eventInquiry.threadHeader", { title: detail.event.title })}
+            {t(detail.startedByStaff ? "eventInquiry.contactThreadHeader" : "eventInquiry.threadHeader", { title: detail.event.title })}
           </Link>
         </Typography>
       )}

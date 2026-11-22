@@ -27,6 +27,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import { Link as RouterLink } from "react-router-dom";
 import type { EventMemberWithUser, EventRole, ParticipationSlot } from "@eventer/shared";
 import { EVENT_ROLES } from "@eventer/shared";
@@ -46,6 +47,7 @@ import { participationStatusLabel, roleLabel } from "../lib/format.js";
 import { isMyMembership } from "../lib/eventMembership.js";
 import { messageKey, type MessageKey } from "../lib/messageKey.js";
 import { canDecideLottery, confirmOverCapacity } from "../lib/slotStatus.js";
+import { StaffContactDialog } from "./StaffContactDialog.js";
 
 /** ロール変更が断られた理由を、その場で直せる形の文言にする (#281)。
  * 何が起きたか（なぜ変えられないか）と、次に何をすればよいかまで書く。
@@ -195,6 +197,8 @@ export function MemberRow({
   // 後の行の結果が前の行のエラー表示を消してしまう (#286)
   const setAttendance = useSetAttendance(eventId);
   const [anchor, setAnchor] = useState<null | HTMLElement>(null);
+  // 運営からの個別の連絡（オーナー決定 2026-11-22）。ダイアログは開いたときだけ組み立てる
+  const [contactOpen, setContactOpen] = useState(false);
   // 例外のまま持ち、表示するときに訳す (#369)
   const [roleError, setRoleError] = useState<unknown>(null);
   const [slotError, setSlotError] = useState<MessageKey | null>(null);
@@ -294,6 +298,20 @@ export function MemberRow({
                 <MoreVertIcon fontSize="small" />
               </IconButton>
               <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+                {/* 連絡がつかない登壇者などに、運営から1人に連絡する。返信はイベントの問い合わせに届く */}
+                {!isMe && [
+                  <MenuItem
+                    key="contact"
+                    onClick={() => {
+                      setAnchor(null);
+                      setContactOpen(true);
+                    }}
+                  >
+                    <MailOutlineIcon fontSize="small" sx={{ mr: 1 }} />
+                    {t("eventInquiry.contactMember")}
+                  </MenuItem>,
+                  <Divider key="contact-divider" />,
+                ]}
                 {!isMe && EVENT_ROLES.map((r) => (
                   <MenuItem
                     key={r}
@@ -400,6 +418,14 @@ export function MemberRow({
                   </MenuItem>,
                 ]}
               </Menu>
+              {contactOpen && (
+                <StaffContactDialog
+                  eventId={eventId}
+                  userId={m.user.id}
+                  name={memberName}
+                  onClose={() => setContactOpen(false)}
+                />
+              )}
               <Snackbar
                 open={Boolean(slotError)}
                 autoHideDuration={8000}
