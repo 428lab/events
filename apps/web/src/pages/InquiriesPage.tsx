@@ -113,6 +113,10 @@ export function InquiriesPage() {
                     <Typography sx={{ flex: 1, minWidth: 0, fontWeight: q.unread ? 700 : 400 }}>
                       {inquirySubject(q)}
                     </Typography>
+                    {/* 運営から届いた連絡（運営から始めた問い合わせ）は、自分が送ったものと見分けられるようにする */}
+                    {q.startedByStaff && (
+                      <Chip size="small" variant="outlined" label={t("eventInquiry.fromStaffChip")} />
+                    )}
                     {/* 3つの状態をスレッド画面と同じ辞書で出す（closed が「対応中」に見えていた #359） */}
                     <Chip
                       size="small"

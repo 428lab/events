@@ -27,6 +27,8 @@ export const inquirySchema = z.object({
   /** その閲覧者にとって未読か（ユーザー視点 or 運営・主催者視点） */
   unread: z.boolean(),
   event: inquiryEventSchema.nullable(),
+  /** イベントの運営から始めた連絡（最初の発言が運営）。参加者・登壇者へ個別に連絡するときの形 */
+  startedByStaff: z.boolean(),
 });
 export type Inquiry = z.infer<typeof inquirySchema>;
 
@@ -54,6 +56,10 @@ export const inquiryDetailSchema = z.object({
   status: z.enum(INQUIRY_STATUSES),
   messages: z.array(inquiryMessageSchema),
   event: inquiryEventSchema.nullable(),
+  /** イベントの運営から始めた連絡か（一覧の startedByStaff と同じ） */
+  startedByStaff: z.boolean(),
+  /** 運営から始めた連絡を送ったスタッフの表示名（主催者側の詳細だけ。退会済みなら付かない） */
+  starterName: z.string().optional(),
   /** 運営・主催者視点の詳細でのみ付与される投稿者情報 */
   userId: z.string().optional(),
   userHandle: z.string().optional(),
@@ -74,6 +80,12 @@ export const createEventInquiryInput = z.object({
   body: z.string().min(1).max(5000),
 });
 export type CreateEventInquiryInput = z.infer<typeof createEventInquiryInput>;
+
+/** 運営からメンバー1人へ個別に連絡する（運営から始める問い合わせ）。件名は任意（空なら画面でイベント名を出す） */
+export const createStaffContactInput = createEventInquiryInput.extend({
+  userId: z.string().min(1).max(64),
+});
+export type CreateStaffContactInput = z.infer<typeof createStaffContactInput>;
 
 export const postInquiryMessageInput = z.object({
   body: z.string().min(1).max(5000),

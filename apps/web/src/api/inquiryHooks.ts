@@ -3,6 +3,7 @@ import type {
   AdminInquiry,
   CreateEventInquiryInput,
   CreateInquiryInput,
+  CreateStaffContactInput,
   Inquiry,
   InquiryDetail,
 } from "@eventer/shared";
@@ -111,6 +112,16 @@ export function useCreateEventInquiry(eventId: string) {
     mutationFn: (input: CreateEventInquiryInput) =>
       api.post<{ id: string }>(`/events/${eventId}/inquiries`, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inquiries"] }),
+  });
+}
+
+/** 運営からメンバー1人へ個別に連絡する（確定スタッフだけ。門はサーバー） */
+export function useCreateStaffContact(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateStaffContactInput) =>
+      api.post<{ id: string }>(`/events/${eventId}/inquiries/staff-contact`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["eventInquiries", eventId] }),
   });
 }
 

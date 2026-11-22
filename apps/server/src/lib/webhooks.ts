@@ -36,6 +36,8 @@ export type WebhookMessage =
       body: string;
       /** 問い合わせを作ったときは false、本人が続けて書いたときは true */
       followUp: boolean;
+      /** 運営から始めた連絡（個別の連絡）への、相手の返信 */
+      replyToStaffContact?: boolean;
     };
 
 /** Discord: embed の説明は 4096 字、1メッセージ 10 embed・合計 6000 字 */
@@ -58,6 +60,7 @@ const inquiryUrl = (eventId: string, inquiryId: string) => `${base()}/events/${e
 function title(m: WebhookMessage): string {
   if (m.topic === "join") return `参加: ${m.eventTitle}`;
   if (m.topic === "cancel") return `${m.byStaff ? "キャンセル（運営が記録）" : "キャンセル"}: ${m.eventTitle}`;
+  if (m.replyToStaffContact) return `運営からの連絡への返信: ${m.eventTitle}`;
   return `${m.followUp ? "問い合わせ（追記）" : "問い合わせ"}: ${m.eventTitle}`;
 }
 

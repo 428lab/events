@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor, within, act, cleanup } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { EventMemberWithUser, ParticipationSlot } from "@eventer/shared";
 import { i18next } from "../i18n/index.js";
@@ -440,6 +440,35 @@ describe("キャンセル扱い", () => {
     drawRow({ ...MEMBER, role: "participant", attended: true });
     fireEvent.click(screen.getByTitle("ロールを変更"));
     expect(screen.queryByRole("menuitem", { name: "キャンセル扱いにする" })).not.toBeInTheDocument();
+  });
+});
+
+/** 運営から個別に連絡する（オーナー決定 2026-11-22「登壇者に連絡がつかない」）。
+ * どの行の「…」からも出し、送ったら運営側のスレッドを開く */
+describe("個別に連絡する", () => {
+  it("「…」の「個別に連絡する」から件名と本文を送り、運営側のスレッドを開く", async () => {
+    postMock.mockReset();
+    postMock.mockResolvedValue({ id: "q-1" });
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/events/e-1/manage"]}>
+          <Routes>
+            <Route path="/events/e-1/manage" element={<MemberRow eventId="e-1" member={{ ...MEMBER, role: "participant" }} isStaff attendanceCheck={false} isMe={false} />} />
+            <Route path="/events/e-1/inquiries/q-1" element={<p>staff thread</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByTitle("ロールを変更"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "個別に連絡する" }));
+    const dialog = await screen.findByRole("dialog", { name: "運営の人 さんに連絡する" });
+    fireEvent.change(within(dialog).getByLabelText("連絡する内容"), { target: { value: " 資料を送ってください " } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "送る" }));
+    await screen.findByText("staff thread");
+    expect(postMock).toHaveBeenCalledWith("/events/e-1/inquiries/staff-contact", {
+      userId: "u-1", subject: "", body: "資料を送ってください",
+    });
   });
 });
 
