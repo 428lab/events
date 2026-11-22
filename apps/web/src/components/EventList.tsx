@@ -1,4 +1,4 @@
-import { Box, Stack, ToggleButton, ToggleButtonGroup } from "@mui/material";
+import { Box, ToggleButton, ToggleButtonGroup } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import ViewAgendaIcon from "@mui/icons-material/ViewAgenda";
 import GridViewIcon from "@mui/icons-material/GridView";
@@ -64,11 +64,13 @@ export function EventList({
       </Box>
     );
   }
+  // 横型カードは、器が広い PC（lg 以上）では2列に並べる。1列のままだとカードが横に間延びする
+  // （PC で横幅を使う。オーナー指摘 2026-11-22）。lg 未満はこれまでどおり1列
   return (
-    <Stack spacing={2}>
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "repeat(2, minmax(0, 1fr))" }, gap: 2 }}>
       {events.map((e) => (
         <EventCard key={e.id} event={e} role={e.myRole ?? role} cohost={isCohost(e)} />
       ))}
-    </Stack>
+    </Box>
   );
 }

@@ -7,7 +7,6 @@ import {
   Card,
   CardContent,
   Chip,
-  Grid,
   Link,
   Stack,
   Typography,
@@ -108,8 +107,16 @@ export function EventDetailPage() {
     : null;
 
   return (
-    <Grid container spacing={3}>
-      <Grid item xs={12} md={8}>
+    // 本文の列は残りの幅を使い、右列（参加者）は読める幅で止める。器が広い PC で右列だけ
+    // 太らないように（オーナー指摘 2026-11-22）。md 未満は1列で、これまでと同じ
+    <Box
+      sx={{
+        display: "grid",
+        gap: 3,
+        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 2fr) minmax(280px, 1fr)", lg: "minmax(0, 1fr) 400px" },
+      }}
+    >
+      <Box sx={{ minWidth: 0 }}>
         <Stack spacing={3}>
       {/* 下書きの注意 (#613)。公開・予約取り消しのボタンは見出し直下の主ボタンが持つ。
           予約公開 (#624) があるときは運営ページと同じく公開予定の案内（「予約を取り消す」付き）に替える */}
@@ -300,7 +307,8 @@ export function EventDetailPage() {
       {(event.description || venueAddress) && (
         <Card variant="outlined">
           <CardContent>
-            {event.description && <Markdown>{event.description}</Markdown>}
+            {/* 説明は長い文章なので、器が広くても1行が長くなりすぎないよう読める幅で止める */}
+            {event.description && <Box sx={{ maxWidth: "75ch" }}><Markdown>{event.description}</Markdown></Box>}
             {event.venueOffline && (
               <Typography variant="body2" sx={{ mt: 2 }}>
                 {t("eventDetail.venueOffline", { venue: event.venueOffline })}
@@ -481,9 +489,10 @@ export function EventDetailPage() {
       {/* 発表が終わったら、発表スライドを並べる（運営には先に「運営だけ」で出る） */}
       <PresentedDecks eventId={id} contest={contest} />
         </Stack>
-      </Grid>
+      </Box>
 
-      <Grid item xs={12} md={4}>
+      {/* 右列は伸ばしたまま（sticky の右列が本文の高さ分だけ動ける） */}
+      <Box sx={{ minWidth: 0 }}>
         <EventDetailSidebar>
           <EventMemberList
             showManagementActions={false}
@@ -492,8 +501,8 @@ export function EventDetailPage() {
             attendanceCheck={event.attendanceCheck}
           />
         </EventDetailSidebar>
-      </Grid>
-    </Grid>
+      </Box>
+    </Box>
   );
 }
 

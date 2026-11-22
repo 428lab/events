@@ -21,6 +21,7 @@ import MenuIcon from "@mui/icons-material/Menu";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import GroupAddIcon from "@mui/icons-material/GroupAdd";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
+import { containerMaxWidth, pageWidth } from "../lib/pageWidth.js";
 import { useBundleReload } from "../lib/useBundleReload.js";
 import { useNavCollapse } from "../lib/useNavCollapse.js";
 import type { User } from "@eventer/shared";
@@ -88,10 +89,8 @@ export function Layout({
   useBundleReload();
   // お知らせとメールを今の画面の言語で受け取れるよう、違うときだけサーバーに知らせる (#352)
   useReportNoticeLanguage();
-  // スライド/配信セット編集は作業領域を最大化するため全幅
-  const wide =
-    (pathname.startsWith("/decks/") || pathname.startsWith("/live-sets/")) &&
-    pathname.endsWith("/edit");
+  // ページごとの横幅（PC で横幅を使う。判定は lib/pageWidth.ts の1か所）
+  const maxWidth = containerMaxWidth(pageWidth(pathname));
   const isAdmin = useIsAdmin();
   const [adminAnchor, setAdminAnchor] = useState<null | HTMLElement>(null);
   const { data: adminUnread } = useAdminInquiryUnreadCount(isAdmin);
@@ -385,7 +384,7 @@ export function Layout({
           </Menu>
         </Toolbar>
       </AppBar>
-      <Container maxWidth={wide ? false : "md"} sx={{ py: 4 }}>
+      <Container maxWidth={maxWidth} sx={{ py: 4 }}>
         {children}
       </Container>
       <VersionFooter />

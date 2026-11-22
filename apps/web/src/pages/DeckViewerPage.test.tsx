@@ -9,14 +9,16 @@ vi.mock("react-router-dom", () => ({ useParams: () => ({ slug: "sample" }) }));
 afterEach(() => { vi.unstubAllGlobals(); });
 it("lets mobile viewers read at original size without slide-tap advancement", () => {
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
-  const { container } = render(<DeckViewerPage />);
+  render(<DeckViewerPage />);
   fireEvent.click(screen.getByRole("button", { name: "拡大して読む" }));
   const region = screen.getByRole("region", { name: "1ページ目" });
+  // jsdom は幅を測れない（0）ので、原寸（960px）を下限に 150% で描く
   expect(region.querySelector("div[style*=\"width: 960px\"]")).toBeTruthy();
+  expect(screen.getByText("150%")).toBeInTheDocument();
   fireEvent.click(region.firstElementChild!);
   expect(screen.getByText("1 / 2")).toBeInTheDocument();
   region.scrollLeft = 640;
-  fireEvent.click(container.querySelectorAll("button")[2]);
+  fireEvent.click(screen.getByRole("button", { name: "次のページ" }));
   expect(screen.getByRole("region", { name: "2ページ目" })).toBeInTheDocument();
   expect(region.scrollLeft).toBe(0);
   fireEvent.click(screen.getByRole("button", { name: "拡大表示を閉じる" }));
@@ -67,4 +69,20 @@ it("requests native full screen on the presentation layer where the browser supp
   } finally {
     Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { value: original, configurable: true, writable: true });
   }
+});
+
+it("zoom steps really enlarge the slide from the fitted width (not just the original 960px)", () => {
+  // 画面に合わせた幅が 1200px の PC（器が広い）。原寸 960px に切り替えるだけだと小さくなってしまう
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  const spy = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1200);
+  render(<DeckViewerPage />);
+  fireEvent.click(screen.getByRole("button", { name: "拡大して読む" }));
+  const region = screen.getByRole("region", { name: "1ページ目" });
+  expect(region.querySelector("div[style*=\"width: 1800px\"]")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "もっと拡大" }));
+  expect(screen.getByText("200%")).toBeInTheDocument();
+  expect(region.querySelector("div[style*=\"width: 2400px\"]")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "拡大を小さく" }));
+  expect(region.querySelector("div[style*=\"width: 1800px\"]")).toBeTruthy();
+  spy.mockRestore();
 });
