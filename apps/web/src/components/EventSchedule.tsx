@@ -313,8 +313,10 @@ export function EventSchedule({
                     </TableCell>
                     {hasSpeakers && (
                       <TableCell sx={{ verticalAlign: "top", width: "1%" }}>
+                        {/* width 1% は列をいちばん細くするので、名前が1文字ずつ折れないよう中身に下限の幅を持たせる
+                            （表のセルの min-width は効かない。スマホ幅で1文字ずつ縦に並んでいた。2026-11-22） */}
                         {it.speaker ? (
-                          <Stack direction="row" alignItems="center" spacing={0.25}>
+                          <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minWidth: { xs: 96, sm: 120 } }}>
                             <UserLink
                               username={it.speaker.username}
                               name={it.speaker.globalName ?? it.speaker.username}
@@ -337,7 +339,7 @@ export function EventSchedule({
                             )}
                           </Stack>
                         ) : it.speakerName ? (
-                          <Typography variant="body2">{it.speakerName}</Typography>
+                          <Typography variant="body2" sx={{ minWidth: { xs: 96, sm: 120 } }}>{it.speakerName}</Typography>
                         ) : null}
                       </TableCell>
                     )}
