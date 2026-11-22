@@ -7,7 +7,8 @@ import {
   Toolbar,
   Typography,
 } from "@mui/material";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink, useLocation } from "react-router-dom";
+import { containerMaxWidth, pageWidth } from "../lib/pageWidth.js";
 import { useTranslation } from "react-i18next";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
 import { LogoGlyph } from "./LogoGlyph.js";
@@ -16,6 +17,7 @@ import { VersionFooter } from "./VersionFooter.js";
 /** 未ログインの公開ページ用の軽量レイアウト（ログイン導線のみ） */
 export function PublicLayout({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
+  const { pathname } = useLocation();
   return (
     <Box sx={{ minHeight: "100vh", overflowX: "hidden" }}>
       <AppBar position="static" elevation={0}>
@@ -65,7 +67,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
           </Box>
         </Toolbar>
       </AppBar>
-      <Container maxWidth="md" sx={{ py: 4 }}>
+      <Container maxWidth={containerMaxWidth(pageWidth(pathname))} sx={{ py: 4 }}>
         {children}
       </Container>
       <VersionFooter />

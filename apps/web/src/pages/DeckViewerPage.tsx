@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert, Box, Button, IconButton, Stack, Typography } from "@mui/material";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
+import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos";
 import CloseIcon from "@mui/icons-material/Close";
@@ -14,6 +16,14 @@ import { DeckExportMenu } from "../components/DeckExportMenu.js";
 import { DECK_H, DECK_W } from "@eventer/shared";
 import { ensureDeckFonts } from "../lib/deckFonts.js";
 
+/** 「拡大して読む」の倍率。画面に合わせた幅に掛ける（オーナー指摘 2026-11-22: 等倍 960px に
+ *  切り替えるだけでは、PC の画面ではほとんど大きくならなかった） */
+export const DECK_ZOOM_STEPS = [1.5, 2, 3] as const;
+/** 拡大の基準の最小の幅。スマホでも最初の段階（150%）で原寸（960px）になり、段階ごとに大きくなる */
+const ZOOM_BASE_MIN = DECK_W / DECK_ZOOM_STEPS[0];
+/** ふだんの表示は、見出し・ページ送りと一緒に画面の高さに収める（広い器でスライドが縦にはみ出さない） */
+const FIT_MAX_WIDTH = `min(100%, calc((100vh - 320px) * ${DECK_W} / ${DECK_H}))`;
+
 export function DeckViewerPage() {
   const { t } = useTranslation();
   const { slug = "" } = useParams();
@@ -23,6 +33,10 @@ export function DeckViewerPage() {
   const [index, setIndex] = useState(0);
   const [width, setWidth] = useState(0);
   const [reading, setReading] = useState(false);
+  /** 拡大の段階（DECK_ZOOM_STEPS の添字） */
+  const [zoomStep, setZoomStep] = useState(0);
+  /** 拡大する前の、画面に合わせた幅。拡大中は器がスライドより狭くなるので、開く前の幅を基準にする */
+  const [fitBase, setFitBase] = useState(0);
   const [presenting, setPresenting] = useState(false);
   const [screenSize, setScreenSize] = useState({ w: 0, h: 0 });
   const presentRef = useRef<HTMLDivElement>(null);
@@ -129,6 +143,7 @@ export function DeckViewerPage() {
 
   const slide = slides[Math.min(index, total - 1)];
   const fitWidth = Math.floor(Math.min(screenSize.w, (screenSize.h * DECK_W) / DECK_H));
+  const zoomWidth = Math.round(Math.max(ZOOM_BASE_MIN, fitBase || width) * DECK_ZOOM_STEPS[zoomStep]!);
 
   return (
     <>
@@ -144,36 +159,53 @@ export function DeckViewerPage() {
           <Typography variant="caption">{t("studio.deckViews", { n: views })}</Typography>
         </Stack>
       )}
-      <Button sx={{ alignSelf: "flex-start" }} variant={reading ? "outlined" : "contained"} onClick={() => setReading(!reading)}>{t(reading ? "deckImport.closeReading" : "deckImport.readFullSize")}</Button>
-      {reading && <Typography variant="body2">{t("deckImport.readingHint", { n: Math.min(index + 1, total), total })}</Typography>}
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        <Button variant={reading ? "outlined" : "contained"} onClick={() => {
+          if (!reading) { setFitBase(width); setZoomStep(0); }
+          setReading(!reading);
+        }}>{t(reading ? "deckImport.closeReading" : "deckImport.readFullSize")}</Button>
+        {reading && (
+          <>
+            <IconButton onClick={() => setZoomStep((z) => Math.max(0, z - 1))} disabled={zoomStep === 0} aria-label={t("studio.deckZoomOut")} title={t("studio.deckZoomOut")}>
+              <ZoomOutIcon />
+            </IconButton>
+            <Typography variant="body2" sx={{ minWidth: 48, textAlign: "center" }}>{Math.round(DECK_ZOOM_STEPS[zoomStep]! * 100)}%</Typography>
+            <IconButton onClick={() => setZoomStep((z) => Math.min(DECK_ZOOM_STEPS.length - 1, z + 1))} disabled={zoomStep === DECK_ZOOM_STEPS.length - 1} aria-label={t("studio.deckZoomIn")} title={t("studio.deckZoomIn")}>
+              <ZoomInIcon />
+            </IconButton>
+          </>
+        )}
+      </Stack>
+      {reading && <Typography variant="body2">{t("studio.deckReadingHint", { n: Math.min(index + 1, total), total })}</Typography>}
       <Box
         ref={wrapRef}
         role={reading ? "region" : undefined}
         aria-label={reading ? t("deckImport.page", { n: Math.min(index + 1, total) }) : undefined}
         tabIndex={reading ? 0 : undefined}
-        sx={{ bgcolor: "#000", borderRadius: 2, overflowX: reading ? "auto" : "hidden", overflowY: reading ? "auto" : "hidden", maxWidth: "100%" }}
+        sx={{ bgcolor: "#000", borderRadius: 2, overflowX: reading ? "auto" : "hidden", overflowY: reading ? "auto" : "hidden", maxWidth: reading ? "100%" : FIT_MAX_WIDTH, width: reading ? undefined : "100%", alignSelf: "center" }}
       >
         <Box
           ref={stageRef}
           onClick={reading ? undefined : () => go(1)}
           sx={{
-            width: reading ? 960 : "100%",
+            width: reading ? zoomWidth : "100%",
             aspectRatio: "16 / 9",
             cursor: reading ? "auto" : "pointer",
             display: "flex",
           }}
         >
-          {(reading || width > 0) && <SlideStage slide={slide} width={reading ? 960 : width} />}
+          {/* 拡大した幅で描き直す（CSS の拡大ではないので文字がぼやけない） */}
+          {(reading || width > 0) && <SlideStage slide={slide} width={reading ? zoomWidth : width} />}
         </Box>
       </Box>
       <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
-        <IconButton onClick={() => go(-1)} disabled={index === 0}>
+        <IconButton onClick={() => go(-1)} disabled={index === 0} aria-label={t("studio.deckPrevPage")}>
           <ArrowBackIosNewIcon />
         </IconButton>
         <Typography variant="body2">
           {Math.min(index + 1, total)} / {total}
         </Typography>
-        <IconButton onClick={() => go(1)} disabled={index >= total - 1}>
+        <IconButton onClick={() => go(1)} disabled={index >= total - 1} aria-label={t("studio.deckNextPage")}>
           <ArrowForwardIosIcon />
         </IconButton>
         <IconButton onClick={fullscreen} title={t("studio.deckFullscreen")}>
