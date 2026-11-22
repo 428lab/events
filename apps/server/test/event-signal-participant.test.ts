@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { BingoState, EventSignalSource, EventSignalTopic, EventState, ScoreSummary } from "@eventer/shared";
+import { deriveBingoCard, type BingoState, type EventSignalSource, type EventSignalTopic, type EventState, type ScoreSummary } from "@eventer/shared";
 import { eventSignal } from "../src/lib/eventSignal.js";
 import { nostrRelay } from "../src/lib/nostrRelay.js";
 import type { PublishReport } from "../src/lib/nostrRelay.js";
@@ -249,8 +249,12 @@ describe("bingo stored counts (D3, migration 0109)", () => {
     expect((await json("POST", `/events/${eventId}/bingo/card`, late.cookie, {})).status).toBe(200);
     expect(await stored()).toMatchObject({ card_count: 3 });
 
+    // late のカードはランダムなので、引いた 1〜5 だけで偶然リーチ（まれにビンゴ）になることがある。
+    // 期待値はそのカードを共通の判定で数える（固定値にすると、まれに CI が落ちる）
+    const lateRow = await sql("SELECT numbers FROM event_bingo_card WHERE event_id=? AND user_id=?", eventId, late.id).first<{ numbers: string }>();
+    const lateOutcome = deriveBingoCard(JSON.parse(lateRow!.numbers) as number[], [1, 2, 3, 4, 5]);
     const mine = await read<BingoState>(`/events/${eventId}/bingo`, member.cookie);
-    expect(mine.counts).toEqual({ cards: 3, bingo: 1, reach: 1 });
+    expect(mine.counts).toEqual({ cards: 3, bingo: 1 + (lateOutcome.bingo ? 1 : 0), reach: 1 + (lateOutcome.reach ? 1 : 0) });
     expect(mine.me).toEqual({ bingo: true, reach: false, rank: 1 });
 
     // stored values match what the staff list derives from every card
