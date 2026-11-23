@@ -241,6 +241,7 @@ npx wrangler secret put NOSTR_SERVICE_KEY --env staging   # staging
 | [docs/staff-timeline.md](docs/staff-timeline.md) | スタッフ用タイムライン（準備・片付け・裏方トラック） |
 | [docs/staff-todo.md](docs/staff-todo.md) | スタッフ向け TODO リストとガントチャート |
 | [docs/video-upload.md](docs/video-upload.md) | 動画投稿（ブラウザ内エンコード・Range 配信） |
+| [docs/browser-live-youtube.md](docs/browser-live-youtube.md) | ブラウザから YouTube に配信する（手元の中継アプリと YouTube 連携。設計） |
 | [docs/event-signal.md](docs/event-signal.md) | 開いている画面への合図（ポーリングの代わり。Nostr ephemeral） |
 | [docs/i18n-notices.md](docs/i18n-notices.md) | お知らせとメールの言語・保存される既定の文言の言語 |
 | [docs/webhooks.md](docs/webhooks.md) | コミュニティとイベントごとの Discord / Slack 通知 |
