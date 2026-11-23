@@ -100,7 +100,7 @@ A を選ぶ理由: 見た目が今と完全に同じで、作るものが最小�
 - `/v1/hello` 以外は `Authorization: Bearer <token>` が要る。
 - **CORS**: `Origin` が許可リストのときだけ `Access-Control-Allow-Origin: <その origin>` を返す。許可リストは
   `https://events.kojira.io` と `https://eventer-staging.kojiran.workers.dev` を組み込みで持つ（開発用に
-  `--allow-origin http://localhost:5173` を起動オプションで足せる）。ほかの origin には CORS ヘッダーを返さない。
+  `--dev`（localhost / 127.0.0.1 の全ポートを許す） を起動オプションで足せる）。ほかの origin には CORS ヘッダーを返さない。
 - 昔の Private Network Access のプリフライト（`Access-Control-Request-Private-Network: true`）が来たら
   `Access-Control-Allow-Private-Network: true` を返す（古い Chrome 向け。害はない）。
 - 送り先の鍵（`streamKey`）は**ログに出さない**。ログに出す RTMP の URL は鍵の部分を `****` にする。
@@ -122,7 +122,7 @@ A を選ぶ理由: 見た目が今と完全に同じで、作るものが最小�
 - https のページ（events lab）から `http://127.0.0.1` へ `fetch` する。Chrome は **Local Network Access** の許可確認を
   出す（Chrome 142 から。2025-09 の Chrome 公式ブログ）。初回に1回「このサイトにローカルネットワークへのアクセスを許可しますか」が出る。
   許可されれば、混在コンテンツ（https → http）の制限からも外れる。
-  - `fetch(url, { targetAddressSpace: "local" })` を付けて、Chrome に「手元への通信」だと先に知らせる。
+  - `fetch(url, { targetAddressSpace: "loopback" })` を付けて、Chrome に「手元への通信」だと先に知らせる。
   - 拒否されたときは、Chrome の「サイトの設定」から許可し直す手順を画面に出す。
 - WebRTC の通信そのもの（WHIP のあとの UDP）は、同じ PC の中なので外には出ない。WebRTC は今のところこの許可確認の対象外
   （Chrome ブログの既知の制限）だが、WHIP の `fetch` で許可は済んでいる。
@@ -433,3 +433,6 @@ CREATE TABLE event_youtube_broadcast (
 - **ソフトウェアで圧縮される PC**（古い PC・GPU の無い Windows）では重くなる。そのときは OBS の方法に戻ってもらう。
 - 中継アプリは**署名なし**だと、入れるときに警告が出る。
 - 回線やPCの不調で配信が止まっても、YouTube の予約は `live` のまま残る。止まったことを運営が気づける表示が要る（§10）。
+
+
+> 2026-11-23 追記: 実装（#703・eventslab-relay 8652648）で次の2点を変えた。`fetch` の `targetAddressSpace` は `"loopback"`（Chrome 157 は 127.0.0.1 を `local` ではなく `loopback` と扱い、`"local"` だと失敗した）。開発用の許可は `--allow-origin` ではなく `--dev`（localhost・127.0.0.1 の全ポート）。
