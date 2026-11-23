@@ -77,6 +77,7 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - [x] スライド（デッキ）の作成・編集・公開（`/d/:slug`。画像・テキスト配置）
 - [x] スライドを PDF から取り込む（見た目そのまま／文字を直せる形を選べる。Keynote・PowerPoint は PDF に書き出してから。[docs/slide-editor.md](docs/slide-editor.md) §3.3.1）
 - [x] 配信セットと配信画面（OBS がウィンドウキャプチャする完成画面・配信コントロール・BGM）
+- [x] 配信画面から手元の中継アプリ（[eventslab-relay](https://github.com/428lab/eventslab-relay)）経由で YouTube に配信（OBS なし・ハードウェアエンコード・配信キーは手で入れる。[docs/browser-live-stream.md](docs/browser-live-stream.md)）
 - [x] イベントチャット（Nostr リレー経由。投影画面あり）
 
 #### スタッフ運用
@@ -102,7 +103,8 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 
 ### 🚧 これから
 
-- [ ] ブラウザから直接ライブ配信（WebRTC）。リモート視聴・観覧モードまで events lab 内で完結
+- [ ] YouTube 連携（Google アカウントで配信の予約・配信キーの受け取り・開始と終了・チャット。#11、設計 PR #702）
+- [ ] リモート視聴・観覧モードまで events lab 内で完結
 - [ ] ネイティブアプリ（iOS / Android）
 
 ## 開発
@@ -269,6 +271,7 @@ npx wrangler secret put NOSTR_SERVICE_KEY --env staging   # staging
 | [docs/agent-deck-token.md](docs/agent-deck-token.md) | AI エージェントにスライドを書いてもらう一時トークン |
 | [docs/lab-llm-slides-import.md](docs/lab-llm-slides-import.md) | LLM 生成スライドの JSON 取り込み |
 | [docs/live-set-visual-design.md](docs/live-set-visual-design.md) | 配信セットのビジュアル設計 |
+| [docs/browser-live-stream.md](docs/browser-live-stream.md) | 配信画面から手元の中継アプリ経由で YouTube に配信する（運営の手順と決まりごと） |
 | [docs/event-card-editor.md](docs/event-card-editor.md) | イベント用カードエディター |
 | [docs/card-brand-alignment.md](docs/card-brand-alignment.md) | プロフィールカードのブランド表示位置 |
 | [docs/profile-social-links.md](docs/profile-social-links.md) | 公開プロフィールの連携アカウントリンク |

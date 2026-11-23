@@ -10,7 +10,8 @@ import { cameraStatusChannelName, resolveCameraSlots } from "../lib/liveCameraMa
 import type { CameraSlotState, CameraStatusMessage } from "../lib/liveCameraMapping.js";
 import { useCameraMap, useCameraStreams, useVideoDevices } from "../lib/useLiveCameras.js";
 import { LiveCameraMapRows, requestCameraPermission } from "../components/LiveCameraMapPanel.js";
-import { useEvent } from "../api/hooks.js";
+import { useEvent, useIsAdmin } from "../api/hooks.js";
+import { LiveRelayBar } from "../components/LiveRelayBar.js";
 import {
   liveDeckKey,
   useEventLiveDeck,
@@ -35,6 +36,9 @@ export function LiveScreenPage() {
   const { id = "" } = useParams();
   const { data: eventData } = useEvent(id);
   const event = eventData?.event;
+  // 配信のバー（手元の中継アプリ経由で YouTube へ、#11）は配信コントロールと同じく運営だけ
+  const isAdmin = useIsAdmin();
+  const canStream = eventData?.myRole === "staff" || isAdmin;
   const liveState = useEventLiveState(id);
   const { data: state } = liveState;
   const [wallNow, setWallNow] = useState(() => Date.now());
@@ -287,6 +291,9 @@ export function LiveScreenPage() {
           </Box>
         </Box>
       )}
+
+      {/* 配信のバー（右上・カーソル表示中のみ。タブの取り込みに写るので、配信中は閉じておく） */}
+      {canStream && <LiveRelayBar visible={cursorVisible} />}
 
       {/* 設定（キャプチャに写りにくいよう右下・カーソル表示中のみ） */}
       {cursorVisible && needCamera && (
