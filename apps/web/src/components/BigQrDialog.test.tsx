@@ -1,6 +1,7 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { EVENT_SIGNAL_KIND, type EventSignalSource } from "@eventer/shared";
 
 /**
@@ -35,7 +36,7 @@ vi.mock("../api/client.js", async (importOriginal) => {
   };
 });
 
-const { BigQrDialog, buildMeetQrUrl } = await import("./BigQrDialog.js");
+const { BigQrDialog, buildMeetQrUrl, parseMeetQrUrl } = await import("./BigQrDialog.js");
 
 const signal: EventSignalSource = { kind: EVENT_SIGNAL_KIND, pubkey: "5e".repeat(32), topic: "meet-token-topic", rev: 1, relays: ["wss://relay.example"] };
 const token = (nonce: string, consumed = false, displayUntil = Date.now() + 90_000) => ({
@@ -54,15 +55,33 @@ async function fireSignal() {
   });
 }
 
-function renderDialog(open = true) {
+function MeetPageStub() {
+  const { token = "" } = useParams();
+  return <div data-testid="meet-page">{token}</div>;
+}
+
+function dialogTree(open: boolean, onClose: () => void, qc: QueryClient) {
+  return (
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={["/me"]}>
+        <Routes>
+          <Route path="/me" element={<BigQrDialog open={open} onClose={onClose} name="テスター" />} />
+          <Route path="/m/:token" element={<MeetPageStub />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+}
+
+function renderDialog(open = true, onClose: () => void = () => {}) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
-    <QueryClientProvider client={qc}>
-      <BigQrDialog open={open} onClose={() => {}} name="テスター" />
-    </QueryClientProvider>,
-  );
+  const view = render(dialogTree(open, onClose, qc));
+  return {
+    ...view,
+    rerenderOpen: (next: boolean) => view.rerender(dialogTree(next, onClose, qc)),
+  };
 }
 
 beforeEach(() => {
@@ -253,5 +272,155 @@ describe("大きなQR表示 (#330)", () => {
     expect("wakeLock" in navigator).toBe(false);
     getMock.mockResolvedValue({ token: "mt1.x.1.y", expiresAt: 0, consumed: false });
     expect(() => renderDialog()).not.toThrow();
+  });
+});
+
+/**
+ * 「QRを見せる / 読み取る」の切り替え (#704)。
+ *
+ * OSのカメラアプリ経由だと別ブラウザで開いてログインからやり直しになることがあるので、
+ * 同じ画面で相手の出会いのQRを読めるようにする。固定しておくのは、既定は従来の「見せる」、
+ * 読み取り中はトークンを取りに行かない、出会いのQRだけを入口に通す、カメラを止め忘れない、こと。
+ * カメラと BarcodeDetector は偽物にする。
+ */
+describe("出会いのQR画面の読み取り (#704)", () => {
+  const stopMock = vi.fn();
+  const getUserMediaMock = vi.fn();
+  const detectMock = vi.fn();
+  /** 偽のカメラに映っている QR の中身 */
+  let scanned: string | null = null;
+
+  beforeEach(() => {
+    scanned = null;
+    stopMock.mockReset();
+    detectMock.mockReset();
+    detectMock.mockImplementation(async () => (scanned ? [{ rawValue: scanned }] : []));
+    getUserMediaMock.mockReset();
+    getUserMediaMock.mockResolvedValue({ getTracks: () => [{ stop: stopMock }] });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: getUserMediaMock },
+    });
+    (window as { BarcodeDetector?: unknown }).BarcodeDetector = class {
+      static getSupportedFormats = async () => ["qr_code"];
+      detect = detectMock;
+    };
+    // jsdom の video は再生できず寸法も持たないので、映っている体にする
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(4);
+    vi.spyOn(HTMLVideoElement.prototype, "videoWidth", "get").mockReturnValue(640);
+    vi.spyOn(HTMLVideoElement.prototype, "videoHeight", "get").mockReturnValue(480);
+    getMock.mockResolvedValue(token("aaaa"));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (window as { BarcodeDetector?: unknown }).BarcodeDetector;
+    delete (navigator as { mediaDevices?: unknown }).mediaDevices;
+  });
+
+  const switchTo = (name: string) => fireEvent.click(screen.getByRole("button", { name }));
+
+  it("出会いのQRは自分のオリジンの /m/<token> だけ", () => {
+    const origin = "https://example.test";
+    expect(parseMeetQrUrl("https://example.test/m/mt1.u.1.ab", origin)).toBe("mt1.u.1.ab");
+    expect(parseMeetQrUrl("https://other.test/m/mt1.u.1.ab", origin)).toBeNull();
+    expect(parseMeetQrUrl("https://example.test/users/sanka", origin)).toBeNull();
+    expect(parseMeetQrUrl("https://example.test/m/a/b", origin)).toBeNull();
+    expect(parseMeetQrUrl("evt1.abc", origin)).toBeNull();
+  });
+
+  it("既定は「QRを見せる」で、カメラは起動しない", async () => {
+    renderDialog();
+    await waitFor(() =>
+      expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toContain("aaaa"),
+    );
+    expect(screen.getByRole("button", { name: "QRを見せる" }).getAttribute("aria-pressed")).toBe("true");
+    expect(getUserMediaMock).not.toHaveBeenCalled();
+  });
+
+  it("「読み取る」に切り替えると背面カメラを起動し、QRとトークンの取得を止める", async () => {
+    renderDialog();
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(1));
+    switchTo("読み取る");
+
+    await waitFor(() =>
+      expect(getUserMediaMock).toHaveBeenCalledWith({ video: { facingMode: "environment" }, audio: false }),
+    );
+    expect(screen.queryByTestId("big-qr")).toBeNull();
+    expect(screen.getByLabelText("QRを読み取るカメラの映像")).toBeTruthy();
+    // 読み取り中は「読まれた」の合図も聞かず、取りに行かない
+    expect(listeners.at(-1)?.source ?? null).toBeNull();
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    expect(getMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("出会いのQRを読んだら閉じて /m/<token> へ進む", async () => {
+    const onClose = vi.fn();
+    renderDialog(true, onClose);
+    switchTo("読み取る");
+    scanned = `${window.location.origin}/m/mt1.u-2.1700000000.cafe`;
+
+    await waitFor(() => expect(screen.getByTestId("meet-page").textContent).toBe("mt1.u-2.1700000000.cafe"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // 画面を離れたらカメラを止める
+    expect(stopMock).toHaveBeenCalled();
+  });
+
+  it("別オリジン・別のパスのQRでは進まず、案内を出して読み続ける", async () => {
+    const onClose = vi.fn();
+    renderDialog(true, onClose);
+    switchTo("読み取る");
+    await waitFor(() => expect(getUserMediaMock).toHaveBeenCalled());
+
+    scanned = "https://other.example/m/mt1.u-2.1700000000.cafe";
+    await waitFor(() => expect(screen.getByText("出会いのQRではありません")).toBeTruthy());
+    scanned = `${window.location.origin}/users/sanka`;
+    await waitFor(() => expect(detectMock.mock.calls.length).toBeGreaterThan(3));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("meet-page")).toBeNull();
+    // 読み取りは続いている（カメラ映像のまま）
+    expect(screen.getByLabelText("QRを読み取るカメラの映像")).toBeTruthy();
+    expect(stopMock).not.toHaveBeenCalled();
+  });
+
+  it("カメラが使えないときは案内と「QRを見せる」に戻るボタンを出す", async () => {
+    getUserMediaMock.mockRejectedValue(new DOMException("denied", "NotAllowedError"));
+    renderDialog();
+    switchTo("読み取る");
+
+    await waitFor(() => expect(screen.getByText(/カメラを使えませんでした/)).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "QRを見せるに戻る" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toContain("aaaa"),
+    );
+  });
+
+  it("閉じて開き直すと「QRを見せる」から始まる", async () => {
+    const view = renderDialog();
+    switchTo("読み取る");
+    await waitFor(() => expect(getUserMediaMock).toHaveBeenCalled());
+
+    view.rerenderOpen(false);
+    await waitFor(() => expect(stopMock).toHaveBeenCalled());
+    view.rerenderOpen(true);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "QRを見せる" }).getAttribute("aria-pressed")).toBe("true"),
+    );
+    expect(screen.getByTestId("big-qr")).toBeTruthy();
+  });
+
+  it("「QRを見せる」に戻したらカメラを止める", async () => {
+    renderDialog();
+    switchTo("読み取る");
+    await waitFor(() => expect(getUserMediaMock).toHaveBeenCalled());
+    // 映像を流し始めるまで待つ（デコードが回り出した＝ストリームを掴んでいる）
+    await waitFor(() => expect(detectMock).toHaveBeenCalled());
+    expect(stopMock).not.toHaveBeenCalled();
+
+    switchTo("QRを見せる");
+    expect(stopMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("big-qr")).toBeTruthy();
   });
 });

@@ -170,6 +170,16 @@ const ja = {
   qrPreparing: "QRを準備しています…",
   qrJustRead: "読み取られました。次の人もどうぞ",
   qrHint: "読み取るとその場で交流が記録されます",
+  /** 出会いのQR画面の「見せる / 読み取る」切り替え (#704) */
+  qrModeLabel: "QRの表示と読み取りの切り替え",
+  qrModeShow: "QRを見せる",
+  qrModeScan: "読み取る",
+  qrScanLabel: "QRを読み取るカメラの映像",
+  qrScanHint: "相手の出会いのQRを映してください",
+  qrScanNotMeet: "出会いのQRではありません",
+  qrScanCameraError:
+    "カメラを使えませんでした。ブラウザの設定でカメラの使用を許可してください",
+  qrScanBackToShow: "QRを見せるに戻る",
 
   /* ===== ビンゴ成績 (#441)。本人のマイページにだけ出す ===== */
   bingoHeading: "ビンゴ成績",
@@ -318,6 +328,15 @@ const en: Record<keyof typeof ja, string> = {
   qrPreparing: "Preparing the QR code…",
   qrJustRead: "Scanned. Next person, go ahead",
   qrHint: "Scanning records your meeting on the spot",
+  qrModeLabel: "Switch between showing and scanning a QR code",
+  qrModeShow: "Show my QR",
+  qrModeScan: "Scan",
+  qrScanLabel: "Camera view for scanning a QR code",
+  qrScanHint: "Point the camera at the other person's meet-up QR code",
+  qrScanNotMeet: "This isn't a meet-up QR code",
+  qrScanCameraError:
+    "Couldn't use the camera. Allow camera access in your browser settings.",
+  qrScanBackToShow: "Back to showing my QR",
 
   bingoHeading: "Bingo record",
   bingoOwnOnly: "Only you can see this record.",
