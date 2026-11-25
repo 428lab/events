@@ -56,10 +56,27 @@ export const cardDesignsRepo = {
     return one<CardAssetRow>("SELECT * FROM event_card_asset WHERE event_id = ? AND id = ? AND ready = 1", eventId, id);
   },
 
-  /** Atomic protection against deleting a file in a concurrently saved design. */
+  /** Atomic protection against deleting a file in a concurrently saved design, or one set as a member's
+   * substitute name-card image (2026-11-25). Both count as "in use", so a delete never silently drops either. */
   async removeUnusedAsset(eventId: string, id: string, writer: EventWriter): Promise<boolean> {
     return (await eventRun(writer,`DELETE FROM event_card_asset WHERE event_id = ? AND id = ?
-      AND NOT EXISTS (SELECT 1 FROM event_card_design_asset WHERE event_id = ? AND asset_id = ?)`,
-      eventId, id, eventId, id)) === 1;
+      AND NOT EXISTS (SELECT 1 FROM event_card_design_asset WHERE event_id = ? AND asset_id = ?)
+      AND NOT EXISTS (SELECT 1 FROM event_card_member_image WHERE event_id = ? AND asset_id = ?)`,
+      eventId, id, eventId, id, eventId, id)) === 1;
+  },
+
+  /** A member's substitute name-card image (2026-11-25). The member must be confirmed in this event (the same people the
+   * name-card list prints) and the asset must be this event's ready asset; both are checked in the same write. */
+  async setMemberImage(eventId: string, userId: string, assetId: string, writer: EventWriter): Promise<boolean> {
+    return (await eventRun(writer,`INSERT INTO event_card_member_image (event_id, user_id, asset_id, updated_at)
+      SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM event_member m JOIN user u ON u.id = m.user_id AND u.deleted_at IS NULL
+          WHERE m.event_id = ? AND m.user_id = ? AND m.status = 'confirmed')
+        AND EXISTS (SELECT 1 FROM event_card_asset WHERE event_id = ? AND id = ? AND ready = 1)
+      ON CONFLICT(event_id, user_id) DO UPDATE SET asset_id = excluded.asset_id, updated_at = excluded.updated_at`,
+      eventId, userId, assetId, Date.now(), eventId, userId, eventId, assetId)) === 1;
+  },
+
+  async removeMemberImage(eventId: string, userId: string, writer: EventWriter): Promise<boolean> {
+    return (await eventRun(writer, "DELETE FROM event_card_member_image WHERE event_id = ? AND user_id = ?", eventId, userId)) === 1;
   },
 };

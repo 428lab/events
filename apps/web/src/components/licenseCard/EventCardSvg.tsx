@@ -23,16 +23,21 @@ export function cardAssetUrl(eventId: string, assetId: string): string {
 }
 /** Bundled default for the No photo mark (apps/web/public). Same origin, so print and export load it like assets. */
 export const NO_PHOTO_MARK_URL = "/card-no-photo.svg";
+/** The picture printed in the member's icon spot: the staff-set substitute for this event's cards (2026-11-25) if any,
+ * otherwise the member's own icon. The only place that decides it, so print, preview and the fallback agree. */
+export function memberPictureUrl(card: EventNameCard, context: EventCardContext): string | null {
+  return card.memberImageAssetId ? cardAssetUrl(context.eventId, card.memberImageAssetId) : card.avatarUrl;
+}
 export function partImageUrl(part: Extract<CardPart, { kind: "image" }>, card: EventNameCard, context: EventCardContext): string | null {
   if (part.source === "noPhoto")
     return card.noPhoto ? part.assetId ? cardAssetUrl(context.eventId, part.assetId) : NO_PHOTO_MARK_URL : null;
-  return part.source === "avatar" ? card.avatarUrl : part.source === "community" ? context.communityLogo
+  return part.source === "avatar" ? memberPictureUrl(card, context) : part.source === "community" ? context.communityLogo
     : part.assetId ? cardAssetUrl(context.eventId, part.assetId) : null;
 }
-/** The member's own icon on this card, if the layout draws one. It is the only image that is not the organizer's asset,
- * so print treats its failure differently: it falls back to the initial instead of blocking the whole sheet. */
-export function cardAvatarUrl(layout: CardLayout, card: EventNameCard): string | null {
-  return layout.parts.some(p => p.kind === "image" && p.source === "avatar") ? card.avatarUrl : null;
+/** The member's picture on this card, if the layout draws one. It is the only per-person image, so print treats its
+ * failure differently: it falls back to the initial instead of blocking the whole sheet. */
+export function cardAvatarUrl(layout: CardLayout, card: EventNameCard, context: EventCardContext): string | null {
+  return layout.parts.some(p => p.kind === "image" && p.source === "avatar") ? memberPictureUrl(card, context) : null;
 }
 export function cardImageUrls(layout: CardLayout, card: EventNameCard, context: EventCardContext): string[] {
   const result = new Set<string>();

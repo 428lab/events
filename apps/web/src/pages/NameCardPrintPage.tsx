@@ -34,6 +34,7 @@ import type { EventCardContext } from "../components/licenseCard/EventCardSvg.js
 import { useEvent } from "../api/hooks.js";
 import { useEventNameCards } from "../api/nameCardHooks.js";
 import { NameCardSelection } from "../components/cardEditor/NameCardSelection.js";
+import { NameCardMemberImageDialog } from "../components/cardEditor/NameCardMemberImageDialog.js";
 import { LicenseCardSvg } from "../components/licenseCard/LicenseCardSvg.js";
 import { toCardData } from "../components/licenseCard/cardData.js";
 import type {
@@ -314,6 +315,8 @@ export function NameCardPrintPage() {
   const onPrintStatus = useCallback((memberId: string, status: CardPrintStatus) => {
     setPrintStatuses(previous => previous[memberId] === status ? previous : { ...previous, [memberId]: status });
   }, []);
+  /** 名札の代わりの画像を選んでいる人（ダイアログ） */
+  const [replacing, setReplacing] = useState<EventNameCard | null>(null);
   /** アイコンを読み込めず、頭文字で刷る人。印刷は止めず、誰がそうなったかだけ知らせる (2026-11-25) */
   const [avatarFailed, setAvatarFailed] = useState<ReadonlySet<string>>(() => new Set());
   const onAvatarFailed = useCallback((memberId: string, failed: boolean) => {
@@ -496,7 +499,10 @@ export function NameCardPrintPage() {
                 {t("staffOps.nameCardPeopleHeading")}
               </Typography>
               <NameCardSelection cards={all} excluded={excluded} onToggle={toggle} avatarFailed={avatarFailed}
+                onReplaceImage={eventPrint.design ? setReplacing : undefined}
                 onSelectOnly={ids => { const included = new Set(ids); setExcluded(new Set(all.filter(c => !included.has(c.id)).map(c => c.id))); }} />
+              {replacing && <NameCardMemberImageDialog eventId={id}
+                card={all.find(c => c.id === replacing.id) ?? replacing} onClose={() => setReplacing(null)} />}
             </Box>
 
             <FormControlLabel control={<Checkbox checked={cutGuides} onChange={(_, checked) => setCutGuides(checked)} />}

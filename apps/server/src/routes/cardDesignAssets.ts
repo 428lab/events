@@ -4,6 +4,7 @@ import { getBucket } from "../runtime.js";
 import { requireNameCardStaff } from "./nameCards.js";
 import { cardDesignsRepo, type CardAssetRow } from "../db/repositories/cardDesigns.js";
 import { z } from "zod";
+import { setNameCardMemberImageInput } from "@eventer/shared";
 import { cardImageDimensions } from "../lib/cardImageDimensions.js";
 import { deleteObjects } from "../lib/mediaCleanup.js";
 import { storeCardAsset } from "../lib/cardAssetStorage.js";
@@ -18,6 +19,7 @@ const info = (a: CardAssetRow) => ({
 export const cardDesignAssetRoutes = new Hono<AppEnv>();
 cardDesignAssetRoutes.use("/:id/name-card-assets", requireNameCardStaff);
 cardDesignAssetRoutes.use("/:id/name-card-assets/*", requireNameCardStaff);
+cardDesignAssetRoutes.use("/:id/name-card-member-images/*", requireNameCardStaff);
 
 cardDesignAssetRoutes.get("/:id/name-card-assets", async c => {
   c.header("Cache-Control", "private, no-store");
@@ -80,4 +82,21 @@ cardDesignAssetRoutes.get("/:id/name-card-assets/:assetId", async c => {
     // Re-check staff membership on every request, including after leaving an event.
     "Cache-Control": "private, no-store",
   } });
+});
+
+/** 名札の代わりの画像（人ごと。このイベントの名札だけで使う。オーナー依頼 2026-11-25）。
+ * 画像はこのイベントの名札素材から選ぶ。対象は名札の一覧と同じ参加確定メンバー */
+cardDesignAssetRoutes.put("/:id/name-card-member-images/:userId", async c => {
+  const parsed = setNameCardMemberImageInput.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "invalid_member_image" }, 400);
+  const eventId = c.req.param("id"), userId = c.req.param("userId");
+  if (!await cardDesignsRepo.setMemberImage(eventId, userId, parsed.data.assetId, { eventId, actorId: c.get("user").id, permission: "staff" }))
+    return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
+});
+
+cardDesignAssetRoutes.delete("/:id/name-card-member-images/:userId", async c => {
+  const eventId = c.req.param("id");
+  await cardDesignsRepo.removeMemberImage(eventId, c.req.param("userId"), { eventId, actorId: c.get("user").id, permission: "staff" });
+  return c.json({ ok: true });
 });

@@ -10,11 +10,11 @@ export function PrintableEventCard({ design, card: member, context, onStatus, on
   onAvatarFailed?: (id: string, failed: boolean) => void;
 }) {
   const layout = useMemo(() => resolveCardLayout(design, member.role, member.slotId ?? null), [design, member.role, member.slotId]);
-  const avatar = cardAvatarUrl(layout, member);
+  const avatar = cardAvatarUrl(layout, member, context);
   const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
   const avatarFailed = avatar !== null && failedAvatar === avatar;
   // Without the icon URL, EventCardSvg draws the grey box with the initial, and the URL drops out of the wait list
-  const card = useMemo(() => avatarFailed ? { ...member, avatarUrl: null } : member, [avatarFailed, member]);
+  const card = useMemo(() => avatarFailed ? { ...member, avatarUrl: null, memberImageAssetId: null } : member, [avatarFailed, member]);
   useLayoutEffect(() => { onAvatarFailed?.(member.id, avatarFailed); }, [member.id, avatarFailed, onAvatarFailed]);
   useLayoutEffect(() => () => onAvatarFailed?.(member.id, false), [member.id, onAvatarFailed]);
   const urls = cardImageUrls(layout, card, context);
