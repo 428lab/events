@@ -98,6 +98,7 @@ describe("TimetableGrid（広い画面）", () => {
 
     expect(blocks).toHaveLength(1);
     expect(blocks[0]!.style.gridColumn).toBe("2 / span 3");
+    // 見た目のラベルは出さず（短い帯で題名を押し出すため）、読み上げにだけ入れる
     expect(blocks[0]!.textContent).toContain("全トラック共通");
     // トラック名は出さない（どれか1本の予定と読み違えられる）
     expect(blocks[0]!.textContent).not.toContain("メインホール");
@@ -110,15 +111,17 @@ describe("TimetableGrid（広い画面）", () => {
     expect(blocksOf(container, "it-b")[0]!.style.gridColumn).toBe("3 / span 1");
   });
 
-  it("枠の高さは所要時間ぶんの行数になる", () => {
-    const container = drawGrid();
+  it("行の高さは layout の値をそのまま使い、枠はその行にまたがる", () => {
+    const got = layout();
+    const { container } = render(
+      <TimetableGrid layout={got} colors={colors(got.tracks.length)} />,
+    );
+    const grid = container.querySelector<HTMLElement>("[role=region] > div")!;
+    const open = got.blocks.find((b) => b.entry.item.id === "it-open")!;
 
-    // 10:00 から20分＝4マス（1マス5分）。ヘッダー行があるので行番号は +1
-    expect(blocksOf(container, "it-open")[0]!.style.gridRow).toBe("2 / 6");
-    // 90分＝18マス
-    const panel = blocksOf(container, "it-panel")[0]!.style.gridRow;
-    const [from, to] = panel.split(" / ").map(Number);
-    expect(to! - from!).toBe(18);
+    expect(grid.style.gridTemplateRows || getComputedStyle(grid).gridTemplateRows).toContain(`${got.rowHeights[0]}px`);
+    // ヘッダー行があるので行番号は +1
+    expect(blocksOf(container, "it-open")[0]!.style.gridRow).toBe(`${open.rowStart + 1} / ${open.rowEnd + 1}`);
   });
 
   it("離れたトラック（飛び地）は2つの枠に割れて、どちらも描かれる", () => {

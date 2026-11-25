@@ -1,14 +1,17 @@
 import { computeScheduleTimes, publicTracks } from "@eventer/shared";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 
-/** 格子の1マスの分数。細かすぎると行数が増えて重く、粗いと短いコマが潰れる */
-export const TIMETABLE_SLOT_MIN = 5;
-/** 1マスの高さ(px)。所要時間がそのまま枠の高さになる */
-export const TIMETABLE_SLOT_PX = 9;
+/** 時間を高さに直すときの1分あたりの高さ(px)。30分で48px */
+export const TIMETABLE_PX_PER_MIN = 1.6;
+/** 1つの枠の最低の高さ(px)。時刻と題名が1行で入る高さ。
+ * 5分・10分のコマが続いても、ここまでは必ず広げる（時間の目盛りのほうを伸ばす） */
+export const TIMETABLE_MIN_BLOCK_PX = 30;
+/** 何も置かれていない時間の帯の高さの上限(px)。長い空き時間で表が間延びしないように縮める */
+const GAP_CAP_PX = 32;
 /** 目盛りの間隔（分）。この倍数に丸めた範囲を描く */
 const TICK_MIN = 30;
-/** 枠の最小マス数。0分・5分のコマでも文字が1行入るだけの高さを残す */
-const MIN_SLOTS = 2;
+/** 所要時間0分のコマを描くときの長さ（分）。0分では枠が作れない */
+const ZERO_DURATION_MIN = 1;
 
 const MS_PER_MIN = 60_000;
 
@@ -49,11 +52,13 @@ export interface TimetableEntry {
   trackIndexes: number[];
 }
 
-/** 格子に置ける枠。ひとつの項目が飛び地に割り当てられていると複数になる */
+/** 格子に置ける枠。ひとつの項目が飛び地に割り当てられていたり、
+ * 全トラック共通のコマに途中で挟まれていたりすると複数になる */
 export interface TimetableBlock {
   /** React の key。同じ項目が割れても衝突しない */
   key: string;
   entry: TimetableEntry;
+  /** そのコマの開始時刻（割れた後ろの枠でもコマ全体の開始。時刻の表示に使う） */
   startsAt: number;
   /** 0 始まりの列番号（トラック列。時刻列は含まない） */
   colStart: number;
@@ -61,10 +66,17 @@ export interface TimetableBlock {
   /** 1 始まりの行番号（ヘッダー行は含まない）。rowEnd は含まない終端 */
   rowStart: number;
   rowEnd: number;
+  /** 枠の高さ(px)。1行に畳むかどうかを描画側が決める */
+  heightPx: number;
+  /** 同じ列で時刻が重なるコマを横に並べるときの位置（0 始まり）と、並ぶ数 (#345)。
+   * 重ねて描くと片方が隠れて読めない */
+  lane: number;
+  laneCount: number;
+  /** 全トラック共通のコマに途中で挟まれて、後ろに続く枠（「続き」と添える） */
+  continued: boolean;
   /** 全トラック共通か。無彩色の帯で描く */
   common: boolean;
-  /** 裏方か (#383)。公開の枠と時刻が重なるのが普通の使い方なので、
-   * 半透明にして**公開の枠より上**に重ねる（下に置くと埋もれて見えない） */
+  /** 裏方か (#383)。参加者には届かない。半透明＋鍵の印で描き分ける */
   staffOnly: boolean;
   /** 色に使うトラックの番号。飛び地で枠が割れても **同じコマは同じ色** に
    * なるよう、列ではなくそのコマの先頭のトラックを指す */
@@ -99,6 +111,8 @@ export interface TimetableLayout {
   unassigned: ScheduleItem[];
   /** 格子の行数（ヘッダー行を除く） */
   rows: number;
+  /** 行ごとの高さ(px)。時間に比例させつつ、短いコマが読めるよう伸ばし、空き時間は縮める */
+  rowHeights: number[];
   ticks: TimetableTick[];
 }
 
@@ -204,78 +218,83 @@ export function buildTimetableLayout(
       outOfRange,
       unassigned,
       rows: 0,
+      rowHeights: [],
       ticks: [],
     };
   }
 
-  const slotMs = TIMETABLE_SLOT_MIN * MS_PER_MIN;
-  const slotsOf = (min: number) =>
-    Math.max(
-      MIN_SLOTS,
-      Math.ceil(Math.min(min, MAX_DURATION_MIN) / TIMETABLE_SLOT_MIN),
-    );
-  const startMs = floorToTick(Math.min(...dated.map((e) => e.startsAt)));
-  const lastEnd = Math.max(
-    ...dated.map((e) => e.startsAt + slotsOf(e.item.durationMin) * slotMs),
-  );
+  const pieces = placePieces(dated, tracks);
+  const startMs = floorToTick(Math.min(...pieces.map((p) => p.from)));
+  const lastEnd = Math.max(...pieces.map((p) => p.to));
   // 末尾は目盛りの手前で切らない。ちょうどで終わるときはそこまで
   const endTick = floorToTick(lastEnd);
   const endMs = endTick === lastEnd ? lastEnd : endTick + TICK_MIN * MS_PER_MIN;
-  const rows = Math.max(1, Math.round((endMs - startMs) / slotMs));
 
-  const rowOf = (ms: number) => Math.round((ms - startMs) / slotMs) + 1;
+  // 行の境目＝目盛りとコマの始まり・終わり。時間を一定の幅で刻まず、
+  // 何かが変わる時刻だけで区切る（5分のコマが続いても行が潰れない）
+  const tickTimes: number[] = [];
+  for (let ms = startMs; ms < endMs; ms += TICK_MIN * MS_PER_MIN) tickTimes.push(ms);
+  const boundaries = [
+    ...new Set([...tickTimes, endMs, ...pieces.flatMap((p) => [p.from, p.to])]),
+  ].sort((a, b) => a - b);
+  const indexOf = new Map(boundaries.map((ms, i) => [ms, i]));
+  const rows = boundaries.length - 1;
 
-  const blocks: TimetableBlock[] = [];
-  for (const entry of dated) {
-    const rowStart = rowOf(entry.startsAt);
-    const rowEnd = rowStart + slotsOf(entry.item.durationMin);
-    if (entry.common) {
-      blocks.push({
-        key: entry.item.id,
-        entry,
-        startsAt: entry.startsAt,
-        colStart: 0,
-        colSpan: tracks.length,
-        rowStart,
-        rowEnd,
-        common: true,
-        staffOnly: entry.staffOnly,
-        colorIndex: 0,
-        trackNames: [],
-        split: false,
-      });
-      continue;
-    }
-    const groups = runs(entry.trackIndexes);
-    for (const group of groups) {
-      blocks.push({
-        key: `${entry.item.id}:${group[0]}`,
-        entry,
-        startsAt: entry.startsAt,
-        colStart: group[0]!,
-        colSpan: group.length,
-        // 割れた枠どうしで色が変わらないよう、列ではなく先頭のトラックで決める
-        colorIndex: entry.trackIndexes[0]!,
-        rowStart,
-        rowEnd,
-        common: false,
-        staffOnly: entry.staffOnly,
-        trackNames: entry.trackIndexes.map((n) => tracks[n]!.name),
-        split: groups.length > 1,
-      });
-    }
+  const rowHeights: number[] = [];
+  for (let i = 0; i < rows; i++) {
+    const from = boundaries[i]!;
+    const to = boundaries[i + 1]!;
+    const px = ((to - from) / MS_PER_MIN) * TIMETABLE_PX_PER_MIN;
+    const covered = pieces.some((p) => p.from < to && from < p.to);
+    rowHeights.push(covered ? px : Math.min(px, GAP_CAP_PX));
+  }
+  // 短いコマから順に、最低の高さに足りない分を最後の行に足す。足すのは行なので、
+  // 同じ時間を通る他のコマ・目盛りも一緒に伸びる（重ならない）
+  const spanOf = (p: Piece) => [indexOf.get(p.from)!, indexOf.get(p.to)!] as const;
+  const byLength = [...pieces].sort((a, b) => {
+    const [a0, a1] = spanOf(a);
+    const [b0, b1] = spanOf(b);
+    return a1 - a0 - (b1 - b0) || a.from - b.from;
+  });
+  for (const p of byLength) {
+    const [r0, r1] = spanOf(p);
+    let sum = 0;
+    for (let r = r0; r < r1; r++) sum += rowHeights[r]!;
+    if (sum < TIMETABLE_MIN_BLOCK_PX) rowHeights[r1 - 1]! += TIMETABLE_MIN_BLOCK_PX - sum;
   }
 
-  const ticks: TimetableTick[] = [];
-  for (let ms = startMs; ms < endMs; ms += TICK_MIN * MS_PER_MIN) {
-    const rowStart = rowOf(ms);
-    ticks.push({
-      ms,
-      rowStart,
-      rowEnd: Math.min(rowStart + TICK_MIN / TIMETABLE_SLOT_MIN, rows + 1),
-      hour: new Date(ms).getMinutes() === 0,
-    });
-  }
+  const blocks: TimetableBlock[] = pieces.map((p) => {
+    const [r0, r1] = spanOf(p);
+    let heightPx = 0;
+    for (let r = r0; r < r1; r++) heightPx += rowHeights[r]!;
+    const { entry } = p;
+    return {
+      key: p.key,
+      entry,
+      startsAt: entry.startsAt!,
+      colStart: p.colStart,
+      colSpan: p.colSpan,
+      rowStart: r0 + 1,
+      rowEnd: r1 + 1,
+      heightPx,
+      lane: p.lane,
+      laneCount: p.laneCount,
+      continued: p.continued,
+      common: entry.common,
+      staffOnly: entry.staffOnly,
+      // 割れた枠どうしで色が変わらないよう、列ではなく先頭のトラックで決める
+      colorIndex: entry.common ? 0 : entry.trackIndexes[0]!,
+      trackNames: entry.common ? [] : entry.trackIndexes.map((n) => tracks[n]!.name),
+      split: !entry.common && runs(entry.trackIndexes).length > 1,
+    };
+  });
+
+  const ticks: TimetableTick[] = tickTimes.map((ms, i) => ({
+    ms,
+    rowStart: indexOf.get(ms)! + 1,
+    rowEnd: indexOf.get(tickTimes[i + 1] ?? endMs)! + 1,
+    hour: new Date(ms).getMinutes() === 0,
+  }));
 
   return {
     tracks,
@@ -285,8 +304,128 @@ export function buildTimetableLayout(
     outOfRange,
     unassigned,
     rows,
+    rowHeights,
     ticks,
   };
+}
+
+/** 格子に置く前の枠（時刻はミリ秒のまま） */
+interface Piece {
+  key: string;
+  entry: TimetableEntry & { startsAt: number };
+  from: number;
+  to: number;
+  colStart: number;
+  colSpan: number;
+  continued: boolean;
+  lane: number;
+  laneCount: number;
+}
+
+/** 枠を作り、重なりを解く。
+ *
+ * 1. **全トラック共通（公開）は全列をまたぐ帯**。同じ時刻に続いている他のコマは、
+ *    帯の前後で枠を割る（後ろの枠は「続き」）。帯の上に重ねると、どちらも読めない。
+ * 2. それでも同じ列で時刻が重なるコマ（同じトラックの重複・裏方と公開など）は、
+ *    **横に並べる** (#345)。またぎの枠が重なるときは、列ごとに割ってから並べる。 */
+function placePieces(
+  dated: Array<TimetableEntry & { startsAt: number }>,
+  tracks: EventTrack[],
+): Piece[] {
+  const all = tracks.length;
+  const span = (e: TimetableEntry & { startsAt: number }) =>
+    Math.max(ZERO_DURATION_MIN, Math.min(e.item.durationMin, MAX_DURATION_MIN)) * MS_PER_MIN;
+
+  // 帯（公開の全トラック共通）。裏方の共通は参加者の予定を区切らないので帯にしない
+  const bands: Piece[] = [];
+  let others: Piece[] = [];
+  for (const entry of dated) {
+    const from = entry.startsAt;
+    const to = from + span(entry);
+    if (entry.common && !entry.staffOnly) {
+      bands.push({ key: entry.item.id, entry, from, to, colStart: 0, colSpan: all, continued: false, lane: 0, laneCount: 1 });
+      continue;
+    }
+    for (const group of runs(entry.trackIndexes)) {
+      others.push({
+        key: `${entry.item.id}:${group[0]}`,
+        entry, from, to, colStart: group[0]!, colSpan: group.length,
+        continued: false, lane: 0, laneCount: 1,
+      });
+    }
+  }
+
+  // 1. 帯の時間を抜いて割る
+  others = others.flatMap((p) => {
+    let parts = [{ from: p.from, to: p.to }];
+    for (const b of bands) {
+      parts = parts.flatMap((q) =>
+        b.to <= q.from || q.to <= b.from
+          ? [q]
+          : [
+              ...(q.from < b.from ? [{ from: q.from, to: b.from }] : []),
+              ...(b.to < q.to ? [{ from: b.to, to: q.to }] : []),
+            ],
+      );
+    }
+    // 「続き」は2つ目からだけ。帯がコマの頭に重なって最初の枠が後ろにずれても、
+    // 見える最初の枠には題名をそのまま出す
+    return parts.map((q, i) => ({
+      ...p,
+      key: i === 0 ? p.key : `${p.key}:${i}`,
+      from: q.from,
+      to: q.to,
+      continued: i > 0,
+    }));
+  });
+
+  // 2. 重なるまたぎの枠は列ごとに割る（またいだまま横に並べると、隣の列に食い込む）
+  const overlaps = (a: Piece, b: Piece) =>
+    a !== b && a.from < b.to && b.from < a.to &&
+    a.colStart < b.colStart + b.colSpan && b.colStart < a.colStart + a.colSpan;
+  others = others.flatMap((p) =>
+    p.colSpan > 1 && others.some((q) => overlaps(p, q))
+      ? Array.from({ length: p.colSpan }, (_, i) => ({
+          ...p,
+          key: `${p.key}@${p.colStart + i}`,
+          colStart: p.colStart + i,
+          colSpan: 1,
+        }))
+      : [p],
+  );
+
+  // 横に並べる。帯どうし・同じ列どうしで、始まりの早い順に空いている位置へ
+  const groups = new Map<string, Piece[]>();
+  for (const p of [...bands, ...others]) {
+    const g = p.colSpan === all && bands.includes(p) ? "band" : `${p.colStart}:${p.colSpan}`;
+    groups.set(g, [...(groups.get(g) ?? []), p]);
+  }
+  for (const group of groups.values()) assignLanes(group);
+  return [...bands, ...others];
+}
+
+/** 時刻の重なる枠に位置を割り当てる。重なりの塊ごとに、並ぶ数をそろえる */
+function assignLanes(pieces: Piece[]): void {
+  const sorted = [...pieces].sort((a, b) => a.from - b.from || b.to - a.to);
+  let cluster: Piece[] = [];
+  let clusterEnd = -Infinity;
+  const laneEnds: number[] = [];
+  const close = () => {
+    const count = Math.max(1, ...cluster.map((p) => p.lane + 1));
+    for (const p of cluster) p.laneCount = count;
+    cluster = [];
+    laneEnds.length = 0;
+  };
+  for (const p of sorted) {
+    if (p.from >= clusterEnd) close();
+    let lane = laneEnds.findIndex((end) => end <= p.from);
+    if (lane === -1) lane = laneEnds.length;
+    laneEnds[lane] = p.to;
+    p.lane = lane;
+    cluster.push(p);
+    clusterEnd = Math.max(clusterEnd, p.to);
+  }
+  close();
 }
 
 /** そのトラックのタブに出すコマ (#338)。

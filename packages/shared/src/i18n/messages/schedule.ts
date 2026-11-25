@@ -127,6 +127,8 @@ const ja = {
   /** トラック（並行して走る枠）。トラック名そのものは利用者が入れた値 */
   tracks: "トラック",
   allTracks: "全トラック共通",
+  /** 全トラック共通のセッションに途中で挟まれた枠の、後ろの部分に添える */
+  continued: "（続き）",
   /** 枠に添えるトラック名の連結。common.dotSeparator は前後に空きがあり、
    *  狭い枠では入り切らないのでここだけ空きなしで持つ */
   trackNameSeparator: "・",
@@ -347,6 +349,7 @@ const en: Record<keyof typeof ja, string> = {
 
   tracks: "Tracks",
   allTracks: "All tracks",
+  continued: " (cont.)",
   trackNameSeparator: ", ",
   trackSrLabel: "Track: {{name}}",
   chooseTrack: "Choose a track",
