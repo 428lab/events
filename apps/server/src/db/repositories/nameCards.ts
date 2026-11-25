@@ -250,6 +250,7 @@ interface MemberRow {
   username: string;
   global_name: string | null;
   avatar_url: string | null;
+  member_image_asset_id: string | null;
   card_image_key: string | null;
   created_at: number;
 }
@@ -278,11 +279,13 @@ export const nameCardsRepo = {
       many<MemberRow>(
         `SELECT m.user_id AS user_id, m.role AS role, ps.id AS slot_id, ps.name AS slot_name, u.username AS username,
                 u.global_name AS global_name, u.avatar_url AS avatar_url,
+                mi.asset_id AS member_image_asset_id,
                 u.card_image_key AS card_image_key,
                 u.created_at AS created_at
            FROM event_member m
            JOIN user u ON u.id = m.user_id
            LEFT JOIN participation_slot ps ON ps.id = m.slot_id AND ps.event_id = m.event_id
+           LEFT JOIN event_card_member_image mi ON mi.event_id = m.event_id AND mi.user_id = m.user_id
           WHERE m.event_id = ? AND m.status = 'confirmed'
             AND u.deleted_at IS NULL
           ORDER BY m.created_at ASC`,
@@ -308,6 +311,7 @@ export const nameCardsRepo = {
         handle: m.username,
         name: m.global_name ?? m.username,
         avatarUrl: m.avatar_url,
+        memberImageAssetId: m.member_image_asset_id,
         cardImageKey: m.card_image_key,
         createdAt: m.created_at,
         participation: p

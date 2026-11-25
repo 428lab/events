@@ -198,3 +198,58 @@ describe("event-only card documents (#506)", () => {
     expect(r.status).toBe(400);
   });
 });
+
+/** 名札の代わりの画像（人ごと。オーナー依頼 2026-11-25） */
+describe("substitute name-card image per member", () => {
+  async function confirmedMember(eventId: string) {
+    const id = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO user (id, discord_id, username, avatar_url, created_at) VALUES (?, ?, ?, ?, ?)")
+      .bind(id, `nostr:${id}`, `u_${id.slice(0, 8)}`, "https://example.invalid/dead.jpg", Date.now()).run();
+    await env.DB.prepare("INSERT INTO event_member (id, event_id, user_id, role, status, created_at) VALUES (?, ?, ?, 'participant', 'confirmed', ?)")
+      .bind(crypto.randomUUID(), eventId, id, Date.now()).run();
+    return id;
+  }
+  const put = (eventId: string, userId: string, cookie: string, assetId: unknown) =>
+    SELF.fetch(`${base}/api/events/${eventId}/name-card-member-images/${userId}`, {
+      method: "PUT", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ assetId }),
+    });
+  const cards = async (eventId: string, cookie: string) =>
+    (await (await SELF.fetch(`${base}/api/events/${eventId}/name-cards`, { headers: { cookie } })).json()) as
+      { cards: Array<{ id: string; memberImageAssetId?: string | null }> };
+
+  it("staff set it and clear it, and the name-card list returns it; deleting the image in use is refused", async () => {
+    const { eventId, cookie } = await setup();
+    const userId = await confirmedMember(eventId);
+    const imageId = (await (await upload(eventId, cookie)).json() as { asset: { id: string } }).asset.id;
+    expect((await put(eventId, userId, cookie, imageId)).status).toBe(200);
+    expect((await cards(eventId, cookie)).cards.find(c => c.id === userId)?.memberImageAssetId).toBe(imageId);
+    // in use as a member image: refused like an asset used by the design, and stays set
+    const url = `${base}/api/events/${eventId}/name-card-assets/${imageId}`;
+    expect((await SELF.fetch(url, { method: "DELETE", headers: { cookie } })).status).toBe(409);
+    expect((await cards(eventId, cookie)).cards.find(c => c.id === userId)?.memberImageAssetId).toBe(imageId);
+    const cleared = await SELF.fetch(`${base}/api/events/${eventId}/name-card-member-images/${userId}`, { method: "DELETE", headers: { cookie } });
+    expect(cleared.status).toBe(200);
+    expect((await cards(eventId, cookie)).cards.find(c => c.id === userId)?.memberImageAssetId).toBeNull();
+    expect((await SELF.fetch(url, { method: "DELETE", headers: { cookie } })).status).toBe(200);
+  });
+
+  it("refuses non-staff, other events' or unready images, and people who are not confirmed members", async () => {
+    const { eventId, cookie } = await setup();
+    const userId = await confirmedMember(eventId);
+    const imageId = await asset(eventId);
+    const participant = await member(eventId, "participant", "confirmed");
+    expect((await put(eventId, userId, participant, imageId)).status).toBe(403);
+    const other = await setup();
+    expect((await put(eventId, userId, cookie, await asset(other.eventId))).status).toBe(404);
+    const unready = crypto.randomUUID();
+    await env.DB.prepare(`INSERT INTO event_card_asset (id, event_id, object_key, content_type, ready, width, height, created_at)
+      VALUES (?, ?, ?, 'image/png', 0, 10, 10, ?)`).bind(unready, eventId, `card-designs/${eventId}/${unready}`, Date.now()).run();
+    expect((await put(eventId, userId, cookie, unready)).status).toBe(404);
+    const stranger = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO user (id, discord_id, username, created_at) VALUES (?, ?, ?, ?)")
+      .bind(stranger, `nostr:${stranger}`, `u_${stranger.slice(0, 8)}`, Date.now()).run();
+    expect((await put(eventId, stranger, cookie, imageId)).status).toBe(404);
+    expect((await put(eventId, userId, cookie, "not-a-uuid")).status).toBe(400);
+    expect(await env.DB.prepare("SELECT COUNT(*) n FROM event_card_member_image WHERE event_id = ?").bind(eventId).first("n")).toBe(0);
+  });
+});

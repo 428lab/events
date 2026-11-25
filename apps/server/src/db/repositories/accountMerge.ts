@@ -111,6 +111,9 @@ export const accountMergeRepo = {
       // プロフィールに載せる／載せないの選択（docs/slide-editor.md「プロフィールに載せる」）。
       // PK (user_id, deck_id)。両方が同じデッキを選んでいたら負け側を捨てる（勝ち側の選択を残す）
       ["profile_deck", "user_id", ["deck_id"]],
+      // 名札の代わりの画像（運営が人ごとに設定。2026-11-25）。PK (event_id, user_id)。
+      // 両方に同じイベントの差し替えがあれば負け側を捨てる（勝ち側の設定を残す）
+      ["event_card_member_image", "user_id", ["event_id"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols
