@@ -116,6 +116,9 @@ export type MeetRankingMode = (typeof MEET_RANKING_MODES)[number];
 /** ランキングに出す行数。プロジェクターで読める限界に合わせて固定 */
 export const MEET_RANKING_TOP_N = 10;
 
+/** ランキングの画面に出す説明（任意）の最大文字数。投影で読み切れる長さ（「上位3人に素敵なプレゼント！」など） */
+export const MEET_RANKING_NOTE_MAX = 200;
+
 /** named モードの1行。rank は競技順位（同数は同順位、次は人数分飛ぶ） */
 export interface MeetRankingNamedRow {
   rank: number;
@@ -157,6 +160,9 @@ export type MeetRankingLive = (
       me: MeetRankingMe | null;
     }
 ) & {
+  /** 主催者が書いたランキングの説明（任意。空文字は出さない）。投影ページは合図で取り直すので、
+   * 書き換えると開いている投影にも届く */
+  note: string;
   /** Where the ranking screen hears "meets changed, refetch" (topic `meet-ranking`,
    * D-POLL-MIN Phase 5b). Null without a service key */
   signal?: EventSignalSource | null;

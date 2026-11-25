@@ -105,6 +105,7 @@ meetEventRoutes.get("/:id/meets/ranking/live", async (c) => {
       ranking: await eventMeetsRepo.rankingForEvent(eventId, MEET_RANKING_TOP_N),
       totalRanked,
       me: meRank,
+      note: event.meetRankingNote,
       signal,
     });
   }
@@ -117,6 +118,7 @@ meetEventRoutes.get("/:id/meets/ranking/live", async (c) => {
     ),
     totalRanked,
     me: meRank,
+    note: event.meetRankingNote,
     signal,
   });
 });

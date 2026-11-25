@@ -94,6 +94,7 @@ eventDuplicateRoutes.post(
       qaAnonymity: src.qaAnonymity,
       // 出会いランキング (#418) も設定だけコピーする（出会いの記録はコピーしない）
       meetRanking: src.meetRanking,
+      meetRankingNote: src.meetRankingNote,
       // 出会いの景品 (#431) も設定と定義だけコピー（下）。引き換え記録・1位はコピーしない
       meetPrizes: src.meetPrizes,
       // 割り勘 (#635) も設定だけコピーする（立替・済み・受け取り先はコピーしない）

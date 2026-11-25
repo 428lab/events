@@ -246,6 +246,17 @@ export function MeetRankingPanel({ eventId }: { eventId: string }) {
           <HandshakeOutlinedIcon fontSize="small" />
           {t("eventSocial.meetRankingHeading")}
         </Typography>
+        {/* 主催者が書いた説明（任意）。小カードでは1行の添え書きにする */}
+        {data.note && (
+          <Typography
+            variant="body2"
+            color="secondary.main"
+            fontWeight={600}
+            sx={{ mb: 1, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+          >
+            {data.note}
+          </Typography>
+        )}
         {rows.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
             {t("eventSocial.meetRankingEmpty")}

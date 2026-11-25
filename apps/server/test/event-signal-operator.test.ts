@@ -139,6 +139,10 @@ describe("live", () => {
     expect((await json("PATCH", `/events/${eventId}`, staff.cookie, { qaEnabled: false, meetRanking: "named" })).status).toBe(200);
     await settled(sent, 2);
     expect(sent.at(-1)!.topics).toEqual([topicOf(eventId, "qa"), topicOf(eventId, "meet-ranking")]);
+    // ランキングの説明を書き換えても、開いている投影が取り直す
+    expect((await json("PATCH", `/events/${eventId}`, staff.cookie, { meetRankingNote: "上位3人にプレゼント" })).status).toBe(200);
+    await settled(sent, 3);
+    expect(sent.at(-1)!.topics).toEqual([topicOf(eventId, "meet-ranking")]);
   });
 });
 

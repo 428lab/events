@@ -278,3 +278,41 @@ describe("出会いランキング live API (#418)", () => {
     expect(event.meetRanking).toBe("named");
   });
 });
+
+/** ランキングの画面に出す説明（任意。オーナー依頼 2026-11-25「上位x人に素敵なプレゼント！とか」） */
+describe("出会いランキングの説明", () => {
+  const patch = (eventId: string, cookie: string, body: unknown) =>
+    SELF.fetch(`${BASE}/api/events/${eventId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify(body),
+    });
+
+  it("編集で保存でき、イベントとランキングの応答に文字のまま載る。200字を超えると 400", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId, "named");
+    await addMember(eventId, owner.userId, "staff");
+    const note = "  上位3人に素敵なプレゼント！\n<b>受付</b>で受け取ってください  ";
+
+    expect((await patch(eventId, owner.cookie, { meetRankingNote: note })).status).toBe(200);
+    const { event } = (await (await SELF.fetch(`${BASE}/api/events/${eventId}`, { headers: { cookie: owner.cookie } })).json()) as {
+      event: { meetRankingNote: string };
+    };
+    // 前後の空白だけ落とし、改行と記号はそのまま（画面は文字として出す）
+    expect(event.meetRankingNote).toBe("上位3人に素敵なプレゼント！\n<b>受付</b>で受け取ってください");
+    const live = (await (await SELF.fetch(liveUrl(eventId), { headers: { cookie: owner.cookie } })).json()) as MeetRankingLive;
+    expect(live.note).toBe(event.meetRankingNote);
+
+    expect((await patch(eventId, owner.cookie, { meetRankingNote: "あ".repeat(201) })).status).toBe(400);
+    expect((await patch(eventId, owner.cookie, { meetRankingNote: "あ".repeat(200) })).status).toBe(200);
+  });
+
+  it("ランキングをオフにすると、説明があってもランキングの応答ごと出さない（404）", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId, "named");
+    await addMember(eventId, owner.userId, "staff");
+    expect((await patch(eventId, owner.cookie, { meetRankingNote: "上位3人にプレゼント" })).status).toBe(200);
+    expect((await patch(eventId, owner.cookie, { meetRanking: "off" })).status).toBe(200);
+    expect((await SELF.fetch(liveUrl(eventId), { headers: { cookie: owner.cookie } })).status).toBe(404);
+  });
+});

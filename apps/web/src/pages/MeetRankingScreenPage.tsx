@@ -118,6 +118,26 @@ export function MeetRankingScreenPage() {
             >
               {t("eventSocial.meetRankingHeading")}
             </Typography>
+            {/* 主催者が書いた説明（任意）。文字のまま出す（HTML にしない）。改行はそのまま、
+                スマホ幅では見出しと同じく画面幅で頭打ちにして、ランキングを押し出さない */}
+            {ranking.data?.note && (
+              <Typography
+                data-testid="meet-ranking-note"
+                sx={{
+                  mt: 1 * scale,
+                  fontSize: `min(${26 * scale}px, ${5.5 * scale}vw)`,
+                  fontWeight: 700,
+                  color: BOARD_ACCENT,
+                  lineHeight: 1.4,
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                  maxWidth: 1100,
+                  mx: "auto",
+                }}
+              >
+                {ranking.data.note}
+              </Typography>
+            )}
           </Box>
 
           <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", maxWidth: 1100, width: "100%", mx: "auto" }}>
