@@ -29,6 +29,11 @@ export function partImageUrl(part: Extract<CardPart, { kind: "image" }>, card: E
   return part.source === "avatar" ? card.avatarUrl : part.source === "community" ? context.communityLogo
     : part.assetId ? cardAssetUrl(context.eventId, part.assetId) : null;
 }
+/** The member's own icon on this card, if the layout draws one. It is the only image that is not the organizer's asset,
+ * so print treats its failure differently: it falls back to the initial instead of blocking the whole sheet. */
+export function cardAvatarUrl(layout: CardLayout, card: EventNameCard): string | null {
+  return layout.parts.some(p => p.kind === "image" && p.source === "avatar") ? card.avatarUrl : null;
+}
 export function cardImageUrls(layout: CardLayout, card: EventNameCard, context: EventCardContext): string[] {
   const result = new Set<string>();
   if (layout.background.assetId && !layout.background.pattern) result.add(cardAssetUrl(context.eventId, layout.background.assetId));

@@ -6,8 +6,10 @@ import { roleLabel } from "../../lib/format.js";
 
 const PAGE_SIZE = 20;
 const normalize = (value: string) => value.normalize("NFKC").toLowerCase();
-export function NameCardSelection({ cards, excluded, onToggle, onSelectOnly }: {
+export function NameCardSelection({ cards, excluded, onToggle, onSelectOnly, avatarFailed }: {
   cards: EventNameCard[]; excluded: ReadonlySet<string>;
+  /** アイコンを読み込めず、頭文字で刷る人 */
+  avatarFailed?: ReadonlySet<string>;
   onToggle: (id: string) => void; onSelectOnly: (ids: string[]) => void;
 }) {
   const { t } = useTranslation();
@@ -50,6 +52,7 @@ export function NameCardSelection({ cards, excluded, onToggle, onSelectOnly }: {
         label={<Stack component="span" direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
           <Avatar src={c.avatarUrl ?? undefined} sx={{ width: 24, height: 24, flexShrink: 0 }}>{[...c.name][0] ?? "?"}</Avatar>
           <Typography component="span" variant="body2" sx={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>{c.name}</Typography>
+          {avatarFailed?.has(c.id) && <Chip size="small" color="warning" variant="outlined" label={t("staffOps.nameCardAvatarFallbackChip")} sx={{ flexShrink: 0 }} />}
           {c.role !== "participant" && <Chip size="small" label={roleLabel(c.role)} sx={{ flexShrink: 0 }} />}
         </Stack>} />)}
     </Box>
