@@ -165,7 +165,7 @@ jitter 0。合図には何も載せない（`{rev}` だけ）。
 | `live` | `GET /events/:id/live-state` | `/live/screen`・`/live/control`（`useEventLiveState`） | 配信状態の PATCH・参戦演出・発表者のデッキ設定（`PUT …/timetable/:itemId/live-deck`）・配信中のデッキ／配信セットの削除（FK で外れる行を先に読む）・チャットの可否に関わるイベント設定（`chatEnabled`・`chatEncrypted`・`visibility`・`status`・`scheduling`）・日程調整に戻す |
 | `qa` | `GET /events/:id/questions` | 投影（`/chat/screen`）・登壇者パネル（`useEventQa(…, watch)`） | 投稿・投票・取り消し・削除（throttle）／対応済み・非表示・ピック・管理者の非表示と復元・Q&A 設定（即時） |
 | `prize-desk` | `GET /events/:id/meet-prizes/status` | 景品デスク（status と引き換え履歴を両方取り直す） | 景品の作成・変更・削除・画像・引き換え・取り消し・1位の確定と解除／出会いの増減（throttle）／ビンゴの抽選・取り消し・終了・リセット・削除 |
-| `meet-ranking` | `GET /events/:id/meets/ranking/live` | 投影（`/meet-ranking/screen`）。詳細の小カードは購読しない | 出会いの記録・取り消し（throttle）・ランキング設定 |
+| `meet-ranking` | `GET /events/:id/meets/ranking/live` | 投影（`/meet-ranking/screen`）。詳細の小カードは購読しない | 出会いの記録・取り消し（throttle）・ランキング設定（表示と説明） |
 | `bingo-staff` | `GET /events/:id/bingo/status` | 抽選コントロール | ゲームの作成・開始・抽選・取り消し・終了・リセット・削除・カード発行（throttle） |
 
 配信画面は `useEventLiveState` の `current`（最後の取得が成功し、`live` の購読が EOSE まで来ている）

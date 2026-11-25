@@ -36,6 +36,7 @@ import {
   PUBLISH_AT_STEP_MS,
   QA_ANONYMITY_MODES,
   VENUE_TYPES,
+  MEET_RANKING_NOTE_MAX,
   isDatetimeOrderInvalid,
   type MeetRankingMode,
   type QaAnonymity,
@@ -147,6 +148,7 @@ export function EditEventPage() {
   // 出会いランキング (#418)。既定OFF（名前が会場に大写しになりうる機能なので、
   // 出したいイベントだけが明示的にONにする）
   const [meetRanking, setMeetRanking] = useState<MeetRankingMode>("off");
+  const [meetRankingNote, setMeetRankingNote] = useState("");
   // 出会いの景品引き換え (#431)。既定OFF。景品の定義はオフでも仕込める
   const [meetPrizes, setMeetPrizes] = useState(false);
   // 割り勘 (#556 / #635)。既定OFF。使いたいイベントだけONにする
@@ -236,6 +238,8 @@ export function EditEventPage() {
       setQaEnabled(e.qaEnabled);
       setQaAnonymity(e.qaAnonymity);
       setMeetRanking(e.meetRanking);
+      // 配備の切り替わり中は古い API が列なしで返すことがあるので、無ければ空にする
+      setMeetRankingNote(e.meetRankingNote ?? "");
       setMeetPrizes(e.meetPrizes);
       setWarikanEnabled(e.warikanEnabled);
       setVenueWanted(e.venueWanted);
@@ -419,6 +423,7 @@ export function EditEventPage() {
         qaEnabled,
         qaAnonymity,
         meetRanking,
+        meetRankingNote,
         meetPrizes,
         warikanEnabled,
         venueWanted,
@@ -869,6 +874,23 @@ export function EditEventPage() {
                     ? t("eventForm.meetRankingNamedHelp")
                     : t("eventForm.meetRankingAnonymousHelp")}
                 </Typography>
+                {/* ランキングの画面に出す説明（任意）。投影と詳細の小カードに文字のまま出る */}
+                <TextField
+                  label={t("eventForm.meetRankingNote")}
+                  placeholder={t("eventForm.meetRankingNotePlaceholder")}
+                  value={meetRankingNote}
+                  onChange={(e) => setMeetRankingNote(e.target.value)}
+                  multiline
+                  minRows={2}
+                  fullWidth
+                  size="small"
+                  inputProps={{ maxLength: MEET_RANKING_NOTE_MAX }}
+                  helperText={t("eventForm.meetRankingNoteHelp", {
+                    n: meetRankingNote.length,
+                    max: MEET_RANKING_NOTE_MAX,
+                  })}
+                  sx={{ mt: 2, maxWidth: 560 }}
+                />
               </Box>
             )}
           </Box>

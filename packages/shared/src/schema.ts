@@ -8,7 +8,7 @@ import {
   VENUE_TYPES,
 } from "./constants.js";
 import { QA_ANONYMITY_MODES } from "./eventQa.js";
-import { MEET_RANKING_MODES } from "./eventMeets.js";
+import { MEET_RANKING_MODES, MEET_RANKING_NOTE_MAX } from "./eventMeets.js";
 import { isDatetimeOrderInvalid } from "./datetimeOrder.js";
 import {
   chatCloseAfterMinutesSchema,
@@ -104,6 +104,8 @@ export const eventSchema = z.object({
   /** 出会いランキングの表示 (#418)。既定は 'off'（出したいイベントだけオンにする）。
    * off のイベントでは参加者向けランキングAPIごと存在を隠す */
   meetRanking: z.enum(MEET_RANKING_MODES),
+  /** 出会いランキングの画面に出す説明（任意。空文字は出さない）。主催者が書いた文字をそのまま出す */
+  meetRankingNote: z.string(),
   /** 出会いの景品引き換え (#431)。既定はオフ。オンでイベントページに景品を表示。
    * ランキングの表示設定 (meetRanking) とは独立（1位の判定は同じ集計を使うだけ）。
    * オフのイベントでは参加者向け景品APIごと存在を隠す */
@@ -188,6 +190,8 @@ export const updateEventInput = z.object({
   qaAnonymity: z.enum(QA_ANONYMITY_MODES).optional(),
   /** 出会いランキングの表示 (#418)。編集でのみ設定（作成直後は 'off'） */
   meetRanking: z.enum(MEET_RANKING_MODES).optional(),
+  /** 出会いランキングの画面に出す説明（任意）。前後の空白は落とす */
+  meetRankingNote: z.string().trim().max(MEET_RANKING_NOTE_MAX).optional(),
   /** 出会いの景品引き換え (#431)。編集でのみ設定（作成直後はオフ） */
   meetPrizes: z.boolean().optional(),
   /** 割り勘 (#556) のオンオフ (#635)。編集でのみ設定（作成直後はオフ） */

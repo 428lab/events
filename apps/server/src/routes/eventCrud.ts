@@ -30,14 +30,14 @@ import { publishDeckSync } from "../lib/deckSync.js";
 
 /** 設定の変更で中身が変わる、開いている運営画面へ「取り直して」を送る（D-POLL-MIN 第5段階 5b-2）。
  * `live`: 配信画面のチャットの可否（GET /live-state の chatSource）が読む列 /
- * `qa`: Q&A の有効・匿名設定 / `meet-ranking`: ランキングの表示設定 */
+ * `qa`: Q&A の有効・匿名設定 / `meet-ranking`: ランキングの表示設定と説明 */
 function settingsSignalTargets(prior: Event | null | undefined, next: Event): RefetchSignalTarget[] {
   if (!prior) return [];
   const changed = (keys: readonly (keyof Event)[]) => keys.some((key) => prior[key] !== next[key]);
   const targets: RefetchSignalTarget[] = [];
   if (changed(["chatEnabled", "chatEncrypted", "visibility", "status", "scheduling"])) targets.push(["live", next.id]);
   if (changed(["qaEnabled", "qaAnonymity"])) targets.push(["qa", next.id]);
-  if (changed(["meetRanking"])) targets.push(["meet-ranking", next.id]);
+  if (changed(["meetRanking", "meetRankingNote"])) targets.push(["meet-ranking", next.id]);
   return targets;
 }
 

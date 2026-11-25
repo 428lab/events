@@ -56,6 +56,8 @@ interface EventRow {
   qa_anonymity: string;
   /** 出会いランキングの表示設定 (#418)。off / anonymous / named */
   meet_ranking: string;
+  /** 出会いランキングの画面に出す説明（任意。空文字は出さない） */
+  meet_ranking_note: string;
   meet_prizes: number;
   /** 割り勘 (#556) の有効/無効 (#635) */
   warikan_enabled: number;
@@ -201,6 +203,7 @@ function toEvent(row: EventRow): Event {
     )
       ? (row.meet_ranking as Event["meetRanking"])
       : "off",
+    meetRankingNote: row.meet_ranking_note ?? "",
     meetPrizes: row.meet_prizes === 1,
     warikanEnabled: row.warikan_enabled === 1,
     // 未設定は NULL。?? null で undefined（列追加前の行）も NULL に寄せる
@@ -561,7 +564,7 @@ export const eventsRepo = {
          chat_encrypted = CASE WHEN chat_encrypted = 1 THEN 1 ELSE ? END,
          chat_open_before_minutes = ?, chat_close_after_minutes = ?,
          qa_enabled = ?, qa_anonymity = ?,
-         meet_ranking = ?, meet_prizes = ?, warikan_enabled = ?,
+         meet_ranking = ?, meet_ranking_note = ?, meet_prizes = ?, warikan_enabled = ?,
          members_note = ?, scheduling = ?,
          registration_deadline = ?
        WHERE e.id = ? AND e.access_revision = ? AND (e.visibility=? OR e.nonpublic_eligible=1) AND ${activeManagerSql("e", "?")}
@@ -597,6 +600,7 @@ export const eventsRepo = {
       next.qaEnabled ? 1 : 0,
       next.qaAnonymity,
       next.meetRanking,
+      next.meetRankingNote,
       next.meetPrizes ? 1 : 0,
       next.warikanEnabled ? 1 : 0,
       membersNote,
