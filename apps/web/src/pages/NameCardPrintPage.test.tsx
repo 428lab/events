@@ -270,6 +270,22 @@ describe("イベントデザインの印刷 (#506)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeDisabled());
     expect(container.querySelector(".name-card-page")).toHaveAttribute("data-print-ready", "false");
   });
+
+  it("a member's icon that fails prints the initial instead and does not block the sheet (2026-11-25)", async () => {
+    mockApi("staff", [
+      card({ id: "u-1", name: "しおん", avatarUrl: "https://i.gyazo.com/dead.jpg" }),
+      card({ id: "u-2", name: "たろう" }),
+    ], createCardTemplate("name"));
+    const { container } = renderPage();
+    const avatar = () => container.querySelector('image[href="https://i.gyazo.com/dead.jpg"]');
+    await waitFor(() => expect(avatar()).not.toBeNull());
+    fireEvent.error(avatar()!);
+    await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeEnabled());
+    expect(avatar()).toBeNull();
+    expect(screen.queryByText(/画像またはフォントを読み込めない/)).toBeNull();
+    expect(screen.getByText("アイコンを読み込めなかった人: しおん（頭文字で印刷します）")).toBeTruthy();
+    expect(screen.getByText("アイコンなし")).toBeTruthy();
+  });
 });
 
 describe("写真NG（No photo）マーク (D-NOPHOTO)", () => {
