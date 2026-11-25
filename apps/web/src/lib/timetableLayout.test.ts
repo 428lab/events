@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 import {
-  TIMETABLE_SLOT_MIN,
+  TIMETABLE_MIN_BLOCK_PX,
+  TIMETABLE_PX_PER_MIN,
   buildTimetableLayout,
   entriesForTrack,
+  type TimetableBlock,
+  type TimetableLayout,
 } from "./timetableLayout.js";
 
 /**
@@ -87,14 +90,14 @@ describe("buildTimetableLayout (#338)", () => {
     expect(blocks[0]!.colSpan).toBe(TRACKS.length);
   });
 
-  it("枠の高さは所要時間に比例し、空き時間は行の隙間になる", () => {
+  it("枠の高さは所要時間に比例し、次の枠はその下から始まる", () => {
     const { blocks } = layout();
     const open = blocks.find((b) => b.entry.item.id === "it-open")!;
     const panel = blocks.find((b) => b.entry.item.id === "it-panel")!;
 
-    // 20分＝4マス、90分＝18マス（1マス5分）
-    expect(open.rowEnd - open.rowStart).toBe(4);
-    expect(panel.rowEnd - panel.rowStart).toBe(18);
+    // 20分・90分（1分あたりの高さに比例）
+    expect(open.heightPx).toBeCloseTo(20 * TIMETABLE_PX_PER_MIN);
+    expect(panel.heightPx).toBeCloseTo(90 * TIMETABLE_PX_PER_MIN);
     // 開会(10:00-10:20) の後ろに次の枠が来るので、行はぶつからない
     const a = blocks.find((b) => b.entry.item.id === "it-a")!;
     expect(a.rowStart).toBe(open.rowEnd);
@@ -290,7 +293,7 @@ describe("buildTimetableLayout (#338)", () => {
     ]);
   });
 
-  it("格子の行数は、いちばん広がっても8日ぶん（7日＋1コマ上限）で頭打ちになる", () => {
+  it("格子の行数は、いちばん広がっても8日ぶん（7日＋1コマ上限）の目盛りで頭打ちになる", () => {
     // 窓は「端から端まで7日」。**最頻クラスタから前後に7日ずつ（＝14日）ではない**。
     // 最後のコマは所要時間の上限24時間で切られるので、行数はここが最大になる
     const first = new Date("2026-08-11T09:00:00+09:00").getTime();
@@ -315,9 +318,9 @@ describe("buildTimetableLayout (#338)", () => {
     const got = buildTimetableLayout(items, TRACKS, first);
 
     expect(got.outOfRange).toEqual([]);
-    // 8日 × 24時間 × 12マス（1マス5分）
-    expect(got.rows).toBe(2304);
-    expect(got.ticks).toHaveLength(2304 / (30 / TIMETABLE_SLOT_MIN));
+    // 8日 × 24時間 × 30分ごとの目盛り。行は目盛りとコマの境目だけで区切る
+    expect(got.ticks).toHaveLength(8 * 24 * 2);
+    expect(got.rows).toBe(8 * 24 * 2);
   });
 
   it("開始時刻の打ち間違いで格子が膨らまず、外れた1件だけが落ちる", () => {
@@ -413,5 +416,94 @@ describe("entriesForTrack (#338)", () => {
       "it-open",
       "it-gap",
     ]);
+  });
+});
+
+/** 行の高さを足して、その枠の上端と下端(px)を出す。描画と同じ計算 */
+function edges(got: TimetableLayout, b: TimetableBlock): [number, number] {
+  const top = got.rowHeights.slice(0, b.rowStart - 1).reduce((n, h) => n + h, 0);
+  return [top, top + b.heightPx];
+}
+/** 同じ列にかかり、縦にも重なり、同じ位置（lane）に並ぶ枠の組。1つでもあれば文字が重なって読めない */
+function collisions(got: TimetableLayout): string[] {
+  const out: string[] = [];
+  got.blocks.forEach((a, i) => {
+    got.blocks.slice(i + 1).forEach((b) => {
+      const cols = a.colStart < b.colStart + b.colSpan && b.colStart < a.colStart + a.colSpan;
+      const [a0, a1] = edges(got, a);
+      const [b0, b1] = edges(got, b);
+      const rows = a0 < b1 - 0.01 && b0 < a1 - 0.01;
+      const sideBySide = a.laneCount > 1 && b.laneCount > 1 && a.lane !== b.lane;
+      if (cols && rows && !sideBySide) out.push(`${a.key} × ${b.key}`);
+    });
+  });
+  return out;
+}
+
+/**
+ * 短いコマ・重なるコマ（Nostrasia 2026 のタイムテーブル、オーナー指摘 2026-11-25）。
+ * 5〜10分のコマが続くと1マス9pxの格子では18pxしか無く、時刻と題名が次のコマに
+ * はみ出していた。全トラック共通の帯は、長いトラックのコマの上に重ねて描いていた。
+ */
+describe("短いコマと重なり", () => {
+  const at = (h: number, m: number) => new Date(`2026-08-11T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+09:00`).getTime();
+
+  it("5〜10分の共通のコマが6つ続いても、どれも1行ぶんの高さがあり、順に並ぶ", () => {
+    const items = [5, 10, 10, 5, 15, 10].map((durationMin, i) =>
+      item({ id: `it-${i}`, title: `登壇${i}`, durationMin }),
+    );
+    const got = buildTimetableLayout(items, TRACKS, at(13, 0));
+    const shown = items.map((it) => got.blocks.find((b) => b.entry.item.id === it.id)!);
+
+    for (const b of shown) expect(b.heightPx).toBeGreaterThanOrEqual(TIMETABLE_MIN_BLOCK_PX);
+    for (let i = 1; i < shown.length; i++) expect(shown[i]!.rowStart).toBeGreaterThanOrEqual(shown[i - 1]!.rowEnd);
+    expect(collisions(got)).toEqual([]);
+  });
+
+  it("長いトラックのコマの途中にある全トラック共通の帯は、そのコマを前後に割り、重ならない", () => {
+    const items = [
+      item({ id: "it-long", title: "交流スペース", startsAt: at(14, 0), durationMin: 240, placement: "tracks", trackIds: ["tr-a"] }),
+      item({ id: "it-zap", title: "じゃんけん", startsAt: at(15, 0), durationMin: 10 }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, at(14, 0));
+    const long = got.blocks.filter((b) => b.entry.item.id === "it-long");
+    const zap = got.blocks.find((b) => b.entry.item.id === "it-zap")!;
+
+    expect(long).toHaveLength(2);
+    expect(long[0]!.rowEnd).toBeLessThanOrEqual(zap.rowStart);
+    expect(long[1]!.rowStart).toBeGreaterThanOrEqual(zap.rowEnd);
+    expect(long.map((b) => b.continued)).toEqual([false, true]);
+    expect(collisions(got)).toEqual([]);
+  });
+
+  it("同じトラックで時刻が重なる2つのコマは、横に並べて両方見える (#345)", () => {
+    const items = [
+      item({ id: "it-x", title: "交流スペース", startsAt: at(14, 0), durationMin: 240, placement: "tracks", trackIds: ["tr-a"] }),
+      item({ id: "it-y", title: "高機能クライアントの話", startsAt: at(16, 0), durationMin: 5, placement: "tracks", trackIds: ["tr-a"] }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, at(14, 0));
+    const x = got.blocks.find((b) => b.entry.item.id === "it-x")!;
+    const y = got.blocks.find((b) => b.entry.item.id === "it-y")!;
+
+    expect([x.laneCount, y.laneCount]).toEqual([2, 2]);
+    expect(x.lane).not.toBe(y.lane);
+    expect(y.heightPx).toBeGreaterThanOrEqual(TIMETABLE_MIN_BLOCK_PX);
+    expect(collisions(got)).toEqual([]);
+  });
+
+  it("時刻の目盛りは上から順に並び、行の高さはどれも正", () => {
+    const items = [
+      item({ id: "it-open", title: "開場", startsAt: at(12, 30), durationMin: 30 }),
+      item({ id: "it-s", title: "短い", durationMin: 5 }),
+      item({ id: "it-late", title: "夜", startsAt: at(18, 0), durationMin: 60 }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, at(12, 30));
+
+    expect(got.rowHeights).toHaveLength(got.rows);
+    expect(got.rowHeights.every((h) => h > 0)).toBe(true);
+    for (let i = 1; i < got.ticks.length; i++) {
+      expect(got.ticks[i]!.ms).toBeGreaterThan(got.ticks[i - 1]!.ms);
+      expect(got.ticks[i]!.rowStart).toBe(got.ticks[i - 1]!.rowEnd);
+    }
   });
 });
