@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Box, Button, Chip, Stack, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -26,6 +27,8 @@ export function EventTimetablePage() {
   // 広い画面は格子、狭い画面はトラック選択のタブ＋縦一覧。
   // 3本のトラックを並べるだけで 700px 近く要るので md で切り替える
   const wide = useMediaQuery(theme.breakpoints.up("md"));
+  // セッションの無いトラックの列は既定で隠す（広い画面だけ。スマホのタブは全部出す）
+  const [showEmptyTracks, setShowEmptyTracks] = useState(false);
 
   if (!eventData || !data) return <Typography>{t("common.loading")}</Typography>;
 
@@ -36,6 +39,7 @@ export function EventTimetablePage() {
     data.items,
     data.tracks,
     event.scheduling ? null : event.startsAt,
+    { showEmptyTracks },
   );
   // 色は**公開トラックの本数だけ**で作る (#383)。スタッフ用の列を本数に
   // 混ぜると、同じトラックが参加者と運営で別の色になる
@@ -95,7 +99,12 @@ export function EventTimetablePage() {
         </Typography>
       ) : wide ? (
         <>
-          <TimetableGrid layout={layout} colors={colors} />
+          <TimetableGrid
+            layout={layout}
+            colors={colors}
+            showingEmptyTracks={showEmptyTracks}
+            onToggleEmptyTracks={() => setShowEmptyTracks((v) => !v)}
+          />
           {/* 裏方の凡例は、裏方が実際に届いているときだけ出す (#383)。
               参加者には裏方が1件も来ないので、無条件に出すと
               「運営のみ」の凡例だけが並んで意味が分からない */}
@@ -205,8 +214,8 @@ function Legend({ withStaff }: { withStaff: boolean }) {
           sx={{
             ...swatch,
             bgcolor: alpha(theme.palette.primary.main, 0.16),
-            borderLeft: "3px solid",
-            borderLeftColor: "primary.main",
+            borderTop: "3px solid",
+            borderTopColor: "primary.main",
           }}
         />
         {t("schedule.legendSingleTrack")}
@@ -217,9 +226,9 @@ function Legend({ withStaff }: { withStaff: boolean }) {
           sx={{
             ...swatch,
             bgcolor: alpha(theme.palette.primary.main, 0.16),
-            borderLeft: "3px solid",
-            borderLeftColor: "primary.main",
-            boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.primary.main, 0.45)}`,
+            borderTop: "3px solid",
+            borderTopColor: "primary.main",
+            boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.primary.main, 0.5)}`,
           }}
         />
         {t("schedule.legendSpanning")}
@@ -229,14 +238,9 @@ function Legend({ withStaff }: { withStaff: boolean }) {
           component="span"
           sx={{
             ...swatch,
-            backgroundImage: `repeating-linear-gradient(135deg, ${alpha(
-              theme.palette.text.primary,
-              0.08,
-            )} 0 8px, ${alpha(theme.palette.text.primary, 0.03)} 8px 16px)`,
-            border: "1px dashed",
-            borderColor: "divider",
+            bgcolor: alpha(theme.palette.text.primary, 0.08),
             borderLeft: "3px solid",
-            borderLeftColor: alpha(theme.palette.text.primary, 0.55),
+            borderLeftColor: alpha(theme.palette.text.primary, 0.45),
           }}
         />
         {t("schedule.allTracks")}

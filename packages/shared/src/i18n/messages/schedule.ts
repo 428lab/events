@@ -127,8 +127,13 @@ const ja = {
   /** トラック（並行して走る枠）。トラック名そのものは利用者が入れた値 */
   tracks: "トラック",
   allTracks: "全トラック共通",
-  /** 全トラック共通のセッションに途中で挟まれた枠の、後ろの部分に添える */
-  continued: "（続き）",
+  /** 広い画面のタイムテーブルで、全トラック共通のセッションを並べる列の見出し */
+  commonColumn: "全体",
+  /** セッションの無いトラックの列を隠す／出す（広い画面のタイムテーブル） */
+  showEmptyTracks: "空のトラックも表示（{{names}}）",
+  hideEmptyTracks: "空のトラックを隠す",
+  /** 開催中の「いま」の線に添える時刻 */
+  nowLine: "いま {{time}}",
   /** 枠に添えるトラック名の連結。common.dotSeparator は前後に空きがあり、
    *  狭い枠では入り切らないのでここだけ空きなしで持つ */
   trackNameSeparator: "・",
@@ -349,7 +354,10 @@ const en: Record<keyof typeof ja, string> = {
 
   tracks: "Tracks",
   allTracks: "All tracks",
-  continued: " (cont.)",
+  commonColumn: "All tracks",
+  showEmptyTracks: "Show empty tracks ({{names}})",
+  hideEmptyTracks: "Hide empty tracks",
+  nowLine: "Now {{time}}",
   trackNameSeparator: ", ",
   trackSrLabel: "Track: {{name}}",
   chooseTrack: "Choose a track",
