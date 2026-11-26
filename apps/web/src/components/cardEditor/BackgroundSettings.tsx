@@ -134,7 +134,10 @@ export function BackgroundSettings({ background, assets, onChange }: {
       <Typography variant="subtitle2">{t("staffOps.cardEditorBgFallback")}</Typography>
       <PatternPicker value={pattern.fallback} paper={pattern.paper} onChange={fallback => onChange({ ...background, pattern: { ...pattern, fallback } })} />
     </>}
-    {pattern?.type === "builtin" && <PatternPicker value={pattern} paper={pattern.paper} onChange={choice => onChange({ ...background, pattern: { ...pattern, ...choice } })} />}
+    {pattern?.type === "builtin" && <>
+      <Typography variant="caption" color="text.secondary">{t("staffOps.cardEditorBgBuiltinHelp")}</Typography>
+      <PatternPicker value={pattern} paper={pattern.paper} onChange={choice => onChange({ ...background, pattern: { ...pattern, ...choice } })} />
+    </>}
     {pattern && <PaperToggle value={pattern.paper} onChange={paper => onChange({ ...background, pattern: { ...pattern, paper } })} />}
     {pattern && <StrengthSlider value={pattern.strength} onCommit={strength => onChange({ ...background, pattern: { ...pattern, strength } })} />}
     {!pattern && <>

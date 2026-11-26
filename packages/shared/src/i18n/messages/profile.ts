@@ -162,6 +162,7 @@ const ja = {
   cardThemeRose: "ローズ",
   cardThemeAmber: "アンバー",
   cardThemeMono: "モノクロ",
+  cardThemePurple: "パープル",
 
   /** 交流用の大きなQR */
   qrLabel: "{{name}} の交流用QRコード",
@@ -311,6 +312,7 @@ const en: Record<keyof typeof ja, string> = {
   cardThemeRose: "Rose",
   cardThemeAmber: "Amber",
   cardThemeMono: "Monochrome",
+  cardThemePurple: "Purple",
 
   qrLabel: "{{name}}'s meet-up QR code",
   qrError:

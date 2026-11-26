@@ -116,6 +116,17 @@ export const CARD_THEMES = [
     accentDeep: "#1E293B",
     watermark: "#3A4356",
   },
+  {
+    // Nostr らしい紫（nostrasia.com の #8E30EB に寄せた）。2色目は淡い桃色
+    key: "purple",
+    nameKey: "profile.cardThemePurple",
+    paper: ["#DCCDF0", "#ECE3F8", "#D2C1EA"],
+    accentA: "#8E30EB",
+    accentB: "#DB2777",
+    accentBLight: "#F0ABFC",
+    accentDeep: "#6D28D9",
+    watermark: "#4C2A73",
+  },
 ] as const satisfies readonly CardThemeChoice[];
 export type CardThemeKey = (typeof CARD_THEMES)[number]["key"];
 
