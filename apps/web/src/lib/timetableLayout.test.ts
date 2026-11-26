@@ -5,6 +5,7 @@ import {
   TIMETABLE_PX_PER_MIN,
   buildTimetableLayout,
   entriesForTrack,
+  timeToOffsetPx,
   type TimetableBlock,
   type TimetableLayout,
 } from "./timetableLayout.js";
@@ -75,19 +76,22 @@ describe("buildTimetableLayout (#338)", () => {
     const blocks = layout().blocks.filter((b) => b.entry.item.id === "it-panel");
 
     expect(blocks).toHaveLength(1);
-    expect(blocks[0]!.colStart).toBe(0);
+    // 先頭は全トラック共通の列なので、A は列 1
+    expect(blocks[0]!.colStart).toBe(1);
     expect(blocks[0]!.colSpan).toBe(2);
     expect(blocks[0]!.split).toBe(false);
     expect(blocks[0]!.trackNames).toEqual([TRACKS[0]!.name, TRACKS[1]!.name]);
   });
 
-  it("全トラック共通は全列をまたぐ1つの帯になる", () => {
-    const blocks = layout().blocks.filter((b) => b.entry.item.id === "it-open");
+  it("全トラック共通は、先頭の専用の列に1つの枠で置く", () => {
+    const got = layout();
+    const blocks = got.blocks.filter((b) => b.entry.item.id === "it-open");
 
+    expect(got.columns[0]).toEqual({ kind: "common" });
     expect(blocks).toHaveLength(1);
     expect(blocks[0]!.common).toBe(true);
     expect(blocks[0]!.colStart).toBe(0);
-    expect(blocks[0]!.colSpan).toBe(TRACKS.length);
+    expect(blocks[0]!.colSpan).toBe(1);
   });
 
   it("枠の高さは所要時間に比例し、次の枠はその下から始まる", () => {
@@ -98,7 +102,7 @@ describe("buildTimetableLayout (#338)", () => {
     // 20分・90分（1分あたりの高さに比例）
     expect(open.heightPx).toBeCloseTo(20 * TIMETABLE_PX_PER_MIN);
     expect(panel.heightPx).toBeCloseTo(90 * TIMETABLE_PX_PER_MIN);
-    // 開会(10:00-10:20) の後ろに次の枠が来るので、行はぶつからない
+    // 開会(10:00-10:20) の後ろに次の枠が来る（列は違っても時刻の行はそろう）
     const a = blocks.find((b) => b.entry.item.id === "it-a")!;
     expect(a.rowStart).toBe(open.rowEnd);
   });
@@ -106,9 +110,10 @@ describe("buildTimetableLayout (#338)", () => {
   it("離れたトラック（飛び地）は2つの枠に割れるが、どちらも消えない", () => {
     const blocks = layout().blocks.filter((b) => b.entry.item.id === "it-gap");
 
+    // 先頭は全トラック共通の列。A は列 1、C は列 3
     expect(blocks.map((b) => [b.colStart, b.colSpan])).toEqual([
-      [0, 1],
-      [2, 1],
+      [1, 1],
+      [3, 1],
     ]);
     expect(blocks.every((b) => b.split)).toBe(true);
     // 割れても同じ時刻・同じ高さ
@@ -398,7 +403,7 @@ describe("buildTimetableLayout (#338)", () => {
 
     expect(got.blocks).toHaveLength(1);
     expect(got.blocks[0]!.common).toBe(true);
-    expect(got.blocks[0]!.colSpan).toBe(TRACKS.length);
+    expect(got.blocks[0]!.colStart).toBe(0);
   });
 });
 
@@ -460,20 +465,63 @@ describe("短いコマと重なり", () => {
     expect(collisions(got)).toEqual([]);
   });
 
-  it("長いトラックのコマの途中にある全トラック共通の帯は、そのコマを前後に割り、重ならない", () => {
+  it("長いトラックのコマの途中に全トラック共通のコマがあっても、トラックのコマは1つの枠のまま（オーナー 2026-11-26）", () => {
     const items = [
       item({ id: "it-long", title: "交流スペース", startsAt: at(14, 0), durationMin: 240, placement: "tracks", trackIds: ["tr-a"] }),
       item({ id: "it-zap", title: "じゃんけん", startsAt: at(15, 0), durationMin: 10 }),
+      item({ id: "it-lt", title: "LT枠2", startsAt: at(16, 5), durationMin: 5 }),
     ];
     const got = buildTimetableLayout(items, TRACKS, at(14, 0));
     const long = got.blocks.filter((b) => b.entry.item.id === "it-long");
     const zap = got.blocks.find((b) => b.entry.item.id === "it-zap")!;
 
-    expect(long).toHaveLength(2);
-    expect(long[0]!.rowEnd).toBeLessThanOrEqual(zap.rowStart);
-    expect(long[1]!.rowStart).toBeGreaterThanOrEqual(zap.rowEnd);
-    expect(long.map((b) => b.continued)).toEqual([false, true]);
+    // 途切れない（以前は帯のたびに「続き」に割れていた）
+    expect(long).toHaveLength(1);
+    expect(long[0]!.colStart).toBe(1);
+    // 全トラック共通は専用の列。同じ時刻でもトラックの列とは別の列
+    expect(zap.colStart).toBe(0);
+    expect(long[0]!.rowStart).toBeLessThan(zap.rowStart);
+    expect(long[0]!.rowEnd).toBeGreaterThan(zap.rowEnd);
     expect(collisions(got)).toEqual([]);
+  });
+
+  it("セッションの無いトラックの列は既定で隠し、showEmptyTracks で出す", () => {
+    const items = [
+      item({ id: "it-a", title: "A", startsAt: at(14, 0), placement: "tracks", trackIds: ["tr-a"] }),
+      item({ id: "it-c", title: "C", startsAt: at(14, 0), placement: "tracks", trackIds: ["tr-c"] }),
+    ];
+    const hidden = buildTimetableLayout(items, TRACKS, at(14, 0));
+    const shown = buildTimetableLayout(items, TRACKS, at(14, 0), { showEmptyTracks: true });
+
+    // 共通のコマが無いので全体の列も無い。B は空なので隠れる
+    expect(hidden.columns).toEqual([
+      { kind: "track", trackIndex: 0 },
+      { kind: "track", trackIndex: 2 },
+    ]);
+    expect(hidden.hiddenTracks.map((t) => t.id)).toEqual(["tr-b"]);
+    expect(hidden.blocks.find((b) => b.entry.item.id === "it-c")!.colStart).toBe(1);
+    expect(shown.columns).toHaveLength(3);
+    expect(shown.hiddenTracks).toEqual([]);
+    expect(shown.blocks.find((b) => b.entry.item.id === "it-c")!.colStart).toBe(2);
+    // スマホのタブはイベントの全トラックを使う（隠さない）
+    expect(hidden.tracks).toHaveLength(3);
+  });
+
+  it("「いま」の位置は、コマのある時間の中だけで返り、時刻とともに下がる", () => {
+    const items = [
+      item({ id: "it-a", title: "A", startsAt: at(14, 0), durationMin: 60, placement: "tracks", trackIds: ["tr-a"] }),
+      item({ id: "it-b", title: "B", startsAt: at(15, 0), durationMin: 60, placement: "tracks", trackIds: ["tr-a"] }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, at(14, 0));
+
+    expect(timeToOffsetPx(got, at(13, 59))).toBeNull();
+    expect(timeToOffsetPx(got, at(16, 1))).toBeNull();
+    expect(timeToOffsetPx(got, at(14, 0))).toBe(0);
+    const mid = timeToOffsetPx(got, at(14, 30))!;
+    const later = timeToOffsetPx(got, at(15, 30))!;
+    expect(mid).toBeGreaterThan(0);
+    expect(later).toBeGreaterThan(mid);
+    expect(timeToOffsetPx(got, at(16, 0))).toBeCloseTo(got.rowHeights.reduce((n, h) => n + h, 0));
   });
 
   it("同じトラックで時刻が重なる2つのコマは、横に並べて両方見える (#345)", () => {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 import { buildTimetableLayout } from "../lib/timetableLayout.js";
 import { trackColors, trackColorsForTracks } from "../lib/trackColors.js";
@@ -86,18 +86,20 @@ describe("TimetableGrid（広い画面）", () => {
     const blocks = blocksOf(container, "it-panel");
 
     expect(blocks).toHaveLength(1);
-    // 1列目は時刻列なので、A から2列ぶん＝ "2 / span 2"
-    expect(blocks[0]!.style.gridColumn).toBe("2 / span 2");
+    // 1列目は時刻列、2列目は全トラック共通の列なので、A から2列ぶん＝ "3 / span 2"
+    expect(blocks[0]!.style.gridColumn).toBe("3 / span 2");
     expect(screen.getAllByText("パネル討論")).toHaveLength(1);
     // どのトラックにまたがっているかを枠の中に添える
     expect(blocks[0]!.textContent).toContain("A（メインホール）・B（小ホール）");
   });
 
-  it("全トラック共通は全列をまたぐ帯として描く", () => {
-    const blocks = blocksOf(drawGrid(), "it-open");
+  it("全トラック共通は、先頭の「全体」の列に描く（トラックの列はまたがない）", () => {
+    const container = drawGrid();
+    const blocks = blocksOf(container, "it-open");
 
     expect(blocks).toHaveLength(1);
-    expect(blocks[0]!.style.gridColumn).toBe("2 / span 3");
+    expect(blocks[0]!.style.gridColumn).toBe("2 / span 1");
+    expect(screen.getByText("全体")).toBeInTheDocument();
     // 見た目のラベルは出さず（短い帯で題名を押し出すため）、読み上げにだけ入れる
     expect(blocks[0]!.textContent).toContain("全トラック共通");
     // トラック名は出さない（どれか1本の予定と読み違えられる）
@@ -107,8 +109,8 @@ describe("TimetableGrid（広い画面）", () => {
   it("1つのトラックだけのコマは、その列にだけ描く", () => {
     const container = drawGrid();
 
-    expect(blocksOf(container, "it-a")[0]!.style.gridColumn).toBe("2 / span 1");
-    expect(blocksOf(container, "it-b")[0]!.style.gridColumn).toBe("3 / span 1");
+    expect(blocksOf(container, "it-a")[0]!.style.gridColumn).toBe("3 / span 1");
+    expect(blocksOf(container, "it-b")[0]!.style.gridColumn).toBe("4 / span 1");
   });
 
   it("行の高さは layout の値をそのまま使い、枠はその行にまたがる", () => {
@@ -132,9 +134,12 @@ describe("TimetableGrid（広い画面）", () => {
         placement: "tracks",
         trackIds: ["tr-a", "tr-c"],
       }),
+      // B にもコマがあるので B の列は隠れず、A と C は隣り合わない
+      item({ id: "it-b", title: "セッションB", placement: "tracks", trackIds: ["tr-b"] }),
     ]);
     const blocks = blocksOf(container, "it-gap");
 
+    // 共通のコマが無いので「全体」の列は無い。時刻列の次が A
     expect(blocks.map((b) => b.style.gridColumn)).toEqual([
       "2 / span 1",
       "4 / span 1",
@@ -242,6 +247,22 @@ describe("TimetableGrid（広い画面）", () => {
     expect(blocksOf(container, "it-a")[0]!.textContent).not.toContain(
       "運営のみ",
     );
+  });
+
+  it("開催中は「いま」の線を引き、コマの時間の外では引かない", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(START + 15 * 60_000);
+      const during = render(<TimetableGrid layout={layout()} colors={colors(TRACKS.length)} />);
+      expect(during.container.querySelector("[data-timetable-now]")).not.toBeNull();
+      during.unmount();
+
+      vi.setSystemTime(START - 60 * 60_000);
+      const before = render(<TimetableGrid layout={layout()} colors={colors(TRACKS.length)} />);
+      expect(before.container.querySelector("[data-timetable-now]")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("開始時刻が決まらないときは格子を描かない（壊れない）", () => {
