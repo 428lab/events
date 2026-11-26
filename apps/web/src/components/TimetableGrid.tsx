@@ -15,8 +15,8 @@ import { formatMonthDay, formatTime } from "../lib/format.js";
 const TIME_COL_PX = 72;
 /** 縦の線と丸の列の幅 */
 const DOT_COL_PX = 28;
-/** 右の細い列（並行して長く続く企画。縦書き）の幅 */
-const SIDE_COL_PX = 52;
+/** 1列（本筋・並行の列とも同じ幅）の最小幅。これより狭くなる画面では横にスクロールする */
+const LANE_MIN_PX = 220;
 /** 行と行の間。詰めすぎると読みにくい（オーナー 2026-11-27「詰まりすぎてて見づらい」） */
 const ROW_GAP_PX = 14;
 /** 列と列の間 */
@@ -74,8 +74,9 @@ function useNow(): number {
  *   （5分の登壇が続いても潰れない）。行の間はゆったり空ける
  * - 本筋のコマは横幅いっぱいのカード。左の太い線と場所の札がトラックの色
  *   （全トラック共通はテーマの主色。灰色にしない）
- * - 並行して長く続く企画は、右の細い列に縦書きで置く。本筋のカードは、その時間に
- *   空いている細い列のぶんまで広がる
+ * - 並行して長く続く企画は、右の並行の列に **横書きの普通のカード** で置く。列の幅は本筋と同じ
+ *   （nostrasia.com の広い画面と同じ等幅の列。縦書きは向こうでもスマホだけ。オーナー 2026-11-27
+ *   「縦書きはスマホ向けだよ」）。本筋のカードは、その時間に空いている並行の列のぶんまで広がる
  * - 同じ時刻に重なる本筋のコマは横に並べる (#345)
  * - 過去のコマは薄く、開催中のコマは強調し、「いま」の位置に印を引く
  * - 裏方 (#383) は破線＋鍵の印 */
@@ -102,8 +103,9 @@ export function TimetableGrid({
   const colorOfTrack = (i: number) => colors[i] ?? neutral;
   const colorOf = (card: TimetableCard) =>
     card.common ? commonColor : colorOfTrack(card.trackIndexes[0]!);
-  // 細い列 k（0 が右端）の grid の列番号。本筋は 3
+  // 並行の列 k（0 が右端）の grid の列番号。本筋は 3
   const sideColumn = (lane: number) => 3 + (sideLanes - lane);
+  const lanes = 1 + sideLanes;
   // 日をまたぐイベントだけ、日の変わり目に日付を添える
   const multiDay =
     new Date(rows[0]!).toDateString() !== new Date(rows[rows.length - 1]!).toDateString();
@@ -172,8 +174,9 @@ export function TimetableGrid({
         sx={{
           display: "grid",
           position: "relative",
-          minWidth: `${TIME_COL_PX + DOT_COL_PX + 360 + sideLanes * SIDE_COL_PX}px`,
-          gridTemplateColumns: `${TIME_COL_PX}px ${DOT_COL_PX}px minmax(0, 1fr)${" " + `${SIDE_COL_PX}px `.repeat(sideLanes)}`.trimEnd(),
+          minWidth: `${TIME_COL_PX + DOT_COL_PX + lanes * LANE_MIN_PX + (lanes + 1) * COL_GAP_PX}px`,
+          // 本筋と並行の列は同じ幅（等幅）
+          gridTemplateColumns: `${TIME_COL_PX}px ${DOT_COL_PX}px repeat(${lanes}, minmax(0, 1fr))`,
           gridTemplateRows: `repeat(${rows.length}, auto)`,
           columnGap: `${COL_GAP_PX}px`,
           rowGap: `${ROW_GAP_PX}px`,
@@ -277,76 +280,9 @@ export function TimetableGrid({
             ...(card.staffOnly ? { borderStyle: "dashed", borderLeftStyle: "solid" } : {}),
           } as const;
 
-          if (card.side) {
-            // 縦書きの細いカード。中身は枠の大きさに合わせて切る（行の高さを押し広げない）
-            return (
-              <Box
-                key={card.key}
-                data-timetable-block={it.id}
-                data-timetable-side
-                title={label}
-                style={{
-                  gridColumn: String(sideColumn(card.lane)),
-                  gridRow: `${card.rowStart} / ${card.rowEnd}`,
-                }}
-                sx={{ ...frame, alignSelf: "stretch", borderLeft: "1px solid", borderTop: `5px solid ${color}`, borderLeftColor: frame.borderColor, overflow: "hidden" }}
-              >
-                <Box
-                  sx={{
-                    position: "absolute",
-                    inset: 0,
-                    py: 1,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: 0.75,
-                    writingMode: "vertical-rl",
-                    overflow: "hidden",
-                  }}
-                >
-                  <Typography
-                    component="span"
-                    sx={{ fontSize: "0.95rem", fontWeight: 800, lineHeight: 1.3, letterSpacing: "0.04em", whiteSpace: "nowrap" }}
-                  >
-                    {it.title}
-                  </Typography>
-                  <Typography
-                    component="span"
-                    sx={{ fontSize: "0.72rem", lineHeight: 1.3, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}
-                    color="text.secondary"
-                  >
-                    {rangeLabel(card)}
-                  </Typography>
-                  <Box component="span" sx={SR_ONLY}>
-                    {card.common
-                      ? t("schedule.commonColumn")
-                      : card.trackIndexes.map((i) => tracks[i]!.name).join(t("common.dotSeparator"))}
-                  </Box>
-                </Box>
-              </Box>
-            );
-          }
-
-          // 本筋のカード。空いている細い列のぶんまで広げ、重なるものは横に並べる (#345)
-          const lanes = card.laneCount;
-          return (
-            <Box
-              key={card.key}
-              data-timetable-block={it.id}
-              title={label}
-              style={{
-                gridColumn: `3 / span ${1 + card.extendSide}`,
-                gridRow: String(card.rowStart),
-                ...(lanes > 1
-                  ? {
-                      width: `calc((100% - ${(lanes - 1) * 8}px) / ${lanes})`,
-                      marginLeft: `calc((100% - ${(lanes - 1) * 8}px) / ${lanes} * ${card.lane} + ${card.lane * 8}px)`,
-                      justifySelf: "start",
-                    }
-                  : {}),
-              }}
-              sx={{ ...frame, alignSelf: "start", px: 1.75, pt: 0.875, pb: 1.125 }}
-            >
+          // カードの中身（本筋も並行の列も同じ。どちらも横書き）
+          const body = (
+            <>
               <Box sx={{ display: "flex", alignItems: "baseline", gap: 1, flexWrap: "wrap" }}>
                 <Typography
                   component="span"
@@ -431,6 +367,49 @@ export function TimetableGrid({
                   />
                 )}
               </Box>
+            </>
+          );
+
+          if (card.side) {
+            // 並行の列のカード。自分の行の範囲いっぱいに伸ばし、中身は上に寄せる（横書き）
+            return (
+              <Box
+                key={card.key}
+                data-timetable-block={it.id}
+                data-timetable-side
+                title={label}
+                style={{
+                  gridColumn: String(sideColumn(card.lane)),
+                  gridRow: `${card.rowStart} / ${card.rowEnd}`,
+                }}
+                sx={{ ...frame, alignSelf: "stretch", px: 1.75, pt: 0.875, pb: 1.125 }}
+              >
+                {body}
+              </Box>
+            );
+          }
+
+          // 本筋のカード。空いている並行の列のぶんまで広げ、重なるものは横に並べる (#345)
+          const overlap = card.laneCount;
+          return (
+            <Box
+              key={card.key}
+              data-timetable-block={it.id}
+              title={label}
+              style={{
+                gridColumn: `3 / span ${1 + card.extendSide}`,
+                gridRow: String(card.rowStart),
+                ...(overlap > 1
+                  ? {
+                      width: `calc((100% - ${(overlap - 1) * 8}px) / ${overlap})`,
+                      marginLeft: `calc((100% - ${(overlap - 1) * 8}px) / ${overlap} * ${card.lane} + ${card.lane * 8}px)`,
+                      justifySelf: "start",
+                    }
+                  : {}),
+              }}
+              sx={{ ...frame, alignSelf: "start", px: 1.75, pt: 0.875, pb: 1.125 }}
+            >
+              {body}
             </Box>
           );
         })}

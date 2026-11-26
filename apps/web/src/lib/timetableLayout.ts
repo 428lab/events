@@ -1,10 +1,10 @@
 import { computeScheduleTimes, publicTracks } from "@eventer/shared";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 
-/** 長いコマを右の細い列（縦書き）に逃がす条件: そのコマの最中に、別のコマが
+/** 長いコマを右の並行の列に置く条件: そのコマの最中に、別のコマが
  * **この数以上の時刻に**始まる。並行して長く続く企画（フリーマーケット・交流スペースなど）を、
- * 本筋の登壇の幅を奪わない細い列に置く（nostrasia.com のタイムテーブルと同じ考え方。
- * オーナー 2026-11-27）。1つだけ重なる程度なら、横に並べるほうが題名を読みやすい */
+ * 本筋と同じ幅の右の列に横書きのカードで置く（nostrasia.com の広い画面と同じ考え方。
+ * オーナー 2026-11-27「縦書きはスマホ向けだよ」）。1つだけ重なる程度なら、横に並べるほうが題名を読みやすい */
 export const TIMETABLE_SIDE_MIN_INNER_STARTS = 2;
 /** 所要時間0分のコマを描くときの長さ（分）。0分では重なりを判定できない */
 const ZERO_DURATION_MIN = 1;
@@ -56,16 +56,16 @@ export interface TimetableCard {
   startsAt: number;
   /** 終わりの時刻（epoch ms）。所要時間0分のコマは開始と同じ */
   endsAt: number;
-  /** 右の細い列（縦書き）に置く長いコマか（TIMETABLE_SIDE_MIN_INNER_STARTS） */
+  /** 右の並行の列に置く長いコマか（TIMETABLE_SIDE_MIN_INNER_STARTS） */
   side: boolean;
   /** 1 始まりの行番号。行＝コマの始まる時刻（時間の長さには比例させない）。rowEnd は含まない終端 */
   rowStart: number;
   rowEnd: number;
   /** 本筋のカード: 時刻の重なる組の中での位置と、並ぶ数 (#345)。
-   *  細い列のカード: 細い列の番号（0 が本筋のすぐ右）。laneCount は細い列の数 */
+   *  並行の列のカード: 並行の列の番号（0 が右端。早く始まった長い企画ほど右）。laneCount は並行の列の数 */
   lane: number;
   laneCount: number;
-  /** 本筋のカードが、空いている細い列に何本ぶん広がるか（左から連続して空いている本数） */
+  /** 本筋のカードが、空いている並行の列に何本ぶん広がるか（本筋のすぐ右から連続して空いている本数） */
   extendSide: number;
   /** 全トラック共通。場所の札は「全体」で、色はテーマの主色（灰色にしない） */
   common: boolean;
@@ -84,7 +84,7 @@ export interface TimetableLayout {
   cards: TimetableCard[];
   /** 行の時刻（epoch ms、昇順・重複なし）。行＝どれかのコマが始まる時刻 */
   rows: number[];
-  /** 右の細い列の数 */
+  /** 右の並行の列の数（本筋の列と同じ幅） */
   sideLanes: number;
   /** 開始時刻が決まらずタイムラインに置けなかったコマ（日程調整中など） */
   undated: TimetableEntry[];
@@ -107,7 +107,8 @@ export interface TimetableLayout {
  * 「詰まりすぎてて見づらい」「このページのタイムテーブルを参考に」）。
  * - 行は **コマの始まる時刻** だけ。時間の長さに比例させないので、5分の登壇が続いても潰れない
  * - 本筋（短いコマ・全トラック共通）は横幅いっぱいのカード。時刻の重なるものは横に並べる (#345)
- * - 並行して長く続く企画は、右の細い列に縦書きで置き、本筋の幅を奪わない
+ * - 並行して長く続く企画は、右の並行の列（本筋と同じ幅）に横書きのカードで置く。
+ *   本筋のカードは、その時間に空いている並行の列のぶんまで広がる
  * - トラックは列ではなく、色と場所の札で示す（空のトラックが場所を取らない） */
 export function buildTimetableLayout(
   items: ScheduleItem[],
@@ -208,13 +209,14 @@ export function buildTimetableLayout(
     };
   });
 
-  // 細い列: 行の重なりで位置を決める（全体で通しの番号。並ぶ数＝細い列の数）
+  // 並行の列: 行の重なりで位置を決める（全体で通しの番号。並ぶ数＝並行の列の数）
   const side = cards.filter((c) => c.side);
   assignLanes(side);
   const sideLanes = Math.max(0, ...side.map((c) => c.lane + 1));
   for (const c of side) c.laneCount = sideLanes;
 
-  // 本筋: 行の重なる組ごとに横に並べ、組の行の範囲で空いている細い列へ広げる
+  // 本筋: 行の重なる組ごとに横に並べ、組の行の範囲で空いている並行の列へ広げる。
+  // 本筋のすぐ右の列は番号の大きい側（0 が右端）なので、sideLanes-1 から順に見る
   const main = cards.filter((c) => !c.side);
   for (const cluster of assignLanes(main)) {
     const r0 = Math.min(...cluster.map((c) => c.rowStart));
@@ -222,7 +224,7 @@ export function buildTimetableLayout(
     let extend = 0;
     while (
       extend < sideLanes &&
-      !side.some((s) => s.lane === extend && s.rowStart < r1 && r0 < s.rowEnd)
+      !side.some((s) => s.lane === sideLanes - 1 - extend && s.rowStart < r1 && r0 < s.rowEnd)
     ) {
       extend++;
     }

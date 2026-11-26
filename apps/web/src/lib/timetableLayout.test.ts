@@ -232,8 +232,8 @@ describe("entriesForTrack (#338)", () => {
 /**
  * Nostrasia 2026 の実際のタイムテーブル（本番のデータを写したもの）。
  * オーナー 2026-11-27「メイントラックのコンテンツは灰色になってるし、それぞれが詰まりすぎてて見づらい」
- * 「nostrasia.com のタイムテーブルを参考に」。並行して長く続く企画は右の細い列、
- * 本筋の登壇は横幅いっぱい、行は始まる時刻だけ。
+ * 「nostrasia.com のタイムテーブルを参考に」「縦書きはスマホ向けだよ」。並行して長く続く企画は
+ * 右の並行の列（本筋と同じ幅・横書き）、本筋の登壇は空いている列のぶんまで広がる、行は始まる時刻だけ。
  */
 describe("Nostrasia 2026 のタイムライン", () => {
   const at = (h: number, m: number) =>
@@ -276,7 +276,7 @@ describe("Nostrasia 2026 のタイムライン", () => {
   ].map((it, i) => ({ ...it, sortOrder: i }));
   const got = () => buildTimetableLayout(NOSTRASIA, NOSTRASIA_TRACKS, at(12, 30));
 
-  it("フリーマーケット・ボードゲーム・交流スペース・交流タイムは右の細い列、登壇は本筋", () => {
+  it("フリーマーケット・ボードゲーム・交流スペース・交流タイムは右の並行の列、登壇は本筋", () => {
     const g = got();
     const side = g.cards.filter((c) => c.side).map((c) => c.entry.item.id).sort();
 
@@ -284,7 +284,7 @@ describe("Nostrasia 2026 のタイムライン", () => {
     for (const id of ["hello", "s1", "s2", "s3", "s4", "zap1", "lt1", "lt2", "zap2", "magic", "ranking", "bye"]) {
       expect(cardOf(g, id).side).toBe(false);
     }
-    // 細い列どうしは重ならない（同じ番号の細い列で行が重なっていない）
+    // 並行の列どうしは重ならない（同じ番号の列で行が重なっていない）
     const sides = g.cards.filter((c) => c.side);
     for (const a of sides)
       for (const b of sides)
@@ -302,14 +302,38 @@ describe("Nostrasia 2026 のタイムライン", () => {
     expect(new Set(rowsOf).size).toBe(3);
   });
 
-  it("登壇は、その時間に空いている細い列のぶんまで広がる（細い列と重ならない）", () => {
+  it("nostrasia.com の広い画面と同じ並べ方: 列は本筋＋並行の列。フリマは右端、ボードゲームはその左。本筋の幅は 全部→2→1→全部", () => {
     const g = got();
-    // 13:00 の時点ではまだ長い企画が始まっていないので、細い列ぜんぶに広がる
+    const lanes = 1 + g.sideLanes;
+    // 本筋のカードが占める列の数（本筋の列 1 ＋ 広がった並行の列）
+    const span = (id: string) => 1 + cardOf(g, id).extendSide;
+
+    // フリーマーケット（いちばん早く始まる長い企画）が右端（lane 0）、同時刻に始まる交流スペース・ボードゲームはその左
+    expect(cardOf(g, "flea").lane).toBe(0);
+    expect(cardOf(g, "games").lane).toBeGreaterThan(0);
+    expect(cardOf(g, "hangout").lane).toBeGreaterThan(0);
+    // 開場〜13:25 は長い企画の前なので全部の列
+    for (const id of ["open", "hello", "s1", "s2", "flea-intro"]) expect(span(id)).toBe(lanes);
+    // 13:30〜13:45 はフリマの最中。本筋はフリマの左まで
+    for (const id of ["s3", "s4"]) expect(span(id)).toBe(lanes - 1);
+    // 15:00〜17:00 はフリマ・交流スペース・ボードゲームの最中。本筋は1列
+    for (const id of ["zap1", "lt1", "lt2", "zap2"]) expect(span(id)).toBe(1);
+    // 18:00 のマジックショーは長い企画が終わったあと。また全部の列
+    expect(span("magic")).toBe(lanes);
+  });
+
+  it("登壇は、その時間に空いている並行の列のぶんまで広がる（並行の列と重ならない）", () => {
+    const g = got();
+    // 13:00 の時点ではまだ長い企画が始まっていないので、並行の列ぜんぶに広がる
     expect(cardOf(g, "hello").extendSide).toBe(g.sideLanes);
-    // 15:00 のじゃんけんは、交流スペース・ボードゲーム・フリマの最中。どの細い列とも重ならない
-    const zap = cardOf(g, "zap1");
-    const busy = g.cards.filter((c) => c.side && c.rowStart <= zap.rowStart && zap.rowStart < c.rowEnd);
-    for (const s of busy) expect(s.lane).toBeGreaterThanOrEqual(zap.extendSide);
+    // 本筋のカードが広がった並行の列（番号の大きい側から extendSide 本）は、その行で空いている
+    for (const c of g.cards.filter((x) => !x.side)) {
+      const used = new Set(Array.from({ length: c.extendSide }, (_v, k) => g.sideLanes - 1 - k));
+      const clash = g.cards.some(
+        (s) => s.side && used.has(s.lane) && s.rowStart < c.rowEnd && c.rowStart < s.rowEnd,
+      );
+      expect(clash).toBe(false);
+    }
   });
 
   it("全トラック共通のコマは共通のカード（色は描画側でテーマの主色。灰色にしない）", () => {
