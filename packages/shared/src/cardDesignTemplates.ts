@@ -1,10 +1,67 @@
-import { cardDesignSchema, type CardDesign, type CardPart } from "./cardDesign.js";
+import { cardDesignSchema, type CardDesign, type CardPart, type CardPatternTheme } from "./cardDesign.js";
 
 export const cardTemplateIds = ["name", "profile", "role"] as const;
 export type CardTemplateId = typeof cardTemplateIds[number];
 
+/** Colour schemes for the templates, separate from the layout. `accent` is the participant heading, role band and role text;
+ * `staffAccent` repaints the band and role on staff cards so staff are told apart at a glance. Body text stays #101827.
+ * Every accent must keep >= 4.5:1 on white and on each pattern paper: the web adds them to the pattern's legibility list
+ * (NAME_CARD_TEXT_COLORS), so the lines are lightened for them. Keep them about as dark as the original teal/rose. */
+export const cardTemplateColors = {
+  // `earlier`: the lighter teal and rose the template used before, still in saved designs. Recolouring treats them as this scheme.
+  teal: { accent: "#11443F", staffAccent: "#701A3E", fallbackPalette: "indigo", earlier: { accent: ["#0F766E"], staffAccent: ["#9D174D"] } },
+  // Nostr purple; staff in a deep vermilion so the two hues sit far apart on the wheel (264 deg vs 18 deg).
+  purple: { accent: "#4C1D95", staffAccent: "#742200", fallbackPalette: "indigo", earlier: { accent: [], staffAccent: [] } },
+} as const satisfies Record<string, { accent: string; staffAccent: string; fallbackPalette: CardPatternTheme;
+  earlier: { accent: readonly string[]; staffAccent: readonly string[] } }>;
+export type CardTemplateColorId = keyof typeof cardTemplateColors;
+export const cardTemplateColorIds = Object.keys(cardTemplateColors) as CardTemplateColorId[];
+
+/** The parts a scheme paints: the participant heading, role band and role text (common and slot rules), and the staff overrides.
+ * `top-band` is the thin top rule of the earlier template, still in saved designs. Only parts still in the old scheme's colour
+ * change, so colours the organizer picked by hand are kept. */
+const ACCENT_PART_IDS = ["event-title", "role-band", "role", "top-band"] as const;
+const repaint = (part: CardPart, from: readonly string[], to: string): CardPart => {
+  if (!(ACCENT_PART_IDS as readonly string[]).includes(part.id)) return part;
+  const same = (c: string | undefined) => c !== undefined && from.some(f => f.toLowerCase() === c.toLowerCase());
+  if (part.kind === "text" && same(part.color)) return { ...part, color: to };
+  if (part.kind === "rect") {
+    const next = { ...part };
+    let changed = false;
+    if (same(part.color)) { next.color = to; changed = true; }
+    if (same(part.strokeColor)) { next.strokeColor = to; changed = true; }
+    return changed ? next : part;
+  }
+  return part;
+};
+/** The scheme a design is painted in, read from its participant heading/role colours (common, then slot rules). Null when
+ * those parts are gone or were all repainted by hand, so there is nothing to recolour. Derived from the design so undo stays right. */
+export function cardTemplateColorsOf(design: CardDesign): CardTemplateColorId | null {
+  const colors = [...design.common.parts, ...design.slots.flatMap(s => s.rule.parts)]
+    .filter(p => (ACCENT_PART_IDS as readonly string[]).includes(p.id))
+    .flatMap(p => p.kind === "text" ? [p.color] : p.kind === "rect" ? [p.color, p.strokeColor] : [])
+    .filter((c): c is string => c !== undefined).map(c => c.toLowerCase());
+  return cardTemplateColorIds.find(id => {
+    const c = cardTemplateColors[id];
+    return [c.accent, ...c.earlier.accent].some(a => colors.includes(a.toLowerCase()));
+  }) ?? null;
+}
+/** Change only the colours of a design from one scheme to another, keeping the layout, positions and hand-picked colours. */
+export function recolorCardDesign(design: CardDesign, from: CardTemplateColorId, to: CardTemplateColorId): CardDesign {
+  const a = cardTemplateColors[from], b = cardTemplateColors[to];
+  const accents = [a.accent, ...a.earlier.accent], staffAccents = [a.staffAccent, ...a.earlier.staffAccent];
+  const participant = (parts: CardPart[]) => parts.map(p => repaint(p, accents, b.accent));
+  return {
+    ...design,
+    common: { ...design.common, parts: participant(design.common.parts) },
+    staff: design.staff && { ...design.staff, parts: design.staff.parts.map(p => repaint(p, staffAccents, b.staffAccent)) },
+    slots: design.slots.map(s => ({ ...s, rule: { ...s.rule, parts: participant(s.rule.parts) } })),
+  };
+}
+
 /** Every template returns independent, editable parts, never a flattened picture. */
-export function createCardTemplate(template: CardTemplateId): CardDesign {
+export function createCardTemplate(template: CardTemplateId, colors: CardTemplateColorId = "teal"): CardDesign {
+  const scheme = cardTemplateColors[colors];
   const text = (id: string, source: Extract<CardPart, { kind: "text" }>["source"],
     x: number, y: number, width: number, height: number, fontSize: number,
     color = "#101827", bold = false): CardPart => ({
@@ -12,7 +69,7 @@ export function createCardTemplate(template: CardTemplateId): CardDesign {
     align: "start", opacity: 1,
   });
   const parts: CardPart[] = [
-    text("event-title", "event", 56, 42, 860, 60, 40, "#11443F", true),
+    text("event-title", "event", 56, 42, 860, 60, 40, scheme.accent, true),
     text("community", "community", 56, 110, 800, 40, 25),
     text("name", "name", 56, 200, 730, 132, 104, "#101827", true),
     text("handle", "handle", 56, 340, 700, 48, 28),
@@ -23,8 +80,8 @@ export function createCardTemplate(template: CardTemplateId): CardDesign {
       width: 180, height: 180, opacity: 1 },
     // Outline only: a solid band would print a large block of ink.
     { id: "role-band", kind: "rect", x: 56, y: 486, width: 700, height: 108,
-      color: "#11443F", radius: 12, opacity: 1, fill: "none", strokeWidth: 3 },
-    text("role", "role", 80, 509, 652, 64, 44, "#11443F", true),
+      color: scheme.accent, radius: 12, opacity: 1, fill: "none", strokeWidth: 3 },
+    text("role", "role", 80, 509, 652, 64, 44, scheme.accent, true),
     // Printed only for members who answered "No photo" in the registration survey.
     { id: "no-photo", kind: "image", source: "noPhoto", x: 930, y: 24,
       width: 120, height: 120, fit: "contain", opacity: 1 },
@@ -59,8 +116,8 @@ export function createCardTemplate(template: CardTemplateId): CardDesign {
     // Each member's own license-card pattern on the license-card paper; members who never chose one get rosette/indigo.
     // The teal and rose text are dark enough (>= 4.5:1) on every paper tint plus its lines.
     common: { background: { color: "#FFFFFF",
-      pattern: { type: "participant", fallback: { key: "rosette", palette: "indigo" }, strength: 1, paper: "card" } }, parts },
-    staff: { parts: [{ ...band, color: "#701A3E" }, { ...role, color: "#701A3E" }] },
+      pattern: { type: "participant", fallback: { key: "rosette", palette: scheme.fallbackPalette }, strength: 1, paper: "card" } }, parts },
+    staff: { parts: [{ ...band, color: scheme.staffAccent }, { ...role, color: scheme.staffAccent }] },
     slots: [],
   });
 }
