@@ -127,18 +127,12 @@ const ja = {
   /** トラック（並行して走る枠）。トラック名そのものは利用者が入れた値 */
   tracks: "トラック",
   allTracks: "全トラック共通",
-  /** 広い画面のタイムテーブルで、全トラック共通のセッションを並べる列の見出し */
+  /** 広い画面のタイムテーブルで、全トラック共通のセッションに付ける場所の札 */
   commonColumn: "全体",
-  /** セッションの無いトラックの列を隠す／出す（広い画面のタイムテーブル） */
-  showEmptyTracks: "空のトラックも表示（{{names}}）",
-  hideEmptyTracks: "空のトラックを隠す",
-  /** 開催中の「いま」の線に添える時刻 */
+  /** 開催中の「いま」の印に添える時刻 */
   nowLine: "いま {{time}}",
-  /** 枠に添えるトラック名の連結。common.dotSeparator は前後に空きがあり、
-   *  狭い枠では入り切らないのでここだけ空きなしで持つ */
-  trackNameSeparator: "・",
-  /** 単独トラックの枠は列を見れば分かるので、読み上げにだけ出す名前 */
-  trackSrLabel: "トラック{{name}}",
+  /** 開催中のセッションのカードに付ける印 */
+  liveNow: "開催中",
   chooseTrack: "トラックを選ぶ",
   allTracksNote: "全トラック共通のセッションは、どのトラックにも表示されます。",
   trackEmpty: "このトラックのセッションはまだありません。",
@@ -154,10 +148,6 @@ const ja = {
     "開始時刻が他のセッションから離れているため表に載せていません",
   unassignedHeading: "未割り当て",
   notShownToParticipants: "参加者には出ません",
-  /** 枠の描き分けの凡例。「全トラック共通」は allTracks を使う */
-  legendSingleTrack: "特定のトラック",
-  legendSpanning: "複数のトラックにまたがる",
-
   /** 準備・片付けなど、参加者に見せない段取り (#383)。
    *  **実装上の列名（visibility など）は文言に出さない**。利用者から見た
    *  「運営だけに見える」「参加者には出ない」という振る舞いだけを伝える */
@@ -355,11 +345,8 @@ const en: Record<keyof typeof ja, string> = {
   tracks: "Tracks",
   allTracks: "All tracks",
   commonColumn: "All tracks",
-  showEmptyTracks: "Show empty tracks ({{names}})",
-  hideEmptyTracks: "Hide empty tracks",
   nowLine: "Now {{time}}",
-  trackNameSeparator: ", ",
-  trackSrLabel: "Track: {{name}}",
+  liveNow: "Live now",
   chooseTrack: "Choose a track",
   allTracksNote: "Sessions marked for all tracks appear under every track.",
   trackEmpty: "No sessions on this track yet.",
@@ -374,8 +361,6 @@ const en: Record<keyof typeof ja, string> = {
     "Left off the grid: the start time is far from every other session",
   unassignedHeading: "Unassigned",
   notShownToParticipants: "Hidden from participants",
-  legendSingleTrack: "One track",
-  legendSpanning: "Spans several tracks",
 
   staffOnly: "Organizers only",
   staffOnlyChip: "Organizers only (hidden from participants)",

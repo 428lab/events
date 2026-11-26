@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Box, Button, Chip, Stack, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -27,8 +26,6 @@ export function EventTimetablePage() {
   // 広い画面は格子、狭い画面はトラック選択のタブ＋縦一覧。
   // 3本のトラックを並べるだけで 700px 近く要るので md で切り替える
   const wide = useMediaQuery(theme.breakpoints.up("md"));
-  // セッションの無いトラックの列は既定で隠す（広い画面だけ。スマホのタブは全部出す）
-  const [showEmptyTracks, setShowEmptyTracks] = useState(false);
 
   if (!eventData || !data) return <Typography>{t("common.loading")}</Typography>;
 
@@ -39,7 +36,6 @@ export function EventTimetablePage() {
     data.items,
     data.tracks,
     event.scheduling ? null : event.startsAt,
-    { showEmptyTracks },
   );
   // 色は**公開トラックの本数だけ**で作る (#383)。スタッフ用の列を本数に
   // 混ぜると、同じトラックが参加者と運営で別の色になる
@@ -81,7 +77,7 @@ export function EventTimetablePage() {
           >
             {t("staffOps.todoFromTimetable")}
           </Button>
-          {layout.blocks.length === 0 && (
+          {layout.cards.length === 0 && (
             <Typography variant="body2" color="text.secondary">
               {t("staffOps.todoScopeNote")}
             </Typography>
@@ -93,22 +89,18 @@ export function EventTimetablePage() {
         <Typography variant="body2" color="text.secondary">
           {t("schedule.noTracks")}
         </Typography>
-      ) : layout.blocks.length === 0 && wide ? (
+      ) : layout.cards.length === 0 && wide ? (
         <Typography variant="body2" color="text.secondary">
           {t("schedule.noTimedSessions")}
         </Typography>
       ) : wide ? (
         <>
-          <TimetableGrid
+          <TimetableGrid layout={layout} colors={colors} />
+          {/* 場所（トラック）の色の凡例。カードの左の線と場所の札が同じ色。
+              裏方の凡例は、裏方が実際に届いているときだけ出す (#383) */}
+          <Legend
             layout={layout}
             colors={colors}
-            showingEmptyTracks={showEmptyTracks}
-            onToggleEmptyTracks={() => setShowEmptyTracks((v) => !v)}
-          />
-          {/* 裏方の凡例は、裏方が実際に届いているときだけ出す (#383)。
-              参加者には裏方が1件も来ないので、無条件に出すと
-              「運営のみ」の凡例だけが並んで意味が分からない */}
-          <Legend
             withStaff={
               layout.entries.some((e) => e.staffOnly) ||
               layout.tracks.some((track) => track.visibility === "staff")
@@ -187,82 +179,65 @@ export function EventTimetablePage() {
   );
 }
 
-/** 枠の描き分けの凡例。色だけでは5本を超えると区別が付かないので言葉で補う。
+/** 場所の色の凡例。トラックは列で分けず、カードの左の線と場所の札の色で示すので、
+ * 色と名前の対応をここに並べる（色だけでは5本を超えると区別が付かないので名前も出す）。
  * `withStaff` は裏方 (#383) が実際に届いているときだけ true になる */
-function Legend({ withStaff }: { withStaff: boolean }) {
+function Legend({
+  layout,
+  colors,
+  withStaff,
+}: {
+  layout: ReturnType<typeof buildTimetableLayout>;
+  colors: Array<string | null>;
+  withStaff: boolean;
+}) {
   const { t } = useTranslation();
   const theme = useTheme();
-  const swatch = {
-    display: "inline-block",
-    width: 26,
-    height: 14,
-    borderRadius: "4px",
-    mr: 0.75,
-    verticalAlign: "-2px",
-  } as const;
+  const light = theme.palette.mode === "light";
+  const used = new Set(layout.cards.flatMap((c) => c.trackIndexes));
+  const swatch = (color: string, dashed = false) => (
+    <Box
+      component="span"
+      sx={{
+        display: "inline-block",
+        width: 22,
+        height: 14,
+        borderRadius: "3px",
+        mr: 0.75,
+        verticalAlign: "-2px",
+        border: "1px solid",
+        borderStyle: dashed ? "dashed" : "solid",
+        borderColor: alpha(theme.palette.text.primary, 0.2),
+        borderLeft: `5px solid ${color}`,
+        bgcolor: alpha(color, light ? 0.08 : 0.14),
+      }}
+    />
+  );
   return (
     <Stack
       direction="row"
       spacing={2}
       flexWrap="wrap"
       useFlexGap
-      sx={{ color: "text.secondary", fontSize: "0.75rem", alignItems: "center" }}
+      sx={{ color: "text.secondary", fontSize: "0.8rem", alignItems: "center" }}
     >
-      <Box component="span">
-        <Box
-          component="span"
-          sx={{
-            ...swatch,
-            bgcolor: alpha(theme.palette.primary.main, 0.16),
-            borderTop: "3px solid",
-            borderTopColor: "primary.main",
-          }}
-        />
-        {t("schedule.legendSingleTrack")}
-      </Box>
-      <Box component="span">
-        <Box
-          component="span"
-          sx={{
-            ...swatch,
-            bgcolor: alpha(theme.palette.primary.main, 0.16),
-            borderTop: "3px solid",
-            borderTopColor: "primary.main",
-            boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.primary.main, 0.5)}`,
-          }}
-        />
-        {t("schedule.legendSpanning")}
-      </Box>
-      <Box component="span">
-        <Box
-          component="span"
-          sx={{
-            ...swatch,
-            bgcolor: alpha(theme.palette.text.primary, 0.08),
-            borderLeft: "3px solid",
-            borderLeftColor: alpha(theme.palette.text.primary, 0.45),
-          }}
-        />
-        {t("schedule.allTracks")}
-      </Box>
-      {/* 裏方 (#383)。参加者には届かないので、staff にしか出ない凡例 */}
+      {layout.cards.some((c) => c.common) && (
+        <Box component="span">
+          {swatch(theme.palette.primary.main)}
+          {t("schedule.allTracks")}
+        </Box>
+      )}
+      {layout.tracks.map((track, i) =>
+        used.has(i) ? (
+          <Box component="span" key={track.id}>
+            {swatch(colors[i] ?? theme.palette.text.secondary)}
+            {track.name}
+          </Box>
+        ) : null,
+      )}
       {withStaff && (
         <Box component="span">
-          <Box
-            component="span"
-            sx={{
-              ...swatch,
-              backgroundImage: `repeating-linear-gradient(135deg, ${alpha(
-                theme.palette.text.primary,
-                0.08,
-              )} 0 8px, ${alpha(theme.palette.text.primary, 0.03)} 8px 16px)`,
-              bgcolor: alpha(theme.palette.background.paper, 0.72),
-              border: "1px dashed",
-              borderColor: "divider",
-              borderLeft: "3px solid",
-              borderLeftColor: alpha(theme.palette.text.primary, 0.4),
-            }}
-          />
+          {swatch(theme.palette.text.secondary, true)}
           {t("schedule.staffOnlyChip")}
         </Box>
       )}
