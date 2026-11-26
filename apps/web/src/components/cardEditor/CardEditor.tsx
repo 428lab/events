@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, Divider, FormControlLabel, List, ListItemButton, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import { cardDesignAssetIds, cardDesignSchema, cardTemplateIds, createCardTemplate, type CardDesign, type CardPart, type EventNameCard, type SavedCardDesign, type CardTemplateId } from "@eventer/shared";
+import { cardDesignAssetIds, cardDesignSchema, cardTemplateColorIds, cardTemplateIds, cardTemplateColorsOf, createCardTemplate, recolorCardDesign, type CardDesign, type CardPart, type CardTemplateColorId, type EventNameCard, type SavedCardDesign, type CardTemplateId } from "@eventer/shared";
 import { api, ApiError } from "../../api/client.js";
 import { cardAssetsKey, cardDesignKey, uploadCardAsset, type CardAsset } from "../../api/cardDesignHooks.js";
 import type { EventCardContext } from "../licenseCard/EventCardSvg.js";
@@ -29,6 +29,8 @@ export function CardEditor({ initial, context, members, assets, slots }: {
   const [gridSize, setGridSize] = useState(16);
   const [target, setTarget] = useState<EditTarget>("common");
   const [template, setTemplate] = useState<CardTemplateId>("name");
+  // 選んでいる配色。保存はしない（色は部品に入る）。塗り替え元はデザインから読む（元に戻すでもずれない）
+  const [colors, setColors] = useState<CardTemplateColorId>("teal");
   const [kind, setKind] = useState<CardPart["kind"]>("text");
   const [memberId, setMemberId] = useState(members[0]?.id ?? "");
   const [addedAssets, setAddedAssets] = useState<CardAsset[]>([]);
@@ -43,6 +45,7 @@ export function CardEditor({ initial, context, members, assets, slots }: {
   const latestDesign = useRef(design); latestDesign.current = design;
   const dirty = JSON.stringify(design) !== baseline;
   const allAssets = useMemo(() => [...new Map([...assets, ...addedAssets].map(a => [a.id, a])).values()].filter(a => !removedAssets.includes(a.id)), [assets, addedAssets, removedAssets]);
+  const currentColors = cardTemplateColorsOf(design);
   const layout = targetLayout(design, target);
   const part = layout.parts.find(p => p.id === selected);
   const sample: EventNameCard = {
@@ -137,6 +140,7 @@ export function CardEditor({ initial, context, members, assets, slots }: {
     text: t("staffOps.cardEditorText"), image: t("staffOps.cardEditorImage"), rect: t("staffOps.cardEditorRect"),
     qr: t("staffOps.cardEditorQr"), stats: t("staffOps.cardEditorStats"),
   };
+  const colorLabels = { teal: "staffOps.cardEditorColorsTeal", purple: "staffOps.cardEditorColorsPurple" } as const satisfies Record<CardTemplateColorId, string>;
   const sourceLabels = {
     literal: t("staffOps.cardEditorLiteral"), name: t("staffOps.cardEditorName"), handle: t("staffOps.cardEditorHandle"),
     event: t("staffOps.cardEditorEvent"), community: t("staffOps.cardEditorCommunity"), role: t("staffOps.cardEditorRole"), slot: t("staffOps.cardEditorSlot"),
@@ -154,7 +158,12 @@ export function CardEditor({ initial, context, members, assets, slots }: {
           t("staffOps.cardEditorTemplateName"), t("staffOps.cardEditorTemplateProfile"), t("staffOps.cardEditorTemplateRole"),
         ][i]}</MenuItem>)}
       </TextField>
-      <Button onClick={() => { if (window.confirm(t("staffOps.cardEditorReplaceConfirm"))) { change(createCardTemplate(template)); setTarget("common"); setSelected(null); } }}>{t("staffOps.cardEditorApplyTemplate")}</Button>
+      <TextField select size="small" label={t("staffOps.cardEditorColors")} value={colors} onChange={e => setColors(e.target.value as CardTemplateColorId)} sx={{ minWidth: 180 }}>
+        {cardTemplateColorIds.map(id => <MenuItem key={id} value={id}>{t(colorLabels[id])}</MenuItem>)}
+      </TextField>
+      <Button onClick={() => { if (window.confirm(t("staffOps.cardEditorReplaceConfirm"))) { change(createCardTemplate(template, colors)); setTarget("common"); setSelected(null); } }}>{t("staffOps.cardEditorApplyTemplate")}</Button>
+      <Button title={t("staffOps.cardEditorRecolorHelp")} disabled={!currentColors || colors === currentColors}
+        onClick={() => { if (currentColors) change(recolorCardDesign(design, currentColors, colors)); }}>{t("staffOps.cardEditorRecolor")}</Button>
       <Button disabled={!history.canUndo} onClick={history.undo}>{t("staffOps.cardEditorUndo")}</Button>
       <Button disabled={!history.canRedo} onClick={history.redo}>{t("staffOps.cardEditorRedo")}</Button>
       <Button variant="contained" disabled={saving || uploading || !dirty} onClick={() => void save()}>{t("staffOps.cardEditorSave")}</Button>

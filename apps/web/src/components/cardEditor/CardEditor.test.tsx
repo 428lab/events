@@ -70,6 +70,24 @@ describe("card editor operations (#506)", () => {
     expect(container.querySelector('[data-card-part="no-photo"] image')).toHaveAttribute("href", "/api/events/event/name-card-assets/mark");
   });
 
+  it("changes the colours only (Nostr purple) keeping the layout, and undo brings the teal back", async () => {
+    const design = createCardTemplate("name");
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={qc}><MemoryRouter><CardEditor initial={{ revision: 1, design }}
+      context={{ eventId: "event", title: "Event", eventUrl: "https://example.com/events/event", origin: "https://example.com", communityName: "", communityLogo: null }}
+      members={[]} assets={[]} slots={[]} /></MemoryRouter></QueryClientProvider>);
+    const roleFill = () => container.querySelector('[data-card-part="role"] g[fill]')?.getAttribute("fill");
+    expect(roleFill()).toBe("#11443F");
+    expect(screen.getByRole("button", { name: "配色だけ変える" })).toBeDisabled();
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "配色" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Nostr パープル" }));
+    fireEvent.click(screen.getByRole("button", { name: "配色だけ変える" }));
+    expect(roleFill()).toBe("#4C1D95");
+    expect(screen.getByRole("button", { name: "配色だけ変える" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "元に戻す" }));
+    expect(roleFill()).toBe("#11443F");
+  });
+
   it("keeps grid preferences out of saved cards and persists a rectangle's radius", async () => {
     const design = createCardTemplate("name"), expected = structuredClone(design);
     const band = expected.common.parts.find(p => p.id === "role-band");
