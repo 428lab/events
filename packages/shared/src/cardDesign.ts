@@ -40,13 +40,13 @@ export const cardPartSchema = z.discriminatedUnion("kind", [
 export type CardPart = z.infer<typeof cardPartSchema>;
 /** Built-in background patterns and the palettes each one ships with. The web app draws them; keys are checked here so the server rejects unknown ones too.
  * Guilloché backgrounds are generated line work; `license-*` are the license-card patterns (CardDecor). */
-export const CARD_PATTERN_THEMES = ["indigo", "teal", "rose", "amber", "mono"] as const;
+export const CARD_PATTERN_THEMES = ["indigo", "teal", "rose", "amber", "mono", "purple"] as const;
 export type CardPatternTheme = typeof CARD_PATTERN_THEMES[number];
 export const CARD_PATTERN_CATALOGUE = {
-  rosette: ["indigo", "teal", "rose", "amber", "mono"],
-  mesh: ["indigo", "teal", "rose", "amber", "mono"],
-  engine: ["amber", "indigo", "teal", "mono"],
-  ribbons: ["rose", "indigo", "teal", "amber"],
+  rosette: ["indigo", "teal", "rose", "amber", "mono", "purple"],
+  mesh: ["indigo", "teal", "rose", "amber", "mono", "purple"],
+  engine: ["amber", "indigo", "teal", "mono", "purple"],
+  ribbons: ["rose", "indigo", "teal", "amber", "purple"],
   "license-rosette": CARD_PATTERN_THEMES,
   "license-topo": CARD_PATTERN_THEMES,
   "license-arcs": CARD_PATTERN_THEMES,
@@ -137,6 +137,7 @@ export const cardDesignSchema = z.object({
 });
 export type CardDesign = z.infer<typeof cardDesignSchema>;
 export type CardLayout = z.infer<typeof cardLayoutSchema>;
+export type CardBackground = z.infer<typeof cardBackgroundSchema>;
 export type CardRule = z.infer<typeof ruleSchema>;
 export interface SavedCardDesign { revision: number; design: CardDesign | null }
 

@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, Divider, FormControlLabel, List, ListItemButton, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import { cardDesignAssetIds, cardDesignSchema, cardTemplateColorIds, cardTemplateIds, cardTemplateColorsOf, createCardTemplate, recolorCardDesign, type CardDesign, type CardPart, type CardTemplateColorId, type EventNameCard, type SavedCardDesign, type CardTemplateId } from "@eventer/shared";
+import { cardDesignAssetIds, cardDesignSchema, cardTemplateColorIds, cardTemplateIds, cardTemplateColorsOf, createCardTemplate, hasSchemeBackground, recolorCardDesign, type CardDesign, type CardPart, type CardTemplateColorId, type EventNameCard, type SavedCardDesign, type CardTemplateId } from "@eventer/shared";
 import { api, ApiError } from "../../api/client.js";
 import { cardAssetsKey, cardDesignKey, uploadCardAsset, type CardAsset } from "../../api/cardDesignHooks.js";
 import type { EventCardContext } from "../licenseCard/EventCardSvg.js";
@@ -162,12 +162,14 @@ export function CardEditor({ initial, context, members, assets, slots }: {
         {cardTemplateColorIds.map(id => <MenuItem key={id} value={id}>{t(colorLabels[id])}</MenuItem>)}
       </TextField>
       <Button onClick={() => { if (window.confirm(t("staffOps.cardEditorReplaceConfirm"))) { change(createCardTemplate(template, colors)); setTarget("common"); setSelected(null); } }}>{t("staffOps.cardEditorApplyTemplate")}</Button>
-      <Button title={t("staffOps.cardEditorRecolorHelp")} disabled={!currentColors || colors === currentColors}
+      {/* 同じ配色でも、背景がまだ一人ずつ違う柄なら押せる（色をそろえるのは背景も含む） */}
+      <Button title={t("staffOps.cardEditorRecolorHelp")} disabled={!currentColors || (colors === currentColors && hasSchemeBackground(design, colors))}
         onClick={() => { if (currentColors) change(recolorCardDesign(design, currentColors, colors)); }}>{t("staffOps.cardEditorRecolor")}</Button>
       <Button disabled={!history.canUndo} onClick={history.undo}>{t("staffOps.cardEditorUndo")}</Button>
       <Button disabled={!history.canRedo} onClick={history.redo}>{t("staffOps.cardEditorRedo")}</Button>
       <Button variant="contained" disabled={saving || uploading || !dirty} onClick={() => void save()}>{t("staffOps.cardEditorSave")}</Button>
     </Stack>
+    <Typography variant="caption" color="text.secondary">{t("staffOps.cardEditorRecolorHelp")}</Typography>
     <Accordion><AccordionSummary>{t("staffOps.cardEditorCopy")}</AccordionSummary><AccordionDetails>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
         <TextField fullWidth size="small" label={t("staffOps.cardEditorCopyEvent")} value={copySource} onChange={e => setCopySource(e.target.value)} />

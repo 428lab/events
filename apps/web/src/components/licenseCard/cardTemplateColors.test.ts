@@ -77,8 +77,23 @@ describe("card template colour schemes", () => {
     expect(out.slots[0]!.rule.parts[0]!.kind === "text" && out.slots[0]!.rule.parts[0]!.fontSize).toBe(50);
     expect(out.staff!.parts.map(p => color([p], p.id))).toEqual(["#742200", "#742200"]);
     // Everything else is untouched, and going back restores the original.
-    expect(out.common.background).toEqual(moved.common.background);
     expect(recolorCardDesign(out, "purple", "teal").common.parts).toEqual(moved.common.parts.map(p =>
       p.id === "role" || p.id === "role-band" || p.id === "top-band" ? { ...p, color: "#11443F" } : p));
+  });
+
+  // オーナー 2026-11-27「スタッフなのに色がバラバラだ」「Nostrパープルにしても何も変わらなかった」:
+  // the background was each member's own card pattern, so the scheme must also make it uniform.
+  it("changing colours also puts everyone on the same pattern in the scheme's palette, staff in theirs, keeping strength and paper", () => {
+    const design = createCardTemplate("name");
+    design.common.background.pattern = { type: "participant", fallback: { key: "mesh", palette: "indigo" }, strength: 0.6, paper: "none" };
+    design.slots = [{ slotId: "slot-1", rule: { parts: [], hiddenIds: [], background: { ...design.common.background, color: "#FFEEEE" } } }];
+    const out = recolorCardDesign(design, "teal", "purple");
+    expect(out.common.background.pattern).toEqual({ type: "builtin", key: "mesh", palette: "purple", strength: 0.6, paper: "none" });
+    expect(out.staff!.background!.pattern).toEqual({ type: "builtin", key: "mesh", palette: "amber", strength: 0.6, paper: "none" });
+    expect(out.slots[0]!.rule.background).toBeUndefined();
+    // A pattern that doesn't offer the palette falls back to rosette (every pattern offers purple now).
+    for (const palettes of Object.values(CARD_PATTERN_CATALOGUE)) expect(palettes).toContain("purple");
+    expect(cardTemplateColors.purple.fallbackPalette).toBe("purple");
+    expect(createCardTemplate("name", "purple").common.background.pattern).toMatchObject({ type: "participant", fallback: { palette: "purple" } });
   });
 });

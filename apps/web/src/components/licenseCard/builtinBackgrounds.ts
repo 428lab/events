@@ -313,6 +313,7 @@ const THEME_NAMES: Record<CardThemeKey, { ja: string; en: string; accent: string
   rose: { ja: "ローズ", en: "Rose", accent: "#701A3E" },
   amber: { ja: "アンバー", en: "Amber", accent: "#7C2D12" },
   mono: { ja: "モノ", en: "Mono", accent: "#1E293B" },
+  purple: { ja: "パープル", en: "Purple", accent: "#4C1D95" },
 };
 const themePalette = (key: CardThemeKey): BuiltinBackgroundPalette => {
   const theme = CARD_THEMES.find(t => t.key === key)!;
@@ -326,10 +327,10 @@ const themePalette = (key: CardThemeKey): BuiltinBackgroundPalette => {
 const palettes = (...keys: CardThemeKey[]) => keys.map(themePalette);
 
 export const BUILTIN_BACKGROUNDS: readonly BuiltinBackground[] = [
-  { key: "rosette", nameJa: "ロゼット", nameEn: "Guilloché Rosette", draw: drawRosette, palettes: palettes("indigo", "teal", "rose", "amber", "mono") },
-  { key: "ribbons", nameJa: "リボン", nameEn: "Ribbons", draw: drawRibbons, palettes: palettes("rose", "indigo", "teal", "amber") },
-  { key: "engine", nameJa: "旋盤彫り", nameEn: "Engine Turned", draw: drawEngineTurned, palettes: palettes("amber", "indigo", "teal", "mono") },
-  { key: "mesh", nameJa: "セキュリティメッシュ", nameEn: "Security Mesh", draw: drawMesh, palettes: palettes("indigo", "teal", "rose", "amber", "mono") },
+  { key: "rosette", nameJa: "ロゼット", nameEn: "Guilloché Rosette", draw: drawRosette, palettes: palettes("indigo", "teal", "rose", "amber", "mono", "purple") },
+  { key: "ribbons", nameJa: "リボン", nameEn: "Ribbons", draw: drawRibbons, palettes: palettes("rose", "indigo", "teal", "amber", "purple") },
+  { key: "engine", nameJa: "旋盤彫り", nameEn: "Engine Turned", draw: drawEngineTurned, palettes: palettes("amber", "indigo", "teal", "mono", "purple") },
+  { key: "mesh", nameJa: "セキュリティメッシュ", nameEn: "Security Mesh", draw: drawMesh, palettes: palettes("indigo", "teal", "rose", "amber", "mono", "purple") },
 ];
 
 export function findBuiltinBackground(key: string): BuiltinBackground | undefined {

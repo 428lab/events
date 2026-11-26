@@ -1,4 +1,4 @@
-import { cardDesignSchema, type CardDesign, type CardPart, type CardPatternTheme } from "./cardDesign.js";
+import { cardDesignSchema, isCardPatternChoice, type CardBackground, type CardDesign, type CardPart, type CardPatternKey, type CardPatternTheme } from "./cardDesign.js";
 
 export const cardTemplateIds = ["name", "profile", "role"] as const;
 export type CardTemplateId = typeof cardTemplateIds[number];
@@ -9,10 +9,11 @@ export type CardTemplateId = typeof cardTemplateIds[number];
  * (NAME_CARD_TEXT_COLORS), so the lines are lightened for them. Keep them about as dark as the original teal/rose. */
 export const cardTemplateColors = {
   // `earlier`: the lighter teal and rose the template used before, still in saved designs. Recolouring treats them as this scheme.
-  teal: { accent: "#11443F", staffAccent: "#701A3E", fallbackPalette: "indigo", earlier: { accent: ["#0F766E"], staffAccent: ["#9D174D"] } },
+  teal: { accent: "#11443F", staffAccent: "#701A3E", fallbackPalette: "indigo", staffPalette: "rose", earlier: { accent: ["#0F766E"], staffAccent: ["#9D174D"] } },
   // Nostr purple; staff in a deep vermilion so the two hues sit far apart on the wheel (264 deg vs 18 deg).
-  purple: { accent: "#4C1D95", staffAccent: "#742200", fallbackPalette: "indigo", earlier: { accent: [], staffAccent: [] } },
-} as const satisfies Record<string, { accent: string; staffAccent: string; fallbackPalette: CardPatternTheme;
+  // The background follows too: everyone on the purple pattern, staff on amber (the palette closest to the vermilion band).
+  purple: { accent: "#4C1D95", staffAccent: "#742200", fallbackPalette: "purple", staffPalette: "amber", earlier: { accent: [], staffAccent: [] } },
+} as const satisfies Record<string, { accent: string; staffAccent: string; fallbackPalette: CardPatternTheme; staffPalette: CardPatternTheme;
   earlier: { accent: readonly string[]; staffAccent: readonly string[] } }>;
 export type CardTemplateColorId = keyof typeof cardTemplateColors;
 export const cardTemplateColorIds = Object.keys(cardTemplateColors) as CardTemplateColorId[];
@@ -46,16 +47,42 @@ export function cardTemplateColorsOf(design: CardDesign): CardTemplateColorId | 
     return [c.accent, ...c.earlier.accent].some(a => colors.includes(a.toLowerCase()));
   }) ?? null;
 }
-/** Change only the colours of a design from one scheme to another, keeping the layout, positions and hand-picked colours. */
+/** The same built-in pattern for every card, in the given palette. Keeps the pattern's strength and paper, and the key when it
+ * offers that palette (rosette otherwise). Replaces "each member's own card background", which made cards differ per person. */
+function uniformBackground(background: CardBackground, palette: CardPatternTheme): CardBackground {
+  const pattern = background.pattern;
+  const current: string = pattern?.type === "builtin" ? pattern.key : pattern?.type === "participant" ? pattern.fallback.key : "rosette";
+  const key = (isCardPatternChoice(current, palette) ? current : "rosette") as CardPatternKey;
+  const { assetId: _image, ...rest } = background;
+  return { ...rest, pattern: { type: "builtin", key, palette, strength: pattern?.strength ?? 1, paper: pattern?.paper ?? "card" } };
+}
+
+/** Whether the design already has the scheme's uniform background (everyone on the same pattern in its palette, staff in theirs). */
+export function hasSchemeBackground(design: CardDesign, id: CardTemplateColorId): boolean {
+  const c = cardTemplateColors[id];
+  const is = (b: CardBackground | undefined, palette: CardPatternTheme) => b?.pattern?.type === "builtin" && b.pattern.palette === palette;
+  return is(design.common.background, c.fallbackPalette) && is(design.staff?.background, c.staffPalette)
+    && design.slots.every(s => !s.rule.background);
+}
+
+/** Change a design from one scheme to another: the accents (keeping the layout, positions and hand-picked colours) and the
+ * background, which becomes one built-in pattern for everyone in the scheme's palette, with staff in `staffPalette`.
+ * Slot rules lose their own background so every participant matches; staff get theirs on the staff rule. */
 export function recolorCardDesign(design: CardDesign, from: CardTemplateColorId, to: CardTemplateColorId): CardDesign {
   const a = cardTemplateColors[from], b = cardTemplateColors[to];
   const accents = [a.accent, ...a.earlier.accent], staffAccents = [a.staffAccent, ...a.earlier.staffAccent];
   const participant = (parts: CardPart[]) => parts.map(p => repaint(p, accents, b.accent));
+  const background = uniformBackground(design.common.background, b.fallbackPalette);
+  const staff = design.staff ?? { parts: [], hiddenIds: [] };
   return {
     ...design,
-    common: { ...design.common, parts: participant(design.common.parts) },
-    staff: design.staff && { ...design.staff, parts: design.staff.parts.map(p => repaint(p, staffAccents, b.staffAccent)) },
-    slots: design.slots.map(s => ({ ...s, rule: { ...s.rule, parts: participant(s.rule.parts) } })),
+    common: { ...design.common, background, parts: participant(design.common.parts) },
+    staff: { ...staff, background: uniformBackground(background, b.staffPalette),
+      parts: staff.parts.map(p => repaint(p, staffAccents, b.staffAccent)) },
+    slots: design.slots.map(s => {
+      const { background: _own, ...rule } = s.rule;
+      return { ...s, rule: { ...rule, parts: participant(s.rule.parts) } };
+    }),
   };
 }
 
