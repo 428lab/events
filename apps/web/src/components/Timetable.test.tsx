@@ -124,7 +124,7 @@ describe("TimetableGrid（広い画面のタイムライン）", () => {
     expect(container.querySelectorAll("time")).toHaveLength(got.rows.length);
   });
 
-  it("並行して長く続く企画は、右の細い列に縦書きで置く", () => {
+  it("並行して長く続く企画は、右の並行の列に横書きの普通のカードで置く（縦書きにしない。等幅の列）", () => {
     const at = (h: number, m: number) => START + ((h - 10) * 60 + m) * 60_000;
     const got = buildTimetableLayout(
       [
@@ -141,6 +141,18 @@ describe("TimetableGrid（広い画面のタイムライン）", () => {
 
     expect(long.hasAttribute("data-timetable-side")).toBe(true);
     expect(blocksOf(container, "it-t1")[0]!.hasAttribute("data-timetable-side")).toBe(false);
+    // 並行の列のカードにも、時間・題名・場所の札（横書き）
+    expect(long.textContent).toContain("フリーマーケット");
+    expect(long.textContent).toContain("C（ワークショップ室）");
+    // 広い画面では縦書きにしない（オーナー 2026-11-27「縦書きはスマホ向けだよ」）
+    for (const el of [long, ...long.querySelectorAll<HTMLElement>("*")]) {
+      expect(getComputedStyle(el).writingMode || "horizontal-tb").not.toMatch(/vertical/);
+    }
+    // 列は本筋と並行の列で同じ幅（等幅）
+    const grid = long.parentElement!;
+    expect(grid.style.gridTemplateColumns || getComputedStyle(grid).gridTemplateColumns).toContain(
+      `repeat(${1 + got.sideLanes}, minmax(0, 1fr))`,
+    );
   });
 
   it("表としてではなく、名前の付いた領域として置く", () => {
