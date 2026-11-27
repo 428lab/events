@@ -91,7 +91,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @eventer/web test -- --shard=${{ matrix.shard }}/2
+      # `--` を挟むと pnpm が vitest に引数ごと渡さず全件を流してしまうので、挟まない
+      - run: pnpm --filter @eventer/web test --shard=${{ matrix.shard }}/2
 
   # フロントをビルド（tsc も走る。Worker の ASSETS バインディングが apps/web/dist を配信する）。
   # テストと同時に作っておき、deploy はこの dist をそのまま使う（同じコミットのビルドを2回しない）。
