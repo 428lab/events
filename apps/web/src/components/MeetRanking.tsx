@@ -174,10 +174,12 @@ export function MeetRankingBoard({
           from: { opacity: 0 },
           to: { opacity: 1 },
         },
-        // 明かした瞬間: 名前が少し下から浮かび上がる（動きを減らす設定では動かさない）
+        // 明かした瞬間: 行がカードのようにくるっとめくれて名前が出る（オーナー 2026-11-27
+        // 「ポチッと押すとめくれるように」）。動きを減らす設定では動かさずに切り替える
         "@keyframes meetReveal": {
-          from: { opacity: 0, transform: "translateY(30%)" },
-          to: { opacity: 1, transform: "none" },
+          "0%": { opacity: 0, transform: "perspective(600px) rotateX(-90deg)" },
+          "60%": { opacity: 1, transform: "perspective(600px) rotateX(12deg)" },
+          "100%": { opacity: 1, transform: "none" },
         },
         "@media (prefers-reduced-motion: reduce)": {
           "& *": { animation: "none !important", transition: "none !important" },
@@ -217,8 +219,9 @@ export function MeetRankingBoard({
             px: 1,
             // 順位変動はこの transition が受け持つ
             transition: "top 500ms ease",
-            // 圏外→圏内の行はフェードイン
-            animation: "meetRowIn 400ms ease",
+            // 圏外→圏内の行はフェードイン。明かされた行は、めくれる動きにする（key が名前の行に替わって1回だけ再生される）
+            animation: r.revealed ? "meetReveal 700ms ease" : "meetRowIn 400ms ease",
+            transformOrigin: "center",
           }}
         >
           <Typography
@@ -242,7 +245,6 @@ export function MeetRankingBoard({
                 height: (r.top3 ? 64 : 44) * scale,
                 fontSize: (r.top3 ? 30 : 20) * scale,
                 ...(r.hidden ? { bgcolor: "rgba(151,163,188,0.25)", color: BOARD_SUB } : {}),
-                ...(r.revealed ? { animation: "meetReveal 600ms ease" } : {}),
               }}
             >
               {r.hidden ? "?" : r.label.charAt(0)}
@@ -258,7 +260,6 @@ export function MeetRankingBoard({
               fontWeight: r.top3 ? 800 : 600,
               color: r.hidden ? BOARD_SUB : BOARD_TEXT,
               letterSpacing: r.hidden ? "0.2em" : undefined,
-              ...(r.revealed ? { animation: "meetReveal 600ms ease" } : {}),
             }}
           >
             {r.label}
