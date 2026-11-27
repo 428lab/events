@@ -388,7 +388,11 @@ describe("出会いランキングの目隠し", () => {
     // 次は、まだ出ていないうちのいちばん下の順位（4位の d）
     expect(await (await reveal(eventId, owner.cookie, { action: "next" })).json()).toEqual({ changed: 1 });
     expect(await shown()).toContain(d.userId);
-    expect(await (await reveal(eventId, owner.cookie, { action: "all" })).json()).toEqual({ changed: 1 });
+    // もう1回押すと隠す（同率2位は2人とも戻る）。隠れている順位を hide しても何も変わらない
+    expect(await (await reveal(eventId, owner.cookie, { action: "hide", rank: 2 })).json()).toEqual({ changed: 2 });
+    expect(await shown()).toEqual([d.userId]);
+    expect(await (await reveal(eventId, owner.cookie, { action: "hide", rank: 1 })).json()).toEqual({ changed: 0 });
+    expect(await (await reveal(eventId, owner.cookie, { action: "all" })).json()).toEqual({ changed: 3 });
     expect((await shown()).sort()).toEqual([a, b, c, d].map((u) => u.userId).sort());
     expect(await (await reveal(eventId, owner.cookie, { action: "reset" })).json()).toEqual({ changed: 4 });
     expect(await shown()).toEqual([]);

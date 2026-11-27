@@ -163,6 +163,7 @@ export const eventMeetsRepo = {
    * - rank: その順位の人を明かす。同順位が複数なら全員（「3位」を押せば3位の人が全員出る）
    * - next: まだ明かしていない人のうち、いちばん下の順位の人（同順位は全員）
    * - all: いまの上位を全員
+   * - hide: その順位の人を目隠しに戻す（投影でもう1回押したとき）
    * - reset: 全部を目隠しに戻す
    * 順位は押した時点で解決し、人（userId）で保存する。明かしたあとに順位が動いても明かされたまま。
    * 戻り値は新しく明かした人数（reset は消した人数）。 */
@@ -178,6 +179,16 @@ export const eventMeetsRepo = {
       this.rankingForEvent(eventId, limit),
       this.revealedUserIds(eventId),
     ]);
+    if (input.action === "hide") {
+      // もう1回押したら隠す（オーナー 2026-11-27「クリックしたら表示してもう1回クリックしたら隠す」）
+      const shown = rows.filter((r) => r.rank === input.rank && revealed.has(r.userId)).map((r) => r.userId);
+      if (shown.length === 0) return 0;
+      await batch(shown.map((userId) => ({
+        sql: "DELETE FROM event_meet_reveal WHERE event_id = ? AND user_id = ?",
+        args: [eventId, userId],
+      })));
+      return shown.length;
+    }
     let targets: string[];
     if (input.action === "rank") {
       targets = rows.filter((r) => r.rank === input.rank).map((r) => r.userId);
