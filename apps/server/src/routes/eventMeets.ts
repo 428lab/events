@@ -1,16 +1,18 @@
 import { Hono } from "hono";
 import type {
+  MeetRevealInput,
   MeetScanInput,
   MeetUndoInput,
 } from "@eventer/shared";
 import {
   MEET_RANKING_TOP_N,
+  meetRevealInput,
   meetScanInput,
   meetUndoInput,
 } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
-import { requireEventRole } from "../auth/roles.js";
+import { canManageEvent, requireEventRole } from "../auth/roles.js";
 import { valid, zValidator } from "../lib/validator.js";
 import {
   consumeMeetToken,
@@ -99,6 +101,18 @@ meetEventRoutes.get("/:id/meets/ranking/live", async (c) => {
   // 匿名モードでも返してよい（他人のものは返さない）
   const meRank = await eventMeetsRepo.rankForUser(eventId, me.id);
 
+  if (event.meetRanking === "blind") {
+    // 目隠し: 明かした人だけ名前・アバター入り。明かしていない行は順位と件数だけ（運営にも同じ）
+    return c.json({
+      mode: "blind",
+      ranking: await eventMeetsRepo.blindRankingForEvent(eventId, MEET_RANKING_TOP_N),
+      totalRanked,
+      me: meRank,
+      canReveal: await canManageEvent(eventId, me),
+      note: event.meetRankingNote,
+      signal,
+    });
+  }
   if (event.meetRanking === "named") {
     return c.json({
       mode: "named",
@@ -122,6 +136,29 @@ meetEventRoutes.get("/:id/meets/ranking/live", async (c) => {
     signal,
   });
 });
+
+/**
+ * 目隠しモードで運営が名前を明かす（オーナー依頼 2026-11-27）。運営だけ（ランキング設定と同じ基準）。
+ * **明かすと全員に見える**（「１回開くとみんなにも見える」）: 明かした人を保存し、`meet-ranking` の合図で
+ * 投影と参加者の画面が取り直す。運営だけに先に見せる仕組みは無い。
+ * 目隠しモード以外では 409（明かす対象が無い）。
+ */
+meetEventRoutes.post(
+  "/:id/meets/ranking/reveal",
+  requireEventRole(["staff"]),
+  zValidator("json", meetRevealInput),
+  async (c) => {
+    const eventId = c.req.param("id");
+    const event = await eventsRepo.findById(eventId);
+    if (!event) return c.json({ error: "not_found" }, 404);
+    if (event.meetRanking !== "blind") return c.json({ error: "not_blind" }, 409);
+    const changed = await eventMeetsRepo.reveal(eventId, valid<MeetRevealInput>(c, "json"), MEET_RANKING_TOP_N);
+    if (changed > 0) {
+      await deferBackground(eventSignal.publishRefetch([["meet-ranking", eventId]]));
+    }
+    return c.json({ changed });
+  },
+);
 
 /* =========================================================
  *  読み取ったその場で確定する出会い (#330)

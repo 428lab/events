@@ -114,6 +114,9 @@ export const accountMergeRepo = {
       // 名札の代わりの画像（運営が人ごとに設定。2026-11-25）。PK (event_id, user_id)。
       // 両方に同じイベントの差し替えがあれば負け側を捨てる（勝ち側の設定を残す）
       ["event_card_member_image", "user_id", ["event_id"]],
+      // 出会いランキングの目隠しで明かした人（2026-11-27）。PK (event_id, user_id)。
+      // 両方が明かされていたら負け側を捨てる（勝ち側の「明かした」を残す）
+      ["event_meet_reveal", "user_id", ["event_id"]],
     ];
     for (const [table, userCol, keyCols] of uniqueKeyed) {
       const sameKey = keyCols

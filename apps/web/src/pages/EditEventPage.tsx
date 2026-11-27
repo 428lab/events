@@ -860,6 +860,7 @@ export function EditEventPage() {
                   sx={{ minWidth: 220 }}
                 >
                   <MenuItem value="named">{t("eventForm.meetRankingNamed")}</MenuItem>
+                  <MenuItem value="blind">{t("eventForm.meetRankingBlind")}</MenuItem>
                   <MenuItem value="anonymous">
                     {t("eventForm.meetRankingAnonymous")}
                   </MenuItem>
@@ -872,7 +873,9 @@ export function EditEventPage() {
                 >
                   {meetRanking === "named"
                     ? t("eventForm.meetRankingNamedHelp")
-                    : t("eventForm.meetRankingAnonymousHelp")}
+                    : meetRanking === "blind"
+                      ? t("eventForm.meetRankingBlindHelp")
+                      : t("eventForm.meetRankingAnonymousHelp")}
                 </Typography>
                 {/* ランキングの画面に出す説明（任意）。投影と詳細の小カードに文字のまま出る */}
                 <TextField

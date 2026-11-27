@@ -215,6 +215,20 @@ describe("meet-ranking", () => {
   });
 });
 
+describe("meet-ranking reveal", () => {
+  it("staff revealing a name in blind mode signals the ranking (everyone refetches); nothing to reveal sends nothing", async () => {
+    const { staff, member, eventId } = await setup({ meet_ranking: "blind" });
+    await sql("INSERT INTO event_meet(id,event_id,user_low,user_high,created_at) VALUES(?,?,?,?,1)", crypto.randomUUID(), eventId,
+      staff.id < member.id ? staff.id : member.id, staff.id < member.id ? member.id : staff.id).run();
+    const { sent } = spyPublish(async () => (await sql("SELECT COUNT(*) AS n FROM event_meet_reveal WHERE event_id=?", eventId).first<{ n: number }>())!.n);
+    expect((await json("POST", `/events/${eventId}/meets/ranking/reveal`, staff.cookie, { action: "rank", rank: 1 })).status).toBe(200);
+    await settled(sent, 1);
+    expect(sent[0]).toMatchObject({ topics: [topicOf(eventId, "meet-ranking")], seen: 2 });
+    expect((await json("POST", `/events/${eventId}/meets/ranking/reveal`, staff.cookie, { action: "all" })).status).toBe(200);
+    await settled(sent, 1); // already all shown: no change, no signal
+  });
+});
+
 describe("bingo-staff", () => {
   it("create, card issue, start, draw and end signal the draw control; draws also signal the desk", async () => {
     const { staff, member, eventId } = await setup();

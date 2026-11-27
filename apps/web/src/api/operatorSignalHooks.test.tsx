@@ -22,6 +22,7 @@ vi.mock("./client.js", () => ({
   NetworkError: class NetworkError extends Error {},
 }));
 vi.mock("../lib/signalHub.js", () => ({
+  PARTICIPANT_SIGNAL_JITTER_MS: 5_000,
   useEventSignal: (source: EventSignalSource | null | undefined, onSignal: () => unknown) => {
     listeners.push({ source, onSignal });
     return { synced: Boolean(source) && synced.value };
@@ -143,6 +144,15 @@ describe("useMeetRankingLive (topic meet-ranking)", () => {
     expect(callsTo("/events/e-1/meets/ranking/live") + callsTo("/events/e-2/meets/ranking/live")).toBe(2);
     await act(async () => { await lastListener().onSignal(); });
     expect(callsTo("/events/e-2/meets/ranking/live")).toBe(2);
+  });
+
+  it("in blind mode the detail card also listens, so a name the staff reveal reaches every phone (2026-11-27)", async () => {
+    vi.useFakeTimers();
+    apiGet.mockResolvedValue({ mode: "blind", ranking: [], totalRanked: 0, me: null, canReveal: false, note: "", signal: source("meet-ranking") });
+    renderHook(() => useMeetRankingLive("e-3", true), { wrapper: wrapper() });
+    await flush(60_000);
+    expect(lastListener().source).toEqual(source("meet-ranking"));
+    expect(callsTo("/events/e-3/meets/ranking/live")).toBe(1);
   });
 });
 

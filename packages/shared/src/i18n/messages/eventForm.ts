@@ -137,6 +137,8 @@ const ja = {
   meetRankingNamedHelp: "名前とアイコンが会場に大写しになります。",
   meetRankingAnonymous: "匿名",
   meetRankingAnonymousHelp: "名前は出さず、人数だけを表示します。",
+  meetRankingBlind: "目隠し",
+  meetRankingBlindHelp: "順位と人数だけ出し、名前は運営が投影で1人ずつ明かします。明かした名前は全員に見えます。",
   meetRankingNote: "ランキング画面に出す説明（任意）",
   meetRankingNotePlaceholder: "例: 上位3人に素敵なプレゼント！",
   /** 文字数の表示を兼ねる */
@@ -491,6 +493,8 @@ const en: Record<keyof typeof ja, string> = {
   meetRankingNamedHelp: "Names and avatars appear large on the venue screen.",
   meetRankingAnonymous: "Anonymous",
   meetRankingAnonymousHelp: "Shows counts only, without names.",
+  meetRankingBlind: "Blindfold",
+  meetRankingBlindHelp: "Shows ranks and counts only. Organizers reveal names one by one on the projection view, and revealed names are visible to everyone.",
   meetRankingNote: "Note on the ranking screen (optional)",
   meetRankingNotePlaceholder: "e.g. Great prizes for the top 3!",
   meetRankingNoteHelp: "Shown on the projection screen and the ranking on the event page ({{n}} / {{max}} characters)",
