@@ -1,8 +1,10 @@
 import type { Context } from "hono";
-import type { User } from "@eventer/shared";
+import { profileLinkFor, type User } from "@eventer/shared";
 import { accountDeletionRepo } from "../db/repositories/accountDeletion.js";
 import { usersRepo } from "../db/repositories/users.js";
 import { identitiesRepo } from "../db/repositories/identities.js";
+import { notificationsRepo } from "../db/repositories/notifications.js";
+import { localized } from "../lib/noticeText.js";
 import { recordAudit } from "../db/repositories/auditLogs.js";
 import { deleteUserAvatarObjects } from "../lib/avatarUploadStorage.js";
 import { currentUser, issueSession } from "./session.js";
@@ -174,6 +176,25 @@ export async function finishIdentityLogin(
     userId = u.id;
   }
   await refreshHandle();
+  // 新しく作ったアカウントだけ、登録に使った連携を最初からプロフィールに出す（オーナー決定 2026-11-27。
+  // 既存の人・あとから足した連携は今までどおりオフから。docs/profile-social-links.md）。
+  // リンクを作れる連携だけが対象。本人には1回だけお知らせで伝え、設定でいつでも外せる
+  if (!existingUserId) {
+    const link = profileLinkFor(provider, providerUserId, publicHandle ?? null);
+    if (link) {
+      await identitiesRepo.setProfilePublic(userId, provider, true);
+      // アプリ内のお知らせだけ（登録した直後にメールまで送らない）
+      await notificationsRepo.createForMany(
+        [userId],
+        "info",
+        localized("profileLinkDefaultOnTitle"),
+        localized("profileLinkDefaultOnBody", { link: link.label }),
+        "/account",
+        undefined,
+        { skipEmail: true },
+      );
+    }
+  }
   // 猶予期間中 (#250) はセッションだけ発行して復帰画面へ誘導する。
   // このセッションで使えるのは復帰API だけ（currentUser が null を返すため）
   const pendingDeletion = await isPendingDeletion(userId);

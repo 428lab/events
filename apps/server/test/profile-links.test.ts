@@ -179,6 +179,8 @@ describe("公開プロフィールの連携アカウントリンク", () => {
 describe("ログインのたびに連携先のユーザー名を取り直す", () => {
   let xUsername = "first_name";
   const xId = `${Date.now()}`;
+  /** X が返すアカウントの ID（テストごとに切り替える） */
+  let xCurrentId = xId;
   beforeAll(() => {
     fetchMock.activate();
     fetchMock.disableNetConnect();
@@ -187,7 +189,7 @@ describe("ログインのたびに連携先のユーザー名を取り直す", (
       .reply(200, () => ({ access_token: "t" }))
       .persist();
     x.intercept({ path: (p: string) => p.startsWith("/2/users/me") })
-      .reply(200, () => ({ data: { id: xId, name: "テスト", username: xUsername } }))
+      .reply(200, () => ({ data: { id: xCurrentId, name: "テスト", username: xUsername } }))
       .persist();
   });
 
@@ -208,13 +210,37 @@ describe("ログインのたびに連携先のユーザー名を取り直す", (
         .bind(xId)
         .first<{ user_id: string; public_handle: string | null; profile_public: number }>();
     expect((await row())?.public_handle).toBe("first_name");
-    expect((await row())?.profile_public).toBe(0);
+    // 新しく作ったアカウントは、登録に使った連携が最初からオン（オーナー決定 2026-11-27）
+    expect((await row())?.profile_public).toBe(1);
+    const userId = (await row())!.user_id;
+    const notices = await env.DB.prepare("SELECT type, title, body, link FROM notification WHERE user_id = ?").bind(userId).all<{ type: string; title: string; body: string; link: string }>();
+    expect(notices.results).toHaveLength(1);
+    expect(notices.results[0]).toMatchObject({ type: "info", link: "/account" });
+    expect(notices.results[0]!.body).toContain("@first_name");
 
-    await env.DB.prepare("UPDATE identity SET profile_public = 1 WHERE provider = 'x' AND provider_user_id = ?").bind(xId).run();
+    // 本人がオフにしたら、名前を変えて再ログインしてもオフのまま。お知らせも増えない
+    await env.DB.prepare("UPDATE identity SET profile_public = 0 WHERE provider = 'x' AND provider_user_id = ?").bind(xId).run();
     xUsername = "renamed_name";
     await loginWithX();
     expect((await row())?.public_handle).toBe("renamed_name");
-    expect((await row())?.profile_public).toBe(1);
+    expect((await row())?.profile_public).toBe(0);
+    const after = await env.DB.prepare("SELECT COUNT(*) AS n FROM notification WHERE user_id = ?").bind(userId).first<{ n: number }>();
+    expect(after?.n).toBe(1);
+  });
+
+  it("今いるアカウントにあとから足した連携は、今までどおりオフから（お知らせも出ない）", async () => {
+    const owner = await makeUser();
+    xCurrentId = `${xId}9`;
+    xUsername = "linked_later";
+    await loginWithX(owner.cookie);
+    xCurrentId = xId;
+    const row = await env.DB.prepare("SELECT user_id, profile_public FROM identity WHERE provider = 'x' AND provider_user_id = ?")
+      .bind(`${xId}9`)
+      .first<{ user_id: string; profile_public: number }>();
+    expect(row?.user_id).toBe(owner.userId);
+    expect(row?.profile_public).toBe(0);
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM notification WHERE user_id = ?").bind(owner.userId).first<{ n: number }>();
+    expect(n?.n).toBe(0);
   });
 });
 
