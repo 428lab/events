@@ -116,12 +116,13 @@ function toBoardRows(data: MeetRankingLive, t: TFunction): BoardRow[] {
 export function MeetRankingBoard({
   data,
   scale: userScale,
-  onReveal,
+  onToggle,
 }: {
   data: MeetRankingLive;
   scale: number;
-  /** 運営だけ: 目隠しの行を押してその順位を明かす（明かすと全員に見える）。無ければ押せない */
-  onReveal?: (rank: number) => void;
+  /** 運営だけ（目隠しモード）: 行を押すたびにその順位を 明かす（hidden=true のとき）／隠す を切り替える。
+   * 明かすと全員に見える。無ければ押せない */
+  onToggle?: (rank: number, hidden: boolean | undefined) => void;
 }) {
   const { t } = useTranslation();
   const rows = toBoardRows(data, t);
@@ -189,25 +190,25 @@ export function MeetRankingBoard({
       {positioned.map((r) => (
         <Box
           key={r.key}
-          // 目隠しの行は、運営にだけ押せる（キーボードでも Enter / Space で明かせる）
-          {...(r.hidden && onReveal
+          // 目隠しモードでは、運営は行を押すたびに 明かす／隠す を切り替える（キーボードは Enter / Space）。
+          // 投影に写るので、ヒントや押せる見た目（ホバーの色・枠）は出さない（オーナー 2026-11-27）
+          {...(onToggle && r.rank > 0
             ? {
                 role: "button",
                 tabIndex: 0,
-                "aria-label": t("eventSocial.meetRankingRevealRank", { rank: r.rank }),
-                onClick: () => onReveal(r.rank),
+                "aria-pressed": !r.hidden,
+                "aria-label": t(r.hidden ? "eventSocial.meetRankingRevealRank" : "eventSocial.meetRankingHideRank", { rank: r.rank }),
+                onClick: () => onToggle(r.rank, r.hidden),
                 onKeyDown: (e: KeyboardEvent) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    onReveal(r.rank);
+                    onToggle(r.rank, r.hidden);
                   }
                 },
               }
             : {})}
           sx={{
-            ...(r.hidden && onReveal
-              ? { cursor: "pointer", borderRadius: 2, "&:hover, &:focus-visible": { bgcolor: "rgba(255,255,255,0.06)", outline: "none" } }
-              : {}),
+            ...(onToggle ? { cursor: "inherit", outline: "none" } : {}),
             position: "absolute",
             left: 0,
             right: 0,

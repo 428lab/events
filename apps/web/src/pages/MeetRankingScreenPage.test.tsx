@@ -37,8 +37,8 @@ it("説明があれば文字のまま出し（HTML として解釈しない）�
 });
 
 /** 目隠しモード（オーナー依頼 2026-11-27）。明かしていない行は「？？？」、明かした行は名前。
- * 行を押して明かす操作と下の操作は運営（canReveal）にだけ出る */
-it("目隠し: 明かしていない行は「？？？」で、運営だけが行を押して明かせる", () => {
+ * 運営（canReveal）だけ、行を押すたびに 明かす／隠す が切り替わる。投影に写るのでガイドやボタンは出さない */
+it("目隠し: 運営は行を押すと明かし、もう1回押すと隠す。ガイドやボタンは出さない", () => {
   const ranking = [
     { rank: 1, count: 3, revealed: false as const },
     { rank: 2, count: 2, revealed: true as const, userId: "u2", username: "hana", name: "はな", avatarUrl: null },
@@ -47,15 +47,16 @@ it("目隠し: 明かしていない行は「？？？」で、運営だけが�
   const { unmount } = draw();
   expect(screen.getByText("？？？")).toBeTruthy();
   expect(screen.getByText("はな")).toBeTruthy();
-  expect(screen.queryByTestId("meet-reveal-controls")).toBeNull();
   expect(screen.queryByRole("button", { name: "1位の名前を見せる" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "2位の名前を隠す" })).toBeNull();
   unmount();
 
   live.data = { mode: "blind", ranking, totalRanked: 2, me: null, note: "", canReveal: true };
   draw();
-  expect(screen.getByTestId("meet-reveal-controls")).toBeTruthy();
+  // 画面に出る文字は盤とタイトルだけ（「名前を見せる」などのボタンやヒントは無い）
+  expect(screen.queryByText(/目隠し中|全員を見せる|目隠しに戻す/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "1位の名前を見せる" }));
-  expect(revealMutate).toHaveBeenCalledWith({ action: "rank", rank: 1 });
-  // 明かした行（2位）は押せない
-  expect(screen.queryByRole("button", { name: "2位の名前を見せる" })).toBeNull();
+  expect(revealMutate).toHaveBeenLastCalledWith({ action: "rank", rank: 1 });
+  fireEvent.click(screen.getByRole("button", { name: "2位の名前を隠す" }));
+  expect(revealMutate).toHaveBeenLastCalledWith({ action: "hide", rank: 2 });
 });

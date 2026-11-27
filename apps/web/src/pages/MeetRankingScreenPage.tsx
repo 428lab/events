@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Box, Button, IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import TextDecreaseIcon from "@mui/icons-material/TextDecrease";
 import TextIncreaseIcon from "@mui/icons-material/TextIncrease";
 import { useParams } from "react-router-dom";
@@ -47,8 +47,6 @@ export function MeetRankingScreenPage() {
   // 目隠しモードで、運営だけが名前を明かせる（明かすと全員に見える）
   const blind = isBlindRanking(ranking.data) ? ranking.data : null;
   const canReveal = Boolean(blind?.canReveal);
-  const hiddenLeft = blind ? blind.ranking.filter((r) => !r.revealed).length : 0;
-  const revealedCount = blind ? blind.ranking.length - hiddenLeft : 0;
 
   const [scale, setScale] = useState(readScale);
   const changeScale = (dir: 1 | -1) => {
@@ -99,7 +97,6 @@ export function MeetRankingScreenPage() {
         // スマホでは余白を詰めて、名前に幅を回す
         p: { xs: 1.5, sm: 3 },
         // 目隠しの運営の操作を出している間は、下の行（合計）と重ならないよう下を空ける
-        ...(cursorVisible && canReveal ? { pb: { xs: 9, sm: 7 } } : {}),
         overflow: "hidden",
       }}
     >
@@ -154,7 +151,9 @@ export function MeetRankingScreenPage() {
               <MeetRankingBoard
                 data={ranking.data}
                 scale={scale}
-                onReveal={canReveal && !reveal.isPending ? (rank) => reveal.mutate({ action: "rank", rank }) : undefined}
+                onToggle={canReveal && !reveal.isPending
+                  ? (rank, hidden) => reveal.mutate(hidden ? { action: "rank", rank } : { action: "hide", rank })
+                  : undefined}
               />
             )}
           </Box>
@@ -175,37 +174,7 @@ export function MeetRankingScreenPage() {
         </>
       )}
 
-      {/* 目隠しモードの運営の操作。投影に写り込まないようカーソル表示中だけ左下に出す。
-          行を押すとその順位を明かす。明かすと全員（投影・参加者のスマホ）に見える */}
-      {cursorVisible && canReveal && (
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          useFlexGap
-          flexWrap="wrap"
-          data-testid="meet-reveal-controls"
-          sx={{ position: "fixed", left: 8, bottom: 8, opacity: 0.85, maxWidth: "calc(100% - 120px)" }}
-        >
-          <Typography sx={{ color: BOARD_SUB, fontSize: 13 }}>
-            {t("eventSocial.meetRankingRevealHint", { n: hiddenLeft })}
-          </Typography>
-          <Button size="small" variant="outlined" disabled={hiddenLeft === 0 || reveal.isPending}
-            onClick={() => reveal.mutate({ action: "next" })} sx={{ color: BOARD_TEXT, borderColor: BOARD_SUB }}>
-            {t("eventSocial.meetRankingRevealNext")}
-          </Button>
-          <Button size="small" variant="outlined" disabled={hiddenLeft === 0 || reveal.isPending}
-            onClick={() => reveal.mutate({ action: "all" })} sx={{ color: BOARD_TEXT, borderColor: BOARD_SUB }}>
-            {t("eventSocial.meetRankingRevealAll")}
-          </Button>
-          <Button size="small" disabled={revealedCount === 0 || reveal.isPending}
-            onClick={() => { if (window.confirm(t("eventSocial.meetRankingRevealResetConfirm"))) reveal.mutate({ action: "reset" }); }}
-            sx={{ color: BOARD_SUB }}>
-            {t("eventSocial.meetRankingRevealReset")}
-          </Button>
-        </Stack>
-      )}
-
+      {/* 目隠しモードの操作は、行を押すだけ（明かす／隠す）。投影に写るので、ガイドやボタンは出さない（オーナー 2026-11-27） */}
       {/* 操作は投影に写り込まないようカーソル表示中だけ右下に出す（チャット投影と同じ作り） */}
       {cursorVisible && (
         <Stack

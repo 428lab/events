@@ -146,9 +146,11 @@ export type MeetRankingBlindRow =
   | { rank: number; count: number; revealed: false }
   | ({ revealed: true } & MeetRankingNamedRow);
 
-/** 運営の明かす操作。rank はその順位の人（同順位なら全員）を明かす */
+/** 運営の明かす操作。rank はその順位の人（同順位なら全員）を明かし、hide は戻す */
 export const meetRevealInput = z.discriminatedUnion("action", [
   z.object({ action: z.literal("rank"), rank: z.number().int().min(1).max(MEET_RANKING_TOP_N) }),
+  /** その順位の人（同順位なら全員）を目隠しに戻す。投影でもう1回押したとき（オーナー 2026-11-27） */
+  z.object({ action: z.literal("hide"), rank: z.number().int().min(1).max(MEET_RANKING_TOP_N) }),
   z.object({ action: z.literal("next") }),
   z.object({ action: z.literal("all") }),
   z.object({ action: z.literal("reset") }),
