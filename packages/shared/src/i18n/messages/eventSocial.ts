@@ -270,6 +270,15 @@ const ja = {
   /** 本人の順位（本人の画面にだけ出す） */
   meetRankingMe: "あなたは {{rank}}位（{{count}}人）",
   meetRankingOpenScreen: "投影画面を開く",
+  /** 目隠しモード（2026-11-27）。まだ明かしていない人の名前の代わり */
+  meetRankingHiddenName: "？？？",
+  /** 運営だけに出す操作。行を押すとその順位を明かす。明かすと全員に見える */
+  meetRankingRevealHint: "目隠し中 {{n}} 人・行を押すとその順位の名前を全員に見せます",
+  meetRankingRevealRank: "{{rank}}位の名前を見せる",
+  meetRankingRevealNext: "名前を見せる（次）",
+  meetRankingRevealAll: "全員を見せる",
+  meetRankingRevealReset: "目隠しに戻す",
+  meetRankingRevealResetConfirm: "明かした名前をすべて目隠しに戻します。よろしいですか？",
 
   /* ===== 景品 (#431)。ビンゴ景品 (#436) も含むため「出会いの〜」とは呼ばない ===== */
   meetPrizesHeading: "景品",
@@ -528,6 +537,13 @@ const en: Record<keyof typeof ja, string> = {
   meetRankingAnonPeople: "×{{n}}",
   meetRankingMe: "You are #{{rank}} ({{count}} met)",
   meetRankingOpenScreen: "Open the projection view",
+  meetRankingHiddenName: "???",
+  meetRankingRevealHint: "{{n}} hidden · click a row to show that rank's name to everyone",
+  meetRankingRevealRank: "Show the name at #{{rank}}",
+  meetRankingRevealNext: "Show next name",
+  meetRankingRevealAll: "Show all",
+  meetRankingRevealReset: "Hide again",
+  meetRankingRevealResetConfirm: "Hide every name that has been shown?",
 
   meetPrizesHeading: "Prizes",
   meetPrizeCondCount: "Meet {{n}} people",

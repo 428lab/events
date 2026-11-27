@@ -61,7 +61,7 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 #### 参加者体験
 
 - [x] チェックイン（QR コードで当日受付）
-- [x] 出会いの記録（QR を見せ合って交流を記録・XP 獲得）と出会いランキングのリアルタイム投影（[docs/meet-ranking.md](docs/meet-ranking.md)）
+- [x] 出会いの記録（QR を見せ合って交流を記録・XP 獲得）と出会いランキングのリアルタイム投影（名前入り／目隠しで運営が1人ずつ明かす／匿名。[docs/meet-ranking.md](docs/meet-ranking.md)）
 - [x] **景品**（達成条件クリアで引き換え、スタッフの引き換えデスク、[docs/meet-prizes.md](docs/meet-prizes.md)）
 - [x] **数字ビンゴ**（参加者カード・スタッフの抽選コントロール・投影画面、[docs/bingo.md](docs/bingo.md)）と成績履歴・受け取りログ（[docs/bingo-history.md](docs/bingo-history.md)）
 - [x] アチーブメント（XP・レベル・バッジ、プロフィールの参加実績）

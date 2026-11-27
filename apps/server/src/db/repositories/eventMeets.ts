@@ -1,7 +1,7 @@
 import { eventPairViewSql } from "../../auth/eventAccess.js";
 import { adminIds } from "./eventAccessInvites.js";
-import type { MeetableEvent } from "@eventer/shared";
-import { many, one, runCount } from "../client.js";
+import type { MeetableEvent, MeetRankingBlindRow, MeetRevealInput } from "@eventer/shared";
+import { batch, many, one, runCount } from "../client.js";
 
 /** 開始30分前から「出会った」を受け付ける（開場・受付中の読み合いを想定） */
 export const MEET_WINDOW_BEFORE_MS = 30 * 60_000;
@@ -129,6 +129,73 @@ export const eventMeetsRepo = {
       above += r.people;
       return { rank, count: r.n, people: r.people };
     });
+  },
+
+  /** 目隠しモードのランキング（オーナー依頼 2026-11-27）。上位は named と同じ並びで、
+   * 運営が明かした人（event_meet_reveal）だけ名前・アバターを付ける。明かしていない行は
+   * 順位と件数だけにし、userId も含めない（運営にも返さない。運営も「◯位」を見て選ぶ）。
+   * 名前を落とすのはクライアントではなくここ（匿名と同じくサーバー側の責務） */
+  async blindRankingForEvent(
+    eventId: string,
+    limit: number,
+  ): Promise<MeetRankingBlindRow[]> {
+    const [rows, revealed] = await Promise.all([
+      this.rankingForEvent(eventId, limit),
+      this.revealedUserIds(eventId),
+    ]);
+    return rows.map((r) =>
+      revealed.has(r.userId)
+        ? { revealed: true as const, ...r }
+        : { rank: r.rank, count: r.count, revealed: false as const },
+    );
+  },
+
+  /** 明かした人の集まり（目隠しモード） */
+  async revealedUserIds(eventId: string): Promise<Set<string>> {
+    const rows = await many<{ user_id: string }>(
+      "SELECT user_id FROM event_meet_reveal WHERE event_id = ?",
+      eventId,
+    );
+    return new Set(rows.map((r) => r.user_id));
+  },
+
+  /** 運営が名前を明かす（目隠しモード）。明かすと全員に見える（オーナー 2026-11-27「１回開くとみんなにも見える」）。
+   * - rank: その順位の人を明かす。同順位が複数なら全員（「3位」を押せば3位の人が全員出る）
+   * - next: まだ明かしていない人のうち、いちばん下の順位の人（同順位は全員）
+   * - all: いまの上位を全員
+   * - reset: 全部を目隠しに戻す
+   * 順位は押した時点で解決し、人（userId）で保存する。明かしたあとに順位が動いても明かされたまま。
+   * 戻り値は新しく明かした人数（reset は消した人数）。 */
+  async reveal(
+    eventId: string,
+    input: MeetRevealInput,
+    limit: number,
+  ): Promise<number> {
+    if (input.action === "reset") {
+      return runCount("DELETE FROM event_meet_reveal WHERE event_id = ?", eventId);
+    }
+    const [rows, revealed] = await Promise.all([
+      this.rankingForEvent(eventId, limit),
+      this.revealedUserIds(eventId),
+    ]);
+    let targets: string[];
+    if (input.action === "rank") {
+      targets = rows.filter((r) => r.rank === input.rank).map((r) => r.userId);
+    } else if (input.action === "all") {
+      targets = rows.map((r) => r.userId);
+    } else {
+      const hidden = rows.filter((r) => !revealed.has(r.userId));
+      const lowest = hidden.length ? Math.max(...hidden.map((r) => r.rank)) : null;
+      targets = hidden.filter((r) => r.rank === lowest).map((r) => r.userId);
+    }
+    const fresh = targets.filter((id) => !revealed.has(id));
+    if (fresh.length === 0) return 0;
+    const now = Date.now();
+    await batch(fresh.map((userId) => ({
+      sql: "INSERT OR IGNORE INTO event_meet_reveal (event_id, user_id, revealed_at) VALUES (?, ?, ?)",
+      args: [eventId, userId, now],
+    })));
+    return fresh.length;
   },
 
   /** 1件以上記録した人数 (#418)。投影の「これまでに N 人が出会いを記録」用 */

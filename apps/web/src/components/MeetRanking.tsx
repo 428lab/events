@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   Avatar,
   Box,
@@ -58,9 +58,37 @@ interface BoardRow {
   value: string;
   /** value が変わった瞬間のパルス起動用（key の差し替えでアニメが再生される） */
   valueKey: string;
+  /** 目隠しモードで、まだ明かしていない行（名前・アバターを持たない） */
+  hidden?: boolean;
+  /** 目隠しモードで明かされた行（明かした瞬間の動きに使う） */
+  revealed?: boolean;
 }
 
 function toBoardRows(data: MeetRankingLive, t: TFunction): BoardRow[] {
+  if (data.mode === "blind") {
+    // 目隠し: 明かしていない行は「？？？」。行の同一性は順位と並び（名前を持たないため）
+    return data.ranking.map((r, i) =>
+      r.revealed
+        ? {
+            key: r.userId,
+            rank: r.rank,
+            label: r.name,
+            avatarUrl: r.avatarUrl,
+            value: t("eventSocial.meetRankingCount", { n: r.count }),
+            valueKey: `n-${r.count}`,
+            revealed: true,
+          }
+        : {
+            key: `h-${i}`,
+            rank: r.rank,
+            label: t("eventSocial.meetRankingHiddenName"),
+            avatarUrl: null,
+            value: t("eventSocial.meetRankingCount", { n: r.count }),
+            valueKey: `n-${r.count}`,
+            hidden: true,
+          },
+    );
+  }
   if (data.mode === "named") {
     return data.ranking.map((r) => ({
       key: r.userId,
@@ -88,9 +116,12 @@ function toBoardRows(data: MeetRankingLive, t: TFunction): BoardRow[] {
 export function MeetRankingBoard({
   data,
   scale: userScale,
+  onReveal,
 }: {
   data: MeetRankingLive;
   scale: number;
+  /** 運営だけ: 目隠しの行を押してその順位を明かす（明かすと全員に見える）。無ければ押せない */
+  onReveal?: (rank: number) => void;
 }) {
   const { t } = useTranslation();
   const rows = toBoardRows(data, t);
@@ -143,12 +174,40 @@ export function MeetRankingBoard({
           from: { opacity: 0 },
           to: { opacity: 1 },
         },
+        // 明かした瞬間: 行がカードのようにくるっとめくれて名前が出る（オーナー 2026-11-27
+        // 「ポチッと押すとめくれるように」）。動きを減らす設定では動かさずに切り替える
+        "@keyframes meetReveal": {
+          "0%": { opacity: 0, transform: "perspective(600px) rotateX(-90deg)" },
+          "60%": { opacity: 1, transform: "perspective(600px) rotateX(12deg)" },
+          "100%": { opacity: 1, transform: "none" },
+        },
+        "@media (prefers-reduced-motion: reduce)": {
+          "& *": { animation: "none !important", transition: "none !important" },
+        },
       }}
     >
       {positioned.map((r) => (
         <Box
           key={r.key}
+          // 目隠しの行は、運営にだけ押せる（キーボードでも Enter / Space で明かせる）
+          {...(r.hidden && onReveal
+            ? {
+                role: "button",
+                tabIndex: 0,
+                "aria-label": t("eventSocial.meetRankingRevealRank", { rank: r.rank }),
+                onClick: () => onReveal(r.rank),
+                onKeyDown: (e: KeyboardEvent) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onReveal(r.rank);
+                  }
+                },
+              }
+            : {})}
           sx={{
+            ...(r.hidden && onReveal
+              ? { cursor: "pointer", borderRadius: 2, "&:hover, &:focus-visible": { bgcolor: "rgba(255,255,255,0.06)", outline: "none" } }
+              : {}),
             position: "absolute",
             left: 0,
             right: 0,
@@ -160,8 +219,9 @@ export function MeetRankingBoard({
             px: 1,
             // 順位変動はこの transition が受け持つ
             transition: "top 500ms ease",
-            // 圏外→圏内の行はフェードイン
-            animation: "meetRowIn 400ms ease",
+            // 圏外→圏内の行はフェードイン。明かされた行は、めくれる動きにする（key が名前の行に替わって1回だけ再生される）
+            animation: r.revealed ? "meetReveal 700ms ease" : "meetRowIn 400ms ease",
+            transformOrigin: "center",
           }}
         >
           <Typography
@@ -184,9 +244,10 @@ export function MeetRankingBoard({
                 width: (r.top3 ? 64 : 44) * scale,
                 height: (r.top3 ? 64 : 44) * scale,
                 fontSize: (r.top3 ? 30 : 20) * scale,
+                ...(r.hidden ? { bgcolor: "rgba(151,163,188,0.25)", color: BOARD_SUB } : {}),
               }}
             >
-              {r.label.charAt(0)}
+              {r.hidden ? "?" : r.label.charAt(0)}
             </Avatar>
           )}
           <Typography
@@ -197,7 +258,8 @@ export function MeetRankingBoard({
               minWidth: 0,
               fontSize: (r.top3 ? 40 : 26) * scale,
               fontWeight: r.top3 ? 800 : 600,
-              color: BOARD_TEXT,
+              color: r.hidden ? BOARD_SUB : BOARD_TEXT,
+              letterSpacing: r.hidden ? "0.2em" : undefined,
             }}
           >
             {r.label}
@@ -277,10 +339,10 @@ export function MeetRankingPanel({ eventId }: { eventId: string }) {
                     src={r.avatarUrl ?? undefined}
                     sx={{ width: 28, height: 28, fontSize: 14 }}
                   >
-                    {r.label.charAt(0)}
+                    {r.hidden ? "?" : r.label.charAt(0)}
                   </Avatar>
                 )}
-                <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} color={r.hidden ? "text.secondary" : undefined} noWrap>
                   {r.label}
                 </Typography>
                 {r.value && (
