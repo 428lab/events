@@ -450,12 +450,6 @@ export function DeckEditorPage() {
             }}
             commands={slideCommands}
           />
-          <DeckLayerList
-            els={els}
-            selectedIds={selectedIds}
-            multiSelect={multiSelect}
-            onSelect={selectElement}
-          />
         </Stack>
 
         <Box sx={{ flex: 1, minWidth: 0, ...STICKY_COLUMN }}>
@@ -488,6 +482,13 @@ export function DeckEditorPage() {
         </Box>
 
         <Stack spacing={1.5} sx={{ width: { md: 240 }, flexShrink: 0, ...STICKY_COLUMN, maxHeight: { md: `calc(100vh - ${STICKY_TOP * 2}px)` }, overflowY: { md: "auto" } }}>
+          {/* レイヤーは選んだ要素の設定のすぐ上に置く。左のページ一覧の下だと、ページが多いと見えないところへ行く */}
+          <DeckLayerList
+            els={els}
+            selectedIds={selectedIds}
+            multiSelect={multiSelect}
+            onSelect={selectElement}
+          />
           <DeckElementPanel
             selection={selection}
             commands={elementCommands}
