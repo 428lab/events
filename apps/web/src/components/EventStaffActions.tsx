@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Alert, Badge, Box, Button, Divider, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Stack, Typography, type SxProps, type Theme } from "@mui/material";
+import { Alert, Badge, Box, Button, Divider, IconButton, ListItemIcon, ListItemText, ListSubheader, Menu, MenuItem, Stack, Tooltip, Typography, type SxProps, type Theme } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import type { Event, EventRole } from "@eventer/shared";
@@ -13,6 +13,7 @@ import GroupAddIcon from "@mui/icons-material/GroupAdd";
 import LiveTvIcon from "@mui/icons-material/LiveTv";
 import PublishIcon from "@mui/icons-material/Publish";
 import QrCodeScannerIcon from "@mui/icons-material/QrCodeScanner";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { useCancelScheduledPublish, usePublishEvent } from "../api/hooks.js";
 import { errorMessage } from "../lib/errorMessage.js";
 import { useEventInquiryUnreadCount } from "../api/inquiryHooks.js";
@@ -167,6 +168,14 @@ function StaffActions({ eventId, event, chatAvailable, inquiryUnread, phase, sx 
         </Button>
         <Menu id={menuId} anchorEl={anchor} open={Boolean(anchor)} onClose={close}>{items}</Menu>
       </Box>
+      {/* 運営ページへの近道（オーナー 2026-11-28「運営ページを開くがいちばん良く使うから、設定アイコンを運営ボタンの右横に」）。
+          メニューの最後の「運営ページを開く」と同じ行き先 */}
+      <Tooltip title={t("eventManagement.openPage")}>
+        <IconButton component={RouterLink} to={`${base}/manage`} aria-label={t("eventManagement.openPage")}
+          sx={{ border: 1, borderColor: "divider", borderRadius: 1 }}>
+          <SettingsOutlinedIcon />
+        </IconButton>
+      </Tooltip>
     </Stack>
     {cancelSchedule.isError && <Typography variant="body2" color="error" sx={{ width: "100%" }}>
       {errorMessage(cancelSchedule.error, { default: t("eventForm.saveError"), publish_state_changed: t("eventForm.publishStateChanged") })}
