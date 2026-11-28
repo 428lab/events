@@ -122,7 +122,8 @@ pnpm dev   # web: vite (127.0.0.1:4280) + API: wrangler dev (:8787、vite が /a
 
 ## デプロイ
 
-GitHub Actions（`.github/workflows/ci.yml`）がブランチ連動でデプロイします。型チェックとテストは同じワークフローで、すべての PR に対しても走ります。
+GitHub Actions（`.github/workflows/ci.yml`）がブランチ連動でデプロイします。型チェックとテストは同じワークフローで、すべての PR と main への push で走ります。
+staging / production への push では、**同じコミットが main の CI で成功していれば、テストを流し直さずにすぐ配備します**（1分ほど）。main の CI がまだ動いていれば終わるまで待ち、見つからない・失敗していれば今までどおり全部のテストを流してから配備します（`.github/scripts/main-ci-gate.sh`）。
 
 ```bash
 git push origin main:staging      # → staging (https://eventer-staging.kojiran.workers.dev、ログイン必須)

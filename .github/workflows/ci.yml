@@ -1,6 +1,6 @@
 name: CI
 
-# 型チェックとテストは **すべての PR** で走る (#387)。
+# 型チェックとテストは **すべての PR** と **main への push** で走る (#387)。
 # デプロイはブランチ連動で、push のときだけ:
 #   production ブランチ → 本番（eventer / events.kojira.io）
 #   staging ブランチ    → staging（eventer-staging / *.workers.dev・管理者限定）
@@ -14,17 +14,30 @@ name: CI
 # 立ててマイグレーション130本を流す」固定の待ち時間で、CPU は空いている。
 # そこで別々の runner に分けて**同時に**流す:
 #
-#   check（型チェック） ─┬─ server（4組。run-tests.mjs の TEST_GROUP で 20 シャードを配る）
-#                        ├─ web（テスト。vitest --shard で2組）
-#                        └─ build（web のビルド。dist を artifact にする）
-#   deploy（push のときだけ）は上の全部が通ってから、build の dist を使って cf で出す。
+#   gate ─ check（型チェック） ─┬─ server（4組。run-tests.mjs の TEST_GROUP で 20 シャードを配る）
+#                               ├─ web（テスト。vitest --shard で2組）
+#                               └─ build（web のビルド。dist を artifact にする）
+#   deploy（staging / production への push のときだけ）は、テストが通ってから build の dist を cf で出す。
 #
 # 依存の導入はキャッシュ込みで約10秒なので、ジョブごとに入れ直しても損は小さい。
 # 1つの runner で同時に立つ workerd は今までどおり8本まで（run-tests.mjs #371）。
+#
+# ## 同じコミットを2回テストしない（2026-11-27 オーナー「待ち時間0は助かる！」）
+#
+# 流れは「PR を main に squash でマージ → その main のコミットをそのまま staging へ →
+# 同じコミットを production へ」。マージで新しいコミットができるので、main への push で
+# **一度だけ**全部のテストを流す。staging / production への push では、最初の gate が
+# 「同じコミットが main の CI で成功しているか」を GitHub の API で確かめる
+# （.github/scripts/main-ci-gate.sh）:
+#   - 成功済み → check・server・web を流さず、build のあとすぐ deploy（1分ほど）
+#   - main の CI がまだ動いている → 終わるまで待つ（最大25分）。成功すれば同じく deploy
+#   - 見つからない・失敗・待ちきれない・API が使えない → 今までどおり全部のテストを流してから deploy
+# deploy は「テストが全部通った」か「gate が main で成功済みと確かめた」のどちらかが無いと走らない。
+# テストしていないコミットは出ない。
 on:
   pull_request:
   push:
-    branches: [production, staging]
+    branches: [main, production, staging]
 
 # 同じ PR に push を重ねたら、古い実行は打ち切る。
 # デプロイ（production / staging への push）は途中で止めると中途半端な状態に
@@ -34,8 +47,33 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # 型チェックは数秒で済むので先に1回だけ。落ちたらテスト（数分）を待たずに止める
+  # staging / production への push で、同じコミットが main の CI で成功済みかを確かめる。
+  # それ以外（PR・main への push）は確かめずに tested=false（全部のテストを流す）
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tested: ${{ steps.gate.outputs.tested }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && ( "${{ github.ref }}" == "refs/heads/staging" || "${{ github.ref }}" == "refs/heads/production" ) ]]; then
+            .github/scripts/main-ci-gate.sh "${{ github.repository }}" "${{ github.sha }}"
+          else
+            echo "tested=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # 型チェックは数秒で済むので先に1回だけ。落ちたらテスト（数分）を待たずに止める。
+  # main で成功済みのコミット（gate の tested=true）では流さない。server・web はこれに続くので一緒に飛ぶ
   check:
+    needs: gate
+    if: needs.gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,8 +136,10 @@ jobs:
   # テストと同時に作っておき、deploy はこの dist をそのまま使う（同じコミットのビルドを2回しない）。
   # 閲覧数の計測 (#328) の識別子はここで渡す。
   # シークレット未設定のリポジトリでは空になり、計測は自動で無効になる
+  # build は配備に要るので、check を飛ばしたとき（tested=true）でも作る
   build:
-    needs: check
+    needs: [gate, check]
+    if: always() && needs.gate.result == 'success' && (needs.gate.outputs.tested == 'true' || needs.check.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -112,15 +152,17 @@ jobs:
       - run: pnpm --filter @eventer/web build
         env:
           VITE_WEB_ANALYTICS_TOKEN: ${{ secrets.WEB_ANALYTICS_TOKEN }}
-      # PR ではデプロイしないので渡す先が無い。push のときだけ残す
-      - if: github.event_name == 'push'
+      # 配備する push（staging / production）のときだけ残す。PR と main では渡す先が無い
+      - if: github.event_name == 'push' && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/production')
         uses: actions/upload-artifact@v4
         with:
           name: web-dist
           path: apps/web/dist
           retention-days: 1
 
-  # ここから下だけがデプロイ。PR では走らない。型チェック・テスト・ビルドが全部通ったときだけ
+  # ここから下だけがデプロイ。staging / production への push のときだけ。
+  # build が通っていて、さらに「型チェック・テストが全部通った」か「gate が main で成功済みと確かめた」とき。
+  # check・server・web を飛ばしたときに deploy まで飛ばないよう always() を付け、条件はここで全部書く
   #
   # デプロイは cf（cloudflare/cf のベータ CLI）。設定はリポジトリ直下の
   # cloudflare.config.ts にあり、`--mode` で環境を選ぶ（staging / production）。
@@ -131,8 +173,15 @@ jobs:
   #   production: pnpm --filter @eventer/server run deploy
   #   staging:    pnpm --filter @eventer/server run deploy:staging
   deploy:
-    if: github.event_name == 'push'
-    needs: [check, server, web, build]
+    needs: [gate, check, server, web, build]
+    if: >-
+      always()
+      && github.event_name == 'push'
+      && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/production')
+      && needs.gate.result == 'success'
+      && needs.build.result == 'success'
+      && (needs.gate.outputs.tested == 'true'
+          || (needs.check.result == 'success' && needs.server.result == 'success' && needs.web.result == 'success'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
