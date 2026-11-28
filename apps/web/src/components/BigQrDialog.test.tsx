@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { EVENT_SIGNAL_KIND, type EventSignalSource } from "@eventer/shared";
 
@@ -60,27 +60,38 @@ function MeetPageStub() {
   return <div data-testid="meet-page">{token}</div>;
 }
 
-function dialogTree(open: boolean, onClose: () => void, qc: QueryClient) {
+/** 省略可の props (#726)。省略時は従来どおり */
+type ExtraProps = Pick<Parameters<typeof BigQrDialog>[0], "initialMode" | "replaceOnMeet" | "ignoreToken">;
+
+function dialogTree(open: boolean, onClose: () => void, qc: QueryClient, extra: ExtraProps = {}) {
   return (
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={["/me"]}>
+      <MemoryRouter initialEntries={["/before", "/me"]} initialIndex={1}>
+        <HistoryProbe />
         <Routes>
-          <Route path="/me" element={<BigQrDialog open={open} onClose={onClose} name="テスター" />} />
+          <Route path="/me" element={<BigQrDialog open={open} onClose={onClose} name="テスター" {...extra} />} />
           <Route path="/m/:token" element={<MeetPageStub />} />
+          <Route path="/before" element={<div data-testid="before-page" />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
   );
 }
 
-function renderDialog(open = true, onClose: () => void = () => {}) {
+/** 戻るを押せるようにする（push / replace を見分ける） */
+function HistoryProbe() {
+  const navigate = useNavigate();
+  return <button type="button" data-testid="back" onClick={() => navigate(-1)} />;
+}
+
+function renderDialog(open = true, onClose: () => void = () => {}, extra: ExtraProps = {}) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const view = render(dialogTree(open, onClose, qc));
+  const view = render(dialogTree(open, onClose, qc, extra));
   return {
     ...view,
-    rerenderOpen: (next: boolean) => view.rerender(dialogTree(next, onClose, qc)),
+    rerenderOpen: (next: boolean) => view.rerender(dialogTree(next, onClose, qc, extra)),
   };
 }
 
@@ -422,5 +433,83 @@ describe("出会いのQR画面の読み取り (#704)", () => {
     switchTo("QRを見せる");
     expect(stopMock).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("big-qr")).toBeTruthy();
+  });
+  it("既定では push で進む（戻るとダイアログを開いた画面へ戻る）", async () => {
+    renderDialog();
+    switchTo("読み取る");
+    scanned = `${window.location.origin}/m/mt1.u-2.1700000000.cafe`;
+    await waitFor(() => expect(screen.getByTestId("meet-page")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("back"));
+    await waitFor(() => expect(screen.queryByTestId("meet-page")).toBeNull());
+    expect(screen.getByRole("button", { name: "読み取る" })).toBeTruthy();
+  });
+
+  describe("結果画面から開く場合の props (#726)", () => {
+    it("initialMode=\"scan\" で開くとすぐカメラを起動し、トークンは取りに行かない", async () => {
+      renderDialog(true, () => {}, { initialMode: "scan" });
+      await waitFor(() =>
+        expect(getUserMediaMock).toHaveBeenCalledWith({ video: { facingMode: "environment" }, audio: false }),
+      );
+      expect(screen.getByRole("button", { name: "読み取る" }).getAttribute("aria-pressed")).toBe("true");
+      expect(screen.queryByTestId("big-qr")).toBeNull();
+      await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+      expect(getMock).not.toHaveBeenCalled();
+    });
+
+    it("initialMode=\"scan\" で閉じて開き直すと「読み取る」から始まる", async () => {
+      const view = renderDialog(true, () => {}, { initialMode: "scan" });
+      switchTo("QRを見せる");
+      await waitFor(() => expect(screen.getByTestId("big-qr")).toBeTruthy());
+
+      view.rerenderOpen(false);
+      view.rerenderOpen(true);
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "読み取る" }).getAttribute("aria-pressed")).toBe("true"),
+      );
+      expect(screen.queryByTestId("big-qr")).toBeNull();
+    });
+
+    it("initialMode=\"scan\" でも「QRを見せる」に切り替えるとカメラを止めてQRを出す", async () => {
+      renderDialog(true, () => {}, { initialMode: "scan" });
+      await waitFor(() => expect(detectMock).toHaveBeenCalled());
+      expect(stopMock).not.toHaveBeenCalled();
+
+      switchTo("QRを見せる");
+      expect(stopMock).toHaveBeenCalledTimes(1);
+      await waitFor(() =>
+        expect(screen.getByTestId("big-qr").getAttribute("data-qr-url")).toContain("aaaa"),
+      );
+    });
+
+    it("replaceOnMeet では履歴を積まずに進む", async () => {
+      renderDialog(true, () => {}, { initialMode: "scan", replaceOnMeet: true });
+      scanned = `${window.location.origin}/m/mt1.u-2.1700000000.cafe`;
+      await waitFor(() => expect(screen.getByTestId("meet-page").textContent).toBe("mt1.u-2.1700000000.cafe"));
+
+      // 開いた画面（/me）は置き換えられているので、戻るとその前へ
+      fireEvent.click(screen.getByTestId("back"));
+      await waitFor(() => expect(screen.getByTestId("before-page")).toBeTruthy());
+      expect(screen.queryByRole("button", { name: "読み取る" })).toBeNull();
+    });
+
+    it("ignoreToken と同じQRでは進まず、案内も変えない", async () => {
+      const onClose = vi.fn();
+      renderDialog(true, onClose, { initialMode: "scan", ignoreToken: "mt1.u-2.1700000000.cafe" });
+      await waitFor(() => expect(getUserMediaMock).toHaveBeenCalled());
+      const hint = screen.getByRole("status").textContent;
+
+      scanned = `${window.location.origin}/m/mt1.u-2.1700000000.cafe`;
+      await waitFor(() => expect(detectMock.mock.calls.length).toBeGreaterThan(3));
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("meet-page")).toBeNull();
+      expect(screen.getByRole("status").textContent).toBe(hint);
+      expect(screen.queryByText("出会いのQRではありません")).toBeNull();
+
+      // 別の相手のQRなら進む
+      scanned = `${window.location.origin}/m/mt1.u-3.1700000000.beef`;
+      await waitFor(() => expect(screen.getByTestId("meet-page").textContent).toBe("mt1.u-3.1700000000.beef"));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 });

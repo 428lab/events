@@ -11,13 +11,20 @@ import {
   Typography,
 } from "@mui/material";
 import HandshakeOutlinedIcon from "@mui/icons-material/HandshakeOutlined";
+import QrCodeScannerIcon from "@mui/icons-material/QrCodeScanner";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
+import {
+  Link as RouterLink,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { MeetScanFailure, MeetScanResult } from "@eventer/shared";
 import { useMe } from "../api/hooks.js";
 import { ApiError, NetworkError } from "../api/client.js";
 import { useMeetScan, useMeetUndo } from "../api/eventMeetHooks.js";
+import { BigQrDialog } from "../components/BigQrDialog.js";
 
 /**
  * QRを読み取った側が開く画面 (#330)。
@@ -84,6 +91,14 @@ export function failureOf(err: unknown): Failure {
 
 export function MeetScanPage() {
   const { token = "" } = useParams();
+  const location = useLocation();
+  // 「続けて読み取る」で /m/<token> 同士を移ったとき、結果と自動送信の印を
+  // 持ち越さないよう作り直す (#726)。同じ token を読み直した（invalid のあと等）
+  // ときも送り直せるよう、token ではなく遷移ごとに変わる location.key で区切る
+  return <MeetScanBody key={location.key} token={token} />;
+}
+
+function MeetScanBody({ token }: { token: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: me, isLoading: meLoading } = useMe();
@@ -92,6 +107,8 @@ export function MeetScanPage() {
   const [result, setResult] = useState<MeetScanResult | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [undone, setUndone] = useState(false);
+  // 結果画面の上に開く読み取りダイアログ (#726)
+  const [scanOpen, setScanOpen] = useState(false);
   // 自動での送信は1回だけ（再描画や再マウントで二重に走らせない）。
   // 再試行はボタンから明示的に行う
   const autoSent = useRef(false);
@@ -125,6 +142,12 @@ export function MeetScanPage() {
   const attendedMe = result?.events.some((e) => e.attendedMe) ?? false;
   const attendedTarget = result?.events.some((e) => e.attendedTarget) ?? false;
 
+  // 「続けて読み取る」(#726)。記録中と、読んでも 401 になる unauthorized では出さない
+  const showScanNext =
+    !!me && (!!result || (!!failure && failure !== "unauthorized"));
+  // 再試行できる失敗では「もう一度試す」を主ボタンのままにする
+  const scanNextPrimary = !!result || (!!failure && !RETRYABLE[failure]);
+
   return (
     <Box sx={{ maxWidth: 560, mx: "auto", p: 2 }}>
       <Card>
@@ -155,7 +178,9 @@ export function MeetScanPage() {
                 <Stack direction="row" spacing={1}>
                   {/* トークンはURLに残っているので、同じ読み取りをやり直せる */}
                   <Button
-                    variant="contained"
+                    variant={
+                      showScanNext && scanNextPrimary ? "outlined" : "contained"
+                    }
                     startIcon={<RefreshIcon />}
                     disabled={scan.isPending}
                     onClick={run}
@@ -229,7 +254,7 @@ export function MeetScanPage() {
                   <Button
                     component={RouterLink}
                     to={`/users/${encodeURIComponent(result.target.username)}`}
-                    variant="contained"
+                    variant={showScanNext ? "outlined" : "contained"}
                   >
                     {t("common.viewProfile")}
                   </Button>
@@ -253,9 +278,33 @@ export function MeetScanPage() {
                 )}
               </>
             )}
+
+            {showScanNext && (
+              <Button
+                fullWidth
+                size="large"
+                variant={scanNextPrimary ? "contained" : "outlined"}
+                startIcon={<QrCodeScannerIcon />}
+                onClick={() => setScanOpen(true)}
+              >
+                {t("meet.scanNext")}
+              </Button>
+            )}
           </Stack>
         </CardContent>
       </Card>
+      {me && (
+        <BigQrDialog
+          open={scanOpen}
+          onClose={() => setScanOpen(false)}
+          name={me.globalName ?? me.username}
+          avatarUrl={me.avatarUrl}
+          initialMode="scan"
+          replaceOnMeet
+          // 直前に記録できた／使用済みだったQRの映り込みでは進まない
+          ignoreToken={result || failure === "used" ? token : undefined}
+        />
+      )}
     </Box>
   );
 }

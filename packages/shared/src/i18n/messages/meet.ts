@@ -23,6 +23,8 @@ const ja = {
   retry: "もう一度試す",
   signIn: "ログインする",
   backToTop: "トップへ戻る",
+  /** 結果画面からその場で次の人のQRを読む (#726) */
+  scanNext: "続けて読み取る",
   undone: "記録を取り消しました",
   undoFailed: "取り消しに失敗しました。もう一度お試しください",
   /** 受付が済んだのが自分か相手かで案内を分ける（1つに潰さないこと） */
@@ -38,6 +40,7 @@ const en: Record<keyof typeof ja, string> = {
   retry: "Try again",
   signIn: "Sign in",
   backToTop: "Back to home",
+  scanNext: "Scan another",
   undone: "This record has been undone.",
   undoFailed: "Could not undo. Please try again.",
   attendedMe: "You have been checked in at the same time.",
