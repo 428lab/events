@@ -19,7 +19,7 @@ import {
  */
 export function DeckAiEditIssueButton({ deckId, content, onIssued, disabled }: {
   deckId: string;
-  /** 保存済みの中身。AI は v2 JSON で読み書きするので、v2 で失われるものを先に確かめる */
+  /** 保存済みの中身。AI は v2 JSON で読み書きするので、v2 の上限に収まるかを先に確かめる */
   content: DeckContent;
   onIssued: (issued: IssuedEditDeckAgentToken) => void;
   disabled?: boolean;
@@ -31,16 +31,10 @@ export function DeckAiEditIssueButton({ deckId, content, onIssued, disabled }: {
   // v2 の上限を超えると、書き出しで切り捨てられたものが AI の書き戻しで消える。発行しない（サーバーも 409）
   const tooLarge = deckTooLargeForAi(losses)
     || (issue.error instanceof ApiError && (issue.error.body as { error?: string } | null)?.error === "deck_too_large_for_ai");
-  const lossItems = [
-    losses.rotated ? t("deckAgent.editLossRotated", { n: losses.rotated }) : null,
-    losses.grouped ? t("deckAgent.editLossGrouped", { n: losses.grouped }) : null,
-    losses.customFonts.length ? t("deckAgent.editLossFonts", { fonts: losses.customFonts.join("、") }) : null,
-  ].filter((x): x is string => x !== null);
   return (
     <>
       <Button size="small" variant="outlined" disabled={disabled || issue.isPending || tooLarge} onClick={() => {
-        const warning = lossItems.length ? `\n\n${t("deckAgent.editLossesIntro")}\n${lossItems.map((x) => `・${x}`).join("\n")}` : "";
-        if (!window.confirm(t("deckAgent.editConfirm") + warning)) return;
+        if (!window.confirm(t("deckAgent.editConfirm"))) return;
         issue.mutate(undefined, { onSuccess: onIssued });
       }}>
         {t("deckAgent.editIssue")}

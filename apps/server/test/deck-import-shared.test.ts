@@ -105,7 +105,7 @@ describe("deckImport shared contract", () => {
         expect(JSON.stringify(result)).not.toContain(bad);
       }
     }
-    for (const badImage of [{ ...image, src: 5 }, { ...image, src: "" }, { ...image, x: 600 }, { ...image, alt: "photo" }, { ...image, src: undefined }]) {
+    for (const badImage of [{ ...image, src: 5 }, { ...image, src: "" }, { ...image, w: -1 }, { ...image, alt: "photo" }, { ...image, src: undefined }]) {
       const result = parse({ ...v2, slides: [{ background: "#FFFFFF", elements: [badImage] }] });
       expect(result.ok).toBe(false);
       if (!result.ok && Object.hasOwn(badImage, "src") && badImage.src !== undefined && badImage.src !== url) {

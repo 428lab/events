@@ -116,9 +116,9 @@ describe("AI agent deck token (docs/agent-deck-token.md)", () => {
     const t = await issue(u.cookie);
     expect((await put(t.token, deck("x"), { "content-type": "text/plain" })).status).toBe(415);
     expect((await put(t.token, "```json\n{}\n```")).status).toBe(400);
-    const bad = await put(t.token, deck("x", [{ type: "image-placeholder", x: 900, y: 0, w: 100, h: 100 }]));
+    const bad = await put(t.token, deck("x", [{ type: "image-placeholder", x: 900, y: 0, w: -1, h: 100 }]));
     expect(bad.status).toBe(422);
-    expect(await bad.json()).toMatchObject({ error: "invalid_deck_import", issues: [expect.objectContaining({ code: "out_of_bounds" })] });
+    expect(await bad.json()).toMatchObject({ error: "invalid_deck_import", issues: [expect.objectContaining({ code: "out_of_range" })] });
     const v1 = await put(t.token, deck("x").replace('"version":2', '"version":1'));
     expect(v1.status).toBe(422);
     expect(await ownedDecks(u.id)).toBe(0);

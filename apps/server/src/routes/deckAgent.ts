@@ -132,15 +132,25 @@ function parseStoredContent(json: string): DeckContent {
 }
 
 /** 結び付いたデッキの今の中身を v2 の取り込み JSON で返す（オーナー決定 2026-11-28「読ませるしかない」）。
- * 書き出し（exportDeckV2）と同じ形。このデッキにアップロード済みの画像は相対の `/api/decks/<id>/images/<uuid>` の
- * まま返し、そのまま PUT に戻せるようにする（PUT はこの形だけをこのデッキの画像として受け付ける） */
+ * 書き出し（exportDeckV2）と同じ形で、そのまま PUT に戻すと同じ中身になる。画像の src は書き換えない
+ * （このデッキにアップロード済みの相対の `/api/decks/<id>/images/<uuid>` も、利用者が入れた URL も） */
 async function deckContentV2(deckId: string) {
   const row = await deckAgentTokensRepo.readContent(deckId);
   if (!row) return null;
-  const own = (src: string) => UPLOADED_SRC_RE.exec(src)?.[1] === deckId;
   const content = parseStoredContent(row.content);
-  // losses: v2 に無いので書き戻すと失われるもの（回転・グループ・書体など）。AI に知らせる
-  return { json: exportDeckV2({ title: row.title, content }, base(), { keepSrc: own }), losses: deckV2Losses(content) };
+  // 画像の src は今の中身のまま返す（PUT は今の中身にある src をそのまま受け付ける）。
+  // losses: v2 の上限を超えた分（発行のときに断っているので、ふつうは全部 0）
+  return { json: exportDeckV2({ title: row.title, content }, base(), { keepSrc: () => true }), losses: deckV2Losses(content) };
+}
+
+/** デッキの今の中身にある画像の src */
+async function deckImageSrcs(deckId: string): Promise<Set<string>> {
+  const row = await deckAgentTokensRepo.readContent(deckId);
+  const srcs = new Set<string>();
+  for (const slide of row ? parseStoredContent(row.content).slides : []) {
+    for (const el of slide.elements ?? []) if (el.type === "image" && el.src) srcs.add(el.src);
+  }
+  return srcs;
 }
 
 async function deckState(row: DeckAgentTokenRow) {
@@ -181,12 +191,17 @@ deckAgentRoutes.put("/deck", async (c) => {
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     if (bytes.byteLength > DECK_IMPORT_MAX_BYTES) return c.json({ error: "too_large", maxBytes: DECK_IMPORT_MAX_BYTES }, 413);
     const referenced: string[] = [];
+    // 今の中身にある画像の src は、HTTPS でなくてもそのまま戻せる（読み取りで書き換えずに渡しているため。
+    // 元の内容を変えない。kojira 2026-11-28）。新しく入れる画像は HTTPS か、このデッキへのアップロードだけ
+    const currentSrcs = existing ? await deckImageSrcs(existing.id) : new Set<string>();
     const parsed = parseDeckImport(bytes, {
       uploadedImageSrc: (src) => {
         const m = UPLOADED_SRC_RE.exec(src);
-        if (!m || !targetId || m[1] !== targetId) return false;
-        referenced.push(m[2]!);
-        return true;
+        if (m && targetId && m[1] === targetId) {
+          referenced.push(m[2]!);
+          return true;
+        }
+        return currentSrcs.has(src);
       },
     });
     if (!parsed.ok) return c.json({ error: "invalid_deck_import", issues: parsed.issues, truncated: parsed.truncated }, 422);

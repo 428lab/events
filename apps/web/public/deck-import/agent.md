@@ -13,9 +13,10 @@
 v2 仕様（[spec.md](v2/spec.md)、[schema.json](v2/schema.json)）のJSONを、そのまま送ります。要点は次のとおりです。
 
 - root は `{"format":"events-lab-deck","version":2,"title":"…","slides":[…]}` の4キーだけ。
-- キャンバスは960×540。座標・寸法・fontSize はすべて整数。`x+w≤960`、`y+h≤540`、`w,h≥20`。
-- 要素は `text` / `image-placeholder` / `image-url` の3種類。記載したキーはすべて必須で、ほかのキーは付けない。
-- `text`: `type,x,y,w,h,text,fontSize(12〜160),font("default"|"serif"|"monospace"),color("#RRGGBB"),bold,italic,align("left"|"center"|"right")`
+- キャンバスは960×540。座標・寸法は数（小数も可）。`x`・`y` はスライドの外も可、`w,h≥0`。新しく作るときは `0≤x`、`x+w≤960`、`0≤y`、`y+h≤540` に収めると全部見えます。
+- 要素は `text` / `image-placeholder` / `image-url` の3種類。必須のキーと、下の任意のキーだけを付ける。
+- どの要素にも任意で `rotation`（度）と `group`（同じ値の要素はまとめて動く）を付けられる。
+- `text`: 必須は `type,x,y,w,h,text`。任意で `fontSize`、`font`（`"default"`・`"serif"`・`"monospace"`・`"Plus Jakarta Sans"`・Google Fonts の書体名。一覧は schema.json の `font`）、`color("#RRGGBB")`、`bold`、`italic`、`align("left"|"center"|"right")`
 - `image-placeholder`: `type,x,y,w,h`（画像をまだ置かない枠）
 - `image-url`: `type,x,y,w,h,src`。`src` には次のどちらかを使います。
   - 下の画像アップロードが返した `src`（`/api/decks/<deckId>/images/<imageId>` の形。**このトークンのデッキに上げた画像だけ**）
@@ -41,7 +42,8 @@ v2 仕様（[spec.md](v2/spec.md)、[schema.json](v2/schema.json)）のJSONを�
 
 - `content` の画像の `src` が `/api/decks/<deckId>/images/<imageId>` のものは、そのデッキに上げてある画像です。そのまま残せば表示されます。
 - 利用者は「AIの変更を取り消す」で、あなたが最初に書く前の中身に戻せます。
-- `content` は v2 にあるものだけです。回転・グループ・既定以外の書体は v2 に無いので、書き戻すと元に戻ります。`GET` の `losses`（`rotated`・`grouped`・`customFonts`）で何が戻るかが分かります。利用者に一言伝えてください。
+- `content` は今のスライドの中身をそのまま表しています（回転・グループ・書体・装飾の省略・はみ出した位置・画像の `src` も）。直さない値は変えずに送り返してください。そのまま送り返すと、元と同じ中身になります。
+- `content` にある画像の `src` は、HTTPS でないもの（利用者が入れた `http:` の URL など）もそのまま戻せます。新しく足す画像は、アップロードした `src` か公開の HTTPS URL にしてください。
 - あなたが書いている間（トークンが有効な間）、利用者はそのスライドを編集できません。終わったら、その旨を伝えてください（利用者がトークンを取り消せば、すぐ編集できます）。
 
 ## API
@@ -109,4 +111,4 @@ JSONの `src` には、返った `src`（相対パス）をそのまま入れま
 
 ## English summary
 
-Send `Authorization: Bearer evd_…` on every call. `PUT /api/agent/deck` with a version 2 events-lab-deck JSON body ([spec](v2/spec.md)) creates the token's single deck (201), and later calls replace it (200). `POST /api/agent/deck/images` takes a raw PNG/JPEG/WebP/GIF/AVIF body (6 MiB or less) after the deck exists. It returns a `src` that you can use in an `image-url` element. `GET /api/agent/deck` reports the token's state. Tokens last 60 minutes and allow 100 writes and 50 images. The saved deck is viewable by anyone who has its URL. On 422, fix the listed `issues` and resend the whole JSON. If the user gave you a token to edit an existing deck, `GET /api/agent/deck` already returns that `deck` and its current `content` (version 2 JSON). Change only what was asked, keep everything else (including `/api/decks/<deckId>/images/...` srcs), and `PUT` the whole JSON back (200). While the token is active the user can't edit the deck; they can undo your changes afterwards. `content` keeps only version 2 properties: rotation, groups and non-default fonts are reset when you write it back (`losses` in the GET response lists them), so tell the user.
+Send `Authorization: Bearer evd_…` on every call. `PUT /api/agent/deck` with a version 2 events-lab-deck JSON body ([spec](v2/spec.md)) creates the token's single deck (201), and later calls replace it (200). `POST /api/agent/deck/images` takes a raw PNG/JPEG/WebP/GIF/AVIF body (6 MiB or less) after the deck exists. It returns a `src` that you can use in an `image-url` element. `GET /api/agent/deck` reports the token's state. Tokens last 60 minutes and allow 100 writes and 50 images. The saved deck is viewable by anyone who has its URL. On 422, fix the listed `issues` and resend the whole JSON. If the user gave you a token to edit an existing deck, `GET /api/agent/deck` already returns that `deck` and its current `content` (version 2 JSON). Change only what was asked, keep everything else (including `/api/decks/<deckId>/images/...` srcs), and `PUT` the whole JSON back (200). While the token is active the user can't edit the deck; they can undo your changes afterwards. `content` represents the deck exactly (rotation, groups, fonts, omitted styling, off-slide positions and image srcs), so leave the values you don't change as they are. Sending it back unchanged reproduces the same deck. Existing image srcs in `content` are accepted back even if they are not HTTPS; new images must be uploaded srcs or public HTTPS URLs.
