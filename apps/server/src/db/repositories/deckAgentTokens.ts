@@ -14,6 +14,8 @@ export interface DeckAgentTokenRow {
   deck_id: string | null;
   /** チームのスライドに結び付いたトークン（発行の時点で決まる）。個人のトークンは null */
   team_deck_id: string | null;
+  /** 既存の個人のデッキを直すトークン（発行の時点で決まる。docs/agent-deck-token.md §4c）。それ以外は null */
+  edit_deck_id: string | null;
   write_count: number;
   image_count: number;
   created_at: number;
@@ -45,10 +47,10 @@ export const deckAgentTokensRepo = {
    * or after the owner deleted the deck. */
   listActive(ownerId: string, now: number): Promise<DeckAgentTokenListRow[]> {
     return many<DeckAgentTokenListRow>(
-      `SELECT t.id, t.owner_id, t.deck_id, t.team_deck_id, t.write_count, t.image_count, t.created_at,
+      `SELECT t.id, t.owner_id, t.deck_id, t.team_deck_id, t.edit_deck_id, t.write_count, t.image_count, t.created_at,
               t.expires_at, t.revoked_at, d.slug AS deck_slug, d.title AS deck_title
        FROM deck_agent_token t LEFT JOIN deck d ON d.id = t.deck_id
-       WHERE t.owner_id = ? AND t.team_deck_id IS NULL AND t.revoked_at IS NULL AND t.expires_at > ?
+       WHERE t.owner_id = ? AND t.team_deck_id IS NULL AND t.edit_deck_id IS NULL AND t.revoked_at IS NULL AND t.expires_at > ?
        ORDER BY t.created_at DESC`,
       ownerId, now,
     );
@@ -65,7 +67,7 @@ export const deckAgentTokensRepo = {
   /** The only Bearer lookup. Unknown, expired, revoked and owners in deletion all read as null. */
   findUsable(tokenHash: string, now: number): Promise<DeckAgentTokenRow | null> {
     return one<DeckAgentTokenRow>(
-      `SELECT t.id, t.owner_id, t.deck_id, t.team_deck_id, t.write_count, t.image_count, t.created_at,
+      `SELECT t.id, t.owner_id, t.deck_id, t.team_deck_id, t.edit_deck_id, t.write_count, t.image_count, t.created_at,
               t.expires_at, t.revoked_at
        FROM deck_agent_token t JOIN user u ON u.id = t.owner_id AND u.${ACTIVE}
        WHERE t.token_hash = ? AND t.revoked_at IS NULL AND t.expires_at > ?`,
@@ -195,6 +197,7 @@ export const deckAgentTokensRepo = {
                 AND EXISTS (SELECT 1 FROM deck d WHERE d.id = ? AND d.team_entry_id IS NOT NULL AND ${deckEditableSql("d", false)})`,
         args: [writeId, tokenId, deckId, DECK_AGENT_TOKEN_MAX_WRITES, now, deckId, ...editableArgs(ownerId, false)],
       },
+      aiBackupStatement(deckId, tokenId, writeId, now),
       {
         sql: `UPDATE deck SET title = ?, content = ?, updated_at = ?, revision = revision + 1, last_saved_by = ?
               WHERE id = ? AND EXISTS (SELECT 1 FROM deck_agent_token WHERE id = ? AND last_write_id = ?)`,
@@ -204,6 +207,74 @@ export const deckAgentTokensRepo = {
     if (counted === 1 && updated === 1) return "replaced";
     if (!(await this.isLive(tokenId, now))) return "revoked";
     return (await this.findTeamDeck(deckId, ownerId)) ? "limit" : "gone";
+  },
+
+  /** 既存の個人のデッキを AI に直してもらうトークンを発行する（docs/agent-deck-token.md §4c）。
+   * 持ち主の個人のデッキだけ・そのデッキに有効なトークンがまだ無いこと・1日の上限を、同じ INSERT の中で見る */
+  async issueForEditDeck(input: { id: string; ownerId: string; tokenHash: string; deckId: string; now: number }):
+    Promise<"ok" | "busy" | "forbidden" | "limit"> {
+    const { id, ownerId, tokenHash, deckId, now } = input;
+    const changes = await runCount(
+      `INSERT INTO deck_agent_token (id, owner_id, token_hash, edit_deck_id, created_at, expires_at)
+       SELECT ?, ?, ?, d.id, ?, ? FROM deck d
+        WHERE d.id = ? AND d.team_entry_id IS NULL AND d.owner_id = ?
+          AND NOT EXISTS (SELECT 1 FROM deck_agent_token busy
+            WHERE busy.edit_deck_id = d.id AND busy.revoked_at IS NULL AND busy.expires_at > ?)
+          AND (SELECT COUNT(*) FROM deck_agent_token WHERE owner_id = ? AND created_at > ?) < ?`,
+      id, ownerId, tokenHash, now, now + DECK_AGENT_TOKEN_TTL_MS,
+      deckId, ownerId,
+      now,
+      ownerId, now - 86_400_000, DECK_AGENT_TOKEN_DAILY_ISSUES,
+    );
+    if (changes === 1) return "ok";
+    if (!(await this.findDeck(deckId, ownerId, true))) return "forbidden";
+    return (await this.activeForEditDeck(deckId, now)) ? "busy" : "limit";
+  },
+
+  /** その個人のデッキを直している有効なトークン（あれば1本） */
+  activeForEditDeck(deckId: string, now: number): Promise<{ id: string; expires_at: number } | null> {
+    return one(
+      `SELECT id, expires_at FROM deck_agent_token
+        WHERE edit_deck_id = ? AND revoked_at IS NULL AND expires_at > ?
+        ORDER BY created_at DESC LIMIT 1`,
+      deckId, now,
+    );
+  },
+
+  /** 持ち主が、自分のデッキを直している AI を止める。止めたらまた編集できる */
+  revokeForEditDeck(deckId: string, ownerId: string, now: number): Promise<number> {
+    return runCount(
+      `UPDATE deck_agent_token SET revoked_at = ?
+        WHERE edit_deck_id = ? AND owner_id = ? AND revoked_at IS NULL`,
+      now, deckId, ownerId,
+    );
+  },
+
+  /** 既存の個人のデッキを AI が書き直す。持ち主のままの個人のデッキだけ。最初の書き込みの直前の中身を控える
+   * （「AIの変更を取り消す」）。版を進めるので、持ち主の画面の古い中身での保存は 409 になる */
+  async replaceEditDeck(input: {
+    tokenId: string; ownerId: string; deckId: string; title: string; content: string; now: number;
+  }): Promise<"replaced" | "limit" | "gone" | "revoked"> {
+    const { tokenId, ownerId, deckId, title, content, now } = input;
+    const writeId = crypto.randomUUID();
+    const [counted, , updated] = await batch([
+      {
+        sql: `UPDATE deck_agent_token SET write_count = write_count + 1, last_write_id = ?
+              WHERE id = ? AND edit_deck_id = ? AND write_count < ? AND revoked_at IS NULL AND expires_at > ?
+                AND EXISTS (SELECT 1 FROM deck WHERE id = ? AND owner_id = ? AND team_entry_id IS NULL)`,
+        args: [writeId, tokenId, deckId, DECK_AGENT_TOKEN_MAX_WRITES, now, deckId, ownerId],
+      },
+      aiBackupStatement(deckId, tokenId, writeId, now),
+      {
+        sql: `UPDATE deck SET title = ?, content = ?, updated_at = ?, revision = revision + 1, last_saved_by = owner_id
+              WHERE id = ? AND owner_id = ? AND EXISTS
+              (SELECT 1 FROM deck_agent_token WHERE id = ? AND last_write_id = ?)`,
+        args: [title, content, now, deckId, ownerId, tokenId, writeId],
+      },
+    ]);
+    if (counted === 1 && updated === 1) return "replaced";
+    if (!(await this.isLive(tokenId, now))) return "revoked";
+    return (await this.findDeck(deckId, ownerId, true)) ? "limit" : "gone";
   },
 
   /** 発行した人がいまも（AI のロックを除けば）編集できるチームのスライド */
@@ -233,12 +304,35 @@ export const deckAgentTokensRepo = {
     ));
   },
 
-  findDeck(deckId: string, ownerId: string): Promise<{ id: string; slug: string; title: string } | null> {
+  /** 持ち主のデッキ。personalOnly なら個人のデッキだけ（AI に直してもらう対象） */
+  findDeck(deckId: string, ownerId: string, personalOnly = false): Promise<{ id: string; slug: string; title: string } | null> {
     return one<{ id: string; slug: string; title: string }>(
-      "SELECT id, slug, title FROM deck WHERE id = ? AND owner_id = ?", deckId, ownerId,
+      `SELECT id, slug, title FROM deck WHERE id = ? AND owner_id = ?${personalOnly ? " AND team_entry_id IS NULL" : ""}`,
+      deckId, ownerId,
     );
   },
+
+  /** AI が直したデッキの中身（読み取り）。結び付いたデッキを持ち主・メンバーとして読めるときだけ呼ぶ */
+  async readContent(deckId: string): Promise<{ title: string; content: string } | null> {
+    return one<{ title: string; content: string }>("SELECT title, content FROM deck WHERE id = ?", deckId);
+  },
 };
+
+/** AI の最初の書き込みの直前の中身を控える文（docs/agent-deck-token.md §4c「AIの変更を取り消す」）。
+ * 書き込みの batch の、デッキの UPDATE より前に置く（更新前の中身を読む）。カウンタの UPDATE が通った
+ * ときだけ（last_write_id）入る。同じトークンの2回目以降は控えを置き換えない（最初の中身を残す）。
+ * 別のトークン（次の AI の作業）が最初に書いたら置き換える（1デッキ1行・最新の作業の前だけ） */
+function aiBackupStatement(deckId: string, tokenId: string, writeId: string, now: number) {
+  return {
+    sql: `INSERT INTO deck_ai_backup (deck_id, token_id, title, content, created_at)
+          SELECT d.id, ?, d.title, d.content, ? FROM deck d
+           WHERE d.id = ? AND EXISTS (SELECT 1 FROM deck_agent_token WHERE id = ? AND last_write_id = ?)
+          ON CONFLICT (deck_id) DO UPDATE SET token_id = excluded.token_id, title = excluded.title,
+            content = excluded.content, created_at = excluded.created_at
+          WHERE deck_ai_backup.token_id <> excluded.token_id`,
+    args: [tokenId, now, deckId, tokenId, writeId],
+  };
+}
 
 /** D1 surfaces UNIQUE failures as messages; only deck id/slug collisions are retryable. */
 export function deckIdentityConflict(error: unknown): boolean {

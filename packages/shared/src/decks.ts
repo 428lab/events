@@ -66,6 +66,8 @@ export const deckSchema = z.object({
   team: z.object({ entryId: z.string(), eventId: z.string(), name: z.string() }).nullable().optional(),
   /** 最後に保存した人。編集用の取得でだけ返す */
   lastSavedBy: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  /** 「AIの変更を取り消す」で戻せる中身があれば、その控えの時刻（docs/agent-deck-token.md §4c）。編集用の取得でだけ返す */
+  aiBackupAt: z.number().nullable().optional(),
 });
 export type Deck = z.infer<typeof deckSchema>;
 

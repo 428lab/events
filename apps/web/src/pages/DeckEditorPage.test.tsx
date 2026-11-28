@@ -36,6 +36,9 @@ vi.mock("../api/deckHooks.js", () => ({
   }),
   useUpdateDeck: () => ({ mutateAsync: mocks.update, isPending: false }),
   useUploadDeckImage: () => ({ mutateAsync: mocks.upload, isPending: false }),
+  useUndoDeckAi: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false, isError: false }),
+  useIssueEditDeckAgentToken: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
+  useRevokeEditDeckAgentToken: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 function text(id: string, body: string, groupId?: string) {

@@ -37,7 +37,13 @@ function imageSrc(src: string | undefined, origin: string): string | null {
   }
 }
 
-export function exportDeckV2(deck: { title: string; content: DeckContent }, origin: string): DeckImportV2 {
+export interface ExportDeckV2Options {
+  /** この関数が true を返す画像の src は、そのまま（相対のまま）書く。AI 用トークンの読み取りで、
+   * そのデッキにアップロード済みの画像を PUT にそのまま戻せるようにするため（docs/agent-deck-token.md §4c） */
+  keepSrc?: (src: string) => boolean;
+}
+
+export function exportDeckV2(deck: { title: string; content: DeckContent }, origin: string, options: ExportDeckV2Options = {}): DeckImportV2 {
   const title = deck.title.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, DECK_IMPORT_LIMITS.title).trim() || "Untitled";
   const slides = (deck.content.slides.length ? deck.content.slides : [{ background: "#ffffff", elements: [] }])
     .slice(0, DECK_IMPORT_LIMITS.slides)
@@ -46,7 +52,7 @@ export function exportDeckV2(deck: { title: string; content: DeckContent }, orig
       elements: slide.elements.slice(0, DECK_IMPORT_LIMITS.elementsPerSlide).flatMap((el): DeckImportV2["slides"][number]["elements"] => {
         const b = box(el);
         if (el.type === "image") {
-          const src = imageSrc(el.src, origin);
+          const src = el.src && options.keepSrc?.(el.src) ? el.src : imageSrc(el.src, origin);
           return [src ? { type: "image-url", ...b, src } : { type: "image-placeholder", ...b }];
         }
         const text = (el.text ?? "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, "").slice(0, DECK_IMPORT_LIMITS.text);

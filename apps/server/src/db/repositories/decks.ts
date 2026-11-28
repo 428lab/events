@@ -5,7 +5,7 @@ import type {
   DeckSummary,
   UpdateDeckInput,
 } from "@eventer/shared";
-import { many, one, run, runCount } from "../client.js";
+import { batch, many, one, run, runCount } from "../client.js";
 import { eventViewSql } from "../../auth/eventAccess.js";
 import { adminIds } from "./eventAccessInvites.js";
 import { deckShownOnProfileSql, deckViewsSql } from "./profileDecks.js";
@@ -32,16 +32,21 @@ interface DeckRow {
  *   見る・書き出すだけになる（オーナー決定 2026-11-03。「終わった」は eventAccessExit.ts と同じ判定）
  * - AI に書いてもらっている間（そのチームのスライドに有効な AI 用トークンがある間）は、メンバーも
  *   編集できない（オーナー決定 2026-11-04、docs/agent-deck-token.md「チームのスライド」）。
+ *   個人のデッキも、AI に直してもらっている間（edit_deck_id のトークンが有効な間）は持ち主も編集できない
+ *   （オーナー決定 2026-11-28、§4c）。
  *   取り消すか期限が切れたら、また編集できる。この判定を通る編集用の GET・保存・画像・同期の鍵が
  *   まとめて止まる
  * 引数は editableArgs(userId) の順。`d` はデッキ表の別名 */
 export function deckEditableSql(d: string, agentLock = true): string {
+  // AI のロック: チームのスライド（team_deck_id）も、AI に直してもらっている個人のデッキ（edit_deck_id、
+  // docs/agent-deck-token.md §4c）も、有効なトークンがある間は編集できない
   const lock = agentLock
     ? `NOT EXISTS (SELECT 1 FROM deck_agent_token agent_lock
-      WHERE agent_lock.team_deck_id = ${d}.id AND agent_lock.revoked_at IS NULL AND agent_lock.expires_at > ?) AND`
+      WHERE (agent_lock.team_deck_id = ${d}.id OR agent_lock.edit_deck_id = ${d}.id)
+        AND agent_lock.revoked_at IS NULL AND agent_lock.expires_at > ?) AND`
     : "";
-  return `((${d}.team_entry_id IS NULL AND ${d}.owner_id = ?)
-    OR (${d}.team_entry_id IS NOT NULL AND ${lock} EXISTS (SELECT 1 FROM entry edit_entry
+  return `(${lock} ((${d}.team_entry_id IS NULL AND ${d}.owner_id = ?)
+    OR (${d}.team_entry_id IS NOT NULL AND EXISTS (SELECT 1 FROM entry edit_entry
       JOIN event edit_event ON edit_event.id = edit_entry.event_id
         AND edit_event.contest_mode = 1 AND edit_event.participation_type = 'team'
         AND (edit_event.scheduling = 1 OR edit_event.ends_at >= ?)
@@ -49,11 +54,11 @@ export function deckEditableSql(d: string, agentLock = true): string {
       JOIN user edit_user ON edit_user.id = edit_member.user_id AND edit_user.deleted_at IS NULL
       WHERE edit_entry.id = ${d}.team_entry_id AND edit_entry.kind = 'team'
         AND edit_member.user_id = ?
-        AND ${eventViewSql("edit_event", "edit_user.id", "?")})))`;
+        AND ${eventViewSql("edit_event", "edit_user.id", "?")}))))`;
 }
 export const editableArgs = (userId: string, agentLock = true) => {
   const now = Date.now();
-  return agentLock ? [userId, now, now, userId, adminIds()] : [userId, now, userId, adminIds()];
+  return agentLock ? [now, userId, now, userId, adminIds()] : [userId, now, userId, adminIds()];
 };
 
 /** 同時編集の鍵を作り直す文の頭（docs/team-deck-live-sync.md §4.2）。後ろに `(SELECT deck の id …)` を続ける。
@@ -72,6 +77,8 @@ interface EditRow extends DeckRow {
   team_name: string | null;
   team_event_id: string | null;
   saver_name: string | null;
+  /** 「AIの変更を取り消す」で戻せる中身があればその時刻（deck_ai_backup） */
+  ai_backup_at: number | null;
 }
 
 /** 編集画面に返す形。チームと最後に保存した人を足す（公開の閲覧では返さない） */
@@ -82,6 +89,7 @@ function toEditDeck(row: EditRow): Deck {
       ? { entryId: row.team_entry_id, eventId: row.team_event_id, name: row.team_name ?? "" }
       : null,
     lastSavedBy: row.last_saved_by && row.saver_name ? { id: row.last_saved_by, name: row.saver_name } : null,
+    aiBackupAt: row.ai_backup_at,
   };
 }
 
@@ -90,6 +98,8 @@ export interface DeckAgentLock {
   expiresAt: number;
   /** 発行した人の表示名だけ（id は返さない） */
   issuedBy: { name: string } | null;
+  /** team: チームのスライド（取り消しはチームのカードから）／deck: AI に直してもらっている個人のデッキ（§4c） */
+  scope: "team" | "deck";
 }
 
 export type DeckEditLookup =
@@ -102,6 +112,7 @@ function agentLockOf(row: EditRow): DeckAgentLock {
   return {
     expiresAt: row.agent_expires_at!,
     issuedBy: row.agent_issuer_id ? { name: row.agent_issuer_name ?? "" } : null,
+    scope: row.team_entry_id ? "team" : "deck",
   };
 }
 
@@ -137,6 +148,10 @@ export const decksRepo = {
     return row ? toDeck(row) : null;
   },
 
+  async isTeamDeck(id: string): Promise<boolean> {
+    return Boolean(await one<{ id: string }>("SELECT id FROM deck WHERE id = ? AND team_entry_id IS NOT NULL", id));
+  },
+
   async findBySlug(slug: string): Promise<Deck | null> {
     const row = await one<DeckRow>("SELECT * FROM deck WHERE slug = ?", slug);
     return row ? toDeck(row) : null;
@@ -160,11 +175,13 @@ export const decksRepo = {
               en.name AS team_name, en.event_id AS team_event_id,
               COALESCE(saver.global_name, saver.username) AS saver_name,
               agent_tok.expires_at AS agent_expires_at, issuer.id AS agent_issuer_id,
-              COALESCE(issuer.global_name, issuer.username) AS agent_issuer_name
+              COALESCE(issuer.global_name, issuer.username) AS agent_issuer_name,
+              (SELECT created_at FROM deck_ai_backup WHERE deck_id = d.id) AS ai_backup_at
          FROM deck d
          LEFT JOIN entry en ON en.id = d.team_entry_id
          LEFT JOIN user saver ON saver.id = d.last_saved_by AND saver.deleted_at IS NULL
-         LEFT JOIN deck_agent_token agent_tok ON agent_tok.team_deck_id = d.id AND agent_tok.revoked_at IS NULL AND agent_tok.expires_at > ?
+         LEFT JOIN deck_agent_token agent_tok ON (agent_tok.team_deck_id = d.id OR agent_tok.edit_deck_id = d.id)
+           AND agent_tok.revoked_at IS NULL AND agent_tok.expires_at > ?
          LEFT JOIN user issuer ON issuer.id = agent_tok.owner_id AND issuer.deleted_at IS NULL
         WHERE d.id = ?`,
       ...editableArgs(userId),
@@ -173,7 +190,7 @@ export const decksRepo = {
       id,
     );
     if (!row) return { status: "not_found" };
-    // メンバーでも、AI に書いてもらっている間は中身を返さない（取り消すか期限が切れるまで）
+    // メンバー（個人のデッキなら持ち主）でも、AI に書いてもらっている間は中身を返さない（取り消すか期限が切れるまで）
     if (!row.editable && row.member_editable && row.agent_expires_at !== null) {
       return { status: "agent_writing", lock: agentLockOf(row) };
     }
@@ -304,6 +321,33 @@ export const decksRepo = {
     const after = await this.findForEdit(id, userId);
     if (after.status !== "ok") return after;
     return changed ? { status: "ok", deck: after.deck } : { status: "conflict", deck: after.deck };
+  },
+
+  /** 「AIの変更を取り消す」（docs/agent-deck-token.md §4c）。AI の最初の書き込みの直前の中身（deck_ai_backup）に戻す。
+   * 編集できる人だけ・AI が書いている間は不可（deckEditableSql）。戻したら控えは消す。
+   * 版を進めるので、ほかの画面の古い中身での保存は 409 になる */
+  async undoAi(id: string, userId: string): Promise<Exclude<DeckEditLookup, { status: "ok" }> | { status: "ok"; deck: Deck } | { status: "no_backup" }> {
+    const backup = await one<{ token_id: string }>("SELECT token_id FROM deck_ai_backup WHERE deck_id = ?", id);
+    const now = Date.now();
+    const [restored] = await batch([
+      {
+        sql: `UPDATE deck SET title = (SELECT title FROM deck_ai_backup WHERE deck_id = deck.id AND token_id = ?),
+                content = (SELECT content FROM deck_ai_backup WHERE deck_id = deck.id AND token_id = ?),
+                updated_at = ?, revision = revision + 1, last_saved_by = ?
+              WHERE id = ? AND ${deckEditableSql("deck")}
+                AND EXISTS (SELECT 1 FROM deck_ai_backup WHERE deck_id = deck.id AND token_id = ?)`,
+        args: [backup?.token_id ?? "", backup?.token_id ?? "", now, userId, id, ...editableArgs(userId), backup?.token_id ?? ""],
+      },
+      // 戻せたときだけ控えを消す（同じ batch。戻した書き込みの時刻と保存した人で見分ける）
+      {
+        sql: `DELETE FROM deck_ai_backup WHERE deck_id = ? AND token_id = ?
+                AND EXISTS (SELECT 1 FROM deck WHERE id = ? AND updated_at = ? AND last_saved_by = ?)`,
+        args: [id, backup?.token_id ?? "", id, now, userId],
+      },
+    ]);
+    const after = await this.findForEdit(id, userId);
+    if (after.status !== "ok") return after;
+    return restored ? after : { status: "no_backup" };
   },
 
   /** 個人のデッキを持ち主が消す。チームのスライドはここでは消せない（メンバー1人がチームの作業を消さない） */

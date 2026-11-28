@@ -20,6 +20,19 @@ const ja = {
   refresh: "最新にする",
   limit: "今日はこれ以上発行できません。時間をおいて試してください。",
   failure: "発行できませんでした。時間をおいて試してください。",
+  /* ── 作成済みのスライドを AI に直してもらう（docs/agent-deck-token.md §4c） ── */
+  editIssue: "AIに直してもらう",
+  editConfirm: "このスライドをAIに直してもらいますか？60分有効のトークンを発行します。AIが書いている間は、あなたもこのスライドを編集できません（取り消せばすぐ編集できます）。AIが保存した時点で、URLを知る人はログインせず閲覧できます。",
+  editInstruction: "events lab のスライドを直してください。\n手順と仕様: {{specUrl}}\nトークン: {{token}}（{{expires}} まで有効）\n直してほしいこと: ",
+  editWriting: "いまAIがこのスライドを直しています（あと{{minutes}}分）。その間は編集できません。",
+  editWritingUnknown: "いまAIがこのスライドを直しています。その間は編集できません。",
+  editRevoke: "AIのアクセスを取り消して編集する",
+  editRevokeConfirm: "AIのアクセスを取り消しますか？AIはこれ以上書けなくなり、編集できるようになります。AIが書いた内容は残ります（「AIの変更を取り消す」で前の中身に戻せます）。",
+  editBusy: "このスライドは、いまAIが直しています。",
+  undo: "AIの変更を取り消す",
+  undoAvailable: "AIがこのスライドを直しました（{{time}}）。直す前の中身に戻せます。",
+  undoConfirm: "AIが直す前の中身に戻しますか？AIが書いた内容と、そのあとに自分で変えた内容は消えます（戻したあとは、もう一度は取り消せません）。",
+  undoFailed: "元に戻せませんでした。時間をおいて試してください。",
 };
 const en: Record<keyof typeof ja, string> = {
   title: "Let an AI write it",
@@ -42,5 +55,17 @@ const en: Record<keyof typeof ja, string> = {
   refresh: "Refresh",
   limit: "You cannot issue more tokens today. Try again later.",
   failure: "Could not issue a token. Try again later.",
+  editIssue: "Have AI edit it",
+  editConfirm: "Have an AI edit this deck? This issues a token valid for 60 minutes. While the AI is writing, you can't edit this deck either (revoke it to edit right away). Once the AI saves, anyone with the URL can view the deck without signing in.",
+  editInstruction: "Please edit a slide deck on events lab.\nSteps and specification: {{specUrl}}\nToken: {{token}} (valid until {{expires}})\nWhat to change: ",
+  editWriting: "An AI is editing this deck right now ({{minutes}} min left). You can't edit it until then.",
+  editWritingUnknown: "An AI is editing this deck right now. You can't edit it until then.",
+  editRevoke: "Revoke the AI's access and edit",
+  editRevokeConfirm: "Revoke the AI's access? The AI can no longer write, and you can edit again. What the AI wrote stays (use \"Undo the AI's changes\" to go back).",
+  editBusy: "An AI is editing this deck right now.",
+  undo: "Undo the AI's changes",
+  undoAvailable: "An AI edited this deck ({{time}}). You can go back to the content from before.",
+  undoConfirm: "Go back to the content from before the AI edited it? What the AI wrote, and anything you changed after it, is removed (this can't be undone again).",
+  undoFailed: "Couldn't undo. Try again later.",
 };
 export const deckAgent = { ja, en };

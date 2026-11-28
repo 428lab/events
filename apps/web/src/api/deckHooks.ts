@@ -94,6 +94,36 @@ export function useRevokeTeamDeckAgentToken(eventId: string) {
   });
 }
 
+/** 作成済みの自分のスライドを AI に直してもらうトークン（docs/agent-deck-token.md §4c）。平文は応答の1回だけ */
+export interface IssuedEditDeckAgentToken {
+  token: string;
+  specUrl: string;
+  deckId: string;
+  expiresAt: number;
+}
+export function useIssueEditDeckAgentToken(deckId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<IssuedEditDeckAgentToken>(`/decks/${deckId}/agent-token`),
+    // 発行したら編集用の取得は 423（AI が書いている）になる。取り直して画面を切り替える
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["deck", deckId] }),
+  });
+}
+/** 自分のスライドを直している AI を止める。止めたらまた編集できる */
+export function useRevokeEditDeckAgentToken(deckId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.del(`/decks/${deckId}/agent-token`),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["deck", deckId] }),
+  });
+}
+/** 「AIの変更を取り消す」。AI が直す前の中身に戻す */
+export function useUndoDeckAi(deckId: string) {
+  return useMutation({
+    mutationFn: () => api.post<Deck>(`/decks/${deckId}/undo-ai`),
+  });
+}
+
 /** 編集用（個人のデッキは持ち主、チームのスライドはそのチームのいまのメンバー） */
 export function useDeck(id: string) {
   return useQuery({

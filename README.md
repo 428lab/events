@@ -76,6 +76,7 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - [x] イベントからの「会場を探しています」掲載とオファーのやりとり
 - [x] スライド（デッキ）の作成・編集・公開（`/d/:slug`。画像・テキスト配置）
 - [x] スライドを PDF から取り込む（見た目そのまま／文字を直せる形を選べる。Keynote・PowerPoint は PDF に書き出してから。[docs/slide-editor.md](docs/slide-editor.md) §3.3.1）
+- [x] スライドを AI エージェントに書いてもらう・作成済みのスライドを直してもらう（一時トークン。直したあと「AIの変更を取り消す」で戻せる。[docs/agent-deck-token.md](docs/agent-deck-token.md)）
 - [x] 配信セットと配信画面（OBS がウィンドウキャプチャする完成画面・配信コントロール・BGM）
 - [x] 配信画面から手元の中継アプリ（[eventslab-relay](https://github.com/428lab/eventslab-relay)）経由で YouTube に配信（OBS なし・ハードウェアエンコード・配信キーは手で入れる。[docs/browser-live-stream.md](docs/browser-live-stream.md)）
 - [x] イベントチャット（Nostr リレー経由。投影画面あり）
@@ -271,7 +272,7 @@ npx wrangler secret put NOSTR_SERVICE_KEY --env staging   # staging
 | [docs/bingo-entry.md](docs/bingo-entry.md) | ビンゴ会場の入口 |
 | [docs/participant-encrypted-chat.md](docs/participant-encrypted-chat.md) | 参加者チャットを参加者だけに限定する（暗号化） |
 | [docs/slide-editor.md](docs/slide-editor.md) | 編集画面（スライド / 配信セット）の責務分割 |
-| [docs/agent-deck-token.md](docs/agent-deck-token.md) | AI エージェントにスライドを書いてもらう一時トークン |
+| [docs/agent-deck-token.md](docs/agent-deck-token.md) | AI エージェントにスライドを書いてもらう・直してもらう一時トークン |
 | [docs/lab-llm-slides-import.md](docs/lab-llm-slides-import.md) | LLM 生成スライドの JSON 取り込み |
 | [docs/live-set-visual-design.md](docs/live-set-visual-design.md) | 配信セットのビジュアル設計 |
 | [docs/browser-live-stream.md](docs/browser-live-stream.md) | 配信画面から手元の中継アプリ経由で YouTube に配信する（運営の手順と決まりごと） |
