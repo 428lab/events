@@ -162,10 +162,13 @@ function MeetQrScanner({
   active,
   onMeet,
   onBackToShow,
+  ignoreToken,
 }: {
   active: boolean;
   onMeet: (token: string) => void;
   onBackToShow: () => void;
+  /** このトークンは読んでも何もしない（直前に記録したQRの映り込み対策, #726） */
+  ignoreToken?: string;
 }) {
   const { t } = useTranslation();
   const [notMeet, setNotMeet] = useState(false);
@@ -181,6 +184,8 @@ function MeetQrScanner({
       }
       lastRef.current = { text, at: now };
       const token = parseMeetQrUrl(text, window.location.origin);
+      // 相手の画面が描き替わる前に同じQRが映り込んでも「使用済み」にしない
+      if (token && token === ignoreToken) return;
       if (token) {
         onMeet(token);
         return;
@@ -189,7 +194,7 @@ function MeetQrScanner({
       window.clearTimeout(noticeTimerRef.current);
       noticeTimerRef.current = window.setTimeout(() => setNotMeet(false), 2500);
     },
-    [onMeet],
+    [onMeet, ignoreToken],
   );
 
   const { videoRef, canvasRef, cameraError } = useQrScanner({
@@ -255,17 +260,26 @@ export function BigQrDialog({
   onClose,
   name,
   avatarUrl,
+  initialMode = "show",
+  replaceOnMeet = false,
+  ignoreToken,
 }: {
   open: boolean;
   onClose: () => void;
   name: string;
   avatarUrl?: string | null;
+  /** 開いたときのモード。出会いの結果画面からは「読み取る」で開く (#726) */
+  initialMode?: QrMode;
+  /** 読んだら履歴を積まずに /m/<token> へ移る（/m 同士を行き来する場合, #726） */
+  replaceOnMeet?: boolean;
+  /** 読んでも進まないトークン（直前に記録した相手のQR, #726） */
+  ignoreToken?: string;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   useScreenWakeLock(open);
-  // 開くたびに「見せる」から始める (#704)
-  const [mode, setMode] = useState<QrMode>("show");
+  // 開くたびに initialMode（既定は「見せる」）から始める (#704, #726)
+  const [mode, setMode] = useState<QrMode>(initialMode);
   // 表示中のトークン。読まれるまでは同じものを出し続ける（読み取っている
   // 最中に切り替わると失敗し続けるため）。読まれたらサーバーが次のぶんを返す
   const [current, setCurrent] = useState<string | null>(null);
@@ -294,9 +308,9 @@ export function BigQrDialog({
     if (!open) {
       setCurrent(null);
       setJustRead(false);
-      setMode("show");
+      setMode(initialMode);
     }
-  }, [open]);
+  }, [open, initialMode]);
 
   // 期限切れを描かないための時計。読み取る側だけが「期限切れ」を見て、
   // 見せている側は気づけない、という壊れ方を防ぐ (#330)。
@@ -317,9 +331,9 @@ export function BigQrDialog({
   const onMeet = useCallback(
     (token: string) => {
       onClose();
-      navigate(`/m/${token}`);
+      navigate(`/m/${token}`, { replace: replaceOnMeet });
     },
-    [onClose, navigate],
+    [onClose, navigate, replaceOnMeet],
   );
   const backToShow = useCallback(() => setMode("show"), []);
 
@@ -376,7 +390,12 @@ export function BigQrDialog({
         sx={{ height: "100%", p: 2 }}
       >
         {mode === "scan" ? (
-          <MeetQrScanner active={open} onMeet={onMeet} onBackToShow={backToShow} />
+          <MeetQrScanner
+            active={open}
+            onMeet={onMeet}
+            onBackToShow={backToShow}
+            ignoreToken={ignoreToken}
+          />
         ) : (
           <>
             <Box
