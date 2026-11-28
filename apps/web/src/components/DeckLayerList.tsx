@@ -31,7 +31,6 @@ export function DeckLayerList({
 
   return (
     <>
-      <Divider sx={{ mt: 1 }} />
       <Typography variant="caption" color="text.secondary">
         {t("studio.layersHeading")}
       </Typography>
@@ -72,6 +71,8 @@ export function DeckLayerList({
           </Typography>
         )}
       </Stack>
+      {/* 下に続く要素の設定との区切り */}
+      <Divider />
     </>
   );
 }
