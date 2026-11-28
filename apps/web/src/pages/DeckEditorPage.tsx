@@ -79,6 +79,10 @@ import { useImagePicker } from "../lib/editor/useImagePicker.js";
  * 履歴・自動保存・キーボード・画像の差し込みは lib/editor/ にまとめてある
  * （ライブ配信セットの編集画面と同じ仕掛けなので、契約を2つ持たない）。
  */
+/** 横幅の広い画面で3つの列を画面上に留める位置（px）。上のバーは流れていくので、画面の上端から少し空ける */
+const STICKY_TOP = 16;
+const STICKY_COLUMN = { position: { md: "sticky" }, top: { md: STICKY_TOP } } as const;
+
 export function DeckEditorPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
@@ -433,8 +437,10 @@ export function DeckEditorPage() {
       )}
 
       <Typography variant="caption">{t("deckImport.tabs")}</Typography>
-      <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-        <Stack spacing={1} sx={{ width: { md: 168 }, flexShrink: 0 }}>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ md: "flex-start" }}>
+        {/* 横幅の広い画面では、左の列（ページ一覧とレイヤー）を画面の高さに収めて中だけスクロールする。
+            3つの列は画面上に留まるので、ページが多くても編集画面が見えなくならない */}
+        <Stack spacing={1} sx={{ width: { md: 168 }, flexShrink: 0, ...STICKY_COLUMN, maxHeight: { md: `calc(100vh - ${STICKY_TOP * 2}px)` } }}>
           <DeckSlideList
             slides={slides}
             current={idx}
@@ -452,7 +458,7 @@ export function DeckEditorPage() {
           />
         </Stack>
 
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Box sx={{ flex: 1, minWidth: 0, ...STICKY_COLUMN }}>
           <DeckToolbar
             onAddText={() => addElement(newTextElement(creatorLanguage()))}
             onAddImage={() =>
@@ -481,7 +487,7 @@ export function DeckEditorPage() {
           />
         </Box>
 
-        <Stack spacing={1.5} sx={{ width: { md: 240 }, flexShrink: 0 }}>
+        <Stack spacing={1.5} sx={{ width: { md: 240 }, flexShrink: 0, ...STICKY_COLUMN, maxHeight: { md: `calc(100vh - ${STICKY_TOP * 2}px)` }, overflowY: { md: "auto" } }}>
           <DeckElementPanel
             selection={selection}
             commands={elementCommands}

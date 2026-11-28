@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Box, Button, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
@@ -31,14 +32,25 @@ export function DeckSlideList({
   commands: DeckSlideCommands;
 }) {
   const { t } = useTranslation();
+  const currentRef = useRef<HTMLDivElement>(null);
+  // 一覧は横幅の広い画面では別にスクロールする。選んだページ（矢印で動かした・足した）が
+  // 見えるところへ寄せる
+  useEffect(() => {
+    currentRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [current, slides.length]);
 
   return (
     <>
+      {/* 横幅の広い画面では、サムネだけをこの枠の中でスクロールする。ページが増えても
+          編集画面が上へ流れていかない（親の列が画面の高さに収まる） */}
+      <Stack spacing={1} data-testid="deck-slide-thumbs" sx={{ overflowY: { md: "auto" }, flex: { md: "1 1 auto" }, minHeight: { md: 0 }, pr: { md: 0.5 } }}>
       {slides.map((s, j) => (
         <Box
           key={s.id}
+          ref={j === current ? currentRef : undefined}
           onClick={() => onSelect(j)}
           sx={{
+            flexShrink: 0,
             cursor: "pointer",
             border: "2px solid",
             borderColor: j === current ? "primary.main" : "divider",
@@ -68,10 +80,11 @@ export function DeckSlideList({
           </Typography>
         </Box>
       ))}
-      <Button size="small" onClick={commands.add}>
+      </Stack>
+      <Button size="small" onClick={commands.add} sx={{ flexShrink: 0 }}>
         {t("studio.addPage")}
       </Button>
-      <Stack direction="row" spacing={0.5} justifyContent="center">
+      <Stack direction="row" spacing={0.5} justifyContent="center" sx={{ flexShrink: 0 }}>
         <Tooltip title={t("studio.duplicate")}>
           <IconButton size="small" onClick={commands.duplicate}>
             <ContentCopyIcon fontSize="small" />
