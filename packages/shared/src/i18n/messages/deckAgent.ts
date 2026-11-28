@@ -24,10 +24,6 @@ const ja = {
   editIssue: "AIに直してもらう",
   editConfirm: "このスライドをAIに直してもらいますか？60分有効のトークンを発行します。AIが書いている間は、あなたもこのスライドを編集できません（取り消せばすぐ編集できます）。AIが保存した時点で、URLを知る人はログインせず閲覧できます。",
   /** AI は v2 JSON で読み書きするので、v2 に無いものは直すと元に戻る（確認に足す。当てはまるものだけ） */
-  editLossesIntro: "AIが直すと、次のものは元に戻ります（戻したいときは「AIの変更を取り消す」）:",
-  editLossRotated: "回転（{{n}}個）",
-  editLossGrouped: "グループ（{{n}}個）",
-  editLossFonts: "書体（{{fonts}}）",
   /** v2 の上限を超えると書き出しで切り捨てられ、AI が書き戻すと消えるので発行しない */
   editTooLarge: "このスライドは{{maxSlides}}枚・1枚{{maxElements}}個までを超えているため、AIでは直せません。",
   editInstruction: "events lab のスライドを直してください。\n手順と仕様: {{specUrl}}\nトークン: {{token}}（{{expires}} まで有効）\n直してほしいこと: ",
@@ -64,10 +60,6 @@ const en: Record<keyof typeof ja, string> = {
   failure: "Could not issue a token. Try again later.",
   editIssue: "Have AI edit it",
   editConfirm: "Have an AI edit this deck? This issues a token valid for 60 minutes. While the AI is writing, you can't edit this deck either (revoke it to edit right away). Once the AI saves, anyone with the URL can view the deck without signing in.",
-  editLossesIntro: "If the AI edits it, these will be reset (use \"Undo AI changes\" to get them back):",
-  editLossRotated: "rotation ({{n}})",
-  editLossGrouped: "groups ({{n}})",
-  editLossFonts: "fonts ({{fonts}})",
   editTooLarge: "This deck has more than {{maxSlides}} slides or more than {{maxElements}} elements on a slide, so an AI can't edit it.",
   editInstruction: "Please edit a slide deck on events lab.\nSteps and specification: {{specUrl}}\nToken: {{token}} (valid until {{expires}})\nWhat to change: ",
   editWriting: "An AI is editing this deck right now ({{minutes}} min left). You can't edit it until then.",

@@ -134,21 +134,28 @@ describe("作成済みのスライドを AI に直してもらう (§4c)", () =>
     expect((await agentPut(issued.token, read)).status).toBe(200);
   });
 
-  it("v2 の上限を超えるデッキ（61枚）は発行しない。回転と書体は発行でき、losses で知らせる", async () => {
+  it("v2 の上限を超えるデッキ（61枚）は発行しない。編集画面の中身は AI の読み書きでそのまま戻る", async () => {
     const owner = await user();
     const big = await personalDeck(owner.id, "大きい", Array.from({ length: 61 }, () => ({ id: crypto.randomUUID(), background: "#ffffff", elements: [text("p")] })));
     const res = await issueEdit(big, owner.cookie);
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: "deck_too_large_for_ai", slides: 61, maxSlides: 60, maxElementsPerSlide: 50 });
 
-    const styled = await personalDeck(owner.id, "飾り", [{ id: crypto.randomUUID(), background: "#ffffff", elements: [
-      { ...text("回転"), rotation: 15 },
-      { ...text("書体", 200), fontFamily: "M PLUS Rounded 1c" },
-    ] }]);
+    // 回転・グループ・書体・はみ出し・利用者が入れた http の画像 URL も、読んでそのまま PUT すると変わらない
+    const slides: DeckContent["slides"] = [{ id: crypto.randomUUID(), background: "#ffffff", elements: [
+      { ...text("回転"), rotation: 15.5, groupId: "g1" },
+      { ...text("書体", 200), fontFamily: "M PLUS Rounded 1c", x: -30.25, w: 1200 },
+      { id: crypto.randomUUID(), type: "image", x: 10, y: 10, w: 100, h: 100, rotation: 0, src: "http://example.com/a.png", groupId: "g1" },
+    ] }];
+    const styled = await personalDeck(owner.id, "飾り", slides);
     const ok = await issueEdit(styled, owner.cookie);
     expect(ok.status).toBe(201);
     const { token } = await ok.json<{ token: string }>();
-    const state = await (await agentGet(token)).json<{ losses: unknown }>();
-    expect(state.losses).toEqual({ truncatedSlides: 0, truncatedElements: 0, rotated: 1, grouped: 0, customFonts: ["M PLUS Rounded 1c"] });
+    const state = await (await agentGet(token)).json<{ losses: unknown; content: unknown }>();
+    expect(state.losses).toEqual({ truncatedSlides: 0, truncatedElements: 0, overTotalElements: 0, overTotalText: 0 });
+    expect((await agentPut(token, state.content)).status).toBe(200);
+    const row = await env.DB.prepare("SELECT content FROM deck WHERE id = ?").bind(styled).first<{ content: string }>();
+    const strip = (c: DeckContent) => c.slides.map((s) => ({ background: s.background, elements: s.elements.map(({ id: _id, pos: _pos, ...rest }) => rest) }));
+    expect(strip(JSON.parse(row!.content))).toEqual(strip({ slides }));
   });
 });

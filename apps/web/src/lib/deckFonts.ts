@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { FONTS } from "./imageTemplates.js";
-import type { DeckContent } from "@eventer/shared";
+import { DECK_IMPORT_FONTS, type DeckContent } from "@eventer/shared";
 
 /** 組み込みフォントの呼び名。**訳した文字列ではなくキーを持つ**ので、
  * 言語を切り替えたときに前の言語のまま残らない (#367) */
@@ -20,13 +20,13 @@ type DeckFontOption = {
   | { label: string; labelKey?: undefined }
 );
 
-const DECK_FONTS: DeckFontOption[] = [
-  { labelKey: "studio.fontDefault", family: "" },
-  { label: "Plus Jakarta Sans", family: "Plus Jakarta Sans" },
-  { labelKey: "studio.fontSerif", family: "serif" },
-  { labelKey: "studio.fontMono", family: "monospace" },
-  ...FONTS.map((f) => ({ label: f.label, family: f.family })),
-];
+/** 並びと値は共有の DECK_IMPORT_FONTS（スライドJSONの font と同じ一覧）から引く */
+const DECK_FONTS: DeckFontOption[] = DECK_IMPORT_FONTS.map((font): DeckFontOption => {
+  if (font === "default") return { labelKey: "studio.fontDefault", family: "" };
+  if (font === "serif") return { labelKey: "studio.fontSerif", family: "serif" };
+  if (font === "monospace") return { labelKey: "studio.fontMono", family: "monospace" };
+  return { label: FONTS.find((f) => f.family === font)?.label ?? font, family: font };
+});
 
 /**
  * フォント選択欄に出す選択肢 (#367)。

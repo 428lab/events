@@ -64,7 +64,7 @@
 | title | 1〜120コード単位。U+0000〜001F、U+007Fを禁止。前後にECMAScript `trim()`対象の空白を含めない（含む場合エラー）。空白だけも不可 |
 | text | 1〜10,000コード単位、かつ全text合計100,000以下。U+0000〜001FはLF（U+000A）のみ許可、U+007F禁止。空白だけも許可（警告）。箇条書きは`・`等の文字と`\n`。Markdown/HTMLの意味解釈なし |
 | 色（background/color） | 正規表現 `^#[0-9A-Fa-f]{6}$`。RGB 6桁のみ。大小文字とも保持。透明色、色名、3/8桁hex、rgb()、url()、グラデーション不可 |
-| font | `"default"` / `"serif"` / `"monospace"` のみ。任意CSS／URL／フォント名不可 |
+| font | `"default"` / `"serif"` / `"monospace"` のみ。任意CSS／URL／フォント名不可（v1。v2 は 2026-11-28 から編集画面で選べる書体名も可。`DECK_IMPORT_FONTS`、`public/deck-import/v2/spec.md`） |
 | fontSize | 整数12〜160、960×540座標系でのCSS px。ptではない |
 | align | `"left"` / `"center"` / `"right"` のみ。縦揃えは既存の中央固定 |
 | x,y,w,h | 整数。`0 ≤ x ≤ 940`、`0 ≤ y ≤ 520`、`20 ≤ w ≤ 960`、`20 ≤ h ≤ 540`、かつ `x+w ≤ 960`、`y+h ≤ 540`。回転なし |

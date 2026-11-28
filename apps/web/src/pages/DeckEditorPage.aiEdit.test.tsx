@@ -70,7 +70,7 @@ it("AI が直したあとは「AIの変更を取り消す」が出て、確認�
   expect(screen.queryByRole("button", { name: "AIに直してもらう" })).toBeNull();
 });
 
-it("回転・書体は発行の確認に「元に戻る」として並べ、60枚を超えるスライドは押せずに理由を出す", async () => {
+it("回転・書体は AI でもそのまま運べるので警告しない。60枚を超えるスライドは押せずに理由を出す", async () => {
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   const el = { id: "e1", type: "text" as const, x: 10, y: 10, w: 200, h: 60, rotation: 0, text: "あ", fontSize: 30 };
   mocks.deck = deck({ content: { slides: [{ id: "s1", background: "#ffffff", elements: [
@@ -79,9 +79,7 @@ it("回転・書体は発行の確認に「元に戻る」として並べ、60�
   const view = draw();
   await act(async () => { fireEvent.click(await screen.findByRole("button", { name: "AIに直してもらう" })); });
   const message = confirm.mock.calls[0]![0] as string;
-  expect(message).toContain("回転（1個）");
-  expect(message).toContain("書体（M PLUS Rounded 1c）");
-  expect(message).not.toContain("グループ");
+  expect(message).not.toMatch(/回転|書体|グループ|元に戻ります/);
   expect(mocks.issue).not.toHaveBeenCalled();
   view.unmount();
 

@@ -1,26 +1,21 @@
-import { DECK_W, DECK_H, type DeckContent, type DeckElement } from "./decks.js";
-import { DECK_IMPORT_LIMITS, type DeckImportFont, type DeckImportV2 } from "./deckImport.js";
+import type { DeckContent } from "./decks.js";
+import { DECK_IMPORT_FONTS, DECK_IMPORT_LIMITS, type DeckImportFont, type DeckImportV2 } from "./deckImport.js";
 
 /** スライドの書き出し（JSON）。公開の取り込み形式 events-lab-deck version 2 にする
  * （docs/slide-editor.md「4.1 書き出し」）。`/decks/import` にそのまま取り込み直せる。
  *
- * 取り込み（convertDeckImport）の逆。v2 が持たないもの（回転・グループ・位置キー pos・
- * 既定以外の書体）は落とす。位置と大きさは v2 の範囲に丸めて収める。 */
+ * 取り込み（convertDeckImport）の逆。編集画面が作れる中身はそのまま書く（位置・大きさは小数や
+ * スライドの外も、回転・グループ・書体・装飾の有無も）。取り込み直すと同じ中身に戻る
+ * （id と並びの位置キー pos は振り直す。並びの順は同じ）。AI に直してもらっても元の内容が
+ * 変わらないようにするため（kojira 2026-11-28）。書けないのは上限を超えた分だけ（deckV2Losses）。 */
 
 const COLOR = /^#[0-9A-Fa-f]{6}$/;
-const BOX = { x: [0, DECK_W - 20], y: [0, DECK_H - 20], w: [20, DECK_W], h: [20, DECK_H] } as const;
-const clamp = (v: number | undefined, min: number, max: number, fallback: number) =>
-  Math.min(max, Math.max(min, Math.round(Number.isFinite(v) ? v! : fallback)));
+const finite = (v: number | undefined, fallback: number) => (Number.isFinite(v) ? v! : fallback);
 const color = (v: string | undefined, fallback: string) => (v && COLOR.test(v) ? v : fallback);
 
-function box(el: DeckElement) {
-  const x = clamp(el.x, BOX.x[0], BOX.x[1], 0);
-  const y = clamp(el.y, BOX.y[0], BOX.y[1], 0);
-  return { x, y, w: clamp(el.w, BOX.w[0], DECK_W - x, BOX.w[0]), h: clamp(el.h, BOX.h[0], DECK_H - y, BOX.h[0]) };
-}
-
-function font(family: string | undefined): DeckImportFont {
-  return family === "serif" || family === "monospace" ? family : "default";
+/** 編集画面の書体はそのまま書き出す。一覧に無い値（編集画面では作れない）だけ既定にする */
+function font(family: string): DeckImportFont {
+  return family !== "default" && (DECK_IMPORT_FONTS as readonly string[]).includes(family) ? family as DeckImportFont : "default";
 }
 
 /** 相対の画像（`/api/decks/...`）は表示中のオリジンで絶対 URL にする。HTTPS の絶対 URL に
@@ -44,57 +39,64 @@ export interface ExportDeckV2Options {
 }
 
 export function exportDeckV2(deck: { title: string; content: DeckContent }, origin: string, options: ExportDeckV2Options = {}): DeckImportV2 {
-  const title = deck.title.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, DECK_IMPORT_LIMITS.title).trim() || "Untitled";
+  const title = deck.title.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, DECK_IMPORT_LIMITS.title).trim();
   const slides = (deck.content.slides.length ? deck.content.slides : [{ background: "#ffffff", elements: [] }])
     .slice(0, DECK_IMPORT_LIMITS.slides)
     .map((slide) => ({
       background: color(slide.background, "#FFFFFF"),
-      elements: slide.elements.slice(0, DECK_IMPORT_LIMITS.elementsPerSlide).flatMap((el): DeckImportV2["slides"][number]["elements"] => {
-        const b = box(el);
+      elements: slide.elements.slice(0, DECK_IMPORT_LIMITS.elementsPerSlide).map((el): DeckImportV2["slides"][number]["elements"][number] => {
+        const b = {
+          x: finite(el.x, 0), y: finite(el.y, 0), w: Math.max(0, finite(el.w, 0)), h: Math.max(0, finite(el.h, 0)),
+          ...(el.rotation ? { rotation: el.rotation } : {}),
+          ...(el.groupId ? { group: el.groupId } : {}),
+        };
         if (el.type === "image") {
           const src = el.src && options.keepSrc?.(el.src) ? el.src : imageSrc(el.src, origin);
-          return [src ? { type: "image-url", ...b, src } : { type: "image-placeholder", ...b }];
+          return src ? { type: "image-url", ...b, src } : { type: "image-placeholder", ...b };
         }
-        const text = (el.text ?? "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, "").slice(0, DECK_IMPORT_LIMITS.text);
-        // 空の文字要素は v2 に書けない（1 文字以上）。描いても何も見えないので落とす
-        if (!text) return [];
-        return [{
-          type: "text", ...b, text,
-          fontSize: clamp(el.fontSize, 12, 160, 28), font: font(el.fontFamily),
-          color: color(el.color, "#0F172A"), bold: Boolean(el.bold), italic: Boolean(el.italic),
-          align: el.align ?? "left",
-        }];
+        return {
+          type: "text", ...b, text: el.text ?? "",
+          ...(el.fontSize !== undefined && Number.isFinite(el.fontSize) ? { fontSize: Math.max(0, el.fontSize) } : {}),
+          ...(el.fontFamily !== undefined ? { font: el.fontFamily ? font(el.fontFamily) : "default" } : {}),
+          ...(el.color !== undefined ? { color: color(el.color, "#0F172A") } : {}),
+          ...(el.bold !== undefined ? { bold: el.bold } : {}),
+          ...(el.italic !== undefined ? { italic: el.italic } : {}),
+          ...(el.align !== undefined ? { align: el.align } : {}),
+        };
       }),
     }));
   return { format: "events-lab-deck", version: 2, title, slides };
 }
 
-/** v2 に書き出すと失われるもの（exportDeckV2 と同じ規則・同じ上限）。AI に直してもらう前に確かめる
- * （docs/agent-deck-token.md §4c）。truncated* が 1 以上ならスライドや要素が消えるので AI では直せない。
- * rotated / grouped / customFonts は直すと元に戻る（警告だけ） */
+/** v2 に書き出せない分（exportDeckV2 と取り込みの検証と同じ上限）。AI に直してもらう前に確かめる
+ * （docs/agent-deck-token.md §4c）。1 以上なら、書き出しで切り捨てられるか書き戻しが通らないので AI では直せない。
+ * それ以外の中身（回転・グループ・書体・装飾・はみ出した位置）は v2 でそのまま運べる */
 export interface DeckV2Losses {
   truncatedSlides: number;
   truncatedElements: number;
-  rotated: number;
-  grouped: number;
-  customFonts: string[];
+  /** 全スライド合計の要素数・文字数の上限を超えた分 */
+  overTotalElements: number;
+  overTotalText: number;
 }
 
 export function deckV2Losses(content: DeckContent): DeckV2Losses {
-  const slides = content.slides;
-  const truncatedSlides = Math.max(0, slides.length - DECK_IMPORT_LIMITS.slides);
-  let truncatedElements = 0, rotated = 0, grouped = 0;
-  const fonts = new Set<string>();
-  for (const slide of slides.slice(0, DECK_IMPORT_LIMITS.slides)) {
+  const slides = content.slides.slice(0, DECK_IMPORT_LIMITS.slides);
+  const truncatedSlides = Math.max(0, content.slides.length - DECK_IMPORT_LIMITS.slides);
+  let truncatedElements = 0, elements = 0, text = 0;
+  for (const slide of slides) {
     truncatedElements += Math.max(0, slide.elements.length - DECK_IMPORT_LIMITS.elementsPerSlide);
     for (const el of slide.elements.slice(0, DECK_IMPORT_LIMITS.elementsPerSlide)) {
-      if (el.rotation) rotated++;
-      if (el.groupId) grouped++;
-      if (el.type === "text" && el.fontFamily && font(el.fontFamily) === "default" && el.fontFamily !== "default") fonts.add(el.fontFamily);
+      elements++;
+      if (el.type === "text") text += (el.text ?? "").length;
     }
   }
-  return { truncatedSlides, truncatedElements, rotated, grouped, customFonts: [...fonts] };
+  return {
+    truncatedSlides, truncatedElements,
+    overTotalElements: Math.max(0, elements - DECK_IMPORT_LIMITS.elements),
+    overTotalText: Math.max(0, text - DECK_IMPORT_LIMITS.totalText),
+  };
 }
 
-/** AI では直せない大きさか（書き出しでスライドや要素が切り捨てられる） */
-export const deckTooLargeForAi = (l: DeckV2Losses) => l.truncatedSlides > 0 || l.truncatedElements > 0;
+/** AI では直せない大きさか（v2 の上限を超える） */
+export const deckTooLargeForAi = (l: DeckV2Losses) =>
+  l.truncatedSlides > 0 || l.truncatedElements > 0 || l.overTotalElements > 0 || l.overTotalText > 0;

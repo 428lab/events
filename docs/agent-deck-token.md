@@ -101,15 +101,18 @@ deck_agent_token(id PK, owner_id → user ON DELETE CASCADE, token_hash UNIQUE,
 - トークンは発行の時点でそのデッキに結び付く（`deck_agent_token.edit_deck_id`、migration `0132`）。最初の PUT から「置き換え」（200）で、
   新しいデッキは作れない。AI の書き込みは版（`revision`）を進める（持ち主の画面の古い中身での保存は 409）
 - **読み取り**: `GET /api/agent/deck` が `content` に今の中身を v2 の取り込み JSON で返す（`exportDeckV2`、書き出しと同じ形）。
-  チームのスライドのトークン・新しく作るトークン（作ったあと）でも返す。そのデッキにアップロード済みの画像は
-  相対の `/api/decks/<id>/images/<uuid>` のまま返す（`exportDeckV2` の `keepSrc`）。そのまま PUT に戻せる
+  チームのスライドのトークン・新しく作るトークン（作ったあと）でも返す。画像の `src` は書き換えずに返し
+  （`exportDeckV2` の `keepSrc`）、PUT は今の中身にある `src` を HTTPS でなくてもそのまま受け付ける。そのまま PUT に戻すと同じ中身になる
 - **ロック**: `deckEditableSql` の AI のロックに `edit_deck_id` を足した。チームのスライドと同じく、編集用の取得・保存・画像が止まる
   （`423 agent_writing`、`agent.scope` が `"deck"`）。編集画面は「いまAIがこのスライドを直しています（あと◯分）」と
   「AIのアクセスを取り消して編集する」を出す。取り消すか期限が切れたら、AI が書いた中身を読み直して編集に戻る
 - `DELETE /api/decks/:id/agent-token`（持ち主・同じオリジン）: 取り消し。AI が書いた中身は残る
-- **v2 で失われるもの**: AI は v2 JSON で読み書きするので、`exportDeckV2` が落とすものは書き戻すと失われる。判定は共有の `deckV2Losses`（`exportDeckV2` と同じ上限・規則）。
-  **60枚・1枚50個を超える**デッキは、書き出しでスライドや要素が切り捨てられ、AI の書き戻しで消えるので**発行しない**（`409 deck_too_large_for_ai {slides, maxSlides, maxElementsPerSlide}`。編集画面はボタンを押せなくして理由を出す）。
-  **回転・グループ・既定以外の書体**は発行の確認に「AIが直すと元に戻ります（戻したいときは『AIの変更を取り消す』）」として当てはまるものだけ並べ、`GET /api/agent/deck` の `losses` でも AI に知らせる（止めはしない）
+- **元の内容を変えない**（オーナー 2026-11-28「とにかく元の内容が変わるのはよくないよ」）: v2 は編集画面が作れる中身をそのまま運ぶ
+  （回転 `rotation`・グループ `group`・編集画面の全部の書体・装飾の省略・小数やスライドの外の位置・空の文字・画像の `src`）。
+  `convertDeckImport(exportDeckV2(deck))` は id と位置キー `pos` を除いて元と同じ（並びは同じ。`apps/server/test/deck-export.test.ts`）。
+  運べないのは v2 の上限を超えた分だけ（共有の `deckV2Losses`）。**60枚・1枚50個・合計1,000個・文字合計100,000**を超えるデッキは
+  **発行しない**（`409 deck_too_large_for_ai {slides, maxSlides, maxElementsPerSlide}`。編集画面はボタンを押せなくして理由を出す）。
+  `GET /api/agent/deck` の `losses` は `{truncatedSlides, truncatedElements, overTotalElements, overTotalText}`（発行のときに断っているので、ふつうは全部 0）
 - **取り消し（undo）**: AI の書き込みの batch で、カウンタが通ったときだけ、書き換える前の中身を `deck_ai_backup`（1デッキ1行）に控える。
   同じトークンの2回目以降は置き換えない（最初の中身を残す）。次の AI の作業（別のトークン）が最初に書いたら置き換える。
   編集画面に「AIがこのスライドを直しました（◯分前）。直す前の中身に戻せます」と「AIの変更を取り消す」を出す。
