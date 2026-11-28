@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Alert, Box, Button, Stack, TextField, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import { DECK_IMPORT_LIMITS, deckTooLargeForAi, deckV2Losses, type DeckContent } from "@eventer/shared";
+import { ApiError } from "../api/client.js";
 import { formatDateTime } from "../lib/format.js";
 import {
   useIssueEditDeckAgentToken,
@@ -15,22 +17,36 @@ import {
  * 平文のトークンは発行直後の応答にしか無いので、この画面の state にだけ置く。
  * チームのスライドはチームの欄から発行する（ここでは出さない）。
  */
-export function DeckAiEditIssueButton({ deckId, onIssued, disabled }: {
+export function DeckAiEditIssueButton({ deckId, content, onIssued, disabled }: {
   deckId: string;
+  /** 保存済みの中身。AI は v2 JSON で読み書きするので、v2 で失われるものを先に確かめる */
+  content: DeckContent;
   onIssued: (issued: IssuedEditDeckAgentToken) => void;
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const issue = useIssueEditDeckAgentToken(deckId);
+  const losses = deckV2Losses(content);
+  const limits = { maxSlides: DECK_IMPORT_LIMITS.slides, maxElements: DECK_IMPORT_LIMITS.elementsPerSlide };
+  // v2 の上限を超えると、書き出しで切り捨てられたものが AI の書き戻しで消える。発行しない（サーバーも 409）
+  const tooLarge = deckTooLargeForAi(losses)
+    || (issue.error instanceof ApiError && (issue.error.body as { error?: string } | null)?.error === "deck_too_large_for_ai");
+  const lossItems = [
+    losses.rotated ? t("deckAgent.editLossRotated", { n: losses.rotated }) : null,
+    losses.grouped ? t("deckAgent.editLossGrouped", { n: losses.grouped }) : null,
+    losses.customFonts.length ? t("deckAgent.editLossFonts", { fonts: losses.customFonts.join("、") }) : null,
+  ].filter((x): x is string => x !== null);
   return (
     <>
-      <Button size="small" variant="outlined" disabled={disabled || issue.isPending} onClick={() => {
-        if (!window.confirm(t("deckAgent.editConfirm"))) return;
+      <Button size="small" variant="outlined" disabled={disabled || issue.isPending || tooLarge} onClick={() => {
+        const warning = lossItems.length ? `\n\n${t("deckAgent.editLossesIntro")}\n${lossItems.map((x) => `・${x}`).join("\n")}` : "";
+        if (!window.confirm(t("deckAgent.editConfirm") + warning)) return;
         issue.mutate(undefined, { onSuccess: onIssued });
       }}>
         {t("deckAgent.editIssue")}
       </Button>
-      {issue.isError && <Typography variant="caption" color="error" role="alert">{t("deckAgent.failure")}</Typography>}
+      {tooLarge && <Typography variant="caption" color="text.secondary" role="status">{t("deckAgent.editTooLarge", limits)}</Typography>}
+      {issue.isError && !tooLarge && <Typography variant="caption" color="error" role="alert">{t("deckAgent.failure")}</Typography>}
     </>
   );
 }

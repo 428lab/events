@@ -107,6 +107,9 @@ deck_agent_token(id PK, owner_id → user ON DELETE CASCADE, token_hash UNIQUE,
   （`423 agent_writing`、`agent.scope` が `"deck"`）。編集画面は「いまAIがこのスライドを直しています（あと◯分）」と
   「AIのアクセスを取り消して編集する」を出す。取り消すか期限が切れたら、AI が書いた中身を読み直して編集に戻る
 - `DELETE /api/decks/:id/agent-token`（持ち主・同じオリジン）: 取り消し。AI が書いた中身は残る
+- **v2 で失われるもの**: AI は v2 JSON で読み書きするので、`exportDeckV2` が落とすものは書き戻すと失われる。判定は共有の `deckV2Losses`（`exportDeckV2` と同じ上限・規則）。
+  **60枚・1枚50個を超える**デッキは、書き出しでスライドや要素が切り捨てられ、AI の書き戻しで消えるので**発行しない**（`409 deck_too_large_for_ai {slides, maxSlides, maxElementsPerSlide}`。編集画面はボタンを押せなくして理由を出す）。
+  **回転・グループ・既定以外の書体**は発行の確認に「AIが直すと元に戻ります（戻したいときは『AIの変更を取り消す』）」として当てはまるものだけ並べ、`GET /api/agent/deck` の `losses` でも AI に知らせる（止めはしない）
 - **取り消し（undo）**: AI の書き込みの batch で、カウンタが通ったときだけ、書き換える前の中身を `deck_ai_backup`（1デッキ1行）に控える。
   同じトークンの2回目以降は置き換えない（最初の中身を残す）。次の AI の作業（別のトークン）が最初に書いたら置き換える。
   編集画面に「AIがこのスライドを直しました（◯分前）。直す前の中身に戻せます」と「AIの変更を取り消す」を出す。

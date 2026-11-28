@@ -41,6 +41,7 @@ v2 仕様（[spec.md](v2/spec.md)、[schema.json](v2/schema.json)）のJSONを�
 
 - `content` の画像の `src` が `/api/decks/<deckId>/images/<imageId>` のものは、そのデッキに上げてある画像です。そのまま残せば表示されます。
 - 利用者は「AIの変更を取り消す」で、あなたが最初に書く前の中身に戻せます。
+- `content` は v2 にあるものだけです。回転・グループ・既定以外の書体は v2 に無いので、書き戻すと元に戻ります。`GET` の `losses`（`rotated`・`grouped`・`customFonts`）で何が戻るかが分かります。利用者に一言伝えてください。
 - あなたが書いている間（トークンが有効な間）、利用者はそのスライドを編集できません。終わったら、その旨を伝えてください（利用者がトークンを取り消せば、すぐ編集できます）。
 
 ## API
@@ -108,4 +109,4 @@ JSONの `src` には、返った `src`（相対パス）をそのまま入れま
 
 ## English summary
 
-Send `Authorization: Bearer evd_…` on every call. `PUT /api/agent/deck` with a version 2 events-lab-deck JSON body ([spec](v2/spec.md)) creates the token's single deck (201), and later calls replace it (200). `POST /api/agent/deck/images` takes a raw PNG/JPEG/WebP/GIF/AVIF body (6 MiB or less) after the deck exists. It returns a `src` that you can use in an `image-url` element. `GET /api/agent/deck` reports the token's state. Tokens last 60 minutes and allow 100 writes and 50 images. The saved deck is viewable by anyone who has its URL. On 422, fix the listed `issues` and resend the whole JSON. If the user gave you a token to edit an existing deck, `GET /api/agent/deck` already returns that `deck` and its current `content` (version 2 JSON). Change only what was asked, keep everything else (including `/api/decks/<deckId>/images/...` srcs), and `PUT` the whole JSON back (200). While the token is active the user can't edit the deck; they can undo your changes afterwards.
+Send `Authorization: Bearer evd_…` on every call. `PUT /api/agent/deck` with a version 2 events-lab-deck JSON body ([spec](v2/spec.md)) creates the token's single deck (201), and later calls replace it (200). `POST /api/agent/deck/images` takes a raw PNG/JPEG/WebP/GIF/AVIF body (6 MiB or less) after the deck exists. It returns a `src` that you can use in an `image-url` element. `GET /api/agent/deck` reports the token's state. Tokens last 60 minutes and allow 100 writes and 50 images. The saved deck is viewable by anyone who has its URL. On 422, fix the listed `issues` and resend the whole JSON. If the user gave you a token to edit an existing deck, `GET /api/agent/deck` already returns that `deck` and its current `content` (version 2 JSON). Change only what was asked, keep everything else (including `/api/decks/<deckId>/images/...` srcs), and `PUT` the whole JSON back (200). While the token is active the user can't edit the deck; they can undo your changes afterwards. `content` keeps only version 2 properties: rotation, groups and non-default fonts are reset when you write it back (`losses` in the GET response lists them), so tell the user.

@@ -69,3 +69,25 @@ it("AI が直したあとは「AIの変更を取り消す」が出て、確認�
   expect(screen.getByDisplayValue("発表")).toBeTruthy(); // 描けている（読み込みで止まっていない）
   expect(screen.queryByRole("button", { name: "AIに直してもらう" })).toBeNull();
 });
+
+it("回転・書体は発行の確認に「元に戻る」として並べ、60枚を超えるスライドは押せずに理由を出す", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const el = { id: "e1", type: "text" as const, x: 10, y: 10, w: 200, h: 60, rotation: 0, text: "あ", fontSize: 30 };
+  mocks.deck = deck({ content: { slides: [{ id: "s1", background: "#ffffff", elements: [
+    { ...el, rotation: 20 }, { ...el, id: "e2", fontFamily: "M PLUS Rounded 1c" },
+  ] }] } });
+  const view = draw();
+  await act(async () => { fireEvent.click(await screen.findByRole("button", { name: "AIに直してもらう" })); });
+  const message = confirm.mock.calls[0]![0] as string;
+  expect(message).toContain("回転（1個）");
+  expect(message).toContain("書体（M PLUS Rounded 1c）");
+  expect(message).not.toContain("グループ");
+  expect(mocks.issue).not.toHaveBeenCalled();
+  view.unmount();
+
+  mocks.deck = deck({ content: { slides: Array.from({ length: 61 }, (_v, i) => ({ id: `s${i}`, background: "#ffffff", elements: [] })) } });
+  draw();
+  const button = await screen.findByRole("button", { name: "AIに直してもらう" });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText(/60枚・1枚50個までを超えているため、AIでは直せません/)).toBeTruthy();
+});

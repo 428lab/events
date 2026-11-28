@@ -133,4 +133,22 @@ describe("作成済みのスライドを AI に直してもらう (§4c)", () =>
     expect(read.slides[0]!.elements.find((e) => e.type === "image-url")?.src).toBe(src);
     expect((await agentPut(issued.token, read)).status).toBe(200);
   });
+
+  it("v2 の上限を超えるデッキ（61枚）は発行しない。回転と書体は発行でき、losses で知らせる", async () => {
+    const owner = await user();
+    const big = await personalDeck(owner.id, "大きい", Array.from({ length: 61 }, () => ({ id: crypto.randomUUID(), background: "#ffffff", elements: [text("p")] })));
+    const res = await issueEdit(big, owner.cookie);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: "deck_too_large_for_ai", slides: 61, maxSlides: 60, maxElementsPerSlide: 50 });
+
+    const styled = await personalDeck(owner.id, "飾り", [{ id: crypto.randomUUID(), background: "#ffffff", elements: [
+      { ...text("回転"), rotation: 15 },
+      { ...text("書体", 200), fontFamily: "M PLUS Rounded 1c" },
+    ] }]);
+    const ok = await issueEdit(styled, owner.cookie);
+    expect(ok.status).toBe(201);
+    const { token } = await ok.json<{ token: string }>();
+    const state = await (await agentGet(token)).json<{ losses: unknown }>();
+    expect(state.losses).toEqual({ truncatedSlides: 0, truncatedElements: 0, rotated: 1, grouped: 0, customFonts: ["M PLUS Rounded 1c"] });
+  });
 });

@@ -68,3 +68,33 @@ export function exportDeckV2(deck: { title: string; content: DeckContent }, orig
     }));
   return { format: "events-lab-deck", version: 2, title, slides };
 }
+
+/** v2 に書き出すと失われるもの（exportDeckV2 と同じ規則・同じ上限）。AI に直してもらう前に確かめる
+ * （docs/agent-deck-token.md §4c）。truncated* が 1 以上ならスライドや要素が消えるので AI では直せない。
+ * rotated / grouped / customFonts は直すと元に戻る（警告だけ） */
+export interface DeckV2Losses {
+  truncatedSlides: number;
+  truncatedElements: number;
+  rotated: number;
+  grouped: number;
+  customFonts: string[];
+}
+
+export function deckV2Losses(content: DeckContent): DeckV2Losses {
+  const slides = content.slides;
+  const truncatedSlides = Math.max(0, slides.length - DECK_IMPORT_LIMITS.slides);
+  let truncatedElements = 0, rotated = 0, grouped = 0;
+  const fonts = new Set<string>();
+  for (const slide of slides.slice(0, DECK_IMPORT_LIMITS.slides)) {
+    truncatedElements += Math.max(0, slide.elements.length - DECK_IMPORT_LIMITS.elementsPerSlide);
+    for (const el of slide.elements.slice(0, DECK_IMPORT_LIMITS.elementsPerSlide)) {
+      if (el.rotation) rotated++;
+      if (el.groupId) grouped++;
+      if (el.type === "text" && el.fontFamily && font(el.fontFamily) === "default" && el.fontFamily !== "default") fonts.add(el.fontFamily);
+    }
+  }
+  return { truncatedSlides, truncatedElements, rotated, grouped, customFonts: [...fonts] };
+}
+
+/** AI では直せない大きさか（書き出しでスライドや要素が切り捨てられる） */
+export const deckTooLargeForAi = (l: DeckV2Losses) => l.truncatedSlides > 0 || l.truncatedElements > 0;

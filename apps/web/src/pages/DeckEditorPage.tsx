@@ -385,7 +385,7 @@ export function DeckEditorPage() {
         {/* 自分のスライドを AI に直してもらう（チームのスライドはチームの欄から）。AI は保存済みの中身を読むので、
             未保存のあいだは押せない */}
         {deck && !deck.team && (
-          <DeckAiEditIssueButton deckId={id} disabled={!saving.saved || upload.isPending} onIssued={setAiIssued} />
+          <DeckAiEditIssueButton deckId={id} content={deck.content} disabled={!saving.saved || upload.isPending} onIssued={setAiIssued} />
         )}
       </Stack>
 

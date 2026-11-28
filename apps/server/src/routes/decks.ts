@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { createDeckInput, setDeckProfileInput, setProfileDeckAutoInput, updateDeckInput } from "@eventer/shared";
+import { createDeckInput, DECK_IMPORT_LIMITS, deckTooLargeForAi, deckV2Losses, setDeckProfileInput, setProfileDeckAutoInput, updateDeckInput } from "@eventer/shared";
 import type { CreateDeckInput, SetDeckProfileInput, SetProfileDeckAutoInput, UpdateDeckInput } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { requireAuth } from "../auth/session.js";
@@ -107,6 +107,14 @@ deckRoutes.post("/:id/agent-token", async (c) => {
   c.header("Cache-Control", "no-store");
   if (c.req.header("Origin") !== new URL(c.req.url).origin) return c.json({ error: "forbidden_origin" }, 403);
   const deckId = c.req.param("id"), ownerId = c.get("user").id;
+  // AI は v2 JSON を読んで全体を書き直す。v2 に収まらない大きさだと、書き出しの時点でスライドや要素が
+  // 切り捨てられ、AI が書き戻すと消えてしまうので発行しない（持ち主の個人のデッキだけ確かめる。
+  // 他人・チームのデッキは下の issueForEditDeck が今までどおり断る）
+  const target = await decksRepo.findById(deckId);
+  if (target && target.ownerId === ownerId && deckTooLargeForAi(deckV2Losses(target.content))) {
+    return c.json({ error: "deck_too_large_for_ai", slides: target.content.slides.length,
+      maxSlides: DECK_IMPORT_LIMITS.slides, maxElementsPerSlide: DECK_IMPORT_LIMITS.elementsPerSlide }, 409);
+  }
   const token = newDeckAgentToken();
   const now = Date.now();
   const issued = await deckAgentTokensRepo.issueForEditDeck({
