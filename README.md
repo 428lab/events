@@ -46,7 +46,7 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 - [x] 参加登録・解除、参加者一覧、参加枠（複数枠・定員・先着順／抽選・抽選日時・手動当落。申込者を選んでまとめて当選にできる）、キャンセル待ちの自動繰り上げ（先着枠）、運営による「キャンセル扱い」（[docs/attendance-staff-cancel.md](docs/attendance-staff-cancel.md)）
 - [x] **開催前アンケート**（トークン URL `/s/:token` で回答、表ビュー・CSV・日毎アクセス数、[docs/pre-event-survey.md](docs/pre-event-survey.md)）
 - [x] 参加アンケート（参加申込時に回答・後から編集可。回答は参加者名簿の CSV に含まれる）
-- [x] タイムテーブル（当日の進行表。参加者向け表示と編集）
+- [x] タイムテーブル（当日の進行表。参加者向け表示と編集。広い画面は縦のタイムライン：[docs/timetable-timeline.md](docs/timetable-timeline.md)）
 - [x] イベントごとのロール（参加者／スタッフ／審査員／観覧者）＋アプリ運営管理者
 - [x] 採点項目の管理、採点（参加者全員が採点可・自己採点の制限・修正可）
 - [x] 集計プレビュー・採点進捗・締切、進行モード（通常／プレゼン／集計／表彰）
@@ -61,7 +61,7 @@ events lab は、アイディアソン／ハッカソンに限らず、あらゆ
 #### 参加者体験
 
 - [x] チェックイン（QR コードで当日受付）
-- [x] 出会いの記録（QR を見せ合って交流を記録・XP 獲得）と出会いランキングのリアルタイム投影（[docs/meet-ranking.md](docs/meet-ranking.md)）
+- [x] 出会いの記録（QR を見せ合って交流を記録・XP 獲得）と出会いランキングのリアルタイム投影（名前入り／目隠しで運営が1人ずつ明かす／匿名。[docs/meet-ranking.md](docs/meet-ranking.md)）
 - [x] **景品**（達成条件クリアで引き換え、スタッフの引き換えデスク、[docs/meet-prizes.md](docs/meet-prizes.md)）
 - [x] **数字ビンゴ**（参加者カード・スタッフの抽選コントロール・投影画面、[docs/bingo.md](docs/bingo.md)）と成績履歴・受け取りログ（[docs/bingo-history.md](docs/bingo-history.md)）
 - [x] アチーブメント（XP・レベル・バッジ、プロフィールの参加実績）
@@ -122,7 +122,8 @@ pnpm dev   # web: vite (127.0.0.1:4280) + API: wrangler dev (:8787、vite が /a
 
 ## デプロイ
 
-GitHub Actions（`.github/workflows/ci.yml`）がブランチ連動でデプロイします。型チェックとテストは同じワークフローで、すべての PR に対しても走ります。
+GitHub Actions（`.github/workflows/ci.yml`）がブランチ連動でデプロイします。型チェックとテストは同じワークフローで、すべての PR と main への push で走ります。
+staging / production への push では、**同じコミットが main の CI で成功していれば、テストを流し直さずにすぐ配備します**（1分ほど）。main の CI がまだ動いていれば終わるまで待ち、見つからない・失敗していれば今までどおり全部のテストを流してから配備します（`.github/scripts/main-ci-gate.sh`）。
 
 ```bash
 git push origin main:staging      # → staging (https://eventer-staging.kojiran.workers.dev、ログイン必須)
@@ -241,6 +242,7 @@ npx wrangler secret put NOSTR_SERVICE_KEY --env staging   # staging
 | [docs/staff-chat.md](docs/staff-chat.md) | スタッフ用チャットルーム（公開前から使える・暗号化） |
 | [docs/staff-roles.md](docs/staff-roles.md) | スタッフの役割タグと持ち場（時間帯 × 役割 × 人数） |
 | [docs/staff-timeline.md](docs/staff-timeline.md) | スタッフ用タイムライン（準備・片付け・裏方トラック） |
+| [docs/timetable-timeline.md](docs/timetable-timeline.md) | タイムテーブル（広い画面）の縦のタイムライン |
 | [docs/staff-todo.md](docs/staff-todo.md) | スタッフ向け TODO リストとガントチャート |
 | [docs/video-upload.md](docs/video-upload.md) | 動画投稿（ブラウザ内エンコード・Range 配信） |
 | [docs/browser-live-youtube.md](docs/browser-live-youtube.md) | ブラウザから YouTube に配信する（手元の中継アプリと YouTube 連携。設計） |

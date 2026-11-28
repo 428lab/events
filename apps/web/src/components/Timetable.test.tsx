@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 import { buildTimetableLayout } from "../lib/timetableLayout.js";
 import { trackColors, trackColorsForTracks } from "../lib/trackColors.js";
@@ -80,69 +81,78 @@ function blocksOf(container: HTMLElement, id: string): HTMLElement[] {
   );
 }
 
-describe("TimetableGrid（広い画面）", () => {
-  it("複数トラックにまたがるコマは、隣の列をつないだ1つの枠として描く", () => {
+describe("TimetableGrid（広い画面のタイムライン）", () => {
+  it("1つのコマは1枚のカード。またぐトラックは場所の札で全部示す", () => {
     const container = drawGrid();
-    const blocks = blocksOf(container, "it-panel");
+    const cards = blocksOf(container, "it-panel");
 
-    expect(blocks).toHaveLength(1);
-    // 1列目は時刻列なので、A から2列ぶん＝ "2 / span 2"
-    expect(blocks[0]!.style.gridColumn).toBe("2 / span 2");
+    expect(cards).toHaveLength(1);
     expect(screen.getAllByText("パネル討論")).toHaveLength(1);
-    // どのトラックにまたがっているかを枠の中に添える
-    expect(blocks[0]!.textContent).toContain("A（メインホール）・B（小ホール）");
+    expect(cards[0]!.textContent).toContain("A（メインホール）");
+    expect(cards[0]!.textContent).toContain("B（小ホール）");
   });
 
-  it("全トラック共通は全列をまたぐ帯として描く", () => {
-    const blocks = blocksOf(drawGrid(), "it-open");
-
-    expect(blocks).toHaveLength(1);
-    expect(blocks[0]!.style.gridColumn).toBe("2 / span 3");
-    expect(blocks[0]!.textContent).toContain("全トラック共通");
-    // トラック名は出さない（どれか1本の予定と読み違えられる）
-    expect(blocks[0]!.textContent).not.toContain("メインホール");
-  });
-
-  it("1つのトラックだけのコマは、その列にだけ描く", () => {
+  it("全トラック共通のカードは場所の札が「全体」で、トラック名を出さない", () => {
     const container = drawGrid();
+    const open = blocksOf(container, "it-open")[0]!;
 
-    expect(blocksOf(container, "it-a")[0]!.style.gridColumn).toBe("2 / span 1");
-    expect(blocksOf(container, "it-b")[0]!.style.gridColumn).toBe("3 / span 1");
+    expect(open.textContent).toContain("全体");
+    expect(open.textContent).not.toContain("メインホール");
   });
 
-  it("枠の高さは所要時間ぶんの行数になる", () => {
-    const container = drawGrid();
+  it("全トラック共通の色はテーマの主色（灰色にしない。オーナー 2026-11-27）", () => {
+    const got = layout();
+    const { container } = render(
+      <ThemeProvider theme={createTheme({ palette: { primary: { main: "#EC4899" } } })}>
+        <TimetableGrid layout={got} colors={colors(got.tracks.length)} />
+      </ThemeProvider>,
+    );
+    const open = blocksOf(container, "it-open")[0]!;
 
-    // 10:00 から20分＝4マス（1マス5分）。ヘッダー行があるので行番号は +1
-    expect(blocksOf(container, "it-open")[0]!.style.gridRow).toBe("2 / 6");
-    // 90分＝18マス
-    const panel = blocksOf(container, "it-panel")[0]!.style.gridRow;
-    const [from, to] = panel.split(" / ").map(Number);
-    expect(to! - from!).toBe(18);
+    // 左の太い線が主色（#EC4899 = rgb(236, 72, 153)）
+    expect(getComputedStyle(open).borderLeft).toContain("rgb(236, 72, 153)");
   });
 
-  it("離れたトラック（飛び地）は2つの枠に割れて、どちらも描かれる", () => {
-    const container = drawGrid([
-      item({
-        id: "it-gap",
-        title: "飛び地",
-        placement: "tracks",
-        trackIds: ["tr-a", "tr-c"],
-      }),
-    ]);
-    const blocks = blocksOf(container, "it-gap");
+  it("行は始まる時刻ごと。カードはその行に置き、時刻を左に出す", () => {
+    const got = layout();
+    const { container } = render(
+      <TimetableGrid layout={got} colors={colors(got.tracks.length)} />,
+    );
+    const open = got.cards.find((c) => c.entry.item.id === "it-open")!;
 
-    expect(blocks.map((b) => b.style.gridColumn)).toEqual([
-      "2 / span 1",
-      "4 / span 1",
-    ]);
-    // 同じコマだと分かるよう、割れた両方にトラック名を添える
-    for (const b of blocks) {
-      expect(b.textContent).toContain("A（メインホール）・C（ワークショップ室）");
+    expect(blocksOf(container, "it-open")[0]!.style.gridRow).toBe(String(open.rowStart));
+    expect(container.querySelectorAll("time")).toHaveLength(got.rows.length);
+  });
+
+  it("並行して長く続く企画は、右の並行の列に横書きの普通のカードで置く（縦書きにしない。等幅の列）", () => {
+    const at = (h: number, m: number) => START + ((h - 10) * 60 + m) * 60_000;
+    const got = buildTimetableLayout(
+      [
+        item({ id: "it-long", title: "フリーマーケット", startsAt: at(10, 0), durationMin: 240, placement: "tracks", trackIds: ["tr-c"] }),
+        item({ id: "it-t1", title: "登壇1", startsAt: at(10, 0), durationMin: 10 }),
+        item({ id: "it-t2", title: "登壇2", durationMin: 10 }),
+        item({ id: "it-t3", title: "登壇3", durationMin: 10 }),
+      ],
+      TRACKS,
+      at(10, 0),
+    );
+    const { container } = render(<TimetableGrid layout={got} colors={colors(TRACKS.length)} />);
+    const long = blocksOf(container, "it-long")[0]!;
+
+    expect(long.hasAttribute("data-timetable-side")).toBe(true);
+    expect(blocksOf(container, "it-t1")[0]!.hasAttribute("data-timetable-side")).toBe(false);
+    // 並行の列のカードにも、時間・題名・場所の札（横書き）
+    expect(long.textContent).toContain("フリーマーケット");
+    expect(long.textContent).toContain("C（ワークショップ室）");
+    // 広い画面では縦書きにしない（オーナー 2026-11-27「縦書きはスマホ向けだよ」）
+    for (const el of [long, ...long.querySelectorAll<HTMLElement>("*")]) {
+      expect(getComputedStyle(el).writingMode || "horizontal-tb").not.toMatch(/vertical/);
     }
-    // 色は列ではなくコマで決めるので、割れた両方が同じ見た目になる。
-    // 見た目が同じなら emotion のクラス名も同じになる（位置だけ inline style）
-    expect(blocks[0]!.className).toBe(blocks[1]!.className);
+    // 列は本筋と並行の列で同じ幅（等幅）
+    const grid = long.parentElement!;
+    expect(grid.style.gridTemplateColumns || getComputedStyle(grid).gridTemplateColumns).toContain(
+      `repeat(${1 + got.sideLanes}, minmax(0, 1fr))`,
+    );
   });
 
   it("表としてではなく、名前の付いた領域として置く", () => {
@@ -158,37 +168,8 @@ describe("TimetableGrid（広い画面）", () => {
     drawGrid();
     const region = screen.getByRole("region", { name: "タイムテーブル" });
 
-    // 役割とラベルが内側に付いていると、外側の器にフォーカスが行かず、
-    // マウスやタッチの無い人がトラックの続きを見られない
     expect(region.tabIndex).toBe(0);
-    expect(getComputedStyle(region).overflow).toBe("auto");
-  });
-
-  it("読み上げ専用のトラック名は、見た目の場所を取らない", () => {
-    const solo = blocksOf(drawGrid(), "it-a")[0]!;
-    const srOnly = Array.from(solo.querySelectorAll("span")).find((el) =>
-      el.textContent?.startsWith("トラック"),
-    )!;
-
-    // sx の 0〜1 は割合として読まれるので、1 と書くと 100% になってしまう
-    expect(getComputedStyle(srOnly).width).toBe("1px");
-    expect(getComputedStyle(srOnly).height).toBe("1px");
-  });
-
-  it("どの枠にもトラック名が入っていて、読み上げでどの列か分かる", () => {
-    const container = drawGrid();
-
-    // 単独トラックの枠は列を見れば分かるので名前を表に出していないが、
-    // 読み上げには列が見えない。目に見えない形で必ず添える
-    const solo = blocksOf(container, "it-a")[0]!;
-    expect(solo.textContent).toContain("A（メインホール）");
-
-    // 全トラック共通も含め、どの枠にも「どこでやるか」が入っている
-    for (const id of ["it-open", "it-a", "it-b", "it-panel"]) {
-      for (const b of blocksOf(container, id)) {
-        expect(b.textContent).toMatch(/全トラック共通|A（メインホール）|B（小ホール）/);
-      }
-    }
+    expect(getComputedStyle(region).overflowX).toBe("auto");
   });
 
   it("未割り当ては格子に出さない", () => {
@@ -239,6 +220,22 @@ describe("TimetableGrid（広い画面）", () => {
     expect(blocksOf(container, "it-a")[0]!.textContent).not.toContain(
       "運営のみ",
     );
+  });
+
+  it("開催中は「いま」の線を引き、コマの時間の外では引かない", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(START + 15 * 60_000);
+      const during = render(<TimetableGrid layout={layout()} colors={colors(TRACKS.length)} />);
+      expect(during.container.querySelector("[data-timetable-now]")).not.toBeNull();
+      during.unmount();
+
+      vi.setSystemTime(START - 60 * 60_000);
+      const before = render(<TimetableGrid layout={layout()} colors={colors(TRACKS.length)} />);
+      expect(before.container.querySelector("[data-timetable-now]")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("開始時刻が決まらないときは格子を描かない（壊れない）", () => {

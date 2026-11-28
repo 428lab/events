@@ -94,7 +94,7 @@ const EXPECTED_BLOCKING_COLUMNS = 9; // #556: 割り勘の帳簿の当事者 4 �
 
 /** user(id) を参照する列の総数（merge-user-columns.test.ts と同じ数）。
  * こちらの走査が空振りしていないことの担保 */
-const EXPECTED_USER_COLUMNS = 68; // #523 までの 55 本 + #556: 割り勘の 4 表で 7 本 + D-EVENT-CONTACT: inquiry_message.author_id + deck_agent_token.owner_id + deck.last_saved_by（チームのスライド） + profile_deck.user_id / profile_setting.user_id（プロフィールのスライド） + webhook.created_by（Discord / Slack 通知）
+const EXPECTED_USER_COLUMNS = 70; // #523 までの 55 本 + #556: 割り勘の 4 表で 7 本 + D-EVENT-CONTACT: inquiry_message.author_id + deck_agent_token.owner_id + deck.last_saved_by（チームのスライド） + profile_deck.user_id / profile_setting.user_id（プロフィールのスライド） + webhook.created_by（Discord / Slack 通知） + event_card_member_image.user_id（名札の代わりの画像。退会では CASCADE で消える） + event_meet_reveal.user_id（目隠しで明かした人。退会では CASCADE で消える）
 
 /* ── 2. 定義の期待値（**定義から導かない**。手で書いて固定する） ───────── */
 

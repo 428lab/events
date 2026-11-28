@@ -109,12 +109,17 @@ export type MeetUndoInput = z.infer<typeof meetUndoInput>;
  * - off: 出さない。参加者向けAPIは404（イベント不存在と同一応答）で存在ごと隠す
  * - anonymous: 件数のみ（個人を特定できる値はサーバー応答に載せない）
  * - named: 名前・アバター入り（会場に大写しになる前提の設定）
+ * - blind: 目隠し。順位と件数だけ出し、名前は運営が投影で1人ずつ明かす（オーナー依頼 2026-11-27）。
+ *   明かしていない人の名前・userId・アバターはサーバー応答に載せない。明かすと全員に見える
  */
-export const MEET_RANKING_MODES = ["off", "anonymous", "named"] as const;
+export const MEET_RANKING_MODES = ["off", "anonymous", "named", "blind"] as const;
 export type MeetRankingMode = (typeof MEET_RANKING_MODES)[number];
 
 /** ランキングに出す行数。プロジェクターで読める限界に合わせて固定 */
 export const MEET_RANKING_TOP_N = 10;
+
+/** ランキングの画面に出す説明（任意）の最大文字数。投影で読み切れる長さ（「上位3人に素敵なプレゼント！」など） */
+export const MEET_RANKING_NOTE_MAX = 200;
 
 /** named モードの1行。rank は競技順位（同数は同順位、次は人数分飛ぶ） */
 export interface MeetRankingNamedRow {
@@ -134,6 +139,23 @@ export interface MeetRankingAnonymousRow {
   /** その件数の人が何人いるか */
   people: number;
 }
+
+/** blind モードの1行。明かした人（revealed）だけ名前・アバターを持つ。
+ * 明かしていない行は順位と件数だけで、誰かを指す値を一切持たない（運営にも返さない） */
+export type MeetRankingBlindRow =
+  | { rank: number; count: number; revealed: false }
+  | ({ revealed: true } & MeetRankingNamedRow);
+
+/** 運営の明かす操作。rank はその順位の人（同順位なら全員）を明かし、hide は戻す */
+export const meetRevealInput = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("rank"), rank: z.number().int().min(1).max(MEET_RANKING_TOP_N) }),
+  /** その順位の人（同順位なら全員）を目隠しに戻す。投影でもう1回押したとき（オーナー 2026-11-27） */
+  z.object({ action: z.literal("hide"), rank: z.number().int().min(1).max(MEET_RANKING_TOP_N) }),
+  z.object({ action: z.literal("next") }),
+  z.object({ action: z.literal("all") }),
+  z.object({ action: z.literal("reset") }),
+]);
+export type MeetRevealInput = z.infer<typeof meetRevealInput>;
 
 /** 呼び出した本人の順位。本人自身の値なので匿名モードでも返す */
 export interface MeetRankingMe {
@@ -156,8 +178,25 @@ export type MeetRankingLive = (
       totalRanked: number;
       me: MeetRankingMe | null;
     }
+  | {
+      mode: "blind";
+      ranking: MeetRankingBlindRow[];
+      totalRanked: number;
+      me: MeetRankingMe | null;
+      /** 明かす操作ができる人（運営）か。画面の操作の出し分け用（防御はサーバー側） */
+      canReveal: boolean;
+    }
 ) & {
+  /** 主催者が書いたランキングの説明（任意。空文字は出さない）。投影ページは合図で取り直すので、
+   * 書き換えると開いている投影にも届く */
+  note: string;
   /** Where the ranking screen hears "meets changed, refetch" (topic `meet-ranking`,
    * D-POLL-MIN Phase 5b). Null without a service key */
   signal?: EventSignalSource | null;
 };
+
+/** 目隠しモードの応答か（union と note の交差で絞り込みが効かないため、型ガードを1つ置く） */
+export type MeetRankingBlindLive = Extract<MeetRankingLive, { mode: "blind" }>;
+export function isBlindRanking(data: MeetRankingLive | undefined | null): data is MeetRankingBlindLive {
+  return data?.mode === "blind";
+}

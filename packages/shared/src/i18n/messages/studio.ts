@@ -330,6 +330,10 @@ const ja = {
   liveSetDuplicate: "このセットをベースに新規作成",
   /** 消す前の確認。配信セットと BGM の曲で同じ綴り */
   deleteConfirm: "「{{name}}」を削除しますか？",
+  /** スライド一覧の削除（自分のスライドだけ） */
+  deckDelete: "削除",
+  deckDeleteConfirm: "スライド「{{name}}」を削除します。元に戻せません。共有したURLも開けなくなります。よろしいですか？",
+  deckDeleteFailed: "削除できませんでした。もう一度お試しください。",
   liveSetNotFound: "配信セットが見つかりません。",
   liveSetNamePlaceholder: "配信セット名",
   /** 利用者が作る数なので 1 もありうる（英語の単数用キーが要る） */
@@ -814,6 +818,9 @@ const en: Record<keyof typeof ja, string> = {
     "You don't have any broadcast sets yet. “{{action}}” creates one that already has the usual scenes: standby, opening, slides with camera, and more.",
   liveSetDuplicate: "Create a new set based on this one",
   deleteConfirm: "Delete “{{name}}”?",
+  deckDelete: "Delete",
+  deckDeleteConfirm: "Delete the slides “{{name}}”? This can't be undone, and shared links will stop working.",
+  deckDeleteFailed: "Couldn't delete. Please try again.",
   liveSetNotFound: "This broadcast set was not found.",
   liveSetNamePlaceholder: "Broadcast set name",
   sceneCountOne: "{{n}} scene",

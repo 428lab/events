@@ -43,6 +43,10 @@ export const eventNameCardSchema = z.object({
   handle: z.string(),
   name: z.string(),
   avatarUrl: z.string().nullable(),
+  /** 運営がこのイベントの名札用に設定した代わりの画像（イベントの名札素材の id）。
+   * あればアイコンの代わりに刷る。本人のプロフィールのアイコンは変えない（オーナー依頼 2026-11-25）。
+   * 古いキャッシュには無いので省略可 */
+  memberImageAssetId: z.string().nullable().optional(),
   /** 本人が選んだカードの見た目（背景-配色）。未設定なら null。
    * 印刷はこれを見て**本人が設定したとおりの配色**で描く (#304) */
   cardImageKey: z.string().nullable(),
@@ -88,3 +92,7 @@ export const SHEET_MARGIN_Y_MM =
   (SHEET_H_MM -
     (SHEET_ROWS * NAME_CARD_H_MM + (SHEET_ROWS - 1) * NAME_CARD_GAP_MM)) /
   2;
+
+/** 名札の代わりの画像を設定する（運営のみ）。画像はイベントの名札素材から選ぶ */
+export const setNameCardMemberImageInput = z.object({ assetId: z.string().uuid() }).strict();
+export type SetNameCardMemberImageInput = z.infer<typeof setNameCardMemberImageInput>;

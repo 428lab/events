@@ -32,6 +32,7 @@ import { EventBingoControlPage } from "./pages/EventBingoControlPage.js";
 import { EventBingoScreenPage } from "./pages/EventBingoScreenPage.js";
 import { PreSurveyPage } from "./pages/PreSurveyPage.js";
 import { EventPreSurveyAdminPage } from "./pages/EventPreSurveyAdminPage.js";
+import { EventSurveyAdminPage } from "./pages/EventSurveyAdminPage.js";
 import { EventStaffingPage } from "./pages/EventStaffingPage.js";
 import { AccountPage } from "./pages/AccountPage.js";
 import { AccountRestorePage } from "./pages/AccountRestorePage.js";
@@ -502,6 +503,8 @@ export function App() {
           {/* 割り勘 (#556)。確定メンバーと帳簿の当事者（門はサーバー） */}
           <Route path="warikan" element={<EventWarikanPage />} />
           {/* 開催前アンケートの管理 (#444)。スタッフ専用 */}
+          {/* 参加アンケート (#152) の質問と回答。スタッフ専用（オーナー 2026-11-28） */}
+          <Route path="survey" element={<EventSurveyAdminPage />} />
           <Route path="pre-survey" element={<EventPreSurveyAdminPage />} />
         </Route>
         <Route path="*" element={<Navigate to={myPath} replace />} />

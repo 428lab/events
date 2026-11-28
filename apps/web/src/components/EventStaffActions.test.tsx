@@ -136,11 +136,13 @@ describe("並び（オーナー決定 2026-10-14）", () => {
     ["終了後", { event: ev({ startsAt: NOW - 3 * HOUR, endsAt: NOW - HOUR }), ended: true }],
   ];
 
-  it.each(phases)("%s でも「編集」「運営」は同じ塊に同じ順で、時期のボタンはその塊に入らない", (_name, opts) => {
+  it.each(phases)("%s でも「編集」「運営」「運営ページを開く（設定アイコン）」は同じ塊に同じ順で、時期のボタンはその塊に入らない", (_name, opts) => {
     draw(opts);
     const { phase, fixed } = groups();
-    const labels = [...fixed.querySelectorAll("a, button")].map((el) => el.textContent);
-    expect(labels).toEqual(["編集", "運営"]);
+    const labels = [...fixed.querySelectorAll("a, button")].map((el) => el.textContent || el.getAttribute("aria-label"));
+    expect(labels).toEqual(["編集", "運営", "運営ページを開く"]);
+    // 設定アイコンは運営ボタンの右横で、運営ページへ行く（オーナー 2026-11-28）
+    expect(within(fixed).getByRole("link", { name: "運営ページを開く" }).getAttribute("href")).toBe("/events/e/manage");
     expect(within(fixed).queryAllByRole("button").filter((b) => b.classList.contains("MuiButton-contained"))).toHaveLength(0);
     // 時期のボタンは「編集」より前（DOM 順でシェアの直後に来る）
     if (phase) expect(phase.compareDocumentPosition(fixed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

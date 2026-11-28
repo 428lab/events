@@ -112,6 +112,7 @@ d だけ FK の設定が効く（3.6 で `CASCADE` を選ぶ。TODO の `SET NUL
 
 - スタッフ用の格子は `EventTimetablePage.tsx`（267行）＋ `TimetableGrid.tsx`（384行）。
   staff にはスタッフ用トラックの列が既に出ている（#383 案V1）。表示専用
+  （2026-11-27 追記: 広い画面は縦のタイムラインに変わった。docs/timetable-timeline.md）
 - タイムテーブルの編集（`ScheduleEditor.tsx` 480行）は**版番号付きの全件差分保存** (#340)。
   ここに役割の編集を混ぜると、チップ1つ付けるのに全項目を送り返すことになる
 - スタッフ専用の独立ページの型は `EventTodoPage.tsx` (#393 案P1) が手本。

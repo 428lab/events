@@ -1,20 +1,43 @@
 name: CI
 
-# 型チェックとテストは **すべての PR** で走る (#387)。
+# 型チェックとテストは **すべての PR** と **main への push** で走る (#387)。
 # デプロイはブランチ連動で、push のときだけ:
 #   production ブランチ → 本番（eventer / events.kojira.io）
 #   staging ブランチ    → staging（eventer-staging / *.workers.dev・管理者限定）
 # デプロイの実体は cf（cloudflare.config.ts の --mode）。wrangler はローカル開発・
 # テスト・D1 のマイグレーションで引き続き使う。
 #
-# 検証とデプロイを1つのワークフロー・1つのジョブに置いているのは、
-# 分けると checkout / pnpm / node / 依存の導入 と web のビルドが2か所に
-# 重複するため（別ジョブは別 runner なので node_modules も dist も引き継げない）。
-# 契約を1つにして、デプロイ側は末尾の2ステップだけを `if:` で切り分ける。
+# ## ジョブの分け方（2026-11-27 オーナー「CI無駄なやつあったら整理したい」）
+#
+# 以前は1ジョブで server のテスト（約11分）→ web のテスト（約3分）を**順番に**流し、
+# 1回あたり約15分かかっていた。server のテストの大半は「シャード1本ごとに workerd を
+# 立ててマイグレーション130本を流す」固定の待ち時間で、CPU は空いている。
+# そこで別々の runner に分けて**同時に**流す:
+#
+#   gate ─ check（型チェック） ─┬─ server（4組。run-tests.mjs の TEST_GROUP で 20 シャードを配る）
+#                               ├─ web（テスト。vitest --shard で2組）
+#                               └─ build（web のビルド。dist を artifact にする）
+#   deploy（staging / production への push のときだけ）は、テストが通ってから build の dist を cf で出す。
+#
+# 依存の導入はキャッシュ込みで約10秒なので、ジョブごとに入れ直しても損は小さい。
+# 1つの runner で同時に立つ workerd は今までどおり8本まで（run-tests.mjs #371）。
+#
+# ## 同じコミットを2回テストしない（2026-11-27 オーナー「待ち時間0は助かる！」）
+#
+# 流れは「PR を main に squash でマージ → その main のコミットをそのまま staging へ →
+# 同じコミットを production へ」。マージで新しいコミットができるので、main への push で
+# **一度だけ**全部のテストを流す。staging / production への push では、最初の gate が
+# 「同じコミットが main の CI で成功しているか」を GitHub の API で確かめる
+# （.github/scripts/main-ci-gate.sh）:
+#   - 成功済み → check・server・web を流さず、build のあとすぐ deploy（1分ほど）
+#   - main の CI がまだ動いている → 終わるまで待つ（最大25分）。成功すれば同じく deploy
+#   - 見つからない・失敗・待ちきれない・API が使えない → 今までどおり全部のテストを流してから deploy
+# deploy は「テストが全部通った」か「gate が main で成功済みと確かめた」のどちらかが無いと走らない。
+# テストしていないコミットは出ない。
 on:
   pull_request:
   push:
-    branches: [production, staging]
+    branches: [main, production, staging]
 
 # 同じ PR に push を重ねたら、古い実行は打ち切る。
 # デプロイ（production / staging への push）は途中で止めると中途半端な状態に
@@ -24,59 +47,163 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  verify-and-deploy:
+  # staging / production への push で、同じコミットが main の CI で成功済みかを確かめる。
+  # それ以外（PR・main への push）は確かめずに tested=false（全部のテストを流す）
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tested: ${{ steps.gate.outputs.tested }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && ( "${{ github.ref }}" == "refs/heads/staging" || "${{ github.ref }}" == "refs/heads/production" ) ]]; then
+            .github/scripts/main-ci-gate.sh "${{ github.repository }}" "${{ github.sha }}"
+          else
+            echo "tested=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # 型チェックは数秒で済むので先に1回だけ。落ちたらテスト（数分）を待たずに止める。
+  # main で成功済みのコミット（gate の tested=true）では流さない。server・web はこれに続くので一緒に飛ぶ
+  check:
+    needs: gate
+    if: needs.gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       # バージョンは root package.json の "packageManager" を参照（version 指定と重複させない）
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
-
-      # 型チェックとテスト。ここで落ちればデプロイまで進まない。
-      # web は後段の build でも tsc が走るが、テスト（3分ほどかかる）を待たずに
-      # 型で落とすため先に単体で回す
       - run: pnpm --filter @eventer/shared typecheck
       - run: pnpm --filter @eventer/server typecheck
       - run: pnpm --filter @eventer/web typecheck
-      - run: pnpm --filter @eventer/server test
-      # web のテスト (#215)。投影用画面・登壇者サイドパネルに参加UIやスタッフ操作、
-      # 匿名投稿者の実名が出ないことの退行防止（jsdom で実際に描画して確かめる）
-      - run: pnpm --filter @eventer/web test
 
-      # フロントをビルド（tsc も走る。
-      # Worker の ASSETS バインディングが apps/web/dist を配信する）
-      # 閲覧数の計測 (#328) の識別子はここで渡す。
-      # シークレット未設定のリポジトリでは空になり、計測は自動で無効になる
+  # server のテスト。20 シャード前後を4組に配って、4つの runner で同時に流す
+  server:
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      # 1組が落ちても残りは最後まで流す（どこが落ちたかを1回で分かるように）
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4]
+    name: server (${{ matrix.group }}/4)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @eventer/server test
+        env:
+          TEST_GROUP: ${{ matrix.group }}/4
+
+  # web のテスト (#215)。投影用画面・登壇者サイドパネルに参加UIやスタッフ操作、
+  # 匿名投稿者の実名が出ないことの退行防止（jsdom で実際に描画して確かめる）
+  # 1本で約3分かかるので、vitest の --shard で2つの runner に分ける
+  web:
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    name: web (${{ matrix.shard }}/2)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `--` を挟むと pnpm が vitest に引数ごと渡さず全件を流してしまうので、挟まない
+      - run: pnpm --filter @eventer/web test --shard=${{ matrix.shard }}/2
+
+  # フロントをビルド（tsc も走る。Worker の ASSETS バインディングが apps/web/dist を配信する）。
+  # テストと同時に作っておき、deploy はこの dist をそのまま使う（同じコミットのビルドを2回しない）。
+  # 閲覧数の計測 (#328) の識別子はここで渡す。
+  # シークレット未設定のリポジトリでは空になり、計測は自動で無効になる
+  # build は配備に要るので、check を飛ばしたとき（tested=true）でも作る
+  build:
+    needs: [gate, check]
+    if: always() && needs.gate.result == 'success' && (needs.gate.outputs.tested == 'true' || needs.check.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @eventer/web build
         env:
           VITE_WEB_ANALYTICS_TOKEN: ${{ secrets.WEB_ANALYTICS_TOKEN }}
+      # 配備する push（staging / production）のときだけ残す。PR と main では渡す先が無い
+      - if: github.event_name == 'push' && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/production')
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+          retention-days: 1
 
-      # ここから下だけがデプロイ。PR では github.event_name が pull_request なので走らない
-      #
-      # デプロイは cf（cloudflare/cf のベータ CLI）。設定はリポジトリ直下の
-      # cloudflare.config.ts にあり、`--mode` で環境を選ぶ（staging / production）。
-      # モード無しと production は同じ本番設定（[env.production] は無い）。
-      # 型チェック・テスト・web のビルドは上のステップのまま（cf は自分でビルドするが、
-      # 配信する apps/web/dist は先に作っておく必要がある）。
-      #
-      # 戻すときは、この2ステップの run を wrangler に戻すだけでよい:
-      #   production: pnpm --filter @eventer/server run deploy
-      #   staging:    pnpm --filter @eventer/server run deploy:staging
+  # ここから下だけがデプロイ。staging / production への push のときだけ。
+  # build が通っていて、さらに「型チェック・テストが全部通った」か「gate が main で成功済みと確かめた」とき。
+  # check・server・web を飛ばしたときに deploy まで飛ばないよう always() を付け、条件はここで全部書く
+  #
+  # デプロイは cf（cloudflare/cf のベータ CLI）。設定はリポジトリ直下の
+  # cloudflare.config.ts にあり、`--mode` で環境を選ぶ（staging / production）。
+  # モード無しと production は同じ本番設定（[env.production] は無い）。
+  # cf は自分でビルドするが、配信する apps/web/dist は先に作っておく必要がある（build の artifact）。
+  #
+  # 戻すときは、この2ステップの run を wrangler に戻すだけでよい:
+  #   production: pnpm --filter @eventer/server run deploy
+  #   staging:    pnpm --filter @eventer/server run deploy:staging
+  deploy:
+    needs: [gate, check, server, web, build]
+    if: >-
+      always()
+      && github.event_name == 'push'
+      && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/production')
+      && needs.gate.result == 'success'
+      && needs.build.result == 'success'
+      && (needs.gate.outputs.tested == 'true'
+          || (needs.check.result == 'success' && needs.server.result == 'success' && needs.web.result == 'success'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
       - name: Deploy to production
-        if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+        if: github.ref == 'refs/heads/production'
         run: pnpm run deploy:cf:production
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Deploy to staging
-        if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+        if: github.ref == 'refs/heads/staging'
         run: pnpm run deploy:cf:staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

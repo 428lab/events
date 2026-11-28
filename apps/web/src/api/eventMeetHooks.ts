@@ -1,8 +1,8 @@
 import { useEffect } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import type { MeetRankingLive, MeetScanResult, MeetToken } from "@eventer/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { MeetRankingLive, MeetRevealInput, MeetScanResult, MeetToken } from "@eventer/shared";
 import { api } from "./client.js";
-import { useEventSignal } from "../lib/signalHub.js";
+import { PARTICIPANT_SIGNAL_JITTER_MS, useEventSignal } from "../lib/signalHub.js";
 
 /** 会場の電波が悪いときに待ち続けないための上限（ミリ秒）。
  * これを過ぎたら打ち切って、画面から再試行できるようにする */
@@ -111,6 +111,23 @@ export function useMeetRankingLive(eventId: string, enabled: boolean, watch = fa
   // watch は投影ページ（/meet-ranking/screen）だけが立てる: 応答の `signal`（topic `meet-ranking`）の
   // 合図で取り直す（D-POLL-MIN 第5段階 5b-2）。映しているライブのランキングが止まっていては意味がなく、
   // プロジェクターの前には誰もいないため。詳細ページの小カードは開いたとき・タブ復帰で取り直す
-  useEventSignal(watch ? query.data?.signal : null, () => query.refetch(), { eventId });
+  // 目隠しモードでは、詳細ページの小カードも合図で取り直す（運営が明かした名前を参加者のスマホにもすぐ出す。
+  // オーナー 2026-11-27「１回開くとみんなにも見える」）。参加者全員なのでばらして取り直す
+  const blind = query.data?.mode === "blind";
+  useEventSignal(watch || blind ? query.data?.signal : null, () => query.refetch(), {
+    eventId,
+    jitterMs: watch ? 0 : PARTICIPANT_SIGNAL_JITTER_MS,
+  });
   return query;
+}
+
+/** 運営: 目隠しモードで名前を明かす／目隠しに戻す。明かすと全員に見える（合図で各画面が取り直す）。
+ * 押した人の画面はすぐ取り直す */
+export function useMeetReveal(eventId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: MeetRevealInput) =>
+      api.post<{ changed: number }>(`/events/${eventId}/meets/ranking/reveal`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["event", eventId, "meet-ranking-live"] }),
+  });
 }

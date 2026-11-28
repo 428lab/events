@@ -34,6 +34,7 @@ import type { EventCardContext } from "../components/licenseCard/EventCardSvg.js
 import { useEvent } from "../api/hooks.js";
 import { useEventNameCards } from "../api/nameCardHooks.js";
 import { NameCardSelection } from "../components/cardEditor/NameCardSelection.js";
+import { NameCardMemberImageDialog } from "../components/cardEditor/NameCardMemberImageDialog.js";
 import { LicenseCardSvg } from "../components/licenseCard/LicenseCardSvg.js";
 import { toCardData } from "../components/licenseCard/cardData.js";
 import type {
@@ -169,6 +170,7 @@ interface EventPrintProps {
   design: CardDesign | null;
   context: EventCardContext;
   onStatus: (id: string, status: CardPrintStatus) => void;
+  onAvatarFailed: (id: string, failed: boolean) => void;
 }
 
 const NameCardCell = memo(function NameCardCell({
@@ -207,7 +209,7 @@ const NameCardCell = memo(function NameCardCell({
       }}
     >
       <Box className="name-card-art" sx={cutGuides ? { width: "100%", height: "100%", "& > svg": { width: "100% !important", height: "100% !important" } } : undefined}>
-      {eventPrint.design ? <PrintableEventCard design={eventPrint.design} card={card} context={eventPrint.context} onStatus={eventPrint.onStatus} /> : <LicenseCardSvg
+      {eventPrint.design ? <PrintableEventCard design={eventPrint.design} card={card} context={eventPrint.context} onStatus={eventPrint.onStatus} onAvatarFailed={eventPrint.onAvatarFailed} /> : <LicenseCardSvg
         card={data}
         variant={variant}
         theme={theme}
@@ -313,6 +315,18 @@ export function NameCardPrintPage() {
   const onPrintStatus = useCallback((memberId: string, status: CardPrintStatus) => {
     setPrintStatuses(previous => previous[memberId] === status ? previous : { ...previous, [memberId]: status });
   }, []);
+  /** 名札の代わりの画像を選んでいる人（ダイアログ） */
+  const [replacing, setReplacing] = useState<EventNameCard | null>(null);
+  /** アイコンを読み込めず、頭文字で刷る人。印刷は止めず、誰がそうなったかだけ知らせる (2026-11-25) */
+  const [avatarFailed, setAvatarFailed] = useState<ReadonlySet<string>>(() => new Set());
+  const onAvatarFailed = useCallback((memberId: string, failed: boolean) => {
+    setAvatarFailed(previous => {
+      if (previous.has(memberId) === failed) return previous;
+      const next = new Set(previous);
+      if (failed) next.add(memberId); else next.delete(memberId);
+      return next;
+    });
+  }, []);
   const {
     data,
     isLoading,
@@ -361,8 +375,10 @@ export function NameCardPrintPage() {
       eventUrl: `${origin}/events/${encodeURIComponent(eventData?.event.slug || id)}`,
       communityName: eventData?.community?.name ?? "", communityLogo: eventData?.community?.iconUrl ?? null },
     onStatus: onPrintStatus,
-  }), [eventDesign.data, eventData, id, origin, onPrintStatus]);
+    onAvatarFailed,
+  }), [eventDesign.data, eventData, id, origin, onPrintStatus, onAvatarFailed]);
   const imageError = Boolean(eventPrint.design && selected.some(c => printStatuses[c.id] === "error"));
+  const avatarFailedNames = selected.filter(c => avatarFailed.has(c.id)).map(c => c.name);
   const resourcesReady = !eventPrint.design || selected.every(c => printStatuses[c.id] === "ready");
   const canPrint = ready && Boolean(eventDesign.data) && !eventDesign.isError && resourcesReady;
   useEffect(() => { setSmallText(Boolean(sheetRoot.current?.querySelector('[data-small-text="true"]'))); }, [visible, eventPrint]);
@@ -408,6 +424,9 @@ export function NameCardPrintPage() {
         <Button component={RouterLink} to={`/events/${id}/name-cards/design`}>{t("staffOps.cardEditorOpen")}</Button>
         {eventDesign.isError && <Alert severity="error">{t("staffOps.cardEditorLoadFailed")}</Alert>}
         {imageError && <Alert severity="error">{t("staffOps.cardEditorResourcesFailed")}</Alert>}
+        {avatarFailedNames.length > 0 && (
+          <Alert severity="warning">{t("staffOps.nameCardAvatarFallback", { names: avatarFailedNames.join(t("staffOps.nameCardNameSeparator")) })}</Alert>
+        )}
         {smallText && <Alert severity="warning">{t("staffOps.cardEditorSmallText")}</Alert>}
         {!resourcesReady && !imageError && <Alert severity="info">{t("staffOps.cardEditorImageLoading")}</Alert>}
         {(isLoading || eventDesign.isLoading) && <CircularProgress size={24} />}
@@ -479,8 +498,11 @@ export function NameCardPrintPage() {
               <Typography variant="subtitle2" gutterBottom>
                 {t("staffOps.nameCardPeopleHeading")}
               </Typography>
-              <NameCardSelection cards={all} excluded={excluded} onToggle={toggle}
+              <NameCardSelection cards={all} excluded={excluded} onToggle={toggle} avatarFailed={avatarFailed}
+                onReplaceImage={eventPrint.design ? setReplacing : undefined}
                 onSelectOnly={ids => { const included = new Set(ids); setExcluded(new Set(all.filter(c => !included.has(c.id)).map(c => c.id))); }} />
+              {replacing && <NameCardMemberImageDialog eventId={id}
+                card={all.find(c => c.id === replacing.id) ?? replacing} onClose={() => setReplacing(null)} />}
             </Box>
 
             <FormControlLabel control={<Checkbox checked={cutGuides} onChange={(_, checked) => setCutGuides(checked)} />}

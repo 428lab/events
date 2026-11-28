@@ -4,8 +4,9 @@ import TextDecreaseIcon from "@mui/icons-material/TextDecrease";
 import TextIncreaseIcon from "@mui/icons-material/TextIncrease";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { isBlindRanking } from "@eventer/shared";
 import { useEvent } from "../api/hooks.js";
-import { useMeetRankingLive } from "../api/eventMeetHooks.js";
+import { useMeetRankingLive, useMeetReveal } from "../api/eventMeetHooks.js";
 import {
   BOARD_ACCENT,
   BOARD_BG,
@@ -42,6 +43,10 @@ export function MeetRankingScreenPage() {
   // オフのイベントでは最初から取りにいかない（サーバーの 404 が防御。これは無駄打ちの節約）
   const enabled = Boolean(event && event.meetRanking !== "off");
   const ranking = useMeetRankingLive(id, enabled, true);
+  const reveal = useMeetReveal(id);
+  // 目隠しモードで、運営だけが名前を明かせる（明かすと全員に見える）
+  const blind = isBlindRanking(ranking.data) ? ranking.data : null;
+  const canReveal = Boolean(blind?.canReveal);
 
   const [scale, setScale] = useState(readScale);
   const changeScale = (dir: 1 | -1) => {
@@ -91,6 +96,7 @@ export function MeetRankingScreenPage() {
         zIndex: 2000,
         // スマホでは余白を詰めて、名前に幅を回す
         p: { xs: 1.5, sm: 3 },
+        // 目隠しの運営の操作を出している間は、下の行（合計）と重ならないよう下を空ける
         overflow: "hidden",
       }}
     >
@@ -118,10 +124,38 @@ export function MeetRankingScreenPage() {
             >
               {t("eventSocial.meetRankingHeading")}
             </Typography>
+            {/* 主催者が書いた説明（任意）。文字のまま出す（HTML にしない）。改行はそのまま、
+                スマホ幅では見出しと同じく画面幅で頭打ちにして、ランキングを押し出さない */}
+            {ranking.data?.note && (
+              <Typography
+                data-testid="meet-ranking-note"
+                sx={{
+                  mt: 1 * scale,
+                  fontSize: `min(${26 * scale}px, ${5.5 * scale}vw)`,
+                  fontWeight: 700,
+                  color: BOARD_ACCENT,
+                  lineHeight: 1.4,
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                  maxWidth: 1100,
+                  mx: "auto",
+                }}
+              >
+                {ranking.data.note}
+              </Typography>
+            )}
           </Box>
 
           <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", maxWidth: 1100, width: "100%", mx: "auto" }}>
-            {ranking.data && <MeetRankingBoard data={ranking.data} scale={scale} />}
+            {ranking.data && (
+              <MeetRankingBoard
+                data={ranking.data}
+                scale={scale}
+                onToggle={canReveal && !reveal.isPending
+                  ? (rank, hidden) => reveal.mutate(hidden ? { action: "rank", rank } : { action: "hide", rank })
+                  : undefined}
+              />
+            )}
           </Box>
 
           {ranking.data && ranking.data.totalRanked > 0 && (
@@ -140,6 +174,7 @@ export function MeetRankingScreenPage() {
         </>
       )}
 
+      {/* 目隠しモードの操作は、行を押すだけ（明かす／隠す）。投影に写るので、ガイドやボタンは出さない（オーナー 2026-11-27） */}
       {/* 操作は投影に写り込まないようカーソル表示中だけ右下に出す（チャット投影と同じ作り） */}
       {cursorVisible && (
         <Stack

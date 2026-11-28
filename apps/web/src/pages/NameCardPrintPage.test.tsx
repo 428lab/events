@@ -25,7 +25,8 @@ import type { CardDesign, EventNameCard, EventRole } from "@eventer/shared";
  * 見た目は既存のプロフィールカード (#178) をそのまま使う（新しい意匠は作らない）。
  */
 
-const { getMock, cardRenders, fontLoad } = vi.hoisted(() => ({
+const { putMock, getMock, cardRenders, fontLoad } = vi.hoisted(() => ({
+  putMock: vi.fn(),
   getMock: vi.fn(),
   cardRenders: vi.fn(),
   fontLoad: vi.fn(),
@@ -39,7 +40,7 @@ vi.mock("../api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client.js")>();
   return {
     ...actual,
-    api: { ...actual.api, get: (...args: unknown[]) => getMock(...args) },
+    api: { ...actual.api, get: (...args: unknown[]) => getMock(...args), put: (...args: unknown[]) => putMock(...args) },
   };
 });
 
@@ -162,6 +163,7 @@ function printedNames(): string[] {
 
 beforeEach(() => {
   getMock.mockReset();
+  putMock.mockReset();
   cardRenders.mockClear();
   localStorage.clear();
 });
@@ -269,6 +271,63 @@ describe("イベントデザインの印刷 (#506)", () => {
     fireEvent.error(container.querySelector("image")!);
     await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeDisabled());
     expect(container.querySelector(".name-card-page")).toHaveAttribute("data-print-ready", "false");
+  });
+
+  it("a member's icon that fails prints the initial instead and does not block the sheet (2026-11-25)", async () => {
+    mockApi("staff", [
+      card({ id: "u-1", name: "しおん", avatarUrl: "https://i.gyazo.com/dead.jpg" }),
+      card({ id: "u-2", name: "たろう" }),
+    ], createCardTemplate("name"));
+    const { container } = renderPage();
+    const avatar = () => container.querySelector('image[href="https://i.gyazo.com/dead.jpg"]');
+    await waitFor(() => expect(avatar()).not.toBeNull());
+    fireEvent.error(avatar()!);
+    await waitFor(() => expect(screen.getByRole("button", { name: "印刷する" })).toBeEnabled());
+    expect(avatar()).toBeNull();
+    expect(screen.queryByText(/画像またはフォントを読み込めない/)).toBeNull();
+    expect(screen.getByText("アイコンを読み込めなかった人: しおん（頭文字で印刷します）")).toBeTruthy();
+    expect(screen.getByText("アイコンなし")).toBeTruthy();
+  });
+});
+
+describe("名札の代わりの画像（運営が人ごとに設定。2026-11-25）", () => {
+  it("prints the staff-set image in the icon spot, and choosing one for a member with no icon clears the warning", async () => {
+    let cards = [
+      card({ id: "u-1", name: "しおん", avatarUrl: "https://i.gyazo.com/dead.jpg" }),
+      card({ id: "u-2", name: "たろう", avatarUrl: "https://example.com/own.png", memberImageAssetId: "sub-2" }),
+    ];
+    const design = createCardTemplate("name");
+    getMock.mockImplementation((path: string) => {
+      if (path === `/events/${EVENT_ID}/name-cards`) return Promise.resolve({ cards });
+      if (path === `/events/${EVENT_ID}/name-card-assets`) return Promise.resolve({ assets: [
+        { id: "sub-1", width: 10, height: 10, contentType: "image/png", url: `/api/events/${EVENT_ID}/name-card-assets/sub-1` },
+      ] });
+      if (path === `/events/${EVENT_ID}/name-card-design`) return Promise.resolve({ revision: 1, design });
+      if (path === "/auth/me") return Promise.resolve({ user: { id: "staff-1" }, isAdmin: false });
+      if (path === `/events/${EVENT_ID}`) return Promise.resolve({ event: { id: EVENT_ID, title: "オフライン回" }, myRole: "staff", community: null });
+      throw new Error(`unexpected path: ${path}`);
+    });
+    putMock.mockImplementation(async () => {
+      cards = cards.map(c => c.id === "u-1" ? { ...c, memberImageAssetId: "sub-1" } : c);
+      return { ok: true };
+    });
+    const { container } = renderPage();
+    // the substitute replaces the member's own icon on the card
+    await waitFor(() => expect(container.querySelector(`image[href="/api/events/${EVENT_ID}/name-card-assets/sub-2"]`)).not.toBeNull());
+    expect(container.querySelector('image[href="https://example.com/own.png"]')).toBeNull();
+    expect(screen.getByText("差し替え画像")).toBeTruthy();
+    const dead = () => container.querySelector('image[href="https://i.gyazo.com/dead.jpg"]');
+    await waitFor(() => expect(dead()).not.toBeNull());
+    fireEvent.error(dead()!);
+    await screen.findByText("アイコンを読み込めなかった人: しおん（頭文字で印刷します）");
+
+    fireEvent.click(screen.getByRole("button", { name: "しおん さんの名札に使う画像を差し替え" }));
+    const choice = await screen.findByRole("button", { pressed: false });
+    fireEvent.click(choice);
+    await waitFor(() => expect(putMock).toHaveBeenCalledWith(`/events/${EVENT_ID}/name-card-member-images/u-1`, { assetId: "sub-1" }));
+    await waitFor(() => expect(container.querySelector(`image[href="/api/events/${EVENT_ID}/name-card-assets/sub-1"]`)).not.toBeNull());
+    expect(screen.queryByText(/アイコンを読み込めなかった人/)).toBeNull();
+    expect(screen.getAllByText("差し替え画像")).toHaveLength(2);
   });
 });
 

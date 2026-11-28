@@ -69,15 +69,35 @@ if (fileCount === 0) {
 }
 
 const shards = Math.ceil(fileCount / MAX_FILES_AT_ONCE);
+
+/** CI で別々の runner に分けて流すための指定（例 TEST_GROUP=2/4）。
+ * シャードを組に配り（i 番目のシャードは (i-1) % 組数 の組）、自分の組のシャードだけを順に流す。
+ * 1つの runner で同時に立つ workerd は今までどおり MAX_FILES_AT_ONCE 本まで（組の中は順番）。
+ * 指定が無ければ全シャード（手元・従来どおり） */
+function parseGroup(value) {
+  if (!value) return null;
+  const m = /^(\d+)\/(\d+)$/.exec(value);
+  const index = m ? Number(m[1]) : NaN, count = m ? Number(m[2]) : NaN;
+  if (!Number.isInteger(index) || !Number.isInteger(count) || count < 1 || index < 1 || index > count) {
+    console.error(`TEST_GROUP の形が違う（例 2/4）: ${value}`);
+    process.exit(1);
+  }
+  return { index, count };
+}
+const group = parseGroup(process.env.TEST_GROUP);
+const mine = [];
+for (let i = 1; i <= shards; i++) if (!group || (i - 1) % group.count === group.index - 1) mine.push(i);
+
 console.log(
   `テストファイル ${fileCount} 本を ${shards} 回に分けて流す` +
-    `（1回あたり最大 ${MAX_FILES_AT_ONCE} 本 = workerd ${MAX_FILES_AT_ONCE} プロセス）`,
+    `（1回あたり最大 ${MAX_FILES_AT_ONCE} 本 = workerd ${MAX_FILES_AT_ONCE} プロセス）` +
+    (group ? `。この組（${group.index}/${group.count}）はシャード ${mine.join(", ")}` : ""),
 );
 
 // 途中で落ちても最後まで流す。1回目で止めると「他にも落ちているか」が分からず、
 // 直すのに何度も回す羽目になる
 const failed = [];
-for (let i = 1; i <= shards; i++) {
+for (const i of mine) {
   console.log(`\n===== シャード ${i}/${shards} =====`);
   const { status } = vitest(["run", `--shard=${i}/${shards}`, ...passthrough]);
   if (status !== 0) failed.push(i);
@@ -87,4 +107,4 @@ if (failed.length > 0) {
   console.error(`\n落ちたシャード: ${failed.join(", ")} / ${shards}`);
   process.exit(1);
 }
-console.log(`\n全 ${shards} シャード通過`);
+console.log(`\n${group ? `この組の ${mine.length}` : `全 ${shards}`} シャード通過`);

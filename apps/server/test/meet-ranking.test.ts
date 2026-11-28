@@ -38,7 +38,7 @@ async function makeUser(): Promise<{
 /** イベント行を直接作る（公開・開催中）。meetRanking 列だけがこのテストの主役 */
 async function insertEvent(
   ownerId: string,
-  meetRanking: "off" | "anonymous" | "named",
+  meetRanking: "off" | "anonymous" | "named" | "blind",
 ): Promise<string> {
   const id = crypto.randomUUID();
   const now = Date.now();
@@ -276,5 +276,129 @@ describe("出会いランキング live API (#418)", () => {
       event: { meetRanking: string };
     };
     expect(event.meetRanking).toBe("named");
+  });
+});
+
+/** ランキングの画面に出す説明（任意。オーナー依頼 2026-11-25「上位x人に素敵なプレゼント！とか」） */
+describe("出会いランキングの説明", () => {
+  const patch = (eventId: string, cookie: string, body: unknown) =>
+    SELF.fetch(`${BASE}/api/events/${eventId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify(body),
+    });
+
+  it("編集で保存でき、イベントとランキングの応答に文字のまま載る。200字を超えると 400", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId, "named");
+    await addMember(eventId, owner.userId, "staff");
+    const note = "  上位3人に素敵なプレゼント！\n<b>受付</b>で受け取ってください  ";
+
+    expect((await patch(eventId, owner.cookie, { meetRankingNote: note })).status).toBe(200);
+    const { event } = (await (await SELF.fetch(`${BASE}/api/events/${eventId}`, { headers: { cookie: owner.cookie } })).json()) as {
+      event: { meetRankingNote: string };
+    };
+    // 前後の空白だけ落とし、改行と記号はそのまま（画面は文字として出す）
+    expect(event.meetRankingNote).toBe("上位3人に素敵なプレゼント！\n<b>受付</b>で受け取ってください");
+    const live = (await (await SELF.fetch(liveUrl(eventId), { headers: { cookie: owner.cookie } })).json()) as MeetRankingLive;
+    expect(live.note).toBe(event.meetRankingNote);
+
+    expect((await patch(eventId, owner.cookie, { meetRankingNote: "あ".repeat(201) })).status).toBe(400);
+    expect((await patch(eventId, owner.cookie, { meetRankingNote: "あ".repeat(200) })).status).toBe(200);
+  });
+
+  it("ランキングをオフにすると、説明があってもランキングの応答ごと出さない（404）", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId, "named");
+    await addMember(eventId, owner.userId, "staff");
+    expect((await patch(eventId, owner.cookie, { meetRankingNote: "上位3人にプレゼント" })).status).toBe(200);
+    expect((await patch(eventId, owner.cookie, { meetRanking: "off" })).status).toBe(200);
+    expect((await SELF.fetch(liveUrl(eventId), { headers: { cookie: owner.cookie } })).status).toBe(404);
+  });
+});
+
+/**
+ * 目隠しモード（オーナー依頼 2026-11-27）。明かしていない人の名前・userId・アバターは
+ * 誰にも（運営にも）返さない。運営が順位を指定して明かすと、その人は全員に見える
+ * （「１回開くとみんなにも見える」）。
+ */
+describe("出会いランキングの目隠し", () => {
+  const reveal = (eventId: string, cookie: string, body: unknown) =>
+    SELF.fetch(`${BASE}/api/events/${eventId}/meets/ranking/reveal`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie, Origin: BASE },
+      body: JSON.stringify(body),
+    });
+  const live = async (eventId: string, cookie: string) => {
+    const res = await SELF.fetch(liveUrl(eventId), { headers: { cookie } });
+    expect(res.status).toBe(200);
+    return res.text();
+  };
+
+  it("明かしていない人は順位と件数だけで、誰を指す値も返さない（運営にも）。明かした人は全員に名前が見える", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId, "blind");
+    await addMember(eventId, owner.userId, "staff");
+    const { a, b, c, d } = await seedRanking(eventId);
+
+    for (const viewer of [b, owner]) {
+      const raw = await live(eventId, viewer.cookie);
+      const body = JSON.parse(raw) as MeetRankingLive;
+      expect(body.mode).toBe("blind");
+      if (body.mode !== "blind") return;
+      expect(body.ranking).toEqual([
+        { rank: 1, count: 3, revealed: false },
+        { rank: 2, count: 2, revealed: false },
+        { rank: 2, count: 2, revealed: false },
+        { rank: 4, count: 1, revealed: false },
+      ]);
+      expect(body.canReveal).toBe(viewer === owner);
+      for (const u of [a, b, c, d]) {
+        expect(raw).not.toContain(u.userId);
+        expect(raw).not.toContain(u.username);
+      }
+    }
+    // 本人自身の順位は目隠しでも返す
+    expect((JSON.parse(await live(eventId, b.cookie)) as MeetRankingLive).me).toEqual({ rank: 2, count: 2 });
+
+    // 運営が「1位」を指定して明かすと、参加者の応答にもその人だけ名前が出る
+    expect((await reveal(eventId, owner.cookie, { action: "rank", rank: 1 })).status).toBe(200);
+    const after = await live(eventId, d.cookie);
+    expect(after).toContain(a.userId);
+    expect(after).toContain(`表示名_${a.username}`);
+    for (const u of [b, c, d]) expect(after).not.toContain(u.userId);
+  });
+
+  it("運営だけが明かせる。同順位は一緒に明かす。次・全員・目隠しに戻すが効き、目隠し以外のモードでは 409", async () => {
+    const owner = await makeUser();
+    const eventId = await insertEvent(owner.userId, "blind");
+    await addMember(eventId, owner.userId, "staff");
+    const { a, b, c, d } = await seedRanking(eventId);
+    const shown = async () => {
+      const body = JSON.parse(await live(eventId, d.cookie)) as MeetRankingLive;
+      return body.mode === "blind" ? body.ranking.filter((r) => r.revealed).map((r) => (r.revealed ? r.userId : "")) : [];
+    };
+
+    expect((await reveal(eventId, d.cookie, { action: "all" })).status).toBe(403);
+    expect(await shown()).toEqual([]);
+
+    // 同率2位（b と c）は「2位」を押すと2人とも出る
+    expect(await (await reveal(eventId, owner.cookie, { action: "rank", rank: 2 })).json()).toEqual({ changed: 2 });
+    expect((await shown()).sort()).toEqual([b.userId, c.userId].sort());
+    // 次は、まだ出ていないうちのいちばん下の順位（4位の d）
+    expect(await (await reveal(eventId, owner.cookie, { action: "next" })).json()).toEqual({ changed: 1 });
+    expect(await shown()).toContain(d.userId);
+    // もう1回押すと隠す（同率2位は2人とも戻る）。隠れている順位を hide しても何も変わらない
+    expect(await (await reveal(eventId, owner.cookie, { action: "hide", rank: 2 })).json()).toEqual({ changed: 2 });
+    expect(await shown()).toEqual([d.userId]);
+    expect(await (await reveal(eventId, owner.cookie, { action: "hide", rank: 1 })).json()).toEqual({ changed: 0 });
+    expect(await (await reveal(eventId, owner.cookie, { action: "all" })).json()).toEqual({ changed: 3 });
+    expect((await shown()).sort()).toEqual([a, b, c, d].map((u) => u.userId).sort());
+    expect(await (await reveal(eventId, owner.cookie, { action: "reset" })).json()).toEqual({ changed: 4 });
+    expect(await shown()).toEqual([]);
+
+    const named = await insertEvent(owner.userId, "named");
+    await addMember(named, owner.userId, "staff");
+    expect((await reveal(named, owner.cookie, { action: "all" })).status).toBe(409);
   });
 });

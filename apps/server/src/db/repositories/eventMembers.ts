@@ -543,6 +543,7 @@ function mapMyEventSummary(
     )
       ? (row.meet_ranking as MyEventSummary["meetRanking"])
       : "off",
+    meetRankingNote: (row.meet_ranking_note as string | null) ?? "",
     meetPrizes: (row.meet_prizes as number) === 1,
     warikanEnabled: (row.warikan_enabled as number) === 1,
     registrationDeadline: (row.registration_deadline as number | null) ?? null,

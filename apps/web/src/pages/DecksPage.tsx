@@ -12,9 +12,10 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useCreateDeck, useMyDecks, useMyTeamDecks, useSetDeckProfile } from "../api/deckHooks.js";
+import { useCreateDeck, useDeleteDeck, useMyDecks, useMyTeamDecks, useSetDeckProfile } from "../api/deckHooks.js";
 import type { DeckSummary } from "@eventer/shared";
 import { formatDateTime } from "../lib/format.js";
 
@@ -66,16 +67,19 @@ export function DecksPage() {
         </Typography>
       ) : (
         <Stack spacing={1.5}>
-          {decks.map((d) => <DeckCard key={d.id} deck={d} onOpen={() => navigate(`/decks/${d.id}/edit`)} />)}
+          {decks.map((d) => <DeckCard key={d.id} deck={d} deletable onOpen={() => navigate(`/decks/${d.id}/edit`)} />)}
         </Stack>
       )}
     </Stack>
   );
 }
 
-function DeckCard({ deck: d, onOpen }: { deck: DeckSummary; onOpen: () => void }) {
+/** deletable: 自分のスライド（個人のデッキ）だけ削除を出す。チームのスライドはメンバーからは消せない（サーバーも 409） */
+function DeckCard({ deck: d, onOpen, deletable = false }: { deck: DeckSummary; onOpen: () => void; deletable?: boolean }) {
   const { t } = useTranslation();
   const setProfile = useSetDeckProfile();
+  const remove = useDeleteDeck();
+  const title = d.title || t("studio.untitledDeck");
   return (
     <Card variant="outlined">
       <CardActionArea onClick={onOpen}>
@@ -89,7 +93,7 @@ function DeckCard({ deck: d, onOpen }: { deck: DeckSummary; onOpen: () => void }
             }}
           >
             <Typography sx={{ fontWeight: 700, flex: 1, minWidth: 0 }} noWrap>
-              {d.title || t("studio.untitledDeck")}
+              {title}
             </Typography>
             {d.team && (
               <Chip size="small" color="primary" variant="outlined" sx={{ maxWidth: "100%" }}
@@ -132,6 +136,24 @@ function DeckCard({ deck: d, onOpen }: { deck: DeckSummary; onOpen: () => void }
           <VisibilityOutlinedIcon sx={{ fontSize: 16 }} aria-hidden />
           <Typography variant="caption">{t("studio.deckViews", { n: d.views ?? 0 })}</Typography>
         </Stack>
+        {/* スライドを消す（2026-11-27、利用者から「削除ができない」。サーバーの DELETE /decks/:id はあったが画面に入口が無かった） */}
+        {deletable && !d.team && (
+          <Button
+            size="small"
+            color="error"
+            startIcon={<DeleteOutlineIcon />}
+            disabled={remove.isPending}
+            onClick={() => {
+              if (window.confirm(t("studio.deckDeleteConfirm", { name: title }))) remove.mutate(d.id);
+            }}
+            sx={{ ml: "auto" }}
+          >
+            {t("studio.deckDelete")}
+          </Button>
+        )}
+        {remove.isError && (
+          <Typography variant="caption" color="error" role="alert">{t("studio.deckDeleteFailed")}</Typography>
+        )}
       </Stack>
     </Card>
   );

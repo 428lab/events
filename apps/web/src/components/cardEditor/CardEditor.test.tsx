@@ -70,6 +70,25 @@ describe("card editor operations (#506)", () => {
     expect(container.querySelector('[data-card-part="no-photo"] image')).toHaveAttribute("href", "/api/events/event/name-card-assets/mark");
   });
 
+  it("changes the colours only (Nostr purple) keeping the layout, and undo brings the teal back", async () => {
+    const design = createCardTemplate("name");
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={qc}><MemoryRouter><CardEditor initial={{ revision: 1, design }}
+      context={{ eventId: "event", title: "Event", eventUrl: "https://example.com/events/event", origin: "https://example.com", communityName: "", communityLogo: null }}
+      members={[]} assets={[]} slots={[]} /></MemoryRouter></QueryClientProvider>);
+    const roleFill = () => container.querySelector('[data-card-part="role"] g[fill]')?.getAttribute("fill");
+    expect(roleFill()).toBe("#11443F");
+    // Same scheme, but the background is still each member's own pattern: the button can still make it uniform.
+    expect(screen.getByRole("button", { name: "配色だけ変える" })).toBeEnabled();
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "配色" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Nostr パープル" }));
+    fireEvent.click(screen.getByRole("button", { name: "配色だけ変える" }));
+    expect(roleFill()).toBe("#4C1D95");
+    expect(screen.getByRole("button", { name: "配色だけ変える" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "元に戻す" }));
+    expect(roleFill()).toBe("#11443F");
+  });
+
   it("keeps grid preferences out of saved cards and persists a rectangle's radius", async () => {
     const design = createCardTemplate("name"), expected = structuredClone(design);
     const band = expected.common.parts.find(p => p.id === "role-band");
@@ -167,11 +186,11 @@ describe("card editor operations (#506)", () => {
       context={{ eventId: "event", title: "Event", eventUrl: "https://example.com/events/event", origin: "https://example.com", communityName: "", communityLogo: null }}
       members={[]} assets={[]} slots={[]} /></MemoryRouter></QueryClientProvider>);
     expect(container.querySelector("[data-card-pattern]")).toHaveAttribute("data-card-pattern", "rosette-indigo");
-    expect(screen.getByRole("button", { name: "参加者のカード背景" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "一人ずつ違う柄" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "編集する対象" }));
     fireEvent.click(await screen.findByRole("option", { name: "スタッフ用" }));
     expect(container.querySelector("[data-card-pattern]")).toHaveAttribute("data-card-pattern", "engine-amber");
-    expect(screen.getByRole("button", { name: "ビルトイン" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "全員同じ柄" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "セキュリティメッシュ · ローズ" }));
     expect(container.querySelector("[data-card-pattern]")).toHaveAttribute("data-card-pattern", "mesh-rose");
     // 地の色: the license-card paper by default, white when turned off.

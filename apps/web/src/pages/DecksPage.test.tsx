@@ -27,3 +27,25 @@ it("デッキごとに表示回数を出し、「プロフィールに載せる�
   await act(async () => { fireEvent.click(toggle); });
   expect(api.put).toHaveBeenCalledExactlyOnceWith("/decks/d1/profile", { show: true });
 });
+
+/** 自分のスライドは一覧から削除できる（2026-11-27、利用者から「削除ができない」）。チームのスライドには出さない */
+it("自分のスライドは確認のうえ削除できる。チームのスライドには削除が出ない", async () => {
+  vi.spyOn(api, "get").mockImplementation(async (path: string) =>
+    (path === "/decks/mine"
+      ? { decks: [{ id: "d1", slug: "abc", title: "発表", slideCount: 2, updatedAt: 0, profileShown: false, views: 7 }] }
+      : { decks: [{ id: "t1", slug: "tm", title: "チームの発表", slideCount: 1, updatedAt: 0, profileShown: false, views: 0,
+          team: { name: "紫苑", eventTitle: "ハッカソン", ended: false } }] }) as never);
+  const del = vi.spyOn(api, "del").mockResolvedValue({ ok: true } as never);
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter><DecksPage /></MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("チームの発表");
+  const buttons = screen.getAllByRole("button", { name: "削除" });
+  expect(buttons).toHaveLength(1);
+  await act(async () => { fireEvent.click(buttons[0]!); });
+  expect(confirm).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("「発表」"));
+  expect(del).toHaveBeenCalledExactlyOnceWith("/decks/d1");
+});

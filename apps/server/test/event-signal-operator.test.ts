@@ -139,6 +139,10 @@ describe("live", () => {
     expect((await json("PATCH", `/events/${eventId}`, staff.cookie, { qaEnabled: false, meetRanking: "named" })).status).toBe(200);
     await settled(sent, 2);
     expect(sent.at(-1)!.topics).toEqual([topicOf(eventId, "qa"), topicOf(eventId, "meet-ranking")]);
+    // ランキングの説明を書き換えても、開いている投影が取り直す
+    expect((await json("PATCH", `/events/${eventId}`, staff.cookie, { meetRankingNote: "上位3人にプレゼント" })).status).toBe(200);
+    await settled(sent, 3);
+    expect(sent.at(-1)!.topics).toEqual([topicOf(eventId, "meet-ranking")]);
   });
 });
 
@@ -208,6 +212,20 @@ describe("meet-ranking", () => {
     const { token: again } = await read<{ token: string }>("/meet/token", member.cookie);
     expect((await json("POST", "/meet/scan", staff.cookie, { token: again })).status).toBe(200);
     await settled(sent, 2); // already met: no new meet row, the token is released, no signal
+  });
+});
+
+describe("meet-ranking reveal", () => {
+  it("staff revealing a name in blind mode signals the ranking (everyone refetches); nothing to reveal sends nothing", async () => {
+    const { staff, member, eventId } = await setup({ meet_ranking: "blind" });
+    await sql("INSERT INTO event_meet(id,event_id,user_low,user_high,created_at) VALUES(?,?,?,?,1)", crypto.randomUUID(), eventId,
+      staff.id < member.id ? staff.id : member.id, staff.id < member.id ? member.id : staff.id).run();
+    const { sent } = spyPublish(async () => (await sql("SELECT COUNT(*) AS n FROM event_meet_reveal WHERE event_id=?", eventId).first<{ n: number }>())!.n);
+    expect((await json("POST", `/events/${eventId}/meets/ranking/reveal`, staff.cookie, { action: "rank", rank: 1 })).status).toBe(200);
+    await settled(sent, 1);
+    expect(sent[0]).toMatchObject({ topics: [topicOf(eventId, "meet-ranking")], seen: 2 });
+    expect((await json("POST", `/events/${eventId}/meets/ranking/reveal`, staff.cookie, { action: "all" })).status).toBe(200);
+    await settled(sent, 1); // already all shown: no change, no signal
   });
 });
 

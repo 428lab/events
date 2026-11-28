@@ -16,6 +16,7 @@ import {
   Divider,
   Portal,
   FormControlLabel,
+  Link,
   MenuItem,
   Stack,
   Switch,
@@ -36,6 +37,7 @@ import {
   PUBLISH_AT_STEP_MS,
   QA_ANONYMITY_MODES,
   VENUE_TYPES,
+  MEET_RANKING_NOTE_MAX,
   isDatetimeOrderInvalid,
   type MeetRankingMode,
   type QaAnonymity,
@@ -57,7 +59,6 @@ import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { DescriptionImageTray } from "../components/DescriptionImageTray.js";
 import { removeImageReferences } from "../lib/descriptionImages.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
-import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
 import { ChatWriteWindowField } from "../components/ChatWriteWindowField.js";
 import { fromDateTimeLocal, venueLabel } from "../lib/format.js";
 import { errorMessage } from "../lib/errorMessage.js";
@@ -147,6 +148,7 @@ export function EditEventPage() {
   // 出会いランキング (#418)。既定OFF（名前が会場に大写しになりうる機能なので、
   // 出したいイベントだけが明示的にONにする）
   const [meetRanking, setMeetRanking] = useState<MeetRankingMode>("off");
+  const [meetRankingNote, setMeetRankingNote] = useState("");
   // 出会いの景品引き換え (#431)。既定OFF。景品の定義はオフでも仕込める
   const [meetPrizes, setMeetPrizes] = useState(false);
   // 割り勘 (#556 / #635)。既定OFF。使いたいイベントだけONにする
@@ -236,6 +238,8 @@ export function EditEventPage() {
       setQaEnabled(e.qaEnabled);
       setQaAnonymity(e.qaAnonymity);
       setMeetRanking(e.meetRanking);
+      // 配備の切り替わり中は古い API が列なしで返すことがあるので、無ければ空にする
+      setMeetRankingNote(e.meetRankingNote ?? "");
       setMeetPrizes(e.meetPrizes);
       setWarikanEnabled(e.warikanEnabled);
       setVenueWanted(e.venueWanted);
@@ -419,6 +423,7 @@ export function EditEventPage() {
         qaEnabled,
         qaAnonymity,
         meetRanking,
+        meetRankingNote,
         meetPrizes,
         warikanEnabled,
         venueWanted,
@@ -855,6 +860,7 @@ export function EditEventPage() {
                   sx={{ minWidth: 220 }}
                 >
                   <MenuItem value="named">{t("eventForm.meetRankingNamed")}</MenuItem>
+                  <MenuItem value="blind">{t("eventForm.meetRankingBlind")}</MenuItem>
                   <MenuItem value="anonymous">
                     {t("eventForm.meetRankingAnonymous")}
                   </MenuItem>
@@ -867,8 +873,27 @@ export function EditEventPage() {
                 >
                   {meetRanking === "named"
                     ? t("eventForm.meetRankingNamedHelp")
-                    : t("eventForm.meetRankingAnonymousHelp")}
+                    : meetRanking === "blind"
+                      ? t("eventForm.meetRankingBlindHelp")
+                      : t("eventForm.meetRankingAnonymousHelp")}
                 </Typography>
+                {/* ランキングの画面に出す説明（任意）。投影と詳細の小カードに文字のまま出る */}
+                <TextField
+                  label={t("eventForm.meetRankingNote")}
+                  placeholder={t("eventForm.meetRankingNotePlaceholder")}
+                  value={meetRankingNote}
+                  onChange={(e) => setMeetRankingNote(e.target.value)}
+                  multiline
+                  minRows={2}
+                  fullWidth
+                  size="small"
+                  inputProps={{ maxLength: MEET_RANKING_NOTE_MAX }}
+                  helperText={t("eventForm.meetRankingNoteHelp", {
+                    n: meetRankingNote.length,
+                    max: MEET_RANKING_NOTE_MAX,
+                  })}
+                  sx={{ mt: 2, maxWidth: 560 }}
+                />
               </Box>
             )}
           </Box>
@@ -934,7 +959,10 @@ export function EditEventPage() {
           <EventSlotsEditor eventId={id} />
 
           <Divider />
-          <SurveyQuestionsEditor eventId={id} />
+          {/* 参加アンケートの質問は「参加アンケート」ページへ移した（オーナー 2026-11-28）。前の場所を探す人のために案内を残す */}
+          <Typography variant="body2" data-testid="survey-moved">
+            <Link component={RouterLink} to={`/events/${id}/survey`}>{t("eventForm.surveyMovedLink")}</Link>
+          </Typography>
 
           {contestMode && (
             <>

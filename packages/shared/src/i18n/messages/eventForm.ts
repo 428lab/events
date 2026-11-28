@@ -137,6 +137,12 @@ const ja = {
   meetRankingNamedHelp: "名前とアイコンが会場に大写しになります。",
   meetRankingAnonymous: "匿名",
   meetRankingAnonymousHelp: "名前は出さず、人数だけを表示します。",
+  meetRankingBlind: "目隠し",
+  meetRankingBlindHelp: "順位と人数だけ出し、名前は運営が投影で1人ずつ明かします。明かした名前は全員に見えます。",
+  meetRankingNote: "ランキング画面に出す説明（任意）",
+  meetRankingNotePlaceholder: "例: 上位3人に素敵なプレゼント！",
+  /** 文字数の表示を兼ねる */
+  meetRankingNoteHelp: "投影画面とイベントページのランキングに出ます（{{n}} / {{max}} 文字）",
 
   /* 景品引き換え (#431)。ビンゴ景品 (#436) もあるので「出会いの〜」とは呼ばない。
      キー名・API・DB（meetPrizes 等）は互換のため変えない（文言だけ） */
@@ -230,10 +236,12 @@ const ja = {
 
   /** 事前アンケート (#152)。質問を作る側 */
   surveyHeading: "参加アンケート",
+  /** イベント編集に残す案内。質問の編集は「参加アンケート」ページへ移した（オーナー 2026-11-28） */
+  surveyMovedLink: "参加アンケートの質問は「参加アンケート」ページで編集します →",
   surveyHelp:
     "参加登録時に回答してもらう質問です（入館用の氏名・所属の収集など）。必須の質問に未回答の人は参加登録できません。回答はスタッフだけが閲覧できます。",
   surveyAnswersExist:
-    "すでに回答が集まっています。質問の追加・必須化は今後の参加者にのみ適用されます（既存参加者の未回答はアクセス統計の回答一覧で確認できます）。",
+    "すでに回答が集まっています。質問の追加・必須化は今後の参加者にのみ適用されます（既存参加者の未回答は、このページの下の回答一覧で確認できます）。",
   surveyQuestion: "質問",
   surveyQtype: "回答形式",
   surveyOptions: "選択肢（カンマ区切り）",
@@ -487,6 +495,11 @@ const en: Record<keyof typeof ja, string> = {
   meetRankingNamedHelp: "Names and avatars appear large on the venue screen.",
   meetRankingAnonymous: "Anonymous",
   meetRankingAnonymousHelp: "Shows counts only, without names.",
+  meetRankingBlind: "Blindfold",
+  meetRankingBlindHelp: "Shows ranks and counts only. Organizers reveal names one by one on the projection view, and revealed names are visible to everyone.",
+  meetRankingNote: "Note on the ranking screen (optional)",
+  meetRankingNotePlaceholder: "e.g. Great prizes for the top 3!",
+  meetRankingNoteHelp: "Shown on the projection screen and the ranking on the event page ({{n}} / {{max}} characters)",
 
   meetPrizes: "Prizes",
   meetPrizesHelp:
@@ -569,10 +582,11 @@ const en: Record<keyof typeof ja, string> = {
   slotJoinWaitlist: "Join the waitlist",
 
   surveyHeading: "Registration survey",
+  surveyMovedLink: "Edit the registration survey questions on the \"Registration survey\" page →",
   surveyHelp:
     "Questions people answer when they register — a full name and company for building access, for example. Anyone who skips a required question cannot register. Only organizers can read the answers.",
   surveyAnswersExist:
-    "Answers have already come in. New questions, and questions you make required, apply only to people who register from now on. You can see who has not answered in the answer list under Traffic.",
+    "Answers have already come in. New questions, and questions you make required, apply only to people who register from now on. You can see who has not answered in the answer list below on this page.",
   surveyQuestion: "Question",
   surveyQtype: "Answer type",
   surveyOptions: "Choices (comma separated)",

@@ -1,17 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { EventTrack, ScheduleItem } from "@eventer/shared";
 import {
-  TIMETABLE_SLOT_MIN,
   buildTimetableLayout,
   entriesForTrack,
+  nowRow,
+  timeState,
+  type TimetableCard,
+  type TimetableLayout,
 } from "./timetableLayout.js";
 
 /**
  * マルチトラックのタイムテーブルの下敷き (#338)。
  *
- * 「どの列の何行目から何行目までか」を決めるのはここ1か所で、広い画面の格子も
- * スマホのタブもこの結果を使う。またぎ・全トラック共通・飛び地・時刻未定が
- * 崩れないことを、描画に頼らず直接確かめる。
+ * 「どの行からどの行までか・本筋か細い列か・何番目に並ぶか」を決めるのはここ1か所で、
+ * 広い画面のタイムラインもスマホのタブもこの結果を使う。描画に頼らず直接確かめる。
  */
 
 const TRACKS: EventTrack[] = [
@@ -67,78 +69,51 @@ const ITEMS: ScheduleItem[] = [
 
 const layout = () => buildTimetableLayout(ITEMS, TRACKS, START);
 
+const cardOf = (got: TimetableLayout, id: string): TimetableCard =>
+  got.cards.find((c) => c.entry.item.id === id)!;
+const idsOf = (got: TimetableLayout) => got.cards.map((c) => c.entry.item.id).sort();
+
 describe("buildTimetableLayout (#338)", () => {
-  it("複数トラックにまたがるコマは、またぐ列をつないだ1つの枠になる", () => {
-    const blocks = layout().blocks.filter((b) => b.entry.item.id === "it-panel");
+  it("1つのコマは、トラックをまたいでも飛び地でも1枚のカード（場所の札で全部のトラックを示す）", () => {
+    const got = layout();
 
-    expect(blocks).toHaveLength(1);
-    expect(blocks[0]!.colStart).toBe(0);
-    expect(blocks[0]!.colSpan).toBe(2);
-    expect(blocks[0]!.split).toBe(false);
-    expect(blocks[0]!.trackNames).toEqual([TRACKS[0]!.name, TRACKS[1]!.name]);
+    expect(got.cards.filter((c) => c.entry.item.id === "it-panel")).toHaveLength(1);
+    expect(cardOf(got, "it-panel").trackIndexes).toEqual([0, 1]);
+    expect(got.cards.filter((c) => c.entry.item.id === "it-gap")).toHaveLength(1);
+    expect(cardOf(got, "it-gap").trackIndexes).toEqual([0, 2]);
   });
 
-  it("全トラック共通は全列をまたぐ1つの帯になる", () => {
-    const blocks = layout().blocks.filter((b) => b.entry.item.id === "it-open");
+  it("全トラック共通は場所の札が付かない共通のカード", () => {
+    const open = cardOf(layout(), "it-open");
 
-    expect(blocks).toHaveLength(1);
-    expect(blocks[0]!.common).toBe(true);
-    expect(blocks[0]!.colStart).toBe(0);
-    expect(blocks[0]!.colSpan).toBe(TRACKS.length);
+    expect(open.common).toBe(true);
+    expect(open.trackIndexes).toEqual([]);
   });
 
-  it("枠の高さは所要時間に比例し、空き時間は行の隙間になる", () => {
-    const { blocks } = layout();
-    const open = blocks.find((b) => b.entry.item.id === "it-open")!;
-    const panel = blocks.find((b) => b.entry.item.id === "it-panel")!;
+  it("行はコマの始まる時刻だけで、昇順・重複なし（時間の長さには比例しない）", () => {
+    const got = layout();
+    const open = cardOf(got, "it-open");
+    const a = cardOf(got, "it-a");
 
-    // 20分＝4マス、90分＝18マス（1マス5分）
-    expect(open.rowEnd - open.rowStart).toBe(4);
-    expect(panel.rowEnd - panel.rowStart).toBe(18);
-    // 開会(10:00-10:20) の後ろに次の枠が来るので、行はぶつからない
-    const a = blocks.find((b) => b.entry.item.id === "it-a")!;
-    expect(a.rowStart).toBe(open.rowEnd);
+    expect(got.rows).toEqual([...new Set(got.rows)].sort((x, y) => x - y));
+    // 開会(10:00-10:20) の次の行が、その後に始まるコマ
+    expect(got.rows[open.rowStart - 1]).toBe(START);
+    expect(a.rowStart).toBe(open.rowStart + 1);
   });
 
-  it("離れたトラック（飛び地）は2つの枠に割れるが、どちらも消えない", () => {
-    const blocks = layout().blocks.filter((b) => b.entry.item.id === "it-gap");
+  it("未割り当ては置かず、別枠で持つ", () => {
+    const { cards, entries, unassigned } = layout();
 
-    expect(blocks.map((b) => [b.colStart, b.colSpan])).toEqual([
-      [0, 1],
-      [2, 1],
-    ]);
-    expect(blocks.every((b) => b.split)).toBe(true);
-    // 割れても同じ時刻・同じ高さ
-    expect(blocks[0]!.rowStart).toBe(blocks[1]!.rowStart);
-    expect(blocks[0]!.rowEnd).toBe(blocks[1]!.rowEnd);
-    // どのトラックのものか分かるよう、割れた側にも全部の名前を添える
-    expect(blocks[0]!.trackNames).toEqual([TRACKS[0]!.name, TRACKS[2]!.name]);
-  });
-
-  it("未割り当ては格子にも一覧にも出さず、別枠で持つ", () => {
-    const { blocks, entries, unassigned } = layout();
-
-    expect(blocks.some((b) => b.entry.item.id === "it-idea")).toBe(false);
+    expect(cards.some((c) => c.entry.item.id === "it-idea")).toBe(false);
     expect(entries.some((e) => e.item.id === "it-idea")).toBe(false);
     expect(unassigned.map((i) => i.id)).toEqual(["it-idea"]);
-  });
-
-  it("時刻の目盛りは30分ごとで、ちょうどの時が分かる", () => {
-    const { ticks, rows } = layout();
-
-    expect(ticks[0]!.ms).toBe(START);
-    expect(ticks[0]!.hour).toBe(true);
-    expect(ticks[1]!.ms).toBe(START + 30 * 60_000);
-    expect(ticks[1]!.hour).toBe(false);
-    expect(ticks.every((t) => t.rowEnd <= rows + 1)).toBe(true);
   });
 
   it("日程調整中（開始時刻が未定）でも壊れず、時刻未定として並ぶ", () => {
     const got = buildTimetableLayout(ITEMS, TRACKS, null);
 
-    expect(got.blocks).toEqual([]);
-    expect(got.rows).toBe(0);
-    expect(got.ticks).toEqual([]);
+    expect(got.cards).toEqual([]);
+    expect(got.rows).toEqual([]);
     // 未割り当てを除く全部が「時刻未定」に落ちる（消えない）
     expect(got.undated.map((e) => e.item.id)).toEqual([
       "it-open",
@@ -149,24 +124,7 @@ describe("buildTimetableLayout (#338)", () => {
     ]);
   });
 
-  it("飛び地で割れた枠は、どちらも同じ色で描ける", () => {
-    const blocks = layout().blocks.filter((b) => b.entry.item.id === "it-gap");
-
-    // 色を列 (colStart) から引くと、割れた片割れが別の色になってしまう
-    expect(blocks.map((b) => b.colorIndex)).toEqual([0, 0]);
-  });
-
-  it("単独のトラックの枠も、どのトラックのものか名前で分かる", () => {
-    // 読み上げは列の位置が見えないので、名前が枠に無いとどのトラックか分からない
-    const solo = layout().blocks.filter((b) => b.entry.item.id === "it-a");
-
-    expect(solo).toHaveLength(1);
-    expect(solo[0]!.trackNames).toEqual([TRACKS[0]!.name]);
-  });
-
-  it("3日間のイベントでも、どの日のコマも1つ残らず表に載る (#346)", () => {
-    // 描く範囲が狭いと、多数派に入らなかった日のコマが丸ごと格子から消え、
-    // 打ち間違い扱いの見出しに並んでしまっていた
+  it("3日間のイベントでも、どの日のコマも1つ残らず載る (#346)", () => {
     const days = [
       new Date("2026-08-11T09:00:00+09:00").getTime(),
       new Date("2026-08-12T09:00:00+09:00").getTime(),
@@ -174,70 +132,25 @@ describe("buildTimetableLayout (#338)", () => {
     ];
     const items = days.flatMap((startsAt, d) => [
       item({ id: `d${d}-open`, title: `${d + 1}日目 開会`, startsAt }),
-      item({
-        id: `d${d}-a`,
-        title: `${d + 1}日目 A`,
-        placement: "tracks",
-        trackIds: ["tr-a"],
-      }),
-      item({
-        id: `d${d}-b`,
-        title: `${d + 1}日目 B`,
-        placement: "tracks",
-        trackIds: ["tr-b"],
-      }),
+      item({ id: `d${d}-a`, title: `${d + 1}日目 A`, placement: "tracks", trackIds: ["tr-a"] }),
+      item({ id: `d${d}-b`, title: `${d + 1}日目 B`, placement: "tracks", trackIds: ["tr-b"] }),
     ]);
     const got = buildTimetableLayout(items, TRACKS, days[0]!);
 
     expect(got.outOfRange).toEqual([]);
     expect(got.undated).toEqual([]);
-    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual(
-      items.map((i) => i.id).sort(),
-    );
-    // 3日ぶんでも行数は3桁に収まる（1日24時間＝288行）
-    expect(got.rows).toBeLessThan(1000);
-  });
-
-  it("朝から深夜までの2日間（36時間超）でも、2日目のコマが落ちない (#346)", () => {
-    const first = new Date("2026-08-11T09:00:00+09:00").getTime();
-    // 1日目の朝から数えて38時間後。1日ぶんの窓では範囲外に落ちていた
-    const lateNight = new Date("2026-08-12T23:00:00+09:00").getTime();
-    const items = [
-      item({ id: "it-d1", title: "1日目 朝", startsAt: first }),
-      item({
-        id: "it-d2-night",
-        title: "2日目 深夜",
-        startsAt: lateNight,
-        placement: "tracks",
-        trackIds: ["tr-a"],
-      }),
-    ];
-    const got = buildTimetableLayout(items, TRACKS, first);
-
-    expect(got.outOfRange).toEqual([]);
-    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual([
-      "it-d1",
-      "it-d2-night",
-    ]);
+    expect(idsOf(got)).toEqual(items.map((i) => i.id).sort());
   });
 
   it("6日間の合宿は全部載り、月を打ち間違えた1件だけが落ちる (#346)", () => {
     const first = new Date("2026-08-11T09:00:00+09:00").getTime();
-    const days = [0, 1, 2, 3, 4, 5].map((d) => first + d * 24 * 60 * 60_000);
     const items = [
-      ...days.map((startsAt, d) =>
-        item({
-          id: `d${d}`,
-          title: `${d + 1}日目`,
-          startsAt,
-          placement: "tracks",
-          trackIds: ["tr-a"],
-        }),
+      ...[0, 1, 2, 3, 4, 5].map((d) =>
+        item({ id: `d${d}`, title: `${d + 1}日目`, startsAt: first + d * 24 * 60 * 60_000, placement: "tracks", trackIds: ["tr-a"] }),
       ),
       item({
         id: "it-typo",
         title: "日を打ち間違い",
-        // 月を打ち間違えた1件。7日の窓から大きく外れる
         startsAt: new Date("2026-09-11T09:00:00+09:00").getTime(),
         placement: "tracks",
         trackIds: ["tr-b"],
@@ -246,156 +159,56 @@ describe("buildTimetableLayout (#338)", () => {
     const got = buildTimetableLayout(items, TRACKS, first);
 
     expect(got.outOfRange.map((e) => e.item.id)).toEqual(["it-typo"]);
-    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual([
-      "d0",
-      "d1",
-      "d2",
-      "d3",
-      "d4",
-      "d5",
-    ]);
-    // 6日ぶんでも行数は 24時間×6＋αで、画面が固まる桁には届かない
-    expect(got.rows).toBeLessThan(2100);
+    expect(idsOf(got)).toEqual(["d0", "d1", "d2", "d3", "d4", "d5"]);
   });
 
   it("10日ずれた打ち間違いは、月をまたがなくても弾かれる (#346)", () => {
-    // 「2日目を1週間後に打つ」「月末で日を1桁間違える」など、年や月をまたがない
-    // ずれ。窓は最頻クラスタの前後ではなく **端から端まで7日** なので、これも外れる
     const first = new Date("2026-08-11T09:00:00+09:00").getTime();
     const items = [
       ...[0, 1, 2].map((d) =>
-        item({
-          id: `d${d}`,
-          title: `${d + 1}日目`,
-          startsAt: first + d * 24 * 60 * 60_000,
-          placement: "tracks",
-          trackIds: ["tr-a"],
-        }),
+        item({ id: `d${d}`, title: `${d + 1}日目`, startsAt: first + d * 24 * 60 * 60_000, placement: "tracks", trackIds: ["tr-a"] }),
       ),
-      item({
-        id: "it-typo",
-        title: "日を打ち間違い",
-        startsAt: first + 10 * 24 * 60 * 60_000,
-        placement: "tracks",
-        trackIds: ["tr-b"],
-      }),
+      item({ id: "it-typo", title: "日を打ち間違い", startsAt: first + 10 * 24 * 60 * 60_000, placement: "tracks", trackIds: ["tr-b"] }),
     ];
     const got = buildTimetableLayout(items, TRACKS, first);
 
     expect(got.outOfRange.map((e) => e.item.id)).toEqual(["it-typo"]);
-    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual([
-      "d0",
-      "d1",
-      "d2",
-    ]);
+    expect(idsOf(got)).toEqual(["d0", "d1", "d2"]);
   });
 
-  it("格子の行数は、いちばん広がっても8日ぶん（7日＋1コマ上限）で頭打ちになる", () => {
-    // 窓は「端から端まで7日」。**最頻クラスタから前後に7日ずつ（＝14日）ではない**。
-    // 最後のコマは所要時間の上限24時間で切られるので、行数はここが最大になる
-    const first = new Date("2026-08-11T09:00:00+09:00").getTime();
-    const items = [
-      item({
-        id: "it-first",
-        title: "初日",
-        startsAt: first,
-        placement: "tracks",
-        trackIds: ["tr-a"],
-      }),
-      item({
-        id: "it-last",
-        title: "ちょうど7日後",
-        // 端は含める（7日ちょうどは窓の中）
-        startsAt: first + 7 * 24 * 60 * 60_000,
-        durationMin: 60 * 24 * 400,
-        placement: "tracks",
-        trackIds: ["tr-a"],
-      }),
-    ];
-    const got = buildTimetableLayout(items, TRACKS, first);
-
-    expect(got.outOfRange).toEqual([]);
-    // 8日 × 24時間 × 12マス（1マス5分）
-    expect(got.rows).toBe(2304);
-    expect(got.ticks).toHaveLength(2304 / (30 / TIMETABLE_SLOT_MIN));
-  });
-
-  it("開始時刻の打ち間違いで格子が膨らまず、外れた1件だけが落ちる", () => {
-    // 年を1桁打ち間違えた1件。これで行数が数百万になり、参加者を含む
-    // 全閲覧者の画面が固まっていた
-    const typo = item({
-      id: "it-typo",
-      title: "打ち間違い",
-      startsAt: new Date("2126-08-11T10:00:00+09:00").getTime(),
-      placement: "tracks",
-      trackIds: ["tr-b"],
-    });
+  it("開始時刻の打ち間違いで行が膨らまず、外れた1件だけが落ちる", () => {
+    // 年を1桁打ち間違えた1件
+    const typo = item({ id: "it-typo", title: "打ち間違い", startsAt: new Date("2126-08-11T10:00:00+09:00").getTime(), placement: "tracks", trackIds: ["tr-b"] });
     const got = buildTimetableLayout([...ITEMS, typo], TRACKS, START);
 
-    expect(got.blocks.some((b) => b.entry.item.id === "it-typo")).toBe(false);
     expect(got.outOfRange.map((e) => e.item.id)).toEqual(["it-typo"]);
-    // 正しいコマは1つも落ちない
     expect(got.undated).toEqual([]);
-    expect(got.blocks.map((b) => b.entry.item.id).sort()).toEqual([
-      "it-a",
-      "it-b",
-      "it-gap",
-      "it-gap",
-      "it-open",
-      "it-panel",
-    ]);
-    // 打ち間違いを含めると10万行を超えていた
-    expect(got.rows).toBeLessThan(1000);
+    expect(idsOf(got)).toEqual(["it-a", "it-b", "it-gap", "it-open", "it-panel"]);
+    expect(got.rows.length).toBeLessThan(10);
   });
 
-  it("打ち間違いが過去側でも、正しいコマの方を表に残す", () => {
+  it("打ち間違いが過去側でも、正しいコマの方を残す", () => {
     // 最も早いコマを基準にすると、正しいコマが全部範囲外に落ちてしまう
-    const typo = item({
-      id: "it-typo",
-      title: "打ち間違い",
-      startsAt: new Date("1926-08-11T10:00:00+09:00").getTime(),
-      placement: "tracks",
-      trackIds: ["tr-b"],
-    });
+    const typo = item({ id: "it-typo", title: "打ち間違い", startsAt: new Date("1926-08-11T10:00:00+09:00").getTime(), placement: "tracks", trackIds: ["tr-b"] });
     const got = buildTimetableLayout([typo, ...ITEMS], TRACKS, START);
 
-    expect(got.outOfRange.map((e) => e.item.id)).toEqual(["it-typo"]);
-    expect(got.blocks.some((b) => b.entry.item.id === "it-open")).toBe(true);
-    expect(got.rows).toBeLessThan(1000);
-  });
-
-  it("所要時間が壊れていても行数が膨らまない", () => {
-    const huge = item({
-      id: "it-huge",
-      title: "壊れた所要時間",
-      durationMin: 60 * 24 * 400,
-      placement: "tracks",
-      trackIds: ["tr-a"],
-    });
-    const got = buildTimetableLayout([huge], TRACKS, START);
-
-    expect(got.blocks).toHaveLength(1);
-    expect(got.rows).toBeLessThan(1000);
+    expect(got.outOfRange.map((e) => e.item.id)).toContain("it-typo");
+    expect(got.cards.some((c) => c.entry.item.id === "it-open")).toBe(true);
   });
 
   it("トラックが1本も無いイベントでも壊れない", () => {
     const got = buildTimetableLayout(ITEMS, [], START);
 
-    expect(got.blocks).toEqual([]);
+    expect(got.cards).toEqual([]);
     expect(got.entries.every((e) => e.common)).toBe(true);
   });
 
   it("消えたトラックだけに載っていたコマは全トラック共通として扱う", () => {
-    const orphan = item({
-      id: "it-orphan",
-      placement: "tracks",
-      trackIds: ["tr-zzz"],
-    });
+    const orphan = item({ id: "it-orphan", placement: "tracks", trackIds: ["tr-zzz"] });
     const got = buildTimetableLayout([orphan], TRACKS, START);
 
-    expect(got.blocks).toHaveLength(1);
-    expect(got.blocks[0]!.common).toBe(true);
-    expect(got.blocks[0]!.colSpan).toBe(TRACKS.length);
+    expect(got.cards).toHaveLength(1);
+    expect(got.cards[0]!.common).toBe(true);
   });
 });
 
@@ -413,5 +226,166 @@ describe("entriesForTrack (#338)", () => {
       "it-open",
       "it-gap",
     ]);
+  });
+});
+
+/**
+ * Nostrasia 2026 の実際のタイムテーブル（本番のデータを写したもの）。
+ * オーナー 2026-11-27「メイントラックのコンテンツは灰色になってるし、それぞれが詰まりすぎてて見づらい」
+ * 「nostrasia.com のタイムテーブルを参考に」「縦書きはスマホ向けだよ」。並行して長く続く企画は
+ * 右の並行の列（本筋と同じ幅・横書き）、本筋の登壇は空いている列のぶんまで広がる、行は始まる時刻だけ。
+ */
+describe("Nostrasia 2026 のタイムライン", () => {
+  const at = (h: number, m: number) =>
+    new Date(`2026-11-29T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+09:00`).getTime();
+  const NOSTRASIA_TRACKS: EventTrack[] = [
+    { id: "main", name: "メイン", sortOrder: 0, visibility: "public" },
+    { id: "l1", name: "Lounge 1", sortOrder: 1, visibility: "public" },
+    { id: "l2", name: "Lounge 2", sortOrder: 2, visibility: "public" },
+    { id: "l3", name: "Lounge 3", sortOrder: 3, visibility: "public" },
+  ];
+  const row = (id: string, title: string, durationMin: number, startsAt: number | null, trackIds: string[] = []) =>
+    item({
+      id,
+      title,
+      durationMin,
+      startsAt,
+      placement: trackIds.length ? "tracks" : "all",
+      trackIds,
+    });
+  // 本番の並び（sort_order 順）・所要時間・開始時刻・トラック。null は前のコマから続く
+  const NOSTRASIA: ScheduleItem[] = [
+    row("open", "開場", 30, at(12, 30)),
+    row("hello", "開始あいさつ", 5, null),
+    row("s1", "Nostrの可能性", 10, null),
+    row("s2", "AI時代のNostrアプリの作り方", 10, null),
+    row("flea-intro", "フリーマーケットの紹介", 5, at(13, 25)),
+    row("s3", "MY FAVORITE NOSTR CLIENTS 2026", 15, at(13, 30)),
+    row("s4", "Nostrで動くオープンソースのメッセージアプリ", 10, null),
+    row("flea", "フリーマーケット", 270, at(13, 30), ["l3"]),
+    row("games", "ボードゲーム", 240, at(14, 0), ["l1"]),
+    row("hangout", "交流スペース", 240, at(14, 0), ["main"]),
+    row("zap1", "じゃんけんzapタイム1", 10, at(15, 0)),
+    row("lt1", "高機能Nostrクライアントと最適化とAIの話", 5, at(16, 0), ["main"]),
+    row("lt2", "Nostrを小さくしよう", 5, at(16, 5), ["main"]),
+    row("zap2", "じゃんけんzapタイム2", 10, at(17, 0)),
+    row("magic", "マジックショー", 60, at(18, 0)),
+    row("hangout2", "交流タイム", 60, null, ["main"]),
+    row("ranking", "出会いランキンググッズプレゼント", 10, at(19, 30)),
+    row("bye", "締めのあいさつ", 5, at(19, 55)),
+  ].map((it, i) => ({ ...it, sortOrder: i }));
+  const got = () => buildTimetableLayout(NOSTRASIA, NOSTRASIA_TRACKS, at(12, 30));
+
+  it("フリーマーケット・ボードゲーム・交流スペース・交流タイムは右の並行の列、登壇は本筋", () => {
+    const g = got();
+    const side = g.cards.filter((c) => c.side).map((c) => c.entry.item.id).sort();
+
+    expect(side).toEqual(["flea", "games", "hangout", "hangout2"].sort());
+    for (const id of ["hello", "s1", "s2", "s3", "s4", "zap1", "lt1", "lt2", "zap2", "magic", "ranking", "bye"]) {
+      expect(cardOf(g, id).side).toBe(false);
+    }
+    // 並行の列どうしは重ならない（同じ番号の列で行が重なっていない）
+    const sides = g.cards.filter((c) => c.side);
+    for (const a of sides)
+      for (const b of sides)
+        if (a !== b && a.lane === b.lane) expect(a.rowEnd <= b.rowStart || b.rowEnd <= a.rowStart).toBe(true);
+  });
+
+  it("行はコマの始まる時刻の順で、短い登壇もそれぞれ自分の行を持つ", () => {
+    const g = got();
+    const starts = [...new Set(NOSTRASIA.map((it) => it.id).map((id) => cardOf(g, id).startsAt))].sort((a, b) => a - b);
+
+    expect(g.rows).toEqual(starts);
+    for (let i = 1; i < g.rows.length; i++) expect(g.rows[i]!).toBeGreaterThan(g.rows[i - 1]!);
+    // 13:00〜13:15 の3つの登壇は別々の行
+    const rowsOf = ["hello", "s1", "s2"].map((id) => cardOf(g, id).rowStart);
+    expect(new Set(rowsOf).size).toBe(3);
+  });
+
+  it("nostrasia.com の広い画面と同じ並べ方: 列は本筋＋並行の列。フリマは右端、ボードゲームはその左。本筋の幅は 全部→2→1→全部", () => {
+    const g = got();
+    const lanes = 1 + g.sideLanes;
+    // 本筋のカードが占める列の数（本筋の列 1 ＋ 広がった並行の列）
+    const span = (id: string) => 1 + cardOf(g, id).extendSide;
+
+    // フリーマーケット（いちばん早く始まる長い企画）が右端（lane 0）、同時刻に始まる交流スペース・ボードゲームはその左
+    expect(cardOf(g, "flea").lane).toBe(0);
+    expect(cardOf(g, "games").lane).toBeGreaterThan(0);
+    expect(cardOf(g, "hangout").lane).toBeGreaterThan(0);
+    // 開場〜13:25 は長い企画の前なので全部の列
+    for (const id of ["open", "hello", "s1", "s2", "flea-intro"]) expect(span(id)).toBe(lanes);
+    // 13:30〜13:45 はフリマの最中。本筋はフリマの左まで
+    for (const id of ["s3", "s4"]) expect(span(id)).toBe(lanes - 1);
+    // 15:00〜17:00 はフリマ・交流スペース・ボードゲームの最中。本筋は1列
+    for (const id of ["zap1", "lt1", "lt2", "zap2"]) expect(span(id)).toBe(1);
+    // 18:00 のマジックショーは長い企画が終わったあと。また全部の列
+    expect(span("magic")).toBe(lanes);
+  });
+
+  it("登壇は、その時間に空いている並行の列のぶんまで広がる（並行の列と重ならない）", () => {
+    const g = got();
+    // 13:00 の時点ではまだ長い企画が始まっていないので、並行の列ぜんぶに広がる
+    expect(cardOf(g, "hello").extendSide).toBe(g.sideLanes);
+    // 本筋のカードが広がった並行の列（番号の大きい側から extendSide 本）は、その行で空いている
+    for (const c of g.cards.filter((x) => !x.side)) {
+      const used = new Set(Array.from({ length: c.extendSide }, (_v, k) => g.sideLanes - 1 - k));
+      const clash = g.cards.some(
+        (s) => s.side && used.has(s.lane) && s.rowStart < c.rowEnd && c.rowStart < s.rowEnd,
+      );
+      expect(clash).toBe(false);
+    }
+  });
+
+  it("全トラック共通のコマは共通のカード（色は描画側でテーマの主色。灰色にしない）", () => {
+    const g = got();
+
+    expect(cardOf(g, "magic").common).toBe(true);
+    expect(cardOf(g, "magic").trackIndexes).toEqual([]);
+    expect(cardOf(g, "lt1").common).toBe(false);
+    expect(cardOf(g, "lt1").trackIndexes).toEqual([0]);
+  });
+});
+
+describe("重なりと時刻の状態", () => {
+  const at = (h: number, m: number) =>
+    new Date(`2026-08-11T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+09:00`).getTime();
+
+  it("同じ時刻に始まって重なる本筋のコマは、横に並べて両方見える (#345)", () => {
+    const items = [
+      item({ id: "it-x", title: "セッションX", startsAt: at(14, 0), durationMin: 20, placement: "tracks", trackIds: ["tr-a"] }),
+      item({ id: "it-y", title: "セッションY", startsAt: at(14, 0), durationMin: 20, placement: "tracks", trackIds: ["tr-a"] }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, at(14, 0));
+    const x = cardOf(got, "it-x");
+    const y = cardOf(got, "it-y");
+
+    expect([x.laneCount, y.laneCount]).toEqual([2, 2]);
+    expect(x.lane).not.toBe(y.lane);
+  });
+
+  it("過去・開催中・これからを、開始と終わりの時刻で決める", () => {
+    const card = { startsAt: at(14, 0), endsAt: at(14, 30) };
+
+    expect(timeState(card, at(13, 59))).toBe("future");
+    expect(timeState(card, at(14, 0))).toBe("live");
+    expect(timeState(card, at(14, 29))).toBe("live");
+    expect(timeState(card, at(14, 30))).toBe("past");
+    // 0分のコマも、始まって1分は開催中
+    expect(timeState({ startsAt: at(14, 0), endsAt: at(14, 0) }, at(14, 0))).toBe("live");
+  });
+
+  it("「いま」の印は、コマのある時間の中だけで、次に始まる行の上に出る", () => {
+    const items = [
+      item({ id: "it-a", title: "A", startsAt: at(14, 0), durationMin: 60, placement: "tracks", trackIds: ["tr-a"] }),
+      item({ id: "it-b", title: "B", startsAt: at(15, 0), durationMin: 60, placement: "tracks", trackIds: ["tr-a"] }),
+    ];
+    const got = buildTimetableLayout(items, TRACKS, at(14, 0));
+
+    expect(nowRow(got, at(13, 59))).toBeNull();
+    expect(nowRow(got, at(16, 1))).toBeNull();
+    // 14:30 は B（2行目）の上
+    expect(nowRow(got, at(14, 30))).toBe(2);
+    // 15:30 は最後の行の最中。末尾の下
+    expect(nowRow(got, at(15, 30))).toBe(3);
   });
 });

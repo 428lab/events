@@ -12,6 +12,7 @@
  * 長いパスデータは持たず、描くたびにコードで生成する（同じ背景は毎回同じ絵）。
  * 描画結果は React に依存しない要素木（BgNode）。React では BuiltinBackgroundLayer で
  * 要素に起こし、書き出しや検査では builtinBackgroundMarkup で文字列にする。 */
+import { cardTemplateColors } from "@eventer/shared";
 import { CARD_THEMES, type CardThemeKey } from "./cardTheme.js";
 
 const W = 1074;
@@ -64,11 +65,13 @@ const luminance = (hex: string) => {
 };
 /** 模様の線と文字の色の差の下限（WCAG）。線は不透明なので重なっても暗くならない */
 export const TEXT_ON_PATTERN_CONTRAST = 4.6;
-/** Text colours of the default name-card template (heading/role teal, staff rose) that sit on the pattern whatever its palette.
- * Dark enough to read on the license-card paper tint as well as on white. */
-export const NAME_CARD_TEXT_COLORS = ["#101827", "#334155", "#11443F", "#701A3E"] as const;
+/** Text colours of the name-card templates that sit on the pattern whatever its palette: body ink, then every template colour
+ * scheme's accents (cardTemplateColors: teal heading/role and rose staff first, then the others such as Nostr purple).
+ * All dark enough to read on the license-card paper tint as well as on white, so the lines are lightened for each of them. */
+export const NAME_CARD_TEXT_COLORS: readonly string[] = [...new Set(["#101827", "#334155",
+  ...Object.values(cardTemplateColors).flatMap(c => [c.accent, c.staffAccent])])];
 /** On white the lines also stay readable against the earlier, lighter template teal and rose, which saved designs may still use. */
-const ON_WHITE_TEXT_COLORS = [...NAME_CARD_TEXT_COLORS, "#0F766E", "#9D174D"] as const;
+const ON_WHITE_TEXT_COLORS = [...NAME_CARD_TEXT_COLORS, "#0F766E", "#9D174D"];
 /** The darkest a line may get so every text colour in the list keeps TEXT_ON_PATTERN_CONTRAST against it. */
 const legibleFloor = (textColors: readonly string[], target = TEXT_ON_PATTERN_CONTRAST) =>
   target * (Math.max(...textColors.map(luminance)) + 0.05) - 0.05;
@@ -310,6 +313,7 @@ const THEME_NAMES: Record<CardThemeKey, { ja: string; en: string; accent: string
   rose: { ja: "ローズ", en: "Rose", accent: "#701A3E" },
   amber: { ja: "アンバー", en: "Amber", accent: "#7C2D12" },
   mono: { ja: "モノ", en: "Mono", accent: "#1E293B" },
+  purple: { ja: "パープル", en: "Purple", accent: "#4C1D95" },
 };
 const themePalette = (key: CardThemeKey): BuiltinBackgroundPalette => {
   const theme = CARD_THEMES.find(t => t.key === key)!;
@@ -323,10 +327,10 @@ const themePalette = (key: CardThemeKey): BuiltinBackgroundPalette => {
 const palettes = (...keys: CardThemeKey[]) => keys.map(themePalette);
 
 export const BUILTIN_BACKGROUNDS: readonly BuiltinBackground[] = [
-  { key: "rosette", nameJa: "ロゼット", nameEn: "Guilloché Rosette", draw: drawRosette, palettes: palettes("indigo", "teal", "rose", "amber", "mono") },
-  { key: "ribbons", nameJa: "リボン", nameEn: "Ribbons", draw: drawRibbons, palettes: palettes("rose", "indigo", "teal", "amber") },
-  { key: "engine", nameJa: "旋盤彫り", nameEn: "Engine Turned", draw: drawEngineTurned, palettes: palettes("amber", "indigo", "teal", "mono") },
-  { key: "mesh", nameJa: "セキュリティメッシュ", nameEn: "Security Mesh", draw: drawMesh, palettes: palettes("indigo", "teal", "rose", "amber", "mono") },
+  { key: "rosette", nameJa: "ロゼット", nameEn: "Guilloché Rosette", draw: drawRosette, palettes: palettes("indigo", "teal", "rose", "amber", "mono", "purple") },
+  { key: "ribbons", nameJa: "リボン", nameEn: "Ribbons", draw: drawRibbons, palettes: palettes("rose", "indigo", "teal", "amber", "purple") },
+  { key: "engine", nameJa: "旋盤彫り", nameEn: "Engine Turned", draw: drawEngineTurned, palettes: palettes("amber", "indigo", "teal", "mono", "purple") },
+  { key: "mesh", nameJa: "セキュリティメッシュ", nameEn: "Security Mesh", draw: drawMesh, palettes: palettes("indigo", "teal", "rose", "amber", "mono", "purple") },
 ];
 
 export function findBuiltinBackground(key: string): BuiltinBackground | undefined {

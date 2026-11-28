@@ -16,13 +16,13 @@ const contrast = (a: string, b: string) => {
 };
 
 describe("BUILTIN_BACKGROUNDS", () => {
-  it("has 4-6 backgrounds with unique keys, each with 3-5 palettes", () => {
+  it("has 4-6 backgrounds with unique keys, each with 3-6 palettes", () => {
     expect(BUILTIN_BACKGROUNDS.length).toBeGreaterThanOrEqual(4);
     expect(BUILTIN_BACKGROUNDS.length).toBeLessThanOrEqual(6);
     expect(new Set(BUILTIN_BACKGROUNDS.map(b => b.key)).size).toBe(BUILTIN_BACKGROUNDS.length);
     for (const bg of BUILTIN_BACKGROUNDS) {
       expect(bg.palettes.length).toBeGreaterThanOrEqual(3);
-      expect(bg.palettes.length).toBeLessThanOrEqual(5);
+      expect(bg.palettes.length).toBeLessThanOrEqual(6);
       expect(new Set(bg.palettes.map(p => p.key)).size).toBe(bg.palettes.length);
     }
   });

@@ -1,13 +1,18 @@
 import { useMemo, useState } from "react";
-import { Avatar, Box, Button, Checkbox, Chip, FormControlLabel, MenuItem, Pagination, Stack, TextField, Typography } from "@mui/material";
+import { Avatar, Box, Button, Checkbox, Chip, FormControlLabel, IconButton, MenuItem, Pagination, Stack, TextField, Typography } from "@mui/material";
+import ImageOutlinedIcon from "@mui/icons-material/ImageOutlined";
 import { EVENT_ROLES, type EventNameCard } from "@eventer/shared";
 import { useTranslation } from "react-i18next";
 import { roleLabel } from "../../lib/format.js";
 
 const PAGE_SIZE = 20;
 const normalize = (value: string) => value.normalize("NFKC").toLowerCase();
-export function NameCardSelection({ cards, excluded, onToggle, onSelectOnly }: {
+export function NameCardSelection({ cards, excluded, onToggle, onSelectOnly, avatarFailed, onReplaceImage }: {
   cards: EventNameCard[]; excluded: ReadonlySet<string>;
+  /** アイコンを読み込めず、頭文字で刷る人 */
+  avatarFailed?: ReadonlySet<string>;
+  /** 名札の代わりの画像を選ぶ（運営が人ごとに設定。2026-11-25）。渡さなければ出さない */
+  onReplaceImage?: (card: EventNameCard) => void;
   onToggle: (id: string) => void; onSelectOnly: (ids: string[]) => void;
 }) {
   const { t } = useTranslation();
@@ -43,15 +48,25 @@ export function NameCardSelection({ cards, excluded, onToggle, onSelectOnly }: {
     <Box data-name-card-selection sx={{ display: "grid", gridTemplateColumns: {
       xs: "minmax(0,1fr)", sm: "repeat(2,minmax(0,1fr))", md: "repeat(3,minmax(0,1fr))",
     }, gap: 0.5 }}>
-      {matching.slice(start, start + PAGE_SIZE).map(c => <FormControlLabel key={c.id}
-        sx={{ m: 0, minWidth: 0, "& .MuiFormControlLabel-label": { minWidth: 0, flex: 1 } }}
+      {matching.slice(start, start + PAGE_SIZE).map(c => <Stack key={c.id} direction="row" alignItems="center" sx={{ minWidth: 0 }}>
+      <FormControlLabel
+        sx={{ m: 0, minWidth: 0, flex: 1, "& .MuiFormControlLabel-label": { minWidth: 0, flex: 1 } }}
         control={<Checkbox size="small" checked={!excluded.has(c.id)} onChange={() => onToggle(c.id)}
           inputProps={{ "aria-label": t("staffOps.nameCardPrintCheckbox", { name: c.name }) }} />}
         label={<Stack component="span" direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
           <Avatar src={c.avatarUrl ?? undefined} sx={{ width: 24, height: 24, flexShrink: 0 }}>{[...c.name][0] ?? "?"}</Avatar>
           <Typography component="span" variant="body2" sx={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>{c.name}</Typography>
+          {avatarFailed?.has(c.id) && <Chip size="small" color="warning" variant="outlined" label={t("staffOps.nameCardAvatarFallbackChip")} sx={{ flexShrink: 0 }} />}
+          {c.memberImageAssetId && <Chip size="small" color="info" variant="outlined" label={t("staffOps.nameCardMemberImageChip")} sx={{ flexShrink: 0 }} />}
           {c.role !== "participant" && <Chip size="small" label={roleLabel(c.role)} sx={{ flexShrink: 0 }} />}
-        </Stack>} />)}
+        </Stack>} />
+      {/* アイコンなしの人は目立たせる。それ以外の人も差し替えられる */}
+      {onReplaceImage && <IconButton size="small" color={avatarFailed?.has(c.id) ? "warning" : "default"}
+        title={t("staffOps.nameCardMemberImage")} aria-label={t("staffOps.nameCardMemberImageFor", { name: c.name })}
+        onClick={() => onReplaceImage(c)} sx={{ flexShrink: 0 }}>
+        <ImageOutlinedIcon fontSize="small" />
+      </IconButton>}
+      </Stack>)}
     </Box>
     {!matching.length && <Typography>{t("staffOps.nameCardNoMatches")}</Typography>}
     <Stack direction="row" useFlexGap flexWrap="wrap" gap={1} alignItems="center">

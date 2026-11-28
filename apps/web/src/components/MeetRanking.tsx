@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   Avatar,
   Box,
@@ -58,9 +58,37 @@ interface BoardRow {
   value: string;
   /** value が変わった瞬間のパルス起動用（key の差し替えでアニメが再生される） */
   valueKey: string;
+  /** 目隠しモードで、まだ明かしていない行（名前・アバターを持たない） */
+  hidden?: boolean;
+  /** 目隠しモードで明かされた行（明かした瞬間の動きに使う） */
+  revealed?: boolean;
 }
 
 function toBoardRows(data: MeetRankingLive, t: TFunction): BoardRow[] {
+  if (data.mode === "blind") {
+    // 目隠し: 明かしていない行は「？？？」。行の同一性は順位と並び（名前を持たないため）
+    return data.ranking.map((r, i) =>
+      r.revealed
+        ? {
+            key: r.userId,
+            rank: r.rank,
+            label: r.name,
+            avatarUrl: r.avatarUrl,
+            value: t("eventSocial.meetRankingCount", { n: r.count }),
+            valueKey: `n-${r.count}`,
+            revealed: true,
+          }
+        : {
+            key: `h-${i}`,
+            rank: r.rank,
+            label: t("eventSocial.meetRankingHiddenName"),
+            avatarUrl: null,
+            value: t("eventSocial.meetRankingCount", { n: r.count }),
+            valueKey: `n-${r.count}`,
+            hidden: true,
+          },
+    );
+  }
   if (data.mode === "named") {
     return data.ranking.map((r) => ({
       key: r.userId,
@@ -88,9 +116,13 @@ function toBoardRows(data: MeetRankingLive, t: TFunction): BoardRow[] {
 export function MeetRankingBoard({
   data,
   scale: userScale,
+  onToggle,
 }: {
   data: MeetRankingLive;
   scale: number;
+  /** 運営だけ（目隠しモード）: 行を押すたびにその順位を 明かす（hidden=true のとき）／隠す を切り替える。
+   * 明かすと全員に見える。無ければ押せない */
+  onToggle?: (rank: number, hidden: boolean | undefined) => void;
 }) {
   const { t } = useTranslation();
   const rows = toBoardRows(data, t);
@@ -143,12 +175,40 @@ export function MeetRankingBoard({
           from: { opacity: 0 },
           to: { opacity: 1 },
         },
+        // 明かした瞬間: 行がカードのようにくるっとめくれて名前が出る（オーナー 2026-11-27
+        // 「ポチッと押すとめくれるように」）。動きを減らす設定では動かさずに切り替える
+        "@keyframes meetReveal": {
+          "0%": { opacity: 0, transform: "perspective(600px) rotateX(-90deg)" },
+          "60%": { opacity: 1, transform: "perspective(600px) rotateX(12deg)" },
+          "100%": { opacity: 1, transform: "none" },
+        },
+        "@media (prefers-reduced-motion: reduce)": {
+          "& *": { animation: "none !important", transition: "none !important" },
+        },
       }}
     >
       {positioned.map((r) => (
         <Box
           key={r.key}
+          // 目隠しモードでは、運営は行を押すたびに 明かす／隠す を切り替える（キーボードは Enter / Space）。
+          // 投影に写るので、ヒントや押せる見た目（ホバーの色・枠）は出さない（オーナー 2026-11-27）
+          {...(onToggle && r.rank > 0
+            ? {
+                role: "button",
+                tabIndex: 0,
+                "aria-pressed": !r.hidden,
+                "aria-label": t(r.hidden ? "eventSocial.meetRankingRevealRank" : "eventSocial.meetRankingHideRank", { rank: r.rank }),
+                onClick: () => onToggle(r.rank, r.hidden),
+                onKeyDown: (e: KeyboardEvent) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onToggle(r.rank, r.hidden);
+                  }
+                },
+              }
+            : {})}
           sx={{
+            ...(onToggle ? { cursor: "inherit", outline: "none" } : {}),
             position: "absolute",
             left: 0,
             right: 0,
@@ -160,8 +220,9 @@ export function MeetRankingBoard({
             px: 1,
             // 順位変動はこの transition が受け持つ
             transition: "top 500ms ease",
-            // 圏外→圏内の行はフェードイン
-            animation: "meetRowIn 400ms ease",
+            // 圏外→圏内の行はフェードイン。明かされた行は、めくれる動きにする（key が名前の行に替わって1回だけ再生される）
+            animation: r.revealed ? "meetReveal 700ms ease" : "meetRowIn 400ms ease",
+            transformOrigin: "center",
           }}
         >
           <Typography
@@ -184,9 +245,10 @@ export function MeetRankingBoard({
                 width: (r.top3 ? 64 : 44) * scale,
                 height: (r.top3 ? 64 : 44) * scale,
                 fontSize: (r.top3 ? 30 : 20) * scale,
+                ...(r.hidden ? { bgcolor: "rgba(151,163,188,0.25)", color: BOARD_SUB } : {}),
               }}
             >
-              {r.label.charAt(0)}
+              {r.hidden ? "?" : r.label.charAt(0)}
             </Avatar>
           )}
           <Typography
@@ -197,7 +259,8 @@ export function MeetRankingBoard({
               minWidth: 0,
               fontSize: (r.top3 ? 40 : 26) * scale,
               fontWeight: r.top3 ? 800 : 600,
-              color: BOARD_TEXT,
+              color: r.hidden ? BOARD_SUB : BOARD_TEXT,
+              letterSpacing: r.hidden ? "0.2em" : undefined,
             }}
           >
             {r.label}
@@ -246,6 +309,17 @@ export function MeetRankingPanel({ eventId }: { eventId: string }) {
           <HandshakeOutlinedIcon fontSize="small" />
           {t("eventSocial.meetRankingHeading")}
         </Typography>
+        {/* 主催者が書いた説明（任意）。小カードでは1行の添え書きにする */}
+        {data.note && (
+          <Typography
+            variant="body2"
+            color="secondary.main"
+            fontWeight={600}
+            sx={{ mb: 1, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+          >
+            {data.note}
+          </Typography>
+        )}
         {rows.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
             {t("eventSocial.meetRankingEmpty")}
@@ -266,10 +340,10 @@ export function MeetRankingPanel({ eventId }: { eventId: string }) {
                     src={r.avatarUrl ?? undefined}
                     sx={{ width: 28, height: 28, fontSize: 14 }}
                   >
-                    {r.label.charAt(0)}
+                    {r.hidden ? "?" : r.label.charAt(0)}
                   </Avatar>
                 )}
-                <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} color={r.hidden ? "text.secondary" : undefined} noWrap>
                   {r.label}
                 </Typography>
                 {r.value && (

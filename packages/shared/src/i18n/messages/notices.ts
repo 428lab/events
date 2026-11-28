@@ -75,6 +75,9 @@ const ja = {
   inquiryReplyTitle: "お問い合わせに返信がありました",
   /** 運営からメンバーへの個別の連絡（運営から始める問い合わせ） */
   staffContactTitle: "「{{event}}」の運営から連絡が届きました",
+  /** 新規登録した人の連携を最初からプロフィールに出したことを伝える（オーナー決定 2026-11-27） */
+  profileLinkDefaultOnTitle: "プロフィールに連携アカウントを表示しています",
+  profileLinkDefaultOnBody: "公開プロフィールに {{link}} へのリンクを表示しています。表示しない場合は、アカウント設定の「ログイン方法（連携）」で変えられます。",
   /** 運営からの連絡に、相手が返信した（送ったスタッフ・運営へ） */
   staffContactReplyTitle: "「{{event}}」の運営からの連絡に返信がありました",
 
@@ -194,6 +197,8 @@ const en: Record<keyof typeof ja, string> = {
   eventInquiryReplyTitle: "The organizer replied",
   inquiryReplyTitle: "You have a reply to your inquiry",
   staffContactTitle: "A message from the organizers of \"{{event}}\"",
+  profileLinkDefaultOnTitle: "Your linked account is shown on your profile",
+  profileLinkDefaultOnBody: "Your public profile shows a link to {{link}}. To hide it, change it under \"Login methods\" in your account settings.",
   staffContactReplyTitle: "Reply to the organizers' message about \"{{event}}\"",
 
   // 名前で始める。メールで名前をリンクにする処理（actorTitleHtml）が先頭の名前を目印にする
