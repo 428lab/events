@@ -23,7 +23,8 @@ import { api, ApiError } from "../api/client.js";
 import { lookupMember, postCheckin } from "../api/checkinHooks.js";
 import { dateLocale, i18next } from "../i18n/index.js";
 import { errorCode, errorMessage } from "../lib/errorMessage.js";
-import { isMessageKey, messageKey, type KeyOrError, type MessageKey } from "../lib/messageKey.js";
+import { isMessageKey, messageKey, type KeyOrError } from "../lib/messageKey.js";
+import { useQrScanner } from "../lib/useQrScanner.js";
 
 /**
  * QR受付（スタッフ用リーダー） (#154)。スマホでの利用が前提。
@@ -43,15 +44,6 @@ export function manualAttendErrorMessage(err: unknown): string {
     not_confirmed: i18next.t("staffOps.checkinManualNotConfirmed"),
     default: i18next.t("staffOps.checkinManualFailed"),
   });
-}
-
-/** BarcodeDetector の最小型（TS の lib.dom にまだ無い） */
-interface BarcodeDetectorLike {
-  detect(source: CanvasImageSource): Promise<{ rawValue: string }[]>;
-}
-interface BarcodeDetectorCtor {
-  new (options?: { formats: string[] }): BarcodeDetectorLike;
-  getSupportedFormats?: () => Promise<string[]>;
 }
 
 type PanelKind =
@@ -100,10 +92,6 @@ export function CheckinPage() {
   const isStaff = eventData?.myRole === "staff" || isAdmin;
   const enabled = Boolean(eventData) && isStaff;
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  // 訳す前の形で持ち、表示するときに訳す (#369)
-  const [cameraError, setCameraError] = useState<MessageKey | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   // 訳す前の形で持ち、表示するときに訳す (#369)
   const [notice, setNotice] = useState<KeyOrError | null>(null);
@@ -279,90 +267,20 @@ export function CheckinPage() {
     },
     [doTokenCheckin, doLookup, flashNotice],
   );
-  const handleDecodeRef = useRef(handleDecode);
-  handleDecodeRef.current = handleDecode;
 
-  // カメラ起動＋デコードループ（約10fps）
+  // カメラ起動＋デコードループ（約10fps）は共通の hook に任せる (#704)
+  const { videoRef, canvasRef, cameraError } = useQrScanner({
+    enabled,
+    onDecode: handleDecode,
+    pausedRef,
+  });
+
+  // 結果パネル・通知のタイマーはカメラと同じ寿命で片づける
   useEffect(() => {
     if (!enabled) return;
-    let cancelled = false;
-    let stream: MediaStream | null = null;
-    let timer: number | undefined;
-
-    void (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-          audio: false,
-        });
-      } catch {
-        // ここで t は使わない（効果の依存に入れると、言語を切り替えるたびに
-        // カメラが止まって開き直しになる）。キーだけ持ち、表示するときに訳す
-        setCameraError(messageKey("staffOps.checkinCameraError"));
-        return;
-      }
-      if (cancelled || !videoRef.current) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      const video = videoRef.current;
-      video.srcObject = stream;
-      await video.play().catch(() => undefined);
-
-      // ネイティブ BarcodeDetector（対応環境）を優先。無ければ jsQR を遅延読み込み
-      let detector: BarcodeDetectorLike | null = null;
-      const Ctor = (window as { BarcodeDetector?: BarcodeDetectorCtor })
-        .BarcodeDetector;
-      if (Ctor) {
-        try {
-          const formats = (await Ctor.getSupportedFormats?.()) ?? [];
-          if (formats.includes("qr_code")) {
-            detector = new Ctor({ formats: ["qr_code"] });
-          }
-        } catch {
-          detector = null;
-        }
-      }
-      const jsQR = detector ? null : (await import("jsqr")).default;
-      if (cancelled) return;
-
-      timer = window.setInterval(async () => {
-        if (pausedRef.current) return;
-        const v = videoRef.current;
-        if (!v || v.readyState < 2 || !v.videoWidth) return;
-        let text: string | null = null;
-        if (detector) {
-          try {
-            const codes = await detector.detect(v);
-            text = codes[0]?.rawValue ?? null;
-          } catch {
-            text = null;
-          }
-        } else if (jsQR && canvasRef.current) {
-          // デコード負荷を抑えるため長辺640pxに縮小してから読む
-          const canvas = canvasRef.current;
-          const scale = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
-          canvas.width = Math.round(v.videoWidth * scale);
-          canvas.height = Math.round(v.videoHeight * scale);
-          const ctx = canvas.getContext("2d", { willReadFrequently: true });
-          if (!ctx) return;
-          ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(img.data, img.width, img.height, {
-            inversionAttempts: "dontInvert",
-          });
-          text = code?.data ?? null;
-        }
-        if (text) handleDecodeRef.current(text);
-      }, 100);
-    })();
-
     return () => {
-      cancelled = true;
-      window.clearInterval(timer);
       window.clearTimeout(resumeTimerRef.current);
       window.clearTimeout(noticeTimerRef.current);
-      stream?.getTracks().forEach((t) => t.stop());
     };
   }, [enabled]);
 
@@ -387,7 +305,7 @@ export function CheckinPage() {
       </Stack>
 
       {cameraError ? (
-        <Alert severity="warning">{t(cameraError.key, cameraError.params)}</Alert>
+        <Alert severity="warning">{t("staffOps.checkinCameraError")}</Alert>
       ) : (
         <Box
           sx={{

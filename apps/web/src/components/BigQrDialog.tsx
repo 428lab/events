@@ -1,17 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Avatar,
   Box,
+  Button,
   CircularProgress,
   Dialog,
   IconButton,
   Stack,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import { useMyMeetToken } from "../api/eventMeetHooks.js";
+import { useQrScanner } from "../lib/useQrScanner.js";
 
 /**
  * 自分のQRコードを画面いっぱいに表示するダイアログ (#324)。
@@ -24,6 +29,9 @@ import { useMyMeetToken } from "../api/eventMeetHooks.js";
  *
  * 飛び先は読み取ったその場で出会いを確定する専用の入口 (#330)。
  * 短時間で切り替わるトークンを載せるので、表示している間は自動で描き替える。
+ *
+ * 上部の切り替えで「読み取る」にすると、同じ画面で相手の出会いのQRを読める (#704)。
+ * OSのカメラアプリ経由だと別ブラウザで開いてログインからやり直しになることがあるため。
  */
 
 /** 読み取り確定用の入口URL。token は短時間で切り替わる */
@@ -123,6 +131,125 @@ function useScreenWakeLock(active: boolean) {
   }, [active]);
 }
 
+/** 読み取った文字列が出会いのQR（自分のオリジンの /m/<token>）ならトークンを返す */
+export function parseMeetQrUrl(text: string, origin: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return null;
+  }
+  if (url.origin !== origin) return null;
+  const m = url.pathname.match(/^\/m\/([^/]+)$/);
+  return m ? m[1] : null;
+}
+
+type QrMode = "show" | "scan";
+
+/** 白い読み取り面の上でも読める切り替えの色。ダークテーマの文字色を引き継がない */
+const TOGGLE_SX = {
+  color: "#555555",
+  borderColor: "rgba(0,0,0,0.23)",
+  px: 2,
+  "&.Mui-selected, &.Mui-selected:hover": {
+    color: "#000000",
+    bgcolor: "rgba(0,0,0,0.12)",
+  },
+} as const;
+
+/** QRの読み取り面。カメラ映像を出し、出会いのQRを読んだら知らせる */
+function MeetQrScanner({
+  active,
+  onMeet,
+  onBackToShow,
+}: {
+  active: boolean;
+  onMeet: (token: string) => void;
+  onBackToShow: () => void;
+}) {
+  const { t } = useTranslation();
+  const [notMeet, setNotMeet] = useState(false);
+  const lastRef = useRef({ text: "", at: 0 });
+  const noticeTimerRef = useRef<number | undefined>(undefined);
+
+  /** 3秒以内の同一QRは無視（連続発火防止。受付リーダーと同じ） */
+  const handleDecode = useCallback(
+    (text: string) => {
+      const now = Date.now();
+      if (lastRef.current.text === text && now - lastRef.current.at < 3000) {
+        return;
+      }
+      lastRef.current = { text, at: now };
+      const token = parseMeetQrUrl(text, window.location.origin);
+      if (token) {
+        onMeet(token);
+        return;
+      }
+      setNotMeet(true);
+      window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = window.setTimeout(() => setNotMeet(false), 2500);
+    },
+    [onMeet],
+  );
+
+  const { videoRef, canvasRef, cameraError } = useQrScanner({
+    enabled: active,
+    onDecode: handleDecode,
+  });
+
+  useEffect(() => () => window.clearTimeout(noticeTimerRef.current), []);
+
+  if (cameraError) {
+    return (
+      <Stack spacing={2} alignItems="center" sx={{ maxWidth: 360 }}>
+        <Typography variant="body2" textAlign="center" sx={{ color: "#555555" }}>
+          {t("profile.qrScanCameraError")}
+        </Typography>
+        <Button
+          variant="outlined"
+          onClick={onBackToShow}
+          sx={{ color: "#000000", borderColor: "rgba(0,0,0,0.23)" }}
+        >
+          {t("profile.qrScanBackToShow")}
+        </Button>
+      </Stack>
+    );
+  }
+
+  return (
+    <>
+      <Box
+        sx={{
+          // 見せるときのQR枠と同じ大きさ
+          width: "min(92vw, 70vh, 100%)",
+          height: "min(92vw, 70vh, 100%)",
+          borderRadius: 2,
+          overflow: "hidden",
+          bgcolor: "#000000",
+        }}
+      >
+        <Box
+          component="video"
+          ref={videoRef}
+          playsInline
+          muted
+          aria-label={t("profile.qrScanLabel")}
+          sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
+      </Box>
+      <Typography
+        variant="body2"
+        role="status"
+        sx={{ color: notMeet ? "#000000" : "#555555", fontWeight: notMeet ? 700 : 400 }}
+      >
+        {notMeet ? t("profile.qrScanNotMeet") : t("profile.qrScanHint")}
+      </Typography>
+      {/* jsQR フォールバック用の作業キャンバス（非表示） */}
+      <canvas ref={canvasRef} style={{ display: "none" }} />
+    </>
+  );
+}
+
 export function BigQrDialog({
   open,
   onClose,
@@ -135,11 +262,15 @@ export function BigQrDialog({
   avatarUrl?: string | null;
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   useScreenWakeLock(open);
+  // 開くたびに「見せる」から始める (#704)
+  const [mode, setMode] = useState<QrMode>("show");
   // 表示中のトークン。読まれるまでは同じものを出し続ける（読み取っている
   // 最中に切り替わると失敗し続けるため）。読まれたらサーバーが次のぶんを返す
   const [current, setCurrent] = useState<string | null>(null);
-  const { data: meetToken, isError } = useMyMeetToken(open, current);
+  // 読み取り中はトークンを取りに行かない
+  const { data: meetToken, isError } = useMyMeetToken(open && mode === "show", current);
   // 「読み取られました」の一時表示。次の人に向け直す合図になる
   const [justRead, setJustRead] = useState(false);
 
@@ -163,6 +294,7 @@ export function BigQrDialog({
     if (!open) {
       setCurrent(null);
       setJustRead(false);
+      setMode("show");
     }
   }, [open]);
 
@@ -181,6 +313,16 @@ export function BigQrDialog({
   const fresh = meetToken && meetToken.expiresAt > now ? meetToken : null;
   const url = fresh ? buildMeetQrUrl(fresh.token, window.location.origin) : null;
 
+  // 記録・取り消しは既存の入口（MeetScanPage）に任せる
+  const onMeet = useCallback(
+    (token: string) => {
+      onClose();
+      navigate(`/m/${token}`);
+    },
+    [onClose, navigate],
+  );
+  const backToShow = useCallback(() => setMode("show"), []);
+
   return (
     <Dialog
       fullScreen
@@ -196,54 +338,91 @@ export function BigQrDialog({
       >
         <CloseIcon />
       </IconButton>
+      {/* 閉じるボタン（右上）と重ならないよう左右に逃がして中央に置く */}
+      <Box
+        sx={{
+          position: "absolute",
+          top: 8,
+          left: 0,
+          right: 0,
+          px: 7,
+          display: "flex",
+          justifyContent: "center",
+          pointerEvents: "none",
+        }}
+      >
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={mode}
+          onChange={(_, next: QrMode | null) => {
+            if (next) setMode(next);
+          }}
+          aria-label={t("profile.qrModeLabel")}
+          sx={{ pointerEvents: "auto" }}
+        >
+          <ToggleButton value="show" sx={TOGGLE_SX}>
+            {t("profile.qrModeShow")}
+          </ToggleButton>
+          <ToggleButton value="scan" sx={TOGGLE_SX}>
+            {t("profile.qrModeScan")}
+          </ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
       <Stack
         spacing={2}
         alignItems="center"
         justifyContent="center"
         sx={{ height: "100%", p: 2 }}
       >
-        <Box
-          data-testid="big-qr"
-          data-qr-url={url ?? ""}
-          sx={{
-            // 縦持ちのスマホで短辺いっぱい。周囲の余白も静穏帯として効く。
-            // 100% を混ぜて左右パディングぶんの横はみ出し（幅400px未満の端末）を防ぐ
-            width: "min(92vw, 70vh, 100%)",
-            height: "min(92vw, 70vh, 100%)",
-            bgcolor: "#ffffff",
-            display: "grid",
-            placeItems: "center",
-          }}
-        >
-          {url ? (
-            <QrCodeSvg url={url} label={t("profile.qrLabel", { name })} />
-          ) : isError ? (
-            <Typography variant="body2" textAlign="center" sx={{ color: "#555555" }}>
-              {t("profile.qrError")}
-            </Typography>
-          ) : (
-            <Stack spacing={1.5} alignItems="center">
-              <CircularProgress sx={{ color: "#555555" }} />
-              <Typography variant="body2" sx={{ color: "#555555" }}>
-                {t("profile.qrPreparing")}
-              </Typography>
-            </Stack>
-          )}
-        </Box>
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          {avatarUrl && <Avatar src={avatarUrl} sx={{ width: 40, height: 40 }} />}
-          <Box>
-            <Typography variant="h6" fontWeight={700} sx={{ color: "#000000" }}>
-              {name}
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{ color: justRead ? "#1b5e20" : "#555555", fontWeight: justRead ? 700 : 400 }}
+        {mode === "scan" ? (
+          <MeetQrScanner active={open} onMeet={onMeet} onBackToShow={backToShow} />
+        ) : (
+          <>
+            <Box
+              data-testid="big-qr"
+              data-qr-url={url ?? ""}
+              sx={{
+                // 縦持ちのスマホで短辺いっぱい。周囲の余白も静穏帯として効く。
+                // 100% を混ぜて左右パディングぶんの横はみ出し（幅400px未満の端末）を防ぐ
+                width: "min(92vw, 70vh, 100%)",
+                height: "min(92vw, 70vh, 100%)",
+                bgcolor: "#ffffff",
+                display: "grid",
+                placeItems: "center",
+              }}
             >
-              {justRead ? t("profile.qrJustRead") : t("profile.qrHint")}
-            </Typography>
-          </Box>
-        </Stack>
+              {url ? (
+                <QrCodeSvg url={url} label={t("profile.qrLabel", { name })} />
+              ) : isError ? (
+                <Typography variant="body2" textAlign="center" sx={{ color: "#555555" }}>
+                  {t("profile.qrError")}
+                </Typography>
+              ) : (
+                <Stack spacing={1.5} alignItems="center">
+                  <CircularProgress sx={{ color: "#555555" }} />
+                  <Typography variant="body2" sx={{ color: "#555555" }}>
+                    {t("profile.qrPreparing")}
+                  </Typography>
+                </Stack>
+              )}
+            </Box>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              {avatarUrl && <Avatar src={avatarUrl} sx={{ width: 40, height: 40 }} />}
+              <Box>
+                <Typography variant="h6" fontWeight={700} sx={{ color: "#000000" }}>
+                  {name}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ color: justRead ? "#1b5e20" : "#555555", fontWeight: justRead ? 700 : 400 }}
+                >
+                  {justRead ? t("profile.qrJustRead") : t("profile.qrHint")}
+                </Typography>
+              </Box>
+            </Stack>
+          </>
+        )}
       </Stack>
     </Dialog>
   );

@@ -24,7 +24,7 @@ const SET_INTERVAL_ALLOWED: Record<string, { count: number; why: string }> = {
   "components/LiveCameraMapPanel.tsx": { count: 1, why: "カメラ状態の経過時間の表示（1秒の時計）" },
   "lib/useEventTiming.ts": { count: 1, why: "開催前・中・後の切り替えの時計（60秒）" },
   "lib/nostrChat.ts": { count: 1, why: "リレー接続の見張り（切れたらつなぎ直すだけで、サーバーへは問い合わせない）" },
-  "pages/CheckinPage.tsx": { count: 1, why: "カメラ映像から QR を読む繰り返し（端末内）" },
+  "lib/useQrScanner.ts": { count: 1, why: "カメラ映像から QR を読む繰り返し（端末内）。受付リーダーと出会いのQR画面で使う" },
   "pages/LiveScreenPage.tsx": { count: 2, why: "壁時計（1秒）と、同じ端末の操作画面への BroadcastChannel 送信（2秒）" },
   "pages/DeckImportPage.tsx": { count: 1, why: "再試行までの残り時間の表示（1秒の時計）" },
   "components/DeckAgentPanel.tsx": { count: 1, why: "AI 用トークンの残り時間の表示（30秒の時計）。一覧の取り直しはフォーカスとボタンだけ" },
