@@ -16,6 +16,7 @@ import {
   Divider,
   Portal,
   FormControlLabel,
+  Link,
   MenuItem,
   Stack,
   Switch,
@@ -58,7 +59,6 @@ import { MarkdownEditor } from "../components/MarkdownEditor.js";
 import { DescriptionImageTray } from "../components/DescriptionImageTray.js";
 import { removeImageReferences } from "../lib/descriptionImages.js";
 import { EventSlotsEditor } from "../components/EventSlotsEditor.js";
-import { SurveyQuestionsEditor } from "../components/SurveyQuestionsEditor.js";
 import { ChatWriteWindowField } from "../components/ChatWriteWindowField.js";
 import { fromDateTimeLocal, venueLabel } from "../lib/format.js";
 import { errorMessage } from "../lib/errorMessage.js";
@@ -959,7 +959,10 @@ export function EditEventPage() {
           <EventSlotsEditor eventId={id} />
 
           <Divider />
-          <SurveyQuestionsEditor eventId={id} />
+          {/* 参加アンケートの質問は「参加アンケート」ページへ移した（オーナー 2026-11-28）。前の場所を探す人のために案内を残す */}
+          <Typography variant="body2" data-testid="survey-moved">
+            <Link component={RouterLink} to={`/events/${id}/survey`}>{t("eventForm.surveyMovedLink")}</Link>
+          </Typography>
 
           {contestMode && (
             <>

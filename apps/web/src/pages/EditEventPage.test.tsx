@@ -111,6 +111,12 @@ beforeEach(() => {
   eventData = makeEventData();
 });
 
+/** 参加アンケートの質問は専用ページへ移した（オーナー 2026-11-28）。前の場所には案内だけ残す */
+it("参加アンケートの質問は編集画面に無く、専用ページへの案内がある", () => {
+  draw();
+  expect(screen.getByRole("link", { name: /参加アンケートの質問は「参加アンケート」ページで編集します/ })).toHaveAttribute("href", "/events/e-1/survey");
+});
+
 describe("イベント編集の日時順序の警告 (#399)", () => {
   it("終了を開始より前にすると警告が出て保存ボタンが無効になる", () => {
     draw();
