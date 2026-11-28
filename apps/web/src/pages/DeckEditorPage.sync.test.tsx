@@ -41,6 +41,9 @@ vi.mock("../api/deckHooks.js", () => ({
     return { mutateAsync: (...args: unknown[]) => mocks.update.get(name)!(...args), isPending: false };
   },
   useUploadDeckImage: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUndoDeckAi: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false, isError: false }),
+  useIssueEditDeckAgentToken: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
+  useRevokeEditDeckAgentToken: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("../lib/signalHub.js", () => ({ useEventSignal: () => ({ synced: true }) }));
 

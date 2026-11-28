@@ -17,6 +17,8 @@ import type { Deck, DeckContent, DeckElement, DeckForEdit, DeckSlide } from "@ev
 import { ApiError, api } from "../api/client.js";
 import { relativeTime } from "../lib/format.js";
 import {
+  useUndoDeckAi,
+  type IssuedEditDeckAgentToken,
   useDeck,
   useUpdateDeck,
   useUploadDeckImage,
@@ -27,6 +29,7 @@ import { DeckLayerList } from "../components/DeckLayerList.js";
 import { DeckSlideList } from "../components/DeckSlideList.js";
 import { DeckToolbar } from "../components/DeckToolbar.js";
 import { DeckExportMenu } from "../components/DeckExportMenu.js";
+import { DeckAiEditIssueButton, DeckAiEditLock } from "../components/DeckAiEditPanel.js";
 import {
   copyElements,
   expandGroup,
@@ -83,6 +86,9 @@ export function DeckEditorPage() {
   const deck = deckData as DeckForEdit | undefined;
   const update = useUpdateDeck(id);
   const upload = useUploadDeckImage(id);
+  // 作成済みのスライドを AI に直してもらう（docs/agent-deck-token.md §4c）。平文のトークンはこの画面の state にだけ置く
+  const [aiIssued, setAiIssued] = useState<IssuedEditDeckAgentToken | null>(null);
+  const undoAi = useUndoDeckAi(id);
 
   const [title, setTitle] = useState("");
   const titleRef = useRef(title);
@@ -197,6 +203,20 @@ export function DeckEditorPage() {
   };
   useDeckLeaveWarning(saving.revision > 0 && !saving.saved, t("deckImport.leave"));
 
+  // AI に直してもらっている間（423）から戻ったら（取り消した・期限が切れた）、AI が書いた中身を読み直す。
+  // 読み込み済みの古い中身のままだと、AI の版より前の版で保存して 409 になる（黙って上書きもしない）
+  const aiLocked = agentLockOf(loadError)?.scope === "deck" && isError;
+  const wasAiLocked = useRef(false);
+  useEffect(() => {
+    if (aiLocked) { wasAiLocked.current = true; return; }
+    if (wasAiLocked.current && deck) {
+      wasAiLocked.current = false;
+      setAiIssued(null);
+      void reloadLatest();
+    }
+    // reloadLatest は毎レンダ作り直すが、中身は ref と state の更新だけ
+  }, [aiLocked, deck]);
+
   const picker = useImagePicker(upload.mutateAsync);
 
   // ここから下は content が無い間も素通りできる形にしておく
@@ -299,8 +319,20 @@ export function DeckEditorPage() {
     canGroup: selectedIds.length >= 2,
   });
 
-  // AI がチームのスライドを書いている間（423）は、見つからないではなく、その旨を出す
-  if (isError) return <Typography>{t(isAgentWriting(loadError) ? "studio.deckAgentWriting" : "studio.deckNotFound")}</Typography>;
+  // AI が書いている間（423）は、見つからないではなく、その旨を出す。自分のスライドを AI に直してもらっている
+  // ときは、取り消して編集に戻るボタン（と発行直後なら指示文）を出す
+  if (isError) {
+    const lock = agentLockOf(loadError);
+    if (lock?.scope === "deck") {
+      return (
+        <Stack spacing={2}>
+          <Box><Button size="small" component={RouterLink} to="/decks">{t("studio.backToList")}</Button></Box>
+          <DeckAiEditLock deckId={id} expiresAt={lock.expiresAt} issued={aiIssued} />
+        </Stack>
+      );
+    }
+    return <Typography>{t(isAgentWriting(loadError) ? "studio.deckAgentWriting" : "studio.deckNotFound")}</Typography>;
+  }
   if (isLoading || !content)
     return <Typography>{t("common.loading")}</Typography>;
 
@@ -350,7 +382,25 @@ export function DeckEditorPage() {
         )}
         {/* 書き出すのは保存済みの中身（公開の取得と同じもの）。未保存のあいだは押せない */}
         {deck && <DeckExportMenu slug={deck.slug} disabled={!saving.saved || upload.isPending} />}
+        {/* 自分のスライドを AI に直してもらう（チームのスライドはチームの欄から）。AI は保存済みの中身を読むので、
+            未保存のあいだは押せない */}
+        {deck && !deck.team && (
+          <DeckAiEditIssueButton deckId={id} content={deck.content} disabled={!saving.saved || upload.isPending} onIssued={setAiIssued} />
+        )}
       </Stack>
+
+      {/* 「AIの変更を取り消す」: AI が直す前の中身に戻す（オーナー決定 2026-11-28）。戻したら画面も読み直す */}
+      {deck?.aiBackupAt != null && !undoAi.isSuccess && (
+        <Alert severity="info" action={
+          <Button color="inherit" size="small" disabled={undoAi.isPending || !saving.saved} onClick={() => {
+            if (!window.confirm(t("deckAgent.undoConfirm"))) return;
+            undoAi.mutate(undefined, { onSuccess: () => void reloadLatest() });
+          }}>{t("deckAgent.undo")}</Button>
+        }>
+          {t("deckAgent.undoAvailable", { time: relativeTime(deck.aiBackupAt) })}
+        </Alert>
+      )}
+      {undoAi.isError && <Alert severity="error">{t("deckAgent.undoFailed")}</Alert>}
 
       {(syncLost === "agent_writing" || isAgentWriting(saving.error)) && <Alert severity="info">{t("studio.deckAgentWriting")}</Alert>}
       {syncLost === "lost" && <Alert severity="info">{t("studio.deckSyncLost")}</Alert>}
@@ -468,6 +518,13 @@ export function DeckEditorPage() {
 /** AI がチームのスライドを書いている（docs/agent-deck-token.md「チームのスライド」）。サーバーは 423 agent_writing */
 function isAgentWriting(error: unknown): boolean {
   return error instanceof ApiError && error.status === 423;
+}
+
+/** 423 の応答に付く AI のロック（scope: team ＝チームのスライド／deck ＝自分のスライドを直している） */
+function agentLockOf(error: unknown): { expiresAt: number | null; scope: "team" | "deck" } | null {
+  if (!isAgentWriting(error)) return null;
+  const agent = ((error as ApiError).body as { agent?: { expiresAt?: number; scope?: "team" | "deck" } } | null)?.agent;
+  return { expiresAt: agent?.expiresAt ?? null, scope: agent?.scope === "deck" ? "deck" : "team" };
 }
 
 function conflictOf(error: unknown): { name: string | null; at: number } | null {

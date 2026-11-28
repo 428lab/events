@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { convertDeckImport, DECK_IMPORT_MAX_BYTES, DeckImportJsonError, parseDeckImport } from "@eventer/shared";
+import { convertDeckImport, DECK_IMPORT_MAX_BYTES, DeckImportJsonError, deckV2Losses, exportDeckV2, parseDeckImport, type DeckContent } from "@eventer/shared";
 import type { AppEnv } from "../types.js";
 import { env, getBucket } from "../runtime.js";
 import { hasImageMagicBytes, normalizeImageMime } from "../lib/imageMime.js";
@@ -110,15 +110,37 @@ deckAgentRoutes.use("*", async (c, next) => {
   await next();
 });
 
-/** トークンが書くデッキの id。チームのスライドのトークンは発行の時点で決まっている（team_deck_id）。
- * 個人のトークンは最初の書き込みで決まる（deck_id） */
-const boundDeckId = (row: DeckAgentTokenRow) => row.team_deck_id ?? row.deck_id;
+/** トークンが書くデッキの id。チームのスライド（team_deck_id）と、既存の個人のデッキを直すトークン
+ * （edit_deck_id、§4c）は発行の時点で決まっている。新しく作るトークンは最初の書き込みで決まる（deck_id） */
+const boundDeckId = (row: DeckAgentTokenRow) => row.team_deck_id ?? row.edit_deck_id ?? row.deck_id;
 
 /** トークンが書けるデッキ。チームのスライドは、発行した人がいまもそのチームで編集できるときだけ
- * （抜けた・イベントが終わったら null ＝ 410） */
+ * （抜けた・イベントが終わったら null ＝ 410）。個人のデッキは持ち主のままのときだけ */
 function findBoundDeck(row: DeckAgentTokenRow) {
   if (row.team_deck_id) return deckAgentTokensRepo.findTeamDeck(row.team_deck_id, row.owner_id);
+  if (row.edit_deck_id) return deckAgentTokensRepo.findDeck(row.edit_deck_id, row.owner_id, true);
   return row.deck_id ? deckAgentTokensRepo.findDeck(row.deck_id, row.owner_id) : Promise.resolve(null);
+}
+
+function parseStoredContent(json: string): DeckContent {
+  try {
+    const v = JSON.parse(json);
+    return v && Array.isArray(v.slides) ? v : { slides: [] };
+  } catch {
+    return { slides: [] };
+  }
+}
+
+/** 結び付いたデッキの今の中身を v2 の取り込み JSON で返す（オーナー決定 2026-11-28「読ませるしかない」）。
+ * 書き出し（exportDeckV2）と同じ形。このデッキにアップロード済みの画像は相対の `/api/decks/<id>/images/<uuid>` の
+ * まま返し、そのまま PUT に戻せるようにする（PUT はこの形だけをこのデッキの画像として受け付ける） */
+async function deckContentV2(deckId: string) {
+  const row = await deckAgentTokensRepo.readContent(deckId);
+  if (!row) return null;
+  const own = (src: string) => UPLOADED_SRC_RE.exec(src)?.[1] === deckId;
+  const content = parseStoredContent(row.content);
+  // losses: v2 に無いので書き戻すと失われるもの（回転・グループ・書体など）。AI に知らせる
+  return { json: exportDeckV2({ title: row.title, content }, base(), { keepSrc: own }), losses: deckV2Losses(content) };
 }
 
 async function deckState(row: DeckAgentTokenRow) {
@@ -129,6 +151,11 @@ async function deckState(row: DeckAgentTokenRow) {
     imagesLeft: Math.max(0, DECK_AGENT_TOKEN_MAX_IMAGES - row.image_count),
     deck: deck ? { id: deck.id, slug: deck.slug, title: deck.title, ...deckUrls(deck) } : null,
     deckDeleted: boundDeckId(row) !== null && deck === null,
+    // 今の中身（v2 JSON）。直すときはこれを読んで、全体を PUT し直す。デッキがまだ無ければ null
+    ...(await (async () => {
+      const read = deck ? await deckContentV2(deck.id) : null;
+      return { content: read?.json ?? null, losses: read?.losses ?? null };
+    })()),
   };
 }
 
@@ -182,7 +209,9 @@ deckAgentRoutes.put("/deck", async (c) => {
       const write = { tokenId: row.id, ownerId: row.owner_id, deckId: existing.id, title: converted.title, content, now };
       const result = row.team_deck_id
         ? await deckAgentTokensRepo.replaceTeamDeck(write)
-        : await deckAgentTokensRepo.replaceBoundDeck(write);
+        : row.edit_deck_id
+          ? await deckAgentTokensRepo.replaceEditDeck(write)
+          : await deckAgentTokensRepo.replaceBoundDeck(write);
       // 認証のあと、書き込みまでの間に取り消された・期限が切れた（書き込みの文の中で止めている）
       if (result === "revoked") return unauthorized(c);
       if (result === "gone") return c.json({ error: "deck_deleted", message: deckGoneMessage(row) }, 410);

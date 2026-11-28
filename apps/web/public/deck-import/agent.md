@@ -30,6 +30,20 @@ v2 仕様（[spec.md](v2/spec.md)、[schema.json](v2/schema.json)）のJSONを�
 
 検証エラー（422）が返ったら、`issues[].path` と `message` を読んで直し、**JSON全体を送り直します**。差分は送れません。
 
+## 既存のスライドを直す
+
+利用者が「直してほしい」と言ってトークンを渡した場合、そのトークンは**利用者の既存のスライドに結び付いています**（`GET /api/agent/deck` の `deck` が最初から入っています）。
+
+1. `GET /api/agent/deck` を呼び、`content`（今のスライドの v2 JSON）を読む
+2. 頼まれたところだけを直す。直さないページ・要素はそのまま残す（座標・色・書体・画像の `src` も変えない）
+3. 直したJSON**全体**を `PUT /api/agent/deck` する（`200` で同じデッキが置き換わる。新しいデッキは作れない）
+4. `viewUrl` と `editUrl` を利用者に伝える
+
+- `content` の画像の `src` が `/api/decks/<deckId>/images/<imageId>` のものは、そのデッキに上げてある画像です。そのまま残せば表示されます。
+- 利用者は「AIの変更を取り消す」で、あなたが最初に書く前の中身に戻せます。
+- `content` は v2 にあるものだけです。回転・グループ・既定以外の書体は v2 に無いので、書き戻すと元に戻ります。`GET` の `losses`（`rotated`・`grouped`・`customFonts`）で何が戻るかが分かります。利用者に一言伝えてください。
+- あなたが書いている間（トークンが有効な間）、利用者はそのスライドを編集できません。終わったら、その旨を伝えてください（利用者がトークンを取り消せば、すぐ編集できます）。
+
 ## API
 
 ### `GET $BASE/api/agent/deck`
@@ -37,8 +51,10 @@ v2 仕様（[spec.md](v2/spec.md)、[schema.json](v2/schema.json)）のJSONを�
 トークンの状態を返します。最初に1回呼んで、トークンが生きているか確かめると安全です。
 
 ```json
-{"expiresAt":1790000000000,"writesLeft":100,"imagesLeft":50,"deck":null,"deckDeleted":false}
+{"expiresAt":1790000000000,"writesLeft":100,"imagesLeft":50,"deck":null,"deckDeleted":false,"content":null}
 ```
+
+デッキがあれば、`deck` にURL、`content` に今の中身（v2 JSON。`PUT` と同じ形）が入ります。
 
 ### `PUT $BASE/api/agent/deck`
 
@@ -93,4 +109,4 @@ JSONの `src` には、返った `src`（相対パス）をそのまま入れま
 
 ## English summary
 
-Send `Authorization: Bearer evd_…` on every call. `PUT /api/agent/deck` with a version 2 events-lab-deck JSON body ([spec](v2/spec.md)) creates the token's single deck (201), and later calls replace it (200). `POST /api/agent/deck/images` takes a raw PNG/JPEG/WebP/GIF/AVIF body (6 MiB or less) after the deck exists. It returns a `src` that you can use in an `image-url` element. `GET /api/agent/deck` reports the token's state. Tokens last 60 minutes and allow 100 writes and 50 images. The saved deck is viewable by anyone who has its URL. On 422, fix the listed `issues` and resend the whole JSON.
+Send `Authorization: Bearer evd_…` on every call. `PUT /api/agent/deck` with a version 2 events-lab-deck JSON body ([spec](v2/spec.md)) creates the token's single deck (201), and later calls replace it (200). `POST /api/agent/deck/images` takes a raw PNG/JPEG/WebP/GIF/AVIF body (6 MiB or less) after the deck exists. It returns a `src` that you can use in an `image-url` element. `GET /api/agent/deck` reports the token's state. Tokens last 60 minutes and allow 100 writes and 50 images. The saved deck is viewable by anyone who has its URL. On 422, fix the listed `issues` and resend the whole JSON. If the user gave you a token to edit an existing deck, `GET /api/agent/deck` already returns that `deck` and its current `content` (version 2 JSON). Change only what was asked, keep everything else (including `/api/decks/<deckId>/images/...` srcs), and `PUT` the whole JSON back (200). While the token is active the user can't edit the deck; they can undo your changes afterwards. `content` keeps only version 2 properties: rotation, groups and non-default fonts are reset when you write it back (`losses` in the GET response lists them), so tell the user.
