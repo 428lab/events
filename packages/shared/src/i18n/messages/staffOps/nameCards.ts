@@ -75,6 +75,13 @@ const ja = {
   sourceCard: "カード",
   /** 事前アンケートの回答一覧 */
   surveyTitle: "アンケート回答",
+  /** 参加アンケートの運営ページ（オーナー 2026-11-28。もとはアクセス統計の中だけにあった） */
+  surveyPageTitle: "参加アンケート",
+  surveyPageStaffOnly: "参加アンケートの管理はスタッフ専用です。",
+  surveyPageIntro: "参加を申し込むときに答えてもらう質問（入館情報・写真NGなど）の編集と、回答の一覧です。URLで配る開催前アンケートは別のページです。",
+  surveyPagePreSurveyLink: "開催前アンケートへ",
+  surveyNoQuestions: "質問がまだありません。上の「参加アンケート」で質問を追加すると、申込のときに聞けます。",
+  surveyStatsMoved: "参加アンケートの回答は「参加アンケート」ページで見られます →",
   surveyRemind: "未回答者にお願い通知",
   surveyRemindConfirm:
     "未回答の確定参加者に「アンケート回答のお願い」通知を送りますか？",
@@ -164,6 +171,12 @@ const en: Record<keyof typeof ja, string> = {
   sourceEmail: "Email",
   sourceCard: "Profile card",
   surveyTitle: "Survey answers",
+  surveyPageTitle: "Registration survey",
+  surveyPageStaffOnly: "Only staff can manage the registration survey.",
+  surveyPageIntro: "Edit the questions people answer when they sign up (entry details, no-photo, and so on) and see their answers. The pre-event survey you share by URL has its own page.",
+  surveyPagePreSurveyLink: "Go to the pre-event survey",
+  surveyNoQuestions: "No questions yet. Add questions under \"Registration survey\" above to ask them at sign-up.",
+  surveyStatsMoved: "Registration survey answers are on the \"Registration survey\" page →",
   surveyRemind: "Remind people who have not answered",
   surveyRemindConfirm:
     "Send a “please answer the survey” notification to confirmed participants who have not answered yet?",

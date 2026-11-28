@@ -236,10 +236,12 @@ const ja = {
 
   /** 事前アンケート (#152)。質問を作る側 */
   surveyHeading: "参加アンケート",
+  /** イベント編集に残す案内。質問の編集は「参加アンケート」ページへ移した（オーナー 2026-11-28） */
+  surveyMovedLink: "参加アンケートの質問は「参加アンケート」ページで編集します →",
   surveyHelp:
     "参加登録時に回答してもらう質問です（入館用の氏名・所属の収集など）。必須の質問に未回答の人は参加登録できません。回答はスタッフだけが閲覧できます。",
   surveyAnswersExist:
-    "すでに回答が集まっています。質問の追加・必須化は今後の参加者にのみ適用されます（既存参加者の未回答はアクセス統計の回答一覧で確認できます）。",
+    "すでに回答が集まっています。質問の追加・必須化は今後の参加者にのみ適用されます（既存参加者の未回答は、このページの下の回答一覧で確認できます）。",
   surveyQuestion: "質問",
   surveyQtype: "回答形式",
   surveyOptions: "選択肢（カンマ区切り）",
@@ -580,10 +582,11 @@ const en: Record<keyof typeof ja, string> = {
   slotJoinWaitlist: "Join the waitlist",
 
   surveyHeading: "Registration survey",
+  surveyMovedLink: "Edit the registration survey questions on the \"Registration survey\" page →",
   surveyHelp:
     "Questions people answer when they register — a full name and company for building access, for example. Anyone who skips a required question cannot register. Only organizers can read the answers.",
   surveyAnswersExist:
-    "Answers have already come in. New questions, and questions you make required, apply only to people who register from now on. You can see who has not answered in the answer list under Traffic.",
+    "Answers have already come in. New questions, and questions you make required, apply only to people who register from now on. You can see who has not answered in the answer list below on this page.",
   surveyQuestion: "Question",
   surveyQtype: "Answer type",
   surveyOptions: "Choices (comma separated)",

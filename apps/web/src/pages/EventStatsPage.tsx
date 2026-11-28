@@ -7,34 +7,21 @@ import {
   Card,
   CardContent,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import BarChartIcon from "@mui/icons-material/BarChart";
-import DownloadIcon from "@mui/icons-material/Download";
 import FlagIcon from "@mui/icons-material/Flag";
-import PollIcon from "@mui/icons-material/Poll";
 import HandshakeOutlinedIcon from "@mui/icons-material/HandshakeOutlined";
-import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { EventStats } from "@eventer/shared";
-import { surveyAnswerText, surveyQuestionText } from "@eventer/shared";
 import { useEvent, useIsAdmin } from "../api/hooks.js";
-import { api } from "../api/client.js";
 import { useEventStats } from "../api/analyticsHooks.js";
-import { useSurveyAnswers } from "../api/eventSurveyHooks.js";
 import { useMeetRanking } from "../api/eventMeetHooks.js";
 import { i18next } from "../i18n/index.js";
 import { DailyBarChart } from "../components/DailyBarChart.js";
-import { messageKey, type MessageKey } from "../lib/messageKey.js";
 
 /** サイトが自分で付ける流入元の印。文言は辞書にある */
 const INTERNAL_SOURCE_KEY: Partial<
@@ -201,8 +188,12 @@ export function EventStatsPage() {
         </>
       )}
 
-      {/* 事前アンケートの回答一覧 (#152)。質問がある場合のみ表示 */}
-      <SurveyAnswersCard eventId={id} enabled={Boolean(eventData) && isStaff} />
+      {/* 参加アンケートの回答は「参加アンケート」ページへ移した（オーナー 2026-11-28） */}
+      {isStaff && (
+        <Box>
+          <Button size="small" component={RouterLink} to={`/events/${id}/survey`}>{t("staffOps.surveyStatsMoved")}</Button>
+        </Box>
+      )}
       <MeetRankingCard
         eventId={id}
         enabled={Boolean(eventData) && isStaff}
@@ -212,185 +203,6 @@ export function EventStatsPage() {
         showDeskLink={eventData?.event.meetPrizes === true}
       />
     </Stack>
-  );
-}
-
-/** 参加状態の見せ方。文言はイベント詳細と同じものを引く（表を2か所に持たない） */
-const SURVEY_STATUS_KEY: Partial<
-  Record<
-    string,
-    | "eventDetail.statusConfirmed"
-    | "eventDetail.statusWaitlist"
-    | "eventDetail.statusApplied"
-    | "eventDetail.statusLost"
-    | "staffOps.surveyStatusCanceled"
-  >
-> = {
-  confirmed: "eventDetail.statusConfirmed",
-  waitlist: "eventDetail.statusWaitlist",
-  applied: "eventDetail.statusApplied",
-  lost: "eventDetail.statusLost",
-  canceled: "staffOps.surveyStatusCanceled",
-};
-
-/** 表に無い状態はサーバーの値をそのまま出す */
-function surveyStatusLabel(status: string): string {
-  const key = SURVEY_STATUS_KEY[status];
-  return key ? i18next.t(key) : status;
-}
-
-/** 事前アンケートの回答一覧（staff のみ）。CSV ダウンロードつき */
-function SurveyAnswersCard({
-  eventId,
-  enabled,
-}: {
-  eventId: string;
-  enabled: boolean;
-}) {
-  const { t, i18n } = useTranslation();
-  const { data } = useSurveyAnswers(eventId, enabled);
-  const [reminding, setReminding] = useState(false);
-  const [remindResult, setRemindResult] = useState<MessageKey | null>(null);
-  if (!data || data.questions.length === 0) return null;
-  const { questions, rows } = data;
-  // 写真NGは撮影の段取りに使うので、人数をまとめて先に見せる（名簿には出さない）
-  const noPhotoQuestion = questions.find((q) => q.preset === "no_photo");
-  const noPhotoCount = (value: "ok" | "no_photo") =>
-    noPhotoQuestion
-      ? rows.filter((r) => r.answers[noPhotoQuestion.id] === value).length
-      : 0;
-
-  return (
-    <Card variant="outlined">
-      <CardContent>
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          flexWrap="wrap"
-          useFlexGap
-          sx={{ mb: 1.5 }}
-        >
-          <Typography
-            variant="h6"
-            sx={{ flex: 1, minWidth: 160, display: "flex", alignItems: "center", gap: 0.75 }}
-          >
-            <PollIcon fontSize="small" />
-            {t("staffOps.surveyTitle")}
-          </Typography>
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<NotificationsNoneIcon />}
-            disabled={reminding}
-            onClick={async () => {
-              if (!window.confirm(t("staffOps.surveyRemindConfirm"))) {
-                return;
-              }
-              setReminding(true);
-              try {
-                const res = await api.post<{ notified: number }>(
-                  `/events/${eventId}/survey/remind`,
-                );
-                setRemindResult(
-                  messageKey(
-                    res.notified === 1
-                      ? "staffOps.surveyRemindedOne"
-                      : "staffOps.surveyReminded",
-                    { n: res.notified },
-                  ),
-                );
-              } catch {
-                setRemindResult(messageKey("staffOps.surveyRemindFailed"));
-              } finally {
-                setReminding(false);
-              }
-            }}
-          >
-            {t("staffOps.surveyRemind")}
-          </Button>
-          {/* 同一オリジンの <a> なので cookie 認証のままダウンロードできる */}
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<DownloadIcon />}
-            component="a"
-            href={`/api/events/${eventId}/survey/answers.csv?lang=${encodeURIComponent(i18n.language)}`}
-            download
-          >
-            {t("staffOps.surveyCsv")}
-          </Button>
-          {/* 受付結果＋アンケートを1枚にした名簿（会場提供者にも渡せる） (#154) */}
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<DownloadIcon />}
-            component="a"
-            href={`/api/events/${eventId}/attendance.csv?lang=${encodeURIComponent(i18n.language)}`}
-            download
-          >
-            {t("staffOps.attendanceCsv")}
-          </Button>
-        </Stack>
-        {noPhotoQuestion && (
-          <Typography variant="body2" sx={{ mb: 1 }} data-testid="no-photo-summary">
-            {surveyQuestionText(noPhotoQuestion, i18n.language)}
-            {t("common.dotSeparator")}
-            {surveyAnswerText(noPhotoQuestion, "no_photo", i18n.language)}: {noPhotoCount("no_photo")}
-            {t("common.dotSeparator")}
-            {surveyAnswerText(noPhotoQuestion, "ok", i18n.language)}: {noPhotoCount("ok")}
-          </Typography>
-        )}
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-          {t("staffOps.surveyNote")}
-          {remindResult && `${t("common.dotSeparator")}${t(remindResult.key, remindResult.params)}`}
-        </Typography>
-        {rows.length === 0 ? (
-          <Typography color="text.secondary" variant="body2">
-            {t("staffOps.surveyEmpty")}
-          </Typography>
-        ) : (
-          <TableContainer sx={{ maxHeight: 420 }}>
-            <Table size="small" stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ whiteSpace: "nowrap" }}>
-                    {t("eventDetail.participantsHeading")}
-                  </TableCell>
-                  <TableCell sx={{ whiteSpace: "nowrap" }}>
-                    {t("staffOps.surveyStatusColumn")}
-                  </TableCell>
-                  {questions.map((q) => (
-                    <TableCell key={q.id} sx={{ minWidth: 120 }}>
-                      {surveyQuestionText(q, i18n.language)}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {rows.map((r) => (
-                  <TableRow key={r.user.id} hover>
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>
-                      {r.user.globalName ?? r.user.username}
-                    </TableCell>
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>
-                      {r.memberStatus
-                        ? surveyStatusLabel(r.memberStatus)
-                        : t("staffOps.surveyNotJoined")}
-                    </TableCell>
-                    {questions.map((q) => (
-                      <TableCell key={q.id}>
-                        {surveyAnswerText(q, r.answers[q.id] ?? "", i18n.language)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

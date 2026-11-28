@@ -17,6 +17,7 @@ import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
 import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import LiveTvIcon from "@mui/icons-material/LiveTv";
 import PollOutlinedIcon from "@mui/icons-material/PollOutlined";
+import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
 import QrCodeScannerIcon from "@mui/icons-material/QrCodeScanner";
 
 /** 運営メニューの区切り (#613)。並びはこの順 */
@@ -58,6 +59,8 @@ export function managementLinks({ isStaff, attendanceCheck, chatAvailable, inqui
     { path: "staffing", labelKey: "staffOps.dutyTitle", icon: <AssignmentIndOutlinedIcon />, group: "day", show: isStaff },
     { path: "prize-desk", labelKey: "staffOps.prizeDeskTitle", icon: <CardGiftcardIcon />, group: "day", show: isStaff },
     { path: "bingo/control", labelKey: "staffOps.bingoControlTitle", icon: <CasinoOutlinedIcon />, group: "day", show: isStaff },
+    // 参加アンケート（申込のときの質問と回答）。開催前アンケート（URLで配るもの）と並べる（オーナー 2026-11-28）
+    { path: "survey", labelKey: "staffOps.surveyPageTitle", icon: <AssignmentOutlinedIcon />, group: "content", show: isStaff },
     { path: "pre-survey", labelKey: "staffOps.preSurveyTitle", icon: <PollOutlinedIcon />, group: "content", show: isStaff },
     // 抽選の当落・先着のキャンセル待ちの確定。以前は編集ページの参加枠の奥にしか入口が無かった
     { path: "lottery", labelKey: "staffOps.slotAdminOpen", icon: <HowToRegOutlinedIcon />, group: "content", show: isStaff && hasSlots },
